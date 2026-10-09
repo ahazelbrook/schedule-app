@@ -1,152 +1,139 @@
-# Plan: a private Roll Call for one Blades in the Dark table
+# Plan: the Blades '68 crew app
 
-Date: 2026-10-09
-Companion to `RESEARCH.md`. This is the plan if we build instead of paying $48/year for Roll Call.
+Date: 2026-10-09. Companion to `RESEARCH.md`.
+
+A private scheduling app for one Blades '68 table, where the front door is a video-game style character creator. A player's profile *is* their character: pick a playbook, build the figure, dress it, fill in the rulebook's character creation sheet, and get a mugshot and a place in the crew line-up. Scheduling (availability, the next score, RSVPs, reminders) hangs off the crew.
+
+Every drawing is produced by the **figure kit v2** from the Blades '68 Design System (`https://claude.ai/artifact/9Ud97s5QUvRk1ufsStUvTr`), so the app looks like the rulebook: no outlines, shape-and-light, grain, 60s wardrobe, true scale. The UI uses the design system's tokens, fonts and components (PosterTitle, Kicker, RulesTable, AbilityCard, RatingDots, SheetField, Track, Stamp, ChapterPlate).
 
 ## 0. Honest framing
 
-For one table of 4 to 6 people, the build is a hobby project, not a cost saving. The MVP below is roughly 50 to 70 focused hours, which is several years of Roll Call subscription. Build it because you want to own it, extend it with Blades-specific features, or enjoy it. Nothing in the plan assumes it will be sold.
+This is a hobby build. The scheduler alone is 54 to 76 focused hours; the creator roughly doubles it. The creator is also the part players will actually enjoy, so it is built first and shipped on its own before any scheduling exists.
 
-## 1. What we are cloning
+## 1. Experience
 
-The behaviour that matters, taken from Roll Call's feature list:
+### 1.1 The creator, screen by screen
 
-1. One campaign with a cadence (weekly / biweekly / monthly) and preferred play windows (e.g. Sunday 18:00 to 22:00, Tuesday 19:00 to 23:00), a session length, and a quorum.
-2. Players' busy time comes from their Google Calendar automatically. They can also block out vacations and mark "maybe".
-3. Each cycle the app finds the best slot, proposes it to the GM (or auto-confirms), and the session lands on everyone's calendar.
-4. RSVP tracking with reminders and nagging over Discord and email.
-5. Holiday avoidance and a fairness rule so the same player is not always the one left out.
+Layout is the console character-creator pattern: the figure stands live on the left (or on top, on a phone), redrawn on every change, with a step rail across the top and the current step's options on the right. Each step is one of the rulebook's registers: poster type for the big choices, sheet components for the small ones. A "Random" button on every step seeds a sensible figure so a player never faces an empty mannequin.
 
-Everything else Roll Call has (multi-campaign billing, SMS, 18-player tiers, Android app) is out of scope.
-
-## 2. The decision that shapes everything: how to touch Google Calendar
-
-Google Calendar scopes are "sensitive". An OAuth app that requests them must either pass Google's verification (privacy policy page, homepage, justification, usually one to four weeks of back and forth) or stay in "Testing" status, where every player's refresh token expires after 7 days and they have to re-consent weekly. A Workspace "internal" app avoids this but only for users inside one Workspace org, which a friend group is not.
-
-Recommendation: **do not use Google OAuth in the MVP.** Use the two mechanisms Google Calendar already exposes without any app review:
-
-| Direction | Mechanism | Cost to player | Caveat |
+| Step | What the player does | Kit / DS pieces | Notes |
 |---|---|---|---|
-| Read busy time | Each player pastes the "Secret address in iCal format" of their calendar(s) into the app once. The app fetches the ICS feed on a schedule and stores only busy intervals, never titles. | 2 minutes, once | The secret URL exposes full event details to the server, so store only start/end and let players revoke by resetting the URL in Google. Google serves the feed with some delay (minutes to a few hours). |
-| Write sessions | (a) a per-campaign `webcal://` subscription feed each player adds once, plus (b) a one-click "Add to Google Calendar" link per session, plus (c) an email with a `.ics` invite attached (`METHOD:REQUEST`), which Gmail renders with Yes/No/Maybe buttons. | 1 minute, once | Google refreshes subscribed feeds slowly (hours), so the email invite is what makes the session show up promptly. |
+| 1. Playbook | Flick through eight playbook covers: poster word, descriptor kicker, "Core playbook ONE of EIGHT", the figure silhouetted in that playbook's scheme. Pick one. | `PosterTitle`, `Kicker`, `K.render(..., {scheme, silhouette})`, `duo-*` tokens | Sets the scheme, halo colour, ID prefix, starting action dots and a default wardrobe preset. Operative, Radical, Hit Squad and Utopians have no duotone in the system; they get `ink` until you supply their pages. |
+| 2. Build | Masc/fem, silhouette (`rect`, `invtri`, `column`, `pear`, `oval`, `hourglass`, `lanky`, `slim`, `lean`), height slider shown against the crew's true-height line-up, `heads`, `build`, skin (9 presets), age. | `K.lineup` chart, `RatingDots`-style steppers | Height against Booker (6'5") and Alfie (5'5") is the joke. Keep it visible. |
+| 3. Face | Head shape, eyes, brows, nose, mouth, expression (13), marks, facial hair, makeup, eyewear. | `K.portrait` at hi detail | Portrait preview switches on for this step. |
+| 4. Hair & hat | 20 hairstyles, colour, grey, 9 hats. | | |
+| 5. Outfit | Ten slots (base, mid, outer, neck, bottom, dress, legs, feet, waist, hands). Each slot: garment type, `cloth-*` swatch, optional pattern. "Playbook kit" presets (the Hound's trench and tie, the Veteran's tactical jacket). | Swatch grid from the wardrobe palette | Palette discipline is enforced softly: the UI shows "dominant / secondary / accent" and warns past three colours. |
+| 6. Props & company | 19 props, 2 companions. Picking a prop auto-sets the arm pose it needs (cigarette → `smoke`, briefcase → `carry`). | | Kit warnings are surfaced inline, never silently dropped. |
+| 7. Attitude | Stance, per-arm pose, head tilt and yaw, stoop. | | |
+| 8. Dossier | The rulebook's character creation sheet: name, alias, look, heritage, background, vice, action ratings, one special ability, friend and rival, items, crew. | `SheetField`, `RatingDots`, `AbilityCard`, `ContactRow`, `CheckItem`, `TriggerList` | Content comes from `content/playbooks/<name>.json`, transcribed from the book (see 1.3). |
+| 9. Mugshot | `K.portrait` with the ID plate (`HND-968-0312`), halo in the playbook colour, a `Stamp`. "Join the crew" adds the figure to the line-up. | `Stamp`, `StatBadge` | Download SVG / PNG for Discord avatars. |
 
-Two-way OAuth sync (read free/busy via the API, write events directly with attendees, read RSVP status back from the event) becomes Phase 7, an optional upgrade once the core works and if the weekly re-consent or verification process is worth it.
+### 1.2 After the creator
 
-## 3. Architecture
+- **Crew line-up** (`/crew`): everyone at true height on the chart, GM included. This page becomes the RSVP board later: a figure steps forward for "in", goes to silhouette for "out", greys for "no answer".
+- **Dossier page** per character: portrait, sheet, the choices as a printed playbook spread. Printable.
+- **Re-tailor**: any step can be reopened; the spec is versioned so an old figure still renders after kit upgrades.
 
-Single deployable Next.js app plus a scheduled job. Deliberately boring.
+### 1.3 Rulebook content
+
+The design system holds only the "Choose a Playbook" table and the crew sheets. For step 8 the app needs, per playbook: the descriptor line, starting action ratings, the special abilities list (name, text, prompt), heritage/background/vice lists, starting items, friends and rivals. That is a one-time transcription from the rulebook pages (Characters chapter, pp. 10 to 85) into JSON. Estimate 30 to 45 minutes per playbook. Crew creation can be transcribed from `assets/sources/Blades 68 crew sheets.pdf`, which has a text layer.
+
+Needed from you before Phase C: the character creation pages as PDF or images, or the vault notes under `Wiki/Games/Blades in the Dark/`. Also the ID prefixes for the six playbooks the system doesn't name (only HND and PAL are canon).
+
+## 2. Architecture
 
 ```
-Browser (GM dashboard, player availability page)
+Browser
+  Next.js 15 (App Router, TypeScript), React 18, Tailwind for layout only
+  Design system: tokens.css, fonts, components/bundle.js   (vendored from the DS artifact)
+  Figure kit: figures/figure-kit.js (UMD, window.B68Figure), cast.js (canon PCs/NPCs)
+  Creator state: one spec object (kit v2 schema) + one sheet object, in a reducer; autosaved
         |
-   Next.js 15 (App Router, TypeScript, server actions, Tailwind)
-        |                       \
-   Postgres (Neon free tier)     Cron (Vercel Cron, hourly)
-   via Drizzle ORM                 - refresh ICS feeds
-        |                          - run scheduler for upcoming cycle
-   Integrations                    - send reminders / nudges
-     - ICS fetch + parse (node-ical)
-     - ICS generation (ics)
-     - Email (Resend, free tier)
-     - Discord (webhook for announcements; bot with slash commands later)
-     - Holidays (date-holidays)
-     - Auth.js with Discord provider (no Google OAuth needed)
+  Server actions + Drizzle -> Postgres (Neon)        Node also runs the kit: SSR of SVG for
+        |                                            share cards, PNG via resvg for Discord
+  Auth.js (Discord login)   Resend (email)   Discord webhook   Cron (feeds, scheduler, reminders)
 ```
 
-Why these choices:
+Why:
 
-- **Next.js on Vercel**: zero ops, free hobby tier, cron built in. The only state is Postgres.
-- **Neon Postgres + Drizzle**: free tier is plenty for 6 users; Drizzle keeps migrations as plain SQL. (Alternative: SQLite on a Fly.io volume if you prefer one container and no external DB. Same code, swap the driver.)
-- **Discord login**: the group is almost certainly on Discord already, Discord OAuth needs no verification, and it gives the Discord user ID we need to ping people by name.
-- **Resend**: 3,000 emails/month free, supports `.ics` attachments, simple API.
-- **date-holidays**: public holidays per country/region without an API key.
+- **The kit is synchronous and pure.** `K.render(spec)` returns SVG in a few ms, so live preview is just React state. No canvas, no WebGL, no asset pipeline.
+- **Vendor, don't link.** Copy `figure-kit.js`, `cast.js`, `tokens.css`, `components/bundle.js`, `bundle.css` and the fonts into `/vendor/b68/` with the DS version noted. Upgrading is a copy plus a visual regression run.
+- **Generic option pickers.** `K.options()` returns every registered name by kind, and `CATALOG.md` is generated from the same registry. Steps 2 to 7 are one `SlotPicker` component driven by that registry, not 29 hand-built screens. Part descriptions in the catalogue become tooltips.
+- **Spec is the source of truth.** `characters.spec` (jsonb) is a verbatim kit v2 spec; `characters.sheet` (jsonb) holds the rulebook choices. Rendering is derived, never stored except as a cached PNG.
 
-Running cost: $0/month on free tiers. Optional domain ~$12/year.
-
-## 4. Data model
+## 3. Data model
 
 ```
-users            id, discordId, email, displayName, timezone
-campaigns        id, name, gmUserId, cadence (weekly|biweekly|monthly),
-                 sessionMinutes, quorum, countryForHolidays,
-                 preferredWindows JSON [{weekday, startHHMM, endHHMM}],
-                 anchorDate (first session), autoConfirm bool, discordWebhookUrl
-memberships      campaignId, userId, role (gm|player), required bool,
-                 missedStreak int, missedTotal int
-calendar_feeds   id, userId, label, secretIcsUrl (encrypted), lastFetchedAt, lastError
-busy_blocks      id, userId, feedId, startUtc, endUtc        -- cache rebuilt on each fetch
-overrides        id, userId, startUtc, endUtc, status (busy|maybe|free), note
-sessions         id, campaignId, cycleIndex, startUtc, endUtc,
-                 status (proposed|confirmed|cancelled|played),
-                 proposedAlternatives JSON, icsUid
-rsvps            sessionId, userId, status (yes|no|maybe|none), respondedAt
-notifications    id, sessionId, userId, channel, kind, sentAt    -- idempotency log
+users          id, discordId, email, displayName, timezone
+campaigns      id, name, gmUserId, cadence, sessionMinutes, quorum, countryForHolidays,
+               preferredWindows JSON, anchorDate, autoConfirm, discordWebhookUrl
+memberships    campaignId, userId, role, required, missedStreak, missedTotal
+characters     id, userId, campaignId, playbook, name, alias, code (XXX-968-NNNN),
+               spec JSONB (kit v2), sheet JSONB (rulebook choices), kitVersion,
+               portraitPngUrl, createdAt, updatedAt
+content        playbooks JSON (from the rulebook), crews JSON (from the crew sheets)   -- files, not DB
+-- scheduling tables unchanged:
+calendar_feeds, busy_blocks, overrides, sessions, rsvps, notifications
 ```
 
-## 5. The scheduler
+## 4. Phases and effort
 
-Pure function, no I/O, so it is unit-testable: `proposeSlots(campaign, members, busy, overrides, holidays, now) -> Candidate[]`.
+Focused hours for one person using Claude Code for the typing. Multiply by about 1.5 if coding by hand.
 
-1. **Cycle window**: from the last confirmed session plus the cadence, take the surrounding period (for weekly: that week; biweekly: that fortnight; monthly: that month).
-2. **Candidates**: every start time at 30 minute steps inside each preferred window where the full session length fits. For weekly that is typically 10 to 30 candidates.
-3. **Per-player availability** for a candidate: `free` if no busy block or busy override overlaps; `maybe` if only a maybe override overlaps; else `busy`.
-4. **Hard filters**: GM must be free; required players must be free; free count must reach quorum.
-5. **Score** (higher wins):
-   - +10 per free player, +4 per maybe
-   - +3 per free player whose `missedStreak` ≥ 1 (fairness)
-   - −15 if the day is a public holiday or the eve of one
-   - −2 per 30 minutes away from the window's canonical start (keeps the "usual" slot sticky)
-   - tie-break: earlier date
-6. **Output**: top 3 candidates with the per-player breakdown. If `autoConfirm` and the best candidate has everyone free, confirm it; otherwise post the proposal to the GM (web + Discord) and wait.
+### Track 1: the creator (ship this first)
 
-Edge cases to handle explicitly: no candidate meets quorum (propose skipping the cycle and notify), player with no feed and no overrides (treat as "unknown", counts as maybe), DST transitions (store UTC, compute windows in the campaign's timezone with `date-fns-tz`).
+| Phase | Deliverable | Hours |
+|---|---|---|
+| A. Shell | Next.js app, DS tokens/fonts/components vendored, kit loaded, Discord login, deploy. Playbook carousel (step 1) with scheme-coloured silhouettes. | 10 to 14 |
+| B. Figure creator | Generic `SlotPicker` over `K.options()`; steps 2 to 7; live figure and portrait; random; kit warnings inline; autosave spec to DB. | 18 to 26 |
+| C. Dossier | Playbook content JSON schema + loader; step 8 with sheet components; validation (one ability, dots within budget). Excludes the transcription itself. | 10 to 14 |
+| D. Mugshot, crew, export | Step 9 with ID plate and stamp; `/crew` line-up; per-character dossier page; SVG/PNG export; share card. | 8 to 12 |
+| E. Polish | Phone layout (preview on top, option strip below), motion tokens for step transitions, empty states, printable dossier. | 8 to 12 |
+| **Creator total** | | **54 to 78** |
+| Content transcription (you) | Eight playbooks into JSON | 4 to 6 |
 
-## 6. Phases and effort
+### Track 2: scheduling (unchanged from the earlier plan, re-skinned)
 
-Effort is focused developer hours for one person using Claude Code or similar for the typing; expect roughly 1.5x if coding by hand. Calendar time assumes evenings and weekends.
+| Phase | Deliverable | Hours |
+|---|---|---|
+| F. Availability | ICS secret-URL feeds, busy block cache, overrides ("downtime"), per-player week view. | 12 to 16 |
+| G. Scheduler | Pure `proposeSlots` with tests, cron, GM proposal view ("the next score"). | 8 to 12 |
+| H. Calendar out | Session ICS, webcal feed, Add-to-Google link, email invite with `.ics`. | 6 to 8 |
+| I. RSVP and reminders | Line-up as RSVP board, Discord webhook with the crew image, T−3d/T−1d nudges, missed-streak fairness. | 10 to 14 |
+| **Scheduling total** | | **36 to 50** |
 
-| Phase | Deliverable | Hours | Depends on |
-|---|---|---|---|
-| 0. Skeleton | Next.js + Drizzle + Neon + Auth.js (Discord) + deploy to Vercel. Login works. | 4 to 6 | – |
-| 1. Campaign & roster | GM creates campaign, sets cadence/windows/quorum/holiday region. Invite link. Players join, set timezone. | 6 to 8 | 0 |
-| 2. Availability | Player pastes ICS secret URL; hourly fetch into `busy_blocks`; override UI (block dates, mark maybe); "my availability" week view; feed health shown to GM. | 12 to 16 | 1 |
-| 3. Scheduler | Pure `proposeSlots` with tests; cron runs it per cycle; GM sees top 3 with breakdown; confirm / pick alternative / skip cycle. | 8 to 12 | 2 |
-| 4. Calendar out | Session ICS generation; per-campaign webcal feed; "Add to Google Calendar" link; email invite with `.ics` via Resend on confirm and on change. | 6 to 8 | 3 |
-| 5. RSVP & reminders | RSVP page (one-click from email/Discord); Discord webhook announces proposal and confirmation; reminders at T−3d and T−1d; nag non-responders; update `missedStreak` after session. | 10 to 14 | 4 |
-| 6. Polish | Mobile layout, GM dashboard (next session, RSVP grid, feed status), cancel/reschedule flow, session history, error handling, basic observability. | 8 to 12 | 5 |
-| **MVP total** | | **54 to 76** | |
-| 7. Google OAuth (optional) | Google provider, free/busy API instead of ICS, write events with attendees, read RSVP from event, OAuth verification submission. | 12 to 20 + weeks of waiting | 6 |
-| 8. Discord bot (optional) | Slash commands: `/rsvp`, `/availability`, `/next`, ephemeral replies, DM reminders instead of channel pings. | 8 to 12 | 5 |
-| 9. Blades extras (optional) | Session recap field in the confirmation email, downtime/clock reminder in the T−1d message, "who's got the next score" prompt. | 4 to 8 | 5 |
+**Everything: 90 to 128 hours.** The creator is usable after Phase D (about 46 to 66 hours). Google OAuth two-way sync stays optional, for the same verification reasons as before: use ICS feeds and email invites in the MVP.
 
-Usable after Phase 4 (~35 to 50 hours): the group has a self-scheduling calendar without reminders. Full Roll Call parity for one table after Phase 6.
+## 5. Risks and decisions
 
-## 7. Repository layout
+- **Rulebook content is the gate for step 8.** Everything else can be built from what the design system already holds. Build A, B and D first; C waits on the transcription.
+- **Mobile is the hard screen.** Nine steps and ten outfit slots on a phone need a strict two-pane layout. Design that before Phase B, not during E.
+- **Kit upgrades.** Pin the kit version in `characters.kitVersion` and keep a visual regression page that renders every saved character side by side after any vendor copy.
+- **Rights.** The kit, tokens and fonts come from your own design system. The rulebook text in `content/` is yours to transcribe for a private table. Keep the app private (Discord login, invite link only).
+- **Canon.** New named PCs are canon decisions. Offer an "export spec to cast.json" button so a finished character can be added to the design system's cast by hand.
+- **Scope creep.** Crew creation (six crew types, claims grid, cohorts) is a natural Phase J. Leave it until the table has used the creator for a month.
+
+## 6. Repository layout
 
 ```
-/app                 Next.js routes
-  /(gm)/campaign     dashboard, settings, proposals
-  /(player)          availability, rsvp
-  /api/cron/*        refresh-feeds, run-scheduler, send-reminders (Vercel Cron)
-  /api/feed/[token]  webcal ICS feed
-/lib
-  /scheduler         proposeSlots.ts + tests   (pure)
-  /calendar          icsFetch.ts, icsBuild.ts, gcalLink.ts
-  /notify            email.ts, discord.ts, templates/
-  /db                schema.ts, migrations/
-/tests               vitest
+/app
+  /(creator)/new/[step]      nine steps, one route each, shared layout with the live figure
+  /crew                      line-up, later the RSVP board
+  /character/[id]            dossier page
+  /(gm)/campaign             scheduling dashboard (Track 2)
+  /api/render/[id].png       SSR portrait for Discord and share cards
+  /api/cron/*                feeds, scheduler, reminders (Track 2)
+/vendor/b68                  figure-kit.js, cast.js, tokens.css, components bundle, fonts, DS version
+/content/playbooks/*.json    transcribed rulebook data
+/content/crews/*.json
+/lib/creator                 spec reducer, SlotPicker registry, presets per playbook, random()
+/lib/scheduler               proposeSlots.ts + tests (Track 2)
+/lib/calendar, /lib/notify   Track 2
+/tests                       vitest; a render-every-character regression page
 ```
 
-## 8. Risks and mitigations
+## 7. First week
 
-- **ICS secret URLs are powerful credentials.** Encrypt at rest, show only the label in the UI, store busy intervals not event bodies, document how to reset the URL in Google.
-- **ICS feed lag.** Google can take hours to reflect changes. Mitigate with a "refresh now" button and by running the scheduler 7+ days before the cycle, then re-checking at T−3d.
-- **Time zones.** One player abroad will find every bug. Store UTC, render in the viewer's timezone, test DST boundaries in the scheduler suite.
-- **Cron on Vercel hobby** runs at most once per day per job unless on Pro. Use a single hourly job on Pro, or run the cron from a free GitHub Actions schedule hitting the endpoint, or host on Fly.io where cron is unrestricted. Decide in Phase 0.
-- **Scope creep.** The optional phases are tempting. Ship Phase 6 and use it for two cycles before starting any of them.
-
-## 9. First week
-
-1. Phase 0 in one sitting: scaffold, Discord login, deploy, invite yourself.
-2. Write `proposeSlots` and its tests before any availability UI, using hand-written fixtures. The scheduler is the only interesting code; get it right first.
-3. Paste your own ICS URL, confirm busy blocks match your calendar, then invite one player.
+1. **Prototype the creator as a single-page artifact first** (one day). The design system already ships a `FigurePlayground`; a creator is that playground with a step rail and option pickers instead of a JSON textarea. No backend, state in the URL. Put it in front of two players and watch them. This settles the mobile layout and the step order before any Next.js code exists.
+2. Phase A: vendor the DS, playbook carousel, deploy.
+3. Send me the character creation pages so the playbook JSON can be drafted while B is in progress.
