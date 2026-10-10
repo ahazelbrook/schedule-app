@@ -65,29 +65,59 @@ export function changedPaths(before, after, path = [], out = []) {
 }
 
 /**
- * `next` only adds entries at the front of `prev` (newest first) and leaves the old ones
- * unchanged. A log already trimmed to LOG_MAX by the client may drop the oldest entries.
- */
-export function isLogAppend(prev, next) {
-  if (!Array.isArray(next)) return false;
-  const old = Array.isArray(prev) ? prev : [];
-  for (let added = Math.max(0, next.length - old.length); added <= next.length; added++) {
-    const kept = next.length - added;
-    if (kept !== old.length && next.length < LOG_MAX) continue; // only the cap may drop old entries
-    if (sameJson(next.slice(added), old.slice(0, kept))) return true;
-  }
-  return false;
-}
-
-/**
- * True when a player may turn `before` into `after`: anything under `crew`, `clocks.<i>.filled`
- * (same number of clocks), and appending to `log`. updatedAt is ignored: the server stamps it.
+ * True when a player may turn `before` into `after`: anything under `crew` and `clocks.<i>.filled`
+ * (same number of clocks). `log` is not compared here: a PATCH adds to it through mergeLog, and
+ * only the GM can PUT. updatedAt is ignored: the server stamps it.
  */
 export function playerMayWrite(before, after) {
-  const { log: oldLog, crew: _c1, updatedAt: _u1, ...oldRest } = before;
-  const { log: newLog, crew: _c2, updatedAt: _u2, ...newRest } = after;
-  if (!changedPaths(oldRest, newRest).every(playerMayChange)) return false;
-  return sameJson(oldLog, newLog) || isLogAppend(oldLog, newLog);
+  const { log: _l1, crew: _c1, updatedAt: _u1, ...oldRest } = before;
+  const { log: _l2, crew: _c2, updatedAt: _u2, ...newRest } = after;
+  return changedPaths(oldRest, newRest).every(playerMayChange);
+}
+
+// ---------- the log: PATCH adds entries, it never replaces ----------
+
+const entryKey = (e) => JSON.stringify([e.at, e.by, e.text]);
+const slotKey = (e) => JSON.stringify([e.at, e.by]);
+
+/**
+ * PATCH semantics for `log`: the incoming array is a set of entries to add, so two clients that
+ * append from the same stale copy both land. An entry already stored (same at + by + text) is
+ * skipped. One with the same at + by as a stored entry but other text is an attempt to rewrite
+ * it: 403 for a player, ignored for the GM (rewriting the log takes a PUT). The result is sorted
+ * by `at`, newest first (stable), and trimmed to LOG_MAX.
+ * @returns {Array} the new log; throws HttpError(400 | 403)
+ */
+export function mergeLog(stored, incoming, gm) {
+  if (!Array.isArray(incoming)) throw new HttpError(400, 'log must be an array of entries');
+  const old = Array.isArray(stored) ? stored.filter(isPlainObject) : [];
+  const have = new Set(old.map(entryKey));
+  const slots = new Set(old.map(slotKey));
+  const added = [];
+  for (const e of incoming) {
+    if (!isPlainObject(e)) throw new HttpError(400, 'log entries must be objects');
+    if (have.has(entryKey(e))) continue;
+    if (slots.has(slotKey(e))) {
+      if (gm) continue;
+      throw new HttpError(403, GM_ONLY);
+    }
+    have.add(entryKey(e)); slots.add(slotKey(e));
+    added.push(e);
+  }
+  if (!added.length) return old.slice(0, LOG_MAX);
+  const at = (e) => (typeof e.at === 'string' ? e.at : '');
+  return added.concat(old)
+    .map((e, i) => [e, i])
+    .sort((a, b) => (at(a[0]) < at(b[0]) ? 1 : at(a[0]) > at(b[0]) ? -1 : a[1] - b[1]))
+    .map(([e]) => e)
+    .slice(0, LOG_MAX);
+}
+
+/** `crew` and `session`, when a body names them, must be plain objects (400 otherwise). */
+export function checkShape(body) {
+  for (const k of ['crew', 'session']) {
+    if (k in body && !isPlainObject(body[k])) throw new HttpError(400, k + ' must be an object');
+  }
 }
 
 /** Server-side finishing touches: newest LOG_MAX log entries, updatedAt stamped. */

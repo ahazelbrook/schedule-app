@@ -55,11 +55,30 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
       return [200, { now: new Date(tick - 2000).toISOString(), docs: list, campaignUpdatedAt: s.campaign ? s.campaign.updatedAt : null }];   // like the real API: 2 s behind, so rows repeat
     }
     if (p === '/api/campaign') {
-      // the player rule is reduced to "players may not PUT" here; the full rule is checked in checks/api/flow.mjs
+      // the player rule is reduced to "players may not PUT" here; the full rule is checked in checks/api/flow.mjs.
+      // A PATCH adds log entries (same at + by + text: skipped; same at + by, other text: 403 for a player),
+      // newest `at` first, like functions/_lib/campaign.js mergeLog.
       if (method === 'GET') return [200, { doc: clone(s.campaign || defaultCampaign()), updatedAt: s.campaign ? s.campaign.updatedAt : null }];
       if (method === 'PUT' && me.role !== 'gm') return [403, { error: 'only the GM can change that' }];
       const base = s.campaign || defaultCampaign();
-      const doc = method === 'PUT' ? clone(body) : method === 'PATCH' ? merge(clone(base), body) : null;
+      let doc = null;
+      if (method === 'PUT') doc = clone(body);
+      else if (method === 'PATCH') {
+        const { log, ...rest } = body;
+        doc = merge(clone(base), rest);
+        if (log) {
+          const key = (e) => JSON.stringify([e.at, e.by, e.text]), slot = (e) => JSON.stringify([e.at, e.by]);
+          const have = new Set(base.log.map(key)), slots = new Set(base.log.map(slot));
+          const added = [];
+          for (const e of log) {
+            if (have.has(key(e))) continue;
+            if (slots.has(slot(e))) { if (me.role === 'gm') continue; return [403, { error: 'only the GM can change that' }]; }
+            have.add(key(e)); slots.add(slot(e)); added.push(clone(e));
+          }
+          doc.log = added.concat(clone(base.log)).map((e, i) => [e, i])
+            .sort((a, b) => (a[0].at < b[0].at ? 1 : a[0].at > b[0].at ? -1 : a[1] - b[1])).map(([e]) => e);
+        }
+      }
       if (!doc) return [405, { error: 'method not allowed' }];
       if (Array.isArray(doc.log)) doc.log = doc.log.slice(0, 200);
       doc.updatedAt = now(); s.campaign = doc;
@@ -472,6 +491,34 @@ await test('campaign: a change made elsewhere arrives within two polls via campa
   await until(() => cs.length > 1, POLL * 2 + 60);
   eq(snaps.length, 3, 'campaign listener notified by a character change');
   un(); cun();
+});
+
+await test('campaign: two players append to the log from the same stale copy: both entries land, no flicker', async () => {
+  const api = fakeApi();
+  api.setCampaign(campaignDoc());
+  const pa = browser(api, { email: 'pa@x.test' }), pb = browser(api, { email: 'pb@x.test' });
+  const refA = (await pa.win.claude.use('db')).collection('campaign').doc('main');
+  const refB = (await pb.win.claude.use('db')).collection('campaign').doc('main');
+  const sa = [], sb = [];
+  const ua = refA.onSnapshot((s) => sa.push(s.data())), ub = refB.onSnapshot((s) => sb.push(s.data()));
+  await until(() => sa.length && sb.length);
+  const base = sa[0].log;
+  const ea = { at: '2026-10-10T12:30:00.000Z', by: 'pa@x.test', text: 'A' };
+  const eb = { at: '2026-10-10T12:30:01.000Z', by: 'pb@x.test', text: 'B' };
+  await Promise.all([refA.update({ log: [ea].concat(base) }), refB.update({ log: [eb].concat(base) })]);
+  eq(api.campaign.log.map((e) => e.text), ['B', 'A', 'first'], 'server log');
+  const texts = (snaps) => snaps[snaps.length - 1].log.map((e) => e.text);
+  await until(() => texts(sa).length === 3 && texts(sb).length === 3, POLL * 3);
+  eq([texts(sa), texts(sb)], [['B', 'A', 'first'], ['B', 'A', 'first']], 'both views');
+  ok(sa.slice(1).every((d) => d.log.some((e) => e.text === 'A')), 'A\'s entry vanished from A\'s view at some point');
+  // a resent entry is not duplicated, optimistically or on the server
+  const n = sa.length;
+  const p = refA.update({ log: [ea] });
+  eq(sa[sa.length - 1].log.length, 3, 'optimistic duplicate');
+  await p;
+  eq(api.campaign.log.length, 3, 'server duplicate');
+  ok(sa.length - n <= 2, 'snapshots for a no-op append: ' + (sa.length - n));
+  ua(); ub();
 });
 
 await test('campaign: a rejected write (player PUT, 403) rejects with the API message and rolls back', async () => {

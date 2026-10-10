@@ -466,7 +466,6 @@ async function campaignSteps() {
     ['player adding a clock -> 403', (d) => ({ clocks: d.clocks.concat([{ id: 'c_new', name: 'New', size: 4, filled: 0, kind: 'other', hidden: false }]) })],
     ['player removing a clock -> 403', (d) => ({ clocks: d.clocks.slice(1) })],
     ['player rewriting an old log entry -> 403', (d) => { const log = d.log.map((e) => ({ ...e })); log[1].text = 'rewritten'; return { log }; }],
-    ['player appending while dropping an old log entry -> 403', (d) => ({ log: [{ at: new Date().toISOString(), by: PLAYER, text: 'x' }].concat(d.log.slice(0, 1)) })],
     ['player adding a top-level key -> 403', () => ({ extra: 1 })],
     ['player changing v -> 403', () => ({ v: 2 })],
   ];
@@ -490,15 +489,70 @@ async function campaignSteps() {
     expect(r.json.doc.updatedAt > '2026', 'stamped ' + r.json.doc.updatedAt);
   });
 
-  await step('campaign: GM may change anything (session, rename/remove clocks, rewrite log)', async () => {
+  await step('campaign: a PATCH log only adds: a partial (stale) log drops nothing', async () => {
     const d = (await get()).doc;
+    const entry = { at: new Date().toISOString(), by: PLAYER, text: 'only mine' };
+    const r = await api('PATCH', '/api/campaign', { user: PLAYER, body: { log: [entry] } });
+    expectStatus(r, 200);
+    expect(r.json.doc.log.length === d.log.length + 1 && r.json.doc.log[0].text === 'only mine', JSON.stringify(r.json.doc.log));
+    const again = await api('PATCH', '/api/campaign', { user: PLAYER, body: { log: [entry].concat(d.log) } });
+    expectStatus(again, 200);
+    expect(again.json.doc.log.length === d.log.length + 1, 'resending stored entries adds nothing');
+  });
+
+  await step('campaign: two players append from the same stale base -> both entries kept, no 403', async () => {
+    const base = (await get()).doc.log;
+    const a = { at: new Date().toISOString(), by: PLAYER, text: 'from A' };
+    const b = { at: new Date(Date.now() + 1).toISOString(), by: 'player2@example.test', text: 'from B' };
+    const [ra, rb] = await Promise.all([
+      api('PATCH', '/api/campaign', { user: PLAYER, body: { log: [a].concat(base) } }),
+      api('PATCH', '/api/campaign', { user: 'player2@example.test', body: { log: [b].concat(base) } }),
+    ]);
+    expectStatus(ra, 200); expectStatus(rb, 200);
+    const log = (await get()).doc.log;
+    expect(log.length === base.length + 2, 'length ' + log.length);
+    expect(log[0].text === 'from B' && log[1].text === 'from A', 'newest first by at: ' + log.slice(0, 2).map((e) => e.text));
+    expect(JSON.stringify(log.slice(2)) === JSON.stringify(base), 'old entries unchanged');
+  });
+
+  await step('campaign: GM may change anything (session, rename/remove clocks, new keys); a GM PATCH rewrite of a log entry is ignored', async () => {
+    const d = (await get()).doc;
+    const rewritten = { ...d.log[0], text: 'rewritten by gm' };
     const r = await api('PATCH', '/api/campaign', {
-      body: { session: { number: 4, startedAt: new Date().toISOString() }, clocks: [{ ...d.clocks[1], name: 'Fence (GM)' }], log: d.log.slice(0, 1), notes: 'gm key' },
+      body: { session: { number: 4, startedAt: new Date().toISOString() }, clocks: [{ ...d.clocks[1], name: 'Fence (GM)' }], log: [rewritten], notes: 'gm key' },
     });
     expectStatus(r, 200);
     const n = r.json.doc;
     expect(n.session.number === 4 && n.session.endedAt === null, JSON.stringify(n.session));
-    expect(n.clocks.length === 1 && n.clocks[0].name === 'Fence (GM)' && n.log.length === 1 && n.notes === 'gm key', JSON.stringify(n).slice(0, 300));
+    expect(n.clocks.length === 1 && n.clocks[0].name === 'Fence (GM)' && n.notes === 'gm key', JSON.stringify(n).slice(0, 300));
+    expect(JSON.stringify(n.log) === JSON.stringify(d.log), 'log changed by a PATCH rewrite');
+  });
+
+  await step('campaign: the GM rewrites or removes log entries with PUT', async () => {
+    const d = (await get()).doc;
+    const r = await api('PUT', '/api/campaign', { body: { ...d, log: [{ ...d.log[0], text: 'fixed' }] } });
+    expectStatus(r, 200);
+    expect(r.json.doc.log.length === 1 && r.json.doc.log[0].text === 'fixed', JSON.stringify(r.json.doc.log));
+  });
+
+  await step('campaign: crew / session must be objects (400), log must be an array (400)', async () => {
+    const before = (await get()).updatedAt;
+    for (const [user, method, body, msg] of [
+      [PLAYER, 'PATCH', { crew: 5 }, 'crew must be an object'],
+      [PLAYER, 'PATCH', { crew: null }, 'crew must be an object'],
+      [GM, 'PATCH', { crew: [] }, 'crew must be an object'],
+      [GM, 'PATCH', { session: 'now' }, 'session must be an object'],
+      [GM, 'PATCH', { session: null }, 'session must be an object'],
+      [GM, 'PUT', { ...sampleCampaign(), crew: 'x' }, 'crew must be an object'],
+      [GM, 'PUT', { ...sampleCampaign(), session: [1] }, 'session must be an object'],
+      [GM, 'PATCH', { log: null }, null],
+      [PLAYER, 'PATCH', { log: ['text'] }, null],
+    ]) {
+      const r = await api(method, '/api/campaign', { user, body });
+      expectStatus(r, 400);
+      expect(!msg || r.json.error === msg, JSON.stringify(body) + ' -> ' + r.text);
+    }
+    expect((await get()).updatedAt === before, 'stored doc changed');
   });
 
   await step('campaign: log trimmed to 200 (GM PUT), a player append at the cap keeps 200', async () => {

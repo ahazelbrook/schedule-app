@@ -36,6 +36,36 @@
   }
   /* trim a campaign doc's log as the server does */
   function trimLog(doc) { if (doc && Array.isArray(doc.log) && doc.log.length > LOG_MAX) doc.log = doc.log.slice(0, LOG_MAX); return doc; }
+  /* the server's PATCH rule for the campaign log (functions/_lib/campaign.js, mergeLog): incoming entries
+     are added, never replace. Already stored (same at + by + text): skipped. Same at + by, other text:
+     skipped here (the server refuses it for a player and ignores it for the GM). Then newest `at` first
+     (stable), at most LOG_MAX. */
+  function mergeLog(stored, incoming) {
+    var old = Array.isArray(stored) ? stored.filter(isObj) : [];
+    function entryKey(e) { return JSON.stringify([e.at, e.by, e.text]); }
+    function slotKey(e) { return JSON.stringify([e.at, e.by]); }
+    var have = {}, slots = {}, added = [];
+    old.forEach(function (e) { have[entryKey(e)] = true; slots[slotKey(e)] = true; });
+    (Array.isArray(incoming) ? incoming : []).forEach(function (e) {
+      if (!isObj(e) || have[entryKey(e)] || slots[slotKey(e)]) return;
+      have[entryKey(e)] = true; slots[slotKey(e)] = true; added.push(clone(e));
+    });
+    if (!added.length) return old.slice(0, LOG_MAX);
+    function at(e) { return typeof e.at === 'string' ? e.at : ''; }
+    return added.concat(old)
+      .map(function (e, i) { return [e, i]; })
+      .sort(function (a, b) { return at(a[0]) < at(b[0]) ? 1 : at(a[0]) > at(b[0]) ? -1 : a[1] - b[1]; })
+      .map(function (x) { return x[0]; })
+      .slice(0, LOG_MAX);
+  }
+  /* the server's PATCH for the campaign: the deep merge above, except `log`, whose entries are added */
+  function mergeCampaign(doc, patch) {
+    var rest = {};
+    Object.keys(patch).forEach(function (k) { if (k !== 'log') rest[k] = patch[k]; });
+    deepMerge(doc, rest);
+    if ('log' in patch && Array.isArray(patch.log)) doc.log = mergeLog(doc.log, patch.log);
+    return doc;
+  }
   /* what a campaign with no stored document reads as (same as functions/_lib/campaign.js) */
   function defaultCampaign() {
     return {
@@ -360,7 +390,8 @@
   }
 
   /* an own campaign write: same shape as write() above. The optimistic merge only applies to a loaded
-     cache (before that there is nothing current to merge into); the server's answer replaces it. A rejected
+     cache (before that there is nothing current to merge into), with the server's rule (mergeCampaign:
+     deep merge, log entries added); the server's answer then replaces it. A rejected
      write (e.g. 403 for a player) forces a refetch so the optimistic change is rolled back. */
   function campaignWrite(method, body, local) {
     if (signedOut) return Promise.reject(signedOutError());
@@ -393,7 +424,7 @@
         return campaignWrite('PUT', doc, function () { camp.doc = trimLog(clone(doc)); });
       },
       update: function (patch) {
-        return campaignWrite('PATCH', patch, function () { trimLog(deepMerge(camp.doc, patch)); });
+        return campaignWrite('PATCH', patch, function () { mergeCampaign(camp.doc, patch); });
       },
       onSnapshot: function (cb, err) { return subscribe({ campaign: true, cb: cb, err: err }); }
     };

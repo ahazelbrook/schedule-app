@@ -52,9 +52,15 @@ come later.
 - The crew sheet is shared by the whole table: players may change anything under `crew`
   (including arrays growing or shrinking), fill clocks (`clocks.<i>.filled`) and append to
   `log`. GM-only: `session`, the structure of `clocks` (add, remove, rename, resize, kind,
-  hidden), rewriting old log entries, and any other top-level key. The page disables the
-  GM-only controls for players; the API enforces it on Cloudflare by comparing the stored
-  document with the merged result (`403 "only the GM can change that"`).
+  hidden), rewriting or removing old log entries (a `PUT`), and any other top-level key. The
+  page disables the GM-only controls for players; the API enforces it on Cloudflare by
+  comparing the stored document with the merged result (`403 "only the GM can change that"`).
+- Appending to the log is commutative: in a `PATCH` (anyone), `log` lists entries to add, not
+  a replacement, so two people appending from the same stale copy both land. An entry
+  identical to a stored one (same `at` + `by` + `text`) is skipped; one with the same `at` +
+  `by` but other text is a rewrite: `403` for a player, ignored for the GM. The result is
+  sorted by `at`, newest first, and trimmed to 200. Sending only the new entry
+  (`{ log: [entry] }`) is enough; sending the whole log with the entry in front also works.
 - A missing document reads as the default above (every field present, `session.number` 0).
   The first write creates it.
 
@@ -72,8 +78,11 @@ server treats `crew` as opaque JSON.
   `updatedAt: null` when missing).
 - `PUT /api/campaign` body = whole doc (GM only) → stored, `updatedAt` stamped by the server.
 - `PATCH /api/campaign` body = partial doc, same deep merge as characters (objects merge,
-  arrays and scalars replace, null deletes); player rule above checked against the merged
-  result. Returns `{ doc, updatedAt }`.
+  arrays and scalars replace, null deletes), except `log`, whose entries are added as above
+  (`log` must be an array of objects, else 400); player rule above checked against the
+  merged result. Returns `{ doc, updatedAt }`.
+- In `PUT` and `PATCH`, `crew` and `session` must be plain objects when present (`400
+  "crew must be an object"` / `"session must be an object"`; `null` to delete them counts).
 - `GET /api/characters` and `?since=` responses gain `"campaignUpdatedAt": ISO | null` so the
   adapter knows when to refetch the campaign without a second poll.
 - Table: `campaigns(id TEXT PRIMARY KEY, updated_at TEXT NOT NULL, doc TEXT NOT NULL)`.

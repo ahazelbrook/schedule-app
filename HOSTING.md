@@ -86,14 +86,19 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   (`functions/_lib/campaign.js`, `defaultCampaign()`) and `"updatedAt": null`.
 - `PUT /api/campaign` body = whole doc, GM only (a player gets `403 {"error":"only the GM can
   change that"}`) → `{ "doc", "updatedAt" }`. The first write creates the row.
-- `PATCH /api/campaign` body = partial doc, the same deep merge as characters →
-  `{ "doc", "updatedAt" }`. For a player the merged result is compared with the stored document
-  (or the default one): anything under `crew` (the crew sheet is shared by the table; arrays
-  there may change length), `clocks.<i>.filled` with the same number of clocks, and adding
-  entries at the front of `log` (old entries unchanged; a client may drop the oldest to stay
-  at 200) are allowed. Any other change (`session`, adding/removing/renaming/resizing a clock,
-  its kind or `hidden`, rewriting old log entries, any other key) is
+- `PATCH /api/campaign` body = partial doc, the same deep merge as characters except for
+  `log` → `{ "doc", "updatedAt" }`. `log` in a PATCH is a list of entries to add (an array of
+  objects, else 400): an entry already stored (same `at` + `by` + `text`) is skipped, one with
+  the same `at` + `by` but other text is a rewrite (403 for a player, ignored for the GM), the
+  rest are added, the log is sorted by `at` newest first and trimmed to 200. So appends from a
+  stale copy commute, and old entries change only through PUT. For a player the merged result
+  is compared with the stored document (or the default one): anything under `crew` (the crew
+  sheet is shared by the table; arrays there may change length) and `clocks.<i>.filled` with
+  the same number of clocks are allowed. Any other change (`session`, adding/removing/renaming/
+  resizing a clock, its kind or `hidden`, any other key) is
   `403 {"error":"only the GM can change that"}`. `updatedAt` in a body is ignored.
+- In PUT and PATCH, `crew` and `session` must be plain objects when present (`null`
+  included): otherwise `400 {"error":"crew must be an object"}` / `"session must be an object"`.
 - For both campaign writes the server stamps `doc.updatedAt`, keeps the newest 200 `log`
   entries, refuses a document over 256 KiB with 413, and uses the same optimistic `updated_at`
   check and retries as characters (409 when it keeps changing). Other methods are 405.
@@ -124,7 +129,8 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   onSnapshot(cb, err) }`. Its snapshot is always `{ id: 'main', exists: true, data() }` (the
   default document while none is stored). The cached copy is refetched (`GET /api/campaign`)
   when a poll's `campaignUpdatedAt` differs from the cached `updatedAt`; own writes merge
-  optimistically (same deep merge, log trimmed to 200) and then take the server's answer; a
+  optimistically with the server's rule (deep merge, log entries added and deduplicated,
+  newest `at` first, at most 200) and then take the server's answer; a
   rejected write (e.g. 403) refetches, which rolls the optimistic change back. Campaign
   listeners hear only campaign changes (first snapshot once loaded, then only when the document
   actually changed), character listeners only character changes. Any other `campaign` doc id
