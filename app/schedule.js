@@ -24,7 +24,7 @@
   function clamp(n, a, b) { n = Math.round(+n || 0); return n < a ? a : n > b ? b : n; }
   function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
   function ms(iso) { var t = Date.parse(iso || ''); return isNaN(t) ? 0 : t; }
-  var H = 3600000, DAY = 86400000, PAST = 12 * H;
+  var H = 3600000, DAY = 86400000, PAST = 12 * H, SOON = 3 * DAY, ATT_KEEP = 20;
   var VALS = ['yes', 'maybe', 'no'], CYCLE = { '': 'yes', yes: 'maybe', maybe: 'no', no: '' };
   var LENGTHS = [120, 150, 180, 210, 240, 270, 300, 360, 420, 480];
   function minutes(v) { var n = Math.round(+v || 0); return n >= 30 && n <= 1440 ? n : 240; }
@@ -32,7 +32,7 @@
   function newOptionId() { return 'o_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
   /* ---------- the data ---------- */
-  function defaults() { return { options: {}, avail: {}, next: null, rsvp: {}, cadence: null, quorum: 0 }; }
+  function defaults() { return { options: {}, avail: {}, next: null, rsvp: {}, cadence: null, quorum: 0, attendance: {} }; }
   function normNext(n) {
     if (!isObj(n) || !ms(n.at)) return null;
     return { at: str(n.at), minutes: minutes(n.minutes), place: str(n.place), note: str(n.note), confirmedAt: typeof n.confirmedAt === 'string' && n.confirmedAt ? n.confirmedAt : null };
@@ -53,6 +53,12 @@
       out.cadence = { weeks: clamp(c.weeks, 1, 4), weekday: clamp(c.weekday, 0, 6), time: /^([01]\d|2[0-3]):[0-5]\d$/.test(c.time) ? c.time : '19:00', minutes: minutes(c.minutes) };
     }
     out.quorum = clamp(s.quorum, 0, 12);
+    /* attendance: { '<session number>': { <userId>: true | false } } (GM), empty sessions dropped */
+    if (isObj(s.attendance)) Object.keys(s.attendance).forEach(function (k) {
+      var a = s.attendance[k]; if (!/^[1-9]\d{0,3}$/.test(k) || !isObj(a)) return; var e = {}, any = false;
+      Object.keys(a).forEach(function (u) { if (u && typeof a[u] === 'boolean') { e[u] = a[u]; any = true; } });
+      if (any) out.attendance[k] = e;
+    });
     return out;
   }
   /* what changed from a to b: nested objects as nested patches, removed keys as null, anything else whole */
@@ -93,15 +99,42 @@
     (extra || []).concat(Object.keys(s.avail), Object.keys(s.rsvp)).forEach(function (id) { if (id && !seen[id]) { seen[id] = 1; out.push(id); } });
     return out;
   }
-  /* yes / maybe counts per open option, the best (most yes, then most maybe, then soonest) and quorum */
+  /* ---------- attendance: who came to which session, and who has missed the most lately ---------- */
+  function sessionsDesc(s) { return Object.keys(s.attendance || {}).sort(function (a, b) { return b - a; }); }
+  /* only the newest ATT_KEEP sessions are kept (a write deletes the older keys with null) */
+  function trimAttendance(s) { sessionsDesc(s).slice(ATT_KEEP).forEach(function (k) { delete s.attendance[k]; }); }
+  /* the most recent recorded sessions in a row someone missed; sessions with no entry for them are skipped */
+  function missedStreak(s, id) {
+    var ks = sessionsDesc(s), n = 0;
+    for (var i = 0; i < ks.length; i++) { var v = s.attendance[ks[i]][id]; if (v === undefined) continue; if (v) break; n++; }
+    return n;
+  }
+  /* the session attendance is about: the latest started one (or a later recorded one) */
+  function latestSession(s, number) { var ks = sessionsDesc(s), k = ks.length ? +ks[0] : 0; return Math.max(+number || 0, k); }
+  /* the answers for `next` become session N's attendance: in -> true, out -> false, no answer -> not recorded */
+  function recordAttendance(s, number) {
+    if (!s.next || !(number > 0)) return false;
+    var rec = {}, any = false;
+    Object.keys(s.rsvp).forEach(function (u) { var v = rsvpOf(s, u); if (v) { rec[u] = v === 'in'; any = true; } });
+    if (!any) return false;
+    s.attendance = s.attendance || {}; s.attendance[String(number)] = rec; trimAttendance(s);
+    return true;
+  }
+
+  /* yes / maybe counts per open option, the best and quorum. Best: most yes, then the larger total missed streak
+     among the yes people (the date that brings back whoever missed most), then most maybe, then soonest. */
   function tally(s, opts, known) {
-    var need = s.quorum || known.length, best = null;
+    var need = s.quorum || known.length, best = null, streak = {};
+    function miss(u) { if (!own(streak, u)) streak[u] = missedStreak(s, u); return streak[u]; }
     var rows = opts.map(function (o) {
-      var yes = 0, maybe = 0, no = 0;
-      Object.keys(s.avail).forEach(function (u) { var v = s.avail[u][o.id]; if (v === 'yes') yes++; else if (v === 'maybe') maybe++; else if (v === 'no') no++; });
-      return { id: o.id, yes: yes, maybe: maybe, no: no, quorum: need > 0 && yes >= need };
+      var yes = 0, maybe = 0, no = 0, missed = 0;
+      Object.keys(s.avail).forEach(function (u) { var v = s.avail[u][o.id]; if (v === 'yes') { yes++; missed += miss(u); } else if (v === 'maybe') maybe++; else if (v === 'no') no++; });
+      return { id: o.id, yes: yes, maybe: maybe, no: no, missed: missed, quorum: need > 0 && yes >= need };
     });
-    rows.forEach(function (r) { if ((r.yes || r.maybe) && (!best || r.yes > best.yes || (r.yes === best.yes && r.maybe > best.maybe))) best = r; });
+    rows.forEach(function (r) {
+      if (!(r.yes || r.maybe)) return;
+      if (!best || r.yes > best.yes || (r.yes === best.yes && (r.missed > best.missed || (r.missed === best.missed && r.maybe > best.maybe)))) best = r;
+    });
     var by = {}; rows.forEach(function (r) { r.best = r === best; by[r.id] = r; });
     return { by: by, best: best ? best.id : null, need: need };
   }
@@ -223,7 +256,7 @@
 
   M.defaults = defaults; M.normalize = normalize; M.diff = diff; M.merge = merge; M.restrict = restrict;
   M.openOptions = openOptions; M.pastOptions = pastOptions; M.people = people; M.tally = tally; M.upcoming = upcoming;
-  M.rsvpOf = rsvpOf; M.cadenceDates = cadenceDates; M.countdown = countdown; M.fromLocal = fromLocal;
+  M.rsvpOf = rsvpOf; M.missedStreak = missedStreak; M.recordAttendance = recordAttendance; M.cadenceDates = cadenceDates; M.countdown = countdown; M.fromLocal = fromLocal;
   M.ics = ics; M.gcal = gcal; M.fmtWhen = fmtWhen; M.fmtDay = fmtDay; M.names = names; M.askNames = askNames;
 
   /* ---------- people, in order: me first, then by name ---------- */
@@ -263,9 +296,12 @@
         (lists.none.length ? '<span class="sc-tag none">' + lists.none.length + ' no answer</span>' + namesList(lists.none, ctx.name, ctx.me) : '') + '</div>' +
         '</div>' +
         (ctx.isGM && !editing ? '<div class="sc-nextbtns"><button type="button" class="btn sm" data-act="sched.nextedit" data-gm="1">Change</button><button type="button" class="btn sm" data-act="sched.nextclear" data-gm="1">Clear</button></div>' : '') +
-        '</div>';
+        '</div>' + boardHtml(s, ctx, known);
       if (!ctx.isGM && !ctx.ro && ctx.me) h += '<p class="hint">Say whether you are in from the bar at the top of the page.</p>';
-    } else if (!ctx.isGM) h += '<p class="hint sc-none">No session is set yet.' + (ctx.ro || !ctx.me ? '' : ' Mark the dates you can make below; the GM confirms one.') + '</p>';
+    } else {
+      board.want = null;
+      if (!ctx.isGM) h += '<p class="hint sc-none">No session is set yet.' + (ctx.ro || !ctx.me ? '' : ' Mark the dates you can make below; the GM confirms one.') + '</p>';
+    }
     if (editing) {
       var nd = n || {}, cad = s.cadence;
       h += '<div class="sc-form" role="group" aria-label="' + (n ? 'Change the next session' : 'Set the next session') + '">' +
@@ -295,8 +331,9 @@
     });
     h += '</tr></thead><tbody>';
     known.forEach(function (id) {
-      var mine = id === ctx.me, a = s.avail[id] || {}, nm = ctx.name(id);
-      h += '<tr' + (mine ? ' class="me"' : '') + '><th scope="row" class="sc-who"><span class="sc-whon"><b>' + esc(nm) + '</b>' + (mine && nm !== 'You' ? '<span class="tp-you">you</span>' : '') + '</span>' + (a.note ? '<small class="sc-pnote">' + esc(a.note) + '</small>' : '') + '</th>';
+      var mine = id === ctx.me, a = s.avail[id] || {}, nm = ctx.name(id), missed = missedStreak(s, id);
+      h += '<tr' + (mine ? ' class="me"' : '') + '><th scope="row" class="sc-who"><span class="sc-whon"><b>' + esc(nm) + '</b>' + (mine && nm !== 'You' ? '<span class="tp-you">you</span>' : '') +
+        (missed ? '<span class="sc-miss" title="' + (missed === 1 ? 'Missed the last recorded session' : 'Missed the last ' + missed + ' recorded sessions in a row') + '">missed ' + missed + '</span>' : '') + '</span>' + (a.note ? '<small class="sc-pnote">' + esc(a.note) + '</small>' : '') + '</th>';
       opts.forEach(function (o) {
         var v = a[o.id] || '', r = tl.by[o.id];
         h += '<td class="' + (r.best ? 'best' : '') + '"><button type="button" class="sc-cell v-' + (v || 'none') + '"' + ' data-o="' + esc(o.id) + '"' + (mine ? ' data-act="sched.cycle"' : ' disabled data-other="1"') +
@@ -314,9 +351,9 @@
     h += '</tr></tfoot></table></div>';
     return h;
   }
-  function gmTools(s, ctx, now) {
+  function gmTools(s, ctx, now, opts) {
     var cad = s.cadence, past = pastOptions(s, now).length, known = ctx.people.length;
-    var h = '<div class="tp-sub sc-tools"><span class="tp-lab">Propose a date</span><div class="sc-row">' +
+    var h = shareTools(s, ctx, opts) + '<div class="tp-sub sc-tools"><span class="tp-lab">Propose a date</span><div class="sc-row">' +
       '<input type="date" class="tp-in sc-date" data-ui="sched.odate" data-gm="1" aria-label="Date to propose" value="' + esc(draft(ctx, 'sched.odate', '')) + '">' +
       '<input type="time" class="tp-in sc-time" data-ui="sched.otime" data-gm="1" aria-label="Start time" value="' + esc(draft(ctx, 'sched.otime', cad ? cad.time : '19:00')) + '">' +
       lengthSelect('sched.olen', +draft(ctx, 'sched.olen', cad ? cad.minutes : 240), 'Length') +
@@ -332,9 +369,117 @@
       ctx.chip('−', 'sched.quorum', null, ' data-n="-1" aria-label="Fewer"', { gm: true }) + '<span class="sc-qv mono" aria-live="polite">' + (s.quorum ? s.quorum + ' yes' : 'everyone (' + known + ')') + '</span>' +
       ctx.chip('+', 'sched.quorum', null, ' data-n="1" aria-label="More"', { gm: true }) + '</span><span class="tp-dim">yes answers that make a date workable</span>' +
       (past ? '<button type="button" class="btn sm sc-clearpast" data-act="sched.clearpast" data-gm="1">Clear past dates (' + past + ')</button>' : '') + '</div></div>';
-    return h;
+    return h + attendanceTools(s, ctx);
   }
+  /* "Copy reminder" / "Copy date poll": plain text for the group chat, and what was copied last */
+  function shareTools(s, ctx, opts) {
+    if (!s.next && !opts.length) return '';
+    var c = ctx.drafts['sched.copied'];
+    var h = '<div class="tp-sub sc-tools sc-share"><span class="tp-lab">Tell the group</span><div class="sc-row">' +
+      (s.next ? '<button type="button" class="btn sm" data-act="sched.copyrem" data-gm="1">Copy reminder</button>' : '') +
+      (opts.length ? '<button type="button" class="btn sm" data-act="sched.copypoll" data-gm="1">Copy date poll</button>' : '') +
+      '<span class="tp-dim">plain text to paste in the group chat</span></div>';
+    if (c) h += '<div class="sc-copied"><div class="sc-row"><span class="sc-copymsg' + (c.ok ? '' : ' bad') + '" role="status">' + esc(c.ok ? 'Copied the ' + (c.what === 'poll' ? 'date poll' : 'reminder') + '. Paste it in the group chat.' : 'Could not copy by itself: the text is selected below, copy it from there.') + '</span>' +
+      '<button type="button" class="tp-x sc-copyx" data-act="sched.copyclose" data-gm="1" title="Close" aria-label="Close the copied text">×</button></div>' +
+      '<textarea class="tp-ta sc-copytext" readonly rows="' + Math.min(7, c.text.split('\n').length + 1) + '" aria-label="The copied text">' + esc(c.text) + '</textarea></div>';
+    return h + '</div>';
+  }
+  /* GM: correct the latest session's attendance, one chip per person: there -> missed -> not recorded */
+  var ATT = { yes: ['✓', 'was there'], no: ['✕', 'missed it'], none: ['–', 'not recorded'] };
+  function attendanceTools(s, ctx) {
+    var n = latestSession(s, ctx.session); if (!n) return '';
+    var rec = s.attendance[n] || {}, seen = {}, ids = [];
+    ctx.people.concat(Object.keys(rec)).forEach(function (id) { if (id && !seen[id]) { seen[id] = 1; ids.push(id); } });
+    ids = ordered(ids, null, ctx.name);
+    var h = '<div class="tp-sub sc-tools sc-att"><div class="tp-subh"><span class="tp-lab">Attendance · session ' + n + '</span><span class="tp-dim">tap to correct: there, missed, not recorded</span></div><div class="sc-attlist">';
+    ids.forEach(function (id) {
+      var v = rec[id] === true ? 'yes' : rec[id] === false ? 'no' : 'none', nm = ctx.name(id);
+      h += '<button type="button" class="sc-attp v-' + v + '" data-act="sched.att" data-u="' + esc(id) + '" data-gm="1" aria-label="' + esc(nm + ', session ' + n + ': ' + ATT[v][1]) + '" title="' + esc(ATT[v][1]) + '"><span class="sc-attg" aria-hidden="true">' + ATT[v][0] + '</span>' + esc(nm) + '</button>';
+    });
+    return h + '</div></div>';
+  }
+
+  /* ---------- the RSVP board: the crew line-up at true height, coloured by each owner's answer for `next` ----------
+     In: full colour with an accent mark at the feet. Out: a silhouette. No answer: greyed. Every character follows
+     its owner's answer; people who answered but own no character are chips underneath. The figures are drawn only
+     when the characters change (board.key); an answer only changes attributes on the kept SVG. box() records what it
+     wants in board.want and campaign.js calls M.mountBoard(root) after each render to put the node back in place. */
+  var board = { key: null, node: null, want: null };
+  function boardHtml(s, ctx, known) {
+    var docs = (ctx.roster || []).filter(function (d) { return d && isObj(d.spec); }), owners = {};
+    docs.forEach(function (d) { if (d.owner) owners[d.owner] = 1; });
+    var nmo = function (id) { return ctx.name(id).toLowerCase(); };
+    docs = docs.slice().sort(function (a, b) {
+      var x = a.owner || '', y = b.owner || '';
+      if (x !== y) {
+        if (!x !== !y) return x ? -1 : 1;                                              /* unowned last */
+        if (ctx.me && (x === ctx.me) !== (y === ctx.me)) return x === ctx.me ? -1 : 1;  /* mine first */
+        return nmo(x) < nmo(y) ? -1 : nmo(x) > nmo(y) ? 1 : x < y ? -1 : 1;
+      }
+      return String(a.name || '').localeCompare(String(b.name || '')) || (a.id < b.id ? -1 : 1);
+    });
+    var st = function (id) { return (id && rsvpOf(s, id)) || 'none'; };
+    var chips = ordered(known.filter(function (id) { return !owners[id] && rsvpOf(s, id); }), ctx.me, ctx.name);
+    var K = window.B68Figure;
+    if (!K || typeof K.lineup !== 'function') docs = [];
+    board.want = docs.length ? { docs: docs, states: docs.map(function (d) { return st(d.owner); }), owners: docs.map(function (d) { return d.owner ? ctx.name(d.owner) : ''; }) } : null;
+    if (!docs.length && !chips.length) return '';
+    return '<div class="sc-board" role="group" aria-label="Who is coming: the crew line-up">' + (docs.length ? '<div class="sc-luslot" data-sc-lu="1"></div>' : '') +
+      (chips.length ? '<div class="sc-luchips"><span class="tp-lab">No character</span>' + chips.map(function (id) { var v = st(id); return '<span class="sc-luchip st-' + v + '"><span class="sc-lug" aria-hidden="true">' + (v === 'in' ? '✓' : '✕') + '</span>' + esc(ctx.name(id)) + '<span class="nx-sr"> ' + v + '</span></span>'; }).join('') + '</div>' : '') + '</div>';
+  }
+  var FILTERS = '<defs><filter id="scf-sil" color-interpolation-filters="sRGB"><feFlood flood-color="#26221e"/><feComposite in2="SourceAlpha" operator="in"/></filter>' +
+    '<filter id="scf-grey" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="linear" slope=".42" intercept=".5"/><feFuncG type="linear" slope=".42" intercept=".48"/><feFuncB type="linear" slope=".42" intercept=".44"/></feComponentTransfer></filter></defs>';
+  function buildBoard(docs) {
+    var K = window.B68Figure, CT = window.B68Content, U = K.U || 25;
+    var specs = docs.map(function (d, i) { var sp = clone(d.spec); sp.id = 'sb' + i; sp.name = d.name || 'Unnamed'; return sp; });
+    var r = K.lineup(specs, { chart: true, height: 240, lod: 'lo', suffix: '-sb' });
+    var xs = [], re = /<g transform="translate\(([-\d.e]+) 0\)"><g class="b68-figure"/g, m;
+    while ((m = re.exec(r.svg))) xs.push(+m[1]);
+    var vb = ((/viewBox="([^"]+)"/.exec(r.svg) || [])[1] || '0 0 1 1').split(/[\s,]+/).map(Number);
+    var feet = xs.map(function (x, i) { return '<rect class="sc-lufoot" data-i="' + i + '" x="' + (x - 6 * U) + '" y="' + (0.25 * U) + '" width="' + 12 * U + '" height="' + U + '" fill="#e0691e"/>'; }).join('');
+    var svg = r.svg.replace(/^<svg([^>]*?) width="[^"]*" height="[^"]*"/, '<svg$1 preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false"').replace(/<\/svg>\s*$/, FILTERS + feet + '</svg>')
+      .replace(/<text[^>]*>\d+'(\d+)"<\/text>/g, function (t, inch) { return inch === '0' ? t : ''; });   /* at this size only the whole feet stay readable */
+    var node = document.createElement('div');
+    node.className = 'sc-lu';
+    node.style.setProperty('--ar', String(Math.round(vb[2] / vb[3] * 1000) / 1000));
+    node.innerHTML = '<div class="sc-lufig">' + svg + '</div><div class="sc-lunames"></div>';
+    /* ghosts read as vapour, as in the creator's line-up */
+    node.querySelectorAll('.b68-figure').forEach(function (g, i) { var q = CT && CT.byId && docs[i] && CT.byId[docs[i].playbook]; if (q && q.ghost) g.classList.add('ghostly'); });
+    /* name slots under each figure: halfway to each neighbour, the outer ones out to the edge of the chart */
+    node.__slots = xs.map(function (x, i) {
+      var l = i ? (x + xs[i - 1]) / 2 : vb[0], rr = i < xs.length - 1 ? (x + xs[i + 1]) / 2 : vb[0] + vb[2];
+      if (xs.length > 1 && !i) l = Math.max(vb[0], x - (rr - x) * 1.6);                       /* keep the outer names near their figure */
+      if (xs.length > 1 && i === xs.length - 1) rr = Math.min(vb[0] + vb[2], x + (x - l) * 1.6);
+      return { left: (l - vb[0]) / vb[2] * 100, width: (rr - l) / vb[2] * 100 };
+    });
+    return node;
+  }
+  function applyBoard(node, w) {
+    var said = { in: 'in', out: 'out', none: 'no answer' }, names = '';
+    node.querySelectorAll('.b68-figure').forEach(function (g, i) {
+      var p = g.parentNode, v = w.states[i] || 'none';
+      p.setAttribute('data-st', v);
+      if (v === 'out') p.setAttribute('filter', 'url(#scf-sil)'); else if (v === 'none') p.setAttribute('filter', 'url(#scf-grey)'); else p.removeAttribute('filter');
+    });
+    node.querySelectorAll('.sc-lufoot').forEach(function (f) { f.style.display = w.states[+f.getAttribute('data-i')] === 'in' ? '' : 'none'; });
+    (node.__slots || []).forEach(function (sl, i) {
+      var d = w.docs[i], v = w.states[i] || 'none';
+      names += '<span class="sc-lun st-' + v + '" style="left:' + sl.left.toFixed(2) + '%;width:' + sl.width.toFixed(2) + '%"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc(w.owners[i] || 'Unowned') + '<span class="sc-lust"> · ' + said[v] + '</span></small></span>';
+    });
+    var nl = node.querySelector('.sc-lunames'); if (nl && nl.innerHTML !== names) nl.innerHTML = names;
+  }
+  M.mountBoard = function (root) {
+    var slot = root && root.querySelector('[data-sc-lu]'), w = board.want; if (!slot || !w) return;
+    var key = JSON.stringify(w.docs.map(function (d) { return [d.id, d.name || '', d.playbook || '', d.spec]; }));
+    if (key !== board.key || !board.node) {
+      try { board.node = buildBoard(w.docs); board.key = key; }
+      catch (e) { board.node = null; board.key = null; slot.innerHTML = '<p class="hint">The line-up could not be drawn: ' + esc(e && e.message || e) + '</p>'; return; }
+    }
+    applyBoard(board.node, w);
+    slot.appendChild(board.node);
+  };
   M.box = function (doc, ctx) {
+    if (ctx.session == null) ctx.session = doc.session ? doc.session.number : 0;
     var s = doc.schedule, now = Date.now(), known = ordered(ctx.people, ctx.me, ctx.name), opts = openOptions(s, now), tl = tally(s, opts, known);
     var h = nextSection(s, ctx, known);
     h += '<div class="sc-avail"><div class="tp-subh"><span class="tp-lab">Who can make it</span>' + (opts.length ? '<span class="tp-dim">' + (ctx.me && !ctx.ro ? 'tap your row: yes, maybe, no' : '') + '</span>' : '') + '</div>' + grid(s, ctx, known, opts, tl) + '</div>';
@@ -342,7 +487,7 @@
       var mine = (s.avail[ctx.me] || {}).note || '';
       h += '<div class="sc-mynote"><label class="sc-row"><span class="tp-lab">Your note</span><input type="text" class="tp-in sc-grow" data-ui="sched.note" aria-label="Your availability note" placeholder="Away the week of the 20th…" value="' + esc(draft(ctx, 'sched.note', mine)) + '"></label></div>';
     }
-    if (ctx.isGM) h += gmTools(s, ctx, now);
+    if (ctx.isGM) h += gmTools(s, ctx, now, opts);
     var right = (s.next && upcoming(s, now) ? 'next ' + fmtDay(s.next.at) + ' · ' : '') + opts.length + ' date' + (opts.length === 1 ? '' : 's') + ' open';
     return ctx.box('Schedule', h, '<span class="tp-dim">' + esc(right) + '</span>', 'tp-schedbox');
   };
@@ -351,11 +496,68 @@
   function dropOptions(s, ids) { ids.forEach(function (id) { delete s.options[id]; Object.keys(s.avail).forEach(function (u) { if (s.avail[u] && own(s.avail[u], id)) delete s.avail[u][id]; }); }); }
   function clearDrafts(ctx, keys) { keys.forEach(function (k) { delete ctx.drafts[k]; }); }
   var NEXT_DRAFTS = ['sched.editing', 'sched.ndate', 'sched.ntime', 'sched.nlen', 'sched.nplace', 'sched.nnote'];
-  M.PERM = { cycle: 'any', note: 'any', optadd: 'gm', optrm: 'gm', confirm: 'gm', cad3: 'gm', cadweeks: 'gm', cadday: 'gm', cadtime: 'gm', cadlen: 'gm', quorum: 'gm', clearpast: 'gm', nextedit: 'gm', nextcancel: 'gm', nextset: 'gm', nextclear: 'gm' };
+  M.PERM = { att: 'gm', copyrem: 'gm', copypoll: 'gm', copyclose: 'gm', cycle: 'any', note: 'any', optadd: 'gm', optrm: 'gm', confirm: 'gm', cad3: 'gm', cadweeks: 'gm', cadday: 'gm', cadtime: 'gm', cadlen: 'gm', quorum: 'gm', clearpast: 'gm', nextedit: 'gm', nextcancel: 'gm', nextset: 'gm', nextclear: 'gm' };
   M.ENTER = { 'sched.note': 'note' };
   M.CHANGE = { 'sched.note': 'note', 'sched.cadtime': 'cadtime', 'sched.cadlen': 'cadlen' };
+  /* ---------- texts for the group chat: names sorted, the copier never listed as "no answer" ---------- */
+  function appLink() {
+    var framed = false; try { framed = window.top !== window; } catch (e) { framed = true; }   /* the artifact's frame URL is no link to share */
+    return typeof location !== 'undefined' && /^https?:$/.test(location.protocol) && !framed ? location.origin + location.pathname : '';
+  }
+  function plainName(ctx) { return function (id) { var n = ctx.name(id); return n === 'You' ? (ctx.isGM ? 'the GM' : 'Someone') : n; }; }
+  function nameJoin(ids, nm) { return ids.map(nm).sort(function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0; }).join(', '); }
+  function sentence(t) { t = String(t || '').trim(); return !t ? '' : /[.!?…]$/.test(t) ? t : t + '.'; }
+  /* Blades '68 · Sat 17 Oct, 19:00 – 23:00 at Gail's. In: Alex, Pat. Out: Sam. No answer yet: Vic. <link> */
+  function reminderText(s, ids, nm, me, link) {
+    var n = s.next; if (!n) return '';
+    var end = new Date(ms(n.at) + n.minutes * 60000).toISOString(), l = { in: [], out: [], none: [] };
+    ids.forEach(function (id) { var v = rsvpOf(s, id); if (v) l[v].push(id); else if (id !== me) l.none.push(id); });
+    var t = "Blades '68 · " + fmtDay(n.at) + ', ' + fmtTime(n.at) + ' – ' + fmtTime(end) + (n.place ? ' at ' + n.place.trim().replace(/[.]$/, '') : '') + '.';
+    if (n.note) t += ' ' + sentence(n.note);
+    t += ' In: ' + (l.in.length ? nameJoin(l.in, nm) : 'nobody yet') + '.';
+    if (l.out.length) t += ' Out: ' + nameJoin(l.out, nm) + '.';
+    if (l.none.length) t += ' No answer yet: ' + nameJoin(l.none, nm) + '.';
+    return t + (link ? ' ' + link : '');
+  }
+  /* one line per open date with its yes / maybe counts, then who has not answered any of them */
+  function pollText(s, ids, nm, me, link, now) {
+    var opts = openOptions(s, now), tl = tally(s, opts, ids), lines = ["Blades '68 · which dates can you make?"];
+    opts.forEach(function (o) { var r = tl.by[o.id]; lines.push(fmtWhen(o.at) + ' · ' + r.yes + ' yes, ' + r.maybe + ' maybe' + (r.best ? ' (best so far)' : '')); });
+    var none = ids.filter(function (id) { var a = s.avail[id] || {}; return id !== me && !opts.some(function (o) { return own(a, o.id); }); });
+    if (none.length) lines.push('No answer yet: ' + nameJoin(none, nm) + '.');
+    if (link) lines.push('Mark your dates: ' + link);
+    return lines.join('\n');
+  }
+  M.reminderText = reminderText; M.pollText = pollText; M.appLink = appLink;
+  /* the clipboard, else a selected read-only textarea (and execCommand), with a confirmation either way */
+  function copyOut(ctx, what, text) {
+    if (!text) return;
+    function show(ok) {
+      ctx.drafts['sched.copied'] = { what: what, text: text, ok: ok }; ctx.render();
+      ctx.status(ok ? (what === 'poll' ? 'Date poll copied' : 'Reminder copied') : 'Copy the selected text', !ok, true);
+    }
+    function select() { var ta = ctx.find && ctx.find('.sc-copytext'); if (ta) { try { ta.focus(); ta.select(); } catch (e) {} } return ta; }
+    function fallback() {
+      show(false); var ok = false;
+      if (select()) { try { ok = !!(document.execCommand && document.execCommand('copy')); } catch (e) { ok = false; } }
+      if (ok) show(true); else select();
+    }
+    var cb = typeof navigator !== 'undefined' && navigator.clipboard;
+    if (cb && typeof cb.writeText === 'function') Promise.resolve().then(function () { return cb.writeText(text); }).then(function () { show(true); }, fallback);
+    else fallback();
+  }
   function setCadence(s, f) { var c = s.cadence || { weeks: 1, weekday: 6, time: '19:00', minutes: 240 }; s.cadence = Object.assign({}, c, f); }
   M.acts = {
+    att: function (d, ctx) {
+      var s = ctx.sched, u = d.u, n = latestSession(s, ctx.session); if (!u || !n) return;
+      var k = String(n), rec = s.attendance[k] = s.attendance[k] || {}, v = rec[u];
+      if (v === true) rec[u] = false; else if (v === false) delete rec[u]; else rec[u] = true;
+      if (!Object.keys(rec).length) delete s.attendance[k];
+      trimAttendance(s); ctx.commit();
+    },
+    copyrem: function (d, ctx) { copyOut(ctx, 'reminder', reminderText(ctx.sched, ctx.people, plainName(ctx), ctx.me, appLink())); },
+    copypoll: function (d, ctx) { copyOut(ctx, 'poll', pollText(ctx.sched, ctx.people, plainName(ctx), ctx.me, appLink(), Date.now())); },
+    copyclose: function (d, ctx) { delete ctx.drafts['sched.copied']; ctx.render(); },
     cycle: function (d, ctx) {
       var s = ctx.sched, me = ctx.me; if (!me || !s.options[d.o]) return;
       var a = s.avail[me] = s.avail[me] || {}, v = CYCLE[a[d.o] || ''];
@@ -431,11 +633,12 @@
       s.next = null; s.rsvp = {}; clearDrafts(ctx, NEXT_DRAFTS); ctx.commit();
     }
   };
-  /* Starting a session (the session bar): `next` goes when it is within 12 h of now, and the dates that are not
-     clearly ahead (before now + 12 h) leave the grid, in the same write as the session itself. */
-  M.onSessionStart = function (s, now) {
+  /* Starting session `number` (the session bar): `next` goes when it is within 12 h of now, its answers becoming that
+     session's attendance, and the dates that are not clearly ahead (before now + 12 h) leave the grid, all in the same
+     write as the session itself. */
+  M.onSessionStart = function (s, now, number) {
     now = now || Date.now();
-    if (s.next && Math.abs(ms(s.next.at) - now) <= PAST) { s.next = null; s.rsvp = {}; }
+    if (s.next && Math.abs(ms(s.next.at) - now) <= PAST) { recordAttendance(s, number); s.next = null; s.rsvp = {}; }
     dropOptions(s, Object.keys(s.options).filter(function (k) { return ms(s.options[k].at) < now + PAST; }));
   };
 
@@ -455,7 +658,12 @@
     var known = ordered(people(s, (api.people ? api.people() : []).concat(me ? [me] : [])), me, function (id) { return nameOf(id, me); });
     var nm = function (id) { return nameOf(id, me); };
     askNames(known, api.profiles, cardRender);
-    var lists = rsvpLists(s, known, nm), mine = rsvpOf(s, me), stale = staleRsvp(s, me), cd = countdown(n);
+    var lists = rsvpLists(s, known, nm), mine = rsvpOf(s, me), stale = staleRsvp(s, me), cd = countdown(n), now = Date.now();
+    /* the nudge: the session is less than 3 days off and the viewer has not answered */
+    var nudge = !!(me && !ro && !mine && ms(n.at) > now && ms(n.at) - now <= SOON);
+    var rsvpBtns = '<span class="seg nx-rsvp" role="group" aria-label="Your answer">' +
+      '<button type="button" class="chip nx-in" data-nx="in" aria-pressed="' + (mine === 'in') + '"' + (!me || ro ? ' disabled' : '') + '>I’m in</button>' +
+      '<button type="button" class="chip nx-out" data-nx="out" aria-pressed="' + (mine === 'out') + '"' + (!me || ro ? ' disabled' : '') + '>Can’t make it</button></span>';
     var end = new Date(ms(n.at) + n.minutes * 60000).toISOString();
     var mineTxt = mine === 'in' ? ['You’re in', 'In'] : mine === 'out' ? ['You’re out', 'Out'] : me && !ro ? ['Are you in?', 'RSVP'] : null;
     var h = '<button type="button" class="nx-line" data-nx="toggle" aria-expanded="' + card.open + '" aria-controls="nx-more">' +
@@ -465,6 +673,7 @@
       '<span class="nx-tally">' + lists.in.length + ' in' + (lists.out.length ? ' · ' + lists.out.length + ' out' : '') + '</span>' +
       (mineTxt ? '<span class="nx-mine ' + (mine || 'ask') + '"><span class="nx-long">' + esc(mineTxt[0]) + '</span><span class="nx-short">' + esc(mineTxt[1]) + '</span></span>' : '') +
       '<span class="nx-caret" aria-hidden="true"></span><span class="nx-sr">' + (card.open ? 'Hide' : 'Show') + ' details</span></button>';
+    if (nudge && !card.open) h += '<div class="nx-nudge"><span class="nx-ask">Are you in?</span>' + rsvpBtns + '</div>';
     h += '<div class="nx-more" id="nx-more"' + (card.open ? '' : ' hidden') + '>' +
       '<div class="nx-info"><div class="nx-full"><b>' + esc(fmtLong(n.at)) + '</b> <span class="mono">' + esc(fmtTime(n.at) + '–' + fmtTime(end)) + '</span></div>' +
       (n.place ? '<div class="nx-place"><span class="nx-k">Where</span> ' + esc(n.place) + '</div>' : '') +
@@ -474,16 +683,14 @@
       (lists.none.length ? ' <span class="nx-k">No answer</span> <span class="nx-dim">' + esc(lists.none.map(nm).join(', ')) + '</span>' : '') + '</div>' +
       (stale ? '<div class="nx-stale">The GM moved the session since you answered. Answer again.</div>' : '') +
       (card.err ? '<div class="nx-err" role="alert">' + esc(card.err) + '</div>' : '') + '</div>' +
-      '<div class="nx-acts"><span class="seg nx-rsvp" role="group" aria-label="Your answer">' +
-      '<button type="button" class="chip nx-in" data-nx="in" aria-pressed="' + (mine === 'in') + '"' + (!me || ro ? ' disabled' : '') + '>I’m in</button>' +
-      '<button type="button" class="chip nx-out" data-nx="out" aria-pressed="' + (mine === 'out') + '"' + (!me || ro ? ' disabled' : '') + '>Can’t make it</button></span>' +
+      '<div class="nx-acts">' + (nudge ? '<span class="nx-ask">Are you in?</span>' : '') + rsvpBtns +
       '<span class="nx-cal"><button type="button" class="btn sm" data-nx="ics" title="Download an .ics file for your calendar app">Add to calendar</button>' +
       '<a class="btn sm" href="' + esc(gcal(n, card.crew)) + '" target="_blank" rel="noopener" data-nx="gcal">Google Calendar</a></span></div></div>';
     startTick();
     if (h === card.html && !el.hidden) return;   /* the minute tick changed nothing: keep the DOM (and the focus) */
     var a = document.activeElement, keep = a && el.contains(a) ? a.getAttribute('data-nx') : null;
     card.html = h; el.innerHTML = h; el.hidden = false;
-    el.classList.toggle('open', !!card.open);
+    el.classList.toggle('open', !!card.open); el.classList.toggle('nudge', nudge);
     if (keep) { var b = el.querySelector('[data-nx="' + keep + '"]'); if (b && !b.disabled) try { b.focus({ preventScroll: true }); } catch (e) {} }
   }
   function startTick() { if (!card.timer) card.timer = setInterval(cardRender, 30000); }

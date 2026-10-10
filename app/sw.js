@@ -9,15 +9,15 @@
 var CACHE = 'b68-shell-v1';     /* bump to drop every cached file on the next activation */
 var PREFIX = 'b68-shell-';
 
-/* the app shell: the page and everything index.html loads (checks/runtime/sw.test.mjs keeps this in step with it) */
+/* the app shell: the page and everything index.html loads (checks/runtime/pwa.test.mjs keeps this in step with it) */
 var SHELL = [
   './',
-  'tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css',
+  'tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css',
   'fonts/ArchivoCompressed-Black.woff2', 'fonts/ArchivoCondensed-Variable.woff2',
   'fonts/GTAmericaArabic-Regular.woff2', 'fonts/GTAmericaArabic-Bold.woff2', 'fonts/GTAmericaArabic-Black.woff2',
   'fonts/SpaceMono-Regular.woff2', 'fonts/SpaceMono-Bold.woff2',
   'figures/figure-kit.js', 'figures/cast.js',
-  'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'campaign.js', 'schedule.js', 'crews.js', 'crewsheet.js',
+  'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'campaign.js', 'schedule.js', 'crews.js', 'crewsheet.js', 'season.js',
   'runtime/cf.js', 'boot.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'
 ];

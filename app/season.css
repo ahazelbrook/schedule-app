@@ -1,0 +1,115 @@
+/* season.css — the season print (#season, season.js). The mode hides the rest of the page; on screen the pages are a
+   paper preview on the desk under a toolbar; in print each page starts a new sheet of paper, on white, toolbar gone.
+   The crew page and the character sheets live in shadow roots that carry every stylesheet of the page (this one
+   included), so their look comes from campaign.css / crewsheet.css / tracker.css unchanged; the :host rules below
+   only reach inside those copies (they match nothing in the document). Classes are sn-. */
+#season { display: none; }
+body[data-mode="print"] header.top, body[data-mode="print"] .studio, body[data-mode="print"] .crew, body[data-mode="print"] .roster,
+body[data-mode="print"] #dossier, body[data-mode="print"] #table-page, body[data-mode="print"] .nx, body[data-mode="print"] .wrap > footer { display: none !important; }
+body[data-mode="print"] #season:not([hidden]) { display: block; }
+
+/* ---- toolbar ---- */
+#season .sn-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; padding: 10px 0; margin-bottom: 14px; background: var(--paper); border-bottom: 2px solid var(--rule); }
+#season .sn-bar-t { flex: 1 1 160px; display: grid; gap: 2px; min-width: 0; }
+#season .sn-bar-t b { font: 900 13px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; }
+#season .sn-bar-n { font-size: 11px; color: var(--ink-soft); }
+#season .sn-note { border: 2px dashed var(--hair); padding: 16px; color: var(--ink-soft); font-size: 13.5px; max-width: 62ch; margin: 0 auto 14px; }
+#season .sn-note.bad { border-color: var(--alarm); border-left: 6px solid var(--alarm); color: var(--ink); }
+
+/* ---- the paper: always the light paper, also in the night theme ---- */
+#season .sn-pages { display: grid; gap: 22px; }
+#season .sn-page {
+  --paper: #f2ede1; --card: #fbf8f1; --inset: #e8e2d4; --hair: #dcd4c2; --ink: #14110e; --ink-soft: #55504a; --ink-faint: #8e8880; --rule: #14110e; --on-ink: #fbf8f1;
+  --accent: #b8481a; --on-accent: #fbf8f1; --mustard: #e8c33c; --on-mustard: #14110e; --alarm: #a8210f; --ok: #41633e; --focus: #b8481a; --shadow-ink: #14110e; --chart: #e8e2d4; --chart-ink: #14110e;
+  color-scheme: light; color: var(--ink); background: var(--card); width: 100%; max-width: 1280px; margin: 0 auto; min-width: 0;
+  padding: clamp(12px, 2.6vw, 34px); border: 1px solid var(--hair); box-shadow: 0 1px 0 var(--hair), 0 10px 26px rgba(20, 17, 14, .18);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #season .sn-page { border-color: #000; box-shadow: 0 12px 30px rgba(0, 0, 0, .55); } }
+:root[data-theme="dark"] #season .sn-page { border-color: #000; box-shadow: 0 12px 30px rgba(0, 0, 0, .55); }
+#season .sn-host { display: block; min-width: 0; }
+#season .sn-dim { color: var(--ink-soft); font-size: 12px; }
+
+/* ---- cover ---- */
+#season .sn-cover { display: grid; gap: 18px; align-content: start; }
+#season .sn-mast { display: grid; gap: 8px; padding: 18px 20px 16px; background: var(--duo-b, var(--rule)); color: var(--duo-a, var(--on-ink)); border-top: 6px solid var(--accent); }
+#season .sn-kick { font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .18em; color: var(--accent); }
+#season .sn-crewname { margin: 0; font: 900 clamp(48px, 9vw, 112px)/.84 var(--font-poster); letter-spacing: -.01em; overflow-wrap: anywhere; }
+#season .sn-crewpb { font: 900 12px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; }
+#season .sn-crewtier { font-size: 12px; opacity: .85; }
+#season .sn-facts { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; border-top: 2px solid var(--rule); border-bottom: 2px solid var(--rule); }
+#season .sn-facts > div { padding: 8px 12px 8px 0; min-width: 0; border-right: 1px solid var(--hair); }
+#season .sn-facts > div:last-child { border-right: 0; }
+#season .sn-facts dt { font: 900 10px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; color: var(--ink-soft); margin-bottom: 3px; }
+#season .sn-facts dd { margin: 0; font: 700 15px/1.25 var(--font-text); overflow-wrap: anywhere; }
+#season .sn-lh { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; background: var(--rule); color: var(--on-ink); font: 900 11px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 6px 10px; }
+#season .sn-lh .sn-dim { color: var(--on-ink); opacity: .75; font-size: 11px; letter-spacing: .04em; text-transform: none; font-weight: 400; }
+#season .sn-lineup { border: 2px solid var(--rule); min-width: 0; }
+#season .sn-chart { background: var(--chart); padding: 8px; min-width: 0; }
+#season .sn-chart svg { display: block; width: 100%; height: auto; max-height: 420px; }
+#season .sn-names { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 8px 10px 10px; border-top: 2px solid var(--rule); font: 700 13px/1.2 var(--font-text); }
+#season .sn-names span { display: grid; min-width: 0; }
+#season .sn-names small { font: 400 11px/1.3 var(--font-mono); color: var(--ink-soft); }
+#season .sn-toc { border: 2px solid var(--rule); }
+#season .sn-toc ol { margin: 0; padding: 6px 10px 8px 34px; display: grid; gap: 2px; font-size: 13px; }
+#season .sn-toc li { padding: 3px 0; border-top: 1px solid var(--hair); }
+#season .sn-toc li:first-child { border-top: 0; }
+#season .sn-toc li span { color: var(--ink-soft); margin-left: 8px; font-size: 12px; }
+#season .ghostly svg, #season svg .b68-figure.ghostly { opacity: .72; filter: blur(.35px) saturate(1.4); }
+
+/* ---- inside the copies (shadow roots): the table tools never show, the figure sits small in the header as printed ---- */
+:host { display: block; }
+:host #table-page { display: grid; gap: 14px; padding: 0; }
+:host #dossier.ds { padding-top: 0; }
+:host .btn, :host .tp-x, :host .tp-addrow, :host .tp-addclock, :host .tp-clocktools, :host .tp-sessbtns, :host .tp-status,
+:host .cs-pickbox, :host .cs-chg, :host .cs-endp, :host .cs-adv .cs-row, :host .cs-xpbox .cs-row .btn,
+:host .ds-x, :host .ds-nav, :host .ds-addrow, :host .ds-status, :host .ds-figbox, :host .ds-band .seg, :host .ds-tools, :host .ds-advance, :host .ds-check,
+:host .ds-glpick, :host .ds-sel, :host .ds-roll, :host .ds-resist, :host .ds-fortune, :host .ds-rollhint, :host .ds-sessbox, :host .ds-dtbox, :host .ds-hitnow { display: none !important; }
+:host .ds-actbtn { cursor: default; }
+:host .sn-ta { white-space: pre-wrap; overflow-wrap: anywhere; height: auto; min-height: 3.2em; }
+:host .sn-in { display: block; white-space: pre-wrap; overflow-wrap: break-word; height: auto; }
+:host .sn-in:empty::before { content: "\00a0"; }
+:host #dossier .ds-key-dl { flex-wrap: wrap; }
+:host #dossier .ds-key-dl .sn-in { width: auto; min-width: auto; flex: 0 1 auto; padding-right: 10px; }   /* a key word never splits mid-word */
+:host .sn-clockname { font-size: 14px; overflow-wrap: anywhere; }
+:host #table-page .tp-clocks { grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); column-gap: 18px; }
+:host #table-page .tp-clock, :host #table-page .tp-clock:first-child { border-top: 1px solid var(--hair); padding-top: 8px; }
+:host #dossier .ds-head { grid-template-columns: auto minmax(0, 1fr) 132px; grid-template-areas: "title ident fig" "bio bio fig"; align-items: start; }
+:host #dossier .ds-printfig { display: block; grid-area: fig; width: 132px; max-height: 200px; overflow: hidden; justify-self: end; border: 2px solid var(--rule); background: var(--chart); padding: 4px; }
+:host #dossier .ds-printfig svg { display: block; width: 100%; height: auto; max-height: 190px; margin: 0 auto; }
+@media (max-width: 760px) {
+  :host #dossier .ds-head { grid-template-columns: minmax(0, 1fr) 96px; grid-template-areas: "title fig" "ident ident" "bio bio"; }
+  :host #dossier .ds-printfig { width: 96px; max-height: 150px; }
+  :host #dossier .ds-printfig svg { max-height: 140px; }
+}
+
+@media print {
+  body[data-mode="print"] #season:not([hidden]) { display: block !important; }
+  #season .sn-bar, #season .sn-note { display: none !important; }
+  #season .sn-pages { display: block; }
+  #season .sn-page {
+    --paper: #fff; --card: #fff; --inset: #eee; --hair: #999; --ink: #000; --ink-soft: #333; --ink-faint: #666; --rule: #000; --on-ink: #fff;
+    --accent: #b8481a; --on-accent: #fff; --chart: #fff; --alarm: #a8210f; --ok: #41633e;
+    max-width: none; margin: 0; padding: 0; border: 0; box-shadow: none !important; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  #season .sn-page + .sn-page { break-before: page; page-break-before: always; }
+  #season .sn-page * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* the cover */
+  #season .sn-cover { gap: 6mm; }
+  #season .sn-mast { padding: 6mm 6mm 5mm; border-top-width: 2mm; }
+  #season .sn-crewname { font-size: 64pt; }
+  #season .sn-facts dd { font-size: 11pt; }
+  #season .sn-chart svg { max-height: 120mm; }
+  #season .sn-lineup, #season .sn-toc li { break-inside: avoid; page-break-inside: avoid; }
+  #season .sn-names { font-size: 10pt; }
+  #season .sn-toc ol { font-size: 10pt; }
+  /* the copies print as their own pages do; the crew page as the table page prints */
+  :host #table-page { --paper: #fff; --card: #fff; --inset: #eee; --hair: #999; --ink: #000; --ink-soft: #333; --ink-faint: #666; --rule: #000; --on-ink: #fff; font-size: 11px; display: block; }
+  :host #table-page > * + * { margin-top: 4mm; }
+  :host .sn-ta { min-height: 0; }
+  :host #dossier .ds-hrow.two { grid-template-columns: auto minmax(0, 1fr); }   /* each harm line gets the box's width, as on a phone */
+  /* the crew sheet's two columns squeeze the claims map to slivers on paper: one column, the map full width */
+  :host #table-page .cs-cols { grid-template-columns: minmax(0, 1fr); }
+  :host #dossier .ds-head { grid-template-columns: auto minmax(0, 1fr) 38mm; grid-template-areas: "title ident fig" "bio bio fig"; }
+  :host #dossier .ds-printfig { width: 38mm; max-height: 58mm; border: .5mm solid #000; padding: 1mm; background: #fff; }
+  :host #dossier .ds-printfig svg { max-height: 55mm; }
+}

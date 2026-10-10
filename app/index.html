@@ -3,6 +3,7 @@
 <link rel="stylesheet" href="campaign.css">
 <link rel="stylesheet" href="crewsheet.css">
 <link rel="stylesheet" href="schedule.css">
+<link rel="stylesheet" href="season.css">
 <style>
   /* Layout: a console character creator in the rulebook's clothes. The subject stands on the height chart
      (left, sticky) under a cover band in the chosen playbook's duotone; the steps run as rulebook side tabs
@@ -374,6 +375,7 @@
   <section class="nx" id="nextSession" hidden aria-label="Next session"></section>
   <section class="dossier" id="dossier" hidden aria-label="Character sheet"></section>
   <section class="tp" id="table-page" hidden aria-label="The table"></section>
+  <section class="sn" id="season" hidden aria-label="Season print"></section>
 
   <main class="studio">
     <section class="stage" aria-label="The subject">
@@ -417,7 +419,7 @@
     <div class="head"><h2>Your files</h2><div class="tools"><div class="seg" id="rosterView" role="group" aria-label="View"><button class="chip" type="button" data-v="cards" aria-pressed="true">Cards</button><button class="chip" type="button" data-v="table" aria-pressed="false">Table</button></div><div class="seg" id="rosterFilter" role="group" aria-label="Whose files" hidden><button class="chip" type="button" data-f="mine" aria-pressed="true">Mine</button><button class="chip" type="button" data-f="all" aria-pressed="false">Everyone</button></div><span class="label" id="rosterNote">Everyone who opens this page sees the same files</span></div></div>
     <div class="cards" id="cards"><div class="empty">No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.</div></div>
     <div class="table" id="table" hidden><div class="empty">No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.</div></div>
-    <div class="backups" id="backups" hidden><span class="label">Backups</span><button class="btn sm" id="dlAll" type="button" hidden>Download all (JSON)</button><button class="btn sm" id="restoreBtn" type="button" hidden>Restore (JSON)</button><input type="file" id="restoreFile" accept="application/json,.json" hidden></div>
+    <div class="backups" id="backups" hidden><span class="label">Backups</span><button class="btn sm" id="dlAll" type="button" hidden>Download all (JSON)</button><button class="btn sm" id="dlEverything" type="button" hidden title="The server's full export: every character, the table and the members">Download everything</button><button class="btn sm" id="restoreBtn" type="button" hidden>Restore (JSON)</button><input type="file" id="restoreFile" accept="application/json,.json" hidden></div>
   </section>
 
   <footer>
@@ -436,5 +438,6 @@
 <script src="schedule.js"></script>
 <script src="campaign.js"></script>
 <script src="crews.js"></script><script src="crewsheet.js"></script>
+<script src="season.js"></script>
 <script src="runtime/cf.js"></script>
 <script src="boot.js"></script>

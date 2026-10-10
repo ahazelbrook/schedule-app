@@ -1126,4 +1126,21 @@
   };
   T.isOpen = function () { return !!cur; };
   T.play = function () { return cur ? clone(cur.play) : null; };
+  /* a read-only copy of a sheet in another root (the season print): the markup the live sheet prints for someone who
+     may write (so the marks print at full strength), in a root made inert, with no listeners and no saves. The figure is
+     drawn once, in the small print slot (.ds-printfig), and the Figure box is left empty, so its SVG ids never appear
+     twice in one root. The open sheet, if any, is untouched. */
+  T.renderStatic = function (root, doc) {
+    if (!root) return null;
+    doc = doc || {}; var live = cur;
+    cur = { doc: doc, api: { canWrite: null }, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
+    try {
+      cur.play = normalize(doc.play, doc.sheet, doc.playbook);
+      render();
+      var f = root.querySelector('.ds-printfig'), art = root.querySelector('.ds-figbox .ds-art');
+      if (f && cur.ui.svg) { f.innerHTML = cur.ui.svg; if (art) art.innerHTML = ''; }
+      root.setAttribute('inert', '');
+    } finally { cur = live; }
+    return root;
+  };
 })();

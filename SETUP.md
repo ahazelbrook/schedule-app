@@ -61,14 +61,21 @@ Add them as type **Secret** in the dashboard, never in `wrangler.toml`, so nothi
 Preview deployments: in the Pages project → **Settings** → **General**, turn on **Enable
 access policy** for previews, or they are reachable without signing in.
 
-## 4. Move the characters across
+## 4. Move the characters and the table across
 
-1. Open the claude.ai artifact, choose **Everyone**, and press **Download all (JSON)**.
-2. Open the new app, sign in, and press **Restore (JSON)** with that file.
+1. Open the claude.ai artifact as its owner (the GM there), choose **Everyone**, and press
+   **Download all (JSON)**. The file holds the characters and the table page (crew sheet,
+   shared clocks, campaign log, session, schedule).
+2. Open the new app, sign in as a GM (an address in `GM_EMAILS`), and press **Restore (JSON)**
+   with that file. It asks before replacing the table; **OK** replaces it, **Cancel** restores
+   the characters only.
 
 Restored characters get new ids and are owned by whoever restores them. If players should
 own their own characters, have each player restore their own file instead, or the GM can
-keep them all (the GM can edit every character either way).
+keep them all (the GM can edit every character either way). A player's restore files their
+characters and leaves the table alone: only the GM can restore the table. The availability and
+RSVP answers in the schedule come across under the ids the artifact gave people, which are not
+the email addresses the hosted app uses, so ask everyone to mark their dates again.
 
 ## 5. Adding and removing players
 
@@ -77,9 +84,18 @@ removed player is signed out at their next request. Their characters stay.
 
 ## 6. Backups
 
-- In the app: **Download all (JSON)** after each session.
-- D1 keeps 30 days of point-in-time history on the free plan (**Time Travel** on the
-  database page), so a bad edit can be rolled back.
+- In the app: **Download all (JSON)** after each session. It holds the characters in the
+  current filter (choose **Everyone** for all of them) and the table page's campaign document.
+  A player's copy leaves out the clocks hidden from players.
+- The GM also has **Download everything** next to it (hosted app only): the server's own
+  export, `/api/export`, with every character (not only the newest 60 the files list shows),
+  the campaign document and the member list.
+- **Restore (JSON)** reads both files. Characters are filed as new copies (nothing is
+  overwritten), by anyone who can write. The table is restored only by the GM and only after
+  a confirm, and it replaces the whole table page as it is now.
+- D1 keeps point-in-time history (**Time Travel** on the database page): 7 days on the free
+  plan, 30 days on Workers Paid, so a bad edit can be rolled back within that window. That is
+  why the download after each session still matters.
 
 ## On phones
 

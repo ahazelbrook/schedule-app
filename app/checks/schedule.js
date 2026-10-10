@@ -3,7 +3,10 @@ process.chdir(__dirname); try { require('fs').mkdirSync('out', { recursive: true
    mode. Four people share ONE stubbed db held here in Node (each page talks to it through an exposed binding, and every
    write is pushed to every open page as a snapshot): the GM (gail), two players (alex, pat) and a read-only viewer
    (vic). Ids are emails, as on Cloudflare. The clock is fixed (Mon 12 Oct 2026, 09:00 in London) so dates, the
-   cadence across the end of summer time and the countdown are exact. Screenshots go to out/schedule-*.png.
+   cadence across the end of summer time and the countdown are exact. Round 2: the RSVP board (the crew line-up at
+   true height, coloured by each owner's answer), attendance recorded on session start and corrected by the GM, the
+   missed streak and the best-date tie-break, the nudge on the card, and the copied reminder / date poll (the
+   clipboard is stubbed: window.__clip). Screenshots go to out/schedule-*.png.
    Run from this dir: PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node schedule.js */
 const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
 const path = require('path');
@@ -48,6 +51,8 @@ const STUB = `(() => {
     onSnapshot: (fn) => { (subs[p] = subs[p] || []).push(fn); call({ op: 'get', p }).then(d => fn(snap(p, d))); window.__subCount = (window.__subCount || 0) + 1; return () => { subs[p] = (subs[p] || []).filter(f => f !== fn); }; } }; };
   const col = (c) => { const q = () => ({ orderBy: q, limit: q, where: q, get: async () => qsnap(c, await call({ op: 'query', c })), onSnapshot: (fn) => { (colSubs[c] = colSubs[c] || []).push(fn); call({ op: 'query', c }).then(l => fn(qsnap(c, l))); return () => {}; } }); return Object.assign(q(), { doc: (id) => docRef(c, id), path: c }); };
   window.__saved = [];
+  window.__clip = []; window.__clipFail = false;
+  try { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (t) => window.__clipFail ? Promise.reject(new Error('denied')) : (window.__clip.push(String(t)), Promise.resolve()) } }); } catch (e) {}
   const user = { id: async () => who.id, can: async (n) => n === 'data.write' ? !who.ro : true, isOwner: async () => !!who.gm, canEdit: async () => !!who.gm,
     me: async () => ({ id: who.id, name: who.name || '', email: who.id }), profiles: async (list) => { const o = {}; list.forEach(id => { o[id] = { id, name: (who.names || {})[id] || '' }; }); return o; } };
   window.claude = { use: async (name) => ({ db: { collection: col, doc: (p) => docRef(p.split('/')[0], p.split('/')[1]) }, user, downloads: { save: async (o) => { window.__saved.push({ filename: o.filename, data: typeof o.data === 'string' ? o.data : String(o.data) }); } } })[name] || null };
@@ -102,6 +107,8 @@ const SHEET = `(() => {
   /* ---------- the GM ---------- */
   const g = await person(GM, { gm: true });
   await g.goto(URL); await settle(g, 1200);
+  /* count the board's line-up renders (suffix '-sb'), not the creator's */
+  await g.evaluate(() => { const K = window.B68Figure, o = K.lineup; window.__lu = 0; K.lineup = function (specs, opts) { if (opts && opts.suffix === '-sb') window.__lu++; return o.apply(this, arguments); }; });
   /* a filed character owned by alex: he is known to the schedule before he answers */
   await g.evaluate(SHEET); await settle(g, 900);
   const charId = await g.evaluate(() => B68.S.sheet.docId);
@@ -134,7 +141,7 @@ const SHEET = `(() => {
   assert(JSON.stringify(sched().cadence) === JSON.stringify({ weeks: 1, weekday: 6, time: '19:00', minutes: 240 }), 'cadence set: ' + JSON.stringify(sched().cadence));
   let wp = await one(g, GM, 'cadence fortnightly', () => g.click('[data-act="sched.cadweeks"][data-n="2"]'));
   assert(wp && JSON.stringify(wp.body.schedule) === '{"cadence":{"weeks":2}}', 'cadence patch is the changed leaf: ' + JSON.stringify(wp && wp.body));
-  const preview = await g.$eval('.sc-tools .sc-row .tp-dim', n => n.textContent).catch(() => '');
+  const preview = await g.$eval('.sc-tools:not(.sc-share) .sc-cad + .sc-row .tp-dim', n => n.textContent).catch(() => '');
   notes.push('cadence preview: ' + preview);
   wp = await one(g, GM, 'add the next three', () => g.click('[data-act="sched.cad3"]'));
   s = sched();
@@ -299,6 +306,99 @@ const SHEET = `(() => {
   assert(cds.tomorrow === 'tomorrow' && cds.tonight === 'tonight' && cds.min === 'in 40 min' && cds.now === 'now' && cds.gone === '(hidden)', 'countdown: ' + JSON.stringify(cds));
   await setNow(a, T0.toISOString());
 
+  /* ---------- the nudge: under 3 days to go and no answer (alex's answer for 31 Oct is stale) ---------- */
+  const nudged = (p) => p.$eval('#nextSession', n => n.classList.contains('nudge'));
+  await a.setViewportSize({ width: 390, height: 844 }); if (await a.$eval('#railBack', n => !n.hidden)) { await a.click('#railBack'); await settle(a, 300); }
+  if (await a.$eval('#nextSession .nx-line', n => n.getAttribute('aria-expanded') === 'true')) await a.click('#nextSession .nx-line');
+  await setNow(a, '2026-10-28T12:00:00Z'); await settle(a, 100);
+  assert(!(await nudged(a)) && !(await a.$('#nextSession .nx-nudge')), 'no nudge 4 days ahead');
+  await setNow(a, '2026-10-30T12:00:00Z'); await settle(a, 100);
+  const ng = await a.evaluate(() => { const n = document.querySelector('#nextSession'), b = n.querySelector('.nx-nudge [data-nx="in"]'), r = b && b.getBoundingClientRect(); return { cls: n.classList.contains('nudge'), open: n.classList.contains('open'), txt: (n.querySelector('.nx-nudge') || {}).textContent || '', vis: !!(r && r.width && r.right <= innerWidth), out: !!n.querySelector('.nx-nudge [data-nx="out"]'), more: n.querySelector('.nx-more').hidden }; });
+  assert(ng.cls && !ng.open && ng.more && /Are you in\?/.test(ng.txt) && ng.vis && ng.out, 'nudge within 3 days on a collapsed phone card, buttons visible: ' + JSON.stringify(ng));
+  await overflow(a, 'alex phone nudge');
+  await shotPage(a, 'nudge-phone');
+  await a.evaluate(() => { document.documentElement.dataset.theme = 'dark'; }); await shotPage(a, 'nudge-phone-dark'); await a.evaluate(() => { delete document.documentElement.dataset.theme; });
+  wp = await one(a, ALEX, 'alex: in from the nudge', () => a.click('#nextSession .nx-nudge [data-nx="in"]'));
+  /* the stale answer was also "in": the patch carries only the changed `at` (boot.js prunes equal leaves) */
+  assert(wp && keysOf(wp.body.schedule) === '["rsvp"]' && keysOf(wp.body.schedule.rsvp) === JSON.stringify([ALEX]) && JSON.stringify(sched().rsvp[ALEX]) === JSON.stringify({ at: '2026-11-01T18:00:00.000Z', v: 'in' }), 'nudge answer stored: ' + JSON.stringify(wp && wp.body) + ' -> ' + JSON.stringify(sched().rsvp[ALEX]));
+  await settle(a, 200);
+  assert(!(await nudged(a)) && !(await a.$('#nextSession .nx-nudge')), 'answered: the nudge goes');
+  await setNow(a, T0.toISOString()); await a.setViewportSize({ width: 1360, height: 900 });
+  /* on a desk the open card asks next to the buttons */
+  await setNow(pt, '2026-10-30T12:00:00Z'); await settle(pt, 100);
+  if (!(await pt.$eval('#nextSession .nx-line', n => n.getAttribute('aria-expanded') === 'true'))) await pt.click('#nextSession .nx-line');
+  assert(await nudged(pt) && /Are you in\?/.test(await pt.$eval('#nextSession .nx-acts', n => n.textContent)), 'pat (desk, open card): nudged, asks by the buttons');
+  await shotCard(pt, 'nudge-desk');
+  await one(pt, PAT, 'pat: can’t make 1 Nov', () => pt.click('#nextSession [data-nx="out"]'));
+  await setNow(pt, T0.toISOString());
+  if (!(await g.$eval('#nextSession .nx-line', n => n.getAttribute('aria-expanded') === 'true'))) await g.click('#nextSession .nx-line');
+  await one(g, GM, 'gail: in (card)', () => g.click('#nextSession [data-nx="in"]'));
+
+  /* ---------- the RSVP board: more filed characters (alex two, pat one, vic one) ---------- */
+  const cast = await g.evaluate(() => JSON.parse(JSON.stringify(B68Cast.pcs)));
+  let cn = 0;
+  function addChar(id, owner, name, spec) {
+    const d = copy(store['characters/' + charId]);
+    d.name = name; d.owner = owner; d.spec = Object.assign(copy(spec), { name }); if (d.sheet) d.sheet.name = name;
+    d.updatedAt = new Date(T0.getTime() + 5000 + (cn++) * 1000).toISOString();
+    store['characters/' + id] = d; broadcast('characters/' + id);
+  }
+  addChar('c_stacey', ALEX, 'Stacey Jatham', cast[2]);
+  addChar('c_booker', PAT, 'Booker Rashan', cast[0]);
+  addChar('c_alfie', VIC, 'Alfie Langstrom', cast[1]);
+  await settle(g, 1200);
+  const boardOf = (p) => p.evaluate(() => {
+    const lu = document.querySelector('.tp-schedbox .sc-lu');
+    return { figs: lu ? [...lu.querySelectorAll('.b68-figure')].map(f => [f.parentNode.getAttribute('data-st'), f.parentNode.getAttribute('filter')]) : null,
+      names: lu ? [...lu.querySelectorAll('.sc-lun')].map(n => n.querySelector('b').textContent + '/' + n.querySelector('small').textContent + '/' + n.className.replace('sc-lun ', '')) : null,
+      feet: lu ? [...lu.querySelectorAll('.sc-lufoot')].filter(r => r.style.display !== 'none').length : null,
+      chips: [...document.querySelectorAll('.tp-schedbox .sc-luchip')].map(c => c.className.replace('sc-luchip ', '') + '/' + c.textContent),
+      lu: window.__lu, after: !!document.querySelector('.tp-schedbox .sc-next + .sc-board') };
+  });
+  let bd = await boardOf(g);
+  assert(JSON.stringify(bd.figs) === JSON.stringify([['in', null], ['in', null], ['out', 'url(#scf-sil)'], ['none', 'url(#scf-grey)']]), 'board: alex two in (full colour), pat out (silhouette), vic no answer (grey): ' + JSON.stringify(bd.figs));
+  assert(JSON.stringify(bd.names) === JSON.stringify(['Aldo Crane/Alex · in/st-in', 'Stacey Jatham/Alex · in/st-in', 'Booker Rashan/Pat · out/st-out', 'Alfie Langstrom/Someone · no answer/st-none']), 'board names under the figures: ' + JSON.stringify(bd.names));
+  assert(bd.feet === 2 && bd.after, 'accent marks under the two in figures, board under the next session: ' + bd.feet);
+  assert(JSON.stringify(bd.chips) === JSON.stringify(['st-in/✓Gail in']), 'gail answered and owns no character: a chip: ' + JSON.stringify(bd.chips));
+  const lu0 = bd.lu;
+  notes.push('board line-up renders after the roster settled: ' + lu0);
+  /* an answer changes attributes only: no new line-up render */
+  await one(g, GM, 'gail: out', () => g.click('#nextSession [data-nx="out"]'));
+  await one(a, ALEX, 'alex: out', () => a.click('#nextSession [data-nx="out"]').catch(async () => { await a.click('#nextSession .nx-line'); await a.click('#nextSession [data-nx="out"]'); }));
+  await settle(g, 300); bd = await boardOf(g);
+  assert(bd.figs[0][0] === 'out' && bd.figs[1][0] === 'out' && bd.chips[0] === 'st-out/✕Gail out' && bd.lu === lu0, 'answers re-colour the board without drawing it again: ' + JSON.stringify(bd));
+  await one(g, GM, 'gail: in again', () => g.click('#nextSession [data-nx="in"]'));
+  await one(a, ALEX, 'alex: in again', () => a.click('#nextSession [data-nx="in"]'));
+  await settle(g, 300); bd = await boardOf(g);
+  assert(bd.figs[0][0] === 'in' && bd.lu === lu0, 'back to in, still no new render');
+  /* a character's figure changes: one new render */
+  const vs = copy(store['characters/c_alfie']); vs.spec.heightIn = 70; vs.updatedAt = new Date(T0.getTime() + 60000).toISOString(); store['characters/c_alfie'] = vs; broadcast('characters/c_alfie');
+  await settle(g, 900); bd = await boardOf(g);
+  assert(bd.lu === lu0 + 1, 'a changed figure draws the line-up once: ' + lu0 + ' -> ' + bd.lu);
+  await shots(g, 'board', '.tp-schedbox');
+
+  /* ---------- copy reminder / date poll (GM tools), clipboard stubbed ---------- */
+  await none(g, 'copy reminder', () => g.click('[data-act="sched.copyrem"]'));
+  const clip = () => g.evaluate(() => window.__clip.slice(-1)[0] || '');
+  const REM = "Blades '68 · Sun 1 Nov, 18:00 – 22:00 at Gail's flat; top floor. Bring dice, snacks. In: Alex, Gail. Out: Pat. No answer yet: Someone.";
+  assert(await clip() === REM, 'reminder text: ' + JSON.stringify(await clip()));
+  assert(/Copied the reminder/.test(await g.$eval('.sc-copymsg', n => n.textContent)) && await g.$eval('.sc-copytext', n => n.value) === REM, 'copied confirmation and the text shown');
+  await none(g, 'copy date poll', () => g.click('[data-act="sched.copypoll"]'));
+  const POLL = ["Blades '68 · which dates can you make?", 'Sat 14 Nov, 19:00 · 1 yes, 0 maybe (best so far)', 'Sat 28 Nov, 19:00 · 0 yes, 0 maybe', 'Sat 12 Dec, 19:00 · 0 yes, 0 maybe', 'Sat 26 Dec, 19:00 · 0 yes, 0 maybe', 'No answer yet: Someone.'].join('\n');
+  assert(await clip() === POLL, 'poll text: ' + JSON.stringify(await clip()));
+  assert(/Copied the date poll/.test(await g.$eval('.sc-copymsg', n => n.textContent)), 'poll confirmation');
+  await shots(g, 'copied', '.tp-schedbox .sc-share');
+  /* the clipboard refuses: the text is selected in a read-only box (and execCommand tried) */
+  await g.evaluate(() => { window.__clipFail = true; });
+  await none(g, 'copy reminder, no clipboard', () => g.click('[data-act="sched.copyrem"]'));
+  const fb = await g.evaluate(() => { const t = document.querySelector('.sc-copytext'), m = document.querySelector('.sc-copymsg'); return { ro: t && t.readOnly, val: t && t.value, sel: t ? document.activeElement === t && t.selectionStart === 0 && t.selectionEnd === t.value.length : false, msg: m ? m.textContent : '' }; });
+  notes.push('clipboard fallback: ' + JSON.stringify({ sel: fb.sel, msg: fb.msg }));
+  assert(fb.ro && fb.val === REM && (fb.sel || /Copied the reminder/.test(fb.msg)), 'fallback: read-only textarea with the text, selected (or copied by execCommand): ' + JSON.stringify(fb));
+  await g.evaluate(() => { window.__clipFail = false; });
+  await none(g, 'close the copied text', () => g.click('[data-act="sched.copyclose"]'));
+  assert(!(await g.$('.sc-copytext')), 'copied text closed');
+  assert(!(await a.$('[data-act="sched.copyrem"]')) && !(await a.$('.sc-att')), 'player: no copy or attendance tools');
+
   /* ---------- read only ---------- */
   const v = await person(VIC, { ro: true });
   await v.goto(URL + '#t'); await settle(v, 1400);
@@ -352,15 +452,64 @@ const SHEET = `(() => {
   assert(printBtns === 0, 'print hides the schedule buttons and the card: ' + printBtns);
   await g.emulateMedia({ media: 'screen' });
 
-  /* ---------- starting the session clears next and the dates around it, in the same write ---------- */
+  /* ---------- starting the session clears next and the dates around it, and records attendance, in the same write ---------- */
+  /* history as the server holds it: sessions 1-21, pat missed 21, 20 and 18 (none recorded for him in 19), came to 17 */
+  const cm = store['campaign/main'];
+  cm.session = { number: 21, startedAt: '2026-10-17T18:00:00.000Z', endedAt: '2026-10-17T23:00:00.000Z' };
+  cm.schedule.attendance = {};
+  for (let k = 1; k <= 21; k++) cm.schedule.attendance[k] = { [ALEX]: true };
+  Object.assign(cm.schedule.attendance[21], { [PAT]: false }); Object.assign(cm.schedule.attendance[20], { [PAT]: false });
+  Object.assign(cm.schedule.attendance[18], { [PAT]: false }); Object.assign(cm.schedule.attendance[17], { [PAT]: true });
+  broadcast('campaign/main');
   await setNow(g, '2026-11-01T17:55:00Z');
   await g.reload(); await settle(g, 1200);
+  assert(/missed 3/.test(await g.$eval('.sc-grid tbody', n => [...n.querySelectorAll('tr')].find(r => /Pat/.test(r.textContent)).textContent)), 'pat: missed 3 before the session');
   wp = await one(g, GM, 'start session', () => g.click('[data-act="sessstart"]'));
   s = sched();
-  assert(!s.next && s.options[o14] && s.options[o28] && camp().session.number === 1, 'session start cleared next, kept later dates: ' + JSON.stringify({ next: s.next, opts: Object.keys(s.options).length }));
+  assert(!s.next && s.options[o14] && s.options[o28] && camp().session.number === 22, 'session start cleared next, kept later dates: ' + JSON.stringify({ next: s.next, opts: Object.keys(s.options).length }));
   assert(wp && wp.body.session && wp.body.schedule && wp.body.schedule.next === null && wp.body.log, 'one write carries session, log and schedule: ' + keysOf(wp && wp.body));
+  const att = s.attendance || {}, sorted = (o) => JSON.stringify(Object.keys(o || {}).sort().map(k => [k, o[k]]));
+  assert(sorted(att['22']) === sorted({ [ALEX]: true, [PAT]: false, [GM]: true }), 'attendance from the answers: in -> true, out -> false, vic (no answer) not recorded: ' + JSON.stringify(att['22']));
+  assert(wp.body.schedule.attendance && sorted(wp.body.schedule.attendance['22']) === sorted(att['22']) && wp.body.schedule.attendance['1'] === null && wp.body.schedule.attendance['2'] === null, 'same write: session 22 recorded, sessions 1 and 2 deleted with null: ' + JSON.stringify(wp.body.schedule.attendance));
+  assert(Object.keys(att).length === 20 && !att['1'] && !att['2'] && att['3'], 'the last 20 sessions are kept: ' + JSON.stringify(Object.keys(att)));
   await settle(a, 300);
   assert(await a.$eval('#nextSession', n => n.hidden), 'card hidden once next is cleared');
+  await settle(g, 300);
+  const missOf = async (p, who) => p.$eval('.sc-grid tbody', (n, who) => { const r = [...n.querySelectorAll('tr')].find(r => r.querySelector('.sc-who b').textContent === who); const m = r && r.querySelector('.sc-miss'); return m ? m.textContent : ''; }, who);
+  assert(await missOf(g, 'Pat') === 'missed 4' && await missOf(g, 'Alex') === '' && await missOf(g, 'Gail') === '', 'missed streak: pat 22, 21, 20, (19 skipped), 18 -> missed 4; alex and gail none');
+  assert(/Attendance · session 22/.test(await g.$eval('.sc-att', n => n.textContent)), 'GM: attendance of the latest session');
+  /* the GM corrects it: pat was there after all is not known, so "not recorded"; vic came, then did not */
+  wp = await one(g, GM, 'GM: pat -> not recorded', () => g.click(`[data-act="sched.att"][data-u="${PAT}"]`));
+  assert(JSON.stringify(wp.body.schedule) === JSON.stringify({ attendance: { 22: { [PAT]: null } } }), 'correction is the one leaf: ' + JSON.stringify(wp.body.schedule));
+  await settle(g, 200);
+  assert(await missOf(g, 'Pat') === 'missed 3', 'pat: missed 3 once session 22 is not recorded for him');
+  wp = await one(g, GM, 'GM: vic was there', () => g.click(`[data-act="sched.att"][data-u="${VIC}"]`));
+  assert(JSON.stringify(wp.body.schedule) === JSON.stringify({ attendance: { 22: { [VIC]: true } } }), 'vic recorded: ' + JSON.stringify(wp.body.schedule));
+  await one(g, GM, 'GM: vic missed it', () => g.click(`[data-act="sched.att"][data-u="${VIC}"]`));
+  await settle(g, 200);
+  assert(sched().attendance['22'][VIC] === false && await missOf(g, 'Someone') === 'missed 1', 'vic: missed 1');
+  assert(await g.evaluate(() => document.activeElement && document.activeElement.dataset.act === 'sched.att'), 'the attendance chip keeps the focus');
+  /* the best date: a tie on yes goes to the date that brings back whoever missed most, before maybe and soonest */
+  await pt.click('#tableBtn'); await settle(pt, 500);
+  await one(pt, PAT, 'pat: 28 Nov yes', () => pt.click(`tr.me ${cellSel(o28)}`));
+  await settle(g, 300); mk = await marks();
+  assert(mk.find(m => m.best).o === o28, 'tie 1 yes each (alex 14 Nov, pat 28 Nov): pat missed 3, so 28 Nov: ' + JSON.stringify(mk));
+  await one(g, GM, 'gail: 14 Nov yes', () => g.click(`tr.me ${cellSel(o14)}`));
+  await one(g, GM, 'gail: 14 Nov maybe', () => g.click(`tr.me ${cellSel(o14)}`));
+  await settle(g, 300); mk = await marks();
+  assert(mk.find(m => m.best).o === o28, 'still 28 Nov: the missed streak comes before maybe: ' + JSON.stringify(mk));
+  assert(await g.evaluate(() => B68Schedule.tally({ avail: { a: { x: 'yes' }, b: { y: 'yes' } }, attendance: { 3: { a: false }, 2: { a: false, b: false }, 1: { b: false } }, quorum: 0 }, [{ id: 'x' }, { id: 'y' }], ['a', 'b']).best) === 'x', 'tally: a missed 2, b missed 1 (session 3 skipped for b, then 2 and 1): x wins');
+  await shots(g, 'attendance', '.tp-schedbox');
+  /* a player cannot write attendance: no tools, a forced click does nothing, and the page strips it from a delta */
+  if (await a.evaluate(() => document.body.dataset.mode !== 'table')) await a.click('#tableBtn');
+  await settle(a, 500);
+  assert(!(await a.$('.sc-att')) && await missOf(a, 'Pat') === 'missed 3', 'player: no attendance tools, the missed label shows');
+  await none(a, 'player forces an attendance click', () => a.evaluate((me) => { const b = document.createElement('button'); b.setAttribute('data-act', 'sched.att'); b.setAttribute('data-u', me); document.querySelector('.tp-schedbox .tp-body').appendChild(b); b.click(); }, ALEX));
+  const strip2 = await a.evaluate(([me]) => JSON.stringify(B68Schedule.restrict({ attendance: { 22: { [me]: true } }, rsvp: { [me]: { at: 'x', v: 'in' } } }, me)), [ALEX]);
+  assert(strip2 === JSON.stringify({ rsvp: { [ALEX]: { at: 'x', v: 'in' } } }), 'restrict drops attendance: ' + strip2);
+  const pw2 = writes.filter(w => w.p === 'campaign/main' && (w.who === ALEX || w.who === PAT));
+  const bad2 = pw2.filter(w => { const sc = w.body.schedule || {}; return Object.keys(w.body).some(k => k !== 'schedule' && k !== 'updatedAt') || Object.keys(sc).some(k => (k !== 'avail' && k !== 'rsvp') || keysOf(sc[k]) !== JSON.stringify([w.who])); });
+  assert(!bad2.length, 'no player write ever carries attendance or another key: ' + JSON.stringify(bad2.slice(0, 2)));
 
   /* ---------- the rest of the page still behaves ---------- */
   await one(g, GM, 'GM log line', async () => { await g.fill('[data-ui="newlog"]', 'Scored'); await g.click('[data-act="logadd"]'); });

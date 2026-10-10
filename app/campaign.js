@@ -44,7 +44,7 @@
       crew: { name: '', type: '', lair: '', notes: '', tier: 0, hold: 'weak', rep: 0, turf: 0, heat: 0, wanted: 0, vault: 0, claims: [], cohorts: [], factions: [] },
       clocks: [],
       log: [],
-      schedule: { options: {}, avail: {}, next: null, rsvp: {}, cadence: null, quorum: 0 },
+      schedule: { options: {}, avail: {}, next: null, rsvp: {}, cadence: null, quorum: 0, attendance: {} },
       updatedAt: null
     };
   }
@@ -61,7 +61,7 @@
     return b == null ? (a == null ? undefined : null) : clone(b);
   }
   function mergeNull(t, p) { Object.keys(p).forEach(function (k) { var v = p[k]; if (v === null) delete t[k]; else if (isObj(v) && isObj(t[k])) mergeNull(t[k], v); else t[k] = clone(v); }); return t; }
-  /* a player may write only schedule.avail.<me> and schedule.rsvp.<me> */
+  /* a player may write only schedule.avail.<me> and schedule.rsvp.<me> (never attendance, options, next, …) */
   function ownSchedule(patch, me) {
     if (!isObj(patch) || !me) return undefined;
     var out = {}, any = false;
@@ -291,7 +291,7 @@
     var c = doc.crew;
     return '<header class="tp-head"><div class="tp-title"><span class="tp-kick">The table</span><h2 class="tp-crewname" id="tp-crewname">' + esc(c.name || 'An unnamed crew') + '</h2>' +
       '<span class="tp-subtitle">' + esc([c.type, 'Tier ' + c.tier + ' · ' + c.hold + ' hold', doc.session.number ? 'session ' + doc.session.number : ''].filter(Boolean).join(' · ')) + '</span></div>' +
-      '<div class="tp-meta"><span class="tp-role' + (gm() ? ' gm' : '') + '">' + esc(role()) + '</span><span class="tp-status mono" id="tp-status" aria-live="polite"></span></div></header>';
+      '<div class="tp-meta"><button type="button" class="btn sm" data-act="print" data-always="1" title="Every character and the crew, one document">Print the season</button><span class="tp-role' + (gm() ? ' gm' : '') + '">' + esc(role()) + '</span><span class="tp-status mono" id="tp-status" aria-live="polite"></span></div></header>';
   }
   function sessionBar(doc) {
     var s = doc.session, running = s.number > 0 && !!s.startedAt && !s.endedAt;
@@ -341,10 +341,14 @@
   }
   function schedName(id) { var Sm = sched(); return (cur && cur.names[id]) || (Sm && Sm.names[id]) || (id && cur && id === cur.api.me ? 'You' : 'Someone'); }
   function schedCtx() {
+    var docs = [];
+    try { docs = (typeof cur.api.roster === 'function' ? cur.api.roster() : []) || []; } catch (e) { docs = []; }
     return {
       sched: cur.doc.schedule, me: cur.api.me || null, isGM: gm(), ro: ro(), drafts: cur.drafts, people: schedPeople(), name: schedName,
+      roster: docs, session: cur.doc.session.number,
       commit: commit, render: render, confirm: function (m) { return window.confirm(m); }, logLine: logLine,
       status: setStatus, focus: function (sel) { var n = cur && cur.root.querySelector(sel); if (n && !n.disabled) { try { n.focus(); } catch (e) {} } },
+      find: function (sel) { return cur ? cur.root.querySelector(sel) : null; },
       esc: esc, box: box, chip: chip
     };
   }
@@ -418,6 +422,7 @@
       '<div class="tp-grid"><div class="tp-col tp-colA">' + crewPanel.render(doc.crew, crewCtx()) + '</div>' +
       '<div class="tp-col tp-colB">' + scheduleBox(doc) + clocks(doc) + players() + '</div></div>' + logBox(doc);
     cur.root.innerHTML = html;
+    var Sm = sched(); if (Sm && Sm.mountBoard) { try { Sm.mountBoard(cur.root); } catch (e) { if (window.console) console.error(e); } }   /* the kept line-up SVG goes back in */
     cur.root.className = 'tp' + (ro() ? ' tp-ro' : '') + (gm() ? ' tp-gm' : ' tp-player');
     if (ro()) cur.root.querySelectorAll('button, input, textarea, select').forEach(function (n) { if (!n.dataset.always) n.disabled = true; });
     else if (!gm()) cur.root.querySelectorAll('[data-gm]').forEach(function (n) { n.disabled = true; n.title = n.title || 'Only the GM can change that'; });
@@ -429,7 +434,7 @@
   }
   function captureFocus() {
     if (!cur) return null; var a = document.activeElement; if (!a || !cur.root.contains(a)) return null;
-    if (a.tagName === 'BUTTON' && /^sched\./.test(a.dataset.act || '')) return { btn: '[data-act="' + a.dataset.act + '"]' + (a.dataset.o ? '[data-o="' + a.dataset.o + '"]' : '') + (a.dataset.n ? '[data-n="' + a.dataset.n + '"]' : '') };   /* a schedule cell or chip keeps the keyboard focus */
+    if (a.tagName === 'BUTTON' && /^sched\./.test(a.dataset.act || '')) return { btn: '[data-act="' + a.dataset.act + '"]' + (a.dataset.o ? '[data-o="' + a.dataset.o + '"]' : '') + (a.dataset.n ? '[data-n="' + a.dataset.n + '"]' : '') + (a.dataset.u ? '[data-u="' + a.dataset.u.replace(/["\\]/g, '\\$&') + '"]' : '') };   /* a schedule cell or chip keeps the keyboard focus */
     if (a.tagName !== 'INPUT' && a.tagName !== 'TEXTAREA' && a.tagName !== 'SELECT') return null;
     return { path: a.dataset.path || null, ui: a.dataset.ui || null, value: a.value, s: a.selectionStart, e: a.selectionEnd };
   }
@@ -445,12 +450,12 @@
   /* ---------- actions (each says who may do it) ---------- */
   function byId(id) { return cur.doc.clocks.filter(function (c) { return c.id === id; })[0] || null; }
   function logLine(text) { cur.doc.log.unshift({ at: nowIso(), by: cur.api.me || null, text: text }); if (cur.doc.log.length > LOG_MAX) cur.doc.log.length = LOG_MAX; }
-  var PERM = { sessstart: 'gm', sessend: 'gm', clockfill: 'any', clocksize: 'gm', clockkind: 'gm', clockhide: 'gm', clockrm: 'gm', clockadd: 'gm', newsize: 'gm', newkind: 'gm', logadd: 'any', logrm: 'gm', open: 'all' };
+  var PERM = { sessstart: 'gm', sessend: 'gm', clockfill: 'any', clocksize: 'gm', clockkind: 'gm', clockhide: 'gm', clockrm: 'gm', clockadd: 'gm', newsize: 'gm', newkind: 'gm', logadd: 'any', logrm: 'gm', open: 'all', print: 'all' };
   var ACTS = {
     sessstart: function () {
       var n = cur.doc.session.number + 1, now = nowIso();
       cur.doc.session = { number: n, startedAt: now, endedAt: null };
-      var Sm = sched(); if (Sm && Sm.onSessionStart) Sm.onSessionStart(cur.doc.schedule, Date.now());   /* same write: next and the dates around now go */
+      var Sm = sched(); if (Sm && Sm.onSessionStart) Sm.onSessionStart(cur.doc.schedule, Date.now(), n);   /* same write: next (its answers become session n's attendance) and the dates around now go */
       logLine('Session ' + n + ' started'); commit();
     },
     sessend: function () {
@@ -477,7 +482,8 @@
       var n2 = cur.root.querySelector('[data-ui="newlog"]'); if (n2) try { n2.focus(); } catch (e) {}
     },
     logrm: function (d) { var e = cur.doc.log[+d.i]; if (!e) return; if (!window.confirm('Remove this line from the log?\n' + e.text)) return; cur.doc.log.splice(+d.i, 1); commit(); },
-    open: function (d) { if (cur.api && typeof cur.api.openCharacter === 'function') cur.api.openCharacter(d.id); }
+    open: function (d) { if (cur.api && typeof cur.api.openCharacter === 'function') cur.api.openCharacter(d.id); },
+    print: function () { if (window.B68Season && typeof B68Season.open === 'function') B68Season.open(); }
   };
   var ENTER = { newlog: 'logadd', newclock: 'clockadd' };
   function allowed(perm) { return perm === 'all' ? true : perm === 'gm' ? gm() : !ro(); }

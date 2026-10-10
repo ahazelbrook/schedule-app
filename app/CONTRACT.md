@@ -8,7 +8,7 @@ Three modules are being built in parallel. Each owns its own files. Do not edit 
 | tracker (the living character sheet) | `tracker.js`, `tracker.css` (new) | `window.B68Tracker` |
 | filing (boot/steps/markup) | `boot.js`, `steps.js`, `index.html` | `window.B68` additions |
 
-Script order in index.html (already set): figure-kit.js, cast.js, content.js, core.js, **zoom.js**, steps.js, **tracker.js**, boot.js. `tracker.css` is linked in the head. The page has a `<section id="dossier" hidden>` placed before `main.studio`; it is the tracker's render root. `body[data-mode="sheet"]` hides `.studio` and `.crew` and shows `#dossier` (CSS for that lives in index.html, owned by filing).
+Script order in index.html (already set): figure-kit.js, cast.js, content.js, core.js, **zoom.js**, steps.js, **tracker.js**, boot.js. (Later rounds added modules; the order today is figure-kit.js, cast.js, content.js, core.js, zoom.js, steps.js, tracker.js, schedule.js, campaign.js, crews.js, crewsheet.js, season.js, runtime/cf.js, boot.js.) `tracker.css` is linked in the head. The page has a `<section id="dossier" hidden>` placed before `main.studio`; it is the tracker's render root. `body[data-mode="sheet"]` hides `.studio` and `.crew` and shows `#dossier` (CSS for that lives in index.html, owned by filing).
 
 Existing globals: `window.B68Figure` (kit, `K`), `window.B68Cast`, `window.B68Content` (`CT`: PLAYBOOKS, byId, ACTIONS = [[attr, [actions]]...], STANDARD_ITEMS = [[name, load]...], VICES, LOOK...), `window.B68` (`A`: S {spec, sheet, step, view, dirty}, helpers `$ el esc clone slug feet toast pbOf renderSpec draw drawLineup showStep blankSheet validate sheetMarkdown dotsTotal attrRating loadTotal`). Read core.js, steps.js, content.js and boot.js for the details; they are short.
 
@@ -65,8 +65,11 @@ B68Tracker.open(doc, api)                   // render the sheet for doc {id, ...
 B68Tracker.update(doc)                      // a newer snapshot of the same doc arrived (another viewer changed it): re-render without losing focus in a text field being edited
 B68Tracker.close()                          // clear #dossier
 B68Tracker.isOpen()                         // bool
+B68Tracker.play()                           // a copy of the open sheet's play, or null (added later)
+B68Tracker.renderStatic(root, doc)          // a read-only, listener-free copy of a sheet in another root (the season print; added later)
 // api = {
 //   save(patch) -> Promise          // shallow-merge patch into the doc: patch is { play: {...whole play...} } or { name, alias, ... }; filing writes updatedAt
+//                                   //   (filing sends only the changed play fields as an update, falling back to a whole set)
 //   edit()                          // load this character into the creator (filing switches mode)
 //   back()                          // return to the roster
 //   remove() -> Promise             // delete (after the tracker's own confirm)
@@ -81,9 +84,13 @@ B68Tracker.isOpen()                         // bool
 A.setMode('create' | 'sheet')     // toggles body[data-mode]; closes the tracker when leaving sheet mode
 A.openCharacter(docId)            // subscribes to characters/<id> and opens the tracker; sets location.hash = '#c/' + id
 A.fileCharacter()                 // create or update (S.sheet.docId) the doc; then openCharacter(id)
+// added in later rounds:
+A.setMode('table' | 'print')      // the table page (CAMPAIGN.md) and the season print
+A.openTable()  A.openPrint()      // switch mode and set the hash
+A.updateCharacter(id, patch)      // write another character's play fields through the same delta path (crew advance)
 ```
 
-Hash routes: `#c/<docId>` opens a sheet; `#s<base64url>` (existing) loads a character into the creator; no hash = creator.
+Hash routes: `#c/<docId>` opens a sheet; `#s<base64url>` (existing) loads a character into the creator; `#t` opens the table page; `#print` the season print; no hash = creator.
 
 ## House rules to respect
 - Hard mode: a deadlock is permanent. Show it as such; no "clear deadlock" control beyond an admin-ish undo with confirm.
@@ -97,7 +104,7 @@ Hash routes: `#c/<docId>` opens a sheet; `#s<base64url>` (existing) loads a char
 Paper/night themes, tokens in index.html `:root`. Fonts: Archivo Compressed (display, `--font-display`), Archivo Condensed (`--font-cond`), GT America (`--font-body`), Space Mono (`--font-mono`). Reuse the existing classes where sensible: `.btn .btn.sm .btn.primary .chip .chip.txt .label .hint .field .row .seg .mono .stamp`. Rulebook feel: boxes, pips, diamonds, orange accent `var(--accent)`, rules `var(--rule)`. Phone width must work (16px gutters, no horizontal scroll).
 
 ## Checking
-`node --check file.js` for syntax. Headless render: Playwright at `/opt/node-tools/node_modules/playwright`, Chromium already installed (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`); see `../shots/check.js` for a working example that opens `file://.../creator/index.html`, collects console errors and screenshots. Font 404s on file:// are expected (fonts live in the artifact). `window.claude` does not exist on file://, so db/user/downloads resolve to nothing: your code must still work (hide or disable, never throw).
+`node --check file.js` for syntax. Headless render: Playwright at `/opt/node-tools/node_modules/playwright`, Chromium already installed (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`); the scripts in `checks/` (for example `checks/e2e.js`) open `file://.../app/index.html` with a stubbed `window.claude`, collect console errors and take screenshots into `checks/out/`. The fonts are vendored in `fonts/`, so they load on file:// too. Without a stub, `window.claude` does not exist on file:// (`runtime/cf.js` stays off there), so db/user/downloads resolve to nothing: your code must still work (hide or disable, never throw).
 
 ---
 
@@ -141,7 +148,7 @@ Forged in the Dark rules, assumed standard: action roll = d6 per action dot (0 d
 `play.log[]` entries gain an optional `kind: 'roll' | 'note'` and rolls are logged as `{ at, kind: 'roll', text: 'Skirmish 3d (push) · risky · 6,4,2 → success' }`. `window.B68Tracker._rng` may be replaced by tests with a deterministic function returning 0..1.
 
 ## GM table and backups (filing)
-`A.roster` (array of docs, as subscribed today) stays the source. The "Your files" section gets a view toggle Cards / Table; the table has one row per character with name, playbook, stress label and value (pb.stressName), worst harm text, healing, playbook xp, load, struck keys count, updatedAt; clicking a row opens the sheet. Backup: "Download all (JSON)" writes `{ v: 1, exportedAt, characters: [docs] }` through the downloads capability (hidden when unavailable); "Restore (JSON)" takes a file input and files each character as a NEW doc (new id, owner = me, createdAt now) so nothing is overwritten.
+`A.roster` (array of docs, as subscribed today) stays the source. The "Your files" section gets a view toggle Cards / Table; the table has one row per character with name, playbook, stress label and value (pb.stressName), worst harm text, healing, playbook xp, load, struck keys count, updatedAt; clicking a row opens the sheet. Backup: "Download all (JSON)" writes `{ v: 1, exportedAt, characters: [docs] }` through the downloads capability (hidden when unavailable); "Restore (JSON)" takes a file input and files each character as a NEW doc (new id, owner = me, createdAt now) so nothing is overwritten. (Later: the file also carries the table's campaign document as `campaign`, a player's copy without hidden clocks; Restore also reads the hosted `/api/export` file and restores the campaign document for the GM only, after a confirm; the hosted GM gets "Download everything". See CAMPAIGN.md, *Backups*.)
 
 ---
 

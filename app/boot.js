@@ -98,18 +98,22 @@
   }
   A.loadIntoCreator = loadIntoCreator;
 
-  /* mode: create (the studio, line-up and files), sheet (the tracker in #dossier) or table (the campaign page in #table-page) */
+  /* mode: create (the studio, line-up and files), sheet (the tracker in #dossier), table (the campaign page in #table-page)
+     or print (the season print in #season, season.js) */
   function setMode(m) {
-    m = m === 'sheet' || m === 'table' ? m : 'create';
+    m = m === 'sheet' || m === 'table' || m === 'print' ? m : 'create';
     var was = document.body.dataset.mode;
     document.body.dataset.mode = m;
     var dos = $('dossier'); if (dos) dos.hidden = m !== 'sheet';
     var tp = $('table-page'); if (tp) tp.hidden = m !== 'table';
+    var sn = $('season'); if (sn) sn.hidden = m !== 'print';
     var rb = $('railBack'); if (rb) rb.hidden = m === 'create';
     var tb = $('tableBtn'); if (tb) tb.setAttribute('aria-pressed', String(m === 'table'));
     if (m !== 'sheet' && was === 'sheet') closeSheet();
     if (m !== 'table' && was === 'table') closeTable();
     if (m === 'table' && was !== 'table') startTable();
+    if (m !== 'print' && was === 'print') closePrint();
+    if (m === 'print' && was !== 'print') startPrint();
     if (A.snapshot) A.snapshot();
   }
   A.setMode = setMode;
@@ -345,6 +349,35 @@
   }
   A.openTable = openTable;
 
+  /* ---------- the season print (season.js): #print, every filed character and the crew in one printable document ----------
+     It reads the files once (nothing is written) when they have settled; Back returns to the mode it came from. */
+  var printPushed = false;
+  function seasonMod() { var Sn = window.B68Season; return Sn && typeof Sn.render === 'function' ? Sn : null; }
+  function printApi() {
+    return {
+      ready: function () { return new Promise(function (res) { (function wait() { if (dbSettled) res(); else setTimeout(wait, 50); })(); }); },
+      db: function () { return db; },
+      roster: function () { return roster.slice(); },
+      me: function () { return A.me; }, isGM: function () { return A.isGM === true; },
+      profiles: function (ids) { return userCap && typeof userCap.profiles === 'function' ? profiles(ids) : Promise.resolve({}); },
+      back: leavePrint
+    };
+  }
+  function startPrint() { var Sn = seasonMod(); if (!Sn) { toast('The season print module is missing.', true); return; } try { Sn.render(printApi()); } catch (e) { toast('The season print could not render: ' + (e && e.message || e), true); } }
+  function closePrint() { var Sn = seasonMod(); if (Sn && Sn.close) { try { Sn.close(); } catch (e) {} } }
+  /* pushed: the page came to #print from another view in this tab, so Back is history.back() */
+  function openPrint(pushed) {
+    printPushed = !!pushed;
+    setMode('print');
+    try { if (location.hash !== '#print') { location.hash = '#print'; printPushed = true; } } catch (e) {}
+    window.scrollTo(0, 0);
+  }
+  function leavePrint() {
+    if (printPushed) { printPushed = false; try { history.back(); return; } catch (e) {} }
+    setMode('create'); clearHash(); window.scrollTo(0, 0);
+  }
+  A.openPrint = function () { openPrint(true); };
+
   /* roster */
   var roster = [];
   /* what a filed sheet says about itself: the cards' status line and the GM table both read these facts, so they never disagree */
@@ -455,26 +488,78 @@
   var rf = $('rosterFilter'); if (rf) rf.querySelectorAll('.chip').forEach(function (b) { b.onclick = function () { filter = b.dataset.f; filterChosen = true; renderRoster(roster); }; });
   var rv = $('rosterView'); if (rv) rv.querySelectorAll('.chip').forEach(function (b) { b.onclick = function () { setRosterView(b.dataset.v); }; });
 
-  /* ---------- backups: every file in the current filter as one JSON; restore files each as a new document ---------- */
+  /* ---------- backups: every file in the current filter and the table as one JSON; restore files each character as a new
+     document and, for the GM after a confirm, replaces the table ---------- */
+  function hostedExport() { var rt = window.B68Runtime; return rt && rt.kind === 'cloudflare' && typeof rt.exportAll === 'function' ? rt : null; }
   function syncBackups() {
-    var b = $('backups'), dl = $('dlAll'), rs = $('restoreBtn'); if (!b) return;
+    var b = $('backups'), dl = $('dlAll'), de = $('dlEverything'), rs = $('restoreBtn'); if (!b) return;
     if (dl) dl.hidden = !downloads;
+    if (de) de.hidden = !downloads || !hostedExport() || A.isGM !== true;
     if (rs) rs.hidden = !db || A.canWrite === false;
     b.hidden = (!dl || dl.hidden) && (!rs || rs.hidden);
   }
+  /* the table as this viewer sees it: { id, doc, updatedAt, view }. A player's copy leaves out the clocks hidden from
+     players (the page never shows them one). None while nothing is stored (the hosted default has no updatedAt). */
+  function campaignBackup() {
+    var d = campLoaded && tableExists && isObj(tableLatest) ? clone(tableLatest) : null;
+    if (!d || (window.B68Runtime && window.B68Runtime.kind === 'cloudflare' && !d.updatedAt)) return null;
+    var gm = A.isGM === true;
+    if (!gm && Array.isArray(d.clocks)) d.clocks = d.clocks.filter(function (c) { return !(c && c.hidden); });
+    return { id: 'main', doc: d, updatedAt: d.updatedAt || null, view: gm ? 'gm' : 'player' };
+  }
   function downloadAll() {
-    var list = visibleDocs(); if (!list.length) { toast('Nothing to download yet.', true); return; }
+    var list = visibleDocs(), camp = campaignBackup(); if (!list.length && !camp) { toast('Nothing to download yet.', true); return; }
     var data = { v: 1, exportedAt: nowIso(), characters: list.map(function (d) { return clone(d); }) };
-    saveFile('blades68-characters-' + data.exportedAt.slice(0, 10) + '.json', JSON.stringify(data, null, 2));
+    if (camp) data.campaign = camp;
+    saveFile('blades68-backup-' + data.exportedAt.slice(0, 10) + '.json', JSON.stringify(data, null, 2));
+  }
+  /* hosted, GM only: the server's whole export (GET /api/export through the runtime), saved as it came */
+  function downloadEverything() {
+    var rt = hostedExport(); if (!rt) return;
+    Promise.resolve().then(function () { return rt.exportAll(); }).then(function (data) {
+      if (!isObj(data) || !Array.isArray(data.characters)) throw new Error('the server sent no export');
+      var cid = String((isObj(data.campaign) && data.campaign.id) || 'campaign').replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'campaign';
+      saveFile('blades68-' + cid + '-' + String(data.exportedAt || nowIso()).slice(0, 10) + '.json', JSON.stringify(data, null, 2));
+    }).catch(function (e) { toast('Could not download everything: ' + (e && e.message || e), true); });
   }
   function validBackupDoc(c) { return !!c && typeof c === 'object' && !Array.isArray(c) && typeof c.playbook === 'string' && !!A.CT.byId[c.playbook] && !!c.sheet && typeof c.sheet === 'object' && !Array.isArray(c.sheet); }
+  /* the table in a backup, or null: { doc, updatedAt, view } from Download all or /api/export (whose campaign is the
+     default document, updatedAt null, when nothing was stored) */
+  function backupCampaign(data) {
+    var c = isObj(data.campaign) && isObj(data.campaign.doc) ? data.campaign : null;
+    return c && (c.updatedAt || c.doc.updatedAt) ? c : null;
+  }
+  /* the GM's restore of the table: the whole document through the db (a PUT on the hosted API, GM only there too) */
+  function restoreCampaign(doc) {
+    var ref = campRef, Cm = campaignMod();
+    if (!ref || typeof ref.set !== 'function') return Promise.reject(new Error('the table is not available here'));
+    var full = Cm && Cm.normalize ? Cm.normalize(clone(doc)) : clone(doc); full.updatedAt = nowIso();
+    return Promise.resolve().then(function () { return ref.set(clone(full)); }).then(function () { tableExists = true; tableLatest = clone(full); });
+  }
+  /* accepts Download all files ({ v: 1, exportedAt, characters: [doc], campaign? }) and the hosted /api/export file
+     ({ exportedAt, campaign: { id, doc, updatedAt }, characters: [{ id, doc, updatedAt }], members }, no v) */
   function restoreDocs(data) {
     if (!db) { toast('The files are not available in this view.', true); return Promise.resolve(0); }
     if (!data || typeof data !== 'object' || !Array.isArray(data.characters)) { toast('That is not a Blades ’68 backup: no characters list.', true); return Promise.resolve(0); }
-    if (data.v !== 1) { toast('Unknown backup version ' + data.v + '. Expected 1.', true); return Promise.resolve(0); }
-    var good = [], bad = 0;
-    data.characters.forEach(function (c) { if (validBackupDoc(c)) good.push(c); else bad++; });
-    if (!good.length) { toast(bad ? 'Nothing restorable: ' + bad + ' invalid entr' + (bad === 1 ? 'y' : 'ies') + '.' : 'The backup is empty.', true); return Promise.resolve(0); }
+    var exported = data.v === undefined && isObj(data.campaign) && isObj(data.campaign.doc);
+    if (data.v !== 1 && !exported) { toast('Unknown backup version ' + data.v + '. Expected 1.', true); return Promise.resolve(0); }
+    var good = [], bad = 0, camp = backupCampaign(data);
+    data.characters.forEach(function (c) { if (isObj(c) && isObj(c.doc) && c.playbook === undefined) c = c.doc; if (validBackupDoc(c)) good.push(c); else bad++; });
+    /* the table: GM only, after a confirm; anyone else restores the characters and is told the table was left */
+    var withTable = false, tableNote = '';
+    if (camp) {
+      if (A.isGM !== true || A.canWrite === false) tableNote = 'only the GM can restore the table';
+      else if (!campRef) tableNote = 'the table is not available here';
+      else {
+        var when = String(camp.updatedAt || camp.doc.updatedAt || '').slice(0, 10);
+        withTable = window.confirm('Replace the table (crew sheet, clocks, log, session and schedule) with the copy in this file' + (when ? ' from ' + when : '') + '? What is on the table now is overwritten.' + (camp.view === 'player' ? ' A player saved this copy, so it has no hidden clocks.' : '') + (good.length ? ' Cancel restores the characters only.' : ''));
+        if (!withTable) tableNote = 'the table was left as it is';
+      }
+    }
+    if (!good.length && !withTable) {
+      if (camp && !bad) { toast(tableNote.charAt(0).toUpperCase() + tableNote.slice(1) + '.', true); return Promise.resolve(0); }
+      toast(bad ? 'Nothing restorable: ' + bad + ' invalid entr' + (bad === 1 ? 'y' : 'ies') + '.' : 'The backup is empty.', true); return Promise.resolve(0);
+    }
     var T = tracker(), used = {}, n = 0, seq = Promise.resolve();
     good.forEach(function (c) {
       seq = seq.then(function () {
@@ -487,7 +572,13 @@
         return col().doc(id).set(doc).then(function () { cache[id] = doc; n++; });
       });
     });
-    return seq.then(function () { toast('Restored ' + n + ' character' + (n === 1 ? '' : 's') + (bad ? ' · skipped ' + bad + ' invalid' : '') + '.'); return n; })
+    var tableDone = false;
+    if (withTable) seq = seq.then(function () { return restoreCampaign(camp.doc).then(function () { tableDone = true; }, function (e) { tableNote = 'the table could not be restored: ' + (e && e.message || e); }); });
+    return seq.then(function () {
+      var what = good.length ? 'Restored ' + n + ' character' + (n === 1 ? '' : 's') + (tableDone ? ' and the table' : '') : tableDone ? 'Restored the table' : 'Restored nothing';
+      toast(what + (bad ? ' · skipped ' + bad + ' invalid' : '') + (tableNote ? ' · ' + tableNote : '') + '.', !tableDone && withTable);
+      return n;
+    })
       .catch(function (e) { toast('Restore stopped after ' + n + ': ' + (e && e.message || e), true); return n; });
   }
   A.restoreDocs = restoreDocs;
@@ -553,6 +644,7 @@
       case 'railBack': goBack(); break;
       case 'tableBtn': openTable(); break;
       case 'dlAll': downloadAll(); break;
+      case 'dlEverything': downloadEverything(); break;
       case 'restoreBtn': (function () { var i = $('restoreFile'); if (!db) { toast('The files are not available in this view.', true); return; } if (i) i.click(); })(); break;
       case 'dlSvg': saveFile(fileBase() + '.svg', A.figureSvg(900)); break;
       case 'dlMug': saveFile(fileBase() + '-mugshot.svg', A.mugshot().svg); break;
@@ -586,8 +678,9 @@
   window.addEventListener('hashchange', function () {
     var id = hashOpen(), m = document.body.dataset.mode;
     if (location.hash === '#t') { if (m !== 'table') openTable(); }
+    else if (location.hash === '#print') { if (m !== 'print') openPrint(true); }
     else if (id) { if (id !== openId) openCharacter(id); }
-    else if (m === 'sheet' || m === 'table') setMode('create');
+    else if (m === 'sheet' || m === 'table' || m === 'print') setMode('create');
   });
   /* the GM: user.canEdit() when it answers a boolean, else user.isOwner(), else not */
   function gmOf(u) {
@@ -605,6 +698,7 @@
     setMode('create'); showStep(S.step); A.draw(); A.drawLineup(); whoami(); syncView(); syncBackups();
     pendingOpen = hashOpen() || (saved && saved.mode === 'sheet' && saved.open ? saved.open : null);
     if (!pendingOpen && (location.hash === '#t' || (saved && saved.mode === 'table' && !location.hash))) openTable();
+    if (location.hash === '#print') openPrint(false);
     if (window.claude && window.claude.use) {
       window.claude.use('downloads').then(function (d) { downloads = d || null; syncBackups(); }).catch(function () {});
       var who = window.claude.use('user').then(function (u) {

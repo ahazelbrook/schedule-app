@@ -281,11 +281,14 @@
 #table-page.tp-ro .cs-cell:hover { box-shadow: none; }
 #table-page.tp-ro .cs-cell.held:hover { box-shadow: 0 0 0 2.5px var(--accent); }
 
-/* ---- print: the sheet without buttons, two columns ---- */
+/* ---- print: the sheet without buttons, one column (two squeeze the claims map to slivers) ---- */
 @media print {
-  #table-page .tp-grid:has(.cs-sheet) { grid-template-columns: minmax(0, 1fr); }
+  /* one column, in plain blocks: grid rows do not grow when a box inside is pushed to the next page, so what follows
+     the crew sheet (schedule, clocks, players) would print over its last panels */
+  #table-page .tp-grid:has(.cs-sheet), #table-page .tp-grid:has(.cs-sheet) > .tp-col { display: block; }
+  #table-page .tp-grid:has(.cs-sheet) > * + *, #table-page .tp-grid:has(.cs-sheet) > .tp-col > * + * { margin-top: 14px; }
   #table-page .cs-pickbox, #table-page .cs-chg, #table-page .cs-endp, #table-page .cs-adv .cs-row, #table-page .cs-xpbox .cs-row .btn, #table-page .cs-legacy .tp-x { display: none !important; }
-  #table-page .cs-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4mm; }
+  #table-page .cs-cols { grid-template-columns: minmax(0, 1fr); gap: 4mm; }
   #table-page .cs-scroll { overflow: visible; padding: 0; }
   #table-page .cs-map, #table-page .cs-crow { min-width: 0; }
   #table-page .cs-cell { min-height: 0; }

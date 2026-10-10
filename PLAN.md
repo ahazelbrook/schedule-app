@@ -2,6 +2,49 @@
 
 Date: 2026-10-09. Companion to `RESEARCH.md`.
 
+## Status
+
+This is the original product plan. Much of it was superseded; the rest of the file is kept
+as written. What was actually built:
+
+- **Stack.** Not Next.js, Postgres and Discord login. The app is a plain HTML/JS page in
+  `app/` with no build step, running as a claude.ai artifact or on Cloudflare Pages +
+  Functions + D1 behind Cloudflare Access (Google or an emailed code). See `DEPLOY.md` for
+  why, and the root `README.md` for the real layout.
+- **Data.** Characters are documents in a `characters` collection (`app/CONTRACT.md`); the
+  crew, clocks, session, log and schedule live in one shared campaign document
+  (`CAMPAIGN.md`, `SCHEDULE.md`). There are no users, memberships or scheduling tables as in
+  §3.
+- **Track 1, the creator (A to E).** A single-page creator was built first, as §7 suggested,
+  and is what `app/` runs today (sixteen steps, the figure kit vendored). The creator is now
+  being redone separately as "v3"; creator features in Track 1 are out of scope for this
+  repository's current work.
+- **Rulebook content (§1.3).** Transcribed: the twelve playbooks' creation content in
+  `app/content.js`, the six crew playbooks in `app/crews.js`. The full rulebook text is not
+  kept in the repository.
+- **Crew line-up (`/crew`).** The creator page shows the crew line-up at true height. The
+  RSVP board became part of the schedule box on the table page: every filed character at
+  true height, in colour for "in", a silhouette for "out", grey for no answer.
+- **Dossier page, printable.** Each living sheet has a Print button (one character), and the
+  season print (`#print`, "Print the season" on the table page) prints the crew and every
+  character in one document.
+- **Crew creation (the "Phase J" in §5).** Built: the six crew playbooks and a full crew
+  sheet on the table page.
+- **Track 2, scheduling.**
+  - F. Availability: no ICS busy-feed import. Cloudflare Access sits in front of every URL
+    and Pages has no cron, so there is nothing to poll feeds with. Instead the GM proposes
+    dates and each person marks yes / maybe / no, with a free-text note for absences.
+  - G. Scheduler: no `proposeSlots` or cron. The GM adds dates by hand or "Add the next
+    three" from a cadence; the grid marks the best date (most yes, then whoever missed most
+    lately, then most maybe, then soonest) and any that meet the quorum. The GM confirms.
+  - H. Calendar out: a per-session `.ics` download and a Google Calendar link. No webcal
+    feed (a calendar app cannot sign in through Access) and no email invites.
+  - I. RSVP and reminders: In / Can't make it on the next-session card, the RSVP board,
+    attendance recorded when the GM starts a session, and the "missed N" streak used in the
+    best-date tie-break. No Discord webhook and no T-3d / T-1d push or email: the card nudges
+    ("Are you in?") within 3 days, and the GM copies a reminder or a date poll as plain text
+    for the group chat.
+
 A private scheduling app for one Blades '68 table, where the front door is a video-game style character creator. A player's profile *is* their character: pick a playbook, build the figure, dress it, fill in the rulebook's character creation sheet, and get a mugshot and a place in the crew line-up. Scheduling (availability, the next score, RSVPs, reminders) hangs off the crew.
 
 Every drawing is produced by the **figure kit v2** from the Blades '68 Design System (`https://claude.ai/artifact/9Ud97s5QUvRk1ufsStUvTr`), so the app looks like the rulebook: no outlines, shape-and-light, grain, 60s wardrobe, true scale. The UI uses the design system's tokens, fonts and components (PosterTitle, Kicker, RulesTable, AbilityCard, RatingDots, SheetField, Track, Stamp, ChapterPlate).
@@ -114,6 +157,8 @@ Focused hours for one person using Claude Code for the typing. Multiply by about
 - **Scope creep.** Crew creation (six crew types, claims grid, cohorts) is a natural Phase J. Leave it until the table has used the creator for a month.
 
 ## 6. Repository layout
+
+The original proposal, not built. The real layout is in the root `README.md`.
 
 ```
 /app

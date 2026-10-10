@@ -174,13 +174,16 @@
       restore(snap.me, snap);
       return me;
     }).then(function (m) {
-      window.B68Runtime = { kind: 'cloudflare', me: m, status: status() };   /* me carries role, for the header */
+      window.B68Runtime = { kind: 'cloudflare', me: m, status: status(), exportAll: exportAll };   /* me carries role, for the header */
       emitStatus();
       if (m && queue.length) flush();
       return m;
     });
     return meP;
   }
+
+  /* GET /api/export (GM only, HOSTING.md): the whole campaign as the server holds it, for the page's "Download everything" */
+  function exportAll() { return api('GET', '/export'); }
 
   var members = null;          /* { at, promise } */
   var membersById = null;      /* the last /api/members answer, kept in the snapshot */

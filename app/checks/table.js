@@ -148,10 +148,11 @@ const SHEET = `(pb) => {
   assert(saved.length === 1, 'one download, got ' + saved.length);
   let backup = null;
   if (saved.length) {
-    assert(/^blades68-characters-\d{4}-\d{2}-\d{2}\.json$/.test(saved[0].filename), 'download filename: ' + saved[0].filename);
+    assert(/^blades68-backup-\d{4}-\d{2}-\d{2}\.json$/.test(saved[0].filename), 'download filename: ' + saved[0].filename);
     try { backup = JSON.parse(saved[0].data); } catch (e) { fails.push('download is not JSON'); }
     if (backup) assert(backup.v === 1 && typeof backup.exportedAt === 'string' && Array.isArray(backup.characters) && backup.characters.length === 3, 'download shape: v=' + backup.v + ' n=' + (backup.characters || []).length);
     if (backup) assert(backup.characters.every(c => c.play && c.sheet && c.spec && c.playbook), 'download carries play, sheet, spec, playbook');
+    if (backup) assert(!('campaign' in backup), 'no table stored yet: the download has no campaign key');
     notes.push('download: ' + saved[0].filename + ' ' + saved[0].data.length + ' bytes');
   }
 
@@ -236,6 +237,118 @@ const SHEET = `(pb) => {
     await p.locator('.keys').screenshot({ path: path.join(SHOTS, 'table-keys-' + theme + '.png') });
   }
   await p.evaluate(() => { delete document.documentElement.dataset.theme; });
+
+  /* ---------- backups with the table (campaign/main): GM and player views, the three restore formats, the hosted export ---------- */
+  const seedChar = backup && backup.characters[0];
+  const T0 = '2026-09-01T18:00:00.000Z';
+  const camp0 = { v: 1, session: { number: 3, startedAt: T0, endedAt: null }, crew: { name: 'The Night Shift', tier: 1, heat: 2 },
+    clocks: [{ id: 'c_open', name: 'Heat rising', size: 6, filled: 2, kind: 'danger', hidden: false }, { id: 'c_secret', name: 'Secret plot', size: 8, filled: 5, kind: 'faction', hidden: true }],
+    log: [{ at: T0, by: 'u_gm', text: 'Session 3 started' }], schedule: { options: {}, avail: {}, next: null, rsvp: {}, cadence: null, quorum: 0, attendance: {} }, updatedAt: T0 };
+  const apiExport = { exportedAt: '2026-09-02T10:00:00.000Z',
+    campaign: { id: 'default', doc: Object.assign({}, camp0, { crew: { name: 'Exported Crew', tier: 2 }, updatedAt: '2026-09-02T09:00:00.000Z' }), updatedAt: '2026-09-02T09:00:00.000Z' },
+    characters: seedChar ? [{ id: 'x-1', doc: Object.assign({}, seedChar, { name: 'Exported One', id: undefined }), updatedAt: '2026-09-02T09:00:00.000Z' }] : [],
+    members: [{ id: 'gm@example.test', name: 'Gail', role: 'gm' }] };
+  /* role: gm | player; hosted: a stand-in for runtime/cf.js's B68Runtime with exportAll (the API's /api/export answer) */
+  const roleStub = (role, seed, hosted) => `(() => {
+    const store = ${JSON.stringify(seed)}; const colSubs = {}; const docSubs = {};
+    const copy = (o) => o === undefined ? undefined : JSON.parse(JSON.stringify(o));
+    const snapOf = (p) => ({ id: p.split('/')[1], exists: p in store, data: () => copy(store[p]), metadata: {} });
+    const query = (c) => { const docs = Object.keys(store).filter(p => p.indexOf(c + '/') === 0).map(snapOf).sort((a, b) => (store[c + '/' + b.id].updatedAt || '').localeCompare(store[c + '/' + a.id].updatedAt || '')); return { docs, size: docs.length, empty: !docs.length, docChanges: () => [] }; };
+    const fire = (p) => { (docSubs[p] || []).forEach(fn => fn(snapOf(p))); const c = p.split('/')[0]; (colSubs[c] || []).forEach(fn => fn(query(c))); };
+    const docRef = (c, id) => { const p = c + '/' + id; return { id, get: async () => snapOf(p),
+      set: async (d) => { store[p] = copy(d); window.__writes.push(['set', p]); fire(p); },
+      update: async (u) => { if (!(p in store)) throw new Error('No document to update: ' + p); Object.assign(store[p], copy(u)); window.__writes.push(['update', p]); fire(p); },
+      delete: async () => { delete store[p]; window.__writes.push(['delete', p]); fire(p); },
+      onSnapshot: (fn) => { (docSubs[p] = docSubs[p] || []).push(fn); setTimeout(() => fn(snapOf(p)), 0); return () => {}; } }; };
+    const col = (c) => { const q = () => ({ orderBy: q, limit: q, where: q, get: async () => query(c), onSnapshot: (fn) => { (colSubs[c] = colSubs[c] || []).push(fn); setTimeout(() => fn(query(c)), 0); return () => {}; } }); return Object.assign(q(), { doc: (id) => docRef(c, id), path: c }); };
+    window.__writes = []; window.__store = store; window.__saved = [];
+    const id = ${JSON.stringify(role === 'gm' ? 'u_gm' : 'u_player')};
+    const user = { id: async () => id, can: async () => true, isOwner: async () => ${role === 'gm'}, canEdit: async () => ${role === 'gm'}, me: async () => ({ id, name: '', email: null }), profiles: async () => ({}) };
+    ${hosted ? `window.B68Runtime = { kind: 'cloudflare', me: { id, email: id, name: id, role: ${JSON.stringify(role)} }, status: { online: true, pending: 0, lastSync: null }, exportAll: async () => { window.__exports = (window.__exports || 0) + 1; return ${JSON.stringify(apiExport)}; } };` : ''}
+    window.claude = { use: async (name) => ({ db: { collection: col, doc: (p) => docRef(p.split('/')[0], p.split('/')[1]) }, user, downloads: { save: async (o) => { window.__saved.push({ filename: o.filename, data: typeof o.data === 'string' ? o.data : String(o.data) }); } } })[name] || null };
+  })();`;
+  const seed = { 'campaign/main': camp0 }; if (seedChar) seed['characters/seed-1'] = Object.assign({}, seedChar, { id: undefined });
+  async function rolePage(role, hosted) {
+    const c = await b.newContext({ viewport: { width: 1360, height: 900 } });
+    await c.addInitScript(roleStub(role, seed, hosted));
+    const pg = await c.newPage(); pg.__dialogs = []; pg.__answer = 'accept';
+    pg.on('pageerror', e => errs.push(role + ' pageerror: ' + e.message));
+    pg.on('console', m => { if (m.type() === 'error' && !/ERR_FILE_NOT_FOUND/.test(m.text())) errs.push(role + ' console.error: ' + m.text()); });
+    pg.on('dialog', d => { pg.__dialogs.push(d.message()); return pg.__answer === 'dismiss' ? d.dismiss() : d.accept(); });
+    await pg.goto(URL); await pg.waitForTimeout(1000);
+    return { c, pg };
+  }
+  const restoreFile = async (pg, obj) => { const f = path.join(SHOTS, 'tmp-backup2.json'); fs.writeFileSync(f, JSON.stringify(obj)); await pg.setInputFiles('#restoreFile', f); await pg.waitForTimeout(700); try { fs.unlinkSync(f); } catch (e) {} return pg.$eval('#toast', n => n.textContent); };
+  const stored = (pg) => pg.evaluate(() => JSON.parse(JSON.stringify(window.__store)));
+  const charCount = (st) => Object.keys(st).filter(k => k.indexOf('characters/') === 0).length;
+  const download = async (pg) => { await pg.click('#dlAll'); await pg.waitForTimeout(400); const sv = await pg.evaluate(() => window.__saved); return sv.length ? { filename: sv[sv.length - 1].filename, text: sv[sv.length - 1].data, json: JSON.parse(sv[sv.length - 1].data) } : null; };
+
+  /* the GM's download carries the whole table, hidden clocks included */
+  const G = await rolePage('gm', false);
+  assert(await G.pg.$eval('#dlEverything', n => n.hidden), 'artifact runtime: no Download everything');
+  const gmFile = await download(G.pg);
+  assert(gmFile && gmFile.json.v === 1 && Array.isArray(gmFile.json.characters) && gmFile.json.characters.length === 1, 'GM download: v 1 with the characters list');
+  assert(gmFile && gmFile.json.campaign && gmFile.json.campaign.id === 'main' && gmFile.json.campaign.view === 'gm' && gmFile.json.campaign.doc.crew.name === 'The Night Shift' && gmFile.json.campaign.doc.session.number === 3, 'GM download includes the campaign: ' + JSON.stringify(gmFile && gmFile.json.campaign && { id: gmFile.json.campaign.id, view: gmFile.json.campaign.view }));
+  assert(gmFile && gmFile.json.campaign.doc.clocks.map(c => c.name).join() === 'Heat rising,Secret plot', 'GM download keeps the hidden clock');
+  notes.push('GM download with the table: ' + (gmFile && gmFile.filename) + ' ' + (gmFile && gmFile.text.length) + ' bytes');
+
+  /* a player's download leaves out the clocks hidden from players, as the page does */
+  const P = await rolePage('player', false);
+  const plFile = await download(P.pg);
+  assert(plFile && plFile.json.campaign && plFile.json.campaign.view === 'player' && plFile.json.campaign.doc.clocks.map(c => c.name).join() === 'Heat rising', 'player download: only the visible clock: ' + JSON.stringify(plFile && plFile.json.campaign && plFile.json.campaign.doc.clocks));
+  assert(plFile && plFile.text.indexOf('Secret plot') < 0 && plFile.text.indexOf('c_secret') < 0, 'player download does not mention the hidden clock');
+
+  /* a player restores the new format: the characters land, the table is refused without asking and left unwritten */
+  const restored = JSON.parse(JSON.stringify(gmFile ? gmFile.json : {})); if (restored.campaign) restored.campaign.doc.crew.name = 'Restored Crew';
+  let msg = await restoreFile(P.pg, restored), st = await stored(P.pg);
+  assert(charCount(st) === 2 && st['campaign/main'].crew.name === 'The Night Shift', 'player restore: one more character, table unchanged (' + charCount(st) + ', ' + st['campaign/main'].crew.name + ')');
+  assert(!(await P.pg.evaluate(() => window.__writes)).some(w => w[1] === 'campaign/main') && !P.pg.__dialogs.length, 'player restore: no campaign write, no confirm');
+  assert(/^Restored 1 character · only the GM can restore the table\.$/.test(msg), 'player restore toast: ' + msg);
+  msg = await restoreFile(P.pg, { v: 1, exportedAt: restored.exportedAt, characters: [], campaign: restored.campaign });
+  assert(/^Only the GM can restore the table\.$/.test(msg) && charCount(await stored(P.pg)) === 2, 'player restore of a table-only file: ' + msg);
+  await P.c.close();
+
+  /* the GM: the old character-only file restores characters and never touches the table */
+  msg = await restoreFile(G.pg, { v: 1, exportedAt: T0, characters: gmFile ? gmFile.json.characters : [] });
+  st = await stored(G.pg);
+  assert(/^Restored 1 character\.$/.test(msg) && charCount(st) === 2 && !G.pg.__dialogs.length && st['campaign/main'].crew.name === 'The Night Shift', 'GM old-format restore: ' + msg);
+  /* the new format, confirm dismissed: characters only */
+  G.pg.__answer = 'dismiss';
+  msg = await restoreFile(G.pg, restored); st = await stored(G.pg);
+  assert(G.pg.__dialogs.length === 1 && /Replace the table/.test(G.pg.__dialogs[0]) && /Cancel restores the characters only/.test(G.pg.__dialogs[0]), 'GM restore asks first: ' + G.pg.__dialogs[0]);
+  assert(/^Restored 1 character · the table was left as it is\.$/.test(msg) && charCount(st) === 3 && st['campaign/main'].crew.name === 'The Night Shift', 'GM restore, confirm dismissed: ' + msg);
+  /* the new format, confirmed: the table is replaced through the db, hidden clock and all */
+  G.pg.__answer = 'accept'; await G.pg.evaluate(() => { window.__writes.length = 0; });
+  msg = await restoreFile(G.pg, restored); st = await stored(G.pg);
+  assert(/^Restored 1 character and the table\.$/.test(msg) && charCount(st) === 4, 'GM restore with the table: ' + msg);
+  assert(st['campaign/main'].crew.name === 'Restored Crew' && st['campaign/main'].clocks.length === 2 && st['campaign/main'].session.number === 3 && st['campaign/main'].log.length === 1 && st['campaign/main'].updatedAt > T0, 'GM restore wrote the table: ' + JSON.stringify(st['campaign/main'].crew));
+  assert((await G.pg.evaluate(() => window.__writes)).some(w => w[0] === 'set' && w[1] === 'campaign/main'), 'GM restore: one set on campaign/main');
+  /* a player's copy warns that it has no hidden clocks */
+  G.pg.__answer = 'dismiss';
+  await restoreFile(G.pg, plFile ? plFile.json : {});
+  assert(/no hidden clocks/.test(G.pg.__dialogs[G.pg.__dialogs.length - 1] || ''), 'player copy: the confirm says so');
+  /* the hosted /api/export format: wrapped characters, the campaign with its server id, members ignored */
+  G.pg.__answer = 'accept';
+  msg = await restoreFile(G.pg, apiExport); st = await stored(G.pg);
+  const exported = Object.keys(st).map(k => st[k]).find(d => d.name === 'Exported One');
+  assert(/^Restored 1 character and the table\.$/.test(msg) && exported && exported.owner === 'u_gm' && st['campaign/main'].crew.name === 'Exported Crew', '/api/export restore: ' + msg);
+  /* an /api/export taken before anything was stored (the default campaign, updatedAt null): characters only, no confirm */
+  const nd = G.pg.__dialogs.length;
+  msg = await restoreFile(G.pg, Object.assign({}, apiExport, { campaign: { id: 'default', doc: Object.assign({}, camp0, { updatedAt: null }), updatedAt: null } }));
+  assert(/^Restored 1 character\.$/.test(msg) && G.pg.__dialogs.length === nd, 'export with the default campaign: ' + msg);
+  await G.c.close();
+
+  /* hosted runtime: the GM gets Download everything (the server's export as it came); a player does not */
+  const H = await rolePage('gm', true);
+  assert(!(await H.pg.$eval('#dlEverything', n => n.hidden)), 'hosted GM: Download everything shown');
+  await H.pg.click('#dlEverything'); await H.pg.waitForTimeout(400);
+  const hs = await H.pg.evaluate(() => ({ saved: window.__saved, calls: window.__exports }));
+  const last = hs.saved[hs.saved.length - 1];
+  assert(hs.calls === 1 && last && /^blades68-default-2026-09-02\.json$/.test(last.filename) && JSON.stringify(JSON.parse(last.data)) === JSON.stringify(apiExport), 'Download everything saved the export: ' + (last && last.filename));
+  await H.c.close();
+  const HP = await rolePage('player', true);
+  assert(await HP.pg.$eval('#dlEverything', n => n.hidden), 'hosted player: no Download everything');
+  await HP.c.close();
 
   /* no db / no downloads: the backups row hides, nothing throws */
   const ctx2 = await b.newContext({ viewport: { width: 1360, height: 900 } });

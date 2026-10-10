@@ -38,12 +38,13 @@ Collection `campaign`, document id `main` (one per campaign; on Cloudflare the c
 }
 ```
 
-`hidden` clocks are shown only to the GM in the page. This is presentation only: anyone with
-access can read the document, so it is not a secret.
+`hidden` clocks are shown only to the GM in the page (and in a player's backup they are left
+out, see *Backups*). This is presentation only: anyone with access can read the document, so it
+is not a secret.
 
-The standard Forged in the Dark crew tracks are used (tier, hold, rep 12, heat 9, wanted 4)
-because the Blades '68 crew playbook pages are not in the repository yet. Crew-type specifics
-come later.
+The standard Forged in the Dark crew tracks are used (tier, hold, rep 12, heat 9, wanted 4).
+This round predates the crew playbooks; the crew-type specifics were added later (see *Crew
+playbooks* and *Crew sheet*).
 
 ## Permissions
 
@@ -68,7 +69,7 @@ come later.
 
 The six Blades '68 crew playbooks (Dealers, Hit Squad, Militants, Racers, Shadows, Utopians)
 are transcribed into `app/crews.js` (`window.B68Crews`). The generic crew panel is replaced
-by a full crew sheet driven by that data in the next round; `crew` gains `playbook`,
+by a full crew sheet driven by that data (done: *Crew sheet* below); `crew` gains `playbook`,
 `abilities`, `upgrades`, `claims` as a map, `xp`, `contacts` and the per-crew extras. The
 server treats `crew` as opaque JSON.
 
@@ -101,18 +102,23 @@ characters. Any other `campaign` doc id, and `collection('campaign')` queries, r
 - A third mode `body[data-mode="table"]`, reached from a new "The table" button in the header
   (next to "Back to the creator") and the hash `#t`. It hides `.studio`, `.crew`, `.roster`,
   `#dossier`, and shows `section#table-page`.
-- Contents, top to bottom: the session bar (number, started time, GM buttons "Start session
-  N+1" and "End session", a reminder line "Each player ends the session on their own sheet");
-  the crew panel (name, type, lair, tier, hold, rep with turf, heat, wanted, vault diamonds,
-  claims, cohorts, faction statuses −3..+3); shared clocks (add, rename, resize, fill by
+- Contents, top to bottom: the header (crew name, tier and hold, the viewer's role, and a
+  "Print the season" button, see *Season print*); the session bar (number, started time, GM
+  buttons "Start session N+1" and "End session", a reminder line "Each player ends the
+  session on their own sheet"); the crew panel (name, type, lair, tier, hold, rep with turf,
+  heat, wanted, vault diamonds, claims, cohorts, faction statuses −3..+3; now the full crew
+  sheet, below); the schedule box (SCHEDULE.md); shared clocks (add, rename, resize, fill by
   clicking segments, kind chips, hidden toggle for the GM, delete with confirm); the players:
   each member with their characters (from the existing roster), each character's stress
   line and an "open" link; and the campaign log (append a line, newest first).
 - Saves go through `doc.update(patch)` with only the changed top-level fields of `crew`,
-  `clocks`, `session`, `log`; the page never writes on open.
+  `clocks`, `session`, `log` (and the changed `schedule` leaves); the page never writes on open.
 - Starting a session sets `session = { number: n + 1, startedAt: now, endedAt: null }` and
   appends a log line. It does not change characters; their own Session box stays per sheet.
-- Read-only viewers (`can('data.write') === false`) see everything disabled.
+  In the same write it updates the schedule: `next` goes when it is within 12 h, its answers
+  becoming that session's attendance, and dates before now + 12 h leave the grid (SCHEDULE.md).
+- Read-only viewers (`can('data.write') === false`) see everything disabled except "Print the
+  season".
 - Same visual language as the sheet (bands, boxes, pips, accent orange), phone width 390px
   without horizontal scroll, light and dark, print hides buttons.
 
@@ -155,3 +161,66 @@ Checked by `app/checks/crewsheet.js`.
   bank and are skipped; a Hull is paid only with A Room of Your Own. Character writes go through
   `B68.updateCharacter(id, patch)` (boot.js; also on the table api): `patch.play` is merged over the stored play and
   only the changed play fields are sent, the same delta path as the sheet's own saves.
+
+## Season print
+
+`#print` (or `B68Season.open()`, or `B68.openPrint()`) opens one printable document of the whole campaign. In the page
+it is the "Print the season" button in the table page's header, which stays enabled for players and read-only viewers
+(printing writes nothing). It is the DEPLOY.md phase 4 "print of every character and the crew at the end of a season". Files: `app/season.js`,
+`app/season.css`, `app/checks/season.js`; boot.js adds the `print` mode (`body[data-mode="print"]` shows only
+`section#season`) and the route.
+
+- **Pages**, each starting a new printed page: the cover (crew name, crew playbook and tagline in its duotone, tier and
+  hold, the season: session count from `session.number`, first and last session dates from the log's
+  "Session N started / ended" lines and `session.startedAt / endedAt`, the date printed, the number on file, the
+  line-up of every filed character at true height as boot draws it, ghosts vapour, and a contents list); the crew (the
+  crew sheet as the table page draws it, the shared clocks, hidden ones only for the GM, and the whole campaign log,
+  newest first, with authors' names when the runtime has `user.profiles`); then one page per filed character, ordered
+  by playbook in rulebook order (the core playbooks, then the paranormal four) and then by name.
+- **Reads only.** It waits for the files to settle, reads `characters` (the whole collection with `get()`, not the
+  roster's 60) and `campaign/main` once, and never writes. A character filed without `play` is printed from
+  `B68Tracker.initialPlay`, as boot would file it; nothing is saved.
+- **Same look, no copied CSS.** The crew page and each sheet are drawn by their own modules
+  (`B68Campaign.crewSheet.render(crew, ctx)`, `B68Tracker.renderStatic(root, doc)`, both small additive APIs) into a
+  shadow root that carries every stylesheet of the page, with the root's own id (`#table-page`, `#dossier`) inside
+  it. The existing `#table-page` / `#dossier` rules, print block included, style the copies unchanged, and the ids
+  never collide with the live page's (`document.getElementById('dossier')` is still the live sheet). `season.css`
+  reaches into the copies only through `:host` rules.
+- **Read-only copies** are inert (nothing focuses or acts; no listeners are attached) but keep the markup a writer's
+  sheet prints, so the marks print at full strength rather than faded as disabled controls. Text fields become plain
+  text in the field's own box, so long text wraps and grows instead of being clipped by an input or a fixed-height
+  notes box (a deliberate difference from the single-sheet print).
+- **Print layout decisions.** Each sheet prints as its own Print does (two pages for a full sheet), with two
+  differences for legibility: harm lines take the box's full width (as on a phone) and key words never split. The
+  crew sheet prints in one column: in two columns, as the table page prints today, the claims map is squeezed to
+  slivers. Clocks sit in columns.
+- **Screen.** A paper preview of the same pages under a sticky toolbar (Back, Print; it never prints). The paper is
+  always the light paper, also in the night theme, so the preview reads as what will print; the desk and toolbar
+  follow the theme. The sheets use their screen layouts, so the preview works at phone width (390 px, no horizontal
+  scroll).
+- **Back** returns where the print was opened from (`history.back()`: the table, a sheet, the creator). Opened cold at
+  `#print`, Back goes to the creator and clears the hash.
+- Checked by `app/checks/season.js` (PDFs in A4 and Letter in `app/checks/out/season-*.pdf`, pages as PNG beside them).
+
+## Backups
+
+boot.js's "Download all (JSON)" and "Restore (JSON)" in the files section (the format started in `app/CONTRACT.md`,
+round 4) carry this document too. Checked by `app/checks/table.js`.
+
+- **Download all** writes `{ v: 1, exportedAt, characters: [doc], campaign }`. `campaign` is `{ id: 'main', doc,
+  updatedAt, view: 'gm' | 'player' }`, the document as the page last read it, and is left out while none is stored
+  (on the hosted build the default document, `updatedAt` null, counts as none). For anyone but the GM, `doc.clocks`
+  leaves out the hidden clocks and `view` is `'player'`, so a player's file shows no more than the page does.
+  `v` stays 1: older files are the same without `campaign`.
+- **Download everything** (hosted build, GM only) saves `GET /api/export` as it came (HOSTING.md): every character,
+  the document and the members.
+- **Restore** reads three shapes: `v: 1` without `campaign` (character-only files from before), `v: 1` with it, and
+  the `/api/export` file (no `v`; `characters` as `{ id, doc, updatedAt }`, which is unwrapped; `members` ignored;
+  its `campaign` with `updatedAt` null is the default document and is skipped). Characters are filed as new
+  documents as before, by anyone who can write. The document is restored only when the viewer is the GM and
+  confirms (the confirm names a player's copy, which has no hidden clocks); it goes through
+  `collection('campaign').doc('main').set()` after `B68Campaign.normalize`, with a fresh `updatedAt`, so on the
+  hosted build it is the GM-only `PUT` and the server's rules still apply. A player's restore files the characters
+  and says the table was left. The toast says what landed: "Restored 3 characters and the table." Restoring
+  replaces the whole document, schedule answers included; ids in it (log authors, schedule answers) are the ids of
+  the runtime that saved it.

@@ -49,5 +49,20 @@ check(r.json.doc.schedule.rsvp?.['p1@example.test']?.v === 'in', 'player RSVP la
 check(r.json.doc.log.some((e) => /Next session/.test(e.text)), 'log line written');
 await sleep(5000);
 check((await GM.p.textContent('#nextSession')).match(/1 in/i), 'GM card sees the RSVP after polling: ' + (await GM.p.textContent('#nextSession')).replace(/\s+/g, ' ').slice(0, 160));
+// the board: p1 answered and owns no character, so a chip under the line-up
+check(/p1|Someone/i.test((await GM.p.textContent('.tp-schedbox .sc-luchips').catch(() => '')) || ''), 'GM box: answerer without a character as a chip');
+// tonight: the GM moves next to within the hour, p1 is in, the GM starts the session in the page -> attendance on the server
+const soon = new Date(Date.now() + 30 * 60000).toISOString();
+r = await api('PATCH', '/campaign', 'gm@example.test', { schedule: { next: { at: soon, minutes: 240, place: '', note: '', confirmedAt: new Date().toISOString() } } });
+check(r.status === 200, 'GM moves next to tonight via API');
+r = await api('PATCH', '/campaign', 'p1@example.test', { schedule: { rsvp: { 'p1@example.test': { at: soon, v: 'in' } } } });
+check(r.status === 200, 'p1 is in for tonight');
+r = await api('PATCH', '/campaign', 'p1@example.test', { schedule: { attendance: { 1: { 'p1@example.test': true } } } });
+check(r.status === 403, 'player writing attendance -> 403');
+await GM.p.reload(); await GM.p.waitForSelector('[data-act="sessstart"]', { timeout: 20000 }); await sleep(1500);
+await GM.p.click('[data-act="sessstart"]');
+await sleep(2500);
+r = await api('GET', '/campaign', 'gm@example.test');
+check(r.json.doc.session.number === 1 && !r.json.doc.schedule.next && r.json.doc.schedule.attendance?.['1']?.['p1@example.test'] === true, 'session start records attendance on the server: ' + JSON.stringify({ n: r.json.doc.session.number, next: r.json.doc.schedule.next, att: r.json.doc.schedule.attendance }));
 check(!P1.errs.length && !GM.errs.length, 'no console errors ' + JSON.stringify(P1.errs.concat(GM.errs)));
 await b.close(); console.log(fails ? 'FAILED ' + fails : 'ALL PASS'); process.exit(fails ? 1 : 0);

@@ -98,12 +98,13 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   resizing a clock, its kind or `hidden`, any other key) is
   `403 {"error":"only the GM can change that"}`. `updatedAt` in a body is ignored.
 - Schedule (SCHEDULE.md): the document has a `schedule` key (`options`, `avail`, `next`, `rsvp`,
-  `cadence`, `quorum`; a stored document without it reads as the default one, and the player rule
-  compares against that default, so a first write works). A player may additionally change their
+  `cadence`, `quorum`, and `attendance` once the GM records one; a stored document without it
+  reads as the default one, and the player rule compares against that default, so a first
+  write works). A player may additionally change their
   own answers: `schedule.avail.<id>` (the whole entry, set or deleted with `null`, or any key in
   it, including `note`) and `schedule.rsvp.<id>`, where `<id>` is their own id (lower-cased
-  email). Another person's entry, `options`, `next`, `cadence`, `quorum` and any other key under
-  `schedule` are `403 {"error":"only the GM can change that"}` for a player; the GM may change
+  email). Another person's entry, `options`, `next`, `cadence`, `quorum`, `attendance` and any
+  other key under `schedule` are `403 {"error":"only the GM can change that"}` for a player; the GM may change
   all of it. Per-person maps merge, so concurrent PATCHes from different people all land.
 - In PUT and PATCH, `crew`, `session` and `schedule` must be plain objects when present (`null`
   included): otherwise `400 {"error":"crew must be an object"}` / `"session must be an object"` /
@@ -115,13 +116,18 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   called `/api/me` (the API upserts a `members` table on each `/api/me`:
   `members(email PRIMARY KEY, name, role, last_seen)`), so the GM table can show names.
 - `GET /api/export` (GM only; a player gets `403 {"error":"only the GM can export"}`; other
-  methods 405) → a backup of this deployment's campaign as a download:
+  methods 405; the page's "Download everything" button, shown to the GM on the hosted build,
+  fetches it through `B68Runtime.exportAll()` and saves it as it came; opening the address in a
+  signed-in browser also works) → a backup of this deployment's campaign as a download:
   `{ "exportedAt": ISO, "campaign": { "id", "doc", "updatedAt" }, "characters": [ { "id", "doc",
   "updatedAt" } ], "members": [ { "id", "name", "role" } ] }`. `campaign.doc` is the stored
   campaign document (the default one, `updatedAt` null, when none is stored); `characters` is
   every live character row of the campaign (not capped at 500, tombstones left out). The
   response carries `Content-Disposition: attachment; filename="blades68-<campaign>-<YYYY-MM-DD>.json"`
-  and `Cache-Control: no-store`.
+  and `Cache-Control: no-store`. The page's "Restore (JSON)" reads this file as well as its own
+  "Download all" file (CAMPAIGN.md, *Backups*): the characters are filed as new documents and the
+  campaign document is restored by the GM only, after a confirm, through
+  `collection('campaign').doc('main').set()` (the `PUT` above).
 
 ## Adapter (`app/runtime/cf.js`)
 
@@ -161,8 +167,10 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   once through the `err` callbacks (not after an offline start, which the header shows).
 - `use('downloads')`: `{ save({ filename, data }) }` → Blob + anchor click, resolves.
 - Anything else resolves `null`.
-- `window.B68Runtime = { kind: 'cloudflare', me, status }` once `/api/me` has answered (or the
-  page started offline). `status = { online, pending, lastSync }`: `online` is false while the
+- `window.B68Runtime = { kind: 'cloudflare', me, status, exportAll }` once `/api/me` has answered (or the
+  page started offline). `exportAll()` → Promise of the `GET /api/export` answer (rejects with
+  the API's error, `status` 403 for a player); boot.js shows "Download everything" only when it
+  exists and the viewer is the GM. `status = { online, pending, lastSync }`: `online` is false while the
   network is unreachable or after an offline start until `/api/me` answers again, `pending` is
   the number of queued writes, `lastSync` the ISO time of the last successful poll or flushed
   write (after an offline start, the snapshot's). Every change dispatches the `window` event
@@ -239,11 +247,19 @@ offline tick and its sync on reconnect.
 ## Local development and checks
 
 ```
-npm install            # wrangler (devDependency at the repository root)
+npm install            # wrangler (a dependency in package.json at the repository root)
 npm run db:local       # = npx wrangler d1 execute DB --local --file schema.sql (optional)
 npm run dev            # = npx wrangler pages dev app --binding DEV_USER=gm@example.test --binding GM_EMAILS=gm@example.test --port 8788
-npm run check:api      # checks/api/jwt.mjs, then checks/api/flow.mjs (starts its own servers)
+npm test               # = npm run check:runtime && npm run check:api (no browser)
+npm run check:api      # checks/api/jwt.mjs, then checks/api/flow.mjs (starts its own servers on 8788 and 8789)
+npm run check:runtime  # checks/runtime/adapter.test.mjs and pwa.test.mjs (plain node)
+npm run check:offline  # checks/runtime/offline.e2e.mjs (own server on 8790, Chromium)
+npm run check:schedule # checks/runtime/schedule.e2e.mjs (own server on 8791, Chromium)
+npm run check:e2e      # app/checks/e2e.js against the stubbed runtime
 ```
+
+The Chromium checks need `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers` (and Playwright at
+`/opt/node-tools/node_modules/playwright`, or `PW_MODULE`).
 
 `npm run dev` takes the D1 binding from `wrangler.toml`, so it shares the local database
 that `db:local` writes. Adding `--d1 DB` also works but gives a separate, empty local
@@ -252,5 +268,6 @@ database; the API creates its tables on first use either way.
 `checks/api/` holds a node script that drives the local server with `fetch` through the
 whole flow (me, create, list, since, patch, delete, player vs gm permissions, bad token) and
 a JWT verification test with a generated RSA key. `checks/runtime/` holds the adapter's unit
-test with a mocked `fetch`, and `app/checks/e2e.js` can be pointed at
-`http://127.0.0.1:8788` with the `window.claude` stub disabled for the real end-to-end run.
+test with a mocked `fetch`, the PWA test, the offline and schedule end-to-end runs and the
+icon builder. `app/checks/e2e.js` runs against `npm run dev` with
+`E2E_URL=http://127.0.0.1:8788` (no `window.claude` stub then) for the real end-to-end run.

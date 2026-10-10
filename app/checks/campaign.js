@@ -257,6 +257,28 @@ const SHEET = `(pb) => {
   assert(c.log[0].text === 'Pat owes the Lampblacks' && c.log[0].by === 'u_player' && JSON.stringify(lg[2].log.slice(1)) === JSON.stringify(logBefore), 'player log append keeps the stored lines: ' + JSON.stringify(lg && lg[2].log));
   await none('player clicks start session (disabled)', () => p.click('[data-act="sessstart"]', { force: true }).catch(() => {}));
   assert((await camp()).session.number === 1, 'player cannot start a session');
+  /* Print the season (header, every role): opens the print view; Back returns to the table; never printed itself */
+  assert((await dis('.tp-head [data-act="print"]')) === false, 'player: Print the season in the header, enabled');
+  await p.emulateMedia({ media: 'print' });
+  assert(await p.$eval('[data-act="print"]', n => getComputedStyle(n).display === 'none'), 'Print the season does not print');
+  await p.emulateMedia({ media: null });
+  for (const [w, tag] of [[1360, 'desk'], [390, 'phone']]) {
+    await p.setViewportSize({ width: w, height: 900 }); await p.waitForTimeout(200);
+    for (const theme of ['light', 'dark']) {
+      await p.evaluate(t => { document.documentElement.dataset.theme = t; }, theme); await p.waitForTimeout(100);
+      await p.locator('#table-page .tp-head').screenshot({ path: path.join(OUT, 'campaign-head-' + tag + '-' + theme + '.png') });
+    }
+  }
+  await p.evaluate(() => { delete document.documentElement.dataset.theme; }); await p.setViewportSize({ width: 1360, height: 900 });
+  await none('player opens the season print and comes back', async () => {
+    await p.click('[data-act="print"]');
+    await p.waitForFunction(() => { const s = document.getElementById('season'); return s && s.dataset.state === 'ready'; }, null, { timeout: 15000 }).catch(() => {});
+    assert((await mode()) === 'print' && await p.$eval('#season', n => !n.hidden && getComputedStyle(n).display !== 'none'), 'player: Print the season opens the print view: ' + (await mode()));
+    assert(await p.$eval('#table-page', n => getComputedStyle(n).display === 'none'), 'player: the table is hidden under the print');
+    await p.click('#season [data-sn="back"]'); await p.waitForTimeout(600);
+    assert((await mode()) === 'table' && (await p.evaluate(() => location.hash)) === '#t', 'player: Back from the print returns to the table: ' + (await mode()));
+    assert(!!(await p.$(`.tp-clock[data-id="${k2.id}"]`)), 'player: the table is drawn again after Back');
+  });
   await shots('player');
 
   /* ---------- read only ---------- */
@@ -264,7 +286,7 @@ const SHEET = `(pb) => {
   await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
   assert((await p.$eval('.tp-role', n => n.textContent)) === 'Read only', 'role Read only');
   const enabled = await p.$$eval('#table-page button, #table-page input, #table-page textarea, #table-page select', ns => ns.filter(n => !n.disabled).map(n => n.dataset.act || n.dataset.path || n.dataset.ui || n.tagName));
-  assert(enabled.length && enabled.every(a => a === 'open'), 'read only: only Open stays enabled: ' + enabled.join(','));
+  assert(enabled.length && enabled.every(a => a === 'open' || a === 'print') && enabled.indexOf('print') >= 0, 'read only: only Open and Print the season stay enabled: ' + enabled.join(','));
   await none('read only clicks', async () => {
     await p.click('[data-act="crew.tier"][data-n="5"]', { force: true }).catch(() => {});
     await p.click(`.tp-seg[data-id="${k2.id}"][data-n="4"]`, { force: true }).catch(() => {});

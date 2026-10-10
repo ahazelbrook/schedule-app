@@ -2,16 +2,18 @@
 
 What the group needs on a game night: open one link on a phone or laptop, see your own
 character exactly as you left it last week (stress, harm, xp, keys, stacks, clocks), tick
-things off during play, and have the GM see everyone at a glance. The prototype in
-`prototype/creator/` already does all of that inside a claude.ai artifact. This plan is
-about turning it into something the table opens every week without thinking about it.
+things off during play, and have the GM see everyone at a glance. The prototype (then in
+`prototype/creator/`, now `app/`) already did all of that inside a claude.ai artifact. This
+plan is about turning it into something the table opens every week without thinking about it.
 
 ## Status (updated)
 
 The hosted build went to **Cloudflare Pages + Access + D1** instead of GitHub Pages +
 Firebase, because you put the site behind Cloudflare anyway: Access gives Google and emailed
 one-time codes with an allowlist and no sign-in code of our own. `SETUP.md` has the dashboard
-steps; `HOSTING.md` the API and adapter contract; `CAMPAIGN.md` the campaign layer; `SCHEDULE.md` the schedule.
+steps; `HOSTING.md` the API and adapter contract; `CAMPAIGN.md` the campaign layer; `SCHEDULE.md` the schedule;
+the root `README.md` the repository layout, local runs and checks. The same page still runs as the claude.ai
+artifact.
 
 | Phase | State |
 |---|---|
@@ -20,8 +22,18 @@ steps; `HOSTING.md` the API and adapter contract; `CAMPAIGN.md` the campaign lay
 | 2. Campaign layer: the six crew sheets, shared clocks, session number, players, log | Done |
 | 3. Night-of-play: end of session, downtime | Done (session wrap-up and downtime on each sheet) |
 | 3. Night-of-play: schedule (next-session card, availability grid, RSVP, calendar) | Done (`SCHEDULE.md`) |
+| 3. Schedule, second round: the RSVP board (the crew line-up coloured by each owner's answer), attendance recorded when the GM starts a session and correctable by the GM, the "missed N" streak and the best-date tie-break, the "Are you in?" nudge within 3 days, GM "Copy reminder" and "Copy date poll" | Done (`SCHEDULE.md`) |
+| 3. Reminders by Discord, email or push | Not built: Pages has no cron and the app sends no mail; the nudge on the card and the copied reminder for the group chat stand in |
 | 4. Installable, offline reading and queued saves | Done (hosted build only) |
-| 4. Backups | Done: GM `/api/export` plus D1 Time Travel (30 days of point-in-time restore) instead of a nightly job, because Pages has no cron |
+| 4. Season print: every character and the crew in one printable document (`#print`, "Print the season" on the table page) | Done (`CAMPAIGN.md`, "Season print") |
+| 4. Backups | Done, without a nightly job (Pages has no cron): "Download all (JSON)" in the app (the characters and the table page's campaign document; a player's copy leaves out hidden clocks), "Restore (JSON)" (characters as new files for anyone; the table for the GM only, after a confirm; it reads both that file and `/api/export`), the GM's "Download everything" on the hosted build (`/api/export`: characters, campaign, members), and D1 Time Travel (7 days of point-in-time restore on the free plan, 30 on Workers Paid) |
+
+All four decisions below are settled. Fonts (3): keep GT America. All four families are
+vendored in `app/fonts/` and the hosted build serves them behind Access; the site is private
+and non-commercial. Decisions 1 and 2: both A and B exist, and sign-in is Cloudflare Access (Google
+or an emailed code). For decision 4: the full rulebook text is not kept in the repository;
+`app/content.js` and `app/crews.js` hold only what the sheets need. The character creator in
+`app/` is the prototype's; a new creator is being built separately.
 
 The sections below are the original plan, kept for reference.
 

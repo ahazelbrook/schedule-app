@@ -52,6 +52,11 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
     const me = { id: user.email, email: user.email, name: user.name || '', role: s.roleOf(user.email), campaign: 'default' };
     if (p === '/api/me') { members[me.id] = { id: me.id, name: me.name, role: me.role }; return [200, me]; }
     if (p === '/api/members') return [200, { members: Object.values(members) }];
+    if (p === '/api/export') {
+      if (me.role !== 'gm') return [403, { error: 'only the GM can export' }];
+      const live = Object.entries(rows).filter(([, r]) => !r.deleted).map(([id, r]) => ({ id, doc: clone(r.doc), updatedAt: r.updatedAt }));
+      return [200, { exportedAt: now(), campaign: { id: 'default', doc: clone(s.campaign || defaultCampaign()), updatedAt: s.campaign ? s.campaign.updatedAt : null }, characters: live, members: Object.values(members) }];
+    }
     if (p === '/api/characters' && method === 'GET') {
       const since = u.searchParams.get('since');
       const list = Object.entries(rows)
@@ -230,6 +235,20 @@ await test('user: shapes for a GM, role on B68Runtime.me, profiles cached', asyn
   eq(api.calls.filter((c) => c.endsWith('/api/me')).length, 1, '/api/me calls');
   eq(await b.win.claude.use('nope'), null);
   const f = b.fetchLog[0].opts; eq([f.credentials, f.cache], ['same-origin', 'no-store'], 'fetch options');
+});
+
+await test('B68Runtime.exportAll: GET /api/export for the GM, refused for a player', async () => {
+  const api = fakeApi();
+  api.put('a', { name: 'a', owner: 'pl@x.test' }); api.setCampaign({ ...api.defaultCampaign(), crew: { ...api.defaultCampaign().crew, name: 'The Crew' } });
+  const b = browser(api, { email: 'gm@x.test' });
+  await b.win.claude.use('user');
+  const x = await b.win.B68Runtime.exportAll();
+  eq([x.campaign.id, x.campaign.doc.crew.name, x.characters.map((c) => c.id), x.characters[0].doc.name], ['default', 'The Crew', ['a'], 'a'], 'export');
+  eq(api.calls.filter((c) => c === 'GET /api/export').length, 1, '/api/export calls');
+  const pb = browser(api, { email: 'pl@x.test' });
+  await pb.win.claude.use('user');
+  let err = null; try { await pb.win.B68Runtime.exportAll(); } catch (e) { err = e; }
+  eq([err && err.message, err && err.status], ['only the GM can export', 403], 'player refused');
 });
 
 await test('user: a player is not owner/editor', async () => {

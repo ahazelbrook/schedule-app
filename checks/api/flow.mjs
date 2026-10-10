@@ -769,6 +769,39 @@ async function campaignSteps() {
     expect(sc.rsvp[PLAYER].v === 'in', 'rsvp');
   });
 
+  await step('schedule: attendance is GM only: GM 200 (maps merge, null deletes), player 403 (own key, other key, delete)', async () => {
+    let r = await api('PATCH', '/api/campaign', { body: { schedule: { attendance: { 1: { [PLAYER]: true, [P2]: false }, 2: { [PLAYER]: false } } } } });
+    expectStatus(r, 200);
+    r = await api('PATCH', '/api/campaign', { body: { schedule: { attendance: { 2: { [P2]: true }, 1: { [P2]: null } } } } });
+    expectStatus(r, 200);
+    let at = r.json.doc.schedule.attendance;
+    expect(JSON.stringify(at) === JSON.stringify({ 1: { [PLAYER]: true }, 2: { [PLAYER]: false, [P2]: true } }), 'merged: ' + JSON.stringify(at));
+    expect(r.json.doc.schedule.avail[PLAYER].o_aaa === 'yes' && r.json.doc.schedule.rsvp[PLAYER].v === 'in', 'other schedule keys kept');
+    r = await api('PATCH', '/api/campaign', { body: { schedule: { attendance: { 3: { [P2]: false } } } } });
+    expectStatus(r, 200);
+    r = await api('PATCH', '/api/campaign', { body: { schedule: { attendance: { 1: null } } } });
+    expectStatus(r, 200);
+    at = r.json.doc.schedule.attendance;
+    expect(JSON.stringify(at) === JSON.stringify({ 2: { [PLAYER]: false, [P2]: true }, 3: { [P2]: false } }), 'GM deletes a session with null: ' + JSON.stringify(at));
+    const before = await get();
+    for (const body of [
+      { schedule: { attendance: { 2: { [PLAYER]: true } } } },
+      { schedule: { attendance: { 4: { [PLAYER]: true } } } },
+      { schedule: { attendance: { 2: { [P2]: false } } } },
+      { schedule: { attendance: { 3: null } } },
+      { schedule: { attendance: null } },
+      { schedule: { rsvp: { [PLAYER]: { at: at1, v: 'in' } }, attendance: { 2: { [PLAYER]: true } } } },
+    ]) {
+      const r2 = await api('PATCH', '/api/campaign', { user: PLAYER, body });
+      expect(r2.status === 403, JSON.stringify(body) + ' -> ' + r2.status);
+      expect(r2.json.error === GM_ONLY, JSON.stringify(body) + ' -> ' + r2.text);
+    }
+    expect((await get()).updatedAt === before.updatedAt, 'stored doc changed');
+    r = await api('PATCH', '/api/campaign', { user: PLAYER, body: { schedule: { avail: { [PLAYER]: { o_bbb: 'yes' } } } } });
+    expectStatus(r, 200);
+    expect(JSON.stringify(r.json.doc.schedule.attendance) === JSON.stringify(at), 'a player\'s own write leaves attendance alone');
+  });
+
   await step('campaign: bad body 400, oversize 413, DELETE 405', async () => {
     expectStatus(await api('PATCH', '/api/campaign', { raw: '[1]' }), 400);
     expectStatus(await api('PUT', '/api/campaign', { body: { ...sampleCampaign(), blob: 'x'.repeat(300 * 1024) } }), 413);

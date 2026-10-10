@@ -582,5 +582,9 @@
   ['cohortadd', 'cohortharm', 'cohortarmor', 'cohortrm', 'factionadd', 'factionstatus', 'factionrm'].forEach(function (k) { acts[k] = function (d, crew, ctx, t) { return G.acts[k](d, crew, ctx, t); }; });
 
   M.setCrewPanel({ render: render, acts: acts, enter: {} });
-  M.crewSheet = { seed: seed, turfCount: turfCount, claimable: claimable, vaultCap: vaultCap };
+  M.crewSheet = { seed: seed, turfCount: turfCount, claimable: claimable, vaultCap: vaultCap,
+    /* the crew sheet's markup for a copy outside the table page (the season print): ctx as campaign.js builds it; the
+       live panel's text-path parent stays the table's own crew */
+    render: function (crew, ctx) { var keep = live; try { return render(crew, ctx); } finally { live = keep; } },
+    look: function (id) { var lk = LOOK[id]; return lk ? { duo: lk.duo.slice(), special: lk.special } : null; } };
 })();

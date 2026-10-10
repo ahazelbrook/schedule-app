@@ -74,7 +74,7 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
   {
     const p = await open(1360, 900, 'hound', 'hound');
     const keys = await p.evaluate(() => Object.keys(B68Tracker).sort().join(','));
-    assert(keys === '_rng,close,initialPlay,isOpen,open,play,update', 'hound: public surface unchanged: ' + keys);
+    assert(keys === '_rng,close,initialPlay,isOpen,open,play,renderStatic,update', 'hound: public surface unchanged: ' + keys);
     let s = await stored(p);
     assert(s.session === 0 && JSON.stringify(s.keyHitSession) === '{}' && s.trainedThisDowntime === false, 'hound: new fields seeded ' + JSON.stringify([s.session, s.keyHitSession, s.trainedThisDowntime]));
     assert(await has(p, '#dossier .ds-c2 .ds-sessbox') && await has(p, '#dossier .ds-c2 .ds-dtbox'), 'hound: Session and Downtime boxes in column 2');
