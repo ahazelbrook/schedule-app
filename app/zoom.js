@@ -93,7 +93,16 @@
     var k = g.p * state.scale, w = g.F.w / k, h = g.F.h / k;
     svg.setAttribute('viewBox', fmt(state.cx - w / 2) + ' ' + fmt(state.cy - h / 2) + ' ' + fmt(w) + ' ' + fmt(h));
   }
-  function schedule() { updateUi(); if (!raf) raf = (window.requestAnimationFrame || window.setTimeout)(apply, 16); }
+  /* past 2x the stage is redrawn at the kit's high level of detail (and back to mid below it) */
+  var hiNow = false, hiTimer = null;
+  function checkDetail() {
+    var hi = state.scale >= 2;
+    if (hi === hiNow) return;
+    hiNow = hi;
+    if (hiTimer) clearTimeout(hiTimer);
+    hiTimer = setTimeout(function () { hiTimer = null; var b = B(); if (b && b.draw && frame && !frame.classList.contains('mug')) { try { b.draw(); } catch (e) {} } }, 120);
+  }
+  function schedule() { updateUi(); checkDetail(); if (!raf) raf = (window.requestAnimationFrame || window.setTimeout)(apply, 16); }
 
   /* ---------- operations ---------- */
   function frameXY(cx, cy) {
@@ -153,17 +162,18 @@
     return { x: V.x + V.w / 2 - hh * 0.4, y: -inches * 25, w: hh * 0.8, h: hh };
   }
 
-  function toFace() {
+  function toFace(opts) {
     if (!frame) return;
+    var heads = (opts && opts.heads) || 2.9;
     if (frame.classList.contains('mug')) { reset(); return; }
     var g = ensureGeo();
     if (!g) return;
     var hb = headBox();
     if (!hb || !(hb.h > 0)) return;
     /* head plus a little breathing room above and the shoulders below: a window about 2.9 heads tall */
-    var s = Math.min(g.F.h / (g.p * hb.h * 2.9), g.F.w / (g.p * hb.w * 2.1));
+    var s = Math.min(g.F.h / (g.p * hb.h * heads), g.F.w / (g.p * hb.w * (heads * 0.72)));
     state.scale = clamp(s, 1.5, MAX);
-    state.cx = hb.x + hb.w / 2; state.cy = hb.y + hb.h * 1.02;
+    state.cx = hb.x + hb.w / 2; state.cy = hb.y + hb.h * (heads < 2.5 ? 0.72 : 1.02);
     clampView(); schedule();
   }
 

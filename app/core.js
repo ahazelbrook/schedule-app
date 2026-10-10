@@ -84,14 +84,15 @@
     drawTimer = null;
     var s = renderSpec(), pb = pbOf();
     try {
-      if (S.view === 'figure') { last = K.lineup([s], { chart: true, height: 560 }); $('frame').classList.remove('mug'); $('plate').hidden = false; }
+      var lod = (window.B68Zoom && window.B68Zoom.state.scale >= 2) ? 'hi' : undefined;
+      if (S.view === 'figure') { last = K.lineup([s], { chart: true, height: 560, lod: lod }); $('frame').classList.remove('mug'); $('plate').hidden = false; }
       else { last = K.portrait(s); $('frame').classList.add('mug'); $('plate').hidden = true; }
       $('art').innerHTML = last.svg;
       var svg = $('art').querySelector('svg'); if (svg) { svg.removeAttribute('width'); svg.removeAttribute('height'); }
       var w = last.warnings || [];
       $('warnings').textContent = w.length ? w.join('\n') : 'Nothing to report. The spec is clean.';
       $('warnings').className = 'body' + (w.length ? ' warn' : '');
-      $('lodNote').textContent = 'drawn live · ' + (last.lod || 'mid') + ' detail';
+      $('lodNote').textContent = 'drawn live · ' + (last.lod || lod || 'mid') + ' detail';
       A.lastWarnings = w;
     } catch (e) { $('warnings').textContent = 'The kit could not draw this spec: ' + e.message; $('warnings').className = 'body warn'; A.lastWarnings = [e.message]; }
     $('plateName').textContent = S.spec.plate || S.sheet.name || 'Unknown';

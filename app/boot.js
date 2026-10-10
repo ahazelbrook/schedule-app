@@ -36,7 +36,9 @@
     $('panelTitle').textContent = A.SECTIONS[S.step].name; $('panelFolio').textContent = (S.step + 1) + ' / ' + N;
     $('back').disabled = S.step === 0; $('next').textContent = S.step === N - 1 ? 'Done' : 'Next';
     $('shuffle').hidden = !A.shuffleStep.has(S.step);
-    if (S.step === 2 && S.view !== 'mug') setView('mug'); else if (S.step !== 2 && S.view !== 'figure' && S.step < 15) setView('figure');
+    /* the Face step: keep the figure view and frame the head large; every other step fits the whole figure */
+    if (S.view !== 'figure' && S.step < 15) setView('figure');
+    if (window.B68Zoom) { if (S.step === 2) { if (!faceFramed) { faceFramed = true; setTimeout(function () { try { window.B68Zoom.toFace({ heads: 2.1 }); } catch (e) {} }, 0); } } else if (faceFramed) { faceFramed = false; try { window.B68Zoom.reset(); } catch (e) {} } }
     syncRail(); A.syncAll();
     var r = rail.children[S.step]; if (r && r.scrollIntoView) { try { r.scrollIntoView({ block: 'nearest', inline: 'center' }); } catch (e) {} }
     if (A.snapshot) A.snapshot();
@@ -48,6 +50,7 @@
   $('back').onclick = function () { showStep(S.step - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   $('next').onclick = function () { if (S.step === N - 1) { var v = A.validate(); var bad = v.filter(function (c) { return !c.ok; }); toast(bad.length ? bad.length + ' thing' + (bad.length > 1 ? 's' : '') + ' still to do, listed above.' : 'Complete. File the character or save the files.', bad.length > 0); return; } if (S.step === 0 && !A.pbOf()) { toast('Pick a playbook first.', true); return; } showStep(S.step + 1); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   $('shuffle').onclick = function () { if (A.shuffleStep(S.step)) toast('Shuffled.'); };
+  var faceFramed = false;
   function setView(v) { S.view = v; $('viewFigure').setAttribute('aria-pressed', String(v === 'figure')); $('viewMug').setAttribute('aria-pressed', String(v === 'mug')); A.draw(); }
   [$('viewFigure'), $('viewMug')].forEach(function (b) { b.onclick = function () { setView(b.dataset.view); }; });
 
