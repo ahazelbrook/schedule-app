@@ -360,17 +360,53 @@
     var n = S.sheet.name || ''; S.spec.name = n;
     if (n) { var parts = n.trim().split(/\s+/); var sur = parts[parts.length - 1]; var ini = parts[0][0]; S.spec.plate = hull() ? n : (parts.length > 1 ? sur + ' · ' + ini + '.' : n); S.spec.id = A.slug(n); }
   }
+  /* a short garment name from the kit's describe text when it is short and colour-free, else the type id */
+  var COLOURISH = /\b(navy|black|white|olive|rust|denim|blue|red|green|60s|sixties|racer|m65|clerk)\b/i;
+  function garmentName(kind, type) {
+    var d = ''; try { d = A.describe(kind, type) || ''; } catch (e) { d = ''; }
+    var ph = d.split(/[:.(,;\/]/)[0].trim();
+    if (ph && ph.split(/\s+/).length <= 2 && !COLOURISH.test(ph)) return ph.toLowerCase();
+    var NICE = { 'trench': 'trench coat', 'shearling': 'shearling jacket', 'nehru': 'nehru jacket', 'blazer': 'blazer', 'double-breasted': 'double-breasted jacket', 'peacoat': 'peacoat', 'field-jacket': 'field jacket', 'tee': 'T-shirt', 'tie': 'tie', 'scarf': 'scarf', 'mini-skirt': 'mini skirt', 'cigarette-pants': 'cigarette pants', 'shades': 'sunglasses', 'mod-oval': 'oval sunglasses', 'browline': 'browline glasses', 'cat-eye': 'cat-eye glasses', 'square-thick': 'thick square glasses', 'rifle-back': 'rifle slung on the back', 'rifle-shoulder': 'rifle across the shoulders', 'pin-badges': 'pin badges', 'flies': 'a cloud of flies', 'knee-brace': 'knee brace' };
+    return NICE[type] || String(type || '').replace(/-/g, ' ');
+  }
+  function colourWord(tok) { return String(tok || '').replace(/^cloth-/, '').replace(/^ink-/, 'ink ').replace(/-/g, ' '); }
+  /* what the figure is wearing, computed from the spec: one phrase per garment, details after a comma */
+  function wearingText() {
+    var s = S.spec || {}, o = s.outfit || {}, bits = [];
+    [['outer', 'outer'], ['dress', 'dress'], ['base', 'top'], ['mid', 'mid'], ['neck', 'neckwear'], ['bottom', 'bottom'], ['legs', 'legwear'], ['feet', 'footwear'], ['waist', 'belt'], ['hands', 'gloves']].forEach(function (kv) {
+      var g = o[kv[0]]; if (!g || !g.type) return;
+      var kind = (K.SLOT_KIND && K.SLOT_KIND[kv[0]]) || kv[1];
+      var name = garmentName(kind, g.type), pre = [], post = [];
+      if (g.cut) pre.push(g.cut + '-cut');
+      if (g.pattern && g.pattern.type) pre.push(g.pattern.type.replace(/-/g, ' '));
+      if (g.color) pre.push(colourWord(g.color));
+      if (g.sleeves && g.sleeves !== 'long') post.push(g.sleeves === 'none' ? 'sleeveless' : g.sleeves + ' sleeves');
+      if (g.open) post.push('worn open');
+      if (g.collar === 'up') post.push('collar up');
+      if (g.tucked) post.push(kv[0] === 'feet' ? 'trousers tucked in' : 'tucked in');
+      if (g.cuff) post.push('turn-ups');
+      if (g.block && g.block.color) post.push(colourWord(g.block.color) + ' colour block');
+      bits.push((pre.length ? pre.join(' ') + ' ' : '') + name + (post.length ? ', ' + post.join(', ') : ''));
+    });
+    if (s.hair && s.hair.hat && s.hair.hat.type) bits.push((s.hair.hat.color ? colourWord(s.hair.hat.color) + ' ' : '') + garmentName('hat', s.hair.hat.type));
+    if (s.face && s.face.eyewear && s.face.eyewear.type) bits.push(garmentName('eyewear', s.face.eyewear.type));
+    (s.props || []).forEach(function (p) { if (p && p.type) bits.push(garmentName('prop', p.type)); });
+    if (s.companion && (s.companion.breed || s.companion.type)) bits.push('a ' + String(s.companion.breed || s.companion.type).replace(/-/g, ' '));
+    var out = bits.join(', ');
+    var note = (S.sheet && S.sheet.wearingNote || '').trim();
+    return out + (note ? (out ? ', ' : '') + note : '');
+  }
+  A.wearingText = wearingText;
+  /* an old doc may carry wearing as an array of chips */
+  function wearingOf(sh) { var w = sh && sh.wearing; if (Array.isArray(w)) return w.join(', '); return w || ''; }
+  A.wearingOf = wearingOf;
   function describeFigure() {
-    var s = S.spec, o = s.outfit || {}, bits = [];
+    var s = S.spec, bits = [];
     bits.push(A.feet(s.heightIn || 70)); if (s.shape) bits.push(O.shapes[s.shape] ? s.shape : s.shape); if (s.age) bits.push(s.age + ' years');
     if (s.hair && s.hair.style && s.hair.style !== 'bald') bits.push(s.hair.style.replace(/-/g, ' ') + ' hair'); else if (s.hair && s.hair.style === 'bald') bits.push('bald');
     if (s.face && s.face.facialHair) bits.push(s.face.facialHair.type.replace(/-/g, ' '));
-    if (s.face && s.face.eyewear) bits.push(s.face.eyewear.type.replace(/-/g, ' '));
     ((s.face || {}).marks || []).forEach(function (m) { bits.push(m.type + (m.at ? ' ' + m.at.replace(/-/g, ' ') : '')); });
-    ['outer', 'dress', 'base', 'mid', 'neck', 'bottom', 'feet'].forEach(function (k) { var g = o[k]; if (g && g.type) bits.push((g.color || '').replace(/^cloth-/, '').replace(/-/g, ' ') + ' ' + g.type.replace(/-/g, ' ')); });
-    if (s.hair && s.hair.hat) bits.push(s.hair.hat.type.replace(/-/g, ' '));
-    (s.props || []).forEach(function (p) { bits.push(p.type.replace(/-/g, ' ')); });
-    if (s.companion) bits.push('a ' + (s.companion.breed || s.companion.type));
+    var w = wearingText(); if (w) bits.push(w);
     return bits.join(', ');
   }
   function identityStep() {
@@ -384,11 +420,11 @@
     lists.forEach(function (l) { var g = el('div', 'g'); g.appendChild(el('div', 'label', esc(l[0]))); var r = el('div', 'row'); l[1].forEach(function (w) { var b = el('button', 'chip txt sm', esc(w)); b.type = 'button'; b.onclick = function () { var cur = S.sheet.look || ''; set('sheet.look', cur ? cur.replace(/\.?\s*$/, '') + ', ' + w.toLowerCase() : w); }; r.appendChild(b); }); g.appendChild(r); wg.appendChild(g); });
     words.appendChild(wg);
     var hl = el('div', 'g'); hl.appendChild(el('div', 'label', 'Hull looks')); var hr = el('div', 'row'); CT.LOOK.hullLook.forEach(function (w) { var b = el('button', 'chip txt sm', esc(w)); b.type = 'button'; b.onclick = function () { var cur = S.sheet.look || ''; set('sheet.look', cur ? cur.replace(/\.?\s*$/, '') + ', ' + w : w); }; hr.appendChild(b); }); hl.appendChild(hr); custom(hl, null, hull); words.appendChild(hl);
-    var wear = el('div'); wear.appendChild(h3('Wearing')); var wgr = el('div', 'wgroups');
-    CT.LOOK.wearing.forEach(function (l) { var g = el('div', 'g'); g.appendChild(el('div', 'label', esc(l[0]))); var r = el('div', 'row'); l[1].forEach(function (w) { var b = el('button', 'chip txt sm', esc(w)); b.type = 'button'; b.dataset.w = w; b.onclick = function () { var cur = (S.sheet.wearing || []).slice(); var i = cur.indexOf(w); if (i >= 0) cur.splice(i, 1); else cur.push(w); set('sheet.wearing', cur); }; r.appendChild(b); }); g.appendChild(r); wgr.appendChild(g); });
-    custom(wgr, function () { wgr.querySelectorAll('.chip').forEach(function (b) { b.setAttribute('aria-pressed', String((S.sheet.wearing || []).indexOf(b.dataset.w) >= 0)); }); });
-    wear.appendChild(wgr);
-    return [grid(nm, al), code, look, words, wear];
+    var wear = el('div', 'wearfield'); wear.innerHTML = '<div class="label"><span>Wearing</span><span class="val">from the figure</span></div><div class="hint">Filled in from what you dressed the figure in; change the Wardrobe, Props or Hair steps to change it.</div>';
+    var wearOut = el('div', 'wearing'); wearOut.id = 'wearingText'; wear.appendChild(wearOut);
+    custom(wear, function () { var w = wearingText(); S.sheet.wearing = w; wearOut.textContent = w || 'Nothing on. Dress the figure in the Wardrobe step.'; wearOut.classList.toggle('none', !w); });
+    var wn = text('Anything the figure can’t show', 'sheet.wearingNote', { placeholder: 'A hidden knife, a borrowed coat, the smell of the docks…', hint: 'Added after the outfit on the filed sheet.' });
+    return [grid(nm, al), code, look, words, wear, wn];
   }
 
   /* ---------- 16 · File ---------- */
@@ -415,7 +451,7 @@
     var p = pb(); if (!p) return ''; var sh = S.sheet, L = [];
     L.push('# ' + (sh.name || 'Unnamed') + (sh.alias ? ' “' + sh.alias + '”' : '') + ' · ' + p.name);
     L.push(p.descriptor + ' · ' + (S.spec.code || ''));
-    L.push(''); L.push('- Look: ' + (sh.look || '')); if ((sh.wearing || []).length) L.push('- Wearing: ' + sh.wearing.join(', '));
+    L.push(''); L.push('- Look: ' + (sh.look || '')); var wr = wearingText() || wearingOf(sh); if (wr) L.push('- Wearing: ' + wr);
     if (p.hull) L.push('- Owning faction: ' + (sh.owning || '')); else { L.push('- Heritage: ' + (sh.heritage || '') + (sh.heritageDetail ? ' — ' + sh.heritageDetail : '')); L.push('- ' + (p.altBackground ? p.altBackground.label : 'Background') + ': ' + (p.altBackground ? (sh.alt || []).join(', ') : (sh.background || '')) + (sh.backgroundDetail ? ' — ' + sh.backgroundDetail : '')); }
     L.push(''); L.push('## Actions'); CT.ACTIONS.forEach(function (g) { L.push('- ' + g[0] + ' ' + attrRating(g[1]) + ': ' + g[1].map(function (a) { return a + ' ' + ((sh.dots || {})[a] || 0); }).join(', ')); });
     L.push(''); L.push('## Special abilities'); if (p.hull) L.push('- Automaton'); if (p.fixedAbility) L.push('- ' + p.fixedAbility[0]); if (sh.ability) L.push('- ' + sh.ability); if (sh.customAbility) L.push('- ' + sh.customAbility); if ((sh.frame || []).length) L.push('- Frame features: ' + sh.frame.join(', '));
@@ -435,7 +471,7 @@
     var stamp = el('div'); custom(stamp, function () { var v = validate(); var all = v.every(function (c) { return c.ok; }); stamp.innerHTML = '<span class="stamp"><span>' + (all ? 'Ready to file' : 'Incomplete') + '</span><span class="mono">' + esc(S.spec.code || 'XXX-968-0000') + '</span></span>'; stamp.querySelector('.stamp').style.borderColor = all ? 'var(--ok)' : 'var(--alarm)'; stamp.querySelector('.stamp').style.color = all ? 'var(--ok)' : 'var(--alarm)'; });
     var summary = el('dl', 'summary'); custom(summary, function () {
       var p = pb(), sh = S.sheet; if (!p) { summary.innerHTML = ''; return; }
-      var rows = [['Name', (sh.name || '—') + (sh.alias ? ' “' + sh.alias + '”' : '')], ['Playbook', p.name], ['Heritage', p.hull ? 'Owned by ' + (sh.owning || '—') : (sh.heritage || '—') + (sh.heritageDetail ? ', ' + sh.heritageDetail : '')], [p.altBackground ? p.altBackground.label : 'Background', p.hull ? '—' : ((p.altBackground ? (sh.alt || []).join(', ') : sh.background) || '—') + (sh.backgroundDetail ? ', ' + sh.backgroundDetail : '')],
+      var rows = [['Name', (sh.name || '—') + (sh.alias ? ' “' + sh.alias + '”' : '')], ['Playbook', p.name], ['Wearing', wearingText() || wearingOf(sh) || '—'], ['Heritage', p.hull ? 'Owned by ' + (sh.owning || '—') : (sh.heritage || '—') + (sh.heritageDetail ? ', ' + sh.heritageDetail : '')], [p.altBackground ? p.altBackground.label : 'Background', p.hull ? '—' : ((p.altBackground ? (sh.alt || []).join(', ') : sh.background) || '—') + (sh.backgroundDetail ? ', ' + sh.backgroundDetail : '')],
         ['Actions', CT.ACTIONS.map(function (g) { return g[0] + ' ' + attrRating(g[1]); }).join(' · ') + ' · ' + Object.keys(sh.dots || {}).filter(function (k) { return sh.dots[k]; }).map(function (k) { return k + ' ' + sh.dots[k]; }).join(', ')],
         ['Ability', [p.hull ? 'Automaton' : null, p.fixedAbility ? p.fixedAbility[0] : null, sh.ability, sh.customAbility].filter(Boolean).join(', ') || '—'],
         ['Keys', p.hull ? 'none to start' : ((sh.keys || []).map(keyName).concat(sh.customKey ? [keyName(sh.customKey)] : []).join(', ') || '—') + (sh.deadlockKey ? ' · ' + keyName(sh.deadlockKey) + ' deadlocked ' + (sh.deadlockMode || '') : '')],
@@ -445,7 +481,13 @@
       summary.innerHTML = rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('');
     });
     var qs = el('div'); custom(qs, function () { var p = pb(); if (!p || !p.questions.length) { qs.innerHTML = ''; return; } qs.innerHTML = '<h3>Questions for the table</h3><p class="hint">After crew creation, take turns asking the group one of these. Anyone can answer.</p><ul class="qs">' + p.questions.map(function (q) { return '<li>' + esc(q) + '</li>'; }).join('') + '</ul>'; });
-    var ex = el('div', 'exports'); ex.innerHTML = '<button class="btn primary" id="fileRoster" type="button">File this character</button><button class="btn sm" id="dlSvg" type="button">Save figure SVG</button><button class="btn sm" id="dlMug" type="button">Save mugshot SVG</button><button class="btn sm" id="dlPng" type="button">Save PNG</button><button class="btn sm" id="copySheet" type="button">Copy sheet</button><button class="btn sm" id="copySpec" type="button">Copy spec</button><button class="btn sm" id="copyLink" type="button">Copy link</button>';
+    var ex = el('div', 'exports'); ex.innerHTML = '<div class="main"><button class="btn primary" id="fileRoster" type="button">File and open the sheet</button><button class="btn" id="openSheet" type="button" hidden>Open the sheet</button><button class="btn" id="newChar" type="button">Start a new character</button></div><div class="hint" id="fileHint"></div><div class="side"><span class="label">Also</span><button class="btn sm" id="dlSvg" type="button">Figure SVG</button><button class="btn sm" id="dlMug" type="button">Mugshot SVG</button><button class="btn sm" id="dlPng" type="button">PNG</button><button class="btn sm" id="copyLink" type="button">Copy link</button></div>';
+    custom(ex, function () {
+      var has = !!S.sheet.docId, avail = A.filingAvailable ? A.filingAvailable() : false;
+      var fb = ex.querySelector('#fileRoster'); fb.textContent = has ? 'Update the file' : 'File and open the sheet'; fb.disabled = !avail;
+      ex.querySelector('#openSheet').hidden = !(has && avail);
+      ex.querySelector('#fileHint').textContent = !avail ? 'Filing needs the shared files, which are not available in this view. The figure can still be saved below.' : has ? 'Already on file. Updating keeps the sheet’s stress, harm, xp and notes; only the creation choices change.' : A.me ? 'Filing creates the living character sheet: stress, harm, xp, clocks and notes, saved to your account.' : 'Filing creates the living character sheet. You are not signed in, so it will not be marked as yours.';
+    });
     return [stamp, checks, summary, qs, ex];
   }
 

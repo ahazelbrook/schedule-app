@@ -1,4 +1,5 @@
 <title>Blades '68 Character Creator</title>
+<link rel="stylesheet" href="tracker.css">
 <style>
   /* Layout: a console character creator in the rulebook's clothes. The subject stands on the height chart
      (left, sticky) under a cover band in the chosen playbook's duotone; the steps run as rulebook side tabs
@@ -74,7 +75,17 @@
   .rail button[aria-current="step"] { color: var(--on-mustard); background: var(--mustard); }
   .rail button.done { color: var(--ink); }
   .rail button.done .n { background: var(--rule); color: var(--on-ink); border-color: var(--rule); }
+  .top .who { grid-column: 1 / -1; font-size: 9.5px; color: var(--ink-faint); letter-spacing: .12em; }
+  .top .who::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 999px; background: var(--ok); margin-right: 6px; vertical-align: 1px; }
+  .top .who.off::before { background: var(--ink-faint); }
+  #railBack { justify-self: start; }
   @media (max-width: 760px) { .top { grid-template-columns: 1fr; } }
+
+  /* ---- modes: create (the studio and files) or sheet (the tracker in #dossier) ---- */
+  #dossier { display: none; }
+  body[data-mode="sheet"] .studio, body[data-mode="sheet"] .crew, body[data-mode="sheet"] .roster, body[data-mode="sheet"] .rail { display: none; }
+  body[data-mode="sheet"] #dossier:not([hidden]) { display: block; }
+  body:not([data-mode="sheet"]) #railBack { display: none; }
 
   /* ---- studio ---- */
   .studio { display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr); gap: 0 22px; align-items: start; padding-top: 18px; }
@@ -158,7 +169,7 @@
   .pb { position: relative; display: grid; grid-template-rows: auto 1fr auto; gap: 0; border: 2px solid var(--rule); background: var(--duo-b); color: var(--on-duo); padding: 0; cursor: pointer; text-align: left; min-height: 250px; overflow: hidden; transition: transform .12s var(--ease), box-shadow .12s var(--ease); }
   .pb:hover { transform: translateY(-2px); box-shadow: 4px 4px 0 var(--shadow-ink); }
   .pb[aria-pressed="true"] { box-shadow: 4px 4px 0 var(--accent); outline: 3px solid var(--accent); outline-offset: -3px; }
-  .pb .word { font: 900 clamp(22px, 1.9vw, 28px)/.85 var(--font-poster); text-transform: uppercase; letter-spacing: -.01em; color: var(--duo-a); padding: 10px 10px 0; position: relative; z-index: 1; overflow-wrap: anywhere; }
+  .pb .word { font: 900 clamp(17px, 1.5vw, 25px)/.85 var(--font-poster); text-transform: uppercase; letter-spacing: -.01em; color: var(--duo-a); padding: 10px 10px 0; position: relative; z-index: 1; overflow-wrap: anywhere; }
   .pb .fig { display: grid; place-items: end center; padding: 6px 8px 0; min-height: 150px; }
   .pb .fig svg { height: 150px; width: auto; }
   .pb .foot { padding: 8px 10px 10px; font: 900 9.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; opacity: .92; }
@@ -232,7 +243,15 @@
   .summary dd { margin: 0; }
   .stamp { display: inline-grid; justify-items: center; gap: 2px; border: 2px solid var(--alarm); color: var(--alarm); padding: 7px 12px; transform: rotate(-4deg); font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .2em; }
   .stamp .mono { font-size: 10px; letter-spacing: .08em; font-weight: 700; }
-  .exports { display: flex; flex-wrap: wrap; gap: 8px; }
+  .exports { display: grid; gap: 10px; }
+  .exports .main, .exports .side { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .exports .side { border-top: 2px solid var(--hair); padding-top: 10px; }
+  .exports .side .label { margin-right: 4px; }
+  .wearfield { display: grid; gap: 7px; }
+  .wearfield > .label { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .wearfield > .label .val { font: 700 11px/1 var(--font-mono); color: var(--ink); letter-spacing: 0; text-transform: none; }
+  .wearing { font: 400 14px/1.5 var(--font-text); padding: 8px 10px; border: 2px solid var(--rule); background: var(--inset); color: var(--ink); max-width: 460px; border-left-width: 6px; border-left-color: var(--accent); }
+  .wearing.none { color: var(--ink-faint); font-style: italic; }
 
   /* ---- crew line-up and roster ---- */
   .crew { margin-top: 30px; display: grid; gap: 10px; }
@@ -251,8 +270,16 @@
   .card .meta { padding: 8px 10px 10px; display: grid; gap: 3px; border-top: 2px solid var(--rule); }
   .card .meta .nm { font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .06em; color: var(--ink); }
   .card .meta .cd { font: 400 9.5px/1.3 var(--font-mono); letter-spacing: .08em; color: var(--ink-soft); }
+  .card .meta .st { font: 700 9.5px/1.3 var(--font-mono); letter-spacing: .04em; color: var(--accent); }
+  .card .meta .acts { display: flex; gap: 6px; margin-top: 4px; }
+  .card .meta .ed { font: 900 9.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 4px 6px; border: 2px solid var(--rule); color: var(--ink); background: var(--card); }
+  .card .meta .ed:hover { background: var(--rule); color: var(--on-ink); }
+  .card.mine { border-color: var(--accent); }
   .card:hover .meta { background: var(--accent); }
-  .card:hover .meta .nm, .card:hover .meta .cd { color: var(--on-accent); }
+  .card:hover .meta .nm, .card:hover .meta .cd, .card:hover .meta .st { color: var(--on-accent); }
+  .card:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .roster .head .tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .roster .head .seg .chip { padding: 5px 9px; font-size: 10px; }
   .card .rm { position: absolute; top: 6px; right: 6px; font: 700 10px/1 var(--font-mono); padding: 4px 6px; border: 2px solid #14110e; background: #fbf8f1; color: #14110e; cursor: pointer; }
   .card .rm:hover { background: var(--alarm); color: #fbf8f1; border-color: var(--alarm); }
   .empty { border: 2px dashed var(--hair); padding: 16px; color: var(--ink-soft); font-size: 13px; max-width: 60ch; }
@@ -279,7 +306,11 @@
   <header class="top">
     <div class="wordmark"><span class="yr">’68</span><span class="ttl">Character Creator<small>City Watch of Duskwall · Form 68-C · Doskvol · 968 AC</small></span></div>
     <nav class="rail" id="rail" aria-label="Steps"></nav>
+    <button class="btn sm" id="railBack" type="button" hidden>← Back to the creator</button>
+    <span class="label who off" id="whoami">Not signed in · filing unavailable</span>
   </header>
+
+  <section class="dossier" id="dossier" hidden aria-label="Character sheet"></section>
 
   <main class="studio">
     <section class="stage" aria-label="The subject">
@@ -319,9 +350,9 @@
     <div class="names" id="lineupNames"></div>
   </section>
 
-  <section class="roster" aria-label="Filed characters">
-    <div class="head"><h2>Filed characters</h2><span class="label" id="rosterNote">Everyone who opens this page sees the same files</span></div>
-    <div class="cards" id="cards"><div class="empty">No one is on file yet. Finish the dossier and file the subject from the last step; they appear here for everyone with the link, and a click loads them back into the creator.</div></div>
+  <section class="roster" aria-label="Your files">
+    <div class="head"><h2>Your files</h2><div class="tools"><div class="seg" id="rosterFilter" role="group" aria-label="Whose files" hidden><button class="chip" type="button" data-f="mine" aria-pressed="true">Mine</button><button class="chip" type="button" data-f="all" aria-pressed="false">Everyone</button></div><span class="label" id="rosterNote">Everyone who opens this page sees the same files</span></div></div>
+    <div class="cards" id="cards"><div class="empty">No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.</div></div>
   </section>
 
   <footer>
@@ -334,5 +365,7 @@
 <script src="figures/cast.js"></script>
 <script src="content.js"></script>
 <script src="core.js"></script>
+<script src="zoom.js"></script>
 <script src="steps.js"></script>
+<script src="tracker.js"></script>
 <script src="boot.js"></script>
