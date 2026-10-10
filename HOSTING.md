@@ -131,11 +131,13 @@ Loaded before `boot.js`. If `window.claude` already exists it does nothing. Othe
 window.claude = { use: function (name) { /* -> Promise */ } };
 ```
 
-- `use('user')`: calls `/api/me` once; on 401 or network failure resolves `null` (the page
-  then shows "not signed in · filing unavailable"). Resolves an object with `id()`, `me()`
-  (`{ id, name, email }`), `can(name)` (`true` for `data.write`), `isOwner()` and `canEdit()`
+- `use('user')`: calls `/api/me` once; on 401 (or a redirect / non-JSON answer: Access asking to
+  sign in) resolves `null` (the page then shows "not signed in · filing unavailable"). On a
+  network failure it also resolves `null`, unless this browser holds a snapshot of the last
+  signed-in user: then the page starts offline as that user (see *Offline* below).
+  Otherwise resolves an object with `id()`, `me()` (`{ id, name, email }`), `can(name)` (`true` for `data.write`), `isOwner()` and `canEdit()`
   (`role === 'gm'`), `profiles(ids)` (from `/api/members`, cached: `{ [id]: { name } }`).
-- `use('db')`: `null` when `/api/me` failed. Otherwise `{ collection(name) }` for
+- `use('db')`: `null` when `use('user')` is. Otherwise `{ collection(name) }` for
   `characters` and `campaign`. `collection().doc(id)` → `{ id, get(), set(doc), update(patch), delete(),
   onSnapshot(cb, err) }`; `collection().orderBy(field, dir).limit(n).where(f, op, v)` chain
   (applied client-side on the cache) with `onSnapshot(cb, err)` and `get()`.
@@ -156,10 +158,83 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   `?since=` every 4 s while the page is visible and every 20 s when hidden, plus an
   immediate poll after each own write; a write also updates the cache optimistically so the
   sheet never waits on the network. Network errors are retried on the next tick and surfaced
-  once through the `err` callbacks.
+  once through the `err` callbacks (not after an offline start, which the header shows).
 - `use('downloads')`: `{ save({ filename, data }) }` → Blob + anchor click, resolves.
 - Anything else resolves `null`.
-- `window.B68Runtime = { kind: 'cloudflare', me }` once `/api/me` has answered, for debugging.
+- `window.B68Runtime = { kind: 'cloudflare', me, status }` once `/api/me` has answered (or the
+  page started offline). `status = { online, pending, lastSync }`: `online` is false while the
+  network is unreachable or after an offline start until `/api/me` answers again, `pending` is
+  the number of queued writes, `lastSync` the ISO time of the last successful poll or flushed
+  write (after an offline start, the snapshot's). Every change dispatches the `window` event
+  `b68:runtime` (`detail` = the status); `boot.js` `whoami()` turns it into "Offline · N changes
+  waiting" / "Saving N changes…" after "Signed in as …".
+
+### Offline (hosted build only)
+
+- **Snapshot.** After each successful load or poll (throttled to one write every 2 s, and on
+  `pagehide` / hidden) the adapter stores `{ me, syncedAt, docs, stamps, campaign: { doc,
+  updatedAt }, members }` in localStorage under `b68.cf.<email>#<campaign>`, and
+  `b68.cf.last = { key, id }` names the last signed-in user. Every storage access is wrapped:
+  with storage blocked or full the page works as before, only without offline start.
+- **Offline start.** When `/api/me` fails with a network error (fetch rejected) and the last
+  user's snapshot exists, `use('user')` resolves that user, `use('db')` serves the snapshot
+  (listeners fire with it at once, `metadata.fromCache` true, `get()`s answer from it), and
+  the poller asks `/api/me` again each tick and on `online` events. When it answers: a
+  different account or signed out ends the session as a sign-out does (one `err`, polling
+  stops, writes reject); the same user gets a full load, a campaign refetch, and listeners are
+  notified. A 401 or redirect at start never starts offline.
+- **Write queue.** Every write (`set`, `update`, `delete`, campaign `set`/`update`) applies to
+  the cache at once and is appended to `b68.cf.<email>#<campaign>#queue` (`{ qid, kind, id,
+  method, path, body }`), then sent in order, one at a time. Its promise resolves when the
+  server accepts it, or as soon as it is queued while offline, and rejects when the server
+  refuses it while the caller still waits (the old behaviour). A network error, a 5xx, or a
+  409 after the two retries keeps it and everything after it, retried on the next poll, on
+  `online`, every poll interval, and at the next start (queued writes are re-applied to the
+  restored cache; all of them are idempotent). A 400/403/404/413 for an already-resolved
+  queued write drops it, resyncs (full load, or campaign refetch) and reports one error
+  (`code: 'dropped'`) through the `err` callbacks; the rest go on. A 401 or redirect stops
+  flushing and keeps the queue for that user's next visit. Snapshots carry
+  `metadata.hasPendingWrites: true` while a queued write for that document exists.
+- **Folding.** A PATCH right behind a PATCH to the same document (not yet being sent, created by
+  this tab) is merged into it only when one merged PATCH is provably the same as the two in a
+  row under the server's merge for any stored document: anything at the top level except an
+  object over a non-object, and below it no `null` and no object over a non-object; campaign
+  `log` lists concatenate; campaign patches fold for the GM only (a player's are checked field
+  by field, so one refused change would sink both). Otherwise they stay separate, in order.
+- **Several tabs** of one user share the stored queue: a tab claims an entry in storage before
+  sending it (30 s claim), removes it when answered, skips entries another tab has claimed,
+  and forgets entries another tab finished.
+
+### Installable (hosted build only)
+
+On activation `cf.js` adds `<link rel="manifest" href="manifest.webmanifest"
+crossorigin="use-credentials">` (Access needs the cookie for the manifest too), `<meta
+name="theme-color" content="#14110e">`, `<link rel="icon">` and `<link rel="apple-touch-icon">`
+(`icons/`), the `apple-mobile-web-app-*` / `mobile-web-app-capable` metas, and registers
+`sw.js` with scope `./` after `load`. `index.html` is unchanged, and inside the artifact (or
+from `file://`) none of this happens. Icons: Stacey's silhouette mugshot from the figure kit,
+in ink on an alarm-red halo on paper with "68", regenerated by `npm run icons`
+(`checks/runtime/icons.mjs`, Playwright); the maskable one keeps the mark inside the 80% safe
+circle.
+
+`app/sw.js` (cache `b68-shell-v<n>`; bump to drop old caches):
+
+- Ignores (does not intercept) non-GET requests, other origins, `/api/*` and `/cdn-cgi/*`.
+- Every other request is network first: the network's answer is returned as it is (a redirect
+  from Access included) and, when it is `200`, same-origin (`basic`) and not redirected,
+  stored. Only when fetch itself fails does the cached copy answer; a navigation falls back
+  to the cached page. The page is stored under the scope URL (`/`), whether it was asked for
+  as `/`, `/index.html` or `/?…`.
+- Install precaches the app shell (the `SHELL` array: the page and every file `index.html`
+  loads, fonts included; `checks/runtime/pwa.test.mjs` fails when `index.html` names a file
+  the array lacks), one file at a time so a failure does not stop the install, then
+  `skipWaiting`; activate deletes older `b68-shell-*` caches and `clients.claim`s.
+
+Checks: `npm run check:runtime` runs the adapter's unit test (mocked fetch and localStorage, offline
+cases included) and `checks/runtime/pwa.test.mjs` (manifest, icons, precache list, the
+service worker's rules in a fake worker scope). `npm run check:offline` starts its own
+`wrangler pages dev` on port 8790 and drives Chromium through install, offline reload, an
+offline tick and its sync on reconnect.
 
 ## Local development and checks
 

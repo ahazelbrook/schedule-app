@@ -2,6 +2,9 @@
    Defines window.claude.use('user' | 'db' | 'downloads') on top of the JSON API in functions/
    (see HOSTING.md) so the page runs unchanged outside the claude.ai artifact. The db serves the
    `characters` collection and the shared `campaign/main` document (CAMPAIGN.md).
+   Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network
+   is unreachable, and writes queue (in order, in localStorage) until it is back. It also makes the hosted page
+   installable (manifest, icons, service worker sw.js).
    Inside the artifact window.claude already exists and this file does nothing. */
 (function () {
   'use strict';
@@ -16,6 +19,9 @@
   var SIGNED_OUT = 'signed out: reload the page to sign in again';
   var CONFLICT_RETRIES = 2;      /* a write answered 409 (the row kept changing) is sent again this many times */
   var MEMBERS_TTL_MS = 60000;
+  var STORE = 'b68.cf.', LAST = 'b68.cf.last';   /* localStorage: b68.cf.<user id>#<campaign> (+ '#queue'), and which user was last */
+  var COALESCE_MAX = 200000;     /* never merge queued patches into a body near the server's 256 KiB limit */
+  function snapshotMs() { return typeof window.__B68_SNAPSHOT_MS === 'number' ? window.__B68_SNAPSHOT_MS : 2000; }
 
   /* ---------- helpers ---------- */
   function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
@@ -82,18 +88,54 @@
     };
   }
   function signedOutError() { var e = new Error(SIGNED_OUT); e.code = 'signed_out'; e.status = 401; return e; }
+  function nowIso() { return new Date().toISOString(); }
+
+  /* ---------- localStorage (every access may throw: private mode, quota, blocked storage) ---------- */
+  function readJSON(key) {
+    try { var s = window.localStorage, t = s && s.getItem(key); return t ? JSON.parse(t) : null; } catch (e) { return null; }
+  }
+  function writeJSON(key, v) {
+    try { var s = window.localStorage; if (!s) return false; if (v == null) s.removeItem(key); else s.setItem(key, JSON.stringify(v)); return true; } catch (e) { return false; }
+  }
+  function userKey(m) { return STORE + m.id + '#' + (m.campaign || 'default'); }
+
+  /* ---------- status: window.B68Runtime.status and the `b68:runtime` event ---------- */
+  var me = null;               /* the signed-in user ({ id, email, name, role, campaign }) */
+  var mode = 'online';         /* 'snapshot' after an offline start, until /api/me answers again */
+  var net = true;              /* the last request reached the server */
+  var lastSync = null;         /* ISO time of the last successful poll or flushed write */
+  var queue = [];              /* own writes not yet accepted by the server, oldest first */
+  var sentStatus = null;
+  function status() { return { online: mode === 'online' && net, pending: queue.length, lastSync: lastSync }; }
+  function emitStatus() {
+    var s = status(), j = JSON.stringify(s);
+    if (window.B68Runtime) window.B68Runtime.status = s;
+    if (j === sentStatus) return;
+    sentStatus = j;
+    try {
+      if (typeof window.dispatchEvent === 'function' && typeof window.CustomEvent === 'function') window.dispatchEvent(new window.CustomEvent('b68:runtime', { detail: s }));
+    } catch (e) {}
+  }
+  function setNet(v) { if (net !== v) { net = v; emitStatus(); } }
 
   /* ---------- the API ---------- */
-  var signedOut = false;       /* the Access session ended: stop polling, refuse writes */
+  var signedOut = false;       /* the Access session ended (or another account signed in): stop polling, refuse writes */
   var onSignedOut = null;      /* set by the db layer */
 
+  /* a rejection from fetch itself (no answer at all): the device is offline or the server is unreachable */
+  function isNetErr(e) { return !!e && e.network === true; }
+
   /* fetch JSON. Rejects with Error(api error string). A 401, or anything that looks like the Access
-     login page instead of our API (a followed or opaque redirect, a non-JSON body), marks the session signed out. */
+     login page instead of our API (a followed or opaque redirect, a non-JSON body), marks the session signed out.
+     A network failure rejects with an error carrying `network: true`. */
   function api(method, path, body) {
     if (signedOut) return Promise.reject(signedOutError());
     var opts = { method: method, credentials: 'same-origin', cache: 'no-store', redirect: 'manual', headers: { Accept: 'application/json' } };
     if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
-    return fetch('/api' + path, opts).then(function (res) {
+    var sent;
+    try { sent = fetch('/api' + path, opts); } catch (e) { sent = Promise.reject(e); }
+    return Promise.resolve(sent).then(function (res) {
+      setNet(true);
       var ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
       if (res.status === 401 || res.redirected || res.type === 'opaqueredirect' || ct.indexOf('json') < 0) {
         if (!signedOut) { signedOut = true; if (onSignedOut) onSignedOut(); }
@@ -104,23 +146,50 @@
         if (!res.ok) { var err = new Error((j && j.error) || ('HTTP ' + res.status)); err.status = res.status; throw err; }
         return j;
       });
+    }, function (e) {
+      setNet(false);
+      var err = e instanceof Error ? e : new Error(String(e && e.message || e || 'network error'));
+      try { err.network = true; } catch (x) { err = new Error(err.message); err.network = true; }
+      throw err;
     });
   }
 
   /* ---------- user ---------- */
   var meP = null;
-  /* /api/me once; null when not signed in or unreachable */
+  /* /api/me once; null when not signed in or unreachable. When it is unreachable (fetch itself failed: not a 401,
+     not a redirect to the sign-in page) and this browser holds a snapshot of the last signed-in user, the page
+     comes up offline as that user from the snapshot (mode 'snapshot') and keeps trying to reach the server. */
   function loadMe() {
-    if (!meP) meP = api('GET', '/me').then(function (m) { return m && m.id ? m : null; }, function () { return null; })
-      .then(function (m) { window.B68Runtime = { kind: 'cloudflare', me: m }; return m; });   /* me carries role, for the header */
+    if (!meP) meP = api('GET', '/me').then(function (m) {
+      if (!m || !m.id) return null;
+      me = m; mode = 'online';
+      writeJSON(LAST, { key: userKey(m), id: m.id });
+      restore(m, null);
+      return m;
+    }, function (e) {
+      if (!isNetErr(e)) return null;
+      var last = readJSON(LAST), snap = last && last.key ? readJSON(last.key) : null;
+      if (!snap || !snap.me || !snap.me.id || userKey(snap.me) !== last.key) return null;
+      me = snap.me; mode = 'snapshot';
+      restore(snap.me, snap);
+      return me;
+    }).then(function (m) {
+      window.B68Runtime = { kind: 'cloudflare', me: m, status: status() };   /* me carries role, for the header */
+      emitStatus();
+      if (m && queue.length) flush();
+      return m;
+    });
     return meP;
   }
 
   var members = null;          /* { at, promise } */
+  var membersById = null;      /* the last /api/members answer, kept in the snapshot */
   function loadMembers() {
     if (members && Date.now() - members.at < MEMBERS_TTL_MS) return members.promise;
     var p = api('GET', '/members').then(function (r) {
-      var byId = {}; ((r && r.members) || []).forEach(function (m) { byId[m.id] = m; }); return byId;
+      var byId = {}; ((r && r.members) || []).forEach(function (m) { byId[m.id] = m; });
+      membersById = byId; persistSoon();
+      return byId;
     });
     members = { at: Date.now(), promise: p };
     p.catch(function () { members = null; });   /* do not cache a failure */
@@ -158,7 +227,7 @@
 
   function docSnap(id) {
     var d = cache[id];
-    return { id: id, exists: d !== undefined, data: function () { return clone(d); }, metadata: { fromCache: false, hasPendingWrites: !!pending[id] } };
+    return { id: id, exists: d !== undefined, data: function () { return clone(d); }, metadata: { fromCache: !status().online, hasPendingWrites: !!pending[id] } };
   }
 
   /* compare two field values for orderBy and range filters */
@@ -226,7 +295,7 @@
   function hasCampaignListeners() { return listeners.some(function (l) { return l.campaign; }); }
   function campSnap() {
     var d = camp.doc || defaultCampaign();
-    return { id: CAMPAIGN_ID, exists: true, data: function () { return clone(d); }, metadata: { fromCache: false, hasPendingWrites: camp.pending > 0 } };
+    return { id: CAMPAIGN_ID, exists: true, data: function () { return clone(d); }, metadata: { fromCache: !status().online, hasPendingWrites: camp.pending > 0 } };
   }
   function notifyCampaign() {
     listeners.slice().forEach(function (l) {
@@ -240,6 +309,7 @@
     var first = !camp.loaded, changed = JSON.stringify(doc) !== JSON.stringify(camp.doc);
     camp.doc = doc; camp.stamp = (r && r.updatedAt) || null; camp.loaded = true;
     if (first || changed) notifyCampaign();
+    persistSoon();
   }
   /* after a characters poll: refetch the campaign when its stamp moved (or it was never loaded) */
   function syncCampaign(serverAt) {
@@ -273,6 +343,7 @@
     if (r.now) since = r.now;      /* reported 2 s behind, so recent rows repeat: the updatedAt check above makes that a no-op */
     loaded = true;
     notify(changed, full);
+    persistSoon();
   }
 
   function schedule(ms) {
@@ -284,17 +355,29 @@
     if (!running || signedOut) return;
     if (inflight) { again = true; return; }
     inflight = true;
+    if (mode === 'snapshot') {
+      /* started offline: ask /api/me again first; once it answers (same user) the next tick does a full load */
+      reconnect().then(function (ok) {
+        inflight = false;
+        if (ok) { flush(); schedule(0); } else if (again) { again = false; schedule(); } else schedule();
+      });
+      return;
+    }
     var full = !loaded, at = epoch, campAt = camp.epoch;
     api('GET', '/' + COLLECTION + (full ? '' : '?since=' + encodeURIComponent(since)))
       .then(function (r) {
         r = r || {};
+        lastSync = nowIso();                          /* before applyServer, so the snapshot it saves carries it */
         /* a write started or finished while this poll was out: its view may be stale, ask again */
         if (at !== epoch) again = true;
         else if (running) applyServer(r, full);
         if (campAt !== camp.epoch) { again = true; return; }
         return syncCampaign(r.campaignUpdatedAt);
       })
-      .then(function () { errored = false; }, function (e) {
+      .then(function () {
+        errored = false; emitStatus();
+        flush();                                      /* the network answers: send what queued up */
+      }, function (e) {
         if (signedOut) return;                        /* reported by onSignedOut */
         if (!errored) { errored = true; notifyErr(e); } /* surface once; retry on the next tick */
       })
@@ -303,24 +386,40 @@
         if (again) { again = false; schedule(0); } else schedule();
       });
   }
-  function start() { if (running) return; running = true; loaded = false; errored = false; epoch++; schedule(0); }   /* epoch++: drop a poll left over from before a stop */
-  function stop() { running = false; loaded = false; camp.loaded = false; again = false; clearTimeout(timer); timer = null; }
+  /* epoch++: drop a poll left over from before a stop. After an offline start the snapshot stays loaded. */
+  function start() { if (running) return; running = true; if (mode !== 'snapshot') loaded = false; errored = false; epoch++; schedule(0); }
+  function stop() { running = false; if (mode !== 'snapshot') { loaded = false; camp.loaded = false; } again = false; clearTimeout(timer); timer = null; }
   function pollSoon() { if (!running) return; if (inflight) again = true; else schedule(0); }
 
-  onSignedOut = function () { stop(); notifyErr(signedOutError()); };
+  /* the session is over (signed out, or another account signed in): stop, tell every listener once.
+     Queued writes stay in localStorage for this user's next visit. */
+  function endSession(err) {
+    if (!signedOut) signedOut = true;
+    stop(); notifyErr(err);
+    queue.forEach(function (q) { settleWaiters(q, err); q.claim = null; });
+    saveQueue();                 /* kept for the next visit, unclaimed */
+    emitStatus();
+  }
+  onSignedOut = function () { endSession(signedOutError()); };
   if (document.addEventListener) document.addEventListener('visibilitychange', function () {
+    if (document.hidden) saveNow();
     if (running && !inflight) schedule(document.hidden ? null : 0);
   });
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('online', function () { kick(); });
+    window.addEventListener('pagehide', function () { saveNow(); });
+  }
 
   function subscribe(l) {
     listeners.push(l);
+    var live = running || mode === 'snapshot';     /* after an offline start the snapshot is the current data */
     if (signedOut) { setTimeout(function () { if (l.err && listeners.indexOf(l) >= 0) l.err(signedOutError()); }, 0); }
     else if (l.campaign) {
       /* the first snapshot comes from the cache when it is current, else from the fetch the next poll makes */
-      if (running && camp.loaded) setTimeout(function () { if (listeners.indexOf(l) >= 0) l.cb(campSnap()); }, 0);
+      if (live && camp.loaded) setTimeout(function () { if (listeners.indexOf(l) >= 0) l.cb(campSnap()); }, 0);
       else pollSoon();
     }
-    else if (running && loaded) {
+    else if (live && loaded) {
       setTimeout(function () { if (listeners.indexOf(l) >= 0) l.cb(l.id !== undefined ? docSnap(l.id) : querySnap(l.query, cache, docSnap)); }, 0);
     }
     start();   /* the poller runs while any listener (characters or campaign) exists */
@@ -329,7 +428,7 @@
       if (done) return; done = true;
       var i = listeners.indexOf(l); if (i >= 0) listeners.splice(i, 1);
       if (!listeners.length) stop();
-      else if (!hasCampaignListeners()) camp.loaded = false;   /* nobody keeps it current: refetch on the next subscribe */
+      else if (!hasCampaignListeners() && mode !== 'snapshot') camp.loaded = false;   /* nobody keeps it current: refetch on the next subscribe */
     };
   }
 
@@ -342,26 +441,264 @@
     });
   }
 
-  /* an own write: update the cache now, send it, take the server's version, then poll */
+  /* ---------- the snapshot: the last loaded data, per user and campaign, for an offline start ---------- */
+  var savedAt = 0, saveTimer = null;
+  function saveNow() {
+    clearTimeout(saveTimer); saveTimer = null;
+    if (!me) return;
+    savedAt = Date.now();
+    writeJSON(userKey(me), {
+      v: 1, me: me, savedAt: nowIso(), syncedAt: lastSync,
+      docs: cache, stamps: stamp,
+      campaign: camp.doc ? { doc: camp.doc, updatedAt: camp.stamp === undefined ? null : camp.stamp } : null,
+      members: membersById
+    });
+  }
+  /* at most one write every couple of seconds (a poll every 4 s with no changes still refreshes lastSync) */
+  function persistSoon() {
+    if (!me || saveTimer) return;
+    var wait = snapshotMs() - (Date.now() - savedAt);
+    if (wait <= 0) saveNow(); else saveTimer = setTimeout(saveNow, wait);
+  }
+
+  /* on start: this user's queued writes, and the snapshot (the whole cache after an offline start; online it only
+     matters for documents with queued writes, which the first full load leaves alone). Queued writes are applied
+     again on top: every one of them is idempotent (deep merge, log append with dedup, PUT, DELETE). */
+  function restore(m, snap) {
+    snap = snap || readJSON(userKey(m));
+    if (snap && snap.me && snap.me.id === m.id) {
+      if (isObj(snap.docs)) cache = snap.docs;
+      if (isObj(snap.stamps)) stamp = snap.stamps;
+      if (snap.campaign && isObj(snap.campaign.doc)) { camp.doc = snap.campaign.doc; camp.stamp = snap.campaign.updatedAt || null; }
+      if (isObj(snap.members)) membersById = snap.members;
+      if (mode === 'snapshot') {
+        lastSync = snap.syncedAt || null;
+        loaded = true; camp.loaded = !!camp.doc;
+        if (membersById) members = { at: Infinity, promise: Promise.resolve(membersById) };
+      }
+    }
+    var saved = readJSON(userKey(m) + '#queue');
+    (Array.isArray(saved) ? saved : []).forEach(function (q, i) {
+      if (!q || typeof q.path !== 'string' || ['PUT', 'PATCH', 'DELETE'].indexOf(q.method) < 0) return;
+      q = { qid: q.qid || TAB + '.r' + i, saved: !!q.qid, mine: false, claim: null,
+        kind: q.kind === 'campaign' ? 'campaign' : 'char', id: q.id, method: q.method, path: q.path, body: q.body, waiters: [] };
+      queue.push(q); bump(q, 1); applyLocal(q);
+    });
+  }
+
+  /* ---------- the write queue ----------
+     Every own write goes through it: applied to the cache at once, appended (and saved to localStorage), then
+     sent in order, one at a time. The promise resolves when the server accepts the write, or as soon as it is
+     queued while the network is unreachable (or failing with 5xx / 409); it rejects when the server refuses it
+     while the caller is still waiting. A queued write the server refuses later is dropped, the cache is resynced
+     and the error goes to the err callbacks. */
+  var flushing = false, stalled = false, retryTimer = null;
+
+  function bump(q, n) {
+    if (q.kind === 'campaign') camp.pending = Math.max(0, camp.pending + n);
+    else { pending[q.id] = (pending[q.id] || 0) + n; if (pending[q.id] <= 0) delete pending[q.id]; }
+  }
+  function applyLocal(q) {
+    if (q.kind === 'campaign') {
+      if (q.method === 'PUT') camp.doc = trimLog(clone(q.body));
+      else if (q.method === 'PATCH' && camp.doc) mergeCampaign(camp.doc, q.body);
+    } else if (q.method === 'PUT') cache[q.id] = clone(q.body);
+    else if (q.method === 'PATCH') { if (q.id in cache) deepMerge(cache[q.id], q.body); }
+    else if (q.method === 'DELETE') delete cache[q.id];
+  }
+  /* Several tabs of one user share the stored queue. Each entry has a qid; a tab sends an entry only after
+     claiming it in storage (no other tab's live claim), removes it when the server answered, and drops from
+     memory entries another tab has finished. A tab only folds into entries it created itself. */
+  var TAB = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  var CLAIM_MS = 30000;
+  var finished = {};           /* qids this tab has sent or dropped */
+  function qkey() { return userKey(me) + '#queue'; }
+  function stored() { var v = me ? readJSON(qkey()) : null; return Array.isArray(v) ? v.filter(function (x) { return x && typeof x === 'object'; }) : []; }
+  function plain(q, x) { return { qid: q.qid, kind: q.kind, id: q.id, method: q.method, path: q.path, body: q.body, claim: q.claim || (claimedElsewhere(x) ? x.claim : null) }; }
+  function saveQueue() {
+    if (!me) return;
+    var mine = {}; queue.forEach(function (q) { mine[q.qid] = q; });
+    var out = [], seen = {};
+    stored().forEach(function (x) {
+      if (!x.qid || finished[x.qid] || seen[x.qid]) return;
+      seen[x.qid] = true; out.push(mine[x.qid] ? plain(mine[x.qid], x) : x);
+    });
+    queue.forEach(function (q) { if (!seen[q.qid] && !q.saved) { seen[q.qid] = true; out.push(plain(q)); } });
+    if (writeJSON(qkey(), out.length ? out : null)) queue.forEach(function (q) { q.saved = true; });
+  }
+  /* entries this tab saved that are gone from storage were sent (or dropped) by another tab: forget them */
+  function syncQueue() {
+    var byId = {}, list = stored();
+    list.forEach(function (x) { if (x.qid) byId[x.qid] = x; });
+    queue.slice().forEach(function (q) {
+      if (q.saved && !byId[q.qid] && q !== sendingQ) { queue.splice(queue.indexOf(q), 1); bump(q, -1); settleWaiters(q); }
+    });
+    return byId;
+  }
+  function claimedElsewhere(x) { return !!(x && x.claim && x.claim.tab !== TAB && x.claim.until > Date.now()); }
+  function settleWaiters(q, err) {
+    var ws = q.waiters; q.waiters = [];
+    ws.forEach(function (w) { if (err) w.reject(err); else w.resolve(); });
+  }
+  function offlineNow() { return mode !== 'online' || stalled || !net; }
+
+  /* can patch b, sent right after patch a to the same document, be folded into a? Only when one PATCH of the merged
+     body is provably the same as the two in a row under the server's rule, whatever the stored document holds:
+     at the top level anything goes except an object over a non-object; below it a null (a delete) or an object
+     over a non-object is not safe (the stored value could be a non-object, which the first patch would replace
+     with its literal object). The campaign `log` appends, so the two lists concatenate. Returns the merged
+     patch or null. */
+  function foldPatch(a, b, depth, campaign) {
+    if (!isObj(a) || !isObj(b)) return null;
+    var out = clone(a), keys = Object.keys(b);
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i], bv = b[k], has = Object.prototype.hasOwnProperty.call(a, k);
+      if (campaign && depth === 0 && k === 'log') {
+        if (!Array.isArray(bv) || (has && !Array.isArray(a.log))) return null;
+        out.log = (has ? a.log : []).concat(clone(bv));
+        continue;
+      }
+      if (bv === null) { if (depth > 0) return null; out[k] = null; continue; }
+      if (isObj(bv)) {
+        if (!has) { out[k] = clone(bv); continue; }
+        if (!isObj(a[k])) return null;
+        var sub = foldPatch(a[k], bv, depth + 1, false);
+        if (!sub) return null;
+        out[k] = sub; continue;
+      }
+      out[k] = clone(bv);
+    }
+    return out;
+  }
+  function tryFold(q) {
+    var last = queue[queue.length - 1];
+    if (!last || last === sendingQ || !last.mine || last.method !== 'PATCH' || q.method !== 'PATCH' || last.kind !== q.kind || last.path !== q.path) return false;
+    /* never into an entry another tab is sending, or has already sent (gone from storage) */
+    var x = stored().filter(function (e) { return e.qid === last.qid; })[0];
+    if (last.saved ? !x || claimedElsewhere(x) : false) return false;
+    /* a player's campaign patches are checked field by field: one refused change would sink both, so never fold them */
+    if (q.kind === 'campaign' && !(me && me.role === 'gm')) return false;
+    var merged = foldPatch(last.body, q.body, 0, q.kind === 'campaign');
+    if (!merged || JSON.stringify(merged).length > COALESCE_MAX) return false;
+    last.body = merged;
+    return last;
+  }
+  var sendingQ = null, qseq = 0;
+  function enqueue(q) {
+    q.waiters = []; q.mine = true; q.saved = false;
+    q.qid = TAB + '.' + (++qseq);
+    var into = tryFold(q);
+    if (!into) { queue.push(q); bump(q, 1); into = q; }
+    saveQueue(); emitStatus();
+    return new Promise(function (resolve, reject) {
+      if (offlineNow()) resolve();             /* queued: it goes out when the network is back */
+      else into.waiters.push({ resolve: resolve, reject: reject });
+    });
+  }
+  function retryLater() {
+    if (retryTimer || !queue.length || signedOut) return;
+    retryTimer = setTimeout(function () { retryTimer = null; kick(); }, pollMs());
+  }
+  /* the network may be back: reconnect after an offline start, send the queue, poll */
+  function kick() {
+    if (signedOut || !me) return;
+    if (mode === 'snapshot') {
+      if (running) pollSoon();
+      else reconnect().then(function (ok) { if (ok) flush(); else retryLater(); });
+      return;
+    }
+    flush(); pollSoon();
+  }
+  function flush() {
+    if (flushing || !queue.length || signedOut || !me) return;
+    if (mode !== 'online') { retryLater(); return; }
+    var byId = syncQueue();
+    if (!queue.length) { stalled = false; emitStatus(); pollSoon(); return; }
+    var q = queue[0], ch = {};
+    if (claimedElsewhere(byId[q.qid])) { retryLater(); return; }    /* another tab is sending it */
+    flushing = true;
+    q.claim = { tab: TAB, until: Date.now() + CLAIM_MS }; saveQueue();
+    if (q.kind === 'char') ch[q.id] = true;
+    sendingQ = q;
+    if (q.kind === 'campaign') camp.epoch++; else epoch++;
+    send(q.method, q.path, q.body).then(function (r) {
+      flushing = false; sendingQ = null; stalled = false;
+      done(q);
+      if (q.kind === 'campaign') {
+        if (!camp.pending && hasCampaignListeners()) applyCampaign(r);
+      } else if (!pending[q.id]) {
+        if (q.method === 'DELETE') { delete cache[q.id]; delete stamp[q.id]; }
+        else if (r && r.doc) { cache[q.id] = r.doc; stamp[q.id] = r.doc.updatedAt || ''; }
+        notify(ch);
+      }
+      lastSync = nowIso(); emitStatus(); persistSoon();
+      settleWaiters(q);
+      if (queue.length) flush(); else pollSoon();
+    }, function (e) {
+      flushing = false; sendingQ = null;
+      if (signedOut) return;                       /* endSession settled the waiters; the queue stays saved */
+      if (isNetErr(e) || !e.status || e.status >= 500 || e.status === 409) {
+        /* not refused, just not now: keep it (and everything after it), tell waiters it is queued, retry */
+        stalled = true; q.claim = null; saveQueue();
+        queue.forEach(function (x) { settleWaiters(x); });
+        emitStatus(); retryLater();
+        return;
+      }
+      /* refused (400 / 403 / 404 / 413 ...): drop it and resync what it touched from the server */
+      done(q);
+      if (q.kind === 'campaign') camp.stamp = undefined;    /* the next poll refetches and undoes the optimistic change */
+      else if (running) loaded = false;                     /* a full load replaces the optimistic copy */
+      pollSoon();
+      emitStatus(); persistSoon();
+      if (q.waiters.length) settleWaiters(q, e);
+      else {
+        var err = new Error('a change saved while offline was not accepted: ' + e.message);
+        err.status = e.status; err.code = 'dropped';
+        notifyErr(err);
+      }
+      flush();
+    });
+  }
+  /* q has been answered: off the queue, no longer pending */
+  function done(q) {
+    finished[q.qid] = true;
+    var i = queue.indexOf(q); if (i >= 0) queue.splice(i, 1);
+    bump(q, -1);
+    if (q.kind === 'campaign') camp.epoch++; else epoch++;
+    saveQueue();
+  }
+
+  /* after an offline start: is the server back, and is it still the same person? */
+  var reconnecting = null;
+  function reconnect() {
+    if (mode !== 'snapshot' || signedOut) return Promise.resolve(mode === 'online');
+    if (reconnecting) return reconnecting;
+    reconnecting = api('GET', '/me').then(function (m) {
+      reconnecting = null;
+      if (!m || !m.id) { endSession(signedOutError()); return false; }
+      if (userKey(m) !== userKey(me)) {
+        var e = new Error('signed in as ' + (m.email || m.id) + ' now: reload the page'); e.code = 'other_user'; e.status = 401;
+        endSession(e); return false;
+      }
+      me = m; mode = 'online';
+      writeJSON(LAST, { key: userKey(m), id: m.id });
+      loaded = false; camp.stamp = undefined; members = null;      /* full load, campaign refetch, fresh names */
+      if (window.B68Runtime) window.B68Runtime.me = m;
+      emitStatus();
+      return true;
+    }, function () { reconnecting = null; return false; });   /* still offline (a 401 or redirect already ended the session) */
+    return reconnecting;
+  }
+
+  /* an own write: update the cache now, queue it, send it; the server's version replaces the cache when it answers */
   function write(id, method, body, local) {
     if (signedOut) return Promise.reject(signedOutError());
     var ch = {}; ch[id] = true;
-    pending[id] = (pending[id] || 0) + 1; epoch++;
-    local(); notify(ch);
-    function settle() { epoch++; if (!--pending[id]) delete pending[id]; }
-    return send(method, '/' + COLLECTION + '/' + encodeURIComponent(id), body).then(function (r) {
-      settle();
-      if (!pending[id]) {
-        if (method === 'DELETE') { delete cache[id]; delete stamp[id]; }
-        else if (r && r.doc) { cache[id] = r.doc; stamp[id] = r.doc.updatedAt || ''; }
-        notify(ch);
-      }
-      pollSoon();
-    }, function (e) {
-      settle();
-      if (running && !signedOut) { loaded = false; pollSoon(); }   /* resync from the server */
-      throw e;
-    });
+    var p = enqueue({ kind: 'char', id: id, method: method, path: '/' + COLLECTION + '/' + encodeURIComponent(id), body: body === undefined ? undefined : clone(body) });
+    epoch++;
+    local(); notify(ch); persistSoon();
+    flush();
+    return p;
   }
 
   function docRef(id) {
@@ -373,6 +710,7 @@
           return { id: id, exists: true, data: function () { return clone(d); }, metadata: { fromCache: false, hasPendingWrites: false } };
         }, function (e) {
           if (e.status === 404) return { id: id, exists: false, data: function () { return undefined; }, metadata: { fromCache: false, hasPendingWrites: false } };
+          if (isNetErr(e) && loaded) return docSnap(id);     /* offline: the last loaded copy */
           throw e;
         });
       },
@@ -395,19 +733,11 @@
      write (e.g. 403 for a player) forces a refetch so the optimistic change is rolled back. */
   function campaignWrite(method, body, local) {
     if (signedOut) return Promise.reject(signedOutError());
-    camp.pending++; camp.epoch++;
-    if (camp.loaded) { local(); notifyCampaign(); }
-    function settle() { camp.epoch++; camp.pending--; }
-    return send(method, '/' + CAMPAIGN, body).then(function (r) {
-      settle();
-      if (!camp.pending && hasCampaignListeners()) applyCampaign(r);
-      pollSoon();
-    }, function (e) {
-      settle();
-      camp.stamp = undefined;    /* unknown: the next poll refetches and undoes the optimistic change */
-      pollSoon();
-      throw e;
-    });
+    var p = enqueue({ kind: 'campaign', method: method, path: '/' + CAMPAIGN, body: clone(body) });
+    camp.epoch++;
+    if (camp.loaded) { local(); notifyCampaign(); persistSoon(); }
+    flush();
+    return p;
   }
 
   function campaignRef() {
@@ -418,6 +748,9 @@
         return api('GET', '/' + CAMPAIGN).then(function (r) {
           var d = r && isObj(r.doc) ? r.doc : defaultCampaign();
           return { id: CAMPAIGN_ID, exists: true, data: function () { return clone(d); }, metadata: { fromCache: false, hasPendingWrites: false } };
+        }, function (e) {
+          if (isNetErr(e) && camp.doc) return campSnap();      /* offline: the last loaded copy */
+          throw e;
         });
       },
       set: function (doc) {
@@ -470,12 +803,15 @@
         if (!OPS[op]) throw new Error('unsupported where operator: ' + op);
         return next({ where: [{ field: f, op: op, value: v }] });
       },
-      /* from the live cache when the poller is running, else one full read */
+      /* from the live cache when the poller is running (or after an offline start), else one full read */
       get: function () {
-        if (running && loaded) return Promise.resolve(querySnap(q, cache, docSnap));
+        if ((running || mode === 'snapshot') && loaded) return Promise.resolve(querySnap(q, cache, docSnap));
         return api('GET', '/' + COLLECTION).then(function (r) {
           var docs = {}; ((r && r.docs) || []).forEach(function (row) { if (!row.deleted && row.doc) docs[row.id] = row.doc; });
           return querySnap(q, docs, function (id) { return { id: id, exists: true, data: function () { return clone(docs[id]); }, metadata: { fromCache: false, hasPendingWrites: false } }; });
+        }, function (e) {
+          if (isNetErr(e) && loaded) return querySnap(q, cache, docSnap);   /* offline: the last loaded copy */
+          throw e;
         });
       },
       onSnapshot: function (cb, err) { return subscribe({ query: q, cb: cb, err: err }); }
@@ -526,4 +862,34 @@
       return uses[name] || (uses[name] = makers[name]());
     }
   };
+
+  /* ---------- installable: manifest, icons, home-screen metas, service worker (hosted build only) ----------
+     Added from here so index.html stays the same page the artifact runs. The manifest is fetched with the
+     Access cookie (crossorigin="use-credentials"), or Access would answer it with its sign-in redirect. */
+  (function installable() {
+    var d = document, head = d.head || (d.getElementsByTagName && d.getElementsByTagName('head')[0]);
+    if (head && typeof d.createElement === 'function') {
+      var add = function (tag, attrs, probe) {
+        try {
+          if (head.querySelector && head.querySelector(probe)) return;
+          var el = d.createElement(tag);
+          Object.keys(attrs).forEach(function (k) { el.setAttribute(k, attrs[k]); });
+          head.appendChild(el);
+        } catch (e) {}
+      };
+      add('link', { rel: 'manifest', href: 'manifest.webmanifest', crossorigin: 'use-credentials' }, 'link[rel="manifest"]');
+      add('meta', { name: 'theme-color', content: '#14110e' }, 'meta[name="theme-color"]');
+      add('link', { rel: 'icon', type: 'image/png', sizes: '192x192', href: 'icons/icon-192.png' }, 'link[rel="icon"]');
+      add('link', { rel: 'apple-touch-icon', href: 'icons/apple-touch-icon.png' }, 'link[rel="apple-touch-icon"]');
+      add('meta', { name: 'apple-mobile-web-app-capable', content: 'yes' }, 'meta[name="apple-mobile-web-app-capable"]');
+      add('meta', { name: 'mobile-web-app-capable', content: 'yes' }, 'meta[name="mobile-web-app-capable"]');
+      add('meta', { name: 'apple-mobile-web-app-title', content: "Blades '68" }, 'meta[name="apple-mobile-web-app-title"]');
+      add('meta', { name: 'apple-mobile-web-app-status-bar-style', content: 'black' }, 'meta[name="apple-mobile-web-app-status-bar-style"]');
+    }
+    var nav = window.navigator;
+    if (!nav || !nav.serviceWorker || typeof nav.serviceWorker.register !== 'function') return;
+    var register = function () { try { nav.serviceWorker.register('sw.js', { scope: './' }).catch(function () {}); } catch (e) {} };
+    if (d.readyState === 'complete' || typeof window.addEventListener !== 'function') register();
+    else window.addEventListener('load', register);
+  })();
 })();

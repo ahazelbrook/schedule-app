@@ -81,6 +81,22 @@ removed player is signed out at their next request. Their characters stay.
 - D1 keeps 30 days of point-in-time history on the free plan (**Time Travel** on the
   database page), so a bad edit can be rolled back.
 
+## On phones
+
+The hosted app installs like an app, with its own icon and no browser bars. Open the address
+once and sign in, then:
+
+- **iPhone or iPad (Safari):** the Share button → **Add to Home Screen** → **Add**.
+- **Android (Chrome):** the ⋮ menu → **Install app** (or **Add to Home screen**), or accept the
+  install prompt.
+
+It keeps working with no signal for what you have already seen: it opens with the sheets and
+the table as they were the last time it was online, and you can tick boxes and edit as usual.
+The header then says **Offline · N changes waiting**; the changes save by themselves, in order,
+when the phone is back online. Signing in needs the network, and so does seeing what others
+changed while you were offline. If a change made offline is refused (for example on a sheet
+you cannot edit), the app says so and shows the saved version again.
+
 ## Running it locally
 
 ```

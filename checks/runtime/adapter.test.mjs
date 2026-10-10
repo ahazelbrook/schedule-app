@@ -36,7 +36,13 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
   });
   s.defaultCampaign = defaultCampaign;
   function merge(t, p) { for (const k of Object.keys(p)) { const v = p[k]; if (v === null) delete t[k]; else if (v && typeof v === 'object' && !Array.isArray(v) && t[k] && typeof t[k] === 'object' && !Array.isArray(t[k])) merge(t[k], v); else t[k] = clone(v); } return t; }
+  s.applied = [];                                       // writes the server accepted, in order: 'PATCH /api/characters/a'
   s.handle = function (user, method, url, body) {
+    const r = handle0(user, method, url, body);
+    if (Array.isArray(r) && r[0] === 200 && method !== 'GET') s.applied.push(method + ' ' + new URL(url, 'https://app.test').pathname);
+    return r;
+  };
+  function handle0(user, method, url, body) {
     calls.push(method + ' ' + url);
     const u = new URL(url, 'https://app.test');
     const p = u.pathname;
@@ -102,12 +108,20 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
     } else return [400, { error: 'bad method' }];
     rows[id] = { owner: doc.owner || null, updatedAt: t, deleted: false, doc };
     return [200, { id, doc: clone(doc) }];
-  };
+  }
   return s;
 }
 
 /* ---------- a fake browser running cf.js ---------- */
-function browser(server, user, { preset, protocol = 'https:' } = {}) {
+/* a localStorage stand-in; pass the same one to two browsers to model a reload. `broken` makes every call throw. */
+function memStorage({ broken = false } = {}) {
+  const m = new Map();
+  const chk = () => { if (broken) throw new Error('SecurityError: storage blocked'); };
+  return { getItem: (k) => (chk(), m.has(k) ? m.get(k) : null), setItem: (k, v) => { chk(); m.set(k, String(v)); }, removeItem: (k) => { chk(); m.delete(k); }, get length() { return m.size; }, _m: m };
+}
+const read = (st, k) => { const v = st._m.get(k); return v == null ? null : JSON.parse(v); };
+
+function browser(server, user, { preset, protocol = 'https:', storage } = {}) {
   const fetchLog = [];
   const clicks = [];
   const listeners = {};
@@ -131,16 +145,26 @@ function browser(server, user, { preset, protocol = 'https:' } = {}) {
     if (r.forced === '401') return mk(401, '{"error":"not signed in"}', 'application/json');
     return mk(r[0], JSON.stringify(r[1]), 'application/json; charset=utf-8');
   }
+  const winListeners = {};
+  const events = [];                                   // every b68:runtime detail, in order
+  class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } }
   const win = {
     document, fetch, setTimeout, clearTimeout, console, Blob, location: { protocol, pathname: '/' },
     URL: { createObjectURL: (b) => { const u = 'blob:' + (++nBlob); blobs[u] = b; return u; }, revokeObjectURL: () => {} },
+    CustomEvent,
+    addEventListener: (t, fn) => { (winListeners[t] = winListeners[t] || []).push(fn); },
+    dispatchEvent: (ev) => { if (ev.type === 'b68:runtime') events.push(clone(ev.detail)); (winListeners[ev.type] || []).forEach((fn) => fn(ev)); return true; },
   };
+  if (storage) win.localStorage = storage;
+  /* the user can change between page loads (a reload as someone else) */
+  const fire = (t) => (winListeners[t] || []).forEach((fn) => fn({ type: t }));
   win.window = win;
   if (preset) win.claude = preset;
   win.__B68_POLL_MS = POLL;
+  win.__B68_SNAPSHOT_MS = 20;                          // the snapshot throttle (2 s in the app)
   vm.createContext(win);
   vm.runInContext(SRC, win, { filename: 'cf.js' });
-  return { win, fetchLog, clicks, blobs, document, listeners };
+  return { win, fetchLog, clicks, blobs, document, listeners, events, fire, setUser: (u) => { user = u; } };
 }
 
 /* wait until fn() is truthy */
@@ -315,15 +339,17 @@ await test('a write by a player to a character they do not own rejects with the 
   await col.doc('pnew').set(char('pnew')); eq(api.rows.pnew.owner, 'pl@x.test');
 });
 
-await test('409: a write is retried, then rejects with the API message', async () => {
+await test('409: a write is retried; when it keeps conflicting it stays queued (resolves) and lands later', async () => {
   const api = fakeApi();
   const b = browser(api, { email: 'gm@x.test' });
   const col = (await b.win.claude.use('db')).collection('characters');
   api.conflicts = 2; await col.doc('k').set(char('k'));
   eq([api.conflicts, !!api.rows.k], [0, true], 'retried twice and landed');
-  api.conflicts = 5; let err = null;
-  try { await col.doc('k').update({ name: 'k2' }); } catch (e) { err = e; }
-  eq(err && err.message, 'the character kept changing, try again'); eq(api.rows.k.doc.name, 'k');
+  api.conflicts = 5;
+  await col.doc('k').update({ name: 'k2' });            // 3 attempts, then queued: resolves
+  eq([api.rows.k.doc.name, b.win.B68Runtime.status.pending, b.win.B68Runtime.status.online], ['k', 1, true], 'queued after the retries');
+  await until(() => api.rows.k.doc.name === 'k2', 3000);
+  eq([api.rows.k.doc.name, b.win.B68Runtime.status.pending], ['k2', 0], 'landed on a later flush');
 });
 
 await test('a failed write resyncs the cache from the server', async () => {
@@ -535,6 +561,290 @@ await test('campaign: a rejected write (player PUT, 403) rejects with the API me
   await until(() => snaps[snaps.length - 1].data().crew.name === 'Lamplighters', POLL * 3);
   eq(snaps[snaps.length - 1].data().crew.name, 'Lamplighters', 'rolled back');
   un();
+});
+
+/* ---------- offline: snapshot, offline start, write queue, status ---------- */
+const SNAP = 'b68.cf.gm@x.test#default', QUEUE = SNAP + '#queue';
+const PSNAP = 'b68.cf.pl@x.test#default', PQUEUE = PSNAP + '#queue';
+/* load a page for `who` with listeners on the characters and the campaign, so the snapshot holds both */
+async function warm(api, storage, who = 'gm@x.test') {
+  const b = browser(api, { email: who, name: who.split('@')[0] }, { storage });
+  const db = await b.win.claude.use('db');
+  const cs = [], ks = [];
+  const un1 = db.collection('characters').onSnapshot((s) => cs.push(s)), un2 = db.collection('campaign').doc('main').onSnapshot((s) => ks.push(s));
+  await (await b.win.claude.use('user')).profiles([who]);
+  await until(() => cs.length && ks.length);
+  await sleep(30);
+  return { b, db, cs, ks, close() { un1(); un2(); } };
+}
+/* start a second page on the same storage with the network down */
+async function offlinePage(api, storage, who = 'gm@x.test') {
+  api.status['/api/'] = 'down';
+  const b = browser(api, { email: who }, { storage });
+  const u = await b.win.claude.use('user');
+  const db = await b.win.claude.use('db');
+  return { b, u, db };
+}
+const ids = (s) => s.docs.map((d) => d.id);
+
+await test('snapshot: written after the first load (me, characters, campaign, members) and remembered as the last user', async () => {
+  const api = fakeApi();
+  api.put('a', char('a', { owner: 'gm@x.test' })); api.setCampaign(campaignDoc());
+  const st = memStorage();
+  const w = await warm(api, st);
+  const snap = read(st, SNAP);
+  ok(snap, 'no snapshot under ' + SNAP + ': ' + [...st._m.keys()]);
+  eq([snap.me.id, snap.me.role, Object.keys(snap.docs), snap.stamps.a, snap.campaign.doc.crew.name, snap.campaign.updatedAt, Object.keys(snap.members)],
+    ['gm@x.test', 'gm', ['a'], api.rows.a.updatedAt, 'Lamplighters', api.campaign.updatedAt, ['gm@x.test']], 'snapshot');
+  ok(snap.syncedAt, 'syncedAt');
+  eq(read(st, 'b68.cf.last'), { key: SNAP, id: 'gm@x.test' }, 'last user');
+  eq(read(st, QUEUE), null, 'no queue');
+  // throttled: a burst of changes does not write on every poll
+  w.b.win.__B68_SNAPSHOT_MS = 2000; await sleep(30);
+  let sets = 0; const real = st.setItem; st.setItem = (k, v) => { if (k === SNAP) sets++; real(k, v); };
+  api.put('b', char('b')); await sleep(POLL * 4);
+  ok(sets <= 1, 'snapshot writes within the throttle window: ' + sets);
+  w.close();
+});
+
+await test('storage that throws everywhere: the page still works online, no offline start', async () => {
+  const api = fakeApi(); api.put('a', char('a'));
+  const st = memStorage({ broken: true });
+  const w = await warm(api, st);
+  await w.db.collection('characters').doc('a').update({ name: 'a2' });
+  eq(api.rows.a.doc.name, 'a2'); w.close();
+  api.status['/api/'] = 'down';
+  const b = browser(api, { email: 'gm@x.test' }, { storage: st });
+  eq(await b.win.claude.use('user'), null, 'user without a readable snapshot');
+});
+
+await test('offline start: user, db, listeners and profiles from the snapshot; reconnect does a full load and notifies', async () => {
+  const api = fakeApi();
+  api.put('a', char('a', { owner: 'gm@x.test' })); api.put('b', char('b')); api.setCampaign(campaignDoc());
+  const st = memStorage();
+  const w = await warm(api, st); w.close();
+  const { b, u, db } = await offlinePage(api, st);
+  ok(u, 'user null offline'); ok(db, 'db null offline');
+  eq([await u.id(), await u.isOwner(), b.win.B68Runtime.me.id], ['gm@x.test', true, 'gm@x.test']);
+  eq(await u.profiles(['gm@x.test']), { 'gm@x.test': { id: 'gm@x.test', name: 'gm' } }, 'profiles from the snapshot');
+  eq([b.win.B68Runtime.status.online, b.win.B68Runtime.status.pending, b.win.B68Runtime.status.lastSync], [false, 0, read(st, SNAP).syncedAt], 'status offline');
+  const cs = [], ds = [], ks = [], errs = [];
+  db.collection('characters').orderBy('updatedAt', 'desc').onSnapshot((s) => cs.push(s), (e) => errs.push(e));
+  db.collection('characters').doc('a').onSnapshot((s) => ds.push(s));
+  db.collection('campaign').doc('main').onSnapshot((s) => ks.push(s));
+  await until(() => cs.length && ds.length && ks.length, 500);
+  eq([ids(cs[0]), ds[0].data().name, ds[0].metadata.fromCache, ks[0].data().crew.name], [['b', 'a'], 'a', true, 'Lamplighters'], 'served from the snapshot');
+  eq((await db.collection('characters').doc('b').get()).data().name, 'b', 'doc get offline');
+  eq((await db.collection('campaign').doc('main').get()).data().crew.name, 'Lamplighters', 'campaign get offline');
+  await sleep(POLL * 3);
+  eq(errs.length, 0, 'an offline start is not an error');
+  // meanwhile on the server
+  api.put('c', char('c')); api.setCampaign(campaignDoc({ crew: { ...campaignDoc().crew, heat: 6 } }));
+  const n = cs.length;
+  delete api.status['/api/'];
+  await until(() => cs.length > n && ks[ks.length - 1].data().crew.heat === 6, POLL * 4);
+  eq([ids(cs[cs.length - 1]), ks[ks.length - 1].data().crew.heat, b.win.B68Runtime.status.online], [['c', 'b', 'a'], 6, true], 'after reconnect');
+  ok(b.win.B68Runtime.status.lastSync > read(st, SNAP).savedAt.slice(0, 0), 'lastSync');
+  eq(api.calls.filter((c) => c === 'GET /api/characters').length >= 2, true, 'a full load after reconnect');
+});
+
+for (const kind of ['401', 'redirect', 'html']) {
+  await test('no offline start when /api/me says signed out (' + kind + '), even with a snapshot', async () => {
+    const api = fakeApi(); api.put('a', char('a'));
+    const st = memStorage();
+    (await warm(api, st)).close();
+    api.status['/api/me'] = kind;
+    const b = browser(api, { email: 'gm@x.test' }, { storage: st });
+    eq([await b.win.claude.use('user'), await b.win.claude.use('db')], [null, null]);
+  });
+}
+
+await test('no offline start without a snapshot for the last user', async () => {
+  const api = fakeApi();
+  const st = memStorage();
+  st.setItem('b68.cf.last', JSON.stringify({ key: SNAP, id: 'gm@x.test' }));
+  api.status['/api/'] = 'down';
+  const b = browser(api, { email: 'gm@x.test' }, { storage: st });
+  eq(await b.win.claude.use('user'), null);
+});
+
+await test('offline writes: optimistic, queued in order (with pending flags), flushed in order on reconnect; safe patches fold', async () => {
+  const api = fakeApi();
+  api.put('a', char('a', { owner: 'gm@x.test' })); api.put('b', char('b')); api.setCampaign(campaignDoc());
+  const st = memStorage();
+  (await warm(api, st)).close();
+  const { b, db } = await offlinePage(api, st);
+  const col = db.collection('characters'), camp = db.collection('campaign').doc('main');
+  const da = [], ks = [];
+  col.doc('a').onSnapshot((s) => da.push(s)); camp.onSnapshot((s) => ks.push(s));
+  await until(() => da.length && ks.length);
+  // each resolves at once (queued), the cache shows it, hasPendingWrites is true
+  await col.doc('a').update({ play: { stress: 2 } });
+  await col.doc('a').update({ play: { stress: 3, harm: { l1: 'cut' } } });      // folds into the one before
+  await col.doc('b').update({ play: { harm: { l1: null } } });                   // a different doc
+  await col.doc('b').update({ play: { harm: { l2: null } } });                   // null below the top: not folded
+  await col.doc('n').set(char('n'));
+  await camp.update({ crew: { heat: 3 }, log: [{ at: '2026-10-10T13:00:00.000Z', by: 'gm@x.test', text: 'one' }] });
+  await camp.update({ log: [{ at: '2026-10-10T13:01:00.000Z', by: 'gm@x.test', text: 'two' }] });   // GM: folds, logs concatenate
+  await col.doc('b').delete();
+  const last = da[da.length - 1];
+  eq([last.data().play.stress, last.data().play.harm.l1, last.metadata.hasPendingWrites], [3, 'cut', true], 'optimistic a');
+  eq([ks[ks.length - 1].data().crew.heat, ks[ks.length - 1].data().log.map((e) => e.text), ks[ks.length - 1].metadata.hasPendingWrites], [3, ['two', 'one', 'first'], true], 'optimistic campaign');
+  const q = read(st, QUEUE);
+  eq(q.map((x) => x.method + ' ' + x.path), ['PATCH /characters/a', 'PATCH /characters/b', 'PATCH /characters/b', 'PUT /characters/n', 'PATCH /campaign', 'DELETE /characters/b'], 'stored queue');
+  eq(q[0].body, { play: { stress: 3, harm: { l1: 'cut' } } }, 'folded character patch');
+  eq(q[4].body.log.map((e) => e.text), ['one', 'two'], 'folded campaign log');
+  eq([b.win.B68Runtime.status.pending, b.win.B68Runtime.status.online], [6, false], 'status while offline');
+  eq(api.applied, [], 'nothing reached the server');
+  // a reload while still offline: the queue and the optimistic state survive
+  const again = await offlinePage(api, st);
+  const ra = []; again.db.collection('characters').doc('a').onSnapshot((s) => ra.push(s));
+  await until(() => ra.length);
+  eq([ra[0].data().play.stress, ra[0].metadata.hasPendingWrites, again.b.win.B68Runtime.status.pending], [3, true, 6], 'after an offline reload');
+  // network back: the first page flushes in order
+  delete api.status['/api/'];
+  await until(() => b.win.B68Runtime.status.pending === 0 && again.b.win.B68Runtime.status.pending === 0, 3000);
+  const want = ['PATCH /api/characters/a', 'PATCH /api/characters/b', 'PATCH /api/characters/b', 'PUT /api/characters/n', 'PATCH /api/campaign', 'DELETE /api/characters/b'];
+  eq(api.applied.slice(0, 6), want, 'applied in order');
+  eq([api.rows.a.doc.play.stress, api.rows.a.doc.play.harm.l1, !!api.rows.n && !api.rows.n.deleted, api.rows.b.deleted, api.campaign.crew.heat, api.campaign.log.map((e) => e.text)],
+    [3, 'cut', true, true, 3, ['two', 'one', 'first']], 'server state');
+  await until(() => !da[da.length - 1].metadata.hasPendingWrites, POLL * 4);
+  eq(da[da.length - 1].metadata.hasPendingWrites, false, 'pending cleared');
+  eq(read(st, QUEUE), null, 'queue emptied');
+});
+
+await test('online, the network drops mid-session: writes queue (resolve) and flush on the next successful poll and on `online`', async () => {
+  const api = fakeApi(); api.put('a', char('a'));
+  const st = memStorage();
+  const w = await warm(api, st);
+  const errs = []; const un = w.db.collection('characters').onSnapshot(() => {}, (e) => errs.push(e));
+  api.status['/api/'] = 'down';
+  await w.db.collection('characters').doc('a').update({ name: 'a2' });
+  eq([w.b.win.B68Runtime.status.pending, w.b.win.B68Runtime.status.online], [1, false], 'queued');
+  await sleep(POLL * 3);
+  eq(errs.length, 1, 'the outage surfaced once');
+  w.b.win.__B68_POLL_MS = 100000;                     // only the `online` event can bring it back now
+  delete api.status['/api/'];
+  w.b.fire('online');
+  await until(() => api.rows.a.doc.name === 'a2', 500);
+  eq([api.rows.a.doc.name, w.b.win.B68Runtime.status.pending, w.b.win.B68Runtime.status.online], ['a2', 0, true], 'flushed on online');
+  un(); w.close();
+});
+
+await test('a queued write refused while flushing (403) is dropped, the doc is resynced, one error is reported, the rest go on', async () => {
+  const api = fakeApi();
+  api.put('gmc', char('gmc', { owner: 'gm@x.test' })); api.put('mine', char('mine', { owner: 'pl@x.test' }));
+  const st = memStorage();
+  (await warm(api, st, 'pl@x.test')).close();
+  const { b, db } = await offlinePage(api, st, 'pl@x.test');
+  const col = db.collection('characters');
+  const qs = [], errs = [];
+  col.onSnapshot((s) => qs.push(s), (e) => errs.push(e));
+  await until(() => qs.length);
+  await col.doc('gmc').update({ name: 'hijacked' });
+  await col.doc('mine').update({ name: 'mine2' });
+  const name = (s, id) => s.docs.find((d) => d.id === id).data().name;
+  eq(name(qs[qs.length - 1], 'gmc'), 'hijacked', 'optimistic');
+  delete api.status['/api/'];
+  await until(() => b.win.B68Runtime.status.pending === 0 && api.rows.mine.doc.name === 'mine2', 2000);
+  await until(() => name(qs[qs.length - 1], 'gmc') === 'gmc', POLL * 4);
+  eq([api.rows.gmc.doc.name, api.rows.mine.doc.name, name(qs[qs.length - 1], 'gmc')], ['gmc', 'mine2', 'gmc'], 'dropped, resynced, the next one landed');
+  eq(errs.length, 1, 'one error');
+  eq([errs[0].status, errs[0].code, /not your character/.test(errs[0].message)], [403, 'dropped', true], 'the error');
+  eq(read(st, PQUEUE), null, 'queue empty');
+});
+
+await test('401 while flushing: stops, keeps the queue for that user; the next start (signed in) flushes it', async () => {
+  const api = fakeApi(); api.put('a', char('a'));
+  const st = memStorage();
+  (await warm(api, st)).close();
+  const { b, db } = await offlinePage(api, st);
+  const errs = []; db.collection('characters').onSnapshot(() => {}, (e) => errs.push(e));
+  await db.collection('characters').doc('a').update({ name: 'a2' });
+  await db.collection('characters').doc('a').update({ sheet: { name: 'A2' } });
+  eq(read(st, QUEUE).length, 1, 'folded into one');
+  await db.collection('characters').doc('a').update({ sheet: { look: null } });      // a delete below the top: not folded
+  eq(read(st, QUEUE).length, 2, 'queued');
+  delete api.status['/api/'];
+  api.status['/api/characters/'] = '401';          // /api/me answers, the write is refused as signed out
+  await until(() => errs.length, 1000);
+  await sleep(POLL * 3);
+  eq([errs.length, errs[0].message], [1, 'signed out: reload the page to sign in again'], 'err once');
+  eq(read(st, QUEUE).length, 2, 'queue kept');
+  eq(api.rows.a.doc.name, 'a', 'server unchanged');
+  let err = null; try { await db.collection('characters').doc('a').update({ name: 'later' }); } catch (e) { err = e; }
+  eq(err && err.code, 'signed_out', 'writes refused after sign-out');
+  // signed in again: a fresh page flushes on start
+  delete api.status['/api/characters/'];
+  const b2 = browser(api, { email: 'gm@x.test' }, { storage: st });
+  await b2.win.claude.use('db');
+  await until(() => api.rows.a.doc.name === 'a2' && read(st, QUEUE) === null, 1000);
+  eq([api.rows.a.doc.name, api.rows.a.doc.sheet.name, api.applied], ['a2', 'A2', ['PATCH /api/characters/a', 'PATCH /api/characters/a']], 'flushed on start');
+});
+
+await test('a queue belongs to its user: another account on the same browser neither sends nor sees it', async () => {
+  const api = fakeApi(); api.put('a', char('a'));
+  const st = memStorage();
+  (await warm(api, st)).close();
+  const { b, db } = await offlinePage(api, st);
+  b.win.__B68_POLL_MS = 100000;                       // the GM page stays offline-quiet from here
+  await db.collection('characters').doc('a').update({ name: 'gm-offline' });
+  delete api.status['/api/'];
+  const p = browser(api, { email: 'pl@x.test' }, { storage: st });
+  const pdb = await p.win.claude.use('db');
+  pdb.collection('characters').onSnapshot(() => {});
+  await sleep(POLL * 4);
+  eq([p.win.B68Runtime.status.pending, read(st, QUEUE).length, api.rows.a.doc.name, api.applied], [0, 1, 'a', []], 'untouched');
+});
+
+await test('two tabs of one user with the same stored queue: each write is sent once, in order', async () => {
+  const api = fakeApi(); api.put('a', char('a', { play: { stress: 0 } }));
+  const st = memStorage();
+  (await warm(api, st)).close();
+  const t1 = await offlinePage(api, st);
+  await t1.db.collection('characters').doc('a').update({ play: { stress: 1 } });
+  await t1.db.collection('characters').doc('b').set(char('b'));
+  const t2 = await offlinePage(api, st);              // opened later: loads the same queue
+  await t2.db.collection('characters').doc('a').update({ play: { stress: 2 } });
+  eq(read(st, QUEUE).length, 3, 'one stored queue');
+  t1.db.collection('characters').onSnapshot(() => {}); t2.db.collection('characters').onSnapshot(() => {});
+  delete api.status['/api/'];
+  await until(() => read(st, QUEUE) === null && !t1.b.win.B68Runtime.status.pending && !t2.b.win.B68Runtime.status.pending, 3000);
+  eq(api.applied, ['PATCH /api/characters/a', 'PUT /api/characters/b', 'PATCH /api/characters/a'], 'each once, in order');
+  eq(api.rows.a.doc.play.stress, 2, 'last write wins');
+});
+
+await test('offline start, then the server says another account: err once, writes refused', async () => {
+  const api = fakeApi(); api.put('a', char('a'));
+  const st = memStorage();
+  (await warm(api, st)).close();
+  const { b, db } = await offlinePage(api, st);
+  const errs = []; db.collection('characters').onSnapshot(() => {}, (e) => errs.push(e));
+  b.setUser({ email: 'pl@x.test' });
+  delete api.status['/api/'];
+  await until(() => errs.length, 1000);
+  eq([errs.length, errs[0].code], [1, 'other_user']);
+  let err = null; try { await db.collection('characters').doc('a').update({ name: 'x' }); } catch (e) { err = e; } ok(err, 'write accepted');
+});
+
+await test('status: B68Runtime.status and b68:runtime events follow offline, pending, reconnect and sync', async () => {
+  const api = fakeApi(); api.put('a', char('a'));
+  const st = memStorage();
+  (await warm(api, st)).close();
+  const { b, db } = await offlinePage(api, st);
+  db.collection('characters').onSnapshot(() => {});
+  ok(b.events.length >= 1, 'no event');
+  eq([b.events[0].online, b.events[0].pending], [false, 0], 'first event: offline');
+  await db.collection('characters').doc('a').update({ name: 'a2' });
+  eq(b.events[b.events.length - 1], { online: false, pending: 1, lastSync: read(st, SNAP).syncedAt }, 'one waiting');
+  const t0 = new Date().toISOString();
+  delete api.status['/api/'];
+  await until(() => b.win.B68Runtime.status.pending === 0 && b.win.B68Runtime.status.online, 1000);
+  const s = b.win.B68Runtime.status;
+  ok(s.lastSync >= t0, 'lastSync moved: ' + s.lastSync);
+  ok(b.events.some((e) => e.online && e.pending === 1), 'online with one to send');
+  eq(b.events[b.events.length - 1].pending, 0, 'last event');
+  for (let i = 1; i < b.events.length; i++) ok(JSON.stringify(b.events[i]) !== JSON.stringify(b.events[i - 1]), 'an event without a change');
 });
 
 await test('downloads.save makes a Blob and clicks a hidden anchor', async () => {
