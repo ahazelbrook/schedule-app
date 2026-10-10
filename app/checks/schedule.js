@@ -168,9 +168,11 @@ const SHEET = `(() => {
   await one(pt, PAT, 'pat: 14 Nov yes', () => pt.click(cellSel(o14)));
   await one(pt, PAT, 'pat: 14 Nov maybe', () => pt.click(cellSel(o14)));
   await one(pt, PAT, 'pat: 14 Nov no', () => pt.click(cellSel(o14)));
-  wp = await one(pt, PAT, 'pat: 28 Nov yes then blank', async () => { await pt.click(cellSel(o28)); await settle(pt, 300); await pt.click(cellSel(o28)); await pt.click(cellSel(o28)); await pt.click(cellSel(o28)); }, 400).catch(() => null);
-  /* (that was four taps: yes, maybe, no, blank: four writes; the helper expects one, so count separately) */
-  fails.splice(fails.findIndex(f => /^pat: 28 Nov/.test(f)), fails.some(f => /^pat: 28 Nov/.test(f)) ? 1 : 0);
+  /* four taps go round: yes, maybe, no, blank, one write each */
+  const n28 = cw(PAT);
+  for (let i = 0; i < 4; i++) { await pt.click(cellSel(o28)); await settle(pt, 250); }
+  assert(cw(PAT) - n28 === 4, 'pat: four taps on 28 Nov, four writes: ' + (cw(PAT) - n28));
+  assert(await pt.evaluate(() => document.activeElement && document.activeElement.classList.contains('sc-cell')), 'the tapped cell keeps the keyboard focus after the redraw');
   const pl = lastW(PAT);
   assert(pl && JSON.stringify(pl.body.schedule) === JSON.stringify({ avail: { [PAT]: { [o28]: null } } }), 'blank again is written as null: ' + JSON.stringify(pl && pl.body));
   await one(a, ALEX, 'alex note (Enter)', async () => { await a.fill('[data-ui="sched.note"]', 'Away the week of the 20th'); await a.press('[data-ui="sched.note"]', 'Enter'); });
@@ -248,7 +250,6 @@ const SHEET = `(() => {
   /* sheet mode */
   await a.evaluate((id) => B68.openCharacter(id), charId); await settle(a, 900);
   assert(await a.evaluate(() => document.body.dataset.mode) === 'sheet' && !(await a.$eval('#nextSession', n => n.hidden)), 'alex: card shown in sheet mode');
-  assert(await a.evaluate(() => window.__subCount) === await a.evaluate(() => window.__subCount), 'noop');
   const subs = await a.evaluate(() => window.__subCount);
   notes.push('alex onSnapshot subscriptions after table → create → sheet: ' + subs);
   await shotCard(a, 'sheet');

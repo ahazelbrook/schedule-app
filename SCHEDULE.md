@@ -77,3 +77,27 @@ quorum: 0 }`. `defaultCampaign()` (server) and `defaults()` (page) gain that key
 - Times: stored as UTC instants; entered and shown in the viewer's local time.
 - `.ics`: one VEVENT, `UID` = `b68-<at>@blades68`, `DTSTART`/`DTEND` in UTC, summary
   "Blades '68 · <crew name or 'session'>", location = place, description = note.
+
+## Schedule page (decisions)
+
+`app/schedule.js` + `app/schedule.css`; checked by `app/checks/schedule.js` (four people sharing one stubbed db).
+
+- boot.js subscribes to `campaign/main` once, as soon as the files settle, in every mode; the table page attaches to
+  that subscription while it is open (leaving the table no longer unsubscribes). Nothing is written on open.
+- Saves carry only the changed schedule leaves (`{schedule:{avail:{<me>:{o_x:'yes'}}}}`), a removed key as `null`.
+  campaign.js strips everything but `avail.<me>` / `rsvp.<me>` from a player's schedule delta.
+- People known: the viewer, owners of filed characters, everyone in `avail` / `rsvp`. Names through `profiles`,
+  else "Someone" ("You" for the viewer). The GM is only listed once they answer or own a character.
+- Best option: most yes, then most maybe, then soonest, and only once someone has said yes or maybe. Quorum 0 means
+  every known person.
+- Confirm, "Remove" and "Clear past dates" also drop everyone's answers for the removed options (GM writes). Confirm
+  keeps the previous `next.place`. Setting or moving `next` by hand logs "Next session: …" / "Next session moved to
+  …"; changing only place / note / length logs nothing. Clearing `next` clears `rsvp`.
+- Starting a session clears `next` (and `rsvp`) when `next.at` is within 12 h of now, and drops the options before
+  now + 12 h (not only those older than 12 h), so tonight's date leaves the grid.
+- The RSVP buttons are on the card only; the table box shows the tally with names. Read-only viewers can still
+  download the `.ics` / open the Google Calendar link (not a write).
+- Countdown: "in N min" (under an hour), "tonight" (same day, 17:00 or later) / "today", "tomorrow", "in N days" (up
+  to 20), "in N weeks", "now" while it runs. The card hides once `at + minutes` has passed.
+- The card is collapsed by default on screens up to 760 px (one line) and open on wider ones; the choice is remembered
+  per browser (`localStorage b68.nextOpen`).

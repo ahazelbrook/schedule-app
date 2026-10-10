@@ -222,7 +222,8 @@ const SHEET = `(pb) => {
   /* open a character from the table, then #t brings the table back */
   await p.click(`.tp-char[data-id="${ids.hound}"] [data-act="open"]`); await p.waitForTimeout(500);
   assert((await mode()) === 'sheet' && (await p.evaluate(() => location.hash)) === '#c/' + ids.hound, 'Open goes to the sheet');
-  assert((await p.evaluate(() => window.__unsubs.filter(x => x === 'campaign/main').length)) >= 1, 'leaving the table unsubscribes');
+  /* the campaign subscription now lives for the whole page (the next-session card reads it in every mode, SCHEDULE.md) */
+  assert((await p.evaluate(() => window.__unsubs.filter(x => x === 'campaign/main').length)) === 0, 'leaving the table keeps the one campaign subscription');
   await p.evaluate(() => { location.hash = '#t'; }); await p.waitForTimeout(500);
   assert((await mode()) === 'table' && (await p.$eval('#tp-crewname', n => n.textContent)) === 'The Lamplighters Gang', 'hash #t reopens the table');
   await p.evaluate(() => history.back()); await p.waitForTimeout(400);

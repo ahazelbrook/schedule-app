@@ -11,6 +11,7 @@
     "check:runtime": "node checks/runtime/adapter.test.mjs && node checks/runtime/pwa.test.mjs",
     "check:e2e": "cd app/checks && node e2e.js",
     "check:offline": "node checks/runtime/offline.e2e.mjs",
+    "check:schedule": "node checks/runtime/schedule.e2e.mjs",
     "icons": "node checks/runtime/icons.mjs"
   },
   "keywords": [],

@@ -441,7 +441,7 @@
 
   /* ================= the next-session card (#nextSession), every mode ================= */
   /* api (boot.js): { me(), canWrite(), save(patch) -> Promise, saveFile(name, text), people() -> ids, profiles(ids) | null } */
-  var card = { el: null, api: null, s: null, crew: '', open: null, timer: null, err: '', busy: false };
+  var card = { el: null, api: null, s: null, crew: '', open: null, timer: null, err: '', html: '' };
   function cardOpenDefault() {
     try { var v = localStorage.getItem('b68.nextOpen'); if (v === '1' || v === '0') return v === '1'; } catch (e) {}
     return !(window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
@@ -449,7 +449,7 @@
   function cardRender() {
     var el = card.el; if (!el) return;
     var s = card.s, n = s && upcoming(s);
-    if (!n) { if (!el.hidden) { el.hidden = true; el.innerHTML = ''; } stopTick(); return; }
+    if (!n) { if (!el.hidden) { el.hidden = true; el.innerHTML = ''; } card.html = ''; stopTick(); return; }
     if (card.open == null) card.open = cardOpenDefault();
     var api = card.api || {}, me = api.me ? api.me() : null, ro = api.canWrite ? api.canWrite() === false : false;
     var known = ordered(people(s, (api.people ? api.people() : []).concat(me ? [me] : [])), me, function (id) { return nameOf(id, me); });
@@ -479,16 +479,19 @@
       '<button type="button" class="chip nx-out" data-nx="out" aria-pressed="' + (mine === 'out') + '"' + (!me || ro ? ' disabled' : '') + '>Can’t make it</button></span>' +
       '<span class="nx-cal"><button type="button" class="btn sm" data-nx="ics" title="Download an .ics file for your calendar app">Add to calendar</button>' +
       '<a class="btn sm" href="' + esc(gcal(n, card.crew)) + '" target="_blank" rel="noopener" data-nx="gcal">Google Calendar</a></span></div></div>';
-    el.innerHTML = h; el.hidden = false;
-    el.classList.toggle('open', !!card.open);
     startTick();
+    if (h === card.html && !el.hidden) return;   /* the minute tick changed nothing: keep the DOM (and the focus) */
+    var a = document.activeElement, keep = a && el.contains(a) ? a.getAttribute('data-nx') : null;
+    card.html = h; el.innerHTML = h; el.hidden = false;
+    el.classList.toggle('open', !!card.open);
+    if (keep) { var b = el.querySelector('[data-nx="' + keep + '"]'); if (b && !b.disabled) try { b.focus({ preventScroll: true }); } catch (e) {} }
   }
   function startTick() { if (!card.timer) card.timer = setInterval(cardRender, 30000); }
   function stopTick() { if (card.timer) { clearInterval(card.timer); card.timer = null; } }
   function cardClick(e) {
     var t = e.target && e.target.closest ? e.target.closest('[data-nx]') : null; if (!t || !card.el.contains(t) || t.disabled) return;
     var what = t.getAttribute('data-nx'), s = card.s, n = s && s.next, api = card.api || {};
-    if (what === 'toggle') { card.open = !card.open; try { localStorage.setItem('b68.nextOpen', card.open ? '1' : '0'); } catch (e2) {} cardRender(); var b = card.el.querySelector('.nx-line'); if (b) try { b.focus(); } catch (e3) {} return; }
+    if (what === 'toggle') { card.open = !card.open; try { localStorage.setItem('b68.nextOpen', card.open ? '1' : '0'); } catch (e2) {} cardRender(); return; }
     if (!n) return;
     if (what === 'ics') { if (api.saveFile) api.saveFile(icsName(n), ics(n, card.crew)); return; }
     if (what === 'in' || what === 'out') {

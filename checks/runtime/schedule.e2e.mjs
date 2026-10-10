@@ -1,0 +1,53 @@
+// Schedule end-to-end against a real local server (wrangler pages dev on PORT, default 8791): the GM seeds two dates
+// through the API, a player answers in the grid, the GM confirms a date in the page, the player RSVPs on the card,
+// and the server holds each change (the player's writes pass the API's own-keys rule). No console errors.
+//   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node checks/runtime/schedule.e2e.mjs
+import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+import { fileURLToPath } from 'node:url';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'), PORT = Number(process.env.PORT || 8791), BASE = 'http://127.0.0.1:' + PORT;
+const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const stateDir = mkdtempSync(path.join(tmpdir(), 'b68-int-'));
+const server = spawn(path.join(ROOT, 'node_modules', '.bin', 'wrangler'), ['pages', 'dev', 'app', '--port', String(PORT), '--ip', '127.0.0.1', '--inspector-port', String(PORT + 20000), '--show-interactive-dev-session', 'false', '--persist-to', stateDir, '--log-level', 'warn', '--binding', 'DEV_USER=gm@example.test', '--binding', 'GM_EMAILS=gm@example.test'], { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: true, stdio: 'ignore' });
+process.on('exit', () => { try { process.kill(-server.pid, 'SIGKILL'); } catch (_) {} try { rmSync(stateDir, { recursive: true, force: true }); } catch (_) {} });
+let fails = 0; const check = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
+const api = (method, p, user, body) => fetch(BASE + '/api' + p, { method, headers: { 'X-Dev-User': user, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
+for (let i = 0; i < 100; i++) { try { const r = await fetch(BASE + '/index.html'); if (r.ok) break; } catch (_) {} await sleep(300); }
+const at1 = new Date(Date.now() + 5 * 864e5).toISOString(), at2 = new Date(Date.now() + 12 * 864e5).toISOString();
+let r = await api('PATCH', '/campaign', 'gm@example.test', { schedule: { options: { o_a: { at: at1, minutes: 240, note: '' }, o_b: { at: at2, minutes: 240, note: '' } } } });
+check(r.status === 200, 'GM seeds two options via API');
+const b = await chromium.launch();
+async function page(user) {
+  const ctx = await b.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: 390, height: 900 } });
+  const p = await ctx.newPage(); const errs = []; p.on('dialog', (d) => d.accept());
+  p.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); }); p.on('pageerror', (e) => errs.push(String(e)));
+  await p.goto(BASE + '/#t'); await p.waitForSelector('.sc-cell[data-act="sched.cycle"]', { timeout: 20000 });
+  return { p, errs };
+}
+const P1 = await page('p1@example.test');
+await P1.p.click('.sc-cell[data-act="sched.cycle"][data-o="o_a"]');
+await sleep(2500);
+r = await api('GET', '/campaign', 'gm@example.test');
+check(r.json.doc.schedule.avail?.['p1@example.test']?.o_a === 'yes', 'player answer lands on server: ' + JSON.stringify(r.json.doc.schedule.avail));
+check(!(await P1.p.textContent('#table-page')).includes('Could not save'), 'no save error on player page');
+const GM = await page('gm@example.test');
+await GM.p.click('[data-act="sched.confirm"][data-o="o_a"]').catch(async () => { await GM.p.click('[data-act="sched.confirm"]'); });
+await sleep(2500);
+r = await api('GET', '/campaign', 'gm@example.test');
+check(r.json.doc.schedule.next && r.json.doc.schedule.next.at === at1, 'GM confirm sets next: ' + JSON.stringify(r.json.doc.schedule.next));
+await P1.p.waitForSelector('[data-nx="in"]:not([disabled])', { timeout: 15000, state: 'attached' }).catch(() => {});
+const tog = await P1.p.$('[data-nx="toggle"]'); if (tog && (await tog.getAttribute('aria-expanded')) === 'false') await tog.click();
+await P1.p.click('[data-nx="in"]');
+await sleep(2500);
+r = await api('GET', '/campaign', 'gm@example.test');
+check(r.json.doc.schedule.rsvp?.['p1@example.test']?.v === 'in', 'player RSVP lands: ' + JSON.stringify(r.json.doc.schedule.rsvp));
+check(r.json.doc.log.some((e) => /Next session/.test(e.text)), 'log line written');
+await sleep(5000);
+check((await GM.p.textContent('#nextSession')).match(/1 in/i), 'GM card sees the RSVP after polling: ' + (await GM.p.textContent('#nextSession')).replace(/\s+/g, ' ').slice(0, 160));
+check(!P1.errs.length && !GM.errs.length, 'no console errors ' + JSON.stringify(P1.errs.concat(GM.errs)));
+await b.close(); console.log(fails ? 'FAILED ' + fails : 'ALL PASS'); process.exit(fails ? 1 : 0);
