@@ -105,7 +105,10 @@
   function appendOnly(rawL, bL, dL) {
     rawL = rawL == null ? [] : rawL;
     if (!Array.isArray(rawL) || !rawL.every(isObj) || rawL.length < bL.length) return null;
-    for (var k = 1; k <= dL.length; k++) if (same(dL.slice(k), bL.slice(0, dL.length - k))) return clone(dL.slice(0, k)).concat(clone(rawL)).slice(0, LOG_MAX);
+    for (var k = 1; k <= dL.length; k++) {
+      var kept = dL.length - k; if (kept !== bL.length && dL.length < LOG_MAX) continue;   /* only the cap may drop old lines */
+      if (same(dL.slice(k), bL.slice(0, kept))) return clone(dL.slice(0, k)).concat(clone(rawL)).slice(0, LOG_MAX);
+    }
     return null;
   }
   function delta() {
@@ -294,6 +297,8 @@
     if (!id) return 'Unowned';
     var n = cur && cur.names[id]; return n || id;
   }
+  /* the status line without the stress bit already shown beside it */
+  function rest(status, f) { var head = f.stressName + ' ' + f.stress + '/' + f.stressMax; status = String(status || ''); return status.indexOf(head) === 0 ? status.slice(head.length).replace(/^\s*·\s*/, '') : status; }
   function players() {
     var api = cur.api, docs = [];
     try { docs = (typeof api.roster === 'function' ? api.roster() : []) || []; } catch (e) { docs = []; }
@@ -314,7 +319,7 @@
         try { if (typeof api.playStatus === 'function') status = api.playStatus(d); } catch (e) { status = ''; }
         var stress = facts && !facts.fresh && facts.stress != null ? '<span class="tp-k">' + esc(facts.stressName) + '</span><b class="mono' + (facts.stress >= facts.stressMax - 1 ? ' bad' : '') + '">' + facts.stress + '/' + facts.stressMax + '</b>' : '<span class="tp-dim">' + esc(status || 'new sheet') + '</span>';
         h += '<li class="tp-char" data-id="' + esc(d.id) + '"><span class="tp-cn"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc([d.alias, d.playbookName || d.playbook].filter(Boolean).join(' · ')) + '</small></span>' +
-          '<span class="tp-cs">' + stress + (facts && !facts.fresh && status ? '<small class="tp-dim">' + esc(status) + '</small>' : '') + '</span>' +
+          '<span class="tp-cs">' + stress + (facts && !facts.fresh && rest(status, facts) ? '<small class="tp-dim">' + esc(rest(status, facts)) + '</small>' : '') + '</span>' +
           '<button type="button" class="btn sm" data-act="open" data-id="' + esc(d.id) + '" data-always="1">Open</button></li>';
       });
       h += '</ul></div>';

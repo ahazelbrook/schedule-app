@@ -16,7 +16,7 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
 #table-page .tp-kick { font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .16em; color: var(--accent); }
 #table-page .tp-crewname { font: 900 clamp(38px, 6vw, 68px)/.85 var(--font-poster); letter-spacing: -.01em; text-transform: none; overflow-wrap: anywhere; }
 #table-page .tp-subtitle { font: 900 10.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
-#table-page .tp-meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+#table-page .tp-meta { padding-right: 2px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 #table-page .tp-role { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; border: 2px solid var(--rule); padding: 5px 8px; }
 #table-page .tp-role.gm { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 #table-page .tp-status { font: 700 11px/1 var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
@@ -99,8 +99,8 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
 #table-page .tp-faction:first-child { border-top: 0; }
 #table-page .tp-faction .tp-in { flex: 1 1 140px; width: auto; }
 #table-page .tp-status7 .chip { min-width: 28px; padding: 4px 5px; text-align: center; }
-#table-page .tp-status7 .chip.neg[aria-pressed="true"] { background: var(--alarm); border-color: var(--alarm); color: #fbf8f1; }
-#table-page .tp-status7 .chip.pos[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: #fbf8f1; }
+#table-page .tp-status7 .chip.neg[aria-pressed="true"] { background: var(--alarm); border-color: var(--alarm); color: var(--paper); }
+#table-page .tp-status7 .chip.pos[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: var(--paper); }
 
 /* ---- shared clocks ---- */
 #table-page .tp-clocks { display: grid; gap: 4px; }
@@ -124,7 +124,7 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
 #table-page .tp-kind.k-project { border-color: var(--ok); color: var(--ok); }
 #table-page .tp-kind.k-faction { border-color: var(--accent); color: var(--accent); }
 #table-page .tp-hidtag { border-style: dashed; color: var(--ink-soft); border-color: var(--ink-soft); }
-#table-page .tp-fulltag { background: var(--alarm); border-color: var(--alarm); color: #fbf8f1; }
+#table-page .tp-fulltag { background: var(--alarm); border-color: var(--alarm); color: var(--paper); }
 #table-page .tp-clocktools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 #table-page .tp-clocktools .chip, #table-page .tp-addclock .chip { padding: 4px 6px; font-size: 9.5px; }
 #table-page .tp-clocktools .tp-x { margin-left: auto; }
