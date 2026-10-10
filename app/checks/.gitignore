@@ -1,3 +1,4 @@
 out/
 *.png
 *.pdf
+tmp-*.json
