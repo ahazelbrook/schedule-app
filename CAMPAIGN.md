@@ -49,13 +49,22 @@ come later.
 
 - GM (`user.canEdit()` true on Cloudflare; the artifact owner, `user.isOwner()`, in the
   artifact) writes everything.
-- Players may change `clocks[*].filled`, `crew.heat`, `crew.vault`, `crew.cohorts[*].harm`,
-  `crew.claims[*].held` and append to `log`. The page enforces this for players by disabling
-  the other controls; the API enforces it on Cloudflare by comparing the stored document with
-  the incoming one (any other changed path from a player is `403 "only the GM can change
-  that"`).
+- The crew sheet is shared by the whole table: players may change anything under `crew`
+  (including arrays growing or shrinking), fill clocks (`clocks.<i>.filled`) and append to
+  `log`. GM-only: `session`, the structure of `clocks` (add, remove, rename, resize, kind,
+  hidden), rewriting old log entries, and any other top-level key. The page disables the
+  GM-only controls for players; the API enforces it on Cloudflare by comparing the stored
+  document with the merged result (`403 "only the GM can change that"`).
 - A missing document reads as the default above (every field present, `session.number` 0).
   The first write creates it.
+
+## Crew playbooks
+
+The six Blades '68 crew playbooks (Dealers, Hit Squad, Militants, Racers, Shadows, Utopians)
+are transcribed into `app/crews.js` (`window.B68Crews`). The generic crew panel is replaced
+by a full crew sheet driven by that data in the next round; `crew` gains `playbook`,
+`abilities`, `upgrades`, `claims` as a map, `xp`, `contacts` and the per-crew extras. The
+server treats `crew` as opaque JSON.
 
 ## API (Cloudflare)
 
