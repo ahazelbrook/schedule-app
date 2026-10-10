@@ -1,0 +1,146 @@
+# Plan: shipping the Blades '68 app for weekly play
+
+What the group needs on a game night: open one link on a phone or laptop, see your own
+character exactly as you left it last week (stress, harm, xp, keys, stacks, clocks), tick
+things off during play, and have the GM see everyone at a glance. The prototype in
+`prototype/creator/` already does all of that inside a claude.ai artifact. This plan is
+about turning it into something the table opens every week without thinking about it.
+
+## 0. Where we are
+
+The prototype is a plain HTML/JS page with no build step. It talks to storage through a
+tiny interface (`claude.use('db')`, `claude.use('user')`, `claude.use('downloads')`) whose
+shape is Firestore's: `collection().doc().set()/get()/update()/delete()`, `onSnapshot`,
+`where/orderBy/limit`. Characters live in one `characters` collection as whole documents
+(`v: 2`, `sheet`, `play`, `owner`, timestamps). Every click on the living sheet saves the
+whole `play` object; other viewers get the change live.
+
+That interface is the hinge of the whole plan: we keep the page as it is and swap what is
+behind `claude.use`.
+
+## 1. Two ways to "deploy", and the recommendation
+
+| | A. The artifact, as is | B. Our own hosted app |
+|---|---|---|
+| Effort to go live | None: it is live now | About three working sessions |
+| Who can open it | People you share it with from the artifact's Share menu (your claude.ai workspace or invited guests) | Anyone on an allowlist, with a normal sign-in |
+| Saves | Already persistent, per account, live between viewers | Same, on a database we own |
+| Phones | Works in the browser; no home-screen install | Installable (PWA), works offline for reading |
+| Cost | Free | Free tier covers a game group many times over |
+| Risks | Share permissions are per artifact; the owner's account is the single point of failure; no custom domain | Fonts licensing (below); we run it |
+
+Recommendation: play on A starting next week, and build B in the background. Nothing done
+on A is lost: the JSON backup and restore being added now is the migration path, and the
+page code is identical on both.
+
+What to do for A right now:
+
+1. Share the artifact with each player as a Contributor (Viewers can read, not tick boxes).
+2. Each player opens their sheet once and bookmarks its link (`#c/<id>`), which opens
+   straight to their character.
+3. The GM uses the Everyone filter and the Table view.
+4. After each session, Download all (JSON) once as a backup.
+
+## 2. The target for B
+
+- **Hosting:** GitHub Pages from this repository (static files, free, HTTPS). Fallback:
+  Cloudflare Pages. No server code.
+- **Database and sign-in:** Firebase (Firestore + Auth) on the free Spark plan. Chosen
+  because the prototype's storage calls are already Firestore-shaped, so the adapter is thin,
+  and because `onSnapshot` gives the live table view for free. Sign-in with Google, with an
+  email allowlist so only the group can get in. (Supabase is the alternative if we would
+  rather have SQL; it costs an extra week because the live-update model differs.)
+- **One app, three surfaces:** the creator, the living sheets, the GM table. Later the
+  schedule from `PLAN.md` (who can make it this week) joins as a fourth tab on the same
+  stack.
+- **Installable:** a web manifest and a small service worker so it sits on the home screen
+  and still opens the last-seen sheets with no signal.
+
+## 3. Data model changes for weekly play
+
+The document shape stays `v: 2` with two changes that matter once several people edit at
+the table:
+
+1. **Field-level writes.** Today a save replaces the whole `play` object. Two people
+   touching the same character at the same moment (a player and the GM) would clobber each
+   other. On Firestore we write only the changed path (`play.stress`, `play.keys.2.hits`)
+   with `update`, and use `arrayUnion` for the session log.
+2. **A `campaign` document** that holds the group: member emails and roles (player / GM),
+   the active session number, and shared clocks. Characters get a `campaign` field so one
+   deployment can serve more than one game.
+
+Security rules: signed-in members read everything in their campaign; a player writes
+characters they own; the GM writes all of them; nobody else reads anything.
+
+## 4. Phases
+
+### Phase 0: finish the table features (this week, on the artifact)
+- Dice rolls, resistance and fortune rolls, with the push and desperate rules applied to the
+  sheet and written to the session log. *(in progress)*
+- GM table view with every character's status, and JSON backup and restore. *(in progress)*
+- Play one session on it. Collect what was annoying.
+
+### Phase 1: repository and static hosting (one session)
+- Create a `main` branch and move the app to `app/` at the repository root.
+- Fonts: vendor Archivo and Space Mono (both open licences). GT America is a commercial
+  typeface and is only served inside the artifact; replace it with Inter or Archivo for the
+  body text. Decide this once; it is the only licensing question in the project.
+- GitHub Actions workflow that publishes `app/` to GitHub Pages on every push to `main`.
+- A `runtime/` folder with two adapters behind `window.claude.use`: `artifact.js` (today's
+  behaviour, nothing to do) and `firebase.js` (empty for now). The page picks one at load.
+
+### Phase 2: Firebase adapter and sign-in (one session)
+- Firebase project, Firestore in production mode, Google sign-in, the allowlist in a
+  `campaigns/<id>` document.
+- `firebase.js` implements the subset of the interface the page uses: `collection`, `doc`,
+  `get`, `set`, `update`, `delete`, `onSnapshot` (per document and per query),
+  `where/orderBy/limit`, `user.id()`, `user.can('data.write')`, and `downloads.save` as a
+  plain browser download.
+- Field-level saves in `tracker.js` (the `api.save(patch)` contract already takes a patch;
+  the adapter turns dotted paths into `update`).
+- Security rules as in section 3, with the Firestore emulator tests in `checks/`.
+- Migrate: Download all (JSON) from the artifact, Restore into the new app.
+
+### Phase 3: night-of-play features (one to two sessions)
+- Session start and end: the end-of-session xp triggers as a checklist that marks xp;
+  session number stamped on log entries.
+- Downtime: indulge vice (roll, overindulge consequence), recover (healing clock ticks),
+  long-term project clocks, acquire asset. These are all buttons on tracks that exist.
+- Crew sheet when the crew playbook pages are available: tier, hold, reputation, heat,
+  wanted level, crew clocks, cohorts; a crew page shared by all characters in the campaign.
+- Schedule tab from `PLAN.md`: weekly availability, a "next session" card on the home
+  screen.
+
+### Phase 4: installable and resilient (half a session)
+- Web manifest, icons from the figure kit, service worker caching the app shell and the last
+  roster so sheets open with no signal (writes queue until it returns, which Firestore does
+  by itself).
+- Nightly Firestore export to a storage bucket, plus the in-app JSON backup.
+- A `#print` of every character and the crew at the end of a season.
+
+## 5. Costs and limits
+
+| Item | Number |
+|---|---|
+| Firestore free tier | 1 GiB stored, 50k reads and 20k writes per day |
+| A character document | about 30 KB; a season of logs stays under 100 KB |
+| A four-hour session, six people, live view open | a few thousand reads, a few hundred writes |
+| GitHub Pages | free for a public or private repository on a paid plan |
+| Domain (optional) | about 12 USD a year |
+
+## 6. Decisions needed from you
+
+1. **A then B, or B only?** The recommendation is A now and B in the background.
+2. **Sign-in:** Google accounts for everyone, or email magic links (works for anyone, one
+   extra click each visit)?
+3. **Body font:** replace GT America with Inter or Archivo (both free), or keep it only on
+   the artifact.
+4. **Repository visibility:** the figure kit and rulebook text are in this repository. If it
+   is public, the transcribed rules text should move behind sign-in or be trimmed to what
+   the sheets need.
+
+## 7. First steps
+
+1. Share the artifact with the group as Contributors and play on it this week.
+2. Answer the four decisions above.
+3. Phase 1 starts on a `main` branch; the deployed URL arrives at the end of that session.
