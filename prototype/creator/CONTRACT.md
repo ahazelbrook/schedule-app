@@ -98,3 +98,34 @@ Paper/night themes, tokens in index.html `:root`. Fonts: Archivo Compressed (dis
 
 ## Checking
 `node --check file.js` for syntax. Headless render: Playwright at `/opt/node-tools/node_modules/playwright`, Chromium already installed (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`); see `../shots/check.js` for a working example that opens `file://.../creator/index.html`, collects console errors and screenshots. Font 404s on file:// are expected (fonts live in the artifact). `window.claude` does not exist on file://, so db/user/downloads resolve to nothing: your code must still work (hide or disable, never throw).
+
+---
+
+# Round 3: paranormal playbooks + printable sheet (read this whole section)
+
+`content.js` now carries `CT.PARANORMAL` (four records, also in `CT.byId`): `ghost`, `vampire`, `timetraveler` (era `future`), `timepast` (era `past`). `CT.LOCKED` is now `[]`. `CT.GENERIC_KEYS` is the 15-key list printed on the Ghost sheet (used by all four). Read the four records in content.js before coding: every flag below is on them.
+
+Record flags: `paranormal: true`; one of `ghost: true` / `vampire: true` / `timetraveler: true` (+ `era`); `section: "Paranormal playbook"`; `subtitle` (Time Traveler only: "From the future" / "From the past"); `stressName` ("Drain" / "Stress" / "Instability") and `stressMax` (10 / 12 / 9); `need` (the rule text that replaces vice); `fixedAbility` (always owned, like Military Discipline); `abilities` (a third element `3` on Versatile = three circles); `xpTriggers` (end-of-session list for the sheet); `dots` is the TOTAL dots including `printed` (ghost 7, vampire 9, time traveler 9 with no printed dots and max 3 per action at creation); `resource: null` (no special resource row: Armor + two blank boxes); `friendsNeeded` (ghost 0, vampire 2, TT 0); `contacts` (vampire: dark servants, label `contactsLabel`); `items` playbook list (ghost: none, `itemsRule` free text).
+- Ghost: `deadlockName: "Echo irregularity"`, `deadlocks` list of six. Keys are struck out with an irregularity instead of a deadlock. No vice, no friends, no bank restriction (stacks + bank exist), no load limit (free text items). "Enemies & Rivals" free text.
+- Vampire: `deadlocksMaxed: true`, `keysNeeded: 4` (all four keys start deadlocked, direction chosen per key), `strictures` (six, `[name, text]`, Dayfire always on), `stricturesRule`, `maxDot: 5` (Dark Majesty: one attribute's actions may reach 5), `echoAbilitiesRule`. Stress 12; feeding is the vice (clear Stress by the highest die, +4 healing ticks).
+- Time Traveler: `glitches` (six temporal glitches), `alluvium: { start: 4, max: 9 }`, `alluviumName` ("canister" / "vial"), `bank: false` (stacks only, no bank), `missions` (two, each `{ name, text, questions[4] }`), `dotsRule`, `advance` text. Instability 9; restabilize clears 5 and uses one alluvium. Four glitches = gone after the next score.
+
+## Sheet fields the creator writes (filing/steps owns; tracker reads them in `initialPlay`)
+Common to all four: `playbook`, `name`, `alias`, `heritage`, `heritageDetail`, `background`, `backgroundDetail`, `dots`, `ability` (one chosen trait beyond the fixed one; `customAbility` for Versatile text), `keys[]` (strings from `GENERIC_KEYS`) + `customKey`, `items[]`, `look`, `wearing`, `wearingNote`.
+- ghost: `ghostItems` (string), `enemies` (string). No `vice`/`purveyor`, no `contacts`.
+- vampire: exactly 4 keys (incl. customKey); `keyLocks: { [keyString]: 'down' | 'up' }` (which way each starts deadlocked); `stricture` (one stricture name beyond Dayfire, chosen because the creation trait is a new vampiric trait; omit when the trait is Versatile); `contacts` (dark servants: 2 friends required, rivals allowed); `feeding`, `telltale`, `echoAbilities` (strings). No `vice`/`purveyor`.
+- timetraveler / timepast: `mission` (mission name), `missionAnswers: ['', '', '', '']`; 2–4 keys; no `contacts`, no `vice`.
+
+## `play` additions (tracker owns; `initialPlay` seeds them)
+- `stress` is reused for Drain / Instability with max `pb.stressMax`; label `pb.stressName`. Vampire stress max 12.
+- `keys[]`: `{ name, down, up, hits, deadlock: null | 'down' | 'up', glitch: null | string }`. Ghost and Time Traveler never set `deadlock`; they set `glitch` (an echo irregularity / temporal glitch name) which strikes the key out. Vampire keys start with `deadlock` set from `sheet.keyLocks`.
+- `alluvium: 4` (Time Traveler, 0..9). `strictures: ['Dayfire', ...]` (Vampire). `darkMajesty: null | 'Insight' | 'Prowess' | 'Resolve'`.
+- `mission: { name, answers: [4 strings], details: [strings] }` (Time Traveler; a detail is added on each glitch).
+- `ghostItems`, `enemies` (Ghost strings); `feeding`, `telltale`, `echoAbilities` (Vampire strings). All editable on the living sheet.
+- `bank` stays 0 and hidden for Time Traveler.
+
+## Printing (tracker owns)
+`tracker.css` gets an `@media print` block that prints `#dossier` alone on white, letter/A4 portrait, no buttons, and a "Print" button in the sheet header calls `window.print()`. `index.html` already hides `.studio .crew .roster .rail` in sheet mode; the print block only needs to hide `#rail`, `header`, `.btn` and the mugshot toggle, and make the figure column small.
+
+## Figure looks (core.js, filing owns)
+`A.LOOKS` needs entries for `ghost`, `vampire`, `timetraveler`, `timepast`. Ghost figures render with `.ghostly` on `#art` / lineup / roster thumbs (CSS in index.html: `opacity:.72; filter: blur(.35px) saturate(1.4)`) so the vapour reads.

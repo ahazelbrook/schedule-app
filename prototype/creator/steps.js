@@ -8,6 +8,13 @@
   var pb = A.pbOf;
   var hull = function () { var p = pb(); return !!(p && p.hull); };
   var vet = function () { var p = pb(); return !!(p && p.veteran); };
+  var para = function () { var p = pb(); return !!(p && p.paranormal); };
+  var ghost = function () { var p = pb(); return !!(p && p.ghost); };
+  var vamp = function () { var p = pb(); return !!(p && p.vampire); };
+  var tt = function () { var p = pb(); return !!(p && p.timetraveler); };
+  var noVice = function () { var p = pb(); return !!(p && (p.hull || p.paranormal)); };
+  var creationMax = function (p) { return p && p.timetraveler ? 3 : 2; };   /* highest action rating at creation */
+  var keyList = function () { return (S.sheet.keys || []).concat(S.sheet.customKey ? [S.sheet.customKey] : []); };
   var hasPb = function () { return !!pb(); };
   function note(html) { var n = el('p', 'hint'); n.innerHTML = html; return n; }
   function grid() { var g = el('div', 'grid2'); for (var i = 0; i < arguments.length; i++) g.appendChild(arguments[i]); return g; }
@@ -18,31 +25,28 @@
     var p = CT.byId[id]; if (!p) return;
     var prev = S.sheet.playbook;
     S.sheet.playbook = id;
-    if (prev !== id) { S.sheet.dots = clone(p.printed); S.sheet.ability = null; S.sheet.ability2 = null; S.sheet.frame = []; S.sheet.keys = []; S.sheet.deadlockKey = null; S.sheet.deadlockMode = null; S.sheet.contacts = {}; S.sheet.items = []; S.sheet.alt = []; S.sheet.owning = null; S.sheet.backing = null; S.sheet.cohortType = null; S.sheet.cohortHousing = null; }
+    if (prev !== id) { S.sheet.dots = clone(p.printed); S.sheet.ability = null; S.sheet.ability2 = null; S.sheet.frame = []; S.sheet.keys = []; S.sheet.deadlockKey = null; S.sheet.deadlockMode = null; S.sheet.contacts = {}; S.sheet.items = []; S.sheet.alt = []; S.sheet.owning = null; S.sheet.backing = null; S.sheet.cohortType = null; S.sheet.cohortHousing = null;
+      S.sheet.keyLocks = {}; S.sheet.stricture = null; S.sheet.mission = null; S.sheet.missionAnswers = ['', '', '', '']; S.sheet.vice = null; S.sheet.purveyor = ''; S.sheet.customAbility = ''; }
     var num = (S.spec.code || '').split('-')[2]; if (!num || num === '0000') num = String(1000 + Math.floor(Math.random() * 9000));
     S.spec.code = p.prefix + '-968-' + num; S.spec.halo = p.halo;
     if (!S.dirty) A.applyLook(id); else A.changed();
   }
   A.choosePlaybook = choosePlaybook;
   function playbookStep() {
-    var covers = el('div', 'covers');
-    var sil = {};
-    CT.PLAYBOOKS.forEach(function (p) {
-      var b = el('button', 'pb'); b.type = 'button'; b.dataset.id = p.id;
+    var wrap = el('div', 'coverrows');
+    function coverFor(p, section, ofN) {
+      var b = el('button', 'pb' + (p.ghost ? ' ghostly' : '')); b.type = 'button'; b.dataset.id = p.id;
       b.style.setProperty('--duo-a', p.duo ? p.duo[0] : '#f2ede1'); b.style.setProperty('--duo-b', p.duo ? p.duo[1] : '#14110e'); b.style.setProperty('--on-duo', '#fbf8f1');
       var svg = ''; try { svg = K.render(A.lookFor(p.id), { height: 150, lod: 'lo', scheme: p.scheme, silhouette: true, shadow: false, suffix: '-pb' }).svg; } catch (e) { svg = ''; }
-      b.innerHTML = '<div class="word">' + esc(p.name) + '</div><div class="fig">' + svg + '</div><div class="foot"><span class="lt">Core playbook</span> ' + esc(p.ordinal) + ' <span class="lt">of</span> EIGHT</div>';
+      b.innerHTML = '<div class="word">' + esc(p.name) + (p.subtitle ? '<small>' + esc(p.subtitle) + '</small>' : '') + '</div><div class="fig">' + svg + '</div><div class="foot"><span class="lt">' + esc(section) + '</span> ' + esc(p.ordinal) + ' <span class="lt">of</span> ' + ofN + '</div>';
       var sv = b.querySelector('svg'); if (sv) { sv.removeAttribute('width'); sv.removeAttribute('height'); }
       b.onclick = function () { choosePlaybook(p.id); };
-      covers.appendChild(b);
-    });
-    CT.LOCKED.forEach(function (p) {
-      var b = el('button', 'pb'); b.type = 'button'; b.disabled = true; b.style.opacity = '.55'; b.style.cursor = 'default';
-      b.style.setProperty('--duo-a', '#c9c3b8'); b.style.setProperty('--duo-b', '#2a2521'); b.style.setProperty('--on-duo', '#fbf8f1');
-      b.innerHTML = '<div class="word">' + esc(p.name) + '</div><div class="fig" style="place-items:center;font:900 10px/1.4 var(--font-cond);text-transform:uppercase;letter-spacing:.12em;text-align:center;padding:12px">Paranormal playbook<br>not in this prototype</div><div class="foot">' + esc(p.descriptor) + '</div>';
-      covers.appendChild(b);
-    });
-    var coversC = custom(covers, function () { covers.querySelectorAll('.pb').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.id === S.sheet.playbook)); }); });
+      return b;
+    }
+    var covers = el('div', 'covers'); CT.PLAYBOOKS.forEach(function (p) { covers.appendChild(coverFor(p, 'Core playbook', 'EIGHT')); }); wrap.appendChild(covers);
+    var plabel = el('div', 'label coverslabel', '<span>Paranormal playbooks</span><span class="val">a ghost, a vampire and two time travelers</span>'); wrap.appendChild(plabel);
+    var pcovers = el('div', 'covers'); (CT.PARANORMAL || []).forEach(function (p) { pcovers.appendChild(coverFor(p, p.section || 'Paranormal playbook', 'FOUR')); }); wrap.appendChild(pcovers);
+    var coversC = custom(wrap, function () { wrap.querySelectorAll('.pb').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.id === S.sheet.playbook)); }); });
 
     var info = el('div', 'pbinfo');
     var infoC = custom(info, function () {
@@ -53,10 +57,20 @@
       if (p.backing) extra.push('<dt>Backing</dt><dd>You start with a backing faction</dd>');
       if (p.hull) extra.push('<dt>Drain</dt><dd>Drain instead of Stress; no vice, no keys, no friends. One controller.</dd>');
       if (p.veteran) extra.push('<dt>Scars</dt><dd>Military Discipline plus one ability, one extra action dot, one key already deadlocked</dd>');
-      info.innerHTML = '<div class="desc">' + A.kickerHtml(p.descriptor) + '</div><p>' + esc(p.blurb) + '</p><dl><dt>xp</dt><dd>When you play a ' + esc(p.name) + ', you earn xp when you ' + esc(p.xp) + '.</dd><dt>Resource</dt><dd>' + esc(p.resource) + '</dd><dt>Dots</dt><dd>' + p.dots + ' action dots in all, ' + (Object.keys(p.printed).length ? Object.keys(p.printed).map(function (k) { return k + ' ' + p.printed[k]; }).join(', ') + ' printed' : 'none printed') + '</dd>' + extra.join('') + '</dl>';
+      if (p.paranormal) {
+        extra.push('<dt>' + esc(p.stressName) + '</dt><dd>' + p.stressMax + ' boxes' + (p.stressName !== 'Stress' ? ', instead of Stress' : ' (three more than usual)') + '</dd>');
+        extra.push('<dt>Need</dt><dd>' + esc(p.need) + '</dd>');
+        extra.push('<dt>Traits</dt><dd>' + esc(p.fixedAbility[0]) + ' is always on; choose one more. Versatile (three circles) takes an ability from another playbook.</dd>');
+        if (p.ghost) extra.push('<dt>Keys</dt><dd>Two to four. A struck key takes an ' + esc(p.deadlockName.toLowerCase()) + ' instead of a deadlock: ' + esc(p.deadlocks.join(', ')) + '. No vice, no friends list (enemies and rivals instead), no load limit.</dd>');
+        if (p.vampire) extra.push('<dt>Keys</dt><dd>Exactly four, every one already deadlocked, your choice of direction. Dayfire stricture always on, one more with your trait. Two dark servants. Feeding replaces vice.</dd>');
+        if (p.timetraveler) extra.push('<dt>Keys</dt><dd>Two to four. A struck key takes a temporal glitch instead of a deadlock: ' + esc(p.glitches.join(', ')) + '. Four glitches and you are gone after the next score. ' + esc(p.alluvium.start) + ' ' + esc(p.alluviumName) + 's of alluvium; stacks only, no bank; you arrive knowing no one.</dd>');
+      }
+      var resource = p.paranormal ? 'None: Armor plus two blank boxes' : p.resource;
+      var dotsRule = p.dotsRule ? esc(p.dotsRule) : p.dots + ' action dots in all, ' + (Object.keys(p.printed).length ? Object.keys(p.printed).map(function (k) { return k + ' ' + p.printed[k]; }).join(', ') + ' printed' : 'none printed');
+      info.innerHTML = '<div class="desc">' + A.kickerHtml(p.descriptor) + '</div><p>' + esc(p.blurb) + '</p><dl><dt>xp</dt><dd>When you play a ' + esc(p.name) + ', you earn xp when you ' + esc(p.xp) + '.</dd><dt>Resource</dt><dd>' + esc(resource) + '</dd><dt>Dots</dt><dd>' + dotsRule + '</dd>' + extra.join('') + '</dl>';
       if (S.dirty) { var b = el('button', 'btn sm', 'Dress the figure in the ' + esc(p.name) + ' look'); b.type = 'button'; b.style.justifySelf = 'start'; b.onclick = function () { A.applyLook(p.id); }; info.appendChild(b); }
     });
-    return [note('Eight core playbooks. Each is a reputation in the underworld, a set of special abilities, and a way of earning xp.'), coversC, infoC];
+    return [note('Eight core playbooks and four paranormal ones. Each is a reputation in the underworld, a set of special abilities, and a way of earning xp.'), coversC, infoC];
   }
 
   /* ---------- 2 · Build ---------- */
@@ -234,7 +248,7 @@
   function attrRating(actions) { var d = S.sheet.dots || {}; return actions.filter(function (a) { return (d[a] || 0) > 0; }).length; }
   A.attrRating = attrRating;
   function actionsStep() {
-    var intro = el('div'); custom(intro, function () { var p = pb(); if (!p) { intro.innerHTML = '<p class="hint">Pick a playbook first.</p>'; return; } var printed = Object.keys(p.printed).map(function (k) { return k + ' ' + p.printed[k]; }).join(', '); intro.innerHTML = '<p class="hint">' + (p.hull ? 'Hulls start with no heritage or background, so assign four dots wherever you want: six in all.' : p.veteran ? 'Four dots as usual, plus one more: eight in all.' : 'Add one dot for your heritage, one for your background, and two more: seven in all.') + ' No action may start above 2. ' + (printed ? 'The sheet prints ' + esc(printed) + ', marked in orange.' : '') + ' An attribute’s rating is the number of its actions with at least one dot.</p>'; });
+    var intro = el('div'); custom(intro, function () { var p = pb(); if (!p) { intro.innerHTML = '<p class="hint">Pick a playbook first.</p>'; return; } var printed = Object.keys(p.printed).map(function (k) { return k + ' ' + p.printed[k]; }).join(', '); var free = p.dots - Object.keys(p.printed).reduce(function (t, k) { return t + p.printed[k]; }, 0); intro.innerHTML = '<p class="hint">' + (p.hull ? 'Hulls start with no heritage or background, so assign four dots wherever you want: six in all.' : p.veteran ? 'Four dots as usual, plus one more: eight in all.' : p.dotsRule ? esc(p.dotsRule) : p.paranormal ? 'Add one dot for your heritage, one for your background, and ' + (free - 2) + ' more: ' + p.dots + ' in all.' : 'Add one dot for your heritage, one for your background, and two more: seven in all.') + ' No action may start above ' + creationMax(p) + '. ' + (printed ? 'The sheet prints ' + esc(printed) + ', marked in orange.' : '') + ' An attribute’s rating is the number of its actions with at least one dot.</p>'; });
     var budget = el('div', 'budget'); custom(budget, function () { var p = pb(); if (!p) return; var t = dotsTotal(); budget.textContent = t + ' / ' + p.dots + ' dots placed'; budget.className = 'budget' + (t > p.dots ? ' bad' : ''); });
     var box = el('div', 'dots');
     CT.ACTIONS.forEach(function (grp) {
@@ -242,7 +256,7 @@
       grp[1].forEach(function (name) {
         var r = el('div', 'act'); r.innerHTML = '<span class="nm">' + esc(name) + '</span>'; var pips = el('span', 'pips'); r.appendChild(pips);
         for (var i = 1; i <= 3; i++) (function (n) { var b = el('button', 'pip'); b.type = 'button'; b.dataset.n = n; b.setAttribute('aria-label', name + ' ' + n); b.onclick = function () { var d = S.sheet.dots = S.sheet.dots || {}; var cur = d[name] || 0; d[name] = (cur === n) ? n - 1 : n; A.changed(); }; pips.appendChild(b); })(i);
-        custom(r, function () { var p = pb(); var d = S.sheet.dots || {}; var v = d[name] || 0; var pr = p ? (p.printed[name] || 0) : 0; pips.querySelectorAll('.pip').forEach(function (b) { var n = +b.dataset.n; b.className = 'pip' + (n <= v ? ' on' : '') + (n <= pr ? ' printed' : '') + (n === 3 && v >= 3 ? ' over' : ''); }); });
+        custom(r, function () { var p = pb(); var d = S.sheet.dots || {}; var v = d[name] || 0; var pr = p ? (p.printed[name] || 0) : 0; pips.querySelectorAll('.pip').forEach(function (b) { var n = +b.dataset.n; b.className = 'pip' + (n <= v ? ' on' : '') + (n <= pr ? ' printed' : '') + (n > creationMax(p) && v >= n ? ' over' : ''); }); });
         a.appendChild(r);
       });
       custom(a, function () { ah.querySelector('.rating').textContent = 'rating ' + attrRating(grp[1]); }, hasPb);
@@ -255,12 +269,12 @@
 
   /* ---------- 10 · Abilities ---------- */
   function abilityCard(name, txt, opts) {
-    opts = opts || {}; var b = el('button', 'ab' + (opts.fixed ? ' fixed' : '')); b.type = 'button'; b.innerHTML = '<span class="box"></span><span><span class="nm">' + esc(name) + '</span> <span class="tx">' + esc(txt) + '</span></span>';
+    opts = opts || {}; var b = el('button', 'ab' + (opts.fixed ? ' fixed' : '')); b.type = 'button'; b.innerHTML = '<span class="box"></span><span><span class="nm">' + esc(name) + '</span> ' + (opts.circles ? '<span class="circ" title="' + opts.circles + ' circles">' + new Array(opts.circles + 1).join('○') + '</span> ' : '') + '<span class="tx">' + esc(txt) + '</span></span>';
     if (opts.fixed) b.setAttribute('aria-pressed', 'true'); else b.onclick = opts.onclick;
     return b;
   }
   function abilitiesStep() {
-    var intro = el('div'); custom(intro, function () { var p = pb(); if (!p) { intro.innerHTML = '<p class="hint">Pick a playbook first.</p>'; return; } intro.innerHTML = '<p class="hint">' + (p.hull ? 'You start with Automaton. Pick one more Hull trait, and two frame features.' : p.veteran ? 'You start with Military Discipline. Pick one more special ability.' : 'Choose one special ability. If you can’t decide, take the first on the list.') + '</p>'; });
+    var intro = el('div'); custom(intro, function () { var p = pb(); if (!p) { intro.innerHTML = '<p class="hint">Pick a playbook first.</p>'; return; } intro.innerHTML = '<p class="hint">' + (p.hull ? 'You start with Automaton. Pick one more Hull trait, and two frame features.' : p.veteran ? 'You start with Military Discipline. Pick one more special ability.' : p.paranormal ? 'You start with ' + esc(p.fixedAbility[0]) + '. Pick one more trait.' + (p.abilities.some(function (a) { return a[2]; }) ? ' Versatile has three circles: each time you take it, write in a special ability from another playbook.' : '') + (p.vampire ? ' A new vampiric trait (anything but Versatile) also adds a stricture.' : '') : 'Choose one special ability. If you can’t decide, take the first on the list.') + '</p>'; });
     var list = el('div', 'abil'); var built = null;
     custom(list, function () {
       var p = pb(); if (!p) { list.innerHTML = ''; built = null; return; }
@@ -268,10 +282,28 @@
       built = p.id; list.innerHTML = '';
       if (p.hull) list.appendChild(abilityCard('Automaton', 'You are a soul powering a robotic body. Human-like strength and senses; built-in armor that doesn’t count for load; you may be repaired if damaged or destroyed. Whenever you would take Stress, take Drain instead. Choose two frame features.', { fixed: true }));
       if (p.fixedAbility) list.appendChild(abilityCard(p.fixedAbility[0], p.fixedAbility[1], { fixed: true }));
-      p.abilities.forEach(function (ab) { var b = abilityCard(ab[0], ab[1], { onclick: function () { set('sheet.ability', S.sheet.ability === ab[0] ? null : ab[0]); } }); b.dataset.n = ab[0]; list.appendChild(b); });
+      p.abilities.forEach(function (ab) { var b = abilityCard(ab[0], ab[1], { circles: ab[2] || 0, onclick: function () { var on = S.sheet.ability === ab[0]; set('sheet.ability', on ? null : ab[0]); if (p.paranormal && (on || ab[0] !== 'Versatile')) set('sheet.customAbility', null); if (p.vampire && (on || ab[0] === 'Versatile')) set('sheet.stricture', null); } }); b.dataset.n = ab[0]; list.appendChild(b); });
       list.querySelectorAll('.ab:not(.fixed)').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.n === S.sheet.ability)); });
     });
-    var versatile = text('Versatile: an ability from another source, written in', 'sheet.customAbility', { placeholder: 'Name and rule text, if the table allows it', visible: hasPb });
+    var versatile = text('Versatile: an ability from another source, written in', 'sheet.customAbility', { placeholder: 'Name and rule text, if the table allows it', visible: function () { return hasPb() && !para(); } });
+    /* paranormal Versatile: pick any ability from any other playbook, or type one */
+    var vpick = el('div'); vpick.appendChild(h3('Versatile')); vpick.appendChild(note('Choose a special ability from another playbook. Its name goes on the sheet; the rule text is in the book.'));
+    var vf = field('From another playbook'); var vsel = document.createElement('select'); vsel.id = 'versatileSelect'; vsel.setAttribute('aria-label', 'Ability from another playbook'); vf.appendChild(vsel); vpick.appendChild(vf);
+    var vBuilt = null;
+    vpick.appendChild(text('Or written in', 'sheet.customAbility', { placeholder: 'Any ability name the table allows' }));
+    vsel.onchange = function () { set('sheet.customAbility', vsel.value || null); };
+    custom(vpick, function () {
+      var p = pb(); if (!p) return;
+      if (vBuilt !== p.id) { vBuilt = p.id; vsel.innerHTML = '<option value="">Choose…</option>'; CT.PLAYBOOKS.concat(CT.PARANORMAL || []).forEach(function (q) { if (q.id === p.id) return; var og = document.createElement('optgroup'); og.label = q.name + (q.subtitle ? ' · ' + q.subtitle : ''); (q.fixedAbility ? [q.fixedAbility] : []).concat(q.abilities).forEach(function (ab) { if (ab[0] === 'Versatile') return; var o = document.createElement('option'); o.value = ab[0]; o.textContent = ab[0]; og.appendChild(o); }); vsel.appendChild(og); }); }
+      var v = S.sheet.customAbility || ''; var has = Array.prototype.some.call(vsel.options, function (o) { return o.value === v; }); if (document.activeElement !== vsel) vsel.value = has ? v : '';
+    }, function () { return para() && S.sheet.ability === 'Versatile'; });
+    /* vampire strictures: Dayfire fixed, one more with a vampiric trait */
+    var strict = el('div'); strict.appendChild(h3('Strictures')); var sNote = note(''); strict.appendChild(sNote); var sl = el('div', 'abil'); strict.appendChild(sl); var sBuilt = false;
+    custom(strict, function () {
+      var p = pb(); if (!p || !p.vampire) return; sNote.textContent = p.stricturesRule + ' Choose the stricture that comes with ' + (S.sheet.ability || 'your trait') + '.';
+      if (!sBuilt) { sBuilt = true; sl.innerHTML = ''; p.strictures.forEach(function (st) { var fixed = st[0] === 'Dayfire'; var b = abilityCard(st[0], st[1], fixed ? { fixed: true } : { onclick: function () { set('sheet.stricture', S.sheet.stricture === st[0] ? null : st[0]); } }); b.dataset.n = st[0]; sl.appendChild(b); }); }
+      sl.querySelectorAll('.ab:not(.fixed)').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.n === S.sheet.stricture)); });
+    }, function () { return vamp() && !!S.sheet.ability && S.sheet.ability !== 'Versatile'; });
     var frame = el('div'); frame.appendChild(h3('Frame features')); frame.appendChild(note('You begin with two frame features of your choice.'));
     var fl = el('div', 'abil'); CT.byId.hull.frame.forEach(function (f) { var b = abilityCard(f[0], f[1], { onclick: function () { var cur = (S.sheet.frame || []).slice(); var i = cur.indexOf(f[0]); if (i >= 0) cur.splice(i, 1); else if (cur.length < 2) cur.push(f[0]); set('sheet.frame', cur); } }); b.dataset.n = f[0]; fl.appendChild(b); });
     custom(fl, function () { fl.querySelectorAll('.ab').forEach(function (b) { b.setAttribute('aria-pressed', String((S.sheet.frame || []).indexOf(b.dataset.n) >= 0)); }); });
@@ -294,21 +326,42 @@
     var expl = el('div'); expl.appendChild(h3('Explosives')); expl.appendChild(note('When you use a bandolier slot, choose an explosive. Fine items, Quality crew Tier +1. Explosives on a score add +1 Heat.'));
     expl.appendChild(el('p', null, esc(CT.byId.radical.explosives.join(' · '))));
     custom(expl, null, function () { var p = pb(); return !!p && !!p.explosives; });
-    return [intro, list, versatile, frame, cohort, backing, scars, expl];
+    return [intro, list, versatile, vpick, strict, frame, cohort, backing, scars, expl];
   }
 
   /* ---------- 11 · Keys ---------- */
   function keyName(k) { return k.split(' (')[0]; }
   function keyParts(k) { var m = k.match(/\(▼ (.*?) ▲ (.*?)\)/); return m ? [m[1], m[2]] : ['', '']; }
   function keysStep() {
-    var intro = el('div'); custom(intro, function () { var p = pb(); intro.innerHTML = !p ? '<p class="hint">Pick a playbook first.</p>' : p.hull ? '<p class="hint">You start with no keys. Hit your xp triggers to keep up. If you have no keys yet, choose a robotic deadlock instead when you would deadlock a key: ' + esc(p.roboticDeadlocks.join(', ')) + '.</p>' : '<p class="hint">Keys are personality traits central to who you are. Up to four; start with two or three. Each lists two deadlocks: ▼ reversed, ▲ intensified. <b>Hard mode is on at this table: a deadlock is permanent.</b>' + (p.veteran ? ' As a Veteran you start with one key already deadlocked.' : '') + '</p>'; });
+    var intro = el('div'); custom(intro, function () {
+      var p = pb();
+      intro.innerHTML = !p ? '<p class="hint">Pick a playbook first.</p>'
+        : p.hull ? '<p class="hint">You start with no keys. Hit your xp triggers to keep up. If you have no keys yet, choose a robotic deadlock instead when you would deadlock a key: ' + esc(p.roboticDeadlocks.join(', ')) + '.</p>'
+        : p.ghost ? '<p class="hint">Keys are personality traits central to who you are. Choose two to four from the generic list. <b>You cannot turn keys.</b> When you are fully drained a key is struck out, but you take an <b>' + esc(p.deadlockName.toLowerCase()) + '</b> instead of a deadlock: ' + esc(p.deadlocks.join(', ')) + '.</p>'
+        : p.timetraveler ? '<p class="hint">Keys are personality traits central to who you are. Choose two to four from the generic list. When a key would deadlock it is struck out and you take a <b>temporal glitch</b> instead: ' + esc(p.glitches.join(', ')) + '. Once you have four glitches, you disappear from this time period after the next score.</p>'
+        : p.vampire ? '<p class="hint">' + esc(p.keysRule) + ' ▼ is the key reversed, ▲ intensified. <b>Hard mode is on at this table: a deadlock is permanent</b>, and yours are maxed out: another deadlock overwhelms you.</p>'
+        : '<p class="hint">Keys are personality traits central to who you are. Up to four; start with two or three. Each lists two deadlocks: ▼ reversed, ▲ intensified. <b>Hard mode is on at this table: a deadlock is permanent.</b>' + (p.veteran ? ' As a Veteran you start with one key already deadlocked.' : '') + '</p>';
+    });
+    var count = el('div', 'budget'); custom(count, function () { var p = pb(); var kc = keyList().length; var need = p && p.keysNeeded ? p.keysNeeded : null; count.textContent = kc + ' / 4 keys' + (need ? ' · exactly ' + need : ' · two to four'); count.className = 'budget' + ((need ? kc !== need : (kc < 2 || kc > 4)) ? ' bad' : ''); }, function () { return hasPb() && !hull(); });
     var box = el('div', 'keys'); var built = null;
     custom(box, function () {
       var p = pb(); if (!p || p.hull) { box.innerHTML = ''; built = null; return; }
-      if (built !== p.id) { built = p.id; box.innerHTML = ''; p.keys.forEach(function (k) { var b = el('button', 'key'); b.type = 'button'; b.dataset.k = k; var ps = keyParts(k); b.innerHTML = '<b>' + esc(keyName(k)) + '</b> <small>▼ ' + esc(ps[0]) + ' ▲ ' + esc(ps[1]) + '</small>'; b.onclick = function () { var cur = (S.sheet.keys || []).slice(); var i = cur.indexOf(k); if (i >= 0) cur.splice(i, 1); else if (cur.length < 4) cur.push(k); set('sheet.keys', cur); }; box.appendChild(b); }); }
+      if (built !== p.id) { built = p.id; box.innerHTML = ''; p.keys.forEach(function (k) { var b = el('button', 'key'); b.type = 'button'; b.dataset.k = k; var ps = keyParts(k); b.innerHTML = '<b>' + esc(keyName(k)) + '</b> <small>▼ ' + esc(ps[0]) + ' ▲ ' + esc(ps[1]) + '</small>'; b.onclick = function () { var cur = (S.sheet.keys || []).slice(); var i = cur.indexOf(k); if (i >= 0) { cur.splice(i, 1); if (S.sheet.keyLocks) delete S.sheet.keyLocks[k]; } else if (cur.length < 4) cur.push(k); set('sheet.keys', cur); }; box.appendChild(b); }); }
       box.querySelectorAll('.key').forEach(function (b) { b.setAttribute('aria-pressed', String((S.sheet.keys || []).indexOf(b.dataset.k) >= 0)); });
     });
     var ownKey = text('A key of your own', 'sheet.customKey', { placeholder: 'Hopeful (▼ Cynical ▲ Content)', hint: 'Written in the same form so its deadlocks are ready.', visible: function () { return hasPb() && !hull(); } });
+    /* vampire: every key starts deadlocked; choose the direction per key -> sheet.keyLocks[key] = 'down' | 'up' */
+    var locks = el('div'); locks.appendChild(h3('How each key is locked')); locks.appendChild(note('Every one of your keys starts deadlocked. For each, choose ▼ (reversed) or ▲ (intensified). This is permanent.'));
+    var lrows = el('div', 'locks'); locks.appendChild(lrows);
+    custom(locks, function () {
+      var keys = keyList(), kl = S.sheet.keyLocks || {};
+      lrows.innerHTML = ''; if (!keys.length) { lrows.innerHTML = '<span class="hint">Choose your keys above first.</span>'; return; }
+      keys.forEach(function (k) {
+        var ps = keyParts(k); var r = el('div', 'lock'); r.appendChild(el('b', null, esc(keyName(k)))); var seg = el('div', 'seg');
+        [['down', '▼ ' + (ps[0] || 'reversed')], ['up', '▲ ' + (ps[1] || 'intensified')]].forEach(function (m) { var b = el('button', 'chip txt', esc(m[1])); b.type = 'button'; b.setAttribute('aria-pressed', String(kl[k] === m[0])); b.onclick = function () { var cur = S.sheet.keyLocks = S.sheet.keyLocks || {}; cur[k] = m[0]; A.changed(); }; seg.appendChild(b); });
+        r.appendChild(seg); lrows.appendChild(r);
+      });
+    }, vamp);
     var dead = el('div'); dead.appendChild(h3('The deadlocked key')); dead.appendChild(note('Choose both the key and its deadlocked state.'));
     var dk = el('div', 'row'); dead.appendChild(dk); var dm = el('div', 'row'); dead.appendChild(dm);
     custom(dead, function () {
@@ -317,42 +370,70 @@
       if (!keys.length) dk.innerHTML = '<span class="hint">Choose your keys above first.</span>';
       dm.innerHTML = ''; if (S.sheet.deadlockKey) { var ps = keyParts(S.sheet.deadlockKey); [['▼', ps[0]], ['▲', ps[1]]].forEach(function (m) { var b = el('button', 'chip txt', m[0] + ' ' + esc(m[1] || 'deadlock')); b.type = 'button'; b.setAttribute('aria-pressed', String(S.sheet.deadlockMode === m[0])); b.onclick = function () { set('sheet.deadlockMode', m[0]); }; dm.appendChild(b); }); }
     }, vet);
-    return [intro, box, ownKey, dead];
+    return [intro, count, box, ownKey, locks, dead];
   }
 
   /* ---------- 12 · Contacts ---------- */
   function contactsStep() {
-    var intro = el('div'); custom(intro, function () { var p = pb(); intro.innerHTML = !p ? '<p class="hint">Pick a playbook first.</p>' : '<p class="hint">' + esc(p.friendsRule || 'Choose one close friend (▲) and one rival (▼). Click a dot to cycle it.') + '</p>'; });
+    var intro = el('div'); custom(intro, function () { var p = pb(); intro.innerHTML = !p ? '<p class="hint">Pick a playbook first.</p>' : '<p class="hint">' + esc(p.friendsRule || 'Choose one close friend (▲) and one rival (▼). Click a dot to cycle it.') + (p.vampire ? ' Click a dot to cycle it: ▲ a dark servant, ▼ a rival.' : '') + '</p>'; });
+    var ctitle = h3(''); custom(ctitle, function () { var p = pb(); ctitle.textContent = p ? (p.contactsLabel || '') : ''; }, function () { var p = pb(); return !!(p && p.contactsLabel); });
     var list = el('div'); var built = null;
     custom(list, function () {
       var p = pb(); if (!p) { list.innerHTML = ''; built = null; return; }
       if (built !== p.id) { built = p.id; list.innerHTML = ''; p.contacts.forEach(function (c) { var r = el('div', 'contact'); var d = el('button', 'dot'); d.type = 'button'; d.dataset.n = c[0]; d.setAttribute('aria-label', 'Cycle ' + c[0]); d.onclick = function () { var cur = S.sheet.contacts || {}; var v = cur[c[0]]; cur[c[0]] = !v ? 'friend' : v === 'friend' ? 'rival' : null; if (!cur[c[0]]) delete cur[c[0]]; set('sheet.contacts', cur); }; r.appendChild(d); r.appendChild(el('span', null, '<span class="cn">' + esc(c[0]) + '</span>, <span class="cr">' + esc(c[1]) + '</span>')); r.appendChild(el('span', 'st')); list.appendChild(r); }); }
-      list.querySelectorAll('.contact').forEach(function (r) { var d = r.querySelector('.dot'); var v = (S.sheet.contacts || {})[d.dataset.n]; d.className = 'dot' + (v ? ' ' + v : ''); r.querySelector('.st').textContent = v === 'friend' ? '▲ friend' : v === 'rival' ? '▼ rival' : ''; });
-    });
-    var custom1 = text('A contact of your own', 'sheet.contactCustom', { placeholder: 'Name, what they do, and whether friend or rival', visible: hasPb });
+      list.querySelectorAll('.contact').forEach(function (r) { var d = r.querySelector('.dot'); var v = (S.sheet.contacts || {})[d.dataset.n]; d.className = 'dot' + (v ? ' ' + v : ''); r.querySelector('.st').textContent = v === 'friend' ? (p.vampire ? '▲ servant' : '▲ friend') : v === 'rival' ? '▼ rival' : ''; });
+    }, function () { var p = pb(); return !!p && !(p.ghost || p.timetraveler); });
+    var custom1 = text('A contact of your own', 'sheet.contactCustom', { placeholder: 'Name, what they do, and whether friend or rival', visible: function () { return hasPb() && !ghost() && !tt(); } });
     var hullNote = note('Your controller gives you orders and sets you to work. Name them, and decide what they are like.'); custom(hullNote, null, hull);
-    return [intro, hullNote, list, custom1];
+    var enemies = text('Enemies & Rivals', 'sheet.enemies', { multi: true, placeholder: 'Who wronged you, who hunts you, who you haunt. One per line.', hint: 'The Ghost sheet has no friends list.', visible: ghost });
+    var ttNote = note('No contacts yet. The crew found you confused on the night you arrived; everyone else you meet in play.'); custom(ttNote, null, tt);
+    return [intro, ctitle, hullNote, list, custom1, enemies, ttNote];
   }
 
   /* ---------- 13 · Vice ---------- */
   function viceStep() {
-    var intro = el('div'); custom(intro, function () { var p = pb(); intro.innerHTML = !p ? '<p class="hint">Pick a playbook first.</p>' : p.hull ? '<p class="hint">You do not Indulge Vice. Recharge your capacitors by connecting to an industrial-grade generator in downtime: clear 5 Drain.</p>' : '<p class="hint">The purveyor is the part people skip and the part that generates fiction. Pick one from the book or name your own.</p>'; });
-    var vices = chips('Vice', 'sheet.vice', CT.VICES.map(function (v) { return v.name; }), { text: true, visible: function () { return hasPb() && !hull(); }, after: function () { set('sheet.purveyor', null); } });
+    var intro = el('div'); custom(intro, function () { var p = pb(); intro.innerHTML = !p ? '<p class="hint">Pick a playbook first.</p>' : p.hull ? '<p class="hint">You do not Indulge Vice. Recharge your capacitors by connecting to an industrial-grade generator in downtime: clear 5 Drain.</p>' : p.paranormal ? '<p class="hint"><b>' + (p.vampire ? 'Feeding replaces vice.' : 'No vice.') + '</b> ' + esc(p.need) + '</p>' : '<p class="hint">The purveyor is the part people skip and the part that generates fiction. Pick one from the book or name your own.</p>'; });
+    var vices = chips('Vice', 'sheet.vice', CT.VICES.map(function (v) { return v.name; }), { text: true, visible: function () { return hasPb() && !noVice(); }, after: function () { set('sheet.purveyor', null); } });
     var vinfo = el('div', 'sub'); var prow = el('div', 'row'); vinfo.appendChild(prow);
-    custom(vinfo, function () { var v = CT.VICES.filter(function (x) { return x.name === S.sheet.vice; })[0]; prow.innerHTML = ''; if (!v) return; var b0 = el('p', 'hint', esc(v.blurb)); b0.style.flexBasis = '100%'; prow.appendChild(b0); v.purveyors.forEach(function (pv) { var b = el('button', 'chip txt', esc(pv)); b.type = 'button'; b.setAttribute('aria-pressed', String(S.sheet.purveyor === pv)); b.onclick = function () { set('sheet.purveyor', pv); }; prow.appendChild(b); }); }, function () { return !!S.sheet.vice && !hull(); });
-    var own = text('Or a purveyor of your own', 'sheet.purveyor', { placeholder: 'Name, place, district', visible: function () { return !!S.sheet.vice && !hull(); } });
-    return [intro, vices, vinfo, own];
+    custom(vinfo, function () { var v = CT.VICES.filter(function (x) { return x.name === S.sheet.vice; })[0]; prow.innerHTML = ''; if (!v) return; var b0 = el('p', 'hint', esc(v.blurb)); b0.style.flexBasis = '100%'; prow.appendChild(b0); v.purveyors.forEach(function (pv) { var b = el('button', 'chip txt', esc(pv)); b.type = 'button'; b.setAttribute('aria-pressed', String(S.sheet.purveyor === pv)); b.onclick = function () { set('sheet.purveyor', pv); }; prow.appendChild(b); }); }, function () { return !!S.sheet.vice && !noVice(); });
+    var own = text('Or a purveyor of your own', 'sheet.purveyor', { placeholder: 'Name, place, district', visible: function () { return !!S.sheet.vice && !noVice(); } });
+    /* ghost: the need, and what came with you */
+    var gItems = ghostItemsField(ghost, true);
+    /* vampire: feeding is the vice */
+    var feed = el('div'); feed.appendChild(h3('Feeding'));
+    feed.appendChild(grid(text('How do you feed?', 'sheet.feeding', { placeholder: 'A bite, a kiss, a long slow conversation…' }), text('What telltale sign do you leave?', 'sheet.telltale', { placeholder: 'Two small marks, a week of grey, a missing memory' })));
+    var echoNote = note(''); feed.appendChild(echoNote);
+    feed.appendChild(text('Echo special abilities', 'sheet.echoAbilities', { multi: true, placeholder: 'Anything you carried over from your time as a ghost, one per line' }));
+    custom(feed, function () { var p = pb(); if (p && p.echoAbilitiesRule) echoNote.textContent = p.echoAbilitiesRule; }, vamp);
+    /* time traveler: the mission */
+    var mis = el('div'); mis.appendChild(h3('Mission')); var mNote = note(''); mis.appendChild(mNote); var ml = el('div', 'abil'); mis.appendChild(ml); var mBuilt = null;
+    var ans = el('div', 'grid2'); ans.style.marginTop = '12px'; mis.appendChild(ans); var aBuilt = null;
+    custom(mis, function () {
+      var p = pb(); if (!p || !p.missions) return;
+      mNote.textContent = 'Choose the mission that brought you here, then answer its questions. You arrive with ' + p.alluvium.start + ' ' + p.alluviumName + 's of alluvium. Every time you gain clarity, note down a new detail.';
+      if (mBuilt !== p.id) { mBuilt = p.id; ml.innerHTML = ''; p.missions.forEach(function (m) { var b = abilityCard(m.name, m.text, { onclick: function () { set('sheet.mission', S.sheet.mission === m.name ? null : m.name); } }); b.dataset.n = m.name; ml.appendChild(b); }); }
+      ml.querySelectorAll('.ab').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.n === S.sheet.mission)); });
+      var m = p.missions.filter(function (x) { return x.name === S.sheet.mission; })[0];
+      if (!Array.isArray(S.sheet.missionAnswers)) S.sheet.missionAnswers = ['', '', '', ''];
+      var key = p.id + '|' + (m ? m.name : '');
+      if (aBuilt !== key) { aBuilt = key; ans.innerHTML = ''; if (m) m.questions.forEach(function (q, i) { var f = field(q); var inp = document.createElement('input'); inp.type = 'text'; inp.id = 'missionAnswer' + i; inp.placeholder = 'Answer ' + (i + 1); inp.oninput = function () { if (!Array.isArray(S.sheet.missionAnswers)) S.sheet.missionAnswers = ['', '', '', '']; S.sheet.missionAnswers[i] = inp.value; A.changed(); }; f.appendChild(inp); ans.appendChild(f); }); }
+      ans.querySelectorAll('input').forEach(function (inp, i) { if (document.activeElement !== inp) inp.value = (S.sheet.missionAnswers || [])[i] || ''; });
+    }, tt);
+    return [intro, vices, vinfo, own, gItems, feed, mis];
   }
+  function ghostItemsField(visible, withHint) { return text('Items (with you in ghost form)', 'sheet.ghostItems', { multi: true, placeholder: 'The clothes you died in, a pocket watch, a locket, the knife…', hint: withHint && CT.byId.ghost ? CT.byId.ghost.itemsRule : '', visible: visible }); }
 
   /* ---------- 14 · Items ---------- */
   function itemLoad(name) { var p = pb(); var all = (p ? p.items : []).concat(CT.STANDARD_ITEMS); var it = all.filter(function (i) { return i[0] === name; })[0]; return it ? it[1] : 0; }
   function loadTotal() { return (S.sheet.items || []).reduce(function (t, n) { return t + itemLoad(n); }, 0); }
   A.loadTotal = loadTotal;
   function itemsStep() {
-    var intro = note('Load is chosen per score: 3 for a Quiet approach, 6 for Loud. Tick what you expect to carry; the sheet is the final word at the table.');
-    var budget = el('div', 'budget'); custom(budget, function () { var t = loadTotal(); budget.textContent = t + ' load · ' + (t <= 3 ? 'quiet' : t <= 6 ? 'loud' : 'over the loud limit'); budget.className = 'budget' + (t > 6 ? ' bad' : ''); }, hasPb);
-    function listOf(title, getItems) { var w = el('div'); w.appendChild(h3(title)); var box = el('div', 'items'); w.appendChild(box); var built = null; custom(w, function () { var p = pb(); if (!p) return; var key = p.id + title; if (built !== key) { built = key; box.innerHTML = ''; getItems(p).forEach(function (it) { var b = el('button', 'item'); b.type = 'button'; b.dataset.n = it[0]; b.innerHTML = '<span class="box"></span><span>' + esc(it[0]) + '</span><span class="ld">' + (it[1] ? it[1] + ' load' : '0 load') + '</span>'; b.onclick = function () { var cur = (S.sheet.items || []).slice(); var i = cur.indexOf(it[0]); if (i >= 0) cur.splice(i, 1); else cur.push(it[0]); set('sheet.items', cur); }; box.appendChild(b); }); } box.querySelectorAll('.item').forEach(function (b) { b.setAttribute('aria-pressed', String((S.sheet.items || []).indexOf(b.dataset.n) >= 0)); }); }, hasPb); return w; }
-    return [intro, budget, listOf('Playbook items', function (p) { return p.items; }), listOf('Standard items', function () { return CT.STANDARD_ITEMS; })];
+    var intro = note('Load is chosen per score: 3 for a Quiet approach, 6 for Loud. Tick what you expect to carry; the sheet is the final word at the table.'); custom(intro, null, function () { return !ghost(); });
+    var gNote = el('div'); custom(gNote, function () { var p = pb(); gNote.innerHTML = p && p.itemsRule ? '<p class="hint">' + esc(p.itemsRule) + ' You weakly interact with the physical world, so what you carry is mostly a memory of itself.</p>' : ''; }, ghost);
+    var gItems = ghostItemsField(ghost);
+    var budget = el('div', 'budget'); custom(budget, function () { var t = loadTotal(); budget.textContent = t + ' load · ' + (t <= 3 ? 'quiet' : t <= 6 ? 'loud' : 'over the loud limit'); budget.className = 'budget' + (t > 6 ? ' bad' : ''); }, function () { return hasPb() && !ghost(); });
+    function listOf(title, getItems) { var w = el('div'); w.appendChild(h3(title)); var box = el('div', 'items'); w.appendChild(box); var built = null; custom(w, function () { var p = pb(); if (!p) return; var key = p.id + title; if (built !== key) { built = key; box.innerHTML = ''; getItems(p).forEach(function (it) { var b = el('button', 'item'); b.type = 'button'; b.dataset.n = it[0]; b.innerHTML = '<span class="box"></span><span>' + esc(it[0]) + '</span><span class="ld">' + (it[1] ? it[1] + ' load' : '0 load') + '</span>'; b.onclick = function () { var cur = (S.sheet.items || []).slice(); var i = cur.indexOf(it[0]); if (i >= 0) cur.splice(i, 1); else cur.push(it[0]); set('sheet.items', cur); }; box.appendChild(b); }); } box.querySelectorAll('.item').forEach(function (b) { b.setAttribute('aria-pressed', String((S.sheet.items || []).indexOf(b.dataset.n) >= 0)); }); }, function () { return hasPb() && !ghost(); }); return w; }
+    return [intro, gNote, gItems, budget, listOf('Playbook items', function (p) { return p.items; }), listOf('Standard items', function () { return CT.STANDARD_ITEMS; })];
   }
 
   /* ---------- 15 · Identity ---------- */
@@ -433,14 +514,22 @@
     ok(p, 'A playbook is chosen'); if (!p) return out;
     ok(S.sheet.name, 'The subject has a name');
     if (p.hull) ok(S.sheet.owning, 'An owning faction'); else { ok(S.sheet.heritage, 'A heritage'); ok(p.altBackground ? (S.sheet.alt || []).length : S.sheet.background, p.altBackground ? p.altBackground.label : 'A background'); }
-    var t = dotsTotal(); var over = Object.keys(S.sheet.dots || {}).some(function (k) { return S.sheet.dots[k] > 2; });
-    ok(t === p.dots && !over, 'Action dots: ' + t + ' of ' + p.dots + ' placed' + (over ? ', one is above 2' : ''));
-    ok(S.sheet.ability || S.sheet.customAbility, p.hull ? 'One Hull trait beyond Automaton' : p.veteran ? 'One ability beyond Military Discipline' : 'One special ability');
+    var mx = creationMax(p); var t = dotsTotal(); var over = Object.keys(S.sheet.dots || {}).some(function (k) { return S.sheet.dots[k] > mx; });
+    ok(t === p.dots && !over, 'Action dots: ' + t + ' of ' + p.dots + ' placed' + (over ? ', one is above ' + mx : ''));
+    if (p.paranormal) { ok(S.sheet.ability, 'One trait beyond ' + p.fixedAbility[0]); if (S.sheet.ability === 'Versatile') ok(S.sheet.customAbility, 'Versatile: an ability from another playbook named'); }
+    else ok(S.sheet.ability || S.sheet.customAbility, p.hull ? 'One Hull trait beyond Automaton' : p.veteran ? 'One ability beyond Military Discipline' : 'One special ability');
+    if (p.vampire && S.sheet.ability && S.sheet.ability !== 'Versatile') ok(S.sheet.stricture, 'A stricture beyond Dayfire');
     if (p.hull) ok((S.sheet.frame || []).length === 2, 'Two frame features');
-    if (!p.hull) { var kc = (S.sheet.keys || []).length + (S.sheet.customKey ? 1 : 0); ok(kc >= 2 && kc <= 4, 'Two to four keys (' + kc + ')'); }
+    var kc = keyList().length;
+    if (p.vampire) { ok(kc === 4, 'Exactly four keys (' + kc + ')'); var kl = S.sheet.keyLocks || {}; var locked = keyList().filter(function (k) { return kl[k] === 'down' || kl[k] === 'up'; }).length; ok(kc === 4 && locked === kc, 'Every key locked ▼ or ▲ (' + locked + ' / ' + kc + ')'); }
+    else if (!p.hull) ok(kc >= 2 && kc <= 4, 'Two to four keys (' + kc + ')');
     if (p.veteran) ok(S.sheet.deadlockKey && S.sheet.deadlockMode, 'One key already deadlocked');
-    if (!p.hull) { var c = S.sheet.contacts || {}; var f = Object.keys(c).filter(function (k) { return c[k] === 'friend'; }).length, r = Object.keys(c).filter(function (k) { return c[k] === 'rival'; }).length; ok(f >= (p.friendsNeeded || 1) && r >= 1, (p.friendsNeeded || 1) + ' friend' + ((p.friendsNeeded || 1) > 1 ? 's' : '') + ' and a rival (' + f + ' / ' + r + ')'); }
-    if (!p.hull) ok(S.sheet.vice && S.sheet.purveyor, 'A vice with a named purveyor');
+    var c = S.sheet.contacts || {}; var f = Object.keys(c).filter(function (k) { return c[k] === 'friend'; }).length, r = Object.keys(c).filter(function (k) { return c[k] === 'rival'; }).length;
+    if (p.vampire) ok(f >= 2, 'Two dark servants (' + f + ')');
+    else if (!p.hull && !p.ghost && !p.timetraveler) ok(f >= (p.friendsNeeded || 1) && r >= 1, (p.friendsNeeded || 1) + ' friend' + ((p.friendsNeeded || 1) > 1 ? 's' : '') + ' and a rival (' + f + ' / ' + r + ')');
+    if (p.vampire) ok(S.sheet.feeding && S.sheet.telltale, 'How you feed, and the telltale sign');
+    if (p.timetraveler) ok(S.sheet.mission, 'A mission');
+    if (!p.hull && !p.paranormal) ok(S.sheet.vice && S.sheet.purveyor, 'A vice with a named purveyor');
     if (p.cohort) ok(S.sheet.cohortType, p.cohort.label + ' has a type');
     if (p.backing) ok(S.sheet.backing, 'A backing faction');
     ok(!(A.lastWarnings || []).length, 'The figure draws clean');
@@ -454,14 +543,20 @@
     L.push(''); L.push('- Look: ' + (sh.look || '')); var wr = wearingText() || wearingOf(sh); if (wr) L.push('- Wearing: ' + wr);
     if (p.hull) L.push('- Owning faction: ' + (sh.owning || '')); else { L.push('- Heritage: ' + (sh.heritage || '') + (sh.heritageDetail ? ' — ' + sh.heritageDetail : '')); L.push('- ' + (p.altBackground ? p.altBackground.label : 'Background') + ': ' + (p.altBackground ? (sh.alt || []).join(', ') : (sh.background || '')) + (sh.backgroundDetail ? ' — ' + sh.backgroundDetail : '')); }
     L.push(''); L.push('## Actions'); CT.ACTIONS.forEach(function (g) { L.push('- ' + g[0] + ' ' + attrRating(g[1]) + ': ' + g[1].map(function (a) { return a + ' ' + ((sh.dots || {})[a] || 0); }).join(', ')); });
-    L.push(''); L.push('## Special abilities'); if (p.hull) L.push('- Automaton'); if (p.fixedAbility) L.push('- ' + p.fixedAbility[0]); if (sh.ability) L.push('- ' + sh.ability); if (sh.customAbility) L.push('- ' + sh.customAbility); if ((sh.frame || []).length) L.push('- Frame features: ' + sh.frame.join(', '));
+    if (p.paranormal) L.push('- ' + p.stressName + ': 0 / ' + p.stressMax + (p.timetraveler ? ' · Alluvium: ' + p.alluvium.start + ' ' + p.alluviumName + 's · stacks only, no bank' : ''));
+    L.push(''); L.push('## Special abilities'); if (p.hull) L.push('- Automaton'); if (p.fixedAbility) L.push('- ' + p.fixedAbility[0]); if (sh.ability) L.push('- ' + sh.ability + (sh.ability === 'Versatile' && sh.customAbility ? ': ' + sh.customAbility : '')); if (sh.customAbility && sh.ability !== 'Versatile') L.push('- ' + sh.customAbility); if ((sh.frame || []).length) L.push('- Frame features: ' + sh.frame.join(', '));
+    if (p.vampire) { L.push('- Strictures: Dayfire' + (sh.stricture && sh.ability !== 'Versatile' ? ', ' + sh.stricture : '')); if (sh.echoAbilities) L.push('- Echo abilities: ' + sh.echoAbilities.replace(/\n+/g, '; ')); }
     if (p.cohort) L.push('- ' + p.cohort.label + ': ' + [sh.cohortName, sh.cohortType, sh.cohortHousing].filter(Boolean).join(', ') + (sh.cohortEdges ? ' · edges: ' + sh.cohortEdges : '') + (sh.cohortFlaws ? ' · flaws: ' + sh.cohortFlaws : ''));
     if (p.backing) L.push('- Backing faction: ' + (sh.backing || '') + (sh.mission ? ' · mission: ' + sh.mission : ''));
     if (p.veteran) { L.push('- Damage: ' + (sh.damage || '')); L.push('- Something that helps: ' + (sh.helps || '')); }
-    if (!p.hull) { L.push(''); L.push('## Keys'); (sh.keys || []).concat(sh.customKey ? [sh.customKey] : []).forEach(function (k) { L.push('- ' + k + (sh.deadlockKey === k ? ' · DEADLOCKED ' + (sh.deadlockMode || '') : '')); }); }
-    L.push(''); L.push('## Contacts'); Object.keys(sh.contacts || {}).forEach(function (k) { L.push('- ' + (sh.contacts[k] === 'friend' ? '▲' : '▼') + ' ' + k); }); if (sh.contactCustom) L.push('- ' + sh.contactCustom);
-    if (!p.hull) { L.push(''); L.push('## Vice'); L.push('- ' + (sh.vice || '') + (sh.purveyor ? ' · ' + sh.purveyor : '')); }
-    L.push(''); L.push('## Items (' + loadTotal() + ' load)'); (sh.items || []).forEach(function (i) { L.push('- ' + i); });
+    if (!p.hull) { L.push(''); L.push('## Keys' + (p.ghost ? ' (struck keys take an echo irregularity)' : p.timetraveler ? ' (struck keys take a temporal glitch)' : '')); var kl = sh.keyLocks || {}; keyList().forEach(function (k) { L.push('- ' + k + (sh.deadlockKey === k ? ' · DEADLOCKED ' + (sh.deadlockMode || '') : '') + (p.vampire && kl[k] ? ' · DEADLOCKED ' + (kl[k] === 'down' ? '▼ ' + keyParts(k)[0] : '▲ ' + keyParts(k)[1]) : '')); }); }
+    if (p.ghost) { L.push(''); L.push('## Enemies & Rivals'); (sh.enemies || '').split(/\n+/).filter(Boolean).forEach(function (e) { L.push('- ' + e); }); }
+    else if (p.timetraveler) { L.push(''); L.push('## Contacts'); L.push('- None yet: you arrive knowing no one.'); }
+    else { L.push(''); L.push('## ' + (p.contactsLabel || 'Contacts')); Object.keys(sh.contacts || {}).forEach(function (k) { L.push('- ' + (sh.contacts[k] === 'friend' ? '▲' : '▼') + ' ' + k); }); if (sh.contactCustom) L.push('- ' + sh.contactCustom); }
+    if (p.paranormal) { L.push(''); L.push('## Need'); L.push(p.need); if (p.vampire) { L.push('- Feeding: ' + (sh.feeding || '')); L.push('- Telltale: ' + (sh.telltale || '')); } if (p.timetraveler) { var m = (p.missions || []).filter(function (x) { return x.name === sh.mission; })[0]; L.push('- Mission: ' + (sh.mission || '')); if (m) m.questions.forEach(function (q, i) { L.push('  - ' + q + ' ' + ((sh.missionAnswers || [])[i] || '')); }); } }
+    else if (!p.hull) { L.push(''); L.push('## Vice'); L.push('- ' + (sh.vice || '') + (sh.purveyor ? ' · ' + sh.purveyor : '')); }
+    if (p.ghost) { L.push(''); L.push('## Items (with you in ghost form)'); (sh.ghostItems || '').split(/\n+/).filter(Boolean).forEach(function (i) { L.push('- ' + i); }); }
+    else { L.push(''); L.push('## Items (' + loadTotal() + ' load)'); (sh.items || []).forEach(function (i) { L.push('- ' + i); }); }
     L.push(''); L.push('## Figure spec'); L.push('```json'); L.push(JSON.stringify(S.spec)); L.push('```');
     return L.join('\n');
   }
@@ -473,11 +568,13 @@
       var p = pb(), sh = S.sheet; if (!p) { summary.innerHTML = ''; return; }
       var rows = [['Name', (sh.name || '—') + (sh.alias ? ' “' + sh.alias + '”' : '')], ['Playbook', p.name], ['Wearing', wearingText() || wearingOf(sh) || '—'], ['Heritage', p.hull ? 'Owned by ' + (sh.owning || '—') : (sh.heritage || '—') + (sh.heritageDetail ? ', ' + sh.heritageDetail : '')], [p.altBackground ? p.altBackground.label : 'Background', p.hull ? '—' : ((p.altBackground ? (sh.alt || []).join(', ') : sh.background) || '—') + (sh.backgroundDetail ? ', ' + sh.backgroundDetail : '')],
         ['Actions', CT.ACTIONS.map(function (g) { return g[0] + ' ' + attrRating(g[1]); }).join(' · ') + ' · ' + Object.keys(sh.dots || {}).filter(function (k) { return sh.dots[k]; }).map(function (k) { return k + ' ' + sh.dots[k]; }).join(', ')],
-        ['Ability', [p.hull ? 'Automaton' : null, p.fixedAbility ? p.fixedAbility[0] : null, sh.ability, sh.customAbility].filter(Boolean).join(', ') || '—'],
-        ['Keys', p.hull ? 'none to start' : ((sh.keys || []).map(keyName).concat(sh.customKey ? [keyName(sh.customKey)] : []).join(', ') || '—') + (sh.deadlockKey ? ' · ' + keyName(sh.deadlockKey) + ' deadlocked ' + (sh.deadlockMode || '') : '')],
-        ['Contacts', Object.keys(sh.contacts || {}).map(function (k) { return (sh.contacts[k] === 'friend' ? '▲ ' : '▼ ') + k; }).join(', ') || '—'],
-        ['Vice', p.hull ? 'Drain and Fuel' : (sh.vice || '—') + (sh.purveyor ? ', ' + sh.purveyor : '')],
-        ['Items', ((sh.items || []).join(', ') || '—') + ' · ' + loadTotal() + ' load']];
+        ['Ability', [p.hull ? 'Automaton' : null, p.fixedAbility ? p.fixedAbility[0] : null, sh.ability === 'Versatile' && sh.customAbility ? 'Versatile: ' + sh.customAbility : sh.ability, sh.ability !== 'Versatile' ? sh.customAbility : null].filter(Boolean).join(', ') || '—'],
+        ['Keys', p.hull ? 'none to start' : (keyList().map(function (k) { var kl = sh.keyLocks || {}; return keyName(k) + (p.vampire && kl[k] ? ' ' + (kl[k] === 'down' ? '▼' : '▲') : ''); }).join(', ') || '—') + (sh.deadlockKey ? ' · ' + keyName(sh.deadlockKey) + ' deadlocked ' + (sh.deadlockMode || '') : '')],
+        [p.ghost ? 'Enemies & rivals' : (p.contactsLabel || 'Contacts'), p.ghost ? (sh.enemies || '—') : p.timetraveler ? 'none yet: you arrive knowing no one' : Object.keys(sh.contacts || {}).map(function (k) { return (sh.contacts[k] === 'friend' ? '▲ ' : '▼ ') + k; }).join(', ') || '—'],
+        [p.paranormal ? 'Need' : 'Vice', p.hull ? 'Drain and Fuel' : p.ghost ? 'Resonance energy · Drain 0/' + p.stressMax : p.vampire ? 'Feeds: ' + (sh.feeding || '—') + ' · telltale: ' + (sh.telltale || '—') : p.timetraveler ? 'Alluvium, ' + p.alluvium.start + ' ' + p.alluviumName + 's · Instability 0/' + p.stressMax : (sh.vice || '—') + (sh.purveyor ? ', ' + sh.purveyor : '')],
+        ['Items', p.ghost ? (sh.ghostItems || '—') : ((sh.items || []).join(', ') || '—') + ' · ' + loadTotal() + ' load']];
+      if (p.vampire) rows.splice(7, 0, ['Strictures', 'Dayfire' + (sh.stricture && sh.ability !== 'Versatile' ? ', ' + sh.stricture : '')], ['Echo abilities', sh.echoAbilities || '—']);
+      if (p.timetraveler) rows.splice(8, 0, ['Mission', (sh.mission || '—') + ((sh.missionAnswers || []).filter(Boolean).length ? ' · ' + (sh.missionAnswers || []).filter(Boolean).join(' · ') : '')]);
       summary.innerHTML = rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('');
     });
     var qs = el('div'); custom(qs, function () { var p = pb(); if (!p || !p.questions.length) { qs.innerHTML = ''; return; } qs.innerHTML = '<h3>Questions for the table</h3><p class="hint">After crew creation, take turns asking the group one of these. Anyone can answer.</p><ul class="qs">' + p.questions.map(function (q) { return '<li>' + esc(q) + '</li>'; }).join('') + '</ul>'; });

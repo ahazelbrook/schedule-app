@@ -20,11 +20,11 @@
       case 0: return !!p;
       case 7: return !!p && (p.hull ? !!sh.owning : !!sh.heritage && (p.altBackground ? (sh.alt || []).length > 0 : !!sh.background));
       case 8: return !!p && A.dotsTotal() === p.dots;
-      case 9: return !!(sh.ability || sh.customAbility);
-      case 10: return !!p && (p.hull || (sh.keys || []).length >= 2);
-      case 11: return !!p && (p.hull || Object.keys(sh.contacts || {}).length >= 2);
-      case 12: return !!p && (p.hull || (!!sh.vice && !!sh.purveyor));
-      case 13: return (sh.items || []).length > 0;
+      case 9: return !!p && (p.paranormal ? !!sh.ability && (sh.ability !== 'Versatile' || !!sh.customAbility) && (!p.vampire || sh.ability === 'Versatile' || !!sh.stricture) : !!(sh.ability || sh.customAbility));
+      case 10: { if (!p) return false; if (p.hull) return true; var ks = (sh.keys || []).concat(sh.customKey ? [sh.customKey] : []); if (p.vampire) { var kl = sh.keyLocks || {}; return ks.length === 4 && ks.every(function (k) { return kl[k] === 'down' || kl[k] === 'up'; }); } return ks.length >= 2 && ks.length <= 4; }
+      case 11: { if (!p) return false; if (p.hull || p.ghost || p.timetraveler) return true; var c = sh.contacts || {}; if (p.vampire) return Object.keys(c).filter(function (k) { return c[k] === 'friend'; }).length >= 2; return Object.keys(c).length >= 2; }
+      case 12: return !!p && (p.hull || p.ghost ? true : p.vampire ? (!!sh.feeding && !!sh.telltale) : p.timetraveler ? !!sh.mission : (!!sh.vice && !!sh.purveyor));
+      case 13: return !!p && (p.ghost ? !!sh.ghostItems : (sh.items || []).length > 0);
       case 14: return !!sh.name;
       default: return S.dirty && !!p;
     }
@@ -60,6 +60,9 @@
       var all = others.concat([you]);
       var r = K.lineup(all, { chart: true, height: 380, lod: 'lo' });
       $('lineup').innerHTML = r.svg; var svg = $('lineup').querySelector('svg'); if (svg) { svg.removeAttribute('width'); svg.removeAttribute('height'); }
+      /* ghosts read as vapour: class the figure group of each Ghost/Echo in the line-up */
+      var ghosts = {}; if (roster.length) roster.slice(0, 6).forEach(function (d, i) { var q = A.CT.byId[d.playbook]; if (q && q.ghost) ghosts['r' + i + '-' + A.slug(d.name)] = true; }); var mine = A.pbOf(); if (mine && mine.ghost) ghosts[you.id] = true;
+      if (svg) Object.keys(ghosts).forEach(function (id) { svg.querySelectorAll('.b68-figure').forEach(function (g) { if (g.getAttribute('data-id') === id) g.classList.add('ghostly'); }); });
       $('lineupNames').innerHTML = all.map(function (c, i) { var last = i === all.length - 1; return '<span' + (last ? ' class="you"' : '') + '>' + esc(last ? (S.sheet.name || 'You') : c.name) + '<small>' + esc(last ? ((A.pbOf() || {}).name || 'the subject') : (c.playbook || '')) + ' · ' + A.feet(c.heightIn) + '</small></span>'; }).join('');
       $('crewNote').textContent = 'True height · 25 units per inch · ' + (roster.length ? 'the filed crew, then you' : 'the canon crew, then you');
     } catch (e) { $('lineup').innerHTML = '<div class="empty">The line-up could not be drawn: ' + esc(e.message) + '</div>'; }
@@ -74,7 +77,7 @@
   A.filingAvailable = function () { return !!db; };
   function nowIso() { return new Date().toISOString(); }
   function tracker() { var T = window.B68Tracker; return T && typeof T.open === 'function' ? T : null; }
-  function pbName(id) { var p = A.CT.byId[id]; return p ? p.name : (id || ''); }
+  function pbName(id) { var p = A.CT.byId[id]; return p ? p.name + (p.subtitle ? ' · ' + p.subtitle : '') : (id || ''); }
   function col() { return chars || (chars = db.collection('characters')); }
 
   function normaliseSheet(sheet, d) {
@@ -157,7 +160,8 @@
   function playStatus(d) {
     var p = d.play; if (!p || typeof p !== 'object') return 'new sheet';
     var pb = A.CT.byId[d.playbook] || {}; var bits = [];
-    var stress = typeof p.stress === 'number' ? p.stress : null; if (stress != null) bits.push((pb.hull ? 'drain ' : 'stress ') + stress + '/' + (pb.hull ? 10 : 9));
+    var stress = typeof p.stress === 'number' ? p.stress : null; if (stress != null) bits.push((pb.stressName || (pb.hull ? 'Drain' : 'Stress')) + ' ' + stress + '/' + (pb.stressMax || (pb.hull ? 10 : 9)));
+    if (pb.timetraveler && typeof p.alluvium === 'number') bits.push('alluvium ' + p.alluvium + '/' + (pb.alluvium ? pb.alluvium.max : 9));
     var h = p.harm || {}, n = 0; ['l1', 'l2', 'l3', 'l4'].forEach(function (k) { var v = h[k]; if (Array.isArray(v)) v.forEach(function (t) { if (t) n++; }); else if (v) n++; }); if (n) bits.push(n + ' harm');
     if (p.xp && typeof p.xp.playbook === 'number') bits.push('xp ' + p.xp.playbook + '/8');
     if (typeof p.stacks === 'number' && p.stacks) bits.push(p.stacks + ' stacks');
@@ -178,7 +182,7 @@
     box.innerHTML = '';
     list.forEach(function (d) {
       var card = el('div', 'card' + (A.me && d.owner === A.me ? ' mine' : '')); card.setAttribute('role', 'button'); card.tabIndex = 0; card.title = 'Open the sheet';
-      var pic = el('div', 'pic'); try { var s = clone(d.spec); s.id = 'c-' + d.id; pic.innerHTML = K.render(s, { height: 150, lod: 'lo', shadow: false }).svg; var sv = pic.querySelector('svg'); if (sv) { sv.removeAttribute('width'); sv.removeAttribute('height'); } } catch (e) { pic.textContent = '?'; }
+      var pic = el('div', 'pic' + ((A.CT.byId[d.playbook] || {}).ghost ? ' ghostly' : '')); try { var s = clone(d.spec); s.id = 'c-' + d.id; pic.innerHTML = K.render(s, { height: 150, lod: 'lo', shadow: false }).svg; var sv = pic.querySelector('svg'); if (sv) { sv.removeAttribute('width'); sv.removeAttribute('height'); } } catch (e) { pic.textContent = '?'; }
       var meta = el('div', 'meta'); meta.innerHTML = '<span class="nm">' + esc(d.name || 'Unnamed') + '</span><span class="cd">' + esc((d.playbookName || pbName(d.playbook)) + (d.code ? ' · ' + d.code : '')) + '</span><span class="st">' + esc(playStatus(d)) + '</span>';
       var acts = el('div', 'acts'); var ed = el('span', 'ed', 'Edit figure'); ed.setAttribute('role', 'button'); ed.tabIndex = 0; ed.title = 'Load into the creator';
       ed.onclick = function (ev) { ev.stopPropagation(); setMode('create'); clearHash(); loadIntoCreator(d); toast('Loaded ' + (d.name || 'the character') + ' into the creator.'); };
@@ -201,7 +205,7 @@
     var p = A.pbOf() || {};
     if (A.wearingText) S.sheet.wearing = A.wearingText();
     var sheet = clone(S.sheet); delete sheet.docId;
-    return { v: 2, name: S.sheet.name, alias: S.sheet.alias || '', code: S.spec.code || '', playbook: S.sheet.playbook || null, playbookName: p.name || '', spec: clone(S.spec), sheet: sheet, updatedAt: nowIso() };
+    return { v: 2, name: S.sheet.name, alias: S.sheet.alias || '', code: S.spec.code || '', playbook: S.sheet.playbook || null, playbookName: p.name ? pbName(p.id) : '', spec: clone(S.spec), sheet: sheet, updatedAt: nowIso() };
   }
   function fileCharacter() {
     if (!db) { toast('Filing is not available in this view.', true); return; }

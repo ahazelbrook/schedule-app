@@ -248,14 +248,114 @@
       questions: [] }
   ];
 
-  var LOCKED = [
-    { id: "ghost", name: "Ghost/Echo", descriptor: "A resonance echo adrift without a body", printed: { Hunt: 1, Prowl: 1, Attune: 1 } },
-    { id: "vampire", name: "Vampire", descriptor: "A resonance echo animating an undying body", printed: { Hunt: 1, Prowl: 1, Attune: 1, Sway: 1 } },
-    { id: "timetraveler", name: "Time Traveler", descriptor: "A voyager visiting this era on an important mission", printed: {} }
+  /* ---- Paranormal playbooks (sheets 9–12). Flags: paranormal:true plus one of ghost / vampire / timetraveler (era 'future'|'past'). ---- */
+  var GENERIC_KEYS = ["Flamboyant (▼ Demure ▲ Self-Obsessed)", "Enigmatic (▼ Open ▲ Reclusive)", "Eccentric (▼ Ordinary ▲ Erratic)", "Haunted (▼ Self-Assured ▲ Tormented)", "Bold (▼ Nervous ▲ Reckless)", "Charismatic (▼ Quiet ▲ Manipulative)", "Passionate (▼ Apathetic ▲ Furious)", "Comical (▼ Serious ▲ Unhinged)", "Curious (▼ Disinterested ▲ Possessed)", "Distant (▼ Warm ▲ Cold)", "Fearless (▼ Nervous ▲ Turbulent)", "Idealistic (▼ Cynical ▲ Zealous)", "Shy (▼ Open ▲ Withdrawn)", "Open-Minded (▼ Rigid ▲ Reckless)", "Spiritual (▼ Cynical ▲ Obsessed)"];
+  var TT_SHARED = {
+    glitches: ["Body phasing", "Hallucinations", "Lagging", "Headaches", "Flashbacks", "Time skips"],
+    stressName: "Instability", stressMax: 9, alluvium: { start: 4, max: 9 }, bank: false, friendsNeeded: 0,
+    friendsRule: "You arrive knowing no one. Friends and rivals are made in play.",
+    keys: GENERIC_KEYS, contacts: [],
+    xpTriggers: ["You addressed a challenge with fearless conviction or lateral thinking.", "You struggled with issues stemming from a temporal glitch."],
+    dotsRule: "Place 9 dots (max 3 dots in any action), reflecting your personal history, experience, background, and heritage.",
+    advance: "Every time you fill your playbook xp, you gain clarity: choose a new Time Traveler trait and a versatile ability from another playbook, take another temporal glitch, and note down a new detail of your mission. Once you have four temporal glitches, you disappear from this time period entirely after the next score."
+  };
+  var PARANORMAL = [
+    { id: "ghost", name: "Ghost/Echo", ordinal: "ONE", prefix: "GST", scheme: "paranormal", halo: "file-300", duo: ["#cfe3f7", "#1f2650"], paranormal: true, ghost: true,
+      descriptor: "A resonance echo adrift without a body", section: "Paranormal playbook",
+      blurb: "You are now a psychedelic being of swirling multicolored vapor that resembles your living body and clothes. Whatever you were, you are adrift now, and you have an intense need: resonance energy.",
+      xp: "exact vengeance upon those you deem deserving, or express your outrage or anger", resource: null, dots: 7, printed: { Hunt: 1, Prowl: 1 },
+      stressName: "Drain", stressMax: 10, deadlockName: "Echo irregularity", deadlocks: ["Chaotic", "Destructive", "Furious", "Obsessive", "Territorial", "Sadistic"],
+      need: "You have an intense need: resonance energy. To satisfy this need, possess a living victim and consume their life essence (this may be a downtime action). When you do so, clear half your Drain (round down). When fully drained, strike out a key but choose an echo irregularity instead of a deadlock as normal. You cannot turn keys.",
+      friendsRule: "You keep no friends list. Note your enemies and rivals instead.", friendsNeeded: 0, contacts: [],
+      keys: GENERIC_KEYS, items: [], itemsRule: "Items (with you in ghost form): whatever came with you. Write them down; there is no load limit to speak of.",
+      fixedAbility: ["Resonance Echo", "You are now a psychedelic being of swirling multicolored vapor that resembles your living body and clothes. You may weakly interact with the physical world and vice versa. You’re vulnerable to paranormal powers and electroplasmic effects. You move about by floating and may fly swiftly without tiring. You may slowly flow through small openings as a vapor. You change the temperature around you and are mind-bending for the living to behold. You are affected by spiritbane charms (take 2 Drain to overcome the repulsion), but not many people still carry these. You have less effect under the light of bluetime. Whenever you would take Stress, take Drain instead. When you would deadlock a key, choose an echo irregularity instead."],
+      abilities: [
+        ["Dissipate", "You can disperse the vapor of your ghostly form in order to pass through solid objects for a moment. Take 1 Drain when you dissipate, plus 1 Drain for each feature: it lasts longer (a minute—an hour—a day)—you also become invisible—anything that passes through your form becomes dangerously electrified or frozen."],
+        ["Manifest", "Take 1 Drain to flow through the electroplasmic pathways of the resonance field in order to instantly travel to any place you knew intimately in life, or to answer the summoning call when compelled."],
+        ["Poltergeist", "Take 1 Drain to strongly interact with the physical world for a few moments (as if you had a normal body). Extend the reach and magnitude of your interaction to include telekinetic force and electroplasmic discharges by taking more Drain (2–6)."],
+        ["Possess", "You may Attune to the resonance field in order to take control of a living body. When your control is challenged, you must re-Attune (risking electroplasmic harm) or leave the body. Your control is challenged when: you consume resonance energy from the host—when paranormal powers act against you—when the host’s will is driven to desperation. You may easily and indefinitely possess a hollow or hull that has been prepared for you. If it’s a hollow, switch to the Vampire playbook. If hull, switch to the Hull playbook, keeping your previous action ratings."],
+        ["Versatile", "Choose a special ability from another source.", 3]
+      ],
+      xpTriggers: ["You exacted vengeance upon those whom you deem deserving.", "You expressed your outrage or anger.", "You struggled with issues stemming from a deadlock."],
+      questions: ["Which of you knew me when I was alive?", "Which of you can I still touch, just barely?", "Which of you is afraid of what I have become?", "Which of you do I haunt without meaning to?", "Which of you owes me a death?", "Which of you have I followed home?"] },
+
+    { id: "vampire", name: "Vampire", ordinal: "TWO", prefix: "VMP", scheme: "balcony", halo: "rust-500", duo: ["#e0b86a", "#3a0f2a"], paranormal: true, vampire: true,
+      descriptor: "A resonance echo animating an undying body", section: "Paranormal playbook",
+      blurb: "You are a resonance echo who animates an undying body. Your deadlocks are maxed out. Paranormal attacks are potent against you. Your xp tracks are longer and you have more Stress boxes.",
+      xp: "display your dominance or slay without mercy", resource: null, dots: 9, printed: { Hunt: 1, Prowl: 1, Skirmish: 1, Attune: 1, Command: 1, Sway: 1 }, maxDot: 5,
+      stressName: "Stress", stressMax: 12, deadlockName: "Deadlock", deadlocksMaxed: true,
+      need: "Your vice is resonance energy, consumed from a living human. Use 1 downtime activity to Hunt prey and clear Stress equal to the highest die. When you feed, mark 4 ticks on your healing clock (this is the only way you can heal). How do you feed? What telltale sign do you leave on your victims?",
+      keysRule: "Choose four keys that reflect your vampiric nature. Every one of them starts deadlocked: pick which way each one is locked.", keysNeeded: 4,
+      strictures: [["Dayfire", "When your skin is exposed to bluetime, take a new level 1 harm (“Burned”) every few minutes."], ["Slumber", "In downtime, you must spend one activity resting in a dark, silent place (or else suffer 3 Stress)."], ["Forbidden", "You cannot enter a private residence without permission from the owner."], ["Repelled", "Spiritbane charms can hold you at bay. (Take 2 Stress to resist the repulsion.)"], ["Bestial", "When you suffer physical harm or overindulge your vice, your body twists into a horrific bestial form until you next feed without overindulging."], ["Bound", "Your spirit must remain in this body, or be destroyed."]],
+      stricturesRule: "When you gain a new Vampiric trait (except Versatile), add a stricture. You start with the Dayfire stricture already.",
+      friendsRule: "Dark servants: start with two.", friendsNeeded: 2, contactsLabel: "Dark servants",
+      contacts: [["Blackwood", "a chauffeur"], ["Carter", "a bodyguard"], ["Sable", "a fashion model"], ["Green", "a personal assistant"], ["Langdon", "a biographer"]],
+      keys: GENERIC_KEYS,
+      items: [["Fine clothes and accessories", 1], ["Fine personal weapon", 1], ["Fine autopod", 1], ["Vial of rare & exotic drug", 1], ["Vial of rare & exotic drug (second)", 1], ["Demonbane charm", 1], ["Spiritbane charm", 1]],
+      fixedAbility: ["Vampire", "You are a resonance echo who animates an undying body. Your deadlocks are maxed out. Choose four that reflect your vampiric nature. Paranormal attacks are potent against you. If you suffer mortal harm or another deadlock, you are overwhelmed. You take level 3 harm: “Incapacitated” until you feed enough to recover. If you suffer paranormal harm while in this state, you are destroyed utterly. Your xp tracks are longer (you now advance more slowly). You have more Stress boxes."],
+      abilities: [
+        ["Terrible Power", "Take 1 Stress to perform a feat of superhuman strength or speed (run faster than an autopod, bend steel with bare hands, leap onto the roof of a building, etc.). This factors into effect."],
+        ["Telepathy", "Take 1 Stress to sense beyond human limits. Read a subject’s true thoughts or feelings, see in pitch darkness, sense the presence of invisible things, intuit the location of a hidden object, etc."],
+        ["Resonance Void", "You are invisible to resonance entities and may not be harmed by them. Take 2 Stress to cause living things to avert their gaze and fail to observe you for a few moments."],
+        ["Dark Majesty", "Choose Insight, Prowess, or Resolve. Your max rating for actions under that attribute becomes 5. When you take this ability, add +1 dot to the resistance rating of the attribute you’ve chosen."],
+        ["Sinister Guile", "During downtime, choose one: get a free additional downtime activity, or take +1d to all downtime activity rolls."],
+        ["Feral Whispers", "You can Attune to animals to have them do your bidding."],
+        ["Versatile", "Choose a special ability from another source.", 3]
+      ],
+      echoAbilitiesRule: "Echo special abilities: anything you carried over from your time as a ghost.",
+      xpTriggers: ["You displayed your dominance or slayed without mercy.", "You struggled with issues stemming from a deadlock or stricture."],
+      questions: ["Which of you knows what I am?", "Which of you have I fed on, and does it show?", "Which of you invited me in?", "Which of you do I find delicious company?", "Which of you carries a spiritbane charm, just in case?", "Which of you was there the night I died?"] },
+
+    merge(TT_SHARED, { id: "timetraveler", name: "Time Traveler", subtitle: "From the future", ordinal: "THREE", prefix: "TTF", scheme: "crews", halo: "file-500", duo: ["#9ec9ff", "#1a1d2a"], paranormal: true, timetraveler: true, era: "future",
+      descriptor: "A voyager visiting this era on an important mission from the future", section: "Paranormal playbook",
+      blurb: "You are a visitor from the future, here on an important mission. Your mind starts muddled from the time travel process. You burn brightly but briefly. Make the most of your time here.",
+      xp: "address a challenge with fearless conviction or lateral thinking", resource: null, dots: 9, printed: {},
+      need: "Instead of Stress, you experience temporal instability. Restabilizing requires using a paranormal device powered by a canister of alluvium (downtime action). When you do this, clear 5 Instability (you cannot overindulge). Note that alluvium is rare and illegal. You arrive with four canisters of alluvium.",
+      alluviumName: "canister", 
+      missions: [
+        { name: "Prevent a terrible future", text: "You come from a future where things went bad; you’ve come back to stop that happening.", questions: ["What is the terrible future?", "Who or what is responsible?", "Why did you choose this crew?", "What is the inflection moment?"] },
+        { name: "Chase down something bad", text: "Something or someone dangerous came here from your time, and you followed to stop them.", questions: ["Who are you chasing?", "What did they do in the future?", "Why did you choose this crew?", "Why did the enemy come here?"] }
+      ],
+      items: [["Powerful mechanical limb", 1], ["Force field device", 1], ["Fine future pistol", 1], ["Fine plasma blade", 1], ["Holo-projector", 1], ["Mysterious tape reel", 1]],
+      fixedAbility: ["Future Shock", "You are a visitor from the future, here on an important mission. Your mind starts muddled from the time travel process. Every time you fill your playbook xp, you gain clarity—choose a new Time Traveler trait and a versatile ability from another playbook (reflecting your former life and experiences), and take another temporal glitch, and note down a new detail of your mission. You burn brightly but briefly. Make the most of your time here."],
+      abilities: [
+        ["Advanced Combat Reflexes", "Cybernetic implants and futuristic combat training let you react to threats in a fraction of a second and even dodge bullets. Your bare hands count as a fine weapon. When there’s a question about who acts first, the answer is you."],
+        ["Psionics", "When you push yourself, you can also do one of the following: communicate without words—view another location clairvoyantly—temporarily increase your strength and speed—mentally interface with technology."],
+        ["Pocket Dimension", "Take 2 Instability to step out of this timeline for a few minutes, disappearing instantly before reappearing in the same place. Take 1 Instability for each additional feature: it lasts for up to an hour rather than a few minutes—you reappear in a visible location of your choice—you also take anyone you’re touching."],
+        ["Multi-Dimensional", "Unmoored in time, you can tap into the knowledge and experiences of yourself from alternate timelines. Attune to instantly “remember” a new skill or experience (e.g. piloting an airship, speaking another language, knowing how to relate to wealthy aristocrats)."],
+        ["Quantum Displacement", "Take 1 Instability to teleport anywhere you can see."],
+        ["Save and Reload", "Take 5 Instability to rewind the timeline of your physical body to a pre-injured state. Clear all harm."]
+      ],
+      questions: ["Which of you did I know of before I came here, from the records?", "Which of you found me, confused, on the night I arrived?", "Which of you have I told the truth?", "Which of you reminds me of someone from my time?", "Which of you have I seen in the terrible future?", "Which of you do I need for the mission?"] }),
+
+    merge(TT_SHARED, { id: "timepast", name: "Time Traveler", subtitle: "From the past", ordinal: "FOUR", prefix: "TTP", scheme: "characters", halo: "rust-500", duo: ["#d9b13b", "#2a1006"], paranormal: true, timetraveler: true, era: "past",
+      descriptor: "A voyager visiting this era on an important mission from the past", section: "Paranormal playbook",
+      blurb: "You are a visitor from the past, here on an important mission. Your mind starts muddled from the time travel process. You burn brightly but briefly. Make the most of your time here.",
+      xp: "address a challenge with fearless conviction or lateral thinking", resource: null, dots: 9, printed: {},
+      need: "Instead of Stress, you experience temporal instability. Restabilizing requires a paranormal ritual that uses alluvium as a crucial ingredient (downtime action). When you do this, clear 5 Instability (you cannot overindulge). Note that alluvium is rare and illegal. You arrive with four vials of alluvium.",
+      alluviumName: "vial",
+      missions: [
+        { name: "Find a solution and take it back", text: "There’s a terrible problem in the past, and you’re here to find the fix and take it back.", questions: ["What plagues the past?", "Who or what is responsible?", "Why did you choose this crew?", "What is the cure or solution?"] },
+        { name: "Save the present from a past mistake", text: "Something terrible happened in your time that’s about to impact today. You’re here to stop it.", questions: ["What was the mistake?", "Why has it been dormant?", "Why did you choose this crew?", "What terrible thing is about to happen?"] }
+      ],
+      items: [["Fine shadow cloak", 1], ["Fine blade (Jira-forged)", 1], ["Fine antiquated pistol", 1], ["Electroplasmic ammo", 1], ["Demonbane charm", 1], ["Mysterious ghost key", 1]],
+      fixedAbility: ["Haunted by the Past", "You are a visitor from the past, here on an important mission. Your mind starts muddled from the time travel process. Every time you fill your playbook xp, you gain clarity—choose a new Time Traveler trait and an ability from one of the Blades in the Dark playbooks, and take another temporal glitch, and note down a new detail of your mission. You burn brightly but briefly. Make the most of your time here."],
+      abilities: [
+        ["Ancient Martial Techniques", "You have been trained in mystical combat arts lost to time. Your bare hands count as a fine weapon. When there’s a question about who acts first, the answer is you."],
+        ["Sorcery", "When you push yourself, you can also do one of the following: communicate without words—view another location clairvoyantly—temporarily increase your strength and speed—supernaturally interface with electroplasmic technology."],
+        ["Step Into the Void", "Take 2 Instability to step out of this timeline for a few minutes, disappearing instantly before reappearing in the same place. Take 1 Instability for each additional feature: it lasts for up to an hour rather than a few minutes—you reappear in a visible location of your choice—you also take anyone you’re touching."],
+        ["Multi-Dimensional", "Unmoored in time, you can tap into the knowledge and experiences of yourself from alternate timelines. Attune to instantly “remember” a new skill or experience (e.g. piloting an airship, speaking another language, knowing how to relate to wealthy aristocrats)."],
+        ["Shadow Walk", "Take 1 Instability to teleport anywhere you can see."],
+        ["Resurrection of the Flesh", "Take 5 Instability to reverse the timeline of your physical body to a pre-injured state. Clear all harm."]
+      ],
+      questions: ["Which of you is descended from someone I knew?", "Which of you found me, confused, on the night I arrived?", "Which of you have I told the truth?", "Which of you reminds me of someone from my time?", "Which of you carries something I recognise from the past?", "Which of you do I need for the mission?"] })
   ];
+  function merge(a, b) { var o = {}, k; for (k in a) o[k] = a[k]; for (k in b) o[k] = b[k]; return o; }
+  var LOCKED = [];
 
   var byId = {};
   PLAYBOOKS.forEach(function (p) { byId[p.id] = p; });
+  PARANORMAL.forEach(function (p) { byId[p.id] = p; });
 
-  root.B68Content = { LOCKED: LOCKED, ACTIONS: ACTIONS, HERITAGES: HERITAGES, BACKGROUNDS: BACKGROUNDS, VICES: VICES, STANDARD_ITEMS: STANDARD_ITEMS, NAMES: NAMES, LOOK: LOOK, PLAYBOOKS: PLAYBOOKS, byId: byId };
+  root.B68Content = { LOCKED: LOCKED, PARANORMAL: PARANORMAL, GENERIC_KEYS: GENERIC_KEYS, ACTIONS: ACTIONS, HERITAGES: HERITAGES, BACKGROUNDS: BACKGROUNDS, VICES: VICES, STANDARD_ITEMS: STANDARD_ITEMS, NAMES: NAMES, LOOK: LOOK, PLAYBOOKS: PLAYBOOKS, byId: byId };
 })(typeof window !== "undefined" ? window : globalThis);

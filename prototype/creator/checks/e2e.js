@@ -1,5 +1,6 @@
-const { chromium } = require('/opt/node-tools/node_modules/playwright');
-const URL = 'file:///tmp/claude-0/-home-user-schedule-app/129e0dec-ffd1-5d8e-bbdf-0627b22952a4/scratchpad/creator/index.html';
+process.chdir(__dirname); try { require('fs').mkdirSync('out', { recursive: true }); } catch (e) {}
+const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
+const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
 // a tiny in-memory db stub with the contract's shape
 const STUB = `(() => {
   const store = {}; const colSubs = []; const docSubs = {};
@@ -29,11 +30,11 @@ const STUB = `(() => {
   console.log('wearing:', await p.evaluate(() => B68.S.sheet.wearing));
   await p.click('#rail button:nth-child(16)'); await p.waitForTimeout(500);
   console.log('checks:', await p.evaluate(() => B68.validate().filter(c => !c.ok).map(c => c.text)));
-  await p.screenshot({ path: 'shots/e2e-file.png' });
+  await p.screenshot({ path: 'out/e2e-file.png' });
   await p.click('#fileRoster'); await p.waitForTimeout(1200);
   const mode = await p.evaluate(() => document.body.dataset.mode); console.log('mode after filing:', mode, 'hash:', await p.evaluate(() => location.hash), 'writes:', await p.evaluate(() => JSON.stringify(window.__writes)));
-  await p.screenshot({ path: 'shots/e2e-sheet-top.png' });
-  await p.screenshot({ path: 'shots/e2e-sheet-full.png', fullPage: true });
+  await p.screenshot({ path: 'out/e2e-sheet-top.png' });
+  await p.screenshot({ path: 'out/e2e-sheet-full.png', fullPage: true });
   // interact: stress box 3, playbook xp 5, a clock tick
   const click = async (sel) => { const h = await p.$(sel); if (!h) { errs.push('missing ' + sel); return; } await h.click(); await p.waitForTimeout(250); };
   const sels = await p.evaluate(() => ({ stress: !!document.querySelector('#dossier [data-stress], #dossier .ds-stress button'), buttons: document.querySelectorAll('#dossier button').length }));
@@ -45,7 +46,7 @@ const STUB = `(() => {
   // back to roster, card appears, click → sheet again
   await click('#dossier button.ds-back, #railBack');
   await p.waitForTimeout(600); console.log('mode after back:', await p.evaluate(() => document.body.dataset.mode), 'cards:', await p.$$eval('#cards .card', c => c.length));
-  await p.screenshot({ path: 'shots/e2e-roster.png', fullPage: true });
+  await p.screenshot({ path: 'out/e2e-roster.png', fullPage: true });
   await p.click('#cards .card'); await p.waitForTimeout(800); console.log('mode after card:', await p.evaluate(() => document.body.dataset.mode));
   // phone
   const ctx2 = await b.newContext({ viewport: { width: 400, height: 800 }, colorScheme: 'dark' }); await ctx2.addInitScript(STUB);

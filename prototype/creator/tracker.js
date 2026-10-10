@@ -1,6 +1,7 @@
 /* tracker.js — the living character sheet. Owned by the tracker module. Sets window.B68Tracker.
    Everything on the printed playbook sheet becomes a live control; the whole `play` object is saved
-   through api.save({ play }) on every change (immediately for clicks, debounced for typing). */
+   through api.save({ play }) on every change (immediately for clicks, debounced for typing).
+   Round 3: the four paranormal playbooks (ghost, vampire, time travelers) and a printable layout. */
 (function () {
   'use strict';
   var T = window.B68Tracker = {};
@@ -15,9 +16,30 @@
   function clamp(n, a, b) { n = +n || 0; return n < a ? a : n > b ? b : n; }
   function pbOf(id) { return CT.byId[id] || null; }
   function isHull(pb) { return !!(pb && pb.hull); }
+  function isGhost(pb) { return !!(pb && pb.ghost); }
+  function isVamp(pb) { return !!(pb && pb.vampire); }
+  function isTT(pb) { return !!(pb && pb.timetraveler); }
+  function isPara(pb) { return !!(pb && pb.paranormal); }
+  function glitchy(pb) { return isGhost(pb) || isTT(pb); } /* keys are struck out with a named irregularity / glitch, never a deadlock */
+  function stressMax(pb) { return pb && pb.stressMax ? +pb.stressMax : isHull(pb) ? 10 : 9; }
+  function stressName(pb) { return pb && pb.stressName ? pb.stressName : isHull(pb) ? 'Drain' : 'Stress'; }
+  function glitchName(pb) { return isTT(pb) ? 'Temporal glitch' : (pb && pb.deadlockName) || 'Echo irregularity'; }
+  function glitchList(pb) { return isTT(pb) ? (pb.glitches || []) : (pb && pb.deadlocks) || []; }
+  function glitchCount(play) { return play.keys.filter(function (k) { return k.glitch; }).length; }
+  function alluvMax(pb) { return pb && pb.alluvium && pb.alluvium.max ? +pb.alluvium.max : 9; }
+  function alluvStart(pb) { return pb && pb.alluvium && pb.alluvium.start != null ? +pb.alluvium.start : 4; }
+  function missionOf(pb, name) { return ((pb && pb.missions) || []).filter(function (m) { return m.name === name; })[0] || null; }
   var ACTS = []; (CT.ACTIONS || []).forEach(function (g) { g[1].forEach(function (a) { ACTS.push(a); }); });
   var ATTRS = (CT.ACTIONS || []).map(function (g) { return g[0]; });
+  function attrOf(action) { var r = null; (CT.ACTIONS || []).forEach(function (g) { if (g[1].indexOf(action) >= 0) r = g[0]; }); return r; }
   var MULTI = { 'Echo Pet': 2, 'Frame Upgrade': 3, 'Advanced Sparkmind': 2 };
+  function abilityMax(pb, name) { var a = pb && pb.abilities ? pb.abilities.filter(function (x) { return x[0] === name; })[0] : null; return (a && +a[2]) || MULTI[name] || 1; }
+  /* the highest rating an action may reach right now */
+  function dotMax(play, pb, action) {
+    if (isVamp(pb) && play.darkMajesty && attrOf(action) === play.darkMajesty) return 5;
+    if (isTT(pb)) return 4;
+    return play.mastery ? 4 : 3;
+  }
   var AUTOMATON = ['Automaton', 'You are a soul powering a robotic body. Human-like strength and senses; built-in armor that doesn’t count for load; you start with no keys; you may be repaired if damaged or destroyed. Whenever you would take Stress, take Drain instead. Choose two frame features.'];
   var FIXED = { hull: AUTOMATON };
 
@@ -25,6 +47,16 @@
   function listText(v, sep) { return Array.isArray(v) ? v.filter(Boolean).join(sep || ', ') : String(v == null ? '' : v); }
   function keyParts(k) { var m = String(k || '').match(/^(.*?)\s*\(\s*▼\s*(.*?)\s*▲\s*(.*?)\s*\)\s*$/); return m ? { name: m[1].trim(), down: m[2].trim(), up: m[3].trim() } : { name: String(k || '').trim(), down: '', up: '' }; }
   function cohortExpert(pb) { var m = pb && pb.cohort && pb.cohort.text ? pb.cohort.text.match(/\((Expert[^)]*)\)/) : null; return m ? m[1] : ''; }
+  /* a typed answer to a numbered prompt: "2" or a (prefix of a) name; returns the index or -1 */
+  function pickIndex(names, v) {
+    v = String(v == null ? '' : v).trim(); if (!v) return -1;
+    if (/^\d+$/.test(v)) { var n = +v; return n >= 1 && n <= names.length ? n - 1 : -1; }
+    var lv = v.toLowerCase(), i;
+    for (i = 0; i < names.length; i++) if (String(names[i]).toLowerCase() === lv) return i;
+    for (i = 0; i < names.length; i++) if (String(names[i]).toLowerCase().indexOf(lv) === 0) return i;
+    return -1;
+  }
+  function numbered(names) { return names.map(function (n, i) { return (i + 1) + '. ' + n; }).join('\n'); }
 
   /* ---------- the play object ---------- */
   function blankPlay() {
@@ -32,8 +64,11 @@
     return { v: 1, crew: '', stress: 0, xp: { playbook: 0, insight: 0, prowess: 0, resolve: 0 }, dots: dots, abilities: [], abilityTicks: {}, frame: [],
       keys: [], roboticDeadlocks: [], harm: { l1: ['', ''], l2: ['', ''], l3: '', l4: '' }, healing: 0, armor: { armor: false, heavy: false }, resource: [false, false],
       stacks: 0, bank: 0, items: [], extraItems: [], loadLimit: 'quiet', cohort: { name: '', type: '', edges: '', flaws: '', abilities: '', harm: null, armor: false },
-      contacts: [], vice: '', purveyor: '', clocks: [], memories: [], suspicion: 0, mastery: false, notes: '', log: [] };
+      contacts: [], vice: '', purveyor: '', clocks: [], memories: [], suspicion: 0, mastery: false, notes: '', log: [],
+      /* paranormal playbooks */
+      alluvium: 0, strictures: [], darkMajesty: null, mission: null, ghostItems: '', enemies: '', feeding: '', telltale: '', echoAbilities: '' };
   }
+  function blankMission(name, answers) { var a = Array.isArray(answers) ? answers.slice(0, 4).map(function (x) { return String(x == null ? '' : x); }) : []; while (a.length < 4) a.push(''); return { name: name || '', answers: a, details: [] }; }
   function initialPlay(sheet, playbookId) {
     sheet = sheet || {}; var pb = pbOf(playbookId || sheet.playbook); var p = blankPlay();
     var d = sheet.dots || {}; ACTS.forEach(function (a) { p.dots[a] = clamp(d[a], 0, 4); });
@@ -41,28 +76,54 @@
     if (pb && pb.fixedAbility) p.abilities.push(pb.fixedAbility[0]);
     [sheet.ability, sheet.ability2, sheet.customAbility].forEach(function (a) { if (a && p.abilities.indexOf(a) < 0) p.abilities.push(a); });
     p.frame = (sheet.frame || []).slice();
-    var keys = (sheet.keys || []).concat(sheet.customKey ? [sheet.customKey] : []);
-    keys.slice(0, 4).forEach(function (k) { var ps = keyParts(k); ps.hits = 0; ps.deadlock = null; if (sheet.deadlockKey === k && sheet.deadlockMode) ps.deadlock = sheet.deadlockMode === '▲' ? 'up' : 'down'; p.keys.push(ps); });
-    var sc = sheet.contacts || {};
-    ((pb && pb.contacts) || []).forEach(function (c) { p.contacts.push({ name: c[0], role: c[1], kind: sc[c[0]] === 'friend' || sc[c[0]] === 'rival' ? sc[c[0]] : null }); });
-    Object.keys(sc).forEach(function (n) { if (!p.contacts.some(function (c) { return c.name === n; })) p.contacts.push({ name: n, role: '', kind: sc[n] || null }); });
-    if (sheet.contactCustom) p.contacts.push({ name: sheet.contactCustom, role: '', kind: /rival/i.test(sheet.contactCustom) ? 'rival' : 'friend' });
-    if (!isHull(pb)) { p.vice = sheet.vice || ''; p.purveyor = sheet.purveyor || ''; }
-    p.items = (sheet.items || []).slice();
+    var keys = (sheet.keys || []).concat(sheet.customKey ? [sheet.customKey] : []), locks = sheet.keyLocks || {};
+    keys.slice(0, 4).forEach(function (k) {
+      var ps = keyParts(k); ps.hits = 0; ps.deadlock = null; ps.glitch = null;
+      if (sheet.deadlockKey === k && sheet.deadlockMode) ps.deadlock = sheet.deadlockMode === '▲' ? 'up' : 'down';
+      if (isVamp(pb)) { var l = locks[k] != null ? locks[k] : locks[ps.name]; ps.deadlock = l === 'up' || l === '▲' ? 'up' : 'down'; } /* vampire: every key starts deadlocked */
+      p.keys.push(ps);
+    });
+    if (!isGhost(pb) && !isTT(pb)) {
+      var sc = sheet.contacts || {};
+      ((pb && pb.contacts) || []).forEach(function (c) { p.contacts.push({ name: c[0], role: c[1], kind: sc[c[0]] === 'friend' || sc[c[0]] === 'rival' ? sc[c[0]] : null }); });
+      Object.keys(sc).forEach(function (n) { if (!p.contacts.some(function (c) { return c.name === n; })) p.contacts.push({ name: n, role: '', kind: sc[n] || null }); });
+      if (sheet.contactCustom) p.contacts.push({ name: sheet.contactCustom, role: '', kind: /rival/i.test(sheet.contactCustom) ? 'rival' : 'friend' });
+    }
+    if (!isHull(pb) && !isPara(pb)) { p.vice = sheet.vice || ''; p.purveyor = sheet.purveyor || ''; }
+    p.items = isGhost(pb) ? [] : (sheet.items || []).slice();
     if (pb && pb.cohort) p.cohort = { name: sheet.cohortName || '', type: [sheet.cohortType, sheet.cohortHousing].filter(Boolean).join(' · '), edges: sheet.cohortEdges || '', flaws: sheet.cohortFlaws || '', abilities: cohortExpert(pb), harm: null, armor: false };
     if (isHull(pb)) p.memories = (pb.memories || []).map(function (q) { return { name: q, size: 8, filled: 0, text: '' }; });
+    if (isGhost(pb)) { p.ghostItems = String(sheet.ghostItems || ''); p.enemies = String(sheet.enemies || ''); }
+    if (isVamp(pb)) {
+      p.strictures = ['Dayfire'].concat([].concat(sheet.stricture || []).map(function (s) { return String(s || '').trim(); })).filter(function (s, i, a) { return s && a.indexOf(s) === i; });
+      p.feeding = String(sheet.feeding || ''); p.telltale = String(sheet.telltale || ''); p.echoAbilities = String(sheet.echoAbilities || '');
+    }
+    if (isTT(pb)) { p.alluvium = alluvStart(pb); p.mission = blankMission(sheet.mission, sheet.missionAnswers); p.bank = 0; }
     return p;
   }
   T.initialPlay = initialPlay;
   /* fill in anything an older or partial play is missing */
   function normalize(play, sheet, pbId) {
-    var base = play && typeof play === 'object' ? clone(play) : initialPlay(sheet, pbId); var b = blankPlay();
+    var base = play && typeof play === 'object' ? clone(play) : initialPlay(sheet, pbId); var b = blankPlay(), pb = pbOf(pbId);
+    /* playbook-specific defaults first, so a v:2 doc filed before round 3 gets its real starting values */
+    if (isTT(pb)) {
+      if (base.alluvium == null) base.alluvium = alluvStart(pb);
+      if (!base.mission || typeof base.mission !== 'object') base.mission = blankMission(sheet && sheet.mission, sheet && sheet.missionAnswers);
+      if (!Array.isArray(base.mission.answers)) base.mission.answers = []; while (base.mission.answers.length < 4) base.mission.answers.push('');
+      if (!Array.isArray(base.mission.details)) base.mission.details = [];
+    }
+    if (isVamp(pb)) { if (!Array.isArray(base.strictures)) base.strictures = []; if (base.strictures.indexOf('Dayfire') < 0) base.strictures.unshift('Dayfire'); }
     Object.keys(b).forEach(function (k) { if (base[k] === undefined || base[k] === null) base[k] = b[k]; });
-    ACTS.forEach(function (a) { base.dots[a] = clamp(base.dots[a], 0, 4); });
+    ACTS.forEach(function (a) { base.dots[a] = clamp(base.dots[a], 0, 5); });
     ['playbook', 'insight', 'prowess', 'resolve'].forEach(function (k) { base.xp[k] = clamp(base.xp[k], 0, k === 'playbook' ? 8 : 6); });
+    base.stress = clamp(base.stress, 0, stressMax(pb));
+    base.alluvium = clamp(base.alluvium, 0, alluvMax(pb));
     if (!Array.isArray(base.contacts)) { var arr = []; Object.keys(base.contacts).forEach(function (n) { arr.push({ name: n, role: '', kind: base.contacts[n] }); }); base.contacts = arr; }
     if (!Array.isArray(base.harm.l1)) base.harm.l1 = [String(base.harm.l1 || ''), '']; if (!Array.isArray(base.harm.l2)) base.harm.l2 = [String(base.harm.l2 || ''), ''];
-    var pb = pbOf(pbId); if (isHull(pb) && !base.memories.length) base.memories = (pb.memories || []).map(function (q) { return { name: q, size: 8, filled: 0, text: '' }; });
+    if (!Array.isArray(base.keys)) base.keys = [];
+    base.keys.forEach(function (k) { if (k.deadlock === undefined) k.deadlock = null; if (k.glitch === undefined) k.glitch = null; if (!k.hits) k.hits = 0; });
+    if (isHull(pb) && !base.memories.length) base.memories = (pb.memories || []).map(function (q) { return { name: q, size: 8, filled: 0, text: '' }; });
+    if (isTT(pb)) base.bank = 0;
     return base;
   }
 
@@ -108,6 +169,7 @@
     return '<svg class="ds-clock" viewBox="0 0 ' + 2 * r + ' ' + 2 * r + '" width="' + 2 * r + '" height="' + 2 * r + '" role="img" aria-label="clock ' + filled + ' of ' + n + '">' + h + '<circle class="ds-clock-rim" cx="' + cx + '" cy="' + cy + '" r="' + R + '"/></svg>';
   }
   function input(path, value, ph, cls) { return '<input type="text" class="ds-in' + (cls ? ' ' + cls : '') + '" data-path="' + esc(path) + '" value="' + esc(value) + '" placeholder="' + esc(ph || '') + '">'; }
+  function textarea(path, value, ph, cls) { return '<textarea class="ds-ta' + (cls ? ' ' + cls : '') + '" data-path="' + esc(path) + '" placeholder="' + esc(ph || '') + '">' + esc(value) + '</textarea>'; }
   function diamonds(n, filled, act, dis) { var h = ''; for (var i = 1; i <= n; i++) h += '<button type="button" class="ds-dia' + (i <= filled ? ' on' : '') + '" data-act="' + act + '" data-n="' + i + '"' + (dis ? ' disabled' : '') + ' aria-label="' + act + ' ' + i + '"></button>'; return h; }
   function sq(on, act, extra) { return '<button type="button" class="ds-sq' + (on ? ' on' : '') + '" data-act="' + act + '"' + (extra || '') + '></button>'; }
 
@@ -123,8 +185,9 @@
     if (pb && pb.backing) alt += '<div><span class="ds-lab">Backing faction</span>' + esc(sheet.backing || '—') + (sheet.mission ? '<div class="ds-dim">Mission: ' + esc(sheet.mission) + '</div>' : '') + '</div>';
     if (pb && pb.veteran) alt += '<div><span class="ds-lab">Damage</span>' + esc(sheet.damage || '—') + '</div><div><span class="ds-lab">Something that helps</span>' + esc(sheet.helps || '—') + '</div>';
     var ro = readOnly();
+    var desc = (pb && pb.subtitle ? esc(pb.subtitle) + ' · ' : '') + esc(pb ? pb.descriptor : '');
     return '<div class="ds-head">' +
-      '<div class="ds-title"><div class="ds-pb">' + esc(pb ? pb.name : doc.playbookName || 'Subject') + '</div><div class="ds-desc">' + esc(pb ? pb.descriptor : '') + '</div></div>' +
+      '<div class="ds-title"><div class="ds-pb">' + esc(pb ? pb.name : doc.playbookName || 'Subject') + '</div><div class="ds-desc">' + desc + '</div></div>' +
       '<div class="ds-ident">' +
         '<div><span class="ds-lab">' + (isHull(pb) ? 'Designation' : 'Name') + '</span><b>' + esc(doc.name || sheet.name || 'Unknown') + '</b></div>' +
         '<div><span class="ds-lab">Alias</span>' + esc(doc.alias || sheet.alias || '—') + '</div>' +
@@ -134,6 +197,7 @@
       '<div class="ds-nav">' +
         '<button type="button" class="btn sm" data-act="back" data-always="1">Back to files</button>' +
         '<button type="button" class="btn sm" data-act="edit"' + (ro ? ' disabled' : '') + '>Edit figure</button>' +
+        '<button type="button" class="btn sm" data-act="print" data-always="1">Print</button>' +
         '<button type="button" class="btn sm ds-remove" data-act="remove"' + (ro ? ' disabled' : '') + '>' + (cur.ui.confirmRemove ? 'Click again to remove' : 'Remove') + '</button>' +
         '<span class="ds-status" id="ds-status">' + (ro ? 'Read only' : 'Saved') + '</span>' +
       '</div>' +
@@ -141,37 +205,74 @@
         '<div><span class="ds-lab">Look</span>' + esc(sheet.look || '—') + '</div>' +
         '<div><span class="ds-lab">Wearing</span>' + esc(listText(sheet.wearing) || '—') + '</div>' + alt +
       '</div>' +
+      '<div class="ds-printfig' + (isGhost(pb) ? ' ghostly' : '') + '" aria-hidden="true"></div>' + /* filled only while printing (see beforeprint) */
     '</div>';
   }
-  function figure(doc) {
+  function figureSvg(doc) {
     var svg = '', warn = '';
     try { if (K && doc.spec) { var r = cur.ui.mug ? K.portrait(doc.spec) : K.render(doc.spec, { height: 420 }); svg = r && r.svg || ''; } } catch (e) { warn = 'The kit could not draw this figure: ' + e.message; }
-    return box('Figure', '<div class="ds-art' + (cur.ui.mug ? ' mug' : '') + '">' + (svg || '<div class="ds-dim">' + esc(warn || 'No figure on file.') + '</div>') + '</div>',
+    cur.ui.svg = svg; cur.ui.svgWarn = warn;
+  }
+  function figure(doc, pb) {
+    var svg = cur.ui.svg, warn = cur.ui.svgWarn;
+    return box('Figure', '<div class="ds-art' + (cur.ui.mug ? ' mug' : '') + (isGhost(pb) ? ' ghostly' : '') + '">' + (svg || '<div class="ds-dim">' + esc(warn || 'No figure on file.') + '</div>') + '</div>',
       '<span class="seg"><button type="button" class="chip sm" data-act="view" data-v="fig" data-always="1" aria-pressed="' + (!cur.ui.mug) + '">Figure</button><button type="button" class="chip sm" data-act="view" data-v="mug" data-always="1" aria-pressed="' + (!!cur.ui.mug) + '">Mugshot</button></span>', 'ds-figbox');
   }
   function stress(play, pb) {
-    var hull = isHull(pb), n = hull ? 10 : 9;
+    var hull = isHull(pb), n = stressMax(pb), name = stressName(pb), ghost = isGhost(pb), vamp = isVamp(pb), tt = isTT(pb);
     var h = '<div class="ds-stress">' + pipRow(n, play.stress, 'stress', '', 'ds-sbox') + '<span class="mono ds-count">' + play.stress + ' / ' + n + '</span></div>';
-    h += '<div class="row ds-tools">' +
-      (hull ? '<button type="button" class="btn sm" data-act="stressd" data-d="-5">Recharge −5</button>' : '<button type="button" class="btn sm" data-act="stressd" data-d="-1">Indulge −1</button><button type="button" class="btn sm" data-act="stressd" data-d="-3">Indulge −3</button>') +
-      '<span class="ds-gap"></span><button type="button" class="btn sm" data-act="stressd" data-d="1">Mark +1</button><button type="button" class="btn sm" data-act="stressd" data-d="2">Mark +2</button></div>';
+    var tools;
+    if (hull) tools = '<button type="button" class="btn sm" data-act="stressd" data-d="-5">Recharge −5</button>';
+    else if (ghost) tools = '<button type="button" class="btn sm" data-act="consume"' + (play.stress > 0 ? '' : ' disabled') + '>Consume (clear half)</button>';
+    else if (vamp) tools = '<button type="button" class="btn sm" data-act="feed">Feed</button>';
+    else if (tt) tools = '<button type="button" class="btn sm" data-act="restabilize"' + (play.alluvium > 0 ? '' : ' disabled') + '>Restabilize (−5, uses one ' + esc(pb.alluviumName || 'canister') + ')</button>';
+    else tools = '<button type="button" class="btn sm" data-act="stressd" data-d="-1">Indulge −1</button><button type="button" class="btn sm" data-act="stressd" data-d="-3">Indulge −3</button>';
+    h += '<div class="row ds-tools">' + tools + '<span class="ds-gap"></span><button type="button" class="btn sm" data-act="stressd" data-d="1">Mark +1</button><button type="button" class="btn sm" data-act="stressd" data-d="2">Mark +2</button></div>';
+    if (tt) {
+      var an = pb.alluviumName || 'canister', am = alluvMax(pb);
+      h += '<div class="ds-alluv"><span class="ds-lab">Alluvium</span>' + pipRow(am, play.alluvium, 'alluvium', '', 'ds-pip ds-vial') + '<span class="mono ds-count">' + play.alluvium + ' ' + esc(an) + (play.alluvium === 1 ? '' : 's') + ' left</span></div>' +
+        '<p class="hint">Click a circle to set how many ' + esc(an) + 's you hold; alluvium is rare and illegal, but more can be found.</p>';
+    }
     if (hull) h += '<p class="hint">Whenever you would take Stress, take Drain. At your last Drain box you go On Program immediately and deadlock a key (or mark a robotic deadlock).</p>';
-    else if (play.stress >= n) h += '<p class="hint ds-warn">Stress is full: trauma. Deadlock a key.</p>';
-    return box(hull ? 'Drain' : 'Stress', h, hull ? '' : '');
+    else if (isPara(pb) && pb.need) h += '<p class="hint">' + esc(pb.need) + '</p>';
+    if (vamp) h += '<div class="ds-feedrow"><div><span class="ds-lab">How do you feed?</span>' + input('feeding', play.feeding, 'Feeding') + '</div><div><span class="ds-lab">Telltale sign on your victims</span>' + input('telltale', play.telltale, 'Telltale') + '</div></div>';
+    if (play.stress >= n) {
+      if (hull) h += '';
+      else if (ghost) h += '<p class="hint ds-warn">Fully drained: strike out a key with an echo irregularity.</p>';
+      else if (tt) h += '<p class="hint ds-warn">Instability is full: strike out a key with a temporal glitch.</p>';
+      else if (vamp) h += '<p class="hint ds-warn">Stress is full: trauma. Another deadlock overwhelms you — level 3 harm “Incapacitated” until you feed enough to recover.</p>';
+      else h += '<p class="hint ds-warn">Stress is full: trauma. Deadlock a key.</p>';
+    }
+    return box(esc(name), h);
   }
   function keys(play, pb) {
-    var hull = isHull(pb), h = '';
+    var hull = isHull(pb), g = glitchy(pb), vamp = isVamp(pb), tt = isTT(pb), h = '', gname = glitchName(pb), glist = glitchList(pb);
+    var used = play.keys.map(function (k) { return k.glitch; }).filter(Boolean);
     if (hull) h += '<p class="hint">You start with no keys; memories can restore them. If you have no keys when you would deadlock, mark a robotic deadlock instead.</p>';
+    if (isGhost(pb)) h += '<p class="hint">You cannot turn keys. When fully drained, strike a key out with an echo irregularity instead of a deadlock.</p>';
+    if (tt) h += '<p class="hint">When Instability is full, strike a key out with a temporal glitch. Each glitch adds a line to your mission details.</p>';
+    if (vamp) h += '<p class="hint">Your deadlocks are maxed out: every key starts deadlocked. A further deadlock overwhelms you — level 3 harm “Incapacitated” until you feed enough to recover.</p>';
     play.keys.forEach(function (k, i) {
-      var dl = k.deadlock;
-      h += '<div class="ds-key' + (dl ? ' locked' : '') + '">' +
+      var dl = k.deadlock, gl = k.glitch, struck = !!(dl || gl), side;
+      if (g) {
+        side = gl ? '<span class="ds-burst on" title="Permanent — hard mode">' + esc(gl) + '</span><span class="ds-perm">Permanent — hard mode</span><button type="button" class="ds-x" data-act="unglitch" data-i="' + i + '" title="Undo (GM)">undo (GM)</button>'
+          : '<button type="button" class="ds-burst' + (cur.ui.glitchPick === i ? ' picking' : '') + '" data-act="glitchpick" data-i="' + i + '" title="Strike out: ' + esc(gname.toLowerCase()) + '" aria-expanded="' + (cur.ui.glitchPick === i) + '">' + BURST + '<span>✕</span></button>';
+      } else {
+        side = dl ? '<span class="ds-burst on" title="Permanent — hard mode">' + (dl === 'up' ? '▲ ' + esc(k.up || 'intensified') : '▼ ' + esc(k.down || 'reversed')) + '</span><span class="ds-perm">Permanent — hard mode</span><button type="button" class="ds-x" data-act="undeadlock" data-i="' + i + '" title="Undo deadlock (GM)">undo (GM)</button>'
+          : '<span class="ds-burstgrp"><button type="button" class="ds-burst" data-act="deadlock" data-i="' + i + '" data-dir="down" title="Deadlock: reversed">' + BURST + '<span>▼</span></button><button type="button" class="ds-burst" data-act="deadlock" data-i="' + i + '" data-dir="up" title="Deadlock: intensified">' + BURST + '<span>▲</span></button></span>';
+      }
+      h += '<div class="ds-key' + (struck ? ' locked' : '') + (gl ? ' glitched' : '') + '">' +
         '<div class="ds-key-main">' + input('keys.' + i + '.name', k.name, 'Key', 'ds-key-name') +
           '<span class="ds-key-dl"><span class="ds-arrow">▼</span>' + input('keys.' + i + '.down', k.down, 'reversed', 'ds-key-word') + '<span class="ds-arrow">▲</span>' + input('keys.' + i + '.up', k.up, 'intensified', 'ds-key-word') + '</span></div>' +
-        '<div class="ds-key-side">' + pipRow(3, k.hits, 'keyhit', ' data-i="' + i + '"') +
-          (dl ? '<span class="ds-burst on" title="Permanent — hard mode">' + (dl === 'up' ? '▲ ' + esc(k.up || 'intensified') : '▼ ' + esc(k.down || 'reversed')) + '</span><span class="ds-perm">Permanent — hard mode</span><button type="button" class="ds-x" data-act="undeadlock" data-i="' + i + '" title="Undo deadlock (GM)">undo (GM)</button>'
-             : '<span class="ds-burstgrp"><button type="button" class="ds-burst" data-act="deadlock" data-i="' + i + '" data-dir="down" title="Deadlock: reversed">' + BURST + '<span>▼</span></button><button type="button" class="ds-burst" data-act="deadlock" data-i="' + i + '" data-dir="up" title="Deadlock: intensified">' + BURST + '<span>▲</span></button></span>') +
+        '<div class="ds-key-side">' + pipRow(3, k.hits, 'keyhit', ' data-i="' + i + '"') + side +
           '<button type="button" class="ds-x" data-act="rmkey" data-i="' + i + '" title="Remove key">×</button>' +
-        '</div></div>';
+        '</div>';
+      if (g && !gl && cur.ui.glitchPick === i) {
+        h += '<div class="ds-glpick"><span class="ds-lab">' + esc(gname) + ' for ' + esc(k.name || 'this key') + ' — permanent</span><div class="row">' +
+          glist.map(function (n) { return '<button type="button" class="chip sm" data-act="glitch" data-i="' + i + '" data-v="' + esc(n) + '"' + (used.indexOf(n) >= 0 ? ' disabled title="Already taken"' : '') + '>' + esc(n) + '</button>'; }).join('') +
+          '<button type="button" class="chip sm none" data-act="glitchcancel">Cancel</button></div></div>';
+      }
+      h += '</div>';
     });
     if (play.keys.length < 4) {
       var opts = '<option value="">Add a key…</option>'; ((pb && pb.keys) || []).forEach(function (k) { if (!play.keys.some(function (x) { return x.name === keyParts(k).name; })) opts += '<option value="' + esc(k) + '">' + esc(k) + '</option>'; });
@@ -183,21 +284,26 @@
       (pb.roboticDeadlocks || []).forEach(function (r) { h += '<button type="button" class="chip sm" data-act="robo" data-v="' + esc(r) + '" aria-pressed="' + (play.roboticDeadlocks.indexOf(r) >= 0) + '">' + esc(r) + '</button>'; });
       h += '</div>';
     }
-    return box('Keys', h, '<span class="ds-dlhead">Deadlocks</span>');
+    if (tt) {
+      var gc = glitchCount(play);
+      h += '<div class="ds-glcount' + (gc >= 4 ? ' full' : '') + '"><b>Temporal glitches: ' + gc + ' / 4</b>' + (gc >= 4 ? '<div class="ds-gone">You disappear from this time period after the next score.</div>' : '<span class="ds-dim">at four, you disappear after the next score</span>') + '</div>';
+    }
+    return box('Keys', h, '<span class="ds-dlhead">' + (tt ? 'Temporal glitches' : isGhost(pb) ? 'Echo irregularities' : 'Deadlocks') + '</span>');
   }
   function harm(play, pb) {
-    var hull = isHull(pb), hm = play.harm, pbr = pb && pb.resource && !hull ? pb.resource : null;
+    var hull = isHull(pb), hm = play.harm, pbr = pb && pb.resource && !hull ? pb.resource : null, blank = !!(pb && pb.resource === null && !hull);
     var h = '<div class="ds-harm">' +
       '<div class="ds-hrow"><span class="ds-hl">4. ' + (hull ? 'Destroyed' : 'Mortal') + '</span>' + input('harm.l4', hm.l4, '', 'ds-hin') + '</div>' +
       '<div class="ds-hrow"><span class="ds-hl">3. Critical</span>' + input('harm.l3', hm.l3, '', 'ds-hin') + '</div>' +
       '<div class="ds-hrow two"><span class="ds-hl">2. Major</span>' + input('harm.l2.0', hm.l2[0], '', 'ds-hin') + '<span class="ds-hl">2. Major</span>' + input('harm.l2.1', hm.l2[1], '', 'ds-hin') + '</div>' +
       '<div class="ds-hrow two"><span class="ds-hl">1. Passing</span>' + input('harm.l1.0', hm.l1[0], '', 'ds-hin') + '<span class="ds-hl">1. Passing</span>' + input('harm.l1.1', hm.l1[1], '', 'ds-hin') + '</div>' +
     '</div>';
-    var side = '<div class="ds-side"><div class="ds-heal"><span class="ds-lab">' + (hull ? 'Repair' : 'Healing') + '</span>' + clockSvg(4, play.healing, 22, 'heal') + '</div>' +
+    var side = '<div class="ds-side"><div class="ds-heal"><span class="ds-lab">' + (hull ? 'Repair' : 'Healing') + '</span>' + clockSvg(4, play.healing, 22, 'heal') + (isVamp(pb) ? '<span class="ds-dim">feeding only</span>' : '') + '</div>' +
       '<div class="ds-res"><span class="ds-lab">Resources</span>' +
         '<div class="ds-resrow"><span>Armor</span><span class="ds-boxes">' + sq(play.armor.armor, 'armor', ' data-k="armor"') + '</span></div>' +
         '<div class="ds-resrow"><span>Heavy</span><span class="ds-boxes">' + sq(play.armor.heavy, 'armor', ' data-k="heavy"') + '</span></div>' +
         (pbr ? '<div class="ds-resrow"><span>' + esc(pbr.charAt(0).toUpperCase() + pbr.slice(1)) + '</span><span class="ds-boxes">' + sq(play.resource[0], 'resource', ' data-k="0"') + sq(play.resource[1], 'resource', ' data-k="1"') + '</span></div>' : '') +
+        (blank ? '<div class="ds-resrow"><span class="ds-blankres" aria-label="unlabelled resource"></span><span class="ds-boxes">' + sq(play.resource[0], 'resource', ' data-k="0"') + sq(play.resource[1], 'resource', ' data-k="1"') + '</span></div>' : '') +
         (hull ? '<div class="ds-dim">Built-in frame armor; it never counts for load.</div>' : '') +
       '</div></div>';
     return box(hull ? 'Damage' : 'Harm', '<div class="ds-harmgrid">' + h + side + '</div>');
@@ -214,18 +320,24 @@
     return box(esc(pb.cohort.label), h, '<span class="ds-dim">Cohort (' + esc(cohortExpert(pb) || 'Expert') + ')</span>');
   }
   function abilities(play, pb, sheet) {
-    var hull = isHull(pb), list = [], h = '';
-    if (pb) { if (hull) list.push({ n: AUTOMATON[0], t: AUTOMATON[1], fixed: true }); if (pb.fixedAbility) list.push({ n: pb.fixedAbility[0], t: pb.fixedAbility[1], fixed: true }); pb.abilities.forEach(function (a) { list.push({ n: a[0], t: a[1] }); }); }
+    var hull = isHull(pb), vamp = isVamp(pb), tt = isTT(pb), list = [], h = '', versText = 'Choose a special ability from another source.';
+    if (pb) {
+      if (hull) list.push({ n: AUTOMATON[0], t: AUTOMATON[1], fixed: true });
+      if (pb.fixedAbility) list.push({ n: pb.fixedAbility[0], t: pb.fixedAbility[1], fixed: true });
+      pb.abilities.forEach(function (a) { if (a[0] === 'Versatile') { versText = a[1] || versText; return; } list.push({ n: a[0], t: a[1] }); });
+    }
     var names = list.map(function (a) { return a.n; });
     list.forEach(function (a) {
-      var max = MULTI[a.n] || 1, owned = play.abilities.indexOf(a.n) >= 0, ticks = owned ? Math.max(1, play.abilityTicks[a.n] || 1) : 0;
+      var max = abilityMax(pb, a.n), owned = play.abilities.indexOf(a.n) >= 0, ticks = owned ? Math.max(1, play.abilityTicks[a.n] || 1) : 0;
       var circles = '';
       for (var i = 1; i <= max; i++) circles += '<button type="button" class="ds-circ' + (i <= ticks ? ' on' : '') + (a.fixed ? ' fixed' : '') + '" data-act="ability" data-n="' + esc(a.n) + '" data-i="' + i + '"' + (a.fixed ? ' disabled' : '') + ' aria-label="' + esc(a.n) + ' ' + i + '"></button>';
-      h += '<div class="ds-ab' + (owned ? ' on' : '') + '"><span class="ds-circs">' + circles + '</span><div><b>' + esc(a.n) + ':</b> ' + esc(a.t) + '</div></div>';
+      var extra = a.n === 'Dark Majesty' && owned && play.darkMajesty ? ' <span class="ds-dm">' + esc(play.darkMajesty) + ' actions may reach 5</span>' : '';
+      h += '<div class="ds-ab' + (owned ? ' on' : '') + '"><span class="ds-circs">' + circles + '</span><div><b>' + esc(a.n) + ':</b> ' + esc(a.t) + extra + '</div></div>';
     });
-    var customs = play.abilities.filter(function (n) { return names.indexOf(n) < 0; });
+    var customs = play.abilities.filter(function (n) { return names.indexOf(n) < 0 && n !== 'Versatile'; });
+    var vOn = customs.length > 0 || play.abilities.indexOf('Versatile') >= 0;
     var vc = ''; for (var i = 1; i <= 3; i++) vc += '<span class="ds-circ' + (i <= customs.length ? ' on' : '') + ' fixed"></span>';
-    h += '<div class="ds-ab' + (customs.length ? ' on' : '') + '"><span class="ds-circs">' + vc + '</span><div><b>Versatile:</b> Choose a special ability from another source.' +
+    h += '<div class="ds-ab' + (vOn ? ' on' : '') + '"><span class="ds-circs">' + vc + '</span><div><b>Versatile:</b> ' + esc(versText) + (tt ? ' <span class="ds-dim">Each time you gain clarity, add one from another playbook, reflecting your former life.</span>' : '') +
       customs.map(function (n) { return '<div class="ds-custom">' + esc(n) + ' <button type="button" class="ds-x" data-act="rmability" data-n="' + esc(n) + '" title="Remove">×</button></div>'; }).join('') +
       '<div class="row ds-addrow">' + input('', '', 'Name and rule text from another playbook', 'ds-grow ds-newab') + '<button type="button" class="btn sm" data-act="addability">Add</button></div></div></div>';
     if (hull) {
@@ -233,45 +345,54 @@
       (pb.frame || []).forEach(function (f) { var on = play.frame.indexOf(f[0]) >= 0; h += '<button type="button" class="ds-feat' + (on ? ' on' : '') + '" data-act="frame" data-n="' + esc(f[0]) + '" aria-pressed="' + on + '"><span class="ds-sq' + (on ? ' on' : '') + '"></span><span><b>' + esc(f[0]) + '</b> <span class="ds-dim">' + esc(f[1]) + '</span></span></button>'; });
       h += '</div>';
     }
-    return box(hull ? 'Hull traits' : 'Special abilities', h, '<span class="ds-xpmini">xp ' + pipRow(8, play.xp.playbook, 'xp', ' data-k="playbook"', 'ds-xbox') + '</span>');
+    if (vamp) h += '<div class="ds-lab ds-sub">Echo special abilities</div>' + (pb.echoAbilitiesRule ? '<p class="hint">' + esc(pb.echoAbilitiesRule) + '</p>' : '') + textarea('echoAbilities', play.echoAbilities, 'Anything carried over from your time as a ghost', 'sm');
+    return box(hull ? 'Hull traits' : isPara(pb) ? 'Traits' : 'Special abilities', h, '<span class="ds-xpmini">xp ' + pipRow(8, play.xp.playbook, 'xp', ' data-k="playbook"', 'ds-xbox') + '</span>', 'ds-abbox');
   }
   function triggers(play, pb) {
-    var hull = isHull(pb);
+    var hull = isHull(pb), tt = isTT(pb);
     var h = '<ul class="ds-trig">' +
       '<li>Every time you roll a <b>desperate action</b> or a <b>zero-dot action</b>, mark xp in any attribute of your choice.</li>' +
       '<li>Once per session when you <b>hit a key</b>, mark 1 xp and mark the key.</li>' +
-      '<li class="ds-trig-h">At the end of each session, mark 1 xp (or 2 xp if you really smashed it) if:</li>' +
-      '<li>You ' + (pb ? esc(pb.xp.replace(/^address/, 'addressed').replace(/^obey orders, or address/, 'obeyed orders, or addressed')) : 'addressed a challenge in your playbook’s way') + '.</li>' +
-      '<li>You struggled with issues stemming from a <b>deadlock</b>.</li></ul>';
+      '<li class="ds-trig-h">At the end of each session, mark 1 xp (or 2 xp if you really smashed it) if:</li>';
+    if (isPara(pb) && pb.xpTriggers && pb.xpTriggers.length) pb.xpTriggers.forEach(function (t) { h += '<li>' + esc(t) + '</li>'; });
+    else h += '<li>You ' + (pb ? esc(pb.xp.replace(/^address/, 'addressed').replace(/^obey orders, or address/, 'obeyed orders, or addressed')) : 'addressed a challenge in your playbook’s way') + '.</li>' +
+      '<li>You struggled with issues stemming from a <b>deadlock</b>.</li>';
+    h += '</ul>';
     if (hull) h += '<p class="hint">Whenever you would mark playbook xp, you can tick a memory clock instead. When all four memories are complete, the first trigger becomes: you worked to free yourself from your owning faction and controller, or addressed a challenge with your humanity.</p>';
+    if (tt && pb.advance) h += '<p class="hint">' + esc(pb.advance) + '</p>';
     var full = play.xp.playbook >= 8;
-    h += '<div class="row ds-tools"><span class="ds-lab">Playbook xp</span>' + pipRow(8, play.xp.playbook, 'xp', ' data-k="playbook"', 'ds-xbox') + '<span class="mono ds-count">' + play.xp.playbook + ' / 8</span></div>' +
-      (full ? '<p class="hint ds-warn">Playbook track full: pick a new special ability above (8 xp are spent when you do).</p>' : '');
+    h += '<div class="row ds-tools"><span class="ds-lab">Playbook xp</span>' + pipRow(8, play.xp.playbook, 'xp', ' data-k="playbook"', 'ds-xbox') + '<span class="mono ds-count">' + play.xp.playbook + ' / 8</span></div>';
+    if (full) h += tt ? '<div class="ds-advance"><button type="button" class="btn sm primary" data-act="clarity">Gain clarity</button><span class="hint ds-warn">Playbook track full: a new trait, a versatile ability, a temporal glitch and a mission detail.</span></div>'
+      : '<p class="hint ds-warn">Playbook track full: pick a new special ability above (8 xp are spent when you do).</p>';
     return box('XP', h);
   }
   function actions(play, pb) {
-    var h = '<div class="ds-attrs">';
+    var vamp = isVamp(pb), tt = isTT(pb), h = '<div class="ds-attrs">';
     (CT.ACTIONS || []).forEach(function (g) {
       var attr = g[0], key = attr.toLowerCase(), rating = g[1].filter(function (a) { return (play.dots[a] || 0) > 0; }).length, xp = play.xp[key] || 0;
-      h += '<div class="ds-attr"><div class="ds-attr-h"><span class="ds-attr-n">' + esc(attr) + '</span><span class="ds-rating mono">' + rating + '</span><span class="ds-xpmini">xp ' + pipRow(6, xp, 'xp', ' data-k="' + key + '"', 'ds-xbox') + '</span></div>';
+      var majesty = vamp && play.darkMajesty === attr;
+      h += '<div class="ds-attr"><div class="ds-attr-h"><span class="ds-attr-n">' + esc(attr) + '</span><span class="ds-rating mono">' + rating + '</span>' + (majesty ? '<span class="ds-dm">Dark Majesty</span>' : '') + '<span class="ds-xpmini">xp ' + pipRow(6, xp, 'xp', ' data-k="' + key + '"', 'ds-xbox') + '</span></div>';
       if (xp >= 6) {
-        if (cur.ui.advance === key) h += '<div class="ds-advance"><span class="ds-lab">Add a dot to</span>' + g[1].map(function (a) { var v = play.dots[a] || 0, max = play.mastery ? 4 : 3; return '<button type="button" class="chip sm" data-act="advdot" data-k="' + key + '" data-a="' + esc(a) + '"' + (v >= max ? ' disabled' : '') + '>' + esc(a) + ' ' + v + '→' + (v + 1) + '</button>'; }).join('') + '<button type="button" class="chip sm none" data-act="advcancel">Later</button></div>';
+        if (cur.ui.advance === key) h += '<div class="ds-advance"><span class="ds-lab">Add a dot to</span>' + g[1].map(function (a) { var v = play.dots[a] || 0, max = dotMax(play, pb, a); return '<button type="button" class="chip sm" data-act="advdot" data-k="' + key + '" data-a="' + esc(a) + '"' + (v >= max ? ' disabled' : '') + '>' + esc(a) + ' ' + v + '→' + (v + 1) + '</button>'; }).join('') + '<button type="button" class="chip sm none" data-act="advcancel">Later</button></div>';
         else h += '<div class="ds-advance"><button type="button" class="btn sm primary" data-act="advance" data-k="' + key + '">Advance: +1 dot</button></div>';
       }
       g[1].forEach(function (a) {
-        var v = play.dots[a] || 0, pr = pb && pb.printed ? (pb.printed[a] || 0) : 0, pips = '';
-        for (var i = 1; i <= 4; i++) pips += '<button type="button" class="ds-pip' + (i <= v ? ' on' : '') + (i <= pr ? ' printed' : '') + (i === 4 ? ' mastery' : '') + '" data-act="dot" data-a="' + esc(a) + '" data-n="' + i + '"' + (i === 4 && !play.mastery ? ' disabled' : '') + ' aria-label="' + esc(a) + ' ' + i + '"></button>';
+        var v = play.dots[a] || 0, pr = pb && pb.printed ? (pb.printed[a] || 0) : 0, pips = '', max = dotMax(play, pb, a), shown = vamp ? 5 : 4;
+        for (var i = 1; i <= shown; i++) pips += '<button type="button" class="ds-pip' + (i <= v ? ' on' : '') + (i <= pr ? ' printed' : '') + (i === 4 ? ' mastery' : '') + (i === 5 ? ' majesty' : '') + '" data-act="dot" data-a="' + esc(a) + '" data-n="' + i + '"' + (i > max ? ' disabled' : '') + ' aria-label="' + esc(a) + ' ' + i + '"></button>';
         h += '<div class="ds-act"><span class="ds-pips">' + pips + '</span><span class="ds-act-n">' + esc(a) + '</span></div>';
       });
       h += '</div>';
     });
-    h += '</div><div class="row ds-tools"><label class="ds-check"><input type="checkbox" data-change="mastery"' + (play.mastery ? ' checked' : '') + '> Mastery (crew upgrade: ratings up to 4)</label></div>';
+    h += '</div>';
+    if (tt) h += '<p class="hint">In play your actions may reach 4 (the limit of 3 was for creation only).</p>';
+    else h += '<div class="row ds-tools"><label class="ds-check"><input type="checkbox" data-change="mastery"' + (play.mastery ? ' checked' : '') + '> Mastery (crew upgrade: ratings up to 4)</label>' + (vamp ? '<span class="ds-dim">Dark Majesty: one attribute up to 5.</span>' : '') + '</div>';
     return box('Actions', h, '<span class="ds-dim">attribute = actions rated 1+</span>');
   }
   function stacks(play, pb) {
-    var hull = isHull(pb), canBank = !hull || play.abilities.indexOf('A Room of Your Own') >= 0;
-    var h = '<div class="ds-stackrow"><span class="ds-lab">Stacks</span><span class="ds-dias">' + diamonds(4, play.stacks, 'stacks') + '</span><span class="mono ds-count">' + play.stacks + '</span></div>' +
-      '<div class="ds-bank"><span class="ds-lab">Bank' + (hull ? ' <span class="ds-dim">*requires A Room of Your Own</span>' : '') + '</span>';
+    var hull = isHull(pb), tt = isTT(pb), canBank = !hull || play.abilities.indexOf('A Room of Your Own') >= 0;
+    var h = '<div class="ds-stackrow"><span class="ds-lab">Stacks</span><span class="ds-dias">' + diamonds(4, play.stacks, 'stacks') + '</span><span class="mono ds-count">' + play.stacks + '</span></div>';
+    if (tt) { h += '<p class="hint">No bank: a time traveler keeps only what they carry. A carried stack takes a load slot.</p>'; return box('Stacks', h); }
+    h += '<div class="ds-bank"><span class="ds-lab">Bank' + (hull ? ' <span class="ds-dim">*requires A Room of Your Own</span>' : '') + '</span>';
     for (var r = 0; r < 4; r++) { h += '<span class="ds-dias">'; for (var i = 1; i <= 10; i++) { var n = r * 10 + i; h += '<button type="button" class="ds-dia' + (n <= play.bank ? ' on' : '') + '" data-act="bank" data-n="' + n + '"' + (canBank ? '' : ' disabled') + ' aria-label="bank ' + n + '"></button>'; } h += '</span>'; }
     h += '<span class="mono ds-count">' + play.bank + ' / 40</span></div>';
     if (!canBank) h += '<p class="hint">Hulls cannot put stacks into bank without the trait A Room of Your Own.</p>';
@@ -281,6 +402,7 @@
   function itemLoad(play, pb, name) { var all = ((pb && pb.items) || []).concat(CT.STANDARD_ITEMS || [], (play.extraItems || []).map(function (x) { return [x.name, x.load]; })); var it = all.filter(function (i) { return i[0] === name; })[0]; return it ? +it[1] || 0 : 0; }
   function loadBonus(play) { var b = 0; if (play.abilities.indexOf('Walking Arsenal') >= 0) b += 2; if (play.abilities.indexOf('Retractable Arsenal') >= 0) b += 2; return b; }
   function items(play, pb) {
+    if (isGhost(pb)) return box('Items (with you in ghost form)', (pb.itemsRule ? '<p class="hint">' + esc(pb.itemsRule) + '</p>' : '') + textarea('ghostItems', play.ghostItems, 'Whatever came with you'));
     var hull = isHull(pb);
     var carried = play.items.reduce(function (t, n) { return t + itemLoad(play, pb, n); }, 0), total = carried + play.stacks;
     var limit = (play.loadLimit === 'loud' ? 6 : 3) + loadBonus(play), over = total > limit;
@@ -292,24 +414,53 @@
     h += '<div class="ds-items">' + (CT.STANDARD_ITEMS || []).map(function (it) { return row(it); }).join('') + '</div>';
     if (play.extraItems.length) h += '<div class="ds-items">' + play.extraItems.map(function (x) { return row([x.name, x.load], '<button type="button" class="ds-x" data-act="rmitem" data-n="' + esc(x.name) + '" title="Remove">×</button>'); }).join('') + '</div>';
     h += '<div class="row ds-addrow">' + input('', '', 'Another item', 'ds-grow ds-newitem') + '<input type="number" class="ds-in ds-num ds-newload" min="0" max="6" value="1" aria-label="load"><button type="button" class="btn sm" data-act="additem">Add</button></div>';
-    return box('Items', h);
+    return box('Items', h, '', 'ds-itembox');
   }
   function contacts(play, pb) {
-    var h = '<div class="ds-contacts">';
+    if (isGhost(pb)) return box('Enemies & Rivals', (pb.friendsRule ? '<p class="hint">' + esc(pb.friendsRule) + '</p>' : '') + textarea('enemies', play.enemies, 'Who wants you gone, and who you haunt'));
+    var h = '';
+    if (isTT(pb) && pb.friendsRule) h += '<p class="hint">' + esc(pb.friendsRule) + '</p>';
+    h += '<div class="ds-contacts">';
     play.contacts.forEach(function (c, i) {
       h += '<div class="ds-contact"><button type="button" class="ds-cdot' + (c.kind ? ' ' + c.kind : '') + '" data-act="contact" data-i="' + i + '" title="' + (c.kind === 'friend' ? '▲ friend' : c.kind === 'rival' ? '▼ rival' : 'neither') + '">' + (c.kind === 'friend' ? '▲' : c.kind === 'rival' ? '▼' : '△') + '</button>' +
         '<span class="ds-cname">' + esc(c.name) + (c.role ? ', <span class="ds-dim">' + esc(c.role) + '</span>' : '') + '</span><span class="ds-cst">' + (c.kind === 'friend' ? 'friend' : c.kind === 'rival' ? 'rival' : '') + '</span>' +
         '<button type="button" class="ds-x" data-act="rmcontact" data-i="' + i + '" title="Remove">×</button></div>';
     });
     h += '</div><div class="row ds-addrow">' + input('', '', 'Name', 'ds-grow ds-newcname') + input('', '', 'what they do', 'ds-grow ds-newcrole') + '<button type="button" class="btn sm" data-act="addcontact">Add</button></div>';
-    var title = isHull(pb) ? 'Contacts' : pb && pb.id === 'hound' ? 'Shady friends' : pb && pb.id === 'intellectual' ? 'Brilliant friends' : pb && pb.veteran ? 'Difficult friends' : 'Friends & rivals';
+    var title = pb && pb.contactsLabel ? esc(pb.contactsLabel) : isHull(pb) ? 'Contacts' : pb && pb.id === 'hound' ? 'Shady friends' : pb && pb.id === 'intellectual' ? 'Brilliant friends' : pb && pb.veteran ? 'Difficult friends' : 'Friends & rivals';
     return box(title, h, '<span class="ds-dim">click the mark to cycle</span>');
   }
   function vice(play, pb) {
-    if (isHull(pb)) return '';
+    if (isHull(pb) || isPara(pb)) return '';
     var opts = '<option value="">—</option>'; (CT.VICES || []).forEach(function (v) { opts += '<option value="' + esc(v.name) + '"' + (play.vice === v.name ? ' selected' : '') + '>' + esc(v.name) + '</option>'; });
     if (play.vice && !(CT.VICES || []).some(function (v) { return v.name === play.vice; })) opts += '<option value="' + esc(play.vice) + '" selected>' + esc(play.vice) + '</option>';
     return box('Vice / hookup', '<div class="ds-vice"><select class="ds-sel" data-change="vice">' + opts + '</select>' + input('purveyor', play.purveyor, 'Purveyor: name, place, district') + '</div>');
+  }
+  function strictures(play, pb) {
+    if (!isVamp(pb)) return '';
+    var listed = (pb.strictures || []).map(function (s) { return s[0]; });
+    var h = (pb.stricturesRule ? '<p class="hint">' + esc(pb.stricturesRule) + '</p>' : '') + '<div class="ds-strics">';
+    (pb.strictures || []).forEach(function (s) {
+      var on = play.strictures.indexOf(s[0]) >= 0, fixed = s[0] === 'Dayfire';
+      h += '<label class="ds-stric' + (on ? ' on' : '') + '"><input type="checkbox" data-change="stricture" data-n="' + esc(s[0]) + '"' + (on ? ' checked' : '') + (fixed ? ' disabled' : '') + '><span><b>' + esc(s[0]) + (fixed ? ' <span class="ds-dim">(always)</span>' : '') + '</b> ' + esc(s[1]) + '</span></label>';
+    });
+    play.strictures.forEach(function (s) { if (listed.indexOf(s) < 0) h += '<label class="ds-stric on"><input type="checkbox" data-change="stricture" data-n="' + esc(s) + '" checked><span><b>' + esc(s) + '</b></span></label>'; });
+    h += '</div>';
+    return box('Strictures', h, '<span class="ds-dim">' + play.strictures.length + ' / 6</span>');
+  }
+  function mission(play, pb) {
+    if (!isTT(pb)) return '';
+    var m = play.mission, def = missionOf(pb, m.name), h = '';
+    if (!m.name) {
+      var opts = '<option value="">Choose the mission…</option>'; (pb.missions || []).forEach(function (x) { opts += '<option value="' + esc(x.name) + '">' + esc(x.name) + '</option>'; });
+      h += '<div class="row"><select class="ds-sel" data-change="mission">' + opts + '</select></div>';
+    } else h += '<div class="ds-mname"><b>' + esc(m.name) + '</b>' + (def ? '<div class="ds-dim">' + esc(def.text) + '</div>' : '') + '</div>';
+    var qs = def ? def.questions : ['', '', '', ''];
+    h += '<div class="ds-mq">' + qs.map(function (q, i) { return '<div><span class="ds-lab">' + esc(q || 'Question ' + (i + 1)) + '</span>' + input('mission.answers.' + i, m.answers[i] || '', 'Answer') + '</div>'; }).join('') + '</div>';
+    h += '<div class="ds-lab ds-sub">Details of the mission</div><p class="hint">Each temporal glitch and each gain of clarity adds a line: note down a new detail as your mind clears.</p>';
+    h += '<div class="ds-details">' + m.details.map(function (d, i) { return '<div class="ds-detail"><span class="mono ds-dim">' + (i + 1) + '</span>' + input('mission.details.' + i, d, 'A new detail of your mission') + '<button type="button" class="ds-x" data-act="rmdetail" data-i="' + i + '" title="Remove">×</button></div>'; }).join('') + '</div>';
+    h += '<div class="row ds-addrow"><button type="button" class="btn sm" data-act="adddetail">Add detail</button></div>';
+    return box('Mission', h, pb.subtitle ? '<span class="ds-dim">' + esc(pb.subtitle) + '</span>' : '');
   }
   function clocks(play, pb) {
     var h = '<div class="ds-clocks">';
@@ -334,22 +485,23 @@
     var h = '<div class="row ds-addrow">' + input('', '', 'What happened this session?', 'ds-grow ds-newlog') + '<button type="button" class="btn sm" data-act="log">Log</button></div><ol class="ds-log">';
     (play.log || []).forEach(function (e, i) { var d = ''; try { d = new Date(e.at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch (x) { d = String(e.at || '').slice(0, 10); } h += '<li><span class="mono ds-logd">' + esc(d) + '</span><span class="ds-logt">' + esc(e.text) + '</span><button type="button" class="ds-x" data-act="rmlog" data-i="' + i + '" title="Remove">×</button></li>'; });
     h += '</ol>' + (!(play.log || []).length ? '<p class="hint">Nothing logged yet.</p>' : '');
-    return box('Session log', h, '<span class="ds-dim">newest first</span>');
+    return box('Session log', h, '<span class="ds-dim">newest first</span>', 'ds-logbox');
   }
 
   /* ---------- render ---------- */
   function render() {
     if (!cur) return; var doc = cur.doc, play = cur.play, pb = cur.pb, sheet = doc.sheet || {};
     var focus = captureFocus();
+    figureSvg(doc);
     var html = header(doc, play, pb, sheet) +
       '<div class="ds-grid">' +
-        '<div class="ds-col ds-c1">' + figure(doc) + stress(play, pb) + keys(play, pb) + harm(play, pb) + cohort(play, pb) + vice(play, pb) + '</div>' +
-        '<div class="ds-col ds-c2">' + abilities(play, pb, sheet) + contacts(play, pb) + triggers(play, pb) + memories(play, pb) + '</div>' +
+        '<div class="ds-col ds-c1">' + figure(doc, pb) + stress(play, pb) + keys(play, pb) + strictures(play, pb) + harm(play, pb) + cohort(play, pb) + vice(play, pb) + '</div>' +
+        '<div class="ds-col ds-c2">' + abilities(play, pb, sheet) + contacts(play, pb) + triggers(play, pb) + mission(play, pb) + memories(play, pb) + '</div>' +
         '<div class="ds-col ds-c3">' + stacks(play, pb) + actions(play, pb) + items(play, pb) + '</div>' +
         '<div class="ds-col ds-c4">' + clocks(play, pb) + notes(play) + log(play) + '</div>' +
       '</div>';
     cur.root.innerHTML = html;
-    cur.root.className = 'dossier ds' + (readOnly() ? ' ds-ro' : '');
+    cur.root.className = 'dossier ds' + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '');
     if (readOnly()) cur.root.querySelectorAll('button, input, textarea, select').forEach(function (n) { if (!n.dataset.always) n.disabled = true; });
     restoreFocus(focus);
   }
@@ -373,9 +525,24 @@
     if (p.xp.playbook >= 8) { if (!window.confirm('Spend 8 playbook xp on ' + what + '?')) return false; p.xp.playbook -= 8; note('8 xp spent on ' + name); return true; }
     return window.confirm('You have ' + p.xp.playbook + ' / 8 playbook xp. Add ' + what + ' anyway (GM)?');
   }
+  /* Dark Majesty: which attribute's actions may reach 5; null when cancelled */
+  function askMajesty() {
+    var v = window.prompt('Dark Majesty: choose Insight, Prowess or Resolve. Actions under that attribute may reach rating 5, and its resistance rating gains +1.\n' + numbered(ATTRS), ATTRS[1] || 'Prowess');
+    if (v == null) return null; var i = pickIndex(ATTRS, v); if (i < 0) { note('Not an attribute: Insight, Prowess or Resolve'); return null; } return ATTRS[i];
+  }
+  /* a new vampiric trait adds a stricture; cancelling leaves it to the Strictures box */
+  function askStricture() {
+    var p = cur.play, pb = cur.pb, left = (pb.strictures || []).map(function (s) { return s[0]; }).filter(function (n) { return p.strictures.indexOf(n) < 0; });
+    if (!left.length) return;
+    var v = window.prompt('A new vampiric trait adds a stricture. Which one?\n' + numbered(left.map(function (n) { var s = pb.strictures.filter(function (x) { return x[0] === n; })[0]; return n + ' — ' + (s ? s[1] : ''); })), '1');
+    if (v == null) { note('No stricture added: tick one in the Strictures box'); return; }
+    var i = pickIndex(left, v); if (i < 0) { note('No such stricture: tick one in the Strictures box'); return; }
+    p.strictures.push(left[i]); note('Stricture added: ' + left[i]);
+  }
   var ACTIONS = {
     back: function () { if (cur.api && cur.api.back) cur.api.back(); },
     edit: function () { if (cur.api && cur.api.edit) cur.api.edit(); },
+    print: function () { printFigure(true); try { window.print(); } catch (e) { note('Printing is not available here'); } },
     remove: function () {
       if (!cur.ui.confirmRemove) { cur.ui.confirmRemove = true; render(); if (cur.rmT) clearTimeout(cur.rmT); cur.rmT = setTimeout(function () { if (cur) { cur.ui.confirmRemove = false; render(); } }, 4000); return; }
       cur.ui.confirmRemove = false; if (cur.rmT) clearTimeout(cur.rmT);
@@ -384,11 +551,35 @@
     },
     view: function (d) { cur.ui.mug = d.v === 'mug'; render(); },
     stress: function (d) { cur.play.stress = toggleTrack(cur.play.stress, +d.n); commit(); },
-    stressd: function (d) { cur.play.stress = clamp(cur.play.stress + (+d.d), 0, isHull(cur.pb) ? 10 : 9); commit(); },
+    stressd: function (d) { cur.play.stress = clamp(cur.play.stress + (+d.d), 0, stressMax(cur.pb)); commit(); },
+    /* ghost: possess a victim and consume their life essence: clear half the Drain, rounded down */
+    consume: function () { var half = Math.floor(cur.play.stress / 2); if (!half) { note('Nothing to clear'); return; } cur.play.stress -= half; note('Consumed: ' + half + ' Drain cleared'); commit(); },
+    /* vampire: hunt prey; clear Stress equal to the highest die, mark 4 ticks on the healing clock */
+    feed: function () {
+      var v = window.prompt('Feed: what was the highest die on the Hunt roll? (1–6) That much Stress is cleared and the healing clock gains 4 ticks.', '6');
+      if (v == null) return; var d = parseInt(String(v).trim(), 10); if (!(d >= 1 && d <= 6)) { note('Enter a number from 1 to 6'); return; }
+      var before = cur.play.stress; cur.play.stress = Math.max(0, before - d); cur.play.healing = Math.min(4, (cur.play.healing || 0) + 4);
+      note('Fed: ' + (before - cur.play.stress) + ' Stress cleared, healing +4'); commit();
+    },
+    /* time traveler: spend one canister / vial of alluvium, clear 5 Instability */
+    restabilize: function () { if (!(cur.play.alluvium > 0)) { note('No alluvium left'); return; } cur.play.alluvium--; cur.play.stress = Math.max(0, cur.play.stress - 5); note('Restabilized: one ' + ((cur.pb && cur.pb.alluviumName) || 'canister') + ' used'); commit(); },
+    alluvium: function (d) { cur.play.alluvium = clamp(toggleTrack(cur.play.alluvium, +d.n), 0, alluvMax(cur.pb)); commit(); },
     keyhit: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; var n = +d.n; if (n > (k.hits || 0)) { k.hits = n; if (cur.play.xp.playbook < 8) { cur.play.xp.playbook++; note('Key hit: +1 playbook xp'); } } else k.hits = n - 1; commit(); },
     deadlock: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; var word = d.dir === 'up' ? k.up : k.down; if (!window.confirm('Deadlock ' + (k.name || 'this key') + ' as ' + (d.dir === 'up' ? '▲ ' : '▼ ') + (word || d.dir) + '? Hard mode: this is permanent.')) return; k.deadlock = d.dir; commit(); },
     undeadlock: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; if (!window.confirm('GM override: clear the permanent deadlock on ' + (k.name || 'this key') + '?')) return; k.deadlock = null; commit(); },
-    rmkey: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; if (k.deadlock && !window.confirm('This key is deadlocked. Remove it anyway?')) return; if (!k.deadlock && (k.name || k.hits) && !window.confirm('Remove the key ' + (k.name || '') + '?')) return; cur.play.keys.splice(+d.i, 1); commit(); },
+    /* ghost / time traveler: strike a key out with a named irregularity or glitch */
+    glitchpick: function (d) { var i = +d.i; cur.ui.glitchPick = cur.ui.glitchPick === i ? null : i; render(); },
+    glitchcancel: function () { cur.ui.glitchPick = null; render(); },
+    glitch: function (d) {
+      var k = cur.play.keys[+d.i], pb = cur.pb; if (!k || k.glitch) return; var gname = glitchName(pb);
+      if (!window.confirm('Strike out ' + (k.name || 'this key') + ' with the ' + gname.toLowerCase() + ' “' + d.v + '”? Hard mode: this is permanent.')) return;
+      k.glitch = d.v; cur.ui.glitchPick = null;
+      if (isTT(pb)) { cur.play.mission.details.push(''); var n = glitchCount(cur.play); note(n >= 4 ? 'Four glitches: you disappear after the next score' : gname + ' ' + n + ' / 4: note a new mission detail'); }
+      else note(gname + ': ' + d.v);
+      commit();
+    },
+    unglitch: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; if (!window.confirm('GM override: clear the permanent ' + glitchName(cur.pb).toLowerCase() + ' “' + k.glitch + '” on ' + (k.name || 'this key') + '?')) return; k.glitch = null; commit(); },
+    rmkey: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; var struck = k.deadlock || k.glitch; if (struck && !window.confirm('This key is struck out. Remove it anyway?')) return; if (!struck && (k.name || k.hits) && !window.confirm('Remove the key ' + (k.name || '') + '?')) return; cur.play.keys.splice(+d.i, 1); if (cur.ui.glitchPick != null) cur.ui.glitchPick = null; commit(); },
     robo: function (d) { var a = cur.play.roboticDeadlocks, i = a.indexOf(d.v); if (i >= 0) { if (!window.confirm('GM override: clear the robotic deadlock ' + d.v + '?')) return; a.splice(i, 1); } else { if (!window.confirm('Mark the robotic deadlock ' + d.v + '? Hard mode: this is permanent.')) return; a.push(d.v); } commit(); },
     heal: function (d) { cur.play.healing = toggleTrack(cur.play.healing, +d.n); commit(); },
     armor: function (d) { cur.play.armor[d.k] = !cur.play.armor[d.k]; commit(); },
@@ -396,18 +587,64 @@
     coharm: function (d) { cur.play.cohort.harm = cur.play.cohort.harm === d.v ? null : d.v; commit(); },
     coarmor: function () { cur.play.cohort.armor = !cur.play.cohort.armor; commit(); },
     ability: function (d) {
-      var p = cur.play, name = d.n, i = +d.i, max = MULTI[name] || 1, owned = p.abilities.indexOf(name) >= 0, ticks = owned ? Math.max(1, p.abilityTicks[name] || 1) : 0;
-      if (i === ticks + 1) { if (!spendForAbility(name, ticks ? 'another circle of ' + name : name)) return; if (!owned) p.abilities.push(name); if (max > 1) p.abilityTicks[name] = ticks + 1; commit(); }
-      else if (i === ticks) { if (!window.confirm(ticks > 1 ? 'Remove a circle from ' + name + '? (GM)' : 'Remove ' + name + '? (GM)')) return; if (ticks > 1) p.abilityTicks[name] = ticks - 1; else { p.abilities.splice(p.abilities.indexOf(name), 1); delete p.abilityTicks[name]; } commit(); }
+      var p = cur.play, pb = cur.pb, name = d.n, i = +d.i, max = abilityMax(pb, name), owned = p.abilities.indexOf(name) >= 0, ticks = owned ? Math.max(1, p.abilityTicks[name] || 1) : 0;
+      if (i === ticks + 1) {
+        if (isTT(pb) && !owned && p.xp.playbook >= 8) return ACTIONS.clarity({ trait: name }); /* a full track means clarity, not a bare purchase */
+        var dm = null; if (name === 'Dark Majesty' && !owned) { dm = askMajesty(); if (!dm) return; }
+        if (!spendForAbility(name, ticks ? 'another circle of ' + name : name)) return;
+        if (!owned) p.abilities.push(name); if (max > 1) p.abilityTicks[name] = ticks + 1;
+        if (dm) p.darkMajesty = dm;
+        if (isVamp(pb) && !owned && name !== 'Versatile') askStricture();
+        commit();
+      }
+      else if (i === ticks) { if (!window.confirm(ticks > 1 ? 'Remove a circle from ' + name + '? (GM)' : 'Remove ' + name + '? (GM)')) return; if (ticks > 1) p.abilityTicks[name] = ticks - 1; else { p.abilities.splice(p.abilities.indexOf(name), 1); delete p.abilityTicks[name]; if (name === 'Dark Majesty') p.darkMajesty = null; } commit(); }
     },
     addability: function (d, n) { var inp = cur.root.querySelector('.ds-newab'); var v = inp && inp.value.trim(); if (!v) { if (inp) inp.focus(); return; } if (cur.play.abilities.indexOf(v) >= 0) return; if (!spendForAbility(v, 'the ability “' + v + '”')) return; cur.play.abilities.push(v); commit(); },
     rmability: function (d) { if (!window.confirm('Remove ' + d.n + '?')) return; var i = cur.play.abilities.indexOf(d.n); if (i >= 0) cur.play.abilities.splice(i, 1); commit(); },
+    /* time traveler advancement: every step is asked before anything changes, so cancelling leaves play untouched */
+    clarity: function (d) {
+      var p = cur.play, pb = cur.pb; if (!isTT(pb)) return;
+      var paid = p.xp.playbook >= 8;
+      if (paid ? !window.confirm('Gain clarity: spend 8 playbook xp? You choose a new Time Traveler trait and a versatile ability from another playbook, take a temporal glitch, and note a new detail of your mission. Cancel at any step and nothing changes.')
+               : !window.confirm('You have ' + p.xp.playbook + ' / 8 playbook xp. Gain clarity anyway (GM)?')) return;
+      function cancelled() { note('Clarity cancelled: nothing changed'); }
+      /* 1. a new Time Traveler trait */
+      var traits = (pb.abilities || []).map(function (a) { return a[0]; }).filter(function (n) { return p.abilities.indexOf(n) < 0; }), trait = null;
+      if (d && d.trait && traits.indexOf(d.trait) >= 0) trait = d.trait;
+      else if (traits.length) {
+        var tv = window.prompt('1 of 4 — Choose a new Time Traveler trait:\n' + numbered(traits), '1'); if (tv == null) return cancelled();
+        var ti = pickIndex(traits, tv); if (ti < 0) { note('No such trait: nothing changed'); return; } trait = traits[ti];
+      }
+      /* 2. a versatile ability from another playbook */
+      var vers = window.prompt('2 of 4 — A versatile ability from another playbook, reflecting your former life (name and rule text). Leave empty to skip.', ''); if (vers == null) return cancelled(); vers = vers.trim();
+      /* 3. a temporal glitch on a key */
+      var open = []; p.keys.forEach(function (k, i) { if (!k.glitch) open.push(i); }); var ki = null, gl = null;
+      if (open.length) {
+        var kv = window.prompt('3 of 4 — Take a temporal glitch. Strike out which key?\n' + numbered(open.map(function (i) { return p.keys[i].name || 'unnamed key'; })), '1'); if (kv == null) return cancelled();
+        var kx = pickIndex(open.map(function (i) { return p.keys[i].name || 'unnamed key'; }), kv); if (kx < 0) { note('No such key: nothing changed'); return; } ki = open[kx];
+        var used = p.keys.map(function (k) { return k.glitch; }).filter(Boolean), gls = glitchList(pb).filter(function (g) { return used.indexOf(g) < 0; });
+        if (gls.length) { var gv = window.prompt('Which temporal glitch for ' + (p.keys[ki].name || 'that key') + '? Hard mode: permanent.\n' + numbered(gls), '1'); if (gv == null) return cancelled(); var gi = pickIndex(gls, gv); if (gi < 0) { note('No such glitch: nothing changed'); return; } gl = gls[gi]; }
+        else { gl = window.prompt('Every listed glitch is taken. Name this one:', ''); if (gl == null) return cancelled(); gl = gl.trim() || 'Temporal glitch'; }
+      }
+      /* 4. a new detail of the mission */
+      var det = window.prompt('4 of 4 — Note down a new detail of your mission.', ''); if (det == null) return cancelled();
+      /* apply */
+      if (paid) p.xp.playbook -= 8;
+      if (trait) p.abilities.push(trait);
+      if (vers && p.abilities.indexOf(vers) < 0) p.abilities.push(vers);
+      if (ki != null) p.keys[ki].glitch = gl;
+      if (!p.mission) p.mission = blankMission('', []);
+      p.mission.details.push(det.trim());
+      var n = glitchCount(p); note(n >= 4 ? 'Clarity gained; four glitches: you disappear after the next score' : 'Clarity gained' + (trait ? ': ' + trait : '')); commit();
+    },
+    adddetail: function () { if (!cur.play.mission) cur.play.mission = blankMission('', []); cur.play.mission.details.push(''); commit(); var ins = cur.root.querySelectorAll('.ds-detail .ds-in'); if (ins.length) ins[ins.length - 1].focus(); },
+    rmdetail: function (d) { var m = cur.play.mission, i = +d.i; if (!m || !(i >= 0 && i < m.details.length)) return; if (m.details[i] && !window.confirm('Remove this mission detail?')) return; m.details.splice(i, 1); commit(); },
     frame: function (d) { var a = cur.play.frame, i = a.indexOf(d.n); if (i >= 0) { if (!window.confirm('Remove the frame feature ' + d.n + '?')) return; a.splice(i, 1); } else { if (!window.confirm('Add the frame feature ' + d.n + '? (Frame Upgrade grants two.)')) return; a.push(d.n); } commit(); },
     xp: function (d) { var k = d.k, max = k === 'playbook' ? 8 : 6; cur.play.xp[k] = clamp(toggleTrack(cur.play.xp[k], +d.n), 0, max); if (cur.ui.advance === k && cur.play.xp[k] < 6) cur.ui.advance = null; commit(); },
     advance: function (d) { cur.ui.advance = d.k; render(); },
     advcancel: function () { cur.ui.advance = null; render(); },
-    advdot: function (d) { var max = cur.play.mastery ? 4 : 3; if ((cur.play.dots[d.a] || 0) >= max) return; cur.play.dots[d.a] = (cur.play.dots[d.a] || 0) + 1; cur.play.xp[d.k] = 0; cur.ui.advance = null; note(d.a + ' is now ' + cur.play.dots[d.a]); commit(); },
-    dot: function (d) { var n = +d.n, max = cur.play.mastery ? 4 : 3; if (n > max) return; cur.play.dots[d.a] = toggleTrack(cur.play.dots[d.a] || 0, n); commit(); },
+    advdot: function (d) { var max = dotMax(cur.play, cur.pb, d.a); if ((cur.play.dots[d.a] || 0) >= max) return; cur.play.dots[d.a] = (cur.play.dots[d.a] || 0) + 1; cur.play.xp[d.k] = 0; cur.ui.advance = null; note(d.a + ' is now ' + cur.play.dots[d.a]); commit(); },
+    dot: function (d) { var n = +d.n, max = dotMax(cur.play, cur.pb, d.a); if (n > max) return; cur.play.dots[d.a] = toggleTrack(cur.play.dots[d.a] || 0, n); commit(); },
     stacks: function (d) { cur.play.stacks = toggleTrack(cur.play.stacks, +d.n); commit(); },
     bank: function (d) { cur.play.bank = toggleTrack(cur.play.bank, +d.n); commit(); },
     tobank: function () { if (cur.play.stacks > 0 && cur.play.bank < 40) { cur.play.stacks--; cur.play.bank++; commit(); } },
@@ -428,14 +665,16 @@
     rmlog: function (d) { if (!window.confirm('Remove this log entry?')) return; cur.play.log.splice(+d.i, 1); commit(); }
   };
   var CHANGES = {
-    addkey: function (sel) { var v = sel.value; sel.value = ''; if (!v || cur.play.keys.length >= 4) return; var k = v === '*' ? { name: '', down: '', up: '' } : keyParts(v); k.hits = 0; k.deadlock = null; cur.play.keys.push(k); commit(); if (v === '*') { var last = cur.root.querySelectorAll('.ds-key-name'); if (last.length) last[last.length - 1].focus(); } },
+    addkey: function (sel) { var v = sel.value; sel.value = ''; if (!v || cur.play.keys.length >= 4) return; var k = v === '*' ? { name: '', down: '', up: '' } : keyParts(v); k.hits = 0; k.deadlock = null; k.glitch = null; cur.play.keys.push(k); commit(); if (v === '*') { var last = cur.root.querySelectorAll('.ds-key-name'); if (last.length) last[last.length - 1].focus(); } },
     mastery: function (inp) { cur.play.mastery = !!inp.checked; commit(); },
-    vice: function (sel) { cur.play.vice = sel.value; commit(); }
+    vice: function (sel) { cur.play.vice = sel.value; commit(); },
+    stricture: function (inp) { var n = inp.dataset.n, a = cur.play.strictures, i = a.indexOf(n); if (n === 'Dayfire') { inp.checked = true; return; } if (inp.checked) { if (i < 0) a.push(n); } else if (i >= 0) a.splice(i, 1); commit(); },
+    mission: function (sel) { var v = sel.value; if (!v) return; if (!cur.play.mission) cur.play.mission = blankMission('', []); cur.play.mission.name = v; commit(); }
   };
   function onClick(e) {
     if (!cur) return; var t = e.target && e.target.closest ? e.target.closest('[data-act]') : null; if (!t || !cur.root.contains(t)) return;
     if (t.disabled) return; var act = t.getAttribute('data-act'); var fn = ACTIONS[act]; if (!fn) return;
-    if (readOnly() && act !== 'back' && act !== 'view') return;
+    if (readOnly() && act !== 'back' && act !== 'view' && act !== 'print') return;
     var d = {}; for (var i = 0; i < t.attributes.length; i++) { var a = t.attributes[i]; if (a.name.indexOf('data-') === 0) d[a.name.slice(5)] = a.value; }
     try { fn(d, t); } catch (err) { setStatus('Something went wrong: ' + err.message, true); if (window.console) console.error(err); }
   }
@@ -450,11 +689,15 @@
   }
   function onKey(e) { if (!cur || e.key !== 'Enter') return; var t = e.target; if (!t || t.tagName !== 'INPUT' || !cur.root.contains(t)) return; var map = { 'ds-newlog': 'log', 'ds-newclock': 'addclock', 'ds-newcname': 'addcontact', 'ds-newcrole': 'addcontact', 'ds-newitem': 'additem', 'ds-newab': 'addability' }; var cls = Object.keys(map).filter(function (c) { return t.classList.contains(c); })[0]; if (!cls) return; e.preventDefault(); if (readOnly()) return; ACTIONS[map[cls]]({ n: 4 }, t); }
 
+  /* the small figure at the top right of the printed sheet exists only while printing, so the big SVG is never in the DOM twice */
+  function printFigure(on) { if (!cur) return; var f = cur.root.querySelector('.ds-printfig'); if (f) f.innerHTML = on ? (cur.ui.svg || '') : ''; }
+  if (window.addEventListener) { window.addEventListener('beforeprint', function () { printFigure(true); }); window.addEventListener('afterprint', function () { printFigure(false); }); }
+
   /* ---------- API ---------- */
   T.open = function (doc, api) {
     var root = document.getElementById('dossier'); if (!root) return;
     if (cur) T.close();
-    doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false }, timer: null, saving: 0 };
+    doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '' }, timer: null, saving: 0 };
     cur.play = normalize(doc.play, doc.sheet, doc.playbook);
     root.addEventListener('click', onClick); root.addEventListener('input', onInput); root.addEventListener('change', onChange); root.addEventListener('keydown', onKey);
     render();

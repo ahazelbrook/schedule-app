@@ -130,6 +130,7 @@
   .sw[aria-pressed="true"]::after { opacity: 1; }
   .swatches { display: flex; flex-wrap: wrap; gap: 5px; max-width: 460px; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  [hidden] { display: none !important; }   /* the hidden attribute must beat the display rules below (.field is a grid) */
   .field { display: grid; gap: 7px; }
   .field > .label { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
   .field > .label .val { font: 700 11px/1 var(--font-mono); color: var(--ink); letter-spacing: 0; text-transform: none; }
@@ -174,6 +175,11 @@
   .pb .fig svg { height: 150px; width: auto; }
   .pb .foot { padding: 8px 10px 10px; font: 900 9.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; opacity: .92; }
   .pb .foot .lt { font-weight: 300; }
+  .pb .word small { display: block; font: 900 9.5px/1.3 var(--font-cond); letter-spacing: .12em; text-transform: uppercase; opacity: .85; margin-top: 3px; }
+  .coverrows { display: grid; gap: 12px; }
+  .coverslabel { margin-top: 6px; display: flex; justify-content: space-between; gap: 6px 14px; flex-wrap: wrap; align-items: baseline; }
+  /* ghosts: a vapour, on the stage, in the line-up, on the file card and on the cover */
+  .ghostly svg, svg .b68-figure.ghostly { opacity: .72; filter: blur(.35px) saturate(1.4); }
   .pbinfo { display: grid; gap: 10px; border-left: 4px solid var(--duo-a); padding: 4px 0 4px 14px; }
   .pbinfo .desc { font: 900 15px/1.25 var(--font-cond); text-transform: uppercase; letter-spacing: .06em; }
   .pbinfo .desc .lt { font-weight: 300; }
@@ -206,6 +212,11 @@
   .ab .nm::after { content: ":"; }
   .ab .tx { font-size: 13px; line-height: 1.45; }
   .ab.fixed { border-style: solid; border-color: var(--rule); background: var(--inset); cursor: default; }
+  .ab .circ { font: 700 12px/1 var(--font-mono); letter-spacing: 2px; color: var(--ink-soft); }
+  .locks { display: grid; gap: 2px; }
+  .lock { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 7px 0; border-top: 1px solid var(--hair); }
+  .lock:first-child { border-top: 0; }
+  .lock b { font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; min-width: 110px; }
   .contact { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--hair); }
   .contact:first-child { border-top: 0; }
   .contact .dot { width: 14px; height: 14px; border-radius: 999px; border: 2px solid var(--rule); background: transparent; padding: 0; cursor: pointer; }

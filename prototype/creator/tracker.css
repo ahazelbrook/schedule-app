@@ -224,3 +224,111 @@
 /* ---- read only ---- */
 #dossier.ds-ro .ds-in, #dossier.ds-ro .ds-ta { opacity: .8; }
 #dossier.ds-ro .ds-pip, #dossier.ds-ro .ds-sbox, #dossier.ds-ro .ds-xbox, #dossier.ds-ro .ds-dia, #dossier.ds-ro .ds-sq, #dossier.ds-ro .ds-circ, #dossier.ds-ro .ds-seg, #dossier.ds-ro .ds-burst { cursor: default; }
+
+/* ---- paranormal playbooks: alluvium, glitches, strictures, mission, ghost figure ---- */
+#dossier .ds-printfig { display: none; }
+#dossier .ds-art.ghostly svg, #dossier .ds-printfig.ghostly svg { opacity: .72; filter: blur(.35px) saturate(1.4); }
+#dossier .ds-alluv { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+#dossier .ds-alluv .ds-lab { margin: 0; }
+#dossier .ds-vial { width: 16px; height: 16px; border-color: var(--accent); }
+#dossier .ds-vial.on { background: var(--accent); }
+#dossier .ds-feedrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 14px; }
+#dossier .ds-burst.picking polygon { fill: var(--accent); }
+#dossier .ds-burst.picking span { color: var(--on-accent); }
+#dossier .ds-glpick { grid-column: 1 / -1; display: grid; gap: 6px; padding: 8px 10px; border: 2px dashed var(--accent); margin-top: 2px; }
+#dossier .ds-glpick .ds-lab { margin: 0; color: var(--accent); }
+#dossier .ds-glpick .row { gap: 6px; }
+#dossier .ds-key.glitched .ds-key-name { text-decoration: line-through; text-decoration-color: var(--accent); text-decoration-thickness: 2px; }
+#dossier .ds-glcount { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-top: 6px; padding-top: 8px; border-top: 2px solid var(--rule); font-size: 13px; }
+#dossier .ds-glcount.full { color: var(--alarm); }
+#dossier .ds-gone { font: 900 12px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; color: var(--alarm); flex-basis: 100%; }
+#dossier .ds-blankres { display: inline-block; width: 58px; border-bottom: 1.5px solid var(--hair); height: 12px; }
+#dossier .ds-strics { display: grid; gap: 2px; }
+#dossier .ds-stric { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start; padding: 4px 0; border-top: 1px solid var(--hair); font-size: 12.5px; line-height: 1.4; cursor: pointer; }
+#dossier .ds-stric:first-child { border-top: 0; }
+#dossier .ds-stric input { accent-color: var(--accent); margin: 3px 0 0; width: 15px; height: 15px; }
+#dossier .ds-stric b { font: 900 11.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .05em; }
+#dossier .ds-stric.on b { color: var(--accent); }
+#dossier .ds-dm { font: 900 9.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--accent); }
+#dossier .ds-pip.majesty:not(.on) { border-style: dotted; border-color: var(--accent); }
+#dossier .ds-mname { font-size: 13.5px; }
+#dossier .ds-mq { display: grid; gap: 6px; }
+#dossier .ds-details { display: grid; gap: 2px; }
+#dossier .ds-detail { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+#dossier .ds-ta.sm { min-height: 64px; }
+
+/* ---- print: the dossier alone, on white, letter or A4 portrait ---- */
+@media print {
+  @page { size: auto; margin: 10mm 11mm; }
+  html, body { background: #fff !important; color: #000 !important; }
+  body::before { display: none !important; }
+  .wrap { max-width: none; margin: 0; padding: 0; }
+  header.top, #rail, #railBack, #whoami, .studio, .crew, .roster, .rail, body > .wrap > footer, footer { display: none !important; }
+  #dossier { display: block !important; position: static; padding: 0;
+    --paper: #fff; --card: #fff; --inset: #eee; --hair: #999; --ink: #000; --ink-soft: #333; --ink-faint: #666; --rule: #000; --on-ink: #fff;
+    --accent: #b8481a; --on-accent: #fff; --chart: #fff; --alarm: #a8210f; --ok: #41633e;
+    font-size: 11px; line-height: 1.35; zoom: .92; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #dossier * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; }
+  #dossier .btn, #dossier .ds-x, #dossier .ds-nav, #dossier .ds-addrow, #dossier .ds-status, #dossier .ds-figbox, #dossier .ds-band .seg, #dossier .ds-tools, #dossier .ds-advance, #dossier .ds-check, #dossier .ds-glpick, #dossier .ds-sel { display: none !important; }
+  #dossier.ds { display: block; }
+  /* the figure sits small, top right, inside the header band */
+  #dossier .ds-head { grid-template-columns: auto minmax(0, 1fr) 38mm; grid-template-areas: "title ident fig" "bio bio fig"; gap: 3mm 6mm; align-items: start; border-top-width: 1mm; padding: 3mm 0; margin-bottom: 3mm; }
+  #dossier .ds-printfig { display: block; grid-area: fig; width: 38mm; max-height: 58mm; overflow: hidden; justify-self: end; border: .5mm solid #000; padding: 1mm; box-sizing: border-box; }
+  #dossier .ds-printfig svg { display: block; width: 100%; height: auto; max-height: 55mm; margin: 0 auto; }
+  #dossier .ds-pb { font-size: 34pt; }
+  #dossier .ds-desc { font-size: 8pt; }
+  #dossier .ds-ident { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2mm 5mm; }
+  #dossier .ds-ident b { font-size: 12px; }
+  #dossier .ds-bio { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2mm 5mm; font-size: 10px; }
+  /* boxes flow down three columns, continuing across pages; none is split inside */
+  #dossier .ds-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3.5mm; align-items: start; }
+  #dossier .ds-col { display: grid; gap: 3.5mm; }
+  #dossier .ds-c3 { grid-column: auto; grid-template-columns: minmax(0, 1fr); }
+  #dossier .ds-c4 { grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #dossier .ds-box { break-inside: avoid; page-break-inside: avoid; margin: 0; border-width: .5mm; background: #fff; }
+  /* the long lists may break between rows, so a tall box never drags its whole row to the next page */
+  #dossier .ds-abbox, #dossier .ds-itembox, #dossier .ds-logbox { break-inside: auto; page-break-inside: auto; }
+  #dossier .ds-ab, #dossier .ds-item, #dossier .ds-log li, #dossier .ds-feat, #dossier .ds-band, #dossier .ds-loadhead { break-inside: avoid; page-break-inside: avoid; }
+  #dossier .ds-band { break-after: avoid; page-break-after: avoid; }
+  #dossier .ds-band { padding: 1.2mm 2.5mm; font-size: 8.5pt; }
+  #dossier .ds-body { padding: 2mm 2.5mm 2.5mm; gap: 1.5mm; }
+  #dossier .ds-dlhead { background: #b8481a; color: #fff; }
+  #dossier .hint, #dossier .ds-dim { font-size: 8.5px; line-height: 1.3; }
+  #dossier .ds-in { font-size: 10px; padding: 1px 2px; border-bottom: .3mm solid #000; color: #000; }
+  #dossier .ds-ta { font-size: 10px; min-height: 18mm; resize: none; border-width: .4mm; overflow: hidden; }
+  #dossier .ds-ta::-webkit-resizer { display: none; }
+  #dossier .ds-in::placeholder, #dossier .ds-ta::placeholder { color: transparent; }
+  #dossier .ds-ab, #dossier .ds-feat, #dossier .ds-stric, #dossier .ds-trig, #dossier .ds-item, #dossier .ds-contact, #dossier .ds-log li { font-size: 9.5px; line-height: 1.3; }
+  #dossier .ds-ab, #dossier .ds-stric { padding: 1mm 0; }
+  #dossier .ds-act-n { font-size: 10.5px; }
+  /* pips and diamonds: outlines, with the filled state kept */
+  #dossier .ds-pip, #dossier .ds-sq, #dossier .ds-xbox, #dossier .ds-sbox, #dossier .ds-dia, #dossier .ds-circ, #dossier .ds-cohpip, #dossier .ds-cohsq { border-color: #000; background: transparent; }
+  #dossier .ds-pip.printed:not(.on), #dossier .ds-circ, #dossier .ds-vial { border-color: #b8481a; }
+  #dossier .ds-pip.on, #dossier .ds-sq.on, #dossier .ds-xbox.on, #dossier .ds-sbox.on, #dossier .ds-dia.on, #dossier .ds-circ.on, #dossier .ds-vial.on, #dossier .ds-coh.on .ds-cohpip, #dossier .ds-coh.on .ds-cohsq { background: #b8481a !important; border-color: #b8481a !important; }
+  #dossier .ds-pip[disabled], #dossier .ds-dia[disabled] { opacity: .35; }
+  #dossier .ds-band .ds-xbox { border-color: #fff; }
+  #dossier .ds-band .ds-xbox.on { background: #b8481a !important; border-color: #b8481a !important; }
+  #dossier .ds-pip { width: 11px; height: 11px; }
+  #dossier .ds-sbox { width: 14px; height: 19px; }
+  #dossier .ds-xbox { width: 10px; height: 13px; }
+  #dossier .ds-dia { width: 9px; height: 9px; margin: 1px; }
+  #dossier .ds-dias { gap: 5px; }
+  #dossier .ds-sq, #dossier .ds-circ { width: 11px; height: 11px; }
+  #dossier .ds-seg { fill: #fff; stroke: #000; }
+  #dossier .ds-seg.on { fill: #b8481a; }
+  #dossier .ds-clock-rim { stroke: #000; }
+  #dossier .ds-burst polygon { fill: #fff; stroke: #b8481a; }
+  #dossier .ds-burst.on { background: #b8481a !important; color: #fff !important; font-size: 8pt; padding: 1mm 2mm; }
+  #dossier .ds-attr-n { background: #b8481a; color: #fff; font-size: 9pt; }
+  #dossier .ds-cdot.friend { background: #41633e; color: #fff; }
+  #dossier .ds-cdot.rival { background: #a8210f; color: #fff; }
+  #dossier .ds-figbox .ds-body, #dossier .ds-art { background: #fff; }
+  #dossier .ds-harmgrid { grid-template-columns: minmax(0, 1fr); }
+  #dossier .ds-side { grid-template-columns: auto 1fr; gap: 4mm; }
+  #dossier .ds-c4 .ds-box, #dossier .ds-log, #dossier .ds-ta { break-inside: avoid; }
+  #dossier .ds-key { padding: 1mm 0; }
+  #dossier .ds-key-name { font-size: 11px; }
+  #dossier .ds-key-word { font-size: 9.5px; }
+  #dossier .ds-perm { font-size: 7px; }
+  #dossier .ds-mem { break-inside: avoid; }
+}
