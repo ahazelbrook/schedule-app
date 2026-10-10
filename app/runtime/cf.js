@@ -1,6 +1,7 @@
 /* Hosted runtime adapter (Cloudflare Pages + Access + D1).
    Defines window.claude.use('user' | 'db' | 'downloads') on top of the JSON API in functions/
-   (see HOSTING.md) so the page runs unchanged outside the claude.ai artifact.
+   (see HOSTING.md) so the page runs unchanged outside the claude.ai artifact. The db serves the
+   `characters` collection and the shared `campaign/main` document (CAMPAIGN.md).
    Inside the artifact window.claude already exists and this file does nothing. */
 (function () {
   'use strict';
@@ -10,6 +11,8 @@
   if (proto !== 'http:' && proto !== 'https:') return;
 
   var COLLECTION = 'characters';
+  var CAMPAIGN = 'campaign', CAMPAIGN_ID = 'main';   /* the one shared campaign document (CAMPAIGN.md) */
+  var LOG_MAX = 200;           /* the server keeps the newest 200 campaign log entries */
   var SIGNED_OUT = 'signed out: reload the page to sign in again';
   var CONFLICT_RETRIES = 2;      /* a write answered 409 (the row kept changing) is sent again this many times */
   var MEMBERS_TTL_MS = 60000;
@@ -30,6 +33,23 @@
       else target[k] = clone(v);
     });
     return target;
+  }
+  /* trim a campaign doc's log as the server does */
+  function trimLog(doc) { if (doc && Array.isArray(doc.log) && doc.log.length > LOG_MAX) doc.log = doc.log.slice(0, LOG_MAX); return doc; }
+  /* what a campaign with no stored document reads as (same as functions/_lib/campaign.js) */
+  function defaultCampaign() {
+    return {
+      v: 1,
+      session: { number: 0, startedAt: null, endedAt: null },
+      crew: {
+        name: '', type: '', lair: '', notes: '',
+        tier: 0, hold: 'weak', rep: 0, turf: 0, heat: 0, wanted: 0, vault: 0,
+        claims: [], cohorts: [], factions: []
+      },
+      clocks: [],
+      log: [],
+      updatedAt: null
+    };
   }
   function signedOutError() { var e = new Error(SIGNED_OUT); e.code = 'signed_out'; e.status = 401; return e; }
 
@@ -101,7 +121,7 @@
   var cache = {};              /* id -> doc (live documents only) */
   var stamp = {};              /* id -> server updatedAt of the cached version */
   var pending = {};            /* id -> number of own writes in flight */
-  var listeners = [];          /* { id?, query?, cb, err } */
+  var listeners = [];          /* { id?, query?, campaign?, cb, err } */
   var loaded = false;          /* the first full load has happened since start */
   var running = false, inflight = false, again = false, timer = null;
   var since = null, epoch = 0, errored = false;
@@ -149,10 +169,10 @@
     return { docs: list, size: list.length, empty: !list.length, forEach: function (fn, self) { list.forEach(fn, self); } };
   }
 
-  /* tell listeners: doc listeners only when their document changed (or `all`), query listeners on any change */
+  /* tell character listeners: doc listeners only when their document changed (or `all`), query listeners on any change */
   function notify(changed, all) {
     listeners.slice().forEach(function (l) {
-      if (listeners.indexOf(l) < 0) return;
+      if (listeners.indexOf(l) < 0 || l.campaign) return;
       try {
         if (l.id !== undefined) { if (all || changed[l.id]) l.cb(docSnap(l.id)); }
         else if (all || Object.keys(changed).length) l.cb(querySnap(l.query, cache, docSnap));
@@ -161,6 +181,45 @@
   }
   function notifyErr(e) {
     listeners.slice().forEach(function (l) { if (l.err) { try { l.err(e); } catch (x) {} } });
+  }
+
+  /* ---------- the campaign document: cached beside the characters, refreshed through the same poller ----------
+     Each /api/characters answer carries campaignUpdatedAt; when it differs from the stamp of the cached copy,
+     the poll goes on to GET /api/campaign. Only maintained while someone listens to campaign/main. */
+  var camp = {
+    doc: null,                 /* the cached document (the default one when none is stored) */
+    stamp: undefined,          /* the server updatedAt of the cached copy: null = no stored doc, undefined = unknown */
+    loaded: false,             /* fetched since the first campaign listener subscribed */
+    pending: 0,                /* own campaign writes in flight */
+    epoch: 0                   /* bumped by own writes, so a fetch that overlapped one is dropped */
+  };
+  function hasCampaignListeners() { return listeners.some(function (l) { return l.campaign; }); }
+  function campSnap() {
+    var d = camp.doc || defaultCampaign();
+    return { id: CAMPAIGN_ID, exists: true, data: function () { return clone(d); }, metadata: { fromCache: false, hasPendingWrites: camp.pending > 0 } };
+  }
+  function notifyCampaign() {
+    listeners.slice().forEach(function (l) {
+      if (!l.campaign || listeners.indexOf(l) < 0) return;
+      try { l.cb(campSnap()); } catch (e) { setTimeout(function () { throw e; }, 0); }
+    });
+  }
+  /* take a server answer ({ doc, updatedAt }); listeners hear about it on the first load and on real changes only */
+  function applyCampaign(r) {
+    var doc = r && isObj(r.doc) ? r.doc : defaultCampaign();
+    var first = !camp.loaded, changed = JSON.stringify(doc) !== JSON.stringify(camp.doc);
+    camp.doc = doc; camp.stamp = (r && r.updatedAt) || null; camp.loaded = true;
+    if (first || changed) notifyCampaign();
+  }
+  /* after a characters poll: refetch the campaign when its stamp moved (or it was never loaded) */
+  function syncCampaign(serverAt) {
+    if (!running || camp.pending || !hasCampaignListeners()) return;
+    if (camp.loaded && serverAt !== undefined && serverAt === camp.stamp) return;   /* unchanged: nothing to do */
+    var at = camp.epoch;
+    return api('GET', '/' + CAMPAIGN).then(function (r) {
+      if (at !== camp.epoch) { again = true; return; }   /* an own write overlapped: ask again */
+      if (running && hasCampaignListeners()) applyCampaign(r);
+    });
   }
 
   /* apply a /api/characters response idempotently (a row whose updatedAt we already hold changes nothing);
@@ -195,14 +254,17 @@
     if (!running || signedOut) return;
     if (inflight) { again = true; return; }
     inflight = true;
-    var full = !loaded, at = epoch;
+    var full = !loaded, at = epoch, campAt = camp.epoch;
     api('GET', '/' + COLLECTION + (full ? '' : '?since=' + encodeURIComponent(since)))
       .then(function (r) {
+        r = r || {};
         /* a write started or finished while this poll was out: its view may be stale, ask again */
-        if (at !== epoch) { again = true; return; }
-        errored = false;
-        if (running) applyServer(r || {}, full);
-      }, function (e) {
+        if (at !== epoch) again = true;
+        else if (running) applyServer(r, full);
+        if (campAt !== camp.epoch) { again = true; return; }
+        return syncCampaign(r.campaignUpdatedAt);
+      })
+      .then(function () { errored = false; }, function (e) {
         if (signedOut) return;                        /* reported by onSignedOut */
         if (!errored) { errored = true; notifyErr(e); } /* surface once; retry on the next tick */
       })
@@ -212,7 +274,7 @@
       });
   }
   function start() { if (running) return; running = true; loaded = false; errored = false; epoch++; schedule(0); }   /* epoch++: drop a poll left over from before a stop */
-  function stop() { running = false; loaded = false; again = false; clearTimeout(timer); timer = null; }
+  function stop() { running = false; loaded = false; camp.loaded = false; again = false; clearTimeout(timer); timer = null; }
   function pollSoon() { if (!running) return; if (inflight) again = true; else schedule(0); }
 
   onSignedOut = function () { stop(); notifyErr(signedOutError()); };
@@ -223,16 +285,31 @@
   function subscribe(l) {
     listeners.push(l);
     if (signedOut) { setTimeout(function () { if (l.err && listeners.indexOf(l) >= 0) l.err(signedOutError()); }, 0); }
+    else if (l.campaign) {
+      /* the first snapshot comes from the cache when it is current, else from the fetch the next poll makes */
+      if (running && camp.loaded) setTimeout(function () { if (listeners.indexOf(l) >= 0) l.cb(campSnap()); }, 0);
+      else pollSoon();
+    }
     else if (running && loaded) {
       setTimeout(function () { if (listeners.indexOf(l) >= 0) l.cb(l.id !== undefined ? docSnap(l.id) : querySnap(l.query, cache, docSnap)); }, 0);
     }
-    start();
+    start();   /* the poller runs while any listener (characters or campaign) exists */
     var done = false;
     return function unsubscribe() {
       if (done) return; done = true;
       var i = listeners.indexOf(l); if (i >= 0) listeners.splice(i, 1);
       if (!listeners.length) stop();
+      else if (!hasCampaignListeners()) camp.loaded = false;   /* nobody keeps it current: refetch on the next subscribe */
     };
+  }
+
+  /* send a write; a 409 (the row kept changing on the server) is sent again a few times */
+  function send(method, path, body, n) {
+    n = n || 0;
+    return api(method, path, body).catch(function (e) {
+      if (e.status !== 409 || n >= CONFLICT_RETRIES) throw e;
+      return new Promise(function (ok) { setTimeout(ok, 150 * (n + 1)); }).then(function () { return send(method, path, body, n + 1); });
+    });
   }
 
   /* an own write: update the cache now, send it, take the server's version, then poll */
@@ -241,15 +318,8 @@
     var ch = {}; ch[id] = true;
     pending[id] = (pending[id] || 0) + 1; epoch++;
     local(); notify(ch);
-    var path = '/' + COLLECTION + '/' + encodeURIComponent(id);
     function settle() { epoch++; if (!--pending[id]) delete pending[id]; }
-    function send(n) {
-      return api(method, path, body).catch(function (e) {
-        if (e.status !== 409 || n >= CONFLICT_RETRIES) throw e;
-        return new Promise(function (ok) { setTimeout(ok, 150 * (n + 1)); }).then(function () { return send(n + 1); });
-      });
-    }
-    return send(0).then(function (r) {
+    return send(method, '/' + COLLECTION + '/' + encodeURIComponent(id), body).then(function (r) {
       settle();
       if (!pending[id]) {
         if (method === 'DELETE') { delete cache[id]; delete stamp[id]; }
@@ -289,6 +359,77 @@
     };
   }
 
+  /* an own campaign write: same shape as write() above. The optimistic merge only applies to a loaded
+     cache (before that there is nothing current to merge into); the server's answer replaces it. A rejected
+     write (e.g. 403 for a player) forces a refetch so the optimistic change is rolled back. */
+  function campaignWrite(method, body, local) {
+    if (signedOut) return Promise.reject(signedOutError());
+    camp.pending++; camp.epoch++;
+    if (camp.loaded) { local(); notifyCampaign(); }
+    function settle() { camp.epoch++; camp.pending--; }
+    return send(method, '/' + CAMPAIGN, body).then(function (r) {
+      settle();
+      if (!camp.pending && hasCampaignListeners()) applyCampaign(r);
+      pollSoon();
+    }, function (e) {
+      settle();
+      camp.stamp = undefined;    /* unknown: the next poll refetches and undoes the optimistic change */
+      pollSoon();
+      throw e;
+    });
+  }
+
+  function campaignRef() {
+    return {
+      id: CAMPAIGN_ID, path: CAMPAIGN + '/' + CAMPAIGN_ID,
+      /* always exists: the server answers the default document while none is stored */
+      get: function () {
+        return api('GET', '/' + CAMPAIGN).then(function (r) {
+          var d = r && isObj(r.doc) ? r.doc : defaultCampaign();
+          return { id: CAMPAIGN_ID, exists: true, data: function () { return clone(d); }, metadata: { fromCache: false, hasPendingWrites: false } };
+        });
+      },
+      set: function (doc) {
+        return campaignWrite('PUT', doc, function () { camp.doc = trimLog(clone(doc)); });
+      },
+      update: function (patch) {
+        return campaignWrite('PATCH', patch, function () { trimLog(deepMerge(camp.doc, patch)); });
+      },
+      onSnapshot: function (cb, err) { return subscribe({ campaign: true, cb: cb, err: err }); }
+    };
+  }
+
+  /* any other campaign document id: never exists, cannot be written */
+  function missingRef(id) {
+    function snap() { return { id: id, exists: false, data: function () { return undefined; }, metadata: { fromCache: false, hasPendingWrites: false } }; }
+    function refuse() { return Promise.reject(new Error('unknown campaign document: ' + id)); }
+    return {
+      id: id, path: CAMPAIGN + '/' + id,
+      get: function () { return Promise.resolve(snap()); },
+      set: refuse, update: refuse, delete: refuse,
+      onSnapshot: function (cb) {
+        var live = true;
+        setTimeout(function () { if (live) cb(snap()); }, 0);
+        return function () { live = false; };
+      }
+    };
+  }
+
+  /* collection('campaign') as a query: always empty (the document is reached with .doc('main')) */
+  function emptyQuery() {
+    function snap() { return { docs: [], size: 0, empty: true, forEach: function () {} }; }
+    var q = {
+      orderBy: function () { return q; }, limit: function () { return q; }, where: function () { return q; },
+      get: function () { return Promise.resolve(snap()); },
+      onSnapshot: function (cb) {
+        var live = true;
+        setTimeout(function () { if (live) cb(snap()); }, 0);
+        return function () { live = false; };
+      }
+    };
+    return q;
+  }
+
   function makeQuery(q) {
     function next(change) { return makeQuery({ order: q.order.concat(change.order || []), where: q.where.concat(change.where || []), limit: change.limit !== undefined ? change.limit : q.limit }); }
     return {
@@ -311,6 +452,11 @@
   }
 
   function collection(name) {
+    if (name === CAMPAIGN) {
+      var cq = emptyQuery();
+      cq.path = CAMPAIGN; cq.doc = function (id) { return id === CAMPAIGN_ID ? campaignRef() : missingRef(String(id)); };
+      return cq;
+    }
     if (name !== COLLECTION) throw new Error('unknown collection: ' + name);
     var c = makeQuery({ order: [], where: [], limit: null });
     c.path = COLLECTION; c.doc = docRef;

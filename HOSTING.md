@@ -57,9 +57,11 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
 ## API (all JSON; errors are `{ "error": "message" }` with 400 / 401 / 403 / 404)
 
 - `GET /api/me` → `{ "id": email, "email", "name", "role": "gm" | "player", "campaign" }`
-- `GET /api/characters` → `{ "now": ISO, "docs": [ { "id", "doc", "updatedAt", "deleted": false } ] }`,
+- `GET /api/characters` → `{ "now": ISO, "docs": [ { "id", "doc", "updatedAt", "deleted": false } ], "campaignUpdatedAt": ISO | null }`,
   every live character of the campaign, newest `updated_at` first, at most 500.
-- `GET /api/characters?since=<ISO>` → same shape, every row (tombstones included, with
+  `campaignUpdatedAt` is the stored campaign document's `updatedAt` (`null` when none), so a
+  poller knows when to refetch `/api/campaign` without polling it too.
+- `GET /api/characters?since=<ISO>` → same shape (with `campaignUpdatedAt`), every row (tombstones included, with
   `"deleted": true` and `"doc": null`) whose `updated_at > since`. `now` is the server time to
   use as the next `since`; it is reported 2 s behind the clock so a write committed during a
   poll is never missed, which means a recent row can arrive in two consecutive polls (apply
@@ -78,6 +80,23 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   so concurrent PATCHes to different fields all land; if a row keeps changing the API answers
   `409 {"error": ...}` and the client should retry. Other methods are 405; unknown `/api/*`
   paths are a JSON 404. Every API response carries `Cache-Control: no-store`.
+- `GET /api/campaign` → `{ "doc", "updatedAt" }`: the shared campaign document of this
+  deployment (see CAMPAIGN.md; stored in `campaigns(id TEXT PRIMARY KEY, updated_at, doc)`,
+  `id` = `CAMPAIGN`). While none is stored it answers the default document
+  (`functions/_lib/campaign.js`, `defaultCampaign()`) and `"updatedAt": null`.
+- `PUT /api/campaign` body = whole doc, GM only (a player gets `403 {"error":"only the GM can
+  change that"}`) → `{ "doc", "updatedAt" }`. The first write creates the row.
+- `PATCH /api/campaign` body = partial doc, the same deep merge as characters →
+  `{ "doc", "updatedAt" }`. For a player the merged result is compared with the stored document
+  (or the default one): anything under `crew` (the crew sheet is shared by the table; arrays
+  there may change length), `clocks.<i>.filled` with the same number of clocks, and adding
+  entries at the front of `log` (old entries unchanged; a client may drop the oldest to stay
+  at 200) are allowed. Any other change (`session`, adding/removing/renaming/resizing a clock,
+  its kind or `hidden`, rewriting old log entries, any other key) is
+  `403 {"error":"only the GM can change that"}`. `updatedAt` in a body is ignored.
+- For both campaign writes the server stamps `doc.updatedAt`, keeps the newest 200 `log`
+  entries, refuses a document over 256 KiB with 413, and uses the same optimistic `updated_at`
+  check and retries as characters (409 when it keeps changing). Other methods are 405.
 - `GET /api/members` → `{ "members": [ { "id": email, "name", "role" } ] }`: everyone who has
   called `/api/me` (the API upserts a `members` table on each `/api/me`:
   `members(email PRIMARY KEY, name, role, last_seen)`), so the GM table can show names.
@@ -95,13 +114,22 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   (`{ id, name, email }`), `can(name)` (`true` for `data.write`), `isOwner()` and `canEdit()`
   (`role === 'gm'`), `profiles(ids)` (from `/api/members`, cached: `{ [id]: { name } }`).
 - `use('db')`: `null` when `/api/me` failed. Otherwise `{ collection(name) }` for
-  `characters` only. `collection().doc(id)` → `{ id, get(), set(doc), update(patch), delete(),
+  `characters` and `campaign`. `collection().doc(id)` → `{ id, get(), set(doc), update(patch), delete(),
   onSnapshot(cb, err) }`; `collection().orderBy(field, dir).limit(n).where(f, op, v)` chain
   (applied client-side on the cache) with `onSnapshot(cb, err)` and `get()`.
   Snapshots: a document snapshot is `{ id, exists, data() }`; a query snapshot is
   `{ docs: [documentSnapshot] }`. `onSnapshot` returns an unsubscribe function and fires
   once with the current cache as soon as the first full load has happened.
-- One poller feeds every listener: a full `GET /api/characters` at start, then
+- `collection('campaign').doc('main')` → `{ id, get(), set(doc) (PUT), update(patch) (PATCH),
+  onSnapshot(cb, err) }`. Its snapshot is always `{ id: 'main', exists: true, data() }` (the
+  default document while none is stored). The cached copy is refetched (`GET /api/campaign`)
+  when a poll's `campaignUpdatedAt` differs from the cached `updatedAt`; own writes merge
+  optimistically (same deep merge, log trimmed to 200) and then take the server's answer; a
+  rejected write (e.g. 403) refetches, which rolls the optimistic change back. Campaign
+  listeners hear only campaign changes (first snapshot once loaded, then only when the document
+  actually changed), character listeners only character changes. Any other `campaign` doc id
+  never exists and refuses writes; `collection('campaign')` queries are always empty.
+- One poller feeds every listener (characters and campaign; it runs while either exists): a full `GET /api/characters` at start, then
   `?since=` every 4 s while the page is visible and every 20 s when hidden, plus an
   immediate poll after each own write; a write also updates the cache optimistically so the
   sheet never waits on the network. Network errors are retried on the next tick and surfaced

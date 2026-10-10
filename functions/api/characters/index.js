@@ -1,9 +1,12 @@
 // GET /api/characters            -> { now, docs }: every live character, newest first, at most 500
 // GET /api/characters?since=ISO  -> { now, docs }: every row changed after `since`, tombstones
 //                                   included ({ deleted: true, doc: null })
+// Both also carry campaignUpdatedAt (ISO or null), so the adapter knows when to refetch
+// /api/campaign without polling it separately.
 
 import { getDb } from '../../_lib/db.js';
 import { HttpError, json, methodNotAllowed, campaignOf } from '../../_lib/http.js';
+import { campaignUpdatedAt } from '../../_lib/campaign.js';
 
 // `now` is reported this far in the past so a write stamped just before a poll but
 // committed just after it is still picked up by the next poll. Rows changed inside the
@@ -44,6 +47,6 @@ export async function onRequest({ request, env }) {
       )
       .bind(campaign);
   }
-  const { results } = await stmt.all();
-  return json({ now, docs: (results || []).map(toEntry) });
+  const [{ results }, campaignAt] = await Promise.all([stmt.all(), campaignUpdatedAt(db, campaign)]);
+  return json({ now, docs: (results || []).map(toEntry), campaignUpdatedAt: campaignAt });
 }

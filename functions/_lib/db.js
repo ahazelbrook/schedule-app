@@ -20,6 +20,11 @@ const SCHEMA = [
     role TEXT NOT NULL DEFAULT 'player',
     last_seen TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS campaigns (
+    id TEXT PRIMARY KEY,
+    updated_at TEXT NOT NULL,
+    doc TEXT NOT NULL
+  )`,
 ];
 
 let ready = null; // Promise, per isolate

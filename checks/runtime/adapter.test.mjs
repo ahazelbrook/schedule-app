@@ -26,7 +26,15 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
     // direct edits, as another client would make them
     put(id, doc) { const t = now(); rows[id] = { owner: doc.owner || null, updatedAt: t, deleted: false, doc: { ...clone(doc), updatedAt: t } }; },
     tombstone(id) { rows[id] = { owner: null, updatedAt: now(), deleted: true, doc: {} }; },
+    campaign: null,                                     // the stored campaign doc (null = none yet)
+    setCampaign(doc) { s.campaign = { ...clone(doc), updatedAt: now() }; },
   };
+  const defaultCampaign = () => ({
+    v: 1, session: { number: 0, startedAt: null, endedAt: null },
+    crew: { name: '', type: '', lair: '', notes: '', tier: 0, hold: 'weak', rep: 0, turf: 0, heat: 0, wanted: 0, vault: 0, claims: [], cohorts: [], factions: [] },
+    clocks: [], log: [], updatedAt: null,
+  });
+  s.defaultCampaign = defaultCampaign;
   function merge(t, p) { for (const k of Object.keys(p)) { const v = p[k]; if (v === null) delete t[k]; else if (v && typeof v === 'object' && !Array.isArray(v) && t[k] && typeof t[k] === 'object' && !Array.isArray(t[k])) merge(t[k], v); else t[k] = clone(v); } return t; }
   s.handle = function (user, method, url, body) {
     calls.push(method + ' ' + url);
@@ -44,7 +52,18 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
         .filter(([, r]) => (since ? r.updatedAt > since : !r.deleted))
         .sort((a, b) => (a[1].updatedAt < b[1].updatedAt ? 1 : -1))
         .map(([id, r]) => ({ id, doc: r.deleted ? null : clone(r.doc), updatedAt: r.updatedAt, deleted: r.deleted }));
-      return [200, { now: new Date(tick - 2000).toISOString(), docs: list }];   // like the real API: 2 s behind, so rows repeat
+      return [200, { now: new Date(tick - 2000).toISOString(), docs: list, campaignUpdatedAt: s.campaign ? s.campaign.updatedAt : null }];   // like the real API: 2 s behind, so rows repeat
+    }
+    if (p === '/api/campaign') {
+      // the player rule is reduced to "players may not PUT" here; the full rule is checked in checks/api/flow.mjs
+      if (method === 'GET') return [200, { doc: clone(s.campaign || defaultCampaign()), updatedAt: s.campaign ? s.campaign.updatedAt : null }];
+      if (method === 'PUT' && me.role !== 'gm') return [403, { error: 'only the GM can change that' }];
+      const base = s.campaign || defaultCampaign();
+      const doc = method === 'PUT' ? clone(body) : method === 'PATCH' ? merge(clone(base), body) : null;
+      if (!doc) return [405, { error: 'method not allowed' }];
+      if (Array.isArray(doc.log)) doc.log = doc.log.slice(0, 200);
+      doc.updatedAt = now(); s.campaign = doc;
+      return [200, { doc: clone(doc), updatedAt: doc.updatedAt }];
     }
     const m = p.match(/^\/api\/characters\/([A-Za-z0-9_-]{1,80})$/);
     if (!m) return [404, { error: 'not found' }];
@@ -356,6 +375,118 @@ await test('visibility: hidden pages poll on the slow interval', async () => {
   b.win.setTimeout = real;
   ok(timers.includes(20000), 'hidden interval: ' + timers);
   ok(timers.includes(4000), 'visible interval: ' + timers);
+  un();
+});
+
+/* ---------- campaign/main ---------- */
+const campaignDoc = (extra = {}) => ({
+  v: 1, session: { number: 2, startedAt: '2026-10-01T19:00:00.000Z', endedAt: null },
+  crew: { name: 'Lamplighters', type: 'shadows', lair: '', notes: '', tier: 1, hold: 'strong', rep: 3, turf: 0, heat: 1, wanted: 0, vault: 2, claims: [], cohorts: [], factions: [] },
+  clocks: [{ id: 'c_a', name: 'Alarm', size: 4, filled: 1, kind: 'danger', hidden: false }],
+  log: [{ at: '2026-10-01T19:00:00.000Z', by: 'gm@x.test', text: 'first' }],
+  ...extra,
+});
+const campaignGets = (api) => api.calls.filter((c) => c === 'GET /api/campaign').length;
+
+await test('campaign: a missing doc snapshots as the default (exists true); other ids and queries are empty', async () => {
+  const api = fakeApi();
+  const b = browser(api, { email: 'pl@x.test' });
+  const db = await b.win.claude.use('db');
+  const ref = db.collection('campaign').doc('main');
+  eq([ref.id, ref.path], ['main', 'campaign/main']);
+  const snaps = [], errs = [];
+  const un = ref.onSnapshot((s) => snaps.push(s), (e) => errs.push(e));
+  await until(() => snaps.length);
+  eq([snaps[0].id, snaps[0].exists, snaps[0].metadata.hasPendingWrites], ['main', true, false]);
+  eq(snaps[0].data(), api.defaultCampaign(), 'default doc');
+  const d = snaps[0].data(); d.crew.heat = 9; eq(snaps[0].data().crew.heat, 0, 'data() clone');
+  const g = await ref.get(); eq([g.exists, g.data()], [true, api.defaultCampaign()], 'get()');
+  ok(api.calls.includes('GET /api/characters'), 'the poller runs for a campaign listener alone');
+  // other ids and collection queries: empty, no writes
+  const other = db.collection('campaign').doc('side');
+  eq((await other.get()).exists, false, 'other id get');
+  const os = []; other.onSnapshot((s) => os.push(s)); await until(() => os.length); eq([os[0].exists, os[0].data()], [false, undefined]);
+  let err = null; try { await other.update({ x: 1 }); } catch (e) { err = e; } ok(err, 'write to another id');
+  const qs = await db.collection('campaign').orderBy('updatedAt', 'desc').limit(5).get(); eq([qs.size, qs.empty, qs.docs], [0, true, []]);
+  const qsn = []; db.collection('campaign').onSnapshot((s) => qsn.push(s)); await until(() => qsn.length); eq(qsn[0].docs, []);
+  eq((await db.doc('campaign/main').get()).exists, true, 'db.doc path');
+  // unchanged polls fire nothing and do not refetch the campaign
+  const n = snaps.length, gets = campaignGets(api);
+  await sleep(POLL * 3);
+  eq(snaps.length, n, 'snapshots on unchanged polls'); eq(campaignGets(api), gets, 'campaign refetched without a change');
+  un();
+  const polls = api.calls.length; await sleep(POLL * 3); eq(api.calls.length, polls, 'polling after the last unsubscribe');
+  eq(errs.length, 0, 'errors');
+});
+
+await test('campaign: update merges optimistically, sends a PATCH, then takes the server version', async () => {
+  const api = fakeApi();
+  api.setCampaign(campaignDoc());
+  const b = browser(api, { email: 'pl@x.test' });
+  const ref = (await b.win.claude.use('db')).collection('campaign').doc('main');
+  const snaps = []; const un = ref.onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  eq(snaps[0].data().crew.name, 'Lamplighters');
+  const clocks = snaps[0].data().clocks; clocks[0].filled = 3;
+  const entry = { at: '2026-10-10T12:30:00.000Z', by: 'pl@x.test', text: 'heat rises' };
+  const p = ref.update({ crew: { heat: 4 }, clocks, log: [entry].concat(snaps[0].data().log) });
+  const opt = snaps[snaps.length - 1];
+  eq([snaps.length, opt.data().crew.heat, opt.data().crew.name, opt.data().clocks[0].filled, opt.data().log.length, opt.metadata.hasPendingWrites],
+    [2, 4, 'Lamplighters', 3, 2, true], 'optimistic snapshot');
+  const sent = b.fetchLog.find((f) => f.url === '/api/campaign' && f.opts.method === 'PATCH');
+  ok(sent, 'no PATCH sent');
+  eq(JSON.parse(sent.opts.body).crew, { heat: 4 }, 'PATCH body');
+  await p;
+  eq([api.campaign.crew.heat, api.campaign.clocks[0].filled, api.campaign.log[0].text], [4, 3, 'heat rises'], 'server');
+  const fin = snaps[snaps.length - 1];
+  eq([fin.data().updatedAt, fin.metadata.hasPendingWrites], [api.campaign.updatedAt, false], 'after the server answered');
+  // the poll after the write sees the stamp it already holds: no refetch, no extra snapshot
+  const n = snaps.length, gets = campaignGets(api);
+  await sleep(POLL * 3);
+  eq([snaps.length, campaignGets(api)], [n, gets], 'quiet after own write');
+  un();
+});
+
+await test('campaign: a change made elsewhere arrives within two polls via campaignUpdatedAt', async () => {
+  const api = fakeApi();
+  const b = browser(api, { email: 'gm@x.test' });
+  const ref = (await b.win.claude.use('db')).collection('campaign').doc('main');
+  const snaps = []; const un = ref.onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  await sleep(POLL * 2);
+  eq(snaps.length, 1, 'no snapshot without a change');
+  const t0 = Date.now();
+  api.setCampaign(campaignDoc({ session: { number: 5, startedAt: null, endedAt: null } }));
+  await until(() => snaps.length > 1, POLL * 2 + 60);
+  const took = Date.now() - t0;
+  eq(snaps[snaps.length - 1].data().session.number, 5, 'external change');
+  ok(took <= POLL * 2 + 60, 'external change took ' + took + 'ms');
+  eq(snaps.length, 2, 'one snapshot per change');
+  // a character listener alongside does not hear campaign changes, and vice versa
+  const cs = []; const cun = (await b.win.claude.use('db')).collection('characters').onSnapshot((s) => cs.push(s));
+  await until(() => cs.length);
+  api.setCampaign(campaignDoc({ crew: { ...campaignDoc().crew, heat: 7 } }));
+  await until(() => snaps.length > 2, POLL * 2 + 60);
+  eq(cs.length, 1, 'characters listener notified by a campaign change');
+  api.put('zz', char('zz'));
+  await until(() => cs.length > 1, POLL * 2 + 60);
+  eq(snaps.length, 3, 'campaign listener notified by a character change');
+  un(); cun();
+});
+
+await test('campaign: a rejected write (player PUT, 403) rejects with the API message and rolls back', async () => {
+  const api = fakeApi();
+  api.setCampaign(campaignDoc());
+  const b = browser(api, { email: 'pl@x.test' });
+  const ref = (await b.win.claude.use('db')).collection('campaign').doc('main');
+  const snaps = []; const un = ref.onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  let err = null;
+  try { await ref.set(campaignDoc({ crew: { name: 'Hijacked' } })); } catch (e) { err = e; }
+  eq(err && [err.message, err.status], ['only the GM can change that', 403]);
+  eq(api.campaign.crew.name, 'Lamplighters', 'server unchanged');
+  await until(() => snaps[snaps.length - 1].data().crew.name === 'Lamplighters', POLL * 3);
+  eq(snaps[snaps.length - 1].data().crew.name, 'Lamplighters', 'rolled back');
   un();
 });
 

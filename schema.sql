@@ -21,3 +21,10 @@ CREATE TABLE IF NOT EXISTS members (
   role TEXT NOT NULL DEFAULT 'player',
   last_seen TEXT NOT NULL
 );
+
+-- One shared campaign document per campaign (id = the CAMPAIGN binding), see CAMPAIGN.md.
+CREATE TABLE IF NOT EXISTS campaigns (
+  id TEXT PRIMARY KEY,
+  updated_at TEXT NOT NULL,
+  doc TEXT NOT NULL
+);
