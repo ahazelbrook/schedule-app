@@ -230,8 +230,8 @@
   .key b { font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
   .key:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
   .key[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
-  .key[aria-pressed="true"] small { color: var(--on-ink); opacity: .75; }
   .key small { color: var(--ink-soft); }
+  .key:hover small, .key[aria-pressed="true"] small { color: inherit; opacity: .85; }
   .items { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 4px 20px; }
   .item { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 5px 0; cursor: pointer; background: transparent; border: 0; text-align: left; font: inherit; color: inherit; }
   .item .box { width: 14px; height: 14px; border: 2px solid var(--rule); }
@@ -294,6 +294,49 @@
   .card .rm { position: absolute; top: 6px; right: 6px; font: 700 10px/1 var(--font-mono); padding: 4px 6px; border: 2px solid #14110e; background: #fbf8f1; color: #14110e; cursor: pointer; }
   .card .rm:hover { background: var(--alarm); color: #fbf8f1; border-color: var(--alarm); }
   .empty { border: 2px dashed var(--hair); padding: 16px; color: var(--ink-soft); font-size: 13px; max-width: 60ch; }
+  /* the GM table: one rule per character, mono numbers, a band for the header */
+  .roster .table { min-width: 0; }
+  .tbl { width: 100%; border-collapse: collapse; border: 2px solid var(--rule); background: var(--card); font-size: 13px; }
+  .tbl thead th { background: var(--rule); color: var(--on-ink); font: 900 10px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; text-align: left; padding: 6px 10px; white-space: nowrap; }
+  .tbl th.num { text-align: right; }
+  .tbl td { padding: 8px 10px; border-top: 1px solid var(--hair); vertical-align: top; }
+  .tbl tbody tr:first-child td { border-top: 0; }
+  .tbl tbody tr { cursor: pointer; }
+  .tbl tbody tr:hover td { background: var(--inset); }
+  .tbl tbody tr:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+  .tbl tr.mine td:first-child { box-shadow: inset 4px 0 0 var(--accent); }
+  .tbl td.nm b { display: block; font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .06em; }
+  .tbl td.nm small { display: block; font: 400 10px/1.4 var(--font-mono); letter-spacing: .04em; color: var(--ink-soft); }
+  .tbl td.pbk { font: 400 11px/1.5 var(--font-mono); letter-spacing: .04em; color: var(--ink-soft); }
+  .tbl td.num { font: 700 12px/1.5 var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .tbl td.st { text-align: left; }
+  .tbl td.up { font-weight: 400; color: var(--ink-soft); }
+  .tbl td.hm { max-width: 28ch; }
+  .tbl td.hm small { font: 700 10px/1 var(--font-mono); }
+  .tbl .k { font: 900 9.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft); margin-right: 6px; }
+  .tbl .dim { color: var(--ink-faint); font-weight: 400; }
+  .tbl .bad { color: var(--alarm); }
+  .backups { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 2px solid var(--hair); padding-top: 10px; }
+  .backups .label { margin-right: 4px; }
+  @media (max-width: 640px) {
+    /* phones: each row becomes a stacked card of label / value pairs; no sideways scroll */
+    .tbl, .tbl tbody, .tbl tr, .tbl td { display: block; }
+    .tbl thead { display: none; }
+    .tbl tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; padding: 10px 12px; border-top: 2px solid var(--rule); }
+    .tbl tbody tr:first-child { border-top: 0; }
+    .tbl tbody tr:hover td { background: transparent; }
+    .tbl tbody tr:hover { background: var(--inset); }
+    .tbl td { padding: 0; border: 0; min-width: 0; }
+    .tbl td.nm, .tbl td.pbk, .tbl td.hm { grid-column: 1 / -1; }
+    .tbl td.num { text-align: left; }
+    .tbl td::before { content: attr(data-l); display: block; font: 900 9px/1.6 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
+    .tbl td.nm::before, .tbl td.pbk::before { display: none; }
+    .tbl td.nm b { font-size: 13px; }
+    .tbl td.hm { max-width: none; overflow-wrap: anywhere; }
+    .tbl td .k { display: none; }
+    .tbl tr.mine td:first-child { box-shadow: none; }
+    .tbl tr.mine { box-shadow: inset 4px 0 0 var(--accent); }
+  }
   footer { margin-top: 36px; border-top: 2px solid var(--rule); padding-top: 12px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--ink-soft); }
 
   @media (max-width: 1000px) {
@@ -362,8 +405,10 @@
   </section>
 
   <section class="roster" aria-label="Your files">
-    <div class="head"><h2>Your files</h2><div class="tools"><div class="seg" id="rosterFilter" role="group" aria-label="Whose files" hidden><button class="chip" type="button" data-f="mine" aria-pressed="true">Mine</button><button class="chip" type="button" data-f="all" aria-pressed="false">Everyone</button></div><span class="label" id="rosterNote">Everyone who opens this page sees the same files</span></div></div>
+    <div class="head"><h2>Your files</h2><div class="tools"><div class="seg" id="rosterView" role="group" aria-label="View"><button class="chip" type="button" data-v="cards" aria-pressed="true">Cards</button><button class="chip" type="button" data-v="table" aria-pressed="false">Table</button></div><div class="seg" id="rosterFilter" role="group" aria-label="Whose files" hidden><button class="chip" type="button" data-f="mine" aria-pressed="true">Mine</button><button class="chip" type="button" data-f="all" aria-pressed="false">Everyone</button></div><span class="label" id="rosterNote">Everyone who opens this page sees the same files</span></div></div>
     <div class="cards" id="cards"><div class="empty">No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.</div></div>
+    <div class="table" id="table" hidden><div class="empty">No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.</div></div>
+    <div class="backups" id="backups" hidden><span class="label">Backups</span><button class="btn sm" id="dlAll" type="button" hidden>Download all (JSON)</button><button class="btn sm" id="restoreBtn" type="button" hidden>Restore (JSON)</button><input type="file" id="restoreFile" accept="application/json,.json" hidden></div>
   </section>
 
   <footer>

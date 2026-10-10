@@ -129,3 +129,16 @@ Common to all four: `playbook`, `name`, `alias`, `heritage`, `heritageDetail`, `
 
 ## Figure looks (core.js, filing owns)
 `A.LOOKS` needs entries for `ghost`, `vampire`, `timetraveler`, `timepast`. Ghost figures render with `.ghostly` on `#art` / lineup / roster thumbs (CSS in index.html: `opacity:.72; filter: blur(.35px) saturate(1.4)`) so the vapour reads.
+
+---
+
+# Round 4: dice at the table, the GM table view, backups
+
+Ownership as before: tracker = `tracker.js`, `tracker.css`; filing = `boot.js`, `steps.js`, `index.html`. Nobody edits content.js / core.js / zoom.js this round.
+
+## Dice (tracker)
+Forged in the Dark rules, assumed standard: action roll = d6 per action dot (0 dots: roll 2d6 and take the LOWEST); +1d for pushing yourself (costs 2 Stress, or Drain / Instability for the variant playbooks), +1d for an assist, +1d for a Devil's Bargain; read the single highest die: 6 success, 4–5 partial, 1–3 failure, two or more 6s a critical. Position controlled / risky / desperate; a desperate roll marks 1 xp in the action's attribute. Resistance roll = d6 per attribute rating (count of actions rated 1+ in that attribute; 0 → 2d take lowest), Stress cost = 6 − highest die, a critical clears 1 Stress instead. Fortune roll = any number of dice, same reading. Vampire Dark Majesty +1 resistance dot in that attribute applies to resistance rolls.
+`play.log[]` entries gain an optional `kind: 'roll' | 'note'` and rolls are logged as `{ at, kind: 'roll', text: 'Skirmish 3d (push) · risky · 6,4,2 → success' }`. `window.B68Tracker._rng` may be replaced by tests with a deterministic function returning 0..1.
+
+## GM table and backups (filing)
+`A.roster` (array of docs, as subscribed today) stays the source. The "Your files" section gets a view toggle Cards / Table; the table has one row per character with name, playbook, stress label and value (pb.stressName), worst harm text, healing, playbook xp, load, struck keys count, updatedAt; clicking a row opens the sheet. Backup: "Download all (JSON)" writes `{ v: 1, exportedAt, characters: [docs] }` through the downloads capability (hidden when unavailable); "Restore (JSON)" takes a file input and files each character as a NEW doc (new id, owner = me, createdAt now) so nothing is overwritten.

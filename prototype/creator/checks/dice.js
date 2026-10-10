@@ -1,0 +1,257 @@
+process.chdir(__dirname); try { require('fs').mkdirSync('out', { recursive: true }); } catch (e) {}
+/* Headless check of the dice on the living sheet (round 4). Run from the scratchpad dir:
+   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node shots/dice.js */
+const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
+const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
+const STUB = `(() => {
+  const store = {}; const colSubs = []; const docSubs = {};
+  const snapOf = (id) => ({ id, exists: id in store, data: () => store[id] ? JSON.parse(JSON.stringify(store[id])) : undefined, metadata: {} });
+  const fire = (id) => { (docSubs[id] || []).forEach(fn => fn(snapOf(id))); colSubs.forEach(fn => fn(query())); };
+  const query = () => { const docs = Object.keys(store).map(snapOf).sort((a, b) => (store[b.id].updatedAt || '').localeCompare(store[a.id].updatedAt || '')); return { docs, size: docs.length, empty: !docs.length, docChanges: () => [] }; };
+  const docRef = (id) => ({ id, get: async () => snapOf(id), set: async (d) => { store[id] = JSON.parse(JSON.stringify(d)); window.__writes.push(['set', id]); fire(id); }, update: async (p) => { Object.assign(store[id], JSON.parse(JSON.stringify(p))); window.__writes.push(['update', id]); fire(id); }, delete: async () => { delete store[id]; window.__writes.push(['delete', id]); fire(id); }, onSnapshot: (fn) => { (docSubs[id] = docSubs[id] || []).push(fn); setTimeout(() => fn(snapOf(id)), 0); return () => {}; } });
+  const q = () => ({ orderBy: q, limit: q, where: q, get: async () => query(), onSnapshot: (fn) => { colSubs.push(fn); setTimeout(() => fn(query()), 0); return () => {}; } });
+  const col = () => Object.assign(q(), { doc: docRef, path: 'characters' });
+  window.__writes = []; window.__store = store;
+  window.claude = { use: async (name) => ({ db: { collection: col, doc: (p) => docRef(p.split('/')[1]) }, user: { id: async () => 'u_test', can: async () => true, isOwner: async () => true, canEdit: async () => true, me: async () => ({ id: 'u_test', name: '', avatarUrl: '', color: '#000', email: null, isOwner: true, canEdit: true }), profiles: async () => ({}) }, downloads: { save: async () => {} } })[name] || null };
+})();`;
+
+const SHEET = `(pb) => {
+  const CT = B68Content, P = CT.byId[pb], S = B68.S;
+  B68.choosePlaybook(pb);
+  const sh = S.sheet;
+  sh.name = { hound: 'Aldo Crane', hull: 'Unit Seven' }[pb]; sh.alias = { hound: 'Dusty', hull: '' }[pb];
+  sh.heritage = 'Akoros'; sh.background = 'Underworld'; sh.look = 'Lean, weathered.'; sh.wearing = ['Trench coat'];
+  const dots = Object.assign({}, P.printed || {});
+  if (pb === 'hound') Object.assign(dots, { Hunt: 2, Survey: 1, Prowl: 1, Skirmish: 1, Consort: 2 });
+  if (pb === 'hull') Object.assign(dots, { Skirmish: 2, Attune: 1, Wreck: 2, Tinker: 1 });
+  sh.dots = dots;
+  if (pb === 'hound') { sh.ability = P.abilities[0][0]; sh.keys = P.keys.slice(0, 3); sh.contacts = {}; sh.contacts[P.contacts[0][0]] = 'friend'; sh.contacts[P.contacts[1][0]] = 'rival'; sh.vice = 'Gambling'; sh.purveyor = 'The Docks'; sh.items = [P.items[0][0], 'Binoculars']; }
+  if (pb === 'hull') { sh.ability = P.abilities[0][0]; sh.owning = P.owning[0]; sh.items = [P.items[0][0]]; }
+  if (B68.syncNameToSpec) B68.syncNameToSpec(); B68.changed();
+  B68.fileCharacter();
+}`;
+
+/* a deterministic rng: each call yields the next die face in the sequence */
+const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringify(seq)}; let i = 0; return () => (s[i++ % s.length] - 0.5) / 6; })(); true`;
+
+(async () => {
+  const b = await chromium.launch();
+  const errs = [], fails = [], notes = [];
+  function assert(ok, msg) { if (!ok) fails.push(msg); }
+  async function open(w, h, name, pb, scheme) {
+    const ctx = await b.newContext({ viewport: { width: w, height: h }, colorScheme: scheme || 'light' });
+    await ctx.addInitScript(STUB);
+    const p = await ctx.newPage(); p.__dialogs = [];
+    p.on('console', m => { if (m.type() === 'error') { const t = m.text(); if (!/ERR_FILE_NOT_FOUND/.test(t)) errs.push(name + ' console.error: ' + t); } });
+    p.on('pageerror', e => errs.push(name + ' pageerror: ' + e.message));
+    p.on('dialog', d => { p.__dialogs.push(d.type() + ': ' + d.message().slice(0, 90)); d.accept(); });
+    await p.goto(URL); await p.waitForTimeout(1200);
+    await p.evaluate(`(${SHEET})(${JSON.stringify(pb)}); true`).catch(e => { errs.push(name + ' sheet setup failed: ' + e.message); });
+    await p.waitForTimeout(1200);
+    const mode = await p.evaluate(() => document.body.dataset.mode);
+    assert(mode === 'sheet', name + ': mode after filing is ' + mode);
+    return p;
+  }
+  const overflow = async (p, name) => {
+    const sw = await p.evaluate(() => document.documentElement.scrollWidth), cw = await p.evaluate(() => document.documentElement.clientWidth);
+    if (sw > cw) errs.push(name + ' horizontal overflow ' + sw + '>' + cw);
+    const clipped = await p.evaluate(() => { const root = document.getElementById('dossier'); const R = root.getBoundingClientRect(); const out = []; root.querySelectorAll('.ds-box, .ds-roll, .ds-roll *, button').forEach(n => { const r = n.getBoundingClientRect(); if (r.width && (r.right > R.right + 1 || r.left < R.left - 1)) out.push(n.className + ' ' + Math.round(r.left) + '-' + Math.round(r.right) + ' vs ' + Math.round(R.right)); }); return out.slice(0, 5); });
+    if (clipped.length) errs.push(name + ' elements outside the dossier: ' + clipped.join(' | '));
+  };
+  const play = (p) => p.evaluate(() => B68Tracker.play());
+  const stored = (p) => p.evaluate(() => { const id = Object.keys(window.__store)[0]; return window.__store[id].play; });
+  const has = (p, sel) => p.$(sel).then(x => !!x);
+  const text = (p, sel) => p.$eval(sel, n => n.textContent).catch(() => null);
+  const click = async (p, sel) => { const h = await p.$(sel); if (!h) { fails.push('missing ' + sel); return false; } await h.click(); await p.waitForTimeout(150); return true; };
+  const shotPanel = async (p, path) => { const h = await p.$('#dossier .ds-actbox'); if (h) await h.screenshot({ path }); };
+
+  /* ---------- Hound ---------- */
+  {
+    const p = await open(1360, 900, 'hound', 'hound');
+    assert(typeof (await p.evaluate(() => typeof B68Tracker._rng)) === 'string' && (await p.evaluate(() => B68Tracker._rng === Math.random)), 'hound: _rng defaults to Math.random');
+    const keys = await p.evaluate(() => Object.keys(B68Tracker).sort().join(','));
+    assert(keys === '_rng,close,initialPlay,isOpen,open,play,update', 'hound: public surface unchanged: ' + keys);
+    let s = await play(p);
+    const skirmish = s.dots.Skirmish, prowessXp = s.xp.prowess, stress0 = s.stress;
+    notes.push('hound Skirmish ' + skirmish + ' dots, stress ' + stress0 + ', prowess xp ' + prowessXp);
+    /* action names are buttons, pips still work */
+    assert((await p.$$eval('#dossier .ds-actbtn', ns => ns.length)) === 12, 'hound: 12 action buttons');
+    await click(p, '#dossier .ds-pip[data-a="Hunt"][data-n="3"]'); s = await stored(p); assert(s.dots.Hunt === 3, 'hound: pips still set dots ' + s.dots.Hunt);
+    await click(p, '#dossier .ds-pip[data-a="Hunt"][data-n="3"]'); s = await stored(p); assert(s.dots.Hunt === 2, 'hound: pips still toggle down ' + s.dots.Hunt);
+    assert(!(await has(p, '#dossier .ds-roll')), 'hound: no panel before a click');
+    /* open Skirmish */
+    await click(p, '#dossier .ds-actbtn[data-a="Skirmish"]');
+    assert(await has(p, '#dossier .ds-actbox .ds-roll'), 'hound: panel opened under the Actions box');
+    assert(/Skirmish/.test(await text(p, '#dossier .ds-roll-t')), 'hound: panel titled with the action');
+    assert((await text(p, '#dossier .ds-roll-big')) === skirmish + 'd', 'hound: dice readout ' + (await text(p, '#dossier .ds-roll-big')));
+    assert((await p.$eval('#dossier [data-act="rollpos"][data-v="risky"]', n => n.getAttribute('aria-pressed'))) === 'true', 'hound: risky by default');
+    assert((await p.$eval('#dossier [data-act="rolleff"][data-v="standard"]', n => n.getAttribute('aria-pressed'))) === 'true', 'hound: standard effect by default');
+    /* push + desperate */
+    await click(p, '#dossier [data-act="rollopt"][data-k="push"]');
+    await click(p, '#dossier [data-act="rollpos"][data-v="desperate"]');
+    assert((await text(p, '#dossier .ds-roll-big')) === (skirmish + 1) + 'd', 'hound: push adds a die: ' + (await text(p, '#dossier .ds-roll-big')));
+    const pushNote = await text(p, '#dossier [data-act="rollopt"][data-k="push"]'); assert(/2 Stress/.test(pushNote), 'hound: push costs 2 Stress: ' + pushNote);
+    await p.evaluate(RNG([6, 4, 2, 1]));
+    await shotPanel(p, 'out/dice-desk-panel.png');
+    await click(p, '#dossier [data-act="roll"]');
+    const dice = await p.$$eval('#dossier .ds-roll-res .ds-die', ns => ns.map(n => n.getAttribute('aria-label')));
+    assert(dice.length === skirmish + 1 && dice[0] === 'die 6', 'hound: dice drawn ' + dice.join(','));
+    assert(await has(p, '#dossier .ds-roll-res .ds-die.hi.six'), 'hound: the highest die (a 6) is highlighted in accent');
+    const word = await text(p, '#dossier .ds-roll-word'); assert(word === 'Success', 'hound: reading ' + word);
+    s = await stored(p);
+    assert(s.stress === stress0 + 2, 'hound: push marked 2 Stress: ' + s.stress);
+    assert(s.xp.prowess === prowessXp + 1, 'hound: desperate marked 1 Prowess xp: ' + s.xp.prowess);
+    assert(s.log.length === 1 && s.log[0].kind === 'roll' && typeof s.log[0].at === 'string', 'hound: one roll log entry ' + JSON.stringify(s.log[0]));
+    const want = 'Skirmish ' + (skirmish + 1) + 'd (push) · desperate · ' + [6, 4, 2, 1].slice(0, skirmish + 1).join(',') + ' → success';
+    assert(s.log[0].text === want, 'hound: log text "' + s.log[0].text + '" vs "' + want + '"');
+    const applied = await text(p, '#dossier .ds-roll-applied'); assert(/\+2 Stress/.test(applied) && /\+1 Prowess xp/.test(applied), 'hound: applied line ' + applied);
+    const writes = await p.evaluate(() => window.__writes.length);
+    await p.screenshot({ path: 'out/dice-desk.png', fullPage: true });
+    const li = await p.$eval('#dossier .ds-log li', n => n.className + '|' + !!n.querySelector('.ds-logdie') + '|' + n.querySelector('.ds-logt').className);
+    assert(li === 'roll|true|ds-logt mono', 'hound: roll entry renders mono with a die: ' + li);
+    /* changing an option clears the result; the roll button is live again */
+    await click(p, '#dossier [data-act="rollopt"][data-k="push"]');
+    assert(!(await has(p, '#dossier .ds-roll-res')), 'hound: toggling clears the result');
+    /* a 0-dot action: two dice, lowest read */
+    const zero = Object.keys(s.dots).filter(a => !s.dots[a])[0]; notes.push('hound zero-dot action: ' + zero);
+    await click(p, '#dossier .ds-actbtn[data-a="' + zero + '"]');
+    assert(/take the lowest/.test(await text(p, '#dossier .ds-roll-go')), 'hound: 0d says take lowest');
+    assert((await text(p, '#dossier .ds-roll-big')) === '0d', 'hound: 0d readout');
+    await p.evaluate(RNG([5, 2]));
+    await click(p, '#dossier [data-act="roll"]');
+    const zd = await p.$$eval('#dossier .ds-roll-res .ds-die', ns => ns.map(n => n.getAttribute('aria-label') + (n.classList.contains('hi') ? '*' : '')));
+    assert(zd.join(',') === 'die 5,die 2*', 'hound: zero-dot dice ' + zd.join(','));
+    assert((await text(p, '#dossier .ds-roll-word')) === 'Failure', 'hound: zero-dot reads the lowest (2 = failure)');
+    s = await stored(p);
+    assert(s.log[0].text === zero + ' 0d (2d take lowest) · risky · 5,2 → failure', 'hound: zero-dot log ' + s.log[0].text);
+    assert(s.stress === stress0 + 2 && s.xp.prowess === prowessXp + 1, 'hound: zero-dot risky roll changed nothing else');
+    /* critical: two 6s */
+    await click(p, '#dossier .ds-actbtn[data-a="Skirmish"]');
+    await click(p, '#dossier [data-act="rollopt"][data-k="assist"]');
+    await click(p, '#dossier [data-act="rollopt"][data-k="bargain"]');
+    await p.evaluate(RNG([6, 6, 3, 1]));
+    await click(p, '#dossier [data-act="roll"]');
+    assert((await text(p, '#dossier .ds-roll-word')) === 'Critical' && await has(p, '#dossier .ds-roll-word.critical'), 'hound: two 6s read critical');
+    assert((await p.$$eval('#dossier .ds-roll-res .ds-die.six', ns => ns.length)) === 2, 'hound: both 6s in accent');
+    s = await stored(p);
+    assert(new RegExp('^Skirmish ' + (skirmish + 2) + 'd \\(assist, bargain\\) · risky · 6,6(,[1-6])* → critical$').test(s.log[0].text), 'hound: critical log ' + s.log[0].text);
+    assert(s.stress === stress0 + 2, 'hound: no push, no stress: ' + s.stress);
+    /* zero dice cannot crit: 6,6 taken lowest is a success */
+    await click(p, '#dossier .ds-actbtn[data-a="' + zero + '"]'); await p.evaluate(RNG([6, 6])); await click(p, '#dossier [data-act="roll"]');
+    assert((await text(p, '#dossier .ds-roll-word')) === 'Success', 'hound: 0d 6,6 is a success, not a critical');
+    /* resistance: Prowess */
+    await click(p, '#dossier [data-act="resistopen"][data-attr="Prowess"]');
+    s = await stored(p); const pr = ['Finesse', 'Prowl', 'Skirmish', 'Wreck'].filter(a => s.dots[a] > 0).length;
+    assert(/Resist/.test(await text(p, '#dossier .ds-roll-t')) && (await text(p, '#dossier .ds-roll-big')) === pr + 'd', 'hound: resist dice = rating ' + pr + ': ' + (await text(p, '#dossier .ds-roll-big')));
+    await p.evaluate(RNG([5, 3, 1, 1]));
+    await click(p, '#dossier [data-act="roll"]');
+    assert(/6 − 5 = 1 Stress/.test(await text(p, '#dossier .ds-roll-why')), 'hound: resist cost shown: ' + (await text(p, '#dossier .ds-roll-why')));
+    const before = (await stored(p)).stress, logs = (await stored(p)).log.length;
+    assert((await text(p, '#dossier [data-act="resistapply"]')) === 'Apply +1 Stress', 'hound: apply label ' + (await text(p, '#dossier [data-act="resistapply"]')));
+    await click(p, '#dossier [data-act="resistapply"]');
+    s = await stored(p);
+    assert(s.stress === before + 1, 'hound: resistance applied 1 Stress: ' + s.stress);
+    assert(s.log.length === logs + 1 && s.log[0].text === 'Resist Prowess ' + pr + 'd · ' + [5, 3, 1, 1].slice(0, pr).join(',') + ' → 1 Stress', 'hound: resist log ' + s.log[0].text);
+    assert(!(await has(p, '#dossier [data-act="resistapply"]')) && /Applied/.test(await text(p, '#dossier .ds-roll-applied')), 'hound: apply once');
+    /* resistance critical clears 1 */
+    await click(p, '#dossier [data-act="roll"]'); await p.evaluate(RNG([6, 6, 6, 6])); await click(p, '#dossier [data-act="roll"]');
+    assert(/clear 1 Stress/.test(await text(p, '#dossier .ds-roll-why')), 'hound: resist critical clears 1');
+    const b2 = (await stored(p)).stress; await click(p, '#dossier [data-act="resistapply"]'); s = await stored(p);
+    assert(s.stress === b2 - 1 && /critical, clear 1 Stress$/.test(s.log[0].text), 'hound: resist critical applied ' + s.stress + ' ' + s.log[0].text);
+    /* fortune */
+    await click(p, '#dossier .ds-band .ds-fortune');
+    assert(/Fortune/.test(await text(p, '#dossier .ds-roll-t')), 'hound: fortune panel');
+    await click(p, '#dossier [data-act="fortn"][data-n="3"]'); await p.evaluate(RNG([4, 2, 1])); await click(p, '#dossier [data-act="roll"]');
+    assert((await text(p, '#dossier .ds-roll-word')) === 'Partial', 'hound: fortune reading');
+    s = await stored(p); assert(s.log[0].text === 'Fortune 3d · 4,2,1 → partial', 'hound: fortune log ' + s.log[0].text);
+    await click(p, '#dossier [data-act="fortn"][data-n="0"]'); await p.evaluate(RNG([3, 6])); await click(p, '#dossier [data-act="roll"]');
+    s = await stored(p); assert(s.log[0].text === 'Fortune 0d (2d take lowest) · 3,6 → failure', 'hound: fortune 0d log ' + s.log[0].text);
+    /* Esc and × close; one panel at a time */
+    await p.keyboard.press('Escape'); await p.waitForTimeout(100);
+    assert(!(await has(p, '#dossier .ds-roll')), 'hound: Esc closes the panel');
+    await click(p, '#dossier .ds-actbtn[data-a="Hunt"]'); await click(p, '#dossier [data-act="resistopen"][data-attr="Insight"]');
+    assert((await p.$$eval('#dossier .ds-roll', ns => ns.length)) === 1 && /Resist/.test(await text(p, '#dossier .ds-roll-t')), 'hound: one panel at a time');
+    await click(p, '#dossier .ds-roll-x'); assert(!(await has(p, '#dossier .ds-roll')), 'hound: × closes');
+    /* push blocked at the top of the track */
+    await click(p, '#dossier .ds-sbox[data-n="8"]'); await click(p, '#dossier .ds-actbtn[data-a="Hunt"]');
+    assert(await p.$eval('#dossier [data-act="rollopt"][data-k="push"]', n => n.disabled), 'hound: push disabled when it would pass 9');
+    assert(/trauma rule applies/.test(await text(p, '#dossier .ds-roll-body')), 'hound: trauma hint shown');
+    await click(p, '#dossier .ds-sbox[data-n="8"]'); await click(p, '#dossier .ds-sbox[data-n="3"]');
+    /* a note keeps the Log button */
+    await p.fill('#dossier .ds-newlog', 'Session 2: the heist at the Gaddoc sluice.'); await click(p, '#dossier [data-act="log"]');
+    s = await stored(p); assert(s.log[0].kind === 'note' && /Gaddoc/.test(s.log[0].text), 'hound: note entry ' + JSON.stringify(s.log[0]));
+    const noteLi = await p.$eval('#dossier .ds-log li', n => n.className + '|' + !!n.querySelector('.ds-logdie')); assert(noteLi === '|false', 'hound: note renders as before: ' + noteLi);
+    /* an old entry without kind still renders */
+    await p.evaluate(() => { const id = Object.keys(window.__store)[0]; const d = JSON.parse(JSON.stringify(window.__store[id])); d.play.log.push({ at: '2026-01-02T00:00:00.000Z', text: 'Old entry' }); B68Tracker.open(Object.assign({ id }, d), { save: () => Promise.resolve(), canWrite: true }); });
+    assert((await p.$$eval('#dossier .ds-log li', ns => ns.map(n => n.textContent))).some(t => /Old entry/.test(t)), 'hound: kind-less entry renders');
+    /* read only: rolls happen, nothing written */
+    const roBefore = await p.evaluate(() => { const id = Object.keys(window.__store)[0]; const d = JSON.parse(JSON.stringify(window.__store[id])); window.__roSaves = 0; B68Tracker.open(Object.assign({ id }, d), { save: () => { window.__roSaves++; return Promise.resolve(); }, canWrite: false }); return B68Tracker.play(); });
+    assert(!(await p.$eval('#dossier .ds-actbtn[data-a="Skirmish"]', n => n.disabled)), 'ro: action buttons stay live');
+    await click(p, '#dossier .ds-actbtn[data-a="Skirmish"]'); await click(p, '#dossier [data-act="rollopt"][data-k="push"]'); await click(p, '#dossier [data-act="rollpos"][data-v="desperate"]');
+    await p.evaluate(RNG([4, 4, 4, 4])); await click(p, '#dossier [data-act="roll"]');
+    assert((await text(p, '#dossier .ds-roll-word')) === 'Partial', 'ro: roll shown');
+    assert(/Not saved \(read only\)/.test(await text(p, '#dossier .ds-roll-applied')), 'ro: says not saved: ' + (await text(p, '#dossier .ds-roll-applied')));
+    const roAfter = await play(p); const roSaves = await p.evaluate(() => window.__roSaves);
+    assert(JSON.stringify(roAfter) === JSON.stringify(roBefore) && roSaves === 0, 'ro: nothing changed or saved (' + roSaves + ' saves)');
+    await click(p, '#dossier [data-act="resistopen"][data-attr="Prowess"]'); await click(p, '#dossier [data-act="roll"]');
+    assert(await p.$eval('#dossier [data-act="resistapply"]', n => n.disabled) && /not saved \(read only\)/.test(await text(p, '#dossier .ds-roll-apply')), 'ro: resist apply disabled with a note');
+    notes.push('hound dialogs: ' + p.__dialogs.join(' / ') + ' · writes after first roll: ' + writes);
+    await p.context().close();
+  }
+
+  /* ---------- Hull: Drain wording ---------- */
+  {
+    const p = await open(1360, 900, 'hull', 'hull');
+    let s = await play(p); const d0 = s.stress;
+    await click(p, '#dossier .ds-actbtn[data-a="Skirmish"]');
+    const pushNote = await text(p, '#dossier [data-act="rollopt"][data-k="push"]'); assert(/2 Drain/.test(pushNote) && !/Stress/.test(pushNote), 'hull: push costs Drain: ' + pushNote);
+    await click(p, '#dossier [data-act="rollopt"][data-k="push"]'); await p.evaluate(RNG([3, 2, 1])); await click(p, '#dossier [data-act="roll"]');
+    s = await stored(p); assert(s.stress === d0 + 2, 'hull: push marked Drain ' + s.stress);
+    assert(/\+2 Drain \(2 \/ 10\)/.test(await text(p, '#dossier .ds-roll-applied')), 'hull: applied says Drain: ' + (await text(p, '#dossier .ds-roll-applied')));
+    await click(p, '#dossier [data-act="resistopen"][data-attr="Prowess"]');
+    assert(/Drain cost is 6 minus the highest die/.test(await text(p, '#dossier .ds-roll-body')), 'hull: resist hint says Drain');
+    await p.evaluate(RNG([4, 1, 1])); await click(p, '#dossier [data-act="roll"]');
+    assert((await text(p, '#dossier [data-act="resistapply"]')) === 'Apply +2 Drain', 'hull: apply label ' + (await text(p, '#dossier [data-act="resistapply"]')));
+    await click(p, '#dossier [data-act="resistapply"]'); s = await stored(p);
+    assert(s.stress === d0 + 4 && /→ 2 Drain$/.test(s.log[0].text), 'hull: resist wrote Drain ' + s.stress + ' ' + s.log[0].text);
+    /* push blocked at 9 / 10 with the On Program rule */
+    await click(p, '#dossier .ds-sbox[data-n="9"]'); await click(p, '#dossier .ds-actbtn[data-a="Wreck"]');
+    assert(await p.$eval('#dossier [data-act="rollopt"][data-k="push"]', n => n.disabled) && /On Program rule applies/.test(await text(p, '#dossier .ds-roll-body')), 'hull: push blocked with the On Program hint');
+    await p.screenshot({ path: 'out/dice-hull-desk.png', fullPage: true });
+    await p.context().close();
+    /* dark */
+    const q = await open(1360, 900, 'hull-dark', 'hull', 'dark');
+    await click(q, '#dossier .ds-actbtn[data-a="Skirmish"]'); await q.evaluate(RNG([6, 6, 2])); await click(q, '#dossier [data-act="rollopt"][data-k="assist"]'); await click(q, '#dossier [data-act="roll"]');
+    await shotPanel(q, 'out/dice-dark-panel.png');
+    await q.context().close();
+  }
+
+  /* ---------- phone ---------- */
+  {
+    const p = await open(390, 800, 'phone', 'hound');
+    await click(p, '#dossier .ds-actbtn[data-a="Skirmish"]'); await click(p, '#dossier [data-act="rollopt"][data-k="push"]'); await click(p, '#dossier [data-act="rollpos"][data-v="desperate"]');
+    await p.evaluate(RNG([6, 4])); await click(p, '#dossier [data-act="roll"]');
+    await overflow(p, 'phone');
+    const r = await p.$eval('#dossier .ds-roll', n => { const b = n.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), h: Math.round(b.height) }; });
+    notes.push('phone panel rect ' + JSON.stringify(r) + ', scrollY ' + (await p.evaluate(() => Math.round(window.scrollY))));
+    await shotPanel(p, 'out/dice-phone-panel.png');
+    await p.screenshot({ path: 'out/dice-phone.png', fullPage: false });
+    await p.context().close();
+  }
+
+  /* ---------- print: panel and roll buttons hidden ---------- */
+  {
+    const p = await open(1360, 900, 'print', 'hound');
+    await click(p, '#dossier .ds-actbtn[data-a="Skirmish"]'); await click(p, '#dossier [data-act="roll"]');
+    await p.emulateMedia({ media: 'print' });
+    const vis = await p.evaluate(() => ['.ds-roll', '.ds-resist', '.ds-fortune', '.ds-actbtn'].map(s => { const n = document.querySelector('#dossier ' + s); return s + ':' + (n ? getComputedStyle(n).display : 'none'); }).join(' '));
+    assert(/\.ds-roll:none/.test(vis) && /\.ds-resist:none/.test(vis) && /\.ds-fortune:none/.test(vis) && !/\.ds-actbtn:none/.test(vis), 'print: ' + vis);
+    await p.context().close();
+  }
+
+  console.log('NOTES:\n' + notes.join('\n'));
+  console.log('FAILS:', fails.length ? '\n' + fails.join('\n') : 'none');
+  console.log('ERRORS:', errs.length ? '\n' + errs.join('\n') : 'none');
+  await b.close();
+  process.exit(fails.length || errs.length ? 1 : 0);
+})().catch(e => { console.error('FAILED', e); process.exit(1); });

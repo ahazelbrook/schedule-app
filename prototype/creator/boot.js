@@ -157,15 +157,40 @@
 
   /* roster */
   var roster = [];
+  /* what a filed sheet says about itself: the cards' status line and the GM table both read these facts, so they never disagree */
+  function itemLoadOf(pb, play, name) { var all = ((pb && pb.items) || []).concat(A.CT.STANDARD_ITEMS || [], (play.extraItems || []).map(function (x) { return [x && x.name, x && x.load]; })); var it = all.filter(function (i) { return i && i[0] === name; })[0]; return it ? +it[1] || 0 : 0; }
+  function playFacts(d) {
+    var p = d.play, pb = A.CT.byId[d.playbook] || {};
+    var f = { fresh: !p || typeof p !== 'object', stressName: pb.stressName || (pb.hull ? 'Drain' : 'Stress'), stressMax: pb.stressMax || (pb.hull ? 10 : 9), stress: null, alluvium: null, alluviumMax: pb.alluvium ? pb.alluvium.max : 9, harmCount: 0, worstHarm: '', healing: 0, xp: null, load: null, loadLimit: null, struck: 0, stacks: 0 };
+    if (f.fresh) return f;
+    if (typeof p.stress === 'number') f.stress = p.stress;
+    if (pb.timetraveler && typeof p.alluvium === 'number') f.alluvium = p.alluvium;
+    var h = p.harm || {}; [['l4', 4], ['l3', 3], ['l2', 2], ['l1', 1]].forEach(function (k) { var v = h[k[0]]; (Array.isArray(v) ? v : [v]).forEach(function (t) { t = t == null ? '' : String(t).trim(); if (!t) return; f.harmCount++; if (!f.worstHarm) f.worstHarm = k[1] + ': ' + t; }); });
+    f.healing = typeof p.healing === 'number' ? p.healing : 0;
+    if (p.xp && typeof p.xp.playbook === 'number') f.xp = p.xp.playbook;
+    f.stacks = typeof p.stacks === 'number' ? p.stacks : 0;
+    if (!pb.ghost) { var ab = p.abilities || []; var bonus = (ab.indexOf('Walking Arsenal') >= 0 ? 2 : 0) + (ab.indexOf('Retractable Arsenal') >= 0 ? 2 : 0); f.load = (p.items || []).reduce(function (t, n) { return t + itemLoadOf(pb, p, n); }, 0) + f.stacks; f.loadLimit = (p.loadLimit === 'loud' ? 6 : 3) + bonus; }
+    f.struck = (p.keys || []).filter(function (k) { return k && (k.deadlock || k.glitch); }).length;
+    return f;
+  }
   function playStatus(d) {
-    var p = d.play; if (!p || typeof p !== 'object') return 'new sheet';
-    var pb = A.CT.byId[d.playbook] || {}; var bits = [];
-    var stress = typeof p.stress === 'number' ? p.stress : null; if (stress != null) bits.push((pb.stressName || (pb.hull ? 'Drain' : 'Stress')) + ' ' + stress + '/' + (pb.stressMax || (pb.hull ? 10 : 9)));
-    if (pb.timetraveler && typeof p.alluvium === 'number') bits.push('alluvium ' + p.alluvium + '/' + (pb.alluvium ? pb.alluvium.max : 9));
-    var h = p.harm || {}, n = 0; ['l1', 'l2', 'l3', 'l4'].forEach(function (k) { var v = h[k]; if (Array.isArray(v)) v.forEach(function (t) { if (t) n++; }); else if (v) n++; }); if (n) bits.push(n + ' harm');
-    if (p.xp && typeof p.xp.playbook === 'number') bits.push('xp ' + p.xp.playbook + '/8');
-    if (typeof p.stacks === 'number' && p.stacks) bits.push(p.stacks + ' stacks');
+    var f = playFacts(d); if (f.fresh) return 'new sheet';
+    var bits = [];
+    if (f.stress != null) bits.push(f.stressName + ' ' + f.stress + '/' + f.stressMax);
+    if (f.alluvium != null) bits.push('alluvium ' + f.alluvium + '/' + f.alluviumMax);
+    if (f.harmCount) bits.push(f.harmCount + ' harm');
+    if (f.xp != null) bits.push('xp ' + f.xp + '/8');
+    if (f.stacks) bits.push(f.stacks + ' stacks');
     return bits.join(' · ') || 'fresh sheet';
+  }
+  A.playFacts = playFacts; A.playStatus = playStatus;
+  function ago(iso) {
+    var t = Date.parse(iso || ''); if (!t) return '—';
+    var sec = Math.round((Date.now() - t) / 1000); if (sec < 45) return 'just now';
+    var m = Math.round(sec / 60); if (m < 60) return m + ' min ago';
+    var h = Math.round(m / 60); if (h < 24) return h + ' h ago';
+    var dd = Math.round(h / 24); if (dd < 14) return dd + ' d ago';
+    try { return new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: dd > 300 ? 'numeric' : undefined }); } catch (e) { return String(iso).slice(0, 10); }
   }
   function visibleDocs() { return filter === 'mine' && A.me ? roster.filter(function (d) { return d.owner === A.me; }) : roster; }
   function syncFilter() {
@@ -175,10 +200,45 @@
     if (!filterChosen) filter = (A.me && mine) ? 'mine' : 'all';
     seg.querySelectorAll('.chip').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.f === filter)); });
   }
+  /* cards or the GM table; the choice is remembered per browser */
+  var view = 'cards'; try { if (localStorage.getItem('b68.rosterView') === 'table') view = 'table'; } catch (e) {}
+  function setRosterView(v) { view = v === 'table' ? 'table' : 'cards'; try { localStorage.setItem('b68.rosterView', view); } catch (e) {} renderRoster(roster); }
+  A.setRosterView = setRosterView;
+  function syncView() {
+    var seg = $('rosterView'); if (seg) seg.querySelectorAll('.chip').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.v === view)); });
+    var c = $('cards'), t = $('table'); if (c) c.hidden = view === 'table'; if (t) t.hidden = view !== 'table';
+  }
+  function emptyHtml() { return '<div class="empty">' + (roster.length ? 'None of these are yours yet. File a character from the last step and it is saved to your account.' : 'No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.') + '</div>'; }
+  function renderTable(list) {
+    var box = $('table'); if (!box) return;
+    if (!list.length) { box.innerHTML = emptyHtml(); return; }
+    var t = el('table', 'tbl'); t.setAttribute('aria-label', 'The table');
+    t.innerHTML = '<thead><tr><th class="nm">Name</th><th class="pbk">Playbook</th><th class="num">Stress</th><th class="hm">Worst harm</th><th class="num">Healing</th><th class="num">XP</th><th class="num">Load</th><th class="num">Struck</th><th class="num">Updated</th></tr></thead>';
+    var tb = el('tbody');
+    list.forEach(function (d) {
+      var f = playFacts(d), tr = el('tr', A.me && d.owner === A.me ? 'mine' : null); tr.tabIndex = 0; tr.setAttribute('role', 'button'); tr.title = 'Open the sheet'; tr.dataset.id = d.id;
+      function td(label, html, cls) { return '<td data-l="' + esc(label) + '"' + (cls ? ' class="' + cls + '"' : '') + '>' + html + '</td>'; }
+      var dash = '<span class="dim">—</span>';
+      tr.innerHTML = td('Name', '<b>' + esc(d.name || 'Unnamed') + '</b>' + (d.alias ? '<small>' + esc(d.alias) + '</small>' : ''), 'nm')
+        + td('Playbook', esc(d.playbookName || pbName(d.playbook)), 'pbk')
+        + td(f.stressName, f.fresh ? '<span class="dim">new sheet</span>' : '<span class="k">' + esc(f.stressName) + '</span><span class="v' + (f.stress >= f.stressMax - 1 ? ' bad' : '') + '">' + f.stress + '/' + f.stressMax + '</span>', 'num st')
+        + td('Worst harm', f.worstHarm ? '<span class="' + (f.worstHarm[0] >= '3' ? 'bad' : '') + '">' + esc(f.worstHarm) + '</span>' + (f.harmCount > 1 ? ' <small class="dim">+' + (f.harmCount - 1) + '</small>' : '') : dash, 'hm')
+        + td('Healing', f.fresh ? dash : f.healing + '/4', 'num')
+        + td('Playbook xp', f.fresh || f.xp == null ? dash : f.xp + '/8', 'num')
+        + td('Load', f.fresh || f.load == null ? dash : '<span class="' + (f.load > f.loadLimit ? 'bad' : '') + '">' + f.load + '/' + f.loadLimit + '</span>', 'num')
+        + td('Struck keys', f.fresh ? dash : (f.struck ? '<span class="bad">' + f.struck + '</span>' : '0'), 'num')
+        + td('Updated', '<span title="' + esc(d.updatedAt || '') + '">' + esc(ago(d.updatedAt)) + '</span>', 'num up');
+      tr.onclick = function () { openCharacter(d.id); };
+      tr.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openCharacter(d.id); } };
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb); box.innerHTML = ''; box.appendChild(t);
+  }
   function renderRoster(docs) {
-    roster = docs || []; syncFilter();
+    roster = docs || []; syncFilter(); syncView(); syncBackups();
     var box = $('cards'), list = visibleDocs();
-    if (!list.length) { box.innerHTML = '<div class="empty">' + (roster.length ? 'None of these are yours yet. File a character from the last step and it is saved to your account.' : 'No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.') + '</div>'; A.drawLineup(); return; }
+    if (view === 'table') { renderTable(list); A.drawLineup(); return; }
+    if (!list.length) { box.innerHTML = emptyHtml(); A.drawLineup(); return; }
     box.innerHTML = '';
     list.forEach(function (d) {
       var card = el('div', 'card' + (A.me && d.owner === A.me ? ' mine' : '')); card.setAttribute('role', 'button'); card.tabIndex = 0; card.title = 'Open the sheet';
@@ -199,7 +259,54 @@
     A.drawLineup();
   }
   A._renderRoster = renderRoster;
+  try { Object.defineProperty(A, 'roster', { get: function () { return roster; } }); } catch (e) {}
   var rf = $('rosterFilter'); if (rf) rf.querySelectorAll('.chip').forEach(function (b) { b.onclick = function () { filter = b.dataset.f; filterChosen = true; renderRoster(roster); }; });
+  var rv = $('rosterView'); if (rv) rv.querySelectorAll('.chip').forEach(function (b) { b.onclick = function () { setRosterView(b.dataset.v); }; });
+
+  /* ---------- backups: every file in the current filter as one JSON; restore files each as a new document ---------- */
+  function syncBackups() {
+    var b = $('backups'), dl = $('dlAll'), rs = $('restoreBtn'); if (!b) return;
+    if (dl) dl.hidden = !downloads;
+    if (rs) rs.hidden = !db || A.canWrite === false;
+    b.hidden = (!dl || dl.hidden) && (!rs || rs.hidden);
+  }
+  function downloadAll() {
+    var list = visibleDocs(); if (!list.length) { toast('Nothing to download yet.', true); return; }
+    var data = { v: 1, exportedAt: nowIso(), characters: list.map(function (d) { return clone(d); }) };
+    saveFile('blades68-characters-' + data.exportedAt.slice(0, 10) + '.json', JSON.stringify(data, null, 2));
+  }
+  function validBackupDoc(c) { return !!c && typeof c === 'object' && !Array.isArray(c) && typeof c.playbook === 'string' && !!A.CT.byId[c.playbook] && !!c.sheet && typeof c.sheet === 'object' && !Array.isArray(c.sheet); }
+  function restoreDocs(data) {
+    if (!db) { toast('The files are not available in this view.', true); return Promise.resolve(0); }
+    if (!data || typeof data !== 'object' || !Array.isArray(data.characters)) { toast('That is not a Blades ’68 backup: no characters list.', true); return Promise.resolve(0); }
+    if (data.v !== 1) { toast('Unknown backup version ' + data.v + '. Expected 1.', true); return Promise.resolve(0); }
+    var good = [], bad = 0;
+    data.characters.forEach(function (c) { if (validBackupDoc(c)) good.push(c); else bad++; });
+    if (!good.length) { toast(bad ? 'Nothing restorable: ' + bad + ' invalid entr' + (bad === 1 ? 'y' : 'ies') + '.' : 'The backup is empty.', true); return Promise.resolve(0); }
+    var T = tracker(), used = {}, n = 0, seq = Promise.resolve();
+    good.forEach(function (c) {
+      seq = seq.then(function () {
+        var now = nowIso(), name = String(c.name || c.sheet.name || 'Unnamed');
+        var sheet = normaliseSheet(c.sheet, c); delete sheet.docId;
+        var base = A.slug(name) + '-' + Date.now().toString(36), id = base, k = 0; while (used[id] || cache[id]) id = base + '-' + (++k).toString(36); used[id] = true;
+        var play = null; if (c.play && typeof c.play === 'object' && !Array.isArray(c.play)) play = clone(c.play); else if (T && T.initialPlay) { try { play = T.initialPlay(clone(sheet), c.playbook) || {}; } catch (e) { play = {}; } } else play = {};
+        var spec = c.spec && typeof c.spec === 'object' && !Array.isArray(c.spec) ? clone(c.spec) : clone(A.BASE_FIGURE); if (!spec.props) spec.props = [];
+        var doc = { v: 2, name: name, alias: String(c.alias || sheet.alias || ''), code: String(c.code || spec.code || ''), playbook: c.playbook, playbookName: String(c.playbookName || pbName(c.playbook)), spec: spec, sheet: sheet, play: play, owner: A.me || null, createdAt: now, updatedAt: now };
+        return col().doc(id).set(doc).then(function () { cache[id] = doc; n++; });
+      });
+    });
+    return seq.then(function () { toast('Restored ' + n + ' character' + (n === 1 ? '' : 's') + (bad ? ' · skipped ' + bad + ' invalid' : '') + '.'); return n; })
+      .catch(function (e) { toast('Restore stopped after ' + n + ': ' + (e && e.message || e), true); return n; });
+  }
+  A.restoreDocs = restoreDocs;
+  function restoreFromFile(file) {
+    if (!file) return;
+    var rd = new FileReader();
+    rd.onerror = function () { toast('Could not read ' + (file.name || 'the file') + '.', true); };
+    rd.onload = function () { var data; try { data = JSON.parse(String(rd.result)); } catch (e) { toast('That file is not JSON.', true); return; } restoreDocs(data); };
+    rd.readAsText(file);
+  }
+  var rfi = $('restoreFile'); if (rfi) rfi.addEventListener('change', function () { var f = rfi.files && rfi.files[0]; try { restoreFromFile(f); } finally { rfi.value = ''; } });
 
   function docFields() {
     var p = A.pbOf() || {};
@@ -251,6 +358,8 @@
       case 'openSheet': if (S.sheet.docId) openCharacter(S.sheet.docId); break;
       case 'newChar': newCharacter(); break;
       case 'railBack': goBack(); break;
+      case 'dlAll': downloadAll(); break;
+      case 'restoreBtn': (function () { var i = $('restoreFile'); if (!db) { toast('The files are not available in this view.', true); return; } if (i) i.click(); })(); break;
       case 'dlSvg': saveFile(fileBase() + '.svg', A.figureSvg(900)); break;
       case 'dlMug': saveFile(fileBase() + '-mugshot.svg', A.mugshot().svg); break;
       case 'dlPng': (function () { var svg = S.view === 'mug' ? A.mugshot().svg : A.figureSvg(900); var m = svg.match(/viewBox="([^"]+)"/); var vb = m ? m[1].split(/\s+/).map(parseFloat) : [0, 0, 540, 900]; var H = 1600, W = Math.round(H * vb[2] / vb[3]); var img = new Image(); var url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })); img.onload = function () { try { var c = document.createElement('canvas'); c.width = W; c.height = H; var g = c.getContext('2d'); g.fillStyle = '#e8e2d4'; g.fillRect(0, 0, W, H); g.drawImage(img, 0, 0, W, H); c.toBlob(function (bl) { URL.revokeObjectURL(url); if (bl) saveFile(fileBase() + (S.view === 'mug' ? '-mugshot' : '') + '.png', bl); else toast('Could not rasterise the figure.', true); }, 'image/png'); } catch (e) { toast('Could not rasterise: ' + e.message, true); } }; img.onerror = function () { URL.revokeObjectURL(url); toast('Could not rasterise the figure.', true); }; img.src = url; })(); break;
@@ -281,17 +390,17 @@
     else { S.spec = clone(A.BASE_FIGURE); S.sheet = A.blankSheet(); }
     if (!S.spec.props) S.spec.props = [];
     $('kitVersion').textContent = 'figure kit v' + (K.version || '2') + ' · ' + A.O.hair.length + ' hairstyles · ' + A.O.prop.length + ' props · 16 steps';
-    setMode('create'); showStep(S.step); A.draw(); A.drawLineup(); whoami();
+    setMode('create'); showStep(S.step); A.draw(); A.drawLineup(); whoami(); syncView(); syncBackups();
     pendingOpen = hashOpen() || (saved && saved.mode === 'sheet' && saved.open ? saved.open : null);
     if (window.claude && window.claude.use) {
-      window.claude.use('downloads').then(function (d) { downloads = d; }).catch(function () {});
+      window.claude.use('downloads').then(function (d) { downloads = d || null; syncBackups(); }).catch(function () {});
       var who = window.claude.use('user').then(function (u) {
         if (!u) return;
         var pid = typeof u.id === 'function' ? Promise.resolve(u.id()) : Promise.resolve(null);
         return pid.then(function (id) { A.me = id || null; var cw = typeof u.can === 'function' ? Promise.resolve(u.can('data.write')) : Promise.resolve(null); return cw.then(function (c) { A.canWrite = c === true ? true : c === false ? false : null; }); });
       }).catch(function () {});
       who.then(function () { whoami(); syncFilter(); A.syncAll(); return window.claude.use('db'); }).then(function (d) {
-        db = d; dbSettled = true; whoami(); A.syncAll();
+        db = d; dbSettled = true; whoami(); A.syncAll(); syncBackups();
         if (!d) { $('rosterNote').textContent = 'The files are unavailable in this view'; if (pendingOpen) { toast('The files are not available here, so that sheet cannot open.', true); pendingOpen = null; } return; }
         $('rosterNote').textContent = A.me ? 'Yours are saved to your account · everyone with the link sees the shared files' : 'Everyone who opens this page sees the same files';
         col().orderBy('updatedAt', 'desc').limit(60).onSnapshot(function (snap) {
@@ -302,7 +411,7 @@
           if (pendingOpen) { var id = pendingOpen; pendingOpen = null; openCharacter(id); }
         }, function (e) { toast('Files offline: ' + (e && e.message || e), true); });
       }).catch(function () { dbSettled = true; });
-    } else { dbSettled = true; $('rosterNote').textContent = 'The files are unavailable in this view'; whoami(); if (pendingOpen) { pendingOpen = null; clearHash(); } }
+    } else { dbSettled = true; $('rosterNote').textContent = 'The files are unavailable in this view'; whoami(); syncBackups(); if (pendingOpen) { pendingOpen = null; clearHash(); } }
   }
   if (hot && hot.ready) hot.ready(function (data) { boot(data || {}); }); else boot((hot && hot.data) || {});
 })();

@@ -1,7 +1,8 @@
 /* tracker.js — the living character sheet. Owned by the tracker module. Sets window.B68Tracker.
    Everything on the printed playbook sheet becomes a live control; the whole `play` object is saved
    through api.save({ play }) on every change (immediately for clicks, debounced for typing).
-   Round 3: the four paranormal playbooks (ghost, vampire, time travelers) and a printable layout. */
+   Round 3: the four paranormal playbooks (ghost, vampire, time travelers) and a printable layout.
+   Round 4: dice at the table — action, resistance and fortune rolls from the Actions box, logged to play.log. */
 (function () {
   'use strict';
   var T = window.B68Tracker = {};
@@ -57,6 +58,37 @@
     return -1;
   }
   function numbered(names) { return names.map(function (n, i) { return (i + 1) + '. ' + n; }).join('\n'); }
+
+  /* ---------- dice (round 4) ----------
+     Standard Forged in the Dark reading: d6 per die, read the single highest; 6 success, 4–5 partial, 1–3 failure,
+     two or more 6s a critical. Zero dice: roll 2d6 and take the LOWEST (no critical possible).
+     T._rng is the only source of randomness so tests can replace it with a deterministic 0..1 function. */
+  T._rng = Math.random;
+  function d6() { var r = +T._rng(); if (!(r >= 0)) r = 0; return 1 + Math.min(5, Math.floor(r * 6)); }
+  function readDice(dice, low) {
+    var v = low ? Math.min.apply(null, dice) : Math.max.apply(null, dice), sixes = dice.filter(function (x) { return x === 6; }).length;
+    var crit = !low && sixes >= 2;
+    return { value: v, crit: crit, reading: crit ? 'critical' : v === 6 ? 'success' : v >= 4 ? 'partial' : 'failure' };
+  }
+  function rollDice(n) { n = Math.max(0, n | 0); var low = n === 0, k = low ? 2 : n, dice = []; for (var i = 0; i < k; i++) dice.push(d6()); var r = readDice(dice, low); r.dice = dice; r.low = low; r.n = n; return r; }
+  var OUTCOMES = {
+    controlled: { critical: 'You do it with increased effect.', success: 'You do it.', partial: 'You hesitate: withdraw and try a different approach, or do it with a minor consequence.', failure: 'You falter: press on by seizing a risky opportunity, or withdraw and try a different approach.' },
+    risky: { critical: 'You do it with increased effect.', success: 'You do it.', partial: 'You do it, but there’s a consequence: harm, a complication, reduced effect or a worse position.', failure: 'Things go badly: harm, a complication, a lost opportunity or a worse position.' },
+    desperate: { critical: 'You do it with increased effect.', success: 'You do it.', partial: 'You do it, but there’s a consequence: severe harm, a serious complication or reduced effect.', failure: 'It’s the worst outcome: severe harm, a serious complication or a lost opportunity.' }
+  };
+  var POSITIONS = ['controlled', 'risky', 'desperate'], EFFECTS = ['limited', 'standard', 'great'];
+  function attrRating(play, attr) { var g = (CT.ACTIONS || []).filter(function (x) { return x[0] === attr; })[0]; return g ? g[1].filter(function (a) { return (play.dots[a] || 0) > 0; }).length : 0; }
+  function resistDice(play, pb, attr) { return attrRating(play, attr) + (isVamp(pb) && play.darkMajesty === attr ? 1 : 0); }
+  /* what happens when the stress track overflows, by playbook: shown when a push would take it past the last box */
+  function overflowRule(pb) { return isHull(pb) ? 'the On Program rule applies' : isGhost(pb) ? 'you are fully drained: an echo irregularity' : isTT(pb) ? 'Instability is full: a temporal glitch' : 'the trauma rule applies'; }
+  var PIPS = { 1: [[18, 18]], 2: [[9, 9], [27, 27]], 3: [[9, 9], [18, 18], [27, 27]], 4: [[9, 9], [27, 9], [9, 27], [27, 27]], 5: [[9, 9], [27, 9], [18, 18], [9, 27], [27, 27]], 6: [[9, 9], [9, 18], [9, 27], [27, 9], [27, 18], [27, 27]] };
+  function dieSvg(v, cls, size) {
+    var pts = PIPS[v] || [], h = '';
+    for (var i = 0; i < pts.length; i++) h += '<circle cx="' + pts[i][0] + '" cy="' + pts[i][1] + '" r="3.4"/>';
+    return '<svg class="ds-die' + (cls ? ' ' + cls : '') + '" viewBox="0 0 36 36"' + (size ? ' width="' + size + '" height="' + size + '"' : '') + ' role="img" aria-label="die ' + v + '"><rect x="2" y="2" width="32" height="32" rx="6"/>' + h + '</svg>';
+  }
+  function diceSvgs(r) { return '<div class="ds-dice" aria-label="dice ' + r.dice.join(', ') + '">' + r.dice.map(function (d) { return dieSvg(d, (d === r.value ? 'hi' : '') + (d === 6 ? ' six' : '')); }).join('') + '</div>'; }
+  function capWord(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
 
   /* ---------- the play object ---------- */
   function blankPlay() {
@@ -156,7 +188,7 @@
   function commit() { if (!cur) return; render(); flushSave(); }
 
   /* ---------- small renderers ---------- */
-  function box(title, body, right, cls) { return '<section class="ds-box' + (cls ? ' ' + cls : '') + '"><div class="ds-band"><span>' + title + '</span>' + (right ? '<span class="ds-band-r">' + right + '</span>' : '') + '</div><div class="ds-body">' + body + '</div></section>'; }
+  function box(title, body, right, cls, after) { return '<section class="ds-box' + (cls ? ' ' + cls : '') + '"><div class="ds-band"><span>' + title + '</span>' + (right ? '<span class="ds-band-r">' + right + '</span>' : '') + '</div><div class="ds-body">' + body + '</div>' + (after || '') + '</section>'; }
   function pipRow(n, filled, act, extra, cls) { var h = '<span class="ds-pips">'; for (var i = 1; i <= n; i++) h += '<button type="button" class="' + (cls || 'ds-pip') + (i <= filled ? ' on' : '') + '" data-act="' + act + '" data-n="' + i + '"' + (extra || '') + ' aria-label="' + act + ' ' + i + '"></button>'; return h + '</span>'; }
   function clockSvg(size, filled, r, act, extra) {
     var cx = r, cy = r, R = r - 2, h = '', n = clamp(size, 2, 12);
@@ -367,11 +399,13 @@
     return box('XP', h);
   }
   function actions(play, pb) {
-    var vamp = isVamp(pb), tt = isTT(pb), h = '<div class="ds-attrs">';
+    var vamp = isVamp(pb), tt = isTT(pb), h = '<div class="ds-attrs">', roll = cur.ui.roll;
     (CT.ACTIONS || []).forEach(function (g) {
       var attr = g[0], key = attr.toLowerCase(), rating = g[1].filter(function (a) { return (play.dots[a] || 0) > 0; }).length, xp = play.xp[key] || 0;
-      var majesty = vamp && play.darkMajesty === attr;
-      h += '<div class="ds-attr"><div class="ds-attr-h"><span class="ds-attr-n">' + esc(attr) + '</span><span class="ds-rating mono">' + rating + '</span>' + (majesty ? '<span class="ds-dm">Dark Majesty</span>' : '') + '<span class="ds-xpmini">xp ' + pipRow(6, xp, 'xp', ' data-k="' + key + '"', 'ds-xbox') + '</span></div>';
+      var majesty = vamp && play.darkMajesty === attr, resisting = roll && roll.kind === 'resist' && roll.attr === attr;
+      h += '<div class="ds-attr"><div class="ds-attr-h"><span class="ds-attr-n">' + esc(attr) + '</span><span class="ds-rating mono">' + rating + '</span>' + (majesty ? '<span class="ds-dm">Dark Majesty</span>' : '') +
+        '<button type="button" class="chip sm ds-resist" data-act="resistopen" data-attr="' + esc(attr) + '" data-always="1" aria-expanded="' + !!resisting + '" title="Resistance roll: ' + resistDice(play, pb, attr) + 'd">Resist</button>' +
+        '<span class="ds-xpmini">xp ' + pipRow(6, xp, 'xp', ' data-k="' + key + '"', 'ds-xbox') + '</span></div>';
       if (xp >= 6) {
         if (cur.ui.advance === key) h += '<div class="ds-advance"><span class="ds-lab">Add a dot to</span>' + g[1].map(function (a) { var v = play.dots[a] || 0, max = dotMax(play, pb, a); return '<button type="button" class="chip sm" data-act="advdot" data-k="' + key + '" data-a="' + esc(a) + '"' + (v >= max ? ' disabled' : '') + '>' + esc(a) + ' ' + v + '→' + (v + 1) + '</button>'; }).join('') + '<button type="button" class="chip sm none" data-act="advcancel">Later</button></div>';
         else h += '<div class="ds-advance"><button type="button" class="btn sm primary" data-act="advance" data-k="' + key + '">Advance: +1 dot</button></div>';
@@ -379,14 +413,65 @@
       g[1].forEach(function (a) {
         var v = play.dots[a] || 0, pr = pb && pb.printed ? (pb.printed[a] || 0) : 0, pips = '', max = dotMax(play, pb, a), shown = vamp ? 5 : 4;
         for (var i = 1; i <= shown; i++) pips += '<button type="button" class="ds-pip' + (i <= v ? ' on' : '') + (i <= pr ? ' printed' : '') + (i === 4 ? ' mastery' : '') + (i === 5 ? ' majesty' : '') + '" data-act="dot" data-a="' + esc(a) + '" data-n="' + i + '"' + (i > max ? ' disabled' : '') + ' aria-label="' + esc(a) + ' ' + i + '"></button>';
-        h += '<div class="ds-act"><span class="ds-pips">' + pips + '</span><span class="ds-act-n">' + esc(a) + '</span></div>';
+        var open = roll && roll.kind === 'action' && roll.action === a;
+        h += '<div class="ds-act"><span class="ds-pips">' + pips + '</span><button type="button" class="ds-act-n ds-actbtn' + (open ? ' open' : '') + '" data-act="rollopen" data-a="' + esc(a) + '" data-always="1" aria-expanded="' + !!open + '" title="Roll ' + esc(a) + ' (' + v + 'd)">' + esc(a) + '</button></div>';
       });
       h += '</div>';
     });
     h += '</div>';
     if (tt) h += '<p class="hint">In play your actions may reach 4 (the limit of 3 was for creation only).</p>';
     else h += '<div class="row ds-tools"><label class="ds-check"><input type="checkbox" data-change="mastery"' + (play.mastery ? ' checked' : '') + '> Mastery (crew upgrade: ratings up to 4)</label>' + (vamp ? '<span class="ds-dim">Dark Majesty: one attribute up to 5.</span>' : '') + '</div>';
-    return box('Actions', h, '<span class="ds-dim">attribute = actions rated 1+</span>');
+    h += '<p class="hint ds-rollhint">Click an action to roll it; Resist rolls an attribute; Fortune rolls any number of dice.</p>';
+    return box('Actions', h, '<span class="ds-dim">attribute = actions rated 1+</span><button type="button" class="chip sm ds-fortune" data-act="fortopen" data-always="1" aria-expanded="' + !!(roll && roll.kind === 'fortune') + '">Fortune</button>', 'ds-actbox', rollPanel(play, pb));
+  }
+  /* ---------- the roll panel (round 4): one at a time, under the Actions box ---------- */
+  function noSave() { return readOnly() || !cur.api || typeof cur.api.save !== 'function'; }
+  function notSavedWhy() { return readOnly() ? 'read only' : 'no store'; }
+  function rollPanel(play, pb) {
+    var r = cur.ui.roll; if (!r) return '';
+    var sn = stressName(pb), sm = stressMax(pb), h = '', title, sub = '';
+    if (r.kind === 'action') {
+      var dots = play.dots[r.action] || 0, attr = attrOf(r.action) || '', total = dots + (r.push ? 1 : 0) + (r.assist ? 1 : 0) + (r.bargain ? 1 : 0);
+      var pushBlocked = !r.push && play.stress + 2 > sm;
+      title = 'Roll · <b>' + esc(r.action) + '</b>'; sub = esc(attr) + ' · ' + dots + ' dot' + (dots === 1 ? '' : 's');
+      function tog(k, label, note, dis) { return '<button type="button" class="ds-rtog" data-act="rollopt" data-k="' + k + '" data-always="1" aria-pressed="' + !!r[k] + '"' + (dis ? ' disabled' : '') + '><span class="ds-sq' + (r[k] ? ' on' : '') + '"></span><span><b>' + label + '</b> <span class="ds-dim">' + note + '</span></span></button>'; }
+      h += '<div class="ds-roll-opts">' + tog('push', 'Push yourself', '+1d · 2 ' + esc(sn), pushBlocked) + tog('assist', 'Assist', '+1d · a crewmate takes 1 ' + esc(sn)) + tog('bargain', 'Devil’s Bargain', '+1d · the GM names a price') + '</div>';
+      if (pushBlocked) h += '<p class="hint ds-warn">Pushing would take ' + esc(sn) + ' past ' + sm + ': ' + esc(overflowRule(pb)) + '. Mark it by hand if you push anyway.</p>';
+      h += '<div class="ds-roll-row"><span class="ds-lab">Position</span><span class="seg">' + POSITIONS.map(function (p) { return '<button type="button" class="chip sm" data-act="rollpos" data-v="' + p + '" data-always="1" aria-pressed="' + (r.position === p) + '">' + capWord(p) + '</button>'; }).join('') + '</span>' + (r.position === 'desperate' ? '<span class="ds-dim">marks 1 ' + esc(attr) + ' xp</span>' : '') + '</div>';
+      h += '<div class="ds-roll-row"><span class="ds-lab">Effect</span><span class="seg">' + EFFECTS.map(function (p) { return '<button type="button" class="chip sm" data-act="rolleff" data-v="' + p + '" data-always="1" aria-pressed="' + (r.effect === p) + '">' + capWord(p) + '</button>'; }).join('') + '</span><span class="ds-dim">for the fiction only</span></div>';
+      var parts = [dots + ' dot' + (dots === 1 ? '' : 's')]; if (r.push) parts.push('push'); if (r.assist) parts.push('assist'); if (r.bargain) parts.push('bargain');
+      h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + total + 'd</b><span class="ds-dim">' + esc(parts.join(' + ')) + (total === 0 ? ' · roll 2d, take the lowest' : '') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">Roll</button></div>';
+      if (r.result) h += rollResult(r, pb);
+    } else if (r.kind === 'resist') {
+      var n = resistDice(play, pb, r.attr), dm = isVamp(pb) && play.darkMajesty === r.attr;
+      title = 'Resist · <b>' + esc(r.attr) + '</b>'; sub = n + 'd · ' + attrRating(play, r.attr) + ' action' + (attrRating(play, r.attr) === 1 ? '' : 's') + ' rated 1+' + (dm ? ' + 1 Dark Majesty' : '');
+      h += '<p class="hint">Resist a consequence: ' + esc(sn) + ' cost is 6 minus the highest die; a critical clears 1 ' + esc(sn) + ' instead.' + (n === 0 ? ' No rating: roll 2d and take the lowest.' : '') + '</p>';
+      h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + n + 'd</b><span class="ds-dim">' + (n === 0 ? 'roll 2d, take the lowest' : esc(r.attr) + ' rating') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">' + (r.result ? 'Roll again' : 'Roll') + '</button></div>';
+      if (r.result) h += rollResult(r, pb);
+    } else {
+      title = 'Fortune roll'; sub = 'any number of dice';
+      h += '<div class="ds-roll-row"><span class="ds-lab">Dice</span><span class="seg">' + [0, 1, 2, 3, 4, 5, 6].map(function (i) { return '<button type="button" class="chip sm" data-act="fortn" data-n="' + i + '" data-always="1" aria-pressed="' + (r.n === i) + '">' + i + 'd</button>'; }).join('') + '</span></div>';
+      h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + r.n + 'd</b><span class="ds-dim">' + (r.n === 0 ? 'roll 2d, take the lowest' : 'read the highest die') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">' + (r.result ? 'Roll again' : 'Roll') + '</button></div>';
+      if (r.result) h += rollResult(r, pb);
+    }
+    return '<div class="ds-roll" tabindex="-1" role="region" aria-label="Roll"><div class="ds-roll-h"><span class="ds-roll-t">' + title + '</span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="rollclose" data-always="1" aria-label="Close the roll panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div></div>';
+  }
+  function rollResult(r, pb) {
+    var res = r.result, sn = stressName(pb), word = res.reading, h = '<div class="ds-roll-res">' + diceSvgs(res);
+    if (r.kind === 'resist') {
+      var cost = res.crit ? -1 : 6 - res.value;
+      h += '<div class="ds-roll-read"><span class="ds-roll-word ' + word + '">' + (res.crit ? 'Critical' : (res.low ? 'lowest ' : 'highest ') + res.value) + '</span><span class="ds-roll-why">' + (res.crit ? 'clear 1 ' + esc(sn) : cost === 0 ? 'no ' + esc(sn) + ' at all' : '6 − ' + res.value + ' = ' + cost + ' ' + esc(sn)) + '</span></div>';
+      if (res.applied) h += '<div class="ds-roll-applied"><span class="ds-lab">Applied</span>' + esc(res.applied.join(' · ')) + '</div>';
+      else h += '<div class="row ds-roll-apply"><button type="button" class="btn sm" data-act="resistapply"' + (noSave() ? ' disabled' : '') + '>Apply ' + (res.crit ? '−1' : '+' + cost) + ' ' + esc(sn) + '</button>' + (noSave() ? '<span class="ds-dim">not saved (' + notSavedWhy() + '): mark it by hand</span>' : '') + '</div>';
+    } else {
+      var why = r.kind === 'action' ? OUTCOMES[r.position][word] : word === 'critical' ? 'Exceptional result.' : word === 'success' ? 'Good result.' : word === 'partial' ? 'Mixed result.' : 'Bad result.';
+      h += '<div class="ds-roll-read"><span class="ds-roll-word ' + word + '">' + capWord(word) + '</span><span class="ds-roll-why">' + (r.kind === 'action' ? capWord(r.position) + ', ' + r.effect + ' effect · ' : '') + esc(why) + '</span></div>';
+      if (res.low) h += '<p class="hint">Zero dice: the lowest of two is read, so no critical is possible.' + (r.kind === 'action' ? ' A zero-dot action also lets you mark xp in an attribute of your choice.' : '') + '</p>';
+      if (res.applied && res.applied.length) h += '<div class="ds-roll-applied"><span class="ds-lab">' + (res.saved ? 'Applied' : 'Not saved (' + esc(res.savedWhy || '') + ')') + '</span>' + esc(res.applied.join(' · ')) + '</div>';
+      else if (!res.saved) h += '<div class="ds-roll-applied"><span class="ds-lab">Not saved (' + esc(res.savedWhy || '') + ')</span><span class="ds-dim">the roll was not logged</span></div>';
+      else h += '<div class="ds-roll-applied"><span class="ds-lab">Logged</span><span class="ds-dim">nothing else to mark</span></div>';
+    }
+    return h + '</div>';
   }
   function stacks(play, pb) {
     var hull = isHull(pb), tt = isTT(pb), canBank = !hull || play.abilities.indexOf('A Room of Your Own') >= 0;
@@ -483,7 +568,10 @@
   function notes(play) { return box('Notes', '<textarea class="ds-ta" data-path="notes" placeholder="Anything the sheet has no box for">' + esc(play.notes) + '</textarea>'); }
   function log(play) {
     var h = '<div class="row ds-addrow">' + input('', '', 'What happened this session?', 'ds-grow ds-newlog') + '<button type="button" class="btn sm" data-act="log">Log</button></div><ol class="ds-log">';
-    (play.log || []).forEach(function (e, i) { var d = ''; try { d = new Date(e.at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch (x) { d = String(e.at || '').slice(0, 10); } h += '<li><span class="mono ds-logd">' + esc(d) + '</span><span class="ds-logt">' + esc(e.text) + '</span><button type="button" class="ds-x" data-act="rmlog" data-i="' + i + '" title="Remove">×</button></li>'; });
+    (play.log || []).forEach(function (e, i) {
+      var d = '', roll = e.kind === 'roll'; try { d = new Date(e.at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch (x) { d = String(e.at || '').slice(0, 10); }
+      h += '<li' + (roll ? ' class="roll"' : '') + '><span class="mono ds-logd">' + esc(d) + '</span><span class="ds-logt' + (roll ? ' mono' : '') + '">' + (roll ? '<span class="ds-logdie" aria-hidden="true">' + dieSvg(6, '', 14) + '</span>' : '') + esc(e.text) + '</span><button type="button" class="ds-x" data-act="rmlog" data-i="' + i + '" title="Remove">×</button></li>';
+    });
     h += '</ol>' + (!(play.log || []).length ? '<p class="hint">Nothing logged yet.</p>' : '');
     return box('Session log', h, '<span class="ds-dim">newest first</span>', 'ds-logbox');
   }
@@ -504,6 +592,12 @@
     cur.root.className = 'dossier ds' + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '');
     if (readOnly()) cur.root.querySelectorAll('button, input, textarea, select').forEach(function (n) { if (!n.dataset.always) n.disabled = true; });
     restoreFocus(focus);
+    /* the roll panel: bring it into view when it opens, and keep keyboard focus inside the sheet so Esc closes it */
+    var panel = cur.ui.roll ? cur.root.querySelector('.ds-roll') : null;
+    if (panel) {
+      if (cur.ui.rollScroll) { cur.ui.rollScroll = false; try { panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {} }
+      var a = document.activeElement; if (!a || a === document.body || !cur.root.contains(a)) { try { panel.focus({ preventScroll: true }); } catch (e) {} }
+    }
   }
   function captureFocus() {
     if (!cur) return null; var a = document.activeElement; if (!a || !cur.root.contains(a)) return null;
@@ -661,9 +755,54 @@
     addclock: function (d) { var n = cur.root.querySelector('.ds-newclock'); cur.play.clocks.push({ name: n ? n.value.trim() : '', size: +d.n || 4, filled: 0 }); commit(); },
     memory: function (d) { var m = cur.play.memories[+d.i]; if (!m) return; m.filled = toggleTrack(m.filled, +d.n); commit(); },
     suspicion: function (d) { cur.play.suspicion = toggleTrack(cur.play.suspicion, +d.n); commit(); },
-    log: function () { var n = cur.root.querySelector('.ds-newlog'); var v = n && n.value.trim(); if (!v) { if (n) n.focus(); return; } cur.play.log.unshift({ at: new Date().toISOString(), text: v }); commit(); },
-    rmlog: function (d) { if (!window.confirm('Remove this log entry?')) return; cur.play.log.splice(+d.i, 1); commit(); }
+    log: function () { var n = cur.root.querySelector('.ds-newlog'); var v = n && n.value.trim(); if (!v) { if (n) n.focus(); return; } cur.play.log.unshift({ at: new Date().toISOString(), kind: 'note', text: v }); commit(); },
+    rmlog: function (d) { if (!window.confirm('Remove this log entry?')) return; cur.play.log.splice(+d.i, 1); commit(); },
+    /* ---- dice (round 4): the roll panel. Every control here carries data-always, so a read-only viewer can roll; nothing is written for them. ---- */
+    rollopen: function (d) { var r = cur.ui.roll; if (r && r.kind === 'action' && r.action === d.a) { cur.ui.roll = null; render(); return; } cur.ui.roll = { kind: 'action', action: d.a, push: false, assist: false, bargain: false, position: 'risky', effect: 'standard', result: null }; cur.ui.rollScroll = true; render(); },
+    resistopen: function (d) { var r = cur.ui.roll; if (r && r.kind === 'resist' && r.attr === d.attr) { cur.ui.roll = null; render(); return; } cur.ui.roll = { kind: 'resist', attr: d.attr, result: null }; cur.ui.rollScroll = true; render(); },
+    fortopen: function () { var r = cur.ui.roll; if (r && r.kind === 'fortune') { cur.ui.roll = null; render(); return; } cur.ui.roll = { kind: 'fortune', n: 2, result: null }; cur.ui.rollScroll = true; render(); },
+    rollclose: function () { cur.ui.roll = null; render(); },
+    rollopt: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action') return; if (d.k === 'push' && !r.push && cur.play.stress + 2 > stressMax(cur.pb)) return; r[d.k] = !r[d.k]; r.result = null; render(); },
+    rollpos: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || POSITIONS.indexOf(d.v) < 0) return; r.position = d.v; r.result = null; render(); },
+    rolleff: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || EFFECTS.indexOf(d.v) < 0) return; r.effect = d.v; r.result = null; render(); },
+    fortn: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'fortune') return; r.n = clamp(d.n, 0, 6); r.result = null; render(); },
+    roll: function () {
+      var r = cur.ui.roll, p = cur.play, pb = cur.pb; if (!r) return;
+      var ro = noSave(), res;
+      if (r.kind === 'action') {
+        var dots = p.dots[r.action] || 0, attr = attrOf(r.action) || '', key = attr.toLowerCase(), sm = stressMax(pb), sn = stressName(pb);
+        if (r.push && p.stress + 2 > sm) { r.push = false; note('Cannot push: ' + sn + ' would pass ' + sm); render(); return; }
+        res = rollDice(dots + (r.push ? 1 : 0) + (r.assist ? 1 : 0) + (r.bargain ? 1 : 0));
+        var flags = []; if (r.push) flags.push('push'); if (r.assist) flags.push('assist'); if (r.bargain) flags.push('bargain');
+        res.text = r.action + ' ' + res.n + 'd' + (flags.length ? ' (' + flags.join(', ') + ')' : res.low ? ' (2d take lowest)' : '') + ' · ' + r.position + ' · ' + res.dice.join(',') + ' → ' + res.reading;
+        /* consequences: listed first, written only when the sheet can be saved */
+        var plan = [];
+        if (r.push) plan.push({ text: '+2 ' + sn, run: function () { p.stress = clamp(p.stress + 2, 0, sm); return '+2 ' + sn + ' (' + p.stress + ' / ' + sm + ')'; } });
+        if (r.position === 'desperate' && key) plan.push({ text: '+1 ' + attr + ' xp', run: function () { if ((p.xp[key] || 0) >= 6) return attr + ' xp is full: advance first'; p.xp[key] = clamp((p.xp[key] || 0) + 1, 0, 6); return '+1 ' + attr + ' xp (' + p.xp[key] + ' / 6)' + (p.xp[key] >= 6 ? ' — advance ready' : ''); } });
+        res.saved = !ro; res.savedWhy = ro ? notSavedWhy() : '';
+        res.applied = plan.map(function (x) { return ro ? x.text : x.run(); });
+      } else if (r.kind === 'resist') {
+        res = rollDice(resistDice(p, pb, r.attr)); res.applied = null; res.saved = false;
+      } else {
+        res = rollDice(r.n);
+        res.text = 'Fortune ' + res.n + 'd' + (res.low ? ' (2d take lowest)' : '') + ' · ' + res.dice.join(',') + ' → ' + res.reading;
+        res.saved = !ro; res.savedWhy = ro ? notSavedWhy() : ''; res.applied = [];
+      }
+      r.result = res;
+      if (res.text && !ro) { p.log.unshift({ at: new Date().toISOString(), kind: 'roll', text: res.text }); commit(); } else render();
+    },
+    resistapply: function () {
+      var r = cur.ui.roll, p = cur.play, pb = cur.pb; if (!r || r.kind !== 'resist' || !r.result || r.result.applied) return;
+      var res = r.result, sn = stressName(pb), sm = stressMax(pb), cost = res.crit ? -1 : 6 - res.value, before = p.stress;
+      p.stress = clamp(before + cost, 0, sm);
+      var what = res.crit ? 'clear 1 ' + sn : cost + ' ' + sn;
+      res.applied = [(res.crit ? '−' + (before - p.stress) : '+' + (p.stress - before)) + ' ' + sn + ' (' + p.stress + ' / ' + sm + ')' + (cost > 0 && before + cost > sm ? ' — track full: ' + overflowRule(pb) : '')];
+      p.log.unshift({ at: new Date().toISOString(), kind: 'roll', text: 'Resist ' + r.attr + ' ' + res.n + 'd' + (res.low ? ' (2d take lowest)' : '') + ' · ' + res.dice.join(',') + ' → ' + (res.crit ? 'critical, ' : '') + what });
+      commit();
+    }
   };
+  /* roll-panel controls stay live for read-only viewers (they write nothing); everything else is gated */
+  var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1 };
   var CHANGES = {
     addkey: function (sel) { var v = sel.value; sel.value = ''; if (!v || cur.play.keys.length >= 4) return; var k = v === '*' ? { name: '', down: '', up: '' } : keyParts(v); k.hits = 0; k.deadlock = null; k.glitch = null; cur.play.keys.push(k); commit(); if (v === '*') { var last = cur.root.querySelectorAll('.ds-key-name'); if (last.length) last[last.length - 1].focus(); } },
     mastery: function (inp) { cur.play.mastery = !!inp.checked; commit(); },
@@ -674,7 +813,7 @@
   function onClick(e) {
     if (!cur) return; var t = e.target && e.target.closest ? e.target.closest('[data-act]') : null; if (!t || !cur.root.contains(t)) return;
     if (t.disabled) return; var act = t.getAttribute('data-act'); var fn = ACTIONS[act]; if (!fn) return;
-    if (readOnly() && act !== 'back' && act !== 'view' && act !== 'print') return;
+    if (readOnly() && !RO_OK[act]) return;
     var d = {}; for (var i = 0; i < t.attributes.length; i++) { var a = t.attributes[i]; if (a.name.indexOf('data-') === 0) d[a.name.slice(5)] = a.value; }
     try { fn(d, t); } catch (err) { setStatus('Something went wrong: ' + err.message, true); if (window.console) console.error(err); }
   }
@@ -687,6 +826,7 @@
     if (t.dataset && t.dataset.change && CHANGES[t.dataset.change]) { if (readOnly()) return; try { CHANGES[t.dataset.change](t); } catch (err) { setStatus('Something went wrong: ' + err.message, true); } return; }
     if (t.dataset && t.dataset.path && cur.timer) { clearTimeout(cur.timer); cur.timer = null; flushSave(); }
   }
+  function onDocKey(e) { if (!cur || !cur.ui.roll || (e.key !== 'Escape' && e.key !== 'Esc')) return; cur.ui.roll = null; render(); }
   function onKey(e) { if (!cur || e.key !== 'Enter') return; var t = e.target; if (!t || t.tagName !== 'INPUT' || !cur.root.contains(t)) return; var map = { 'ds-newlog': 'log', 'ds-newclock': 'addclock', 'ds-newcname': 'addcontact', 'ds-newcrole': 'addcontact', 'ds-newitem': 'additem', 'ds-newab': 'addability' }; var cls = Object.keys(map).filter(function (c) { return t.classList.contains(c); })[0]; if (!cls) return; e.preventDefault(); if (readOnly()) return; ACTIONS[map[cls]]({ n: 4 }, t); }
 
   /* the small figure at the top right of the printed sheet exists only while printing, so the big SVG is never in the DOM twice */
@@ -697,9 +837,10 @@
   T.open = function (doc, api) {
     var root = document.getElementById('dossier'); if (!root) return;
     if (cur) T.close();
-    doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '' }, timer: null, saving: 0 };
+    doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', roll: null, rollScroll: false }, timer: null, saving: 0 };
     cur.play = normalize(doc.play, doc.sheet, doc.playbook);
     root.addEventListener('click', onClick); root.addEventListener('input', onInput); root.addEventListener('change', onChange); root.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onDocKey);
     render();
     if (!doc.play && !readOnly()) flushSave(); /* a doc filed without a play object gets one */
   };
@@ -716,6 +857,7 @@
     if (c.timer) { clearTimeout(c.timer); c.timer = null; flushSave(); } /* typed text still waiting goes out before the sheet closes */
     cur = null; if (c.rmT) clearTimeout(c.rmT); if (c.statusT) clearTimeout(c.statusT);
     c.root.removeEventListener('click', onClick); c.root.removeEventListener('input', onInput); c.root.removeEventListener('change', onChange); c.root.removeEventListener('keydown', onKey);
+    document.removeEventListener('keydown', onDocKey);
     c.root.innerHTML = ''; c.root.className = 'dossier';
   };
   T.isOpen = function () { return !!cur; };
