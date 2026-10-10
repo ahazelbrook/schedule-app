@@ -7,6 +7,10 @@
    clock segments and append to the log; the session buttons, clock structure (add, remove, rename, resize, kind,
    hidden) and removing old log lines stay with the GM. Read-only viewers see everything disabled.
 
+   The schedule box (schedule.js, SCHEDULE.md) sits above the clocks: data-act "sched.*" goes to B68Schedule.acts, with
+   its own PERM. A player may change only schedule.avail.<me> and schedule.rsvp.<me>; anything else under schedule is
+   stripped from a player's delta, and schedule changes go out as the changed leaves only (null deletes a key).
+
    The crew panel is self-contained (a render function and its own action table, data-act "crew.*"), so a full crew
    sheet can replace it later through B68Campaign.setCrewPanel({ render(crew, ctx), acts, enter }). */
 (function () {
@@ -22,6 +26,7 @@
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
   function isoOrNull(v) { return typeof v === 'string' && v ? v : null; }
   function nowIso() { return new Date().toISOString(); }
+  function sched() { var S = window.B68Schedule; return S && typeof S.normalize === 'function' ? S : null; }
   function toggleTrack(cur, n) { return cur === n ? n - 1 : n; }
   var SIZES = [4, 6, 8, 10, 12], KINDS = ['danger', 'project', 'faction', 'other'], HARMS = ['weak', 'impaired', 'broken'];
   var LOG_MAX = 200, SAVE_DELAY = 400;
@@ -39,8 +44,29 @@
       crew: { name: '', type: '', lair: '', notes: '', tier: 0, hold: 'weak', rep: 0, turf: 0, heat: 0, wanted: 0, vault: 0, claims: [], cohorts: [], factions: [] },
       clocks: [],
       log: [],
+      schedule: { options: {}, avail: {}, next: null, rsvp: {}, cadence: null, quorum: 0 },
       updatedAt: null
     };
+  }
+  function normSchedule(s) { var Sm = sched(); return Sm ? Sm.normalize(s) : isObj(s) ? Object.assign(defaults().schedule, clone(s)) : defaults().schedule; }
+  /* schedule changes: the changed leaves, a removed key as null (a PATCH deletes it) */
+  function diffObj(a, b) {
+    if (same(a, b)) return undefined;
+    if (isObj(a) && isObj(b)) {
+      var out = {}, any = false;
+      Object.keys(b).forEach(function (k) { var d = diffObj(a[k], b[k]); if (d !== undefined) { out[k] = d; any = true; } });
+      Object.keys(a).forEach(function (k) { if (!Object.prototype.hasOwnProperty.call(b, k) && a[k] != null) { out[k] = null; any = true; } });
+      return any ? out : undefined;
+    }
+    return b == null ? (a == null ? undefined : null) : clone(b);
+  }
+  function mergeNull(t, p) { Object.keys(p).forEach(function (k) { var v = p[k]; if (v === null) delete t[k]; else if (isObj(v) && isObj(t[k])) mergeNull(t[k], v); else t[k] = clone(v); }); return t; }
+  /* a player may write only schedule.avail.<me> and schedule.rsvp.<me> */
+  function ownSchedule(patch, me) {
+    if (!isObj(patch) || !me) return undefined;
+    var out = {}, any = false;
+    ['avail', 'rsvp'].forEach(function (k) { if (isObj(patch[k]) && Object.prototype.hasOwnProperty.call(patch[k], me)) { out[k] = {}; out[k][me] = patch[k][me]; any = true; } });
+    return any ? out : undefined;
   }
   function normCrew(c) {
     var d = defaults().crew; c = isObj(c) ? c : {};
@@ -68,6 +94,7 @@
       return { id: id, name: str(c.name), size: size, filled: clamp(c.filled, 0, size), kind: KINDS.indexOf(c.kind) >= 0 ? c.kind : 'other', hidden: !!c.hidden };
     });
     out.log = (Array.isArray(d.log) ? d.log : []).filter(isObj).slice(0, LOG_MAX).map(function (e) { return { at: str(e.at), by: e.by == null ? null : str(e.by), text: str(e.text) }; });
+    out.schedule = normSchedule(d.schedule);
     out.updatedAt = isoOrNull(d.updatedAt);
     if (d.v != null) out.v = d.v;
     return out;
@@ -120,6 +147,11 @@
     var cd = {}, cany = false;
     Object.keys(d.crew).forEach(function (f) { if (!same(d.crew[f], b.crew[f])) { cd[f] = clone(d.crew[f]); cany = true; } });
     if (cany) { out.crew = cd; any = true; }
+    if (!same(d.schedule, b.schedule)) {
+      var sd = diffObj(b.schedule, d.schedule);
+      if (sd && !gm()) sd = ownSchedule(sd, cur.api && cur.api.me);   /* the page enforces the player rule (the artifact db has none) */
+      if (sd) { out.schedule = sd; any = true; }
+    }
     return any ? out : null;
   }
   function flushSave() {
@@ -140,7 +172,7 @@
     }
     cur.base = clone(cur.doc); cur.saving++; setStatus('Saving…');
     var raw = cur.raw = clone(cur.raw || {});   /* what the store holds once this lands, for the next delta before the echo */
-    Object.keys(patch).forEach(function (k) { if (k === 'crew') raw.crew = Object.assign(isObj(raw.crew) ? raw.crew : {}, clone(patch.crew)); else raw[k] = clone(patch[k]); });
+    Object.keys(patch).forEach(function (k) { if (k === 'crew') raw.crew = Object.assign(isObj(raw.crew) ? raw.crew : {}, clone(patch.crew)); else if (k === 'schedule') raw.schedule = mergeNull(isObj(raw.schedule) ? raw.schedule : {}, patch.schedule); else raw[k] = clone(patch[k]); });
     var c = cur, p;
     try { p = c.api.save(patch); } catch (e) { c.saving--; setStatus('Could not save: ' + (e && e.message || e), true); return; }
     Promise.resolve(p).then(function () { c.saving--; c.everSaved = true; if (cur === c && !c.saving && !c.timer) setStatus('Saved'); },
@@ -299,6 +331,25 @@
     if (!id) return 'Unowned';
     var n = cur && cur.names[id]; return n || id;
   }
+  /* the schedule: everyone the page knows (owners of filed characters, everyone who answered, me) and their names */
+  function schedPeople() {
+    var ids = [], seen = {}, docs = [], s = cur.doc.schedule, me = cur.api.me || null;
+    try { docs = (typeof cur.api.roster === 'function' ? cur.api.roster() : []) || []; } catch (e) { docs = []; }
+    function add(id) { if (id && !seen[id]) { seen[id] = 1; ids.push(id); } }
+    add(me); docs.forEach(function (d) { add(d.owner); }); Object.keys(s.avail).forEach(add); Object.keys(s.rsvp).forEach(add);
+    return ids;
+  }
+  function schedName(id) { var Sm = sched(); return (cur && cur.names[id]) || (Sm && Sm.names[id]) || (id && cur && id === cur.api.me ? 'You' : 'Someone'); }
+  function schedCtx() {
+    return {
+      sched: cur.doc.schedule, me: cur.api.me || null, isGM: gm(), ro: ro(), drafts: cur.drafts, people: schedPeople(), name: schedName,
+      commit: commit, render: render, confirm: function (m) { return window.confirm(m); }, logLine: logLine,
+      status: setStatus, focus: function (sel) { var n = cur && cur.root.querySelector(sel); if (n && !n.disabled) { try { n.focus(); } catch (e) {} } },
+      esc: esc, box: box, chip: chip
+    };
+  }
+  function scheduleBox(doc) { var Sm = sched(); if (!Sm || typeof Sm.box !== 'function') return ''; try { return Sm.box(doc, schedCtx()); } catch (e) { if (window.console) console.error(e); return box('Schedule', '<p class="hint bad">The schedule could not be drawn.</p>', '', 'tp-schedbox'); } }
+
   /* the status line without the stress bit already shown beside it */
   function rest(status, f) { var head = f.stressName + ' ' + f.stress + '/' + f.stressMax; status = String(status || ''); return status.indexOf(head) === 0 ? status.slice(head.length).replace(/^\s*·\s*/, '') : status; }
   function players() {
@@ -346,6 +397,7 @@
     try { docs = cur.api.roster() || []; } catch (e) { docs = []; }
     docs.forEach(function (d) { if (d.owner) ids[d.owner] = 1; });
     cur.doc.log.forEach(function (e) { if (e.by) ids[e.by] = 1; });
+    Object.keys(cur.doc.schedule.avail).concat(Object.keys(cur.doc.schedule.rsvp), cur.api.me ? [cur.api.me] : []).forEach(function (id) { if (id) ids[id] = 1; });
     var want = Object.keys(ids).filter(function (id) { return !cur.asked[id]; }); if (!want.length) return;
     want.forEach(function (id) { cur.asked[id] = 1; });
     var c = cur;
@@ -361,29 +413,33 @@
     if (!cur) return;
     if (!cur.loaded) { cur.root.className = 'tp'; cur.root.innerHTML = '<div class="tp-note">Reading the table…</div>'; return; }
     var focus = captureFocus(), doc = cur.doc, scroll = window.scrollY;
+    var gridEl = cur.root.querySelector('.sc-scroll'), gridX = gridEl ? gridEl.scrollLeft : 0;   /* the availability grid keeps its sideways scroll */
     var html = head(doc) + sessionBar(doc) +
       '<div class="tp-grid"><div class="tp-col tp-colA">' + crewPanel.render(doc.crew, crewCtx()) + '</div>' +
-      '<div class="tp-col tp-colB">' + clocks(doc) + players() + '</div></div>' + logBox(doc);
+      '<div class="tp-col tp-colB">' + scheduleBox(doc) + clocks(doc) + players() + '</div></div>' + logBox(doc);
     cur.root.innerHTML = html;
     cur.root.className = 'tp' + (ro() ? ' tp-ro' : '') + (gm() ? ' tp-gm' : ' tp-player');
     if (ro()) cur.root.querySelectorAll('button, input, textarea, select').forEach(function (n) { if (!n.dataset.always) n.disabled = true; });
     else if (!gm()) cur.root.querySelectorAll('[data-gm]').forEach(function (n) { n.disabled = true; n.title = n.title || 'Only the GM can change that'; });
     setStatus(idleStatus());
+    if (gridX) { var g2 = cur.root.querySelector('.sc-scroll'); if (g2) g2.scrollLeft = gridX; }
     restoreFocus(focus);
     if (Math.abs(window.scrollY - scroll) > 2) { try { window.scrollTo(0, scroll); } catch (e) {} }
     askNames();
   }
   function captureFocus() {
     if (!cur) return null; var a = document.activeElement; if (!a || !cur.root.contains(a)) return null;
-    if (a.tagName !== 'INPUT' && a.tagName !== 'TEXTAREA') return null;
+    if (a.tagName === 'BUTTON' && /^sched\./.test(a.dataset.act || '')) return { btn: '[data-act="' + a.dataset.act + '"]' + (a.dataset.o ? '[data-o="' + a.dataset.o + '"]' : '') + (a.dataset.n ? '[data-n="' + a.dataset.n + '"]' : '') };   /* a schedule cell or chip keeps the keyboard focus */
+    if (a.tagName !== 'INPUT' && a.tagName !== 'TEXTAREA' && a.tagName !== 'SELECT') return null;
     return { path: a.dataset.path || null, ui: a.dataset.ui || null, value: a.value, s: a.selectionStart, e: a.selectionEnd };
   }
   function restoreFocus(f) {
     if (!f || !cur) return; var n = null;
+    if (f.btn) { n = cur.root.querySelector(f.btn); if (n && !n.disabled) { try { n.focus({ preventScroll: true }); } catch (e) {} } return; }
     if (f.path) n = cur.root.querySelector('[data-path="' + f.path.replace(/"/g, '\\"') + '"]');
     else if (f.ui) n = cur.root.querySelector('[data-ui="' + f.ui.replace(/"/g, '\\"') + '"]');
     if (!n || n.disabled) return; if (n.value !== f.value) n.value = f.value;
-    try { n.focus({ preventScroll: true }); if (f.s != null) n.setSelectionRange(f.s, f.e); } catch (e) {}
+    try { n.focus({ preventScroll: true }); if (f.s != null && n.setSelectionRange) n.setSelectionRange(f.s, f.e); } catch (e) {}
   }
 
   /* ---------- actions (each says who may do it) ---------- */
@@ -394,6 +450,7 @@
     sessstart: function () {
       var n = cur.doc.session.number + 1, now = nowIso();
       cur.doc.session = { number: n, startedAt: now, endedAt: null };
+      var Sm = sched(); if (Sm && Sm.onSessionStart) Sm.onSessionStart(cur.doc.schedule, Date.now());   /* same write: next and the dates around now go */
       logLine('Session ' + n + ' started'); commit();
     },
     sessend: function () {
@@ -427,6 +484,7 @@
   function attrs(t) { var d = {}; for (var i = 0; i < t.attributes.length; i++) { var a = t.attributes[i]; if (a.name.indexOf('data-') === 0) d[a.name.slice(5)] = a.value; } return d; }
   function run(act, d, t) {
     try {
+      if (act.indexOf('sched.') === 0) { var Sm = sched(), nm = act.slice(6), sf = Sm && Sm.acts && Sm.acts[nm]; if (!sf || !allowed((Sm.PERM && Sm.PERM[nm]) || 'gm')) return; sf(d, schedCtx(), t); return; }
       if (act.indexOf('crew.') === 0) { var fn = crewPanel.acts && crewPanel.acts[act.slice(5)]; if (!fn || !allowed('any')) return; fn(d, cur.doc.crew, crewCtx(), t); return; }
       if (!ACTS[act] || !allowed(PERM[act] || 'gm')) return;
       ACTS[act](d, t);
@@ -446,16 +504,22 @@
     if (path === 'crew.name') { var h = cur.root.querySelector('#tp-crewname'); if (h) h.textContent = t.value || 'An unnamed crew'; }
     scheduleSave();
   }
-  function onChange(e) { if (!cur) return; var t = e.target; if (t && t.dataset && t.dataset.path && cur.timer) flushSave(); }
+  function onChange(e) {
+    if (!cur) return; var t = e.target; if (!t || !t.dataset) return;
+    var Sm = sched(), sa = t.dataset.ui && Sm && Sm.CHANGE ? Sm.CHANGE[t.dataset.ui] : null;
+    if (sa) { cur.drafts[t.dataset.ui] = t.value; if (!t.disabled) run('sched.' + sa, attrs(t), t); return; }
+    if (t.dataset.path && cur.timer) flushSave();
+  }
   function onKey(e) {
     if (!cur || e.key !== 'Enter') return; var t = e.target; if (!t || t.tagName !== 'INPUT' || !cur.root.contains(t)) return;
-    var ui = t.dataset.ui, act = ui ? ENTER[ui] || (crewPanel.enter && crewPanel.enter[ui] ? 'crew.' + crewPanel.enter[ui] : null) : null;
+    var Sm = sched(), ui = t.dataset.ui, act = ui ? ENTER[ui] || (crewPanel.enter && crewPanel.enter[ui] ? 'crew.' + crewPanel.enter[ui] : null) || (Sm && Sm.ENTER && Sm.ENTER[ui] ? 'sched.' + Sm.ENTER[ui] : null) : null;
     if (act) { e.preventDefault(); if (!t.disabled) run(act, attrs(t), t); return; }
     if (t.dataset.path && cur.timer) { e.preventDefault(); flushSave(); }
   }
 
   /* ---------- API ---------- */
-  /* api = { save(patch) -> Promise, replace(wholeDoc) -> Promise (GM only: log removals), me, canWrite, isGM, roster(), openCharacter(id), playStatus(doc), playFacts(doc), profiles(ids) | null } */
+  /* api = { save(patch) -> Promise, replace(wholeDoc) -> Promise (GM only: log removals), me, canWrite, isGM, roster(), openCharacter(id), playStatus(doc), playFacts(doc), profiles(ids) | null }
+     patch: changed top-level fields of session / clocks / log, the changed crew fields, and the changed schedule leaves */
   M.open = function (api) {
     var root = document.getElementById('table-page'); if (!root) return;
     if (cur) M.close();

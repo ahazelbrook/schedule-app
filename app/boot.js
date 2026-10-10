@@ -206,12 +206,29 @@
   }
   A.updateCharacter = updateCharacter;
 
-  /* ---------- the table: one shared campaign document, campaign/main (CAMPAIGN.md) ---------- */
-  var tableRef = null, tableUnsub = null, tableLatest = null, tableExists = false;
+  /* ---------- the table: one shared campaign document, campaign/main (CAMPAIGN.md) ----------
+     Subscribed once, as soon as the files settle, in every mode: the next-session card (schedule.js, SCHEDULE.md) at
+     the top of the creator, the sheet and the table reads it too. The table page only attaches to that subscription
+     while it is open; nothing is written on open. */
+  var campRef = null, campUnsub = null, campLive = false, campLoaded = false, tableOn = false, tableLatest = null, tableExists = false;
   var NO_TABLE = 'The table needs the shared files. Open this page where the files are available (the published artifact or the hosted site) to see the crew, the clocks and the players.';
   function campaignMod() { var Cm = window.B68Campaign; return Cm && typeof Cm.open === 'function' ? Cm : null; }
+  function schedMod() { var Sm = window.B68Schedule; return Sm && Sm.card ? Sm : null; }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function deepMerge(t, s) { for (var k in s) { if (!Object.prototype.hasOwnProperty.call(s, k)) continue; var v = s[k]; if (isObj(v) && isObj(t[k])) deepMerge(t[k], v); else t[k] = v; } return t; }
+  /* the schedule's PATCH, as the server applies it: objects merge, null deletes */
+  function mergeNull(t, s) { Object.keys(s).forEach(function (k) { var v = s[k]; if (v === null) delete t[k]; else if (isObj(v) && isObj(t[k])) mergeNull(t[k], v); else t[k] = clone(v); }); return t; }
+  /* the leaves of a schedule patch that differ from what is stored (a null for a key that is not there is dropped) */
+  function prune(p, before) {
+    var out = {}, any = false; before = isObj(before) ? before : {};
+    Object.keys(p).forEach(function (k) {
+      var v = p[k], ov = before[k];
+      if (v === null) { if (ov != null) { out[k] = null; any = true; } return; }
+      if (isObj(v) && isObj(ov)) { var sub = prune(v, ov); if (sub) { out[k] = sub; any = true; } return; }
+      if (!same(v, ov)) { out[k] = v; any = true; }
+    });
+    return any ? out : null;
+  }
   /* names for owners and log authors when the runtime has user.profiles: { id: name } */
   function profiles(ids) {
     if (!userCap || typeof userCap.profiles !== 'function') return Promise.resolve({});
@@ -222,37 +239,43 @@
       return out;
     }).catch(function () { return {}; });
   }
+  /* patch: changed top-level fields of session / crew / clocks / log (crew may be partial) and the changed schedule
+     leaves (null deletes). Only what differs from the latest known document is sent; the first write to a missing
+     document creates it whole. Used by the table page and by the next-session card (an RSVP from any mode). */
+  function campaignSave(patch) {
+    var ref = campRef;
+    if (!ref) return Promise.reject(new Error('The table is not available here.'));
+    var before = tableLatest || {}, out = {}, any = false;
+    ['session', 'crew', 'clocks', 'log', 'schedule'].forEach(function (k) {
+      if (!patch || !Object.prototype.hasOwnProperty.call(patch, k)) return;
+      var nv = patch[k], ov = before[k];
+      if (k === 'crew' && isObj(nv)) { var sub = {}, s2 = false; for (var f in nv) if (Object.prototype.hasOwnProperty.call(nv, f) && !same(nv[f], isObj(ov) ? ov[f] : undefined)) { sub[f] = nv[f]; s2 = true; } if (s2) { out.crew = sub; any = true; } return; }
+      if (k === 'schedule' && isObj(nv)) { var sp = prune(nv, ov); if (sp) { out.schedule = sp; any = true; } return; }
+      if (!same(nv, ov)) { out[k] = nv; any = true; }
+    });
+    if (!any) return Promise.resolve(false);
+    out.updatedAt = nowIso();
+    var rest = {}; Object.keys(out).forEach(function (k) { if (k !== 'schedule') rest[k] = out[k]; });
+    var merged = deepMerge(clone(before), clone(rest)), Cm = campaignMod(), write;
+    if (out.schedule) merged.schedule = mergeNull(isObj(merged.schedule) ? merged.schedule : {}, out.schedule);
+    if (!tableExists && typeof ref.set === 'function') {
+      var full = Cm && Cm.normalize ? Cm.normalize(merged) : merged; full.updatedAt = out.updatedAt;
+      tableExists = true; tableLatest = full; write = ref.set(clone(full));
+    } else {
+      tableLatest = merged;
+      write = Promise.resolve().then(function () { return ref.update(clone(out)); }).catch(function (e) {
+        if (/not.?found|no document|does not exist|missing/i.test(String(e && e.message || e)) && typeof ref.set === 'function') { var f2 = Cm && Cm.normalize ? Cm.normalize(merged) : merged; f2.updatedAt = out.updatedAt; return ref.set(clone(f2)); }
+        throw e;
+      });
+    }
+    return write.then(function () { return true; }, function (e) { toast('Could not save the table: ' + (e && e.message || e), true); throw e; });
+  }
   function tableApi(ref) {
     return {
-      /* patch: changed top-level fields of session / crew / clocks / log (crew may be partial). Only what differs from the
-         latest known document is sent; the first write to a missing document creates it whole. */
-      save: function (patch) {
-        if (tableRef !== ref) return Promise.reject(new Error('The table is closed.'));
-        var before = tableLatest || {}, out = {}, any = false;
-        ['session', 'crew', 'clocks', 'log'].forEach(function (k) {
-          if (!patch || !Object.prototype.hasOwnProperty.call(patch, k)) return;
-          var nv = patch[k], ov = before[k];
-          if (k === 'crew' && isObj(nv)) { var sub = {}, s2 = false; for (var f in nv) if (Object.prototype.hasOwnProperty.call(nv, f) && !same(nv[f], isObj(ov) ? ov[f] : undefined)) { sub[f] = nv[f]; s2 = true; } if (s2) { out.crew = sub; any = true; } return; }
-          if (!same(nv, ov)) { out[k] = nv; any = true; }
-        });
-        if (!any) return Promise.resolve(false);
-        out.updatedAt = nowIso();
-        var merged = deepMerge(clone(before), clone(out)), Cm = campaignMod(), write;
-        if (!tableExists && typeof ref.set === 'function') {
-          var full = Cm && Cm.normalize ? Cm.normalize(merged) : merged; full.updatedAt = out.updatedAt;
-          tableExists = true; tableLatest = full; write = ref.set(clone(full));
-        } else {
-          tableLatest = merged;
-          write = Promise.resolve().then(function () { return ref.update(clone(out)); }).catch(function (e) {
-            if (/not.?found|no document|does not exist|missing/i.test(String(e && e.message || e)) && typeof ref.set === 'function') { var f2 = Cm && Cm.normalize ? Cm.normalize(merged) : merged; f2.updatedAt = out.updatedAt; return ref.set(clone(f2)); }
-            throw e;
-          });
-        }
-        return write.then(function () { return true; }, function (e) { toast('Could not save the table: ' + (e && e.message || e), true); throw e; });
-      },
+      save: campaignSave,
       /* the whole document (PUT on the hosted API, GM only): removing a log line, which a patch can never do */
       replace: function (whole) {
-        if (tableRef !== ref) return Promise.reject(new Error('The table is closed.'));
+        if (campRef !== ref || !tableOn) return Promise.reject(new Error('The table is closed.'));
         var Cm = campaignMod(), full = Cm && Cm.normalize ? Cm.normalize(whole) : clone(whole); full.updatedAt = nowIso();
         tableExists = true; tableLatest = clone(full);
         return Promise.resolve().then(function () { return ref.set(clone(full)); }).then(function () { return true; }, function (e) { toast('Could not save the table: ' + (e && e.message || e), true); throw e; });
@@ -265,31 +288,54 @@
       profiles: userCap && typeof userCap.profiles === 'function' ? profiles : null
     };
   }
-  function startTable() {
-    var Cm = campaignMod(); if (!Cm) { toast('The table module is missing.', true); return; }
-    if (tableRef) return;
-    if (!dbSettled) { Cm.notice('Opening the table…'); return; }   /* boot calls again once the files settle */
-    var ref = null; try { ref = db ? db.collection('campaign').doc('main') : null; } catch (e) { ref = null; }
-    if (!ref) { Cm.notice(NO_TABLE, true); return; }
-    tableRef = ref; tableLatest = null; tableExists = false;
-    Cm.open(tableApi(ref));
+  /* the one campaign subscription, started when the files settle (and again by the table if it was not) */
+  function startCampaign() {
+    if (campRef || !db) return;
+    var ref = null; try { ref = db.collection('campaign').doc('main'); } catch (e) { ref = null; }
+    if (!ref) return;
+    campRef = ref; tableLatest = null; tableExists = false; campLoaded = false;
+    var Sm = schedMod(); if (Sm) { try { Sm.card.mount($('nextSession'), cardApi()); } catch (e) {} }
     function arrived(snap) {
-      if (tableRef !== ref) return;
+      if (campRef !== ref) return;
       var data = snap && snap.exists !== false && typeof snap.data === 'function' ? snap.data() : null;
       if (!isObj(data)) data = null;
-      tableExists = !!data; tableLatest = data ? clone(data) : null;
-      try { Cm.update(data ? clone(data) : null); } catch (e) { toast('The table could not render: ' + (e && e.message || e), true); }
+      tableExists = !!data; tableLatest = data ? clone(data) : null; campLoaded = true;
+      var Cm = campaignMod();
+      if (tableOn && Cm) { try { Cm.update(data ? clone(data) : null); } catch (e) { toast('The table could not render: ' + (e && e.message || e), true); } }
+      var S2 = schedMod(); if (S2) { try { S2.card.update(data ? clone(data) : null); } catch (e) { if (window.console) console.error(e); } }
     }
-    function failed(e) { if (tableRef !== ref) return; toast('The table is offline: ' + (e && e.message || e), true); }
-    if (typeof ref.onSnapshot === 'function') { try { tableUnsub = ref.onSnapshot(arrived, failed); } catch (e) { tableUnsub = null; } }
-    if (!tableUnsub) {
-      tableUnsub = function () {};
-      (typeof ref.get === 'function' ? Promise.resolve().then(function () { return ref.get(); }) : Promise.resolve(null)).then(arrived).catch(failed);
-    }
+    function failed(e) { if (campRef !== ref || !tableOn) return; toast('The table is offline: ' + (e && e.message || e), true); }
+    campaignArrived = arrived; campaignFailed = failed;
+    if (typeof ref.onSnapshot === 'function') { try { campUnsub = ref.onSnapshot(arrived, failed); campLive = !!campUnsub; } catch (e) { campUnsub = null; campLive = false; } }
+    if (!campLive) readCampaignOnce();
+  }
+  var campaignArrived = null, campaignFailed = null;
+  function readCampaignOnce() {
+    var ref = campRef; if (!ref || !campaignArrived) return;
+    (typeof ref.get === 'function' ? Promise.resolve().then(function () { return ref.get(); }) : Promise.resolve(null)).then(campaignArrived).catch(campaignFailed);
+  }
+  /* what the next-session card may do: answer for the viewer, save an .ics, name people */
+  function cardApi() {
+    return {
+      me: function () { return A.me; }, canWrite: function () { return A.canWrite; },
+      save: campaignSave, saveFile: function (name, text) { saveFile(name, text); },
+      people: function () { var ids = []; roster.forEach(function (d) { if (d.owner && ids.indexOf(d.owner) < 0) ids.push(d.owner); }); return ids; },
+      profiles: userCap && typeof userCap.profiles === 'function' ? profiles : null
+    };
+  }
+  function startTable() {
+    var Cm = campaignMod(); if (!Cm) { toast('The table module is missing.', true); return; }
+    if (tableOn) return;
+    if (!dbSettled) { Cm.notice('Opening the table…'); return; }   /* boot calls again once the files settle */
+    startCampaign();
+    if (!campRef) { Cm.notice(NO_TABLE, true); return; }
+    tableOn = true;
+    Cm.open(tableApi(campRef));
+    if (campLoaded) { try { Cm.update(tableLatest ? clone(tableLatest) : null); } catch (e) { toast('The table could not render: ' + (e && e.message || e), true); } }
+    if (!campLive) readCampaignOnce();   /* no live subscription: read the document afresh each time the table opens */
   }
   function closeTable() {
-    if (tableUnsub) { try { tableUnsub(); } catch (e) {} tableUnsub = null; }
-    tableRef = null; tableLatest = null; tableExists = false;
+    tableOn = false;
     var Cm = campaignMod(); if (Cm && Cm.close) { try { Cm.close(); } catch (e) {} }
   }
   function openTable() {
@@ -380,7 +426,8 @@
   }
   function renderRoster(docs) {
     roster = docs || []; syncFilter(); syncView(); syncBackups();
-    if (tableRef) { var Cm = campaignMod(); if (Cm && Cm.rosterChanged) { try { Cm.rosterChanged(); } catch (e) {} } }
+    if (tableOn) { var Cm = campaignMod(); if (Cm && Cm.rosterChanged) { try { Cm.rosterChanged(); } catch (e) {} } }
+    var Sm = schedMod(); if (Sm && campRef) { try { Sm.card.refresh(); } catch (e) {} }
     var box = $('cards'), list = visibleDocs();
     if (view === 'table') { renderTable(list); A.drawLineup(); return; }
     if (!list.length) { box.innerHTML = emptyHtml(); A.drawLineup(); return; }
@@ -492,6 +539,7 @@
   /* ---------- exports ---------- */
   var downloads = null;
   function fileBase() { return A.slug(S.sheet.name || S.spec.id || 'subject'); }
+  A.saveFile = function (name, data) { saveFile(name, data); };
   function saveFile(name, data) { if (!downloads) { toast('Saving files is not available in this view. Copy the sheet instead.', true); return; } downloads.save({ filename: name, data: data }).then(function () { toast('Saved ' + name); }).catch(function (e) { if (e && e.code === 'declined') return; toast('Could not save: ' + (e && e.message || e), true); }); }
   function copyText(txt, ok) { var p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(txt) : Promise.reject(); p.then(function () { toast(ok); }).catch(function () { var ta = document.createElement('textarea'); ta.value = txt; ta.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:160px;z-index:9;font:12px var(--font-mono)'; document.body.appendChild(ta); ta.focus(); ta.select(); toast('Copy blocked here. The text is selected; copy it, then click away.', true); ta.onblur = function () { ta.remove(); }; }); }
   function b64url(s) { return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
@@ -520,10 +568,15 @@
   function whoami() {
     var w = $('whoami'); if (!w) return;
     var rt = window.B68Runtime, hosted = !!(rt && rt.kind === 'cloudflare');
+    if (hosted && !whoami.listening && typeof window.addEventListener === 'function') { whoami.listening = true; window.addEventListener('b68:runtime', function () { whoami(); }); }
     if (A.me) {
       var who = hosted && rt.me ? (rt.me.name || rt.me.email || '') : '';
       w.textContent = who ? 'Signed in as ' + who + (rt.me.role === 'gm' ? ' · GM' : '') + ' · ' : 'Signed in · your files are saved to your account';
       if (who) { var out = document.createElement('a'); out.href = '/cdn-cgi/access/logout'; out.textContent = 'Sign out'; out.className = 'signout'; w.appendChild(out); }
+      /* hosted: the runtime's sync state (runtime/cf.js: B68Runtime.status, the b68:runtime event) */
+      var st = hosted && rt.status, n = st ? st.pending || 0 : 0, ch = n === 1 ? ' change' : ' changes';
+      var sync = !st ? '' : !st.online ? 'Offline' + (n ? ' · ' + n + ch + ' waiting' : '') : n ? 'Saving ' + n + ch + '…' : '';
+      if (sync) { var sy = document.createElement('span'); sy.className = 'sync'; sy.textContent = ' · ' + sync; w.appendChild(sy); }
       w.classList.remove('off');
     }
     else if (hosted) { w.textContent = 'Not signed in · '; var inl = document.createElement('a'); inl.href = location.pathname; inl.textContent = 'Sign in'; inl.className = 'signout'; w.appendChild(inl); w.classList.add('off'); }
@@ -562,6 +615,7 @@
       }).catch(function () {});
       who.then(function () { whoami(); syncFilter(); A.syncAll(); return window.claude.use('db'); }).then(function (d) {
         db = d; dbSettled = true; whoami(); A.syncAll(); syncBackups();
+        startCampaign();
         if (document.body.dataset.mode === 'table') startTable();
         if (!d) { $('rosterNote').textContent = 'The files are unavailable in this view'; if (pendingOpen) { toast('The files are not available here, so that sheet cannot open.', true); pendingOpen = null; } return; }
         $('rosterNote').textContent = A.me ? 'Yours are saved to your account · everyone with the link sees the shared files' : 'Everyone who opens this page sees the same files';

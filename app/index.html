@@ -2,6 +2,7 @@
 <link rel="stylesheet" href="tracker.css">
 <link rel="stylesheet" href="campaign.css">
 <link rel="stylesheet" href="crewsheet.css">
+<link rel="stylesheet" href="schedule.css">
 <style>
   /* Layout: a console character creator in the rulebook's clothes. The subject stands on the height chart
      (left, sticky) under a cover band in the chosen playbook's duotone; the steps run as rulebook side tabs
@@ -370,6 +371,7 @@
     <span class="label who off" id="whoami">Not signed in · filing unavailable</span>
   </header>
 
+  <section class="nx" id="nextSession" hidden aria-label="Next session"></section>
   <section class="dossier" id="dossier" hidden aria-label="Character sheet"></section>
   <section class="tp" id="table-page" hidden aria-label="The table"></section>
 
@@ -431,6 +433,7 @@
 <script src="zoom.js"></script>
 <script src="steps.js"></script>
 <script src="tracker.js"></script>
+<script src="schedule.js"></script>
 <script src="campaign.js"></script>
 <script src="crews.js"></script><script src="crewsheet.js"></script>
 <script src="runtime/cf.js"></script>
