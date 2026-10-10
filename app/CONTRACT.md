@@ -142,3 +142,23 @@ Forged in the Dark rules, assumed standard: action roll = d6 per action dot (0 d
 
 ## GM table and backups (filing)
 `A.roster` (array of docs, as subscribed today) stays the source. The "Your files" section gets a view toggle Cards / Table; the table has one row per character with name, playbook, stress label and value (pb.stressName), worst harm text, healing, playbook xp, load, struck keys count, updatedAt; clicking a row opens the sheet. Backup: "Download all (JSON)" writes `{ v: 1, exportedAt, characters: [docs] }` through the downloads capability (hidden when unavailable); "Restore (JSON)" takes a file input and files each character as a NEW doc (new id, owner = me, createdAt now) so nothing is overwritten.
+
+---
+
+# Round 5: end of session and downtime (tracker)
+
+Tracker owns `tracker.js`, `tracker.css`, `checks/session.js`. Both new boxes sit in column 2 after the XP box, are table tools (hidden in print), and open inline panels in the roll panel's style; only one panel (roll, downtime activity, end of session) is open at a time, and Esc closes it.
+
+## `play` additions (defaulted in `normalize`, so older documents open unchanged)
+- `session: 0` — the current session number. "Start session N+1" increments it, clears `trainedThisDowntime` (and any `keyHitSession` left over), and logs `{ at, kind: 'note', text: 'Session N started' }`.
+- `keyHitSession: { [keyIndex]: true }` — the sheet had no per-session flag, so this is new. The first key hit on a key in a session marks 1 playbook xp and sets the flag; another hit on the same key that session marks the pip but gives no xp ("once per session", read per key). Removing a key re-indexes the flags. End session sets it to `{}` (boot's delta falls back to a full set when an object loses keys).
+- `trainedThisDowntime: false` — Train sets it; Start session clears it.
+
+## End of session
+The panel lists the same end-of-session triggers as the XP box: `pb.xpTriggers` for the paranormal four; for the core playbooks "You <pb.xp, past tense>." and "You struggled with issues stemming from a deadlock." (Hull with all four memories complete: the first line becomes "You worked to free yourself from your owning faction and controller, or addressed a challenge with your humanity."). Each trigger 0 / 1 / 2. "Mark xp" adds the total to `xp.playbook` capped at 8 and says how many were lost; at 8 it points at the advance (Special abilities / Traits / Hull traits box; Time Traveler: Gain clarity). Hull may send the xp to one memory clock instead (up to its free segments; the rest spills into playbook xp). Then `keyHitSession = {}` and one note: `Session N ended: +X xp (trigger; trigger ×2)` plus ` · K to memory M` / ` · L lost to the cap`. One save. Read-only: the Session buttons are disabled.
+
+## Downtime (each activity: one `kind: 'roll'` log entry, one save; read-only viewers roll but nothing is written, "Not saved (read only)")
+- Indulge vice (core playbooks only, not Hull): dice = the lowest attribute rating (0 → 2d take lowest); clear Stress equal to the read die; more than current Stress → "Overindulge: tell the GM", Stress 0. Log `Indulge vice 1d · 4 → clear 4 Stress (5 → 1)` (`, overindulge` when it applies). Hull / Ghost / Vampire / Time Traveler get no button and a line naming Recharge −5 / Consume / Feed / Restabilize.
+- Recover (Hull: "Repair", treated by "a mechanic"): yourself with a chosen action's rating, or a healer with 0–4 dice. Ticks: 1–3 one, 4–5 two, 6 three, critical five. When the 4-segment clock fills, every harm steps down (level 3 → 2, 2 → 1, 1 cleared; level 4 is not healed by the clock) and the overflow stays on the clock (it can fill more than once). Vampire has no Recover: feeding is its only healing. Log `Recover (a healer) 2d · 5,3 → partial, +2 healing, clock filled: harm steps down (0 / 4)`.
+- Long-term project: one of `play.clocks` (complete ones are shown but cannot be chosen) or a new clock (name + 4 / 6 / 8, default 8, created on the roll), a chosen action, same tick table, capped at the clock size. Log `Long-term project “Name” (Hunt) 2d · 6,1 → success, +3 (3 / 6)` (`, complete` when full).
+- Train: +1 xp in Insight, Prowess, Resolve or playbook (a full track cannot be chosen), once per downtime (`trainedThisDowntime`). Log `Train Prowess · +1 xp (1 / 6)`.

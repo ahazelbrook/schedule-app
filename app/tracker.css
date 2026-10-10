@@ -314,6 +314,38 @@
 #dossier .ds-detail { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 #dossier .ds-ta.sm { min-height: 64px; }
 
+/* ---- session and downtime (round 5): boxes in column 2, panels in the roll panel's style ---- */
+#dossier .ds-sess { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; }
+#dossier .ds-sessno { display: inline-grid; justify-items: center; border: 2px solid var(--rule); padding: 4px 10px 3px; min-width: 64px; }
+#dossier .ds-sessno .ds-lab { margin: 0; }
+#dossier .ds-sessno b { font: 900 30px/1 var(--font-poster); letter-spacing: -.01em; }
+#dossier .ds-sessnote { flex: 1 1 140px; min-width: 0; }
+#dossier .ds-sessbtns { display: flex; gap: 6px; flex-wrap: wrap; }
+#dossier .ds-sessbtns .btn[aria-expanded="true"], #dossier .ds-dtbtns .btn[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); box-shadow: none; transform: translate(2px, 2px); }
+#dossier .ds-endtrig { display: grid; }
+#dossier .ds-endrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; padding: 6px 0; border-top: 1px solid var(--hair); font-size: 13px; line-height: 1.35; }
+#dossier .ds-endrow:first-child { border-top: 0; padding-top: 0; }
+#dossier .ds-endrow .seg .chip, #dossier .ds-endtarget .chip { min-width: 30px; }
+#dossier .ds-endtarget { flex: 1 1 200px; }
+#dossier .ds-roll-big b.ds-warn, #dossier .ds-roll-n b.ds-warn { font: 700 12px/1.2 var(--font-text); }
+#dossier .ds-dtbtns { gap: 8px; }
+#dossier .ds-actchips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+#dossier .ds-actchips .seg { flex-wrap: wrap; }
+#dossier .ds-actchips .chip.txt { text-transform: none; }
+#dossier .ds-roll-row.ds-actrow { align-items: flex-start; }
+#dossier .ds-roll-row.ds-actrow .ds-lab { padding-top: 6px; }
+#dossier .ds-dt .ds-newproj { flex: 1 1 160px; }
+#dossier .ds-dtclock { display: flex; gap: 10px; align-items: center; }
+#dossier .ds-dtclock .ds-seg { cursor: default; pointer-events: none; }
+#dossier .ds-over { margin: 0; justify-self: start; border: 2px solid var(--alarm); color: var(--alarm); padding: 5px 10px 4px; font: 900 13px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; transform: rotate(-1.5deg); }
+#dossier .ds-hitnow { font: 900 9px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--accent); border: 1.5px solid var(--accent); padding: 2px 4px; }
+#dossier .chip[disabled] { opacity: .4; cursor: default; }
+#dossier .chip[disabled]:hover { background: var(--card); color: var(--ink); border-color: var(--rule); }
+@media (max-width: 480px) {
+  #dossier .ds-endrow { grid-template-columns: minmax(0, 1fr); }
+  #dossier .ds-sessbtns { flex-basis: 100%; }
+}
+
 /* ---- print: the dossier alone, on white, letter or A4 portrait ---- */
 @media print {
   @page { size: auto; margin: 10mm 11mm; }
@@ -329,6 +361,8 @@
   #dossier .btn, #dossier .ds-x, #dossier .ds-nav, #dossier .ds-addrow, #dossier .ds-status, #dossier .ds-figbox, #dossier .ds-band .seg, #dossier .ds-tools, #dossier .ds-advance, #dossier .ds-check, #dossier .ds-glpick, #dossier .ds-sel { display: none !important; }
   /* dice: the roll panel and its buttons never print; action names print as plain text */
   #dossier .ds-roll, #dossier .ds-resist, #dossier .ds-fortune, #dossier .ds-rollhint { display: none !important; }
+  /* session and downtime are table tools: never printed */
+  #dossier .ds-sessbox, #dossier .ds-dtbox, #dossier .ds-hitnow { display: none !important; }
   #dossier .ds-actbtn { text-decoration: none; background: transparent !important; color: #000 !important; padding: 0; font-size: 10.5px; }
   #dossier .ds-log li.roll .ds-logt { font-size: 9px; }
   #dossier .ds-logdie .ds-die rect { stroke: #000; fill: #fff; }

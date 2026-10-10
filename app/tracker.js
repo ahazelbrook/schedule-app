@@ -324,7 +324,7 @@
       h += '<div class="ds-key' + (struck ? ' locked' : '') + (gl ? ' glitched' : '') + '">' +
         '<div class="ds-key-main">' + input('keys.' + i + '.name', k.name, 'Key', 'ds-key-name') +
           '<span class="ds-key-dl"><span class="ds-arrow">▼</span>' + input('keys.' + i + '.down', k.down, 'reversed', 'ds-key-word') + '<span class="ds-arrow">▲</span>' + input('keys.' + i + '.up', k.up, 'intensified', 'ds-key-word') + '</span></div>' +
-        '<div class="ds-key-side">' + pipRow(3, k.hits, 'keyhit', ' data-i="' + i + '"') + side +
+        '<div class="ds-key-side">' + pipRow(3, k.hits, 'keyhit', ' data-i="' + i + '"') + (play.keyHitSession && play.keyHitSession[i] ? '<span class="ds-hitnow" title="Hit this session: no more xp from this key until the session ends">hit this session</span>' : '') + side +
           '<button type="button" class="ds-x" data-act="rmkey" data-i="' + i + '" title="Remove key">×</button>' +
         '</div>';
       if (g && !gl && cur.ui.glitchPick === i) {
@@ -423,6 +423,122 @@
     if (full) h += tt ? '<div class="ds-advance"><button type="button" class="btn sm primary" data-act="clarity">Gain clarity</button><span class="hint ds-warn">Playbook track full: a new trait, a versatile ability, a temporal glitch and a mission detail.</span></div>'
       : '<p class="hint ds-warn">Playbook track full: pick a new special ability above (8 xp are spent when you do).</p>';
     return box('XP', h);
+  }
+  /* ---------- the Session box and the end-of-session panel (round 5) ---------- */
+  function session(play, pb) {
+    var n = play.session || 0, e = cur.ui.endSess, hits = Object.keys(play.keyHitSession || {}).length;
+    var h = '<div class="ds-sess"><span class="ds-sessno"><span class="ds-lab">Session</span><b class="mono">' + n + '</b></span>' +
+      '<span class="ds-dim ds-sessnote">' + (n ? 'Session ' + n + ' is the current session.' : 'No session started yet.') + (hits ? ' Keys hit this session: ' + hits + '.' : '') + (play.trainedThisDowntime ? ' Trained this downtime.' : '') + '</span>' +
+      '<span class="ds-sessbtns"><button type="button" class="btn sm" data-act="sessstart">Start session ' + (n + 1) + '</button>' +
+      '<button type="button" class="btn sm primary" data-act="endopen" aria-expanded="' + !!e + '">End session</button></span></div>';
+    return box('Session', h, '', 'ds-sessbox', endPanel(play, pb));
+  }
+  /* what "Mark xp" would do: playbook xp capped at 8; a Hull may send it to a memory clock first, the rest spills into playbook xp */
+  function endPlan(play, pb, e) {
+    var total = e.vals.reduce(function (t, v) { return t + v; }, 0), xp = play.xp.playbook || 0, toMem = 0, mem = null;
+    if (isHull(pb) && e.target !== 'xp' && play.memories[+e.target]) { mem = play.memories[+e.target]; toMem = Math.min(total, Math.max(0, (mem.size || 8) - (mem.filled || 0))); }
+    var rest = total - toMem, toXp = Math.min(rest, Math.max(0, 8 - xp));
+    return { total: total, toMem: toMem, mem: mem, memI: mem ? +e.target : null, toXp: toXp, lost: rest - toXp, xpAfter: xp + toXp };
+  }
+  function advancePointer(pb) { return isTT(pb) ? 'Gain clarity in the XP box.' : 'pick a new ' + (isHull(pb) ? 'trait in the Hull traits box' : isPara(pb) ? 'trait in the Traits box' : 'special ability in the Special abilities box') + ' (8 xp are spent when you do).'; }
+  function endPanel(play, pb) {
+    var e = cur.ui.endSess; if (!e) return '';
+    var trig = sessionTriggers(play, pb), n = play.session || 0, done = !!e.result, plan = endPlan(play, pb, e), hits = Object.keys(play.keyHitSession || {}).length;
+    var h = '<p class="hint">Mark 1 xp for each trigger that happened this session, 2 if you really smashed it.</p><div class="ds-endtrig">';
+    trig.forEach(function (t, i) {
+      h += '<div class="ds-endrow"><span>' + esc(t) + '</span><span class="seg">' + [0, 1, 2].map(function (v) { return '<button type="button" class="chip sm" data-act="endval" data-i="' + i + '" data-v="' + v + '" aria-pressed="' + (e.vals[i] === v) + '"' + (done ? ' disabled' : '') + ' aria-label="' + esc(trigLabel(t)) + ': ' + v + ' xp">' + v + '</button>'; }).join('') + '</span></div>';
+    });
+    h += '</div>';
+    if (isHull(pb)) {
+      h += '<div class="ds-roll-row"><span class="ds-lab">Mark on</span><span class="ds-actchips ds-endtarget"><button type="button" class="chip sm" data-act="endtarget" data-v="xp" aria-pressed="' + (e.target === 'xp') + '"' + (done ? ' disabled' : '') + '>Playbook xp</button>' +
+        play.memories.map(function (m, i) { var full = (m.filled || 0) >= (m.size || 8); return '<button type="button" class="chip sm" data-act="endtarget" data-v="' + i + '" aria-pressed="' + (String(e.target) === String(i)) + '"' + (done || full ? ' disabled' : '') + ' title="' + esc(m.name) + '">Memory ' + (i + 1) + ' · ' + (m.filled || 0) + '/' + (m.size || 8) + '</button>'; }).join('') + '</span></div>';
+      if (plan.mem) h += '<p class="hint">Memory ' + (plan.memI + 1) + ': ' + esc(plan.mem.name) + (plan.total > plan.toMem ? ' Only ' + plan.toMem + ' fit' + (plan.toMem === 1 ? 's' : '') + '; the rest goes to playbook xp.' : '') + '</p>';
+    }
+    var where = !plan.total ? 'nothing to mark' : plan.mem ? '+' + plan.toMem + ' memory ' + (plan.memI + 1) + (plan.toXp || plan.lost ? ' · playbook ' + (play.xp.playbook || 0) + ' → ' + plan.xpAfter + ' / 8' : '') : 'playbook ' + (play.xp.playbook || 0) + ' → ' + plan.xpAfter + ' / 8';
+    if (!done) {
+      h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">+' + plan.total + ' xp</b><span class="ds-dim">' + esc(where) + (plan.lost ? ' · <b class="ds-warn">' + plan.lost + ' lost to the cap</b>' : '') + '</span></span>' +
+        '<button type="button" class="btn sm primary" data-act="endmark">' + (plan.total ? 'Mark xp' : 'End without xp') + '</button></div>';
+      h += '<p class="hint">Ends session ' + n + ': logs it' + (hits ? ' and clears this session’s key hits (' + hits + ' key' + (hits === 1 ? '' : 's') + ')' : '') + '. Key hits and desperate rolls were marked as they happened.</p>';
+    } else {
+      h += '<div class="ds-roll-res"><div class="ds-roll-applied"><span class="ds-lab">Applied</span>' + esc(e.result.lines.join(' · ')) + '</div>';
+      if (e.result.lost) h += '<p class="hint ds-warn">' + e.result.lost + ' xp lost to the cap.</p>';
+      if (e.result.full) h += '<p class="hint ds-warn ds-endfull">Playbook track full: ' + esc(advancePointer(pb)) + '</p>';
+      if (e.result.memFull) h += '<p class="hint ds-warn">Memory complete: write it in the Human memories box. You also remember one key, a human contact, and a special ability from another playbook.</p>';
+      h += '<p class="hint">Downtime next: use the Downtime box, then Start session ' + (n + 1) + '.</p></div>';
+    }
+    return '<div class="ds-roll ds-endp" tabindex="-1" role="region" aria-label="End of session"><div class="ds-roll-h"><span class="ds-roll-t">End of session · <b>' + n + '</b></span><span class="ds-roll-sub">' + trig.length + ' triggers · 0, 1 or 2 xp each</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close the end of session panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div></div>';
+  }
+
+  /* ---------- the Downtime box (round 5): one activity panel at a time, in the roll panel's style ---------- */
+  var DT_NAMES = { indulge: 'Indulge vice', recover: 'Recover', project: 'Long-term project', train: 'Train' };
+  function dtName(kind, pb) { return kind === 'recover' && isHull(pb) ? 'Repair' : DT_NAMES[kind] || kind; }
+  function coreVice(pb) { return !!pb && !isHull(pb) && !isPara(pb); }
+  function downtime(play, pb) {
+    var t = cur.ui.dt, vamp = isVamp(pb), hull = isHull(pb);
+    function b(kind) { var open = !!(t && t.kind === kind); return '<button type="button" class="btn sm ds-dtbtn" data-act="dtopen" data-k="' + kind + '" data-always="1" aria-expanded="' + open + '">' + esc(dtName(kind, pb)) + '</button>'; }
+    var h = '<div class="row ds-dtbtns">' + (coreVice(pb) ? b('indulge') : '') + (vamp ? '' : b('recover')) + b('project') + b('train') + '</div>';
+    if (hull) h += '<p class="hint">No vice: <b>Recharge −5</b> in the Drain box clears Drain.</p>';
+    else if (isGhost(pb)) h += '<p class="hint">No vice: <b>Consume</b> in the Drain box clears half your Drain.</p>';
+    else if (vamp) h += '<p class="hint">Feeding is your vice and your only healing: <b>Feed</b> in the Stress box clears Stress by the highest die and marks 4 healing. You cannot Recover by being treated.</p>';
+    else if (isTT(pb)) h += '<p class="hint">No vice: <b>Restabilize</b> in the Instability box clears 5 and uses one ' + esc(pb.alluviumName || 'canister') + '.</p>';
+    h += '<p class="hint">Two activities per downtime is the usual pace. Each one rolls, marks the sheet and logs the roll.</p>';
+    return box('Downtime', h, play.trainedThisDowntime ? '<span class="ds-dim">trained this downtime</span>' : '', 'ds-dtbox', dtPanel(play, pb));
+  }
+  function actionChips(play, sel) {
+    return '<div class="ds-actchips">' + (CT.ACTIONS || []).map(function (g) { return '<span class="seg">' + g[1].map(function (a) { return '<button type="button" class="chip sm" data-act="dtopt" data-k="action" data-v="' + esc(a) + '" data-always="1" aria-pressed="' + (sel === a) + '">' + esc(a) + ' ' + (play.dots[a] || 0) + '</button>'; }).join('') + '</span>'; }).join('') + '</div>';
+  }
+  function diceGo(n, note, label, again) { return '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + n + 'd</b><span class="ds-dim">' + note + (n === 0 ? ' · roll 2d, take the lowest' : '') + '</span></span><button type="button" class="btn sm primary" data-act="dtroll" data-always="1">' + (again ? 'Roll again' : label || 'Roll') + '</button></div>'; }
+  function dtDice(play, pb, t) {
+    if (t.kind === 'indulge') return lowestAttr(play).n;
+    if (t.kind === 'recover' && t.who === 'healer') return t.n;
+    return play.dots[t.action] || 0;
+  }
+  function dtPanel(play, pb) {
+    var t = cur.ui.dt; if (!t) return '';
+    var sn = stressName(pb), h = '', sub = '', ro = noSave();
+    if (t.kind === 'indulge') {
+      var lo = lowestAttr(play);
+      sub = 'lowest attribute · ' + esc(lo.attr) + ' ' + lo.n;
+      h += '<p class="hint">Roll your lowest attribute rating and clear ' + esc(sn) + ' equal to the highest die. Clearing more than you have is overindulging.' + (play.vice ? ' Vice: <b>' + esc(play.vice) + '</b>' + (play.purveyor ? ' · ' + esc(play.purveyor) : '') + '.' : '') + '</p>';
+      h += diceGo(lo.n, esc(lo.attr) + ' rating · ' + esc(sn) + ' ' + play.stress + ' / ' + stressMax(pb), 'Roll', !!t.result);
+    } else if (t.kind === 'recover') {
+      var cn = isHull(pb) ? 'Repair' : 'Healing';
+      sub = cn.toLowerCase() + ' clock ' + play.healing + ' / 4';
+      h += '<div class="ds-roll-row"><span class="ds-lab">Treated by</span><span class="seg"><button type="button" class="chip sm" data-act="dtopt" data-k="who" data-v="self" data-always="1" aria-pressed="' + (t.who === 'self') + '">Yourself</button><button type="button" class="chip sm" data-act="dtopt" data-k="who" data-v="healer" data-always="1" aria-pressed="' + (t.who === 'healer') + '">' + (isHull(pb) ? 'A mechanic' : 'A healer') + '</button></span></div>';
+      if (t.who === 'self') h += '<div class="ds-roll-row ds-actrow"><span class="ds-lab">Action</span>' + actionChips(play, t.action) + '</div>';
+      else h += '<div class="ds-roll-row"><span class="ds-lab">Dice</span><span class="seg">' + [0, 1, 2, 3, 4].map(function (i) { return '<button type="button" class="chip sm" data-act="dtopt" data-k="n" data-v="' + i + '" data-always="1" aria-pressed="' + (t.n === i) + '">' + i + 'd</button>'; }).join('') + '</span><span class="ds-dim">their quality or rating</span></div>';
+      h += '<div class="ds-dtclock">' + clockSvg(4, play.healing, 18, 'none') + '<p class="hint">Ticks: 1–3 one, 4–5 two, 6 three, critical five. A full clock steps every harm down a level (3 → 2, 2 → 1, 1 cleared) and extra ticks carry over.' + (harmCount(play.harm) ? '' : ' You have no harm to heal right now.') + '</p></div>';
+      h += diceGo(dtDice(play, pb, t), t.who === 'self' ? esc(t.action) + ' rating' : 'the healer’s dice', 'Roll', !!t.result);
+    } else if (t.kind === 'project') {
+      sub = play.clocks.length + ' clock' + (play.clocks.length === 1 ? '' : 's');
+      h += '<div class="ds-roll-row"><span class="ds-lab">Clock</span><span class="ds-actchips">' + play.clocks.map(function (c, i) { var full = c.filled >= c.size; return '<button type="button" class="chip sm txt" data-act="dtopt" data-k="clock" data-v="' + i + '" data-always="1" aria-pressed="' + (String(t.clock) === String(i)) + '"' + (full ? ' disabled title="Complete"' : '') + '>' + esc(c.name || 'Clock ' + (i + 1)) + ' · ' + c.filled + '/' + c.size + '</button>'; }).join('') +
+        '<button type="button" class="chip sm none" data-act="dtopt" data-k="clock" data-v="new" data-always="1" aria-pressed="' + (t.clock === 'new') + '">New clock</button></span></div>';
+      if (t.clock === 'new') h += '<div class="ds-roll-row"><span class="ds-lab">New</span><input type="text" class="ds-in ds-grow ds-newproj" data-ui="dtname" data-always="1" value="' + esc(t.newName || '') + '" placeholder="What is the project?"><span class="seg">' + [4, 6, 8].map(function (n) { return '<button type="button" class="chip sm" data-act="dtopt" data-k="size" data-v="' + n + '" data-always="1" aria-pressed="' + (t.size === n) + '">' + n + '</button>'; }).join('') + '</span></div>';
+      h += '<div class="ds-roll-row ds-actrow"><span class="ds-lab">Action</span>' + actionChips(play, t.action) + '</div>';
+      h += '<p class="hint">Ticks: 1–3 one, 4–5 two, 6 three, critical five.</p>';
+      h += diceGo(dtDice(play, pb, t), esc(t.action) + ' rating', 'Roll', !!t.result);
+    } else {
+      sub = 'once per downtime';
+      var tracks = ATTRS.map(function (a) { return [a.toLowerCase(), a, 6]; }).concat([['playbook', 'Playbook', 8]]);
+      h += '<p class="hint">Mark 1 xp in an attribute or your playbook. Once per downtime; Start session clears it.</p>';
+      h += '<div class="ds-roll-row"><span class="ds-lab">Track</span><span class="seg">' + tracks.map(function (x) { var v = play.xp[x[0]] || 0, full = v >= x[2]; return '<button type="button" class="chip sm" data-act="dtopt" data-k="track" data-v="' + x[0] + '" data-always="1" aria-pressed="' + (t.track === x[0]) + '"' + (full ? ' disabled title="Track full: advance first"' : '') + '>' + esc(x[1]) + ' ' + v + '/' + x[2] + '</button>'; }).join('') + '</span></div>';
+      var blocked = play.trainedThisDowntime && !(t.result && t.result.saved);
+      var sel = tracks.filter(function (x) { return x[0] === t.track; })[0], selFull = !sel || (play.xp[sel[0]] || 0) >= sel[2];
+      if (!t.result) h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">+1 xp</b><span class="ds-dim">' + (sel ? esc(sel[1]) + ' ' + (play.xp[sel[0]] || 0) + ' → ' + Math.min(sel[2], (play.xp[sel[0]] || 0) + 1) + ' / ' + sel[2] : 'choose a track') + '</span></span><button type="button" class="btn sm primary" data-act="dttrain"' + (blocked || ro || selFull ? ' disabled' : '') + '>Mark 1 xp</button></div>';
+      if (blocked) h += '<p class="hint ds-warn ds-trained">Already trained this downtime: Start session ' + ((play.session || 0) + 1) + ' clears it.</p>';
+      if (ro && !t.result) h += '<p class="hint">Not saved (' + notSavedWhy() + '): training writes nothing here.</p>';
+    }
+    if (t.result && t.kind !== 'train') h += dtResult(t, pb);
+    else if (t.result) h += '<div class="ds-roll-res"><div class="ds-roll-applied"><span class="ds-lab">Applied</span>' + esc(t.result.applied.join(' · ')) + '</div></div>';
+    return '<div class="ds-roll ds-dt" tabindex="-1" role="region" aria-label="Downtime"><div class="ds-roll-h"><span class="ds-roll-t">Downtime · <b>' + esc(dtName(t.kind, pb)) + '</b></span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close the downtime panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div></div>';
+  }
+  function dtResult(t, pb) {
+    var res = t.result, h = '<div class="ds-roll-res">' + diceSvgs(res);
+    h += '<div class="ds-roll-read"><span class="ds-roll-word ' + (res.cls || res.reading) + '">' + esc(res.big) + '</span><span class="ds-roll-why">' + esc(res.why) + '</span></div>';
+    if (res.over) h += '<p class="ds-over">Overindulge: tell the GM.</p>';
+    if (res.low) h += '<p class="hint">Zero dice: the lowest of two is read, so no critical is possible.</p>';
+    h += '<div class="ds-roll-applied"><span class="ds-lab">' + (res.saved ? 'Applied' : 'Not saved (' + esc(res.savedWhy || '') + ')') + '</span>' + esc(res.applied.join(' · ')) + '</div>';
+    return h + '</div>';
   }
   function actions(play, pb) {
     var vamp = isVamp(pb), tt = isTT(pb), h = '<div class="ds-attrs">', roll = cur.ui.roll;
@@ -610,7 +726,7 @@
     var html = header(doc, play, pb, sheet) +
       '<div class="ds-grid">' +
         '<div class="ds-col ds-c1">' + figure(doc, pb) + stress(play, pb) + keys(play, pb) + strictures(play, pb) + harm(play, pb) + cohort(play, pb) + vice(play, pb) + '</div>' +
-        '<div class="ds-col ds-c2">' + abilities(play, pb, sheet) + contacts(play, pb) + triggers(play, pb) + mission(play, pb) + memories(play, pb) + '</div>' +
+        '<div class="ds-col ds-c2">' + abilities(play, pb, sheet) + contacts(play, pb) + triggers(play, pb) + session(play, pb) + downtime(play, pb) + mission(play, pb) + memories(play, pb) + '</div>' +
         '<div class="ds-col ds-c3">' + stacks(play, pb) + actions(play, pb) + items(play, pb) + '</div>' +
         '<div class="ds-col ds-c4">' + clocks(play, pb) + notes(play) + log(play) + '</div>' +
       '</div>';
@@ -619,7 +735,7 @@
     if (readOnly()) cur.root.querySelectorAll('button, input, textarea, select').forEach(function (n) { if (!n.dataset.always) n.disabled = true; });
     restoreFocus(focus);
     /* the roll panel: bring it into view when it opens, and keep keyboard focus inside the sheet so Esc closes it */
-    var panel = cur.ui.roll ? cur.root.querySelector('.ds-roll') : null;
+    var panel = cur.ui.roll || cur.ui.dt || cur.ui.endSess ? cur.root.querySelector('.ds-roll') : null;
     if (panel) {
       if (cur.ui.rollScroll) { cur.ui.rollScroll = false; try { panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {} }
       var a = document.activeElement; if (!a || a === document.body || !cur.root.contains(a)) { try { panel.focus({ preventScroll: true }); } catch (e) {} }
@@ -684,7 +800,19 @@
     /* time traveler: spend one canister / vial of alluvium, clear 5 Instability */
     restabilize: function () { if (!(cur.play.alluvium > 0)) { note('No alluvium left'); return; } cur.play.alluvium--; cur.play.stress = Math.max(0, cur.play.stress - 5); note('Restabilized: one ' + ((cur.pb && cur.pb.alluviumName) || 'canister') + ' used'); commit(); },
     alluvium: function (d) { cur.play.alluvium = clamp(toggleTrack(cur.play.alluvium, +d.n), 0, alluvMax(cur.pb)); commit(); },
-    keyhit: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; var n = +d.n; if (n > (k.hits || 0)) { k.hits = n; if (cur.play.xp.playbook < 8) { cur.play.xp.playbook++; note('Key hit: +1 playbook xp'); } } else k.hits = n - 1; commit(); },
+    /* once per session per key: the first hit this session marks 1 playbook xp and sets play.keyHitSession[i]; End session clears it */
+    keyhit: function (d) {
+      var p = cur.play, i = +d.i, k = p.keys[i]; if (!k) return; var n = +d.n, hs = p.keyHitSession || {};
+      if (n > (k.hits || 0)) {
+        k.hits = n;
+        if (hs[i]) note('Already hit this session: no more xp from this key until the session ends');
+        else {
+          var nh = Object.assign({}, hs); nh[i] = true; p.keyHitSession = nh;
+          if (p.xp.playbook < 8) { p.xp = Object.assign({}, p.xp, { playbook: p.xp.playbook + 1 }); note('Key hit: +1 playbook xp'); } else note('Key hit: playbook xp is full');
+        }
+      } else k.hits = n - 1;
+      commit();
+    },
     deadlock: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; var word = d.dir === 'up' ? k.up : k.down; if (!window.confirm('Deadlock ' + (k.name || 'this key') + ' as ' + (d.dir === 'up' ? '▲ ' : '▼ ') + (word || d.dir) + '? Hard mode: this is permanent.')) return; k.deadlock = d.dir; commit(); },
     undeadlock: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; if (!window.confirm('GM override: clear the permanent deadlock on ' + (k.name || 'this key') + '?')) return; k.deadlock = null; commit(); },
     /* ghost / time traveler: strike a key out with a named irregularity or glitch */
@@ -699,7 +827,9 @@
       commit();
     },
     unglitch: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; if (!window.confirm('GM override: clear the permanent ' + glitchName(cur.pb).toLowerCase() + ' “' + k.glitch + '” on ' + (k.name || 'this key') + '?')) return; k.glitch = null; commit(); },
-    rmkey: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; var struck = k.deadlock || k.glitch; if (struck && !window.confirm('This key is struck out. Remove it anyway?')) return; if (!struck && (k.name || k.hits) && !window.confirm('Remove the key ' + (k.name || '') + '?')) return; cur.play.keys.splice(+d.i, 1); if (cur.ui.glitchPick != null) cur.ui.glitchPick = null; commit(); },
+    rmkey: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; var struck = k.deadlock || k.glitch; if (struck && !window.confirm('This key is struck out. Remove it anyway?')) return; if (!struck && (k.name || k.hits) && !window.confirm('Remove the key ' + (k.name || '') + '?')) return; cur.play.keys.splice(+d.i, 1); if (cur.ui.glitchPick != null) cur.ui.glitchPick = null;
+      var hs = cur.play.keyHitSession || {}, nh = {}, ri = +d.i; Object.keys(hs).forEach(function (x) { var j = +x; if (j < ri) nh[j] = hs[x]; else if (j > ri) nh[j - 1] = hs[x]; }); cur.play.keyHitSession = nh; /* indices follow the keys */
+      commit(); },
     robo: function (d) { var a = cur.play.roboticDeadlocks, i = a.indexOf(d.v); if (i >= 0) { if (!window.confirm('GM override: clear the robotic deadlock ' + d.v + '?')) return; a.splice(i, 1); } else { if (!window.confirm('Mark the robotic deadlock ' + d.v + '? Hard mode: this is permanent.')) return; a.push(d.v); } commit(); },
     heal: function (d) { cur.play.healing = toggleTrack(cur.play.healing, +d.n); commit(); },
     armor: function (d) { cur.play.armor[d.k] = !cur.play.armor[d.k]; commit(); },
@@ -784,9 +914,9 @@
     log: function () { var n = cur.root.querySelector('.ds-newlog'); var v = n && n.value.trim(); if (!v) { if (n) n.focus(); return; } cur.play.log.unshift({ at: new Date().toISOString(), kind: 'note', text: v }); commit(); },
     rmlog: function (d) { if (!window.confirm('Remove this log entry?')) return; cur.play.log.splice(+d.i, 1); commit(); },
     /* ---- dice (round 4): the roll panel. Every control here carries data-always, so a read-only viewer can roll; nothing is written for them. ---- */
-    rollopen: function (d) { var r = cur.ui.roll; if (r && r.kind === 'action' && r.action === d.a) { cur.ui.roll = null; render(); return; } cur.ui.roll = { kind: 'action', action: d.a, push: false, assist: false, bargain: false, position: 'risky', effect: 'standard', result: null }; cur.ui.rollScroll = true; render(); },
-    resistopen: function (d) { var r = cur.ui.roll; if (r && r.kind === 'resist' && r.attr === d.attr) { cur.ui.roll = null; render(); return; } cur.ui.roll = { kind: 'resist', attr: d.attr, result: null }; cur.ui.rollScroll = true; render(); },
-    fortopen: function () { var r = cur.ui.roll; if (r && r.kind === 'fortune') { cur.ui.roll = null; render(); return; } cur.ui.roll = { kind: 'fortune', n: 2, result: null }; cur.ui.rollScroll = true; render(); },
+    rollopen: function (d) { var r = cur.ui.roll; if (r && r.kind === 'action' && r.action === d.a) { cur.ui.roll = null; render(); return; } cur.ui.dt = cur.ui.endSess = null; cur.ui.roll = { kind: 'action', action: d.a, push: false, assist: false, bargain: false, position: 'risky', effect: 'standard', result: null }; cur.ui.rollScroll = true; render(); },
+    resistopen: function (d) { var r = cur.ui.roll; if (r && r.kind === 'resist' && r.attr === d.attr) { cur.ui.roll = null; render(); return; } cur.ui.dt = cur.ui.endSess = null; cur.ui.roll = { kind: 'resist', attr: d.attr, result: null }; cur.ui.rollScroll = true; render(); },
+    fortopen: function () { var r = cur.ui.roll; if (r && r.kind === 'fortune') { cur.ui.roll = null; render(); return; } cur.ui.dt = cur.ui.endSess = null; cur.ui.roll = { kind: 'fortune', n: 2, result: null }; cur.ui.rollScroll = true; render(); },
     rollclose: function () { cur.ui.roll = null; render(); },
     rollopt: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action') return; if (d.k === 'push' && !r.push && cur.play.stress + 2 > stressMax(cur.pb)) return; r[d.k] = !r[d.k]; r.result = null; render(); },
     rollpos: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || POSITIONS.indexOf(d.v) < 0) return; r.position = d.v; r.result = null; render(); },
@@ -817,6 +947,110 @@
       r.result = res;
       if (res.text && !ro) { p.log.unshift({ at: new Date().toISOString(), kind: 'roll', text: res.text }); commit(); } else render();
     },
+    /* ---- sessions (round 5) ---- */
+    sessstart: function () {
+      var p = cur.play, n = (p.session || 0) + 1;
+      p.session = n; p.trainedThisDowntime = false;
+      if (Object.keys(p.keyHitSession || {}).length) p.keyHitSession = {};
+      p.log = [{ at: new Date().toISOString(), kind: 'note', text: 'Session ' + n + ' started' }].concat(p.log || []);
+      cur.ui.endSess = null; if (cur.ui.dt && cur.ui.dt.kind === 'train') cur.ui.dt.result = null;
+      note('Session ' + n + ' started'); commit();
+    },
+    endopen: function () {
+      if (cur.ui.endSess) { cur.ui.endSess = null; render(); return; }
+      closePanels(); cur.ui.endSess = { vals: sessionTriggers(cur.play, cur.pb).map(function () { return 0; }), target: 'xp', result: null }; cur.ui.rollScroll = true; render();
+    },
+    endval: function (d) { var e = cur.ui.endSess, i = +d.i; if (!e || e.result || !(i >= 0 && i < e.vals.length)) return; e.vals[i] = clamp(d.v, 0, 2); render(); },
+    endtarget: function (d) { var e = cur.ui.endSess; if (!e || e.result || !isHull(cur.pb)) return; e.target = d.v === 'xp' ? 'xp' : clamp(d.v, 0, cur.play.memories.length - 1); render(); },
+    endmark: function () {
+      var e = cur.ui.endSess, p = cur.play, pb = cur.pb; if (!e || e.result || noSave()) return;
+      var plan = endPlan(p, pb, e), n = p.session || 0, trig = sessionTriggers(p, pb), lines = [], memFull = false, hits = Object.keys(p.keyHitSession || {}).length;
+      if (plan.toXp) p.xp = Object.assign({}, p.xp, { playbook: plan.xpAfter });
+      if (plan.toMem) {
+        p.memories = p.memories.map(function (m, i) { return i === plan.memI ? Object.assign({}, m, { filled: (m.filled || 0) + plan.toMem }) : m; });
+        var mm = p.memories[plan.memI]; memFull = mm.filled >= (mm.size || 8);
+        lines.push('+' + plan.toMem + ' memory ' + (plan.memI + 1) + ' (' + mm.filled + ' / ' + (mm.size || 8) + ')');
+      }
+      if (plan.toXp || !plan.toMem) lines.push('+' + plan.toXp + ' playbook xp (' + p.xp.playbook + ' / 8)');
+      p.keyHitSession = {}; if (hits) lines.push('key hits cleared');
+      var names = []; e.vals.forEach(function (v, i) { if (v && trig[i]) names.push(trigLabel(trig[i]) + (v === 2 ? ' ×2' : '')); });
+      var text = 'Session ' + n + ' ended: +' + plan.total + ' xp' + (names.length ? ' (' + names.join('; ') + ')' : '') + (plan.toMem ? ' · ' + plan.toMem + ' to memory ' + (plan.memI + 1) : '') + (plan.lost ? ' · ' + plan.lost + ' lost to the cap' : '');
+      p.log = [{ at: new Date().toISOString(), kind: 'note', text: text }].concat(p.log || []);
+      e.result = { lines: lines, lost: plan.lost, full: p.xp.playbook >= 8, memFull: memFull };
+      note('Session ' + n + ' ended'); commit();
+    },
+    panelclose: function () { closePanels(); render(); },
+    /* ---- downtime (round 5): rolls stay live for read-only viewers, who get "not saved" and no writes ---- */
+    dtopen: function (d) {
+      var k = d.k, p = cur.play, pb = cur.pb; if (!DT_NAMES[k]) return;
+      if ((k === 'indulge' && !coreVice(pb)) || (k === 'recover' && isVamp(pb))) return;
+      if (cur.ui.dt && cur.ui.dt.kind === k) { cur.ui.dt = null; render(); return; }
+      closePanels();
+      var open = -1; p.clocks.forEach(function (c, i) { if (open < 0 && c.filled < c.size) open = i; });
+      var track = ['insight', 'prowess', 'resolve', 'playbook'].filter(function (x) { return (p.xp[x] || 0) < (x === 'playbook' ? 8 : 6); })[0] || 'playbook';
+      var def = k === 'project' ? 'Study' : 'Tinker';
+      cur.ui.dt = { kind: k, who: 'self', action: ACTS.indexOf(def) >= 0 ? def : ACTS[0], n: 2, clock: open >= 0 ? open : 'new', newName: '', size: 8, track: track, result: null };
+      cur.ui.rollScroll = true; render();
+    },
+    dtopt: function (d) {
+      var t = cur.ui.dt; if (!t) return; var k = d.k, v = d.v;
+      if (k === 'who') t.who = v === 'healer' ? 'healer' : 'self';
+      else if (k === 'action') { if (ACTS.indexOf(v) < 0) return; t.action = v; }
+      else if (k === 'n') t.n = clamp(v, 0, 4);
+      else if (k === 'clock') { if (v === 'new') t.clock = 'new'; else if (+v >= 0 && +v < cur.play.clocks.length) t.clock = +v; else return; }
+      else if (k === 'size') { if ([4, 6, 8].indexOf(+v) < 0) return; t.size = +v; }
+      else if (k === 'track') { if (['insight', 'prowess', 'resolve', 'playbook'].indexOf(v) < 0) return; t.track = v; }
+      else return;
+      t.result = null; render();
+    },
+    dtroll: function () {
+      var t = cur.ui.dt, p = cur.play, pb = cur.pb; if (!t || t.kind === 'train') return;
+      if ((t.kind === 'indulge' && !coreVice(pb)) || (t.kind === 'recover' && isVamp(pb))) return;
+      var c = null, newClock = t.kind === 'project' && t.clock === 'new';
+      if (t.kind === 'project') { c = newClock ? { name: String(t.newName || '').trim() || 'Long-term project', size: t.size || 8, filled: 0 } : p.clocks[+t.clock]; if (!c) { note('Choose a clock'); return; } if (c.filled >= c.size) { note('That clock is complete'); return; } }
+      var ro = noSave(), res = rollDice(dtDice(p, pb, t)), dice = res.dice.join(','), nd = res.n + 'd' + (res.low ? ' (2d take lowest)' : ''), applied = [], apply;
+      if (t.kind === 'indulge') {
+        var sn = stressName(pb), clear = res.value, before = p.stress, after = Math.max(0, before - clear);
+        res.over = clear > before; res.cls = res.over ? 'failure' : 'success';
+        res.big = 'Clear ' + clear; res.why = (res.low ? 'lowest ' : 'highest die ') + res.value + ' · ' + sn + ' ' + before + ' → ' + after + (res.over ? ': more than you had' : '');
+        res.text = 'Indulge vice ' + nd + ' · ' + dice + ' → clear ' + clear + ' ' + sn + (res.over ? ', overindulge' : '') + ' (' + before + ' → ' + after + ')';
+        applied.push('−' + (before - after) + ' ' + sn + ' (' + after + ' / ' + stressMax(pb) + ')'); if (res.over) applied.push('overindulged: tell the GM');
+        apply = function () { p.stress = after; };
+      } else if (t.kind === 'recover') {
+        var ticks = ticksFor(res), h0 = p.healing || 0, total = h0 + ticks, fills = 0, hm = p.harm, cn = isHull(pb) ? 'repair' : 'healing';
+        while (total >= 4) { total -= 4; fills++; hm = stepHarm(hm); }
+        var who = t.who === 'healer' ? (isHull(pb) ? 'a mechanic' : 'a healer') : t.action;
+        res.big = '+' + ticks + ' tick' + (ticks === 1 ? '' : 's'); res.cls = res.reading;
+        res.why = capWord(res.reading) + ' · ' + cn + ' ' + h0 + ' → ' + total + ' / 4' + (fills ? ' · the clock filled' + (fills > 1 ? ' ' + fills + ' times' : '') + ': every harm steps down a level' : '');
+        res.text = dtName('recover', pb) + ' (' + who + ') ' + nd + ' · ' + dice + ' → ' + res.reading + ', +' + ticks + ' ' + cn + (fills ? ', clock filled: harm steps down' : '') + ' (' + total + ' / 4)';
+        applied.push('+' + ticks + ' ' + cn + ' (' + total + ' / 4)'); if (fills) applied.push('harm stepped down' + (fills > 1 ? ' ×' + fills : ''));
+        apply = function () { p.healing = total; if (fills) p.harm = hm; };
+      } else {
+        var tk = ticksFor(res), f1 = Math.min(c.size, c.filled + tk), done = f1 >= c.size;
+        res.big = '+' + tk + ' tick' + (tk === 1 ? '' : 's'); res.cls = res.reading;
+        res.why = capWord(res.reading) + ' · ' + c.name + ' ' + c.filled + ' → ' + f1 + ' / ' + c.size + (done ? ': complete' : '');
+        res.text = 'Long-term project “' + c.name + '” (' + t.action + ') ' + nd + ' · ' + dice + ' → ' + res.reading + ', +' + tk + ' (' + f1 + ' / ' + c.size + ')' + (done ? ', complete' : '');
+        applied.push((newClock ? 'new clock ' : '') + '“' + c.name + '” ' + f1 + ' / ' + c.size + (done ? ' — complete' : ''));
+        apply = function () {
+          var nc = Object.assign({}, c, { filled: f1 });
+          if (newClock) { p.clocks = p.clocks.concat([nc]); t.clock = p.clocks.length - 1; t.newName = ''; }
+          else { var ci = +t.clock; p.clocks = p.clocks.map(function (x, i) { return i === ci ? nc : x; }); }
+        };
+      }
+      res.saved = !ro; res.savedWhy = ro ? notSavedWhy() : ''; res.applied = applied; t.result = res;
+      if (!ro) { apply(); p.log = [{ at: new Date().toISOString(), kind: 'roll', text: res.text }].concat(p.log || []); commit(); } else render();
+    },
+    dttrain: function () {
+      var t = cur.ui.dt, p = cur.play; if (!t || t.kind !== 'train' || noSave()) return;
+      if (p.trainedThisDowntime) { note('Already trained this downtime'); render(); return; }
+      var k = t.track, max = k === 'playbook' ? 8 : 6; if (['insight', 'prowess', 'resolve', 'playbook'].indexOf(k) < 0) return;
+      if ((p.xp[k] || 0) >= max) { note('That track is full: advance first'); return; }
+      var v = (p.xp[k] || 0) + 1, label = k === 'playbook' ? 'playbook' : capWord(k), nx = Object.assign({}, p.xp); nx[k] = v;
+      p.xp = nx; p.trainedThisDowntime = true;
+      t.result = { saved: true, applied: ['+1 ' + label + ' xp (' + v + ' / ' + max + ')' + (v >= max ? ' — advance ready' : '')] };
+      p.log = [{ at: new Date().toISOString(), kind: 'roll', text: 'Train ' + label + ' · +1 xp (' + v + ' / ' + max + ')' }].concat(p.log || []);
+      commit();
+    },
     resistapply: function () {
       var r = cur.ui.roll, p = cur.play, pb = cur.pb; if (!r || r.kind !== 'resist' || !r.result || r.result.applied) return;
       var res = r.result, sn = stressName(pb), sm = stressMax(pb), cost = res.crit ? -1 : 6 - res.value, before = p.stress;
@@ -828,7 +1062,9 @@
     }
   };
   /* roll-panel controls stay live for read-only viewers (they write nothing); everything else is gated */
-  var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1 };
+  var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1 };
+  /* one panel at a time: a roll, a downtime activity or the end of session */
+  function closePanels() { if (!cur) return; cur.ui.roll = null; cur.ui.dt = null; cur.ui.endSess = null; }
   var CHANGES = {
     addkey: function (sel) { var v = sel.value; sel.value = ''; if (!v || cur.play.keys.length >= 4) return; var k = v === '*' ? { name: '', down: '', up: '' } : keyParts(v); k.hits = 0; k.deadlock = null; k.glitch = null; cur.play.keys.push(k); commit(); if (v === '*') { var last = cur.root.querySelectorAll('.ds-key-name'); if (last.length) last[last.length - 1].focus(); } },
     mastery: function (inp) { cur.play.mastery = !!inp.checked; commit(); },
@@ -844,7 +1080,9 @@
     try { fn(d, t); } catch (err) { setStatus('Something went wrong: ' + err.message, true); if (window.console) console.error(err); }
   }
   function onInput(e) {
-    if (!cur || readOnly()) return; var t = e.target; if (!t || !t.dataset || !t.dataset.path || !cur.root.contains(t)) return;
+    if (!cur) return; var t = e.target;
+    if (t && t.dataset && t.dataset.ui === 'dtname' && cur.ui.dt) { cur.ui.dt.newName = t.value; return; } /* the downtime panel's new-clock name: panel state, never saved by itself */
+    if (readOnly()) return; if (!t || !t.dataset || !t.dataset.path || !cur.root.contains(t)) return;
     setPath(cur.play, t.dataset.path, t.value); scheduleSave();
   }
   function onChange(e) {
@@ -852,7 +1090,7 @@
     if (t.dataset && t.dataset.change && CHANGES[t.dataset.change]) { if (readOnly()) return; try { CHANGES[t.dataset.change](t); } catch (err) { setStatus('Something went wrong: ' + err.message, true); } return; }
     if (t.dataset && t.dataset.path && cur.timer) { clearTimeout(cur.timer); cur.timer = null; flushSave(); }
   }
-  function onDocKey(e) { if (!cur || !cur.ui.roll || (e.key !== 'Escape' && e.key !== 'Esc')) return; cur.ui.roll = null; render(); }
+  function onDocKey(e) { if (!cur || !(cur.ui.roll || cur.ui.dt || cur.ui.endSess) || (e.key !== 'Escape' && e.key !== 'Esc')) return; closePanels(); render(); }
   function onKey(e) { if (!cur || e.key !== 'Enter') return; var t = e.target; if (!t || t.tagName !== 'INPUT' || !cur.root.contains(t)) return; var map = { 'ds-newlog': 'log', 'ds-newclock': 'addclock', 'ds-newcname': 'addcontact', 'ds-newcrole': 'addcontact', 'ds-newitem': 'additem', 'ds-newab': 'addability' }; var cls = Object.keys(map).filter(function (c) { return t.classList.contains(c); })[0]; if (!cls) return; e.preventDefault(); if (readOnly()) return; ACTIONS[map[cls]]({ n: 4 }, t); }
 
   /* the small figure at the top right of the printed sheet exists only while printing, so the big SVG is never in the DOM twice */
@@ -863,7 +1101,7 @@
   T.open = function (doc, api) {
     var root = document.getElementById('dossier'); if (!root) return;
     if (cur) T.close();
-    doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', roll: null, rollScroll: false }, timer: null, saving: 0 };
+    doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
     cur.play = normalize(doc.play, doc.sheet, doc.playbook);
     root.addEventListener('click', onClick); root.addEventListener('input', onInput); root.addEventListener('change', onChange); root.addEventListener('keydown', onKey);
     document.addEventListener('keydown', onDocKey);
