@@ -115,3 +115,43 @@ characters. Any other `campaign` doc id, and `collection('campaign')` queries, r
 - Read-only viewers (`can('data.write') === false`) see everything disabled.
 - Same visual language as the sheet (bands, boxes, pips, accent orange), phone width 390px
   without horizontal scroll, light and dark, print hides buttons.
+
+## Crew sheet
+
+`app/crewsheet.js` + `app/crewsheet.css` replace the generic crew panel through `B68Campaign.setCrewPanel`, driven
+by `app/crews.js`. campaign.js still owns the document, the saves (one write per click, typing debounced, only the
+changed `crew` fields) and the gating (read-only: everything disabled; `data-gm` controls disabled for players).
+Checked by `app/checks/crewsheet.js`.
+
+- **No playbook yet** (`crew.playbook` null): six crew covers above the generic panel. Anyone may choose (confirm).
+  Choosing seeds the printed state: the record's `pre` upgrades, the starting cohort (added unless one of that type
+  exists), pre-held cells (BASE; Dealers' first Distribution turf), abilities printed marked (Racers' Stunt Riders),
+  the Utopians' first circle. Name, tier, hold, rep, heat, wanted, cohorts, factions and notes are kept; `lair` fills
+  an empty `base`; a generic `claims` list moves to `crew.legacyClaims` (listed as text, clearable).
+- **Changing the playbook** is GM only, with a warning; abilities, upgrades, claims, contacts, versatile write-ins
+  and `special` are cleared, the common tracks stay.
+- **Shape** (added to `crew`): `playbook`, `reputation` (or the record's `extraHeader` key, `cause` for Militants),
+  `base`, `wardBoss`, `preferred: ['', …]`, `anger`, `stacks`, `xp`, `claims: { cellId: bool }`,
+  `abilities: { name: n }`, `versatile: ['']`, `contacts: { name: 'friend' | 'rival' | null }`,
+  `upgrades: { name: n }`, `special: { units, productKind, stunts: { name: bool }, edges: [], flaws: [],
+  circles: { id: { marked, tally, truths: [] } } }`, `legacyClaims`, `advancePaid: { characterId: bool }`. `type`
+  is set to the playbook name and `turf` to the derived turf count. Because a PATCH merges objects, a cleared map
+  entry is written as `false` / `0` / `null`, never removed. campaign.js keeps a `claims` map as a map.
+- **Claims**: a cell is claimable when held or joined by a connector bar to a held cell. Dealers' product follows
+  the arrows: a cell opens once an arrow source is held; cells with no arrow in (Local Supplier, Local Fiends,
+  Branding, the turfs) are open from the start. Utopians' cells open with their circle. Unclaimable cells are dimmed
+  and disabled for players; the GM can claim them after a confirm. BASE is fixed.
+- **Turf**: each held turf cell marks one rep pip from the right as turf ("each turf: 1 less rep to tier up"); with
+  On the Side of the Oppressed each Wanted Level counts too. The sheets print no rule for this, so it is visual and
+  flagged in a hint until the table confirms it. Rep can be marked up to 12 − turf.
+- **Vaults**: 4 + 8 cubes, locked until the Vault upgrade's first box (first group) and second box (second group).
+- **Utopians**: descending to a circle needs the one before; leaving a circle leaves the deeper ones. Grouped
+  abilities are locked until their circle is reached. Truth words: up to the circle's `count`.
+- **Crew xp**: the record's `xpMax` ovals; "End session: mark crew xp" scores each trigger 0/1/2 (page state, no
+  write) and "Mark crew xp" adds the total in one write, capped. When crew xp is full, the crew advance shows the
+  footer rule; the GM's "Pay each PC Tier+2 to bank" adds Tier+2 to every filed character's `play.bank` (capped at
+  40) not yet paid for this advance, then resets crew xp to 0 and clears `advancePaid`. A player pays only their own
+  characters (recorded in `advancePaid`, so nobody is paid twice); anyone may reset crew xp. Time travelers keep no
+  bank and are skipped; a Hull is paid only with A Room of Your Own. Character writes go through
+  `B68.updateCharacter(id, patch)` (boot.js; also on the table api): `patch.play` is merged over the stored play and
+  only the changed play fields are sent, the same delta path as the sheet's own saves.

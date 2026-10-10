@@ -190,6 +190,21 @@
     setMode('sheet'); window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   A.openCharacter = openCharacter;
+  /* Change a filed character from outside its sheet (the crew sheet's bank payout): `patch.play` is merged over the
+     character's stored play, and only what changed goes out through the same delta path as the sheet's own saves. */
+  function updateCharacter(id, patch) {
+    if (!db) return Promise.reject(new Error('The files are not available in this view.'));
+    var before = (openId === id && latest) || cache[id];
+    if (!before) return Promise.reject(new Error('There is no such file: ' + id));
+    var full = {};
+    Object.keys(patch || {}).forEach(function (k) { full[k] = k === 'play' && isObj(patch.play) ? Object.assign({}, isObj(before.play) ? clone(before.play) : {}, clone(patch.play)) : clone(patch[k]); });
+    if (!Object.keys(full).some(function (k) { return !same(full[k], before[k]); })) return Promise.resolve(false);
+    var after = Object.assign({}, before, full, { updatedAt: nowIso() }), delta = playDelta(before, full), ref = col().doc(id);
+    cache[id] = after; if (openId === id) latest = after;
+    var write = delta && typeof ref.update === 'function' ? ref.update(clone(delta)) : ref.set(clone(after));
+    return write.then(function () { return true; }, function (e) { toast('Could not save ' + (before.name || 'the character') + ': ' + (e && e.message || e), true); throw e; });
+  }
+  A.updateCharacter = updateCharacter;
 
   /* ---------- the table: one shared campaign document, campaign/main (CAMPAIGN.md) ---------- */
   var tableRef = null, tableUnsub = null, tableLatest = null, tableExists = false;
@@ -245,6 +260,7 @@
       me: A.me, canWrite: A.canWrite, isGM: A.isGM === true,
       roster: function () { return roster.slice(); },
       openCharacter: function (id) { openCharacter(id); },
+      updateCharacter: updateCharacter,
       playStatus: playStatus, playFacts: playFacts,
       profiles: userCap && typeof userCap.profiles === 'function' ? profiles : null
     };

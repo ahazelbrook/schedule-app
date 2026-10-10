@@ -49,7 +49,8 @@
     out.tier = clamp(c.tier, 0, 6); out.hold = c.hold === 'strong' ? 'strong' : 'weak';
     out.turf = clamp(c.turf, 0, 6); out.rep = clamp(c.rep, 0, 12);
     out.heat = clamp(c.heat, 0, 9); out.wanted = clamp(c.wanted, 0, 4); out.vault = clamp(c.vault, 0, 16);
-    out.claims = (Array.isArray(c.claims) ? c.claims : d.claims).filter(isObj).map(function (x) { return { name: str(x.name), held: !!x.held }; });
+    /* claims: the generic list of { name, held }, or the crew sheet's map { cellId: true | false } (crewsheet.js) */
+    out.claims = isObj(c.claims) ? Object.keys(c.claims).reduce(function (m, k) { m[k] = c.claims[k] === true; return m; }, {}) : (Array.isArray(c.claims) ? c.claims : d.claims).filter(isObj).map(function (x) { return { name: str(x.name), held: !!x.held }; });
     out.cohorts = (Array.isArray(c.cohorts) ? c.cohorts : d.cohorts).filter(isObj).map(function (x) { return { name: str(x.name), type: str(x.type), edges: str(x.edges), flaws: str(x.flaws), harm: HARMS.indexOf(x.harm) >= 0 ? x.harm : null, armor: !!x.armor }; });
     out.factions = (Array.isArray(c.factions) ? c.factions : d.factions).filter(isObj).map(function (x) { return { name: str(x.name), status: clamp(x.status, -3, 3) }; });
     return out;
@@ -175,6 +176,7 @@
   var GenericCrew = (function () {
     function track(label, body, note) { return '<div class="tp-track"><span class="tp-lab">' + label + '</span><div class="tp-trackv">' + body + (note ? '<span class="tp-dim mono">' + note + '</span>' : '') + '</div></div>'; }
     function render(crew, ctx) {
+      if (!Array.isArray(crew.claims)) crew = Object.assign({}, crew, { claims: [] });   /* a crew-sheet claims map has no generic list */
       var h = '<div class="tp-ident">' +
         '<label><span class="tp-lab">Crew name</span>' + ctx.input('crew.name', crew.name, 'What does the street call you?') + '</label>' +
         '<label><span class="tp-lab">Crew type</span>' + ctx.input('crew.type', crew.type, 'Dealers, Racers, Shadows…') + '</label>' +
