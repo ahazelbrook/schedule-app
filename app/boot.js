@@ -116,6 +116,31 @@
   function clearHash() { if (!location.hash) return; try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; } }
   function goBack() { setMode('create'); clearHash(); var r = document.querySelector('.roster'); if (r && r.scrollIntoView) { try { r.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} } if (A.snapshot) A.snapshot(); }
 
+  /* A save from the sheet sends only what changed, so a player and the GM editing the same character at once
+     do not overwrite each other's marks. Each changed top-level field of play is sent whole (arrays and scalars
+     replace on the server); an object field that lost a key, or any doubt, falls back to a full set (returns null). */
+  function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function playDelta(before, patch) {
+    var out = {}, any = false;
+    for (var k in patch) {
+      if (!Object.prototype.hasOwnProperty.call(patch, k)) continue;
+      if (k !== 'play') { if (!same(patch[k], before[k])) { out[k] = patch[k]; any = true; } continue; }
+      var np = patch.play || {}, op = before.play;
+      if (!op || typeof op !== 'object') return null;
+      var pd = {}, pany = false;
+      for (var f in op) if (Object.prototype.hasOwnProperty.call(op, f) && !(f in np)) return null;
+      for (var g in np) {
+        if (!Object.prototype.hasOwnProperty.call(np, g) || same(np[g], op[g])) continue;
+        var nv = np[g], ov = op[g];
+        if (nv && ov && typeof nv === 'object' && typeof ov === 'object' && !Array.isArray(nv)) { for (var h in ov) if (!(h in nv)) return null; }
+        pd[g] = nv; pany = true;
+      }
+      if (pany) { out.play = pd; any = true; }
+    }
+    if (!any) return null;
+    out.updatedAt = nowIso();
+    return out;
+  }
   function openCharacter(id) {
     if (!id) return;
     if (!db) { pendingOpen = id; if (dbSettled) toast('The files are not available in this view.', true); return; }
@@ -126,9 +151,12 @@
     var api = {
       save: function (patch) {
         if (!db || openId !== id) return Promise.reject(new Error('The sheet is closed.'));
-        latest = Object.assign({}, latest || {}, patch || {}, { updatedAt: nowIso() });
+        var before = latest || {};
+        latest = Object.assign({}, before, patch || {}, { updatedAt: nowIso() });
         cache[id] = latest;
-        return ref.set(clone(latest)).catch(function (e) { toast('Could not save: ' + (e && e.message || e), true); throw e; });
+        var delta = playDelta(before, patch || {});
+        var write = delta && typeof ref.update === 'function' ? ref.update(clone(delta)) : ref.set(clone(latest));
+        return write.catch(function (e) { toast('Could not save: ' + (e && e.message || e), true); throw e; });
       },
       edit: function () { var d = Object.assign({ id: id }, latest || cache[id] || {}); setMode('create'); clearHash(); loadIntoCreator(d); toast('Editing ' + (d.name || 'the character') + ' in the creator.'); },
       back: function () { goBack(); },
@@ -376,7 +404,14 @@
   A.snapshot = function () { if (hot && hot.snapshot) { try { hot.snapshot(function () { return { spec: S.spec, sheet: S.sheet, step: S.step, view: S.view, dirty: S.dirty, mode: document.body.dataset.mode || 'create', open: openId }; }); } catch (e) {} } };
   function whoami() {
     var w = $('whoami'); if (!w) return;
-    if (A.me) { w.textContent = 'Signed in · your files are saved to your account'; w.classList.remove('off'); }
+    var rt = window.B68Runtime, hosted = !!(rt && rt.kind === 'cloudflare');
+    if (A.me) {
+      var who = hosted && rt.me ? (rt.me.name || rt.me.email || '') : '';
+      w.textContent = who ? 'Signed in as ' + who + (rt.me.role === 'gm' ? ' · GM' : '') + ' · ' : 'Signed in · your files are saved to your account';
+      if (who) { var out = document.createElement('a'); out.href = '/cdn-cgi/access/logout'; out.textContent = 'Sign out'; out.className = 'signout'; w.appendChild(out); }
+      w.classList.remove('off');
+    }
+    else if (hosted) { w.textContent = 'Not signed in · '; var inl = document.createElement('a'); inl.href = location.pathname; inl.textContent = 'Sign in'; inl.className = 'signout'; w.appendChild(inl); w.classList.add('off'); }
     else { w.textContent = db ? 'Not signed in · files are not marked as yours' : 'Not signed in · filing unavailable'; w.classList.add('off'); }
   }
   function hashOpen() { var h = location.hash || ''; return h.indexOf('#c/') === 0 ? decodeURIComponent(h.slice(3)) : null; }
