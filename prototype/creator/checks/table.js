@@ -1,6 +1,6 @@
 process.chdir(__dirname); try { require('fs').mkdirSync('out', { recursive: true }); } catch (e) {}
-/* Headless check of the GM table view and the JSON backups. Run from the scratchpad dir:
-   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node shots/table.js */
+/* Headless check of the GM table view and the JSON backups. Run from this dir:
+   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node table.js */
 const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
 const fs = require('fs'), path = require('path');
 const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');

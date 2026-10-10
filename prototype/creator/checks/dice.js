@@ -1,6 +1,6 @@
 process.chdir(__dirname); try { require('fs').mkdirSync('out', { recursive: true }); } catch (e) {}
-/* Headless check of the dice on the living sheet (round 4). Run from the scratchpad dir:
-   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node shots/dice.js */
+/* Headless check of the dice on the living sheet (round 4). Run from this dir:
+   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node dice.js */
 const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
 const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
 const STUB = `(() => {
