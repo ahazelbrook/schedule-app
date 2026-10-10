@@ -1,5 +1,6 @@
 <title>Blades '68 Character Creator</title>
 <link rel="stylesheet" href="tracker.css">
+<link rel="stylesheet" href="campaign.css">
 <style>
   /* Layout: a console character creator in the rulebook's clothes. The subject stands on the height chart
      (left, sticky) under a cover band in the chosen playbook's duotone; the steps run as rulebook side tabs
@@ -78,14 +79,17 @@
   .top .who { grid-column: 1 / -1; font-size: 9.5px; color: var(--ink-faint); letter-spacing: .12em; }
   .top .who::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 999px; background: var(--ok); margin-right: 6px; vertical-align: 1px; }
   .top .who.off::before { background: var(--ink-faint); }
-  #railBack { justify-self: start; }
+  .topnav { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-self: start; }
+  #tableBtn[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); box-shadow: none; transform: translate(2px, 2px); }
   @media (max-width: 760px) { .top { grid-template-columns: 1fr; } }
 
-  /* ---- modes: create (the studio and files) or sheet (the tracker in #dossier) ---- */
-  #dossier { display: none; }
+  /* ---- modes: create (the studio and files), sheet (the tracker in #dossier) or table (the campaign page in #table-page) ---- */
+  #dossier, #table-page { display: none; }
   body[data-mode="sheet"] .studio, body[data-mode="sheet"] .crew, body[data-mode="sheet"] .roster, body[data-mode="sheet"] .rail { display: none; }
   body[data-mode="sheet"] #dossier:not([hidden]) { display: block; }
-  body:not([data-mode="sheet"]) #railBack { display: none; }
+  body[data-mode="table"] .studio, body[data-mode="table"] .crew, body[data-mode="table"] .roster, body[data-mode="table"] .rail, body[data-mode="table"] #dossier { display: none; }
+  body[data-mode="table"] #table-page:not([hidden]) { display: block; }
+  body:not([data-mode="sheet"]):not([data-mode="table"]) #railBack { display: none; }
 
   /* ---- studio ---- */
   .studio { display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr); gap: 0 22px; align-items: start; padding-top: 18px; }
@@ -361,11 +365,12 @@
   <header class="top">
     <div class="wordmark"><span class="yr">’68</span><span class="ttl">Character Creator<small>City Watch of Duskwall · Form 68-C · Doskvol · 968 AC</small></span></div>
     <nav class="rail" id="rail" aria-label="Steps"></nav>
-    <button class="btn sm" id="railBack" type="button" hidden>← Back to the creator</button>
+    <div class="topnav"><button class="btn sm" id="railBack" type="button" hidden>← Back to the creator</button><button class="btn sm" id="tableBtn" type="button" aria-pressed="false" title="The crew, shared clocks, the players and the campaign log">The table</button></div>
     <span class="label who off" id="whoami">Not signed in · filing unavailable</span>
   </header>
 
   <section class="dossier" id="dossier" hidden aria-label="Character sheet"></section>
+  <section class="tp" id="table-page" hidden aria-label="The table"></section>
 
   <main class="studio">
     <section class="stage" aria-label="The subject">
@@ -425,5 +430,6 @@
 <script src="zoom.js"></script>
 <script src="steps.js"></script>
 <script src="tracker.js"></script>
+<script src="campaign.js"></script>
 <script src="runtime/cf.js"></script>
 <script src="boot.js"></script>

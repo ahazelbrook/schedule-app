@@ -95,9 +95,24 @@
   function idleStatus() { return ro() ? 'Read only' : cur.timer || cur.saving ? 'Saving…' : cur.everSaved ? 'Saved' : 'Up to date'; }
 
   /* what changed since the last known server state: session, clocks and log whole; crew field by field */
+  /* Outside crew the server compares the stored document path by path, so a clock fill or a log append is built from
+     the arrays exactly as stored (only `filled` changed / new entries in front); anything else sends the page's copy. */
+  function fillOnly(rawC, bC, dC) {
+    if (!Array.isArray(rawC) || rawC.length !== bC.length || dC.length !== bC.length || !rawC.every(isObj)) return null;
+    for (var i = 0; i < dC.length; i++) { var x = Object.assign({}, dC[i], { filled: 0 }), y = Object.assign({}, bC[i], { filled: 0 }); if (!same(x, y)) return null; }
+    return rawC.map(function (r, i) { var c = clone(r); if (dC[i].filled !== bC[i].filled) c.filled = dC[i].filled; return c; });
+  }
+  function appendOnly(rawL, bL, dL) {
+    rawL = rawL == null ? [] : rawL;
+    if (!Array.isArray(rawL) || !rawL.every(isObj) || rawL.length < bL.length) return null;
+    for (var k = 1; k <= dL.length; k++) if (same(dL.slice(k), bL.slice(0, dL.length - k))) return clone(dL.slice(0, k)).concat(clone(rawL)).slice(0, LOG_MAX);
+    return null;
+  }
   function delta() {
-    var out = {}, any = false, d = cur.doc, b = cur.base;
-    ['session', 'clocks', 'log'].forEach(function (k) { if (!same(d[k], b[k])) { out[k] = clone(d[k]); any = true; } });
+    var out = {}, any = false, d = cur.doc, b = cur.base, raw = cur.raw || {};
+    if (!same(d.session, b.session)) { out.session = clone(d.session); any = true; }
+    if (!same(d.clocks, b.clocks)) { out.clocks = fillOnly(raw.clocks, b.clocks, d.clocks) || clone(d.clocks); any = true; }
+    if (!same(d.log, b.log)) { var ap = appendOnly(raw.log, b.log, d.log); if (!ap) return { replace: true }; out.log = ap; any = true; }   /* a patch can only add log lines */
     var cd = {}, cany = false;
     Object.keys(d.crew).forEach(function (f) { if (!same(d.crew[f], b.crew[f])) { cd[f] = clone(d.crew[f]); cany = true; } });
     if (cany) { out.crew = cd; any = true; }
@@ -109,7 +124,19 @@
     var patch = delta(); cur.dirty = {};
     if (!patch) { setStatus(idleStatus()); return; }
     if (!cur.api || typeof cur.api.save !== 'function') { setStatus('Not saved: no store', true); return; }
+    if (patch.replace) {
+      /* removing or rewriting log lines: the GM writes the whole document (PUT); a patch never removes log entries */
+      if (!gm() || typeof cur.api.replace !== 'function') { setStatus('Only the GM can change old log lines', true); return; }
+      var whole = clone(cur.doc); cur.base = clone(cur.doc); cur.raw = clone(cur.doc); cur.saving++; setStatus('Saving…');
+      var c0 = cur, p0;
+      try { p0 = c0.api.replace(whole); } catch (e) { c0.saving--; setStatus('Could not save: ' + (e && e.message || e), true); return; }
+      Promise.resolve(p0).then(function () { c0.saving--; c0.everSaved = true; if (cur === c0 && !c0.saving && !c0.timer) setStatus('Saved'); },
+        function (e) { c0.saving--; if (cur === c0) setStatus('Could not save: ' + (e && e.message || e || 'unknown error'), true); });
+      return;
+    }
     cur.base = clone(cur.doc); cur.saving++; setStatus('Saving…');
+    var raw = cur.raw = clone(cur.raw || {});   /* what the store holds once this lands, for the next delta before the echo */
+    Object.keys(patch).forEach(function (k) { if (k === 'crew') raw.crew = Object.assign(isObj(raw.crew) ? raw.crew : {}, clone(patch.crew)); else raw[k] = clone(patch[k]); });
     var c = cur, p;
     try { p = c.api.save(patch); } catch (e) { c.saving--; setStatus('Could not save: ' + (e && e.message || e), true); return; }
     Promise.resolve(p).then(function () { c.saving--; c.everSaved = true; if (cur === c && !c.saving && !c.timer) setStatus('Saved'); },
@@ -421,11 +448,11 @@
   }
 
   /* ---------- API ---------- */
-  /* api = { save(patch) -> Promise, me, canWrite, isGM, roster(), openCharacter(id), playStatus(doc), playFacts(doc), profiles(ids) | null } */
+  /* api = { save(patch) -> Promise, replace(wholeDoc) -> Promise (GM only: log removals), me, canWrite, isGM, roster(), openCharacter(id), playStatus(doc), playFacts(doc), profiles(ids) | null } */
   M.open = function (api) {
     var root = document.getElementById('table-page'); if (!root) return;
     if (cur) M.close();
-    cur = { api: api || {}, root: root, doc: normalize(null), base: normalize(null), loaded: false, dirty: {}, timer: null, saving: 0, drafts: {}, names: {}, asked: {}, statusT: null, everSaved: false };
+    cur = { api: api || {}, root: root, doc: normalize(null), base: normalize(null), raw: {}, loaded: false, dirty: {}, timer: null, saving: 0, drafts: {}, names: {}, asked: {}, statusT: null, everSaved: false };
     root.addEventListener('click', onClick); root.addEventListener('input', onInput); root.addEventListener('change', onChange); root.addEventListener('keydown', onKey);
     render();
   };
@@ -436,7 +463,7 @@
     /* text still waiting to be saved, and the field being typed in, are never clobbered */
     Object.keys(cur.dirty).forEach(function (p) { var v = getPath(cur.doc, p); if (v !== undefined) setPath(incoming, p, v); });
     if (focus && focus.path) setPath(incoming, focus.path, focus.value);
-    cur.base = normalize(data); cur.doc = incoming; cur.loaded = true;
+    cur.raw = isObj(data) ? clone(data) : {}; cur.base = normalize(data); cur.doc = incoming; cur.loaded = true;
     render();
   };
   M.rosterChanged = function () { if (cur && cur.loaded) render(); };

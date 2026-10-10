@@ -1,4 +1,4 @@
-/* Boot: the step rail, navigation, the crew line-up, the files (characters collection, account, modes and routing), exports, and hot reload. */
+/* Boot: the step rail, navigation, the crew line-up, the files (characters collection, account, modes and routing), the table page (campaign/main), exports, and hot reload. */
 (function () {
   'use strict';
   var A = window.B68; if (!A || !A.K || !A.SECTIONS) return;
@@ -76,7 +76,8 @@
   var openId = null, openUnsub = null, latest = null;      /* the character open in the sheet; latest = its newest data (no id) */
   var cache = {};                                           /* id -> data, from the collection snapshot */
   var filter = 'all', filterChosen = false, pendingOpen = null;
-  A.me = null; A.canWrite = null;
+  A.me = null; A.canWrite = null; A.isGM = false;
+  var userCap = null;                                       /* the user capability, for profiles */
   A.filingAvailable = function () { return !!db; };
   function nowIso() { return new Date().toISOString(); }
   function tracker() { var T = window.B68Tracker; return T && typeof T.open === 'function' ? T : null; }
@@ -97,14 +98,18 @@
   }
   A.loadIntoCreator = loadIntoCreator;
 
-  /* mode: create (the studio, line-up and files) or sheet (the tracker in #dossier) */
+  /* mode: create (the studio, line-up and files), sheet (the tracker in #dossier) or table (the campaign page in #table-page) */
   function setMode(m) {
-    m = m === 'sheet' ? 'sheet' : 'create';
+    m = m === 'sheet' || m === 'table' ? m : 'create';
     var was = document.body.dataset.mode;
     document.body.dataset.mode = m;
     var dos = $('dossier'); if (dos) dos.hidden = m !== 'sheet';
-    var rb = $('railBack'); if (rb) rb.hidden = m !== 'sheet';
+    var tp = $('table-page'); if (tp) tp.hidden = m !== 'table';
+    var rb = $('railBack'); if (rb) rb.hidden = m === 'create';
+    var tb = $('tableBtn'); if (tb) tb.setAttribute('aria-pressed', String(m === 'table'));
     if (m !== 'sheet' && was === 'sheet') closeSheet();
+    if (m !== 'table' && was === 'table') closeTable();
+    if (m === 'table' && was !== 'table') startTable();
     if (A.snapshot) A.snapshot();
   }
   A.setMode = setMode;
@@ -185,6 +190,98 @@
     setMode('sheet'); window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   A.openCharacter = openCharacter;
+
+  /* ---------- the table: one shared campaign document, campaign/main (CAMPAIGN.md) ---------- */
+  var tableRef = null, tableUnsub = null, tableLatest = null, tableExists = false;
+  var NO_TABLE = 'The table needs the shared files. Open this page where the files are available (the published artifact or the hosted site) to see the crew, the clocks and the players.';
+  function campaignMod() { var Cm = window.B68Campaign; return Cm && typeof Cm.open === 'function' ? Cm : null; }
+  function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function deepMerge(t, s) { for (var k in s) { if (!Object.prototype.hasOwnProperty.call(s, k)) continue; var v = s[k]; if (isObj(v) && isObj(t[k])) deepMerge(t[k], v); else t[k] = v; } return t; }
+  /* names for owners and log authors when the runtime has user.profiles: { id: name } */
+  function profiles(ids) {
+    if (!userCap || typeof userCap.profiles !== 'function') return Promise.resolve({});
+    return Promise.resolve().then(function () { return userCap.profiles(ids); }).then(function (r) {
+      var out = {};
+      if (Array.isArray(r)) r.forEach(function (x) { if (x && x.id) out[x.id] = x.name || x.email || ''; });
+      else if (r && typeof r === 'object') Object.keys(r).forEach(function (k) { var v = r[k]; out[k] = typeof v === 'string' ? v : v ? (v.name || v.email || '') : ''; });
+      return out;
+    }).catch(function () { return {}; });
+  }
+  function tableApi(ref) {
+    return {
+      /* patch: changed top-level fields of session / crew / clocks / log (crew may be partial). Only what differs from the
+         latest known document is sent; the first write to a missing document creates it whole. */
+      save: function (patch) {
+        if (tableRef !== ref) return Promise.reject(new Error('The table is closed.'));
+        var before = tableLatest || {}, out = {}, any = false;
+        ['session', 'crew', 'clocks', 'log'].forEach(function (k) {
+          if (!patch || !Object.prototype.hasOwnProperty.call(patch, k)) return;
+          var nv = patch[k], ov = before[k];
+          if (k === 'crew' && isObj(nv)) { var sub = {}, s2 = false; for (var f in nv) if (Object.prototype.hasOwnProperty.call(nv, f) && !same(nv[f], isObj(ov) ? ov[f] : undefined)) { sub[f] = nv[f]; s2 = true; } if (s2) { out.crew = sub; any = true; } return; }
+          if (!same(nv, ov)) { out[k] = nv; any = true; }
+        });
+        if (!any) return Promise.resolve(false);
+        out.updatedAt = nowIso();
+        var merged = deepMerge(clone(before), clone(out)), Cm = campaignMod(), write;
+        if (!tableExists && typeof ref.set === 'function') {
+          var full = Cm && Cm.normalize ? Cm.normalize(merged) : merged; full.updatedAt = out.updatedAt;
+          tableExists = true; tableLatest = full; write = ref.set(clone(full));
+        } else {
+          tableLatest = merged;
+          write = Promise.resolve().then(function () { return ref.update(clone(out)); }).catch(function (e) {
+            if (/not.?found|no document|does not exist|missing/i.test(String(e && e.message || e)) && typeof ref.set === 'function') { var f2 = Cm && Cm.normalize ? Cm.normalize(merged) : merged; f2.updatedAt = out.updatedAt; return ref.set(clone(f2)); }
+            throw e;
+          });
+        }
+        return write.then(function () { return true; }, function (e) { toast('Could not save the table: ' + (e && e.message || e), true); throw e; });
+      },
+      /* the whole document (PUT on the hosted API, GM only): removing a log line, which a patch can never do */
+      replace: function (whole) {
+        if (tableRef !== ref) return Promise.reject(new Error('The table is closed.'));
+        var Cm = campaignMod(), full = Cm && Cm.normalize ? Cm.normalize(whole) : clone(whole); full.updatedAt = nowIso();
+        tableExists = true; tableLatest = clone(full);
+        return Promise.resolve().then(function () { return ref.set(clone(full)); }).then(function () { return true; }, function (e) { toast('Could not save the table: ' + (e && e.message || e), true); throw e; });
+      },
+      me: A.me, canWrite: A.canWrite, isGM: A.isGM === true,
+      roster: function () { return roster.slice(); },
+      openCharacter: function (id) { openCharacter(id); },
+      playStatus: playStatus, playFacts: playFacts,
+      profiles: userCap && typeof userCap.profiles === 'function' ? profiles : null
+    };
+  }
+  function startTable() {
+    var Cm = campaignMod(); if (!Cm) { toast('The table module is missing.', true); return; }
+    if (tableRef) return;
+    if (!dbSettled) { Cm.notice('Opening the table…'); return; }   /* boot calls again once the files settle */
+    var ref = null; try { ref = db ? db.collection('campaign').doc('main') : null; } catch (e) { ref = null; }
+    if (!ref) { Cm.notice(NO_TABLE, true); return; }
+    tableRef = ref; tableLatest = null; tableExists = false;
+    Cm.open(tableApi(ref));
+    function arrived(snap) {
+      if (tableRef !== ref) return;
+      var data = snap && snap.exists !== false && typeof snap.data === 'function' ? snap.data() : null;
+      if (!isObj(data)) data = null;
+      tableExists = !!data; tableLatest = data ? clone(data) : null;
+      try { Cm.update(data ? clone(data) : null); } catch (e) { toast('The table could not render: ' + (e && e.message || e), true); }
+    }
+    function failed(e) { if (tableRef !== ref) return; toast('The table is offline: ' + (e && e.message || e), true); }
+    if (typeof ref.onSnapshot === 'function') { try { tableUnsub = ref.onSnapshot(arrived, failed); } catch (e) { tableUnsub = null; } }
+    if (!tableUnsub) {
+      tableUnsub = function () {};
+      (typeof ref.get === 'function' ? Promise.resolve().then(function () { return ref.get(); }) : Promise.resolve(null)).then(arrived).catch(failed);
+    }
+  }
+  function closeTable() {
+    if (tableUnsub) { try { tableUnsub(); } catch (e) {} tableUnsub = null; }
+    tableRef = null; tableLatest = null; tableExists = false;
+    var Cm = campaignMod(); if (Cm && Cm.close) { try { Cm.close(); } catch (e) {} }
+  }
+  function openTable() {
+    setMode('table');
+    try { if (location.hash !== '#t') location.hash = '#t'; } catch (e) {}
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  A.openTable = openTable;
 
   /* roster */
   var roster = [];
@@ -267,6 +364,7 @@
   }
   function renderRoster(docs) {
     roster = docs || []; syncFilter(); syncView(); syncBackups();
+    if (tableRef) { var Cm = campaignMod(); if (Cm && Cm.rosterChanged) { try { Cm.rosterChanged(); } catch (e) {} } }
     var box = $('cards'), list = visibleDocs();
     if (view === 'table') { renderTable(list); A.drawLineup(); return; }
     if (!list.length) { box.innerHTML = emptyHtml(); A.drawLineup(); return; }
@@ -389,6 +487,7 @@
       case 'openSheet': if (S.sheet.docId) openCharacter(S.sheet.docId); break;
       case 'newChar': newCharacter(); break;
       case 'railBack': goBack(); break;
+      case 'tableBtn': openTable(); break;
       case 'dlAll': downloadAll(); break;
       case 'restoreBtn': (function () { var i = $('restoreFile'); if (!db) { toast('The files are not available in this view.', true); return; } if (i) i.click(); })(); break;
       case 'dlSvg': saveFile(fileBase() + '.svg', A.figureSvg(900)); break;
@@ -416,10 +515,16 @@
   }
   function hashOpen() { var h = location.hash || ''; return h.indexOf('#c/') === 0 ? decodeURIComponent(h.slice(3)) : null; }
   window.addEventListener('hashchange', function () {
-    var id = hashOpen();
-    if (id) { if (id !== openId) openCharacter(id); }
-    else if (document.body.dataset.mode === 'sheet') setMode('create');
+    var id = hashOpen(), m = document.body.dataset.mode;
+    if (location.hash === '#t') { if (m !== 'table') openTable(); }
+    else if (id) { if (id !== openId) openCharacter(id); }
+    else if (m === 'sheet' || m === 'table') setMode('create');
   });
+  /* the GM: user.canEdit() when it answers a boolean, else user.isOwner(), else not */
+  function gmOf(u) {
+    function ask(fn) { return typeof fn === 'function' ? Promise.resolve().then(function () { return fn.call(u); }).catch(function () { return undefined; }) : Promise.resolve(undefined); }
+    return ask(u.canEdit).then(function (v) { return typeof v === 'boolean' ? v : ask(u.isOwner).then(function (w) { return w === true; }); });
+  }
   function boot(saved) {
     var fromHash = null;
     try { if (location.hash && location.hash.length > 24 && location.hash[1] === 's') fromHash = JSON.parse(unb64url(location.hash.slice(2))); } catch (e) { fromHash = null; }
@@ -430,15 +535,18 @@
     $('kitVersion').textContent = 'figure kit v' + (K.version || '2') + ' · ' + A.O.hair.length + ' hairstyles · ' + A.O.prop.length + ' props · 16 steps';
     setMode('create'); showStep(S.step); A.draw(); A.drawLineup(); whoami(); syncView(); syncBackups();
     pendingOpen = hashOpen() || (saved && saved.mode === 'sheet' && saved.open ? saved.open : null);
+    if (!pendingOpen && (location.hash === '#t' || (saved && saved.mode === 'table' && !location.hash))) openTable();
     if (window.claude && window.claude.use) {
       window.claude.use('downloads').then(function (d) { downloads = d || null; syncBackups(); }).catch(function () {});
       var who = window.claude.use('user').then(function (u) {
         if (!u) return;
+        userCap = u;
         var pid = typeof u.id === 'function' ? Promise.resolve(u.id()) : Promise.resolve(null);
-        return pid.then(function (id) { A.me = id || null; var cw = typeof u.can === 'function' ? Promise.resolve(u.can('data.write')) : Promise.resolve(null); return cw.then(function (c) { A.canWrite = c === true ? true : c === false ? false : null; }); });
+        return pid.then(function (id) { A.me = id || null; var cw = typeof u.can === 'function' ? Promise.resolve(u.can('data.write')) : Promise.resolve(null); return cw.then(function (c) { A.canWrite = c === true ? true : c === false ? false : null; return gmOf(u); }).then(function (g) { A.isGM = g === true; }); });
       }).catch(function () {});
       who.then(function () { whoami(); syncFilter(); A.syncAll(); return window.claude.use('db'); }).then(function (d) {
         db = d; dbSettled = true; whoami(); A.syncAll(); syncBackups();
+        if (document.body.dataset.mode === 'table') startTable();
         if (!d) { $('rosterNote').textContent = 'The files are unavailable in this view'; if (pendingOpen) { toast('The files are not available here, so that sheet cannot open.', true); pendingOpen = null; } return; }
         $('rosterNote').textContent = A.me ? 'Yours are saved to your account · everyone with the link sees the shared files' : 'Everyone who opens this page sees the same files';
         col().orderBy('updatedAt', 'desc').limit(60).onSnapshot(function (snap) {
@@ -448,8 +556,8 @@
           if (A._followCache && openId) A._followCache(openId);
           if (pendingOpen) { var id = pendingOpen; pendingOpen = null; openCharacter(id); }
         }, function (e) { toast('Files offline: ' + (e && e.message || e), true); });
-      }).catch(function () { dbSettled = true; });
-    } else { dbSettled = true; $('rosterNote').textContent = 'The files are unavailable in this view'; whoami(); syncBackups(); if (pendingOpen) { pendingOpen = null; clearHash(); } }
+      }).catch(function () { dbSettled = true; if (document.body.dataset.mode === 'table') startTable(); });
+    } else { dbSettled = true; $('rosterNote').textContent = 'The files are unavailable in this view'; whoami(); syncBackups(); if (pendingOpen) { pendingOpen = null; clearHash(); } if (document.body.dataset.mode === 'table') startTable(); }
   }
   if (hot && hot.ready) hot.ready(function (data) { boot(data || {}); }); else boot((hot && hot.data) || {});
 })();
