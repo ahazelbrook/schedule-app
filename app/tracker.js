@@ -2,7 +2,9 @@
    Everything on the printed playbook sheet becomes a live control; the whole `play` object is saved
    through api.save({ play }) on every change (immediately for clicks, debounced for typing).
    Round 3: the four paranormal playbooks (ghost, vampire, time travelers) and a printable layout.
-   Round 4: dice at the table — action, resistance and fortune rolls from the Actions box, logged to play.log. */
+   Round 4: dice at the table — action, resistance and fortune rolls from the Actions box, logged to play.log.
+   Round 5: the Session box (start / end of session, end-of-session xp) and the Downtime box (indulge vice, recover,
+   long-term project, train), each with an inline panel in the roll panel's style. */
 (function () {
   'use strict';
   var T = window.B68Tracker = {};
@@ -90,6 +92,27 @@
   function diceSvgs(r) { return '<div class="ds-dice" aria-label="dice ' + r.dice.join(', ') + '">' + r.dice.map(function (d) { return dieSvg(d, (d === r.value ? 'hi' : '') + (d === 6 ? ' six' : '')); }).join('') + '</div>'; }
   function capWord(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
 
+  /* ---------- sessions and downtime (round 5) ---------- */
+  function memoriesDone(play) { return !!(play.memories && play.memories.length) && play.memories.every(function (m) { return (m.filled || 0) >= (m.size || 8); }); }
+  /* the end-of-session xp triggers, exactly as the XP box lists them */
+  function sessionTriggers(play, pb) {
+    if (isPara(pb) && pb.xpTriggers && pb.xpTriggers.length) return pb.xpTriggers.slice();
+    var first = pb && pb.xp ? 'You ' + pb.xp.replace(/^address/, 'addressed').replace(/^obey orders, or address/, 'obeyed orders, or addressed') + '.' : 'You addressed a challenge in your playbook’s way.';
+    if (isHull(pb) && memoriesDone(play)) first = 'You worked to free yourself from your owning faction and controller, or addressed a challenge with your humanity.';
+    return [first, 'You struggled with issues stemming from a deadlock.'];
+  }
+  function trigLabel(t) { return String(t).replace(/^You\s+/, '').replace(/\.\s*$/, ''); }
+  /* indulging vice rolls the lowest attribute rating */
+  function lowestAttr(play) { var best = null; ATTRS.forEach(function (a) { var n = attrRating(play, a); if (!best || n < best.n) best = { attr: a, n: n }; }); return best || { attr: '', n: 0 }; }
+  /* clock ticks from a downtime roll: 1–3 one, 4–5 two, 6 three, critical five */
+  function ticksFor(res) { return res.crit ? 5 : res.value >= 6 ? 3 : res.value >= 4 ? 2 : 1; }
+  /* a full healing clock steps every harm down a level: 3 → 2, 2 → 1, 1 cleared. Level 4 (mortal) is not healed by a clock. */
+  function stepHarm(hm) {
+    function two(a) { a = a.filter(function (x) { return x; }); while (a.length < 2) a.push(''); return a.slice(0, 2); }
+    return { l4: hm.l4 || '', l3: '', l2: two([hm.l3 || '']), l1: two([(hm.l2 || [])[0] || '', (hm.l2 || [])[1] || '']) };
+  }
+  function harmCount(hm) { return [hm.l3, hm.l2[0], hm.l2[1], hm.l1[0], hm.l1[1]].filter(function (x) { return x; }).length; }
+
   /* ---------- the play object ---------- */
   function blankPlay() {
     var dots = {}; ACTS.forEach(function (a) { dots[a] = 0; });
@@ -98,7 +121,9 @@
       stacks: 0, bank: 0, items: [], extraItems: [], loadLimit: 'quiet', cohort: { name: '', type: '', edges: '', flaws: '', abilities: '', harm: null, armor: false },
       contacts: [], vice: '', purveyor: '', clocks: [], memories: [], suspicion: 0, mastery: false, notes: '', log: [],
       /* paranormal playbooks */
-      alluvium: 0, strictures: [], darkMajesty: null, mission: null, ghostItems: '', enemies: '', feeding: '', telltale: '', echoAbilities: '' };
+      alluvium: 0, strictures: [], darkMajesty: null, mission: null, ghostItems: '', enemies: '', feeding: '', telltale: '', echoAbilities: '',
+      /* round 5: sessions and downtime */
+      session: 0, keyHitSession: {}, trainedThisDowntime: false };
   }
   function blankMission(name, answers) { var a = Array.isArray(answers) ? answers.slice(0, 4).map(function (x) { return String(x == null ? '' : x); }) : []; while (a.length < 4) a.push(''); return { name: name || '', answers: a, details: [] }; }
   function initialPlay(sheet, playbookId) {
@@ -156,6 +181,9 @@
     base.keys.forEach(function (k) { if (k.deadlock === undefined) k.deadlock = null; if (k.glitch === undefined) k.glitch = null; if (!k.hits) k.hits = 0; });
     if (isHull(pb) && !base.memories.length) base.memories = (pb.memories || []).map(function (q) { return { name: q, size: 8, filled: 0, text: '' }; });
     if (isTT(pb)) base.bank = 0;
+    base.session = Math.max(0, Math.floor(+base.session || 0));
+    if (typeof base.keyHitSession !== 'object' || Array.isArray(base.keyHitSession)) base.keyHitSession = {};
+    base.trainedThisDowntime = !!base.trainedThisDowntime;
     return base;
   }
 
@@ -386,9 +414,7 @@
       '<li>Every time you roll a <b>desperate action</b> or a <b>zero-dot action</b>, mark xp in any attribute of your choice.</li>' +
       '<li>Once per session when you <b>hit a key</b>, mark 1 xp and mark the key.</li>' +
       '<li class="ds-trig-h">At the end of each session, mark 1 xp (or 2 xp if you really smashed it) if:</li>';
-    if (isPara(pb) && pb.xpTriggers && pb.xpTriggers.length) pb.xpTriggers.forEach(function (t) { h += '<li>' + esc(t) + '</li>'; });
-    else h += '<li>You ' + (pb ? esc(pb.xp.replace(/^address/, 'addressed').replace(/^obey orders, or address/, 'obeyed orders, or addressed')) : 'addressed a challenge in your playbook’s way') + '.</li>' +
-      '<li>You struggled with issues stemming from a <b>deadlock</b>.</li>';
+    sessionTriggers(play, pb).forEach(function (t) { h += '<li>' + (isPara(pb) ? esc(t) : esc(t).replace(/a deadlock\.$/, 'a <b>deadlock</b>.')) + '</li>'; });
     h += '</ul>';
     if (hull) h += '<p class="hint">Whenever you would mark playbook xp, you can tick a memory clock instead. When all four memories are complete, the first trigger becomes: you worked to free yourself from your owning faction and controller, or addressed a challenge with your humanity.</p>';
     if (tt && pb.advance) h += '<p class="hint">' + esc(pb.advance) + '</p>';
