@@ -17,9 +17,9 @@ steps; `HOSTING.md` the API and adapter contract; `CAMPAIGN.md` the campaign lay
 |---|---|
 | 0. Table features on the artifact (dice, GM table, backups) | Done |
 | 1. Repository, hosting, sign-in, API, adapter, field-level saves | Done, waiting on your Cloudflare setup |
-| 2. Campaign layer: crew, shared clocks, session number, players | In progress |
+| 2. Campaign layer: the six crew sheets, shared clocks, session number, players, log | Done |
 | 3. Night-of-play: end of session, downtime | Done (session wrap-up and downtime on each sheet) |
-| 3. Night-of-play: crew playbook specifics, schedule tab | Waiting on the crew pages; schedule after the campaign layer |
+| 3. Night-of-play: schedule tab | Next |
 | 4. Installable, offline reading, nightly export | Not started |
 
 The sections below are the original plan, kept for reference.
