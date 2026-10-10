@@ -21,7 +21,7 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
   const calls = [];
   const s = {
     rows, calls, members, now,
-    status: {},                                          // path prefix -> forced response kind ('401' | 'redirect' | 'html' | 'down')
+    status: {}, conflicts: 0,                           // conflicts: answer the next N writes 409                                          // path prefix -> forced response kind ('401' | 'redirect' | 'html' | 'down')
     roleOf: (email) => (gms.includes(email) ? 'gm' : 'player'),
     // direct edits, as another client would make them
     put(id, doc) { const t = now(); rows[id] = { owner: doc.owner || null, updatedAt: t, deleted: false, doc: { ...clone(doc), updatedAt: t } }; },
@@ -33,6 +33,7 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
     const u = new URL(url, 'https://app.test');
     const p = u.pathname;
     for (const pre of Object.keys(s.status)) if (p.startsWith(pre)) return { forced: s.status[pre] };
+    if (method !== 'GET' && s.conflicts > 0) { s.conflicts--; return [409, { error: 'the character kept changing, try again' }]; }
     if (!user) return [401, { error: 'not signed in' }];
     const me = { id: user.email, email: user.email, name: user.name || '', role: s.roleOf(user.email), campaign: 'default' };
     if (p === '/api/me') { members[me.id] = { id: me.id, name: me.name, role: me.role }; return [200, me]; }
@@ -43,7 +44,7 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
         .filter(([, r]) => (since ? r.updatedAt > since : !r.deleted))
         .sort((a, b) => (a[1].updatedAt < b[1].updatedAt ? 1 : -1))
         .map(([id, r]) => ({ id, doc: r.deleted ? null : clone(r.doc), updatedAt: r.updatedAt, deleted: r.deleted }));
-      return [200, { now: new Date(tick).toISOString(), docs: list }];
+      return [200, { now: new Date(tick - 2000).toISOString(), docs: list }];   // like the real API: 2 s behind, so rows repeat
     }
     const m = p.match(/^\/api\/characters\/([A-Za-z0-9_-]{1,80})$/);
     if (!m) return [404, { error: 'not found' }];
@@ -274,6 +275,17 @@ await test('a write by a player to a character they do not own rejects with the 
   err = null; try { await col.doc('gmc').delete(); } catch (e) { err = e; } eq(err && err.message, 'not your character');
   // a new one is fine and owned by the player
   await col.doc('pnew').set(char('pnew')); eq(api.rows.pnew.owner, 'pl@x.test');
+});
+
+await test('409: a write is retried, then rejects with the API message', async () => {
+  const api = fakeApi();
+  const b = browser(api, { email: 'gm@x.test' });
+  const col = (await b.win.claude.use('db')).collection('characters');
+  api.conflicts = 2; await col.doc('k').set(char('k'));
+  eq([api.conflicts, !!api.rows.k], [0, true], 'retried twice and landed');
+  api.conflicts = 5; let err = null;
+  try { await col.doc('k').update({ name: 'k2' }); } catch (e) { err = e; }
+  eq(err && err.message, 'the character kept changing, try again'); eq(api.rows.k.doc.name, 'k');
 });
 
 await test('a failed write resyncs the cache from the server', async () => {

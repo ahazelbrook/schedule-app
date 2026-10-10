@@ -11,7 +11,7 @@
 
   var COLLECTION = 'characters';
   var SIGNED_OUT = 'signed out: reload the page to sign in again';
-  var SINCE_OVERLAP_MS = 2000;   /* ask for a little more than `since`, so a row stamped in the same instant is not missed */
+  var CONFLICT_RETRIES = 2;      /* a write answered 409 (the row kept changing) is sent again this many times */
   var MEMBERS_TTL_MS = 60000;
 
   /* ---------- helpers ---------- */
@@ -163,7 +163,8 @@
     listeners.slice().forEach(function (l) { if (l.err) { try { l.err(e); } catch (x) {} } });
   }
 
-  /* apply a /api/characters response; rows for documents with own writes in flight are left alone */
+  /* apply a /api/characters response idempotently (a row whose updatedAt we already hold changes nothing);
+     rows for documents with own writes in flight are left alone */
   function applyServer(r, full) {
     var changed = {};
     if (full) {
@@ -180,7 +181,7 @@
         cache[id] = row.doc; stamp[id] = at; changed[id] = true;
       }
     });
-    if (r.now) { var t = Date.parse(r.now); since = isNaN(t) ? r.now : new Date(t - SINCE_OVERLAP_MS).toISOString(); }
+    if (r.now) since = r.now;      /* reported 2 s behind, so recent rows repeat: the updatedAt check above makes that a no-op */
     loaded = true;
     notify(changed, full);
   }
@@ -242,7 +243,13 @@
     local(); notify(ch);
     var path = '/' + COLLECTION + '/' + encodeURIComponent(id);
     function settle() { epoch++; if (!--pending[id]) delete pending[id]; }
-    return api(method, path, body).then(function (r) {
+    function send(n) {
+      return api(method, path, body).catch(function (e) {
+        if (e.status !== 409 || n >= CONFLICT_RETRIES) throw e;
+        return new Promise(function (ok) { setTimeout(ok, 150 * (n + 1)); }).then(function () { return send(n + 1); });
+      });
+    }
+    return send(0).then(function (r) {
       settle();
       if (!pending[id]) {
         if (method === 'DELETE') { delete cache[id]; delete stamp[id]; }

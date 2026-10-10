@@ -7,7 +7,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "wrangler pages dev app --binding DEV_USER=gm@example.test --binding GM_EMAILS=gm@example.test --port 8788",
     "db:local": "wrangler d1 execute DB --local --file schema.sql",
-    "check:api": "node checks/api/jwt.mjs && node checks/api/flow.mjs"
+    "check:api": "node checks/api/jwt.mjs && node checks/api/flow.mjs",
+    "check:runtime": "node checks/runtime/adapter.test.mjs",
+    "check:e2e": "cd app/checks && node e2e.js"
   },
   "keywords": [],
   "author": "",
