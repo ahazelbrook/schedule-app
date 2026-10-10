@@ -5,7 +5,8 @@
 //                                  deletes), except `log`, whose entries are added (mergeLog);
 //                                  a player may only change what playerMayWrite allows
 //                                  -> { doc, updatedAt }
-// `crew` and `session` in a body must be plain objects (400).
+// A player may also change their own `schedule.avail.<id>` and `schedule.rsvp.<id>` (SCHEDULE.md).
+// `crew`, `session` and `schedule` in a body must be plain objects (400).
 // The server stamps doc.updatedAt and keeps the newest LOG_MAX log entries.
 
 import { getDb } from '../_lib/db.js';
@@ -33,7 +34,7 @@ export async function onRequest({ request, env, data }) {
     if (method === 'PUT') return { ...body };
     const { log, ...rest } = body;
     const next = deepMerge(current, rest);
-    if (!gm && !playerMayWrite(current, next)) throw new HttpError(403, GM_ONLY);
+    if (!gm && !playerMayWrite(current, next, me.id)) throw new HttpError(403, GM_ONLY);
     if ('log' in body) next.log = mergeLog(current.log, log, gm);
     return next;
   });

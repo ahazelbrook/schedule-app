@@ -352,6 +352,35 @@ async function main() {
     expect(byId[PLAYER] && byId[PLAYER].role === 'player', 'player ' + JSON.stringify(byId[PLAYER]));
     expect(r.json.members.length === 2, 'count ' + r.json.members.length);
   });
+
+  await step('GET /api/export as gm: shape, attachment header, campaign and all live characters', async () => {
+    const r = await api('GET', '/api/export');
+    expectStatus(r, 200);
+    const cd = r.headers.get('content-disposition') || '';
+    expect(/^attachment; filename="blades68-check-\d{4}-\d{2}-\d{2}\.json"$/.test(cd), 'content-disposition ' + cd);
+    expect(r.headers.get('cache-control') === 'no-store', 'no-store');
+    expect(cd.includes(new Date().toISOString().slice(0, 10)), 'date in filename');
+    const j = r.json;
+    expect(typeof j.exportedAt === 'string' && !Number.isNaN(Date.parse(j.exportedAt)), 'exportedAt');
+    expect(j.campaign && j.campaign.id === 'check' && j.campaign.updatedAt && j.campaign.doc && j.campaign.doc.v === 1, 'campaign ' + JSON.stringify(j.campaign).slice(0, 200));
+    expect(j.campaign.doc.schedule && j.campaign.doc.schedule.avail, 'schedule in the exported doc');
+    expect(Array.isArray(j.characters) && j.characters.length > 0, 'characters');
+    const live = (await api('GET', '/api/characters')).json.docs;
+    expect(j.characters.length === live.length, 'characters ' + j.characters.length + ' vs ' + live.length);
+    for (const c of j.characters) {
+      expect(c.id && c.doc && typeof c.doc === 'object' && c.updatedAt, 'character entry ' + JSON.stringify(c).slice(0, 120));
+    }
+    expect(live.every((d) => j.characters.some((c) => c.id === d.id && c.updatedAt === d.updatedAt)), 'same rows as the list');
+    expect(Array.isArray(j.members) && j.members.some((m) => m.id === GM && m.role === 'gm'), 'members ' + JSON.stringify(j.members));
+  });
+
+  await step('GET /api/export as player -> 403; POST -> 405', async () => {
+    const r = await api('GET', '/api/export', { user: PLAYER });
+    expectStatus(r, 403);
+    expect(r.json.error === 'only the GM can export', r.text);
+    expect(!r.headers.get('content-disposition'), 'no attachment on an error');
+    expectStatus(await api('POST', '/api/export', { body: {} }), 405);
+  });
 }
 
 // ---------- /api/campaign (CAMPAIGN.md) ----------
@@ -577,6 +606,167 @@ async function campaignSteps() {
     for (const r of rs) expectStatus(r, 200);
     const marks = (await get()).doc.crew.marks || {};
     expect([0, 1, 2, 3].every((i) => marks['m' + i] === i), 'marks ' + JSON.stringify(marks));
+  });
+
+  // ----- schedule (SCHEDULE.md): the player rule on schedule.avail.<me> / schedule.rsvp.<me> -----
+  const P2 = 'player2@example.test';
+  const sched = async () => (await get()).doc.schedule;
+  const at1 = '2026-11-20T19:00:00.000Z';
+  const at2 = '2026-11-27T19:00:00.000Z';
+
+  await step('schedule: a stored doc without `schedule` reads as the default; GM PUT without it stays valid', async () => {
+    const d = (await get()).doc;
+    expect(d.schedule === undefined, 'stored doc has no schedule: ' + JSON.stringify(d.schedule));
+    const r = await api('GET', '/api/campaign', { user: PLAYER });
+    expectStatus(r, 200);
+  });
+
+  await step('schedule: player writes own avail on a doc with no schedule (new key) -> 200, one allowed path', async () => {
+    const r = await api('PATCH', '/api/campaign', { user: PLAYER, body: { schedule: { avail: { [PLAYER]: { o_aaa: 'yes' } } } } });
+    expectStatus(r, 200);
+    const sc = r.json.doc.schedule;
+    expect(sc.avail[PLAYER].o_aaa === 'yes', JSON.stringify(sc));
+    expect(r.json.doc.crew.name === 'The Lamplighters' && r.json.doc.clocks.length >= 1, 'rest kept');
+  });
+
+  await step('schedule: GM adds options, sets next, cadence and quorum, and writes another person\'s answers', async () => {
+    const r = await api('PATCH', '/api/campaign', {
+      body: {
+        schedule: {
+          options: { o_aaa: { at: at1, minutes: 240, note: '' }, o_bbb: { at: at2, minutes: 180, note: 'late' } },
+          next: { at: at1, minutes: 240, place: 'The Crow', note: '', confirmedAt: '2026-10-10T10:00:00.000Z' },
+          cadence: { weeks: 2, weekday: 5, time: '19:00', minutes: 240 },
+          quorum: 3,
+          avail: { [P2]: { o_aaa: 'yes', o_bbb: 'yes' } },
+          rsvp: { [P2]: { at: at1, v: 'in' } },
+        },
+      },
+    });
+    expectStatus(r, 200);
+    const sc = r.json.doc.schedule;
+    expect(Object.keys(sc.options).length === 2 && sc.next.place === 'The Crow' && sc.cadence.weeks === 2 && sc.quorum === 3, JSON.stringify(sc));
+    expect(sc.avail[PLAYER].o_aaa === 'yes', 'player answer kept');
+  });
+
+  await step('schedule: player writes own avail on a doc with schedule: new key, change, and note', async () => {
+    let r = await api('PATCH', '/api/campaign', { user: PLAYER, body: { schedule: { avail: { [PLAYER]: { o_bbb: 'maybe' } } } } });
+    expectStatus(r, 200);
+    r = await api('PATCH', '/api/campaign', { user: PLAYER, body: { schedule: { avail: { [PLAYER]: { o_aaa: 'no' } } } } });
+    expectStatus(r, 200);
+    r = await api('PATCH', '/api/campaign', { user: PLAYER, body: { schedule: { avail: { [PLAYER]: { note: 'away the week of the 20th' } } } } });
+    expectStatus(r, 200);
+    const a = r.json.doc.schedule.avail[PLAYER];
+    expect(a.o_aaa === 'no' && a.o_bbb === 'maybe' && a.note === 'away the week of the 20th', JSON.stringify(a));
+  });
+
+  await step('schedule: player writes own rsvp -> 200 (and replaces it)', async () => {
+    let r = await api('PATCH', '/api/campaign', { user: PLAYER, body: { schedule: { rsvp: { [PLAYER]: { at: at1, v: 'in' } } } } });
+    expectStatus(r, 200);
+    expect(r.json.doc.schedule.rsvp[PLAYER].v === 'in' && r.json.doc.schedule.rsvp[PLAYER].at === at1, JSON.stringify(r.json.doc.schedule.rsvp));
+    r = await api('PATCH', '/api/campaign', { user: PLAYER, body: { schedule: { rsvp: { [PLAYER]: { v: 'out' } } } } });
+    expectStatus(r, 200);
+    expect(r.json.doc.schedule.rsvp[PLAYER].v === 'out', 'changed');
+  });
+
+  await step('schedule: player writes another person\'s avail / rsvp -> 403, nothing stored', async () => {
+    const before = await get();
+    for (const body of [
+      { schedule: { avail: { [P2]: { o_aaa: 'no' } } } },
+      { schedule: { avail: { [GM]: { o_aaa: 'yes' } } } },
+      { schedule: { rsvp: { [P2]: { at: at1, v: 'out' } } } },
+      { schedule: { avail: { [PLAYER]: { o_aaa: 'yes' }, [P2]: { o_aaa: 'no' } } } },
+      { schedule: { avail: { [P2.toUpperCase()]: { o_aaa: 'yes' } } } },
+    ]) {
+      const r = await api('PATCH', '/api/campaign', { user: PLAYER, body });
+      expectStatus(r, 403);
+      expect(r.json.error === GM_ONLY, r.text);
+    }
+    expect((await get()).updatedAt === before.updatedAt, 'stored doc changed');
+  });
+
+  await step('schedule: player cannot add an option, set next, cadence or quorum, or wipe avail/rsvp -> 403', async () => {
+    const before = await get();
+    for (const body of [
+      { schedule: { options: { o_ccc: { at: at2, minutes: 60, note: '' } } } },
+      { schedule: { options: { o_aaa: { at: at2 } } } },
+      { schedule: { options: { o_aaa: null } } },
+      { schedule: { next: { at: at2, minutes: 60, place: '', note: '', confirmedAt: at1 } } },
+      { schedule: { next: null } },
+      { schedule: { cadence: { weeks: 1, weekday: 1, time: '18:00', minutes: 120 } } },
+      { schedule: { quorum: 1 } },
+      { schedule: { avail: null } },
+      { schedule: { rsvp: null } },
+      { schedule: { avail: { [PLAYER]: { o_aaa: 'yes' } }, quorum: 1 } },
+      { schedule: { extra: { a: 1 } } },
+      { schedule: { extra: {} } },
+    ]) {
+      const r = await api('PATCH', '/api/campaign', { user: PLAYER, body });
+      expect(r.status === 403, JSON.stringify(body) + ' -> ' + r.status);
+      expect(r.json.error === GM_ONLY, JSON.stringify(body) + ' -> ' + r.text);
+    }
+    expect((await get()).updatedAt === before.updatedAt, 'stored doc changed');
+  });
+
+  await step('schedule: GM may change anything under schedule, adding an option, quorum, next', async () => {
+    const r = await api('PATCH', '/api/campaign', {
+      body: {
+        schedule: {
+          options: { o_ccc: { at: '2026-12-04T19:00:00.000Z', minutes: 240, note: '' } },
+          quorum: 2,
+        },
+      },
+    });
+    expectStatus(r, 200);
+    const sc = r.json.doc.schedule;
+    expect(Object.keys(sc.options).length === 3 && sc.avail[P2].o_bbb === 'yes' && sc.rsvp[P2].v === 'in' && sc.quorum === 2, JSON.stringify(sc));
+    expect(sc.avail[PLAYER].o_aaa === 'no' && sc.next.place === 'The Crow', 'other keys kept');
+  });
+
+  await step('schedule: null deletes the player\'s own avail entry key, then the whole entry and rsvp', async () => {
+    let r = await api('PATCH', '/api/campaign', { user: PLAYER, body: { schedule: { avail: { [PLAYER]: { note: null } } } } });
+    expectStatus(r, 200);
+    expect(!('note' in r.json.doc.schedule.avail[PLAYER]), 'note deleted');
+    r = await api('PATCH', '/api/campaign', { user: PLAYER, body: { schedule: { avail: { [PLAYER]: null }, rsvp: { [PLAYER]: null } } } });
+    expectStatus(r, 200);
+    const sc = r.json.doc.schedule;
+    expect(!(PLAYER in sc.avail) && !(PLAYER in sc.rsvp), JSON.stringify(sc));
+    expect(sc.avail[P2].o_aaa === 'yes' && sc.rsvp[P2].v === 'in' && Object.keys(sc.options).length === 3, 'others kept');
+  });
+
+  await step('schedule: null deleting someone else\'s entry is 403', async () => {
+    const r = await api('PATCH', '/api/campaign', { user: PLAYER, body: { schedule: { avail: { [P2]: null } } } });
+    expectStatus(r, 403);
+    expect((await sched()).avail[P2].o_aaa === 'yes', 'kept');
+  });
+
+  await step('schedule: `schedule` must be an object (400) in PATCH and PUT, for player and GM', async () => {
+    const before = (await get()).updatedAt;
+    for (const [user, method, body] of [
+      [PLAYER, 'PATCH', { schedule: 5 }],
+      [PLAYER, 'PATCH', { schedule: null }],
+      [GM, 'PATCH', { schedule: 5 }],
+      [GM, 'PATCH', { schedule: [] }],
+      [GM, 'PATCH', { schedule: 'x' }],
+      [GM, 'PUT', { ...sampleCampaign(), schedule: 5 }],
+    ]) {
+      const r = await api(method, '/api/campaign', { user, body });
+      expectStatus(r, 400);
+      expect(r.json.error === 'schedule must be an object', JSON.stringify(body) + ' -> ' + r.text);
+    }
+    expect((await get()).updatedAt === before, 'stored doc changed');
+  });
+
+  await step('schedule: concurrent PATCHes from two players to their own avail both land', async () => {
+    const rs = await Promise.all([
+      api('PATCH', '/api/campaign', { user: PLAYER, body: { schedule: { avail: { [PLAYER]: { o_aaa: 'yes', o_ccc: 'maybe' } } } } }),
+      api('PATCH', '/api/campaign', { user: P2, body: { schedule: { avail: { [P2]: { o_ccc: 'no' } }, rsvp: { [P2]: { at: at1, v: 'out' } } } } }),
+      api('PATCH', '/api/campaign', { user: PLAYER, body: { schedule: { rsvp: { [PLAYER]: { at: at1, v: 'in' } } } } }),
+    ]);
+    for (const r of rs) expectStatus(r, 200);
+    const sc = await sched();
+    expect(sc.avail[PLAYER].o_aaa === 'yes' && sc.avail[PLAYER].o_ccc === 'maybe', 'player avail ' + JSON.stringify(sc.avail[PLAYER]));
+    expect(sc.avail[P2].o_ccc === 'no' && sc.avail[P2].o_aaa === 'yes' && sc.rsvp[P2].v === 'out', 'player2 ' + JSON.stringify(sc.avail[P2]));
+    expect(sc.rsvp[PLAYER].v === 'in', 'rsvp');
   });
 
   await step('campaign: bad body 400, oversize 413, DELETE 405', async () => {

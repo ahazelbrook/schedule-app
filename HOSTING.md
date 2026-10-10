@@ -97,14 +97,31 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   the same number of clocks are allowed. Any other change (`session`, adding/removing/renaming/
   resizing a clock, its kind or `hidden`, any other key) is
   `403 {"error":"only the GM can change that"}`. `updatedAt` in a body is ignored.
-- In PUT and PATCH, `crew` and `session` must be plain objects when present (`null`
-  included): otherwise `400 {"error":"crew must be an object"}` / `"session must be an object"`.
+- Schedule (SCHEDULE.md): the document has a `schedule` key (`options`, `avail`, `next`, `rsvp`,
+  `cadence`, `quorum`; a stored document without it reads as the default one, and the player rule
+  compares against that default, so a first write works). A player may additionally change their
+  own answers: `schedule.avail.<id>` (the whole entry, set or deleted with `null`, or any key in
+  it, including `note`) and `schedule.rsvp.<id>`, where `<id>` is their own id (lower-cased
+  email). Another person's entry, `options`, `next`, `cadence`, `quorum` and any other key under
+  `schedule` are `403 {"error":"only the GM can change that"}` for a player; the GM may change
+  all of it. Per-person maps merge, so concurrent PATCHes from different people all land.
+- In PUT and PATCH, `crew`, `session` and `schedule` must be plain objects when present (`null`
+  included): otherwise `400 {"error":"crew must be an object"}` / `"session must be an object"` /
+  `"schedule must be an object"`.
 - For both campaign writes the server stamps `doc.updatedAt`, keeps the newest 200 `log`
   entries, refuses a document over 256 KiB with 413, and uses the same optimistic `updated_at`
   check and retries as characters (409 when it keeps changing). Other methods are 405.
 - `GET /api/members` → `{ "members": [ { "id": email, "name", "role" } ] }`: everyone who has
   called `/api/me` (the API upserts a `members` table on each `/api/me`:
   `members(email PRIMARY KEY, name, role, last_seen)`), so the GM table can show names.
+- `GET /api/export` (GM only; a player gets `403 {"error":"only the GM can export"}`; other
+  methods 405) → a backup of this deployment's campaign as a download:
+  `{ "exportedAt": ISO, "campaign": { "id", "doc", "updatedAt" }, "characters": [ { "id", "doc",
+  "updatedAt" } ], "members": [ { "id", "name", "role" } ] }`. `campaign.doc` is the stored
+  campaign document (the default one, `updatedAt` null, when none is stored); `characters` is
+  every live character row of the campaign (not capped at 500, tombstones left out). The
+  response carries `Content-Disposition: attachment; filename="blades68-<campaign>-<YYYY-MM-DD>.json"`
+  and `Cache-Control: no-store`.
 
 ## Adapter (`app/runtime/cf.js`)
 

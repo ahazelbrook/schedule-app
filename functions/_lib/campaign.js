@@ -22,9 +22,15 @@ export function defaultCampaign() {
       claims: [], cohorts: [], factions: [],
     },
     clocks: [],
+    schedule: defaultSchedule(),
     log: [],
     updatedAt: null,
   };
+}
+
+/** What a missing `schedule` reads as (see SCHEDULE.md). */
+export function defaultSchedule() {
+  return { options: {}, avail: {}, next: null, rsvp: {}, cadence: null, quorum: 0 };
 }
 
 // ---------- the player rule ----------
@@ -42,17 +48,26 @@ function sameJson(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function playerMayChange(path) {
-  return PLAYER_PATHS.some((p) => p.length === path.length &&
-    p.every((seg, i) => (seg === INDEX ? typeof path[i] === 'number' : seg === path[i])));
+function playerMayChange(path, meId) {
+  if (PLAYER_PATHS.some((p) => p.length === path.length &&
+    p.every((seg, i) => (seg === INDEX ? typeof path[i] === 'number' : seg === path[i])))) return true;
+  // schedule.avail.<me>[.…] and schedule.rsvp.<me>[.…]: a person's own answers. Ids are emails,
+  // and a path is an array of segments, so a key containing '.' cannot be confused with a path.
+  return typeof meId === 'string' && meId !== '' && path.length >= 3 && path[0] === 'schedule' &&
+    (path[1] === 'avail' || path[1] === 'rsvp') && path[2] === meId;
 }
 
 /**
  * Every leaf path whose value differs between two documents. Objects are compared key by key,
  * arrays of equal length index by index; an array whose length changed is reported as the
- * array's own path (so adding or removing a clock is never a player change).
+ * array's own path (so adding or removing a clock is never a player change). A key present on
+ * one side only is reported as the paths under it when its value is a non-empty plain object
+ * (so a new `schedule.avail.<me>` is `[schedule, avail, <me>, <key>]`), else as its own path.
  */
 export function changedPaths(before, after, path = [], out = []) {
+  const nonEmpty = (v) => isPlainObject(v) && Object.keys(v).length > 0;
+  if (before === undefined && nonEmpty(after)) before = {};
+  else if (after === undefined && nonEmpty(before)) after = {};
   if (isPlainObject(before) && isPlainObject(after)) {
     const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
     for (const k of keys) changedPaths(before[k], after[k], path.concat(k), out);
@@ -64,15 +79,22 @@ export function changedPaths(before, after, path = [], out = []) {
   return out;
 }
 
+// A stored document may predate `schedule`: compare both sides with the missing keys filled in.
+function withSchedule(doc) {
+  if (doc.schedule !== undefined && !isPlainObject(doc.schedule)) return doc;
+  return { ...doc, schedule: { ...defaultSchedule(), ...(doc.schedule || {}) } };
+}
+
 /**
- * True when a player may turn `before` into `after`: anything under `crew` and `clocks.<i>.filled`
- * (same number of clocks). `log` is not compared here: a PATCH adds to it through mergeLog, and
- * only the GM can PUT. updatedAt is ignored: the server stamps it.
+ * True when a player (`meId`, the caller's id) may turn `before` into `after`: anything under
+ * `crew`, `clocks.<i>.filled` (same number of clocks), and the caller's own entries
+ * `schedule.avail.<meId>` and `schedule.rsvp.<meId>`. `log` is not compared here: a PATCH adds
+ * to it through mergeLog, and only the GM can PUT. updatedAt is ignored: the server stamps it.
  */
-export function playerMayWrite(before, after) {
-  const { log: _l1, crew: _c1, updatedAt: _u1, ...oldRest } = before;
-  const { log: _l2, crew: _c2, updatedAt: _u2, ...newRest } = after;
-  return changedPaths(oldRest, newRest).every(playerMayChange);
+export function playerMayWrite(before, after, meId) {
+  const { log: _l1, crew: _c1, updatedAt: _u1, ...oldRest } = withSchedule(before);
+  const { log: _l2, crew: _c2, updatedAt: _u2, ...newRest } = withSchedule(after);
+  return changedPaths(oldRest, newRest).every((p) => playerMayChange(p, meId));
 }
 
 // ---------- the log: PATCH adds entries, it never replaces ----------
@@ -113,9 +135,9 @@ export function mergeLog(stored, incoming, gm) {
     .slice(0, LOG_MAX);
 }
 
-/** `crew` and `session`, when a body names them, must be plain objects (400 otherwise). */
+/** `crew`, `session` and `schedule`, when a body names them, must be plain objects (400 otherwise). */
 export function checkShape(body) {
-  for (const k of ['crew', 'session']) {
+  for (const k of ['crew', 'session', 'schedule']) {
     if (k in body && !isPlainObject(body[k])) throw new HttpError(400, k + ' must be an object');
   }
 }
