@@ -1,0 +1,26 @@
+# Cloudflare Pages project for the hosted build (see HOSTING.md).
+# The static page is app/; the API is functions/ (Pages Functions) on a D1 database.
+
+name = "blades68"
+pages_build_output_dir = "app"
+compatibility_date = "2025-09-01"
+
+[vars]
+# Which campaign this deployment serves (rows are scoped by it).
+CAMPAIGN = "default"
+
+# Set these in the Cloudflare dashboard (Pages project > Settings > Variables and Secrets,
+# type "Secret"), or with `npx wrangler pages secret put <NAME>`. They are not listed in
+# [vars] because plain vars in this file override what is set in the dashboard.
+#   ACCESS_TEAM  your Zero Trust team name: the "<team>" in https://<team>.cloudflareaccess.com
+#   ACCESS_AUD   the Application Audience (AUD) tag of the Access application protecting the site
+#   GM_EMAILS    comma-separated GM emails, case-insensitive, e.g. "gm@example.com,co-gm@example.com"
+# Never set DEV_USER in production: it signs in every request without a token
+# (local development only, passed with --binding DEV_USER=... ; see package.json "dev").
+
+[[d1_databases]]
+binding = "DB"
+database_name = "blades68"
+# REPLACE with the id printed by `npx wrangler d1 create blades68`
+# (or shown in the dashboard under Storage & Databases > D1).
+database_id = "00000000-0000-0000-0000-000000000000"

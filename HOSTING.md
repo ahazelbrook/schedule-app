@@ -26,7 +26,10 @@ Roles: `gm` when the email is in `GM_EMAILS` (comma-separated, case-insensitive)
 plus new ones. GMs write and delete any.
 
 Development: when the binding `DEV_USER` is set (an email) and there is no Access header,
-that email is the user. Never set `DEV_USER` in production.
+that email is the user. Never set `DEV_USER` in production. Only while `DEV_USER` is set, a
+request may name another user with an `X-Dev-User: <email>` header (the checks use it to act
+as a player and as the GM against one server); without `DEV_USER` the header is ignored. A
+request that carries an Access header is always verified, even with `DEV_USER` set.
 
 Environment / bindings: `DB` (D1), `ACCESS_TEAM`, `ACCESS_AUD`, `GM_EMAILS`, `DEV_USER`
 (dev only), `CAMPAIGN` (default `default`).
@@ -58,7 +61,9 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   every live character of the campaign, newest `updated_at` first, at most 500.
 - `GET /api/characters?since=<ISO>` → same shape, every row (tombstones included, with
   `"deleted": true` and `"doc": null`) whose `updated_at > since`. `now` is the server time to
-  use as the next `since`.
+  use as the next `since`; it is reported 2 s behind the clock so a write committed during a
+  poll is never missed, which means a recent row can arrive in two consecutive polls (apply
+  rows idempotently). A `since` that does not parse as a date is 400.
 - `GET /api/characters/:id` → `{ "id", "doc" }`; 404 when missing or deleted.
 - `PUT /api/characters/:id` body = whole doc → create or replace. The server stamps
   `doc.updatedAt = now`; on create it stamps `doc.createdAt` if missing and forces
@@ -69,6 +74,10 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   permission rule, same stamping. Returns `{ "id", "doc" }`.
 - `DELETE /api/characters/:id` → tombstone. Returns `{ "ok": true }`.
 - Ids: `[A-Za-z0-9_-]{1,80}`. Bodies over 256 KiB are refused with 413.
+- Writes are read-modify-write with an optimistic check on `updated_at`, retried a few times,
+  so concurrent PATCHes to different fields all land; if a row keeps changing the API answers
+  `409 {"error": ...}` and the client should retry. Other methods are 405; unknown `/api/*`
+  paths are a JSON 404. Every API response carries `Cache-Control: no-store`.
 - `GET /api/members` → `{ "members": [ { "id": email, "name", "role" } ] }`: everyone who has
   called `/api/me` (the API upserts a `members` table on each `/api/me`:
   `members(email PRIMARY KEY, name, role, last_seen)`), so the GM table can show names.
@@ -105,9 +114,14 @@ window.claude = { use: function (name) { /* -> Promise */ } };
 
 ```
 npm install            # wrangler (devDependency at the repository root)
-npx wrangler d1 execute DB --local --file schema.sql
-npx wrangler pages dev app --d1 DB --binding DEV_USER=gm@example.test --binding GM_EMAILS=gm@example.test --port 8788
+npm run db:local       # = npx wrangler d1 execute DB --local --file schema.sql (optional)
+npm run dev            # = npx wrangler pages dev app --binding DEV_USER=gm@example.test --binding GM_EMAILS=gm@example.test --port 8788
+npm run check:api      # checks/api/jwt.mjs, then checks/api/flow.mjs (starts its own servers)
 ```
+
+`npm run dev` takes the D1 binding from `wrangler.toml`, so it shares the local database
+that `db:local` writes. Adding `--d1 DB` also works but gives a separate, empty local
+database; the API creates its tables on first use either way.
 
 `checks/api/` holds a node script that drives the local server with `fetch` through the
 whole flow (me, create, list, since, patch, delete, player vs gm permissions, bad token) and

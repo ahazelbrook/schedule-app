@@ -54,6 +54,8 @@ Every push to that branch now redeploys. Other branches get preview addresses.
 | `ACCESS_AUD` | the AUD tag from step 4 |
 | `GM_EMAILS` | your email (comma-separated if there is more than one GM) |
 
+Add them as type **Secret** in the dashboard, never in `wrangler.toml`, so nothing in the repository overrides them.
+
 6. Redeploy (Deployments → the latest → **Retry deployment**) so the variables take effect.
 
 Preview deployments: in the Pages project → **Settings** → **General**, turn on **Enable
