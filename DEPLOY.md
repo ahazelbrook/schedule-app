@@ -6,6 +6,24 @@ things off during play, and have the GM see everyone at a glance. The prototype 
 `prototype/creator/` already does all of that inside a claude.ai artifact. This plan is
 about turning it into something the table opens every week without thinking about it.
 
+## Status (updated)
+
+The hosted build went to **Cloudflare Pages + Access + D1** instead of GitHub Pages +
+Firebase, because you put the site behind Cloudflare anyway: Access gives Google and emailed
+one-time codes with an allowlist and no sign-in code of our own. `SETUP.md` has the dashboard
+steps; `HOSTING.md` the API and adapter contract; `CAMPAIGN.md` the campaign layer.
+
+| Phase | State |
+|---|---|
+| 0. Table features on the artifact (dice, GM table, backups) | Done |
+| 1. Repository, hosting, sign-in, API, adapter, field-level saves | Done, waiting on your Cloudflare setup |
+| 2. Campaign layer: crew, shared clocks, session number, players | In progress |
+| 3. Night-of-play: end of session, downtime | Done (session wrap-up and downtime on each sheet) |
+| 3. Night-of-play: crew playbook specifics, schedule tab | Waiting on the crew pages; schedule after the campaign layer |
+| 4. Installable, offline reading, nightly export | Not started |
+
+The sections below are the original plan, kept for reference.
+
 ## 0. Where we are
 
 The prototype is a plain HTML/JS page with no build step. It talks to storage through a
