@@ -1,4 +1,4 @@
-// Offline end-to-end check of the hosted build against a real local server (wrangler pages dev, DEV_USER):
+// Offline end-to-end check of the hosted build against a real local server (wrangler dev, DEV_USER):
 // the service worker takes control, a character is filed and ticked online, then with the browser offline the
 // page reloads from the cache and shows the last-seen data, a tick made offline waits in the queue (the header
 // says so) and lands on the server once the browser is back online. Also: the manifest is served and valid,
@@ -20,9 +20,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ---------- our own server (only this process group is ever signalled) ---------- */
 const stateDir = mkdtempSync(path.join(tmpdir(), 'b68-offline-check-'));
-const server = spawn(path.join(ROOT, 'node_modules', '.bin', 'wrangler'), ['pages', 'dev', 'app', '--port', String(PORT), '--ip', '127.0.0.1',
+const server = spawn(path.join(ROOT, 'node_modules', '.bin', 'wrangler'), ['dev', '--port', String(PORT), '--ip', '127.0.0.1',
   '--inspector-port', String(PORT + 20000), '--show-interactive-dev-session', 'false', '--persist-to', stateDir, '--log-level', 'warn',
-  '--binding', 'DEV_USER=gm@example.test', '--binding', 'GM_EMAILS=gm@example.test'],
+  '--var', 'DEV_USER:gm@example.test', '--var', 'GM_EMAILS:gm@example.test'],
 { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
 let serverLog = '';
 server.stdout.on('data', (d) => { serverLog += d; }); server.stderr.on('data', (d) => { serverLog += d; });
@@ -74,6 +74,9 @@ try {
   check(head.manifest && /crossorigin="use-credentials"/.test(head.manifest) && head.theme === '#14110e' && head.apple, 'manifest link, theme colour and touch icon in the page: ' + JSON.stringify(head));
   const cached = await until(() => page.evaluate(async () => { const ks = await caches.keys(); if (!ks.length) return null; const c = await caches.open(ks[0]); return (await c.keys()).map((r) => new URL(r.url).pathname); }), 10000);
   check(cached && cached.includes('/') && cached.includes('/boot.js') && cached.includes('/fonts/SpaceMono-Regular.woff2') && !cached.some((p) => p.startsWith('/api/')), 'app shell precached (' + (cached || []).length + ' files), no /api/');
+  const cachedPage = await page.evaluate(async () => { const ks = await caches.keys(); const c = await caches.open(ks[0]); const r = await c.match(location.origin + '/'); return r ? (await r.text()).slice(0, 200) : null; });
+  check(cachedPage && /^<!doctype html><meta charset=utf-8><meta name=viewport /i.test(cachedPage), 'the cached page carries the Worker\'s doctype and viewport: ' + JSON.stringify((cachedPage || '').slice(0, 60)));
+  check(await page.evaluate(() => document.compatMode === 'CSS1Compat' && !!document.querySelector('meta[name="viewport"]')), 'online: standards mode with a viewport meta');
 
   // file a character through the app, as app/checks/e2e.js does, then tick a stress box
   await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me);
@@ -99,6 +102,7 @@ try {
   await page.reload({ waitUntil: 'load' });
   const who = await until(() => page.evaluate(() => { const w = document.getElementById('whoami'); return w && /Offline/.test(w.textContent) ? w.textContent : null; }), 15000);
   check(!!who, 'app shell loaded offline, header says: ' + who);
+  check(await page.evaluate(() => document.compatMode === 'CSS1Compat' && document.characterSet === 'UTF-8' && /width=device-width/.test((document.querySelector('meta[name="viewport"]') || {}).content || '')), 'offline: the cached page is in standards mode too (doctype, charset, viewport)');
   const sheet = await until(() => page.evaluate((args) => document.body.dataset.mode === 'sheet' && document.querySelector(args.sel) ? document.querySelector('#dossier').textContent.includes('Offline Olly') : null, { sel: stressButtons }), 10000);
   check(!!sheet, 'the sheet opened offline with the last-seen character');
   const local = async () => page.evaluate(async (cid) => (await (await window.claude.use('db')).collection('characters').doc(cid).get()).data().play.stress, id);

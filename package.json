@@ -1,23 +1,26 @@
 {
   "name": "blades68-app",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Blades '68 table app: a Cloudflare Worker (static page + API on D1) behind Cloudflare Access",
   "scripts": {
     "test": "npm run check:runtime && npm run check:api",
-    "dev": "wrangler pages dev app --binding DEV_USER=gm@example.test --binding GM_EMAILS=gm@example.test --port 8788",
-    "db:local": "wrangler d1 execute DB --local --file schema.sql",
-    "check:api": "node checks/api/jwt.mjs && node checks/api/flow.mjs",
+    "dev": "wrangler dev --port 8788 --ip 127.0.0.1 --var DEV_USER:gm@example.test --var GM_EMAILS:gm@example.test",
+    "db:local": "wrangler d1 migrations apply DB --local",
+    "check:api": "node checks/api/jwt.mjs && node checks/api/worker.mjs && node checks/api/flow.mjs",
     "check:runtime": "node checks/runtime/adapter.test.mjs && node checks/runtime/pwa.test.mjs",
     "check:e2e": "cd app/checks && node e2e.js",
     "check:offline": "node checks/runtime/offline.e2e.mjs",
     "check:schedule": "node checks/runtime/schedule.e2e.mjs",
-    "icons": "node checks/runtime/icons.mjs"
+    "icons": "node checks/runtime/icons.mjs",
+    "check:phone": "node checks/runtime/phone.e2e.mjs",
+    "build": "wrangler deploy --dry-run --outdir .wrangler/dist",
+    "deploy": "sh scripts/deploy.sh"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "wrangler": "^4.149.0"
-  }
+  },
+  "private": true
 }

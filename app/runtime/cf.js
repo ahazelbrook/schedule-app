@@ -1,4 +1,4 @@
-/* Hosted runtime adapter (Cloudflare Pages + Access + D1).
+/* Hosted runtime adapter (Cloudflare Worker + Access + D1).
    Defines window.claude.use('user' | 'db' | 'downloads') on top of the JSON API in functions/
    (see HOSTING.md) so the page runs unchanged outside the claude.ai artifact. The db serves the
    `characters` collection and the shared `campaign/main` document (CAMPAIGN.md).
@@ -880,6 +880,9 @@
           head.appendChild(el);
         } catch (e) {}
       };
+      /* the Worker already puts a doctype, charset and this viewport in front of the page (worker/app.js); this is
+         the fallback if the page ever arrives without them, so a phone does not lay it out 980 px wide */
+      add('meta', { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' }, 'meta[name="viewport"]');
       add('link', { rel: 'manifest', href: 'manifest.webmanifest', crossorigin: 'use-credentials' }, 'link[rel="manifest"]');
       add('meta', { name: 'theme-color', content: '#14110e' }, 'meta[name="theme-color"]');
       add('link', { rel: 'icon', type: 'image/png', sizes: '192x192', href: 'icons/icon-192.png' }, 'link[rel="icon"]');

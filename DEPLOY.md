@@ -8,25 +8,29 @@ plan is about turning it into something the table opens every week without think
 
 ## Status (updated)
 
-The hosted build went to **Cloudflare Pages + Access + D1** instead of GitHub Pages +
-Firebase, because you put the site behind Cloudflare anyway: Access gives Google and emailed
-one-time codes with an allowlist and no sign-in code of our own. `SETUP.md` has the dashboard
-steps; `HOSTING.md` the API and adapter contract; `CAMPAIGN.md` the campaign layer; `SCHEDULE.md` the schedule;
+The hosted build is **one Cloudflare Worker + Access + D1** at `https://blades.fieldguide.help`
+(a subdomain of the domain you already have on Cloudflare; the apex and `www` are left alone),
+instead of GitHub Pages + Firebase: Access gives emailed one-time codes (and Google, when you
+add it) with an allowlist and no sign-in code of our own. It started as a Pages project and
+moved to a Worker with static assets, so one deploy carries the page, the API, the custom
+domain and the secrets. `SETUP.md` has the deploy (`scripts/deploy.sh`, then a few Access
+steps in the dashboard); `DEPLOY-PROMPT.md` is that procedure as a prompt for a local Claude
+session; `HOSTING.md` the Worker, API and adapter contract; `CAMPAIGN.md` the campaign layer; `SCHEDULE.md` the schedule;
 the root `README.md` the repository layout, local runs and checks. The same page still runs as the claude.ai
 artifact.
 
 | Phase | State |
 |---|---|
 | 0. Table features on the artifact (dice, GM table, backups) | Done |
-| 1. Repository, hosting, sign-in, API, adapter, field-level saves | Done, waiting on your Cloudflare setup |
+| 1. Repository, hosting, sign-in, API, adapter, field-level saves | Done; deploying is `scripts/deploy.sh` plus the Access dashboard steps (`SETUP.md`), not yet run on your account |
 | 2. Campaign layer: the six crew sheets, shared clocks, session number, players, log | Done |
 | 3. Night-of-play: end of session, downtime | Done (session wrap-up and downtime on each sheet) |
 | 3. Night-of-play: schedule (next-session card, availability grid, RSVP, calendar) | Done (`SCHEDULE.md`) |
 | 3. Schedule, second round: the RSVP board (the crew line-up coloured by each owner's answer), attendance recorded when the GM starts a session and correctable by the GM, the "missed N" streak and the best-date tie-break, the "Are you in?" nudge within 3 days, GM "Copy reminder" and "Copy date poll" | Done (`SCHEDULE.md`) |
-| 3. Reminders by Discord, email or push | Not built: Pages has no cron and the app sends no mail; the nudge on the card and the copied reminder for the group chat stand in |
+| 3. Reminders by Discord, email or push | Not built: the app sends no mail (a Worker could run them on a cron trigger, but nothing does yet); the nudge on the card and the copied reminder for the group chat stand in |
 | 4. Installable, offline reading and queued saves | Done (hosted build only) |
 | 4. Season print: every character and the crew in one printable document (`#print`, "Print the season" on the table page) | Done (`CAMPAIGN.md`, "Season print") |
-| 4. Backups | Done, without a nightly job (Pages has no cron): "Download all (JSON)" in the app (the characters and the table page's campaign document; a player's copy leaves out hidden clocks), "Restore (JSON)" (characters as new files for anyone; the table for the GM only, after a confirm; it reads both that file and `/api/export`), the GM's "Download everything" on the hosted build (`/api/export`: characters, campaign, members), and D1 Time Travel (7 days of point-in-time restore on the free plan, 30 on Workers Paid) |
+| 4. Backups | Done, without a nightly job (none scheduled; `npx wrangler d1 export` makes a full copy by hand): "Download all (JSON)" in the app (the characters and the table page's campaign document; a player's copy leaves out hidden clocks), "Restore (JSON)" (characters as new files for anyone; the table for the GM only, after a confirm; it reads both that file and `/api/export`), the GM's "Download everything" on the hosted build (`/api/export`: characters, campaign, members), and D1 Time Travel (7 days of point-in-time restore on the free plan, 30 on Workers Paid) |
 
 All four decisions below are settled. Fonts (3): keep GT America. All four families are
 vendored in `app/fonts/` and the hosted build serves them behind Access; the site is private

@@ -1,15 +1,49 @@
-# Hosted build contract: Cloudflare Pages + Access + D1
+# Hosted build contract: a Cloudflare Worker + Access + D1
 
 The page in `app/` is unchanged. It reaches storage, identity and downloads through
 `window.claude.use(name)`. Inside the claude.ai artifact that object is provided by the
 platform. In the hosted build `app/runtime/cf.js` defines it (only when it is missing) on
-top of a small JSON API served by Cloudflare Pages Functions in `functions/`, with the data
-in a D1 database and sign-in handled by Cloudflare Access in front of the whole site.
+top of a small JSON API, with the data in a D1 database and sign-in handled by Cloudflare
+Access in front of the whole host. One Cloudflare Worker (`blades68`) serves both the page
+and the API on one custom domain, by default `https://blades.fieldguide.help`.
 
-Ownership this round: **backend** owns `functions/`, `schema.sql`, `wrangler.toml`,
-`checks/api/`; **adapter** owns `app/runtime/cf.js`, the one `<script>` line in
-`app/index.html` that loads it before `boot.js`, and `checks/runtime/`. Nobody edits the
-other `app/*.js` files.
+Ownership: **backend** owns `worker/`, `functions/`, `schema.sql`, `migrations/`,
+`wrangler.toml`, `scripts/`, `checks/api/`; **adapter** owns `app/runtime/cf.js`, the one
+`<script>` line in `app/index.html` that loads it before `boot.js`, and `checks/runtime/`.
+
+## The Worker (`worker/`, `wrangler.toml`)
+
+- **Static assets.** Every file in `app/` is served as it is by Cloudflare's asset server
+  (`[assets] directory = "./app"`, binding `ASSETS`), except what `app/.assetsignore` leaves
+  out (`app/checks/` and the `.md` files). `/index.html` answers a redirect to `/`, a path
+  with no file a plain 404 (no single-page fallback: the app routes with `#` hashes).
+- **Worker first** (`run_worker_first`) for `/api`, `/api/*`, `/` and `/index.html`; any path
+  without a file also reaches the Worker, which hands it back to the asset server.
+- **The API.** `worker/app.js` maps `/api/*` onto the handlers in `functions/api/` exactly as
+  Pages Functions routed them (`me.js`, `members.js`, `export.js`, `campaign.js`,
+  `characters/index.js`, `characters/[id].js`, and `[[path]].js` for every other path, a
+  trailing slash allowed) and calls them with a Pages-style context (`request`, `env`,
+  `params`, `data`, `next`, `waitUntil`, `passThroughOnException`, `functionPath`). The
+  middleware `functions/api/_middleware.js` runs first for every API path, so an unknown path
+  without a token is a 401, then a JSON 404. The handlers and `functions/_lib/` are unchanged.
+- **The page.** `app/index.html` starts with `<title>`: inside the artifact the platform wraps
+  it in its own document. The Worker answers `/` with
+  `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width, initial-scale=1, viewport-fit=cover">`
+  in front of the file (only for a `200` HTML answer; a `304` or redirect passes through, and
+  the asset's `ETag` is kept since the same file always gets the same head). Without it a phone
+  lays the page out 980 px wide in quirks mode. The service worker caches the page as served,
+  so the offline copy has the same head. `cf.js` also adds the viewport meta when it is missing.
+- **Headers.** The page: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
+  `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` (only that: a
+  fuller CSP would need care with the page's inline styles) and a `Permissions-Policy` that
+  turns off camera, microphone, geolocation and payment. Every API answer: `Cache-Control:
+  no-store`, `nosniff`, `Referrer-Policy: same-origin`. Other files keep the asset server's
+  headers.
+- **Only the custom domain.** `workers_dev = false` and `preview_urls = false`: a
+  `*.workers.dev` address would skip Access (the API would still refuse it without a token,
+  the page would not). The route is `{ pattern = "<host>", custom_domain = true }`; deploying
+  creates the one proxied DNS record and certificate for that hostname and touches nothing else
+  in the zone. `scripts/deploy.sh` refuses the zone apex and `www`.
 
 ## Identity
 
@@ -26,15 +60,27 @@ Roles: `gm` when the email is in `GM_EMAILS` (comma-separated, case-insensitive)
 plus new ones. GMs write and delete any.
 
 Development: when the binding `DEV_USER` is set (an email) and there is no Access header,
-that email is the user. Never set `DEV_USER` in production. Only while `DEV_USER` is set, a
+that email is the user. Never set `DEV_USER` in production: `wrangler.toml` never names it
+(`npm run dev` and the checks pass it with `--var`), `checks/api/worker.mjs` and
+`scripts/deploy.sh` refuse a config that sets it, the deploy deletes a `DEV_USER` secret, and
+the Worker drops it for any request whose `Host` is not `localhost`, `127.0.0.1` or `[::1]`
+(`[dev] host = "localhost"` in `wrangler.toml` keeps that origin under `wrangler dev`), so a
+stray binding in production still means "Access token required". Only while `DEV_USER` is set, a
 request may name another user with an `X-Dev-User: <email>` header (the checks use it to act
 as a player and as the GM against one server); without `DEV_USER` the header is ignored. A
 request that carries an Access header is always verified, even with `DEV_USER` set.
 
-Environment / bindings: `DB` (D1), `ACCESS_TEAM`, `ACCESS_AUD`, `GM_EMAILS`, `DEV_USER`
-(dev only), `CAMPAIGN` (default `default`).
+Environment / bindings: `DB` (D1), `ASSETS` (the files in `app/`), the secrets `ACCESS_TEAM`,
+`ACCESS_AUD`, `GM_EMAILS` (set by `scripts/deploy.sh`), `DEV_USER` (local only), and the var
+`CAMPAIGN` (default `default`).
 
-## Database (`schema.sql`)
+## Database (`schema.sql`, `migrations/`)
+
+`schema.sql` is the whole schema as it stands; `migrations/` holds the same statements as
+numbered D1 migrations (`0001_init.sql`), applied with `npx wrangler d1 migrations apply DB
+--remote` (the deploy script does it) or `npm run db:local`. A later change goes in a new
+numbered file and in `schema.sql`; `checks/api/worker.mjs` fails when the two differ. The API
+also creates the tables lazily, so a fresh database works either way.
 
 ```sql
 CREATE TABLE IF NOT EXISTS characters (
@@ -241,33 +287,42 @@ circle.
 Checks: `npm run check:runtime` runs the adapter's unit test (mocked fetch and localStorage, offline
 cases included) and `checks/runtime/pwa.test.mjs` (manifest, icons, precache list, the
 service worker's rules in a fake worker scope). `npm run check:offline` starts its own
-`wrangler pages dev` on port 8790 and drives Chromium through install, offline reload, an
-offline tick and its sync on reconnect.
+`wrangler dev` on port 8790 and drives Chromium through install, offline reload (the cached
+page keeps the Worker's doctype: standards mode online and offline), an offline tick and its
+sync on reconnect. `npm run check:phone` opens the page in a 390 x 844 mobile Chromium
+(`isMobile`) on its own server (port 8792) and asserts `innerWidth` 390, standards mode, one
+viewport meta and no horizontal overflow.
 
 ## Local development and checks
 
 ```
 npm install            # wrangler (a dependency in package.json at the repository root)
-npm run db:local       # = npx wrangler d1 execute DB --local --file schema.sql (optional)
-npm run dev            # = npx wrangler pages dev app --binding DEV_USER=gm@example.test --binding GM_EMAILS=gm@example.test --port 8788
+npm run db:local       # = npx wrangler d1 migrations apply DB --local (optional)
+npm run dev            # = npx wrangler dev --port 8788 --ip 127.0.0.1 --var DEV_USER:gm@example.test --var GM_EMAILS:gm@example.test
+npm run build          # = npx wrangler deploy --dry-run --outdir .wrangler/dist (bundles, uploads nothing)
 npm test               # = npm run check:runtime && npm run check:api (no browser)
-npm run check:api      # checks/api/jwt.mjs, then checks/api/flow.mjs (starts its own servers on 8788 and 8789)
+npm run check:api      # checks/api/jwt.mjs, worker.mjs, then flow.mjs (starts its own servers on 8788 and 8789)
 npm run check:runtime  # checks/runtime/adapter.test.mjs and pwa.test.mjs (plain node)
 npm run check:offline  # checks/runtime/offline.e2e.mjs (own server on 8790, Chromium)
 npm run check:schedule # checks/runtime/schedule.e2e.mjs (own server on 8791, Chromium)
+npm run check:phone    # checks/runtime/phone.e2e.mjs (own server on 8792, mobile Chromium)
 npm run check:e2e      # app/checks/e2e.js against the stubbed runtime
 ```
 
 The Chromium checks need `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers` (and Playwright at
 `/opt/node-tools/node_modules/playwright`, or `PW_MODULE`).
 
-`npm run dev` takes the D1 binding from `wrangler.toml`, so it shares the local database
-that `db:local` writes. Adding `--d1 DB` also works but gives a separate, empty local
-database; the API creates its tables on first use either way.
+`npm run dev` takes the D1 binding from `wrangler.toml` and keeps its local data in
+`.wrangler/state`, the same local database that `db:local` writes; the API creates its tables
+on first use either way. Each check starts its own `wrangler dev` with a throwaway
+`--persist-to` directory and stops only the process group it started.
 
 `checks/api/` holds a node script that drives the local server with `fetch` through the
-whole flow (me, create, list, since, patch, delete, player vs gm permissions, bad token) and
-a JWT verification test with a generated RSA key. `checks/runtime/` holds the adapter's unit
+whole flow (me, create, list, since, patch, delete, player vs gm permissions, bad token), a
+JWT verification test with a generated RSA key, and `worker.mjs`: the router against the
+Pages file layout, the DEV_USER guard, the page head and headers, and the deploy config
+(assets, `run_worker_first`, `workers_dev = false`, no secrets or DEV_USER in
+`wrangler.toml`, migrations equal to `schema.sql`). `checks/runtime/` holds the adapter's unit
 test with a mocked `fetch`, the PWA test, the offline and schedule end-to-end runs and the
 icon builder. `app/checks/e2e.js` runs against `npm run dev` with
 `E2E_URL=http://127.0.0.1:8788` (no `window.claude` stub then) for the real end-to-end run.

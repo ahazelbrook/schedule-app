@@ -1,26 +1,62 @@
-# Cloudflare Pages project for the hosted build (see HOSTING.md).
-# The static page is app/; the API is functions/ (Pages Functions) on a D1 database.
+# Cloudflare Worker for the hosted build (see HOSTING.md and SETUP.md).
+# One Worker serves the static page in app/ (Workers static assets) and the JSON API in
+# functions/ (routed by worker/index.js) on a D1 database, behind Cloudflare Access.
+# scripts/deploy.sh fills in database_id and the host below; commit the result.
 
 name = "blades68"
-pages_build_output_dir = "app"
-compatibility_date = "2025-09-01"
+main = "worker/index.js"
+compatibility_date = "2026-10-01"
+
+# Only the custom domain below serves the app. The *.workers.dev address and preview URLs
+# would skip Cloudflare Access (the API would still refuse them, the page would not), so
+# they stay off.
+workers_dev = false
+preview_urls = false
+
+# The host the app lives on: a subdomain of a zone in this Cloudflare account. Deploying
+# creates (or keeps) a Worker custom domain for exactly this hostname: one proxied DNS record
+# and its certificate. Nothing else in the zone is touched. To move it, change the pattern
+# (or run B68_HOST=<host> scripts/deploy.sh, which rewrites it) and set up Access for the new
+# host (SETUP.md).
+routes = [
+  { pattern = "blades.fieldguide.help", custom_domain = true },
+]
+
+[assets]
+directory = "./app"
+binding = "ASSETS"
+# The Worker answers the API and the page itself (it puts a doctype and viewport in front of
+# index.html); every other file is served straight from the assets. Paths with no file also
+# reach the Worker, which answers the asset server's 404.
+run_worker_first = ["/api", "/api/*", "/", "/index.html"]
 
 [vars]
 # Which campaign this deployment serves (rows are scoped by it).
 CAMPAIGN = "default"
 
-# Set these in the Cloudflare dashboard (Pages project > Settings > Variables and Secrets,
-# type "Secret"), or with `npx wrangler pages secret put <NAME>`. They are not listed in
-# [vars] because plain vars in this file override what is set in the dashboard.
+# Secrets, set by scripts/deploy.sh (or `npx wrangler secret put <NAME>`), never in this file:
 #   ACCESS_TEAM  your Zero Trust team name: the "<team>" in https://<team>.cloudflareaccess.com
-#   ACCESS_AUD   the Application Audience (AUD) tag of the Access application protecting the site
-#   GM_EMAILS    comma-separated GM emails, case-insensitive, e.g. "gm@example.com,co-gm@example.com"
-# Never set DEV_USER in production: it signs in every request without a token
-# (local development only, passed with --binding DEV_USER=... ; see package.json "dev").
+#   ACCESS_AUD   the Application Audience (AUD) tag of the Access application protecting the host
+#   GM_EMAILS    comma-separated GM emails, case-insensitive
+# DEV_USER (local development only) is passed with `--var` by `npm run dev` and the checks. It
+# must never appear in this file: checks/api/worker.mjs and scripts/deploy.sh refuse it, and
+# the Worker ignores it on anything but a loopback address.
 
 [[d1_databases]]
 binding = "DB"
 database_name = "blades68"
-# REPLACE with the id printed by `npx wrangler d1 create blades68`
-# (or shown in the dashboard under Storage & Databases > D1).
+# Written by scripts/deploy.sh (it creates the database when missing). By hand: the id printed
+# by `npx wrangler d1 create blades68`, or `npx wrangler d1 list`.
 database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# Local development (`npm run dev`, the checks). `host` keeps a loopback origin on requests
+# instead of the route's hostname, so the Worker knows it is local (see DEV_USER above).
+[dev]
+port = 8788
+ip = "127.0.0.1"
+host = "localhost"
+upstream_protocol = "http"
+
+[observability]
+enabled = true
