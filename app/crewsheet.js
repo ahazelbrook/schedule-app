@@ -79,9 +79,13 @@
   function turfCount(crew, r) {
     var n = cellsOf(r).filter(function (c) { return c.turf && held(crew, c.id); }).length;
     if (abilityN(crew, 'On the Side of the Oppressed') > 0) n += clamp(crew.wanted, 0, 4);
-    return Math.min(n, COMMON.rep.pips);
+    return Math.min(n, COMMON.rep.turfMax);
   }
   function repMax(crew, r) { return COMMON.rep.pips - turfCount(crew, r); }
+  /* developing (the base rule, which '68 inherits): a full rep track makes a weak hold strong, or, with strong hold,
+     buys the next Tier for new Tier x 8 stacks (half with Benefactor); either way rep resets and turf marks stay */
+  function tierCost(crew, tier) { var c = (tier + 1) * 8; return abilityN(crew, 'Benefactor') > 0 ? Math.ceil(c / 2) : c; }
+  function funds(crew, r) { return clamp(crew.stacks, 0, COMMON.stacks.pips) + Math.min(clamp(crew.vault, 0, 16), vaultCap(crew, r)); }
   function xpMax(r) { return r && r.xpMax || 10; }
   function strs(a, n) { a = Array.isArray(a) ? a.slice() : []; while (a.length < n) a.push(''); return a.map(function (x) { return typeof x === 'string' ? x : x == null ? '' : String(x); }); }
 
@@ -170,7 +174,7 @@
     var turf = turfCount(crew, r), max = COMMON.rep.pips - turf, rep = Math.min(clamp(crew.rep, 0, 12), max), h = '';
     var reps = '';
     for (var i = 1; i <= COMMON.rep.pips; i++) {
-      if (i > max) reps += pill('turfp', true, 'crew.rep', i, { dis: true, label: 'Turf', title: 'Turf: one less rep to tier up' });
+      if (i > max) reps += pill('turfp', true, 'crew.rep', i, { dis: true, label: 'Turf', title: 'Turf: one less rep to develop' });
       else reps += pill(i <= COMMON.rep.accentedPips ? 'acc' : 'gry', i <= rep, 'crew.rep', i, { label: 'Rep' });
     }
     var hold = crew.hold === 'strong' ? 'strong' : 'weak', tier = clamp(crew.tier, 0, 6), tiers = '';
@@ -180,10 +184,19 @@
       '<div class="cs-bar cs-holdbar"><span class="cs-bl">' + esc(COMMON.hold.label) + '</span><span class="cs-bseg">Weak</span>' + pill('acc', hold === 'weak', 'crew.hold', 1, { extra: ' data-v="weak"', label: 'Weak hold' }) +
         '<span class="cs-bseg">Strong</span>' + pill('acc', hold === 'strong', 'crew.hold', 2, { extra: ' data-v="strong"', label: 'Strong hold' }) +
         '<span class="cs-bl cs-bl2">' + esc(COMMON.tier.label) + '</span><span class="cs-tiers">' + tiers + (tier > COMMON.tier.pips ? '<b class="mono">' + tier + '</b>' : '') + '</span></div></div>';
+    var full = max > 0 && rep >= max, oppressed = abilityN(crew, 'On the Side of the Oppressed') > 0;
     h += '<p class="hint cs-turfhint">Rep <b class="mono">' + rep + ' / ' + max + '</b>' + (turf ? ' · <b class="mono">' + turf + '</b> turf' : '') +
-      (max > 0 && rep >= max ? ' · <b class="cs-repfull">Rep is full: the crew can spend stacks to go up a tier.</b>' : ' · fill the rep track, then spend stacks to go up a tier.') +
-      ' Rep fills from the left; each held turf marks a pip from the right, so 1 less rep to tier up' +
-      (abilityN(crew, 'On the Side of the Oppressed') > 0 ? ' (each Wanted Level counts as turf: On the Side of the Oppressed)' : '') + '.</p>';
+      ' · rep fills from the left; each held turf (at most ' + COMMON.rep.turfMax + ', the grey pips) marks a pip from the right, so 1 less rep to develop' +
+      (oppressed ? ' (each Wanted Level counts as turf: On the Side of the Oppressed)' : '') + '.</p>';
+    if (full) {
+      var cost = tierCost(crew, tier), have = funds(crew, r), top = tier >= 6;
+      h += '<div class="cs-develop"><p><b class="cs-repfull">Rep is full.</b> ' + (hold === 'weak'
+          ? 'With weak hold, developing makes the hold strong and resets rep to 0 (turf stays).</p><div class="cs-row"><button type="button" class="btn sm primary" data-act="crew.develop">Strengthen the hold</button></div>'
+          : top ? 'The crew is at the top Tier.</p>'
+          : 'With strong hold, the crew can go up to Tier ' + (tier + 1) + ' for <b class="mono">' + cost + '</b> stacks (new Tier × 8' + (abilityN(crew, 'Benefactor') > 0 ? ', halved by Benefactor' : '') + '). Rep resets to 0, turf stays and the hold becomes weak. The crew has <b class="mono">' + have + '</b> (stacks and vaults).</p>' +
+            '<div class="cs-row"><button type="button" class="btn sm primary" data-act="crew.develop"' + (have < cost ? ' disabled' : '') + '>Go up to Tier ' + (tier + 1) + ' (' + cost + ' stacks)</button>' +
+            (have < cost ? '<span class="hint">' + (cost - have) + ' more stacks needed. Rep stays full meanwhile (12 is the max).</span>' : '') + '</div>') + '</div>';
+    }
     return h;
   }
 
@@ -467,6 +480,18 @@
   }
 
   var mine = {
+    develop: function (d, crew, ctx, r) {
+      var max = repMax(crew, r), tier = clamp(crew.tier, 0, 6); if (!(max > 0 && clamp(crew.rep, 0, 12) >= max)) return;
+      if (crew.hold !== 'strong') {
+        if (!ctx.confirm('Develop the crew: the hold becomes strong and rep resets to 0 (turf stays)?')) return;
+        crew.hold = 'strong'; crew.rep = 0; ctx.commit(); toast('The hold is strong. Rep is back to 0.'); return;
+      }
+      var cost = tierCost(crew, tier); if (tier >= 6 || funds(crew, r) < cost) return;
+      if (!ctx.confirm('Go up to Tier ' + (tier + 1) + ' for ' + cost + ' stacks? Rep resets to 0, turf stays and the hold becomes weak.')) return;
+      var st = clamp(crew.stacks, 0, COMMON.stacks.pips), fromSt = Math.min(st, cost);
+      crew.stacks = st - fromSt; crew.vault = Math.min(clamp(crew.vault, 0, 16), vaultCap(crew, r)) - (cost - fromSt);
+      crew.tier = tier + 1; crew.hold = 'weak'; crew.rep = 0; ctx.commit(); toast('The crew is Tier ' + crew.tier + '. Hold is weak; rep is back to 0.');
+    },
     tier: function (d, crew, ctx) { var n = clamp(d.n, 1, COMMON.tier.pips); crew.tier = toggleTrack(clamp(crew.tier, 0, 6), n); ctx.commit(); },
     rep: function (d, crew, ctx, r) { var max = repMax(crew, r), n = +d.n; if (!(n >= 1 && n <= max)) return; crew.rep = toggleTrack(Math.min(clamp(crew.rep, 0, 12), max), n); ctx.commit(); },
     wanted: function (d, crew, ctx, r) { crew.wanted = toggleTrack(clamp(crew.wanted, 0, 4), clamp(d.n, 1, 4)); settle(crew, r); ctx.commit(); },
@@ -573,7 +598,7 @@
     if (at >= 0) l.splice(at, 1); else l.push(name);
     s[key] = l; return true;
   }
-  ['tier', 'hold', 'rep', 'turf', 'heat', 'wanted', 'vault', 'claimadd', 'claimheld', 'claimrm'].forEach(function (k) {
+  ['tier', 'develop', 'hold', 'rep', 'turf', 'heat', 'wanted', 'vault', 'claimadd', 'claimheld', 'claimrm'].forEach(function (k) {
     acts[k] = function (d, crew, ctx, t) {
       var r = rec(crew);
       if (!r) return G.acts[k] ? G.acts[k](d, crew, ctx, t) : undefined;

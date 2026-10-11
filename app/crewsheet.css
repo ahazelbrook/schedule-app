@@ -230,6 +230,9 @@
 #table-page .cs-adv { border: 2.5px solid var(--accent); padding: 0 12px 12px; display: grid; gap: 8px; }
 #table-page .cs-advh { margin: 0 -12px; background: var(--accent); color: var(--on-accent); padding: 5px 12px; font: 900 13px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }
 #table-page .cs-adv p { margin: 0; font-size: 13px; }
+#table-page .cs-develop { border: 2.5px solid var(--accent); padding: 10px 12px; display: grid; gap: 8px; margin-top: 8px; }
+#table-page .cs-develop p { margin: 0; font-size: 13px; }
+#table-page .cs-repfull { color: var(--accent); }
 #table-page .cs-payees { margin: 0; padding: 0 0 0 18px; font-size: 12.5px; display: grid; gap: 2px; }
 
 /* ---- upgrades ---- */
@@ -287,7 +290,7 @@
      the crew sheet (schedule, clocks, players) would print over its last panels */
   #table-page .tp-grid:has(.cs-sheet), #table-page .tp-grid:has(.cs-sheet) > .tp-col { display: block; }
   #table-page .tp-grid:has(.cs-sheet) > * + *, #table-page .tp-grid:has(.cs-sheet) > .tp-col > * + * { margin-top: 14px; }
-  #table-page .cs-pickbox, #table-page .cs-chg, #table-page .cs-endp, #table-page .cs-adv .cs-row, #table-page .cs-xpbox .cs-row .btn, #table-page .cs-legacy .tp-x { display: none !important; }
+  #table-page .cs-pickbox, #table-page .cs-chg, #table-page .cs-endp, #table-page .cs-adv .cs-row, #table-page .cs-develop .cs-row, #table-page .cs-xpbox .cs-row .btn, #table-page .cs-legacy .tp-x { display: none !important; }
   #table-page .cs-cols { grid-template-columns: minmax(0, 1fr); gap: 4mm; }
   #table-page .cs-scroll { overflow: visible; padding: 0; }
   #table-page .cs-map, #table-page .cs-crow { min-width: 0; }

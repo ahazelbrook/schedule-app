@@ -60,10 +60,11 @@
   var COMMON = {
     headerFields: ["Name", "Reputation", "Base", "Ward boss"], // plus the "Crew’s mark" drawing box
     anger: { label: "Anger", segments: 4 }, // round clock in a rounded square, divided by a cross into 4
-    rep: { label: "Rep", pips: 12, accentedPips: 6, turfLabel: "Turf" },
-    // Rep is how the crew levels up: it fills left to right like every track, and once full the crew can spend stacks to go up a tier (the table's rule; not printed).
-    // accentedPips: the first 6 Rep pips are drawn with yellow tops, the last 6 grey; the split is drawn as printed. // unclear: meaning of the 6/6 split
-    // Turf: the Rep track ends in a "Turf" label; held turf is marked from the right end, 1 less rep to tier up (Dealers print the 12th pip pre-filled for their starting turf).
+    rep: { label: "Rep", pips: 12, accentedPips: 6, turfLabel: "Turf", turfMax: 6 },
+    // Rep is how the crew develops (base Blades, which '68 inherits): it fills left to right; a full track makes a weak hold strong,
+    // or with strong hold buys the next Tier for new Tier x 8 stacks; either way rep resets to 0 and turf marks stay.
+    // accentedPips: the first 6 Rep pips are drawn with yellow tops, the last 6 grey: the grey six are where turf is marked (at most 6 turf).
+    // Turf: the Rep track ends in a "Turf" label; held turf is marked from the right end, 1 less rep to develop (Dealers print the 12th pip pre-filled for their starting turf).
     hold: { label: "Hold", options: [{ label: "Weak", pips: 1 }, { label: "Strong", pips: 1 }] },
     tier: { label: "Tier", pips: 4 },
     heat: { label: "Heat", pips: 9 },
