@@ -63,7 +63,7 @@ try {
   page.on('pageerror', (e) => online.errors.push('pageerror: ' + e.message));
   page.on('dialog', (d) => d.accept());
 
-  await page.goto(BASE + '/');
+  await page.goto(BASE + '/#new');                // the creator (no hash is Home)
   const controlled = await until(() => page.evaluate(() => !!(navigator.serviceWorker && navigator.serviceWorker.controller)), 15000);
   check(controlled, 'the service worker controls the page');
   const head = await page.evaluate(() => ({
