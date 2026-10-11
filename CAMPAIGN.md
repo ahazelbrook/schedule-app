@@ -54,7 +54,10 @@ playbooks* and *Crew sheet*).
   (including arrays growing or shrinking), fill clocks (`clocks.<i>.filled`) and append to
   `log`. GM-only: `session`, the structure of `clocks` (add, remove, rename, resize, kind,
   hidden), rewriting or removing old log entries (a `PUT`), and any other top-level key. The
-  page disables the GM-only controls for players; the API enforces it on Cloudflare by
+  page does not show GM-only controls (`data-gm`) to players or read-only viewers at all, rather
+  than showing them disabled; a GM-only text field (a clock's name) still shows its value,
+  disabled, and where that leaves a player nothing the box says who does it ("The GM starts
+  sessions."). The API enforces it on Cloudflare by
   comparing the stored document with the merged result (`403 "only the GM can change that"`).
 - Appending to the log is commutative: in a `PATCH` (anyone), `log` lists entries to add, not
   a replacement, so two people appending from the same stale copy both land. An entry
@@ -102,15 +105,21 @@ characters. Any other `campaign` doc id, and `collection('campaign')` queries, r
 - A third mode `body[data-mode="table"]`, reached from a new "The table" button in the header
   (next to "Back to the creator") and the hash `#t`. It hides `.studio`, `.crew`, `.roster`,
   `#dossier`, and shows `section#table-page`.
-- Contents, top to bottom: the header (crew name, tier and hold, the viewer's role, and a
+- Contents: the header (crew name, tier and hold, the viewer's role, and a
   "Print the season" button, see *Season print*); the session bar (number, started time, GM
   buttons "Start session N+1" and "End session", a reminder line "Each player ends the
-  session on their own sheet"); the crew panel (name, type, lair, tier, hold, rep with turf,
+  session on their own sheet", which for players starts "The GM starts sessions."); the crew panel (name, type, lair, tier, hold, rep with turf,
   heat, wanted, vault diamonds, claims, cohorts, faction statuses −3..+3; now the full crew
   sheet, below); the schedule box (SCHEDULE.md); shared clocks (add, rename, resize, fill by
   clicking segments, kind chips, hidden toggle for the GM, delete with confirm); the players:
   each member with their characters (from the existing roster), each character's stress
-  line and an "open" link; and the campaign log (append a line, newest first).
+  line and an "open" link; and the campaign log (append a line, newest first; each line shows
+  when and who together before the text).
+- Layout: the page's DOM order is the phone's reading order: session, schedule, clocks, players,
+  crew, log (column B, then column A). Up to 900 px it is one column in that order; on a wider
+  screen (and in print) the crew is placed back in the left column beside schedule / clocks /
+  players, or, once the full crew sheet is chosen, across the top above them. The schedule box is
+  `#tp-schedule` (the `#t/schedule` route scrolls to it).
 - Saves go through `doc.update(patch)` with only the changed top-level fields of `crew`,
   `clocks`, `session`, `log` (and the changed `schedule` leaves); the page never writes on open.
 - Starting a session sets `session = { number: n + 1, startedAt: now, endedAt: null }` and
@@ -118,7 +127,7 @@ characters. Any other `campaign` doc id, and `collection('campaign')` queries, r
   In the same write it updates the schedule: `next` goes when it is within 12 h, its answers
   becoming that session's attendance, and dates before now + 12 h leave the grid (SCHEDULE.md).
 - Read-only viewers (`can('data.write') === false`) see everything disabled except "Print the
-  season".
+  season", Open and the phone's "Show the six crew playbooks"; GM-only controls are not shown.
 - Same visual language as the sheet (bands, boxes, pips, accent orange), phone width 390px
   without horizontal scroll, light and dark, print hides buttons.
 
@@ -126,10 +135,13 @@ characters. Any other `campaign` doc id, and `collection('campaign')` queries, r
 
 `app/crewsheet.js` + `app/crewsheet.css` replace the generic crew panel through `B68Campaign.setCrewPanel`, driven
 by `app/crews.js`. campaign.js still owns the document, the saves (one write per click, typing debounced, only the
-changed `crew` fields) and the gating (read-only: everything disabled; `data-gm` controls disabled for players).
+changed `crew` fields) and the gating (read-only: everything disabled; `data-gm` controls not shown to players). A
+crew panel may give an act its own permission (`PERM: { act: 'all' | 'gm' }`; 'any' by default).
 Checked by `app/checks/crewsheet.js`.
 
 - **No playbook yet** (`crew.playbook` null): six crew covers above the generic panel. Anyone may choose (confirm).
+  Up to 760 px the covers fold behind "Show the six crew playbooks" (page state, never written; read-only viewers may
+  unfold them too).
   Choosing seeds the printed state: the record's `pre` upgrades, the starting cohort (added unless one of that type
   exists), pre-held cells (BASE; Dealers' first Distribution turf), abilities printed marked (Racers' Stunt Riders),
   the Utopians' first circle. Name, tier, hold, rep, heat, wanted, cohorts, factions and notes are kept; `lair` fills

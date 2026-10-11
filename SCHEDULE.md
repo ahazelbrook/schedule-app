@@ -65,8 +65,10 @@ are kept: a write that records a session deletes the older keys with `null`.
   RSVP tally with names, the viewer's own In / Can't make it buttons, and "Add to calendar"
   (an `.ics` download through `downloads`, plus a Google Calendar link). One line on a phone
   when collapsed. Hidden when there is no next session.
-- **Schedule box on the table page**, above the clocks:
-  - The confirmed next session (GM: set or change date/time, length, place, note; clear it).
+- **Schedule box on the table page** (`#tp-schedule`), above the clocks:
+  - The confirmed next session (GM: set or change date/time, length, place, note; clear it), with
+    the viewer's own "I’m in / Can’t make it" under the tally while it is ahead (not for read-only
+    viewers).
   - The availability grid: one column per open option (future ones, soonest first), one row
     per known person (members on Cloudflare; on the artifact, the owners of filed characters,
     everyone who has answered, and the viewer). Each cell is yes / maybe / no / blank; the
@@ -135,8 +137,9 @@ the schedule steps in `npm run check:api` (the own-keys rule and GM-only `attend
   …"; changing only place / note / length logs nothing. Clearing `next` clears `rsvp`.
 - Starting a session clears `next` (and `rsvp`) when `next.at` is within 12 h of now, and drops the options before
   now + 12 h (not only those older than 12 h), so tonight's date leaves the grid.
-- The RSVP buttons are on the card only; the table box shows the tally with names. Read-only viewers can still
-  download the `.ics` / open the Google Calendar link (not a write).
+- The RSVP buttons are on the card and in the table box (`sched.rsvp`, PERM 'any'): the same answer, written the same
+  way (only the changed leaves of `rsvp.<me>`; tapping the pressed answer again deletes it), so the two always agree.
+  Read-only viewers can still download the `.ics` / open the Google Calendar link (not a write).
 - Countdown: "in N min" (under an hour), "tonight" (same day, 17:00 or later) / "today", "tomorrow", "in N days" (up
   to 20), "in N weeks", "now" while it runs. The card hides once `at + minutes` has passed.
 - The card is collapsed by default on screens up to 760 px (one line) and open on wider ones; the choice is remembered

@@ -31,7 +31,13 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
 #table-page .tp-body { padding: 10px 12px 12px; display: grid; gap: 10px; min-width: 0; }
 #table-page .tp-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 #table-page .tp-col { display: grid; gap: 14px; min-width: 0; }
+/* column B (schedule, clocks, players) comes first in the page so a phone reads it before the crew; a wide screen (and
+   print) puts the crew back in the left column */
+#table-page .tp-colA { grid-column: 1; grid-row: 1; }
+#table-page .tp-colB { grid-column: 2; grid-row: 1; }
 @media (max-width: 900px) { #table-page .tp-grid { grid-template-columns: minmax(0, 1fr); } }
+@media screen and (max-width: 900px) { #table-page .tp-colA, #table-page .tp-colB { grid-column: auto; grid-row: auto; } }
+#table-page #tp-schedule { scroll-margin-top: 12px; }
 
 /* ---- inputs and controls ---- */
 #table-page .tp-in { font: 400 13.5px/1.35 var(--font-text); padding: 5px 7px; border: 0; border-bottom: 1.5px solid var(--rule); background: transparent; color: var(--ink); width: 100%; min-width: 0; border-radius: 0; }
@@ -156,15 +162,16 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
 
 /* ---- the log ---- */
 #table-page .tp-log { margin: 0; padding: 0; list-style: none; display: grid; }
-#table-page .tp-log li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: baseline; padding: 5px 0; border-top: 1px solid var(--hair); font-size: 13px; }
+/* each line: when and who together on the left (a fixed column, so the texts line up), then the text */
+#table-page .tp-log li { display: grid; grid-template-columns: 15em minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; padding: 5px 0; border-top: 1px solid var(--hair); font-size: 13px; }
 #table-page .tp-log li:first-child { border-top: 0; }
+#table-page .tp-logm { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; min-width: 0; }
 #table-page .tp-logd { font-size: 11px; color: var(--ink-soft); white-space: nowrap; }
 #table-page .tp-logt { overflow-wrap: anywhere; white-space: pre-wrap; min-width: 0; }
-#table-page .tp-logby { font: 900 9.5px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft); overflow-wrap: anywhere; max-width: 22ch; }
+#table-page .tp-logby { font: 900 9.5px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft); overflow-wrap: anywhere; min-width: 0; }
 @media (max-width: 560px) {
   #table-page .tp-log li { grid-template-columns: minmax(0, 1fr) auto; }
-  #table-page .tp-logd { grid-column: 1; }
-  #table-page .tp-logby { grid-column: 1; grid-row: 1; justify-self: end; text-align: right; }
+  #table-page .tp-logm { grid-column: 1; }
   #table-page .tp-logt { grid-column: 1 / -1; }
   #table-page .tp-log li .tp-x { grid-column: 2; grid-row: 1; }
 }

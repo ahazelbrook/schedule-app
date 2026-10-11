@@ -313,6 +313,7 @@ const CREWS = ['dealers', 'hit-squad', 'militants', 'racers', 'shadows', 'utopia
   await as('ro');
   const enabled = await p.$$eval('#table-page button, #table-page input, #table-page textarea, #table-page select', ns => ns.filter(n => !n.disabled).map(n => n.dataset.act || n.dataset.path || n.dataset.ui || n.tagName));
   assert(enabled.every(a => a === 'open' || a === 'print'), 'read only: everything disabled but Open and Print the season: ' + enabled.join(','));
+  assert(!(await p.$('.cs-chg')) && !(await p.$('#table-page [data-gm]:not(input):not(textarea)')), 'read only: no GM-only controls shown');
   await none('read only clicks', async () => {
     for (const sel of ['[data-act="crew.ability"][data-k="Sleepy Time"][data-n="1"]', '[data-act="crew.claim"][data-id="turf"]', '[data-act="crew.upgrade"][data-k="Gear"][data-n="1"]', '[data-act="crew.contact"][data-k="Bloom"]', '[data-act="crew.heat"][data-n="7"]'])
       await p.click(sel, { force: true }).catch(() => {});
@@ -327,9 +328,42 @@ const CREWS = ['dealers', 'hit-squad', 'militants', 'racers', 'shadows', 'utopia
   await p.locator('.cs-sheet').screenshot({ path: path.join(OUT, 'crewsheet-print.png') });
   await p.emulateMedia({ media: 'screen' });
 
+  /* ---------- layout: the full sheet above the schedule on a wide screen, below it on a phone ---------- */
+  const tops = () => p.evaluate(() => ['.cs-sheet', '#tp-schedule', '.tp-playbox'].map(s => Math.round(document.querySelector('#table-page ' + s).getBoundingClientRect().top + scrollY)));
+  let tp = await tops();
+  assert(tp[0] < tp[1] && tp[0] < tp[2], 'desk: the crew sheet above the schedule and players: ' + tp.join(','));
+  await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(300);
+  tp = await tops();
+  assert(tp[1] < tp[2] && tp[2] < tp[0], 'phone: schedule, then players, then the crew sheet: ' + tp.join(','));
+  await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(200);
+
   /* ---------- a player can choose the playbook on a fresh table ---------- */
+  /* on a phone the six covers fold behind one button (page state, no write); a wide screen shows them, no button */
+  await fresh('player');
+  const fold = () => p.evaluate(() => { const t = document.querySelector('.cs-pickt'), c = document.querySelector('.cs-covers'); return { btn: !!t && getComputedStyle(t).display !== 'none', exp: t && t.getAttribute('aria-expanded'), covers: !!c && getComputedStyle(c).display !== 'none', label: t && t.textContent }; });
+  let fd = await fold();
+  assert(!fd.btn && fd.covers, 'desk: the covers shown, no fold button: ' + JSON.stringify(fd));
+  await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(300);
+  fd = await fold();
+  assert(fd.btn && !fd.covers && fd.exp === 'false' && /Show the six crew playbooks/.test(fd.label), 'phone: the covers folded behind one button: ' + JSON.stringify(fd));
+  const pickTop = await p.evaluate(() => document.querySelector('.cs-pickbox').getBoundingClientRect().height);
+  assert(pickTop < 400, 'phone: the folded picker is short: ' + pickTop);
+  await none('phone: show the covers', () => p.click('[data-act="crew.cspick"]'));
+  fd = await fold();
+  assert(fd.btn && fd.covers && fd.exp === 'true' && await p.evaluate(() => document.activeElement && document.activeElement.dataset.act === 'crew.cspick'), 'phone: the covers unfold, focus stays on the button: ' + JSON.stringify(fd));
+  await overflow('picker phone open');
+  await none('phone: fold them again', () => p.click('[data-act="crew.cspick"]'));
+  assert(!(await fold()).covers, 'phone: folded again');
+  await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(200);
   await choose('militants', 'player');
   assert((await crew()).playbook === 'militants', 'player chose the playbook');
+  /* a read-only viewer may unfold the covers too (it only shows them) */
+  await as('ro', {});
+  await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(300);
+  await none('read only: show the covers', () => p.click('[data-act="crew.cspick"]'));
+  fd = await fold();
+  assert(fd.covers && (await dis('[data-act="crew.cschoose"]')) === true, 'read only: covers shown, Choose disabled: ' + JSON.stringify(fd));
+  await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(200);
 
   async function shots(prefix, phoneDark) {
     await p.locator('.cs-sheet').screenshot({ path: path.join(OUT, 'crewsheet-' + prefix + '.png') });

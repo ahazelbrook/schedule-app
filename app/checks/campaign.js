@@ -131,6 +131,21 @@ const SHEET = `(pb) => {
   assert(!!(await p.$('[data-act="sessstart"]')) && !(await dis('[data-act="sessstart"]')) && (await dis('[data-act="sessend"]')) === true, 'GM: start enabled, end disabled with no session');
   assert((await p.$eval('[data-act="sessstart"]', n => n.textContent)) === 'Start session 1', 'Start session 1 label');
   assert(/Each player ends the session on their own sheet/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'session reminder line');
+  assert(!/The GM starts sessions/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'GM: no "The GM starts sessions" line');
+  assert((await p.$$eval('#tp-schedule', n => n.length)) === 1 && (await p.$eval('#tp-schedule', n => n.classList.contains('tp-schedbox'))), 'the schedule box is #tp-schedule, once on the page');
+  /* layout: two columns on a wide screen (the crew on the left); on a phone session, schedule, clocks, players, crew, log */
+  const BOXES = ['.tp-sessbox', '#tp-schedule', '.tp-clockbox', '.tp-playbox', '.tp-crewbox', '.tp-logbox'];
+  const boxes = () => p.evaluate((sels) => sels.map(s => { const r = document.querySelector('#table-page ' + s).getBoundingClientRect(); return { s, top: Math.round(r.top + scrollY), left: Math.round(r.left), w: Math.round(r.width) }; }), BOXES);
+  async function phoneOrder(who) {
+    const cols = await p.evaluate(() => ['.tp-colA', '.tp-colB'].map(s => { const r = document.querySelector('#table-page ' + s).getBoundingClientRect(); return { left: Math.round(r.left), top: Math.round(r.top), w: Math.round(r.width) }; }));
+    assert(cols[0].left < cols[1].left && cols[0].top === cols[1].top && cols[1].w < 700, who + ' desk: the crew column left of the schedule column, side by side: ' + JSON.stringify(cols));
+    await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(250);
+    const bx = await boxes();
+    assert(bx.every((b, i) => !i || b.top > bx[i - 1].top), who + ' phone: session, schedule, clocks, players, crew, log top to bottom: ' + bx.map(b => b.s + '@' + b.top).join(' '));
+    assert(bx[1].top < (await p.evaluate(() => document.querySelector('#table-page .cs-pickbox, #table-page .tp-crewbox').getBoundingClientRect().top + scrollY)), who + ' phone: the schedule above the crew sheet');
+    await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(150);
+  }
+  await phoneOrder('GM');
 
   /* crew: name (typed, debounced: one write), tier, rep, heat */
   await one('crew name', async () => { await p.click('[data-path="crew.name"]'); await p.keyboard.type('The Lamplighters', { delay: 15 }); }, 800);
@@ -238,7 +253,9 @@ const SHEET = `(pb) => {
   assert((await p.$eval('.tp-role', n => n.textContent)) === 'Player', 'role Player');
   assert(!(await p.$(`.tp-clock[data-id="${k1.id}"]`)) && (await p.$$eval('.tp-clock', n => n.length)) === 1, 'player: hidden clock not rendered, one visible');
   assert(!/hidden/i.test(await p.$eval('.tp-clockbox .tp-band', n => n.textContent)), 'player: no hidden count');
-  assert((await dis('[data-act="sessstart"]')) === true && (await dis('[data-act="sessend"]')) === true, 'player: session buttons disabled');
+  assert(!(await p.$('[data-act="sessstart"]')) && !(await p.$('[data-act="sessend"]')) && !(await p.$('#table-page [data-gm]:not(input):not(textarea)')), 'player: no GM-only session buttons (hidden, not disabled)');
+  assert(/The GM starts sessions\. Each player ends the session on their own sheet/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'player: "The GM starts sessions." in the session box');
+  await phoneOrder('player');
   assert((await dis(`.tp-clock[data-id="${k2.id}"] .tp-in`)) === true, 'player: clock name disabled');
   assert(!(await p.$('[data-act="clockadd"]')) && !(await p.$('[data-act="clocksize"]')) && !(await p.$('[data-act="logrm"]')), 'player: no clock structure tools, no log removal');
   assert((await dis('[data-act="crew.tier"]')) === false && (await dis('[data-path="crew.name"]')) === false, 'player: crew panel editable (shared crew sheet)');
@@ -255,7 +272,7 @@ const SHEET = `(pb) => {
   await one('player log', async () => { await p.fill('[data-ui="newlog"]', 'Pat owes the Lampblacks'); await p.click('[data-act="logadd"]'); });
   c = await camp(); const lg = await lastPatch();
   assert(c.log[0].text === 'Pat owes the Lampblacks' && c.log[0].by === 'u_player' && JSON.stringify(lg[2].log.slice(1)) === JSON.stringify(logBefore), 'player log append keeps the stored lines: ' + JSON.stringify(lg && lg[2].log));
-  await none('player clicks start session (disabled)', () => p.click('[data-act="sessstart"]', { force: true }).catch(() => {}));
+  await none('player forces start session', () => p.evaluate(() => { const b = document.createElement('button'); b.setAttribute('data-act', 'sessstart'); document.querySelector('.tp-sessbox .tp-body').appendChild(b); b.click(); }));
   assert((await camp()).session.number === 1, 'player cannot start a session');
   /* Print the season (header, every role): opens the print view; Back returns to the table; never printed itself */
   assert((await dis('.tp-head [data-act="print"]')) === false, 'player: Print the season in the header, enabled');
@@ -286,7 +303,8 @@ const SHEET = `(pb) => {
   await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
   assert((await p.$eval('.tp-role', n => n.textContent)) === 'Read only', 'role Read only');
   const enabled = await p.$$eval('#table-page button, #table-page input, #table-page textarea, #table-page select', ns => ns.filter(n => !n.disabled).map(n => n.dataset.act || n.dataset.path || n.dataset.ui || n.tagName));
-  assert(enabled.length && enabled.every(a => a === 'open' || a === 'print') && enabled.indexOf('print') >= 0, 'read only: only Open and Print the season stay enabled: ' + enabled.join(','));
+  assert(enabled.length && enabled.every(a => a === 'open' || a === 'print' || a === 'crew.cspick') && enabled.indexOf('print') >= 0, 'read only: only Open, Print the season and the crew covers toggle stay enabled: ' + enabled.join(','));
+  assert(!(await p.$('[data-act="sessstart"]')) && /The GM starts sessions/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'read only: no session buttons, the GM line instead');
   await none('read only clicks', async () => {
     await p.click('[data-act="crew.tier"][data-n="5"]', { force: true }).catch(() => {});
     await p.click(`.tp-seg[data-id="${k2.id}"][data-n="4"]`, { force: true }).catch(() => {});

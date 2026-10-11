@@ -2,7 +2,8 @@
    crews.js (window.B68Crews). Registers itself through B68Campaign.setCrewPanel({ render, acts, enter }), so campaign.js
    keeps owning the document, the saves (one write per click, typing debounced) and the read-only / GM gating.
 
-   With no crew playbook chosen it shows a picker (six covers) above the generic crew panel; choosing seeds the
+   With no crew playbook chosen it shows a picker (six covers; folded behind "Show the six crew playbooks" on a phone)
+   above the generic crew panel; choosing seeds the
    playbook's printed state (pre-marked upgrades, the starting cohort, BASE and other pre-held cells, Stunt Riders,
    the Utopians' first circle) and keeps the common tracks. The GM can change the playbook later.
 
@@ -141,9 +142,11 @@
 
   /* the crew-playbook picker */
   function picker(crew, ctx, changing) {
-    var r0 = rec(crew);
+    var r0 = rec(crew), fold = !changing && ctx.draft('cs.pick') !== 'open';   /* on a phone the covers start folded */
     var h = '<p class="hint">' + (changing ? '<b class="bad">Changing the crew playbook clears its abilities, upgrades, claims, contacts and extras.</b> Name, reputation, base, ward boss, anger, rep, hold, tier, heat, wanted level, stacks, vaults, crew xp, cohorts, factions and notes stay.'
-      : 'Pick the crew playbook the table plays. It sets the claims map, special abilities, contacts, upgrades and starting cohort; anyone at the table may choose. Until then the generic crew tracks below stand in.') + '</p><div class="cs-covers">';
+      : 'Pick the crew playbook the table plays. It sets the claims map, special abilities, contacts, upgrades and starting cohort; anyone at the table may choose. Until then the generic crew tracks below stand in.') + '</p>' +
+      (changing ? '' : '<button type="button" class="btn sm cs-pickt" data-act="crew.cspick" data-always="1" aria-expanded="' + !fold + '" aria-controls="cs-covers">' + (fold ? 'Show the six crew playbooks' : 'Hide the crew playbooks') + '</button>') +
+      '<div class="cs-covers" id="' + (changing ? 'cs-covers-chg' : 'cs-covers') + '">';
     CR.CREWS.forEach(function (r, i) {
       var lk = LOOK[r.id] || { duo: ['#f2ede1', '#14110e'], special: '' }, on = r0 && r0.id === r.id;
       h += '<div class="cs-cover' + (on ? ' on' : '') + '" style="--duo-a:' + lk.duo[0] + ';--duo-b:' + lk.duo[1] + '" data-id="' + r.id + '"><div class="cs-cword">' + esc(r.name) + '<small>' + esc(r.tagline) + '</small></div>' +
@@ -152,7 +155,7 @@
     });
     h += '</div>';
     if (changing) h += '<div class="cs-row"><button type="button" class="btn sm" data-act="crew.cschange" data-v="close">Keep ' + esc(r0 ? r0.name : 'the playbook') + '</button></div>';
-    return ctx.box(changing ? 'Change the crew playbook' : 'Choose the crew playbook', h, '<span class="tp-dim">' + (changing ? 'GM only' : 'six crew playbooks') + '</span>', 'cs-pickbox');
+    return ctx.box(changing ? 'Change the crew playbook' : 'Choose the crew playbook', h, '<span class="tp-dim">' + (changing ? 'GM only' : 'six crew playbooks') + '</span>', 'cs-pickbox' + (fold ? ' cs-fold' : ''));
   }
 
   function header(crew, r, ctx) {
@@ -204,7 +207,7 @@
     if (c.base) return '<div class="cs-cell base held" data-id="' + c.id + '"><span class="cs-basew">Base</span></div>';
     var on = held(crew, c.id), ok = claimable(crew, r, c);
     var cls = 'cs-cell' + (on ? ' held' : '') + (c.special ? ' sp' : '') + (c.oneOff ? ' one' : '') + (c.outline === 'double' ? ' dbl' : '') + (c.turf ? ' turf' : '') + (!ok ? ' far' : '');
-    return '<button type="button" class="' + cls + '" data-act="crew.claim" data-id="' + c.id + '"' + (!ok ? ' data-gm="1"' : '') + ' aria-pressed="' + on + '" title="' + esc(on ? 'Held: click to give it up' : ok ? 'Claim ' + c.name : 'Not connected to a held claim' + (gm ? ' (GM: click to override)' : '')) + '">' +
+    return '<button type="button" class="' + cls + '" data-act="crew.claim" data-id="' + c.id + '"' + (!ok && !gm ? ' disabled' : '') + ' aria-pressed="' + on + '" title="' + esc(on ? 'Held: click to give it up' : ok ? 'Claim ' + c.name : 'Not connected to a held claim' + (gm ? ' (GM: click to override)' : '')) + '">' +
       '<span class="cs-ch"><span class="cs-cn">' + esc(c.name) + '</span><span class="cs-mark' + (c.special ? ' sq' : '') + (on ? ' on' : '') + '"></span></span>' +
       '<span class="cs-cb">' + (c.text ? '<span>' + rich(c.text) + '</span>' : '') + (c.oneOffLabel ? '<i class="cs-oo">One-off opportunity</i>' : '') + '</span></button>';
   }
@@ -507,6 +510,7 @@
       } else if (!ctx.confirm('Make the crew ' + r.name + '? This sets up the ' + r.name + ' crew sheet for the whole table; name, tier, hold, rep, heat, cohorts, factions and notes are kept.')) return;
       seed(crew, r); ctx.setDraft('cs.change', ''); ctx.commit();
     },
+    cspick: function (d, crew, ctx) { ctx.setDraft('cs.pick', ctx.draft('cs.pick') === 'open' ? '' : 'open'); ctx.commit(); },   /* page state only: show or fold the covers */
     cschange: function (d, crew, ctx) { if (!ctx.isGM) return; ctx.setDraft('cs.change', d.v === 'close' || ctx.draft('cs.change') === 'open' ? '' : 'open'); ctx.commit(); },
     anger: function (d, crew, ctx) { crew.anger = toggleTrack(clamp(crew.anger, 0, COMMON.anger.segments), clamp(d.n, 1, COMMON.anger.segments)); ctx.commit(); },
     stacks: function (d, crew, ctx) { crew.stacks = toggleTrack(clamp(crew.stacks, 0, COMMON.stacks.pips), clamp(d.n, 1, COMMON.stacks.pips)); ctx.commit(); },
@@ -608,7 +612,7 @@
   });
   ['cohortadd', 'cohortharm', 'cohortarmor', 'cohortrm', 'factionadd', 'factionstatus', 'factionrm'].forEach(function (k) { acts[k] = function (d, crew, ctx, t) { return G.acts[k](d, crew, ctx, t); }; });
 
-  M.setCrewPanel({ render: render, acts: acts, enter: {} });
+  M.setCrewPanel({ render: render, acts: acts, enter: {}, PERM: { cspick: 'all' } });
   M.crewSheet = { seed: seed, turfCount: turfCount, claimable: claimable, vaultCap: vaultCap,
     /* the crew sheet's markup for a copy outside the table page (the season print): ctx as campaign.js builds it; the
        live panel's text-path parent stays the table's own crew */
