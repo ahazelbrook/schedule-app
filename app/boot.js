@@ -91,29 +91,41 @@
     if (!sh.name && d && d.name) sh.name = d.name;
     return sh;
   }
-  function loadIntoCreator(d) {
+  /* step: where the creator opens (the File step unless told; Edit figure opens at Build) */
+  function loadIntoCreator(d, step) {
     S.spec = clone(d.spec || A.BASE_FIGURE); if (!S.spec.props) S.spec.props = [];
     S.sheet = normaliseSheet(d.sheet, d); S.sheet.docId = d.id; S.dirty = true;
-    A.changed(); showStep(15); window.scrollTo({ top: 0, behavior: 'smooth' });
+    A.changed(); showStep(step == null ? 15 : step); syncEditBar(); window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   A.loadIntoCreator = loadIntoCreator;
+  /* Edit figure (a card, the sheet): the filed character in the creator at the Build step, under the editing banner */
+  function editFigure(d) {
+    var dr = draftInfo(); if (dr && !window.confirm('Edit ' + (d.name || 'this character') + '? Your draft (' + dr + ') in the creator is cleared.')) return;
+    setMode('create'); loadIntoCreator(d, 1);
+    toast('Editing ' + (d.name || 'the character') + '. Update the file when you are done.');
+  }
 
-  /* mode: create (the studio, line-up and files), sheet (the tracker in #dossier), table (the campaign page in #table-page)
-     or print (the season print in #season, season.js) */
-  function setMode(m) {
-    m = m === 'sheet' || m === 'table' || m === 'print' ? m : 'create';
+  /* mode: home (#home: the start page and the files), create (the studio and line-up), sheet (the tracker in #dossier),
+     table (the campaign page in #table-page) or print (the season print in #season, season.js).
+     Every mode has a hash, and a switch pushes one history entry (quiet: the hash already says so, or boot). */
+  var MODES = { home: 1, create: 1, sheet: 1, table: 1, print: 1 };
+  function setMode(m, quiet) {
+    m = MODES[m] ? m : 'home';
     var was = document.body.dataset.mode;
     document.body.dataset.mode = m;
+    var hm = $('home'); if (hm) hm.hidden = m !== 'home';
     var dos = $('dossier'); if (dos) dos.hidden = m !== 'sheet';
     var tp = $('table-page'); if (tp) tp.hidden = m !== 'table';
     var sn = $('season'); if (sn) sn.hidden = m !== 'print';
-    var rb = $('railBack'); if (rb) rb.hidden = m === 'create';
-    var tb = $('tableBtn'); if (tb) tb.setAttribute('aria-pressed', String(m === 'table'));
     if (m !== 'sheet' && was === 'sheet') closeSheet();
     if (m !== 'table' && was === 'table') closeTable();
     if (m === 'table' && was !== 'table') startTable();
     if (m !== 'print' && was === 'print') closePrint();
     if (m === 'print' && was !== 'print') startPrint();
+    if (m === 'home' && was !== 'home') renderHome();
+    if (!quiet) syncHash(m);
+    syncNav(); syncEditBar();
+    if (was && was !== m) focusView();
     if (A.snapshot) A.snapshot();
   }
   A.setMode = setMode;
@@ -122,8 +134,66 @@
     var T = tracker(); if (T && T.isOpen && T.isOpen()) { try { T.close(); } catch (e) {} }
     openId = null; latest = null;
   }
-  function clearHash() { if (!location.hash) return; try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; } }
-  function goBack() { setMode('create'); clearHash(); var r = document.querySelector('.roster'); if (r && r.scrollIntoView) { try { r.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} } if (A.snapshot) A.snapshot(); }
+
+  /* the header: the wordmark's subtitle and the tab title name the view; the nav marks where you are */
+  function viewName() {
+    var m = document.body.dataset.mode;
+    if (m === 'table') return 'The table';
+    if (m === 'print') return 'The season print';
+    if (m === 'sheet') return ((openId && (latest || cache[openId])) || {}).name || 'A character';
+    if (m === 'create') return S.sheet && S.sheet.docId ? 'Editing ' + (S.sheet.name || 'a character') : 'New character';
+    return 'Home';
+  }
+  function syncTitle() {
+    var n = viewName(), v = $('viewName'); if (v) v.textContent = n;
+    try { document.title = n === 'Home' ? 'Blades ’68' : n + ' · Blades ’68'; } catch (e) {}
+  }
+  /* "Your sheet": only when the viewer owns exactly one character */
+  function mineOnly() { if (!A.me) return null; var m = roster.filter(function (d) { return d.owner === A.me; }); return m.length === 1 ? m[0] : null; }
+  function syncNav() {
+    var m = document.body.dataset.mode, one = mineOnly();
+    var mb = $('mineBtn'); if (mb) { mb.hidden = !one; if (one) mb.title = 'Open ' + (one.name || 'your character'); }
+    [['homeBtn', m === 'home'], ['tableBtn', m === 'table'], ['mineBtn', m === 'sheet' && !!one && openId === one.id]].forEach(function (x) { var b = $(x[0]); if (!b) return; if (x[1]) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    syncTitle();
+  }
+  /* a11y: after a switch, focus lands on the view's title (Home's heading, else the header's view name) */
+  function focusView() {
+    var t = document.body.dataset.mode === 'home' && $('homeTitle') || $('viewName');
+    if (t && t.focus) { try { t.focus({ preventScroll: true }); } catch (e) {} }
+  }
+  /* the creator's banner while it holds a filed character */
+  function syncEditBar() {
+    var b = $('editBar'); if (!b) return;
+    var on = document.body.dataset.mode === 'create' && !!(S.sheet && S.sheet.docId) && !!db;
+    b.hidden = !on; if (on) $('editName').textContent = S.sheet.name || 'the character';
+    if (document.body.dataset.mode === 'create') syncTitle();
+  }
+
+  /* history: each entry this page makes carries { b68: depth }; depth 0 is the entry the visit started on, so Back can
+     tell an in-app previous entry (history.back()) from leaving the app (Home instead, replacing this entry) */
+  var depth = 0, noState = false;
+  function stamp() { try { history.replaceState({ b68: depth }, '', location.href); } catch (e) { noState = true; } }
+  function pushHash(h) {
+    if (h) { try { location.hash = h; } catch (e) {} return; }   /* the hashchange stamps the new entry */
+    try { history.pushState({ b68: depth + 1 }, '', location.pathname + location.search); depth++; } catch (e) { try { location.hash = ''; } catch (e2) {} }
+  }
+  function replaceHash(h) { try { history.replaceState({ b68: depth }, '', h || location.pathname + location.search); } catch (e) { noState = true; } }
+  function isShare(h) { return h.length > 24 && h[1] === 's'; }
+  function hashFor(m) { return m === 'sheet' ? (openId ? '#c/' + openId : null) : m === 'table' ? '#t' : m === 'print' ? '#print' : m === 'create' ? '#create' : ''; }
+  function syncHash(m) {
+    var h = location.hash || '', want = hashFor(m);
+    if (want === null || h === want || (!want && h === '#')) return;
+    if (m === 'table' && h.indexOf('#t/') === 0) return;
+    if (m === 'create' && (h === '#new' || isShare(h))) return;
+    pushHash(want);
+  }
+  /* Back (the sheet's, the print's): the previous view when it is this app's, else Home */
+  function goBack() {
+    if (depth > 0 && !noState) { try { history.back(); return; } catch (e) {} }
+    goHome(true);
+  }
+  function goHome(replace) { setMode('home', !!replace); if (replace) replaceHash(''); window.scrollTo(0, 0); }
+  A.goHome = function () { goHome(false); };
 
   /* A save from the sheet sends only what changed, so a player and the GM editing the same character at once
      do not overwrite each other's marks. Each changed top-level field of play is sent whole (arrays and scalars
@@ -167,7 +237,7 @@
         var write = delta && typeof ref.update === 'function' ? ref.update(clone(delta)) : ref.set(clone(latest));
         return write.catch(function (e) { toast('Could not save: ' + (e && e.message || e), true); throw e; });
       },
-      edit: function () { var d = Object.assign({ id: id }, latest || cache[id] || {}); setMode('create'); clearHash(); loadIntoCreator(d); toast('Editing ' + (d.name || 'the character') + ' in the creator.'); },
+      edit: function () { editFigure(Object.assign({ id: id }, latest || cache[id] || {})); },
       back: function () { goBack(); },
       remove: function () { var r2 = ref; return r2.delete().then(function () { delete cache[id]; toast('Removed from the files.'); goBack(); }).catch(function (e) { toast('Could not remove: ' + (e && e.message || e), true); throw e; }); },
       me: A.me, canWrite: A.canWrite
@@ -177,7 +247,7 @@
       if (!data) { toast(first ? 'There is no such file.' : 'This file was removed.', true); goBack(); return; }
       latest = data; cache[id] = data;
       var doc = Object.assign({ id: id }, clone(data));
-      try { if (first) { first = false; T.open(doc, api); } else if (T.update) T.update(doc); }
+      try { if (first) { first = false; T.open(doc, api); } else if (T.update) T.update(doc); syncTitle(); }
       catch (e) { toast('The sheet could not render: ' + (e && e.message || e), true); }
     }
     if (typeof ref.onSnapshot === 'function') {
@@ -190,7 +260,6 @@
       openUnsub = function () {};
       A._followCache = function (did) { if (did === id && openId === id && !first) arrived(cache[id] || null); };
     } else A._followCache = null;
-    try { if (location.hash !== '#c/' + id) location.hash = '#c/' + id; } catch (e) {}
     setMode('sheet'); window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   A.openCharacter = openCharacter;
@@ -307,13 +376,15 @@
       var Cm = campaignMod();
       if (tableOn && Cm) { try { Cm.update(data ? clone(data) : null); } catch (e) { toast('The table could not render: ' + (e && e.message || e), true); } }
       var S2 = schedMod(); if (S2) { try { S2.card.update(data ? clone(data) : null); } catch (e) { if (window.console) console.error(e); } }
+      renderHome();
     }
-    function failed(e) { if (campRef !== ref || !tableOn) return; toast('The table is offline: ' + (e && e.message || e), true); }
+    function failed(e) { if (campRef !== ref) return; if (!campLoaded && !campGaveUp) { campGaveUp = true; renderHome(); } if (!tableOn) return; toast('The table is offline: ' + (e && e.message || e), true); }
     campaignArrived = arrived; campaignFailed = failed;
     if (typeof ref.onSnapshot === 'function') { try { campUnsub = ref.onSnapshot(arrived, failed); campLive = !!campUnsub; } catch (e) { campUnsub = null; campLive = false; } }
     if (!campLive) readCampaignOnce();
+    setTimeout(function () { if (campRef === ref && !campLoaded && !campGaveUp) { campGaveUp = true; renderHome(); } }, 3000);   /* Home stops waiting for a slow table */
   }
-  var campaignArrived = null, campaignFailed = null;
+  var campaignArrived = null, campaignFailed = null, campGaveUp = false;
   function readCampaignOnce() {
     var ref = campRef; if (!ref || !campaignArrived) return;
     (typeof ref.get === 'function' ? Promise.resolve().then(function () { return ref.get(); }) : Promise.resolve(null)).then(campaignArrived).catch(campaignFailed);
@@ -344,14 +415,23 @@
   }
   function openTable() {
     setMode('table');
-    try { if (location.hash !== '#t') location.hash = '#t'; } catch (e) {}
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   A.openTable = openTable;
+  /* #t/schedule: the table, scrolled to its schedule box once it is drawn */
+  function openSchedule() {
+    if (document.body.dataset.mode !== 'table') setMode('table', true);
+    if ((location.hash || '') !== '#t/schedule') pushHash('#t/schedule');
+    whenDrawn(function () { return $('tp-schedule') || document.querySelector('#table-page .tp-schedbox'); }, function (n) { try { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} });
+  }
+  /* run fn(node) once find() returns a node while the table is open (it draws when the campaign arrives) */
+  function whenDrawn(find, fn) {
+    var t0 = Date.now();
+    (function look() { if (document.body.dataset.mode !== 'table') return; var n = find(); if (n) { fn(n); return; } if (Date.now() - t0 < 5000) setTimeout(look, 100); })();
+  }
 
   /* ---------- the season print (season.js): #print, every filed character and the crew in one printable document ----------
-     It reads the files once (nothing is written) when they have settled; Back returns to the mode it came from. */
-  var printPushed = false;
+     It reads the files once (nothing is written) when they have settled; Back returns to the view it came from. */
   function seasonMod() { var Sn = window.B68Season; return Sn && typeof Sn.render === 'function' ? Sn : null; }
   function printApi() {
     return {
@@ -365,18 +445,9 @@
   }
   function startPrint() { var Sn = seasonMod(); if (!Sn) { toast('The season print module is missing.', true); return; } try { Sn.render(printApi()); } catch (e) { toast('The season print could not render: ' + (e && e.message || e), true); } }
   function closePrint() { var Sn = seasonMod(); if (Sn && Sn.close) { try { Sn.close(); } catch (e) {} } }
-  /* pushed: the page came to #print from another view in this tab, so Back is history.back() */
-  function openPrint(pushed) {
-    printPushed = !!pushed;
-    setMode('print');
-    try { if (location.hash !== '#print') { location.hash = '#print'; printPushed = true; } } catch (e) {}
-    window.scrollTo(0, 0);
-  }
-  function leavePrint() {
-    if (printPushed) { printPushed = false; try { history.back(); return; } catch (e) {} }
-    setMode('create'); clearHash(); window.scrollTo(0, 0);
-  }
-  A.openPrint = function () { openPrint(true); };
+  function openPrint() { setMode('print'); window.scrollTo(0, 0); }
+  function leavePrint() { goBack(); }
+  A.openPrint = openPrint;
 
   /* roster */
   var roster = [];
@@ -432,10 +503,10 @@
     var c = $('cards'), t = $('table'); if (c) c.hidden = view === 'table'; if (t) t.hidden = view !== 'table';
   }
   function emptyHtml() { return '<div class="empty">' + (roster.length ? 'None of these are yours yet. File a character from the last step and it is saved to your account.' : 'No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.') + '</div>'; }
-  function renderTable(list) {
-    var box = $('table'); if (!box) return;
+  function renderTable(list, into) {
+    var box = into || $('table'); if (!box) return;
     if (!list.length) { box.innerHTML = emptyHtml(); return; }
-    var t = el('table', 'tbl'); t.setAttribute('aria-label', 'The table');
+    var t = el('table', 'tbl'); t.setAttribute('aria-label', into ? 'The players' : 'The table');
     t.innerHTML = '<thead><tr><th class="nm">Name</th><th class="pbk">Playbook</th><th class="num">Stress</th><th class="hm">Worst harm</th><th class="num">Healing</th><th class="num">XP</th><th class="num">Load</th><th class="num">Struck</th><th class="num">Updated</th></tr></thead>';
     var tb = el('tbody');
     list.forEach(function (d) {
@@ -457,46 +528,58 @@
     });
     t.appendChild(tb); box.innerHTML = ''; box.appendChild(t);
   }
+  /* may this viewer change this character: the GM any, a player their own and the unowned (the server's rule) */
+  function mayEdit(d) { return A.canWrite !== false && (A.isGM === true || !d.owner || d.owner === A.me); }
+  function figureSvg(d, h, pre) {
+    try { var s = clone(d.spec); s.id = pre + d.id; var svg = K.render(s, { height: h, lod: 'lo', shadow: false }).svg; return svg.replace(/<svg([^>]*?)\swidth="[^"]*"/, '<svg$1').replace(/<svg([^>]*?)\sheight="[^"]*"/, '<svg$1'); } catch (e) { return '?'; }
+  }
+  function renderCards(list) {
+    var box = $('cards');
+    if (!list.length) { box.innerHTML = emptyHtml(); return; }
+    box.innerHTML = '';
+    list.forEach(function (d) {
+      var card = el('div', 'card' + (A.me && d.owner === A.me ? ' mine' : '')); card.setAttribute('role', 'button'); card.tabIndex = 0; card.title = 'Open the sheet';
+      var pic = el('div', 'pic' + ((A.CT.byId[d.playbook] || {}).ghost ? ' ghostly' : '')); pic.innerHTML = figureSvg(d, 150, 'c-');
+      var meta = el('div', 'meta'); meta.innerHTML = '<span class="nm">' + esc(d.name || 'Unnamed') + '</span><span class="cd">' + esc((d.playbookName || pbName(d.playbook)) + (d.code ? ' · ' + d.code : '')) + '</span><span class="st">' + esc(playStatus(d)) + '</span>';
+      /* Edit figure only on the cards this viewer may change; removing a character lives on its sheet */
+      if (mayEdit(d)) {
+        var acts = el('div', 'acts'); var ed = el('span', 'ed', 'Edit figure'); ed.setAttribute('role', 'button'); ed.tabIndex = 0; ed.title = 'Load into the creator';
+        ed.onclick = function (ev) { ev.stopPropagation(); editFigure(d); };
+        ed.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); editFigure(d); } };
+        acts.appendChild(ed); meta.appendChild(acts);
+      }
+      card.appendChild(pic); card.appendChild(meta);
+      card.onclick = function () { openCharacter(d.id); };
+      card.onkeydown = function (ev) { if (ev.target === card && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); openCharacter(d.id); } };
+      box.appendChild(card);
+    });
+  }
+  var rosterSeen = false;   /* the first collection snapshot arrived */
   function renderRoster(docs) {
     roster = docs || []; syncFilter(); syncView(); syncBackups();
     if (tableOn) { var Cm = campaignMod(); if (Cm && Cm.rosterChanged) { try { Cm.rosterChanged(); } catch (e) {} } }
     var Sm = schedMod(); if (Sm && campRef) { try { Sm.card.refresh(); } catch (e) {} }
-    var box = $('cards'), list = visibleDocs();
-    if (view === 'table') { renderTable(list); A.drawLineup(); return; }
-    if (!list.length) { box.innerHTML = emptyHtml(); A.drawLineup(); return; }
-    box.innerHTML = '';
-    list.forEach(function (d) {
-      var card = el('div', 'card' + (A.me && d.owner === A.me ? ' mine' : '')); card.setAttribute('role', 'button'); card.tabIndex = 0; card.title = 'Open the sheet';
-      var pic = el('div', 'pic' + ((A.CT.byId[d.playbook] || {}).ghost ? ' ghostly' : '')); try { var s = clone(d.spec); s.id = 'c-' + d.id; pic.innerHTML = K.render(s, { height: 150, lod: 'lo', shadow: false }).svg; var sv = pic.querySelector('svg'); if (sv) { sv.removeAttribute('width'); sv.removeAttribute('height'); } } catch (e) { pic.textContent = '?'; }
-      var meta = el('div', 'meta'); meta.innerHTML = '<span class="nm">' + esc(d.name || 'Unnamed') + '</span><span class="cd">' + esc((d.playbookName || pbName(d.playbook)) + (d.code ? ' · ' + d.code : '')) + '</span><span class="st">' + esc(playStatus(d)) + '</span>';
-      var acts = el('div', 'acts'); var ed = el('span', 'ed', 'Edit figure'); ed.setAttribute('role', 'button'); ed.tabIndex = 0; ed.title = 'Load into the creator';
-      ed.onclick = function (ev) { ev.stopPropagation(); setMode('create'); clearHash(); loadIntoCreator(d); toast('Loaded ' + (d.name || 'the character') + ' into the creator.'); };
-      ed.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ed.onclick(ev); } };
-      acts.appendChild(ed); meta.appendChild(acts);
-      card.appendChild(pic); card.appendChild(meta);
-      var rm = el('span', 'rm', 'remove'); rm.setAttribute('role', 'button'); rm.tabIndex = 0; rm.title = 'Remove from the files'; var armed = false;
-      rm.onclick = function (ev) { ev.stopPropagation(); if (!db) { toast('The files are not available in this view.', true); return; } if (armed) { col().doc(d.id).delete().then(function () { delete cache[d.id]; }).catch(function (e) { toast('Could not remove: ' + (e.message || e), true); }); } else { armed = true; rm.textContent = 'sure?'; setTimeout(function () { armed = false; rm.textContent = 'remove'; }, 2500); } };
-      card.appendChild(rm);
-      card.onclick = function () { openCharacter(d.id); };
-      card.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openCharacter(d.id); } };
-      box.appendChild(card);
-    });
-    A.drawLineup();
+    var list = visibleDocs();
+    if (view === 'table') renderTable(list); else renderCards(list);
+    A.drawLineup(); syncNav(); renderHome();
   }
   A._renderRoster = renderRoster;
   try { Object.defineProperty(A, 'roster', { get: function () { return roster; } }); } catch (e) {}
   var rf = $('rosterFilter'); if (rf) rf.querySelectorAll('.chip').forEach(function (b) { b.onclick = function () { filter = b.dataset.f; filterChosen = true; renderRoster(roster); }; });
   var rv = $('rosterView'); if (rv) rv.querySelectorAll('.chip').forEach(function (b) { b.onclick = function () { setRosterView(b.dataset.v); }; });
 
-  /* ---------- backups: every file in the current filter and the table as one JSON; restore files each character as a new
-     document and, for the GM after a confirm, replaces the table ---------- */
+  /* ---------- backups: every character the viewer can see and the table as one JSON; restore previews the file, then files
+     each chosen character as a new document and, for the GM after a confirm, replaces the table ---------- */
   function hostedExport() { var rt = window.B68Runtime; return rt && rt.kind === 'cloudflare' && typeof rt.exportAll === 'function' ? rt : null; }
   function syncBackups() {
-    var b = $('backups'), dl = $('dlAll'), de = $('dlEverything'), rs = $('restoreBtn'); if (!b) return;
+    var b = $('backups'), dl = $('dlAll'), de = $('dlEverything'), rs = $('restoreBtn'), h = $('backupHint'); if (!b) return;
     if (dl) dl.hidden = !downloads;
     if (de) de.hidden = !downloads || !hostedExport() || A.isGM !== true;
     if (rs) rs.hidden = !db || A.canWrite === false;
     b.hidden = (!dl || dl.hidden) && (!rs || rs.hidden);
+    if (h) h.textContent = !dl || dl.hidden ? 'Restore adds the characters in a backup file as new copies; you check the list first.'
+      : A.isGM === true ? 'A backup holds every character on file and the whole table, hidden clocks included.'
+      : 'A backup holds every character you can see, yours and everyone else’s, and the table as players see it.';
   }
   /* the table as this viewer sees it: { id, doc, updatedAt, view }. A player's copy leaves out the clocks hidden from
      players (the page never shows them one). None while nothing is stored (the hosted default has no updatedAt). */
@@ -507,8 +590,9 @@
     if (!gm && Array.isArray(d.clocks)) d.clocks = d.clocks.filter(function (c) { return !(c && c.hidden); });
     return { id: 'main', doc: d, updatedAt: d.updatedAt || null, view: gm ? 'gm' : 'player' };
   }
+  /* every character on file the viewer can see, whatever the Mine / Everyone filter shows */
   function downloadAll() {
-    var list = visibleDocs(), camp = campaignBackup(); if (!list.length && !camp) { toast('Nothing to download yet.', true); return; }
+    var list = roster, camp = campaignBackup(); if (!list.length && !camp) { toast('Nothing to download yet.', true); return; }
     var data = { v: 1, exportedAt: nowIso(), characters: list.map(function (d) { return clone(d); }) };
     if (camp) data.campaign = camp;
     saveFile('blades68-backup-' + data.exportedAt.slice(0, 10) + '.json', JSON.stringify(data, null, 2));
@@ -538,7 +622,7 @@
   }
   /* accepts Download all files ({ v: 1, exportedAt, characters: [doc], campaign? }) and the hosted /api/export file
      ({ exportedAt, campaign: { id, doc, updatedAt }, characters: [{ id, doc, updatedAt }], members }, no v) */
-  function restoreDocs(data) {
+  function restoreDocs(data, choice) {
     if (!db) { toast('The files are not available in this view.', true); return Promise.resolve(0); }
     if (!data || typeof data !== 'object' || !Array.isArray(data.characters)) { toast('That is not a Blades ’68 backup: no characters list.', true); return Promise.resolve(0); }
     var exported = data.v === undefined && isObj(data.campaign) && isObj(data.campaign.doc);
@@ -546,42 +630,94 @@
     var good = [], bad = 0, camp = backupCampaign(data);
     data.characters.forEach(function (c) { if (isObj(c) && isObj(c.doc) && c.playbook === undefined) c = c.doc; if (validBackupDoc(c)) good.push(c); else bad++; });
     /* the table: GM only, after a confirm; anyone else restores the characters and is told the table was left */
-    var withTable = false, tableNote = '';
+    var gmTable = false, tableNote = '';
     if (camp) {
       if (A.isGM !== true || A.canWrite === false) tableNote = 'only the GM can restore the table';
       else if (!campRef) tableNote = 'the table is not available here';
-      else {
+      else gmTable = true;
+    }
+    if (!good.length && !gmTable) {
+      if (camp && !bad) { toast(tableNote.charAt(0).toUpperCase() + tableNote.slice(1) + '.', true); return Promise.resolve(0); }
+      toast(bad ? 'Nothing restorable: ' + bad + ' invalid entr' + (bad === 1 ? 'y' : 'ies') + '.' : 'The backup is empty.', true); return Promise.resolve(0);
+    }
+    /* the plan: a character matching a file already here (same code and name) is skipped unless copies are asked for;
+       a player restores their own and unowned characters unless they opt in to the others' (the copies become theirs) */
+    var plan = good.map(function (c) {
+      var name = String(c.name || c.sheet.name || 'Unnamed'), code = String(c.code || (isObj(c.spec) && c.spec.code) || '');
+      var dup = roster.some(function (d) { return String(d.code || '') === code && String(d.name || '').trim().toLowerCase() === name.trim().toLowerCase(); });
+      return { c: c, name: name, dup: dup, other: A.isGM !== true && !!c.owner && c.owner !== A.me };
+    });
+    var pick = good.length ? (choice ? Promise.resolve(choice) : restorePreview(plan, camp, gmTable, tableNote)) : Promise.resolve({});
+    return pick.then(function (ch) {
+      if (!ch) { toast('Restore cancelled. Nothing was changed.'); return 0; }
+      var take = plan.filter(function (p) { return (!p.dup || ch.copies) && (!p.other || ch.others); });
+      var dups = plan.filter(function (p) { return p.dup && !ch.copies; }).length, others = plan.filter(function (p) { return p.other && !ch.others && !(p.dup && !ch.copies); }).length;
+      var withTable = false;
+      if (gmTable) {
         var when = String(camp.updatedAt || camp.doc.updatedAt || '').slice(0, 10);
         withTable = window.confirm('Replace the table (crew sheet, clocks, log, session and schedule) with the copy in this file' + (when ? ' from ' + when : '') + '? What is on the table now is overwritten.' + (camp.view === 'player' ? ' A player saved this copy, so it has no hidden clocks.' : '') + (good.length ? ' Cancel restores the characters only.' : ''));
         if (!withTable) tableNote = 'the table was left as it is';
       }
-    }
-    if (!good.length && !withTable) {
-      if (camp && !bad) { toast(tableNote.charAt(0).toUpperCase() + tableNote.slice(1) + '.', true); return Promise.resolve(0); }
-      toast(bad ? 'Nothing restorable: ' + bad + ' invalid entr' + (bad === 1 ? 'y' : 'ies') + '.' : 'The backup is empty.', true); return Promise.resolve(0);
-    }
-    var T = tracker(), used = {}, n = 0, seq = Promise.resolve();
-    good.forEach(function (c) {
-      seq = seq.then(function () {
-        var now = nowIso(), name = String(c.name || c.sheet.name || 'Unnamed');
-        var sheet = normaliseSheet(c.sheet, c); delete sheet.docId;
-        var base = A.slug(name) + '-' + Date.now().toString(36), id = base, k = 0; while (used[id] || cache[id]) id = base + '-' + (++k).toString(36); used[id] = true;
-        var play = null; if (c.play && typeof c.play === 'object' && !Array.isArray(c.play)) play = clone(c.play); else if (T && T.initialPlay) { try { play = T.initialPlay(clone(sheet), c.playbook) || {}; } catch (e) { play = {}; } } else play = {};
-        var spec = c.spec && typeof c.spec === 'object' && !Array.isArray(c.spec) ? clone(c.spec) : clone(A.BASE_FIGURE); if (!spec.props) spec.props = [];
-        var doc = { v: 2, name: name, alias: String(c.alias || sheet.alias || ''), code: String(c.code || spec.code || ''), playbook: c.playbook, playbookName: String(c.playbookName || pbName(c.playbook)), spec: spec, sheet: sheet, play: play, owner: A.me || null, createdAt: now, updatedAt: now };
-        return col().doc(id).set(doc).then(function () { cache[id] = doc; n++; });
+      if (!good.length && !withTable) { toast('The table was left as it is.', true); return 0; }
+      var T = tracker(), used = {}, n = 0, seq = Promise.resolve();
+      take.forEach(function (p) {
+        var c = p.c;
+        seq = seq.then(function () {
+          var now = nowIso(), name = p.name;
+          var sheet = normaliseSheet(c.sheet, c); delete sheet.docId;
+          var base = A.slug(name) + '-' + Date.now().toString(36), id = base, k = 0; while (used[id] || cache[id]) id = base + '-' + (++k).toString(36); used[id] = true;
+          var play = null; if (c.play && typeof c.play === 'object' && !Array.isArray(c.play)) play = clone(c.play); else if (T && T.initialPlay) { try { play = T.initialPlay(clone(sheet), c.playbook) || {}; } catch (e) { play = {}; } } else play = {};
+          var spec = c.spec && typeof c.spec === 'object' && !Array.isArray(c.spec) ? clone(c.spec) : clone(A.BASE_FIGURE); if (!spec.props) spec.props = [];
+          var doc = { v: 2, name: name, alias: String(c.alias || sheet.alias || ''), code: String(c.code || spec.code || ''), playbook: c.playbook, playbookName: String(c.playbookName || pbName(c.playbook)), spec: spec, sheet: sheet, play: play, owner: A.me || null, createdAt: now, updatedAt: now };
+          return col().doc(id).set(doc).then(function () { cache[id] = doc; n++; });
+        });
       });
+      var tableDone = false;
+      if (withTable) seq = seq.then(function () { return restoreCampaign(camp.doc).then(function () { tableDone = true; }, function (e) { tableNote = 'the table could not be restored: ' + (e && e.message || e); }); });
+      return seq.then(function () {
+        var what = n ? 'Restored ' + n + ' character' + (n === 1 ? '' : 's') + (tableDone ? ' and the table' : '') : tableDone ? 'Restored the table' : 'Restored nothing';
+        toast(what + (dups ? ' · skipped ' + dups + ' already on file' : '') + (others ? ' · skipped ' + others + ' of other players' : '') + (bad ? ' · skipped ' + bad + ' invalid' : '') + (tableNote ? ' · ' + tableNote : '') + '.', !tableDone && withTable);
+        return n;
+      })
+        .catch(function (e) { toast('Restore stopped after ' + n + ': ' + (e && e.message || e), true); return n; });
     });
-    var tableDone = false;
-    if (withTable) seq = seq.then(function () { return restoreCampaign(camp.doc).then(function () { tableDone = true; }, function (e) { tableNote = 'the table could not be restored: ' + (e && e.message || e); }); });
-    return seq.then(function () {
-      var what = good.length ? 'Restored ' + n + ' character' + (n === 1 ? '' : 's') + (tableDone ? ' and the table' : '') : tableDone ? 'Restored the table' : 'Restored nothing';
-      toast(what + (bad ? ' · skipped ' + bad + ' invalid' : '') + (tableNote ? ' · ' + tableNote : '') + '.', !tableDone && withTable);
-      return n;
-    })
-      .catch(function (e) { toast('Restore stopped after ' + n + ': ' + (e && e.message || e), true); return n; });
   }
   A.restoreDocs = restoreDocs;
+  /* the preview before anything is written: each character and what happens to it, the two opt-ins, Restore / Cancel.
+     Resolves { copies, others } or null (cancelled). */
+  function restorePreview(plan, camp, gmTable, tableNote) {
+    var dlg = $('restoreDlg');
+    if (!dlg) return Promise.resolve(window.confirm('Restore ' + plan.length + ' character' + (plan.length === 1 ? '' : 's') + ' from this file?') ? { copies: false, others: false } : null);
+    var nDup = plan.filter(function (p) { return p.dup; }).length, nOther = plan.filter(function (p) { return p.other; }).length;
+    return new Promise(function (resolve) {
+      dlg.innerHTML = '<form method="dialog"><div class="hm-band">Restore from a backup</div><h2 id="restoreTitle">What this file adds</h2>' +
+        '<ul>' + plan.map(function (p, i) { return '<li data-i="' + i + '"><b>' + esc(p.name) + '</b><small></small></li>'; }).join('') + '</ul>' +
+        (nDup ? '<label class="opt"><input type="checkbox" data-o="copies"> <span>Also add copies of the ' + (nDup === 1 ? 'one' : nDup) + ' already on file</span></label>' : '') +
+        (nOther ? '<label class="opt"><input type="checkbox" data-o="others"> <span>Also restore ' + (nOther === 1 ? 'the one' : 'the ' + nOther) + ' belonging to other players (the copies become yours)</span></label>' : '') +
+        (camp ? '<p class="hint">' + (gmTable ? 'This file also holds the table. You are asked before it replaces the one here.' : 'This file also holds the table: ' + esc(tableNote) + '.') + '</p>' : '') +
+        '<p class="sum" id="restoreSum" aria-live="polite"></p>' +
+        '<div class="hm-acts"><button class="btn primary" type="button" data-o="go">Restore</button><button class="btn" type="button" data-o="cancel">Cancel</button></div></form>';
+      function opts() { var o = { copies: false, others: false }; dlg.querySelectorAll('input[data-o]').forEach(function (i) { o[i.dataset.o] = i.checked; }); return o; }
+      function sync() {
+        var o = opts(), n = 0;
+        plan.forEach(function (p, i) {
+          var skip = (p.dup && !o.copies) || (p.other && !o.others), li = dlg.querySelector('li[data-i="' + i + '"]'); if (!skip) n++;
+          var bits = [p.c.playbookName || pbName(p.c.playbook)]; if (p.dup) bits.push('already on file'); if (p.other) bits.push('another player’s');
+          li.classList.toggle('skip', skip); li.querySelector('small').textContent = bits.join(' · ') + ' · ' + (skip ? 'skipped' : 'added as a new copy');
+        });
+        $('restoreSum').textContent = n ? 'Adds ' + n + ' character' + (n === 1 ? '' : 's') + ' as new copies owned by you. Nothing here is overwritten.' : 'Nothing new to add.' + (gmTable ? ' Restore asks about the table.' : '');
+        var go = dlg.querySelector('[data-o="go"]'); go.disabled = !n && !gmTable; go.textContent = n ? 'Restore ' + n : gmTable ? 'Restore the table' : 'Restore';
+      }
+      var settled = false;
+      function done(v) { if (settled) return; settled = true; dlg.onclick = dlg.onchange = dlg.oncancel = null; try { dlg.close(); } catch (e) { dlg.removeAttribute('open'); } resolve(v); }
+      dlg.onchange = sync;
+      dlg.onclick = function (ev) { var b = ev.target.closest && ev.target.closest('button[data-o]'); if (!b) return; done(b.dataset.o === 'go' ? opts() : null); };
+      dlg.oncancel = function (ev) { ev.preventDefault(); done(null); };
+      sync();
+      try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
+      var first = dlg.querySelector('[data-o="go"]:not([disabled])') || dlg.querySelector('[data-o="cancel"]'); if (first) { try { first.focus(); } catch (e) {} }
+    });
+  }
   function restoreFromFile(file) {
     if (!file) return;
     var rd = new FileReader();
@@ -605,7 +741,7 @@
       id = A.slug(S.sheet.name) + '-' + Date.now().toString(36);
       var play = {}; var T = tracker(); if (T && T.initialPlay) { try { play = T.initialPlay(clone(S.sheet), S.sheet.playbook) || {}; } catch (e) { play = {}; } }
       var doc = Object.assign(fields, { play: play, owner: A.me || null, createdAt: fields.updatedAt });
-      return col().doc(id).set(doc).then(function () { cache[id] = doc; S.sheet.docId = id; S.dirty = false; A.changed(); toast('Filed ' + S.sheet.name + '. Opening the sheet.'); openCharacter(id); });
+      return col().doc(id).set(doc).then(function () { cache[id] = doc; S.sheet.docId = id; S.dirty = false; clearDraft(); A.changed(); toast('Filed ' + S.sheet.name + '. Opening the sheet.'); openCharacter(id); });
     }
     var done;
     if (id) {
@@ -614,16 +750,22 @@
       done = p.then(function (cur) {
         if (!cur) return create();
         var doc = Object.assign({}, cur, fields, { play: cur.play || {}, owner: cur.owner === undefined ? (A.me || null) : cur.owner, createdAt: cur.createdAt || fields.updatedAt });
-        return ref.set(doc).then(function () { cache[id] = doc; if (openId === id) latest = doc; S.dirty = false; A.changed(); toast('Updated the file for ' + S.sheet.name + '.'); openCharacter(id); });
+        return ref.set(doc).then(function () { cache[id] = doc; if (openId === id) latest = doc; S.dirty = false; clearDraft(); A.changed(); toast('Updated the file for ' + S.sheet.name + '.'); openCharacter(id); });
       });
     } else done = create();
     done.catch(function (e) { toast('Could not file: ' + (e && e.message || e), true); });
   }
   A.fileCharacter = fileCharacter;
+  /* returns false when the person chose to keep what the creator holds */
   function newCharacter() {
-    if (S.dirty && !window.confirm('Start a new character? The one in the creator is cleared' + (S.sheet.docId ? ' (the filed copy stays in the files)' : '') + '.')) return;
-    S.spec = clone(A.BASE_FIGURE); S.sheet = A.blankSheet(); S.dirty = false; S.view = 'figure';
-    A.changed(); showStep(0); A.draw(); window.scrollTo({ top: 0, behavior: 'smooth' }); toast('A blank form.');
+    var dr = draftInfo();
+    if ((S.dirty || dr) && !window.confirm(dr && !S.sheet.docId ? 'Start a new character? Your draft (' + dr + ') is cleared. Cancel continues the draft.' : 'Start a new character? The one in the creator is cleared' + (S.sheet.docId ? ' (the filed copy stays in the files)' : '') + '.')) return false;
+    blankCreator(); window.scrollTo({ top: 0, behavior: 'smooth' }); toast('A blank form.');
+    return true;
+  }
+  function blankCreator() {
+    S.spec = clone(A.BASE_FIGURE); S.sheet = A.blankSheet(); S.dirty = false; S.view = 'figure'; clearDraft();
+    A.changed(); showStep(0); A.draw(); syncEditBar();
   }
   A.newCharacter = newCharacter;
 
@@ -636,16 +778,20 @@
   function b64url(s) { return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
   function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return decodeURIComponent(escape(atob(s))); }
   document.addEventListener('click', function (ev) {
-    var b = ev.target.closest && ev.target.closest('button'); if (!b) return;
+    var b = ev.target.closest && ev.target.closest('button, a#homeLink'); if (!b) return;
     switch (b.id) {
       case 'fileRoster': fileCharacter(); break;
       case 'openSheet': if (S.sheet.docId) openCharacter(S.sheet.docId); break;
       case 'newChar': newCharacter(); break;
-      case 'railBack': goBack(); break;
+      case 'homeLink': ev.preventDefault(); goHome(false); break;
+      case 'homeBtn': goHome(false); break;
       case 'tableBtn': openTable(); break;
+      case 'mineBtn': (function () { var one = mineOnly(); if (one) openCharacter(one.id); })(); break;
+      case 'editUpdate': fileCharacter(); break;
+      case 'editBack': if (S.sheet.docId) openCharacter(S.sheet.docId); break;
       case 'dlAll': downloadAll(); break;
       case 'dlEverything': downloadEverything(); break;
-      case 'restoreBtn': (function () { var i = $('restoreFile'); if (!db) { toast('The files are not available in this view.', true); return; } if (i) i.click(); })(); break;
+      case 'restoreBtn': pickRestore(); break;
       case 'dlSvg': saveFile(fileBase() + '.svg', A.figureSvg(900)); break;
       case 'dlMug': saveFile(fileBase() + '-mugshot.svg', A.mugshot().svg); break;
       case 'dlPng': (function () { var svg = S.view === 'mug' ? A.mugshot().svg : A.figureSvg(900); var m = svg.match(/viewBox="([^"]+)"/); var vb = m ? m[1].split(/\s+/).map(parseFloat) : [0, 0, 540, 900]; var H = 1600, W = Math.round(H * vb[2] / vb[3]); var img = new Image(); var url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })); img.onload = function () { try { var c = document.createElement('canvas'); c.width = W; c.height = H; var g = c.getContext('2d'); g.fillStyle = '#e8e2d4'; g.fillRect(0, 0, W, H); g.drawImage(img, 0, 0, W, H); c.toBlob(function (bl) { URL.revokeObjectURL(url); if (bl) saveFile(fileBase() + (S.view === 'mug' ? '-mugshot' : '') + '.png', bl); else toast('Could not rasterise the figure.', true); }, 'image/png'); } catch (e) { toast('Could not rasterise: ' + e.message, true); } }; img.onerror = function () { URL.revokeObjectURL(url); toast('Could not rasterise the figure.', true); }; img.src = url; })(); break;
@@ -654,74 +800,215 @@
       case 'copyLink': copyText(location.href.split('#')[0] + '#s' + b64url(JSON.stringify({ spec: S.spec, sheet: Object.assign({}, S.sheet, { docId: undefined }) })), 'Link copied. It carries the whole character.'); break;
     }
   });
+  function pickRestore() { var i = $('restoreFile'); if (!db) { toast('The files are not available in this view.', true); return; } if (i) i.click(); }
+
+  /* ---------- home: the start page, drawn from the data (the viewer's role, the table, their characters, a draft) ---------- */
+  var DRAFT = 'b68.draft', draftT = null;
+  function hosted() { var rt = window.B68Runtime; return !!(rt && rt.kind === 'cloudflare'); }
+  /* the creator's unfiled character, as "Veteran, step 9 of 16" ('' when there is none) */
+  function draftInfo() { var p = S.sheet && !S.sheet.docId && A.pbOf ? A.pbOf() : null; return p ? pbName(p.id) + ', step ' + (S.step + 1) + ' of ' + N : ''; }
+  function homeReady() { return dbSettled && (!db || rosterSeen) && (!campRef || campLoaded || campGaveUp); }
+  function dayOf(iso) { var Sm = schedMod(); if (Sm && Sm.fmtDay) { try { return Sm.fmtDay(iso); } catch (e) {} } try { return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); } catch (e) { return String(iso).slice(0, 10); } }
+  function btn(act, label, cls, id) { return '<button type="button" class="' + (cls || 'btn') + '" data-hm="' + act + '"' + (id ? ' data-id="' + esc(id) + '"' : '') + '>' + label + '</button>'; }
+  function link(act, label) { return btn(act, label, 'hm-link'); }
+  function head(kick, title, sub, lead) { return '<div class="hm-head"><p class="hm-kick">' + kick + '</p><h1 class="hm-title" id="homeTitle" tabindex="-1">' + title + '</h1>' + (sub ? '<p class="hm-sub">' + sub + '</p>' : '') + (lead ? '<p class="hm-lead">' + lead + '</p>' : '') + '</div>'; }
+  function nudges(list) { return list.length ? '<ul class="hm-nudges">' + list.map(function (n) { return '<li>' + n + '</li>'; }).join('') + '</ul>' : ''; }
+  function draftHtml() { var dr = draftInfo(); return dr ? '<div class="hm-draft"><b>Continue your draft</b><span>' + esc(dr) + '</span>' + btn('create', 'Continue', 'btn sm primary') + link('discard', 'Discard') + '</div>' : ''; }
+  /* what the table says: { started, crew, session, s (the schedule), next, open (dates still to come) } */
+  function tableFacts() {
+    var Sm = schedMod(), d = isObj(tableLatest) ? tableLatest : {};
+    var f = { started: campLoaded && tableExists && !!tableLatest && !(hosted() && !tableLatest.updatedAt), crew: isObj(d.crew) ? d.crew : {}, session: isObj(d.session) ? d.session : {}, s: null, next: null, open: [] };
+    if (Sm && Sm.normalize) { try { f.s = Sm.normalize(d.schedule); f.next = Sm.upcoming(f.s); f.open = Sm.openOptions(f.s); } catch (e) { f.s = null; } }
+    return f;
+  }
+  function sessionLine(f) {
+    var n = +f.session.number || 0, out = !n ? 'No session played yet' : 'Session ' + n + (f.session.endedAt ? ' · ended ' + dayOf(f.session.endedAt) : f.session.startedAt ? ' · in play' : '');
+    var Sm = schedMod(); if (f.next && Sm && Sm.fmtWhen) { try { out += ' · next ' + Sm.fmtWhen(f.next.at); } catch (e) {} }
+    return esc(out);
+  }
+  function myOpenDates(f) { if (!f.s || !A.me) return 0; var a = f.s.avail[A.me] || {}; return f.open.filter(function (o) { return !a[o.id]; }).length; }
+  function datesNudge(f) { var n = myOpenDates(f); return n ? '<span>' + (n === 1 ? 'One date needs' : n + ' dates need') + ' your answer.</span>' + btn('schedule', 'Mark your dates', 'btn sm') : ''; }
+  /* A. the GM, before the table exists: four numbered steps that tick themselves off */
+  function homeSetup(f) {
+    var url = hosted() ? location.origin + location.pathname : location.href.split('#')[0];
+    var steps = [
+      [!!f.crew.name, 'Start the table', 'Name the crew and choose the crew playbook.', btn('table-setup', 'Open the table', 'btn primary')],
+      [!!(f.next || f.open.length), 'Plan the first session', 'Propose a few dates; everyone marks the ones they can make.', btn('schedule', 'Plan dates')],
+      [roster.some(function (d) { return d.owner && d.owner !== A.me; }), 'Invite the players', hosted() ? 'Players sign in here with Google or an emailed code. Their email must be on the sign-in list first (SETUP.md, step 5).' : 'Share this page with your players; each one opens it signed in.', btn('copylink', 'Copy the link') + '<p class="hint mono">' + esc(url) + '</p>'],
+      [false, 'Moving from another copy?', 'Restore the characters and the table from a backup file.', db && A.canWrite !== false ? btn('restore', 'Restore from a backup…') : '<p class="hint">Restoring needs the shared files.</p>']
+    ];
+    return head('Blades ’68 · you’re the GM', 'Set up the table', '', 'One table lives at this address. Set it up once; your players sign in here and join it.') + draftHtml() +
+      '<ol class="hm-steps">' + steps.map(function (s, i) { return '<li class="hm-step' + (s[0] ? ' done' : '') + '"><span class="hm-n" aria-hidden="true">' + (i + 1) + '</span>' + (s[0] ? '<span class="hm-done">Done</span>' : '') + '<h3>' + (s[0] ? '<span class="sr">Done: </span>' : '') + s[1] + '</h3><p>' + s[2] + '</p>' + s[3] + '</li>'; }).join('') + '</ol>' +
+      '<div class="hm-links">' + link('new', 'Make a character') + '</div>' +
+      '<p class="hm-note">This site holds one table. A second campaign needs a second copy of the app (SETUP.md).</p>';
+  }
+  /* B. the GM, table started: the crew, the session, what needs doing, the players at a glance */
+  function homeGm(f) {
+    var Sm = schedMod(), list = [];
+    if (f.next && f.s && Sm) {
+      var ids = []; roster.forEach(function (d) { if (d.owner && ids.indexOf(d.owner) < 0) ids.push(d.owner); });
+      Sm.people(f.s, ids).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
+      var waiting = ids.filter(function (id) { return id !== A.me && !Sm.rsvpOf(f.s, id); }).length;
+      if (waiting) list.push('<span>' + (waiting === 1 ? 'One player hasn’t' : waiting + ' players haven’t') + ' answered for ' + esc(dayOf(f.next.at)) + '.</span>' + btn('schedule', 'See the schedule', 'btn sm'));
+    }
+    if (!f.next && !f.open.length) list.push('<span>No dates proposed.</span>' + btn('schedule', 'Plan dates', 'btn sm'));
+    if (!roster.length) list.push('<span>Nobody has filed yet.</span>' + btn('copylink', 'Copy the link for the players', 'btn sm'));
+    return head('The table · you’re the GM', esc(f.crew.name || 'An unnamed crew'), sessionLine(f), '') +
+      '<div class="hm-acts">' + btn('table', 'Open the table', 'btn primary') + '</div>' + nudges(list) + draftHtml() +
+      (roster.length ? '<section class="hm-box" aria-label="The players"><div class="hm-band">The players</div><div id="homePlayers"></div></section>' : '') +
+      '<div class="hm-links">' + link('print', 'Print the season') + link('backups', 'Backups') + link('new', 'Make a character') + '</div>';
+  }
+  /* C. a player with no character yet */
+  function homeWelcome(f) {
+    var kick = esc(f.crew.name || 'Blades ’68');
+    if (!db) return head(kick, 'Welcome', '', 'The shared files are not available in this view, so nothing can be filed here. You can still make a character and save the figure.') + draftHtml() + '<div class="hm-acts">' + btn('new', 'Make a character', 'btn primary') + '</div>';
+    var ro = A.canWrite === false, n = myOpenDates(f);
+    return head(kick, 'Welcome to the table', '', 'Make your character, then mark the dates you can play.') + draftHtml() +
+      '<div class="hm-big"><h2>Make your character</h2><p>Sixteen steps: pick a playbook, dress the figure, fill in the sheet. Filing it opens your living sheet.</p>' + btn('new', 'Make your character', 'btn primary') + '</div>' +
+      (n ? '<div class="hm-big"><h2>Mark your dates</h2><p>' + (n === 1 ? 'One date needs' : n + ' dates need') + ' your answer.</p>' + btn('schedule', 'Mark your dates') + '</div>' : '') +
+      (ro ? '<p class="hm-note">You can look around but not change anything.</p>' : '') +
+      '<div class="hm-links">' + link('table', 'See the table') + (ro ? '' : link('restore', 'Restore your characters from a backup')) + '</div>';
+  }
+  /* D. a player with characters: one big card each */
+  function homeBack(f, mine) {
+    var list = [], dn = datesNudge(f), sn = +f.session.number || 0;
+    if (dn) list.push(dn);
+    if (sn && f.session.startedAt && !f.session.endedAt) mine.forEach(function (d) { var ps = isObj(d.play) ? +d.play.session || 0 : 0; if (ps < sn) list.push('<span>Session ' + sn + ' has started at the table' + (mine.length > 1 ? ' (' + esc(d.name || 'Unnamed') + ')' : '') + '.</span>' + btn('open', 'Open the sheet', 'btn sm', d.id)); });
+    var one = mine.length === 1;
+    return head(esc(f.crew.name || 'Blades ’68'), 'Welcome back' + (A.myName ? ', ' + esc(A.myName) : ''), '', '') +
+      '<div class="hm-chars">' + mine.map(function (d) {
+        return '<article class="hm-char"><div class="pic' + ((A.CT.byId[d.playbook] || {}).ghost ? ' ghostly' : '') + '" data-fig="' + esc(d.id) + '"></div><div class="meta"><h2 class="nm">' + esc(d.name || 'Unnamed') + '</h2><span class="cd">' + esc((d.playbookName || pbName(d.playbook)) + (d.code ? ' · ' + d.code : '')) + '</span><span class="st">' + esc(playStatus(d)) + '</span>' + btn('open', 'Open sheet', one ? 'btn primary' : 'btn', d.id) + '</div></article>';
+      }).join('') + '</div>' + nudges(list) + draftHtml() +
+      '<div class="hm-links">' + link('table', 'The table') + link('new', 'Make another character') + link('files', 'Everyone’s files') + link('print', 'Print the season') + link('backups', 'Backups') + '</div>';
+  }
+  function renderHome() {
+    if (document.body.dataset.mode !== 'home') return;
+    var box = $('homeMain'), files = $('files'); if (!box) return;
+    var ready = homeReady();
+    if (files) files.hidden = !ready || !db;
+    if (!ready) { box.innerHTML = '<p class="hm-wait" role="status">Opening the files…</p>'; return; }
+    var act = document.activeElement, keep = act && box.contains(act) ? (act.id === 'homeTitle' ? '#homeTitle' : act.getAttribute('data-hm') ? '[data-hm="' + act.getAttribute('data-hm') + '"]' + (act.dataset.id ? '[data-id="' + act.dataset.id + '"]' : '') : null) : null;
+    var f = tableFacts(), mine = A.me ? roster.filter(function (d) { return d.owner === A.me; }) : [];
+    box.innerHTML = A.isGM === true && db ? (f.started ? homeGm(f) : homeSetup(f)) : mine.length ? homeBack(f, mine) : homeWelcome(f);
+    box.querySelectorAll('[data-fig]').forEach(function (n) { var d = roster.filter(function (x) { return x.id === n.getAttribute('data-fig'); })[0]; if (d) n.innerHTML = figureSvg(d, 140, 'h-'); });
+    var hp = $('homePlayers'); if (hp) renderTable(roster, hp);
+    if (keep) { var k = box.querySelector(keep); if (k) { try { k.focus({ preventScroll: true }); } catch (e) {} } }
+  }
+  function homeAct(a, id) {
+    if (a === 'table') openTable();
+    else if (a === 'table-setup') { openTable(); whenDrawn(function () { return document.querySelector('#table-page [data-path="crew.name"]'); }, function (n) { try { n.focus(); } catch (e) {} }); }
+    else if (a === 'schedule') openSchedule();
+    else if (a === 'new') { setMode('create'); newCharacter(); window.scrollTo(0, 0); }
+    else if (a === 'create') { setMode('create'); window.scrollTo(0, 0); }
+    else if (a === 'discard') { if (window.confirm('Discard your draft (' + draftInfo() + ')? It cannot be brought back.')) { blankCreator(); renderHome(); toast('Draft discarded.'); } }
+    else if (a === 'open' && id) openCharacter(id);
+    else if (a === 'print') openPrint();
+    else if (a === 'files' || a === 'backups') { var n = $(a); if (n) { try { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} } }
+    else if (a === 'restore') pickRestore();
+    else if (a === 'copylink') copyText(hosted() ? location.origin + location.pathname : location.href.split('#')[0], 'Link copied. Send it to your players.');
+  }
+  var hmEl = $('home'); if (hmEl) hmEl.addEventListener('click', function (ev) { var b = ev.target.closest && ev.target.closest('[data-hm]'); if (b) homeAct(b.getAttribute('data-hm'), b.getAttribute('data-id')); });
 
   /* ---------- boot ---------- */
-  A.snapshot = function () { if (hot && hot.snapshot) { try { hot.snapshot(function () { return { spec: S.spec, sheet: S.sheet, step: S.step, view: S.view, dirty: S.dirty, mode: document.body.dataset.mode || 'create', open: openId }; }); } catch (e) {} } };
+  /* the creator's state: the artifact keeps it in claude.hot; elsewhere an unfiled draft goes to localStorage (b68.draft) */
+  A.snapshot = function () {
+    if (hot && hot.snapshot) { try { hot.snapshot(function () { return { spec: S.spec, sheet: S.sheet, step: S.step, view: S.view, dirty: S.dirty, mode: document.body.dataset.mode || 'home', open: openId }; }); } catch (e) {} return; }
+    if (draftT) clearTimeout(draftT); draftT = setTimeout(writeDraft, 400);
+  };
+  function writeDraft() {
+    draftT = null; if (hot && hot.snapshot) return;
+    try { if (draftInfo()) localStorage.setItem(DRAFT, JSON.stringify({ v: 1, spec: S.spec, sheet: S.sheet, step: S.step, dirty: S.dirty, at: nowIso() })); else localStorage.removeItem(DRAFT); } catch (e) {}
+  }
+  function readDraft() { try { var d = JSON.parse(localStorage.getItem(DRAFT) || 'null'); return d && isObj(d.spec) && isObj(d.sheet) && d.sheet.playbook ? d : null; } catch (e) { return null; } }
+  function clearDraft() { if (draftT) { clearTimeout(draftT); draftT = null; } try { localStorage.removeItem(DRAFT); } catch (e) {} }
   function whoami() {
     var w = $('whoami'); if (!w) return;
-    var rt = window.B68Runtime, hosted = !!(rt && rt.kind === 'cloudflare');
-    if (hosted && !whoami.listening && typeof window.addEventListener === 'function') { whoami.listening = true; window.addEventListener('b68:runtime', function () { whoami(); }); }
+    var rt = window.B68Runtime, isHosted = hosted();
+    if (isHosted && !whoami.listening && typeof window.addEventListener === 'function') { whoami.listening = true; window.addEventListener('b68:runtime', function () { whoami(); }); }
     if (A.me) {
-      var who = hosted && rt.me ? (rt.me.name || rt.me.email || '') : '';
+      var who = isHosted && rt.me ? (rt.me.name || rt.me.email || '') : '';
       w.textContent = who ? 'Signed in as ' + who + (rt.me.role === 'gm' ? ' · GM' : '') + ' · ' : 'Signed in · your files are saved to your account';
       if (who) { var out = document.createElement('a'); out.href = '/cdn-cgi/access/logout'; out.textContent = 'Sign out'; out.className = 'signout'; w.appendChild(out); }
-      /* hosted: the runtime's sync state (runtime/cf.js: B68Runtime.status, the b68:runtime event) */
-      var st = hosted && rt.status, n = st ? st.pending || 0 : 0, ch = n === 1 ? ' change' : ' changes';
+      /* hosted: the runtime's sync state (runtime/cf.js: B68Runtime.status, the b68:runtime event), as a chip */
+      var st = isHosted && rt.status, n = st ? st.pending || 0 : 0, ch = n === 1 ? ' change' : ' changes';
       var sync = !st ? '' : !st.online ? 'Offline' + (n ? ' · ' + n + ch + ' waiting' : '') : n ? 'Saving ' + n + ch + '…' : '';
-      if (sync) { var sy = document.createElement('span'); sy.className = 'sync'; sy.textContent = ' · ' + sync; w.appendChild(sy); }
+      if (sync) { var sy = document.createElement('span'); sy.className = 'sync' + (st.online ? '' : ' off'); sy.setAttribute('role', 'status'); sy.textContent = sync; w.appendChild(sy); }
       w.classList.remove('off');
     }
-    else if (hosted) { w.textContent = 'Not signed in · '; var inl = document.createElement('a'); inl.href = location.pathname; inl.textContent = 'Sign in'; inl.className = 'signout'; w.appendChild(inl); w.classList.add('off'); }
+    else if (isHosted) { w.textContent = 'Not signed in · '; var inl = document.createElement('a'); inl.href = location.pathname; inl.textContent = 'Sign in'; inl.className = 'signout'; w.appendChild(inl); w.classList.add('off'); }
     else { w.textContent = db ? 'Not signed in · files are not marked as yours' : 'Not signed in · filing unavailable'; w.classList.add('off'); }
   }
   function hashOpen() { var h = location.hash || ''; return h.indexOf('#c/') === 0 ? decodeURIComponent(h.slice(3)) : null; }
+  /* the routes: (none) Home · #new a blank creator (asks first when there is a draft) · #create the creator as it is ·
+     #s<base64url> a shared character in the creator · #c/<id> a sheet · #t the table · #t/schedule its schedule · #print */
+  function route() {
+    var h = location.hash || '', id = hashOpen(), m = document.body.dataset.mode;
+    if (h === '#t' || h === '#t/schedule') { if (m !== 'table') setMode('table', true); if (h === '#t/schedule') openSchedule(); }
+    else if (h === '#print') { if (m !== 'print') setMode('print', true); }
+    else if (id) { if (id !== openId || m !== 'sheet') openCharacter(id); }
+    else if (h === '#new') { setMode('create', true); newCharacter(); replaceHash('#create'); syncTitle(); }
+    else if (h === '#create' || isShare(h)) { if (m !== 'create') setMode('create', true); }
+    else if (m !== 'home') setMode('home', true);
+  }
   window.addEventListener('hashchange', function () {
-    var id = hashOpen(), m = document.body.dataset.mode;
-    if (location.hash === '#t') { if (m !== 'table') openTable(); }
-    else if (location.hash === '#print') { if (m !== 'print') openPrint(true); }
-    else if (id) { if (id !== openId) openCharacter(id); }
-    else if (m === 'sheet' || m === 'table' || m === 'print') setMode('create');
+    var st = history.state;
+    if (st && typeof st.b68 === 'number') depth = st.b68; else { depth++; stamp(); }   /* a new entry (a link, a typed hash, pushHash) */
+    route();
   });
   /* the GM: user.canEdit() when it answers a boolean, else user.isOwner(), else not */
   function gmOf(u) {
     function ask(fn) { return typeof fn === 'function' ? Promise.resolve().then(function () { return fn.call(u); }).catch(function () { return undefined; }) : Promise.resolve(undefined); }
     return ask(u.canEdit).then(function (v) { return typeof v === 'boolean' ? v : ask(u.isOwner).then(function (w) { return w === true; }); });
   }
+  /* a sheet named by the hash cannot open: say so and go Home */
+  function cannotOpen(msg) { if (!pendingOpen) return; pendingOpen = null; if (msg) toast(msg, true); if (document.body.dataset.mode === 'sheet' && !openId) goHome(true); }
   function boot(saved) {
-    var fromHash = null;
-    try { if (location.hash && location.hash.length > 24 && location.hash[1] === 's') fromHash = JSON.parse(unb64url(location.hash.slice(2))); } catch (e) { fromHash = null; }
+    var hs = history.state; if (hs && typeof hs.b68 === 'number') depth = hs.b68; else stamp();
+    var fromHash = null, h = location.hash || '';
+    try { if (isShare(h)) fromHash = JSON.parse(unb64url(h.slice(2))); } catch (e) { fromHash = null; }
+    var draft = hot && hot.snapshot ? null : readDraft();
     if (saved && saved.spec && saved.sheet) { S.spec = saved.spec; S.sheet = normaliseSheet(saved.sheet); S.step = saved.step || 0; S.view = saved.view || 'figure'; S.dirty = !!saved.dirty; }
     else if (fromHash && fromHash.spec) { S.spec = fromHash.spec; S.sheet = normaliseSheet(fromHash.sheet); S.dirty = true; S.step = 15; }
+    else if (draft) { S.spec = draft.spec; S.sheet = normaliseSheet(draft.sheet); delete S.sheet.docId; S.step = Math.max(0, Math.min(N - 1, +draft.step || 0)); S.dirty = !!draft.dirty; }
     else { S.spec = clone(A.BASE_FIGURE); S.sheet = A.blankSheet(); }
     if (!S.spec.props) S.spec.props = [];
-    $('kitVersion').textContent = 'figure kit v' + (K.version || '2') + ' · ' + A.O.hair.length + ' hairstyles · ' + A.O.prop.length + ' props · 16 steps';
-    setMode('create'); showStep(S.step); A.draw(); A.drawLineup(); whoami(); syncView(); syncBackups();
-    pendingOpen = hashOpen() || (saved && saved.mode === 'sheet' && saved.open ? saved.open : null);
-    if (!pendingOpen && (location.hash === '#t' || (saved && saved.mode === 'table' && !location.hash))) openTable();
-    if (location.hash === '#print') openPrint(false);
+    showStep(S.step); A.draw(); A.drawLineup(); whoami(); syncView(); syncBackups();
+    /* the first view, from the hash (or the hot snapshot when there is none); quiet: the hash already says so */
+    var sm = !h && saved ? saved.mode : null;
+    pendingOpen = hashOpen() || (sm === 'sheet' && saved.open ? saved.open : null);
+    if (pendingOpen) setMode('sheet', true);   /* the sheet opens once the files settle */
+    else if (h === '#t' || h === '#t/schedule' || sm === 'table') { setMode('table', true); if (h === '#t/schedule') openSchedule(); }
+    else if (h === '#print') setMode('print', true);
+    else if (h === '#new') { setMode('create', true); newCharacter(); replaceHash('#create'); }
+    else if (h === '#create' || fromHash || sm === 'create') setMode('create', true);
+    else setMode('home', true);
+    syncTitle();
     if (window.claude && window.claude.use) {
       window.claude.use('downloads').then(function (d) { downloads = d || null; syncBackups(); }).catch(function () {});
       var who = window.claude.use('user').then(function (u) {
         if (!u) return;
         userCap = u;
+        if (hosted() && window.B68Runtime.me) A.myName = window.B68Runtime.me.name || '';
+        else if (typeof u.me === 'function') Promise.resolve().then(function () { return u.me(); }).then(function (m) { A.myName = (m && m.name) || ''; renderHome(); }).catch(function () {});
         var pid = typeof u.id === 'function' ? Promise.resolve(u.id()) : Promise.resolve(null);
         return pid.then(function (id) { A.me = id || null; var cw = typeof u.can === 'function' ? Promise.resolve(u.can('data.write')) : Promise.resolve(null); return cw.then(function (c) { A.canWrite = c === true ? true : c === false ? false : null; return gmOf(u); }).then(function (g) { A.isGM = g === true; }); });
       }).catch(function () {});
       who.then(function () { whoami(); syncFilter(); A.syncAll(); return window.claude.use('db'); }).then(function (d) {
-        db = d; dbSettled = true; whoami(); A.syncAll(); syncBackups();
+        db = d; dbSettled = true; whoami(); A.syncAll(); syncBackups(); syncEditBar();
         startCampaign();
         if (document.body.dataset.mode === 'table') startTable();
-        if (!d) { $('rosterNote').textContent = 'The files are unavailable in this view'; if (pendingOpen) { toast('The files are not available here, so that sheet cannot open.', true); pendingOpen = null; } return; }
+        if (!d) { $('rosterNote').textContent = 'The files are unavailable in this view'; cannotOpen('The files are not available here, so that sheet cannot open.'); renderHome(); return; }
         $('rosterNote').textContent = A.me ? 'Yours are saved to your account · everyone with the link sees the shared files' : 'Everyone who opens this page sees the same files';
+        renderHome();
         col().orderBy('updatedAt', 'desc').limit(60).onSnapshot(function (snap) {
           var docs = [], seen = {};
           (snap.docs || []).forEach(function (doc) { var data = (doc.data && doc.data()) || {}; if (!data.spec) return; seen[doc.id] = true; cache[doc.id] = data; docs.push(Object.assign({ id: doc.id }, data)); });
-          renderRoster(docs);
+          rosterSeen = true; renderRoster(docs);
           if (A._followCache && openId) A._followCache(openId);
           if (pendingOpen) { var id = pendingOpen; pendingOpen = null; openCharacter(id); }
-        }, function (e) { toast('Files offline: ' + (e && e.message || e), true); });
-      }).catch(function () { dbSettled = true; if (document.body.dataset.mode === 'table') startTable(); });
-    } else { dbSettled = true; $('rosterNote').textContent = 'The files are unavailable in this view'; whoami(); syncBackups(); if (pendingOpen) { pendingOpen = null; clearHash(); } if (document.body.dataset.mode === 'table') startTable(); }
+        }, function (e) { rosterSeen = true; renderHome(); toast('Files offline: ' + (e && e.message || e), true); });
+      }).catch(function () { dbSettled = true; cannotOpen('The files are not available here, so that sheet cannot open.'); renderHome(); if (document.body.dataset.mode === 'table') startTable(); });
+    } else { dbSettled = true; $('rosterNote').textContent = 'The files are unavailable in this view'; whoami(); syncBackups(); cannotOpen(''); renderHome(); if (document.body.dataset.mode === 'table') startTable(); }
   }
   if (hot && hot.ready) hot.ready(function (data) { boot(data || {}); }); else boot((hot && hot.data) || {});
 })();

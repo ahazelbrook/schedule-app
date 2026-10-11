@@ -25,6 +25,14 @@ const STUB = `(() => {
   p.on('dialog', d => d.accept());
   await p.goto(URL); await p.waitForTimeout(1200);
   console.log('whoami:', await p.$eval('#whoami', e => e.textContent));
+  // no hash: Home; this viewer is the GM (canEdit) and no table is stored yet, so it is the set-up page
+  if (!E2E_URL) {
+    const h = await p.evaluate(() => ({ mode: document.body.dataset.mode, title: (document.getElementById('homeTitle') || {}).textContent, steps: document.querySelectorAll('#home .hm-step').length, view: document.getElementById('viewName').textContent, doc: document.title }));
+    console.log('home:', JSON.stringify(h));
+    if (h.mode !== 'home' || h.title !== 'Set up the table' || h.steps !== 4 || h.view !== 'Home') errs.push('landing is not the GM set-up Home: ' + JSON.stringify(h));
+  }
+  await p.click('#home [data-hm="new"]'); await p.waitForTimeout(400);
+  if (await p.evaluate(() => document.body.dataset.mode + ' ' + location.hash) !== 'create #create') errs.push('Make a character did not open the creator: ' + await p.evaluate(() => document.body.dataset.mode + ' ' + location.hash));
   await p.click('.pb[data-id="hound"]'); await p.waitForTimeout(500);
   // fill a complete sheet quickly
   await p.evaluate(() => { const S = B68.S, CT = B68.CT, pb = CT.byId.hound; S.sheet.name = 'Aldo Crane'; S.sheet.alias = 'Dusty'; S.sheet.heritage = 'Akoros'; S.sheet.background = 'Underworld'; S.sheet.dots = { Survey: 1, Consort: 2, Hunt: 2, Prowl: 1, Skirmish: 1 }; S.sheet.ability = pb.abilities[0][0]; S.sheet.keys = pb.keys.slice(0, 2); S.sheet.contacts = {}; S.sheet.contacts[pb.contacts[0][0] + ', ' + pb.contacts[0][1]] = 'friend'; S.sheet.contacts[pb.contacts[1][0] + ', ' + pb.contacts[1][1]] = 'friend'; S.sheet.contacts[pb.contacts[2][0] + ', ' + pb.contacts[2][1]] = 'rival'; S.sheet.vice = 'Gambling'; S.sheet.purveyor = 'The Silver Stag'; S.sheet.items = [pb.items[0][0], 'Binoculars']; S.sheet.cohortType = 'hound dog'; S.sheet.cohortName = 'Biscuit'; B68.syncNameToSpec(); B68.changed(); });
@@ -50,16 +58,147 @@ const STUB = `(() => {
     return { id, stress: d.play.stress, keys: d.play.keys.length, abilities: d.play.abilities, owner: d.owner, contacts: d.play.contacts.length, items: d.play.items, wearing: d.sheet.wearing };
   });
   console.log('stored:', JSON.stringify(play));
-  // back to roster, card appears, click → sheet again
-  await click('#dossier button.ds-back, #railBack');
-  await p.waitForTimeout(600); console.log('mode after back:', await p.evaluate(() => document.body.dataset.mode), 'cards:', await p.$$eval('#cards .card', c => c.length));
+  // Back returns to the view before the sheet (the creator), Home shows the files; a card opens the sheet again
+  await click('#dossier [data-act="back"]');
+  await p.waitForTimeout(600); console.log('mode after back:', await p.evaluate(() => document.body.dataset.mode + ' ' + location.hash));
+  if (await p.evaluate(() => document.body.dataset.mode) !== 'create') errs.push('Back from the sheet did not return to the creator');
+  await p.click('#homeBtn'); await p.waitForTimeout(600);
+  console.log('mode after Home:', await p.evaluate(() => document.body.dataset.mode), 'cards:', await p.$$eval('#cards .card', c => c.length));
+  if (!E2E_URL && await p.$$eval('#cards .card', c => c.length) !== 1) errs.push('Home: the filed card is missing');
   await p.screenshot({ path: 'out/e2e-roster.png', fullPage: true });
   await p.click('#cards .card'); await p.waitForTimeout(800); console.log('mode after card:', await p.evaluate(() => document.body.dataset.mode));
+  // browser Back from that sheet is Home again, and Back from Home steps back through the views
+  await p.goBack(); await p.waitForTimeout(500);
+  if (await p.evaluate(() => document.body.dataset.mode) !== 'home') errs.push('browser Back from the sheet: ' + await p.evaluate(() => document.body.dataset.mode));
+  // Edit figure opens the creator at Build under the editing banner; Back to the sheet returns to it
+  await p.click('#cards .card'); await p.waitForTimeout(800);
+  await click('#dossier [data-act="edit"]'); await p.waitForTimeout(500);
+  const ed = await p.evaluate(() => ({ mode: document.body.dataset.mode, step: B68.S.step, bar: !document.getElementById('editBar').hidden && document.getElementById('editBar').textContent, view: document.getElementById('viewName').textContent }));
+  console.log('edit figure:', JSON.stringify(ed));
+  if (ed.mode !== 'create' || ed.step !== 1 || !/Editing Aldo Crane/.test(ed.bar || '') || ed.view !== 'Editing Aldo Crane') errs.push('Edit figure: ' + JSON.stringify(ed));
+  await p.click('#editBack'); await p.waitForTimeout(600);
+  if (await p.evaluate(() => document.body.dataset.mode + ' ' + /^#c\//.test(location.hash)) !== 'sheet true') errs.push('Back to the sheet did not reopen it');
   // phone
   const ctx2 = await b.newContext({ viewport: { width: 400, height: 800 }, colorScheme: 'dark' }); if (!E2E_URL) await ctx2.addInitScript(STUB);
   const p2 = await ctx2.newPage(); p2.on('pageerror', e => errs.push('phone pageerror: ' + e.message));
   await p2.goto(URL); await p2.waitForTimeout(1200);
   const sw = await p2.evaluate(() => document.documentElement.scrollWidth), cw = await p2.evaluate(() => document.documentElement.clientWidth); if (sw > cw) errs.push('phone overflow ' + sw + '>' + cw);
+  if (!E2E_URL) await homeStates(b, errs);
   console.log('ERRORS:', errs.length ? errs.join('\n') : 'none');
   await b.close();
 })().catch(e => { console.error('FAILED', e); process.exit(1); });
+
+/* ---------- Home, state by state (stubbed runtime with real collections; role gm | player | ro) ---------- */
+async function homeStates(b, errs) {
+  const day = 86400000, T = (n) => new Date(Date.now() + n * day).toISOString();
+  const fig = await (async () => { const c = await b.newContext(); await c.addInitScript(STUB); const pg = await c.newPage(); await pg.goto(URL); await pg.waitForTimeout(600); const s = await pg.evaluate(() => B68.lookFor('hound')); await c.close(); return s; })();
+  const char = (id, name, owner, session) => ({ v: 2, name, alias: '', code: 'HND-968-' + (1000 + name.length), playbook: 'hound', playbookName: 'Hound', spec: Object.assign({}, fig, { name }), sheet: { playbook: 'hound', name }, play: { stress: 2, session: session || 0, xp: { playbook: 1 } }, owner, createdAt: T(-9), updatedAt: T(-1) });
+  const camp = (extra) => Object.assign({ v: 1, session: { number: 3, startedAt: T(-1), endedAt: null }, crew: { name: 'The Night Shift', tier: 1 }, clocks: [], log: [],
+    schedule: { options: { o_a: { at: T(3), minutes: 240 }, o_b: { at: T(10), minutes: 240 } }, avail: {}, next: null, rsvp: {}, cadence: null, quorum: 0, attendance: {} }, updatedAt: T(-1) }, extra || {});
+  const stub = (role, seed) => `(() => {
+    const store = ${JSON.stringify(seed)}; const colSubs = {}; const docSubs = {};
+    const copy = (o) => o === undefined ? undefined : JSON.parse(JSON.stringify(o));
+    const snapOf = (p) => ({ id: p.split('/')[1], exists: p in store, data: () => copy(store[p]), metadata: {} });
+    const query = (c) => { const docs = Object.keys(store).filter(p => p.indexOf(c + '/') === 0).map(snapOf); return { docs, size: docs.length, empty: !docs.length, docChanges: () => [] }; };
+    const fire = (p) => { (docSubs[p] || []).forEach(fn => fn(snapOf(p))); const c = p.split('/')[0]; (colSubs[c] || []).forEach(fn => fn(query(c))); };
+    const docRef = (c, id) => { const p = c + '/' + id; return { id, get: async () => snapOf(p), set: async (d) => { store[p] = copy(d); fire(p); }, update: async (u) => { if (!(p in store)) throw new Error('No document to update'); Object.assign(store[p], copy(u)); fire(p); }, delete: async () => { delete store[p]; fire(p); }, onSnapshot: (fn) => { (docSubs[p] = docSubs[p] || []).push(fn); setTimeout(() => fn(snapOf(p)), 0); return () => {}; } }; };
+    const col = (c) => { const q = () => ({ orderBy: q, limit: q, where: q, get: async () => query(c), onSnapshot: (fn) => { (colSubs[c] = colSubs[c] || []).push(fn); setTimeout(() => fn(query(c)), 0); return () => {}; } }); return Object.assign(q(), { doc: (id) => docRef(c, id), path: c }); };
+    const id = ${JSON.stringify(role === 'gm' ? 'u_gm' : 'u_pat')};
+    const user = { id: async () => id, can: async () => ${role !== 'ro'}, isOwner: async () => ${role === 'gm'}, canEdit: async () => ${role === 'gm'}, me: async () => ({ id, name: ${JSON.stringify(role === 'gm' ? 'Gail' : 'Pat')} }), profiles: async () => ({}) };
+    window.claude = { use: async (name) => ({ db: { collection: col, doc: (p) => docRef(p.split('/')[0], p.split('/')[1]) }, user, downloads: { save: async () => {} } })[name] || null };
+  })();`;
+  async function open(role, seed, hash, vp) {
+    const c = await b.newContext({ viewport: vp || { width: 1280, height: 900 } });
+    if (seed) await c.addInitScript(stub(role, seed));
+    const pg = await c.newPage(); pg.on('pageerror', e => errs.push('home ' + role + ' pageerror: ' + e.message)); pg.on('dialog', d => d.accept());
+    pg.on('console', m => { if (m.type() === 'error' && !/ERR_FILE_NOT_FOUND/.test(m.text())) errs.push('home ' + role + ' console.error: ' + m.text()); });
+    await pg.goto(URL + (hash || '')); await pg.waitForTimeout(1000);
+    return { c, pg };
+  }
+  const facts = (pg) => pg.evaluate(() => ({ mode: document.body.dataset.mode, kick: (document.querySelector('#home .hm-kick') || {}).textContent, title: (document.getElementById('homeTitle') || {}).textContent, text: document.getElementById('homeMain').textContent, files: !document.getElementById('files').hidden,
+    mine: !document.getElementById('mineBtn').hidden, chars: document.querySelectorAll('#home .hm-char').length, primary: Array.from(document.querySelectorAll('#homeMain .btn.primary')).map(n => n.textContent),
+    edits: Array.from(document.querySelectorAll('#cards .card')).map(c => c.querySelector('.nm').textContent + ':' + !!c.querySelector('.ed') + ':' + !!c.querySelector('.rm')) }));
+  const want = (ok, msg, f) => { if (!ok) errs.push('Home ' + msg + (f ? ': ' + JSON.stringify(f) : '')); };
+  const where = (pg) => pg.evaluate(() => document.body.dataset.mode + ' ' + location.hash);
+
+  /* "Opening the files…" until the files settle */
+  { const c = await b.newContext(); await c.addInitScript(`window.claude = { use: (n) => n === 'db' ? new Promise(() => {}) : Promise.resolve(n === 'user' ? { id: async () => 'u_pat', can: async () => true, isOwner: async () => false, canEdit: async () => false } : null) };`);
+    const pg = await c.newPage(); await pg.goto(URL); await pg.waitForTimeout(600);
+    want(/Opening the files/.test(await pg.$eval('#homeMain', n => n.textContent)) && await pg.$eval('#files', n => n.hidden), 'waits for the files'); await c.close(); }
+
+  /* C. a player with no character: the crew as kicker, Make your character, Mark your dates (two open dates) */
+  { const { c, pg } = await open('player', { 'campaign/main': camp(), 'characters/sam-1': char('sam-1', 'Vera Lux', 'u_sam') });
+    const f = await facts(pg);
+    want(f.mode === 'home' && f.kick === 'The Night Shift' && f.title === 'Welcome to the table' && f.primary.join() === 'Make your character' && /2 dates need your answer/.test(f.text) && !f.mine && f.files, 'C (player, no character)', f);
+    want(f.edits.join() === 'Vera Lux:false:false', 'C: another player’s card has no Edit figure and no remove', f.edits);
+    await pg.evaluate(() => B68.toast('Hello from Home')); await pg.waitForTimeout(100);
+    const t = await pg.$eval('#toast', n => { const r = n.getBoundingClientRect(); return { text: n.textContent, pos: getComputedStyle(n).position, inView: r.bottom <= innerHeight && r.top >= 0 && r.height > 0, role: document.getElementById('toastMsg').getAttribute('role') }; });
+    want(t.text === 'Hello from Home' && t.pos === 'fixed' && t.inView && t.role === 'status', 'the toast shows on Home', t);
+    await pg.click('#homeMain [data-hm="schedule"]'); await pg.waitForTimeout(700);
+    want(await where(pg) === 'table #t/schedule', 'C: Mark your dates opens #t/schedule', await where(pg));
+    want(await pg.evaluate(() => document.title) === 'The table · Blades ’68' && await pg.$eval('#viewName', n => n.textContent) === 'The table', 'C: title on the table');
+    await pg.goBack(); await pg.waitForTimeout(400);
+    want(await pg.evaluate(() => document.body.dataset.mode) === 'home', 'C: browser Back returns Home');
+    await pg.screenshot({ path: 'out/e2e-home-player-new.png', fullPage: true });
+    /* a draft survives a reload without claude.hot, Home offers it, Discard clears it */
+    await pg.click('#homeMain [data-hm="new"]'); await pg.waitForTimeout(300);
+    await pg.click('.pb[data-id="veteran"]'); await pg.waitForTimeout(200); await pg.evaluate(() => B68.showStep(8)); await pg.waitForTimeout(700);
+    want(!!(await pg.evaluate(() => localStorage.getItem('b68.draft'))), 'draft written to localStorage');
+    await pg.goto(URL); await pg.waitForTimeout(1000);
+    const dr = await pg.$eval('#homeMain', n => (n.querySelector('.hm-draft') || {}).textContent || '');
+    want(/Continue your draft/.test(dr) && /Veteran, step 9 of 16/.test(dr), 'draft offered after a reload', dr);
+    await pg.click('#homeMain [data-hm="create"]'); await pg.waitForTimeout(300);
+    want(await pg.evaluate(() => document.body.dataset.mode + ' ' + B68.S.sheet.playbook + ' ' + B68.S.step) === 'create veteran 8', 'Continue opens the draft where it was');
+    await pg.click('#homeBtn'); await pg.waitForTimeout(300);
+    await pg.click('#homeMain [data-hm="discard"]'); await pg.waitForTimeout(600);
+    want(!(await pg.$('#homeMain .hm-draft')) && (await pg.evaluate(() => localStorage.getItem('b68.draft'))) === null, 'Discard clears the draft');
+    await c.close(); }
+
+  /* D. a player with one character: Welcome back, the big card, Your sheet, the session nudge */
+  { const { c, pg } = await open('player', { 'campaign/main': camp(), 'characters/sam-1': char('sam-1', 'Vera Lux', 'u_sam'), 'characters/pat-1': char('pat-1', 'Aldo Crane', 'u_pat', 2) }, '', { width: 390, height: 844 });
+    const f = await facts(pg);
+    want(f.title === 'Welcome back, Pat' && f.chars === 1 && f.primary.join() === 'Open sheet' && /Session 3 has started at the table/.test(f.text) && f.mine, 'D (player with a character)', f);
+    want(f.edits.join() === 'Aldo Crane:true:false', 'D: the files show Mine first', f.edits);
+    await pg.click('#rosterFilter [data-f="all"]'); await pg.waitForTimeout(200);
+    const ed = (await facts(pg)).edits.sort();
+    want(ed.join() === 'Aldo Crane:true:false,Vera Lux:false:false', 'D: Edit figure only on your own card, no remove chips', ed);
+    const sw = await pg.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]); want(sw[0] <= sw[1], 'D: phone overflow ' + sw);
+    await pg.screenshot({ path: 'out/e2e-home-player-back.png', fullPage: true });
+    await pg.click('#mineBtn'); await pg.waitForTimeout(700);
+    const s1 = await pg.evaluate(() => document.body.dataset.mode + ' ' + location.hash + ' ' + document.getElementById('mineBtn').getAttribute('aria-current') + ' ' + document.title);
+    want(s1 === 'sheet #c/pat-1 page Aldo Crane · Blades ’68', 'D: Your sheet opens it', s1);
+    want(await pg.evaluate(() => document.activeElement && document.activeElement.id) === 'viewName', 'D: focus on the view title after the switch');
+    await pg.click('#dossier [data-act="back"]'); await pg.waitForTimeout(500);
+    want(await where(pg) === 'home ', 'D: the sheet’s Back returns Home', await where(pg));
+    /* a sheet opened from a link (nothing before it in this tab): Back goes Home in place */
+    await pg.goto(URL + '#c/pat-1'); await pg.waitForTimeout(1000);
+    const len = await pg.evaluate(() => history.length);
+    await pg.click('#dossier [data-act="back"]'); await pg.waitForTimeout(500);
+    want(await where(pg) === 'home ' && await pg.evaluate(() => history.length) === len, 'D: Back from a cold sheet replaces it with Home', await where(pg));
+    await c.close(); }
+
+  /* B. the GM with a started table: the crew name, the players table, the nudges that are true */
+  { const seed = { 'campaign/main': camp({ schedule: { options: {}, avail: {}, next: { at: T(4), minutes: 240, place: '', note: '', confirmedAt: null }, rsvp: {}, cadence: null, quorum: 0, attendance: {} } }), 'characters/sam-1': char('sam-1', 'Vera Lux', 'u_sam'), 'characters/pat-1': char('pat-1', 'Aldo Crane', 'u_pat') };
+    const { c, pg } = await open('gm', seed);
+    const f = await facts(pg);
+    want(f.title === 'The Night Shift' && f.primary.join() === 'Open the table' && /2 players haven’t answered/.test(f.text) && !/No dates proposed/.test(f.text) && !/Nobody has filed/.test(f.text), 'B (GM, table started)', f);
+    want(await pg.$$eval('#homePlayers .tbl tbody tr', n => n.length) === 2, 'B: the players table');
+    want(f.edits.length === 2 && f.edits.every(e => /:true:false$/.test(e)), 'B: the GM gets Edit figure on every card', f.edits);
+    await pg.screenshot({ path: 'out/e2e-home-gm.png', fullPage: true });
+    await c.close(); }
+
+  /* A. the GM before the table: the set-up page; step 1 opens the table with the crew name focused */
+  { const { c, pg } = await open('gm', {});
+    const f = await facts(pg);
+    want(f.title === 'Set up the table' && /One table lives at this address/.test(f.text) && /a second copy of the app/.test(f.text), 'A (GM, no table)', f);
+    await pg.click('#homeMain [data-hm="table-setup"]'); await pg.waitForTimeout(900);
+    const a1 = await pg.evaluate(() => document.body.dataset.mode + ' ' + (document.activeElement && document.activeElement.dataset.path));
+    want(a1 === 'table crew.name', 'A: Open the table focuses the crew name', a1);
+    await c.close(); }
+
+  /* read only, and no runtime at all */
+  { const { c, pg } = await open('ro', { 'campaign/main': camp() });
+    const f = await facts(pg); want(/You can look around but not change anything/.test(f.text) && !/Restore your characters/.test(f.text), 'read-only player', f); await c.close(); }
+  { const { c, pg } = await open('none', null);
+    const f = await facts(pg); want(f.title === 'Welcome' && f.primary.join() === 'Make a character' && !f.files, 'no runtime: only Make a character', f); await c.close(); }
+}
