@@ -3,7 +3,7 @@
 The whole app as one static page with no build step: the character creator, the living
 sheets, the table page, the schedule and the prints. It started as the single-page creator
 prototype from `PLAN.md` and is built on the Blades '68 Design System's figure kit v2. It
-runs as a claude.ai artifact or on the hosted build (Cloudflare Pages, see `HOSTING.md`);
+runs as a claude.ai artifact or on the hosted build (a Cloudflare Worker, see `HOSTING.md`);
 storage, identity and downloads always go through `window.claude.use(...)`.
 
 - `index.html` is the page: markup, theme tokens, the `@font-face` rules and the script

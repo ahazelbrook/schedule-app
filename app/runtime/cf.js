@@ -1,4 +1,4 @@
-/* Hosted runtime adapter (Cloudflare Pages + Access + D1).
+/* Hosted runtime adapter (Cloudflare Worker + Access + D1).
    Defines window.claude.use('user' | 'db' | 'downloads') on top of the JSON API in functions/
    (see HOSTING.md) so the page runs unchanged outside the claude.ai artifact. The db serves the
    `characters` collection and the shared `campaign/main` document (CAMPAIGN.md).
