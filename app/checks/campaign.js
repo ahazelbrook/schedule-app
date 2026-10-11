@@ -106,7 +106,7 @@ const SHEET = `(pb) => {
   for (const pb of ['hound', 'hull', 'timetraveler']) {
     await p.evaluate(`(${SHEET})(${JSON.stringify(pb)}); true`); await p.waitForTimeout(900);
     ids[pb] = await p.evaluate(() => B68.S.sheet.docId);
-    await p.click('#railBack'); await p.waitForTimeout(250); await p.evaluate(() => B68.newCharacter()); await p.waitForTimeout(30);
+    await p.click('#homeBtn'); await p.waitForTimeout(250); await p.evaluate(() => B68.newCharacter()); await p.waitForTimeout(30);
   }
   await p.evaluate(async (ids) => {
     const db = await window.claude.use('db'); const c = db.collection('characters');
@@ -121,7 +121,7 @@ const SHEET = `(pb) => {
   assert((await mode()) === 'table', 'table mode after the button: ' + (await mode()));
   assert((await p.evaluate(() => location.hash)) === '#t', 'hash #t');
   assert(await p.$eval('#dossier', n => getComputedStyle(n).display === 'none') && await p.$eval('.studio', n => getComputedStyle(n).display === 'none') && await p.$eval('.roster', n => getComputedStyle(n).display === 'none'), 'studio, roster, dossier hidden in table mode');
-  assert(await p.$eval('#railBack', n => getComputedStyle(n).display !== 'none'), 'back button shown in table mode');
+  assert(await p.$eval('#homeBtn', n => getComputedStyle(n).display !== 'none') && (await p.$eval('#tableBtn', n => n.getAttribute('aria-current'))) === 'page' && (await p.$eval('#viewName', n => n.textContent)) === 'The table', 'nav: Home shown, The table marked current in table mode');
   assert((await cw()) === writesBefore && (await camp()) === null, 'opening writes nothing');
   /* defaults */
   assert((await p.$eval('#tp-crewname', n => n.textContent)) === 'An unnamed crew', 'default crew name heading');
@@ -312,8 +312,8 @@ const SHEET = `(pb) => {
   await p2.goto(URL); await p2.waitForTimeout(900);
   await p2.click('#tableBtn'); await p2.waitForTimeout(300);
   assert(/The table needs the shared files/.test(await p2.$eval('#table-page', n => n.textContent)), 'no window.claude: shared-files note');
-  await p2.click('#railBack'); await p2.waitForTimeout(200);
-  assert((await p2.evaluate(() => document.body.dataset.mode)) === 'create', 'no window.claude: back to the creator');
+  await p2.click('#homeBtn'); await p2.waitForTimeout(200);
+  assert((await p2.evaluate(() => document.body.dataset.mode)) === 'home', 'no window.claude: back Home');
   await ctx2.close();
 
   console.log('NOTES:\n' + notes.join('\n'));

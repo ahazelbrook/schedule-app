@@ -243,7 +243,7 @@ const iso = (n) => new Date(T0 + n * DAY).toISOString();
     await c.close();
   }
 
-  /* ---------- cold load at #print on a phone, light and dark: Back goes to the creator ---------- */
+  /* ---------- cold load at #print on a phone, light and dark: Back goes Home (nothing before it in this tab) ---------- */
   for (const scheme of ['light', 'dark']) {
     const { c, pg } = await session('phone-' + scheme, { role: 'gm', ctx: { viewport: { width: 390, height: 844 }, colorScheme: scheme, deviceScaleFactor: 2 } });
     await pg.goto(URL + '#print');
@@ -258,7 +258,7 @@ const iso = (n) => new Date(T0 + n * DAY).toISOString();
     await pg.locator('#season .sn-page').nth(1).screenshot({ path: path.join(OUT, 'season-phone-' + scheme + '-crew.png') }); shots.push('season-phone-' + scheme + '-crew.png');
     await pg.locator('#season .sn-page').nth(2).screenshot({ path: path.join(OUT, 'season-phone-' + scheme + '-sheet.png') }); shots.push('season-phone-' + scheme + '-sheet.png');
     await pg.click('#season [data-sn="back"]'); await pg.waitForTimeout(600);
-    assert(await mode(pg) === 'create', 'phone ' + scheme + ': Back from a cold #print went to ' + await mode(pg));
+    assert(await mode(pg) === 'home', 'phone ' + scheme + ': Back from a cold #print went to ' + await mode(pg));
     assert(await pg.evaluate(() => location.hash) === '', 'phone ' + scheme + ': hash after Back ' + await pg.evaluate(() => location.hash));
     assert(await writes(pg) === w0, 'phone ' + scheme + ': writes');
     await c.close();

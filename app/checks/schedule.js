@@ -114,7 +114,7 @@ const SHEET = `(() => {
   const charId = await g.evaluate(() => B68.S.sheet.docId);
   store['characters/' + charId].owner = ALEX; store['characters/' + charId].updatedAt = new Date(T0.getTime() + 1000).toISOString(); broadcast('characters/' + charId);
   await settle(g, 300);
-  await g.click('#railBack'); await settle(g, 300);
+  await g.click('#homeBtn'); await settle(g, 300);
   assert(await g.$eval('#nextSession', n => n.hidden), 'card hidden with no next session');
   const w0 = cw();
   await g.click('#tableBtn'); await settle(g, 600);
@@ -242,7 +242,7 @@ const SHEET = `(() => {
   assert(wp && JSON.stringify(wp.body.schedule) === JSON.stringify({ rsvp: { [ALEX]: { at: '2026-10-31T19:00:00.000Z', v: 'in' } } }), 'rsvp patch: ' + JSON.stringify(wp && wp.body));
   assert(await a.$eval('#nextSession [data-nx="in"]', n => n.getAttribute('aria-pressed')) === 'true', 'In pressed');
   /* pat answers from the creator, never opening the table again */
-  await pt.click('#railBack'); await settle(pt, 300);
+  await pt.evaluate(() => B68.setMode('create')); await settle(pt, 300);   /* the creator (#create), reached from Home's Make a character */
   assert(await pt.evaluate(() => document.body.dataset.mode) === 'create' && !(await pt.$eval('#nextSession', n => n.hidden)), 'pat: card shown in create mode');
   if (!(await pt.$eval('#nextSession .nx-line', n => n.getAttribute('aria-expanded') === 'true'))) await pt.click('#nextSession .nx-line');
   await one(pt, PAT, 'pat: can’t make it (create mode)', () => pt.click('#nextSession [data-nx="out"]'));
@@ -260,9 +260,9 @@ const SHEET = `(() => {
   const subs = await a.evaluate(() => window.__subCount);
   notes.push('alex onSnapshot subscriptions after table → create → sheet: ' + subs);
   await shotCard(a, 'sheet');
-  await a.click('#railBack'); await settle(a, 400);
+  await a.click('#homeBtn'); await settle(a, 400);
   /* table, sheet and create share the one campaign subscription (plus the open character's) */
-  await a.click('#tableBtn'); await settle(a, 500); await a.click('#railBack'); await settle(a, 300);
+  await a.click('#tableBtn'); await settle(a, 500); await a.click('#homeBtn'); await settle(a, 300);
   assert(await a.evaluate(() => window.__subCount) === subs, 'no new campaign subscription when re-entering the table: ' + subs + ' -> ' + await a.evaluate(() => window.__subCount));
 
   /* ---------- ics and the Google link ---------- */
@@ -308,7 +308,7 @@ const SHEET = `(() => {
 
   /* ---------- the nudge: under 3 days to go and no answer (alex's answer for 31 Oct is stale) ---------- */
   const nudged = (p) => p.$eval('#nextSession', n => n.classList.contains('nudge'));
-  await a.setViewportSize({ width: 390, height: 844 }); if (await a.$eval('#railBack', n => !n.hidden)) { await a.click('#railBack'); await settle(a, 300); }
+  await a.setViewportSize({ width: 390, height: 844 }); if (await a.evaluate(() => document.body.dataset.mode !== 'create')) { await a.evaluate(() => B68.setMode('create')); await settle(a, 300); }
   if (await a.$eval('#nextSession .nx-line', n => n.getAttribute('aria-expanded') === 'true')) await a.click('#nextSession .nx-line');
   await setNow(a, '2026-10-28T12:00:00Z'); await settle(a, 100);
   assert(!(await nudged(a)) && !(await a.$('#nextSession .nx-nudge')), 'no nudge 4 days ahead');
@@ -424,7 +424,7 @@ const SHEET = `(() => {
   assert(Math.abs(before - after) < 1, 'name column stays put while the grid scrolls: ' + before + ' → ' + after);
   await a.$eval('.sc-scroll', n => { n.scrollLeft = 0; });
   /* the card is one line when collapsed, and the creator's figure starts just below it */
-  await a.click('#railBack'); await settle(a, 400);
+  await a.evaluate(() => B68.setMode('create')); await settle(a, 400);
   if (await a.$eval('#nextSession .nx-line', n => n.getAttribute('aria-expanded') === 'true')) await a.click('#nextSession .nx-line');
   await settle(a, 100);
   const ch = await a.$eval('#nextSession', n => n.getBoundingClientRect().height);

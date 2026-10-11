@@ -50,6 +50,18 @@ const SHEET = `(pb) => {
   const mode = () => p.evaluate(() => document.body.dataset.mode);
   const store = () => p.evaluate(() => JSON.parse(JSON.stringify(window.__store)));
   const toast = () => p.$eval('#toast', n => n.textContent);
+  /* restore through the file input: the preview dialog opens first; tick the opt-ins, then Restore (or Cancel) */
+  const preview = async (pg, file, o) => {
+    o = o || {};
+    await pg.setInputFiles('#restoreFile', file); await pg.waitForTimeout(400);
+    const open = await pg.$eval('#restoreDlg', n => n.open);
+    if (!open) return { open, msg: await pg.$eval('#toast', n => n.textContent) };
+    for (const k of ['copies', 'others']) if (o[k]) await pg.check('#restoreDlg input[data-o="' + k + '"]');
+    const items = await pg.$$eval('#restoreDlg li', ls => ls.map(l => l.textContent));
+    const sum = await pg.$eval('#restoreSum', n => n.textContent), go = await pg.$eval('#restoreDlg [data-o="go"]', n => ({ text: n.textContent, disabled: n.disabled }));
+    await pg.click('#restoreDlg [data-o="' + (o.cancel ? 'cancel' : 'go') + '"]'); await pg.waitForTimeout(700);
+    return { open, items, sum, go, closed: !(await pg.$eval('#restoreDlg', n => n.open)), msg: await pg.$eval('#toast', n => n.textContent) };
+  };
 
   /* the backups row is shown and the view toggle defaults to cards */
   assert(!(await p.$eval('#backups', n => n.hidden)) && !(await p.$eval('#dlAll', n => n.hidden)) && !(await p.$eval('#restoreBtn', n => n.hidden)), 'backups row visible with db + downloads');
@@ -62,7 +74,7 @@ const SHEET = `(pb) => {
     await p.waitForTimeout(900);
     assert((await mode()) === 'sheet', pb + ': sheet opened after filing');
     ids[pb] = await p.evaluate(() => B68.S.sheet.docId);
-    await p.click('#railBack'); await p.waitForTimeout(300);
+    await p.click('#homeBtn'); await p.waitForTimeout(300);
     await p.evaluate(() => B68.newCharacter()); await p.waitForTimeout(200);
     await p.waitForTimeout(20); /* distinct Date.now() ids */
   }
@@ -135,12 +147,14 @@ const SHEET = `(pb) => {
   const hullNow = await p.$eval('#table .tbl tbody tr[data-id="' + ids.hull + '"] td.st', n => n.textContent.trim());
   assert(hullNow === 'Drain7/10', 'live update reached the table: ' + hullNow);
 
-  /* click a row -> the sheet; back -> the table is still the view */
+  /* click a row -> the sheet; the sheet's Back -> Home, the table is still the view */
   await p.click('#table .tbl tbody tr[data-id="' + ids.hound + '"]'); await p.waitForTimeout(600);
   assert((await mode()) === 'sheet', 'row click opens the sheet');
   assert((await p.evaluate(() => location.hash)) === '#c/' + ids.hound, 'hash set to the row\'s character');
-  await p.click('#railBack'); await p.waitForTimeout(400);
-  assert((await mode()) === 'create' && !(await p.$eval('#table', n => n.hidden)), 'back to the table');
+  await p.click('#dossier [data-act="back"]'); await p.waitForTimeout(400);
+  assert((await mode()) === 'home' && !(await p.$eval('#table', n => n.hidden)), 'back to the table');
+  /* the backup row names what a download holds */
+  assert(/every character on file and the whole table/.test(await p.$eval('#backupHint', n => n.textContent)) && (await p.$eval('#dlAll', n => n.textContent)) === 'Download a backup' && (await p.$eval('#restoreBtn', n => n.textContent)) === 'Restore from a backup…', 'backup buttons and hint: ' + await p.$eval('#backups', n => n.textContent));
 
   /* download all */
   await p.click('#dlAll'); await p.waitForTimeout(400);
@@ -160,7 +174,11 @@ const SHEET = `(pb) => {
   const tmp = path.join(SHOTS, 'tmp-backup.json');
   fs.writeFileSync(tmp, saved.length ? saved[0].data : '{}');
   const before = Object.keys(await store());
-  await p.setInputFiles('#restoreFile', tmp); await p.waitForTimeout(900);
+  let pv = await preview(p, tmp, { cancel: true });
+  assert(pv.open && pv.items.length === 3 && pv.items.every(t => /already on file · skipped$/.test(t)) && pv.go.disabled && /Nothing new to add/.test(pv.sum), 'preview: the same file again is three matches, skipped: ' + JSON.stringify(pv));
+  assert(pv.closed && /^Restore cancelled\. Nothing was changed\.$/.test(pv.msg) && Object.keys(await store()).length === 3, 'preview cancelled: nothing written: ' + pv.msg);
+  pv = await preview(p, tmp, { copies: true });
+  assert(/^Restore 3$/.test(pv.go.text) && /Adds 3 characters as new copies owned by you/.test(pv.sum) && pv.items.every(t => /added as a new copy$/.test(t)), 'preview with copies: ' + JSON.stringify(pv));
   const after = await store();
   const newIds = Object.keys(after).filter(id => before.indexOf(id) < 0);
   assert(Object.keys(after).length === 6, 'six docs after restore, got ' + Object.keys(after).length);
@@ -169,7 +187,7 @@ const SHEET = `(pb) => {
   const restoredHull = newIds.map(id => after[id]).find(d => d.playbook === 'hull');
   assert(restoredHull && restoredHull.play && restoredHull.play.stress === 7 && restoredHull.name === 'Unit Seven' && restoredHull.playbookName === 'Hull', 'restored hull keeps its play: ' + JSON.stringify(restoredHull && { stress: restoredHull.play.stress, name: restoredHull.name }));
   assert(newIds.every(id => after[id].createdAt !== backup.characters.find(c => c.name === after[id].name).createdAt), 'createdAt is now, not the backup\'s');
-  assert(/^Restored 3 characters\.$/.test(await toast()), 'toast: ' + (await toast()));
+  assert(/^Restored 3 characters\.$/.test(pv.msg), 'toast: ' + pv.msg);
   await p.click('#rosterView [data-v="cards"]'); await p.waitForTimeout(400);
   const cards = await p.$$eval('#cards .card', c => c.length);
   assert(cards === 6, 'six cards after restore, got ' + cards);
@@ -184,17 +202,18 @@ const SHEET = `(pb) => {
     { name: 'Fresh Hound', alias: 'New', playbook: 'hound', sheet: { name: 'Fresh Hound', keys: ['Sardonic (▼ Grim ▲ Witty)'], items: ['Binoculars'], dots: { Hunt: 2 } } }
   ] };
   fs.writeFileSync(tmp, JSON.stringify(mixed));
-  await p.setInputFiles('#restoreFile', tmp); await p.waitForTimeout(700);
-  assert(/^Restored 1 character · skipped 2 invalid\.$/.test(await toast()), 'mixed toast: ' + (await toast()));
+  pv = await preview(p, tmp);
+  assert(pv.items.length === 1 && /^Fresh Hound/.test(pv.items[0]), 'mixed preview lists the one valid entry: ' + JSON.stringify(pv.items));
+  assert(/^Restored 1 character · skipped 2 invalid\.$/.test(pv.msg), 'mixed toast: ' + pv.msg);
   const s7 = await store(); const fresh = Object.keys(s7).map(k => s7[k]).find(d => d.name === 'Fresh Hound');
   assert(Object.keys(s7).length === 7 && fresh && fresh.play && fresh.play.keys && fresh.play.keys.length === 1 && fresh.play.items[0] === 'Binoculars' && fresh.spec && fresh.spec.props, 'play-less entry filed with initialPlay + base figure: ' + JSON.stringify(fresh && { keys: fresh.play.keys, items: fresh.play.items }));
   /* garbage is refused without throwing */
   fs.writeFileSync(tmp, 'not json');
   await p.setInputFiles('#restoreFile', tmp); await p.waitForTimeout(400);
-  assert(/not JSON/.test(await toast()), 'non-JSON toast: ' + (await toast()));
+  assert(/not JSON/.test(await toast()) && await p.$eval('#toastErr', n => n.getAttribute('role') === 'alert' && n.textContent.length > 0), 'non-JSON toast (an alert): ' + (await toast()));
   fs.writeFileSync(tmp, JSON.stringify({ v: 2, characters: [] }));
   await p.setInputFiles('#restoreFile', tmp); await p.waitForTimeout(400);
-  assert(/Unknown backup version 2/.test(await toast()), 'wrong version toast: ' + (await toast()));
+  assert(/Unknown backup version 2/.test(await toast()) && !(await p.$eval('#restoreDlg', n => n.open)), 'wrong version toast, no preview: ' + (await toast()));
   assert(Object.keys(await store()).length === 7, 'nothing filed from bad input');
   try { fs.unlinkSync(tmp); } catch (e) {}
 
@@ -205,11 +224,11 @@ const SHEET = `(pb) => {
 
   /* phone: 390px, light and dark, no horizontal scroll */
   await p.evaluate(`(${SHEET})('hound'); true`); await p.waitForTimeout(900);
-  await p.click('#railBack'); await p.waitForTimeout(200); await p.evaluate(() => B68.newCharacter());
+  await p.click('#homeBtn'); await p.waitForTimeout(200); await p.evaluate(() => B68.newCharacter());
   await p.evaluate(`(${SHEET})('hull'); true`); await p.waitForTimeout(900);
-  await p.click('#railBack'); await p.waitForTimeout(200); await p.evaluate(() => B68.newCharacter());
+  await p.click('#homeBtn'); await p.waitForTimeout(200); await p.evaluate(() => B68.newCharacter());
   await p.evaluate(`(${SHEET})('timetraveler'); true`); await p.waitForTimeout(900);
-  await p.click('#railBack'); await p.waitForTimeout(300);
+  await p.click('#homeBtn'); await p.waitForTimeout(300);
   await p.evaluate(async () => { const db = await window.claude.use('db'); const col = db.collection('characters'); for (const id of Object.keys(window.__store)) { const d = JSON.parse(JSON.stringify(window.__store[id])); if (d.playbook === 'hound') { d.play.stress = 4; d.play.harm.l3 = 'Broken ribs'; d.play.healing = 2; d.play.xp.playbook = 5; d.play.keys[0].deadlock = 'up'; } if (d.playbook === 'hull') { d.play.stress = 8; d.play.harm.l1[0] = 'Scraped plating'; } if (d.playbook === 'timetraveler') { d.play.keys[1].glitch = 'Lagging'; } await col.doc(id).set(d); } });
   await p.waitForTimeout(400);
   await p.setViewportSize({ width: 390, height: 800 }); await p.waitForTimeout(400);
@@ -225,7 +244,7 @@ const SHEET = `(pb) => {
 
   /* the Keys step: a hovered (orange) and a selected key chip keep their deadlock sub-labels legible, both themes */
   await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(200);
-  await p.evaluate(() => { B68.newCharacter(); B68.choosePlaybook('vampire'); B68.S.sheet.keys = B68Content.GENERIC_KEYS.slice(0, 3); B68.changed(); B68.showStep(10); });
+  await p.evaluate(() => { B68.setMode('create'); B68.newCharacter(); B68.choosePlaybook('vampire'); B68.S.sheet.keys = B68Content.GENERIC_KEYS.slice(0, 3); B68.changed(); B68.showStep(10); });
   await p.waitForTimeout(300);
   for (const theme of ['light', 'dark']) {
     await p.evaluate((t) => { document.documentElement.dataset.theme = t; }, theme); await p.waitForTimeout(100);
@@ -278,7 +297,8 @@ const SHEET = `(pb) => {
     await pg.goto(URL); await pg.waitForTimeout(1000);
     return { c, pg };
   }
-  const restoreFile = async (pg, obj) => { const f = path.join(SHOTS, 'tmp-backup2.json'); fs.writeFileSync(f, JSON.stringify(obj)); await pg.setInputFiles('#restoreFile', f); await pg.waitForTimeout(700); try { fs.unlinkSync(f); } catch (e) {} return pg.$eval('#toast', n => n.textContent); };
+  let lastPreview = null;
+  const restoreFile = async (pg, obj, o) => { const f = path.join(SHOTS, 'tmp-backup2.json'); fs.writeFileSync(f, JSON.stringify(obj)); lastPreview = await preview(pg, f, o); try { fs.unlinkSync(f); } catch (e) {} return lastPreview.msg; };
   const stored = (pg) => pg.evaluate(() => JSON.parse(JSON.stringify(window.__store)));
   const charCount = (st) => Object.keys(st).filter(k => k.indexOf('characters/') === 0).length;
   const download = async (pg) => { await pg.click('#dlAll'); await pg.waitForTimeout(400); const sv = await pg.evaluate(() => window.__saved); return sv.length ? { filename: sv[sv.length - 1].filename, text: sv[sv.length - 1].data, json: JSON.parse(sv[sv.length - 1].data) } : null; };
@@ -300,7 +320,10 @@ const SHEET = `(pb) => {
 
   /* a player restores the new format: the characters land, the table is refused without asking and left unwritten */
   const restored = JSON.parse(JSON.stringify(gmFile ? gmFile.json : {})); if (restored.campaign) restored.campaign.doc.crew.name = 'Restored Crew';
-  let msg = await restoreFile(P.pg, restored), st = await stored(P.pg);
+  let msg = await restoreFile(P.pg, restored, { cancel: true }), st = await stored(P.pg);
+  assert(lastPreview.open && lastPreview.items.length === 1 && /already on file · another player’s · skipped$/.test(lastPreview.items[0]) && lastPreview.go.disabled && /only the GM can restore the table/.test(await P.pg.$eval('#restoreDlg', n => n.textContent)), 'player preview: another player’s character, already on file, skipped by default: ' + JSON.stringify(lastPreview));
+  assert(charCount(st) === 1 && !(await P.pg.evaluate(() => window.__writes)).length, 'player preview cancelled: nothing written');
+  msg = await restoreFile(P.pg, restored, { copies: true, others: true }); st = await stored(P.pg);
   assert(charCount(st) === 2 && st['campaign/main'].crew.name === 'The Night Shift', 'player restore: one more character, table unchanged (' + charCount(st) + ', ' + st['campaign/main'].crew.name + ')');
   assert(!(await P.pg.evaluate(() => window.__writes)).some(w => w[1] === 'campaign/main') && !P.pg.__dialogs.length, 'player restore: no campaign write, no confirm');
   assert(/^Restored 1 character · only the GM can restore the table\.$/.test(msg), 'player restore toast: ' + msg);
@@ -309,23 +332,25 @@ const SHEET = `(pb) => {
   await P.c.close();
 
   /* the GM: the old character-only file restores characters and never touches the table */
-  msg = await restoreFile(G.pg, { v: 1, exportedAt: T0, characters: gmFile ? gmFile.json.characters : [] });
+  msg = await restoreFile(G.pg, { v: 1, exportedAt: T0, characters: gmFile ? gmFile.json.characters : [] }, { copies: true });
   st = await stored(G.pg);
+  assert(lastPreview.items.length === 1 && /already on file · added as a new copy$/.test(lastPreview.items[0]) && !/another player/.test(lastPreview.items[0]), 'GM preview: no opt-in needed for others’ characters: ' + JSON.stringify(lastPreview.items));
   assert(/^Restored 1 character\.$/.test(msg) && charCount(st) === 2 && !G.pg.__dialogs.length && st['campaign/main'].crew.name === 'The Night Shift', 'GM old-format restore: ' + msg);
   /* the new format, confirm dismissed: characters only */
   G.pg.__answer = 'dismiss';
-  msg = await restoreFile(G.pg, restored); st = await stored(G.pg);
+  msg = await restoreFile(G.pg, restored, { copies: true }); st = await stored(G.pg);
   assert(G.pg.__dialogs.length === 1 && /Replace the table/.test(G.pg.__dialogs[0]) && /Cancel restores the characters only/.test(G.pg.__dialogs[0]), 'GM restore asks first: ' + G.pg.__dialogs[0]);
   assert(/^Restored 1 character · the table was left as it is\.$/.test(msg) && charCount(st) === 3 && st['campaign/main'].crew.name === 'The Night Shift', 'GM restore, confirm dismissed: ' + msg);
   /* the new format, confirmed: the table is replaced through the db, hidden clock and all */
   G.pg.__answer = 'accept'; await G.pg.evaluate(() => { window.__writes.length = 0; });
-  msg = await restoreFile(G.pg, restored); st = await stored(G.pg);
+  msg = await restoreFile(G.pg, restored, { copies: true }); st = await stored(G.pg);
   assert(/^Restored 1 character and the table\.$/.test(msg) && charCount(st) === 4, 'GM restore with the table: ' + msg);
   assert(st['campaign/main'].crew.name === 'Restored Crew' && st['campaign/main'].clocks.length === 2 && st['campaign/main'].session.number === 3 && st['campaign/main'].log.length === 1 && st['campaign/main'].updatedAt > T0, 'GM restore wrote the table: ' + JSON.stringify(st['campaign/main'].crew));
   assert((await G.pg.evaluate(() => window.__writes)).some(w => w[0] === 'set' && w[1] === 'campaign/main'), 'GM restore: one set on campaign/main');
   /* a player's copy warns that it has no hidden clocks */
   G.pg.__answer = 'dismiss';
-  await restoreFile(G.pg, plFile ? plFile.json : {});
+  msg = await restoreFile(G.pg, plFile ? plFile.json : {});
+  assert(lastPreview.go.text === 'Restore the table' && /^Restored nothing · skipped 1 already on file · the table was left as it is\.$/.test(msg), 'player copy, matches skipped, table refused: ' + msg);
   assert(/no hidden clocks/.test(G.pg.__dialogs[G.pg.__dialogs.length - 1] || ''), 'player copy: the confirm says so');
   /* the hosted /api/export format: wrapped characters, the campaign with its server id, members ignored */
   G.pg.__answer = 'accept';
@@ -334,7 +359,7 @@ const SHEET = `(pb) => {
   assert(/^Restored 1 character and the table\.$/.test(msg) && exported && exported.owner === 'u_gm' && st['campaign/main'].crew.name === 'Exported Crew', '/api/export restore: ' + msg);
   /* an /api/export taken before anything was stored (the default campaign, updatedAt null): characters only, no confirm */
   const nd = G.pg.__dialogs.length;
-  msg = await restoreFile(G.pg, Object.assign({}, apiExport, { campaign: { id: 'default', doc: Object.assign({}, camp0, { updatedAt: null }), updatedAt: null } }));
+  msg = await restoreFile(G.pg, Object.assign({}, apiExport, { campaign: { id: 'default', doc: Object.assign({}, camp0, { updatedAt: null }), updatedAt: null } }), { copies: true });
   assert(/^Restored 1 character\.$/.test(msg) && G.pg.__dialogs.length === nd, 'export with the default campaign: ' + msg);
   await G.c.close();
 
@@ -355,7 +380,8 @@ const SHEET = `(pb) => {
   const p2 = await ctx2.newPage(); p2.on('pageerror', e => errs.push('no-claude pageerror: ' + e.message)); p2.on('console', m => { if (m.type() === 'error' && !/ERR_FILE_NOT_FOUND/.test(m.text())) errs.push('no-claude console.error: ' + m.text()); });
   await p2.goto(URL); await p2.waitForTimeout(1000);
   assert(await p2.$eval('#backups', n => n.hidden), 'no window.claude: backups row hidden');
-  await p2.click('#rosterView [data-v="cards"]'); await p2.waitForTimeout(200);
+  assert(await p2.$eval('#files', n => n.hidden), 'no window.claude: Home leaves out the files it cannot read');
+  await p2.evaluate(() => B68.setRosterView('cards')); await p2.waitForTimeout(200);
   assert(!(await p2.$eval('#cards', n => n.hidden)), 'no window.claude: toggle still works');
   await ctx2.close();
 
