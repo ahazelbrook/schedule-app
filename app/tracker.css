@@ -11,7 +11,8 @@
 /* ---- header band ---- */
 #dossier .ds-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "title ident nav" "bio bio bio"; gap: 12px 24px; align-items: end; border-top: 4px solid var(--rule); border-bottom: 2px solid var(--rule); padding: 12px 0 12px; }
 #dossier .ds-title { grid-area: title; }
-#dossier .ds-pb { font: 900 clamp(44px, 6vw, 72px)/.82 var(--font-poster); letter-spacing: -.01em; text-transform: none; }
+#dossier .ds-name { font: 900 clamp(44px, 6vw, 72px)/.82 var(--font-poster); letter-spacing: -.01em; text-transform: none; margin: 0; overflow-wrap: anywhere; text-wrap: balance; }
+#dossier .ds-pb { font: 900 13px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; margin-top: 8px; }
 #dossier .ds-desc { font: 900 10.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); margin-top: 6px; max-width: 32ch; }
 #dossier .ds-ident { grid-area: ident; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 18px; }
 #dossier .ds-ident > div { border-bottom: 1.5px solid var(--hair); padding-bottom: 4px; min-width: 0; overflow-wrap: anywhere; }
@@ -22,6 +23,12 @@
 #dossier .ds-bio { grid-area: bio; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px 18px; font-size: 13px; }
 #dossier .ds-bio > div { min-width: 0; overflow-wrap: anywhere; }
 #dossier .ds-remove:hover { background: var(--alarm); border-color: var(--alarm); color: var(--on-accent); }
+#dossier .ds-thumb { display: none; }
+/* the table's session, under the header (api.table): Join when the table is ahead of this sheet */
+#dossier .ds-tablebar { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; border: 2px solid var(--rule); background: var(--card); padding: 7px 8px 7px 12px; margin: 2px 0 14px; }
+#dossier .ds-tablebar.ahead { border-color: var(--accent); border-left-width: 6px; }
+#dossier .ds-tbline { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; flex: 1 1 200px; min-width: 0; }
+#dossier .ds-tbline b { font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }
 
 /* ---- columns ---- */
 #dossier .ds-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, .9fr); gap: 14px; align-items: start; }
@@ -37,6 +44,7 @@
 /* ---- boxes ---- */
 #dossier .ds-box { border: 2px solid var(--rule); background: var(--card); min-width: 0; }
 #dossier .ds-band { background: var(--rule); color: var(--on-ink); font: 900 11px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 6px 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+#dossier .ds-bt { font: inherit; letter-spacing: inherit; text-transform: inherit; margin: 0; }
 #dossier .ds-band-r { font-weight: 400; letter-spacing: .04em; text-transform: none; display: inline-flex; align-items: center; gap: 6px; }
 #dossier .ds-band .ds-dim { color: var(--on-ink); opacity: .7; font-size: 11px; }
 #dossier .ds-band .seg { border-color: var(--on-ink); }
@@ -346,6 +354,45 @@
   #dossier .ds-sessbtns { flex-basis: 100%; }
 }
 
+/* ---- phones: one column in the order play needs it (screen only, so print keeps its three columns) ---- */
+@media screen and (max-width: 760px) {
+  #dossier .ds-col { display: contents; }
+  #dossier .ds-grid .ds-box { order: 9; }
+  #dossier .ds-grid .ds-stressbox { order: 1; }
+  #dossier .ds-grid .ds-harmbox { order: 2; }
+  #dossier .ds-grid .ds-actbox { order: 3; }
+  #dossier .ds-grid .ds-itembox { order: 4; }
+  #dossier .ds-grid .ds-keybox { order: 5; }
+  #dossier .ds-grid .ds-sessbox { order: 6; }
+  /* the figure: a mugshot thumbnail beside the name instead of the Figure box */
+  #dossier .ds-figbox { display: none; }
+  #dossier .ds-head { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title thumb" "nav nav" "ident ident" "bio bio"; }
+  #dossier .ds-thumb { display: block; grid-area: thumb; align-self: start; width: 84px; height: 84px; border: 2px solid var(--rule); }
+  #dossier .ds-thumb.ghostly { opacity: .72; filter: blur(.35px) saturate(1.4); }
+  /* rolling is the main thing at the table: each action's roll button fills the rest of its row, 44px tall */
+  #dossier .ds-actbtn { min-height: 44px; flex: 1 1 auto; }
+}
+/* touch targets: an invisible ::before widens each small mark without moving anything. A mark's area is 44px tall
+   where its row has the room and as wide as its pitch in the row (--hit-w), so neighbours tile and never take each
+   other's taps; skewed and rotated marks turn their area back square (--hit-t). */
+@media screen and (max-width: 760px), screen and (pointer: coarse) {
+  #dossier .ds-pip, #dossier .ds-sbox, #dossier .ds-xbox, #dossier .ds-dia, #dossier .ds-x { position: relative; }
+  #dossier .ds-pip::before, #dossier .ds-sbox::before, #dossier .ds-xbox::before, #dossier .ds-dia::before {
+    content: ""; position: absolute; left: 50%; top: 50%; width: var(--hit-w, 19px); height: var(--hit-h, 44px); transform: translate(-50%, -50%) var(--hit-t, rotate(0deg)); }
+  #dossier .ds-vial { --hit-w: 20px; }
+  #dossier .ds-sbox { --hit-w: 25px; --hit-t: skewX(14deg); }
+  #dossier .ds-xbox { --hit-w: 17px; --hit-t: skewX(12deg); }
+  #dossier .ds-xpmini .ds-xbox { --hit-w: 16px; }
+  #dossier .ds-dia { --hit-w: 23px; --hit-t: rotate(-45deg); }
+  #dossier .ds-bank .ds-dia { --hit-h: 18px; } /* the four rows of ten sit 18px apart */
+  #dossier .ds-x::before { content: ""; position: absolute; left: -4px; top: 50%; width: 44px; height: var(--hit-h, 44px); transform: translateY(-50%); }
+  /* × in a list: as tall as its row, so the row below keeps its own */
+  #dossier .ds-contact .ds-x { --hit-h: 32px; }
+  #dossier .ds-log .ds-x, #dossier .ds-detail .ds-x { --hit-h: 28px; }
+  #dossier .ds-custom .ds-x { --hit-h: 22px; }
+  #dossier .ds-items .ds-x { --hit-h: 100%; }
+}
+
 /* ---- print: the dossier alone, on white, letter or A4 portrait ---- */
 @media print {
   @page { size: auto; margin: 10mm 11mm; }
@@ -362,7 +409,7 @@
   /* dice: the roll panel and its buttons never print; action names print as plain text */
   #dossier .ds-roll, #dossier .ds-resist, #dossier .ds-fortune, #dossier .ds-rollhint { display: none !important; }
   /* session and downtime are table tools: never printed */
-  #dossier .ds-sessbox, #dossier .ds-dtbox, #dossier .ds-hitnow { display: none !important; }
+  #dossier .ds-sessbox, #dossier .ds-dtbox, #dossier .ds-hitnow, #dossier .ds-tablebar, #dossier .ds-thumb { display: none !important; }
   #dossier .ds-actbtn { text-decoration: none; background: transparent !important; color: #000 !important; padding: 0; font-size: 10.5px; }
   #dossier .ds-log li.roll .ds-logt { font-size: 9px; }
   #dossier .ds-logdie .ds-die rect { stroke: #000; fill: #fff; }
@@ -372,7 +419,8 @@
   #dossier .ds-head { grid-template-columns: auto minmax(0, 1fr) 38mm; grid-template-areas: "title ident fig" "bio bio fig"; gap: 3mm 6mm; align-items: start; border-top-width: 1mm; padding: 3mm 0; margin-bottom: 3mm; }
   #dossier .ds-printfig { display: block; grid-area: fig; width: 38mm; max-height: 58mm; overflow: hidden; justify-self: end; border: .5mm solid #000; padding: 1mm; box-sizing: border-box; }
   #dossier .ds-printfig svg { display: block; width: 100%; height: auto; max-height: 55mm; margin: 0 auto; }
-  #dossier .ds-pb { font-size: 34pt; }
+  #dossier .ds-name { font-size: 34pt; }
+  #dossier .ds-pb { font-size: 9pt; margin-top: 1.5mm; }
   #dossier .ds-desc { font-size: 8pt; }
   #dossier .ds-ident { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2mm 5mm; }
   #dossier .ds-ident b { font-size: 12px; }

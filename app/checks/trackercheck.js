@@ -121,11 +121,95 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
   // read-only re-open
   const ro = await d.evaluate(() => { B68Tracker.close(); const c = B68Tracker.isOpen(); B68Tracker.open({ id: 't2', name: 'RO', playbook: 'hound', playbookName: 'Hound', code: 'HND-968-0001', spec: B68.S.spec, sheet: B68.S.sheet, play: window.saved.play }, { save: () => Promise.resolve(), edit() {}, back() {}, remove() {}, me: null, canWrite: false }); return { closed: !c, status: document.getElementById('ds-status').textContent, disabled: document.querySelector('#dossier .ds-sbox').disabled, backOk: !document.querySelector('#dossier [data-act="back"]').disabled }; });
   assert(ro.closed && ro.status === 'Read only' && ro.disabled && ro.backOk, 'read only: ' + JSON.stringify(ro));
+  /* someone else's sheet: read only, says whose, the editing controls are off, and a re-render keeps the status */
+  const fo = await d.evaluate(async () => {
+    B68Tracker.open({ id: 't3', name: 'Vera Lux', owner: 'u_sam', playbook: 'hound', playbookName: 'Hound', code: 'HND-968-0002', spec: B68.S.spec, sheet: B68.S.sheet, play: window.saved.play },
+      { save: () => Promise.resolve(), edit() {}, back() {}, remove() {}, me: 'u_pat', canWrite: false, profiles: async (ids) => ({ u_sam: 'Sam' }) });
+    const first = document.getElementById('ds-status').textContent;
+    await new Promise(r => setTimeout(r, 50));
+    const named = document.getElementById('ds-status').textContent;
+    document.querySelector('#dossier [data-act="view"][data-v="mug"]').click();
+    const q = s => document.querySelector('#dossier ' + s);
+    return { first, named, after: document.getElementById('ds-status').textContent, edit: q('[data-act="edit"]').disabled, remove: q('[data-act="remove"]').disabled, pip: q('.ds-pip[data-act="dot"]').disabled, input: q('input[data-path="crew"]').disabled, roll: !q('[data-act="rollopen"]').disabled, ro: document.getElementById('dossier').classList.contains('ds-ro') };
+  });
+  assert(fo.first === 'Read only · another player’s character' && fo.named === 'Read only · Sam’s character' && fo.after === fo.named, 'others’ sheet status: ' + JSON.stringify(fo));
+  assert(fo.edit && fo.remove && fo.pip && fo.input && fo.roll && fo.ro, 'others’ sheet controls: ' + JSON.stringify(fo));
+  /* a re-render shows the last real status, never a made-up "Saved" */
+  const st = await d.evaluate(async () => {
+    B68Tracker.open({ id: 't4', name: 'Errol', playbook: 'hound', playbookName: 'Hound', code: 'HND-968-0003', spec: B68.S.spec, sheet: B68.S.sheet, play: window.saved.play },
+      { save: () => Promise.reject(new Error('offline')), edit() {}, back() {}, remove() {}, me: 'u_pat', canWrite: true });
+    const fresh = document.getElementById('ds-status').textContent;
+    document.querySelector('#dossier .ds-sbox[data-n="2"]').click(); await new Promise(r => setTimeout(r, 30));
+    const failed = document.getElementById('ds-status').textContent;
+    document.querySelector('#dossier [data-act="view"][data-v="mug"]').click();
+    return { fresh, failed, after: document.getElementById('ds-status').textContent, bad: document.getElementById('ds-status').classList.contains('bad') };
+  });
+  assert(st.fresh === 'Saved' && st.failed === 'Could not save: offline' && st.after === st.failed && st.bad, 'status survives a re-render: ' + JSON.stringify(st));
+  /* the title is the character, the playbook small; box titles are headings; one Back */
+  const hd = await d.evaluate(() => ({ name: document.querySelector('#dossier h2.ds-name').textContent, pb: document.querySelector('#dossier .ds-pb').textContent, nameSize: parseFloat(getComputedStyle(document.querySelector('#dossier .ds-name')).fontSize), pbSize: parseFloat(getComputedStyle(document.querySelector('#dossier .ds-pb')).fontSize), boxes: document.querySelectorAll('#dossier .ds-box').length, h3: document.querySelectorAll('#dossier .ds-box > .ds-band > h3').length, back: document.querySelector('#dossier [data-act="back"]').textContent, h3Margin: getComputedStyle(document.querySelector('#dossier .ds-band h3')).marginTop, h3Font: getComputedStyle(document.querySelector('#dossier .ds-band h3')).fontSize, hitDesk: getComputedStyle(document.querySelector('#dossier .ds-pip'), '::before').content }));
+  assert(hd.name === 'Errol' && hd.pb === 'Hound' && hd.nameSize > 40 && hd.pbSize < 16, 'title: ' + JSON.stringify(hd));
+  assert(hd.boxes > 10 && hd.h3 === hd.boxes && hd.h3Margin === '0px' && hd.h3Font === '11px', 'box headings: ' + JSON.stringify(hd));
+  assert(hd.back === '← Back', 'back label: ' + hd.back);
+  assert(hd.hitDesk === 'none', 'desktop pips carry no hit area: ' + hd.hitDesk);
   await d.screenshot({ path: 'out/tracker-desk-after.png', fullPage: true });
 
-  /* phone light */
+  /* phone light: the play order, the mugshot thumbnail, 44px targets that never take a neighbour's tap */
   const { p: ph } = await open(400, 800, 'hound-phone', 'hound', false);
   await ph.screenshot({ path: 'out/tracker-phone.png', fullPage: true });
+  for (const dark of [false, true]) {
+    const tag = 'phone390' + (dark ? '-dark' : '');
+    const { p: q } = await open(390, 844, tag, 'hound', dark);
+    const lay = await q.evaluate(() => {
+      const top = s => { const n = document.querySelector('#dossier ' + s); return n && n.offsetParent ? Math.round(n.getBoundingClientRect().top + scrollY) : null; };
+      const th = document.querySelector('#dossier .ds-thumb');
+      return { stress: top('.ds-stressbox'), harm: top('.ds-harmbox'), actions: top('.ds-actbox'), items: top('.ds-itembox'), keys: top('.ds-keybox'), abilities: top('.ds-abbox'), fig: top('.ds-figbox'), thumb: th && th.offsetParent ? [th.naturalWidth, Math.round(th.getBoundingClientRect().width)] : null,
+        rollMin: Math.min.apply(null, [...document.querySelectorAll('#dossier .ds-actbtn')].map(n => n.getBoundingClientRect().height)) };
+    });
+    assert(lay.stress < lay.harm && lay.harm < lay.actions && lay.actions < lay.items && lay.items < lay.keys && lay.keys < lay.abilities, tag + ': play order Stress, Harm, Actions, Items, Keys, then the rest: ' + JSON.stringify(lay));
+    assert(lay.actions < lay.keys, tag + ': Actions above Keys');
+    assert(lay.fig === null && lay.thumb && lay.thumb[0] > 0 && lay.thumb[1] <= 100, tag + ': mugshot thumbnail instead of the Figure box: ' + JSON.stringify(lay));
+    assert(lay.rollMin >= 44, tag + ': roll buttons 44px tall: ' + lay.rollMin);
+    if (!dark) {
+      /* a row in every list that carries a ×: a log line, a clock, an extra item, a custom ability */
+      await q.fill('#dossier .ds-newlog', 'We took the Autodrome.'); await q.click('#dossier [data-act="log"]');
+      await q.fill('#dossier .ds-newlog', 'Bluecoats on the bridge.'); await q.click('#dossier [data-act="log"]');
+      await q.fill('#dossier .ds-newclock', 'Courier'); await q.click('#dossier [data-act="addclock"][data-n="4"]');
+      await q.fill('#dossier .ds-newitem', 'Lockpicks'); await q.click('#dossier [data-act="additem"]');
+      await q.fill('#dossier .ds-newab', 'Ghost Contract'); await q.click('#dossier [data-act="addability"]'); await q.waitForTimeout(150);
+      await q.click('#dossier [data-act="rollopen"][data-a="Hunt"]'); await q.waitForTimeout(150);
+      const hit = await q.evaluate(() => {
+        const out = { min: {}, owns: [], stolen: [] };
+        const kinds = { pip: '.ds-act .ds-pip', keypip: '.ds-key .ds-pip', sbox: '.ds-sbox', xbox: '.ds-attr-h .ds-xbox', xpbox: '.ds-tools .ds-xbox', bandxp: '.ds-band .ds-xbox', bank: '.ds-bank .ds-dia', stacks: '.ds-stackrow .ds-dia', x: '.ds-key .ds-x, .ds-clockrow .ds-x, .ds-roll-x', xlist: '.ds-contact .ds-x, .ds-log .ds-x, .ds-items .ds-x, .ds-custom .ds-x' };
+        const at = (x, y) => document.elementFromPoint(x, y);
+        for (const k in kinds) {
+          [...document.querySelectorAll('#dossier ' + kinds[k])].filter(n => n.offsetParent).forEach(n => {
+            n.scrollIntoView({ block: 'center' });
+            const cs = getComputedStyle(n, '::before'), w = parseFloat(cs.width), h = parseFloat(cs.height), r = n.getBoundingClientRect();
+            const m = out.min[k] || (out.min[k] = { w: 1e9, h: 1e9 }); m.w = Math.min(m.w, w); m.h = Math.min(m.h, h);
+            const L = k === 'x' || k === 'xlist' ? r.left - 4 : r.left + r.width / 2 - w / 2, cy = r.top + r.height / 2;
+            [[L + 2, cy], [L + w - 2, cy], [L + w / 2, cy - h / 2 + 2], [L + w / 2, cy + h / 2 - 2]].forEach(pt => { const e = at(pt[0], pt[1]); if (!(e === n || n.contains(e))) out.owns.push(k + ' ' + (n.getAttribute('data-act') || '') + (n.getAttribute('data-n') || '') + ' @' + pt.map(Math.round) + ' → ' + (e ? e.className || e.tagName : null)); });
+          });
+        }
+        /* every control still owns its own visible box */
+        [...document.querySelectorAll('#dossier button, #dossier input, #dossier select, #dossier textarea')].filter(n => n.offsetParent && n.getBoundingClientRect().width > 4).forEach(n => {
+          n.scrollIntoView({ block: 'center' }); const r = n.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+          [[cx, cy], [r.left + 2, cy], [r.right - 2, cy], [cx, r.top + 2], [cx, r.bottom - 2]].forEach(pt => { const e = at(pt[0], pt[1]); if (e && !(e === n || n.contains(e))) out.stolen.push((n.className || n.tagName) + ' ' + (n.getAttribute('data-act') || '') + ' @' + pt.map(Math.round) + ' → ' + (e.className || e.tagName) + ' ' + (e.getAttribute('data-act') || '')); });
+        });
+        out.owns = out.owns.slice(0, 12); out.stolen = out.stolen.slice(0, 12);
+        return out;
+      });
+      console.log(tag + ' hit areas', JSON.stringify(hit.min));
+      ['pip', 'keypip', 'sbox', 'xbox', 'xpbox', 'bandxp', 'stacks', 'x'].forEach(k => assert(hit.min[k] && hit.min[k].h >= 44, tag + ': ' + k + ' hit area 44px tall: ' + JSON.stringify(hit.min[k])));
+      assert(hit.min.x.w >= 44 && hit.min.xlist && hit.min.xlist.w >= 44, tag + ': × hit areas 44px wide (as tall as their row in a list): ' + JSON.stringify([hit.min.x, hit.min.xlist]));
+      assert(hit.min.pip.w >= 19 && hit.min.sbox.w >= 25 && hit.min.xbox.w >= 16 && hit.min.bank.w >= 23 && hit.min.bank.h >= 18, tag + ': marks fill their pitch: ' + JSON.stringify(hit.min));
+      assert(!hit.owns.length, tag + ': each mark owns its whole hit area: ' + hit.owns.join(' | '));
+      assert(!hit.stolen.length, tag + ': no control loses taps to a neighbour’s hit area: ' + hit.stolen.join(' | '));
+      await q.evaluate(() => scrollTo(0, 0));
+    }
+    await q.screenshot({ path: 'out/tracker-' + tag + '.png' });
+    await q.screenshot({ path: 'out/tracker-' + tag + '-full.png', fullPage: true });
+    await q.close();
+  }
   /* dark desktop, Hull */
   const { p: hu, r: rh } = await open(1360, 900, 'hull-dark', 'hull', true);
   if (rh.ok) { assert(rh.play.abilities[0] === 'Automaton' && rh.play.memories.length === 4 && rh.play.keys.length === 0 && rh.play.vice === '', 'hull seeding: ' + JSON.stringify([rh.play.abilities, rh.play.memories.length, rh.play.keys.length])); }

@@ -40,9 +40,9 @@ const SHEET = `(pb) => {
   const b = await chromium.launch();
   const errs = [], fails = [], notes = [];
   function assert(ok, msg) { if (!ok) fails.push(msg); }
-  async function open(w, h, name, pb) {
+  async function open(w, h, name, pb, extra) {
     const ctx = await b.newContext({ viewport: { width: w, height: h } });
-    await ctx.addInitScript(STUB);
+    await ctx.addInitScript(STUB); if (extra) await ctx.addInitScript(extra);
     const p = await ctx.newPage(); p.__answers = []; p.__dialogs = [];
     p.on('console', m => { if (m.type() === 'error') { const t = m.text(); if (!/ERR_FILE_NOT_FOUND/.test(t)) errs.push(name + ' console.error: ' + t); } });
     p.on('pageerror', e => errs.push(name + ' pageerror: ' + e.message));
@@ -69,7 +69,7 @@ const SHEET = `(pb) => {
     assert(await has(p, '#dossier [data-act="print"]'), 'hound: print button');
     assert(!(await has(p, '#dossier .ds-alluv')) && !(await has(p, '#dossier .ds-strics')) && !(await has(p, '#dossier .ds-mq')), 'hound: no paranormal boxes');
     assert(await has(p, '#dossier .ds-vice'), 'hound: vice box');
-    const bands = await p.$$eval('#dossier .ds-band > span:first-child', ns => ns.map(n => n.textContent));
+    const bands = await p.$$eval('#dossier .ds-band > h3', ns => ns.map(n => n.textContent));
     notes.push('hound boxes: ' + bands.join(', '));
     await click(p, '#dossier .ds-sbox[data-n="4"]');
     let s = await stored(p); assert(s.stress === 4, 'hound: stress saved ' + s.stress);
@@ -93,7 +93,7 @@ const SHEET = `(pb) => {
     assert(s.stress === 0 && s.abilities.indexOf('Resonance Echo') >= 0 && s.abilities.indexOf('Possess') >= 0, 'ghost: abilities ' + JSON.stringify(s.abilities));
     assert(s.keys.length === 3 && s.keys.every(k => k.glitch === null && k.deadlock === null), 'ghost: keys ' + JSON.stringify(s.keys));
     assert(s.ghostItems.indexOf('wedding ring') >= 0 && s.enemies.indexOf('Dahl') >= 0 && s.items.length === 0 && !s.vice && s.contacts.length === 0, 'ghost: seeded strings ' + JSON.stringify([s.ghostItems, s.enemies, s.items, s.vice, s.contacts]));
-    const band = await p.$eval('#dossier .ds-c1 .ds-box:nth-child(2) .ds-band > span:first-child', n => n.textContent); assert(band === 'Drain', 'ghost: stress label ' + band);
+    const band = await p.$eval('#dossier .ds-c1 .ds-box:nth-child(2) .ds-band > h3', n => n.textContent); assert(band === 'Drain', 'ghost: stress label ' + band);
     const n = await p.$$eval('#dossier .ds-sbox', ns => ns.length); assert(n === 10, 'ghost: 10 drain boxes, got ' + n);
     assert(await has(p, '#dossier textarea[data-path="ghostItems"]') && await has(p, '#dossier textarea[data-path="enemies"]'), 'ghost: items / enemies textareas');
     assert(!(await has(p, '#dossier .ds-vice')) && !(await has(p, '#dossier .ds-loadhead')) && !(await has(p, '#dossier .ds-contacts')), 'ghost: no vice, load, contacts');
@@ -132,7 +132,7 @@ const SHEET = `(pb) => {
     assert(await has(p, '#dossier [data-act="feed"]') && await has(p, '#dossier [data-act="stressd"][data-d="1"]') && !(await has(p, '#dossier [data-act="stressd"][data-d="-1"]')), 'vampire: feed + mark, no indulge');
     assert(await has(p, '#dossier .ds-strics') && await has(p, '#dossier input[data-change="stricture"][data-n="Dayfire"]:disabled:checked'), 'vampire: strictures box with Dayfire fixed');
     assert(await has(p, '#dossier textarea[data-path="echoAbilities"]') && await has(p, '#dossier input[data-path="feeding"]') && await has(p, '#dossier input[data-path="telltale"]'), 'vampire: echo / feeding / telltale');
-    const title = await p.$$eval('#dossier .ds-band > span:first-child', ns => ns.map(n => n.textContent)); assert(title.indexOf('Dark servants') >= 0, 'vampire: contacts titled Dark servants: ' + title.join(','));
+    const title = await p.$$eval('#dossier .ds-band > h3', ns => ns.map(n => n.textContent)); assert(title.indexOf('Dark servants') >= 0, 'vampire: contacts titled Dark servants: ' + title.join(','));
     /* feed: stress 6 → highest die 5 → 1; healing 4 */
     await click(p, '#dossier .ds-sbox[data-n="6"]');
     p.__answers.push('5'); await click(p, '#dossier [data-act="feed"]');
@@ -166,7 +166,7 @@ const SHEET = `(pb) => {
     assert(s.abilities.indexOf('Future Shock') >= 0 && s.abilities.indexOf('Psionics') >= 0 && !s.vice && s.contacts.length === 0, 'tt: abilities ' + JSON.stringify(s.abilities));
     const n = await p.$$eval('#dossier .ds-sbox', ns => ns.length); assert(n === 9, 'tt: 9 instability boxes, got ' + n);
     const vials = await p.$$eval('#dossier .ds-vial', ns => ns.map(x => x.classList.contains('on'))); assert(vials.length === 9 && vials.filter(Boolean).length === 4, 'tt: alluvium row ' + vials.join(','));
-    const band = await p.$eval('#dossier .ds-c1 .ds-box:nth-child(2) .ds-band > span:first-child', x => x.textContent); assert(band === 'Instability', 'tt: label ' + band);
+    const band = await p.$eval('#dossier .ds-c1 .ds-box:nth-child(2) .ds-band > h3', x => x.textContent); assert(band === 'Instability', 'tt: label ' + band);
     assert(!(await has(p, '#dossier .ds-bank')) && !(await has(p, '#dossier [data-act="tobank"]')), 'tt: bank hidden');
     assert(await has(p, '#dossier .ds-mq') && (await p.$$eval('#dossier .ds-mq input', ns => ns.length)) === 4, 'tt: mission questions');
     const pips = await p.$$eval('#dossier .ds-pip[data-a="Tinker"]', ns => ns.map(x => x.disabled)); assert(pips.join() === 'false,false,false,false', 'tt: dots max 4 in play ' + pips.join());
@@ -217,6 +217,26 @@ const SHEET = `(pb) => {
     await p.screenshot({ path: 'out/tracker-pn-timepast-desk.png', fullPage: true });
     await p.context().close();
     const q = await open(390, 800, 'timepast-phone', 'timepast'); await q.screenshot({ path: 'out/tracker-pn-timepast-phone.png', fullPage: true }); await q.context().close();
+  }
+
+  /* ---------- whose sheet: boot passes a per-document canWrite (a player writes only their own; the GM any) ---------- */
+  {
+    const PLAYER = `(() => { const use = window.claude.use; window.claude.use = async (n) => { const r = await use(n); return n === 'user' ? Object.assign({}, r, { canEdit: async () => false, isOwner: async () => false, profiles: async () => ({ u_sam: 'Sam' }) }) : r; }; })()`;
+    const SAMS = `(id) => { const own = window.__store[Object.keys(window.__store)[0]]; window.__store[id] = Object.assign(JSON.parse(JSON.stringify(own)), { name: 'Vera Lux', owner: 'u_sam' }); B68.openCharacter(id); }`;
+    const look = (p) => p.evaluate(() => ({ status: document.getElementById('ds-status').textContent, ro: document.getElementById('dossier').classList.contains('ds-ro'), sbox: document.querySelector('#dossier .ds-sbox').disabled, edit: document.querySelector('#dossier [data-act="edit"]').disabled, name: document.querySelector('#dossier .ds-name').textContent }));
+    for (const who of ['player', 'gm']) {
+      const p = await open(1360, 900, 'owner-' + who, 'hound', who === 'player' ? PLAYER : null);
+      const mine = await look(p);
+      assert(!mine.ro && !mine.sbox && mine.status === 'Saved' && mine.name === 'Aldo Crane', who + ': own sheet writable: ' + JSON.stringify(mine));
+      await p.evaluate(`(${SAMS})('vera-lux-x'); true`); await p.waitForTimeout(400);
+      const sams = await look(p), w0 = await p.evaluate(() => window.__writes.length);
+      if (who === 'player') assert(sams.ro && sams.sbox && sams.edit && sams.status === 'Read only · Sam’s character' && sams.name === 'Vera Lux', 'player: Sam’s sheet read only: ' + JSON.stringify(sams));
+      else assert(!sams.ro && !sams.sbox && sams.status === 'Saved', 'gm: Sam’s sheet writable: ' + JSON.stringify(sams));
+      await p.click('#dossier .ds-sbox[data-n="3"]', { force: true }).catch(() => {}); await p.waitForTimeout(200);
+      const w1 = await p.evaluate(() => window.__writes.length);
+      assert(who === 'player' ? w1 === w0 : w1 === w0 + 1, who + ': a click on Sam’s stress writes ' + (w1 - w0));
+      await p.context().close();
+    }
   }
 
   /* ---------- Hound phone ---------- */

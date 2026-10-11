@@ -74,7 +74,7 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
   {
     const p = await open(1360, 900, 'hound', 'hound');
     const keys = await p.evaluate(() => Object.keys(B68Tracker).sort().join(','));
-    assert(keys === '_rng,close,initialPlay,isOpen,open,play,renderStatic,update', 'hound: public surface unchanged: ' + keys);
+    assert(keys === '_rng,close,initialPlay,isOpen,open,play,refresh,renderStatic,update', 'hound: public surface unchanged: ' + keys);
     let s = await stored(p);
     assert(s.session === 0 && JSON.stringify(s.keyHitSession) === '{}' && s.trainedThisDowntime === false, 'hound: new fields seeded ' + JSON.stringify([s.session, s.keyHitSession, s.trainedThisDowntime]));
     assert(await has(p, '#dossier .ds-c2 .ds-sessbox') && await has(p, '#dossier .ds-c2 .ds-dtbox'), 'hound: Session and Downtime boxes in column 2');
@@ -242,6 +242,46 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     const roAfter = await play(p), roSaves = await p.evaluate(() => window.__roSaves);
     assert(JSON.stringify(roAfter) === JSON.stringify(roBefore) && roSaves === 0, 'ro: nothing changed or saved (' + roSaves + ' saves)');
     notes.push('hound dialogs: ' + p.__dialogs.join(' / '));
+    await p.context().close();
+  }
+
+  /* ---------- the table's session (api.table, wired by boot from campaign/main): Join, End uses the table's number ---------- */
+  {
+    const p = await open(1360, 900, 'table', 'hound');
+    const camp = (session) => p.evaluate((s) => window.claude.use('db').then(db => db.collection('campaign').doc('main').set({ v: 1, session: s, crew: {}, clocks: [], log: [], updatedAt: new Date().toISOString() })), session);
+    assert(await has(p, '#dossier [data-act="sessstart"]') && !(await has(p, '#dossier .ds-tablebar')), 'table: no table, the manual start stays');
+    await camp({ number: 3, startedAt: new Date().toISOString(), endedAt: null }); await p.waitForTimeout(250);
+    assert((await text(p, '#dossier .ds-tablebar .ds-tbline b')) === 'Table: session 3 · in play', 'table: bar names the table’s session: ' + (await text(p, '#dossier .ds-tablebar')));
+    assert((await text(p, '#dossier [data-act="sessjoin"]')) === 'Join session 3' && await p.$eval('#dossier [data-act="sessjoin"]', n => n.classList.contains('primary')), 'table: one primary Join session 3');
+    assert(!(await has(p, '#dossier [data-act="sessstart"]')), 'table: the manual start is gone while there is a table');
+    assert((await text(p, '#dossier [data-act="endopen"]')) === 'End session 3', 'table: End session uses the table’s number: ' + (await text(p, '#dossier [data-act="endopen"]')));
+    assert(/Table: session 3 · in play/.test(await text(p, '#dossier .ds-sessnote')), 'table: Session box says where the table is');
+    await once(p, '#dossier [data-act="sessjoin"]', 'join session');
+    let s = await stored(p);
+    assert(s.session === 3 && s.log[0].kind === 'note' && s.log[0].text === 'Session 3 started' && s.trainedThisDowntime === false, 'table: joined session 3 ' + JSON.stringify([s.session, s.log[0]]));
+    assert(!(await has(p, '#dossier [data-act="sessjoin"]')) && (await text(p, '#dossier .ds-tablebar .ds-tbline b')) === 'Table: session 3 · in play', 'table: caught up, no Join');
+    await click(p, '#dossier [data-act="endopen"]');
+    assert(/End of session · 3/.test(await text(p, '#dossier .ds-endp .ds-roll-t')) && /^Ends session 3: /.test(await text(p, '#dossier .ds-endp .ds-roll-body p.hint:last-child')), 'table: panel ends session 3: ' + (await text(p, '#dossier .ds-endp .ds-roll-body p.hint:last-child')));
+    await click(p, '#dossier [data-act="endval"][data-i="0"][data-v="1"]');
+    await once(p, '#dossier [data-act="endmark"]', 'end session 3');
+    s = await stored(p);
+    assert(/^Session 3 ended: \+1 xp/.test(s.log[0].text), 'table: end log ' + s.log[0].text);
+    assert(/then join the next session when the GM starts it\./.test(await text(p, '#dossier .ds-endp')), 'table: points at joining, not a manual start');
+    /* the GM ends 3 and starts 4 at the table; the player ends it without joining first: the sheet follows the table */
+    await camp({ number: 3, startedAt: new Date().toISOString(), endedAt: new Date().toISOString() }); await p.waitForTimeout(250);
+    assert((await text(p, '#dossier .ds-tablebar .ds-tbline b')) === 'Table: session 3 · ended', 'table: ended: ' + (await text(p, '#dossier .ds-tablebar')));
+    await camp({ number: 4, startedAt: new Date().toISOString(), endedAt: null }); await p.waitForTimeout(250);
+    assert((await text(p, '#dossier [data-act="sessjoin"]')) === 'Join session 4' && /This sheet is on session 3/.test(await text(p, '#dossier .ds-tablebar')), 'table: ahead again: ' + (await text(p, '#dossier .ds-tablebar')));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(100);
+    await click(p, '#dossier [data-act="endopen"]');
+    assert(/this sheet is on 3/.test(await text(p, '#dossier .ds-endp')), 'table: panel says the sheet is behind');
+    await click(p, '#dossier [data-act="endmark"]');
+    s = await stored(p);
+    assert(s.session === 4 && /^Session 4 ended: \+0 xp/.test(s.log[0].text) && !(await has(p, '#dossier [data-act="sessjoin"]')), 'table: ended the table’s session 4 ' + JSON.stringify([s.session, s.log[0].text]));
+    /* a table that has not started a session: no manual start, End session waits for the GM */
+    await camp({ number: 0, startedAt: null, endedAt: null }); await p.waitForTimeout(250);
+    assert(!(await has(p, '#dossier .ds-tablebar')) && !(await has(p, '#dossier [data-act="sessstart"]')) && await p.$eval('#dossier [data-act="endopen"]', n => n.disabled) && /The GM starts sessions/.test(await text(p, '#dossier .ds-sessnote')), 'table: session 0 at the table');
+    await shot(p, '#dossier .ds-sessbox', 'out/session-table.png');
     await p.context().close();
   }
 

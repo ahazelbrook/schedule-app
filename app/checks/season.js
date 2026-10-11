@@ -224,6 +224,8 @@ const iso = (n) => new Date(T0 + n * DAY).toISOString();
     const { c, pg } = await session('player-sheet', { role: 'player' });
     await pg.goto(URL); await pg.waitForTimeout(1200);
     const exp = await expected(pg); const target = exp.find(e => e.playbook === 'vampire');
+    /* the player's own sheet (the GM filed every seed; a player may write only their own, as the server allows) */
+    await pg.evaluate((id) => { const k = 'characters/' + id; window.__seed(k, Object.assign(JSON.parse(JSON.stringify(window.__store[k])), { owner: 'u_player' })); }, target.id);
     await pg.evaluate((id) => B68.openCharacter(id), target.id); await pg.waitForTimeout(800);
     assert(await mode(pg) === 'sheet', 'player: sheet mode ' + await mode(pg));
     const w0 = await writes(pg);
