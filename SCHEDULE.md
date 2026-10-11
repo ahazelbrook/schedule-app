@@ -6,7 +6,8 @@ it works in both runtimes with no new collection, and the hosted build gets it t
 existing `/api/campaign` and adapter.
 
 No email, push or calendar feeds: Cloudflare Access sits in front of every URL, so a calendar
-app cannot subscribe to a feed, and Pages has no cron. Instead each person adds the confirmed
+app cannot subscribe to a feed, and the app sends no mail (a Worker cron could, but there is no mail
+service set up). Instead each person adds the confirmed
 session to their own calendar (an `.ics` file or a Google Calendar link), and the app shows the
 next session at the top of every screen.
 

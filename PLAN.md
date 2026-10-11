@@ -32,7 +32,7 @@ as written. What was actually built:
   sheet on the table page.
 - **Track 2, scheduling.**
   - F. Availability: no ICS busy-feed import. Cloudflare Access sits in front of every URL
-    and Pages has no cron, so there is nothing to poll feeds with. Instead the GM proposes
+    and nothing polls feeds (the Worker could run a cron, but nothing is set up for it). Instead the GM proposes
     dates and each person marks yes / maybe / no, with a free-text note for absences.
   - G. Scheduler: no `proposeSlots` or cron. The GM adds dates by hand or "Add the next
     three" from a cadence; the grid marks the best date (most yes, then whoever missed most
