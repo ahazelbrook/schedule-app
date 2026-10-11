@@ -1,4 +1,4 @@
-// Schedule end-to-end against a real local server (wrangler pages dev on PORT, default 8791): the GM seeds two dates
+// Schedule end-to-end against a real local server (wrangler dev on PORT, default 8791): the GM seeds two dates
 // through the API, a player answers in the grid, the GM confirms a date in the page, the player RSVPs on the card,
 // and the server holds each change (the player's writes pass the API's own-keys rule). No console errors.
 //   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node checks/runtime/schedule.e2e.mjs
@@ -13,7 +13,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const stateDir = mkdtempSync(path.join(tmpdir(), 'b68-int-'));
-const server = spawn(path.join(ROOT, 'node_modules', '.bin', 'wrangler'), ['pages', 'dev', 'app', '--port', String(PORT), '--ip', '127.0.0.1', '--inspector-port', String(PORT + 20000), '--show-interactive-dev-session', 'false', '--persist-to', stateDir, '--log-level', 'warn', '--binding', 'DEV_USER=gm@example.test', '--binding', 'GM_EMAILS=gm@example.test'], { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: true, stdio: 'ignore' });
+const server = spawn(path.join(ROOT, 'node_modules', '.bin', 'wrangler'), ['dev', '--port', String(PORT), '--ip', '127.0.0.1', '--inspector-port', String(PORT + 20000), '--show-interactive-dev-session', 'false', '--persist-to', stateDir, '--log-level', 'warn', '--var', 'DEV_USER:gm@example.test', '--var', 'GM_EMAILS:gm@example.test'], { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: true, stdio: 'ignore' });
 process.on('exit', () => { try { process.kill(-server.pid, 'SIGKILL'); } catch (_) {} try { rmSync(stateDir, { recursive: true, force: true }); } catch (_) {} });
 let fails = 0; const check = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 const api = (method, p, user, body) => fetch(BASE + '/api' + p, { method, headers: { 'X-Dev-User': user, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));

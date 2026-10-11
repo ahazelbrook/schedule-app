@@ -1,4 +1,4 @@
-// End-to-end check of the API against a local `wrangler pages dev` (see HOSTING.md).
+// End-to-end check of the API against a local `wrangler dev` (the Worker in worker/) (see HOSTING.md).
 //
 //   node checks/api/flow.mjs            (or: npm run check:api)
 //
@@ -26,10 +26,10 @@ let passes = 0;
 
 function startServer(port, bindings) {
   const bin = join(ROOT, 'node_modules', '.bin', 'wrangler');
-  const args = ['pages', 'dev', 'app', '--port', String(port), '--ip', '127.0.0.1',
+  const args = ['dev', '--port', String(port), '--ip', '127.0.0.1',
     '--inspector-port', String(port + 20000), '--show-interactive-dev-session', 'false',
     '--persist-to', join(stateDir, 'p' + port), '--log-level', 'warn'];
-  for (const [k, v] of Object.entries(bindings)) args.push('--binding', k + '=' + v);
+  for (const [k, v] of Object.entries(bindings)) args.push('--var', k + ':' + v);
   const child = spawn(bin, args, {
     cwd: ROOT,
     env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' },

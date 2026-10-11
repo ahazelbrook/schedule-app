@@ -1,0 +1,4 @@
+# Files in app/ that the Worker does not publish (gitignore syntax; read by wrangler deploy / dev).
+# The Playwright page checks and the docs stay in the repository only.
+checks/
+*.md

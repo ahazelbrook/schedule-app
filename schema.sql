@@ -1,7 +1,10 @@
--- D1 schema for the hosted build (see HOSTING.md, "Database").
--- Production: npx wrangler d1 execute DB --remote --file schema.sql
--- Local:      npm run db:local
--- The API also runs these statements lazily (once per isolate), so a fresh database works.
+-- D1 schema for the hosted build (see HOSTING.md, "Database"): the whole schema as it stands.
+-- Applied through migrations/ (migrations/0001_init.sql holds these same statements; later changes
+-- go in new numbered files there, and here):
+--   production: npx wrangler d1 migrations apply DB --remote   (scripts/deploy.sh does this)
+--   local:      npm run db:local
+-- The API also runs these CREATE ... IF NOT EXISTS statements lazily (once per isolate), so a
+-- fresh database works, and applying the migration to a database made from this file is harmless.
 
 CREATE TABLE IF NOT EXISTS characters (
   id TEXT PRIMARY KEY,
