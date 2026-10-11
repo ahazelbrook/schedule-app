@@ -4,7 +4,9 @@
    Round 3: the four paranormal playbooks (ghost, vampire, time travelers) and a printable layout.
    Round 4: dice at the table — action, resistance and fortune rolls from the Actions box, logged to play.log.
    Round 5: the Session box (start / end of session, end-of-session xp) and the Downtime box (indulge vice, recover,
-   long-term project, train), each with an inline panel in the roll panel's style. */
+   long-term project, train), each with an inline panel in the roll panel's style.
+   Later: the character's name as the title; read only on someone else's sheet (api.canWrite per document); the table's
+   session (api.table) with Join session N; on phones the boxes in play order, a mugshot thumbnail, wider touch targets. */
 (function () {
   'use strict';
   var T = window.B68Tracker = {};
@@ -192,19 +194,39 @@
   function setPath(o, path, v) { var ps = path.split('.'); for (var i = 0; i < ps.length - 1; i++) { if (o[ps[i]] == null || typeof o[ps[i]] !== 'object') o[ps[i]] = {}; o = o[ps[i]]; } o[ps[ps.length - 1]] = v; }
 
   /* ---------- state ---------- */
-  var cur = null; /* { doc, api, play, pb, root, ui, timer, saving } */
+  var cur = null; /* { doc, api, play, pb, root, ui, timer, saving, status, ownerName } */
   var SAVE_DELAY = 400;
   function readOnly() { return !!(cur && cur.api && cur.api.canWrite === false); }
+  /* someone else's sheet: filed with an owner who is not the viewer */
+  function foreign() { var o = cur && cur.doc && cur.doc.owner; return !!o && o !== (cur.api && cur.api.me); }
+  function roLabel() { return 'Read only' + (foreign() ? ' · ' + (cur.ownerName || 'another player') + '’s character' : ''); }
+  /* the status line as it should read after a re-render: the last one set, never a made-up "Saved" */
+  function statusNow() {
+    var s = cur.status || { msg: '' };
+    if (readOnly() && !s.bad && !s.transient) return { msg: roLabel() };
+    if (!readOnly() && /^Read only/.test(s.msg)) return { msg: 'Saved' };
+    return s;
+  }
   function setStatus(msg, bad, transient) {
-    if (!cur) return; var s = cur.root.querySelector('#ds-status'); if (!s) return;
-    s.textContent = msg; s.className = 'ds-status' + (bad ? ' bad' : '');
+    if (!cur) return; cur.status = { msg: msg, bad: !!bad, transient: !!transient };
+    var s = cur.root.querySelector('#ds-status');
+    if (s) { s.textContent = msg; s.className = 'ds-status' + (bad ? ' bad' : ''); }
     if (cur.statusT) clearTimeout(cur.statusT);
-    if (transient) cur.statusT = setTimeout(function () { if (cur) setStatus(readOnly() ? 'Read only' : cur.timer || cur.saving ? 'Saving…' : 'Saved'); }, 2400);
+    if (transient) cur.statusT = setTimeout(function () { if (cur) setStatus(readOnly() ? roLabel() : cur.timer || cur.saving ? 'Saving…' : 'Saved'); }, 2400);
   }
   function note(msg) { setStatus(msg, false, true); }
+  /* the owner's name for "Read only · Sam’s character", when the runtime can name people */
+  function askOwner() {
+    var c = cur, o = c && c.doc.owner, pf = c && c.api && c.api.profiles;
+    if (!foreign() || typeof pf !== 'function' || c.ownerAsked === o) return; c.ownerAsked = o;
+    Promise.resolve().then(function () { return pf([o]); }).then(function (m) {
+      var n = m && m[o]; if (cur !== c || !n || c.doc.owner !== o) return;
+      c.ownerName = String(n); if (readOnly() && !(c.status && (c.status.bad || c.status.transient))) setStatus(roLabel());
+    }, function () {});
+  }
   function flushSave() {
     if (!cur) return; if (cur.timer) { clearTimeout(cur.timer); cur.timer = null; }
-    if (readOnly()) { setStatus('Read only'); return; }
+    if (readOnly()) { setStatus(roLabel()); return; }
     if (!cur.api || typeof cur.api.save !== 'function') { setStatus('Not saved: no store'); return; }
     var snap = clone(cur.play); cur.saving++; setStatus('Saving…'); var p;
     try { p = cur.api.save({ play: snap }); } catch (e) { cur.saving--; setStatus('Could not save: ' + (e && e.message || e), true); return; }
@@ -216,7 +238,7 @@
   function commit() { if (!cur) return; render(); flushSave(); }
 
   /* ---------- small renderers ---------- */
-  function box(title, body, right, cls, after) { return '<section class="ds-box' + (cls ? ' ' + cls : '') + '"><div class="ds-band"><span>' + title + '</span>' + (right ? '<span class="ds-band-r">' + right + '</span>' : '') + '</div><div class="ds-body">' + body + '</div>' + (after || '') + '</section>'; }
+  function box(title, body, right, cls, after) { return '<section class="ds-box' + (cls ? ' ' + cls : '') + '"><div class="ds-band"><h3 class="ds-bt">' + title + '</h3>' + (right ? '<span class="ds-band-r">' + right + '</span>' : '') + '</div><div class="ds-body">' + body + '</div>' + (after || '') + '</section>'; }
   function pipRow(n, filled, act, extra, cls) { var h = '<span class="ds-pips">'; for (var i = 1; i <= n; i++) h += '<button type="button" class="' + (cls || 'ds-pip') + (i <= filled ? ' on' : '') + '" data-act="' + act + '" data-n="' + i + '"' + (extra || '') + ' aria-label="' + act + ' ' + i + '"></button>'; return h + '</span>'; }
   function clockSvg(size, filled, r, act, extra) {
     var cx = r, cy = r, R = r - 2, h = '', n = clamp(size, 2, 12);
@@ -244,10 +266,11 @@
     }
     if (pb && pb.backing) alt += '<div><span class="ds-lab">Backing faction</span>' + esc(sheet.backing || '—') + (sheet.mission ? '<div class="ds-dim">Mission: ' + esc(sheet.mission) + '</div>' : '') + '</div>';
     if (pb && pb.veteran) alt += '<div><span class="ds-lab">Damage</span>' + esc(sheet.damage || '—') + '</div><div><span class="ds-lab">Something that helps</span>' + esc(sheet.helps || '—') + '</div>';
-    var ro = readOnly();
+    var ro = readOnly(), st = statusNow(), th = cur.ui.static ? '' : thumb(doc); /* the season print has its own figure slot */
     var desc = (pb && pb.subtitle ? esc(pb.subtitle) + ' · ' : '') + esc(pb ? pb.descriptor : '');
     return '<div class="ds-head">' +
-      '<div class="ds-title"><div class="ds-pb">' + esc(pb ? pb.name : doc.playbookName || 'Subject') + '</div><div class="ds-desc">' + desc + '</div></div>' +
+      '<div class="ds-title"><h2 class="ds-name">' + esc(doc.name || sheet.name || 'Unknown') + '</h2><div class="ds-pb">' + esc(pb ? pb.name : doc.playbookName || 'Subject') + '</div><div class="ds-desc">' + desc + '</div></div>' +
+      (th ? '<img class="ds-thumb' + (isGhost(pb) ? ' ghostly' : '') + '" src="' + th + '" alt="" aria-hidden="true">' : '') + /* phones only (tracker.css) */
       '<div class="ds-ident">' +
         '<div><span class="ds-lab">' + (isHull(pb) ? 'Designation' : 'Name') + '</span><b>' + esc(doc.name || sheet.name || 'Unknown') + '</b></div>' +
         '<div><span class="ds-lab">Alias</span>' + esc(doc.alias || sheet.alias || '—') + '</div>' +
@@ -255,11 +278,11 @@
         '<div><span class="ds-lab">File</span><span class="mono">' + esc(doc.code || '') + '</span></div>' +
       '</div>' +
       '<div class="ds-nav">' +
-        '<button type="button" class="btn sm" data-act="back" data-always="1">Back to files</button>' +
+        '<button type="button" class="btn sm" data-act="back" data-always="1">← Back</button>' +
         '<button type="button" class="btn sm" data-act="edit"' + (ro ? ' disabled' : '') + '>Edit figure</button>' +
         '<button type="button" class="btn sm" data-act="print" data-always="1">Print</button>' +
         '<button type="button" class="btn sm ds-remove" data-act="remove"' + (ro ? ' disabled' : '') + '>' + (cur.ui.confirmRemove ? 'Click again to remove' : 'Remove') + '</button>' +
-        '<span class="ds-status" id="ds-status">' + (ro ? 'Read only' : 'Saved') + '</span>' +
+        '<span class="ds-status' + (st.bad ? ' bad' : '') + '" id="ds-status">' + esc(st.msg) + '</span>' +
       '</div>' +
       '<div class="ds-bio">' +
         '<div><span class="ds-lab">Look</span>' + esc(sheet.look || '—') + '</div>' +
@@ -272,6 +295,15 @@
     var svg = '', warn = '';
     try { if (K && doc.spec) { var r = cur.ui.mug ? K.portrait(doc.spec) : K.render(doc.spec, { height: 420 }); svg = r && r.svg || ''; } } catch (e) { warn = 'The kit could not draw this figure: ' + e.message; }
     cur.ui.svg = svg; cur.ui.svgWarn = warn;
+  }
+  /* the phone's mugshot thumbnail beside the name: an <img> of the portrait, so its SVG ids never meet the Figure box's;
+     drawn once per figure */
+  function thumb(doc) {
+    var key; try { key = JSON.stringify(doc.spec || null); } catch (e) { key = ''; }
+    if (cur.ui.thumbKey === key) return cur.ui.thumb;
+    cur.ui.thumbKey = key; cur.ui.thumb = '';
+    try { if (K && doc.spec) { var r = K.portrait(doc.spec, { width: 240, height: 240, chart: false, plate: false, suffix: '-t', lod: 'lo' }), s = r && r.svg || ''; if (s) { if (s.indexOf('xmlns=') < 0) s = s.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'); cur.ui.thumb = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s); } } } catch (e) {}
+    return cur.ui.thumb;
   }
   function figure(doc, pb) {
     var svg = cur.ui.svg, warn = cur.ui.svgWarn;
@@ -303,7 +335,7 @@
       else if (vamp) h += '<p class="hint ds-warn">Stress is full: trauma. Another deadlock overwhelms you — level 3 harm “Incapacitated” until you feed enough to recover.</p>';
       else h += '<p class="hint ds-warn">Stress is full: trauma. Deadlock a key.</p>';
     }
-    return box(esc(name), h);
+    return box(esc(name), h, '', 'ds-stressbox');
   }
   function keys(play, pb) {
     var hull = isHull(pb), g = glitchy(pb), vamp = isVamp(pb), tt = isTT(pb), h = '', gname = glitchName(pb), glist = glitchList(pb);
@@ -348,7 +380,7 @@
       var gc = glitchCount(play);
       h += '<div class="ds-glcount' + (gc >= 4 ? ' full' : '') + '"><b>Temporal glitches: ' + gc + ' / 4</b>' + (gc >= 4 ? '<div class="ds-gone">You disappear from this time period after the next score.</div>' : '<span class="ds-dim">at four, you disappear after the next score</span>') + '</div>';
     }
-    return box('Keys', h, '<span class="ds-dlhead">' + (tt ? 'Temporal glitches' : isGhost(pb) ? 'Echo irregularities' : 'Deadlocks') + '</span>');
+    return box('Keys', h, '<span class="ds-dlhead">' + (tt ? 'Temporal glitches' : isGhost(pb) ? 'Echo irregularities' : 'Deadlocks') + '</span>', 'ds-keybox');
   }
   function harm(play, pb) {
     var hull = isHull(pb), hm = play.harm, pbr = pb && pb.resource && !hull ? pb.resource : null, blank = !!(pb && pb.resource === null && !hull);
@@ -366,7 +398,7 @@
         (blank ? '<div class="ds-resrow"><span class="ds-blankres" aria-label="unlabelled resource"></span><span class="ds-boxes">' + sq(play.resource[0], 'resource', ' data-k="0"') + sq(play.resource[1], 'resource', ' data-k="1"') + '</span></div>' : '') +
         (hull ? '<div class="ds-dim">Built-in frame armor; it never counts for load.</div>' : '') +
       '</div></div>';
-    return box(hull ? 'Damage' : 'Harm', '<div class="ds-harmgrid">' + h + side + '</div>');
+    return box(hull ? 'Damage' : 'Harm', '<div class="ds-harmgrid">' + h + side + '</div>', '', 'ds-harmbox');
   }
   function cohort(play, pb) {
     if (!pb || !pb.cohort) return '';
@@ -425,12 +457,30 @@
     return box('XP', h);
   }
   /* ---------- the Session box and the end-of-session panel (round 5) ---------- */
+  /* the table's session (api.table, CONTRACT.md): { session, inPlay } or null when there is no table */
+  function tableNow() {
+    var a = cur && cur.api; if (!a || typeof a.table !== 'function') return null;
+    try { var t = a.table(); return t && typeof t === 'object' ? { session: Math.max(0, Math.floor(+t.session || 0)), inPlay: !!t.inPlay } : null; } catch (e) { return null; }
+  }
+  function tableLine(t) { return !t.session ? 'Table: no session started yet' : 'Table: session ' + t.session + (t.inPlay ? ' · in play' : ' · ended'); }
+  /* the session End of session closes: the table's when there is one */
+  function endNo(play) { var t = tableNow(); return t ? t.session : play.session || 0; }
+  /* what comes after downtime: the manual start, or joining the table's next session */
+  function nextStart(play) { return tableNow() ? 'join the next session when the GM starts it' : 'Start session ' + ((play.session || 0) + 1); }
+  /* under the header while a table exists: where the table is, and Join when it is ahead of this sheet */
+  function tableBar(play) {
+    var t = tableNow(); if (!t || !t.session) return '';
+    var n = play.session || 0, ahead = t.session > n;
+    return '<div class="ds-tablebar' + (ahead ? ' ahead' : '') + '"><span class="ds-tbline"><b>' + esc(tableLine(t)) + '</b>' + (ahead ? '<span class="ds-dim">' + (n ? 'This sheet is on session ' + n + '.' : 'This sheet has not joined a session yet.') + '</span>' : '') + '</span>' +
+      (ahead ? '<button type="button" class="btn sm primary" data-act="sessjoin">Join session ' + t.session + '</button>' : '') + '</div>';
+  }
   function session(play, pb) {
-    var n = play.session || 0, e = cur.ui.endSess, hits = Object.keys(play.keyHitSession || {}).length;
+    var n = play.session || 0, e = cur.ui.endSess, hits = Object.keys(play.keyHitSession || {}).length, t = tableNow(), en = endNo(play);
+    var note = t ? tableLine(t) + '.' + (t.session > n ? ' Join it from the top of the sheet.' : '') + (!t.session ? ' The GM starts sessions on the table page.' : '') : n ? 'Session ' + n + ' is the current session.' : 'No session started yet.';
     var h = '<div class="ds-sess"><span class="ds-sessno"><span class="ds-lab">Session</span><b class="mono">' + n + '</b></span>' +
-      '<span class="ds-dim ds-sessnote">' + (n ? 'Session ' + n + ' is the current session.' : 'No session started yet.') + (hits ? ' Keys hit this session: ' + hits + '.' : '') + (play.trainedThisDowntime ? ' Trained this downtime.' : '') + '</span>' +
-      '<span class="ds-sessbtns"><button type="button" class="btn sm" data-act="sessstart">Start session ' + (n + 1) + '</button>' +
-      '<button type="button" class="btn sm primary" data-act="endopen" aria-expanded="' + !!e + '">End session</button></span></div>';
+      '<span class="ds-dim ds-sessnote">' + esc(note) + (hits ? ' Keys hit this session: ' + hits + '.' : '') + (play.trainedThisDowntime ? ' Trained this downtime.' : '') + '</span>' +
+      '<span class="ds-sessbtns">' + (t ? '' : '<button type="button" class="btn sm" data-act="sessstart">Start session ' + (n + 1) + '</button>') +
+      '<button type="button" class="btn sm primary" data-act="endopen" aria-expanded="' + !!e + '"' + (t && !en ? ' disabled title="No session has started at the table"' : '') + '>End session' + (t && en ? ' ' + en : '') + '</button></span></div>';
     return box('Session', h, '', 'ds-sessbox', endPanel(play, pb));
   }
   /* what "Mark xp" would do: playbook xp capped at 8; a Hull may send it to a memory clock first, the rest spills into playbook xp */
@@ -443,7 +493,7 @@
   function advancePointer(pb) { return isTT(pb) ? 'Gain clarity in the XP box.' : 'pick a new ' + (isHull(pb) ? 'trait in the Hull traits box' : isPara(pb) ? 'trait in the Traits box' : 'special ability in the Special abilities box') + ' (8 xp are spent when you do).'; }
   function endPanel(play, pb) {
     var e = cur.ui.endSess; if (!e) return '';
-    var trig = sessionTriggers(play, pb), n = play.session || 0, done = !!e.result, plan = endPlan(play, pb, e), hits = Object.keys(play.keyHitSession || {}).length;
+    var trig = sessionTriggers(play, pb), n = endNo(play), done = !!e.result, plan = endPlan(play, pb, e), hits = Object.keys(play.keyHitSession || {}).length;
     var h = '<p class="hint">Mark 1 xp for each trigger that happened this session, 2 if you really smashed it.</p><div class="ds-endtrig">';
     trig.forEach(function (t, i) {
       h += '<div class="ds-endrow"><span>' + esc(t) + '</span><span class="seg">' + [0, 1, 2].map(function (v) { return '<button type="button" class="chip sm" data-act="endval" data-i="' + i + '" data-v="' + v + '" aria-pressed="' + (e.vals[i] === v) + '"' + (done ? ' disabled' : '') + ' aria-label="' + esc(trigLabel(t)) + ': ' + v + ' xp">' + v + '</button>'; }).join('') + '</span></div>';
@@ -458,13 +508,13 @@
     if (!done) {
       h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">+' + plan.total + ' xp</b><span class="ds-dim">' + esc(where) + (plan.lost ? ' · <b class="ds-warn">' + plan.lost + ' lost to the cap</b>' : '') + '</span></span>' +
         '<button type="button" class="btn sm primary" data-act="endmark">' + (plan.total ? 'Mark xp' : 'End without xp') + '</button></div>';
-      h += '<p class="hint">Ends session ' + n + ': logs it' + (hits ? ' and clears this session’s key hits (' + hits + ' key' + (hits === 1 ? '' : 's') + ')' : '') + '. Key hits and desperate rolls were marked as they happened.</p>';
+      h += '<p class="hint">Ends session ' + n + (n !== (play.session || 0) ? ', the table’s (this sheet is on ' + (play.session || 0) + ')' : '') + ': logs it' + (hits ? ' and clears this session’s key hits (' + hits + ' key' + (hits === 1 ? '' : 's') + ')' : '') + '. Key hits and desperate rolls were marked as they happened.</p>';
     } else {
       h += '<div class="ds-roll-res"><div class="ds-roll-applied"><span class="ds-lab">Applied</span>' + esc(e.result.lines.join(' · ')) + '</div>';
       if (e.result.lost) h += '<p class="hint ds-warn">' + e.result.lost + ' xp lost to the cap.</p>';
       if (e.result.full) h += '<p class="hint ds-warn ds-endfull">Playbook track full: ' + esc(advancePointer(pb)) + '</p>';
       if (e.result.memFull) h += '<p class="hint ds-warn">Memory complete: write it in the Human memories box. You also remember one key, a human contact, and a special ability from another playbook.</p>';
-      h += '<p class="hint">Downtime next: use the Downtime box, then Start session ' + (n + 1) + '.</p></div>';
+      h += '<p class="hint">Downtime next: use the Downtime box, then ' + esc(nextStart(play)) + '.</p></div>';
     }
     return '<div class="ds-roll ds-endp" tabindex="-1" role="region" aria-label="End of session"><div class="ds-roll-h"><span class="ds-roll-t">End of session · <b>' + n + '</b></span><span class="ds-roll-sub">' + trig.length + ' triggers · 0, 1 or 2 xp each</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close the end of session panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div></div>';
   }
@@ -520,12 +570,12 @@
     } else {
       sub = 'once per downtime';
       var tracks = ATTRS.map(function (a) { return [a.toLowerCase(), a, 6]; }).concat([['playbook', 'Playbook', 8]]);
-      h += '<p class="hint">Mark 1 xp in an attribute or your playbook. Once per downtime; Start session clears it.</p>';
+      h += '<p class="hint">Mark 1 xp in an attribute or your playbook. Once per downtime; ' + (tableNow() ? 'joining the next session' : 'Start session') + ' clears it.</p>';
       h += '<div class="ds-roll-row"><span class="ds-lab">Track</span><span class="seg">' + tracks.map(function (x) { var v = play.xp[x[0]] || 0, full = v >= x[2]; return '<button type="button" class="chip sm" data-act="dtopt" data-k="track" data-v="' + x[0] + '" data-always="1" aria-pressed="' + (t.track === x[0]) + '"' + (full ? ' disabled title="Track full: advance first"' : '') + '>' + esc(x[1]) + ' ' + v + '/' + x[2] + '</button>'; }).join('') + '</span></div>';
       var blocked = play.trainedThisDowntime && !(t.result && t.result.saved);
       var sel = tracks.filter(function (x) { return x[0] === t.track; })[0], selFull = !sel || (play.xp[sel[0]] || 0) >= sel[2];
       if (!t.result) h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">+1 xp</b><span class="ds-dim">' + (sel ? esc(sel[1]) + ' ' + (play.xp[sel[0]] || 0) + ' → ' + Math.min(sel[2], (play.xp[sel[0]] || 0) + 1) + ' / ' + sel[2] : 'choose a track') + '</span></span><button type="button" class="btn sm primary" data-act="dttrain"' + (blocked || ro || selFull ? ' disabled' : '') + '>Mark 1 xp</button></div>';
-      if (blocked) h += '<p class="hint ds-warn ds-trained">Already trained this downtime: Start session ' + ((play.session || 0) + 1) + ' clears it.</p>';
+      if (blocked) h += '<p class="hint ds-warn ds-trained">Already trained this downtime: ' + esc(capWord(nextStart(play))) + ' clears it.</p>';
       if (ro && !t.result) h += '<p class="hint">Not saved (' + notSavedWhy() + '): training writes nothing here.</p>';
     }
     if (t.result && t.kind !== 'train') h += dtResult(t, pb);
@@ -629,7 +679,7 @@
   function itemLoad(play, pb, name) { var all = ((pb && pb.items) || []).concat(CT.STANDARD_ITEMS || [], (play.extraItems || []).map(function (x) { return [x.name, x.load]; })); var it = all.filter(function (i) { return i[0] === name; })[0]; return it ? +it[1] || 0 : 0; }
   function loadBonus(play) { var b = 0; if (play.abilities.indexOf('Walking Arsenal') >= 0) b += 2; if (play.abilities.indexOf('Retractable Arsenal') >= 0) b += 2; return b; }
   function items(play, pb) {
-    if (isGhost(pb)) return box('Items (with you in ghost form)', (pb.itemsRule ? '<p class="hint">' + esc(pb.itemsRule) + '</p>' : '') + textarea('ghostItems', play.ghostItems, 'Whatever came with you'));
+    if (isGhost(pb)) return box('Items (with you in ghost form)', (pb.itemsRule ? '<p class="hint">' + esc(pb.itemsRule) + '</p>' : '') + textarea('ghostItems', play.ghostItems, 'Whatever came with you'), '', 'ds-itembox');
     var hull = isHull(pb);
     var carried = play.items.reduce(function (t, n) { return t + itemLoad(play, pb, n); }, 0), total = carried + play.stacks;
     var limit = (play.loadLimit === 'loud' ? 6 : 3) + loadBonus(play), over = total > limit;
@@ -723,7 +773,7 @@
     if (!cur) return; var doc = cur.doc, play = cur.play, pb = cur.pb, sheet = doc.sheet || {};
     var focus = captureFocus();
     figureSvg(doc);
-    var html = header(doc, play, pb, sheet) +
+    var html = header(doc, play, pb, sheet) + tableBar(play) +
       '<div class="ds-grid">' +
         '<div class="ds-col ds-c1">' + figure(doc, pb) + stress(play, pb) + keys(play, pb) + strictures(play, pb) + harm(play, pb) + cohort(play, pb) + vice(play, pb) + '</div>' +
         '<div class="ds-col ds-c2">' + abilities(play, pb, sheet) + contacts(play, pb) + triggers(play, pb) + session(play, pb) + downtime(play, pb) + mission(play, pb) + memories(play, pb) + '</div>' +
@@ -732,6 +782,7 @@
       '</div>';
     cur.root.innerHTML = html;
     cur.root.className = 'dossier ds' + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '');
+    askOwner();
     if (readOnly()) cur.root.querySelectorAll('button, input, textarea, select').forEach(function (n) { if (!n.dataset.always) n.disabled = true; });
     restoreFocus(focus);
     /* the roll panel: bring it into view when it opens, and keep keyboard focus inside the sheet so Esc closes it */
@@ -948,23 +999,20 @@
       if (res.text && !ro) { p.log.unshift({ at: new Date().toISOString(), kind: 'roll', text: res.text }); commit(); } else render();
     },
     /* ---- sessions (round 5) ---- */
-    sessstart: function () {
-      var p = cur.play, n = (p.session || 0) + 1;
-      p.session = n; p.trainedThisDowntime = false;
-      if (Object.keys(p.keyHitSession || {}).length) p.keyHitSession = {};
-      p.log = [{ at: new Date().toISOString(), kind: 'note', text: 'Session ' + n + ' started' }].concat(p.log || []);
-      cur.ui.endSess = null; if (cur.ui.dt && cur.ui.dt.kind === 'train') cur.ui.dt.result = null;
-      note('Session ' + n + ' started'); commit();
-    },
+    sessstart: function () { if (tableNow()) return; startSession((cur.play.session || 0) + 1); },
+    /* the table is ahead of this sheet: catch up to its session with the same start */
+    sessjoin: function () { var t = tableNow(); if (!t || t.session <= (cur.play.session || 0)) return; startSession(t.session); },
     endopen: function () {
       if (cur.ui.endSess) { cur.ui.endSess = null; render(); return; }
+      if (tableNow() && !endNo(cur.play)) return; /* nothing has started at the table */
       closePanels(); cur.ui.endSess = { vals: sessionTriggers(cur.play, cur.pb).map(function () { return 0; }), target: 'xp', result: null }; cur.ui.rollScroll = true; render();
     },
     endval: function (d) { var e = cur.ui.endSess, i = +d.i; if (!e || e.result || !(i >= 0 && i < e.vals.length)) return; e.vals[i] = clamp(d.v, 0, 2); render(); },
     endtarget: function (d) { var e = cur.ui.endSess; if (!e || e.result || !isHull(cur.pb)) return; e.target = d.v === 'xp' ? 'xp' : clamp(d.v, 0, cur.play.memories.length - 1); render(); },
     endmark: function () {
       var e = cur.ui.endSess, p = cur.play, pb = cur.pb; if (!e || e.result || noSave()) return;
-      var plan = endPlan(p, pb, e), n = p.session || 0, trig = sessionTriggers(p, pb), lines = [], memFull = false, hits = Object.keys(p.keyHitSession || {}).length;
+      var plan = endPlan(p, pb, e), n = endNo(p), trig = sessionTriggers(p, pb), lines = [], memFull = false, hits = Object.keys(p.keyHitSession || {}).length;
+      if (n !== (p.session || 0)) p.session = n; /* the table's session is the one that ended */
       if (plan.toXp) p.xp = Object.assign({}, p.xp, { playbook: plan.xpAfter });
       if (plan.toMem) {
         p.memories = p.memories.map(function (m, i) { return i === plan.memI ? Object.assign({}, m, { filled: (m.filled || 0) + plan.toMem }) : m; });
@@ -1061,6 +1109,15 @@
       commit();
     }
   };
+  /* a new session on this sheet (Start session, or Join the table's): clears the downtime and per-session flags, logs it */
+  function startSession(n) {
+    var p = cur.play;
+    p.session = n; p.trainedThisDowntime = false;
+    if (Object.keys(p.keyHitSession || {}).length) p.keyHitSession = {};
+    p.log = [{ at: new Date().toISOString(), kind: 'note', text: 'Session ' + n + ' started' }].concat(p.log || []);
+    cur.ui.endSess = null; if (cur.ui.dt && cur.ui.dt.kind === 'train') cur.ui.dt.result = null;
+    note('Session ' + n + ' started'); commit();
+  }
   /* roll-panel controls stay live for read-only viewers (they write nothing); everything else is gated */
   var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1 };
   /* one panel at a time: a roll, a downtime activity or the end of session */
@@ -1103,6 +1160,7 @@
     if (cur) T.close();
     doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
     cur.play = normalize(doc.play, doc.sheet, doc.playbook);
+    cur.status = { msg: readOnly() ? roLabel() : 'Saved' }; /* as stored */
     root.addEventListener('click', onClick); root.addEventListener('input', onInput); root.addEventListener('change', onChange); root.addEventListener('keydown', onKey);
     document.addEventListener('keydown', onDocKey);
     render();
@@ -1111,7 +1169,7 @@
   T.update = function (doc) {
     if (!cur || !doc) return; if (doc.id && cur.doc.id && doc.id !== cur.doc.id) return;
     if (cur.timer || cur.saving) { cur.doc = Object.assign({}, cur.doc, doc, { play: cur.play }); return; } /* our own change is on its way; it will come back */
-    var focus = captureFocus(); cur.doc = doc; cur.pb = pbOf(doc.playbook) || cur.pb;
+    var focus = captureFocus(); if (doc.owner !== cur.doc.owner) cur.ownerName = null; cur.doc = doc; cur.pb = pbOf(doc.playbook) || cur.pb;
     var incoming = normalize(doc.play, doc.sheet, doc.playbook);
     if (focus && focus.path) setPath(incoming, focus.path, focus.value); /* never clobber what is being typed */
     cur.play = incoming; render();
@@ -1124,6 +1182,8 @@
     document.removeEventListener('keydown', onDocKey);
     c.root.innerHTML = ''; c.root.className = 'dossier';
   };
+  /* something the sheet reads from outside its document changed (the table's session, api.table): redraw */
+  T.refresh = function () { if (cur) render(); };
   T.isOpen = function () { return !!cur; };
   T.play = function () { return cur ? clone(cur.play) : null; };
   /* a read-only copy of a sheet in another root (the season print): the markup the live sheet prints for someone who
@@ -1133,7 +1193,7 @@
   T.renderStatic = function (root, doc) {
     if (!root) return null;
     doc = doc || {}; var live = cur;
-    cur = { doc: doc, api: { canWrite: null }, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
+    cur = { doc: doc, api: { canWrite: null }, pb: pbOf(doc.playbook), root: root, ui: { static: true, mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
     try {
       cur.play = normalize(doc.play, doc.sheet, doc.playbook);
       render();

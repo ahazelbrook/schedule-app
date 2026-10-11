@@ -170,7 +170,16 @@
       edit: function () { var d = Object.assign({ id: id }, latest || cache[id] || {}); setMode('create'); clearHash(); loadIntoCreator(d); toast('Editing ' + (d.name || 'the character') + ' in the creator.'); },
       back: function () { goBack(); },
       remove: function () { var r2 = ref; return r2.delete().then(function () { delete cache[id]; toast('Removed from the files.'); goBack(); }).catch(function (e) { toast('Could not remove: ' + (e && e.message || e), true); throw e; }); },
-      me: A.me, canWrite: A.canWrite
+      me: A.me,
+      /* per document, as the server decides: a player writes only their own (or an unowned) sheet, the GM any */
+      get canWrite() { var d = latest || cache[id] || {}; return A.canWrite === false ? false : (A.isGM || !d.owner || d.owner === A.me) ? A.canWrite : false; },
+      /* the table's session, null without a started table (boot calls B68Tracker.refresh when it changes) */
+      table: function () {
+        var t = campLoaded && tableExists && isObj(tableLatest) ? tableLatest : null, s = t && isObj(t.session) ? t.session : {};
+        if (!t || (window.B68Runtime && window.B68Runtime.kind === 'cloudflare' && !t.updatedAt)) return null;
+        var n = Math.max(0, Math.floor(+s.number || 0)); return { session: n, inPlay: n > 0 && !!s.startedAt && !s.endedAt };
+      },
+      profiles: userCap && typeof userCap.profiles === 'function' ? profiles : null
     };
     function arrived(data) {
       if (openId !== id) return;
@@ -307,6 +316,7 @@
       var Cm = campaignMod();
       if (tableOn && Cm) { try { Cm.update(data ? clone(data) : null); } catch (e) { toast('The table could not render: ' + (e && e.message || e), true); } }
       var S2 = schedMod(); if (S2) { try { S2.card.update(data ? clone(data) : null); } catch (e) { if (window.console) console.error(e); } }
+      var T2 = tracker(); if (openId && T2 && T2.refresh) { try { T2.refresh(); } catch (e) {} }   /* the open sheet reads the table's session */
     }
     function failed(e) { if (campRef !== ref || !tableOn) return; toast('The table is offline: ' + (e && e.message || e), true); }
     campaignArrived = arrived; campaignFailed = failed;

@@ -67,16 +67,37 @@ B68Tracker.close()                          // clear #dossier
 B68Tracker.isOpen()                         // bool
 B68Tracker.play()                           // a copy of the open sheet's play, or null (added later)
 B68Tracker.renderStatic(root, doc)          // a read-only, listener-free copy of a sheet in another root (the season print; added later)
+B68Tracker.refresh()                        // something the sheet reads outside its doc changed (api.table): re-render, keeping focus and the status line (added later)
 // api = {
 //   save(patch) -> Promise          // shallow-merge patch into the doc: patch is { play: {...whole play...} } or { name, alias, ... }; filing writes updatedAt
 //                                   //   (filing sends only the changed play fields as an update, falling back to a whole set)
 //   edit()                          // load this character into the creator (filing switches mode)
-//   back()                          // return to the roster
+//   back()                          // return to where the sheet was opened from (the button reads "← Back")
 //   remove() -> Promise             // delete (after the tracker's own confirm)
 //   me: 'u_..' | null,              // viewer id
-//   canWrite: true | false | null   // null = unknown, keep controls enabled and let a refused save decide
+//   canWrite: true | false | null   // null = unknown, keep controls enabled and let a refused save decide. Per document, read on
+//                                   //   every check (boot passes a getter): false when the viewer cannot write at all, or is a
+//                                   //   player and doc.owner is someone else; the GM, the owner and an unowned doc get the viewer's
+//                                   //   global value. On someone else's sheet the status reads "Read only · Sam’s character".
+//   profiles(ids) -> Promise<{ id: name }> | null   // optional: names the owner in that status ("another player" without it)
+//   table() -> { session, inPlay } | null           // optional: the table's session (campaign/main, CAMPAIGN.md): session = session.number,
+//                                   //   inPlay = started and not ended; null when there is no started table (no db, no document, or the
+//                                   //   hosted default that was never written). Boot calls B68Tracker.refresh() whenever it changes.
 // }
 ```
+
+With `api.table()` the sheet follows the table instead of its own counter: a bar under the header reads "Table: session N ·
+in play" (or "· ended"), and when the table is ahead of `play.session` it carries the one primary **Join session N**, which
+sets `play.session = N` and runs the Start session logic (clears `trainedThisDowntime` and `keyHitSession`, logs `Session N
+started`). End of session closes the table's session N (and sets `play.session = N` when the sheet was elsewhere). The manual
+"Start session N+1" button exists only when `table()` is missing or returns null; at table session 0 End session waits for the GM.
+
+The sheet's title is the character's name; the playbook and its descriptor sit small under it. Box titles are `h3.ds-bt`
+inside `.ds-band`. On phones (screen ≤ 760px) the boxes leave their columns and run Stress, Harm, Actions, Items, Keys,
+Session, then the rest; the Figure box gives way to a mugshot thumbnail beside the name (`img.ds-thumb`, a data URI, so
+its SVG ids never meet the Figure box's); pips, xp boxes, diamonds and × get invisible `::before` hit areas (44px tall where
+the row has room, as wide as their pitch so neighbours never take each other's taps) and each action's roll button is 44px
+tall. Print is unchanged by all of this (the phone rules are `screen` only).
 
 ### Filing API (`window.B68` additions, boot.js)
 
