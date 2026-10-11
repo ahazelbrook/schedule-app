@@ -33,7 +33,7 @@ Steps:
 1. **Get the code.** Check `git`, `node` (20 or newer) and `npm` are installed. Clone the
    private repository `ahazelbrook/schedule-app` from GitHub (with `gh repo clone` if the
    GitHub CLI is signed in, otherwise `git clone` over HTTPS with my credentials), `cd` into it
-   and check out the branch I name (the default branch once the deploy work is merged). Run
+   (the default branch, `main`, has everything). Run
    `npm install`. Read `SETUP.md`, then `scripts/deploy.sh --help`.
 2. **Optional sanity check.** `npm test` (plain node, no browser; it starts local servers on
    ports 8788 and 8789, so nothing else may use them). Everything should pass.
@@ -70,8 +70,9 @@ Steps:
    - `curl -sI https://blades.fieldguide.help/` answers a 302 whose `location` is on
      `<team>.cloudflareaccess.com`.
    - In the browser, open `https://blades.fieldguide.help`, enter the GM email, and I type the
-     code from my inbox. The app opens; the header says **Signed in as … · GM**, and the table
-     page (`https://blades.fieldguide.help/#t`) shows the GM controls.
+     code from my inbox. The app opens on its Home page, which for a new GM reads **Set up the table**;
+     the header says **Signed in as … · GM**, and the table page
+     (`https://blades.fieldguide.help/#t`) shows the GM controls.
    - In a private window, an address that is not on the list gets no code / is refused.
    - Narrow the window to phone width (or use the browser's device mode): the page fits the
      screen, no sideways scrolling.

@@ -68,7 +68,7 @@ The npm scripts (from the repository root):
 |---|---|
 | `npm run check:api` | `checks/api/jwt.mjs` (Access token verification), `checks/api/worker.mjs` (the router, the DEV_USER guard, the page head, the deploy config) and `checks/api/flow.mjs` (the whole API against its own `wrangler dev` on ports 8788 and 8789, so stop `npm run dev` first) |
 | `npm run check:runtime` | `checks/runtime/adapter.test.mjs` (the adapter, offline cases included) and `checks/runtime/pwa.test.mjs` (manifest, icons, the service worker) |
-| `npm run check:e2e` | `app/checks/e2e.js`: file, sheet, roster and back, against the stubbed runtime. With `E2E_URL=http://127.0.0.1:8788` it runs against `npm run dev` instead |
+| `npm run check:e2e` | `app/checks/e2e.js`: the Home page in each state, filing a character, the sheet, the files and browser Back, against the stubbed runtime. With `E2E_URL=http://127.0.0.1:8788` it runs against `npm run dev` instead |
 | `npm run check:offline` | `checks/runtime/offline.e2e.mjs`: install, offline reload and sync on reconnect, on its own server (port 8790) |
 | `npm run check:schedule` | `checks/runtime/schedule.e2e.mjs`: the schedule against a real local server (port 8791) |
 | `npm run check:phone` | `checks/runtime/phone.e2e.mjs`: a 390 px mobile Chromium against its own server (port 8792): device width, standards mode, no horizontal overflow |
@@ -93,7 +93,7 @@ drive a browser (`check:e2e`, `check:offline`, `check:schedule`, `check:phone`, 
 
 | Check | Covers |
 |---|---|
-| `e2e.js` | file a character, open the sheet, the roster, back to the sheet |
+| `e2e.js` | Home states, file a character, open the sheet, the files, Back and drafts |
 | `pn-e2e.js` | creating each paranormal playbook |
 | `trackercheck.js` | the living sheet for the core playbooks |
 | `trackerpn.js` | every sheet control for the paranormal playbooks, and printing |
