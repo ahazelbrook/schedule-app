@@ -1,4 +1,5 @@
-<title>Blades '68 Character Creator</title>
+<meta charset="utf-8">
+<title>Blades '68</title>
 <link rel="stylesheet" href="tracker.css">
 <link rel="stylesheet" href="campaign.css">
 <link rel="stylesheet" href="crewsheet.css">
@@ -67,10 +68,13 @@
 
   /* ---- masthead and step rail ---- */
   .top { display: grid; grid-template-columns: auto 1fr; gap: 10px 24px; align-items: center; border-bottom: 4px solid var(--rule); padding-bottom: 12px; }
-  .wordmark { display: flex; align-items: baseline; gap: 10px; }
+  .wordmark { display: flex; align-items: baseline; gap: 10px; color: inherit; text-decoration: none; justify-self: start; }
+  .wordmark:hover .ttl { color: var(--accent); }
   .wordmark .yr { font: 900 44px/.8 var(--font-poster); letter-spacing: -.02em; }
   .wordmark .ttl { font: 900 13px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; }
-  .wordmark .ttl small { display: block; font: 400 10px/1.3 var(--font-mono); letter-spacing: .08em; text-transform: none; color: var(--ink-soft); }
+  .wordmark .ttl small { display: block; font: 400 10px/1.3 var(--font-mono); letter-spacing: .08em; text-transform: none; color: var(--ink-soft); margin-top: 2px; }
+  .wordmark .ttl small:focus { outline: none; }
+  .wordmark .ttl small:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .rail { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding: 2px; }
   .rail::-webkit-scrollbar { display: none; }
   .rail button { flex: 0 0 auto; display: grid; grid-template-columns: auto auto; gap: 6px; align-items: center; font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 8px 10px; border: 2px solid transparent; background: transparent; color: var(--ink-soft); cursor: pointer; border-radius: 4px; transition: background-color .16s var(--ease), color .16s var(--ease); }
@@ -79,20 +83,102 @@
   .rail button[aria-current="step"] { color: var(--on-mustard); background: var(--mustard); }
   .rail button.done { color: var(--ink); }
   .rail button.done .n { background: var(--rule); color: var(--on-ink); border-color: var(--rule); }
-  .top .who { grid-column: 1 / -1; font-size: 9.5px; color: var(--ink-faint); letter-spacing: .12em; }
+  .top .who { grid-column: 1 / -1; font-size: 9.5px; color: var(--ink-soft); letter-spacing: .12em; }
+  /* the hosted runtime's sync state: a chip, alarm-red while offline */
+  .top .who .sync { display: inline-block; margin-left: 8px; padding: 3px 6px; border: 1.5px solid var(--ink-soft); color: var(--ink-soft); font: 700 10px/1 var(--font-mono); letter-spacing: .02em; text-transform: none; vertical-align: 1px; }
+  .top .who .sync.off { border-color: var(--alarm); color: var(--alarm); }
   .top .who::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 999px; background: var(--ok); margin-right: 6px; vertical-align: 1px; }
   .top .who.off::before { background: var(--ink-faint); }
   .topnav { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-self: start; }
-  #tableBtn[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); box-shadow: none; transform: translate(2px, 2px); }
-  @media (max-width: 760px) { .top { grid-template-columns: 1fr; } }
+  .topnav .btn[aria-current="page"] { background: var(--rule); color: var(--on-ink); box-shadow: none; transform: translate(2px, 2px); }
+  @media (max-width: 760px) { .top { grid-template-columns: 1fr; } .hm-char { grid-template-columns: 84px minmax(0, 1fr); } }
 
-  /* ---- modes: create (the studio and files), sheet (the tracker in #dossier) or table (the campaign page in #table-page) ---- */
+  /* ---- modes: home (#home: the start page and the files), create (the studio and line-up), sheet (the tracker in #dossier),
+     table (the campaign page in #table-page) or print (#season, season.css) ---- */
   #dossier, #table-page { display: none; }
-  body[data-mode="sheet"] .studio, body[data-mode="sheet"] .crew, body[data-mode="sheet"] .roster, body[data-mode="sheet"] .rail { display: none; }
+  body:not([data-mode="create"]) .studio, body:not([data-mode="create"]) .crew, body:not([data-mode="create"]) .rail { display: none; }
+  body:not([data-mode="home"]) .roster { display: none; }
   body[data-mode="sheet"] #dossier:not([hidden]) { display: block; }
-  body[data-mode="table"] .studio, body[data-mode="table"] .crew, body[data-mode="table"] .roster, body[data-mode="table"] .rail, body[data-mode="table"] #dossier { display: none; }
+  body[data-mode="table"] #dossier { display: none; }
   body[data-mode="table"] #table-page:not([hidden]) { display: block; }
-  body:not([data-mode="sheet"]):not([data-mode="table"]) #railBack { display: none; }
+
+  /* ---- home: the start page (boot.js renderHome) ---- */
+  .home { padding-top: 22px; display: grid; gap: 30px; }
+  .hm { display: grid; gap: 18px; min-width: 0; }
+  .hm-wait { font: 700 12px/1.4 var(--font-mono); color: var(--ink-soft); padding: 24px 0; }
+  .hm-head { display: grid; gap: 8px; border-bottom: 2px solid var(--rule); padding-bottom: 14px; }
+  .hm-kick { font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .16em; color: var(--accent); }
+  .hm-title { font: 900 clamp(38px, 6vw, 68px)/.85 var(--font-poster); letter-spacing: -.01em; margin: 0; overflow-wrap: anywhere; }
+  .hm-title:focus { outline: none; }
+  .hm-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+  .hm-sub { font: 900 10.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
+  .hm-lead { font-size: 15px; max-width: 58ch; }
+  .hm-acts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .hm-note { font-size: 13px; color: var(--ink-soft); max-width: 62ch; }
+  .hm-draft { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; border: 2px solid var(--rule); border-left-width: 6px; border-left-color: var(--mustard); background: var(--card); padding: 10px 12px; max-width: 720px; }
+  .hm-draft b { font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
+  .hm-link { font: inherit; color: var(--ink); background: none; border: 0; padding: 4px 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; min-height: 24px; }
+  .hm-link:hover { color: var(--accent); }
+  .hm-links { display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: center; font-size: 13.5px; }
+  .hm-nudges { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-width: 720px; }
+  .hm-nudges li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 8px 12px; border: 2px solid var(--rule); background: var(--card); }
+  .hm-nudges li::before { content: ""; width: 8px; height: 8px; background: var(--accent); align-self: center; flex: 0 0 auto; }
+  .hm-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+  .hm-step { border: 2px solid var(--rule); background: var(--card); padding: 14px 14px 16px; display: grid; gap: 8px; align-content: start; position: relative; }
+  .hm-step .hm-n { font: 900 34px/.8 var(--font-poster); color: var(--ink-faint); }
+  .hm-step h3 { font-size: 14px; }
+  .hm-step p { font-size: 13px; color: var(--ink-soft); }
+  .hm-step .btn { justify-self: start; }
+  .hm-step.done { border-color: var(--ok); }
+  .hm-step.done .hm-n { color: var(--ok); }
+  .hm-step .hm-done { position: absolute; top: 12px; right: 12px; font: 900 10px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ok); }
+  .hm-big { border: 2px solid var(--rule); background: var(--card); padding: 16px; display: grid; gap: 10px; max-width: 720px; }
+  .hm-big h2 { font-size: 22px; }
+  .hm-big .btn { justify-self: start; }
+  .hm-chars { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .hm-char { display: grid; grid-template-columns: 96px minmax(0, 1fr); border: 2px solid var(--accent); background: var(--card); min-width: 0; }
+  .hm-char .pic { background: var(--chart); display: grid; place-items: end center; overflow: hidden; border-right: 2px solid var(--rule); min-height: 150px; }
+  .hm-char .pic svg { height: 140px; width: auto; }
+  .hm-char .meta { padding: 12px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+  .hm-char .nm { font: 900 24px/.95 var(--font-poster); overflow-wrap: anywhere; margin: 0; }
+  .hm-char .cd { font: 400 10.5px/1.3 var(--font-mono); letter-spacing: .06em; color: var(--ink-soft); }
+  .hm-char .st { font: 700 10.5px/1.3 var(--font-mono); color: var(--accent); }
+  .hm-char .btn { justify-self: start; margin-top: 6px; }
+  .hm-box { border: 2px solid var(--rule); background: var(--card); min-width: 0; }
+  .hm-band { background: var(--rule); color: var(--on-ink); font: 900 11px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 6px 10px; }
+  .hm-box .tbl { border: 0; }
+  .hm-box .empty { margin: 12px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .roster .backups .hint { flex-basis: 100%; }
+  .roster .cards > .empty { grid-column: 1 / -1; }
+
+  /* ---- editing a filed character in the creator ---- */
+  .editbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; margin-top: 14px; padding: 8px 12px; border: 2px solid var(--rule); border-left-width: 6px; border-left-color: var(--accent); background: var(--card); }
+  .editbar > span:first-child { font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
+
+  /* ---- the toast: one region for every mode, above the home indicator ---- */
+  .toast { position: fixed; z-index: 60; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); width: max-content; max-width: calc(100vw - 32px); pointer-events: none; }
+  .toast-msg { margin: 0; max-width: 560px; font: 700 12px/1.4 var(--font-mono); color: var(--on-ink); background: var(--rule); border: 2px solid var(--rule); padding: 9px 12px; box-shadow: 3px 3px 0 var(--accent); animation: toastIn .18s var(--ease); }
+  .toast-msg.bad { background: var(--alarm); border-color: var(--alarm); color: #fbf8f1; box-shadow: 3px 3px 0 var(--rule); }
+  .toast-msg:empty { display: none; }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(6px); } }
+  @media print { .toast, .dlg { display: none !important; } }
+
+  /* ---- the restore preview ---- */
+  .dlg { border: 2px solid var(--rule); background: var(--card); color: var(--ink); padding: 0; width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); box-shadow: 6px 6px 0 var(--shadow-ink); }
+  .dlg::backdrop { background: rgba(20, 17, 14, .55); }
+  .dlg form { display: grid; gap: 12px; padding: 0 16px 16px; }
+  .dlg .hm-band { margin: 0 -16px; padding: 8px 16px; }
+  .dlg h2 { font-size: 20px; }
+  .dlg ul { list-style: none; margin: 0; padding: 0; display: grid; max-height: 40vh; overflow: auto; }
+  .dlg li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid var(--hair); font-size: 13.5px; }
+  .dlg li:first-child { border-top: 0; }
+  .dlg li small { font: 400 11px/1.4 var(--font-mono); color: var(--ink-soft); text-align: right; }
+  .dlg li.skip { color: var(--ink-soft); }
+  .dlg li.skip b { font-weight: 400; text-decoration: line-through; text-decoration-thickness: 1px; }
+  .dlg label.opt { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; cursor: pointer; }
+  .dlg label.opt input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--accent); flex: 0 0 auto; }
+  .dlg .sum { font: 700 12px/1.4 var(--font-mono); }
 
   /* ---- studio ---- */
   .studio { display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr); gap: 0 22px; align-items: start; padding-top: 18px; }
@@ -169,8 +255,6 @@
   .panel.on { display: grid; }
   .pnav { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; border-top: 2px solid var(--rule); padding-top: 14px; }
   .pnav .right { display: flex; gap: 10px; flex-wrap: wrap; }
-  .toast { font: 700 11px/1 var(--font-mono); color: var(--ok); min-height: 12px; }
-  .toast.bad { color: var(--alarm); }
 
   /* playbook covers */
   .covers { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
@@ -280,7 +364,7 @@
   .crew .names span { flex: 1 1 0; min-width: 0; }
   .crew .names small { display: block; font: 400 9.5px/1.3 var(--font-mono); letter-spacing: .06em; color: var(--ink-soft); text-transform: none; }
   .crew .names .you { color: var(--accent); }
-  .roster { margin-top: 26px; display: grid; gap: 12px; }
+  .roster { display: grid; gap: 12px; border-top: 4px solid var(--rule); padding-top: 12px; }
   .roster .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
   .card { display: grid; border: 2px solid var(--rule); background: var(--card); text-align: left; padding: 0; cursor: pointer; position: relative; font: inherit; color: inherit; }
   .card .pic { background: var(--chart); display: grid; place-items: end center; height: 150px; overflow: hidden; }
@@ -298,8 +382,6 @@
   .card:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
   .roster .head .tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .roster .head .seg .chip { padding: 5px 9px; font-size: 10px; }
-  .card .rm { position: absolute; top: 6px; right: 6px; font: 700 10px/1 var(--font-mono); padding: 4px 6px; border: 2px solid #14110e; background: #fbf8f1; color: #14110e; cursor: pointer; }
-  .card .rm:hover { background: var(--alarm); color: #fbf8f1; border-color: var(--alarm); }
   .empty { border: 2px dashed var(--hair); padding: 16px; color: var(--ink-soft); font-size: 13px; max-width: 60ch; }
   /* the GM table: one rule per character, mono numbers, a band for the header */
   .roster .table { min-width: 0; }
@@ -366,9 +448,9 @@
 
 <div class="wrap">
   <header class="top">
-    <div class="wordmark"><span class="yr">’68</span><span class="ttl">Character Creator<small>City Watch of Duskwall · Form 68-C · Doskvol · 968 AC</small></span></div>
+    <a class="wordmark" id="homeLink" href="#" title="Home"><span class="yr">’68</span><span class="ttl">Blades ’68<small id="viewName" tabindex="-1">Home</small></span></a>
     <nav class="rail" id="rail" aria-label="Steps"></nav>
-    <div class="topnav"><button class="btn sm" id="railBack" type="button" hidden>← Back to the creator</button><button class="btn sm" id="tableBtn" type="button" aria-pressed="false" title="The crew, shared clocks, the players and the campaign log">The table</button></div>
+    <nav class="topnav" aria-label="Pages"><button class="btn sm" id="homeBtn" type="button">Home</button><button class="btn sm" id="tableBtn" type="button" title="The crew, shared clocks, the players and the campaign log">The table</button><button class="btn sm" id="mineBtn" type="button" hidden>Your sheet</button></nav>
     <span class="label who off" id="whoami">Not signed in · filing unavailable</span>
   </header>
 
@@ -376,6 +458,17 @@
   <section class="dossier" id="dossier" hidden aria-label="Character sheet"></section>
   <section class="tp" id="table-page" hidden aria-label="The table"></section>
   <section class="sn" id="season" hidden aria-label="Season print"></section>
+  <section class="home" id="home" hidden aria-labelledby="homeTitle">
+    <div class="hm" id="homeMain"><p class="hm-wait">Opening the files…</p></div>
+    <section class="roster" id="files" aria-labelledby="filesTitle" hidden>
+      <div class="head"><h2 id="filesTitle">The files</h2><div class="tools"><div class="seg" id="rosterView" role="group" aria-label="View"><button class="chip" type="button" data-v="cards" aria-pressed="true">Cards</button><button class="chip" type="button" data-v="table" aria-pressed="false">Table</button></div><div class="seg" id="rosterFilter" role="group" aria-label="Whose files" hidden><button class="chip" type="button" data-f="mine" aria-pressed="true">Mine</button><button class="chip" type="button" data-f="all" aria-pressed="false">Everyone</button></div><span class="label" id="rosterNote">Everyone who opens this page sees the same files</span></div></div>
+      <div class="cards" id="cards"><div class="empty">No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.</div></div>
+      <div class="table" id="table" hidden><div class="empty">No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.</div></div>
+      <div class="backups" id="backups" hidden><span class="label">Backups</span><button class="btn sm" id="dlAll" type="button" hidden>Download a backup</button><button class="btn sm" id="dlEverything" type="button" hidden title="The server's full export: every character, the table and the members">Download everything</button><button class="btn sm" id="restoreBtn" type="button" hidden>Restore from a backup…</button><input type="file" id="restoreFile" accept="application/json,.json" hidden><p class="hint" id="backupHint"></p></div>
+    </section>
+  </section>
+
+  <div class="editbar" id="editBar" hidden><span>Editing <b id="editName"></b></span><span class="row"><button class="btn sm primary" id="editUpdate" type="button">Update the file</button><button class="btn sm" id="editBack" type="button">Back to the sheet</button></span></div>
 
   <main class="studio">
     <section class="stage" aria-label="The subject">
@@ -404,7 +497,6 @@
           <button class="btn" id="back" type="button">Back</button>
           <div class="right"><button class="btn" id="shuffle" type="button">Shuffle</button><button class="btn primary" id="next" type="button">Next</button></div>
         </nav>
-        <div class="toast" id="toast" aria-live="polite"></div>
       </section>
     </section>
   </main>
@@ -415,18 +507,13 @@
     <div class="names" id="lineupNames"></div>
   </section>
 
-  <section class="roster" aria-label="Your files">
-    <div class="head"><h2>Your files</h2><div class="tools"><div class="seg" id="rosterView" role="group" aria-label="View"><button class="chip" type="button" data-v="cards" aria-pressed="true">Cards</button><button class="chip" type="button" data-v="table" aria-pressed="false">Table</button></div><div class="seg" id="rosterFilter" role="group" aria-label="Whose files" hidden><button class="chip" type="button" data-f="mine" aria-pressed="true">Mine</button><button class="chip" type="button" data-f="all" aria-pressed="false">Everyone</button></div><span class="label" id="rosterNote">Everyone who opens this page sees the same files</span></div></div>
-    <div class="cards" id="cards"><div class="empty">No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.</div></div>
-    <div class="table" id="table" hidden><div class="empty">No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.</div></div>
-    <div class="backups" id="backups" hidden><span class="label">Backups</span><button class="btn sm" id="dlAll" type="button" hidden>Download all (JSON)</button><button class="btn sm" id="dlEverything" type="button" hidden title="The server's full export: every character, the table and the members">Download everything</button><button class="btn sm" id="restoreBtn" type="button" hidden>Restore (JSON)</button><input type="file" id="restoreFile" accept="application/json,.json" hidden></div>
-  </section>
-
   <footer>
     <span>Drawn by the Blades ’68 figure kit v2. Rules text transcribed from the Characters chapter. The year is 968 AC.</span>
-    <span class="mono" id="kitVersion"></span>
   </footer>
 </div>
+
+<div class="toast" id="toast"><p class="toast-msg" id="toastMsg" role="status" aria-live="polite" aria-atomic="true"></p><p class="toast-msg bad" id="toastErr" role="alert" aria-atomic="true"></p></div>
+<dialog class="dlg" id="restoreDlg" aria-labelledby="restoreTitle"></dialog>
 
 <script src="figures/figure-kit.js"></script>
 <script src="figures/cast.js"></script>

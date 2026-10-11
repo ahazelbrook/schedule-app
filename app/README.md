@@ -7,15 +7,18 @@ runs as a claude.ai artifact or on the hosted build (Cloudflare Pages, see `HOST
 storage, identity and downloads always go through `window.claude.use(...)`.
 
 - `index.html` is the page: markup, theme tokens, the `@font-face` rules and the script
-  order. It holds the creator studio, the crew line-up and "Your files", and the empty roots
-  the modules render into (`#nextSession`, `#dossier`, `#table-page`, `#season`).
+  order. It holds the header (wordmark, the view's name, Home · The table · Your sheet), Home
+  (`#home`, with "The files" and the backups), the creator studio and the crew line-up, the
+  empty roots the modules render into (`#nextSession`, `#dossier`, `#table-page`, `#season`),
+  the toast region and the restore preview dialog.
 - `content.js` is the rulebook's character creation content, transcribed from the
   Characters chapter and all twelve playbook sheets (eight core, plus Ghost/Echo, Vampire and
   the two Time Travelers).
 - `core.js` holds state, the control factory and drawing; `steps.js` the sixteen creation
-  steps; `boot.js` the modes and hash routes, filing to the shared `characters` collection
+  steps; `boot.js` Home (the start page, drawn from the viewer's role, the table and their
+  characters), the modes, hash routes and Back, the creator's draft, filing to the shared `characters` collection
   (field-level saves), the roster with its Cards / Table views, JSON backup and restore (the
-  characters and the table's campaign document; CAMPAIGN.md, *Backups*), the
+  characters and the table's campaign document, with a preview before a restore writes; CAMPAIGN.md, *Backups*), the
   table and print modes, and the one subscription to the campaign document.
 - `zoom.js` adds zoom and pan on the stage (wheel, drag, pinch, and a Face button that frames
   the head).
@@ -37,10 +40,12 @@ storage, identity and downloads always go through `window.claude.use(...)`.
   vendored fonts.
 - `CONTRACT.md` documents the character document, the `play` shape and the module APIs.
 - `checks/` holds Playwright checks that stub the artifact runtime and open `../index.html`
-  from `file://`: `e2e.js` walks file → sheet → roster → sheet, `pn-e2e.js` creates each
+  from `file://`: `e2e.js` walks Home → file → sheet → Back → Home's files → sheet, then each
+  Home state (GM set-up, GM table, a new player, a returning player, read only, no runtime,
+  the draft), `pn-e2e.js` creates each
   paranormal playbook, `trackerpn.js` exercises every sheet control, `trackercheck.js` the
   core sheet, `dice.js` the roll panel, `session.js` end of session and downtime, `table.js`
-  the roster table and backups (both runtimes' formats, GM and player), `printcheck.js` renders the print PDFs, `campaign.js` the
+  the roster table and backups (both runtimes' formats, GM and player, the restore preview), `printcheck.js` renders the print PDFs, `campaign.js` the
   table page, `crewsheet.js` the crew sheet, `schedule.js` the schedule and `season.js` the
   season print. Run one with `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node <name>.js`
   (from any directory); output goes to `checks/out/`, which is not committed.

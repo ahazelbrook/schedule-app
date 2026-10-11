@@ -193,7 +193,12 @@
   }
   A.syncAll = syncAll;
   var toastT = null;
-  function toast(msg, bad) { var t = $('toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : ''); if (toastT) clearTimeout(toastT); toastT = setTimeout(function () { t.textContent = ''; }, 3600); }
+  /* one region outside the page (#toast): news in a status line, errors in an alert line, so both are announced */
+  function toast(msg, bad) {
+    var ok = $('toastMsg'), er = $('toastErr'); if (!ok || !er) return;
+    (bad ? ok : er).textContent = ''; (bad ? er : ok).textContent = String(msg == null ? '' : msg);
+    if (toastT) clearTimeout(toastT); toastT = setTimeout(function () { ok.textContent = ''; er.textContent = ''; }, bad ? 6000 : 3600);
+  }
 
   Object.assign(A, { K: K, C: C, CT: CT, O: O, $: $, el: el, esc: esc, clone: clone, merge: merge, pick: pick, chance: chance, slug: slug, feet: feet, newCode: newCode, hex: hex, describe: describe, params: params, kickerHtml: kickerHtml,
     CLOTH: CLOTH, HAIR_TOKENS: HAIR_TOKENS, SKINS: SKINS, BASE_FIGURE: BASE_FIGURE, blankSheet: blankSheet,

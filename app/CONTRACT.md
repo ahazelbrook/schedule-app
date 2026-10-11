@@ -71,7 +71,7 @@ B68Tracker.renderStatic(root, doc)          // a read-only, listener-free copy o
 //   save(patch) -> Promise          // shallow-merge patch into the doc: patch is { play: {...whole play...} } or { name, alias, ... }; filing writes updatedAt
 //                                   //   (filing sends only the changed play fields as an update, falling back to a whole set)
 //   edit()                          // load this character into the creator (filing switches mode)
-//   back()                          // return to the roster
+//   back()                          // the previous view in this tab (history.back()), else Home
 //   remove() -> Promise             // delete (after the tracker's own confirm)
 //   me: 'u_..' | null,              // viewer id
 //   canWrite: true | false | null   // null = unknown, keep controls enabled and let a refused save decide
@@ -87,10 +87,26 @@ A.fileCharacter()                 // create or update (S.sheet.docId) the doc; t
 // added in later rounds:
 A.setMode('table' | 'print')      // the table page (CAMPAIGN.md) and the season print
 A.openTable()  A.openPrint()      // switch mode and set the hash
+A.setMode('home')                 // the start page (#home): who you are decides what it offers; it holds the files and backups
+A.goHome()                        // Home, as a new history entry
 A.updateCharacter(id, patch)      // write another character's play fields through the same delta path (crew advance)
 ```
 
-Hash routes: `#c/<docId>` opens a sheet; `#s<base64url>` (existing) loads a character into the creator; `#t` opens the table page; `#print` the season print; no hash = creator.
+Hash routes: no hash = Home; `#new` a blank creator (asks first when an unfiled draft is there, then becomes `#create`);
+`#create` the creator as it is; `#s<base64url>` loads a shared character into the creator; `#c/<docId>` opens a sheet;
+`#t` the table page; `#t/schedule` the table scrolled to its schedule box (`#tp-schedule`, or `.tp-schedbox`); `#print`
+the season print.
+
+Navigation: every mode switch pushes one history entry (`A.setMode(m)` sets the mode's hash; a hash change routes back
+into the same modes without pushing again). Each entry the page makes carries `history.state = { b68: depth }`, depth 0
+being the entry the visit started on. Back (the sheet's `api.back`, the print's Back) is `history.back()` when the previous
+entry is the app's (depth > 0), else Home replacing the current entry. The header shows the view's name under the
+wordmark (which links Home), sets `document.title`, and moves focus to that name on each switch; the nav is Home · The
+table · Your sheet (the last only when the viewer owns exactly one character).
+
+Drafts: without `claude.hot` the creator's unfiled character (a playbook chosen, no `docId`) is kept in localStorage
+`b68.draft` as `{ v: 1, spec, sheet, step, dirty, at }` (written 400 ms after the last change; cleared on filing, a new
+character or Discard) and restored on load; Home offers it as "Continue your draft".
 
 ## House rules to respect
 - Hard mode: a deadlock is permanent. Show it as such; no "clear deadlock" control beyond an admin-ish undo with confirm.
