@@ -149,7 +149,13 @@ const CREWS = ['dealers', 'hit-squad', 'militants', 'racers', 'shadows', 'utopia
   c = await crew();
   assert(c.claims.turf === true && c.turf === 1, 'turf claimed, crew.turf 1');
   assert((await p.$$eval('.cs-repbar .cs-pill.turfp', n => n.map(x => x.dataset.n))).join() === '12', 'turf marks the 12th rep pip from the right');
-  assert(/each turf: 1 less rep to tier up/.test(await p.$eval('.cs-turfhint', n => n.textContent)), 'turf hint shown');
+  assert(/1 less rep to tier up/.test(await p.$eval('.cs-turfhint', n => n.textContent)), 'turf hint shown');
+  assert(!/until confirmed/.test(await p.$eval('.cs-turfhint', n => n.textContent)), 'rep rule no longer flagged as unconfirmed');
+  assert(!(await p.$('.cs-repfull')), 'rep 4 of 11: not full');
+  await one('rep full (11 with one turf)', () => p.click('.cs-repbar [data-act="crew.rep"][data-n="11"]'));
+  assert((await crew()).rep === 11 && /Rep is full: the crew can spend stacks to go up a tier/.test(await p.$eval('.cs-turfhint', n => n.textContent)), 'full rep says the crew can tier up');
+  await one('rep back to 4', () => p.click('.cs-repbar [data-act="crew.rep"][data-n="4"]'));
+  assert((await crew()).rep === 4 && !(await p.$('.cs-repfull')), 'rep back to 4');
   await one('claim next to the turf', () => p.click('[data-act="crew.claim"][data-id="dive-bar"]'));
   await one('give up dive bar', () => p.click('[data-act="crew.claim"][data-id="dive-bar"]'));
   assert((await crew()).claims['dive-bar'] === false, 'released claim stored as false (a merge never drops a key)');

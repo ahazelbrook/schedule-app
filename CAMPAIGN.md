@@ -147,9 +147,10 @@ Checked by `app/checks/crewsheet.js`.
   the arrows: a cell opens once an arrow source is held; cells with no arrow in (Local Supplier, Local Fiends,
   Branding, the turfs) are open from the start. Utopians' cells open with their circle. Unclaimable cells are dimmed
   and disabled for players; the GM can claim them after a confirm. BASE is fixed.
-- **Turf**: each held turf cell marks one rep pip from the right as turf ("each turf: 1 less rep to tier up"); with
-  On the Side of the Oppressed each Wanted Level counts too. The sheets print no rule for this, so it is visual and
-  flagged in a hint until the table confirms it. Rep can be marked up to 12 − turf.
+- **Rep and turf**: rep is how the crew levels up. It fills left to right like every track; once it is full the
+  crew can spend stacks to go up a tier, and the hint under the track says so. Each held turf cell marks one rep pip
+  from the right as turf ("1 less rep to tier up"); with On the Side of the Oppressed each Wanted Level counts too.
+  Rep can be marked up to 12 − turf. Going up a tier is the GM's tier pips; rep and stacks are not changed for you.
 - **Vaults**: 4 + 8 cubes, locked until the Vault upgrade's first box (first group) and second box (second group).
 - **Utopians**: descending to a circle needs the one before; leaving a circle leaves the deeper ones. Grouped
   abilities are locked until their circle is reached. Truth words: up to the circle's `count`.

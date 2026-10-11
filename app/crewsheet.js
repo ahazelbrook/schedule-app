@@ -180,8 +180,10 @@
       '<div class="cs-bar cs-holdbar"><span class="cs-bl">' + esc(COMMON.hold.label) + '</span><span class="cs-bseg">Weak</span>' + pill('acc', hold === 'weak', 'crew.hold', 1, { extra: ' data-v="weak"', label: 'Weak hold' }) +
         '<span class="cs-bseg">Strong</span>' + pill('acc', hold === 'strong', 'crew.hold', 2, { extra: ' data-v="strong"', label: 'Strong hold' }) +
         '<span class="cs-bl cs-bl2">' + esc(COMMON.tier.label) + '</span><span class="cs-tiers">' + tiers + (tier > COMMON.tier.pips ? '<b class="mono">' + tier + '</b>' : '') + '</span></div></div>';
-    h += '<p class="hint cs-turfhint">Rep <b class="mono">' + rep + ' / ' + max + '</b>' + (turf ? ' · <b class="mono">' + turf + '</b> turf' : '') + ' · each turf: 1 less rep to tier up. Held turf claims mark rep pips from the right' +
-      (abilityN(crew, 'On the Side of the Oppressed') > 0 ? ' (each Wanted Level counts as turf: On the Side of the Oppressed)' : '') + '; the sheet prints no rule for it, so treat it as the table’s reading until confirmed.</p>';
+    h += '<p class="hint cs-turfhint">Rep <b class="mono">' + rep + ' / ' + max + '</b>' + (turf ? ' · <b class="mono">' + turf + '</b> turf' : '') +
+      (max > 0 && rep >= max ? ' · <b class="cs-repfull">Rep is full: the crew can spend stacks to go up a tier.</b>' : ' · fill the rep track, then spend stacks to go up a tier.') +
+      ' Rep fills from the left; each held turf marks a pip from the right, so 1 less rep to tier up' +
+      (abilityN(crew, 'On the Side of the Oppressed') > 0 ? ' (each Wanted Level counts as turf: On the Side of the Oppressed)' : '') + '.</p>';
     return h;
   }
 
