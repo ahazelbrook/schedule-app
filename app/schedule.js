@@ -4,9 +4,10 @@
       (only the changed leaves, `null` for a removed key, so a PATCH carries e.g. {avail:{<me>:{o_x:'yes'}}} and two
       people answering at once never overwrite each other), the open options, the best option and quorum, the cadence
       ("Add the next three"), the countdown, the .ics file and the Google Calendar link.
-   2. The schedule box on the table page. campaign.js owns the document, the saves and the gating; it calls box(doc,
-      ctx) to draw and routes data-act "sched.*" to acts here (PERM says who may: 'gm' or 'any'). A player only ever
-      changes schedule.avail.<me> and schedule.rsvp.<me>; campaign.js also strips anything else from a player's delta.
+   2. The schedule box on the table page (#tp-schedule). campaign.js owns the document, the saves and the gating; it
+      calls box(doc, ctx) to draw and routes data-act "sched.*" to acts here (PERM says who may: 'gm' or 'any'). A
+      player only ever changes schedule.avail.<me> and schedule.rsvp.<me> (their dates, and I'm in / Can't make it,
+      the same answer as the card's); campaign.js also strips anything else from a player's delta.
    3. The next-session card at the top of every mode (#nextSession). boot.js owns the campaign subscription and hands
       each snapshot to card.update(doc); the card writes only the viewer's own RSVP through api.save(patch).
 
@@ -294,10 +295,9 @@
         '<div class="sc-rsvp"><span class="sc-tag in">' + lists.in.length + ' in</span>' + (lists.in.length ? namesList(lists.in, ctx.name, ctx.me) : '<span class="tp-dim">nobody yet</span>') +
         (lists.out.length ? '<span class="sc-tag out">' + lists.out.length + ' out</span>' + namesList(lists.out, ctx.name, ctx.me) : '') +
         (lists.none.length ? '<span class="sc-tag none">' + lists.none.length + ' no answer</span>' + namesList(lists.none, ctx.name, ctx.me) : '') + '</div>' +
-        '</div>' +
+        (live ? myRsvp(s, ctx) : '') + '</div>' +
         (ctx.isGM && !editing ? '<div class="sc-nextbtns"><button type="button" class="btn sm" data-act="sched.nextedit" data-gm="1">Change</button><button type="button" class="btn sm" data-act="sched.nextclear" data-gm="1">Clear</button></div>' : '') +
         '</div>' + boardHtml(s, ctx, known);
-      if (!ctx.isGM && !ctx.ro && ctx.me) h += '<p class="hint">Say whether you are in from the bar at the top of the page.</p>';
     } else {
       board.want = null;
       if (!ctx.isGM) h += '<p class="hint sc-none">No session is set yet.' + (ctx.ro || !ctx.me ? '' : ' Mark the dates you can make below; the GM confirms one.') + '</p>';
@@ -315,6 +315,15 @@
         (n ? '<button type="button" class="btn sm" data-act="sched.nextcancel" data-gm="1">Cancel</button>' : '') + '</div></div>';
     }
     return h;
+  }
+  /* the viewer's own answer for `next`, the same one the card writes (schedule.rsvp.<me>); tapping it again takes it back */
+  function myRsvp(s, ctx) {
+    if (!ctx.me || ctx.ro) return '';
+    var mine = rsvpOf(s, ctx.me);
+    return '<div class="sc-myrsvp" role="group" aria-label="Your answer"><span class="sc-ask' + (mine ? ' ' + mine : '') + '">' + (mine === 'in' ? 'You’re in' : mine === 'out' ? 'You’re out' : 'Are you in?') + '</span>' +
+      '<span class="seg"><button type="button" class="chip sc-in" data-act="sched.rsvp" data-v="in" aria-pressed="' + (mine === 'in') + '">I’m in</button>' +
+      '<button type="button" class="chip sc-out" data-act="sched.rsvp" data-v="out" aria-pressed="' + (mine === 'out') + '">Can’t make it</button></span>' +
+      (staleRsvp(s, ctx.me) ? '<span class="sc-stale">The GM moved the session since you answered. Answer again.</span>' : '') + '</div>';
   }
   function cellGlyph(v) { return v === 'yes' ? '✓' : v === 'maybe' ? '?' : v === 'no' ? '✕' : ''; }
   function grid(s, ctx, known, opts, tl) {
@@ -489,14 +498,14 @@
     }
     if (ctx.isGM) h += gmTools(s, ctx, now, opts);
     var right = (s.next && upcoming(s, now) ? 'next ' + fmtDay(s.next.at) + ' · ' : '') + opts.length + ' date' + (opts.length === 1 ? '' : 's') + ' open';
-    return ctx.box('Schedule', h, '<span class="tp-dim">' + esc(right) + '</span>', 'tp-schedbox');
+    return ctx.box('Schedule', h, '<span class="tp-dim">' + esc(right) + '</span>', 'tp-schedbox', 'tp-schedule');
   };
 
   /* ---------- actions ---------- */
   function dropOptions(s, ids) { ids.forEach(function (id) { delete s.options[id]; Object.keys(s.avail).forEach(function (u) { if (s.avail[u] && own(s.avail[u], id)) delete s.avail[u][id]; }); }); }
   function clearDrafts(ctx, keys) { keys.forEach(function (k) { delete ctx.drafts[k]; }); }
   var NEXT_DRAFTS = ['sched.editing', 'sched.ndate', 'sched.ntime', 'sched.nlen', 'sched.nplace', 'sched.nnote'];
-  M.PERM = { att: 'gm', copyrem: 'gm', copypoll: 'gm', copyclose: 'gm', cycle: 'any', note: 'any', optadd: 'gm', optrm: 'gm', confirm: 'gm', cad3: 'gm', cadweeks: 'gm', cadday: 'gm', cadtime: 'gm', cadlen: 'gm', quorum: 'gm', clearpast: 'gm', nextedit: 'gm', nextcancel: 'gm', nextset: 'gm', nextclear: 'gm' };
+  M.PERM = { rsvp: 'any', att: 'gm', copyrem: 'gm', copypoll: 'gm', copyclose: 'gm', cycle: 'any', note: 'any', optadd: 'gm', optrm: 'gm', confirm: 'gm', cad3: 'gm', cadweeks: 'gm', cadday: 'gm', cadtime: 'gm', cadlen: 'gm', quorum: 'gm', clearpast: 'gm', nextedit: 'gm', nextcancel: 'gm', nextset: 'gm', nextclear: 'gm' };
   M.ENTER = { 'sched.note': 'note' };
   M.CHANGE = { 'sched.note': 'note', 'sched.cadtime': 'cadtime', 'sched.cadlen': 'cadlen' };
   /* ---------- texts for the group chat: names sorted, the copier never listed as "no answer" ---------- */
@@ -558,6 +567,11 @@
     copyrem: function (d, ctx) { copyOut(ctx, 'reminder', reminderText(ctx.sched, ctx.people, plainName(ctx), ctx.me, appLink())); },
     copypoll: function (d, ctx) { copyOut(ctx, 'poll', pollText(ctx.sched, ctx.people, plainName(ctx), ctx.me, appLink(), Date.now())); },
     copyclose: function (d, ctx) { delete ctx.drafts['sched.copied']; ctx.render(); },
+    rsvp: function (d, ctx) {
+      var s = ctx.sched, me = ctx.me, n = upcoming(s); if (!me || !n || (d.v !== 'in' && d.v !== 'out')) return;
+      if (rsvpOf(s, me) === d.v) delete s.rsvp[me]; else s.rsvp[me] = { at: n.at, v: d.v };
+      ctx.commit();
+    },
     cycle: function (d, ctx) {
       var s = ctx.sched, me = ctx.me; if (!me || !s.options[d.o]) return;
       var a = s.avail[me] = s.avail[me] || {}, v = CYCLE[a[d.o] || ''];

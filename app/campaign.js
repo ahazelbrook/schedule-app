@@ -5,9 +5,13 @@
 
    Permissions: the GM writes everything. A player may edit the whole crew panel (the crew sheet is shared), fill
    clock segments and append to the log; the session buttons, clock structure (add, remove, rename, resize, kind,
-   hidden) and removing old log lines stay with the GM. Read-only viewers see everything disabled.
+   hidden) and removing old log lines stay with the GM. A GM-only control (data-gm) is not shown to players at all
+   (a GM-only text field still shows its value, disabled); where that leaves a player nothing, a short line says who
+   does it ("The GM starts sessions."). Read-only viewers see the rest disabled.
 
-   The schedule box (schedule.js, SCHEDULE.md) sits above the clocks: data-act "sched.*" goes to B68Schedule.acts, with
+   Layout: the DOM order is the phone's reading order (session, schedule, clocks, players, crew, log); on a wide screen
+   campaign.css places the crew back in the left column. The schedule box (schedule.js, SCHEDULE.md) sits above the
+   clocks, as #tp-schedule (the #t/schedule route scrolls to it): data-act "sched.*" goes to B68Schedule.acts, with
    its own PERM. A player may change only schedule.avail.<me> and schedule.rsvp.<me>; anything else under schedule is
    stripped from a player's delta, and schedule changes go out as the changed leaves only (null deletes a key).
 
@@ -183,7 +187,7 @@
   function commit() { if (!cur) return; render(); flushSave(); }
 
   /* ---------- small renderers (shared with the crew panel through ctx) ---------- */
-  function box(title, body, right, cls) { return '<section class="tp-box' + (cls ? ' ' + cls : '') + '"><div class="tp-band"><span>' + title + '</span>' + (right ? '<span class="tp-band-r">' + right + '</span>' : '') + '</div><div class="tp-body">' + body + '</div></section>'; }
+  function box(title, body, right, cls, id) { return '<section' + (id ? ' id="' + id + '"' : '') + ' class="tp-box' + (cls ? ' ' + cls : '') + '"><div class="tp-band"><span>' + title + '</span>' + (right ? '<span class="tp-band-r">' + right + '</span>' : '') + '</div><div class="tp-body">' + body + '</div></section>'; }
   /* o: { cls, dis, gm, extra, label } */
   function pips(n, filled, act, o) {
     o = o || {}; var h = '<span class="tp-pips' + (o.wrap ? ' ' + o.wrap : '') + '">';
@@ -274,7 +278,8 @@
     return { render: render, acts: acts, enter: {} };
   })();
   var crewPanel = GenericCrew;
-  /* a later round swaps in a full crew sheet: { render(crew, ctx) -> html, acts: { name: fn(d, crew, ctx) }, enter: { ui: actName } } */
+  /* a later round swaps in a full crew sheet: { render(crew, ctx) -> html, acts: { name: fn(d, crew, ctx) }, enter: { ui: actName },
+     PERM: { name: 'all' | 'gm' } (optional; a crew act is 'any' by default) } */
   M.setCrewPanel = function (panel) { crewPanel = panel && typeof panel.render === 'function' ? panel : GenericCrew; if (cur && cur.loaded) render(); };
   M.genericCrewPanel = GenericCrew;
   function crewCtx() {
@@ -297,9 +302,9 @@
     var s = doc.session, running = s.number > 0 && !!s.startedAt && !s.endedAt;
     var info = !s.number ? 'No session has started yet.' : 'Started ' + esc(when(s.startedAt, true) || '—') + (s.endedAt ? ' · ended ' + esc(when(s.endedAt, true)) : ' · in play');
     var h = '<div class="tp-sess"><div class="tp-sessno"><span class="tp-lab">Session</span><b>' + (s.number || '—') + '</b></div>' +
-      '<div class="tp-sessinfo"><span class="tp-sessline">' + info + '</span><span class="hint">Each player ends the session on their own sheet.</span></div>' +
-      '<div class="tp-sessbtns"><button type="button" class="btn sm primary" data-act="sessstart" data-gm="1">Start session ' + (s.number + 1) + '</button>' +
-      '<button type="button" class="btn sm" data-act="sessend" data-gm="1"' + (running ? '' : ' disabled') + '>End session</button></div></div>';
+      '<div class="tp-sessinfo"><span class="tp-sessline">' + info + '</span><span class="hint">' + (gm() ? '' : 'The GM starts sessions. ') + 'Each player ends the session on their own sheet.</span></div>' +
+      (gm() ? '<div class="tp-sessbtns"><button type="button" class="btn sm primary" data-act="sessstart" data-gm="1">Start session ' + (s.number + 1) + '</button>' +
+      '<button type="button" class="btn sm" data-act="sessend" data-gm="1"' + (running ? '' : ' disabled') + '>End session</button></div>' : '') + '</div>';
     return box('Session', h, running ? '<span class="tp-live">in play</span>' : '', 'tp-sessbox');
   }
   function clocks(doc) {
@@ -352,7 +357,7 @@
       esc: esc, box: box, chip: chip
     };
   }
-  function scheduleBox(doc) { var Sm = sched(); if (!Sm || typeof Sm.box !== 'function') return ''; try { return Sm.box(doc, schedCtx()); } catch (e) { if (window.console) console.error(e); return box('Schedule', '<p class="hint bad">The schedule could not be drawn.</p>', '', 'tp-schedbox'); } }
+  function scheduleBox(doc) { var Sm = sched(); if (!Sm || typeof Sm.box !== 'function') return ''; try { return Sm.box(doc, schedCtx()); } catch (e) { if (window.console) console.error(e); return box('Schedule', '<p class="hint bad">The schedule could not be drawn.</p>', '', 'tp-schedbox', 'tp-schedule'); } }
 
   /* the status line without the stress bit already shown beside it */
   function rest(status, f) { var head = f.stressName + ' ' + f.stress + '/' + f.stressMax; status = String(status || ''); return status.indexOf(head) === 0 ? status.slice(head.length).replace(/^\s*·\s*/, '') : status; }
@@ -387,7 +392,7 @@
   function logBox(doc) {
     var h = '<div class="tp-addrow">' + draftInput('newlog', 'What happened? A line for the whole table', { cls: 'tp-grow', label: 'New log line' }) + '<button type="button" class="btn sm" data-act="logadd">Log</button></div><ol class="tp-log">';
     doc.log.forEach(function (e, i) {
-      h += '<li><span class="tp-logd mono">' + esc(when(e.at, true) || '—') + '</span><span class="tp-logt">' + esc(e.text) + '</span><span class="tp-logby">' + esc(e.by ? nameOf(e.by) : '') + '</span>' +
+      h += '<li><span class="tp-logm"><span class="tp-logd mono">' + esc(when(e.at, true) || '—') + '</span>' + (e.by ? '<span class="tp-logby">' + esc(nameOf(e.by)) + '</span>' : '') + '</span><span class="tp-logt">' + esc(e.text) + '</span>' +
         (gm() ? '<button type="button" class="tp-x" data-act="logrm" data-i="' + i + '" data-gm="1" title="Remove this line" aria-label="Remove this line">×</button>' : '') + '</li>';
     });
     h += '</ol>' + (!doc.log.length ? '<p class="hint">Nothing logged yet. Session starts and ends are logged here too.</p>' : '');
@@ -418,14 +423,17 @@
     if (!cur.loaded) { cur.root.className = 'tp'; cur.root.innerHTML = '<div class="tp-note">Reading the table…</div>'; return; }
     var focus = captureFocus(), doc = cur.doc, scroll = window.scrollY;
     var gridEl = cur.root.querySelector('.sc-scroll'), gridX = gridEl ? gridEl.scrollLeft : 0;   /* the availability grid keeps its sideways scroll */
+    /* column B first: on a phone the page reads session, schedule, clocks, players, crew, log (campaign.css puts the
+       crew back on the left of a wide screen) */
     var html = head(doc) + sessionBar(doc) +
-      '<div class="tp-grid"><div class="tp-col tp-colA">' + crewPanel.render(doc.crew, crewCtx()) + '</div>' +
-      '<div class="tp-col tp-colB">' + scheduleBox(doc) + clocks(doc) + players() + '</div></div>' + logBox(doc);
+      '<div class="tp-grid"><div class="tp-col tp-colB">' + scheduleBox(doc) + clocks(doc) + players() + '</div>' +
+      '<div class="tp-col tp-colA">' + crewPanel.render(doc.crew, crewCtx()) + '</div></div>' + logBox(doc);
     cur.root.innerHTML = html;
     var Sm = sched(); if (Sm && Sm.mountBoard) { try { Sm.mountBoard(cur.root); } catch (e) { if (window.console) console.error(e); } }   /* the kept line-up SVG goes back in */
     cur.root.className = 'tp' + (ro() ? ' tp-ro' : '') + (gm() ? ' tp-gm' : ' tp-player');
+    /* GM-only controls are not shown to players or read-only viewers; a GM-only text field stays as its value */
+    if (!gm()) cur.root.querySelectorAll('[data-gm]').forEach(function (n) { if (n.tagName === 'INPUT' || n.tagName === 'TEXTAREA') { n.disabled = true; n.title = n.title || 'Only the GM can change that'; } else n.parentNode.removeChild(n); });
     if (ro()) cur.root.querySelectorAll('button, input, textarea, select').forEach(function (n) { if (!n.dataset.always) n.disabled = true; });
-    else if (!gm()) cur.root.querySelectorAll('[data-gm]').forEach(function (n) { n.disabled = true; n.title = n.title || 'Only the GM can change that'; });
     setStatus(idleStatus());
     if (gridX) { var g2 = cur.root.querySelector('.sc-scroll'); if (g2) g2.scrollLeft = gridX; }
     restoreFocus(focus);
@@ -434,7 +442,7 @@
   }
   function captureFocus() {
     if (!cur) return null; var a = document.activeElement; if (!a || !cur.root.contains(a)) return null;
-    if (a.tagName === 'BUTTON' && /^sched\./.test(a.dataset.act || '')) return { btn: '[data-act="' + a.dataset.act + '"]' + (a.dataset.o ? '[data-o="' + a.dataset.o + '"]' : '') + (a.dataset.n ? '[data-n="' + a.dataset.n + '"]' : '') + (a.dataset.u ? '[data-u="' + a.dataset.u.replace(/["\\]/g, '\\$&') + '"]' : '') };   /* a schedule cell or chip keeps the keyboard focus */
+    if (a.tagName === 'BUTTON' && /^sched\.|^crew\.cspick$/.test(a.dataset.act || '')) return { btn: '[data-act="' + a.dataset.act + '"]' + (a.dataset.o ? '[data-o="' + a.dataset.o + '"]' : '') + (a.dataset.n ? '[data-n="' + a.dataset.n + '"]' : '') + (a.dataset.v ? '[data-v="' + a.dataset.v + '"]' : '') + (a.dataset.u ? '[data-u="' + a.dataset.u.replace(/["\\]/g, '\\$&') + '"]' : '') };   /* a schedule cell or chip, or the covers' toggle, keeps the keyboard focus */
     if (a.tagName !== 'INPUT' && a.tagName !== 'TEXTAREA' && a.tagName !== 'SELECT') return null;
     return { path: a.dataset.path || null, ui: a.dataset.ui || null, value: a.value, s: a.selectionStart, e: a.selectionEnd };
   }
@@ -491,7 +499,7 @@
   function run(act, d, t) {
     try {
       if (act.indexOf('sched.') === 0) { var Sm = sched(), nm = act.slice(6), sf = Sm && Sm.acts && Sm.acts[nm]; if (!sf || !allowed((Sm.PERM && Sm.PERM[nm]) || 'gm')) return; sf(d, schedCtx(), t); return; }
-      if (act.indexOf('crew.') === 0) { var fn = crewPanel.acts && crewPanel.acts[act.slice(5)]; if (!fn || !allowed('any')) return; fn(d, cur.doc.crew, crewCtx(), t); return; }
+      if (act.indexOf('crew.') === 0) { var cn = act.slice(5), fn = crewPanel.acts && crewPanel.acts[cn]; if (!fn || !allowed((crewPanel.PERM && crewPanel.PERM[cn]) || 'any')) return; fn(d, cur.doc.crew, crewCtx(), t); return; }
       if (!ACTS[act] || !allowed(PERM[act] || 'gm')) return;
       ACTS[act](d, t);
     } catch (err) { setStatus('Something went wrong: ' + (err && err.message || err), true); if (window.console) console.error(err); }

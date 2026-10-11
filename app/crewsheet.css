@@ -12,6 +12,7 @@
 /* the full sheet takes the whole width; clocks and players sit side by side below it */
 #table-page .tp-grid:has(.cs-sheet) { grid-template-columns: minmax(0, 1fr); }
 #table-page .tp-grid:has(.cs-sheet) .tp-colB { grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); align-items: start; }
+@media print, (min-width: 901px) { #table-page .tp-grid:has(.cs-sheet) .tp-colB { grid-column: 1; grid-row: 2; } }   /* the crew sheet above (column B comes first in the page, for phones) */
 #table-page .cs-body { gap: 14px; }
 #table-page .cs-row { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
 #table-page .cs-gap { flex: 1; }
@@ -29,6 +30,12 @@
 #table-page .cs-cfoot .lt { font-weight: 300; }
 #table-page .cs-cfoot .btn { flex: 0 0 auto; }
 #table-page .cs-pickbox .hint b.bad { color: var(--alarm); }
+/* on a phone the six covers fold behind one button until asked for (only on the live table page, not in a print copy) */
+#table-page .cs-pickt { display: none; justify-self: start; }
+@media (max-width: 760px) {
+  body[data-mode="table"] #table-page .cs-pickt { display: inline-block; }
+  body[data-mode="table"] #table-page .cs-pickbox.cs-fold .cs-covers { display: none; }
+}
 
 /* ---- masthead ---- */
 #table-page .cs-mast { display: flex; align-items: flex-end; gap: 6px 18px; flex-wrap: wrap; border-bottom: 2px solid var(--rule); padding-bottom: 8px; }

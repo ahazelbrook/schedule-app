@@ -254,6 +254,23 @@ const SHEET = `(() => {
   const gwho = await g.$eval('.tp-schedbox .sc-rsvp', n => n.textContent);
   assert(/1 inAlex/.test(gwho) && /1 outPat/.test(gwho) && /1 no answerGail/.test(gwho), 'GM box tally: ' + gwho);
   assert(/1 in · 1 out/.test(await a.$eval('#nextSession .nx-tally', n => n.textContent)), 'tally on the line');
+  /* I'm in / Can't make it inline in the schedule box: the same answer as the card's, the same one-leaf patch */
+  const box = (p) => p.evaluate(() => { const r = document.querySelector('#tp-schedule .sc-myrsvp'); return r ? { ask: r.querySelector('.sc-ask').textContent, in: r.querySelector('[data-act="sched.rsvp"][data-v="in"]').getAttribute('aria-pressed'), out: r.querySelector('[data-act="sched.rsvp"][data-v="out"]').getAttribute('aria-pressed'), inBox: !!r.closest('.sc-nextinfo'), bar: /bar at the top/.test(document.querySelector('#tp-schedule').textContent) } : null; });
+  let bx = await box(a);
+  assert(bx && bx.ask === 'You’re in' && bx.in === 'true' && bx.out === 'false' && bx.inBox && !bx.bar, 'alex: his answer inline in the schedule box, no "bar at the top" copy: ' + JSON.stringify(bx));
+  wp = await one(a, ALEX, 'alex: can’t make it (schedule box)', () => a.click('#tp-schedule [data-act="sched.rsvp"][data-v="out"]'));
+  assert(wp && JSON.stringify(wp.body.schedule) === JSON.stringify({ rsvp: { [ALEX]: { v: 'out' } } }) && JSON.stringify(sched().rsvp[ALEX]) === JSON.stringify({ at: '2026-10-31T19:00:00.000Z', v: 'out' }), 'box rsvp patch: only the changed leaf of rsvp.<me>: ' + JSON.stringify(wp && wp.body));
+  await settle(a, 250); bx = await box(a);
+  assert(bx.ask === 'You’re out' && bx.out === 'true' && bx.in === 'false' && await a.$eval('#nextSession [data-nx="out"]', n => n.getAttribute('aria-pressed')) === 'true', 'the box and the card agree: ' + JSON.stringify(bx));
+  assert(await a.evaluate(() => document.activeElement && document.activeElement.dataset.act === 'sched.rsvp' && document.activeElement.dataset.v === 'out'), 'the tapped answer keeps the focus');
+  await one(a, ALEX, 'alex: I’m in again (schedule box)', () => a.click('#tp-schedule [data-act="sched.rsvp"][data-v="in"]'));
+  assert(sched().rsvp[ALEX].v === 'in', 'alex is in again');
+  bx = await box(g);
+  assert(bx && bx.ask === 'Are you in?' && bx.in === 'false' && bx.out === 'false', 'GM: her own answer in the box too: ' + JSON.stringify(bx));
+  await one(g, GM, 'GM: I’m in (schedule box)', () => g.click('#tp-schedule [data-act="sched.rsvp"][data-v="in"]'));
+  wp = await one(g, GM, 'GM: tap again takes it back', () => g.click('#tp-schedule [data-act="sched.rsvp"][data-v="in"]'));
+  assert(wp && JSON.stringify(wp.body.schedule) === JSON.stringify({ rsvp: { [GM]: null } }) && !sched().rsvp[GM], 'taking the answer back deletes rsvp.<me>: ' + JSON.stringify(wp && wp.body));
+  await settle(g, 200); await settle(a, 200);
   /* sheet mode */
   await a.evaluate((id) => B68.openCharacter(id), charId); await settle(a, 900);
   assert(await a.evaluate(() => document.body.dataset.mode) === 'sheet' && !(await a.$eval('#nextSession', n => n.hidden)), 'alex: card shown in sheet mode');

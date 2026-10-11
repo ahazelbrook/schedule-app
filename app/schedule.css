@@ -98,6 +98,15 @@
 #table-page .sc-tag.none { border-style: dashed; border-color: var(--ink-faint); color: var(--ink-soft); }
 #table-page .sc-nm.me { font-weight: 700; }
 #table-page .sc-nextbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+/* the viewer's own answer, as on the card */
+#table-page .sc-myrsvp { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 4px; }
+#table-page .sc-ask { font: 900 12.5px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; color: var(--accent); }
+#table-page .sc-ask.in { color: var(--ok); }
+#table-page .sc-ask.out { color: var(--alarm); }
+#table-page .sc-myrsvp .chip { padding: 7px 10px; }
+#table-page .sc-myrsvp .chip.sc-in[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: var(--card); }
+#table-page .sc-myrsvp .chip.sc-out[aria-pressed="true"] { background: var(--alarm); border-color: var(--alarm); color: var(--card); }
+#table-page .sc-stale { flex-basis: 100%; font-size: 12px; color: var(--alarm); }
 /* the RSVP board: the crew line-up on its height chart, names under the figures, answerers without a character as chips */
 #table-page .sc-board { display: grid; gap: 8px; min-width: 0; }
 #table-page .sc-luslot { min-width: 0; }
@@ -215,7 +224,7 @@
 @media print {
   .nx { display: none !important; }
   #table-page .sc-lufoot { fill: #14110e; }
-  #table-page .sc-tools, #table-page .sc-confirm, #table-page .sc-rm, #table-page .sc-form, #table-page .sc-nextbtns, #table-page .sc-mynote { display: none !important; }
+  #table-page .sc-tools, #table-page .sc-confirm, #table-page .sc-rm, #table-page .sc-form, #table-page .sc-nextbtns, #table-page .sc-mynote, #table-page .sc-myrsvp { display: none !important; }
   #table-page .sc-scroll { overflow: visible; }
   #table-page .sc-who { position: static; }
   #table-page .sc-cell { width: 22px; height: 22px; font-size: 11px; }
