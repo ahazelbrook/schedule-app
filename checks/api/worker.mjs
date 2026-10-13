@@ -16,6 +16,8 @@ import { onRequest as exportAll } from '../../functions/api/export.js';
 import { onRequest as campaign } from '../../functions/api/campaign.js';
 import { onRequest as characters } from '../../functions/api/characters/index.js';
 import { onRequest as character } from '../../functions/api/characters/[id].js';
+import { onRequest as npcs } from '../../functions/api/npcs/index.js';
+import { onRequest as npc } from '../../functions/api/npcs/[id].js';
 import { onRequest as notFound } from '../../functions/api/[[path]].js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -50,6 +52,7 @@ await step('router: every Pages Functions route maps to its handler, with params
     ['/api/me', me], ['/api/me/', me], ['/api/members', members], ['/api/export', exportAll],
     ['/api/campaign', campaign], ['/api/characters', characters], ['/api/characters/', characters],
     ['/api/characters/abc_1-2', character], ['/api/characters/x/', character],
+    ['/api/npcs', npcs], ['/api/npcs/', npcs], ['/api/npcs/npc_grunt', npc], ['/api/npcs/x/', npc], ['/api/npcs/a/b', notFound],
     ['/api', notFound], ['/api/', notFound], ['/api/nope', notFound], ['/api/characters/a/b', notFound], ['/api/me/x', notFound],
   ];
   for (const [p, h] of cases) expect(matchApi(p).handler === h, p + ' -> wrong handler');

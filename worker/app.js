@@ -20,6 +20,8 @@ import { onRequest as exportAll } from '../functions/api/export.js';
 import { onRequest as campaign } from '../functions/api/campaign.js';
 import { onRequest as characters } from '../functions/api/characters/index.js';
 import { onRequest as character } from '../functions/api/characters/[id].js';
+import { onRequest as npcs } from '../functions/api/npcs/index.js';
+import { onRequest as npc } from '../functions/api/npcs/[id].js';
 import { onRequest as notFound } from '../functions/api/[[path]].js';
 
 // The same file layout Pages Functions routed: [id] is one path segment, [[path]] the rest.
@@ -31,6 +33,8 @@ export const ROUTES = [
   { re: /^\/api\/campaign\/?$/, handler: campaign, path: '/api/campaign' },
   { re: /^\/api\/characters\/?$/, handler: characters, path: '/api/characters' },
   { re: /^\/api\/characters\/([^/]+)\/?$/, handler: character, path: '/api/characters/:id', params: ['id'] },
+  { re: /^\/api\/npcs\/?$/, handler: npcs, path: '/api/npcs' },
+  { re: /^\/api\/npcs\/([^/]+)\/?$/, handler: npc, path: '/api/npcs/:id', params: ['id'] },
 ];
 
 function decode(s) {

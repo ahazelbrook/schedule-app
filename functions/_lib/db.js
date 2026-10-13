@@ -25,6 +25,15 @@ const SCHEMA = [
     updated_at TEXT NOT NULL,
     doc TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS npcs (
+    id TEXT PRIMARY KEY,
+    campaign TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    doc TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS npcs_campaign_updated ON npcs (campaign, updated_at)`,
 ];
 
 let ready = null; // Promise, per isolate

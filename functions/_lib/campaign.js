@@ -4,7 +4,7 @@
 // Plain ES module with no Cloudflare-specific imports. The page keeps its own copy of the
 // default document (app/campaign.js); keep the two in step.
 
-import { HttpError, MAX_BODY_BYTES, isPlainObject, nowIso } from './http.js';
+import { HttpError, ID_RE, MAX_BODY_BYTES, isPlainObject, nowIso } from './http.js';
 
 export const CAMPAIGN_DOC_ID = 'main';
 export const LOG_MAX = 200;
@@ -135,11 +135,24 @@ export function mergeLog(stored, incoming, gm) {
     .slice(0, LOG_MAX);
 }
 
-/** `crew`, `session` and `schedule`, when a body names them, must be plain objects (400 otherwise). */
+/**
+ * `crew`, `session`, `schedule` and `scene`, when a body names them, must be plain objects (400
+ * otherwise). `scene` (who is on stage, see CAST.md) is { npcs: { <id>: true | false | null }, at }.
+ */
 export function checkShape(body) {
-  for (const k of ['crew', 'session', 'schedule']) {
+  for (const k of ['crew', 'session', 'schedule', 'scene']) {
     if (k in body && !isPlainObject(body[k])) throw new HttpError(400, k + ' must be an object');
   }
+  const sc = body.scene;
+  if (sc === undefined) return;
+  if ('npcs' in sc) {
+    const n = sc.npcs;
+    if (!isPlainObject(n) || Object.keys(n).length > 100 ||
+      Object.entries(n).some(([id, v]) => !ID_RE.test(id) || (v !== true && v !== false && v !== null))) {
+      throw new HttpError(400, 'scene.npcs must map NPC ids to true or false');
+    }
+  }
+  if ('at' in sc && sc.at !== null && (typeof sc.at !== 'string' || sc.at.length > 40)) throw new HttpError(400, 'scene.at must be a time or null');
 }
 
 /** Server-side finishing touches: newest LOG_MAX log entries, updatedAt stamped. */
