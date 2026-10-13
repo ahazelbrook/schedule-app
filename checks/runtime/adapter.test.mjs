@@ -26,6 +26,7 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
     // direct edits, as another client would make them
     put(id, doc) { const t = now(); rows[id] = { owner: doc.owner || null, updatedAt: t, deleted: false, doc: { ...clone(doc), updatedAt: t } }; },
     tombstone(id) { rows[id] = { owner: null, updatedAt: now(), deleted: true, doc: {} }; },
+    rulesRows: [], rulesVersion: '0',                   // the rules wiki's corpus (RULES.md)
     campaign: null,                                     // the stored campaign doc (null = none yet)
     setCampaign(doc) { s.campaign = { ...clone(doc), updatedAt: now() }; },
   };
@@ -56,6 +57,22 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
       if (me.role !== 'gm') return [403, { error: 'only the GM can export' }];
       const live = Object.entries(rows).filter(([, r]) => !r.deleted).map(([id, r]) => ({ id, doc: clone(r.doc), updatedAt: r.updatedAt }));
       return [200, { exportedAt: now(), campaign: { id: 'default', doc: clone(s.campaign || defaultCampaign()), updatedAt: s.campaign ? s.campaign.updatedAt : null }, characters: live, members: Object.values(members) }];
+    }
+    if (p === '/api/rules' && method === 'GET') {
+      const v = u.searchParams.get('v');
+      return v && v === s.rulesVersion ? [200, { version: s.rulesVersion, unchanged: true }] : [200, { version: s.rulesVersion, entries: clone(s.rulesRows) }];
+    }
+    if (p === '/api/rules/import' && method === 'POST') {
+      if (me.role !== 'gm') return [403, { error: 'only the GM can change the rules' }];
+      s.rulesRows = (body.replace ? [] : s.rulesRows).concat(body.entries.map((e) => ({ book: body.book, ...e }))); s.rulesVersion = 'v' + (++tick);
+      return [200, { ok: true, count: s.rulesRows.length, version: s.rulesVersion }];
+    }
+    const hm = p.match(/^\/api\/rules\/house\/([a-z0-9_-]+)$/);
+    if (hm) {
+      if (me.role !== 'gm') return [403, { error: 'only the GM can change the rules' }];
+      s.rulesRows = s.rulesRows.filter((e) => !(e.book === 'house' && e.slug === hm[1])); s.rulesVersion = 'v' + (++tick);
+      if (method === 'PUT') s.rulesRows.push({ book: 'house', slug: hm[1], ...body });
+      return [200, method === 'PUT' ? { entry: { book: 'house', slug: hm[1], ...body }, version: s.rulesVersion } : { ok: true, version: s.rulesVersion }];
     }
     if (p === '/api/characters' && method === 'GET') {
       const since = u.searchParams.get('since');
@@ -249,6 +266,30 @@ await test('B68Runtime.exportAll: GET /api/export for the GM, refused for a play
   await pb.win.claude.use('user');
   let err = null; try { await pb.win.B68Runtime.exportAll(); } catch (e) { err = e; }
   eq([err && err.message, err && err.status], ['only the GM can export', 403], 'player refused');
+});
+
+await test('window.claude.rules: list (with the cached version), import, house rules; a player is refused the writes', async () => {
+  const api = fakeApi();
+  const b = browser(api, { email: 'gm@x.test' });
+  ok(b.win.claude.rules && ['list', 'import', 'saveHouse', 'deleteHouse'].every((k) => typeof b.win.claude.rules[k] === 'function'), 'rules API');
+  const r = await b.win.claude.rules.import({ book: 'bitd', entries: [{ slug: 'a', title: 'A', body: 'placeholder' }], replace: true, part: 1, of: 1 });
+  eq([r.ok, r.count], [true, 1]);
+  const l = await b.win.claude.rules.list();
+  eq([l.entries.length, l.entries[0].book, l.entries[0].slug], [1, 'bitd', 'a']);
+  const same = await b.win.claude.rules.list({ version: l.version });
+  eq([same.unchanged, same.entries], [true, undefined], 'unchanged while the version matches');
+  await b.win.claude.rules.saveHouse('my-rule', { title: 'Mine', body: 'x' });
+  eq((await b.win.claude.rules.list()).entries.map((e) => e.slug), ['a', 'my-rule']);
+  await b.win.claude.rules.deleteHouse('my-rule');
+  eq((await b.win.claude.rules.list()).entries.map((e) => e.slug), ['a']);
+  const f = b.fetchLog.map((x) => x.opts.method + ' ' + x.url);
+  ok(f.includes('PUT /api/rules/house/my-rule') && f.includes('DELETE /api/rules/house/my-rule') && f.some((x) => x.indexOf('GET /api/rules?v=') === 0), 'requests: ' + f.join(' | '));
+  const pb = browser(api, { email: 'pl@x.test' });
+  eq((await pb.win.claude.rules.list()).entries.length, 1, 'a player reads');
+  let err = null; try { await pb.win.claude.rules.import({ book: 'bitd', entries: [] }); } catch (e) { err = e; }
+  eq([err && err.status, err && err.message], [403, 'only the GM can change the rules']);
+  const art = browser(api, { email: 'gm@x.test' }, { preset: { use: () => 1 } });
+  eq(art.win.claude.rules, undefined, 'the artifact build has no rules API');
 });
 
 await test('user: a player is not owner/editor', async () => {

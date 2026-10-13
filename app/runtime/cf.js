@@ -1,7 +1,8 @@
 /* Hosted runtime adapter (Cloudflare Worker + Access + D1).
    Defines window.claude.use('user' | 'db' | 'downloads') on top of the JSON API in functions/
    (see HOSTING.md) so the page runs unchanged outside the claude.ai artifact. The db serves the
-   `characters` collection and the shared `campaign/main` document (CAMPAIGN.md).
+   `characters` collection and the shared `campaign/main` document (CAMPAIGN.md). window.claude.rules (list, import,
+   saveHouse, deleteHouse) is the rules wiki's corpus (RULES.md).
    Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network
    is unreachable, and writes queue (in order, in localStorage) until it is back. It also makes the hosted page
    installable (manifest, icons, service worker sw.js).
@@ -852,6 +853,19 @@
     }
   };
 
+  /* ---------- rules: the rules wiki's corpus (RULES.md). Only the hosted build has it; the page caches the corpus itself
+     (app/rules.js, IndexedDB), so these are plain calls on the API. A network failure rejects with `network: true`. ---------- */
+  var rules = {
+    /* GET /api/rules -> { version, updatedAt, count, books, entries }; opts.version: the cached version, answered
+       { version, unchanged: true } (no entries) while it is still current */
+    list: function (opts) { return api('GET', '/rules' + (opts && opts.version ? '?v=' + encodeURIComponent(opts.version) : '')); },
+    /* POST /api/rules/import (GM): { book: 'b68' | 'bitd', entries: [{ slug, title, trail, keys, body, ord, src }], replace, part, of } */
+    import: function (req) { return api('POST', '/rules/import', req || {}); },
+    /* PUT / DELETE /api/rules/house/:slug (GM): a house rule written in the app */
+    saveHouse: function (slug, entry) { return api('PUT', '/rules/house/' + encodeURIComponent(slug), entry || {}); },
+    deleteHouse: function (slug) { return api('DELETE', '/rules/house/' + encodeURIComponent(slug)); }
+  };
+
   /* ---------- window.claude ---------- */
   var uses = {};
   var makers = {
@@ -863,7 +877,8 @@
     use: function (name) {
       if (!makers[name]) return Promise.resolve(null);
       return uses[name] || (uses[name] = makers[name]());
-    }
+    },
+    rules: rules
   };
 
   /* ---------- installable: manifest, icons, home-screen metas, service worker (hosted build only) ----------

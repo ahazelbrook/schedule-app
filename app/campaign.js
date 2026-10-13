@@ -22,6 +22,9 @@
   var M = window.B68Campaign = window.B68Campaign || {};
 
   /* ---------- small helpers ---------- */
+  /* a small "?" link to the rules wiki (rules.js), drawn only on the hosted build, which has the rules */
+  function rl(term) { var R = window.B68Rules; return R && R.help ? R.help(term) : ''; }
+  function rulesLink() { var R = window.B68Rules; return R && R.available && R.available() ? '<a class="btn sm" href="#rules" title="The rulebooks, searchable">Rules</a>' : ''; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function clone(o) { return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
   function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
@@ -296,7 +299,7 @@
     var c = doc.crew;
     return '<header class="tp-head"><div class="tp-title"><span class="tp-kick">The table</span><h2 class="tp-crewname" id="tp-crewname">' + esc(c.name || 'An unnamed crew') + '</h2>' +
       '<span class="tp-subtitle">' + esc([c.type, 'Tier ' + c.tier + ' · ' + c.hold + ' hold', doc.session.number ? 'session ' + doc.session.number : ''].filter(Boolean).join(' · ')) + '</span></div>' +
-      '<div class="tp-meta"><button type="button" class="btn sm" data-act="print" data-always="1" title="Every character and the crew, one document">Print the season</button><span class="tp-role' + (gm() ? ' gm' : '') + '">' + esc(role()) + '</span><span class="tp-status mono" id="tp-status" aria-live="polite"></span></div></header>';
+      '<div class="tp-meta">' + rulesLink() + '<button type="button" class="btn sm" data-act="print" data-always="1" title="Every character and the crew, one document">Print the season</button><span class="tp-role' + (gm() ? ' gm' : '') + '">' + esc(role()) + '</span><span class="tp-status mono" id="tp-status" aria-live="polite"></span></div></header>';
   }
   function sessionBar(doc) {
     var s = doc.session, running = s.number > 0 && !!s.startedAt && !s.endedAt;
@@ -330,7 +333,7 @@
         '<button type="button" class="btn sm" data-act="clockadd" data-gm="1">Add clock</button></div>';
     }
     var hiddenN = doc.clocks.filter(function (c) { return c.hidden; }).length;
-    return box('Shared clocks', h, '<span class="tp-dim">' + list.length + ' clock' + (list.length === 1 ? '' : 's') + (gm() && hiddenN ? ' · ' + hiddenN + ' hidden' : '') + '</span>', 'tp-clockbox');
+    return box('Shared clocks' + rl('clocks'), h, '<span class="tp-dim">' + list.length + ' clock' + (list.length === 1 ? '' : 's') + (gm() && hiddenN ? ' · ' + hiddenN + ' hidden' : '') + '</span>', 'tp-clockbox');
   }
   function nameOf(id) {
     if (!id) return 'Unowned';
