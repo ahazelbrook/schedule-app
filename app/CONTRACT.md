@@ -206,3 +206,31 @@ The panel lists the same end-of-session triggers as the XP box: `pb.xpTriggers` 
 - Recover (Hull: "Repair", treated by "a mechanic"): yourself with a chosen action's rating, or a healer with 0–4 dice. Ticks: 1–3 one, 4–5 two, 6 three, critical five. When the 4-segment clock fills, every harm steps down (level 3 → 2, 2 → 1, 1 cleared; level 4 is not healed by the clock) and the overflow stays on the clock (it can fill more than once). Vampire has no Recover: feeding is its only healing. Log `Recover (a healer) 2d · 5,3 → partial, +2 healing, clock filled: harm steps down (0 / 4)`.
 - Long-term project: one of `play.clocks` (complete ones are shown but cannot be chosen) or a new clock (name + 4 / 6 / 8, default 8, created on the roll), a chosen action, same tick table, capped at the clock size. Log `Long-term project “Name” (Hunt) 2d · 6,1 → success, +3 (3 / 6)` (`, complete` when full).
 - Train: +1 xp in Insight, Prowess, Resolve or playbook (a full track cannot be chosen), once per downtime (`trainedThisDowntime`). Log `Train Prowess · +1 xp (1 / 6)`.
+
+---
+
+# The rules wiki (rules.js, markdown.js; RULES.md)
+
+Optional runtime API, hosted build only (`runtime/cf.js`). Without it (the claude.ai artifact, `file://`) the Rules page says
+"Rules are available on the hosted app" and the "?" links and Rules buttons are not drawn. It sits beside `use()`:
+
+```js
+window.claude.rules = {
+  list({ version? }) -> Promise<{ version, updatedAt, count, books: { b68, bitd, house }, entries: [ { book, slug, title, trail, keys, body, ord, src, updatedAt } ] }
+                               | { version, updatedAt, count, unchanged: true }>   // GET /api/rules[?v=<version>]; any signed-in member
+  import({ book: 'b68' | 'bitd', entries: [ { slug, title, trail, keys?, body, ord, src } ], replace, part, of }) -> Promise<{ ok, book, received, part, of, replaced, count, version }>   // GM
+  saveHouse(slug, { title, body, trail?, keys?, ord? }) -> Promise<{ entry, version }>   // GM, PUT /api/rules/house/:slug
+  deleteHouse(slug) -> Promise<{ ok, version }>                                          // GM, DELETE
+}
+```
+
+Errors reject with `Error(message)` and `.status` (403 for a player's write, 413 over a size cap, 400 malformed); a network
+failure rejects with `.network = true`. The page caches the corpus itself (IndexedDB `b68-rules`, key `corpus:<user id>`),
+sends the cached `version` to get a cheap `unchanged`, and falls back to the cache when the network is down.
+
+`window.B68Rules` (rules.js): `available()`, `help(term)` (HTML for a "?" link to `#rules?q=<term>`, `''` when unavailable;
+tracker.js, crewsheet.js and campaign.js use it), `open(root, api)`, `route()`, `close()`. boot.js owns the `rules` mode
+(`body[data-mode="rules"]`, `#rules-page`), the `#rules` hash routes (`#rules`, `#rules?q=<words>`, `#rules?edit=<slug>`,
+`#rules/<book>/<slug>`), the Rules button in the header and the link on Home; `A.openRules()`. `window.B68Markdown`
+(markdown.js): `render(src, { resolve, headingOffset })`, `parseFrontmatter`, `splitFile`, `plain`, `safeUrl`, `esc`. The
+renderer escapes all raw HTML and only links http, https and relative addresses.
