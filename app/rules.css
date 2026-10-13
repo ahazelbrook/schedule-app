@@ -33,7 +33,8 @@ body[data-mode="rules"] #rules-page:not([hidden]) { display: block; }
 #rules-page .rl-hit-title { font: 900 18px/1.2 var(--font-cond); letter-spacing: .01em; text-decoration: none; overflow-wrap: anywhere; }
 #rules-page .rl-hit-title:hover { text-decoration: underline; }
 #rules-page .rl-hit-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
-#rules-page .rl-hit-trail { display: block; font: 700 10.5px/1.4 var(--font-mono); color: var(--ink-soft); margin-top: 2px; overflow-wrap: anywhere; }
+#rules-page .rl-hit-trail { display: block; font: 700 10.5px/1.4 var(--font-mono); color: var(--ink-soft); margin-bottom: 3px; overflow-wrap: anywhere; }
+#rules-page .rl-hit-trail b { color: var(--accent); }
 #rules-page .rl-snip { margin: 6px 0 0; color: var(--ink-soft); font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
 #rules-page mark { background: var(--mustard); color: var(--on-mustard); padding: 0 1px; }
 #rules-page .rl-book { display: inline-block; font: 900 9.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; border: 1.5px solid var(--rule); padding: 3px 5px; vertical-align: 2px; }
@@ -49,67 +50,171 @@ body[data-mode="rules"] #rules-page:not([hidden]) { display: block; }
 #rules-page .rl-twin-full { border: 2px solid var(--hair); background: var(--card); padding: 6px 12px 10px; margin-top: 18px; }
 #rules-page .rl-alsonote { font-size: 13px; color: var(--ink-soft); margin: 4px 0 0; }
 
-/* ---- the index ---- */
-#rules-page .rl-indexbox { display: grid; gap: 12px; max-width: 760px; }
+/* ---- the index: the book's contents, a card per chapter ---- */
+#rules-page .rl-indexbox { display: grid; gap: 14px; max-width: 1080px; }
 #rules-page .rl-sec { border: 2px solid var(--rule); background: var(--card); }
-#rules-page .rl-sec > summary { background: var(--rule); color: var(--on-ink); font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 9px 12px; cursor: pointer; }
+#rules-page .rl-sec > summary { background: var(--rule); color: var(--on-ink); font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 10px 14px; cursor: pointer; }
 #rules-page .rl-sec > summary .rl-dim { color: var(--on-ink); opacity: .7; text-transform: none; letter-spacing: .02em; margin-left: 6px; }
-#rules-page .rl-sec-body { padding: 6px 12px 10px; display: grid; gap: 2px; }
-#rules-page .rl-grp > summary { cursor: pointer; font: 900 14px/1.3 var(--font-cond); padding: 7px 0; letter-spacing: .02em; }
-#rules-page .rl-grp > summary:hover { color: var(--accent); }
+#rules-page .rl-sec-body { padding: 14px; }
+#rules-page .rl-chapters { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 10px; }
+#rules-page .rl-ch { display: block; }
+#rules-page .rl-ch:has(> details[open]) { grid-column: 1 / -1; }
+#rules-page .rl-grp { border: 2px solid var(--rule); background: var(--paper); height: 100%; transition: box-shadow .12s var(--ease), transform .12s var(--ease); }
+#rules-page .rl-grp:not([open]):hover { box-shadow: 4px 4px 0 var(--shadow-ink); transform: translate(-2px, -2px); }
+#rules-page .rl-grp > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; gap: 2px 12px; align-items: end; padding: 12px 14px 13px; min-height: 84px; }
+#rules-page .rl-grp > summary::-webkit-details-marker { display: none; }
+#rules-page .rl-ch-num { grid-row: 1 / span 2; font: 900 52px/.78 var(--font-poster); color: var(--ink-faint); letter-spacing: -.02em; align-self: center; transition: color .12s var(--ease); }
+#rules-page .rl-ch-name { font: 900 17px/1.05 var(--font-cond); letter-spacing: .005em; overflow-wrap: anywhere; }
+#rules-page .rl-ch-n { font: 700 10.5px/1.2 var(--font-mono); color: var(--ink-soft); }
+#rules-page .rl-grp > summary:hover .rl-ch-num, #rules-page .rl-grp[open] .rl-ch-num { color: var(--accent); }
+#rules-page .rl-grp[open] { background: var(--card); }
+#rules-page .rl-grp[open] > summary { border-bottom: 2px solid var(--rule); }
+#rules-page .rl-ch-list { columns: 2 260px; column-gap: 28px; padding: 12px 16px 14px; margin: 0; display: block; }
 #rules-page .rl-list { list-style: none; margin: 0 0 6px; padding: 0 0 0 4px; display: grid; gap: 1px; }
-#rules-page .rl-list li { padding: 3px 0; font-size: 14px; overflow-wrap: anywhere; }
+#rules-page .rl-list li { padding: 3px 0; font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; break-inside: avoid; }
+#rules-page .rl-list a { text-decoration: none; }
+#rules-page .rl-list a:hover { text-decoration: underline; text-decoration-color: var(--accent); }
+#rules-page .rl-ch-list li.d0 { font: 900 14.5px/1.25 var(--font-cond); letter-spacing: .01em; padding-top: 7px; }
+#rules-page .rl-ch-list li.d0:first-child { padding-top: 2px; }
 #rules-page .rl-list li.d1 { padding-left: 14px; }
-#rules-page .rl-list li.d2 { padding-left: 28px; }
-#rules-page .rl-list li.d3 { padding-left: 42px; }
+#rules-page .rl-list li.d2 { padding-left: 28px; color: var(--ink-soft); }
+#rules-page .rl-list li.d3 { padding-left: 42px; color: var(--ink-soft); }
 #rules-page .rl-linkbtn { margin-left: 6px; font-size: 12.5px; }
-#rules-page .rl-grp > summary .rl-dim { margin-left: 6px; }
-#rules-page .rl-also { margin-top: 18px; display: grid; gap: 4px; }
 
-/* ---- an entry ---- */
-#rules-page .rl-crumbs { font: 700 10.5px/1.5 var(--font-mono); color: var(--ink-soft); margin: 2px 0 12px; overflow-wrap: anywhere; }
-#rules-page .rl-entry { max-width: 72ch; }
-#rules-page .rl-entry .rl-title { font-size: clamp(30px, 5vw, 48px); margin: 4px 0 12px; }
-#rules-page .rl-body { font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
-#rules-page .rl-body > * { margin: 0 0 .85em; }
-#rules-page .rl-body h2, #rules-page .rl-body h3, #rules-page .rl-body h4, #rules-page .rl-body h5, #rules-page .rl-body h6 { font-family: var(--font-cond); font-weight: 900; line-height: 1.2; letter-spacing: .01em; margin: 1.3em 0 .45em; text-transform: none; }
-#rules-page .rl-body h2 { font-size: 24px; border-bottom: 2px solid var(--rule); padding-bottom: 3px; }
-#rules-page .rl-body h3 { font-size: 19px; }
-#rules-page .rl-body h4, #rules-page .rl-body h5, #rules-page .rl-body h6 { font-size: 15px; text-transform: uppercase; letter-spacing: .08em; }
-#rules-page .rl-body ul, #rules-page .rl-body ol { padding-left: 1.5em; }
-#rules-page .rl-body li { margin: .2em 0; }
-#rules-page .rl-body li > ul, #rules-page .rl-body li > ol { margin: .2em 0 0; }
-#rules-page .rl-body hr { border: 0; border-top: 2px solid var(--rule); margin: 1.2em 0; }
-#rules-page .rl-body blockquote { margin-left: 0; padding: 2px 0 2px 14px; border-left: 4px solid var(--hair); color: var(--ink-soft); }
+/* ---- an entry: the article, and its chapter beside it ---- */
+#rules-page .rl-crumbs { font: 700 10.5px/1.5 var(--font-mono); color: var(--ink-soft); margin: 2px 0 14px; overflow-wrap: anywhere; }
+#rules-page .rl-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; align-items: start; }
+#rules-page .rl-entry { max-width: 70ch; min-width: 0; }
+#rules-page .rl-entryhead { border-top: 6px solid var(--rule); padding-top: 12px; margin-bottom: 18px; }
+#rules-page .rl-entryhead .rl-kick { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; color: var(--ink-soft); }
+#rules-page .rl-chap b { color: var(--accent); margin-right: 2px; }
+#rules-page .rl-entry .rl-title { font-size: clamp(38px, 6.4vw, 68px); line-height: .9; margin: 10px 0 0; text-wrap: balance; }
+#rules-page .rl-parent { font: 700 11px/1.4 var(--font-mono); color: var(--ink-soft); margin: 10px 0 0; }
+
+/* the text */
+#rules-page .rl-body { font-size: 16.5px; line-height: 1.62; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; }
+#rules-page .rl-body > * { margin: 0 0 .9em; }
+#rules-page .rl-body p { text-wrap: pretty; }
+#rules-page .rl-body > p:first-child, #rules-page .rl-body > .rl-src:first-child + p, #rules-page .rl-body > .rl-src:first-child + .rl-pbhead + p { font-size: 18.5px; line-height: 1.55; }
+#rules-page .rl-body strong { font-weight: 700; }
+#rules-page .rl-body a { text-decoration-color: var(--accent); text-decoration-thickness: 1.5px; }
+#rules-page .rl-body a:hover { color: var(--accent); }
+#rules-page .rl-body h2, #rules-page .rl-body h3, #rules-page .rl-body h4, #rules-page .rl-body h5, #rules-page .rl-body h6 { line-height: 1.1; letter-spacing: .005em; margin: 1.6em 0 .5em; text-transform: none; hyphens: manual; text-wrap: balance; }
+#rules-page .rl-body h2 { font: 900 36px/.95 var(--font-poster); border-top: 6px solid var(--rule); padding-top: 10px; }
+#rules-page .rl-body h3 { font: 900 30px/.95 var(--font-poster); border-top: 4px solid var(--rule); padding-top: 10px; margin-top: 1.9em; }
+#rules-page .rl-body h4 { font: 900 21px/1.15 var(--font-cond); display: flex; gap: 10px; align-items: baseline; }
+#rules-page .rl-body h4::before { content: ""; flex: 0 0 auto; width: 10px; height: 10px; background: var(--accent); transform: translateY(-1px); }
+#rules-page .rl-body h5 { font: 900 13px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; border-bottom: 2px solid var(--rule); padding-bottom: 4px; }
+#rules-page .rl-body h6 { font: 900 12px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
+#rules-page .rl-body h5 + *, #rules-page .rl-body h6 + * { margin-top: .4em; }
+#rules-page .rl-body ul, #rules-page .rl-body ol { padding-left: 1.4em; }
+#rules-page .rl-body ul { list-style: none; padding-left: 1.25em; }
+#rules-page .rl-body ul > li { position: relative; }
+#rules-page .rl-body ul > li::before { content: ""; position: absolute; left: -1.05em; top: .62em; width: 6px; height: 6px; background: var(--ink); }
+#rules-page .rl-body ul ul > li::before { background: none; border: 1.5px solid var(--ink); width: 4px; height: 4px; }
+#rules-page .rl-body ol > li::marker { font: 700 .82em var(--font-mono); color: var(--accent); }
+#rules-page .rl-body li { margin: .3em 0; }
+#rules-page .rl-body li > ul, #rules-page .rl-body li > ol { margin: .3em 0 0; }
+#rules-page .rl-body li > p { margin: .3em 0; }
+#rules-page .rl-body hr { border: 0; border-top: 2px solid var(--rule); margin: 1.6em 0; }
+#rules-page .rl-body blockquote { margin-left: 0; padding: 2px 0 2px 16px; border-left: 4px solid var(--accent); font-style: italic; }
 #rules-page .rl-body blockquote > * { margin: .4em 0; }
-#rules-page .rl-body code { font: 700 .88em var(--font-mono); background: var(--inset); padding: 1px 4px; }
+#rules-page .rl-body code { font: 700 .86em var(--font-mono); background: var(--inset); padding: 1px 4px; }
 #rules-page .rl-body pre { background: var(--inset); padding: 10px 12px; overflow-x: auto; max-width: 100%; }
 #rules-page .rl-body pre code { background: none; padding: 0; font-weight: 400; }
 #rules-page .rl-body a.rl-wl { text-decoration-style: dotted; text-decoration-thickness: 2px; }
 #rules-page .rl-body .rl-task { font-family: var(--font-text); }
 #rules-page .rl-body .rl-img { font-style: italic; color: var(--ink-soft); }
 #rules-page .rl-body .rl-hl { background: var(--mustard); color: var(--on-mustard); }
-/* a table scrolls inside its own box; the page never scrolls sideways */
-#rules-page .rl-tablewrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 2px solid var(--rule); background: var(--card); }
-#rules-page .rl-body table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 13.5px; line-height: 1.4; }
-#rules-page .rl-body th, #rules-page .rl-body td { border: 1px solid var(--hair); padding: 5px 9px; vertical-align: top; text-align: left; overflow-wrap: normal; }
-#rules-page .rl-body th { background: var(--rule); color: var(--on-ink); font: 900 11px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
+#rules-page .rl-anchor { display: block; height: 0; scroll-margin-top: 18px; }
+
+/* where a section comes from: a small chip under its heading (the compiled book's <!-- src=... --> notes) */
+#rules-page .rl-src { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0; width: max-content; max-width: 100%; margin: -.1em 0 1em; font: 900 9.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; }
+#rules-page .rl-src > span { border: 1.5px solid var(--rule); padding: 4px 6px 3px; }
+#rules-page .rl-src > span + span { border-left: 0; }
+#rules-page .rl-src-book { background: var(--rule); color: var(--on-ink); }
+#rules-page .rl-src-page { font: 700 10px/1 var(--font-mono); letter-spacing: .02em; text-transform: none; background: var(--card); }
+#rules-page .rl-src-bitd .rl-src-book { background: var(--card); color: var(--ink); }
+#rules-page .rl-src-editor .rl-src-book { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+#rules-page .rl-src-mode { background: var(--alarm); border-color: var(--alarm) !important; color: var(--on-ink); }
+#rules-page .rl-entryhead + .rl-body > .rl-src:first-child { margin-top: 0; }
+
+/* a playbook's opening: its tagline and its actions */
+#rules-page .rl-pbhead { border: 2px solid var(--rule); background: var(--card); padding: 14px 16px; display: grid; gap: 10px; box-shadow: 4px 4px 0 var(--accent); margin-bottom: 1.2em; }
+#rules-page .rl-pbhead > * { margin: 0; }
+#rules-page .rl-tagline { font: 900 22px/1 var(--font-poster); text-transform: uppercase; letter-spacing: .01em; text-wrap: balance; hyphens: manual; }
+#rules-page .rl-pbacts { display: flex; flex-wrap: wrap; gap: 6px; }
+#rules-page .rl-pbacts span { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; background: var(--rule); color: var(--on-ink); padding: 5px 8px 4px; }
+
+/* a figure the transcription leaves out, and the compiler's notes (the GM sees those) */
+#rules-page .rl-figure { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: baseline; border: 2px dashed var(--hair); background: var(--inset); padding: 12px 14px; font-size: 14px; line-height: 1.45; color: var(--ink-soft); }
+#rules-page .rl-figure-lab { font: 900 10px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; color: var(--accent); }
+#rules-page .rl-figure-txt { font-style: italic; }
+#rules-page .rl-todo { display: none; }
+#rules-page.rl-gm .rl-todo { display: inline; font: 400 11.5px/1.45 var(--font-mono); color: var(--ink-soft); background: color-mix(in srgb, var(--mustard) 28%, transparent); padding: 1px 4px; }
+#rules-page.rl-gm p.rl-todo { display: block; padding: 6px 9px; border-left: 4px solid var(--mustard); }
+#rules-page.rl-gm .rl-todo::before { content: "GM \00b7 to check: "; font-weight: 700; }
+
+/* tables: a black head, banded rows, the first column as the key */
+#rules-page .rl-tablewrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 2px solid var(--rule); background: var(--card); margin-bottom: 1.2em; }
+#rules-page .rl-body table { border-collapse: collapse; width: 100%; font-size: 14.5px; line-height: 1.42; hyphens: manual; }
+#rules-page .rl-body th, #rules-page .rl-body td { border-bottom: 1px solid var(--hair); padding: 7px 11px; vertical-align: top; text-align: left; min-width: 8ch; }
+#rules-page .rl-body td + td, #rules-page .rl-body th + th { border-left: 1px solid var(--hair); }
+#rules-page .rl-body th { background: var(--rule); color: var(--on-ink); font: 900 11px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; border-color: var(--rule); }
+#rules-page .rl-body tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--inset) 55%, transparent); }
+#rules-page .rl-body tbody tr:last-child td { border-bottom: 0; }
+#rules-page .rl-body td:first-child { font-weight: 600; }
+#rules-page .rl-body td strong { font-family: var(--font-cond); font-weight: 900; font-size: 1.04em; letter-spacing: .01em; }
 #rules-page .rl-body .al-r { text-align: right; }
 #rules-page .rl-body .al-c { text-align: center; }
-/* Obsidian callouts */
-#rules-page .rl-callout { border: 2px solid var(--rule); border-left-width: 6px; background: var(--card); padding: 0; }
-#rules-page .rl-callout-title { font: 900 12px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; padding: 6px 12px; background: var(--inset); cursor: default; }
+
+/* callouts. "'68 changes this" (important) is the loud one: a black band and the accent's shadow */
+#rules-page .rl-callout { border: 2px solid var(--rule); border-left-width: 6px; background: var(--card); padding: 0; margin: 1.2em 0; }
+#rules-page .rl-callout-title { font: 900 12px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; padding: 7px 12px; background: var(--inset); cursor: default; }
 #rules-page summary.rl-callout-title { cursor: pointer; }
-#rules-page .rl-callout-body { padding: 8px 12px 2px; }
+#rules-page .rl-callout-body { padding: 10px 14px 4px; font-size: 15.5px; line-height: 1.55; }
 #rules-page .rl-callout-body > * { margin: 0 0 .7em; }
+#rules-page .rl-callout[data-callout="important"] { border-left-width: 2px; box-shadow: 5px 5px 0 var(--accent); }
+#rules-page .rl-callout[data-callout="important"] > .rl-callout-title { background: var(--rule); color: var(--on-ink); display: flex; gap: 8px; align-items: center; }
+#rules-page .rl-callout[data-callout="important"] > .rl-callout-title::before { content: "\2019 68"; font: 900 15px/1 var(--font-poster); letter-spacing: -.02em; background: var(--accent); color: var(--on-accent); padding: 2px 5px 1px; }
 #rules-page .rl-callout[data-callout="warning"], #rules-page .rl-callout[data-callout="danger"], #rules-page .rl-callout[data-callout="caution"], #rules-page .rl-callout[data-callout="failure"], #rules-page .rl-callout[data-callout="bug"] { border-color: var(--alarm); }
 #rules-page .rl-callout[data-callout="tip"], #rules-page .rl-callout[data-callout="success"], #rules-page .rl-callout[data-callout="check"], #rules-page .rl-callout[data-callout="done"] { border-color: var(--ok); }
 #rules-page .rl-callout[data-callout="note"], #rules-page .rl-callout[data-callout="info"], #rules-page .rl-callout[data-callout="example"], #rules-page .rl-callout[data-callout="quote"] { border-color: var(--accent); }
+#rules-page .rl-callout[data-callout="note"] > .rl-callout-title { color: var(--accent); background: transparent; padding-bottom: 0; }
 #rules-page .rl-gmtools { margin-top: 18px; display: flex; gap: 8px; flex-wrap: wrap; }
-#rules-page .rl-pager { display: flex; justify-content: space-between; gap: 12px; margin: 22px 0 0; max-width: 72ch; font: 900 13px/1.3 var(--font-cond); letter-spacing: .02em; }
-#rules-page .rl-pager a { text-decoration: none; border: 2px solid var(--rule); background: var(--card); padding: 8px 12px; overflow-wrap: anywhere; max-width: 48%; }
+
+/* next and previous: two cards */
+#rules-page .rl-pager { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 34px 0 0; }
+#rules-page .rl-pager a { display: grid; gap: 6px; align-content: start; text-decoration: none; border: 2px solid var(--rule); background: var(--card); padding: 11px 14px 13px; box-shadow: 3px 3px 0 var(--shadow-ink); transition: background-color .16s var(--ease), color .16s var(--ease), transform .09s var(--ease), box-shadow .09s var(--ease); overflow-wrap: anywhere; }
 #rules-page .rl-pager a:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-#rules-page .rl-next { margin-left: auto; text-align: right; }
+#rules-page .rl-pager a:hover .rl-lab { color: inherit; }
+#rules-page .rl-pager a:active { transform: translate(2px, 2px); box-shadow: none; }
+#rules-page .rl-pg-t { font: 900 19px/1.1 var(--font-cond); letter-spacing: .005em; }
+#rules-page .rl-next { text-align: right; }
+
+/* the chapter beside the text */
+#rules-page .rl-tocbox { border: 2px solid var(--rule); background: var(--card); }
+#rules-page .rl-tocbox > summary { list-style: none; cursor: pointer; display: grid; gap: 4px; padding: 10px 12px 11px; border-bottom: 2px solid transparent; }
+#rules-page .rl-tocbox > summary::-webkit-details-marker { display: none; }
+#rules-page .rl-tocbox[open] > summary { border-bottom-color: var(--rule); }
+#rules-page .rl-tocbox > summary .rl-lab::after { content: " \25be"; }
+#rules-page .rl-tocbox[open] > summary .rl-lab::after { content: " \25b4"; }
+#rules-page .rl-toc-ch { font: 900 16px/1.1 var(--font-cond); }
+#rules-page .rl-toc-ch b { color: var(--accent); margin-right: 3px; }
+#rules-page .rl-toc-list { list-style: none; margin: 0; padding: 8px 0; max-height: min(70vh, 640px); overflow-y: auto; overscroll-behavior: contain; position: relative; }
+#rules-page .rl-toc-list li { font-size: 13.5px; line-height: 1.3; border-left: 4px solid transparent; }
+#rules-page .rl-toc-list a { display: block; padding: 4px 12px 4px 10px; text-decoration: none; color: var(--ink-soft); }
+#rules-page .rl-toc-list a:hover { color: var(--ink); background: var(--inset); }
+#rules-page .rl-toc-list li.d0 a { font: 900 13.5px/1.25 var(--font-cond); color: var(--ink); padding-top: 7px; }
+#rules-page .rl-toc-list li.d1 a { padding-left: 22px; }
+#rules-page .rl-toc-list li.d2 a, #rules-page .rl-toc-list li.d3 a { padding-left: 34px; font-size: 12.5px; }
+#rules-page .rl-toc-list li.on { border-left-color: var(--accent); background: var(--inset); }
+#rules-page .rl-toc-list li.on a { color: var(--ink); font-weight: 700; }
+@media (min-width: 1080px) {
+  #rules-page .rl-layout { grid-template-columns: minmax(0, 70ch) minmax(240px, 300px); gap: 56px; }
+  #rules-page .rl-toc { position: sticky; top: 16px; }
+  #rules-page .rl-toc-list { max-height: calc(100vh - 120px); }
+}
 
 /* ---- the GM's boxes: import and house rules ---- */
 #rules-page .rl-box { border: 2px solid var(--rule); background: var(--card); margin-top: 22px; max-width: 760px; }
@@ -147,10 +252,11 @@ body[data-mode="rules"] #rules-page:not([hidden]) { display: block; }
   #rules-page { padding-top: 12px; }
   #rules-page .rl-search { flex-wrap: wrap; }
   #rules-page .rl-search input[type="search"] { flex-basis: 100%; }
-  #rules-page .rl-body { font-size: 15.5px; }
-  #rules-page .rl-pager { flex-direction: column; }
-  #rules-page .rl-pager a { max-width: none; }
-  #rules-page .rl-next { margin-left: 0; text-align: left; }
+  #rules-page .rl-pager { grid-template-columns: 1fr; }
+  #rules-page .rl-next { text-align: left; }
+  #rules-page .rl-body { font-size: 16px; }
+  #rules-page .rl-chapters { grid-template-columns: 1fr 1fr; }
+  #rules-page .rl-ch-num { font-size: 40px; }
 }
 
 /* links drawn as buttons (the table page's "Rules", the not-found page's choices) */

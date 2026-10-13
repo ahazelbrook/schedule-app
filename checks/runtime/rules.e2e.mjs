@@ -132,7 +132,7 @@ try {
   const c = (await api(GM, 'GET', '/rules')).json;
   check(c.books.bitd === 3 && c.books.b68 === 8, 'Blades in the Dark replaced by the 3 fixture entries: ' + JSON.stringify(c.books));
   const sections = await G.page.$$eval('#rl-index .rl-sec > summary', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
-  check(sections.length === 2 && /Blades \u201968 8 entries/.test(sections[0]) && /Blades in the Dark 3 entries/.test(sections[1]), 'the index lists Blades \u201968 first, then the other book: ' + sections.join(' | '));
+  check(sections.length === 2 && /^Blades \u201968 \d+ chapters? \u00b7 8 entries$/.test(sections[0]) && /^Blades in the Dark 1 chapter \u00b7 3 entries$/.test(sections[1]), 'the index lists Blades \u201968 first, then the other book: ' + sections.join(' | '));
   const gmExport = await api(GM, 'GET', '/export');
   check(!JSON.stringify(gmExport.json).includes('wobbling lantern'), 'the backup export carries none of it');
 

@@ -98,6 +98,10 @@
     var t = String(src == null ? '' : src).replace(/[\u0000\u0001]/g, '');
     /* code spans first: nothing inside them is markup */
     t = t.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, function (m, q, code) { return hold('<code>' + esc(code.replace(/^ ([\s\S]*) $/, '$1')) + '</code>'); });
+    /* [TODO: ...]: the compiler's notes to the GM (rules.css shows them only to the GM) */
+    t = t.replace(/\[TODO:[ \t]*([^\[\]\n]*(?:\[[^\[\]\n]*\][^\[\]\n]*)*)\]/g, function (m, note) { return hold('<span class="rl-todo">' + esc(note.trim()) + '</span>'); });
+    /* <br> inside a line (table cells): the one tag that is kept, as a line break */
+    t = t.replace(/<br[ \t]*\/?>/gi, function () { return hold('<br>'); });
     /* ![[embed]] and [[wikilink]] */
     t = t.replace(/(!?)\[\[([^\[\]\n]+?)\]\]/g, function (m, bang, inner) { return hold(wiki(!!bang, inner, ctx)); });
     /* ![alt](url): no remote pictures; the alt text stays */
@@ -135,6 +139,82 @@
   }
   function decodeSafe(s) { try { return decodeURIComponent(s); } catch (e) { return s; } }
 
+  /* ---------- headings in ALL CAPS or all lower case (as a PDF extraction leaves them) -> Title Case ---------- */
+  var SMALL = { a: 1, an: 1, and: 1, as: 1, at: 1, but: 1, by: 1, for: 1, from: 1, 'in': 1, into: 1, nor: 1, of: 1, on: 1, or: 1, the: 1, to: 1, vs: 1, 'vs.': 1, via: 1, with: 1 };
+  var UPPER = { gm: 'GM', gms: 'GMs', pc: 'PC', pcs: 'PCs', npc: 'NPC', npcs: 'NPCs', xp: 'XP', tv: 'TV', ii: 'II', iii: 'III', iv: 'IV', vi: 'VI', vii: 'VII', viii: 'VIII', ix: 'IX', bitd: 'BitD', ok: 'OK', uk: 'UK', usa: 'USA', ai: 'AI' };
+  function titleCase(s) {
+    s = String(s == null ? '' : s);
+    var letters = s.replace(/[^A-Za-z]/g, '');
+    if (letters.length < 2 || (/[a-z]/.test(letters) && /[A-Z]/.test(letters))) return s;   /* mixed case: the author's own */
+    var first = true;
+    return s.toLowerCase().replace(/[A-Za-z][A-Za-z'’.]*/g, function (w, at, all) {
+      var bare = w.replace(/[.]+$/, ''), prev = all.slice(0, at).replace(/\s+$/, ''), lead = first || /[:—–(]$/.test(prev) || /(^|\s)\d+[.)]$/.test(prev);
+      first = false;
+      if (UPPER[bare]) return UPPER[bare] + w.slice(bare.length);
+      if (!lead && SMALL[w]) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    });
+  }
+
+  /* ---------- the compiled rulebook's markers ----------
+     <a id="x"></a> on a line of its own: an anchor for cross-references (rendered as an empty span with a safe id).
+     <!-- src=b68 p=151 ... mode=edited -->: where the section comes from, shown as a small page chip. Every other HTML
+     comment is dropped. The markers become lines starting \u0002 before the block parser runs. */
+  var MARK = '\u0002';
+  var SRC_NAMES = { b68: 'Blades ’68', bitd: 'Blades in the Dark', editor: 'Editor’s note' };
+  function markLines(body) {
+    var out = lines(String(body).replace(/[\u0002\u0003]/g, '')).map(function (ln) {
+      var m = /^ {0,3}<a\s+(?:id|name)="([A-Za-z0-9_-]{1,120})"\s*>\s*<\/a>\s*$/i.exec(ln);
+      if (m) return MARK + 'A' + m[1];
+      m = /^ {0,3}<!--\s*src=([A-Za-z0-9_-]{1,20})([^<>]*?)-->\s*$/.exec(ln);
+      if (m) {
+        var p = /\bp=([0-9][0-9,–-]{0,20})/.exec(m[2]), mode = /\bmode=([a-z]+)/.exec(m[2]);
+        return MARK + 'S' + m[1].toLowerCase() + '\u0004' + (p ? p[1] : '') + '\u0004' + (mode ? mode[1] : '');
+      }
+      return ln;
+    }).join('\n');
+    return lines(out.replace(/<!--[\s\S]*?-->/g, ''));
+  }
+  function markerHtml(ln) {
+    var kind = ln.charAt(1), v = ln.slice(2);
+    if (kind === 'A') return /^[A-Za-z0-9_-]+$/.test(v) ? '<span class="rl-anchor" id="rl-a-' + v + '"></span>' : '';
+    var f = v.split('\u0004'), book = f[0], page = f[1], mode = f[2], cls = /^[a-z0-9]+$/.test(book) ? ' rl-src-' + book : '';
+    return '<div class="rl-src' + cls + '"><span class="rl-src-book">' + esc(SRC_NAMES[book] || book) + '</span>' +
+      (page ? '<span class="rl-src-page">p. ' + esc(page.replace(/-/g, '–')) + '</span>' : '') +
+      (mode === 'excised' ? '<span class="rl-src-mode">Replaced in ’68</span>' : '') + '</div>';
+  }
+
+  /* a paragraph's lines -> HTML. Lines join with a space (a hard-wrapped page reads as one paragraph); a word broken
+     with a hyphen at a line end joins without one; two trailing spaces or a backslash keep a line break.
+     A playbook's opening (lines in CAPITALS, single capitalised words such as its actions) becomes its tagline. */
+  var RE_CAPS = /^[A-Z0-9][A-Z0-9 ,.'’"“”!?&—–:-]{6,}$/;
+  function paragraph(buf, ctx) {
+    var joined = buf.join(' ').replace(/\s+/g, ' ').trim(), m;
+    if ((m = /^\[Figure omitted:\s*([\s\S]*)\]$/i.exec(joined))) return '<div class="rl-figure"><span class="rl-figure-lab">Figure</span><span class="rl-figure-txt">' + inline(m[1], ctx) + '</span></div>';
+    if (/^\[TODO:[^\[\]]*\]$/.test(joined)) return '<p class="rl-todo">' + esc(joined.slice(6, -1).trim()) + '</p>';
+    var head = '', k = 0, caps = [], words = [];
+    while (k < buf.length - 1 && k < 6) {
+      var l = buf[k].trim();
+      if (RE_CAPS.test(l) && /[A-Z]{2}/.test(l) && /\s/.test(l)) caps.push(l);
+      else if (/^[A-Z][a-z]{2,15}$/.test(l)) words.push(l);
+      else break;
+      k++;
+    }
+    if (caps.length) {
+      head = '<div class="rl-pbhead"><p class="rl-tagline">' + esc(caps.join(' ').replace(/([—–]) /g, '$1')) + '</p>' +
+        (words.length ? '<p class="rl-pbacts">' + words.map(function (w) { return '<span>' + esc(w) + '</span>'; }).join('') + '</p>' : '') + '</div>';
+      buf = buf.slice(k);
+    }
+    var text = '';
+    buf.forEach(function (l, i) {
+      if (!i) { text = l; return; }
+      var hard = / {2,}$|\\$/.test(text);
+      text = text.replace(/(?: +|\\)$/, '');
+      text += (hard ? '\u0003' : /[A-Za-z]-$/.test(text) && /^[a-z]/.test(l.trim()) ? '' : ' ') + l.trim();
+    });
+    return head + '<p>' + inline(text.replace(/(?: +|\\)$/, ''), ctx).replace(/\u0003/g, '<br>') + '</p>';
+  }
+
   /* ---------- blocks ---------- */
   var RE_FENCE = /^ {0,3}(`{3,}|~{3,})[^\n]*$/;
   var RE_HEAD = /^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
@@ -162,7 +242,7 @@
     return ln.indexOf('|') >= 0 && next !== undefined && next.indexOf('-') >= 0 && RE_SEP.test(next) && splitRow(ln).length === splitRow(next).length;
   }
   function blockStart(ln, next) {
-    return RE_HEAD.test(ln) || RE_FENCE.test(ln) || RE_HR.test(ln) || RE_QUOTE.test(ln) || RE_ITEM.test(ln) || tableStarts(ln, next);
+    return ln.charAt(0) === MARK || RE_HEAD.test(ln) || RE_FENCE.test(ln) || RE_HR.test(ln) || RE_QUOTE.test(ln) || RE_ITEM.test(ln) || tableStarts(ln, next);
   }
   function indentOf(ln) { return /^ */.exec(ln)[0].length; }
   function blank(ln) { return /^\s*$/.test(ln); }
@@ -183,7 +263,10 @@
     var inner = ls.map(function (ln) { return ln.replace(/^ {0,3}> ?/, ''); });
     var co = /^\[!([A-Za-z0-9_-]+)\]([+-]?)[ \t]*(.*)$/.exec(inner[0]);
     if (!co) return '<blockquote>' + blocks(inner, ctx).join('') + '</blockquote>';
-    var type = co[1].toLowerCase(), fold = co[2], title = co[3].trim() || (type.charAt(0).toUpperCase() + type.slice(1));
+    var type = co[1].toLowerCase(), fold = co[2], title = co[3].trim(), lead;
+    /* no title of its own, and the body opens with a short bold phrase ("**'68 changes this.** ..."): that phrase is the title */
+    if (!title && inner.length > 1 && (lead = /^\*\*([^*\n]{1,60}?)[.:]?\*\*[ \t]*(.*)$/.exec(inner[1]))) { title = lead[1]; inner = inner.slice(); inner[1] = lead[2]; }
+    title = title || (type.charAt(0).toUpperCase() + type.slice(1));
     var body = '<div class="rl-callout-body">' + blocks(inner.slice(1), ctx).join('') + '</div>';
     if (fold) return '<details class="rl-callout" data-callout="' + esc(type) + '"' + (fold === '+' ? ' open' : '') + '><summary class="rl-callout-title">' + inline(title, ctx) + '</summary>' + body + '</details>';
     return '<div class="rl-callout" data-callout="' + esc(type) + '"><div class="rl-callout-title">' + inline(title, ctx) + '</div>' + body + '</div>';
@@ -234,6 +317,7 @@
     while (i < n) {
       var ln = ls[i];
       if (blank(ln)) { i++; continue; }
+      if (ln.charAt(0) === MARK) { out.push(markerHtml(ln)); i++; continue; }
       if ((m = RE_FENCE.exec(ln))) {
         var fence = m[1], code = [];
         i++;
@@ -244,7 +328,7 @@
       }
       if ((m = RE_HEAD.exec(ln))) {
         var lvl = Math.min(6, m[1].length + (ctx.off || 0));
-        out.push('<h' + lvl + '>' + inline(m[2], ctx) + '</h' + lvl + '>');
+        out.push('<h' + lvl + '>' + inline(/[\[`]/.test(m[2]) ? m[2] : titleCase(m[2]), ctx) + '</h' + lvl + '>');
         i++; continue;
       }
       if (RE_HR.test(ln)) { out.push('<hr>'); i++; continue; }
@@ -266,7 +350,7 @@
       var buf = [ln];
       i++;
       while (i < n && !blank(ls[i]) && !blockStart(ls[i], ls[i + 1])) buf.push(ls[i++]);
-      out.push('<p>' + inline(buf.join('\n').replace(/(?: {2,}|\\)\n/g, '\n'), ctx).replace(/\n/g, '<br>') + '</p>');
+      out.push(paragraph(buf, ctx));
     }
     return out;
   }
@@ -275,13 +359,18 @@
   function render(src, opts) {
     opts = opts || {};
     var body = parseFrontmatter(src).body.replace(/%%[\s\S]*?%%/g, '');
-    return blocks(lines(body), { resolve: opts.resolve, off: opts.headingOffset == null ? 1 : opts.headingOffset, depth: 0 }).join('\n');
+    return blocks(markLines(body), { resolve: opts.resolve, off: opts.headingOffset == null ? 1 : opts.headingOffset, depth: 0 }).join('\n');
   }
 
   /* ---------- plain text, for search and snippets ---------- */
   function plain(src) {
     return parseFrontmatter(src).body
       .replace(/%%[\s\S]*?%%/g, ' ')
+      .replace(/<!--[\s\S]*?-->/g, ' ')
+      .replace(/<a\s+(?:id|name)="[^"]*"\s*>\s*<\/a>/gi, ' ')
+      .replace(/<br\s*\/?>/gi, ' ')
+      .replace(/\[TODO:[^\]]*\]/g, ' ')
+      .replace(/\[Figure omitted:\s*/gi, '[')
       .replace(/!\[\[[^\]]*\]\]/g, ' ')
       .replace(/\[\[([^\]|#]*)(?:#([^\]|]*))?(?:\|([^\]]*))?\]\]/g, function (m, p, h, a) { return a || ((p || '') + (h ? ' ' + h : '')); })
       .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
@@ -382,5 +471,5 @@
     return out;
   }
 
-  window.B68Markdown = { render: render, parseFrontmatter: parseFrontmatter, splitFile: splitFile, plain: plain, safeUrl: safeUrl, esc: esc, norm: norm };
+  window.B68Markdown = { title: titleCase, render: render, parseFrontmatter: parseFrontmatter, splitFile: splitFile, plain: plain, safeUrl: safeUrl, esc: esc, norm: norm };
 })();

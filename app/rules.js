@@ -94,20 +94,40 @@
 
   /* ---------- the corpus and its indexes ---------- */
   /* r: { version, updatedAt, entries } as the API sends it (or as cached) */
+  /* an anchor line (<a id="x"></a>), an HTML comment line, or a blank: not text a reader sees */
+  var RE_ANCHOR = /^\s*<a\s+(?:id|name)="([A-Za-z0-9_-]{1,120})"\s*>\s*<\/a>\s*$/i;
+  function invisible(l) { return !l.trim() || RE_ANCHOR.test(l) || /^\s*<!--[\s\S]*-->\s*$/.test(l); }
+  /* a file name such as "b68-rulebook-02-core-system": its chapter number, when it has one */
+  function numberOf(src) { var m = /(?:^|[^0-9a-z])(\d{1,3})(?=[-_ ]|$)/i.exec(String(src || '').split('/').pop().replace(/\.md$/i, '')); return m ? m[1] : ''; }
+
   function setCorpus(r, fromCache, savedAt) {
     var entries = (r.entries || []).filter(function (e) { return e && BOOKS[e.book] && e.slug; });
-    var c = { version: r.version, updatedAt: r.updatedAt, entries: entries, fromCache: !!fromCache, savedAt: savedAt || Date.now(), byId: {}, byBook: { b68: [], bitd: [], house: [] }, bySrc: {}, titleKey: { b68: {}, bitd: {}, house: {} }, fileKey: { b68: {}, bitd: {}, house: {} }, groups: {} };
+    var c = { version: r.version, updatedAt: r.updatedAt, entries: entries, fromCache: !!fromCache, savedAt: savedAt || Date.now(), byId: {}, byBook: { b68: [], bitd: [], house: [] }, read: { b68: [], bitd: [], house: [] }, chapters: { b68: [], bitd: [], house: [] }, bySrc: {}, titleKey: { b68: {}, bitd: {}, house: {} }, fileKey: { b68: {}, bitd: {}, house: {} }, anchors: { b68: {}, bitd: {}, house: {} }, groups: {} };
     entries.sort(function (a, b) { return PRI[a.book] - PRI[b.book] || a.ord - b.ord || (a.slug < b.slug ? -1 : 1); });
+    var seenTitle = {};
     entries.forEach(function (e) {
       e._p = M.plain(e.body);
       e._b = fold(e._p);
+      e.t = M.title(e.title);                                  /* the title as shown: "THE CONVERSATION" -> "The Conversation" */
       e._t = fold(e.title + '\n' + (e.keys || '').replace(/\n/g, ' '));
       e._tr = fold(e.trail || '');
       e._n = norm(e.title);
+      /* an entry with nothing a reader sees (a heading whose text sits in the entries under it, or only an anchor) is
+         kept for links but left out of the index, search and paging */
+      e._empty = String(e.body || '').split('\n').every(invisible);
+      /* the trail without the file's own name ("b68-rulebook-02-core-system"), which a compiled book's chapters carry */
+      var base = norm(String(e.src || '').split('/').pop().replace(/\.md$/i, ''));
+      e._segs = (e.trail || '').split(' > ').filter(function (s) { return s && !(base && norm(s) === base); }).map(M.title);
       c.byId[e.book + '/' + e.slug] = e;
       c.byBook[e.book].push(e);
-      if (e._n) (c.groups[e._n] = c.groups[e._n] || []).push(e);
-      if (!c.titleKey[e.book][e._n]) c.titleKey[e.book][e._n] = e;
+      if (!e._empty) {
+        c.read[e.book].push(e);
+        /* entries of one title fold together across books; a second entry of that title in the same book is its own */
+        var k = e.book + '|' + e._n; seenTitle[k] = (seenTitle[k] || 0) + 1;
+        e._g = e._n ? e._n + '#' + seenTitle[k] : '';
+        if (e._g) (c.groups[e._g] = c.groups[e._g] || []).push(e);
+      }
+      if (!c.titleKey[e.book][e._n] || c.titleKey[e.book][e._n]._empty && !e._empty) c.titleKey[e.book][e._n] = e;
       if (e.src) {
         var sk = e.book + '|' + e.src;
         if (!c.bySrc[sk]) {                                    /* the first entry of a file stands for the file: [[File name]] and its aliases */
@@ -119,8 +139,51 @@
         c.bySrc[sk].push(e);
       }
     });
+
+    /* chapters: the readable entries grouped by the first step of their trail (a compiled book's H1, or a folder) */
+    ORDER.forEach(function (b) {
+      var byName = {}, list = c.chapters[b];
+      c.read[b].forEach(function (e) {
+        var name = e._segs[0] || e.t, ch = byName[name];
+        if (!ch) { ch = byName[name] = { name: name, num: numberOf(e.src), items: [] }; list.push(ch); }
+        e._ch = ch;
+        e._depth = Math.min(3, Math.max(0, e._segs.length - 1));
+        ch.items.push(e);
+      });
+      var nums = list.map(function (ch) { return ch.num; });
+      list.forEach(function (ch, i) {                                  /* file numbers only when every chapter has its own */
+        if (!nums.every(function (n, j) { return n && nums.indexOf(n) === j; })) ch.num = String(i + 1);
+        ch.num = ch.num.length < 2 ? '0' + ch.num : ch.num;
+      });
+    });
+
+    /* anchors (<a id="x"></a>) -> the entry a reader should land on. The importer cuts a file just before each heading,
+       so the anchor of a heading ends the entry above it: an anchor after the last visible text belongs to the next
+       readable entry of the file; one in the middle is a place inside its entry (#rules/<book>/<slug>?at=<id>). */
+    Object.keys(c.bySrc).forEach(function (sk) {
+      var pending = [];
+      c.bySrc[sk].forEach(function (e) {
+        var lead = [], mid = [], tail = [], seen = false;
+        String(e.body || '').split('\n').forEach(function (l) {
+          var m = RE_ANCHOR.exec(l);
+          if (m) (seen ? tail : lead).push(m[1]);
+          else if (!invisible(l)) { seen = true; mid = mid.concat(tail); tail = []; }
+        });
+        if (e._empty) { pending = pending.concat(lead, tail); return; }
+        pending.concat(lead).forEach(function (id) { if (!c.anchors[e.book][id]) c.anchors[e.book][id] = { e: e, at: '' }; });
+        mid.forEach(function (id) { if (!c.anchors[e.book][id]) c.anchors[e.book][id] = { e: e, at: id }; });
+        pending = tail;
+      });
+    });
     S.corpus = c;
     return c;
+  }
+  /* an entry with no text of its own stands for the first readable entry after it in its file */
+  function readable(e) {
+    if (!e || !e._empty || !S.corpus) return e;
+    var list = S.corpus.bySrc[e.book + '|' + e.src] || [], i = list.indexOf(e);
+    for (i = i + 1; i < list.length; i++) if (!list[i]._empty) return list[i];
+    return e;
   }
 
   function fetchRules() {
@@ -166,6 +229,13 @@
   function resolver(book) {
     return function (page, frag) {
       var c = S.corpus; if (!c) return null;
+      if (frag) {                                                 /* file.md#anchor-id: the anchor's entry, and the place in it */
+        var ab = [book].concat(ORDER.filter(function (b) { return b !== book; }));
+        for (var j = 0; j < ab.length; j++) {
+          var a = c.anchors[ab[j]][frag];
+          if (a) return { href: hrefOf(a.e) + (a.at ? '?at=' + encodeURIComponent(a.at) : '') };
+        }
+      }
       var key = norm(String(page).replace(/^.*\//, '').replace(/\.md$/i, '')), order = [book].concat(ORDER.filter(function (b) { return b !== book; }));
       for (var i = 0; i < order.length; i++) {
         var b = order[i], e = c.fileKey[b][key] || c.titleKey[b][key];
@@ -174,7 +244,7 @@
           var fk = norm(frag), sib = (c.bySrc[e.book + '|' + e.src] || []).filter(function (x) { return x._n === fk; })[0];
           if (sib) e = sib;
         }
-        return { href: hrefOf(e) };
+        return { href: hrefOf(readable(e)) };
       }
       return null;
     };
@@ -234,11 +304,11 @@
     var scored = [], pass, all;
     for (pass = 0; pass < 2 && !scored.length; pass++) {
       all = pass === 0;
-      c.entries.forEach(function (e) { var s = scoreOf(e, terms, phrase, all); if (s) scored.push({ e: e, s: s }); });
+      c.entries.forEach(function (e) { if (e._empty) return; var s = scoreOf(e, terms, phrase, all); if (s) scored.push({ e: e, s: s }); });
     }
     var groups = {}, order = [];
     scored.forEach(function (x) {
-      var k = x.e._n || x.e.book + '/' + x.e.slug, g = groups[k];
+      var k = x.e._g || x.e.book + '/' + x.e.slug, g = groups[k];
       if (!g) { g = groups[k] = { key: k, items: [], score: 0 }; order.push(g); }
       g.items.push(x); if (x.s > g.score) g.score = x.s;
     });
@@ -279,14 +349,16 @@
     if (end < p.length) { var ep = p.lastIndexOf(' ', end); if (ep > start + 60) end = ep; }
     return (start > 0 ? '\u2026' : '') + highlight(p.slice(start, end), terms) + (end < p.length ? '\u2026' : '');
   }
-  function trailText(e) { return (e.trail || '').split(' > ').filter(Boolean).join(' \u203a '); }
+  function trailText(e) { return (e._segs || []).join(' \u203a '); }
 
   function hitHtml(h, terms) {
     var e = h.primary, twins = h.members.filter(function (m) { return m !== e; });
-    var html = '<li class="rl-hit"><a class="rl-hit-title" href="' + hrefOf(e) + '">' + highlight(e.title, terms) + '</a> <span class="rl-book" data-book="' + e.book + '">' + esc(BOOKS[e.book]) + '</span>' +
-      (e.trail ? '<span class="rl-hit-trail">' + esc(trailText(e)) + '</span>' : '') + '<p class="rl-snip">' + snippet(e, terms) + '</p>';
+    var trail = trailText(e);
+    var html = '<li class="rl-hit"><span class="rl-hit-trail">' + (e._ch ? '<b>' + esc(e._ch.num) + '</b> ' : '') + esc(trail || BOOKS[e.book]) + '</span>' +
+      '<a class="rl-hit-title" href="' + hrefOf(e) + '">' + highlight(e.t, terms) + '</a> <span class="rl-book" data-book="' + e.book + '">' + esc(BOOKS[e.book]) + '</span>' +
+      '<p class="rl-snip">' + snippet(e, terms) + '</p>';
     twins.forEach(function (t) {
-      html += '<details class="rl-twin"><summary>' + esc(twinLabel(t.book)) + '</summary><a href="' + hrefOf(t) + '">' + highlight(t.title, terms) + '</a><p class="rl-snip">' + snippet(t, terms) + '</p></details>';
+      html += '<details class="rl-twin"><summary>' + esc(twinLabel(t.book)) + '</summary><a href="' + hrefOf(t) + '">' + highlight(t.t, terms) + '</a><p class="rl-snip">' + snippet(t, terms) + '</p></details>';
     });
     return html + '</li>';
   }
@@ -321,36 +393,30 @@
   }
   function statusLine() {
     var c = S.corpus; if (!c) return '';
-    var n = c.entries.length, bits = [plural(n, 'entry', 'entries')];
+    var n = ORDER.reduce(function (t, b) { return t + c.read[b].length; }, 0), bits = [plural(n, 'entry', 'entries')];
     if (S.offline) bits.push('offline: the copy saved on this device' + (c.savedAt ? ' (' + when(c.savedAt) + ')' : ''));
     else if (c.fromCache) bits.push('checking for updates\u2026');
     else if (S.error) bits.push('could not check for updates');
     return esc(bits.join(' \u00b7 '));
   }
 
-  /* the index: a section per book, its entries grouped by chapter, built when the section is opened */
+  /* the index: a section per book; inside it the book's contents, one card per chapter, built when the section is opened */
   function indexHtml() {
-    var c = S.corpus, h = '';
-    ORDER.forEach(function (b) {
-      var list = c.byBook[b];
-      if (!list.length) return;
-      h += '<details class="rl-sec" data-book="' + b + '"' + (ORDER.filter(function (x) { return c.byBook[x].length; }).length === 1 ? ' open' : '') + '><summary><b>' + esc(BOOKS[b]) + '</b> <span class="rl-dim">' + plural(list.length, 'entry', 'entries') + '</span></summary><div class="rl-sec-body" data-built="0"></div></details>';
+    var c = S.corpus, h = '', books = ORDER.filter(function (x) { return c.read[x].length; });
+    books.forEach(function (b) {
+      var list = c.read[b];
+      h += '<details class="rl-sec" data-book="' + b + '"' + (books.length === 1 ? ' open' : '') + '><summary><b>' + esc(BOOKS[b]) + '</b> <span class="rl-dim">' + plural(c.chapters[b].length, 'chapter') + ' · ' + plural(list.length, 'entry', 'entries') + '</span></summary><div class="rl-sec-body" data-built="0"></div></details>';
     });
     return h;
   }
   function fillSection(sec) {
     var body = sec.querySelector('.rl-sec-body'); if (!body || body.getAttribute('data-built') === '1' || !S.corpus) return;
     body.setAttribute('data-built', '1');
-    var list = S.corpus.byBook[sec.getAttribute('data-book')], groups = [], byName = {};
-    list.forEach(function (e) {
-      var segs = (e.trail || '').split(' > ').filter(Boolean), name = segs[0] || 'Pages', g = byName[name];
-      if (!g) { g = byName[name] = { name: name, items: [] }; groups.push(g); }
-      g.items.push({ e: e, depth: Math.min(3, Math.max(0, segs.length - 1)) });
-    });
-    body.innerHTML = groups.map(function (g) {
-      return '<details class="rl-grp"><summary>' + esc(g.name) + ' <span class="rl-dim">' + g.items.length + '</span></summary><ul class="rl-list">' +
-        g.items.map(function (x) { return '<li class="d' + x.depth + '"><a href="' + hrefOf(x.e) + '">' + esc(x.e.title) + '</a></li>'; }).join('') + '</ul></details>';
-    }).join('');
+    var chapters = S.corpus.chapters[sec.getAttribute('data-book')];
+    body.innerHTML = '<ol class="rl-chapters">' + chapters.map(function (ch) {
+      return '<li class="rl-ch"><details class="rl-grp"><summary><span class="rl-ch-num">' + esc(ch.num) + '</span><span class="rl-ch-name">' + esc(ch.name) + '</span><span class="rl-ch-n">' + plural(ch.items.length, 'section') + '</span></summary>' +
+        '<ul class="rl-list rl-ch-list">' + ch.items.map(function (e) { return '<li class="d' + e._depth + '"><a href="' + hrefOf(e) + '">' + esc(e.t) + '</a></li>'; }).join('') + '</ul></details></li>';
+    }).join('') + '</ol>';
   }
 
   /* ---------- the views ---------- */
@@ -401,40 +467,59 @@
     var hp = $('rl-houselist'); if (hp) hp.innerHTML = houseList();
   }
 
+  /* the chapter an entry sits in, as a list for the side of the page (a details box: open beside a wide page, folded on a phone) */
+  function tocHtml(e) {
+    var ch = e._ch; if (!ch || ch.items.length < 2) return '';
+    return '<aside class="rl-toc" aria-label="This chapter"><details class="rl-tocbox"' + (window.innerWidth >= 1080 ? ' open' : '') + '><summary><span class="rl-lab">This chapter</span><span class="rl-toc-ch"><b>' + esc(ch.num) + '</b> ' + esc(ch.name) + '</span></summary>' +
+      '<ol class="rl-toc-list">' + ch.items.map(function (x) {
+        return '<li class="d' + x._depth + (x === e ? ' on' : '') + '"><a href="' + hrefOf(x) + '"' + (x === e ? ' aria-current="page"' : '') + '>' + esc(x.t) + '</a></li>';
+      }).join('') + '</ol></details></aside>';
+  }
+
   function entryHtml(e) {
     var c = S.corpus, gm = isGM();
-    var group = (c.groups[e._n] || [e]).filter(function (x) { return x !== e; }), first = (c.groups[e._n] || [e])[0];
+    var all = e._g ? c.groups[e._g] || [e] : [e], group = all.filter(function (x) { return x !== e; }), first = all[0];
     var body = M.render(e.body, { resolve: resolver(e.book), headingOffset: 1 });
-    var segs = (e.trail || '').split(' > ').filter(Boolean);
-    var crumbs = '<nav class="rl-crumbs" aria-label="Where this is"><a href="#rules">Rules</a> \u203a <span>' + esc(BOOKS[e.book]) + '</span>' + segs.map(function (s) { return ' \u203a <span>' + esc(s) + '</span>'; }).join('') + '</nav>';
-    var list = c.byBook[e.book], at = list.indexOf(e), prev = at > 0 ? list[at - 1] : null, next = at >= 0 && at < list.length - 1 ? list[at + 1] : null;
-    var h = '<div class="rl-top"><button type="button" class="btn sm rl-back" data-rl="back">\u2190 Back</button>' + searchForm(true) + '</div>' + crumbs +
-      '<article class="rl-entry"><p class="rl-kick"><span class="rl-book" data-book="' + e.book + '">' + esc(BOOKS[e.book]) + '</span></p><h1 class="rl-title" id="rulesTitle" tabindex="-1">' + esc(e.title) + '</h1>';
+    var segs = e._segs || [], parents = segs.slice(1);
+    var crumbs = '<nav class="rl-crumbs" aria-label="Where this is"><a href="#rules">Rules</a> › <span>' + esc(BOOKS[e.book]) + '</span>' + segs.map(function (s) { return ' › <span>' + esc(s) + '</span>'; }).join('') + '</nav>';
+    var list = c.read[e.book], at = list.indexOf(e), prev = at > 0 ? list[at - 1] : null, next = at >= 0 && at < list.length - 1 ? list[at + 1] : null;
+    var h = '<div class="rl-top"><button type="button" class="btn sm rl-back" data-rl="back">← Back</button>' + searchForm(true) + '</div>' + crumbs +
+      '<div class="rl-layout"><article class="rl-entry"><header class="rl-entryhead"><p class="rl-kick"><span class="rl-book" data-book="' + e.book + '">' + esc(BOOKS[e.book]) + '</span>' +
+      (e._ch ? '<span class="rl-chap">' + (e._ch.num ? '<b>' + esc(e._ch.num) + '</b> ' : '') + esc(e._ch.name) + '</span>' : '') + '</p>' +
+      '<h1 class="rl-title" id="rulesTitle" tabindex="-1">' + esc(e.t) + '</h1>' +
+      (parents.length ? '<p class="rl-parent">in ' + parents.map(esc).join(' › ') + '</p>' : '') + '</header>';
     if (first && first !== e) h += '<p class="rl-alsonote">There is also a ' + esc(BOOKS[first.book]) + ' entry with this title: <a href="' + hrefOf(first) + '">open it</a>.</p>';
     h += '<div class="rl-body">' + (body || '<p class="rl-dim">This entry has no text of its own. Look under it in the index.</p>') + '</div>';
-    var sib = (c.bySrc[e.book + '|' + e.src] || []).filter(function (x) { return x !== e; }).slice(0, 40);
-    if (sib.length) h += '<nav class="rl-also" aria-label="Also in this note"><span class="rl-lab">Also in this note</span><ul class="rl-list">' + sib.map(function (x) { return '<li><a href="' + hrefOf(x) + '">' + esc(x.title) + '</a></li>'; }).join('') + '</ul></nav>';
     group.forEach(function (t) {
       h += '<details class="rl-twin rl-twin-full"><summary>' + esc(twinLabel(t.book)) + '</summary><div class="rl-body">' + M.render(t.body, { resolve: resolver(t.book), headingOffset: 2 }) + '</div><p><a href="' + hrefOf(t) + '">Open this entry on its own</a></p></details>';
     });
     if (gm && e.book === 'house') h += '<p class="rl-gmtools"><button type="button" class="btn sm" data-rl="edit" data-slug="' + esc(e.slug) + '">Edit this house rule</button> <button type="button" class="btn sm" data-rl="delhouse" data-slug="' + esc(e.slug) + '">Delete</button></p>';
-    h += '</article><nav class="rl-pager" aria-label="Neighbouring entries">' + (prev ? '<a class="rl-prev" href="' + hrefOf(prev) + '">\u2190 ' + esc(prev.title) + '</a>' : '<span></span>') + (next ? '<a class="rl-next" href="' + hrefOf(next) + '">' + esc(next.title) + ' \u2192</a>' : '<span></span>') + '</nav>';
+    function card(x, cls, label) {
+      return '<a class="' + cls + '" href="' + hrefOf(x) + '"><span class="rl-lab">' + label + (x._ch && x._ch !== e._ch ? ' · ' + esc(x._ch.name) : '') + '</span><span class="rl-pg-t">' + esc(x.t) + '</span></a>';
+    }
+    h += '<nav class="rl-pager" aria-label="Neighbouring entries">' + (prev ? card(prev, 'rl-prev', '← Previous') : '<span></span>') + (next ? card(next, 'rl-next', 'Next →') : '<span></span>') + '</nav>';
+    h += '</article>' + tocHtml(e) + '</div>';
     return h + footer();
   }
 
-  function drawEntry(book, slug) {
+  function drawEntry(book, slug, place) {
     if (S.status === 'unavailable') { shell('note', unavailableHtml()); return; }
     var c = S.corpus;
     if (!c) { drawIndex(); return; }
     var e = c.byId[book + '/' + slug];
+    if (e && e._empty && readable(e) !== e) { try { history.replaceState(history.state, '', hrefOf(readable(e))); } catch (x) {} e = readable(e); }
     if (!e) {
-      shell('note', head('Rules', 'Not found', '') + note('There is no entry \u201c' + esc(book + '/' + slug) + '\u201d. It may have been renamed when the book was imported again.') +
+      shell('note', head('Rules', 'Not found', '') + note('There is no entry “' + esc(book + '/' + slug) + '”. It may have been renamed when the book was imported again.') +
         '<p><a class="btn sm" href="#rules?q=' + encodeURIComponent(slug.replace(/[-_]+/g, ' ')) + '">Search for it</a> <a class="btn sm" href="#rules">The index</a></p>' + footer());
       focusTitle(); return;
     }
     shell('entry', entryHtml(e));
-    try { document.title = e.title + ' \u00b7 Rules \u00b7 ' + SUFFIX; } catch (x) {}
-    window.scrollTo(0, 0);
+    try { document.title = e.t + ' · Rules · ' + SUFFIX; } catch (x) {}
+    var spot = place && /^[A-Za-z0-9_-]+$/.test(place) ? $('rl-a-' + place) : null;
+    if (spot) { try { spot.scrollIntoView({ block: 'start' }); } catch (x) { window.scrollTo(0, 0); } } else window.scrollTo(0, 0);
+    /* the sidebar shows where this entry sits in its chapter, without moving the page */
+    var box = root.querySelector('.rl-toc-list'), on = box && box.querySelector('li.on');
+    if (box && on) box.scrollTop = Math.max(0, on.offsetTop - box.clientHeight / 3);
     focusTitle();
   }
   function focusTitle() { var t = $('rulesTitle'); if (t) { try { t.focus({ preventScroll: true }); } catch (e) {} } }
@@ -452,7 +537,8 @@
   function draw() {
     if (!active || !root) return;
     var p = parseHash();
-    if (p.book && p.slug) { drawEntry(p.book, p.slug); return; }
+    root.classList.toggle('rl-gm', isGM());                  /* the compiler's [TODO] notes show for the GM only (rules.css) */
+    if (p.book && p.slug) { drawEntry(p.book, p.slug, p.params.at); return; }
     S.q = p.params.q || '';
     editing = 'edit' in p.params ? p.params.edit : undefined;
     if (view('index') && S.corpus && S.status === 'ready') {
