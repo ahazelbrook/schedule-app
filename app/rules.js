@@ -468,9 +468,11 @@
   /* ---------- the GM's importer ---------- */
   function importHtml() {
     return '<details class="rl-box rl-import" id="rl-import"><summary>Import rules <span class="rl-dim">GM only</span></summary><div class="rl-box-body">' +
-      '<p class="hint">Do this on the PC that holds the rulebook notes, in Chrome or Edge. Pick the book, then the folder of markdown files (Obsidian notes are fine). Each file is split at its headings into entries, shown to you before anything is sent. Importing a book again replaces it.</p>' +
-      '<div class="rl-field"><span class="rl-lab" id="rl-booklab">Book</span><span class="seg" role="group" aria-labelledby="rl-booklab"><button type="button" class="chip" data-rl="book" data-book="b68" aria-pressed="true">' + esc(BOOKS.b68) + '</button><button type="button" class="chip" data-rl="book" data-book="bitd" aria-pressed="false">' + esc(BOOKS.bitd) + '</button></span></div>' +
-      '<div class="rl-field"><label class="rl-lab" for="rl-folder">Folder of markdown files</label><input type="file" id="rl-folder" webkitdirectory directory multiple></div>' +
+      '<p class="hint">Do this on the PC that holds the rulebook, in Chrome or Edge. Pick the folder of the compiled Blades \u201968 rulebook (one markdown file per chapter is fine, and so are Obsidian notes), or pick the chapter files themselves. Each file is split at its headings into entries, shown to you before anything is sent. Importing again replaces the book.</p>' +
+      '<div class="rl-field"><label class="rl-lab" for="rl-folder">The rulebook\u2019s folder</label><input type="file" id="rl-folder" webkitdirectory directory multiple></div>' +
+      '<div class="rl-field"><label class="rl-lab" for="rl-files">or its chapter files</label><input type="file" id="rl-files" multiple accept=".md,text/markdown"></div>' +
+      /* one compiled book is the usual case; a separate Blades in the Dark book stays possible, out of the way */
+      '<details class="rl-other"><summary class="rl-dim">Importing a separate book?</summary><div class="rl-field"><span class="rl-lab" id="rl-booklab">Book</span><span class="seg" role="group" aria-labelledby="rl-booklab"><button type="button" class="chip" data-rl="book" data-book="b68" aria-pressed="true">' + esc(BOOKS.b68) + '</button><button type="button" class="chip" data-rl="book" data-book="bitd" aria-pressed="false">' + esc(BOOKS.bitd) + '</button></span></div></details>' +
       '<div id="rl-preview" class="rl-preview" aria-live="polite"></div>' +
       '<p><button type="button" class="btn primary" data-rl="import" id="rl-go" disabled>Import</button></p>' +
       '<p id="rl-progress" class="rl-progress" role="status"></p></div></details>';
@@ -580,7 +582,7 @@
     });
     function load2() {
       return fetchRules().then(function () {
-        S.busy = false; PEND.plan = null; var inp = $('rl-folder'); if (inp) inp.value = '';
+        S.busy = false; PEND.plan = null; clearPicks();
         S.status = 'ready'; refreshIndex(); drawPending();
         say('Imported ' + plural(p.entries.length, 'entry', 'entries') + ' into ' + BOOKS[book] + '.');
       });
@@ -656,7 +658,7 @@
     else if (a === 'clear') { S.q = ''; var q = $('rl-q'); if (q) { q.value = ''; q.focus(); } if (view('index')) { drawResults(); syncHash(); } else location.hash = '#rules'; }
     else if (a === 'more') { S.shown += PAGE; drawResults(); }
     else if (a === 'retry') load(true);
-    else if (a === 'book') { PEND.book = b.getAttribute('data-book'); PEND.plan = null; var inp = $('rl-folder'); if (inp) inp.value = ''; say(''); drawPending(); }
+    else if (a === 'book') { PEND.book = b.getAttribute('data-book'); PEND.plan = null; clearPicks(); say(''); drawPending(); }
     else if (a === 'import') doImport();
     else if (a === 'edit') {
       var slug = b.getAttribute('data-slug') || '', want = '#rules?edit=' + encodeURIComponent(slug);
@@ -665,7 +667,13 @@
     else if (a === 'canceledit') { editing = undefined; location.hash = '#rules'; }
     else if (a === 'delhouse') deleteHouse(b.getAttribute('data-slug'));
   }
-  function onChange(ev) { if (ev.target.id === 'rl-folder') pickFolder(ev.target); }
+  function clearPicks() { ['rl-folder', 'rl-files'].forEach(function (id) { var inp = $(id); if (inp) inp.value = ''; }); }
+  /* a folder or a set of files, whichever was picked last (the other picker is cleared) */
+  function onChange(ev) {
+    var id = ev.target.id; if (id !== 'rl-folder' && id !== 'rl-files') return;
+    var other = $(id === 'rl-folder' ? 'rl-files' : 'rl-folder'); if (other) other.value = '';
+    pickFolder(ev.target);
+  }
   function onSubmit(ev) {
     var f = ev.target.getAttribute && ev.target.getAttribute('data-rl-form'); if (!f) return;
     ev.preventDefault();

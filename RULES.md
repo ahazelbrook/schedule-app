@@ -24,8 +24,9 @@ This repository is public and the rulebooks are not ours to publish. So:
 
 1. On the PC that holds the rulebook notes, open the site in **Chrome or Edge** (folder upload needs it) and sign in as the GM.
 2. Open **Rules**, then **Import rules**.
-3. Choose the book (Blades '68 or Blades in the Dark) and pick its **folder**: the rulebook folder of the vault (the one
-   whose files are `.md` notes). Do the other book the same way.
+3. Pick the **folder** of the compiled Blades '68 rulebook (one `.md` file per chapter, the Blades in the Dark references
+   folded in), or pick the **chapter files** themselves. It goes in as one book, Blades '68. A separate Blades in the Dark
+   book is still possible under "Importing a separate book?", but is not needed.
 4. The page reads the `.md` files and shows a preview: files, entries, size, and whether it replaces something. Folders
    starting with a dot (`.obsidian`) and files that are not `.md` are ignored.
 5. **Import**. It uploads in parts of about 300 KB with a progress line, then reloads the rules. Importing a book again

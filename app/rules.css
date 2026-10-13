@@ -124,6 +124,8 @@ body[data-mode="rules"] #rules-page:not([hidden]) { display: block; }
 #rules-page .rl-field textarea { font-family: var(--font-mono); font-size: 13px; resize: vertical; min-height: 140px; }
 #rules-page .rl-field input:focus, #rules-page .rl-field textarea:focus { outline: none; border-color: var(--accent); }
 #rules-page .rl-field input[type="file"] { max-width: 100%; font-size: 13px; }
+#rules-page .rl-other > summary { cursor: pointer; font-size: 13px; }
+#rules-page .rl-other[open] > summary { margin-bottom: 8px; }
 #rules-page .rl-pv { margin: 0; padding-left: 1.2em; font-size: 13.5px; display: grid; gap: 3px; }
 #rules-page .rl-progress { font: 700 12px/1.4 var(--font-mono); color: var(--ink-soft); min-height: 1em; }
 #rules-page .rl-progress.bad { color: var(--alarm); }

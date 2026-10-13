@@ -60,11 +60,13 @@ async function open(browser, user, opts = {}) {
   page.on('dialog', (d) => { page.dialogs.push(d.message()); d.accept(); });
   return { ctx, page, errors };
 }
+/* `dir` is a folder (the folder picker) or an array of files (the chapter-files picker) */
 async function importFolder(page, book, dir) {
   await page.waitForSelector('#rl-import', { timeout: 20000 });
   if (!(await page.$eval('#rl-import', (d) => d.open))) await page.click('#rl-import > summary');
+  if (!(await page.$eval('.rl-other', (d) => d.open))) await page.click('.rl-other > summary');
   await page.click('[data-rl="book"][data-book="' + book + '"]');
-  await page.setInputFiles('#rl-folder', dir);
+  await page.setInputFiles(Array.isArray(dir) ? '#rl-files' : '#rl-folder', dir);
   await page.waitForFunction(() => { const b = document.getElementById('rl-go'); return b && !b.disabled; }, null, { timeout: 30000 });
   const preview = (await page.textContent('#rl-preview')).replace(/\s+/g, ' ');
   await page.click('#rl-go');
@@ -119,9 +121,9 @@ try {
   const lead = b68[0];
   check(lead.keys === 'Downtime\nRest Phase\nBetween Scores' && !/aliases|^---/m.test(lead.body) && lead.src === 'Chapter One/Downtime.md', 'frontmatter is stripped; its title and aliases became search keys: ' + JSON.stringify(lead.keys));
 
-  /* the same book again replaces it (after a confirm) */
+  /* the same book again, as picked chapter files this time, replaces it (after a confirm) */
   G.page.dialogs.length = 0;
-  await importFolder(G.page, 'b68', path.join(FIX, 'b68'));
+  await importFolder(G.page, 'b68', ['Chapter One/Downtime.md', 'Chapter One/Engagement Roll.md', 'Chapter One/Heat.md', 'Chapter Two/Hostile.md', 'Loose.md'].map((f) => path.join(FIX, 'b68', f)));
   check(G.page.dialogs.some((m) => /Replace the 8 entries/.test(m)), 'importing a book that has entries asks before replacing it');
   check((await api(GM, 'GET', '/rules')).json.books.b68 === 8, 'the book was replaced, not doubled');
 
