@@ -175,6 +175,22 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   campaign document is restored by the GM only, after a confirm, through
   `collection('campaign').doc('main').set()` (the `PUT` above).
 
+- The rules wiki (RULES.md; table `rules(campaign, book, slug, title, trail, keys, body, ord, src, updated_at)`, primary key
+  `(campaign, book, slug)`, `book` one of `b68`, `bitd`, `house`; `migrations/0002_rules.sql`). Never part of `/api/export`.
+  - `GET /api/rules` (any signed-in member) -> `{ "version", "updatedAt", "count", "books": { b68, bitd, house }, "entries": [ {
+    "book", "slug", "title", "trail", "keys", "body", "ord", "src", "updatedAt" } ] }`, every book, ordered by book then `ord`.
+    `version` changes with every import, edit and delete; `GET /api/rules?v=<version>` answers `{ version, updatedAt, count,
+    "unchanged": true }` without the entries while it still matches.
+  - `POST /api/rules/import` (GM) body `{ "book": "b68" | "bitd", "entries": [ { "slug", "title", "trail", "keys"?, "body",
+    "ord", "src" } ], "replace": true | false, "part"?: n, "of"?: n }` -> `{ ok, book, received, part, of, replaced, count,
+    version }`. The first chunk with `replace` (no `part`, or `part` 1) deletes the book's rows in the same D1 `batch()` as its
+    inserts; every other chunk adds (an entry with a slug already stored replaces it, so a chunk sent twice is harmless).
+    Caps (`functions/_lib/rules.js`, `LIMITS`): 1 MiB of JSON per request, 200 entries per request, 120 KiB of markdown per
+    entry, 4000 entries and 8 MiB of text per book, title 200, trail / keys / src 600, slug `[a-z0-9][a-z0-9_-]{0,119}`; a
+    malformed body is 400, a size over a cap 413, a player 403 (checked before the body is read). `house` is not importable.
+  - `PUT /api/rules/house/:slug` (GM) body `{ title, body, trail?, keys?, ord? }` -> `{ entry, version }`; `DELETE` ->
+    `{ ok, version }` (404 when missing). At most 300 house rules. A player gets 403 for both.
+
 ## Adapter (`app/runtime/cf.js`)
 
 Loaded before `boot.js`. If `window.claude` already exists it does nothing. Otherwise:
@@ -213,6 +229,8 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   once through the `err` callbacks (not after an offline start, which the header shows).
 - `use('downloads')`: `{ save({ filename, data }) }` → Blob + anchor click, resolves.
 - Anything else resolves `null`.
+- `window.claude.rules` (hosted build only; `list`, `import`, `saveHouse`, `deleteHouse`, see `app/CONTRACT.md`): plain calls
+  on the rules API above.
 - `window.B68Runtime = { kind: 'cloudflare', me, status, exportAll }` once `/api/me` has answered (or the
   page started offline). `exportAll()` → Promise of the `GET /api/export` answer (rejects with
   the API's error, `status` 403 for a player); boot.js shows "Download everything" only when it
@@ -301,11 +319,12 @@ npm run db:local       # = npx wrangler d1 migrations apply DB --local (optional
 npm run dev            # = npx wrangler dev --port 8788 --ip 127.0.0.1 --var DEV_USER:gm@example.test --var GM_EMAILS:gm@example.test
 npm run build          # = npx wrangler deploy --dry-run --outdir .wrangler/dist (bundles, uploads nothing)
 npm test               # = npm run check:runtime && npm run check:api (no browser)
-npm run check:api      # checks/api/jwt.mjs, worker.mjs, then flow.mjs (starts its own servers on 8788 and 8789)
-npm run check:runtime  # checks/runtime/adapter.test.mjs and pwa.test.mjs (plain node)
+npm run check:api      # checks/api/jwt.mjs, worker.mjs, flow.mjs (own servers on 8788 and 8789), then rules.mjs (8794)
+npm run check:runtime  # checks/runtime/adapter.test.mjs, pwa.test.mjs and markdown.test.mjs (plain node)
 npm run check:offline  # checks/runtime/offline.e2e.mjs (own server on 8790, Chromium)
 npm run check:schedule # checks/runtime/schedule.e2e.mjs (own server on 8791, Chromium)
 npm run check:phone    # checks/runtime/phone.e2e.mjs (own server on 8792, mobile Chromium)
+npm run check:rules    # checks/runtime/rules.e2e.mjs (own server on 8795, Chromium): the rules wiki, see RULES.md
 npm run check:e2e      # app/checks/e2e.js against the stubbed runtime
 ```
 

@@ -5,6 +5,7 @@
 <link rel="stylesheet" href="crewsheet.css">
 <link rel="stylesheet" href="schedule.css">
 <link rel="stylesheet" href="season.css">
+<link rel="stylesheet" href="rules.css">
 <style>
   /* Layout: a console character creator in the rulebook's clothes. The subject stands on the height chart
      (left, sticky) under a cover band in the chosen playbook's duotone; the steps run as rulebook side tabs
@@ -450,7 +451,7 @@
   <header class="top">
     <a class="wordmark" id="homeLink" href="#" title="Home"><span class="yr">’68</span><span class="ttl">Blades ’68<small id="viewName" tabindex="-1">Home</small></span></a>
     <nav class="rail" id="rail" aria-label="Steps"></nav>
-    <nav class="topnav" aria-label="Pages"><button class="btn sm" id="homeBtn" type="button">Home</button><button class="btn sm" id="tableBtn" type="button" title="The crew, shared clocks, the players and the campaign log">The table</button><button class="btn sm" id="mineBtn" type="button" hidden>Your sheet</button></nav>
+    <nav class="topnav" aria-label="Pages"><button class="btn sm" id="homeBtn" type="button">Home</button><button class="btn sm" id="tableBtn" type="button" title="The crew, shared clocks, the players and the campaign log">The table</button><button class="btn sm" id="rulesBtn" type="button" title="The rulebooks, searchable">Rules</button><button class="btn sm" id="mineBtn" type="button" hidden>Your sheet</button></nav>
     <span class="label who off" id="whoami">Not signed in · filing unavailable</span>
   </header>
 
@@ -458,6 +459,7 @@
   <section class="dossier" id="dossier" hidden aria-label="Character sheet"></section>
   <section class="tp" id="table-page" hidden aria-label="The table"></section>
   <section class="sn" id="season" hidden aria-label="Season print"></section>
+  <section class="rl" id="rules-page" hidden aria-label="The rules"></section>
   <section class="home" id="home" hidden aria-labelledby="homeTitle">
     <div class="hm" id="homeMain"><p class="hm-wait">Opening the files…</p></div>
     <section class="roster" id="files" aria-labelledby="filesTitle" hidden>
@@ -526,5 +528,6 @@
 <script src="campaign.js"></script>
 <script src="crews.js"></script><script src="crewsheet.js"></script>
 <script src="season.js"></script>
+<script src="markdown.js"></script><script src="rules.js"></script>
 <script src="runtime/cf.js"></script>
 <script src="boot.js"></script>

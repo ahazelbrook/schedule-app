@@ -2,6 +2,8 @@
 //   -> { exportedAt, campaign: { id, doc, updatedAt }, characters: [ { id, doc, updatedAt } ],
 //        members: [ { id, name, role } ] }
 // Every live character of the campaign (not capped), sent as an attachment.
+// The rules wiki (the `rules` table, RULES.md) is deliberately not in it: the rulebook text is not ours to put in a
+// file that gets shared, and the GM re-imports it from their own copy.
 
 import { getDb } from '../_lib/db.js';
 import { roleFor } from '../_lib/auth.js';

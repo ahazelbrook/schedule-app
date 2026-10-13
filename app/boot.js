@@ -108,7 +108,7 @@
   /* mode: home (#home: the start page and the files), create (the studio and line-up), sheet (the tracker in #dossier),
      table (the campaign page in #table-page) or print (the season print in #season, season.js).
      Every mode has a hash, and a switch pushes one history entry (quiet: the hash already says so, or boot). */
-  var MODES = { home: 1, create: 1, sheet: 1, table: 1, print: 1 };
+  var MODES = { home: 1, create: 1, sheet: 1, table: 1, print: 1, rules: 1 };
   function setMode(m, quiet) {
     m = MODES[m] ? m : 'home';
     var was = document.body.dataset.mode;
@@ -117,11 +117,14 @@
     var dos = $('dossier'); if (dos) dos.hidden = m !== 'sheet';
     var tp = $('table-page'); if (tp) tp.hidden = m !== 'table';
     var sn = $('season'); if (sn) sn.hidden = m !== 'print';
+    var rp = $('rules-page'); if (rp) rp.hidden = m !== 'rules';
     if (m !== 'sheet' && was === 'sheet') closeSheet();
     if (m !== 'table' && was === 'table') closeTable();
     if (m === 'table' && was !== 'table') startTable();
     if (m !== 'print' && was === 'print') closePrint();
     if (m === 'print' && was !== 'print') startPrint();
+    if (m !== 'rules' && was === 'rules') closeRules();
+    if (m === 'rules' && was !== 'rules') startRules();
     if (m === 'home' && was !== 'home') renderHome();
     if (!quiet) syncHash(m);
     syncNav(); syncEditBar();
@@ -140,6 +143,7 @@
     var m = document.body.dataset.mode;
     if (m === 'table') return 'The table';
     if (m === 'print') return 'The season print';
+    if (m === 'rules') return 'Rules';
     if (m === 'sheet') return ((openId && (latest || cache[openId])) || {}).name || 'A character';
     if (m === 'create') return S.sheet && S.sheet.docId ? 'Editing ' + (S.sheet.name || 'a character') : 'New character';
     return 'Home';
@@ -152,8 +156,9 @@
   function mineOnly() { if (!A.me) return null; var m = roster.filter(function (d) { return d.owner === A.me; }); return m.length === 1 ? m[0] : null; }
   function syncNav() {
     var m = document.body.dataset.mode, one = mineOnly();
+    var rb = $('rulesBtn'); if (rb) rb.hidden = !rulesOn();
     var mb = $('mineBtn'); if (mb) { mb.hidden = !one; if (one) mb.title = 'Open ' + (one.name || 'your character'); }
-    [['homeBtn', m === 'home'], ['tableBtn', m === 'table'], ['mineBtn', m === 'sheet' && !!one && openId === one.id]].forEach(function (x) { var b = $(x[0]); if (!b) return; if (x[1]) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    [['homeBtn', m === 'home'], ['tableBtn', m === 'table'], ['rulesBtn', m === 'rules'], ['mineBtn', m === 'sheet' && !!one && openId === one.id]].forEach(function (x) { var b = $(x[0]); if (!b) return; if (x[1]) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     syncTitle();
   }
   /* a11y: after a switch, focus lands on the view's title (Home's heading, else the header's view name) */
@@ -179,11 +184,12 @@
   }
   function replaceHash(h) { try { history.replaceState({ b68: depth }, '', h || location.pathname + location.search); } catch (e) { noState = true; } }
   function isShare(h) { return h.length > 24 && h[1] === 's'; }
-  function hashFor(m) { return m === 'sheet' ? (openId ? '#c/' + openId : null) : m === 'table' ? '#t' : m === 'print' ? '#print' : m === 'create' ? '#create' : ''; }
+  function hashFor(m) { return m === 'sheet' ? (openId ? '#c/' + openId : null) : m === 'table' ? '#t' : m === 'print' ? '#print' : m === 'rules' ? '#rules' : m === 'create' ? '#create' : ''; }
   function syncHash(m) {
     var h = location.hash || '', want = hashFor(m);
     if (want === null || h === want || (!want && h === '#')) return;
     if (m === 'table' && h.indexOf('#t/') === 0) return;
+    if (m === 'rules' && isRulesHash(h)) return;
     if (m === 'create' && (h === '#new' || isShare(h))) return;
     pushHash(want);
   }
@@ -458,6 +464,22 @@
   function openPrint() { setMode('print'); window.scrollTo(0, 0); }
   function leavePrint() { goBack(); }
   A.openPrint = openPrint;
+
+  /* ---------- the rules wiki (rules.js): #rules, #rules?q=<words>, #rules/<book>/<slug>; the hosted build only (rules.js, RULES.md) ---------- */
+  function rulesMod() { var R = window.B68Rules; return R && typeof R.open === 'function' ? R : null; }
+  function rulesOn() { var R = rulesMod(); return !!(R && R.available && R.available()); }
+  function isRulesHash(h) { return /^#rules($|[\/?])/.test(h); }
+  function rulesApi() {
+    return {
+      ready: function () { return new Promise(function (res) { (function wait() { if (dbSettled) res(); else setTimeout(wait, 50); })(); }); },
+      isGM: function () { return A.isGM === true; }, me: function () { return A.me; }, back: goBack
+    };
+  }
+  function startRules() { var R = rulesMod(), el = $('rules-page'); if (!R || !el) { toast('The rules module is missing.', true); return; } try { R.open(el, rulesApi()); } catch (e) { toast('The rules could not open: ' + (e && e.message || e), true); } }
+  function closeRules() { var R = rulesMod(); if (R && R.close) { try { R.close(); } catch (e) {} } }
+  function rulesRoute() { var R = rulesMod(); if (R && R.route) { try { R.route(); } catch (e) {} } }
+  function openRules() { setMode('rules'); window.scrollTo(0, 0); }
+  A.openRules = openRules;
 
   /* roster */
   var roster = [];
@@ -796,6 +818,7 @@
       case 'homeLink': ev.preventDefault(); goHome(false); break;
       case 'homeBtn': goHome(false); break;
       case 'tableBtn': openTable(); break;
+      case 'rulesBtn': openRules(); break;
       case 'mineBtn': (function () { var one = mineOnly(); if (one) openCharacter(one.id); })(); break;
       case 'editUpdate': fileCharacter(); break;
       case 'editBack': if (S.sheet.docId) openCharacter(S.sheet.docId); break;
@@ -900,6 +923,7 @@
     var act = document.activeElement, keep = act && box.contains(act) ? (act.id === 'homeTitle' ? '#homeTitle' : act.getAttribute('data-hm') ? '[data-hm="' + act.getAttribute('data-hm') + '"]' + (act.dataset.id ? '[data-id="' + act.dataset.id + '"]' : '') : null) : null;
     var f = tableFacts(), mine = A.me ? roster.filter(function (d) { return d.owner === A.me; }) : [];
     box.innerHTML = A.isGM === true && db ? (f.started ? homeGm(f) : homeSetup(f)) : mine.length ? homeBack(f, mine) : homeWelcome(f);
+    if (rulesOn()) box.insertAdjacentHTML('beforeend', '<div class="hm-links">' + link('rules', 'Search the rules') + '</div>');
     box.querySelectorAll('[data-fig]').forEach(function (n) { var d = roster.filter(function (x) { return x.id === n.getAttribute('data-fig'); })[0]; if (d) n.innerHTML = figureSvg(d, 140, 'h-'); });
     var hp = $('homePlayers'); if (hp) renderTable(roster, hp);
     if (keep) { var k = box.querySelector(keep); if (k) { try { k.focus({ preventScroll: true }); } catch (e) {} } }
@@ -913,6 +937,7 @@
     else if (a === 'discard') { if (window.confirm('Discard your draft (' + draftInfo() + ')? It cannot be brought back.')) { blankCreator(); renderHome(); toast('Draft discarded.'); } }
     else if (a === 'open' && id) openCharacter(id);
     else if (a === 'print') openPrint();
+    else if (a === 'rules') openRules();
     else if (a === 'files' || a === 'backups') { var n = $(a); if (n) { try { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} } }
     else if (a === 'restore') pickRestore();
     else if (a === 'copylink') copyText(hosted() ? location.origin + location.pathname : location.href.split('#')[0], 'Link copied. Send it to your players.');
@@ -955,6 +980,7 @@
     var h = location.hash || '', id = hashOpen(), m = document.body.dataset.mode;
     if (h === '#t' || h === '#t/schedule') { if (m !== 'table') setMode('table', true); if (h === '#t/schedule') openSchedule(); }
     else if (h === '#print') { if (m !== 'print') setMode('print', true); }
+    else if (isRulesHash(h)) { if (m !== 'rules') setMode('rules', true); else rulesRoute(); }
     else if (id) { if (id !== openId || m !== 'sheet') openCharacter(id); }
     else if (h === '#new') { setMode('create', true); newCharacter(); replaceHash('#create'); syncTitle(); }
     else if (h === '#create' || isShare(h)) { if (m !== 'create') setMode('create', true); }
@@ -989,6 +1015,7 @@
     if (pendingOpen) setMode('sheet', true);   /* the sheet opens once the files settle */
     else if (h === '#t' || h === '#t/schedule' || sm === 'table') { setMode('table', true); if (h === '#t/schedule') openSchedule(); }
     else if (h === '#print') setMode('print', true);
+    else if (isRulesHash(h)) setMode('rules', true);
     else if (h === '#new') { setMode('create', true); newCharacter(); replaceHash('#create'); }
     else if (h === '#create' || fromHash || sm === 'create') setMode('create', true);
     else setMode('home', true);

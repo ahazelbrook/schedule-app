@@ -31,3 +31,20 @@ CREATE TABLE IF NOT EXISTS campaigns (
   updated_at TEXT NOT NULL,
   doc TEXT NOT NULL
 );
+
+-- The rules wiki (RULES.md; migrations/0002_rules.sql). Imported by the GM, never in git, never in /api/export.
+-- book: 'b68' | 'bitd' | 'house'. trail: the heading path, "Folder > File > H1". keys: extra search words, one per line.
+CREATE TABLE IF NOT EXISTS rules (
+  campaign TEXT NOT NULL DEFAULT 'default',
+  book TEXT NOT NULL CHECK (book IN ('b68', 'bitd', 'house')),
+  slug TEXT NOT NULL,
+  title TEXT NOT NULL,
+  trail TEXT NOT NULL DEFAULT '',
+  keys TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  ord INTEGER NOT NULL DEFAULT 0,
+  src TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (campaign, book, slug)
+);
+CREATE INDEX IF NOT EXISTS rules_campaign_book_ord ON rules (campaign, book, ord);

@@ -20,6 +20,8 @@
   var G = M.genericCrewPanel, COMMON = CR.COMMON;
 
   /* ---------- helpers ---------- */
+  /* a small "?" link to the rules wiki (rules.js), drawn only on the hosted build, which has the rules */
+  function rl(term) { var R = window.B68Rules; return R && R.help ? R.help(term) : ''; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function clamp(n, a, b) { n = Math.round(+n || 0); return n < a ? a : n > b ? b : n; }
@@ -310,8 +312,8 @@
       for (var k = 1; k <= g; k++) { n++; vc += cube(n <= vault, 'crew.vault', n, { locked: n > cap, dis: n > cap, label: 'Vault', title: n > cap ? 'Needs the Vault upgrade (' + (gi + 1) + ' box' + (gi ? 'es' : '') + ')' : '' }); }
       vc += '</span>';
     });
-    return '<div class="cs-bars cs-heatrow"><div class="cs-bar"><span class="cs-bl">' + esc(COMMON.heat.label) + '</span><span class="cs-pills">' + hp + '</span><span class="cs-bl cs-bl2">' + esc(COMMON.wantedLevel.label) + '</span><span class="cs-pills">' + wp + '</span></div>' +
-      '<div class="cs-bar cs-stackbar"><span class="cs-bl">' + esc(COMMON.stacks.label) + '</span><span class="cs-bend cs-vl">' + esc(COMMON.vaults.label) + '</span><span class="cs-cubes">' + sc + '</span><span class="cs-vaults">' + vc + '</span></div></div>' +
+    return '<div class="cs-bars cs-heatrow"><div class="cs-bar"><span class="cs-bl">' + esc(COMMON.heat.label) + rl('heat') + '</span><span class="cs-pills">' + hp + '</span><span class="cs-bl cs-bl2">' + esc(COMMON.wantedLevel.label) + rl('wanted level') + '</span><span class="cs-pills">' + wp + '</span></div>' +
+      '<div class="cs-bar cs-stackbar"><span class="cs-bl">' + esc(COMMON.stacks.label) + rl('stacks') + '</span><span class="cs-bend cs-vl">' + esc(COMMON.vaults.label) + '</span><span class="cs-cubes">' + sc + '</span><span class="cs-vaults">' + vc + '</span></div></div>' +
       '<p class="hint">Heat <b class="mono">' + heat + '/9</b> · wanted level <b class="mono">' + wanted + '</b> · stacks <b class="mono">' + stacks + '</b> · vaults <b class="mono">' + vault + '/' + cap + '</b>' + (cap < 12 ? ' (the Vault upgrade opens ' + (cap ? 'the second group' : 'the first group, then the second') + ')' : '') + '</p>';
   }
 

@@ -15,6 +15,8 @@
   function B() { return window.B68 || {}; }
 
   /* ---------- helpers (prefer window.B68's, fall back locally) ---------- */
+  /* a small "?" link to the rules wiki (rules.js), drawn only on the hosted build, which has the rules */
+  function rl(term) { var R = window.B68Rules; return R && R.help ? R.help(term) : ''; }
   function esc(s) { if (B().esc) return B().esc(s); return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function clone(o) { return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
   function el(tag, cls, html) { if (B().el) return B().el(tag, cls, html); var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
@@ -333,9 +335,9 @@
       else if (ghost) h += '<p class="hint ds-warn">Fully drained: strike out a key with an echo irregularity.</p>';
       else if (tt) h += '<p class="hint ds-warn">Instability is full: strike out a key with a temporal glitch.</p>';
       else if (vamp) h += '<p class="hint ds-warn">Stress is full: trauma. Another deadlock overwhelms you — level 3 harm “Incapacitated” until you feed enough to recover.</p>';
-      else h += '<p class="hint ds-warn">Stress is full: trauma. Deadlock a key.</p>';
+      else h += '<p class="hint ds-warn">Stress is full: trauma' + rl('trauma') + '. Deadlock a key.</p>';
     }
-    return box(esc(name), h, '', 'ds-stressbox');
+    return box(esc(name) + rl('stress'), h, '', 'ds-stressbox');
   }
   function keys(play, pb) {
     var hull = isHull(pb), g = glitchy(pb), vamp = isVamp(pb), tt = isTT(pb), h = '', gname = glitchName(pb), glist = glitchList(pb);
@@ -521,17 +523,18 @@
 
   /* ---------- the Downtime box (round 5): one activity panel at a time, in the roll panel's style ---------- */
   var DT_NAMES = { indulge: 'Indulge vice', recover: 'Recover', project: 'Long-term project', train: 'Train' };
+  var DT_HELP = { indulge: 'indulge vice', recover: 'recover', project: 'long-term project', train: 'train' };
   function dtName(kind, pb) { return kind === 'recover' && isHull(pb) ? 'Repair' : DT_NAMES[kind] || kind; }
   function coreVice(pb) { return !!pb && !isHull(pb) && !isPara(pb); }
   function downtime(play, pb) {
     var t = cur.ui.dt, vamp = isVamp(pb), hull = isHull(pb);
-    function b(kind) { var open = !!(t && t.kind === kind); return '<button type="button" class="btn sm ds-dtbtn" data-act="dtopen" data-k="' + kind + '" data-always="1" aria-expanded="' + open + '">' + esc(dtName(kind, pb)) + '</button>'; }
+    function b(kind) { var open = !!(t && t.kind === kind); return '<button type="button" class="btn sm ds-dtbtn" data-act="dtopen" data-k="' + kind + '" data-always="1" aria-expanded="' + open + '">' + esc(dtName(kind, pb)) + '</button>' + rl(DT_HELP[kind]); }
     var h = '<div class="row ds-dtbtns">' + (coreVice(pb) ? b('indulge') : '') + (vamp ? '' : b('recover')) + b('project') + b('train') + '</div>';
     if (hull) h += '<p class="hint">No vice: <b>Recharge −5</b> in the Drain box clears Drain.</p>';
     else if (isGhost(pb)) h += '<p class="hint">No vice: <b>Consume</b> in the Drain box clears half your Drain.</p>';
     else if (vamp) h += '<p class="hint">Feeding is your vice and your only healing: <b>Feed</b> in the Stress box clears Stress by the highest die and marks 4 healing. You cannot Recover by being treated.</p>';
     else if (isTT(pb)) h += '<p class="hint">No vice: <b>Restabilize</b> in the Instability box clears 5 and uses one ' + esc(pb.alluviumName || 'canister') + '.</p>';
-    h += '<p class="hint">Two activities per downtime is the usual pace. Each one rolls, marks the sheet and logs the roll.</p>';
+    h += '<p class="hint">Two activities per downtime is the usual pace. Each one rolls, marks the sheet and logs the roll. <span class="ds-dim">Personal business</span>' + rl('personal business') + '</p>';
     return box('Downtime', h, play.trainedThisDowntime ? '<span class="ds-dim">trained this downtime</span>' : '', 'ds-dtbox', dtPanel(play, pb));
   }
   function actionChips(play, sel) {
@@ -746,7 +749,7 @@
     });
     if (!play.clocks.length) h += '<p class="hint">Long-term projects, healing, the GM’s dangers: add a clock and click its segments.</p>';
     h += '</div><div class="row ds-addrow">' + input('', '', 'New clock', 'ds-grow ds-newclock') + '<span class="seg">' + [4, 6, 8].map(function (n) { return '<button type="button" class="chip sm" data-act="addclock" data-n="' + n + '">' + n + '</button>'; }).join('') + '</span></div>';
-    return box('Clocks', h);
+    return box('Clocks' + rl('clocks'), h);
   }
   function memories(play, pb) {
     if (!isHull(pb)) return '';

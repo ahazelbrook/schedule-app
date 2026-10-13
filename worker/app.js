@@ -20,6 +20,9 @@ import { onRequest as exportAll } from '../functions/api/export.js';
 import { onRequest as campaign } from '../functions/api/campaign.js';
 import { onRequest as characters } from '../functions/api/characters/index.js';
 import { onRequest as character } from '../functions/api/characters/[id].js';
+import { onRequest as rules } from '../functions/api/rules/index.js';
+import { onRequest as rulesImport } from '../functions/api/rules/import.js';
+import { onRequest as rulesHouse } from '../functions/api/rules/house/[slug].js';
 import { onRequest as notFound } from '../functions/api/[[path]].js';
 
 // The same file layout Pages Functions routed: [id] is one path segment, [[path]] the rest.
@@ -31,6 +34,9 @@ export const ROUTES = [
   { re: /^\/api\/campaign\/?$/, handler: campaign, path: '/api/campaign' },
   { re: /^\/api\/characters\/?$/, handler: characters, path: '/api/characters' },
   { re: /^\/api\/characters\/([^/]+)\/?$/, handler: character, path: '/api/characters/:id', params: ['id'] },
+  { re: /^\/api\/rules\/?$/, handler: rules, path: '/api/rules' },
+  { re: /^\/api\/rules\/import\/?$/, handler: rulesImport, path: '/api/rules/import' },
+  { re: /^\/api\/rules\/house\/([^/]+)\/?$/, handler: rulesHouse, path: '/api/rules/house/:slug', params: ['slug'] },
 ];
 
 function decode(s) {
