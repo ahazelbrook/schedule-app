@@ -104,7 +104,7 @@ try {
   let preview = await importFolder(G.page, 'bitd', bigDir);
   check(/60 files read/.test(preview) && /sent in [2-9] parts/.test(preview), 'a big folder previews as 60 files in several parts: ' + preview.slice(0, 120));
   check(posts.length >= 2 && posts.length === posts[0].of && posts.every((b, i) => b.part === i + 1 && b.of === posts.length && b.book === 'bitd' && b.replace === true), 'the upload is chunked: ' + posts.length + ' requests with part / of');
-  check(posts.every((b) => JSON.stringify(b).length < 330000 && b.entries.length <= 100), 'every part is about 300 KB or less');
+  check(posts.every((b) => JSON.stringify(b).length < 330000 && b.entries.length <= 40), 'every part is about 300 KB or less');
   const big = (await api(GM, 'GET', '/rules')).json;
   check(big.books.bitd === 60 * 5 && big.books.b68 === 0, 'the server holds the 300 entries (each note split at its H1 and H2s): ' + JSON.stringify(big.books));
   check(big.entries[0].title === 'Big note 0' && big.entries[0].src === 'Vol 0/note-00.md' && big.entries[0].trail === 'Vol 0 > note-00', 'order, source and trail come from the folder: ' + JSON.stringify([big.entries[0].title, big.entries[0].src, big.entries[0].trail]));

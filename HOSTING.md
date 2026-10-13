@@ -185,7 +185,7 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
     "ord", "src" } ], "replace": true | false, "part"?: n, "of"?: n }` -> `{ ok, book, received, part, of, replaced, count,
     version }`. The first chunk with `replace` (no `part`, or `part` 1) deletes the book's rows in the same D1 `batch()` as its
     inserts; every other chunk adds (an entry with a slug already stored replaces it, so a chunk sent twice is harmless).
-    Caps (`functions/_lib/rules.js`, `LIMITS`): 1 MiB of JSON per request, 200 entries per request, 120 KiB of markdown per
+    Caps (`functions/_lib/rules.js`, `LIMITS`): 1 MiB of JSON per request, 40 entries per request (the Workers Free plan allows 50 D1 queries per request), 120 KiB of markdown per
     entry, 4000 entries and 8 MiB of text per book, title 200, trail / keys / src 600, slug `[a-z0-9][a-z0-9_-]{0,119}`; a
     malformed body is 400, a size over a cap 413, a player 403 (checked before the body is read). `house` is not importable.
   - `PUT /api/rules/house/:slug` (GM) body `{ title, body, trail?, keys?, ord? }` -> `{ entry, version }`; `DELETE` ->

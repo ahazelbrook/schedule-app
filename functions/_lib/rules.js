@@ -12,7 +12,7 @@ export const GM_ONLY = 'only the GM can change the rules';
 
 export const LIMITS = {
   request: 1024 * 1024,        // bytes of JSON in one import request (the page sends about 300 KB)
-  entriesPerRequest: 200,      // D1 batches one statement per entry
+  entriesPerRequest: 40,       // D1 batches one statement per entry; the Workers Free plan allows 50 queries a request
   entryBody: 120 * 1024,       // bytes of markdown in one entry (the importer splits larger sections)
   bookEntries: 4000,           // entries in one imported book
   bookBytes: 8 * 1024 * 1024,  // bytes of markdown in one imported book

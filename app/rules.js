@@ -21,7 +21,7 @@
   var ORDER = ['b68', 'house', 'bitd'];                       /* which book an entry is shown from first */
   var PRI = { b68: 0, house: 1, bitd: 2 };
   /* the server's caps (functions/_lib/rules.js, LIMITS); the importer splits to fit them */
-  var LIMITS = { chunkBytes: 300000, chunkEntries: 100, bookEntries: 4000, bookBytes: 8 * 1024 * 1024 };
+  var LIMITS = { chunkBytes: 300000, chunkEntries: 40, bookEntries: 4000, bookBytes: 8 * 1024 * 1024 };
   var SUFFIX = 'Blades \u201968';
   var PAGE = 40;                                              /* search results per page */
 
@@ -525,7 +525,7 @@
         entries.push({ slug: uniq(s), title: s.title.slice(0, 200), trail: s.trail.slice(0, 600), keys: (s.keys || '').slice(0, 600), body: s.body, ord: ord++, src: p.path.slice(0, 600) });
       });
     });
-    /* chunks of about 300 KB of JSON and at most 100 entries, in order */
+    /* chunks of about 300 KB of JSON and at most 40 entries, in order */
     var chunks = [], cur = [], size = 0, bytes = 0;
     entries.forEach(function (e) {
       var n = utf8len(JSON.stringify(e)); bytes += utf8len(e.body);

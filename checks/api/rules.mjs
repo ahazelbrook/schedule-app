@@ -23,7 +23,7 @@ const PORT = Number(process.env.PORT || 8794);
 const GM = 'gm@example.test';
 const PLAYER = 'player@example.test';
 const OVERALL_TIMEOUT_MS = Number(process.env.CHECK_TIMEOUT_MS || 240000);
-const L = { entryBody: 120 * 1024, entriesPerRequest: 200, request: 1024 * 1024, bookEntries: 4000, bookBytes: 8 * 1024 * 1024 };
+const L = { entryBody: 120 * 1024, entriesPerRequest: 40, request: 1024 * 1024, bookEntries: 4000, bookBytes: 8 * 1024 * 1024 };
 
 const stateDir = mkdtempSync(join(tmpdir(), 'b68-rules-check-'));
 let failures = 0;
@@ -248,14 +248,15 @@ async function main() {
   });
 
   await step('size caps: 4000 entries and 8 MiB of text in a book, across chunks', async () => {
-    let r = await imp('bitd', Array.from({ length: 200 }, (_, i) => entry('n0-' + i, { ord: i, body: 'p' })), { replace: true, part: 1, of: 21 });
+    const N = L.entriesPerRequest, P = L.bookEntries / N;
+    let r = await imp('bitd', Array.from({ length: N }, (_, i) => entry('n0-' + i, { ord: i, body: 'p' })), { replace: true, part: 1, of: P + 1 });
     expectStatus(r, 200);
-    for (let k = 1; k < 20; k++) {
-      r = await imp('bitd', Array.from({ length: 200 }, (_, i) => entry('n' + k + '-' + i, { ord: k * 200 + i, body: 'p' })), { part: k + 1, of: 21 });
+    for (let k = 1; k < P; k++) {
+      r = await imp('bitd', Array.from({ length: N }, (_, i) => entry('n' + k + '-' + i, { ord: k * N + i, body: 'p' })), { part: k + 1, of: P + 1 });
       expectStatus(r, 200);
     }
     expect(r.json.count === 4000, 'count ' + r.json.count);
-    r = await imp('bitd', [entry('one-too-many')], { part: 21, of: 21 });
+    r = await imp('bitd', [entry('one-too-many')], { part: P + 1, of: P + 1 });
     expectStatus(r, 413);
     expect(/too many entries in bitd/.test(r.json.error), r.text);
     // text: 8 MiB = 69 entries of 120 KiB (and a bit); sent 8 at a time under the 1 MiB request cap
