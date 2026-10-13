@@ -206,3 +206,39 @@ The panel lists the same end-of-session triggers as the XP box: `pb.xpTriggers` 
 - Recover (Hull: "Repair", treated by "a mechanic"): yourself with a chosen action's rating, or a healer with 0–4 dice. Ticks: 1–3 one, 4–5 two, 6 three, critical five. When the 4-segment clock fills, every harm steps down (level 3 → 2, 2 → 1, 1 cleared; level 4 is not healed by the clock) and the overflow stays on the clock (it can fill more than once). Vampire has no Recover: feeding is its only healing. Log `Recover (a healer) 2d · 5,3 → partial, +2 healing, clock filled: harm steps down (0 / 4)`.
 - Long-term project: one of `play.clocks` (complete ones are shown but cannot be chosen) or a new clock (name + 4 / 6 / 8, default 8, created on the roll), a chosen action, same tick table, capped at the clock size. Log `Long-term project “Name” (Hunt) 2d · 6,1 → success, +3 (3 / 6)` (`, complete` when full).
 - Train: +1 xp in Insight, Prowess, Resolve or playbook (a full track cannot be chosen), once per downtime (`trainedThisDowntime`). Log `Train Prowess · +1 xp (1 / 6)`.
+
+---
+
+# Round 6: the cast (NPCs)
+
+Owner: `cast-page.js`, `cast.css` (new), `figures/npcs.js` (data); the server and adapter side is in `functions/` and `runtime/cf.js`.
+The whole contract is in `CAST.md`; this is the part the page and the runtimes share.
+
+## Collection `npcs` (artifact db, and `cf.js`)
+
+```js
+db.collection('npcs')            // where / orderBy / limit / get() / onSnapshot(cb, err) -> { docs: [snap], size, empty, forEach }
+db.collection('npcs').doc(id)    // get() / set(doc) / update(patch) / delete() / onSnapshot(cb, err) -> { id, exists, data(), metadata }
+// doc: { name, alias, role, faction, description, spec /* figure kit v2 */, revealed, firstSeen, tags, gmNotes }
+```
+
+- The same interface as `characters`, on the hosted build (`cf.js`: cached beside the characters, refetched only when the characters
+  poll's `npcsUpdatedAt` moved, writes through the ordered offline queue, GM only) and in the artifact (the db's own collection;
+  `update` where the runtime has it, else `set`). The page never assumes either: when `collection('npcs')` is missing or throws it
+  says the cast needs the shared files.
+- **Secrecy.** Hosted: the server sends a player only revealed NPCs, never `gmNotes`. Artifact: the collection is shared, so hiding is
+  presentation only (`cast-page.js` filters on `revealed` and drops `gmNotes` for anyone but the GM).
+- `campaign/main` gains `scene = { npcs: { <id>: true | false }, at }` (GM only). Boot saves it through `campaignSave({ scene })` (changed leaves
+  only, like `schedule`) and `campaign.js` `normalize` keeps it.
+
+## `window.B68CastPage` (boot.js calls it)
+
+```js
+B68CastPage.init(api)         // once the files settle: api = { db(), me(), isGM(), canWrite(), saveScene(scene) -> Promise, back() }
+B68CastPage.campaign(doc)     // every campaign/main snapshot (the scene), and null when there is none
+B68CastPage.open(hash)  .route(hash)  .close()   // the `cast` mode (#cast, #cast/<id>, #cast/<id>/edit, #cast/new)
+```
+
+`body[data-mode="cast"]` shows `section#cast-page`; `aside#stageBanner` is outside every mode and shows who is on stage on every screen.
+Boot adds the mode (`MODES`, `setMode`, `route`, the hash) and "The cast" on Home and the table page; nothing else of the creator is touched.
+

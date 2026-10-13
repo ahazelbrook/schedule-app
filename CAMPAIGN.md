@@ -68,6 +68,12 @@ playbooks* and *Crew sheet*).
 - A missing document reads as the default above (every field present, `session.number` 0).
   The first write creates it.
 
+## Who is on stage
+
+`scene = { npcs: { <npcId>: true | false }, at: ISO }` is a GM-only top-level key (a map, as the convention asks for anything
+several people might write). `checkShape` validates its shape (400), and a player's change to it is 403, like any other key outside
+the player rules. It says which NPCs the table is looking at; the page shows them in a banner on every screen. See CAST.md.
+
 ## Crew playbooks
 
 The six Blades '68 crew playbooks (Dealers, Hit Squad, Militants, Racers, Shadows, Utopians)

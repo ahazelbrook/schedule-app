@@ -303,7 +303,7 @@ const SHEET = `(pb) => {
   await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
   assert((await p.$eval('.tp-role', n => n.textContent)) === 'Read only', 'role Read only');
   const enabled = await p.$$eval('#table-page button, #table-page input, #table-page textarea, #table-page select', ns => ns.filter(n => !n.disabled).map(n => n.dataset.act || n.dataset.path || n.dataset.ui || n.tagName));
-  assert(enabled.length && enabled.every(a => a === 'open' || a === 'print' || a === 'crew.cspick') && enabled.indexOf('print') >= 0, 'read only: only Open, Print the season and the crew covers toggle stay enabled: ' + enabled.join(','));
+  assert(enabled.length && enabled.every(a => a === 'open' || a === 'print' || a === 'cast' || a === 'crew.cspick') && enabled.indexOf('print') >= 0, 'read only: only Open, The cast, Print the season and the crew covers toggle stay enabled: ' + enabled.join(','));
   assert(!(await p.$('[data-act="sessstart"]')) && /The GM starts sessions/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'read only: no session buttons, the GM line instead');
   await none('read only clicks', async () => {
     await p.click('[data-act="crew.tier"][data-n="5"]', { force: true }).catch(() => {});

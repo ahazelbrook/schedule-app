@@ -106,7 +106,8 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
 - `GET /api/characters` → `{ "now": ISO, "docs": [ { "id", "doc", "updatedAt", "deleted": false } ], "campaignUpdatedAt": ISO | null }`,
   every live character of the campaign, newest `updated_at` first, at most 500.
   `campaignUpdatedAt` is the stored campaign document's `updatedAt` (`null` when none), so a
-  poller knows when to refetch `/api/campaign` without polling it too.
+  poller knows when to refetch `/api/campaign` without polling it too. `npcsUpdatedAt` does the same for `/api/npcs`
+  (the newest change of any NPC row, `null` when none; CAST.md).
 - `GET /api/characters?since=<ISO>` → same shape (with `campaignUpdatedAt`), every row (tombstones included, with
   `"deleted": true` and `"doc": null`) whose `updated_at > since`. `now` is the server time to
   use as the next `since`; it is reported 2 s behind the clock so a write committed during a
@@ -166,7 +167,7 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   fetches it through `B68Runtime.exportAll()` and saves it as it came; opening the address in a
   signed-in browser also works) → a backup of this deployment's campaign as a download:
   `{ "exportedAt": ISO, "campaign": { "id", "doc", "updatedAt" }, "characters": [ { "id", "doc",
-  "updatedAt" } ], "members": [ { "id", "name", "role" } ] }`. `campaign.doc` is the stored
+  "updatedAt" } ], "npcs": [ { "id", "doc", "updatedAt" } ], "members": [ { "id", "name", "role" } ] }`. `campaign.doc` is the stored
   campaign document (the default one, `updatedAt` null, when none is stored); `characters` is
   every live character row of the campaign (not capped at 500, tombstones left out). The
   response carries `Content-Disposition: attachment; filename="blades68-<campaign>-<YYYY-MM-DD>.json"`
@@ -174,6 +175,11 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   "Download all" file (CAMPAIGN.md, *Backups*): the characters are filed as new documents and the
   campaign document is restored by the GM only, after a confirm, through
   `collection('campaign').doc('main').set()` (the `PUT` above).
+
+- `/api/npcs` and `/api/npcs/:id` (the cast, CAST.md): `GET` lists or reads NPC documents (the GM gets all, a player only the
+  revealed ones without `gmNotes`); `POST` (a new id), `PUT`, `PATCH` and `DELETE` are GM only (403 for a player) and validate the
+  document (400 / 413). Table `npcs(id, campaign, created_at, updated_at, deleted, doc)` (migration `0003_npcs.sql`, which also
+  seeds seven hidden NPCs). The campaign document's `scene` (who is on stage) is GM only.
 
 ## Adapter (`app/runtime/cf.js`)
 
@@ -206,7 +212,11 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   listeners hear only campaign changes (first snapshot once loaded, then only when the document
   actually changed), character listeners only character changes. Any other `campaign` doc id
   never exists and refuses writes; `collection('campaign')` queries are always empty.
-- One poller feeds every listener (characters and campaign; it runs while either exists): a full `GET /api/characters` at start, then
+- `collection('npcs')` is the characters collection's interface (`doc(id)` with `get / set / update / delete / onSnapshot`, and the
+  `where / orderBy / limit` chain over the cache), for the cast (CAST.md). It is cached beside the characters and refetched
+  (`GET /api/npcs`, the whole list) only when a poll's `npcsUpdatedAt` differs from the cached stamp, and only while someone listens.
+  Writes use the same queue; a player's write is refused at once (403) without a request.
+- One poller feeds every listener (characters, campaign and npcs; it runs while any exists): a full `GET /api/characters` at start, then
   `?since=` every 4 s while the page is visible and every 20 s when hidden, plus an
   immediate poll after each own write; a write also updates the cache optimistically so the
   sheet never waits on the network. Network errors are retried on the next tick and surfaced

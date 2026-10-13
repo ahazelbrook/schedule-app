@@ -5,6 +5,7 @@
 <link rel="stylesheet" href="crewsheet.css">
 <link rel="stylesheet" href="schedule.css">
 <link rel="stylesheet" href="season.css">
+<link rel="stylesheet" href="cast.css">
 <style>
   /* Layout: a console character creator in the rulebook's clothes. The subject stands on the height chart
      (left, sticky) under a cover band in the chosen playbook's duotone; the steps run as rulebook side tabs
@@ -458,6 +459,7 @@
   <section class="dossier" id="dossier" hidden aria-label="Character sheet"></section>
   <section class="tp" id="table-page" hidden aria-label="The table"></section>
   <section class="sn" id="season" hidden aria-label="Season print"></section>
+  <section class="cp" id="cast-page" hidden aria-label="The cast"></section>
   <section class="home" id="home" hidden aria-labelledby="homeTitle">
     <div class="hm" id="homeMain"><p class="hm-wait">Opening the files…</p></div>
     <section class="roster" id="files" aria-labelledby="filesTitle" hidden>
@@ -512,11 +514,13 @@
   </footer>
 </div>
 
+<aside class="cp-stage" id="stageBanner" hidden role="region" aria-label="On stage" aria-live="polite"></aside>
 <div class="toast" id="toast"><p class="toast-msg" id="toastMsg" role="status" aria-live="polite" aria-atomic="true"></p><p class="toast-msg bad" id="toastErr" role="alert" aria-atomic="true"></p></div>
 <dialog class="dlg" id="restoreDlg" aria-labelledby="restoreTitle"></dialog>
 
 <script src="figures/figure-kit.js"></script>
 <script src="figures/cast.js"></script>
+<script src="figures/npcs.js"></script>
 <script src="content.js"></script>
 <script src="core.js"></script>
 <script src="zoom.js"></script>
@@ -526,5 +530,6 @@
 <script src="campaign.js"></script>
 <script src="crews.js"></script><script src="crewsheet.js"></script>
 <script src="season.js"></script>
+<script src="cast-page.js"></script>
 <script src="runtime/cf.js"></script>
 <script src="boot.js"></script>
