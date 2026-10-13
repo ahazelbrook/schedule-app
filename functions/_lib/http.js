@@ -35,12 +35,13 @@ export function isPlainObject(v) {
     (Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null);
 }
 
-// Read the request body as a JSON object, refusing anything over MAX_BODY_BYTES.
-export async function readJsonObject(request) {
+// Read the request body as a JSON object, refusing anything over maxBytes (MAX_BODY_BYTES unless the
+// caller, such as the rules import, has a reason for a larger one).
+export async function readJsonObject(request, maxBytes = MAX_BODY_BYTES) {
   const declared = Number(request.headers.get('Content-Length'));
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw new HttpError(413, 'body too large');
+  if (Number.isFinite(declared) && declared > maxBytes) throw new HttpError(413, 'body too large');
   const buf = await request.arrayBuffer();
-  if (buf.byteLength > MAX_BODY_BYTES) throw new HttpError(413, 'body too large');
+  if (buf.byteLength > maxBytes) throw new HttpError(413, 'body too large');
   let body;
   try {
     body = JSON.parse(new TextDecoder().decode(buf));

@@ -2,3 +2,7 @@ node_modules
 .wrangler/
 app/checks/out/
 .dev.vars
+# The rulebooks are not ours to publish (this repository is public): a safety net for a local copy of the
+# markdown (RULES.md). The rules live in the D1 database, imported from the GM's PC, never in git.
+rules-src/
+rules-private/

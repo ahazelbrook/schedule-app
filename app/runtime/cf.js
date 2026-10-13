@@ -1,7 +1,8 @@
 /* Hosted runtime adapter (Cloudflare Worker + Access + D1).
    Defines window.claude.use('user' | 'db' | 'downloads') on top of the JSON API in functions/
    (see HOSTING.md) so the page runs unchanged outside the claude.ai artifact. The db serves the
-   `characters` collection and the shared `campaign/main` document (CAMPAIGN.md).
+   `characters` collection, the shared `campaign/main` document (CAMPAIGN.md) and the `npcs` collection (CAST.md).
+   window.claude.rules (list, import, saveHouse, deleteHouse) is the rules wiki's corpus (RULES.md).
    Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network
    is unreachable, and writes queue (in order, in localStorage) until it is back. It also makes the hosted page
    installable (manifest, icons, service worker sw.js).
@@ -15,6 +16,7 @@
 
   var COLLECTION = 'characters';
   var CAMPAIGN = 'campaign', CAMPAIGN_ID = 'main';   /* the one shared campaign document (CAMPAIGN.md) */
+  var NPCS = 'npcs';           /* the cast (CAST.md): the GM writes, a player is sent only the revealed NPCs */
   var LOG_MAX = 200;           /* the server keeps the newest 200 campaign log entries */
   var SIGNED_OUT = 'signed out: reload the page to sign in again';
   var CONFLICT_RETRIES = 2;      /* a write answered 409 (the row kept changing) is sent again this many times */
@@ -274,7 +276,7 @@
   /* tell character listeners: doc listeners only when their document changed (or `all`), query listeners on any change */
   function notify(changed, all) {
     listeners.slice().forEach(function (l) {
-      if (listeners.indexOf(l) < 0 || l.campaign) return;
+      if (listeners.indexOf(l) < 0 || l.campaign || l.npcs) return;
       try {
         if (l.id !== undefined) { if (all || changed[l.id]) l.cb(docSnap(l.id)); }
         else if (all || Object.keys(changed).length) l.cb(querySnap(l.query, cache, docSnap));
@@ -322,6 +324,61 @@
     return api('GET', '/' + CAMPAIGN).then(function (r) {
       if (at !== camp.epoch) { again = true; return; }   /* an own write overlapped: ask again */
       if (running && hasCampaignListeners()) applyCampaign(r);
+    });
+  }
+
+  /* ---------- the cast: the `npcs` collection, cached beside the characters, refreshed through the same poller ----------
+     Each /api/characters answer carries npcsUpdatedAt (the newest change of any NPC row, hidden ones included); only when it
+     differs from the stamp of the cached copy does the poll go on to GET /api/npcs (the whole list: a table has a few dozen
+     NPCs). Nothing is fetched while nobody listens to `npcs`. The server sends a player only the revealed NPCs. */
+  var npcs = {
+    docs: {},                  /* id -> doc (live ones the viewer may see) */
+    stamp: {},                 /* id -> server updatedAt of the cached version */
+    at: undefined,             /* the server npcsUpdatedAt of the cached copy: null = no rows, undefined = unknown */
+    loaded: false,             /* fetched since the first npcs listener subscribed */
+    pending: {},               /* id -> own writes in flight */
+    epoch: 0                   /* bumped by own writes, so a fetch that overlapped one is dropped */
+  };
+  function hasNpcListeners() { return listeners.some(function (l) { return l.npcs; }); }
+  function npcSnap(id) {
+    var d = npcs.docs[id];
+    return { id: id, exists: d !== undefined, data: function () { return clone(d); }, metadata: { fromCache: !status().online, hasPendingWrites: !!npcs.pending[id] } };
+  }
+  function notifyNpcs(changed, all) {
+    listeners.slice().forEach(function (l) {
+      if (!l.npcs || listeners.indexOf(l) < 0) return;
+      try {
+        if (l.id !== undefined) { if (all || changed[l.id]) l.cb(npcSnap(l.id)); }
+        else if (all || Object.keys(changed).length) l.cb(querySnap(l.query, npcs.docs, npcSnap));
+      } catch (e) { setTimeout(function () { throw e; }, 0); }
+    });
+  }
+  /* take GET /api/npcs: the list replaces the cache (rows with own writes in flight are kept as they are) */
+  function applyNpcs(r) {
+    var rows = (r && r.docs) || [], changed = {}, next = {}, nextStamp = {};
+    rows.forEach(function (row) {
+      if (npcs.pending[row.id] || row.deleted || !row.doc) return;
+      next[row.id] = row.doc; nextStamp[row.id] = row.updatedAt || (row.doc && row.doc.updatedAt) || '';
+    });
+    Object.keys(npcs.pending).forEach(function (id) { if (id in npcs.docs) { next[id] = npcs.docs[id]; nextStamp[id] = npcs.stamp[id]; } });
+    Object.keys(next).forEach(function (id) { if (!(id in npcs.docs) || npcs.stamp[id] !== nextStamp[id]) changed[id] = true; });
+    Object.keys(npcs.docs).forEach(function (id) { if (!(id in next)) changed[id] = true; });
+    var first = !npcs.loaded;
+    npcs.docs = next; npcs.stamp = nextStamp; npcs.at = (r && r.npcsUpdatedAt) || null; npcs.loaded = true;
+    notifyNpcs(changed, first);
+    persistSoon();
+  }
+  /* after a characters poll: refetch the cast when its stamp moved (or it was never loaded) */
+  function syncNpcs(serverAt) {
+    if (!running || !hasNpcListeners() || Object.keys(npcs.pending).length) return;
+    if (npcs.loaded && (serverAt === undefined || serverAt === npcs.at)) return;   /* unchanged (or an older server): nothing to do */
+    var at = npcs.epoch;
+    return api('GET', '/' + NPCS).then(function (r) {
+      if (at !== npcs.epoch) { again = true; return; }   /* an own write overlapped: ask again */
+      if (running && hasNpcListeners()) applyNpcs(r);
+    }).catch(function (e) {
+      if (isNetErr(e) || signedOut) throw e;            /* the poll reports those */
+      listeners.slice().forEach(function (l) { if (l.npcs && l.err) { try { l.err(e); } catch (x) {} } });   /* the cast alone failed: only its listeners hear */
     });
   }
 
@@ -375,7 +432,7 @@
         if (at !== epoch) again = true;
         else if (running) applyServer(r, full);
         if (campAt !== camp.epoch) { again = true; return; }
-        return syncCampaign(r.campaignUpdatedAt);
+        return Promise.resolve(syncCampaign(r.campaignUpdatedAt)).then(function () { return syncNpcs(r.npcsUpdatedAt); });
       })
       .then(function () {
         errored = false; emitStatus();
@@ -391,7 +448,7 @@
   }
   /* epoch++: drop a poll left over from before a stop. After an offline start the snapshot stays loaded. */
   function start() { if (running) return; running = true; if (mode !== 'snapshot') loaded = false; errored = false; epoch++; schedule(0); }
-  function stop() { running = false; if (mode !== 'snapshot') { loaded = false; camp.loaded = false; } again = false; clearTimeout(timer); timer = null; }
+  function stop() { running = false; if (mode !== 'snapshot') { loaded = false; camp.loaded = false; npcs.loaded = false; } again = false; clearTimeout(timer); timer = null; }
   function pollSoon() { if (!running) return; if (inflight) again = true; else schedule(0); }
 
   /* the session is over (signed out, or another account signed in): stop, tell every listener once.
@@ -422,6 +479,10 @@
       if (live && camp.loaded) setTimeout(function () { if (listeners.indexOf(l) >= 0) l.cb(campSnap()); }, 0);
       else pollSoon();
     }
+    else if (l.npcs) {
+      if (live && npcs.loaded) setTimeout(function () { if (listeners.indexOf(l) >= 0) l.cb(l.id !== undefined ? npcSnap(l.id) : querySnap(l.query, npcs.docs, npcSnap)); }, 0);
+      else pollSoon();
+    }
     else if (live && loaded) {
       setTimeout(function () { if (listeners.indexOf(l) >= 0) l.cb(l.id !== undefined ? docSnap(l.id) : querySnap(l.query, cache, docSnap)); }, 0);
     }
@@ -431,7 +492,11 @@
       if (done) return; done = true;
       var i = listeners.indexOf(l); if (i >= 0) listeners.splice(i, 1);
       if (!listeners.length) stop();
-      else if (!hasCampaignListeners() && mode !== 'snapshot') camp.loaded = false;   /* nobody keeps it current: refetch on the next subscribe */
+      else {
+        /* nobody keeps it current: refetch on the next subscribe */
+        if (!hasCampaignListeners() && mode !== 'snapshot') camp.loaded = false;
+        if (!hasNpcListeners() && mode !== 'snapshot') npcs.loaded = false;
+      }
     };
   }
 
@@ -454,6 +519,7 @@
       v: 1, me: me, savedAt: nowIso(), syncedAt: lastSync,
       docs: cache, stamps: stamp,
       campaign: camp.doc ? { doc: camp.doc, updatedAt: camp.stamp === undefined ? null : camp.stamp } : null,
+      npcs: npcs.loaded ? { docs: npcs.docs, stamps: npcs.stamp, at: npcs.at === undefined ? null : npcs.at } : null,
       members: membersById
     });
   }
@@ -474,9 +540,10 @@
       if (isObj(snap.stamps)) stamp = snap.stamps;
       if (snap.campaign && isObj(snap.campaign.doc)) { camp.doc = snap.campaign.doc; camp.stamp = snap.campaign.updatedAt || null; }
       if (isObj(snap.members)) membersById = snap.members;
+      if (snap.npcs && isObj(snap.npcs.docs)) { npcs.docs = snap.npcs.docs; npcs.stamp = isObj(snap.npcs.stamps) ? snap.npcs.stamps : {}; npcs.at = snap.npcs.at || null; }
       if (mode === 'snapshot') {
         lastSync = snap.syncedAt || null;
-        loaded = true; camp.loaded = !!camp.doc;
+        loaded = true; camp.loaded = !!camp.doc; npcs.loaded = !!snap.npcs && isObj(snap.npcs.docs);
         if (membersById) members = { at: Infinity, promise: Promise.resolve(membersById) };
       }
     }
@@ -484,7 +551,7 @@
     (Array.isArray(saved) ? saved : []).forEach(function (q, i) {
       if (!q || typeof q.path !== 'string' || ['PUT', 'PATCH', 'DELETE'].indexOf(q.method) < 0) return;
       q = { qid: q.qid || TAB + '.r' + i, saved: !!q.qid, mine: false, claim: null,
-        kind: q.kind === 'campaign' ? 'campaign' : 'char', id: q.id, method: q.method, path: q.path, body: q.body, waiters: [] };
+        kind: q.kind === 'campaign' || q.kind === 'npc' ? q.kind : 'char', id: q.id, method: q.method, path: q.path, body: q.body, waiters: [] };
       queue.push(q); bump(q, 1); applyLocal(q);
     });
   }
@@ -499,12 +566,17 @@
 
   function bump(q, n) {
     if (q.kind === 'campaign') camp.pending = Math.max(0, camp.pending + n);
+    else if (q.kind === 'npc') { npcs.pending[q.id] = (npcs.pending[q.id] || 0) + n; if (npcs.pending[q.id] <= 0) delete npcs.pending[q.id]; }
     else { pending[q.id] = (pending[q.id] || 0) + n; if (pending[q.id] <= 0) delete pending[q.id]; }
   }
   function applyLocal(q) {
     if (q.kind === 'campaign') {
       if (q.method === 'PUT') camp.doc = trimLog(clone(q.body));
       else if (q.method === 'PATCH' && camp.doc) mergeCampaign(camp.doc, q.body);
+    } else if (q.kind === 'npc') {
+      if (q.method === 'PUT') npcs.docs[q.id] = clone(q.body);
+      else if (q.method === 'PATCH') { if (q.id in npcs.docs) deepMerge(npcs.docs[q.id], q.body); }
+      else if (q.method === 'DELETE') delete npcs.docs[q.id];
     } else if (q.method === 'PUT') cache[q.id] = clone(q.body);
     else if (q.method === 'PATCH') { if (q.id in cache) deepMerge(cache[q.id], q.body); }
     else if (q.method === 'DELETE') delete cache[q.id];
@@ -543,6 +615,8 @@
     var ws = q.waiters; q.waiters = [];
     ws.forEach(function (w) { if (err) w.reject(err); else w.resolve(); });
   }
+  /* a write started or finished: the poll in flight for that store may be stale */
+  function epochUp(q) { if (q.kind === 'campaign') camp.epoch++; else if (q.kind === 'npc') npcs.epoch++; else epoch++; }
   function offlineNow() { return mode !== 'online' || stalled || !net; }
 
   /* can patch b, sent right after patch a to the same document, be folded into a? Only when one PATCH of the merged
@@ -623,12 +697,18 @@
     q.claim = { tab: TAB, until: Date.now() + CLAIM_MS }; saveQueue();
     if (q.kind === 'char') ch[q.id] = true;
     sendingQ = q;
-    if (q.kind === 'campaign') camp.epoch++; else epoch++;
+    epochUp(q);
     send(q.method, q.path, q.body).then(function (r) {
       flushing = false; sendingQ = null; stalled = false;
       done(q);
       if (q.kind === 'campaign') {
         if (!camp.pending && hasCampaignListeners()) applyCampaign(r);
+      } else if (q.kind === 'npc') {
+        if (!npcs.pending[q.id]) {
+          if (q.method === 'DELETE') { delete npcs.docs[q.id]; delete npcs.stamp[q.id]; }
+          else if (r && r.doc) { npcs.docs[q.id] = r.doc; npcs.stamp[q.id] = r.doc.updatedAt || ''; }
+          var nch = {}; nch[q.id] = true; notifyNpcs(nch);
+        }
       } else if (!pending[q.id]) {
         if (q.method === 'DELETE') { delete cache[q.id]; delete stamp[q.id]; }
         else if (r && r.doc) { cache[q.id] = r.doc; stamp[q.id] = r.doc.updatedAt || ''; }
@@ -650,6 +730,7 @@
       /* refused (400 / 403 / 404 / 413 ...): drop it and resync what it touched from the server */
       done(q);
       if (q.kind === 'campaign') camp.stamp = undefined;    /* the next poll refetches and undoes the optimistic change */
+      else if (q.kind === 'npc') npcs.at = undefined;       /* same for the cast */
       else if (running) loaded = false;                     /* a full load replaces the optimistic copy */
       pollSoon();
       emitStatus(); persistSoon();
@@ -667,7 +748,7 @@
     finished[q.qid] = true;
     var i = queue.indexOf(q); if (i >= 0) queue.splice(i, 1);
     bump(q, -1);
-    if (q.kind === 'campaign') camp.epoch++; else epoch++;
+    epochUp(q);
     saveQueue();
   }
 
@@ -685,7 +766,7 @@
       }
       me = m; mode = 'online';
       writeJSON(LAST, { key: userKey(m), id: m.id });
-      loaded = false; camp.stamp = undefined; members = null;      /* full load, campaign refetch, fresh names */
+      loaded = false; camp.stamp = undefined; npcs.at = undefined; members = null;      /* full load, campaign refetch, fresh names */
       if (window.B68Runtime) window.B68Runtime.me = m;
       emitStatus();
       return true;
@@ -766,6 +847,61 @@
     };
   }
 
+  /* an own write to the cast: the GM only (the server says 403 to anyone else, so a player's call is refused here at once).
+     Same shape as write(): the cache changes now, the write is queued and sent, the server's version replaces it. */
+  function npcWrite(id, method, body, local) {
+    if (signedOut) return Promise.reject(signedOutError());
+    if (!me || me.role !== 'gm') { var e = new Error('only the GM can change the cast'); e.status = 403; return Promise.reject(e); }
+    var ch = {}; ch[id] = true;
+    var p = enqueue({ kind: 'npc', id: id, method: method, path: '/' + NPCS + '/' + encodeURIComponent(id), body: body === undefined ? undefined : clone(body) });
+    npcs.epoch++;
+    if (npcs.loaded) { local(); notifyNpcs(ch); persistSoon(); }
+    flush();
+    return p;
+  }
+  function npcRef(id) {
+    function snapOf(d) { return { id: id, exists: d !== undefined, data: function () { return clone(d); }, metadata: { fromCache: false, hasPendingWrites: false } }; }
+    return {
+      id: id, path: NPCS + '/' + id,
+      get: function () {
+        return api('GET', '/' + NPCS + '/' + encodeURIComponent(id)).then(function (r) { return snapOf(r && r.doc); }, function (e) {
+          if (e.status === 404) return snapOf(undefined);   /* missing, deleted, or not revealed to a player */
+          if (isNetErr(e) && npcs.loaded) return npcSnap(id);
+          throw e;
+        });
+      },
+      set: function (doc) { return npcWrite(id, 'PUT', doc, function () { npcs.docs[id] = clone(doc); }); },
+      update: function (patch) { return npcWrite(id, 'PATCH', patch, function () { if (id in npcs.docs) deepMerge(npcs.docs[id], patch); }); },
+      delete: function () { return npcWrite(id, 'DELETE', undefined, function () { delete npcs.docs[id]; }); },
+      onSnapshot: function (cb, err) { return subscribe({ npcs: true, id: id, cb: cb, err: err }); }
+    };
+  }
+  /* collection('npcs'): where / orderBy / limit over the cached cast, get(), onSnapshot(), doc(id) */
+  function makeNpcQuery(q) {
+    function next(change) { return makeNpcQuery({ order: q.order.concat(change.order || []), where: q.where.concat(change.where || []), limit: change.limit !== undefined ? change.limit : q.limit }); }
+    var c = {
+      orderBy: function (f, dir) { return next({ order: [{ field: f, dir: dir === 'desc' ? 'desc' : 'asc' }] }); },
+      limit: function (n) { return next({ limit: n }); },
+      where: function (f, op, v) {
+        if (!OPS[op]) throw new Error('unsupported where operator: ' + op);
+        return next({ where: [{ field: f, op: op, value: v }] });
+      },
+      get: function () {
+        if ((running || mode === 'snapshot') && npcs.loaded) return Promise.resolve(querySnap(q, npcs.docs, npcSnap));
+        return api('GET', '/' + NPCS).then(function (r) {
+          var docs = {}; ((r && r.docs) || []).forEach(function (row) { if (!row.deleted && row.doc) docs[row.id] = row.doc; });
+          return querySnap(q, docs, function (id) { return { id: id, exists: true, data: function () { return clone(docs[id]); }, metadata: { fromCache: false, hasPendingWrites: false } }; });
+        }, function (e) {
+          if (isNetErr(e) && npcs.loaded) return querySnap(q, npcs.docs, npcSnap);
+          throw e;
+        });
+      },
+      onSnapshot: function (cb, err) { return subscribe({ npcs: true, query: q, cb: cb, err: err }); }
+    };
+    c.path = NPCS; c.doc = npcRef;
+    return c;
+  }
+
   /* any other campaign document id: never exists, cannot be written */
   function missingRef(id) {
     function snap() { return { id: id, exists: false, data: function () { return undefined; }, metadata: { fromCache: false, hasPendingWrites: false } }; }
@@ -827,6 +963,7 @@
       cq.path = CAMPAIGN; cq.doc = function (id) { return id === CAMPAIGN_ID ? campaignRef() : missingRef(String(id)); };
       return cq;
     }
+    if (name === NPCS) return makeNpcQuery({ order: [], where: [], limit: null });
     if (name !== COLLECTION) throw new Error('unknown collection: ' + name);
     var c = makeQuery({ order: [], where: [], limit: null });
     c.path = COLLECTION; c.doc = docRef;
@@ -852,6 +989,19 @@
     }
   };
 
+  /* ---------- rules: the rules wiki's corpus (RULES.md). Only the hosted build has it; the page caches the corpus itself
+     (app/rules.js, IndexedDB), so these are plain calls on the API. A network failure rejects with `network: true`. ---------- */
+  var rules = {
+    /* GET /api/rules -> { version, updatedAt, count, books, entries }; opts.version: the cached version, answered
+       { version, unchanged: true } (no entries) while it is still current */
+    list: function (opts) { return api('GET', '/rules' + (opts && opts.version ? '?v=' + encodeURIComponent(opts.version) : '')); },
+    /* POST /api/rules/import (GM): { book: 'b68' | 'bitd', entries: [{ slug, title, trail, keys, body, ord, src }], replace, part, of } */
+    import: function (req) { return api('POST', '/rules/import', req || {}); },
+    /* PUT / DELETE /api/rules/house/:slug (GM): a house rule written in the app */
+    saveHouse: function (slug, entry) { return api('PUT', '/rules/house/' + encodeURIComponent(slug), entry || {}); },
+    deleteHouse: function (slug) { return api('DELETE', '/rules/house/' + encodeURIComponent(slug)); }
+  };
+
   /* ---------- window.claude ---------- */
   var uses = {};
   var makers = {
@@ -863,7 +1013,8 @@
     use: function (name) {
       if (!makers[name]) return Promise.resolve(null);
       return uses[name] || (uses[name] = makers[name]());
-    }
+    },
+    rules: rules
   };
 
   /* ---------- installable: manifest, icons, home-screen metas, service worker (hosted build only) ----------

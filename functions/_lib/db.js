@@ -25,6 +25,29 @@ const SCHEMA = [
     updated_at TEXT NOT NULL,
     doc TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS rules (
+    campaign TEXT NOT NULL DEFAULT 'default',
+    book TEXT NOT NULL CHECK (book IN ('b68', 'bitd', 'house')),
+    slug TEXT NOT NULL,
+    title TEXT NOT NULL,
+    trail TEXT NOT NULL DEFAULT '',
+    keys TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    ord INTEGER NOT NULL DEFAULT 0,
+    src TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (campaign, book, slug)
+  )`,
+  `CREATE INDEX IF NOT EXISTS rules_campaign_book_ord ON rules (campaign, book, ord)`,
+  `CREATE TABLE IF NOT EXISTS npcs (
+    id TEXT PRIMARY KEY,
+    campaign TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    doc TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS npcs_campaign_updated ON npcs (campaign, updated_at)`,
 ];
 
 let ready = null; // Promise, per isolate

@@ -106,7 +106,8 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
 - `GET /api/characters` → `{ "now": ISO, "docs": [ { "id", "doc", "updatedAt", "deleted": false } ], "campaignUpdatedAt": ISO | null }`,
   every live character of the campaign, newest `updated_at` first, at most 500.
   `campaignUpdatedAt` is the stored campaign document's `updatedAt` (`null` when none), so a
-  poller knows when to refetch `/api/campaign` without polling it too.
+  poller knows when to refetch `/api/campaign` without polling it too. `npcsUpdatedAt` does the same for `/api/npcs`
+  (the newest change of any NPC row, `null` when none; CAST.md).
 - `GET /api/characters?since=<ISO>` → same shape (with `campaignUpdatedAt`), every row (tombstones included, with
   `"deleted": true` and `"doc": null`) whose `updated_at > since`. `now` is the server time to
   use as the next `since`; it is reported 2 s behind the clock so a write committed during a
@@ -166,7 +167,7 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   fetches it through `B68Runtime.exportAll()` and saves it as it came; opening the address in a
   signed-in browser also works) → a backup of this deployment's campaign as a download:
   `{ "exportedAt": ISO, "campaign": { "id", "doc", "updatedAt" }, "characters": [ { "id", "doc",
-  "updatedAt" } ], "members": [ { "id", "name", "role" } ] }`. `campaign.doc` is the stored
+  "updatedAt" } ], "npcs": [ { "id", "doc", "updatedAt" } ], "members": [ { "id", "name", "role" } ] }`. `campaign.doc` is the stored
   campaign document (the default one, `updatedAt` null, when none is stored); `characters` is
   every live character row of the campaign (not capped at 500, tombstones left out). The
   response carries `Content-Disposition: attachment; filename="blades68-<campaign>-<YYYY-MM-DD>.json"`
@@ -174,6 +175,26 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   "Download all" file (CAMPAIGN.md, *Backups*): the characters are filed as new documents and the
   campaign document is restored by the GM only, after a confirm, through
   `collection('campaign').doc('main').set()` (the `PUT` above).
+
+- The rules wiki (RULES.md; table `rules(campaign, book, slug, title, trail, keys, body, ord, src, updated_at)`, primary key
+  `(campaign, book, slug)`, `book` one of `b68`, `bitd`, `house`; `migrations/0002_rules.sql`). Never part of `/api/export`.
+  - `GET /api/rules` (any signed-in member) -> `{ "version", "updatedAt", "count", "books": { b68, bitd, house }, "entries": [ {
+    "book", "slug", "title", "trail", "keys", "body", "ord", "src", "updatedAt" } ] }`, every book, ordered by book then `ord`.
+    `version` changes with every import, edit and delete; `GET /api/rules?v=<version>` answers `{ version, updatedAt, count,
+    "unchanged": true }` without the entries while it still matches.
+  - `POST /api/rules/import` (GM) body `{ "book": "b68" | "bitd", "entries": [ { "slug", "title", "trail", "keys"?, "body",
+    "ord", "src" } ], "replace": true | false, "part"?: n, "of"?: n }` -> `{ ok, book, received, part, of, replaced, count,
+    version }`. The first chunk with `replace` (no `part`, or `part` 1) deletes the book's rows in the same D1 `batch()` as its
+    inserts; every other chunk adds (an entry with a slug already stored replaces it, so a chunk sent twice is harmless).
+    Caps (`functions/_lib/rules.js`, `LIMITS`): 1 MiB of JSON per request, 40 entries per request (the Workers Free plan allows 50 D1 queries per request), 120 KiB of markdown per
+    entry, 4000 entries and 8 MiB of text per book, title 200, trail / keys / src 600, slug `[a-z0-9][a-z0-9_-]{0,119}`; a
+    malformed body is 400, a size over a cap 413, a player 403 (checked before the body is read). `house` is not importable.
+  - `PUT /api/rules/house/:slug` (GM) body `{ title, body, trail?, keys?, ord? }` -> `{ entry, version }`; `DELETE` ->
+    `{ ok, version }` (404 when missing). At most 300 house rules. A player gets 403 for both.
+- `/api/npcs` and `/api/npcs/:id` (the cast, CAST.md): `GET` lists or reads NPC documents (the GM gets all, a player only the
+  revealed ones without `gmNotes`); `POST` (a new id), `PUT`, `PATCH` and `DELETE` are GM only (403 for a player) and validate the
+  document (400 / 413). Table `npcs(id, campaign, created_at, updated_at, deleted, doc)` (migration `0003_npcs.sql`, which also
+  seeds seven hidden NPCs). The campaign document's `scene` (who is on stage) is GM only.
 
 ## Adapter (`app/runtime/cf.js`)
 
@@ -206,13 +227,19 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   listeners hear only campaign changes (first snapshot once loaded, then only when the document
   actually changed), character listeners only character changes. Any other `campaign` doc id
   never exists and refuses writes; `collection('campaign')` queries are always empty.
-- One poller feeds every listener (characters and campaign; it runs while either exists): a full `GET /api/characters` at start, then
+- `collection('npcs')` is the characters collection's interface (`doc(id)` with `get / set / update / delete / onSnapshot`, and the
+  `where / orderBy / limit` chain over the cache), for the cast (CAST.md). It is cached beside the characters and refetched
+  (`GET /api/npcs`, the whole list) only when a poll's `npcsUpdatedAt` differs from the cached stamp, and only while someone listens.
+  Writes use the same queue; a player's write is refused at once (403) without a request.
+- One poller feeds every listener (characters, campaign and npcs; it runs while any exists): a full `GET /api/characters` at start, then
   `?since=` every 4 s while the page is visible and every 20 s when hidden, plus an
   immediate poll after each own write; a write also updates the cache optimistically so the
   sheet never waits on the network. Network errors are retried on the next tick and surfaced
   once through the `err` callbacks (not after an offline start, which the header shows).
 - `use('downloads')`: `{ save({ filename, data }) }` → Blob + anchor click, resolves.
 - Anything else resolves `null`.
+- `window.claude.rules` (hosted build only; `list`, `import`, `saveHouse`, `deleteHouse`, see `app/CONTRACT.md`): plain calls
+  on the rules API above.
 - `window.B68Runtime = { kind: 'cloudflare', me, status, exportAll }` once `/api/me` has answered (or the
   page started offline). `exportAll()` → Promise of the `GET /api/export` answer (rejects with
   the API's error, `status` 403 for a player); boot.js shows "Download everything" only when it
@@ -301,11 +328,12 @@ npm run db:local       # = npx wrangler d1 migrations apply DB --local (optional
 npm run dev            # = npx wrangler dev --port 8788 --ip 127.0.0.1 --var DEV_USER:gm@example.test --var GM_EMAILS:gm@example.test
 npm run build          # = npx wrangler deploy --dry-run --outdir .wrangler/dist (bundles, uploads nothing)
 npm test               # = npm run check:runtime && npm run check:api (no browser)
-npm run check:api      # checks/api/jwt.mjs, worker.mjs, then flow.mjs (starts its own servers on 8788 and 8789)
-npm run check:runtime  # checks/runtime/adapter.test.mjs and pwa.test.mjs (plain node)
+npm run check:api      # checks/api/jwt.mjs, worker.mjs, flow.mjs (own servers on 8788 and 8789), then rules.mjs (8794)
+npm run check:runtime  # checks/runtime/adapter.test.mjs, pwa.test.mjs and markdown.test.mjs (plain node)
 npm run check:offline  # checks/runtime/offline.e2e.mjs (own server on 8790, Chromium)
 npm run check:schedule # checks/runtime/schedule.e2e.mjs (own server on 8791, Chromium)
 npm run check:phone    # checks/runtime/phone.e2e.mjs (own server on 8792, mobile Chromium)
+npm run check:rules    # checks/runtime/rules.e2e.mjs (own server on 8795, Chromium): the rules wiki, see RULES.md
 npm run check:e2e      # app/checks/e2e.js against the stubbed runtime
 ```
 

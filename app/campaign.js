@@ -22,6 +22,9 @@
   var M = window.B68Campaign = window.B68Campaign || {};
 
   /* ---------- small helpers ---------- */
+  /* a small "?" link to the rules wiki (rules.js), drawn only on the hosted build, which has the rules */
+  function rl(term) { var R = window.B68Rules; return R && R.help ? R.help(term) : ''; }
+  function rulesLink() { var R = window.B68Rules; return R && R.available && R.available() ? '<a class="btn sm" href="#rules" title="The rulebooks, searchable">Rules</a>' : ''; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function clone(o) { return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
   function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
@@ -99,6 +102,7 @@
     });
     out.log = (Array.isArray(d.log) ? d.log : []).filter(isObj).slice(0, LOG_MAX).map(function (e) { return { at: str(e.at), by: e.by == null ? null : str(e.by), text: str(e.text) }; });
     out.schedule = normSchedule(d.schedule);
+    if (isObj(d.scene)) out.scene = clone(d.scene);   /* who is on stage (cast-page.js, CAST.md): the GM writes it; kept so a whole-document write never drops it */
     out.updatedAt = isoOrNull(d.updatedAt);
     if (d.v != null) out.v = d.v;
     return out;
@@ -296,7 +300,7 @@
     var c = doc.crew;
     return '<header class="tp-head"><div class="tp-title"><span class="tp-kick">The table</span><h2 class="tp-crewname" id="tp-crewname">' + esc(c.name || 'An unnamed crew') + '</h2>' +
       '<span class="tp-subtitle">' + esc([c.type, 'Tier ' + c.tier + ' · ' + c.hold + ' hold', doc.session.number ? 'session ' + doc.session.number : ''].filter(Boolean).join(' · ')) + '</span></div>' +
-      '<div class="tp-meta"><button type="button" class="btn sm" data-act="print" data-always="1" title="Every character and the crew, one document">Print the season</button><span class="tp-role' + (gm() ? ' gm' : '') + '">' + esc(role()) + '</span><span class="tp-status mono" id="tp-status" aria-live="polite"></span></div></header>';
+      '<div class="tp-meta">' + rulesLink() + '<button type="button" class="btn sm" data-act="cast" data-always="1" title="The NPCs the table has met">The cast</button><button type="button" class="btn sm" data-act="print" data-always="1" title="Every character and the crew, one document">Print the season</button><span class="tp-role' + (gm() ? ' gm' : '') + '">' + esc(role()) + '</span><span class="tp-status mono" id="tp-status" aria-live="polite"></span></div></header>';
   }
   function sessionBar(doc) {
     var s = doc.session, running = s.number > 0 && !!s.startedAt && !s.endedAt;
@@ -330,7 +334,7 @@
         '<button type="button" class="btn sm" data-act="clockadd" data-gm="1">Add clock</button></div>';
     }
     var hiddenN = doc.clocks.filter(function (c) { return c.hidden; }).length;
-    return box('Shared clocks', h, '<span class="tp-dim">' + list.length + ' clock' + (list.length === 1 ? '' : 's') + (gm() && hiddenN ? ' · ' + hiddenN + ' hidden' : '') + '</span>', 'tp-clockbox');
+    return box('Shared clocks' + rl('clocks'), h, '<span class="tp-dim">' + list.length + ' clock' + (list.length === 1 ? '' : 's') + (gm() && hiddenN ? ' · ' + hiddenN + ' hidden' : '') + '</span>', 'tp-clockbox');
   }
   function nameOf(id) {
     if (!id) return 'Unowned';
@@ -458,7 +462,7 @@
   /* ---------- actions (each says who may do it) ---------- */
   function byId(id) { return cur.doc.clocks.filter(function (c) { return c.id === id; })[0] || null; }
   function logLine(text) { cur.doc.log.unshift({ at: nowIso(), by: cur.api.me || null, text: text }); if (cur.doc.log.length > LOG_MAX) cur.doc.log.length = LOG_MAX; }
-  var PERM = { sessstart: 'gm', sessend: 'gm', clockfill: 'any', clocksize: 'gm', clockkind: 'gm', clockhide: 'gm', clockrm: 'gm', clockadd: 'gm', newsize: 'gm', newkind: 'gm', logadd: 'any', logrm: 'gm', open: 'all', print: 'all' };
+  var PERM = { sessstart: 'gm', sessend: 'gm', clockfill: 'any', clocksize: 'gm', clockkind: 'gm', clockhide: 'gm', clockrm: 'gm', clockadd: 'gm', newsize: 'gm', newkind: 'gm', logadd: 'any', logrm: 'gm', open: 'all', print: 'all', cast: 'all' };
   var ACTS = {
     sessstart: function () {
       var n = cur.doc.session.number + 1, now = nowIso();
@@ -491,7 +495,8 @@
     },
     logrm: function (d) { var e = cur.doc.log[+d.i]; if (!e) return; if (!window.confirm('Remove this line from the log?\n' + e.text)) return; cur.doc.log.splice(+d.i, 1); commit(); },
     open: function (d) { if (cur.api && typeof cur.api.openCharacter === 'function') cur.api.openCharacter(d.id); },
-    print: function () { if (window.B68Season && typeof B68Season.open === 'function') B68Season.open(); }
+    print: function () { if (window.B68Season && typeof B68Season.open === 'function') B68Season.open(); },
+    cast: function () { if (window.B68CastPage && typeof B68CastPage.open === 'function') location.hash = '#cast'; }
   };
   var ENTER = { newlog: 'logadd', newclock: 'clockadd' };
   function allowed(perm) { return perm === 'all' ? true : perm === 'gm' ? gm() : !ro(); }
