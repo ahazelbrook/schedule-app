@@ -24,7 +24,7 @@ const lacks = (html, s) => ok(!html.includes(s), 'unexpected ' + JSON.stringify(
 
 /* the only tags and attributes the renderer may ever produce: anything else in the output is a leak of the source */
 const TAGS = new Set(['p', 'br', 'strong', 'em', 'del', 'mark', 'code', 'pre', 'a', 'ul', 'ol', 'li', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'blockquote', 'div', 'details', 'summary', 'span', 'table', 'thead', 'tbody', 'tr', 'th', 'td']);
-const ATTRS = new Set(['href', 'target', 'rel', 'class', 'data-callout', 'start', 'open', 'aria-hidden']);
+const ATTRS = new Set(['href', 'target', 'rel', 'class', 'data-callout', 'start', 'open', 'aria-hidden', 'id']);
 function inert(html) {
   const re = /<\/?([a-zA-Z][a-zA-Z0-9]*)((?:\s+[a-zA-Z-]+(?:="[^"]*")?)*)\s*\/?>/g;
   let rest = html.replace(re, (m, tag, attrs) => {
@@ -84,11 +84,13 @@ await test('links: only http, https and relative addresses; javascript:, data:, 
   has(M.render('![a picture](https://ok.test/p.png)'), 'a picture'); lacks(M.render('![a picture](https://ok.test/p.png)'), '<img');
 });
 
-await test('blocks: headings (one level down), paragraphs with line breaks, rules, quotes', async () => {
+await test('blocks: headings (one level down), paragraphs joined across lines, rules, quotes', async () => {
   const html = M.render('# One\n\nfirst line\nsecond line\n\n## Two\n\n---\n\n###### Six\n\n####### not a heading\n\n> quoted\n> more');
   has(html, '<h2>One</h2>'); has(html, '<h3>Two</h3>'); has(html, '<h6>Six</h6>');
-  has(html, '<p>first line<br>second line</p>'); has(html, '<hr>'); has(html, '<p>####### not a heading</p>');
-  has(html, '<blockquote><p>quoted<br>more</p></blockquote>');
+  has(html, '<p>first line second line</p>'); has(html, '<hr>'); has(html, '<p>####### not a heading</p>');
+  has(html, '<blockquote><p>quoted more</p></blockquote>');
+  has(M.render('kept  \nbreak and\\\nthis'), '<p>kept<br>break and<br>this</p>');
+  has(M.render('a double-\ncross, a Fair-\nHaven'), '<p>a double-cross, a Fair- Haven</p>');
   has(M.render('# One', { headingOffset: 0 }), '<h1>One</h1>');
   inert(html);
 });
@@ -178,6 +180,41 @@ await test('deep nesting and odd input do not hang or throw', async () => {
   eq(M.render(''), ''); eq(M.render(null), '');
   const long = 'word '.repeat(40000);
   const t0 = Date.now(); M.render(long + '\n\n' + '[a](b) '.repeat(5000)); ok(Date.now() - t0 < 3000, 'slow on large input: ' + (Date.now() - t0) + ' ms');
+});
+
+
+await test('a compiled rulebook: anchors, source notes, comments, figures, the GM notes, <br> in cells', async () => {
+  const src = [
+    '<a id="b68-023-hound"></a>', '## HOUND', '<!-- src=b68 p=23-24 lines=1-9 mode=edited ops=4 -->', 'Placeholder words.',
+    '', '<a id="x" onclick="1"></a>', '<a id="bad id"></a>', '<!-- src=bitd p=31 mode=excised -->', '<!-- src=x" onmouseover="1 p=2 -->',
+    '', '<!-- a note', 'over two lines -->', 'after the note',
+    '', '[Figure omitted: a made-up kettle diagram.]', '', 'Text [TODO: check the <b>kettle</b>] here.', '', '[TODO: a whole-paragraph note]',
+    '', '| a | b |', '|---|---|', '| **One**<br>two | c<br/>d |',
+  ].join('\n');
+  const html = M.render(src);
+  inert(html);
+  has(html, '<span class="rl-anchor" id="rl-a-b68-023-hound"></span>');
+  has(html, '<h3>Hound</h3>');
+  has(html, '<div class="rl-src rl-src-b68"><span class="rl-src-book">Blades ’68</span><span class="rl-src-page">p. 23–24</span></div>');
+  has(html, '<span class="rl-src-mode">Replaced in ’68</span>');
+  lacks(html, 'id="rl-a-x"'); lacks(html, 'id="rl-a-bad'); lacks(html, 'lines=1-9'); lacks(html, 'a note'); lacks(html, 'onmouseover="1');
+  has(html, '<p>after the note</p>');
+  has(html, '<div class="rl-figure"><span class="rl-figure-lab">Figure</span><span class="rl-figure-txt">a made-up kettle diagram.</span></div>');
+  has(html, 'Text <span class="rl-todo">check the &lt;b&gt;kettle&lt;/b&gt;</span> here.');
+  has(html, '<p class="rl-todo">a whole-paragraph note</p>');
+  has(html, '<td><strong>One</strong><br>two</td><td>c<br>d</td>');
+  eq(M.plain(src).includes('src='), false, 'plain() drops the notes');
+});
+
+await test('a playbook opening, callout titles from a bold lead, headings in capitals', async () => {
+  const pb = M.render('Hunt\nA STEALTHY AND MADE-UP\nPLACEHOLDER PROFESSIONAL\nThe kettle hums.\nIt wobbles.');
+  has(pb, '<div class="rl-pbhead"><p class="rl-tagline">A STEALTHY AND MADE-UP PLACEHOLDER PROFESSIONAL</p><p class="rl-pbacts"><span>Hunt</span></p></div><p>The kettle hums. It wobbles.</p>');
+  has(M.render('Survey\nThe kettle hums.'), '<p>Survey The kettle hums.</p>');
+  has(M.render('> [!IMPORTANT]\n> **A made-up change.** The kettle hums.'), '<div class="rl-callout-title">A made-up change</div><div class="rl-callout-body"><p>The kettle hums.</p>');
+  has(M.render('> [!note] Own title\n> **Bold** stays'), '<p><strong>Bold</strong> stays</p>');
+  eq(['THE CONVERSATION', 'gm best practices', 'pc vs. pc', '1. the player states their goal', 'tug-of-war clocks', 'Mixed Case stays', "HOW TO PLAY HARD IN '68"].map(M.title),
+    ['The Conversation', 'GM Best Practices', 'PC vs. PC', '1. The Player States Their Goal', 'Tug-of-War Clocks', 'Mixed Case stays', "How to Play Hard in '68"]);
+  has(M.render('## PROGRESS CLOCKS'), '<h3>Progress Clocks</h3>');
 });
 
 /* ---------- splitFile ---------- */

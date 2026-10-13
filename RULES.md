@@ -43,6 +43,23 @@ book (then the other books); one that finds nothing is plain text. `![[image.png
 `> [!note] Title` callouts, tables, nested lists, task lists, `==highlights==` and `%%comments%%` work. Raw HTML in a note is
 shown as text, never run; links are only made for `http`, `https` and relative addresses.
 
+The compiled Blades '68 book carries some markup of its own, read at display time (so an import made before this was
+added looks right without importing again):
+
+- `<a id="..."></a>` lines are anchors. A link such as `[page 152](b68-rulebook-02-core-system.md#b68-152-harm)` opens the
+  entry that anchor belongs to, and scrolls to the place inside it when the anchor is not at the top
+  (`#rules/b68/<slug>?at=<anchor>`).
+- `<!-- src=b68 p=151 ... mode=edited -->` notes become a small page chip under the heading ("Blades '68 · p. 151";
+  `mode=excised` adds "Replaced in '68"). Every other HTML comment is dropped.
+- Hard-wrapped lines join into paragraphs (a word broken across a line with a hyphen joins without a space); two trailing
+  spaces or a backslash keep a line break. `<br>` inside a table cell is a line break.
+- Headings in ALL CAPS or all lower case are shown in Title Case. A playbook's opening lines in capitals become its tagline.
+- `[Figure omitted: ...]` paragraphs are shown as a figure placeholder; `[TODO: ...]` notes are shown to the GM only.
+- `> [!IMPORTANT]` with a bold first phrase ("**'68 changes this.**") takes that phrase as its title.
+- An entry with no text of its own (a chapter heading, or only an anchor) is left out of the index, search and paging; a
+  link to it opens the first entry under it. The file name ("b68-rulebook-02-core-system") is left out of the trail; its
+  number becomes the chapter number on the index.
+
 ## House rules
 
 The GM can write the table's own rulings in the app: **Rules > House rules > New house rule** (a title and Markdown, with a
