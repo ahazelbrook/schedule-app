@@ -47,7 +47,7 @@ binding = "DB"
 database_name = "blades68"
 # Written by scripts/deploy.sh (it creates the database when missing). By hand: the id printed
 # by `npx wrangler d1 create blades68`, or `npx wrangler d1 list`.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "1770d861-af0a-4b12-865e-335415144bbb"
 migrations_dir = "migrations"
 
 # Local development (`npm run dev`, the checks). `host` keeps a loopback origin on requests
