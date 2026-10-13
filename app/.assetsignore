@@ -2,3 +2,6 @@
 # The Playwright page checks and the docs stay in the repository only.
 checks/
 *.md
+# The cast's starting NPCs (hidden ones included): only the artifact build loads it, on the GM's request; the hosted
+# build seeds them from migrations/0003_npcs.sql.
+figures/npcs.js

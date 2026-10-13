@@ -1,0 +1,137 @@
+/* cast.css — the cast page (#cast-page, cast-page.js) and the "on stage" banner (#stageBanner). Same language as the table page
+   (campaign.css): paper boxes under 2px rules, Archivo Condensed caps labels, orange accent; colours are the page's tokens, so
+   the Night theme needs nothing of its own. Classes are cp-; the banner is fixed to the foot of every screen. */
+#cast-page { display: none; }
+body[data-mode="cast"] #cast-page:not([hidden]) { display: block; }
+#cast-page.cp { padding-top: 14px; }
+#cast-page .cp-lab { display: block; font: 900 10px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; color: var(--ink-soft); margin-bottom: 3px; }
+#cast-page .cp-kick { font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .16em; color: var(--accent); margin: 0; }
+#cast-page .cp-note { border: 2px dashed var(--hair); padding: 16px; color: var(--ink-soft); font-size: 13.5px; max-width: 62ch; margin-top: 14px; }
+#cast-page .cp-note.bad { border-color: var(--alarm); color: var(--ink); border-left: 6px solid var(--alarm); }
+#cast-page .cp-note a, #cast-page .cp-crumb a { color: var(--ink); text-underline-offset: 3px; }
+#cast-page .cp-crumb { margin: 0 0 12px; font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }
+#cast-page .cp-empty { border: 2px dashed var(--hair); padding: 28px 16px; color: var(--ink-soft); text-align: center; margin: 14px 0; }
+
+/* ---- header and the GM's bar ---- */
+#cast-page .cp-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px 24px; flex-wrap: wrap; border-top: 4px solid var(--rule); border-bottom: 2px solid var(--rule); padding: 12px 0; }
+#cast-page .cp-title { display: grid; gap: 4px; min-width: 0; }
+#cast-page .cp-h { font: 900 clamp(38px, 6vw, 68px)/.85 var(--font-poster); letter-spacing: -.01em; text-transform: none; margin: 0; }
+#cast-page .cp-h:focus, #cast-page .cp-dname:focus { outline: none; }
+#cast-page .cp-role { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; border: 2px solid var(--rule); padding: 5px 8px; }
+#cast-page .cp-role.gm { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+#cast-page .cp-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 14px 0; }
+#cast-page .cp-count { margin: 0; font: 900 10.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); margin-right: auto; }
+#cast-page .cp-bar-acts { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+#cast-page a.btn, #cast-page a.chip { text-decoration: none; display: inline-block; }
+#cast-page .seg { flex-wrap: wrap; max-width: 100%; }
+
+/* ---- the grid ---- */
+#cast-page .cp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+#cast-page .cp-card { border: 2px solid var(--rule); background: var(--card); display: grid; grid-template-rows: auto 1fr; min-width: 0; }
+#cast-page .cp-card.hidden { border-style: dashed; }
+#cast-page .cp-card.hidden .cp-pic svg { filter: grayscale(.55); opacity: .75; }
+#cast-page .cp-card.staged { border-left: 6px solid var(--accent); }
+#cast-page .cp-pic { display: block; position: relative; background: var(--chart); border-bottom: 2px solid var(--rule); aspect-ratio: 540 / 600; overflow: hidden; }
+#cast-page .cp-fig-mug, #stageBanner .cp-fig-mug { width: 100%; aspect-ratio: 540 / 600; }
+#cast-page .cp-fig-mug svg { display: block; width: 100%; height: auto; }
+#cast-page .cp-badge { position: absolute; top: 8px; left: 8px; font: 900 10px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; padding: 4px 6px; background: var(--card); color: var(--ink); border: 2px solid var(--rule); }
+#cast-page .cp-badge.hid { border-style: dashed; color: var(--ink-soft); }
+#cast-page .cp-badge.stage { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+#cast-page .cp-body { padding: 10px 12px 12px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+#cast-page .cp-name { font: 900 20px/1.05 var(--font-cond); text-transform: none; letter-spacing: -.005em; margin: 0; overflow-wrap: anywhere; }
+#cast-page .cp-name a { color: inherit; text-decoration: none; }
+#cast-page .cp-name a:hover { color: var(--accent); }
+#cast-page .cp-name small, #cast-page .cp-st-name small { font: 400 12px/1.2 var(--font-text); color: var(--ink-soft); }
+#cast-page .cp-sub { margin: 0; font: 900 10.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--accent); }
+#cast-page .cp-desc { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+#cast-page .cp-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+#cast-page .cp-acts.big { gap: 10px; margin-top: 14px; }
+#cast-page .cp-acts.wide { grid-column: 1 / -1; align-items: center; }
+
+/* ---- one NPC, large (a laptop shown to the table) ---- */
+#cast-page .cp-detail { display: grid; grid-template-columns: minmax(240px, 38%) minmax(0, 1fr); gap: 28px; align-items: start; }
+#cast-page .cp-fig-big { background: var(--chart); border: 2px solid var(--rule); display: flex; justify-content: center; padding: 14px 8px 0; min-height: 200px; }
+#cast-page .cp-fig svg { display: block; height: min(78vh, 820px); width: auto; max-width: 100%; }
+#cast-page .cp-text { display: grid; gap: 12px; align-content: start; min-width: 0; }
+#cast-page .cp-dname { font: 900 clamp(40px, 6vw, 84px)/.85 var(--font-poster); letter-spacing: -.01em; text-transform: none; margin: 0; overflow-wrap: anywhere; }
+#cast-page .cp-alias { margin: 0; font-size: 17px; color: var(--ink-soft); font-style: italic; }
+#cast-page .cp-ddesc { margin: 0; font-size: clamp(17px, 1.9vw, 25px); line-height: 1.45; max-width: 34em; white-space: pre-line; }
+#cast-page .cp-tags { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+#cast-page .cp-gmnotes { border: 2px dashed var(--rule); border-left: 6px solid var(--accent); padding: 10px 12px; background: var(--card); max-width: 44em; }
+#cast-page .cp-gmnotes p { margin: 0; font-size: 14px; white-space: pre-line; }
+
+/* ---- the editor ---- */
+#cast-page .cp-editor { display: grid; gap: 12px; }
+#cast-page .cp-egrid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+#cast-page .cp-ecol { display: grid; gap: 14px; min-width: 0; align-content: start; }
+#cast-page .cp-box { border: 2px solid var(--rule); background: var(--card); padding: 12px; margin: 0; min-width: 0; }
+#cast-page .cp-box legend { font: 900 11px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; background: var(--rule); color: var(--on-ink); padding: 4px 10px; }
+#cast-page .cp-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px 12px; margin-top: 8px; }
+#cast-page .cp-field { display: grid; gap: 3px; align-content: start; min-width: 0; }
+#cast-page .cp-field.wide, #cast-page .cp-check.wide, #cast-page .cp-adjust.wide { grid-column: 1 / -1; }
+#cast-page .cp-field input[type="text"], #cast-page .cp-field input[type="number"], #cast-page .cp-field select, #cast-page .cp-field textarea { font: 400 14px/1.4 var(--font-text); padding: 8px 10px; border: 2px solid var(--rule); background: var(--paper); color: var(--ink); width: 100%; min-width: 0; border-radius: 0; box-sizing: border-box; }
+#cast-page .cp-field textarea { resize: vertical; }
+#cast-page .cp-field textarea.mono { font: 400 11.5px/1.35 var(--font-mono); }
+#cast-page .cp-field :is(input, select, textarea):focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+#cast-page .cp-check { display: flex; align-items: center; gap: 8px; font-size: 13px; min-height: 28px; }
+#cast-page .cp-check input { width: 18px; height: 18px; accent-color: var(--accent); flex: 0 0 auto; }
+#cast-page .cp-lab.sp { margin-top: 14px; }
+#cast-page .cp-props { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; }
+#cast-page .cp-prev { align-self: stretch; }
+#cast-page .cp-sticky { position: sticky; top: 8px; display: grid; gap: 6px; }
+#cast-page .cp-prevgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .8fr); gap: 8px; align-items: end; background: var(--chart); border: 2px solid var(--rule); padding: 6px; }
+#cast-page .cp-prev-mug svg, #cast-page .cp-prev-fig svg { display: block; width: 100%; height: auto; }
+#cast-page .cp-warn, #cast-page .cp-specmsg { margin: 0; font: 400 11.5px/1.4 var(--font-mono); color: var(--alarm); }
+#cast-page .cp-err { margin: 0; color: var(--alarm); font-weight: 700; min-height: 1em; }
+#cast-page .cp-del { margin-left: auto; border-color: var(--alarm); color: var(--alarm); }
+#cast-page .cp-del:hover { background: var(--alarm); border-color: var(--alarm); color: var(--on-accent); }
+#cast-page .cp-nofig { font-size: 12px; color: var(--ink-soft); padding: 12px; display: block; }
+
+/* ---- the banner: who is on stage, on every screen ---- */
+#stageBanner.cp-stage { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: var(--card); color: var(--ink); border-top: 4px solid var(--accent); box-shadow: 0 -8px 28px rgba(20, 17, 14, .28);
+  padding: 10px max(16px, calc((100% - 1100px) / 2)) calc(12px + env(safe-area-inset-bottom, 0px)); max-height: 58vh; overflow-y: auto; box-sizing: border-box; }
+#stageBanner[hidden] { display: none; }
+#stageBanner .cp-st-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+#stageBanner .cp-st-kick { font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .16em; background: var(--accent); color: var(--on-accent); padding: 5px 8px; }
+#stageBanner .cp-st-acts { display: inline-flex; gap: 8px; }
+#stageBanner .cp-st-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px 20px; }
+#stageBanner .cp-st-npc { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; align-items: start; min-width: 0; }
+#stageBanner .cp-st-pic { display: block; border: 2px solid var(--rule); background: var(--chart); }
+#stageBanner .cp-fig-mug svg { display: block; width: 100%; height: auto; }
+#stageBanner .cp-st-txt { display: grid; gap: 4px; min-width: 0; }
+#stageBanner .cp-st-name { font: 900 24px/1 var(--font-poster); letter-spacing: -.005em; text-transform: none; margin: 0; overflow-wrap: anywhere; }
+#stageBanner .cp-st-name small { font: 400 12px/1.2 var(--font-text); color: var(--ink-soft); }
+#stageBanner .cp-st-sub { margin: 0; font: 900 10.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--accent); }
+#stageBanner .cp-st-desc { margin: 0; font-size: 14px; line-height: 1.45; white-space: pre-line; }
+body .wrap { padding-bottom: calc(48px + var(--cp-stage-h, 0px)); }
+
+@media (min-width: 900px) {
+  #stageBanner .cp-st-npc { grid-template-columns: 148px minmax(0, 1fr); gap: 18px; }
+  #stageBanner .cp-st-name { font-size: 32px; }
+  #stageBanner .cp-st-desc { font-size: 17px; }
+}
+@media (max-width: 900px) {
+  #cast-page .cp-egrid { grid-template-columns: minmax(0, 1fr); }
+  #cast-page .cp-prev { order: -1; }
+  #cast-page .cp-sticky { position: static; }
+}
+@media (max-width: 760px) {
+  #cast-page .cp-detail { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  #cast-page .cp-fig svg { height: min(62vh, 560px); }
+  #cast-page .cp-ddesc { font-size: 17px; }
+}
+@media (max-width: 560px) {
+  #cast-page .cp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  #cast-page .cp-body { padding: 8px 8px 10px; }
+  #cast-page .cp-name { font-size: 17px; }
+  #cast-page .cp-desc { -webkit-line-clamp: 4; font-size: 12.5px; }
+  #cast-page .cp-acts .chip { flex: 1 1 auto; text-align: center; }
+  #cast-page .cp-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #stageBanner .cp-st-npc { grid-template-columns: 72px minmax(0, 1fr); gap: 10px; }
+  #stageBanner .cp-st-name { font-size: 19px; }
+  #stageBanner .cp-st-desc { font-size: 13px; line-height: 1.4; }
+  #stageBanner.cp-stage { max-height: 48vh; padding-top: 8px; }
+  #stageBanner .cp-st-head { margin-bottom: 6px; }
+}
+@media print { #stageBanner { display: none !important; } }
+body[data-mode="print"] #stageBanner { display: none !important; }

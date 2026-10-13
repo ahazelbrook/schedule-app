@@ -23,6 +23,8 @@ import { onRequest as character } from '../functions/api/characters/[id].js';
 import { onRequest as rules } from '../functions/api/rules/index.js';
 import { onRequest as rulesImport } from '../functions/api/rules/import.js';
 import { onRequest as rulesHouse } from '../functions/api/rules/house/[slug].js';
+import { onRequest as npcs } from '../functions/api/npcs/index.js';
+import { onRequest as npc } from '../functions/api/npcs/[id].js';
 import { onRequest as notFound } from '../functions/api/[[path]].js';
 
 // The same file layout Pages Functions routed: [id] is one path segment, [[path]] the rest.
@@ -37,6 +39,8 @@ export const ROUTES = [
   { re: /^\/api\/rules\/?$/, handler: rules, path: '/api/rules' },
   { re: /^\/api\/rules\/import\/?$/, handler: rulesImport, path: '/api/rules/import' },
   { re: /^\/api\/rules\/house\/([^/]+)\/?$/, handler: rulesHouse, path: '/api/rules/house/:slug', params: ['slug'] },
+  { re: /^\/api\/npcs\/?$/, handler: npcs, path: '/api/npcs' },
+  { re: /^\/api\/npcs\/([^/]+)\/?$/, handler: npc, path: '/api/npcs/:id', params: ['id'] },
 ];
 
 function decode(s) {

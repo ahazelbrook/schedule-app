@@ -27,6 +27,9 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
     put(id, doc) { const t = now(); rows[id] = { owner: doc.owner || null, updatedAt: t, deleted: false, doc: { ...clone(doc), updatedAt: t } }; },
     tombstone(id) { rows[id] = { owner: null, updatedAt: now(), deleted: true, doc: {} }; },
     rulesRows: [], rulesVersion: '0',                   // the rules wiki's corpus (RULES.md)
+    npcs: {},                                           // the cast: id -> { updatedAt, deleted, doc } (the GM writes, a player reads the revealed ones)
+    putNpc(id, doc) { s.npcs[id] = { updatedAt: now(), deleted: false, doc: clone(doc) }; },
+    npcsAt() { const t = Object.values(s.npcs).map((r) => r.updatedAt).sort(); return t.length ? t[t.length - 1] : null; },
     campaign: null,                                     // the stored campaign doc (null = none yet)
     setCampaign(doc) { s.campaign = { ...clone(doc), updatedAt: now() }; },
   };
@@ -80,7 +83,7 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
         .filter(([, r]) => (since ? r.updatedAt > since : !r.deleted))
         .sort((a, b) => (a[1].updatedAt < b[1].updatedAt ? 1 : -1))
         .map(([id, r]) => ({ id, doc: r.deleted ? null : clone(r.doc), updatedAt: r.updatedAt, deleted: r.deleted }));
-      return [200, { now: new Date(tick - 2000).toISOString(), docs: list, campaignUpdatedAt: s.campaign ? s.campaign.updatedAt : null }];   // like the real API: 2 s behind, so rows repeat
+      return [200, { now: new Date(tick - 2000).toISOString(), docs: list, campaignUpdatedAt: s.campaign ? s.campaign.updatedAt : null, npcsUpdatedAt: s.npcsAt() }];   // like the real API: 2 s behind, so rows repeat
     }
     if (p === '/api/campaign') {
       // the player rule is reduced to "players may not PUT" here; the full rule is checked in checks/api/flow.mjs.
@@ -111,6 +114,24 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
       if (Array.isArray(doc.log)) doc.log = doc.log.slice(0, 200);
       doc.updatedAt = now(); s.campaign = doc;
       return [200, { doc: clone(doc), updatedAt: doc.updatedAt }];
+    }
+    // the cast, as functions/_lib/npcs.js serves it: a player is sent revealed NPCs only, without gmNotes; writes are GM only
+    const view = (doc) => { if (me.role === 'gm') return clone(doc); if (doc.revealed !== true) return null; const c = clone(doc); delete c.gmNotes; return c; };
+    if (p === '/api/npcs' && method === 'GET') {
+      const docs = Object.entries(s.npcs).filter(([, r]) => !r.deleted).map(([id, r]) => ({ id, doc: view(r.doc), updatedAt: r.updatedAt })).filter((d) => d.doc);
+      return [200, { now: new Date(tick - 2000).toISOString(), docs, npcsUpdatedAt: s.npcsAt() }];
+    }
+    const nm = p.match(/^\/api\/npcs\/([A-Za-z0-9_-]{1,80})$/);
+    if (nm) {
+      const id = nm[1], row = s.npcs[id], live = row && !row.deleted;
+      if (method === 'GET') { const d = live ? view(row.doc) : null; return d ? [200, { id, doc: d }] : [404, { error: 'not found' }]; }
+      if (me.role !== 'gm') return [403, { error: 'only the GM can change the cast' }];
+      if (method === 'DELETE') { if (!live) return [404, { error: 'not found' }]; s.npcs[id] = { updatedAt: now(), deleted: true, doc: {} }; return [200, { ok: true }]; }
+      if (method === 'PUT') s.putNpc(id, body);
+      else if (method === 'PATCH') { if (!live) return [404, { error: 'not found' }]; s.putNpc(id, merge(clone(row.doc), body)); }
+      else return [400, { error: 'bad method' }];
+      s.npcs[id].doc.updatedAt = s.npcs[id].updatedAt;
+      return [200, { id, doc: clone(s.npcs[id].doc) }];
     }
     const m = p.match(/^\/api\/characters\/([A-Za-z0-9_-]{1,80})$/);
     if (!m) return [404, { error: 'not found' }];
@@ -920,6 +941,118 @@ await test('downloads.save makes a Blob and clicks a hidden anchor', async () =>
   eq(b.blobs[b.clicks[2].href].size, 2, 'ArrayBuffer');
   const given = new Blob(['zz']); await dl.save({ filename: 'z.png', data: given });
   ok(b.blobs[b.clicks[3].href] === given, 'Blob passed as-is');
+});
+
+/* ---------- the cast: collection('npcs') (CAST.md) ---------- */
+const npc = (name, extra = {}) => ({ name, alias: '', role: '', faction: '', description: name + ' is here.', spec: { id: name }, revealed: false, firstSeen: null, tags: [], gmNotes: 'notes on ' + name, ...extra });
+const npcCalls = (api) => api.calls.filter((c) => /\/api\/npcs/.test(c));
+
+await test('npcs: a GM listener gets every NPC; the poll refetches the list only when npcsUpdatedAt moved', async () => {
+  const api = fakeApi();
+  api.putNpc('grunt', npc('Grunt')); api.putNpc('mira', npc('Mira', { revealed: true }));
+  const b = browser(api, { email: 'gm@x.test' });
+  const col = (await b.win.claude.use('db')).collection('npcs');
+  const snaps = []; const un = col.onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  eq(snaps[0].docs.map((d) => d.id).sort(), ['grunt', 'mira'], 'both, hidden one too');
+  eq(snaps[0].docs.find((d) => d.id === 'grunt').data().gmNotes, 'notes on Grunt', 'the GM has the notes');
+  await sleep(POLL * 6);
+  eq(npcCalls(api).filter((c) => c === 'GET /api/npcs').length, 1, 'one fetch of the list while nothing changed');
+  ok(api.calls.filter((c) => /^GET \/api\/characters/.test(c)).length >= 4, 'the characters poll kept running');
+  api.putNpc('zam', npc('Zam'));
+  await until(() => snaps[snaps.length - 1].size === 3);
+  eq(snaps[snaps.length - 1].docs.map((d) => d.id).sort(), ['grunt', 'mira', 'zam'], 'a change on the server arrives');
+  eq(npcCalls(api).filter((c) => c === 'GET /api/npcs').length, 2, 'refetched once for it');
+  api.npcs.grunt = { updatedAt: api.now(), deleted: true, doc: {} };
+  await until(() => snaps[snaps.length - 1].size === 2);
+  eq(snaps[snaps.length - 1].docs.map((d) => d.id).sort(), ['mira', 'zam'], 'a deleted NPC leaves');
+  un();
+});
+
+await test('npcs: nothing is fetched while nobody listens, and the first listener starts the cast', async () => {
+  const api = fakeApi();
+  api.putNpc('mira', npc('Mira', { revealed: true }));
+  const b = browser(api, { email: 'pl@x.test' });
+  const db = await b.win.claude.use('db');
+  const chars = []; const unc = db.collection('characters').onSnapshot((s) => chars.push(s));
+  await until(() => chars.length); await sleep(POLL * 3);
+  eq(npcCalls(api), [], 'no /api/npcs call without a listener');
+  const snaps = []; const un = db.collection('npcs').onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  eq(snaps[0].docs.map((d) => d.id), ['mira'], 'listed once subscribed');
+  un(); unc();
+});
+
+await test('npcs: a player is sent only revealed NPCs without gmNotes; reveal and hide arrive by polling', async () => {
+  const api = fakeApi();
+  api.putNpc('grunt', npc('Grunt')); api.putNpc('mira', npc('Mira', { revealed: true }));
+  const pl = browser(api, { email: 'pl@x.test' }), gmb = browser(api, { email: 'gm@x.test' });
+  const snaps = []; const col = (await pl.win.claude.use('db')).collection('npcs');
+  const un = col.onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  const last = () => snaps[snaps.length - 1];
+  eq(last().docs.map((d) => d.id), ['mira'], 'revealed only');
+  ok(!('gmNotes' in last().docs[0].data()), 'no gmNotes');
+  const gref = (await gmb.win.claude.use('db')).collection('npcs').doc('grunt');
+  await gref.update({ revealed: true });
+  await until(() => last().size === 2);
+  eq(last().docs.map((d) => d.id).sort(), ['grunt', 'mira'], 'revealed by the GM, seen by the player');
+  eq(last().docs.find((d) => d.id === 'grunt').data().gmNotes, undefined, 'still no notes');
+  await gref.update({ revealed: false });
+  await until(() => last().size === 1);
+  eq(last().docs.map((d) => d.id), ['mira'], 'hidden again, gone');
+  eq((await col.doc('grunt').get()).exists, false, 'a hidden NPC reads like a missing one');
+  eq((await col.doc('mira').get()).data().name, 'Mira', 'one revealed NPC reads');
+  un();
+});
+
+await test('npcs: the GM writes through doc(): set, update, delete (optimistic, queued, the server holds them); a player is refused at once', async () => {
+  const api = fakeApi();
+  api.putNpc('mira', npc('Mira'));
+  const b = browser(api, { email: 'gm@x.test' });
+  const col = (await b.win.claude.use('db')).collection('npcs');
+  const snaps = []; const un = col.onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  const last = () => snaps[snaps.length - 1];
+  const p = col.doc('zam').set(npc('Zam'));
+  eq([last().size, last().docs.find((d) => d.id === 'zam').metadata.hasPendingWrites], [2, true], 'optimistic set');
+  await p;
+  eq([api.npcs.zam.doc.name, api.npcs.zam.doc.gmNotes], ['Zam', 'notes on Zam'], 'the server holds it');
+  await col.doc('zam').update({ role: 'Kid', tags: ['keys'] });
+  eq([api.npcs.zam.doc.role, api.npcs.zam.doc.tags, api.npcs.zam.doc.name], ['Kid', ['keys'], 'Zam'], 'merge');
+  eq(last().docs.find((d) => d.id === 'zam').data().role, 'Kid', 'the snapshot follows');
+  await col.doc('zam').delete();
+  eq([api.npcs.zam.deleted, last().docs.map((d) => d.id)], [true, ['mira']], 'delete');
+  eq(api.applied.filter((a) => /npcs/.test(a)), ['PUT /api/npcs/zam', 'PATCH /api/npcs/zam', 'DELETE /api/npcs/zam'], 'writes in order');
+  un();
+  const pl = browser(api, { email: 'pl@x.test' });
+  const pcol = (await pl.win.claude.use('db')).collection('npcs');
+  const before = npcCalls(api).length;
+  for (const fn of [() => pcol.doc('mira').set(npc('x')), () => pcol.doc('mira').update({ revealed: true }), () => pcol.doc('mira').delete()]) {
+    let err = null; try { await fn(); } catch (e) { err = e; }
+    eq([err && err.status, err && err.message], [403, 'only the GM can change the cast'], 'player write');
+  }
+  eq(npcCalls(api).length, before, 'no request was sent');
+  eq(api.npcs.mira.doc.revealed, false, 'the cast is unchanged');
+});
+
+await test('npcs: a write the server refuses (400) is dropped and the cast is resynced; unknown collections still throw', async () => {
+  const api = fakeApi();
+  api.putNpc('mira', npc('Mira'));
+  const b = browser(api, { email: 'gm@x.test' });
+  const db = await b.win.claude.use('db');
+  const snaps = []; const un = db.collection('npcs').onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  const orig = api.handle; api.handle = (u, m, url, body) => (m === 'PUT' && /\/api\/npcs\//.test(url) ? [400, { error: 'name is required' }] : orig(u, m, url, body));
+  let err = null; try { await db.collection('npcs').doc('bad').set(npc('')); } catch (e) { err = e; }
+  eq([err && err.status, err && err.message], [400, 'name is required'], 'the refusal reaches the caller');
+  api.handle = orig;
+  await until(() => snaps[snaps.length - 1].docs.every((d) => d.id !== 'bad'));
+  eq(snaps[snaps.length - 1].docs.map((d) => d.id), ['mira'], 'the optimistic copy is rolled back');
+  let thrown = null; try { db.collection('nope'); } catch (e) { thrown = e; }
+  ok(thrown && /unknown collection/.test(thrown.message), 'unknown collection');
+  ok(db.doc('npcs/mira').id === 'mira', 'db.doc("npcs/<id>")');
+  un();
 });
 
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');

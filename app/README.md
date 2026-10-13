@@ -33,6 +33,8 @@ storage, identity and downloads always go through `window.claude.use(...)`.
   and the GM's copied reminder and date poll (`SCHEDULE.md`).
 - `season.js` and `season.css` are the season print (`#print`): every filed character and the
   crew in one printable document, opened from "Print the season" on the table page.
+- `cast-page.js` and `cast.css` are the cast (`#cast`, `#cast/<id>`, the GM's editor) and the "on stage" banner shown on every
+  screen; `figures/npcs.js` holds the seven starting NPCs (`CAST.md`).
 - `runtime/cf.js` is the hosted build's `window.claude` adapter. It does nothing inside the
   artifact or from `file://`. `sw.js`, `manifest.webmanifest` and `icons/` make the hosted
   build installable and usable offline.

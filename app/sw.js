@@ -19,6 +19,7 @@ var SHELL = [
   'figures/figure-kit.js', 'figures/cast.js',
   'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'campaign.js', 'schedule.js', 'crews.js', 'crewsheet.js', 'season.js', 'markdown.js', 'rules.js',
   'runtime/cf.js', 'boot.js',
+  'cast.css', 'cast-page.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'
 ];
 

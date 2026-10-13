@@ -327,7 +327,7 @@ async function main() {
     expect(c.entries.length > 0, 'there are rules to leave out');
     const r = await gm('GET', '/api/export');
     expectStatus(r, 200);
-    expect(!('rules' in r.json) && Object.keys(r.json).sort().join() === 'campaign,characters,exportedAt,members', 'keys ' + Object.keys(r.json));
+    expect(!('rules' in r.json) && Object.keys(r.json).sort().join() === 'campaign,characters,exportedAt,members,npcs', 'keys ' + Object.keys(r.json));
     expect(!/zebra-striped|wobbling lantern|Placeholder|export-probe/.test(r.text), 'rule text in the export');
     expectStatus(await player('GET', '/api/export'), 403);
   });

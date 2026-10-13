@@ -106,9 +106,9 @@
   }
 
   /* mode: home (#home: the start page and the files), create (the studio and line-up), sheet (the tracker in #dossier),
-     table (the campaign page in #table-page) or print (the season print in #season, season.js).
+     table (the campaign page in #table-page), print (the season print in #season, season.js) or cast (the NPCs in #cast-page, cast-page.js).
      Every mode has a hash, and a switch pushes one history entry (quiet: the hash already says so, or boot). */
-  var MODES = { home: 1, create: 1, sheet: 1, table: 1, print: 1, rules: 1 };
+  var MODES = { home: 1, create: 1, sheet: 1, table: 1, print: 1, rules: 1, cast: 1 };
   function setMode(m, quiet) {
     m = MODES[m] ? m : 'home';
     var was = document.body.dataset.mode;
@@ -118,6 +118,7 @@
     var tp = $('table-page'); if (tp) tp.hidden = m !== 'table';
     var sn = $('season'); if (sn) sn.hidden = m !== 'print';
     var rp = $('rules-page'); if (rp) rp.hidden = m !== 'rules';
+    var cp = $('cast-page'); if (cp) cp.hidden = m !== 'cast';
     if (m !== 'sheet' && was === 'sheet') closeSheet();
     if (m !== 'table' && was === 'table') closeTable();
     if (m === 'table' && was !== 'table') startTable();
@@ -125,6 +126,8 @@
     if (m === 'print' && was !== 'print') startPrint();
     if (m !== 'rules' && was === 'rules') closeRules();
     if (m === 'rules' && was !== 'rules') startRules();
+    if (m !== 'cast' && was === 'cast') closeCast();
+    if (m === 'cast' && was !== 'cast') startCast();
     if (m === 'home' && was !== 'home') renderHome();
     if (!quiet) syncHash(m);
     syncNav(); syncEditBar();
@@ -144,6 +147,7 @@
     if (m === 'table') return 'The table';
     if (m === 'print') return 'The season print';
     if (m === 'rules') return 'Rules';
+    if (m === 'cast') return 'The cast';
     if (m === 'sheet') return ((openId && (latest || cache[openId])) || {}).name || 'A character';
     if (m === 'create') return S.sheet && S.sheet.docId ? 'Editing ' + (S.sheet.name || 'a character') : 'New character';
     return 'Home';
@@ -184,12 +188,13 @@
   }
   function replaceHash(h) { try { history.replaceState({ b68: depth }, '', h || location.pathname + location.search); } catch (e) { noState = true; } }
   function isShare(h) { return h.length > 24 && h[1] === 's'; }
-  function hashFor(m) { return m === 'sheet' ? (openId ? '#c/' + openId : null) : m === 'table' ? '#t' : m === 'print' ? '#print' : m === 'rules' ? '#rules' : m === 'create' ? '#create' : ''; }
+  function hashFor(m) { return m === 'sheet' ? (openId ? '#c/' + openId : null) : m === 'table' ? '#t' : m === 'print' ? '#print' : m === 'rules' ? '#rules' : m === 'cast' ? '#cast' : m === 'create' ? '#create' : ''; }
   function syncHash(m) {
     var h = location.hash || '', want = hashFor(m);
     if (want === null || h === want || (!want && h === '#')) return;
     if (m === 'table' && h.indexOf('#t/') === 0) return;
     if (m === 'rules' && isRulesHash(h)) return;
+    if (m === 'cast' && (h === '#cast' || h.indexOf('#cast/') === 0)) return;
     if (m === 'create' && (h === '#new' || isShare(h))) return;
     pushHash(want);
   }
@@ -328,24 +333,25 @@
     }).catch(function () { return {}; });
   }
   /* patch: changed top-level fields of session / crew / clocks / log (crew may be partial) and the changed schedule
-     leaves (null deletes). Only what differs from the latest known document is sent; the first write to a missing
+     and scene leaves (null deletes). Only what differs from the latest known document is sent; the first write to a missing
      document creates it whole. Used by the table page and by the next-session card (an RSVP from any mode). */
   function campaignSave(patch) {
     var ref = campRef;
     if (!ref) return Promise.reject(new Error('The table is not available here.'));
     var before = tableLatest || {}, out = {}, any = false;
-    ['session', 'crew', 'clocks', 'log', 'schedule'].forEach(function (k) {
+    ['session', 'crew', 'clocks', 'log', 'schedule', 'scene'].forEach(function (k) {
       if (!patch || !Object.prototype.hasOwnProperty.call(patch, k)) return;
       var nv = patch[k], ov = before[k];
       if (k === 'crew' && isObj(nv)) { var sub = {}, s2 = false; for (var f in nv) if (Object.prototype.hasOwnProperty.call(nv, f) && !same(nv[f], isObj(ov) ? ov[f] : undefined)) { sub[f] = nv[f]; s2 = true; } if (s2) { out.crew = sub; any = true; } return; }
-      if (k === 'schedule' && isObj(nv)) { var sp = prune(nv, ov); if (sp) { out.schedule = sp; any = true; } return; }
+      if ((k === 'schedule' || k === 'scene') && isObj(nv)) { var sp = prune(nv, ov); if (sp) { out[k] = sp; any = true; } return; }
       if (!same(nv, ov)) { out[k] = nv; any = true; }
     });
     if (!any) return Promise.resolve(false);
     out.updatedAt = nowIso();
-    var rest = {}; Object.keys(out).forEach(function (k) { if (k !== 'schedule') rest[k] = out[k]; });
+    var rest = {}; Object.keys(out).forEach(function (k) { if (k !== 'schedule' && k !== 'scene') rest[k] = out[k]; });
     var merged = deepMerge(clone(before), clone(rest)), Cm = campaignMod(), write;
     if (out.schedule) merged.schedule = mergeNull(isObj(merged.schedule) ? merged.schedule : {}, out.schedule);
+    if (out.scene) merged.scene = mergeNull(isObj(merged.scene) ? merged.scene : {}, out.scene);
     if (!tableExists && typeof ref.set === 'function') {
       var full = Cm && Cm.normalize ? Cm.normalize(merged) : merged; full.updatedAt = out.updatedAt;
       tableExists = true; tableLatest = full; write = ref.set(clone(full));
@@ -392,6 +398,7 @@
       if (tableOn && Cm) { try { Cm.update(data ? clone(data) : null); } catch (e) { toast('The table could not render: ' + (e && e.message || e), true); } }
       var S2 = schedMod(); if (S2) { try { S2.card.update(data ? clone(data) : null); } catch (e) { if (window.console) console.error(e); } }
       renderHome();
+      var Cp = castMod(); if (Cp) { try { Cp.campaign(data ? clone(data) : null); } catch (e) { if (window.console) console.error(e); } }
       var T2 = tracker(); if (openId && T2 && T2.refresh) { try { T2.refresh(); } catch (e) {} }   /* the open sheet reads the table's session */
     }
     function failed(e) { if (campRef !== ref) return; if (!campLoaded && !campGaveUp) { campGaveUp = true; renderHome(); } if (!tableOn) return; toast('The table is offline: ' + (e && e.message || e), true); }
@@ -480,6 +487,26 @@
   function rulesRoute() { var R = rulesMod(); if (R && R.route) { try { R.route(); } catch (e) {} } }
   function openRules() { setMode('rules'); window.scrollTo(0, 0); }
   A.openRules = openRules;
+  /* ---------- the cast (cast-page.js, CAST.md): NPC portraits, #cast, and the "on stage" banner on every screen ----------
+     The module is started once the files settle (the banner needs it in every mode) and gets each campaign snapshot,
+     whose `scene` says who is on stage; the page itself is the `cast` mode. */
+  var castOn = false;
+  function castMod() { var Cp = window.B68CastPage; return Cp && typeof Cp.init === 'function' ? Cp : null; }
+  function castApi() {
+    return {
+      db: function () { return db; },
+      me: function () { return A.me; }, isGM: function () { return A.isGM === true; }, canWrite: function () { return A.canWrite; },
+      saveScene: function (scene) { return campaignSave({ scene: scene }); },   /* { npcs: { id: true | false }, at } through the table's own save */
+      back: goBack
+    };
+  }
+  function startCast() {
+    var Cp = castMod(); if (!Cp) { toast('The cast module is missing.', true); return; }
+    castOn = true;
+    try { Cp.open(location.hash || '#cast'); } catch (e) { toast('The cast could not render: ' + (e && e.message || e), true); }
+  }
+  function castRoute() { var Cp = castMod(); if (Cp && castOn) { try { Cp.route(location.hash || '#cast'); } catch (e) {} } }
+  function closeCast() { castOn = false; var Cp = castMod(); if (Cp && Cp.close) { try { Cp.close(); } catch (e) {} } }
 
   /* roster */
   var roster = [];
@@ -872,7 +899,7 @@
     ];
     return head('Blades ’68 · you’re the GM', 'Set up the table', '', 'One table lives at this address. Set it up once; your players sign in here and join it.') + draftHtml() +
       '<ol class="hm-steps">' + steps.map(function (s, i) { return '<li class="hm-step' + (s[0] ? ' done' : '') + '"><span class="hm-n" aria-hidden="true">' + (i + 1) + '</span>' + (s[0] ? '<span class="hm-done">Done</span>' : '') + '<h3>' + (s[0] ? '<span class="sr">Done: </span>' : '') + s[1] + '</h3><p>' + s[2] + '</p>' + s[3] + '</li>'; }).join('') + '</ol>' +
-      '<div class="hm-links">' + link('new', 'Make a character') + '</div>' +
+      '<div class="hm-links">' + link('cast', 'The cast') + link('new', 'Make a character') + '</div>' +
       '<p class="hm-note">This site holds one table. A second campaign needs a second copy of the app (SETUP.md).</p>';
   }
   /* B. the GM, table started: the crew, the session, what needs doing, the players at a glance */
@@ -889,7 +916,7 @@
     return head('The table · you’re the GM', esc(f.crew.name || 'An unnamed crew'), sessionLine(f), '') +
       '<div class="hm-acts">' + btn('table', 'Open the table', 'btn primary') + '</div>' + nudges(list) + draftHtml() +
       (roster.length ? '<section class="hm-box" aria-label="The players"><div class="hm-band">The players</div><div id="homePlayers"></div></section>' : '') +
-      '<div class="hm-links">' + link('print', 'Print the season') + link('backups', 'Backups') + link('new', 'Make a character') + '</div>';
+      '<div class="hm-links">' + link('cast', 'The cast') + link('print', 'Print the season') + link('backups', 'Backups') + link('new', 'Make a character') + '</div>';
   }
   /* C. a player with no character yet */
   function homeWelcome(f) {
@@ -900,7 +927,7 @@
       '<div class="hm-big"><h2>Make your character</h2><p>Sixteen steps: pick a playbook, dress the figure, fill in the sheet. Filing it opens your living sheet.</p>' + btn('new', 'Make your character', 'btn primary') + '</div>' +
       (n ? '<div class="hm-big"><h2>Mark your dates</h2><p>' + (n === 1 ? 'One date needs' : n + ' dates need') + ' your answer.</p>' + btn('schedule', 'Mark your dates') + '</div>' : '') +
       (ro ? '<p class="hm-note">You can look around but not change anything.</p>' : '') +
-      '<div class="hm-links">' + link('table', 'See the table') + (ro ? '' : link('restore', 'Restore your characters from a backup')) + '</div>';
+      '<div class="hm-links">' + link('table', 'See the table') + link('cast', 'The cast') + (ro ? '' : link('restore', 'Restore your characters from a backup')) + '</div>';
   }
   /* D. a player with characters: one big card each */
   function homeBack(f, mine) {
@@ -912,7 +939,7 @@
       '<div class="hm-chars">' + mine.map(function (d) {
         return '<article class="hm-char"><div class="pic' + ((A.CT.byId[d.playbook] || {}).ghost ? ' ghostly' : '') + '" data-fig="' + esc(d.id) + '"></div><div class="meta"><h2 class="nm">' + esc(d.name || 'Unnamed') + '</h2><span class="cd">' + esc((d.playbookName || pbName(d.playbook)) + (d.code ? ' · ' + d.code : '')) + '</span><span class="st">' + esc(playStatus(d)) + '</span>' + btn('open', 'Open sheet', one ? 'btn primary' : 'btn', d.id) + '</div></article>';
       }).join('') + '</div>' + nudges(list) + draftHtml() +
-      '<div class="hm-links">' + link('table', 'The table') + link('new', 'Make another character') + link('files', 'Everyone’s files') + link('print', 'Print the season') + link('backups', 'Backups') + '</div>';
+      '<div class="hm-links">' + link('table', 'The table') + link('cast', 'The cast') + link('new', 'Make another character') + link('files', 'Everyone’s files') + link('print', 'Print the season') + link('backups', 'Backups') + '</div>';
   }
   function renderHome() {
     if (document.body.dataset.mode !== 'home') return;
@@ -938,6 +965,7 @@
     else if (a === 'open' && id) openCharacter(id);
     else if (a === 'print') openPrint();
     else if (a === 'rules') openRules();
+    else if (a === 'cast') { try { location.hash = '#cast'; } catch (e) {} }
     else if (a === 'files' || a === 'backups') { var n = $(a); if (n) { try { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} } }
     else if (a === 'restore') pickRestore();
     else if (a === 'copylink') copyText(hosted() ? location.origin + location.pathname : location.href.split('#')[0], 'Link copied. Send it to your players.');
@@ -975,12 +1003,13 @@
   }
   function hashOpen() { var h = location.hash || ''; return h.indexOf('#c/') === 0 ? decodeURIComponent(h.slice(3)) : null; }
   /* the routes: (none) Home · #new a blank creator (asks first when there is a draft) · #create the creator as it is ·
-     #s<base64url> a shared character in the creator · #c/<id> a sheet · #t the table · #t/schedule its schedule · #print */
+     #s<base64url> a shared character in the creator · #c/<id> a sheet · #t the table · #t/schedule its schedule · #print · #cast the NPCs, #cast/<id> one, #cast/<id>/edit and #cast/new the GM's editor */
   function route() {
     var h = location.hash || '', id = hashOpen(), m = document.body.dataset.mode;
     if (h === '#t' || h === '#t/schedule') { if (m !== 'table') setMode('table', true); if (h === '#t/schedule') openSchedule(); }
     else if (h === '#print') { if (m !== 'print') setMode('print', true); }
     else if (isRulesHash(h)) { if (m !== 'rules') setMode('rules', true); else rulesRoute(); }
+    else if (h === '#cast' || h.indexOf('#cast/') === 0) { if (m !== 'cast') setMode('cast', true); else castRoute(); }
     else if (id) { if (id !== openId || m !== 'sheet') openCharacter(id); }
     else if (h === '#new') { setMode('create', true); newCharacter(); replaceHash('#create'); syncTitle(); }
     else if (h === '#create' || isShare(h)) { if (m !== 'create') setMode('create', true); }
@@ -1016,6 +1045,7 @@
     else if (h === '#t' || h === '#t/schedule' || sm === 'table') { setMode('table', true); if (h === '#t/schedule') openSchedule(); }
     else if (h === '#print') setMode('print', true);
     else if (isRulesHash(h)) setMode('rules', true);
+    else if (h === '#cast' || h.indexOf('#cast/') === 0) setMode('cast', true);
     else if (h === '#new') { setMode('create', true); newCharacter(); replaceHash('#create'); }
     else if (h === '#create' || fromHash || sm === 'create') setMode('create', true);
     else setMode('home', true);
@@ -1033,6 +1063,7 @@
       who.then(function () { whoami(); syncFilter(); A.syncAll(); return window.claude.use('db'); }).then(function (d) {
         db = d; dbSettled = true; whoami(); A.syncAll(); syncBackups(); syncEditBar();
         startCampaign();
+        var Cp0 = castMod(); if (Cp0) { try { Cp0.init(castApi()); } catch (e) { if (window.console) console.error(e); } }
         if (document.body.dataset.mode === 'table') startTable();
         if (!d) { $('rosterNote').textContent = 'The files are unavailable in this view'; cannotOpen('The files are not available here, so that sheet cannot open.'); renderHome(); return; }
         $('rosterNote').textContent = A.me ? 'Yours are saved to your account · everyone with the link sees the shared files' : 'Everyone who opens this page sees the same files';
