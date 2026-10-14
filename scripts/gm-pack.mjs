@@ -11,6 +11,16 @@
 //   console   T from Tools/views/gm-console/view.js
 //   location  T (+ extra: the other top-level consts the generator reads) from the location generator
 //   campaign  pcs, callbacks, cast, standing, owed, npcs, names, clocks (mirrors view.js readPCs/pipeList/readNPCs/readNames)
+//             (pcs[].file is each character sheet's file name: the NPC generator's initials rule uses file names)
+//   npc       T (NPC generator tables, cut before `const POOL`), cast (anchor rows from blades-68-npc-cast.md, the vault's own
+//             regex), F (the figure map). T.leverage[].t are functions in the vault; they are stored as data
+//             { f, t: "...{v}...", lower, head } and every one is round-trip tested, or the export fails.
+//
+// F (the figure map) comes from the vault page Tools/blades-68-npc-figure-map.md, read as JSON from fenced code blocks:
+//   ```json F          the whole F object (use this form for a small map), or
+//   ```json F.<key>    one top-level key of F per block (e.g. ```json F.faction), merged in page order.
+//   Any other fence is ignored. If the page is missing, or holds no such block, F is exported as null with a warning.
+//   A block that is not valid JSON fails the export.
 //
 // Idempotent: a part whose source is unchanged keeps its previous exportedAt, so a second run writes the same bytes.
 
@@ -184,6 +194,142 @@ function buildLocation(vault, exportedAt) {
   return { src: { file: rel(vault, file), blockSha: sha(block), exportedAt }, T, extra, _extraNames: extraNames };
 }
 
+// ---- part: npc ----------------------------------------------------------------------------------------
+// T.leverage[].t are arrow functions of one string. toJson would drop them silently, so each is probed with a marker
+// and stored as data: { f, t: "...{v}...", lower?, head? }. Applying it: x = v; if head, x = x.split(" — ")[0];
+// if lower, x = x.toLowerCase(); result = t with "{v}" replaced by x. Every shape is then checked against the original
+// function on several values; any mismatch throws (a wrong sentence in the pack is worse than no pack).
+const LEV_MARK = "ZzMarkQ — TailQ";
+const LEV_SAMPLES = ["Alpha", "Beta Gamma — Delta", "ÉCLAIR — x — y", "mIxEd CaSe", "a$&b$1", "", "Trailing —", "— leading"];
+function applyLeverage(shape, v) {
+  let x = String(v);
+  if (shape.head) x = x.split(" — ")[0];
+  if (shape.lower) x = x.toLowerCase();
+  return shape.t.replace("{v}", () => x);
+}
+function leverageToData(fn, f, idx) {
+  const label = "npc: T.leverage[" + idx + "] (" + f + ")";
+  const out = String(fn(LEV_MARK));
+  const forms = [
+    { head: false, lower: false, needle: LEV_MARK },
+    { head: false, lower: true, needle: LEV_MARK.toLowerCase() },
+    { head: true, lower: false, needle: LEV_MARK.split(" — ")[0] },
+    { head: true, lower: true, needle: LEV_MARK.split(" — ")[0].toLowerCase() },
+  ];
+  // longest needle first, so the full marker is not mistaken for its head
+  forms.sort((a, b) => b.needle.length - a.needle.length);
+  const hit = forms.find(m => out.includes(m.needle));
+  if (!hit) throw new Error(label + " does not echo its argument in a recognised form (verbatim, lower-cased, or head before ' — ')");
+  if (out.split(hit.needle).length !== 2) throw new Error(label + " uses its argument more than once; the exporter's {v} form holds one");
+  if (out.includes("{v}")) throw new Error(label + " already contains the literal {v}");
+  const shape = { f, t: out.replace(hit.needle, "{v}") };
+  if (hit.lower) shape.lower = true;
+  if (hit.head) shape.head = true;
+  for (const v of LEV_SAMPLES) {
+    if (String(fn(v)) !== applyLeverage(shape, v)) throw new Error(label + " does not round-trip on a test value (the stored form gives different text); the leverage function does something the exporter cannot express");
+  }
+  return shape;
+}
+
+const FIGMAP_PAGE = ["Wiki", "Games", "Blades in the Dark", "Tools", "blades-68-npc-figure-map.md"];
+
+// The vault's own cast regex (generator page loadCast): one row per anchor, name in bold in the first cell.
+function parseCast(text) {
+  const out = [];
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\|\s*\*\*(.+?)\*\*[^|]*\|(.*)$/);
+    if (!m) continue;
+    const c = m[2].split("|").map(s => s.trim());
+    if (c.length < 4 || !c[0]) continue;
+    out.push({ n: m[1].trim(), status: c[0], pace: c[1], borrow: c[2], never: c[3] });
+  }
+  return out;
+}
+
+// ```json F  or  ```json F.<key>  fences of the figure-map page -> F, or null
+function parseFigureMap(text) {
+  const lines = text.split("\n");
+  let F = null;
+  for (let i = 0; i < lines.length; i++) {
+    const open = lines[i].match(/^```json[ \t]+(F(?:\.[A-Za-z_$][\w$-]*)?)[ \t]*$/);
+    if (!open) continue;
+    let j = i + 1;
+    while (j < lines.length && !/^```[ \t]*$/.test(lines[j])) j++;
+    if (j >= lines.length) throw new Error("npc: the figure-map block '" + open[1] + "' is not closed");
+    let val;
+    try { val = JSON.parse(lines.slice(i + 1, j).join("\n")); } catch (e) { throw new Error("npc: the figure-map block '" + open[1] + "' is not valid JSON (" + e.message + ")"); }
+    if (open[1] === "F") {
+      if (!val || typeof val !== "object" || Array.isArray(val)) throw new Error("npc: block 'F' must be a JSON object");
+      F = Object.assign(F || {}, val);
+    } else {
+      (F ||= {})[open[1].slice(2)] = val;
+    }
+    i = j;
+  }
+  return F;
+}
+
+function buildNpc(vault, exportedAt) {
+  const tools = path.join(vault, "Wiki", "Games", "Blades in the Dark", "Tools");
+  const genFile = path.join(tools, "blades-68-npc-generator.md");
+  const text = readText(genFile);
+  const open = text.match(/^```dataviewjs[ \t]*$/m);
+  if (!open) throw new Error("npc: no ```dataviewjs block found in the generator page");
+  const bodyStart = open.index + open[0].length + 1;
+  const close = text.indexOf("\n```", bodyStart);
+  if (close < 0) throw new Error("npc: the dataviewjs block is not closed");
+  const block = text.slice(bodyStart, close);
+  const decl = block.match(/^const T = \{\};[ \t]*$/m);
+  if (!decl) throw new Error("npc: `const T = {};` not found in the generator block");
+  const declEnd = decl.index + decl[0].length;
+  const stopM = block.match(/^const POOL = /m);
+  if (!stopM) throw new Error("npc: `const POOL = ` not found; the tables are cut before it");
+  const stop = stopM.index;
+  if (LATE_T.test(block.slice(stop))) warn("npc: `T.x = ...` statements exist AFTER `const POOL`; they are NOT in the pack");
+  const code = block.slice(0, declEnd) + "\nglobalThis.__T = T;\n" + block.slice(declEnd, stop) + "\n";
+  const { ctx, error } = runBody(code, "blades-68-npc-generator.md");
+  if (error) throw new Error("npc: table statements threw: " + error.message);
+  const rawT = ctx.__T;
+  if (!rawT || !Object.keys(rawT).length) throw new Error("npc: T is empty");
+
+  // leverage: functions -> data (fails loudly)
+  if (!Array.isArray(rawT.leverage) || !rawT.leverage.length) throw new Error("npc: T.leverage is missing or empty");
+  const leverage = rawT.leverage.map((s, i) => {
+    if (!s || typeof s.f !== "string" || typeof s.t !== "function") throw new Error("npc: T.leverage[" + i + "] is not { f: string, t: function }");
+    return leverageToData(s.t, s.f, i);
+  });
+  const dropped = [];
+  const T = toJson(Object.assign({}, rawT, { leverage }), "T", dropped);
+  if (dropped.length) throw new Error("npc: non-JSON values in T would be dropped: " + dropped.join(", "));
+  // generate() holds one rule as a literal: which heritage rolls a telltale. It is data in the pack (T.telltaleHeritage),
+  // so the app's code carries no heritage name.
+  const tt = block.match(/o\.telltale\s*=\s*h\.n\s*===\s*("(?:[^"\\]|\\.)*")\s*\?\s*pick\(T\.telltale\)\s*:\s*null/);
+  if (!tt) throw new Error("npc: the telltale rule in generate() was not found; update the exporter");
+  T.telltaleHeritage = JSON.parse(tt[1]);
+  if (!T.heritage.some(h => h.n === T.telltaleHeritage)) warn("npc: the telltale heritage is not in T.heritage; telltales will never roll");
+
+  // the cast
+  const castFile = path.join(tools, "blades-68-npc-cast.md");
+  let castText = "";
+  let cast = [];
+  try { castText = readText(castFile); cast = parseCast(castText); } catch (e) { warn("npc: the cast page is unreadable (" + e.message + "); cast is empty"); }
+  if (!cast.length) warn("npc: no cast anchors parsed; the generator will roll a status and dial instead");
+
+  // the figure map
+  const mapFile = path.join(vault, ...FIGMAP_PAGE);
+  let F = null, mapText = "";
+  if (fs.existsSync(mapFile)) {
+    mapText = readText(mapFile);
+    F = parseFigureMap(mapText);
+    if (!F) warn("npc: Tools/blades-68-npc-figure-map.md has no ```json F block; F is null");
+  } else warn("npc: Tools/blades-68-npc-figure-map.md does not exist yet; F is null (portraits use the built-in fallback map)");
+
+  return {
+    src: { file: rel(vault, genFile) + " (+ npc-cast, npc-figure-map)", blockSha: sha(block + "\n\u0000\n" + castText + "\n\u0000\n" + mapText), exportedAt },
+    T, cast, F, _leverage: leverage.length,
+  };
+}
+
 // ---- tiny YAML frontmatter parser ---------------------------------------------------------------------
 // Handles what Dataview would hand view.js for these notes: scalars (numbers, booleans, null), quoted strings,
 // [a, b] flow lists, and `- item` block lists. Not a general YAML parser.
@@ -291,7 +437,7 @@ function buildCampaign(vault, exportedAt) {
     const base = path.basename(f, ".md");
     const name = String(fm.character || base);
     pcs.push({
-      name, first: name.split(" ")[0], playbook: String(fm.playbook || ""),
+      name, file: base, first: name.split(" ")[0], playbook: String(fm.playbook || ""),
       insight: Number(fm.insight) || 0, prowess: Number(fm.prowess) || 0, resolve: Number(fm.resolve) || 0,
       wont: rawList(fm.wont_breaks).map(bare), vice: rawList(fm.vice).map(bare),
       friend: rawList(fm.friends).map(bare), rival: rawList(fm.rival).map(bare),
@@ -379,12 +525,14 @@ function main() {
 
   const parts = {};
   const failures = [];
-  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign]];
+  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc]];
+  let npcLeverage = 0;
   let locationExtraNames = [];
   for (const [name, fn] of builders) {
     try {
       const part = fn(vault, now);
       if (name === "location") { locationExtraNames = part._extraNames; delete part._extraNames; }
+      if (name === "npc") { npcLeverage = part._leverage; delete part._leverage; }
       const old = prev && prev.parts && prev.parts[name];
       if (old && old.src && old.src.blockSha === part.src.blockSha) {
         const body = JSON.stringify({ ...part, src: { ...part.src, exportedAt: old.src.exportedAt } });
@@ -422,6 +570,8 @@ function main() {
     console.log("  console.T   (" + Object.keys(parts.console.T).length + ")  " + summariseKeys(parts.console.T).join(" "));
     console.log("  location.T  (" + Object.keys(parts.location.T).length + ")  " + summariseKeys(parts.location.T).join(" "));
     console.log("  location.extra: " + locationExtraNames.join(", "));
+    console.log("  npc.T       (" + Object.keys(parts.npc.T).length + ")  " + summariseKeys(parts.npc.T).join(" "));
+    console.log("  npc: cast " + parts.npc.cast.length + ", leverage shapes " + npcLeverage + " (round-trip tested), F " + (parts.npc.F ? "present (" + Object.keys(parts.npc.F).join(", ") + ")" : "null"));
     const c = parts.campaign;
     console.log("  campaign: pcs " + c.pcs.length + ", callbacks " + c.callbacks.length + ", cast " + c.cast.length + ", standing " + c.standing.length +
       ", owed " + c.owed.length + ", npcs " + c.npcs.length + ", names " + c.names.first.length + "/" + c.names.family.length + ", clocks " + c.clocks.length);
@@ -434,4 +584,6 @@ function main() {
   if (!a.quiet && !warnings.length) console.log("\nno warnings");
 }
 
-main();
+// Runs as a script; importing the file (the unit test does) only exposes the npc helpers below.
+export { buildNpc, leverageToData, applyLeverage, parseCast, parseFigureMap, warnings as exportWarnings };
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
