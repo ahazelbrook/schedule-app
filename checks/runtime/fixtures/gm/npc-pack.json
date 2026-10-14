@@ -109,9 +109,9 @@
         "quirk": ["Believes in lucky socks.", "Devoted to their goose.", "Married into jam.", "Reclusive, deals through notes.", "Owes money to a snail.", "Cannot abide whistling.", "Keeps a diary of weather.", "Secretly writes poetry."],
         "quirkExtra": ["Just moved house.", "Collects thimbles.", "Afraid of ducks.", "Sings in the bath, loudly."],
         "attitude": [
-          { "n": "Hostile", "d": "roll 1d — they start against you", "w": 2 },
-          { "n": "Neutral", "d": "roll 2d — no stake in you either way", "w": 5 },
-          { "n": "Friendly", "d": "roll 3d — inclined to help", "w": 3 }
+          { "n": "Hostile", "d": "invented: cold, one die", "w": 2 },
+          { "n": "Neutral", "d": "invented: indifferent, two dice", "w": 5 },
+          { "n": "Friendly", "d": "invented: warm, three dice", "w": 3 }
         ]
       },
       "cast": [

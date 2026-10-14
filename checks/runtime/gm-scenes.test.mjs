@@ -160,7 +160,7 @@ function vaultRunner(block) {
   return ctx;
 }
 await test('parity with the invented vault page: 300 rolls, every field and the memory after, identical', () => {
-  const block = PAGE.match(/```dataviewjs\n([\s\S]*?)\n```/)[1];
+  const block = PAGE.match(/```dataviewjs\r?\n([\s\S]*?)\r?\n```/)[1];
   const ctx = vaultRunner(block);
   const sc = S.create({ T });
   let n = 0;

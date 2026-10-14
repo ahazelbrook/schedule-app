@@ -38,7 +38,7 @@ const DESCRIPTIONS = {
 };
 
 function stop() {
-  if (server) { try { process.kill(-server.pid, 'SIGKILL'); } catch (_) {} server = null; }
+  if (server) { try { if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(server.pid), '/T', '/F'], { stdio: 'ignore' }); else process.kill(-server.pid, 'SIGKILL'); } catch (_) {} server = null; }
   try { rmSync(stateDir, { recursive: true, force: true }); } catch (_) {}
 }
 process.on('exit', stop);
@@ -69,10 +69,10 @@ async function main() {
   const busy = await fetch('http://127.0.0.1:' + PORT + '/api/me', { signal: AbortSignal.timeout(1500) }).then(() => true, () => false);
   if (busy) throw new Error('port ' + PORT + ' is already in use: stop what is on it, or set PORT');
   // the migrations, applied the way a deploy applies them
-  const mig = spawnSync(WRANGLER, ['d1', 'migrations', 'apply', 'DB', '--local', '--persist-to', persist], { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, encoding: 'utf8' });
+  const mig = spawnSync(WRANGLER, ['d1', 'migrations', 'apply', 'DB', '--local', '--persist-to', persist], { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, encoding: 'utf8', shell: process.platform === 'win32' });
   if (mig.status !== 0) throw new Error('migrations failed:\n' + mig.stdout + mig.stderr);
   server = spawn(WRANGLER, ['dev', '--port', String(PORT), '--ip', '127.0.0.1', '--inspector-port', String(PORT + 20000), '--show-interactive-dev-session', 'false',
-    '--persist-to', persist, '--log-level', 'warn', '--var', 'DEV_USER:' + GM, '--var', 'GM_EMAILS:' + GM], { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: true, stdio: 'ignore' });
+    '--persist-to', persist, '--log-level', 'warn', '--var', 'DEV_USER:' + GM, '--var', 'GM_EMAILS:' + GM], { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: true, stdio: 'ignore', shell: process.platform === 'win32' });
   for (let i = 0; i < 180; i++) { try { const r = await fetch('http://127.0.0.1:' + PORT + '/index.html', { signal: AbortSignal.timeout(2000) }); if (r.status > 0) break; } catch (_) {} await sleep(500); }
 
   await step('seed: the migration made the seven NPCs, hidden, with the descriptions word for word', async () => {

@@ -136,7 +136,7 @@ await test('controls: approach and loadout selects, then one tri control per fac
 
 // ---- the port against the invented vault page, run as the vault runs it (node:vm, a seeded Math.random) -------------------
 await test('parity with the invented vault page: roll() and outcome() agree for pools -4..8 over 200 seeds', () => {
-  const block = PAGE.match(/```dataviewjs\n([\s\S]*?)\n```/)[1];
+  const block = PAGE.match(/```dataviewjs\r?\n([\s\S]*?)\r?\n```/)[1];
   const ctx = vm.createContext({ dv: {}, console });
   vm.runInContext('(function(){\n' + block.split('const wrap')[0] + '\nglobalThis.__roll = roll; globalThis.__outcome = outcome;\n})()', ctx);
   const en = E.create({ T });

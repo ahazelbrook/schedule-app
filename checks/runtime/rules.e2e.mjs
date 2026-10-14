@@ -4,7 +4,7 @@
 // layout with no sideways scroll. Every text is placeholder prose from checks/runtime/fixtures/rules/: the real
 // rulebooks are never in this repository.
 //   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node checks/runtime/rules.e2e.mjs      (or: npm run check:rules)
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -26,10 +26,10 @@ const bigDir = mkdtempSync(path.join(tmpdir(), 'b68-rules-big-'));
 const server = spawn(path.join(ROOT, 'node_modules', '.bin', 'wrangler'), ['dev', '--port', String(PORT), '--ip', '127.0.0.1',
   '--inspector-port', String(PORT + 20000), '--show-interactive-dev-session', 'false', '--persist-to', stateDir, '--log-level', 'warn',
   '--var', 'DEV_USER:' + GM, '--var', 'GM_EMAILS:' + GM],
-{ cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+{ cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: true, shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
 let serverLog = '';
 server.stdout.on('data', (d) => { serverLog += d; }); server.stderr.on('data', (d) => { serverLog += d; });
-function killServer(sig = 'SIGTERM') { try { process.kill(-server.pid, sig); } catch (_) {} }
+function killServer(sig = 'SIGTERM') { try { if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(server.pid), '/T', '/F'], { stdio: 'ignore' }); else process.kill(-server.pid, sig); } catch (_) {} }
 process.on('exit', () => { killServer('SIGKILL'); for (const d of [stateDir, bigDir]) try { rmSync(d, { recursive: true, force: true }); } catch (_) {} });
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
 
