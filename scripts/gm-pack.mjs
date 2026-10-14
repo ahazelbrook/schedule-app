@@ -72,7 +72,7 @@ function toJson(v, p, dropped) {
   if (t === "undefined" || t === "symbol" || t === "bigint") { dropped.push(p + " (" + t + ")"); return undefined; }
   if (v instanceof RegExp || Object.prototype.toString.call(v) === "[object RegExp]") { dropped.push(p + " (RegExp)"); return undefined; }
   if (Array.isArray(v)) {
-    return v.map((x, i) => { const r = toJson(x, p + "[" + i + "]", dropped); return r === undefined ? null : r; });
+    return Array.from(v, (x, i) => { const r = toJson(x, p + "[" + i + "]", dropped); return r === undefined ? null : r; });   // Array.from: a host array even for a vm-realm one
   }
   if (t === "object") {
     const out = {};
@@ -411,7 +411,7 @@ function buildScenes(vault, exportedAt) {
   const src = cutFunction(block, "ratings", label);
   const { ctx, error } = runBody("globalThis.__R = (" + src.replace(/^function ratings/, "function") + ")({ d: { r: ['@0@', '@1@', '@2@', '@3@'] } });", "ratings");
   if (error || !Array.isArray(ctx.__R) || ctx.__R.length !== 4) throw new Error(label + ": ratings() could not be probed" + (error ? ": " + error.message : ""));
-  T.ratingLabels = ctx.__R.map((s, i) => {
+  T.ratingLabels = Array.from(ctx.__R, (s, i) => {   // Array.from: a host array, not the vm realm's
     const m = String(s).match(/^(.*?)\s*@(\d)@$/);
     if (!m || Number(m[2]) !== i || !m[1]) throw new Error(label + ": ratings() entry " + i + " does not read '<label> r[" + i + "]'");
     return m[1];

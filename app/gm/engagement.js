@@ -22,7 +22,7 @@
        replay { id:'engagement', seed, mem:{}, ui }   en.replay(replay) redraws the same dice
        lines  [{ kind:'read', id:'mods', md }, { kind:'want', id:'result', md }, { kind:'grid', id:'roll',
               rows:[{ k:'Roll', md }] }, { kind:'read', id:'cut', md }]   md is markdown, never HTML
-       meta   { id:'engagement', title ("Assault — 2d"), sub, chips, text, all, label, result }
+       meta   { id:'engagement', title ("<approach> — 2d"), sub, chips, text, all, label, result }
    Helpers: B68GmEngagement.seedRng(a) · poolOf(T, mods) · rollPool(n, rng) · outcomeOf(T, r) · plain(md)
    --------------------------------------------------------------------------------------------------------------- */
 (function (root, factory) {
