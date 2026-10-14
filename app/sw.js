@@ -6,7 +6,7 @@
    /api/*, /cdn-cgi/* and other origins are not touched at all: the data layer (cf.js) keeps its own offline copy. */
 'use strict';
 
-var CACHE = 'b68-shell-v4';     /* bump to drop every cached file on the next activation */
+var CACHE = 'b68-shell-v5';     /* bump to drop every cached file on the next activation */
 var PREFIX = 'b68-shell-';
 
 /* the app shell: the page and everything index.html loads (checks/runtime/pwa.test.mjs keeps this in step with it) */
@@ -21,7 +21,7 @@ var SHELL = [
   'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'campaign.js', 'schedule.js', 'crews.js', 'crewsheet.js', 'season.js', 'markdown.js', 'rules.js',
   'runtime/cf.js', 'boot.js',
   'cast.css', 'cast-page.js',
-  'gm/console.js', 'gm/location.js', 'gm.css', 'gm-page.js', 'display.css', 'display-page.js',
+  'gm/console.js', 'gm/location.js', 'gm.css', 'gm-page.js', 'display.css', 'display-page.js', 'name-edit.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'
 ];
 

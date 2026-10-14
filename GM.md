@@ -70,14 +70,28 @@ fails and nobody is known, nothing is purged.
   versions with `pack()` and fetches only what changed; if a part will not download, the page carries on with the copy on
   the device ("offline copy" in the header). The header shows "Campaign data exported DD/MM/YYYY", amber when
   more than three days old.
-- **Layout.** Laptop (>= 1100 px): the console (controls, the nine buttons, the card, "Earlier:" the last five rolls) |
+- **Layout.** Laptop (>= 1100 px): the console (the Situations | Classic toggle, Position, controls, the four buttons, the card, "Earlier:" the last five rolls) |
   a side panel with **Location (B)**, **NPC (N)** and **Rules (T)** | the state rail (crew heat, wanted, rep, stacks and
   vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on
   stage) | the capture bar at the foot. 600–1100 px: two columns, the rail below. Phone: a Console | Location | NPC |
-  State bar, the buttons a 3 × 3 grid, the controls behind a "Scene" line, capture on a floating button.
-- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd): `1`–`9` roll, `B` `N` `T` switch the panel
+  State bar, the Position switch at the top, the situations a 2 × 2 grid (Classic: 3 × 3), the other controls behind a "Scene" line,
+  capture on a floating button.
+- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd): `1`–`4` roll a situation (Classic: `1`–`9` roll a single table), `B` `N` `T` switch the panel
   (`S` and `E` are reserved), `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
   the last roll under "Rolled at the table", `H` blanks the screen until any key or tap.
+- **Situations and Classic.** The console opens on **Situations**: four buttons, each a moment in the roll: `1` **Before** (a Devil's
+  Bargain), `2` **4/5**, `3` **1–3**, `4` **Someone**. A large three-way **Position** switch (controlled / risky / desperate, with what
+  it means for severity, winds and harm) sits above them, always on screen; the other controls stay (scene, district, PC, NPC,
+  threat); there is no Result control (the button is the result). A card is a **lead box** (one big line, its chips, its own
+  detail under *More*), at most three one-line **Or** rows that each open to their full section, and **one** actions row merged
+  from every section (bargains owed, callbacks used, ticks...), then Pin and Copy. Under the cards a small **Single tables** row
+  holds the nine classic rollers (no keys). **Classic** is the nine-button console exactly as it was (keys `1`–`9`, the Result
+  control): the **Situations | Classic** toggle in the console header is one tap and is remembered per device
+  (`localStorage` `b68.gm.view`; without storage it opens on Situations). The release switch is `SITUATIONS_DEFAULT` near the top
+  of `gm-page.js`: `false` hides the toggle and shows Classic only (the safe release; rollback is also one tap on the toggle).
+  Composed cards are stored under `cards.situation` / `hist.situation` (replay info: `{ id: 'situation', situation, seed, ui, mem }`),
+  never under `console`: code from before redraws any unknown console id as a Devil's Bargain. Classic and single tables keep
+  `cards.console` / `hist.console`. In Situations, Earlier lists the last five across both. Position is the same live control in both views.
 - **Location.** The generator's controls and Roll, the card with GM-only sections marked, then the map: view, theme,
   layer (GM / Player) and the bands revealed to the player layer; Draw, Download SVG / note (.md) / canvas. **Show on
   iPad** is enabled only on the player layer, and the code renders the player layer itself and refuses any other svg
@@ -99,8 +113,11 @@ fails and nobody is known, nothing is purged.
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,
   so a reload or an Earlier click redraws exactly the same card even after a callback was used or a bargain collected),
-  `hist` (five per tool), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at }`). Capture never touches
+  `hist` (five per tool), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at, s? }`). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
+  `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
+  there was none), on typed lines, on lines filed by a card's action (a bargain accepted) and on rolls filed with `L`, so the sync
+  (`npm run gm:sync`) files each line in the right session note. The campaign log never gets capture text.
 - **Saving.** Writes are debounced 800 ms, one in flight at a time; what is added meanwhile goes when it lands, even
   after leaving the page, and a hidden tab or `pagehide` sends what is pending as a `keepalive` request. A network error,
   409, 429 or 5xx retries with backoff; any other refusal is shown as "Not saved", kept in `b68.gm.sticky` and never

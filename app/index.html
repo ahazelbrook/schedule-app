@@ -128,6 +128,16 @@
   .hm-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
   .hm-sub { font: 900 10.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
   .hm-lead { font-size: 15px; max-width: 58ch; }
+  .hm-name { font-size: 13.5px; color: var(--ink-soft); display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: center; margin: -6px 0 0; }
+  .hm-name b { color: var(--ink); }
+  .hm-nameform { display: grid; gap: 6px; margin: -6px 0 0; max-width: 520px; }
+  .hm-namelab { font: 900 10.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
+  .hm-namerow { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; }
+  .hm-namerow input { flex: 1 1 200px; min-width: 0; font: 400 16px/1.3 var(--font-text); padding: 8px 10px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); border-radius: 0; min-height: 44px; }
+  .hm-namerow input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+  .hm-namerow .btn { min-height: 44px; }
+  .hm-nameerr { color: var(--alarm); font-size: 13px; min-height: 1.3em; margin: 0; }
+  .hm-name .hm-link { min-height: 44px; padding: 4px 6px; }
   .hm-acts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   .hm-note { font-size: 13px; color: var(--ink-soft); max-width: 62ch; }
   .hm-draft { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; border: 2px solid var(--rule); border-left-width: 6px; border-left-color: var(--mustard); background: var(--card); padding: 10px 12px; max-width: 720px; }
@@ -552,5 +562,6 @@
 <script src="gm/console.js"></script><script src="gm/location.js"></script>
 <script src="gm-page.js"></script>
 <script src="display-page.js"></script>
+<script src="name-edit.js"></script>
 <script src="runtime/cf.js"></script>
 <script src="boot.js"></script>
