@@ -7,6 +7,8 @@
 //       functions/, checks/ or scripts/. Strings the pack shares with app/content.js (the rulebook's public
 //       character-creation text, already shipped to every player) are exempt.
 //   (d) the GM page's pure guards: only a player-layer map reaches the display, keys, pack validation, the note, patches.
+//   (f) when the pack has the scenes and engagement parts: app/gm/scenes.js and app/gm/engagement.js hold none of their
+//       text (districts, streets, landmarks, notables, factions, rumours, approaches, factors, outcome wording);
 //   (e) when the pack has the npc part: app/gm/npc.js and app/gm/figure-map.js name no faction of npc.T / npc.F (the
 //       figure map's faction palette lives in the pack for exactly that reason).
 // The pack: $B68_PACK if set (it must then load), else gm-private/b68-gm-pack.json (git-ignored) when present.
@@ -70,6 +72,7 @@ function packNames(pk) {
   const nT = (parts.npc && parts.npc.T) || {};
   if (Array.isArray(nT.faction)) nT.faction.forEach((r) => add(first(r)));
   if (nT.factionDetail && typeof nT.factionDetail === 'object') Object.keys(nT.factionDetail).forEach(add);
+  for (const d of (parts.scenes && parts.scenes.T && parts.scenes.T.district) || []) { add(d.n); (d.landmarks || []).forEach(add); (d.notables || []).forEach((n) => add(n && n[0])); }
   return [...out];
 }
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -233,6 +236,46 @@ await test('(c) no string of 25+ characters from the real pack appears in a publ
   const hits = packScan(texts, forms, MIN, exempt);
   if (hits.length) throw new Error(hits.length + ' hit(s):\n  ' + [...new Set(hits)].slice(0, 30).join('\n  '));
   console.log('     ' + originals.size + ' pack strings (' + exempt.size + ' exempt: already public in app/content.js), ' + files.length + ' files (' + files.filter((f) => rel(f).startsWith('scripts/')).length + ' under scripts/), ' + Math.round(bytes / 1024) + ' KiB scanned');
+});
+
+/* ---------- (f) the scenes and engagement modules hold none of their parts' table text ---------- */
+// Everything the two parts carry (districts, streets, landmarks, notables, factions, rumours, the approaches, the factors, the
+// outcome wording, the closing line) lives in the pack. The modules hold arithmetic, labels and card layout only.
+function sceneStrings(pk) {
+  const out = new Set(), add = (v) => { const s = typeof v === 'string' ? v.trim() : ''; if (s.length >= 4) out.add(s); };
+  const parts = (pk && pk.parts) || {}, sT = (parts.scenes && parts.scenes.T) || {}, eT = (parts.engagement && parts.engagement.T) || {};
+  for (const d of sT.district || []) {
+    add(d.n); add(d.streets); add(d.buildings); add(d.factions); add(d.special);
+    for (const k of ['named', 'scene', 'landmarks']) (d[k] || []).forEach(add);
+    (d.notables || []).forEach((n) => (n || []).forEach(add));
+  }
+  for (const k of ['streetType', 'streetSound', 'streetSmell', 'streetObstacle', 'buildingCommon', 'buildingRare', 'rumour', 'faction']) (sT[k] || []).forEach(add);
+  for (const k of Object.keys(sT.weather || {})) { add(k); (sT.weather[k] || []).forEach(add); }
+  (sT.ratingLabels || []).forEach(add);
+  for (const a of eT.approach || []) a.forEach(add);
+  for (const f of eT.factor || []) { add(f.plus); add(f.minus); }
+  for (const l of eT.loadout || []) { add(l.value); add(l.label); }
+  for (const o of Object.values(eT.outcome || {})) { add(o.pos); add(o.how); }
+  add(eT.cut); add(eT.cite);
+  return [...out];
+}
+await test('(f) app/gm/scenes.js and app/gm/engagement.js hold no text of the pack\'s scenes or engagement parts', async () => {
+  if (!PACK || !PACK.parts.scenes || !PACK.parts.engagement) { console.log('     skipped: the pack has no scenes and engagement parts'); return; }
+  const files = ['scenes.js', 'engagement.js'].map((f) => path.join(ROOT, 'app', 'gm', f));
+  const missing = files.filter((f) => !fs.existsSync(f));
+  if (missing.length) throw new Error('missing: ' + missing.map(rel).join(', '));
+  const strings = sceneStrings(PACK);
+  if (strings.length < 100) throw new Error('only ' + strings.length + ' strings found in the scenes and engagement parts (has their shape changed?)');
+  const hits = [];
+  for (const f of files) {
+    const text = read(f);
+    for (const n of strings) {
+      const re = new RegExp('(^|[^A-Za-z0-9_])' + reEsc(n) + '(?![A-Za-z0-9_])', 'g');
+      let m; while ((m = re.exec(text))) hits.push(rel(f) + ':' + lineOf(text, m.index + m[1].length) + ' ' + mask(n));
+    }
+  }
+  if (hits.length) throw new Error(hits.length + ' hit(s):\n  ' + hits.slice(0, 20).join('\n  '));
+  console.log('     ' + files.length + ' files, ' + strings.length + ' strings');
 });
 
 /* ---------- (e) the NPC and figure-map modules name no faction of the npc part ---------- */
