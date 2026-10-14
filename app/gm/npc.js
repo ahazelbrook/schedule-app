@@ -52,7 +52,7 @@
        vault draws are never disturbed. K is the kit (window.B68Figure | require('../figures/figure-kit.js')).
        Contract with the figure map (app/gm/figure-map.js, package P3a), used when present:
            B68GmFigureMap.map(npc, F, rngFn, K) -> spec      (pure; rngFn is a () => [0,1) stream)
-       `map` in opts overrides it (tests). When neither exists a conservative internal map is used: generic kit
+       `map` in opts overrides it (tests; `map: false` forces the internal map). When neither exists a conservative internal map is used: generic kit
        names only, picked from the stream, plus F.halo[faction] if F has it. In every case the identity fields
        (id, name, plate "Surname · F.", code, halo) are stamped last.
        Retry ladder: (1) names the kit does not know are dropped; the spec is rendered (render and portrait must both
@@ -487,6 +487,7 @@
   }
   function getMapper(opts) {
     if (opts && typeof opts.map === 'function') return opts.map;
+    if (opts && opts.map === false) return null;      /* force the conservative internal map */
     var m = root && root.B68GmFigureMap;
     if (!m) { try { if (typeof require === 'function') m = require('./figure-map.js'); } catch (e) { m = null; } }
     return m && typeof m.map === 'function' ? m.map : null;
@@ -664,6 +665,7 @@
     var mapper = getMapper(opts);
     try {
       spec = mapper ? mapper(npc, F || null, rng, K) : internalMap(npc, F || null, rng, K);
+      if (isObj(spec) && isObj(spec.spec)) spec = spec.spec;     /* B68GmFigureMap.map returns { spec, notes }; a test's map may return the spec itself */
       if (!isObj(spec)) { notes.push('the map returned no spec'); spec = null; }
     } catch (e) { notes.push('the map threw: ' + (e && e.message || e)); spec = null; }
 

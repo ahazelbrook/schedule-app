@@ -123,17 +123,24 @@ fails and nobody is known, nothing is purged.
   or an Earlier click redraws the same card from the seed. Changing an engagement control drops the stored roll (the Earlier row
   keeps it) and shows the pool again; the controls live in `eng.ui` and `scn.ui`. Parity with the vault pages:
   `node scripts/gm-parity.mjs --scenes --engagement` (see the header of that script for the one deliberate difference).
-- **NPC.** The panel lists the app's cast with portraits: **Show on iPad** (a hidden NPC asks first) and **Put on stage**
-  (opens the NPC on the cast page, which stages it). **The NPC generator is not in the page yet** (it says "coming"). Its
-  logic is built and tested but is used only by the sync: `app/gm/npc.js` (the vault generator's port, fed by the pack's
-  `npc` part), `app/gm/figure-map.js` (an NPC's fields to a figure kit spec, with a built-in fallback map while the vault's
-  `Tools/blades-68-npc-figure-map.md` page does not exist) and `scripts/lib/sync-npc.mjs` (NPCs made in the app, filed back as
-  vault cards). The pack's `npc` part is uploaded for it.
+- **NPC (`N`).** At the top the generator: **Roll an NPC** draws a card (the vault generator's port, `app/gm/npc.js`, fed by the
+  pack's `npc` part and the campaign part): a portrait, what the table could see, what they want, how to play them (cast,
+  status, dial, mannerism, verb), the levers, and the faction's dossier folded away. A roll is a seed plus the repeat-guard
+  memory, so a reload or an Earlier click (five kept) redraws the same NPC and the same portrait. The portrait comes from
+  `app/gm/figure-map.js` (an NPC's fields to a figure kit spec, with a built-in map while the vault's
+  `Tools/blades-68-npc-figure-map.md` page does not exist); if the kit will not draw it, the nearest stock figure is used and
+  the card says so. **Add to the cast** files the NPC as a hidden cast doc (tag `generated`, the look as the description, the
+  play notes as GM notes) and stores the roll's seed and memory under `npcgen[<npc id>]` in the GM state, so `npm run gm:pull`
+  can rebuild the vault card from it (`SYNC.md`). Pin and Copy work as on the other cards. Under it, the app's cast with
+  portraits: **Show on iPad** (a hidden NPC asks first) and **Put on stage** (opens the NPC on the cast page, which stages it).
+  A roll uses the pack's campaign part, not the live cast, so a freshly filed NPC is avoided by name only after the next
+  pack build and push; that keeps the replay identical to the sync's. Code: `app/gm-page.js`, `app/gm/npc.js`,
+  `app/gm/figure-map.js`, `scripts/lib/sync-npc.mjs`. Check: `checks/runtime/gm-npc-panel.e2e.mjs`.
 - **State.** The GM state document holds `con` (the console state: `live` controls, `owed`, `struck`, `used`), `loc`
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,
   so a reload or an Earlier click redraws exactly the same card even after a callback was used or a bargain collected),
-  `hist` (five per tool), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at, s? }`). Capture never touches
+  `hist` (five per tool), `npcgen` (`{ seed, mem, at, s? }` per generated NPC id: the roll that made them), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at, s? }`). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
   `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
   there was none), on typed lines, on lines filed by a card's action (a bargain accepted) and on rolls filed with `L`, so the sync

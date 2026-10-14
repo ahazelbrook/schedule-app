@@ -93,6 +93,11 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-card code { font: 400 12px/1.3 var(--font-mono); background: var(--inset); padding: 0 3px; }
 #gm-page .gm-card ul, #gm-page .gm-card ol { margin: 4px 0; padding-left: 18px; }
 #gm-page .gm-card-acts { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
+#gm-page .gm-npccard .gm-card-h { align-items: flex-start; }
+#gm-page .gm-npcfig { width: 88px; height: 88px; flex: none; }
+#gm-page .gm-gridh { margin: 10px 12px 2px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+#gm-page .gm-fold { margin: 8px 12px; border: 1px solid var(--hair); padding: 6px 10px; }
+#gm-page .gm-fold > summary { cursor: pointer; font-weight: 700; min-height: 44px; display: flex; align-items: center; }
 #gm-page .gm-earlier { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
 #gm-page .gm-earlier .gm-lab { margin-right: 2px; }
 #gm-page .gm-earlier .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

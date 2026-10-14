@@ -21,7 +21,7 @@ var SHELL = [
   'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'campaign.js', 'schedule.js', 'crews.js', 'crewsheet.js', 'season.js', 'markdown.js', 'rules.js',
   'runtime/cf.js', 'boot.js',
   'cast.css', 'cast-page.js',
-  'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/engagement.js', 'gm.css', 'gm-page.js', 'display.css', 'display-page.js', 'name-edit.js',
+  'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/engagement.js', 'gm/npc.js', 'gm/figure-map.js', 'gm.css', 'gm-page.js', 'display.css', 'display-page.js', 'name-edit.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'
 ];
 

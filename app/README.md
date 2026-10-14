@@ -39,7 +39,7 @@ storage, identity and downloads always go through `window.claude.use(...)`.
   (`#display`); both are hosted-build only (`GM.md`). `gm/` holds the pure logic behind them, one UMD module each, with no DOM,
   storage or table text (the tables arrive from the GM's pack): `console.js` (the console and its situations), `location.js`
   (the location generator and map data), `scenes.js` (street scenes), `engagement.js` (the engagement roll), and `npc.js` with
-  `figure-map.js` (the NPC generator and its figure map; used by the sync, not yet wired into the page).
+  `figure-map.js` (the NPC generator and its figure map: the NPC tab on `#gm`, and the sync).
 - `runtime/cf.js` is the hosted build's `window.claude` adapter. It does nothing inside the
   artifact or from `file://`. `sw.js`, `manifest.webmanifest` and `icons/` make the hosted
   build installable and usable offline.

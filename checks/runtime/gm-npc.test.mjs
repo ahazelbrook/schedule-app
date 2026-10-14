@@ -290,15 +290,30 @@ await test('a figure map module is used when present, with the documented signat
   assert.equal(JSON.stringify(g.mem()), before);
 });
 
+await test('the real figure map (B68GmFigureMap.map returns { spec, notes }) draws the NPC: no fallback to a stock figure', () => {
+  const sets = [['fixture', FIX]].concat(REAL ? [['real', REAL]] : []);
+  for (const [label, P] of sets) {
+    const g = N.create(P);
+    let fb = 0, n = 60;
+    for (let i = 0; i < n; i++) {
+      const r = g.roll({ seed: seedOf(i + 40) });
+      const f = g.figure(r.npc, { K });
+      if (f.fallback) fb++;
+      assert.deepEqual(f.warnings, [], label + ': the final spec draws clean');
+    }
+    assert.equal(fb, 0, label + ': ' + fb + ' of ' + n + ' rolls fell back to a stock archetype (the figure map returns { spec, notes }, which must be unwrapped)');
+  }
+});
+
 await test('internal map honours F.halo and F = null', () => {
   const g = N.create(FIX), g0 = N.create(Object.assign({}, FIX, { F: null }));
   let hit = 0;
   for (let i = 0; i < 100; i++) {
     const r = g.roll({ seed: seedOf(i) });
-    const f = g.figure(r.npc, { seed: r.seed, K });
+    const f = g.figure(r.npc, { seed: r.seed, K, map: false });
     const want = FIX.F.halo[r.npc.faction || ''];
     if (want) { assert.equal(f.spec.halo, f.fallback ? f.spec.halo : want); hit++; }
-    assert.deepEqual(g0.figure(r.npc, { seed: r.seed, K }).warnings, []);
+    assert.deepEqual(g0.figure(r.npc, { seed: r.seed, K, map: false }).warnings, []);
   }
   assert.ok(hit > 10);
 });

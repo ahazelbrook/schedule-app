@@ -564,7 +564,7 @@
   function adoptMem() {
     var m = isObj(S.doc.mem) ? S.doc.mem : {};
     if (S.con) { var cm = S.con.mem(); Object.keys(cm).forEach(function (k) { delete cm[k]; }); Object.assign(cm, clone(m.console || {})); }
-    S.locMem = clone(m.location || {}); S.scnMem = clone(m.scenes || {});
+    S.locMem = clone(m.location || {}); S.scnMem = clone(m.scenes || {}); S.npcMem = clone(m.npc || {});
     if (S.con) { try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {} }
   }
 
@@ -727,7 +727,7 @@
     if (!C || !cp || !isObj(cp.T)) S.conErr = !C ? 'The console module is missing.' : 'The pack has no console part. Update the pack.';
     else { try { S.con = C.create({ T: cp.T, campaign: part('campaign') || {}, state: S.doc.con || {}, mem: clone(m.console || {}) }); } catch (e) { S.conErr = 'The console could not start: ' + errText(e); } }
     S.view = conView(storedView(), hasSit());
-    S.locMem = clone(m.location || {}); S.locErr = ''; S.scnMem = clone(m.scenes || {}); S.scn = null; S.eng = null;
+    S.locMem = clone(m.location || {}); S.locErr = ''; S.scnMem = clone(m.scenes || {}); S.scn = null; S.eng = null; S.npcg = null; S.npcMem = clone(m.npc || {}); S.npcRoll = null;
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready';
     layout(); redrawAll(); subscribeNpcs();
@@ -1160,13 +1160,14 @@
   function renderNpcs() {
     var box = $q('#gm-npc'); if (!box) return;
     var list = npcList();
-    box.innerHTML = '<p class="gm-note">NPC generator: coming. Meanwhile, the cast below can go to the iPad or on stage.</p>' +
+    box.innerHTML = '<div id="gm-npcgen"></div><h3 class="gm-band">The cast</h3>' +
       (list.length ? '<ul class="gm-npcs">' + list.map(function (x) {
         var d = x.doc, rev = d.revealed === true;
         return '<li class="gm-npcrow" data-id="' + esc(x.id) + '"><div class="gm-thumb" data-fig="' + esc(x.id) + '" aria-hidden="true"></div><div class="gm-npcmeta"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc([d.role, d.faction].filter(Boolean).join(' · ')) + '</small>' + (rev ? '' : '<span class="gm-badge">Hidden</span>') + '</div>' +
           '<div class="gm-npcacts"><button type="button" class="btn sm" data-gm="npcipad" data-id="' + esc(x.id) + '">Show on iPad</button><a class="btn sm" href="#cast/' + encodeURIComponent(x.id) + '" title="The cast page: put them on stage from there">Put on stage</a></div></li>';
       }).join('') + '</ul>' : '<p class="gm-empty">' + (S.api && S.api.db && S.api.db() ? 'No NPCs in the cast yet. Add them on the cast page.' : 'The cast is not available here.') + '</p>') +
       '<p><a class="hm-link" href="#cast">The cast page</a></p>';
+    renderNpcGen();
     var K = W.B68Figure; if (!K || !K.portrait) return;
     var holders = [].slice.call(box.querySelectorAll('[data-fig]')), i = 0, me = S;
     (function next() {
@@ -1179,6 +1180,83 @@
       }
       setTimeout(next, 0);
     })();
+  }
+  /* ---------- the NPC generator: a roll is a seed and the repeat-guard memory, so it replays after a reload ---------- */
+  function npcgInst() {
+    if (S.npcg) return S.npcg;
+    var M = W.B68GmNpc, pk = part('npc');
+    if (!M) { S.npcgErr = 'The NPC generator module is missing.'; return null; }
+    if (!pk || !isObj(pk.T)) { S.npcgErr = 'The pack has no npc part. Update the pack.'; return null; }
+    try { S.npcg = M.create({ T: pk.T, cast: pk.cast || [], F: pk.F || null, campaign: part('campaign') || {}, mem: clone(S.npcMem) }); S.npcgErr = ''; } catch (e) { S.npcgErr = 'The NPC generator could not start: ' + errText(e); }
+    return S.npcg;
+  }
+  /* the figure for a roll: drawn once per roll and kept, since the kit's render checks are the slow part */
+  function npcWithFigure(g, roll) {
+    var K = W.B68Figure, fig = null, svg = '';
+    try { fig = g.figure(roll.npc, { K: K }); } catch (e) { fig = null; }
+    if (fig && fig.spec && K && K.portrait) { try { var sp = clone(fig.spec); sp.id = 'gm-npcg'; svg = stripSize(K.portrait(sp, { lod: 'lo' }).svg); } catch (e) { svg = ''; } }
+    return { roll: roll, fig: fig, svg: svg };
+  }
+  function replayNpc(e) {
+    var g = npcgInst(); if (!g || !isObj(e)) return null;
+    var mem = {}; try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
+    try { return npcWithFigure(g, g.roll({ seed: e.seed, mem: mem })); } catch (x) { return null; }
+  }
+  function rollNpc() {
+    var g = npcgInst(); if (!g) { renderNpcGen(); return; }
+    var roll;
+    try { roll = g.roll({ mem: S.npcMem }); } catch (e) { toast('The NPC roll failed: ' + errText(e), true); return; }
+    var entry = { seed: roll.seed, mem: JSON.stringify(roll.replay.mem), label: str(roll.card.meta.label), at: nowIso() };
+    var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.npc) ? S.doc.hist.npc : {};
+    patch({ cards: { npc: Object.assign({ hid: hid }, entry) }, mem: { npc: clone(S.npcMem) }, hist: { npc: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
+    S.npcRoll = npcWithFigure(g, roll); S.last = { text: 'NPC: ' + entry.label };
+    renderNpcGen(true);
+  }
+  /* in the cast already: a generated doc with this name (so the button does not file the same roll twice) */
+  function npcInCast(name) {
+    return Object.keys(S.npcs).some(function (id) { var d = S.npcs[id]; return isObj(d) && str(d.name) === str(name) && Array.isArray(d.tags) && d.tags.indexOf('generated') >= 0; });
+  }
+  function npcGenLinesHtml(lines) {
+    return (lines || []).map(function (l) {
+      if (l.kind === 'chips') return chipsHtml(l.chips);
+      if (l.kind === 'grid' && l.title) {
+        return l.collapsed ? '<details class="gm-fold"><summary>' + esc(l.title) + '</summary>' + linesHtml([l], md) + '</details>' : '<h4 class="gm-gridh">' + esc(l.title) + '</h4>' + linesHtml([l], md);
+      }
+      return linesHtml([l], md);
+    }).join('');
+  }
+  function renderNpcGen(fresh) {
+    var box = $q('#gm-npcgen'); if (!box) return;
+    var g = npcgInst();
+    if (!g) { box.innerHTML = '<p class="gm-note bad">' + esc(S.npcgErr || 'The NPC generator is not available.') + '</p>'; return; }
+    var cur = isObj(S.doc.cards) ? S.doc.cards.npc : null;
+    if (!fresh && cur && (!S.npcRoll || S.npcRoll.roll.seed !== cur.seed)) S.npcRoll = replayNpc(cur);
+    var r = S.npcRoll, h = '<div class="gm-loc-ctl"><button type="button" class="btn primary gm-roll" data-gm="npcroll">Roll an NPC</button></div>';
+    if (r) {
+      var c = r.roll.card, m = c.meta, inCast = npcInCast(r.roll.npc.name);
+      h += '<article class="gm-card gm-npccard" data-tool="npc"><header class="gm-card-h">' + (r.svg ? '<div class="gm-thumb gm-npcfig" aria-hidden="true">' + r.svg + '</div>' : '') + '<div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' +
+        (m.figureNote ? '<p class="gm-note">' + esc(m.figureNote) + '</p>' : '') + (r.fig && r.fig.fallback ? '<p class="gm-note">The portrait is the nearest of the stock figures (the generated one would not draw).</p>' : '') +
+        npcGenLinesHtml(c.lines) +
+        '<div class="gm-card-acts"><button type="button" class="btn sm primary" data-gm="npcfile"' + (inCast ? ' disabled' : '') + ' title="Adds them to the cast, hidden from the players">' + (inCast ? 'In the cast' : 'Add to the cast') + '</button>' +
+        '<button type="button" class="btn sm" data-gm="pin" data-tool="npc">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="npc">Copy</button></div></article>';
+    } else h += '<p class="gm-empty">Roll for a face on the street: who they are, what they want, how to play them. They stay in this tab until you add them to the cast.</p>';
+    box.innerHTML = h + earlierHtml('npc', cur);
+  }
+  /* the roll into the cast: a hidden doc, plus the roll's seed in the GM state so the vault note can be rebuilt from it (SYNC.md) */
+  function fileNpc() {
+    var r = S.npcRoll, g = S.npcg, db = S.api && S.api.db ? S.api.db() : null; if (!r || !g) return;
+    if (npcInCast(r.roll.npc.name)) { toast('They are in the cast already.'); return; }
+    var col = null; try { col = db && db.collection('npcs'); } catch (e) { col = null; }
+    if (!col) { toast('The cast is not available here.', true); return; }
+    var id = 'npc_' + slug(r.roll.npc.name) + '_' + Date.now().toString(36), doc = g.castDoc(r.roll.npc, r.fig && r.fig.spec ? r.fig.spec : {}), me = S;
+    var n = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, e = {}, b = $q('[data-gm="npcfile"]'); if (b) b.disabled = true;
+    Promise.resolve().then(function () { return col.doc(id).set(clone(doc)); }).then(function () {
+      if (S !== me) return;
+      e[id] = clone(g.stateEntry(r.roll, { at: nowIso(), s: n }));
+      e[id].mem = JSON.stringify(e[id].mem);
+      patch({ npcgen: e }, { force: true });
+      toast(doc.name + ' is in the cast, hidden.'); renderNpcGen();
+    }, function (x) { toast('Could not add them to the cast: ' + errText(x), true); if (S === me) renderNpcGen(); });
   }
   function npcToIpad(id) {
     var d = S.npcs[id]; if (!d) return;
@@ -1265,6 +1343,7 @@
   function cardFor(tool) {
     if (tool === 'console' || tool === 'situation') { var r = S.conRes; return r ? { label: str(r.meta.label), title: str(r.meta.title), text: r.sections ? situationPlain(r) : consolePlain(r) } : null; }
     if (tool === 'scenes' || tool === 'engagement') { var g = tool === 'scenes' ? S.scnRoll : S.engRoll; return g ? { label: str(g.meta.label), title: str(g.meta.title), text: g.meta.all.join('\n') } : null; }
+    if (tool === 'npc') { var nr = S.npcRoll; return nr ? { label: str(nr.roll.card.meta.label), title: str(nr.roll.card.meta.title), text: nr.roll.card.meta.all.join('\n') } : null; }
     var L = W.B68GmLocation, roll = S.locRoll; if (!L || !roll) return null;
     var lines = []; try { lines = L.cardLines(roll, part('location')); } catch (e) {}
     return { label: str(roll.name) + (roll.district ? ' · ' + roll.district : ''), title: str(roll.name), text: lines.map(plainMd).join('\n') };
@@ -1332,6 +1411,7 @@
         var cp = { cards: {} }; cp.cards[tool] = cur; patch(cp, { force: true });
         if (tool === 'console' || tool === 'situation') { S.conRes = null; drawConsoleCard(); }
         else if (tool === 'scenes') { S.scnRoll = null; renderScenes(); }
+        else if (tool === 'npc') { S.npcRoll = null; renderNpcGen(); }
         else if (tool === 'engagement') { S.engRoll = null; patch({ eng: { ui: clone(e.ui || {}) } }); renderEngagement(); }
         else { S.locRoll = null; S.map = null; renderLocation(); }
         break;
@@ -1340,6 +1420,8 @@
       case 'copy': copy(b.getAttribute('data-tool')); break;
       case 'locroll': rollLocation(); break;
       case 'scnroll': rollScenes(); break;
+      case 'npcroll': rollNpc(); break;
+      case 'npcfile': fileNpc(); break;
       case 'scnipad': scenesToIpad(); break;
       case 'engroll': rollEngagement(); break;
       case 'layer': setMap('layer', b.getAttribute('data-v')); renderLocation(); break;
