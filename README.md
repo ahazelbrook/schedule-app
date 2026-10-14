@@ -32,7 +32,7 @@ app/                 the page (the Worker's static assets; app/.assetsignore kee
   schedule.js/.css   the next-session card and the schedule box (grid, RSVP board, attendance)
   season.js/.css     the season print (#print)
   cast-page.js, cast.css   the cast (#cast) and the "on stage" banner (CAST.md)
-  gm/, gm-page.js, gm.css  the GM's page (#gm): the console's nine rollers, the location generator and map, capture (GM.md)
+  gm/, gm-page.js, gm.css  the GM's page (#gm): the console (situations and the nine classic rollers), the location generator and map, street scenes, the engagement roll, capture (GM.md); gm/ also holds the NPC generator and figure map used by the sync
   display-page.js, display.css   the iPad's full-screen display (#display, GM.md)
   figures/           the vendored figure kit (v2) and cast
   maps/              the vendored map kit (B68Map): a location roll drawn as a rings, plan, iso or section SVG
@@ -44,7 +44,9 @@ worker/              the Worker: routes /api/* to functions/, serves the page wi
 functions/           the /api/* handlers (Pages Functions layout, called by worker/app.js)
   _lib/              auth (Access JWT), characters, campaign rules, D1 helpers
 migrations/          D1 migrations (the statements of schema.sql)
-scripts/             deploy.sh (D1, Access, secrets, deploy, smoke test) and access-emails.sh
+scripts/             deploy.sh (D1, Access, secrets, deploy, smoke test) and access-emails.sh; the GM's local tools gm-pack.mjs
+                     (build the pack from the vault), gm-sync.mjs (pull/push between the app and the vault, SYNC.md) and
+                     gm-parity.mjs (the ports against the vault's own pages)
 checks/
   api/               API checks (JWT unit test, the Worker and its config, end-to-end flow against wrangler dev)
   runtime/           adapter and PWA unit tests, offline, schedule and phone end-to-end runs, icon builder
@@ -70,14 +72,15 @@ The npm scripts (from the repository root):
 
 | Script | What it runs |
 |---|---|
-| `npm run check:api` | `checks/api/npcs.mjs` (the cast: the seeds, who sees what, writes, validation, the scene rule), `checks/api/jwt.mjs` (Access token verification), `checks/api/worker.mjs` (the router, the DEV_USER guard, the page head, the deploy config) and `checks/api/flow.mjs` (the whole API against its own `wrangler dev` on ports 8788 and 8789, so stop `npm run dev` first) |
-| `npm run check:runtime` | `checks/runtime/adapter.test.mjs` (the adapter, offline cases included), `checks/runtime/pwa.test.mjs` (manifest, icons, the service worker), `markdown.test.mjs` and `gm-nosecrets.test.mjs` (no GM table text in the public code; the GM page's display gate; also `npm run check:gm-secrets`) |
+| `npm run check:api` | `checks/api/npcs.mjs` (the cast: the seeds, who sees what, writes, validation, the scene rule), `checks/api/jwt.mjs` (Access token verification), `checks/api/worker.mjs` (the router, the DEV_USER guard, the page head, the deploy config), `checks/api/flow.mjs` (the whole API against its own `wrangler dev` on ports 8788 and 8789, so stop `npm run dev` first), `checks/api/rules.mjs`, `checks/api/gm.mjs` (the GM-only API and its secrecy), `checks/api/name.mjs` (the display name, `PATCH /api/me`) and `checks/api/display-role.mjs` (the `DISPLAY_EMAILS` role: two calls and a 403 for everything else; also `npm run check:display-role`) |
+| `npm run check:runtime` | `checks/runtime/adapter.test.mjs` (the adapter, offline cases included), `checks/runtime/pwa.test.mjs` (manifest, icons, the service worker), `markdown.test.mjs` and `gm-nosecrets.test.mjs` (no GM table text in the public code; the GM page's display gate; also `npm run check:gm-secrets`), then the GM modules against invented fixtures: `gm-logic`, `gm-page`, `gm-figure`, `gm-npc`, `gm-sync`, `gm-scenes` and `gm-engagement` (`.test.mjs`) |
 | `npm run check:e2e` | `app/checks/e2e.js`: the Home page in each state, filing a character, the sheet, the files and browser Back, against the stubbed runtime. With `E2E_URL=http://127.0.0.1:8788` it runs against `npm run dev` instead |
 | `npm run check:offline` | `checks/runtime/offline.e2e.mjs`: install, offline reload and sync on reconnect, on its own server (port 8790) |
 | `npm run check:schedule` | `checks/runtime/schedule.e2e.mjs`: the schedule against a real local server (port 8791) |
 | `npm run check:phone` | `checks/runtime/phone.e2e.mjs`: a 390 px mobile Chromium against its own server (port 8792): device width, standards mode, no horizontal overflow |
 | `npm run check:cast` | `checks/runtime/cast.e2e.mjs`: the cast end to end against its own server (port 8842), a GM and a player in two browser contexts, and at 360 px; then `cast.artifact.e2e.mjs`: the same in the artifact's runtime (a stubbed db) |
 | `npm run check:gm` | `checks/runtime/gm.e2e.mjs`: the GM page and the display wiring against its own server (port 8845) with invented fixture tables: importing a pack, the keys, replay on reload, capture, the location map (only the player layer reaches the display), the cast to the iPad, the phone and iPad layouts, a player's view |
+| `node checks/runtime/gm-scenes.e2e.mjs`, `display-role.e2e.mjs` | the Street and Engage panels (desktop and a 390 px phone) and the iPad's display-only sign-in in a browser; no npm script, run them directly (each starts its own server, ports 8857 and 8856) |
 | `npm run build` | `wrangler deploy --dry-run`: bundles the Worker into `.wrangler/dist`, uploads nothing |
 | `npm run icons` | rebuilds `app/icons/*` from the figure kit (`checks/runtime/icons.mjs`) |
 
@@ -90,6 +93,10 @@ The page checks in `app/checks/` load `app/index.html` from `file://` with a stu
 ```
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node app/checks/<name>.js
 ```
+
+On Windows the browser checks run with `PW_MODULE` pointing at a Playwright install (a small wrapper that launches Edge
+works when Chromium will not download), and the API checks start wrangler through a shell and stop it with `taskkill`.
+A dev server left behind by an interrupted run (ports 88xx / 288xx) serves stale data to the next one: stop it first.
 
 They change to their own directory first, so they run from anywhere, and write screenshots
 and PDFs to `app/checks/out/` (not committed). Playwright is loaded from
@@ -122,7 +129,8 @@ drive a browser (`check:e2e`, `check:offline`, `check:schedule`, `check:phone`, 
 - `CAMPAIGN.md`: the shared campaign document, the table page, the crew sheet, the season print.
 - `SCHEDULE.md`: the schedule: the document, permissions, the card and the schedule box.
 - `CAST.md`: the cast: NPC portraits, who sees what, "on stage".
-- `GM.md`: the GM's tools: the pack, the GM-only API, the `#gm` page and the `#display` iPad view.
+- `GM.md`: the GM's tools: the pack, the GM-only API, the `#gm` page and the `#display` iPad view, and the display-only sign-in.
+- `SYNC.md`: the two-way sync between the app and the GM's Obsidian vault (`npm run gm:pull`, `gm:push`, `gm:sync`).
 - `app/CONTRACT.md`: the character document, the living sheet's `play` shape, the module APIs.
 - `app/README.md`: the files in `app/`.
 - `DEPLOY.md`: deployment status, and the original deployment plan.

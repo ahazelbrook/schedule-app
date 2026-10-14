@@ -22,13 +22,17 @@ artifact.
 | Phase | State |
 |---|---|
 | 0. Table features on the artifact (dice, GM table, backups) | Done |
-| 1. Repository, hosting, sign-in, API, adapter, field-level saves | Done; deploying is `scripts/deploy.sh` plus the Access dashboard steps (`SETUP.md`), not yet run on your account |
+| 1. Repository, hosting, sign-in, API, adapter, field-level saves | Done and live at https://blades.fieldguide.help since 13/10/2026 (first deploy: `scripts/deploy.sh` plus the Access dashboard steps, `SETUP.md`) |
 | 2. Campaign layer: the six crew sheets, shared clocks, session number, players, log | Done |
 | 3. Night-of-play: end of session, downtime | Done (session wrap-up and downtime on each sheet) |
 | 3. Night-of-play: schedule (next-session card, availability grid, RSVP, calendar) | Done (`SCHEDULE.md`) |
 | 3. Schedule, second round: the RSVP board (the crew line-up coloured by each owner's answer), attendance recorded when the GM starts a session and correctable by the GM, the "missed N" streak and the best-date tie-break, the "Are you in?" nudge within 3 days, GM "Copy reminder" and "Copy date poll" | Done (`SCHEDULE.md`) |
 | 3. Reminders by Discord, email or push | Not built: the app sends no mail (a Worker could run them on a cron trigger, but nothing does yet); the nudge on the card and the copied reminder for the group chat stand in |
 | 4. Installable, offline reading and queued saves | Done (hosted build only) |
+| 5. The rules wiki and the cast (NPC portraits, "on stage") | Done and live (`RULES.md`, `CAST.md`) |
+| 6. GM tools: the `#gm` console (situations and classic), location generator and map, street scenes, engagement roll, capture, the `#display` iPad view, a display name for everyone | Done and live since 14/10/2026 and 15/10/2026 (`GM.md`). Not yet in the page: the NPC generator panel (its logic is built, `app/gm/npc.js`) |
+| 6. GM sync: what happened at the table into the vault, the vault's NPC cards and the pack back to the app | Done (`SYNC.md`; runs on the GM's PC) |
+| 6. A display-only sign-in for the iPad (`DISPLAY_EMAILS`) | Built and deployed, switched off: the iPad uses the GM's own email (`GM.md`) |
 | 4. Season print: every character and the crew in one printable document (`#print`, "Print the season" on the table page) | Done (`CAMPAIGN.md`, "Season print") |
 | 4. Backups | Done, without a nightly job (none scheduled; `npx wrangler d1 export` makes a full copy by hand): "Download all (JSON)" in the app (the characters and the table page's campaign document; a player's copy leaves out hidden clocks), "Restore (JSON)" (characters as new files for anyone; the table for the GM only, after a confirm; it reads both that file and `/api/export`), the GM's "Download everything" on the hosted build (`/api/export`: characters, campaign, members), and D1 Time Travel (7 days of point-in-time restore on the free plan, 30 on Workers Paid) |
 
@@ -38,6 +42,12 @@ and non-commercial. Decisions 1 and 2: both A and B exist, and sign-in is Cloudf
 or an emailed code). For decision 4: the full rulebook text is not kept in the repository;
 `app/content.js` and `app/crews.js` hold only what the sheets need. The character creator in
 `app/` is the prototype's; a new creator is being built separately.
+
+**Redeploys.** After the first deploy, a release is: merge to `main`, `npx wrangler d1 migrations apply DB --remote` (only
+when `migrations/` has a new file; note `npx wrangler d1 time-travel info <database>` first for a restore point), then
+`npx wrangler deploy`. `scripts/deploy.sh` is for the first deploy and for changing who is allowed in: it rewrites the
+Access allow policy and needs the player list. Then `npm run gm:pack` and `npm run gm:push -- --only pack --yes` (or
+Import GM pack on `#gm`). Not on a game day.
 
 The sections below are the original plan, kept for reference.
 
