@@ -18,7 +18,8 @@ const SCHEMA = [
     email TEXT PRIMARY KEY,
     name TEXT,
     role TEXT NOT NULL DEFAULT 'player',
-    last_seen TEXT NOT NULL
+    last_seen TEXT NOT NULL,
+    name_override TEXT
   )`,
   `CREATE TABLE IF NOT EXISTS campaigns (
     id TEXT PRIMARY KEY,

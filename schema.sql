@@ -108,3 +108,7 @@ CREATE TABLE IF NOT EXISTS gm_display (
   updated_at TEXT NOT NULL,
   doc TEXT NOT NULL
 );
+
+-- A display name a member chose for themselves (migrations/0005_member_name.sql). Not IF NOT EXISTS: SQLite has none for
+-- ADD COLUMN, so run schema.sql once on a database that does not have the column yet.
+ALTER TABLE members ADD COLUMN name_override TEXT;

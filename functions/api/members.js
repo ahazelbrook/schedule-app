@@ -8,7 +8,7 @@ export async function onRequest({ request, env }) {
   if (request.method !== 'GET') return methodNotAllowed(['GET']);
   const db = await getDb(env);
   const { results } = await db
-    .prepare('SELECT email, name FROM members ORDER BY name COLLATE NOCASE, email LIMIT 1000')
+    .prepare('SELECT email, COALESCE(name_override, name) AS name FROM members ORDER BY COALESCE(name_override, name) COLLATE NOCASE, email LIMIT 1000')
     .all();
   const members = (results || []).map((r) => ({
     id: r.email,

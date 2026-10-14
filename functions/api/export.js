@@ -33,7 +33,7 @@ export async function onRequest({ request, env, data }) {
       .prepare('SELECT id, updated_at, doc FROM npcs WHERE campaign = ?1 AND deleted = 0 ORDER BY updated_at DESC')
       .bind(id)
       .all(),
-    db.prepare('SELECT email, name FROM members ORDER BY name COLLATE NOCASE, email').all(),
+    db.prepare('SELECT email, COALESCE(name_override, name) AS name FROM members ORDER BY COALESCE(name_override, name) COLLATE NOCASE, email').all(),
   ]);
   const now = new Date().toISOString();
   const body = {
