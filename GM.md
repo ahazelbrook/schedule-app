@@ -1,9 +1,12 @@
 # GM tools: the API and the secrecy contract
 
-The `#gm` page (console, location generator) and the `#display` page (an iPad signed in as the GM) run on three
-GM-only endpoints. The generators' tables hold '68 text and GM-only secrets, so they never enter git: the GM builds
-a **pack** from the vault on their own PC (`npm run gm:pack`, into the git-ignored `gm-private/`) and uploads it from
-the browser. Code: `functions/_lib/gm.js`, `functions/api/gm/*.js`; tables in `migrations/0004_gm.sql`.
+The `#gm` page (the console with its Situations and Classic views, the location generator, street scenes and the engagement
+roll) and the `#display` page (an iPad signed in as the GM) run on three GM-only endpoints. The generators' tables hold '68
+text and GM-only secrets, so they never enter git: the GM builds a **pack** from the vault on their own PC (`npm run
+gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser or with `npm run gm:push -- --only pack
+--yes` (see `SYNC.md`, which also moves what happened at the table back into the vault). Code: `functions/_lib/gm.js`,
+`functions/api/gm/*.js`; tables in `migrations/0004_gm.sql`. The pack parts are `console`, `location`, `campaign`, `npc`,
+`scenes` and `engagement` (`scripts/gm-pack.mjs` lists what each holds).
 
 ## Secrecy rules (server enforced)
 
@@ -120,8 +123,12 @@ fails and nobody is known, nothing is purged.
   or an Earlier click redraws the same card from the seed. Changing an engagement control drops the stored roll (the Earlier row
   keeps it) and shows the pool again; the controls live in `eng.ui` and `scn.ui`. Parity with the vault pages:
   `node scripts/gm-parity.mjs --scenes --engagement` (see the header of that script for the one deliberate difference).
-- **NPC.** The NPC generator is not ported yet. The app's cast is listed with portraits: **Show on iPad** (a hidden NPC
-  asks first) and **Put on stage** (opens the NPC on the cast page, which stages it).
+- **NPC.** The panel lists the app's cast with portraits: **Show on iPad** (a hidden NPC asks first) and **Put on stage**
+  (opens the NPC on the cast page, which stages it). **The NPC generator is not in the page yet** (it says "coming"). Its
+  logic is built and tested but is used only by the sync: `app/gm/npc.js` (the vault generator's port, fed by the pack's
+  `npc` part), `app/gm/figure-map.js` (an NPC's fields to a figure kit spec, with a built-in fallback map while the vault's
+  `Tools/blades-68-npc-figure-map.md` page does not exist) and `scripts/lib/sync-npc.mjs` (NPCs made in the app, filed back as
+  vault cards). The pack's `npc` part is uploaded for it.
 - **State.** The GM state document holds `con` (the console state: `live` controls, `owed`, `struck`, `used`), `loc`
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,

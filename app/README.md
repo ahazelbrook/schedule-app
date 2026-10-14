@@ -35,6 +35,11 @@ storage, identity and downloads always go through `window.claude.use(...)`.
   crew in one printable document, opened from "Print the season" on the table page.
 - `cast-page.js` and `cast.css` are the cast (`#cast`, `#cast/<id>`, the GM's editor) and the "on stage" banner shown on every
   screen; `figures/npcs.js` holds the seven starting NPCs (`CAST.md`).
+- `gm-page.js` and `gm.css` are the GM's page (`#gm`), and `display-page.js` and `display.css` the iPad's full-screen display
+  (`#display`); both are hosted-build only (`GM.md`). `gm/` holds the pure logic behind them, one UMD module each, with no DOM,
+  storage or table text (the tables arrive from the GM's pack): `console.js` (the console and its situations), `location.js`
+  (the location generator and map data), `scenes.js` (street scenes), `engagement.js` (the engagement roll), and `npc.js` with
+  `figure-map.js` (the NPC generator and its figure map; used by the sync, not yet wired into the page).
 - `runtime/cf.js` is the hosted build's `window.claude` adapter. It does nothing inside the
   artifact or from `file://`. `sw.js`, `manifest.webmanifest` and `icons/` make the hosted
   build installable and usable offline.

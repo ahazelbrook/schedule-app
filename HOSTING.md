@@ -55,8 +55,10 @@ the team's JWKS at `https://<ACCESS_TEAM>.cloudflareaccess.com/cdn-cgi/access/ce
 (the user id everywhere), `sub`, and `name` when present. A request with an invalid or
 missing token is `401 {"error":"not signed in"}`.
 
-Roles: `gm` when the email is in `GM_EMAILS` (comma-separated, case-insensitive), else
-`player`. Players read every character and write the ones they own (`doc.owner === email`)
+Roles: `gm` when the email is in `GM_EMAILS` (comma-separated, case-insensitive); `display`
+when it is in `DISPLAY_EMAILS` (optional, the table iPad's own sign-in: it may only
+`GET /api/me` and `GET /api/gm/display`, everything else is 403; GM wins if an email is in both;
+GM.md); else `player`. Players read every character and write the ones they own (`doc.owner === email`)
 plus new ones. GMs write and delete any.
 
 Development: when the binding `DEV_USER` is set (an email) and there is no Access header,
@@ -77,7 +79,7 @@ Environment / bindings: `DB` (D1), `ASSETS` (the files in `app/`), the secrets `
 ## Database (`schema.sql`, `migrations/`)
 
 `schema.sql` is the whole schema as it stands; `migrations/` holds the same statements as
-numbered D1 migrations (`0001_init.sql`), applied with `npx wrangler d1 migrations apply DB
+numbered D1 migrations (`0001_init.sql` to `0005_member_name.sql`), applied with `npx wrangler d1 migrations apply DB
 --remote` (the deploy script does it) or `npm run db:local`. A later change goes in a new
 numbered file and in `schema.sql`; `checks/api/worker.mjs` fails when the two differ. The API
 also creates the tables lazily, so a fresh database works either way.
@@ -102,7 +104,12 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
 
 ## API (all JSON; errors are `{ "error": "message" }` with 400 / 401 / 403 / 404)
 
-- `GET /api/me` → `{ "id": email, "email", "name", "role": "gm" | "player", "campaign" }`
+- `GET /api/me` → `{ "id": email, "email", "name", "role": "gm" | "player" | "display", "campaign" }`; `name` is the
+  display name the person chose, else the one from the Access claim.
+- `PATCH /api/me` `{ "name" }` → the same shape: sets the caller's own display name (`members.name_override`, migration
+  `0005_member_name.sql`; 1 to 40 characters, no control characters or `<` `>`; `""` or `null` clears it back to the
+  Access-derived name). The sign-in upsert never touches the override, nobody can set another person's, and the
+  `display` role is refused. In the page: `window.claude.profile.setName(name)`.
 - `GET /api/characters` → `{ "now": ISO, "docs": [ { "id", "doc", "updatedAt", "deleted": false } ], "campaignUpdatedAt": ISO | null }`,
   every live character of the campaign, newest `updated_at` first, at most 500.
   `campaignUpdatedAt` is the stored campaign document's `updatedAt` (`null` when none), so a
@@ -161,7 +168,8 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   check and retries as characters (409 when it keeps changing). Other methods are 405.
 - `GET /api/members` → `{ "members": [ { "id": email, "name", "role" } ] }`: everyone who has
   called `/api/me` (the API upserts a `members` table on each `/api/me`:
-  `members(email PRIMARY KEY, name, role, last_seen)`), so the GM table can show names.
+  `members(email PRIMARY KEY, name, role, last_seen, name_override)`; the `name` returned is `COALESCE(name_override, name)`),
+  so the GM table can show names. The `display` role is never recorded.
 - `GET /api/export` (GM only; a player gets `403 {"error":"only the GM can export"}`; other
   methods 405; the page's "Download everything" button, shown to the GM on the hosted build,
   fetches it through `B68Runtime.exportAll()` and saves it as it came; opening the address in a
@@ -372,7 +380,8 @@ whole flow (me, create, list, since, patch, delete, player vs gm permissions, ba
 JWT verification test with a generated RSA key, and `worker.mjs`: the router against the
 Pages file layout, the DEV_USER guard, the page head and headers, and the deploy config
 (assets, `run_worker_first`, `workers_dev = false`, no secrets or DEV_USER in
-`wrangler.toml`, migrations equal to `schema.sql`). `checks/runtime/` holds the adapter's unit
+`wrangler.toml`, migrations equal to `schema.sql`); `name.mjs` and `display-role.mjs` cover the display name and the display
+role, `gm.mjs` the GM-only API. `checks/runtime/` holds the adapter's unit
 test with a mocked `fetch`, the PWA test, the offline and schedule end-to-end runs and the
 icon builder. `app/checks/e2e.js` runs against `npm run dev` with
 `E2E_URL=http://127.0.0.1:8788` (no `window.claude` stub then) for the real end-to-end run.
