@@ -1,4 +1,4 @@
-// Unit test for app/gm/console.js (the GM console's nine rollers), in Node with no dependencies.
+// Unit test for app/gm/console.js (the GM console's nine rollers, and the situations layer composed from them), in Node with no dependencies.
 // Every table here is the invented fixture checks/runtime/fixtures/gm/console-pack.json; the real GM pack is never in
 // this repository. If gm-private/b68-gm-pack.json exists on this machine, the same sweeps also run against it
 // (counts only are printed), otherwise that section is skipped with a note.
@@ -7,6 +7,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
@@ -243,6 +246,251 @@ await test('no DOM, storage or network in the module', () => {
     ok(!src.includes(w), 'module mentions ' + w);
 });
 
+// --- Situations (composed cards) -------------------------------------------------------------------------------
+const POS = ['controlled', 'risky', 'desperate'];
+const SCENES = ['', 'chase', 'fight', 'sneak', 'talk', 'street'];
+// A card's UI for iteration i: every control rotates so the sweep covers the cross-product over many seeds.
+function sitUi(i, npcs, pos) {
+  return { pos, scene: SCENES[i % 6], pc: ['', 'Pip Wobble', 'Dot Crumble', 'Moss'][i % 4], district: i % 3 ? '' : 'Puddleton',
+           npc: npcs[i % npcs.length], threat: i % 5 ? '' : 'a placeholder hazard', result: ['', '45', '13'][i % 3] };
+}
+// A composed card has the classic card shape plus sections; checkCard works on it and on every section.
+function checkSituation(card, sid, where) {
+  checkCard(card, where);
+  ok(card.sections.length >= 1 && card.sections.length <= 4, where + ': 1 lead + at most 3 Or, got ' + card.sections.length);
+  eq(card.sections.map(s => s.role), card.sections.map((s, i) => i ? 'or' : 'lead'), where + ': roles');
+  eq(card.meta.id, 'situation', where + ': id'); eq(card.replay.id, 'situation', where + ': replay id');
+  eq(card.meta.situation, sid, where + ': situation id'); eq(card.meta.composeVersion, 1, where + ': composeVersion');
+  eq(card.meta.sections.map(s => s.id), card.sections.map(s => s.id));
+  for (const s of card.sections) {
+    ok(s.lines.length && typeof s.title === 'string' && s.title, where + ': empty section ' + s.id);
+    ok(s.lead && s.lead.length <= 120, where + ': lead line ' + JSON.stringify(s.lead));
+    checkCard({ lines: s.lines, meta: s.meta, seed: s.seed }, where + ' / ' + s.id);
+    for (const re of BAD) ok(!re.test(s.lead), where + ': ' + re + ' in lead');
+  }
+  eq(card.lines, card.sections.flatMap(s => s.lines), where + ': lines are the sections flattened');
+  const keys = card.meta.actions.map(a => JSON.stringify(a.intent));
+  eq(keys.length, new Set(keys).size, where + ': merged actions are unique');
+  ok(card.meta.actions.every(a => card.sections.some(s => s.id === a.from)), where + ': action.from');
+}
+function sitSweep(T, campaign, seeds) {
+  const con = C.create({ T, campaign, seed: 3 });
+  const npcs = con.controls.find(c => c.id === 'npc').options.map(o => o.value);
+  let n = 0;
+  for (const s of con.situations()) for (const pos of POS) {
+    const mem = {};
+    for (let i = 0; i < seeds; i++) {
+      const ui = sitUi(i, npcs, pos);
+      const card = con.situation(s.id, ui, { seed: (i * 2654435761 + n) >>> 0, mem });
+      checkSituation(card, s.id, `${s.id} ${JSON.stringify(ui)} #${i}`);
+      n++;
+    }
+  }
+  return n;
+}
+
+await test('situations: shape, keys, positions, controls without Result, exports', () => {
+  const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign });
+  eq(con.situations().map(s => [s.id, s.key]), [['before', 1], ['fourfive', 2], ['onetothree', 3], ['someone', 4]]);
+  for (const s of con.situations()) ok(s.label && s.hint, 'label/hint ' + s.id);
+  eq(con.positions.map(p => p.value), POS);
+  eq(con.positions.map(p => p.severity), ['mild', 'middling', 'spicy']);
+  eq(con.positions.map(p => p.harm), ['1 (lesser)', '2', '3']);
+  eq(con.situationControls.map(c => c.id), ['pos', 'scene', 'district', 'pc', 'npc', 'threat']);
+  eq(con.situationDefaults(), { pos: 'risky', scene: '', district: '', pc: '', npc: '', threat: '' });
+  eq(con.defaults(), { pos: 'risky', scene: '', district: '', pc: '', result: '', npc: '', threat: '' }, 'classic defaults unchanged');
+  eq(C.SITUATION_ID, 'situation'); eq(C.COMPOSE_VERSION, 1); eq(C.SITUATIONS.map(s => s.id), con.situations().map(s => s.id));
+  con.setCampaign({}, {});
+  eq(con.situationControls.map(c => c.id), ['pos', 'scene', 'district', 'pc', 'npc', 'threat'], 'rebuilt by setCampaign');
+  // by number; an unknown id rolls before
+  eq(con.situation(3, {}, { seed: 1, mem: {} }).meta.situation, 'onetothree');
+  eq(con.situation('nope', {}, { seed: 1, mem: {} }).meta.situation, 'before');
+});
+
+await test('situations (fixture): each situation x position x 200 seeds, every control rotating: clean cards', () => {
+  const n = sitSweep(FIX.parts.console.T, FIX.parts.campaign, 200);
+  console.log('     ' + n + ' situation cards');
+  eq(n, 4 * 3 * 200);
+});
+
+await test('situations (fixture, empty campaign): clean cards with no PCs, callbacks, NPCs or names', () => {
+  const n = sitSweep(FIX.parts.console.T, {}, 100);
+  console.log('     ' + n + ' empty-campaign situation cards');
+  const con = C.create({ T: FIX.parts.console.T, campaign: {} });
+  eq(con.situation('fourfive', {}, { seed: 2, mem: {} }).sections.map(s => s.id), ['consequence', 'complication'], 'no callbacks on file: no callback section');
+  // a friend that is on no sheet still composes (contact is unaimed and says so)
+  checkSituation(con.situation('someone', { npc: 'friend:Nobody' }, { seed: 2, mem: {} }), 'someone', 'friend off-sheet');
+});
+
+await test('situations: exact replay, instance memory, and the stored triple redraws the whole card', () => {
+  const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign, seed: 11 });
+  const npcs = con.controls.find(c => c.id === 'npc').options.map(o => o.value);
+  const mem = {};
+  for (let i = 0; i < 400; i++) {
+    const sid = con.situations()[i % 4].id;
+    const ui = sitUi(i, npcs, POS[i % 3]);
+    const before = clone(mem);
+    const a = con.situation(sid, ui, { mem });                         // fresh seed, live memory
+    eq(a.replay.mem, before, 'replay.mem is the memory before the card');
+    eq(a.replay.ui.result, '', 'result is not part of a situation');
+    const again = con.replay(a.replay);                                // clones replay.mem itself
+    eq(again.lines, a.lines, sid + ' lines'); eq(again.meta, a.meta, sid + ' meta'); eq(again.sections, a.sections, sid + ' sections');
+    eq(again.replay, a.replay, sid + ' replay');
+    const m2 = clone(before);
+    con.situation(sid, ui, { seed: a.seed, mem: m2 });
+    eq(m2, mem, sid + ' memory after the card');
+    // JSON round trip of the stored triple (what GM state keeps)
+    eq(con.replay(JSON.parse(JSON.stringify(a.replay))).lines, a.lines, sid + ' after JSON');
+  }
+  // con.replay also redraws a classic card
+  const k = con.roll('harm', { pos: 'desperate' }, { mem: {} });
+  eq(con.replay(k.replay).lines, k.lines);
+  // the same seed gives the same card whatever the instance has been doing
+  const x = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign }).situation('onetothree', { npc: 'rival:Nigel Sprocket' }, { seed: 77, mem: {} });
+  const y = con.situation('onetothree', { npc: 'rival:Nigel Sprocket' }, { seed: 77, mem: {} });
+  eq(x.lines, y.lines);
+});
+
+await test('situations: every section is a classic roll with its own seed; memory runs through them in order', () => {
+  const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign });
+  const npcs = con.controls.find(c => c.id === 'npc').options.map(o => o.value);
+  for (let i = 0; i < 300; i++) {
+    const sid = con.situations()[i % 4].id;
+    const ui = sitUi(i, npcs, POS[i % 3]);
+    const mem = {};
+    for (let w = 0; w < i % 6; w++) con.roll(['complication', 'consequence', 'face'][w % 3], ui, { mem });   // a warm memory
+    const start = clone(mem);
+    const seed = (i * 40503 + 9) >>> 0;
+    const card = con.situation(sid, ui, { seed, mem });
+    // the section seeds are the card seed's second mulberry32 stream
+    const r2 = C.seedRng(seed), expect = [0, 1, 2, 3].map(() => (r2() * 4294967296) >>> 0);
+    card.sections.forEach((s, j) => eq(s.seed, expect[j], sid + ' section seed ' + j));
+    // memory: each section starts from what the one before left, the first from the card's start, the last leaves mem
+    let chain = clone(start);
+    for (const s of card.sections) {
+      eq(s.replay.mem, chain, sid + ': ' + s.id + ' starts from the previous section\'s memory');
+      eq(s.replay.seed, s.seed);
+      const re = con.roll(s.replay.id, s.replay.ui, { seed: s.replay.seed, mem: chain });   // classic replay advances chain
+      eq(re.lines, s.lines, sid + ': ' + s.id + ' is a classic roll'); eq(re.meta, s.meta);
+    }
+    eq(chain, mem, sid + ': the last section leaves the memory');
+    // result is forced per section: 4/5 for the 4/5 card, 1-3 for the 1-3 card
+    for (const s of card.sections) {
+      if (sid === 'fourfive') eq(s.replay.ui.result, '45'); else if (sid === 'onetothree') eq(s.replay.ui.result, '13'); else eq(s.replay.ui.result, '');
+    }
+  }
+  // the guard works across cards: with shared memory a section never repeats inside its window
+  const mem = {}, seen = [];
+  for (let i = 0; i < 200; i++) seen.push(con.situation('fourfive', { scene: 'chase' }, { mem }).sections[1].meta.text);
+  for (let i = 4; i < seen.length; i++) ok(new Set(seen.slice(i - 4, i)).size === 4, 'complication repeated inside the window at ' + i);
+});
+
+await test('situations: what each one offers (lead, then at most three Or)', () => {
+  const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign });
+  const ids = (sid, ui, seed) => con.situation(sid, ui, { seed: seed || 1, mem: {} }).sections.map(s => s.id);
+  eq(ids('before', {}), ['devilsBargain']);
+  eq(ids('fourfive', {}), ['consequence', 'complication', 'callback']);
+  eq(ids('fourfive', { npc: 'rival:Nigel Sprocket' }), ['consequence', 'complication', 'callback', 'reaction']);
+  eq(ids('onetothree', {}), ['consequence', 'payThePrice', 'harm']);
+  eq(ids('onetothree', { npc: 'fac:Hat Society' }), ['consequence', 'payThePrice', 'harm', 'reaction']);
+  eq(ids('someone', {}), ['face', 'reaction']);
+  eq(ids('someone', { npc: 'friend:Marge Teacup' }), ['contact', 'reaction']);
+  eq(ids('someone', { npc: 'rival:Nigel Sprocket' }), ['reaction']);
+  eq(ids('someone', { npc: 'fac:The Teaspoons' }), ['reaction']);
+  // NPC variants carry their pool through to the reaction
+  const reaction = (sid, npc) => con.situation(sid, { npc }, { seed: 4, mem: {} }).sections.find(s => s.id === 'reaction').meta.reaction;
+  eq(reaction('fourfive', 'friend:Marge Teacup').pool, 3); eq(reaction('onetothree', 'rival:Nigel Sprocket').pool, 1);
+  eq(reaction('someone', 'fac:The Teaspoons').pool, 3); eq(reaction('someone', 'fac:Hat Society').pool, 0);
+  eq(reaction('someone', '').pool, 2, 'nobody set: 2d');
+  eq(reaction('fourfive', 'friend:Marge Teacup').npc, 'Marge Teacup');
+  // lead lines: the 4/5 lead is a 4/5 consequence, the 1-3 lead a 1-3 consequence (never Reduced effect, never Worse at desperate)
+  for (let s = 0; s < 200; s++) {
+    const l13 = con.situation('onetothree', { pos: 'risky' }, { seed: s, mem: {} });
+    ok(!/^Reduced effect/.test(l13.sections[0].meta.text), '1-3 lead offered reduced effect');
+    ok(/1–3/.test(l13.sections[0].meta.sub), '1-3 lead says so');
+    ok(!/^Worse position/.test(con.situation('fourfive', { pos: 'desperate' }, { seed: s, mem: {} }).sections[0].meta.text), 'desperate 4/5 lead offered worse position');
+  }
+  // someone/friend: contact is aimed at the friend's PC, so Marge (Pip's friend) is among Pip's contacts
+  let marge = 0, flan = 0;
+  for (let s = 0; s < 60; s++) {
+    if (con.situation('someone', { npc: 'friend:Marge Teacup' }, { seed: s, mem: {} }).sections[0].meta.contact.pc === 'Pip Wobble') marge++;
+    if (/Auntie Flan/.test(con.situation('someone', { npc: 'friend:Auntie Flan' }, { seed: s, mem: {} }).sections[0].meta.text)) flan++;
+  }
+  eq(marge, 60, 'friend contact is aimed at the friend\'s PC'); eq(flan, 60, 'a sole friend is always the one called');
+  // someone with nobody set: a name, then 2d
+  const sm = con.situation('someone', { district: 'Lower Fluff' }, { seed: 3, mem: {} });
+  eq(sm.sections[1].meta.reaction.pool, 2); ok(sm.meta.face, 'face extra surfaces on the card');
+  // 1-3 and 4/5 differ in what they offer at each position: severity and harm level follow Position
+  const ob = (pos) => con.situation('onetothree', { pos }, { seed: 6, mem: {} });
+  ok(/→ mild/.test(ob('controlled').meta.sub) && /→ spicy/.test(ob('desperate').meta.sub), 'sub shows severity');
+  ok(/level 1 \(lesser\)/.test(ob('controlled').sections[2].meta.sub) && /level 3/.test(ob('desperate').sections[2].meta.sub), 'harm level follows position');
+  ok(/→ mild/.test(con.situation('fourfive', { pos: 'controlled' }, { seed: 6, mem: {} }).sections[1].meta.sub), 'complication severity follows position');
+  ok(con.situation('fourfive', { pos: 'desperate' }, { seed: 6, mem: {} }).sections[1].meta.all.some(t => /^Severity: .*3 winds/.test(t)), 'clock ticks follow position');
+  // dots flow into harm & resist; the aim chip and threat chip surface on the card
+  const h = con.situation('onetothree', { pc: 'Dot Crumble', dots: { 'Dot Crumble': { prowess: 3 } } }, { seed: 2, mem: {} });
+  ok(h.sections[2].meta.all.some(t => /Dot 3d/.test(t)), 'ui.dots reach the sections'); ok(h.meta.chips.includes('Aim: Dot'), 'aim chip');
+  eq(h.replay.ui.dots, { 'Dot Crumble': { prowess: 3 } }, 'dots in the replay ui');
+  eq(con.replay(h.replay).lines, h.lines, 'dots replay');
+});
+
+await test('situations: actions merge across sections (one threat-spent button, bargain, collected, callback used)', () => {
+  const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign });
+  const th = con.situation('onetothree', { threat: 'the wobbly ladder' }, { seed: 8, mem: {} });
+  eq(th.meta.actions.filter(a => a.intent.type === 'threatSpent').length, 1, 'one threat-spent button for the whole card');
+  ok(th.sections.filter(s => s.actions.some(a => a.intent.type === 'threatSpent')).length > 1, 'but several sections offered it');
+  const b = con.situation('before', { pc: 'Pip Wobble' }, { seed: 8, mem: {} });
+  ok(b.meta.actions.some(a => a.intent.type === 'bargainOwed' && a.from === 'devilsBargain'), 'bargain owed');
+  ok(b.meta.bargain && b.meta.bargain.kind, 'bargain extra');
+  const cb = con.situation('fourfive', {}, { seed: 8, mem: {} });
+  ok(cb.meta.actions.some(a => a.intent.type === 'callbackUsed' && a.from === 'callback'), 'callback used');
+  let col = null;
+  for (let s = 0; s < 3000 && !col; s++) { const c = con.situation('onetothree', {}, { seed: s, mem: {} }); col = c.meta.actions.find(a => a.intent.type === 'bargainCollected'); }
+  ok(col && col.from === 'payThePrice', 'collected from pay the price');
+  // intents still go through applyIntent unchanged
+  const st = C.applyIntent({}, col.intent);
+  ok(Object.keys(st.struck).length === 1);
+});
+
+// Classic parity: the nine rollers' output for fixed inputs, hashed with the version that shipped before situations
+// existed (recorded from app/gm/console.js at ff8fe19). The digests depend on the fixture pack, so change both together.
+const CLASSIC_GOLDEN = {
+  devilsBargain: 'c9237e9f8b094ed6', complication: '4505e4405cf5314b', consequence: '231b9e204df7048c',
+  payThePrice: '1c5846196193d7a3', reaction: 'ff9edfefebd57804', callback: 'e2fc81e8b59fdfb9',
+  harm: '7ef4afe0179e72b8', contact: '90af90db5efe0def', face: 'fc9d88055bece0a2'
+};
+function classicDigest(id, mod) {
+  const con = (mod || C).create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign, seed: 99 });
+  const mem = {}, h = createHash('sha256');
+  for (let i = 0; i < 150; i++) {
+    const ui = { pos: POS[i % 3], scene: SCENES[i % 6], pc: ['', 'Pip Wobble', 'Dot Crumble', 'Moss'][i % 4], district: i % 5 ? '' : 'Puddleton',
+                 result: ['', '45', '13'][i % 3], npc: ['', 'friend:Marge Teacup', 'rival:Nigel Sprocket', 'fac:Hat Society'][i % 4], threat: i % 7 ? '' : 'a placeholder hazard' };
+    h.update(JSON.stringify(con.roll(id, ui, { seed: (i * 2654435761 + 17) >>> 0, mem })));
+  }
+  h.update(JSON.stringify(mem));
+  return h.digest('hex').slice(0, 16);
+}
+await test('Classic is byte-for-byte unchanged: 150 rolls per button hash to the pre-situations digests', () => {
+  for (const b of C.BUTTONS) eq(classicDigest(b.id), CLASSIC_GOLDEN[b.id], 'classic ' + b.id);
+  eq(C.BUTTONS.map(b => b.id), ['devilsBargain', 'complication', 'consequence', 'payThePrice', 'reaction', 'callback', 'harm', 'contact', 'face']);
+  // composing situations first (and sharing the instance) does not disturb Classic
+  const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign, seed: 99 });
+  for (let i = 0; i < 50; i++) con.situation(con.situations()[i % 4].id, { npc: i % 2 ? 'friend:Marge Teacup' : '' });
+  const a = con.roll('consequence', { pos: 'risky', result: '45' }, { seed: 12, mem: {} });
+  const b = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign }).roll('consequence', { pos: 'risky', result: '45' }, { seed: 12, mem: {} });
+  eq(a, b);
+});
+await test('Classic matches the pre-situations source when git can supply it (optional)', () => {
+  let src = null;
+  try { src = execFileSync('git', ['show', 'ff8fe19:app/gm/console.js'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { /* not available: the digests above still hold */ }
+  if (!src) { console.log('     (ff8fe19 not available here: skipped)'); return; }
+  const tmp = path.join(os.tmpdir(), 'b68-console-prev-' + process.pid + '.cjs');
+  fs.writeFileSync(tmp, src);
+  try {
+    const prev = require(tmp);
+    for (const b of C.BUTTONS) eq(classicDigest(b.id), classicDigest(b.id, prev), 'vs previous ' + b.id);
+  } finally { fs.unlinkSync(tmp); }
+});
+
 // --- the real pack, only when it is on this machine (never committed) -------------------------------------------
 if (fs.existsSync(REAL)) {
   const real = JSON.parse(fs.readFileSync(REAL, 'utf8'));
@@ -271,6 +519,18 @@ if (fs.existsSync(REAL)) {
       const a = con.roll(con.buttons[i % 9].id, { scene: ['', 'chase', 'fight', 'sneak', 'talk', 'street'][i % 6], pos: ['controlled', 'risky', 'desperate'][i % 3] }, { mem });
       const b = con.roll(a.replay.id, a.replay.ui, { seed: a.replay.seed, mem: clone(a.replay.mem) });
       eq(JSON.stringify(b.lines) === JSON.stringify(a.lines), true, 'replay ' + i);
+    }
+  });
+  await test('real pack: situations sweep (clean cards) and exact replay', () => {
+    const n = sitSweep(real.parts.console.T, real.parts.campaign, 60);
+    const e = sitSweep(real.parts.console.T, {}, 20);
+    console.log('     ' + n + ' real-pack situation cards, ' + e + ' with an empty campaign');
+    const con = C.create({ T: real.parts.console.T, campaign: real.parts.campaign });
+    const npcs = con.controls.find(c => c.id === 'npc').options.map(o => o.value);
+    const mem = {};
+    for (let i = 0; i < 300; i++) {
+      const a = con.situation(con.situations()[i % 4].id, sitUi(i, npcs, POS[i % 3]), { mem });
+      eq(con.replay(a.replay).lines, a.lines, 'replay ' + i);
     }
   });
 } else {
