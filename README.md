@@ -32,7 +32,7 @@ app/                 the page (the Worker's static assets; app/.assetsignore kee
   schedule.js/.css   the next-session card and the schedule box (grid, RSVP board, attendance)
   season.js/.css     the season print (#print)
   cast-page.js, cast.css   the cast (#cast) and the "on stage" banner (CAST.md)
-  gm/, gm-page.js, gm.css  the GM's page (#gm): the console (situations and the nine classic rollers), the location generator and map, street scenes, the engagement roll, capture (GM.md); gm/ also holds the NPC generator and figure map used by the sync
+  gm/, gm-page.js, gm.css  the GM's page (#gm): the console (situations and the nine classic rollers), the location generator and map, street scenes, the engagement roll, the NPC generator, capture (GM.md); gm/ also holds the NPC generator's logic and figure map, which the sync uses too
   display-page.js, display.css   the iPad's full-screen display (#display, GM.md)
   figures/           the vendored figure kit (v2) and cast
   maps/              the vendored map kit (B68Map): a location roll drawn as a rings, plan, iso or section SVG
@@ -80,7 +80,7 @@ The npm scripts (from the repository root):
 | `npm run check:phone` | `checks/runtime/phone.e2e.mjs`: a 390 px mobile Chromium against its own server (port 8792): device width, standards mode, no horizontal overflow |
 | `npm run check:cast` | `checks/runtime/cast.e2e.mjs`: the cast end to end against its own server (port 8842), a GM and a player in two browser contexts, and at 360 px; then `cast.artifact.e2e.mjs`: the same in the artifact's runtime (a stubbed db) |
 | `npm run check:gm` | `checks/runtime/gm.e2e.mjs`: the GM page and the display wiring against its own server (port 8845) with invented fixture tables: importing a pack, the keys, replay on reload, capture, the location map (only the player layer reaches the display), the cast to the iPad, the phone and iPad layouts, a player's view |
-| `node checks/runtime/gm-scenes.e2e.mjs`, `display-role.e2e.mjs` | the Street and Engage panels (desktop and a 390 px phone) and the iPad's display-only sign-in in a browser; no npm script, run them directly (each starts its own server, ports 8857 and 8856) |
+| `node checks/runtime/gm-scenes.e2e.mjs`, `gm-npc-panel.e2e.mjs`, `display-role.e2e.mjs` | the Street and Engage panels, the NPC generator panel (a roll, reload, Earlier, Add to the cast and the seed the sync replays) and the iPad's display-only sign-in in a browser; no npm script, run them directly (each starts its own server, ports 8857, 8858 and 8856) |
 | `npm run build` | `wrangler deploy --dry-run`: bundles the Worker into `.wrangler/dist`, uploads nothing |
 | `npm run icons` | rebuilds `app/icons/*` from the figure kit (`checks/runtime/icons.mjs`) |
 

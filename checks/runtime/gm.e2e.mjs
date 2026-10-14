@@ -251,7 +251,7 @@ try {
   /* ---- the NPC tab: the cast, Show on iPad for a hidden one after a confirm ---- */
   await G.page.keyboard.press('n');
   check(await G.page.waitForFunction(() => document.querySelectorAll('#gm-npc .gm-npcrow').length === 7, null, { timeout: 15000 }).then(() => true, () => false), 'N: the NPC tab lists the seven seeded NPCs');
-  check(/NPC generator: coming/.test(await G.page.textContent('#gm-npc')), 'NPC: the generator is marked as coming');
+  check(!/coming/.test(await G.page.textContent('#gm-npc')) && /The pack has no npc part/.test(await G.page.textContent('#gm-npcgen')), 'NPC: the generator panel is there, and says so when the pack has no npc part (its own check: gm-npc-panel.e2e.mjs)');
   await G.page.click('#gm-npc .gm-npcrow[data-id="npc_mira"] [data-gm="npcipad"]');      // hidden: the confirm is accepted
   check(await until(async () => { const d = (await api('GET', '/gm/display', GM)).json.display; return d.kind === 'npc' && d.npcId === 'npc_mira'; }, 5000), 'Show on iPad (after the confirm): the display shows the NPC');
   check((await G.page.getAttribute('#gm-npc .gm-npcrow[data-id="npc_mira"] a.btn', 'href')) === '#cast/npc_mira', 'Put on stage leads to the cast page');

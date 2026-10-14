@@ -30,7 +30,7 @@ artifact.
 | 3. Reminders by Discord, email or push | Not built: the app sends no mail (a Worker could run them on a cron trigger, but nothing does yet); the nudge on the card and the copied reminder for the group chat stand in |
 | 4. Installable, offline reading and queued saves | Done (hosted build only) |
 | 5. The rules wiki and the cast (NPC portraits, "on stage") | Done and live (`RULES.md`, `CAST.md`) |
-| 6. GM tools: the `#gm` console (situations and classic), location generator and map, street scenes, engagement roll, capture, the `#display` iPad view, a display name for everyone | Done and live since 14/10/2026 and 15/10/2026 (`GM.md`). Not yet in the page: the NPC generator panel (its logic is built, `app/gm/npc.js`) |
+| 6. GM tools: the `#gm` console (situations and classic), location generator and map, street scenes, engagement roll, capture, the `#display` iPad view, a display name for everyone | Done and live since 14/10/2026 and 15/10/2026 (`GM.md`). The NPC generator panel in the NPC tab is new on 15/10/2026 (`GM.md`) |
 | 6. GM sync: what happened at the table into the vault, the vault's NPC cards and the pack back to the app | Done (`SYNC.md`; runs on the GM's PC) |
 | 6. A display-only sign-in for the iPad (`DISPLAY_EMAILS`) | Built and deployed, switched off: the iPad uses the GM's own email (`GM.md`) |
 | 4. Season print: every character and the crew in one printable document (`#print`, "Print the season" on the table page) | Done (`CAMPAIGN.md`, "Season print") |
