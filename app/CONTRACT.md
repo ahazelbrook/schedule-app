@@ -209,6 +209,25 @@ The panel lists the same end-of-session triggers as the XP box: `pb.xpTriggers` 
 
 ---
 
+# Display name (runtime/cf.js; PATCH /api/me)
+
+Optional runtime API, hosted build only, beside `use()`. A person may change their own display name, never another's:
+
+```js
+window.claude.profile = {
+  setName(name) -> Promise<{ id, email, name, role, campaign }>   // PATCH /api/me { name }; '' or null clears it
+}
+```
+
+The server trims the name, collapses runs of whitespace, and accepts 1-40 characters with no control characters and no `<` or `>`
+(otherwise the promise rejects with `Error(message)` and `.status` 400; `.network = true` while offline: it is a plain call, never
+queued). The answer is the same shape as `GET /api/me`, `name` being what is now shown (the chosen name, else the sign-in
+name). On success the adapter updates `window.B68Runtime.me.name`, `user.me()` and the cached member names; a page that already
+drew the old name (the header, `A.myName`) redraws it itself. Characters store their owner by id, so a rename shows everywhere
+that resolves names through `user.profiles()`.
+
+---
+
 # The rules wiki (rules.js, markdown.js; RULES.md)
 
 Optional runtime API, hosted build only (`runtime/cf.js`). Without it (the claude.ai artifact, `file://`) the Rules page says

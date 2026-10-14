@@ -55,7 +55,17 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
     if (method !== 'GET' && s.conflicts > 0) { s.conflicts--; return [409, { error: 'the character kept changing, try again' }]; }
     if (!user) return [401, { error: 'not signed in' }];
     const me = { id: user.email, email: user.email, name: user.name || '', role: s.roleOf(user.email), campaign: 'default' };
-    if (p === '/api/me') { members[me.id] = { id: me.id, name: me.name, role: me.role }; return [200, me]; }
+    if (p === '/api/me') {
+      const prev = members[me.id] || {};
+      if (method === 'PATCH') {   // the display name (functions/api/me.js): the real rules are checks/api/name.mjs
+        const n = body && typeof body.name === 'string' ? body.name.replace(/\s+/g, ' ').trim() : '';
+        if (/[<>]/.test(n)) return [400, { error: 'name cannot contain < or >' }];
+        prev.override = n || null;
+      }
+      const shown = prev.override || me.name;
+      members[me.id] = { id: me.id, name: shown, role: me.role, override: prev.override || null };
+      return [200, { ...me, name: shown }];
+    }
     if (p === '/api/members') return [200, { members: Object.values(members) }];
     // the GM tools (GM.md), reduced: 403 for anyone but the GM on every /api/gm/* path; the full rules are checks/api/gm.mjs
     if (p.startsWith('/api/gm/')) {
@@ -1118,6 +1128,23 @@ await test('npcs: a write the server refuses (400) is dropped and the cast is re
   ok(thrown && /unknown collection/.test(thrown.message), 'unknown collection');
   ok(db.doc('npcs/mira').id === 'mira', 'db.doc("npcs/<id>")');
   un();
+});
+
+await test('profile.setName: PATCH /api/me, the signed-in user and the cached member names follow; a refusal rejects with status 400', async () => {
+  const api = fakeApi();
+  const b = browser(api, { email: 'pl@x.test', name: 'pl' });
+  const u = await b.win.claude.use('user');
+  eq((await u.me()).name, 'pl'); eq((await u.profiles('pl@x.test'))['pl@x.test'].name, 'pl');
+  const r = await b.win.claude.profile.setName('  Sam   the Man ');
+  eq([r.id, r.name, r.role], ['pl@x.test', 'Sam the Man', 'player']);
+  const patch = b.fetchLog.find((f) => f.opts.method === 'PATCH');
+  eq([patch.url, JSON.parse(patch.opts.body)], ['/api/me', { name: '  Sam   the Man ' }], 'request');
+  eq((await u.me()).name, 'Sam the Man', 'user.me()'); eq(b.win.B68Runtime.me.name, 'Sam the Man', 'B68Runtime.me');
+  eq((await u.profiles('pl@x.test'))['pl@x.test'].name, 'Sam the Man', 'profiles refetched');
+  let err = null; try { await b.win.claude.profile.setName('<b>'); } catch (e) { err = e; }
+  ok(err && err.status === 400, 'a refused name rejects with status 400'); eq((await u.me()).name, 'Sam the Man', 'unchanged after a refusal');
+  eq((await b.win.claude.profile.setName(null)).name, 'pl', 'null clears');
+  eq((await u.me()).name, 'pl'); eq(JSON.parse(b.fetchLog.filter((f) => f.opts.method === 'PATCH').pop().opts.body), { name: null });
 });
 
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
