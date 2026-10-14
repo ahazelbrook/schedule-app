@@ -1,0 +1,284 @@
+{
+ "format": 1,
+ "exportedAt": "2026-10-15T00:00:00.000Z",
+ "parts": {
+  "scenes": {
+   "src": {
+    "file": "fixture/blades-68-district-scenes.md",
+    "blockSha": "4221a561742ec0a4854839fb1dfa8b7884bc927154892d841a336787b253a671",
+    "exportedAt": "2026-10-15T00:00:00.000Z"
+   },
+   "T": {
+    "district": [
+     {
+      "n": "Alder Quay",
+      "p": "p.1",
+      "r": [
+       "High",
+       "Low",
+       "Moderate",
+       "Very low"
+      ],
+      "streets": "Wet stone and tied-up boats.",
+      "named": [
+       "Rope Walk",
+       "Kettle Steps",
+       "Moon Slip"
+      ],
+      "buildings": "Net lofts and a smokehouse.",
+      "scene": [
+       "A cat walks the rail.",
+       "Two gulls argue over a hat.",
+       "A bell rings once."
+      ],
+      "landmarks": [
+       "The Leaning Crane",
+       "Fish Hall"
+      ],
+      "notables": [
+       [
+        "Ota Pell",
+        "Runs the ferry and a quiet book.",
+        "Dry, Patient"
+       ],
+       [
+        "Wick Amory",
+        "Sells maps of rivers that moved.",
+        "Vague, Cheerful"
+       ]
+      ],
+      "factions": "The Lamp Guild, Reed Row",
+      "special": "Boats make a good getaway: take +1d to escape by water."
+     },
+     {
+      "n": "Brindle Row",
+      "p": "p.2",
+      "r": [
+       "Low",
+       "High",
+       "High",
+       "Low"
+      ],
+      "streets": "Brick, narrow, always shaded.",
+      "named": [
+       "Tin Lane",
+       "Saddle Street"
+      ],
+      "buildings": "Terraces with shared yards.",
+      "scene": [
+       "A child chalks a door."
+      ],
+      "landmarks": [
+       "The Orange Gate",
+       "Mill Chapel",
+       "Pump Square"
+      ],
+      "notables": [
+       [
+        "Dara Voss",
+        "Landlady with a ledger.",
+        "Sharp, Fair"
+       ],
+       [
+        "Hobb Lund",
+        "Retired courier who sees all.",
+        "Slow, Kind"
+       ],
+       [
+        "Ivy Crane",
+        "Organises the stair committee.",
+        "Loud, Right"
+       ]
+      ],
+      "factions": "Reed Row",
+      "special": ""
+     },
+     {
+      "n": "Cobb Hill",
+      "p": "p.3",
+      "r": [
+       "Very high",
+       "Very high",
+       "Low",
+       "Moderate"
+      ],
+      "streets": "Wide and swept.",
+      "named": [
+       "Hill Road",
+       "Cedar Crescent",
+       "Garden Walk",
+       "Almond Mews"
+      ],
+      "buildings": "Tall houses with iron gates.",
+      "scene": [
+       "A gardener clips a hedge.",
+       "A tutor walks three pupils.",
+       "A car idles, engine off."
+      ],
+      "landmarks": [
+       "The Glass House"
+      ],
+      "notables": [
+       [
+        "Sir Marl",
+        "Owns half the lamps.",
+        "Pompous, Lonely"
+       ]
+      ],
+      "factions": "The Lamp Guild",
+      "special": "Anyone loud is noticed at once."
+     }
+    ],
+    "weather": {
+     "Bluetime": [
+      "a high pale sky",
+      "a light breeze",
+      "thin cloud",
+      "a warm gust"
+     ],
+     "Night": [
+      "a low mist",
+      "steady rain",
+      "a clear cold",
+      "a rising wind"
+     ]
+    },
+    "streetType": [
+     "a stepped lane",
+     "a covered passage",
+     "a tram street",
+     "a yard path",
+     "a sunken way",
+     "a quiet square"
+    ],
+    "streetSound": [
+     "a distant whistle",
+     "someone sweeping",
+     "a gate swinging",
+     "a radio through a wall",
+     "boots on stone",
+     "a dog barking twice"
+    ],
+    "streetSmell": [
+     "coal smoke",
+     "river mud",
+     "fried onions",
+     "wet wool",
+     "warm bread",
+     "paint thinner"
+    ],
+    "streetObstacle": [
+     "A queue for something",
+     "A stuck cart",
+     "A stretch of fresh paint",
+     "A crowd round a card game",
+     "Scaffolding",
+     "A burst pipe"
+    ],
+    "buildingCommon": [
+     "a bakery",
+     "a tailor's",
+     "a boarding house",
+     "a tea room",
+     "a laundry",
+     "a locksmith"
+    ],
+    "buildingRare": [
+     "a private bank",
+     "a shuttered cinema",
+     "a small embassy",
+     "a clockmaker's"
+    ],
+    "rumour": [
+     "%F%'s newest recruit",
+     "%F%'s debt",
+     "%F%'s favourite bar",
+     "a quarrel inside %F%",
+     "a rival of %F%",
+     "%F%'s missing ledger"
+    ],
+    "faction": [
+     "The Lamp Guild",
+     "Reed Row",
+     "The Ferry Union",
+     "The Night Post",
+     "Salt & Sons",
+     "The Quiet Choir"
+    ],
+    "ratingLabels": [
+     "Wealth",
+     "Security",
+     "Criminal",
+     "Paranormal"
+    ]
+   }
+  },
+  "engagement": {
+   "src": {
+    "file": "fixture/blades-68-engagement-roll.md",
+    "blockSha": "33014430bae790440920d59650c7e742eb678b2d161b7dfcd36e4fff06a28b4a",
+    "exportedAt": "2026-10-15T00:00:00.000Z"
+   },
+   "T": {
+    "approach": [
+     [
+      "Smash",
+      "the weak hinge"
+     ],
+     [
+      "Charm",
+      "the friendly face"
+     ],
+     [
+      "Slip",
+      "the unwatched door"
+     ]
+    ],
+    "factor": [
+     {
+      "id": "bold",
+      "plus": "The plan is neat",
+      "minus": "It leans on too many people"
+     },
+     {
+      "id": "tier",
+      "plus": "The target is smaller than the crew",
+      "minus": "The target is bigger than the crew"
+     }
+    ],
+    "loadout": [
+     {
+      "value": "Quiet",
+      "label": "Quiet — load 3",
+      "load": 3
+     },
+     {
+      "value": "Loud",
+      "label": "Loud — load 6",
+      "load": 6
+     }
+    ],
+    "outcome": {
+     "crit": {
+      "pos": "Ahead of the game — and through the first door",
+      "how": "Start the scene on the far side of the first door."
+     },
+     "six": {
+      "pos": "Ahead",
+      "how": "They hold the advantage. Open on that."
+     },
+     "risky": {
+      "pos": "Level",
+      "how": "The default. Open mid-problem."
+     },
+     "desperate": {
+      "pos": "Behind",
+      "how": "Trouble from the first breath. The other side is good at this."
+     }
+    },
+    "cut": "Now **cut to the middle of it** — and ask someone what they are doing about it.",
+    "cite": "'68 p.1–2"
+   }
+  }
+ }
+}

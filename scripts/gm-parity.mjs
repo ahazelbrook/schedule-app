@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Parity check (local only): the vault's GM tools against their ports in app/gm/. Three modes:
+// Parity check (local only): the vault's GM tools against their ports in app/gm/. Five modes:
 //
 //   node scripts/gm-parity.mjs [mode] [--vault <dir>] [--pack <pack.json>] [--seed <uint>] [--app <dir>]
 //     --classic      (default) every classic console button x --n cards (default 40): view.js vs console.js roll()
@@ -9,8 +9,14 @@
 //                    memory view.js leaves behind must be the next section's start memory (or the card's end memory)
 //     --npc          --nn rolls (default 300) of the vault NPC generator page's dataviewjs block vs npc.js: the npc
 //                    object, noteBody() and the repeat-guard memory after the roll
-//     --all          all three
-//   --pack defaults to $B68_PACK, then gm-private/b68-gm-pack.json. --npc needs a pack with the `npc` part
+//     --scenes       --scn rolls (default 300) of the vault district scene page's dataviewjs block vs scenes.js: the scene
+//                    object, the read-aloud lines, the grid and ratings, and the repeat-guard memory after the roll
+//                    (one deliberate difference, patched in the copy of the page that is run: the notable repeat-guard
+//                    is keyed by name in the port, because the vault's never fires once the memory is JSON-cloned)
+//     --engagement   --en cases (default 400) of the vault engagement page vs engagement.js: every line the page puts on the
+//                    card, before a roll and after, with the page's Math.random and the port's dice on one seeded stream
+//     --all          all five
+//   --pack defaults to $B68_PACK, then gm-private/b68-gm-pack.json. --npc, --scenes and --engagement need a pack with that part
 //   (npm run gm:pack builds one). --app points at another app/ directory (a mutated copy, to prove a mode can fail).
 //   Exit 0 = every compared case identical; 1 = any mismatch; 2 = a requested mode could not run (vault page, pack or
 //   pack part missing). Prints counts, ids, seeds, field names and line indexes only, never table text.
@@ -38,9 +44,11 @@ const VAULT = arg('--vault', process.env.B68_VAULT || 'C:/Vault/Hazel Second Bra
 const PACK = path.resolve(REPO, arg('--pack', process.env.B68_PACK || 'gm-private/b68-gm-pack.json'));
 const APP = path.resolve(arg('--app', path.join(REPO, 'app')));
 const N = Number(arg('--n', 40)), SN = Number(arg('--sn', 20)), NN = Number(arg('--nn', 300));
+const SCN = Number(arg('--scn', 300)), EN_N = Number(arg('--en', 400));
 const SEED = Number(arg('--seed', 20261017)) >>> 0;
 const ALL = flag('--all');
-const MODES = ALL ? ['classic', 'situations', 'npc'] : ['classic', 'situations', 'npc'].filter((m) => flag('--' + m));
+const ALL_MODES = ['classic', 'situations', 'npc', 'scenes', 'engagement'];
+const MODES = ALL ? ALL_MODES : ALL_MODES.filter((m) => flag('--' + m));
 if (!MODES.length) MODES.push('classic');
 
 const C = require(path.join(APP, 'gm', 'console.js'));
@@ -274,8 +282,122 @@ async function npc() {
     note: hulls + ' Hulls among them' + (npcPart.F ? '' : '; the pack has no figure map (F), which the generator does not read'), fails });
 }
 
+/* ============================== the vault's pages for scenes and engagement ============================== */
+function pageBlock(file, mode) {
+  if (!fs.existsSync(file)) return { cannot: 'no vault page at ' + file };
+  const text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const open = text.match(/^```dataviewjs[ \t]*$/m);
+  if (!open) return { cannot: 'no dataviewjs block on the ' + mode + ' page' };
+  const start = open.index + open[0].length + 1;
+  return { block: text.slice(start, text.indexOf('\n```', start)) };
+}
+// a stub DOM that records every text the page hands to the screen, in order (empty() on any node starts a fresh card)
+function recorder() {
+  const log = [];
+  const el = () => ({ style: {}, value: '', children: [], createEl(tag, o) { if (o && typeof o.text === 'string') log.push(o.text); return el(); },
+    empty() { log.length = 0; }, setText() {}, appendText() {}, setAttr() {}, createDiv() { return el(); } });
+  return { el, log };
+}
+
+/* ============================== --scenes ============================== */
+async function scenes() {
+  const page = pageBlock(path.join(VAULT, ROOT, 'Tools/blades-68-district-scenes.md'), 'district scenes');
+  if (page.cannot) return cannot('scenes', page.cannot);
+  if (!pack || !pack.parts || !pack.parts.scenes) return cannot('scenes', 'the pack at ' + PACK + ' has no scenes part (build one with gm-pack.mjs)');
+  const SC = require(path.join(APP, 'gm', 'scenes.js'));
+  // the one deliberate difference (see the header of app/gm/scenes.js): the notable repeat-guard is keyed by name in the port
+  const call = 'fresh("notable-" + d.n, d.notables)';
+  if (!page.block.includes(call)) return cannot('scenes', 'the notable call in generate() was not found, so the one deliberate difference cannot be applied; update the parity script');
+  const block = page.block.replace(call, 'fresh("notable-" + d.n, d.notables, x => x[0])');
+  const sc = SC.create({ T: pack.parts.scenes.T });
+  async function vaultRoll(seed, mem, sel) {
+    const store = new Map([['b68-sticky:district', JSON.stringify({ cur: { seed, mem, ui: { sel } }, hist: [] })]]);
+    const { el } = recorder();
+    const ctx = { dv: { container: el(), el: () => el() }, console, localStorage: { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) },
+      document: { getElementById: () => true, head: el() }, window: {} };
+    ctx.window = ctx;
+    vm.createContext(ctx);
+    const wrapped = '(function (dv, localStorage, document, window) {\n' + block +
+      '\n;return JSON.parse(JSON.stringify({ o: current, read: readAloud(current), rows: rows(current), ratings: ratings(current), memBefore: sticky.cur.mem, memAfter: MEM }));\n})(dv, localStorage, document, window)';
+    return vm.runInContext(wrapped, ctx, { filename: 'district-scenes.md' });
+  }
+  const names = pack.parts.scenes.T.district.map(d => d.n);
+  const rng = C.seedRng((SEED ^ 0x5ce4e5) >>> 0);
+  let ok = 0, readOk = 0, rowsOk = 0, memOk = 0;
+  const seenDistricts = new Set();
+  const fails = [];
+  for (let i = 0; i < SCN; i++) {
+    const seed = (rng() * 4294967296) >>> 0;
+    const sel = i % 3 === 0 ? names[(i / 3) % names.length] : '';          // a third of the cards in a chosen district
+    const mem = {};
+    if (i % 2) { sc.roll({ sel: '' }, { seed: (seed ^ 0x5bd1e995) >>> 0, mem }); sc.roll({ sel: '' }, { seed: (seed ^ 0x2545f491) >>> 0, mem: mem }); }
+    const before = clone(mem);                                              // JSON-cloned, as a sticky replay does
+    const v = await vaultRoll(seed, clone(before), sel);
+    const p = sc.roll({ sel }, { seed, mem });
+    const po = clone(p.scene);
+    seenDistricts.add(po.d.n);
+    if (same(v.o, po)) ok++; else fails.push({ i, seed, fields: [...new Set(Object.keys(v.o).concat(Object.keys(po)))].filter(k => !same(v.o[k], po[k])).join(',') });
+    const lines = p.lines;
+    const pRead = [lines[0].md, lines[1].md, lines[2].md];
+    if (same(v.read, pRead)) readOk++; else fails.push({ i, seed, readAloud: 'line ' + firstDiff(v.read, pRead) });
+    const pRows = lines.find(l => l.id === 'scene').rows.map(r => [r.k, r.md]);
+    if (same(v.rows, pRows) && same(v.ratings, p.meta.chips)) rowsOk++; else fails.push({ i, seed, rows: same(v.rows, pRows) ? 'ratings' : 'row ' + firstDiff(v.rows.map(String), pRows.map(String)) });
+    if (same(v.memBefore, before) && same(v.memAfter, mem)) memOk++; else fails.push({ i, seed, memory: same(v.memBefore, before) ? 'after the roll' : 'before the roll' });
+  }
+  results.push({ mode: 'scenes', cases: SCN, ok, unit: 'scene objects (every field)',
+    extra: [['read-aloud triples identical', readOk, SCN], ['grids and ratings identical', rowsOk, SCN], ['repeat-guard memories identical', memOk, SCN]],
+    note: seenDistricts.size + '/' + names.length + ' districts among them; one deliberate difference: the notable repeat-guard is keyed by name', fails });
+}
+
+/* ============================== --engagement ============================== */
+async function engagement() {
+  const page = pageBlock(path.join(VAULT, ROOT, 'Tools/blades-68-engagement-roll.md'), 'engagement');
+  if (page.cannot) return cannot('engagement', page.cannot);
+  if (!pack || !pack.parts || !pack.parts.engagement) return cannot('engagement', 'the pack at ' + PACK + ' has no engagement part (build one with gm-pack.mjs)');
+  const EN = require(path.join(APP, 'gm', 'engagement.js'));
+  const T = pack.parts.engagement.T;
+  const en = EN.create({ T });
+  // the page is booted once (its own draw(false) runs); then each case sets the controls and calls draw() itself
+  const { el, log } = recorder();
+  const next = { f: () => 0 };
+  const ctx = { dv: { container: el(), el: (t, md) => { log.push(md); return el(); } }, console, document: { getElementById: () => true, head: el() }, window: {}, __next: () => next.f() };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext('Math.random = () => __next();', ctx);
+  const wrapped = '(function (dv, document, window) {\n' + page.block +
+    '\n;return function (app, load, mods, doRoll) { appSel.value = app; loadSel.value = load; for (const f of T.factor) states[f.id].value = String(mods[f.id]); draw(doRoll); };\n})(dv, document, window)';
+  let drive;
+  try { drive = vm.runInContext(wrapped, ctx, { filename: 'engagement-roll.md' }); } catch (e) { return cannot('engagement', 'the vault page did not run: ' + e.message); }
+  const rng = C.seedRng((SEED ^ 0xe46a6e) >>> 0);
+  const pick = (a) => a[Math.floor(rng() * a.length)];
+  let okRoll = 0, okPrev = 0, crit = 0, zero = 0;
+  const fails = [];
+  for (let i = 0; i < EN_N; i++) {
+    const app = pick(T.approach)[0], load = pick(T.loadout).value;
+    const mods = {}; for (const f of T.factor) mods[f.id] = pick([-1, 0, 0, 1]);
+    const seed = (rng() * 4294967296) >>> 0;
+    // the preview
+    drive(app, load, mods, false);
+    const vPrev = log.slice();
+    const pc = en.card({ approach: app, load, mods });
+    const pPrev = [pc.meta.title, pc.meta.sub].concat(pc.lines.map(l => l.md));
+    if (same(vPrev, pPrev)) okPrev++; else fails.push({ i, preview: 'line ' + firstDiff(vPrev, pPrev) });
+    // the roll: the page's Math.random is the same seeded stream the port rolls with
+    const stream = EN.seedRng(seed);
+    next.f = stream;
+    drive(app, load, mods, true);
+    const vRoll = log.slice();
+    const pr = en.roll({ approach: app, load, mods }, { seed });
+    const pRoll = [pr.meta.title, pr.meta.sub, pr.lines[0].md, pr.lines[1].md, pr.lines[2].rows[0].k, pr.lines[2].rows[0].md, pr.lines[3].md];
+    if (pr.crit) crit++; if (pr.zero) zero++;
+    if (same(vRoll, pRoll)) okRoll++; else fails.push({ i, seed, roll: 'line ' + firstDiff(vRoll, pRoll), vaultLines: vRoll.length, portLines: pRoll.length });
+  }
+  results.push({ mode: 'engagement', cases: EN_N, ok: okRoll, unit: 'rolled cards (every line)', extra: [['previews identical', okPrev, EN_N]],
+    note: crit + ' criticals and ' + zero + ' zero-dice pools among them', fails });
+}
+
 /* ============================== run and report ============================== */
-for (const m of MODES) await ({ classic, situations, npc })[m]();
+for (const m of MODES) await ({ classic, situations, npc, scenes, engagement })[m]();
 let bad = false, cant = false;
 for (const r of results) {
   if (r.cannot) { cant = true; console.log(`${r.mode}: CANNOT RUN (${r.cannot})`); continue; }
