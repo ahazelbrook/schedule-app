@@ -31,6 +31,7 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
     putNpc(id, doc) { s.npcs[id] = { updatedAt: now(), deleted: false, doc: clone(doc) }; },
     npcsAt() { const t = Object.values(s.npcs).map((r) => r.updatedAt).sort(); return t.length ? t[t.length - 1] : null; },
     campaign: null,                                     // the stored campaign doc (null = none yet)
+    gm: { parts: {}, state: {}, stateAt: null, seq: 0, display: { kind: 'blank' } },   // the GM tools (GM.md)
     setCampaign(doc) { s.campaign = { ...clone(doc), updatedAt: now() }; },
   };
   const defaultCampaign = () => ({
@@ -56,6 +57,27 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
     const me = { id: user.email, email: user.email, name: user.name || '', role: s.roleOf(user.email), campaign: 'default' };
     if (p === '/api/me') { members[me.id] = { id: me.id, name: me.name, role: me.role }; return [200, me]; }
     if (p === '/api/members') return [200, { members: Object.values(members) }];
+    // the GM tools (GM.md), reduced: 403 for anyone but the GM on every /api/gm/* path; the full rules are checks/api/gm.mjs
+    if (p.startsWith('/api/gm/')) {
+      if (me.role !== 'gm') return [403, { error: 'only the GM can use the GM tools' }];
+      const g = s.gm;
+      if (p === '/api/gm/pack') {
+        const part = u.searchParams.get('part');
+        if (method === 'GET' && !part) return [200, { version: 'p' + Object.keys(g.parts).length, parts: Object.fromEntries(Object.entries(g.parts).map(([k, v]) => [k, { version: v.version, src: v.src }])) }];
+        if (method === 'GET') return g.parts[part] ? [200, { part, ...clone(g.parts[part]) }] : [404, { error: 'not found' }];
+        if (method === 'POST') { g.parts[body.part] = { version: 'v' + JSON.stringify(body.body).length, src: body.src || {}, body: clone(body.body) }; return [200, { ok: true, part: body.part, version: g.parts[body.part].version, packVersion: 'p' + Object.keys(g.parts).length }]; }
+        if (method === 'DELETE') { delete g.parts[part]; return [200, { ok: true, part }]; }
+      }
+      if (p === '/api/gm/state') {
+        if (method === 'GET') return [200, { doc: clone(g.state), updatedAt: g.stateAt }];
+        if (method === 'PATCH') { merge(g.state, body); g.stateAt = now(); return [200, { doc: clone(g.state), updatedAt: g.stateAt }]; }
+      }
+      if (p === '/api/gm/display') {
+        if (method === 'GET') { const q = u.searchParams.get('seq'); return q !== null && +q === g.seq ? [200, { seq: g.seq, unchanged: true }] : [200, { seq: g.seq, display: clone(g.display) }]; }
+        if (method === 'PUT') { g.seq++; g.display = clone(body); return [200, { seq: g.seq, display: clone(g.display) }]; }
+      }
+      return [404, { error: 'not found' }];
+    }
     if (p === '/api/export') {
       if (me.role !== 'gm') return [403, { error: 'only the GM can export' }];
       const live = Object.entries(rows).filter(([, r]) => !r.deleted).map(([id, r]) => ({ id, doc: clone(r.doc), updatedAt: r.updatedAt }));
@@ -941,6 +963,49 @@ await test('downloads.save makes a Blob and clicks a hidden anchor', async () =>
   eq(b.blobs[b.clicks[2].href].size, 2, 'ArrayBuffer');
   const given = new Blob(['zz']); await dl.save({ filename: 'z.png', data: given });
   ok(b.blobs[b.clicks[3].href] === given, 'Blob passed as-is');
+});
+
+/* ---------- the GM tools: window.claude.gm (GM.md) ---------- */
+await test('window.claude.gm: plain calls for the GM (pack, parts, state, display); a player gets 403; the artifact has none', async () => {
+  const api = fakeApi(), storage = memStorage();
+  const b = browser(api, { email: 'gm@x.test' }, { storage });
+  const g = b.win.claude.gm;
+  ok(g && ['pack', 'packPart', 'importPart', 'removePart', 'state', 'patchState', 'display', 'setDisplay'].every((k) => typeof g[k] === 'function'), 'gm API');
+  const MARK = 'zebra-teacup-table-text';
+  eq((await g.importPart({ part: 'console', src: { file: 'f' }, body: { T: { a: MARK } } })).ok, true, 'importPart');
+  const idx = await g.pack();
+  eq(Object.keys(idx.parts), ['console'], 'index');
+  eq((await g.packPart('console')).body.T.a, MARK, 'packPart');
+  await g.patchState({ capture: { c1: { bucket: 'n', text: MARK } } });
+  eq((await g.state()).doc.capture.c1.text, MARK, 'state round trip');
+  eq((await g.setDisplay({ kind: 'text', text: 'hi' })).seq, 1, 'setDisplay');
+  eq((await g.display(1)).unchanged, true, 'display unchanged at the current seq');
+  await g.removePart('console');
+  const sent = b.fetchLog.map((x) => (x.opts.method || 'GET') + ' ' + x.url).filter((x) => x.includes('/api/gm/'));
+  eq(sent, ['POST /api/gm/pack', 'GET /api/gm/pack', 'GET /api/gm/pack?part=console', 'PATCH /api/gm/state', 'GET /api/gm/state', 'PUT /api/gm/display', 'GET /api/gm/display?seq=1', 'DELETE /api/gm/pack?part=console'], 'requests');
+  await sleep(60);
+  ok(![...storage._m.values()].some((v) => String(v).includes(MARK)), 'GM text reached localStorage (snapshot or queue)');
+  const pb = browser(api, { email: 'pl@x.test' });
+  for (const fn of [() => pb.win.claude.gm.pack(), () => pb.win.claude.gm.state(), () => pb.win.claude.gm.setDisplay({ kind: 'blank' })]) {
+    let err = null; try { await fn(); } catch (e) { err = e; }
+    eq([err && err.status, err && err.message], [403, 'only the GM can use the GM tools'], 'player refused');
+  }
+  eq(browser(api, { email: 'gm@x.test' }, { preset: { use: () => 1 } }).win.claude.gm, undefined, 'the artifact build has no gm API');
+});
+
+await test('window.claude.gm: offline, a call rejects with network: true and is never queued or replayed', async () => {
+  const api = fakeApi(), storage = memStorage();
+  const b = browser(api, { email: 'gm@x.test' }, { storage });
+  await b.win.claude.use('db');
+  api.status['/api/gm/'] = 'down';
+  let err = null; try { await b.win.claude.gm.patchState({ live: { pos: 'desperate' } }); } catch (e) { err = e; }
+  eq([!!err, err && err.network], [true, true], 'network error');
+  delete api.status['/api/gm/'];
+  await sleep(POLL * 4);
+  eq(api.calls.filter((c) => c.startsWith('PATCH /api/gm/')).length, 1, 'only the one failed attempt (never replayed)');
+  eq(api.gm.state, {}, 'nothing reached the server');
+  ok(![...storage._m.values()].some((v) => String(v).includes('desperate')), 'the GM write sits in localStorage');
+  eq(b.win.B68Runtime.status.pending || 0, 0, 'counted as a pending change');
 });
 
 /* ---------- the cast: collection('npcs') (CAST.md) ---------- */

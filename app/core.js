@@ -73,8 +73,8 @@
   A.get = get; A.set = set;
 
   /* ---------- drawing ---------- */
-  var drawTimer = null, lineTimer = null, last = null;
-  function changed() { if (drawTimer) clearTimeout(drawTimer); drawTimer = setTimeout(draw, 40); if (lineTimer) clearTimeout(lineTimer); lineTimer = setTimeout(A.drawLineup, 450); syncAll(); if (A.onChange) A.onChange(); }
+  var drawTimer = null, lineTimer = null, last = null, drawKey = null;
+  function changed() { if (drawTimer) clearTimeout(drawTimer); var ae = document.activeElement, typing = ae && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && ae.type === 'text')); drawTimer = setTimeout(draw, typing ? 350 : 40); if (lineTimer) clearTimeout(lineTimer); lineTimer = setTimeout(function () { lineTimer = null; if (window.requestIdleCallback) window.requestIdleCallback(function () { A.drawLineup(); }, { timeout: 1500 }); else A.drawLineup(); }, 900); syncAll(); if (A.onChange) A.onChange(); }
   A.changed = changed;
   function pbOf() { return S.sheet && S.sheet.playbook ? CT.byId[S.sheet.playbook] : null; }
   A.pbOf = pbOf;
@@ -85,6 +85,11 @@
     var s = renderSpec(), pb = pbOf();
     try {
       var lod = (window.B68Zoom && window.B68Zoom.state.scale >= 2) ? 'hi' : undefined;
+      /* most of the creator edits the sheet (name, dots, abilities, contacts), which never changes the figure: when the spec,
+         view and detail level match the last draw, keep the SVG on screen (re-parsing a 270 KB SVG is the slow part on a phone) */
+      var key = S.view + '|' + (lod || '') + '|' + JSON.stringify(s);
+      if (key !== drawKey) {
+      drawKey = null;
       if (S.view === 'figure') { last = K.lineup([s], { chart: true, height: 560, lod: lod }); $('frame').classList.remove('mug'); $('plate').hidden = false; }
       else { last = K.portrait(s); $('frame').classList.add('mug'); $('plate').hidden = true; }
       $('art').innerHTML = last.svg;
@@ -94,7 +99,8 @@
       $('warnings').className = 'body' + (w.length ? ' warn' : '');
       $('lodNote').textContent = 'drawn live · ' + (last.lod || lod || 'mid') + ' detail';
       A.lastWarnings = w;
-    } catch (e) { $('warnings').textContent = 'The kit could not draw this spec: ' + e.message; $('warnings').className = 'body warn'; A.lastWarnings = [e.message]; }
+      drawKey = key; }
+    } catch (e) { drawKey = null; $('warnings').textContent = 'The kit could not draw this spec: ' + e.message; $('warnings').className = 'body warn'; A.lastWarnings = [e.message]; }
     $('plateName').textContent = S.spec.plate || S.sheet.name || 'Unknown';
     $('plateCode').textContent = S.spec.code || 'XXX-968-0000';
     $('htBadge').textContent = feet(S.spec.heightIn || 70) + ' · ' + (S.spec.heightIn || 70) + ' in';

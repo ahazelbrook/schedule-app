@@ -55,20 +55,24 @@
   [$('viewFigure'), $('viewMug')].forEach(function (b) { b.onclick = function () { setView(b.dataset.view); }; });
 
   /* ---------- the crew line-up ---------- */
-  var roster = [];
+  var roster = [], lineKey = null;
   A.drawLineup = function () {
     try {
       var you = A.renderSpec(); you.id = (you.id || 'you') + '-lu';
       var others = roster.length ? roster.slice(0, 6).map(function (d, i) { var s = clone(d.spec); s.id = 'r' + i + '-' + A.slug(d.name); s.name = d.name; s.playbook = d.playbookName || d.playbook; return s; }) : C.pcs.map(function (c) { return clone(c); });
       var all = others.concat([you]);
+      /* the same figures as the last line-up (a sheet edit, not a figure edit): leave the drawing alone */
+      var lkey = JSON.stringify(all) + '|' + roster.length;
+      if (lkey === lineKey && $('lineup').firstChild) return;
       var r = K.lineup(all, { chart: true, height: 380, lod: 'lo' });
+      lineKey = lkey;
       $('lineup').innerHTML = r.svg; var svg = $('lineup').querySelector('svg'); if (svg) { svg.removeAttribute('width'); svg.removeAttribute('height'); }
       /* ghosts read as vapour: class the figure group of each Ghost/Echo in the line-up */
       var ghosts = {}; if (roster.length) roster.slice(0, 6).forEach(function (d, i) { var q = A.CT.byId[d.playbook]; if (q && q.ghost) ghosts['r' + i + '-' + A.slug(d.name)] = true; }); var mine = A.pbOf(); if (mine && mine.ghost) ghosts[you.id] = true;
       if (svg) Object.keys(ghosts).forEach(function (id) { svg.querySelectorAll('.b68-figure').forEach(function (g) { if (g.getAttribute('data-id') === id) g.classList.add('ghostly'); }); });
       $('lineupNames').innerHTML = all.map(function (c, i) { var last = i === all.length - 1; return '<span' + (last ? ' class="you"' : '') + '>' + esc(last ? (S.sheet.name || 'You') : c.name) + '<small>' + esc(last ? ((A.pbOf() || {}).name || 'the subject') : (c.playbook || '')) + ' · ' + A.feet(c.heightIn) + '</small></span>'; }).join('');
       $('crewNote').textContent = 'True height · 25 units per inch · ' + (roster.length ? 'the filed crew, then you' : 'the canon crew, then you');
-    } catch (e) { $('lineup').innerHTML = '<div class="empty">The line-up could not be drawn: ' + esc(e.message) + '</div>'; }
+    } catch (e) { lineKey = null; $('lineup').innerHTML = '<div class="empty">The line-up could not be drawn: ' + esc(e.message) + '</div>'; }
   };
 
   /* ---------- the files: the characters collection, account, modes and routing ---------- */
@@ -76,7 +80,7 @@
   var openId = null, openUnsub = null, latest = null;      /* the character open in the sheet; latest = its newest data (no id) */
   var cache = {};                                           /* id -> data, from the collection snapshot */
   var filter = 'all', filterChosen = false, pendingOpen = null;
-  A.me = null; A.canWrite = null; A.isGM = false;
+  A.me = null; A.canWrite = null; A.isGM = false; A.roleKnown = false;   /* roleKnown: a signed-in user answered, so isGM is a fact */
   var userCap = null;                                       /* the user capability, for profiles */
   A.filingAvailable = function () { return !!db; };
   function nowIso() { return new Date().toISOString(); }
@@ -106,9 +110,10 @@
   }
 
   /* mode: home (#home: the start page and the files), create (the studio and line-up), sheet (the tracker in #dossier),
-     table (the campaign page in #table-page), print (the season print in #season, season.js) or cast (the NPCs in #cast-page, cast-page.js).
+     table (the campaign page in #table-page), print (the season print in #season, season.js), cast (the NPCs in #cast-page, cast-page.js),
+     gm (the GM's page in #gm-page, gm-page.js) or display (the iPad's full-screen view in #display-page, display-page.js).
      Every mode has a hash, and a switch pushes one history entry (quiet: the hash already says so, or boot). */
-  var MODES = { home: 1, create: 1, sheet: 1, table: 1, print: 1, rules: 1, cast: 1 };
+  var MODES = { home: 1, create: 1, sheet: 1, table: 1, print: 1, rules: 1, cast: 1, gm: 1, display: 1 };
   function setMode(m, quiet) {
     m = MODES[m] ? m : 'home';
     var was = document.body.dataset.mode;
@@ -119,6 +124,8 @@
     var sn = $('season'); if (sn) sn.hidden = m !== 'print';
     var rp = $('rules-page'); if (rp) rp.hidden = m !== 'rules';
     var cp = $('cast-page'); if (cp) cp.hidden = m !== 'cast';
+    var gp = $('gm-page'); if (gp) gp.hidden = m !== 'gm';
+    var dp = $('display-page'); if (dp) dp.hidden = m !== 'display';
     if (m !== 'sheet' && was === 'sheet') closeSheet();
     if (m !== 'table' && was === 'table') closeTable();
     if (m === 'table' && was !== 'table') startTable();
@@ -128,6 +135,10 @@
     if (m === 'rules' && was !== 'rules') startRules();
     if (m !== 'cast' && was === 'cast') closeCast();
     if (m === 'cast' && was !== 'cast') startCast();
+    if (m !== 'gm' && was === 'gm') closeGm();
+    if (m === 'gm' && was !== 'gm') startGm();
+    if (m !== 'display' && was === 'display') closeDisplay();
+    if (m === 'display' && was !== 'display') startDisplay();
     if (m === 'home' && was !== 'home') renderHome();
     if (!quiet) syncHash(m);
     syncNav(); syncEditBar();
@@ -148,6 +159,8 @@
     if (m === 'print') return 'The season print';
     if (m === 'rules') return 'Rules';
     if (m === 'cast') return 'The cast';
+    if (m === 'gm') return 'GM console';
+    if (m === 'display') return 'The display';
     if (m === 'sheet') return ((openId && (latest || cache[openId])) || {}).name || 'A character';
     if (m === 'create') return S.sheet && S.sheet.docId ? 'Editing ' + (S.sheet.name || 'a character') : 'New character';
     return 'Home';
@@ -161,8 +174,9 @@
   function syncNav() {
     var m = document.body.dataset.mode, one = mineOnly();
     var rb = $('rulesBtn'); if (rb) rb.hidden = !rulesOn();
+    var gb = $('gmBtn'); if (gb) gb.hidden = !gmOn();
     var mb = $('mineBtn'); if (mb) { mb.hidden = !one; if (one) mb.title = 'Open ' + (one.name || 'your character'); }
-    [['homeBtn', m === 'home'], ['tableBtn', m === 'table'], ['rulesBtn', m === 'rules'], ['mineBtn', m === 'sheet' && !!one && openId === one.id]].forEach(function (x) { var b = $(x[0]); if (!b) return; if (x[1]) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    [['homeBtn', m === 'home'], ['tableBtn', m === 'table'], ['rulesBtn', m === 'rules'], ['gmBtn', m === 'gm'], ['mineBtn', m === 'sheet' && !!one && openId === one.id]].forEach(function (x) { var b = $(x[0]); if (!b) return; if (x[1]) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     syncTitle();
   }
   /* a11y: after a switch, focus lands on the view's title (Home's heading, else the header's view name) */
@@ -188,7 +202,7 @@
   }
   function replaceHash(h) { try { history.replaceState({ b68: depth }, '', h || location.pathname + location.search); } catch (e) { noState = true; } }
   function isShare(h) { return h.length > 24 && h[1] === 's'; }
-  function hashFor(m) { return m === 'sheet' ? (openId ? '#c/' + openId : null) : m === 'table' ? '#t' : m === 'print' ? '#print' : m === 'rules' ? '#rules' : m === 'cast' ? '#cast' : m === 'create' ? '#create' : ''; }
+  function hashFor(m) { return m === 'sheet' ? (openId ? '#c/' + openId : null) : m === 'table' ? '#t' : m === 'print' ? '#print' : m === 'rules' ? '#rules' : m === 'cast' ? '#cast' : m === 'gm' ? '#gm' : m === 'display' ? '#display' : m === 'create' ? '#create' : ''; }
   function syncHash(m) {
     var h = location.hash || '', want = hashFor(m);
     if (want === null || h === want || (!want && h === '#')) return;
@@ -399,6 +413,7 @@
       var S2 = schedMod(); if (S2) { try { S2.card.update(data ? clone(data) : null); } catch (e) { if (window.console) console.error(e); } }
       renderHome();
       var Cp = castMod(); if (Cp) { try { Cp.campaign(data ? clone(data) : null); } catch (e) { if (window.console) console.error(e); } }
+      var Gp = gmMod(); if (Gp && Gp.campaign) { try { Gp.campaign(data ? clone(data) : null); } catch (e) { if (window.console) console.error(e); } }
       var T2 = tracker(); if (openId && T2 && T2.refresh) { try { T2.refresh(); } catch (e) {} }   /* the open sheet reads the table's session */
     }
     function failed(e) { if (campRef !== ref) return; if (!campLoaded && !campGaveUp) { campGaveUp = true; renderHome(); } if (!tableOn) return; toast('The table is offline: ' + (e && e.message || e), true); }
@@ -507,6 +522,53 @@
   }
   function castRoute() { var Cp = castMod(); if (Cp && castOn) { try { Cp.route(location.hash || '#cast'); } catch (e) {} } }
   function closeCast() { castOn = false; var Cp = castMod(); if (Cp && Cp.close) { try { Cp.close(); } catch (e) {} } }
+
+  /* ---------- the GM's page (gm-page.js, GM.md): #gm; the hosted build and the GM only (the server enforces it, 403) ----------
+     It waits for the files to settle (it needs to know who the viewer is), then draws itself; a player or the claude.ai
+     artifact sees a short message. Each campaign snapshot is passed on for its state rail. */
+  function gmMod() { var G = window.B68GmPage; return G && typeof G.open === 'function' ? G : null; }
+  function gmOn() { return A.isGM === true && !!(window.claude && window.claude.gm); }
+  function settled() { return new Promise(function (res) { (function wait() { if (dbSettled) res(); else setTimeout(wait, 50); })(); }); }
+  function gmPageApi() {
+    return {
+      ready: settled,
+      isGM: function () { return A.isGM === true; }, roleKnown: function () { return A.roleKnown === true; }, me: function () { return A.me; },
+      gm: function () { return (window.claude && window.claude.gm) || null; },
+      db: function () { return db; },
+      campaign: function () { return campLoaded && isObj(tableLatest) ? clone(tableLatest) : null; },
+      saveFile: function (name, data) { saveFile(name, data); },
+      copy: function (text, ok) { copyText(text, ok); }
+    };
+  }
+  function startGm() { var G = gmMod(), el = $('gm-page'); if (!G || !el) { toast('The GM page module is missing.', true); return; } try { G.open(el, gmPageApi()); } catch (e) { toast('The GM page could not open: ' + (e && e.message || e), true); } }
+  function closeGm() { var G = gmMod(); if (G && G.close) { try { G.close(); } catch (e) {} } }
+  function openGm() { setMode('gm'); window.scrollTo(0, 0); }
+  A.openGm = openGm;
+  /* ---------- the display (display-page.js): #display, full screen for the iPad signed in as the GM; no header or nav ---------- */
+  function displayMod() { var D = window.B68DisplayPage; return D && typeof D.mount === 'function' ? D : null; }
+  var displayMounted = false;
+  function displayNote(el, msg) { el.innerHTML = '<div class="gm-dispnote"><p>' + esc(msg) + '</p><p><a href="#">Home</a></p></div>'; }
+  function startDisplay() {
+    var el = $('display-page'); if (!el) return;
+    displayNote(el, 'Opening the display…');
+    settled().then(function () {
+      if (document.body.dataset.mode !== 'display' || displayMounted) return;
+      var D = displayMod();
+      if (!D) { displayNote(el, 'The display module is missing.'); return; }
+      if (!(window.claude && window.claude.gm)) { displayNote(el, 'GM tools are available on the hosted app.'); return; }
+      if (A.isGM !== true) { displayNote(el, 'GM only: the display is for an iPad signed in as the GM.'); return; }
+      el.innerHTML = '';
+      /* db: the resolved db (the files have settled here), since display-page.js calls db.collection() directly */
+      try { D.mount(el, { gm: window.claude.gm, db: db, figures: window.B68Figure, cast: window.B68Cast, isGM: A.isGM === true }); displayMounted = true; }
+      catch (e) { displayNote(el, 'The display could not open: ' + (e && e.message || e)); }
+    });
+  }
+  function closeDisplay() {
+    var D = displayMod();
+    if (displayMounted && D && typeof D.unmount === 'function') { try { D.unmount(); } catch (e) {} }
+    displayMounted = false;
+    var el = $('display-page'); if (el) el.innerHTML = '';
+  }
 
   /* roster */
   var roster = [];
@@ -846,6 +908,7 @@
       case 'homeBtn': goHome(false); break;
       case 'tableBtn': openTable(); break;
       case 'rulesBtn': openRules(); break;
+      case 'gmBtn': openGm(); break;
       case 'mineBtn': (function () { var one = mineOnly(); if (one) openCharacter(one.id); })(); break;
       case 'editUpdate': fileCharacter(); break;
       case 'editBack': if (S.sheet.docId) openCharacter(S.sheet.docId); break;
@@ -1003,13 +1066,16 @@
   }
   function hashOpen() { var h = location.hash || ''; return h.indexOf('#c/') === 0 ? decodeURIComponent(h.slice(3)) : null; }
   /* the routes: (none) Home · #new a blank creator (asks first when there is a draft) · #create the creator as it is ·
-     #s<base64url> a shared character in the creator · #c/<id> a sheet · #t the table · #t/schedule its schedule · #print · #cast the NPCs, #cast/<id> one, #cast/<id>/edit and #cast/new the GM's editor */
+     #s<base64url> a shared character in the creator · #c/<id> a sheet · #t the table · #t/schedule its schedule · #print · #cast the NPCs, #cast/<id> one, #cast/<id>/edit and #cast/new the GM's editor ·
+     #gm the GM's page · #display the iPad's full-screen display */
   function route() {
     var h = location.hash || '', id = hashOpen(), m = document.body.dataset.mode;
     if (h === '#t' || h === '#t/schedule') { if (m !== 'table') setMode('table', true); if (h === '#t/schedule') openSchedule(); }
     else if (h === '#print') { if (m !== 'print') setMode('print', true); }
     else if (isRulesHash(h)) { if (m !== 'rules') setMode('rules', true); else rulesRoute(); }
     else if (h === '#cast' || h.indexOf('#cast/') === 0) { if (m !== 'cast') setMode('cast', true); else castRoute(); }
+    else if (h === '#gm') { if (m !== 'gm') setMode('gm', true); }
+    else if (h === '#display') { if (m !== 'display') setMode('display', true); }
     else if (id) { if (id !== openId || m !== 'sheet') openCharacter(id); }
     else if (h === '#new') { setMode('create', true); newCharacter(); replaceHash('#create'); syncTitle(); }
     else if (h === '#create' || isShare(h)) { if (m !== 'create') setMode('create', true); }
@@ -1046,6 +1112,8 @@
     else if (h === '#print') setMode('print', true);
     else if (isRulesHash(h)) setMode('rules', true);
     else if (h === '#cast' || h.indexOf('#cast/') === 0) setMode('cast', true);
+    else if (h === '#gm') setMode('gm', true);
+    else if (h === '#display') setMode('display', true);
     else if (h === '#new') { setMode('create', true); newCharacter(); replaceHash('#create'); }
     else if (h === '#create' || fromHash || sm === 'create') setMode('create', true);
     else setMode('home', true);
@@ -1058,9 +1126,14 @@
         if (hosted() && window.B68Runtime.me) A.myName = window.B68Runtime.me.name || '';
         else if (typeof u.me === 'function') Promise.resolve().then(function () { return u.me(); }).then(function (m) { A.myName = (m && m.name) || ''; renderHome(); }).catch(function () {});
         var pid = typeof u.id === 'function' ? Promise.resolve(u.id()) : Promise.resolve(null);
-        return pid.then(function (id) { A.me = id || null; var cw = typeof u.can === 'function' ? Promise.resolve(u.can('data.write')) : Promise.resolve(null); return cw.then(function (c) { A.canWrite = c === true ? true : c === false ? false : null; return gmOf(u); }).then(function (g) { A.isGM = g === true; }); });
+        return pid.then(function (id) { A.me = id || null; var cw = typeof u.can === 'function' ? Promise.resolve(u.can('data.write')) : Promise.resolve(null); return cw.then(function (c) { A.canWrite = c === true ? true : c === false ? false : null; return gmOf(u); }).then(function (g) { A.isGM = g === true; A.roleKnown = !!A.me; }); });
       }).catch(function () {});
-      who.then(function () { whoami(); syncFilter(); A.syncAll(); return window.claude.use('db'); }).then(function (d) {
+      who.then(function () {
+        whoami(); syncFilter(); A.syncAll(); syncNav();
+        /* the GM pack is cached per browser (IndexedDB): a viewer KNOWN not to be the GM drops every cached copy (not when /api/me failed) */
+        if (A.roleKnown === true && A.isGM !== true) { var G0 = gmMod(); if (G0 && G0.purge) { try { G0.purge(); } catch (e) {} } }
+        return window.claude.use('db');
+      }).then(function (d) {
         db = d; dbSettled = true; whoami(); A.syncAll(); syncBackups(); syncEditBar();
         startCampaign();
         var Cp0 = castMod(); if (Cp0) { try { Cp0.init(castApi()); } catch (e) { if (window.console) console.error(e); } }

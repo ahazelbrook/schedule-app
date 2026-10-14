@@ -7,6 +7,8 @@
 <link rel="stylesheet" href="season.css">
 <link rel="stylesheet" href="rules.css">
 <link rel="stylesheet" href="cast.css">
+<link rel="stylesheet" href="gm.css">
+<link rel="stylesheet" href="display.css">
 <style>
   /* Layout: a console character creator in the rulebook's clothes. The subject stands on the height chart
      (left, sticky) under a cover band in the chosen playbook's duotone; the steps run as rulebook side tabs
@@ -45,6 +47,10 @@
   @font-face { font-family: "GT America"; src: url("fonts/GTAmericaArabic-Black.woff2") format("woff2"); font-weight: 900; font-display: swap; }
   @font-face { font-family: "Space Mono"; src: url("fonts/SpaceMono-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
   @font-face { font-family: "Space Mono"; src: url("fonts/SpaceMono-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+  /* the map kit's typewriter and script faces (maps/map-kit.js: case-file labels, the board's red pencil) */
+  @font-face { font-family: "Courier Prime"; src: url("fonts/CourierPrime-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+  @font-face { font-family: "Courier Prime"; src: url("fonts/CourierPrime-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+  @font-face { font-family: "Yellowtail"; src: url("fonts/Yellowtail-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 
   * { box-sizing: border-box; }
   html { height: 100%; }
@@ -103,6 +109,13 @@
   body[data-mode="sheet"] #dossier:not([hidden]) { display: block; }
   body[data-mode="table"] #dossier { display: none; }
   body[data-mode="table"] #table-page:not([hidden]) { display: block; }
+  /* the display (#display, display-page.js): the whole screen is the iPad's, so the header, nav and every banner go */
+  #display-page { display: none; }
+  body[data-mode="display"] #display-page:not([hidden]) { display: block; }
+  body[data-mode="display"] > .wrap, body[data-mode="display"] #stageBanner { display: none !important; }
+  body[data-mode="display"]::before { display: none; }
+  .gm-dispnote { position: relative; z-index: 1; max-width: 560px; margin: 18vh auto 0; padding: 0 16px; font: 700 13px/1.5 var(--font-mono); color: var(--ink-soft); display: grid; gap: 10px; }
+  .gm-dispnote a { color: var(--ink); }
 
   /* ---- home: the start page (boot.js renderHome) ---- */
   .home { padding-top: 22px; display: grid; gap: 30px; }
@@ -452,7 +465,7 @@
   <header class="top">
     <a class="wordmark" id="homeLink" href="#" title="Home"><span class="yr">’68</span><span class="ttl">Blades ’68<small id="viewName" tabindex="-1">Home</small></span></a>
     <nav class="rail" id="rail" aria-label="Steps"></nav>
-    <nav class="topnav" aria-label="Pages"><button class="btn sm" id="homeBtn" type="button">Home</button><button class="btn sm" id="tableBtn" type="button" title="The crew, shared clocks, the players and the campaign log">The table</button><button class="btn sm" id="rulesBtn" type="button" title="The rulebooks, searchable">Rules</button><button class="btn sm" id="mineBtn" type="button" hidden>Your sheet</button></nav>
+    <nav class="topnav" aria-label="Pages"><button class="btn sm" id="homeBtn" type="button">Home</button><button class="btn sm" id="tableBtn" type="button" title="The crew, shared clocks, the players and the campaign log">The table</button><button class="btn sm" id="rulesBtn" type="button" title="The rulebooks, searchable">Rules</button><button class="btn sm" id="mineBtn" type="button" hidden>Your sheet</button><button class="btn sm" id="gmBtn" type="button" hidden title="The GM console, the location generator and the iPad display">GM</button></nav>
     <span class="label who off" id="whoami">Not signed in · filing unavailable</span>
   </header>
 
@@ -462,6 +475,7 @@
   <section class="sn" id="season" hidden aria-label="Season print"></section>
   <section class="rl" id="rules-page" hidden aria-label="The rules"></section>
   <section class="cp" id="cast-page" hidden aria-label="The cast"></section>
+  <section class="gm-page" id="gm-page" hidden aria-label="GM tools"></section>
   <section class="home" id="home" hidden aria-labelledby="homeTitle">
     <div class="hm" id="homeMain"><p class="hm-wait">Opening the files…</p></div>
     <section class="roster" id="files" aria-labelledby="filesTitle" hidden>
@@ -516,12 +530,14 @@
   </footer>
 </div>
 
+<section class="dp" id="display-page" hidden aria-label="The table display"></section>
 <aside class="cp-stage" id="stageBanner" hidden role="region" aria-label="On stage" aria-live="polite"></aside>
 <div class="toast" id="toast"><p class="toast-msg" id="toastMsg" role="status" aria-live="polite" aria-atomic="true"></p><p class="toast-msg bad" id="toastErr" role="alert" aria-atomic="true"></p></div>
 <dialog class="dlg" id="restoreDlg" aria-labelledby="restoreTitle"></dialog>
 
 <script src="figures/figure-kit.js"></script>
 <script src="figures/cast.js"></script>
+<script src="maps/map-kit.js"></script>
 <script src="content.js"></script>
 <script src="core.js"></script>
 <script src="zoom.js"></script>
@@ -533,5 +549,8 @@
 <script src="season.js"></script>
 <script src="markdown.js"></script><script src="rules.js"></script>
 <script src="cast-page.js"></script>
+<script src="gm/console.js"></script><script src="gm/location.js"></script>
+<script src="gm-page.js"></script>
+<script src="display-page.js"></script>
 <script src="runtime/cf.js"></script>
 <script src="boot.js"></script>

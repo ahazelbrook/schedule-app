@@ -1,0 +1,452 @@
+// Unit test for app/display-page.js (the table display, #display): the pure parts only, in plain Node, no browser, no deps.
+// Covered: the SVG sanitiser (against malicious samples, run on a small XML parser stub that stands in for DOMParser), the
+// poll / backoff state machine (fake gm, fake timers), the display -> view-model mapping (an npc push never carries gmNotes),
+// the zoom maths and the corner-status text. The DOM layer (mount, gestures, fade, wake lock) needs a browser and is left to
+// the Playwright run. Invented fixtures only.
+//   node checks/runtime/display.test.mjs
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const require = createRequire(import.meta.url);
+const D = require(path.join(ROOT, 'app', 'display-page.js'));
+const P = D.Pure;
+
+let failed = 0, passed = 0;
+async function test(name, fn) {
+  try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); }
+}
+const flush = () => new Promise((r) => setImmediate(r));
+
+/* ---------- a small XML parser standing in for DOMParser('image/svg+xml') ---------- */
+function decode(s) {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (m, e) => {
+    if (e[0] === '#') return String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10));
+    return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[e.toLowerCase()];
+  });
+}
+const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function mkNode(type, name) {
+  const n = { nodeType: type, nodeName: name, childNodes: [], parentNode: null, attributes: [] };
+  n.localName = name && name.includes(':') ? name.slice(name.indexOf(':') + 1) : name;
+  n.tagName = name;
+  n.getAttribute = (k) => { const a = n.attributes.find((x) => x.name === k); return a ? a.value : null; };
+  n.setAttribute = (k, v) => { const a = n.attributes.find((x) => x.name === k); if (a) a.value = String(v); else n.attributes.push({ name: k, value: String(v) }); };
+  n.removeAttribute = (k) => { n.attributes = n.attributes.filter((x) => x.name !== k); };
+  n.removeChild = (c) => { n.childNodes = n.childNodes.filter((x) => x !== c); c.parentNode = null; return c; };
+  Object.defineProperty(n, 'textContent', { get() { return n.nodeType === 3 || n.nodeType === 4 ? n._text : n.nodeType === 8 ? '' : n.childNodes.map((c) => c.textContent).join(''); } });
+  return n;
+}
+class FakeDOMParser {
+  parseFromString(src) {
+    const bad = () => { const d = { documentElement: mkNode(1, 'parsererror'), getElementsByTagName: () => [1] }; return d; };
+    const re = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<!(?:DOCTYPE|ENTITY)[^>]*>|<\/([^\s>]+)\s*>|<([^\s/>!?]+)((?:\s+[^\s=/>]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>|([^<]+)/gy;
+    let m, top = null; const stack = [];
+    while (re.lastIndex < src.length) {
+      const at = re.lastIndex; m = re.exec(src);
+      if (!m) return bad();
+      const whole = m[0];
+      if (whole.startsWith('<!--')) { const c = mkNode(8, '#comment'); c._text = whole; if (stack.length) { c.parentNode = stack[stack.length - 1]; c.parentNode.childNodes.push(c); } continue; }
+      if (whole.startsWith('<![CDATA[')) { const t = mkNode(4, '#cdata'); t._text = whole.slice(9, -3); if (stack.length) { t.parentNode = stack[stack.length - 1]; t.parentNode.childNodes.push(t); } continue; }
+      if (whole.startsWith('<?') || whole.startsWith('<!')) continue;
+      if (m[1] !== undefined) { const o = stack.pop(); if (!o || o.nodeName !== m[1]) return bad(); continue; }
+      if (m[2] !== undefined) {
+        const n = mkNode(1, m[2]);
+        for (const a of m[3].matchAll(/([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) n.attributes.push({ name: a[1], value: decode(a[2] !== undefined ? a[2] : a[3]) });
+        if (stack.length) { n.parentNode = stack[stack.length - 1]; n.parentNode.childNodes.push(n); } else if (top) return bad(); else top = n;
+        if (!m[4]) stack.push(n);
+        continue;
+      }
+      if (m[5] !== undefined) {
+        if (!stack.length) { if (m[5].trim()) return bad(); continue; }
+        const t = mkNode(3, '#text'); t._text = decode(m[5]); t.parentNode = stack[stack.length - 1]; t.parentNode.childNodes.push(t);
+      }
+      if (re.lastIndex === at) return bad();
+    }
+    if (stack.length || !top) return bad();
+    return { documentElement: top, getElementsByTagName: () => [] };
+  }
+}
+class FakeXMLSerializer {
+  serializeToString(n) {
+    if (n.nodeType === 3) return esc(n._text);
+    if (n.nodeType === 4) return '<![CDATA[' + n._text + ']]>';
+    if (n.nodeType === 8) return n._text;
+    const a = n.attributes.map((x) => ' ' + x.name + '="' + esc(x.value) + '"').join('');
+    const kids = n.childNodes.map((c) => this.serializeToString(c)).join('');
+    return '<' + n.nodeName + a + (kids ? '>' + kids + '</' + n.nodeName + '>' : '/>');
+  }
+}
+const ENV = { DOMParser: FakeDOMParser, XMLSerializer: FakeXMLSerializer };
+const clean = (svg) => P.sanitiseSvg(svg, ENV);
+
+/* the things that must never survive in markup */
+const FORBIDDEN = [/<script/i, /<foreignObject/i, /<iframe/i, /<object/i, /<embed/i, /\son[a-z]+\s*=/i, /javascript:/i, /@import/i, /(?:href|src)="(?!#|data:image\/)/i, /url\(\s*['"]?(?!#|data:image\/)/i];
+function assertClean(markup, what) { for (const re of FORBIDDEN) assert.ok(!re.test(markup), what + ': markup still matches ' + re + '\n' + markup); }
+
+const GOOD = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 300" width="800" height="600">' +
+  '<defs><linearGradient id="g"><stop offset="0" stop-color="#112233"/></linearGradient><style>.a{fill:url(#g);font-family:"Fixture Sans"}</style></defs>' +
+  '<rect id="r" class="a" x="10" y="10" width="100" height="50" fill="url(#g)"/><use href="#r" x="5"/><use xlink:href="#r"/>' +
+  '<image href="data:image/png;base64,AAAA" width="10" height="10"/><text x="20" y="40">Fixture &amp; &lt;room&gt;</text></svg>';
+
+await test('sanitiser keeps a clean map and normalises its size', () => {
+  const r = clean(GOOD);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.viewBox, { x: 0, y: 0, w: 400, h: 300 });
+  assert.equal(r.node.getAttribute('width'), null);
+  assert.equal(r.node.getAttribute('height'), null);
+  assert.equal(r.node.getAttribute('preserveAspectRatio'), 'xMidYMid meet');
+  for (const keep of ['<rect', 'href="#r"', 'xlink:href="#r"', 'url(#g)', 'data:image/png;base64,AAAA', 'Fixture &amp; &lt;room&gt;', '.a{fill:url(#g)']) assert.ok(r.markup.includes(keep), 'kept: ' + keep);
+  assertClean(r.markup, 'good map');
+});
+
+await test('sanitiser derives a viewBox from width and height, and refuses a map with neither', () => {
+  const r = clean('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect width="1" height="1"/></svg>');
+  assert.equal(r.ok, true); assert.deepEqual(r.viewBox, { x: 0, y: 0, w: 640, h: 480 });
+  assert.equal(clean('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>').ok, false);
+  assert.equal(clean('<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%"><rect/></svg>').ok, false);
+});
+
+const wrap = (inner, attrs = '') => '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10"' + attrs + '>' + inner + '</svg>';
+
+await test('script elements are removed with their text', () => {
+  const r = clean(wrap('<g><script>alert(1)</script><rect id="ok"/></g><script type="text/javascript"><![CDATA[ fetch("https://evil.test") ]]></script>'));
+  assert.equal(r.ok, true); assertClean(r.markup, 'script'); assert.ok(r.markup.includes('id="ok"')); assert.ok(!/alert|evil/.test(r.markup));
+});
+await test('on* attributes are removed everywhere (onload, onclick, onmouseover, mixed case)', () => {
+  const r = clean(wrap('<rect onclick="x()" ONMOUSEOVER="x()" width="1"/><g onfocus="x()"><circle onerror="x()" r="2"/></g>', ' onload="x()"'));
+  assert.equal(r.ok, true); assertClean(r.markup, 'on*'); assert.ok(r.markup.includes('width="1"') && r.markup.includes('r="2"'));
+});
+await test('foreignObject goes, and takes its HTML with it', () => {
+  const r = clean(wrap('<foreignObject width="5" height="5"><div xmlns="http://www.w3.org/1999/xhtml"><iframe src="https://evil.test"/><p>hi</p></div></foreignObject><rect id="ok"/>'));
+  assert.equal(r.ok, true); assertClean(r.markup, 'foreignObject'); assert.ok(!r.markup.includes('<div') && !r.markup.includes('hi')); assert.ok(r.markup.includes('id="ok"'));
+});
+await test('iframe, object, embed, link, meta, base, form, audio and video are removed', () => {
+  const r = clean(wrap('<iframe src="x"/><object data="x"/><embed src="x"/><link href="x"/><meta content="x"/><base href="x"/><form action="x"/><audio src="x"/><video src="x"/><rect id="ok"/>'));
+  assert.equal(r.ok, true); assertClean(r.markup, 'html elements');
+  for (const n of ['iframe', 'object', 'embed', 'link', 'meta', 'base', 'form', 'audio', 'video']) assert.ok(!r.markup.includes('<' + n), n);
+});
+await test('external href / xlink:href / src are removed; #fragment and data:image stay', () => {
+  const r = clean(wrap('<image href="https://evil.test/a.png"/><image xlink:href="//evil.test/b.png"/><use href="http://evil.test/x.svg#a"/><a href="https://evil.test"><rect/></a><image src="https://evil.test"/>' +
+    '<use href="#local"/><image href="data:image/png;base64,AAA"/><image href="data:text/html;base64,AAA"/><image href="/relative.png"/>'));
+  assert.equal(r.ok, true); assertClean(r.markup, 'hrefs');
+  assert.ok(r.markup.includes('href="#local"') && r.markup.includes('data:image/png;base64,AAA'));
+  assert.ok(!r.markup.includes('relative.png') && !r.markup.includes('data:text/html'));
+});
+await test('javascript: is refused outright, plainly or smuggled with whitespace', () => {
+  assert.equal(clean(wrap('<a href="javascript:alert(1)"><rect/></a>')).ok, false);
+  assert.equal(clean(wrap('<a href="JaVa\tScRiPt:alert(1)"><rect/></a>')).ok, false);
+  assert.equal(clean(wrap('<a href="vbscript:x"><rect/></a>')).ok, false);
+});
+await test('entity-encoded javascript: is caught after parsing, and the attribute dropped', () => {
+  const r = clean(wrap('<a href="java&#115;cript:alert(1)"><rect/></a><rect id="ok"/><a xlink:href="&#x6a;avascript&#58;alert(1)"><rect/></a>'));
+  assert.equal(r.ok, true); assertClean(r.markup, 'encoded'); assert.ok(r.markup.includes('id="ok"'));
+});
+await test('style: @import and external url() remove the element; benign CSS stays', () => {
+  const bad = ['@import url("https://evil.test/a.css"); .a{fill:red}', '@import "x.css";', '.a{background:url(https://evil.test/p.png)}', '.a{fill:url( "//evil.test/x" )}', '.a{fill:expression(alert(1))}', '.\\75rl{x:y}', '.a{-moz-binding:url(x)}'];
+  for (const css of bad) {
+    const r = clean(wrap('<style>' + css + '</style><rect id="ok"/>'));
+    assert.equal(r.ok, true, css); assert.ok(!r.markup.includes('<style'), 'style kept for ' + css); assertClean(r.markup, css); assert.ok(r.markup.includes('id="ok"'));
+  }
+  const good = clean(wrap('<style>.a{fill:#123;stroke:url(#g)} @font-face-not{}</style><rect class="a"/>'));
+  assert.ok(good.markup.includes('<style') && good.markup.includes('stroke:url(#g)'));
+  const cdata = clean(wrap('<style><![CDATA[ @import url(https://evil.test/x.css); ]]></style><rect/>'));
+  assert.ok(!cdata.markup.includes('<style'));
+});
+await test('style attributes and presentation attributes with external urls are removed', () => {
+  const r = clean(wrap('<rect style="fill:url(https://evil.test/a)" id="a"/><rect fill="url(https://evil.test/b)" id="b"/><rect style="fill:red" id="c"/><rect filter="url(#f)" id="d"/><rect style="background:url(javascript:x)"/>'.replace('javascript:x', 'data:text/html,x')));
+  assert.equal(r.ok, true); assertClean(r.markup, 'style attrs');
+  assert.ok(r.markup.includes('style="fill:red"') && r.markup.includes('filter="url(#f)"'));
+});
+await test('animations that target href are removed; harmless ones stay', () => {
+  const r = clean(wrap('<a href="#x"><animate attributeName="href" values="https://evil.test"/><set attributeName="xlink:href" to="https://evil.test"/></a><rect><animate attributeName="opacity" values="0;1" dur="1s"/></rect>'));
+  assert.equal(r.ok, true); assertClean(r.markup, 'animate');
+  assert.ok(!/attributeName="(xlink:)?href"/.test(r.markup)); assert.ok(r.markup.includes('attributeName="opacity"'));
+});
+await test('comments, DOCTYPE and ENTITY are not carried', () => {
+  assert.equal(clean('<!DOCTYPE svg [<!ENTITY x "y">]><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"/>').ok, false);
+  const r = clean(wrap('<!-- <script>alert(1)</script> --><rect/>'));
+  assert.equal(r.ok, true); assert.ok(!r.markup.includes('<!--'));
+});
+await test('malformed, non-svg, oversized and non-string input is rejected', () => {
+  assert.equal(clean('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><g></svg>').ok, false);
+  assert.equal(clean('<html><body/></html>').ok, false);
+  assert.equal(clean('hello').ok, false);
+  assert.equal(clean('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1">' + 'a'.repeat(P.LIMITS.svgChars) + '</svg>').ok, false);
+  for (const v of [null, undefined, 42, {}, []]) assert.equal(clean(v).ok, false);
+  assert.equal(P.sanitiseSvg(GOOD, {}).ok, false);
+});
+await test('a map that forgot its namespaces gets them (an XML parser would otherwise draw nothing)', () => {
+  const r = clean('<svg viewBox="0 0 5 5"><image xlink:href="#a"/><rect id="a"/></svg>');
+  assert.equal(r.ok, true);
+  assert.ok(r.markup.includes('xmlns="http://www.w3.org/2000/svg"') && r.markup.includes('xmlns:xlink="http://www.w3.org/1999/xlink"'));
+  const had = clean('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 5"><rect/></svg>');
+  assert.equal((had.markup.match(/xmlns=/g) || []).length, 1, 'no second xmlns');
+  assert.equal(P.sanitiseSvg('<svg viewBox="0 0 1 1">' + 'a'.repeat(800000) + '</svg>', { DOMParser: FakeDOMParser, maxChars: 900000 }).ok, true, 'a larger cap can be passed for the kit');
+});
+await test('a combined attack leaves nothing active', () => {
+  const r = clean('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 50 50" onload="x()">' +
+    '<script>x()</script><style>@import url(https://evil.test/x.css);</style><foreignObject><div/></foreignObject>' +
+    '<g onclick="x()"><image href="https://evil.test/p.png" onerror="x()"/><use xlink:href="https://evil.test/s.svg#a"/><rect fill="url(https://evil.test/f)" width="3" height="3"/></g></svg>');
+  assert.equal(r.ok, true); assertClean(r.markup, 'combined'); assert.ok(r.markup.includes('<g'));
+});
+
+/* parity with the server's checkSvg (functions/_lib/gm.js; checks/api/gm.mjs sends the same payloads) */
+await test('parity: namespaced script/foreignObject/iframe/style, <a>, xml:base, backslashes, image-set(), src(), data: on <use> are stripped', () => {
+  const r = clean(wrap('<x:script xmlns:x="http://www.w3.org/2000/svg">alert(1)</x:script>' +
+    '<x:foreignObject xmlns:x="http://www.w3.org/2000/svg"><p>hi</p></x:foreignObject>' +
+    '<h:iframe xmlns:h="http://www.w3.org/1999/xhtml" src="https://evil.test"/>' +
+    '<h:style xmlns:h="http://www.w3.org/1999/xhtml">@import url(https://evil.test/x.css);</h:style>' +
+    '<a href="#ok"><rect id="inlink"/></a>' +
+    '<g xml:base="https://evil.test/"><rect id="b1"/></g>' +
+    '<rect id="bs" fill="u\\72l(https://evil.test/x)" style="fill:red"/>' +
+    '<rect id="iset" style="background:image-set(&quot;https://evil.test/a.png&quot; 1x)"/>' +
+    '<rect id="srcfn" style="background:src(&quot;https://evil.test/a.png&quot;)"/>' +
+    '<use id="usedata" href="data:image/png;base64,AAAA"/>' +
+    '<image id="svgdata" href="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="/>' +
+    '<image id="png" href="data:image/png;base64,AAAA"/><feImage id="fe" href="data:image/webp;base64,AAAA"/>' +
+    '<style>.a{fill:url(data:image/png;base64,AAAA)}</style><rect id="ok"/>'));
+  assert.equal(r.ok, true); assertClean(r.markup, 'parity');
+  for (const gone of ['alert', '<p>', 'iframe', 'evil.test', '<a ', 'inlink', 'xml:base', 'u\\72l', 'image-set', 'src(', 'svg+xml', 'url(data:']) assert.ok(!r.markup.includes(gone), 'still has ' + gone + '\n' + r.markup);
+  assert.ok(!/id="usedata"[^>]*href/.test(r.markup), 'a data: href on <use> survived');
+  assert.ok(/id="png"[^>]*href="data:image\/png/.test(r.markup) && /id="fe"[^>]*href="data:image\/webp/.test(r.markup), 'raster data on <image>/<feImage> stays');
+  assert.ok(r.markup.includes('id="ok"') && r.markup.includes('id="b1"'), 'the rest stays');
+});
+
+/* the real map kit's output, every view and theme, through the sanitiser (needs the git-ignored pack; skipped without it) */
+await test('the map kit output (real pack, player layer) loses nothing to the sanitiser', () => {
+  const packPath = path.join(ROOT, 'gm-private', 'b68-gm-pack.json');
+  if (!fs.existsSync(packPath)) { console.log('     skipped: no gm-private/b68-gm-pack.json'); return; }
+  const pk = JSON.parse(fs.readFileSync(packPath, 'utf8')).parts.location;
+  const L = require(path.join(ROOT, 'app', 'gm', 'location.js')), M = require(path.join(ROOT, 'app', 'maps', 'map-kit.js'));
+  let n = 0;
+  for (let s = 1; s <= 6; s++) {
+    const roll = L.generate(pk, {}, { seed: s * 104729, mem: {} });
+    for (const view of ['rings', 'plan', 'iso', 'section']) for (const theme of ['rulebook', 'blueprint', 'casefile', 'board']) {
+      const svg = M.render(roll, { view, theme, layer: 'player', reveal: ['public'], width: 1400 }).svg;
+      const doc = new FakeDOMParser().parseFromString(svg.replace(/<svg(?=[\s>])/, '<svg'));
+      if (!doc.documentElement || doc.documentElement.nodeName === 'parsererror') continue;   // the stub parser is strict; the browser run covers the rest
+      const removed = P.cleanElement(doc.documentElement); n++;
+      assert.equal(removed, 0, view + '/' + theme + ': the sanitiser removed ' + removed + ' thing(s) from a kit map');
+    }
+  }
+  assert.ok(n > 0, 'no map parsed'); console.log('     ' + n + ' of 96 kit maps parsed and cleaned');
+});
+
+/* real figure-kit output goes through the sanitiser too (the NPC portrait), so it must survive it */
+await test('the figure kit output survives the sanitiser (an NPC portrait and a full figure)', () => {
+  const K = require(path.join(ROOT, 'app', 'figures', 'figure-kit.js'));
+  const canon = require(path.join(ROOT, 'app', 'figures', 'cast.js'));
+  const spec = JSON.parse(JSON.stringify(canon.npcs[0]));
+  spec.id = 'dp-test';
+  for (const draw of [(s) => K.render(s, { height: 900 }), (s) => K.portrait(s, { lod: 'mid' })]) {
+    const out = draw(JSON.parse(JSON.stringify(spec)));
+    const r = clean(out.svg);
+    assert.equal(r.ok, true, 'kit output rejected: ' + (r.reason || ''));
+    assertClean(r.markup, 'kit');
+    assert.ok(r.markup.length > out.svg.length * 0.9, 'sanitiser removed a lot of the figure: ' + r.markup.length + ' of ' + out.svg.length);
+  }
+});
+
+/* ---------- display -> view model ---------- */
+const SECRET = 'GM-ONLY-SECRET-xyzzy';
+const NPC_DOC = { name: 'Vera Fixture', alias: 'Quill', role: 'Clerk', faction: 'The Registry', description: 'A tidy person with ink on her cuffs.', spec: { heightIn: 66 },
+  revealed: false, firstSeen: null, tags: ['tag-' + SECRET], gmNotes: 'Secret: ' + SECRET, extra: SECRET, nested: { gmNotes: SECRET } };
+
+await test('npc view model carries player fields only, never gmNotes', () => {
+  const vm = P.viewModel({ kind: 'npc', npcId: 'vera', title: 'Vera', gmNotes: SECRET }, NPC_DOC);
+  assert.equal(vm.kind, 'npc'); assert.equal(vm.found, true);
+  assert.equal(vm.name, 'Vera Fixture'); assert.equal(vm.alias, 'Quill'); assert.equal(vm.sub, 'Clerk · The Registry'); assert.equal(vm.description, NPC_DOC.description);
+  assert.ok(!JSON.stringify(vm).includes(SECRET), 'a secret reached the view model');
+  assert.ok(!('gmNotes' in vm) && !('tags' in vm) && !('revealed' in vm));
+  assert.deepEqual(Object.keys(P.playerNpc(NPC_DOC)).sort(), ['alias', 'description', 'faction', 'name', 'role', 'spec']);
+});
+await test('npc not found: title only', () => {
+  for (const doc of [null, undefined, 'x', [], 5]) {
+    const vm = P.viewModel({ kind: 'npc', npcId: 'gone', title: 'Someone' }, doc);
+    assert.equal(vm.found, false); assert.equal(vm.title, 'Someone'); assert.ok(!('description' in vm) && !('name' in vm));
+  }
+});
+await test('npc with a missing name falls back to the pushed title; long fields are capped', () => {
+  const vm = P.viewModel({ kind: 'npc', npcId: 'a', title: 'Pushed title' }, { description: 'x'.repeat(5000), gmNotes: SECRET });
+  assert.equal(vm.name, 'Pushed title'); assert.equal(vm.description.length, 2000); assert.ok(!JSON.stringify(vm).includes(SECRET));
+});
+await test('svg, text and blank view models; unknown and malformed pushes draw as blank', () => {
+  assert.deepEqual(P.viewModel({ kind: 'svg', title: 'T', caption: 'C', svg: '<svg/>' }), { kind: 'svg', title: 'T', caption: 'C', svg: '<svg/>' });
+  const t = P.viewModel({ kind: 'text', title: 'Kicker', text: 'Hello' });
+  assert.equal(t.kind, 'text'); assert.equal(t.title, 'Kicker'); assert.equal(t.text, 'Hello'); assert.equal(t.size, 'xl');
+  for (const d of [{ kind: 'blank' }, { kind: 'wat' }, { kind: 'svg' }, { kind: 'svg', svg: 5 }, null, undefined, 'x', [], 7, {}]) assert.deepEqual(P.viewModel(d), { kind: 'blank' });
+  assert.equal(P.viewModel({ kind: 'text', text: 7 }).text, '');
+});
+await test('text size steps down as the text grows', () => {
+  assert.deepEqual(['a', 'a'.repeat(200), 'a'.repeat(500), 'a'.repeat(1500)].map(P.textSize), ['xl', 'l', 'm', 's']);
+});
+
+/* ---------- zoom maths ---------- */
+await test('zoom: fit is the whole map, in the frame\'s aspect', () => {
+  const V = { x: 0, y: 0, w: 400, h: 300 }, size = { w: 1024, h: 768 };
+  const w = P.viewWindow(V, size, { s: 1, cx: 0, cy: 0 });
+  assert.ok(Math.abs(w.x) < 1e-9 && Math.abs(w.y) < 1e-9 && Math.abs(w.w - 400) < 1e-9 && Math.abs(w.h - 300) < 1e-9);
+  const wide = P.viewWindow(V, { w: 2000, h: 500 }, { s: 1 });                       // a wide frame shows extra margin, centred
+  assert.ok(Math.abs(wide.h - 300) < 1e-9 && wide.w > 400 && Math.abs(wide.x + wide.w / 2 - 200) < 1e-9);
+});
+await test('zoom: pinch keeps the point under the fingers, clamps scale and pan', () => {
+  const V = { x: 0, y: 0, w: 400, h: 300 }, size = { w: 800, h: 600 };              // k0 = 2
+  const start = { s: 1, cx: 200, cy: 150, d: 100, px: 100, py: 0 };                  // midpoint 100 px right of centre: map x = 250
+  const z = P.pinchView(V, size, start, { d: 200, px: 100, py: 0 });                 // fingers spread 2x, same midpoint
+  assert.ok(Math.abs(z.s - 2) < 1e-9);
+  assert.ok(Math.abs(z.cx + 100 / (2 * z.s) - 250) < 1e-9, 'point under the fingers moved');
+  assert.equal(P.pinchView(V, size, start, { d: 1e6, px: 0, py: 0 }).s, P.MAXZOOM);
+  assert.equal(P.pinchView(V, size, start, { d: 1, px: 0, py: 0 }).s, 1);
+  const far = P.clampView(V, size, { s: 4, cx: -999, cy: 9999 });                    // pan far off: held to the map's edge
+  const w = P.viewWindow(V, size, far);
+  assert.ok(w.x >= -1e-9 && w.y + w.h <= 300 + 1e-9);
+  const back = P.pinchView(V, size, { s: 3, cx: 100, cy: 100, d: 100, px: 0, py: 0 }, { d: 10, px: 0, py: 0 });
+  assert.equal(back.s, 1); assert.ok(Math.abs(back.cx - 200) < 1e-9 && Math.abs(back.cy - 150) < 1e-9, 'fit recentres');
+});
+await test('zoom: one finger pans (same distance, midpoint moved)', () => {
+  const V = { x: 0, y: 0, w: 400, h: 300 }, size = { w: 800, h: 600 };
+  const z = P.pinchView(V, size, { s: 4, cx: 200, cy: 150, d: 1, px: 0, py: 0 }, { d: 1, px: 80, py: 0 });   // drag right 80 px at k = 8: map moves right, so the centre moves left by 10
+  assert.ok(Math.abs(z.cx - 190) < 1e-9 && Math.abs(z.cy - 150) < 1e-9);
+});
+
+/* ---------- the poller ---------- */
+function clock() {
+  let now = 0, id = 0; const q = [];
+  return {
+    setTimeout(fn, ms) { q.push({ id: ++id, at: now + ms, fn }); return id; },
+    clearTimeout(i) { const k = q.findIndex((t) => t.id === i); if (k >= 0) q.splice(k, 1); },
+    get now() { return now; },
+    pending() { return q.length; },
+    async advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        await flush();
+        q.sort((a, b) => a.at - b.at || a.id - b.id);
+        if (!q.length || q[0].at > end) break;
+        const t = q.shift(); now = Math.max(now, t.at); t.fn();
+      }
+      now = end; await flush();
+    }
+  };
+}
+function rig(over = {}) {
+  const c = clock(), calls = [], data = [], states = [];
+  const g = { hidden: false, handler: null };
+  const poller = P.createPoller(Object.assign({
+    timers: c, fetch: (seq) => { calls.push({ seq, at: c.now }); return g.handler(seq); },
+    onData: (d, seq, at) => data.push({ d, seq, at }), onStatus: (s) => states.push(s.state), isHidden: () => g.hidden
+  }, over));
+  return { c, calls, data, states, g, poller };
+}
+const ok = (seq, display) => ({ seq, display: display || { kind: 'blank', title: '', caption: '' }, updatedAt: '2026-10-17T09:00:00.000Z' });
+
+await test('poller: first request has no seq, then every 2 s, passing the seq it holds', async () => {
+  const r = rig(); let n = 0; r.g.handler = (seq) => Promise.resolve(seq === null ? ok(3, { kind: 'text', text: 'a' }) : { seq: 3, unchanged: true });
+  r.poller.start(); await r.c.advance(0);
+  assert.deepEqual(r.calls.map((x) => x.seq), [null]); assert.equal(r.data.length, 1); assert.equal(r.data[0].seq, 3);
+  await r.c.advance(1999); assert.equal(r.calls.length, 1);
+  await r.c.advance(1); assert.equal(r.calls.length, 2); assert.equal(r.calls[1].seq, 3);
+  await r.c.advance(6000); assert.deepEqual(r.calls.map((x) => x.at), [0, 2000, 4000, 6000, 8000]);
+  assert.equal(r.data.length, 1, 'unchanged must not redraw');
+  assert.equal(r.poller.state(), 'live'); r.poller.stop();
+});
+await test('poller: a new seq calls onData once with the display and updatedAt', async () => {
+  const r = rig(); let cur = 1;
+  r.g.handler = (seq) => Promise.resolve(seq === cur ? { seq: cur, unchanged: true } : ok(cur, { kind: 'text', text: 'v' + cur }));
+  r.poller.start(); await r.c.advance(0); cur = 2; await r.c.advance(2000); await r.c.advance(2000);
+  assert.deepEqual(r.data.map((x) => [x.seq, x.d.text]), [[1, 'v1'], [2, 'v2']]); assert.equal(r.data[1].at, '2026-10-17T09:00:00.000Z');
+  r.poller.stop();
+});
+await test('poller: three failures in a row back off to 10 s; the first success returns to 2 s', async () => {
+  const r = rig(); let fail = true; r.g.handler = () => (fail ? Promise.reject(new Error('net')) : Promise.resolve({ seq: 1, unchanged: true }));
+  r.poller.start(); await r.c.advance(0);
+  assert.equal(r.poller.state(), 'retrying');
+  await r.c.advance(2000); await r.c.advance(2000);
+  assert.deepEqual(r.calls.map((x) => x.at), [0, 2000, 4000]); assert.equal(r.poller.state(), 'offline'); assert.equal(r.poller.fails(), 3);
+  await r.c.advance(9999); assert.equal(r.calls.length, 3, 'must wait the full 10 s');
+  await r.c.advance(1); assert.equal(r.calls.length, 4); assert.equal(r.calls[3].at, 14000);
+  await r.c.advance(10000); assert.equal(r.calls[4].at, 24000);
+  fail = false; await r.c.advance(10000); assert.equal(r.calls[5].at, 34000); assert.equal(r.poller.state(), 'live'); assert.equal(r.poller.fails(), 0);
+  await r.c.advance(2000); assert.equal(r.calls[6].at, 36000);
+  assert.deepEqual(r.states, ['retrying', 'offline', 'live']); r.poller.stop();
+});
+await test('poller: a bad response (no seq, or neither display nor unchanged) counts as a failure', async () => {
+  const r = rig(); const bad = [null, {}, { seq: 'x' }, { seq: 1 }, 'html', { error: 'x' }]; let i = 0;
+  r.g.handler = () => Promise.resolve(bad[i++]);
+  r.poller.start(); await r.c.advance(0); assert.equal(r.poller.fails(), 1);
+  await r.c.advance(2000); await r.c.advance(2000); assert.equal(r.poller.state(), 'offline'); assert.equal(r.data.length, 0); r.poller.stop();
+});
+await test('poller: a 403 is "denied" and polls slowly; a thrown fetch is a failure, not a crash', async () => {
+  const r = rig(); r.g.handler = () => Promise.reject(Object.assign(new Error('forbidden'), { status: 403 }));
+  r.poller.start(); await r.c.advance(0); assert.equal(r.poller.state(), 'denied');
+  await r.c.advance(5000); assert.equal(r.calls.length, 1); await r.c.advance(5000); assert.equal(r.calls.length, 2); r.poller.stop();
+  const t = rig({ fetch: () => { throw new Error('sync'); } }); t.poller.start(); await t.c.advance(0); assert.equal(t.poller.state(), 'retrying'); t.poller.stop();
+});
+await test('poller: never overlaps requests, and times out a request that hangs', async () => {
+  const r = rig({ timeoutMs: 5000 }); let release; r.g.handler = () => new Promise((res) => { release = res; });
+  r.poller.start(); await r.c.advance(0);
+  r.poller.kick(); r.poller.kick(); await r.c.advance(100); assert.equal(r.calls.length, 1, 'kick while in flight must not start another');
+  await r.c.advance(5000); assert.equal(r.poller.fails(), 1, 'timeout counted');
+  r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true }); await r.c.advance(2000); assert.equal(r.calls.length, 2);
+  release(ok(9)); await r.c.advance(0); assert.equal(r.data.length, 0, 'a late answer to a timed-out request is ignored');
+  r.poller.stop();
+});
+await test('poller: hidden pauses polling; visible polls at once; nothing is scheduled while hidden', async () => {
+  const r = rig(); r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true });
+  r.poller.start(); await r.c.advance(0); await r.c.advance(2000); assert.equal(r.calls.length, 2);
+  r.g.hidden = true; r.poller.kick(); assert.equal(r.poller.state(), 'paused');
+  await r.c.advance(60000); assert.equal(r.calls.length, 2, 'polled while hidden'); assert.equal(r.c.pending(), 0);
+  r.g.hidden = false; r.poller.kick(); await r.c.advance(0); assert.equal(r.calls.length, 3); assert.equal(r.calls[2].at, 62000);
+  assert.equal(r.poller.state(), 'live'); await r.c.advance(2000); assert.equal(r.calls.length, 4); r.poller.stop();
+});
+await test('poller: hiding mid-request lets it finish but schedules nothing; stop ends everything', async () => {
+  const r = rig(); let release; r.g.handler = () => new Promise((res) => { release = res; });
+  r.poller.start(); await r.c.advance(0); r.g.hidden = true; release({ seq: 4, display: { kind: 'blank' } }); await r.c.advance(0);
+  assert.equal(r.data.length, 1); await r.c.advance(30000); assert.equal(r.calls.length, 1);
+  r.g.hidden = false; r.g.handler = () => Promise.resolve({ seq: 4, unchanged: true }); r.poller.kick(); await r.c.advance(0); assert.equal(r.calls.length, 2);
+  r.poller.stop(); await r.c.advance(60000); assert.equal(r.calls.length, 2); assert.equal(r.c.pending(), 0);
+  let late; const s = rig(); s.g.handler = () => new Promise((res) => { late = res; }); s.poller.start(); await s.c.advance(0); s.poller.stop(); late(ok(5)); await s.c.advance(0);
+  assert.equal(s.data.length, 0, 'an answer after stop must not draw'); assert.equal(s.c.pending(), 0);
+});
+await test('poller: the network coming back forgets the backoff', async () => {
+  const r = rig(); let fail = true; r.g.handler = () => (fail ? Promise.reject(new Error('net')) : Promise.resolve({ seq: 1, unchanged: true }));
+  r.poller.start(); await r.c.advance(0); await r.c.advance(2000); await r.c.advance(2000); assert.equal(r.poller.state(), 'offline');
+  fail = false; r.poller.reset(); r.poller.kick(); await r.c.advance(0); assert.equal(r.poller.state(), 'live'); assert.equal(r.poller.fails(), 0); r.poller.stop();
+});
+await test('poller: an onData that throws does not stop polling', async () => {
+  const r = rig({ onData: () => { throw new Error('draw failed'); } }); r.g.handler = () => Promise.resolve(ok(1));
+  r.poller.start(); await r.c.advance(0); await r.c.advance(2000); assert.equal(r.calls.length, 2); r.poller.stop();
+});
+
+/* ---------- corner status ---------- */
+await test('status: waiting, updated, trouble and denied', () => {
+  const at = new Date(2026, 9, 17, 9, 5).toISOString();
+  assert.equal(P.formatTime(at), '09:05'); assert.equal(P.formatTime(null), ''); assert.equal(P.formatTime('nonsense'), '');
+  assert.deepEqual(P.statusView({ state: 'connecting' }, 0, null), { dot: 'idle', text: 'Connecting…' });
+  assert.deepEqual(P.statusView({ state: 'live' }, 0, null), { dot: 'ok', text: 'Waiting for the GM' });
+  assert.deepEqual(P.statusView({ state: 'live' }, 4, at), { dot: 'ok', text: 'Updated 09:05' });
+  assert.equal(P.statusView({ state: 'retrying' }, 4, at).dot, 'warn');
+  assert.equal(P.statusView({ state: 'offline' }, 4, at).text, 'Offline, retrying · last update 09:05');
+  assert.equal(P.statusView({ state: 'denied' }, 0, null).dot, 'bad');
+});
+
+await test('no way to the GM routes from the display: no link, no #gm, no href set anywhere in display-page.js', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'display-page.js'), 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  assert.ok(!/#gm\b/.test(code), 'display-page.js names #gm');
+  assert.ok(!/\.href\s*=|setAttribute\(\s*['"]href['"]|el\(\s*['"]a['"]/.test(code), 'display-page.js makes a link');
+  assert.ok(!/location\s*\.\s*(hash|href|assign|replace)/.test(code), 'display-page.js navigates');
+  assert.ok(!/dp-hatch|dp-back/.test(fs.readFileSync(path.join(ROOT, 'app', 'display.css'), 'utf8')), 'the hold-to-reveal styles are gone');
+});
+
+await test('the module exposes the page interface', () => {
+  assert.equal(typeof D.mount, 'function'); assert.equal(typeof D.unmount, 'function');
+  assert.doesNotThrow(() => D.unmount());                                             // unmounting nothing is fine
+});
+
+console.log('\n' + passed + ' passed, ' + failed + ' failed');
+process.exit(failed ? 1 : 0);

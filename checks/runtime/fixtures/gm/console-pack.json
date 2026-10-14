@@ -1,0 +1,175 @@
+{
+  "format": 1,
+  "exportedAt": "2026-10-14T00:00:00.000Z",
+  "parts": {
+    "console": {
+      "src": { "file": "fixture/console-view.js", "blockSha": "0000000000000000", "exportedAt": "2026-10-14T00:00:00.000Z" },
+      "T": {
+        "cat": {
+          "collateral": "Wobbly cost: the teapot",
+          "item": "Wobbly cost: a sock",
+          "betray": "Wobbly cost: a pen pal",
+          "faction": "Wobbly cost: the knitting circle",
+          "clock": "Wobbly cost: a kitchen timer",
+          "heat": "Wobbly cost: warm soup",
+          "harm": "Wobbly cost: a stubbed toe"
+        },
+        "db": [
+          ["collateral", "A garden gnome falls over, sadly."],
+          ["collateral", "The umbrella turns inside out."],
+          ["item", "It costs **1 biscuit**, now."],
+          ["item", "Leave one sock behind."],
+          ["betray", "You tell the parrot a secret."],
+          ["betray", "You borrow a pen pal's bicycle."],
+          ["faction", "**{faction}** sniff loudly: **-1 crumb**."],
+          ["clock", "Start a 4-timer, *{clock}*, and wind it once."],
+          ["clock", "Wind the timer you already have."],
+          ["heat", "**+1 soup.** Someone in {district} saw the spoon."],
+          ["heat", "**+1 soup**, and a spoon is left behind."],
+          ["harm", "Take a **level 1 stubbed toe**."],
+          ["harm", "Take a **level 2 paper cut**."]
+        ],
+        "dbFaction": [
+          ["faction", "**{f}** go quiet at tea: **-1 crumb**."],
+          ["heat", "**+1 soup**, and **{f}** tell the neighbours."],
+          ["clock", "**{f}** remember your hat. Start a 4-timer, *{clock}*."],
+          ["faction", "You forget **{f}**'s birthday."]
+        ],
+        "dbScene": {
+          "chase": [["collateral", "The pram loses a wheel."], ["item", "The cake slides off the tray."], ["harm", "A bump on the head, chase-style."], ["heat", "A goose honks at {district}."]],
+          "fight": [["item", "The pillow bursts."], ["collateral", "The vase is doomed."], ["heat", "The noise wakes the cat: **+1 soup**."], ["faction", "**{faction}** saw that cushion."]],
+          "sneak": [["heat", "A crumb trail: **+1 soup**."], ["item", "The slipper squeaks off."], ["betray", "You step on a sleeping dog's tail."], ["clock", "Start a 4-timer, *{clock}*."]],
+          "talk": [["betray", "You promise a pony."], ["betray", "You mention the auntie."], ["heat", "The gossip hears it: **+1 soup**."], ["betray", "They want a nickname. You give one."]],
+          "street": [["betray", "Your aunt waves from a bus."], ["faction", "You cut through the bowls club lawn."], ["collateral", "A pigeon gets the blame."], ["heat", "A photo of your hat: **+1 soup**."]]
+        },
+        "aim": {
+          "wont": ["To get the die you'd have to **{x}**. Oh dear.", "Only if you **{x}**, on stage."],
+          "friend": ["**{x}** gets roped in, and grumbles.", "You lean on **{x}** for it."],
+          "rival": ["**{x}** sees it and smirks.", "**{x}** helped. Now you owe a cake."],
+          "extra": ["**{x}**, apparently."]
+        },
+        "aimCat": { "wont": "betray", "friend": "betray", "rival": "faction", "extra": "" },
+        "dbDistrict": {
+          "Puddleton": { "scenes": ["", "chase", "fight", "street"], "page": "fixture p.1", "text": "**+1d for a cartwheel**, and a cloud follows you." },
+          "Crumbhall": { "scenes": ["", "talk", "sneak"], "page": "fixture p.2", "text": "**+1d to eavesdrop**, and I wind a timer." }
+        },
+        "arsenal": "**Pocket Fluff** (fixture): your water pistol **sputters**.",
+        "clock": ["Kettle", "Toast", "Bathwater", "The Cat Wakes", "Tea Goes Cold", "Gran Phones", "Bus Leaves", "Rain", "Bedtime", "Dessert"],
+        "faction": ["The Teaspoons", "The Doilies", "Bowls Club", "The Pigeon Union", "Knitting Circle", "Hat Society"],
+        "district": ["Puddleton", "Crumbhall", "Muddle End", "Biscuit Row", "Lower Fluff"],
+        "compSource": [
+          ["The teapot", "it's hotter than expected"], ["The postman", "a parcel for next door"], ["A neighbour", "they want the ladder back"],
+          ["The weather", "a sudden drizzle"], ["The cat", "it has opinions"], ["Your own shoelaces", "a sneeze, a hiccup"]
+        ],
+        "compShape": [
+          ["Someone visits", "with a casserole"], ["Something is lost", "the spoon, the key, the remote"], ["You're spotted", "by the window cleaner"],
+          ["The timer jumps", "wind it two or three"], ["A bill arrives", "biscuits owed"], ["It's sillier than planned", "reassess the silliness"]
+        ],
+        "scene": {
+          "chase": { "label": "Chase", "comp": ["**Pram 1**", "**Pram 2**", "**Pram 3**", "**Pram 4**", "**Pram 5**", "**Pram 6**", "**Pram 7**", "**Pram 8**"],
+                     "reduced": "Chase slower.", "lost": "Chase gone.", "worse": "Chase uphill.",
+                     "harm": [["Chase bump A", "Chase bump B"], ["Chase bruise A", "Chase bruise B"], ["Chase sprain A", "Chase sprain B"]], "resist": "prowess" },
+          "fight": { "label": "Fight", "comp": ["**Pillow 1**", "**Pillow 2**", "**Pillow 3**", "**Pillow 4**", "**Pillow 5**", "**Pillow 6**", "**Pillow 7**", "**Pillow 8**"],
+                     "reduced": "Fight softer.", "lost": "Fight over.", "worse": "Fight on the floor.",
+                     "harm": [["Fight bump A", "Fight bump B"], ["Fight bruise A", "Fight bruise B"], ["Fight sprain A", "Fight sprain B"]], "resist": "prowess" },
+          "sneak": { "label": "Sneak", "comp": ["**Tiptoe 1**", "**Tiptoe 2**", "**Tiptoe 3**", "**Tiptoe 4**", "**Tiptoe 5**", "**Tiptoe 6**", "**Tiptoe 7**", "**Tiptoe 8**"],
+                     "reduced": "Sneak halfway.", "lost": "Sneak spotted.", "worse": "Sneak on a ledge.",
+                     "harm": [["Sneak bump A", "Sneak bump B"], ["Sneak bruise A", "Sneak bruise B"], ["Sneak sprain A", "Sneak sprain B"]], "resist": "prowess" },
+          "talk": { "label": "Talk", "comp": ["**Chat 1**", "**Chat 2**", "**Chat 3**", "**Chat 4**", "**Chat 5**", "**Chat 6**", "**Chat 7**", "**Chat 8**"],
+                    "reduced": "Talk mumbled.", "lost": "Talk ignored.", "worse": "Talk overheard.",
+                    "harm": [["Talk blush A", "Talk blush B"], ["Talk fluster A", "Talk fluster B"], ["Talk mortified A", "Talk mortified B"]], "resist": "resolve" },
+          "street": { "label": "Street", "comp": ["**Footpath 1**", "**Footpath 2**", "**Footpath 3**", "**Footpath 4**", "**Footpath 5**", "**Footpath 6**", "**Footpath 7**", "**Footpath 8**"],
+                      "reduced": "Street slower.", "lost": "Street missed.", "worse": "Street wrong side.",
+                      "harm": [["Street bump A", "Street bump B"], ["Street bruise A", "Street bruise B"], ["Street sprain A", "Street sprain B"]], "resist": "prowess" }
+        },
+        "consequence": [
+          ["Reduced effect", "Placeholder: it works, but less.", "The soup is lukewarm."],
+          ["Complication", "Placeholder: new trouble.", "The cat knocks over the milk."],
+          ["Lost opportunity", "Placeholder: the chance slips.", "The bus pulls away."],
+          ["Worse position", "Placeholder: one step sillier.", "You end up on the roof."],
+          ["Harm", "Placeholder: a lasting wobble.", "Level 1 Bump · Level 2 Bruise · Level 3 Sprain."]
+        ],
+        "allowed": {
+          "controlled": { "45": ["Reduced effect", "Complication", "Harm", "Worse position"], "13": ["Worse position", "Lost opportunity"] },
+          "risky": { "45": ["Harm", "Complication", "Reduced effect", "Worse position"], "13": ["Harm", "Complication", "Worse position", "Lost opportunity"] },
+          "desperate": { "45": ["Harm", "Complication", "Reduced effect"], "13": ["Harm", "Complication", "Lost opportunity"] }
+        },
+        "spend": {
+          "Reduced effect": "**{t}** wobbles it.",
+          "Complication": "**{t}** becomes a muddle.",
+          "Lost opportunity": "**{t}** shuts the gate.",
+          "Worse position": "**{t}** gets nearer.",
+          "Harm": "**{t}** bonks them."
+        },
+        "severity": {
+          "controlled": ["mild", "1 wind", "a mild muddle", 1],
+          "risky": ["middling", "2 winds", "a middling muddle", 2],
+          "desperate": ["spicy", "3 winds", "a spicy muddle", 3]
+        },
+        "price": [
+          [11, 13, "**Price A.** A timer winds once."], [14, 16, "**Price B**: biscuits."], [21, 23, "**Price C.** Less soup."],
+          [24, 26, "**Price D.** Sillier next."], [31, 33, "**Price E**: a spoon is gone."], [34, 36, "**Price F.** The neighbour saw."],
+          [41, 43, "**Price G.** Soup on the crew."], [44, 46, "**Price H**: a pen pal sulks."], [51, 53, "**Price I**, harm."],
+          [54, 56, "**Price J.** A club notices."], [61, 62, "**Price K**: a deal comes due."], [63, 64, "**Price L.** A rival moves."],
+          [65, 65, "**Price M**, on a friend."], [66, 66, "**Price N. Roll twice more.**"]
+        ],
+        "reaction": [["Delighted", "they bake a cake"], ["Helpful", "they get on with it"], ["Fussy", "yes, IF: a price"], ["Grumpy", "no, or a demand"]],
+        "say3": {
+          "Delighted": ["Ooh yes.", "why it's fun", "the extra cake"],
+          "Helpful": ["Righto.", "it suits them", "a question back"],
+          "Fussy": ["Only if…", "what it costs them", "the price, as a question"],
+          "Grumpy": ["Hmph.", "their worry", "the crack"]
+        },
+        "crumb": {
+          "Delighted": "**a lead and a lift**: a name and a bus timetable.",
+          "Helpful": "**a lead**: a name or a place.",
+          "Fussy": "**for a price**: a dozen scones.",
+          "Grumpy": "**not a no.** They drop a crumb: {c}"
+        },
+        "crumbBits": ["a smell of toast.", "a name nobody mentioned.", "a place they avoid.", "who else asked.", "a time: tonight.", "a warning."]
+      }
+    },
+    "campaign": {
+      "src": { "file": "fixture/campaign", "blockSha": "0000000000000000", "exportedAt": "2026-10-14T00:00:00.000Z" },
+      "pcs": [
+        { "name": "Pip Wobble", "first": "Pip", "playbook": "Veteran", "insight": 1, "prowess": 2, "resolve": 0,
+          "wont": ["eat the last biscuit", "skip the queue"], "vice": ["crosswords"], "friend": ["Marge Teacup", "Old Bert"], "rival": ["Nigel Sprocket"],
+          "extra": ["The kettle never boils for you"], "keyPressure": ["tea", "naps", "puzzles"] },
+        { "name": "Dot Crumble", "first": "Dot", "playbook": "Slider", "insight": 3, "prowess": 0, "resolve": 2,
+          "wont": [], "vice": [], "friend": ["Auntie Flan"], "rival": [], "extra": [], "keyPressure": [] },
+        { "name": "Moss", "playbook": "", "insight": 0, "prowess": 1, "resolve": 1,
+          "wont": ["[[Wiki Link|sing in public]]"], "vice": [], "friend": [], "rival": ["Captain Doily"], "extra": [] }
+      ],
+      "callbacks": [
+        { "text": "The bowls club wants its trophy back", "src": "the garden party" },
+        { "text": "Pip owes the baker", "src": "" },
+        "Marge Teacup's cat is still missing | last Tuesday",
+        { "text": "A goose follows the crew", "src": "the canal walk" }
+      ],
+      "cast": [
+        { "text": "The Teaspoons", "src": "hosting the fete" },
+        { "text": "Hat Society", "src": "" }
+      ],
+      "standing": [
+        { "faction": "The Teaspoons", "status": 1 },
+        { "faction": "Hat Society", "status": -2 },
+        { "faction": "Bowls Club", "status": 0 }
+      ],
+      "owed": [
+        { "text": "A dozen scones for the vicar", "src": "Pip, 01/10/2026" },
+        "Mow Auntie Flan's lawn | Dot, 05/10/2026"
+      ],
+      "npcs": [
+        { "name": "Marge Teacup", "role": "tea lady", "faction": "The Teaspoons", "district": "Puddleton", "glance": "a cardigan with pockets",
+          "say": ["\"More tea, dear?\"", "\"Mind the step.\""], "playedBy": "a placeholder actor", "mannerism": "dabs at the table" },
+        { "name": "Nigel Sprocket", "role": "rival gardener", "faction": "Bowls Club", "district": "Crumbhall", "glance": "", "say": [], "playedBy": "", "mannerism": "" },
+        { "name": "Captain Doily", "role": "", "faction": "Hat Society", "district": "", "glance": "a very tall hat", "say": ["\"Hats off.\""], "playedBy": "", "mannerism": "tips the hat" },
+        { "name": "Lonely Lou", "role": "nobody special", "faction": "", "district": "Lower Fluff", "glance": "", "say": [], "playedBy": "", "mannerism": "" }
+      ],
+      "names": { "first": ["Bunty", "Clem", "Hob", "Wren"], "family": ["Puddle", "Scone", "Thimble"] },
+      "clocks": [
+        { "name": "The Fete", "goal": "win the marrow prize", "faction": "The Teaspoons", "tier": 1, "district": "Puddleton", "segments": 6, "filled": 2, "beats": ["a", "b", "c", "d", "e", "f"], "status": "active" }
+      ]
+    }
+  }
+}

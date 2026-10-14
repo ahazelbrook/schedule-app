@@ -3,6 +3,8 @@
    (see HOSTING.md) so the page runs unchanged outside the claude.ai artifact. The db serves the
    `characters` collection, the shared `campaign/main` document (CAMPAIGN.md) and the `npcs` collection (CAST.md).
    window.claude.rules (list, import, saveHouse, deleteHouse) is the rules wiki's corpus (RULES.md).
+   window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay) is the GM tools'
+   API (GM.md): plain calls, never queued, cached or snapshotted here.
    Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network
    is unreachable, and writes queue (in order, in localStorage) until it is back. It also makes the hosted page
    installable (manifest, icons, service worker sw.js).
@@ -1002,6 +1004,29 @@
     deleteHouse: function (slug) { return api('DELETE', '/rules/house/' + encodeURIComponent(slug)); }
   };
 
+  /* ---------- gm: the GM tools (GM.md). GM only on the server (403 for anyone else); hosted build only. Plain calls
+     on the API: nothing here is queued, put in the offline snapshot or written to localStorage, and none of it goes
+     through the db layer. The GM page keeps its own copy of the pack (IndexedDB). ---------- */
+  var qs = function (k, v) { return k + '=' + encodeURIComponent(v); };
+  var gm = {
+    /* GET /api/gm/pack -> { version, parts: { name: { version, src, updatedAt, bytes } } }; opts.version: the cached
+       pack version, answered { version, unchanged: true } while it is still current */
+    pack: function (opts) { return api('GET', '/gm/pack' + (opts && opts.version ? '?' + qs('v', opts.version) : '')); },
+    /* GET /api/gm/pack?part=name -> { part, version, src, updatedAt, body }; opts.version -> { ..., unchanged: true } */
+    packPart: function (name, opts) { return api('GET', '/gm/pack?' + qs('part', name) + (opts && opts.version ? '&' + qs('v', opts.version) : '')); },
+    /* POST /api/gm/pack { part, src, body } -> { ok, part, version, bytes, unchanged, packVersion } */
+    importPart: function (req) { return api('POST', '/gm/pack', req || {}); },
+    /* DELETE /api/gm/pack?part=name -> { ok, part, packVersion } */
+    removePart: function (name) { return api('DELETE', '/gm/pack?' + qs('part', name)); },
+    /* GET /api/gm/state -> { doc, updatedAt }; PATCH merges (maps merge, null deletes) -> { doc, updatedAt } */
+    state: function () { return api('GET', '/gm/state'); },
+    patchState: function (patch) { return api('PATCH', '/gm/state', patch || {}); },
+    /* GET /api/gm/display?seq=N -> { seq, display, updatedAt } or { seq, unchanged: true } */
+    display: function (seq) { return api('GET', '/gm/display' + (seq !== undefined && seq !== null ? '?' + qs('seq', seq) : '')); },
+    /* PUT /api/gm/display { kind: blank | svg | npc | text, title, caption, svg | npcId | text } -> { seq, display, updatedAt } */
+    setDisplay: function (d) { return api('PUT', '/gm/display', d || {}); }
+  };
+
   /* ---------- window.claude ---------- */
   var uses = {};
   var makers = {
@@ -1014,7 +1039,8 @@
       if (!makers[name]) return Promise.resolve(null);
       return uses[name] || (uses[name] = makers[name]());
     },
-    rules: rules
+    rules: rules,
+    gm: gm
   };
 
   /* ---------- installable: manifest, icons, home-screen metas, service worker (hosted build only) ----------

@@ -6,3 +6,6 @@ app/checks/out/
 # markdown (RULES.md). The rules live in the D1 database, imported from the GM's PC, never in git.
 rules-src/
 rules-private/
+
+# GM pack: the generators' tables are GM-only table data; built by scripts/gm-pack.mjs, never committed.
+gm-private/

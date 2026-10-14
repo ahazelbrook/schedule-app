@@ -48,6 +48,21 @@ const SCHEMA = [
     doc TEXT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS npcs_campaign_updated ON npcs (campaign, updated_at)`,
+  `CREATE TABLE IF NOT EXISTS gm_pack (
+    campaign TEXT NOT NULL,
+    part TEXT NOT NULL,
+    version TEXT NOT NULL,
+    src TEXT NOT NULL DEFAULT '{}',
+    updated_at INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    PRIMARY KEY (campaign, part)
+  )`,
+  `CREATE TABLE IF NOT EXISTS gm_display (
+    campaign TEXT PRIMARY KEY,
+    seq INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    doc TEXT NOT NULL
+  )`,
 ];
 
 let ready = null; // Promise, per isolate
