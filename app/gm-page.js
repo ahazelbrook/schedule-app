@@ -264,11 +264,135 @@
   function makeGate() {
     var ok = [];
     return {
-      mark: function (svg) { ok.push(svg); if (ok.length > 4) ok.shift(); return svg; },
-      allows: function (d) { return isObj(d) && (d.kind !== 'svg' || (typeof d.svg === 'string' && ok.indexOf(d.svg) >= 0)); }
+      mark: function (svg) { ok.push(svg); if (ok.length > 8) ok.shift(); return svg; },
+      allows: function (d) { return isObj(d) && (d.kind !== 'svg' || (typeof d.svg === 'string' && ok.indexOf(d.svg) >= 0)); },
+      /* an ambient patch: a score (the only thing in it that carries a map) goes only if BOTH its svgs were marked; null clears */
+      allowsAmbient: function (p) {
+        if (!isObj(p)) return false;
+        if (!('score' in p) || p.score === null) return true;
+        return isObj(p.score) && typeof p.score.board === 'string' && typeof p.score.iso === 'string' && ok.indexOf(p.score.board) >= 0 && ok.indexOf(p.score.iso) >= 0;
+      }
     };
   }
   P.makeGate = makeGate;
+
+  /* ---------- the iPad panel: the ambient scenes, the crew sync, the score scene (AMBIENT-PLAN.md) ---------- */
+  /* The scenes the picker offers (ids mirror Pure.AMBIENT_SCENES in display-page.js and AMBIENT_SCENES in functions/_lib/gm.js). */
+  P.IPAD_SCENES = [
+    { id: 'harvest', label: 'The lair' }, { id: 'watch', label: 'City Watch feed' }, { id: 'duskwall', label: 'The city after dark' },
+    { id: 'board', label: 'Planning board', needs: 'score' }, { id: 'exploded', label: 'Score site, exploded', needs: 'score' },
+    { id: 'testcard', label: 'Please stand by', pinOnly: true }
+  ];
+  P.IPAD_INTERVALS = [4, 7, 10, 15];
+  P.IPAD_INTERVAL_DEFAULT = 7;
+  P.CREW_DEBOUNCE = 2000;
+  function clampN(v, lo, hi) { return Math.min(hi, Math.max(lo, Math.round(v))); }
+  /* the crew heat / wanted a campaign (or ambient) document holds, as whole numbers clamped to 0-9 / 0-4; null when it holds no
+     number for either */
+  function crewOf(doc) {
+    var c = isObj(doc) && isObj(doc.crew) ? doc.crew : null; if (!c) return null;
+    var h = typeof c.heat === 'number' && isFinite(c.heat), w = typeof c.wanted === 'number' && isFinite(c.wanted);
+    if (!h && !w) return null;
+    return { heat: clampN(h ? c.heat : 0, 0, 9), wanted: clampN(w ? c.wanted : 0, 0, 4) };
+  }
+  function sameCrew(a, b) { return !!a && !!b && a.heat === b.heat && a.wanted === b.wanted; }
+  P.crewOf = crewOf; P.sameCrew = sameCrew;
+  /* The heat / wanted sync. note(campaignDoc) says what the table holds; when it differs from what the server holds (`lastSent`,
+     learned from a send or adopted from the ambient document) and the ambient is not off, a send follows after `ms` of quiet
+     (restarted only when the target moves). One request in flight; a failure toasts once (until the next success) and the next
+     change retries. adopt(serverCrew, true) takes the server's value as the truth and corrects a stale one at once.
+     o = { send(crew) -> Promise, mode() -> 'auto' | 'pin' | 'off' | undefined, delay(fn, ms) -> handle, cancel(handle), toast(msg),
+           sent(response, crew), ms } */
+  function makeCrewSync(o) {
+    var st = { lastSent: null, target: null, pending: null, timer: null, inflight: false, toasted: false }, ms = o.ms == null ? P.CREW_DEBOUNCE : o.ms;
+    function clear() { if (st.timer !== null) { o.cancel(st.timer); st.timer = null; } st.pending = null; }
+    function wanted() { return !!st.target && !sameCrew(st.target, st.lastSent) && o.mode() !== 'off'; }
+    function evaluate(now) {
+      if (!wanted()) { clear(); return; }
+      if (now) { clear(); fire(); return; }
+      if (st.timer !== null && sameCrew(st.pending, st.target)) return;      /* already counting down to this value */
+      clear(); st.pending = st.target;
+      st.timer = o.delay(function () { st.timer = null; st.pending = null; fire(); }, ms);
+    }
+    function fire() {
+      if (st.inflight || !wanted()) return;
+      var crew = { heat: st.target.heat, wanted: st.target.wanted };
+      st.inflight = true;
+      Promise.resolve().then(function () { return o.send(crew); }).then(function (r) {
+        st.inflight = false; st.lastSent = crew; st.toasted = false;
+        if (o.sent) { try { o.sent(r, crew); } catch (e) {} }
+        evaluate(false);
+      }, function (e) {
+        st.inflight = false;
+        if (!st.toasted) { st.toasted = true; if (o.toast) o.toast('Could not send heat and wanted to the iPad: ' + (e && e.message || 'failed') + '. It will try again on the next change.'); }
+      });
+    }
+    return {
+      note: function (campDoc) { st.target = crewOf(campDoc); evaluate(false); },
+      adopt: function (serverCrew, fix) { st.lastSent = crewOf({ crew: serverCrew }); if (fix) evaluate(true); else evaluate(false); },
+      state: function () { return st; }
+    };
+  }
+  P.makeCrewSync = makeCrewSync;
+
+  /* "On the iPad now": the last display kind and title this page pushed or read */
+  function displayLine(d) {
+    if (!isObj(d)) return '';
+    var t = str(d.title).slice(0, 80);
+    if (d.kind === 'dark') return 'Lights out' + (t ? ' · ' + t : '');
+    if (d.kind === 'svg') return 'Map' + (t ? ' · ' + t : '');
+    if (d.kind === 'npc') return 'NPC' + (t ? ' · ' + t : '');
+    if (d.kind === 'text') return 'Text' + (t ? ' · ' + t : '');
+    return 'Nothing spotlit: the ambient plays';
+  }
+  P.displayLine = displayLine;
+  function scoreLine(score) {
+    if (!isObj(score)) return '';
+    var at = Date.parse(str(score.at)), when = '';
+    if (at) { var d = new Date(at); when = pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+    return [str(score.name) || 'Unnamed', (Array.isArray(score.reveal) ? score.reveal : []).map(str).join(', ') || 'public', when].filter(Boolean).join(' · ');
+  }
+  P.scoreLine = scoreLine;
+  /* ipadView(doc) -> what the panel draws from the server's ambient document (null or {} before there is one) */
+  function ipadView(doc) {
+    var d = isObj(doc) ? doc : {}, score = isObj(d.score) ? d.score : null;
+    var mode = d.mode === 'pin' || d.mode === 'off' ? d.mode : 'auto';
+    var scene = typeof d.scene === 'string' ? d.scene : null;
+    var iv = Math.round(Number(d.intervalMin)); if (!(iv >= 3 && iv <= 30)) iv = P.IPAD_INTERVAL_DEFAULT;
+    var intervals = P.IPAD_INTERVALS.slice(); if (intervals.indexOf(iv) < 0) { intervals.push(iv); intervals.sort(function (a, b) { return a - b; }); }
+    return {
+      mode: mode, scene: scene, intervalMin: iv, intervals: intervals, hasScore: !!score, scoreLine: scoreLine(score),
+      tiles: P.IPAD_SCENES.map(function (s) {
+        var noScore = s.needs === 'score' && !score;
+        return { id: s.id, label: s.label, disabled: noScore, pressed: mode === 'pin' && scene === s.id, note: noScore ? 'needs a score scene' : s.pinOnly ? 'pin only' : '' };
+      })
+    };
+  }
+  P.ipadView = ipadView;
+
+  /* The score scene (Location panel, "Set as score scene"): the board and the exploded site, rendered HERE from the roll on the
+     PLAYER layer at the revealed bands, run through the same hidden-name scan as Show on iPad. The board is the plan on the board
+     theme; if that names a hidden room it is redrawn as rings (clean) and `rings` is true; the iso never falls back: if it leaks,
+     this throws (e.leak). Only player-safe fields go out: the place name and district. The target stays '' (the legend does not
+     print it, and the target room is the secret). */
+  function scoreScene(roll, map, render) {
+    if (!isObj(map) || map.layer !== 'player') throw new Error('Only the player layer can be a score scene. Switch Layer to Player first.');
+    if (!roll || typeof render !== 'function') throw new Error('Roll a location first.');
+    var reveal = revealList(map);
+    function leak() { var e = new Error(P.LEAK_MSG); e.leak = true; return e; }
+    var board = render(roll, { view: 'plan', theme: 'board', layer: 'player', reveal: reveal, width: 1600 }), view = 'plan';
+    if (leaks(board.svg, roll, reveal).length) {
+      board = render(roll, { view: 'rings', theme: 'board', layer: 'player', reveal: reveal, width: 1600 }); view = 'rings';
+      if (leaks(board.svg, roll, reveal).length) throw leak();
+    }
+    var iso = render(roll, { view: 'iso', theme: 'blueprint', legend: false, layer: 'player', reveal: reveal, width: 1600 });
+    if (leaks(iso.svg, roll, reveal).length) throw leak();
+    return {
+      reveal: reveal, view: view, rings: view === 'rings', board: board.svg, iso: iso.svg,
+      score: { name: str(roll.name).slice(0, 200), district: str(roll.district).slice(0, 200), target: '', reveal: reveal, view: view, board: board.svg, iso: iso.svg }
+    };
+  }
+  P.scoreScene = scoreScene;
 
   /* a key press on #gm -> an action, or null. ev: { key, ctrlKey, altKey, metaKey, typing, view }
      view 'situations': 1-4 roll a situation (5-9 do nothing); anything else (Classic): 1-9 roll a single table */
@@ -289,6 +413,8 @@
       case 'm': return { type: 'capture', bucket: 'm' };
       case 'l': return { type: 'last' };
       case 'h': return { type: 'blank' };
+      case 'i': return { type: 'panel', panel: 'ipad' };
+      case '0': return { type: 'clear' };
       case 'escape': return { type: 'esc' };
     }
     return null;
@@ -447,6 +573,10 @@
   var camp = null;               /* the latest campaign document from boot */
   var gate = makeGate();
   var lastSaver = null;          /* the newest session's saver: pagehide sends what it still holds */
+  var keptApi = null;            /* the page api of the last open() that found the GM: the heat sync outlives the page (campaign() keeps arriving) */
+  /* The ambient document as the server holds it (the truth), what the iPad was last told to spotlight, and the panel's state.
+     Module-level, not in S: the heat / wanted sync keeps running while the page is closed. */
+  var AM = { doc: null, seq: null, updatedAt: null, shown: null, loaded: false, busy: 0, error: '', displayRead: false };
 
   function toast(msg, bad) { var A = W.B68; if (A && A.toast) A.toast(msg, !!bad); }
   function errText(e) { return e && e.message || String(e || 'unknown error'); }
@@ -480,6 +610,7 @@
   var kvDel = function (k) { return idbDo('readwrite', function (s) { s.delete(k); }); };
   /* every pack:* key, whoever cached it; the database is only opened if it exists (no empty database for a player) */
   function purge() {
+    keptApi = null; AM.doc = null; AM.shown = null; AM.loaded = false; AM.seq = null;
     try { W.localStorage.removeItem(STICKY); } catch (e) {}
     if (!W.indexedDB) return Promise.resolve(0);
     var exists = typeof W.indexedDB.databases === 'function'
@@ -620,6 +751,7 @@
       if (!gmApi()) { screen(note('GM tools are available on the hosted app.', 'Open the hosted site, signed in as the GM, to use the console, the location generator and the iPad display.')); me.status = 'off'; return; }
       if (!(api.isGM && api.isGM())) { if (api.roleKnown && api.roleKnown()) purge(); screen(note('GM only.', 'This page holds the GM’s tools. Sign in as the GM to use it.')); me.status = 'off'; return; }
       me.me = (api.me && api.me()) || 'gm';
+      keptApi = api;
       camp = api.campaign ? api.campaign() : camp;
       return load();
     }).catch(function (e) { if (S === me) screen(note('The GM tools could not open.', errText(e), true)); });
@@ -731,9 +863,10 @@
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready';
     layout(); redrawAll(); subscribeNpcs();
+    if (S.panel === 'ipad') loadAmbient();
   }
   function layout() {
-    var segs = [['console', 'Console'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['state', 'State']];
+    var segs = [['console', 'Console'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['ipad', 'iPad'], ['state', 'State']];
     S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '" data-view="' + esc(S.view) + '">' +
       '<div class="gm-head"><div class="gm-title"><p class="gm-kick">GM tools <span id="gm-save" class="gm-save" role="status"></span></p>' + '<h1 class="gm-h" tabindex="-1">The console</h1><p class="gm-exp" id="gm-exp"></p></div>' +
       '<div class="gm-acts"><a class="btn sm primary" href="#display" id="gm-display" title="The players’ screen: open this on the iPad">Display</a>' + '<button type="button" class="btn sm" data-gm="note">Export tonight’s note</button><button type="button" class="btn sm" data-gm="update">Update pack</button>' + '<button type="button" class="btn sm" data-gm="forget">Forget GM data on this device</button></div></div>' +
@@ -744,8 +877,8 @@
       '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"><span class="gm-lab">Scene</span>' + '<span class="gm-scene-chips" id="gm-scene-chips"></span></button>' +
       '<div class="gm-controls" id="gm-controls"></div><div class="gm-buttons" id="gm-buttons"></div><div class="gm-singles" id="gm-singles"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      [['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['rules', 'Rules', 'T']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
-      '</div><div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div></section>' +
+      [['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['rules', 'Rules', 'T'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
+      '</div><div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
       '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button></div>';
@@ -760,7 +893,7 @@
   }
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); syncPanels(); renderView(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderRail(); renderCapture(); syncSave();
+    syncHead(); syncPanels(); renderView(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderIpad(); renderRail(); renderCapture(); syncSave();
   }
   function syncHead() {
     var e = $q('#gm-exp'); if (!e) return;
@@ -782,6 +915,7 @@
     S.panel = p; if (S.seg !== 'console' && S.seg !== 'state') S.seg = 'side';
     try { W.localStorage.setItem('b68.gm.panel', p); } catch (e) {}
     syncPanels();
+    if (p === 'ipad') loadAmbient();
   }
 
   /* ---------- the console: Situations (the default) or Classic (the nine single tables) ---------- */
@@ -967,8 +1101,9 @@
         '<button type="button" class="btn primary" data-gm="draw">Draw</button></div>' +
         '<div class="gm-map" id="gm-map"></div><p class="gm-warn" id="gm-mapwarn" role="status"></p>' +
         '<div class="gm-map-acts"><button type="button" class="btn sm primary" data-gm="ipad"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + '>Show on iPad</button>' +
-        '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button><button type="button" class="btn sm" data-gm="blankipad">Blank the iPad</button></div>' + '</section>';
-    } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what is GM only.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad">Blank the iPad</button></p>';
+        '<button type="button" class="btn sm" data-gm="scorescene"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + (mu.layer === 'player' ? ' title="The planning board and the exploded site on the iPad, from this roll at these bands"' : '') + '>Set as score scene</button>' +
+        '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button><button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></div>' + '</section>';
+    } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what is GM only.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></p>';
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
     if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="location" data-h="' + esc(x._id) + '"' + (cur && cur.hid === x._id ? ' aria-current="true"' : '') + '>' + esc(x.label) + '</button>'; }).join('') + '</div>';
     box.innerHTML = h;
@@ -997,7 +1132,7 @@
   function pushDisplay(d) {
     var g = gmApi(); if (!g) return Promise.reject(new Error('The display needs the hosted app.'));
     if (!gate.allows(d)) return Promise.reject(new Error('Only a player-layer map made on this page can go to the iPad.'));
-    return Promise.resolve().then(function () { return g.setDisplay(d); });
+    return Promise.resolve().then(function () { return g.setDisplay(d); }).then(function (r) { noteShown(d); return r; });
   }
   /* more than the public band is going to the players: say which, and ask */
   function confirmReveal(reveal, what) {
@@ -1023,10 +1158,83 @@
     try { ps = L.playerSummary(S.locRoll, reveal); } catch (e) { toast(errText(e), true); return; }
     pushDisplay({ kind: 'text', title: plainText(ps.title).slice(0, 2000), caption: str(S.locRoll.district || ''), text: plainText(ps.text).slice(0, 2000) }).then(function () { toast('On the iPad: the street description.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
   }
-  function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('The iPad is blank.'); }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); }); }
+  /* Clear -> ambient: nothing spotlit, the ambient scene plays. Lights out: true black. */
+  function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('Cleared: the iPad plays the ambient scene.'); }, function (e) { toast('Could not clear the iPad: ' + errText(e), true); }); }
+  function darkIpad() { pushDisplay({ kind: 'dark' }).then(function () { toast('Lights out on the iPad.'); }, function (e) { toast('Could not turn the lights out: ' + errText(e), true); }); }
+
+  /* ---------- the iPad panel (I): the ambient scenes. The server's document is the truth ---------- */
+  function noteShown(d) { if (isObj(d)) { AM.shown = { kind: str(d.kind), title: str(d.title) }; renderIpad(); } }
+  function adoptAmbient(r) {
+    if (!isObj(r) || !isObj(r.doc)) return false;
+    if (typeof r.seq === 'number' && typeof AM.seq === 'number' && r.seq < AM.seq) return false;     /* an older answer landing late */
+    AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null; AM.loaded = true; AM.error = '';
+    return true;
+  }
+  /* GET the ambient document (and, the first time, what the iPad shows). Also corrects a stale crew once the truth is known. */
+  function loadAmbient() {
+    var g = gmApi(); if (!g || typeof g.ambient !== 'function') return Promise.resolve();
+    var me = S, first = !AM.displayRead;
+    return Promise.resolve().then(function () { return Promise.all([g.ambient(), first && typeof g.display === 'function' ? g.display().then(function (r) { return r; }, function () { return null; }) : null]); }).then(function (res) {
+      if (adoptAmbient(res[0])) { crewSync.note(camp); crewSync.adopt(AM.doc.crew, true); }
+      var dr = res[1];
+      if (dr && isObj(dr.display)) { AM.displayRead = true; AM.shown = AM.shown || { kind: str(dr.display.kind), title: str(dr.display.title) }; }
+      if (S === me) renderIpad();
+    }, function (e) {
+      AM.error = errText(e);
+      if (S === me) { renderIpad(); toast('Could not read the iPad settings: ' + AM.error, true); }
+    });
+  }
+  /* PATCH the ambient document; the response is drawn (a refused change is a toast and the panel keeps the server's value) */
+  function patchAmbient(p) {
+    var g = gmApi(); if (!g || typeof g.patchAmbient !== 'function') { toast('The iPad settings need the hosted app.', true); return Promise.resolve(null); }
+    if (!gate.allowsAmbient(p)) { toast('Only a player-layer score made on this page can go to the iPad.', true); return Promise.resolve(null); }
+    AM.busy++; renderIpad();
+    return Promise.resolve().then(function () { return g.patchAmbient(p); }).then(function (r) {
+      AM.busy--; if (adoptAmbient(r)) crewSync.adopt(AM.doc.crew, false); renderIpad(); return r;
+    }, function (e) {
+      AM.busy--; renderIpad(); toast('Could not change the iPad: ' + errText(e), true); return null;
+    });
+  }
+  /* the heat / wanted sync: campaign(doc) feeds it (see makeCrewSync) */
+  var crewSync = makeCrewSync({
+    send: function (crew) { var g = (keptApi && keptApi.gm && keptApi.gm()) || (W.claude && W.claude.gm); if (!g || typeof g.patchAmbient !== 'function') return Promise.reject(new Error('the GM tools are not available')); return g.patchAmbient({ crew: crew }); },
+    mode: function () { return AM.doc && isObj(AM.doc) ? AM.doc.mode : undefined; },
+    delay: function (fn, ms) { return setTimeout(fn, ms); }, cancel: function (h) { clearTimeout(h); },
+    toast: function (m) { toast(m, true); },
+    sent: function (r) { if (adoptAmbient(r)) renderIpad(); }
+  });
+  function renderIpad() {
+    var box = $q('#gm-ipad'); if (!box) return;
+    var v = ipadView(AM.doc), busy = AM.busy > 0, off = !AM.loaded;
+    function seg(k, label) { return '<button type="button" class="chip" data-gm="ambmode" data-v="' + k + '" aria-pressed="' + (v.mode === k) + '"' + (off || busy ? ' disabled' : '') + '>' + label + '</button>'; }
+    var h = '<section class="gm-box gm-ipad-now"><h3 class="gm-band">On the iPad now</h3><p class="gm-ipad-line" id="gm-ipad-now">' + (AM.shown ? esc(displayLine(AM.shown)) : '<span class="gm-dim">Not known yet: push something, or clear it.</span>') + '</p>' +
+      '<div class="gm-ipad-acts"><button type="button" class="btn primary" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' +
+      '<button type="button" class="btn" data-gm="darkipad" title="True black until you push something">Lights out</button></div></section>';
+    h += '<section class="gm-box gm-ipad-amb"><h3 class="gm-band">Ambient scenes</h3><div class="gm-ipad-body">';
+    if (!AM.loaded) h += '<p class="gm-dim" role="status">' + (AM.error ? 'Could not read the settings: ' + esc(AM.error) : 'Loading the iPad settings…') + '</p>' + (AM.error ? '<p><button type="button" class="btn sm" data-gm="ambretry">Try again</button></p>' : '');
+    h += '<div class="gm-field"><span class="gm-lab">When nothing is spotlit</span><div class="seg" role="group" aria-label="Ambient mode">' + seg('off', 'Off') + seg('auto', 'Auto') + seg('pin', 'Pin') + '</div></div>' +
+      '<div class="gm-field"><span class="gm-lab">Scene' + (v.mode === 'pin' ? '' : ' (tap one to pin it)') + '</span><div class="gm-ipad-tiles" role="group" aria-label="Scenes">' + v.tiles.map(function (s) {
+        return '<button type="button" class="gm-ipad-tile" data-gm="ambscene" data-id="' + esc(s.id) + '" aria-pressed="' + s.pressed + '"' + (s.disabled || off || busy ? ' disabled' : '') + '><b>' + esc(s.label) + '</b>' + (s.note ? '<small>' + esc(s.note) + '</small>' : '') + '</button>';
+      }).join('') + '</div></div>' +
+      '<div class="gm-row"><label class="gm-field" for="gm-amb-int"><span class="gm-lab">Auto changes every</span><select id="gm-amb-int" data-ambint="1"' + (off || busy ? ' disabled' : '') + '>' + v.intervals.map(function (n) { return '<option value="' + n + '"' + (n === v.intervalMin ? ' selected' : '') + '>' + n + ' min</option>'; }).join('') + '</select></label>' +
+      '<button type="button" class="btn" data-gm="ambskip"' + (off || busy || v.mode !== 'auto' ? ' disabled' : '') + ' title="Auto mode only">Next scene</button></div></div></section>';
+    h += '<section class="gm-box gm-ipad-score"><h3 class="gm-band">Score scene</h3><div class="gm-ipad-body"><p class="gm-ipad-line" id="gm-ipad-score">' + (v.hasScore ? esc(v.scoreLine) : '<span class="gm-dim">None set. Use Set as score scene in the Location panel.</span>') + '</p>' +
+      '<button type="button" class="btn sm" data-gm="clearscore"' + (!v.hasScore || off || busy ? ' disabled' : '') + '>Clear score</button></div></section>';
+    box.innerHTML = h;
+  }
+  function setScoreScene() {
+    if (!S || !S.locRoll) { toast('Roll a location first.', true); return; }
+    var built;
+    try { built = scoreScene(S.locRoll, mapUi(), W.B68Map && W.B68Map.render); } catch (e) { toast(errText(e), true); return; }
+    if (!confirmReveal(built.reveal, 'This score scene')) return;
+    gate.mark(built.board); gate.mark(built.iso);
+    patchAmbient({ score: built.score }).then(function (r) {
+      if (r) toast(built.rings ? 'Score scene set. The plan would name a hidden room, so the board uses rings.' : 'Score scene set: ' + built.score.name + '.');
+    });
+  }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
 
-  var SIDE = ['location', 'scenes', 'engagement', 'npc', 'rules'];
+  var SIDE = ['location', 'scenes', 'engagement', 'npc', 'rules', 'ipad'];
   /* ---------- the street scene roller (S) and the engagement roll (E): side panels ---------- */
   function genLinesHtml(lines) {
     return (lines || []).map(function (l) { return l.kind === 'chips' ? chipsHtml(l.chips) : linesHtml([l], md); }).join('');
@@ -1384,6 +1592,7 @@
     else if (a.type === 'capture') arm(a.bucket, true);
     else if (a.type === 'last') fileLast();
     else if (a.type === 'blank') blank();
+    else if (a.type === 'clear') blankIpad();
   }
   function onClick(ev) {
     var b = ev.target.closest && ev.target.closest('[data-gm]'); if (!b || !S || !S.root.contains(b)) return;
@@ -1429,6 +1638,13 @@
       case 'ipad': showOnIpad(); break;
       case 'pushtext': pushText(); break;
       case 'blankipad': blankIpad(); break;
+      case 'darkipad': darkIpad(); break;
+      case 'scorescene': setScoreScene(); break;
+      case 'ambretry': loadAmbient(); break;
+      case 'ambmode': { var am = b.getAttribute('data-v'); if (am === 'pin') patchAmbient({ mode: 'pin', scene: AM.doc && ipadView(AM.doc).scene || 'harvest' }); else patchAmbient({ mode: am }); break; }
+      case 'ambscene': patchAmbient({ mode: 'pin', scene: b.getAttribute('data-id') }); break;
+      case 'ambskip': patchAmbient({ skip: true }); break;
+      case 'clearscore': patchAmbient({ score: null }); break;
       case 'dlsvg': if (!S.map) toast('Draw the map first.', true); else if (S.map.layer === 'player' && S.map.leak) toast(P.LEAK_MSG, true); else save(slug(S.locRoll && S.locRoll.name) + '-' + S.map.view + '-' + S.map.theme + '-' + S.map.layer + '.svg', S.map.svg); break;
       case 'dlnote': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.md', W.B68GmLocation.noteBody(S.locRoll, { date: dmy(new Date()) })); break;
       case 'dlcanvas': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.canvas', W.B68GmLocation.canvas(S.locRoll, part('location'))); break;
@@ -1446,6 +1662,7 @@
     if (t.id === 'gm-file') { readPackFile(t.files && t.files[0]); return; }
     if (t.hasAttribute('data-ctl')) { if (ev.type === 'change' || t.tagName === 'SELECT') setLive(t.getAttribute('data-ctl'), t.value); return; }
     if (ev.type !== 'change') return;
+    if (t.hasAttribute('data-ambint')) { patchAmbient({ intervalMin: Math.round(+t.value) }); return; }
     if (t.hasAttribute('data-loc')) { var l = {}; l[t.getAttribute('data-loc')] = t.type === 'checkbox' ? t.checked : t.value; patch({ loc: { ui: l } }); }
     else if (t.hasAttribute('data-map')) setMap(t.getAttribute('data-map'), t.value);
     else if (t.hasAttribute('data-scn')) { var sc = {}; sc[t.getAttribute('data-scn')] = t.value; patch({ scn: { ui: sc } }); }
@@ -1465,14 +1682,21 @@
     if (!wire.global) {
       wire.global = true;
       document.addEventListener('keydown', onKey, true);
-      W.addEventListener('focus', refetch);
+      W.addEventListener('focus', function () { refetch(); if (S && S.status === 'ready' && S.panel === 'ipad') loadAmbient(); });
       /* leaving or hiding the tab: what is pending goes now, as a keepalive request (also from a session already closed) */
-      document.addEventListener('visibilitychange', function () { if (document.hidden) { if (lastSaver) lastSaver.beacon(); } else if (S) refetch(); });
+      document.addEventListener('visibilitychange', function () { if (document.hidden) { if (lastSaver) lastSaver.beacon(); } else if (S) { refetch(); if (S.status === 'ready' && S.panel === 'ipad') loadAmbient(); } });
       W.addEventListener('pagehide', function () { if (lastSaver) lastSaver.beacon(); });
     }
   }
 
-  function campaign(doc) { camp = isObj(doc) ? doc : null; if (S && S.status === 'ready') renderRail(); }
+  /* the table changed: redraw the rail, and keep the iPad's heat / wanted in step (only once the GM has opened this page: the
+     campaign document reaches every signed-in person, and only the GM may write the ambient) */
+  function campaign(doc) {
+    camp = isObj(doc) ? doc : null;
+    if (S && S.status === 'ready') renderRail();
+    var api = (S && S.api) || keptApi;
+    if (api && api.isGM && api.isGM() === true && keptApi) crewSync.note(camp);
+  }
 
   return {
     open: open, close: close, campaign: campaign, purge: purge,
@@ -1480,6 +1704,7 @@
     _pure: P,
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */
     _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer }, panel: S.panel, seg: S.seg, view: S.view } : null; },
-    _pushDisplay: function (d) { return pushDisplay(d); }
+    _pushDisplay: function (d) { return pushDisplay(d); },
+    _ambient: function () { return { doc: AM.doc, shown: AM.shown, loaded: AM.loaded, crew: crewSync.state().lastSent }; }
   };
 });

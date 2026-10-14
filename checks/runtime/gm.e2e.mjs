@@ -90,7 +90,7 @@ try {
   if (!ready) throw new Error('server not ready:\n' + serverLog);
   if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const errors = [];
   async function open(user, hash, { width = 1280, height = 900, mobile = false, ctx = null } = {}) {
     const c = ctx || await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile, deviceScaleFactor: mobile ? 2 : 1, acceptDownloads: true });
@@ -235,7 +235,46 @@ try {
   const ids = (s) => String(s || '').replace(/b68m\d+-/g, 'b68m-');   // the kit numbers its ids per render
   check(!!disp && disp.display.kind === 'svg' && ids(disp.display.svg) === ids(want) && /working/.test(disp.display.caption), 'Show on iPad: the display holds the player-layer render with the reveal' + (disp ? ' (' + disp.display.caption + ')' : ' (nothing sent)'));
   await G.page.click('[data-gm="blankipad"]');
-  check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'blank', 5000), 'Blank the iPad: the display is blank');
+  check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'blank', 5000), 'Clear → ambient: the display is blank');
+  check(!(await G.page.evaluate(() => /Blank the iPad/.test(document.getElementById('gm-page').textContent))) && /Clear → ambient/.test(await G.page.textContent('#gm-loc [data-gm="blankipad"]')), 'the old "Blank the iPad" name is gone');
+
+  /* ---- Set as score scene (Location panel), then the iPad panel (I): Lights out, Clear, mode, scenes, the score ---- */
+  const ambientDoc = async () => (await api('GET', '/gm/ambient', GM)).json;
+  const rollName = await G.page.evaluate(() => window.B68GmPage._state().locRoll.name);
+  check(!(await G.page.$eval('[data-gm="scorescene"]', (b) => b.disabled)), 'Set as score scene is on for the player layer, beside Show on iPad');
+  await G.page.click('[data-gm="scorescene"]');
+  const sc = await until(async () => { const d = await ambientDoc(); return d.doc && d.doc.score ? d.doc.score : null; }, 8000);
+  check(!!sc && sc.name === rollName && sc.target === '' && sc.reveal.includes('working') && /^<svg/.test(sc.board) && /^<svg/.test(sc.iso) && (sc.view === 'plan' || sc.view === 'rings'),
+    'Set as score scene: the server holds the player-layer board and iso for ' + rollName + (sc ? ' (' + sc.view + ', ' + sc.reveal.join('+') + ')' : ' (nothing stored)'));
+  const hiddenNow = await G.page.evaluate(() => { const r = window.B68GmPage._state().locRoll, pub = r.rooms.filter((x) => x.band === 'public' || x.band === 'working').map((x) => x.name); return r.rooms.filter((x) => !pub.includes(x.name)).map((x) => x.name); });
+  check(!!sc && !hiddenNow.some((n) => new RegExp('(^|[^a-z0-9])' + n.toLowerCase().replace(/[^a-z0-9 ]/g, '.') + '([^a-z0-9]|$)').test((' ' + sc.board + ' ' + sc.iso).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').toLowerCase())), 'the stored score svgs name no hidden room');
+  await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  await G.page.keyboard.press('i');
+  check(await G.page.$eval('#gm-ipad', (p) => !p.hidden) && await G.page.waitForSelector('#gm-ipad .gm-ipad-tile:not([disabled])[data-id="board"]', { timeout: 8000 }).then(() => true, () => false), 'I opens the iPad panel; the score scenes are open now that a score is set');
+  check((await G.page.textContent('#gm-ipad-score')).includes(rollName), 'the score line names the roll');
+  check((await G.page.$$('#gm-ipad .gm-ipad-tile')).length === 6, 'six scenes in the picker');
+  await G.page.click('#gm-ipad [data-gm="darkipad"]');
+  check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'dark', 5000), 'Lights out: the display is dark');
+  check(/Lights out/.test(await G.page.textContent('#gm-ipad-now')), 'On the iPad now says so');
+  await G.page.click('#gm-ipad [data-gm="blankipad"]');
+  check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'blank', 5000), 'Clear → ambient in the panel: blank');
+  await G.page.click('#gm-ipad [data-gm="darkipad"]'); await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'dark', 5000);
+  await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  await G.page.keyboard.press('0');
+  check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'blank', 5000), 'key 0 clears to ambient');
+  await G.page.click('#gm-ipad [data-gm="ambscene"][data-id="board"]');
+  check(!!(await until(async () => { const d = (await ambientDoc()).doc; return d.mode === 'pin' && d.scene === 'board' ? d : null; }, 5000)) && await G.page.$eval('#gm-ipad [data-id="board"]', (b) => b.getAttribute('aria-pressed') === 'true'), 'tapping the board pins it on the server and the panel shows it');
+  await G.page.click('#gm-ipad [data-gm="ambmode"][data-v="auto"]');
+  check(!!(await until(async () => (await ambientDoc()).doc.mode === 'auto', 5000)), 'Auto');
+  await G.page.selectOption('#gm-amb-int', '15');
+  check(!!(await until(async () => (await ambientDoc()).doc.intervalMin === 15, 5000)), 'the interval is 15 min');
+  const skip0 = (await ambientDoc()).doc.skip || 0;
+  await G.page.click('#gm-ipad [data-gm="ambskip"]');
+  check(!!(await until(async () => ((await ambientDoc()).doc.skip || 0) === skip0 + 1, 5000)), 'Next scene bumps the skip counter');
+  await G.page.click('#gm-ipad [data-gm="clearscore"]');
+  check(!!(await until(async () => !(await ambientDoc()).doc.score, 5000)) && await G.page.$eval('#gm-ipad [data-id="board"]', (b) => b.disabled), 'Clear score: gone on the server, and the score scenes close');
+  await G.page.keyboard.press('b');
+  check(await G.page.$eval('#gm-loc', (p) => !p.hidden), 'B is back on the Location panel');
   // the street description: with Layer back on GM the working tick no longer counts; it goes as plain text
   await G.page.click('[data-gm="layer"][data-v="gm"]');
   await G.page.click('[data-gm="pushtext"]');
@@ -375,6 +414,8 @@ try {
   check(await Q.page.evaluate(() => localStorage.getItem('b68.gm.sticky') === null), 'and the sticky copy is gone');
 
   check(!errors.length, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 5).join(' | ') : ''));
+  /* an ambient scene may still be loading in the display's frame: closing rejects that navigation, which is not a failure */
+  process.on('unhandledRejection', (e) => { if (!(e && e.name === 'TargetClosedError')) { console.log('FAIL ' + (e && e.stack || e)); process.exit(1); } });
   await browser.close();
 } catch (e) {
   failed++; console.log('FAIL ' + (e && e.stack || e));

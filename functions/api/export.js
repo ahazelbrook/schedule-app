@@ -6,7 +6,7 @@
 // The rules wiki (the `rules` table, RULES.md) is deliberately not in it: the rulebook text is not ours to put in a
 // file that gets shared, and the GM re-imports it from their own copy. The GM tools (GM.md) are left out the same way:
 // the pack (`gm_pack`), the GM state (the `campaigns` row '<CAMPAIGN>#gm': only the row id = CAMPAIGN is read here)
-// and the display (`gm_display`).
+// the display (`gm_display`) and the ambient scenes (`gm_ambient`).
 
 import { getDb } from '../_lib/db.js';
 import { roleFor } from '../_lib/auth.js';

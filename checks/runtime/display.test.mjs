@@ -422,6 +422,172 @@ await test('poller: an onData that throws does not stop polling', async () => {
   r.poller.start(); await r.c.advance(0); await r.c.advance(2000); assert.equal(r.calls.length, 2); r.poller.stop();
 });
 
+/* ---------- the poller with the ambient part (GET /api/gm/display?seq=N&aseq=M) ---------- */
+const aok = (seq, aseq, doc, display) => ({ seq, display: display || { kind: 'blank' }, updatedAt: '2026-10-17T09:00:00.000Z', ambient: doc ? { seq: aseq, doc, updatedAt: '2026-10-17T09:00:01.000Z' } : { seq: aseq, unchanged: true } });
+await test('poller: fetch gets both seqs; the first call has neither, then the ones it holds', async () => {
+  const calls = []; const r = rig({ fetch: (seq, aseq) => { calls.push([seq, aseq]); return Promise.resolve(r.g.res); } });
+  r.g.res = aok(4, 2, { mode: 'pin', scene: 'duskwall' });
+  r.poller.start(); await r.c.advance(0);
+  r.g.res = { seq: 4, unchanged: true, ambient: { seq: 2, unchanged: true } };
+  await r.c.advance(2000);
+  assert.deepEqual(calls, [[null, null], [4, 2]]); assert.equal(r.poller.seq(), 4); assert.equal(r.poller.aseq(), 2); r.poller.stop();
+});
+await test('poller: a display with an ambient doc calls onAmbient (first) then onData; both unchanged calls neither', async () => {
+  const order = []; const r = rig({ onAmbient: (doc, aseq, at) => order.push(['amb', doc.mode, aseq, at]), onData: (d, seq) => order.push(['data', d.kind, seq]) });
+  r.g.handler = () => Promise.resolve(aok(7, 3, { mode: 'off' }, { kind: 'text', text: 'x' }));
+  r.poller.start(); await r.c.advance(0);
+  assert.deepEqual(order, [['amb', 'off', 3, '2026-10-17T09:00:01.000Z'], ['data', 'text', 7]]);
+  r.g.handler = () => Promise.resolve({ seq: 7, unchanged: true, ambient: { seq: 3, unchanged: true } });
+  await r.c.advance(2000); assert.equal(order.length, 2, 'nothing redrawn'); r.poller.stop();
+});
+await test('poller: an ambient-only change carries the display along but must not redraw the spotlight', async () => {
+  const order = []; const r = rig({ onAmbient: (doc) => order.push(['amb', doc.mode]), onData: (d, seq) => order.push(['data', seq]) });
+  r.g.handler = () => Promise.resolve(aok(5, 1, { mode: 'auto' }, { kind: 'svg', svg: '<svg/>' }));
+  r.poller.start(); await r.c.advance(0);
+  r.g.handler = () => Promise.resolve(aok(5, 2, { mode: 'pin', scene: 'harvest' }, { kind: 'svg', svg: '<svg/>' }));
+  await r.c.advance(2000);
+  assert.deepEqual(order, [['amb', 'auto'], ['data', 5], ['amb', 'pin']]); assert.equal(r.poller.aseq(), 2);
+  r.g.handler = () => Promise.resolve(aok(6, 2, null, { kind: 'blank' }));       // a display change with the ambient unchanged
+  await r.c.advance(2000); assert.deepEqual(order.slice(3), [['data', 6]]); r.poller.stop();
+});
+await test('poller: the old shapes still work (no ambient part): seq alone, and the full display without one', async () => {
+  const order = []; const r = rig({ onAmbient: () => order.push('amb'), onData: (d, seq) => order.push(seq) });
+  r.g.handler = (seq) => Promise.resolve(seq === null ? ok(2, { kind: 'blank' }) : { seq: 2, unchanged: true });
+  r.poller.start(); await r.c.advance(0); await r.c.advance(2000);
+  assert.deepEqual(order, [2]); assert.equal(r.poller.aseq(), null); assert.equal(r.poller.state(), 'live'); r.poller.stop();
+});
+await test('poller: unchanged with an ambient part is a valid answer; a malformed ambient part is ignored, never an error', async () => {
+  const order = []; const r = rig({ onAmbient: (d) => order.push(['amb', d]), onData: (d, seq) => order.push(['data', seq]) });
+  r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true, ambient: { seq: 1, unchanged: true } });
+  r.poller.start(); await r.c.advance(0); assert.equal(r.poller.state(), 'live'); assert.equal(r.poller.aseq(), 1); assert.deepEqual(order, []);
+  for (const bad of [null, 'x', 7, [], { seq: 'x', doc: {} }, { seq: 2 }, { seq: 2, doc: 'no' }, { doc: {} }]) {
+    r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true, ambient: bad }); await r.c.advance(2000);
+    assert.equal(r.poller.state(), 'live', JSON.stringify(bad)); assert.equal(r.poller.aseq(), 1, 'a bad part did not move the seq: ' + JSON.stringify(bad));
+  }
+  r.g.handler = () => Promise.resolve({ seq: 2, display: { kind: 'blank' }, ambient: { seq: 'junk' } }); await r.c.advance(2000);
+  assert.deepEqual(order, [['data', 2]], 'the spotlight still draws'); assert.equal(r.poller.fails(), 0); r.poller.stop();
+});
+await test('poller: an onAmbient that throws does not stop the display from drawing', async () => {
+  const seen = []; const r = rig({ onAmbient: () => { throw new Error('plan failed'); }, onData: (d, seq) => seen.push(seq) });
+  r.g.handler = () => Promise.resolve(aok(3, 1, { mode: 'auto' })); r.poller.start(); await r.c.advance(0);
+  assert.deepEqual(seen, [3]); assert.equal(r.poller.state(), 'live'); r.poller.stop();
+});
+
+/* ---------- lights out, the crew and the score messages ---------- */
+await test('viewModel: dark is its own kind (title and caption only); anything extra is dropped', () => {
+  assert.deepEqual(P.viewModel({ kind: 'dark', title: 'Break', caption: 'back at nine', svg: '<svg/>', text: 'x', npcId: 'y' }), { kind: 'dark', title: 'Break', caption: 'back at nine' });
+  assert.deepEqual(P.viewModel({ kind: 'dark' }), { kind: 'dark', title: '', caption: '' });
+  assert.equal(P.viewModel({ kind: 'blank' }).kind, 'blank'); assert.equal(P.viewModel({ kind: 'darker' }).kind, 'blank');
+});
+await test('crewMessage / crewChanged: post when the crew exists and differs from what the scene was told', () => {
+  assert.equal(P.crewMessage(P.ambientPlan({})), null); assert.equal(P.crewMessage(null), null);
+  assert.deepEqual(P.crewMessage(P.ambientPlan({ crew: { heat: 12, wanted: 2 } })), { type: 'b68:crew', heat: 9, wanted: 2 });
+  assert.equal(P.crewChanged(null, null), false, 'no crew: nothing to say');
+  assert.equal(P.crewChanged(null, { heat: 0, wanted: 0 }), true, 'never told: tell it, even zeros');
+  assert.equal(P.crewChanged({ heat: 3, wanted: 1 }, { heat: 3, wanted: 1 }), false);
+  assert.equal(P.crewChanged({ heat: 3, wanted: 1 }, { heat: 4, wanted: 1 }), true); assert.equal(P.crewChanged({ heat: 3, wanted: 1 }, { heat: 3, wanted: 2 }), true);
+  assert.equal(P.crewChanged({ heat: 3, wanted: 1 }, null), false, 'a removed crew posts nothing');
+});
+await test('scoreMessage: board and iso are re-sanitised (script gone), the fields are copied by name, polaroids pass through', () => {
+  const dirty = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><script>x()</script><rect id="r" onclick="x()" width="3" height="3"/></svg>';
+  const score = { name: 'The Mint', district: 'Quay', target: '', reveal: ['public'], view: 'rings', board: dirty, iso: GOOD, at: 'x', gm: 'secret' };
+  const m = P.scoreMessage(score, [{ svg: '<svg/>', cap: 'Babel' }, { svg: '', cap: 'none' }, null], ENV);
+  assert.deepEqual(Object.keys(m).sort(), ['board', 'district', 'iso', 'name', 'polaroids', 'target', 'type', 'view']);
+  assert.equal(m.type, 'b68:score'); assert.equal(m.view, 'rings'); assert.equal(m.name, 'The Mint');
+  assertClean(m.board, 'board'); assert.ok(m.board.includes('id="r"') && !m.board.includes('onclick')); assertClean(m.iso, 'iso');
+  assert.deepEqual(m.polaroids, [{ svg: '<svg/>', cap: 'Babel' }]);
+  const bad = P.scoreMessage(Object.assign({}, score, { board: '<html>', iso: 'javascript:' }), [], ENV);
+  assert.equal(bad.board, ''); assert.equal(bad.iso, '', 'what will not clean is not sent'); assert.deepEqual(bad.polaroids, []);
+  assert.equal(P.scoreMessage(null, [], ENV), null); assert.equal(P.scoreMessage('x', [], ENV), null);
+  assert.equal(P.scoreMessage({ board: GOOD, iso: GOOD }, [], ENV).view, 'plan');
+  assert.equal(P.isScoreScene('board'), true); assert.equal(P.isScoreScene('exploded'), true); assert.equal(P.isScoreScene('watch'), false); assert.equal(P.isScoreScene('nope'), false);
+  assert.deepEqual(P.POLAROIDS.map((p) => [p.id, p.cap]), [['booker', 'Babel'], ['alfie', 'Ashtray & Buck'], ['stacey', 'Stacey'], ['loader', '99.47']]);
+});
+
+/* ---------- the ambient floor: registry, plan and rotation ---------- */
+await test('ambient registry: ordered, URLs come only from it, the watch feed is always ?api=off', () => {
+  assert.deepEqual(P.AMBIENT_SCENES.map((s) => s.id), ['harvest', 'watch', 'duskwall', 'board', 'exploded', 'testcard']);
+  assert.equal(P.ambientUrl('harvest'), 'ambient/second-harvest');
+  assert.equal(P.ambientUrl('watch'), 'ambient/watch-feed?api=off');
+  assert.equal(P.ambientUrl('testcard'), 'ambient/test-card');
+  for (const s of P.AMBIENT_SCENES) assert.ok(!/\.html/.test(P.ambientUrl(s.id)), s.id + ': no .html in the URL (the asset server 307s it)');
+  assert.equal(P.ambientUrl('board'), 'ambient/planning-board'); assert.equal(P.ambientUrl('exploded'), 'ambient/score-exploded');
+  assert.equal(P.ambientUrl('../../etc/passwd'), ''); assert.equal(P.ambientUrl('https://evil.example/x'), ''); assert.equal(P.ambientUrl(undefined), '');
+  assert.equal(P.AMBIENT_SCENES.filter((s) => s.pinOnly).map((s) => s.id).join(), 'testcard');
+});
+
+await test('ambientPlan: defaults for nothing, null, {} and rubbish', () => {
+  const want = { mode: 'auto', scene: null, playlist: ['harvest', 'watch', 'duskwall'], intervalMin: 7, skip: 0, crew: null, score: null };
+  for (const d of [undefined, null, {}, 'x', 42, [], { mode: 'sideways', playlist: 'no', intervalMin: 'soon', skip: -3, crew: 'hot', score: 'none' }]) assert.deepEqual(P.ambientPlan(d), want);
+  assert.notEqual(P.ambientPlan(null).playlist, P.AMBIENT_DEFAULT_PLAYLIST);                // a copy, not the shared array
+});
+
+await test('ambientPlan: unknown ids go, duplicates go, the test card is never in a playlist, order is kept', () => {
+  assert.deepEqual(P.ambientPlan({ playlist: ['duskwall', 'nope', 'harvest', 'duskwall', 7, null, 'testcard'] }).playlist, ['duskwall', 'harvest']);
+  assert.deepEqual(P.ambientPlan({ playlist: ['nope', 'testcard'] }).playlist, ['harvest', 'watch', 'duskwall'], 'nothing valid left: the default');
+  assert.deepEqual(P.ambientPlan({ playlist: [] }).playlist, ['harvest', 'watch', 'duskwall']);
+});
+
+await test('ambientPlan: interval is clamped to 3-30 minutes, skip to a whole number, crew to heat 0-9 / wanted 0-4', () => {
+  assert.equal(P.ambientPlan({ intervalMin: 1 }).intervalMin, 3); assert.equal(P.ambientPlan({ intervalMin: 99 }).intervalMin, 30);
+  assert.equal(P.ambientPlan({ intervalMin: 10.4 }).intervalMin, 10); assert.equal(P.ambientPlan({ intervalMin: '12' }).intervalMin, 12);
+  assert.equal(P.ambientPlan({ skip: 4.9 }).skip, 4); assert.equal(P.ambientPlan({ skip: 'x' }).skip, 0);
+  assert.deepEqual(P.ambientPlan({ crew: { heat: 12, wanted: 9 } }).crew, { heat: 9, wanted: 4 });
+  assert.deepEqual(P.ambientPlan({ crew: { heat: 3 } }).crew, { heat: 3, wanted: 0 });
+  assert.equal(P.ambientPlan({ crew: {} }).crew, null);
+});
+
+await test('ambientPlan: score scenes are gated on a score, and a score is normalised', () => {
+  const noScore = P.ambientPlan({ playlist: ['harvest', 'board', 'exploded', 'watch'] });
+  assert.deepEqual(noScore.playlist, ['harvest', 'board', 'exploded', 'watch'], "the GM's list is kept");
+  assert.deepEqual(P.ambientRotation(noScore), ['harvest', 'watch'], 'but the rotation drops the score scenes');
+  const withScore = P.ambientPlan({ playlist: ['harvest', 'board', 'exploded'], score: { name: 'The Mint', district: 'Quay', target: 'vault', reveal: ['public', 7], board: '<svg/>', iso: 5, view: 'weird', at: '2026-10-15T01:00:00Z', extra: 'x' } });
+  assert.deepEqual(P.ambientRotation(withScore), ['harvest', 'board', 'exploded']);
+  assert.deepEqual(withScore.score, { name: 'The Mint', district: 'Quay', target: 'vault', reveal: ['public'], board: '<svg/>', iso: '', view: 'plan', at: '2026-10-15T01:00:00Z' });
+  assert.equal(P.ambientPlan({ score: { view: 'rings' } }).score.view, 'rings');
+  assert.equal(P.ambientPlan({ score: { board: 'x'.repeat(P.LIMITS.svgChars + 1) } }).score.board, '', 'an oversize svg is dropped');
+});
+
+await test('ambientPlan: pin keeps a playable scene, the test card is pinnable, anything else falls back to auto', () => {
+  assert.deepEqual([P.ambientPlan({ mode: 'pin', scene: 'duskwall' }).mode, P.ambientPlan({ mode: 'pin', scene: 'duskwall' }).scene], ['pin', 'duskwall']);
+  assert.equal(P.ambientPlan({ mode: 'pin', scene: 'testcard' }).mode, 'pin');
+  for (const d of [{ mode: 'pin' }, { mode: 'pin', scene: 'nope' }, { mode: 'pin', scene: 'board' }, { mode: 'pin', scene: 'exploded', score: null }]) {
+    const p = P.ambientPlan(d); assert.deepEqual([p.mode, p.scene], ['auto', null], JSON.stringify(d));
+  }
+  assert.equal(P.ambientPlan({ mode: 'pin', scene: 'board', score: { name: 'x' } }).mode, 'pin');
+  assert.equal(P.ambientPlan({ mode: 'off' }).mode, 'off');
+});
+
+await test('ambientPlan reads its own output', () => {
+  const d = { mode: 'pin', scene: 'board', playlist: ['watch', 'board'], intervalMin: 15, skip: 2, crew: { heat: 4, wanted: 1 }, score: { name: 'x', board: '<svg/>' } };
+  assert.deepEqual(P.ambientPlan(P.ambientPlan(d)), P.ambientPlan(d));
+});
+
+await test('nextScene: next in the rotation, wrapping; first when the current one is not in it; null when nothing plays', () => {
+  const plan = P.ambientPlan({});
+  assert.equal(P.nextScene(plan, 'harvest'), 'watch'); assert.equal(P.nextScene(plan, 'watch'), 'duskwall');
+  assert.equal(P.nextScene(plan, 'duskwall'), 'harvest', 'wraps');
+  assert.equal(P.nextScene(plan, null), 'harvest'); assert.equal(P.nextScene(plan, 'testcard'), 'harvest'); assert.equal(P.nextScene(plan, 'nope'), 'harvest');
+  assert.equal(P.nextScene(null, 'harvest'), 'watch', 'a missing plan is the default plan');
+  assert.equal(P.nextScene(P.ambientPlan({ playlist: ['duskwall'] }), 'duskwall'), 'duskwall', 'a single scene is its own next');
+  assert.equal(P.nextScene(P.ambientPlan({ playlist: ['board', 'exploded'] }), 'board'), null, 'score scenes only, no score: nothing plays');
+  assert.equal(P.nextScene(P.ambientPlan({ playlist: ['board', 'exploded'], score: {} }), 'board'), 'exploded');
+});
+
+await test('nextScene: score scenes are skipped without a score; excluded (benched) ids are passed over', () => {
+  const plan = P.ambientPlan({ playlist: ['harvest', 'board', 'watch', 'exploded', 'duskwall'] });
+  assert.equal(P.nextScene(plan, 'harvest'), 'watch');
+  assert.equal(P.nextScene(plan, 'watch'), 'duskwall');
+  assert.equal(P.nextScene(plan, 'harvest', ['watch']), 'duskwall');
+  assert.equal(P.nextScene(plan, 'harvest', ['watch', 'duskwall']), 'harvest', 'only itself left');
+  assert.equal(P.nextScene(plan, 'harvest', ['harvest', 'watch', 'duskwall']), null, 'all benched');
+});
+
+await test('the ambient controller is not reachable without a mount: the module-level calls are no-ops', () => {
+  assert.equal(D.ambient.state(), null); assert.equal(D.ambient.post('watch', {}), false);
+  assert.doesNotThrow(() => { D.ambient.setPlan({}); D.ambient.cover(); D.ambient.uncover(); });
+});
+
 /* ---------- corner status ---------- */
 await test('status: waiting, updated, trouble and denied', () => {
   const at = new Date(2026, 9, 17, 9, 5).toISOString();

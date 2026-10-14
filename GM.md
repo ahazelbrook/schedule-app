@@ -33,6 +33,9 @@ gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser o
 | `PATCH /api/gm/state` | deep merge (plain objects merge, arrays and scalars replace, `null` deletes) → `{ doc, updatedAt }`. Keep collections as maps, not arrays. |
 | `GET /api/gm/display` | `{ seq, display, updatedAt }` (`seq` 0, a blank display, until written). `?seq=N` → `{ seq, unchanged: true }` while N is current. |
 | `PUT /api/gm/display` | `{ kind, title?, caption?, svg \| npcId \| text }` → `{ seq, display, updatedAt }`; `seq` goes up by one on every PUT. |
+| `GET /api/gm/display` (ambient) | also carries `ambient: { seq, doc, updatedAt }`. `?seq=N&aseq=M` → `{ seq, unchanged: true, ambient: { seq, unchanged: true } }` while both are current; otherwise the full display, with `ambient` `{ seq, unchanged: true }` when only M is current. `?seq=N` alone is the old answer. |
+| `GET /api/gm/ambient` | `{ seq, doc, updatedAt }` (`0`, `{}`, `null` until written). GM only; the display sign-in is refused (it reads the doc through the display). |
+| `PATCH /api/gm/ambient` | top-level merge (`null` deletes, `skip: true` bumps a counter) → `{ seq, doc, updatedAt }`. Keys: `mode` auto/pin/off, `scene`, `playlist` (1–12 distinct ids), `intervalMin` 3–30, `skip`, `crew { heat 0–9, wanted 0–4 }`, `score { name, district, target, reveal, view plan/rings, board, iso }` (both svgs through `checkSvg`; the server sets `at`). Stored doc at most 1.4 MiB, in `gm_ambient` (migration 0006). |
 
 - **Pack.** Part names `[a-z0-9-]{1,32}`; at most 12 parts; `body` a JSON object (or a string holding one), at most
   900 KiB as JSON; `src` an object, at most 2 KiB. A part's `version` is the first 12 hex digits of the SHA-256 of
@@ -74,14 +77,14 @@ fails and nobody is known, nothing is purged.
   the device ("offline copy" in the header). The header shows "Campaign data exported DD/MM/YYYY", amber when
   more than three days old.
 - **Layout.** Laptop (>= 1100 px): the console (the Situations | Classic toggle, Position, controls, the four buttons, the card, "Earlier:" the last five rolls) |
-  a side panel with **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)** and **Rules (T)** | the state rail (crew heat, wanted, rep, stacks and
+  a side panel with **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)**, **Rules (T)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
   vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on
   stage) | the capture bar at the foot. 600–1100 px: two columns, the rail below. Phone: a Console | Location | Street | Engage | NPC |
   State bar, the Position switch at the top, the situations a 2 × 2 grid (Classic: 3 × 3), the other controls behind a "Scene" line,
   capture on a floating button.
-- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd): `1`–`4` roll a situation (Classic: `1`–`9` roll a single table), `B` `N` `S` `E` `T` switch the panel
-  (Location, NPC, Street scene, Engagement, Rules), `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
-  the last roll under "Rolled at the table", `H` blanks the screen until any key or tap.
+- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd): `1`–`4` roll a situation (Classic: `1`–`9` roll a single table), `B` `N` `S` `E` `T` `I` switch the panel
+  (Location, NPC, Street scene, Engagement, Rules, iPad), `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
+  the last roll under "Rolled at the table", `H` blanks the screen until any key or tap, `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
 - **Situations and Classic.** The console opens on **Situations**: four buttons, each a moment in the roll: `1` **Before** (a Devil's
   Bargain), `2` **4/5**, `3` **1–3**, `4` **Someone**. A large three-way **Position** switch (controlled / risky / desperate, with what
   it means for severity, winds and harm) sits above them, always on screen; the other controls stay (scene, district, PC, NPC,
@@ -99,7 +102,7 @@ fails and nobody is known, nothing is purged.
   layer (GM / Player) and the bands revealed to the player layer; Draw, Download SVG / note (.md) / canvas. **Show on
   iPad** is enabled only on the player layer, and the code renders the player layer itself and refuses any other svg
   (`gate` in `gm-page.js`; tested in `gm-nosecrets.test.mjs`, `gm-page.test.mjs` and `gm.e2e.mjs`). The street
-  description can go to the iPad as plain text; **Blank the iPad** clears it.
+  description can go to the iPad as plain text; **Clear → ambient** (once called Blank the iPad) clears it.
 - **Reveal.** Every new roll and every replay starts with the public band only. The ticks count only while Layer is
   Player (on the GM layer the street description and everything else use public only), and sending anything beyond public
   to the iPad asks first, naming the bands.
@@ -159,6 +162,31 @@ calls `unmount()` on leaving; anyone but the GM sees a message instead. The GM p
 
 The display offers **no way back** to the GM page (no link, hidden or not). Its sanitiser applies the same rules as the server's `checkSvg` (namespaced
 elements, `<a>`, `xml:base`, backslashes, `image-set()` / `src()`, raster `data:` images only on `<image>` / `<feImage>`).
+
+### Ambient scenes (`app/ambient/`, the iPad panel `I`)
+
+When nothing is spotlit the display plays an **ambient scene** underneath: `blank` means "the ambient plays", and the new
+kind `dark` is lights out (true black). Scenes are same-origin pages in `app/ambient/`, framed with
+`sandbox="allow-scripts allow-same-origin"` and served with `X-Frame-Options: SAMEORIGIN` and a no-network CSP (`app/_headers`).
+URLs are built from the registry (`Pure.AMBIENT_SCENES`) and have **no `.html`**: the asset server 307s `x.html` → `x`, and the
+service worker never caches a redirect. The registry ids are `harvest`, `watch` (City Watch feed, always `?api=off`, told heat and wanted by
+`postMessage`), `duskwall`, `board` and `exploded` (the score scenes), and `testcard` (pin only).
+
+- **Rotation.** Auto (default `harvest` → `watch` → `duskwall`, every 7 min, cross-faded), Pin (one scene), or Off. **Next scene** skips.
+  A covered scene is kept for 30 s, then its frame is removed (a hidden frame gets no `visibilitychange` and would animate all night),
+  and reloaded when the spotlight clears. A scene that has not loaded in 20 s is benched for 10 min.
+- **Heat and wanted.** The GM page sends the campaign's crew heat and wanted (debounced 2 s) while the ambient is not off. The page
+  has to have been opened as the GM in that page load; the iPad panel also corrects a stale value when it opens.
+- **Score scenes.** **Set as score scene** (Location panel, player layer only) renders the board (`plan`, board theme) and the exploded
+  site (`iso`, blueprint) from the current roll at the revealed bands, through the same gate and hidden-name scan as Show on iPad.
+  A plan that names a hidden room is redrawn as `rings`; a leaking iso is refused. Bands beyond public ask first. Only the place name and
+  district go with it (`target` is always empty). It **never updates on its own**: press it again after revealing more. The shells
+  (`planning-board`, `score-exploded`) hold no data; they post `b68:ready` and the display answers with `b68:score` (both svgs
+  re-sanitised, four crew polaroids drawn with the figure kit, `Pure.POLAROIDS`).
+- **Checks.** `check:ambient` (assets), `ambient-shells.test.mjs`, `check:display-ambient` (e2e), plus the ambient cases in
+  `checks/api/gm.mjs`, `display-role.mjs`, `display.test.mjs`, `gm-page.test.mjs` and `gm-nosecrets.test.mjs`. The e2e checks take
+  `PW_CHANNEL=msedge` when Playwright's own Chromium is not installed.
+- **Deploy.** `npx wrangler d1 migrations apply DB --remote` (0006) before `wrangler deploy`.
 
 ### The display sign-in (`DISPLAY_EMAILS`)
 

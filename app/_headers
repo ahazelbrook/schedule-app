@@ -1,0 +1,5 @@
+# Workers static-assets headers (not served as a file). Ambient scenes are framed only by the display page on the same origin,
+# and may call nothing but their own origin (watch-feed polls GET /api/campaign unless loaded with ?api=off).
+/ambient/*
+  X-Frame-Options: SAMEORIGIN
+  Content-Security-Policy: frame-ancestors 'self'; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'self' data:; connect-src 'self'

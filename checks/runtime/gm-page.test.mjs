@@ -604,7 +604,7 @@ await test('8a. keyAction: S opens the street scene panel and E the engagement p
 await test('8b. S opens the panel; Roll files the card (seed, controls, memory BEFORE the roll) and a history entry; the card has the read-aloud, ratings and grid', async () => {
   const fg = fakeGm(), h = await openPage({ fg });
   assert.ok(h.q('[data-pane="scenes"]') && h.q('[data-pane="engagement"]') && h.q('#gm-scn') && h.q('#gm-eng'));
-  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'location,scenes,engagement,npc,rules');
+  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'location,scenes,engagement,npc,rules,ipad');
   h.press('s'); assert.equal(h.page._state().panel, 'scenes');
   assert.ok(!h.q('#gm-scn .gm-scncard'), 'nothing before the first roll');
   h.q('[data-gm="scnroll"]').click();
@@ -723,6 +723,226 @@ await test('8i. the missing modules (an old shell): a one-line message each, not
   const br = fakeBrowser({ B68GmScenes: undefined, B68GmEngagement: undefined });
   const h = await openPage({ br });
   assert.ok(/module is missing/.test(h.q('#gm-scn').textContent) && /module is missing/.test(h.q('#gm-eng').textContent));
+});
+
+/* ---------- 9. the iPad panel (I): ambient scenes, Clear and Lights out, the heat sync, the score scene ---------- */
+const clone = (v) => JSON.parse(JSON.stringify(v));
+/* a fake ambient on the fake GM server: the server's own merge for the keys the panel sends (skip adds one; null deletes) */
+function addAmbient(fg, init) {
+  const s = fg.server; s.amb = { seq: (init && init.seq) || 0, doc: clone((init && init.doc) || {}) }; s.ambPatches = []; s.ambFail = false; s.ambGets = 0; s.shown = (init && init.shown) || { kind: 'text', title: 'Invented line' };
+  fg.gm.ambient = async () => { s.ambGets++; return { seq: s.amb.seq, doc: clone(s.amb.doc), updatedAt: 'a' + s.amb.seq }; };
+  fg.gm.display = async () => ({ seq: 3, display: clone(s.shown), updatedAt: 'd', ambient: { seq: s.amb.seq, unchanged: true } });
+  fg.gm.setDisplay = async (d) => { s.displays.push(d); s.shown = clone(d); return { seq: s.displays.length, display: d }; };
+  fg.gm.patchAmbient = async (p) => {
+    if (s.ambFail) throw Object.assign(new Error('the server said no'), { status: 500 });
+    s.ambPatches.push(clone(p)); const d = clone(s.amb.doc);
+    for (const k of Object.keys(p)) { if (k === 'skip') d.skip = (d.skip || 0) + 1; else if (p[k] === null) delete d[k]; else d[k] = clone(p[k]); }
+    if (p.score) d.score.at = '2026-10-17T01:02:03.000Z';
+    s.amb.seq++; s.amb.doc = d; return { seq: s.amb.seq, doc: clone(d), updatedAt: 'a' + s.amb.seq };
+  };
+  return fg;
+}
+const eqj = (a, b, m) => assert.equal(JSON.stringify(a), JSON.stringify(b), m);
+const openIpad = async (h) => { h.press('i'); await until(() => h.page._ambient().loaded); };
+const CAMP3 = { session: { number: 3 }, crew: { heat: 3, wanted: 1 } };
+const SCORE0 = { name: 'Invented Mill', district: 'Nowhere', target: '', reveal: ['public', 'working'], view: 'plan', board: '<svg/>', iso: '<svg/>', at: '2026-10-17T01:02:03.000Z' };
+
+await test('9a. keys: I opens the iPad panel and 0 clears to ambient; never while typing or with a modifier; the other keys are unchanged', () => {
+  assert.deepEqual(P.keyAction({ key: 'i' }), { type: 'panel', panel: 'ipad' }); assert.deepEqual(P.keyAction({ key: 'I', view: 'classic' }), { type: 'panel', panel: 'ipad' });
+  assert.deepEqual(P.keyAction({ key: '0' }), { type: 'clear' }); assert.deepEqual(P.keyAction({ key: '0', view: 'situations' }), { type: 'clear' }); assert.deepEqual(P.keyAction({ key: '0', view: 'classic' }), { type: 'clear' });
+  for (const k of ['i', '0']) {
+    assert.equal(P.keyAction({ key: k, typing: true }), null, k + ' typing'); assert.equal(P.keyAction({ key: k, ctrlKey: true }), null, k + ' ctrl');
+    assert.equal(P.keyAction({ key: k, altKey: true }), null); assert.equal(P.keyAction({ key: k, metaKey: true }), null);
+  }
+  assert.deepEqual(P.keyAction({ key: 'h' }), { type: 'blank' }, 'H still blanks the GM screen'); assert.deepEqual(P.keyAction({ key: '1', view: 'classic' }), { type: 'button', n: 1 });
+});
+
+await test('9b. crewOf: whole numbers clamped to 0-9 / 0-4; null without a number; ipadView draws from the server document', () => {
+  assert.deepEqual(P.crewOf({ crew: { heat: 3.4, wanted: 2 } }), { heat: 3, wanted: 2 });
+  assert.deepEqual(P.crewOf({ crew: { heat: 40, wanted: -3 } }), { heat: 9, wanted: 0 });
+  assert.deepEqual(P.crewOf({ crew: { heat: 5 } }), { heat: 5, wanted: 0 });
+  for (const d of [null, {}, { crew: null }, { crew: {} }, { crew: { heat: '3', wanted: 'x' } }, { crew: { heat: NaN } }, { crew: [] }]) assert.equal(P.crewOf(d), null, JSON.stringify(d));
+  const v0 = P.ipadView(null); assert.deepEqual([v0.mode, v0.intervalMin, v0.hasScore, v0.intervals], ['auto', 7, false, [4, 7, 10, 15]]);
+  assert.deepEqual(v0.tiles.map((x) => [x.id, x.disabled, x.pressed, x.note]), [['harvest', false, false, ''], ['watch', false, false, ''], ['duskwall', false, false, ''], ['board', true, false, 'needs a score scene'], ['exploded', true, false, 'needs a score scene'], ['testcard', false, false, 'pin only']]);
+  const v1 = P.ipadView({ mode: 'pin', scene: 'board', intervalMin: 12, score: SCORE0 });
+  assert.deepEqual([v1.mode, v1.intervalMin, v1.intervals, v1.hasScore], ['pin', 12, [4, 7, 10, 12, 15], true]);
+  assert.deepEqual(v1.tiles.filter((x) => x.pressed).map((x) => x.id), ['board']); assert.equal(v1.tiles.filter((x) => x.disabled).length, 0);
+  assert.match(v1.scoreLine, /^Invented Mill · public, working · \d\d:\d\d$/);
+  assert.equal(P.ipadView({ mode: 'sideways', intervalMin: 99 }).mode, 'auto'); assert.equal(P.ipadView({ intervalMin: 99 }).intervalMin, 7);
+  assert.equal(P.ipadView({ mode: 'auto', scene: 'board' }).tiles.filter((x) => x.pressed).length, 0, 'only a pin presses a tile');
+  assert.equal(P.displayLine({ kind: 'svg', title: 'Invented Mill' }), 'Map · Invented Mill'); assert.equal(P.displayLine({ kind: 'dark' }), 'Lights out');
+  assert.match(P.displayLine({ kind: 'blank' }), /ambient/);
+});
+
+/* the crew sync on fake timers: a debounce, one in flight, the ambient off, one toast */
+function crewRig(over) {
+  const timers = []; let id = 0; const sent = [], toasts = [];
+  const r = { mode: 'auto', fail: false, hold: null, sent, toasts, timers,
+    run() { const t = timers.shift(); if (t) t.fn(); return !!t; } };
+  r.sync = P.makeCrewSync(Object.assign({
+    send: (crew) => { sent.push(crew); if (r.hold) return new Promise((res) => { r.hold.push(res); }); return r.fail ? Promise.reject(new Error('net')) : Promise.resolve({ ok: 1 }); },
+    mode: () => r.mode, delay: (fn, ms) => { const h = ++id; timers.push({ id: h, fn, ms }); return h; }, cancel: (h) => { const i = timers.findIndex((x) => x.id === h); if (i >= 0) timers.splice(i, 1); },
+    toast: (m) => toasts.push(m)
+  }, over || {}));
+  return r;
+}
+const settle = () => new Promise((r) => setImmediate(r));
+await test('9c. crew sync: a change waits 2 s, restarts when the value moves, and sends once; the same value is not re-sent', async () => {
+  const r = crewRig();
+  r.sync.note({ crew: { heat: 2, wanted: 0 } }); assert.equal(r.timers.length, 1); assert.equal(r.timers[0].ms, 2000); assert.equal(r.sent.length, 0);
+  r.sync.note({ crew: { heat: 2, wanted: 0 } }); assert.equal(r.timers.length, 1, 'the same value does not restart the wait');
+  r.sync.note({ crew: { heat: 3, wanted: 0 } }); assert.equal(r.timers.length, 1, 'a new value replaces the wait');
+  r.run(); await settle(); assert.deepEqual(r.sent, [{ heat: 3, wanted: 0 }]);
+  r.sync.note({ crew: { heat: 3, wanted: 0 } }); assert.equal(r.timers.length, 0, 'already sent'); r.sync.note({ crew: { heat: 3, wanted: 1 } }); r.run(); await settle();
+  assert.deepEqual(r.sent, [{ heat: 3, wanted: 0 }, { heat: 3, wanted: 1 }]);
+  r.sync.note({ crew: {} }); r.sync.note(null); assert.equal(r.timers.length, 0, 'no crew numbers: nothing');
+});
+await test('9d. crew sync: nothing while the ambient is off; sends again once it is not; adopt() takes the server as the truth', async () => {
+  const r = crewRig(); r.mode = 'off';
+  r.sync.note({ crew: { heat: 1, wanted: 1 } }); assert.equal(r.timers.length, 0, 'off: no send');
+  r.mode = 'auto'; r.sync.note({ crew: { heat: 1, wanted: 1 } }); assert.equal(r.timers.length, 1);
+  r.sync.adopt({ heat: 1, wanted: 1 }, true); await settle(); assert.equal(r.sent.length, 0, 'the server already holds it'); assert.equal(r.timers.length, 0, 'and the wait is cancelled');
+  r.sync.adopt({ heat: 5, wanted: 2 }, true); await settle(); assert.deepEqual(r.sent, [{ heat: 1, wanted: 1 }], 'stale on the server: corrected at once, no wait');
+  const q = crewRig(); q.sync.note({ crew: { heat: 4, wanted: 0 } }); q.sync.adopt(undefined, true); await settle(); assert.deepEqual(q.sent, [{ heat: 4, wanted: 0 }], 'missing on the server: sent');
+  const o = crewRig(); o.mode = 'off'; o.sync.note({ crew: { heat: 4, wanted: 0 } }); o.sync.adopt(undefined, true); await settle(); assert.equal(o.sent.length, 0, 'off stays off');
+});
+await test('9e. crew sync: one request in flight; a change meanwhile goes after; one toast on errors until a success', async () => {
+  const r = crewRig(); r.hold = [];
+  r.sync.note({ crew: { heat: 2, wanted: 0 } }); r.run(); await settle(); assert.equal(r.sent.length, 1);
+  r.sync.note({ crew: { heat: 4, wanted: 0 } }); r.run(); await settle(); assert.equal(r.sent.length, 1, 'still the first request in flight');
+  r.hold.shift()({}); await settle(); await settle();
+  assert.equal(r.timers.length, 1, 'the newer value is waiting its turn'); r.hold = null; r.run(); await settle(); assert.deepEqual(r.sent.map((c) => c.heat), [2, 4]);
+  const e = crewRig(); e.fail = true;
+  e.sync.note({ crew: { heat: 7, wanted: 0 } }); e.run(); await settle(); e.sync.note({ crew: { heat: 8, wanted: 0 } }); e.run(); await settle(); e.sync.note({ crew: { heat: 9, wanted: 0 } }); e.run(); await settle();
+  assert.equal(e.sent.length, 3, 'each change retries'); assert.equal(e.toasts.length, 1, 'one toast for the run of errors'); assert.match(e.toasts[0], /heat and wanted/);
+  e.fail = false; e.sync.note({ crew: { heat: 1, wanted: 0 } }); e.run(); await settle(); e.fail = true; e.sync.note({ crew: { heat: 2, wanted: 0 } }); e.run(); await settle(); assert.equal(e.toasts.length, 2, 'a success re-arms the toast');
+});
+
+await test('9f. the score scene: player layer only; the board is the plan, or rings when the plan would name a hidden room; a leaking iso is refused', () => {
+  const calls = []; const rend = (roll, o) => { calls.push(o); return render(roll, o); };
+  assert.throws(() => P.scoreScene(LEAKY, { layer: 'gm', view: 'plan' }, rend), /player layer/); assert.equal(calls.length, 0, 'a GM-layer request rendered nothing');
+  assert.throws(() => P.scoreScene(null, { layer: 'player' }, rend), /Roll a location/);
+  const s = P.scoreScene(LEAKY, { layer: 'player', reveal: { public: true } }, rend);
+  assert.equal(s.view, 'rings'); assert.equal(s.rings, true, 'the plan named the hidden Basement: rings instead');
+  assert.deepEqual(calls.map((c) => [c.view, c.theme, c.layer, c.legend, c.width]), [['plan', 'board', 'player', undefined, 1600], ['rings', 'board', 'player', undefined, 1600], ['iso', 'blueprint', 'player', false, 1600]]);
+  assert.ok(calls.every((c) => c.reveal.join() === 'public'));
+  assert.deepEqual(P.leaks(s.board, LEAKY, ['public']), []); assert.deepEqual(P.leaks(s.iso, LEAKY, ['public']), []);
+  assert.deepEqual(s.score, { name: 'Invented Works', district: 'Nowhere', target: '', reveal: ['public'], view: 'rings', board: s.board, iso: s.iso });
+  const clean = { name: 'Plain', district: 'D', rooms: [{ name: 'Lobby', band: 'public' }, { name: 'Hall', band: 'public' }], targetRoom: 'Lobby', targetBand: 'public' };
+  const c = P.scoreScene(clean, { layer: 'player', reveal: { public: true, working: true } }, render);
+  assert.deepEqual([c.view, c.rings, c.score.reveal], ['plan', false, ['public', 'working']]);
+  const calls2 = []; const bad = (roll, o) => { calls2.push(o.view); return { svg: '<svg><text>Basement</text></svg>' }; };
+  let err = null; try { P.scoreScene(LEAKY, { layer: 'player', reveal: { public: true } }, bad); } catch (e) { err = e; }
+  assert.ok(err && err.leak && err.message === P.LEAK_MSG, 'a plan that leaks AND rings that leak: refused'); assert.deepEqual(calls2, ['plan', 'rings']);
+  const isoOnly = (roll, o) => ({ svg: o.view === 'iso' ? '<svg><text>Basement</text></svg>' : '<svg><text>Lobby</text></svg>' });
+  err = null; try { P.scoreScene(LEAKY, { layer: 'player', reveal: { public: true } }, isoOnly); } catch (e) { err = e; }
+  assert.ok(err && err.leak, 'a leaking iso is refused, not redrawn');
+});
+await test('9g. the gate lets a score patch through only when both svgs were marked here; null and other keys pass', () => {
+  const g = P.makeGate(); const sc = { board: '<svg id="b"/>', iso: '<svg id="i"/>' };
+  assert.equal(g.allowsAmbient({ score: sc }), false); g.mark(sc.board); assert.equal(g.allowsAmbient({ score: sc }), false, 'one is not enough'); g.mark(sc.iso);
+  assert.equal(g.allowsAmbient({ score: sc }), true); assert.equal(g.allowsAmbient({ score: { board: '<svg id="gm"/>', iso: sc.iso } }), false, 'a GM-layer svg');
+  assert.equal(g.allowsAmbient({ score: null }), true); assert.equal(g.allowsAmbient({ mode: 'pin', scene: 'harvest' }), true); assert.equal(g.allowsAmbient(null), false);
+  assert.equal(g.allowsAmbient({ score: { board: 5, iso: 6 } }), false);
+});
+
+await test('9h. the iPad panel: a tab (I), On the iPad now, Clear and Lights out, the mode, six scenes, the interval; the server document is drawn', async () => {
+  const fg = addAmbient(fakeGm(), { doc: { mode: 'pin', scene: 'duskwall', intervalMin: 10 }, shown: { kind: 'svg', title: 'Invented Mill' } });
+  const h = await openPage({ fg, camp: CAMP3 });
+  assert.ok(h.q('#gm-ipad') && h.q('[data-pane="ipad"]') && h.q('.gm-tab[data-panel="ipad"]').textContent.includes('iPad'));
+  assert.ok(h.qa('[data-gm="seg"]').some((b) => b.getAttribute('data-seg') === 'ipad'), 'the phone bar has it too');
+  h.press('i'); assert.equal(h.page._state().panel, 'ipad');
+  await until(() => h.page._ambient().loaded);
+  assert.equal(h.qa('#gm-ipad .gm-ipad-tile').length, 6); assert.equal(h.qa('#gm-ipad [data-gm="ambmode"]').length, 3);
+  assert.equal(h.q('#gm-ipad-now').textContent, 'Map · Invented Mill', 'what the display holds, read once');
+  assert.deepEqual(h.qa('#gm-ipad [data-gm="ambmode"]').map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed')]), [['off', 'false'], ['auto', 'false'], ['pin', 'true']]);
+  assert.deepEqual(h.qa('#gm-ipad .gm-ipad-tile').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.getAttribute('data-id')), ['duskwall']);
+  assert.deepEqual(h.qa('#gm-ipad .gm-ipad-tile').filter((b) => b.hasAttribute('disabled')).map((b) => b.getAttribute('data-id')), ['board', 'exploded'], 'score scenes wait for a score');
+  assert.deepEqual(h.qa('#gm-amb-int option').map((o) => o.textContent), ['4 min', '7 min', '10 min', '15 min']); assert.equal(h.q('#gm-ipad [data-gm="ambskip"]').hasAttribute('disabled'), true, 'Next scene is Auto only');
+  assert.match(h.q('#gm-ipad-score').textContent, /None set/); assert.equal(h.q('#gm-ipad [data-gm="clearscore"]').hasAttribute('disabled'), true);
+  assert.deepEqual(h.qa('#gm-ipad [data-gm="blankipad"], #gm-ipad [data-gm="darkipad"]').map((b) => b.textContent.replace(/\s+/g, ' ').trim()), ['Clear → ambient 0', 'Lights out']);
+  const fetches = fg.server.ambGets; h.press('i'); await until(() => fg.server.ambGets > fetches); assert.ok(fg.server.ambGets > fetches, 'opening the panel reads the document');
+  await h.save();
+});
+
+await test('9i. Clear → ambient (button and key 0) sends blank; Lights out sends dark; every "Blank the iPad" button is renamed; errors are toasts', async () => {
+  const fg = addAmbient(fakeGm()), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
+  await openIpad(h);
+  h.q('#gm-ipad [data-gm="darkipad"]').click(); await until(() => fg.server.displays.length === 1); eqj(fg.server.displays[0], { kind: 'dark' });
+  await until(() => h.q('#gm-ipad-now').textContent === 'Lights out'); assert.equal(h.q('#gm-ipad-now').textContent, 'Lights out');
+  h.q('#gm-ipad [data-gm="blankipad"]').click(); await until(() => fg.server.displays.length === 2); eqj(fg.server.displays[1], { kind: 'blank' });
+  h.press('0'); await until(() => fg.server.displays.length === 3); eqj(fg.server.displays[2], { kind: 'blank' }, 'key 0');
+  h.press('0', { ctrlKey: true }); await tick(); assert.equal(fg.server.displays.length, 3, 'not with a modifier');
+  h.press('b'); assert.ok(h.qa('[data-gm="blankipad"]').every((b) => /Clear → ambient/.test(b.textContent)), 'the location panel button too');
+  assert.ok(!/Blank the iPad/.test(h.root.textContent), 'no old name left');
+  fg.gm.setDisplay = async () => { throw new Error('refused'); }; br.toasts.length = 0;
+  h.press('0'); await until(() => br.toasts.length); assert.deepEqual(br.toasts[0], ['Could not clear the iPad: refused', true]);
+  await h.save();
+});
+
+await test('9j. Off / Auto / Pin, a scene, the interval, Next scene and Clear score patch the server and draw its answer', async () => {
+  const fg = addAmbient(fakeGm(), { doc: { score: SCORE0 } }), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
+  await openIpad(h);
+  assert.equal(h.qa('#gm-ipad .gm-ipad-tile').filter((b) => b.hasAttribute('disabled')).length, 0, 'a score is set: the score scenes are open');
+  assert.match(h.q('#gm-ipad-score').textContent, /^Invented Mill · public, working · \d\d:\d\d$/);
+  const patched = async (fn, n) => { fn(); await until(() => fg.server.ambPatches.length >= n); await until(() => !h.q('#gm-ipad [data-gm="ambmode"]').hasAttribute('disabled')); return fg.server.ambPatches[n - 1]; };
+  const skipP = fg.server.ambPatches.length;
+  eqj(await patched(() => h.qa('#gm-ipad [data-gm="ambmode"]')[0].click(), skipP + 1), { mode: 'off' });
+  assert.equal(h.qa('#gm-ipad [data-gm="ambmode"]')[0].getAttribute('aria-pressed'), 'true', 'drawn from the answer');
+  eqj(await patched(() => h.qa('#gm-ipad [data-gm="ambmode"]')[1].click(), skipP + 2), { mode: 'auto' });
+  assert.equal(h.q('#gm-ipad [data-gm="ambskip"]').hasAttribute('disabled'), false, 'Next scene opens in Auto');
+  eqj(await patched(() => h.q('#gm-ipad [data-gm="ambskip"]').click(), skipP + 3), { skip: true }); assert.equal(fg.server.amb.doc.skip, 1);
+  eqj(await patched(() => h.qa('#gm-ipad [data-gm="ambmode"]')[2].click(), skipP + 4), { mode: 'pin', scene: 'harvest' }, 'Pin with no scene yet pins the first');
+  eqj(await patched(() => h.q('#gm-ipad [data-id="board"]').click(), skipP + 5), { mode: 'pin', scene: 'board' });
+  assert.deepEqual(h.qa('#gm-ipad .gm-ipad-tile').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.getAttribute('data-id')), ['board']);
+  eqj(await patched(() => h.qa('#gm-ipad [data-gm="ambmode"]')[1].click(), skipP + 6), { mode: 'auto' });
+  eqj(await patched(() => h.q('#gm-ipad [data-id="testcard"]').click(), skipP + 7), { mode: 'pin', scene: 'testcard' }, 'the test card pins');
+  eqj(await patched(() => change(h.q('#gm-amb-int'), 15), skipP + 8), { intervalMin: 15 });
+  eqj(await patched(() => h.q('#gm-ipad [data-gm="clearscore"]').click(), skipP + 9), { score: null });
+  assert.match(h.q('#gm-ipad-score').textContent, /None set/); assert.equal(h.qa('#gm-ipad .gm-ipad-tile').filter((b) => b.hasAttribute('disabled')).length, 2);
+  br.toasts.length = 0; fg.server.ambFail = true; h.qa('#gm-ipad [data-gm="ambmode"]')[0].click(); await until(() => br.toasts.length);
+  assert.deepEqual(br.toasts[0], ['Could not change the iPad: the server said no', true]);
+  assert.equal(h.qa('#gm-ipad [data-gm="ambmode"]')[2].getAttribute('aria-pressed'), 'true', 'a refused change leaves the server value (pin) on screen');
+  await h.save();
+});
+
+await test('9k. heat and wanted: the panel load sends a missing crew once; a changed campaign sends after the wait; off sends nothing', async () => {
+  const fg = addAmbient(fakeGm()), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
+  assert.equal(fg.server.ambPatches.length, 0, 'the page alone sends nothing');
+  h.press('i'); await until(() => fg.server.ambPatches.length === 1);
+  eqj(fg.server.ambPatches[0], { crew: { heat: 3, wanted: 1 } }, 'first load: the server had no crew');
+  eqj(fg.server.amb.doc.crew, { heat: 3, wanted: 1 });
+  h.press('i'); await tick(); await tick(); assert.equal(fg.server.ambPatches.length, 1, 'an up-to-date crew is not sent again');
+  h.page.campaign({ session: { number: 3 }, crew: { heat: 6, wanted: 2 } });
+  await tick(); assert.equal(fg.server.ambPatches.length, 1, 'debounced: not at once');
+  await until(() => fg.server.ambPatches.length === 2, 700); eqj(fg.server.ambPatches[1], { crew: { heat: 6, wanted: 2 } });
+  h.q('#gm-ipad [data-gm="ambmode"][data-v="off"]').click(); await until(() => fg.server.amb.doc.mode === 'off');
+  h.page.campaign({ session: { number: 3 }, crew: { heat: 7, wanted: 2 } });
+  await new Promise((r) => setTimeout(r, 2400)); assert.equal(fg.server.ambPatches.length, 3, 'only the mode change: the ambient is off');
+  await h.save();
+});
+
+await test('9l. Set as score scene: a player-layer plan and iso from the roll, name and district only, never auto-updated; refused on the GM layer', async () => {
+  const fg = addAmbient(fakeGm()), br = fakeBrowser({ B68Map: M }); const h = await openPage({ fg, br, camp: CAMP3 });
+  h.press('b'); h.q('[data-gm="locroll"]').click(); const roll = h.page._state().locRoll; assert.ok(roll);
+  assert.ok(h.q('[data-gm="scorescene"]') && /Set as score scene/.test(h.q('[data-gm="scorescene"]').textContent), 'beside Show on iPad');
+  assert.equal(h.q('[data-gm="scorescene"]').hasAttribute('disabled'), true, 'GM layer: disabled'); h.q('[data-gm="scorescene"]').click(); await tick();
+  assert.equal(fg.server.ambPatches.length, 0, 'GM layer: nothing sent'); assert.ok(br.toasts.some((x) => /player layer/i.test(x[0]) && x[1]));
+  h.q('[data-gm="layer"][data-v="player"]').click(); assert.equal(h.q('[data-gm="scorescene"]').hasAttribute('disabled'), false);
+  h.q('[data-gm="scorescene"]').click(); await until(() => fg.server.ambPatches.length === 1);
+  const sc = fg.server.ambPatches[0].score;
+  assert.deepEqual(Object.keys(sc).sort(), ['board', 'district', 'iso', 'name', 'reveal', 'target', 'view']);
+  assert.deepEqual([sc.name, sc.district, sc.target, sc.reveal], [roll.name, roll.district || '', '', ['public']]);
+  assert.ok(sc.view === 'plan' || sc.view === 'rings'); assert.ok(sc.board.startsWith('<svg') && sc.iso.startsWith('<svg'));
+  assert.deepEqual(P.leaks(sc.board, roll, ['public']), []); assert.deepEqual(P.leaks(sc.iso, roll, ['public']), []);
+  checkSvg(sc.board); checkSvg(sc.iso);
+  assert.ok(h.page._ambient().doc.score, 'drawn from the answer');
+  // more bands ticked: it does not change by itself
+  const before = JSON.stringify(fg.server.amb.doc.score);
+  h.q('[data-reveal="working"]').checked = true; dispatch(h.q('[data-reveal="working"]'), 'change'); await tick(); await tick();
+  assert.equal(fg.server.ambPatches.length, 1, 'revealing a band sends nothing'); assert.equal(JSON.stringify(fg.server.amb.doc.score), before);
+  h.press('i'); await until(() => h.q('#gm-ipad-score')); assert.match(h.q('#gm-ipad-score').textContent, new RegExp('^' + roll.name.replace(/[.*+?^$${}()|[\]\\]/g, '\\$&')));
+  await h.save();
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

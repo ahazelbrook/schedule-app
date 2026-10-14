@@ -33,7 +33,8 @@ app/                 the page (the Worker's static assets; app/.assetsignore kee
   season.js/.css     the season print (#print)
   cast-page.js, cast.css   the cast (#cast) and the "on stage" banner (CAST.md)
   gm/, gm-page.js, gm.css  the GM's page (#gm): the console (situations and the nine classic rollers), the location generator and map, street scenes, the engagement roll, the NPC generator, capture (GM.md); gm/ also holds the NPC generator's logic and figure map, which the sync uses too
-  display-page.js, display.css   the iPad's full-screen display (#display, GM.md)
+  display-page.js, display.css   the iPad's full-screen display (#display, GM.md): the spotlight over an ambient scene
+  ambient/, _headers  the ambient scenes the iPad plays when nothing is spotlit (GM.md, "Ambient scenes"), framed same-origin only
   figures/           the vendored figure kit (v2) and cast
   maps/              the vendored map kit (B68Map): a location roll drawn as a rings, plan, iso or section SVG
   fonts/ icons/      vendored fonts; install icons
@@ -47,6 +48,8 @@ migrations/          D1 migrations (the statements of schema.sql)
 scripts/             deploy.sh (D1, Access, secrets, deploy, smoke test) and access-emails.sh; the GM's local tools gm-pack.mjs
                      (build the pack from the vault), gm-sync.mjs (pull/push between the app and the vault, SYNC.md) and
                      gm-parity.mjs (the ports against the vault's own pages)
+tools/ambient/       the designer's generator for the score scenes (make-score-scenes.js, shell.js, grain.js): reference only,
+                     not deployed; the live score scenes are built in the browser (GM.md, "Ambient scenes")
 checks/
   api/               API checks (JWT unit test, the Worker and its config, end-to-end flow against wrangler dev)
   runtime/           adapter and PWA unit tests, offline, schedule and phone end-to-end runs, icon builder
@@ -81,6 +84,7 @@ The npm scripts (from the repository root):
 | `npm run check:cast` | `checks/runtime/cast.e2e.mjs`: the cast end to end against its own server (port 8842), a GM and a player in two browser contexts, and at 360 px; then `cast.artifact.e2e.mjs`: the same in the artifact's runtime (a stubbed db) |
 | `npm run check:gm` | `checks/runtime/gm.e2e.mjs`: the GM page and the display wiring against its own server (port 8845) with invented fixture tables: importing a pack, the keys, replay on reload, capture, the location map (only the player layer reaches the display), the cast to the iPad, the phone and iPad layouts, a player's view |
 | `node checks/runtime/gm-scenes.e2e.mjs`, `gm-npc-panel.e2e.mjs`, `display-role.e2e.mjs` | the Street and Engage panels, the NPC generator panel (a roll, reload, Earlier, Add to the cast and the seed the sync replays) and the iPad's display-only sign-in in a browser; no npm script, run them directly (each starts its own server, ports 8857, 8858 and 8856) |
+| `npm run check:ambient`, `npm run check:display-ambient` | the ambient scene files (no outside URLs, the `_headers` rules; also on `check:runtime` with `ambient-shells.test.mjs`), then the ambient floor in a browser on its own server (port 8871): the spotlight covers and clears it, rotation, pin, skip, lights out, heat and wanted to the City Watch feed, the score scenes, same-origin requests only |
 | `npm run build` | `wrangler deploy --dry-run`: bundles the Worker into `.wrangler/dist`, uploads nothing |
 | `npm run icons` | rebuilds `app/icons/*` from the figure kit (`checks/runtime/icons.mjs`) |
 

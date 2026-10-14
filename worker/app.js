@@ -28,6 +28,7 @@ import { onRequest as npc } from '../functions/api/npcs/[id].js';
 import { onRequest as gmPack } from '../functions/api/gm/pack.js';
 import { onRequest as gmState } from '../functions/api/gm/state.js';
 import { onRequest as gmDisplay } from '../functions/api/gm/display.js';
+import { onRequest as gmAmbient } from '../functions/api/gm/ambient.js';
 import { gmNotFound } from '../functions/_lib/gm.js';
 import { onRequest as notFound } from '../functions/api/[[path]].js';
 
@@ -49,6 +50,7 @@ export const ROUTES = [
   { re: /^\/api\/gm\/pack\/?$/, handler: gmPack, path: '/api/gm/pack' },
   { re: /^\/api\/gm\/state\/?$/, handler: gmState, path: '/api/gm/state' },
   { re: /^\/api\/gm\/display\/?$/, handler: gmDisplay, path: '/api/gm/display' },
+  { re: /^\/api\/gm\/ambient\/?$/, handler: gmAmbient, path: '/api/gm/ambient' },
   { re: /^\/api\/gm(?:\/.*)?$/, handler: gmNotFound, path: '/api/gm/[[path]]' },
 ];
 

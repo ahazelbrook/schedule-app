@@ -339,11 +339,72 @@ await test('(d) only a player-layer render goes to the display: GM layer refused
 
 await test('(d) keys: never while typing (Esc only) or with a modifier; 1-9, N B S E T, P X M, L, H', async () => {
   const k = (key, x = {}) => GP.keyAction({ key, ...x });
-  assertEq([k('1'), k('9'), k('0')], [{ type: 'button', n: 1 }, { type: 'button', n: 9 }, null], 'digits');
+  assertEq([k('1'), k('9'), k('0')], [{ type: 'button', n: 1 }, { type: 'button', n: 9 }, { type: 'clear' }], 'digits (0 clears the iPad to ambient)');
+  assertEq([k('i').panel, k('0', { typing: true }), k('i', { ctrlKey: true })], ['ipad', null, null], 'the iPad panel key');
   assertEq([k('n').panel, k('B').panel, k('t').panel, k('s').panel, k('E').panel], ['npc', 'location', 'rules', 'scenes', 'engagement'], 'panels');
   assertEq([k('p').bucket, k('x').bucket, k('M').bucket, k('l').type, k('h').type], ['n', 'x', 'm', 'last', 'blank'], 'capture');
   assertEq([k('1', { typing: true }), k('h', { typing: true }), k('Escape', { typing: true })], [null, null, { type: 'esc' }], 'typing');
   assertEq([k('1', { ctrlKey: true }), k('h', { metaKey: true }), k('p', { altKey: true })], [null, null, null], 'modifiers');
+});
+
+/* ---------- (g) the score scene: the one new route from a roll to the players' screen ---------- */
+const SCORE_ROLLS = JSON.parse(read(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'score-rolls.json')));
+const MAPKIT = createRequire(import.meta.url)(path.join(ROOT, 'app', 'maps', 'map-kit.js'));
+const mapRender = MAPKIT.render.bind(MAPKIT);
+const { checkSvg } = await import((await import('node:url')).pathToFileURL(path.join(ROOT, 'functions', '_lib', 'gm.js')).href);
+
+await test('(g) a score scene is only ever built from a player-layer render made here: a GM-layer request renders nothing', async () => {
+  const calls = [];
+  const spy = (roll, o) => { calls.push(o); return mapRender(roll, o); };
+  for (const map of [{ layer: 'gm' }, { layer: 'GM', view: 'plan' }, {}, null, { layer: undefined, reveal: { public: true } }]) {
+    let err = null; try { GP.scoreScene(SCORE_ROLLS.clean, map, spy); } catch (e) { err = e; }
+    if (!err) throw new Error('a request on ' + JSON.stringify(map) + ' was accepted');
+  }
+  if (calls.length) throw new Error('a refused request still rendered: ' + JSON.stringify(calls));
+  const s = GP.scoreScene(SCORE_ROLLS.clean, { layer: 'player', reveal: { public: true } }, spy);
+  if (!calls.length || calls.some((c) => c.layer !== 'player')) throw new Error('every render must be the player layer: ' + JSON.stringify(calls.map((c) => c.layer)));
+  assertEq(calls.map((c) => c.reveal.join()), ['public', 'public'], 'reveal is the public band only');
+  assertEq(Object.keys(s.score).sort(), ['board', 'district', 'iso', 'name', 'reveal', 'target', 'view'], 'the fields that go out');
+  assertEq([s.score.name, s.score.district, s.score.target], ['Plain Hall', 'Elsewhere', ''], 'the place name and district; the target is never sent');
+});
+
+await test('(g) a leaking plan falls back to rings; a leaking iso is refused; the hidden name is on neither svg', async () => {
+  const leaky = SCORE_ROLLS.leaky, hidden = 'basement';
+  const plan = mapRender(leaky, { view: 'plan', theme: 'board', layer: 'player', reveal: ['public'], width: 1600 });
+  if (!GP.leaks(plan.svg, leaky, ['public']).includes(hidden)) throw new Error('self-test: the fixture plan should name the hidden level');
+  const s = GP.scoreScene(leaky, { layer: 'player', reveal: { public: true } }, mapRender);
+  assertEq([s.view, s.score.view, s.rings], ['rings', 'rings', true], 'rings instead of the plan');
+  for (const [k, svg] of [['board', s.score.board], ['iso', s.score.iso]]) {
+    if (GP.leaks(svg, leaky, ['public']).length) throw new Error(k + ' names a hidden room');
+    if (svg.toLowerCase().includes(hidden)) throw new Error(k + ' prints the hidden room name');
+    checkSvg(svg);
+  }
+  const isoLeak = (roll, o) => ({ svg: o.view === 'iso' ? '<svg><text>Basement</text></svg>' : mapRender(roll, o).svg });
+  let err = null; try { GP.scoreScene(leaky, { layer: 'player', reveal: { public: true } }, isoLeak); } catch (e) { err = e; }
+  if (!err || !err.leak || err.message !== GP.LEAK_MSG) throw new Error('a leaking iso was not refused: ' + (err && err.message));
+  const open = GP.scoreScene(leaky, { layer: 'player', reveal: { public: true, working: true, controlled: true, secure: true } }, mapRender);
+  assertEq([open.view, open.rings], ['plan', false], 'revealed: the plan stands');
+});
+
+await test('(g) the gate: a score patch passes only with both svgs marked from a player render; a GM-layer svg, one svg, or an unmarked svg is refused', async () => {
+  const gate = GP.makeGate();
+  const gmSvg = mapRender(SCORE_ROLLS.clean, { view: 'plan', theme: 'board', layer: 'gm', reveal: ['public'], width: 1600 }).svg;
+  const s = GP.scoreScene(SCORE_ROLLS.clean, { layer: 'player', reveal: { public: true } }, mapRender);
+  if (gate.allowsAmbient({ score: s.score })) throw new Error('an unmarked score passed');
+  gate.mark(s.board); if (gate.allowsAmbient({ score: s.score })) throw new Error('a score with one marked svg passed');
+  gate.mark(s.iso); if (!gate.allowsAmbient({ score: s.score })) throw new Error('a marked score was refused');
+  if (gate.allowsAmbient({ score: Object.assign({}, s.score, { board: gmSvg }) })) throw new Error('a GM-layer board passed the gate');
+  if (gate.allowsAmbient({ score: Object.assign({}, s.score, { iso: gmSvg }) })) throw new Error('a GM-layer iso passed the gate');
+  if (!gate.allowsAmbient({ score: null }) || !gate.allowsAmbient({ mode: 'off' })) throw new Error('clearing the score and the other keys pass');
+  if (gate.allowsAmbient({ score: { board: s.board } })) throw new Error('an iso-less score passed');
+});
+
+await test('(g) the page source: a score is written only as the built score or null, and patchAmbient runs the gate', async () => {
+  const src = read(path.join(ROOT, 'app', 'gm-page.js'));
+  const uses = src.match(/patchAmbient\(\{ score:/g) || [];
+  if (uses.length !== 2) throw new Error('expected exactly the set (built.score) and the clear (null) writes, found ' + uses.length);
+  if (!/patchAmbient\(\{ score: built\.score \}\)/.test(src) || !/patchAmbient\(\{ score: null \}\)/.test(src)) throw new Error('a score write that is neither the built score nor null');
+  if (!/if \(!gate\.allowsAmbient\(p\)\)/.test(src)) throw new Error('patchAmbient no longer runs the gate');
 });
 
 await test('(d) the pack file is validated before upload; the note has the four headings and the session number', async () => {

@@ -1,5 +1,5 @@
-// The GM tools' API against a local `wrangler dev` (see GM.md, HOSTING.md): /api/gm/pack, /api/gm/state and
-// /api/gm/display are GM only (403 for a player on every method, before the body is read; 401 without a token), the
+// The GM tools' API against a local `wrangler dev` (see GM.md, HOSTING.md): /api/gm/pack, /api/gm/state,
+// /api/gm/ambient (AMBIENT-PLAN.md) and /api/gm/display are GM only (403 for a player on every method, before the body is read; 401 without a token), the
 // caps and validation, the unchanged answers, /api/export carrying none of it, and no GM key on /api/characters (for
 // anyone). Every table, name and sentence in here is invented: the real pack is never in this repository.
 //
@@ -17,6 +17,7 @@ import { worker, matchApi } from '../../worker/app.js';
 import { onRequest as gmPack } from '../../functions/api/gm/pack.js';
 import { onRequest as gmState } from '../../functions/api/gm/state.js';
 import { onRequest as gmDisplay } from '../../functions/api/gm/display.js';
+import { onRequest as gmAmbient } from '../../functions/api/gm/ambient.js';
 import { gmNotFound } from '../../functions/_lib/gm.js';
 import { onRequest as notFound } from '../../functions/api/[[path]].js';
 
@@ -86,16 +87,18 @@ const svgOk = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w
 // ---------- no server: the router, the middleware, and the role check before the body ----------
 
 await step('router: /api/gm/pack, /state and /display map to their handlers; any other /api/gm path to the GM-only 404', async () => {
-  for (const [p, h] of [['/api/gm/pack', gmPack], ['/api/gm/pack/', gmPack], ['/api/gm/state', gmState], ['/api/gm/display', gmDisplay], ['/api/gm/display/', gmDisplay]]) {
+  for (const [p, h] of [['/api/gm/pack', gmPack], ['/api/gm/pack/', gmPack], ['/api/gm/state', gmState], ['/api/gm/display', gmDisplay], ['/api/gm/display/', gmDisplay],
+    ['/api/gm/ambient', gmAmbient], ['/api/gm/ambient/', gmAmbient]]) {
     expect(matchApi(p).handler === h, p);
   }
-  for (const p of ['/api/gm', '/api/gm/', '/api/gm/nope', '/api/gm/pack/x', '/api/gm/state/a/b']) expect(matchApi(p).handler === gmNotFound, p);
+  for (const p of ['/api/gm', '/api/gm/', '/api/gm/nope', '/api/gm/pack/x', '/api/gm/state/a/b', '/api/gm/ambient/x']) expect(matchApi(p).handler === gmNotFound, p);
   expect(matchApi('/api/gmx').handler === notFound && matchApi('/api/gm-pack').handler === notFound, 'other paths stay the plain 404');
 });
 
 await step('without a token every /api/gm path and method is 401, no-store', async () => {
   for (const [m, p] of [['GET', '/api/gm/pack'], ['POST', '/api/gm/pack'], ['DELETE', '/api/gm/pack?part=console'], ['GET', '/api/gm/state'],
-    ['PATCH', '/api/gm/state'], ['GET', '/api/gm/display'], ['PUT', '/api/gm/display'], ['GET', '/api/gm/other']]) {
+    ['PATCH', '/api/gm/state'], ['GET', '/api/gm/display'], ['PUT', '/api/gm/display'], ['GET', '/api/gm/ambient'], ['PATCH', '/api/gm/ambient'],
+    ['GET', '/api/gm/other']]) {
     const r = await worker.fetch(new Request('https://blades.example.test' + p, { method: m }), { CAMPAIGN: 'x' }, {});
     expect(r.status === 401, m + ' ' + p + ': ' + r.status);
     expect(r.headers.get('Cache-Control') === 'no-store', m + ' ' + p + ': cache-control');
@@ -110,7 +113,7 @@ await step('the role is checked before anything else: a player never reaches the
     text() { touched.push('text'); throw new Error('read'); }, get body() { touched.push('body'); return null; },
   });
   const env = { get DB() { touched.push('DB'); return undefined; }, CAMPAIGN: 'x' };
-  for (const h of [gmPack, gmState, gmDisplay, gmNotFound]) {
+  for (const h of [gmPack, gmState, gmDisplay, gmAmbient, gmNotFound]) {
     for (const m of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
       for (const me of [{ role: 'player', id: PLAYER }, undefined]) {
         let err = null;
@@ -160,6 +163,7 @@ async function main() {
   });
 
   let v1;
+  let SVG_CASES = [];   // [svg value, status, error pattern]: filled by the display validation step, replayed for the ambient score
   await step('GM imports two parts; the index lists them (no bodies) and a part reads back as stored', async () => {
     let r = await gm('GET', '/api/gm/pack'); status(r, 200);
     expect(r.json.version === '0' && JSON.stringify(r.json.parts) === '{}', 'empty index: ' + r.text);
@@ -341,6 +345,8 @@ async function main() {
       const r = await gm('PUT', '/api/gm/display', body);
       expect(r.status === code && re.test(r.json && r.json.error), JSON.stringify(body).slice(0, 90) + ' -> ' + r.status + ' ' + r.text.slice(0, 160));
     }
+    // the same svg refusals are replayed against the ambient score's board and iso (the ambient steps below)
+    SVG_CASES = cases.filter(([b]) => b.kind === 'svg').map(([b, code, re]) => [b.svg, code, re]);
     status(await call('PUT', '/api/gm/display', { user: GM, raw: '[1]' }), 400);
     status(await call('PUT', '/api/gm/display', { user: GM, raw: '{nope' }), 400);
     // at the caps is fine
@@ -348,6 +354,186 @@ async function main() {
     const pad = L.svg - svg('<text></text>').length;
     r = await gm('PUT', '/api/gm/display', { kind: 'svg', svg: svg('<text>' + 'x'.repeat(pad) + '</text>') }); status(r, 200);
     expect(r.json.seq === seq0 + 2, 'only the two good writes moved seq: ' + r.json.seq + ' from ' + seq0);
+  });
+
+  // ---------- the ambient document ----------
+  const AMARK = 'ambient-probe-marzipan';   // must never leave through /api/export or the campaign reads
+  const board = (txt) => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/><text x="1" y="5">' + txt + '</text></svg>';
+  const scoreOk = (extra) => ({ name: 'The Lantern Wharf Job', district: 'Eastgate', target: 'Customs shed', reveal: ['public'], view: 'plan', board: board('board ' + AMARK), iso: board('iso'), ...extra });
+  const A = (body) => gm('PATCH', '/api/gm/ambient', body);
+  const ambSeq = async () => (await gm('GET', '/api/gm/ambient')).json.seq;
+
+  await step('ambient: a player gets 403 on every method before the body is read (even a malformed or oversized one); nothing is stored', async () => {
+    const big = JSON.stringify({ score: { name: 'y'.repeat(3 * 1024 * 1024) } });
+    for (const m of ['GET', 'PATCH', 'DELETE', 'PUT', 'POST']) {
+      for (const raw of m === 'GET' || m === 'DELETE' ? [undefined] : ['{nope', '[1]', '{"mode":"pin"}', big]) {
+        const r = await call(m, '/api/gm/ambient', { user: PLAYER, raw });
+        status(r, 403);
+        expect(/only the GM/.test(r.json && r.json.error), m + ': ' + r.text);
+        expect(r.headers.get('cache-control') === 'no-store', 'no-store');
+      }
+    }
+    const r = await gm('GET', '/api/gm/ambient'); status(r, 200);
+    expect(r.json.seq === 0 && JSON.stringify(r.json.doc) === '{}' && r.json.updatedAt === null, 'empty: ' + r.text);
+    for (const m of ['PUT', 'POST', 'DELETE']) status(await gm(m, '/api/gm/ambient', {}), 405);
+    status(await call('PATCH', '/api/gm/ambient', { user: GM, raw: '{nope' }), 400);
+    status(await call('PATCH', '/api/gm/ambient', { user: GM, raw: '[1]' }), 400);
+    expect(await ambSeq() === 0, 'a refused write moves nothing');
+  });
+
+  await step('ambient: PATCH mode, scene, playlist, interval, crew and score read back; other keys dropped; arrays and crew replace', async () => {
+    let r = await A({ mode: 'pin', scene: 'duskwall', junk: 1 }); status(r, 200);
+    expect(r.json.seq === 1 && JSON.stringify(r.json.doc) === '{"mode":"pin","scene":"duskwall"}' && typeof r.json.updatedAt === 'string', r.text);
+    const t1 = r.json.updatedAt;
+    r = await A({ playlist: ['harvest', 'watch', 'board'], intervalMin: 10 }); status(r, 200);
+    expect(r.json.seq === 2 && r.json.doc.mode === 'pin' && JSON.stringify(r.json.doc.playlist) === '["harvest","watch","board"]' && r.json.doc.intervalMin === 10, r.text);
+    expect(r.json.updatedAt > t1, 'updatedAt moves');
+    r = await A({ playlist: ['exploded'], intervalMin: 3 }); status(r, 200);
+    expect(JSON.stringify(r.json.doc.playlist) === '["exploded"]' && r.json.doc.intervalMin === 3, 'playlist replaces: ' + r.text);
+    r = await A({ intervalMin: 30, mode: 'auto' }); status(r, 200);
+    expect(r.json.doc.intervalMin === 30 && r.json.doc.mode === 'auto', r.text);
+    r = await A({ crew: { heat: 9, wanted: 4, extra: 'dropped' } }); status(r, 200);
+    expect(JSON.stringify(r.json.doc.crew) === '{"heat":9,"wanted":4}', r.text);
+    r = await A({ crew: { heat: 0, wanted: 0 } }); status(r, 200);
+    expect(JSON.stringify(r.json.doc.crew) === '{"heat":0,"wanted":0}', 'crew replaces as a whole: ' + r.text);
+    const before = Date.now();
+    r = await A({ score: scoreOk({ reveal: ['secure', 'public', 'public'], view: 'rings', junk: 'dropped' }) }); status(r, 200);
+    const s = r.json.doc.score;
+    expect(s.name === 'The Lantern Wharf Job' && s.district === 'Eastgate' && s.target === 'Customs shed' && s.view === 'rings' && !('junk' in s), r.text.slice(0, 300));
+    expect(JSON.stringify(s.reveal) === '["public","secure"]', 'reveal deduped, in band order: ' + JSON.stringify(s.reveal));
+    expect(s.board === board('board ' + AMARK) && s.iso === board('iso'), 'svgs stored as sent');
+    expect(Math.abs(Date.parse(s.at) - before) < 60000 && new Date(s.at).toISOString() === s.at, 'at is the server time: ' + s.at);
+    r = await A({ score: scoreOk({ name: 'Kept short', at: '1999-01-01T00:00:00.000Z' }) }); status(r, 200);
+    expect(r.json.doc.score.name === 'Kept short' && r.json.doc.score.at !== '1999-01-01T00:00:00.000Z', 'a sent `at` is ignored; the score replaces whole');
+    const g = await gm('GET', '/api/gm/ambient'); status(g, 200);
+    expect(JSON.stringify(g.json) === JSON.stringify({ seq: g.json.seq, doc: r.json.doc, updatedAt: r.json.updatedAt }) && g.json.seq === 8, 'GET reads back what PATCH answered: ' + g.text.slice(0, 200));
+  });
+
+  await step('ambient: skip:true adds one each time and survives other patches; null deletes a key; score:null clears; an empty patch writes nothing', async () => {
+    let r = await A({ skip: true }); status(r, 200);
+    expect(r.json.doc.skip === 1, r.text.slice(0, 200));
+    r = await A({ skip: true, mode: 'off' }); status(r, 200);
+    expect(r.json.doc.skip === 2 && r.json.doc.mode === 'off', 'skip with other keys');
+    r = await A({ scene: 'testcard' }); expect(r.json.doc.skip === 2, 'other patches leave the counter');
+    r = await A({ score: null }); status(r, 200);
+    expect(!('score' in r.json.doc) && r.json.doc.skip === 2 && r.json.doc.crew.heat === 0, 'score cleared, the rest kept');
+    r = await A({ scene: null, playlist: null, intervalMin: null, crew: null, mode: null }); status(r, 200);
+    expect(JSON.stringify(r.json.doc) === '{"skip":2}', 'null deletes: ' + JSON.stringify(r.json.doc));
+    const seq = r.json.seq;
+    r = await A({}); status(r, 200);
+    expect(r.json.seq === seq, 'an empty patch does not move seq');
+    r = await A({ junk: true }); status(r, 200);
+    expect(r.json.seq === seq && JSON.stringify(r.json.doc) === '{"skip":2}', 'a patch of only unknown keys is the same');
+  });
+
+  await step('ambient validation: malformed is 400, too long 413, and a refused patch (even one with a good key in it) changes nothing', async () => {
+    const seq0 = await ambSeq();
+    const cases = [
+      [{ mode: 'loud' }, 400, /mode must be/], [{ mode: 5 }, 400, /mode must be/], [{ mode: '' }, 400, /mode must be/],
+      [{ scene: 'nope' }, 400, /scene must be one of/], [{ scene: 5 }, 400, /scene must be one of/], [{ scene: '' }, 400, /scene must be one of/],
+      [{ playlist: 'harvest' }, 400, /playlist must be a non-empty array/], [{ playlist: [] }, 400, /playlist must be a non-empty array/],
+      [{ playlist: ['harvest', 'nope'] }, 400, /playlist entries must be one of/], [{ playlist: [1] }, 400, /playlist entries/],
+      [{ playlist: ['watch', 'watch'] }, 400, /must not repeat/], [{ playlist: Array(13).fill('harvest') }, 413, /playlist is too long/],
+      [{ intervalMin: 2 }, 400, /intervalMin must be/], [{ intervalMin: 31 }, 400, /intervalMin must be/], [{ intervalMin: 7.5 }, 400, /intervalMin must be/],
+      [{ intervalMin: '7' }, 400, /intervalMin must be/], [{ intervalMin: 0 }, 400, /intervalMin must be/], [{ intervalMin: true }, 400, /intervalMin must be/],
+      [{ skip: false }, 400, /skip must be true/], [{ skip: 1 }, 400, /skip must be true/], [{ skip: 'yes' }, 400, /skip must be true/], [{ skip: null }, 400, /skip must be true/],
+      [{ crew: { heat: 10, wanted: 1 } }, 400, /crew\.heat/], [{ crew: { heat: -1, wanted: 1 } }, 400, /crew\.heat/], [{ crew: { heat: 1.5, wanted: 1 } }, 400, /crew\.heat/],
+      [{ crew: { heat: '3', wanted: 1 } }, 400, /crew\.heat/], [{ crew: { wanted: 1 } }, 400, /crew\.heat/],
+      [{ crew: { heat: 1, wanted: 5 } }, 400, /crew\.wanted/], [{ crew: { heat: 1, wanted: -1 } }, 400, /crew\.wanted/], [{ crew: { heat: 1, wanted: 2.5 } }, 400, /crew\.wanted/],
+      [{ crew: { heat: 1 } }, 400, /crew\.wanted/], [{ crew: [] }, 400, /crew must be/], [{ crew: 'hot' }, 400, /crew must be/],
+      [{ score: 'a score' }, 400, /score must be/], [{ score: [] }, 400, /score must be/],
+      [{ score: scoreOk({ reveal: ['public', 'basement'] }) }, 400, /score\.reveal holds only/], [{ score: scoreOk({ reveal: [] }) }, 400, /score\.reveal must be/],
+      [{ score: scoreOk({ reveal: 'public' }) }, 400, /score\.reveal must be/], [{ score: scoreOk({ reveal: undefined }) }, 400, /score\.reveal must be/],
+      [{ score: scoreOk({ view: 'iso' }) }, 400, /score\.view must be/], [{ score: scoreOk({ view: undefined }) }, 400, /score\.view must be/],
+      [{ score: scoreOk({ iso: undefined }) }, 400, /svg must be a string/], [{ score: scoreOk({ board: undefined }) }, 400, /svg must be a string/],
+      [{ score: scoreOk({ iso: '' }) }, 400, /must start with <svg/], [{ score: scoreOk({ iso: null }) }, 400, /svg must be a string/],
+      [{ score: scoreOk({ name: 5 }) }, 400, /score\.name must be a string/], [{ score: scoreOk({ name: 'n'.repeat(201) }) }, 413, /score\.name is too long/],
+      [{ score: scoreOk({ district: 'd'.repeat(201) }) }, 413, /score\.district is too long/], [{ score: scoreOk({ target: 't'.repeat(201) }) }, 413, /score\.target is too long/],
+    ];
+    for (const [body, code, re] of cases) {
+      // a good key beside the bad one must not be applied
+      const r = await A({ scene: 'harvest', ...body });
+      expect(r.status === code && re.test(r.json && r.json.error), JSON.stringify(body).slice(0, 90) + ' -> ' + r.status + ' ' + r.text.slice(0, 160));
+    }
+    let r = await A({ score: scoreOk({ name: 'n'.repeat(200), district: 'd'.repeat(200), target: 't'.repeat(200), reveal: ['public', 'working', 'controlled', 'secure'] }) }); status(r, 200);   // at the caps is fine
+    r = await A({ score: null }); status(r, 200);
+    const g = (await gm('GET', '/api/gm/ambient')).json;
+    expect(g.seq === seq0 + 2 && !('scene' in g.doc), 'only the two good writes moved seq, and no scene was applied from a refused patch: ' + JSON.stringify(g).slice(0, 200));
+  });
+
+  await step('ambient: every display svg refusal is replayed against score.board and score.iso', async () => {
+    expect(SVG_CASES.length >= 30, 'the display step collected its svg cases: ' + SVG_CASES.length);
+    const seq0 = await ambSeq();
+    for (const [svg, code, re] of SVG_CASES) {
+      for (const field of ['board', 'iso']) {
+        const r = await A({ score: scoreOk({ [field]: svg }) });
+        expect(r.status === code && re.test(r.json && r.json.error), field + ' ' + String(svg).slice(0, 70) + ' -> ' + r.status + ' ' + r.text.slice(0, 160));
+      }
+    }
+    expect(await ambSeq() === seq0, 'nothing was stored');
+  });
+
+  await step('ambient: the stored document is capped at 1.4 MiB (413), a request at 2.5 MiB (413); nothing changes on a refusal', async () => {
+    const quotes = (n) => '<svg xmlns="http://www.w3.org/2000/svg"><text>' + '"'.repeat(n) + '</text></svg>';   // every " is two bytes once stored
+    const n = L.svg - 100;
+    const seq0 = await ambSeq();
+    let r = await A({ score: scoreOk({ board: quotes(n), iso: quotes(n) }) });
+    expect(r.status === 413 && /ambient document is too large/.test(r.json.error), 'two escaped 600 KiB svgs: ' + r.status + ' ' + r.text.slice(0, 160));
+    r = await A({ score: scoreOk({ board: quotes(n) }) }); status(r, 200);   // one of them fits (about 1.2 MB stored)
+    expect(r.json.doc.score.board.length > 500 * KiB, 'stored');
+    r = await A({ score: scoreOk({ board: board('small') }) }); status(r, 200);
+    r = await A({ score: null }); status(r, 200);
+    expect(await ambSeq() === seq0 + 3, 'the refused write left seq alone');
+    r = await call('PATCH', '/api/gm/ambient', { user: GM, raw: JSON.stringify({ blob: 'z'.repeat(2560 * KiB) }) });
+    expect(r.status === 413 && /too large/.test(r.json.error), 'request over the cap: ' + r.status + ' ' + r.text.slice(0, 100));
+  });
+
+  await step('display: the dark kind is accepted (no extra fields kept) and bumps seq', async () => {
+    const seq0 = (await gm('GET', '/api/gm/display')).json.seq;
+    let r = await gm('PUT', '/api/gm/display', { kind: 'dark', title: 'Lights out', text: 'dropped', svg: svgOk, npcId: 'dropped', junk: 1 }); status(r, 200);
+    expect(r.json.seq === seq0 + 1 && JSON.stringify(r.json.display) === '{"kind":"dark","title":"Lights out","caption":""}', r.text.slice(0, 200));
+    r = await gm('PUT', '/api/gm/display', { kind: 'dark' }); status(r, 200);
+    expect(r.json.display.kind === 'dark', r.text);
+    r = await gm('GET', '/api/gm/display'); expect(r.json.display.kind === 'dark', 'reads back');
+    r = await gm('PUT', '/api/gm/display', { kind: 'blank' }); status(r, 200);
+    r = await gm('PUT', '/api/gm/display', { kind: 'darkish' }); status(r, 400);
+    expect(/kind must be one of blank, dark, svg, npc, text/.test(r.json.error), r.text);
+  });
+
+  await step('display GET carries the ambient; ?seq alone is the old call; ?seq&aseq answers unchanged per half', async () => {
+    status(await A({ mode: 'auto', playlist: ['harvest', 'duskwall'], intervalMin: 7 }), 200);
+    const a = await gm('GET', '/api/gm/ambient'); status(a, 200);
+    const d = await gm('GET', '/api/gm/display'); status(d, 200);
+    expect(Object.keys(d.json).sort().join() === 'ambient,display,seq,updatedAt', 'keys ' + Object.keys(d.json));
+    expect(JSON.stringify(d.json.ambient) === JSON.stringify(a.json) && d.json.ambient.doc.mode === 'auto', 'the full ambient: ' + d.text.slice(0, 200));
+    const S = d.json.seq, AS = a.json.seq;
+    expect(S > 1 && AS > 1, 'seqs are well past 0 and 1: ' + S + ' ' + AS);
+    const get = async (q) => { const r = await gm('GET', '/api/gm/display' + q); status(r, 200); return r.json; };
+    // old clients: seq alone
+    let j = await get('?seq=' + S);
+    expect(JSON.stringify(j) === JSON.stringify({ seq: S, unchanged: true }), 'old call, current: ' + JSON.stringify(j));
+    j = await get('?seq=' + (S - 1));
+    expect(j.display && j.seq === S && JSON.stringify(j.ambient) === JSON.stringify(a.json), 'old call, stale: full display and full ambient');
+    // both halves
+    j = await get('?seq=' + S + '&aseq=' + AS);
+    expect(JSON.stringify(j) === JSON.stringify({ seq: S, unchanged: true, ambient: { seq: AS, unchanged: true } }), 'both current: ' + JSON.stringify(j));
+    j = await get('?seq=' + S + '&aseq=' + (AS - 1));
+    expect(j.display && !j.unchanged && j.seq === S && JSON.stringify(j.ambient) === JSON.stringify(a.json), 'ambient stale: ' + JSON.stringify(j).slice(0, 200));
+    j = await get('?seq=' + (S - 1) + '&aseq=' + AS);
+    expect(j.display && !j.unchanged && JSON.stringify(j.ambient) === JSON.stringify({ seq: AS, unchanged: true }), 'display stale: ' + JSON.stringify(j.ambient));
+    j = await get('?seq=' + (S - 1) + '&aseq=' + (AS - 1));
+    expect(j.display && JSON.stringify(j.ambient) === JSON.stringify(a.json), 'both stale');
+    j = await get('?aseq=' + AS);
+    expect(j.display && !j.unchanged && JSON.stringify(j.ambient) === JSON.stringify({ seq: AS, unchanged: true }), 'aseq alone: ' + JSON.stringify(j.ambient));
+    j = await get('?aseq=' + AS + '&seq=garbage');
+    expect(j.display && JSON.stringify(j.ambient) === JSON.stringify({ seq: AS, unchanged: true }), 'an odd seq is just stale');
+    // an empty aseq is not a match
+    expect((await get('?seq=' + S + '&aseq=')).ambient.doc !== undefined, 'an empty aseq is stale');
+    // the ambient write moves only its own half
+    status(await A({ skip: true }), 200);
+    j = await get('?seq=' + S + '&aseq=' + AS);
+    expect(j.display && j.ambient.doc && j.ambient.seq === AS + 1, 'after an ambient write the pair is stale: ' + JSON.stringify(j).slice(0, 160));
+    status(await player('GET', '/api/gm/display?seq=1&aseq=1'), 403);
   });
 
   await step('state: {} until written; PATCH merges maps, null deletes, arrays replace; the 256 KiB cap; /api/campaign untouched', async () => {
@@ -397,9 +583,15 @@ async function main() {
     status(await gm('PATCH', '/api/gm/state', { pins: { m: { text: 'Export probe ' + MARK } } }), 200);
     status(await gm('PUT', '/api/gm/display', { kind: 'text', text: 'Display probe ' + MARK }), 200);
     expect((await gm('GET', '/api/gm/pack?part=console')).text.includes(MARK), 'the pack holds the marker');
+    const set = await A({ score: scoreOk({ name: 'Ambient probe ' + AMARK }), mode: 'pin', scene: 'board' }); status(set, 200);
+    expect((await gm('GET', '/api/gm/ambient')).text.includes(AMARK) && (await gm('GET', '/api/gm/display')).text.includes(AMARK), 'the ambient holds the marker');
     const r = await gm('GET', '/api/export'); status(r, 200);
     expect(Object.keys(r.json).sort().join() === 'campaign,characters,exportedAt,members,npcs', 'keys ' + Object.keys(r.json));
     expect(!r.text.includes(MARK) && !/Fixture\/console|Pigeon loft|Display probe|gmcheck#gm/.test(r.text), 'GM data in the export');
+    expect(!r.text.includes(AMARK) && !/ambient|Lantern Wharf|gm_ambient/i.test(r.text), 'ambient data in the export');
+    for (const p of ['/api/campaign', '/api/characters']) {
+      expect(!(await player('GET', p)).text.includes(AMARK) && !(await gm('GET', p)).text.includes(AMARK), 'ambient data on ' + p);
+    }
     status(await player('GET', '/api/export'), 403);
   });
 }

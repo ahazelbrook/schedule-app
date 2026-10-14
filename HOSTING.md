@@ -82,7 +82,7 @@ Environment / bindings: `DB` (D1), `ASSETS` (the files in `app/`), the secrets `
 ## Database (`schema.sql`, `migrations/`)
 
 `schema.sql` is the whole schema as it stands; `migrations/` holds the same statements as
-numbered D1 migrations (`0001_init.sql` to `0005_member_name.sql`), applied with `npx wrangler d1 migrations apply DB
+numbered D1 migrations (`0001_init.sql` to `0006_gm_ambient.sql`), applied with `npx wrangler d1 migrations apply DB
 --remote` (the deploy script does it) or `npm run db:local`. A later change goes in a new
 numbered file and in `schema.sql`; `checks/api/worker.mjs` fails when the two differ. The API
 also creates the tables lazily, so a fresh database works either way.
@@ -220,10 +220,14 @@ before the body is read (no token: 401, as everywhere). Never part of `/api/expo
 - `GET /api/gm/state` → `{ doc, updatedAt }`; `PATCH` deep-merges (maps merge, null deletes, arrays replace; ≤ 256 KiB). Stored as
   the `campaigns` row `<CAMPAIGN>#gm`, which `/api/campaign` and `/api/export` never read.
 - `GET /api/gm/display` → `{ seq, display, updatedAt }` (`?seq=N` → `{ seq, unchanged: true }`); `PUT { kind, title, caption,
-  svg | npcId | text }` bumps `seq`. `kind` ∈ `blank | svg | npc | text`; the svg (≤ 600 KiB, starts `<svg`) is refused (400) with
+  svg | npcId | text }` bumps `seq`. `kind` ∈ `blank | dark | svg | npc | text` (blank: the ambient scene plays; dark: lights out); the svg (≤ 600 KiB, starts `<svg`) is refused (400) with
   scripts, `foreignObject`, HTML elements (namespaced too), `<a>`, `xml:base`, `javascript:`, `on…=` attributes, backslashes in
   attribute values, `image-set()`/`src()`, any `url()` other than `#fragment`, or any `href`/`src` other than `#fragment` (a raster
   `data:image/` only on `<image>`/`<feImage>`); GM.md has the full list. Table `gm_display(campaign, seq, updated_at, doc)`.
+  The GET also carries `ambient: { seq, doc, updatedAt }` (`&aseq=M` → `{ seq, unchanged: true }` while current).
+- `GET /api/gm/ambient` → `{ seq, doc, updatedAt }`; `PATCH` merges the top level (null deletes, `skip: true` bumps a counter): mode,
+  scene, playlist, intervalMin, crew heat/wanted, and the score scene (`board`/`iso` svgs through the same check as the display). GM only:
+  the display sign-in reads it through the display. Table `gm_ambient(campaign, seq, updated_at, doc)` (migration `0006_gm_ambient.sql`).
 - `GET /api/characters` carries nothing about the GM tools (the GM page refetches its state on focus instead).
 
 ## Adapter (`app/runtime/cf.js`)

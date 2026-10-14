@@ -1033,10 +1033,21 @@
     /* GET /api/gm/state -> { doc, updatedAt }; PATCH merges (maps merge, null deletes) -> { doc, updatedAt } */
     state: function () { return api('GET', '/gm/state'); },
     patchState: function (patch) { return api('PATCH', '/gm/state', patch || {}); },
-    /* GET /api/gm/display?seq=N -> { seq, display, updatedAt } or { seq, unchanged: true } */
-    display: function (seq) { return api('GET', '/gm/display' + (seq !== undefined && seq !== null ? '?' + qs('seq', seq) : '')); },
-    /* PUT /api/gm/display { kind: blank | svg | npc | text, title, caption, svg | npcId | text } -> { seq, display, updatedAt } */
-    setDisplay: function (d) { return api('PUT', '/gm/display', d || {}); }
+    /* GET /api/gm/display?seq=N&aseq=M -> { seq, display, updatedAt, ambient: { seq, doc, updatedAt } }. An ambient seq M that
+       is still current gives ambient: { seq, unchanged: true }; both current -> { seq, unchanged: true, ambient: { seq, unchanged: true } }.
+       seq alone (no aseq) is the old call: { seq, unchanged: true } while current, with the ambient ignored. */
+    display: function (seq, aseq) {
+      var q = [];
+      if (seq !== undefined && seq !== null) q.push(qs('seq', seq));
+      if (aseq !== undefined && aseq !== null) q.push(qs('aseq', aseq));
+      return api('GET', '/gm/display' + (q.length ? '?' + q.join('&') : ''));
+    },
+    /* PUT /api/gm/display { kind: blank | dark | svg | npc | text, title, caption, svg | npcId | text } -> { seq, display, updatedAt } */
+    setDisplay: function (d) { return api('PUT', '/gm/display', d || {}); },
+    /* GET /api/gm/ambient -> { seq, doc, updatedAt }; PATCH merges at the top level (null deletes a key, skip: true bumps the
+       counter) -> { seq, doc, updatedAt }. GM only: the table display gets the ambient through display() above. */
+    ambient: function () { return api('GET', '/gm/ambient'); },
+    patchAmbient: function (p) { return api('PATCH', '/gm/ambient', p || {}); }
   };
 
   /* ---------- profile: the signed-in person's own display name (PATCH /api/me). A plain call: never queued, so it
