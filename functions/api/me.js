@@ -4,8 +4,11 @@
 //   the row is always the caller's email). The name is trimmed, runs of whitespace become one space, 1-40 characters,
 //   no control or invisible-format characters, no `<` or `>`. "" or null clears it back to the Access-derived name.
 //   Only `name_override` is written: the sign-in upsert below never touches it.
+// The table display sign-in (role 'display', DISPLAY_EMAILS, GM.md) gets its identity from GET and nothing else: it is
+// never recorded in `members` (so it never shows up as a player), and PATCH is 403 (the middleware refuses it first).
 
 import { getDb } from '../_lib/db.js';
+import { DISPLAY_ONLY } from '../_lib/auth.js';
 import { HttpError, json, methodNotAllowed, campaignOf, nowIso, readJsonObject } from '../_lib/http.js';
 
 export const NAME_MAX = 40;
@@ -32,6 +35,10 @@ export async function onRequest({ request, env, data }) {
   const method = request.method;
   if (method !== 'GET' && method !== 'PATCH') return methodNotAllowed(['GET', 'PATCH']);
   const me = data.me;
+  if (me.role === 'display') {
+    if (method !== 'GET') throw new HttpError(403, DISPLAY_ONLY);
+    return json({ id: me.id, email: me.email, name: me.name, role: me.role, campaign: campaignOf(env) });
+  }
   let override = null;   // PATCH only: the new override (a string), or null to clear
   if (method === 'PATCH') {
     const body = await readJsonObject(request, 4 * 1024);

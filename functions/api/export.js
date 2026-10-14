@@ -44,7 +44,7 @@ export async function onRequest({ request, env, data }) {
     members: (people.results || []).map((r) => ({
       id: r.email,
       name: r.name || String(r.email).split('@')[0],
-      role: roleFor(r.email, env.GM_EMAILS),
+      role: roleFor(r.email, env.GM_EMAILS, env.DISPLAY_EMAILS),
     })),
   };
   const safe = id.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'campaign';

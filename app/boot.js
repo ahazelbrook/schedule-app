@@ -80,7 +80,7 @@
   var openId = null, openUnsub = null, latest = null;      /* the character open in the sheet; latest = its newest data (no id) */
   var cache = {};                                           /* id -> data, from the collection snapshot */
   var filter = 'all', filterChosen = false, pendingOpen = null;
-  A.me = null; A.canWrite = null; A.isGM = false; A.roleKnown = false;   /* roleKnown: a signed-in user answered, so isGM is a fact */
+  A.me = null; A.canWrite = null; A.isGM = false; A.isDisplay = false; A.roleKnown = false;   /* roleKnown: a signed-in user answered, so isGM is a fact */
   var userCap = null;                                       /* the user capability, for profiles */
   A.filingAvailable = function () { return !!db; };
   function nowIso() { return new Date().toISOString(); }
@@ -116,6 +116,7 @@
   var MODES = { home: 1, create: 1, sheet: 1, table: 1, print: 1, rules: 1, cast: 1, gm: 1, display: 1 };
   function setMode(m, quiet) {
     m = MODES[m] ? m : 'home';
+    if (A.isDisplay === true) m = 'display';   /* the table iPad's own sign-in shows the display and nothing else */
     var was = document.body.dataset.mode;
     document.body.dataset.mode = m;
     var hm = $('home'); if (hm) hm.hidden = m !== 'home';
@@ -556,10 +557,10 @@
       var D = displayMod();
       if (!D) { displayNote(el, 'The display module is missing.'); return; }
       if (!(window.claude && window.claude.gm)) { displayNote(el, 'GM tools are available on the hosted app.'); return; }
-      if (A.isGM !== true) { displayNote(el, 'GM only: the display is for an iPad signed in as the GM.'); return; }
+      if (A.isGM !== true && A.isDisplay !== true) { displayNote(el, 'GM only: the display is for an iPad signed in as the GM or as the table display.'); return; }
       el.innerHTML = '';
       /* db: the resolved db (the files have settled here), since display-page.js calls db.collection() directly */
-      try { D.mount(el, { gm: window.claude.gm, db: db, figures: window.B68Figure, cast: window.B68Cast, isGM: A.isGM === true }); displayMounted = true; }
+      try { D.mount(el, { gm: window.claude.gm, db: db, figures: window.B68Figure, cast: window.B68Cast, isGM: A.isGM === true || A.isDisplay === true }); displayMounted = true; }
       catch (e) { displayNote(el, 'The display could not open: ' + (e && e.message || e)); }
     });
   }
@@ -1155,14 +1156,16 @@
         if (hosted() && window.B68Runtime.me) A.myName = window.B68Runtime.me.name || '';
         else if (typeof u.me === 'function') Promise.resolve().then(function () { return u.me(); }).then(function (m) { A.myName = (m && m.name) || ''; renderHome(); }).catch(function () {});
         var pid = typeof u.id === 'function' ? Promise.resolve(u.id()) : Promise.resolve(null);
-        return pid.then(function (id) { A.me = id || null; var cw = typeof u.can === 'function' ? Promise.resolve(u.can('data.write')) : Promise.resolve(null); return cw.then(function (c) { A.canWrite = c === true ? true : c === false ? false : null; return gmOf(u); }).then(function (g) { A.isGM = g === true; A.roleKnown = !!A.me; }); });
+        return pid.then(function (id) { A.me = id || null; var cw = typeof u.can === 'function' ? Promise.resolve(u.can('data.write')) : Promise.resolve(null); return cw.then(function (c) { A.canWrite = c === true ? true : c === false ? false : null; return gmOf(u); }).then(function (g) { A.isGM = g === true; A.roleKnown = !!A.me; A.isDisplay = hosted() && !!window.B68Runtime.me && window.B68Runtime.me.role === 'display'; }); });
       }).catch(function () {});
       who.then(function () {
         whoami(); syncFilter(); A.syncAll(); syncNav();
         /* the GM pack is cached per browser (IndexedDB): a viewer KNOWN not to be the GM drops every cached copy (not when /api/me failed) */
         if (A.roleKnown === true && A.isGM !== true) { var G0 = gmMod(); if (G0 && G0.purge) { try { G0.purge(); } catch (e) {} } }
+        if (A.isDisplay === true) return null;   /* the display sign-in may not read the files: no db, no roster, no campaign */
         return window.claude.use('db');
       }).then(function (d) {
+        if (A.isDisplay === true) { db = null; dbSettled = true; setMode('display', true); replaceHash('#display'); return; }
         db = d; dbSettled = true; whoami(); A.syncAll(); syncBackups(); syncEditBar();
         startCampaign();
         var Cp0 = castMod(); if (Cp0) { try { Cp0.init(castApi()); } catch (e) { if (window.console) console.error(e); } }

@@ -130,9 +130,18 @@ Full screen (no header, nav or banner) for an iPad signed in as the GM. Boot mou
 `B68DisplayPage.mount(container, { gm, db, figures, cast, isGM })` once the files settle (`db` is the resolved db) and
 calls `unmount()` on leaving; anyone but the GM sees a message instead. The GM page's **Display** button opens it.
 
-The display offers **no way back** to the GM page (no link, hidden or not): the iPad lies in front of the players,
-signed in as the GM. Run it as a Home Screen app (Share, Add to Home Screen), which has no address bar, and leave or
-change it from the GM's own device. Its sanitiser applies the same rules as the server's `checkSvg` (namespaced
-elements, `<a>`, `xml:base`, backslashes, `image-set()` / `src()`, raster `data:` images only on `<image>` /
-`<feImage>`). The proper follow-up is a dedicated display sign-in (a `DISPLAY_EMAILS` role that can read the display and
-nothing else), so the iPad never holds a GM session.
+The display offers **no way back** to the GM page (no link, hidden or not). Its sanitiser applies the same rules as the server's `checkSvg` (namespaced
+elements, `<a>`, `xml:base`, backslashes, `image-set()` / `src()`, raster `data:` images only on `<image>` / `<feImage>`).
+
+### The display sign-in (`DISPLAY_EMAILS`)
+
+A third role, `display`, so the iPad never holds a GM session. An email in `DISPLAY_EMAILS` (comma-separated, case-insensitive,
+like `GM_EMAILS`; the GM wins if an email is in both) gets exactly two calls: `GET /api/me` and `GET /api/gm/display`.
+Everything else, any method, known route or not, is the same 403 ("this is the table display sign-in: it can only show
+the display") from `functions/api/_middleware.js` before the body is read or the database touched, so a route added later is
+refused by default. It is never recorded in `members`, never listed as a player, and `PUT /api/gm/display` stays GM only.
+With `DISPLAY_EMAILS` unset the role does not exist. Check: `npm run check:display-role`.
+
+**To turn it on** (Alex's steps, not done by code): pick an email for the iPad, add it to the Cloudflare Access allow policy,
+then `npx wrangler secret put DISPLAY_EMAILS` and sign the iPad in with that email. `scripts/deploy.sh` does not manage this secret.
+The display page's NPC view reads `npcs`, which this role cannot; it falls back to the pushed title and caption.
