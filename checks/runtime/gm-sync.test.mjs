@@ -61,7 +61,7 @@ function copyDir(src, dst) {
   fs.mkdirSync(dst, { recursive: true });
   for (const e of fs.readdirSync(src, { withFileTypes: true })) {
     const s = path.join(src, e.name), d = path.join(dst, e.name);
-    if (e.isDirectory()) copyDir(s, d); else fs.copyFileSync(s, d);
+    if (e.isDirectory()) copyDir(s, d); else fs.writeFileSync(d, fs.readFileSync(s, 'utf8').replace(/\r\n/g, '\n'));   // git may check out CRLF
   }
 }
 function snapshot(dir) {
@@ -255,7 +255,7 @@ await test('LF notes: every byte outside the inserted lines is unchanged', async
 });
 
 await test('an old note with a table under Rolled at the table: a blank line separates the table from the new list', async () => {
-  const lines = V.toLines(read(FIXTURE, S + '/b68g-s01.md'));
+  const lines = V.toLines(read(FIXTURE, S + '/b68g-s01.md').replace(/\r\n/g, '\n'));
   const text = fileInto(lines.join('\n'), '\n', [{ kind: 'capture', id: 'z1', bid: 'b68-z1', bucket: 'r', text: 'ZQX a roll', at: T0 }, { kind: 'capture', id: 'z2', bid: 'b68-z2', bucket: 'x', text: 'ZQX loose', at: T0 }]);
   ok(text.includes('| 1 | Test PC | 6 |\n\n- **20:05** ZQX a roll ^b68-z1\n\n---\n\n## Close'), 'table then blank then line, before the rule');
   ok(text.includes('## Loose ends\n\n- **20:05** ZQX loose ^b68-z2\n\n## Moments'), 'placeholder replaced');
@@ -335,7 +335,256 @@ await test('state shapes: collectItems tolerates junk (non-objects, string owed 
   eq(JSON.stringify(st.doc), '{}');
 });
 
-// @@NPC-TESTS@@
+// ======================================================================================================
+// NPCs (lib/sync-npc.mjs)
+// ======================================================================================================
+const NPC_NAMES = ["Odo D'Arcy", 'Vell Marrow', 'Sabine Quell', 'Pim Calloway', 'Tamsin Rook'];
+function npcRows() {
+  return [
+    { id: 'npc_odo', doc: { name: "Odo D'Arcy", alias: '', role: '', faction: '', description: 'A narrow man in a waxed coat, smelling of lamp oil.', spec: {}, revealed: true, firstSeen: '2026-10-17T10:00:00.000Z', tags: [], gmNotes: 'ZQXgm Speaks softly.\nCounts twice.' } },
+    { id: 'npc_vell', doc: { name: 'Vell Marrow', alias: '', role: '', faction: '', description: 'ZQXdesc An older app description', spec: { id: 'vell', shape: 'slim', hair: 'bun', coat: 'apron' }, revealed: false, firstSeen: null, tags: [], gmNotes: '' } },
+    { id: 'npc_sabine', doc: { name: 'Sabine Quell', alias: 'Quill', role: 'Night porter', faction: '', description: 'ZQXlook A porter with a lantern', spec: {}, revealed: false, firstSeen: null, tags: [], gmNotes: 'ZQXgm2 Owes the crew one.' } },
+    { id: 'npc_pim', doc: { name: 'Pim Calloway', alias: '', role: '', faction: '', description: 'ZQXlook2 Short, quick', spec: {}, revealed: false, firstSeen: null, tags: [], gmNotes: '' } },
+    { id: 'npc_gen', doc: { name: 'Tamsin Rook', alias: '', role: '', faction: '', description: 'ZQXlook3 A grinder with green fingers.', spec: {}, revealed: false, firstSeen: null, tags: [], gmNotes: 'ZQXgm3 how to play and levers' } },
+  ];
+}
+const fakeGen = {
+  create() {
+    return {
+      roll({ seed }) { return { npc: { name: seed === 77 ? 'Tamsin Rook' : 'Someone Else', profession: 'glass grinder', rank: 'Member', faction: 'The Tin Choir' } }; },
+      noteBody(npc, { date }) {
+        return ['---', 'wiki: entity', 'created: ' + date, 'updated: ' + date, 'quality: 1', 'district: Test Quarter', 'faction: The Tin Choir',
+          'attitude: Wary', 'played_by:', 'campaign: group', 'tags:', '  - wiki/games', '  - wiki/blades-in-the-dark', '  - wiki/npc', '---', '',
+          '# ' + npc.name, '', '*glass grinder*', '', '> [!quote] At a glance', '> ZQXlook3 A grinder with green fingers.', '', '## In play', '',
+          '*What they wanted from the crew, what they got, what they owe.*', '', '---', '', 'Rolled from [[blades-68-npc-generator]].', ''].join('\n');
+      },
+    };
+  },
+};
+const npcDoc = () => ({ ...stateDoc(), npcgen: { npc_gen: { seed: 77, mem: '{}', at: T0, s: 2 } } });
+const appNpc = (env, id) => JSON.parse(env.exec.db.prepare('SELECT doc FROM npcs WHERE id = ?').get(id).doc);
+
+await test('NPC pull: new cards (generator format, fallback, "(NPC)" on a vault-wide name collision), needs-review, log entry', async () => {
+  const env = await setup({ doc: npcDoc(), npcs: npcRows() });
+  const r = await sync(env, ['pull'], { npcModule: fakeGen });
+  const sab = read(env.vault, NP + '/Sabine Quell.md');
+  ok(sab.startsWith('---\nwiki: entity\ncreated: 18/10/2026\n'), 'frontmatter like the generator');
+  ok(sab.includes('  - wiki/npc\n  - wiki/needs-review\nreview_note: "'), 'needs-review + review_note');
+  ok(sab.includes('# Sabine Quell "Quill"') && sab.includes('> ZQXlook A porter with a lantern') && sab.includes('[TODO:'), 'fallback card from the app fields');
+  ok(/## In play\n\n\*What they wanted.*\*\n\n> \[!note\]- 10\/10\/2026: GM notes from the app\n> ZQXgm2 Owes the crew one\.\n\n\^b68-gmn-npc-sabine-[0-9a-f]{8}\n\n---/.test(sab), 'GM notes callout inside In play, before the rule');
+  ok(fs.existsSync(V.abs(env.vault, NP + '/Pim Calloway (NPC).md')), 'collision with Personal/People -> (NPC)');
+  ok(!fs.existsSync(V.abs(env.vault, NP + '/Pim Calloway.md')), 'shadowed the personal note');
+  const tam = read(env.vault, NP + '/Tamsin Rook.md');
+  ok(tam.includes('  - wiki/npc\n  - wiki/needs-review\nreview_note: ') && tam.includes('*glass grinder*'), 'generator card + review tag');
+  ok(!tam.includes('gmn-'), 'a generator card gets no GM-notes callout (the card already holds them)');
+  ok(read(env.vault, V.FACTIONS + '/b68-the-tin-choir.md').endsWith("- [[Odo D'Arcy]] — lamp-oil seller, Member The Tin Choir\n- [[Tamsin Rook]] — glass grinder, Member The Tin Choir\n"), 'dossier line appended like the generator Save');
+  const log = read(env.vault, V.LOG);
+  ok(/\n\n## \[18\/10\/2026\] sync \| GM app: 3 new NPC cards\n- Created \[\[Sabine Quell\]\], \[\[Pim Calloway \(NPC\)\]\], \[\[Tamsin Rook\]\]/.test(log) || /## \[18\/10\/2026\] sync \| GM app: 3 new NPC cards/.test(log), 'Wiki/log.md entry');
+  eq(r.report.created.length, 3);
+  ok(r.out.includes('created ' + NP + '/Tamsin Rook.md (tagged wiki/needs-review), from its generator roll'), 'printed with provenance');
+  const odo = read(env.vault, NP + "/Odo D'Arcy.md");
+  ok(/## In play\n\n\*What they wanted.*\*\n\n- \*\*17\/10\/2026 \(app\):\*\* revealed to the table\. \^b68-rev-npc-odo\n\n> \[!note\]- 10\/10\/2026: GM notes from the app\n> ZQXgm Speaks softly\.\n> Counts twice\.\n\n\^b68-gmn-npc-odo-[0-9a-f]{8}\n\n---\n\nRolled from/.test(odo), 'reveal line and GM notes in In play, before the footer rule');
+});
+
+await test('NPC pull: idempotent (byte-identical second run, no second log entry); dry run creates nothing', async () => {
+  const env = await setup({ doc: npcDoc(), npcs: npcRows() });
+  const a0 = snapshot(env.vault);
+  const d = await sync(env, ['pull', '--dry-run'], { npcModule: fakeGen });
+  eq(JSON.stringify(snapshot(env.vault)), JSON.stringify(a0), 'dry run wrote');
+  ok(d.out.includes('would create ' + NP + '/Sabine Quell.md'));
+  await sync(env, ['pull'], { npcModule: fakeGen });
+  const a = snapshot(env.vault);
+  const r2 = await sync(env, ['pull'], { npcModule: fakeGen });
+  eq(JSON.stringify(snapshot(env.vault)), JSON.stringify(a), 'second run changed the vault');
+  eq(r2.report.created.length, 0);
+});
+
+await test('NPC pull: a card Alex deleted is not recreated; a new GM-notes version is added once', async () => {
+  const env = await setup({ doc: npcDoc(), npcs: npcRows() });
+  await sync(env, ['pull'], { npcModule: fakeGen });
+  fs.renameSync(V.abs(env.vault, NP + '/Sabine Quell.md'), V.abs(env.base, 'moved away.md'));
+  const r = await sync(env, ['pull'], { npcModule: fakeGen });
+  ok(!fs.existsSync(V.abs(env.vault, NP + '/Sabine Quell.md')) && r.report.skipped.find((s) => s.id === 'npc_sabine' && /renamed or removed/.test(s.why)));
+  env.exec.db.prepare("UPDATE npcs SET doc = json_set(doc, '$.gmNotes', 'ZQXgm Now louder.') WHERE id = 'npc_odo'").run();
+  await sync(env, ['pull'], { npcModule: fakeGen });
+  const odo = read(env.vault, NP + "/Odo D'Arcy.md");
+  eq((odo.match(/GM notes from the app/g) || []).length, 2, 'two versions of the GM notes');
+  ok(odo.indexOf('ZQXgm Speaks softly') < odo.indexOf('ZQXgm Now louder'), 'newest last');
+});
+
+await test('NPC push, no ledger: every difference is a conflict, nothing is written to D1 even with --yes', async () => {
+  const env = await setup({ doc: npcDoc(), npcs: npcRows() });
+  const before = appNpc(env, 'npc_vell');
+  const r = await sync(env, ['push', '--yes', '--only', 'npcs']);
+  eq(JSON.stringify(appNpc(env, 'npc_vell')), JSON.stringify(before), 'D1 changed');
+  ok(r.report.conflicts.find((c) => c.npc === 'npc_vell' && c.field === 'description'), 'description conflict');
+  ok(r.report.conflicts.find((c) => c.npc === 'npc_vell' && c.field === 'spec'), 'spec conflict');
+  ok(!r.report.conflicts.find((c) => c.npc === 'npc_odo'), 'Odo: revealed, so the app owns the description: no conflict');
+  ok(r.out.includes("Odo D'Arcy: faction differs between card and app"), 'data mismatch reported (faction is the app\'s)');
+  eq(r.code, 1);
+});
+
+await test('NPC push with a base (--baseline): vault-owned fields are planned without --yes, written with --yes, then settle', async () => {
+  const env = await setup({ doc: npcDoc(), npcs: npcRows() });
+  const p = await sync(env, ['push', '--baseline', '--only', 'npcs']);
+  ok(p.report.planned.find((x) => x.id === 'npc_vell' && /description, spec/.test(x.what)), 'planned');
+  ok(p.out.includes('run again with --yes'), 'says how to write');
+  eq(appNpc(env, 'npc_vell').description, 'ZQXdesc An older app description', 'written without --yes');
+  const w = await sync(env, ['push', '--yes', '--only', 'npcs']);
+  const d = appNpc(env, 'npc_vell');
+  eq(d.description, 'A barber with chalk on her sleeves.'); eq(d.spec.hair, 'bob');
+  ok(w.report.pushed.find((x) => x.id === 'npc_vell'), 'reported');
+  const again = await sync(env, ['push', '--yes', '--only', 'npcs']);
+  eq(again.report.pushed.length + again.report.planned.length + again.report.conflicts.length, 0, 'not settled');
+});
+
+await test('NPC spec three-way merge: vault-only pushes, app-only stays, both changed -> conflict, app copy kept, nothing written', async () => {
+  const env = await setup({ doc: npcDoc(), npcs: npcRows() });
+  await sync(env, ['push', '--baseline', '--yes', '--only', 'npcs']);
+  const fig = V.abs(env.vault, V.FIGURES + '/Vell Marrow.json');
+  // app only
+  env.exec.db.prepare("UPDATE npcs SET doc = json_set(doc, '$.spec.hair', 'crop') WHERE id = 'npc_vell'").run();
+  const a = await sync(env, ['push', '--yes', '--only', 'npcs']);
+  eq(appNpc(env, 'npc_vell').spec.hair, 'crop'); ok(a.out.includes('figure edited in the app only'));
+  // both
+  fs.writeFileSync(fig, JSON.stringify({ kit: '2.0.0', spec: { id: 'vell', shape: 'slim', hair: 'long', coat: 'apron' } }));
+  const b = await sync(env, ['push', '--yes', '--only', 'npcs']);
+  eq(appNpc(env, 'npc_vell').spec.hair, 'crop', 'app overwritten');
+  ok(b.report.conflicts.find((c) => c.field === 'spec' && /both/.test(c.why)));
+  ok(fs.readdirSync(path.join(env.priv, 'sync-conflicts')).some((f) => /^npc_vell-spec-app-[0-9a-f]{8}\.json$/.test(f)), 'app copy kept');
+  // vault only (the app goes back to the base)
+  env.exec.db.prepare("UPDATE npcs SET doc = json_set(doc, '$.spec.hair', 'bob') WHERE id = 'npc_vell'").run();
+  await sync(env, ['push', '--yes', '--only', 'npcs']);
+  eq(appNpc(env, 'npc_vell').spec.hair, 'long', 'vault edit not pushed');
+});
+
+await test('NPC description: the app owns it from the first reveal; name: the vault wins once there is a base', async () => {
+  const env = await setup({ doc: npcDoc(), npcs: npcRows() });
+  await sync(env, ['push', '--baseline', '--yes', '--only', 'npcs']);
+  env.exec.db.prepare("UPDATE npcs SET doc = json_set(doc, '$.revealed', json('true'), '$.firstSeen', '2026-10-17T11:00:00.000Z', '$.description', 'ZQXapp Revealed wording', '$.name', 'vell marrow') WHERE id = 'npc_vell'").run();
+  const r = await sync(env, ['push', '--yes', '--only', 'npcs']);
+  const d = appNpc(env, 'npc_vell');
+  eq(d.description, 'ZQXapp Revealed wording', 'vault description pushed after the reveal');
+  eq(d.name, 'Vell Marrow', 'vault name not pushed');
+  ok(r.out.includes('renamed in the app too; the vault wins'));
+});
+
+await test('NPC push: a change made in the app during the sync is not overwritten (server-side check), reported', async () => {
+  const env = await setup({ doc: npcDoc(), npcs: npcRows() });
+  await sync(env, ['push', '--baseline', '--only', 'npcs']);   // record the base, write nothing
+  const inner = env.exec;
+  let hit = false;
+  const racing = { kind: 'memory', db: inner.db, batch: async (sql) => {
+    if (!hit && /FROM npcs WHERE id = 'npc_vell'/.test(sql)) { hit = true; inner.db.prepare("UPDATE npcs SET doc = json_set(doc, '$.spec.hair', 'shaved'), updated_at = '2026-10-18T00:00:00.000Z' WHERE id = 'npc_vell'").run(); }
+    return inner.batch(sql);
+  } };
+  const r = await sync({ ...env, exec: racing }, ['push', '--yes', '--only', 'npcs']);
+  eq(appNpc(env, 'npc_vell').spec.hair, 'shaved', 'the app edit was overwritten');
+  ok(r.report.conflicts.find((c) => c.npc === 'npc_vell' && /changed in the app during the sync/.test(c.why)));
+});
+
+await test('NPC names and table text stay out of sync-log.jsonl; table text stays out of the printout', async () => {
+  const env = await setup({ doc: npcDoc(), npcs: npcRows() });
+  const r1 = await sync(env, ['both'], { npcModule: fakeGen });
+  const r2 = await sync(env, ['both', '--baseline', '--yes'], { npcModule: fakeGen });
+  const log = logText(env);
+  for (const m of MARKERS) ok(!r1.out.includes(m) && !r2.out.includes(m) && !log.includes(m), 'marker leaked');
+  for (const n of NPC_NAMES) ok(!log.includes(n) && !log.includes(n.split(' ')[0]), 'NPC name in the log: ' + n);
+});
+
+// ======================================================================================================
+// the pack (lib/sync-pack.mjs)
+// ======================================================================================================
+import { packIndex, shortHash as sh, cleanPart } from '../../functions/_lib/gm.js';
+import { pieces } from '../../scripts/lib/sync-pack.mjs';
+function writePack(env, extra = {}) {
+  const rows = []; for (let i = 0; i < 400; i++) rows.push(['ZQXrow ' + i + ' "quoted" it\'s ✓ 東京 🙂', i]);
+  const pk = { format: 1, exportedAt: T0, parts: {
+    console: { src: { file: 'Tools/x.md', blockSha: 'aa' }, T: { a: [1, 2, 3] } },
+    location: { src: { file: 'Tools/y.md', blockSha: 'bb' }, T: { rows } },
+    campaign: { src: { file: 'z', blockSha: 'cc' }, npcs: [], ...extra },
+  } };
+  fs.mkdirSync(env.priv, { recursive: true });
+  fs.writeFileSync(path.join(env.priv, 'b68-gm-pack.json'), JSON.stringify(pk));
+  return pk;
+}
+const BUDGET = 9000;   // small pieces so the location part needs three
+
+await test('pack: pieces never split a surrogate pair and rejoin exactly; a three-piece push reads back the server\'s version', async () => {
+  const env = await setup({ doc: null });
+  const pk = writePack(env);
+  const body = cleanPart({ part: 'location', src: pk.parts.location.src, body: { T: pk.parts.location.T } }).body;
+  const ps = pieces(body, BUDGET);
+  eq(ps.length, 3, 'expected three pieces at this budget');
+  eq(ps.join(''), body);
+  ok(ps.every((p) => !/[\uD800-\uDBFF]$/.test(p)), 'split a surrogate pair');
+  const dry = await sync(env, ['push', '--only', 'pack'], { pieceBudget: BUDGET });
+  ok(dry.report.planned.find((x) => x.id === 'location' && /3 pieces/.test(x.what)), 'planned with three pieces');
+  eq(env.exec.db.prepare('SELECT count(*) AS n FROM gm_pack').get().n, 0, 'written without --yes');
+  const r = await sync(env, ['push', '--yes', '--only', 'pack'], { pieceBudget: BUDGET });
+  eq(r.code, 0, r.out);
+  const idx = await packIndex(asD1(env.exec), 'default');
+  eq(idx.parts.location.version, await sh(body), 'server version = hash of the body as the API would store it');
+  const back = env.exec.db.prepare("SELECT body FROM gm_pack WHERE part = 'location'").get().body;
+  eq(back, body, 'stored body differs');
+  eq(await sh(JSON.stringify(JSON.parse(back))), idx.parts.location.version, 'read-back hash');
+  eq(r.report.chunks, 3 + 1 + 1, 'pieces written (location 3, console 1, campaign 1)');
+  eq(env.exec.db.prepare('SELECT count(*) AS n FROM gm_sync_stage').get().n, 0, 'staging rows left');
+  const again = await sync(env, ['push', '--yes', '--only', 'pack'], { pieceBudget: BUDGET });
+  eq(again.report.chunks, 0, 'unchanged parts pushed again');
+  eq(again.report.skipped.filter((s) => s.why === 'unchanged').length, 3);
+});
+
+await test('pack: a push that fails part-way leaves the old part in place and stops (exit 2)', async () => {
+  const env = await setup({ doc: null });
+  writePack(env);
+  await sync(env, ['push', '--yes', '--only', 'pack'], { pieceBudget: BUDGET });
+  const old = env.exec.db.prepare("SELECT version, body FROM gm_pack WHERE part = 'location'").get();
+  writePack(env, {});
+  const pk = JSON.parse(fs.readFileSync(path.join(env.priv, 'b68-gm-pack.json'), 'utf8'));
+  pk.parts.location.T.rows.push(['ZQXnew row', 999]);
+  fs.writeFileSync(path.join(env.priv, 'b68-gm-pack.json'), JSON.stringify(pk));
+  let n = 0;
+  const inner = env.exec;
+  const flaky = { kind: 'memory', db: inner.db, batch: async (sql) => { if (/^UPDATE gm_sync_stage/.test(sql) && ++n === 2) throw new D1Error('fetch failed', 'offline'); return inner.batch(sql); } };
+  const r = await sync({ ...env, exec: flaky }, ['push', '--yes', '--only', 'pack'], { pieceBudget: BUDGET });
+  eq(r.code, 2);
+  const now = env.exec.db.prepare("SELECT version, body FROM gm_pack WHERE part = 'location'").get();
+  eq(now.version, old.version); eq(now.body, old.body);
+  ok(/connection lost mid-run/.test(r.out));
+  const fixed = await sync(env, ['push', '--yes', '--only', 'pack'], { pieceBudget: BUDGET });
+  eq(fixed.code, 0);
+  ok(env.exec.db.prepare("SELECT body FROM gm_pack WHERE part = 'location'").get().body.includes('ZQXnew row'), 'the retry landed');
+});
+
+await test('pack: a server part the file lacks is left alone; a bad part name is refused; no pack file -> nothing', async () => {
+  const env = await setup({ doc: null });
+  const none = await sync(env, ['push', '--yes', '--only', 'pack']);
+  ok(/pack: no pack at/.test(none.out));
+  writePack(env);
+  env.exec.db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('default', 'extra', 'v', '{}', 1, '{}')").run();
+  const pk = JSON.parse(fs.readFileSync(path.join(env.priv, 'b68-gm-pack.json'), 'utf8'));
+  pk.parts['Bad Name'] = { src: {}, T: {} };
+  fs.writeFileSync(path.join(env.priv, 'b68-gm-pack.json'), JSON.stringify(pk));
+  const r = await sync(env, ['push', '--yes', '--only', 'pack']);
+  ok(env.exec.db.prepare("SELECT count(*) AS n FROM gm_pack WHERE part = 'extra'").get().n === 1, 'extra part deleted');
+  ok(/server has a part "extra"/.test(r.out));
+  ok(r.report.refused.find((x) => x.target === 'pack:Bad Name'));
+  for (const m of MARKERS) ok(!r.out.includes(m) && !logText(env).includes(m));
+});
+
+await test('the core ships alone: with the NPC and pack modules absent the pull still runs and says so', async () => {
+  const env = await setup();
+  const core = fs.mkdtempSync(path.join(os.tmpdir(), 'b68 core '));
+  const files = ['scripts/gm-sync.mjs', 'scripts/lib/d1.mjs', 'scripts/lib/vault.mjs', 'scripts/lib/ledger.mjs', 'scripts/lib/report.mjs', 'scripts/lib/sync-notes.mjs', 'functions/_lib/gm.js', 'functions/_lib/http.js'];
+  for (const f of files) { fs.mkdirSync(path.dirname(path.join(core, f)), { recursive: true }); fs.copyFileSync(path.join(ROOT, f), path.join(core, f)); }
+  const { pathToFileURL } = await import('node:url');
+  const m = await import(pathToFileURL(path.join(core, 'scripts', 'gm-sync.mjs')).href);
+  const out = [];
+  const r = await m.run({ ...m.parseArgs(['both', '--yes']), vault: env.vault, privateDir: env.priv, exec: env.exec, root: core, now: Date.parse('2026-10-18T01:00:00.000Z'), print: (s) => out.push(s) });
+  ok(r.report.filed.length >= 8, 'the core did not file');
+  ok(out.join('\n').includes('NPC sync is not installed') && out.join('\n').includes('pack push is not installed'), 'absence not reported');
+});
 
 console.log((failed ? 'FAILED ' : 'ok ') + passed + ' passed, ' + failed + ' failed');
 if (failed) process.exitCode = 1;

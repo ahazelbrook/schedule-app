@@ -10,7 +10,7 @@ export function newReport() {
     filed: [], skipped: [], refused: [], conflicts: [], created: [], pushed: [], planned: [], info: [], errors: [], chunks: 0,
     file(it, note, dry) { r.filed.push({ kind: it.kind, id: it.id, bid: it.bid, note, bucket: it.bucket, dry: !!dry }); },
     skip(it, why) { r.skipped.push({ kind: it.kind, id: it.id, why }); },
-    refuse(target, why, list) { r.refused.push({ target, why, ids: (list || []).map((i) => i.id) }); },
+    refuse(target, why, list, label) { r.refused.push({ target, why, label, ids: (list || []).map((i) => i.id) }); },   // label: shown, never logged
     conflict(npcId, field, why) { r.conflicts.push({ npc: npcId, field, why }); },
     note(msg) { r.info.push(msg); },
   };
@@ -27,6 +27,7 @@ export function formatReport(r, o) {
   const mode = o.mode === 'both' ? 'pull + push' : o.mode;
   out.push('GM sync · campaign ' + o.campaign + ' · ' + mode + (o.dryRun ? ' · DRY RUN (nothing written)' : ''));
   if (r.errors.length) { out.push(''); for (const e of r.errors) out.push('STOPPED: ' + e); }
+  if (r.errors.length && !r.filed.length && !r.created.length && !r.pushed.length && !r.refused.length) return out;
   if (o.mode !== 'push') {
     out.push('', 'Session notes (app -> vault)');
     const byNote = {};
@@ -34,7 +35,7 @@ export function formatReport(r, o) {
     for (const [note, list] of Object.entries(byNote)) {
       const caps = list.filter((x) => x.kind === 'capture');
       const parts = [];
-      if (caps.length) parts.push(caps.length + ' lines (' + fmt(count(caps, (x) => BUCKET[x.bucket] || x.bucket)) + ')');
+      if (caps.length) parts.push(caps.length + (caps.length === 1 ? ' line (' : ' lines (') + fmt(count(caps, (x) => BUCKET[x.bucket] || x.bucket)) + ')');
       const rest = count(list.filter((x) => x.kind !== 'capture'), (x) => KIND[x.kind]);
       if (Object.keys(rest).length) parts.push(fmt(rest));
       out.push('  ' + (o.dryRun ? 'would file into ' : 'filed into ') + note + ': ' + parts.join(', '));
@@ -46,7 +47,7 @@ export function formatReport(r, o) {
   const refused = r.refused;
   if (refused.length) {
     out.push('', 'REFUSED (nothing written there)');
-    for (const x of refused) out.push('  ' + x.target + ': ' + x.why + (x.ids.length ? ' (' + x.ids.length + ' not filed: ' + x.ids.slice(0, 6).join(', ') + (x.ids.length > 6 ? ', ...' : '') + ')' : ''));
+    for (const x of refused) out.push('  ' + (x.label ? x.label + ' (' + x.target + ')' : x.target) + ': ' + x.why + (x.ids.length ? ' (' + x.ids.length + ' not filed: ' + x.ids.slice(0, 6).join(', ') + (x.ids.length > 6 ? ', ...' : '') + ')' : ''));
   }
   const npcLines = r.filed.filter((x) => x.kind === 'reveal' || x.kind === 'gmnotes');
   if (r.created.length || npcLines.length) {
@@ -57,7 +58,7 @@ export function formatReport(r, o) {
   const npcSkips = r.skipped.filter((x) => x.kind === 'npc' || x.kind === 'reveal' || x.kind === 'gmnotes');
   if (npcSkips.length) out.push('  skipped: ' + Object.entries(count(npcSkips, (x) => x.why)).map(([k, v]) => v + ' ' + k).join(' · '));
   if (r.conflicts.length) {
-    out.push('', 'CONFLICTS (neither side changed)');
+    out.push('', 'CONFLICTS (nothing overwritten on either side)');
     for (const c of r.conflicts) out.push('  ' + c.npc + ' ' + c.field + ': ' + c.why);
   }
   if (r.pushed.length || r.planned.length) {
@@ -81,7 +82,7 @@ export function logEntry(r, o) {
     },
     filed: r.filed.map((f) => f.bid || f.id),
     notes: [...new Set(r.filed.filter((f) => /^b68g-s/.test(f.note || '')).map((f) => f.note))],
-    refused: r.refused.map((x) => ({ target: /^b68g-s[0-9.]+(\.md)?$/.test(x.target) ? x.target : 'npc', why: x.why.replace(/[^\x20-\x7e]/g, '').slice(0, 80), ids: x.ids })),
+    refused: r.refused.map((x) => ({ target: x.target, why: x.why.replace(/[^\x20-\x7e]/g, '').slice(0, 80), ids: x.ids })),
     conflicts: r.conflicts.map((c) => ({ npc: c.npc, field: c.field })),
     created: r.created.map((c) => c.id),
     pushed: r.pushed.map((p) => p.id),
