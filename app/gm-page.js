@@ -1,6 +1,6 @@
 /* gm-page.js — the GM's page (#gm, GM.md): the console (four Situations, or the nine Classic rollers), the location generator
    with its map, the cast as a list to push to the iPad, the state rail (crew, clocks, bargains owed, pins, who is on stage) and
-   the capture bar.
+   the capture bar. S opens the street scene roller and E the engagement roll, beside the location generator (side panels).
    Hosted build only (window.claude.gm); in the claude.ai artifact, or for a player, the page says so and does nothing.
 
    window.B68GmPage (boot.js):
@@ -282,7 +282,8 @@
       case 'n': return { type: 'panel', panel: 'npc' };
       case 'b': return { type: 'panel', panel: 'location' };
       case 't': return { type: 'panel', panel: 'rules' };
-      case 's': case 'e': return { type: 'reserved' };            /* Street and Engagement, later */
+      case 's': return { type: 'panel', panel: 'scenes' };
+      case 'e': return { type: 'panel', panel: 'engagement' };
       case 'p': return { type: 'capture', bucket: 'n' };
       case 'x': return { type: 'capture', bucket: 'x' };
       case 'm': return { type: 'capture', bucket: 'm' };
@@ -563,7 +564,7 @@
   function adoptMem() {
     var m = isObj(S.doc.mem) ? S.doc.mem : {};
     if (S.con) { var cm = S.con.mem(); Object.keys(cm).forEach(function (k) { delete cm[k]; }); Object.assign(cm, clone(m.console || {})); }
-    S.locMem = clone(m.location || {});
+    S.locMem = clone(m.location || {}); S.scnMem = clone(m.scenes || {});
     if (S.con) { try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {} }
   }
 
@@ -606,10 +607,10 @@
   function open(rootEl, api) {
     close();
     S = { root: rootEl, api: api, me: null, status: 'loading', doc: {}, updatedAt: null, saver: null, carriedParked: null,
-      pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console',
+      pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console', scn: null, scnRoll: null, scnMem: {}, scnErr: '', eng: null, engRoll: null, engErr: '',
       arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, pinOpen: null, figMemo: {}, importing: null, view: 'classic', shown: 'console' };
     try { S.panel = W.localStorage.getItem('b68.gm.panel') || 'location'; } catch (e) {}
-    if (['location', 'npc', 'rules'].indexOf(S.panel) < 0) S.panel = 'location';
+    if (SIDE.indexOf(S.panel) < 0) S.panel = 'location';
     S.saver = lastSaver = makeSessionSaver(S);
     wire(rootEl);
     screen('<p class="gm-wait" role="status">Opening the GM tools…</p>');
@@ -726,13 +727,13 @@
     if (!C || !cp || !isObj(cp.T)) S.conErr = !C ? 'The console module is missing.' : 'The pack has no console part. Update the pack.';
     else { try { S.con = C.create({ T: cp.T, campaign: part('campaign') || {}, state: S.doc.con || {}, mem: clone(m.console || {}) }); } catch (e) { S.conErr = 'The console could not start: ' + errText(e); } }
     S.view = conView(storedView(), hasSit());
-    S.locMem = clone(m.location || {}); S.locErr = '';
+    S.locMem = clone(m.location || {}); S.locErr = ''; S.scnMem = clone(m.scenes || {}); S.scn = null; S.eng = null;
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready';
     layout(); redrawAll(); subscribeNpcs();
   }
   function layout() {
-    var segs = [['console', 'Console'], ['location', 'Location'], ['npc', 'NPC'], ['state', 'State']];
+    var segs = [['console', 'Console'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['state', 'State']];
     S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '" data-view="' + esc(S.view) + '">' +
       '<div class="gm-head"><div class="gm-title"><p class="gm-kick">GM tools <span id="gm-save" class="gm-save" role="status"></span></p>' + '<h1 class="gm-h" tabindex="-1">The console</h1><p class="gm-exp" id="gm-exp"></p></div>' +
       '<div class="gm-acts"><a class="btn sm primary" href="#display" id="gm-display" title="The players’ screen: open this on the iPad">Display</a>' + '<button type="button" class="btn sm" data-gm="note">Export tonight’s note</button><button type="button" class="btn sm" data-gm="update">Update pack</button>' + '<button type="button" class="btn sm" data-gm="forget">Forget GM data on this device</button></div></div>' +
@@ -743,8 +744,8 @@
       '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"><span class="gm-lab">Scene</span>' + '<span class="gm-scene-chips" id="gm-scene-chips"></span></button>' +
       '<div class="gm-controls" id="gm-controls"></div><div class="gm-buttons" id="gm-buttons"></div><div class="gm-singles" id="gm-singles"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      [['location', 'Location', 'B'], ['npc', 'NPC', 'N'], ['rules', 'Rules', 'T']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
-      '</div><div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div></section>' +
+      [['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['rules', 'Rules', 'T']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
+      '</div><div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div></section>' +
       '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button></div>';
@@ -759,7 +760,7 @@
   }
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); syncPanels(); renderView(); renderLocation(); renderNpcs(); renderRail(); renderCapture(); syncSave();
+    syncHead(); syncPanels(); renderView(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderRail(); renderCapture(); syncSave();
   }
   function syncHead() {
     var e = $q('#gm-exp'); if (!e) return;
@@ -1025,6 +1026,124 @@
   function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('The iPad is blank.'); }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); }); }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
 
+  var SIDE = ['location', 'scenes', 'engagement', 'npc', 'rules'];
+  /* ---------- the street scene roller (S) and the engagement roll (E): side panels ---------- */
+  function genLinesHtml(lines) {
+    return (lines || []).map(function (l) { return l.kind === 'chips' ? chipsHtml(l.chips) : linesHtml([l], md); }).join('');
+  }
+  function earlierHtml(tool, cur) {
+    var hist = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).slice(0, LIMITS.hist);
+    return hist.length ? '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) {
+      return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="' + esc(tool) + '" data-h="' + esc(x._id) + '"' + (cur && cur.hid === x._id ? ' aria-current="true"' : '') + '>' + esc(x.label) + '</button>';
+    }).join('') + '</div>' : '';
+  }
+  function selectHtml(id, attr, key, label, options, value) {
+    return '<label class="gm-field" for="' + id + '"><span class="gm-lab">' + esc(label) + '</span><select id="' + id + '" ' + attr + '="' + esc(key) + '">' + options.map(function (o) {
+      return '<option value="' + esc(o.value) + '"' + (str(o.value) === str(value) ? ' selected' : '') + '>' + esc(o.label) + '</option>';
+    }).join('') + '</select></label>';
+  }
+
+  function scnInst() {
+    if (S.scn) return S.scn;
+    var M = W.B68GmScenes, pk = part('scenes');
+    if (!M) { S.scnErr = 'The street scene module is missing.'; return null; }
+    if (!pk || !isObj(pk.T)) { S.scnErr = 'The pack has no scenes part. Update the pack.'; return null; }
+    try { S.scn = M.create({ T: pk.T }); S.scnErr = ''; } catch (e) { S.scnErr = 'The street scenes could not start: ' + errText(e); }
+    return S.scn;
+  }
+  function scnUi() { var l = isObj(S.doc.scn) && isObj(S.doc.scn.ui) ? S.doc.scn.ui : {}, sc = scnInst(); return Object.assign(sc ? sc.defaults() : {}, l); }
+  function replayScenes(e) {
+    var sc = scnInst(); if (!sc || !isObj(e)) return null;
+    var mem = {}; try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
+    try { return sc.roll(e.ui || {}, { seed: e.seed, mem: mem }); } catch (x) { return null; }
+  }
+  function rollScenes() {
+    var sc = scnInst(); if (!sc) { renderScenes(); return; }
+    var ui = scnUi(), before = JSON.stringify(S.scnMem), roll;
+    try { roll = sc.roll(ui, { mem: S.scnMem }); } catch (e) { toast('The street scene failed: ' + errText(e), true); return; }
+    var entry = { seed: roll.seed, ui: ui, mem: before, label: str(roll.meta.label), at: nowIso() };
+    var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.scenes) ? S.doc.hist.scenes : {};
+    patch({ cards: { scenes: Object.assign({ hid: hid }, entry) }, mem: { scenes: clone(S.scnMem) }, hist: { scenes: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
+    S.scnRoll = roll; S.last = { text: 'Street scene: ' + entry.label };
+    renderScenes(true);
+  }
+  function renderScenes(fresh) {
+    var box = $q('#gm-scn'); if (!box) return;
+    var sc = scnInst();
+    if (!sc) { box.innerHTML = '<p class="gm-note bad">' + esc(S.scnErr || 'The street scenes are not available.') + '</p>'; return; }
+    var cur = isObj(S.doc.cards) ? S.doc.cards.scenes : null;
+    if (!fresh && cur && (!S.scnRoll || S.scnRoll.seed !== cur.seed)) S.scnRoll = replayScenes(cur);
+    var ui = scnUi(), roll = S.scnRoll;
+    var h = '<div class="gm-loc-ctl">' + sc.controls.map(function (x) { return selectHtml('gm-s-' + x.id, 'data-scn', x.id, x.label, x.options, ui[x.id]); }).join('') +
+      '<button type="button" class="btn primary gm-roll" data-gm="scnroll">Roll a street scene</button></div>';
+    if (roll) {
+      var m = roll.meta;
+      h += '<article class="gm-card gm-scncard" data-tool="scenes"><header class="gm-card-h"><div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' + genLinesHtml(roll.lines) +
+        '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="scenes">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="scenes">Copy</button>' +
+        '<button type="button" class="btn sm" data-gm="scnipad" title="Only the three read-aloud paragraphs go to the iPad">Read-aloud to the iPad</button></div></article>';
+    } else h += '<p class="gm-empty">Pick a district, or leave it on anywhere, and roll. The grid under the read-aloud is for you, not the table.</p>';
+    box.innerHTML = h + earlierHtml('scenes', cur);
+  }
+  /* what the crew could see and hear: the three read-aloud paragraphs, never the notable, the rumour or the rule */
+  function scenesToIpad() {
+    var r = S.scnRoll; if (!r) return;
+    var read = r.lines.filter(function (l) { return l.kind === 'read'; }).map(function (l) { return plainMd(l.md); });
+    pushDisplay({ kind: 'text', title: plainMd(r.meta.title).slice(0, 2000), caption: plainMd(r.meta.sub).slice(0, 2000), text: read.join('\n\n').slice(0, 2000) })
+      .then(function () { toast('On the iPad: ' + plainMd(r.meta.title) + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+  }
+
+  function engInst() {
+    if (S.eng) return S.eng;
+    var M = W.B68GmEngagement, pk = part('engagement');
+    if (!M) { S.engErr = 'The engagement module is missing.'; return null; }
+    if (!pk || !isObj(pk.T)) { S.engErr = 'The pack has no engagement part. Update the pack.'; return null; }
+    try { S.eng = M.create({ T: pk.T }); S.engErr = ''; } catch (e) { S.engErr = 'The engagement roll could not start: ' + errText(e); }
+    return S.eng;
+  }
+  function engUi() {
+    var l = isObj(S.doc.eng) && isObj(S.doc.eng.ui) ? S.doc.eng.ui : {}, en = engInst(), d = en ? en.defaults() : { mods: {} };
+    return { approach: l.approach || d.approach, load: l.load || d.load, mods: Object.assign({}, d.mods, isObj(l.mods) ? l.mods : {}) };
+  }
+  function replayEngagement(e) {
+    var en = engInst(); if (!en || !isObj(e)) return null;
+    try { return en.roll(e.ui || {}, { seed: e.seed }); } catch (x) { return null; }
+  }
+  function rollEngagement() {
+    var en = engInst(); if (!en) { renderEngagement(); return; }
+    var roll;
+    try { roll = en.roll(engUi(), {}); } catch (e) { toast('The engagement roll failed: ' + errText(e), true); return; }
+    var entry = { seed: roll.seed, ui: roll.replay.ui, label: str(roll.meta.title) + ' · ' + str(roll.position).split(' — ')[0], at: nowIso() };
+    var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.engagement) ? S.doc.hist.engagement : {};
+    patch({ cards: { engagement: Object.assign({ hid: hid }, entry) }, hist: { engagement: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
+    S.engRoll = roll; S.last = { text: 'Engagement: ' + entry.label };
+    renderEngagement(true);
+  }
+  /* a control changed: the roll on screen no longer matches, so it goes (the Earlier row keeps it) and the pool is shown again */
+  function setEngagement(key, value, mod) {
+    var u = {};
+    if (mod) { u.mods = {}; u.mods[key] = +value || 0; } else u[key] = value;
+    patch({ eng: { ui: u }, cards: { engagement: null } });
+    S.engRoll = null; renderEngagement();
+  }
+  function renderEngagement(fresh) {
+    var box = $q('#gm-eng'); if (!box) return;
+    var en = engInst();
+    if (!en) { box.innerHTML = '<p class="gm-note bad">' + esc(S.engErr || 'The engagement roll is not available.') + '</p>'; return; }
+    var cur = isObj(S.doc.cards) ? S.doc.cards.engagement : null;
+    if (!fresh && cur && (!S.engRoll || S.engRoll.seed !== cur.seed)) S.engRoll = replayEngagement(cur);
+    var ui = engUi(), roll = S.engRoll, c = roll || en.card(ui);
+    var TRI = [{ value: 0, label: '—' }, { value: 1, label: '+1d' }, { value: -1, label: '−1d' }];
+    var h = '<div class="gm-loc-ctl">' + en.controls.map(function (x) {
+      if (x.type === 'tri') return '<label class="gm-field wide" for="gm-e-' + esc(x.id) + '"><span class="gm-lab">' + esc(x.label) + '</span><select id="gm-e-' + esc(x.id) + '" data-engmod="' + esc(x.id) + '">' + TRI.map(function (o) {
+        return '<option value="' + o.value + '"' + (+ui.mods[x.id] === o.value ? ' selected' : '') + '>' + o.label + '</option>';
+      }).join('') + '</select></label>';
+      return selectHtml('gm-e-' + x.id, 'data-eng', x.id, x.label, x.options, ui[x.id]);
+    }).join('') + '<button type="button" class="btn primary gm-roll" data-gm="engroll">Roll engagement</button></div>';
+    h += '<article class="gm-card gm-engcard" data-tool="engagement"><header class="gm-card-h"><div><h3>' + esc(c.meta.title) + '</h3><p class="gm-sub">' + esc(c.meta.sub) + '</p></div></header>' + chipsHtml(roll ? c.meta.chips : []) + genLinesHtml(c.lines) +
+      (roll ? '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="engagement">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="engagement">Copy</button></div>' : '') + '</article>';
+    box.innerHTML = h + earlierHtml('engagement', cur);
+  }
+
   /* ---------- the NPC tab: the app's cast ---------- */
   function subscribeNpcs() {
     if (S.npcUnsub) return;
@@ -1145,6 +1264,7 @@
   /* ---------- pins and copy ---------- */
   function cardFor(tool) {
     if (tool === 'console' || tool === 'situation') { var r = S.conRes; return r ? { label: str(r.meta.label), title: str(r.meta.title), text: r.sections ? situationPlain(r) : consolePlain(r) } : null; }
+    if (tool === 'scenes' || tool === 'engagement') { var g = tool === 'scenes' ? S.scnRoll : S.engRoll; return g ? { label: str(g.meta.label), title: str(g.meta.title), text: g.meta.all.join('\n') } : null; }
     var L = W.B68GmLocation, roll = S.locRoll; if (!L || !roll) return null;
     var lines = []; try { lines = L.cardLines(roll, part('location')); } catch (e) {}
     return { label: str(roll.name) + (roll.district ? ' · ' + roll.district : ''), title: str(roll.name), text: lines.map(plainMd).join('\n') };
@@ -1196,7 +1316,7 @@
       case 'update': importScreen(true); break;
       case 'forget': forget(); break;
       case 'note': exportTonight(); break;
-      case 'seg': { var sg = b.getAttribute('data-seg'); if (sg === 'location' || sg === 'npc') { S.seg = 'side'; setPanel(sg); } else { S.seg = sg; syncPanels(); } break; }
+      case 'seg': { var sg = b.getAttribute('data-seg'); if (SIDE.indexOf(sg) >= 0) { S.seg = 'side'; setPanel(sg); } else { S.seg = sg; syncPanels(); } break; }
       case 'panel': setPanel(b.getAttribute('data-panel')); break;
       case 'scene': S.sceneOpen = !S.sceneOpen; syncPanels(); break;
       case 'capopen': S.capOpen = !S.capOpen; syncPanels(); if (S.capOpen) { var ci = $q('#gm-cap-in'); if (ci) ci.focus(); } break;
@@ -1210,12 +1330,18 @@
         var cur = {}; Object.keys(e).forEach(function (k) { if (k !== '_id') cur[k] = e[k]; }); cur.hid = e._id;
         cur.at = nowIso();      /* the current card now: after a reload the newest of the two still shows */
         var cp = { cards: {} }; cp.cards[tool] = cur; patch(cp, { force: true });
-        if (tool === 'console' || tool === 'situation') { S.conRes = null; drawConsoleCard(); } else { S.locRoll = null; S.map = null; renderLocation(); }
+        if (tool === 'console' || tool === 'situation') { S.conRes = null; drawConsoleCard(); }
+        else if (tool === 'scenes') { S.scnRoll = null; renderScenes(); }
+        else if (tool === 'engagement') { S.engRoll = null; patch({ eng: { ui: clone(e.ui || {}) } }); renderEngagement(); }
+        else { S.locRoll = null; S.map = null; renderLocation(); }
         break;
       }
       case 'pin': pin(b.getAttribute('data-tool')); break;
       case 'copy': copy(b.getAttribute('data-tool')); break;
       case 'locroll': rollLocation(); break;
+      case 'scnroll': rollScenes(); break;
+      case 'scnipad': scenesToIpad(); break;
+      case 'engroll': rollEngagement(); break;
       case 'layer': setMap('layer', b.getAttribute('data-v')); renderLocation(); break;
       case 'draw': drawMap(); break;
       case 'ipad': showOnIpad(); break;
@@ -1240,6 +1366,9 @@
     if (ev.type !== 'change') return;
     if (t.hasAttribute('data-loc')) { var l = {}; l[t.getAttribute('data-loc')] = t.type === 'checkbox' ? t.checked : t.value; patch({ loc: { ui: l } }); }
     else if (t.hasAttribute('data-map')) setMap(t.getAttribute('data-map'), t.value);
+    else if (t.hasAttribute('data-scn')) { var sc = {}; sc[t.getAttribute('data-scn')] = t.value; patch({ scn: { ui: sc } }); }
+    else if (t.hasAttribute('data-eng')) setEngagement(t.getAttribute('data-eng'), t.value, false);
+    else if (t.hasAttribute('data-engmod')) setEngagement(t.getAttribute('data-engmod'), t.value, true);
     else if (t.hasAttribute('data-reveal')) { var rv = {}; rv[t.getAttribute('data-reveal')] = t.checked; patch({ loc: { map: { reveal: rv } } }); if (S.map) drawMap(); renderLocation(); }
   }
   function onSubmit(ev) {

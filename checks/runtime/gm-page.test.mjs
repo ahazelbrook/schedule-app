@@ -180,6 +180,8 @@ await test('4c. sizes are bytes (UTF-8), not characters', () => {
    5. Situations (phase 2): the pure parts
    ===================================================================================================================== */
 const FIXC = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'console-pack.json'), 'utf8')).parts;
+const FIXS = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'scenes-pack.json'), 'utf8'));
+const SC = require(path.join(ROOT, 'app', 'gm', 'scenes.js')), EN = require(path.join(ROOT, 'app', 'gm', 'engagement.js'));
 const FIXL = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'location-pack.json'), 'utf8'));
 const mdPlain = (s) => '<p>' + String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>';   // the page passes B68Markdown here
 const count = (s, re) => (s.match(re) || []).length;
@@ -333,7 +335,7 @@ function fakeBrowser(over) {
   const ls = new Map(), toasts = [];
   const W = { document: doc, localStorage: { getItem: (k) => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => { ls.set(k, String(v)); }, removeItem: (k) => { ls.delete(k); } },
     matchMedia: () => ({ matches: false }), addEventListener() {}, confirm: () => true, open() {}, B68: { toast: (m, bad) => toasts.push([m, !!bad]) },
-    B68GmConsole: C, B68GmLocation: L, setTimeout, clearTimeout, console };
+    B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmEngagement: EN, setTimeout, clearTimeout, console };
   W.self = W; Object.assign(W, over || {});
   return { W, doc, ls, toasts };
 }
@@ -344,14 +346,15 @@ function loadPage(W) {
 }
 /* a fake server for the GM state: the real merge, one document */
 function fakeGm(camp) {
-  const server = { doc: {}, at: 0, patches: [] };
-  const parts = { console: { version: 'c1', src: {}, body: FIXC.console }, campaign: { version: 'k1', src: FIXC.campaign.src || {}, body: camp || FIXC.campaign }, location: { version: 'l1', src: {}, body: { T: FIXL.T, extra: FIXL.extra } } };
+  const server = { doc: {}, at: 0, patches: [], displays: [] };
+  const parts = { console: { version: 'c1', src: {}, body: FIXC.console }, campaign: { version: 'k1', src: FIXC.campaign.src || {}, body: camp || FIXC.campaign }, location: { version: 'l1', src: {}, body: { T: FIXL.T, extra: FIXL.extra } },
+    scenes: { version: 's1', src: {}, body: { T: FIXS.parts.scenes.T } }, engagement: { version: 'e1', src: {}, body: { T: FIXS.parts.engagement.T } } };
   const gm = {
     pack: async () => ({ version: 'v1', parts: Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, { version: v.version }])) }),
     packPart: async (n) => ({ part: n, version: parts[n].version, src: parts[n].src, body: parts[n].body }),
     state: async () => ({ doc: JSON.parse(JSON.stringify(server.doc)), updatedAt: 't' + server.at }),
     patchState: async (p) => { server.patches.push(p); server.doc = P.applyPatch(server.doc, p); server.at++; return { doc: JSON.parse(JSON.stringify(server.doc)), updatedAt: 't' + server.at }; },
-    display: async () => ({ seq: 0 }), setDisplay: async () => ({ seq: 1 }),
+    display: async () => ({ seq: 0 }), setDisplay: async (d) => { server.displays.push(d); return { seq: 1 }; },
   };
   return { gm, server };
 }
@@ -583,6 +586,143 @@ await test('7c. boot.js wires it: the box goes under the greeting, only on the h
   assert.ok(/insertAdjacentHTML\('afterend', nh\)/.test(boot));
   const idx = fs.readFileSync(path.join(ROOT, 'app', 'index.html'), 'utf8');
   assert.ok(idx.indexOf('<script src="name-edit.js">') > 0 && idx.indexOf('<script src="name-edit.js">') < idx.indexOf('<script src="boot.js">'), 'loaded before boot.js');
+});
+
+/* ---------- 8. the street scene roller (S) and the engagement roll (E) ---------- */
+const cardOf = (h, sel) => (h.q(sel).textContent || '').replace(/\s+/g, ' ').trim();
+const change = (el, v) => { el.value = String(v); dispatch(el, 'change'); };
+const isObjLike = (v) => v && typeof v === 'object' && !Array.isArray(v);
+const T_SC = FIXS.parts.scenes.T, T_EN = FIXS.parts.engagement.T;
+
+await test('8a. keyAction: S opens the street scene panel and E the engagement panel (no longer reserved)', () => {
+  assert.deepEqual(P.keyAction({ key: 's' }), { type: 'panel', panel: 'scenes' });
+  assert.deepEqual(P.keyAction({ key: 'E' }), { type: 'panel', panel: 'engagement' });
+  assert.equal(P.keyAction({ key: 's', ctrlKey: true }), null);
+  assert.equal(P.keyAction({ key: 'e', typing: true }), null);
+});
+
+await test('8b. S opens the panel; Roll files the card (seed, controls, memory BEFORE the roll) and a history entry; the card has the read-aloud, ratings and grid', async () => {
+  const fg = fakeGm(), h = await openPage({ fg });
+  assert.ok(h.q('[data-pane="scenes"]') && h.q('[data-pane="engagement"]') && h.q('#gm-scn') && h.q('#gm-eng'));
+  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'location,scenes,engagement,npc,rules');
+  h.press('s'); assert.equal(h.page._state().panel, 'scenes');
+  assert.ok(!h.q('#gm-scn .gm-scncard'), 'nothing before the first roll');
+  h.q('[data-gm="scnroll"]').click();
+  const card = h.q('#gm-scn .gm-scncard'); assert.ok(card, 'a card');
+  const name = cardOf(h, '#gm-scn .gm-scncard h3');
+  assert.ok(T_SC.district.some((d) => d.n === name), 'the district is one of the pack\'s');
+  assert.equal(h.qa('#gm-scn .gm-read').length, 3, 'three read-aloud paragraphs');
+  assert.equal(h.qa('#gm-scn .gm-chip').length, 4, 'four ratings');
+  assert.ok(h.qa('#gm-scn .gm-grid dt').map((d) => d.textContent).join().startsWith('Landmark,Who\'s out,In the way,Word out,Factions'));
+  await h.save();
+  const c = fg.server.doc.cards.scenes;
+  assert.ok(Number.isInteger(c.seed) && c.ui && c.ui.sel === '' && c.mem === '{}' && c.label.startsWith(name + ' · ') && c.hid);
+  assert.equal(Object.keys(fg.server.doc.hist.scenes).length, 1);
+  assert.ok(isObjLike(fg.server.doc.mem.scenes) && Object.keys(fg.server.doc.mem.scenes).length > 0, 'the repeat-guard memory is kept');
+});
+
+await test('8c. a chosen district is honoured and remembered; reload redraws the identical card; Earlier replays the first', async () => {
+  const fg = fakeGm(), br = fakeBrowser();
+  const h = await openPage({ fg, br });
+  h.press('s'); h.q('[data-gm="scnroll"]').click(); const first = cardOf(h, '#gm-scn .gm-scncard');
+  change(h.q('#gm-s-sel'), 'Cobb Hill');
+  h.q('[data-gm="scnroll"]').click();
+  assert.equal(cardOf(h, '#gm-scn .gm-scncard h3'), 'Cobb Hill');
+  const second = cardOf(h, '#gm-scn .gm-scncard');
+  await h.save();
+  assert.equal(fg.server.doc.scn.ui.sel, 'Cobb Hill', 'the control is kept');
+  const h2 = await openPage({ fg, br });
+  assert.equal(h2.q('#gm-s-sel').getAttribute('data-scn'), 'sel');
+  assert.equal(cardOf(h2, '#gm-scn .gm-scncard'), second, 'the same card after a reload');
+  const chips = h2.qa('#gm-scn [data-gm="replay"]'); assert.equal(chips.length, 2);
+  chips.filter((c) => !c.hasAttribute('aria-current'))[0].click();
+  assert.equal(cardOf(h2, '#gm-scn .gm-scncard'), first, 'Earlier redraws the first card (its own memory, its own controls)');
+  await h2.save();
+  const h3 = await openPage({ fg, br });
+  assert.equal(cardOf(h3, '#gm-scn .gm-scncard'), first, 'and the replayed card is the one that comes back');
+  await h3.save();
+});
+
+await test('8d. Pin and Copy on a street scene are plain text filed under "scenes"; L files it under Rolled at the table', async () => {
+  const fg = fakeGm(), br = fakeBrowser();
+  const h = await openPage({ fg, br });
+  h.press('s'); h.q('[data-gm="scnroll"]').click();
+  h.q('#gm-scn [data-gm="copy"]').click(); assert.ok(br.copied && !/\*\*|\[\[/.test(br.copied) && /Landmark:/.test(br.copied), 'plain text');
+  h.q('#gm-scn [data-gm="pin"]').click(); await h.save();
+  const pins = Object.values(fg.server.doc.pins || {}); assert.equal(pins.length, 1); assert.equal(pins[0].tool, 'scenes');
+  const h2 = await openPage({ fg, br });
+  h2.press('s'); h2.q('[data-gm="scnroll"]').click(); h2.press('l'); await h2.save();
+  const cap = Object.values(fg.server.doc.capture || {}); assert.ok(cap.some((c) => c.bucket === 'r' && /^Street scene: /.test(c.text)), 'filed: ' + JSON.stringify(cap));
+});
+
+await test('8e. Read-aloud to the iPad sends only the three read-aloud paragraphs: never the notable, the rumour or the district rule', async () => {
+  const fg = fakeGm(), h = await openPage({ fg });
+  h.press('s');
+  for (const d of T_SC.district) {
+    change(h.q('#gm-s-sel'), d.n); h.q('[data-gm="scnroll"]').click();
+    h.q('[data-gm="scnipad"]').click(); await until(() => fg.server.displays.length);
+    const sent = fg.server.displays.pop();
+    assert.equal(sent.kind, 'text'); assert.equal(sent.title, d.n);
+    for (const n of d.notables) assert.ok(!sent.text.includes(n[0]) && !sent.text.includes(n[1]), 'no notable');
+    if (d.special) assert.ok(!sent.text.includes(d.special), 'no district rule');
+    assert.ok(!sent.text.includes('Word out') && !/\*\*/.test(sent.text), 'no grid, no markdown');
+    assert.equal(sent.text.split('\n\n').length, 3, 'three paragraphs');
+  }
+  fg.server.displays.length = 0;
+});
+
+await test('8f. E opens the engagement panel on a preview (1d, no roll yet); a control changes the pool and the preview; Roll files seed and controls', async () => {
+  const fg = fakeGm(), h = await openPage({ fg });
+  h.press('e'); assert.equal(h.page._state().panel, 'engagement');
+  assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 1d');
+  assert.ok(/Set the factors, then roll\./.test(cardOf(h, '#gm-eng .gm-engcard')));
+  assert.equal(h.qa('#gm-eng select').length, 2 + T_EN.factor.length);
+  change(h.q('#gm-e-bold'), 1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
+  change(h.q('#gm-e-tier'), -1); change(h.q('#gm-e-bold'), -1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — -1d');
+  change(h.q('#gm-e-approach'), 'Slip'); change(h.q('#gm-e-load'), 'Loud');
+  assert.ok(/opening gambit is the unwatched door · Loud loadout, load 6/.test(cardOf(h, '#gm-eng .gm-engcard')));
+  h.q('[data-gm="engroll"]').click();
+  const txt = cardOf(h, '#gm-eng .gm-engcard');
+  assert.ok(/Slip — -1d/.test(txt) && /0d — rolled 2, kept the lowest/.test(txt) && /Roll/.test(txt) && txt.replace(/\*\*/g, '').includes(T_EN.cut.replace(/\*\*/g, '')), txt);
+  await h.save();
+  const c = fg.server.doc.cards.engagement;
+  assert.deepEqual(c.ui, { approach: 'Slip', load: 'Loud', mods: { bold: -1, tier: -1 } }); assert.ok(Number.isInteger(c.seed) && c.label.startsWith('Slip — -1d · '));
+  assert.equal(Object.keys(fg.server.doc.hist.engagement).length, 1); assert.equal(c.mem, undefined);
+});
+
+await test('8g. engagement: reload redraws the identical dice; changing a control drops the stored card (not the history); Earlier brings back the roll and its controls', async () => {
+  const fg = fakeGm(), br = fakeBrowser();
+  const h = await openPage({ fg, br });
+  h.press('e'); change(h.q('#gm-e-bold'), 1); h.q('[data-gm="engroll"]').click(); const a = cardOf(h, '#gm-eng .gm-engcard');
+  change(h.q('#gm-e-tier'), 1); h.q('[data-gm="engroll"]').click(); const b = cardOf(h, '#gm-eng .gm-engcard'); assert.notEqual(a, b);
+  await h.save();
+  const h2 = await openPage({ fg, br });
+  assert.equal(cardOf(h2, '#gm-eng .gm-engcard'), b, 'the same roll after a reload');
+  const chips = h2.qa('#gm-eng [data-gm="replay"]'); assert.equal(chips.length, 2);
+  chips.filter((c) => !c.hasAttribute('aria-current'))[0].click();
+  assert.equal(cardOf(h2, '#gm-eng .gm-engcard'), a, 'Earlier redraws the first roll');
+  change(h2.q('#gm-e-approach'), 'Charm');
+  assert.equal(cardOf(h2, '#gm-eng .gm-engcard h3'), 'Charm — 2d', 'a control change shows the preview again');
+  await h2.save();
+  assert.equal(fg.server.doc.cards.engagement, undefined, 'the stored card went with it');
+  assert.equal(Object.keys(fg.server.doc.hist.engagement).length, 2, 'the history stays');
+  assert.deepEqual(fg.server.doc.eng.ui, { approach: 'Charm', load: 'Quiet', mods: { bold: 1, tier: 0 } }, 'the replayed rolls controls came back, then the new approach');
+});
+
+await test('8h. a pack without the scenes or engagement part: the panels say so and the rest of the page works', async () => {
+  const fg = fakeGm(); const full = fg.gm.pack, part = fg.gm.packPart;
+  fg.gm.pack = async () => { const r = await full(); delete r.parts.scenes; delete r.parts.engagement; return r; };
+  const h = await openPage({ fg });
+  h.press('s'); assert.ok(/no scenes part/.test(h.q('#gm-scn').textContent));
+  h.press('e'); assert.ok(/no engagement part/.test(h.q('#gm-eng').textContent));
+  h.press('2'); assert.ok(cardTxt(h).length > 20, 'the console still rolls');
+  void part;
+});
+
+await test('8i. the missing modules (an old shell): a one-line message each, nothing thrown', async () => {
+  const br = fakeBrowser({ B68GmScenes: undefined, B68GmEngagement: undefined });
+  const h = await openPage({ br });
+  assert.ok(/module is missing/.test(h.q('#gm-scn').textContent) && /module is missing/.test(h.q('#gm-eng').textContent));
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
