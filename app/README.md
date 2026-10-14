@@ -40,6 +40,9 @@ storage, identity and downloads always go through `window.claude.use(...)`.
   storage or table text (the tables arrive from the GM's pack): `console.js` (the console and its situations), `location.js`
   (the location generator and map data), `scenes.js` (street scenes), `engagement.js` (the engagement roll), and `npc.js` with
   `figure-map.js` (the NPC generator and its figure map: the NPC tab on `#gm`, and the sync).
+- `ambient/` holds the scenes the display plays when nothing is spotlit: four designer pages as delivered and two data-free
+  score shells (`planning-board`, `score-exploded`) that draw what the display sends them. `_headers` lets only this origin frame
+  them and blocks every network call from them (`GM.md`, "Ambient scenes").
 - `runtime/cf.js` is the hosted build's `window.claude` adapter. It does nothing inside the
   artifact or from `file://`. `sw.js`, `manifest.webmanifest` and `icons/` make the hosted
   build installable and usable offline.
