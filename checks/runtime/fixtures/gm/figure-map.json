@@ -1,0 +1,161 @@
+{
+  "_comment": "Invented figure-map data for the tests: generic words and made-up factions only. Not the real table.",
+  "words": {
+    "presentation": ["masculine", "feminine", "ambiguous or concealed"],
+    "heritage": ["Lineage One", "Lineage Two", "Lineage Three", "Lineage Four", "Unrecorded"],
+    "rank": ["a hanger-on of", "a foot soldier for", "a trusted lieutenant of", "runs a corner of", "a made name inside"],
+    "faction": ["Faction A", "Faction B", "Faction C", "Faction D", "Faction E", "Faction F", "Faction G"],
+    "build": ["Broad", "Slight", "Heavy", "Tall", "Compact", "Wiry", "Round", "Lean", "Sturdy", "Odd Shaped"],
+    "features": ["weathered", "sharp", "soft", "stern", "plain", "scarred", "rough", "striking", "freckled"],
+    "manner": ["calm", "restless", "cold", "warm", "proud", "hunched", "grinning"],
+    "hair": ["a tall hairdo", "a short crop", "long loose hair", "a neat beard", "slicked hair", "curly hair", "tidy hair", "a moustache", "braids", "no hair to speak of"],
+    "standout": ["a visible scar", "round glasses", "tinted glasses", "a cane", "tattooed", "dressed with flair", "an unusual limp", "a book always in hand", "a heavy briefcase", "shorn"],
+    "register": ["Plain", "Formal", "Casual", "Worker", "Flashy", "Soldierly"],
+    "garment": ["a heavy coat", "a plain suit", "a long dress", "overalls", "a skirt", "a leather jacket", "a trench coat", "a knit jumper", "a uniform jacket", "a sharp suit", "a poncho"],
+    "accessory": ["a flat cap", "a scarf", "boots", "gloves", "a hat", "a satchel", "a necktie", "a beret", "a belt", "a headscarf", "a bag"]
+  },
+  "F": {
+    "defaults": {
+      "skin": ["fair", "olive", "tan", "brown"],
+      "age": [24, 60],
+      "heightIn": [64, 74],
+      "palette": ["cloth-navy", "cloth-olive", "cloth-brown", "cloth-rust", "cloth-teal", "cloth-plum", "cloth-mustard", "cloth-charcoal", "cloth-forest"],
+      "hairColor": ["cloth-black", "cloth-chocolate", "cloth-brown", "cloth-ochre", "cloth-rust"],
+      "hairStyle": { "masc": ["short", "crew", "side-part", "slick-back", "buzz"], "fem": ["bob", "flip", "ponytail", "bun", "short"] },
+      "outfit": { "feet": ["oxfords", "loafers", "chelsea-boots"] }
+    },
+    "faction": {
+      "Faction A": { "halo": "file-500", "code": "FAA", "palette": ["cloth-navy", "cloth-cream", "cloth-red"], "hat": "peaked-cap", "outer": { "type": "watch-tunic" } },
+      "Faction B": { "halo": "alarm-500", "code": "FBB", "palette": ["cloth-oxblood", "cloth-black", "cloth-mustard"], "outer": ["leather-jacket", "blazer"] },
+      "Faction C": { "halo": "caution-500", "code": "FCC", "palette": ["cloth-olive", "cloth-khaki", "cloth-brown"], "outer": ["field-jacket"], "props": ["satchel"] },
+      "Faction D": { "halo": "swing-500", "code": "FDD", "palette": ["cloth-plum", "cloth-lilac", "cloth-white"], "fem": { "dress": "shift-dress" } },
+      "Faction E": { "halo": "covert-500", "code": "FEE", "palette": ["cloth-charcoal", "cloth-ash", "cloth-teal"], "outer": "trench", "hat": ["trilby", "bowler"] },
+      "Faction F": { "halo": "slate-500", "code": "FFF", "palette": ["cloth-tobacco", "cloth-camel", "cloth-forest"] }
+    },
+    "presentation": {
+      "masculine": { "figure": "masc" },
+      "feminine": { "figure": "fem" },
+      "ambiguous": { "figure": ["masc", "fem"] }
+    },
+    "heritage": {
+      "Lineage One": { "skin": ["fair", "porcelain", "flushed"], "hairColor": ["cloth-ochre", "cloth-brown", "cloth-rust"] },
+      "Lineage Two": { "skin": ["olive", "tan"], "hairColor": ["cloth-black", "cloth-chocolate"] },
+      "Lineage Three": { "skin": ["brown", "deep", "ebony"], "hairColor": ["cloth-black"] },
+      "Lineage Four": { "skin": ["pale", "fair"], "hairColor": ["cloth-ash", "cloth-tan"] }
+    },
+    "rank": {
+      "hanger-on": { "age": [17, 30] },
+      "foot soldier": { "age": [22, 40] },
+      "lieutenant": { "age": [32, 55] },
+      "corner": { "age": [36, 62] },
+      "made name": { "age": [48, 72] }
+    },
+    "build": {
+      "broad": { "shape": ["rect", "invtri"], "build": [1.12, 1.25], "heightIn": [69, 76], "heads": [7.2, 7.5], "body": { "type": "muscular" } },
+      "slight": { "shape": ["column", "slim"], "build": [0.86, 0.94], "heightIn": [60, 67], "heads": [7.4, 7.8] },
+      "heavy": { "shape": ["oval", "pear"], "build": [1.18, 1.3], "heightIn": [64, 71], "heads": [7.0, 7.3], "body": { "belly": [0.5, 1.0] } },
+      "tall": { "shape": ["lanky", "lean"], "build": [0.92, 1.0], "heightIn": [73, 80], "heads": [7.6, 8.0] },
+      "compact": { "shape": ["lean", "pear"], "build": [1.0, 1.1], "heightIn": [58, 65], "heads": [7.0, 7.3] },
+      "wiry": { "shape": ["column", "lean"], "build": [0.88, 0.98], "heightIn": [63, 70], "heads": [7.3, 7.6], "body": { "type": "bony" } },
+      "round": { "shape": "oval", "build": [1.12, 1.25], "heightIn": [61, 69], "heads": [7.0, 7.3], "body": { "belly": [0.6, 1.2] } },
+      "lean": { "shape": ["lean", "slim"], "build": [0.94, 1.02], "heightIn": [66, 73], "heads": [7.4, 7.7] },
+      "sturdy": { "shape": ["rect", "hourglass"], "build": [1.06, 1.18], "heightIn": [64, 72], "heads": [7.2, 7.5] }
+    },
+    "features": {
+      "weathered": { "head": ["square", "long"], "eyes": ["hooded", "deepset"], "brows": ["heavy", "bushy"], "nose": ["broad", "hooked"], "mouth": ["grim", "thin"], "ageStyle": "weathered" },
+      "sharp": { "head": ["wedge", "diamond", "heart"], "eyes": ["narrow", "upturned"], "brows": ["angled", "straight"], "nose": ["hooked", "straight"], "mouth": ["thin", "neutral"] },
+      "soft": { "head": ["round", "oval"], "eyes": ["round", "almond"], "brows": ["arched"], "nose": ["button"], "mouth": ["full", "pout"] },
+      "stern": { "head": ["square", "wedge"], "eyes": ["narrow", "heavy"], "brows": ["heavy", "straight"], "nose": ["straight", "broad"], "mouth": ["grim", "thin"] },
+      "plain": { "head": ["oval", "pear"], "eyes": ["almond", "downturned"], "nose": ["straight", "flat"], "mouth": ["neutral"] },
+      "scarred": { "head": ["square", "wedge"], "eyes": ["deepset", "narrow"], "nose": ["broken"], "mouth": ["grim"], "marks": ["scar"] },
+      "rough": { "head": ["square", "pear"], "eyes": ["heavy", "hooded"], "brows": ["bushy", "unibrow"], "nose": ["broken", "flat"], "mouth": ["wide"], "ageStyle": "lines" },
+      "striking": { "head": ["diamond", "heart", "long"], "eyes": ["upturned", "almond"], "brows": ["arched", "angled"], "nose": ["straight"], "mouth": ["full", "wide"] },
+      "freckled": { "head": ["round", "heart"], "eyes": ["round"], "brows": ["arched"], "nose": ["button"], "mouth": ["wide"], "marks": ["freckles"] }
+    },
+    "manner": {
+      "calm": { "stance": "easy", "arms": { "R": ["down", "hold"], "L": ["pocket", "hip", "down"] }, "expression": ["neutral", "cool"] },
+      "restless": { "stance": "wide", "arms": { "R": ["hip", "pocket"], "L": ["pocket", "hip"] }, "expression": ["wary", "tired"], "tilt": [-6, 6], "yaw": [-18, 18] },
+      "cold": { "stance": "square", "arms": { "R": "cross", "L": "cross" }, "expression": ["stern", "sneer", "cool"] },
+      "warm": { "stance": "easy", "arms": { "R": ["down", "raise"], "L": ["hip", "down"] }, "expression": ["smile", "amused"] },
+      "proud": { "stance": "square", "arms": { "R": ["lapel", "hip"], "L": ["behind", "hip"] }, "expression": ["smirk", "determined"], "tilt": [2, 8] },
+      "hunched": { "stance": "easy", "arms": { "R": "down", "L": ["pocket", "down"] }, "expression": ["sad", "tired"], "stoop": [0.3, 0.6] },
+      "grinning": { "stance": "wide", "arms": { "R": ["raise", "pocket"], "L": ["hip", "down"] }, "expression": ["smile", "amused", "smirk"] }
+    },
+    "hair": {
+      "tall hairdo": { "style": ["beehive", "pompadour", "afro"] },
+      "short crop": { "style": ["buzz", "crew", "pixie"] },
+      "long loose hair": { "style": ["long-straight", "ponytail"] },
+      "neat beard": { "style": ["side-part", "short"], "facialHair": "beard-short" },
+      "slicked": { "style": "slick-back" },
+      "curly": { "style": ["afro", "bob"] },
+      "tidy": { "style": ["side-part", "flip"] },
+      "moustache": { "style": ["short", "balding"], "facialHair": ["moustache", "pencil"] },
+      "braids": { "style": "bun" },
+      "no hair": { "style": ["bald", "balding"] }
+    },
+    "standout": {
+      "visible scar": { "marks": ["scar"] },
+      "round glasses": { "eyewear": ["round-wire", "browline"] },
+      "tinted glasses": { "eyewear": ["shades", "aviators"] },
+      "cane": { "props": ["cane"] },
+      "tattooed": { "marks": ["mole", "spots"] },
+      "flair": { "props": [], "hairStyle": ["pompadour", "beehive"] },
+      "limp": { "props": ["cane"], "stoop": 0.2 },
+      "book always": { "props": [{ "type": "book" }] },
+      "briefcase": { "props": ["briefcase"] },
+      "shorn": { "hairStyle": ["buzz", "bald"] }
+    },
+    "register": {
+      "Plain": { "base": ["shirt", "tee", "knit"], "bottom": ["trousers", "slacks"] },
+      "Formal": { "base": "shirt", "neck": { "type": "tie", "color": "accent" }, "bottom": "trousers", "feet": "oxfords" },
+      "Casual": { "base": ["tee", "polo"], "bottom": ["jeans", "cargo-trousers"], "feet": ["sneakers", "chelsea-boots"] },
+      "Worker": { "base": "tee", "bottom": ["jeans", "cargo-trousers"], "feet": "combat-boots" },
+      "Flashy": { "base": ["turtleneck", "shirt"], "neck": { "type": "scarf", "color": "accent" }, "bottom": "slacks", "feet": ["chelsea-boots", "loafers"] },
+      "Soldierly": { "base": "tee", "bottom": "cargo-trousers", "feet": "combat-boots" }
+    },
+    "garment": {
+      "heavy coat": { "outer": ["overcoat", "peacoat", "shearling"] },
+      "plain suit": { "outer": "suit-jacket", "base": "shirt", "bottom": "trousers" },
+      "long dress": { "dress": ["a-line-dress", "shift-dress", "gown"] },
+      "overalls": { "dress": "overalls", "base": "tee" },
+      "skirt": { "bottom": ["pencil-skirt", "a-line-skirt"], "base": ["blouse", "shell"] },
+      "leather jacket": { "outer": "leather-jacket" },
+      "trench": { "outer": "trench" },
+      "jumper": { "base": "knit", "mid": ["cardigan", "waistcoat"] },
+      "uniform": { "outer": "watch-tunic" },
+      "sharp suit": { "outer": ["double-breasted", "blazer"], "base": "shirt", "bottom": "slacks", "neck": "bow-tie" },
+      "poncho": { "outer": "cape-coat" }
+    },
+    "accessory": {
+      "flat cap": { "hat": "flat-cap" },
+      "scarf": { "neck": { "type": "scarf", "color": "accent" } },
+      "boots": { "feet": ["combat-boots", "chelsea-boots"] },
+      "gloves": { "hands": { "type": "leather" } },
+      "hat": { "hat": ["trilby", "bowler"] },
+      "satchel": { "props": ["satchel"] },
+      "necktie": { "neck": { "type": "tie", "color": "accent" } },
+      "beret": { "hat": "beret" },
+      "belt": { "waist": "belt" },
+      "headscarf": { "hat": { "type": "headscarf", "color": "accent" } },
+      "bag": { "props": ["satchel"] }
+    },
+    "chassis": {
+      "boxy": { "palette": ["cloth-graphite", "cloth-ash", "cloth-teal"], "eyewear": "square-thick" }
+    },
+    "hull": { "shape": ["rect", "lanky", "column"], "heightIn": [66, 76], "build": [0.95, 1.1] },
+    "archetypes": [
+      { "id": "watch-sergeant", "match": { "profession": ["guard", "officer"], "register": ["soldierly"], "faction": ["faction a"] } },
+      { "id": "fence", "match": { "profession": ["trader", "dealer"], "register": ["flashy"] } },
+      { "id": "socialite", "match": { "profession": ["host", "socialite"], "register": ["flashy"] } },
+      { "id": "dock-heavy", "match": { "profession": ["labourer", "porter"], "register": ["worker"], "build": ["broad", "heavy"] } },
+      { "id": "intellectual", "match": { "profession": ["clerk", "scholar"], "register": ["formal"], "build": ["tall"] } },
+      { "id": "racer", "match": { "profession": ["driver"], "register": ["casual"] } },
+      { "id": "bartender", "match": { "profession": ["server", "barkeep"] } },
+      { "id": "urchin", "match": { "profession": ["runner", "child"], "build": ["slight", "compact"] } },
+      { "id": "noble", "match": { "profession": ["owner", "patron"], "register": ["formal"] } },
+      { "id": "mystic", "match": { "profession": ["seer", "healer"] } },
+      { "id": "inspector", "match": { "profession": ["detective", "inspector"], "register": ["plain"] } },
+      { "id": "militant", "match": { "profession": ["activist"], "faction": ["faction b"] } }
+    ]
+  }
+}
