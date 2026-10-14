@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Planning board</title>
+<style>
+@font-face{font-family:"Archivo Condensed";src:url(../fonts/ArchivoCondensed-Variable.woff2) format("woff2");font-weight:100 900;font-display:block}
+@font-face{font-family:"GT America";src:url(../fonts/GTAmericaArabic-Regular.woff2) format("woff2");font-weight:400;font-display:block}
+@font-face{font-family:"GT America";src:url(../fonts/GTAmericaArabic-Bold.woff2) format("woff2");font-weight:700;font-display:block}
+@font-face{font-family:"Space Mono";src:url(../fonts/SpaceMono-Regular.woff2) format("woff2");font-weight:400;font-display:block}
+@font-face{font-family:"Space Mono";src:url(../fonts/SpaceMono-Bold.woff2) format("woff2");font-weight:700;font-display:block}
+@font-face{font-family:"Courier Prime";src:url(../fonts/CourierPrime-Regular.woff2) format("woff2");font-weight:400;font-display:block}
+@font-face{font-family:"Courier Prime";src:url(../fonts/CourierPrime-Bold.woff2) format("woff2");font-weight:700;font-display:block}
+@font-face{font-family:"Yellowtail";src:url(../fonts/Yellowtail-Regular.woff2) format("woff2");font-weight:400;font-display:block}
+html,body{margin:0;height:100%;background:#3a2a18;overflow:hidden}
+body{container-type:size}
+/* the scene is 4:3 and always covers its frame */
+.stage{position:absolute;left:50%;top:50%;width:max(100%,133.334vh);aspect-ratio:4/3;transform:translate(-50%,-50%);min-height:100%;overflow:hidden}
+@supports (width:1cqw){.stage{width:max(100cqw,133.334cqh)}}
+.layer{position:absolute;inset:0;width:100%;height:100%;display:block}
+#grain{position:absolute;inset:0;background-size:224px;opacity:.12;mix-blend-mode:overlay;pointer-events:none}
+#vig{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 46%,transparent 55%,rgba(8,7,10,.55) 100%);pointer-events:none}
+#world{will-change:transform}.string{stroke-dasharray:1 1;stroke-dashoffset:1}
+</style></head>
+<body>
+<div class="stage" id="stage">
+<svg class="layer" id="world" viewBox="0 0 1600 1200" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+  <defs>
+    <filter id="cork" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.13" numOctaves="3" seed="11"/><feColorMatrix values="0 0 0 0 0.22  0 0 0 0 0.12  0 0 0 0 0.05  0 0 0 -2.2 1.25"/></filter>
+    <radialGradient id="lamp" cx="760" cy="460" r="900" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffd27a" stop-opacity=".12"/><stop offset=".55" stop-color="#1a1208" stop-opacity=".25"/><stop offset="1" stop-color="#0d0905" stop-opacity=".72"/></radialGradient>
+  </defs>
+  <g id="cam">
+    <rect x="-200" y="-200" width="2000" height="1600" fill="#a27445"/>
+    <rect x="-200" y="-200" width="2000" height="1600" filter="url(#cork)" opacity=".9"/>
+    <g id="content"></g>
+    <rect x="-200" y="-200" width="2000" height="1600" fill="url(#lamp)"/>
+  </g>
+</svg>
+<div id="vig"></div>
+<div id="grain"></div>
+</div>
+<script>
+(()=>{"use strict";
+const $=id=>document.getElementById(id), NS="http://www.w3.org/2000/svg";
+const R=(a,b)=>a+(b-a)*Math.random();
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const el=(tag,attrs,parent)=>{const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);parent&&parent.appendChild(e);return e;};
+// one loop at ~30fps, paused while hidden; step(dt, clock)
+let last=performance.now(),acc=0,clock=0,run=!document.hidden;const steps=[];
+const loop=fn=>steps.push(fn);
+function frame(now){if(!run)return;const dt=Math.min(.1,(now-last)/1000);last=now;acc+=dt;
+ if(acc>=1/30){const d=reduce?acc*.5:acc;clock+=d;for(const f of steps)f(d,clock);acc=0;}requestAnimationFrame(frame);}
+document.addEventListener("visibilitychange",()=>{run=!document.hidden;if(run){last=performance.now();requestAnimationFrame(frame);}});
+if(navigator.wakeLock){const lock=()=>navigator.wakeLock.request("screen").catch(()=>{});lock();document.addEventListener("visibilitychange",()=>{if(!document.hidden)lock();});}
+
+// grain: the same 224px noise tile the baked scenes carried, drawn at load instead of shipped (PRNG and alpha curve from grain.js)
+try{const N=224,cv=document.createElement("canvas");cv.width=cv.height=N;const cx=cv.getContext("2d"),img=cx.createImageData(N,N);
+ let s=7;const r=()=>(s=(s*16807)%2147483647)/2147483647;
+ for(let y=0;y<N;y++)for(let x=0;x<N;x++){const v=r(),o=(y*N+x)*4,g=v<.5?0:255;img.data[o]=img.data[o+1]=img.data[o+2]=g;img.data[o+3]=Math.floor(Math.pow(Math.abs(v-.5)*2,2.2)*255);}
+ cx.putImageData(img,0,0);$("grain").style.backgroundImage="url("+cv.toDataURL("image/png")+")";}catch(e){}
+
+// ---- received SVG: parsed, checked, cleaned, imported. Never assigned as markup. ----
+const MAX=8e6;
+function parseSvg(str){
+ if(typeof str!=="string"||!str||str.length>MAX)return null;
+ let doc;try{doc=new DOMParser().parseFromString(str,"image/svg+xml");}catch(e){return null;}
+ if(!doc||doc.getElementsByTagName("parsererror").length)return null;
+ const root=doc.documentElement;if(!root||root.localName!=="svg")return null;
+ const node=document.importNode(root,true);
+ // belt and braces on top of the server and sender checks: no scripts, no handlers, no external references
+ for(const n of [node,...node.querySelectorAll("*")]){
+  const t=n.localName.toLowerCase();
+  if(t==="script"||t==="foreignobject"||t==="iframe"||t==="object"||t==="embed"){if(n!==node)n.remove();continue;}
+  for(const a of [...n.attributes]){const k=a.name.toLowerCase();
+   if(k.startsWith("on"))n.removeAttribute(a.name);
+   else if(k==="href"||k==="xlink:href"){const v=a.value.trim();if(!(v[0]==="#"||/^data:image\//i.test(v)))n.removeAttribute(a.name);}}
+ }
+ return node;
+}
+function viewBox(node){
+ const vb=(node.getAttribute("viewBox")||"").trim().split(/[\s,]+/).map(Number);
+ return vb.length===4&&vb.every(isFinite)&&vb[2]>0&&vb[3]>0?vb:null;
+}
+// a nested <svg> holding the received svg's children, at x/y/w/h with the received viewBox
+function nest(node,vb,x,y,w,h,parent){
+ const n=el("svg",{x:x,y:y,width:w,height:h,viewBox:vb.join(" ")},parent);
+ while(node.firstChild)n.appendChild(node.firstChild);
+ return n;
+}
+const clear=n=>{while(n.firstChild)n.removeChild(n.firstChild);};
+
+const W=1600,H=1200,content=$("content"),cam=$("cam");
+let pols=[],strings=[],timers=[],gen=0;
+const T=(fn,ms)=>{const id=setTimeout(fn,ms);timers.push(id);return id;};
+
+// a slow drift across the board: never still, never fast
+loop((dt,t)=>{const x=Math.sin(t*2*Math.PI/97)*70+Math.sin(t*2*Math.PI/41)*18, y=Math.sin(t*2*Math.PI/73+1)*45+Math.cos(t*2*Math.PI/37)*12, s=1.16+Math.sin(t*2*Math.PI/131)*.05;
+ cam.setAttribute("transform","translate(800 600) scale("+s.toFixed(4)+") translate("+(-800+x).toFixed(1)+" "+(-600+y).toFixed(1)+")");});
+// polaroids lift a little in a draught
+loop((dt,t)=>{for(const p of pols){const a=Math.sin(t*p.sp+p.ph)*.6+Math.sin(t*p.sp*2.3+p.ph)*.25;p.e.setAttribute("transform",p.base.replace(/rotate\([^)]*\)/,"rotate("+(p.rot+a).toFixed(2)+")"));}});
+
+// the red string is pinned up one length at a time, then now and then taken down and pinned again
+function pin(s,ms){s.style.transition="stroke-dashoffset "+ms+"ms cubic-bezier(.6,.1,.3,1)";s.style.strokeDashoffset="0";}
+function repin(g){if(g!==gen||!strings.length)return;const s=strings[Math.floor(Math.random()*strings.length)];
+ s.style.transition="stroke-dashoffset 1800ms ease-in";s.style.strokeDashoffset="-1";
+ T(()=>{s.style.transition="none";s.style.strokeDashoffset="1";requestAnimationFrame(()=>requestAnimationFrame(()=>{if(g===gen)pin(s,3200);}));},2600);
+ T(()=>repin(g),R(70,140)*1000);}
+
+function teardown(){gen++;for(const id of timers)clearTimeout(id);timers=[];pols=[];strings=[];clear(content);}
+
+const POL_ROT=[-4,3,-2,5];
+function show(d){
+ const board=parseSvg(d.board),vb=board&&viewBox(board);
+ if(!board||!vb)return;
+ const pw=176,ph=228,crew=[];
+ for(const p of (Array.isArray(d.polaroids)?d.polaroids.slice(0,8):[])){
+  if(!p||typeof p!=="object")continue;
+  const n=parseSvg(p.svg),pv=n&&viewBox(n);
+  if(!n||!pv)continue;
+  crew.push({n:n,pv:pv,cap:typeof p.cap==="string"?p.cap.slice(0,60):""});
+ }
+ teardown();
+ // the kit draws its own cork (the first two full-size rects): the page has one cork under everything
+ const full=[...board.children].filter(c=>c.localName==="rect"&&c.getAttribute("width")==="100%"&&c.getAttribute("height")==="100%");
+ const a=full.find(c=>c.hasAttribute("fill")&&!c.hasAttribute("filter")),b=full.find(c=>c.hasAttribute("filter"));
+ if(a)a.remove();
+ if(b)b.remove();
+ // red string: mark it so the page can pin it up
+ let n=0;
+ for(const p of board.querySelectorAll("path")){
+  if(p.getAttribute("stroke")!=="#a51d16")continue;
+  const c=p.getAttribute("class");
+  p.setAttribute("class",c?c+" string":"string");p.setAttribute("data-i",n++);p.setAttribute("pathLength","1");
+ }
+ const bw=1220,bh=bw*vb[3]/vb[2],bx=(W-bw)/2+20,by=120;
+ nest(board,vb,bx,by,bw,bh,content);
+ // masking tape on the sheet's corners
+ el("rect",{x:bx+160,y:by+30,width:120,height:30,fill:"#e8dfc4",opacity:".8",transform:"rotate(-12 "+(bx+220)+" "+(by+45)+")"},content);
+ el("rect",{x:bx+bw-520,y:by+10,width:110,height:28,fill:"#e8dfc4",opacity:".8",transform:"rotate(9 "+(bx+bw-465)+" "+(by+24)+")"},content);
+ // the crew as polaroids along the bottom of the board
+ crew.forEach((c,i)=>{
+  const x=380+i*270+(i%2?14:-8),y=by+bh-70+(i%2?16:0),rot=POL_ROT[i%4];
+  const tf="translate("+x+" "+y+") rotate("+rot+")";
+  const g=el("g",{"class":"pol","data-rot":rot,transform:tf},content);
+  el("rect",{x:-pw/2+5,y:9,width:pw,height:ph,fill:"#000",opacity:".3"},g);
+  el("rect",{x:-pw/2,y:0,width:pw,height:ph,fill:"#f6f2e8"},g);
+  nest(c.n,c.pv,-pw/2+14,14,pw-28,(pw-28)*c.pv[3]/c.pv[2],g);
+  const t=el("text",{x:0,y:ph-13,"text-anchor":"middle","font-family":"Yellowtail","font-size":24,fill:"#2a2521"},g);
+  t.textContent=c.cap;
+  el("circle",{cx:0,cy:10,r:8,fill:"#a8210f"},g);
+  el("circle",{cx:-2.5,cy:7.5,r:3,fill:"#e03a20"},g);
+  pols.push({e:g,base:tf,rot:rot,ph:R(0,6),sp:R(.5,.8)});
+ });
+ strings=[...content.querySelectorAll(".string")];
+ const g0=gen;
+ strings.forEach((s,i)=>T(()=>{if(g0===gen)pin(s,2600);},1500+i*2200));
+ T(()=>repin(g0),R(60,90)*1000);
+}
+
+// ---- protocol: ask the parent for the score; accept it only from the parent, on this origin ----
+if(parent!==window){
+ addEventListener("message",e=>{
+  if(!(e.source === parent && e.origin === location.origin && e.data && e.data.type === "b68:score"))return;
+  try{show(e.data);}catch(err){}
+ });
+ try{parent.postMessage({type:"b68:ready"},location.origin);}catch(e){}
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body></html>

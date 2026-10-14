@@ -18,16 +18,25 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
 
 /* ---- stages: one per push, cross-faded ---- */
 .dp-stages { position: absolute; inset: 0; }
-.dp-stage { position: absolute; inset: 0; opacity: 0; transition: opacity .6s ease; overflow: hidden; }
+.dp-stage { position: absolute; inset: 0; opacity: 0; transition: opacity .6s ease; overflow: hidden; background: var(--dp-bg); }   /* a spotlight is opaque: the ambient is only seen through blank */
 .dp-stage.dp-in { opacity: 1; }
 .dp-stage.dp-out { opacity: 0; pointer-events: none; }
-@media (prefers-reduced-motion: reduce) { .dp-stage { transition: none; } .dp-strip { transition: none; } .dp-chrome, .dp-hint { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .dp-stage { transition: none; } .dp-strip { transition: none; } .dp-chrome, .dp-hint { transition: none; } .dp-amb-frame { transition: none; } }
 
 .dp-kicker { margin: 0 0 .5em; font: 900 clamp(13px, 2.2vmin, 22px)/1.2 var(--font-cond, "Arial Narrow", sans-serif); text-transform: uppercase; letter-spacing: .18em; color: var(--dp-kick); }
 .dp-muted { margin: 0; color: var(--dp-dim); font-size: clamp(16px, 2.6vmin, 26px); }
 
-/* ---- blank: nothing but a very subtle mark ---- */
-.dp-blank { display: grid; place-items: center; }
+/* ---- ambient: the floor under the stages (display-page.js plays app/ambient/*.html in two cross-fading iframes) ---- */
+.dp-ambient { position: absolute; inset: 0; background: #000; overflow: hidden; pointer-events: none; }
+.dp-amb-frame { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border: 0; background: #000; opacity: 0; transition: opacity 1.2s ease; pointer-events: none; }
+.dp-amb-frame.dp-amb-in { opacity: 1; }
+
+/* ---- blank: transparent, so the ambient shows through; the subtle mark only when there is no ambient ---- */
+.dp-blank { display: grid; place-items: center; background: transparent; }
+.dp-root.dp-amb-on .dp-mark { display: none; }
+
+/* ---- lights out (kind dark): true black, opaque, over the ambient; nothing drawn ---- */
+.dp-dark { background: #000; }
 .dp-mark { width: 10px; height: 10px; border: 1px solid var(--dp-ink); opacity: .1; transform: rotate(45deg); }
 
 /* ---- text ---- */

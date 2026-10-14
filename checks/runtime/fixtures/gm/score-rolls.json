@@ -1,0 +1,10 @@
+{
+  "note": "Invented rolls for the score-scene checks (no campaign text). 'leaky' puts its hidden target room alone on its level, so the map kit titles a plan level after it; 'clean' has only public rooms.",
+  "leaky": { "name": "Invented Works", "district": "Nowhere", "target": "Apartment building", "targetRoom": "Basement", "targetBand": "secure",
+    "rooms": [{ "name": "Lobby", "band": "public" }, { "name": "Reception", "band": "public" }, { "name": "Break room", "band": "working" },
+      { "name": "Filing room", "band": "working" }, { "name": "Server room", "band": "controlled" }, { "name": "Basement", "band": "secure", "isTarget": true }],
+    "vectors": [], "skips": [] },
+  "clean": { "name": "Plain Hall", "district": "Elsewhere", "target": "Hall", "targetRoom": "Lobby", "targetBand": "public",
+    "rooms": [{ "name": "Lobby", "band": "public", "isTarget": true }, { "name": "Cloakroom", "band": "public" }, { "name": "Stage", "band": "public" }],
+    "vectors": [], "skips": [] }
+}

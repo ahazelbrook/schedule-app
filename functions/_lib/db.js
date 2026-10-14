@@ -64,6 +64,12 @@ const SCHEMA = [
     updated_at TEXT NOT NULL,
     doc TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS gm_ambient (
+    campaign TEXT PRIMARY KEY,
+    seq INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    doc TEXT NOT NULL
+  )`,
 ];
 
 let ready = null; // Promise, per isolate

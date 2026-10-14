@@ -1,5 +1,5 @@
 // The GM tools' storage and validation (see GM.md): the GM pack (the generators' tables, imported by the GM from
-// their own PC, never in git), the GM state document and the display the iPad shows. Everything here is GM only:
+// their own PC, never in git), the GM state document, the display the iPad shows and the ambient scenes behind it. Everything here is GM only:
 // every /api/gm/* handler calls requireGm() before it reads the body or touches the database.
 //
 // Plain ES module with no Cloudflare-specific imports (WebCrypto and TextEncoder only), so node can import it.
@@ -18,10 +18,21 @@ export const LIMITS = {
   svg: 600 * KiB,               // bytes of a display svg
   displayRequest: 1280 * KiB,   // one PUT /api/gm/display (an svg's quotes double when JSON-escaped)
   text: 2000,                   // characters of a display title, caption or text
+  ambient: 1400 * KiB,          // bytes of the stored ambient document (under D1's 2 MB row)
+  ambientRequest: 2560 * KiB,   // one PATCH /api/gm/ambient (two 600 KiB svgs whose quotes double when JSON-escaped)
+  ambientString: 200,           // characters of a score's name, district or target
+  playlist: 12,                 // scenes in a playlist
 };
 
 export const PART_RE = /^[a-z0-9-]{1,32}$/;
-export const DISPLAY_KINDS = ['blank', 'svg', 'npc', 'text'];
+// blank: nothing spotlit (the table display falls back to the ambient scene); dark: lights out (true black)
+export const DISPLAY_KINDS = ['blank', 'dark', 'svg', 'npc', 'text'];
+
+// The ambient scenes (AMBIENT-PLAN.md): the ids mirror Pure.AMBIENT_SCENES in app/display-page.js; the bands are the
+// four reveal layers of a score site, lowest first.
+export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'board', 'exploded', 'testcard'];
+export const AMBIENT_MODES = ['auto', 'pin', 'off'];
+export const BANDS = ['public', 'working', 'controlled', 'secure'];
 
 /** 403 unless the caller is the GM. Call it first, before the method check and before the body is read. */
 export function requireGm(data) {
@@ -250,4 +261,130 @@ export async function putDisplay(db, campaign, display) {
     .bind(campaign, now, JSON.stringify(display))
     .first();
   return { seq: row.seq, display, updatedAt: row.updated_at };
+}
+// ---------- the ambient document ----------
+// What plays on the table display when nothing is spotlit (AMBIENT-PLAN.md). Its own table, `gm_ambient`, so an NPC push
+// (which replaces the display document) can never wipe the score maps. Never part of /api/export. Merge-patched by the
+// GM only; the display sign-in reads it through GET /api/gm/display, never from /api/gm/ambient.
+
+const AMBIENT_ATTEMPTS = 5;
+const isInt = (v, lo, hi) => typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
+
+function sceneId(v, name) {
+  if (typeof v !== 'string' || !AMBIENT_SCENES.includes(v)) throw new HttpError(400, name + ' must be one of ' + AMBIENT_SCENES.join(', '));
+  return v;
+}
+
+/**
+ * Validate one PATCH /api/gm/ambient body into a patch. Only these keys are kept (others are dropped); `null` on any
+ * but `skip` means "delete this key":
+ *   mode 'auto'|'pin'|'off', scene (a scene id), playlist (1 to 12 distinct scene ids, replaces), intervalMin (integer 3-30),
+ *   skip (only `true`: the server adds one to its counter), crew ({ heat 0-9, wanted 0-4 }, replaces),
+ *   score ({ name, district, target (each at most 200 characters), reveal (distinct bands), view 'plan'|'rings',
+ *            board and iso (player-safe svgs, each through checkSvg) }, replaces; `at` is set here, to the server's time).
+ * Malformed is 400, too long or too large 413.
+ */
+export function cleanAmbientPatch(raw) {
+  const patch = {};
+  if ('mode' in raw) {
+    const v = raw.mode;
+    if (v !== null && !AMBIENT_MODES.includes(v)) throw new HttpError(400, 'mode must be one of ' + AMBIENT_MODES.join(', '));
+    patch.mode = v;
+  }
+  if ('scene' in raw) patch.scene = raw.scene === null ? null : sceneId(raw.scene, 'scene');
+  if ('playlist' in raw) {
+    const v = raw.playlist;
+    if (v === null) patch.playlist = null;
+    else {
+      if (!Array.isArray(v) || !v.length) throw new HttpError(400, 'playlist must be a non-empty array of scene ids');
+      if (v.length > LIMITS.playlist) throw new HttpError(413, 'playlist is too long (at most ' + LIMITS.playlist + ' scenes)');
+      v.forEach((id) => sceneId(id, 'playlist entries'));
+      if (new Set(v).size !== v.length) throw new HttpError(400, 'playlist must not repeat a scene');
+      patch.playlist = v.slice();
+    }
+  }
+  if ('intervalMin' in raw) {
+    const v = raw.intervalMin;
+    if (v !== null && !isInt(v, 3, 30)) throw new HttpError(400, 'intervalMin must be a whole number from 3 to 30');
+    patch.intervalMin = v;
+  }
+  if ('skip' in raw && raw.skip !== undefined) {
+    if (raw.skip !== true) throw new HttpError(400, 'skip must be true');
+    patch.skip = true;
+  }
+  if ('crew' in raw) {
+    const v = raw.crew;
+    if (v === null) patch.crew = null;
+    else {
+      if (!isPlainObject(v)) throw new HttpError(400, 'crew must be an object or null');
+      if (!isInt(v.heat, 0, 9)) throw new HttpError(400, 'crew.heat must be a whole number from 0 to 9');
+      if (!isInt(v.wanted, 0, 4)) throw new HttpError(400, 'crew.wanted must be a whole number from 0 to 4');
+      patch.crew = { heat: v.heat, wanted: v.wanted };
+    }
+  }
+  if ('score' in raw) {
+    const v = raw.score;
+    if (v === null) patch.score = null;
+    else {
+      if (!isPlainObject(v)) throw new HttpError(400, 'score must be an object or null');
+      const reveal = v.reveal;
+      if (!Array.isArray(reveal) || !reveal.length) throw new HttpError(400, 'score.reveal must be a non-empty array of bands');
+      if (reveal.some((b) => !BANDS.includes(b))) throw new HttpError(400, 'score.reveal holds only ' + BANDS.join(', '));
+      if (v.view !== 'plan' && v.view !== 'rings') throw new HttpError(400, "score.view must be 'plan' or 'rings'");
+      patch.score = {
+        name: str(v.name, 'score.name', LIMITS.ambientString),
+        district: str(v.district, 'score.district', LIMITS.ambientString),
+        target: str(v.target, 'score.target', LIMITS.ambientString),
+        reveal: BANDS.filter((b) => reveal.includes(b)),
+        view: v.view,
+        board: checkSvg(v.board),
+        iso: checkSvg(v.iso),
+        at: nowIso(),
+      };
+    }
+  }
+  return patch;
+}
+
+async function ambientRow(db, campaign) {
+  return db.prepare('SELECT seq, updated_at, doc FROM gm_ambient WHERE campaign = ?1').bind(campaign).first();
+}
+
+const ambientOf = (row) => {
+  const d = row ? parseJson(row.doc, {}) : {};
+  return { seq: row ? row.seq : 0, doc: isPlainObject(d) ? d : {}, updatedAt: row ? row.updated_at : null };
+};
+
+/** { seq, doc, updatedAt }: `{ seq: 0, doc: {}, updatedAt: null }` while none is stored. */
+export async function loadAmbient(db, campaign) {
+  return ambientOf(await ambientRow(db, campaign));
+}
+
+/**
+ * Apply a cleanAmbientPatch() result to the stored document: top-level keys replace (a playlist, crew or score as a whole),
+ * null deletes the key, `skip: true` adds one to the stored counter. Writes with seq + 1 under the same optimistic
+ * updated_at check as patchState (409 when it keeps colliding); the stored document is at most LIMITS.ambient bytes (413).
+ * An empty patch changes nothing and does not move seq. Returns { seq, doc, updatedAt }.
+ */
+export async function patchAmbient(db, campaign, patch) {
+  for (let attempt = 0; attempt < AMBIENT_ATTEMPTS; attempt++) {
+    const row = await ambientRow(db, campaign);
+    const cur = ambientOf(row);
+    if (!Object.keys(patch).length) return cur;
+    const doc = { ...cur.doc };
+    for (const [k, v] of Object.entries(patch)) {
+      if (k === 'skip') doc.skip = (doc.skip | 0) + 1;
+      else if (v === null) delete doc[k];
+      else doc[k] = v;
+    }
+    const text = JSON.stringify(doc);
+    if (byteLength(text) > LIMITS.ambient) throw new HttpError(413, 'the ambient document is too large (at most ' + LIMITS.ambient + ' bytes)');
+    const now = nowIso(row && row.updated_at);
+    const seq = cur.seq + 1;
+    const result = row
+      ? await db.prepare('UPDATE gm_ambient SET seq = ?1, updated_at = ?2, doc = ?3 WHERE campaign = ?4 AND updated_at = ?5').bind(seq, now, text, campaign, row.updated_at).run()
+      : await db.prepare('INSERT INTO gm_ambient (campaign, seq, updated_at, doc) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(campaign) DO NOTHING').bind(campaign, seq, now, text).run();
+    if (result && result.meta && result.meta.changes > 0) return { seq, doc, updatedAt: now };
+  }
+  throw new HttpError(409, 'the ambient document changed while saving, try again');
 }

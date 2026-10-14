@@ -70,7 +70,7 @@ await step('roleFor: gm wins, then display, else player; unset DISPLAY_EMAILS ma
 await step('displayMayCall: exactly GET /api/me and GET /api/gm/display (optional trailing slash), nothing else', () => {
   expect(displayMayCall('GET', '/api/me') && displayMayCall('GET', '/api/me/') && displayMayCall('GET', '/api/gm/display') && displayMayCall('GET', '/api/gm/display/'), 'allowed');
   for (const [m, p] of [['PATCH', '/api/me'], ['PUT', '/api/gm/display'], ['POST', '/api/gm/display'], ['GET', '/api/gm/pack'], ['GET', '/api/gm/state'],
-    ['GET', '/api/gm/'], ['GET', '/api/campaign'], ['GET', '/api/characters'], ['GET', '/api/npcs'], ['GET', '/api/members'], ['GET', '/api/export'],
+    ['GET', '/api/gm/ambient'], ['PATCH', '/api/gm/ambient'], ['GET', '/api/gm/ambient/'], ['GET', '/api/gm/'], ['GET', '/api/campaign'], ['GET', '/api/characters'], ['GET', '/api/npcs'], ['GET', '/api/members'], ['GET', '/api/export'],
     ['GET', '/api/rules'], ['GET', '/api/me/x'], ['GET', '/api/gm/display/x'], ['GET', '/api/nothing'], ['GET', '/api/ME'], ['GET', ''], ['GET', undefined]]) {
     expect(!displayMayCall(m, p), m + ' ' + p + ' should be refused');
   }
@@ -115,9 +115,27 @@ async function main() {
     expect(after.json.seq === seq && after.json.display.text === 'invented words', 'unchanged by the refused PUTs: ' + after.text);
   });
 
+  await step('the ambient rides on the display read; the display cannot call /api/gm/ambient (GET or PATCH) and cannot change it', async () => {
+    const set = await call('PATCH', '/api/gm/ambient', { user: GM, body: { mode: 'pin', scene: 'duskwall', crew: { heat: 2, wanted: 1 } } }); status(set, 200);
+    const g = await call('GET', '/api/gm/display', { user: IPAD }); status(g, 200);
+    expect(g.json.ambient && g.json.ambient.seq === set.json.seq && g.json.ambient.doc.mode === 'pin' && g.json.ambient.doc.scene === 'duskwall' && g.json.ambient.doc.crew.heat === 2, g.text);
+    const same = await call('GET', '/api/gm/display?seq=' + g.json.seq + '&aseq=' + g.json.ambient.seq, { user: IPAD }); status(same, 200);
+    expect(same.json.unchanged === true && same.json.ambient.unchanged === true && same.json.ambient.seq === set.json.seq && !('doc' in same.json.ambient), same.text);
+    const stale = await call('GET', '/api/gm/display?seq=' + g.json.seq + '&aseq=0', { user: IPAD }); status(stale, 200);
+    expect(stale.json.display && stale.json.ambient.doc.mode === 'pin', stale.text);
+    const refused = await call('GET', '/api/gm/ambient', { user: IPAD }); status(refused, 403);
+    expect(/table display/.test(refused.text) && !refused.text.includes('duskwall'), refused.text);
+    const p = await call('PATCH', '/api/gm/ambient', { user: IPAD, body: { mode: 'off', scene: 'harvest' } }); status(p, 403);
+    status(await call('PATCH', '/api/gm/ambient', { user: PLAYER, body: { mode: 'off' } }), 403);
+    status(await call('GET', '/api/gm/display', { user: PLAYER }), 403);
+    const after = await call('GET', '/api/gm/ambient', { user: GM }); status(after, 200);
+    expect(after.json.seq === set.json.seq && after.json.doc.mode === 'pin', 'unchanged by the refused PATCHes: ' + after.text);
+  });
+
   await step('every other route is the same 403 for the display, known or unknown, any method, before the body is read', async () => {
     const msgs = new Set();
-    const routes = [['GET', '/api/campaign'], ['PUT', '/api/campaign'], ['GET', '/api/characters'], ['POST', '/api/characters'], ['GET', '/api/npcs'],
+    const routes = [['GET', '/api/gm/ambient'], ['PATCH', '/api/gm/ambient'], ['PUT', '/api/gm/ambient'], ['DELETE', '/api/gm/ambient'],
+      ['GET', '/api/campaign'], ['PUT', '/api/campaign'], ['GET', '/api/characters'], ['POST', '/api/characters'], ['GET', '/api/npcs'],
       ['GET', '/api/members'], ['GET', '/api/export'], ['GET', '/api/rules'], ['GET', '/api/gm/pack'], ['GET', '/api/gm/state'], ['PUT', '/api/gm/state'],
       ['GET', '/api/gm/anything'], ['GET', '/api/does-not-exist'], ['PATCH', '/api/me'], ['POST', '/api/me'], ['DELETE', '/api/gm/display']];
     for (const [m, p] of routes) {

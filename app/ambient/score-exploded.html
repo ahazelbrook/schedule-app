@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Score site</title>
+<style>
+@font-face{font-family:"Archivo Condensed";src:url(../fonts/ArchivoCondensed-Variable.woff2) format("woff2");font-weight:100 900;font-display:block}
+@font-face{font-family:"GT America";src:url(../fonts/GTAmericaArabic-Regular.woff2) format("woff2");font-weight:400;font-display:block}
+@font-face{font-family:"Space Mono";src:url(../fonts/SpaceMono-Regular.woff2) format("woff2");font-weight:400;font-display:block}
+@font-face{font-family:"Space Mono";src:url(../fonts/SpaceMono-Bold.woff2) format("woff2");font-weight:700;font-display:block}
+html,body{margin:0;height:100%;background:#1d4f9c;overflow:hidden}
+body{container-type:size}
+/* the scene is 4:3 and always covers its frame */
+.stage{position:absolute;left:50%;top:50%;width:max(100%,133.334vh);aspect-ratio:4/3;transform:translate(-50%,-50%);min-height:100%;overflow:hidden}
+@supports (width:1cqw){.stage{width:max(100cqw,133.334cqh)}}
+.layer{position:absolute;inset:0;width:100%;height:100%;display:block}
+#grain{position:absolute;inset:0;background-size:224px;opacity:.1;mix-blend-mode:overlay;pointer-events:none}
+#vig{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 46%,transparent 55%,rgba(8,7,10,.6) 100%);pointer-events:none}
+.plate{position:absolute;left:3.2%;bottom:4.2%;font:400 clamp(10px,1.25cqw,18px)/1.35 "Space Mono",monospace;color:#f4f6fb;opacity:.78;letter-spacing:.06em;text-transform:uppercase}
+.plate b{display:block;font:700 clamp(16px,2.4cqw,34px)/1.1 "Space Mono",monospace;letter-spacing:.02em}
+.plate .k{display:block;color:#e8c33c;font-size:.85em}
+.plate[hidden]{display:none}
+</style></head>
+<body>
+<div class="stage" id="stage">
+<svg class="layer" viewBox="0 0 1600 1200" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+  <defs>
+    <linearGradient id="scan" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cfe3ff" stop-opacity="0"/><stop offset=".5" stop-color="#cfe3ff" stop-opacity=".16"/><stop offset="1" stop-color="#cfe3ff" stop-opacity="0"/></linearGradient>
+    <radialGradient id="lampB" cx="800" cy="520" r="900" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" stop-opacity=".07"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect id="bgRect" width="1600" height="1200" fill="#1d4f9c"/>
+  <g id="cam">
+    <g id="drawing"></g>
+    <rect id="scanBar" x="-100" y="-260" width="1800" height="260" fill="url(#scan)" opacity="0"/>
+  </g>
+  <rect width="1600" height="1200" fill="url(#lampB)"/>
+</svg>
+<div class="plate" id="plate" hidden><span class="k">Score site</span><b id="pName"></b><span id="pSub"></span></div>
+<div id="vig"></div>
+<div id="grain"></div>
+</div>
+<script>
+(()=>{"use strict";
+const $=id=>document.getElementById(id), NS="http://www.w3.org/2000/svg";
+const R=(a,b)=>a+(b-a)*Math.random();
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const el=(tag,attrs,parent)=>{const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);parent&&parent.appendChild(e);return e;};
+// one loop at ~30fps, paused while hidden; step(dt, clock)
+let last=performance.now(),acc=0,clock=0,run=!document.hidden;const steps=[];
+const loop=fn=>steps.push(fn);
+function frame(now){if(!run)return;const dt=Math.min(.1,(now-last)/1000);last=now;acc+=dt;
+ if(acc>=1/30){const d=reduce?acc*.5:acc;clock+=d;for(const f of steps)f(d,clock);acc=0;}requestAnimationFrame(frame);}
+document.addEventListener("visibilitychange",()=>{run=!document.hidden;if(run){last=performance.now();requestAnimationFrame(frame);}});
+if(navigator.wakeLock){const lock=()=>navigator.wakeLock.request("screen").catch(()=>{});lock();document.addEventListener("visibilitychange",()=>{if(!document.hidden)lock();});}
+
+// grain: the same 224px noise tile the baked scenes carried, drawn at load instead of shipped (PRNG and alpha curve from grain.js)
+try{const N=224,cv=document.createElement("canvas");cv.width=cv.height=N;const cx=cv.getContext("2d"),img=cx.createImageData(N,N);
+ let s=7;const r=()=>(s=(s*16807)%2147483647)/2147483647;
+ for(let y=0;y<N;y++)for(let x=0;x<N;x++){const v=r(),o=(y*N+x)*4,g=v<.5?0:255;img.data[o]=img.data[o+1]=img.data[o+2]=g;img.data[o+3]=Math.floor(Math.pow(Math.abs(v-.5)*2,2.2)*255);}
+ cx.putImageData(img,0,0);$("grain").style.backgroundImage="url("+cv.toDataURL("image/png")+")";}catch(e){}
+
+// ---- received SVG: parsed, checked, cleaned, imported. Never assigned as markup. ----
+const MAX=8e6;
+function parseSvg(str){
+ if(typeof str!=="string"||!str||str.length>MAX)return null;
+ let doc;try{doc=new DOMParser().parseFromString(str,"image/svg+xml");}catch(e){return null;}
+ if(!doc||doc.getElementsByTagName("parsererror").length)return null;
+ const root=doc.documentElement;if(!root||root.localName!=="svg")return null;
+ const node=document.importNode(root,true);
+ // belt and braces on top of the server and sender checks: no scripts, no handlers, no external references
+ for(const n of [node,...node.querySelectorAll("*")]){
+  const t=n.localName.toLowerCase();
+  if(t==="script"||t==="foreignobject"||t==="iframe"||t==="object"||t==="embed"){if(n!==node)n.remove();continue;}
+  for(const a of [...n.attributes]){const k=a.name.toLowerCase();
+   if(k.startsWith("on"))n.removeAttribute(a.name);
+   else if(k==="href"||k==="xlink:href"){const v=a.value.trim();if(!(v[0]==="#"||/^data:image\//i.test(v)))n.removeAttribute(a.name);}}
+ }
+ return node;
+}
+function viewBox(node){
+ const vb=(node.getAttribute("viewBox")||"").trim().split(/[\s,]+/).map(Number);
+ return vb.length===4&&vb.every(isFinite)&&vb[2]>0&&vb[3]>0?vb:null;
+}
+// a nested <svg> holding the received svg's children, at x/y/w/h with the received viewBox
+function nest(node,vb,x,y,w,h,parent){
+ const n=el("svg",{x:x,y:y,width:w,height:h,viewBox:vb.join(" ")},parent);
+ while(node.firstChild)n.appendChild(node.firstChild);
+ return n;
+}
+const clear=n=>{while(n.firstChild)n.removeChild(n.firstChild);};
+
+const H=1200,cam=$("cam"),bar=$("scanBar"),drawing=$("drawing");
+let WH=H,travel=0,has=false;
+
+// the camera eases down the building and back up, floor by floor, with a little sideways drift
+loop((dt,t)=>{const p=.5-.5*Math.cos(t*2*Math.PI/150);const y=-p*travel+40, x=Math.sin(t*2*Math.PI/61)*40, s=1.08+Math.sin(t*2*Math.PI/89)*.04;
+ cam.setAttribute("transform","translate(800 600) scale("+s.toFixed(4)+") translate("+(-800+x).toFixed(1)+" "+(-600+y).toFixed(1)+")");});
+// a copier's light passes over the drawing now and then
+let sT=-1,sNext=R(8,16);
+loop((dt)=>{if(!has)return;if(sT<0){sNext-=dt;if(sNext<=0)sT=0;return;}sT+=dt;const k=sT/9;bar.setAttribute("y",(-260+k*(WH+520)).toFixed(1));
+ bar.setAttribute("opacity",Math.sin(Math.min(1,k)*Math.PI).toFixed(3));if(k>=1){sT=-1;sNext=R(40,80);bar.setAttribute("opacity",0);}});
+
+const str=(v,m)=>typeof v==="string"?v.trim().slice(0,m):"";
+function show(d){
+ const iso=parseSvg(d.iso),vb=iso&&viewBox(iso);
+ if(!iso||!vb)return;
+ clear(drawing);
+ const ww=1600,wh=ww*vb[3]/vb[2];   // the drawing at full stage width; taller than the stage
+ // the blueprint's own paper colour, from its first full-size rect
+ let bg="#1d4f9c";
+ for(const r of iso.querySelectorAll("rect")){
+  const f=r.getAttribute("fill");
+  if(r.getAttribute("width")==="100%"&&f&&/^#[0-9a-f]+$/i.test(f)){bg=f;break;}
+ }
+ nest(iso,vb,0,0,ww,wh,drawing);
+ $("bgRect").setAttribute("fill",bg);
+ document.documentElement.style.background=bg;document.body.style.background=bg;
+ WH=wh;travel=Math.max(0,WH-H*.92);
+ sT=-1;sNext=R(8,16);bar.setAttribute("opacity",0);has=true;
+ $("pName").textContent=str(d.name,120)||"Score site";
+ $("pSub").textContent=[str(d.target,120),str(d.district,120)].filter(Boolean).join(" · ");
+ $("plate").hidden=false;
+}
+
+// ---- protocol: ask the parent for the score; accept it only from the parent, on this origin ----
+if(parent!==window){
+ addEventListener("message",e=>{
+  if(!(e.source === parent && e.origin === location.origin && e.data && e.data.type === "b68:score"))return;
+  try{show(e.data);}catch(err){}
+ });
+ try{parent.postMessage({type:"b68:ready"},location.origin);}catch(e){}
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body></html>

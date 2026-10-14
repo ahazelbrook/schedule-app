@@ -112,3 +112,12 @@ CREATE TABLE IF NOT EXISTS gm_display (
 -- A display name a member chose for themselves (migrations/0005_member_name.sql). Not IF NOT EXISTS: SQLite has none for
 -- ADD COLUMN, so run schema.sql once on a database that does not have the column yet.
 ALTER TABLE members ADD COLUMN name_override TEXT;
+
+-- The ambient scenes' document (migrations/0006_gm_ambient.sql): what plays on the table display when nothing is
+-- spotlit (seq goes up on every write). GM only, never in /api/export.
+CREATE TABLE IF NOT EXISTS gm_ambient (
+  campaign TEXT PRIMARY KEY,
+  seq INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  doc TEXT NOT NULL
+);

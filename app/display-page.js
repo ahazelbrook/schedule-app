@@ -2,7 +2,9 @@
    It shows whatever the GM last pushed through GET /api/gm/display (GM.md): a player-safe map (svg), one NPC (npc), a line
    of text (text), or nothing (blank). It never decides anything itself: it polls, sanitises and draws.
    Interface: window.B68DisplayPage = { mount(container, ctx), unmount() }
-   with ctx = { gm: window.claude.gm, db: window.claude.use('db'), figures: window.B68Figure, cast: window.B68Cast, isGM }.
+   with ctx = { gm: window.claude.gm, db: window.claude.use('db'), figures: window.B68Figure, cast: window.B68Cast, isGM }, plus the
+   optional ambient inputs ctx.ambientDoc, ctx.ambientTiming, ctx.onAmbientLoad (see the ambient controller below).
+   When nothing is spotlit (blank) it plays an ambient scene underneath (app/ambient/*.html in a sandboxed same-origin iframe).
    The pure parts (SVG sanitiser, poll/backoff state machine, zoom maths, display -> view model) sit in `Pure`, which Node
    requires for checks/runtime/display.test.mjs. No external requests; every string from the server goes in with textContent
    (the SVG is parsed, stripped of anything active and imported as nodes, never set as HTML). Nothing here throws when the
@@ -215,6 +217,7 @@
     var title = str(d.title), kind = d.kind;
     if (kind === 'svg' && typeof d.svg === 'string' && d.svg) return { kind: 'svg', title: title, caption: str(d.caption), svg: d.svg };
     if (kind === 'text') return { kind: 'text', title: title, text: str(d.text), size: Pure.textSize(str(d.text)) };
+    if (kind === 'dark') return { kind: 'dark', title: title, caption: str(d.caption) };      /* lights out: true black, covers the ambient */
     if (kind === 'npc') {
       var n = Pure.playerNpc(npcDoc);
       var vm = { kind: 'npc', npcId: typeof d.npcId === 'string' ? d.npcId : '', title: title, found: !!n };
@@ -249,15 +252,26 @@
   };
 
   /* ---------- the poller ----------
-     o = { fetch(seq) -> Promise, onData(display, seq, updatedAt), onStatus({state, fails, error}), isHidden(), timers,
-           intervalMs (2000), slowMs (10000), failLimit (3), timeoutMs (10000) }
+     o = { fetch(seq, aseq) -> Promise, onData(display, seq, updatedAt), onAmbient(doc, aseq, updatedAt), onStatus({state, fails,
+           error}), isHidden(), timers, intervalMs (2000), slowMs (10000), failLimit (3), timeoutMs (10000) }
      One request in flight at a time; the next is scheduled only when the last has finished. States: connecting (nothing yet),
      live, retrying (1 to failLimit-1 failures in a row), offline (failLimit or more: polls every slowMs), denied (401/403, also
-     slow), paused (page hidden: nothing scheduled). The first success after a failure goes back to the fast interval. */
+     slow), paused (page hidden: nothing scheduled). The first success after a failure goes back to the fast interval.
+     Responses (GET /api/gm/display?seq=N&aseq=M): { seq, unchanged: true } (an older server, or `?seq` alone), the same with an
+     ambient part { ambient: { seq, unchanged: true } }, or { seq, display, updatedAt, ambient: { seq, unchanged: true } | { seq,
+     doc, updatedAt } }. The display redraws only when its seq moved (an ambient-only change carries the display along, and it
+     must not cross-fade the same spotlight again); the ambient part, when it holds a doc, goes to onAmbient first (so the
+     first draw already has its plan). A malformed ambient part is ignored: it never stops the spotlight. */
+  Pure.ambientPart = function (r) {
+    var a = r && r.ambient;
+    if (!isObj(a) || typeof a.seq !== 'number' || !isFinite(a.seq)) return null;
+    if (a.unchanged === true) return { seq: a.seq, unchanged: true };
+    return isObj(a.doc) ? { seq: a.seq, doc: a.doc, updatedAt: typeof a.updatedAt === 'string' ? a.updatedAt : null } : null;
+  };
   Pure.createPoller = function (o) {
     var T = o.timers || { setTimeout: function (f, ms) { return setTimeout(f, ms); }, clearTimeout: function (id) { clearTimeout(id); } };
     var fast = o.intervalMs || 2000, slow = o.slowMs || 10000, limit = o.failLimit || 3, tmo = o.timeoutMs || 10000;
-    var seq = null, fails = 0, timer = null, inflight = false, running = false, gen = 0, state = 'connecting', lastErr = null;
+    var seq = null, aseq = null, fails = 0, timer = null, inflight = false, running = false, gen = 0, state = 'connecting', lastErr = null;
     function hidden() { return !!(o.isHidden && o.isHidden()); }
     function setState(s) {
       if (s === state) return;
@@ -286,13 +300,18 @@
         inflight = false;
         if (!running) return;
         if (!err && !(r && typeof r === 'object' && typeof r.seq === 'number' && (r.unchanged === true || (r.display && typeof r.display === 'object')))) err = new Error('bad response');
+        var amb = err ? null : Pure.ambientPart(r);
         if (err) {
           fails++; lastErr = err;
           var code = err.status;
           setState(code === 401 || code === 403 ? 'denied' : fails >= limit ? 'offline' : 'retrying');
         } else {
           fails = 0; lastErr = null;
-          if (r.unchanged !== true) {
+          if (amb) {
+            aseq = amb.seq;
+            if (!amb.unchanged && o.onAmbient) { try { o.onAmbient(amb.doc, amb.seq, amb.updatedAt); } catch (e) { /* ditto */ } }
+          }
+          if (r.unchanged !== true && r.seq !== seq) {
             seq = r.seq;
             if (o.onData) { try { o.onData(r.display, r.seq, r.updatedAt || null); } catch (e) { /* ditto */ } }
           }
@@ -301,7 +320,7 @@
         schedule();
       }
       var p;
-      try { p = Promise.resolve(o.fetch(seq)); } catch (e) { p = Promise.reject(e); }
+      try { p = Promise.resolve(o.fetch(seq, aseq)); } catch (e) { p = Promise.reject(e); }
       p.then(function (r) { finish(null, r); }, function (e) { finish(e || new Error('failed')); });
     }
     return {
@@ -317,10 +336,138 @@
       /* the network is back: forget the backoff */
       reset: function () { fails = 0; if (state === 'offline' || state === 'retrying') state = 'connecting'; },
       seq: function () { return seq; },
+      aseq: function () { return aseq; },
       state: function () { return state; },
       fails: function () { return fails; }
     };
   };
+
+  /* ---------- the ambient floor (AMBIENT-PLAN.md) ----------
+     When no spotlight is up the display plays a self-contained scene full screen and rotates it. The registry below is the only
+     source of a scene's URL (`ambient/<file>`, relative to the app root): nothing from the server ever becomes a URL. `needs`
+     says what a scene waits for ('score' gates it; 'crew' is advisory, the watch feed has its own defaults); `pinOnly` keeps a
+     scene out of the rotation (the test card). */
+  Pure.AMBIENT_SCENES = [
+    { id: 'harvest', file: 'second-harvest.html', label: 'The lair' },
+    { id: 'watch', file: 'watch-feed.html', label: 'City Watch feed', needs: 'crew' },
+    { id: 'duskwall', file: 'duskwall-after-dark.html', label: 'The city after dark' },
+    { id: 'board', file: 'planning-board.html', label: 'Planning board', needs: 'score' },
+    { id: 'exploded', file: 'score-exploded.html', label: 'Score site, exploded', needs: 'score' },
+    { id: 'testcard', file: 'test-card.html', label: 'Please stand by', pinOnly: true }
+  ];
+  Pure.AMBIENT_DEFAULT_PLAYLIST = ['harvest', 'watch', 'duskwall'];
+  Pure.AMBIENT_DEFAULT_MIN = 7;
+
+  Pure.ambientScene = function (id) {
+    for (var i = 0; i < Pure.AMBIENT_SCENES.length; i++) if (Pure.AMBIENT_SCENES[i].id === id) return Pure.AMBIENT_SCENES[i];
+    return null;
+  };
+  /* the iframe URL for a scene id, or '' for an unknown id. The watch feed polls /api/campaign unless told not to; the display
+     sign-in may not call it, so it is always loaded with ?api=off. */
+  Pure.ambientUrl = function (id) {
+    var sc = Pure.ambientScene(id);
+    /* no `.html`: the asset server answers /ambient/x.html with a 307 to /ambient/x, and the service worker will not cache a
+       redirected response, so a scene would never be available offline */
+    return sc ? 'ambient/' + sc.file.replace(/\.html$/, '') + (sc.id === 'watch' ? '?api=off' : '') : '';
+  };
+  /* a scene is playable when it exists and, if it needs a score, the plan has one */
+  Pure.ambientAvailable = function (plan, id) {
+    var sc = Pure.ambientScene(id);
+    if (!sc) return false;
+    if (sc.needs === 'score') return !!(plan && plan.score);
+    return true;
+  };
+  function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function clampInt(v, lo, hi, dflt) {
+    var n = Math.round(Number(v));
+    return isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
+  }
+  function cleanScore(v) {
+    if (!isObj(v)) return null;
+    var svg = function (x) { return typeof x === 'string' && x.length <= Pure.LIMITS.svgChars ? x : ''; };
+    return {
+      name: str(v.name, 200), district: str(v.district, 200), target: str(v.target, 200),
+      reveal: Array.isArray(v.reveal) ? v.reveal.filter(function (b) { return typeof b === 'string'; }).slice(0, 8).map(function (b) { return str(b, 40); }) : [],
+      board: svg(v.board), iso: svg(v.iso), view: v.view === 'rings' ? 'rings' : 'plan', at: str(v.at, 40)
+    };
+  }
+  /* ambientPlan(doc) -> the normalised plan: { mode: auto | pin | off, scene, playlist: [ids], intervalMin: 3..30, skip: int,
+     crew: { heat, wanted } | null, score: null | { name, district, target, reveal, board, iso, view, at } }.
+     `doc` is the ambient document the server delivers (null, undefined or {} before there is one). Unknown ids go; the test card
+     never joins the rotation; a pin on a scene that cannot play (unknown, or a score scene with no score) falls back to auto.
+     It reads its own output, so ambientPlan(ambientPlan(d)) equals ambientPlan(d). */
+  Pure.ambientPlan = function (doc) {
+    var d = isObj(doc) ? doc : {};
+    var mode = d.mode === 'pin' || d.mode === 'off' ? d.mode : 'auto';
+    var seen = {}, list = [];
+    (Array.isArray(d.playlist) ? d.playlist : []).forEach(function (id) {
+      var sc = typeof id === 'string' ? Pure.ambientScene(id) : null;
+      if (sc && !sc.pinOnly && !seen[sc.id]) { seen[sc.id] = 1; list.push(sc.id); }
+    });
+    var crew = null;
+    if (isObj(d.crew) && (isFinite(Number(d.crew.heat)) || isFinite(Number(d.crew.wanted)))) {
+      crew = { heat: clampInt(d.crew.heat, 0, 9, 0), wanted: clampInt(d.crew.wanted, 0, 4, 0) };
+    }
+    var skip = Math.floor(Number(d.skip));
+    var plan = {
+      mode: mode, scene: typeof d.scene === 'string' && Pure.ambientScene(d.scene) ? d.scene : null,
+      playlist: list.length ? list : Pure.AMBIENT_DEFAULT_PLAYLIST.slice(),
+      intervalMin: clampInt(d.intervalMin, 3, 30, Pure.AMBIENT_DEFAULT_MIN), skip: isFinite(skip) && skip > 0 ? skip : 0,
+      crew: crew, score: cleanScore(d.score)
+    };
+    if (plan.mode === 'pin' && !(plan.scene && Pure.ambientAvailable(plan, plan.scene))) { plan.mode = 'auto'; plan.scene = null; }
+    return plan;
+  };
+  /* the playlist as it can play now: score scenes drop out while there is no score (the test card is never in a playlist) */
+  Pure.ambientRotation = function (plan) {
+    var p = plan && Array.isArray(plan.playlist) ? plan : Pure.ambientPlan(plan);
+    return p.playlist.filter(function (id) { var sc = Pure.ambientScene(id); return sc && !sc.pinOnly && Pure.ambientAvailable(p, id); });
+  };
+  /* nextScene(plan, currentId, exclude?) -> the id after currentId in the rotation (wrapping), or the first when currentId is
+     not in it; null when nothing can play. `exclude` is a list of ids to pass over (the benched ones). May return currentId
+     itself when it is the only scene left. */
+  Pure.nextScene = function (plan, currentId, exclude) {
+    var rot = Pure.ambientRotation(plan), bad = exclude || [], n = rot.length;
+    if (!n) return null;
+    var at = rot.indexOf(currentId);
+    for (var i = 1; i <= n; i++) {
+      var id = rot[(at + i + n) % n];                  /* at = -1 starts at rot[0] */
+      if (bad.indexOf(id) < 0) return id;
+    }
+    return null;
+  };
+
+  /* ---------- what the scenes are told ----------
+     crewMessage(plan) -> { type: 'b68:crew', heat, wanted } for the watch feed, or null while the plan holds no crew.
+     crewChanged(prev, next) -> true when `next` (a plan's crew, or null) should be posted: it exists and differs from what the
+     scene was last told (`prev`, or null when it was told nothing). The page posts when this says so, and again whenever the
+     watch scene finishes loading (a freshly loaded scene knows nothing). */
+  Pure.crewMessage = function (plan) {
+    var c = plan && isObj(plan.crew) ? plan.crew : null;
+    return c ? { type: 'b68:crew', heat: clampInt(c.heat, 0, 9, 0), wanted: clampInt(c.wanted, 0, 4, 0) } : null;
+  };
+  Pure.crewChanged = function (prev, next) {
+    if (!isObj(next)) return false;
+    return !isObj(prev) || prev.heat !== next.heat || prev.wanted !== next.wanted;
+  };
+  /* the four crew polaroids on the score scenes: cast id -> caption (the generator's constant; AMBIENT-PLAN.md 4.3) */
+  Pure.POLAROIDS = [{ id: 'booker', cap: 'Babel' }, { id: 'alfie', cap: 'Ashtray & Buck' }, { id: 'stacey', cap: 'Stacey' }, { id: 'loader', cap: '99.47' }];
+  /* scoreMessage(score, polaroids, env) -> the message a score scene is sent in reply to its b68:ready, or null with no score.
+     `board` and `iso` are the score's svgs run through the sanitiser again here (normal cap) and sent as its markup, '' when one
+     will not clean; `polaroids` are [{ svg, cap }] already cleaned by the caller (the figure kit's output, big cap). Nothing but
+     these fields is copied. */
+  Pure.scoreMessage = function (score, polaroids, env) {
+    if (!isObj(score)) return null;
+    function markup(svg) { var r = Pure.sanitiseSvg(svg, { DOMParser: env && env.DOMParser, XMLSerializer: env && env.XMLSerializer }); return r.ok ? r.markup : ''; }
+    return {
+      type: 'b68:score', name: str(score.name, 200), district: str(score.district, 200), target: str(score.target, 200),
+      view: score.view === 'rings' ? 'rings' : 'plan', board: markup(score.board), iso: markup(score.iso),
+      polaroids: (Array.isArray(polaroids) ? polaroids : []).filter(function (p) { return isObj(p) && typeof p.svg === 'string' && p.svg; })
+        .slice(0, 4).map(function (p) { return { svg: p.svg, cap: str(p.cap, 80) }; })
+    };
+  };
+  /* a score scene's id (board, exploded) -> true: the scenes that wait for a score */
+  Pure.isScoreScene = function (id) { var sc = Pure.ambientScene(id); return !!(sc && sc.needs === 'score'); };
 
   /* =====================================================================================================================
      Browser part
@@ -345,6 +492,12 @@
   function blankStage() {
     var e = el('div', 'dp-stage dp-blank'), m = el('div', 'dp-mark');
     m.setAttribute('aria-hidden', 'true'); e.appendChild(m);
+    return { el: e, destroy: function () {} };
+  }
+  /* lights out: an opaque black stage over everything, the ambient included; no text, no mark */
+  function darkStage(vm) {
+    var e = el('div', 'dp-stage dp-dark');
+    if (vm.title) e.setAttribute('aria-label', vm.title);
     return { el: e, destroy: function () {} };
   }
   function textStage(vm) {
@@ -375,6 +528,15 @@
       } catch (e) { out = null; }
     }
     return out;
+  }
+  /* a head-and-shoulders portrait from the figure kit, cleaned like any figure (the big cap); null when it will not draw */
+  function drawPortrait(spec, uid, K) {
+    if (!K || typeof K.portrait !== 'function' || !spec) return null;
+    try {
+      var s = JSON.parse(JSON.stringify(spec)); s.id = uid;
+      var r = K.portrait(s, { lod: 'mid' }), res = Pure.sanitiseSvg(r && r.svg, parserEnv(true));
+      return res.ok ? res : null;
+    } catch (e) { return null; }
   }
   function npcStage(vm, seq, ctx) {
     var e = el('div', 'dp-stage dp-npc' + (vm.found ? '' : ' dp-npc-missing'));
@@ -514,6 +676,7 @@
     try {
       if (vm.kind === 'svg') return svgStage(vm);
       if (vm.kind === 'text') return textStage(vm);
+      if (vm.kind === 'dark') return darkStage(vm);
       if (vm.kind === 'npc') return npcStage(vm, seq, ctx);
     } catch (e) { return noteStage(vm.title, 'This could not be shown.'); }
     return blankStage();
@@ -532,6 +695,190 @@
         }, function () { resolve(null); });
       } catch (e) { resolve(null); }
     });
+  }
+
+  /* ---------- the ambient controller ----------
+     One per session, in a `.dp-ambient` layer UNDER `.dp-stages`. Two iframe slots: `active` (on screen) and `incoming`
+     (loading); a new scene fades in only on its `load` event, then the old one fades out and goes. The rotation timer runs in
+     auto mode only, and not while the page is hidden. A spotlight (anything but blank) covers the ambient: the rotation stops,
+     and after graceMs the iframes are removed (a hidden iframe gets no visibilitychange and would keep animating all night);
+     blank uncovers it: if the iframe is still there the spotlight just fades off it, otherwise the scene reloads and fades in.
+     A scene with no `load` inside watchdogMs is removed and benched for benchMs, and the next one is tried.
+     Timings: defaults below; ctx.ambientTiming = { intervalMs, graceMs, watchdogMs, benchMs } overrides them (tests). On a
+     loopback host only, localStorage['b68.display.ambientTiming'] (the same JSON) does the same, for the e2e run.
+     Public methods (also on B68DisplayPage.ambient while mounted, for the poller and the GM-driven phases):
+       setPlan(docOrPlan)  re-plan; a raised `skip` advances to the next scene at once (auto mode)
+       cover() / uncover() a spotlight went up / the spotlight cleared
+       post(id, message)   postMessage to that scene's frame (targetOrigin = this origin) when loaded; returns true if sent
+       state()             { mode, cur, active, incoming, covered, benched: [ids] } for tests and debugging
+     ctx.onAmbientLoad(id, frame), if given, runs after each scene loads (the session's own hook, s.onLoad, runs first: it posts the
+     crew's heat to the watch feed). */
+  function timingHook() {
+    try {
+      var h = location.hostname;
+      if (h !== '127.0.0.1' && h !== 'localhost') return null;
+      return JSON.parse(localStorage.getItem('b68.display.ambientTiming') || 'null');
+    } catch (e) { return null; }
+  }
+  function makeFrame(id) {
+    var f = document.createElement('iframe');
+    f.className = 'dp-amb-frame';
+    f.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+    f.setAttribute('allow', 'screen-wake-lock');
+    f.setAttribute('aria-hidden', 'true');
+    f.setAttribute('tabindex', '-1');
+    f.setAttribute('referrerpolicy', 'same-origin');
+    f.setAttribute('data-scene', id);
+    f.setAttribute('src', Pure.ambientUrl(id));
+    return f;
+  }
+  function createAmbient(s, layer, later, clearLater) {
+    var ctx = s.ctx, container = s.container;
+    var T = { intervalMs: 0, graceMs: 30000, watchdogMs: 20000, benchMs: 600000, fadeMs: 1300 };
+    var over = isObj(ctx.ambientTiming) ? ctx.ambientTiming : timingHook();
+    if (isObj(over)) {
+      ['intervalMs', 'watchdogMs', 'benchMs'].forEach(function (k) { var n = Number(over[k]); if (isFinite(n) && n > 0) T[k] = n; });
+      var g = Number(over.graceMs); if (isFinite(g) && g >= 0) T.graceMs = g;
+    }
+    var A = {
+      plan: Pure.ambientPlan(ctx.ambientDoc), lastSkip: 0, covered: true,          /* covered until the first push says blank */
+      cur: null, active: null, incoming: null, fading: [], bench: {}, rot: null, grace: null, retry: null, dead: false
+    };
+    A.lastSkip = A.plan.skip;
+
+    function benched(id) { return !!A.bench[id] && A.bench[id] > Date.now(); }
+    function benchList() { var out = []; for (var k in A.bench) if (Object.prototype.hasOwnProperty.call(A.bench, k) && benched(k)) out.push(k); return out; }
+    function intervalMs() { return T.intervalMs || A.plan.intervalMin * 60000; }
+
+    /* the scene that should be up: the pin, or the current one while it is still in the rotation, or the next playable */
+    function pickTarget() {
+      var p = A.plan;
+      if (p.mode === 'off') return null;
+      var bad = benchList();
+      if (p.mode === 'pin') return p.scene && bad.indexOf(p.scene) < 0 ? p.scene : Pure.nextScene(p, p.scene, bad);
+      if (A.cur && Pure.ambientRotation(p).indexOf(A.cur) >= 0 && bad.indexOf(A.cur) < 0) return A.cur;
+      return Pure.nextScene(p, A.cur, bad);
+    }
+    /* the subtle mark shows only when there is no ambient to look at */
+    function paintMark() { container.classList.toggle('dp-amb-on', !A.dead && A.plan.mode !== 'off' && !!(A.active || pickTarget())); }
+
+    function stopRot() { if (A.rot !== null) { clearLater(A.rot); A.rot = null; } }
+    function armRot() {
+      stopRot();
+      if (A.dead || A.covered || document.hidden || A.plan.mode !== 'auto' || Pure.ambientRotation(A.plan).length < 2) return;
+      A.rot = later(function () { A.rot = null; advance(); }, intervalMs());
+    }
+    function advance() {
+      if (A.dead || A.covered || A.plan.mode !== 'auto') return;
+      var next = Pure.nextScene(A.plan, A.cur, benchList());
+      if (next && next !== A.cur) load(next); else armRot();
+    }
+
+    function drop(slot) {
+      if (!slot || slot.dead) return;
+      slot.dead = true;
+      if (slot.wd !== null) clearLater(slot.wd);
+      if (slot.off) slot.off();
+      if (slot.frame.parentNode) slot.frame.parentNode.removeChild(slot.frame);
+      var i = A.fading.indexOf(slot); if (i >= 0) A.fading.splice(i, 1);
+    }
+    function removeAll() {
+      var all = [A.active, A.incoming].concat(A.fading);
+      A.active = null; A.incoming = null;
+      all.forEach(drop);
+      paintMark();
+    }
+    function retire(slot) {
+      slot.frame.classList.remove('dp-amb-in');
+      A.fading.push(slot);
+      later(function () { drop(slot); }, reduced() ? 60 : T.fadeMs);
+    }
+
+    function load(id) {
+      A.cur = id;
+      if (A.incoming) { if (A.incoming.id === id) return; drop(A.incoming); A.incoming = null; }
+      if (A.active && A.active.id === id) { armRot(); return; }
+      var f = makeFrame(id), slot = { id: id, frame: f, loaded: false, dead: false, wd: null, off: null };
+      slot.off = on(f, 'load', function () { onLoad(slot); });
+      slot.wd = later(function () { slot.wd = null; onWatchdog(slot); }, T.watchdogMs);
+      A.incoming = slot;
+      layer.appendChild(f);
+    }
+    function onLoad(slot) {
+      if (slot.dead || A.dead || slot.loaded) return;
+      if (slot.wd !== null) { clearLater(slot.wd); slot.wd = null; }
+      slot.loaded = true;
+      var old = A.active;
+      A.active = slot; if (A.incoming === slot) A.incoming = null;
+      paintMark();
+      later(function () { if (!slot.dead) slot.frame.classList.add('dp-amb-in'); }, reduced() ? 0 : 30);
+      if (old) retire(old);
+      if (typeof s.onLoad === 'function') { try { s.onLoad(slot.id, slot.frame); } catch (e) { /* a hook must not stop the floor */ } }
+      if (typeof ctx.onAmbientLoad === 'function') { try { ctx.onAmbientLoad(slot.id, slot.frame); } catch (e) { /* a hook must not stop the floor */ } }
+      armRot();
+    }
+    function onWatchdog(slot) {
+      if (slot.dead || A.dead || slot.loaded) return;
+      A.bench[slot.id] = Date.now() + T.benchMs;
+      if (A.incoming === slot) A.incoming = null;
+      drop(slot);
+      if (A.retry !== null) clearLater(A.retry);
+      A.retry = later(function () { A.retry = null; ensure(); }, T.benchMs + 50);   /* when the bench lapses, look again */
+      ensure();
+    }
+
+    /* make the layer match the plan: after a re-plan, an uncover, a failed load */
+    function ensure() {
+      if (A.dead) return;
+      if (A.plan.mode === 'off') { stopRot(); removeAll(); return; }
+      paintMark();
+      if (A.covered) return;
+      var t = pickTarget();
+      if (!t) { stopRot(); return; }
+      if (A.active && A.active.id === t && !A.incoming) { A.cur = t; armRot(); return; }
+      if (A.incoming && A.incoming.id === t) { A.cur = t; return; }
+      load(t);
+    }
+
+    var api = {
+      setPlan: function (raw) {
+        if (A.dead) return;
+        var p = Pure.ambientPlan(raw), up = p.skip > A.lastSkip;
+        A.lastSkip = p.skip; A.plan = p;
+        if (up && p.mode === 'auto') {
+          var next = Pure.nextScene(p, A.cur, benchList());
+          if (next && next !== A.cur) A.cur = next;        /* ensure() loads it now, or uncover() does when the spotlight clears */
+        }
+        ensure();
+      },
+      cover: function () {
+        if (A.dead) return;
+        A.covered = true; stopRot();
+        if (A.grace === null) A.grace = later(function () { A.grace = null; removeAll(); }, T.graceMs);
+      },
+      uncover: function () {
+        if (A.dead) return;
+        A.covered = false;
+        if (A.grace !== null) { clearLater(A.grace); A.grace = null; }
+        ensure();
+      },
+      post: function (id, message) {
+        var slot = A.active;
+        if (A.dead || !slot || slot.dead || !slot.loaded || slot.id !== id) return false;
+        try { slot.frame.contentWindow.postMessage(message, location.origin); return true; } catch (e) { return false; }
+      },
+      state: function () {
+        return { mode: A.plan.mode, cur: A.cur, active: A.active ? A.active.id : null, incoming: A.incoming ? A.incoming.id : null, covered: A.covered, benched: benchList() };
+      },
+      destroy: function () {
+        A.dead = true; stopRot();
+        [A.active, A.incoming].concat(A.fading).forEach(drop);
+        A.active = null; A.incoming = null; A.fading = [];
+        container.classList.remove('dp-amb-on');
+      }
+    };
+    s.offs.push(on(document, 'visibilitychange', function () { if (document.hidden) stopRot(); else armRot(); }));
+    return api;
   }
 
   /* ---------- the session ---------- */
@@ -557,10 +904,60 @@
     hint.appendChild(hintText); hint.appendChild(hintBtn);
     /* No way back to the GM page from here, hidden or not: the iPad lies in front of the players, signed in as the GM.
        The GM leaves the display from the GM's own device (or closes the Home Screen app). */
-    container.appendChild(stages); container.appendChild(status); container.appendChild(chrome); container.appendChild(hint);
+    var layer = el('div', 'dp-ambient'); layer.setAttribute('aria-hidden', 'true');           /* the ambient floor, under the stages */
+    container.appendChild(layer); container.appendChild(stages); container.appendChild(status); container.appendChild(chrome); container.appendChild(hint);
 
     function later(fn, ms) { var id = setTimeout(function () { var i = s.timers.indexOf(id); if (i >= 0) s.timers.splice(i, 1); if (!s.dead) fn(); }, ms); s.timers.push(id); return id; }
     function clearLater(id) { clearTimeout(id); var i = s.timers.indexOf(id); if (i >= 0) s.timers.splice(i, 1); }
+    /* the ambient floor stays covered (nothing loads) until the first push arrives, and always when there is no poller */
+    var amb = s.amb = createAmbient(s, layer, later, clearLater);
+
+    /* What the scenes are told. s.crew = the crew the plan last held (null: none yet); s.score = the ambient doc's score
+       (normalised), the source of every b68:score. The watch feed learns the crew when it loads and again on each change; a score
+       scene asks (b68:ready) and is answered, and is sent the new score when it changes. */
+    s.crew = null; s.score = null; s.scoreMsg = null; s.scoreKey = ''; s.polaroids = null; s.plan = Pure.ambientPlan(ctx.ambientDoc);
+    s.onLoad = function (id) {
+      if (id !== 'watch') return;
+      var m = Pure.crewMessage(s.plan);
+      if (m) amb.post('watch', m);
+    };
+    function polaroids() {
+      if (s.polaroids) return s.polaroids;
+      var out = [], K = ctx.figures, C = ctx.cast;
+      if (K && C && Array.isArray(C.pcs)) {
+        Pure.POLAROIDS.forEach(function (p) {
+          var pc = null; C.pcs.forEach(function (x) { if (x && x.id === p.id) pc = x; });
+          var r = pc ? drawPortrait(pc, 'dp-pol-' + p.id, K) : null;
+          if (r && r.markup) out.push({ svg: r.markup, cap: p.cap });
+        });
+      }
+      return (s.polaroids = out);
+    }
+    function sendScore(win) {
+      if (!s.score || !win) return;
+      if (!s.scoreMsg) s.scoreMsg = Pure.scoreMessage(s.score, polaroids(), parserEnv(false));
+      try { win.postMessage(s.scoreMsg, location.origin); } catch (e) { /* the frame went away */ }
+    }
+    /* the ambient doc arrived (or changed): re-plan, tell the watch feed a changed crew, hand a changed score to the live score scenes */
+    function applyAmbient(doc) {
+      var p = s.plan = Pure.ambientPlan(doc);
+      amb.setPlan(p);
+      if (Pure.crewChanged(s.crew, p.crew)) amb.post('watch', Pure.crewMessage(p));
+      s.crew = p.crew;
+      var key = p.score ? [p.score.at, p.score.name, p.score.district, p.score.target, p.score.view, p.score.board.length, p.score.iso.length].join('|') : '';
+      if (key !== s.scoreKey) {
+        s.scoreKey = key; s.score = p.score; s.scoreMsg = null;
+        if (p.score) [].forEach.call(layer.querySelectorAll('iframe'), function (f) { if (Pure.isScoreScene(f.getAttribute('data-scene'))) sendScore(f.contentWindow); });
+      }
+    }
+    /* A score scene says it is ready (it posts to its parent once its script has run): answer THAT frame, and only a frame of
+       ours that is a score scene, from this origin. The reply goes to the frame's window itself: the load event may not have fired. */
+    s.offs.push(on(window, 'message', function (ev) {
+      if (s.dead || ev.origin !== location.origin || !ev.data || ev.data.type !== 'b68:ready' || !ev.source) return;
+      var frames = layer.querySelectorAll('iframe'), hit = null;
+      for (var i = 0; i < frames.length; i++) if (frames[i].contentWindow === ev.source && Pure.isScoreScene(frames[i].getAttribute('data-scene'))) hit = frames[i];
+      if (hit) sendScore(hit.contentWindow);
+    }));
 
     /* status */
     function paintStatus() {
@@ -589,6 +986,7 @@
     }
     function show(display, seq) {
       var my = ++s.token, vm = Pure.viewModel(display);
+      if (vm.kind === 'blank') amb.uncover(); else amb.cover();                 /* a spotlight covers the ambient; blank lets it through */
       if (vm.kind === 'npc') {
         loadNpc(ctx, vm.npcId).then(function (doc) {
           if (s.dead || my !== s.token) return;                       /* a newer push arrived while the cast was loading */
@@ -611,8 +1009,9 @@
       stext.textContent = 'Not signed in as the GM'; dot.className = 'dp-dot dp-dot-bad';
     } else {
       s.poller = Pure.createPoller({
-        fetch: function (seq) { return ctx.gm.display(seq === null ? undefined : seq); },
+        fetch: function (seq, aseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq); },
         isHidden: function () { return document.hidden; },
+        onAmbient: function (doc) { applyAmbient(doc); },
         onData: function (display, seq, at) { s.seq = seq; s.updatedAt = at; paintStatus(); show(display, seq); },
         onStatus: function (p) { s.poll = p; paintStatus(); }
       });
@@ -680,6 +1079,7 @@
     var s = S; if (!s) return;
     S = null; s.dead = true; s.token++;
     if (s.poller) s.poller.stop();
+    if (s.amb) { try { s.amb.destroy(); } catch (e) {} s.amb = null; }
     s.timers.forEach(function (id) { clearTimeout(id); }); s.timers = [];
     s.offs.forEach(function (f) { try { f(); } catch (e) {} }); s.offs = [];
     s.stages.forEach(function (st) { try { st.destroy(); } catch (e) {} }); s.stages = [];
@@ -690,7 +1090,15 @@
     s.container.innerHTML = '';
   }
 
-  var api = { mount: mount, unmount: unmount };
+  /* the controller of the mounted session, for the poller and the GM-driven phases; every call is a no-op when nothing is mounted */
+  var ambient = {
+    setPlan: function (doc) { if (S && S.amb) S.amb.setPlan(doc); },
+    cover: function () { if (S && S.amb) S.amb.cover(); },
+    uncover: function () { if (S && S.amb) S.amb.uncover(); },
+    post: function (id, message) { return !!(S && S.amb && S.amb.post(id, message)); },
+    state: function () { return S && S.amb ? S.amb.state() : null; }
+  };
+  var api = { mount: mount, unmount: unmount, ambient: ambient };
   if (typeof window !== 'undefined') window.B68DisplayPage = api;
-  if (typeof module !== 'undefined' && module.exports) module.exports = { mount: mount, unmount: unmount, Pure: Pure };
+  if (typeof module !== 'undefined' && module.exports) module.exports = { mount: mount, unmount: unmount, ambient: ambient, Pure: Pure };
 })(typeof window !== 'undefined' ? window : globalThis);
