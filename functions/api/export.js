@@ -33,7 +33,7 @@ export async function onRequest({ request, env, data }) {
       .prepare('SELECT id, updated_at, doc FROM npcs WHERE campaign = ?1 AND deleted = 0 ORDER BY updated_at DESC')
       .bind(id)
       .all(),
-    db.prepare('SELECT email, name FROM members ORDER BY name COLLATE NOCASE, email').all(),
+    db.prepare('SELECT email, COALESCE(name_override, name) AS name FROM members ORDER BY COALESCE(name_override, name) COLLATE NOCASE, email').all(),
   ]);
   const now = new Date().toISOString();
   const body = {
@@ -44,7 +44,7 @@ export async function onRequest({ request, env, data }) {
     members: (people.results || []).map((r) => ({
       id: r.email,
       name: r.name || String(r.email).split('@')[0],
-      role: roleFor(r.email, env.GM_EMAILS),
+      role: roleFor(r.email, env.GM_EMAILS, env.DISPLAY_EMAILS),
     })),
   };
   const safe = id.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'campaign';

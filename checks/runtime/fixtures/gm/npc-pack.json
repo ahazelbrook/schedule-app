@@ -1,0 +1,126 @@
+{
+  "format": 1,
+  "exportedAt": "2026-10-14T00:00:00.000Z",
+  "parts": {
+    "campaign": {
+      "src": { "file": "fixture/campaign", "blockSha": "0000000000000000", "exportedAt": "2026-10-14T00:00:00.000Z" },
+      "pcs": [
+        { "name": "Pippa Quince", "file": "Pippa Quince", "first": "Pippa" },
+        { "name": "Barnaby Tuck", "file": "Barnaby Tuck", "first": "Barnaby" },
+        { "name": "Odette Marsh", "file": "Odette Marsh", "first": "Odette" },
+        { "name": "Hugo Pell", "file": "The Hugo Pell", "first": "Hugo" }
+      ],
+      "npcs": [
+        { "name": "Mrs Dumpling", "role": "", "faction": "The Biscuit Board", "district": "Puddle End", "playedBy": "Aunt Biscuit" },
+        { "name": "Sergeant Spoon", "role": "", "faction": "Kettle Cooperative", "district": "Puddle End", "playedBy": "Captain Teacosy" },
+        { "name": "Old Mop", "role": "", "faction": "", "district": "Lower Crumb", "playedBy": "" }
+      ]
+    },
+    "npc": {
+      "src": { "file": "fixture/npc", "blockSha": "0000000000000000", "exportedAt": "2026-10-14T00:00:00.000Z" },
+      "T": {
+        "nameMasc": ["Alfie", "Bram", "Cosmo", "Dudley", "Egbert", "Fitz", "Gus", "Humphrey", "Ignatz", "Jasper", "Kipper", "Lionel"],
+        "nameFem": ["Agnes", "Blossom", "Clementine", "Dottie", "Edna", "Fenella", "Gertie", "Hester", "Imogen", "Juniper", "Kitty", "Lettice"],
+        "nameAmb": ["Ash", "Bobbin", "Cricket", "Dapple", "Ember", "Fig", "Gizmo", "Hob", "Indigo", "Jinx", "Kestrel", "Lark"],
+        "family": ["Applegarth", "Bumble", "Crumpet", "Dibble", "Eggcup", "Fumble", "Gadsby", "Hobnob", "Inkpot", "Jollop", "Kettleby", "Lumpkin"],
+        "alias": ["Biscuit", "Nutmeg", "Pudding", "Teacup", "Thimble", "Whisk", "Spoons", "Crumbs", "Sprout", "Pickle"],
+        "hullDesig": ["Unit Teapot-1", "Kettle Mk II", "Wobble-7", "Spoonbot", "Hull No. 3"],
+        "hullLook": ["dented", "shiny", "wobbly", "round", "squeaky", "painted yellow", "stripy", "tiny dials", "one big lamp"],
+        "hullWear": ["nothing", "a knitted jumper", "a paper hat"],
+        "heritage": [
+          { "n": "Wexland", "d": ["jam makers", "lighthouse keepers", "egg collectors", "pigeon fanciers"] },
+          { "n": "The Mossy Isles", "d": ["ferry hands", "moss farmers", "bell ringers", "kite makers"] },
+          { "n": "Port Tuppence", "d": ["clerks", "lamplighters", "cheese graders", "umbrella menders"] }
+        ],
+        "telltale": ["green ears", "a second shadow", "feathery eyebrows"],
+        "telltaleHeritage": "Wexland",
+        "profession": [
+          ["Baker", "Clerk", "Ferryman", "Knitter"],
+          ["Plumber", "Poet", "Tailor", "Waiter"],
+          ["Cabbie", "Nurse", "Porter", "Sexton"]
+        ],
+        "professionExtra": ["Beekeeper", "Cartographer", "Piano tuner"],
+        "build": ["Round", "Lanky", "Stocky", "Wispy", "Broad", "Petite", "Wiry", "Tall"],
+        "manner": ["jolly", "sleepy", "prim", "fussy", "bouncy", "grumpy", "serene", "nervy"],
+        "features": ["rosy", "pinched", "freckled", "jowly", "lined", "gentle", "sharp", "pale"],
+        "hair": ["a quiff", "a handlebar moustache", "a buzz cut", "an afro", "a long plait", "a pixie crop", "a bald head", "a pompadour", "a beehive", "a neat beard", "a ponytail", "tidy waves"],
+        "standout": ["round spectacles", "a neat scar", "inked forearms", "a shaved head", "a very tidy collar", "a limp"],
+        "tell": ["Hums a tune before answering", "Straightens the cutlery", "Counts on their fingers", "Winks at nobody", "Sniffs every object offered", "Pats their hat twice", "Draws circles on the table", "Taps a spoon on a cup"],
+        "status": [
+          { "n": "High", "d": "unhurried, never hurries to explain" },
+          { "n": "Low", "d": "fusses, over-apologises" },
+          { "n": "High", "d": "waits for you to finish, then waits more" },
+          { "n": "Low", "d": "keeps tidying nothing" }
+        ],
+        "verb": ["soothe", "tease", "warn", "bribe", "flatter", "scold", "tempt", "hush", "wheedle", "praise"],
+        "dial": ["Pace: gentle", "Pace: brisk", "Pace: dawdling", "Pace: staccato", "Pace: sing-song"],
+        "wearing": [
+          { "r": "smart", "g": ["a pinstripe jacket", "a tweed coat", "a wool cardigan", "a velvet waistcoat"], "a": ["a paisley tie", "a silk scarf"] },
+          { "r": "shabby", "g": ["a patched duffle", "a threadbare mac", "a stained apron"], "a": ["odd gloves", "a bobble hat", "mismatched socks"] },
+          { "r": "festive", "g": ["a spotty frock", "a checked suit", "a shiny jumper"], "a": ["a flower", "a tinsel boa", "a party hat"] }
+        ],
+        "trait": [["Cheerful", "Blunt", "Fussy", "Dreamy"], ["Loyal", "Greedy", "Shy", "Boastful"], ["Stubborn", "Curious", "Kind", "Sly"]],
+        "traitExtra": ["Pedantic", "Giddy", "Sombre"],
+        "interest": [["Stamps and string", "Jam and preserves", "Birds and bells", "Kites and weather"], ["Tea and cake", "Maps and rivers", "Clocks and keys", "Hats and bonnets"], ["Moss and mushrooms", "Chess and draughts", "Poems and puns", "Trains and timetables"]],
+        "interestExtra": ["Gnome history", "Pickling", "Knitting patterns"],
+        "key": [
+          ["Jam", "Bakes only for strangers", "Bakes only for themselves"],
+          ["Bells", "Hates the ringing", "Rings them at midnight"],
+          ["Pride", "Hides every success", "Boasts of every failure"],
+          ["Tea", "Drinks coffee in secret", "Brews for the whole street"],
+          ["Maps", "Burns every chart", "Draws on the walls"],
+          ["Kites", "Keeps them grounded", "Flies one in a storm"]
+        ],
+        "vice": [
+          { "n": "Gambling on snails", "p": ["the Lettuce Lounge", "Old Mop's shed", "the back of the bakery"] },
+          { "n": "Sherry", "p": ["the Cosy Cork", "a locked wardrobe"] },
+          { "n": "Sweets", "p": ["the Humbug Hatch", "a gran in Port Tuppence"] }
+        ],
+        "district": ["Puddle End", "Lower Crumb", "Upper Crumb", "Teapot Row", "The Wobbles", "Gnome Hill"],
+        "faction": [
+          ["The Biscuit Board", 3, "S"],
+          ["Marmalade Syndicate", 2, "W"],
+          ["Teapot Union", 4, "S"],
+          ["The Wobbly Few", 1, "W"],
+          ["Gnome Lodge", 5, "S"],
+          ["Kettle Cooperative", 2, "S"]
+        ],
+        "factionDetail": {
+          "The Biscuit Board": { "what": "Sets the price of biscuits.", "turf": "The bakery quarter.", "boss": "A woman in a floury hat.", "with": "Teapot Union", "against": "Marmalade Syndicate", "now": "Counting crumbs.", "p": 7, "secret": "The recipe is a copy." },
+          "Marmalade Syndicate": { "what": "Sticky business.", "turf": "The orchards.", "boss": "Nobody agrees.", "with": "Gnome Lodge", "against": "The Biscuit Board", "now": "Bottling a grudge.", "p": 8 },
+          "Teapot Union": { "what": "Tea breaks for all.", "turf": "Every kitchen.", "boss": "A committee.", "with": "Kettle Cooperative", "against": "Nobody, loudly", "now": "Voting on the sugar.", "p": 9, "secret": "The committee is one man." }
+        },
+        "rank": ["a tea runner for", "a clerk at", "a trusted baker for", "a made name inside", "runs a corner of"],
+        "physThreat": ["Falls on you from a shelf", "Throws a heavy pudding", "Chases you with a ladle", "Trips you with a rug", "Locks you in the pantry", "Sets the geese on you"],
+        "socThreat": ["Tells your mother", "Spreads a rumour about your hat", "Cuts you at the market", "Writes to the newspaper", "Sings your secrets", "Never invites you again"],
+        "goal": ["Comfort", "Fame", "Revenge", "Cake", "Order", "Quiet", "Respect", "Adventure"],
+        "method": ["gossip", "baking", "bargaining", "bluster", "sulking", "charm", "paperwork", "bells"],
+        "errand": ["Delivering a very large parcel", "Looking for a lost glove", "Dodging a creditor", "Collecting rent in pennies", "Planting something at night", "Returning a borrowed ladder", "Finding a witness for a wedding"],
+        "leverage": [
+          { "f": "faction", "t": "Is quietly feeding {v} to the pigeons." },
+          { "f": "heritage", "t": "Their papers say {v}, their accent says elsewhere." },
+          { "f": "key", "t": "The {v} thing is a front.", "lower": true },
+          { "f": "purveyor", "t": "Owes {v} more than they let on." },
+          { "f": "goal", "t": "Wants {v} badly enough to share it.", "lower": true },
+          { "f": "district", "t": "Something they did in {v} comes back." },
+          { "f": "familyWere", "t": "Someone from back when the family were {v} has turned up." },
+          { "f": "threat", "t": "Can do more than they let on: *{v}*.", "lower": true, "head": true }
+        ],
+        "quirk": ["Believes in lucky socks.", "Devoted to their goose.", "Married into jam.", "Reclusive, deals through notes.", "Owes money to a snail.", "Cannot abide whistling.", "Keeps a diary of weather.", "Secretly writes poetry."],
+        "quirkExtra": ["Just moved house.", "Collects thimbles.", "Afraid of ducks.", "Sings in the bath, loudly."],
+        "attitude": [
+          { "n": "Hostile", "d": "invented: cold, one die", "w": 2 },
+          { "n": "Neutral", "d": "invented: indifferent, two dice", "w": 5 },
+          { "n": "Friendly", "d": "invented: warm, three dice", "w": 3 }
+        ]
+      },
+      "cast": [
+        { "n": "Aunt Biscuit", "status": "High", "pace": "Slow", "borrow": "The long sigh", "never": "The giggle" },
+        { "n": "Captain Teacosy", "status": "Low", "pace": "Fast", "borrow": "The flustered salute", "never": "The shouting" },
+        { "n": "Professor Plum", "status": "High", "pace": "Irregular", "borrow": "The raised eyebrow", "never": "The pipe" },
+        { "n": "Nanny Thimble", "status": "Plays low, is high", "pace": "Brisk", "borrow": "The pat on the arm", "never": "The lullaby" }
+      ],
+      "F": { "halo": { "": "ink-700", "The Biscuit Board": "swing-500", "Teapot Union": "caution-500", "Gnome Lodge": "covert-500" } }
+    }
+  }
+}

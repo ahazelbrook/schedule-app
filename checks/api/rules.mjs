@@ -7,7 +7,7 @@
 //
 // Starts its own dev server on PORT (default 8794) with DEV_USER set and a throwaway D1 state directory.
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
@@ -31,7 +31,7 @@ let passes = 0;
 let child;
 let log = '';
 
-function signal(sig) { try { process.kill(-child.pid, sig); } catch (_) {} }
+function signal(sig) { try { if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); else process.kill(-child.pid, sig); } catch (_) {} }
 async function stop() {
   if (!child) return;
   signal('SIGTERM');
@@ -49,7 +49,7 @@ function start() {
   const args = ['dev', '--port', String(PORT), '--ip', '127.0.0.1', '--inspector-port', String(PORT + 20000),
     '--show-interactive-dev-session', 'false', '--persist-to', join(stateDir, 'p'), '--log-level', 'warn',
     '--var', 'DEV_USER:' + GM, '--var', 'GM_EMAILS:' + GM, '--var', 'CAMPAIGN:rulescheck'];
-  child = spawn(bin, args, { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  child = spawn(bin, args, { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: true, shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.on('data', (d) => { log += d; });
   child.stderr.on('data', (d) => { log += d; });
 }

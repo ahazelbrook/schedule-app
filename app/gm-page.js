@@ -1,5 +1,6 @@
-/* gm-page.js — the GM's page (#gm, GM.md): the console's nine rollers, the location generator with its map, the cast as a
-   list to push to the iPad, the state rail (crew, clocks, bargains owed, pins, who is on stage) and the capture bar.
+/* gm-page.js — the GM's page (#gm, GM.md): the console (four Situations, or the nine Classic rollers), the location generator
+   with its map, the cast as a list to push to the iPad, the state rail (crew, clocks, bargains owed, pins, who is on stage) and
+   the capture bar. S opens the street scene roller and E the engagement roll, beside the location generator (side panels).
    Hosted build only (window.claude.gm); in the claude.ai artifact, or for a player, the page says so and does nothing.
 
    window.B68GmPage (boot.js):
@@ -27,6 +28,10 @@
   else root.B68GmPage = M;
 })(typeof self !== 'undefined' ? self : this, function (W) {
   'use strict';
+
+  /* Release switch. true: the console opens on the four Situations, with a Situations | Classic toggle in its header.
+     false: no toggle and no Situations, only the nine-button Classic console (the safe release, GM.md). */
+  var SITUATIONS_DEFAULT = true;
 
   /* =====================================================================================================================
      Pure helpers (no DOM)
@@ -265,17 +270,20 @@
   }
   P.makeGate = makeGate;
 
-  /* a key press on #gm -> an action, or null. ev: { key, ctrlKey, altKey, metaKey, typing } */
+  /* a key press on #gm -> an action, or null. ev: { key, ctrlKey, altKey, metaKey, typing, view }
+     view 'situations': 1-4 roll a situation (5-9 do nothing); anything else (Classic): 1-9 roll a single table */
   function keyAction(ev) {
     if (!ev || ev.ctrlKey || ev.altKey || ev.metaKey) return null;
     var k = str(ev.key);
     if (ev.typing) return k === 'Escape' ? { type: 'esc' } : null;
-    if (/^[1-9]$/.test(k)) return { type: 'button', n: +k };
+    if (ev.view === 'situations') { if (/^[1-4]$/.test(k)) return { type: 'situation', n: +k }; if (/^[5-9]$/.test(k)) return null; }
+    else if (/^[1-9]$/.test(k)) return { type: 'button', n: +k };
     switch (k.toLowerCase()) {
       case 'n': return { type: 'panel', panel: 'npc' };
       case 'b': return { type: 'panel', panel: 'location' };
       case 't': return { type: 'panel', panel: 'rules' };
-      case 's': case 'e': return { type: 'reserved' };            /* Street and Engagement, later */
+      case 's': return { type: 'panel', panel: 'scenes' };
+      case 'e': return { type: 'panel', panel: 'engagement' };
       case 'p': return { type: 'capture', bucket: 'n' };
       case 'x': return { type: 'capture', bucket: 'x' };
       case 'm': return { type: 'capture', bucket: 'm' };
@@ -331,6 +339,102 @@
   P.plainMd = plainMd; P.consolePlain = consolePlain;
   function stripSize(svg) { return str(svg).replace(/<svg([^>]*?)\swidth="[^"]*"/, '<svg$1').replace(/<svg([^>]*?)\sheight="[^"]*"/, '<svg$1'); }
   P.stripSize = stripSize;
+
+  /* ---------- Situations: which console shows, the session on a capture, and the composed card ---------- */
+  P.SITUATIONS_DEFAULT = SITUATIONS_DEFAULT;
+  var VIEW_KEY = 'b68.gm.view';
+  P.VIEW_KEY = VIEW_KEY;
+  /* 'situations' or 'classic'. `stored` is what this device remembered; the switch off (or a console without the
+     situations layer) is always Classic, whatever was remembered. */
+  function conView(stored, hasSituations, flag) {
+    if (!(flag === undefined ? SITUATIONS_DEFAULT : flag) || !hasSituations) return 'classic';
+    return stored === 'classic' ? 'classic' : 'situations';
+  }
+  P.conView = conView;
+  /* the session number the campaign document holds (a whole number >= 1), or undefined */
+  function sessionOf(doc) {
+    var n = isObj(doc) && isObj(doc.session) ? Math.floor(+doc.session.number) : NaN;
+    return isFinite(n) && n >= 1 && n <= 9999 ? n : undefined;
+  }
+  P.sessionOf = sessionOf;
+  /* one capture entry: id, bucket, text, at, and `s` (the session it was filed in, numbers only, absent when unknown) so
+     the sync can file the line in the right session note */
+  function captureEntry(id, bucket, text, at, doc) {
+    var e = { id: id, bucket: bucket, text: text, at: at }, s = sessionOf(doc);
+    if (s !== undefined) e.s = s;
+    return e;
+  }
+  P.captureEntry = captureEntry;
+  /* the history / current-card entry for a composed card (id 'situation', never 'console'): replay info only */
+  function situationEntry(res, con) {
+    var rp = res.replay;
+    return { id: rp.id, situation: rp.situation, seed: rp.seed, ui: rp.ui, mem: JSON.stringify(rp.mem), con: conSnapshot(con), label: str(res.meta && res.meta.label), at: nowIso() };
+  }
+  function replaySituationEntry(C, T, campaign, e, fallback) {
+    if (!C || !T || !isObj(e) || e.id !== 'situation') return null;
+    var mem = {}, state = fallback || {};
+    try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
+    if (typeof e.con === 'string') { try { state = JSON.parse(e.con); } catch (x) {} }
+    try { return C.create({ T: T, campaign: campaign || {}, state: state, mem: {} }).replay({ id: 'situation', situation: e.situation, seed: e.seed, ui: e.ui || {}, mem: mem }); } catch (x) { return null; }
+  }
+  P.situationEntry = situationEntry; P.replaySituationEntry = replaySituationEntry;
+  /* a composed card as plain text (Copy, Pin, "L files last roll") */
+  function situationPlain(res) {
+    var m = res && res.meta || {}, out = [str(m.title) + (m.sub ? ' (' + str(m.sub) + ')' : '')];
+    (res && res.sections || []).forEach(function (s, i) {
+      out.push((i ? 'Or ' : '') + str(s.title) + ': ' + plainMd(s.lead));
+      (s.lines || []).forEach(function (l) {
+        if (l.kind === 'grid') (l.rows || []).forEach(function (r) { out.push('  ' + str(r.k) + ': ' + plainMd(r.md)); });
+        else out.push('  ' + plainMd(l.md) + (l.small ? ' ' + plainMd(l.small) : ''));
+      });
+    });
+    return out.join('\n');
+  }
+  P.situationPlain = situationPlain;
+  /* a roll's one-line text for "L" (the title and the lead) */
+  function lastText(res) {
+    var m = res && res.meta || {};
+    return m.id === 'situation' && res.sections && res.sections[0] ? str(m.title) + ': ' + plainMd(res.sections[0].lead) : str(m.title) + ': ' + plainMd(m.text);
+  }
+  P.lastText = lastText;
+  /* classic lines -> html (`mdf` renders markdown: the page passes B68Markdown) */
+  function linesHtml(lines, mdf) {
+    var h = '';
+    (lines || []).forEach(function (l) {
+      if (l.kind === 'want') h += '<div class="gm-want">' + mdf(l.md) + (l.small ? '<div class="gm-small">' + mdf(l.small) + '</div>' : '') + '</div>';
+      else if (l.kind === 'read') h += '<div class="gm-read">' + mdf(l.md) + '</div>';
+      else if (l.kind === 'grid') h += '<dl class="gm-grid">' + (l.rows || []).map(function (r) { return '<dt>' + esc(r.k) + '</dt><dd>' + mdf(r.md) + '</dd>'; }).join('') + '</dl>';
+    });
+    return h;
+  }
+  function chipsHtml(chips) { return chips && chips.length ? '<p class="gm-chips">' + chips.map(function (c) { return '<span class="gm-chip">' + esc(c) + '</span>'; }).join('') + '</p>' : ''; }
+  /* the merged actions (one row, each with its index into meta.actions) and Pin / Copy */
+  function actsHtml(m, tool) {
+    return '<div class="gm-card-acts">' + (m.actions || []).map(function (a, i) { return '<button type="button" class="btn sm primary" data-gm="intent" data-i="' + i + '">' + esc(a.label) + '</button>'; }).join('') +
+      '<button type="button" class="btn sm" data-gm="pin" data-tool="' + esc(tool) + '">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="' + esc(tool) + '">Copy</button></div>';
+  }
+  /* The classic card (a single table), exactly as before. */
+  function classicCardHtml(res, mdf) {
+    var m = res.meta || {};
+    return '<article class="gm-card" data-tool="console"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>' +
+      chipsHtml(m.chips) + linesHtml(res.lines, mdf) + actsHtml(m, 'console') + '</article>';
+  }
+  /* The composed card: the LEAD box (big line, chips, its own lines under "More"), then at most three one-line "Or"
+     rows that open to their full section, then ONE merged actions row. */
+  function situationCardHtml(res, mdf) {
+    var m = res.meta || {}, secs = res.sections || [];
+    var h = '<article class="gm-card gm-sit" data-tool="situation" data-sit="' + esc(m.situation) + '"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>';
+    if (!secs.length) return h + linesHtml(res.lines, mdf) + actsHtml(m, 'situation') + '</article>';
+    var lead = secs[0];
+    h += '<section class="gm-lead" data-sec="' + esc(lead.id) + '"><p class="gm-lead-k">' + esc(lead.title) + '</p><p class="gm-lead-t">' + esc(lead.lead) + '</p>' + chipsHtml(lead.chips) +
+      ((lead.lines || []).length ? '<details class="gm-more"><summary>More</summary><div class="gm-more-b">' + linesHtml(lead.lines, mdf) + '</div></details>' : '') + '</section>';
+    secs.slice(1, 4).forEach(function (s) {
+      h += '<details class="gm-or" data-sec="' + esc(s.id) + '"><summary><span class="gm-or-k">Or</span><span class="gm-or-t"><b>' + esc(s.title) + '</b> ' + esc(s.lead) + '</span></summary><div class="gm-or-b">' +
+        (s.sub ? '<p class="gm-sub">' + esc(s.sub) + '</p>' : '') + chipsHtml(s.chips) + linesHtml(s.lines, mdf) + '</div></details>';
+    });
+    return h + actsHtml(m, 'situation') + '</article>';
+  }
+  P.linesHtml = linesHtml; P.classicCardHtml = classicCardHtml; P.situationCardHtml = situationCardHtml;
 
   if (!W || !W.document) return { _pure: P };
 
@@ -460,7 +564,7 @@
   function adoptMem() {
     var m = isObj(S.doc.mem) ? S.doc.mem : {};
     if (S.con) { var cm = S.con.mem(); Object.keys(cm).forEach(function (k) { delete cm[k]; }); Object.assign(cm, clone(m.console || {})); }
-    S.locMem = clone(m.location || {});
+    S.locMem = clone(m.location || {}); S.scnMem = clone(m.scenes || {});
     if (S.con) { try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {} }
   }
 
@@ -503,10 +607,10 @@
   function open(rootEl, api) {
     close();
     S = { root: rootEl, api: api, me: null, status: 'loading', doc: {}, updatedAt: null, saver: null, carriedParked: null,
-      pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console',
-      arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, pinOpen: null, figMemo: {}, importing: null };
+      pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console', scn: null, scnRoll: null, scnMem: {}, scnErr: '', eng: null, engRoll: null, engErr: '',
+      arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, pinOpen: null, figMemo: {}, importing: null, view: 'classic', shown: 'console' };
     try { S.panel = W.localStorage.getItem('b68.gm.panel') || 'location'; } catch (e) {}
-    if (['location', 'npc', 'rules'].indexOf(S.panel) < 0) S.panel = 'location';
+    if (SIDE.indexOf(S.panel) < 0) S.panel = 'location';
     S.saver = lastSaver = makeSessionSaver(S);
     wire(rootEl);
     screen('<p class="gm-wait" role="status">Opening the GM tools…</p>');
@@ -622,31 +726,41 @@
     S.con = null; S.conErr = '';
     if (!C || !cp || !isObj(cp.T)) S.conErr = !C ? 'The console module is missing.' : 'The pack has no console part. Update the pack.';
     else { try { S.con = C.create({ T: cp.T, campaign: part('campaign') || {}, state: S.doc.con || {}, mem: clone(m.console || {}) }); } catch (e) { S.conErr = 'The console could not start: ' + errText(e); } }
-    S.locMem = clone(m.location || {}); S.locErr = '';
+    S.view = conView(storedView(), hasSit());
+    S.locMem = clone(m.location || {}); S.locErr = ''; S.scnMem = clone(m.scenes || {}); S.scn = null; S.eng = null;
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready';
     layout(); redrawAll(); subscribeNpcs();
   }
   function layout() {
-    var segs = [['console', 'Console'], ['location', 'Location'], ['npc', 'NPC'], ['state', 'State']];
-    S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' +
+    var segs = [['console', 'Console'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['state', 'State']];
+    S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '" data-view="' + esc(S.view) + '">' +
       '<div class="gm-head"><div class="gm-title"><p class="gm-kick">GM tools <span id="gm-save" class="gm-save" role="status"></span></p>' + '<h1 class="gm-h" tabindex="-1">The console</h1><p class="gm-exp" id="gm-exp"></p></div>' +
       '<div class="gm-acts"><a class="btn sm primary" href="#display" id="gm-display" title="The players’ screen: open this on the iPad">Display</a>' + '<button type="button" class="btn sm" data-gm="note">Export tonight’s note</button><button type="button" class="btn sm" data-gm="update">Update pack</button>' + '<button type="button" class="btn sm" data-gm="forget">Forget GM data on this device</button></div></div>' +
       '<div class="seg gm-segbar" role="tablist" aria-label="Show">' + segs.map(function (s) { return '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
       '<div class="gm-main">' +
-      '<section class="gm-col gm-console" aria-label="Console">' + '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"><span class="gm-lab">Scene</span>' + '<span class="gm-scene-chips" id="gm-scene-chips"></span></button>' +
-      '<div class="gm-controls" id="gm-controls"></div><div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div></section>' +
+      '<section class="gm-col gm-console" aria-label="Console">' + '<div class="gm-conhead"><h2 class="gm-conh">Console</h2>' + viewToggle() + '</div>' +
+      '<div class="gm-pos" id="gm-pos" role="radiogroup" aria-label="Position"></div>' +
+      '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"><span class="gm-lab">Scene</span>' + '<span class="gm-scene-chips" id="gm-scene-chips"></span></button>' +
+      '<div class="gm-controls" id="gm-controls"></div><div class="gm-buttons" id="gm-buttons"></div><div class="gm-singles" id="gm-singles"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      [['location', 'Location', 'B'], ['npc', 'NPC', 'N'], ['rules', 'Rules', 'T']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
-      '</div><div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div></section>' +
+      [['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['rules', 'Rules', 'T']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
+      '</div><div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div></section>' +
       '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button></div>';
     renderRules();
   }
+  /* the one-tap Situations | Classic toggle in the console header; none while the release switch is off */
+  function viewToggle() {
+    if (!SITUATIONS_DEFAULT || !hasSit()) return '';
+    return '<div class="seg gm-viewseg" role="group" aria-label="Console view">' + [['situations', 'Situations'], ['classic', 'Classic']].map(function (o) {
+      return '<button type="button" class="chip" data-gm="view" data-v="' + o[0] + '" aria-pressed="' + (S.view === o[0]) + '">' + o[1] + '</button>';
+    }).join('') + '</div>';
+  }
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); syncPanels(); renderControls(); renderButtons(); drawConsoleCard(); renderLocation(); renderNpcs(); renderRail(); renderCapture(); syncSave();
+    syncHead(); syncPanels(); renderView(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderRail(); renderCapture(); syncSave();
   }
   function syncHead() {
     var e = $q('#gm-exp'); if (!e) return;
@@ -670,12 +784,17 @@
     syncPanels();
   }
 
-  /* ---------- the console ---------- */
+  /* ---------- the console: Situations (the default) or Classic (the nine single tables) ---------- */
+  function hasSit() { return !!(S && S.con && typeof S.con.situation === 'function' && Array.isArray(S.con.situationControls) && typeof S.con.situations === 'function'); }
+  function storedView() { try { return W.localStorage.getItem(VIEW_KEY); } catch (e) { return null; } }
+  function sit() { return S.view === 'situations'; }
+  function ctlList() { return !S.con ? [] : sit() ? S.con.situationControls.filter(function (c) { return c.id !== 'pos'; }) : S.con.controls; }
+  function uiNow() { return clone(Object.assign(sit() ? S.con.situationDefaults() : S.con.defaults(), live())); }
   function renderControls() {
     var box = $q('#gm-controls'), chips = $q('#gm-scene-chips'); if (!box) return;
     if (!S.con) { box.innerHTML = ''; if (chips) chips.textContent = ''; return; }
-    var lv = Object.assign(S.con.defaults(), live()), rows = {};
-    S.con.controls.forEach(function (c) { (rows[c.row] = rows[c.row] || []).push(c); });
+    var lv = uiNow(), rows = {};
+    ctlList().forEach(function (c) { (rows[c.row] = rows[c.row] || []).push(c); });
     var html = Object.keys(rows).sort().map(function (r) {
       return '<div class="gm-row">' + rows[r].map(function (c) {
         var id = 'gm-c-' + esc(c.id), v = str(lv[c.id]);
@@ -690,8 +809,8 @@
   /* the Scene line's chips: what the controls are set to (the phone shows only this until the disclosure opens) */
   function renderChips() {
     var chips = $q('#gm-scene-chips'); if (!chips || !S.con) return;
-    var lv = Object.assign(S.con.defaults(), live()), bits = [];
-    S.con.controls.forEach(function (c) {
+    var lv = uiNow(), bits = [];
+    ctlList().forEach(function (c) {
       var v = str(lv[c.id]); if (!v) return;
       var o = (c.options || []).filter(function (x) { return str(x.value) === v; })[0];
       bits.push('<span class="gm-chip">' + esc(o ? o.label : v.length > 28 ? v.slice(0, 26) + '…' : v) + '</span>');
@@ -699,49 +818,103 @@
     chips.innerHTML = bits.join('') || '<span class="gm-dim">any</span>';
   }
   function setLive(id, value) { var l = {}; l[id] = value; patch({ con: { live: l } }); renderChips(); }
+  /* the big three-way Position switch (Situations only; always on screen, the phone too) */
+  function renderPos() {
+    var box = $q('#gm-pos'); if (!box) return;
+    if (!S.con || !sit()) { box.innerHTML = ''; return; }
+    var cur = str(uiNow().pos);
+    box.innerHTML = '<span class="gm-lab">Position</span><div class="gm-posb-row">' + S.con.positions.map(function (p) {
+      return '<button type="button" class="gm-posb" role="radio" aria-checked="' + (p.value === cur) + '" data-gm="pos" data-v="' + esc(p.value) + '"><b>' + esc(p.label) + '</b><small>' + esc(p.severity + ' · ' + p.ticks) + '</small><small>harm ' + esc(p.harm) + '</small></button>';
+    }).join('') + '</div>';
+  }
   function renderButtons() {
     var box = $q('#gm-buttons'); if (!box) return;
     if (!S.con) { box.innerHTML = '<p class="gm-note bad">' + esc(S.conErr || 'The console is not available.') + '</p>'; return; }
+    if (sit()) {
+      box.innerHTML = S.con.situations().map(function (b) {
+        return '<button type="button" class="gm-btn gm-sbtn" data-gm="situation" data-n="' + b.key + '" data-sit="' + esc(b.id) + '" title="' + esc(b.hint || '') + '"><kbd>' + b.key + '</kbd><b>' + esc(b.label) + '</b><small>' + esc(b.hint || '') + '</small></button>';
+      }).join('');
+      return;
+    }
     box.innerHTML = S.con.buttons.map(function (b) {
       return '<button type="button" class="gm-btn" data-gm="roll" data-n="' + b.n + '" title="' + esc(b.hint || '') + '"><kbd>' + b.n + '</kbd><b>' + esc(b.label) + '</b><small>' + esc(b.hint || '') + '</small></button>';
     }).join('');
   }
+  /* the nine classic rollers as a small row under the Situations (no keys) */
+  function renderSingles() {
+    var box = $q('#gm-singles'); if (!box) return;
+    if (!S.con || !sit()) { box.innerHTML = ''; return; }
+    box.innerHTML = '<span class="gm-lab">Single tables</span><div class="gm-singles-b">' + S.con.buttons.map(function (b) {
+      return '<button type="button" class="chip sm" data-gm="roll" data-n="' + b.n + '" title="' + esc(b.hint || '') + '">' + esc(b.label) + '</button>';
+    }).join('') + '</div>';
+  }
+  /* Situations | Classic: redraw everything that depends on it */
+  function renderView() {
+    var r = $q('#gm-root'); if (!r) return;
+    r.setAttribute('data-view', S.view);
+    r.querySelectorAll('[data-gm="view"]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === S.view)); });
+    renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard();
+  }
+  function setView(v) {
+    v = conView(v, hasSit()); if (v === S.view) return;
+    S.view = v; S.conRes = null;
+    try { W.localStorage.setItem(VIEW_KEY, v); } catch (e) {}
+    renderView();
+  }
+  function setPos(v) { setLive('pos', v); renderPos(); }
+  function stamp(kind, res) { S.conRes = res; S.shown = kind; S.last = { text: lastText(res) }; drawConsoleCard(res); }
   function rollConsole(n) {
     if (!S || !S.con) return;
-    var res; try { res = S.con.roll(n, clone(Object.assign(S.con.defaults(), live()))); } catch (e) { toast('The roll failed: ' + errText(e), true); return; }
+    var res; try { res = S.con.roll(n, uiNow()); } catch (e) { toast('The roll failed: ' + errText(e), true); return; }
     var entry = consoleEntry(res, S.doc.con);    /* with the bargains and callbacks as they are now, for an exact redraw */
     var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.console) ? S.doc.hist.console : {};
     var ok = patch({ cards: { console: Object.assign({ hid: hid }, entry) }, mem: { console: clone(S.con.mem()) }, hist: { console: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
     if (!ok) return;
-    S.conRes = res; S.last = { text: str(res.meta.title) + ': ' + plainMd(res.meta.text) };
-    drawConsoleCard(res);
+    stamp('console', res);
+  }
+  /* a situation: a composed card, stored and replayed under its own id 'situation', never 'console' (old code would redraw
+     an unknown console id as a Devil's Bargain) */
+  function rollSituation(n) {
+    if (!S || !hasSit()) return;
+    var res; try { res = S.con.situation(n, uiNow()); } catch (e) { toast('The roll failed: ' + errText(e), true); return; }
+    var entry = situationEntry(res, S.doc.con);
+    var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.situation) ? S.doc.hist.situation : {};
+    var ok = patch({ cards: { situation: Object.assign({ hid: hid }, entry) }, mem: { console: clone(S.con.mem()) }, hist: { situation: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
+    if (!ok) return;
+    stamp('situation', res);
   }
   function replayConsole(e) {
     var cp = part('console');
     if (!S.con || !cp || !isObj(e)) return null;
     return replayConsoleEntry(W.B68GmConsole, cp.T, part('campaign') || {}, e, S.doc.con || {});
   }
+  function replaySituation(e) {
+    var cp = part('console');
+    if (!hasSit() || !cp || !isObj(e)) return null;
+    return replaySituationEntry(W.B68GmConsole, cp.T, part('campaign') || {}, e, S.doc.con || {});
+  }
+  /* which stored card the console shows: Classic its own; Situations the newer of the situation card and a single table */
+  function pickShown() {
+    var c = isObj(S.doc.cards) ? S.doc.cards : {};
+    if (!sit()) return 'console';
+    if (c.situation && (!c.console || str(c.situation.at) >= str(c.console.at))) return 'situation';
+    return c.console ? 'console' : 'situation';
+  }
   function drawConsoleCard(res) {
     var box = $q('#gm-card'); if (!box) return;
-    var cur = isObj(S.doc.cards) ? S.doc.cards.console : null;
-    if (!res) { res = cur ? replayConsole(cur) : null; S.conRes = res; if (res && !S.last) S.last = { text: str(res.meta.title) + ': ' + plainMd(res.meta.text) }; }
-    box.innerHTML = res ? consoleCardHtml(res) : S.con ? '<p class="gm-empty">Press a button, or a number key <kbd>1</kbd>–<kbd>9</kbd>.</p>' : '';
+    var cards = isObj(S.doc.cards) ? S.doc.cards : {};
+    if (!res) {
+      var kind = pickShown(), cur = cards[kind];
+      res = cur ? (kind === 'situation' ? replaySituation(cur) : replayConsole(cur)) : null; S.conRes = res; S.shown = kind;
+      if (res && !S.last) S.last = { text: lastText(res) };
+    }
+    box.innerHTML = res ? (res.sections ? situationCardHtml(res, md) : classicCardHtml(res, md)) : S.con ? (sit() ? '<p class="gm-empty">Press a button, or a number key <kbd>1</kbd>–<kbd>4</kbd>.</p>' : '<p class="gm-empty">Press a button, or a number key <kbd>1</kbd>–<kbd>9</kbd>.</p>') : '';
     var er = $q('#gm-earlier'); if (!er) return;
-    var hist = newest(isObj(S.doc.hist) ? S.doc.hist.console : null).slice(0, LIMITS.hist);
-    er.innerHTML = hist.length ? '<span class="gm-lab">Earlier:</span>' + hist.map(function (h) { return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="console" data-h="' + esc(h._id) + '"' + (cur && cur.hid === h._id ? ' aria-current="true"' : '') + '>' + esc(h.label || h.id) + '</button>'; }).join('') : '';
-  }
-  function consoleCardHtml(res) {
-    var m = res.meta || {};
-    var h = '<article class="gm-card" data-tool="console"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>';
-    if (m.chips && m.chips.length) h += '<p class="gm-chips">' + m.chips.map(function (c) { return '<span class="gm-chip">' + esc(c) + '</span>'; }).join('') + '</p>';
-    (res.lines || []).forEach(function (l) {
-      if (l.kind === 'want') h += '<div class="gm-want">' + md(l.md) + (l.small ? '<div class="gm-small">' + md(l.small) + '</div>' : '') + '</div>';
-      else if (l.kind === 'read') h += '<div class="gm-read">' + md(l.md) + '</div>';
-      else if (l.kind === 'grid') h += '<dl class="gm-grid">' + (l.rows || []).map(function (r) { return '<dt>' + esc(r.k) + '</dt><dd>' + md(r.md) + '</dd>'; }).join('') + '</dl>';
-    });
-    h += '<div class="gm-card-acts">' + (m.actions || []).map(function (a, i) { return '<button type="button" class="btn sm primary" data-gm="intent" data-i="' + i + '">' + esc(a.label) + '</button>'; }).join('') +
-      '<button type="button" class="btn sm" data-gm="pin" data-tool="console">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="console">Copy</button></div></article>';
-    return h;
+    var h = isObj(S.doc.hist) ? S.doc.hist : {}, list = [];
+    (sit() ? ['situation', 'console'] : ['console']).forEach(function (t) { newest(h[t]).forEach(function (x) { x._tool = t; list.push(x); }); });
+    list.sort(function (a, b) { return str(a.at) < str(b.at) ? 1 : str(a.at) > str(b.at) ? -1 : 0; });
+    list = list.slice(0, LIMITS.hist);
+    er.innerHTML = list.length ? '<span class="gm-lab">Earlier:</span>' + list.map(function (x) { return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="' + x._tool + '" data-h="' + esc(x._id) + '"' + (cards[x._tool] && cards[x._tool].hid === x._id && S.shown === x._tool ? ' aria-current="true"' : '') + '>' + esc(x.label || x.id) + '</button>'; }).join('') : '';
   }
   function doIntent(i) {
     var res = S.conRes, a = res && res.meta && res.meta.actions && res.meta.actions[i], C = W.B68GmConsole; if (!a || !C) return;
@@ -750,7 +923,7 @@
     if (it.capture && it.capture.text) addCapture(it.capture.bucket || 'x', it.capture.text, true);
     try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {}
     toast(a.label.replace(/:.*$/, '') + '.');
-    renderControls(); renderRail();
+    renderControls(); renderPos(); renderRail();
   }
 
   /* ---------- the location generator ---------- */
@@ -853,6 +1026,124 @@
   function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('The iPad is blank.'); }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); }); }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
 
+  var SIDE = ['location', 'scenes', 'engagement', 'npc', 'rules'];
+  /* ---------- the street scene roller (S) and the engagement roll (E): side panels ---------- */
+  function genLinesHtml(lines) {
+    return (lines || []).map(function (l) { return l.kind === 'chips' ? chipsHtml(l.chips) : linesHtml([l], md); }).join('');
+  }
+  function earlierHtml(tool, cur) {
+    var hist = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).slice(0, LIMITS.hist);
+    return hist.length ? '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) {
+      return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="' + esc(tool) + '" data-h="' + esc(x._id) + '"' + (cur && cur.hid === x._id ? ' aria-current="true"' : '') + '>' + esc(x.label) + '</button>';
+    }).join('') + '</div>' : '';
+  }
+  function selectHtml(id, attr, key, label, options, value) {
+    return '<label class="gm-field" for="' + id + '"><span class="gm-lab">' + esc(label) + '</span><select id="' + id + '" ' + attr + '="' + esc(key) + '">' + options.map(function (o) {
+      return '<option value="' + esc(o.value) + '"' + (str(o.value) === str(value) ? ' selected' : '') + '>' + esc(o.label) + '</option>';
+    }).join('') + '</select></label>';
+  }
+
+  function scnInst() {
+    if (S.scn) return S.scn;
+    var M = W.B68GmScenes, pk = part('scenes');
+    if (!M) { S.scnErr = 'The street scene module is missing.'; return null; }
+    if (!pk || !isObj(pk.T)) { S.scnErr = 'The pack has no scenes part. Update the pack.'; return null; }
+    try { S.scn = M.create({ T: pk.T }); S.scnErr = ''; } catch (e) { S.scnErr = 'The street scenes could not start: ' + errText(e); }
+    return S.scn;
+  }
+  function scnUi() { var l = isObj(S.doc.scn) && isObj(S.doc.scn.ui) ? S.doc.scn.ui : {}, sc = scnInst(); return Object.assign(sc ? sc.defaults() : {}, l); }
+  function replayScenes(e) {
+    var sc = scnInst(); if (!sc || !isObj(e)) return null;
+    var mem = {}; try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
+    try { return sc.roll(e.ui || {}, { seed: e.seed, mem: mem }); } catch (x) { return null; }
+  }
+  function rollScenes() {
+    var sc = scnInst(); if (!sc) { renderScenes(); return; }
+    var ui = scnUi(), before = JSON.stringify(S.scnMem), roll;
+    try { roll = sc.roll(ui, { mem: S.scnMem }); } catch (e) { toast('The street scene failed: ' + errText(e), true); return; }
+    var entry = { seed: roll.seed, ui: ui, mem: before, label: str(roll.meta.label), at: nowIso() };
+    var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.scenes) ? S.doc.hist.scenes : {};
+    patch({ cards: { scenes: Object.assign({ hid: hid }, entry) }, mem: { scenes: clone(S.scnMem) }, hist: { scenes: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
+    S.scnRoll = roll; S.last = { text: 'Street scene: ' + entry.label };
+    renderScenes(true);
+  }
+  function renderScenes(fresh) {
+    var box = $q('#gm-scn'); if (!box) return;
+    var sc = scnInst();
+    if (!sc) { box.innerHTML = '<p class="gm-note bad">' + esc(S.scnErr || 'The street scenes are not available.') + '</p>'; return; }
+    var cur = isObj(S.doc.cards) ? S.doc.cards.scenes : null;
+    if (!fresh && cur && (!S.scnRoll || S.scnRoll.seed !== cur.seed)) S.scnRoll = replayScenes(cur);
+    var ui = scnUi(), roll = S.scnRoll;
+    var h = '<div class="gm-loc-ctl">' + sc.controls.map(function (x) { return selectHtml('gm-s-' + x.id, 'data-scn', x.id, x.label, x.options, ui[x.id]); }).join('') +
+      '<button type="button" class="btn primary gm-roll" data-gm="scnroll">Roll a street scene</button></div>';
+    if (roll) {
+      var m = roll.meta;
+      h += '<article class="gm-card gm-scncard" data-tool="scenes"><header class="gm-card-h"><div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' + genLinesHtml(roll.lines) +
+        '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="scenes">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="scenes">Copy</button>' +
+        '<button type="button" class="btn sm" data-gm="scnipad" title="Only the three read-aloud paragraphs go to the iPad">Read-aloud to the iPad</button></div></article>';
+    } else h += '<p class="gm-empty">Pick a district, or leave it on anywhere, and roll. The grid under the read-aloud is for you, not the table.</p>';
+    box.innerHTML = h + earlierHtml('scenes', cur);
+  }
+  /* what the crew could see and hear: the three read-aloud paragraphs, never the notable, the rumour or the rule */
+  function scenesToIpad() {
+    var r = S.scnRoll; if (!r) return;
+    var read = r.lines.filter(function (l) { return l.kind === 'read'; }).map(function (l) { return plainMd(l.md); });
+    pushDisplay({ kind: 'text', title: plainMd(r.meta.title).slice(0, 2000), caption: plainMd(r.meta.sub).slice(0, 2000), text: read.join('\n\n').slice(0, 2000) })
+      .then(function () { toast('On the iPad: ' + plainMd(r.meta.title) + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+  }
+
+  function engInst() {
+    if (S.eng) return S.eng;
+    var M = W.B68GmEngagement, pk = part('engagement');
+    if (!M) { S.engErr = 'The engagement module is missing.'; return null; }
+    if (!pk || !isObj(pk.T)) { S.engErr = 'The pack has no engagement part. Update the pack.'; return null; }
+    try { S.eng = M.create({ T: pk.T }); S.engErr = ''; } catch (e) { S.engErr = 'The engagement roll could not start: ' + errText(e); }
+    return S.eng;
+  }
+  function engUi() {
+    var l = isObj(S.doc.eng) && isObj(S.doc.eng.ui) ? S.doc.eng.ui : {}, en = engInst(), d = en ? en.defaults() : { mods: {} };
+    return { approach: l.approach || d.approach, load: l.load || d.load, mods: Object.assign({}, d.mods, isObj(l.mods) ? l.mods : {}) };
+  }
+  function replayEngagement(e) {
+    var en = engInst(); if (!en || !isObj(e)) return null;
+    try { return en.roll(e.ui || {}, { seed: e.seed }); } catch (x) { return null; }
+  }
+  function rollEngagement() {
+    var en = engInst(); if (!en) { renderEngagement(); return; }
+    var roll;
+    try { roll = en.roll(engUi(), {}); } catch (e) { toast('The engagement roll failed: ' + errText(e), true); return; }
+    var entry = { seed: roll.seed, ui: roll.replay.ui, label: str(roll.meta.title) + ' · ' + str(roll.position).split(' — ')[0], at: nowIso() };
+    var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.engagement) ? S.doc.hist.engagement : {};
+    patch({ cards: { engagement: Object.assign({ hid: hid }, entry) }, hist: { engagement: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
+    S.engRoll = roll; S.last = { text: 'Engagement: ' + entry.label };
+    renderEngagement(true);
+  }
+  /* a control changed: the roll on screen no longer matches, so it goes (the Earlier row keeps it) and the pool is shown again */
+  function setEngagement(key, value, mod) {
+    var u = {};
+    if (mod) { u.mods = {}; u.mods[key] = +value || 0; } else u[key] = value;
+    patch({ eng: { ui: u }, cards: { engagement: null } });
+    S.engRoll = null; renderEngagement();
+  }
+  function renderEngagement(fresh) {
+    var box = $q('#gm-eng'); if (!box) return;
+    var en = engInst();
+    if (!en) { box.innerHTML = '<p class="gm-note bad">' + esc(S.engErr || 'The engagement roll is not available.') + '</p>'; return; }
+    var cur = isObj(S.doc.cards) ? S.doc.cards.engagement : null;
+    if (!fresh && cur && (!S.engRoll || S.engRoll.seed !== cur.seed)) S.engRoll = replayEngagement(cur);
+    var ui = engUi(), roll = S.engRoll, c = roll || en.card(ui);
+    var TRI = [{ value: 0, label: '—' }, { value: 1, label: '+1d' }, { value: -1, label: '−1d' }];
+    var h = '<div class="gm-loc-ctl">' + en.controls.map(function (x) {
+      if (x.type === 'tri') return '<label class="gm-field wide" for="gm-e-' + esc(x.id) + '"><span class="gm-lab">' + esc(x.label) + '</span><select id="gm-e-' + esc(x.id) + '" data-engmod="' + esc(x.id) + '">' + TRI.map(function (o) {
+        return '<option value="' + o.value + '"' + (+ui.mods[x.id] === o.value ? ' selected' : '') + '>' + o.label + '</option>';
+      }).join('') + '</select></label>';
+      return selectHtml('gm-e-' + x.id, 'data-eng', x.id, x.label, x.options, ui[x.id]);
+    }).join('') + '<button type="button" class="btn primary gm-roll" data-gm="engroll">Roll engagement</button></div>';
+    h += '<article class="gm-card gm-engcard" data-tool="engagement"><header class="gm-card-h"><div><h3>' + esc(c.meta.title) + '</h3><p class="gm-sub">' + esc(c.meta.sub) + '</p></div></header>' + chipsHtml(roll ? c.meta.chips : []) + genLinesHtml(c.lines) +
+      (roll ? '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="engagement">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="engagement">Copy</button></div>' : '') + '</article>';
+    box.innerHTML = h + earlierHtml('engagement', cur);
+  }
+
   /* ---------- the NPC tab: the app's cast ---------- */
   function subscribeNpcs() {
     if (S.npcUnsub) return;
@@ -953,7 +1244,7 @@
   }
   function addCapture(bucket, text, quiet) {
     text = str(text).replace(/\s+/g, ' ').trim().slice(0, LIMITS.captureText); if (!text) return false;
-    var id = uid('c'), entry = { id: id, bucket: bucket, text: text, at: nowIso() };
+    var id = uid('c'), entry = captureEntry(id, bucket, text, nowIso(), camp);
     if (!patch({ capture: addCapped(S.doc.capture, id, entry, LIMITS.capture) })) return false;
     renderCapture();
     if (!quiet) { var b = BUCKETS.filter(function (x) { return x.k === bucket; })[0]; toast('Filed under ' + (b ? b.head : bucket) + '.'); }
@@ -972,7 +1263,8 @@
 
   /* ---------- pins and copy ---------- */
   function cardFor(tool) {
-    if (tool === 'console') { var r = S.conRes; return r ? { label: str(r.meta.label), title: str(r.meta.title), text: consolePlain(r) } : null; }
+    if (tool === 'console' || tool === 'situation') { var r = S.conRes; return r ? { label: str(r.meta.label), title: str(r.meta.title), text: r.sections ? situationPlain(r) : consolePlain(r) } : null; }
+    if (tool === 'scenes' || tool === 'engagement') { var g = tool === 'scenes' ? S.scnRoll : S.engRoll; return g ? { label: str(g.meta.label), title: str(g.meta.title), text: g.meta.all.join('\n') } : null; }
     var L = W.B68GmLocation, roll = S.locRoll; if (!L || !roll) return null;
     var lines = []; try { lines = L.cardLines(roll, part('location')); } catch (e) {}
     return { label: str(roll.name) + (roll.district ? ' · ' + roll.district : ''), title: str(roll.name), text: lines.map(plainMd).join('\n') };
@@ -1002,12 +1294,13 @@
     if (blankEl) { ev.preventDefault(); ev.stopPropagation(); unblank(); return; }
     if (!S || S.status !== 'ready' || document.body.dataset.mode !== 'gm') return;
     var dlg = document.querySelector('dialog[open]'); if (dlg) return;
-    var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
+    var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target), view: S.view });
     if (!a) return;
     if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } return; }
     if (a.type === 'reserved') return;
     ev.preventDefault();
     if (a.type === 'button') rollConsole(a.n);
+    else if (a.type === 'situation') rollSituation(a.n);
     else if (a.type === 'panel') { setPanel(a.panel); if (isPhone()) { S.seg = 'side'; syncPanels(); } }
     else if (a.type === 'capture') arm(a.bucket, true);
     else if (a.type === 'last') fileLast();
@@ -1023,22 +1316,32 @@
       case 'update': importScreen(true); break;
       case 'forget': forget(); break;
       case 'note': exportTonight(); break;
-      case 'seg': { var sg = b.getAttribute('data-seg'); if (sg === 'location' || sg === 'npc') { S.seg = 'side'; setPanel(sg); } else { S.seg = sg; syncPanels(); } break; }
+      case 'seg': { var sg = b.getAttribute('data-seg'); if (SIDE.indexOf(sg) >= 0) { S.seg = 'side'; setPanel(sg); } else { S.seg = sg; syncPanels(); } break; }
       case 'panel': setPanel(b.getAttribute('data-panel')); break;
       case 'scene': S.sceneOpen = !S.sceneOpen; syncPanels(); break;
       case 'capopen': S.capOpen = !S.capOpen; syncPanels(); if (S.capOpen) { var ci = $q('#gm-cap-in'); if (ci) ci.focus(); } break;
       case 'roll': rollConsole(+b.getAttribute('data-n')); break;
+      case 'situation': rollSituation(+b.getAttribute('data-n')); break;
+      case 'pos': setPos(b.getAttribute('data-v')); break;
+      case 'view': setView(b.getAttribute('data-v')); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {
         var tool = b.getAttribute('data-tool'), e = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).filter(function (x) { return x._id === b.getAttribute('data-h'); })[0]; if (!e) break;
         var cur = {}; Object.keys(e).forEach(function (k) { if (k !== '_id') cur[k] = e[k]; }); cur.hid = e._id;
+        cur.at = nowIso();      /* the current card now: after a reload the newest of the two still shows */
         var cp = { cards: {} }; cp.cards[tool] = cur; patch(cp, { force: true });
-        if (tool === 'console') { S.conRes = null; drawConsoleCard(); } else { S.locRoll = null; S.map = null; renderLocation(); }
+        if (tool === 'console' || tool === 'situation') { S.conRes = null; drawConsoleCard(); }
+        else if (tool === 'scenes') { S.scnRoll = null; renderScenes(); }
+        else if (tool === 'engagement') { S.engRoll = null; patch({ eng: { ui: clone(e.ui || {}) } }); renderEngagement(); }
+        else { S.locRoll = null; S.map = null; renderLocation(); }
         break;
       }
       case 'pin': pin(b.getAttribute('data-tool')); break;
       case 'copy': copy(b.getAttribute('data-tool')); break;
       case 'locroll': rollLocation(); break;
+      case 'scnroll': rollScenes(); break;
+      case 'scnipad': scenesToIpad(); break;
+      case 'engroll': rollEngagement(); break;
       case 'layer': setMap('layer', b.getAttribute('data-v')); renderLocation(); break;
       case 'draw': drawMap(); break;
       case 'ipad': showOnIpad(); break;
@@ -1063,6 +1366,9 @@
     if (ev.type !== 'change') return;
     if (t.hasAttribute('data-loc')) { var l = {}; l[t.getAttribute('data-loc')] = t.type === 'checkbox' ? t.checked : t.value; patch({ loc: { ui: l } }); }
     else if (t.hasAttribute('data-map')) setMap(t.getAttribute('data-map'), t.value);
+    else if (t.hasAttribute('data-scn')) { var sc = {}; sc[t.getAttribute('data-scn')] = t.value; patch({ scn: { ui: sc } }); }
+    else if (t.hasAttribute('data-eng')) setEngagement(t.getAttribute('data-eng'), t.value, false);
+    else if (t.hasAttribute('data-engmod')) setEngagement(t.getAttribute('data-engmod'), t.value, true);
     else if (t.hasAttribute('data-reveal')) { var rv = {}; rv[t.getAttribute('data-reveal')] = t.checked; patch({ loc: { map: { reveal: rv } } }); if (S.map) drawMap(); renderLocation(); }
   }
   function onSubmit(ev) {
@@ -1091,7 +1397,7 @@
     available: function () { return !!(W.claude && W.claude.gm); },
     _pure: P,
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */
-    _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer }, panel: S.panel, seg: S.seg } : null; },
+    _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer }, panel: S.panel, seg: S.seg, view: S.view } : null; },
     _pushDisplay: function (d) { return pushDisplay(d); }
   };
 });

@@ -5,6 +5,7 @@
    window.claude.rules (list, import, saveHouse, deleteHouse) is the rules wiki's corpus (RULES.md).
    window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay) is the GM tools'
    API (GM.md): plain calls, never queued, cached or snapshotted here.
+   window.claude.profile.setName(name) changes the signed-in person's own display name (PATCH /api/me); a plain call too.
    Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network
    is unreachable, and writes queue (in order, in localStorage) until it is back. It also makes the hosted page
    installable (manifest, icons, service worker sw.js).
@@ -204,11 +205,12 @@
   }
 
   function makeUser(m) {
-    var gm = m.role === 'gm';
+    var gm = m.role === 'gm', disp = m.role === 'display';   /* display: the table iPad's own sign-in (DISPLAY_EMAILS): it reads the display and nothing else */
     return {
       id: function () { return Promise.resolve(m.id); },
       me: function () { return Promise.resolve({ id: m.id, name: m.name || '', email: m.email || m.id, isOwner: gm, canEdit: gm }); },
-      can: function (name) { return Promise.resolve(name === 'data.write'); },
+      can: function (name) { return Promise.resolve(name === 'data.write' && !disp); },
+      isDisplay: function () { return Promise.resolve(disp); },
       isOwner: function () { return Promise.resolve(gm); },
       canEdit: function () { return Promise.resolve(gm); },
       /* every id passed gets an entry; name '' when unknown. Never rejects. */
@@ -1027,6 +1029,26 @@
     setDisplay: function (d) { return api('PUT', '/gm/display', d || {}); }
   };
 
+  /* ---------- profile: the signed-in person's own display name (PATCH /api/me). A plain call: never queued, so it
+     rejects with `network: true` while offline. Nobody can set another person's name. ---------- */
+  var profile = {
+    /* setName(name) -> Promise<{ id, email, name, role, campaign }> (the same shape as /api/me, `name` being what is now
+       shown). name: trimmed server side, 1-40 characters, no < or >; '' or null clears it back to the sign-in name.
+       Rejects with Error(api error string) and err.status 400 for a name the server refuses. On success the signed-in
+       user (window.B68Runtime.me, user.me()) and the cached member names carry the new name. */
+    setName: function (name) {
+      return api('PATCH', '/me', { name: name === undefined || name === null ? null : String(name) }).then(function (m) {
+        if (m && m.id && typeof m.name === 'string') {
+          if (me && me.id === m.id) me.name = m.name;   /* the same object user.me() and B68Runtime.me read */
+          if (membersById && membersById[m.id]) membersById[m.id].name = m.name;
+          members = null;                                /* the next profiles() asks the server again */
+          persistSoon();
+        }
+        return m;
+      });
+    }
+  };
+
   /* ---------- window.claude ---------- */
   var uses = {};
   var makers = {
@@ -1040,7 +1062,8 @@
       return uses[name] || (uses[name] = makers[name]());
     },
     rules: rules,
-    gm: gm
+    gm: gm,
+    profile: profile
   };
 
   /* ---------- installable: manifest, icons, home-screen metas, service worker (hosted build only) ----------

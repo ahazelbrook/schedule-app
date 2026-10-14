@@ -6,7 +6,7 @@
 // state directory, plus a second one on PORT+1 without DEV_USER for the 401 checks.
 // Prints PASS/FAIL per step, exits non-zero on any failure, always stops the servers.
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
@@ -33,7 +33,7 @@ function startServer(port, bindings) {
   const child = spawn(bin, args, {
     cwd: ROOT,
     env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' },
-    detached: true, // own process group, so workerd dies with it
+    detached: true, shell: process.platform === 'win32', // own process group, so workerd dies with it
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let log = '';
@@ -47,7 +47,7 @@ function startServer(port, bindings) {
 function signalServers(sig) {
   for (const s of servers) {
     // signal the whole process group (wrangler and its workerd), even if wrangler is gone
-    try { process.kill(-s.child.pid, sig); } catch (_) {}
+    try { if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(s.child.pid), '/T', '/F'], { stdio: 'ignore' }); else process.kill(-s.child.pid, sig); } catch (_) {}
   }
 }
 

@@ -80,7 +80,7 @@
   var openId = null, openUnsub = null, latest = null;      /* the character open in the sheet; latest = its newest data (no id) */
   var cache = {};                                           /* id -> data, from the collection snapshot */
   var filter = 'all', filterChosen = false, pendingOpen = null;
-  A.me = null; A.canWrite = null; A.isGM = false; A.roleKnown = false;   /* roleKnown: a signed-in user answered, so isGM is a fact */
+  A.me = null; A.canWrite = null; A.isGM = false; A.isDisplay = false; A.roleKnown = false;   /* roleKnown: a signed-in user answered, so isGM is a fact */
   var userCap = null;                                       /* the user capability, for profiles */
   A.filingAvailable = function () { return !!db; };
   function nowIso() { return new Date().toISOString(); }
@@ -116,6 +116,7 @@
   var MODES = { home: 1, create: 1, sheet: 1, table: 1, print: 1, rules: 1, cast: 1, gm: 1, display: 1 };
   function setMode(m, quiet) {
     m = MODES[m] ? m : 'home';
+    if (A.isDisplay === true) m = 'display';   /* the table iPad's own sign-in shows the display and nothing else */
     var was = document.body.dataset.mode;
     document.body.dataset.mode = m;
     var hm = $('home'); if (hm) hm.hidden = m !== 'home';
@@ -556,10 +557,10 @@
       var D = displayMod();
       if (!D) { displayNote(el, 'The display module is missing.'); return; }
       if (!(window.claude && window.claude.gm)) { displayNote(el, 'GM tools are available on the hosted app.'); return; }
-      if (A.isGM !== true) { displayNote(el, 'GM only: the display is for an iPad signed in as the GM.'); return; }
+      if (A.isGM !== true && A.isDisplay !== true) { displayNote(el, 'GM only: the display is for an iPad signed in as the GM or as the table display.'); return; }
       el.innerHTML = '';
       /* db: the resolved db (the files have settled here), since display-page.js calls db.collection() directly */
-      try { D.mount(el, { gm: window.claude.gm, db: db, figures: window.B68Figure, cast: window.B68Cast, isGM: A.isGM === true }); displayMounted = true; }
+      try { D.mount(el, { gm: window.claude.gm, db: db, figures: window.B68Figure, cast: window.B68Cast, isGM: A.isGM === true || A.isDisplay === true }); displayMounted = true; }
       catch (e) { displayNote(el, 'The display could not open: ' + (e && e.message || e)); }
     });
   }
@@ -1010,9 +1011,10 @@
     var ready = homeReady();
     if (files) files.hidden = !ready || !db;
     if (!ready) { box.innerHTML = '<p class="hm-wait" role="status">Opening the files…</p>'; return; }
-    var act = document.activeElement, keep = act && box.contains(act) ? (act.id === 'homeTitle' ? '#homeTitle' : act.getAttribute('data-hm') ? '[data-hm="' + act.getAttribute('data-hm') + '"]' + (act.dataset.id ? '[data-id="' + act.dataset.id + '"]' : '') : null) : null;
+    var act = document.activeElement, keep = act && box.contains(act) ? (act.id === 'homeTitle' ? '#homeTitle' : act.id === 'homeNameIn' ? '#homeNameIn' : act.getAttribute('data-hm') ? '[data-hm="' + act.getAttribute('data-hm') + '"]' + (act.dataset.id ? '[data-id="' + act.dataset.id + '"]' : '') : null) : null;
     var f = tableFacts(), mine = A.me ? roster.filter(function (d) { return d.owner === A.me; }) : [];
     box.innerHTML = A.isGM === true && db ? (f.started ? homeGm(f) : homeSetup(f)) : mine.length ? homeBack(f, mine) : homeWelcome(f);
+    var nh = nameHtml(); if (nh) { var hd = box.querySelector('.hm-head'); if (hd) hd.insertAdjacentHTML('afterend', nh); }
     if (rulesOn()) box.insertAdjacentHTML('beforeend', '<div class="hm-links">' + link('rules', 'Search the rules') + '</div>');
     box.querySelectorAll('[data-fig]').forEach(function (n) { var d = roster.filter(function (x) { return x.id === n.getAttribute('data-fig'); })[0]; if (d) n.innerHTML = figureSvg(d, 140, 'h-'); });
     var hp = $('homePlayers'); if (hp) renderTable(roster, hp);
@@ -1033,7 +1035,35 @@
     else if (a === 'restore') pickRestore();
     else if (a === 'copylink') copyText(hosted() ? location.origin + location.pathname : location.href.split('#')[0], 'Link copied. Send it to your players.');
   }
+  /* ---------- the display name (name-edit.js; hosted build only): "Change name" under the greeting ---------- */
+  var nameSt = { open: false, busy: false, error: '', value: null };
+  function nameMod() { var N = window.B68NameEdit; return N && hosted() && A.me && N.available(window) ? N : null; }
+  function nameHtml() { var N = nameMod(); return N ? N.html(nameSt, A.myName) : ''; }
+  function nameFocus(sel) { var n = document.querySelector('#home ' + sel); if (n) { try { n.focus(); if (n.select && sel === '#homeNameIn') n.select(); } catch (e) {} } }
+  function nameAct(a) {
+    var N = nameMod(); if (!N) return;
+    if (a === 'open') { nameSt = { open: true, busy: false, error: '', value: null }; renderHome(); nameFocus('#homeNameIn'); return; }
+    if (a === 'cancel') { nameSt = { open: false, busy: false, error: '', value: null }; renderHome(); nameFocus('[data-nm="open"]'); return; }
+    if (a !== 'save' && a !== 'clear') return;
+    if (nameSt.busy) return;
+    var inp = document.getElementById('homeNameIn'), val = a === 'clear' ? '' : (inp ? inp.value : nameSt.value || '');
+    nameSt.busy = true; nameSt.error = ''; nameSt.value = a === 'clear' ? '' : val; renderHome();
+    N.save(window.claude.profile, val).then(function (r) {
+      nameSt.busy = false;
+      if (r.ok) {
+        A.myName = r.name || ''; nameSt = { open: false, busy: false, error: '', value: null };
+        whoami(); renderHome(); nameFocus('[data-nm="open"]');
+        toast(r.cleared ? 'Back to your sign-in name: ' + A.myName + '.' : 'Name changed to ' + A.myName + '.');
+      } else { nameSt.error = r.message; renderHome(); nameFocus('#homeNameIn'); }
+    });
+  }
   var hmEl = $('home'); if (hmEl) hmEl.addEventListener('click', function (ev) { var b = ev.target.closest && ev.target.closest('[data-hm]'); if (b) homeAct(b.getAttribute('data-hm'), b.getAttribute('data-id')); });
+  if (hmEl) {
+    hmEl.addEventListener('click', function (ev) { var b = ev.target.closest && ev.target.closest('[data-nm]'); if (b && b.getAttribute('data-nm') !== 'save') nameAct(b.getAttribute('data-nm')); });
+    hmEl.addEventListener('submit', function (ev) { var f = ev.target; if (f && f.getAttribute && f.getAttribute('data-nm-form')) { ev.preventDefault(); nameAct('save'); } });
+    hmEl.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'homeNameIn') nameSt.value = ev.target.value; });
+    hmEl.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && ev.target && ev.target.id === 'homeNameIn') { ev.preventDefault(); nameAct('cancel'); } });
+  }
 
   /* ---------- boot ---------- */
   /* the creator's state: the artifact keeps it in claude.hot; elsewhere an unfiled draft goes to localStorage (b68.draft) */
@@ -1126,14 +1156,16 @@
         if (hosted() && window.B68Runtime.me) A.myName = window.B68Runtime.me.name || '';
         else if (typeof u.me === 'function') Promise.resolve().then(function () { return u.me(); }).then(function (m) { A.myName = (m && m.name) || ''; renderHome(); }).catch(function () {});
         var pid = typeof u.id === 'function' ? Promise.resolve(u.id()) : Promise.resolve(null);
-        return pid.then(function (id) { A.me = id || null; var cw = typeof u.can === 'function' ? Promise.resolve(u.can('data.write')) : Promise.resolve(null); return cw.then(function (c) { A.canWrite = c === true ? true : c === false ? false : null; return gmOf(u); }).then(function (g) { A.isGM = g === true; A.roleKnown = !!A.me; }); });
+        return pid.then(function (id) { A.me = id || null; var cw = typeof u.can === 'function' ? Promise.resolve(u.can('data.write')) : Promise.resolve(null); return cw.then(function (c) { A.canWrite = c === true ? true : c === false ? false : null; return gmOf(u); }).then(function (g) { A.isGM = g === true; A.roleKnown = !!A.me; A.isDisplay = hosted() && !!window.B68Runtime.me && window.B68Runtime.me.role === 'display'; }); });
       }).catch(function () {});
       who.then(function () {
         whoami(); syncFilter(); A.syncAll(); syncNav();
         /* the GM pack is cached per browser (IndexedDB): a viewer KNOWN not to be the GM drops every cached copy (not when /api/me failed) */
         if (A.roleKnown === true && A.isGM !== true) { var G0 = gmMod(); if (G0 && G0.purge) { try { G0.purge(); } catch (e) {} } }
+        if (A.isDisplay === true) return null;   /* the display sign-in may not read the files: no db, no roster, no campaign */
         return window.claude.use('db');
       }).then(function (d) {
+        if (A.isDisplay === true) { db = null; dbSettled = true; setMode('display', true); replaceHash('#display'); return; }
         db = d; dbSettled = true; whoami(); A.syncAll(); syncBackups(); syncEditBar();
         startCampaign();
         var Cp0 = castMod(); if (Cp0) { try { Cp0.init(castApi()); } catch (e) { if (window.console) console.error(e); } }

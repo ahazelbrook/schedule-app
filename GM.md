@@ -70,14 +70,28 @@ fails and nobody is known, nothing is purged.
   versions with `pack()` and fetches only what changed; if a part will not download, the page carries on with the copy on
   the device ("offline copy" in the header). The header shows "Campaign data exported DD/MM/YYYY", amber when
   more than three days old.
-- **Layout.** Laptop (>= 1100 px): the console (controls, the nine buttons, the card, "Earlier:" the last five rolls) |
-  a side panel with **Location (B)**, **NPC (N)** and **Rules (T)** | the state rail (crew heat, wanted, rep, stacks and
+- **Layout.** Laptop (>= 1100 px): the console (the Situations | Classic toggle, Position, controls, the four buttons, the card, "Earlier:" the last five rolls) |
+  a side panel with **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)** and **Rules (T)** | the state rail (crew heat, wanted, rep, stacks and
   vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on
-  stage) | the capture bar at the foot. 600–1100 px: two columns, the rail below. Phone: a Console | Location | NPC |
-  State bar, the buttons a 3 × 3 grid, the controls behind a "Scene" line, capture on a floating button.
-- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd): `1`–`9` roll, `B` `N` `T` switch the panel
-  (`S` and `E` are reserved), `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
+  stage) | the capture bar at the foot. 600–1100 px: two columns, the rail below. Phone: a Console | Location | Street | Engage | NPC |
+  State bar, the Position switch at the top, the situations a 2 × 2 grid (Classic: 3 × 3), the other controls behind a "Scene" line,
+  capture on a floating button.
+- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd): `1`–`4` roll a situation (Classic: `1`–`9` roll a single table), `B` `N` `S` `E` `T` switch the panel
+  (Location, NPC, Street scene, Engagement, Rules), `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
   the last roll under "Rolled at the table", `H` blanks the screen until any key or tap.
+- **Situations and Classic.** The console opens on **Situations**: four buttons, each a moment in the roll: `1` **Before** (a Devil's
+  Bargain), `2` **4/5**, `3` **1–3**, `4` **Someone**. A large three-way **Position** switch (controlled / risky / desperate, with what
+  it means for severity, winds and harm) sits above them, always on screen; the other controls stay (scene, district, PC, NPC,
+  threat); there is no Result control (the button is the result). A card is a **lead box** (one big line, its chips, its own
+  detail under *More*), at most three one-line **Or** rows that each open to their full section, and **one** actions row merged
+  from every section (bargains owed, callbacks used, ticks...), then Pin and Copy. Under the cards a small **Single tables** row
+  holds the nine classic rollers (no keys). **Classic** is the nine-button console exactly as it was (keys `1`–`9`, the Result
+  control): the **Situations | Classic** toggle in the console header is one tap and is remembered per device
+  (`localStorage` `b68.gm.view`; without storage it opens on Situations). The release switch is `SITUATIONS_DEFAULT` near the top
+  of `gm-page.js`: `false` hides the toggle and shows Classic only (the safe release; rollback is also one tap on the toggle).
+  Composed cards are stored under `cards.situation` / `hist.situation` (replay info: `{ id: 'situation', situation, seed, ui, mem }`),
+  never under `console`: code from before redraws any unknown console id as a Devil's Bargain. Classic and single tables keep
+  `cards.console` / `hist.console`. In Situations, Earlier lists the last five across both. Position is the same live control in both views.
 - **Location.** The generator's controls and Roll, the card with GM-only sections marked, then the map: view, theme,
   layer (GM / Player) and the bands revealed to the player layer; Draw, Download SVG / note (.md) / canvas. **Show on
   iPad** is enabled only on the player layer, and the code renders the player layer itself and refuses any other svg
@@ -93,14 +107,30 @@ fails and nobody is known, nothing is purged.
   threats and a hidden target, and refuses to send it ("This view would name a hidden room: use Rings or Iso, or reveal
   more bands"); the in-page Player draw shows the same warning and the Player SVG download is refused. `rings` and `iso`
   are clean.
+- **Street (S) and Engage (E).** Two more side panels, ports of the vault pages `Tools/blades-68-district-scenes.md` and
+  `Tools/blades-68-engagement-roll.md` (`app/gm/scenes.js`, `app/gm/engagement.js`; tables from the pack parts `scenes` and
+  `engagement`; both optional: an older pack shows "The pack has no scenes part. Update the pack." in the panel).
+  **Street**: a district select (or anywhere) and **Roll a street scene**: three read-aloud paragraphs, the four ratings, and a
+  GM grid (landmark, who is out, what is in the way, word out, factions, the district rule). **Read-aloud to the iPad** sends
+  only the three paragraphs as plain text (never the notable, the rumour or the rule). **Engage**: approach, loadout (Quiet
+  3 / Loud 6) and one -1d / 0 / +1d control per factor; the card shows the pool before a roll, **Roll engagement** rolls it
+  (a 0d pool rolls two and keeps the lowest) and the card gives the position, the dice and the closing "cut to the first
+  obstacle" line. Both file a card under `cards.scenes` / `cards.engagement` (`{ hid, seed, ui, mem?, label, at }`; the street
+  scene keeps its repeat-guard in `mem.scenes`, the engagement roll has none), five Earlier per tool, Pin, Copy and `L`. A reload
+  or an Earlier click redraws the same card from the seed. Changing an engagement control drops the stored roll (the Earlier row
+  keeps it) and shows the pool again; the controls live in `eng.ui` and `scn.ui`. Parity with the vault pages:
+  `node scripts/gm-parity.mjs --scenes --engagement` (see the header of that script for the one deliberate difference).
 - **NPC.** The NPC generator is not ported yet. The app's cast is listed with portraits: **Show on iPad** (a hidden NPC
   asks first) and **Put on stage** (opens the NPC on the cast page, which stages it).
 - **State.** The GM state document holds `con` (the console state: `live` controls, `owed`, `struck`, `used`), `loc`
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,
   so a reload or an Earlier click redraws exactly the same card even after a callback was used or a bargain collected),
-  `hist` (five per tool), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at }`). Capture never touches
+  `hist` (five per tool), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at, s? }`). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
+  `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
+  there was none), on typed lines, on lines filed by a card's action (a bargain accepted) and on rolls filed with `L`, so the sync
+  (`npm run gm:sync`) files each line in the right session note. The campaign log never gets capture text.
 - **Saving.** Writes are debounced 800 ms, one in flight at a time; what is added meanwhile goes when it lands, even
   after leaving the page, and a hidden tab or `pagehide` sends what is pending as a `keepalive` request. A network error,
   409, 429 or 5xx retries with backoff; any other refusal is shown as "Not saved", kept in `b68.gm.sticky` and never
@@ -113,9 +143,18 @@ Full screen (no header, nav or banner) for an iPad signed in as the GM. Boot mou
 `B68DisplayPage.mount(container, { gm, db, figures, cast, isGM })` once the files settle (`db` is the resolved db) and
 calls `unmount()` on leaving; anyone but the GM sees a message instead. The GM page's **Display** button opens it.
 
-The display offers **no way back** to the GM page (no link, hidden or not): the iPad lies in front of the players,
-signed in as the GM. Run it as a Home Screen app (Share, Add to Home Screen), which has no address bar, and leave or
-change it from the GM's own device. Its sanitiser applies the same rules as the server's `checkSvg` (namespaced
-elements, `<a>`, `xml:base`, backslashes, `image-set()` / `src()`, raster `data:` images only on `<image>` /
-`<feImage>`). The proper follow-up is a dedicated display sign-in (a `DISPLAY_EMAILS` role that can read the display and
-nothing else), so the iPad never holds a GM session.
+The display offers **no way back** to the GM page (no link, hidden or not). Its sanitiser applies the same rules as the server's `checkSvg` (namespaced
+elements, `<a>`, `xml:base`, backslashes, `image-set()` / `src()`, raster `data:` images only on `<image>` / `<feImage>`).
+
+### The display sign-in (`DISPLAY_EMAILS`)
+
+A third role, `display`, so the iPad never holds a GM session. An email in `DISPLAY_EMAILS` (comma-separated, case-insensitive,
+like `GM_EMAILS`; the GM wins if an email is in both) gets exactly two calls: `GET /api/me` and `GET /api/gm/display`.
+Everything else, any method, known route or not, is the same 403 ("this is the table display sign-in: it can only show
+the display") from `functions/api/_middleware.js` before the body is read or the database touched, so a route added later is
+refused by default. It is never recorded in `members`, never listed as a player, and `PUT /api/gm/display` stays GM only.
+With `DISPLAY_EMAILS` unset the role does not exist. Check: `npm run check:display-role`.
+
+**To turn it on** (Alex's steps, not done by code): pick an email for the iPad, add it to the Cloudflare Access allow policy,
+then `npx wrangler secret put DISPLAY_EMAILS` and sign the iPad in with that email. `scripts/deploy.sh` does not manage this secret.
+The display page's NPC view reads `npcs`, which this role cannot; it falls back to the pushed title and caption.

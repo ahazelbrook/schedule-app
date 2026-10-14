@@ -61,7 +61,47 @@
    An intent's `capture` (bargainOwed only) is the line the vault also filed under Loose ends (bucket 'x').
 
    Helpers: B68GmConsole.seedRng(a) (mulberry32, as the vault) · resistOdds(n) · poolRoll(n, rng) · plain(md)
-            · LIVE0 · BUTTONS (ids and labels only)
+            · LIVE0 · BUTTONS (ids and labels only) · SITUATIONS · SITUATION_ID · COMPOSE_VERSION
+   ---------------------------------------------------------------------------------------------------------------
+   SITUATIONS (composed cards; phase 2). Classic (everything above) is untouched: situations are a layer that runs
+   classic rolls as sections. Nothing below changes what con.roll() returns.
+   ---------------------------------------------------------------------------------------------------------------
+   con.situations()  -> [{ id, label, key, hint }]: before (key 1, Devil's Bargain) · fourfive (2, a 4/5) ·
+                        onetothree (3, a 1-3) · someone (4). Keys 1-4 in Situations; Classic keeps 1-9.
+   con.positions     [{ value: 'controlled'|'risky'|'desperate', label, severity, ticks, harm }] for the big 3-way
+                        Position switch (severity / ticks / harm level come from T.severity).
+   con.situationControls   con.controls without Result (the button is the result): pos, scene, district, pc, npc, threat.
+                        Rebuilt by setCampaign(), like con.controls.
+   con.situationDefaults() the starting controls for Situations (con.defaults() minus result).
+   con.situation(id, ui, { seed, mem }) -> { lines, meta, sections, seed, replay }
+       id     a situation id, or its number 1..4 (an unknown id rolls 'before')
+       ui     the controls (as roll(); any ui.result is ignored: the situation decides it). ui.dots works as in roll().
+       seed   uint32 for the whole card; omit for a fresh one. mem the repeat-guard memory, MUTATED, default the
+              instance's. Same rules as roll(): replay.mem is a deep copy BEFORE the card.
+       sections  ordered; sections[0] is the LEAD (render it as the lead box), the rest are at most three "Or" entries
+                 (render each as a one-line `lead`, opening to its full lines). Each section:
+                 { id: classic button id, role: 'lead'|'or', title, lead: one plain line (<= 120 chars),
+                   sub, chips, lines: [classic lines], actions: [{ label, intent }], meta: the classic meta,
+                   seed, replay: { id, seed, mem, ui } }  (replay is a classic roll: con.roll(id, ui, { seed, mem }))
+       lines  every section's lines flattened in order (a plain fallback; the page should render `sections`)
+       actions  meta.actions is the merged list from every section (duplicates dropped; each carries `from`, the
+                section id). Pressing one hands its `intent` to applyIntent as always.
+       meta   { id: 'situation', situation: <situation id>, n: 1..4, composeVersion: 1, title, sub, chips, text (the
+              lead's first line), all (every section's lines as text), label, actions, sections: [{ id, role, title,
+              seed }], plus the first bargain / d66 / reaction / contact / face extras among the sections }
+       replay { id: 'situation', situation, seed, mem, ui }: con.replay(replay) redraws the whole card exactly.
+   con.replay(replay) redraws a stored card: id 'situation' -> situation(), anything else -> roll(). It clones
+                      replay.mem for you.
+   Section seeds come from a second mulberry32 stream started from the card's seed (one draw per possible section,
+   in a fixed order, whether or not the section appears), and mem runs through the sections in order.
+   STORE COMPOSED CARDS AND HISTORY UNDER THE ID 'situation' (B68GmConsole.SITUATION_ID), NEVER 'console': code from
+   before this change redraws any unknown id as a Devil's Bargain, so a rollback would misread them.
+   Which sections appear: before = Devil's Bargain. fourfive = Consequence (4/5) · Or Complication (4/5, with the
+   clock ticks) · Or Callback (only if callbacks are on file) · Or NPC reaction (only if the NPC control is set).
+   onetothree = Consequence (1-3) · Or Pay the price · Or Harm & resist · Or NPC reaction (NPC set).
+   someone = NPC control empty: Face · Or NPC reaction (2d). A friend: Contact (aimed at that friend's PC; with
+   several friends on one sheet it may pick another of them) · Or NPC reaction (3d). A rival or faction: NPC reaction
+   with that pool. B68GmConsole.SITUATIONS and COMPOSE_VERSION are exported too.
    --------------------------------------------------------------------------------------------------------------- */
 (function (root, factory) {
   'use strict';
@@ -195,6 +235,18 @@
   ];
   var LIVE0 = { pos: 'risky', scene: '', district: '', pc: '', result: '', npc: '', threat: '' };
 
+  // --- Situations (composed cards): the id the page must file them under, and the compose version ----------------
+  var SITUATION_ID = 'situation';
+  var COMPOSE_VERSION = 1;
+  var SITUATIONS = [
+    { id: 'before',     label: 'Before',  key: 1, hint: "before the roll: a Devil's Bargain to offer" },
+    { id: 'fourfive',   label: '4/5',     key: 2, hint: 'they rolled a 4 or 5: a consequence, or a complication' },
+    { id: 'onetothree', label: '1–3',     key: 3, hint: 'they rolled 1-3: a consequence, the price, the harm' },
+    { id: 'someone',    label: 'Someone', key: 4, hint: 'a stranger, a friend or a rival turns up: who, and how they take it' }
+  ];
+  var LEAD_MAX = 120;
+  var cut = function (t) { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > LEAD_MAX ? t.slice(0, LEAD_MAX - 1) + '…' : t; };
+
   function create(options) {
     var o = options || {};
     var T = o.T;
@@ -235,6 +287,7 @@
       // No names in the pack: one invented placeholder each (the vault's six fallback names are its own text).
       NAMES = first.length && family.length ? { first: first, family: family } : { first: ['Nameless'], family: ['Stranger'] };
       con.controls = buildControls();
+      con.situationControls = con.controls.filter(function (c) { return c.id !== 'result'; });
     }
 
     function buildControls() {
@@ -680,6 +733,91 @@
       return { lines: o2.lines, meta: meta, seed: seed, replay: { id: fnId, seed: seed, mem: memBefore, ui: replayUi } };
     };
 
+    // --- Situations: composed cards. Each section is a classic con.roll(); nothing above is touched. ---------------
+    function planFor(sid, u) {
+      var npc = u.npc || '';
+      var sec = function (id, role, result, extraUi) { return { id: id, role: role, result: result, ui: extraUi || null }; };
+      if (sid === 'before') return [sec('devilsBargain', 'lead', '')];
+      if (sid === 'fourfive') {
+        var p = [sec('consequence', 'lead', '45'), sec('complication', 'or', '45')];
+        if (CALLBACKS.length) p.push(sec('callback', 'or', '45'));
+        if (npc) p.push(sec('reaction', 'or', '45'));
+        return p;
+      }
+      if (sid === 'onetothree') {
+        var q = [sec('consequence', 'lead', '13'), sec('payThePrice', 'or', '13'), sec('harm', 'or', '13')];
+        if (npc) q.push(sec('reaction', 'or', '13'));
+        return q;
+      }
+      // someone
+      if (npc.indexOf('friend:') === 0) {
+        var friend = npc.slice(7), owner = PCS.find(function (pc) { return pc.friend.indexOf(friend) >= 0; });
+        return [sec('contact', 'lead', '', owner ? { pc: owner.name } : null), sec('reaction', 'or', '')];
+      }
+      if (npc) return [sec('reaction', 'lead', '')];                          // a rival or a faction: that pool
+      return [sec('face', 'lead', ''), sec('reaction', 'or', '')];            // nobody set: a name, then 2d
+    }
+
+    con.situations = function () { return SITUATIONS.map(function (x) { return Object.assign({}, x); }); };
+    con.positions = ['controlled', 'risky', 'desperate'].filter(function (k) { return T.severity[k]; }).map(function (k) {
+      var sv = T.severity[k];
+      return { value: k, label: k, severity: sv[0], ticks: sv[1], harm: k === 'controlled' ? '1 (lesser)' : String(sv[3]) };
+    });
+    con.situationDefaults = function () { var d = Object.assign({}, LIVE0); delete d.result; return d; };
+    con.situation = function (id, ui, ro) {
+      var r = ro || {};
+      var sit = SITUATIONS.find(function (x) { return x.id === id || x.key === Number(id); }) || SITUATIONS[0];
+      var seed = r.seed == null || !isFinite(Number(r.seed)) ? newSeed() : Number(r.seed) >>> 0;
+      var mem = isObj(r.mem) ? r.mem : instMem;
+      var memBefore = clone(mem);
+      var u = sanitise(ui); u.result = '';
+      var dots = isObj(ui) && isObj(ui.dots) ? ui.dots : null;
+      var plan = planFor(sit.id, u);
+      // Section seeds: a second mulberry32 stream from the card's seed, four draws always, so a section's seed never
+      // depends on which others appear.
+      var r2 = seedRng(seed);
+      var seeds = [0, 1, 2, 3].map(function () { return (r2() * 4294967296) >>> 0; });
+
+      var sections = plan.map(function (p, i) {
+        var su = Object.assign({}, u, p.ui || {}, { result: p.result });
+        if (dots) su.dots = dots;
+        var c = con.roll(p.id, su, { seed: seeds[i], mem: mem });
+        return { id: p.id, role: p.role, title: c.meta.title, lead: cut(c.meta.text), sub: c.meta.sub, chips: c.meta.chips,
+                 lines: c.lines, actions: c.meta.actions, meta: c.meta, seed: seeds[i], replay: c.replay };
+      });
+
+      var actions = [], seen = {}, chips = [], lines = [], all = [];
+      sections.forEach(function (s) {
+        s.actions.forEach(function (a) {
+          var k = JSON.stringify(a.intent);
+          if (seen[k]) return;
+          seen[k] = 1; actions.push({ label: a.label, intent: a.intent, from: s.id });
+        });
+        s.chips.forEach(function (c) { if (chips.indexOf(c) < 0) chips.push(c); });
+        Array.prototype.push.apply(lines, s.lines);
+        Array.prototype.push.apply(all, s.meta.all);
+      });
+      var title = { before: 'Before the roll', fourfive: 'A 4/5', onetothree: 'A 1–3', someone: 'Someone' }[sit.id];
+      var text = sections[0].meta.text;
+      var t = text.replace(/\s+/g, ' ');
+      var meta = { id: SITUATION_ID, situation: sit.id, n: sit.key, composeVersion: COMPOSE_VERSION, title: title,
+        sub: u.pos + ' → ' + T.severity[u.pos][0], chips: chips, text: text, all: all,
+        label: title + ': ' + (t.length > 38 ? t.slice(0, 36) + '…' : t), actions: actions,
+        sections: sections.map(function (s) { return { id: s.id, role: s.role, title: s.title, seed: s.seed }; }) };
+      ['bargain', 'd66', 'reaction', 'contact', 'face'].forEach(function (k) {
+        for (var i = 0; i < sections.length; i++) if (k in sections[i].meta) { meta[k] = sections[i].meta[k]; break; }
+      });
+      var replayUi = Object.assign({}, u);
+      if (dots) replayUi.dots = clone(dots);
+      return { lines: lines, meta: meta, sections: sections, seed: seed,
+               replay: { id: SITUATION_ID, situation: sit.id, seed: seed, mem: memBefore, ui: replayUi } };
+    };
+    con.replay = function (rp) {
+      var x = rp || {};
+      if (x.id === SITUATION_ID) return con.situation(x.situation, x.ui, { seed: x.seed, mem: clone(x.mem) });
+      return con.roll(x.id, x.ui, { seed: x.seed, mem: clone(x.mem) });
+    };
+
     load(o.campaign, o.state);
     return con;
   }
@@ -687,6 +825,7 @@
   return {
     create: create, applyIntent: applyIntent, intentPatch: intentPatch, campaignWith: campaignWith,
     seedRng: seedRng, resistOdds: resistOdds, poolRoll: poolRoll, plain: plain, keyOf: keyOf,
+    SITUATION_ID: SITUATION_ID, COMPOSE_VERSION: COMPOSE_VERSION, SITUATIONS: SITUATIONS.map(function (x) { return Object.assign({}, x); }),
     LIVE0: Object.assign({}, LIVE0), BUTTONS: BUTTONS.map(function (b) { return { n: b.n, id: b.id, label: b.label }; })
   };
 });
