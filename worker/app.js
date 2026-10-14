@@ -25,6 +25,10 @@ import { onRequest as rulesImport } from '../functions/api/rules/import.js';
 import { onRequest as rulesHouse } from '../functions/api/rules/house/[slug].js';
 import { onRequest as npcs } from '../functions/api/npcs/index.js';
 import { onRequest as npc } from '../functions/api/npcs/[id].js';
+import { onRequest as gmPack } from '../functions/api/gm/pack.js';
+import { onRequest as gmState } from '../functions/api/gm/state.js';
+import { onRequest as gmDisplay } from '../functions/api/gm/display.js';
+import { gmNotFound } from '../functions/_lib/gm.js';
 import { onRequest as notFound } from '../functions/api/[[path]].js';
 
 // The same file layout Pages Functions routed: [id] is one path segment, [[path]] the rest.
@@ -41,6 +45,11 @@ export const ROUTES = [
   { re: /^\/api\/rules\/house\/([^/]+)\/?$/, handler: rulesHouse, path: '/api/rules/house/:slug', params: ['slug'] },
   { re: /^\/api\/npcs\/?$/, handler: npcs, path: '/api/npcs' },
   { re: /^\/api\/npcs\/([^/]+)\/?$/, handler: npc, path: '/api/npcs/:id', params: ['id'] },
+  // the GM tools (GM.md), GM only: any other /api/gm path is 403 for a player (404 for the GM), not the plain 404
+  { re: /^\/api\/gm\/pack\/?$/, handler: gmPack, path: '/api/gm/pack' },
+  { re: /^\/api\/gm\/state\/?$/, handler: gmState, path: '/api/gm/state' },
+  { re: /^\/api\/gm\/display\/?$/, handler: gmDisplay, path: '/api/gm/display' },
+  { re: /^\/api\/gm(?:\/.*)?$/, handler: gmNotFound, path: '/api/gm/[[path]]' },
 ];
 
 function decode(s) {

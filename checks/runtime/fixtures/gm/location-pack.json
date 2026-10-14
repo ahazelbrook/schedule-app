@@ -1,0 +1,1535 @@
+{
+ "_comment": "Invented placeholder tables for tests. Same key structure as the GM pack location part; no real text.",
+ "T": {
+  "theme": {
+   "Fixture Offices": {
+    "p": "p.400",
+    "items": [
+     "a oxter pell",
+     "a quill rusk",
+     "a sable tarn",
+     "a umber vell",
+     "a wick xeno",
+     "a yarrow zest",
+     "a zorn1 quib1",
+     "a vexa1 morlu1",
+     "a tanwick1 plume1",
+     "a harb1 fendle1",
+     "a gorsk1 yonder1",
+     "a brisk1 calp1"
+    ],
+    "areas": [
+     "Zorn quib room. Quib walls and vexa floors, invented for tests.",
+     "Morlu tanwick room. Tanwick walls and plume floors, invented for tests.",
+     "Harb fendle room. Fendle walls and gorsk floors, invented for tests.",
+     "Yonder brisk room. Brisk walls and calp floors, invented for tests.",
+     "Dunmore eskel room. Eskel walls and flit floors, invented for tests.",
+     "Gantry hobb room. Hobb walls and ibex floors, invented for tests."
+    ],
+    "also": "jolt closet, kelp dock, lumen annexe, mott stair, nimb cellar",
+    "obstacles": [
+     "Dunmore1 eskel1 hazard",
+     "Flit1 gantry1 hazard",
+     "Hobb1 ibex1 hazard",
+     "Jolt1 kelp1 hazard",
+     "Lumen1 mott1 hazard",
+     "Nimb1 oxter1 hazard"
+    ],
+    "impressions": [
+     "the pell1 of quill1",
+     "the rusk1 of sable1",
+     "the tarn1 of umber1",
+     "the vell1 of wick1",
+     "the xeno1 of yarrow1",
+     "the zest1 of zorn2"
+    ],
+    "bands": [
+     "public",
+     "working",
+     "working",
+     "controlled",
+     "secure",
+     "working"
+    ],
+    "alsoRooms": [
+     [
+      "Jolt closet",
+      "public"
+     ],
+     [
+      "Kelp dock",
+      "working"
+     ],
+     [
+      "Lumen annexe",
+      "controlled"
+     ],
+     [
+      "Mott stair",
+      "secure"
+     ],
+     [
+      "Nimb cellar",
+      "public"
+     ]
+    ],
+    "bandNote": "Invented band note quib2."
+   },
+   "Fixture Works": {
+    "p": "p.401",
+    "items": [
+     "a quill2 rusk2",
+     "a sable2 tarn2",
+     "a umber2 vell2",
+     "a wick2 xeno2",
+     "a yarrow2 zest2",
+     "a zorn3 quib3",
+     "a vexa3 morlu3",
+     "a tanwick3 plume3",
+     "a harb3 fendle3",
+     "a gorsk3 yonder3",
+     "a brisk3 calp3",
+     "a dunmore3 eskel3"
+    ],
+    "areas": [
+     "Vexa2 morlu2 room. Morlu2 walls and tanwick2 floors, invented for tests.",
+     "Plume2 harb2 room. Harb2 walls and fendle2 floors, invented for tests.",
+     "Gorsk2 yonder2 room. Yonder2 walls and brisk2 floors, invented for tests.",
+     "Calp2 dunmore2 room. Dunmore2 walls and eskel2 floors, invented for tests.",
+     "Flit2 gantry2 room. Gantry2 walls and hobb2 floors, invented for tests.",
+     "Ibex2 jolt2 room. Jolt2 walls and kelp2 floors, invented for tests."
+    ],
+    "also": "lumen2 closet, mott2 dock, nimb2 annexe, oxter2 stair, pell2 cellar",
+    "obstacles": [
+     "Flit3 gantry3 hazard",
+     "Hobb3 ibex3 hazard",
+     "Jolt3 kelp3 hazard",
+     "Lumen3 mott3 hazard",
+     "Nimb3 oxter3 hazard",
+     "Pell3 quill3 hazard"
+    ],
+    "impressions": [
+     "the rusk3 of sable3",
+     "the tarn3 of umber3",
+     "the vell3 of wick3",
+     "the xeno3 of yarrow3",
+     "the zest3 of zorn4",
+     "the quib4 of vexa4"
+    ],
+    "bands": [
+     "working",
+     "working",
+     "working",
+     "controlled",
+     "working",
+     "controlled"
+    ],
+    "alsoRooms": [
+     [
+      "Lumen2 closet",
+      "working"
+     ],
+     [
+      "Mott2 dock",
+      "public"
+     ],
+     [
+      "Nimb2 annexe",
+      "controlled"
+     ],
+     [
+      "Oxter2 stair",
+      "secure"
+     ],
+     [
+      "Pell2 cellar",
+      "working"
+     ]
+    ]
+   },
+   "Fixture Lab": {
+    "p": "p.402",
+    "items": [
+     "a rusk4 sable4",
+     "a tarn4 umber4",
+     "a vell4 wick4",
+     "a xeno4 yarrow4",
+     "a zest4 zorn5",
+     "a quib5 vexa5",
+     "a morlu5 tanwick5",
+     "a plume5 harb5",
+     "a fendle5 gorsk5",
+     "a yonder5 brisk5",
+     "a calp5 dunmore5",
+     "a eskel5 flit5"
+    ],
+    "areas": [
+     "Morlu4 tanwick4 room. Tanwick4 walls and plume4 floors, invented for tests.",
+     "Harb4 fendle4 room. Fendle4 walls and gorsk4 floors, invented for tests.",
+     "Yonder4 brisk4 room. Brisk4 walls and calp4 floors, invented for tests.",
+     "Dunmore4 eskel4 room. Eskel4 walls and flit4 floors, invented for tests.",
+     "Gantry4 hobb4 room. Hobb4 walls and ibex4 floors, invented for tests.",
+     "Jolt4 kelp4 room. Kelp4 walls and lumen4 floors, invented for tests."
+    ],
+    "also": "mott4 closet, nimb4 dock, oxter4 annexe, pell4 stair, quill4 cellar",
+    "obstacles": [
+     "Gantry5 hobb5 hazard",
+     "Ibex5 jolt5 hazard",
+     "Kelp5 lumen5 hazard",
+     "Mott5 nimb5 hazard",
+     "Oxter5 pell5 hazard",
+     "Quill5 rusk5 hazard"
+    ],
+    "impressions": [
+     "the sable5 of tarn5",
+     "the umber5 of vell5",
+     "the wick5 of xeno5",
+     "the yarrow5 of zest5",
+     "the zorn6 of quib6",
+     "the vexa6 of morlu6"
+    ],
+    "bands": [
+     "working",
+     "working",
+     "secure",
+     "controlled",
+     "working",
+     "controlled"
+    ],
+    "alsoRooms": [
+     [
+      "Mott4 closet",
+      "controlled"
+     ],
+     [
+      "Nimb4 dock",
+      "working"
+     ],
+     [
+      "Oxter4 annexe",
+      "public"
+     ],
+     [
+      "Pell4 stair",
+      "working"
+     ],
+     [
+      "Quill4 cellar",
+      "controlled"
+     ]
+    ]
+   },
+   "Fixture Villa": {
+    "p": "p.403",
+    "items": [
+     "a sable6 tarn6",
+     "a umber6 vell6",
+     "a wick6 xeno6",
+     "a yarrow6 zest6",
+     "a zorn7 quib7",
+     "a vexa7 morlu7",
+     "a tanwick7 plume7",
+     "a harb7 fendle7",
+     "a gorsk7 yonder7",
+     "a brisk7 calp7",
+     "a dunmore7 eskel7",
+     "a flit7 gantry7"
+    ],
+    "areas": [
+     "Tanwick6 plume6 room. Plume6 walls and harb6 floors, invented for tests.",
+     "Fendle6 gorsk6 room. Gorsk6 walls and yonder6 floors, invented for tests.",
+     "Brisk6 calp6 room. Calp6 walls and dunmore6 floors, invented for tests.",
+     "Eskel6 flit6 room. Flit6 walls and gantry6 floors, invented for tests.",
+     "Hobb6 ibex6 room. Ibex6 walls and jolt6 floors, invented for tests.",
+     "Kelp6 lumen6 room. Lumen6 walls and mott6 floors, invented for tests."
+    ],
+    "also": "nimb6 closet, oxter6 dock, pell6 annexe, quill6 stair, rusk6 cellar",
+    "obstacles": [
+     "Hobb7 ibex7 hazard",
+     "Jolt7 kelp7 hazard",
+     "Lumen7 mott7 hazard",
+     "Nimb7 oxter7 hazard",
+     "Pell7 quill7 hazard",
+     "Rusk7 sable7 hazard"
+    ],
+    "impressions": [
+     "the tarn7 of umber7",
+     "the vell7 of wick7",
+     "the xeno7 of yarrow7",
+     "the zest7 of zorn8",
+     "the quib8 of vexa8",
+     "the morlu8 of tanwick8"
+    ],
+    "bands": [
+     "public",
+     "public",
+     "public",
+     "public",
+     "secure",
+     "working"
+    ],
+    "alsoRooms": [
+     [
+      "Nimb6 closet",
+      "public"
+     ],
+     [
+      "Oxter6 dock",
+      "working"
+     ],
+     [
+      "Pell6 annexe",
+      "controlled"
+     ],
+     [
+      "Quill6 stair",
+      "secure"
+     ],
+     [
+      "Rusk6 cellar",
+      "public"
+     ]
+    ],
+    "bandNote": "Invented band note plume8."
+   },
+   "Fixture Manor": {
+    "p": "p.404",
+    "items": [
+     "a umber8 vell8",
+     "a wick8 xeno8",
+     "a yarrow8 zest8",
+     "a zorn9 quib9",
+     "a vexa9 morlu9",
+     "a tanwick9 plume9",
+     "a harb9 fendle9",
+     "a gorsk9 yonder9",
+     "a brisk9 calp9",
+     "a dunmore9 eskel9",
+     "a flit9 gantry9",
+     "a hobb9 ibex9"
+    ],
+    "areas": [
+     "Harb8 fendle8 room. Fendle8 walls and gorsk8 floors, invented for tests.",
+     "Yonder8 brisk8 room. Brisk8 walls and calp8 floors, invented for tests.",
+     "Dunmore8 eskel8 room. Eskel8 walls and flit8 floors, invented for tests.",
+     "Gantry8 hobb8 room. Hobb8 walls and ibex8 floors, invented for tests.",
+     "Jolt8 kelp8 room. Kelp8 walls and lumen8 floors, invented for tests.",
+     "Mott8 nimb8 room. Nimb8 walls and oxter8 floors, invented for tests."
+    ],
+    "also": "pell8 closet, quill8 dock, rusk8 annexe, sable8 stair, tarn8 cellar",
+    "obstacles": [
+     "Jolt9 kelp9 hazard",
+     "Lumen9 mott9 hazard",
+     "Nimb9 oxter9 hazard",
+     "Pell9 quill9 hazard",
+     "Rusk9 sable9 hazard",
+     "Tarn9 umber9 hazard"
+    ],
+    "impressions": [
+     "the vell9 of wick9",
+     "the xeno9 of yarrow9",
+     "the zest9 of zorn10",
+     "the quib10 of vexa10",
+     "the morlu10 of tanwick10",
+     "the plume10 of harb10"
+    ],
+    "bands": [
+     "public",
+     "working",
+     "public",
+     "working",
+     "controlled",
+     "public"
+    ],
+    "alsoRooms": [
+     [
+      "Pell8 closet",
+      "working"
+     ],
+     [
+      "Quill8 dock",
+      "public"
+     ],
+     [
+      "Rusk8 annexe",
+      "controlled"
+     ],
+     [
+      "Sable8 stair",
+      "secure"
+     ],
+     [
+      "Tarn8 cellar",
+      "working"
+     ]
+    ]
+   },
+   "Fixture Hall": {
+    "p": "p.405",
+    "items": [
+     "a vell10 wick10",
+     "a xeno10 yarrow10",
+     "a zest10 zorn11",
+     "a quib11 vexa11",
+     "a morlu11 tanwick11",
+     "a plume11 harb11",
+     "a fendle11 gorsk11",
+     "a yonder11 brisk11",
+     "a calp11 dunmore11",
+     "a eskel11 flit11",
+     "a gantry11 hobb11",
+     "a ibex11 jolt11"
+    ],
+    "areas": [
+     "Fendle10 gorsk10 room. Gorsk10 walls and yonder10 floors, invented for tests.",
+     "Brisk10 calp10 room. Calp10 walls and dunmore10 floors, invented for tests.",
+     "Eskel10 flit10 room. Flit10 walls and gantry10 floors, invented for tests.",
+     "Hobb10 ibex10 room. Ibex10 walls and jolt10 floors, invented for tests.",
+     "Kelp10 lumen10 room. Lumen10 walls and mott10 floors, invented for tests.",
+     "Nimb10 oxter10 room. Oxter10 walls and pell10 floors, invented for tests."
+    ],
+    "also": "quill10 closet, rusk10 dock, sable10 annexe, tarn10 stair, umber10 cellar",
+    "obstacles": [
+     "Kelp11 lumen11 hazard",
+     "Mott11 nimb11 hazard",
+     "Oxter11 pell11 hazard",
+     "Quill11 rusk11 hazard",
+     "Sable11 tarn11 hazard",
+     "Umber11 vell11 hazard"
+    ],
+    "impressions": [
+     "the wick11 of xeno11",
+     "the yarrow11 of zest11",
+     "the zorn12 of quib12",
+     "the vexa12 of morlu12",
+     "the tanwick12 of plume12",
+     "the harb12 of fendle12"
+    ],
+    "bands": [
+     "public",
+     "public",
+     "public",
+     "controlled",
+     "controlled",
+     "secure"
+    ],
+    "alsoRooms": [
+     [
+      "Quill10 closet",
+      "controlled"
+     ],
+     [
+      "Rusk10 dock",
+      "working"
+     ],
+     [
+      "Sable10 annexe",
+      "public"
+     ],
+     [
+      "Tarn10 stair",
+      "working"
+     ],
+     [
+      "Umber10 cellar",
+      "controlled"
+     ]
+    ]
+   },
+   "Fixture Flats": {
+    "p": "p.406",
+    "items": [
+     "a wick12 xeno12",
+     "a yarrow12 zest12",
+     "a zorn13 quib13",
+     "a vexa13 morlu13",
+     "a tanwick13 plume13",
+     "a harb13 fendle13",
+     "a gorsk13 yonder13",
+     "a brisk13 calp13",
+     "a dunmore13 eskel13",
+     "a flit13 gantry13",
+     "a hobb13 ibex13",
+     "a jolt13 kelp13"
+    ],
+    "areas": [
+     "Gorsk12 yonder12 room. Yonder12 walls and brisk12 floors, invented for tests.",
+     "Calp12 dunmore12 room. Dunmore12 walls and eskel12 floors, invented for tests.",
+     "Flit12 gantry12 room. Gantry12 walls and hobb12 floors, invented for tests.",
+     "Ibex12 jolt12 room. Jolt12 walls and kelp12 floors, invented for tests.",
+     "Lumen12 mott12 room. Mott12 walls and nimb12 floors, invented for tests.",
+     "Oxter12 pell12 room. Pell12 walls and quill12 floors, invented for tests."
+    ],
+    "also": "rusk12 closet, sable12 dock, tarn12 annexe, umber12 stair, vell12 cellar",
+    "obstacles": [
+     "Lumen13 mott13 hazard",
+     "Nimb13 oxter13 hazard",
+     "Pell13 quill13 hazard",
+     "Rusk13 sable13 hazard",
+     "Tarn13 umber13 hazard",
+     "Vell13 wick13 hazard"
+    ],
+    "impressions": [
+     "the xeno13 of yarrow13",
+     "the zest13 of zorn14",
+     "the quib14 of vexa14",
+     "the morlu14 of tanwick14",
+     "the plume14 of harb14",
+     "the fendle14 of gorsk14"
+    ],
+    "bands": [
+     "public",
+     "controlled",
+     "public",
+     "working",
+     "working",
+     "secure"
+    ],
+    "alsoRooms": [
+     [
+      "Rusk12 closet",
+      "public"
+     ],
+     [
+      "Sable12 dock",
+      "working"
+     ],
+     [
+      "Tarn12 annexe",
+      "controlled"
+     ],
+     [
+      "Umber12 stair",
+      "secure"
+     ],
+     [
+      "Vell12 cellar",
+      "public"
+     ]
+    ],
+    "bandNote": "Invented band note yonder14."
+   },
+   "Anomalous Zone": {
+    "p": "p.407",
+    "items": [
+     "a yarrow14 zest14",
+     "a zorn15 quib15",
+     "a vexa15 morlu15",
+     "a tanwick15 plume15",
+     "a harb15 fendle15",
+     "a gorsk15 yonder15",
+     "a brisk15 calp15",
+     "a dunmore15 eskel15",
+     "a flit15 gantry15",
+     "a hobb15 ibex15",
+     "a jolt15 kelp15",
+     "a lumen15 mott15"
+    ],
+    "areas": [
+     "Brisk14 calp14 room. Calp14 walls and dunmore14 floors, invented for tests.",
+     "Eskel14 flit14 room. Flit14 walls and gantry14 floors, invented for tests.",
+     "Hobb14 ibex14 room. Ibex14 walls and jolt14 floors, invented for tests.",
+     "Kelp14 lumen14 room. Lumen14 walls and mott14 floors, invented for tests.",
+     "Nimb14 oxter14 room. Oxter14 walls and pell14 floors, invented for tests.",
+     "Quill14 rusk14 room. Rusk14 walls and sable14 floors, invented for tests."
+    ],
+    "also": "tarn14 closet, umber14 dock, vell14 annexe, wick14 stair, xeno14 cellar",
+    "obstacles": [
+     "Nimb15 oxter15 hazard",
+     "Pell15 quill15 hazard",
+     "Rusk15 sable15 hazard",
+     "Tarn15 umber15 hazard",
+     "Vell15 wick15 hazard",
+     "Xeno15 yarrow15 hazard"
+    ],
+    "impressions": [
+     "the zest15 of zorn16",
+     "the quib16 of vexa16",
+     "the morlu16 of tanwick16",
+     "the plume16 of harb16",
+     "the fendle16 of gorsk16",
+     "the yonder16 of brisk16"
+    ],
+    "bands": [
+     "public",
+     "public",
+     "controlled",
+     "controlled",
+     "working",
+     "secure"
+    ],
+    "alsoRooms": [
+     [
+      "Tarn14 closet",
+      "working"
+     ],
+     [
+      "Umber14 dock",
+      "public"
+     ],
+     [
+      "Vell14 annexe",
+      "controlled"
+     ],
+     [
+      "Wick14 stair",
+      "secure"
+     ],
+     [
+      "Xeno14 cellar",
+      "working"
+     ]
+    ]
+   }
+  },
+  "themeNames": [
+   "Fixture Offices",
+   "Fixture Works",
+   "Fixture Lab",
+   "Fixture Villa",
+   "Fixture Manor",
+   "Fixture Hall",
+   "Fixture Flats",
+   "Anomalous Zone"
+  ],
+  "bandOrder": [
+   "public",
+   "working",
+   "controlled",
+   "secure"
+  ],
+  "bandLabel": {
+   "public": "Public: fixture",
+   "working": "Working: fixture",
+   "controlled": "Controlled: fixture",
+   "secure": "Secure: fixture"
+  },
+  "colour": [
+   "calp16 and dunmore16",
+   "eskel16 and flit16",
+   "gantry16 and hobb16",
+   "ibex16 and jolt16",
+   "kelp16 and lumen16",
+   "mott16 and nimb16",
+   "oxter16 and pell16",
+   "quill16 and rusk16",
+   "sable16 and tarn16",
+   "umber16 and vell16",
+   "wick16 and xeno16",
+   "yarrow16 and zest16"
+  ],
+  "style": [
+   "Zorn17 style. Invented facade with harb17 panels and fendle17 trim.",
+   "Quib17 style. Invented facade with gorsk17 panels and yonder17 trim.",
+   "Vexa17 style. Invented facade with brisk17 panels and calp17 trim.",
+   "Morlu17 style. Invented facade with dunmore17 panels and eskel17 trim.",
+   "Tanwick17 style. Invented facade with flit17 panels and gantry17 trim.",
+   "Plume17 style. Invented facade with hobb17 panels and ibex17 trim."
+  ],
+  "geometry": {
+   "Zorn17 style": {
+    "rings": "glazed",
+    "skips": 0,
+    "note": "Invented geometry note jolt17 for Zorn17 style."
+   },
+   "Quib17 style": {
+    "rings": "hard",
+    "skips": 0,
+    "note": "Invented geometry note kelp17 for Quib17 style."
+   },
+   "Vexa17 style": {
+    "rings": "blurred",
+    "skips": 2,
+    "note": "Invented geometry note lumen17 for Vexa17 style."
+   },
+   "Morlu17 style": {
+    "rings": "spine",
+    "skips": 1,
+    "note": "Invented geometry note mott17 for Morlu17 style."
+   },
+   "Tanwick17 style": {
+    "rings": "soft",
+    "skips": 1,
+    "note": "Invented geometry note nimb17 for Tanwick17 style."
+   },
+   "Plume17 style": {
+    "rings": "radial",
+    "skips": 0,
+    "note": "Invented geometry note oxter17 for Plume17 style."
+   }
+  },
+  "detail": [
+   "a pell17 quill17",
+   "a rusk17 sable17",
+   "a tarn17 umber17",
+   "a vell17 wick17",
+   "a xeno17 yarrow17",
+   "a zest17 zorn18",
+   "a quib18 vexa18",
+   "a morlu18 tanwick18",
+   "a plume18 harb18",
+   "a fendle18 gorsk18",
+   "a yonder18 brisk18",
+   "a calp18 dunmore18"
+  ],
+  "itemRare": [
+   "rare eskel18 kit",
+   "rare flit18 kit",
+   "rare gantry18 kit",
+   "rare hobb18 kit",
+   "rare ibex18 kit",
+   "rare jolt18 kit",
+   "rare kelp18 kit",
+   "rare lumen18 kit",
+   "rare mott18 kit",
+   "rare nimb18 kit",
+   "rare oxter18 kit",
+   "rare pell18 kit"
+  ],
+  "itemCommon": [
+   "common quill18 kit",
+   "common rusk18 kit",
+   "common sable18 kit",
+   "common tarn18 kit",
+   "common umber18 kit",
+   "common vell18 kit",
+   "common wick18 kit",
+   "common xeno18 kit",
+   "common yarrow18 kit",
+   "common zest18 kit",
+   "common zorn19 kit",
+   "common quib19 kit"
+  ],
+  "buildingCommon": [
+   "a vexa19 shop",
+   "a morlu19 shop",
+   "a tanwick19 shop",
+   "a plume19 shop",
+   "a harb19 shop",
+   "a fendle19 shop",
+   "a gorsk19 shop",
+   "a yonder19 shop",
+   "a brisk19 shop",
+   "a calp19 shop",
+   "a dunmore19 shop",
+   "a eskel19 shop"
+  ],
+  "buildingRare": [
+   "a flit19 hall",
+   "a gantry19 hall",
+   "a hobb19 hall",
+   "a ibex19 hall",
+   "a jolt19 hall",
+   "a kelp19 hall",
+   "a lumen19 hall",
+   "a mott19 hall",
+   "a nimb19 hall",
+   "a oxter19 hall",
+   "a pell19 hall",
+   "a quill19 hall"
+  ],
+  "blockUse": [
+   "Rusk19 trade",
+   "Sable19 trade",
+   "Tarn19 trade",
+   "Umber19 trade",
+   "Vell19 trade",
+   "Wick19 trade",
+   "Xeno19 trade",
+   "Yarrow19 trade",
+   "Zest19 trade",
+   "Zorn20 trade",
+   "Quib20 trade",
+   "Vexa20 trade",
+   "Morlu20 trade",
+   "Tanwick20 trade",
+   "Plume20 trade",
+   "Harb20 trade",
+   "Fendle20 trade",
+   "Gorsk20 trade"
+  ],
+  "props": [
+   "yonder20 crates",
+   "brisk20 crates",
+   "calp20 crates",
+   "dunmore20 crates",
+   "eskel20 crates",
+   "flit20 crates",
+   "gantry20 crates",
+   "hobb20 crates",
+   "ibex20 crates",
+   "jolt20 crates",
+   "kelp20 crates",
+   "lumen20 crates",
+   "mott20 crates",
+   "nimb20 crates",
+   "oxter20 crates",
+   "pell20 crates",
+   "quill20 crates",
+   "rusk20 crates",
+   "sable20 crates",
+   "tarn20 crates",
+   "umber20 crates",
+   "vell20 crates",
+   "wick20 crates",
+   "xeno20 crates",
+   "yarrow20 crates",
+   "zest20 crates",
+   "zorn21 crates",
+   "quib21 crates",
+   "vexa21 crates",
+   "morlu21 crates",
+   "tanwick21 crates",
+   "plume21 crates",
+   "harb21 crates",
+   "fendle21 crates",
+   "gorsk21 crates",
+   "yonder21 crates",
+   "brisk21 crates",
+   "calp21 crates",
+   "dunmore21 crates",
+   "eskel21 crates",
+   "flit21 crates",
+   "gantry21 crates",
+   "hobb21 crates",
+   "ibex21 crates",
+   "jolt21 crates"
+  ],
+  "circulation": [
+   "kelp21 stairs",
+   "lumen21 stairs",
+   "mott21 stairs",
+   "nimb21 stairs",
+   "oxter21 stairs",
+   "pell21 stairs"
+  ],
+  "volume": [
+   "quill21 and rusk21",
+   "sable21 and tarn21",
+   "umber21 and vell21",
+   "wick21 and xeno21",
+   "yarrow21 and zest21",
+   "zorn22 and quib22"
+  ],
+  "condition": [
+   "vexa22ish",
+   "morlu22ish",
+   "tanwick22ish",
+   "plume22ish",
+   "harb22ish",
+   "fendle22ish",
+   "gorsk22ish",
+   "yonder22ish",
+   "brisk22ish",
+   "calp22ish",
+   "dunmore22ish",
+   "eskel22ish",
+   "flit22ish",
+   "gantry22ish",
+   "hobb22ish",
+   "ibex22ish",
+   "jolt22ish",
+   "kelp22ish",
+   "lumen22ish",
+   "mott22ish"
+  ],
+  "furnishing": [
+   "nimb22, oxter22, pell22",
+   "quill22, rusk22, sable22",
+   "tarn22, umber22, vell22",
+   "wick22, xeno22, yarrow22",
+   "zest22, zorn23, quib23",
+   "vexa23, morlu23, tanwick23",
+   "plume23, harb23, fendle23",
+   "gorsk23, yonder23, brisk23",
+   "calp23, dunmore23, eskel23",
+   "flit23, gantry23, hobb23",
+   "ibex23, jolt23, kelp23",
+   "lumen23, mott23, nimb23",
+   "oxter23, pell23, quill23",
+   "rusk23, sable23, tarn23",
+   "umber23, vell23, wick23",
+   "xeno23, yarrow23, zest23",
+   "zorn24, quib24, vexa24",
+   "morlu24, tanwick24, plume24",
+   "harb24, fendle24, gorsk24",
+   "yonder24, brisk24, calp24",
+   "dunmore24, eskel24, flit24",
+   "gantry24, hobb24, ibex24",
+   "jolt24, kelp24, lumen24",
+   "mott24, nimb24, oxter24",
+   "pell24, quill24, rusk24",
+   "sable24, tarn24, umber24",
+   "vell24, wick24, xeno24",
+   "yarrow24, zest24, zorn25"
+  ],
+  "targetType": {
+   "Test shop": {
+    "theme": "Fixture Offices"
+   },
+   "Test flat": {
+    "theme": "Fixture Flats"
+   },
+   "Test depot": {
+    "theme": "Fixture Works"
+   },
+   "Test clinic": {
+    "theme": "Fixture Lab"
+   },
+   "Test arcade": {
+    "theme": "Fixture Hall"
+   },
+   "Bank": {
+    "theme": "Fixture Offices",
+    "mix": "Fixture Hall",
+    "note": "Invented bank note."
+   },
+   "Mansion": {
+    "theme": "Fixture Manor",
+    "alt": "Fixture Villa",
+    "note": "Invented mansion note."
+   },
+   "Temple": {
+    "theme": "Fixture Manor",
+    "mix": "Anomalous Zone",
+    "note": "Invented temple note."
+   },
+   "Ship": {
+    "theme": "Fixture Works",
+    "district": "Dockside Test",
+    "landmark": "The Test Hulk",
+    "note": "Invented ship note."
+   },
+   "Records office": {
+    "theme": "Fixture Offices",
+    "forceRoom": 3,
+    "note": "Invented forced-room note."
+   },
+   "Casino": {
+    "theme": "Fixture Hall"
+   },
+   "Office building": {
+    "theme": "Fixture Offices"
+   }
+  },
+  "targetNames": [
+   "Test shop",
+   "Test flat",
+   "Test depot",
+   "Test clinic",
+   "Test arcade",
+   "Bank",
+   "Mansion",
+   "Temple",
+   "Ship",
+   "Records office",
+   "Casino",
+   "Office building"
+  ],
+  "approach": [
+   {
+    "n": "Quiet",
+    "gambit": "the entry point",
+    "seat": "secure",
+    "target": "an object",
+    "why": "Invented why, quiet."
+   },
+   {
+    "n": "Loud",
+    "gambit": "the attack point",
+    "seat": "controlled",
+    "target": "a person",
+    "why": "Invented why, loud."
+   },
+   {
+    "n": "Smooth",
+    "gambit": "the disguise",
+    "seat": "working",
+    "target": "a person",
+    "why": "Invented why, smooth."
+   },
+   {
+    "n": "Talk",
+    "gambit": "the connection",
+    "seat": "public",
+    "target": "a person",
+    "why": "Invented why, talk."
+   },
+   {
+    "n": "Fast",
+    "gambit": "the moment",
+    "seat": "public",
+    "target": "whatever is nearest",
+    "why": "Invented why, fast."
+   },
+   {
+    "n": "Paranormal",
+    "gambit": "the strange power",
+    "seat": "secure",
+    "target": "the anomaly itself",
+    "why": "Invented why, strange."
+   }
+  ],
+  "weather": {
+   "Bluetime": [
+    "quib25 sky",
+    "vexa25 sky",
+    "morlu25 sky",
+    "tanwick25 sky",
+    "plume25 sky",
+    "harb25 sky"
+   ],
+   "Night": [
+    "fendle25 night air",
+    "gorsk25 night air",
+    "yonder25 night air",
+    "brisk25 night air",
+    "calp25 night air",
+    "dunmore25 night air"
+   ]
+  },
+  "streetType": [
+   "a eskel25 lane",
+   "a flit25 lane",
+   "a gantry25 lane",
+   "a hobb25 lane",
+   "a ibex25 lane",
+   "a jolt25 lane",
+   "a kelp25 lane",
+   "a lumen25 lane",
+   "a mott25 lane",
+   "a nimb25 lane",
+   "a oxter25 lane",
+   "a pell25 lane"
+  ],
+  "streetDesc": [
+   "quill25 gables over rusk25 gutters",
+   "sable25 gables over tarn25 gutters",
+   "umber25 gables over vell25 gutters",
+   "wick25 gables over xeno25 gutters",
+   "yarrow25 gables over zest25 gutters",
+   "zorn26 gables over quib26 gutters",
+   "vexa26 gables over morlu26 gutters",
+   "tanwick26 gables over plume26 gutters",
+   "harb26 gables over fendle26 gutters",
+   "gorsk26 gables over yonder26 gutters",
+   "brisk26 gables over calp26 gutters",
+   "dunmore26 gables over eskel26 gutters"
+  ],
+  "streetSound": [
+   "the flit26 of a gantry26",
+   "the hobb26 of a ibex26",
+   "the jolt26 of a kelp26",
+   "the lumen26 of a mott26",
+   "the nimb26 of a oxter26",
+   "the pell26 of a quill26",
+   "the rusk26 of a sable26",
+   "the tarn26 of a umber26",
+   "the vell26 of a wick26",
+   "the xeno26 of a yarrow26",
+   "the zest26 of a zorn27",
+   "the quib27 of a vexa27"
+  ],
+  "streetSmell": [
+   "morlu27 smoke",
+   "tanwick27 smoke",
+   "plume27 smoke",
+   "harb27 smoke",
+   "fendle27 smoke",
+   "gorsk27 smoke",
+   "yonder27 smoke",
+   "brisk27 smoke",
+   "calp27 smoke",
+   "dunmore27 smoke",
+   "eskel27 smoke",
+   "flit27 smoke"
+  ],
+  "streetObstacle": [
+   "Gantry27 closure",
+   "Hobb27 closure",
+   "Ibex27 closure",
+   "Jolt27 closure",
+   "Kelp27 closure",
+   "Lumen27 closure",
+   "Mott27 closure",
+   "Nimb27 closure",
+   "Oxter27 closure",
+   "Pell27 closure",
+   "Quill27 closure",
+   "Rusk27 closure"
+  ],
+  "rumour": [
+   "%F%'s allies",
+   "%F%'s quirk or situation",
+   "%F%'s enemies",
+   "%F%'s goals",
+   "Invented rumour about the sable27 tarn27.",
+   "Invented rumour about the umber27 vell27.",
+   "Invented rumour about the wick27 xeno27.",
+   "Invented rumour about the yarrow27 zest27.",
+   "Invented rumour about the zorn28 quib28.",
+   "Invented rumour about the vexa28 morlu28.",
+   "Invented rumour about the tanwick28 plume28.",
+   "Invented rumour about the harb28 fendle28."
+  ],
+  "physThreat": [
+   [
+    "Gorsk28 brawlers",
+    "Invented physical threat text about yonder28 and brisk28."
+   ],
+   [
+    "Calp28 brawlers",
+    "Invented physical threat text about dunmore28 and eskel28."
+   ],
+   [
+    "Flit28 brawlers",
+    "Invented physical threat text about gantry28 and hobb28."
+   ],
+   [
+    "Ibex28 brawlers",
+    "Invented physical threat text about jolt28 and kelp28."
+   ],
+   [
+    "Lumen28 brawlers",
+    "Invented physical threat text about mott28 and nimb28."
+   ],
+   [
+    "Oxter28 brawlers",
+    "Invented physical threat text about pell28 and quill28."
+   ],
+   [
+    "Rusk28 brawlers",
+    "Invented physical threat text about sable28 and tarn28."
+   ],
+   [
+    "Umber28 brawlers",
+    "Invented physical threat text about vell28 and wick28."
+   ],
+   [
+    "Xeno28 brawlers",
+    "Invented physical threat text about yarrow28 and zest28."
+   ],
+   [
+    "Zorn29 brawlers",
+    "Invented physical threat text about quib29 and vexa29."
+   ],
+   [
+    "Morlu29 brawlers",
+    "Invented physical threat text about tanwick29 and plume29."
+   ],
+   [
+    "Harb29 brawlers",
+    "Invented physical threat text about fendle29 and gorsk29."
+   ]
+  ],
+  "socThreat": [
+   [
+    "Yonder29 fixer",
+    "Invented social threat text about brisk29 and calp29."
+   ],
+   [
+    "Dunmore29 fixer",
+    "Invented social threat text about eskel29 and flit29."
+   ],
+   [
+    "Gantry29 fixer",
+    "Invented social threat text about hobb29 and ibex29."
+   ],
+   [
+    "Jolt29 fixer",
+    "Invented social threat text about kelp29 and lumen29."
+   ],
+   [
+    "Mott29 fixer",
+    "Invented social threat text about nimb29 and oxter29."
+   ],
+   [
+    "Pell29 fixer",
+    "Invented social threat text about quill29 and rusk29."
+   ],
+   [
+    "Sable29 fixer",
+    "Invented social threat text about tarn29 and umber29."
+   ],
+   [
+    "Vell29 fixer",
+    "Invented social threat text about wick29 and xeno29."
+   ],
+   [
+    "Yarrow29 fixer",
+    "Invented social threat text about zest29 and zorn30."
+   ],
+   [
+    "Quib30 fixer",
+    "Invented social threat text about vexa30 and morlu30."
+   ],
+   [
+    "Tanwick30 fixer",
+    "Invented social threat text about plume30 and harb30."
+   ],
+   [
+    "Fendle30 fixer",
+    "Invented social threat text about gorsk30 and yonder30."
+   ]
+  ],
+  "district": [
+   [
+    "Testfield",
+    "Very low",
+    "Moderate",
+    "Very high",
+    "Low"
+   ],
+   [
+    "Dockside Test",
+    "Low",
+    "High",
+    "Very low",
+    "Moderate"
+   ],
+   [
+    "Hightown Test",
+    "Moderate",
+    "Very high",
+    "Low",
+    "High"
+   ],
+   [
+    "Lowmarsh Test",
+    "High",
+    "Very low",
+    "Moderate",
+    "Very high"
+   ],
+   [
+    "Quietside Test",
+    "Very high",
+    "Low",
+    "High",
+    "Very low"
+   ]
+  ],
+  "faction": [
+   [
+    "The Brisk30 Guild",
+    1,
+    "W"
+   ],
+   [
+    "The Calp30 Crew",
+    2,
+    "S"
+   ],
+   [
+    "The Dunmore30 Firm",
+    3,
+    "W"
+   ],
+   [
+    "The Eskel30 Guild",
+    4,
+    "S"
+   ],
+   [
+    "The Flit30 Crew",
+    5,
+    "W"
+   ],
+   [
+    "The Gantry30 Firm",
+    6,
+    "S"
+   ],
+   [
+    "The Hobb30 Guild",
+    1,
+    "W"
+   ],
+   [
+    "The Ibex30 Crew",
+    2,
+    "S"
+   ],
+   [
+    "The Jolt30 Firm",
+    3,
+    "W"
+   ],
+   [
+    "The Kelp30 Guild",
+    4,
+    "S"
+   ],
+   [
+    "The Lumen30 Crew",
+    5,
+    "W"
+   ],
+   [
+    "The Mott30 Firm",
+    6,
+    "S"
+   ]
+  ],
+  "factionDetail": {
+   "The Brisk30 Guild": {
+    "what": "w",
+    "turf": "t",
+    "boss": "b",
+    "with": "friends nimb30",
+    "against": "foes oxter30",
+    "now": "Invented goal pell30.",
+    "p": "p.0",
+    "secret": "Invented secret quill30."
+   },
+   "The Calp30 Crew": {
+    "what": "w",
+    "turf": "t",
+    "boss": "b",
+    "with": "friends rusk30",
+    "against": "foes sable30",
+    "now": "Invented goal tarn30.",
+    "p": "p.0",
+    "secret": "Invented secret umber30."
+   },
+   "The Dunmore30 Firm": {
+    "what": "w",
+    "turf": "t",
+    "boss": "b",
+    "with": "friends vell30",
+    "against": "foes wick30",
+    "now": "Invented goal xeno30.",
+    "p": "p.0",
+    "secret": "Invented secret yarrow30."
+   },
+   "The Eskel30 Guild": {
+    "what": "w",
+    "turf": "t",
+    "boss": "b",
+    "with": "friends zest30",
+    "against": "foes zorn31",
+    "now": "Invented goal quib31.",
+    "p": "p.0",
+    "secret": "Invented secret vexa31."
+   },
+   "The Flit30 Crew": {
+    "what": "w",
+    "turf": "t",
+    "boss": "b",
+    "with": "friends morlu31",
+    "against": "foes tanwick31",
+    "now": "Invented goal plume31.",
+    "p": "p.0",
+    "secret": "Invented secret harb31."
+   },
+   "The Gantry30 Firm": {
+    "what": "w",
+    "turf": "t",
+    "boss": "b",
+    "with": "friends fendle31",
+    "against": "foes gorsk31",
+    "now": "Invented goal yonder31.",
+    "p": "p.0",
+    "secret": "Invented secret brisk31."
+   },
+   "The Hobb30 Guild": {
+    "what": "w",
+    "turf": "t",
+    "boss": "b",
+    "with": "friends calp31",
+    "against": "foes dunmore31",
+    "now": "Invented goal eskel31.",
+    "p": "p.0",
+    "secret": "Invented secret flit31."
+   },
+   "The Ibex30 Crew": {
+    "what": "w",
+    "turf": "t",
+    "boss": "b",
+    "with": "friends gantry31",
+    "against": "foes hobb31",
+    "now": "Invented goal ibex31.",
+    "p": "p.0",
+    "secret": "Invented secret jolt31."
+   },
+   "The Jolt30 Firm": {
+    "what": "w",
+    "turf": "t",
+    "boss": "b",
+    "with": "friends kelp31",
+    "against": "foes lumen31",
+    "now": "Invented goal mott31.",
+    "p": "p.0",
+    "secret": "Invented secret nimb31."
+   }
+  },
+  "factionThumb": {
+   "The Kelp30 Guild": {
+    "cat": "Invented Cat",
+    "thumb": "Invented thumbnail oxter31."
+   },
+   "The Lumen30 Crew": {
+    "cat": "Invented Cat",
+    "thumb": "Invented thumbnail pell31."
+   },
+   "The Mott30 Firm": {
+    "cat": "Invented Cat",
+    "thumb": "Invented thumbnail quill31."
+   }
+  },
+  "gaz": {
+   "Testfield": {
+    "streets": "Invented streets rusk31.",
+    "named": [
+     "Sable31 Road",
+     "Tarn31 Road",
+     "Umber31 Road"
+    ],
+    "buildings": "Invented buildings vell31.",
+    "landmarks": [
+     "The Wick31 Tower",
+     "The Xeno31 Tower",
+     "The Yarrow31 Tower"
+    ],
+    "notables": [
+     "Zest31 Zorn32, a watcher",
+     "Quib32 Vexa32, a watcher",
+     "Morlu32 Tanwick32, a watcher"
+    ],
+    "factions": "the brisk30 guild and the eskel30 guild",
+    "special": "Invented district rule plume32."
+   },
+   "Dockside Test": {
+    "streets": "Invented streets harb32.",
+    "named": [
+     "Fendle32 Road",
+     "Gorsk32 Road",
+     "Yonder32 Road"
+    ],
+    "buildings": "Invented buildings brisk32.",
+    "landmarks": [
+     "The Calp32 Tower",
+     "The Dunmore32 Tower",
+     "The Eskel32 Tower"
+    ],
+    "notables": [
+     "Flit32 Gantry32, a watcher",
+     "Hobb32 Ibex32, a watcher",
+     "Jolt32 Kelp32, a watcher"
+    ],
+    "factions": "the calp30 crew and the flit30 crew"
+   },
+   "Hightown Test": {
+    "streets": "Invented streets lumen32.",
+    "named": [
+     "Mott32 Road",
+     "Nimb32 Road",
+     "Oxter32 Road"
+    ],
+    "buildings": "Invented buildings pell32.",
+    "landmarks": [
+     "The Quill32 Tower",
+     "The Rusk32 Tower",
+     "The Sable32 Tower"
+    ],
+    "notables": [
+     "Tarn32 Umber32, a watcher",
+     "Vell32 Wick32, a watcher",
+     "Xeno32 Yarrow32, a watcher"
+    ],
+    "factions": "the dunmore30 firm and the gantry30 firm",
+    "special": "Invented district rule zest32."
+   },
+   "Lowmarsh Test": {
+    "streets": "Invented streets zorn33.",
+    "named": [
+     "Quib33 Road",
+     "Vexa33 Road",
+     "Morlu33 Road"
+    ],
+    "buildings": "Invented buildings tanwick33.",
+    "landmarks": [
+     "The Plume33 Tower",
+     "The Harb33 Tower",
+     "The Fendle33 Tower"
+    ],
+    "notables": [
+     "Gorsk33 Yonder33, a watcher",
+     "Brisk33 Calp33, a watcher",
+     "Dunmore33 Eskel33, a watcher"
+    ],
+    "factions": "the eskel30 guild and the hobb30 guild"
+   },
+   "Quietside Test": {
+    "streets": "Invented streets flit33.",
+    "named": [
+     "Gantry33 Road",
+     "Hobb33 Road",
+     "Ibex33 Road"
+    ],
+    "buildings": "Invented buildings jolt33.",
+    "landmarks": [
+     "The Kelp33 Tower",
+     "The Lumen33 Tower",
+     "The Mott33 Tower"
+    ],
+    "notables": [
+     "Nimb33 Oxter33, a watcher",
+     "Pell33 Quill33, a watcher",
+     "Rusk33 Sable33, a watcher"
+    ],
+    "factions": "the flit30 crew and the ibex30 crew",
+    "special": "Invented district rule tarn33."
+   }
+  }
+ },
+ "extra": {
+  "BAND_RANGE": {
+   "public": [
+    2,
+    3
+   ],
+   "working": [
+    3,
+    4
+   ],
+   "controlled": [
+    2,
+    3
+   ],
+   "secure": [
+    1,
+    2
+   ]
+  },
+  "ROMAN": [
+   "0",
+   "I",
+   "II",
+   "III",
+   "IV",
+   "V",
+   "VI"
+  ],
+  "SERVICE_RE": {
+   "$re": "dock|closet|elevator|stair|fire escape|garage|roof|basement|maintenance|waste|cellar|kitchen|service|coolant|hydraulic",
+   "flags": "i"
+  },
+  "CANVAS_BAND": {
+   "public": "4",
+   "working": "3",
+   "controlled": "2",
+   "secure": "1"
+  },
+  "RING_R": {
+   "public": 1180,
+   "working": 840,
+   "controlled": 520,
+   "secure": 220
+  },
+  "NODE_W": 280,
+  "NODE_H": 140,
+  "VECTOR_R": 1560,
+  "RING_WIDEN": 1.45
+ }
+}

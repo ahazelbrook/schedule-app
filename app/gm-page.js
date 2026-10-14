@@ -1,0 +1,1097 @@
+/* gm-page.js — the GM's page (#gm, GM.md): the console's nine rollers, the location generator with its map, the cast as a
+   list to push to the iPad, the state rail (crew, clocks, bargains owed, pins, who is on stage) and the capture bar.
+   Hosted build only (window.claude.gm); in the claude.ai artifact, or for a player, the page says so and does nothing.
+
+   window.B68GmPage (boot.js):
+     open(root, api)   draw into `root` (boot calls it when the mode becomes `gm`)
+     close()           flush the pending state write, drop listeners
+     campaign(doc)     the campaign document changed (crew, clocks, session, scene)
+     purge()           forget every GM pack cached in this browser (boot calls it when the viewer is not the GM)
+   api = { ready() -> Promise, isGM() -> bool, me() -> id, gm() -> window.claude.gm | null, db() -> db | null,
+           campaign() -> doc | null, saveFile(name, data), copy(text, okMessage) }
+
+   Where things live. The pack (the generators' tables, GM-only text) comes from GET /api/gm/pack and is cached in
+   IndexedDB only (db `b68-gm`, store `kv`, key `pack:<userId>`): never localStorage, the artifact db or Cache Storage.
+   The GM state document (GET/PATCH /api/gm/state) holds the live controls, the current card per tool as replay info
+   ({seed, ui, mem-before}, never the card), the last five rolls per tool, pins, capture and the console's bargains;
+   patches are maps (null deletes), debounced 800 ms. `b68.gm.sticky` in localStorage mirrors the live controls and the
+   current cards (replay info only) so a reload draws at once. Nothing from capture is written to the campaign log.
+
+   Safety. Pack text and cards reach the page through B68Markdown.render (which escapes all HTML) or esc(); there is no
+   eval. Only a player-layer map render, made here, can be sent to the display (`gate`, checks/runtime/gm-nosecrets
+   and gm.e2e.mjs test it). The pure helpers are exported for Node as module.exports._pure. */
+(function (root, factory) {
+  'use strict';
+  var M = factory(root);
+  if (typeof module === 'object' && module && module.exports) module.exports = M;
+  else root.B68GmPage = M;
+})(typeof self !== 'undefined' ? self : this, function (W) {
+  'use strict';
+
+  /* =====================================================================================================================
+     Pure helpers (no DOM)
+     ===================================================================================================================== */
+  var P = {};
+  var LIMITS = P.LIMITS = { hist: 5, pins: 50, capture: 400, captureText: 500, stateSoft: 240 * 1024, stateCap: 256 * 1024, debounce: 800, staleDays: 3, partBytes: 900 * 1024, parts: 12 };
+  var BANDS = P.BANDS = ['public', 'working', 'controlled', 'secure'];
+  var BUCKETS = P.BUCKETS = [
+    { k: 'n', label: 'Name', head: 'Names', key: 'P' },
+    { k: 'x', label: 'Loose end', head: 'Loose ends', key: 'X' },
+    { k: 'm', label: 'Moment', head: 'Moments', key: 'M' },
+    { k: 'r', label: 'Rolled', head: 'Rolled at the table', key: 'L' }
+  ];
+  var VIEWS = ['rings', 'plan', 'iso', 'section'], THEMES = ['rulebook', 'blueprint', 'casefile', 'board'];
+  P.MAP0 = { view: 'rings', theme: 'rulebook', layer: 'gm', reveal: { public: true } };
+
+  function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
+  function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
+  function esc(s) { return str(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function nowIso() { return new Date().toISOString(); }
+  function uid(p) { return p + Date.now().toString(36) + Math.floor(Math.random() * 1679616).toString(36); }
+  function slug(s) { return str(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'roll'; }
+  P.isObj = isObj; P.clone = clone; P.esc = esc; P.slug = slug;
+
+  /* the server's PATCH: plain objects merge, arrays and scalars replace, null deletes (GM.md) */
+  function applyPatch(doc, patch) {
+    var out = isObj(doc) ? clone(doc) : {};
+    Object.keys(patch || {}).forEach(function (k) {
+      var v = patch[k];
+      if (v === null || v === undefined) delete out[k];
+      else if (isObj(v)) out[k] = applyPatch(isObj(out[k]) ? out[k] : {}, v);
+      else out[k] = clone(v);
+    });
+    return out;
+  }
+  /* two pending patches as one: sending the result equals sending a, then b (a key nulled and then set to an object is
+     sent as the object; ids here are never reused, so that case does not arise) */
+  function mergePatch(a, b) {
+    var out = isObj(a) ? clone(a) : {};
+    Object.keys(b || {}).forEach(function (k) {
+      var v = b[k];
+      if (isObj(v) && isObj(out[k])) out[k] = mergePatch(out[k], v);
+      else out[k] = v === undefined ? null : clone(v);
+    });
+    return out;
+  }
+  P.applyPatch = applyPatch; P.mergePatch = mergePatch;
+
+  /* entries of a map { id: { at } } newest first */
+  function newest(map) {
+    return Object.keys(isObj(map) ? map : {}).filter(function (k) { return isObj(map[k]); })
+      .map(function (k) { return Object.assign({ _id: k }, map[k]); })
+      .sort(function (a, b) { return str(a.at) < str(b.at) ? 1 : str(a.at) > str(b.at) ? -1 : (a._id < b._id ? 1 : -1); });
+  }
+  P.newest = newest;
+  /* the patch that adds `entry` under `id` to `map` and drops the oldest past `max` */
+  function addCapped(map, id, entry, max) {
+    var p = {}; p[id] = entry;
+    var after = Object.assign({}, isObj(map) ? map : {}); after[id] = entry;
+    newest(after).slice(max).forEach(function (e) { p[e._id] = null; });
+    return p;
+  }
+  P.addCapped = addCapped;
+
+  /* the pack file (npm run gm:pack, format 1) -> { ok, errors, parts: [{ name, bytes, src }], exportedAt } */
+  var PART_RE = /^[a-z0-9-]{1,32}$/;
+  function bytesOf(s) { try { return new TextEncoder().encode(s).length; } catch (e) { return unescape(encodeURIComponent(s)).length; } }
+  function validatePack(pk) {
+    var errors = [], parts = [];
+    if (!isObj(pk)) return { ok: false, errors: ['That file is not a GM pack (not a JSON object).'], parts: parts, exportedAt: null };
+    if (pk.format !== 1) errors.push('Unknown pack format ' + JSON.stringify(pk.format) + ': expected 1. Rebuild it with npm run gm:pack.');
+    var ps = isObj(pk.parts) ? pk.parts : null;
+    if (!ps) errors.push('The pack has no parts.');
+    else {
+      ['console', 'location'].forEach(function (n) {
+        if (!isObj(ps[n])) errors.push('The pack has no ' + n + ' part.');
+        else if (!isObj(ps[n].T)) errors.push('The ' + n + ' part has no tables (T).');
+      });
+      var names = Object.keys(ps);
+      if (names.length > LIMITS.parts) errors.push('Too many parts (' + names.length + ', at most ' + LIMITS.parts + ').');
+      names.forEach(function (n) {
+        if (!PART_RE.test(n)) { errors.push('Part name ' + JSON.stringify(n) + ' is not allowed.'); return; }
+        if (!isObj(ps[n])) { errors.push('Part ' + n + ' is not an object.'); return; }
+        var body = partBody(ps[n]), b = bytesOf(JSON.stringify(body));
+        if (b > LIMITS.partBytes) errors.push('Part ' + n + ' is too large (' + Math.round(b / 1024) + ' KiB, at most 900).');
+        parts.push({ name: n, bytes: b, src: isObj(ps[n].src) ? ps[n].src : {} });
+      });
+    }
+    return { ok: !errors.length, errors: errors, parts: parts, exportedAt: typeof pk.exportedAt === 'string' ? pk.exportedAt : null };
+  }
+  function partBody(part) { var b = {}; Object.keys(part || {}).forEach(function (k) { if (k !== 'src') b[k] = part[k]; }); return b; }
+  /* one POST /api/gm/pack per part */
+  function partRequests(pk) { return Object.keys(pk.parts).map(function (n) { return { part: n, src: isObj(pk.parts[n].src) ? pk.parts[n].src : {}, body: partBody(pk.parts[n]) }; }); }
+  P.validatePack = validatePack; P.partBody = partBody; P.partRequests = partRequests;
+
+  /* the bands the player layer reveals: public, plus what the GM ticked, and only while Layer is Player (on the GM layer
+     the ticks are kept but nothing beyond public counts) */
+  function revealList(map) {
+    if (!isObj(map) || map.layer !== 'player') return ['public'];
+    var r = isObj(map.reveal) ? map.reveal : {};
+    return BANDS.filter(function (b) { return b === 'public' || r[b] === true; });
+  }
+  P.revealList = revealList;
+  P.REVEAL0 = { public: true, working: false, controlled: false, secure: false };   /* every new roll and replay starts here */
+
+  /* An SVG's visible text: tags out (so a name split over <tspan>s joins up), XML entities decoded, whitespace collapsed,
+     lower case. */
+  function svgText(svg) {
+    return str(svg).replace(/<[^>]*>/g, ' ').replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos);/gi, function (m, e) {
+      if (e.charAt(0) === '#') { var n = e.charAt(1).toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); try { return String.fromCodePoint(n); } catch (x) { return ' '; } }
+      return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[e.toLowerCase()];
+    }).replace(/\s+/g, ' ').toLowerCase();
+  }
+  /* What the players must not read on a map with these bands revealed: every room in a hidden band, both threats, and
+     the target room while its band is hidden. A name that is also a revealed room's name is not a secret. */
+  function hiddenNames(roll, reveal) {
+    var rooms = roll && Array.isArray(roll.rooms) ? roll.rooms : [], shown = {}, out = [];
+    rooms.forEach(function (r) { if (r && reveal.indexOf(r.band) >= 0) shown[str(r.name).trim().toLowerCase()] = 1; });
+    function add(n) { n = str(n).trim().toLowerCase(); if (n.length >= 3 && !shown[n] && out.indexOf(n) < 0) out.push(n); }
+    rooms.forEach(function (r) { if (r && reveal.indexOf(r.band) < 0) add(r.name); });
+    if (roll) { add(roll.physThreatName); add(roll.socThreatName); if (roll.targetRoom && reveal.indexOf(roll.targetBand) < 0) add(roll.targetRoom); }
+    return out;
+  }
+  /* the hidden names the svg prints (whole words, any case), [] when it is clean */
+  function leaks(svg, roll, reveal) {
+    var t = ' ' + svgText(svg) + ' ';
+    return hiddenNames(roll, reveal).filter(function (n) {
+      var i = -1;
+      while ((i = t.indexOf(n, i + 1)) >= 0) { if (!/[a-z0-9]/.test(t.charAt(i - 1)) && !/[a-z0-9]/.test(t.charAt(i + n.length))) return true; }
+      return false;
+    });
+  }
+  P.svgText = svgText; P.hiddenNames = hiddenNames; P.leaks = leaks;
+  P.LEAK_MSG = 'This view would name a hidden room: use Rings or Iso, or reveal more bands.';
+  /* The only way a map reaches the display: the PLAYER layer, rendered here from the roll, whatever the controls say.
+     Refuses outright when the controls are on the GM layer, so a GM render can never be pushed by accident, and refuses a
+     player render that prints a hidden name (the map kit titles a plan or section level after the room it holds, hidden
+     or not: a kit bug, GM.md). */
+  function playerDisplay(roll, map, render) {
+    if (!isObj(map) || map.layer !== 'player') throw new Error('Only the player layer can go to the iPad. Switch Layer to Player first.');
+    if (!roll || typeof render !== 'function') throw new Error('Roll a location first.');
+    var reveal = revealList(map);
+    var r = render(roll, { view: VIEWS.indexOf(map.view) >= 0 ? map.view : 'rings', theme: THEMES.indexOf(map.theme) >= 0 ? map.theme : 'rulebook', layer: 'player', reveal: reveal, width: 1400 });
+    if (leaks(r.svg, roll, reveal).length) { var e = new Error(P.LEAK_MSG); e.leak = true; throw e; }
+    return { kind: 'svg', title: str(roll.name).slice(0, 200), caption: (roll.district ? roll.district + ' · ' : '') + 'surveyed: ' + reveal.join(', '), svg: r.svg, warnings: r.warnings || [], reveal: reveal };
+  }
+  P.playerDisplay = playerDisplay;
+  /* the street description for the iPad, as plain text (markdown markers out: the display shows text as it is) */
+  function plainText(md) {
+    return str(md).split('\n').map(function (l) {
+      return l.replace(/^\s{0,3}#{1,6}\s+/, '').replace(/^\s*>\s?/, '').replace(/^\s*[-*+]\s+/, '• ')
+        .replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/\*\*([^*]+)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1').replace(/\*([^*\n]+)\*/g, '$1').replace(/(^|\W)_([^_\n]+)_(?=\W|$)/g, '$1$2')
+        .replace(/`([^`]+)`/g, '$1').replace(/\s+$/, '');
+    }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  P.plainText = plainText;
+
+  /* ---------- console replay: a card is redrawn with the bargains and callbacks as they were when it was rolled ---------- */
+  function conSnapshot(con) { var c = isObj(con) ? con : {}; return JSON.stringify({ owed: c.owed || {}, struck: c.struck || {}, used: c.used || {} }); }
+  /* the history / current-card entry for a console roll: replay info only, never the card */
+  function consoleEntry(res, con) {
+    var rp = res.replay;
+    return { id: rp.id, seed: rp.seed, ui: rp.ui, mem: JSON.stringify(rp.mem), con: conSnapshot(con), label: str(res.meta && res.meta.label), at: nowIso() };
+  }
+  /* redraw an entry: its own snapshot of the console state (entries from before snapshots use `fallback`), its own memory */
+  function replayConsoleEntry(C, T, campaign, e, fallback) {
+    if (!C || !T || !isObj(e)) return null;
+    var mem = {}, state = fallback || {};
+    try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
+    if (typeof e.con === 'string') { try { state = JSON.parse(e.con); } catch (x) {} }
+    try { return C.create({ T: T, campaign: campaign || {}, state: state, mem: {} }).roll(e.id, e.ui || {}, { seed: e.seed, mem: mem }); } catch (x) { return null; }
+  }
+  P.conSnapshot = conSnapshot; P.consoleEntry = consoleEntry; P.replayConsoleEntry = replayConsoleEntry;
+
+  /* ---------- saving the GM state ---------- */
+  function bytes(o) { var s; try { s = typeof o === 'string' ? o : JSON.stringify(o); } catch (e) { return 0; } return bytesOf(s || ''); }
+  P.bytes = bytes;
+  /* Is it worth retrying a failed write? A network error, a conflict (409), a rate limit (429) or a server error (5xx) is;
+     any other 4xx (malformed, too large, forbidden) will fail the same way again. */
+  function retryable(e) { var s = e && e.status; return !s || s === 409 || s === 429 || s >= 500; }
+  P.retryable = retryable;
+  /* The write queue for one page session. add() folds a patch into the pending one and saves after `debounce` ms; one
+     write is in flight at a time, and whatever was added meanwhile goes as soon as it lands (even after the page closed:
+     the session flushes itself, it does not look at whether the page is still open). A retryable failure puts the patch
+     back and retries with backoff; any other is parked (kept for the sticky copy, never resent) so later patches still
+     save. o = { send(patch) -> Promise<{ doc, updatedAt }>, beacon?(patch) -> Promise, saved(r, pendingAfter),
+     changed(state), delay(fn, ms) -> handle, cancel(handle), debounce } */
+  function makeSaver(o) {
+    var st = { pending: null, writing: false, parked: null, error: '', retryMs: 0, timer: null };
+    function changed() { if (o.changed) { try { o.changed(st); } catch (e) {} } }
+    function schedule(ms) { if (st.timer !== null) o.cancel(st.timer); st.timer = o.delay(function () { st.timer = null; flush(); }, ms); }
+    function add(p) { st.pending = st.pending ? mergePatch(st.pending, p) : clone(p); schedule(o.debounce); changed(); }
+    function flush() {
+      if (st.timer !== null) { o.cancel(st.timer); st.timer = null; }
+      if (st.writing || !st.pending) return Promise.resolve();
+      var p = st.pending; st.pending = null; st.writing = true; changed();
+      return Promise.resolve().then(function () { return o.send(p); }).then(function (r) {
+        st.writing = false; st.retryMs = 0; if (!st.parked) st.error = '';
+        if (o.saved) { try { o.saved(r, st.pending); } catch (e) {} }
+        changed();
+        if (st.pending) return flush();
+      }, function (e) {
+        st.writing = false;
+        if (retryable(e)) {
+          st.pending = st.pending ? mergePatch(p, st.pending) : p;
+          st.retryMs = Math.min(30000, st.retryMs ? st.retryMs * 2 : 2500);
+          st.error = 'retrying'; schedule(st.retryMs);
+        } else {
+          st.parked = st.parked ? mergePatch(st.parked, p) : p;
+          st.error = (e && e.message) || 'refused';
+          if (st.pending) { changed(); return flush(); }
+        }
+        changed();
+      });
+    }
+    /* the page is going away: send what is pending now, with keepalive, even if a write is in flight */
+    function beacon() {
+      if (st.timer !== null) { o.cancel(st.timer); st.timer = null; }
+      if (!st.pending || !o.beacon) return flush();
+      var p = st.pending; st.pending = null;
+      return Promise.resolve().then(function () { return o.beacon(p); }).then(function (r) { if (r && o.saved) { try { o.saved(r, st.pending); } catch (e) {} } },
+        function () { st.pending = st.pending ? mergePatch(p, st.pending) : p; });
+    }
+    return { add: add, flush: flush, beacon: beacon, state: function () { return st; } };
+  }
+  P.makeSaver = makeSaver;
+  /* the display gate: an svg goes out only if playerDisplay made it; every other kind passes */
+  function makeGate() {
+    var ok = [];
+    return {
+      mark: function (svg) { ok.push(svg); if (ok.length > 4) ok.shift(); return svg; },
+      allows: function (d) { return isObj(d) && (d.kind !== 'svg' || (typeof d.svg === 'string' && ok.indexOf(d.svg) >= 0)); }
+    };
+  }
+  P.makeGate = makeGate;
+
+  /* a key press on #gm -> an action, or null. ev: { key, ctrlKey, altKey, metaKey, typing } */
+  function keyAction(ev) {
+    if (!ev || ev.ctrlKey || ev.altKey || ev.metaKey) return null;
+    var k = str(ev.key);
+    if (ev.typing) return k === 'Escape' ? { type: 'esc' } : null;
+    if (/^[1-9]$/.test(k)) return { type: 'button', n: +k };
+    switch (k.toLowerCase()) {
+      case 'n': return { type: 'panel', panel: 'npc' };
+      case 'b': return { type: 'panel', panel: 'location' };
+      case 't': return { type: 'panel', panel: 'rules' };
+      case 's': case 'e': return { type: 'reserved' };            /* Street and Engagement, later */
+      case 'p': return { type: 'capture', bucket: 'n' };
+      case 'x': return { type: 'capture', bucket: 'x' };
+      case 'm': return { type: 'capture', bucket: 'm' };
+      case 'l': return { type: 'last' };
+      case 'h': return { type: 'blank' };
+      case 'escape': return { type: 'esc' };
+    }
+    return null;
+  }
+  P.keyAction = keyAction;
+
+  function pad2(n) { n = Math.max(0, Math.floor(+n || 0)); return n < 10 ? '0' + n : String(n); }
+  function dmy(d) { d = d instanceof Date ? d : new Date(d); if (isNaN(d)) return ''; return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + d.getFullYear(); }
+  function ageDays(iso, now) { var t = Date.parse(iso || ''); if (!t) return null; return ((now == null ? Date.now() : +now) - t) / 86400000; }
+  P.dmy = dmy; P.ageDays = ageDays; P.pad2 = pad2;
+
+  /* "Export tonight's note": the capture under four headings, then the bargains and callbacks (doc = GM state) */
+  function exportNote(doc, opts) {
+    var o = opts || {}, n = Math.max(0, Math.floor(+o.session || 0)), d = doc || {};
+    var cap = newest(d.capture).reverse();
+    var out = ['# Session ' + n + ': notes from the table', '', '*Exported ' + dmy(o.now || new Date()) + ' from the GM page.*', ''];
+    BUCKETS.forEach(function (b) {
+      out.push('## ' + b.head, '');
+      var list = cap.filter(function (e) { return e.bucket === b.k && str(e.text).trim(); });
+      if (!list.length) out.push('- (none)');
+      list.forEach(function (e) { out.push('- ' + str(e.text).replace(/\s+/g, ' ').trim()); });
+      out.push('');
+    });
+    var con = isObj(d.con) ? d.con : {};
+    var owed = Object.keys(isObj(con.owed) ? con.owed : {}).map(function (k) { var x = con.owed[k]; return isObj(x) ? str(x.text) + (x.src ? ' (' + str(x.src) + ')' : '') : str(x); }).filter(Boolean);
+    var struck = Object.keys(isObj(con.struck) ? con.struck : {}).map(function (k) { return str(con.struck[k]); }).filter(Boolean);
+    var used = Object.keys(isObj(con.used) ? con.used : {}).map(function (k) { return str(con.used[k]); }).filter(Boolean);
+    out.push('## Bargains accepted', '');
+    if (!owed.length) out.push('- (none)'); owed.forEach(function (t) { out.push('- ' + t); });
+    if (struck.length) { out.push('', '## Bargains collected', ''); struck.forEach(function (t) { out.push('- ' + t); }); }
+    out.push('', '## Callbacks used', '');
+    if (!used.length) out.push('- (none)'); used.forEach(function (t) { out.push('- ' + t); });
+    out.push('');
+    return { filename: 'b68g-s' + pad2(n) + '-notes.md', text: out.join('\n') };
+  }
+  P.exportNote = exportNote;
+
+  /* a console roll as plain text (Copy, "L files last roll") */
+  function plainMd(s) { return str(s).replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/`([^`]+)`/g, '$1').replace(/\s+/g, ' ').trim(); }
+  function consolePlain(res) {
+    var m = res && res.meta || {}, out = [str(m.title) + (m.sub ? ' (' + str(m.sub) + ')' : '')];
+    (res && res.lines || []).forEach(function (l) {
+      if (l.kind === 'grid') (l.rows || []).forEach(function (r) { out.push(str(r.k) + ': ' + plainMd(r.md)); });
+      else out.push(plainMd(l.md) + (l.small ? ' ' + plainMd(l.small) : ''));
+    });
+    return out.join('\n');
+  }
+  P.plainMd = plainMd; P.consolePlain = consolePlain;
+  function stripSize(svg) { return str(svg).replace(/<svg([^>]*?)\swidth="[^"]*"/, '<svg$1').replace(/<svg([^>]*?)\sheight="[^"]*"/, '<svg$1'); }
+  P.stripSize = stripSize;
+
+  if (!W || !W.document) return { _pure: P };
+
+  /* =====================================================================================================================
+     The page
+     ===================================================================================================================== */
+  var document = W.document;
+  var IDB = 'b68-gm', STORE = 'kv', STICKY = 'b68.gm.sticky';
+  var S = null;                  /* the open page; null when closed */
+  var camp = null;               /* the latest campaign document from boot */
+  var gate = makeGate();
+  var lastSaver = null;          /* the newest session's saver: pagehide sends what it still holds */
+
+  function toast(msg, bad) { var A = W.B68; if (A && A.toast) A.toast(msg, !!bad); }
+  function errText(e) { return e && e.message || String(e || 'unknown error'); }
+  function md(s) { var R = W.B68Markdown; return R && R.render ? R.render(str(s)) : '<p>' + esc(s) + '</p>'; }
+  function gmApi() { return S && S.api && S.api.gm ? S.api.gm() : (W.claude && W.claude.gm) || null; }
+  function $q(sel) { return S && S.root ? S.root.querySelector(sel) : null; }
+  function part(name) { var p = S && S.pack && S.pack.parts && S.pack.parts[name]; return p ? p.body : null; }
+
+  /* ---------- IndexedDB (the pack cache) ---------- */
+  function idbOpen() {
+    return new Promise(function (res, rej) {
+      if (!W.indexedDB) { rej(new Error('no IndexedDB')); return; }
+      var r; try { r = W.indexedDB.open(IDB, 1); } catch (e) { rej(e); return; }
+      r.onupgradeneeded = function () { try { r.result.createObjectStore(STORE); } catch (e) {} };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error || new Error('IndexedDB failed')); };
+      r.onblocked = function () { rej(new Error('IndexedDB blocked')); };
+    });
+  }
+  function idbDo(mode, fn) {
+    return idbOpen().then(function (db) {
+      return new Promise(function (res, rej) {
+        var out, tx; try { tx = db.transaction(STORE, mode); out = fn(tx.objectStore(STORE)); } catch (e) { db.close(); rej(e); return; }
+        tx.oncomplete = function () { db.close(); res(out && 'result' in out ? out.result : out); };
+        tx.onerror = tx.onabort = function () { db.close(); rej(tx.error || new Error('IndexedDB transaction failed')); };
+      });
+    });
+  }
+  var kvGet = function (k) { return idbDo('readonly', function (s) { return s.get(k); }); };
+  var kvSet = function (k, v) { return idbDo('readwrite', function (s) { s.put(v, k); }); };
+  var kvDel = function (k) { return idbDo('readwrite', function (s) { s.delete(k); }); };
+  /* every pack:* key, whoever cached it; the database is only opened if it exists (no empty database for a player) */
+  function purge() {
+    try { W.localStorage.removeItem(STICKY); } catch (e) {}
+    if (!W.indexedDB) return Promise.resolve(0);
+    var exists = typeof W.indexedDB.databases === 'function'
+      ? Promise.resolve().then(function () { return W.indexedDB.databases(); }).then(function (l) { return (l || []).some(function (d) { return d && d.name === IDB; }); }, function () { return true; })
+      : Promise.resolve(true);
+    return exists.then(function (yes) {
+      if (!yes) return 0;
+      return idbDo('readwrite', function (s) {
+        var n = { result: 0 }, cur = s.openCursor();
+        cur.onsuccess = function () { var c = cur.result; if (!c) return; if (String(c.key).indexOf('pack:') === 0) { c.delete(); n.result++; } c.continue(); };
+        return n;
+      });
+    }).catch(function () { return 0; });
+  }
+
+  /* ---------- sticky (localStorage): live controls and current cards (replay info only), and any refused patch ---------- */
+  function readSticky() { try { var s = JSON.parse(W.localStorage.getItem(STICKY) || 'null'); return isObj(s) && s.v === 1 && s.user === S.me ? s : null; } catch (e) { return null; } }
+  function writeSticky() {
+    if (!S) return;
+    var parked = S.saver ? S.saver.state().parked : null;
+    if (S.carriedParked) parked = parked ? mergePatch(S.carriedParked, parked) : S.carriedParked;
+    try { W.localStorage.setItem(STICKY, JSON.stringify({ v: 1, user: S.me, live: (S.doc.con || {}).live || {}, cards: S.doc.cards || {}, parked: parked || undefined, at: nowIso() })); } catch (e) {}
+  }
+
+  /* ---------- the GM state document ---------- */
+  var HARD = LIMITS.stateCap - 4096;          /* the server's cap less a margin for its own keys */
+  /* every change goes through here: sized in bytes; refused past the soft cap (a roll, `force`, may go up to the hard cap) */
+  function patch(p, opts) {
+    if (!S || !S.saver) return false;
+    var next = applyPatch(S.doc, p), b = bytes(next), force = !!(opts && opts.force);
+    if (b > (force ? HARD : LIMITS.stateSoft)) { toast('The GM notes are full (' + Math.round(b / 1024) + ' of 256 KiB). Export tonight’s note and clear the capture first.', true); return false; }
+    S.doc = next;
+    S.saver.add(p);
+    writeSticky();
+    return true;
+  }
+  /* one saver per page session: it keeps flushing after close() until what was pending has gone */
+  function makeSessionSaver(me) {
+    return makeSaver({
+      debounce: LIMITS.debounce,
+      delay: function (fn, ms) { return setTimeout(fn, ms); }, cancel: function (h) { clearTimeout(h); },
+      send: function (p) { var g = gmApi() || (W.claude && W.claude.gm); if (!g) return Promise.reject(new Error('the GM tools are not available')); return g.patchState(p); },
+      /* pagehide / hidden tab: a keepalive request outlives the page (64 KiB at most; bigger goes the normal way) */
+      beacon: function (p) {
+        var body = JSON.stringify(p);
+        if (bytesOf(body) > 60000 || typeof W.fetch !== 'function') { var g = W.claude && W.claude.gm; return g ? g.patchState(p) : Promise.reject(new Error('no gm')); }
+        return W.fetch('/api/gm/state', { method: 'PATCH', keepalive: true, credentials: 'same-origin', cache: 'no-store', redirect: 'manual', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: body })
+          .then(function (res) { if (!res.ok) { var e = new Error('HTTP ' + res.status); e.status = res.status; throw e; } return res.json(); });
+      },
+      saved: function (r, pendingAfter) {
+        if (!r || !isObj(r.doc)) return;
+        me.updatedAt = r.updatedAt || me.updatedAt;
+        me.doc = pendingAfter ? applyPatch(r.doc, pendingAfter) : r.doc;
+      },
+      changed: function (st) {
+        if (S !== me) return;
+        syncSave();
+        if (st.parked && !me.parkedToasted) { me.parkedToasted = true; toast('Not saved: the server refused a change (' + st.error + '). It is kept on this device; later changes still save.', true); writeSticky(); }
+      }
+    });
+  }
+  function flush() { return S && S.saver ? S.saver.flush() : Promise.resolve(); }
+  function busy() { var st = S && S.saver ? S.saver.state() : null; return !!(st && (st.pending || st.writing)); }
+  function syncSave() {
+    var n = $q('#gm-save'); if (!n || !S.saver) return;
+    var st = S.saver.state();
+    n.textContent = st.parked ? 'Not saved' : st.error === 'retrying' ? 'Offline: retrying' : st.writing || st.pending ? 'Saving…' : S.updatedAt ? 'Saved' : '';
+    n.classList.toggle('bad', !!st.parked || st.error === 'retrying');
+    if (st.parked) n.title = 'The server refused a change: ' + st.error;
+  }
+  /* another device changed the state: take it when nothing of ours is waiting */
+  function refetch() {
+    if (!S || S.status !== 'ready' || busy()) return;
+    var g = gmApi(), me = S; if (!g) return;
+    Promise.resolve().then(function () { return g.state(); }).then(function (r) {
+      if (S !== me || busy() || !r || !isObj(r.doc)) return;
+      if (r.updatedAt && r.updatedAt === me.updatedAt) return;
+      me.doc = r.doc; me.updatedAt = r.updatedAt; adoptMem(); redrawAll(); writeSticky();
+    }).catch(function () {});
+  }
+  function live() { var c = S.doc.con; return isObj(c) && isObj(c.live) ? c.live : {}; }
+  function adoptMem() {
+    var m = isObj(S.doc.mem) ? S.doc.mem : {};
+    if (S.con) { var cm = S.con.mem(); Object.keys(cm).forEach(function (k) { delete cm[k]; }); Object.assign(cm, clone(m.console || {})); }
+    S.locMem = clone(m.location || {});
+    if (S.con) { try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {} }
+  }
+
+  /* ---------- the pack: IndexedDB copy, then the server's index, fetching only changed parts ---------- */
+  function parseBody(b) { if (typeof b === 'string') { try { return JSON.parse(b); } catch (e) { return null; } } return isObj(b) ? b : null; }
+  function syncPack() {
+    var key = 'pack:' + S.me, g = gmApi(), me = S;
+    return kvGet(key).catch(function () { return null; }).then(function (cached) {
+      if (S !== me) return 'closed';
+      me.pack = isObj(cached) && isObj(cached.parts) ? cached : null;
+      return Promise.resolve().then(function () { return g.pack(); }).then(function (idx) {
+        var parts = isObj(idx && idx.parts) ? idx.parts : {}, names = Object.keys(parts);
+        if (!names.length) { me.pack = null; kvDel(key).catch(function () {}); return 'nopack'; }
+        var have = me.pack ? me.pack.parts : {}, next = {}, chain = Promise.resolve();
+        names.forEach(function (n) {
+          if (have[n] && have[n].version === parts[n].version && isObj(have[n].body)) { next[n] = have[n]; return; }
+          chain = chain.then(function () { return g.packPart(n); }).then(function (r) {
+            var body = parseBody(r && r.body); if (!body) throw new Error('part ' + n + ' arrived empty');
+            next[n] = { version: r.version, src: isObj(r.src) ? r.src : {}, body: body };
+          });
+        });
+        return chain.then(function () {
+          me.pack = { version: idx.version, parts: next, savedAt: nowIso() };
+          return kvSet(key, me.pack).catch(function () {}).then(function () { return 'ready'; });
+        }, function (e) {
+          /* a part would not download: carry on with the copy on this device (it stays as it was) */
+          if (e && e.status === 403) return 'forbidden';
+          if (me.pack && Object.keys(me.pack.parts || {}).length) { me.offline = true; return 'ready'; }
+          throw e;
+        });
+      }, function (e) {
+        if (e && e.status === 403) return 'forbidden';
+        if (me.pack) { me.offline = true; return 'ready'; }
+        throw e;
+      });
+    });
+  }
+
+  /* ---------- open / close ---------- */
+  function open(rootEl, api) {
+    close();
+    S = { root: rootEl, api: api, me: null, status: 'loading', doc: {}, updatedAt: null, saver: null, carriedParked: null,
+      pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console',
+      arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, pinOpen: null, figMemo: {}, importing: null };
+    try { S.panel = W.localStorage.getItem('b68.gm.panel') || 'location'; } catch (e) {}
+    if (['location', 'npc', 'rules'].indexOf(S.panel) < 0) S.panel = 'location';
+    S.saver = lastSaver = makeSessionSaver(S);
+    wire(rootEl);
+    screen('<p class="gm-wait" role="status">Opening the GM tools…</p>');
+    var me = S;
+    Promise.resolve().then(function () { return api && api.ready ? api.ready() : null; }).then(function () {
+      if (S !== me) return;
+      if (!gmApi()) { screen(note('GM tools are available on the hosted app.', 'Open the hosted site, signed in as the GM, to use the console, the location generator and the iPad display.')); me.status = 'off'; return; }
+      if (!(api.isGM && api.isGM())) { if (api.roleKnown && api.roleKnown()) purge(); screen(note('GM only.', 'This page holds the GM’s tools. Sign in as the GM to use it.')); me.status = 'off'; return; }
+      me.me = (api.me && api.me()) || 'gm';
+      camp = api.campaign ? api.campaign() : camp;
+      return load();
+    }).catch(function (e) { if (S === me) screen(note('The GM tools could not open.', errText(e), true)); });
+  }
+  function load() {
+    var me = S, g = gmApi();
+    screen('<p class="gm-wait" role="status">Loading the GM pack…</p>');
+    var sticky = readSticky();
+    var st = Promise.resolve().then(function () { return g.state(); }).then(function (r) { return r; }, function (e) { return { failed: e }; });
+    return Promise.all([syncPack(), st]).then(function (res) {
+      if (S !== me) return;
+      var r = res[1];
+      if (r && isObj(r.doc)) { me.doc = r.doc; me.updatedAt = r.updatedAt || null; }
+      else if (sticky) { me.doc = { con: { live: sticky.live || {} }, cards: sticky.cards || {} }; toast('The GM notes are offline: showing this device’s last copy.', true); }
+      if (sticky && isObj(sticky.parked)) me.carriedParked = sticky.parked;   /* a change the server refused earlier stays on this device */
+      if (res[0] === 'forbidden') { purge(); screen(note('GM only.', 'The server says this account is not the GM.')); me.status = 'off'; return; }
+      if (res[0] === 'nopack' || !me.pack) { me.status = 'import'; importScreen(false); return; }
+      start();
+    }).catch(function (e) { if (S === me) screen(note('The GM pack could not load.', errText(e) + '. Check the connection and open the page again.', true) + '<p><button type="button" class="btn sm" data-gm="retry">Try again</button></p>'); });
+  }
+  function close() {
+    if (!S) return;
+    var me = S;
+    if (me.saver) me.saver.flush();          /* session-scoped: anything added while a write is in flight still goes */
+    if (me.npcUnsub) { try { me.npcUnsub(); } catch (e) {} }
+    S = null;
+    if (me.root) { me.root.innerHTML = ''; }
+    unblank();
+  }
+
+  /* ---------- screens ---------- */
+  function screen(html) { if (!S || !S.root) return; S.root.innerHTML = '<div class="gm gm-screen">' + html + '</div>'; }
+  function note(title, body, bad) { return '<div class="gm-head"><div class="gm-title"><p class="gm-kick">GM tools</p><h1 class="gm-h" tabindex="-1">' + esc(title) + '</h1></div></div><p class="gm-note' + (bad ? ' bad' : '') + '">' + esc(body) + '</p>'; }
+
+  function importScreen(cancellable) {
+    S.status = 'import'; S.importing = null;
+    screen('<div class="gm-head"><div class="gm-title"><p class="gm-kick">GM tools</p><h1 class="gm-h" tabindex="-1">Import the GM pack</h1></div></div>' +
+      '<div class="gm-import">' +
+      '<p>The generators’ tables are GM-only and never part of the app. ' + 'Build the pack on the GM’s PC with <code>npm run gm:pack</code> (it writes <code>gm-private/b68-gm-pack.json</code>), then choose that file here. ' + 'It is uploaded to the server, where only the GM can read it, and kept on this device.</p>' +
+      '<p><label class="btn primary gm-pick">Choose b68-gm-pack.json<input type="file" id="gm-file" accept="application/json,.json" class="gm-file"></label>' + (cancellable ? ' <button type="button" class="btn" data-gm="cancel-import">Cancel</button>' : '') + '</p>' +
+      '<div id="gm-prev" class="gm-prev" aria-live="polite"></div></div>');
+  }
+  function previewPack(pk, name) {
+    var v = validatePack(pk), box = $q('#gm-prev'); if (!box) return;
+    S.importing = v.ok ? pk : null;
+    var rows = v.parts.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td class="num">' + (p.bytes / 1024).toFixed(1) + ' KiB</td><td>' + esc(p.src && p.src.exportedAt ? dmy(p.src.exportedAt) : '') + '</td></tr>'; }).join('');
+    box.innerHTML = '<h2>' + esc(name || 'The pack') + '</h2>' +
+      (v.exportedAt ? '<p class="gm-dim">Exported ' + esc(dmy(v.exportedAt)) + ' · ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's') + '</p>' : '') +
+      (rows ? '<table class="gm-tbl"><thead><tr><th>Part</th><th class="num">Size</th><th>Exported</th></tr></thead><tbody>' + rows + '</tbody></table>' : '') +
+      (v.errors.length ? '<ul class="gm-errs">' + v.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>' : '') +
+      '<p class="gm-up"><button type="button" class="btn primary" data-gm="upload"' + (v.ok ? '' : ' disabled') + '>Upload ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's') + '</button> <progress id="gm-prog" max="' + Math.max(1, v.parts.length) + '" value="0" hidden></progress> <span id="gm-upmsg" class="gm-dim" role="status"></span></p>';
+  }
+  function upload() {
+    var pk = S && S.importing, g = gmApi(); if (!pk || !g) return;
+    var reqs = partRequests(pk), prog = $q('#gm-prog'), msg = $q('#gm-upmsg'), btn = $q('[data-gm="upload"]'), me = S, done = {}, packVersion = null, i = 0;
+    if (btn) btn.disabled = true; if (prog) prog.hidden = false;
+    var chain = Promise.resolve();
+    reqs.forEach(function (rq) {
+      chain = chain.then(function () {
+        if (msg) msg.textContent = 'Uploading ' + rq.part + ' (' + (i + 1) + ' of ' + reqs.length + ')…';
+        return g.importPart(rq);
+      }).then(function (r) {
+        i++; if (prog) prog.value = i;
+        done[rq.part] = { version: r && r.version, src: rq.src, body: rq.body }; packVersion = r && r.packVersion || packVersion;
+      });
+    });
+    /* parts on the server that the new file no longer has are removed, so the server holds exactly this pack */
+    chain = chain.then(function () { return g.pack(); }).then(function (idx) {
+      var extra = Object.keys(isObj(idx && idx.parts) ? idx.parts : {}).filter(function (n) { return !done[n]; }), c2 = Promise.resolve();
+      extra.forEach(function (n) { c2 = c2.then(function () { return g.removePart(n); }).then(function (r) { packVersion = r && r.packVersion || packVersion; }); });
+      return c2.then(function () { if (!extra.length && idx && idx.version) packVersion = idx.version; });
+    });
+    chain.then(function () {
+      if (S !== me) return;
+      me.pack = { version: packVersion, parts: done, savedAt: nowIso() };
+      return kvSet('pack:' + me.me, me.pack).catch(function () {}).then(function () { if (S !== me) return; toast('GM pack imported: ' + reqs.length + ' parts.'); me.importing = null; start(); });
+    }).catch(function (e) {
+      if (S !== me) return;
+      if (msg) msg.textContent = 'Stopped after ' + i + ' of ' + reqs.length + ': ' + errText(e);
+      if (btn) btn.disabled = false;
+    });
+  }
+  function readPackFile(file) {
+    if (!file) return;
+    var rd = new FileReader();
+    rd.onerror = function () { toast('Could not read ' + (file.name || 'the file') + '.', true); };
+    rd.onload = function () { var pk; try { pk = JSON.parse(String(rd.result)); } catch (e) { pk = '__bad'; } if (!S) return; if (pk === '__bad') { var b = $q('#gm-prev'); if (b) b.innerHTML = '<ul class="gm-errs"><li>That file is not JSON.</li></ul>'; S.importing = null; return; } previewPack(pk, file.name); };
+    rd.readAsText(file);
+  }
+  function forget() {
+    if (!S || !W.confirm('Forget the GM pack and the GM notes cached on this device? The server keeps its copy; the page reloads it next time.')) return;
+    var me = S;
+    Promise.all([kvDel('pack:' + me.me).catch(function () {}), Promise.resolve().then(function () { try { W.localStorage.removeItem(STICKY); } catch (e) {} })]).then(function () {
+      if (S !== me) return;
+      me.pack = null; me.status = 'off';
+      screen(note('GM data forgotten on this device.', 'The pack and the GM notes cached here are gone. Load them again from the server when you need them.') + '<p><button type="button" class="btn sm primary" data-gm="retry">Load again</button></p>');
+      toast('GM data forgotten on this device.');
+    });
+  }
+
+  /* ---------- start: the console instance, the generator, the layout ---------- */
+  function start() {
+    var cp = part('console'), C = W.B68GmConsole, m = isObj(S.doc.mem) ? S.doc.mem : {};
+    S.con = null; S.conErr = '';
+    if (!C || !cp || !isObj(cp.T)) S.conErr = !C ? 'The console module is missing.' : 'The pack has no console part. Update the pack.';
+    else { try { S.con = C.create({ T: cp.T, campaign: part('campaign') || {}, state: S.doc.con || {}, mem: clone(m.console || {}) }); } catch (e) { S.conErr = 'The console could not start: ' + errText(e); } }
+    S.locMem = clone(m.location || {}); S.locErr = '';
+    if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
+    S.status = 'ready';
+    layout(); redrawAll(); subscribeNpcs();
+  }
+  function layout() {
+    var segs = [['console', 'Console'], ['location', 'Location'], ['npc', 'NPC'], ['state', 'State']];
+    S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' +
+      '<div class="gm-head"><div class="gm-title"><p class="gm-kick">GM tools <span id="gm-save" class="gm-save" role="status"></span></p>' + '<h1 class="gm-h" tabindex="-1">The console</h1><p class="gm-exp" id="gm-exp"></p></div>' +
+      '<div class="gm-acts"><a class="btn sm primary" href="#display" id="gm-display" title="The players’ screen: open this on the iPad">Display</a>' + '<button type="button" class="btn sm" data-gm="note">Export tonight’s note</button><button type="button" class="btn sm" data-gm="update">Update pack</button>' + '<button type="button" class="btn sm" data-gm="forget">Forget GM data on this device</button></div></div>' +
+      '<div class="seg gm-segbar" role="tablist" aria-label="Show">' + segs.map(function (s) { return '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
+      '<div class="gm-main">' +
+      '<section class="gm-col gm-console" aria-label="Console">' + '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"><span class="gm-lab">Scene</span>' + '<span class="gm-scene-chips" id="gm-scene-chips"></span></button>' +
+      '<div class="gm-controls" id="gm-controls"></div><div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div></section>' +
+      '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
+      [['location', 'Location', 'B'], ['npc', 'NPC', 'N'], ['rules', 'Rules', 'T']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
+      '</div><div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div></section>' +
+      '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
+      '<div class="gm-foot" id="gm-foot"></div>' +
+      '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button></div>';
+    renderRules();
+  }
+  function redrawAll() {
+    if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
+    syncHead(); syncPanels(); renderControls(); renderButtons(); drawConsoleCard(); renderLocation(); renderNpcs(); renderRail(); renderCapture(); syncSave();
+  }
+  function syncHead() {
+    var e = $q('#gm-exp'); if (!e) return;
+    var cp = S.pack && S.pack.parts && (S.pack.parts.campaign || S.pack.parts.console), at = cp && cp.src && cp.src.exportedAt;
+    var age = ageDays(at);
+    e.textContent = at ? 'Campaign data exported ' + dmy(at) + (age != null && age > LIMITS.staleDays ? ' · ' + Math.floor(age) + ' days old: rebuild the pack' : '') + (S.offline ? ' · offline copy' : '') : 'Campaign data: no export date';
+    e.classList.toggle('stale', age != null && age > LIMITS.staleDays);
+  }
+  function syncPanels() {
+    var r = $q('#gm-root'); if (!r) return;
+    r.setAttribute('data-seg', S.seg); r.setAttribute('data-panel', S.panel);
+    r.querySelectorAll('[data-gm="seg"]').forEach(function (b) { var on = b.getAttribute('data-seg') === (S.seg === 'side' ? S.panel : S.seg); b.setAttribute('aria-selected', String(on)); b.setAttribute('aria-pressed', String(on)); });
+    r.querySelectorAll('[data-gm="panel"]').forEach(function (b) { b.setAttribute('aria-selected', String(b.getAttribute('data-panel') === S.panel)); });
+    r.querySelectorAll('.gm-pane').forEach(function (p) { p.hidden = p.getAttribute('data-pane') !== S.panel; });
+    var sc = $q('#gm-scene'); if (sc) sc.setAttribute('aria-expanded', String(!!S.sceneOpen)); r.classList.toggle('scene-open', !!S.sceneOpen);
+    var fab = $q('.gm-fab'); if (fab) fab.setAttribute('aria-expanded', String(!!S.capOpen)); r.classList.toggle('cap-open', !!S.capOpen);
+  }
+  function setPanel(p) {
+    S.panel = p; if (S.seg !== 'console' && S.seg !== 'state') S.seg = 'side';
+    try { W.localStorage.setItem('b68.gm.panel', p); } catch (e) {}
+    syncPanels();
+  }
+
+  /* ---------- the console ---------- */
+  function renderControls() {
+    var box = $q('#gm-controls'), chips = $q('#gm-scene-chips'); if (!box) return;
+    if (!S.con) { box.innerHTML = ''; if (chips) chips.textContent = ''; return; }
+    var lv = Object.assign(S.con.defaults(), live()), rows = {};
+    S.con.controls.forEach(function (c) { (rows[c.row] = rows[c.row] || []).push(c); });
+    var html = Object.keys(rows).sort().map(function (r) {
+      return '<div class="gm-row">' + rows[r].map(function (c) {
+        var id = 'gm-c-' + esc(c.id), v = str(lv[c.id]);
+        if (c.type === 'text') return '<label class="gm-field wide" for="' + id + '"><span class="gm-lab">' + esc(c.label) + '</span><input type="text" id="' + id + '" data-ctl="' + esc(c.id) + '" value="' + esc(v) + '" placeholder="' + esc(c.placeholder || '') + '" autocomplete="off"></label>';
+        return '<label class="gm-field" for="' + id + '"><span class="gm-lab">' + esc(c.label) + '</span><select id="' + id + '" data-ctl="' + esc(c.id) + '">' +
+          (c.options || []).map(function (o) { return '<option value="' + esc(o.value) + '"' + (str(o.value) === v ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('') + '</select></label>';
+      }).join('') + '</div>';
+    }).join('');
+    box.innerHTML = html;
+    renderChips();
+  }
+  /* the Scene line's chips: what the controls are set to (the phone shows only this until the disclosure opens) */
+  function renderChips() {
+    var chips = $q('#gm-scene-chips'); if (!chips || !S.con) return;
+    var lv = Object.assign(S.con.defaults(), live()), bits = [];
+    S.con.controls.forEach(function (c) {
+      var v = str(lv[c.id]); if (!v) return;
+      var o = (c.options || []).filter(function (x) { return str(x.value) === v; })[0];
+      bits.push('<span class="gm-chip">' + esc(o ? o.label : v.length > 28 ? v.slice(0, 26) + '…' : v) + '</span>');
+    });
+    chips.innerHTML = bits.join('') || '<span class="gm-dim">any</span>';
+  }
+  function setLive(id, value) { var l = {}; l[id] = value; patch({ con: { live: l } }); renderChips(); }
+  function renderButtons() {
+    var box = $q('#gm-buttons'); if (!box) return;
+    if (!S.con) { box.innerHTML = '<p class="gm-note bad">' + esc(S.conErr || 'The console is not available.') + '</p>'; return; }
+    box.innerHTML = S.con.buttons.map(function (b) {
+      return '<button type="button" class="gm-btn" data-gm="roll" data-n="' + b.n + '" title="' + esc(b.hint || '') + '"><kbd>' + b.n + '</kbd><b>' + esc(b.label) + '</b><small>' + esc(b.hint || '') + '</small></button>';
+    }).join('');
+  }
+  function rollConsole(n) {
+    if (!S || !S.con) return;
+    var res; try { res = S.con.roll(n, clone(Object.assign(S.con.defaults(), live()))); } catch (e) { toast('The roll failed: ' + errText(e), true); return; }
+    var entry = consoleEntry(res, S.doc.con);    /* with the bargains and callbacks as they are now, for an exact redraw */
+    var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.console) ? S.doc.hist.console : {};
+    var ok = patch({ cards: { console: Object.assign({ hid: hid }, entry) }, mem: { console: clone(S.con.mem()) }, hist: { console: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
+    if (!ok) return;
+    S.conRes = res; S.last = { text: str(res.meta.title) + ': ' + plainMd(res.meta.text) };
+    drawConsoleCard(res);
+  }
+  function replayConsole(e) {
+    var cp = part('console');
+    if (!S.con || !cp || !isObj(e)) return null;
+    return replayConsoleEntry(W.B68GmConsole, cp.T, part('campaign') || {}, e, S.doc.con || {});
+  }
+  function drawConsoleCard(res) {
+    var box = $q('#gm-card'); if (!box) return;
+    var cur = isObj(S.doc.cards) ? S.doc.cards.console : null;
+    if (!res) { res = cur ? replayConsole(cur) : null; S.conRes = res; if (res && !S.last) S.last = { text: str(res.meta.title) + ': ' + plainMd(res.meta.text) }; }
+    box.innerHTML = res ? consoleCardHtml(res) : S.con ? '<p class="gm-empty">Press a button, or a number key <kbd>1</kbd>–<kbd>9</kbd>.</p>' : '';
+    var er = $q('#gm-earlier'); if (!er) return;
+    var hist = newest(isObj(S.doc.hist) ? S.doc.hist.console : null).slice(0, LIMITS.hist);
+    er.innerHTML = hist.length ? '<span class="gm-lab">Earlier:</span>' + hist.map(function (h) { return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="console" data-h="' + esc(h._id) + '"' + (cur && cur.hid === h._id ? ' aria-current="true"' : '') + '>' + esc(h.label || h.id) + '</button>'; }).join('') : '';
+  }
+  function consoleCardHtml(res) {
+    var m = res.meta || {};
+    var h = '<article class="gm-card" data-tool="console"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>';
+    if (m.chips && m.chips.length) h += '<p class="gm-chips">' + m.chips.map(function (c) { return '<span class="gm-chip">' + esc(c) + '</span>'; }).join('') + '</p>';
+    (res.lines || []).forEach(function (l) {
+      if (l.kind === 'want') h += '<div class="gm-want">' + md(l.md) + (l.small ? '<div class="gm-small">' + md(l.small) + '</div>' : '') + '</div>';
+      else if (l.kind === 'read') h += '<div class="gm-read">' + md(l.md) + '</div>';
+      else if (l.kind === 'grid') h += '<dl class="gm-grid">' + (l.rows || []).map(function (r) { return '<dt>' + esc(r.k) + '</dt><dd>' + md(r.md) + '</dd>'; }).join('') + '</dl>';
+    });
+    h += '<div class="gm-card-acts">' + (m.actions || []).map(function (a, i) { return '<button type="button" class="btn sm primary" data-gm="intent" data-i="' + i + '">' + esc(a.label) + '</button>'; }).join('') +
+      '<button type="button" class="btn sm" data-gm="pin" data-tool="console">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="console">Copy</button></div></article>';
+    return h;
+  }
+  function doIntent(i) {
+    var res = S.conRes, a = res && res.meta && res.meta.actions && res.meta.actions[i], C = W.B68GmConsole; if (!a || !C) return;
+    var it = a.intent, p; try { p = C.intentPatch(it, { date: dmy(new Date()) }); } catch (e) { toast(errText(e), true); return; }
+    patch({ con: p });
+    if (it.capture && it.capture.text) addCapture(it.capture.bucket || 'x', it.capture.text, true);
+    try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {}
+    toast(a.label.replace(/:.*$/, '') + '.');
+    renderControls(); renderRail();
+  }
+
+  /* ---------- the location generator ---------- */
+  function locUi() { var l = isObj(S.doc.loc) && isObj(S.doc.loc.ui) ? S.doc.loc.ui : {}; return Object.assign(W.B68GmLocation ? W.B68GmLocation.defaults() : {}, l); }
+  function mapUi() { var l = isObj(S.doc.loc) && isObj(S.doc.loc.map) ? S.doc.loc.map : {}; var m = Object.assign(clone(P.MAP0), l); m.reveal = Object.assign({}, P.MAP0.reveal, isObj(l.reveal) ? l.reveal : {}); return m; }
+  function replayLocation(e) {
+    var L = W.B68GmLocation, pk = part('location'); if (!L || !pk || !isObj(e)) return null;
+    var mem = {}; try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
+    try { return L.generate(pk, e.ui || {}, { seed: e.seed, mem: mem }); } catch (x) { return null; }
+  }
+  function rollLocation() {
+    var L = W.B68GmLocation, pk = part('location'); if (!L || !pk) return;
+    var opts = locUi(), before = JSON.stringify(S.locMem), roll;
+    try { roll = L.generate(pk, opts, { mem: S.locMem }); } catch (e) { toast('The location roll failed: ' + errText(e), true); return; }
+    var entry = { seed: roll.seed, ui: opts, mem: before, label: str(roll.name) + (roll.district ? ' · ' + roll.district : ''), at: nowIso() };
+    var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.location) ? S.doc.hist.location : {};
+    patch({ cards: { location: Object.assign({ hid: hid }, entry) }, mem: { location: clone(S.locMem) }, hist: { location: addCapped(hist, hid, entry, LIMITS.hist) }, loc: { map: { reveal: clone(P.REVEAL0) } } }, { force: true });
+    S.locRoll = roll; S.map = null; S.last = { text: 'Location: ' + entry.label };
+    renderLocation(true);
+  }
+  function renderLocation(fresh) {
+    var box = $q('#gm-loc'), L = W.B68GmLocation, pk = part('location'); if (!box) return;
+    if (S.locErr || !L || !pk) { box.innerHTML = '<p class="gm-note bad">' + esc(S.locErr || 'The location generator is not available.') + '</p>'; return; }
+    var cur = isObj(S.doc.cards) ? S.doc.cards.location : null;
+    if (!fresh && cur && (!S.locRoll || S.locRoll.seed !== cur.seed)) { S.locRoll = replayLocation(cur); S.map = null; resetReveal(); }
+    var c = L.controls(pk), ui = locUi(), mu = mapUi(), roll = S.locRoll;
+    var h = '<div class="gm-loc-ctl">' + c.controls.map(function (x) {
+      var id = 'gm-l-' + esc(x.key);
+      if (x.kind === 'toggle') return '<label class="gm-check" for="' + id + '"><input type="checkbox" id="' + id + '" data-loc="' + esc(x.key) + '"' + (ui[x.key] ? ' checked' : '') + '> <span>' + esc(x.label) + '</span></label>';
+      return '<label class="gm-field" for="' + id + '"><span class="gm-lab">' + esc(x.label) + '</span><select id="' + id + '" data-loc="' + esc(x.key) + '">' + (x.options || []).map(function (o) { return '<option value="' + esc(o.value) + '"' + (str(o.value) === str(ui[x.key]) ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('') + '</select></label>';
+    }).join('') + '<button type="button" class="btn primary gm-roll" data-gm="locroll">Roll a location</button></div>';
+    if (roll) {
+      var secs = []; try { secs = L.cardSections(roll, pk); } catch (e) { secs = []; }
+      h += '<article class="gm-card gm-loccard" data-tool="location">' + secs.map(function (s) {
+        return '<section class="gm-sec' + (s.gm ? ' gm-secret' : '') + '" data-sec="' + esc(s.id) + '">' + (s.id === 'head' ? '<h3 class="gm-locname">' + esc(s.title) + '</h3>' : '<h4>' + esc(s.title) + (s.gm ? ' <span class="gm-badge">GM only</span>' : '') + '</h4>') + md((s.lines || []).join('\n')) + '</section>';
+      }).join('') + '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="location">Pin</button>' + '<button type="button" class="btn sm" data-gm="copy" data-tool="location">Copy</button>' + '<button type="button" class="btn sm" data-gm="pushtext">Street description on iPad</button></div></article>';
+      h += '<section class="gm-mapbox" aria-label="Map"><h4>Map</h4><div class="gm-map-ctl">' +
+        sel('view', 'View', VIEWS, mu.view) + sel('theme', 'Theme', THEMES, mu.theme) +
+        '<div class="gm-field"><span class="gm-lab">Layer</span><div class="seg" role="group" aria-label="Layer">' + [['gm', 'GM'], ['player', 'Player']].map(function (o) { return '<button type="button" class="chip" data-gm="layer" data-v="' + o[0] + '" aria-pressed="' + (mu.layer === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
+        '<fieldset class="gm-reveal"><legend class="gm-lab">Reveal to the players: ' + esc(mu.layer === 'player' ? revealList(mu).join(', ') : 'public only while Layer is GM') + '</legend>' + BANDS.map(function (b) { return '<label class="gm-check"><input type="checkbox" data-reveal="' + b + '"' + (b === 'public' || mu.reveal[b] ? ' checked' : '') + (b === 'public' ? ' disabled' : '') + '> <span>' + b + '</span></label>'; }).join('') + '</fieldset>' +
+        '<button type="button" class="btn primary" data-gm="draw">Draw</button></div>' +
+        '<div class="gm-map" id="gm-map"></div><p class="gm-warn" id="gm-mapwarn" role="status"></p>' +
+        '<div class="gm-map-acts"><button type="button" class="btn sm primary" data-gm="ipad"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + '>Show on iPad</button>' +
+        '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button><button type="button" class="btn sm" data-gm="blankipad">Blank the iPad</button></div>' + '</section>';
+    } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what is GM only.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad">Blank the iPad</button></p>';
+    var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
+    if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="location" data-h="' + esc(x._id) + '"' + (cur && cur.hid === x._id ? ' aria-current="true"' : '') + '>' + esc(x.label) + '</button>'; }).join('') + '</div>';
+    box.innerHTML = h;
+    if (S.map) showMap();
+  }
+  function sel(key, label, list, v) { return '<label class="gm-field" for="gm-m-' + key + '"><span class="gm-lab">' + label + '</span><select id="gm-m-' + key + '" data-map="' + key + '">' + list.map(function (o) { return '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select></label>'; }
+  function drawMap() {
+    var K = W.B68Map; if (!S.locRoll) { toast('Roll a location first.', true); return; }
+    if (!K || !K.render) { toast('The map kit is missing.', true); return; }
+    var mu = mapUi(), r;
+    try { r = K.render(S.locRoll, { view: mu.view, theme: mu.theme, layer: mu.layer === 'player' ? 'player' : 'gm', reveal: revealList(mu), width: 1400 }); } catch (e) { toast('The map could not be drawn: ' + errText(e), true); return; }
+    S.map = { svg: r.svg, warnings: r.warnings || [], layer: mu.layer === 'player' ? 'player' : 'gm', view: mu.view, theme: mu.theme };
+    S.map.leak = S.map.layer === 'player' && leaks(r.svg, S.locRoll, revealList(mu)).length > 0;
+    showMap();
+  }
+  function showMap() {
+    var box = $q('#gm-map'), w = $q('#gm-mapwarn'); if (!box || !S.map) return;
+    box.innerHTML = stripSize(S.map.svg);     /* the map kit's own output from our roll; it escapes its text */
+    box.setAttribute('data-layer', S.map.layer);
+    box.classList.toggle('gm-leak', !!S.map.leak);
+    if (w) w.classList.toggle('bad', !!S.map.leak);
+    if (w) w.textContent = (S.map.leak ? 'Not for the iPad: ' + P.LEAK_MSG + ' ' : '') + (S.map.layer === 'gm' ? 'GM layer: everything shows. ' : 'Player layer. ') + (S.map.warnings.length ? S.map.warnings.length + ' map note' + (S.map.warnings.length === 1 ? '' : 's') + ': ' + S.map.warnings.slice(0, 2).map(function (x) { return typeof x === 'string' ? x : x && (x.message || x.msg || JSON.stringify(x)); }).join(' · ') + (S.map.warnings.length > 2 ? ' …' : '') : '');
+  }
+  /* a change to the map controls redraws a map already on screen, so what shows always matches the controls */
+  function setMap(k, v) { var p = { loc: { map: {} } }; p.loc.map[k] = v; patch(p); if (S.map) drawMap(); }
+  function pushDisplay(d) {
+    var g = gmApi(); if (!g) return Promise.reject(new Error('The display needs the hosted app.'));
+    if (!gate.allows(d)) return Promise.reject(new Error('Only a player-layer map made on this page can go to the iPad.'));
+    return Promise.resolve().then(function () { return g.setDisplay(d); });
+  }
+  /* more than the public band is going to the players: say which, and ask */
+  function confirmReveal(reveal, what) {
+    var more = reveal.filter(function (b) { return b !== 'public'; });
+    return !more.length || W.confirm(what + ' will show the players the ' + more.join(', ') + ' band' + (more.length === 1 ? '' : 's') + ' as well as public. Go ahead?');
+  }
+  function resetReveal() {
+    var r = mapUi().reveal;
+    if (BANDS.some(function (b) { return !!r[b] !== !!P.REVEAL0[b]; })) patch({ loc: { map: { reveal: clone(P.REVEAL0) } } });
+  }
+  function showOnIpad() {
+    var mu = mapUi(), d;
+    try { d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render); } catch (e) { toast(errText(e), true); return; }
+    if (!confirmReveal(d.reveal, 'This map')) return;
+    gate.mark(d.svg);
+    var send = { kind: 'svg', title: d.title, caption: d.caption, svg: d.svg };
+    pushDisplay(send).then(function () { toast('On the iPad: ' + d.title + ' (' + d.caption + ').'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+  }
+  function pushText() {
+    var L = W.B68GmLocation; if (!L || !S.locRoll) return;
+    var reveal = revealList(mapUi()), ps;      /* public only, unless Layer is Player and the GM ticked more */
+    if (!confirmReveal(reveal, 'The street description')) return;
+    try { ps = L.playerSummary(S.locRoll, reveal); } catch (e) { toast(errText(e), true); return; }
+    pushDisplay({ kind: 'text', title: plainText(ps.title).slice(0, 2000), caption: str(S.locRoll.district || ''), text: plainText(ps.text).slice(0, 2000) }).then(function () { toast('On the iPad: the street description.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+  }
+  function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('The iPad is blank.'); }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); }); }
+  function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
+
+  /* ---------- the NPC tab: the app's cast ---------- */
+  function subscribeNpcs() {
+    if (S.npcUnsub) return;
+    var db = S.api && S.api.db ? S.api.db() : null, me = S; if (!db) return;
+    try {
+      S.npcUnsub = db.collection('npcs').onSnapshot(function (snap) {
+        if (S !== me) return;
+        var m = {}; (snap && snap.docs || []).forEach(function (d) { var x = d && typeof d.data === 'function' ? d.data() : null; if (isObj(x)) m[d.id] = x; });
+        me.npcs = m; renderNpcs(); renderRail();
+      }, function () {});
+    } catch (e) { S.npcUnsub = null; }
+  }
+  function npcList() { return Object.keys(S.npcs).map(function (id) { return { id: id, doc: S.npcs[id] }; }).sort(function (a, b) { return str(a.doc.name).toLowerCase() < str(b.doc.name).toLowerCase() ? -1 : 1; }); }
+  function renderNpcs() {
+    var box = $q('#gm-npc'); if (!box) return;
+    var list = npcList();
+    box.innerHTML = '<p class="gm-note">NPC generator: coming. Meanwhile, the cast below can go to the iPad or on stage.</p>' +
+      (list.length ? '<ul class="gm-npcs">' + list.map(function (x) {
+        var d = x.doc, rev = d.revealed === true;
+        return '<li class="gm-npcrow" data-id="' + esc(x.id) + '"><div class="gm-thumb" data-fig="' + esc(x.id) + '" aria-hidden="true"></div><div class="gm-npcmeta"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc([d.role, d.faction].filter(Boolean).join(' · ')) + '</small>' + (rev ? '' : '<span class="gm-badge">Hidden</span>') + '</div>' +
+          '<div class="gm-npcacts"><button type="button" class="btn sm" data-gm="npcipad" data-id="' + esc(x.id) + '">Show on iPad</button><a class="btn sm" href="#cast/' + encodeURIComponent(x.id) + '" title="The cast page: put them on stage from there">Put on stage</a></div></li>';
+      }).join('') + '</ul>' : '<p class="gm-empty">' + (S.api && S.api.db && S.api.db() ? 'No NPCs in the cast yet. Add them on the cast page.' : 'The cast is not available here.') + '</p>') +
+      '<p><a class="hm-link" href="#cast">The cast page</a></p>';
+    var K = W.B68Figure; if (!K || !K.portrait) return;
+    var holders = [].slice.call(box.querySelectorAll('[data-fig]')), i = 0, me = S;
+    (function next() {
+      if (S !== me || i >= holders.length) return;
+      var h = holders[i++], id = h.getAttribute('data-fig'), d = me.npcs[id];
+      if (d && isObj(d.spec)) {
+        var key = JSON.stringify(d.spec), hit = me.figMemo[id];
+        if (!hit || hit.key !== key) { var svg = ''; try { var s = clone(d.spec); s.id = 'gm-' + slug(id); svg = stripSize(K.portrait(s, { lod: 'lo' }).svg); } catch (e) { svg = ''; } hit = me.figMemo[id] = { key: key, svg: svg }; }
+        h.innerHTML = hit.svg;     /* the figure kit's render of a spec, as the cast page does */
+      }
+      setTimeout(next, 0);
+    })();
+  }
+  function npcToIpad(id) {
+    var d = S.npcs[id]; if (!d) return;
+    if (d.revealed !== true && !W.confirm((d.name || 'This NPC') + ' is hidden from the players. Show them on the iPad anyway?')) return;
+    pushDisplay({ kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000) }).then(function () { toast('On the iPad: ' + (d.name || 'the NPC') + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+  }
+
+  /* ---------- the Rules tab ---------- */
+  var RULE_TERMS = ['position and effect', 'resistance', 'devil’s bargain', 'harm', 'heat', 'engagement roll', 'flashback', 'stress', 'trauma', 'clocks', 'teamwork', 'gather information'];
+  function renderRules() {
+    var box = $q('#gm-rules'); if (!box) return;
+    var R = W.B68Rules, on = !!(R && R.available && R.available());
+    box.innerHTML = on ? '<form class="gm-rulesq" data-gm-form="rules"><label class="gm-field wide" for="gm-rq"><span class="gm-lab">Search the rules (opens a new tab)</span>' + '<input type="search" id="gm-rq" autocomplete="off" placeholder="push yourself, gambits…"></label><button type="submit" class="btn primary">Search</button></form>' +
+      '<p class="gm-chips">' + RULE_TERMS.map(function (t) { return '<a class="chip sm" target="_blank" rel="noopener" href="#rules?q=' + encodeURIComponent(t) + '">' + esc(t) + '</a>'; }).join('') + '</p>' : '<p class="gm-note">The rules are not available here.</p>';
+  }
+
+  /* ---------- the rail ---------- */
+  function renderRail() {
+    var box = $q('#gm-rail'); if (!box) return;
+    var d = isObj(camp) ? camp : {}, crew = isObj(d.crew) ? d.crew : {}, h = '';
+    function stat(k, v, max) { return '<div class="gm-stat"><dt>' + k + '</dt><dd>' + (v == null ? '—' : esc(v) + (max ? '<small>/' + max + '</small>' : '')) + '</dd></div>'; }
+    h += '<section class="gm-box"><h3 class="gm-band">Crew' + (crew.name ? ': ' + esc(crew.name) : '') + '</h3><dl class="gm-stats">' + stat('Heat', +crew.heat || 0, 9) + stat('Wanted', +crew.wanted || 0, 4) + stat('Rep', +crew.rep || 0, 12) + stat('Stacks', +crew.stacks || 0) + stat('Vault', +crew.vault || 0, 16) + '</dl>' +
+      '<p class="gm-dim">Session ' + esc(isObj(d.session) ? +d.session.number || 0 : 0) + ' · read-only here; change it on <a href="#t">the table</a>.</p></section>';
+    var tc = Array.isArray(d.clocks) ? d.clocks : [];
+    h += '<section class="gm-box"><h3 class="gm-band">Table clocks</h3>' + (tc.length ? '<ul class="gm-clocks">' + tc.map(function (c) { return clockLi(c.name, c.filled, c.size, c.hidden ? 'hidden from players' : c.kind); }).join('') + '</ul>' : '<p class="gm-dim">None on the table.</p>') + '</section>';
+    var wc = (part('campaign') || {}).clocks; wc = Array.isArray(wc) ? wc : [];
+    h += '<section class="gm-box"><h3 class="gm-band">World clocks <small>(pack)</small></h3>' + (wc.length ? '<ul class="gm-clocks">' + wc.map(function (c) { return clockLi(c.goal || c.name, c.filled, c.segments || c.size, [c.faction, c.tier != null && c.tier !== '' ? 'Tier ' + c.tier : ''].filter(Boolean).join(' · ')); }).join('') + '</ul>' : '<p class="gm-dim">None in the pack.</p>') + '</section>';
+    var owed = []; try { owed = W.B68GmConsole ? W.B68GmConsole.campaignWith(part('campaign') || {}, S.doc.con || {}).owed : []; } catch (e) { owed = []; }
+    h += '<section class="gm-box"><h3 class="gm-band">Bargains owed</h3>' + (owed.length ? '<ul class="gm-owed">' + owed.map(function (o, i) { return '<li><span>' + esc(o.text) + (o.src ? ' <small>' + esc(o.src) + '</small>' : '') + '</span><button type="button" class="btn sm" data-gm="collect" data-i="' + i + '">Collect</button></li>'; }).join('') + '</ul>' : '<p class="gm-dim">Nothing owed.</p>') + '</section>';
+    S.owed = owed;
+    var pins = newest(S.doc.pins);
+    h += '<section class="gm-box"><h3 class="gm-band">Pins <small>' + pins.length + '/' + LIMITS.pins + '</small></h3>' + (pins.length ? '<ul class="gm-pins">' + pins.map(function (p) {
+      var open = S.pinOpen === p._id;
+      return '<li><div class="gm-pinrow"><button type="button" class="chip txt sm" data-gm="pinopen" data-id="' + esc(p._id) + '" aria-expanded="' + open + '">' + esc(p.label || p.title || 'Pinned') + '</button><button type="button" class="gm-x" data-gm="unpin" data-id="' + esc(p._id) + '" aria-label="Unpin">×</button></div>' + (open ? '<pre class="gm-pintext">' + esc(p.text || '') + '</pre>' : '') + '</li>';
+    }).join('') + '</ul>' : '<p class="gm-dim">Pin a card to keep it here.</p>') + '</section>';
+    var sc = isObj(d.scene) && isObj(d.scene.npcs) ? d.scene.npcs : {}, staged = Object.keys(sc).filter(function (id) { return sc[id] === true; });
+    h += '<section class="gm-box"><h3 class="gm-band">On stage</h3><p class="gm-chips">' + (staged.length ? staged.map(function (id) { var n = S.npcs[id]; return '<a class="chip sm" href="#cast/' + encodeURIComponent(id) + '">' + esc(n && n.name || id) + '</a>'; }).join('') : '<a class="chip sm" href="#cast">Nobody: the cast</a>') + '</p></section>';
+    box.innerHTML = h;
+  }
+  function clockLi(name, filled, size, sub) {
+    var n = Math.max(1, Math.min(12, Math.floor(+size || 4))), f = Math.max(0, Math.min(n, Math.floor(+filled || 0))), seg = '';
+    for (var i = 0; i < n; i++) seg += '<i' + (i < f ? ' class="on"' : '') + '></i>';
+    return '<li><span class="gm-clockname">' + esc(name || 'Clock') + (sub ? ' <small>' + esc(sub) + '</small>' : '') + '</span><span class="gm-clock" aria-label="' + f + ' of ' + n + '">' + seg + '</span><span class="gm-clockn">' + f + '/' + n + '</span></li>';
+  }
+
+  /* ---------- capture ---------- */
+  function renderCapture() {
+    var box = $q('#gm-foot'); if (!box) return;
+    var keep = W.document.activeElement && W.document.activeElement.id === 'gm-cap-in' ? $q('#gm-cap-in').value : null;
+    var all = newest(S.doc.capture);
+    box.innerHTML = '<div class="gm-cap"><div class="seg gm-capb" role="group" aria-label="File as">' + BUCKETS.map(function (b) { return '<button type="button" class="chip sm" data-gm="arm" data-b="' + b.k + '" aria-pressed="' + (S.arm === b.k) + '">' + esc(b.label) + ' <kbd>' + b.key + '</kbd></button>'; }).join('') + '</div>' +
+      '<form class="gm-capf" data-gm-form="capture"><label class="sr" for="gm-cap-in">Capture</label><input type="text" id="gm-cap-in" maxlength="' + LIMITS.captureText + '" autocomplete="off" placeholder="' + esc(placeholder(S.arm)) + '"><button type="submit" class="btn primary">File</button></form>' +
+      '<div class="gm-capacts"><span class="gm-dim">' + all.length + ' filed</span><button type="button" class="btn sm" data-gm="last" title="L">File last roll</button>' + '<button type="button" class="btn sm" data-gm="note">Export tonight’s note</button><button type="button" class="btn sm" data-gm="clearcap"' + (all.length ? '' : ' disabled') + '>Clear</button></div></div>' +
+      (all.length ? '<ol class="gm-caplist">' + all.slice(0, 3).map(function (e) { var b = BUCKETS.filter(function (x) { return x.k === e.bucket; })[0]; return '<li><span class="gm-lab">' + esc(b ? b.label : e.bucket) + '</span> ' + esc(e.text) + '</li>'; }).join('') + '</ol>' : '');
+    if (keep !== null) { var i = $q('#gm-cap-in'); if (i) { i.value = keep; i.focus(); } }
+  }
+  function placeholder(b) { return b === 'n' ? 'A name you just made up…' : b === 'x' ? 'A thread left hanging…' : b === 'm' ? 'A moment worth remembering…' : 'A roll worth keeping…'; }
+  function arm(b, focus) {
+    S.arm = b;
+    var r = $q('#gm-root'); if (r) r.querySelectorAll('[data-gm="arm"]').forEach(function (x) { x.setAttribute('aria-pressed', String(x.getAttribute('data-b') === b)); });
+    var i = $q('#gm-cap-in'); if (i) i.placeholder = placeholder(b);
+    if (focus) { if (!S.capOpen && isPhone()) { S.capOpen = true; syncPanels(); } if (i) { try { i.focus(); } catch (e) {} } }
+  }
+  function addCapture(bucket, text, quiet) {
+    text = str(text).replace(/\s+/g, ' ').trim().slice(0, LIMITS.captureText); if (!text) return false;
+    var id = uid('c'), entry = { id: id, bucket: bucket, text: text, at: nowIso() };
+    if (!patch({ capture: addCapped(S.doc.capture, id, entry, LIMITS.capture) })) return false;
+    renderCapture();
+    if (!quiet) { var b = BUCKETS.filter(function (x) { return x.k === bucket; })[0]; toast('Filed under ' + (b ? b.head : bucket) + '.'); }
+    return true;
+  }
+  function fileLast() { if (!S.last) { toast('Nothing rolled yet.', true); return; } addCapture('r', S.last.text); }
+  function clearCapture() {
+    var all = newest(S.doc.capture); if (!all.length) return;
+    if (!W.confirm('Clear all ' + all.length + ' captured lines? Export tonight’s note first if you want them.')) return;
+    var p = {}; all.forEach(function (e) { p[e._id] = null; }); patch({ capture: p }, { force: true }); renderCapture();
+  }
+  function exportTonight() {
+    var n = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, x = exportNote(S.doc, { session: n });
+    save(x.filename, x.text);
+  }
+
+  /* ---------- pins and copy ---------- */
+  function cardFor(tool) {
+    if (tool === 'console') { var r = S.conRes; return r ? { label: str(r.meta.label), title: str(r.meta.title), text: consolePlain(r) } : null; }
+    var L = W.B68GmLocation, roll = S.locRoll; if (!L || !roll) return null;
+    var lines = []; try { lines = L.cardLines(roll, part('location')); } catch (e) {}
+    return { label: str(roll.name) + (roll.district ? ' · ' + roll.district : ''), title: str(roll.name), text: lines.map(plainMd).join('\n') };
+  }
+  function pin(tool) {
+    var c = cardFor(tool); if (!c) return;
+    var id = uid('p'), e = { tool: tool, label: c.label.slice(0, 120), title: c.title.slice(0, 120), text: c.text.slice(0, 1500), at: nowIso() };
+    if (patch({ pins: addCapped(S.doc.pins, id, e, LIMITS.pins) })) { toast('Pinned.'); renderRail(); }
+  }
+  function copy(tool) { var c = cardFor(tool); if (c && S.api && S.api.copy) S.api.copy(c.text, 'Copied.'); }
+
+  /* ---------- blank screen ---------- */
+  var blankEl = null;
+  function blank() {
+    if (blankEl) return;
+    blankEl = document.createElement('div'); blankEl.className = 'gm-blank'; blankEl.setAttribute('role', 'presentation'); blankEl.tabIndex = -1;
+    blankEl.addEventListener('pointerdown', function (ev) { ev.preventDefault(); unblank(); });
+    blankEl.addEventListener('click', function (ev) { ev.preventDefault(); unblank(); });
+    document.body.appendChild(blankEl); try { blankEl.focus(); } catch (e) {}
+  }
+  function unblank() { if (blankEl && blankEl.parentNode) blankEl.parentNode.removeChild(blankEl); blankEl = null; }
+  function isPhone() { try { return W.matchMedia && W.matchMedia('(max-width: 599px)').matches; } catch (e) { return false; } }
+
+  /* ---------- events ---------- */
+  function typing(t) { if (!t || t === document.body) return false; var n = (t.tagName || '').toLowerCase(); return n === 'input' || n === 'textarea' || n === 'select' || !!t.isContentEditable; }
+  function onKey(ev) {
+    if (blankEl) { ev.preventDefault(); ev.stopPropagation(); unblank(); return; }
+    if (!S || S.status !== 'ready' || document.body.dataset.mode !== 'gm') return;
+    var dlg = document.querySelector('dialog[open]'); if (dlg) return;
+    var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
+    if (!a) return;
+    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } return; }
+    if (a.type === 'reserved') return;
+    ev.preventDefault();
+    if (a.type === 'button') rollConsole(a.n);
+    else if (a.type === 'panel') { setPanel(a.panel); if (isPhone()) { S.seg = 'side'; syncPanels(); } }
+    else if (a.type === 'capture') arm(a.bucket, true);
+    else if (a.type === 'last') fileLast();
+    else if (a.type === 'blank') blank();
+  }
+  function onClick(ev) {
+    var b = ev.target.closest && ev.target.closest('[data-gm]'); if (!b || !S || !S.root.contains(b)) return;
+    var a = b.getAttribute('data-gm');
+    switch (a) {
+      case 'retry': load(); break;
+      case 'upload': upload(); break;
+      case 'cancel-import': start(); break;
+      case 'update': importScreen(true); break;
+      case 'forget': forget(); break;
+      case 'note': exportTonight(); break;
+      case 'seg': { var sg = b.getAttribute('data-seg'); if (sg === 'location' || sg === 'npc') { S.seg = 'side'; setPanel(sg); } else { S.seg = sg; syncPanels(); } break; }
+      case 'panel': setPanel(b.getAttribute('data-panel')); break;
+      case 'scene': S.sceneOpen = !S.sceneOpen; syncPanels(); break;
+      case 'capopen': S.capOpen = !S.capOpen; syncPanels(); if (S.capOpen) { var ci = $q('#gm-cap-in'); if (ci) ci.focus(); } break;
+      case 'roll': rollConsole(+b.getAttribute('data-n')); break;
+      case 'intent': doIntent(+b.getAttribute('data-i')); break;
+      case 'replay': {
+        var tool = b.getAttribute('data-tool'), e = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).filter(function (x) { return x._id === b.getAttribute('data-h'); })[0]; if (!e) break;
+        var cur = {}; Object.keys(e).forEach(function (k) { if (k !== '_id') cur[k] = e[k]; }); cur.hid = e._id;
+        var cp = { cards: {} }; cp.cards[tool] = cur; patch(cp, { force: true });
+        if (tool === 'console') { S.conRes = null; drawConsoleCard(); } else { S.locRoll = null; S.map = null; renderLocation(); }
+        break;
+      }
+      case 'pin': pin(b.getAttribute('data-tool')); break;
+      case 'copy': copy(b.getAttribute('data-tool')); break;
+      case 'locroll': rollLocation(); break;
+      case 'layer': setMap('layer', b.getAttribute('data-v')); renderLocation(); break;
+      case 'draw': drawMap(); break;
+      case 'ipad': showOnIpad(); break;
+      case 'pushtext': pushText(); break;
+      case 'blankipad': blankIpad(); break;
+      case 'dlsvg': if (!S.map) toast('Draw the map first.', true); else if (S.map.layer === 'player' && S.map.leak) toast(P.LEAK_MSG, true); else save(slug(S.locRoll && S.locRoll.name) + '-' + S.map.view + '-' + S.map.theme + '-' + S.map.layer + '.svg', S.map.svg); break;
+      case 'dlnote': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.md', W.B68GmLocation.noteBody(S.locRoll, { date: dmy(new Date()) })); break;
+      case 'dlcanvas': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.canvas', W.B68GmLocation.canvas(S.locRoll, part('location'))); break;
+      case 'npcipad': npcToIpad(b.getAttribute('data-id')); break;
+      case 'collect': { var o = S.owed && S.owed[+b.getAttribute('data-i')]; if (!o || !W.B68GmConsole) break; patch({ con: W.B68GmConsole.intentPatch({ type: 'bargainCollected', key: W.B68GmConsole.keyOf(o.text), text: o.text }) }); try { S.con && S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (x) {} toast('Collected.'); renderRail(); break; }
+      case 'pinopen': S.pinOpen = S.pinOpen === b.getAttribute('data-id') ? null : b.getAttribute('data-id'); renderRail(); break;
+      case 'unpin': { var up = {}; up[b.getAttribute('data-id')] = null; patch({ pins: up }, { force: true }); renderRail(); break; }
+      case 'arm': arm(b.getAttribute('data-b'), true); break;
+      case 'last': fileLast(); break;
+      case 'clearcap': clearCapture(); break;
+    }
+  }
+  function onChange(ev) {
+    var t = ev.target; if (!S || !t) return;
+    if (t.id === 'gm-file') { readPackFile(t.files && t.files[0]); return; }
+    if (t.hasAttribute('data-ctl')) { if (ev.type === 'change' || t.tagName === 'SELECT') setLive(t.getAttribute('data-ctl'), t.value); return; }
+    if (ev.type !== 'change') return;
+    if (t.hasAttribute('data-loc')) { var l = {}; l[t.getAttribute('data-loc')] = t.type === 'checkbox' ? t.checked : t.value; patch({ loc: { ui: l } }); }
+    else if (t.hasAttribute('data-map')) setMap(t.getAttribute('data-map'), t.value);
+    else if (t.hasAttribute('data-reveal')) { var rv = {}; rv[t.getAttribute('data-reveal')] = t.checked; patch({ loc: { map: { reveal: rv } } }); if (S.map) drawMap(); renderLocation(); }
+  }
+  function onSubmit(ev) {
+    var f = ev.target; if (!S || !f || !f.getAttribute) return;
+    var k = f.getAttribute('data-gm-form'); if (!k) return;
+    ev.preventDefault();
+    if (k === 'capture') { var i = $q('#gm-cap-in'); if (i && addCapture(S.arm, i.value)) { i = $q('#gm-cap-in'); if (i) { i.value = ''; i.focus(); } } }
+    else if (k === 'rules') { var q = $q('#gm-rq'); if (q && q.value.trim()) { try { W.open('#rules?q=' + encodeURIComponent(q.value.trim()), '_blank', 'noopener'); } catch (e) {} } }
+  }
+  function wire(el) {
+    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); }
+    if (!wire.global) {
+      wire.global = true;
+      document.addEventListener('keydown', onKey, true);
+      W.addEventListener('focus', refetch);
+      /* leaving or hiding the tab: what is pending goes now, as a keepalive request (also from a session already closed) */
+      document.addEventListener('visibilitychange', function () { if (document.hidden) { if (lastSaver) lastSaver.beacon(); } else if (S) refetch(); });
+      W.addEventListener('pagehide', function () { if (lastSaver) lastSaver.beacon(); });
+    }
+  }
+
+  function campaign(doc) { camp = isObj(doc) ? doc : null; if (S && S.status === 'ready') renderRail(); }
+
+  return {
+    open: open, close: close, campaign: campaign, purge: purge,
+    available: function () { return !!(W.claude && W.claude.gm); },
+    _pure: P,
+    /* for checks (gm.e2e.mjs): the current roll, and the display gate */
+    _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer }, panel: S.panel, seg: S.seg } : null; },
+    _pushDisplay: function (d) { return pushDisplay(d); }
+  };
+});

@@ -89,3 +89,22 @@ VALUES ('npc_skinner', 'default', '2026-10-13T00:00:00.000Z', '2026-10-13T00:00:
 INSERT OR IGNORE INTO npcs (id, campaign, created_at, updated_at, deleted, doc)
 VALUES ('npc_zam', 'default', '2026-10-13T00:00:00.000Z', '2026-10-13T00:00:00.000Z', 0,
   '{"name":"Zam","alias":"","role":"","faction":"","description":"A kid in a man''s jacket with the sleeves rolled four times, sitting on the bonnet of a car that isn''t his. Odd shoes. A bunch of other people''s keys clipped to his belt.","spec":{"id":"zam","name":"Zam","plate":"Zam","code":"NPC-968-0107","halo":"signal-500","heightIn":56,"shape":"column","heads":6.6,"build":0.85,"skin":"brown","age":13,"pose":{"stance":"wide","arms":{"R":"pocket","L":"hip"},"head":{"tilt":-6,"yaw":8}},"head":{"shape":"round"},"face":{"eyes":"round","brows":"arched","nose":"button","mouth":"wide","expression":"smirk"},"hair":{"style":"afro","color":"cloth-black"},"outfit":{"base":{"type":"tee","color":"cloth-mustard"},"outer":{"type":"suit-jacket","color":"cloth-warm-grey","open":true,"ease":0.12},"bottom":{"type":"trousers","color":"cloth-brown"},"waist":{"type":"chain-belt","color":"metal-steel","at":"hip"},"feet":{"type":"sneakers","color":"cloth-red"}},"props":[]},"revealed":false,"firstSeen":null,"tags":[],"gmNotes":""}');
+
+-- The GM tools (migrations/0004_gm.sql, GM.md): GM only, never in git, never in /api/export. The GM state document is the
+-- `campaigns` row '<CAMPAIGN>#gm'. gm_pack: the generators' tables, one row per part (version = a short hash of body,
+-- updated_at in ms). gm_display: what the table's display shows (seq goes up on every write).
+CREATE TABLE IF NOT EXISTS gm_pack (
+  campaign TEXT NOT NULL,
+  part TEXT NOT NULL,
+  version TEXT NOT NULL,
+  src TEXT NOT NULL DEFAULT '{}',
+  updated_at INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  PRIMARY KEY (campaign, part)
+);
+CREATE TABLE IF NOT EXISTS gm_display (
+  campaign TEXT PRIMARY KEY,
+  seq INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  doc TEXT NOT NULL
+);

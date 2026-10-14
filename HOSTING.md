@@ -196,6 +196,25 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   document (400 / 413). Table `npcs(id, campaign, created_at, updated_at, deleted, doc)` (migration `0003_npcs.sql`, which also
   seeds seven hidden NPCs). The campaign document's `scene` (who is on stage) is GM only.
 
+### GM tools (`/api/gm/*`, GM.md)
+
+GM only, on every method of every `/api/gm/*` path: anyone else gets `403 {"error":"only the GM can use the GM tools"}`
+before the body is read (no token: 401, as everywhere). Never part of `/api/export`. Full contract in GM.md.
+
+- `GET /api/gm/pack` → the pack index `{ version, parts: { name: { version, src, updatedAt, bytes } } }` (`?v=` → `unchanged`);
+  `GET ?part=name` → `{ part, version, src, updatedAt, body }` (`&v=` → `unchanged`, no body); `POST { part, src, body }` stores
+  one part (name `[a-z0-9-]{1,32}`, body a JSON object ≤ 900 KiB, src ≤ 2 KiB, at most 12 parts; the same body and src again is
+  `unchanged` and writes nothing); `DELETE ?part=name`. Table `gm_pack(campaign, part, version, src, updated_at, body)`, primary
+  key `(campaign, part)`, `version` = 12 hex digits of SHA-256 of the body, `updated_at` in ms (migration `0004_gm.sql`).
+- `GET /api/gm/state` → `{ doc, updatedAt }`; `PATCH` deep-merges (maps merge, null deletes, arrays replace; ≤ 256 KiB). Stored as
+  the `campaigns` row `<CAMPAIGN>#gm`, which `/api/campaign` and `/api/export` never read.
+- `GET /api/gm/display` → `{ seq, display, updatedAt }` (`?seq=N` → `{ seq, unchanged: true }`); `PUT { kind, title, caption,
+  svg | npcId | text }` bumps `seq`. `kind` ∈ `blank | svg | npc | text`; the svg (≤ 600 KiB, starts `<svg`) is refused (400) with
+  scripts, `foreignObject`, HTML elements (namespaced too), `<a>`, `xml:base`, `javascript:`, `on…=` attributes, backslashes in
+  attribute values, `image-set()`/`src()`, any `url()` other than `#fragment`, or any `href`/`src` other than `#fragment` (a raster
+  `data:image/` only on `<image>`/`<feImage>`); GM.md has the full list. Table `gm_display(campaign, seq, updated_at, doc)`.
+- `GET /api/characters` carries nothing about the GM tools (the GM page refetches its state on focus instead).
+
 ## Adapter (`app/runtime/cf.js`)
 
 Loaded before `boot.js`. If `window.claude` already exists it does nothing. Otherwise:
@@ -240,6 +259,8 @@ window.claude = { use: function (name) { /* -> Promise */ } };
 - Anything else resolves `null`.
 - `window.claude.rules` (hosted build only; `list`, `import`, `saveHouse`, `deleteHouse`, see `app/CONTRACT.md`): plain calls
   on the rules API above.
+- `window.claude.gm` (hosted build only; `pack`, `packPart`, `importPart`, `removePart`, `state`, `patchState`, `display`,
+  `setDisplay`, see GM.md): plain calls on the GM API above. Never queued, never in the offline snapshot or localStorage.
 - `window.B68Runtime = { kind: 'cloudflare', me, status, exportAll }` once `/api/me` has answered (or the
   page started offline). `exportAll()` → Promise of the `GET /api/export` answer (rejects with
   the API's error, `status` 403 for a player); boot.js shows "Download everything" only when it
@@ -328,7 +349,8 @@ npm run db:local       # = npx wrangler d1 migrations apply DB --local (optional
 npm run dev            # = npx wrangler dev --port 8788 --ip 127.0.0.1 --var DEV_USER:gm@example.test --var GM_EMAILS:gm@example.test
 npm run build          # = npx wrangler deploy --dry-run --outdir .wrangler/dist (bundles, uploads nothing)
 npm test               # = npm run check:runtime && npm run check:api (no browser)
-npm run check:api      # checks/api/jwt.mjs, worker.mjs, flow.mjs (own servers on 8788 and 8789), then rules.mjs (8794)
+npm run check:api      # checks/api/jwt.mjs, worker.mjs, flow.mjs (own servers on 8788 and 8789), then rules.mjs (8794), npcs.mjs (8841), gm.mjs (8843)
+npm run check:gm-api   # checks/api/gm.mjs alone: the GM tools' API (own server on 8843)
 npm run check:runtime  # checks/runtime/adapter.test.mjs, pwa.test.mjs and markdown.test.mjs (plain node)
 npm run check:offline  # checks/runtime/offline.e2e.mjs (own server on 8790, Chromium)
 npm run check:schedule # checks/runtime/schedule.e2e.mjs (own server on 8791, Chromium)

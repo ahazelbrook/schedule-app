@@ -4,7 +4,9 @@
 // Every live character of the campaign (not capped) and every live NPC, hidden ones and gmNotes
 // included (the file is the GM's, like the rest of this endpoint), sent as an attachment.
 // The rules wiki (the `rules` table, RULES.md) is deliberately not in it: the rulebook text is not ours to put in a
-// file that gets shared, and the GM re-imports it from their own copy.
+// file that gets shared, and the GM re-imports it from their own copy. The GM tools (GM.md) are left out the same way:
+// the pack (`gm_pack`), the GM state (the `campaigns` row '<CAMPAIGN>#gm': only the row id = CAMPAIGN is read here)
+// and the display (`gm_display`).
 
 import { getDb } from '../_lib/db.js';
 import { roleFor } from '../_lib/auth.js';
