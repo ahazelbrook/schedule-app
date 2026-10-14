@@ -14,7 +14,7 @@ export async function onRequest({ request, env }) {
     id: r.email,
     name: r.name || String(r.email).split('@')[0],
     // role follows the current GM_EMAILS, not the value stored at the member's last visit
-    role: roleFor(r.email, env.GM_EMAILS),
+    role: roleFor(r.email, env.GM_EMAILS, env.DISPLAY_EMAILS),
   }));
   return json({ members });
 }

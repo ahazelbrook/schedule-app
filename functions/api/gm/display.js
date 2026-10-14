@@ -1,5 +1,6 @@
-// /api/gm/display (GM only, see GM.md): what the table's display (an iPad signed in as the GM) shows. Never part of
-// /api/export. A player gets 403 on every method, before the body is read.
+// /api/gm/display (GM only, see GM.md): what the table's display shows. The GM may GET and PUT; the table display
+// sign-in (role 'display', DISPLAY_EMAILS) may GET only. Never part of /api/export. A player gets 403 on every method,
+// before the body is read.
 //   GET            -> { seq, display, updatedAt }   (seq 0 and a blank display while none is stored)
 //   GET ?seq=N     -> { seq, unchanged: true } while N is still the current seq
 //   PUT  display   -> { seq, display, updatedAt }: replaces the display and bumps seq
@@ -15,8 +16,9 @@ import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay } from '../../
 const METHODS = ['GET', 'PUT'];
 
 export async function onRequest({ request, env, data }) {
-  requireGm(data);
   const method = request.method;
+  // the table display sign-in (role 'display') may read what the GM pushed, nothing more; everyone else but the GM is refused first
+  if (!(data && data.me && data.me.role === 'display' && method === 'GET')) requireGm(data);
   if (!METHODS.includes(method)) return methodNotAllowed(METHODS);
   const campaign = campaignOf(env);
   if (method === 'GET') {

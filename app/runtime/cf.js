@@ -205,11 +205,12 @@
   }
 
   function makeUser(m) {
-    var gm = m.role === 'gm';
+    var gm = m.role === 'gm', disp = m.role === 'display';   /* display: the table iPad's own sign-in (DISPLAY_EMAILS): it reads the display and nothing else */
     return {
       id: function () { return Promise.resolve(m.id); },
       me: function () { return Promise.resolve({ id: m.id, name: m.name || '', email: m.email || m.id, isOwner: gm, canEdit: gm }); },
-      can: function (name) { return Promise.resolve(name === 'data.write'); },
+      can: function (name) { return Promise.resolve(name === 'data.write' && !disp); },
+      isDisplay: function () { return Promise.resolve(disp); },
       isOwner: function () { return Promise.resolve(gm); },
       canEdit: function () { return Promise.resolve(gm); },
       /* every id passed gets an entry; name '' when unknown. Never rejects. */

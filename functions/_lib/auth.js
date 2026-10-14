@@ -122,8 +122,32 @@ export function parseList(s) {
   return String(s || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
 }
 
-export function roleFor(email, gmEmails) {
-  return parseList(gmEmails).includes(String(email || '').toLowerCase()) ? 'gm' : 'player';
+/**
+ * The caller's role: 'gm' (in GM_EMAILS), 'display' (in DISPLAY_EMAILS: the table's iPad, see GM.md "The display
+ * sign-in") or 'player' (anyone else Access lets in). GM wins when an email is in both lists. With DISPLAY_EMAILS
+ * unset nobody is 'display', so the role ships inert.
+ */
+export function roleFor(email, gmEmails, displayEmails) {
+  const e = String(email || '').toLowerCase();
+  if (parseList(gmEmails).includes(e)) return 'gm';
+  if (parseList(displayEmails).includes(e)) return 'display';
+  return 'player';
+}
+
+// ---------- the display role: an allow-list, applied by functions/api/_middleware.js before any handler ----------
+// The table display may read itself and its own identity, nothing else. Every other method and path (other /api/gm/*
+// routes, the campaign, characters, NPCs, rules, members, export, unknown paths) is 403 with the same message, before
+// the body is read or the database touched, so the display cannot tell which routes exist. A route added later is
+// refused by default. The patterns are the router's own (worker/app.js ROUTES: an optional trailing slash).
+export const DISPLAY_ONLY = 'this is the table display sign-in: it can only show the display';
+export const DISPLAY_ALLOWED = [
+  { method: 'GET', re: /^\/api\/me\/?$/ },
+  { method: 'GET', re: /^\/api\/gm\/display\/?$/ },
+];
+
+/** true when the display role may make this call (method and the raw URL pathname, as the router matches it). */
+export function displayMayCall(method, pathname) {
+  return DISPLAY_ALLOWED.some((a) => a.method === method && a.re.test(String(pathname || '')));
 }
 
 function displayName(name, email) {
@@ -152,7 +176,7 @@ export async function identify(request, env) {
           email,
           name: displayName(claims.name, email),
           sub: claims.sub || null,
-          role: roleFor(email, env.GM_EMAILS),
+          role: roleFor(email, env.GM_EMAILS, env.DISPLAY_EMAILS),
         },
       };
     } catch (e) {
@@ -166,7 +190,7 @@ export async function identify(request, env) {
     if (!looksLikeEmail(raw)) return { me: null, reason: 'DEV_USER is not an email' };
     const email = raw.trim().toLowerCase();
     return {
-      me: { id: email, email, name: displayName(null, email), sub: 'dev:' + email, role: roleFor(email, env.GM_EMAILS) },
+      me: { id: email, email, name: displayName(null, email), sub: 'dev:' + email, role: roleFor(email, env.GM_EMAILS, env.DISPLAY_EMAILS) },
     };
   }
   return { me: null, reason: 'no token' };
