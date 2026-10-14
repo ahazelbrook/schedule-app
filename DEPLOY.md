@@ -27,6 +27,7 @@ artifact.
 | 3. Night-of-play: end of session, downtime | Done (session wrap-up and downtime on each sheet) |
 | 3. Night-of-play: schedule (next-session card, availability grid, RSVP, calendar) | Done (`SCHEDULE.md`) |
 | 3. Schedule, second round: the RSVP board (the crew line-up coloured by each owner's answer), attendance recorded when the GM starts a session and correctable by the GM, the "missed N" streak and the best-date tie-break, the "Are you in?" nudge within 3 days, GM "Copy reminder" and "Copy date poll" | Done (`SCHEDULE.md`) |
+| Sign-in on a phone | **Open 15/10/2026.** The hosted app showed "Not signed in" on a phone that had passed Access. PR #8 (Worker `aa5be076`) made the 401 carry a `reason` and the header show it; it read **access not configured**: `ACCESS_TEAM` or `ACCESS_AUD` is blank on the Worker (secrets exist by name since 13/10). Fix: re-set both with `wrangler secret put` (`SETUP.md`, "Not signed in"). The values are `hazelbrook` and the AUD tag in the Access login redirect. Not yet done: the agent session was blocked from writing secrets, so Alex runs them. |
 | 3. Reminders by Discord, email or push | Not built: the app sends no mail (a Worker could run them on a cron trigger, but nothing does yet); the nudge on the card and the copied reminder for the group chat stand in |
 | 4. Installable, offline reading and queued saves | Done (hosted build only) |
 | 5. The rules wiki and the cast (NPC portraits, "on stage") | Done and live (`RULES.md`, `CAST.md`) |

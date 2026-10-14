@@ -165,6 +165,23 @@ After pulling changes: `npx wrangler deploy` (or run `scripts/deploy.sh` again, 
 applies new migrations). The secrets stay as they are. Phones pick up the new version the next
 time they open the app online.
 
+## "Not signed in" on a device that has passed Access
+
+The home screen's header says **Not signed in (reason)** when `/api/me` refuses a request Access let through. The reason is the
+server's (`HOSTING.md`, Access section). What each one means:
+
+| Reason | Meaning and fix |
+|---|---|
+| `access not configured` | `ACCESS_TEAM` or `ACCESS_AUD` is empty on the Worker, so every sign-in fails. `npx wrangler secret list` shows the names but not whether a value is blank. Re-set both: `ACCESS_TEAM` is the team name (the host `<team>.cloudflareaccess.com` in the Access login redirect) and `ACCESS_AUD` is the application's AUD tag (the `kid` in that same redirect, or Access > Applications > the app > Overview). Each `npx wrangler secret put` takes effect at once; no deploy. |
+| `wrong audience` | The AUD secret is for a different Access application (an app re-created, or a second app for the host). Re-set `ACCESS_AUD`. |
+| `wrong issuer` or `unknown kid` | `ACCESS_TEAM` is wrong. |
+| `expired` | The Access session ended; Sign in starts again. |
+| `no token` | Access let the request through without a token (a Bypass policy, or a path the application does not cover). |
+| `Access answered with its sign-in page` | The browser holds no valid Access session. Sign in. |
+
+**Sign in** on that header goes to `/cdn-cgi/access/logout?returnTo=<this site>`, which clears Access's cookie and comes back, so
+Access asks again from scratch (a plain reload cannot fix a session Access has kept but the server will not accept).
+
 ## Adding Google sign-in later
 
 1. **Zero Trust → Settings → Authentication → Login methods → Add new → Google**, and follow

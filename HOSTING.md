@@ -53,7 +53,10 @@ the team's JWKS at `https://<ACCESS_TEAM>.cloudflareaccess.com/cdn-cgi/access/ce
 (cached in memory for an hour) and requires `aud` to contain `ACCESS_AUD`, `iss` to be
 `https://<ACCESS_TEAM>.cloudflareaccess.com`, and `exp` in the future. Claims used: `email`
 (the user id everywhere), `sub`, and `name` when present. A request with an invalid or
-missing token is `401 {"error":"not signed in"}`.
+missing token is `401 {"error":"not signed in","reason":"..."}`. `reason` is a short fixed phrase from the token check (`no token`,
+`expired`, `wrong audience`, `wrong issuer`, `unknown kid`, `bad signature`, `access not configured` when `ACCESS_TEAM` or
+`ACCESS_AUD` is empty); it is never the token. The page shows it beside "Not signed in" (`B68Runtime.signedOutWhy`, set in
+`app/runtime/cf.js`; when Access answered with its login page instead of JSON the page says so).
 
 Roles: `gm` when the email is in `GM_EMAILS` (comma-separated, case-insensitive); `display`
 when it is in `DISPLAY_EMAILS` (optional, the table iPad's own sign-in: it may only
