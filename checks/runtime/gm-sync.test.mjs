@@ -338,6 +338,11 @@ await test('state shapes: collectItems tolerates junk (non-objects, string owed 
 // ======================================================================================================
 // NPCs (lib/sync-npc.mjs)
 // ======================================================================================================
+const HAS_NPC = fs.existsSync(path.join(ROOT, 'scripts', 'lib', 'sync-npc.mjs'));
+const HAS_PACK = fs.existsSync(path.join(ROOT, 'scripts', 'lib', 'sync-pack.mjs'));
+// Parts 2 and 3 are optional in a build (SYNC.md): their tests run when their files are there.
+const testNpc = HAS_NPC ? test : async (name) => console.log('SKIP ' + name + ' (lib/sync-npc.mjs not in this build)');
+const testPack = HAS_PACK ? test : async (name) => console.log('SKIP ' + name + ' (lib/sync-pack.mjs not in this build)');
 const NPC_NAMES = ["Odo D'Arcy", 'Vell Marrow', 'Sabine Quell', 'Pim Calloway', 'Tamsin Rook'];
 function npcRows() {
   return [
@@ -364,7 +369,7 @@ const fakeGen = {
 const npcDoc = () => ({ ...stateDoc(), npcgen: { npc_gen: { seed: 77, mem: '{}', at: T0, s: 2 } } });
 const appNpc = (env, id) => JSON.parse(env.exec.db.prepare('SELECT doc FROM npcs WHERE id = ?').get(id).doc);
 
-await test('NPC pull: new cards (generator format, fallback, "(NPC)" on a vault-wide name collision), needs-review, log entry', async () => {
+await testNpc('NPC pull: new cards (generator format, fallback, "(NPC)" on a vault-wide name collision), needs-review, log entry', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
   const r = await sync(env, ['pull'], { npcModule: fakeGen });
   const sab = read(env.vault, NP + '/Sabine Quell.md');
@@ -386,7 +391,7 @@ await test('NPC pull: new cards (generator format, fallback, "(NPC)" on a vault-
   ok(/## In play\n\n\*What they wanted.*\*\n\n- \*\*17\/10\/2026 \(app\):\*\* revealed to the table\. \^b68-rev-npc-odo\n\n> \[!note\]- 10\/10\/2026: GM notes from the app\n> ZQXgm Speaks softly\.\n> Counts twice\.\n\n\^b68-gmn-npc-odo-[0-9a-f]{8}\n\n---\n\nRolled from/.test(odo), 'reveal line and GM notes in In play, before the footer rule');
 });
 
-await test('NPC pull: idempotent (byte-identical second run, no second log entry); dry run creates nothing', async () => {
+await testNpc('NPC pull: idempotent (byte-identical second run, no second log entry); dry run creates nothing', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
   const a0 = snapshot(env.vault);
   const d = await sync(env, ['pull', '--dry-run'], { npcModule: fakeGen });
@@ -399,7 +404,7 @@ await test('NPC pull: idempotent (byte-identical second run, no second log entry
   eq(r2.report.created.length, 0);
 });
 
-await test('NPC pull: a card Alex deleted is not recreated; a new GM-notes version is added once', async () => {
+await testNpc('NPC pull: a card Alex deleted is not recreated; a new GM-notes version is added once', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
   await sync(env, ['pull'], { npcModule: fakeGen });
   fs.renameSync(V.abs(env.vault, NP + '/Sabine Quell.md'), V.abs(env.base, 'moved away.md'));
@@ -412,7 +417,7 @@ await test('NPC pull: a card Alex deleted is not recreated; a new GM-notes versi
   ok(odo.indexOf('ZQXgm Speaks softly') < odo.indexOf('ZQXgm Now louder'), 'newest last');
 });
 
-await test('NPC push, no ledger: every difference is a conflict, nothing is written to D1 even with --yes', async () => {
+await testNpc('NPC push, no ledger: every difference is a conflict, nothing is written to D1 even with --yes', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
   const before = appNpc(env, 'npc_vell');
   const r = await sync(env, ['push', '--yes', '--only', 'npcs']);
@@ -424,7 +429,7 @@ await test('NPC push, no ledger: every difference is a conflict, nothing is writ
   eq(r.code, 1);
 });
 
-await test('NPC push with a base (--baseline): vault-owned fields are planned without --yes, written with --yes, then settle', async () => {
+await testNpc('NPC push with a base (--baseline): vault-owned fields are planned without --yes, written with --yes, then settle', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
   const p = await sync(env, ['push', '--baseline', '--only', 'npcs']);
   ok(p.report.planned.find((x) => x.id === 'npc_vell' && /description, spec/.test(x.what)), 'planned');
@@ -438,7 +443,7 @@ await test('NPC push with a base (--baseline): vault-owned fields are planned wi
   eq(again.report.pushed.length + again.report.planned.length + again.report.conflicts.length, 0, 'not settled');
 });
 
-await test('NPC spec three-way merge: vault-only pushes, app-only stays, both changed -> conflict, app copy kept, nothing written', async () => {
+await testNpc('NPC spec three-way merge: vault-only pushes, app-only stays, both changed -> conflict, app copy kept, nothing written', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
   await sync(env, ['push', '--baseline', '--yes', '--only', 'npcs']);
   const fig = V.abs(env.vault, V.FIGURES + '/Vell Marrow.json');
@@ -458,7 +463,7 @@ await test('NPC spec three-way merge: vault-only pushes, app-only stays, both ch
   eq(appNpc(env, 'npc_vell').spec.hair, 'long', 'vault edit not pushed');
 });
 
-await test('NPC description: the app owns it from the first reveal; name: the vault wins once there is a base', async () => {
+await testNpc('NPC description: the app owns it from the first reveal; name: the vault wins once there is a base', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
   await sync(env, ['push', '--baseline', '--yes', '--only', 'npcs']);
   env.exec.db.prepare("UPDATE npcs SET doc = json_set(doc, '$.revealed', json('true'), '$.firstSeen', '2026-10-17T11:00:00.000Z', '$.description', 'ZQXapp Revealed wording', '$.name', 'vell marrow') WHERE id = 'npc_vell'").run();
@@ -469,7 +474,7 @@ await test('NPC description: the app owns it from the first reveal; name: the va
   ok(r.out.includes('renamed in the app too; the vault wins'));
 });
 
-await test('NPC push: a change made in the app during the sync is not overwritten (server-side check), reported', async () => {
+await testNpc('NPC push: a change made in the app during the sync is not overwritten (server-side check), reported', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
   await sync(env, ['push', '--baseline', '--only', 'npcs']);   // record the base, write nothing
   const inner = env.exec;
@@ -483,7 +488,7 @@ await test('NPC push: a change made in the app during the sync is not overwritte
   ok(r.report.conflicts.find((c) => c.npc === 'npc_vell' && /changed in the app during the sync/.test(c.why)));
 });
 
-await test('NPC names and table text stay out of sync-log.jsonl; table text stays out of the printout', async () => {
+await testNpc('NPC names and table text stay out of sync-log.jsonl; table text stays out of the printout', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
   const r1 = await sync(env, ['both'], { npcModule: fakeGen });
   const r2 = await sync(env, ['both', '--baseline', '--yes'], { npcModule: fakeGen });
@@ -496,7 +501,7 @@ await test('NPC names and table text stay out of sync-log.jsonl; table text stay
 // the pack (lib/sync-pack.mjs)
 // ======================================================================================================
 import { packIndex, shortHash as sh, cleanPart } from '../../functions/_lib/gm.js';
-import { pieces } from '../../scripts/lib/sync-pack.mjs';
+const { pieces } = HAS_PACK ? await import('../../scripts/lib/sync-pack.mjs') : {};
 function writePack(env, extra = {}) {
   const rows = []; for (let i = 0; i < 400; i++) rows.push(['ZQXrow ' + i + ' "quoted" it\'s ✓ 東京 🙂', i]);
   const pk = { format: 1, exportedAt: T0, parts: {
@@ -510,7 +515,7 @@ function writePack(env, extra = {}) {
 }
 const BUDGET = 9000;   // small pieces so the location part needs three
 
-await test('pack: pieces never split a surrogate pair and rejoin exactly; a three-piece push reads back the server\'s version', async () => {
+await testPack('pack: pieces never split a surrogate pair and rejoin exactly; a three-piece push reads back the server\'s version', async () => {
   const env = await setup({ doc: null });
   const pk = writePack(env);
   const body = cleanPart({ part: 'location', src: pk.parts.location.src, body: { T: pk.parts.location.T } }).body;
@@ -535,7 +540,7 @@ await test('pack: pieces never split a surrogate pair and rejoin exactly; a thre
   eq(again.report.skipped.filter((s) => s.why === 'unchanged').length, 3);
 });
 
-await test('pack: a push that fails part-way leaves the old part in place and stops (exit 2)', async () => {
+await testPack('pack: a push that fails part-way leaves the old part in place and stops (exit 2)', async () => {
   const env = await setup({ doc: null });
   writePack(env);
   await sync(env, ['push', '--yes', '--only', 'pack'], { pieceBudget: BUDGET });
@@ -557,7 +562,7 @@ await test('pack: a push that fails part-way leaves the old part in place and st
   ok(env.exec.db.prepare("SELECT body FROM gm_pack WHERE part = 'location'").get().body.includes('ZQXnew row'), 'the retry landed');
 });
 
-await test('pack: a server part the file lacks is left alone; a bad part name is refused; no pack file -> nothing', async () => {
+await testPack('pack: a server part the file lacks is left alone; a bad part name is refused; no pack file -> nothing', async () => {
   const env = await setup({ doc: null });
   const none = await sync(env, ['push', '--yes', '--only', 'pack']);
   ok(/pack: no pack at/.test(none.out));
