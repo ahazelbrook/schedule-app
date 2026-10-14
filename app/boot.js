@@ -1091,7 +1091,13 @@
       if (sync) { var sy = document.createElement('span'); sy.className = 'sync' + (st.online ? '' : ' off'); sy.setAttribute('role', 'status'); sy.textContent = sync; w.appendChild(sy); }
       w.classList.remove('off');
     }
-    else if (isHosted) { w.textContent = 'Not signed in · '; var inl = document.createElement('a'); inl.href = location.pathname; inl.textContent = 'Sign in'; inl.className = 'signout'; w.appendChild(inl); w.classList.add('off'); }
+    else if (isHosted) {
+      /* a plain reload cannot fix a sign-in Access has kept but the server will not accept, so Sign in clears Access's cookie
+         first and comes back here, which makes Access ask again from scratch; the server's reason is shown beside it */
+      var why = rt && rt.signedOutWhy ? rt.signedOutWhy : '';
+      w.textContent = 'Not signed in' + (why ? ' (' + why + ')' : '') + ' · ';
+      var inl = document.createElement('a'); inl.href = '/cdn-cgi/access/logout?returnTo=' + encodeURIComponent(location.origin + '/'); inl.textContent = 'Sign in'; inl.className = 'signout'; w.appendChild(inl); w.classList.add('off');
+    }
     else { w.textContent = db ? 'Not signed in · files are not marked as yours' : 'Not signed in · filing unavailable'; w.classList.add('off'); }
   }
   function hashOpen() { var h = location.hash || ''; return h.indexOf('#c/') === 0 ? decodeURIComponent(h.slice(3)) : null; }

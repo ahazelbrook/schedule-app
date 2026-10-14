@@ -217,7 +217,7 @@ function browser(server, user, { preset, protocol = 'https:', storage } = {}) {
     if (r.forced === 'down') throw new TypeError('Failed to fetch');
     if (r.forced === 'redirect') return mk(0, '', null, { type: 'opaqueredirect', ok: false });
     if (r.forced === 'html') return mk(200, '<html>Sign in</html>', 'text/html', { redirected: true });
-    if (r.forced === '401') return mk(401, '{"error":"not signed in"}', 'application/json');
+    if (r.forced === '401') return mk(401, '{"error":"not signed in","reason":"wrong audience"}', 'application/json');
     return mk(r[0], JSON.stringify(r[1]), 'application/json; charset=utf-8');
   }
   const winListeners = {};
@@ -494,6 +494,17 @@ await test('network errors surface once through err callbacks and polling retrie
   eq(snaps[snaps.length - 1].docs.map((d) => d.id), ['back'], 'recovered');
   un();
 });
+
+for (const [kind, why] of [['401', 'wrong audience'], ['redirect', 'Access answered with its sign-in page'], ['html', 'Access answered with its sign-in page']]) {
+  await test('signed out at /api/me (' + kind + '): the page is told why (B68Runtime.signedOutWhy)', async () => {
+    const api = fakeApi();
+    api.status['/api/me'] = kind;
+    const b = browser(api, { email: 'gm@x.test' });
+    try { await b.win.claude.use('db'); } catch (e) { /* signed out: the point is the reason below */ }
+    await until(() => b.win.B68Runtime && b.win.B68Runtime.me === null, POLL * 3);
+    eq(b.win.B68Runtime.signedOutWhy, why, 'reason');
+  });
+}
 
 for (const kind of ['401', 'redirect', 'html']) {
   await test('signed out on a poll (' + kind + '): err once, polling stops, writes reject', async () => {

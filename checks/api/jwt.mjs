@@ -199,8 +199,14 @@ await step('middleware: 401 JSON + no-store without identity; sets data.me other
   const c1 = ctx({}, env);
   const r1 = await middleware(c1);
   expect(r1.status === 401, 'status ' + r1.status);
-  expect((await r1.json()).error === 'not signed in', 'body');
+  const b1 = await r1.json();
+  expect(b1.error === 'not signed in' && b1.reason === 'no token', 'body ' + JSON.stringify(b1));
   expect(r1.headers.get('cache-control') === 'no-store', 'no-store');
+  // a token the check refuses: the 401 names the reason (a fixed phrase), never the token
+  const bad = await sign(k1, 'k1', claims({ aud: ['someone-else'] }));
+  const rb = await middleware(ctx({ 'Cf-Access-Jwt-Assertion': bad }, env));
+  const bb = await rb.json();
+  expect(rb.status === 401 && bb.reason === 'wrong audience' && !JSON.stringify(bb).includes(bad.slice(0, 20)), 'reason ' + JSON.stringify(bb));
   const c2 = ctx({ 'Cf-Access-Jwt-Assertion': await sign(k1, 'k1', claims()) }, env);
   const r2 = await middleware(c2);
   expect(r2.status === 200 && r2.headers.get('cache-control') === 'no-store', 'status ' + r2.status);

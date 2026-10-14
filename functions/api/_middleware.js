@@ -7,7 +7,7 @@
 // the database touched. A route added later is denied to the display by default.
 
 import { identify, displayMayCall, DISPLAY_ONLY } from '../_lib/auth.js';
-import { HttpError, error } from '../_lib/http.js';
+import { HttpError, error, json } from '../_lib/http.js';
 
 function noStore(res) {
   try {
@@ -38,7 +38,10 @@ export async function onRequest(context) {
     const { me, reason } = await identify(request, env);
     if (!me) {
       if (reason && reason !== 'no token') console.warn('api: not signed in:', reason);
-      res = error(401, 'not signed in');
+      // The reason is a short fixed phrase from the token check (expired, wrong audience, no token...), never the token
+      // itself. It reaches only callers Access let through, and the page shows it so a sign-in that will not stick can be
+      // told apart from a session that ended.
+      res = json({ error: 'not signed in', reason: String(reason || 'no token').slice(0, 60) }, 401);
     } else if (me.role === 'display' && !displayAllowed(context)) {
       res = error(403, DISPLAY_ONLY);
     } else {
