@@ -1,12 +1,21 @@
-// The public code carries no GM table text (GM.md, "Secrecy rules"). Four checks:
-//   (a) app/gm/**, app/gm-page.js and app/display-page.js name none of the campaign's or the setting's proper nouns
-//       (a built-in short list, plus the faction, district, NPC and PC names of the real pack when it is on this machine);
-//   (b) the same files hold no string literal over 220 characters outside comments (a table pasted in as text);
-//   (c) when the real pack exists (gm-private/b68-gm-pack.json, git-ignored), no string of 25+ characters from it appears
-//       in any public file under app/, functions/ or checks/.
+// The public code carries no GM table text (GM.md, "Secrecy rules"). Five checks:
+//   (a) app/gm/**, app/gm-page.js, app/display-page.js and scripts/** (.mjs/.js/.cjs/.sh) name none of the campaign's
+//       or the setting's proper nouns (a built-in short list, plus the faction, district, NPC and PC names of the real
+//       pack when it is on this machine);
+//   (b) the same JavaScript files hold no string literal over 220 characters outside comments (a table pasted in);
+//   (c) when the real pack exists, no string of 25+ characters from it appears in any public file under app/,
+//       functions/, checks/ or scripts/. Strings the pack shares with app/content.js (the rulebook's public
+//       character-creation text, already shipped to every player) are exempt.
 //   (d) the GM page's pure guards: only a player-layer map reaches the display, keys, pack validation, the note, patches.
+//   (e) when the pack has the npc part: app/gm/npc.js and app/gm/figure-map.js name no faction of npc.T / npc.F (the
+//       figure map's faction palette lives in the pack for exactly that reason).
+// The pack: $B68_PACK if set (it must then load), else gm-private/b68-gm-pack.json (git-ignored) when present.
+// The vault readers (scripts/gm-pack.mjs, gm-parity.mjs, gm-sync.mjs, scripts/lib/**) get no exemption: they find
+// the vault's tables by page path, code-fence, heading and frontmatter key, never by a table's content, so they need
+// no name and no table text. If one ever must name a vault page by a proper noun, allow that one string by hash
+// (as ALLOW below does), never the whole file.
 // Nothing from the real pack is printed: a hit names the file, the line and a masked form of the text.
-//   node checks/runtime/gm-nosecrets.test.mjs
+//   node checks/runtime/gm-nosecrets.test.mjs          B68_PACK=<pack.json> node checks/runtime/gm-nosecrets.test.mjs
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -34,12 +43,19 @@ function walk(dir, out = []) {
 }
 
 /* the scanned GM files */
-const GM_FILES = [...walk(path.join(ROOT, 'app', 'gm')).filter((f) => /\.m?js$/.test(f)), path.join(ROOT, 'app', 'gm-page.js'), path.join(ROOT, 'app', 'display-page.js')].filter((f) => fs.existsSync(f));
+const APP_GM_FILES = [...walk(path.join(ROOT, 'app', 'gm')).filter((f) => /\.m?js$/.test(f)), path.join(ROOT, 'app', 'gm-page.js'), path.join(ROOT, 'app', 'display-page.js')].filter((f) => fs.existsSync(f));
+const SCRIPT_JS = walk(path.join(ROOT, 'scripts')).filter((f) => /\.(m?js|cjs)$/.test(f));
+const SCRIPT_TEXT = walk(path.join(ROOT, 'scripts')).filter((f) => /\.(m?js|cjs|sh)$/.test(f));
+const NAME_FILES = APP_GM_FILES.concat(SCRIPT_TEXT);      // (a)
+const LITERAL_FILES = APP_GM_FILES.concat(SCRIPT_JS);     // (b)
 
-/* the real pack, if this machine has one */
-const PACK_PATH = path.join(ROOT, 'gm-private', 'b68-gm-pack.json');
-let PACK = null;
-if (fs.existsSync(PACK_PATH)) { try { PACK = JSON.parse(read(PACK_PATH)); } catch (e) { PACK = null; } }
+/* the real pack, if this machine has one ($B68_PACK overrides; when set it must load) */
+const PACK_PATH = process.env.B68_PACK ? path.resolve(process.env.B68_PACK) : path.join(ROOT, 'gm-private', 'b68-gm-pack.json');
+let PACK = null, PACK_ERR = null;
+if (fs.existsSync(PACK_PATH)) { try { PACK = JSON.parse(read(PACK_PATH)); if (!PACK || !PACK.parts) throw new Error('no parts'); } catch (e) { PACK = null; PACK_ERR = e.message; } }
+else if (process.env.B68_PACK) PACK_ERR = 'not found';
+console.log('pack: ' + (PACK ? (process.env.B68_PACK ? '$B68_PACK' : 'gm-private/b68-gm-pack.json') + ', parts ' + Object.keys(PACK.parts).join(' ') : 'none' + (PACK_ERR ? ' (' + PACK_ERR + ')' : '')));
+if (PACK_ERR) await test('the pack loads', async () => { throw new Error(PACK_PATH + ': ' + PACK_ERR); });
 
 /* ---------- (a) proper nouns ---------- */
 const BUILT_IN = ['Doskvol', 'Blueraker', 'Limmerfield', 'Blackthorn', 'Duskwall'];
@@ -51,15 +67,18 @@ function packNames(pk) {
   for (const n of camp.npcs || []) add(n && n.name);
   for (const p of camp.pcs || []) add(p && p.name);
   for (const s of camp.standing || []) add(first(s));
+  const nT = (parts.npc && parts.npc.T) || {};
+  if (Array.isArray(nT.faction)) nT.faction.forEach((r) => add(first(r)));
+  if (nT.factionDetail && typeof nT.factionDetail === 'object') Object.keys(nT.factionDetail).forEach(add);
   return [...out];
 }
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-await test('(a) the GM files name no campaign or setting proper noun' + (PACK ? ' (built-in list and the real pack)' : ' (built-in list; no real pack here)'), async () => {
-  if (!GM_FILES.length) throw new Error('no GM files found');
+await test('(a) the GM files and public scripts name no campaign or setting proper noun' + (PACK ? ' (built-in list and the real pack)' : ' (built-in list; no real pack here)'), async () => {
+  if (!NAME_FILES.length) throw new Error('no GM files found');
   const names = [...new Set(BUILT_IN.concat(PACK ? packNames(PACK) : []))];
   const hits = [];
-  for (const f of GM_FILES) {
+  for (const f of NAME_FILES) {
     const text = read(f);
     for (const n of names) {
       const re = new RegExp('(^|[^A-Za-z0-9_])' + reEsc(n) + '(?![A-Za-z0-9_])', 'g');
@@ -67,7 +86,7 @@ await test('(a) the GM files name no campaign or setting proper noun' + (PACK ? 
     }
   }
   if (hits.length) throw new Error(hits.length + ' hit(s):\n  ' + hits.slice(0, 20).join('\n  '));
-  console.log('     ' + GM_FILES.length + ' files, ' + names.length + ' names');
+  console.log('     ' + NAME_FILES.length + ' files, ' + names.length + ' names');
 });
 
 /* ---------- (b) long string literals outside comments ---------- */
@@ -116,7 +135,7 @@ export function literals(src) {
   return out;
 }
 
-await test('(b) the GM files hold no string literal over 220 characters outside comments', async () => {
+await test('(b) the GM files and scripts hold no string literal over 220 characters outside comments', async () => {
   // the lexer itself, on a sample
   const sample = "var a = 'x'.repeat(2); /* '" + 'y'.repeat(300) + "' */ // '" + 'z'.repeat(300) + "'\nvar r = /'[^']*'/g, b = `t${ { k: 'v' }.k }u`, c = 4 / 2 / 1;";
   const lits = literals(sample).map((l) => l.len);
@@ -124,11 +143,12 @@ await test('(b) the GM files hold no string literal over 220 characters outside 
   const long = literals("var s = '" + 'q'.repeat(230) + "';");
   if (!(long.length === 1 && long[0].len === 230)) throw new Error('the lexer missed a long literal');
   const hits = [];
-  for (const f of GM_FILES) {
+  for (const f of LITERAL_FILES) {
     const text = read(f);
     for (const l of literals(text)) if (l.len > 220) hits.push(rel(f) + ':' + lineOf(text, l.at) + ' (' + l.len + ' chars)');
   }
   if (hits.length) throw new Error(hits.length + ' long literal(s):\n  ' + hits.join('\n  '));
+  console.log('     ' + LITERAL_FILES.length + ' files (' + SCRIPT_JS.length + ' under scripts/)');
 });
 
 /* ---------- (c) no pack text in public files ---------- */
@@ -138,8 +158,50 @@ await test('(b) the GM files hold no string literal over 220 characters outside 
      book vocabulary in app/gm/location.js: the four band labels, a target-type name and the service-route regex
        (also in the invented fixture, which copies the regex);
      a cast description that is also public seed data (app/figures/npcs.js, checks/api/npcs.mjs), shown to players
-       once the GM reveals that NPC. */
+       once the GM reveals that NPC.
+   By source: any pack string that app/content.js already holds (compared after normalising both sides: JS escapes
+   undone, curly quotes and apostrophes straightened, runs of whitespace collapsed). content.js is the rulebook's
+   character-creation text and ships to every player, so such a string is public already (the npc part repeats some
+   of it: vice purveyors, heritage entries, a Hull look). The exemption is by string, not by file: content.js itself
+   is still scanned for every other pack string, and a table string not in content.js fails wherever it is pasted.
+   Each part's `src` (the vault file path, a hash and a timestamp: provenance, not table text) is not collected. */
 const VENDORED = new Set(['app/maps/map-kit.js']);
+const normPublic = (s) => String(s).replace(/\\(['"`\\])/g, '$1').replace(/\\n/g, ' ')
+  .replace(/[‘’ʼ]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim();
+const CONTENT_JS = path.join(ROOT, 'app', 'content.js');
+
+/* every pack string of MIN+ characters, in the forms it could take when pasted into a file: as is, JSON-escaped,
+   and with its apostrophes escaped for a single-quoted JS literal. Returns Map(form -> original). */
+function packStrings(pk, MIN) {
+  const forms = new Map();
+  (function collect(v, key) {
+    if (key === 'src') return;
+    if (typeof v === 'string') {
+      const s = v.trim(); if (s.length < MIN) return;
+      for (const f of [s, JSON.stringify(s).slice(1, -1), s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")]) if (!forms.has(f)) forms.set(f, s);
+    }
+    else if (Array.isArray(v)) v.forEach((x) => collect(x));
+    else if (v && typeof v === 'object') for (const k of Object.keys(v)) { collect(k); collect(v[k], k); }
+  })(pk.parts);
+  return forms;
+}
+/* scan texts for pack strings: [{ name, text }] -> hits (masked) */
+function packScan(texts, forms, MIN, exempt) {
+  const byPrefix = new Map();
+  for (const f of forms.keys()) { const k = f.slice(0, MIN); if (!byPrefix.has(k)) byPrefix.set(k, []); byPrefix.get(k).push(f); }
+  const hits = [];
+  for (const { name, text } of texts) {
+    for (let i = 0; i + MIN <= text.length; i++) {
+      const cand = byPrefix.get(text.substr(i, MIN)); if (!cand) continue;
+      for (const f of cand) if (text.startsWith(f, i)) {
+        const s = forms.get(f);
+        if (!ALLOW.has(hashOf(s)) && !exempt.has(s)) hits.push(name + ':' + lineOf(text, i) + ' ' + mask(s) + ' #' + hashOf(s));
+        break;
+      }
+    }
+  }
+  return hits;
+}
 const ALLOW = new Set([
   '5505f366fcfd2394', 'b32ed6feb419d144', '56978126c0c719f4',   // band labels (location.js fallback)
   'c94db93d10cfb1de',                                         // a target-type name (location.js)
@@ -147,29 +209,67 @@ const ALLOW = new Set([
   '92dc34bec130c877'                                          // a public cast seed description (npcs.js, npcs.mjs)
 ]);
 
-await test('(c) no string of 25+ characters from the real pack appears in a public file under app/, functions/ or checks/', async () => {
-  if (!PACK) { console.log('     skipped: no gm-private/b68-gm-pack.json on this machine'); return; }
-  const MIN = 25, strings = new Set();
-  (function collect(v) {
-    if (typeof v === 'string') { const s = v.trim(); if (s.length >= MIN) { strings.add(s); const j = JSON.stringify(s).slice(1, -1); if (j !== s) strings.add(j); } }
-    else if (Array.isArray(v)) v.forEach(collect);
-    else if (v && typeof v === 'object') for (const k of Object.keys(v)) { collect(k); collect(v[k]); }
-  })(PACK.parts);
-  const byPrefix = new Map();
-  for (const s of strings) { const k = s.slice(0, MIN); if (!byPrefix.has(k)) byPrefix.set(k, []); byPrefix.get(k).push(s); }
-  const TEXT = /\.(m?js|cjs|css|html?|json|md|txt|svg|webmanifest|sql|toml)$/i;
-  const files = ['app', 'functions', 'checks'].flatMap((d) => walk(path.join(ROOT, d))).filter((f) => TEXT.test(f) && !VENDORED.has(rel(f)));
-  const hits = [];
-  let bytes = 0;
-  for (const f of files) {
-    const text = read(f); bytes += text.length;
-    for (let i = 0; i + MIN <= text.length; i++) {
-      const cand = byPrefix.get(text.substr(i, MIN)); if (!cand) continue;
-      for (const s of cand) if (text.startsWith(s, i)) { if (!ALLOW.has(hashOf(s))) hits.push(rel(f) + ':' + lineOf(text, i) + ' ' + mask(s) + ' #' + hashOf(s)); break; }
+await test('(c) no string of 25+ characters from the real pack appears in a public file under app/, functions/, checks/ or scripts/', async () => {
+  if (!PACK) { console.log('     skipped: no pack on this machine (gm-private/b68-gm-pack.json, or set B68_PACK)'); return; }
+  const MIN = 25, forms = packStrings(PACK, MIN);
+  const originals = new Set(forms.values());
+  // public already: in app/content.js after normalising
+  const content = fs.existsSync(CONTENT_JS) ? normPublic(read(CONTENT_JS)) : '';
+  const exempt = new Set([...originals].filter((s) => content && content.includes(normPublic(s))));
+  // the scanner itself, on texts made here (nothing is printed): a non-exempt pack string planted in a fake npc.js
+  // is caught, in each pasted form; an exempt one is not
+  const probe = [...originals].find((s) => !exempt.has(s) && !ALLOW.has(hashOf(s)) && /'/.test(s)) || [...originals].find((s) => !exempt.has(s) && !ALLOW.has(hashOf(s)));
+  if (probe) {
+    for (const form of [probe, JSON.stringify(probe).slice(1, -1), probe.replace(/\\/g, '\\\\').replace(/'/g, "\\'")]) {
+      if (packScan([{ name: 'probe', text: "var x = '" + form + "';\n" }], forms, MIN, exempt).length !== 1) throw new Error('self-test: a planted pack string was not caught');
     }
   }
+  const ex1 = [...exempt][0];
+  if (ex1 && packScan([{ name: 'probe', text: 'var y = "' + ex1 + '";' }], forms, MIN, exempt).length) throw new Error('self-test: an exempt string was flagged');
+  const TEXT = /\.(m?js|cjs|css|html?|json|md|txt|svg|webmanifest|sql|toml|sh)$/i;
+  const files = ['app', 'functions', 'checks', 'scripts'].flatMap((d) => walk(path.join(ROOT, d))).filter((f) => TEXT.test(f) && !VENDORED.has(rel(f)));
+  let bytes = 0;
+  const texts = files.map((f) => { const text = read(f); bytes += text.length; return { name: rel(f), text }; });
+  const hits = packScan(texts, forms, MIN, exempt);
   if (hits.length) throw new Error(hits.length + ' hit(s):\n  ' + [...new Set(hits)].slice(0, 30).join('\n  '));
-  console.log('     ' + strings.size + ' pack strings, ' + files.length + ' files, ' + Math.round(bytes / 1024) + ' KiB scanned');
+  console.log('     ' + originals.size + ' pack strings (' + exempt.size + ' exempt: already public in app/content.js), ' + files.length + ' files (' + files.filter((f) => rel(f).startsWith('scripts/')).length + ' under scripts/), ' + Math.round(bytes / 1024) + ' KiB scanned');
+});
+
+/* ---------- (e) the NPC and figure-map modules name no faction of the npc part ---------- */
+function npcFactions(pk) {
+  const out = new Set(), add = (v) => { const s = typeof v === 'string' ? v.trim() : ''; if (s.length >= 4) out.add(s); };
+  const npc = (pk && pk.parts && pk.parts.npc) || {}, T = npc.T || {}, F = npc.F;
+  if (Array.isArray(T.faction)) T.faction.forEach((r) => add(Array.isArray(r) ? r[0] : r && typeof r === 'object' ? r.name : r));
+  if (T.factionDetail && typeof T.factionDetail === 'object') Object.keys(T.factionDetail).forEach(add);
+  // F: any map keyed by faction (palette, halo, ...): its keys; any row naming a faction: that name
+  (function walkF(v) {
+    if (Array.isArray(v)) return v.forEach(walkF);
+    if (!v || typeof v !== 'object') return;
+    for (const k of Object.keys(v)) {
+      if (/^(faction|factions|palette|halo|halos|colours?|colors?)$/i.test(k) && v[k] && typeof v[k] === 'object' && !Array.isArray(v[k])) Object.keys(v[k]).forEach(add);
+      if (/^faction$/i.test(k) && typeof v[k] === 'string') add(v[k]);
+      walkF(v[k]);
+    }
+  })(F);
+  return [...out];
+}
+await test('(e) app/gm/npc.js and app/gm/figure-map.js name no faction of the pack\'s npc.T / npc.F', async () => {
+  if (!PACK || !PACK.parts.npc) { console.log('     skipped: the pack has no npc part'); return; }
+  const files = ['npc.js', 'figure-map.js'].map((f) => path.join(ROOT, 'app', 'gm', f));
+  const missing = files.filter((f) => !fs.existsSync(f));
+  if (missing.length) throw new Error('missing: ' + missing.map(rel).join(', '));
+  const names = npcFactions(PACK);
+  if (!names.length) throw new Error('no faction names found in the npc part (has its shape changed?)');
+  const hits = [];
+  for (const f of files) {
+    const text = read(f);
+    for (const n of names) {
+      const re = new RegExp('(^|[^A-Za-z0-9_])' + reEsc(n) + '(?![A-Za-z0-9_])', 'g');
+      let m; while ((m = re.exec(text))) hits.push(rel(f) + ':' + lineOf(text, m.index + m[1].length) + ' ' + mask(n));
+    }
+  }
+  if (hits.length) throw new Error(hits.length + ' hit(s):\n  ' + hits.slice(0, 20).join('\n  '));
+  console.log('     ' + files.length + ' files, ' + names.length + ' faction names' + (PACK.parts.npc.F ? '' : ' (npc.F is empty in this pack)'));
 });
 
 /* ---------- (d) the GM page's own guards (app/gm-page.js, pure helpers) ---------- */
