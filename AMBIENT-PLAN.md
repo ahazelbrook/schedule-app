@@ -1,6 +1,6 @@
 # Ambient scenes on the table iPad — build plan
 
-Status: **built 15/10/2026 on branch `ambient`, all checks green, not deployed.** Phases 1–4 done; Phase 5 docs in `GM.md`
+Status: **built and deployed 15/10/2026** (PR #10, Worker `cc0e9b13`, migration 0006). Phases 1–4 done; Phase 5 docs in `GM.md`
 ("Ambient scenes"); the iPad soak (5.3) is Alex's. Source: `b68-ambient.zip` (six scenes + `tools/`), uploaded 15/10; a copy is at
 `%USERPROFILE%\Documents\b68-ambient.zip`.
 
