@@ -71,7 +71,7 @@ fails and nobody is known, nothing is purged.
   the device ("offline copy" in the header). The header shows "Campaign data exported DD/MM/YYYY", amber when
   more than three days old.
 - **Layout.** Laptop (>= 1100 px): the console (the Situations | Classic toggle, Position, controls, the four buttons, the card, "Earlier:" the last five rolls) |
-  a side panel with **Location (B)**, **NPC (N)** and **Rules (T)** | the state rail (crew heat, wanted, rep, stacks and
+  a side panel with **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)** and **Rules (T)** | the state rail (crew heat, wanted, rep, stacks and
   vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on
   stage) | the capture bar at the foot. 600–1100 px: two columns, the rail below. Phone: a Console | Location | Street | Engage | NPC |
   State bar, the Position switch at the top, the situations a 2 × 2 grid (Classic: 3 × 3), the other controls behind a "Scene" line,
@@ -107,6 +107,19 @@ fails and nobody is known, nothing is purged.
   threats and a hidden target, and refuses to send it ("This view would name a hidden room: use Rings or Iso, or reveal
   more bands"); the in-page Player draw shows the same warning and the Player SVG download is refused. `rings` and `iso`
   are clean.
+- **Street (S) and Engage (E).** Two more side panels, ports of the vault pages `Tools/blades-68-district-scenes.md` and
+  `Tools/blades-68-engagement-roll.md` (`app/gm/scenes.js`, `app/gm/engagement.js`; tables from the pack parts `scenes` and
+  `engagement`; both optional: an older pack shows "The pack has no scenes part. Update the pack." in the panel).
+  **Street**: a district select (or anywhere) and **Roll a street scene**: three read-aloud paragraphs, the four ratings, and a
+  GM grid (landmark, who is out, what is in the way, word out, factions, the district rule). **Read-aloud to the iPad** sends
+  only the three paragraphs as plain text (never the notable, the rumour or the rule). **Engage**: approach, loadout (Quiet
+  3 / Loud 6) and one -1d / 0 / +1d control per factor; the card shows the pool before a roll, **Roll engagement** rolls it
+  (a 0d pool rolls two and keeps the lowest) and the card gives the position, the dice and the closing "cut to the first
+  obstacle" line. Both file a card under `cards.scenes` / `cards.engagement` (`{ hid, seed, ui, mem?, label, at }`; the street
+  scene keeps its repeat-guard in `mem.scenes`, the engagement roll has none), five Earlier per tool, Pin, Copy and `L`. A reload
+  or an Earlier click redraws the same card from the seed. Changing an engagement control drops the stored roll (the Earlier row
+  keeps it) and shows the pool again; the controls live in `eng.ui` and `scn.ui`. Parity with the vault pages:
+  `node scripts/gm-parity.mjs --scenes --engagement` (see the header of that script for the one deliberate difference).
 - **NPC.** The NPC generator is not ported yet. The app's cast is listed with portraits: **Show on iPad** (a hidden NPC
   asks first) and **Put on stage** (opens the NPC on the cast page, which stages it).
 - **State.** The GM state document holds `con` (the console state: `live` controls, `owed`, `struck`, `used`), `loc`

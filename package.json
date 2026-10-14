@@ -26,6 +26,7 @@
     "deploy": "sh scripts/deploy.sh",
     "check:gm-secrets": "node checks/runtime/gm-nosecrets.test.mjs",
     "check:gm": "node checks/runtime/gm.e2e.mjs",
+    "check:gm-scenes": "node checks/runtime/gm-scenes.e2e.mjs",
     "check:gm-page": "node checks/runtime/gm-page.test.mjs"
   },
   "keywords": [],
