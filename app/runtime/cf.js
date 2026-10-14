@@ -133,6 +133,7 @@
   /* fetch JSON. Rejects with Error(api error string). A 401, or anything that looks like the Access
      login page instead of our API (a followed or opaque redirect, a non-JSON body), marks the session signed out.
      A network failure rejects with an error carrying `network: true`. */
+  var signedOutWhy = '';       /* why the last 401 said so (the server's reason, or that Access answered with its login page) */
   function api(method, path, body) {
     if (signedOut) return Promise.reject(signedOutError());
     var opts = { method: method, credentials: 'same-origin', cache: 'no-store', redirect: 'manual', headers: { Accept: 'application/json' } };
@@ -143,8 +144,17 @@
       setNet(true);
       var ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
       if (res.status === 401 || res.redirected || res.type === 'opaqueredirect' || ct.indexOf('json') < 0) {
-        if (!signedOut) { signedOut = true; if (onSignedOut) onSignedOut(); }
-        throw signedOutError();
+        var out = function (why) {
+          if (!signedOut) { signedOutWhy = why || ''; signedOut = true; if (onSignedOut) onSignedOut(); }
+          throw signedOutError();
+        };
+        if (res.status === 401 && ct.indexOf('json') >= 0 && res.text) {
+          return res.text().then(function (t) {
+            var j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
+            return out(j && typeof j.reason === 'string' ? j.reason.slice(0, 60) : '');
+          }, function () { return out(''); });
+        }
+        return out('Access answered with its sign-in page');
       }
       return res.text().then(function (t) {
         var j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
@@ -179,7 +189,7 @@
       restore(snap.me, snap);
       return me;
     }).then(function (m) {
-      window.B68Runtime = { kind: 'cloudflare', me: m, status: status(), exportAll: exportAll };   /* me carries role, for the header */
+      window.B68Runtime = { kind: 'cloudflare', me: m, status: status(), exportAll: exportAll, signedOutWhy: m ? '' : signedOutWhy };   /* me carries role, for the header */
       emitStatus();
       if (m && queue.length) flush();
       return m;
