@@ -37,6 +37,8 @@ function mkNode(type, name) {
   n.setAttribute = (k, v) => { const a = n.attributes.find((x) => x.name === k); if (a) a.value = String(v); else n.attributes.push({ name: k, value: String(v) }); };
   n.removeAttribute = (k) => { n.attributes = n.attributes.filter((x) => x.name !== k); };
   n.removeChild = (c) => { n.childNodes = n.childNodes.filter((x) => x !== c); c.parentNode = null; return c; };
+  n.insertBefore = (c, ref) => { if (c.parentNode) c.parentNode.removeChild(c); const i = n.childNodes.indexOf(ref); n.childNodes.splice(i < 0 ? n.childNodes.length : i, 0, c); c.parentNode = n; return c; };
+  Object.defineProperty(n, 'firstChild', { get() { return n.childNodes[0] || null; } });
   Object.defineProperty(n, 'textContent', { get() { return n.nodeType === 3 || n.nodeType === 4 ? n._text : n.nodeType === 8 ? '' : n.childNodes.map((c) => c.textContent).join(''); } });
   return n;
 }
@@ -478,6 +480,34 @@ await test('viewModel: dark is its own kind (title and caption only); anything e
   assert.deepEqual(P.viewModel({ kind: 'dark', title: 'Break', caption: 'back at nine', svg: '<svg/>', text: 'x', npcId: 'y' }), { kind: 'dark', title: 'Break', caption: 'back at nine' });
   assert.deepEqual(P.viewModel({ kind: 'dark' }), { kind: 'dark', title: '', caption: '' });
   assert.equal(P.viewModel({ kind: 'blank' }).kind, 'blank'); assert.equal(P.viewModel({ kind: 'darker' }).kind, 'blank');
+});
+/* ---------- a rules entry (kind rule) ---------- */
+await test('viewModel: rule carries title, caption and md (capped) and a size; anything extra is dropped', () => {
+  const vm = P.viewModel({ kind: 'rule', title: 'Invented rule', caption: 'House rules', md: '## A\n\nWords.', text: 'x', svg: '<svg/>', npcId: 'y' });
+  assert.deepEqual(vm, { kind: 'rule', title: 'Invented rule', caption: 'House rules', md: '## A\n\nWords.', size: 'l' });
+  assert.equal(P.viewModel({ kind: 'rule', md: 7 }).md, '');
+  assert.equal(P.viewModel({ kind: 'rule', md: 'x'.repeat(P.LIMITS.rule + 50) }).md.length, P.LIMITS.rule);
+  assert.equal(P.ruleSize('x'.repeat(700)), 'l'); assert.equal(P.ruleSize('x'.repeat(701)), 'm'); assert.equal(P.ruleSize('x'.repeat(2501)), 's');
+});
+await test('cleanRuleTree: links become words; TODO notes, anchors, page chips, scripts and stray attributes go; callouts open', () => {
+  const src = '<div><p>Roll <a class="rl-wl" href="#rules/b68/x">the <strong>dice</strong></a> now <span class="rl-todo">GM secret note</span><script>x()</script></p>' +
+    '<span class="rl-anchor" id="rl-a-q"></span><div class="rl-src rl-src-b68"><span class="rl-src-book">Book</span><span class="rl-src-page">p. 3</span></div>' +
+    '<p class="rl-todo">another GM note</p><details class="rl-callout" data-callout="note"><summary class="rl-callout-title">Tip</summary>' +
+    '<div onclick="x()" style="color:red" id="z" class="rl-callout-body">body</div></details><ol start="3" onmouseover="y()"><li>a</li></ol>' +
+    '<img src="x.png"/><a href="https://example.test/">out</a><p class="bad&quot;x">q</p></div>';
+  const doc = new FakeDOMParser().parseFromString(src), root = doc.documentElement;
+  const removed = P.cleanRuleTree(root);
+  const out = new FakeXMLSerializer().serializeToString(root);
+  assert.ok(removed > 0);
+  assert.ok(!/<a[\s>]/.test(out) && !/href=/.test(out), 'no link survives: ' + out);
+  assert.ok(out.includes('Roll the <strong>dice</strong> now'), 'the link words stay: ' + out);
+  assert.ok(!/GM secret note|another GM note/.test(out), 'TODO notes go');
+  assert.ok(!/<script|<img|rl-anchor|rl-src|p\. 3|onclick|onmouseover|style=|id=/.test(out), 'the rest goes: ' + out);
+  assert.ok(/<details class="rl-callout" data-callout="note" open=""/.test(out), 'callouts open: ' + out);
+  assert.ok(out.includes('<ol start="3">'), 'a list keeps its start');
+  assert.ok(out.includes('>out<'), 'an outside link keeps its words');
+  assert.ok(out.includes('<p>q</p>'), 'an odd class goes');
+  assert.equal(P.cleanRuleTree(null), 0);
 });
 await test('crewMessage / crewChanged: post when the crew exists and differs from what the scene was told', () => {
   assert.equal(P.crewMessage(P.ambientPlan({})), null); assert.equal(P.crewMessage(null), null);

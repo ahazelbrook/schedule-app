@@ -4,6 +4,8 @@
    (window.claude.rules, runtime/cf.js; CONTRACT.md) and every signed-in member reads it from there. The page keeps the
    last corpus it loaded in IndexedDB (per user), so search works offline and the next page load starts from it.
    Without window.claude.rules (the claude.ai artifact build) the page says the rules live on the hosted app.
+   The GM gets "Show on iPad" on each entry: the entry's Markdown, without the compiler's [TODO] notes, goes to the table
+   display as kind `rule` (window.claude.gm.setDisplay; GM.md), and a `b68:display` event tells the GM page what is showing.
 
    window.B68Rules:
      available()                  true when the runtime has a rules API (the "?" links are only drawn then)
@@ -488,10 +490,12 @@
       (e._ch ? '<span class="rl-chap">' + (e._ch.num ? '<b>' + esc(e._ch.num) + '</b> ' : '') + esc(e._ch.name) + '</span>' : '') + '</p>' +
       '<h1 class="rl-title" id="rulesTitle" tabindex="-1">' + esc(e.t) + '</h1>' +
       (parents.length ? '<p class="rl-parent">in ' + parents.map(esc).join(' › ') + '</p>' : '') + '</header>';
+    if (canShow()) h += '<p class="rl-gmtools rl-ipad"><button type="button" class="btn sm" data-rl="ipad" data-id="' + esc(e.book + '/' + e.slug) + '" title="Put this entry on the table’s iPad">Show on iPad</button> <button type="button" class="btn sm" data-rl="ipadclear" title="Back to the ambient scene">Clear iPad</button> <span class="rl-dim" id="rl-ipadmsg" role="status"></span></p>';
     if (first && first !== e) h += '<p class="rl-alsonote">There is also a ' + esc(BOOKS[first.book]) + ' entry with this title: <a href="' + hrefOf(first) + '">open it</a>.</p>';
     h += '<div class="rl-body">' + (body || '<p class="rl-dim">This entry has no text of its own. Look under it in the index.</p>') + '</div>';
     group.forEach(function (t) {
-      h += '<details class="rl-twin rl-twin-full"><summary>' + esc(twinLabel(t.book)) + '</summary><div class="rl-body">' + M.render(t.body, { resolve: resolver(t.book), headingOffset: 2 }) + '</div><p><a href="' + hrefOf(t) + '">Open this entry on its own</a></p></details>';
+      h += '<details class="rl-twin rl-twin-full"><summary>' + esc(twinLabel(t.book)) + '</summary><div class="rl-body">' + M.render(t.body, { resolve: resolver(t.book), headingOffset: 2 }) + '</div><p><a href="' + hrefOf(t) + '">Open this entry on its own</a>' +
+        (canShow() ? ' <button type="button" class="btn sm" data-rl="ipad" data-id="' + esc(t.book + '/' + t.slug) + '">Show this on iPad</button>' : '') + '</p></details>';
     });
     if (gm && e.book === 'house') h += '<p class="rl-gmtools"><button type="button" class="btn sm" data-rl="edit" data-slug="' + esc(e.slug) + '">Edit this house rule</button> <button type="button" class="btn sm" data-rl="delhouse" data-slug="' + esc(e.slug) + '">Delete</button></p>';
     function card(x, cls, label) {
@@ -716,6 +720,33 @@
     rt.deleteHouse(slug).then(function () { return fetchRules(); }).then(function () { editing = undefined; location.hash = '#rules'; draw(); }, function (err) { houseMsg('Could not delete: ' + (err && err.message || err), true); });
   }
 
+  /* ---------- Show on iPad (GM): one entry to the table display (GM.md, display kind `rule`) ---------- */
+  var RULE_MAX = 40000;                                       /* the server's cap (functions/_lib/gm.js, LIMITS.rule) */
+  function gmDisplay() { var c = window.claude; return c && c.gm && typeof c.gm.setDisplay === 'function' ? c.gm : null; }
+  function canShow() { return isGM() && !!gmDisplay(); }
+  /* the entry's Markdown as the players may see it: the compiler's [TODO] notes and %% comments out, cut at a paragraph to fit */
+  function forTable(md) {
+    var t = String(md == null ? '' : md).replace(/%%[\s\S]*?%%/g, '')
+      .replace(/\[TODO:[^\[\]]*\]/g, '').replace(/\[TODO:[ \t]*[^\[\]\n]*(?:\[[^\[\]\n]*\][^\[\]\n]*)*\]/g, '')
+      .replace(/\n{3,}/g, '\n\n').trim();
+    if (t.length > RULE_MAX) { var cut = t.lastIndexOf('\n\n', RULE_MAX - 3); t = t.slice(0, cut > RULE_MAX / 2 ? cut : RULE_MAX - 3) + '\n\n…'; }
+    return t;
+  }
+  function ipadMsg(msg, bad) { var m = $('rl-ipadmsg'); if (m) { m.textContent = msg; m.className = 'rl-dim' + (bad ? ' bad' : ''); } }
+  function pushIpad(d, done) {
+    var g = gmDisplay(); if (!g || !isGM()) return;
+    ipadMsg('Sending…');
+    Promise.resolve().then(function () { return g.setDisplay(d); }).then(function () {
+      ipadMsg(done);
+      try { window.dispatchEvent(new CustomEvent('b68:display', { detail: { kind: d.kind, title: d.title || '' } })); } catch (e) {}
+    }, function (e) { ipadMsg('Could not reach the iPad: ' + (e && e.message || e), true); });
+  }
+  function showOnIpad(id) {
+    var e = S.corpus && S.corpus.byId[id]; if (!e) return;
+    var ch = e._ch && e._ch.name, caption = BOOKS[e.book] + (ch && ch !== e.t && norm(ch) !== norm(BOOKS[e.book]) ? ' · ' + ch : '');
+    pushIpad({ kind: 'rule', title: e.t.slice(0, 2000), caption: caption.slice(0, 2000), md: forTable(e.body) || '—' }, 'On the iPad: ' + e.t + '.');
+  }
+
   /* ---------- events ---------- */
   var hashT = null;
   function syncHash() {
@@ -752,6 +783,8 @@
     }
     else if (a === 'canceledit') { editing = undefined; location.hash = '#rules'; }
     else if (a === 'delhouse') deleteHouse(b.getAttribute('data-slug'));
+    else if (a === 'ipad') showOnIpad(b.getAttribute('data-id') || '');
+    else if (a === 'ipadclear') pushIpad({ kind: 'blank' }, 'Cleared: the iPad plays the ambient scene.');
   }
   function clearPicks() { ['rl-folder', 'rl-files'].forEach(function (id) { var inp = $(id); if (inp) inp.value = ''; }); }
   /* a folder or a set of files, whichever was picked last (the other picker is cleared) */

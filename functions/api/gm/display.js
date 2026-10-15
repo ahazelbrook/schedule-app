@@ -10,9 +10,10 @@
 //                     otherwise the full display, with ambient = { seq, unchanged: true } when M is current, else the
 //                     full { seq, doc, updatedAt }
 //   PUT  display   -> { seq, display, updatedAt }: replaces the display and bumps seq
-// display: { kind: 'blank' | 'dark' | 'svg' | 'npc' | 'text', title?, caption? } plus `svg` (a player-safe render: starts
-// with <svg, at most 600 KiB, no <script, <foreignObject, javascript:, on...= attributes, or href / src / url() other
-// than a #fragment or a data:image/ URI), `npcId` (an id) or `text`. blank: nothing spotlit, the ambient scene plays;
+// display: { kind: 'blank' | 'dark' | 'svg' | 'npc' | 'text' | 'rule', title?, caption? } plus `svg` (a player-safe
+// render: starts with <svg, at most 600 KiB, no <script, <foreignObject, javascript:, on...= attributes, or href / src /
+// url() other than a #fragment or a data:image/ URI), `npcId` (an id), `text`, or `md` (a rules entry's Markdown, at most
+// 40000 characters; the display renders it escaped, with no links). blank: nothing spotlit, the ambient scene plays;
 // dark: lights out. title, caption and text: at most 2000 characters. Other keys are dropped. A malformed display is
 // 400, a size over a cap 413.
 

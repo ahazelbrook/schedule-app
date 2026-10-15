@@ -6,7 +6,7 @@
    /api/*, /cdn-cgi/* and other origins are not touched at all: the data layer (cf.js) keeps its own offline copy. */
 'use strict';
 
-var CACHE = 'b68-shell-v7';     /* bump to drop every cached file on the next activation */
+var CACHE = 'b68-shell-v8';     /* bump to drop every cached file on the next activation */
 var PREFIX = 'b68-shell-';
 
 /* the app shell: the page and everything index.html loads (checks/runtime/pwa.test.mjs keeps this in step with it) */

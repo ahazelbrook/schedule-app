@@ -1,6 +1,7 @@
 // The rules wiki end to end against a real local Worker (wrangler dev on PORT, default 8795, DEV_USER): the GM imports a
 // folder of (made-up) Obsidian notes through the page, a player searches and reads them, wikilinks, the folded entry of
-// the other book, hostile text staying inert, the "?" links on the sheets, house rules, the offline copy, and a phone
+// the other book, hostile text staying inert, the "?" links on the sheets, house rules, Show on iPad (the entry drawn on
+// #display, [TODO] notes never sent, links as words), the offline copy, and a phone
 // layout with no sideways scroll. Every text is placeholder prose from checks/runtime/fixtures/rules/: the real
 // rulebooks are never in this repository.
 //   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node checks/runtime/rules.e2e.mjs      (or: npm run check:rules)
@@ -81,7 +82,7 @@ try {
   const ready = await until(async () => { if (server.exitCode !== null) throw new Error('wrangler exited:\n' + serverLog); try { return (await fetch(BASE + '/api/me')).ok; } catch (_) { return false; } }, 90000, 300);
   if (!ready) throw new Error('server not ready:\n' + serverLog);
   makeBig();
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});   // PW_CHANNEL=msedge uses an installed Edge
 
   /* ---------- nobody has imported anything yet ---------- */
   const P = await open(browser, PLAYER);
@@ -292,6 +293,42 @@ try {
   await sleep(500);
   check((await api(GM, 'GET', '/rules')).json.books.house === 0, 'the house rule can be deleted');
 
+  /* ---------- Show on iPad (GM): an entry goes to the table display as kind rule ---------- */
+  await R.page.goto(BASE + '/#rules/b68/personal-business');
+  await R.page.waitForSelector('.rl-entry');
+  check(!(await R.page.$('[data-rl="ipad"]')) && !(await R.page.$('[data-rl="ipadclear"]')), 'a player has no Show on iPad');
+  await G.page.evaluate(() => window.claude.rules.saveHouse('ipad-probe', { title: 'iPad Probe', body: 'Visible words for the table. [TODO: GM secret note]\n\nSee [[Heat]] and [a site](https://example.test/).\n\n%% hidden comment %%', trail: 'House rules' }));
+  await G.page.goto(BASE + '/?ipad#rules/b68/personal-business');
+  await G.page.waitForSelector('.rl-entry [data-rl="ipad"]', { timeout: 20000 });
+  await G.page.click('.rl-entry [data-rl="ipad"]');
+  await G.page.waitForFunction(() => /On the iPad: Personal Business/.test(document.getElementById('rl-ipadmsg').textContent), null, { timeout: 10000 });
+  let disp = (await api(GM, 'GET', '/gm/display')).json.display;
+  check(disp.kind === 'rule' && disp.title === 'Personal Business' && /^Blades ’68/.test(disp.caption) && disp.md.includes('first item'), 'Show on iPad sends the entry as a rule: ' + JSON.stringify({ ...disp, md: String(disp.md).slice(0, 60) }));
+  const D = await open(browser, GM, { viewport: { width: 1180, height: 820 } });
+  await D.page.goto(BASE + '/#display');
+  await D.page.waitForSelector('.dp-stage.dp-rule.dp-in .dp-rule-title', { timeout: 20000 });
+  const shown = () => D.page.evaluate(() => { const s = document.querySelector('.dp-stage.dp-rule.dp-in'); return s && { title: s.querySelector('.dp-rule-title').textContent, links: s.querySelectorAll('a, script, img').length, items: s.querySelectorAll('li').length, text: s.textContent }; });
+  let dv = await shown();
+  if (process.env.SHOTS) { await sleep(800); await D.page.screenshot({ path: path.join(process.env.SHOTS, 'rules-ipad.png') }); }
+  check(dv.title === 'Personal Business' && dv.links === 0 && dv.items >= 3 && dv.text.includes('safe link') && dv.text.includes('nested item'), 'the iPad draws the entry: its list, its link words, no link: ' + JSON.stringify({ ...dv, text: undefined }));
+  await G.page.goto(BASE + '/?ipad2#rules/house/ipad-probe');
+  await G.page.waitForSelector('.rl-entry [data-rl="ipad"]', { timeout: 20000 });
+  await G.page.click('.rl-entry [data-rl="ipad"]');
+  await G.page.waitForFunction(() => /On the iPad: iPad Probe/.test(document.getElementById('rl-ipadmsg').textContent), null, { timeout: 10000 });
+  disp = (await api(GM, 'GET', '/gm/display')).json.display;
+  check(disp.kind === 'rule' && disp.md.includes('Visible words') && !/GM secret note|hidden comment|TODO/.test(disp.md), 'the compiler\'s [TODO] notes and %% comments never leave the GM\'s page: ' + JSON.stringify(disp.md));
+  await D.page.waitForFunction(() => { const t = document.querySelector('.dp-stage.dp-rule.dp-in .dp-rule-title'); return t && t.textContent === 'iPad Probe'; }, null, { timeout: 15000 });
+  dv = await shown();
+  check(dv.links === 0 && dv.text.includes('Heat') && dv.text.includes('a site') && !/secret|hidden/.test(dv.text), 'the iPad shows a house rule with its wikilink and link as words: ' + JSON.stringify(dv.text));
+  check(disp.caption === 'House rules', 'a house rule is captioned once, not "House rules · House rules": ' + disp.caption);
+  const sc = await D.page.$eval('.dp-stage.dp-rule.dp-in .dp-rule-scroll', (e) => getComputedStyle(e).overflowY);
+  check(sc === 'auto', 'the entry scrolls on the iPad: ' + sc);
+  await G.page.click('.rl-entry [data-rl="ipadclear"]');
+  await G.page.waitForFunction(() => /Cleared/.test(document.getElementById('rl-ipadmsg').textContent), null, { timeout: 10000 });
+  check((await api(GM, 'GET', '/gm/display')).json.display.kind === 'blank', 'Clear iPad puts the ambient back');
+  await G.page.evaluate(() => window.claude.rules.deleteHouse('ipad-probe'));
+  check((await api(GM, 'GET', '/rules')).json.books.house === 0, 'the probe house rule is gone again');
+
   /* ---------- the offline copy ---------- */
   const O = await open(browser, PLAYER);
   await O.page.goto(BASE + '/#rules');
@@ -342,7 +379,7 @@ try {
   const tw = await (async () => { await M.page.goto(BASE + '/#rules/b68/indulge-vice'); await M.page.waitForSelector('.rl-tablewrap'); return M.page.$eval('.rl-tablewrap', (w) => ({ scrolls: w.scrollWidth > w.clientWidth, boxW: w.getBoundingClientRect().width })); })();
   check(tw.scrolls && tw.boxW <= 360, 'the wide table scrolls inside its own box on a phone: ' + JSON.stringify(tw));
 
-  const all = [P, G, R, Q, O, A, M].flatMap((s) => s.errors).filter((e) => !/Failed to load resource|net::ERR_FAILED/.test(e));
+  const all = [P, G, R, Q, O, A, M, D].flatMap((s) => s.errors).filter((e) => !/Failed to load resource|net::ERR_FAILED/.test(e));
   check(all.length === 0, 'no console errors' + (all.length ? ': ' + all.join(' | ') : ''));
   await browser.close();
 } catch (e) {

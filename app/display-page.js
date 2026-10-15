@@ -1,13 +1,14 @@
 /* The table display (#display): a full-screen page for an iPad lying in front of the players, signed in as the GM.
    It shows whatever the GM last pushed through GET /api/gm/display (GM.md): a player-safe map (svg), one NPC (npc), a line
-   of text (text), or nothing (blank). It never decides anything itself: it polls, sanitises and draws.
+   of text (text), a rules entry (rule), or nothing (blank). It never decides anything itself: it polls, sanitises and draws.
    Interface: window.B68DisplayPage = { mount(container, ctx), unmount() }
    with ctx = { gm: window.claude.gm, db: window.claude.use('db'), figures: window.B68Figure, cast: window.B68Cast, isGM }, plus the
    optional ambient inputs ctx.ambientDoc, ctx.ambientTiming, ctx.onAmbientLoad (see the ambient controller below).
    When nothing is spotlit (blank) it plays an ambient scene underneath (app/ambient/*.html in a sandboxed same-origin iframe).
    The pure parts (SVG sanitiser, poll/backoff state machine, zoom maths, display -> view model) sit in `Pure`, which Node
    requires for checks/runtime/display.test.mjs. No external requests; every string from the server goes in with textContent
-   (the SVG is parsed, stripped of anything active and imported as nodes, never set as HTML). Nothing here throws when the
+   (the SVG is parsed, stripped of anything active and imported as nodes, never set as HTML; a rules entry is markdown.js's
+   escaped HTML, parsed inert in a <template> and cut down by Pure.cleanRuleTree before it is imported). Nothing here throws when the
    kit, the db or the wake lock is missing. */
 (function (root) {
   'use strict';
@@ -17,7 +18,7 @@
      ===================================================================================================================== */
   var Pure = {};
 
-  Pure.LIMITS = { svgChars: 700000, text: 2000 };
+  Pure.LIMITS = { svgChars: 700000, text: 2000, rule: 40000 };
 
   /* ---------- the SVG sanitiser ---------- */
   var BAD_ELEMENTS = {
@@ -218,6 +219,7 @@
     if (kind === 'svg' && typeof d.svg === 'string' && d.svg) return { kind: 'svg', title: title, caption: str(d.caption), svg: d.svg };
     if (kind === 'text') return { kind: 'text', title: title, text: str(d.text), size: Pure.textSize(str(d.text)) };
     if (kind === 'dark') return { kind: 'dark', title: title, caption: str(d.caption) };      /* lights out: true black, covers the ambient */
+    if (kind === 'rule') { var md = str(d.md, Pure.LIMITS.rule); return { kind: 'rule', title: title, caption: str(d.caption), md: md, size: Pure.ruleSize(md) }; }
     if (kind === 'npc') {
       var n = Pure.playerNpc(npcDoc);
       var vm = { kind: 'npc', npcId: typeof d.npcId === 'string' ? d.npcId : '', title: title, found: !!n };
@@ -234,6 +236,50 @@
     var n = String(text || '').length;
     return n <= 90 ? 'xl' : n <= 260 ? 'l' : n <= 700 ? 'm' : 's';
   };
+  /* a size class for a rules entry: a short one reads from across the table, a long one scrolls */
+  Pure.ruleSize = function (md) {
+    var n = String(md || '').length;
+    return n <= 700 ? 'l' : n <= 2500 ? 'm' : 's';
+  };
+
+  /* ---------- a rules entry: what markdown.js made, cut down to plain text structure ----------
+     markdown.js escapes every piece of source text, so its HTML is already safe; this is the second lock. Only the tags below
+     stay. A link becomes its words (a tap must never navigate the GM's signed-in iPad). The compiler's [TODO] notes, anchors
+     and page chips go. Attributes go, except a plain class, an <ol>'s start and a callout's type; folded callouts open. */
+  var RULE_TAGS = {
+    p: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1, ul: 1, ol: 1, li: 1, strong: 1, em: 1, del: 1, mark: 1, code: 1, pre: 1,
+    blockquote: 1, table: 1, thead: 1, tbody: 1, tr: 1, th: 1, td: 1, br: 1, hr: 1, div: 1, span: 1, details: 1, summary: 1
+  };
+  var RULE_GONE = /(?:^|\s)(?:rl-todo|rl-anchor|rl-src)(?:\s|$)/;
+  function cleanRuleKids(node) {
+    var removed = 0, kids = childList(node);
+    for (var k = 0; k < kids.length; k++) {
+      var c = kids[k];
+      if (c.nodeType === 3) continue;
+      if (c.nodeType !== 1) { detach(c); removed++; continue; }
+      var ln = localName(c), cls = String(c.getAttribute && c.getAttribute('class') || '');
+      if (ln === 'a' && !RULE_GONE.test(cls)) {                  /* a link: keep its words, lose the link */
+        removed += cleanRuleKids(c) + 1;
+        while (c.firstChild) node.insertBefore(c.firstChild, c);
+        detach(c);
+        continue;
+      }
+      if (!RULE_TAGS[ln] || RULE_GONE.test(cls)) { detach(c); removed++; continue; }
+      var attrs = attrList(c);
+      for (var a = 0; a < attrs.length; a++) {
+        var n = String(attrs[a].name).toLowerCase(), v = String(attrs[a].value);
+        var keep = (n === 'class' && /^[a-z0-9 _-]{0,80}$/i.test(v)) || (n === 'start' && ln === 'ol' && /^\d{1,6}$/.test(v)) ||
+          (n === 'data-callout' && /^[a-z0-9_-]{1,40}$/i.test(v)) || (n === 'open' && ln === 'details');
+        if (!keep) { c.removeAttribute(attrs[a].name); removed++; }
+      }
+      if (ln === 'details') c.setAttribute('open', '');
+      removed += cleanRuleKids(c);
+    }
+    return removed;
+  }
+  /* cleanRuleTree(node): strip a parsed rules entry in place (a <template>'s content, or any element); returns how much went */
+  Pure.cleanRuleTree = function (node) { return node ? cleanRuleKids(node) : 0; };
+
   Pure.formatTime = function (iso) {
     var d = iso ? new Date(iso) : null;
     if (!d || isNaN(d.getTime())) return '';
@@ -507,6 +553,22 @@
     e.appendChild(box);
     return { el: e, destroy: function () {} };
   }
+  /* a rules entry: rendered by markdown.js, parsed inert in a <template>, cleaned, then imported; a column that scrolls */
+  function ruleStage(vm) {
+    var e = el('div', 'dp-stage dp-rule dp-r-' + vm.size), scroll = el('div', 'dp-rule-scroll'), box = el('article', 'dp-rule-box');
+    if (vm.caption) box.appendChild(el('p', 'dp-kicker', vm.caption));
+    if (vm.title) box.appendChild(el('h1', 'dp-rule-title', vm.title));
+    var body = el('div', 'dp-rule-body'), M = root.B68Markdown, html = '';
+    try { html = M && typeof M.render === 'function' ? M.render(vm.md, { headingOffset: 1 }) : ''; } catch (x) { html = ''; }
+    var tpl = html ? document.createElement('template') : null;
+    if (tpl && 'content' in tpl) {
+      tpl.innerHTML = html;
+      Pure.cleanRuleTree(tpl.content);
+      body.appendChild(document.importNode(tpl.content, true));
+    } else body.appendChild(el('p', 'dp-rule-plain', M && typeof M.plain === 'function' ? M.plain(vm.md) : vm.md));
+    box.appendChild(body); scroll.appendChild(box); e.appendChild(scroll);
+    return { el: e, destroy: function () {} };
+  }
   function noteStage(title, msg) {
     var e = el('div', 'dp-stage dp-text dp-t-l'), box = el('div', 'dp-text-box');
     if (title) box.appendChild(el('p', 'dp-kicker', title));
@@ -677,6 +739,7 @@
       if (vm.kind === 'svg') return svgStage(vm);
       if (vm.kind === 'text') return textStage(vm);
       if (vm.kind === 'dark') return darkStage(vm);
+      if (vm.kind === 'rule') return ruleStage(vm);
       if (vm.kind === 'npc') return npcStage(vm, seq, ctx);
     } catch (e) { return noteStage(vm.title, 'This could not be shown.'); }
     return blankStage();

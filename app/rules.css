@@ -182,6 +182,8 @@ body[data-mode="rules"] #rules-page:not([hidden]) { display: block; }
 #rules-page .rl-callout[data-callout="note"], #rules-page .rl-callout[data-callout="info"], #rules-page .rl-callout[data-callout="example"], #rules-page .rl-callout[data-callout="quote"] { border-color: var(--accent); }
 #rules-page .rl-callout[data-callout="note"] > .rl-callout-title { color: var(--accent); background: transparent; padding-bottom: 0; }
 #rules-page .rl-gmtools { margin-top: 18px; display: flex; gap: 8px; flex-wrap: wrap; }
+#rules-page .rl-ipad { margin: 0 0 14px; align-items: center; }   /* Show on iPad: under the title, GM only */
+#rules-page .rl-ipad .rl-dim.bad { color: var(--alarm); }
 
 /* next and previous: two cards */
 #rules-page .rl-pager { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 34px 0 0; }

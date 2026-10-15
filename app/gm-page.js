@@ -343,6 +343,7 @@
     if (d.kind === 'svg') return 'Map' + (t ? ' · ' + t : '');
     if (d.kind === 'npc') return 'NPC' + (t ? ' · ' + t : '');
     if (d.kind === 'text') return 'Text' + (t ? ' · ' + t : '');
+    if (d.kind === 'rule') return 'Rule' + (t ? ' · ' + t : '');
     return 'Nothing spotlit: the ambient plays';
   }
   P.displayLine = displayLine;
@@ -1725,6 +1726,8 @@
       /* leaving or hiding the tab: what is pending goes now, as a keepalive request (also from a session already closed) */
       document.addEventListener('visibilitychange', function () { if (document.hidden) { if (lastSaver) lastSaver.beacon(); } else if (S) { refetch(); if (S.status === 'ready' && S.panel === 'ipad') loadAmbient(); } });
       W.addEventListener('pagehide', function () { if (lastSaver) lastSaver.beacon(); });
+      /* a push from another page (the rules page's Show on iPad) keeps "On the iPad now" true */
+      W.addEventListener('b68:display', function (ev) { if (ev && isObj(ev.detail)) noteShown(ev.detail); });
     }
   }
 
