@@ -391,6 +391,20 @@ await testNpc('NPC pull: new cards (generator format, fallback, "(NPC)" on a vau
   ok(/## In play\n\n\*What they wanted.*\*\n\n- \*\*17\/10\/2026 \(app\):\*\* revealed to the table\. \^b68-rev-npc-odo\n\n> \[!note\]- 10\/10\/2026: GM notes from the app\n> ZQXgm Speaks softly\.\n> Counts twice\.\n\n\^b68-gmn-npc-odo-[0-9a-f]{8}\n\n---\n\nRolled from/.test(odo), 'reveal line and GM notes in In play, before the footer rule');
 });
 
+await testNpc('NPC pull: the roll\'s choices (npcgen[id].ui) go back into the replay', async () => {
+  const seen = [];
+  const choosy = { create() { const g = fakeGen.create(); return { noteBody: g.noteBody, roll(o) { seen.push(o.ui); return o.ui && o.ui.place === 'ZQXplace' ? g.roll(o) : { npc: { name: 'Someone Else' } }; } }; } };
+  const doc = { ...stateDoc(), npcgen: { npc_gen: { seed: 77, mem: '{}', at: T0, s: 2, ui: { faction: '', district: '', place: 'ZQXplace' } } } };
+  const env = await setup({ doc, npcs: npcRows() });
+  const r = await sync(env, ['pull'], { npcModule: choosy });
+  ok(seen.some((u) => u && u.place === 'ZQXplace'), 'the replay was given the ui');
+  ok(r.out.includes('created ' + NP + '/Tamsin Rook.md (tagged wiki/needs-review), from its generator roll'), 'rebuilt from the roll, not the fallback');
+  const env2 = await setup({ doc: npcDoc(), npcs: npcRows() });
+  seen.length = 0;
+  await sync(env2, ['pull'], { npcModule: choosy });
+  ok(seen.length && seen.every((u) => u && typeof u === 'object' && !Object.keys(u).length), 'an entry with no ui replays with {} (any)');
+});
+
 await testNpc('NPC pull: idempotent (byte-identical second run, no second log entry); dry run creates nothing', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
   const a0 = snapshot(env.vault);

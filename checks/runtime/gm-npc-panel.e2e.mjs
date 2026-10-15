@@ -58,7 +58,7 @@ try {
   }
   await api('PATCH', '/campaign', { session: { number: 4 } });
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const errors = [];
   async function open(hash, { width = 1280, height = 900, mobile = false } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile });
@@ -135,6 +135,35 @@ try {
   check(!!a && rr.npc.name === a.name, 'outside the page: the stored seed and memory replay to ' + (a && a.name));
   check(await p.waitForFunction((n) => [].some.call(document.querySelectorAll('#gm-npc .gm-npcrow b'), (b) => b.textContent === n), a.name, { timeout: 8000 }).then(() => true, () => false), 'the cast list below shows them');
   check(/Hidden/.test(await text(p, '#gm-npc .gm-npcrow[data-id="' + added[0].id + '"]')), 'and marks them hidden from the players');
+
+  // the choices: faction, district and place
+  const sub = () => text(p, '#gm-npc .gm-npccard .gm-sub');
+  check((await p.$$eval('#gm-npc select[data-npcui]', (s) => s.map((x) => x.getAttribute('data-npcui')))).join() === 'faction,district,place', 'the panel has Faction, District and Place pickers');
+  check(await p.$('#gm-npc [data-gm="npcloc"]') === null, 'no Use the location button while there is no location card');
+  await p.selectOption('#gm-n-faction', 'Teapot Union');
+  await p.selectOption('#gm-n-place', 'Test shop');
+  await p.click('[data-gm="npcroll"]');
+  check(await p.waitForFunction(() => { const s = document.querySelector('#gm-npc .gm-npccard .gm-sub'); return s && /Teapot Union/.test(s.textContent) && / · Test shop$/.test(s.textContent.trim()); }, null, { timeout: 15000 }).then(() => true, () => false), 'a roll with a faction and a place chosen: the role line shows both');
+  const chosen = await sub();
+  check(np.parts.npc.T.place['Test shop'].work.includes(chosen.split(' · ')[0]), 'the profession comes from the place: ' + chosen.split(' · ')[0]);
+  await sleep(1200);
+  st = (await api('GET', '/gm/state')).json.doc;
+  check(st.npc && st.npc.ui && st.npc.ui.faction === 'Teapot Union' && st.npc.ui.place === 'Test shop' && st.cards.npc.ui && st.cards.npc.ui.place === 'Test shop', 'server: the pickers are kept, and the card records its choices');
+  await p.reload();
+  await p.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  await p.keyboard.press('n');
+  await p.waitForSelector('#gm-npc .gm-npccard', { timeout: 15000 });
+  check(await sub() === chosen && await p.$eval('#gm-n-faction', (s) => s.value) === 'Teapot Union' && await p.$eval('#gm-n-place', (s) => s.value) === 'Test shop', 'reload: the same NPC, and the pickers as they were');
+  // Use the location: the location card's building, district and owner, kept to what the NPC tables know
+  await api('PATCH', '/gm/state', { cards: { location: { hid: 'hloc', seed: 4242, ui: { target: 'Casino', district: '', approach: '', faction: '', mix: false }, mem: '{}', label: 'x', at: new Date().toISOString() } } });
+  await p.reload();
+  await p.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  await p.keyboard.press('n');
+  await p.waitForSelector('#gm-npc [data-gm="npcloc"]', { timeout: 15000 });
+  await p.click('#gm-npc [data-gm="npcloc"]');
+  check(await p.waitForFunction(() => { const s = document.querySelector('#gm-n-place'); return s && s.value === 'Casino'; }, null, { timeout: 5000 }).then(() => true, () => false) && await p.$eval('#gm-n-faction', (s) => s.value) === '', 'Use the location: Place becomes the building (Casino); the faction the NPC tables do not know goes back to any');
+  await p.click('[data-gm="npcroll"]');
+  check(await p.waitForFunction(() => { const s = document.querySelector('#gm-npc .gm-npccard .gm-sub'); return s && / · Teapot Row · Casino$/.test(s.textContent.trim()); }, null, { timeout: 15000 }).then(() => true, () => false), 'and the roll lands there: ' + await sub());
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
   await G.c.close();
 

@@ -1441,13 +1441,31 @@
   function replayNpc(e) {
     var g = npcgInst(); if (!g || !isObj(e)) return null;
     var mem = {}; try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
-    try { return npcWithFigure(g, g.roll({ seed: e.seed, mem: mem })); } catch (x) { return null; }
+    try { return npcWithFigure(g, g.roll({ seed: e.seed, mem: mem, ui: isObj(e.ui) ? e.ui : {} })); } catch (x) { return null; }
+  }
+  /* the GM's choices (faction, district, place), kept in npc.ui; anything the pack does not hold reads as any */
+  function npcUi() { var l = isObj(S.doc.npc) && isObj(S.doc.npc.ui) ? S.doc.npc.ui : {}, g = npcgInst(); return g ? g.cleanUi(l) : {}; }
+  /* the current location card's roll, redrawn from its seed when this tab has not drawn it yet */
+  function locationNow() {
+    var cur = isObj(S.doc.cards) ? S.doc.cards.location : null;
+    if (S.locRoll && (!cur || S.locRoll.seed === cur.seed)) return S.locRoll;
+    return cur ? replayLocation(cur) : null;
+  }
+  /* the location card's building, district and owner into the NPC choices, so the roll fits the scene */
+  function npcFromLocation() {
+    var g = npcgInst(), lr = locationNow(); if (!g) return;
+    if (!lr) { toast('Roll a location first.', true); return; }
+    var ui = g.cleanUi({ faction: str(lr.faction), district: str(lr.district), place: str(lr.target) });
+    patch({ npc: { ui: ui } });
+    var got = [ui.place, ui.district, ui.faction].filter(Boolean);
+    toast(got.length ? 'From the location: ' + got.join(', ') + '. Change any of them before you roll.' : 'The NPC tables know none of the location\'s building, district or owner.');
+    renderNpcGen();
   }
   function rollNpc() {
     var g = npcgInst(); if (!g) { renderNpcGen(); return; }
     var roll;
-    try { roll = g.roll({ mem: S.npcMem }); } catch (e) { toast('The NPC roll failed: ' + errText(e), true); return; }
-    var entry = { seed: roll.seed, mem: JSON.stringify(roll.replay.mem), label: str(roll.card.meta.label), at: nowIso() };
+    try { roll = g.roll({ mem: S.npcMem, ui: npcUi() }); } catch (e) { toast('The NPC roll failed: ' + errText(e), true); return; }
+    var entry = { seed: roll.seed, ui: clone(roll.replay.ui), mem: JSON.stringify(roll.replay.mem), label: str(roll.card.meta.label), at: nowIso() };
     var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.npc) ? S.doc.hist.npc : {};
     patch({ cards: { npc: Object.assign({ hid: hid }, entry) }, mem: { npc: clone(S.npcMem) }, hist: { npc: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
     S.npcRoll = npcWithFigure(g, roll); S.last = { text: 'NPC: ' + entry.label };
@@ -1472,7 +1490,10 @@
     if (!g) { box.innerHTML = '<p class="gm-note bad">' + esc(S.npcgErr || 'The NPC generator is not available.') + '</p>'; return; }
     var cur = isObj(S.doc.cards) ? S.doc.cards.npc : null;
     if (!fresh && cur && (!S.npcRoll || S.npcRoll.roll.seed !== cur.seed)) S.npcRoll = replayNpc(cur);
-    var r = S.npcRoll, h = '<div class="gm-loc-ctl"><button type="button" class="btn primary gm-roll" data-gm="npcroll">Roll an NPC</button></div>';
+    var ui = npcUi(), hasLoc = isObj(S.doc.cards) && isObj(S.doc.cards.location);
+    var r = S.npcRoll, h = '<div class="gm-loc-ctl">' + g.controls.map(function (x) { return selectHtml('gm-n-' + x.id, 'data-npcui', x.id, x.label, x.options, ui[x.id]); }).join('') +
+      (hasLoc ? '<button type="button" class="btn" data-gm="npcloc" title="Sets the faction, district and place from the location card">Use the location</button>' : '') +
+      '<button type="button" class="btn primary gm-roll" data-gm="npcroll">Roll an NPC</button></div>';
     if (r) {
       var c = r.roll.card, m = c.meta, inCast = npcInCast(r.roll.npc.name);
       h += '<article class="gm-card gm-npccard" data-tool="npc"><header class="gm-card-h">' + (r.svg ? '<div class="gm-thumb gm-npcfig" aria-hidden="true">' + r.svg + '</div>' : '') + '<div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' +
@@ -1480,7 +1501,8 @@
         npcGenLinesHtml(c.lines) +
         '<div class="gm-card-acts"><button type="button" class="btn sm primary" data-gm="npcfile"' + (inCast ? ' disabled' : '') + ' title="Adds them to the cast, hidden from the players">' + (inCast ? 'In the cast' : 'Add to the cast') + '</button>' +
         '<button type="button" class="btn sm" data-gm="pin" data-tool="npc">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="npc">Copy</button></div></article>';
-    } else h += '<p class="gm-empty">Roll for a face on the street: who they are, what they want, how to play them. They stay in this tab until you add them to the cast.</p>';
+    } else h += '<p class="gm-empty">Roll for a face on the street: who they are, what they want, how to play them. ' +
+      'Pick a faction, district or place to fit the scene, or leave them on any. They stay in this tab until you add them to the cast.</p>';
     box.innerHTML = h + earlierHtml('npc', cur);
   }
   /* the roll into the cast: a hidden doc, plus the roll's seed in the GM state so the vault note can be rebuilt from it (SYNC.md) */
@@ -1670,6 +1692,7 @@
       case 'locroll': rollLocation(); break;
       case 'scnroll': rollScenes(); break;
       case 'npcroll': rollNpc(); break;
+      case 'npcloc': npcFromLocation(); break;
       case 'npcfile': fileNpc(); break;
       case 'scnipad': scenesToIpad(); break;
       case 'engroll': rollEngagement(); break;
@@ -1706,6 +1729,7 @@
     if (t.hasAttribute('data-loc')) { var l = {}; l[t.getAttribute('data-loc')] = t.type === 'checkbox' ? t.checked : t.value; patch({ loc: { ui: l } }); }
     else if (t.hasAttribute('data-map')) setMap(t.getAttribute('data-map'), t.value);
     else if (t.hasAttribute('data-scn')) { var sc = {}; sc[t.getAttribute('data-scn')] = t.value; patch({ scn: { ui: sc } }); }
+    else if (t.hasAttribute('data-npcui')) { var nu = {}; nu[t.getAttribute('data-npcui')] = t.value; patch({ npc: { ui: nu } }); }
     else if (t.hasAttribute('data-eng')) setEngagement(t.getAttribute('data-eng'), t.value, false);
     else if (t.hasAttribute('data-engmod')) setEngagement(t.getAttribute('data-engmod'), t.value, true);
     else if (t.hasAttribute('data-reveal')) { var rv = {}; rv[t.getAttribute('data-reveal')] = t.checked; patch({ loc: { map: { reveal: rv } } }); if (S.map) drawMap(); renderLocation(); }
