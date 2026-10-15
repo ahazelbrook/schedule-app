@@ -344,6 +344,7 @@
     if (d.kind === 'npc') return 'NPC' + (t ? ' · ' + t : '');
     if (d.kind === 'text') return 'Text' + (t ? ' · ' + t : '');
     if (d.kind === 'rule') return 'Rule' + (t ? ' · ' + t : '');
+    if (d.kind === 'cards') return 'Cards' + (Array.isArray(d.cards) ? ' · ' + d.cards.length : '') + (d.mode === 'spread' ? ', spread' : '');
     return 'Nothing spotlit: the ambient plays';
   }
   P.displayLine = displayLine;
@@ -415,6 +416,8 @@
       case 'l': return { type: 'last' };
       case 'h': return { type: 'blank' };
       case 'i': return { type: 'panel', panel: 'ipad' };
+      case 'r': return { type: 'panel', panel: 'prep' };
+      case 'o': return { type: 'panel', panel: 'cards' };
       case '0': return { type: 'clear' };
       case 'escape': return { type: 'esc' };
     }
@@ -569,7 +572,7 @@
      The page
      ===================================================================================================================== */
   var document = W.document;
-  var IDB = 'b68-gm', STORE = 'kv', STICKY = 'b68.gm.sticky';
+  var IDB = 'b68-gm', STORE = 'kv', STICKY = 'b68.gm.sticky', PREP_NOTE = 'b68.gm.prepNote', PREP_WIDE = 'b68.gm.prepWide';
   var S = null;                  /* the open page; null when closed */
   var camp = null;               /* the latest campaign document from boot */
   var gate = makeGate();
@@ -741,7 +744,7 @@
     S = { root: rootEl, api: api, me: null, status: 'loading', doc: {}, updatedAt: null, saver: null, carriedParked: null,
       pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console', scn: null, scnRoll: null, scnMem: {}, scnErr: '', eng: null, engRoll: null, engErr: '',
       arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, pinOpen: null, figMemo: {}, importing: null, view: 'classic', shown: 'console' };
-    try { S.panel = W.localStorage.getItem('b68.gm.panel') || 'location'; } catch (e) {}
+    try { S.panel = W.localStorage.getItem('b68.gm.panel') || 'location'; S.prepWide = W.localStorage.getItem(PREP_WIDE) === '1'; } catch (e) {}
     if (SIDE.indexOf(S.panel) < 0) S.panel = 'location';
     S.saver = lastSaver = makeSessionSaver(S);
     wire(rootEl);
@@ -778,6 +781,7 @@
     var me = S;
     if (me.saver) me.saver.flush();          /* session-scoped: anything added while a write is in flight still goes */
     if (me.npcUnsub) { try { me.npcUnsub(); } catch (e) {} }
+    if (me.prepTimer) { W.clearInterval(me.prepTimer); me.prepTimer = null; }
     S = null;
     if (me.root) { me.root.innerHTML = ''; }
     unblank();
@@ -862,12 +866,13 @@
     S.view = conView(storedView(), hasSit());
     S.locMem = clone(m.location || {}); S.locErr = ''; S.scnMem = clone(m.scenes || {}); S.scn = null; S.eng = null; S.npcg = null; S.npcMem = clone(m.npc || {}); S.npcRoll = null;
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
-    S.status = 'ready';
+    S.status = 'ready'; S.prepKey = null;
     layout(); redrawAll(); subscribeNpcs();
+    if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
     if (S.panel === 'ipad') loadAmbient();
   }
   function layout() {
-    var segs = [['console', 'Console'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['ipad', 'iPad'], ['state', 'State']];
+    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['cards', 'Cards'], ['ipad', 'iPad'], ['state', 'State']];
     S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '" data-view="' + esc(S.view) + '">' +
       '<div class="gm-head"><div class="gm-title"><p class="gm-kick">GM tools <span id="gm-save" class="gm-save" role="status"></span></p>' + '<h1 class="gm-h" tabindex="-1">The console</h1><p class="gm-exp" id="gm-exp"></p></div>' +
       '<div class="gm-acts"><a class="btn sm primary" href="#display" id="gm-display" title="The players’ screen: open this on the iPad">Display</a>' + '<button type="button" class="btn sm" data-gm="note">Export tonight’s note</button><button type="button" class="btn sm" data-gm="update">Update pack</button>' + '<button type="button" class="btn sm" data-gm="forget">Forget GM data on this device</button></div></div>' +
@@ -878,8 +883,8 @@
       '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"><span class="gm-lab">Scene</span>' + '<span class="gm-scene-chips" id="gm-scene-chips"></span></button>' +
       '<div class="gm-controls" id="gm-controls"></div><div class="gm-buttons" id="gm-buttons"></div><div class="gm-singles" id="gm-singles"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      [['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['rules', 'Rules', 'T'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
-      '</div><div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
+      [['prep', 'Prep', 'R'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['cards', 'Cards', 'O'], ['rules', 'Rules', 'T'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
+      '</div><div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
       '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button></div>';
@@ -894,7 +899,7 @@
   }
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); syncPanels(); renderView(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderIpad(); renderRail(); renderCapture(); syncSave();
+    syncHead(); syncPanels(); renderView(); renderPrep(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
   }
   function syncHead() {
     var e = $q('#gm-exp'); if (!e) return;
@@ -911,6 +916,8 @@
     r.querySelectorAll('.gm-pane').forEach(function (p) { p.hidden = p.getAttribute('data-pane') !== S.panel; });
     var sc = $q('#gm-scene'); if (sc) sc.setAttribute('aria-expanded', String(!!S.sceneOpen)); r.classList.toggle('scene-open', !!S.sceneOpen);
     var fab = $q('.gm-fab'); if (fab) fab.setAttribute('aria-expanded', String(!!S.capOpen)); r.classList.toggle('cap-open', !!S.capOpen);
+    r.classList.toggle('prep-wide', S.panel === 'prep' && !!S.prepWide);
+    var wb = $q('[data-gm="prep-wide"]'); if (wb) wb.setAttribute('aria-pressed', String(!!S.prepWide));
   }
   function setPanel(p) {
     S.panel = p; if (S.seg !== 'console' && S.seg !== 'state') S.seg = 'side';
@@ -1267,7 +1274,7 @@
   }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
 
-  var SIDE = ['location', 'scenes', 'engagement', 'npc', 'rules', 'ipad'];
+  var SIDE = ['prep', 'location', 'scenes', 'engagement', 'npc', 'cards', 'rules', 'ipad'];
   /* ---------- the street scene roller (S) and the engagement roll (E): side panels ---------- */
   function genLinesHtml(lines) {
     return (lines || []).map(function (l) { return l.kind === 'chips' ? chipsHtml(l.chips) : linesHtml([l], md); }).join('');
@@ -1527,6 +1534,180 @@
     pushDisplay({ kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000) }).then(function () { toast('On the iPad: ' + (d.name || 'the NPC') + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
   }
 
+  /* ---------- the Prep tab (gm/prep.js; GM.md "Prep"): the prep notes from the pack, ticks and beats in the GM state ---------- */
+  function prepDoc() { return isObj(S.doc.prep) ? S.doc.prep : {}; }
+  function prepSession() { return isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0; }
+  function prepNoteId(pk) {
+    var list = W.B68GmPrep.notes(pk), id = null;
+    try { id = W.localStorage.getItem(PREP_NOTE); } catch (e) {}
+    return list.some(function (n) { return n.id === id; }) ? id : list[0] ? list[0].id : null;
+  }
+  function prepRunning() { var b = prepDoc().beats; return isObj(b) && Object.keys(b).some(function (k) { return isObj(b[k]); }); }
+  function hm(iso) { var d = new Date(iso); return isNaN(d) ? '' : pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+  function renderPrep(force) {
+    var box = $q('#gm-prep'); if (!box) return;
+    var B = W.B68GmPrep, M = W.B68Markdown, pk = part('prep');
+    if (!B || !M) { box.innerHTML = '<p class="gm-note bad">The prep module is missing.</p>'; S.prepKey = null; return; }
+    if (!pk) { box.innerHTML = '<p class="gm-empty">No prep notes in the pack yet. In Obsidian, add the property <code>gm_prep: true</code> to a session note, then run <code>npm run gm:pack</code> and push the pack (or Update pack).</p>'; S.prepKey = null; return; }
+    var meta = S.pack.parts.prep, id = prepNoteId(pk), key = str(meta.version) + '|' + id;
+    if (force || S.prepKey !== key || !box.querySelector('.pp-doc')) {
+      var exp = meta.src && meta.src.exportedAt, age = ageDays(exp);
+      var v = B.view(pk, id, { M: M, exportedAt: exp ? dmy(exp) + ' ' + hm(exp) : '' }), list = B.notes(pk);
+      S.prepView = v; S.prepKey = key; S.prepTasks = {};
+      (v.note ? v.note.blocks : []).forEach(function (b) { (b.tasks || []).forEach(function (t) { if (t && t.a) S.prepTasks[t.a] = { rel: b.from, t: t.t, d: !!t.d }; }); });
+      box.innerHTML = '<div class="pp-bar">' +
+        (list.length > 1 ? '<label class="gm-field pp-pick" for="gm-prep-note"><span class="gm-lab">Note</span><select id="gm-prep-note">' + list.map(function (n) { return '<option value="' + esc(n.id) + '"' + (n.id === id ? ' selected' : '') + '>' + esc(n.title) + '</option>'; }).join('') + '</select></label>' : '') +
+        '<nav class="pp-rail" aria-label="Sections">' + v.rail.map(function (r) { return '<button type="button" class="chip sm" data-gm="prep-go" data-id="' + esc(r.id) + '">' + esc(r.text) + '</button>'; }).join('') + '</nav>' +
+        '<button type="button" class="btn sm pp-widebtn" data-gm="prep-wide" aria-pressed="' + !!S.prepWide + '" title="Hide the console while you read">Wide</button></div>' +
+        (age != null && age > 1 ? '<p class="gm-note pp-stale">Exported ' + Math.floor(age) + ' day' + (age >= 2 ? 's' : '') + ' ago. Edits made in Obsidian since then are not here: run <code>npm run gm:pack</code> and push the pack.</p>' : '') +
+        '<div class="pp-peek" id="gm-prep-peek" hidden></div><article class="pp-doc">' + v.html + '</article>';
+    }
+    decoratePrep(box);
+  }
+  function decoratePrep(el) {
+    if (!el || !W.B68GmPrep) return;
+    var p = prepDoc(), pins = isObj(p.pins) ? p.pins : {};
+    W.B68GmPrep.decorate(el, { ticks: p.ticks, cells: p.cells, beats: p.beats });
+    el.querySelectorAll('.pp-pin').forEach(function (b) { var on = isObj(pins[b.getAttribute('data-sec')]); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Pinned' : 'Pin'; });
+  }
+  function prepRedecorate() { decoratePrep($q('#gm-prep')); renderRail(); }
+  function prepTick(a) {
+    var info = S.prepTasks && S.prepTasks[a]; if (!info) return;
+    if (info.d) { toast('Ticked in the note already.'); return; }
+    var t = {}, on = isObj(prepDoc().ticks) && isObj(prepDoc().ticks[a]);
+    t[a] = on ? null : { at: nowIso(), s: prepSession(), rel: info.rel, t: str(info.t).slice(0, 200) };
+    if (patch({ prep: { ticks: t } })) prepRedecorate();
+  }
+  function prepCell(td) {
+    var k = td.getAttribute('data-cell'), c = {}, on = isObj(prepDoc().cells) && isObj(prepDoc().cells[k]);
+    c[k] = on ? null : { at: nowIso(), s: prepSession(), label: str(td.getAttribute('data-label')).slice(0, 200) };
+    if (patch({ prep: { cells: c } })) prepRedecorate();
+  }
+  function prepBeat(b) {
+    var k = b.getAttribute('data-beat'), on = isObj(prepDoc().beats) && isObj(prepDoc().beats[k]), x = {};
+    if (on && !W.confirm('Clear this beat’s start time?')) return;
+    x[k] = on ? null : { at: nowIso(), s: prepSession(), label: str(b.getAttribute('data-label')).slice(0, 200) };
+    if (patch({ prep: { beats: x } })) prepRedecorate();
+  }
+  function prepPin(sec) {
+    var pins = isObj(prepDoc().pins) ? prepDoc().pins : {}, x = {};
+    if (isObj(pins[sec])) x[sec] = null;
+    else { if (Object.keys(pins).filter(function (k) { return isObj(pins[k]); }).length >= 3) { toast('Three sections are pinned already: unpin one first.', true); return; } x[sec] = { at: nowIso(), note: prepNoteId(part('prep')) }; }
+    if (patch({ prep: { pins: x } })) prepRedecorate();
+  }
+  /* the pinned sections, live (their boxes tick here as in the tab), at the top of the rail */
+  function prepPinsHtml() {
+    var pk = part('prep'), B = W.B68GmPrep, pins = prepDoc().pins; if (!pk || !B || !isObj(pins)) return '';
+    return Object.keys(pins).filter(function (k) { return isObj(pins[k]); }).map(function (sec) {
+      var noteId = str(pins[sec].note), v = S.prepView && S.prepView.note && S.prepView.note.id === noteId ? S.prepView : B.view(pk, noteId, { M: W.B68Markdown }), s = v.secs[sec];
+      if (!s) return '';
+      return '<section class="gm-box pp-pinbox" data-sec="' + esc(sec) + '"><h3 class="gm-band">' + esc(s.head || 'Prep') + '<button type="button" class="gm-x" data-gm="prep-pin" data-sec="' + esc(sec) + '" aria-label="Unpin">×</button></h3>' +
+        '<div class="pp-doc pp-mini">' + B.section(pk, noteId, sec, { M: W.B68Markdown, view: v }) + '</div></section>';
+    }).join('');
+  }
+  function prepGo(id) {
+    var el = id ? $q('#' + id) : null; if (!el) return;
+    if (S.panel !== 'prep') setPanel('prep');
+    try { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) { el.scrollIntoView(); }
+  }
+  /* a link in a prep note: a heading here, a peek card for an NPC, PC or faction, another prep note, or Obsidian */
+  function prepLink(href) {
+    var B = W.B68GmPrep, pk = part('prep'), l = B && B.link(href); if (!l || !pk) return;
+    if (l.type === 'top') { var d = $q('#gm-prep'); if (d) d.scrollIntoView(); return; }
+    if (l.type === 'heading') {
+      var want = B.slug(l.text), hit = $q('#gm-prep [id="pp-' + want + '"]') || $q('#gm-prep h2[id$="--' + want + '"], #gm-prep h3[id$="--' + want + '"], #gm-prep h4[id$="--' + want + '"], #gm-prep h5[id$="--' + want + '"]');
+      if (hit) { try { hit.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) { hit.scrollIntoView(); } } else toast('That heading is not in this note.', true);
+      return;
+    }
+    var L = isObj(pk.links) ? pk.links[l.key] : null; if (!L) return;
+    if (l.kind === 'note') {
+      var other = B.notes(pk).filter(function (n) { var full = (pk.notes || []).filter(function (x) { return x.id === n.id; })[0]; return full && full.rel === L.rel; })[0];
+      if (other && other.id !== prepNoteId(pk)) { try { W.localStorage.setItem(PREP_NOTE, other.id); } catch (e) {} renderPrep(true); return; }
+      var emb = $q('#gm-prep .pp-embed[data-from="' + str(L.rel).replace(/"/g, '') + '"]'); if (emb) { emb.scrollIntoView(); return; }
+    }
+    if (l.kind === 'npc' || l.kind === 'pc' || l.kind === 'faction') { prepPeek(l.kind, L); return; }
+    W.location.href = B.obsidianUri(pk, L.rel);
+  }
+  function prepPeek(kind, L) {
+    var box = $q('#gm-prep-peek'), pk = part('prep'), c = part('campaign') || {}, lc = function (s) { return str(s).toLowerCase(); }, h = '', acts = '';
+    if (!box) return;
+    if (kind === 'npc') {
+      var n = (c.npcs || []).filter(function (x) { return lc(x.name) === lc(L.name); })[0] || { name: L.name };
+      var appId = Object.keys(S.npcs || {}).filter(function (id) { return lc(S.npcs[id] && S.npcs[id].name) === lc(L.name); })[0];
+      h = '<p class="gm-kick">NPC</p><h3>' + esc(n.name) + '</h3><p class="gm-sub">' + esc([n.role, n.faction, n.district].filter(Boolean).join(' · ')) + '</p>' +
+        (n.glance ? '<p>' + esc(n.glance) + '</p>' : '') + (n.mannerism ? '<p class="gm-dim">' + esc(n.mannerism) + '</p>' : '') +
+        (Array.isArray(n.say) && n.say.length ? '<blockquote class="pp-sayline">' + n.say.slice(0, 2).map(esc).join('<br>') + '</blockquote>' : '');
+      if (appId) acts += '<button type="button" class="btn sm" data-gm="npcipad" data-id="' + esc(appId) + '">Show on iPad</button><a class="btn sm" href="#cast/' + encodeURIComponent(appId) + '">Put on stage</a>';
+    } else if (kind === 'pc') {
+      var p = (c.pcs || []).filter(function (x) { return lc(x.file) === lc(L.name) || lc(x.name) === lc(L.name); })[0] || { name: L.name };
+      h = '<p class="gm-kick">PC</p><h3>' + esc(p.name) + '</h3><p class="gm-sub">' + esc(p.playbook || '') + '</p>' +
+        [['Friends', p.friend], ['Rival', p.rival], ['Vice', p.vice]].filter(function (r) { return Array.isArray(r[1]) && r[1].length; }).map(function (r) { return '<p><span class="gm-lab">' + r[0] + '</span> ' + esc(r[1].join(', ')) + '</p>'; }).join('');
+    } else {
+      var bare = lc(L.name).replace(/^b68g?-/, '').replace(/^the-/, ''), st = (c.standing || []).filter(function (s) { return B68slug(s.faction).replace(/^the-/, '') === bare; })[0];
+      h = '<p class="gm-kick">Faction</p><h3>' + esc(st ? st.faction : L.name) + '</h3>' + (st ? '<p><span class="gm-lab">Status with the crew</span> ' + esc((st.status > 0 ? '+' : '') + st.status) + '</p>' : '<p class="gm-dim">No status recorded on the board.</p>');
+    }
+    box.innerHTML = '<div class="pp-peekcard">' + h + '<p class="pp-acts">' + acts + '<a class="btn sm" href="' + esc(W.B68GmPrep.obsidianUri(pk, L.rel)) + '">Open in Obsidian</a><button type="button" class="btn sm" data-gm="prep-peekx">Close</button></p></div>';
+    box.hidden = false;
+    try { box.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+  }
+  /* ---------- the Cards panel: the planning meeting's opportunity cards, typed onto the card here, shown on the iPad ----------
+     GM state `opps`: { list: { id: { from, client, target, type, note, payout, order, at } }, interval }. Only what the GM typed
+     goes out, and only when they press a Show button (display kind `cards`, checked by the server). */
+  var OPP_ROWS = [['from', 'From'], ['client', 'Client'], ['target', 'Target'], ['type', 'Type'], ['note', ''], ['payout', 'Payout']], OPP_MAX = 8;
+  function oppDoc() { return isObj(S.doc.opps) ? S.doc.opps : {}; }
+  function oppList() {
+    var l = isObj(oppDoc().list) ? oppDoc().list : {};
+    return Object.keys(l).filter(function (k) { return isObj(l[k]); }).map(function (k) { return Object.assign({ _id: k }, l[k]); })
+      .sort(function (a, b) { return (+a.order || 0) - (+b.order || 0) || (a._id < b._id ? -1 : 1); });
+  }
+  function renderCards(force) {
+    var box = $q('#gm-cards'); if (!box) return;
+    var act = document.activeElement;
+    if (!force && act && box.contains(act) && act.classList && act.classList.contains('oc-in')) return;   /* not while typing on a card */
+    var list = oppList(), iv = Math.floor(+oppDoc().interval || 0), pcs = (part('campaign') || {}).pcs || [];
+    var names = pcs.map(function (p) { return str(p.first || p.name); }).filter(Boolean).concat(['GM']);
+    var h = '<div class="gm-cardsbar"><button type="button" class="btn sm primary" data-gm="opp-add"' + (list.length >= OPP_MAX ? ' disabled' : '') + '>Add a card</button>' +
+      '<button type="button" class="btn sm" data-gm="opp-show" data-mode="carousel"' + (list.length ? '' : ' disabled') + '>Show on iPad</button>' +
+      '<button type="button" class="btn sm" data-gm="opp-show" data-mode="spread"' + (list.length ? '' : ' disabled') + '>Spread on iPad</button>' +
+      '<label class="gm-field" for="gm-opp-iv"><span class="gm-lab">Turns</span><select id="gm-opp-iv">' + [[0, 'when tapped'], [8, 'every 8 s'], [12, 'every 12 s'], [20, 'every 20 s']].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === iv ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label></div>' +
+      '<datalist id="gm-opp-from">' + names.map(function (n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>';
+    if (!list.length) h += '<p class="gm-empty">One card per pitch at the planning meeting: each player’s, then yours. Type on the card, then Show on iPad. Each card names a client, a target or an operation type (the others stay blank).</p>';
+    h += '<div class="gm-opps">' + list.map(function (c, i) {
+      return '<div class="gm-opp"><div class="oc-card oc-edit"><div class="oc-row oc-head"><span class="oc-lab"></span><span class="oc-colon"></span><span class="oc-val oc-title">Opportunity ' + (i + 1) + '</span></div>' +
+        OPP_ROWS.map(function (r) {
+          return '<label class="oc-row"><span class="oc-lab">' + esc(r[1]) + '</span><span class="oc-colon">:</span><span class="oc-val"><input class="oc-in" type="text" maxlength="120" autocomplete="off" data-opp="' + esc(c._id) + '" data-f="' + r[0] + '" value="' + esc(c[r[0]]) + '"' +
+            (r[0] === 'from' ? ' list="gm-opp-from"' : '') + ' aria-label="' + esc(r[1] || 'Note') + '"></span></label>';
+        }).join('') + '</div><div class="gm-opp-acts"><button type="button" class="btn sm" data-gm="opp-one" data-id="' + esc(c._id) + '">Show this one</button>' +
+        '<button type="button" class="btn sm" data-gm="opp-move" data-id="' + esc(c._id) + '" data-d="-1"' + (i ? '' : ' disabled') + ' aria-label="Move up">↑</button><button type="button" class="btn sm" data-gm="opp-move" data-id="' + esc(c._id) + '" data-d="1"' + (i < list.length - 1 ? '' : ' disabled') + ' aria-label="Move down">↓</button>' +
+        '<button type="button" class="btn sm" data-gm="opp-del" data-id="' + esc(c._id) + '">Remove</button></div></div>';
+    }).join('') + '</div>';
+    box.innerHTML = h;
+  }
+  function oppAdd() {
+    var list = oppList(); if (list.length >= OPP_MAX) return;
+    var id = uid('o'), x = {}; x[id] = { from: '', client: '', target: '', type: '', note: '', payout: '', order: list.length ? (+list[list.length - 1].order || 0) + 1 : 1, at: nowIso() };
+    if (patch({ opps: { list: x } })) { renderCards(true); var f = $q('[data-opp="' + id + '"][data-f="from"]'); if (f) f.focus(); }
+  }
+  function oppMove(id, d) {
+    var list = oppList(), i = list.map(function (c) { return c._id; }).indexOf(id), j = i + d; if (i < 0 || j < 0 || j >= list.length) return;
+    var x = {}; x[list[i]._id] = { order: +list[j].order || j }; x[list[j]._id] = { order: +list[i].order || i };
+    if (x[list[i]._id].order === x[list[j]._id].order) { x[list[i]._id].order = j; x[list[j]._id].order = i; }
+    if (patch({ opps: { list: x } })) renderCards(true);
+  }
+  function oppDel(id) {
+    var c = oppList().filter(function (o) { return o._id === id; })[0]; if (!c) return;
+    if ((c.from || c.client || c.target || c.type || c.note || c.payout) && !W.confirm('Remove this card?')) return;
+    var x = {}; x[id] = null; if (patch({ opps: { list: x } }, { force: true })) renderCards(true);
+  }
+  function oppShow(mode, oneId) {
+    var list = oppList(); if (oneId) list = list.filter(function (c) { return c._id === oneId; });
+    if (!list.length) { toast('Add a card first.', true); return; }
+    var cards = list.slice(0, OPP_MAX).map(function (c) { var o = {}; OPP_ROWS.forEach(function (r) { o[r[0]] = str(c[r[0]]).replace(/\s+/g, ' ').trim().slice(0, 120); }); return o; });
+    var d = { kind: 'cards', title: 'Opportunities', cards: cards, mode: mode === 'spread' ? 'spread' : 'carousel', interval: oneId ? 0 : Math.floor(+oppDoc().interval || 0), start: 0 };
+    pushDisplay(d).then(function () { toast('On the iPad: ' + (oneId ? 'one card' : cards.length + ' cards' + (d.mode === 'spread' ? ', spread out' : '')) + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+  }
+  function B68slug(s) { return str(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
+
   /* ---------- the Rules tab ---------- */
   var RULE_TERMS = ['position and effect', 'resistance', 'devil’s bargain', 'harm', 'heat', 'engagement roll', 'flashback', 'stress', 'trauma', 'clocks', 'teamwork', 'gather information'];
   function renderRules() {
@@ -1539,7 +1720,7 @@
   /* ---------- the rail ---------- */
   function renderRail() {
     var box = $q('#gm-rail'); if (!box) return;
-    var d = isObj(camp) ? camp : {}, crew = isObj(d.crew) ? d.crew : {}, h = '';
+    var d = isObj(camp) ? camp : {}, crew = isObj(d.crew) ? d.crew : {}, h = prepPinsHtml();
     function stat(k, v, max) { return '<div class="gm-stat"><dt>' + k + '</dt><dd>' + (v == null ? '—' : esc(v) + (max ? '<small>/' + max + '</small>' : '')) + '</dd></div>'; }
     h += '<section class="gm-box"><h3 class="gm-band">Crew' + (crew.name ? ': ' + esc(crew.name) : '') + '</h3><dl class="gm-stats">' + stat('Heat', +crew.heat || 0, 9) + stat('Wanted', +crew.wanted || 0, 4) + stat('Rep', +crew.rep || 0, 12) + stat('Stacks', +crew.stacks || 0) + stat('Vault', +crew.vault || 0, 16) + '</dl>' +
       '<p class="gm-dim">Session ' + esc(isObj(d.session) ? +d.session.number || 0 : 0) + ' · read-only here; change it on <a href="#t">the table</a>.</p></section>';
@@ -1558,6 +1739,7 @@
     var sc = isObj(d.scene) && isObj(d.scene.npcs) ? d.scene.npcs : {}, staged = Object.keys(sc).filter(function (id) { return sc[id] === true; });
     h += '<section class="gm-box"><h3 class="gm-band">On stage</h3><p class="gm-chips">' + (staged.length ? staged.map(function (id) { var n = S.npcs[id]; return '<a class="chip sm" href="#cast/' + encodeURIComponent(id) + '">' + esc(n && n.name || id) + '</a>'; }).join('') : '<a class="chip sm" href="#cast">Nobody: the cast</a>') + '</p></section>';
     box.innerHTML = h;
+    if (box.querySelector('.pp-pinbox')) decoratePrep(box);
   }
   function clockLi(name, filled, size, sub) {
     var n = Math.max(1, Math.min(12, Math.floor(+size || 4))), f = Math.max(0, Math.min(n, Math.floor(+filled || 0))), seg = '';
@@ -1643,6 +1825,11 @@
     if (blankEl) { ev.preventDefault(); ev.stopPropagation(); unblank(); return; }
     if (!S || S.status !== 'ready' || document.body.dataset.mode !== 'gm') return;
     var dlg = document.querySelector('dialog[open]'); if (dlg) return;
+    /* a focused task box or tick cell in the Prep tab: Space or Enter ticks it */
+    var tg = ev.target;
+    if ((ev.key === ' ' || ev.key === 'Enter') && tg && tg.matches && S.root.contains(tg) && tg.matches('.rl-task[data-task], td[data-cell]')) {
+      ev.preventDefault(); if (tg.hasAttribute('data-task')) prepTick(tg.getAttribute('data-task')); else prepCell(tg); return;
+    }
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target), view: S.view });
     if (!a) return;
     if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } return; }
@@ -1657,7 +1844,12 @@
     else if (a.type === 'clear') blankIpad();
   }
   function onClick(ev) {
-    var b = ev.target.closest && ev.target.closest('[data-gm]'); if (!b || !S || !S.root.contains(b)) return;
+    if (!S || !ev.target.closest) return;
+    /* the Prep tab: a link in a note, a task box, a tick-column cell (no data-gm: they come from the renderer) */
+    var pl = ev.target.closest('a[href^="#pp:"]'); if (pl && S.root.contains(pl)) { ev.preventDefault(); prepLink(pl.getAttribute('href')); return; }
+    var pt = ev.target.closest('.rl-task[data-task]'); if (pt && S.root.contains(pt)) { ev.preventDefault(); prepTick(pt.getAttribute('data-task')); return; }
+    var pc = ev.target.closest('td[data-cell]'); if (pc && S.root.contains(pc)) { prepCell(pc); return; }
+    var b = ev.target.closest('[data-gm]'); if (!b || !S.root.contains(b)) return;
     var a = b.getAttribute('data-gm');
     switch (a) {
       case 'retry': load(); break;
@@ -1687,6 +1879,16 @@
         else { S.locRoll = null; S.map = null; renderLocation(); }
         break;
       }
+      case 'opp-add': oppAdd(); break;
+      case 'opp-show': oppShow(b.getAttribute('data-mode')); break;
+      case 'opp-one': oppShow('carousel', b.getAttribute('data-id')); break;
+      case 'opp-move': oppMove(b.getAttribute('data-id'), +b.getAttribute('data-d')); break;
+      case 'opp-del': oppDel(b.getAttribute('data-id')); break;
+      case 'prep-go': prepGo(b.getAttribute('data-id')); break;
+      case 'prep-pin': prepPin(b.getAttribute('data-sec')); break;
+      case 'prep-beat': prepBeat(b); break;
+      case 'prep-wide': S.prepWide = !S.prepWide; try { W.localStorage.setItem(PREP_WIDE, S.prepWide ? '1' : '0'); } catch (e) {} syncPanels(); break;
+      case 'prep-peekx': { var pk2 = $q('#gm-prep-peek'); if (pk2) { pk2.hidden = true; pk2.innerHTML = ''; } break; }
       case 'pin': pin(b.getAttribute('data-tool')); break;
       case 'copy': copy(b.getAttribute('data-tool')); break;
       case 'locroll': rollLocation(); break;
@@ -1723,6 +1925,12 @@
   function onChange(ev) {
     var t = ev.target; if (!S || !t) return;
     if (t.id === 'gm-file') { readPackFile(t.files && t.files[0]); return; }
+    if (t.hasAttribute && t.hasAttribute('data-opp')) {      /* a card's line: saved when the field is left (the change event), not per key */
+      if (ev.type === 'change') { var ol = {}, ox = {}; ox[t.getAttribute('data-f')] = str(t.value).slice(0, 120); ol[t.getAttribute('data-opp')] = ox; patch({ opps: { list: ol } }); }
+      return;
+    }
+    if (t.id === 'gm-opp-iv') { if (ev.type === 'change') patch({ opps: { interval: Math.floor(+t.value) || 0 } }); return; }
+    if (t.id === 'gm-prep-note') { if (ev.type === 'change') { try { W.localStorage.setItem(PREP_NOTE, t.value); } catch (e) {} renderPrep(true); } return; }
     if (t.hasAttribute('data-ctl')) { if (ev.type === 'change' || t.tagName === 'SELECT') setLive(t.getAttribute('data-ctl'), t.value); return; }
     if (ev.type !== 'change') return;
     if (t.hasAttribute('data-ambint')) { patchAmbient({ intervalMin: Math.round(+t.value) }); return; }

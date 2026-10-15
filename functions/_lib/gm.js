@@ -28,7 +28,11 @@ export const LIMITS = {
 export const PART_RE = /^[a-z0-9-]{1,32}$/;
 // blank: nothing spotlit (the table display falls back to the ambient scene); dark: lights out (true black);
 // rule: one rules entry, as Markdown (the display renders it with markdown.js, links as plain text)
-export const DISPLAY_KINDS = ['blank', 'dark', 'svg', 'npc', 'text', 'rule'];
+// cards: the planning meeting's opportunity cards, typed by the GM on the GM page (from, client, target, type, a free line,
+// payout), shown as a carousel or spread out
+export const DISPLAY_KINDS = ['blank', 'dark', 'svg', 'npc', 'text', 'rule', 'cards'];
+export const CARD_FIELDS = ['from', 'client', 'target', 'type', 'note', 'payout'];
+export const CARD_LIMITS = { cards: 8, field: 120, interval: 120 };
 
 // The ambient scenes (AMBIENT-PLAN.md): the ids mirror Pure.AMBIENT_SCENES in app/display-page.js; the bands are the
 // four reveal layers of a score site, lowest first.
@@ -240,6 +244,19 @@ export function cleanDisplay(raw) {
   }
   if (kind === 'text') out.text = str(raw.text, 'text', LIMITS.text, true);
   if (kind === 'rule') out.md = str(raw.md, 'md', LIMITS.rule, true);
+  if (kind === 'cards') {
+    if (!Array.isArray(raw.cards) || raw.cards.length < 1 || raw.cards.length > CARD_LIMITS.cards) throw new HttpError(400, 'cards must be a list of 1 to ' + CARD_LIMITS.cards + ' cards');
+    out.cards = raw.cards.map((c, i) => {
+      if (!isPlainObject(c)) throw new HttpError(400, 'card ' + (i + 1) + ' must be an object');
+      const card = {};
+      for (const f of CARD_FIELDS) card[f] = str(c[f], 'card ' + (i + 1) + ' ' + f, CARD_LIMITS.field);
+      return card;
+    });
+    out.mode = raw.mode === 'spread' ? 'spread' : 'carousel';
+    const n = Number(raw.interval);
+    out.interval = Number.isInteger(n) && n >= 0 && n <= CARD_LIMITS.interval ? n : 0;
+    out.start = Number.isInteger(raw.start) && raw.start >= 0 && raw.start < out.cards.length ? raw.start : 0;
+  }
   return out;
 }
 

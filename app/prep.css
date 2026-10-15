@@ -1,0 +1,152 @@
+/* prep.css — the GM page's Prep tab (app/gm/prep.js) and the planning-meeting cards: a prep note from the vault, set in the
+   Blades '68 design system's play-aid manner. Boxes with an ink header band, condensed black caps for labels, mono micro
+   caps for provenance, square trackers that fill solid ink, hard offset shadows (never a blur), two inks per surface.
+   Callout colours follow the system's tones: signal (read aloud), caution (hazard), covert (settled), file (open question). */
+#gm-page { --pp-file: #3f62c4; --pp-on-file: #fbf8f1; --pp-caution-ink: #6e5408; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #gm-page { --pp-file: #8fa3dd; --pp-on-file: #14110e; --pp-caution-ink: #e8c33c; } }
+:root[data-theme="dark"] #gm-page { --pp-file: #8fa3dd; --pp-on-file: #14110e; --pp-caution-ink: #e8c33c; }
+
+/* ---- the bar: note picker, section rail, Wide ---- */
+#gm-page .pp-bar { position: sticky; top: 0; z-index: 3; display: flex; gap: 8px; align-items: center; background: var(--paper); border-bottom: 2px solid var(--rule); padding: 6px 0 8px; }
+#gm-page .pp-rail { display: flex; gap: 6px; overflow-x: auto; flex: 1 1 auto; min-width: 0; scrollbar-width: thin; padding-bottom: 2px; }
+#gm-page .pp-rail .chip { white-space: nowrap; flex: 0 0 auto; }
+#gm-page .pp-pick, #gm-page .pp-widebtn { flex: 0 0 auto; }
+#gm-page .pp-widebtn[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .pp-stale { border-left: 6px solid var(--mustard); }
+
+/* ---- the note ---- */
+#gm-page .pp-doc { font: 400 15px/1.5 var(--font-text); overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; }
+#gm-page .pp-head { border-top: 4px solid var(--rule); padding-top: 8px; margin: 10px 0 6px; }
+#gm-page .pp-title { font: 900 clamp(34px, 4vw, 48px)/.86 var(--font-poster); margin: 4px 0 6px; text-wrap: balance; }
+#gm-page .pp-meta { font: 900 11px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
+#gm-page .pp-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+#gm-page .pp-sec { position: relative; scroll-margin-top: 56px; }
+#gm-page .pp-sec-acts { position: absolute; right: 0; top: 14px; }
+#gm-page .pp-pin { font: 900 10px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; border: 2px solid var(--rule); background: var(--card); color: var(--ink); padding: 5px 7px; cursor: pointer; border-radius: 4px; }
+#gm-page .pp-pin[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .pp-doc > * > * , #gm-page .pp-doc .pp-sec > * { margin: 0 0 .8em; }
+#gm-page .pp-doc p { text-wrap: pretty; }
+#gm-page .pp-doc strong { font-weight: 700; }
+#gm-page .pp-doc h2 { font: 900 30px/.92 var(--font-poster); margin: 1.4em 0 .5em; }
+#gm-page .pp-doc h3 { font: 900 28px/.92 var(--font-poster); border-top: 4px solid var(--rule); padding: 10px 64px 0 0; margin: 1.6em 0 .5em; text-transform: none; letter-spacing: 0; scroll-margin-top: 56px; }
+#gm-page .pp-doc h4 { font: 900 18px/1.15 var(--font-cond); display: flex; gap: 8px; align-items: baseline; margin: 1.3em 0 .4em; text-transform: none; letter-spacing: 0; }
+#gm-page .pp-doc h4::before { content: ""; flex: 0 0 auto; width: 9px; height: 9px; background: var(--accent); transform: translateY(-1px); }
+#gm-page .pp-doc h5, #gm-page .pp-doc h6 { font: 900 12px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; border-bottom: 2px solid var(--rule); padding-bottom: 3px; margin: 1.2em 0 .4em; }
+#gm-page .pp-doc hr { display: none; }                         /* the note's rules between sections: the sections carry their own */
+#gm-page .pp-doc ul, #gm-page .pp-doc ol { padding-left: 1.3em; margin: 0 0 .8em; }
+#gm-page .pp-doc ul { list-style: none; padding-left: 1.2em; }
+#gm-page .pp-doc ul > li { position: relative; }
+#gm-page .pp-doc ul > li::before { content: ""; position: absolute; left: -1em; top: .6em; width: 6px; height: 6px; background: var(--ink); }
+#gm-page .pp-doc ul > li:has(> .pp-box)::before { display: none; }
+#gm-page .pp-doc ol > li::marker { font: 700 .82em var(--font-mono); color: var(--accent); }
+#gm-page .pp-doc li { margin: .28em 0; }
+#gm-page .pp-doc a.rl-wl { color: inherit; text-decoration: underline dotted var(--accent); text-decoration-thickness: 2px; text-underline-offset: 2px; }
+#gm-page .pp-doc a.rl-wl:hover { color: var(--accent); }
+#gm-page .pp-doc code { font: 700 .84em var(--font-mono); background: var(--inset); padding: 1px 4px; }
+#gm-page .pp-doc .rl-hl { background: var(--mustard); color: var(--on-mustard); }
+#gm-page .pp-doc .rl-todo { font: 400 12px/1.4 var(--font-mono); background: color-mix(in srgb, var(--mustard) 30%, transparent); padding: 1px 4px; }
+#gm-page .pp-doc .rl-todo::before { content: "To do: "; font-weight: 700; }
+/* provenance: [Blade's pitch], [interpretation] as mono micro-caps stamps */
+#gm-page .pp-doc code.pp-prov { font: 700 9.5px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .08em; background: transparent; color: var(--ink-soft); border: 1.5px solid currentColor; border-radius: 4px; padding: 2px 5px; white-space: nowrap; vertical-align: 1px; }
+
+/* ---- tables: ink header band, hairlines, a tinted first column ---- */
+#gm-page .pp-doc .rl-tablewrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 2px solid var(--rule); background: var(--card); margin: 0 0 1em; }
+#gm-page .pp-doc table { border-collapse: collapse; width: 100%; font-size: 13.5px; line-height: 1.4; hyphens: manual; }
+#gm-page .pp-doc th, #gm-page .pp-doc td { border-bottom: 1px solid var(--hair); padding: 6px 9px; vertical-align: top; text-align: left; }
+#gm-page .pp-doc td + td, #gm-page .pp-doc th + th { border-left: 1px solid var(--hair); }
+#gm-page .pp-doc th { background: var(--rule); color: var(--on-ink); font: 900 10.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; border-color: var(--rule); }
+#gm-page .pp-doc tbody tr:last-child td { border-bottom: 0; }
+#gm-page .pp-doc td:first-child { background: color-mix(in srgb, var(--inset) 70%, transparent); font-weight: 600; }
+#gm-page .pp-doc td strong { font-family: var(--font-cond); font-weight: 900; font-size: 1.04em; }
+#gm-page .pp-doc .al-c { text-align: center; } #gm-page .pp-doc .al-r { text-align: right; }
+
+/* ---- callouts: a box with a coloured header band ---- */
+#gm-page .pp-doc .rl-callout { border: 2px solid var(--rule); background: var(--card); margin: 0 0 1em; }
+#gm-page .pp-doc .rl-callout-title { font: 900 11px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; padding: 6px 10px; background: var(--inset); color: var(--ink); }
+#gm-page .pp-doc summary.rl-callout-title { cursor: pointer; }
+#gm-page .pp-doc .rl-callout-body { padding: 9px 12px 2px; }
+#gm-page .pp-doc .rl-callout-body > * { margin: 0 0 .7em; }
+#gm-page .pp-doc .rl-callout[data-callout="example"] > .rl-callout-title,
+#gm-page .pp-doc .rl-callout[data-callout="abstract"] > .rl-callout-title,
+#gm-page .pp-doc .rl-callout[data-callout="important"] > .rl-callout-title { background: var(--rule); color: var(--on-ink); }
+#gm-page .pp-doc .rl-callout[data-callout="important"] { box-shadow: 3px 3px 0 var(--accent); }
+#gm-page .pp-doc .rl-callout[data-callout="warning"], #gm-page .pp-doc .rl-callout[data-callout="caution"], #gm-page .pp-doc .rl-callout[data-callout="danger"] { border-color: var(--rule); }
+#gm-page .pp-doc .rl-callout[data-callout="warning"] > .rl-callout-title, #gm-page .pp-doc .rl-callout[data-callout="caution"] > .rl-callout-title, #gm-page .pp-doc .rl-callout[data-callout="danger"] > .rl-callout-title { background: var(--mustard); color: var(--on-mustard); }
+#gm-page .pp-doc .rl-callout[data-callout="warning"] > .rl-callout-title::before, #gm-page .pp-doc .rl-callout[data-callout="caution"] > .rl-callout-title::before, #gm-page .pp-doc .rl-callout[data-callout="danger"] > .rl-callout-title::before { content: "\26A0\FE0E  "; }
+#gm-page .pp-doc .rl-callout[data-callout="success"] > .rl-callout-title, #gm-page .pp-doc .rl-callout[data-callout="check"] > .rl-callout-title, #gm-page .pp-doc .rl-callout[data-callout="done"] > .rl-callout-title { background: var(--ok); color: var(--on-ink); }
+#gm-page .pp-doc .rl-callout[data-callout="question"] > .rl-callout-title, #gm-page .pp-doc .rl-callout[data-callout="faq"] > .rl-callout-title { background: var(--pp-file); color: var(--pp-on-file); }
+/* SAY: read aloud. Signal band, larger text, the hard offset of a second print pass */
+#gm-page .pp-doc .rl-callout.pp-say { box-shadow: 4px 4px 0 var(--shadow-ink); }
+#gm-page .pp-doc .rl-callout.pp-say > .rl-callout-title { background: var(--accent); color: var(--on-accent); font-size: 12px; }
+#gm-page .pp-doc .rl-callout.pp-say > .rl-callout-title::before { content: "\25B6\FE0E  "; }
+#gm-page .pp-doc .rl-callout.pp-say .rl-callout-body { font-size: 19px; line-height: 1.38; padding: 12px 14px 4px; }
+
+/* ---- transcluded sections ---- */
+#gm-page .pp-embed { border: 2px solid var(--rule); background: var(--card); margin: 0 0 1.2em; padding: 0 12px 4px; }
+#gm-page .pp-embed-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--inset); margin: 0 -12px 8px; padding: 5px 6px 5px 12px; border-bottom: 2px solid var(--rule); }
+#gm-page .pp-from { font: 900 10px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; color: var(--ink-soft); }
+#gm-page .pp-from b { color: var(--ink); }
+#gm-page .pp-embed h3 { border-top: 0; padding-top: 0; margin-top: .4em; font-size: 24px; }
+
+/* ---- task boxes and tick cells: the sheet's square tracker, filled solid ink; orange = ticked here, not yet in the note ---- */
+#gm-page .pp-doc .pp-box { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--rule); background: var(--card); color: transparent; font-size: 0; vertical-align: -3px; margin-right: 6px; cursor: pointer; border-radius: 0; }
+#gm-page .pp-doc .pp-box.done { background: var(--rule); }
+#gm-page .pp-doc .pp-box.here { background: var(--accent); border-color: var(--accent); }
+#gm-page .pp-doc .pp-box[aria-disabled="true"] { cursor: default; }
+#gm-page .pp-doc .pp-box:focus-visible, #gm-page .pp-doc .pp-cell:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+#gm-page .pp-doc li.pp-done { color: var(--ink-soft); }
+#gm-page .pp-doc td.pp-cell { cursor: pointer; text-align: center; font-size: 0; min-width: 40px; }
+#gm-page .pp-doc td.pp-cell::after { content: ""; display: inline-block; width: 18px; height: 18px; border: 2px solid var(--rule); background: var(--card); }
+#gm-page .pp-doc td.pp-cell.done::after { background: var(--accent); border-color: var(--accent); }
+@media (pointer: coarse) { #gm-page .pp-doc .pp-box { width: 24px; height: 24px; vertical-align: -6px; } #gm-page .pp-doc td.pp-cell::after { width: 24px; height: 24px; } }
+
+/* ---- run order: a start button per beat, the time against the budget ---- */
+#gm-page .pp-doc .pp-beat { width: 28px; height: 28px; margin: 0 6px 0 0; border: 2px solid var(--rule); background: var(--card); color: var(--ink); font: 700 11px/1 var(--font-mono); cursor: pointer; box-shadow: 2px 2px 0 var(--shadow-ink); vertical-align: middle; }
+#gm-page .pp-doc .pp-beat:active { transform: translate(2px, 2px); box-shadow: none; }
+#gm-page .pp-doc .pp-beat[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .pp-doc tr.pp-running td { background: color-mix(in srgb, var(--mustard) 26%, var(--card)); }
+#gm-page .pp-doc .pp-clock { display: block; font: 700 11px/1.3 var(--font-mono); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+#gm-page .pp-doc .pp-clock.run { color: var(--ink); }
+#gm-page .pp-doc .pp-clock.due { background: var(--mustard); color: var(--on-mustard); padding: 1px 4px; display: inline-block; }
+#gm-page .pp-doc .pp-clock.late { background: var(--alarm); color: var(--on-accent); padding: 1px 4px; display: inline-block; }
+
+/* ---- the peek card (an NPC, PC or faction linked from the note) ---- */
+#gm-page .pp-peek { position: sticky; top: 48px; z-index: 2; }
+#gm-page .pp-peekcard { border: 2px solid var(--rule); background: var(--card); box-shadow: 4px 4px 0 var(--shadow-ink); padding: 10px 12px; margin: 8px 0 12px; display: grid; gap: 6px; }
+#gm-page .pp-peekcard h3 { font: 900 30px/.9 var(--font-poster); margin: 0; }
+#gm-page .pp-sayline { margin: 0; padding: 2px 0 2px 12px; border-left: 4px solid var(--accent); font-size: 15px; }
+
+/* ---- a pinned section in the rail ---- */
+#gm-page .pp-pinbox .gm-band { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+#gm-page .pp-pinbox .gm-x { color: var(--on-ink); background: transparent; border: 0; width: 28px; height: 22px; font-size: 18px; }
+@media (pointer: coarse) { #gm-page .pp-pinbox .gm-x { width: 44px; height: 32px; } }
+#gm-page .pp-mini { font-size: 13px; padding: 8px 10px 2px; max-height: 46vh; overflow-y: auto; }
+#gm-page .pp-mini table { font-size: 12px; }
+#gm-page .pp-mini h3 { display: none; }
+
+/* ---- Wide: the note across the console's column ---- */
+@media (min-width: 1100px) {
+  #gm-root.prep-wide .gm-main { grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); }
+  #gm-root.prep-wide .gm-console { display: none; }
+  #gm-root.prep-wide .pp-doc { max-width: 78ch; }
+}
+@media (min-width: 600px) and (max-width: 1099px) {
+  #gm-root.prep-wide .gm-console { display: none; }
+  #gm-root.prep-wide .gm-side { grid-column: 1 / -1; }
+}
+/* the phone's segment bar: nine segments now (Prep and Cards joined), so it scrolls sideways rather than cutting the labels */
+@media (max-width: 599px) { #gm-page .gm-segbar { overflow-x: auto; scrollbar-width: none; } #gm-page .gm-segbar .chip { flex: 0 0 auto; padding: 8px 12px; }
+  #gm-page .pp-widebtn { display: none; } #gm-page .pp-doc h3 { font-size: 24px; } #gm-page .pp-doc .rl-callout.pp-say .rl-callout-body { font-size: 17px; } }
+
+/* ---- the Cards panel: the opportunity cards, typed straight onto the card (the card's own look is in display.css) ---- */
+#gm-page .gm-cardsbar { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: end; }
+#gm-page .gm-opps { display: grid; gap: 14px; }
+#gm-page .gm-opp { display: grid; gap: 6px; }
+#gm-page .oc-edit { font-size: 17px; box-shadow: 3px 3px 0 var(--shadow-ink); padding: .5em 0 .7em; }
+#gm-page .oc-edit .oc-row { min-height: 1.9em; }
+#gm-page .oc-edit .oc-in { width: 100%; border: 0; background: transparent; color: var(--oc-ink); font: 400 1em/1.2 "Courier Prime", "Courier New", monospace; padding: .2em 0 .05em; border-radius: 0; }
+#gm-page .oc-edit .oc-in:focus { outline: none; background: rgba(232, 195, 60, .25); }
+#gm-page .gm-opp-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* touch: every control at least 44 px, as on the rest of the GM page */
+@media (pointer: coarse) { #gm-page .pp-pin { min-height: 44px; min-width: 60px; } #gm-page .pp-doc .pp-beat { width: 44px; height: 44px; } #gm-page .pp-sec-acts { top: 6px; } }

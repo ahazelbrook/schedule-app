@@ -167,12 +167,38 @@ fails and nobody is known, nothing is purged.
   A roll uses the pack's campaign part, not the live cast, so a freshly filed NPC is avoided by name only after the next
   pack build and push; that keeps the replay identical to the sync's. Code: `app/gm-page.js`, `app/gm/npc.js`,
   `app/gm/figure-map.js`, `scripts/lib/sync-npc.mjs`. Check: `checks/runtime/gm-npc-panel.e2e.mjs`.
+- **Prep** (`R`, the first side tab; on a phone the Prep segment). The GM's prep notes as written in the vault, laid out in
+  the design system. A note opts in with the property `gm_prep: true`; `npm run gm:pack` exports every such note under the
+  '68 folder as the pack part `prep` (`scripts/lib/prep-export.mjs`): the note cut into Markdown blocks, each transclusion
+  (`![[note#heading]]` on a line of its own) carried in as that section of the other note, and every task box matched to its
+  line. Nothing parses a note into a model, so any layout works; a heading or table the page does not recognise renders as
+  written. The page (`app/gm/prep.js`, `app/prep.css`) renders the blocks with `markdown.js`, cut at their `##` headings into
+  sections with a sticky rail of section chips, and then adds what it recognises:
+  - **task boxes** tick (GM state `prep.ticks[anchor]`: `{ at, s, rel, t }`); orange means ticked here and not yet in the
+    note, solid ink means ticked in the note (locked here). `npm run gm:pull` ticks the box in its note (SYNC.md, "Prep");
+  - a table with a `✓` or `☐` column: its cells tick (`prep.cells`), filed as lines under `## At the table (app)`;
+  - a run-order table (first column `#`, a column headed About, Time, Budget or Length): a start button per beat
+    (`prep.beats`) and the running beat's time against its budget, amber at the budget and red at half as much again;
+  - `> [!quote] SAY` as a read-aloud card; a code span that is one `[bracket]` (`` `[Blade's pitch]` ``) as a provenance chip;
+  - links: `[[#Heading]]` scrolls; an NPC, PC or faction opens a peek card from the pack's campaign part (an NPC in the app's
+    cast gets Show on iPad and Put on stage); another prep note opens it; anything else opens in Obsidian (`obsidian://open`);
+  - **Pin** on a section keeps it, live, at the top of the rail (three at most, `prep.pins`); **Wide** hides the console.
+  The header says when the part was exported and warns after a day. Prep text never goes to the iPad or to players; edits are
+  made in Obsidian and reach the page with the next pack build and push. Checks: `checks/runtime/gm-prep.test.mjs`,
+  `checks/runtime/gm-prep.e2e.mjs` (`PREP_PACK=<pack>` to look at a real pack locally).
+- **Cards** (`O`): the planning meeting's opportunity cards, typed straight onto the book's ruled index card (From, Client,
+  Target, Type, a free line, Payout; From suggests the PCs and GM). Up to eight, reordered with the arrows. **Show on iPad**
+  sends them as a carousel (display kind `cards`; the Turns setting makes it turn by itself, or a tap on the right turns it,
+  on the left goes back); **Spread on iPad** lays them all out; **Show this one** sends a single card. GM state `opps`:
+  `{ list: { id: { from, client, target, type, note, payout, order, at } }, interval }`. Only typed text goes out, and only
+  on a Show button; the server keeps the six lines of each card (120 characters each) and nothing else.
 - **State.** The GM state document holds `con` (the console state: `live` controls, `owed`, `struck`, `used`), `loc`
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,
   so a reload or an Earlier click redraws exactly the same card even after a callback was used or a bargain collected),
   `hist` (five per tool), `npc` (`ui`: the NPC pickers), `npcgen` (`{ seed, mem, at, s?, ui? }` per generated NPC id: the
-  roll that made them, `ui` only when a picker was set), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at, s? }`). Capture never touches
+  roll that made them, `ui` only when a picker was set), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at, s? }`),
+  `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab) and `opps` (the Cards panel). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
   `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
   there was none), on typed lines, on lines filed by a card's action (a bargain accepted) and on rolls filed with `L`, so the sync

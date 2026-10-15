@@ -5,7 +5,8 @@
 //                            [--session <N>] [--baseline] [--only notes|npcs|pack] [--pack <file>] [--private <dir>]
 //
 //   pull   app -> vault: capture lines, L rolls, pins, bargains and callbacks into the session note; NPCs made in the
-//          app as new NPC cards; reveals and GM notes into a card's "## In play". Writes the vault unless --dry-run.
+//          app as new NPC cards; reveals and GM notes into a card's "## In play"; the Prep tab's ticks into their task
+//          boxes ([ ] -> [x], never back) and its beat times under "## At the table (app)". Writes the vault unless --dry-run.
 //   push   vault -> D1: NPC name / description / figure spec (field ownership + three-way merge), the GM pack parts
 //          (staged in pieces, swapped in with one statement). Writes D1 ONLY with --yes; otherwise a plan.
 //   both   pull, then push (the default).
@@ -14,7 +15,7 @@
 // stops before it writes anything. Exit: 0 fine, 1 something refused / in conflict, 2 stopped.
 //
 // The pull of session notes (lib/sync-notes.mjs) is the core. NPCs (lib/sync-npc.mjs) and the pack
-// (lib/sync-pack.mjs) are loaded only if present, so the core ships on its own.
+// (lib/sync-pack.mjs) and the Prep tab (lib/sync-prep.mjs) are loaded only if present, so the core ships on its own.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -86,6 +87,7 @@ export async function run(opts) {
   const want = (part) => !o.only || o.only === part;
   const npcMod = want('npcs') ? (opts.npcSync || await optional('sync-npc.mjs')) : null;
   const packMod = want('pack') && o.mode !== 'pull' ? (opts.packSync || await optional('sync-pack.mjs')) : null;
+  const prepMod = want('notes') && o.mode !== 'push' ? (opts.prepSync || await optional('sync-prep.mjs')) : null;
   if (want('npcs') && !npcMod) report.note('NPC sync is not installed in this build (lib/sync-npc.mjs): skipped');
   if (want('pack') && o.mode !== 'pull' && !packMod) report.note('pack push is not installed in this build (lib/sync-pack.mjs): skipped');
 
@@ -103,6 +105,7 @@ export async function run(opts) {
   try {
     if (o.mode !== 'push') {
       if (want('notes')) pullNotes(ctx);
+      if (prepMod) prepMod.pullPrep(ctx);
       if (npcMod) await npcMod.pullNpcs(ctx, opts.npcModule);
     }
     if (o.mode !== 'pull') {

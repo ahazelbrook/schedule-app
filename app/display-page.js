@@ -220,6 +220,11 @@
     if (kind === 'text') return { kind: 'text', title: title, text: str(d.text), size: Pure.textSize(str(d.text)) };
     if (kind === 'dark') return { kind: 'dark', title: title, caption: str(d.caption) };      /* lights out: true black, covers the ambient */
     if (kind === 'rule') { var md = str(d.md, Pure.LIMITS.rule); return { kind: 'rule', title: title, caption: str(d.caption), md: md, size: Pure.ruleSize(md) }; }
+    if (kind === 'cards' && Array.isArray(d.cards) && d.cards.length) {
+      var cards = d.cards.slice(0, 8).map(function (c) { var o = {}; Pure.CARD_FIELDS.forEach(function (f) { o[f] = str(c && c[f], 120); }); return o; });
+      var iv = Math.floor(+d.interval); iv = iv >= 0 && iv <= 120 ? iv : 0;
+      return { kind: 'cards', title: title, cards: cards, mode: d.mode === 'spread' ? 'spread' : 'carousel', interval: iv, start: Math.max(0, Math.min(cards.length - 1, Math.floor(+d.start) || 0)) };
+    }
     if (kind === 'npc') {
       var n = Pure.playerNpc(npcDoc);
       var vm = { kind: 'npc', npcId: typeof d.npcId === 'string' ? d.npcId : '', title: title, found: !!n };
@@ -231,6 +236,11 @@
     }
     return { kind: 'blank' };
   };
+  /* the opportunity card's lines (the planning meeting): field and label, as the book's index card prints them */
+  Pure.CARD_FIELDS = ['from', 'client', 'target', 'type', 'note', 'payout'];
+  Pure.CARD_ROWS = [['from', 'From'], ['client', 'Client'], ['target', 'Target'], ['type', 'Type'], ['note', ''], ['payout', 'Payout']];
+  /* the next card of a carousel: wraps both ways */
+  Pure.cardStep = function (i, n, d) { return n ? ((i + d) % n + n) % n : 0; };
   /* a size class for a block of text, from how much of it there is */
   Pure.textSize = function (text) {
     var n = String(text || '').length;
@@ -569,6 +579,50 @@
     box.appendChild(body); scroll.appendChild(box); e.appendChild(scroll);
     return { el: e, destroy: function () {} };
   }
+  /* the planning meeting's opportunity cards: one large at a time (tap the right side for the next, the left for the one
+     before; it turns by itself when the GM set an interval), or all of them spread on the table */
+  function oppCard(c, i) {
+    var card = el('div', 'oc-card'), head = el('div', 'oc-row oc-head');
+    head.appendChild(el('span', 'oc-lab')); head.appendChild(el('span', 'oc-colon')); head.appendChild(el('span', 'oc-val oc-title', 'Opportunity'));
+    card.appendChild(head);
+    Pure.CARD_ROWS.forEach(function (r) {
+      var row = el('div', 'oc-row');
+      row.appendChild(el('span', 'oc-lab', r[1])); row.appendChild(el('span', 'oc-colon', ':')); row.appendChild(el('span', 'oc-val', c[r[0]]));
+      card.appendChild(row);
+    });
+    card.setAttribute('data-i', String(i));
+    return card;
+  }
+  function cardsStage(vm) {
+    var e = el('div', 'dp-stage dp-cards dp-cards-' + vm.mode), n = vm.cards.length, cur = vm.start, timer = null, offs = [];
+    if (vm.title) e.appendChild(el('p', 'dp-kicker dp-cards-kicker', vm.title));
+    var track = el('div', 'oc-track'), cards = vm.cards.map(function (c, i) { var k = oppCard(c, i); track.appendChild(k); return k; });
+    e.appendChild(track);
+    if (vm.mode === 'spread') return { el: e, destroy: function () {} };
+    var dots = el('div', 'oc-dots');
+    var dotEls = vm.cards.map(function () { var d = el('span', 'oc-dot'); dots.appendChild(d); return d; });
+    if (n > 1) e.appendChild(dots);
+    function show() {
+      cards.forEach(function (k, i) {
+        var off = Pure.cardStep(i, n, -cur), pos = off === 0 ? 'cur' : off === 1 ? 'next' : off === n - 1 ? 'prev' : 'away';
+        k.className = 'oc-card oc-' + (n === 1 ? 'cur' : pos);
+      });
+      dotEls.forEach(function (d, i) { d.classList.toggle('on', i === cur); });
+    }
+    function go(d) { cur = Pure.cardStep(cur, n, d); show(); arm(); }
+    function arm() {
+      clearTimeout(timer);
+      if (vm.interval > 0 && n > 1 && !reduced()) timer = setTimeout(function () { if (!document.hidden) go(1); else arm(); }, vm.interval * 1000);
+    }
+    offs.push(on(e, 'click', function (ev) {
+      if (n < 2) return;
+      var r = e.getBoundingClientRect();
+      go(ev.clientX - r.left < r.width / 3 ? -1 : 1);
+    }));
+    offs.push(on(document, 'keydown', function (ev) { if (ev.key === 'ArrowRight' || ev.key === ' ') go(1); else if (ev.key === 'ArrowLeft') go(-1); }));
+    show(); arm();
+    return { el: e, destroy: function () { clearTimeout(timer); offs.forEach(function (f) { f(); }); } };
+  }
   function noteStage(title, msg) {
     var e = el('div', 'dp-stage dp-text dp-t-l'), box = el('div', 'dp-text-box');
     if (title) box.appendChild(el('p', 'dp-kicker', title));
@@ -740,6 +794,7 @@
       if (vm.kind === 'text') return textStage(vm);
       if (vm.kind === 'dark') return darkStage(vm);
       if (vm.kind === 'rule') return ruleStage(vm);
+      if (vm.kind === 'cards') return cardsStage(vm);
       if (vm.kind === 'npc') return npcStage(vm, seq, ctx);
     } catch (e) { return noteStage(vm.title, 'This could not be shown.'); }
     return blankStage();

@@ -15,6 +15,7 @@
   'use strict';
 
   var MAX_DEPTH = 10;                       /* nested quotes / lists deeper than this are shown as text */
+  var ID_RE = /^[A-Za-z0-9_-]{1,80}$/;      /* an id a caller's hook may put on a heading or a task box */
 
   function esc(t) {
     return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -85,7 +86,10 @@
     if (embed && MEDIA.test(page)) return '';                      /* an image or other file: dropped */
     var showFrag = frag && frag.charAt(0) !== '^' ? frag : '';
     var label = embed ? (page || frag) : (alias || (page ? page + (showFrag ? ' > ' + showFrag : '') : showFrag));
-    if (!page) return esc(label);                                   /* [[#Heading]]: this page; plain text */
+    if (!page) {                                                    /* [[#Heading]]: this page; plain text unless the caller places it */
+      var here = ctx && typeof ctx.resolveLocal === 'function' ? ctx.resolveLocal(frag) : null;
+      return here && typeof here.href === 'string' ? '<a class="rl-wl rl-local" href="' + esc(here.href) + '">' + esc(label) + '</a>' : esc(label);
+    }
     var hit = ctx && typeof ctx.resolve === 'function' ? ctx.resolve(page, frag) : null;
     if (!hit || typeof hit.href !== 'string') return esc(label);    /* unresolved: plain text */
     return '<a class="rl-wl' + (embed ? ' rl-embed' : '') + '" href="' + esc(hit.href) + '">' + esc(label) + '</a>';
@@ -300,7 +304,12 @@
     var tag = ordered ? 'ol' : 'ul', h = '<' + tag + (ordered && start !== 1 ? ' start="' + start + '"' : '') + '>';
     items.forEach(function (body) {
       var task = /^\[([ xX])\][ \t]+/.exec(body[0]), box = '';
-      if (task) { box = '<span class="rl-task' + (task[1] === ' ' ? '' : ' done') + '" aria-hidden="true">' + (task[1] === ' ' ? '\u2610' : '\u2611') + '</span> '; body[0] = body[0].slice(task[0].length); }
+      if (task) {
+        /* ctx.task({ done, text }) -> an id for this box (the GM page's prep view makes it tickable), in document order */
+        var tid = typeof ctx.task === 'function' ? ctx.task({ done: task[1] !== ' ', text: body[0].slice(task[0].length) }) : null;
+        tid = typeof tid === 'string' && ID_RE.test(tid) ? ' data-task="' + tid + '"' : '';
+        box = '<span class="rl-task' + (task[1] === ' ' ? '' : ' done') + '"' + tid + ' aria-hidden="true">' + (task[1] === ' ' ? '\u2610' : '\u2611') + '</span> '; body[0] = body[0].slice(task[0].length);
+      }
       var parts = blocks(body, ctx);
       if (parts.length && parts[0].slice(0, 3) === '<p>') parts[0] = parts[0].slice(3, -4);   /* a tight item: no paragraph around its text */
       h += '<li>' + box + parts.join('') + '</li>';
@@ -313,7 +322,7 @@
     ctx = ctx || {};
     var depth = ctx.depth || 0;
     if (depth > MAX_DEPTH) return ['<p>' + esc(ls.join('\n')).replace(/\n/g, '<br>') + '</p>'];
-    var sub = { resolve: ctx.resolve, off: ctx.off, depth: depth + 1 };
+    var sub = { resolve: ctx.resolve, resolveLocal: ctx.resolveLocal, task: ctx.task, headingId: ctx.headingId, off: ctx.off, depth: depth + 1 };
     while (i < n) {
       var ln = ls[i];
       if (blank(ln)) { i++; continue; }
@@ -328,7 +337,8 @@
       }
       if ((m = RE_HEAD.exec(ln))) {
         var lvl = Math.min(6, m[1].length + (ctx.off || 0));
-        out.push('<h' + lvl + '>' + inline(/[\[`]/.test(m[2]) ? m[2] : titleCase(m[2]), ctx) + '</h' + lvl + '>');
+        var hid = typeof ctx.headingId === 'function' ? ctx.headingId(m[2], m[1].length) : null;
+        out.push('<h' + lvl + (typeof hid === 'string' && ID_RE.test(hid) ? ' id="' + hid + '"' : '') + '>' + inline(/[\[`]/.test(m[2]) ? m[2] : titleCase(m[2]), ctx) + '</h' + lvl + '>');
         i++; continue;
       }
       if (RE_HR.test(ln)) { out.push('<hr>'); i++; continue; }
@@ -355,11 +365,16 @@
     return out;
   }
 
-  /* src: Markdown; opts.resolve(page, heading) -> { href } | null for wikilinks; opts.headingOffset (default 1: # is an h2) */
+  /* src: Markdown; opts.resolve(page, heading) -> { href } | null for wikilinks; opts.headingOffset (default 1: # is an h2).
+     Optional, for the GM page's prep view (none of them is used by the rules wiki):
+       opts.resolveLocal(heading) -> { href } | null   for [[#Heading]] (without it, plain text)
+       opts.headingId(text, level) -> id | null          an id on each heading
+       opts.task({ done, text }) -> id | null            a data-task id on each task box, called in document order
+     Ids must match ID_RE; anything else is dropped. */
   function render(src, opts) {
     opts = opts || {};
     var body = parseFrontmatter(src).body.replace(/%%[\s\S]*?%%/g, '');
-    return blocks(markLines(body), { resolve: opts.resolve, off: opts.headingOffset == null ? 1 : opts.headingOffset, depth: 0 }).join('\n');
+    return blocks(markLines(body), { resolve: opts.resolve, resolveLocal: opts.resolveLocal, task: opts.task, headingId: opts.headingId, off: opts.headingOffset == null ? 1 : opts.headingOffset, depth: 0 }).join('\n');
   }
 
   /* ---------- plain text, for search and snippets ---------- */

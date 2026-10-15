@@ -17,9 +17,12 @@ export const FACTIONS = ROOT + '/Factions';
 export const LOG = 'Wiki/log.md';
 export const NEVER = [ROOT + '/Campaigns/Group/b68g-factions.md'];   // the board: Blade copies to it at close, never the sync
 
+export const GROUP = ROOT + '/Campaigns/Group';
+
 export const BUCKETS = { n: 'Names', x: 'Loose ends', m: 'Moments', r: 'Rolled at the table' };
 export const PINNED = 'Pinned';
 export const BARGAINS = 'Bargains and callbacks';
+export const AT_TABLE = 'At the table (app)';        // the prep tab's log: beats started, table cells, ticks with no line
 export const SESSION_HEADINGS = [BUCKETS.n, BUCKETS.x, BUCKETS.m, BUCKETS.r];
 
 const posix = (p) => p.split(path.sep).join('/');
@@ -35,6 +38,20 @@ export function assertWritable(rel) {
     (r.startsWith(NPCS + '/') && !r.slice(NPCS.length + 1).includes('/') && r.endsWith('.md')) ||
     (r.startsWith(FACTIONS + '/') && !r.slice(FACTIONS.length + 1).includes('/') && r.endsWith('.md'));
   if (!ok) throw new Error('not a path the sync writes: ' + r);
+  return r;
+}
+
+/**
+ * The one extra edit the prep sync makes (lib/sync-prep.mjs): ticking a task box, [ ] -> [x], in a prep note or a note
+ * it transcludes. Those live in the group campaign's folder or its Sessions/ (pocket scores, run sheets, session notes);
+ * transcripts, the faction board and anything deeper (Characters/, Clocks/) are refused.
+ */
+export function assertPrepWritable(rel) {
+  const r = posix(rel);
+  if (NEVER.includes(r)) throw new Error('the sync never writes ' + r);
+  if (/(^|\/)\./.test(r) || r.startsWith('TTRPG/') || r.startsWith('_Templates/') || r.startsWith('_archive/')) throw new Error('no-touch zone: ' + r);
+  const tail = r.startsWith(GROUP + '/') ? r.slice(GROUP.length + 1) : null;
+  if (tail === null || !/^(Sessions\/)?[^/]+\.md$/.test(tail) || /-transcript\.md$/i.test(tail)) throw new Error('not a note the prep sync ticks: ' + r);
   return r;
 }
 
@@ -173,9 +190,10 @@ function renameOver(tmp, file) {
 /**
  * Edit an existing note: `edit(note)` returns the new text, or null for "nothing to do" (a refusal is a throw).
  * Returns { changed, text }. Retries once if the note changes between the read and the rename.
+ * opts.prep: the path rule is assertPrepWritable (ticking a box in a prep note), not assertWritable.
  */
-export function editNote(vault, rel, edit) {
-  assertWritable(rel);
+export function editNote(vault, rel, edit, opts) {
+  (opts && opts.prep ? assertPrepWritable : assertWritable)(rel);
   const file = abs(vault, rel);
   for (let attempt = 0; attempt < 2; attempt++) {
     const note = readNote(file);
