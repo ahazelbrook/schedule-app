@@ -28,7 +28,7 @@ const PLAYER = 'player@example.test';
 const WRANGLER = join(ROOT, 'node_modules', '.bin', 'wrangler');
 const OVERALL_TIMEOUT_MS = Number(process.env.CHECK_TIMEOUT_MS || 240000);
 const KiB = 1024;
-const L = { partBody: 900 * KiB, parts: 12, src: 2 * KiB, state: 256 * KiB, svg: 600 * KiB, text: 2000 };
+const L = { partBody: 900 * KiB, parts: 12, src: 2 * KiB, state: 256 * KiB, svg: 600 * KiB, text: 2000, rule: 40000 };
 const stateDir = mkdtempSync(join(tmpdir(), 'b68-gm-check-'));
 const persist = join(stateDir, 'state');
 let server = null, passes = 0, failures = 0;
@@ -283,6 +283,10 @@ async function main() {
     expect(r.json.seq === 4 && r.json.display.kind === 'blank', r.text);
     r = await gm('PUT', '/api/gm/display', { kind: 'svg', svg: '  ' + svgOk }); status(r, 200);
     expect(r.json.seq === 5 && r.json.display.svg === svgOk, 'leading blanks trimmed');
+    const md = '## Invented rule\n\nRoll **two dice** and keep the best.\n\n- one\n- two';
+    r = await gm('PUT', '/api/gm/display', { kind: 'rule', title: 'Invented rule', caption: 'House rules', md, text: 'dropped', svg: svgOk }); status(r, 200);
+    expect(r.json.seq === 6 && r.json.display.kind === 'rule' && r.json.display.md === md && r.json.display.caption === 'House rules' && !('text' in r.json.display) && !('svg' in r.json.display), r.text.slice(0, 200));
+    r = await gm('GET', '/api/gm/display?seq=5'); expect(r.json.seq === 6 && r.json.display.md === md, 'a rule reads back');
     status(await gm('POST', '/api/gm/display', { kind: 'blank' }), 405);
     status(await gm('DELETE', '/api/gm/display'), 405);
   });
@@ -337,6 +341,10 @@ async function main() {
       [{ kind: 'text', text: '   ' }, 400, /text is required/],
       [{ kind: 'text', text: 7 }, 400, /text must be a string/],
       [{ kind: 'text', text: 'x'.repeat(L.text + 1) }, 413, /text is too long/],
+      [{ kind: 'rule' }, 400, /md is required/],
+      [{ kind: 'rule', md: '  ' }, 400, /md is required/],
+      [{ kind: 'rule', md: ['x'] }, 400, /md must be a string/],
+      [{ kind: 'rule', md: 'x'.repeat(L.rule + 1) }, 413, /md is too long/],
       [{ kind: 'blank', title: 'x'.repeat(L.text + 1) }, 413, /title is too long/],
       [{ kind: 'blank', caption: 'x'.repeat(L.text + 1) }, 413, /caption is too long/],
       [{ kind: 'blank', title: 5 }, 400, /title must be a string/],
@@ -353,7 +361,8 @@ async function main() {
     let r = await gm('PUT', '/api/gm/display', { kind: 'text', title: 't'.repeat(L.text), caption: 'c'.repeat(L.text), text: 'x'.repeat(L.text) }); status(r, 200);
     const pad = L.svg - svg('<text></text>').length;
     r = await gm('PUT', '/api/gm/display', { kind: 'svg', svg: svg('<text>' + 'x'.repeat(pad) + '</text>') }); status(r, 200);
-    expect(r.json.seq === seq0 + 2, 'only the two good writes moved seq: ' + r.json.seq + ' from ' + seq0);
+    r = await gm('PUT', '/api/gm/display', { kind: 'rule', md: 'x'.repeat(L.rule) }); status(r, 200);
+    expect(r.json.seq === seq0 + 3, 'only the three good writes moved seq: ' + r.json.seq + ' from ' + seq0);
   });
 
   // ---------- the ambient document ----------

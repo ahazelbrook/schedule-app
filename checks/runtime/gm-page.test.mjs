@@ -771,6 +771,7 @@ await test('9b. crewOf: whole numbers clamped to 0-9 / 0-4; null without a numbe
   assert.equal(P.ipadView({ mode: 'sideways', intervalMin: 99 }).mode, 'auto'); assert.equal(P.ipadView({ intervalMin: 99 }).intervalMin, 7);
   assert.equal(P.ipadView({ mode: 'auto', scene: 'board' }).tiles.filter((x) => x.pressed).length, 0, 'only a pin presses a tile');
   assert.equal(P.displayLine({ kind: 'svg', title: 'Invented Mill' }), 'Map · Invented Mill'); assert.equal(P.displayLine({ kind: 'dark' }), 'Lights out');
+  assert.equal(P.displayLine({ kind: 'rule', title: 'Invented rule' }), 'Rule · Invented rule');
   assert.match(P.displayLine({ kind: 'blank' }), /ambient/);
 });
 

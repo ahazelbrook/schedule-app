@@ -18,6 +18,7 @@ export const LIMITS = {
   svg: 600 * KiB,               // bytes of a display svg
   displayRequest: 1280 * KiB,   // one PUT /api/gm/display (an svg's quotes double when JSON-escaped)
   text: 2000,                   // characters of a display title, caption or text
+  rule: 40000,                  // characters of a rules entry's Markdown (the importer cuts entries at 36000)
   ambient: 1400 * KiB,          // bytes of the stored ambient document (under D1's 2 MB row)
   ambientRequest: 2560 * KiB,   // one PATCH /api/gm/ambient (two 600 KiB svgs whose quotes double when JSON-escaped)
   ambientString: 200,           // characters of a score's name, district or target
@@ -25,8 +26,9 @@ export const LIMITS = {
 };
 
 export const PART_RE = /^[a-z0-9-]{1,32}$/;
-// blank: nothing spotlit (the table display falls back to the ambient scene); dark: lights out (true black)
-export const DISPLAY_KINDS = ['blank', 'dark', 'svg', 'npc', 'text'];
+// blank: nothing spotlit (the table display falls back to the ambient scene); dark: lights out (true black);
+// rule: one rules entry, as Markdown (the display renders it with markdown.js, links as plain text)
+export const DISPLAY_KINDS = ['blank', 'dark', 'svg', 'npc', 'text', 'rule'];
 
 // The ambient scenes (AMBIENT-PLAN.md): the ids mirror Pure.AMBIENT_SCENES in app/display-page.js; the bands are the
 // four reveal layers of a score site, lowest first.
@@ -237,6 +239,7 @@ export function cleanDisplay(raw) {
     out.npcId = raw.npcId;
   }
   if (kind === 'text') out.text = str(raw.text, 'text', LIMITS.text, true);
+  if (kind === 'rule') out.md = str(raw.md, 'md', LIMITS.rule, true);
   return out;
 }
 

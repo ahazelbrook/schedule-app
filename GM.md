@@ -32,7 +32,7 @@ gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser o
 | `GET /api/gm/state` | `{ doc, updatedAt }` (`{}` and `null` until written). |
 | `PATCH /api/gm/state` | deep merge (plain objects merge, arrays and scalars replace, `null` deletes) → `{ doc, updatedAt }`. Keep collections as maps, not arrays. |
 | `GET /api/gm/display` | `{ seq, display, updatedAt }` (`seq` 0, a blank display, until written). `?seq=N` → `{ seq, unchanged: true }` while N is current. |
-| `PUT /api/gm/display` | `{ kind, title?, caption?, svg \| npcId \| text }` → `{ seq, display, updatedAt }`; `seq` goes up by one on every PUT. |
+| `PUT /api/gm/display` | `{ kind, title?, caption?, svg \| npcId \| text \| md }` → `{ seq, display, updatedAt }`; `seq` goes up by one on every PUT. |
 | `GET /api/gm/display` (ambient) | also carries `ambient: { seq, doc, updatedAt }`. `?seq=N&aseq=M` → `{ seq, unchanged: true, ambient: { seq, unchanged: true } }` while both are current; otherwise the full display, with `ambient` `{ seq, unchanged: true }` when only M is current. `?seq=N` alone is the old answer. |
 | `GET /api/gm/ambient` | `{ seq, doc, updatedAt }` (`0`, `{}`, `null` until written). GM only; the display sign-in is refused (it reads the doc through the display). |
 | `PATCH /api/gm/ambient` | top-level merge (`null` deletes, `skip: true` bumps a counter) → `{ seq, doc, updatedAt }`. Keys: `mode` auto/pin/off, `scene`, `playlist` (1–12 distinct ids), `intervalMin` 3–30, `skip`, `crew { heat 0–9, wanted 0–4 }`, `score { name, district, target, reveal, view plan/rings, board, iso }` (both svgs through `checkSvg`; the server sets `at`). Stored doc at most 1.4 MiB, in `gm_ambient` (migration 0006). |
@@ -43,8 +43,14 @@ gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser o
   `gm_pack(campaign, part, version, src, updated_at /* ms */, body)`.
 - **State.** The `campaigns` row `<CAMPAIGN>#gm` (beside the campaign document; `/api/campaign` never reads it). Patch
   and stored document at most 256 KiB each; optimistic `updated_at` check with retries, 409 when it keeps colliding.
-- **Display.** `kind` is `blank`, `svg`, `npc` or `text`; other keys are dropped. `title`, `caption`, `text` at most
-  2000 characters (`text` required for `text`); `npcId` an id `[A-Za-z0-9_-]{1,80}`. `svg` is the player-safe render:
+- **Display.** `kind` is `blank`, `dark`, `svg`, `npc`, `text` or `rule`; other keys are dropped. `title`, `caption`,
+  `text` at most 2000 characters (`text` required for `text`); `npcId` an id `[A-Za-z0-9_-]{1,80}`; `md` (required for
+  `rule`) a rules entry's Markdown, at most 40000 characters. The rules page's **Show on iPad** (GM only, on every
+  entry and on a house-rule twin) sends the entry without the compiler's `[TODO]` notes and `%%` comments; the display
+  renders it with `markdown.js` (which escapes all text), parses that inert in a `<template>`, and keeps only plain
+  structure (`Pure.cleanRuleTree`): links become their words, anchors, page chips and `[TODO]` notes go, folded
+  callouts open. The text scrolls on the iPad. A push from the rules page tells the GM page through a `b68:display`
+  window event, so "On the iPad now" stays true. `svg` is the player-safe render:
   at most 600 KiB, must start with `<svg`, and is **rejected** (400) if it holds `<script`, `<foreignObject`, an HTML
   element (`iframe`, `embed`, `object`, `meta`, `link`, `base`, `form`...), any of those with a namespace prefix
   (`<x:script>`, `<h:iframe>`), a namespaced `<style>`, an `<a>`, `xml:base`, `<!DOCTYPE`/`<!ENTITY`, `javascript:`,

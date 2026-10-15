@@ -50,6 +50,42 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
 .dp-t-s .dp-text-body { font-size: clamp(18px, 3vmin, 34px); text-align: left; }
 .dp-t-s .dp-text-box { max-width: 36em; }
 
+/* ---- a rules entry (kind rule): large type in one column that scrolls; the corner status sits under its end ---- */
+.dp-rule-scroll { position: absolute; inset: 0; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-x pan-y;
+  padding: max(6vmin, env(safe-area-inset-top)) max(6vmin, env(safe-area-inset-right)) max(10vmin, calc(env(safe-area-inset-bottom) + 56px)) max(6vmin, env(safe-area-inset-left)); }
+.dp-rule-box { max-width: 36em; margin: 0 auto; font: 400 clamp(19px, 2.9vmin, 32px)/1.45 var(--font-text, Georgia, serif); }
+.dp-r-l .dp-rule-box { font-size: clamp(22px, 3.8vmin, 42px); }
+.dp-r-s .dp-rule-box { font-size: clamp(17px, 2.4vmin, 26px); max-width: 40em; }
+.dp-rule-box .dp-kicker { font-size: clamp(13px, 2.2vmin, 22px); }
+.dp-rule-title { margin: 0 0 .6em; font: 900 clamp(34px, 7vmin, 96px)/.95 var(--font-poster, Impact, "Arial Narrow", sans-serif); letter-spacing: -.01em; overflow-wrap: anywhere; text-wrap: balance; }
+.dp-rule-body { overflow-wrap: anywhere; }
+.dp-rule-body > :first-child { margin-top: 0; }
+.dp-rule-body p, .dp-rule-body ul, .dp-rule-body ol, .dp-rule-body blockquote, .dp-rule-body pre, .dp-rule-body .rl-tablewrap, .dp-rule-body .rl-callout, .dp-rule-body .rl-figure { margin: 0 0 .8em; }
+.dp-rule-body h2, .dp-rule-body h3, .dp-rule-body h4, .dp-rule-body h5, .dp-rule-body h6 { margin: 1.3em 0 .45em; font: 900 1.05em/1.15 var(--font-cond, "Arial Narrow", sans-serif); text-transform: uppercase; letter-spacing: .08em; color: var(--dp-kick); }
+.dp-rule-body h2 { font-size: 1.2em; }
+.dp-rule-body ul, .dp-rule-body ol { padding-left: 1.3em; }
+.dp-rule-body li + li { margin-top: .3em; }
+.dp-rule-body li > ul, .dp-rule-body li > ol { margin: .3em 0 0; }
+.dp-rule-body strong { color: #fff; font-weight: 700; }
+.dp-rule-body mark { background: rgba(232, 195, 60, .28); color: inherit; padding: 0 .1em; }
+.dp-rule-body code, .dp-rule-body pre { font: .85em/1.4 var(--font-mono, ui-monospace, Menlo, monospace); }
+.dp-rule-body pre { white-space: pre-wrap; }
+.dp-rule-body blockquote { margin-left: 0; padding-left: .9em; border-left: 3px solid var(--dp-dim); color: var(--dp-soft); }
+.dp-rule-body hr { border: 0; border-top: 1px solid #3a352f; margin: 1.3em 0; }
+.dp-rule-body .rl-callout { padding: .6em .9em; border-left: 4px solid var(--dp-kick); background: rgba(255, 255, 255, .045); }
+.dp-rule-body .rl-callout-title { display: block; margin-bottom: .35em; font-weight: 700; list-style: none; }
+.dp-rule-body .rl-callout-title::-webkit-details-marker { display: none; }
+.dp-rule-body .rl-callout-body > :last-child { margin-bottom: 0; }
+.dp-rule-body .rl-tablewrap { overflow-x: auto; }
+.dp-rule-body table { border-collapse: collapse; font-size: .85em; }
+.dp-rule-body th, .dp-rule-body td { padding: .35em .7em; border-bottom: 1px solid #3a352f; text-align: left; vertical-align: top; }
+.dp-rule-body th { color: var(--dp-kick); font-weight: 700; }
+.dp-rule-body .rl-pbhead, .dp-rule-body .rl-tagline { color: var(--dp-kick); }
+.dp-rule-body .rl-pbacts span + span::before { content: " · "; }
+.dp-rule-body .rl-figure, .dp-rule-body .rl-img { color: var(--dp-dim); font-style: italic; }
+.dp-rule-body .rl-figure-lab { margin-right: .5em; text-transform: uppercase; letter-spacing: .1em; font-style: normal; }
+.dp-rule-plain { margin: 0; white-space: pre-wrap; }
+
 /* ---- NPC: a figure at true proportion beside the player-facing words ---- */
 .dp-npc { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 4vmin; align-items: center;
   padding: max(4vmin, env(safe-area-inset-top)) max(5vmin, env(safe-area-inset-right)) max(4vmin, env(safe-area-inset-bottom)) max(5vmin, env(safe-area-inset-left)); }
