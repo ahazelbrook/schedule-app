@@ -29,6 +29,9 @@ import { onRequest as gmPack } from '../functions/api/gm/pack.js';
 import { onRequest as gmState } from '../functions/api/gm/state.js';
 import { onRequest as gmDisplay } from '../functions/api/gm/display.js';
 import { onRequest as gmAmbient } from '../functions/api/gm/ambient.js';
+import { onRequest as gmStt } from '../functions/api/gm/stt.js';
+import { onRequest as gmSttToken } from '../functions/api/gm/stt-token.js';
+import { onRequest as gmTranscript } from '../functions/api/gm/transcript.js';
 import { gmNotFound } from '../functions/_lib/gm.js';
 import { onRequest as notFound } from '../functions/api/[[path]].js';
 
@@ -51,6 +54,9 @@ export const ROUTES = [
   { re: /^\/api\/gm\/state\/?$/, handler: gmState, path: '/api/gm/state' },
   { re: /^\/api\/gm\/display\/?$/, handler: gmDisplay, path: '/api/gm/display' },
   { re: /^\/api\/gm\/ambient\/?$/, handler: gmAmbient, path: '/api/gm/ambient' },
+  { re: /^\/api\/gm\/stt\/?$/, handler: gmStt, path: '/api/gm/stt' },
+  { re: /^\/api\/gm\/stt\/token\/?$/, handler: gmSttToken, path: '/api/gm/stt/token' },
+  { re: /^\/api\/gm\/transcript\/?$/, handler: gmTranscript, path: '/api/gm/transcript' },
   { re: /^\/api\/gm(?:\/.*)?$/, handler: gmNotFound, path: '/api/gm/[[path]]' },
 ];
 
@@ -134,7 +140,8 @@ export const PAGE_HEADERS = {
   // frame-ancestors only: the page loads its own scripts, inline styles and data: images, so a fuller
   // CSP would need care; this one cannot break anything.
   'Content-Security-Policy': "frame-ancestors 'none'",
-  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+  // the microphone for this origin only: the table iPad's transcriber (GM.md "Listening"); still never for a frame
+  'Permissions-Policy': 'camera=(), microphone=(self), geolocation=(), payment=()',
 };
 
 export async function handlePage(res) {

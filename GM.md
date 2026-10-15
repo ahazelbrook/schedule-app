@@ -255,3 +255,34 @@ With `DISPLAY_EMAILS` unset the role does not exist. Check: `npm run check:displ
 **To turn it on** (Alex's steps, not done by code): pick an email for the iPad, add it to the Cloudflare Access allow policy,
 then `npx wrangler secret put DISPLAY_EMAILS` and sign the iPad in with that email. `scripts/deploy.sh` does not manage this secret.
 The display page's NPC view reads `npcs`, which this role cannot; it falls back to the pushed title and caption.
+
+## Listening: the table iPad's transcriber (`app/stt.js`, the iPad panel `I`)
+
+The iPad sits in the middle of the table, so it hears everyone; it replaces the laptop's mic in Obsidian
+(`Tools/blades-68-transcriber.md`, kept as the fallback). The path, and who holds what:
+
+1. **Start listening** (iPad panel, `I`): GM state in `gm_stt` (`want: on`, the session number, speaker names).
+2. **The iPad** (`#display`) polls `GET /api/gm/stt` every 4 s. While `want` is on and it is not listening, it shows
+   **Tap to start listening**: iPad Safari opens the mic only on a tap. The page's `Permissions-Policy` allows the
+   microphone for this origin only (`microphone=(self)`, `worker/app.js`).
+3. The mic goes to Deepgram's live API (`nova-3`, speaker labels) as 16 kHz 16-bit PCM over a WebSocket. It opens with
+   a short-lived token from `POST /api/gm/stt/token`, which the Worker mints with its secret `DEEPGRAM_API_KEY` (never
+   sent to a browser). The token rides the handshake as a subprotocol pair, `bearer` then `token`; whichever works is
+   remembered on the iPad. `npm run check:stt-live` (with the key in `DEEPGRAM_API_KEY`) says which one Deepgram accepts.
+4. Finished words are merged into lines (same speaker within 4 s of audio), as the vault transcriber does. They are
+   posted to `POST /api/gm/transcript` every 3 s with their own ids, so a resend is skipped. A dropped connection
+   reconnects with a new token and files a `reconnected` mark (Deepgram renumbers speakers). Stop, leaving `#display`
+   or 6 hours stops it. While it listens, **● Listening** shows in the iPad's corner for the table to see.
+5. **Into the vault:** `npm run gm:transcript -- --follow` on the PC copies new lines every 10 s into
+   `Sessions/b68g-sNN-transcript.md`, in the vault transcriber's format, with names from **Who is who**. It never
+   writes into a transcript the Obsidian transcriber made (no `source: ipad`); those lines go to
+   `b68g-sNN-transcript-ipad.md` instead. Append only; the ledger's `transcript.last` remembers the last line filed.
+   `--prune` deletes filed lines from the server.
+
+The panel shows the iPad's last report (state, lines sent, how long ago), the newest six lines, and the speaker names.
+Endpoints are GM only. The table display sign-in (`DISPLAY_EMAILS`) may get a token, post lines and report its status,
+but not read the transcript. The transcript is never in `/api/export`. Migration `0007_gm_stt.sql`. Checks:
+`checks/runtime/stt.test.mjs`, `checks/runtime/gm-stt.e2e.mjs` (fake mic, fake Deepgram socket).
+
+**Setup, once:** `npx wrangler secret put DEEPGRAM_API_KEY` (a key with Member permission or above), then
+`npm run check:stt-live`.

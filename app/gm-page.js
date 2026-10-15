@@ -782,6 +782,7 @@
     if (me.saver) me.saver.flush();          /* session-scoped: anything added while a write is in flight still goes */
     if (me.npcUnsub) { try { me.npcUnsub(); } catch (e) {} }
     if (me.prepTimer) { W.clearInterval(me.prepTimer); me.prepTimer = null; }
+    if (me.sttTimer) { W.clearInterval(me.sttTimer); me.sttTimer = null; }
     S = null;
     if (me.root) { me.root.innerHTML = ''; }
     unblank();
@@ -868,6 +869,7 @@
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
     layout(); redrawAll(); subscribeNpcs();
+    if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S; S.sttTimer = W.setInterval(function () { if (S === mine2 && S.status === 'ready' && S.panel === 'ipad' && !document.hidden) loadStt(); }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
     if (S.panel === 'ipad') loadAmbient();
   }
@@ -923,7 +925,7 @@
     S.panel = p; if (S.seg !== 'console' && S.seg !== 'state') S.seg = 'side';
     try { W.localStorage.setItem('b68.gm.panel', p); } catch (e) {}
     syncPanels();
-    if (p === 'ipad') loadAmbient();
+    if (p === 'ipad') { loadAmbient(); loadStt(); }
   }
 
   /* ---------- the console: Situations (the default) or Classic (the nine single tables) ---------- */
@@ -1260,7 +1262,51 @@
       '<button type="button" class="btn" data-gm="ambskip"' + (off || busy || v.mode !== 'auto' ? ' disabled' : '') + ' title="Auto mode only">Next scene</button></div></div></section>';
     h += '<section class="gm-box gm-ipad-score"><h3 class="gm-band">Score scene</h3><div class="gm-ipad-body"><p class="gm-ipad-line" id="gm-ipad-score">' + (v.hasScore ? esc(v.scoreLine) : '<span class="gm-dim">None set. Use Set as score scene in the Location panel.</span>') + '</p>' +
       '<button type="button" class="btn sm" data-gm="clearscore"' + (!v.hasScore || off || busy ? ' disabled' : '') + '>Clear score</button></div></section>';
-    box.innerHTML = h;
+    box.innerHTML = '<div id="gm-stt"></div>' + h;
+    renderStt(true);
+  }
+
+  /* ---------- Listening: the table iPad's transcriber (app/stt.js, GM.md "Listening") ----------
+     GET/PATCH /api/gm/stt: want on | off, the session, speaker names, and the iPad's own report; the newest lines from
+     GET /api/gm/transcript?tail=. Read every 5 s while the iPad panel is open. The vault copy is the PC's job
+     (npm run gm:transcript -- --follow). */
+  var STT = { doc: null, tail: [], error: '', loaded: false };
+  var STT_LABEL = { idle: 'Not listening', starting: 'Starting…', listening: 'Listening', reconnecting: 'Reconnecting…', stopped: 'Stopped', error: 'Stopped by an error' };
+  function loadStt() {
+    var g = gmApi(); if (!g || typeof g.stt !== 'function') return;
+    Promise.all([g.stt(), g.transcript({ tail: 6 }).then(function (r) { return r; }, function () { return null; })]).then(function (res) {
+      STT.doc = res[0] && res[0].doc || null; STT.tail = res[1] && Array.isArray(res[1].lines) ? res[1].lines : STT.tail; STT.error = ''; STT.loaded = true; renderStt();
+    }, function (e) { STT.error = errText(e); STT.loaded = true; renderStt(); });
+  }
+  function sttPatch(p) {
+    var g = gmApi(); if (!g || typeof g.patchStt !== 'function') { toast('Listening needs the hosted app.', true); return; }
+    Promise.resolve().then(function () { return g.patchStt(p); }).then(function (r) { STT.doc = r && r.doc || STT.doc; renderStt(true); }, function (e) { toast('Could not change listening: ' + errText(e), true); });
+  }
+  function sttName(doc, sp) { var n = doc && isObj(doc.speakers) ? doc.speakers[String(sp)] : ''; return sp === null || sp === undefined ? '?' : n || 'S' + sp; }
+  function renderStt(force) {
+    var box = $q('#gm-stt'); if (!box) return;
+    var act = document.activeElement;
+    if (!force && act && box.contains(act) && act.hasAttribute && act.hasAttribute('data-sttspk')) return;   /* not while a name is being typed */
+    var d = STT.doc || { want: 'off', speakers: {}, status: { state: 'idle' } }, st = isObj(d.status) ? d.status : { state: 'idle' }, on = d.want === 'on';
+    var age = st.at ? Math.max(0, Math.round((Date.now() - Date.parse(st.at)) / 1000)) : null;
+    var line = !STT.loaded ? 'Loading…' : STT.error ? 'Could not read listening: ' + STT.error
+      : on && (st.state === 'idle' || st.state === 'stopped' || st.state === 'error') ? 'Waiting for the iPad: tap “Tap to start listening” on it.'
+      : (STT_LABEL[st.state] || st.state) + (st.lines ? ' · ' + st.lines + ' lines sent' : '') + (age !== null ? ' · ' + (age < 60 ? age + ' s' : Math.round(age / 60) + ' min') + ' ago' : '');
+    var stale = on && st.state === 'listening' && age !== null && age > 40;
+    var seen = STT.tail.reduce(function (m, l) { return typeof l.speaker === 'number' && l.speaker > m ? l.speaker : m; }, -1);
+    var nums = []; for (var i = 0; i <= Math.max(4, seen, Math.max.apply(null, Object.keys(isObj(d.speakers) ? d.speakers : {}).map(Number).concat([-1]))); i++) nums.push(i);
+    box.innerHTML = '<section class="gm-box gm-stt"><h3 class="gm-band">Listening' + (on ? ' <span class="gm-stt-on">● on</span>' : '') + '</h3><div class="gm-ipad-body">' +
+      '<p class="gm-ipad-line' + (stale || st.state === 'error' ? ' bad' : '') + '" role="status">' + esc(line) + (stale ? ' No word from the iPad for a while: is the display open?' : '') + '</p>' +
+      (st.error && st.state !== 'listening' ? '<p class="gm-note bad">' + esc(st.error) + '</p>' : '') +
+      '<div class="gm-ipad-acts">' + (on ? '<button type="button" class="btn" data-gm="stt-off">Stop listening</button>'
+        : '<button type="button" class="btn primary" data-gm="stt-on" title="The iPad shows a button: tap it once to open the mic">Start listening</button>') + '</div>' +
+      '<details class="gm-fold"' + (on ? ' open' : '') + '><summary>Who is who</summary><div class="gm-stt-spk">' + nums.map(function (n) {
+        return '<label class="gm-field" for="gm-stt-s' + n + '"><span class="gm-lab">S' + n + '</span><input type="text" id="gm-stt-s' + n + '" data-sttspk="' + n + '" maxlength="60" autocomplete="off" placeholder="Name (Character)" value="' + esc(isObj(d.speakers) ? d.speakers[String(n)] || '' : '') + '"></label>';
+      }).join('') + '</div><p class="gm-dim">Numbers are Deepgram’s guesses and restart after a reconnect. Names apply to lines the PC copies from now on.</p></details>' +
+      (STT.tail.length ? '<ol class="gm-stt-tail">' + STT.tail.map(function (l) {
+        return '<li>' + (l.kind === 'mark' ? '<i>— ' + esc(l.text || 'reconnected') + ' —</i>' : '<span class="gm-lab">' + esc(sttName(d, l.speaker)) + '</span> ' + esc(l.text)) + '</li>';
+      }).join('') + '</ol>' : '') +
+      '<p class="gm-dim">Into the vault: on the PC, <code>npm run gm:transcript -- --follow</code> copies new lines into the session’s transcript note every 10 s.</p></div></section>';
   }
   function setScoreScene() {
     if (!S || !S.locRoll) { toast('Roll a location first.', true); return; }
@@ -1879,6 +1925,8 @@
         else { S.locRoll = null; S.map = null; renderLocation(); }
         break;
       }
+      case 'stt-on': sttPatch({ want: 'on', session: String(isObj(camp) && isObj(camp.session) ? +camp.session.number || '' : '') }); break;
+      case 'stt-off': sttPatch({ want: 'off' }); break;
       case 'opp-add': oppAdd(); break;
       case 'opp-show': oppShow(b.getAttribute('data-mode')); break;
       case 'opp-one': oppShow('carousel', b.getAttribute('data-id')); break;
@@ -1927,6 +1975,10 @@
     if (t.id === 'gm-file') { readPackFile(t.files && t.files[0]); return; }
     if (t.hasAttribute && t.hasAttribute('data-opp')) {      /* a card's line: saved when the field is left (the change event), not per key */
       if (ev.type === 'change') { var ol = {}, ox = {}; ox[t.getAttribute('data-f')] = str(t.value).slice(0, 120); ol[t.getAttribute('data-opp')] = ox; patch({ opps: { list: ol } }); }
+      return;
+    }
+    if (t.hasAttribute && t.hasAttribute('data-sttspk')) {   /* a speaker's name: saved when the field is left */
+      if (ev.type === 'change') { var sp = {}; sp[t.getAttribute('data-sttspk')] = str(t.value).trim().slice(0, 60) || null; sttPatch({ speakers: sp }); }
       return;
     }
     if (t.id === 'gm-opp-iv') { if (ev.type === 'change') patch({ opps: { interval: Math.floor(+t.value) || 0 } }); return; }

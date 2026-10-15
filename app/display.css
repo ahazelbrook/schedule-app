@@ -170,3 +170,16 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
 .dp-cards-spread .oc-card:nth-child(3n+2) { transform: rotate(1.5deg) translateY(2vmin); }
 .dp-cards-spread .oc-card:nth-child(3n) { transform: rotate(4deg); }
 @media (prefers-reduced-motion: reduce) { .dp-cards-carousel .oc-card { transition: none; } }
+
+/* ---- the transcriber (app/stt.js): the tap that opens the mic, and the mark the table sees while it listens ---- */
+.stt-tap { position: absolute; left: 50%; bottom: max(64px, calc(env(safe-area-inset-bottom) + 54px)); transform: translateX(-50%); z-index: 6;
+  min-height: 64px; padding: 0 28px; font: 900 clamp(16px, 2.4vmin, 22px)/1 var(--font-cond, "Arial Narrow", sans-serif); text-transform: uppercase; letter-spacing: .12em;
+  background: var(--dp-ink); color: var(--dp-bg); border: 0; box-shadow: 4px 4px 0 #b8481a; }
+.stt-tap[hidden] { display: none; }
+.stt-pill { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); z-index: 5; display: flex; align-items: center; gap: 7px;
+  font: 700 12px/1 var(--font-mono, "Space Mono", monospace); letter-spacing: .06em; text-transform: uppercase; color: var(--dp-soft); pointer-events: none; }
+.stt-pill[hidden] { display: none; }
+.stt-dot { width: 9px; height: 9px; border-radius: 50%; background: #d9736e; animation: stt-pulse 2s steps(2, end) infinite; }
+.stt-pill.stt-warn .stt-dot { background: var(--dp-warn); }
+@keyframes stt-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .stt-dot { animation: none; } }
