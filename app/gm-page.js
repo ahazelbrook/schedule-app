@@ -1090,24 +1090,56 @@
       return '<label class="gm-field" for="' + id + '"><span class="gm-lab">' + esc(x.label) + '</span><select id="' + id + '" data-loc="' + esc(x.key) + '">' + (x.options || []).map(function (o) { return '<option value="' + esc(o.value) + '"' + (str(o.value) === str(ui[x.key]) ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('') + '</select></label>';
     }).join('') + '<button type="button" class="btn primary gm-roll" data-gm="locroll">Roll a location</button></div>';
     if (roll) {
-      var secs = []; try { secs = L.cardSections(roll, pk); } catch (e) { secs = []; }
-      h += '<article class="gm-card gm-loccard" data-tool="location">' + secs.map(function (s) {
-        return '<section class="gm-sec' + (s.gm ? ' gm-secret' : '') + '" data-sec="' + esc(s.id) + '">' + (s.id === 'head' ? '<h3 class="gm-locname">' + esc(s.title) + '</h3>' : '<h4>' + esc(s.title) + (s.gm ? ' <span class="gm-badge">GM only</span>' : '') + '</h4>') + md((s.lines || []).join('\n')) + '</section>';
-      }).join('') + '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="location">Pin</button>' + '<button type="button" class="btn sm" data-gm="copy" data-tool="location">Copy</button>' + '<button type="button" class="btn sm" data-gm="pushtext">Street description on iPad</button></div></article>';
+      h += '<article class="gm-card gm-loccard" data-tool="location">' + glanceHtml(L, roll, pk, revealList(mu)) + foldsHtml(L, roll, pk, revealList(mu)) +
+        '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="location" title="Pins the glance card">Pin</button>' + '<button type="button" class="btn sm" data-gm="copy" data-tool="location" title="Copies the whole card">Copy</button></div></article>';
+      /* the iPad controls (Layer, Reveal, the warning, Show on iPad, Set as score scene) stay visible together: never in a fold */
       h += '<section class="gm-mapbox" aria-label="Map"><h4>Map</h4><div class="gm-map-ctl">' +
         sel('view', 'View', VIEWS, mu.view) + sel('theme', 'Theme', THEMES, mu.theme) +
         '<div class="gm-field"><span class="gm-lab">Layer</span><div class="seg" role="group" aria-label="Layer">' + [['gm', 'GM'], ['player', 'Player']].map(function (o) { return '<button type="button" class="chip" data-gm="layer" data-v="' + o[0] + '" aria-pressed="' + (mu.layer === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
         '<fieldset class="gm-reveal"><legend class="gm-lab">Reveal to the players: ' + esc(mu.layer === 'player' ? revealList(mu).join(', ') : 'public only while Layer is GM') + '</legend>' + BANDS.map(function (b) { return '<label class="gm-check"><input type="checkbox" data-reveal="' + b + '"' + (b === 'public' || mu.reveal[b] ? ' checked' : '') + (b === 'public' ? ' disabled' : '') + '> <span>' + b + '</span></label>'; }).join('') + '</fieldset>' +
         '<button type="button" class="btn primary" data-gm="draw">Draw</button></div>' +
-        '<div class="gm-map" id="gm-map"></div><p class="gm-warn" id="gm-mapwarn" role="status"></p>' +
+        '<p class="gm-warn" id="gm-mapwarn" role="status"></p>' +
         '<div class="gm-map-acts"><button type="button" class="btn sm primary" data-gm="ipad"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + '>Show on iPad</button>' +
         '<button type="button" class="btn sm" data-gm="scorescene"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + (mu.layer === 'player' ? ' title="The planning board and the exploded site on the iPad, from this roll at these bands"' : '') + '>Set as score scene</button>' +
-        '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button><button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></div>' + '</section>';
+        '<button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></div>' +
+        '<div class="gm-map" id="gm-map"></div>' +
+        '<details class="gm-more gm-dl"' + (foldOpen('dl') ? ' open' : '') + ' data-fold="dl"><summary>Downloads</summary><div class="gm-map-acts">' + '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button></div></details>' + '</section>';
     } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what is GM only.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></p>';
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
     if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="location" data-h="' + esc(x._id) + '"' + (cur && cur.hid === x._id ? ' aria-current="true"' : '') + '>' + esc(x.label) + '</button>'; }).join('') + '</div>';
     box.innerHTML = h;
     if (S.map) showMap();
+  }
+  /* the glance card: place, whose, the bands, the target, the one line to say aloud. GM-only as a whole; the street
+     button sends playerSummary (never this card) through pushText */
+  function glanceHtml(L, roll, pk, reveal) {
+    var g; try { g = L.glance(roll, pk, reveal); } catch (e) { return '<p class="gm-note bad">The card could not be drawn: ' + esc(errText(e)) + '</p>'; }
+    var bands = g.bands.map(function (b) {
+      return '<li class="gm-gband' + (b.shown ? ' shown' : '') + '"' + (b.shown ? ' title="The players can see this band"' : '') + '><b>' + esc(b.short) + '</b> ' + b.count + (b.locks ? ' <small>' + b.locks + (b.locks === 1 ? ' lock' : ' locks') + '</small>' : '') + (b.target ? ' <span class="gm-star" aria-label="target">★</span>' : '') + '</li>';
+    }).join('');
+    return '<section class="gm-glance gm-secret" data-sec="glance"><div class="gm-glance-h"><h3 class="gm-locname">' + esc(g.title) + '</h3><span class="gm-badge">GM only</span></div>' +
+      '<p class="gm-glance-place">' + esc(g.place) + '</p>' +
+      '<div class="gm-say"><span class="gm-lab">Say</span><p>“' + esc(g.say) + '”</p><button type="button" class="btn sm" data-gm="pushtext">Street description on iPad</button></div>' +
+      '<dl class="gm-grid gm-glance-dl"><dt>Whose</dt><dd>' + esc(g.whose) + ' · Security <b>' + esc(g.security) + '</b></dd>' +
+      '<dt>Bands</dt><dd><ol class="gm-gbands">' + bands + '</ol></dd>' +
+      '<dt>Target</dt><dd>★ <b>' + esc(g.target.room) + '</b> (' + esc(String(g.target.band).toLowerCase()) + ') — ' + esc(g.target.what) + '</dd>' +
+      (g.flags.length ? '<dt>Flags</dt><dd>' + g.flags.map(function (f) { return '<span class="gm-flag">! ' + esc(f) + '</span>'; }).join(' ') + '</dd>' : '') + '</dl></section>';
+  }
+  function foldsHtml(L, roll, pk, reveal) {
+    var F = []; try { F = L.folds(roll, pk, reveal); } catch (e) { F = []; }
+    return F.map(function (f) {
+      return '<details class="gm-lfold' + (f.gm ? ' gm-secret' : '') + '" data-fold="' + esc(f.id) + '"' + (foldOpen(f.id) ? ' open' : '') + '><summary><span class="gm-lfold-t">' + esc(f.title) + '</span>' + (f.hint ? '<span class="gm-lfold-h">' + esc(f.hint) + '</span>' : '') + (f.gm ? '<span class="gm-badge">GM only</span>' : '') + '</summary><div class="gm-lfold-b">' + md((f.lines || []).join('\n')) + '</div></details>';
+    }).join('');
+  }
+  /* which location folds are open: this device only (localStorage), fold ids only, never table text */
+  var FOLD_KEY = 'b68.gm.locfold';
+  function foldState() { try { var a = JSON.parse(W.localStorage.getItem(FOLD_KEY) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  function foldOpen(id) { return foldState().indexOf(id) >= 0; }
+  function onToggle(ev) {
+    var d = ev.target; if (!d || !d.getAttribute || !d.hasAttribute('data-fold')) return;
+    var id = d.getAttribute('data-fold'), a = foldState().filter(function (x) { return x !== id && /^[a-z-]{1,24}$/.test(x); });
+    if (d.open) a.push(id);
+    try { W.localStorage.setItem(FOLD_KEY, JSON.stringify(a.slice(-20))); } catch (e) {}
   }
   function sel(key, label, list, v) { return '<label class="gm-field" for="gm-m-' + key + '"><span class="gm-lab">' + label + '</span><select id="gm-m-' + key + '" data-map="' + key + '">' + list.map(function (o) { return '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select></label>'; }
   function drawMap() {
@@ -1556,8 +1588,15 @@
     var lines = []; try { lines = L.cardLines(roll, part('location')); } catch (e) {}
     return { label: str(roll.name) + (roll.district ? ' · ' + roll.district : ''), title: str(roll.name), text: lines.map(plainMd).join('\n') };
   }
+  /* a pinned location is its glance card (the whole card ran past the pin's 1500 characters); Copy keeps the whole card */
+  function pinFor(tool) {
+    var L = W.B68GmLocation, roll = S.locRoll;
+    if (tool !== 'location' || !L || !roll || !L.glanceLines) return cardFor(tool);
+    var lines = []; try { lines = L.glanceLines(roll, part('location'), revealList(mapUi())); } catch (e) { return cardFor(tool); }
+    return { label: str(roll.name) + (roll.district ? ' · ' + roll.district : ''), title: str(roll.name), text: lines.map(plainMd).join('\n') };
+  }
   function pin(tool) {
-    var c = cardFor(tool); if (!c) return;
+    var c = pinFor(tool); if (!c) return;
     var id = uid('p'), e = { tool: tool, label: c.label.slice(0, 120), title: c.title.slice(0, 120), text: c.text.slice(0, 1500), at: nowIso() };
     if (patch({ pins: addCapped(S.doc.pins, id, e, LIMITS.pins) })) { toast('Pinned.'); renderRail(); }
   }
@@ -1678,7 +1717,7 @@
     else if (k === 'rules') { var q = $q('#gm-rq'); if (q && q.value.trim()) { try { W.open('#rules?q=' + encodeURIComponent(q.value.trim()), '_blank', 'noopener'); } catch (e) {} } }
   }
   function wire(el) {
-    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); }
+    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); }
     if (!wire.global) {
       wire.global = true;
       document.addEventListener('keydown', onKey, true);

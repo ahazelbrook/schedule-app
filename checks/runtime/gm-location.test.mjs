@@ -161,6 +161,58 @@ await test('cardLines: markdown only, GM sections flagged, no HTML', () => {
   assert.ok(text.includes('**Secret:**'), 'dossier included when the pack is passed');
 });
 
+/* the panel (15/10/2026): a glance card and folds. Nothing is lost from the card, the roll is not changed, and the SAY
+   line is the start of what the players are already shown */
+function panelCheck(pack, o, label) {
+  const before = JSON.stringify(o);
+  const g = L.glance(o, pack, ['public']), F = L.folds(o, pack, ['public']);
+  assert.equal(JSON.stringify(o), before, label + ': glance/folds changed the roll');
+  assert.ok(L.playerSummary(o, ['public']).text.includes(g.say), label + ': SAY is not inside the player summary');
+  assert.ok(g.say.length < 220, label + ': SAY is short');
+  assert.ok(F.every(f => f.gm === true), label + ': every fold is GM-only');
+  const ids = F.map(f => f.id);
+  assert.equal(new Set(ids).size, ids.length, label + ': fold ids unique');
+  assert.ok(ids.every(id => /^[a-z-]{1,24}$/.test(id)), label + ': fold ids are plain words (they go to localStorage)');
+  const all = JSON.stringify(g) + F.map(f => f.title + '\n' + f.hint + '\n' + f.lines.join('\n')).join('\n') + L.glanceLines(o, pack).join('\n');
+  assert.ok(!/undefined|NaN|\[object|%F%|<\/?(div|span|p|br)\b/.test(all), label + ': bad token or HTML');
+  // every room sits in exactly one band fold, the target is starred, and the room tags survive
+  for (const r of o.rooms) {
+    // a mixed roll can hold the same room name from both themes: the room is its name plus its theme
+    const head = '- **' + (r.isTarget ? '★ ' : '') + r.name + '**' + (r.mix ? ' *(' + r.mix + ')*' : '') + ' — ';
+    const holders = F.filter(f => f.id.startsWith('band-') && f.lines.some(l => l.startsWith(head)));
+    assert.equal(holders.length, 1, label + ': room ' + r.name + ' in ' + holders.length + ' band folds');
+    assert.equal(holders[0].id, 'band-' + r.band);
+    for (const t of [r.obstacle, r.loot, r.connects, r.pairedWith, r.holdsAnswerTo].filter(Boolean)) assert.ok(holders[0].lines.join('\n').toLowerCase().includes(String(t).toLowerCase()), label + ': room tag lost: ' + t);
+  }
+  assert.equal(g.bands.reduce((s, b) => s + b.count, 0), o.rooms.length);
+  assert.equal(g.bands.filter(b => b.target).length, 1);
+  assert.equal(g.bands.reduce((s, b) => s + b.locks, 0), o.rooms.filter(r => r.obstacle).length);
+  assert.deepEqual(g.bands.filter(b => b.shown).map(b => b.band), g.bands.some(b => b.band === 'public') ? ['public'] : []);
+  // nothing moved off the card is lost: it is in a fold
+  const folded = F.map(f => f.lines.join('\n')).join('\n');
+  const keep = [o.rumour, o.physThreatText, o.socThreatText, o.also, o.bandNote, o.targetWhy, o.targetNote, o.geometry.note, o.landmark, o.watcher, o.special,
+    o.vectors[0].cost, o.vectors[1].how, o.vectors[1].cost, o.vectors[2].cost, o.approach.gambit, ...ratingsOf(o), ...o.skips.map(s => s.via)].filter(Boolean);
+  for (const s of keep) assert.ok(folded.includes(s), label + ': lost from the folds: ' + String(s).slice(0, 40));
+  for (const t of o.tensions) assert.ok(folded.includes(t.replace(/^\*\*(.+?)\*\*\s*/, '').slice(0, 30)), label + ': tension lost');
+  if (pack.T.factionDetail && pack.T.factionDetail[o.faction]) assert.ok(folded.includes(pack.T.factionDetail[o.faction].secret), label + ': dossier lost');
+}
+const ratingsOf = o => ['Wealth ' + o.wealth, 'Security ' + o.security, 'Criminal ' + o.criminal, 'Paranormal ' + o.paranormal];
+
+await test('panel: glance card and folds keep everything, change nothing, and SAY is player-safe', () => {
+  let n = 0;
+  for (const target of FIX.T.targetNames) for (let s = 0; s < 25; s++) {
+    const o = L.generate(FIX, { target, mix: s % 3 === 0, approach: FIX.T.approach[s % 6].n }, { seed: s * 53 + 3, mem: {} });
+    panelCheck(FIX, o, target + '#' + s); n++;
+  }
+  console.log('     ' + n + ' fixture rolls');
+  const o = L.generate(FIX, { target: 'Test shop' }, { seed: 77, mem: {} });
+  const deep = L.glance(o, FIX, ['public', 'working', 'controlled']);
+  assert.deepEqual(deep.bands.filter(b => b.shown).map(b => b.band), deep.bands.map(b => b.band).filter(b => b !== 'secure'), 'shown follows the reveal');
+  const pinText = L.glanceLines(o, FIX).join('\n');
+  assert.ok(pinText.length < 1500, 'the pinned glance fits a pin: ' + pinText.length);
+  assert.ok(pinText.includes(o.name) && pinText.includes(o.targetRoom));
+});
+
 await test('noteBody and canvas', () => {
   const o = L.generate(FIX, {}, { seed: 5, mem: {} });
   const n = L.noteBody(o, { date: '14/10/2026' });
@@ -249,6 +301,14 @@ if (!REAL) {
       const r = leakCheck(o, 'real#' + n); c += r.checked; sk += r.skipped; n++;
     }
     console.log('     ' + n + ' rolls, ' + c + ' hidden-string checks (' + sk + ' skipped as coincident)');
+  });
+  await test('REAL pack: panel keeps everything and SAY is player-safe', () => {
+    let n = 0;
+    for (const target of REAL.T.targetNames) for (let s = 0; s < 6; s++) {
+      const o = L.generate(REAL, { target, mix: s % 2 === 0, approach: REAL.T.approach[s % 6].n }, { seed: s * 977 + 5, mem: {} });
+      panelCheck(REAL, o, 'real#' + n); n++;
+    }
+    console.log('     ' + n + ' real rolls');
   });
 
   const kitPath = path.join(ROOT, 'app', 'maps', 'map-kit.js');

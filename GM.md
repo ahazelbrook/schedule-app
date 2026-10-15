@@ -98,11 +98,27 @@ fails and nobody is known, nothing is purged.
   Composed cards are stored under `cards.situation` / `hist.situation` (replay info: `{ id: 'situation', situation, seed, ui, mem }`),
   never under `console`: code from before redraws any unknown console id as a Devil's Bargain. Classic and single tables keep
   `cards.console` / `hist.console`. In Situations, Earlier lists the last five across both. Position is the same live control in both views.
-- **Location.** The generator's controls and Roll, the card with GM-only sections marked, then the map: view, theme,
-  layer (GM / Player) and the bands revealed to the player layer; Draw, Download SVG / note (.md) / canvas. **Show on
-  iPad** is enabled only on the player layer, and the code renders the player layer itself and refuses any other svg
-  (`gate` in `gm-page.js`; tested in `gm-nosecrets.test.mjs`, `gm-page.test.mjs` and `gm.e2e.mjs`). The street
-  description can go to the iPad as plain text; **Clear → ambient** (once called Blank the iPad) clears it.
+- **Location.** The generator's controls and Roll, then the card (since 15/10/2026), then the map.
+  - **The glance card** (`B68GmLocation.glance`): the name and place, **Say** (the first line of the street
+    description, built only from fields `playerSummary` already shows) with the **Street description on iPad** button,
+    then Whose (faction, Tier, hold, district Security), the bands (room count, locks, ★ on the target's band, dashed
+    when the players can see it), the target, and Flags (off turf, a low Tier holding a high-value target, a district
+    clash, low paranormal, a district rule, ring-skips).
+  - **Folds** (`B68GmLocation.folds`), closed by default: Read aloud, Ways in, one per band, Opposition (both threats and
+    the dossier), Block & word out, Plan & routes (the ring-skips), Reference (the four ratings, the band labels, why
+    the target is there, the band note, the target type's note, the flags in full, Also here, the plan geometry, the
+    fixed lines on the service side and back route). A band note that says to call it at the table also shows in the
+    band fold of the room it names. Wording is shortened in the folds only, never in `generate()`, because the map kit,
+    the canvas and `playerSummary` read the roll. Open folds are remembered per device (`b68.gm.locfold`, fold ids only).
+    The glance card and every fold are GM-only and carry the badge.
+  - **Pin** stores the glance card; **Copy** and **Download note (.md)** keep the whole card (`cardLines`, `noteBody`).
+  - **The map**: view, theme, layer (GM / Player) and the bands revealed to the player layer, Draw; then the warning
+    line, **Show on iPad**, **Set as score scene** and **Clear → ambient** together, never in a fold; then the map;
+    Download SVG / note (.md) / canvas fold under Downloads. **Show on iPad** is enabled only on the player layer, and
+    the code renders the player layer itself and refuses any other svg (`gate` in `gm-page.js`; tested in
+    `gm-nosecrets.test.mjs`, `gm-page.test.mjs` and `gm.e2e.mjs`). The street description goes to the iPad as plain
+    text through the `playerSummary` whitelist only (the gate passes non-svg kinds), so `playerSummary` and `pushText`
+    are secrecy-critical.
 - **Reveal.** Every new roll and every replay starts with the public band only. The ticks count only while Layer is
   Player (on the GM layer the street description and everything else use public only), and sending anything beyond public
   to the iPad asks first, naming the bands.
