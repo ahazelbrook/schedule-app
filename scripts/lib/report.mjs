@@ -3,7 +3,8 @@
 // gm-private/sync-log.jsonl can carry table text. NPC names appear only in `created` / NPC lines on screen
 // (the card's file name), never in the log, which uses NPC ids.
 
-const KIND = { capture: 'lines', pin: 'pins', owed: 'bargains', paid: 'bargains', used: 'callbacks', reveal: 'reveals', gmnotes: 'GM notes' };
+const KIND = { capture: 'lines', pin: 'pins', owed: 'bargains', paid: 'bargains', used: 'callbacks', reveal: 'reveals', gmnotes: 'GM notes', tick: 'boxes ticked', tickline: 'ticks filed as lines (box not found)', beat: 'beats started', cell: 'table ticks' };
+const PREP = ['tick', 'tickline', 'beat', 'cell'];
 
 export function newReport() {
   const r = {
@@ -43,6 +44,16 @@ export function formatReport(r, o) {
     if (!Object.keys(byNote).length) out.push('  nothing new to file');
     const sk = count(r.skipped.filter((x) => ['capture', 'pin', 'owed', 'paid', 'used'].includes(x.kind)), (x) => x.why);
     if (Object.keys(sk).length) out.push('  skipped: ' + Object.entries(sk).map(([k, v]) => v + ' ' + k).join(' · '));
+  }
+  const prep = r.filed.filter((x) => PREP.includes(x.kind)), prepSkips = r.skipped.filter((x) => PREP.includes(x.kind));
+  if (prep.length || prepSkips.length) {
+    out.push('', 'Prep tab (app -> vault)');
+    const byNote = {};
+    for (const f of prep) (byNote[f.note] = byNote[f.note] || []).push(f);
+    for (const [note, list] of Object.entries(byNote)) {
+      out.push('  ' + (o.dryRun ? 'would file into ' : 'filed into ') + note + ': ' + fmt(count(list, (x) => KIND[x.kind])));
+    }
+    if (prepSkips.length) out.push('  skipped: ' + Object.entries(count(prepSkips, (x) => x.why)).map(([k, v]) => v + ' ' + k).join(' · '));
   }
   const refused = r.refused;
   if (refused.length) {

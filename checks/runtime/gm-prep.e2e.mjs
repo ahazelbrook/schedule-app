@@ -1,0 +1,177 @@
+// The Prep tab and the planning meeting's cards, end to end against a real local Worker (wrangler dev, DEV_USER) on PORT
+// (default 8846), with only invented data: a prep note written to a temp vault and exported by scripts/lib/prep-export.mjs,
+// beside the fixture console and location parts. The GM imports the pack through the page; R opens Prep; a task box ticks
+// (GM state), survives a reload, and a box ticked in the note is locked; a beat starts its clock; a section pins to the rail;
+// an NPC link opens a peek card; Wide hides the console; the phone layout does not overflow. Then O opens Cards: three cards
+// are typed, shown on the iPad as a carousel (the server holds exactly the typed lines) and as a spread; #display draws them
+// and a tap turns the carousel.
+//   PW_MODULE=<playwright> PW_CHANNEL=msedge node checks/runtime/gm-prep.e2e.mjs
+// PREP_PACK=<pack.json> uses that pack instead of the invented one (a local look at real prep; nothing is asserted about its
+// text). GM_SHOTS=<dir> saves screenshots there.
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { buildPrep } from '../../scripts/lib/prep-export.mjs';
+import { basenames } from '../../scripts/lib/vault.mjs';
+
+const require = createRequire(import.meta.url);
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const PORT = Number(process.env.PORT || 8846);
+const BASE = 'http://127.0.0.1:' + PORT;
+const GM = 'gm@example.test';
+const SHOTS = process.env.GM_SHOTS || '';
+const REAL = process.env.PREP_PACK || '';
+const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const WIN = process.platform === 'win32';
+
+/* ---------- the pack: fixture console and location, and a prep part from an invented note ---------- */
+const stateDir = mkdtempSync(path.join(tmpdir(), 'b68-prep-e2e-'));
+const FIX = path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm');
+let PACK;
+if (REAL) PACK = JSON.parse(readFileSync(REAL, 'utf8'));
+else {
+  const conFix = JSON.parse(readFileSync(path.join(FIX, 'console-pack.json'), 'utf8')), locFix = JSON.parse(readFileSync(path.join(FIX, 'location-pack.json'), 'utf8'));
+  const vault = path.join(stateDir, 'vault'), G = 'Wiki/Games/Blades in the Dark/Campaigns/Group';
+  const w = (rel, text) => { const f = path.join(vault, ...rel.split('/')); mkdirSync(path.dirname(f), { recursive: true }); writeFileSync(f, text); };
+  w(G + '/Sessions/b68g-s07.md', ['---', 'session: 7', 'date: 01/02/2030', 'status: prep', 'gm_prep: true', '---', '', '# Session 7: prep', '',
+    '## Run order', '', '| # | Beat | About |', '|---|---|---|', '| 1 | **Titles** | 5 min |', '| 2 | **The score** | 60 min |', '',
+    '## Must land', '', '- [ ] **#1** The lamp flickers', '- [x] **#2** The dog barks twice', '',
+    '> [!quote] SAY', '> *"The fog comes in off the canal."* `[Invented pitch]`', '',
+    '> [!warning] Mind the time', '> Cut the scene at ten minutes.', '',
+    '## Cast', '', 'Open on [[Odo Plim]]. Then the [[pip-pockets#A. The goose job|goose job]].', '',
+    '![[pip-pockets#A. The goose job]]', '', '# Play log', '', '## Names', '', '-', '', '## Loose ends', '', '-', '', '## Moments', '', '-', '', '## Rolled at the table', '', '-', ''].join('\n'));
+  w(G + '/pip-pockets.md', ['# Pockets', '', '## A. The goose job', '', '| | |', '|---|---|', '| **Target** | A goose |', '| **Pays** | 2 |', '', '- [ ] Ask the goose', ''].join('\n'));
+  w('Wiki/Games/Blades in the Dark/NPCs/Odo Plim.md', '# Odo\n');
+  const prep = buildPrep({ vault, repo: ROOT, exportedAt: new Date().toISOString(), basenames: basenames(vault) });
+  PACK = { format: 1, exportedAt: new Date().toISOString(), parts: { console: conFix.parts.console, campaign: conFix.parts.campaign,
+    location: { src: { file: 'fixture/location', blockSha: '0', exportedAt: new Date().toISOString() }, T: locFix.T, extra: locFix.extra }, prep } };
+}
+const packFile = path.join(stateDir, 'b68-gm-pack.json');
+writeFileSync(packFile, JSON.stringify(PACK));
+
+/* ---------- our own server ---------- */
+const WRANGLER = path.join(ROOT, 'node_modules', '.bin', 'wrangler');
+const env = { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' };
+if (await fetch(BASE + '/api/me', { signal: AbortSignal.timeout(1500) }).then(() => true, () => false)) { console.log('FAIL port ' + PORT + ' is already in use'); process.exit(1); }
+const mig = spawnSync(WRANGLER, ['d1', 'migrations', 'apply', 'DB', '--local', '--persist-to', stateDir], { cwd: ROOT, env, encoding: 'utf8', shell: WIN });
+if (mig.status !== 0) { console.log('FAIL migrations\n' + mig.stdout + mig.stderr); process.exit(1); }
+const server = spawn(WRANGLER, ['dev', '--port', String(PORT), '--ip', '127.0.0.1', '--inspector-port', String(PORT + 20000), '--show-interactive-dev-session', 'false',
+  '--persist-to', stateDir, '--log-level', 'warn', '--var', 'DEV_USER:' + GM, '--var', 'GM_EMAILS:' + GM], { cwd: ROOT, env, detached: !WIN, shell: WIN, stdio: ['ignore', 'pipe', 'pipe'] });
+let serverLog = '';
+server.stdout.on('data', (d) => { serverLog += d; }); server.stderr.on('data', (d) => { serverLog += d; });
+function killServer() { if (WIN) spawnSync('taskkill', ['/pid', String(server.pid), '/T', '/F'], { stdio: 'ignore' }); else { try { process.kill(-server.pid, 'SIGKILL'); } catch (_) {} } }
+process.on('exit', () => { killServer(); try { rmSync(stateDir, { recursive: true, force: true }); } catch (_) {} });
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
+
+let failed = 0;
+function check(cond, msg) { console.log((cond ? 'PASS ' : 'FAIL ') + msg); if (!cond) failed++; }
+async function until(fn, ms, step = 100) { const t0 = Date.now(); for (;;) { const v = await fn(); if (v || Date.now() - t0 > ms) return v; await sleep(step); } }
+const timeout = setTimeout(() => { console.log('FAIL timed out\n' + serverLog.slice(-2000)); process.exit(1); }, 300000);
+const api = (method, p, body) => fetch(BASE + '/api' + p, { method, headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
+const gmState = async () => (await api('GET', '/gm/state')).json.doc;
+
+try {
+  const ready = await until(async () => { if (server.exitCode !== null) throw new Error('wrangler exited:\n' + serverLog); try { return (await fetch(BASE + '/api/me')).status > 0; } catch (_) { return false; } }, 120000, 300);
+  if (!ready) throw new Error('server not ready:\n' + serverLog);
+  if (SHOTS) mkdirSync(SHOTS, { recursive: true });
+  await api('PATCH', '/campaign', { session: { number: 7 } });
+  const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
+  const errors = [];
+  async function open(hash, { width = 1440, height = 900, mobile = false } = {}) {
+    const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile, deviceScaleFactor: mobile ? 2 : 1 });
+    await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
+    const page = await c.newPage();
+    page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
+    page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+    page.on('dialog', (d) => d.accept());
+    await page.goto(BASE + '/' + hash);
+    await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
+    return { ctx: c, page };
+  }
+  const shot = async (page, name, full) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png'), fullPage: !!full }); };
+
+  /* ---- import, then Prep ---- */
+  const { page } = await open('#gm');
+  await page.waitForSelector('#gm-file', { state: 'attached', timeout: 30000 });
+  await page.setInputFiles('#gm-file', packFile);
+  await page.waitForSelector('[data-gm="upload"]:not([disabled])', { timeout: 10000 });
+  await page.click('[data-gm="upload"]');
+  await page.waitForSelector('#gm-root', { timeout: 30000 });
+  await page.keyboard.press('r');
+  check(await page.waitForSelector('#gm-prep .pp-doc', { timeout: 10000 }).then(() => true, () => false), 'R opens Prep and the note renders');
+  check(await page.$eval('[data-gm="panel"][data-panel="prep"]', (b) => b.getAttribute('aria-selected')) === 'true', 'the Prep tab is selected');
+  const boxes = await page.$$eval('#gm-prep .pp-box', (bs) => bs.map((b) => ({ a: b.getAttribute('data-task'), locked: b.getAttribute('aria-disabled') === 'true' })));
+  check(boxes.length > 0 && boxes.some((b) => b.locked) === !!boxes.find((b) => b.locked), 'task boxes are tickable checkboxes (' + boxes.length + ')');
+  check((await page.$$('#gm-prep .pp-sec')).length > 1 && (await page.$$('#gm-prep .pp-rail .chip')).length > 1, 'sections and a section rail');
+  await shot(page, 'prep-desktop');
+  if (!REAL) {
+    const open1 = boxes.find((b) => !b.locked), done1 = boxes.find((b) => b.locked);
+    check(!!done1, 'a box ticked in the note is locked');
+    await page.click('#gm-prep .pp-box[data-task="' + open1.a + '"]');
+    check(await page.$eval('#gm-prep .pp-box[data-task="' + open1.a + '"]', (b) => b.classList.contains('here') && b.getAttribute('aria-checked') === 'true'), 'a tick shows at once (orange: not yet in the note)');
+    const st = await until(async () => { const d = await gmState(); return d.prep && d.prep.ticks && d.prep.ticks[open1.a]; }, 8000, 300);
+    check(!!st && st.s === 7 && /b68g-s07\.md$/.test(st.rel) && /lamp/.test(st.t), 'the tick is in the GM state with its note, session and text');
+    await page.click('#gm-prep .pp-box[data-task="' + done1.a + '"]', { force: true });
+    check(await page.$eval('#gm-prep .pp-box[data-task="' + done1.a + '"]', (b) => !b.classList.contains('here')), 'a box ticked in the note cannot be unticked here');
+    await page.click('#gm-prep .pp-beat');
+    check(await until(async () => { const d = await gmState(); return d.prep && d.prep.beats && Object.keys(d.prep.beats).length === 1; }, 8000, 300), 'a beat starts');
+    check(/0:0\d \/ 5:00/.test(await page.textContent('#gm-prep .pp-clock.run')), 'the beat clock runs against its 5 min budget');
+    check(await page.$eval('#gm-prep .rl-callout.pp-say', () => true).catch(() => false) && await page.$eval('#gm-prep code.pp-prov', () => true).catch(() => false), 'SAY card and provenance chip');
+    check((await page.$$('#gm-prep .pp-embed')).length === 1, 'the transcluded section is carried in');
+    await page.click('#gm-prep #pp-must-land .pp-pin');
+    check(await page.waitForSelector('#gm-rail .pp-pinbox .pp-box', { timeout: 5000 }).then(() => true, () => false), 'a pinned section sits in the rail with its boxes');
+    await page.click('#gm-prep a[href^="#pp:npc:"]');
+    check(await page.$eval('#gm-prep-peek', (p) => !p.hidden && /Odo Plim/.test(p.textContent)), 'an NPC link opens a peek card');
+    check(page.url().endsWith('#gm'), 'a link in the note does not leave the page');
+    await page.reload(); await page.waitForSelector('#gm-prep .pp-doc', { timeout: 20000 });
+    check(await page.$eval('#gm-prep .pp-box[data-task="' + open1.a + '"]', (b) => b.classList.contains('here')), 'reload: the tick is still there');
+  }
+  await page.click('[data-gm="prep-wide"]');
+  check(await page.$eval('#gm-root .gm-console', (c) => getComputedStyle(c).display === 'none'), 'Wide hides the console');
+  await shot(page, 'prep-wide');
+  await page.click('[data-gm="prep-wide"]');
+
+  /* ---- the phone ---- */
+  const ph = await open('#gm', { width: 390, height: 844, mobile: true });
+  await ph.page.waitForSelector('#gm-root', { timeout: 30000 });
+  await ph.page.click('.gm-segbar [data-seg="prep"]');
+  await ph.page.waitForSelector('#gm-prep .pp-doc', { timeout: 10000 });
+  const over = await ph.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  check(over <= 1, 'phone: the note does not overflow the screen (' + over + ' px)');
+  await shot(ph.page, 'prep-phone');
+
+  /* ---- Cards ---- */
+  await page.keyboard.press('o');
+  check(await page.waitForSelector('#gm-cards [data-gm="opp-add"]', { timeout: 5000 }).then(() => true, () => false), 'O opens Cards');
+  const typed = [{ from: 'Pip', client: 'The Lantern Guild', target: 'A barge (2)', payout: '6 stacks' }, { from: 'Wen', type: 'Smuggling', note: 'Tonight only' }, { from: 'GM', target: 'A bell tower' }];
+  for (const c of typed) {
+    await page.click('[data-gm="opp-add"]');
+    const id = await page.$$eval('#gm-cards .gm-opp', (os) => os[os.length - 1].querySelector('[data-opp]').getAttribute('data-opp'));
+    for (const [f, v] of Object.entries(c)) await page.fill('[data-opp="' + id + '"][data-f="' + f + '"]', v);
+    await page.click('#gm-cards .gm-cardsbar');                 // leave the field: the change event saves it
+  }
+  await page.selectOption('#gm-opp-iv', '8');
+  await shot(page, 'cards-editor');
+  await page.click('[data-gm="opp-show"][data-mode="carousel"]');
+  const disp = await until(async () => { const r = await api('GET', '/gm/display'); return r.json && r.json.display && r.json.display.kind === 'cards' ? r.json.display : null; }, 8000, 300);
+  check(!!disp && disp.cards.length === 3 && disp.cards[0].client === 'The Lantern Guild' && disp.cards[1].note === 'Tonight only' && disp.interval === 8 && disp.mode === 'carousel', 'Show on iPad: the server holds the three cards as typed');
+  const ipad = await open('#display', { width: 1180, height: 820, mobile: true });
+  check(await ipad.page.waitForSelector('#display-page .oc-card.oc-cur', { timeout: 15000 }).then(() => true, () => false), '#display draws the carousel');
+  check(/The Lantern Guild/.test(await ipad.page.textContent('#display-page .oc-cur')), 'the first card is in front');
+  await sleep(1200); await shot(ipad.page, 'ipad-carousel');
+  await ipad.page.mouse.click(1000, 400);
+  check(/Wen/.test(await ipad.page.textContent('#display-page .oc-cur')), 'a tap on the right turns to the next card');
+  await page.click('[data-gm="opp-show"][data-mode="spread"]');
+  check(await ipad.page.waitForSelector('#display-page .dp-cards-spread', { timeout: 15000 }).then(() => true, () => false), 'Spread on iPad lays all three out');
+  await sleep(1500); await shot(ipad.page, 'ipad-spread');
+
+  check(!errors.length, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 4).join(' | ') : ''));
+  await browser.close();
+} catch (e) { console.log('FAIL ' + (e && e.stack || e)); failed++; }
+clearTimeout(timeout);
+console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
+process.exit(failed ? 1 : 0);

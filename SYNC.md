@@ -29,6 +29,15 @@ in, offline, no vault) or mid-push (what landed is in the ledger; run it again).
 | An NPC made in the app with no card | a new `NPCs/<Name>.md` | the vault NPC generator's Save format (replayed through `app/gm/npc.js` from the GM state's `npcgen[id]` (seed, memory and the roll's faction / district / place choices) and the local pack; without those, the same skeleton with `[TODO]`s), tagged `wiki/needs-review` with a `review_note`; a faction dossier line as the generator's Save adds it; one `Wiki/log.md` entry per run that creates cards | the name is checked across the whole vault first: a note outside `NPCs/` with it -> `<Name> (NPC).md` |
 | A reveal | the card's `## In play` | `- **DD/MM/YYYY (app):** revealed to the table. ^b68-rev-<id>` | the block id in the card |
 | GM notes | the card's `## In play` | each new version as a collapsed `> [!note]-` callout, `^b68-gmn-<id>-<hash>` | same |
+| A task box ticked in the Prep tab (`prep.ticks`) | that box, in its own note: `- [ ]` becomes `- [x]` | one character; nothing else in the note changes | the ledger's `ticked`: a box the GM unticks by hand afterwards is not ticked again |
+| A tick whose box is gone (reworded, moved under another heading, or the same task twice) | the session note, `## At the table (app)` (added after Bargains, Pinned or Rolled at the table) | `- **HH:MM** Ticked at the table: text (not found in <note>) ^b68-tick-<anchor>` | the block id, as above |
+| A beat started, a tick-column cell ticked (`prep.beats`, `prep.cells`) | the same heading | `- **HH:MM** Beat started: label ^b68-beat-<key>`, `Ticked at the table: label ^b68-cell-<key>` | same |
+
+**Prep.** A tick only ever ticks: the sync never unticks a box, and a box already ticked in the note is left as it is. The
+box is found by its anchor (`scripts/lib/prep.mjs`): a hash of the note's path, the heading the task sits under, its text
+and how many identical tasks come before it under that heading, so it survives edits elsewhere and a renamed note title.
+It is never guessed onto another line. The notes a tick may edit are fixed in code (`assertPrepWritable`): the group
+campaign's folder and its `Sessions/`, never a transcript, the faction board, `Characters/` or `Clocks/`.
 
 **Which session note.** A capture or pin carries `s`, the session number the page stamps on it: `s: 2` ->
 `b68g-s02.md` (or `b68g-s2.md`), `s: 1.5` -> `b68g-s1.5.md`. Entries without `s` (older lines) and the bargains go to
@@ -95,5 +104,6 @@ command-line limit, counting node's escaping), so a pack piece is about 13-25 KB
 | `scripts/lib/sync-notes.mjs` | pull: session notes (the core) |
 | `scripts/lib/sync-npc.mjs` | pull and push: NPC cards and fields (optional: loaded only if present) |
 | `scripts/lib/sync-pack.mjs` | push: the pack (optional: loaded only if present) |
+| `scripts/lib/sync-prep.mjs`, `prep.mjs` | pull: the Prep tab's ticks, beats and cells (optional); the line scan and anchors it shares with the exporter |
 | `scripts/lib/ledger.mjs`, `report.mjs` | the ledger, the log, the printout |
 | `checks/runtime/gm-sync.test.mjs` | `node checks/runtime/gm-sync.test.mjs` |
