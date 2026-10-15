@@ -279,7 +279,9 @@ The iPad sits in the middle of the table, so it hears everyone; it replaces the 
    `copier: { at, last }` in `gm_stt` at most once a minute, so the panel can say the PC is copying. It never writes
    into a transcript the Obsidian transcriber made (no `source: ipad`); those lines go to `b68g-sNN-transcript-ipad.md`
    instead. Append only; the ledger's `transcript.last` remembers the last line filed. Lines the PC missed (off, asleep)
-   wait on the server and land on its next look. One copier at a time (`gm-private/transcript.lock`); its log is
+   wait on the server and land on its next look. Two PCs on one vault (desk and laptop, through Obsidian Sync): the
+   heartbeat names its host, and a copier stands back while another host has beaten in the last 3 minutes, then takes
+   over from that host's `last`. One copier per PC (`gm-private/transcript.lock`); its log is
    `gm-private/transcript-watch.log`. By hand: `npm run gm:transcript` (one pass), `-- --follow` (every 10 s, in a
    terminal), `-- --prune` (delete filed lines from the server).
 
