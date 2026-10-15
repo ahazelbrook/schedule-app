@@ -52,6 +52,15 @@
  * cardLines(roll, pack?) -> [markdown line]   the sections flattened, "## title" headings
  *   between them. GM-only headings read "## [GM] title" so a plain-text reader can tell.
  *
+ * glance(roll, pack?, reveal = ["public"]) -> { title, place, say, whose, security,
+ *     bands: [{ band, short, count, locks, target, shown }], target: { room, band, what }, flags }
+ *   The console's at-a-glance card. GM-only as a whole; `say` alone is player-safe (it is
+ *   the start of playerSummary's outside description). glanceLines() is the same as
+ *   markdown (what Pin stores).
+ * folds(roll, pack?, reveal = ["public"]) -> [ { id, title, hint, gm: true, lines } ]
+ *   Everything else, one fold each: read aloud, ways in, one per band, opposition, block,
+ *   plan, reference. Wording is shortened here, never in generate().
+ *
  * playerSummary(roll, reveal = ["public"]) -> { title, place, facade, outside, front,
  *                                                rooms: [{ name, band, detail }], lines, text }
  *   ONLY what the crew could see from the street plus the rooms in the revealed bands:
@@ -628,6 +637,176 @@
     return out;
   }
 
+  // --- The panel: a glance card and folds (15/10/2026) --------------------------------
+  // The console's own layout. It reads the roll and never changes it (Copy, the note,
+  // the canvas and the map kit still read the full card). Every fold is GM-only.
+  var BAND_ORDER0 = ["public", "working", "controlled", "secure"];
+  var BAND_LABEL0 = { public: "Public — anyone can be here", working: "Working — staff only; you need a reason",
+    controlled: "Controlled — access-controlled; most locks are here", secure: "Secure — the target" };
+
+  function bandsOf(pack) {
+    var T = (pack && pack.T) || {};
+    var order = T.bandOrder || BAND_ORDER0, label = T.bandLabel || BAND_LABEL0;
+    return order.map(function (b) {
+      var full = label[b] || cap(b);
+      return { band: b, short: full.split(" — ")[0] || cap(b), full: full };
+    });
+  }
+
+  function plural(n, one) { return n + " " + one + (n === 1 ? "" : "s"); }
+
+  // The tension that only explains the generator (the target type's note) goes to Reference.
+  function realTensions(o) {
+    var noteLine = o.targetNote ? "**" + o.target + ".** " + o.targetNote : null;
+    return o.tensions.filter(function (t) { return t !== noteLine; });
+  }
+
+  function shortFlag(t) {
+    if (t.indexOf("**Off their turf.**") === 0) return "Off their turf: hostile for Heat";
+    if (/^\*\*Tier [0IVX]+ holding/.test(t)) return t.replace(/^\*\*(.+?)\.\*\*.*$/, "$1") + ": a premise";
+    if (/^\*\*Paranormal /.test(t)) return t.replace(/^\*\*(.+?)\*\*.*$/, "$1") + ": hidden or imported";
+    return t.replace(/^\*\*(.+?)\.?\*\*.*$/, "$1");
+  }
+
+  // A band note that is a table cue (it says to call it at the table) stays in the band
+  // fold of the room it names; the rest of the band notes are design rationale.
+  function bandCue(o, inBand) {
+    if (!o.bandNote || !/at the table/i.test(o.bandNote)) return "";
+    var note = o.bandNote.toLowerCase();
+    return inBand.some(function (r) { return r.name.length >= 3 && note.indexOf(r.name.toLowerCase()) >= 0; }) ? o.bandNote : "";
+  }
+
+  function wayName(v) { return cap(v.n.replace(/^the /i, "")); }
+
+  function glance(roll, pack, reveal) {
+    var o = roll, X = pack ? extraOf(pack) : DEFAULT_EXTRA;
+    reveal = Array.isArray(reveal) && reveal.length ? reveal : ["public"];
+    var bands = bandsOf(pack).map(function (b) {
+      var inBand = o.rooms.filter(function (r) { return r.band === b.band; });
+      return { band: b.band, short: b.short, count: inBand.length,
+        locks: inBand.filter(function (r) { return r.obstacle; }).length,
+        target: inBand.some(function (r) { return r.isTarget; }),
+        shown: reveal.indexOf(b.band) >= 0 };
+    }).filter(function (b) { return b.count > 0; });
+    var flags = realTensions(o).map(shortFlag);
+    if (o.special) flags.push("District rule");
+    if (o.skips.length) flags.push(plural(o.skips.length, "ring-skip") + " (" +
+      o.skips.map(function (s) { return s.via; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(", ") + ")");
+    var targetBand = (bands.find(function (b) { return b.band === o.targetBand; }) || {}).short || o.targetBand;
+    return {
+      title: o.name,
+      place: o.district + " · " + o.timeOfDay + ", " + o.weather + " · " + o.namedStreet,
+      // Built only from fields playerSummary already shows (the start of the outside description).
+      say: "You come at it down " + o.streetType + " — " + o.streetDesc + ".",
+      whose: o.faction + " · Tier " + X.ROMAN[o.factionTier] + ", " + o.factionHold + " hold",
+      security: o.security,
+      bands: bands,
+      target: { room: o.targetRoom, band: targetBand, what: o.targetWhat },
+      flags: flags
+    };
+  }
+
+  function glanceLines(roll, pack, reveal) {
+    var g = glance(roll, pack, reveal);
+    var lines = ["# " + g.title, "*" + g.place + "*", "",
+      "**Say:** “" + g.say + "”",
+      "**Whose:** " + g.whose + " · Security " + g.security,
+      "**Bands:** " + g.bands.map(function (b) {
+        return b.short + " " + b.count + (b.locks ? " (" + plural(b.locks, "lock") + ")" : "") + (b.target ? " ★" : "");
+      }).join(" > "),
+      "**Target:** ★ " + g.target.room + " (" + g.target.band.toLowerCase() + ") — " + g.target.what];
+    if (g.flags.length) lines.push("**Flags:** " + g.flags.join(" · "));
+    return lines;
+  }
+
+  function roomChips(o, r) {
+    var bits = [];
+    if (r.isTarget) bits.push("**★ target:** " + o.targetWhat);
+    if (r.obstacle) bits.push("**lock:** " + r.obstacle);
+    if (r.loot) bits.push("**take:** " + cap(r.loot));
+    if (r.connects) bits.push("**exit:** " + r.connects);
+    if (r.pairedWith) bits.push("**answer in:** " + r.pairedWith);
+    if (r.holdsAnswerTo) bits.push("**answers:** " + r.holdsAnswerTo);
+    return bits;
+  }
+
+  // -> [ { id, title, hint, gm: true, lines: [markdown] } ], in reading order.
+  function folds(roll, pack, reveal) {
+    var o = roll, F = [], X = pack ? extraOf(pack) : DEFAULT_EXTRA;
+    reveal = Array.isArray(reveal) && reveal.length ? reveal : ["public"];
+    var dsc = describe(o), B = bandsOf(pack);
+    var fold = function (id, title, hint, lines) { F.push({ id: id, title: title, hint: hint, gm: true, lines: lines }); };
+
+    fold("read", "Read aloud", "street, then inside", [
+      "*From the street*", "", dsc.outside, "",
+      "*Inside — " + heading(o) + "* · read aloud, never sent to the iPad", "", dsc.inside
+    ]);
+
+    var v = o.vectors;
+    var backHow = cap(v[2].how).replace(/\s+—\s+there is always one\.$/, ".");
+    fold("ways", "Ways in (" + v.length + ")", o.approachName, [
+      "**" + o.approachName + "** — " + o.approach.gambit + ".", "",
+      "- **" + wayName(v[0]) + "** — " + cap(v[0].how) + " " + v[0].cost + " · *" + v[0].know + "*",
+      "- **" + wayName(v[1]) + "** — " + cap(v[1].how) + " · *" + v[1].know + "*",
+      "- **" + wayName(v[2]) + "** — " + backHow + " · *" + v[2].know + "*"
+    ]);
+
+    B.forEach(function (b) {
+      var inBand = o.rooms.filter(function (r) { return r.band === b.band; });
+      if (!inBand.length) return;
+      var locks = inBand.filter(function (r) { return r.obstacle; }).length;
+      var hint = [];
+      if (locks) hint.push(plural(locks, "lock"));
+      if (inBand.some(function (r) { return r.isTarget; })) hint.push("★ target");
+      if (reveal.indexOf(b.band) >= 0) hint.push("players see it");
+      var lines = [];
+      var cue = bandCue(o, inBand);
+      if (cue) lines.push("*" + cue + "*", "");
+      inBand.forEach(function (r) {
+        lines.push("- **" + (r.isTarget ? "★ " : "") + r.name + "**" + (r.mix ? " *(" + r.mix + ")*" : "") + " — " + r.detail);
+        var chips = roomChips(o, r);
+        if (chips.length) lines.push("  - " + chips.join(" · "));
+      });
+      fold("band-" + b.band, b.short + " (" + inBand.length + ")", hint.join(" · "), lines);
+    });
+
+    var opp = [
+      "- **Physical** — **" + o.physThreatName + ".** " + o.physThreatText,
+      "- **Social** — **" + o.socThreatName + ".** " + o.socThreatText, "",
+      "**" + o.faction + "** — Tier " + X.ROMAN[o.factionTier] + ", " + o.factionHold + " hold"
+    ];
+    if (pack && pack.T) {
+      var dd = (pack.T.factionDetail || {})[o.faction], th = (pack.T.factionThumb || {})[o.faction];
+      if (dd) opp.push("- **Now:** " + dd.now, "- **With:** " + dd.with, "- **Against:** " + dd.against, "- **Secret:** " + dd.secret);
+      else if (th) opp.push("- **" + th.cat + ":** " + th.thumb);
+      else opp.push("- **Detail:** [TODO: neither a dossier nor a thumbnail is printed for this faction.]");
+    }
+    fold("opp", "Opposition", o.physThreatName + " · " + o.socThreatName + " · dossier", opp);
+
+    var blk = ["- **Nearby** — " + o.landmark, "- **Watching** — " + o.watcher, "- **Word out** — " + o.rumour];
+    if (o.special) blk.push("- **Rule here** — " + o.special);
+    fold("block", "Block & word out", o.special ? "rumour · district rule" : "rumour", blk);
+
+    fold("plan", "Plan & routes", o.styleName + " · " + plural(o.skips.length, "skip"),
+      o.skips.length
+        ? ["**Skips a ring** — the links to plan around:"].concat(o.skips.map(function (s) { return "- *" + s.via + "* — " + s.from + " → " + s.to; }))
+        : ["No link skips a ring. Each room's **exit:** shows the ways between floors."]);
+
+    var ref = [
+      "**Ratings** — " + ratings(o).map(function (c) { return "`" + c + "`"; }).join(" · "),
+      "**Bands** — " + B.map(function (b) { return b.full; }).join(" · "),
+      "**Why the target is there** — " + o.targetWhy
+    ];
+    if (o.bandNote) ref.push("**Band note** — *" + o.bandNote + "*");
+    if (o.targetNote) ref.push("**" + o.target + "** — " + o.targetNote);
+    realTensions(o).forEach(function (t) { ref.push("**Flag** — " + t.replace(/^\*\*(.+?)\*\*\s*/, "$1 ")); });
+    ref.push("**Also here** — *" + o.also + "*");
+    if (o.geometry.note) ref.push("**The plan** — " + o.styleName + ". " + o.geometry.note);
+    ref.push("**Ways in, always** — " + wayName(v[1]) + ": " + v[1].cost + " " + wayName(v[2]) + ": there is always one. " + v[2].cost);
+    fold("ref", "Reference", "ratings · notes · also here", ref.map(function (l) { return "- " + l; }));
+    return F;
+  }
+
   // --- What the crew can see ---------------------------------------------------------
   function playerSummary(roll, reveal) {
     var o = roll;
@@ -786,6 +965,7 @@
   return {
     generate: generate, controls: controls, defaults: defaults,
     cardSections: cardSections, cardLines: cardLines, playerSummary: playerSummary,
+    glance: glance, glanceLines: glanceLines, folds: folds,
     describe: describe, noteBody: noteBody, canvas: canvas, seedRng: seedRng,
     _reviveRe: reviveRe
   };
