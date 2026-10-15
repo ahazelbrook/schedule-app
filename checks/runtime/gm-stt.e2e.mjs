@@ -105,6 +105,7 @@ try {
   check(!!lines && lines[0].text === 'The fog rolls in. Again tonight.' && lines[0].speaker === 0 && lines[1].text === 'Who knocks?' && lines[1].speaker === 1 && lines[0].session === '9',
     'finished words merge into lines by speaker and reach the server: ' + JSON.stringify((lines || []).map((l) => [l.speaker, l.text])));
   check(await gm.waitForFunction(() => /Alex \(GM\)\s*The fog rolls in/.test((document.querySelector('.gm-stt-tail') || {}).textContent || ''), null, { timeout: 15000 }).then(() => true, () => false), 'the GM panel shows the tail with names');
+  check(/waiting for the PC/.test(await gm.textContent('.gm-stt-pc').catch(() => '')), 'no heartbeat from the PC yet: the panel says it is waiting for it');
   check(await until(async () => { const r = await api('GET', '/gm/stt'); return r.json && r.json.doc.status.state === 'listening' && r.json.doc.status.lines >= 2; }, 15000, 500), 'the iPad reports listening, and lines sent');
 
   /* Stop */

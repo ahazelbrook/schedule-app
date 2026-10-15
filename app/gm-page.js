@@ -1306,7 +1306,15 @@
       (STT.tail.length ? '<ol class="gm-stt-tail">' + STT.tail.map(function (l) {
         return '<li>' + (l.kind === 'mark' ? '<i>— ' + esc(l.text || 'reconnected') + ' —</i>' : '<span class="gm-lab">' + esc(sttName(d, l.speaker)) + '</span> ' + esc(l.text)) + '</li>';
       }).join('') + '</ol>' : '') +
-      '<p class="gm-dim">Into the vault: on the PC, <code>npm run gm:transcript -- --follow</code> copies new lines into the session’s transcript note every 10 s.</p></div></section>';
+      sttCopier(d, on) + '</div></section>';
+  }
+  /* the PC's heartbeat: fresh within 3 minutes while listening is on */
+  function sttCopier(d, on) {
+    var at = isObj(d.copier) && d.copier.at ? Date.parse(d.copier.at) : NaN;
+    var age = isNaN(at) ? null : Math.max(0, Math.round((Date.now() - at) / 1000));
+    if (on && age !== null && age < 180) return '<p class="gm-dim gm-stt-pc" role="status">Into the vault: the PC is copying (' + (age < 60 ? age + ' s' : Math.round(age / 60) + ' min') + ' ago).</p>';
+    if (on && STT.loaded && !STT.error) return '<p class="gm-note gm-stt-pc" role="status">Into the vault: waiting for the PC (it looks once a minute). Lines keep on the server till then; if this stays, is the PC on and awake?</p>';
+    return '<p class="gm-dim gm-stt-pc">Into the vault: the PC copies new lines by itself while listening is on.</p>';
   }
   function setScoreScene() {
     if (!S || !S.locRoll) { toast('Roll a location first.', true); return; }

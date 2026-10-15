@@ -4,7 +4,14 @@
 //
 //   npm run gm:transcript                 one pass: every line not yet in the vault
 //   npm run gm:transcript -- --follow     keep going, a pass every 10 s (Ctrl+C stops it)
-//   node scripts/gm-transcript.mjs [--follow] [--every <s>] [--session <N>] [--vault <path>] [--dry-run] [--prune]
+//   npm run gm:transcript -- --watch      in the background for good: one cheap look a minute, and a pass every 10 s
+//                                         while the GM page has listening on (or lines are waiting). Logs to
+//                                         gm-private/transcript-watch.log; tells the GM page it is alive (gm_stt `copier`)
+//   npm run gm:transcript -- --install    start --watch now and at every Windows sign-in (a hidden launcher in the
+//                                         Startup folder); --uninstall stops it and removes the launcher
+//   node scripts/gm-transcript.mjs [--follow | --watch] [--every <s>] [--idle <s>] [--session <N>] [--vault <path>] [--dry-run] [--prune]
+//
+// One copier at a time (gm-private/transcript.lock): a --follow while the background one runs says so and stops.
 //
 // Where: Sessions/b68g-sNN-transcript.md for the line's session (the session the GM page stamped when listening started;
 // else --session, else the highest-numbered session note). The note is created the first time, in the vault
@@ -18,6 +25,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { asD1, wranglerExec, readWranglerToml } from './lib/d1.mjs';
 import { SESSIONS, abs, readNote, createNote, appendNote, editNote, sessionNotes, highestNote, hhmm, dmy } from './lib/vault.mjs';
@@ -27,12 +35,16 @@ import { readLines, loadStt, pruneLines } from '../functions/_lib/stt.js';
 export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export function parseArgs(argv) {
-  const o = { follow: false, every: 10, dryRun: false, prune: false };
+  const o = { follow: false, watch: false, every: 10, idle: 60, dryRun: false, prune: false };
   const need = (i, f) => { if (i >= argv.length || argv[i].startsWith('--')) throw new Error(f + ' needs a value'); return argv[i]; };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--follow') o.follow = true;
+    else if (a === '--watch') o.watch = true;
+    else if (a === '--install') o.install = true;
+    else if (a === '--uninstall') o.uninstall = true;
     else if (a === '--every') { o.every = Number(need(++i, a)); if (!(o.every >= 3)) throw new Error('--every takes seconds, 3 or more'); }
+    else if (a === '--idle') { o.idle = Number(need(++i, a)); if (!(o.idle >= 15)) throw new Error('--idle takes seconds, 15 or more'); }
     else if (a === '--session') { o.session = String(need(++i, a)); if (!/^[0-9]+(\.[0-9]+)?$/.test(o.session)) throw new Error('--session takes a session number'); }
     else if (a === '--vault') o.vault = need(++i, a);
     else if (a === '--dry-run' || a === '-n') o.dryRun = true;
@@ -40,6 +52,8 @@ export function parseArgs(argv) {
     else if (a === '--help' || a === '-h') o.help = true;
     else throw new Error('unknown argument: ' + a);
   }
+  if (o.follow && o.watch) throw new Error('--follow or --watch, not both');
+  if (o.watch && o.dryRun) throw new Error('--watch has no dry run');
   return o;
 }
 
@@ -61,7 +75,7 @@ export function newNote(session, speakers, at) {
     .concat(speakersYaml(speakers), ['tags:', '  - wiki/games', '  - wiki/blades-in-the-dark', '  - wiki/b68-group', '  - wiki/b68-transcript', '---', '',
       '# Blades \'68 — Group, session ' + session + ' — live transcript (table iPad)', '',
       'Session log: [[b68g-s' + (/^\d+$/.test(session) ? session.padStart(2, '0') : session) + ']]', '',
-      '> [!info] Raw live speech-to-text from the table iPad (Deepgram), copied here every few seconds by `npm run gm:transcript -- --follow`.',
+      '> [!info] Raw live speech-to-text from the table iPad (Deepgram), copied here every few seconds by the PC (`scripts/gm-transcript.mjs`, which runs by itself while listening is on).',
       '> Expect mishearings, especially of invented names. Speaker numbers are Deepgram\'s guesses: names come from the GM page\'s "Who is who" at the time',
       '> a line was copied, and a `— reconnected` line means the numbers may have changed. Append-only: read from the bottom for the current state.', '',
       '## Transcript', '']).join('\n');
@@ -109,31 +123,133 @@ export async function pass(ctx) {
   return { filed, notes: [...notes] };
 }
 
+/* ---------- --watch: in the background, busy only while listening is on ---------- */
+
+/** One cheap look (one query): does the GM page want listening, and the newest line on the server. */
+export async function probe(db, campaign) {
+  const r = await db.prepare("SELECT json_extract((SELECT doc FROM gm_stt WHERE campaign = ?1), '$.want') AS want, (SELECT MAX(seq) FROM gm_transcript WHERE campaign = ?1) AS top")
+    .bind(campaign).first();
+  return { want: r && r.want === 'on' ? 'on' : 'off', top: Number(r && r.top) || 0 };
+}
+/** Tell the GM page the PC is copying: gm_stt.doc.copier = { at, last }, set in place (the PATCH API never sets it). */
+export async function beat(db, campaign, copier) {
+  await db.prepare("UPDATE gm_stt SET doc = json_set(doc, '$.copier', json(?2)) WHERE campaign = ?1").bind(campaign, JSON.stringify(copier)).run();
+}
+/**
+ * One --watch step: a pass only while listening is on or lines are waiting, a heartbeat at most once a minute while on.
+ * ctx as pass() plus { every, idle (s), now(), beatAt }. Returns pass()'s result with { want, wait (ms) }.
+ */
+export async function watchStep(ctx) {
+  const p = await probe(ctx.db, ctx.campaign);
+  const last = () => (ctx.ledger.transcript && ctx.ledger.transcript.last) || 0;
+  const r = p.want === 'on' || p.top > last() ? await pass(ctx) : { filed: 0, notes: [] };
+  const now = ctx.now ? ctx.now() : Date.now();
+  if (p.want === 'on' && (r.filed || !ctx.beatAt || now - ctx.beatAt >= 60000)) {
+    await beat(ctx.db, ctx.campaign, { at: new Date(now).toISOString(), last: last() });
+    ctx.beatAt = now;
+  }
+  return { ...r, want: p.want, wait: (p.want === 'on' || r.filed ? ctx.every : ctx.idle) * 1000 };
+}
+
+/** One copier at a time. -> 0 when this process holds the lock, else the pid that does. */
+export function takeLock(dir) {
+  const f = path.join(dir, 'transcript.lock');
+  try {
+    const pid = Number(fs.readFileSync(f, 'utf8'));
+    if (pid && pid !== process.pid) { try { process.kill(pid, 0); return pid; } catch (_) { /* gone: a stale lock */ } }
+  } catch (_) { /* no lock */ }
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(f, String(process.pid));
+  return 0;
+}
+function dropLock(dir) {
+  const f = path.join(dir, 'transcript.lock');
+  try { if (Number(fs.readFileSync(f, 'utf8')) === process.pid) fs.unlinkSync(f); } catch (_) {}
+}
+
+/* ---------- --install / --uninstall: a hidden launcher in the Windows Startup folder ---------- */
+
+export const LAUNCHER = 'b68-transcript.vbs';
+export function startupDir(env = process.env) { return path.join(env.APPDATA || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup'); }
+/** The launcher: wscript runs node with no window (style 0) and does not wait. */
+export function launcherText(node, script, vault) {
+  const q = (s) => '""' + String(s).replace(/"/g, '') + '""';
+  return ["' Blades '68 (schedule-app): copies the table iPad's transcript into the vault while listening is on.",
+    "' Made by `npm run gm:transcript -- --install`; `-- --uninstall` removes it. Log: gm-private\\transcript-watch.log",
+    'CreateObject("WScript.Shell").Run "' + q(node) + ' ' + q(script) + ' --watch --vault ' + q(vault) + '", 0, False', ''].join('\r\n');
+}
+function install(o, privateDir) {
+  if (process.platform !== 'win32') { console.error('--install is for Windows: run --watch under your own service manager'); process.exit(2); }
+  const file = path.join(startupDir(), LAUNCHER);
+  fs.writeFileSync(file, launcherText(process.execPath, fileURLToPath(import.meta.url), path.resolve(o.vault)));
+  const held = takeLock(privateDir);
+  if (held) { console.log('Launcher written: ' + file + '\nThe background copier is already running (pid ' + held + ').'); return; }
+  dropLock(privateDir);
+  spawn('wscript.exe', [file], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  console.log('Launcher written: ' + file + '\nStarted the background copier. It starts by itself at every sign-in from now on.\nLog: ' + path.join(privateDir, 'transcript-watch.log'));
+}
+function uninstall(privateDir) {
+  const file = path.join(startupDir(), LAUNCHER);
+  if (fs.existsSync(file)) { fs.unlinkSync(file); console.log('Removed ' + file); } else console.log('No launcher in the Startup folder.');
+  const held = takeLock(privateDir);
+  if (held) { try { process.kill(held); console.log('Stopped the background copier (pid ' + held + ').'); } catch (e) { console.log('Could not stop pid ' + held + ': ' + e.message); } }
+  dropLock(privateDir);
+}
+
 async function main() {
   let o;
   try { o = parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(2); }
-  if (o.help) { console.log('node scripts/gm-transcript.mjs [--follow] [--every <s>] [--session <N>] [--vault <path>] [--dry-run] [--prune]'); return; }
+  if (o.help) { console.log('node scripts/gm-transcript.mjs [--follow | --watch | --install | --uninstall] [--every <s>] [--idle <s>] [--session <N>] [--vault <path>] [--dry-run] [--prune]'); return; }
+  const privateDir = path.join(REPO, 'gm-private');
+  if (o.uninstall) return uninstall(privateDir);
   if (!o.vault || !fs.existsSync(abs(o.vault, SESSIONS))) { console.error('vault not found (or it has no ' + SESSIONS + '): pass --vault "<path>"'); process.exit(2); }
-  const toml = readWranglerToml(REPO), privateDir = path.join(REPO, 'gm-private');
+  if (o.install) return install(o, privateDir);
+  const toml = readWranglerToml(REPO);
   const db = asD1(wranglerExec({ root: REPO, database: toml.database }));
-  const ledger = loadLedger(privateDir), camp = campaignLedger(ledger, toml.campaign);
   const stamp = () => new Date().toLocaleTimeString('en-AU', { timeZone: 'Australia/Melbourne', hour12: false });
+
+  /* --watch has no console: it writes to a log, a repeated message once */
+  const logFile = path.join(privateDir, 'transcript-watch.log');
+  let said = '';
+  const say = (msg, again) => {
+    if (!o.watch) return console.log(stamp() + '  ' + msg);
+    if (msg === said && !again) return;
+    said = msg;
+    try {
+      if (fs.existsSync(logFile) && fs.statSync(logFile).size > 256 * 1024) fs.renameSync(logFile, logFile + '.1');
+      fs.appendFileSync(logFile, new Date().toISOString() + '  ' + msg + '\n');
+    } catch (_) {}
+  };
+  const looping = o.follow || o.watch;
+  if (looping && !o.dryRun) {
+    const held = takeLock(privateDir);
+    if (held) { if (o.follow) console.log('The background copier is already copying (pid ' + held + '): nothing to do.'); process.exit(0); }
+    process.on('exit', () => dropLock(privateDir));
+  }
+  const ledger = loadLedger(privateDir), camp = campaignLedger(ledger, toml.campaign);
   let stop = false;
   process.on('SIGINT', () => { stop = true; console.log('\nstopping after this pass'); });
   if (o.follow) console.log('Copying the iPad\'s transcript into the vault every ' + o.every + ' s. Ctrl+C stops.');
+  if (o.watch) say('watching (pid ' + process.pid + '): a look every ' + o.idle + ' s, a pass every ' + o.every + ' s while listening is on', true);
+  const ctx = { vault: o.vault, db, campaign: toml.campaign, ledger: camp, session: o.session, dryRun: o.dryRun, prune: o.prune, every: o.every, idle: o.idle };
+  let want = 'off';
   do {
+    let wait = o.every * 1000;
     try {
-      const r = await pass({ vault: o.vault, db, campaign: toml.campaign, ledger: camp, session: o.session, dryRun: o.dryRun, prune: o.prune });
+      const r = o.watch ? await watchStep(ctx) : await pass(ctx);
       if (!o.dryRun) saveLedger(privateDir, ledger);
-      if (r.filed || !o.follow) console.log(stamp() + '  ' + (o.dryRun ? 'would copy ' : 'copied ') + r.filed + ' line' + (r.filed === 1 ? '' : 's') + (r.notes.length ? ' into ' + r.notes.join(', ') : ''));
+      if (o.watch) { if (r.want !== want) say('listening ' + r.want, true); want = r.want; wait = r.wait; }
+      if (r.filed || !looping) say((o.dryRun ? 'would copy ' : 'copied ') + r.filed + ' line' + (r.filed === 1 ? '' : 's') + (r.notes.length ? ' into ' + r.notes.join(', ') : ''), true);
+      else if (o.watch) said = '';
     } catch (e) {
       if (!o.dryRun) { try { saveLedger(privateDir, ledger); } catch (_) {} }   /* what did land is remembered */
       const why = e.kind === 'auth' ? 'not logged in to Cloudflare: run `npx wrangler login`' : e.kind === 'offline' ? 'offline or Cloudflare unreachable' : e.code === 'RACE' ? 'Obsidian was saving the note: next pass' : e.message;
-      console.log(stamp() + '  skipped a pass: ' + why);
-      if (!o.follow) process.exit(2);
+      say('skipped a pass: ' + why);
+      if (!looping) process.exit(2);
+      if (o.watch && e.code !== 'RACE') wait = o.idle * 1000;
     }
-    if (o.follow && !stop) await new Promise((r) => setTimeout(r, o.every * 1000));
-  } while (o.follow && !stop);
+    if (looping && !stop) await new Promise((r) => setTimeout(r, wait));
+  } while (looping && !stop);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main();

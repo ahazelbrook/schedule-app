@@ -273,16 +273,23 @@ The iPad sits in the middle of the table, so it hears everyone; it replaces the 
    posted to `POST /api/gm/transcript` every 3 s with their own ids, so a resend is skipped. A dropped connection
    reconnects with a new token and files a `reconnected` mark (Deepgram renumbers speakers). Stop, leaving `#display`
    or 6 hours stops it. While it listens, **● Listening** shows in the iPad's corner for the table to see.
-5. **Into the vault:** `npm run gm:transcript -- --follow` on the PC copies new lines every 10 s into
-   `Sessions/b68g-sNN-transcript.md`, in the vault transcriber's format, with names from **Who is who**. It never
-   writes into a transcript the Obsidian transcriber made (no `source: ipad`); those lines go to
-   `b68g-sNN-transcript-ipad.md` instead. Append only; the ledger's `transcript.last` remembers the last line filed.
-   `--prune` deletes filed lines from the server.
+5. **Into the vault, by itself:** the PC's background copier (`scripts/gm-transcript.mjs --watch`) looks at `gm_stt`
+   once a minute (one query). While `want` is on, or lines are waiting, it copies new lines every 10 s into
+   `Sessions/b68g-sNN-transcript.md`, in the vault transcriber's format, with names from **Who is who**, and sets
+   `copier: { at, last }` in `gm_stt` at most once a minute, so the panel can say the PC is copying. It never writes
+   into a transcript the Obsidian transcriber made (no `source: ipad`); those lines go to `b68g-sNN-transcript-ipad.md`
+   instead. Append only; the ledger's `transcript.last` remembers the last line filed. Lines the PC missed (off, asleep)
+   wait on the server and land on its next look. One copier at a time (`gm-private/transcript.lock`); its log is
+   `gm-private/transcript-watch.log`. By hand: `npm run gm:transcript` (one pass), `-- --follow` (every 10 s, in a
+   terminal), `-- --prune` (delete filed lines from the server).
 
-The panel shows the iPad's last report (state, lines sent, how long ago), the newest six lines, and the speaker names.
+The panel shows the iPad's last report (state, lines sent, how long ago), the newest six lines, the speaker names, and
+whether the PC is copying.
 Endpoints are GM only. The table display sign-in (`DISPLAY_EMAILS`) may get a token, post lines and report its status,
 but not read the transcript. The transcript is never in `/api/export`. Migration `0007_gm_stt.sql`. Checks:
 `checks/runtime/stt.test.mjs`, `checks/runtime/gm-stt.e2e.mjs` (fake mic, fake Deepgram socket).
 
 **Setup, once:** `npx wrangler secret put DEEPGRAM_API_KEY` (a key with Member permission or above), then
-`npm run check:stt-live`.
+`npm run check:stt-live`. On the PC, `npm run gm:transcript -- --install` writes a hidden launcher
+(`b68-transcript.vbs`) into the Windows Startup folder and starts the copier; it starts at every sign-in after that.
+`-- --uninstall` stops it and removes the launcher. It runs the repo's checked-out copy of the script.

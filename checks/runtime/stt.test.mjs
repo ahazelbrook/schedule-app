@@ -14,7 +14,7 @@ import { onRequest as sttApi } from '../../functions/api/gm/stt.js';
 import { onRequest as tokenApi } from '../../functions/api/gm/stt-token.js';
 import { onRequest as transcriptApi } from '../../functions/api/gm/transcript.js';
 import { matchApi, PAGE_HEADERS } from '../../worker/app.js';
-import { pass, lineOf, newNote, withSpeakers, parseArgs } from '../../scripts/gm-transcript.mjs';
+import { pass, lineOf, newNote, withSpeakers, parseArgs, probe, watchStep, takeLock, launcherText } from '../../scripts/gm-transcript.mjs';
 import { assertWritable } from '../../scripts/lib/vault.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -166,6 +166,57 @@ await test('vault: helpers: the line format, the speakers block, the arguments',
   assert.equal(withSpeakers('no frontmatter', {}), null);
   assert.deepEqual([parseArgs(['--follow', '--every', '5']).every, parseArgs([]).follow], [5, false]);
   assert.throws(() => parseArgs(['--every', '1'])); assert.throws(() => parseArgs(['--bogus']));
+  assert.deepEqual([parseArgs(['--watch']).watch, parseArgs(['--watch']).idle, parseArgs(['--watch', '--idle', '30']).idle], [true, 60, 30]);
+  assert.throws(() => parseArgs(['--watch', '--follow'])); assert.throws(() => parseArgs(['--watch', '--dry-run'])); assert.throws(() => parseArgs(['--idle', '5']));
+  const vbs = launcherText('C:\\Program Files\\nodejs\\node.exe', 'C:\\repo\\scripts\\gm-transcript.mjs', 'C:/Vault/Hazel Second Brain');
+  assert.ok(vbs.includes('.Run """C:\\Program Files\\nodejs\\node.exe"" ""C:\\repo\\scripts\\gm-transcript.mjs"" --watch --vault ""C:/Vault/Hazel Second Brain""", 0, False'), vbs);
+});
+
+await test('watch: idle is one look and no pass; listening on files lines and beats at most once a minute; lines waiting after off still land', async () => {
+  const v = makeVault(), db = await newDb(), ledger = {};
+  let clock = Date.parse('2030-01-01T09:00:00Z');
+  const ctx = { vault: v, db, campaign: 'default', ledger, every: 10, idle: 60, now: () => clock };
+  assert.deepEqual(await probe(db, 'default'), { want: 'off', top: 0 }, 'no tables filled: off, nothing waiting');
+  let r = await watchStep(ctx);
+  assert.deepEqual([r.want, r.filed, r.wait], ['off', 0, 60000]);
+  assert.ok(!fs.existsSync(path.join(v, ...S.split('/'), 'b68g-s09-transcript.md')));
+  await patchStt(db, 'default', cleanSttPatch({ want: 'on', session: '9' }, 'gm'));
+  r = await watchStep(ctx);
+  assert.deepEqual([r.want, r.filed, r.wait], ['on', 0, 10000], 'on: the fast cadence even with nothing yet');
+  assert.equal((await loadStt(db, 'default')).doc.copier.at, '2030-01-01T09:00:00.000Z', 'the first step beats');
+  await addLines(db, 'default', cleanLines({ lines: [L('a', 'One.'), L('b', 'Two.')] }));
+  clock += 10000; r = await watchStep(ctx);
+  assert.equal(r.filed, 2); assert.equal((await loadStt(db, 'default')).doc.copier.last, ledger.transcript.last, 'filed: beats with the last seq');
+  clock += 10000; await watchStep(ctx);
+  assert.equal((await loadStt(db, 'default')).doc.copier.at, '2030-01-01T09:00:10.000Z', 'nothing filed, under a minute: no beat');
+  clock += 60000; await watchStep(ctx);
+  assert.equal((await loadStt(db, 'default')).doc.copier.at, '2030-01-01T09:01:20.000Z', 'a minute on: beats again');
+  await patchStt(db, 'default', cleanSttPatch({ want: 'off' }, 'gm'));
+  assert.equal((await loadStt(db, 'default')).doc.copier.last, ledger.transcript.last, 'a GM PATCH keeps the copier');
+  await addLines(db, 'default', cleanLines({ lines: [L('c', 'Straggler.')] }));
+  r = await watchStep(ctx);
+  assert.deepEqual([r.want, r.filed, r.wait], ['off', 1, 10000], 'off but a line waiting: filed, then look again soon');
+  r = await watchStep(ctx);
+  assert.deepEqual([r.filed, r.wait], [0, 60000], 'then idle');
+  assert.ok(/Straggler\.\n$/.test(fs.readFileSync(path.join(v, ...S.split('/'), 'b68g-s09-transcript.md'), 'utf8')));
+  assert.throws(() => cleanSttPatch({ copier: { at: 'x' } }, 'gm'), /unknown key/, 'no client may set the heartbeat');
+  fs.rmSync(v, { recursive: true, force: true });
+});
+
+await test('watch: one copier at a time (a live pid holds the lock, a dead one does not)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'b68-lock-'));
+  assert.equal(takeLock(dir), 0, 'free: taken');
+  assert.equal(takeLock(dir), 0, 'this process again: still ours');
+  const { spawnSync } = await import('node:child_process');
+  const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))']).stdout.toString();
+  fs.writeFileSync(path.join(dir, 'transcript.lock'), dead);
+  assert.equal(takeLock(dir), 0, 'a dead pid: taken over');
+  const { spawn } = await import('node:child_process');
+  const live = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)']);
+  fs.writeFileSync(path.join(dir, 'transcript.lock'), String(live.pid));
+  assert.equal(takeLock(dir), live.pid, 'a live pid: refused');
+  live.kill();
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 console.log(failed ? `\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);

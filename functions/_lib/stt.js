@@ -101,7 +101,8 @@ export async function pruneLines(db, campaign, through) {
 
 /* ---------- the control document ---------- */
 
-export const BLANK_STT = { want: 'off', session: '', speakers: {}, status: { state: 'idle', at: '', lines: 0, error: '' } };
+// copier: the PC's heartbeat (scripts/gm-transcript.mjs --watch writes it in place; no client may PATCH it).
+export const BLANK_STT = { want: 'off', session: '', speakers: {}, status: { state: 'idle', at: '', lines: 0, error: '' }, copier: { at: '', last: 0 } };
 
 export async function loadStt(db, campaign) {
   const row = await db.prepare('SELECT updated_at, doc FROM gm_stt WHERE campaign = ?1').bind(campaign).first();
