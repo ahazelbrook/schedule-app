@@ -175,8 +175,8 @@ await test('vault: helpers: the line format, the speakers block, the arguments',
 await test('watch: idle is one look and no pass; listening on files lines and beats at most once a minute; lines waiting after off still land', async () => {
   const v = makeVault(), db = await newDb(), ledger = {};
   let clock = Date.parse('2030-01-01T09:00:00Z');
-  const ctx = { vault: v, db, campaign: 'default', ledger, every: 10, idle: 60, now: () => clock };
-  assert.deepEqual(await probe(db, 'default'), { want: 'off', top: 0 }, 'no tables filled: off, nothing waiting');
+  const ctx = { vault: v, db, campaign: 'default', ledger, every: 10, idle: 60, now: () => clock, host: 'LAPTOP' };
+  assert.deepEqual(await probe(db, 'default'), { want: 'off', top: 0, copier: { host: '', at: '', last: 0 } }, 'no tables filled: off, nothing waiting');
   let r = await watchStep(ctx);
   assert.deepEqual([r.want, r.filed, r.wait], ['off', 0, 60000]);
   assert.ok(!fs.existsSync(path.join(v, ...S.split('/'), 'b68g-s09-transcript.md')));
@@ -200,6 +200,29 @@ await test('watch: idle is one look and no pass; listening on files lines and be
   assert.deepEqual([r.filed, r.wait], [0, 60000], 'then idle');
   assert.ok(/Straggler\.\n$/.test(fs.readFileSync(path.join(v, ...S.split('/'), 'b68g-s09-transcript.md'), 'utf8')));
   assert.throws(() => cleanSttPatch({ copier: { at: 'x' } }, 'gm'), /unknown key/, 'no client may set the heartbeat');
+  fs.rmSync(v, { recursive: true, force: true });
+});
+
+await test('watch: two PCs on one synced vault: the one copying keeps it, the other stands back, then takes over without copying a line twice', async () => {
+  const v = makeVault(), db = await newDb();
+  let clock = Date.parse('2030-01-01T09:00:00Z');
+  const lap = { vault: v, db, campaign: 'default', ledger: {}, every: 10, idle: 60, now: () => clock, host: 'LAPTOP' };
+  const desk = { vault: v, db, campaign: 'default', ledger: {}, every: 10, idle: 60, now: () => clock, host: 'DESKTOP' };
+  await patchStt(db, 'default', cleanSttPatch({ want: 'on', session: '9' }, 'gm'));
+  await addLines(db, 'default', cleanLines({ lines: [L('a', 'One.'), L('b', 'Two.')] }));
+  assert.equal((await watchStep(lap)).filed, 2);
+  clock += 5000;
+  let r = await watchStep(desk);
+  assert.deepEqual([r.filed, r.other, r.wait], [0, 'LAPTOP', 60000], 'the laptop beat a moment ago: the desktop stands back');
+  await addLines(db, 'default', cleanLines({ lines: [L('c', 'Three.')] }));
+  clock += 200000;   /* the laptop sleeps */
+  r = await watchStep(desk);
+  assert.deepEqual([r.filed, r.other], [1, ''], 'the laptop gone quiet: the desktop takes over from the laptop\'s last line');
+  assert.equal((await loadStt(db, 'default')).doc.copier.host, 'DESKTOP');
+  clock += 5000;
+  assert.equal((await watchStep(lap)).other, 'DESKTOP', 'the laptop wakes: it stands back in turn');
+  const t = fs.readFileSync(path.join(v, ...S.split('/'), 'b68g-s09-transcript.md'), 'utf8');
+  assert.deepEqual([(t.match(/One\./g) || []).length, (t.match(/Three\./g) || []).length], [1, 1], 'nothing copied twice');
   fs.rmSync(v, { recursive: true, force: true });
 });
 

@@ -24,6 +24,7 @@
 // last line filed. --prune then deletes the filed lines from the server. Nothing here prints the transcript's text.
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -125,30 +126,38 @@ export async function pass(ctx) {
 
 /* ---------- --watch: in the background, busy only while listening is on ---------- */
 
-/** One cheap look (one query): does the GM page want listening, and the newest line on the server. */
+/** One cheap look (one query): does the GM page want listening, the newest line on the server, and the last copier. */
 export async function probe(db, campaign) {
-  const r = await db.prepare("SELECT json_extract((SELECT doc FROM gm_stt WHERE campaign = ?1), '$.want') AS want, (SELECT MAX(seq) FROM gm_transcript WHERE campaign = ?1) AS top")
+  const r = await db.prepare("SELECT json_extract(s.doc, '$.want') AS want, json_extract(s.doc, '$.copier.host') AS host, json_extract(s.doc, '$.copier.at') AS at," +
+    " json_extract(s.doc, '$.copier.last') AS last, (SELECT MAX(seq) FROM gm_transcript WHERE campaign = ?1) AS top FROM (SELECT 1) LEFT JOIN gm_stt s ON s.campaign = ?1")
     .bind(campaign).first();
-  return { want: r && r.want === 'on' ? 'on' : 'off', top: Number(r && r.top) || 0 };
+  return { want: r && r.want === 'on' ? 'on' : 'off', top: Number(r && r.top) || 0, copier: { host: (r && r.host) || '', at: (r && r.at) || '', last: Number(r && r.last) || 0 } };
 }
-/** Tell the GM page the PC is copying: gm_stt.doc.copier = { at, last }, set in place (the PATCH API never sets it). */
+/** Tell the GM page the PC is copying: gm_stt.doc.copier = { at, last, host }, set in place (the PATCH API never sets it). */
 export async function beat(db, campaign, copier) {
   await db.prepare("UPDATE gm_stt SET doc = json_set(doc, '$.copier', json(?2)) WHERE campaign = ?1").bind(campaign, JSON.stringify(copier)).run();
 }
+export const OTHER_FRESH_MS = 180000;
 /**
  * One --watch step: a pass only while listening is on or lines are waiting, a heartbeat at most once a minute while on.
- * ctx as pass() plus { every, idle (s), now(), beatAt }. Returns pass()'s result with { want, wait (ms) }.
+ * Two PCs (desk and laptop) share one vault through Obsidian Sync: while another host has beaten in the last 3 minutes
+ * this one stands back, and it never files below the other's `last` (those lines reach this vault by sync).
+ * ctx as pass() plus { every, idle (s), now(), host, beatAt }. Returns pass()'s result with { want, wait (ms), other }.
  */
 export async function watchStep(ctx) {
   const p = await probe(ctx.db, ctx.campaign);
-  const last = () => (ctx.ledger.transcript && ctx.ledger.transcript.last) || 0;
-  const r = p.want === 'on' || p.top > last() ? await pass(ctx) : { filed: 0, notes: [] };
   const now = ctx.now ? ctx.now() : Date.now();
-  if (p.want === 'on' && (r.filed || !ctx.beatAt || now - ctx.beatAt >= 60000)) {
-    await beat(ctx.db, ctx.campaign, { at: new Date(now).toISOString(), last: last() });
+  const host = ctx.host || os.hostname();
+  const t = ctx.ledger.transcript = ctx.ledger.transcript || { last: 0, speakers: {} };
+  const theirs = p.copier.host && p.copier.host !== host;
+  if (theirs && now - Date.parse(p.copier.at) < OTHER_FRESH_MS) return { filed: 0, notes: [], want: p.want, wait: ctx.idle * 1000, other: p.copier.host };
+  if (theirs && p.copier.last > t.last) t.last = p.copier.last;
+  const r = p.want === 'on' || p.top > t.last ? await pass(ctx) : { filed: 0, notes: [] };
+  if (p.want === 'on' && (r.filed || theirs || !ctx.beatAt || now - ctx.beatAt >= 60000)) {
+    await beat(ctx.db, ctx.campaign, { at: new Date(now).toISOString(), last: t.last, host });
     ctx.beatAt = now;
   }
-  return { ...r, want: p.want, wait: (p.want === 'on' || r.filed ? ctx.every : ctx.idle) * 1000 };
+  return { ...r, want: p.want, wait: (p.want === 'on' || r.filed ? ctx.every : ctx.idle) * 1000, other: '' };
 }
 
 /** One copier at a time. -> 0 when this process holds the lock, else the pid that does. */
@@ -238,9 +247,9 @@ async function main() {
     try {
       const r = o.watch ? await watchStep(ctx) : await pass(ctx);
       if (!o.dryRun) saveLedger(privateDir, ledger);
-      if (o.watch) { if (r.want !== want) say('listening ' + r.want, true); want = r.want; wait = r.wait; }
+      if (o.watch) { if (r.want !== want) say('listening ' + r.want, true); want = r.want; wait = r.wait; if (r.other) say('standing back: ' + r.other + ' is copying'); }
       if (r.filed || !looping) say((o.dryRun ? 'would copy ' : 'copied ') + r.filed + ' line' + (r.filed === 1 ? '' : 's') + (r.notes.length ? ' into ' + r.notes.join(', ') : ''), true);
-      else if (o.watch) said = '';
+      else if (o.watch && !r.other) said = '';
     } catch (e) {
       if (!o.dryRun) { try { saveLedger(privateDir, ledger); } catch (_) {} }   /* what did land is remembered */
       const why = e.kind === 'auth' ? 'not logged in to Cloudflare: run `npx wrangler login`' : e.kind === 'offline' ? 'offline or Cloudflare unreachable' : e.code === 'RACE' ? 'Obsidian was saving the note: next pass' : e.message;
