@@ -376,5 +376,91 @@ await test('exporter: cast rows, the figure-map blocks, and the npc part from an
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// ---- the GM's choices: faction, district, place (15/10/2026) ----
+await test('choices: controls, defaults and cleanUi come from the tables', () => {
+  const g = N.create(FIX);
+  assert.deepEqual(g.controls.map((c) => c.id), ['faction', 'district', 'place']);
+  for (const c of g.controls) assert.deepEqual(c.options[0], { value: '', label: 'any' }, c.id + ': any first');
+  const fac = g.controls[0].options.map((o) => o.value);
+  assert.equal(fac[1], '-'); assert.deepEqual(fac.slice(2), FIX.T.faction.map((x) => x[0]));
+  assert.deepEqual(g.controls[2].options.slice(1).map((o) => o.value), Object.keys(FIX.T.place));
+  assert.deepEqual(g.defaults(), { faction: '', district: '', place: '' });
+  assert.deepEqual(g.cleanUi({ faction: 'Nobody', district: 'Atlantis', place: 'toString', x: 1 }), { faction: '', district: '', place: '' });
+  assert.deepEqual(g.cleanUi({ faction: '-', district: 'Gnome Hill', place: 'Casino' }), { faction: '-', district: 'Gnome Hill', place: 'Casino' });
+  assert.deepEqual(g.cleanUi(null), { faction: '', district: '', place: '' });
+  const T2 = clone(FIX.T); delete T2.place;
+  assert.deepEqual(N.create({ ...FIX, T: T2 }).controls.map((c) => c.id), ['faction', 'district'], 'an older pack: no place picker');
+});
+
+await test('choices: no choice (or only unknown ones) draws exactly as before', () => {
+  for (let i = 0; i < 200; i++) {
+    const a = N.create(FIX).roll({ seed: seedOf(i), mem: {} });
+    const b = N.create(FIX).roll({ seed: seedOf(i), mem: {}, ui: { faction: '', district: '', place: '' } });
+    const c = N.create(FIX).roll({ seed: seedOf(i), mem: {}, ui: { faction: 'Nobody', place: 'Atlantis' } });
+    assert.deepEqual(b.npc, a.npc); assert.deepEqual(c.npc, a.npc);
+    assert.ok(!('place' in a.npc));
+  }
+});
+
+await test('choices: a chosen faction, unaffiliated, a district and a place are honoured on every roll', () => {
+  const g = N.create(FIX);
+  const mem = {};
+  for (let i = 0; i < 300; i++) {
+    const r = g.roll({ seed: seedOf(i), mem, ui: { faction: 'Teapot Union', district: 'Gnome Hill', place: 'Test shop' } });
+    checkRoll(r, 'chosen #' + i);
+    assert.equal(r.npc.faction, 'Teapot Union'); assert.equal(r.npc.factionTier, 4); assert.ok(FIX.T.rank.includes(r.npc.rank));
+    assert.equal(r.npc.district, 'Gnome Hill');
+    assert.equal(r.npc.place, 'Test shop'); assert.ok(FIX.T.place['Test shop'].work.includes(r.npc.profession), 'profession from the place');
+    assert.ok(r.card.meta.sub.endsWith(' · Gnome Hill · Test shop'), 'the role line names the place');
+    const u = g.roll({ seed: seedOf(i), mem: {}, ui: { faction: '-' } });
+    assert.equal(u.npc.faction, null); assert.ok(u.npc.quality >= 1 && u.npc.quality <= 2);
+  }
+});
+
+await test('choices: a place\'s factions take about half the affiliated rolls; its districts fill an "any" district', () => {
+  const g = N.create(FIX);
+  let aff = 0, home = 0;
+  for (let i = 0; i < 1200; i++) {
+    const r = g.roll({ seed: seedOf(i), mem: {}, ui: { place: 'Test shop' } });
+    if (r.npc.faction) { aff++; if (FIX.T.place['Test shop'].factions.includes(r.npc.faction)) home++; }
+  }
+  const share = home / aff, base = 2 / FIX.T.faction.length;
+  assert.ok(share > 0.55 && share < 0.8, 'place factions share ' + share.toFixed(2) + ' (base ' + base.toFixed(2) + ')');
+  for (let i = 0; i < 100; i++) {
+    assert.equal(g.roll({ seed: seedOf(i), mem: {}, ui: { place: 'Casino' } }).npc.district, 'Teapot Row');
+    assert.equal(g.roll({ seed: seedOf(i), mem: {}, ui: { place: 'Casino', district: 'Puddle End' } }).npc.district, 'Puddle End', 'the district picker wins');
+  }
+});
+
+await test('choices: the replay carries the cleaned ui and redraws the same NPC; stateEntry keeps ui only when chosen', () => {
+  const g = N.create(FIX);
+  const mem = {};
+  for (let i = 0; i < 50; i++) g.roll({ seed: seedOf(i), mem, ui: { place: 'Test depot' } });
+  const r = g.roll({ mem, ui: { faction: 'Gnome Lodge', place: 'Casino', junk: 1 } });
+  assert.deepEqual(r.replay.ui, { faction: 'Gnome Lodge', district: '', place: 'Casino' });
+  const again = N.create(FIX).roll({ seed: r.replay.seed, mem: clone(r.replay.mem), ui: r.replay.ui });
+  assert.deepEqual(again.npc, r.npc); assert.deepEqual(again.card, r.card);
+  const e = g.stateEntry(r, { at: 'x' });
+  assert.deepEqual(e.ui, r.replay.ui);
+  assert.ok(!('ui' in g.stateEntry(g.roll({ seed: 1, mem: {} }), { at: 'x' })), 'no choices: no ui key (older entries look the same)');
+  assert.ok(g.noteBody(r.npc, { date: '15/10/2026' }).includes(' · Casino*'), 'the saved note names the place');
+});
+
+if (REAL && REAL.T.place) {
+  await test('real pack: every place, with and without a faction, rolls clean cards', () => {
+    const g = N.create(REAL);
+    const places = Object.keys(REAL.T.place);
+    let n = 0;
+    for (const p of places) for (let i = 0; i < 40; i++) {
+      const f = i % 4 === 0 ? REAL.T.faction[i % REAL.T.faction.length][0] : i % 4 === 1 ? '-' : '';
+      const r = g.roll({ seed: seedOf(n++), ui: { place: p, faction: f } });
+      checkRoll(r, 'real place #' + n);
+      assert.equal(r.npc.place, p);
+      if (f && f !== '-') assert.equal(r.npc.faction, f);
+    }
+    console.log('  (' + n + ' rolls over ' + places.length + ' places)');
+  });
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

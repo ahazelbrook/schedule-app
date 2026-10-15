@@ -150,8 +150,14 @@ fails and nobody is known, nothing is purged.
   `node scripts/gm-parity.mjs --scenes --engagement` (see the header of that script for the one deliberate difference).
 - **NPC (`N`).** At the top the generator: **Roll an NPC** draws a card (the vault generator's port, `app/gm/npc.js`, fed by the
   pack's `npc` part and the campaign part): a portrait, what the table could see, what they want, how to play them (cast,
-  status, dial, mannerism, verb), the levers, and the faction's dossier folded away. A roll is a seed plus the repeat-guard
-  memory, so a reload or an Earlier click (five kept) redraws the same NPC and the same portrait. The portrait comes from
+  status, dial, mannerism, verb), the levers, and the faction's dossier folded away. Above the button three pickers, each on
+  **any** by default: **Faction** (or none, unaffiliated), **District**, and **Place** (the pack's `npc.T.place`, a vault table
+  keyed by the location generator's building types: the profession comes from the place's `work` list; with the faction on
+  any, about half the affiliated rolls come from its `factions`; with the district on any, its `districts` when it has them).
+  An older pack without `T.place` shows no Place picker. **Use the location** (shown once there is a location card) copies that
+  card's building, district and owning faction into the pickers, each one the NPC tables do not hold going back to any. With
+  every picker on any the draws are the vault generator's, unchanged. A roll is a seed, the repeat-guard memory and the
+  choices, so a reload or an Earlier click (five kept) redraws the same NPC and the same portrait. The portrait comes from
   `app/gm/figure-map.js` (an NPC's fields to a figure kit spec, with a built-in map while the vault's
   `Tools/blades-68-npc-figure-map.md` page does not exist); if the kit will not draw it, the nearest stock figure is used and
   the card says so. **Add to the cast** files the NPC as a hidden cast doc (tag `generated`, the look as the description, the
@@ -165,7 +171,8 @@ fails and nobody is known, nothing is purged.
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,
   so a reload or an Earlier click redraws exactly the same card even after a callback was used or a bargain collected),
-  `hist` (five per tool), `npcgen` (`{ seed, mem, at, s? }` per generated NPC id: the roll that made them), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at, s? }`). Capture never touches
+  `hist` (five per tool), `npc` (`ui`: the NPC pickers), `npcgen` (`{ seed, mem, at, s?, ui? }` per generated NPC id: the
+  roll that made them, `ui` only when a picker was set), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at, s? }`). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
   `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
   there was none), on typed lines, on lines filed by a card's action (a bargain accepted) and on rolls filed with `L`, so the sync

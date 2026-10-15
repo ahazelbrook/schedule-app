@@ -91,6 +91,11 @@
           "Teapot Union": { "what": "Tea breaks for all.", "turf": "Every kitchen.", "boss": "A committee.", "with": "Kettle Cooperative", "against": "Nobody, loudly", "now": "Voting on the sugar.", "p": 9, "secret": "The committee is one man." }
         },
         "rank": ["a tea runner for", "a clerk at", "a trusted baker for", "a made name inside", "runs a corner of"],
+        "place": {
+          "Test shop": { "work": ["Baker", "Clerk", "Knitter"], "factions": ["The Biscuit Board", "Marmalade Syndicate"] },
+          "Casino": { "work": ["Waiter", "Porter"], "factions": ["Teapot Union"], "districts": ["Teapot Row"] },
+          "Test depot": { "work": ["Ferryman", "Cabbie"] }
+        },
         "physThreat": ["Falls on you from a shelf", "Throws a heavy pudding", "Chases you with a ladle", "Trips you with a rug", "Locks you in the pantry", "Sets the geese on you"],
         "socThreat": ["Tells your mother", "Spreads a rumour about your hat", "Cuts you at the market", "Writes to the newspaper", "Sings your secrets", "Never invites you again"],
         "goal": ["Comfort", "Fame", "Revenge", "Cake", "Order", "Quiet", "Respect", "Adventure"],

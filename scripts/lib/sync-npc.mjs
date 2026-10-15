@@ -122,7 +122,7 @@ function replay(gen, rec, doc, today) {
   if (!gen || !gen.inst || !isObj(rec)) return null;
   let mem = rec.mem;
   if (typeof mem === 'string') { try { mem = JSON.parse(mem); } catch (_) { mem = {}; } }
-  const r = gen.inst.roll({ seed: rec.seed, mem: mem || {} });
+  const r = gen.inst.roll({ seed: rec.seed, mem: mem || {}, ui: isObj(rec.ui) ? rec.ui : {} });
   const npc = r && r.npc;
   if (!npc || String(npc.name || '').trim() !== doc.name.trim()) return null;
   const nb = gen.inst.noteBody || gen.M.noteBody;

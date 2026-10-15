@@ -21,13 +21,25 @@
    gen.setCampaign(campaign)               swap the campaign (call it after the GM files a new NPC, see npcRecord)
    gen.mem()                               the instance's live repeat-guard memory
 
-   gen.roll({ seed, mem }) -> { npc, card, seed, replay }
+   gen.roll({ seed, mem, ui }) -> { npc, card, seed, replay }
        seed    uint32; omitted: a fresh random one
        mem     the repeat-guard memory to use and MUTATE (default: the instance's)
-       replay  { seed, mem, ui: {} }  mem is a deep copy of the memory as it was BEFORE this roll. To redraw a roll:
-               gen.roll({ seed: replay.seed, mem: JSON.parse(JSON.stringify(replay.mem)) }). Same card, same npc.
+       ui      the GM's choices (optional; "" or absent is any, see gen.controls):
+                 faction   a name from T.faction, or "-" for unaffiliated
+                 district  a name from T.district
+                 place     a key of T.place: the profession comes from its `work` list; with faction on any, about half
+                           the affiliated rolls come from its `factions` list (when it has one); with district on any,
+                           the district comes from its `districts` list (when it has one)
+               A value the tables do not hold is dropped (any). With no choices the draws are the vault's, unchanged.
+       replay  { seed, mem, ui }  mem is a deep copy of the memory as it was BEFORE this roll, ui the choices as cleaned.
+               To redraw a roll: gen.roll({ seed: replay.seed, mem: JSON.parse(JSON.stringify(replay.mem)), ui: replay.ui }).
+               Same card, same npc.
+   gen.controls                            [{ id, label, options: [{ value, label }] }] for faction, district and (when
+                                           the pack has T.place) place, each starting with { value: '', label: 'any' }
+   gen.defaults()                          { faction: '', district: '', place: '' }
+   gen.cleanUi(ui)                         the choices with anything the tables do not hold dropped
        npc     the vault's own object: isHull, presentation, name, alias, heritage, familyWere, telltale, profession,
-               district, faction, factionTier, factionHold, rank, quality, build, featuresLook, hairLook, mannerLook,
+               district, place (only when chosen), faction, factionTier, factionHold, rank, quality, build, featuresLook, hairLook, mannerLook,
                standout, register, wears, chassis (Hull), tell, verb, cast (anchor row | null), status {n,d}, dial,
                traits [2], key, keyFlip, keyInt (or memory for a Hull), interest, quirk, goal, method, errand, vice,
                purveyor, threatKind, threat, leverage (text | null), attitude, attitudeDice
@@ -73,7 +85,8 @@
    gen.castDoc(npc, spec)                the hidden doc for POST /api/npcs: { name, alias, role:'', faction:'',
                                          description (the look line, plain), spec, revealed:false, firstSeen:null,
                                          tags:['generated'], gmNotes (how to play, levers, role: GM only) }
-   gen.stateEntry(roll, { at, s })       the GM-state entry npcgen[id] = { seed, mem, at, s } that replays the roll
+   gen.stateEntry(roll, { at, s })       the GM-state entry npcgen[id] = { seed, mem, at, s, ui? } that replays the roll
+                                         (ui only when a choice was made)
    gen.npcRecord(npc)                    the entry to push onto campaign.npcs once filed, so later rolls avoid its
                                          initial and its cast anchor: { name, role, faction, district, playedBy, ... }
    All of noteBody, dossierLine, dossier, castDoc, stateEntry, npcRecord are also on B68GmNpc itself (they need no
@@ -129,7 +142,7 @@
   function identity(o) { return o.alias ? o.name + ' — "' + o.alias + '"' : o.name; }
   function role(o) {
     var fac = o.faction ? o.rank + ' ' + o.faction + ' (Tier ' + ROMAN[o.factionTier] + ', ' + holdWord(o.factionHold) + ')' : 'unaffiliated';
-    return o.profession + ' · ' + fac + ' · ' + o.district;
+    return o.profession + ' · ' + fac + ' · ' + o.district + (o.place ? ' · ' + o.place : '');
   }
   function describe(o) {
     var look = o.isHull
@@ -297,6 +310,8 @@
     opts = opts || {};
     var e = { seed: r.seed >>> 0, mem: clone(r.replay.mem), at: opts.at || new Date().toISOString() };
     if (opts.s != null) e.s = opts.s;
+    var ui = r.replay && isObj(r.replay.ui) ? r.replay.ui : {};
+    if (Object.keys(ui).some(function (k) { return ui[k]; })) e.ui = clone(ui);
     return e;
   }
   function npcRecord(o) {
@@ -312,7 +327,42 @@
   // =============================================================================================================
   // The generator: generate() from the vault, on one seeded stream
   // =============================================================================================================
-  function makeGenerate(T, CAST, campaign, rnd, MEM) {
+  // --- The GM's choices: faction, district, place ("" is any; faction "-" is unaffiliated) -----------------------
+  var NONE = '-';
+  function placeOf(T, name) {
+    var p = name && isObj(T.place) && Object.prototype.hasOwnProperty.call(T.place, name) ? T.place[name] : null;
+    return isObj(p) ? p : null;
+  }
+  function cleanUi(T, ui) {
+    ui = isObj(ui) ? ui : {};
+    var s = function (v) { return typeof v === 'string' ? v : ''; };
+    var f = s(ui.faction), d = s(ui.district), p = s(ui.place);
+    return {
+      faction: f === NONE || (T.faction || []).some(function (x) { return x[0] === f; }) ? f : '',
+      district: (T.district || []).indexOf(d) >= 0 ? d : '',
+      place: placeOf(T, p) ? p : ''
+    };
+  }
+  function controlsOf(T) {
+    var any = { value: '', label: 'any' };
+    var opt = function (v) { return { value: v, label: v }; };
+    var c = [
+      { id: 'faction', label: 'Faction', options: [any, { value: NONE, label: 'none (unaffiliated)' }].concat((T.faction || []).map(function (x) { return opt(x[0]); })) },
+      { id: 'district', label: 'District', options: [any].concat((T.district || []).map(opt)) }
+    ];
+    var places = isObj(T.place) ? Object.keys(T.place).filter(function (k) { return isObj(T.place[k]); }) : [];
+    if (places.length) c.push({ id: 'place', label: 'Place', options: [any].concat(places.map(opt)) });
+    return c;
+  }
+
+  function makeGenerate(T, CAST, campaign, rnd, MEM, UI) {
+    UI = UI || { faction: '', district: '', place: '' };
+    var PLACE = placeOf(T, UI.place);
+    // a place's lists, kept to what the tables hold (a faction must be in T.faction, a district in T.district)
+    var placeList = function (key, ok) { var a = PLACE && Array.isArray(PLACE[key]) ? PLACE[key].filter(ok) : []; return a.length ? a : null; };
+    var WORK = placeList('work', function (x) { return typeof x === 'string' && x.trim(); });
+    var PFAC = placeList('factions', function (n) { return (T.faction || []).some(function (x) { return x[0] === n; }); });
+    var PDIS = placeList('districts', function (n) { return (T.district || []).indexOf(n) >= 0; });
     var POOL = {
       trait: flat(T.trait).concat(T.traitExtra),
       interest: flat(T.interest).concat(T.interestExtra),
@@ -386,15 +436,21 @@
         o.telltale = T.telltaleHeritage && h.n === T.telltaleHeritage ? pick(T.telltale) : null;
       }
 
-      o.profession = fresh('profession', POOL.profession);
-      o.district = fresh('district', T.district);
+      // The GM's choices replace a draw; with none made, every draw is the vault's.
+      o.profession = fresh('profession', WORK || POOL.profession);
+      o.district = UI.district ? UI.district : PDIS ? fresh('district', PDIS) : fresh('district', T.district);
+      if (PLACE) o.place = UI.place;
 
       // Faction. Quality tracks their faction's Tier, drifted one step either way.
-      if (oneIn(3)) {
+      if (UI.faction === NONE || (!UI.faction && oneIn(3))) {
         o.faction = null;
         o.quality = 1 + Math.floor(rnd() * 2);
       } else {
-        var f = fresh('faction', T.faction, function (x) { return x[0]; });
+        var byName = function (x) { return x[0]; };
+        // a place's factions take about half the affiliated rolls, so the rest of the city still walks in
+        var f = UI.faction ? T.faction.filter(function (x) { return x[0] === UI.faction; })[0]
+          : PFAC && oneIn(2) ? fresh('faction', T.faction.filter(function (x) { return PFAC.indexOf(x[0]) >= 0; }), byName)
+          : fresh('faction', T.faction, byName);
         o.faction = f[0]; o.factionTier = f[1]; o.factionHold = f[2];
         o.rank = fresh('rank', T.rank);
         var dr = d6();
@@ -717,12 +773,15 @@
       o = o || {};
       var seed = o.seed != null ? o.seed >>> 0 : (Math.random() * 4294967296) >>> 0;
       var mem = isObj(o.mem) ? o.mem : MEM;
-      var before = clone(mem);
-      var npc = makeGenerate(T, CAST, campaign, seedRng(seed), mem)();
-      return { npc: npc, card: cardOf(npc, T), seed: seed, replay: { seed: seed, mem: before, ui: {} } };
+      var before = clone(mem), ui = cleanUi(T, o.ui);
+      var npc = makeGenerate(T, CAST, campaign, seedRng(seed), mem, ui)();
+      return { npc: npc, card: cardOf(npc, T), seed: seed, replay: { seed: seed, mem: before, ui: ui } };
     }
     return {
       roll: roll,
+      controls: controlsOf(T),
+      defaults: function () { return { faction: '', district: '', place: '' }; },
+      cleanUi: function (ui) { return cleanUi(T, ui); },
       figure: function (npc, o) { return figure(npc, F, o); },
       setCampaign: function (c) { campaign = c || {}; },
       mem: function () { return MEM; },
