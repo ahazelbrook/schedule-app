@@ -166,6 +166,45 @@ Roles follow at once; nobody signs in again.
 
 ## Updating the app
 
+### Step by step, on the Windows PC (about 10 minutes)
+
+Never on a game day: deploy the day after, so a surprise has a week to be fixed.
+
+1. **Open Git Bash** (Start menu → Git Bash). Not PowerShell, not the Command Prompt.
+2. **Go to the app's folder and fetch the latest version:**
+   ```
+   cd ~/schedule-app        # or wherever the folder is: cd "/c/Users/<you>/Documents/schedule-app"
+   git checkout main
+   git pull
+   npm install
+   ```
+3. **Check the two files that are not on GitHub are in the folder.** In File Explorer, these must exist:
+   `app\media\theme.mp3` (the opening credits' song) and `app\ambient\calling-cards.html` (the cards scene). If one
+   is missing (a new PC, a fresh clone), copy it in from the old folder or your backup. The cards scene can also be
+   rebuilt with `node tools/ambient/scenes/cards.js` when the faction art is in `tools/ambient/cards/`. The script
+   refuses to deploy without them, because a deploy without them takes them off the live site.
+4. **Find your two Access values** (once; write them down next to this file, not in it):
+   - the **team name**: Cloudflare dashboard → **Zero Trust** → **Settings** → the team domain reads
+     `<team>.cloudflareaccess.com`; the team name is the `<team>` part;
+   - the **AUD tag**: Zero Trust → **Access** → **Applications** → the app for `blades.fieldguide.help` → **Overview**
+     (or Configure) → **Application Audience (AUD) Tag**, a long string of letters and digits. Copy it whole.
+5. **Deploy** (one line; the script asks for the team name and AUD tag if you leave them out):
+   ```
+   B68_GM_EMAILS=ahazelbrook@gmail.com B68_ACCESS_TEAM=<team> B68_ACCESS_AUD=<aud tag> npm run deploy
+   ```
+6. **Read the receipt at the end.** Every line should be filled in, `smoke test` should say PASS twice, and
+   `files` should say both files were deployed. `DISPLAY_EMAILS` and `DEEPGRAM_API_KEY` show as set once you have
+   set them; they are never changed by the script.
+7. **Check it on the devices:** open the app on your phone (a page left open shows **Updated: reload**). On the iPad,
+   pin the planning meeting scene for a minute (it should move smoothly), then the opening credits, and tap once: the
+   song should play.
+
+If the script stops instead, it says why. The usual ones: *uncommitted changes* (someone edited a file in the folder:
+`git status` lists them; `git stash` sets them aside), *missing theme.mp3 / calling-cards.html* (step 3), *not logged
+in* (`npx wrangler login`). Nothing is changed on the live site until the script reaches its deploy step.
+
+### The details
+
 Not on a game day. After merging to `main` and pulling, from Git Bash:
 
 ```

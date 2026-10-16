@@ -1,6 +1,6 @@
-// Unit test for app/gm/downtime.js (personal business: the downtime activities' scene prompts, and an overindulgence's cost).
-// The tables are the module's own writing, so every check runs on them as committed; the book's purveyors come from
-// app/content.js (B68Content.VICES), as the page passes them.
+// Unit test for app/gm/downtime.js (personal business: the downtime activities' scene prompts, and an overindulgence's cost)
+// on its tables, app/downtime-tables.js (original writing, committed), and the book's purveyors from app/content.js
+// (B68Content.VICES), as the page has them.
 //   node checks/runtime/gm-downtime.test.mjs
 import path from 'node:path';
 import vm from 'node:vm';
@@ -12,6 +12,8 @@ import assert from 'node:assert/strict';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
 const D = require(path.join(ROOT, 'app', 'gm', 'downtime.js'));
+const X = require(path.join(ROOT, 'app', 'downtime-tables.js'));
+const T = X.T, mk = (cfg) => D.create(Object.assign({ T, places: X.PLACES }, cfg || {}));
 const box = {}; box.window = box;
 vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'app', 'content.js'), 'utf8'), box);
 const CT = box.B68Content;
@@ -26,21 +28,23 @@ const PURVEYORS = [].concat(...CT.VICES.map((v) => v.purveyors));
 const JUNK = /[{}]|undefined|null|NaN|\[object|\s\s|\s[.,:;!?]|(?<!\.)\.\.(?!\.)|\b(?:a|an) (?:a|an|the)\b|\|\|/;
 const texts = (r) => r.meta.all.concat(r.meta.actions.map((a) => a.label), r.over ? r.over.options.flatMap((o) => [o.title, o.mech, o.md, o.source]) : []).filter(Boolean);
 
-await test('check(): the built-in tables are complete; a broken replacement is named; create() refuses it', () => {
-  assert.deepEqual(D.check(), []);
-  assert.deepEqual(D.check({}), []);
-  assert.deepEqual(D.check('nope'), ['T']);
-  assert.deepEqual(D.check({ vice: { Faith: { lead: [] } } }), ['vice.Faith.lead']);
-  assert.ok(D.check({ vice: { Cards: { lead: ['x'] } } }).includes('vice.Cards.hosts'), 'a new vice needs every table');
-  assert.ok(D.check({ recover: { band: { '13': ['x'] } } }).includes('recover.healers'), 'a replaced activity table is checked whole');
-  assert.ok(D.check({ over: [{ id: 'brag', title: 'Brag', mech: 'x' }] }).includes('over'), 'all four overindulgences');
-  assert.throws(() => D.create({ T: { vice: { Faith: { lead: [] } } } }), /vice\.Faith\.lead/);
-  const dt = D.create({ T: { vice: { Faith: { lead: ['{Host} waits at {place}.'] } } } });
+await test('check(): the tables are complete; a pack\'s broken replacement is named; create() refuses it and needs the tables', () => {
+  assert.deepEqual(D.check(T), []);
+  assert.deepEqual(D.check(T, {}), []);
+  assert.deepEqual(D.check(), ['T']);
+  assert.deepEqual(D.check(T, 'nope'), ['pack']);
+  assert.deepEqual(D.check(T, { vice: { Faith: { lead: [] } } }), ['vice.Faith.lead']);
+  assert.ok(D.check(T, { vice: { Cards: { lead: ['x'] } } }).includes('vice.Cards.hosts'), 'a new vice needs every table');
+  assert.ok(D.check(T, { recover: { band: { '13': ['x'] } } }).includes('recover.healers'), 'a replaced activity table is checked whole');
+  assert.ok(D.check(T, { over: [{ id: 'brag', title: 'Brag', mech: 'x' }] }).includes('over'), 'all four overindulgences');
+  assert.throws(() => mk({ pack: { vice: { Faith: { lead: [] } } } }), /vice\.Faith\.lead/);
+  assert.throws(() => D.create({}), /the tables are required/);
+  const dt = mk({ pack: { vice: { Faith: { lead: ['{Host} waits at {place}.'] } } } });
   assert.equal(dt.roll({ act: 'indulge', vice: 'Faith', purveyor: 'Preceptor Aldo, the Sanctorium grand cathedral, Brightstone' }, { seed: 1 }).meta.text, 'Preceptor Aldo waits at the Sanctorium.', 'a replaced table is used');
 });
 
 await test('every activity, result and choice: 2,800 rolls with no broken text, each one replaying identically', () => {
-  const dt = D.create({ vices: CT.VICES });
+  const dt = mk({ vices: CT.VICES });
   let n = 0;
   for (const act of ACTS) for (let seed = 1; seed <= 400; seed++) {
     const ui = {
@@ -62,7 +66,7 @@ await test('every activity, result and choice: 2,800 rolls with no broken text, 
 });
 
 await test('the memory keeps indices, stays small, and keeps a lead from coming back within half its list', () => {
-  const mem = {}, dt = D.create({ mem });
+  const mem = {}, dt = mk({ mem });
   const leads = [];
   for (let i = 0; i < 200; i++) {
     const r = dt.roll({ act: ACTS[i % ACTS.length], vice: 'Gambling', res: '45' });
@@ -70,12 +74,12 @@ await test('the memory keeps indices, stays small, and keeps a lead from coming 
   }
   for (const k of Object.keys(mem)) assert.ok(mem[k].every((x) => Number.isInteger(x)), 'indices only: ' + k);
   assert.ok(JSON.stringify(mem).length < 4000, 'small: ' + JSON.stringify(mem).length);
-  const win = Math.floor(D.TABLES.vice.Gambling.lead.length / 2);
+  const win = Math.floor(T.vice.Gambling.lead.length / 2);
   for (let i = win; i < leads.length; i++) assert.ok(!leads.slice(i - win, i).includes(leads[i]), 'a lead repeated within ' + win + ': ' + leads[i]);
 });
 
 await test('indulge: "Overindulged" and the option switch leave the scene above as it was; the cost line is bold, its scene under it', () => {
-  const dt = D.create({ vices: CT.VICES });
+  const dt = mk({ vices: CT.VICES });
   const base = { act: 'indulge', who: 'Mags', vice: 'Gambling', purveyor: 'Vesper, bookmaker at the Vreen Autodrome, Nightmarket' };
   const mem = { 'Gambling.lead': [2] };
   const plainRoll = dt.roll(base, { seed: 99, mem: JSON.parse(JSON.stringify(mem)) });
@@ -108,50 +112,40 @@ await test('indulge: "Overindulged" and the option switch leave the scene above 
 });
 
 await test('indulge: the sheet\'s vice and purveyor; curly or straight apostrophes; an unknown vice is drawn; no purveyor gets a stock one', () => {
-  const dt = D.create({ vices: CT.VICES });
+  const dt = mk({ vices: CT.VICES });
   for (const v of ['Gettin’ Fucked Up', "gettin' fucked up", 'GAMBLING']) {
     const r = dt.roll({ act: 'indulge', vice: v }, { seed: 5 });
     assert.ok(dt.VICES.includes(r.meta.chips[1]) && r.meta.chips[1].toLowerCase().replace(/’/g, "'") === v.toLowerCase().replace(/’/g, "'"), v + ' -> ' + r.meta.chips[1]);
   }
   assert.ok(dt.VICES.includes(dt.roll({ act: 'indulge', vice: 'Collecting stamps' }, { seed: 5 }).meta.chips[1]));
   const stock = dt.roll({ act: 'indulge', vice: 'Faith' }, { seed: 8 });
-  const V = D.TABLES.vice.Faith, where = stock.lines.find((l) => l.id === 'more').rows[0].md;
+  const V = T.vice.Faith, where = stock.lines.find((l) => l.id === 'more').rows[0].md;
   assert.ok(V.places.some((p) => where.toLowerCase().includes(p.toLowerCase())) && V.hosts.some((h) => where.includes(h)), where);
   assert.deepEqual(dt.VICES, Array.from(CT.VICES, (v) => v.name.replace('’', "'")), 'the seven vices, in the book\'s order');   // Array.from: the vm's arrays have another prototype
 });
 
 await test('purveyor(): every line in the book reads as a host and a place; typed lines too', () => {
   for (const p of PURVEYORS) {
-    const x = D.purveyor(p);
+    const x = D.purveyor(p, T.districts, X.PLACES);
     assert.ok(x.host && x.place, p + ' -> ' + JSON.stringify(x));
     assert.ok(!/^(?:a|an) /i.test(x.place) && !/\b(?:pilot|guide|dealer|player|construct|controller|handler|leader|bookmaker|librarian|president)\b/i.test(x.place), 'a place, not a role: ' + x.place);
   }
-  assert.deepEqual(D.purveyor('Vesper, bookmaker at the Vreen Autodrome, Nightmarket'), { host: 'Vesper', place: 'the Vreen Autodrome', district: 'Nightmarket', near: '' });
-  assert.deepEqual(D.purveyor('Karter, the Sky High casino, above Doskvol'), { host: 'Karter', place: 'the Sky High casino', district: '', near: 'above Doskvol' });
-  assert.deepEqual(D.purveyor('Jimmy at the Rusty Anchor, Docks'), { host: 'Jimmy', place: 'the Rusty Anchor', district: 'the Docks', near: '' });
-  assert.deepEqual(D.purveyor("Old Mo, Mo's Bar, crowfoot"), { host: 'Old Mo', place: "Mo's Bar", district: 'Crowfoot', near: '' });
-  assert.deepEqual(D.purveyor('Aunt Bea'), { host: 'Aunt Bea', place: '', district: '', near: '' });
-  assert.deepEqual(D.purveyor(''), { host: '', place: '', district: '', near: '' });
-});
-
-await test('purveyor(): a known host whose place is the line\'s own second part gets it as written, its role word off (no setting name in the module)', () => {
-  const line = PURVEYORS.find((p) => /^Ms\.? Asta,/.test(p));     // read from the book (content.js): this file names no setting either
-  assert.ok(line, 'the book still has the line');
-  const parts = line.split(',').map((x) => x.trim());
-  assert.match(parts[1], /\scontroller$/);
-  assert.deepEqual(D.purveyor(line), { host: 'Ms. Asta', place: parts[1].replace(/\s+controller$/, ''), district: 'the Docks', near: '' });
-  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'downtime.js'), 'utf8');
-  assert.ok(!src.includes(parts[1].split(' ')[0]), 'the place is not written into the module');
+  assert.deepEqual(D.purveyor('Vesper, bookmaker at the Vreen Autodrome, Nightmarket', T.districts, X.PLACES), { host: 'Vesper', place: 'the Vreen Autodrome', district: 'Nightmarket', near: '' });
+  assert.deepEqual(D.purveyor('Karter, the Sky High casino, above Doskvol', T.districts, X.PLACES), { host: 'Karter', place: 'the Sky High casino', district: '', near: 'above Doskvol' });
+  assert.deepEqual(D.purveyor('Jimmy at the Rusty Anchor, Docks', T.districts, X.PLACES), { host: 'Jimmy', place: 'the Rusty Anchor', district: 'the Docks', near: '' });
+  assert.deepEqual(D.purveyor("Old Mo, Mo's Bar, crowfoot", T.districts, X.PLACES), { host: 'Old Mo', place: "Mo's Bar", district: 'Crowfoot', near: '' });
+  assert.deepEqual(D.purveyor('Aunt Bea', T.districts, X.PLACES), { host: 'Aunt Bea', place: '', district: '', near: '' });
+  assert.deepEqual(D.purveyor('', T.districts, X.PLACES), { host: '', place: '', district: '', near: '' });
 });
 
 await test('the dice: recover and project carry the sheet\'s ticks (1 / 2 / 3 / 5); before the dice there are none', () => {
-  const dt = D.create();
+  const dt = mk();
   const want = { '13': 1, '45': 2, '6': 3, crit: 5 };
   for (const [res, n] of Object.entries(want)) {
     assert.deepEqual(dt.roll({ act: 'recover', res }, { seed: 1 }).meta.chips, [D.BAND_LABEL[res], 'healing +' + n]);
     assert.deepEqual(dt.roll({ act: 'project', res }, { seed: 1 }).meta.chips, [D.BAND_LABEL[res], '+' + n + ' on the clock']);
     const lead = dt.roll({ act: 'recover', res }, { seed: 1 }).meta.text;
-    assert.ok(D.TABLES.recover.band[res].some((t) => lead.endsWith(t.replace(/^\{Healer\}/, '').slice(-25))), 'the lead comes from the ' + res + ' list');
+    assert.ok(T.recover.band[res].some((t) => lead.endsWith(t.replace(/^\{Healer\}/, '').slice(-25))), 'the lead comes from the ' + res + ' list');
   }
   assert.deepEqual(dt.roll({ act: 'recover' }, { seed: 1 }).meta.chips, ['before the dice']);
   assert.deepEqual(dt.roll({ act: 'train', attr: 'Prowess' }, { seed: 1 }).meta.chips, ['Prowess', '+1 xp']);
@@ -160,7 +154,7 @@ await test('the dice: recover and project carry the sheet\'s ticks (1 / 2 / 3 / 
 });
 
 await test('friend or rival: the sheet\'s contact by name; the clock a lead suggests becomes an action', () => {
-  const dt = D.create();
+  const dt = mk();
   const r = dt.roll({ act: 'contact', who: 'Mags', contact: 'Vanden, a lazy Bluecoat', rel: 'rival' }, { seed: 4 });
   assert.equal(r.meta.title, 'Mags · Rival: Vanden');
   assert.equal(r.meta.sub, 'A lazy Bluecoat');
@@ -174,10 +168,13 @@ await test('friend or rival: the sheet\'s contact by name; the clock a lead sugg
   assert.equal(dt.roll({ act: 'contact', rel: 'friend' }, { seed: 2 }).meta.title, 'Friend: An old friend');
 });
 
-await test('the module ships no rules text: no page references, no dice procedure beyond the sheet\'s own numbers', () => {
-  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'downtime.js'), 'utf8');
+await test('no rules text in the tables (no page references), prompts short enough to read at a glance; the module names nothing', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'downtime-tables.js'), 'utf8');
   assert.ok(!/\bp(?:age|p)?\.\s?\d+/i.test(src), 'no page references');
-  for (const v of Object.values(D.TABLES.vice)) for (const k of ['lead', 'hook']) for (const t of v[k]) assert.ok(t.length <= 160, 'short enough to read at a glance: ' + t);
+  const mod = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'downtime.js'), 'utf8');
+  for (const d of T.districts) assert.ok(!new RegExp('\\b' + d.replace(/^the /, '') + '\\b').test(mod), 'the module names no district: ' + d);
+  for (const k of Object.keys(X.PLACES)) assert.ok(!mod.includes(X.PLACES[k][0].replace(/^the /, '')) || /^your family$/.test(X.PLACES[k][0]), 'the module names no purveyor: ' + X.PLACES[k][0]);
+  for (const v of Object.values(T.vice)) for (const k of ['lead', 'hook']) for (const t of v[k]) assert.ok(t.length <= 160, 'short enough to read at a glance: ' + t);
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

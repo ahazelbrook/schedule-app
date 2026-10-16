@@ -183,6 +183,8 @@ const FIXC = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fi
 const FIXS = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'scenes-pack.json'), 'utf8'));
 const SC = require(path.join(ROOT, 'app', 'gm', 'scenes.js')), EN = require(path.join(ROOT, 'app', 'gm', 'engagement.js'));
 const DT = require(path.join(ROOT, 'app', 'gm', 'downtime.js'));
+const DTT = require(path.join(ROOT, 'app', 'downtime-tables.js'));      /* the built-in tables (B68DowntimeTables), loaded before the module */
+const dtMk = (cfg) => DT.create(Object.assign({ T: DTT.T, places: DTT.PLACES }, cfg || {}));
 const CTBOX = {}; CTBOX.window = CTBOX; vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'app', 'content.js'), 'utf8'), CTBOX);
 const CT = CTBOX.B68Content;        /* the book's vices and purveyors (public: every player loads content.js), as the page passes them */
 const FIXL = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'location-pack.json'), 'utf8'));
@@ -333,7 +335,7 @@ function fakeBrowser(over) {
   const ls = new Map(), toasts = [];
   const W = { document: doc, localStorage: { getItem: (k) => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => { ls.set(k, String(v)); }, removeItem: (k) => { ls.delete(k); } },
     matchMedia: () => ({ matches: false }), addEventListener() {}, confirm: () => true, open() {}, B68: { toast: (m, bad) => toasts.push([m, !!bad]) },
-    B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmEngagement: EN, B68GmDowntime: DT, B68Content: CT, setTimeout, clearTimeout, console };
+    B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmEngagement: EN, B68GmDowntime: DT, B68DowntimeTables: DTT, B68Content: CT, setTimeout, clearTimeout, console };
   W.self = W; Object.assign(W, over || {});
   return { W, doc, ls, toasts };
 }
@@ -2000,10 +2002,10 @@ await test('17b. Who: the PCs from the live sheets and "anyone"; picking one pre
   h.press('d');
   assert.deepEqual(h.qa('#gm-dt [data-gm="dt-who"]').map((b) => b.textContent), ['Mags Invented', 'Rook Invented', 'anyone']);
   assert.equal(h.q('#gm-dt [data-gm="dt-who"][data-id=""]').getAttribute('aria-pressed'), 'true', 'anyone until a PC is picked');
-  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-act"]').map((b) => b.textContent), DT.create().ACTS.map((a) => a.label), 'the activities in the module\'s order');
+  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-act"]').map((b) => b.textContent), dtMk().ACTS.map((a) => a.label), 'the activities in the module\'s order');
   assert.deepEqual(h.qa('#gm-dt [data-gm="dt-act"]').map((b) => b.textContent), ['Indulge vice', 'Recover', 'Long-term project', 'Train', 'Friend or rival', 'Lay low', 'Acquire']);
   assert.equal(h.q('#gm-dt [data-gm="dt-act"][data-v="indulge"]').getAttribute('aria-pressed'), 'true', 'Indulge vice first, picked');
-  assert.deepEqual(h.qa('#gm-dt-vice option').map((o) => o.getAttribute('value')), [''].concat(DT.create().VICES), 'the seven vices (and any)');
+  assert.deepEqual(h.qa('#gm-dt-vice option').map((o) => o.getAttribute('value')), [''].concat(dtMk().VICES), 'the seven vices (and any)');
   dtWho(h, 'c-mags');
   assert.equal(h.q('#gm-dt [data-gm="dt-who"][data-id="c-mags"]').getAttribute('aria-pressed'), 'true');
   assert.equal(optSel(h, '#gm-dt-vice').getAttribute('value'), 'Gambling', 'the sheet\'s vice is preselected');
@@ -2036,7 +2038,7 @@ await test('17c. Overindulged: one tap rolls the card; the four options right ab
   const kids = card.children, iOpts = kids.indexOf(h.q('#gm-dt .gm-dt-opts')), iCost = kids.indexOf(h.q('#gm-dt .gm-dt-cost'));
   assert.ok(iOpts > 0 && iCost === iOpts + 1, 'the option row sits directly above the cost box');
   assert.ok(kids.indexOf(h.q('#gm-dt .gm-dtcard .gm-want')) < iOpts && kids.indexOf(h.q('#gm-dt .gm-dtcard .gm-grid')) > iCost, 'under the scene, above the grid');
-  const st = dtStored(h), mod = DT.create({ vices: CT.VICES }).replay({ seed: st.seed, mem: JSON.parse(st.mem), ui: st.ui });
+  const st = dtStored(h), mod = dtMk({ vices: CT.VICES }).replay({ seed: st.seed, mem: JSON.parse(st.mem), ui: st.ui });
   assert.match(cardOf(h, '#gm-dt .gm-dt-cost'), new RegExp('^\\*\\*Overindulged: ' + mod.over.options.find((o) => o.id === mod.over.pick).title));
   assert.equal(pressedOpt(h), mod.over.pick, 'the drawn option is the pressed one');
   assert.equal(leadTxt(h), (mod.lines[0].md + mod.lines[0].small).replace(/\s+/g, ' ').trim(), 'the module\'s scene, as drawn (this fake page shows markdown as written)');
@@ -2200,7 +2202,7 @@ await test('17i. Copy and Pin are the card as plain lines; L files "Downtime: <l
   assert.equal(dtStored(h).ui.district, now, 'Now in, stored in the card\'s own ui');
   const card = h.q('#gm-dt-card'); assert.ok(card && card.classList.contains('gm-cardbox'), 'the card sits in a card box, as the console\'s');
   h.q('#gm-dt [data-gm="copy"]').click();
-  const all = DT.create({ vices: CT.VICES }).replay({ seed: dtStored(h).seed, mem: JSON.parse(dtStored(h).mem), ui: dtStored(h).ui }).meta.all;
+  const all = dtMk({ vices: CT.VICES }).replay({ seed: dtStored(h).seed, mem: JSON.parse(dtStored(h).mem), ui: dtStored(h).ui }).meta.all;
   assert.equal(br.copied, all.join('\n'), 'Copy is meta.all'); assert.ok(!/\*\*/.test(br.copied));
   h.q('#gm-dt [data-gm="pin"]').click(); h.press('l');
   await h.save();
@@ -2227,6 +2229,8 @@ await test('17j. the "?" by Overindulged opens the rules on overindulging in the
 await test('17k. without a module, without the characters, with a pack part over the tables: the panel says so or uses it; the pack check names what a part lacks', async () => {
   const none = await openPage({ br: fakeBrowser({ B68GmDowntime: undefined }) });
   none.press('d'); assert.match(none.q('#gm-dt').textContent, /The downtime module is missing/); none.press('2'); assert.ok(cardTxt(none).length > 20, 'the console still rolls'); await none.save();
+  const bookless = await openPage({ br: fakeBrowser({ B68DowntimeTables: undefined }) });
+  bookless.press('d'); assert.match(bookless.q('#gm-dt').textContent, /The downtime tables are missing/); await bookless.save();
   const bare = await openPage({ camp: CAMP3 });       // an older boot without characters() or addClock()
   bare.press('d');
   assert.deepEqual(bare.qa('#gm-dt [data-gm="dt-who"]').map((b) => b.textContent), ['anyone']); assert.match(cardOf(bare, '#gm-dt'), /No characters are filed yet/);
@@ -2243,8 +2247,11 @@ await test('17k. without a module, without the characters, with a pack part over
   const bad = await dtPage(undefined, { fg: fakeGm(undefined, { downtime: { version: 'd2', src: {}, body: { T: broken } } }) });
   bad.press('d'); dtRoll(bad, 'over');
   assert.ok(bad.q('#gm-dt .gm-dtcard') && /lacks tables, so these cards use the built-in ones/.test(cardOf(bad, '#gm-dt')), 'a part that lacks tables: the built-in ones, and a note');
-  assert.deepEqual(P.packWarnings({ B68GmDowntime: DT }, { downtime: { T: broken } }), [{ part: 'downtime', missing: ['vice.Gambling.lead'] }], 'the pack check lists it');
-  assert.deepEqual(P.packWarnings({ B68GmDowntime: DT }, { downtime: {} }), [], 'a part with no tables replaces nothing');
+  const dmods = { B68GmDowntime: DT, B68DowntimeTables: DTT };
+  assert.deepEqual(P.packWarnings(dmods, { downtime: { T: broken } }), [{ part: 'downtime', missing: ['vice.Gambling.lead'] }], 'the pack check lists it, laid over the built-in tables');
+  assert.deepEqual(P.packWarnings(dmods, { downtime: { T: T } }), [], 'a part that replaces one table is complete over the built-in ones');
+  assert.deepEqual(P.packWarnings(dmods, { downtime: {} }), [], 'a part with no tables replaces nothing');
+  assert.deepEqual(P.packWarnings({ B68GmDowntime: DT }, { downtime: { T: broken } }), [], 'without the built-in tables loaded it says nothing');
   await bad.save();
 });
 

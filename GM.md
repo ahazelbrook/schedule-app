@@ -2,13 +2,13 @@
 
 The `#gm` page (the console with its four Situations, the location generator, street scenes, the engagement roll and the
 downtime cards) and the `#display` page (an iPad signed in as the GM) run on three GM-only endpoints. The generators' tables hold '68
-text and GM-only secrets, so they never enter git (the downtime cards' tables are the module's own writing, so they are in git): the
-GM builds a **pack** from the vault on their own PC (`npm run
-gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser or with `npm run gm:push -- --only pack
---yes` (see `SYNC.md`, which also moves what happened at the table back into the vault). Code: `functions/_lib/gm.js`,
-`functions/api/gm/*.js`; tables in `migrations/0004_gm.sql`. The pack parts are `console`, `location`, `campaign`, `npc`,
-`scenes`, `engagement`, `prep` and `screen` (the last two optional; `scripts/gm-pack.mjs` lists what each holds). An optional
-`downtime` part (none is built yet) would replace the Downtime panel's own tables (see Downtime (D) below).
+text and GM-only secrets, so they never enter git (the downtime cards' tables are original writing, so they are in git, in
+`app/downtime-tables.js`): the GM builds a **pack** from the vault on their own PC (`npm run gm:pack`, into the git-ignored
+`gm-private/`) and uploads it, from the browser or with `npm run gm:push -- --only pack --yes` (see `SYNC.md`, which also
+moves what happened at the table back into the vault). Code: `functions/_lib/gm.js`, `functions/api/gm/*.js`; tables in
+`migrations/0004_gm.sql`. The pack parts are `console`, `location`, `campaign`, `npc`, `scenes`, `engagement`, `prep` and
+`screen` (the last two optional; `scripts/gm-pack.mjs` lists what each holds). An optional `downtime` part (none is built
+yet) would be laid over the Downtime panel's built-in tables (see Downtime (D) below).
 
 ## Secrecy rules (server enforced)
 
@@ -36,6 +36,7 @@ gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser o
 | `GET /api/gm/display` | `{ seq, display, updatedAt }` (`seq` 0, a blank display, until written). `?seq=N` → `{ seq, unchanged: true }` while N is current. |
 | `PUT /api/gm/display` | `{ kind, title?, caption?, svg \| npcId \| text \| md }` → `{ seq, display, updatedAt }`; `seq` goes up by one on every PUT. |
 | `GET /api/gm/display` (ambient) | also carries `ambient: { seq, doc, updatedAt }`. `?seq=N&aseq=M` → `{ seq, unchanged: true, ambient: { seq, unchanged: true } }` while both are current; otherwise the full display, with `ambient` `{ seq, unchanged: true }` when only M is current. `?seq=N` alone is the old answer. |
+| `GET /api/gm/display` (transcriber) | also carries `stt: { seq, want, session }`: whether the GM wants the iPad listening (`on` / `off`) and the session number to stamp on its lines, and **nothing else**: never a speaker name, the iPad's own report, the PC's heartbeat or a transcript line, whoever asks. Its `seq` is made from those two values alone, so the iPad's reports (which rewrite the control document every minute) never move it. `?seq=N&aseq=M&sseq=K` → `{ seq, unchanged: true, ambient: { seq, unchanged: true }, stt: { seq, unchanged: true } }` while all three are current; otherwise the full display, each part `{ seq, unchanged: true }` when its number is the one given and in full when not. Without `sseq` (a display page from before the transcriber rode along) there is no `stt` and the answers are the ones above. Why: one request where the display and the transcriber used to make two (see "The display", how it polls). |
 | `GET /api/gm/ambient` | `{ seq, doc, updatedAt }` (`0`, `{}`, `null` until written). GM only; the display sign-in is refused (it reads the doc through the display). |
 | `PATCH /api/gm/ambient` | top-level merge (`null` deletes, `skip: true` bumps a counter) → `{ seq, doc, updatedAt }`. Keys: `mode` auto/pin/off, `scene`, `playlist` (1–16 distinct ids), `intervalMin` 3–30, `skip`, `crew { heat 0–9, wanted 0–4 }`, `score { name, district, target, reveal, view plan/rings, board, iso }` (both svgs through `checkSvg`; the server sets `at`). Stored doc at most 1.4 MiB, in `gm_ambient` (migration 0006). |
 
@@ -67,7 +68,9 @@ gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser o
 ## Adapter (`app/runtime/cf.js`, hosted build only)
 
 `window.claude.gm = { pack(opts), packPart(name, opts), importPart(req), removePart(name), state(), patchState(patch),
-display(seq), setDisplay(d) }`; `opts.version` asks for the unchanged answer. Each returns the API's JSON, or rejects
+display(seq, aseq, sseq), setDisplay(d) }` (and `ambient`, `patchAmbient`, `stt`, `patchStt`, `sttToken`, `transcript`, `addTranscript`; HOSTING.md
+lists them all); `opts.version` asks for the unchanged answer, and the three seqs of `display` are the display's, the ambient's and the
+transcriber's. Each returns the API's JSON, or rejects
 with `err.status` (403 for a player) or `err.network = true`. In the claude.ai artifact there is no `window.claude.gm`.
 
 ## The page (`#gm`, `app/gm-page.js`, `app/gm.css`)
@@ -80,7 +83,8 @@ fails and nobody is known, nothing is purged.
 - **First run.** With no pack on the server the page asks for `gm-private/b68-gm-pack.json` (built by `npm run gm:pack`),
   checks it (`format` 1, `console` and `location` parts with `T`), previews the parts and uploads one part per
   `importPart` with a progress bar; parts the server holds that the file lacks are removed. Each module checks its own part
-  (`B68GmConsole`, `B68GmLocation`, `B68GmNpc`, `B68GmScenes`, `B68GmEngagement`, `B68GmDowntime`: `check(T)`): the table entries a part lacks are listed
+  (`B68GmConsole`, `B68GmLocation`, `B68GmNpc`, `B68GmScenes`, `B68GmEngagement`: `check(T)`; `B68GmDowntime`: `check(T, part)`, the part laid
+  over the built-in tables): the table entries a part lacks are listed
   as a **warning** in the preview and, for the pack the page loads, in the Menu under **Pack check** (with one toast per page load).
   A warning never stops the upload, and a roll that needs a missing entry uses a neutral word. **Update pack** does the same
   again; **Forget GM data on this device** drops the local copies. After that, each visit compares the cached part
@@ -254,9 +258,11 @@ fails and nobody is known, nothing is purged.
   pack build and push; that keeps the replay identical to the sync's. Code: `app/gm-page.js`, `app/gm/npc.js`,
   `app/gm/figure-map.js`, `scripts/lib/sync-npc.mjs`. Check: `checks/runtime/gm-npc-panel.e2e.mjs`.
 - **Downtime (`D`; on a phone the Downtime segment).** Personal business, heading "Downtime · personal business": one card per activity a
-  PC takes in the downtime phase, to frame it at the table (`app/gm/downtime.js`, `B68GmDowntime`). The tables are the module's own writing
-  (no book text, so the panel works with any pack); a pack part `downtime` may replace them (any top-level key of its `T`, a vice's tables one
-  by one: the module's header). A part that lacks tables is listed by the Pack check, and the panel uses the built-in tables with a note.
+  PC takes in the downtime phase, to frame it at the table (`app/gm/downtime.js`, `B68GmDowntime`). The tables are original writing with no
+  book text, so the panel works with any pack: `app/downtime-tables.js` (`B68DowntimeTables`, public like `content.js`, loaded before the
+  module; it names the setting, so the module and `app/gm-page.js` name nothing of it). A pack part `downtime` is laid over them (any top-level
+  key of its `T` replaces that table, a vice's tables one by one: the module's header). A part that lacks tables is listed by the Pack check,
+  and the panel uses the built-in tables with a note.
   - **Who**: a chip per PC from the live sheets (boot's `characters()`: a slim copy of each filed character, never the figure spec, read on
     every draw and again when the characters snapshot changes) and **anyone**. Picking a PC prefills the vice (a select of the seven, theirs
     picked) and the purveyor (a text field) from their sheet; an edit is panel state (`dt.ui`), never written to the sheet.
@@ -283,7 +289,7 @@ fails and nobody is known, nothing is purged.
     purveyor line, the contact line, the project's name, the district), so a reload or an Earlier click redraws the same card after a sheet
     changes, and `mem` is the repeat guard before the roll; `hist.downtime` (five); `mem.downtime` (the guard itself: small integer arrays);
     `dt.ui` `{ who (a character id, '' for anyone), act, vice, purveyor, project, contact }` (`project` and `contact` '' follow the sheet, `*`
-    is none of the sheet's). Now in is the card's district: the module's own spelling when its list holds it, else as the bar has it (a
+    is none of the sheet's). Now in is the card's district: the tables' own spelling when their list holds it, else as the bar has it (a
     downtime card reads a district as words in a sentence, never as a table key).
   - Checks: `checks/runtime/gm-downtime.test.mjs` (the module), `gm-page.test.mjs` (17a–17l), `gm.e2e.mjs` (the laptop and the phone).
 - **GM screen** (`T`; on a phone the GM screen segment). The GM screen: the vault note with `gm_screen: true` under the '68
@@ -369,6 +375,38 @@ calls `unmount()` on leaving; anyone but the GM sees a message instead. The GM p
 The display offers **no way back** to the GM page (no link, hidden or not). Its sanitiser applies the same rules as the server's `checkSvg` (namespaced
 elements, `<a>`, `xml:base`, backslashes, `image-set()` / `src()`, raster `data:` images only on `<image>` / `<feImage>`).
 
+### How it polls (the request budget)
+
+Workers Free allows 100,000 requests a day for the whole site (counted in UTC; after that the Worker refuses until the next day), and the
+iPad stays on all night, so the display asks for one thing only: `GET /api/gm/display?seq=N&aseq=M&sseq=K` (the display, the ambient and the
+transcriber's part; each comes back as `unchanged` when it is current, see Endpoints). The beat (`Pure.POLL`, `Pure.createPoller` in
+`app/display-page.js`):
+
+| when | every |
+|---|---|
+| anything is moving | **4 s** |
+| nothing has changed for **2 hours** (not the display, the ambient settings, nor the transcriber's `want` and `session`), until the next change | **15 s** |
+| offline (three failures in a row) or signed out | 10 s, and never faster than the beat above |
+| the page is hidden (a background tab) | **60 s**, and never faster than any of the above |
+
+A change is seen by the first look after it, so after two quiet hours the first push can take up to 15 s to appear, and then the 4 s beat is
+back. Coming back to the page, or the network coming back, looks at once. A hidden page keeps looking because the transcriber's part rides on
+this poll: the GM's **Stop listening** has to reach a microphone left open in a background tab. The adapter's own poll of characters, the
+campaign and the cast (`cf.js`, HOSTING.md) is 4 s in front and 60 s hidden (it was 20 s).
+
+An iPad on all day costs about 21,600 requests at the 4 s beat, 5,760 at the 15 s beat, and about 1,440 for its status reports (once a
+minute while idle and visible; every 10 s while the mic is open). Before (display every 2 s, the transcriber's own GET every 4 s, its report
+every 10 s) that was about 73,000 a day: with a laptop or two open it could trip the cap in the middle of a session. Now it is about 23,000
+on a day when something changes at least every two hours, and about 8,500 on a day of nothing.
+
+**Signed out.** When the Access sign-in ends, the adapter refuses every call from then on (until the page is reloaded) and the corner says
+"Not signed in as the GM". Nobody touches an iPad on the table's stand for hours, so after **10 minutes** signed out the page reloads itself
+(`Pure.createReloader`): the reload asks Access again, which signs the iPad in silently while the single sign-on session is still good, and
+otherwise shows its sign-in page, which a person must see anyway. It reloads **at most once per 30 minutes**: the time of the last reload is
+kept in `localStorage` and `sessionStorage` (`b68.display.reload`), so a page that comes back still signed out (a person must sign in, or the
+email is not allowed) tries again in half an hour and not in a loop; where neither can be written it never reloads. Checks: the poller and the
+reloader in `checks/runtime/display.test.mjs` (fake clock), and in a browser, with the time jumped, `checks/runtime/display-role.e2e.mjs`.
+
 ### Ambient scenes (`app/ambient/`, the iPad panel `I`)
 
 When nothing is spotlit the display plays an **ambient scene** underneath: `blank` means "the ambient plays", and the new
@@ -436,15 +474,28 @@ and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools
 - **Checks.** `check:ambient` (assets, shells, frames), `check:display-ambient` (e2e), plus the ambient cases in
   `checks/api/gm.mjs`, `display-role.mjs`, `display.test.mjs`, `gm-page.test.mjs` and `gm-nosecrets.test.mjs`. The e2e checks take
   `PW_CHANNEL=msedge` when Playwright's own Chromium is not installed.
-- **Deploy.** `npx wrangler d1 migrations apply DB --remote` (0006) before `wrangler deploy`. Copy `app/media/theme.mp3` into the
-  deploying checkout too (gitignored; without it the credits run silent). Before a deploy, build the calling cards
-  on the deploying PC (`node tools/ambient/scenes/cards.js`, needs `tools/ambient/cards/*.jpg`): the file is gitignored, and the
-  asset upload takes whatever is on disk. Without it the `cards` scene 404s and `check:ambient` prints SKIP.
+- **Deploy.** `npm run deploy` (SETUP.md, "Updating the app") applies the migrations and refuses to ship without
+  `app/media/theme.mp3` and `app/ambient/calling-cards.html` on disk: both are gitignored, and the asset upload takes whatever
+  is on disk. The cards are built on the deploying PC (`node tools/ambient/scenes/cards.js`, from `tools/ambient/cards/*.jpg`);
+  without the file the `cards` scene 404s and `check:ambient` prints SKIP.
+- **Decisions** (Alex, 15/10/2026; the plan as written is `docs/history/AMBIENT-PLAN.md`). Rotation is a playlist plus pin (auto
+  every 7 minutes, cross-faded; pin one; skip). The score scenes are live from the current location roll, player layer only, and
+  never update on their own. **Clear** goes back to the ambient; **Lights out** is true black. Heat and wanted come from the
+  campaign by themselves.
+- **Secrecy.** The score maps are the only route from a roll to the players' screen, and they pass every gate Show on iPad
+  uses: the page's own player-layer render, the hidden-name scan, a confirm for bands beyond public, `checkSvg` on the server and
+  `sanitiseSvg` on the iPad. The ambient document is never in `/api/export`; a player and the display sign-in get 403 on
+  `/api/gm/ambient` before the body is read, and the display reads the document only through `GET /api/gm/display`.
+- **Open items.** Thermals: `watch-feed` is a 2.2 MB svg animated at about 30 fps; if the iPad runs hot over a long session, the
+  knob is a frame rate in the scenes (regenerate them). The four static scenes (`second-harvest`, `watch-feed`,
+  `duskwall-after-dark`, `test-card`) have no generator here: `tools/ambient/redress.js` patches small things (a suit, a
+  cigarette), anything bigger means asking the design tool again. The score scenes' polaroids are a fixed list (`Pure.POLAROIDS`): move it to the campaign document when the roster
+  changes. Offline, a scene never played before shows blank and the watchdog skips it.
 
 ### The display sign-in (`DISPLAY_EMAILS`)
 
 A third role, `display`, so the iPad never holds a GM session. An email in `DISPLAY_EMAILS` (comma-separated, case-insensitive,
-like `GM_EMAILS`; the GM wins if an email is in both) gets exactly six calls: `GET /api/me`, `GET /api/gm/display`, and the transcriber's `POST /api/gm/stt/token`, `GET` and `PATCH /api/gm/stt` and `POST /api/gm/transcript` (Listening).
+like `GM_EMAILS`; the GM wins if an email is in both) gets exactly six calls: `GET /api/me`, `GET /api/gm/display`, and the transcriber's `POST /api/gm/stt/token`, `GET` and `PATCH /api/gm/stt` and `POST /api/gm/transcript` (Listening; the display page no longer calls `GET /api/gm/stt`, its read of the display carries `want` and `session`, but the call stays allowed for a display page of an older build).
 Everything else, any method, known route or not, is the same 403 ("this is the table display sign-in: it can only show
 the display") from `functions/api/_middleware.js` before the body is read or the database touched, so a route added later is
 refused by default. It is never recorded in `members`, never listed as a player, and `PUT /api/gm/display` stays GM only.
@@ -460,9 +511,14 @@ The iPad sits in the middle of the table, so it hears everyone; it replaces the 
 (`Tools/blades-68-transcriber.md`, kept as the fallback). The path, and who holds what:
 
 1. **Start listening** (iPad panel, `I`): GM state in `gm_stt` (`want: on`, the session number, speaker names).
-2. **The iPad** (`#display`) polls `GET /api/gm/stt` every 4 s. While `want` is on and it is not listening, it shows
-   **Tap to start listening**: iPad Safari opens the mic only on a tap. The page's `Permissions-Policy` allows the
-   microphone for this origin only (`microphone=(self)`, `worker/app.js`).
+2. **The iPad** (`#display`) learns what the GM wants from its display poll: `GET /api/gm/display` carries `stt: { seq, want, session }`
+   (see Endpoints and "How it polls"), and `display-page.js` hands each change to `B68Stt.feed()`. The transcriber makes no request of its own
+   for it; only against a server whose display answers carry no `stt` (an older build) does it fall back to `GET /api/gm/stt` every 4 s. While
+   `want` is on and it is not listening, it shows **Tap to start listening**: iPad Safari opens the mic only on a tap. The page's
+   `Permissions-Policy` allows the microphone for this origin only (`microphone=(self)`, `worker/app.js`). It tells the server its state
+   (`PATCH /api/gm/stt`, `status`) at once when the state changes, every 10 s while the mic is open and once a minute otherwise while the page
+   is visible (a hidden page says nothing); the GM page shows how long ago from it, and calls the iPad silent after 40 s while it should be
+   listening. **Stop listening** reaches the iPad with its next look (4 s; 15 s after two quiet hours; a minute in a hidden tab).
 3. The mic goes to Deepgram's live API (`nova-3`, speaker labels) as 16 kHz 16-bit PCM over a WebSocket. It opens with
    a short-lived token from `POST /api/gm/stt/token`, which the Worker mints with its secret `DEEPGRAM_API_KEY` (never
    sent to a browser). The token rides the handshake as a subprotocol pair, `bearer` then `token`; whichever works is
@@ -498,7 +554,8 @@ first and last time, unnamed speakers), and reports the table's session counter 
 it). `--yes --prune` then clears the server's copy of the lines the vault has. Stop listening first: with listening
 still on it leaves the transcript alone.
 Endpoints are GM only. The table display sign-in (`DISPLAY_EMAILS`) may get a token, post lines and report its status,
-but not read the transcript. The transcript is never in `/api/export`. Migration `0007_gm_stt.sql`. Checks:
+but not read the transcript; the display read it gets carries `want` and `session` and never a line, a name or a report
+(`checks/api/display-role.mjs` posts lines with a marker and looks for it in every shape of that read). The transcript is never in `/api/export`. Migration `0007_gm_stt.sql`. Checks:
 `checks/runtime/stt.test.mjs`, `checks/runtime/gm-stt.e2e.mjs` (fake mic, fake Deepgram socket).
 
 **Setup, once:** `npx wrangler secret put DEEPGRAM_API_KEY` (a key with Member permission or above), then

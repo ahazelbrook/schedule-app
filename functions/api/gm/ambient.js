@@ -1,4 +1,4 @@
-// /api/gm/ambient (GM only, see AMBIENT-PLAN.md): what plays on the table display when nothing is spotlit. Stored in
+// /api/gm/ambient (GM only, see GM.md, "Ambient scenes", and docs/history/AMBIENT-PLAN.md): what plays on the table display when nothing is spotlit. Stored in
 // `gm_ambient`; never part of /api/export. A player AND the table display sign-in get 403 on every method, before the body
 // is read: the display reads this document only through GET /api/gm/display (its `ambient` key), not from here.
 //   GET            -> { seq, doc, updatedAt }   (seq 0, {} and null while none is stored)

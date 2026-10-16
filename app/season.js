@@ -1,4 +1,4 @@
-/* season.js — the season print (DEPLOY.md phase 4, CAMPAIGN.md "Season print"): one printable document of the whole
+/* season.js — the season print (docs/history/DEPLOY.md phase 4, CAMPAIGN.md "Season print"): one printable document of the whole
    campaign, reached from #print or B68Season.open(). boot.js owns the mode (body[data-mode="print"]) and the route,
    and hands render() an api; this module only reads (the characters collection and campaign/main, once) and never
    writes.

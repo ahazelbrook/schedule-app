@@ -1,13 +1,15 @@
 // Unit test for app/display-page.js (the table display, #display): the pure parts only, in plain Node, no browser, no deps.
 // Covered: the SVG sanitiser (against malicious samples, run on a small XML parser stub that stands in for DOMParser), the
-// poll / backoff state machine (fake gm, fake timers), the display -> view-model mapping (an npc push never carries gmNotes),
-// the zoom maths and the corner-status text. The DOM layer (mount, gestures, fade, wake lock) needs a browser and is left to
-// the Playwright run. Invented fixtures only.
+// poll / backoff state machine (fake gm, fake timers), the transcriber part of the display answer and app/stt.js taking it
+// (and its fallback GET), the display -> view-model mapping (an npc push never carries gmNotes), the zoom maths and the
+// corner-status text. The DOM layer (mount, gestures, fade, wake lock) needs a browser and is left to the Playwright run.
+// Invented fixtures only.
 //   node checks/runtime/display.test.mjs
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -335,52 +337,57 @@ function clock() {
     }
   };
 }
+/* the beats, written out here and not read from the page: the Workers Free budget (100,000 requests a day) is what they are for */
+const BEAT = 4000, SLOW = 10000, IDLE = 15000, HIDDEN = 60000, IDLE_AFTER = 2 * 3600 * 1000;
 function rig(over = {}) {
   const c = clock(), calls = [], data = [], states = [];
   const g = { hidden: false, handler: null };
   const poller = P.createPoller(Object.assign({
-    timers: c, fetch: (seq) => { calls.push({ seq, at: c.now }); return g.handler(seq); },
+    timers: c, now: () => c.now, fetch: (seq, aseq, sseq) => { calls.push({ seq, at: c.now }); return g.handler(seq, aseq, sseq); },
     onData: (d, seq, at) => data.push({ d, seq, at }), onStatus: (s) => states.push(s.state), isHidden: () => g.hidden
   }, over));
   return { c, calls, data, states, g, poller };
 }
 const ok = (seq, display) => ({ seq, display: display || { kind: 'blank', title: '', caption: '' }, updatedAt: '2026-10-17T09:00:00.000Z' });
 
-await test('poller: first request has no seq, then every 2 s, passing the seq it holds', async () => {
+await test('poller: the beats are 4 s, 15 s after two hours of nothing, 10 s when failing and a minute when hidden', () => {
+  assert.deepEqual(P.POLL, { intervalMs: BEAT, idleMs: IDLE, idleAfterMs: IDLE_AFTER, slowMs: SLOW, hiddenMs: HIDDEN });
+});
+await test('poller: first request has no seq, then every 4 s, passing the seq it holds', async () => {
   const r = rig(); let n = 0; r.g.handler = (seq) => Promise.resolve(seq === null ? ok(3, { kind: 'text', text: 'a' }) : { seq: 3, unchanged: true });
   r.poller.start(); await r.c.advance(0);
   assert.deepEqual(r.calls.map((x) => x.seq), [null]); assert.equal(r.data.length, 1); assert.equal(r.data[0].seq, 3);
-  await r.c.advance(1999); assert.equal(r.calls.length, 1);
+  await r.c.advance(3999); assert.equal(r.calls.length, 1);
   await r.c.advance(1); assert.equal(r.calls.length, 2); assert.equal(r.calls[1].seq, 3);
-  await r.c.advance(6000); assert.deepEqual(r.calls.map((x) => x.at), [0, 2000, 4000, 6000, 8000]);
+  await r.c.advance(12000); assert.deepEqual(r.calls.map((x) => x.at), [0, 4000, 8000, 12000, 16000]);
   assert.equal(r.data.length, 1, 'unchanged must not redraw');
   assert.equal(r.poller.state(), 'live'); r.poller.stop();
 });
 await test('poller: a new seq calls onData once with the display and updatedAt', async () => {
   const r = rig(); let cur = 1;
   r.g.handler = (seq) => Promise.resolve(seq === cur ? { seq: cur, unchanged: true } : ok(cur, { kind: 'text', text: 'v' + cur }));
-  r.poller.start(); await r.c.advance(0); cur = 2; await r.c.advance(2000); await r.c.advance(2000);
+  r.poller.start(); await r.c.advance(0); cur = 2; await r.c.advance(BEAT); await r.c.advance(BEAT);
   assert.deepEqual(r.data.map((x) => [x.seq, x.d.text]), [[1, 'v1'], [2, 'v2']]); assert.equal(r.data[1].at, '2026-10-17T09:00:00.000Z');
   r.poller.stop();
 });
-await test('poller: three failures in a row back off to 10 s; the first success returns to 2 s', async () => {
+await test('poller: three failures in a row back off to 10 s; the first success returns to 4 s', async () => {
   const r = rig(); let fail = true; r.g.handler = () => (fail ? Promise.reject(new Error('net')) : Promise.resolve({ seq: 1, unchanged: true }));
   r.poller.start(); await r.c.advance(0);
   assert.equal(r.poller.state(), 'retrying');
-  await r.c.advance(2000); await r.c.advance(2000);
-  assert.deepEqual(r.calls.map((x) => x.at), [0, 2000, 4000]); assert.equal(r.poller.state(), 'offline'); assert.equal(r.poller.fails(), 3);
+  await r.c.advance(BEAT); await r.c.advance(BEAT);
+  assert.deepEqual(r.calls.map((x) => x.at), [0, 4000, 8000]); assert.equal(r.poller.state(), 'offline'); assert.equal(r.poller.fails(), 3);
   await r.c.advance(9999); assert.equal(r.calls.length, 3, 'must wait the full 10 s');
-  await r.c.advance(1); assert.equal(r.calls.length, 4); assert.equal(r.calls[3].at, 14000);
-  await r.c.advance(10000); assert.equal(r.calls[4].at, 24000);
-  fail = false; await r.c.advance(10000); assert.equal(r.calls[5].at, 34000); assert.equal(r.poller.state(), 'live'); assert.equal(r.poller.fails(), 0);
-  await r.c.advance(2000); assert.equal(r.calls[6].at, 36000);
+  await r.c.advance(1); assert.equal(r.calls.length, 4); assert.equal(r.calls[3].at, 18000);
+  await r.c.advance(10000); assert.equal(r.calls[4].at, 28000);
+  fail = false; await r.c.advance(10000); assert.equal(r.calls[5].at, 38000); assert.equal(r.poller.state(), 'live'); assert.equal(r.poller.fails(), 0);
+  await r.c.advance(BEAT); assert.equal(r.calls[6].at, 42000);
   assert.deepEqual(r.states, ['retrying', 'offline', 'live']); r.poller.stop();
 });
 await test('poller: a bad response (no seq, or neither display nor unchanged) counts as a failure', async () => {
   const r = rig(); const bad = [null, {}, { seq: 'x' }, { seq: 1 }, 'html', { error: 'x' }]; let i = 0;
   r.g.handler = () => Promise.resolve(bad[i++]);
   r.poller.start(); await r.c.advance(0); assert.equal(r.poller.fails(), 1);
-  await r.c.advance(2000); await r.c.advance(2000); assert.equal(r.poller.state(), 'offline'); assert.equal(r.data.length, 0); r.poller.stop();
+  await r.c.advance(BEAT); await r.c.advance(BEAT); assert.equal(r.poller.state(), 'offline'); assert.equal(r.data.length, 0); r.poller.stop();
 });
 await test('poller: a 403 is "denied" and polls slowly; a thrown fetch is a failure, not a crash', async () => {
   const r = rig(); r.g.handler = () => Promise.reject(Object.assign(new Error('forbidden'), { status: 403 }));
@@ -393,35 +400,100 @@ await test('poller: never overlaps requests, and times out a request that hangs'
   r.poller.start(); await r.c.advance(0);
   r.poller.kick(); r.poller.kick(); await r.c.advance(100); assert.equal(r.calls.length, 1, 'kick while in flight must not start another');
   await r.c.advance(5000); assert.equal(r.poller.fails(), 1, 'timeout counted');
-  r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true }); await r.c.advance(2000); assert.equal(r.calls.length, 2);
+  r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true }); await r.c.advance(BEAT); assert.equal(r.calls.length, 2);
   release(ok(9)); await r.c.advance(0); assert.equal(r.data.length, 0, 'a late answer to a timed-out request is ignored');
   r.poller.stop();
 });
-await test('poller: hidden pauses polling; visible polls at once; nothing is scheduled while hidden', async () => {
+await test('poller: a hidden page looks once a minute, never faster; visible again it polls at once and is back on the 4 s beat', async () => {
   const r = rig(); r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true });
-  r.poller.start(); await r.c.advance(0); await r.c.advance(2000); assert.equal(r.calls.length, 2);
-  r.g.hidden = true; r.poller.kick(); assert.equal(r.poller.state(), 'paused');
-  await r.c.advance(60000); assert.equal(r.calls.length, 2, 'polled while hidden'); assert.equal(r.c.pending(), 0);
-  r.g.hidden = false; r.poller.kick(); await r.c.advance(0); assert.equal(r.calls.length, 3); assert.equal(r.calls[2].at, 62000);
-  assert.equal(r.poller.state(), 'live'); await r.c.advance(2000); assert.equal(r.calls.length, 4); r.poller.stop();
+  r.poller.start(); await r.c.advance(0); await r.c.advance(BEAT); assert.equal(r.calls.length, 2);                  // looks at 0 and 4000
+  r.g.hidden = true; r.poller.kick();                                                                               // to the background at 4000
+  await r.c.advance(HIDDEN - 1); assert.equal(r.calls.length, 2, 'not before the minute is up');
+  await r.c.advance(1); assert.equal(r.calls.length, 3); assert.equal(r.calls[2].at, 4000 + HIDDEN);
+  await r.c.advance(HIDDEN); assert.equal(r.calls.length, 4); assert.equal(r.calls[3].at, 4000 + 2 * HIDDEN, 'and every minute after');
+  assert.equal(r.poller.state(), 'live'); assert.equal(r.c.pending(), 1, 'one timer: the next look');
+  r.g.hidden = false; r.poller.kick(); await r.c.advance(0); assert.equal(r.calls.length, 5); assert.equal(r.calls[4].at, 4000 + 2 * HIDDEN, 'visible: at once');
+  await r.c.advance(BEAT); assert.equal(r.calls.length, 6, 'and on the 4 s beat again'); assert.equal(r.calls[5].at - r.calls[4].at, BEAT); r.poller.stop();
 });
-await test('poller: hiding mid-request lets it finish but schedules nothing; stop ends everything', async () => {
+await test('poller: hiding mid-request lets it finish and then waits a minute; a kick while one is out starts nothing; stop ends everything', async () => {
   const r = rig(); let release; r.g.handler = () => new Promise((res) => { release = res; });
-  r.poller.start(); await r.c.advance(0); r.g.hidden = true; release({ seq: 4, display: { kind: 'blank' } }); await r.c.advance(0);
-  assert.equal(r.data.length, 1); await r.c.advance(30000); assert.equal(r.calls.length, 1);
-  r.g.hidden = false; r.g.handler = () => Promise.resolve({ seq: 4, unchanged: true }); r.poller.kick(); await r.c.advance(0); assert.equal(r.calls.length, 2);
-  r.poller.stop(); await r.c.advance(60000); assert.equal(r.calls.length, 2); assert.equal(r.c.pending(), 0);
+  r.poller.start(); await r.c.advance(0); r.g.hidden = true; r.poller.kick(); release({ seq: 4, display: { kind: 'blank' } }); await r.c.advance(0);
+  assert.equal(r.calls.length, 1, 'the kick in flight started no second request'); assert.equal(r.data.length, 1);
+  await r.c.advance(HIDDEN - 1); assert.equal(r.calls.length, 1, 'a minute after the answer, not 4 s');
+  r.g.handler = () => Promise.resolve({ seq: 4, unchanged: true }); await r.c.advance(1); assert.equal(r.calls.length, 2);
+  r.g.hidden = false; r.poller.kick(); await r.c.advance(0); assert.equal(r.calls.length, 3, 'visible: at once');
+  r.poller.stop(); await r.c.advance(2 * HIDDEN); assert.equal(r.calls.length, 3); assert.equal(r.c.pending(), 0);
   let late; const s = rig(); s.g.handler = () => new Promise((res) => { late = res; }); s.poller.start(); await s.c.advance(0); s.poller.stop(); late(ok(5)); await s.c.advance(0);
   assert.equal(s.data.length, 0, 'an answer after stop must not draw'); assert.equal(s.c.pending(), 0);
 });
+await test('poller: a hidden page that is offline or denied is no faster than the minute either', async () => {
+  const r = rig(); r.g.handler = () => Promise.reject(new Error('net')); r.g.hidden = true;
+  r.poller.start(); await r.c.advance(0); await r.c.advance(HIDDEN); await r.c.advance(HIDDEN); await r.c.advance(HIDDEN);
+  assert.deepEqual(r.calls.map((x) => x.at), [0, HIDDEN, 2 * HIDDEN, 3 * HIDDEN]); assert.equal(r.poller.state(), 'offline'); r.poller.stop();
+});
 await test('poller: the network coming back forgets the backoff', async () => {
   const r = rig(); let fail = true; r.g.handler = () => (fail ? Promise.reject(new Error('net')) : Promise.resolve({ seq: 1, unchanged: true }));
-  r.poller.start(); await r.c.advance(0); await r.c.advance(2000); await r.c.advance(2000); assert.equal(r.poller.state(), 'offline');
+  r.poller.start(); await r.c.advance(0); await r.c.advance(BEAT); await r.c.advance(BEAT); assert.equal(r.poller.state(), 'offline');
   fail = false; r.poller.reset(); r.poller.kick(); await r.c.advance(0); assert.equal(r.poller.state(), 'live'); assert.equal(r.poller.fails(), 0); r.poller.stop();
 });
 await test('poller: an onData that throws does not stop polling', async () => {
   const r = rig({ onData: () => { throw new Error('draw failed'); } }); r.g.handler = () => Promise.resolve(ok(1));
-  r.poller.start(); await r.c.advance(0); await r.c.advance(2000); assert.equal(r.calls.length, 2); r.poller.stop();
+  r.poller.start(); await r.c.advance(0); await r.c.advance(BEAT); assert.equal(r.calls.length, 2); r.poller.stop();
+});
+
+/* ---------- two hours without a change: 15 s (the Workers Free budget) ---------- */
+/* a server whose three seqs the test moves through the returned object: a part comes in full when the poller's seq for it is stale */
+function seqServer(r) {
+  const st = { seq: 1, aseq: 1, sseq: 1 };
+  r.g.handler = (seq, aseq, sseq) => {
+    const ambient = aseq === st.aseq ? { seq: st.aseq, unchanged: true } : { seq: st.aseq, doc: { mode: 'auto' } };
+    const stt = sseq === st.sseq ? { seq: st.sseq, unchanged: true } : { seq: st.sseq, want: 'off', session: '' };
+    return Promise.resolve(seq === st.seq && aseq === st.aseq && sseq === st.sseq ? { seq: st.seq, unchanged: true, ambient, stt }
+      : { seq: st.seq, display: { kind: 'blank' }, updatedAt: '2026-10-17T09:00:00.000Z', ambient, stt });
+  };
+  return st;
+}
+/* the time of the call before the last, and the last: how far apart the two newest looks are */
+const gap = (r) => r.calls[r.calls.length - 1].at - r.calls[r.calls.length - 2].at;
+async function idleRig() {
+  const r = rig(); const st = seqServer(r);
+  r.poller.start(); await r.c.advance(0);
+  await r.c.advance(IDLE_AFTER);                                   // the look at exactly two hours is the last on the fast beat
+  return { r, st };
+}
+await test('poller: two hours without a change slow the beat to 15 s, and not a moment before', async () => {
+  const r = rig(); seqServer(r);
+  r.poller.start(); await r.c.advance(0);
+  await r.c.advance(IDLE_AFTER - 1); assert.equal(r.calls.length, 1800); assert.equal(r.calls[1799].at, IDLE_AFTER - BEAT);
+  assert.ok(r.calls.every((x, i) => x.at === i * BEAT), 'every look so far was on the 4 s beat');
+  await r.c.advance(1); assert.equal(r.calls.length, 1801); assert.equal(r.calls[1800].at, IDLE_AFTER, 'the look at two hours sees nothing new');
+  await r.c.advance(IDLE - 1); assert.equal(r.calls.length, 1801, 'and the next is 15 s later');
+  await r.c.advance(1); assert.equal(r.calls.length, 1802); assert.equal(gap(r), IDLE);
+  await r.c.advance(IDLE); assert.equal(gap(r), IDLE); assert.equal(r.poller.state(), 'live'); assert.equal(r.data.length, 1, 'nothing redrawn all that time'); r.poller.stop();
+});
+for (const part of ['seq', 'aseq', 'sseq']) {
+  await test('poller: after two idle hours a change of ' + (part === 'seq' ? 'the display' : part === 'aseq' ? 'the ambient' : 'the transcriber part') + ' brings the 4 s beat back, on the look that sees it', async () => {
+    const { r, st } = await idleRig(); const n = r.calls.length;
+    await r.c.advance(IDLE); assert.equal(r.calls.length, n + 1); assert.equal(gap(r), IDLE, 'still idle');
+    st[part]++;                                                    // moves between two looks: seen 15 s later, at the idle beat
+    await r.c.advance(IDLE); assert.equal(r.calls.length, n + 2); assert.equal(gap(r), IDLE, 'the look that finds the change is still one idle beat away');
+    await r.c.advance(BEAT - 1); assert.equal(r.calls.length, n + 2); await r.c.advance(1); assert.equal(r.calls.length, n + 3); assert.equal(gap(r), BEAT, 'then 4 s');
+    await r.c.advance(BEAT); assert.equal(gap(r), BEAT); assert.equal(r.calls.length, n + 4);
+    await r.c.advance(IDLE_AFTER - BEAT); assert.equal(gap(r), BEAT, 'and it takes another two hours of nothing to slow down again'); r.poller.stop();
+  });
+}
+await test('poller: failures while idle are no faster than 15 s, and a failure that recovers with nothing new leaves it idle', async () => {
+  const { r } = await idleRig(); const inner = r.g.handler; let fail = false;
+  r.g.handler = (...a) => (fail ? Promise.reject(new Error('net')) : inner(...a));
+  fail = true; for (let i = 0; i < 4; i++) { await r.c.advance(IDLE); assert.equal(gap(r), IDLE, 'failure ' + (i + 1) + ' (' + r.poller.state() + ')'); }
+  assert.equal(r.poller.state(), 'offline');
+  fail = false; await r.c.advance(IDLE); assert.equal(r.poller.state(), 'live');
+  await r.c.advance(IDLE); assert.equal(gap(r), IDLE, 'recovered, nothing moved: still idle'); r.poller.stop();
+});
+await test('poller: a clock that jumps (the iPad slept) counts: the first answer after two hours of nothing is on the idle beat', async () => {
+  let t = 0; const r = rig({ now: () => t }); seqServer(r);
+  r.poller.start(); await r.c.advance(0); t = IDLE_AFTER + 5000;                        // the wall clock moved two hours while the page slept
+  await r.c.advance(BEAT); assert.equal(r.calls.length, 2); await r.c.advance(IDLE); assert.equal(r.calls.length, 3); assert.equal(gap(r), IDLE); r.poller.stop();
 });
 
 /* ---------- the poller with the ambient part (GET /api/gm/display?seq=N&aseq=M) ---------- */
@@ -431,7 +503,7 @@ await test('poller: fetch gets both seqs; the first call has neither, then the o
   r.g.res = aok(4, 2, { mode: 'pin', scene: 'duskwall' });
   r.poller.start(); await r.c.advance(0);
   r.g.res = { seq: 4, unchanged: true, ambient: { seq: 2, unchanged: true } };
-  await r.c.advance(2000);
+  await r.c.advance(BEAT);
   assert.deepEqual(calls, [[null, null], [4, 2]]); assert.equal(r.poller.seq(), 4); assert.equal(r.poller.aseq(), 2); r.poller.stop();
 });
 await test('poller: a display with an ambient doc calls onAmbient (first) then onData; both unchanged calls neither', async () => {
@@ -440,22 +512,22 @@ await test('poller: a display with an ambient doc calls onAmbient (first) then o
   r.poller.start(); await r.c.advance(0);
   assert.deepEqual(order, [['amb', 'off', 3, '2026-10-17T09:00:01.000Z'], ['data', 'text', 7]]);
   r.g.handler = () => Promise.resolve({ seq: 7, unchanged: true, ambient: { seq: 3, unchanged: true } });
-  await r.c.advance(2000); assert.equal(order.length, 2, 'nothing redrawn'); r.poller.stop();
+  await r.c.advance(BEAT); assert.equal(order.length, 2, 'nothing redrawn'); r.poller.stop();
 });
 await test('poller: an ambient-only change carries the display along but must not redraw the spotlight', async () => {
   const order = []; const r = rig({ onAmbient: (doc) => order.push(['amb', doc.mode]), onData: (d, seq) => order.push(['data', seq]) });
   r.g.handler = () => Promise.resolve(aok(5, 1, { mode: 'auto' }, { kind: 'svg', svg: '<svg/>' }));
   r.poller.start(); await r.c.advance(0);
   r.g.handler = () => Promise.resolve(aok(5, 2, { mode: 'pin', scene: 'harvest' }, { kind: 'svg', svg: '<svg/>' }));
-  await r.c.advance(2000);
+  await r.c.advance(BEAT);
   assert.deepEqual(order, [['amb', 'auto'], ['data', 5], ['amb', 'pin']]); assert.equal(r.poller.aseq(), 2);
   r.g.handler = () => Promise.resolve(aok(6, 2, null, { kind: 'blank' }));       // a display change with the ambient unchanged
-  await r.c.advance(2000); assert.deepEqual(order.slice(3), [['data', 6]]); r.poller.stop();
+  await r.c.advance(BEAT); assert.deepEqual(order.slice(3), [['data', 6]]); r.poller.stop();
 });
 await test('poller: the old shapes still work (no ambient part): seq alone, and the full display without one', async () => {
   const order = []; const r = rig({ onAmbient: () => order.push('amb'), onData: (d, seq) => order.push(seq) });
   r.g.handler = (seq) => Promise.resolve(seq === null ? ok(2, { kind: 'blank' }) : { seq: 2, unchanged: true });
-  r.poller.start(); await r.c.advance(0); await r.c.advance(2000);
+  r.poller.start(); await r.c.advance(0); await r.c.advance(BEAT);
   assert.deepEqual(order, [2]); assert.equal(r.poller.aseq(), null); assert.equal(r.poller.state(), 'live'); r.poller.stop();
 });
 await test('poller: unchanged with an ambient part is a valid answer; a malformed ambient part is ignored, never an error', async () => {
@@ -463,16 +535,225 @@ await test('poller: unchanged with an ambient part is a valid answer; a malforme
   r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true, ambient: { seq: 1, unchanged: true } });
   r.poller.start(); await r.c.advance(0); assert.equal(r.poller.state(), 'live'); assert.equal(r.poller.aseq(), 1); assert.deepEqual(order, []);
   for (const bad of [null, 'x', 7, [], { seq: 'x', doc: {} }, { seq: 2 }, { seq: 2, doc: 'no' }, { doc: {} }]) {
-    r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true, ambient: bad }); await r.c.advance(2000);
+    r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true, ambient: bad }); await r.c.advance(BEAT);
     assert.equal(r.poller.state(), 'live', JSON.stringify(bad)); assert.equal(r.poller.aseq(), 1, 'a bad part did not move the seq: ' + JSON.stringify(bad));
   }
-  r.g.handler = () => Promise.resolve({ seq: 2, display: { kind: 'blank' }, ambient: { seq: 'junk' } }); await r.c.advance(2000);
+  r.g.handler = () => Promise.resolve({ seq: 2, display: { kind: 'blank' }, ambient: { seq: 'junk' } }); await r.c.advance(BEAT);
   assert.deepEqual(order, [['data', 2]], 'the spotlight still draws'); assert.equal(r.poller.fails(), 0); r.poller.stop();
 });
 await test('poller: an onAmbient that throws does not stop the display from drawing', async () => {
   const seen = []; const r = rig({ onAmbient: () => { throw new Error('plan failed'); }, onData: (d, seq) => seen.push(seq) });
   r.g.handler = () => Promise.resolve(aok(3, 1, { mode: 'auto' })); r.poller.start(); await r.c.advance(0);
   assert.deepEqual(seen, [3]); assert.equal(r.poller.state(), 'live'); r.poller.stop();
+});
+
+/* ---------- the poller with the transcriber part (GET /api/gm/display?seq=N&aseq=M&sseq=K) ---------- */
+const sok = (seq, sseq, part, display) => ({ seq, display: display || { kind: 'blank' }, updatedAt: '2026-10-17T09:00:00.000Z', ambient: { seq: 1, unchanged: true }, stt: part ? { seq: sseq, ...part } : { seq: sseq, unchanged: true } });
+await test('poller: fetch gets all three seqs (null on the first call); the transcriber part reaches onStt once per change, never when unchanged', async () => {
+  const calls = [], got = []; const r = rig({ fetch: (seq, aseq, sseq) => { calls.push([seq, aseq, sseq]); return Promise.resolve(r.g.res); }, onStt: (p) => got.push(p) });
+  r.g.res = sok(4, 77, { want: 'off', session: '' });
+  r.poller.start(); await r.c.advance(0);
+  r.g.res = { seq: 4, unchanged: true, ambient: { seq: 1, unchanged: true }, stt: { seq: 77, unchanged: true } };
+  await r.c.advance(BEAT); await r.c.advance(BEAT);
+  r.g.res = { seq: 4, unchanged: true, ambient: { seq: 1, unchanged: true }, stt: { seq: 88, want: 'on', session: '9.1' } };   // only the GM's listening changed: no display along
+  await r.c.advance(BEAT);
+  r.g.res = { seq: 4, unchanged: true, ambient: { seq: 1, unchanged: true }, stt: { seq: 88, unchanged: true } };
+  await r.c.advance(BEAT);
+  assert.deepEqual(calls, [[null, null, null], [4, 1, 77], [4, 1, 77], [4, 1, 77], [4, 1, 88]]);
+  assert.deepEqual(got, [{ seq: 77, want: 'off', session: '' }, { seq: 88, want: 'on', session: '9.1' }]);
+  assert.equal(r.poller.sseq(), 88); assert.equal(r.data.length, 1, 'the display drew once: a transcriber change is not a redraw'); assert.equal(r.poller.state(), 'live'); r.poller.stop();
+});
+await test('poller: the transcriber part comes after the ambient and before the display on one answer', async () => {
+  const order = []; const r = rig({ onAmbient: () => order.push('amb'), onStt: (p) => order.push('stt:' + (p && p.want)), onData: (d, seq) => order.push('data:' + seq) });
+  r.g.handler = () => Promise.resolve({ seq: 3, display: { kind: 'blank' }, ambient: { seq: 2, doc: { mode: 'auto' } }, stt: { seq: 5, want: 'on', session: '' } });
+  r.poller.start(); await r.c.advance(0); assert.deepEqual(order, ['amb', 'stt:on', 'data:3']); r.poller.stop();
+});
+await test('poller: an answer with no transcriber part (an older server, or ?seq alone) tells onStt(null) once, and the display carries on', async () => {
+  const got = [], seen = []; const r = rig({ onStt: (p) => got.push(p), onData: (d, seq) => seen.push(seq) });
+  r.g.handler = (seq) => Promise.resolve(seq === null ? ok(2, { kind: 'blank' }) : { seq: 2, unchanged: true });
+  r.poller.start(); await r.c.advance(0); await r.c.advance(BEAT); await r.c.advance(BEAT);
+  assert.deepEqual(got, [null], 'once, not on every answer'); assert.deepEqual(seen, [2]); assert.equal(r.poller.sseq(), null); assert.equal(r.poller.state(), 'live');
+  r.g.handler = () => Promise.resolve(sok(2, 5, { want: 'on', session: '3' }));   // the server was upgraded under it
+  await r.c.advance(BEAT); assert.deepEqual(got, [null, { seq: 5, want: 'on', session: '3' }]);
+  r.g.handler = () => Promise.resolve({ seq: 2, unchanged: true });                 // and rolled back: told once more
+  await r.c.advance(BEAT); assert.deepEqual(got.slice(2), [null]); r.poller.stop();
+});
+await test('poller: a malformed transcriber part is ignored like a missing one, never an error; an onStt that throws does not stop polling', async () => {
+  const got = []; const r = rig({ onStt: (p) => got.push(p) });
+  r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true }); r.poller.start(); await r.c.advance(0);
+  for (const bad of [null, 'x', 7, [], { seq: 'x', want: 'on' }, { seq: 3 }, { seq: 3, want: 'maybe' }, { want: 'on' }, { seq: NaN, want: 'on' }]) {
+    r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true, stt: bad }); await r.c.advance(BEAT);
+    assert.equal(r.poller.state(), 'live', JSON.stringify(bad)); assert.equal(r.poller.sseq(), null, 'a bad part did not move the seq: ' + JSON.stringify(bad));
+  }
+  assert.deepEqual(got, [null], 'told once that there is no usable part');
+  assert.deepEqual(P.sttPart({ stt: { seq: 2, want: 'on', session: '12345678901234567890', extra: 'x' } }), { seq: 2, want: 'on', session: '123456789012' }, 'only want and session, the session capped');
+  assert.equal(P.sttPart({ stt: { seq: 2, want: 'on', session: 5 } }).session, '');
+  const t = rig({ onStt: () => { throw new Error('feed failed'); } }); t.g.handler = () => Promise.resolve(sok(1, 1, { want: 'on', session: '' }));
+  t.poller.start(); await t.c.advance(0); await t.c.advance(BEAT); assert.equal(t.calls.length, 2); assert.equal(t.poller.state(), 'live'); t.poller.stop(); r.poller.stop();
+});
+
+/* ---------- app/stt.js: what the GM wants comes from the display poll; its own GET is only the fallback ---------- */
+function sttRig() {
+  const timers = []; let now = 0, id = 0; const base = 1.7e12;
+  const add = (fn, ms, every) => { timers.push({ id: ++id, at: now + ms, fn, every }); return id; };
+  const drop = (i) => { const k = timers.findIndex((t) => t.id === i); if (k >= 0) timers.splice(k, 1); };
+  const el = (tag) => ({ tag, className: '', textContent: '', hidden: false, kids: [], attrs: {}, listeners: {}, appendChild(c) { this.kids.push(c); return c; }, setAttribute(k, v) { this.attrs[k] = v; }, remove() {},
+    addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }, classList: { toggle() {} } });
+  const doc = { hidden: false, createElement: el, listeners: {}, addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }, removeEventListener(t, f) { this.listeners[t] = (this.listeners[t] || []).filter((x) => x !== f); } };
+  class FakeDate extends Date { static now() { return base + now; } }
+  const win = { document: doc, navigator: {}, Date: FakeDate, setTimeout: (f, ms) => add(f, ms, 0), setInterval: (f, ms) => add(f, ms, ms), clearTimeout: drop, clearInterval: drop, console };
+  win.self = win;
+  vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'app', 'stt.js'), 'utf8'), win);
+  const calls = { stt: 0, patch: [] }, server = { want: 'off', session: '' };
+  const gm = {
+    stt: () => { calls.stt++; return Promise.resolve({ doc: { want: server.want, session: server.session } }); },
+    sttToken: () => Promise.reject(new Error('no token here')), addTranscript: () => Promise.resolve({ added: 0 }),
+    patchStt: (p) => { calls.patch.push(p); return Promise.resolve({}); }
+  };
+  const container = el('div'); const ctl = win.B68Stt.attach(container, { gm });
+  const tap = container.kids[0];
+  return { ctl, gm, calls, server, doc, tap, now: () => now,
+    async advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        await flush(); timers.sort((a, b) => a.at - b.at || a.id - b.id);
+        if (!timers.length || timers[0].at > end) break;
+        const t = timers.shift(); now = Math.max(now, t.at); if (t.every) { t.at = now + t.every; timers.push(t); } t.fn();
+      }
+      now = end; await flush();
+    } };
+}
+await test('stt.js: fed by the display poll it makes no request of its own for what the GM wants, and shows the tap while want is on', async () => {
+  const r = sttRig(); r.ctl.feed({ seq: 5, want: 'off', session: '' });
+  assert.equal(r.tap.hidden, true); assert.deepEqual([r.ctl.state().fed, r.ctl.state().want], [true, 'off']);
+  await r.advance(60000); assert.equal(r.calls.stt, 0, 'no GET /api/gm/stt in a minute');
+  r.ctl.feed({ seq: 6, want: 'on', session: '9.1' });
+  assert.equal(r.tap.hidden, false, 'want on and not listening: Tap to start listening'); assert.equal(r.ctl.state().session, '9.1');
+  await r.advance(60000); assert.equal(r.calls.stt, 0);
+  r.ctl.feed({ seq: 7, want: 'off', session: '9.1' }); assert.equal(r.tap.hidden, true, 'the GM said stop: the tap goes');
+  r.doc.hidden = true; r.doc.listeners.visibilitychange.forEach((f) => f()); await r.advance(60000); assert.equal(r.calls.stt, 0, 'nor on a visibility change');
+  r.ctl.destroy();
+});
+await test('stt.js: an answer with no transcriber part (null) makes it ask GET /api/gm/stt itself at once and every 4 s; a part again ends that', async () => {
+  const r = sttRig(); r.server.want = 'on'; r.server.session = '7';
+  r.ctl.feed(null); await r.advance(0);
+  assert.equal(r.calls.stt, 1, 'at once'); assert.deepEqual([r.ctl.state().fed, r.ctl.state().want, r.ctl.state().session], [false, 'on', '7']); assert.equal(r.tap.hidden, false);
+  await r.advance(3999); assert.equal(r.calls.stt, 1); await r.advance(1); assert.equal(r.calls.stt, 2);
+  await r.advance(8000); assert.equal(r.calls.stt, 4, 'every 4 s');
+  r.ctl.feed(null); r.ctl.feed(null); await r.advance(0); assert.equal(r.calls.stt, 4, 'more nulls change nothing');
+  r.server.want = 'off'; await r.advance(4000); assert.equal(r.ctl.state().want, 'off'); assert.equal(r.tap.hidden, true, 'the fallback hears the GM stop too');
+  r.ctl.feed({ seq: 9, want: 'on', session: '' }); const n = r.calls.stt; await r.advance(60000); assert.equal(r.calls.stt, n, 'fed again: the fallback is quiet');
+  r.ctl.feed(null); await r.advance(0); assert.equal(r.calls.stt, n + 1, 'and starts again when the parts stop');
+  r.ctl.destroy();
+});
+await test('stt.js: before any display answer (or with a display page that never feeds it) it polls for itself, as it always did', async () => {
+  const r = sttRig(); r.server.want = 'on';
+  await r.advance(3999); assert.equal(r.calls.stt, 0); await r.advance(1); assert.equal(r.calls.stt, 1); assert.equal(r.ctl.state().fed, null);
+  assert.equal(r.tap.hidden, false); await r.advance(8000); assert.equal(r.calls.stt, 3);
+  r.ctl.destroy(); await r.advance(20000); assert.equal(r.calls.stt, 3, 'destroyed: nothing more');
+  const late = sttRig(); late.server.want = 'on'; late.ctl.feed(null); late.ctl.destroy(); await late.advance(0); await late.advance(20000); assert.equal(late.calls.stt, 1, 'a feed after destroy is ignored');
+});
+await test('stt.js: a fallback answer that lands after the display poll has taken over is dropped', async () => {
+  const r = sttRig(); let release; r.gm.stt = () => new Promise((res) => { release = res; });
+  r.ctl.feed(null); await r.advance(0);                                              // the fallback GET is out
+  r.ctl.feed({ seq: 3, want: 'off', session: '' });                                // the display poll answers first
+  release({ doc: { want: 'on', session: '5' } }); await r.advance(0);
+  assert.equal(r.ctl.state().want, 'off', 'the older fallback answer did not overwrite the display poll\'s'); assert.equal(r.tap.hidden, true); r.ctl.destroy();
+});
+await test('stt.js: the iPad reports its state at once on a change, then once a minute while visible and idle, and not at all while hidden', async () => {
+  const r = sttRig(); r.ctl.feed({ seq: 1, want: 'off', session: '' });
+  await r.advance(9999); assert.equal(r.calls.patch.length, 0); await r.advance(1); assert.equal(r.calls.patch.length, 1, 'the first look at 10 s');
+  assert.equal(r.calls.patch[0].status.state, 'idle');
+  await r.advance(59000); assert.equal(r.calls.patch.length, 1, 'then a minute apart, not every 10 s'); await r.advance(1000); assert.equal(r.calls.patch.length, 2);
+  r.doc.hidden = true; await r.advance(10 * 60000); assert.equal(r.calls.patch.length, 2, 'a hidden page says nothing');
+  r.doc.hidden = false; await r.advance(10000); assert.equal(r.calls.patch.length, 3, 'visible again: the next look reports');
+  r.ctl.feed({ seq: 2, want: 'on', session: '' }); r.tap.listeners.click[0]({ stopPropagation() {} }); await r.advance(0);   // a tap: no microphone here, so it starts and fails at once
+  assert.deepEqual(r.calls.patch.slice(3).map((p) => p.status.state), ['starting', 'error'], 'a change of state is reported at once');
+  assert.ok(/microphone/.test(r.calls.patch[4].status.error), r.calls.patch[4].status.error);
+  r.ctl.destroy();
+});
+
+/* ---------- the way out of "denied": a reload after ten minutes signed out, at most once per half hour ---------- */
+const MIN = 60000, T0 = 1.7e12;
+/* one clock and one place to keep the time, and `page()` makes the reloader of one page load (a reload makes a new one) */
+function reloadWorld() {
+  const c = clock(), mem = { last: null, ok: true }, ev = [];
+  const page = (over = {}) => P.createReloader(Object.assign({
+    timers: c, now: () => T0 + c.now, last: () => mem.last,
+    remember: (ms) => { if (!mem.ok) return false; mem.last = ms; ev.push(['kept', c.now]); return true; },
+    reload: () => ev.push(['reload', c.now])
+  }, over));
+  return { c, mem, ev, page };
+}
+await test('reloader: the numbers are ten minutes signed out and half an hour between reloads', () => {
+  assert.deepEqual(P.RELOAD, { deniedMs: 10 * MIN, gapMs: 30 * MIN, key: 'b68.display.reload' });
+});
+await test('reloader: denied for ten minutes reloads once, having kept the time first; not a moment before', async () => {
+  const w = reloadWorld(), rl = w.page(); rl.state('denied');
+  await w.c.advance(10 * MIN - 1); assert.deepEqual(w.ev, []);
+  await w.c.advance(1); assert.deepEqual(w.ev, [['kept', 10 * MIN], ['reload', 10 * MIN]]);
+  assert.equal(w.mem.last, T0 + 10 * MIN);
+  await w.c.advance(3 * 3600000); assert.equal(w.ev.length, 2, 'once'); assert.equal(w.c.pending(), 0);
+});
+await test('reloader: any state but denied cancels it, and the ten minutes start over at the next denial; denied again does not restart them', async () => {
+  const w = reloadWorld(), rl = w.page();
+  rl.state('denied'); await w.c.advance(9 * MIN); rl.state('live'); assert.equal(w.c.pending(), 0); await w.c.advance(2 * 3600000); assert.deepEqual(w.ev, [], 'signed in again in time');
+  for (const other of ['retrying', 'offline', 'connecting']) { rl.state('denied'); await w.c.advance(5 * MIN); rl.state(other); assert.equal(w.c.pending(), 0, other); await w.c.advance(MIN); }
+  assert.deepEqual(w.ev, []);
+  const t = w.c.now; rl.state('denied'); await w.c.advance(5 * MIN); rl.state('denied'); await w.c.advance(5 * MIN - 1); assert.deepEqual(w.ev, [], 'the clock runs from the first denial');
+  await w.c.advance(1); assert.deepEqual(w.ev, [['kept', t + 10 * MIN], ['reload', t + 10 * MIN]]);
+});
+await test('reloader: stop cancels it', async () => {
+  const w = reloadWorld(), rl = w.page(); rl.state('denied'); await w.c.advance(5 * MIN); rl.stop(); assert.equal(w.c.pending(), 0); await w.c.advance(MIN * 60); assert.deepEqual(w.ev, []);
+});
+await test('reloader: at most once per half hour: a page that comes back still denied waits out the half hour since the last reload', async () => {
+  const w = reloadWorld(), first = w.page(); first.state('denied'); await w.c.advance(10 * MIN);
+  assert.deepEqual(w.ev.map((e) => e[0]), ['kept', 'reload']); first.stop();                       // that page is gone; the new load
+  await w.c.advance(1000); const second = w.page(); second.state('denied');                          // denied again, 1 s after the reload
+  await w.c.advance(10 * MIN); assert.equal(w.ev.length, 2, 'ten minutes signed out again, but it reloaded 10 minutes ago');
+  await w.c.advance(20 * MIN - 1001); assert.equal(w.ev.length, 2, 'not before half an hour from the last');
+  await w.c.advance(1); assert.deepEqual(w.ev.slice(2), [['kept', 40 * MIN], ['reload', 40 * MIN]]);
+  assert.equal(w.mem.last, T0 + 40 * MIN);
+});
+await test('reloader: a reload noted in the future (the clock was set back) counts its half hour from now', async () => {
+  const w = reloadWorld(); w.mem.last = T0 + 5 * 3600000; const rl = w.page(); rl.state('denied');
+  await w.c.advance(40 * MIN - 1); assert.deepEqual(w.ev, []); await w.c.advance(1); assert.deepEqual(w.ev, [['kept', 40 * MIN], ['reload', 40 * MIN]]);
+});
+await test('reloader: an old note (a day ago) does not hold it back', async () => {
+  const w = reloadWorld(); w.mem.last = T0 - 24 * 3600000; const rl = w.page(); rl.state('denied'); await w.c.advance(10 * MIN);
+  assert.deepEqual(w.ev, [['kept', 10 * MIN], ['reload', 10 * MIN]]);
+});
+await test('reloader: with nowhere to keep the time it never reloads (a stale word beats a loop)', async () => {
+  const w = reloadWorld(); w.mem.ok = false; const rl = w.page(); rl.state('denied');
+  await w.c.advance(3 * 3600000); assert.deepEqual(w.ev, []); assert.equal(w.c.pending(), 0);
+});
+await test('reloader: it counts the wall clock: after a jump forward (the iPad slept) the wake-up reloads and keeps the wall clock\'s time', async () => {
+  let skew = 0; const w = reloadWorld(), rl = w.page({ now: () => T0 + w.c.now + skew }); rl.state('denied');
+  await w.c.advance(MIN); skew = 3 * 3600000;                                          // the wall clock moves three hours
+  await w.c.advance(9 * MIN - 1); assert.deepEqual(w.ev, []); await w.c.advance(1);
+  assert.deepEqual(w.ev, [['kept', 10 * MIN], ['reload', 10 * MIN]]); assert.equal(w.mem.last, T0 + 10 * MIN + 3 * 3600000);
+});
+await test('reloader: after a jump of the clock back the wake-up finds the ten minutes not yet up and waits out the rest', async () => {
+  let skew = 0; const w = reloadWorld(), rl = w.page({ now: () => T0 + w.c.now + skew }); rl.state('denied');
+  await w.c.advance(MIN); skew = -5 * MIN;                                             // the clock is set back five minutes
+  await w.c.advance(9 * MIN); assert.deepEqual(w.ev, [], 'at the wake-up the wall clock says five minutes have gone, not ten');
+  await w.c.advance(5 * MIN - 1); assert.deepEqual(w.ev, []); await w.c.advance(1); assert.deepEqual(w.ev, [['kept', 15 * MIN], ['reload', 15 * MIN]]);
+});
+await test('reload store: both storages are written, the newer time wins, a blocked one is skipped, and nothing kept says so', () => {
+  const KEY = P.RELOAD.key, mem = () => { const m = {}; return { m, getItem: (k) => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); } }; };
+  const boom = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+  let w = { localStorage: mem(), sessionStorage: mem() }, st = P.reloadStore(w);
+  assert.equal(st.last(), null); assert.equal(st.remember(1700000000123), true);
+  assert.equal(w.localStorage.m[KEY], '1700000000123'); assert.equal(w.sessionStorage.m[KEY], '1700000000123'); assert.equal(st.last(), 1700000000123);
+  w.sessionStorage.m[KEY] = '1700000999999'; assert.equal(st.last(), 1700000999999, 'the newer one');
+  for (const half of [{ localStorage: boom, sessionStorage: mem() }, { localStorage: mem(), sessionStorage: boom }, { sessionStorage: mem() }, { localStorage: mem() }]) {
+    st = P.reloadStore(half); assert.equal(st.last(), null); assert.equal(st.remember(5e12), true, 'the other one took it'); assert.equal(st.last(), 5e12);
+  }
+  for (const none of [{ localStorage: boom, sessionStorage: boom }, {}]) { st = P.reloadStore(none); assert.equal(st.remember(1), false); assert.equal(st.last(), null); }
+  for (const bad of ['', 'abc', '0', '-5', 'NaN', 'Infinity', null]) {
+    w = { localStorage: Object.assign(mem(), { getItem: () => bad }), sessionStorage: mem() };
+    assert.equal(P.reloadStore(w).last(), null, 'not a time: ' + String(bad));
+  }
 });
 
 /* ---------- lights out, the crew and the score messages ---------- */

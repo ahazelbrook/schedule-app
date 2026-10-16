@@ -610,15 +610,17 @@
 
   /* The tables a pack lacks, by each module's own check(T) (console, location, npc, scenes, engagement, downtime), for the preview and the
      load to show as WARNINGS (never errors: the upload still works, and every roller falls back to a neutral word for a missing table;
-     the downtime cards to their own built-in tables). mods: { B68GmConsole, ... }; parts: { <part>: body }. -> [{ part, missing: [path] }].
-     A part the pack lacks, a module that is not loaded and a check that throws say nothing. */
-  var CHECKED = [['console', 'B68GmConsole'], ['location', 'B68GmLocation'], ['npc', 'B68GmNpc'], ['scenes', 'B68GmScenes'], ['engagement', 'B68GmEngagement'], ['downtime', 'B68GmDowntime']];
+     the downtime cards to the built-in tables). mods: { B68GmConsole, ..., B68DowntimeTables }; parts: { <part>: body }.
+     -> [{ part, missing: [path] }]. A downtime part is laid over the built-in tables (app/downtime-tables.js, the third name), so it is
+     checked laid over them: check(T, part's T). A part the pack lacks, a module or base tables not loaded and a check that throws say
+     nothing. */
+  var CHECKED = [['console', 'B68GmConsole'], ['location', 'B68GmLocation'], ['npc', 'B68GmNpc'], ['scenes', 'B68GmScenes'], ['engagement', 'B68GmEngagement'], ['downtime', 'B68GmDowntime', 'B68DowntimeTables']];
   function packWarnings(mods, parts) {
     var out = [];
     CHECKED.forEach(function (c) {
-      var M = mods && mods[c[1]], body = parts && parts[c[0]];
-      if (!M || typeof M.check !== 'function' || !isObj(body)) return;
-      var miss; try { miss = M.check(body.T); } catch (e) { return; }
+      var M = mods && mods[c[1]], body = parts && parts[c[0]], base = c[2] ? mods && mods[c[2]] : null;
+      if (!M || typeof M.check !== 'function' || !isObj(body) || (c[2] && !(isObj(base) && isObj(base.T)))) return;
+      var miss; try { miss = c[2] ? M.check(base.T, body.T) : M.check(body.T); } catch (e) { return; }
       miss = (Array.isArray(miss) ? miss : []).map(str).filter(Boolean);
       if (miss.length) out.push({ part: c[0], missing: miss });
     });
@@ -1098,7 +1100,7 @@
     close();
     S = { root: rootEl, api: api, me: null, status: 'loading', doc: {}, updatedAt: null, saver: null, carriedParked: null,
       pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console', scn: null, scnRoll: null, scnMem: {}, scnErr: '', eng: null, engRoll: null, engHid: null, engErr: '',
-      dt: null, dtRoll: null, dtSig: null, dtMem: {}, dtErr: '', dtNote: '', dtBusy: {},
+      dt: null, dtDists: null, dtRoll: null, dtSig: null, dtMem: {}, dtErr: '', dtNote: '', dtBusy: {},
       arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, pinOpen: null, figMemo: {}, importing: null, shown: 'console' };
     try { S.panel = W.localStorage.getItem('b68.gm.panel') || 'location'; S.prepWide = W.localStorage.getItem(PREP_WIDE) === '1'; } catch (e) {}
     if (SIDE.indexOf(S.panel) < 0) S.panel = 'location';
@@ -1184,7 +1186,7 @@
       '<p class="gm-up"><button type="button" class="btn ' + (losses.length ? 'bad' : 'primary') + '" data-gm="upload"' + (v.ok ? '' : ' disabled') + '>' + (losses.length ? 'Upload anyway' : 'Upload ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's')) + '</button> <progress id="gm-prog" max="' + Math.max(1, v.parts.length) + '" value="0" hidden></progress> <span id="gm-upmsg" class="gm-dim" role="status"></span></p>';
   }
   /* the pack check as a list: a warning, never an error (the rollers use a neutral word for a table the pack lacks) */
-  function modMap() { return { B68GmConsole: W.B68GmConsole, B68GmLocation: W.B68GmLocation, B68GmNpc: W.B68GmNpc, B68GmScenes: W.B68GmScenes, B68GmEngagement: W.B68GmEngagement, B68GmDowntime: W.B68GmDowntime }; }
+  function modMap() { return { B68GmConsole: W.B68GmConsole, B68GmLocation: W.B68GmLocation, B68GmNpc: W.B68GmNpc, B68GmScenes: W.B68GmScenes, B68GmEngagement: W.B68GmEngagement, B68GmDowntime: W.B68GmDowntime, B68DowntimeTables: W.B68DowntimeTables }; }
   function packWarnHtml(warns) {
     if (!warns.length) return '';
     var n = warns.reduce(function (k, w) { return k + w.missing.length; }, 0);
@@ -1278,7 +1280,7 @@
     if (!C || !cp || !isObj(cp.T)) S.conErr = !C ? 'The console module is missing.' : 'The pack has no console part. Update the pack.';
     else { try { S.con = C.create({ T: cp.T, campaign: part('campaign') || {}, state: S.doc.con || {}, mem: clone(m.console || {}) }); } catch (e) { S.conErr = 'The console could not start: ' + errText(e); } }
     S.locMem = clone(m.location || {}); S.locErr = ''; S.scnMem = clone(m.scenes || {}); S.scn = null; S.eng = null; S.npcg = null; S.npcMem = clone(m.npc || {}); S.npcRoll = null;
-    S.dt = null; S.dtRoll = null; S.dtSig = null; S.dtMem = clone(m.downtime || {});
+    S.dt = null; S.dtDists = null; S.dtRoll = null; S.dtSig = null; S.dtMem = clone(m.downtime || {});
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
     layout(); redrawAll(); subscribeNpcs(); checkPack();
@@ -2130,27 +2132,33 @@
   }
 
   /* ---------- Downtime (D): personal business, one card per activity a PC takes (app/gm/downtime.js; GM.md "Downtime (D)") ----------
-     The module's own tables (its own writing, no book text), or a pack part `downtime` over them. Everyone rolls physical dice: a tap
-     on the result IS the roll. Who: the PCs from the live sheets (api.characters(), slim copies, read on every draw) or anyone; picking
-     one prefills the vice and purveyor (panel state in dt.ui, never written to the sheet), and their own clocks and contacts fill the
-     Project and Contact selects. A card is { hid, seed, ui, mem, label, at, started? } under cards.downtime (five in hist.downtime):
-     `ui` holds the RESOLVED strings (the PC's name, the vice, the purveyor line, the contact line, the project's name, the district),
-     so a reload or an Earlier click redraws the same card after a sheet changes, and `mem` is the repeat guard before the roll (the
-     guard itself is mem.downtime). An overindulgence's option and "Overindulged?" redraw the SAME card (its seed and memory: the module
-     keeps the scene above as it was). A clock a card suggests goes onto the table's clocks, hidden (api.addClock), and the card keeps
-     its id under `started`. Nothing here goes to the iPad: the prompts and hooks are the GM's. */
+     The built-in tables (app/downtime-tables.js: original writing, no book text), or a pack part `downtime` laid over them; this page
+     names nothing of the setting (districts, purveyors and contacts come from those tables and the sheets). Everyone rolls physical
+     dice: a tap on the result IS the roll. Who: the PCs from the live sheets (api.characters(), slim copies, read on every draw) or
+     anyone; picking one prefills the vice and purveyor (panel state in dt.ui, never written to the sheet), and their own clocks and
+     contacts fill the Project and Contact selects. A card is { hid, seed, ui, mem, label, at, started? } under cards.downtime (five
+     in hist.downtime): `ui` holds the RESOLVED strings (the PC's name, the vice, the purveyor line, the contact line, the project's
+     name, the district), so a reload or an Earlier click redraws the same card after a sheet changes, and `mem` is the repeat guard
+     before the roll (the guard itself is mem.downtime). An overindulgence's option and "Overindulged?" redraw the SAME card (its seed
+     and memory: the module keeps the scene above as it was). A clock a card suggests goes onto the table's clocks, hidden
+     (api.addClock), and the card keeps its id under `started`. Nothing here goes to the iPad: the prompts and hooks are the GM's. */
   var DT_BANDS = [['13', '1–3'], ['45', '4/5'], ['6', '6'], ['crit', 'Crit']];
   var DT_NONE = '*';      /* the Project and Contact selects' "none of the sheet's"; '' follows the sheet */
   var DT_Q = '<button type="button" class="gm-q" data-gm="dt-rule" title="The rules on overindulging, in the GM screen" aria-label="The rules on overindulging, in the GM screen">?</button>';
+  /* the instance, built once per start(): the built-in tables (B68DowntimeTables, loaded before the module) with the pack's downtime
+     part laid over them; S.dtDists is the district list those tables draw from (Now in is matched against it) */
   function dtInst() {
     if (S.dt) return S.dt;
-    var M = W.B68GmDowntime, pk = part('downtime'), vices = W.B68Content && Array.isArray(W.B68Content.VICES) ? W.B68Content.VICES : [];
+    var M = W.B68GmDowntime, book = W.B68DowntimeTables, pk = part('downtime'), vices = W.B68Content && Array.isArray(W.B68Content.VICES) ? W.B68Content.VICES : [];
     if (!M || typeof M.create !== 'function') { S.dtErr = 'The downtime module is missing.'; return null; }
+    if (!isObj(book) || !isObj(book.T)) { S.dtErr = 'The downtime tables are missing.'; return null; }
+    var pack = pk && isObj(pk.T) ? pk.T : undefined, dists = function (t) { return isObj(t) && Array.isArray(t.districts) ? t.districts.map(str) : null; };
+    var cfg = function (over) { return { T: book.T, places: isObj(book.PLACES) ? book.PLACES : undefined, pack: over, vices: vices }; };
     S.dtNote = '';
-    try { S.dt = M.create({ T: pk && isObj(pk.T) ? pk.T : undefined, vices: vices }); S.dtErr = ''; }
+    try { S.dt = M.create(cfg(pack)); S.dtErr = ''; S.dtDists = dists(pack) || dists(book.T) || []; }
     catch (e) {
-      /* a pack part that lacks tables: the module's own (the Menu's Pack check names what the part lacks) */
-      try { S.dt = M.create({ vices: vices }); S.dtErr = ''; S.dtNote = 'The pack’s downtime part lacks tables, so these cards use the built-in ones.'; }
+      /* a pack part that lacks tables: the built-in ones (the Menu's Pack check names what the part lacks) */
+      try { S.dt = M.create(cfg(undefined)); S.dtErr = ''; S.dtDists = dists(book.T) || []; if (pack) S.dtNote = 'The pack’s downtime part lacks tables, so these cards use the built-in ones.'; }
       catch (x) { S.dtErr = 'The downtime cards could not start: ' + errText(x); }
     }
     return S.dt;
@@ -2180,7 +2188,7 @@
     var open = list.filter(function (c) { return +c.filled < +c.size; })[0] || list[0];
     return open ? str(open.name).trim() : '';
   }
-  /* "Vanden, a lazy Bluecoat": the line a contact is on the sheet, as the card takes it */
+  /* "Sam, a nosy neighbour": the line a contact is on the sheet, as the card takes it */
   function contactLine(c) { return str(c.name).trim() + (str(c.role).trim() ? ', ' + str(c.role).trim() : ''); }
   /* the sheet's contacts, a friend or a rival first */
   function dtContacts(pc) {
@@ -2191,13 +2199,12 @@
     var v = dtUi().contact, list = dtContacts(pc); if (v === DT_NONE) return null;
     return (v && list.filter(function (c) { return contactLine(c) === v; })[0]) || list[0] || null;
   }
-  /* Now in, as the other tools take it: the module's own spelling when its list holds the district, else as the bar has it (a downtime
-     card reads a district as words in a sentence, never as a table key); '' while Now in is anywhere (the card picks one) */
+  /* Now in, as the other tools take it: the tables' own spelling when their list holds the district (S.dtDists, set by dtInst()), else
+     as the bar has it (a downtime card reads a district as words in a sentence, never as a table key); '' while Now in is anywhere (the
+     card picks one) */
   function dtDistrict() {
     var now = nowDistrict(); if (!now) return '';
-    var M = W.B68GmDowntime, pk = part('downtime');
-    var list = pk && isObj(pk.T) && Array.isArray(pk.T.districts) ? pk.T.districts : M && M.TABLES && Array.isArray(M.TABLES.districts) ? M.TABLES.districts : [];
-    return nowIn(list.map(str)) || now;
+    return nowIn(S.dtDists || []) || now;
   }
   /* what a tap rolls: the panel's choices resolved to the strings the card keeps */
   function dtRollUi(dt, v) {

@@ -135,6 +135,38 @@ async function main() {
     expect(after.json.seq === set.json.seq && after.json.doc.mode === 'pin', 'unchanged by the refused PATCHes: ' + after.text);
   });
 
+  await step('the transcriber rides on the display read as want and session only: never a line, a name or the iPad\'s own report; the display cannot change it', async () => {
+    const MARK = 'saffron-ferry-whisper';
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    // the GM asks and names a speaker; the iPad reports an error and posts a line, each carrying the marker
+    status(await call('PATCH', '/api/gm/stt', { user: GM, body: { want: 'on', session: '9', speakers: { 0: 'Fixture ' + MARK } } }), 200);
+    status(await call('PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'error', lines: 1, error: 'broke ' + MARK } } }), 200);
+    status(await call('POST', '/api/gm/transcript', { user: IPAD, body: { lines: [{ id: 'm1', at: '2026-10-16T10:00:00.000Z', speaker: 0, text: 'overheard ' + MARK }] } }), 200);
+    const g = await call('GET', '/api/gm/display', { user: IPAD }); status(g, 200);
+    expect(Object.keys(g.json.stt).sort().join() === 'seq,session,want' && g.json.stt.want === 'on' && g.json.stt.session === '9', 'the part: ' + g.text);
+    // whichever way it is asked, nothing of the transcriber but the two values
+    for (const q of ['', '?seq=0', '?sseq=0', '?seq=0&aseq=0&sseq=0', '?seq=' + g.json.seq + '&aseq=' + g.json.ambient.seq, '?seq=' + g.json.seq + '&aseq=' + g.json.ambient.seq + '&sseq=' + g.json.stt.seq]) {
+      const r = await call('GET', '/api/gm/display' + q, { user: IPAD }); status(r, 200);
+      expect(!r.text.includes(MARK), 'a transcriber word on the display read ' + q + ': ' + r.text.slice(0, 200));
+      expect(!r.json.stt || Object.keys(r.json.stt).every((k) => ['seq', 'want', 'session', 'unchanged'].includes(k)), q + ' -> ' + JSON.stringify(r.json.stt));
+    }
+    const small = await call('GET', '/api/gm/display?seq=' + g.json.seq + '&aseq=' + g.json.ambient.seq + '&sseq=' + g.json.stt.seq, { user: IPAD });
+    expect(same(small.json.stt, { seq: g.json.stt.seq, unchanged: true }) && small.json.unchanged === true, 'all three current: ' + small.text);
+    // the iPad's own reports (they rewrite the control document every minute) do not move the part
+    status(await call('PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'listening', lines: 5, error: '' } } }), 200);
+    const quiet = await call('GET', '/api/gm/display?seq=' + g.json.seq + '&aseq=' + g.json.ambient.seq + '&sseq=' + g.json.stt.seq, { user: IPAD });
+    expect(same(quiet.json, small.json), 'a status report moved the part: ' + quiet.text);
+    // the display cannot change what it is told; a player cannot read it
+    status(await call('PATCH', '/api/gm/stt', { user: IPAD, body: { want: 'off' } }), 403);
+    status(await call('PATCH', '/api/gm/stt', { user: IPAD, body: { session: '1' } }), 403);
+    status(await call('GET', '/api/gm/display?sseq=1', { user: PLAYER }), 403);
+    expect(same((await call('GET', '/api/gm/display', { user: IPAD })).json.stt, g.json.stt), 'unchanged by the refused PATCHes');
+    // and when the GM turns it off the part follows
+    status(await call('PATCH', '/api/gm/stt', { user: GM, body: { want: 'off' } }), 200);
+    const off = await call('GET', '/api/gm/display?seq=' + g.json.seq + '&aseq=' + g.json.ambient.seq + '&sseq=' + g.json.stt.seq, { user: IPAD }); status(off, 200);
+    expect(off.json.stt.want === 'off' && off.json.stt.session === '9' && off.json.stt.seq !== g.json.stt.seq && off.json.display, 'off: ' + off.text.slice(0, 200));
+  });
+
   await step('every other route is the same 403 for the display, known or unknown, any method, before the body is read', async () => {
     const msgs = new Set();
     const routes = [['GET', '/api/gm/ambient'], ['PATCH', '/api/gm/ambient'], ['PUT', '/api/gm/ambient'], ['DELETE', '/api/gm/ambient'],

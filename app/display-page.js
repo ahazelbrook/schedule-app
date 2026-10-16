@@ -1,6 +1,8 @@
 /* The table display (#display): a full-screen page for an iPad lying in front of the players, signed in as the GM.
    It shows whatever the GM last pushed through GET /api/gm/display (GM.md): a player-safe map (svg), one NPC (npc), a line
    of text (text), a rules entry (rule), or nothing (blank). It never decides anything itself: it polls, sanitises and draws.
+   The same poll carries what the transcriber (app/stt.js) needs, so the page makes one request where it made two; and a page that
+   stays signed out for ten minutes reloads itself (Pure.createPoller, Pure.createReloader below).
    Interface: window.B68DisplayPage = { mount(container, ctx), unmount() }
    with ctx = { gm: window.claude.gm, db: window.claude.use('db'), figures: window.B68Figure, cast: window.B68Cast, isGM }, plus the
    optional ambient inputs ctx.ambientDoc, ctx.ambientTiming, ctx.onAmbientLoad (see the ambient controller below).
@@ -303,49 +305,72 @@
     if (st === 'denied') return { dot: 'bad', text: 'Not signed in as the GM' };
     if (st === 'retrying') return { dot: 'warn', text: 'Connection trouble, retrying' + (at ? ' · last update ' + at : '') };
     if (st === 'offline') return { dot: 'bad', text: 'Offline, retrying' + (at ? ' · last update ' + at : '') };
-    if (st === 'paused') return { dot: 'idle', text: 'Paused' };
     return { dot: 'ok', text: !seq ? 'Waiting for the GM' : 'Updated ' + (at || 'just now') };
   };
 
   /* ---------- the poller ----------
-     o = { fetch(seq, aseq) -> Promise, onData(display, seq, updatedAt), onAmbient(doc, aseq, updatedAt), onStatus({state, fails,
-           error}), isHidden(), timers, intervalMs (2000), slowMs (10000), failLimit (3), timeoutMs (10000) }
+     o = { fetch(seq, aseq, sseq) -> Promise, onData(display, seq, updatedAt), onAmbient(doc, aseq, updatedAt), onStt(part | null),
+           onStatus({state, fails, error}), isHidden(), timers, now(), failLimit (3), timeoutMs (10000), and the beats of Pure.POLL:
+           intervalMs, idleMs, idleAfterMs, slowMs, hiddenMs }
      One request in flight at a time; the next is scheduled only when the last has finished. States: connecting (nothing yet),
      live, retrying (1 to failLimit-1 failures in a row), offline (failLimit or more: polls every slowMs), denied (401/403, also
-     slow), paused (page hidden: nothing scheduled). The first success after a failure goes back to the fast interval.
-     Responses (GET /api/gm/display?seq=N&aseq=M): { seq, unchanged: true } (an older server, or `?seq` alone), the same with an
-     ambient part { ambient: { seq, unchanged: true } }, or { seq, display, updatedAt, ambient: { seq, unchanged: true } | { seq,
-     doc, updatedAt } }. The display redraws only when its seq moved (an ambient-only change carries the display along, and it
-     must not cross-fade the same spotlight again); the ambient part, when it holds a doc, goes to onAmbient first (so the
-     first draw already has its plan). A malformed ambient part is ignored: it never stops the spotlight. */
+     slow). The first success after a failure goes back to the fast beat.
+     The beat. Workers Free allows 100,000 requests a day for the whole site and an iPad stays on all night, so: intervalMs (4 s)
+     while anything is moving; idleMs (15 s) once nothing has changed for idleAfterMs (2 hours: not the display, the ambient or the
+     transcriber's part), until the next change brings the fast beat back; slowMs (10 s) while offline or denied, never faster than the
+     beat before it; and hiddenMs (a minute) while the page is hidden, never faster than any of them. A hidden page keeps looking
+     because the transcriber's part rides on this poll: the GM's Stop must reach a microphone left open in a background tab. Becoming
+     visible, or the network coming back, polls at once (kick).
+     Responses (GET /api/gm/display?seq=N&aseq=M&sseq=K): { seq, unchanged: true } (an older server, or `?seq` alone), the same with
+     an ambient part { ambient: { seq, unchanged: true } } and a transcriber part { stt: { seq, unchanged: true } }, or { seq,
+     display, updatedAt, ambient: { seq, unchanged: true } | { seq, doc, updatedAt }, stt: { seq, unchanged: true } | { seq, want,
+     session } }. The display redraws only when its seq moved (an ambient-only change carries the display along, and it must not
+     cross-fade the same spotlight again); the ambient part, when it holds a doc, goes to onAmbient first (so the first draw already
+     has its plan), then the transcriber part to onStt. A malformed ambient or transcriber part is ignored: it never stops the
+     spotlight. onStt(part) gets { seq, want, session } when the part changed, and null once when an answer has no usable part
+     (an older server: app/stt.js then asks for itself). */
+  Pure.POLL = { intervalMs: 4000, idleMs: 15000, idleAfterMs: 2 * 3600 * 1000, slowMs: 10000, hiddenMs: 60000 };
   Pure.ambientPart = function (r) {
     var a = r && r.ambient;
     if (!isObj(a) || typeof a.seq !== 'number' || !isFinite(a.seq)) return null;
     if (a.unchanged === true) return { seq: a.seq, unchanged: true };
     return isObj(a.doc) ? { seq: a.seq, doc: a.doc, updatedAt: typeof a.updatedAt === 'string' ? a.updatedAt : null } : null;
   };
+  /* the transcriber's part of an answer: { seq, unchanged: true } | { seq, want: 'on' | 'off', session } | null (absent or malformed) */
+  Pure.sttPart = function (r) {
+    var a = r && r.stt;
+    if (!isObj(a) || typeof a.seq !== 'number' || !isFinite(a.seq)) return null;
+    if (a.unchanged === true) return { seq: a.seq, unchanged: true };
+    if (a.want !== 'on' && a.want !== 'off') return null;
+    return { seq: a.seq, want: a.want, session: typeof a.session === 'string' ? a.session.slice(0, 12) : '' };
+  };
   Pure.createPoller = function (o) {
     var T = o.timers || { setTimeout: function (f, ms) { return setTimeout(f, ms); }, clearTimeout: function (id) { clearTimeout(id); } };
-    var fast = o.intervalMs || 2000, slow = o.slowMs || 10000, limit = o.failLimit || 3, tmo = o.timeoutMs || 10000;
-    var seq = null, aseq = null, fails = 0, timer = null, inflight = false, running = false, gen = 0, state = 'connecting', lastErr = null;
+    var B = Pure.POLL, fast = o.intervalMs || B.intervalMs, idleBeat = o.idleMs || B.idleMs, idleAfter = o.idleAfterMs || B.idleAfterMs,
+        slow = o.slowMs || B.slowMs, hiddenBeat = o.hiddenMs || B.hiddenMs, limit = o.failLimit || 3, tmo = o.timeoutMs || 10000;
+    var clock = o.now || function () { return Date.now(); };
+    var seq = null, aseq = null, sseq = null, sttSeen = null, movedAt = null, fails = 0, timer = null, inflight = false, running = false, gen = 0, state = 'connecting', lastErr = null;
     function hidden() { return !!(o.isHidden && o.isHidden()); }
     function setState(s) {
       if (s === state) return;
       state = s;
       if (o.onStatus) { try { o.onStatus({ state: s, fails: fails, error: lastErr }); } catch (e) { /* the page must not stop the poller */ } }
     }
-    function delay() { return fails >= limit || state === 'denied' ? slow : fast; }
+    /* movedAt: when the display, the ambient or the transcriber's part last changed (or the poller started) */
+    function delay() {
+      var d = movedAt !== null && clock() - movedAt >= idleAfter ? idleBeat : fast;
+      if (fails >= limit || state === 'denied') d = Math.max(d, slow);
+      return hidden() ? Math.max(d, hiddenBeat) : d;
+    }
     function clearTimer() { if (timer !== null) { T.clearTimeout(timer); timer = null; } }
     function schedule() {
       clearTimer();
       if (!running) return;
-      if (hidden()) { setState('paused'); return; }
       timer = T.setTimeout(tick, delay());
     }
     function tick() {
       timer = null;
       if (!running) return;
-      if (hidden()) { setState('paused'); return; }
       if (inflight) return;
       inflight = true;
       var myGen = gen, done = false, guard = T.setTimeout(function () { finish(new Error('timeout')); }, tmo);
@@ -356,49 +381,112 @@
         inflight = false;
         if (!running) return;
         if (!err && !(r && typeof r === 'object' && typeof r.seq === 'number' && (r.unchanged === true || (r.display && typeof r.display === 'object')))) err = new Error('bad response');
-        var amb = err ? null : Pure.ambientPart(r);
+        var amb = err ? null : Pure.ambientPart(r), stt = err ? null : Pure.sttPart(r);
         if (err) {
           fails++; lastErr = err;
           var code = err.status;
           setState(code === 401 || code === 403 ? 'denied' : fails >= limit ? 'offline' : 'retrying');
         } else {
           fails = 0; lastErr = null;
+          var moved = false;
           if (amb) {
+            if (amb.seq !== aseq) moved = true;
             aseq = amb.seq;
             if (!amb.unchanged && o.onAmbient) { try { o.onAmbient(amb.doc, amb.seq, amb.updatedAt); } catch (e) { /* ditto */ } }
           }
+          if (stt) {
+            if (stt.seq !== sseq) moved = true;
+            sseq = stt.seq; sttSeen = true;
+            if (!stt.unchanged && o.onStt) { try { o.onStt({ seq: stt.seq, want: stt.want, session: stt.session }); } catch (e) { /* ditto */ } }
+          } else if (sttSeen !== false) {
+            sttSeen = false;
+            if (o.onStt) { try { o.onStt(null); } catch (e) { /* ditto */ } }
+          }
           if (r.unchanged !== true && r.seq !== seq) {
+            moved = true;
             seq = r.seq;
             if (o.onData) { try { o.onData(r.display, r.seq, r.updatedAt || null); } catch (e) { /* ditto */ } }
           }
+          if (moved) movedAt = clock();
           setState('live');
         }
         schedule();
       }
       var p;
-      try { p = Promise.resolve(o.fetch(seq, aseq)); } catch (e) { p = Promise.reject(e); }
+      try { p = Promise.resolve(o.fetch(seq, aseq, sseq)); } catch (e) { p = Promise.reject(e); }
       p.then(function (r) { finish(null, r); }, function (e) { finish(e || new Error('failed')); });
     }
     return {
-      start: function () { if (running) return; running = true; gen++; fails = 0; tick(); },
+      start: function () { if (running) return; running = true; gen++; fails = 0; movedAt = clock(); tick(); },
       stop: function () { running = false; gen++; inflight = false; clearTimer(); },
-      /* the page became hidden or visible, or the network came back: pause, or poll at once */
+      /* the page became hidden or visible, or the network came back: a hidden page waits out the hidden beat from now, a visible one polls at once */
       kick: function () {
-        if (!running) return;
-        if (hidden()) { clearTimer(); setState('paused'); return; }
-        if (inflight) return;
+        if (!running || inflight) return;
+        if (hidden()) { schedule(); return; }
         clearTimer(); tick();
       },
       /* the network is back: forget the backoff */
       reset: function () { fails = 0; if (state === 'offline' || state === 'retrying') state = 'connecting'; },
       seq: function () { return seq; },
       aseq: function () { return aseq; },
+      sseq: function () { return sseq; },
       state: function () { return state; },
       fails: function () { return fails; }
     };
   };
 
-  /* ---------- the ambient floor (AMBIENT-PLAN.md) ----------
+  /* ---------- the way out of "denied" ----------
+     When the Access sign-in ends, the adapter (app/runtime/cf.js) refuses every call from then on, for good, and nothing on the
+     page can bring it back: "Not signed in as the GM" stays up until someone reloads, and nobody touches an iPad on the table's
+     stand for hours. So the page reloads itself after deniedMs (10 minutes) signed out: a reload asks Access again, which re-issues
+     the sign-in while the single sign-on session is still good, and otherwise shows its sign-in page, which is what a person has to
+     see. At most once per gapMs (30 minutes): the time of the last reload is kept in storage (last, remember), so a page that comes
+     back still denied (a person has to sign in, or the email is not allowed) does not reload in a loop, it tries again later. With
+     no storage to keep that time in, it never reloads: a stale word is better than a loop.
+     o = { last() -> ms | null, remember(ms) -> true | false, reload(), timers, now(), deniedMs, gapMs }
+     -> { state(name) (the poller's states, as they change), stop() } */
+  Pure.RELOAD = { deniedMs: 10 * 60 * 1000, gapMs: 30 * 60 * 1000, key: 'b68.display.reload' };
+  Pure.createReloader = function (o) {
+    var T = o.timers || { setTimeout: function (f, ms) { return setTimeout(f, ms); }, clearTimeout: function (id) { clearTimeout(id); } };
+    var R = Pure.RELOAD, deniedMs = o.deniedMs || R.deniedMs, gapMs = o.gapMs || R.gapMs, clock = o.now || function () { return Date.now(); };
+    var since = null, timer = null, went = false, future = null;
+    function clearTimer() { if (timer !== null) { T.clearTimeout(timer); timer = null; } }
+    function arm(ms) { clearTimer(); timer = T.setTimeout(check, Math.max(1000, ms)); }
+    function check() {
+      timer = null;
+      if (since === null || went) return;
+      var now = clock(), last = o.last();
+      if (last !== null && last > now) { if (future === null) future = now; last = future; }   /* a clock set back: count the half hour from when this was seen */
+      else future = null;
+      var wait = Math.max(since + deniedMs - now, last === null ? 0 : last + gapMs - now);
+      if (wait > 0) { arm(wait); return; }
+      if (!o.remember(now)) return;                               /* nowhere to note it: stay as it is, rather than risk a loop */
+      went = true;
+      o.reload();
+    }
+    return {
+      state: function (name) {
+        if (name === 'denied') { if (since === null) { since = clock(); arm(deniedMs); } }
+        else if (since !== null) { since = null; clearTimer(); }
+      },
+      stop: function () { since = null; clearTimer(); }
+    };
+  };
+  /* where the page keeps the time of its last reload (win is the window): localStorage and sessionStorage both, so that either one
+     being blocked (private mode, a full quota) loses nothing, and the newer time counts. remember() says whether one of them took it. */
+  Pure.reloadStore = function (win) {
+    function each(fn) { ['localStorage', 'sessionStorage'].forEach(function (name) { try { fn(win[name]); } catch (e) { /* blocked: the other one */ } }); }
+    return {
+      last: function () {
+        var best = null;
+        each(function (st) { var n = Number(st.getItem(Pure.RELOAD.key)); if (isFinite(n) && n > 0 && (best === null || n > best)) best = n; });
+        return best;
+      },
+      remember: function (ms) { var kept = false; each(function (st) { st.setItem(Pure.RELOAD.key, String(ms)); kept = true; }); return kept; }
+    };
+  };
+
+  /* ---------- the ambient floor (GM.md, "Ambient scenes"; the plan: docs/history/AMBIENT-PLAN.md) ----------
      When no spotlight is up the display plays a self-contained scene full screen and rotates it. The registry below is the only
      source of a scene's URL (`ambient/<file>`, relative to the app root): nothing from the server ever becomes a URL. `needs`
      says what a scene waits for ('score' gates it; 'crew' is advisory, the watch feed has its own defaults); `pinOnly` keeps a
@@ -540,7 +628,7 @@
     if (!isObj(next)) return false;
     return !isObj(prev) || prev.heat !== next.heat || prev.wanted !== next.wanted;
   };
-  /* the four crew polaroids on the score scenes: cast id -> caption (the generator's constant; AMBIENT-PLAN.md 4.3) */
+  /* the four crew polaroids on the score scenes: cast id -> caption (the generator's constant; docs/history/AMBIENT-PLAN.md 4.3) */
   Pure.POLAROIDS = [{ id: 'booker', cap: 'Babel' }, { id: 'alfie', cap: 'Ashtray & Buck' }, { id: 'stacey', cap: 'Stacey' }, { id: 'loader', cap: '99.47' }];
   /* scoreMessage(score, polaroids, env) -> the message a score scene is sent in reply to its b68:ready, or null with no score.
      `board` and `iso` are the score's svgs run through the sanitiser again here (normal cap) and sent as its markup, '' when one
@@ -1039,7 +1127,7 @@
     ctx = ctx || {};
     var s = S = {
       container: container, ctx: ctx, offs: [], timers: [], stages: [], current: null, token: 0, seq: 0, updatedAt: null,
-      poll: { state: 'connecting' }, poller: null, wake: null, wakeWanted: true, enteredFs: false, dead: false
+      poll: { state: 'connecting' }, poller: null, reloader: null, wake: null, wakeWanted: true, enteredFs: false, dead: false
     };
     container.classList.add('dp-root');
     container.innerHTML = '';
@@ -1319,12 +1407,24 @@
       swap(noteStage('', 'The table display runs on the GM’s sign-in.'));
       stext.textContent = 'Not signed in as the GM'; dot.className = 'dp-dot dp-dot-bad';
     } else {
+      /* signed out for good (the adapter refuses every call once Access has ended the session): reload, once in a while (Pure.createReloader) */
+      var reloads = Pure.reloadStore(window);
+      s.reloader = Pure.createReloader({
+        timers: { setTimeout: later, clearTimeout: clearLater },
+        now: function () { return Date.now(); },
+        last: reloads.last, remember: reloads.remember,
+        reload: function () { try { window.location.reload(); } catch (e) { /* the page stays as it is */ } }
+      });
       s.poller = Pure.createPoller({
-        fetch: function (seq, aseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq); },
+        /* sseq rides as a third argument: the adapter (app/runtime/cf.js) forwards it as ?sseq= to make the unchanged answer
+           the small one; an adapter that does not simply gets the transcriber part in full each time */
+        fetch: function (seq, aseq, sseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq); },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },
+        /* the transcriber's part of the answer goes to app/stt.js, which then makes no request of its own for it */
+        onStt: function (part) { if (s.stt && typeof s.stt.feed === 'function') { try { s.stt.feed(part); } catch (e) { /* the page goes on */ } } },
         onData: function (display, seq, at) { s.seq = seq; s.updatedAt = at; paintStatus(); show(display, seq); },
-        onStatus: function (p) { s.poll = p; paintStatus(); }
+        onStatus: function (p) { s.poll = p; paintStatus(); s.reloader.state(p.state); }
       });
       s.poller.start();
       /* the transcriber (app/stt.js): idle until the GM presses Start listening, then one tap here opens the mic */
@@ -1392,6 +1492,7 @@
     var s = S; if (!s) return;
     S = null; s.dead = true; s.token++;
     if (s.poller) s.poller.stop();
+    if (s.reloader) s.reloader.stop();
     if (s.stt) { try { s.stt.destroy(); } catch (e) {} s.stt = null; }
     if (s.amb) { try { s.amb.destroy(); } catch (e) {} s.amb = null; }
     s.timers.forEach(function (id) { clearTimeout(id); }); s.timers = [];
