@@ -25,6 +25,9 @@
 //   prep      the prep notes: every note under the '68 folder with `gm_prep: true`, cut into Markdown blocks with their
 //             transclusions carried in, each task box with its anchor (lib/prep-export.mjs). No such note: no part.
 //
+//   screen    the GM screen: the note under the '68 folder with `gm_screen: true`, cut at its ## headings into sections
+//             of Markdown (lib/screen-export.mjs). No such note: no part.
+//
 // F (the figure map) comes from the vault page Tools/blades-68-npc-figure-map.md, read as JSON from fenced code blocks:
 //   ```json F          the whole F object (use this form for a small map), or
 //   ```json F.<key>    one top-level key of F per block (e.g. ```json F.faction), merged in page order.
@@ -40,6 +43,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { basenames } from "./lib/vault.mjs";
 import { buildPrep } from "./lib/prep-export.mjs";
+import { buildScreen } from "./lib/screen-export.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..");
@@ -663,6 +667,11 @@ function buildPrepPart(vault, exportedAt) {
   return buildPrep({ vault, repo: REPO, exportedAt, basenames: basenames(vault), warn });
 }
 
+// ---- part: screen -------------------------------------------------------------------------------------
+function buildScreenPart(vault, exportedAt) {
+  return buildScreen({ vault, repo: REPO, exportedAt, warn });
+}
+
 // ---- main ---------------------------------------------------------------------------------------------
 function main() {
   const a = args(process.argv.slice(2));
@@ -677,13 +686,13 @@ function main() {
 
   const parts = {};
   const failures = [];
-  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["engagement", buildEngagement], ["prep", buildPrepPart]];
+  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["engagement", buildEngagement], ["prep", buildPrepPart], ["screen", buildScreenPart]];
   let npcLeverage = 0;
   let locationExtraNames = [];
   for (const [name, fn] of builders) {
     try {
       const part = fn(vault, now);
-      if (part === null) continue;                           // an optional part with nothing to carry (prep)
+      if (part === null) continue;                           // an optional part with nothing to carry (prep, screen)
       if (name === "location") { locationExtraNames = part._extraNames; delete part._extraNames; }
       if (name === "npc") { npcLeverage = part._leverage; delete part._leverage; }
       const old = prev && prev.parts && prev.parts[name];
@@ -733,6 +742,8 @@ function main() {
     const pr = parts.prep;
     console.log("  prep: " + (pr ? pr.notes.length + " note(s), " + pr.notes.reduce((n, x) => n + x.blocks.length, 0) + " blocks, " +
       pr.notes.reduce((n, x) => n + x.blocks.reduce((m, b) => m + b.tasks.length, 0), 0) + " task boxes, " + Object.keys(pr.links).length + " linked pages" : "none (no note has gm_prep: true)"));
+    const sc = parts.screen;
+    console.log("  screen: " + (sc ? sc.sections.length + " sections from " + path.basename(sc.rel) : "none (no note has gm_screen: true)"));
   }
   for (const [name, part] of Object.entries(parts)) {
     const n = Buffer.byteLength(JSON.stringify(part));

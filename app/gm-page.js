@@ -874,7 +874,7 @@
     if (S.panel === 'ipad') loadAmbient();
   }
   function layout() {
-    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['cards', 'Cards'], ['ipad', 'iPad'], ['state', 'State']];
+    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['cards', 'Cards'], ['rules', 'Screen'], ['ipad', 'iPad'], ['state', 'State']];
     S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '" data-view="' + esc(S.view) + '">' +
       '<div class="gm-head"><div class="gm-title"><p class="gm-kick">GM tools <span id="gm-save" class="gm-save" role="status"></span></p>' + '<h1 class="gm-h" tabindex="-1">The console</h1><p class="gm-exp" id="gm-exp"></p></div>' +
       '<div class="gm-acts"><a class="btn sm primary" href="#display" id="gm-display" title="The players’ screen: open this on the iPad">Display</a>' + '<button type="button" class="btn sm" data-gm="note">Export tonight’s note</button><button type="button" class="btn sm" data-gm="update">Update pack</button>' + '<button type="button" class="btn sm" data-gm="forget">Forget GM data on this device</button></div></div>' +
@@ -885,7 +885,7 @@
       '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"><span class="gm-lab">Scene</span>' + '<span class="gm-scene-chips" id="gm-scene-chips"></span></button>' +
       '<div class="gm-controls" id="gm-controls"></div><div class="gm-buttons" id="gm-buttons"></div><div class="gm-singles" id="gm-singles"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      [['prep', 'Prep', 'R'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['cards', 'Cards', 'O'], ['rules', 'Rules', 'T'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
+      [['prep', 'Prep', 'R'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['cards', 'Cards', 'O'], ['rules', 'Screen', 'T'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
       '</div><div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
       '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
       '<div class="gm-foot" id="gm-foot"></div>' +
@@ -901,7 +901,7 @@
   }
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); syncPanels(); renderView(); renderPrep(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
+    syncHead(); syncPanels(); renderView(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
   }
   function syncHead() {
     var e = $q('#gm-exp'); if (!e) return;
@@ -1762,13 +1762,49 @@
   }
   function B68slug(s) { return str(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 
-  /* ---------- the Rules tab ---------- */
+  /* ---------- the Screen tab (T): the GM screen from the pack's `screen` part, then the full rules search ----------
+     The part (scripts/lib/screen-export.mjs) is the vault note with gm_screen: true, cut at its ## headings. Jump chips,
+     a filter over the sections' text, and Show on iPad (a 'rule' display, as the rules page sends). Drawn once per part
+     version, so the filter and the scroll survive a redraw. */
   var RULE_TERMS = ['position and effect', 'resistance', 'devil’s bargain', 'harm', 'heat', 'engagement roll', 'flashback', 'stress', 'trauma', 'clocks', 'teamwork', 'gather information'];
+  function screenSections() { var sc = part('screen'); return isObj(sc) && Array.isArray(sc.sections) ? sc.sections.filter(function (s) { return isObj(s) && s.id && s.md; }) : []; }
   function renderRules() {
     var box = $q('#gm-rules'); if (!box) return;
-    var R = W.B68Rules, on = !!(R && R.available && R.available());
-    box.innerHTML = on ? '<form class="gm-rulesq" data-gm-form="rules"><label class="gm-field wide" for="gm-rq"><span class="gm-lab">Search the rules (opens a new tab)</span>' + '<input type="search" id="gm-rq" autocomplete="off" placeholder="push yourself, gambits…"></label><button type="submit" class="btn primary">Search</button></form>' +
-      '<p class="gm-chips">' + RULE_TERMS.map(function (t) { return '<a class="chip sm" target="_blank" rel="noopener" href="#rules?q=' + encodeURIComponent(t) + '">' + esc(t) + '</a>'; }).join('') + '</p>' : '<p class="gm-note">The rules are not available here.</p>';
+    var sc = part('screen'), list = screenSections(), p = S.pack && S.pack.parts && S.pack.parts.screen;
+    var key = list.length ? 'v:' + (p && p.version || (p && p.src && p.src.blockSha) || list.length) : 'none';
+    if (box.getAttribute('data-gs') === key && box.firstChild) return;
+    box.setAttribute('data-gs', key);
+    var R = W.B68Rules, on = !!(R && R.available && R.available()), h = '';
+    if (list.length) {
+      h += '<div class="gs"><div class="gs-top"><label class="gm-field wide" for="gm-gs-q"><span class="gm-lab">Find on the screen</span>' +
+        '<input type="search" id="gm-gs-q" autocomplete="off" placeholder="armour, heat, a district…"></label>' +
+        '<p class="gm-chips gs-jump">' + list.map(function (s) { return '<button type="button" class="chip sm" data-gm="gs-jump" data-id="' + esc(s.id) + '">' + esc(s.title) + '</button>'; }).join('') + '</p></div>' +
+        (sc.intro ? '<div class="gs-intro pp-doc">' + md(sc.intro) + '</div>' : '') +
+        list.map(function (s) {
+          return '<section class="gs-sec" id="gs-' + esc(s.id) + '" data-gs="' + esc(s.id) + '"><h3 class="gs-h"><span>' + esc(s.title) + '</span>' +
+            '<button type="button" class="btn sm" data-gm="gs-ipad" data-id="' + esc(s.id) + '" title="Show this section on the iPad">Show on iPad</button></h3><div class="gs-body pp-doc">' + md(s.md) + '</div></section>';
+        }).join('') + '<p class="gm-dim gs-none" hidden>Nothing on the screen matches.</p></div>';
+    } else h += '<p class="gm-note">No GM screen in the pack yet. It comes from the vault note with <code>gm_screen: true</code>: run <code>npm run gm:pack</code>, then push the pack.</p>';
+    h += '<section class="gs-rules"><h3 class="gm-band">The full rules</h3>' + (on ? '<form class="gm-rulesq" data-gm-form="rules"><label class="gm-field wide" for="gm-rq"><span class="gm-lab">Search the rules (opens a new tab)</span>' + '<input type="search" id="gm-rq" autocomplete="off" placeholder="push yourself, gambits…"></label><button type="submit" class="btn primary">Search</button></form>' +
+      '<p class="gm-chips">' + RULE_TERMS.map(function (t) { return '<a class="chip sm" target="_blank" rel="noopener" href="#rules?q=' + encodeURIComponent(t) + '">' + esc(t) + '</a>'; }).join('') + '</p>' : '<p class="gm-note">The rules are not available here.</p>') + '</section>';
+    box.innerHTML = h;
+  }
+  /* every word of the query somewhere in a section's title or text */
+  function filterScreen(q) {
+    var box = $q('#gm-rules'); if (!box) return;
+    var words = str(q).toLowerCase().split(/\s+/).filter(Boolean), shown = 0;
+    box.querySelectorAll('.gs-sec').forEach(function (sec) {
+      var t = sec.textContent.toLowerCase(), hit = words.every(function (w) { return t.indexOf(w) >= 0; });
+      sec.hidden = !hit; if (hit) shown++;
+      var chip = box.querySelector('[data-gm="gs-jump"][data-id="' + sec.getAttribute('data-gs') + '"]'); if (chip) chip.hidden = !hit;
+    });
+    var none = box.querySelector('.gs-none'); if (none) none.hidden = shown > 0;
+  }
+  function screenJump(id) { var sec = $q('#gm-rules [data-gs="' + str(id).replace(/"/g, '') + '"]'); if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+  function screenToIpad(id) {
+    var s = screenSections().filter(function (x) { return x.id === id; })[0]; if (!s) return;
+    pushDisplay({ kind: 'rule', title: s.title.slice(0, 2000), caption: 'GM screen', md: s.md.slice(0, 40000) })
+      .then(function () { toast('On the iPad: ' + s.title + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
   }
 
   /* ---------- the rail ---------- */
@@ -1946,6 +1982,8 @@
       case 'prep-wide': S.prepWide = !S.prepWide; try { W.localStorage.setItem(PREP_WIDE, S.prepWide ? '1' : '0'); } catch (e) {} syncPanels(); break;
       case 'prep-peekx': { var pk2 = $q('#gm-prep-peek'); if (pk2) { pk2.hidden = true; pk2.innerHTML = ''; } break; }
       case 'pin': pin(b.getAttribute('data-tool')); break;
+      case 'gs-jump': screenJump(b.getAttribute('data-id')); break;
+      case 'gs-ipad': screenToIpad(b.getAttribute('data-id')); break;
       case 'copy': copy(b.getAttribute('data-tool')); break;
       case 'locroll': rollLocation(); break;
       case 'scnroll': rollScenes(); break;
@@ -2010,7 +2048,7 @@
     else if (k === 'rules') { var q = $q('#gm-rq'); if (q && q.value.trim()) { try { W.open('#rules?q=' + encodeURIComponent(q.value.trim()), '_blank', 'noopener'); } catch (e) {} } }
   }
   function wire(el) {
-    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); }
+    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); }
     if (!wire.global) {
       wire.global = true;
       document.addEventListener('keydown', onKey, true);
