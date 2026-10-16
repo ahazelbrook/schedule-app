@@ -56,7 +56,9 @@ module.exports = function build() {
     const spec = L.pc(c.id);
     const fig = L.fig(spec, { id: "cr-" + c.id, frames: moves[c.id] });
     const big = L.at(fig, 1140, 1190, 0.42);
-    const silBig = L.at(sil[c.id], 1140, 1190, 0.42, `fill="${c.deep}"`);
+    // the silhouette again, big: its ids renamed, so no id is defined twice (a reference resolves to the first copy, and that
+    // one sits in another shot, display:none, which older WebKit does not resolve into)
+    const silBig = L.at(sil[c.id], 1140, 1190, 0.42, `fill="${c.deep}"`).split("sil-" + c.id).join("silb-" + c.id);
     const nameSize = c.name.length > 18 ? 104 : 124;
     shot("c" + i, `<rect class="wipe" x="0" y="0" width="0" height="${H}" fill="${c.deep}"/>
       <g opacity=".22">${rings(1140, 640, 8, 80, C.paper100, 4)}</g>
