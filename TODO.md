@@ -140,8 +140,8 @@ additive secrets on deploy; schema.sql = migrations.
       opposite. Treat 401 as pending-until-sign-in, say "reload to sign in, notes kept", resend. · S-M
 - [ ] E18 P3 · Capture alone can hit the 240 KiB soft cap, after which every roll is refused; cap by bytes, drop the
       oldest. · S
-- [ ] E17 P3 · Dead weight: SITUATIONS_DEFAULT's no-Situations branch, the Classic layout fallback (decide after a few
-      sessions on the new layout). · S
+- [x] E17 · Decided 16 Oct: the Classic console view and the Classic page layout go entirely (one mode). Done on the
+      gm-page branch.
 - [ ] E3 P2 · Two players ticking different clocks within ~4 s lose one (the campaign PATCH sends the whole array). A
       per-clock operation applied inside the server's write loop and mirrored in cf.js. · M (contract change)
 - [ ] E4 P2 · Workers Free budget: an always-on iPad polls display every 2 s and stt every 4 s (≈65k requests/day);
@@ -160,15 +160,15 @@ additive secrets on deploy; schema.sql = migrations.
 
 - Scheduling (phases 2, 3, 6 of docs/history/ROADMAP.md): November/December.
 - E11 · The seven hidden NPCs' names and look lines are in the public repo (`app/figures/npcs.js`, migration 0003).
-  Decision for Alex: seed them from gm-private instead, or make the repo private.
+  Decided 16 Oct: leave as is.
 - E12 · Make the CSP enforcing once the report-only header shows nothing for a few sessions.
 - Vendored map kit bug: the player layer titles a plan/section level after a hidden room (worked around in the page).
 
-## Questions for Alex
+## Decisions (16 Oct)
 
-1. The NPC seed in the public repo (above): keep as is, seed privately, or make the repo private?
-2. Classic view and Classic layout: keep them as fallbacks for a few sessions, or remove them now?
-3. The phone roll panel as a bottom sheet (C1) changes how the sheet feels: happy to try it for a session?
+1. The NPC seed in the public repo: leave as is.
+2. Classic view and Classic layout: removed; one mode.
+3. The phone roll panel as a bottom sheet (C1): yes, try it.
 
 ## Done
 
