@@ -15,10 +15,10 @@ the overindulgence lines follow Blades in the Dark (check them against the '68 b
 Checks: `checks/runtime/gm-downtime.test.mjs` (9), gm-page.test (109), gm.e2e (231), all of `npm test` (705).
 
 **Then, in order:**
-1. The final verification on 13b632e (`npm test`, `npm run check:e2e-all`: 26 of 27 expected, gm-stt's fake microphone
-   fails in the cloud container, also on untouched main; "port … is already in use" means two runs collided: re-run that
-   check alone with `PORT=<free>`).
-2. Update PR #26's description, mark it ready and merge to main (Alex asked for everything merged). Merging does not deploy.
+1. ~~The final verification~~ DONE on 13b632e: `npm test` 705 PASS, 0 FAIL; `npm run check:e2e-all` 26 of 27 (only
+   gm-stt, its same four fake-microphone lines, as on untouched main).
+2. ~~Update PR #26's description, mark it ready and merge to main~~ (doing it now; Alex asked for everything merged).
+   Merging does not deploy.
 3. Deploy (Alex, from the Windows PC; SETUP.md "Updating the app" has it in seven plain steps): `npm run deploy` from
    **Git Bash** (not plain wrangler: the script stamps the build, which is how phones learn of a new version). It needs a
    clean tree; `app/media/theme.mp3` and `app/ambient/calling-cards.html` on disk; `B68_GM_EMAILS=ahazelbrook@gmail.com`;
