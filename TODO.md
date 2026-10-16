@@ -176,6 +176,32 @@ additive secrets on deploy; schema.sql = migrations.
 3. The phone roll panel as a bottom sheet (C1): yes, try it. Then: everyone rolls physical dice, so the strip is for
    MARKING what happened (stress, harm, resist), and the in-app roll is secondary.
 
+## Handover: how to pick this up in a new session
+
+Everything is on GitHub, nothing lives only in a container.
+
+- **This branch** `ccr-e0dcd379-q104ac` (draft PR #26) holds this list and `docs/review/` (the four review reports:
+  A the GM page, B the generators, C the players' side, E engineering; their findings are numbered as above).
+- **Wave-1 work branches on origin**, each started from main (7fce4b9) and worked by its own agent with a brief that is
+  the matching section above:
+  | branch | holds | state when saved |
+  |---|---|---|
+  | `review/gm-page` | section 1 (the GM page table-first, Classic removed) | the agent's own commits |
+  | `review/engineering` | section 4 (timeouts, service worker, lazy loading, deploy receipt, docs) | the agent's own commits |
+  | `review/ambient-wip` | section 0 (the three iPad bugs) | a WIP snapshot of uncommitted work; superseded by `review/ambient` when it lands |
+  | `review/players-wip` | section 3 (the phone sheet: mark strip, resist helper, first screen, table page) | WIP snapshot; superseded by `review/players` |
+  | `review/generators-wip` | section 2 (the pure modules) | WIP snapshot; superseded by `review/generators` |
+- **To resume:** `git fetch origin && git checkout ccr-e0dcd379-q104ac`, then for each work branch, in this order
+  (ambient, generators, gm-page, players, engineering): read its log and diff, run the checks its section names
+  (`npm test` plus the e2e checks: `check:gm`, `check:gm-scenes`, `check:cast`, `check:phone`, `check:offline`, the
+  page checks in `app/checks/`, `check:ambient`, `check:display-ambient`), fix what is red, `git merge --no-ff` it
+  into this branch, push. Conflicts to expect: `app/boot.js` and `app/index.html` (players vs engineering: strings and
+  the theme switch vs the lazy-loading script list), `GM.md` (gm-page vs engineering doc fixes). A `-wip` snapshot
+  that was never superseded means that agent did not finish: treat its diff as a draft, finish the section's items
+  from it, and commit properly.
+- **Then wave 2** (above), one branch per item group, same rules. Merge into main only with everything green, and
+  never deploy on a game day.
+
 ## Done
 
 - 67a1e0d · TODO: the first cut of this list.
