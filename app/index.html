@@ -1,5 +1,25 @@
 <meta charset="utf-8">
 <title>Blades '68</title>
+<script>
+/* The theme, before anything paints (so Night does not flash paper): the choice a player made with the switch in the footer
+   (localStorage b68.theme: "dark" = Night, "light" = Paper), else nothing is set and the tokens below follow the device
+   (prefers-color-scheme). The switch is wired here too, by delegation, so it works whatever loads later. Storage may be
+   blocked (a private window, a sandboxed frame): then the choice lasts for the visit only. */
+(function () {
+  var KEY = 'b68.theme', root = document.documentElement, mem = '';
+  function read() { try { var t = localStorage.getItem(KEY); return t === 'dark' || t === 'light' ? t : ''; } catch (e) { return mem; } }
+  function apply(t) { if (t) root.setAttribute('data-theme', t); else root.removeAttribute('data-theme'); }
+  function mark() { var cur = read() || 'auto', bs = document.querySelectorAll('[data-theme-set]'); for (var i = 0; i < bs.length; i++) bs[i].setAttribute('aria-pressed', bs[i].getAttribute('data-theme-set') === cur ? 'true' : 'false'); }
+  apply(read());
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mark); else mark();
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-theme-set]') : null; if (!b) return;
+    var v = b.getAttribute('data-theme-set'); v = v === 'dark' || v === 'light' ? v : '';
+    mem = v; try { if (v) localStorage.setItem(KEY, v); else localStorage.removeItem(KEY); } catch (x) {}
+    apply(v); mark();
+  });
+})();
+</script>
 <link rel="stylesheet" href="tracker.css">
 <link rel="stylesheet" href="campaign.css">
 <link rel="stylesheet" href="crewsheet.css">
@@ -16,7 +36,7 @@
      down a sheet on the right; Back / Next sit at the foot of the sheet. Paper theme by default, Night in dark. */
   :root {
     --paper: #f2ede1; --card: #fbf8f1; --inset: #e8e2d4; --hair: #dcd4c2;
-    --ink: #14110e; --ink-soft: #55504a; --ink-faint: #8e8880; --rule: #14110e; --on-ink: #fbf8f1;
+    --ink: #14110e; --ink-soft: #55504a; --ink-faint: #6a645e; --rule: #14110e; --on-ink: #fbf8f1;
     --accent: #b8481a; --on-accent: #fbf8f1; --mustard: #e8c33c; --on-mustard: #14110e;
     --alarm: #a8210f; --ok: #41633e; --focus: #b8481a; --shadow-ink: #14110e;
     --chart: #e8e2d4; --chart-ink: #14110e;
@@ -30,15 +50,15 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --paper: #1a1a1c; --card: #2a2521; --inset: #14110e; --hair: #55504a;
-      --ink: #f2ede1; --ink-soft: #c9c3b8; --ink-faint: #8e8880; --rule: #f2ede1; --on-ink: #14110e;
-      --accent: #e0691e; --on-accent: #14110e; --alarm: #d9736e; --ok: #6e8f6a; --focus: #e8c33c; --shadow-ink: #b8481a;
+      --ink: #f2ede1; --ink-soft: #c9c3b8; --ink-faint: #9a948c; --rule: #f2ede1; --on-ink: #14110e;
+      --accent: #e8742a; --on-accent: #14110e; --alarm: #d9736e; --ok: #7d9e78; --focus: #e8c33c; --shadow-ink: #b8481a;
       color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
     --paper: #1a1a1c; --card: #2a2521; --inset: #14110e; --hair: #55504a;
-    --ink: #f2ede1; --ink-soft: #c9c3b8; --ink-faint: #8e8880; --rule: #f2ede1; --on-ink: #14110e;
-    --accent: #e0691e; --on-accent: #14110e; --alarm: #d9736e; --ok: #6e8f6a; --focus: #e8c33c; --shadow-ink: #b8481a;
+    --ink: #f2ede1; --ink-soft: #c9c3b8; --ink-faint: #9a948c; --rule: #f2ede1; --on-ink: #14110e;
+    --accent: #e8742a; --on-accent: #14110e; --alarm: #d9736e; --ok: #7d9e78; --focus: #e8c33c; --shadow-ink: #b8481a;
     color-scheme: dark;
   }
   @font-face { font-family: "Archivo Compressed"; src: url("fonts/ArchivoCompressed-Black.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
@@ -453,6 +473,12 @@
     .tbl tr.mine { box-shadow: inset 4px 0 0 var(--accent); }
   }
   footer { margin-top: 36px; border-top: 2px solid var(--rule); padding-top: 12px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--ink-soft); }
+  /* the Auto / Paper / Night switch (the inline script at the top wires it) */
+  footer .theme { display: inline-flex; align-items: center; gap: 4px; }
+  footer .theme .label { margin-right: 6px; }
+  footer .theme .chip { padding: 7px 10px; font-size: 10.5px; }
+  @media (max-width: 760px) { footer .theme .chip { min-height: 40px; } }
+  @media print { footer .theme { display: none; } }
 
   @media (max-width: 1000px) {
     .studio { grid-template-columns: 1fr; gap: 14px; }
@@ -538,6 +564,7 @@
 
   <footer>
     <span>Drawn by the Blades ’68 figure kit v2. Rules text transcribed from the Characters chapter. The year is 968 AC.</span>
+    <span class="theme" role="group" aria-label="Colour theme"><span class="label">Theme</span><button class="chip sm" type="button" data-theme-set="auto" aria-pressed="true" title="Follow this device’s light or dark setting">Auto</button><button class="chip sm" type="button" data-theme-set="light" aria-pressed="false">Paper</button><button class="chip sm" type="button" data-theme-set="dark" aria-pressed="false">Night</button></span>
   </footer>
 </div>
 

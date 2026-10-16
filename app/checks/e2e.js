@@ -84,6 +84,7 @@ const STUB = `(() => {
   await p2.goto(URL); await p2.waitForTimeout(1200);
   const sw = await p2.evaluate(() => document.documentElement.scrollWidth), cw = await p2.evaluate(() => document.documentElement.clientWidth); if (sw > cw) errs.push('phone overflow ' + sw + '>' + cw);
   if (!E2E_URL) await homeStates(b, errs);
+  if (!E2E_URL) await themeStates(b, errs);
   console.log('ERRORS:', errs.length ? errs.join('\n') : 'none');
   await b.close();
 })().catch(e => { console.error('FAILED', e); process.exit(1); });
@@ -225,4 +226,54 @@ async function homeStates(b, errs) {
   { const { c, pg } = await open('none', null);
     const f = await facts(pg); want(f.title === 'Welcome' && f.primary.join() === 'Make a character' && !f.files, 'no runtime: only Make a character', f);
     want(/Saving is not available in this view/.test(f.text) && !/files|filed/i.test(f.text), 'no runtime: plain words about saving', f.text.slice(0, 200)); await c.close(); }
+}
+
+/* ---------- the theme: Auto / Paper / Night in the footer, remembered, applied before the first paint, with readable text ---------- */
+async function themeStates(b, errs) {
+  const fs = require('fs'), want = (ok, msg, f) => { if (!ok) errs.push('Theme ' + msg + (f ? ': ' + JSON.stringify(f) : '')); };
+  const html = fs.readFileSync(require('path').resolve(__dirname, '..', 'index.html'), 'utf8');
+  /* the inline script that applies the choice sits ahead of every stylesheet, and reads localStorage in a try */
+  const i = html.indexOf('localStorage.getItem(KEY)'), firstCss = Math.min(html.indexOf('<link'), html.indexOf('<style'));
+  want(html.indexOf('<script>') >= 0 && html.indexOf('<script>') < firstCss && i > html.indexOf('<script>') && i < firstCss && /try \{ var t = localStorage\.getItem\(KEY\)/.test(html), 'the inline script that applies the theme is in the head, before the first stylesheet, and guards storage');
+  const probe = `(() => { window.__themeAtWrap = 'none'; try { const mo = new MutationObserver(() => { if (document.querySelector('.wrap')) { window.__themeAtWrap = document.documentElement.getAttribute('data-theme'); mo.disconnect(); } }); mo.observe(document, { childList: true, subtree: true }); } catch (e) {} })();`;
+  const state = (pg) => pg.evaluate(() => { const cs = getComputedStyle(document.documentElement); return { attr: document.documentElement.getAttribute('data-theme'), stored: (() => { try { return localStorage.getItem('b68.theme'); } catch (e) { return 'blocked'; } })(), bg: getComputedStyle(document.body).backgroundColor, pressed: [...document.querySelectorAll('footer [data-theme-set]')].filter(x => x.getAttribute('aria-pressed') === 'true').map(x => x.textContent), tok: { faint: cs.getPropertyValue('--ink-faint').trim(), accent: cs.getPropertyValue('--accent').trim(), ok: cs.getPropertyValue('--ok').trim(), card: cs.getPropertyValue('--card').trim(), paper: cs.getPropertyValue('--paper').trim(), inset: cs.getPropertyValue('--inset').trim(), soft: cs.getPropertyValue('--ink-soft').trim() } }; });
+  const PAPER = 'rgb(242, 237, 225)', NIGHT = 'rgb(26, 26, 28)';
+  const lum = (h) => { const c = [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const ratio = (a, b2) => { const x = lum(a), y = lum(b2); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  async function ctxFor(scheme, init) { const c = await b.newContext({ viewport: { width: 390, height: 844 }, colorScheme: scheme }); await c.addInitScript(probe); if (init) await c.addInitScript(init); const pg = await c.newPage(); pg.on('pageerror', e => errs.push('theme (' + scheme + ') pageerror: ' + e.message)); return { c, pg }; }
+
+  /* a light device: Paper by default, nothing stored; Night on a tap, remembered, there before the first paint on the next visit */
+  { const { c, pg } = await ctxFor('light'); await pg.goto(URL); await pg.waitForTimeout(700);
+    let st = await state(pg);
+    want(st.attr === null && st.stored === null && st.bg === PAPER && st.pressed.join() === 'Auto', 'light device, no choice: Paper, Auto pressed', st);
+    want(ratio(st.tok.faint, st.tok.card) >= 4.5 && ratio(st.tok.faint, st.tok.paper) >= 4.5 && ratio(st.tok.faint, st.tok.inset) >= 4.5 && ratio(st.tok.accent, st.tok.card) >= 4.5, 'Paper: faint text is at least 4.5:1 on the card, the paper and the inset; accent text on the card too', st.tok);
+    await pg.click('footer [data-theme-set="dark"]'); await pg.waitForTimeout(150);
+    st = await state(pg);
+    want(st.attr === 'dark' && st.stored === 'dark' && st.bg === NIGHT && st.pressed.join() === 'Night', 'Night on a tap, stored, pressed', st);
+    want(ratio(st.tok.accent, st.tok.card) >= 4.5 && ratio(st.tok.accent, st.tok.paper) >= 4.5 && ratio(st.tok.faint, st.tok.card) >= 4.5 && ratio(st.tok.ok, st.tok.card) >= 4.5 && ratio(st.tok.soft, st.tok.card) >= 4.5, 'Night: accent, faint, ok and soft text are at least 4.5:1 on the card (accent on the paper too)', st.tok);
+    await pg.reload(); await pg.waitForTimeout(700);
+    st = await state(pg);
+    want(st.attr === 'dark' && st.bg === NIGHT && st.pressed.join() === 'Night' && await pg.evaluate(() => window.__themeAtWrap) === 'dark', 'the choice is remembered and applied before the page body is even parsed (no flash)', { st, atWrap: await pg.evaluate(() => window.__themeAtWrap) });
+    await pg.click('footer [data-theme-set="light"]'); await pg.waitForTimeout(150);
+    st = await state(pg); want(st.attr === 'light' && st.stored === 'light' && st.bg === PAPER && st.pressed.join() === 'Paper', 'Paper on a tap', st);
+    await pg.click('footer [data-theme-set="auto"]'); await pg.waitForTimeout(150);
+    st = await state(pg); want(st.attr === null && st.stored === null && st.bg === PAPER && st.pressed.join() === 'Auto', 'Auto forgets the choice and follows the device again', st);
+    await c.close(); }
+
+  /* a dark device: Night by default; Paper on a tap overrides it, and survives a reload */
+  { const { c, pg } = await ctxFor('dark'); await pg.goto(URL); await pg.waitForTimeout(700);
+    let st = await state(pg);
+    want(st.attr === null && st.bg === NIGHT && st.pressed.join() === 'Auto', 'dark device, no choice: Night, Auto pressed', st);
+    await pg.click('footer [data-theme-set="light"]'); await pg.waitForTimeout(150);
+    await pg.reload(); await pg.waitForTimeout(700);
+    st = await state(pg);
+    want(st.attr === 'light' && st.bg === PAPER && st.pressed.join() === 'Paper' && await pg.evaluate(() => window.__themeAtWrap) === 'light', 'Paper on a dark device is remembered and applied before the body is parsed', { st, atWrap: await pg.evaluate(() => window.__themeAtWrap) });
+    await c.close(); }
+
+  /* storage blocked (a private window, a sandboxed frame): the switch still works for the visit and nothing throws */
+  { const { c, pg } = await ctxFor('light', `Object.defineProperty(window, 'localStorage', { configurable: true, get() { throw new Error('storage blocked'); } });`); await pg.goto(URL); await pg.waitForTimeout(700);
+    await pg.click('footer [data-theme-set="dark"]'); await pg.waitForTimeout(150);
+    const st = await state(pg);
+    want(st.attr === 'dark' && st.bg === NIGHT && st.pressed.join() === 'Night', 'storage blocked: Night still applies for the visit', st);
+    await c.close(); }
 }

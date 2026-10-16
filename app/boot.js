@@ -1086,7 +1086,7 @@
     if (isHosted && !whoami.listening && typeof window.addEventListener === 'function') { whoami.listening = true; window.addEventListener('b68:runtime', function () { whoami(); }); }
     if (A.me) {
       var who = isHosted && rt.me ? (rt.me.name || rt.me.email || '') : '';
-      w.textContent = who ? 'Signed in as ' + who + (rt.me.role === 'gm' ? ' · GM' : '') + ' · ' : 'Signed in · your characters are saved to your account';
+      w.textContent = who ? 'Signed in as ' + who + (rt.me.role === 'gm' ? ' · GM' : '') + ' · ' : 'Signed in · saved to your account';
       if (who) { var out = document.createElement('a'); out.href = '/cdn-cgi/access/logout'; out.textContent = 'Sign out'; out.className = 'signout'; w.appendChild(out); }
       /* hosted: the runtime's sync state (runtime/cf.js: B68Runtime.status, the b68:runtime event), as a chip */
       var st = isHosted && rt.status, n = st ? st.pending || 0 : 0, ch = n === 1 ? ' change' : ' changes';

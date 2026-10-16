@@ -467,7 +467,7 @@ const SHEET = `(() => {
   /* ---------- dark mode ---------- */
   for (const pg of [g, a]) await pg.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
   const dk = await g.evaluate(() => { const c = document.querySelector('.sc-cell.v-yes'); const st = c && getComputedStyle(c); return st ? st.backgroundColor : ''; });
-  assert(dk === 'rgb(224, 105, 30)', 'dark: yes cells in the dark accent: ' + dk);
+  assert(dk === 'rgb(232, 116, 42)', 'dark: yes cells in the dark accent (#e8742a, 4.5:1 for accent text on the card): ' + dk);
   await shotPage(a, 'create-desk-dark');
   for (const pg of [g, a]) await pg.evaluate(() => { delete document.documentElement.dataset.theme; });
 

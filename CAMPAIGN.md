@@ -157,6 +157,12 @@ characters. Any other `campaign` doc id, and `collection('campaign')` queries, r
   summary row, the log's "All"); GM-only controls are not shown.
 - Same visual language as the sheet (bands, boxes, pips, accent orange), phone width 390px
   without horizontal scroll, light and dark, print hides buttons.
+- Theme: the page follows the device (light is Paper, dark is Night) until someone picks one with the small Auto /
+  Paper / Night switch in the footer. The choice is kept in this browser (`localStorage` key `b68.theme`: `light` or
+  `dark`; Auto removes it; a blocked store means the choice lasts for the visit) and a tiny inline script at the top
+  of `index.html` applies it as `html[data-theme]` before anything paints, so Night never flashes paper. Text colours
+  are 4.5:1 or better on the card: `--ink-faint` on Paper (`#6a645e`), and `--accent` (`#e8742a`), `--ink-faint`
+  (`#9a948c`) and `--ok` (`#7d9e78`) on Night (checked by `app/checks/e2e.js`).
 
 ## Crew sheet
 
