@@ -57,7 +57,7 @@ try {
   }
   await api('PATCH', '/campaign', { session: { number: 4 } });
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const errors = [];
   async function open(hash, { width = 1280, height = 900, mobile = false } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile });
@@ -74,7 +74,7 @@ try {
 
   const G = await open('#gm');
   const p = G.page;
-  check((await p.$$eval('.gm-tab', (t) => t.map((x) => x.getAttribute('data-panel')).join())) === 'location,scenes,engagement,npc,rules', 'the side tabs: Location, Street, Engage, NPC, Rules');
+  check((await p.$$eval('.gm-tab', (t) => t.map((x) => x.getAttribute('data-panel')).join())) === 'prep,rules,location,scenes,engagement,npc,cards,ipad', 'the side tabs: Prep, Screen, Location, Street, Engage, NPC, Cards, iPad');
   await p.keyboard.press('s');
   check(await p.$eval('#gm-root', (r) => r.getAttribute('data-panel')) === 'scenes' && await p.$eval('#gm-scn', (e) => !e.closest('[hidden]') && !e.hidden), 'key S opens the street scene panel');
   await p.click('[data-gm="scnroll"]');
@@ -128,10 +128,10 @@ try {
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
   await G.c.close();
 
-  // a phone: six segments, nothing wider than the screen, every control 44 px or more
+  // a phone: ten segments, nothing wider than the screen, every control 44 px or more
   const M = await open('#gm', { width: 390, height: 844, mobile: true });
   const mp = M.page;
-  check((await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => x.getAttribute('data-seg')).join())) === 'console,location,scenes,engagement,npc,state', 'phone: the bar is Console, Location, Street, Engage, NPC, State');
+  check((await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => x.getAttribute('data-seg')).join())) === 'console,prep,location,scenes,engagement,npc,cards,rules,ipad,state', 'phone: the bar is Console, Prep, Location, Street, Engage, NPC, Cards, Screen, iPad, State');
   for (const seg of ['scenes', 'engagement']) {
     await mp.click('.gm-segbar [data-seg="' + seg + '"]');
     await mp.waitForSelector('#gm-' + (seg === 'scenes' ? 'scn' : 'eng') + ' select', { state: 'visible', timeout: 5000 });

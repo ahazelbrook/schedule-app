@@ -135,10 +135,14 @@ try {
     await page.reload(); await page.waitForSelector('#gm-prep .pp-doc', { timeout: 20000 });
     check(await page.$eval('#gm-prep .pp-box[data-task="' + open1.a + '"]', (b) => b.classList.contains('here')), 'reload: the tick is still there');
   }
-  await page.click('[data-gm="prep-wide"]');
-  check(await page.$eval('#gm-root .gm-console', (c) => getComputedStyle(c).display === 'none'), 'Wide hides the console');
+  /* the laptop layout: one window tall, the outline follows the reading, Focus shrinks the console to its keys */
+  check(await page.evaluate(() => document.body.classList.contains('gm-app') && document.documentElement.scrollHeight <= innerHeight + 1), 'laptop: the page is one window tall with the note open');
+  await page.evaluate(() => { const p = document.getElementById('gm-prep'); p.scrollTop = Math.floor(p.scrollHeight / 2); });
+  check(await page.waitForSelector('#gm-prep .pp-rail [aria-current="true"]', { timeout: 5000 }).then(() => true, () => false), 'laptop: the outline marks the section being read');
+  await page.click('[data-gm="focus"]');
+  check(await page.$eval('#gm-root .gm-console', (c) => c.getBoundingClientRect().width < 100) && await page.$eval('#gm-mini', (m) => getComputedStyle(m).display !== 'none' && m.querySelectorAll('button').length > 0), 'Focus shrinks the console to its keys');
   await shot(page, 'prep-wide');
-  await page.click('[data-gm="prep-wide"]');
+  await page.click('[data-gm="focus"]');
 
   /* ---- the phone ---- */
   const ph = await open('#gm', { width: 390, height: 844, mobile: true });

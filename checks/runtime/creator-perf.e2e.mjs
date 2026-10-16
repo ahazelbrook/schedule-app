@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PW_MODULE || 'playwright');
 const index = 'file://' + path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'app', 'index.html');
 let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
-const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 390, height: 800 } });
+const b = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {}); const p = await b.newPage({ viewport: { width: 390, height: 800 } });
 const errs = []; p.on('pageerror', e => errs.push(e.message));
 await p.goto(index); await p.waitForTimeout(1000);
 const r = await p.evaluate(async () => {

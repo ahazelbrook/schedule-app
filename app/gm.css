@@ -1,6 +1,7 @@
 /* gm.css — the GM's page (#gm-page, gm-page.js; GM.md). The table page's language: paper boxes under 2px rules, black bands,
    Archivo Condensed caps labels, the orange accent. Colours are the :root tokens in index.html, so Night needs nothing here.
-   Laptop (>= 1100 px): console | side panel | state rail, the capture bar at the foot. 600–1100 px: two columns, the rail
+   Laptop (>= 1100 px): console | side panel | state rail, the capture bar at the foot (the one-window laptop layout is at the
+   end of this file). 600–1100 px: two columns, the rail
    folded below. Phone (< 600 px): one column chosen by a segmented bar, the buttons a 3 × 3 grid, capture on a button.
    Every control is at least 44 px tall on touch screens. Classes are gm-. */
 #gm-page { display: none; padding-top: 14px; min-width: 0; }
@@ -354,3 +355,107 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-ipad-tile:focus-visible, #gm-page .gm-ipad-body .chip:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 #gm-page .gm-ipad-body .gm-row { align-items: end; }
 @media (pointer: coarse) { #gm-page .gm-ipad-tile { min-height: 64px; } }
+
+/* ---- the laptop layout (>= 1100 px, body.gm-app; gm-page.js setApp): the window is the page ----
+   The site header and footer go; the GM page fills the window as four rows (top bar, the three columns, capture), and each
+   column scrolls on its own, so a long Prep note or the GM screen never carries the console or the state rail away. Prep and
+   Screen get their section list as an outline beside the text, the current section marked. Focus (F, or Prep's Wide) shrinks
+   the console to its keys on any tab. Below 1100 px, and with "Classic layout" chosen in the menu, none of this applies. */
+#gm-page .gm-bar, #gm-page .gm-mini, #gm-page .gm-focusbtn, #gm-page .gm-applayout { display: none; }
+#gm-page .gm-box-empty { border-style: dashed; border-color: var(--hair); background: none; }
+#gm-page .gm-box-empty .gm-band { background: none; color: var(--ink-soft); padding: 5px 10px; }
+@media (min-width: 1100px) {
+  #gm-page .gm-applayout { display: inline-flex; }
+  body.gm-app #gm-page .gm-applayout { display: none; }
+  body.gm-app[data-mode="gm"] { overflow: hidden; }
+  body.gm-app[data-mode="gm"] .wrap { max-width: none; height: 100vh; height: 100dvh; padding: 0; display: flex; flex-direction: column; }
+  body.gm-app[data-mode="gm"] .wrap > .top, body.gm-app[data-mode="gm"] .wrap > footer { display: none; }
+  body.gm-app #gm-page:not([hidden]) { flex: 1 1 auto; min-height: 0; padding: 0; }
+  body.gm-app #gm-root { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+  body.gm-app #gm-page .gm-head, body.gm-app #gm-page .gm-fab { display: none; }
+
+  /* the top bar */
+  body.gm-app #gm-page .gm-bar { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 6px 12px; background: var(--rule); color: var(--on-ink); position: relative; z-index: 20; }
+  #gm-page .gm-bar a.gm-bar-mark { font: 900 24px/1 var(--font-poster); color: inherit; text-decoration: none; white-space: nowrap; }
+  #gm-page .gm-bar-mark b { font: 900 12px/1 var(--font-cond); letter-spacing: .14em; vertical-align: 4px; }
+  #gm-page .gm-bar-sess, #gm-page .gm-bar .gm-save { font: 700 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; color: inherit; opacity: .8; margin: 0; }
+  #gm-page .gm-bar .gm-save.bad { opacity: 1; background: var(--alarm); color: #fbf8f1; padding: 3px 5px; }
+  #gm-page .gm-bar-exp { font: 700 11px/1 var(--font-mono); background: var(--mustard); color: var(--on-mustard); padding: 4px 6px; white-space: nowrap; }
+  #gm-page .gm-bar-exp:empty { display: none; }
+  #gm-page .gm-grow { flex: 1 1 auto; }
+  #gm-page .gm-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; max-width: 280px; padding: 4px 9px; border: 1.5px solid currentColor; background: none; color: inherit; font: 700 11px/1.2 var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  #gm-page .gm-pill.warn { border-color: var(--mustard); }
+  #gm-page .gm-pill:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  #gm-page .gm-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; }
+  #gm-page .gm-dot.on { background: var(--mustard); border-color: var(--mustard); }
+  #gm-page .gm-dot.warn { background: var(--accent); border-color: var(--accent); }
+  #gm-page .gm-bb { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 10px; border: 0; background: var(--on-ink); color: var(--rule); font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; text-decoration: none; white-space: nowrap; cursor: pointer; }
+  #gm-page .gm-bb:hover, #gm-page .gm-bb[aria-expanded="true"] { background: var(--accent); color: var(--on-accent); }
+  #gm-page .gm-bb kbd { font-size: 9.5px; }
+  #gm-page .gm-pill:focus-visible, #gm-page .gm-bb:focus-visible, #gm-page .gm-bar-mark:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  #gm-page .gm-menu { position: relative; display: inline-flex; }
+  #gm-page .gm-menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; display: grid; min-width: 250px; background: var(--card); color: var(--ink); border: 2px solid var(--rule); box-shadow: 4px 4px 0 var(--shadow-ink); }
+  #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button { display: block; text-align: left; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--hair); background: none; color: var(--ink); font: 600 13px/1.2 var(--font-text); text-decoration: none; cursor: pointer; }
+  #gm-page .gm-menu-list > :last-child { border-bottom: 0; }
+  #gm-page .gm-menu-list > :hover, #gm-page .gm-menu-list > :focus-visible { background: var(--inset); outline: none; }
+  #gm-page .gm-menu-list > .bad { color: var(--alarm); }
+
+  /* the three columns, each its own scroller */
+  body.gm-app #gm-page .gm-main { min-height: 0; gap: 0; align-items: stretch; grid-template-columns: clamp(300px, 26vw, 400px) minmax(0, 1fr) clamp(230px, 19vw, 300px); }
+  body.gm-app #gm-page .gm-col { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; border-right: 2px solid var(--rule); scrollbar-width: thin; }
+  body.gm-app #gm-page .gm-rail { border-right: 0; }
+  body.gm-app #gm-page .gm-side { padding: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 0; }
+  body.gm-app #gm-page .gm-tabrow { display: flex; align-items: stretch; border-bottom: 2px solid var(--rule); background: var(--paper); }
+  body.gm-app #gm-page .gm-tabs { flex: 1 1 auto; flex-wrap: nowrap; overflow-x: auto; gap: 0; border-bottom: 0; scrollbar-width: none; }
+  body.gm-app #gm-page .gm-tab { flex: 0 0 auto; border: 0; border-right: 1.5px solid var(--hair); background: none; color: var(--ink); white-space: nowrap; padding: 10px 9px; }
+  body.gm-app #gm-page .gm-tab[data-panel="location"], body.gm-app #gm-page .gm-tab[data-panel="cards"] { border-left: 2px solid var(--rule); margin-left: 8px; }
+  body.gm-app #gm-page .gm-tab[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
+  body.gm-app #gm-page .gm-tab:hover { background: var(--accent); color: var(--on-accent); }
+  body.gm-app #gm-page .gm-focusbtn { display: inline-flex; align-items: center; gap: 5px; flex: none; border: 0; border-left: 2px solid var(--rule); background: var(--card); color: var(--ink); padding: 0 12px; font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; cursor: pointer; }
+  body.gm-app #gm-page .gm-focusbtn[aria-pressed="true"] { background: var(--mustard); color: var(--on-mustard); }
+  body.gm-app #gm-page .gm-focusbtn:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+  body.gm-app #gm-page .gm-pane { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; align-content: start; scrollbar-width: thin; }
+
+  /* capture: always at the foot */
+  body.gm-app #gm-page .gm-foot { margin: 0; border: 0; border-top: 3px solid var(--rule); border-left: 8px solid var(--mustard); padding: 6px 12px; }
+  body.gm-app #gm-page .gm-caplist { display: none; }
+
+  /* Focus: the console becomes its keys */
+  body.gm-app #gm-root.focus .gm-main { grid-template-columns: 74px minmax(0, 1fr) clamp(230px, 19vw, 300px); }
+  body.gm-app #gm-root.focus .gm-console { display: grid; padding: 8px; }
+  body.gm-app #gm-root.focus .gm-console > :not(.gm-mini) { display: none; }
+  body.gm-app #gm-root.focus .gm-mini { display: grid; gap: 6px; align-content: start; }
+  body.gm-app #gm-root.prep-wide .gm-side { grid-column: auto; }
+  body.gm-app #gm-root.prep-wide .pp-doc { max-width: none; }
+  #gm-page .gm-mini button { display: grid; place-items: center; gap: 3px; min-height: 54px; padding: 4px 2px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); font: 900 22px/1 var(--font-poster); cursor: pointer; box-shadow: 2px 2px 0 var(--shadow-ink); }
+  #gm-page .gm-mini button small { font: 900 8.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .04em; max-width: 100%; overflow: hidden; }
+  #gm-page .gm-mini button:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  #gm-page .gm-mini button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  body.gm-app #gm-page .pp-widebtn { display: none; }
+  /* the console column is narrower than before: the Position labels and the situations' type step down to fit */
+  body.gm-app #gm-page .gm-posb b { font-size: clamp(12px, 1.05vw, 16px); }
+  body.gm-app #gm-page .gm-posb small { font-size: 10px; }
+  body.gm-app #gm-page .gm-sbtn b { font-size: clamp(14px, 1.15vw, 18px); }
+
+  /* Prep and Screen: the section list as an outline beside the text */
+  body.gm-app #gm-prep:not([hidden]) { grid-template-columns: 200px minmax(0, 1fr); column-gap: 16px; row-gap: 0; align-items: start; }
+  body.gm-app #gm-prep > * { grid-column: 2; }
+  body.gm-app #gm-prep > * + * { margin-top: 10px; }
+  body.gm-app #gm-prep > .pp-bar { grid-column: 1; grid-row: 1 / span 30; margin: 0; position: sticky; top: 0; flex-direction: column; align-items: stretch; gap: 8px; border-bottom: 0; border-right: 2px solid var(--rule); padding: 0 10px 0 0; max-height: calc(100dvh - 190px); overflow-y: auto; scrollbar-width: thin; }
+  body.gm-app #gm-prep .pp-rail { flex-direction: column; overflow: visible; gap: 0; padding: 0; }
+  body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip { display: block; width: 100%; white-space: normal; text-align: left; border: 0; border-left: 3px solid transparent; background: none; color: var(--ink); padding: 6px 8px; min-height: 0; font: 700 12px/1.25 var(--font-text); text-transform: none; letter-spacing: 0; box-shadow: none; }
+  body.gm-app #gm-prep .pp-rail .chip:hover, body.gm-app #gm-rules .gs-jump .chip:hover { background: var(--inset); }
+  body.gm-app #gm-prep .pp-rail .chip[aria-current="true"], body.gm-app #gm-rules .gs-jump .chip[aria-current="true"] { border-left-color: var(--accent); background: var(--inset); color: var(--ink); font-weight: 900; }
+  body.gm-app #gm-prep .pp-sec, body.gm-app #gm-prep .pp-doc h3, body.gm-app #gm-rules .gs-sec { scroll-margin-top: 8px; }
+  body.gm-app #gm-prep .pp-peek { top: 0; }
+  body.gm-app #gm-rules .gs { display: grid; grid-template-columns: 200px minmax(0, 1fr); column-gap: 16px; row-gap: 0; align-items: start; }
+  body.gm-app #gm-rules .gs > * { grid-column: 2; }
+  body.gm-app #gm-rules .gs > .gs-top { grid-column: 1; grid-row: 1 / span 60; margin: 0; padding: 0 10px 0 0; border-bottom: 0; border-right: 2px solid var(--rule); max-height: calc(100dvh - 190px); overflow-y: auto; scrollbar-width: thin; }
+  body.gm-app #gm-rules .gs-jump { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 0; }
+  body.gm-app #gm-rules .gs-jump [hidden] { display: none; }
+}
+@media (min-width: 1100px) and (pointer: coarse) {
+  #gm-page .gm-bb, #gm-page .gm-pill, #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button { min-height: 44px; }
+  body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip { min-height: 44px; }
+}
+@media (min-width: 1100px) and (max-width: 1439px) { body.gm-app #gm-page .gm-tab kbd { display: none; } }

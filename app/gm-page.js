@@ -418,6 +418,7 @@
       case 'i': return { type: 'panel', panel: 'ipad' };
       case 'r': return { type: 'panel', panel: 'prep' };
       case 'o': return { type: 'panel', panel: 'cards' };
+      case 'f': return { type: 'focus' };
       case '0': return { type: 'clear' };
       case 'escape': return { type: 'esc' };
     }
@@ -572,7 +573,12 @@
      The page
      ===================================================================================================================== */
   var document = W.document;
-  var IDB = 'b68-gm', STORE = 'kv', STICKY = 'b68.gm.sticky', PREP_NOTE = 'b68.gm.prepNote', PREP_WIDE = 'b68.gm.prepWide';
+  var IDB = 'b68-gm', STORE = 'kv', STICKY = 'b68.gm.sticky', PREP_NOTE = 'b68.gm.prepNote', PREP_WIDE = 'b68.gm.prepWide', LAYOUT = 'b68.gm.layout';
+  /* The laptop layout (gm.css, >= 1100 px): the window is the page, the columns scroll on their own, a slim top bar, capture
+     at the foot. body.gm-app turns it on (only while the tools are open); "Classic layout" in the menu turns it off on this
+     device (localStorage `b68.gm.layout` = classic) and the old header's "Laptop layout" turns it back on. */
+  function appPref() { try { return W.localStorage.getItem(LAYOUT) !== 'classic'; } catch (e) { return true; } }
+  function setApp(on) { if (document.body) document.body.classList.toggle('gm-app', !!on); }
   var S = null;                  /* the open page; null when closed */
   var camp = null;               /* the latest campaign document from boot */
   var gate = makeGate();
@@ -679,11 +685,13 @@
   function flush() { return S && S.saver ? S.saver.flush() : Promise.resolve(); }
   function busy() { var st = S && S.saver ? S.saver.state() : null; return !!(st && (st.pending || st.writing)); }
   function syncSave() {
-    var n = $q('#gm-save'); if (!n || !S.saver) return;
+    if (!S || !S.root || !S.saver) return;
     var st = S.saver.state();
-    n.textContent = st.parked ? 'Not saved' : st.error === 'retrying' ? 'Offline: retrying' : st.writing || st.pending ? 'Saving…' : S.updatedAt ? 'Saved' : '';
-    n.classList.toggle('bad', !!st.parked || st.error === 'retrying');
-    if (st.parked) n.title = 'The server refused a change: ' + st.error;
+    [].forEach.call(S.root.querySelectorAll('.gm-save'), function (n) {
+      n.textContent = st.parked ? 'Not saved' : st.error === 'retrying' ? 'Offline: retrying' : st.writing || st.pending ? 'Saving…' : S.updatedAt ? 'Saved' : '';
+      n.classList.toggle('bad', !!st.parked || st.error === 'retrying');
+      if (st.parked) n.title = 'The server refused a change: ' + st.error;
+    });
   }
   /* another device changed the state: take it when nothing of ours is waiting */
   function refetch() {
@@ -784,12 +792,13 @@
     if (me.prepTimer) { W.clearInterval(me.prepTimer); me.prepTimer = null; }
     if (me.sttTimer) { W.clearInterval(me.sttTimer); me.sttTimer = null; }
     S = null;
+    setApp(false);
     if (me.root) { me.root.innerHTML = ''; }
     unblank();
   }
 
   /* ---------- screens ---------- */
-  function screen(html) { if (!S || !S.root) return; S.root.innerHTML = '<div class="gm gm-screen">' + html + '</div>'; }
+  function screen(html) { if (!S || !S.root) return; setApp(false); S.root.innerHTML = '<div class="gm gm-screen">' + html + '</div>'; }
   function note(title, body, bad) { return '<div class="gm-head"><div class="gm-title"><p class="gm-kick">GM tools</p><h1 class="gm-h" tabindex="-1">' + esc(title) + '</h1></div></div><p class="gm-note' + (bad ? ' bad' : '') + '">' + esc(body) + '</p>'; }
 
   function importScreen(cancellable) {
@@ -869,28 +878,75 @@
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
     layout(); redrawAll(); subscribeNpcs();
-    if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S; S.sttTimer = W.setInterval(function () { if (S === mine2 && S.status === 'ready' && S.panel === 'ipad' && !document.hidden) loadStt(); }, 5000); }
+    /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
+    if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden && (S.panel === 'ipad' || n2 % 3 === 0)) loadStt(); }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
-    if (S.panel === 'ipad') loadAmbient();
+    if (S.panel === 'ipad') loadAmbient(); else loadShown();
+    loadStt();
+  }
+  /* the top bar: what the iPad shows, read once (GET /api/gm/display only: the heat sync waits for the iPad tab, as before) */
+  function loadShown() {
+    var g = gmApi(), me = S; if (!g || typeof g.display !== 'function' || AM.displayRead) return;
+    Promise.resolve().then(function () { return g.display(); }).then(function (r) {
+      if (r && isObj(r.display)) { AM.displayRead = true; AM.shown = AM.shown || { kind: str(r.display.kind), title: str(r.display.title) }; }
+      if (S === me) renderBar();
+    }, function () {});
   }
   function layout() {
     var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['cards', 'Cards'], ['rules', 'Screen'], ['ipad', 'iPad'], ['state', 'State']];
-    S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '" data-view="' + esc(S.view) + '">' +
+    S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '" data-view="' + esc(S.view) + '">' + barHtml() +
       '<div class="gm-head"><div class="gm-title"><p class="gm-kick">GM tools <span id="gm-save" class="gm-save" role="status"></span></p>' + '<h1 class="gm-h" tabindex="-1">The console</h1><p class="gm-exp" id="gm-exp"></p></div>' +
-      '<div class="gm-acts"><a class="btn sm primary" href="#display" id="gm-display" title="The players’ screen: open this on the iPad">Display</a>' + '<button type="button" class="btn sm" data-gm="note">Export tonight’s note</button><button type="button" class="btn sm" data-gm="update">Update pack</button>' + '<button type="button" class="btn sm" data-gm="forget">Forget GM data on this device</button></div></div>' +
+      '<div class="gm-acts"><a class="btn sm primary" href="#display" id="gm-display" title="The players’ screen: open this on the iPad">Display</a>' + '<button type="button" class="btn sm" data-gm="note">Export tonight’s note</button><button type="button" class="btn sm" data-gm="update">Update pack</button>' + '<button type="button" class="btn sm" data-gm="forget">Forget GM data on this device</button>' + '<button type="button" class="btn sm gm-applayout" data-gm="layout-app" title="One screen: the columns scroll on their own">Laptop layout</button></div></div>' +
       '<div class="seg gm-segbar" role="tablist" aria-label="Show">' + segs.map(function (s) { return '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
       '<div class="gm-main">' +
       '<section class="gm-col gm-console" aria-label="Console">' + '<div class="gm-conhead"><h2 class="gm-conh">Console</h2>' + viewToggle() + '</div>' +
       '<div class="gm-pos" id="gm-pos" role="radiogroup" aria-label="Position"></div>' +
       '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"><span class="gm-lab">Scene</span>' + '<span class="gm-scene-chips" id="gm-scene-chips"></span></button>' +
-      '<div class="gm-controls" id="gm-controls"></div><div class="gm-buttons" id="gm-buttons"></div><div class="gm-singles" id="gm-singles"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div></section>' +
-      '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      [['prep', 'Prep', 'R'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['cards', 'Cards', 'O'], ['rules', 'Screen', 'T'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
-      '</div><div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
+      '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-singles" id="gm-singles"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div></section>' +
+      '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
+      [['prep', 'Prep', 'R'], ['rules', 'Screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
+      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
       '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button></div>';
     renderRules();
+    setApp(appPref());
+  }
+  /* the top bar of the laptop layout (hidden below 1100 px and in the classic layout): the session, saving, what the iPad shows,
+     listening, Clear and Lights out, the Display link, and a menu with the rest of the old header and the site's pages */
+  function barHtml() {
+    return '<div class="gm-bar"><a class="gm-bar-mark" href="#" title="Home">’68 <b>GM</b></a><span class="gm-bar-sess" id="gm-bar-sess"></span>' +
+      '<span class="gm-save" role="status"></span><span class="gm-bar-exp" id="gm-bar-exp"></span><span class="gm-grow"></span>' +
+      '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-ipad" title="What the players see (the iPad tab)"></button>' +
+      '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-stt" title="The transcriber (the iPad tab)"></button>' +
+      '<button type="button" class="gm-bb" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' + '<button type="button" class="gm-bb" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
+      '<a class="gm-bb" href="#display" title="The players’ screen: open this on the iPad">Display</a>' +
+      '<span class="gm-menu"><button type="button" class="gm-bb" data-gm="menu" aria-expanded="false" aria-haspopup="true">Menu</button><span class="gm-menu-list" hidden>' +
+      '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="update">Update pack</button>' +
+      '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
+      '<button type="button" data-gm="layout-classic">Classic layout (this device)</button><button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span></div>';
+  }
+  function menuOpen(on) {
+    var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
+    if (on) m.removeAttribute('hidden'); else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
+  }
+  /* the bar's live parts: the session, what is on the iPad, listening */
+  function renderBar() {
+    if (!S || !S.root) return;
+    var s = $q('#gm-bar-sess'); if (s) s.textContent = 'Session ' + (isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0);
+    var ip = $q('#gm-bar-ipad');
+    if (ip) {
+      var shown = AM.shown ? (AM.shown.kind === 'blank' || !AM.shown.kind ? 'ambient' : displayLine(AM.shown)) : 'not known yet';
+      ip.innerHTML = '<span class="gm-dot' + (AM.shown && AM.shown.kind && AM.shown.kind !== 'blank' ? ' on' : '') + '"></span>iPad: ' + esc(shown);
+      ip.title = 'What the players see: ' + (AM.shown ? displayLine(AM.shown) : 'not known yet') + '. Opens the iPad tab.';
+    }
+    var sp = $q('#gm-bar-stt'); if (!sp) return;
+    var d = STT.doc, on = !!(d && d.want === 'on'), st = d && isObj(d.status) ? d.status : {}, age = st.at ? (Date.now() - Date.parse(st.at)) / 1000 : null;
+    var pc = d && isObj(d.copier) && d.copier.at ? (Date.now() - Date.parse(d.copier.at)) / 1000 : null;
+    var text = !STT.loaded ? 'Listening: …' : !on ? 'Not listening' : st.state === 'listening' && age !== null && age < 40 ? 'Listening' + (pc !== null && pc < 180 ? ' · PC copying' : ' · PC not copying') : 'Listening: waiting for the iPad';
+    var warn = on && !(st.state === 'listening' && age !== null && age < 40 && pc !== null && pc < 180);
+    sp.innerHTML = '<span class="gm-dot' + (on ? warn ? ' warn' : ' on' : '') + '"></span>' + esc(text);
+    sp.classList.toggle('warn', warn);
   }
   /* the one-tap Situations | Classic toggle in the console header; none while the release switch is off */
   function viewToggle() {
@@ -901,7 +957,7 @@
   }
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); syncPanels(); renderView(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
+    syncHead(); renderBar(); syncPanels(); renderView(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
   }
   function syncHead() {
     var e = $q('#gm-exp'); if (!e) return;
@@ -909,6 +965,8 @@
     var age = ageDays(at);
     e.textContent = at ? 'Campaign data exported ' + dmy(at) + (age != null && age > LIMITS.staleDays ? ' · ' + Math.floor(age) + ' days old: rebuild the pack' : '') + (S.offline ? ' · offline copy' : '') : 'Campaign data: no export date';
     e.classList.toggle('stale', age != null && age > LIMITS.staleDays);
+    var be = $q('#gm-bar-exp');
+    if (be) be.textContent = (at && age != null && age > LIMITS.staleDays ? 'Pack ' + Math.floor(age) + ' days old' : '') + (S.offline ? (at && age > LIMITS.staleDays ? ' · ' : '') + 'offline copy' : '');
   }
   function syncPanels() {
     var r = $q('#gm-root'); if (!r) return;
@@ -919,13 +977,15 @@
     var sc = $q('#gm-scene'); if (sc) sc.setAttribute('aria-expanded', String(!!S.sceneOpen)); r.classList.toggle('scene-open', !!S.sceneOpen);
     var fab = $q('.gm-fab'); if (fab) fab.setAttribute('aria-expanded', String(!!S.capOpen)); r.classList.toggle('cap-open', !!S.capOpen);
     r.classList.toggle('prep-wide', S.panel === 'prep' && !!S.prepWide);
-    var wb = $q('[data-gm="prep-wide"]'); if (wb) wb.setAttribute('aria-pressed', String(!!S.prepWide));
+    r.classList.toggle('focus', !!S.prepWide);       /* the laptop layout: Focus (or Prep's Wide) shrinks the console on every tab */
+    r.querySelectorAll('[data-gm="prep-wide"], [data-gm="focus"]').forEach(function (b) { b.setAttribute('aria-pressed', String(!!S.prepWide)); });
   }
   function setPanel(p) {
     S.panel = p; if (S.seg !== 'console' && S.seg !== 'state') S.seg = 'side';
     try { W.localStorage.setItem('b68.gm.panel', p); } catch (e) {}
     syncPanels();
     if (p === 'ipad') { loadAmbient(); loadStt(); }
+    spy(p);
   }
 
   /* ---------- the console: Situations (the default) or Classic (the nine single tables) ---------- */
@@ -973,6 +1033,9 @@
   }
   function renderButtons() {
     var box = $q('#gm-buttons'); if (!box) return;
+    var mini = $q('#gm-mini');
+    if (mini) mini.innerHTML = !S.con ? '' : (sit() ? S.con.situations().map(function (b) { return '<button type="button" data-gm="situation" data-n="' + b.key + '" title="' + esc(b.label) + '">' + b.key + '<small>' + esc(str(b.label).slice(0, 8)) + '</small></button>'; })
+      : S.con.buttons.map(function (b) { return '<button type="button" data-gm="roll" data-n="' + b.n + '" title="' + esc(b.label) + '">' + b.n + '</button>'; })).join('');
     if (!S.con) { box.innerHTML = '<p class="gm-note bad">' + esc(S.conErr || 'The console is not available.') + '</p>'; return; }
     if (sit()) {
       box.innerHTML = S.con.situations().map(function (b) {
@@ -1266,6 +1329,7 @@
       '<button type="button" class="btn sm" data-gm="clearscore"' + (!v.hasScore || off || busy ? ' disabled' : '') + '>Clear score</button></div></section>';
     box.innerHTML = '<div id="gm-stt"></div>' + h;
     renderStt(true);
+    renderBar();
   }
 
   /* ---------- Listening: the table iPad's transcriber (app/stt.js, GM.md "Listening") ----------
@@ -1277,12 +1341,12 @@
   function loadStt() {
     var g = gmApi(); if (!g || typeof g.stt !== 'function') return;
     Promise.all([g.stt(), g.transcript({ tail: 6 }).then(function (r) { return r; }, function () { return null; })]).then(function (res) {
-      STT.doc = res[0] && res[0].doc || null; STT.tail = res[1] && Array.isArray(res[1].lines) ? res[1].lines : STT.tail; STT.error = ''; STT.loaded = true; renderStt();
-    }, function (e) { STT.error = errText(e); STT.loaded = true; renderStt(); });
+      STT.doc = res[0] && res[0].doc || null; STT.tail = res[1] && Array.isArray(res[1].lines) ? res[1].lines : STT.tail; STT.error = ''; STT.loaded = true; renderStt(); renderBar();
+    }, function (e) { STT.error = errText(e); STT.loaded = true; renderStt(); renderBar(); });
   }
   function sttPatch(p) {
     var g = gmApi(); if (!g || typeof g.patchStt !== 'function') { toast('Listening needs the hosted app.', true); return; }
-    Promise.resolve().then(function () { return g.patchStt(p); }).then(function (r) { STT.doc = r && r.doc || STT.doc; renderStt(true); }, function (e) { toast('Could not change listening: ' + errText(e), true); });
+    Promise.resolve().then(function () { return g.patchStt(p); }).then(function (r) { STT.doc = r && r.doc || STT.doc; renderStt(true); renderBar(); }, function (e) { toast('Could not change listening: ' + errText(e), true); });
   }
   function sttName(doc, sp) { var n = doc && isObj(doc.speakers) ? doc.speakers[String(sp)] : ''; return sp === null || sp === undefined ? '?' : n || 'S' + sp; }
   function renderStt(force) {
@@ -1817,11 +1881,12 @@
     h += '<section class="gm-box"><h3 class="gm-band">Crew' + (crew.name ? ': ' + esc(crew.name) : '') + '</h3><dl class="gm-stats">' + stat('Heat', +crew.heat || 0, 9) + stat('Wanted', +crew.wanted || 0, 4) + stat('Rep', +crew.rep || 0, 12) + stat('Stacks', +crew.stacks || 0) + stat('Vault', +crew.vault || 0, 16) + '</dl>' +
       '<p class="gm-dim">Session ' + esc(isObj(d.session) ? +d.session.number || 0 : 0) + ' · read-only here; change it on <a href="#t">the table</a>.</p></section>';
     var tc = Array.isArray(d.clocks) ? d.clocks : [];
-    h += '<section class="gm-box"><h3 class="gm-band">Table clocks</h3>' + (tc.length ? '<ul class="gm-clocks">' + tc.map(function (c) { return clockLi(c.name, c.filled, c.size, c.hidden ? 'hidden from players' : c.kind); }).join('') + '</ul>' : '<p class="gm-dim">None on the table.</p>') + '</section>';
+    function none(title) { return '<section class="gm-box gm-box-empty"><h3 class="gm-band">' + title + ' <small>· none</small></h3></section>'; }
+    h += tc.length ? '<section class="gm-box"><h3 class="gm-band">Table clocks</h3><ul class="gm-clocks">' + tc.map(function (c) { return clockLi(c.name, c.filled, c.size, c.hidden ? 'hidden from players' : c.kind); }).join('') + '</ul></section>' : none('Table clocks');
     var wc = (part('campaign') || {}).clocks; wc = Array.isArray(wc) ? wc : [];
-    h += '<section class="gm-box"><h3 class="gm-band">World clocks <small>(pack)</small></h3>' + (wc.length ? '<ul class="gm-clocks">' + wc.map(function (c) { return clockLi(c.goal || c.name, c.filled, c.segments || c.size, [c.faction, c.tier != null && c.tier !== '' ? 'Tier ' + c.tier : ''].filter(Boolean).join(' · ')); }).join('') + '</ul>' : '<p class="gm-dim">None in the pack.</p>') + '</section>';
+    h += wc.length ? '<section class="gm-box"><h3 class="gm-band">World clocks <small>(pack)</small></h3><ul class="gm-clocks">' + wc.map(function (c) { return clockLi(c.goal || c.name, c.filled, c.segments || c.size, [c.faction, c.tier != null && c.tier !== '' ? 'Tier ' + c.tier : ''].filter(Boolean).join(' · ')); }).join('') + '</ul></section>' : none('World clocks');
     var owed = []; try { owed = W.B68GmConsole ? W.B68GmConsole.campaignWith(part('campaign') || {}, S.doc.con || {}).owed : []; } catch (e) { owed = []; }
-    h += '<section class="gm-box"><h3 class="gm-band">Bargains owed</h3>' + (owed.length ? '<ul class="gm-owed">' + owed.map(function (o, i) { return '<li><span>' + esc(o.text) + (o.src ? ' <small>' + esc(o.src) + '</small>' : '') + '</span><button type="button" class="btn sm" data-gm="collect" data-i="' + i + '">Collect</button></li>'; }).join('') + '</ul>' : '<p class="gm-dim">Nothing owed.</p>') + '</section>';
+    h += owed.length ? '<section class="gm-box"><h3 class="gm-band">Bargains owed</h3><ul class="gm-owed">' + owed.map(function (o, i) { return '<li><span>' + esc(o.text) + (o.src ? ' <small>' + esc(o.src) + '</small>' : '') + '</span><button type="button" class="btn sm" data-gm="collect" data-i="' + i + '">Collect</button></li>'; }).join('') + '</ul></section>' : none('Bargains owed');
     S.owed = owed;
     var pins = newest(S.doc.pins);
     h += '<section class="gm-box"><h3 class="gm-band">Pins <small>' + pins.length + '/' + LIMITS.pins + '</small></h3>' + (pins.length ? '<ul class="gm-pins">' + pins.map(function (p) {
@@ -1922,6 +1987,7 @@
     if ((ev.key === ' ' || ev.key === 'Enter') && tg && tg.matches && S.root.contains(tg) && tg.matches('.rl-task[data-task], td[data-cell]')) {
       ev.preventDefault(); if (tg.hasAttribute('data-task')) prepTick(tg.getAttribute('data-task')); else prepCell(tg); return;
     }
+    var ml = $q('.gm-menu-list'); if (ml && !ml.hasAttribute('hidden') && ev.key === 'Escape') { menuOpen(false); var mb = $q('[data-gm="menu"]'); if (mb) mb.focus(); ev.preventDefault(); return; }
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target), view: S.view });
     if (!a) return;
     if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } return; }
@@ -1934,16 +2000,24 @@
     else if (a.type === 'last') fileLast();
     else if (a.type === 'blank') blank();
     else if (a.type === 'clear') blankIpad();
+    else if (a.type === 'focus') toggleFocus();
   }
+  function toggleFocus() { S.prepWide = !S.prepWide; try { W.localStorage.setItem(PREP_WIDE, S.prepWide ? '1' : '0'); } catch (e) {} syncPanels(); }
   function onClick(ev) {
     if (!S || !ev.target.closest) return;
     /* the Prep tab: a link in a note, a task box, a tick-column cell (no data-gm: they come from the renderer) */
     var pl = ev.target.closest('a[href^="#pp:"]'); if (pl && S.root.contains(pl)) { ev.preventDefault(); prepLink(pl.getAttribute('href')); return; }
     var pt = ev.target.closest('.rl-task[data-task]'); if (pt && S.root.contains(pt)) { ev.preventDefault(); prepTick(pt.getAttribute('data-task')); return; }
     var pc = ev.target.closest('td[data-cell]'); if (pc && S.root.contains(pc)) { prepCell(pc); return; }
+    var inMenu = ev.target.closest('.gm-menu');
+    if (!inMenu || ev.target.closest('.gm-menu-list')) menuOpen(false);   /* a click outside the menu, or on one of its items: it closes */
     var b = ev.target.closest('[data-gm]'); if (!b || !S.root.contains(b)) return;
     var a = b.getAttribute('data-gm');
     switch (a) {
+      case 'menu': { var ml2 = $q('.gm-menu-list'); menuOpen(!!(ml2 && ml2.hasAttribute('hidden'))); break; }
+      case 'focus': toggleFocus(); break;
+      case 'layout-classic': try { W.localStorage.setItem(LAYOUT, 'classic'); } catch (e) {} setApp(false); toast('Classic layout on this device. “Laptop layout” in the header brings the new one back.'); break;
+      case 'layout-app': try { W.localStorage.removeItem(LAYOUT); } catch (e) {} setApp(true); break;
       case 'retry': load(); break;
       case 'upload': upload(); break;
       case 'cancel-import': start(); break;
@@ -1981,7 +2055,7 @@
       case 'prep-go': prepGo(b.getAttribute('data-id')); break;
       case 'prep-pin': prepPin(b.getAttribute('data-sec')); break;
       case 'prep-beat': prepBeat(b); break;
-      case 'prep-wide': S.prepWide = !S.prepWide; try { W.localStorage.setItem(PREP_WIDE, S.prepWide ? '1' : '0'); } catch (e) {} syncPanels(); break;
+      case 'prep-wide': toggleFocus(); break;
       case 'prep-peekx': { var pk2 = $q('#gm-prep-peek'); if (pk2) { pk2.hidden = true; pk2.innerHTML = ''; } break; }
       case 'pin': pin(b.getAttribute('data-tool')); break;
       case 'gs-jump': screenJump(b.getAttribute('data-id')); break;
@@ -2042,6 +2116,26 @@
     else if (t.hasAttribute('data-engmod')) setEngagement(t.getAttribute('data-engmod'), t.value, true);
     else if (t.hasAttribute('data-reveal')) { var rv = {}; rv[t.getAttribute('data-reveal')] = t.checked; patch({ loc: { map: { reveal: rv } } }); if (S.map) drawMap(); renderLocation(); }
   }
+  /* the outline of a long tab (Prep, Screen): the section being read is marked in its list */
+  var spyQueued = false;
+  function onScroll(ev) {
+    var t = ev.target; if (!S || !t || !t.id || (t.id !== 'gm-prep' && t.id !== 'gm-rules')) return;
+    if (spyQueued) return; spyQueued = true;
+    (W.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () { spyQueued = false; spy(S && S.panel); });
+  }
+  function spy(panel) {
+    if (!S || !S.root || (panel !== 'prep' && panel !== 'rules')) return;
+    var pane = $q(panel === 'prep' ? '#gm-prep' : '#gm-rules'); if (!pane) return;
+    var chips = [].slice.call(pane.querySelectorAll(panel === 'prep' ? '.pp-rail [data-gm="prep-go"]' : '.gs-jump [data-gm="gs-jump"]')); if (!chips.length) return;
+    var top = pane.getBoundingClientRect().top, cur = null;
+    chips.forEach(function (c) {
+      var id = c.getAttribute('data-id'), sec = null;
+      try { sec = panel === 'prep' ? pane.querySelector('#' + (W.CSS && W.CSS.escape ? W.CSS.escape(id) : id)) : pane.querySelector('[data-gs="' + str(id).replace(/"/g, '') + '"]'); } catch (e) { sec = null; }
+      if (sec && !sec.hidden && sec.getBoundingClientRect().top - top <= 90) cur = c;
+    });
+    if (!cur && pane.scrollTop < 40) cur = null;
+    chips.forEach(function (c) { if (c === cur) c.setAttribute('aria-current', 'true'); else c.removeAttribute('aria-current'); });
+  }
   function onSubmit(ev) {
     var f = ev.target; if (!S || !f || !f.getAttribute) return;
     var k = f.getAttribute('data-gm-form'); if (!k) return;
@@ -2050,7 +2144,7 @@
     else if (k === 'rules') { var q = $q('#gm-rq'); if (q && q.value.trim()) { try { W.open('#rules?q=' + encodeURIComponent(q.value.trim()), '_blank', 'noopener'); } catch (e) {} } }
   }
   function wire(el) {
-    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); }
+    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); el.addEventListener('scroll', onScroll, true); }
     if (!wire.global) {
       wire.global = true;
       document.addEventListener('keydown', onKey, true);
@@ -2067,7 +2161,7 @@
      campaign document reaches every signed-in person, and only the GM may write the ambient) */
   function campaign(doc) {
     camp = isObj(doc) ? doc : null;
-    if (S && S.status === 'ready') renderRail();
+    if (S && S.status === 'ready') { renderRail(); renderBar(); }
     var api = (S && S.api) || keptApi;
     if (api && api.isGM && api.isGM() === true && keptApi) crewSync.note(camp);
   }

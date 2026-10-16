@@ -46,7 +46,7 @@ const TEXT = 'The Hart is late tonight';
 const put = await fetch(BASE + '/api/gm/display', { method: 'PUT', headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'text', title: 'Tonight', text: TEXT }) });
 if (put.status !== 200) { console.log('FAIL could not push a display as the GM: ' + put.status); process.exit(1); }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
 try {
   const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1180, height: 820 } });
   const page = await ctx.newPage();
@@ -74,9 +74,9 @@ try {
     }
   });
 
-  await step('only GET /api/me and GET /api/gm/display were called, and none was refused', async () => {
+  await step('only GET /api/me, GET /api/gm/display and the transcriber’s GET /api/gm/stt were called, and none was refused', async () => {
     await sleep(1500);
-    const odd = calls.filter((c) => !/^GET \/api\/(me|gm\/display) 200$/.test(c));
+    const odd = calls.filter((c) => !/^GET \/api\/(me|gm\/display|gm\/stt) 200$/.test(c));
     expect(odd.length === 0, 'unexpected API calls: ' + odd.join(' | '));
     expect(calls.some((c) => c === 'GET /api/gm/display 200'), 'display was polled: ' + calls.join(' | '));
   });
