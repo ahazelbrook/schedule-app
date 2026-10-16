@@ -610,3 +610,12 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 #gm-page .gm-ech-t { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #gm-page .gm-ech-s { font: 700 10px/1.2 var(--font-mono); letter-spacing: 0; color: var(--ink-soft); }
 #gm-page .gm-ech:hover .gm-ech-s, #gm-page .chip[aria-current="true"] .gm-ech-s { color: inherit; opacity: .85; }
+/* the engagement roll with the table's own dice: tap the highest die (or Crit) under Roll engagement */
+#gm-page .gm-dice { gap: 6px; border-top: 1px solid var(--hair); padding-top: 8px; }
+#gm-page .gm-dice .gm-lab { color: var(--ink); font-size: 12px; }
+#gm-page .gm-dicerow { display: flex; flex-wrap: wrap; gap: 6px; }
+#gm-page .gm-die { flex: 1 1 44px; min-height: 52px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; font: 900 22px/1 var(--font-poster); letter-spacing: 0; text-transform: none; box-shadow: 2px 2px 0 var(--shadow-ink); }
+#gm-page .gm-die.gm-crit { flex: 3 1 130px; font: 900 13px/1.1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; }
+#gm-page .gm-die:disabled { opacity: .45; cursor: default; box-shadow: none; }
+#gm-page .gm-die:disabled:hover { background: var(--card); color: var(--ink); border-color: var(--rule); }
+#gm-page .gm-die:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }

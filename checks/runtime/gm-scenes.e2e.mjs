@@ -1,5 +1,6 @@
 // The street scene roller (S) and the engagement roll (E) on the real GM page, in a real browser, against a local wrangler dev:
-// keys and tabs, a roll per tool, reload (the same card), Earlier, the iPad push (read-aloud only), and a phone layout.
+// keys and tabs, a roll per tool, reload (the same card), Earlier, the iPad push (read-aloud only), the engagement roll made with
+// the table's own dice (tap the highest die, Crit, a 0d pool's lowest die; stored without a seed, the same card after a reload), and a phone layout.
 // Invented fixtures only (checks/runtime/fixtures/gm/).
 //   PW_MODULE=<path to playwright> node checks/runtime/gm-scenes.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
@@ -162,6 +163,38 @@ try {
   await p.selectOption('#gm-e-approach', 'Slip');
   check(await text(p, '#gm-eng .gm-engcard h3') === 'Slip — 3d' && /Set the factors/.test(await text(p, '#gm-eng .gm-engcard')), 'a control change shows the preview again');
   await shot(p, 'engagement-desktop');
+
+  // physical dice: everyone rolls at the table, so the GM taps the highest die instead of the app rolling
+  const EN_T = sc.parts.engagement.T, OUT = EN_T.outcome, cutText = EN_T.cut.replace(/\*\*/g, '');
+  check(await text(p, '#gm-eng .gm-dice .gm-lab') === 'Rolled at the table: highest die' && (await p.$$eval('#gm-eng [data-gm="engdie"]', (bs) => bs.map((b) => b.textContent.trim()).join('|'))) === '1|2|3|4|5|6|Crit (two 6s)', 'Engage: a "Rolled at the table: highest die" row of 1 2 3 4 5 6 and Crit (two 6s)');
+  check(await p.$eval('#gm-eng [data-gm="engroll"]', (b) => b.textContent === 'Roll engagement') && await p.$eval('#gm-eng', (e) => { const r = e.querySelector('[data-gm="engroll"]').getBoundingClientRect(), d = e.querySelector('.gm-dice').getBoundingClientRect(), c = e.querySelector('.gm-engcard').getBoundingClientRect(); return d.top >= r.bottom - 1 && c.top >= d.bottom - 1; }), 'the row sits under Roll engagement (the app rolls) and above the card');
+  await p.click('#gm-eng [data-gm="engdie"][data-v="4"]');
+  await p.waitForFunction(() => /Rolled at the table: highest die 4/.test(document.querySelector('#gm-eng .gm-engcard').textContent));
+  const t4 = await text(p, '#gm-eng .gm-engcard');
+  check(/Slip — 3d/.test(t4) && t4.includes(OUT.risky.pos) && t4.includes(OUT.risky.how) && t4.replace(/\*\*/g, '').includes(cutText) && !/\[\d \d \d\]/.test(t4), 'tap 4: the risky card, its position, how and the closing line: ' + t4.slice(0, 120));
+  check(await p.$eval('#gm-eng [data-gm="engdie"][data-v="4"]', (b) => b.getAttribute('aria-pressed') === 'true'), 'the tapped die stays marked');
+  await shot(p, 'wave2-engage-dice');
+  await p.click('#gm-eng [data-gm="engdie"][data-v="crit"]');
+  await p.waitForFunction(() => /critical/.test(document.querySelector('#gm-eng .gm-engcard').textContent));
+  const tc = await text(p, '#gm-eng .gm-engcard');
+  check(tc.includes(OUT.crit.pos) && tc.includes(OUT.crit.how) && /two 6s/.test(tc), 'Crit (two 6s): the crit card');
+  await p.click('#gm-eng [data-gm="engdie"][data-v="4"]');
+  await p.waitForFunction(() => /highest die 4/.test(document.querySelector('#gm-eng .gm-engcard').textContent));
+  const stP = await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.cards.engagement && d.cards.engagement.phys && d.cards.engagement.phys.best === 4 && Object.keys(d.hist.engagement || {}).length >= 3 ? d : null; }, 8000);
+  const ce = stP && stP.cards.engagement;
+  check(!!ce && ce.id === 'engagement' && ce.phys.crit === false && !('seed' in ce) && ce.ui.approach === 'Slip' && /table 4$/.test(ce.label), 'server: the card is { id, ui, phys: { best, crit } } with no seed');
+  await p.reload();
+  await p.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  await p.keyboard.press('e');
+  check(await text(p, '#gm-eng .gm-engcard') === t4 && await p.$eval('#gm-eng [data-gm="engdie"][data-v="4"]', (b) => b.getAttribute('aria-pressed') === 'true'), 'reload: the same card from the table\'s result');
+  await p.click('#gm-eng [data-gm="replay"]:not([aria-current]) >> text=table crit');
+  await p.waitForFunction(() => /critical/.test(document.querySelector('#gm-eng .gm-engcard').textContent));
+  check(await text(p, '#gm-eng .gm-engcard') === tc, 'Earlier: the crit comes back, card for card');
+  await p.selectOption('#gm-e-approach', 'Charm'); await p.click('#gm-eng [data-gm="engtri"][data-id="bold"][data-v="-1"]'); await p.click('#gm-eng [data-gm="engtri"][data-id="tier"][data-v="-1"]');
+  check(await text(p, '#gm-eng .gm-dice .gm-lab') === 'Rolled at the table: lowest die' && (await p.$$('#gm-eng [data-gm="engdie"]')).length === 6, 'a 0d pool: the table rolls two and keeps the lowest, so the row says "lowest die" and has no crit');
+  await p.click('#gm-eng [data-gm="engdie"][data-v="2"]');
+  await p.waitForFunction(() => /kept the lowest: 2/.test(document.querySelector('#gm-eng .gm-engcard').textContent));
+  check(/Charm — 0d \(2d, keep lowest\)/.test(await text(p, '#gm-eng .gm-engcard')) && (await text(p, '#gm-eng .gm-engcard')).includes(OUT.desperate.how), 'tap 2 on a 0d pool: the lowest die is 2, the desperate card');
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
   await G.c.close();
 
@@ -174,7 +207,12 @@ try {
   for (const seg of ['scenes', 'engagement']) {
     await mp.click('.gm-segbar [data-seg="' + seg + '"]');
     await mp.waitForSelector('#gm-' + (seg === 'scenes' ? 'scn' : 'eng') + ' select', { state: 'visible', timeout: 5000 });
-    if (seg === 'scenes') { await mp.click('[data-gm="scnroll"]'); await mp.waitForSelector('#gm-scn .gm-scncard'); } else { await mp.click('[data-gm="engroll"]'); await mp.waitForSelector('#gm-eng .gm-engcard .gm-grid'); }
+    if (seg === 'scenes') { await mp.click('[data-gm="scnroll"]'); await mp.waitForSelector('#gm-scn .gm-scncard'); } else {
+      await mp.click('[data-gm="engroll"]'); await mp.waitForSelector('#gm-eng .gm-engcard .gm-grid');
+      await mp.click('#gm-eng [data-gm="engdie"][data-v="5"]');     // the table's dice: seven buttons that wrap, none under 44 px, nothing wider than the screen
+      await mp.waitForFunction(() => /highest die 5|kept the lowest: 5/.test(document.querySelector('#gm-eng .gm-engcard').textContent));
+      check(await mp.$eval('#gm-eng .gm-dicerow', (r) => { const w = r.getBoundingClientRect(); return [...r.children].every((b) => { const x = b.getBoundingClientRect(); return x.left >= w.left - 1 && x.right <= w.right + 1 && x.height >= 44; }); }), 'phone engagement: the dice buttons wrap inside the row, each 44 px or taller');
+    }
     const lay = await mp.evaluate(() => {
       const vw = window.innerWidth, wide = [], small = [];
       for (const el of document.querySelectorAll('#gm-page *')) { const r = el.getBoundingClientRect(); if (r.width && r.height && r.right > vw + 1) { let clipped = false; for (let q = el.parentElement; q && q !== document.body; q = q.parentElement) if (getComputedStyle(q).overflowX !== 'visible') { clipped = true; break; } if (!clipped && getComputedStyle(el).position !== 'fixed') wide.push(el.tagName + '.' + (el.className || '')); } }

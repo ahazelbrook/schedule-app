@@ -1386,6 +1386,23 @@ await test('13c. on the page: a stored card redraws without a note after a reloa
   const h3 = await openPage({ fg, br }); assert.ok(h3.q('#gm-card .gm-quiet') && /Redrawn with the current tables/.test(h3.q('#gm-card .gm-quiet').textContent), 'a card stored before versions says so'); await h3.save();
 });
 
+await test('13c. replacing the stored card: replacePatch nulls what only the old card had; an Earlier entry without composeVersion brings its note back, also after a reload', async () => {
+  assert.deepEqual(P.replacePatch({ a: 1, b: { c: 2, d: 3 }, e: 5 }, { a: 9, b: { c: 4 }, f: 6 }), { e: null, a: 9, b: { d: null, c: 4 }, f: 6 });
+  assert.deepEqual(P.replacePatch(null, { x: { y: 1 } }), { x: { y: 1 } }); assert.deepEqual(P.replacePatch({ x: 1 }, {}), { x: null });
+  const old = { cards: { engagement: { hid: 'h1', seed: 7, phys: { best: 4, crit: false }, ui: { mods: { a: 1 } } } } };
+  assert.deepEqual(P.applyPatch(old, { cards: { engagement: P.replacePatch(old.cards.engagement, { hid: 'h2', seed: 8, ui: { mods: { a: 0 } } }) } }).cards.engagement, { hid: 'h2', seed: 8, ui: { mods: { a: 0 } } }, 'the merge leaves nothing of the old card');
+  const fg = fakeGm(), br = fakeBrowser();
+  const h = await openPage({ fg, br }); h.press('2'); const fresh = cardTxt(h); h.press('3'); await h.save();
+  const hist = fg.server.doc.hist.situation, ids = Object.keys(hist), older = ids.find((k) => hist[k].situation === 'fourfive');
+  delete hist[older].composeVersion;                           /* the entry as an older page stored it */
+  const h2 = await openPage({ fg, br }); assert.ok(!h2.q('#gm-card .gm-quiet'), 'the current card is a version 2 card');
+  h2.qa('#gm-earlier [data-gm="replay"]').filter((c) => c.getAttribute('data-h') === older)[0].click();
+  assert.ok(h2.q('#gm-card .gm-quiet'), 'Earlier: the older entry says it was redrawn');
+  assert.equal(cardTxt(h2).replace(/Redrawn with the current tables/, '').replace(/\s+/g, ' ').slice(0, 20), fresh.replace(/\s+/g, ' ').slice(0, 20), 'and it is the card that was rolled first (same seed)');
+  await h2.save(); assert.ok(!('composeVersion' in fg.server.doc.cards.situation), 'the stored card is that entry, version and all');
+  const h3 = await openPage({ fg, br }); assert.ok(h3.q('#gm-card .gm-quiet'), 'after a reload the note is still there'); await h3.save();
+});
+
 await test('13d. packWarnings: each module\'s own check(T), guarded; a missing table is a warning list, not an error', () => {
   const mods = { B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmEngagement: EN, B68GmNpc: NPCM };
   const full = { console: FIXC.console, location: { T: FIXL.T, extra: FIXL.extra }, scenes: { T: FIXS.parts.scenes.T }, engagement: { T: FIXS.parts.engagement.T }, npc: NPCFIX.parts.npc };
@@ -1525,6 +1542,152 @@ await test('13g. Earlier chips name what the card is (the NPC for Someone / Cont
   assert.match(chips[1].querySelector('.gm-ech-s').textContent, /· risky$/);
   // the other tools' chips carry the time (they have no position)
   h.q('[data-gm="scnroll"]').click(); assert.match(h.q('#gm-scn .gm-earlier .gm-ech-s').textContent, /^\d\d:\d\d$/);
+  await h.save();
+});
+
+/* =====================================================================================================================
+   14. Physical dice for the engagement roll: the table rolls, the GM taps the highest die (the lowest on a 0d pool, a crit for two 6s)
+   ===================================================================================================================== */
+const enGame = () => EN.create({ T: T_EN });
+/* a seed whose app roll gives this result (highest/lowest die best, crit or not) for these controls */
+function seedFor(en, ui, best, crit) {
+  for (let seed = 1; seed < 200000; seed++) { const r = en.roll(ui, { seed }); if (r.best === best && r.crit === crit) return seed; }
+  throw new Error('no seed for ' + best + (crit ? ' crit' : ''));
+}
+const modsUi = (en, mods) => Object.assign(en.defaults(), { mods: Object.assign(en.defaults().mods, mods) });
+
+await test('14a. engagementPhys: the card for a result called at the table is the card the app roll gives for it (position, closing line), for every pool and result', () => {
+  const en = enGame();
+  const pools = [[{ bold: -1, tier: -1 }, -1], [{ bold: -1 }, 0], [{}, 1], [{ bold: 1 }, 2], [{ bold: 1, tier: 1 }, 3]];
+  for (const [mods, pool] of pools) {
+    const ui = modsUi(en, mods);
+    assert.equal(en.pool(ui), pool, 'the pool of ' + JSON.stringify(mods));
+    const results = [1, 2, 3, 4, 5, 6].map((b) => [b, false]).concat(en.pool(ui) >= 2 ? [[6, true]] : []);
+    for (const [best, crit] of results) {
+      const app = en.roll(ui, { seed: seedFor(en, ui, best, crit) }), ph = P.engagementPhys(EN, en, T_EN, ui, { best, crit });
+      const tag = en.pool(ui) + 'd best ' + best + (crit ? ' crit' : '');
+      assert.ok(ph, tag + ': a card');
+      assert.deepEqual(ph.lines[0], app.lines[0], tag + ': the modifiers line'); assert.deepEqual(ph.lines[1], app.lines[1], tag + ': the position and its how');
+      assert.deepEqual(ph.lines[3], app.lines[3], tag + ': the closing line'); assert.equal(ph.lines.length, 4);
+      assert.equal(ph.lines[2].kind, 'grid'); assert.equal(ph.lines[2].id, 'roll'); assert.match(ph.lines[2].rows[0].md, /at the table/); assert.ok(ph.lines[2].rows[0].md.includes('**' + (crit ? 'critical' : best) + '**'), ph.lines[2].rows[0].md);
+      assert.deepEqual(ph.meta.chips, app.meta.chips, tag + ': the position chip'); assert.equal(ph.meta.title, app.meta.title); assert.equal(ph.meta.sub, app.meta.sub); assert.equal(ph.meta.label, app.meta.label);
+      assert.equal(ph.position, app.position); assert.equal(ph.pool, app.pool); assert.equal(ph.zero, app.zero); assert.equal(ph.best, best); assert.equal(ph.crit, crit);
+      assert.deepEqual(ph.meta.result.pos, app.meta.result.pos); assert.equal(ph.meta.all.length, app.meta.all.length); assert.equal(ph.meta.all[0], app.meta.all[0]);
+      assert.deepEqual(ph.replay, { id: 'engagement', phys: { best, crit }, ui: app.replay.ui }, 'replay info, no seed'); assert.ok(!('seed' in ph.replay) && ph.seed === null);
+      assert.ok(!/undefined|NaN|\[object/.test(JSON.stringify(ph)));
+      // the same position as the module's own helper gives for these dice
+      assert.equal(ph.position, EN.outcomeOf(T_EN, { crit, best }).pos);
+    }
+  }
+  const one = modsUi(en, {}), zero = modsUi(en, { bold: -1, tier: -1 });
+  assert.equal(en.pool(one), 1); assert.ok(en.pool(zero) <= 0);
+  assert.equal(P.engagementPhys(EN, en, T_EN, one, { best: 6, crit: true }), null, 'two 6s needs 2d');
+  assert.equal(P.engagementPhys(EN, en, T_EN, zero, { best: 6, crit: true }), null, 'a 0d pool has no crit');
+  for (const bad of [{ best: 0 }, { best: 7 }, { best: 'x' }, { best: 4.5 }, { best: 5, crit: true }, null, 'x']) assert.equal(P.engagementPhys(EN, en, T_EN, modsUi(en, { bold: 1 }), bad), null, JSON.stringify(bad));
+  assert.match(P.engagementPhys(EN, en, T_EN, zero, { best: 2, crit: false }).lines[2].rows[0].md, /^0d — rolled 2 at the table, kept the lowest: \*\*2\*\*$/, 'a 0d pool: the table rolls two and keeps the lowest');
+  assert.match(P.engagementPhys(EN, en, T_EN, zero, { best: 2, crit: false }).meta.title, /\(2d, keep lowest\)/, 'and the title says so, never -1d');
+});
+
+const dieBtn = (h, v) => h.q('#gm-eng [data-gm="engdie"][data-v="' + v + '"]');
+const engTxt = (h) => cardOf(h, '#gm-eng .gm-engcard').replace(/\*\*/g, '');       // this fake page shows markdown as written
+
+await test('14b. the Engage panel: the pool before the roll, Roll engagement (the app rolls), and a "Rolled at the table: highest die" row of 1-6 and Crit (two 6s)', async () => {
+  const fg = fakeGm(), h = await openPage({ fg });
+  h.press('e');
+  assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 1d', 'the pool before any roll'); assert.ok(/Set the factors, then roll\./.test(engTxt(h)));
+  assert.ok(h.q('#gm-eng [data-gm="engroll"]'), 'Roll engagement stays'); assert.equal(h.q('#gm-eng [data-gm="engroll"]').textContent, 'Roll engagement');
+  const row = h.q('#gm-eng .gm-dice'); assert.ok(row, 'the dice row');
+  assert.equal(row.querySelector('.gm-lab').textContent, 'Rolled at the table: highest die');
+  assert.deepEqual(h.qa('#gm-eng [data-gm="engdie"]').map((b) => b.textContent), ['1', '2', '3', '4', '5', '6', 'Crit (two 6s)']);
+  assert.ok(dieBtn(h, 'crit').hasAttribute('disabled') && /2d/.test(dieBtn(h, 'crit').getAttribute('title')), 'one die cannot give two 6s');
+  const all = h.q('#gm-eng').innerHTML, iRoll = all.indexOf('data-gm="engroll"'), iDice = all.indexOf('class="gm-field wide gm-dice"'), iCard = all.indexOf('gm-engcard');
+  assert.ok(iRoll < iDice && iDice < iCard, 'the row sits under Roll engagement, above the card');
+  h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click();
+  assert.ok(!dieBtn(h, 'crit').hasAttribute('disabled'), 'a 2d pool can crit');
+  h.q('[data-gm="engtri"][data-id="bold"][data-v="-1"]').click(); h.q('[data-gm="engtri"][data-id="tier"][data-v="-1"]').click();
+  assert.equal(h.q('#gm-eng .gm-dice .gm-lab').textContent, 'Rolled at the table: lowest die', 'a 0d pool rolls two and keeps the LOWEST');
+  assert.equal(h.qa('#gm-eng [data-gm="engdie"]').length, 6, 'and has no crit button'); assert.ok(/0d: roll two dice, keep the lowest/.test(h.q('#gm-eng .gm-dice').textContent), h.q('#gm-eng .gm-dice').textContent);
+  await h.save();
+});
+
+await test('14c. tap 4: the risky card; a crit; the result is stored without a seed, redrawn exactly after a reload and from Earlier', async () => {
+  const fg = fakeGm(), br = fakeBrowser();
+  const h = await openPage({ fg, br });
+  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click();                           // 2d
+  dieBtn(h, '4').click();
+  let txt = engTxt(h);
+  assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
+  assert.ok(txt.includes(T_EN.outcome.risky.pos) && txt.includes(T_EN.outcome.risky.how), 'the risky position and its line: ' + txt);
+  assert.ok(txt.replace(/\*\*/g, '').includes(T_EN.cut.replace(/\*\*/g, '')), 'the closing line'); assert.ok(/Rolled at the table: highest die 4/.test(txt), txt);
+  assert.deepEqual(h.qa('#gm-eng .gm-engcard .gm-chip').map((c) => c.textContent), [T_EN.outcome.risky.pos.split(' — ')[0]]);
+  assert.equal(dieBtn(h, '4').getAttribute('aria-pressed'), 'true', 'the tapped die is marked'); assert.equal(dieBtn(h, '5').getAttribute('aria-pressed'), 'false');
+  assert.ok(h.q('#gm-eng .gm-engcard [data-gm="pin"]') && h.q('#gm-eng .gm-engcard [data-gm="copy"]'), 'Pin and Copy on it');
+  const first = txt;
+  dieBtn(h, 'crit').click(); txt = engTxt(h);
+  assert.ok(txt.includes(T_EN.outcome.crit.pos) && txt.includes(T_EN.outcome.crit.how) && /two 6s/.test(txt) && /critical/.test(txt), 'a crit: ' + txt);
+  assert.equal(dieBtn(h, 'crit').getAttribute('aria-pressed'), 'true'); assert.equal(dieBtn(h, '4').getAttribute('aria-pressed'), 'false');
+  const crit = txt;
+  dieBtn(h, '6').click(); assert.ok(engTxt(h).includes(T_EN.outcome.six.pos + ' ') || engTxt(h).includes(T_EN.outcome.six.how), 'one 6 is the six outcome, not the crit');
+  dieBtn(h, '2').click(); assert.ok(engTxt(h).includes(T_EN.outcome.desperate.how), 'a 1-3 is the desperate outcome');
+  dieBtn(h, '4').click();
+  await h.save();
+  const c = fg.server.doc.cards.engagement;
+  assert.equal(c.id, 'engagement'); assert.deepEqual(c.phys, { best: 4, crit: false }); assert.deepEqual(c.ui, { approach: 'Smash', load: 'Quiet', mods: { bold: 1, tier: 0 } });
+  assert.ok(!('seed' in c) && !('mem' in c), 'no seed: the dice are the table\'s'); assert.ok(c.hid && c.at && /^Smash — 2d · Level · table 4$/.test(c.label), c.label);
+  assert.equal(Object.keys(fg.server.doc.hist.engagement).length, 5, 'every tap is in Earlier (five kept)');
+  const h2 = await openPage({ fg, br });
+  assert.equal(engTxt(h2), first, 'reload: exactly the same card'); assert.equal(h2.q('#gm-eng [data-gm="engdie"][data-v="4"]').getAttribute('aria-pressed'), 'true');
+  const chips = h2.qa('#gm-eng [data-gm="replay"]'); assert.equal(chips.length, 5);
+  assert.deepEqual(chips.map((x) => x.querySelector('.gm-ech-t').textContent).sort(), ['Smash — 2d · Ahead of the game · table crit', 'Smash — 2d · Ahead · table 6', 'Smash — 2d · Behind · table 2', 'Smash — 2d · Level · table 4', 'Smash — 2d · Level · table 4'].sort(), 'Earlier names the table result');
+  chips.filter((x) => x.querySelector('.gm-ech-t').textContent.endsWith('table crit'))[0].click();
+  assert.equal(engTxt(h2), crit, 'Earlier brings the crit back, card for card');
+  await h2.save();
+  const h3 = await openPage({ fg, br });
+  assert.equal(engTxt(h3), crit, 'and the replayed card is the one that comes back'); assert.equal(h3.q('#gm-eng [data-gm="engdie"][data-v="crit"]').getAttribute('aria-pressed'), 'true');
+  // a control change drops the stored card (the Earlier row keeps it); the app's own roll still works and files a seed
+  change(h3.q('#gm-e-approach'), 'Charm'); assert.ok(/Set the factors/.test(engTxt(h3)) && !h3.q('#gm-eng .gm-chip'), 'a change shows the pool again');
+  h3.q('[data-gm="engroll"]').click(); assert.ok(/\[\d \d\]/.test(engTxt(h3)), 'the app rolls real dice: ' + engTxt(h3));
+  await h3.save();
+  assert.ok(Number.isInteger(fg.server.doc.cards.engagement.seed) && !fg.server.doc.cards.engagement.phys && fg.server.doc.cards.engagement.phys === undefined, 'an app roll files a seed and no phys');
+});
+
+await test('14d. a 0d pool: the table rolls two and keeps the lowest; the tap is the lowest die; Pin, Copy and L say it was the table\'s', async () => {
+  const fg = fakeGm(), br = fakeBrowser(), h = await openPage({ fg, br });
+  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="-1"]').click(); h.q('[data-gm="engtri"][data-id="tier"][data-v="-1"]').click();
+  assert.equal(h.q('#gm-eng .gm-dice .gm-lab').textContent, 'Rolled at the table: lowest die');
+  dieBtn(h, '5').click();
+  const txt = engTxt(h);
+  assert.ok(/Smash — 0d \(2d, keep lowest\)/.test(txt) && !/-1d/.test(txt) && /0d — rolled 2 at the table, kept the lowest: 5/.test(txt), txt);
+  assert.ok(txt.includes(T_EN.outcome.risky.how), 'the lowest die 5 is the risky outcome');
+  h.q('#gm-eng [data-gm="copy"]').click(); assert.ok(/kept the lowest/.test(br.copied) && !/\*\*/.test(br.copied) && br.copied.includes(T_EN.cut.replace(/\*\*/g, '')), br.copied);
+  h.q('#gm-eng [data-gm="pin"]').click(); h.press('l'); await h.save();
+  const pins = Object.values(fg.server.doc.pins); assert.equal(pins.length, 1); assert.equal(pins[0].tool, 'engagement'); assert.ok(/at the table/.test(pins[0].text));
+  const cap = Object.values(fg.server.doc.capture); assert.ok(cap.some((e) => e.bucket === 'r' && /^Engagement: Smash — 0d \(2d, keep lowest\) · Level · table low 5$/.test(e.text)), JSON.stringify(cap));
+  assert.deepEqual(fg.server.doc.cards.engagement.phys, { best: 5, crit: false });
+});
+
+await test('14f. a table roll and an app roll never inherit each other\'s stored keys: reload and Earlier give each card back as it was', async () => {
+  const fg = fakeGm(), br = fakeBrowser(), h = await openPage({ fg, br });
+  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click();
+  dieBtn(h, '4').click(); const table = engTxt(h);
+  h.q('[data-gm="engroll"]').click(); const app = engTxt(h); assert.notEqual(app, table); assert.ok(/\[\d \d\]/.test(app));
+  await h.save();
+  let c = fg.server.doc.cards.engagement; assert.ok(Number.isInteger(c.seed) && !('phys' in c), 'the app roll replaced the table roll: no phys left on it: ' + JSON.stringify(c));
+  const h2 = await openPage({ fg, br }); assert.equal(engTxt(h2), app, 'reload: the app roll, not the table roll');
+  h2.qa('#gm-eng [data-gm="replay"]').filter((x) => /table 4$/.test(x.querySelector('.gm-ech-t').textContent))[0].click();
+  assert.equal(engTxt(h2), table, 'Earlier: the table roll'); await h2.save();
+  c = fg.server.doc.cards.engagement; assert.ok(c.phys && !('seed' in c), 'and the stored card is the table roll alone: ' + JSON.stringify(c));
+  const h3 = await openPage({ fg, br }); assert.equal(engTxt(h3), table, 'reload: still the table roll');
+  h3.qa('#gm-eng [data-gm="replay"]').filter((x) => !/table/.test(x.querySelector('.gm-ech-t').textContent))[0].click();
+  assert.equal(engTxt(h3), app, 'Earlier: the app roll again'); await h3.save();
+  assert.ok(Number.isInteger(fg.server.doc.cards.engagement.seed) && !('phys' in fg.server.doc.cards.engagement));
+});
+
+await test('14e. a pack without the engagement part: no dice row, nothing thrown', async () => {
+  const fg = fakeGm(); const full = fg.gm.pack;
+  fg.gm.pack = async () => { const r = await full(); delete r.parts.engagement; return r; };
+  const h = await openPage({ fg }); h.press('e');
+  assert.ok(/no engagement part/.test(h.q('#gm-eng').textContent) && !h.q('#gm-eng .gm-dice'));
   await h.save();
 });
 

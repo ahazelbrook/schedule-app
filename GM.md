@@ -210,11 +210,18 @@ fails and nobody is known, nothing is purged.
   GM grid (landmark, who is out, what is in the way, word out, factions, the district rule). **Read-aloud to the iPad** sends
   only the three paragraphs as plain text (never the notable, the rumour or the rule). **Engage**: approach, loadout (Quiet
   3 / Loud 6) and three chips per factor (**+1d** carrying the factor's plus statement, **0**, **−1d** its minus statement, so
-  which is which reads at a glance); the card shows the pool before a roll, **Roll engagement** rolls it
+  which is which reads at a glance); the card shows the pool before a roll, **Roll engagement** rolls it in the app
   (a 0d pool rolls two and keeps the lowest) and the card gives the position, the dice and the closing "cut to the first
-  obstacle" line. Both file a card under `cards.scenes` / `cards.engagement` (`{ hid, seed, ui, mem?, label, at }`; the street
-  scene keeps its repeat-guard in `mem.scenes`, the engagement roll has none), five Earlier per tool, Pin, Copy and `L`. A reload
-  or an Earlier click redraws the same card from the seed. Changing an engagement control drops the stored roll (the Earlier row
+  obstacle" line. **Everyone rolls physical dice**, so under Roll engagement sits a row **Rolled at the table: highest die**
+  with the buttons `1 2 3 4 5 6` and **Crit (two 6s)** (disabled under 2d): the GM rolls the pool, taps the highest die, and
+  gets the card the app's roll would give for that result (position, how, the closing line; the Roll row says "Rolled at the
+  table"). A 0d pool rolls two dice and keeps the LOWEST, so its row reads **Rolled at the table: lowest die** and has no crit.
+  Both file a card under `cards.scenes` / `cards.engagement` (an app roll `{ hid, seed, ui, label, at }`, a table roll
+  `{ hid, id: 'engagement', ui, phys: { best, crit }, label, at }` with no seed and a label ending "table 4" / "table crit" /
+  "table low 2"; the street scene keeps its repeat-guard in `mem.scenes`, the engagement roll has none), five Earlier per tool, Pin, Copy and `L`. A reload
+  or an Earlier click redraws the same card (from the seed, or from the result called at the table). A stored card is replaced, never merged:
+  the way of rolling it does not use is sent as null, so a table roll never keeps an old seed nor an app roll an old `phys`.
+  Changing an engagement control drops the stored roll (the Earlier row
   keeps it) and shows the pool again; the controls live in `eng.ui` and `scn.ui`. Parity with the vault pages:
   `node scripts/gm-parity.mjs --scenes --engagement` (see the header of that script for the one deliberate difference).
 - **NPC (`N`).** At the top the generator: **Roll an NPC** draws a card (the vault generator's port, `app/gm/npc.js`, fed by the
