@@ -623,6 +623,28 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-page .gm-bar.out .gm-save { display: none; }
   body.gm-app #gm-page .gm-segbar { top: var(--gm-bar-h, 44px); }
 }
+/* ---------- the Score panel (J): the outline of a heist (gm-page.js renderScore; GM.md "Score (J)") ----------
+   Six pickers and Roll a score in the same wrapping row as the other generators. On the card every row that can be rolled again
+   has a small ↻ at its right (44 px on a touch screen), and the pitch one in its corner; the cloud folds away. On a phone the
+   label sits over its row, so the text has the width. */
+#gm-page .gm-sc-ctl .gm-field { flex: 1 1 150px; }
+#gm-page .gm-sc-want { position: relative; padding-right: 46px; }
+#gm-page .gm-sc-want .gm-bump { position: absolute; top: 4px; right: 4px; }
+#gm-page .gm-sc-grid dd { display: flex; align-items: flex-start; gap: 6px; }
+#gm-page .gm-sc-md { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+#gm-page .gm-sc-md p + p { margin-top: 4px; }
+#gm-page .gm-bump { flex: none; width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font: 700 17px/1 var(--font-text); border: 1.5px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; }
+#gm-page .gm-bump:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+#gm-page .gm-bump:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+/* a name in the rail's On stage box and its Job button, side by side */
+#gm-page .gm-onstage { display: inline-flex; align-items: stretch; gap: 2px; }
+@media (pointer: coarse) { #gm-page .gm-bump { width: 44px; height: 44px; } #gm-page .gm-sc-want { padding-right: 56px; } }
+@media (max-width: 599px) {
+  #gm-page .gm-bump { width: 44px; height: 44px; }
+  #gm-page .gm-sc-want { padding-right: 56px; }
+  #gm-page .gm-sc-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  #gm-page .gm-sc-grid dt { margin-top: 8px; }
+}
 /* ---------- the Downtime panel (D): personal business (gm-page.js renderDowntime; GM.md "Downtime (D)") ----------
    Who and Activity are chips; the activity's one row of buttons rolls the card on a tap (the table's dice are the roll, so the
    buttons are big enough to hit with the dice in the other hand). On an Indulge vice card the morning after sits right under the scene: a d100 box,

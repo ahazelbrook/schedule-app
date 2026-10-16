@@ -349,11 +349,11 @@ await test('(d) only a player-layer render goes to the display: GM layer refused
   if (!gate.allows({ kind: 'blank' }) || !gate.allows({ kind: 'npc', npcId: 'x' }) || !gate.allows({ kind: 'text', text: 'x' })) throw new Error('other kinds should pass');
 });
 
-await test('(d) keys: never while typing (Esc only) or with a modifier; 1-4 (5-9 nothing), N B S T, P X M, L, H twice or Shift+H', async () => {
+await test('(d) keys: never while typing (Esc only) or with a modifier; 1-4 (5-9 nothing), N B S T J, P X M, L, H twice or Shift+H', async () => {
   const k = (key, x = {}) => GP.keyAction({ key, ...x });
   assertEq([k('1'), k('4'), k('9'), k('0')], [{ type: 'situation', n: 1 }, { type: 'situation', n: 4 }, null, { type: 'clear' }], 'digits (0 clears the iPad to ambient; 5-9 do nothing)');
   assertEq([k('i').panel, k('0', { typing: true }), k('i', { ctrlKey: true })], ['ipad', null, null], 'the iPad panel key');
-  assertEq([k('n').panel, k('B').panel, k('t').panel, k('s').panel, k('E'), k('e')], ['npc', 'location', 'rules', 'scenes', null, null], 'panels (E went with Engage)');
+  assertEq([k('n').panel, k('B').panel, k('t').panel, k('s').panel, k('j').panel, k('E'), k('e')], ['npc', 'location', 'rules', 'scenes', 'score', null, null], 'panels (J is Score; E went with Engage)');
   assertEq([k('p').bucket, k('x').bucket, k('M').bucket, k('l').type, k('h').type, k('H').type], ['n', 'x', 'm', 'last', 'blank-tap', 'blank'], 'capture, and the blank key');
   assertEq([k('1', { typing: true }), k('h', { typing: true }), k('Escape', { typing: true })], [null, null, { type: 'esc' }], 'typing');
   assertEq([k('1', { ctrlKey: true }), k('h', { metaKey: true }), k('p', { altKey: true })], [null, null, null], 'modifiers');

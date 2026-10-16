@@ -510,6 +510,7 @@
       case 'b': return { type: 'panel', panel: 'location' };
       case 't': return { type: 'panel', panel: 'rules' };
       case 's': return { type: 'panel', panel: 'scenes' };
+      case 'j': return { type: 'panel', panel: 'score' };
       case 'd': return { type: 'panel', panel: 'downtime' };
       case 'p': return { type: 'capture', bucket: 'n' };
       case 'x': return { type: 'capture', bucket: 'x' };
@@ -652,13 +653,13 @@
   }
   P.packLosses = packLosses;
 
-  /* The tables a pack lacks, by each module's own check(T) (console, location, npc, scenes, downtime), for the preview and the
+  /* The tables a pack lacks, by each module's own check(T) (console, location, npc, scenes, score, downtime), for the preview and the
      load to show as WARNINGS (never errors: the upload still works, and every roller falls back to a neutral word for a missing table;
      the downtime cards to the built-in tables). mods: { B68GmConsole, ..., B68DowntimeTables }; parts: { <part>: body }.
      -> [{ part, missing: [path] }]. A downtime part is laid over the built-in tables (app/downtime-tables.js, the third name), so it is
      checked laid over them: check(T, part's T). A part the pack lacks, a module or base tables not loaded and a check that throws say
      nothing. */
-  var CHECKED = [['console', 'B68GmConsole'], ['location', 'B68GmLocation'], ['npc', 'B68GmNpc'], ['scenes', 'B68GmScenes'], ['downtime', 'B68GmDowntime', 'B68DowntimeTables']];
+  var CHECKED = [['console', 'B68GmConsole'], ['location', 'B68GmLocation'], ['npc', 'B68GmNpc'], ['scenes', 'B68GmScenes'], ['score', 'B68GmScore'], ['downtime', 'B68GmDowntime', 'B68DowntimeTables']];
   function packWarnings(mods, parts) {
     var out = [];
     CHECKED.forEach(function (c) {
@@ -1070,12 +1071,12 @@
   }
   function setNow(v) {
     v = str(v).trim().slice(0, 120); if (v === nowDistrict()) return;
-    patch({ now: { district: v } }); renderNow(); syncDistricts();
+    patch({ now: { district: v } }); renderNow(); syncDistricts(); scMaybeRedraw();
   }
   function adoptMem() {
     var m = isObj(S.doc.mem) ? S.doc.mem : {};
     if (S.con) { var cm = S.con.mem(); Object.keys(cm).forEach(function (k) { delete cm[k]; }); Object.assign(cm, clone(m.console || {})); }
-    S.locMem = clone(m.location || {}); S.scnMem = clone(m.scenes || {}); S.npcMem = clone(m.npc || {}); S.dtMem = clone(m.downtime || {});
+    S.locMem = clone(m.location || {}); S.scnMem = clone(m.scenes || {}); S.npcMem = clone(m.npc || {}); S.dtMem = clone(m.downtime || {}); S.scMem = clone(m.score || {});
     if (S.con) { try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {} }
   }
 
@@ -1119,6 +1120,7 @@
     close();
     S = { root: rootEl, api: api, me: null, status: 'loading', doc: {}, updatedAt: null, saver: null, carriedParked: null,
       pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console', scn: null, scnRoll: null, scnMem: {}, scnErr: '',
+      sc: null, scRoll: null, scMem: {}, scErr: '', scSig: null, scCtxSig: '', scBusy: {},
       dt: null, dtDists: null, dtRoll: null, dtSig: null, dtMem: {}, dtErr: '', dtNote: '', dtBusy: {},
       arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, pinOpen: null, figMemo: {}, importing: null, shown: 'console' };
     try { S.panel = W.localStorage.getItem('b68.gm.panel') || 'location'; S.prepWide = W.localStorage.getItem(PREP_WIDE) === '1'; } catch (e) {}
@@ -1205,7 +1207,7 @@
       '<p class="gm-up"><button type="button" class="btn ' + (losses.length ? 'bad' : 'primary') + '" data-gm="upload"' + (v.ok ? '' : ' disabled') + '>' + (losses.length ? 'Upload anyway' : 'Upload ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's')) + '</button> <progress id="gm-prog" max="' + Math.max(1, v.parts.length) + '" value="0" hidden></progress> <span id="gm-upmsg" class="gm-dim" role="status"></span></p>';
   }
   /* the pack check as a list: a warning, never an error (the rollers use a neutral word for a table the pack lacks) */
-  function modMap() { return { B68GmConsole: W.B68GmConsole, B68GmLocation: W.B68GmLocation, B68GmNpc: W.B68GmNpc, B68GmScenes: W.B68GmScenes, B68GmDowntime: W.B68GmDowntime, B68DowntimeTables: W.B68DowntimeTables }; }
+  function modMap() { return { B68GmConsole: W.B68GmConsole, B68GmLocation: W.B68GmLocation, B68GmNpc: W.B68GmNpc, B68GmScenes: W.B68GmScenes, B68GmScore: W.B68GmScore, B68GmDowntime: W.B68GmDowntime, B68DowntimeTables: W.B68DowntimeTables }; }
   function packWarnHtml(warns) {
     if (!warns.length) return '';
     var n = warns.reduce(function (k, w) { return k + w.missing.length; }, 0);
@@ -1309,6 +1311,7 @@
     else { try { S.con = C.create({ T: cp.T, campaign: part('campaign') || {}, state: S.doc.con || {}, mem: clone(m.console || {}) }); } catch (e) { S.conErr = 'The console could not start: ' + errText(e); } }
     S.locMem = clone(m.location || {}); S.locErr = ''; S.scnMem = clone(m.scenes || {}); S.scn = null; S.npcg = null; S.npcMem = clone(m.npc || {}); S.npcRoll = null;
     S.dt = null; S.dtDists = null; S.dtRoll = null; S.dtSig = null; S.dtMem = clone(m.downtime || {});
+    S.sc = null; S.scRoll = null; S.scSig = null; S.scCtxSig = ''; S.scErr = ''; S.scMem = clone(m.score || {});
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
     layout(); redrawAll(); subscribeNpcs(); checkPack();
@@ -1327,7 +1330,7 @@
     }, function () {});
   }
   function layout() {
-    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['npc', 'NPC'], ['downtime', 'Downtime'], ['cards', 'Cards'], ['rules', 'GM screen'], ['ipad', 'iPad'], ['state', 'State']];
+    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['score', 'Score'], ['npc', 'NPC'], ['downtime', 'Downtime'], ['cards', 'Cards'], ['rules', 'GM screen'], ['ipad', 'iPad'], ['state', 'State']];
     S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' + barHtml() +
       '<div class="seg gm-segbar" role="tablist" aria-label="Show">' + segs.map(function (s) { return '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
       '<div class="gm-main">' +
@@ -1342,8 +1345,8 @@
       '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div>' +
       '<details class="gm-singles" id="gm-singles"></details></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
-      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
+      [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score', 'J'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
+      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="score" id="gm-score"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
       '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button>' +
@@ -1519,7 +1522,7 @@
 
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderNpcs(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
+    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderNpcs(); renderScore(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
   }
   /* the pack's export date: in the Menu in full, in the bar only when stale or an offline copy */
   function syncHead() {
@@ -2094,7 +2097,7 @@
   }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
 
-  var SIDE = ['prep', 'location', 'scenes', 'npc', 'downtime', 'cards', 'rules', 'ipad'];
+  var SIDE = ['prep', 'location', 'scenes', 'score', 'npc', 'downtime', 'cards', 'rules', 'ipad'];
   /* ---------- the street scene roller (S): a side panel ---------- */
   function genLinesHtml(lines) {
     return (lines || []).map(function (l) { return l.kind === 'chips' ? chipsHtml(l.chips) : linesHtml([l], md); }).join('');
@@ -2156,6 +2159,247 @@
     var read = r.lines.filter(function (l) { return l.kind === 'read'; }).map(function (l) { return plainMd(l.md); });
     pushDisplay({ kind: 'text', title: plainMd(r.meta.title).slice(0, 2000), caption: plainMd(r.meta.sub).slice(0, 2000), text: read.join('\n\n').slice(0, 2000) })
       .then(function () { toast('On the iPad: ' + plainMd(r.meta.title) + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+  }
+
+  /* ---------- Score (J): the outline of a heist, rolled for inspiration (app/gm/score.js; GM.md "Score (J)") ----------
+     For the GM only: nothing in this section goes to the iPad (the Cards panel is the one road to the players, through its own Show
+     buttons). The instance is built once per start() from the pack's `score` part and its campaign part. The panel's choices are GM
+     state `sc: { ui }` (client, who (the NPC who asks, as this page resolved them when they were picked), target, job, district, crew,
+     tier). A card is `cards.score` { hid, seed, ui, mem (JSON: the repeat guard BEFORE the roll), bump, label, at, started? } (five
+     in hist.score; the live guard is mem.score), so a reload or an Earlier click redraws the same card. A reroll (the small ↻ on a
+     row) keeps the card's seed, memory and choices, raises one section's bump and replaces the card and its Earlier entry in place;
+     a clock the card started stays under `started`, by name. The crew is the live campaign document's (type, Tier), else the pack's
+     crew sheet, unless the GM picks another in the panel. */
+  function scAvail() { var pk = part('score'); return !!(W.B68GmScore && pk && isObj(pk.T)); }
+  function scInst() {
+    if (S.sc) return S.sc;
+    var M = W.B68GmScore, pk = part('score');
+    if (!M) { S.scErr = 'The score generator module is missing.'; return null; }
+    if (!pk || !isObj(pk.T)) { S.scErr = 'The pack has no score part. Update the pack.'; return null; }
+    try { S.sc = M.create({ T: pk.T, campaign: part('campaign') || {} }); S.scErr = ''; } catch (e) { S.scErr = 'The score generator could not start: ' + errText(e); }
+    return S.sc;
+  }
+  function scCard() { return isObj(S.doc.cards) && isObj(S.doc.cards.score) ? S.doc.cards.score : null; }
+  function scHist() { return isObj(S.doc.hist) && isObj(S.doc.hist.score) ? S.doc.hist.score : {}; }
+  function scSig(c) { return isObj(c) ? JSON.stringify([c.hid, c.seed, c.ui, c.bump]) : null; }
+  function scReplayOf(e) {
+    var mem = {}; try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
+    return { seed: e.seed, mem: isObj(mem) ? mem : {}, ui: isObj(e.ui) ? e.ui : {}, bump: isObj(e.bump) ? e.bump : {} };
+  }
+  function replayScore(e) {
+    var g = scInst(); if (!g || !isObj(e)) return null;
+    try { return g.replay(scReplayOf(e)); } catch (x) { return null; }
+  }
+  /* the crew the table has: the live campaign document's type and Tier first, then the pack's crew sheet; its enemies and abilities are the sheet's */
+  function scCrew() {
+    var live = isObj(camp) && isObj(camp.crew) ? camp.crew : null, sheet = (part('campaign') || {}).crew;
+    sheet = isObj(sheet) ? sheet : {};
+    var num = function (v) { return typeof v === 'number' && isFinite(v); }, t = live && num(live.tier) ? live.tier : num(sheet.tier) ? sheet.tier : 0;
+    return { type: str(live && live.type).trim() || str(sheet.type).trim(), tier: Math.max(0, Math.min(6, Math.round(t))),
+      enemies: Array.isArray(sheet.enemies) ? sheet.enemies : [], abilities: Array.isArray(sheet.abilities) ? sheet.abilities : [] };
+  }
+  /* Now in as the score tables spell it ('' while it is anywhere, or not a district they hold), and what the Where picker says of it */
+  function scNowIn() { var T = scAvail() ? part('score').T : {}; return nowIn(T.loc && Array.isArray(T.loc.district) ? T.loc.district.map(str) : []); }
+  function scNowLabel() { var now = nowDistrict(); return !now ? '' : scNowIn() || 'any (no ' + now + ' here)'; }
+  /* the NPC who asks, as a score keeps them: strings, so a replay never depends on a list that changed */
+  function scWho(n) { return { name: str(n.name).slice(0, 120), faction: str(n.faction).slice(0, 120), district: str(n.district).slice(0, 120), role: str(n.role).slice(0, 160), want: str(n.want).slice(0, 300) }; }
+  function scFromRoll(o) { return { key: 'roll-' + slug(o.name), name: str(o.name), faction: str(o.faction), district: str(o.district), role: str(o.profession), want: str(o.goal) }; }
+  /* a cast NPC: what the cast doc says, filled in from the pack's campaign NPCs and the last NPC roll when they have the same name */
+  function scFromDoc(id, d) {
+    var nm = str(d.name).trim(), same = function (n) { return isObj(n) && str(n.name).trim().toLowerCase() === nm.toLowerCase(); };
+    var pk = (Array.isArray((part('campaign') || {}).npcs) ? part('campaign').npcs : []).filter(same)[0] || {}, rn = S.npcRoll && S.npcRoll.roll && same(S.npcRoll.roll.npc) ? S.npcRoll.roll.npc : {};
+    return { key: 'app-' + id, name: nm, faction: str(d.faction).trim() || str(pk.faction).trim() || str(rn.faction), district: str(pk.district).trim() || str(rn.district),
+      role: str(d.role).trim() || str(pk.role).trim() || str(rn.profession), want: str(rn.goal) };
+  }
+  /* the NPCs the Who's asking picker offers, each once: on stage, the last NPC roll, the cast, then the campaign's own */
+  function scNpcs() {
+    var out = [], seen = {}, add = function (n, group) { var k = str(n.name).trim().toLowerCase(); if (!k || seen[k]) return; seen[k] = true; out.push(Object.assign({ group: group }, n)); };
+    npcList().forEach(function (x) { if (staged(x.id)) add(scFromDoc(x.id, x.doc), 'On stage'); });
+    var rn = S.npcRoll && S.npcRoll.roll && S.npcRoll.roll.npc; if (rn) add(scFromRoll(rn), 'Last NPC roll');
+    npcList().forEach(function (x) { add(scFromDoc(x.id, x.doc), 'The cast'); });
+    (Array.isArray((part('campaign') || {}).npcs) ? part('campaign').npcs : []).forEach(function (n) {
+      if (isObj(n)) add({ key: 'pack-' + slug(n.name), name: n.name, faction: n.faction, district: n.district, role: n.role, want: '' }, 'Campaign NPCs');
+    });
+    var u = uiOf('sc');      /* the NPC picked earlier, who is in none of the lists now, stays pickable */
+    if (str(u.client).indexOf('npc:') === 0 && isObj(u.who) && str(u.who.name).trim() && !out.some(function (n) { return 'npc:' + n.key === u.client; })) out.unshift(Object.assign({ key: str(u.client).slice(4), group: 'Picked' }, scWho(u.who)));
+    return out;
+  }
+  function scCtx() { var c = scCrew(); return { crew: { type: c.type, tier: c.tier, enemies: c.enemies, abilities: c.abilities }, npcs: scNpcs(), nowIn: scNowLabel() }; }
+  function scCtxSig(ctx) { return JSON.stringify([ctx.crew.type, ctx.crew.tier, ctx.nowIn, ctx.npcs.map(function (n) { return [n.key, n.group, n.name, n.faction, n.role]; })]); }
+  /* the panel's choices as the selects show them (what the tables hold) */
+  function scPanelUi() {
+    var g = scInst(), u = uiOf('sc'); if (!g) return {};
+    var c = g.cleanUi({ client: u.client, who: u.who, target: u.target, job: u.job, district: u.district, crew: u.crew, tier: u.tier });
+    return { client: c.client, target: c.target, job: c.job, district: c.district, crew: c.crew, tier: c.tier === '' ? '' : String(c.tier) };
+  }
+  /* what a roll reads: the panel's choices with the crew and its Tier resolved, and Now in as the tables spell it */
+  function scRollUi() {
+    var g = scInst(), u = uiOf('sc'), c = scCrew(), k = g.cleanUi({ crew: u.crew, tier: u.tier });
+    return { client: str(u.client), who: isObj(u.who) ? u.who : null, target: str(u.target), job: str(u.job), district: str(u.district),
+      crew: k.crew || c.type, tier: k.tier === '' ? c.tier : k.tier, nowIn: scNowIn() };
+  }
+  function scEntry(roll) {
+    var e = { seed: roll.seed, ui: clone(roll.replay.ui), mem: JSON.stringify(roll.replay.mem), label: str(roll.card.meta.label), at: nowIso() };
+    if (Object.keys(roll.replay.bump).length) e.bump = clone(roll.replay.bump);
+    return e;
+  }
+  function rollScore() {
+    var g = scInst(); if (!g) { renderScore(); return; }
+    var roll;
+    try { roll = g.roll({ mem: S.scMem, ui: scRollUi() }); } catch (e) { toast('The score roll failed: ' + errText(e), true); return; }
+    var entry = scEntry(roll), hid = uid('h'), card = Object.assign({ hid: hid }, entry);
+    /* the new card REPLACES the stored one: nothing of the old (a clock it started) carries over */
+    var ok = patch({ cards: { score: replacePatch(scCard(), card) }, mem: { score: clone(S.scMem) }, hist: { score: addCapped(scHist(), hid, entry, LIMITS.hist) } }, { force: true });
+    if (!ok) return;
+    S.scRoll = roll; S.scSig = scSig(card); S.last = { text: 'Score: ' + entry.label };
+    renderScore(true);
+    showIn($q('#gm-score-card'), $q('#gm-score'), ['.gm-want', '.gm-card-h']);
+  }
+  function scLatest(hid) { var n = newest(scHist())[0]; return !!n && n._id === hid; }
+  /* ↻ on a row: the same card with one section rolled again (its seed, memory and choices stay; the bump and the label change, in the
+     card and in its Earlier entry). The live repeat guard takes the reroll's picks when this is the newest card. */
+  function scBump(row) {
+    var g = scInst(), cur = scCard(); if (!g || !cur) return;
+    var res;
+    try { res = g.reroll(scReplayOf(cur), row); } catch (e) { toast('That row could not be rolled again: ' + errText(e), true); return; }
+    var label = str(res.card.meta.label), old = scHist()[cur.hid], p = { cards: { score: { bump: replacePatch(cur.bump, res.replay.bump), label: label } } };
+    if (isObj(old)) { p.hist = { score: {} }; p.hist.score[cur.hid] = { bump: replacePatch(old.bump, res.replay.bump), label: label }; }
+    if (scLatest(cur.hid)) { S.scMem = clone(res.memAfter); p.mem = { score: clone(S.scMem) }; }
+    if (!patch(p, { force: true })) return;
+    S.scRoll = res; S.scSig = scSig(scCard()); S.last = { text: 'Score: ' + label };
+    renderScore(true);
+  }
+  /* To Cards: the planning meeting's index card, onto the Cards panel (shown to the players only from there, by its own buttons) */
+  function scToCards() {
+    var r = S.scRoll, M = W.B68GmScore; if (!r || !M) return;
+    var list = oppList();
+    if (list.length >= OPP_MAX) { toast('The Cards panel holds ' + OPP_MAX + ' cards already: remove one there first.', true); return; }
+    var e = M.cardEntry(r.score), id = uid('o'), x = {};
+    x[id] = { from: e.from, client: e.client, target: e.target, type: e.type, note: e.note, payout: e.payout, order: list.length ? (+list[list.length - 1].order || 0) + 1 : 1, at: nowIso() };
+    if (!patch({ opps: { list: x } })) return;
+    renderCards(true);
+    toast('On the Cards panel: ' + [e.type, e.target].filter(Boolean).join(' · ') + '. Show it from there.');
+  }
+  /* Roll the site: the Location pickers from the score (the way Score sites does it), then a roll there */
+  function scRollSite() {
+    var r = S.scRoll, M = W.B68GmScore, L = W.B68GmLocation, pk = part('location'); if (!r || !M) return;
+    if (!L || !pk) { toast('The location generator is not available.', true); return; }
+    var x; try { x = siteUi(L.controls(pk).controls, M.siteHints(r.score)); } catch (e) { x = { ui: {}, missed: [] }; }
+    patch({ loc: { ui: x.ui } });
+    showPanel('location');
+    rollLocation();
+    if (x.missed.length) toast('Not in the generator, so rolled on any: ' + x.missed.map(function (m) { return m[0] + ' “' + m[1] + '”'; }).join(', ') + '.', true);
+  }
+  /* A face: the NPC pickers from the score (the client's faction, or the target's when nobody asks, and the district) */
+  function scFace() {
+    var r = S.scRoll, M = W.B68GmScore, g = npcgInst(); if (!r || !M) return;
+    if (!g) { toast('The NPC generator is not available.', true); return; }
+    var h = M.npcHints(r.score), ui = g.cleanUi({ faction: h.faction, district: h.district });
+    if (!ui.district) ui.district = NOW_ANY;        /* not a district the NPC tables hold: any, not whatever Now in is */
+    patch({ npc: { ui: ui } });
+    showPanel('npc'); renderNpcGen();
+    var got = [ui.faction, ui.district !== NOW_ANY ? ui.district : ''].filter(Boolean);
+    toast(got.length ? 'For a face: ' + got.join(', ') + '. Change either before you roll.' : 'The NPC tables hold neither the faction nor the district of this score: rolling on any.');
+  }
+  /* Start the clock: onto the table's clocks, hidden, a danger clock (as Downtime does it); the card keeps its id under `started` by name */
+  function scClock() {
+    var cur = scCard(), r = S.scRoll, M = W.B68GmScore; if (!cur || !r || !M) return;
+    var ck = M.clockOf(r.score), name = str(ck.name), hid = cur.hid, key = hid + '|' + name, me = S;
+    if (!name || (isObj(cur.started) && Object.prototype.hasOwnProperty.call(cur.started, name)) || S.scBusy[key]) return;
+    if (!S.api || typeof S.api.addClock !== 'function') { toast('The table is not available here: start the clock on the table page.', true); return; }
+    var clock = { id: 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), name: name, size: +ck.size || 4, filled: 0, kind: 'danger', hidden: true };
+    S.scBusy[key] = true;
+    var b = $q('#gm-score [data-gm="scoreclock"]'); if (b) b.disabled = true;
+    Promise.resolve().then(function () { return S.api.addClock(clock); }).then(function () {
+      delete me.scBusy[key]; if (S !== me) return;
+      var st = {}, p = {}; st[name] = clock.id;
+      var c = scCard(); if (c && c.hid === hid) p.cards = { score: { started: st } };
+      if (isObj(scHist()[hid])) { p.hist = { score: {} }; p.hist.score[hid] = { started: clone(st) }; }
+      if (p.cards || p.hist) patch(p, { force: true });
+      toast('Clock started, hidden from the players: ' + name + '. Show it from the table page.');
+      renderScore();
+    }, function (e) {
+      delete me.scBusy[key]; if (S !== me) return;
+      toast('Could not start the clock: ' + errText(e), true);
+      renderScore();
+    });
+  }
+  /* an NPC asks: they are the client, and the score rolls (A job for them, on the NPC card; Job, beside a name in the rail) */
+  function scAsk(n) {
+    if (!n || !str(n.name).trim()) return;
+    patch({ sc: { ui: { client: 'npc:' + n.key, who: replacePatch(uiOf('sc').who, scWho(n)) } } });
+    showPanel('score');
+    rollScore();
+  }
+  /* a picker changed: kept in the notes (a choice shapes the next roll, never the card on screen); the NPC who asks is kept with it */
+  function scSetUi(key, value) {
+    value = str(value);
+    var u = {};
+    u[key] = value;
+    if (key === 'client') {
+      if (value.indexOf('npc:') === 0) {
+        var n = scNpcs().filter(function (x) { return 'npc:' + x.key === value; })[0];
+        if (!n) return;                                 /* the NPC already kept with it: nothing changed */
+        u.who = replacePatch(uiOf('sc').who, scWho(n));
+      } else u.who = null;
+    }
+    patch({ sc: { ui: u } });
+    if (key === 'crew') renderScore();                  /* the Job picker's favoured group follows the crew */
+  }
+  /* the crew, an NPC on stage or a roll in the NPC tab changed: the pickers follow (never from under a list the GM has open) */
+  function scMaybeRedraw() {
+    if (!S || S.status !== 'ready' || !S.scCtxSig || !scAvail() || !scInst()) return;       /* nothing to follow until the panel has been drawn once */
+    var sig = scCtxSig(scCtx());
+    if (sig === S.scCtxSig) return;
+    var a = document.activeElement, box = $q('#gm-score');
+    if (a && box && box.contains(a) && str(a.tagName).toUpperCase() === 'SELECT') return;
+    renderScore();
+  }
+
+  function scSelect(c, value) {
+    var inner = c.groups.map(function (g) {
+      var o = g.options.map(function (x) { return '<option value="' + esc(x.value) + '"' + (str(x.value) === str(value) ? ' selected' : '') + '>' + esc(x.label) + '</option>'; }).join('');
+      return g.label ? '<optgroup label="' + esc(g.label) + '">' + o + '</optgroup>' : o;
+    }).join('');
+    return selectHtml('gm-sc-' + c.id, 'data-scui', c.id, c.label, c.options, value, inner);
+  }
+  function scBumpBtn(row, label) {
+    return '<button type="button" class="gm-bump" data-gm="scorebump" data-row="' + esc(row) + '" aria-label="Reroll ' + esc(label) + '" title="Roll ' + esc(label) + ' again">↻</button>';
+  }
+  function scGridHtml(rows) {
+    return '<dl class="gm-grid gm-sc-grid">' + rows.map(function (r) {
+      return '<dt>' + esc(r.k) + '</dt><dd><div class="gm-sc-md">' + md(r.md) + '</div>' + (r.reroll ? scBumpBtn(r.id, str(r.k).toLowerCase()) : '') + '</dd>';
+    }).join('') + '</dl>';
+  }
+  function scCardHtml(roll, cur) {
+    var m = roll.card.meta, s = roll.score, M = W.B68GmScore, ck = M.clockOf(s), started = cur && isObj(cur.started) ? cur.started : {}, done = Object.prototype.hasOwnProperty.call(started, ck.name);
+    var h = '<article class="gm-card gm-sccard" data-tool="score"><header class="gm-card-h"><div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>';
+    roll.card.lines.forEach(function (l) {
+      if (l.kind === 'chips') h += chipsHtml(l.chips);
+      else if (l.kind === 'want') h += '<div class="gm-want gm-sc-want">' + md(l.md) + (l.reroll ? scBumpBtn('lead', 'pitch') : '') + '</div>';
+      else if (l.kind === 'grid' && l.collapsed) h += '<details class="gm-fold gm-sc-cloud" data-fold="sccloud"' + (foldOpen('sccloud') ? ' open' : '') + '><summary>' + esc(l.title) + '</summary>' + scGridHtml(l.rows) + '</details>';
+      else if (l.kind === 'grid') h += scGridHtml(l.rows);
+    });
+    return h + '<div class="gm-card-acts">' +
+      '<button type="button" class="btn sm primary" data-gm="scorecards" title="Onto the Cards panel as an opportunity card; the players see it only from there">To Cards</button>' +
+      '<button type="button" class="btn sm" data-gm="scoresite" title="Location, with its pickers set from this score, and a roll">Roll the site</button>' +
+      (s.client.type === 'npc' ? '' : '<button type="button" class="btn sm" data-gm="scoreface" title="NPC, with the faction and district set from this score">A face</button>') +
+      '<button type="button" class="btn sm" data-gm="scoreclock"' + (done ? ' disabled title="On the table, hidden from the players: show it from the table page"' : ' title="Onto the table’s clocks, hidden from the players"') + '>' + esc(done ? 'Clock started: ' + ck.name : 'Start the clock') + '</button>' +
+      '<button type="button" class="btn sm" data-gm="pin" data-tool="score">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="score">Copy</button></div></article>';
+  }
+  function renderScore(fresh) {
+    var box = $q('#gm-score'); if (!box) return;
+    var g = scInst();
+    if (!g) { box.innerHTML = '<p class="gm-note bad">' + esc(S.scErr || 'The score generator is not available.') + '</p>'; return; }
+    var cur = scCard();
+    if (!fresh && cur && S.scSig !== scSig(cur)) { S.scRoll = replayScore(cur); S.scSig = scSig(cur); }
+    if (!cur) { S.scRoll = null; S.scSig = null; }
+    var ctx = scCtx(), ui = scPanelUi(), roll = S.scRoll;
+    S.scCtxSig = scCtxSig(ctx);
+    var h = '<div class="gm-loc-ctl gm-sc-ctl">' + g.controls(ctx, ui).map(function (c) { return scSelect(c, ui[c.id]); }).join('') + '<button type="button" class="btn primary gm-roll" data-gm="scoreroll">Roll a score</button></div>';
+    h += roll ? '<div class="gm-cardbox" id="gm-score-card">' + scCardHtml(roll, cur) + '</div>'
+      : '<p class="gm-empty">Roll with everything on any when the table is lost, or set the target, the job or who is asking when they have a rough idea. Nothing here goes to the iPad: To Cards is the way to the players.</p>';
+    box.innerHTML = h + earlierHtml('score', cur);
   }
 
   /* ---------- Downtime (D): personal business, one card per activity a PC takes (app/gm/downtime.js; GM.md "Downtime (D)") ----------
@@ -2479,6 +2723,7 @@
       }).join('') + '</ul>' : '<p class="gm-empty">' + (S.api && S.api.db && S.api.db() ? 'No NPCs in the cast yet. Add them on the cast page.' : 'The cast is not available here.') + '</p>') +
       '<p><a class="hm-link" href="#cast">The cast page</a></p>';
     renderNpcGen();
+    scMaybeRedraw();
     var K = W.B68Figure; if (!K || !K.portrait) return;
     var holders = [].slice.call(box.querySelectorAll('[data-fig]')), i = 0, me = S;
     (function next() {
@@ -2601,10 +2846,12 @@
         (m.figureNote ? '<p class="gm-note">' + esc(m.figureNote) + '</p>' : '') + (r.note ? '<p class="gm-note gm-fignote">' + esc(r.note) + '</p>' : '') +
         npcGenLinesHtml(c.lines) +
         '<div class="gm-card-acts"><button type="button" class="btn sm primary" data-gm="npcfile"' + (inCast ? ' disabled' : '') + ' title="Adds them to the cast, hidden from the players">' + (inCast ? 'In the cast' : 'Add to the cast') + '</button>' +
+        (scAvail() ? '<button type="button" class="btn sm" data-gm="npcjob" title="The Score tab, with them as the client, and a roll">A job for them</button>' : '') +
         '<button type="button" class="btn sm" data-gm="pin" data-tool="npc">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="npc">Copy</button></div></article>';
     } else h += '<p class="gm-empty">Roll for a face on the street: who they are, what they want, how to play them. ' +
       'Pick a faction, district or place to fit the scene, or leave them on any. They stay in this tab until you add them to the cast.</p>';
     box.innerHTML = h + earlierHtml('npc', cur);
+    scMaybeRedraw();
   }
   /* the roll into the cast: a hidden doc, plus the roll's seed in the GM state so the vault note can be rebuilt from it (SYNC.md) */
   function fileNpc() {
@@ -2982,7 +3229,10 @@
       return '<li><div class="gm-pinrow"><button type="button" class="chip txt sm" data-gm="pinopen" data-id="' + esc(p._id) + '" aria-expanded="' + open + '">' + esc(p.label || p.title || 'Pinned') + '</button><button type="button" class="gm-x" data-gm="unpin" data-id="' + esc(p._id) + '" aria-label="Unpin">×</button></div>' + (open ? '<pre class="gm-pintext">' + esc(p.text || '') + '</pre>' : '') + '</li>';
     }).join('') + '</ul>' : '<p class="gm-dim">Pin a card to keep it here.</p>') + '</section>';
     var sc = isObj(d.scene) && isObj(d.scene.npcs) ? d.scene.npcs : {}, staged = Object.keys(sc).filter(function (id) { return sc[id] === true; });
-    h += '<section class="gm-box"><h3 class="gm-band">On stage</h3><p class="gm-chips">' + (staged.length ? staged.map(function (id) { var n = S.npcs[id]; return '<a class="chip sm" href="#cast/' + encodeURIComponent(id) + '">' + esc(n && n.name || id) + '</a>'; }).join('') : '<a class="chip sm" href="#cast">Nobody: the cast</a>') + '</p></section>';
+    h += '<section class="gm-box"><h3 class="gm-band">On stage</h3><p class="gm-chips">' + (staged.length ? staged.map(function (id) {
+      var n = S.npcs[id], nm = n && n.name || id;
+      return '<span class="gm-onstage"><a class="chip sm" href="#cast/' + encodeURIComponent(id) + '">' + esc(nm) + '</a>' + (n && scAvail() ? '<button type="button" class="chip sm gm-sc-job" data-gm="scorestage" data-id="' + esc(id) + '" aria-label="A job for ' + esc(nm) + '" title="A job for them: the Score tab, with them as the client, and a roll">Job</button>' : '') + '</span>';
+    }).join('') : '<a class="chip sm" href="#cast">Nobody: the cast</a>') + '</p></section>';
     box.innerHTML = h;
     if (box.querySelector('.pp-pinbox')) decoratePrep(box);
   }
@@ -3038,6 +3288,7 @@
   function cardFor(tool) {
     if (tool === 'console' || tool === 'situation') { var r = S.conRes; return r ? { label: str(r.meta.label), title: str(r.meta.title), text: r.sections ? situationPlain(r) : consolePlain(r) } : null; }
     if (tool === 'scenes' || tool === 'downtime') { var g = tool === 'scenes' ? S.scnRoll : S.dtRoll; return g ? { label: str(g.meta.label), title: str(g.meta.title), text: g.meta.all.join('\n') } : null; }
+    if (tool === 'score') { var sr = S.scRoll; return sr ? { label: str(sr.card.meta.label), title: str(sr.card.meta.title), text: sr.card.meta.all.join('\n') } : null; }
     if (tool === 'npc') { var nr = S.npcRoll; return nr ? { label: str(nr.roll.card.meta.label), title: str(nr.roll.card.meta.title), text: nr.roll.card.meta.all.join('\n') } : null; }
     var L = W.B68GmLocation, roll = S.locRoll; if (!L || !roll) return null;
     var lines = []; try { lines = L.cardLines(roll, part('location')); } catch (e) {}
@@ -3167,6 +3418,7 @@
         else if (tool === 'scenes') { S.scnRoll = null; renderScenes(); }
         else if (tool === 'npc') { S.npcRoll = null; renderNpcGen(); }
         else if (tool === 'downtime') { S.dtRoll = null; S.dtSig = null; renderDowntime(); }
+        else if (tool === 'score') { S.scRoll = null; S.scSig = null; renderScore(); }
         else { S.locRoll = null; S.map = null; renderLocation(); }
         break;
       }
@@ -3198,6 +3450,14 @@
       case 'npcloc': npcFromLocation(); break;
       case 'npcfile': fileNpc(); break;
       case 'scnipad': scenesToIpad(); break;
+      case 'scoreroll': rollScore(); break;
+      case 'scorebump': scBump(str(b.getAttribute('data-row'))); break;
+      case 'scorecards': scToCards(); break;
+      case 'scoresite': scRollSite(); break;
+      case 'scoreface': scFace(); break;
+      case 'scoreclock': scClock(); break;
+      case 'npcjob': { var jr = S.npcRoll; if (jr) scAsk(scFromRoll(jr.roll.npc)); break; }
+      case 'scorestage': { var jd = S.npcs[b.getAttribute('data-id')]; if (jd) scAsk(scFromDoc(b.getAttribute('data-id'), jd)); break; }
       case 'dt-who': dtSetWho(str(b.getAttribute('data-id'))); break;
       case 'dt-act': dtSetAct(b.getAttribute('data-v')); break;
       case 'dt-roll': rollDowntime(str(b.getAttribute('data-v'))); break;
@@ -3259,6 +3519,7 @@
     if (t.hasAttribute('data-loc')) { var l = {}; l[t.getAttribute('data-loc')] = t.type === 'checkbox' ? t.checked : t.value; patch({ loc: { ui: l } }); }
     else if (t.hasAttribute('data-map')) setMap(t.getAttribute('data-map'), t.value);
     else if (t.hasAttribute('data-scn')) { var sc = {}; sc[t.getAttribute('data-scn')] = t.value; patch({ scn: { ui: sc } }); }
+    else if (t.hasAttribute('data-scui')) scSetUi(t.getAttribute('data-scui'), t.value);
     else if (t.hasAttribute('data-npcui')) { var nu = {}; nu[t.getAttribute('data-npcui')] = t.value; patch({ npc: { ui: nu } }); }
     else if (t.hasAttribute('data-dtf')) dtField(t.getAttribute('data-dtf'), t.value);
     else if (t.hasAttribute('data-reveal')) { var rv = {}; rv[t.getAttribute('data-reveal')] = t.checked; patch({ loc: { map: { reveal: rv } } }); if (S.map) drawMap(); renderLocation(); }
@@ -3310,7 +3571,7 @@
     var before = isObj(camp) && isObj(camp.scene) ? JSON.stringify(camp.scene.npcs || {}) : '';
     camp = isObj(doc) ? doc : null;
     if (S && S.status === 'ready') {
-      renderRail(); renderBar();
+      renderRail(); renderBar(); scMaybeRedraw();
       /* the stage changed: the NPC tab's buttons follow */
       if ((isObj(camp) && isObj(camp.scene) ? JSON.stringify(camp.scene.npcs || {}) : '') !== before) {
         [].forEach.call(S.root.querySelectorAll('[data-gm="npcstage"]'), function (b) { var on = staged(b.getAttribute('data-id')); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Off stage' : 'Put on stage'; b.classList.toggle('primary', !on); });
