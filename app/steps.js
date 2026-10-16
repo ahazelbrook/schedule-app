@@ -583,7 +583,7 @@
       var has = !!S.sheet.docId, avail = A.filingAvailable ? A.filingAvailable() : false;
       var fb = ex.querySelector('#fileRoster'); fb.textContent = has ? 'Update the file' : 'File and open the sheet'; fb.disabled = !avail;
       ex.querySelector('#openSheet').hidden = !(has && avail);
-      ex.querySelector('#fileHint').textContent = !avail ? 'Filing needs the shared files, which are not available in this view. The figure can still be saved below.' : has ? 'Already on file. Updating keeps the sheet’s stress, harm, xp and notes; only the creation choices change.' : A.me ? 'Filing creates the living character sheet: stress, harm, xp, clocks and notes, saved to your account.' : 'Filing creates the living character sheet. You are not signed in, so it will not be marked as yours.';
+      ex.querySelector('#fileHint').textContent = !avail ? 'Saved characters are not available in this view. The figure can still be saved below.' : has ? 'Already on file. Updating keeps the sheet’s stress, harm, xp and notes; only the creation choices change.' : A.me ? 'Filing creates the living character sheet: stress, harm, xp, clocks and notes, saved to your account.' : 'Filing creates the living character sheet. You are not signed in, so it will not be marked as yours.';
     });
     return [stamp, checks, summary, qs, ex];
   }

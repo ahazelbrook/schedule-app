@@ -246,6 +246,14 @@
     out.updatedAt = nowIso();
     return out;
   }
+  /* a live subscription's error, in plain words: no signal (what changed stays on this phone and goes out when the signal is
+     back), a change the server refused after it was queued (the adapter says which), or else what could not be loaded and why */
+  function loadError(what, e) {
+    if (e && e.network) return 'No signal. Changes are kept on this phone and sync when you are back.';
+    var m = String(e && e.message || e || 'unknown error');
+    if (e && e.code === 'dropped') return m.charAt(0).toUpperCase() + m.slice(1);
+    return 'Could not load ' + what + ': ' + m;
+  }
   function openCharacter(id) {
     if (!id) return;
     if (!db) { pendingOpen = id; if (dbSettled) toast('Saved characters are not available in this view.', true); return; }
@@ -286,7 +294,7 @@
       catch (e) { toast('The sheet could not render: ' + (e && e.message || e), true); }
     }
     if (typeof ref.onSnapshot === 'function') {
-      try { openUnsub = ref.onSnapshot(function (snap) { arrived(snap && (snap.exists === false ? null : (typeof snap.data === 'function' ? snap.data() : snap))); }, function (e) { toast('Files offline: ' + (e && e.message || e), true); }); } catch (e) { openUnsub = null; }
+      try { openUnsub = ref.onSnapshot(function (snap) { arrived(snap && (snap.exists === false ? null : (typeof snap.data === 'function' ? snap.data() : snap))); }, function (e) { toast(loadError('this character', e), true); }); } catch (e) { openUnsub = null; }
     }
     if (!openUnsub) {
       /* no per-doc subscription: read once, then follow the collection snapshot cache */
@@ -1244,7 +1252,7 @@
           rosterSeen = true; renderRoster(docs);
           if (A._followCache && openId) A._followCache(openId);
           if (pendingOpen) { var id = pendingOpen; pendingOpen = null; openCharacter(id); }
-        }, function (e) { rosterSeen = true; renderHome(); toast('Files offline: ' + (e && e.message || e), true); });
+        }, function (e) { rosterSeen = true; renderHome(); toast(loadError('the characters', e), true); });
       }).catch(function () { dbSettled = true; cannotOpen('Saved characters are not available here, so that sheet cannot open.'); renderHome(); if (document.body.dataset.mode === 'table') startTable(); });
     } else { dbSettled = true; $('rosterNote').textContent = 'Saved characters are not available in this view.'; whoami(); syncBackups(); cannotOpen(''); renderHome(); if (document.body.dataset.mode === 'table') startTable(); }
   }

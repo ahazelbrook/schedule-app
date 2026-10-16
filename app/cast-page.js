@@ -227,7 +227,7 @@
     var head = '<header class="cp-head"><div class="cp-title"><span class="cp-kick">Blades ’68</span><h2 class="cp-h" id="cp-h" tabindex="-1">The cast</h2></div><div class="cp-meta">' +
       (gm() ? '<span class="cp-role gm">GM</span>' : '') + '</div></header>';
     var body;
-    if (!api || !api.db()) body = api ? note('The cast needs the shared files. Open this page where the files are available (the published artifact or the hosted site).', true) : note('Opening the cast…');
+    if (!api || !api.db()) body = api ? note('The cast is not available in this view. Open the app from the table’s usual link to see it.', true) : note('Opening the cast…');
     else if (failed && !loaded) body = note(/unknown collection|not available/i.test(errText(failed)) ? 'The cast is not available in this view.' : 'The cast is offline: ' + esc(errText(failed)), true);
     else if (!loaded) body = note('Opening the cast…');
     else if (view.kind === 'edit' || view.kind === 'new') body = gm() ? editorView() : note('Only the GM can edit the cast. <a href="#cast">Back to the cast</a>');

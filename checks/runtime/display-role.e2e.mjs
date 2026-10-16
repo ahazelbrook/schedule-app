@@ -81,9 +81,9 @@ try {
     expect(calls.some((c) => c === 'GET /api/gm/display 200'), 'display was polled: ' + calls.join(' | '));
   });
 
-  await step('no page errors, and no "files offline" toast', async () => {
+  await step('no page errors, and no toast about loading the characters', async () => {
     expect(errors.length === 0, errors.join(' | '));
-    expect(!(await page.evaluate(() => document.body.innerText)).includes('Files offline'), 'toast visible');
+    expect(!/No signal\. Changes are kept|Could not load (the characters|this character)|was not accepted/.test(await page.evaluate(() => document.body.innerText)), 'toast visible');
   });
 
   await step('a new push reaches the display without a reload', async () => {
