@@ -1,15 +1,18 @@
 /* gm-page.js — the GM's page (#gm, GM.md): the console (the four Situations; the nine single tables fold under the card), the location generator
    with its map, the cast as a list to push to the iPad, the state rail (crew, clocks, bargains owed, pins, who is on stage) and
-   the capture bar. S opens the street scene roller and E the engagement roll, beside the location generator (side panels).
+   the capture bar. S opens the street scene roller and E the engagement roll, beside the location generator (side panels), and
+   D the downtime cards (personal business: a scene prompt per activity a PC takes, an overindulgence's cost).
    Hosted build only (window.claude.gm); in the claude.ai artifact, or for a player, the page says so and does nothing.
 
    window.B68GmPage (boot.js):
      open(root, api)   draw into `root` (boot calls it when the mode becomes `gm`)
      close()           flush the pending state write, drop listeners
      campaign(doc)     the campaign document changed (crew, clocks, session, scene)
+     characters()      the filed characters changed (the Downtime panel reads api.characters() again)
      purge()           forget every GM pack cached in this browser (boot calls it when the viewer is not the GM)
    api = { ready() -> Promise, isGM() -> bool, me() -> id, gm() -> window.claude.gm | null, db() -> db | null,
-           campaign() -> doc | null, saveFile(name, data), copy(text, okMessage) }
+           campaign() -> doc | null, saveFile(name, data), copy(text, okMessage),
+           characters() -> [slim PC], addClock(clock) -> Promise (both optional: the Downtime panel) }
 
    Where things live. The pack (the generators' tables, GM-only text) comes from GET /api/gm/pack and is cached in
    IndexedDB only (db `b68-gm`, store `kv`, key `pack:<userId>`): never localStorage, the artifact db or Cache Storage.
@@ -463,6 +466,7 @@
       case 't': return { type: 'panel', panel: 'rules' };
       case 's': return { type: 'panel', panel: 'scenes' };
       case 'e': return { type: 'panel', panel: 'engagement' };
+      case 'd': return { type: 'panel', panel: 'downtime' };
       case 'p': return { type: 'capture', bucket: 'n' };
       case 'x': return { type: 'capture', bucket: 'x' };
       case 'm': return { type: 'capture', bucket: 'm' };
@@ -604,17 +608,19 @@
   }
   P.packLosses = packLosses;
 
-  /* The tables a pack lacks, by each module's own check(T) (console, location, npc, scenes, engagement), for the preview and the load to
-     show as WARNINGS (never errors: the upload still works, and every roller falls back to a neutral word for a missing table).
-     mods: { B68GmConsole, ... }; parts: { <part>: body }. -> [{ part, missing: [path] }]. A part the pack lacks, a module that is not
-     loaded and a check that throws say nothing. */
-  var CHECKED = [['console', 'B68GmConsole'], ['location', 'B68GmLocation'], ['npc', 'B68GmNpc'], ['scenes', 'B68GmScenes'], ['engagement', 'B68GmEngagement']];
+  /* The tables a pack lacks, by each module's own check(T) (console, location, npc, scenes, engagement, downtime), for the preview and the
+     load to show as WARNINGS (never errors: the upload still works, and every roller falls back to a neutral word for a missing table;
+     the downtime cards to the built-in tables). mods: { B68GmConsole, ..., B68DowntimeTables }; parts: { <part>: body }.
+     -> [{ part, missing: [path] }]. A downtime part is laid over the built-in tables (app/downtime-tables.js, the third name), so it is
+     checked laid over them: check(T, part's T). A part the pack lacks, a module or base tables not loaded and a check that throws say
+     nothing. */
+  var CHECKED = [['console', 'B68GmConsole'], ['location', 'B68GmLocation'], ['npc', 'B68GmNpc'], ['scenes', 'B68GmScenes'], ['engagement', 'B68GmEngagement'], ['downtime', 'B68GmDowntime', 'B68DowntimeTables']];
   function packWarnings(mods, parts) {
     var out = [];
     CHECKED.forEach(function (c) {
-      var M = mods && mods[c[1]], body = parts && parts[c[0]];
-      if (!M || typeof M.check !== 'function' || !isObj(body)) return;
-      var miss; try { miss = M.check(body.T); } catch (e) { return; }
+      var M = mods && mods[c[1]], body = parts && parts[c[0]], base = c[2] ? mods && mods[c[2]] : null;
+      if (!M || typeof M.check !== 'function' || !isObj(body) || (c[2] && !(isObj(base) && isObj(base.T)))) return;
+      var miss; try { miss = c[2] ? M.check(base.T, body.T) : M.check(body.T); } catch (e) { return; }
       miss = (Array.isArray(miss) ? miss : []).map(str).filter(Boolean);
       if (miss.length) out.push({ part: c[0], missing: miss });
     });
@@ -1050,7 +1056,7 @@
   function adoptMem() {
     var m = isObj(S.doc.mem) ? S.doc.mem : {};
     if (S.con) { var cm = S.con.mem(); Object.keys(cm).forEach(function (k) { delete cm[k]; }); Object.assign(cm, clone(m.console || {})); }
-    S.locMem = clone(m.location || {}); S.scnMem = clone(m.scenes || {}); S.npcMem = clone(m.npc || {});
+    S.locMem = clone(m.location || {}); S.scnMem = clone(m.scenes || {}); S.npcMem = clone(m.npc || {}); S.dtMem = clone(m.downtime || {});
     if (S.con) { try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {} }
   }
 
@@ -1094,6 +1100,7 @@
     close();
     S = { root: rootEl, api: api, me: null, status: 'loading', doc: {}, updatedAt: null, saver: null, carriedParked: null,
       pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console', scn: null, scnRoll: null, scnMem: {}, scnErr: '', eng: null, engRoll: null, engHid: null, engErr: '',
+      dt: null, dtDists: null, dtRoll: null, dtSig: null, dtMem: {}, dtErr: '', dtNote: '', dtBusy: {},
       arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, pinOpen: null, figMemo: {}, importing: null, shown: 'console' };
     try { S.panel = W.localStorage.getItem('b68.gm.panel') || 'location'; S.prepWide = W.localStorage.getItem(PREP_WIDE) === '1'; } catch (e) {}
     if (SIDE.indexOf(S.panel) < 0) S.panel = 'location';
@@ -1179,7 +1186,7 @@
       '<p class="gm-up"><button type="button" class="btn ' + (losses.length ? 'bad' : 'primary') + '" data-gm="upload"' + (v.ok ? '' : ' disabled') + '>' + (losses.length ? 'Upload anyway' : 'Upload ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's')) + '</button> <progress id="gm-prog" max="' + Math.max(1, v.parts.length) + '" value="0" hidden></progress> <span id="gm-upmsg" class="gm-dim" role="status"></span></p>';
   }
   /* the pack check as a list: a warning, never an error (the rollers use a neutral word for a table the pack lacks) */
-  function modMap() { return { B68GmConsole: W.B68GmConsole, B68GmLocation: W.B68GmLocation, B68GmNpc: W.B68GmNpc, B68GmScenes: W.B68GmScenes, B68GmEngagement: W.B68GmEngagement }; }
+  function modMap() { return { B68GmConsole: W.B68GmConsole, B68GmLocation: W.B68GmLocation, B68GmNpc: W.B68GmNpc, B68GmScenes: W.B68GmScenes, B68GmEngagement: W.B68GmEngagement, B68GmDowntime: W.B68GmDowntime, B68DowntimeTables: W.B68DowntimeTables }; }
   function packWarnHtml(warns) {
     if (!warns.length) return '';
     var n = warns.reduce(function (k, w) { return k + w.missing.length; }, 0);
@@ -1273,6 +1280,7 @@
     if (!C || !cp || !isObj(cp.T)) S.conErr = !C ? 'The console module is missing.' : 'The pack has no console part. Update the pack.';
     else { try { S.con = C.create({ T: cp.T, campaign: part('campaign') || {}, state: S.doc.con || {}, mem: clone(m.console || {}) }); } catch (e) { S.conErr = 'The console could not start: ' + errText(e); } }
     S.locMem = clone(m.location || {}); S.locErr = ''; S.scnMem = clone(m.scenes || {}); S.scn = null; S.eng = null; S.npcg = null; S.npcMem = clone(m.npc || {}); S.npcRoll = null;
+    S.dt = null; S.dtDists = null; S.dtRoll = null; S.dtSig = null; S.dtMem = clone(m.downtime || {});
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
     layout(); redrawAll(); subscribeNpcs(); checkPack();
@@ -1291,7 +1299,7 @@
     }, function () {});
   }
   function layout() {
-    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['cards', 'Cards'], ['rules', 'GM screen'], ['ipad', 'iPad'], ['state', 'State']];
+    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['downtime', 'Downtime'], ['cards', 'Cards'], ['rules', 'GM screen'], ['ipad', 'iPad'], ['state', 'State']];
     S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' + barHtml() +
       '<div class="seg gm-segbar" role="tablist" aria-label="Show">' + segs.map(function (s) { return '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
       '<div class="gm-main">' +
@@ -1306,8 +1314,8 @@
       '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div>' +
       '<details class="gm-singles" id="gm-singles"></details></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
-      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
+      [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
+      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
       '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button>' +
@@ -1483,7 +1491,7 @@
 
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
+    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
   }
   /* the pack's export date: in the Menu in full, in the bar only when stale or an offline copy */
   function syncHead() {
@@ -1595,17 +1603,20 @@
   /* the card into view in its scroller (the console column on a laptop, the page on a phone), by the least scroll that shows
      it: the whole card when it fits, else its lead box (the header just above it), so the Position switch stays on screen
      whenever there is room; nothing moves when the card is on screen already. The sticky bars and the phone's capture
-     button are allowed for through scroll-margins. */
-  function showCard() {
-    var box = $q('#gm-card');
+     button are allowed for through scroll-margins. A side panel's card (Downtime) goes the same way in its own pane, its part to
+     read first being the cost box of an overindulgence, else its lead box. parts: the selectors tried in turn for that part. */
+  function showCard() { showIn($q('#gm-card'), $q('.gm-console'), ['.gm-lead', '.gm-card-h']); }
+  function showIn(box, col, parts) {
     if (!box || typeof box.scrollIntoView !== 'function' || typeof box.getBoundingClientRect !== 'function') return;
-    var col = $q('.gm-console'), r = box.getBoundingClientRect(), top = 0, bottom = +W.innerHeight || 0, c;
+    var r = box.getBoundingClientRect(), top = 0, bottom = +W.innerHeight || 0, c;
     try {
       if (col && W.getComputedStyle && /auto|scroll/.test(W.getComputedStyle(col).overflowY)) { c = col.getBoundingClientRect(); top = c.top; bottom = c.bottom; }
       else if (W.getComputedStyle) { var cs = W.getComputedStyle(box); top += parseFloat(cs.scrollMarginTop) || 0; bottom -= parseFloat(cs.scrollMarginBottom) || 0; }
     } catch (e) {}
     if (r.top >= top && r.bottom <= bottom) return;
-    var target = r.height <= bottom - top ? box : (box.querySelector('.gm-lead') || box.querySelector('.gm-card-h') || box);
+    var target = r.height <= bottom - top ? box : null;
+    (parts || []).forEach(function (s) { if (!target) target = box.querySelector(s); });
+    target = target || box;
     var smooth = true; try { smooth = !(W.matchMedia && W.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
     try { target.scrollIntoView({ block: 'nearest', behavior: smooth ? 'smooth' : 'auto' }); } catch (e) { try { target.scrollIntoView(); } catch (x) {} }
   }
@@ -1970,7 +1981,7 @@
   }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
 
-  var SIDE = ['prep', 'location', 'scenes', 'engagement', 'npc', 'cards', 'rules', 'ipad'];
+  var SIDE = ['prep', 'location', 'scenes', 'engagement', 'npc', 'downtime', 'cards', 'rules', 'ipad'];
   /* ---------- the street scene roller (S) and the engagement roll (E): side panels ---------- */
   function genLinesHtml(lines) {
     return (lines || []).map(function (l) { return l.kind === 'chips' ? chipsHtml(l.chips) : linesHtml([l], md); }).join('');
@@ -2118,6 +2129,260 @@
     h += '<article class="gm-card gm-engcard" data-tool="engagement"><header class="gm-card-h"><div><h3>' + esc(c.meta.title) + '</h3><p class="gm-sub">' + esc(c.meta.sub) + '</p></div></header>' + chipsHtml(roll ? c.meta.chips : []) + genLinesHtml(c.lines) +
       (roll ? '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="engagement">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="engagement">Copy</button></div>' : '') + '</article>';
     box.innerHTML = h + earlierHtml('engagement', cur);
+  }
+
+  /* ---------- Downtime (D): personal business, one card per activity a PC takes (app/gm/downtime.js; GM.md "Downtime (D)") ----------
+     The built-in tables (app/downtime-tables.js: original writing, no book text), or a pack part `downtime` laid over them; this page
+     names nothing of the setting (districts, purveyors and contacts come from those tables and the sheets). Everyone rolls physical
+     dice: a tap on the result IS the roll. Who: the PCs from the live sheets (api.characters(), slim copies, read on every draw) or
+     anyone; picking one prefills the vice and purveyor (panel state in dt.ui, never written to the sheet), and their own clocks and
+     contacts fill the Project and Contact selects. A card is { hid, seed, ui, mem, label, at, started? } under cards.downtime (five
+     in hist.downtime): `ui` holds the RESOLVED strings (the PC's name, the vice, the purveyor line, the contact line, the project's
+     name, the district), so a reload or an Earlier click redraws the same card after a sheet changes, and `mem` is the repeat guard
+     before the roll (the guard itself is mem.downtime). An overindulgence's option and "Overindulged?" redraw the SAME card (its seed
+     and memory: the module keeps the scene above as it was). A clock a card suggests goes onto the table's clocks, hidden
+     (api.addClock), and the card keeps its id under `started`. Nothing here goes to the iPad: the prompts and hooks are the GM's. */
+  var DT_BANDS = [['13', '1–3'], ['45', '4/5'], ['6', '6'], ['crit', 'Crit']];
+  var DT_NONE = '*';      /* the Project and Contact selects' "none of the sheet's"; '' follows the sheet */
+  var DT_Q = '<button type="button" class="gm-q" data-gm="dt-rule" title="The rules on overindulging, in the GM screen" aria-label="The rules on overindulging, in the GM screen">?</button>';
+  /* the instance, built once per start(): the built-in tables (B68DowntimeTables, loaded before the module) with the pack's downtime
+     part laid over them; S.dtDists is the district list those tables draw from (Now in is matched against it) */
+  function dtInst() {
+    if (S.dt) return S.dt;
+    var M = W.B68GmDowntime, book = W.B68DowntimeTables, pk = part('downtime'), vices = W.B68Content && Array.isArray(W.B68Content.VICES) ? W.B68Content.VICES : [];
+    if (!M || typeof M.create !== 'function') { S.dtErr = 'The downtime module is missing.'; return null; }
+    if (!isObj(book) || !isObj(book.T)) { S.dtErr = 'The downtime tables are missing.'; return null; }
+    var pack = pk && isObj(pk.T) ? pk.T : undefined, dists = function (t) { return isObj(t) && Array.isArray(t.districts) ? t.districts.map(str) : null; };
+    var cfg = function (over) { return { T: book.T, places: isObj(book.PLACES) ? book.PLACES : undefined, pack: over, vices: vices }; };
+    S.dtNote = '';
+    try { S.dt = M.create(cfg(pack)); S.dtErr = ''; S.dtDists = dists(pack) || dists(book.T) || []; }
+    catch (e) {
+      /* a pack part that lacks tables: the built-in ones (the Menu's Pack check names what the part lacks) */
+      try { S.dt = M.create(cfg(undefined)); S.dtErr = ''; S.dtDists = dists(book.T) || []; if (pack) S.dtNote = 'The pack’s downtime part lacks tables, so these cards use the built-in ones.'; }
+      catch (x) { S.dtErr = 'The downtime cards could not start: ' + errText(x); }
+    }
+    return S.dt;
+  }
+  function dtUi() {
+    var u = isObj(S.doc.dt) && isObj(S.doc.dt.ui) ? S.doc.dt.ui : {};
+    return { who: str(u.who), act: str(u.act), vice: str(u.vice), purveyor: str(u.purveyor), project: str(u.project), contact: str(u.contact) };
+  }
+  function dtActOf(dt, v) { return dt.ACTS.some(function (a) { return a.id === v; }) ? v : dt.ACTS[0].id; }
+  function dtCard() { return isObj(S.doc.cards) && isObj(S.doc.cards.downtime) ? S.doc.cards.downtime : null; }
+  function dtHist() { return isObj(S.doc.hist) && isObj(S.doc.hist.downtime) ? S.doc.hist.downtime : {}; }
+  function dtSig(c) { return isObj(c) ? JSON.stringify([c.hid, c.seed, c.ui]) : null; }
+  /* the PCs: api.characters() (slim copies of the filed characters), read afresh on every draw */
+  function dtPcs() { var a = []; try { a = S.api && typeof S.api.characters === 'function' ? S.api.characters() : []; } catch (e) { a = []; } return (Array.isArray(a) ? a : []).filter(function (c) { return isObj(c) && str(c.id); }); }
+  function dtPc(pcs) { var id = dtUi().who; return id ? pcs.filter(function (c) { return str(c.id) === id; })[0] || null : null; }
+  function pcName(c) { return str(c && c.name).trim() || str(c && c.alias).trim() || 'Unnamed'; }
+  function dtFold(s) { return str(s).toLowerCase().replace(/[’‘`]/g, "'").replace(/\s+/g, ' ').trim(); }
+  /* the module's own name for the vice a sheet holds ('' when it is none of the seven: the card picks one) */
+  function dtViceOf(dt, v) { var k = dtFold(v); return k ? dt.VICES.filter(function (x) { return dtFold(x) === k; })[0] || '' : ''; }
+  /* the book's spelling (B68Content.VICES) for a vice's label; the module's name stays the value */
+  function dtViceLabel(v) { var b = (W.B68Content && Array.isArray(W.B68Content.VICES) ? W.B68Content.VICES : []).filter(function (x) { return isObj(x) && dtFold(x.name) === dtFold(v); })[0]; return b ? str(b.name) : v; }
+  function dtClocks(pc) { return pc && Array.isArray(pc.clocks) ? pc.clocks.filter(function (c) { return isObj(c) && str(c.name).trim(); }) : []; }
+  /* the project a card is for: the clock picked here, else the PC's first clock still open (else their first); '' for none */
+  function dtProject(pc) {
+    var v = dtUi().project, list = dtClocks(pc); if (v === DT_NONE) return '';
+    if (v && list.some(function (c) { return str(c.name).trim() === v; })) return v;
+    var open = list.filter(function (c) { return +c.filled < +c.size; })[0] || list[0];
+    return open ? str(open.name).trim() : '';
+  }
+  /* "Sam, a nosy neighbour": the line a contact is on the sheet, as the card takes it */
+  function contactLine(c) { return str(c.name).trim() + (str(c.role).trim() ? ', ' + str(c.role).trim() : ''); }
+  /* the sheet's contacts, a friend or a rival first */
+  function dtContacts(pc) {
+    var l = pc && Array.isArray(pc.contacts) ? pc.contacts.filter(function (c) { return isObj(c) && str(c.name).trim(); }) : [], rel = function (c) { return c.kind === 'friend' || c.kind === 'rival'; };
+    return l.filter(rel).concat(l.filter(function (c) { return !rel(c); }));
+  }
+  function dtContact(pc) {
+    var v = dtUi().contact, list = dtContacts(pc); if (v === DT_NONE) return null;
+    return (v && list.filter(function (c) { return contactLine(c) === v; })[0]) || list[0] || null;
+  }
+  /* Now in, as the other tools take it: the tables' own spelling when their list holds the district (S.dtDists, set by dtInst()), else
+     as the bar has it (a downtime card reads a district as words in a sentence, never as a table key); '' while Now in is anywhere (the
+     card picks one) */
+  function dtDistrict() {
+    var now = nowDistrict(); if (!now) return '';
+    return nowIn(S.dtDists || []) || now;
+  }
+  /* what a tap rolls: the panel's choices resolved to the strings the card keeps */
+  function dtRollUi(dt, v) {
+    var u = dtUi(), pc = dtPc(dtPcs()), act = dtActOf(dt, u.act), ui = { act: act, who: pc ? pcName(pc) : '', district: dtDistrict() };
+    if (act === 'indulge') { ui.vice = dtViceOf(dt, u.vice); ui.purveyor = u.purveyor.trim(); ui.res = v === 'over' ? 'over' : ''; }
+    else if (act === 'train') ui.attr = v;
+    else if (act === 'contact') { var c = dtContact(pc); ui.contact = c ? contactLine(c) : ''; ui.rel = v === 'rival' ? 'rival' : 'friend'; }
+    else { ui.res = v; if (act === 'project') ui.project = dtProject(pc); }
+    return ui;
+  }
+  function replayDowntime(e) {
+    var dt = dtInst(); if (!dt || !isObj(e)) return null;
+    var mem = {}; try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
+    try { return dt.roll(isObj(e.ui) ? e.ui : {}, { seed: e.seed, mem: isObj(mem) ? mem : {} }); } catch (x) { return null; }
+  }
+  function rollDowntime(v) {
+    var dt = dtInst(); if (!dt) { renderDowntime(); return; }
+    /* the purveyor as the field holds it now: a tap on a phone may not blur the field first, so its change has not fired (a select's has) */
+    var pin = dtActOf(dt, dtUi().act) === 'indulge' ? $q('#gm-dt-purveyor') : null;
+    if (pin && str(pin.value).slice(0, 200) !== dtUi().purveyor) patch({ dt: { ui: { purveyor: str(pin.value).slice(0, 200) } } });
+    var ui = dtRollUi(dt, v), roll;
+    try { roll = dt.roll(ui, { mem: S.dtMem }); } catch (e) { toast('The downtime card failed: ' + errText(e), true); return; }
+    var entry = { seed: roll.seed, ui: clone(roll.replay.ui), mem: JSON.stringify(roll.replay.mem), label: str(roll.meta.label), at: nowIso() };
+    var hid = uid('h'), card = Object.assign({ hid: hid }, entry);
+    /* the new card REPLACES the stored one: nothing of the old (a clock it started) carries over */
+    var ok = patch({ cards: { downtime: replacePatch(dtCard(), card) }, mem: { downtime: clone(S.dtMem) }, hist: { downtime: addCapped(dtHist(), hid, entry, LIMITS.hist) } }, { force: true });
+    if (!ok) return;
+    S.dtRoll = roll; S.dtSig = dtSig(card); S.last = { text: 'Downtime: ' + entry.label };
+    renderDowntime(true);
+    showIn($q('#gm-dt-card'), $q('#gm-dt'), ['.gm-dt-cost', '.gm-want', '.gm-card-h']);
+  }
+  /* The SAME card redrawn with one choice changed (an overindulgence's option, or "Overindulged?"): its own seed and memory, so the
+     scene above stays as it was (the module draws the four options last). Only the choice, and the label that names it, change in
+     the stored card and its Earlier entry; the hid, seed, memory and time stay. */
+  function dtRedraw(change) {
+    var cur = dtCard(); if (!cur || !dtInst()) return;
+    var roll = replayDowntime(Object.assign({}, cur, { ui: Object.assign({}, isObj(cur.ui) ? cur.ui : {}, change) }));
+    if (!roll) { toast('That card could not be redrawn.', true); return; }
+    var x = { ui: clone(roll.replay.ui), label: str(roll.meta.label) }, p = { cards: { downtime: x } };
+    if (isObj(dtHist()[cur.hid])) { p.hist = { downtime: {} }; p.hist.downtime[cur.hid] = clone(x); }
+    if (!patch(p, { force: true })) return;
+    S.dtRoll = roll; S.dtSig = dtSig(dtCard()); S.last = { text: 'Downtime: ' + x.label };
+    renderDowntime(true);
+  }
+  /* a PC chip: their vice and purveyor from the sheet into the panel (never back into the sheet); the Project and Contact selects go
+     back to following their sheet. A tap on the chip already picked fills them from the sheet again. */
+  function dtSetWho(id) {
+    var dt = dtInst(); if (!dt) return;
+    var pc = id ? dtPcs().filter(function (c) { return str(c.id) === id; })[0] || null : null;
+    patch({ dt: { ui: { who: pc ? str(pc.id) : '', vice: pc ? dtViceOf(dt, pc.vice) : '', purveyor: pc ? str(pc.purveyor).slice(0, 200) : '', project: '', contact: '' } } });
+    renderDowntime();
+  }
+  function dtSetAct(v) { var dt = dtInst(); if (!dt) return; patch({ dt: { ui: { act: dtActOf(dt, v) } } }); renderDowntime(); }
+  function dtField(k, v) {
+    var u = {}; u[k] = str(v).slice(0, 200); if (dtUi()[k] === u[k]) return;
+    patch({ dt: { ui: u } });
+    if (k === 'contact') renderDowntime();      /* the Friend or Rival button the sheet names follows the contact */
+  }
+  /* "Start a clock: …": onto the table's clocks (boot's addClock: a clockOps add, as the table page adds one), hidden from the players,
+     a danger clock; the card keeps its id so the button stays done after a reload and on its Earlier entry */
+  function dtClock(i) {
+    var cur = dtCard(), a = S.dtRoll && S.dtRoll.meta && S.dtRoll.meta.actions ? S.dtRoll.meta.actions[i] : null, it = a && a.intent;
+    if (!cur || !isObj(it) || it.type !== 'clock') return;
+    var name = str(it.name), hid = cur.hid, key = hid + '|' + name, me = S;
+    if (!name || (isObj(cur.started) && Object.prototype.hasOwnProperty.call(cur.started, name)) || S.dtBusy[key]) return;
+    if (!S.api || typeof S.api.addClock !== 'function') { toast('The table is not available here: start the clock on the table page.', true); return; }
+    var clock = { id: 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), name: name, size: +it.size || 4, filled: 0, kind: 'danger', hidden: true };
+    S.dtBusy[key] = true;
+    var b = $q('#gm-dt [data-gm="dt-clock"][data-i="' + (+i) + '"]'); if (b) b.disabled = true;
+    Promise.resolve().then(function () { return S.api.addClock(clock); }).then(function () {
+      delete me.dtBusy[key]; if (S !== me) return;
+      var st = {}, p = {}; st[name] = clock.id;
+      var c = dtCard(); if (c && c.hid === hid) p.cards = { downtime: { started: st } };
+      if (isObj(dtHist()[hid])) { p.hist = { downtime: {} }; p.hist.downtime[hid] = { started: clone(st) }; }
+      if (p.cards || p.hist) patch(p, { force: true });
+      toast('Clock started, hidden from the players: ' + name + '. Show it from the table page.');
+      renderDowntime();
+    }, function (e) {
+      delete me.dtBusy[key]; if (S !== me) return;
+      toast('Could not start the clock: ' + errText(e), true);
+      renderDowntime();
+    });
+  }
+  /* the "?" by Overindulged: the rules entry on overindulging, in the GM screen pane (its own search; the entry opens when a hit's title
+     is about indulging, else the list) */
+  function dtRule() {
+    setPanel('rules'); if (isPhone()) { S.seg = 'side'; syncPanels(); }
+    rulesSearch('overindulge', null, function (x) { return /indulg/i.test(str(x.title)); });
+  }
+  /* the filed characters changed (boot, on each collection snapshot): the Who chips and the selects follow. Players tick their sheets all
+     session, so the panel is drawn again only when what it shows changed (the slim copies), and never from under a list the GM has open
+     (the next change catches up) */
+  function charactersChanged() {
+    if (!S || S.status !== 'ready' || JSON.stringify(dtPcs()) === S.dtPcSig) return;
+    var a = document.activeElement, box = $q('#gm-dt');
+    if (a && box && box.contains(a) && str(a.tagName).toUpperCase() === 'SELECT') return;
+    renderDowntime();
+  }
+
+  /* the activity's ONE row of buttons (a tap rolls the card at once), with what it needs above it; the button that made the card on
+     screen stays marked while it is this PC's card for this activity */
+  function dtRowHtml(dt, act, u, pc, roll) {
+    var on = roll && roll.replay ? roll.replay.ui : null, who = pc ? pcName(pc) : '', mine = !!on && on.act === act && on.who === who;
+    var btn = function (k, v, label, cls, extra) {
+      return '<button type="button" class="chip gm-dtb' + (cls ? ' ' + cls : '') + '" data-gm="dt-roll" data-k="' + k + '" data-v="' + esc(v) + '" aria-pressed="' + (mine && str(on[k]) === v) + '"' + (extra || '') + '>' + label + '</button>';
+    };
+    var row = function (label, btns) { return '<div class="gm-field wide gm-dt-row" role="group" aria-label="' + esc(label) + '"><span class="gm-lab">' + esc(label) + ':</span><div class="gm-dt-btns">' + btns + '</div></div>'; };
+    if (act === 'indulge') {
+      return '<div class="gm-row gm-dt-fields"><label class="gm-field gm-dt-vice" for="gm-dt-vice"><span class="gm-lab">Vice</span><select id="gm-dt-vice" data-dtf="vice"><option value=""' + (u.vice ? '' : ' selected') + '>any (the card picks one)</option>' +
+        dt.VICES.map(function (v) { return '<option value="' + esc(v) + '"' + (v === u.vice ? ' selected' : '') + '>' + esc(dtViceLabel(v)) + '</option>'; }).join('') + '</select></label>' +
+        '<label class="gm-field gm-dt-pur" for="gm-dt-purveyor"><span class="gm-lab">Purveyor</span><input type="text" id="gm-dt-purveyor" data-dtf="purveyor" maxlength="200" autocomplete="off" value="' + esc(u.purveyor) + '"' +
+        ' placeholder="' + (pc ? 'Name, place, district' : 'any: a stock host and place') + '" title="Filled from the sheet. A change here is for these cards only: the sheet keeps its own."></label></div>' +
+        row('Rolled at the table', btn('res', '', 'Indulged') + btn('res', 'over', 'Overindulged', 'gm-dtb-over'));
+    }
+    if (act === 'train') return row('Which xp track', dt.ATTRS.map(function (a) { return btn('attr', a, esc(a)); }).join(''));
+    if (act === 'contact') {
+      var list = dtContacts(pc), c = dtContact(pc), sel = c ? contactLine(c) : DT_NONE;
+      return (list.length ? '<label class="gm-field wide" for="gm-dt-contact"><span class="gm-lab">Contact</span><select id="gm-dt-contact" data-dtf="contact">' + list.map(function (x) {
+        var l = contactLine(x); return '<option value="' + esc(l) + '"' + (l === sel ? ' selected' : '') + '>' + esc(l + (x.kind ? ' (' + x.kind + ')' : '')) + '</option>';
+      }).join('') + '<option value="' + DT_NONE + '"' + (sel === DT_NONE ? ' selected' : '') + '>someone else (an old friend or rival)</option></select></label>'
+        : pc ? '<p class="gm-dim">No contacts on ' + esc(who) + '’s sheet: the card brings an old friend or an old rival.</p>' : '') +
+        row('Play them as', ['friend', 'rival'].map(function (r) {
+          var sheet = !!c && c.kind === r;
+          return btn('rel', r, '<b>' + (r === 'friend' ? 'Friend' : 'Rival') + '</b>' + (sheet ? '<small>on the sheet</small>' : ''), sheet ? 'gm-dtb-sheet' : '', sheet ? ' title="' + esc(str(c.name).trim() + ' is ' + who + '’s ' + r + ' on the sheet') + '"' : '');
+        }).join(''));
+    }
+    var clocks = act === 'project' ? dtClocks(pc) : [], proj = act === 'project' ? dtProject(pc) : '';
+    return (act !== 'project' ? '' : clocks.length ? '<label class="gm-field wide" for="gm-dt-project"><span class="gm-lab">Project clock</span><select id="gm-dt-project" data-dtf="project">' + clocks.map(function (x) {
+      var n = str(x.name).trim(); return '<option value="' + esc(n) + '"' + (n === proj ? ' selected' : '') + '>' + esc(n + ' · ' + (+x.filled || 0) + '/' + (+x.size || 0)) + '</option>';
+    }).join('') + '<option value="' + DT_NONE + '"' + (proj ? '' : ' selected') + '>another project</option></select></label>'
+      : pc ? '<p class="gm-dim">No clocks on ' + esc(who) + '’s sheet: the card says “the project”.</p>' : '') +
+      row('Rolled at the table', DT_BANDS.map(function (b) { return btn('res', b[0], esc(b[1]), b[0] === 'crit' ? '' : 'gm-dtb-num'); }).join(''));
+  }
+  /* the card: the existing card's parts (header, chips, the lead box with its small line, the grid, one actions row with Pin and Copy).
+     An overindulgence puts its four options right above the cost box (the picked one pressed), the cost box in its own colour and a "?"
+     for the rules; an indulgence that was not one carries a small "Overindulged?" that turns the same card into one. */
+  function dtCardHtml(roll, cur) {
+    var m = roll.meta || {}, over = roll.over, started = cur && isObj(cur.started) ? cur.started : {};
+    var h = '<article class="gm-card gm-dtcard" data-tool="downtime"><header class="gm-card-h"><div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' + chipsHtml(m.chips);
+    (roll.lines || []).forEach(function (l) {
+      if (l.id === 'over' && over) {
+        h += '<div class="gm-dt-opts" role="group" aria-label="What overindulging costs"><span class="gm-lab">Overindulged ' + DT_Q + '</span><div class="gm-dt-optrow">' +
+          over.options.map(function (o) { return '<button type="button" class="chip gm-dt-opt" data-gm="dt-pick" data-v="' + esc(o.id) + '" aria-pressed="' + (o.id === over.pick) + '">' + esc(o.title) + '</button>'; }).join('') + '</div></div>' +
+          '<div class="gm-want gm-dt-cost">' + md(l.md) + (l.small ? '<div class="gm-small">' + md(l.small) + '</div>' : '') + '</div>';
+        return;
+      }
+      h += linesHtml([l], md);
+      if (l.id === 'lead' && over && !over.shown) h += '<p class="gm-dt-flip"><button type="button" class="btn sm" data-gm="dt-over" title="The same card, overindulged: the scene above stays">Overindulged?</button>' + DT_Q + '</p>';
+    });
+    return h + '<div class="gm-card-acts">' + (m.actions || []).map(function (a, i) {
+      var name = isObj(a.intent) ? str(a.intent.name) : '', done = !!name && Object.prototype.hasOwnProperty.call(started, name);
+      return '<button type="button" class="btn sm primary" data-gm="dt-clock" data-i="' + i + '"' + (done ? ' disabled title="On the table, hidden from the players: show it from the table page"' : ' title="Onto the table’s clocks, hidden from the players"') + '>' + esc(done ? 'Clock started: ' + name : a.label) + '</button>';
+    }).join('') + '<button type="button" class="btn sm" data-gm="pin" data-tool="downtime">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="downtime">Copy</button></div></article>';
+  }
+  function renderDowntime(fresh) {
+    var box = $q('#gm-dt'); if (!box) return;
+    var dt = dtInst();
+    if (!dt) { box.innerHTML = '<p class="gm-note bad">' + esc(S.dtErr || 'The downtime cards are not available.') + '</p>'; return; }
+    /* a redraw while the purveyor is being typed keeps the typing (the characters can land at any time) */
+    var pin = $q('#gm-dt-purveyor'), keep = pin && document.activeElement === pin ? { v: pin.value, a: pin.selectionStart, b: pin.selectionEnd } : null;
+    var cur = dtCard();
+    if (!fresh && cur && S.dtSig !== dtSig(cur)) { S.dtRoll = replayDowntime(cur); S.dtSig = dtSig(cur); }
+    var u = dtUi(), pcs = dtPcs(), pc = dtPc(pcs), act = dtActOf(dt, u.act), roll = S.dtRoll;
+    S.dtPcSig = JSON.stringify(pcs);
+    var h = '<section class="gm-box gm-dtbox"><h3 class="gm-band">Downtime · personal business</h3><div class="gm-dt-ctl">' +
+      '<div class="gm-field wide"><span class="gm-lab" id="gm-dt-wl">Who</span><div class="gm-dt-chips" role="group" aria-labelledby="gm-dt-wl">' +
+      pcs.map(function (c) { return '<button type="button" class="chip gm-dt-who" data-gm="dt-who" data-id="' + esc(c.id) + '" aria-pressed="' + (!!pc && pc.id === c.id) + '"' + (c.playbookName ? ' title="' + esc(c.playbookName) + '"' : '') + '>' + esc(pcName(c)) + '</button>'; }).join('') +
+      '<button type="button" class="chip gm-dt-who" data-gm="dt-who" data-id="" aria-pressed="' + !pc + '">anyone</button></div>' +
+      (pcs.length ? '' : '<p class="gm-dim">No characters are filed yet: a card uses a stock host and place.</p>') + '</div>' +
+      '<div class="gm-field wide"><span class="gm-lab" id="gm-dt-al">Activity</span><div class="gm-dt-chips gm-dt-acts" role="group" aria-labelledby="gm-dt-al">' +
+      /* a phone shows the module's short labels (two rows, not four: the row of buttons stays on the first screen); the label is the name */
+      dt.ACTS.map(function (a) { return '<button type="button" class="chip" data-gm="dt-act" data-v="' + esc(a.id) + '" data-short="' + esc(a.short || a.label) + '" aria-label="' + esc(a.label) + '" aria-pressed="' + (a.id === act) + '"><span class="gm-dt-l">' + esc(a.label) + '</span></button>'; }).join('') + '</div></div>' +
+      dtRowHtml(dt, act, u, pc, roll) + '</div></section>';
+    if (S.dtNote) h += '<p class="gm-note">' + esc(S.dtNote) + '</p>';
+    h += roll ? '<div class="gm-cardbox" id="gm-dt-card">' + dtCardHtml(roll, cur) + '</div>'
+      : '<p class="gm-empty">Pick who and what they did, then tap what the dice said: a scene to frame, a question for the player and a hook. Nothing here goes to the iPad.</p>';
+    box.innerHTML = h + earlierHtml('downtime', cur);
+    if (keep) { var p2 = $q('#gm-dt-purveyor'); if (p2) { p2.value = keep.v; try { p2.focus(); p2.setSelectionRange(keep.a, keep.b); } catch (e) {} } }
   }
 
   /* ---------- the NPC tab: the app's cast ---------- */
@@ -2522,7 +2787,8 @@
   function rulesPage(q) { return '#rules?q=' + encodeURIComponent(q); }
   /* a snippet from the rules module is escaped text with <mark> round the matched words: anything else in it is dropped */
   function snipHtml(s) { return str(s).replace(/<(\/?)mark>|<[^>]*>?/g, function (m, c) { return c === undefined ? '' : m; }); }
-  function rulesSearch(q, openId) {
+  /* openId: the entry to open once the hits are in; or best(hit) -> bool: the first hit it takes opens (the Downtime card's "?"), else the list */
+  function rulesSearch(q, openId, best) {
     q = str(q).trim(); if (!q) return;
     var R = rulesApi(), box = $q('#gm-rq-hits'), rq = $q('#gm-rq'); if (rq && rq.value !== q) rq.value = q;
     if (!R || !box) { try { W.open(rulesPage(q), '_blank', 'noopener'); } catch (e) {} return; }
@@ -2533,7 +2799,8 @@
       var r = {}; try { r = R.hits(q, RQ_N) || {}; } catch (e) { mine.err = errText(e); }
       mine.hits = Array.isArray(r.hits) ? r.hits : []; mine.total = Math.max(+r.total || 0, mine.hits.length);
       mine.empty = !!(c && Array.isArray(c.entries) && !c.entries.length); mine.busy = false;
-      if (openId && !mine.err) rulesOpen(openId); else drawRq(true);
+      var top = !openId && typeof best === 'function' && !mine.err ? mine.hits.filter(function (x) { return isObj(x) && best(x); })[0] : null;
+      if (openId && !mine.err) rulesOpen(openId); else if (top) rulesOpen(top.id); else drawRq(true);
     }, function (e) { if (S !== me || S.rq !== mine) return; mine.busy = false; mine.err = errText(e); drawRq(true); });
   }
   function drawRq(scroll) {
@@ -2685,7 +2952,7 @@
   /* ---------- pins and copy ---------- */
   function cardFor(tool) {
     if (tool === 'console' || tool === 'situation') { var r = S.conRes; return r ? { label: str(r.meta.label), title: str(r.meta.title), text: r.sections ? situationPlain(r) : consolePlain(r) } : null; }
-    if (tool === 'scenes' || tool === 'engagement') { var g = tool === 'scenes' ? S.scnRoll : S.engRoll; return g ? { label: str(g.meta.label), title: str(g.meta.title), text: g.meta.all.join('\n') } : null; }
+    if (tool === 'scenes' || tool === 'engagement' || tool === 'downtime') { var g = tool === 'scenes' ? S.scnRoll : tool === 'engagement' ? S.engRoll : S.dtRoll; return g ? { label: str(g.meta.label), title: str(g.meta.title), text: g.meta.all.join('\n') } : null; }
     if (tool === 'npc') { var nr = S.npcRoll; return nr ? { label: str(nr.roll.card.meta.label), title: str(nr.roll.card.meta.title), text: nr.roll.card.meta.all.join('\n') } : null; }
     var L = W.B68GmLocation, roll = S.locRoll; if (!L || !roll) return null;
     var lines = []; try { lines = L.cardLines(roll, part('location')); } catch (e) {}
@@ -2813,6 +3080,7 @@
         if (tool === 'console' || tool === 'situation') { S.conRes = null; drawConsoleCard(); }
         else if (tool === 'scenes') { S.scnRoll = null; renderScenes(); }
         else if (tool === 'npc') { S.npcRoll = null; renderNpcGen(); }
+        else if (tool === 'downtime') { S.dtRoll = null; S.dtSig = null; renderDowntime(); }
         else if (tool === 'engagement') { S.engRoll = null; patch({ eng: { ui: clone(e.ui || {}) } }); renderEngagement(); }
         else { S.locRoll = null; S.map = null; renderLocation(); }
         break;
@@ -2848,6 +3116,13 @@
       case 'engroll': rollEngagement(); break;
       case 'engdie': rollEngagementPhys(b.getAttribute('data-v')); break;
       case 'engtri': setEngagement(b.getAttribute('data-id'), b.getAttribute('data-v'), true); break;
+      case 'dt-who': dtSetWho(str(b.getAttribute('data-id'))); break;
+      case 'dt-act': dtSetAct(b.getAttribute('data-v')); break;
+      case 'dt-roll': rollDowntime(str(b.getAttribute('data-v'))); break;
+      case 'dt-pick': dtRedraw({ res: 'over', pick: b.getAttribute('data-v') }); break;
+      case 'dt-over': dtRedraw({ res: 'over' }); break;
+      case 'dt-clock': dtClock(+b.getAttribute('data-i')); break;
+      case 'dt-rule': dtRule(); break;
       case 'layer': setMap('layer', b.getAttribute('data-v')); renderLocation(); break;
       case 'draw': drawMap(); break;
       case 'ipad': showOnIpad(); break;
@@ -2894,6 +3169,7 @@
     else if (t.hasAttribute('data-map')) setMap(t.getAttribute('data-map'), t.value);
     else if (t.hasAttribute('data-scn')) { var sc = {}; sc[t.getAttribute('data-scn')] = t.value; patch({ scn: { ui: sc } }); }
     else if (t.hasAttribute('data-npcui')) { var nu = {}; nu[t.getAttribute('data-npcui')] = t.value; patch({ npc: { ui: nu } }); }
+    else if (t.hasAttribute('data-dtf')) dtField(t.getAttribute('data-dtf'), t.value);
     else if (t.hasAttribute('data-eng')) setEngagement(t.getAttribute('data-eng'), t.value, false);
     else if (t.hasAttribute('data-engmod')) setEngagement(t.getAttribute('data-engmod'), t.value, true);
     else if (t.hasAttribute('data-reveal')) { var rv = {}; rv[t.getAttribute('data-reveal')] = t.checked; patch({ loc: { map: { reveal: rv } } }); if (S.map) drawMap(); renderLocation(); }
@@ -2926,7 +3202,7 @@
     else if (k === 'rules') { var q = $q('#gm-rq'); if (q && q.value.trim()) rulesSearch(q.value); }
   }
   function wire(el) {
-    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'gm-find-q') { findRender(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-prep-q') { prepFilter(ev.target.value); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); el.addEventListener('scroll', onScroll, true); }
+    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'gm-find-q') { findRender(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-prep-q') { prepFilter(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-dt-purveyor') { clearTimeout(wire.dt); var pv = ev.target; wire.dt = setTimeout(function () { if (S) dtField('purveyor', pv.value); }, 500); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); el.addEventListener('scroll', onScroll, true); }
     if (!wire.global) {
       wire.global = true;
       document.addEventListener('keydown', onKey, true);
@@ -2960,7 +3236,7 @@
   }
 
   return {
-    open: open, close: close, campaign: campaign, purge: purge,
+    open: open, close: close, campaign: campaign, characters: charactersChanged, purge: purge,
     available: function () { return !!(W.claude && W.claude.gm); },
     _pure: P,
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */

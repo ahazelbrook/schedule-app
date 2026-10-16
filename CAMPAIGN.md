@@ -96,7 +96,8 @@ tick survives the GM renaming, resizing, hiding, adding or removing other clocks
 - Who may do what is judged on the result, by the rule above: a player's ops may only change `filled` (403 otherwise).
   `hidden` stays presentation only, so a player may fill a hidden clock through the API, as before.
 - The page sends ops only to a store that says it takes them (the campaign ref's `clockOps: true`: the hosted
-  adapter, HOSTING.md); anywhere else (the artifact's own db) it sends the whole `clocks` array as before.
+  adapter, HOSTING.md); anywhere else (the artifact's own db) it sends the whole `clocks` array as before. The GM page's
+  Downtime panel adds a clock a card suggests the same way, hidden and of kind `danger` (boot.js `addTableClock`, GM.md).
 - The previous release sends a tick as the whole `clocks` array, copied from the document as that page last read it
   with one fill changed. For one release the server still takes it under the old rule (a player may only change
   `filled`, the same clocks, else 403), plus one: a player's array that changes the fill of more than one clock was

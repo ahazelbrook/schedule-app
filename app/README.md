@@ -43,8 +43,10 @@ storage, identity and downloads always go through `window.claude.use(...)`.
 - `gm-page.js` and `gm.css` are the GM's page (`#gm`), and `display-page.js` and `display.css` the iPad's full-screen display
   (`#display`); both are hosted-build only (`GM.md`). `gm/` holds the pure logic behind them, one UMD module each, with no DOM,
   storage or table text (the tables arrive from the GM's pack): `console.js` (the console and its situations), `location.js`
-  (the location generator and map data), `scenes.js` (street scenes), `engagement.js` (the engagement roll), and `npc.js` with
-  `figure-map.js` (the NPC generator and its figure map: the NPC tab on `#gm`, and the sync).
+  (the location generator and map data), `scenes.js` (street scenes), `engagement.js` (the engagement roll), `npc.js` with
+  `figure-map.js` (the NPC generator and its figure map: the NPC tab on `#gm`, and the sync), `prep.js` (the Prep tab), and
+  `downtime.js` (the Downtime tab's cards). `downtime-tables.js` holds those cards' tables (`B68DowntimeTables`): original writing
+  with no book text, public like `content.js`, and outside `gm/` because it names the setting; a pack part may be laid over them.
 - `ambient/` holds the scenes the display plays when nothing is spotlit: four designer pages as delivered and two data-free
   score shells (`planning-board`, `score-exploded`) that draw what the display sends them. `_headers` lets only this origin frame
   them and blocks every network call from them (`GM.md`, "Ambient scenes").

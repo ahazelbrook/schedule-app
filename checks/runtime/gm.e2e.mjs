@@ -6,7 +6,8 @@
 // records the session; the Home greeting's "Change name" edits the display name (saved, cleared, the API's 400 message,
 // offline); keys stay quiet while typing, the location tab rolls and draws, only a
 // player-layer map reaches the display (a GM-layer svg is refused in code), H blanks the screen, an NPC goes to the iPad
-// (hidden ones after a confirm), the note downloads; the phone (360 px) and the iPad (both orientations) layouts do not
+// (hidden ones after a confirm), the Downtime panel (D) turns two taps into a card and starts a hidden clock on the table,
+// the note downloads; the phone (360 px) and the iPad (both orientations) layouts do not
 // overflow and their buttons are at least 44 px; a player sees "GM only" and no GM button, and their sign-in purges the
 // cached pack; #display hides the header and mounts the display page.
 //   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node checks/runtime/gm.e2e.mjs      (or: npm run check:gm)
@@ -451,6 +452,54 @@ try {
   check((await api('GET', '/npcs', GM)).json.docs.some((d) => d.id === 'npc_mira' && d.doc.revealed === true && !!d.doc.firstSeen), 'and the hidden NPC was revealed first (firstSeen set)');
   check(await G.page.waitForFunction(() => /Mira/.test((document.querySelector('#gm-rail') || {}).textContent || '') && !/Nobody: the cast/.test(document.querySelector('#gm-rail').textContent), null, { timeout: 8000 }).then(() => true, () => false) && G.page.url().endsWith('#gm'), 'the rail’s On stage box shows Mira, and the page did not leave #gm');
 
+  /* ---- Downtime (D): two invented PCs filed through the API reach the panel; two taps (the PC, Overindulged) give a card with its cost
+          box on screen; switching the option keeps the scene and the seed; Start a clock puts a hidden danger clock on the table ---- */
+  {
+    const spec = await G.page.evaluate(() => window.B68.BASE_FIGURE);
+    const pc = (name, play) => ({ v: 2, name, alias: '', code: '', playbook: 'hound', playbookName: 'Hound', spec, sheet: { name }, play });
+    const put1 = await api('PUT', '/characters/dt-mags', GM, pc('Mags Invented', { vice: 'Gambling', purveyor: 'Old Mo, Mo’s Bar',
+      contacts: [{ name: 'Nim', role: 'a dock boss', kind: 'rival' }, { name: 'Ada', role: 'a nurse', kind: 'friend' }], clocks: [{ name: 'Learn the code', size: 8, filled: 3 }] }));
+    const put2 = await api('PUT', '/characters/dt-rook', GM, pc('Rook Invented', { vice: 'Weird', purveyor: '', contacts: [], clocks: [] }));
+    check(put1.status === 200 && put2.status === 200, 'two invented PCs are filed');
+    await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await G.page.keyboard.press('d');
+    check(await G.page.$eval('#gm-dt', (p) => !p.hidden && /Downtime · personal business/.test(p.querySelector('.gm-band').textContent)), 'D opens the Downtime panel');
+    check(await G.page.$eval('.gm-tabs', (t) => t.scrollWidth <= t.clientWidth + 1 && [...t.querySelectorAll('.gm-tab')].every((x) => x.getBoundingClientRect().right <= t.getBoundingClientRect().right + 1 && !!x.querySelector('kbd'))), 'the nine side tabs fit one row at 1280 px, each with its key');
+    check(await G.page.waitForSelector('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]', { timeout: 15000 }).then(() => true, () => false), 'the PCs filed a moment ago appear as chips (the characters snapshot reaches the open panel)');
+    await G.page.click('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]');
+    check(await G.page.$eval('#gm-dt-vice', (s) => s.value) === 'Gambling' && await G.page.$eval('#gm-dt-purveyor', (i) => i.value) === 'Old Mo, Mo’s Bar', 'picking the PC prefills the vice and purveyor from their sheet');
+    await G.page.click('#gm-dt [data-gm="dt-roll"][data-v="over"]');
+    await G.page.waitForSelector('#gm-dt .gm-dt-cost', { timeout: 5000 }); await sleep(700);   // the smooth scroll
+    check(await G.page.$eval('#gm-dt .gm-dt-cost', (c) => { const r = c.getBoundingClientRect(), p = document.getElementById('gm-dt').getBoundingClientRect(); return r.height > 20 && r.top >= p.top - 1 && r.bottom <= p.bottom + 1; }), 'two taps from "Mags overindulged": the card is drawn and its cost box is on screen');
+    const opts = await G.page.$$eval('#gm-dt [data-gm="dt-pick"]', (bs) => bs.map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed')]));
+    check(opts.length === 4 && opts.filter((o) => o[1] === 'true').length === 1 && await G.page.$eval('#gm-dt .gm-dt-opts', (o) => o.nextElementSibling && o.nextElementSibling.classList.contains('gm-dt-cost')), 'the four options sit right above the cost box, one pressed');
+    check(await G.page.$eval('#gm-dt .gm-dt-cost', (c) => getComputedStyle(c).borderTopColor !== getComputedStyle(document.querySelector('#gm-dt .gm-dtcard .gm-want')).borderLeftColor), 'the cost box has an accent of its own');
+    const st1 = await until(async () => { const d = await gmState(); return d.cards && d.cards.downtime && d.cards.downtime.ui.res === 'over' ? d.cards.downtime : null; }, 5000);
+    check(!!st1 && st1.ui.who === 'Mags Invented' && st1.ui.purveyor === 'Old Mo, Mo’s Bar' && typeof st1.mem === 'string' && Number.isInteger(st1.seed), 'state: the card is replay info with the resolved strings');
+    const lead = await G.page.textContent('#gm-dt .gm-dtcard .gm-want');
+    await G.page.click('#gm-dt [data-gm="dt-pick"][data-v="trouble"]');
+    const pickTrouble = await until(async () => { const d = await gmState(); return d.cards.downtime.ui.pick === 'trouble' ? d.cards.downtime : null; }, 5000);
+    check(!!pickTrouble && pickTrouble.seed === st1.seed && pickTrouble.hid === st1.hid && pickTrouble.mem === st1.mem && (await G.page.textContent('#gm-dt .gm-dtcard .gm-want')) === lead && /^Overindulged: Attract trouble\./.test((await G.page.textContent('#gm-dt .gm-dt-cost')).trim()), 'Attract trouble: the same card (seed, memory, the scene above), its cost box switched');
+    const clockLabel = await G.page.$eval('#gm-dt [data-gm="dt-clock"][data-i="0"]', (b) => b.textContent);
+    const clockName = (/^Start a clock: (.*) \(\d+\)$/.exec(clockLabel) || [])[1];
+    await G.page.click('#gm-dt [data-gm="dt-clock"][data-i="0"]');
+    const tc = await until(async () => { const d = (await api('GET', '/campaign', GM)).json.doc; return (d.clocks || []).find((c) => c.name === clockName) || null; }, 8000);
+    check(!!clockName && !!tc && tc.hidden === true && tc.kind === 'danger' && tc.size === 4 && tc.filled === 0 && /^c_/.test(tc.id), 'Start a clock: a hidden danger clock on the table: ' + clockName);
+    check(await G.page.waitForFunction((n) => /Clock started, hidden from the players/.test(document.getElementById('toastMsg').textContent) && [...document.querySelectorAll('#gm-rail .gm-clocks li')].some((li) => li.textContent.includes(n) && /hidden from players/.test(li.textContent)), clockName, { timeout: 8000 }).then(() => true, () => false), 'a toast says so, and the rail\'s Table clocks shows it, hidden');
+    check(await G.page.$eval('#gm-dt [data-gm="dt-clock"][data-i="0"]', (b) => b.disabled && /^Clock started: /.test(b.textContent)), 'the button is done for this card');
+    await shot(G.page, 'downtime-laptop');
+    await G.page.reload(); await G.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
+    await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await G.page.keyboard.press('d');
+    check(await G.page.waitForSelector('#gm-dt .gm-dt-cost', { timeout: 10000 }).then(() => true, () => false) && (await G.page.textContent('#gm-dt .gm-dtcard .gm-want')) === lead && await G.page.$eval('#gm-dt [data-gm="dt-clock"][data-i="0"]', (b) => b.disabled), 'reload: the same card, its clock still started');
+    await G.page.click('#gm-dt [data-gm="dt-act"][data-v="recover"]'); await G.page.click('#gm-dt [data-gm="dt-roll"][data-v="45"]');
+    await G.page.waitForFunction(() => /Recover/.test(document.querySelector('#gm-dt .gm-dtcard h3').textContent));
+    await G.page.click('#gm-dt .gm-earlier [data-gm="replay"]:not([aria-current])');
+    check(await G.page.waitForFunction((l) => document.querySelector('#gm-dt .gm-dtcard .gm-want') && document.querySelector('#gm-dt .gm-dtcard .gm-want').textContent === l, lead, { timeout: 5000 }).then(() => true, () => false), 'Earlier brings the overindulgence back as it was left');
+    await G.page.click('#gm-dt [data-gm="dt-act"][data-v="indulge"]');
+    await G.page.keyboard.press('b');
+  }
+
   /* ---- a stray H does nothing; H twice within a second, or Shift+H, blanks the screen; any key brings it back ---- */
   await G.page.keyboard.press('h'); await sleep(1200);
   check(!(await G.page.$('.gm-blank')), 'one H alone does not blank the laptop');
@@ -499,7 +548,11 @@ try {
       check(await V.page.$eval('.gm-segbar', (s) => getComputedStyle(s).display !== 'none'), 'phone: the segmented bar shows');
       const segs = await V.page.$$eval('.gm-segbar .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { seg: x.getAttribute('data-seg'), top: Math.round(r.top), right: Math.round(r.right) }; }));
       const segTop = await V.page.$eval('.gm-segbar', (s) => Math.round(s.getBoundingClientRect().top));
-      check(segs.length === 10 && new Set(segs.map((s) => s.top)).size === 2 && segs.every((s) => s.right <= w) && segTop === 44, 'phone: ten segments in two rows under the bar, none off screen ' + JSON.stringify([segTop, segs.map((s) => s.right)]));
+      const rowsOf = segs.reduce((m, s) => { m[s.top] = (m[s.top] || 0) + 1; return m; }, {});
+      check(segs.length === 11 && JSON.stringify(Object.values(rowsOf)) === '[6,5]' && segs.every((s) => s.right <= w) && segTop === 44, 'phone: eleven segments in two rows (six, then five) under the bar, none off screen ' + JSON.stringify([segTop, rowsOf, segs.map((s) => s.right)]));
+      /* the label's own text box inside the segment's box (scrollWidth overstates on these inline-flex chips, and text-overflow does
+         not reach the text inside them, so a cut label would show no ellipsis) */
+      check(await V.page.$$eval('.gm-segbar .chip', (c) => c.every((x) => { const rg = document.createRange(); rg.selectNodeContents(x); const t = rg.getBoundingClientRect(), b = x.getBoundingClientRect(), s = getComputedStyle(x); return t.width > 0 && t.left >= b.left + parseFloat(s.borderLeftWidth) - 0.5 && t.right <= b.right - parseFloat(s.borderRightWidth) + 0.5 && b.height >= 40; })), 'phone: every segment label shows whole, each 40 px or taller');
       check(await V.page.$eval('#gm-bar-ipad', (p) => getComputedStyle(p).display !== 'none') && await V.page.$eval('#gm-bar-stt', (p) => getComputedStyle(p).display === 'none'), 'phone: the bar shows the iPad pill (no Listening pill while the transcriber was never set up)');
       const cols = await V.page.$eval('#gm-buttons', (b) => getComputedStyle(b).gridTemplateColumns.split(' ').length);
       check(cols === 2 && (await V.page.$$('#gm-buttons .gm-btn')).length === 4, 'phone: the four situations are a 2 × 2 grid');
@@ -519,6 +572,22 @@ try {
       await V.page.selectOption('#gm-now-s', 'Puddleton');
       check(await V.page.$eval('#gm-now', (sel) => sel.value === 'Puddleton') && /District: Puddleton/.test(await V.page.textContent('#gm-scene-chips')) && !!(await until(async () => { const d = await gmState(); return d.now && d.now.district === 'Puddleton'; }, 5000)), 'phone: choosing it there sets Now in (the bar’s copy follows, the Scene line shows the district)');
       await V.page.selectOption('#gm-now-s', '');
+      /* the Downtime segment: the PC and Overindulged on the first screen (clear of the Capture button), the card's cost box on screen
+         after the tap, nothing too wide or too small (taps, not clicks: a touch screen) */
+      await V.page.tap('[data-gm="seg"][data-seg="downtime"]'); await V.page.evaluate(() => scrollTo(0, 0));
+      check(await V.page.waitForSelector('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]', { timeout: 10000 }).then(() => true, () => false), 'phone: the Downtime segment shows the panel with the PCs');
+      await V.page.tap('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]');
+      if (await V.page.$eval('#gm-dt [data-gm="dt-act"][data-v="indulge"]', (b) => b.getAttribute('aria-pressed') !== 'true')) await V.page.tap('#gm-dt [data-gm="dt-act"][data-v="indulge"]');
+      const ob = await V.page.$eval('#gm-dt [data-gm="dt-roll"][data-v="over"]', (b) => { const r = b.getBoundingClientRect(), f = document.querySelector('.gm-fab').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), fab: Math.round(f.top), ih: innerHeight }; });
+      check(ob.bottom <= ob.fab && ob.bottom <= ob.ih, 'phone: after the PC, Overindulged is on the first screen, clear of the Capture button ' + JSON.stringify(ob));
+      const ld = await V.page.evaluate(layout);
+      check(ld.scrollWidth <= ld.clientWidth + 1 && !ld.wide.length && !ld.small.length, 'phone Downtime: no overflow and every control is at least 44 px ' + JSON.stringify([ld.wide, ld.small]));
+      await V.page.tap('#gm-dt [data-gm="dt-roll"][data-v="over"]'); await V.page.waitForSelector('#gm-dt .gm-dt-cost'); await sleep(800);
+      const cv = await V.page.$eval('#gm-dt .gm-dt-cost', (c) => { const r = c.getBoundingClientRect(), f = document.querySelector('.gm-fab').getBoundingClientRect(), seg = document.querySelector('.gm-segbar').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), bars: Math.round(seg.bottom), fab: Math.round(f.top) }; });
+      check(cv.top >= cv.bars && cv.bottom <= cv.fab, 'phone: after the tap the cost box is on screen, under the bars and above the Capture button ' + JSON.stringify(cv));
+      const ld2 = await V.page.evaluate(layout);
+      check(ld2.scrollWidth <= ld2.clientWidth + 1 && !ld2.wide.length && !ld2.small.length, 'phone: with the downtime card showing, no overflow and every control is at least 44 px ' + JSON.stringify([ld2.wide, ld2.small]));
+      await shot(V.page, '03b-phone-downtime');
       await V.page.click('[data-gm="seg"][data-seg="state"]');
       check(await V.page.$eval('#gm-rail', (r) => getComputedStyle(r).display !== 'none') && await V.page.$eval('.gm-console', (c) => getComputedStyle(c).display === 'none'), 'phone: State shows the rail alone');
       await V.page.click('.gm-fab');

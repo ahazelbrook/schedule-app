@@ -584,9 +584,48 @@
       db: function () { return db; },
       campaign: function () { return campLoaded && isObj(tableLatest) ? clone(tableLatest) : null; },
       saveScene: function (scene) { return campaignSave({ scene: scene }); },   /* Put on stage from the GM page: { npcs: { id: true | false }, at }, as the cast page saves it */
+      characters: gmCharacters,      /* the PCs for the Downtime panel (D): slim copies, read on every call */
+      addClock: addTableClock,       /* a clock a downtime card suggests, onto the table's clocks */
       saveFile: function (name, data) { saveFile(name, data); },
       copy: function (text, ok) { copyText(text, ok); }
     };
+  }
+  /* The PCs as the GM page's Downtime panel needs them (GM.md "Downtime"): a SLIM copy of each filed character, read from the
+     collection snapshot (`roster`, with this browser's newer copy from `cache` where there is one) on every call, never the
+     figure spec or the rest of the sheet. From the living sheet (doc.play; the creator's sheet for a field play lacks): the vice
+     and purveyor, the contacts as [{ name, role, kind: 'friend' | 'rival' | null }] (the tracker's array, or the older map
+     { 'Name, role': kind } read the same way) and the clocks as { name, size, filled }. Sorted by name. */
+  function slimCharacter(id, d) {
+    if (!isObj(d)) return null;
+    var p = isObj(d.play) ? d.play : {}, sh = isObj(d.sheet) ? d.sheet : {}, t = function (v) { return v == null ? '' : String(v); };
+    var kind = function (k) { return k === 'friend' || k === 'rival' ? k : null; };
+    var raw = p.contacts != null ? p.contacts : sh.contacts, contacts = [];
+    if (Array.isArray(raw)) raw.forEach(function (c) { if (isObj(c) && t(c.name).trim()) contacts.push({ name: t(c.name).trim(), role: t(c.role).trim(), kind: kind(c.kind) }); });
+    else if (isObj(raw)) Object.keys(raw).forEach(function (n) { if (n.trim()) contacts.push({ name: n.trim(), role: '', kind: kind(raw[n]) }); });
+    return {
+      id: String(id), name: t(d.name), alias: t(d.alias), playbook: t(d.playbook), playbookName: t(d.playbookName),
+      vice: t(p.vice != null ? p.vice : sh.vice), purveyor: t(p.purveyor != null ? p.purveyor : sh.purveyor), contacts: contacts,
+      clocks: (Array.isArray(p.clocks) ? p.clocks : []).filter(isObj).map(function (c) { return { name: t(c.name), size: Math.max(0, Math.floor(+c.size || 0)), filled: Math.max(0, Math.floor(+c.filled || 0)) }; })
+    };
+  }
+  function gmCharacters() {
+    var ids = roster.length ? roster.map(function (d) { return d.id; }) : Object.keys(cache);
+    return ids.map(function (id) { return slimCharacter(id, cache[id] || roster.filter(function (d) { return d.id === id; })[0]); }).filter(Boolean)
+      .sort(function (a, b) { var x = a.name.toLowerCase(), y = b.name.toLowerCase(); return x < y ? -1 : x > y ? 1 : 0; });
+  }
+  /* A clock onto the table's clocks (CAMPAIGN.md "Clocks"), as the table page would add it: an `add` op where the store takes
+     clockOps (the hosted adapter), else the whole array with the clock appended (only once the table has loaded, so it is never
+     written over an array this page has not seen). -> the save's promise (it toasts a failure itself). */
+  function addTableClock(clock) {
+    if (!campRef) return Promise.reject(new Error('The table is not available here.'));
+    if (!isObj(clock) || !clock.id) return Promise.reject(new Error('That is not a clock.'));
+    var c = { id: String(clock.id), name: String(clock.name || '').slice(0, 80), size: [4, 6, 8, 10, 12].indexOf(+clock.size) >= 0 ? +clock.size : 4, filled: 0,
+      kind: ['danger', 'project', 'faction', 'other'].indexOf(clock.kind) >= 0 ? clock.kind : 'danger', hidden: clock.hidden !== false };
+    if (campRef.clockOps === true) return campaignSave({ clockOps: [{ add: c }] });
+    if (!campLoaded) return Promise.reject(new Error('The table has not loaded yet: try again in a moment.'));
+    var cur = isObj(tableLatest) && Array.isArray(tableLatest.clocks) ? tableLatest.clocks : [];
+    if (cur.some(function (x) { return isObj(x) && x.id === c.id; })) return Promise.resolve(false);
+    return campaignSave({ clocks: clone(cur).concat([c]) });
   }
   function startGm() {
     var G = gmMod(), el = $('gm-page');
@@ -1250,6 +1289,7 @@
           var docs = [], seen = {};
           (snap.docs || []).forEach(function (doc) { var data = (doc.data && doc.data()) || {}; if (!data.spec) return; seen[doc.id] = true; cache[doc.id] = data; docs.push(Object.assign({ id: doc.id }, data)); });
           rosterSeen = true; renderRoster(docs);
+          var Gc = gmMod(); if (Gc && typeof Gc.characters === 'function') { try { Gc.characters(); } catch (e) {} }   /* the Downtime panel's PCs */
           if (A._followCache && openId) A._followCache(openId);
           if (pendingOpen) { var id = pendingOpen; pendingOpen = null; openCharacter(id); }
         }, function (e) { rosterSeen = true; renderHome(); toast(loadError('the characters', e), true); });
