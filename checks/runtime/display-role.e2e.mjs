@@ -1,6 +1,9 @@
 // The table display sign-in in a real browser (GM.md "The display sign-in"): the iPad signed in as a DISPLAY_EMAILS address opens
 // the app, lands on the full-screen display whatever the hash says, shows what the GM pushed, and makes no API call but the two
-// it is allowed (GET /api/me, GET /api/gm/display): no 403 anywhere, no characters / campaign / members / npcs fetch.
+// it needs (GET /api/me, GET /api/gm/display, which also carries what the transcriber wants: no GET /api/gm/stt) and its own
+// status report: no 403 anywhere, no characters / campaign / members / npcs fetch. The request budget (Workers Free, GM.md "The
+// display"): a look every 4 s, every 15 s after two hours of nothing new, and a page whose sign-in has ended reloads itself after
+// ten minutes and not again within half an hour. The two long waits use Playwright's clock (page.clock, 1.45+) to jump the time.
 //   PW_MODULE=<path to playwright> node checks/runtime/display-role.e2e.mjs      (invented fixtures only)
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -50,8 +53,9 @@ const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: proces
 try {
   const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1180, height: 820 } });
   const page = await ctx.newPage();
-  const calls = [];
+  const calls = [], reads = [];
   page.on('response', (r) => { const u = new URL(r.url()); if (u.pathname.startsWith('/api/')) calls.push(r.request().method() + ' ' + u.pathname + ' ' + r.status()); });
+  page.on('request', (r) => { const u = new URL(r.url()); if (u.pathname === '/api/gm/display') reads.push(u.search); });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e && e.message || e)));
 
@@ -74,22 +78,126 @@ try {
     }
   });
 
-  await step('only GET /api/me, GET /api/gm/display and the transcriber’s GET /api/gm/stt were called, and none was refused', async () => {
-    await sleep(1500);
-    const odd = calls.filter((c) => !/^GET \/api\/(me|gm\/display|gm\/stt) 200$/.test(c));
+  await step('only GET /api/me and GET /api/gm/display (and the iPad’s own status report) were called, and none was refused: the transcriber asks nothing of its own', async () => {
+    await sleep(6000);                                           // past the 4 s beat the transcriber would have used on its own
+    const odd = calls.filter((c) => !/^(GET \/api\/(me|gm\/display)|PATCH \/api\/gm\/stt) 200$/.test(c));
     expect(odd.length === 0, 'unexpected API calls: ' + odd.join(' | '));
     expect(calls.some((c) => c === 'GET /api/gm/display 200'), 'display was polled: ' + calls.join(' | '));
+    expect(!calls.some((c) => c.startsWith('GET /api/gm/stt')), 'the display read carries the transcriber, so no GET /api/gm/stt: ' + calls.join(' | '));
   });
 
-  await step('no page errors, and no "files offline" toast', async () => {
+  await step('the display read names all three parts after the first (seq, aseq, sseq), and the first names none', async () => {
+    expect(reads[0] === '', 'the first read: ' + reads[0]);
+    expect(reads.length >= 2 && reads.slice(1).every((q) => /^\?seq=\d+&aseq=\d+&sseq=\d+$/.test(q)), 'the later reads: ' + reads.join(' | '));
+  });
+
+  await step('the GM asks for listening: the tap appears on the display and goes when the GM stops, with no GET /api/gm/stt', async () => {
+    const ask = (body) => fetch(BASE + '/api/gm/stt', { method: 'PATCH', headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    expect((await ask({ want: 'on', session: '9' })).status === 200, 'want on');
+    await page.waitForSelector('.stt-tap:not([hidden])', { timeout: 15000 });
+    expect((await page.textContent('.stt-tap')).includes('Tap to start listening'), 'the tap says so');
+    expect((await ask({ want: 'off' })).status === 200, 'want off');
+    await page.waitForSelector('.stt-tap', { state: 'hidden', timeout: 15000 });
+    expect(!calls.some((c) => c.startsWith('GET /api/gm/stt')), 'still no GET /api/gm/stt: ' + calls.filter((c) => c.includes('stt')).join(' | '));
+  });
+
+  await step('no page errors, and no toast about loading the characters', async () => {
     expect(errors.length === 0, errors.join(' | '));
-    expect(!(await page.evaluate(() => document.body.innerText)).includes('Files offline'), 'toast visible');
+    expect(!/No signal\. Changes are kept|Could not load (the characters|this character)|was not accepted/.test(await page.evaluate(() => document.body.innerText)), 'toast visible');
   });
 
   await step('a new push reaches the display without a reload', async () => {
     const r = await fetch(BASE + '/api/gm/display', { method: 'PUT', headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'text', title: 'Later', text: 'Second words' }) });
     expect(r.status === 200, 'push ' + r.status);
     await page.waitForFunction(() => document.getElementById('display-page').innerText.includes('Second words'), null, { timeout: 20000 });
+  });
+
+  /* ---- the request budget: what an iPad left on all night costs (Workers Free allows 100,000 requests a day for the whole site) ---- */
+  const STATUS = '.dp-status-text';
+  const text = (pg, sel) => pg.evaluate((q) => (document.querySelector(q) || {}).textContent || '', sel);
+  async function until(fn, ms, every = 100) { const t0 = Date.now(); for (;;) { const v = await fn(); if (v || Date.now() - t0 > ms) return v; await sleep(every); } }
+
+  /* E14: when the Access sign-in ends, every call is refused for good and the page used to say "Not signed in" for ever.
+     Access answers a fetch with a redirect to its sign-in page; the adapter calls that signed out. */
+  const octx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1180, height: 820 } });
+  const opage = await octx.newPage();
+  await opage.clock.install();                                  // time flows as usual until a test jumps it
+  let signedIn = true, loads = 0;
+  opage.on('load', () => { loads++; });
+  await opage.route((u) => u.pathname === '/api/gm/display', (route) => (signedIn ? route.continue()
+    : route.fulfill({ status: 302, headers: { location: 'https://team.cloudflareaccess.com/cdn-cgi/access/login/blades' } })));
+  await opage.goto(BASE + '/');
+  await opage.waitForFunction(() => document.body.dataset.mode === 'display', null, { timeout: 15000 });
+
+  await step('the sign-in ends: the display says so, and the page has not reloaded yet', async () => {
+    expect(await until(async () => /Updated|Waiting/.test(await text(opage, STATUS)), 10000), 'signed in first: ' + await text(opage, STATUS));
+    signedIn = false;
+    expect(await until(async () => /Not signed in/.test(await text(opage, STATUS)), 12000), 'the corner says so: ' + await text(opage, STATUS));
+    expect(loads === 1, 'loads so far: ' + loads);
+  });
+
+  await step('ten minutes signed out: it reloads itself once, having noted the time in localStorage and sessionStorage', async () => {
+    await opage.clock.fastForward('09:30'); await sleep(1500);
+    expect(loads === 1, 'not before the ten minutes: ' + loads);
+    await opage.clock.fastForward('01:00');
+    expect(await until(() => loads === 2, 15000), 'reloaded: loads ' + loads);
+    await opage.waitForFunction(() => document.body.dataset.mode === 'display', null, { timeout: 15000 });
+    const kept = await opage.evaluate(() => [localStorage.getItem('b68.display.reload'), sessionStorage.getItem('b68.display.reload'), Date.now()]);
+    expect(/^\d{13}$/.test(kept[0]) && kept[0] === kept[1], 'the time noted in both: ' + kept.join(' | '));
+    expect(Math.abs(Number(kept[0]) - kept[2]) < 60000, 'and it is about now (the jumped clock): ' + kept.join(' | '));
+  });
+
+  await step('still signed out ten minutes after that: no second reload within half an hour; after half an hour, one more', async () => {
+    expect(await until(async () => /Not signed in/.test(await text(opage, STATUS)), 12000), 'denied again: ' + await text(opage, STATUS));
+    await opage.clock.fastForward('10:30'); await sleep(2500);
+    expect(loads === 2, 'ten minutes after the last reload is too soon: ' + loads);
+    await opage.clock.fastForward('20:00');
+    expect(await until(() => loads === 3, 15000), 'half an hour after the last: loads ' + loads);
+    await opage.waitForFunction(() => document.body.dataset.mode === 'display', null, { timeout: 15000 });
+  });
+
+  await step('with no storage to note the time in, a signed-out display does not reload', async () => {
+    const sctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1180, height: 820 } });
+    const spage = await sctx.newPage();
+    await spage.addInitScript(() => {
+      const refuse = () => { throw new DOMException('blocked', 'SecurityError'); };
+      for (const k of ['setItem']) { try { Storage.prototype[k] = refuse; } catch (e) { /* kept */ } }
+    });
+    await spage.clock.install();
+    let n = 0, out = false; spage.on('load', () => { n++; });
+    await spage.route((u) => u.pathname === '/api/gm/display', (route) => (out ? route.fulfill({ status: 302, headers: { location: 'https://team.cloudflareaccess.com/x' } }) : route.continue()));
+    await spage.goto(BASE + '/'); await spage.waitForFunction(() => document.body.dataset.mode === 'display', null, { timeout: 15000 });
+    expect(await until(async () => /Updated|Waiting/.test(await text(spage, STATUS)), 10000), 'signed in first');
+    out = true;
+    expect(await until(async () => /Not signed in/.test(await text(spage, STATUS)), 12000), 'denied');
+    await spage.clock.fastForward('01:00:00'); await sleep(3000);
+    expect(n === 1, 'it stayed as it was: loads ' + n);
+    await sctx.close();
+  });
+
+  /* E4: nothing changes for two hours and the display looks every 15 s instead of every 4 s, until the GM pushes something */
+  await step('two hours with nothing new: it looks every 15 s; a push shows within one beat and brings the 4 s beat back', async () => {
+    const ictx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1180, height: 820 } });
+    const ipg = await ictx.newPage();
+    await ipg.clock.install();
+    const at = []; ipg.on('request', (r) => { if (new URL(r.url()).pathname === '/api/gm/display') at.push(Date.now()); });
+    await ipg.goto(BASE + '/'); await ipg.waitForFunction(() => document.body.dataset.mode === 'display', null, { timeout: 15000 });
+    expect(await until(() => at.length >= 3, 15000), 'looking every few seconds: ' + at.length);
+    const gaps = () => at.slice(1).map((t, i) => t - at[i]);
+    expect(gaps().every((g) => g > 2500 && g < 7000), 'the 4 s beat while things are fresh: ' + gaps().join(' '));
+    await ipg.clock.fastForward('02:00:30');
+    const n0 = at.length;
+    expect(await until(() => at.length >= n0 + 2, 45000, 200), 'looks after the jump: ' + (at.length - n0));
+    const idle = gaps().slice(n0 - 1);                         // the look the jump itself caused (or timed out), then the beat it settled on
+    expect(idle.slice(-1)[0] > 13000 && idle.slice(-1)[0] < 18000, 'every 15 s: ' + idle.join(' '));
+    const NEW = 'Quiet again, then this';
+    const r = await fetch(BASE + '/api/gm/display', { method: 'PUT', headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'text', title: 'After hours', text: NEW }) });
+    expect(r.status === 200, 'push ' + r.status);
+    await ipg.waitForFunction((t) => document.getElementById('display-page').innerText.includes(t), NEW, { timeout: 20000 });
+    const n1 = at.length;
+    expect(await until(() => at.length >= n1 + 2, 15000, 200), 'looks after the push');
+    expect(gaps().slice(-1)[0] < 7000, 'back on the 4 s beat: ' + gaps().slice(-3).join(' '));
+    await ictx.close();
   });
 
   // and the GM is unchanged: the same browser as the GM still gets the GM page

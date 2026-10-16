@@ -67,7 +67,7 @@ module.exports = function build() {
   props += `<g transform="translate(560 822)"><rect x="0" y="0" width="140" height="8" fill="#b7bdb9"/><rect x="18" y="-6" width="50" height="6" fill="#8a9190"/><rect x="80" y="-10" width="10" height="10" fill="${C.covert700}"/><path d="M100 -2 l30 -4" stroke="#8a9190" stroke-width="3"/></g>`;
 
   // ---------- Grunt behind the table, wiping his hands ----------
-  const grunt = L.fig(L.npc("grunt"), { id: "grunt", frames: [{},
+  const grunt = L.fig(L.npc("grunt"), { id: "grunt", place: 0.255, frames: [{},
     { pose: { arms: { R: { a: "cross", b: "hold", t: .5 }, L: { a: "cross", b: "hold", t: .5 } }, head: { tilt: 6 } } },
     { pose: { arms: { R: "hold", L: "hold" }, head: { tilt: 9 } } },
     { pose: { arms: { R: "hold", L: { a: "hold", b: "down", t: .3 } }, head: { tilt: 9 } } },

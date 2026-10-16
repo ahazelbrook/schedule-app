@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withClockIds, applyClockOps, checkClockOps, changedFills, playerMayWrite, STALE_CLOCKS, CLOCK_SIZES, CLOCK_KINDS } from '../../functions/_lib/campaign.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'app', 'runtime', 'cf.js'), 'utf8');
@@ -118,17 +119,26 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
       return [200, { now: new Date(tick - 2000).toISOString(), docs: list, campaignUpdatedAt: s.campaign ? s.campaign.updatedAt : null, npcsUpdatedAt: s.npcsAt() }];   // like the real API: 2 s behind, so rows repeat
     }
     if (p === '/api/campaign') {
-      // the player rule is reduced to "players may not PUT" here; the full rule is checked in checks/api/flow.mjs.
-      // A PATCH adds log entries (same at + by + text: skipped; same at + by, other text: 403 for a player),
-      // newest `at` first, like functions/_lib/campaign.js mergeLog.
+      // the player rule (functions/_lib/campaign.js playerMayWrite) is the server's own; checks/api/flow.mjs and clocks.mjs
+      // check it against the real Worker. A PATCH adds log entries (same at + by + text: skipped; same at + by, other text:
+      // 403 for a player), newest `at` first, like mergeLog; `clockOps` and a whole `clocks` array go through the server's
+      // own functions (withClockIds, applyClockOps, changedFills), so the adapter's optimistic copy is compared with them.
       if (method === 'GET') return [200, { doc: clone(s.campaign || defaultCampaign()), updatedAt: s.campaign ? s.campaign.updatedAt : null }];
       if (method === 'PUT' && me.role !== 'gm') return [403, { error: 'only the GM can change that' }];
-      const base = s.campaign || defaultCampaign();
+      const base = clone(s.campaign || defaultCampaign());
+      if (Array.isArray(base.clocks)) base.clocks = withClockIds(base.clocks);
       let doc = null;
       if (method === 'PUT') doc = clone(body);
       else if (method === 'PATCH') {
-        const { log, ...rest } = body;
+        const { log, clockOps, ...rest } = body;
         doc = merge(clone(base), rest);
+        if (Array.isArray(rest.clocks)) doc.clocks = withClockIds(doc.clocks);
+        if (clockOps !== undefined) {
+          try { checkClockOps(clockOps); } catch (e) { return [e.status, { error: e.message }]; }
+          doc.clocks = applyClockOps(doc.clocks, clockOps);
+        }
+        if (me.role !== 'gm' && !playerMayWrite(base, doc, me.id)) return [403, { error: 'only the GM can change that' }];
+        if (me.role !== 'gm' && Array.isArray(rest.clocks) && changedFills(base.clocks, rest.clocks) > 1) return [412, { error: STALE_CLOCKS }];
         if (log) {
           const key = (e) => JSON.stringify([e.at, e.by, e.text]), slot = (e) => JSON.stringify([e.at, e.by]);
           const have = new Set(base.log.map(key)), slots = new Set(base.log.map(slot));
@@ -144,6 +154,7 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
       }
       if (!doc) return [405, { error: 'method not allowed' }];
       if (Array.isArray(doc.log)) doc.log = doc.log.slice(0, 200);
+      if (Array.isArray(doc.clocks)) doc.clocks = withClockIds(doc.clocks);
       doc.updatedAt = now(); s.campaign = doc;
       return [200, { doc: clone(doc), updatedAt: doc.updatedAt }];
     }
@@ -210,10 +221,20 @@ function browser(server, user, { preset, protocol = 'https:', storage } = {}) {
   let nBlob = 0;
   async function fetch(url, opts = {}) {
     fetchLog.push({ url, opts });
+    /* server.hang(method, url) true: a request that never answers (a stalled connection). It settles only when the
+       adapter aborts it through opts.signal, with the AbortError a real fetch gives. */
+    if (server.hang && server.hang(opts.method || 'GET', url)) {
+      return new Promise((_, reject) => {
+        const sig = opts.signal; if (!sig) return;
+        const abort = () => reject(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }));
+        if (sig.aborted) abort(); else sig.addEventListener('abort', abort);
+      });
+    }
     await sleep(2);
     const body = opts.body ? JSON.parse(opts.body) : undefined;
     const r = server.handle(user, opts.method || 'GET', url, body);
-    const mk = (status, text, ct, extra = {}) => ({ status, ok: status >= 200 && status < 300, redirected: false, type: 'basic', headers: { get: (h) => (h.toLowerCase() === 'content-type' ? ct : null) }, text: async () => text, ...extra });
+    /* server.build: the Worker's build stamp, as worker/app.js puts it on every API answer (X-B68-Build) */
+    const mk = (status, text, ct, extra = {}) => ({ status, ok: status >= 200 && status < 300, redirected: false, type: 'basic', headers: { get: (h) => (h.toLowerCase() === 'content-type' ? ct : h.toLowerCase() === 'x-b68-build' ? (server.build || null) : null) }, text: async () => text, ...extra });
     if (r.forced === 'down') throw new TypeError('Failed to fetch');
     if (r.forced === 'redirect') return mk(0, '', null, { type: 'opaqueredirect', ok: false });
     if (r.forced === 'html') return mk(200, '<html>Sign in</html>', 'text/html', { redirected: true });
@@ -224,7 +245,7 @@ function browser(server, user, { preset, protocol = 'https:', storage } = {}) {
   const events = [];                                   // every b68:runtime detail, in order
   class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } }
   const win = {
-    document, fetch, setTimeout, clearTimeout, console, Blob, location: { protocol, pathname: '/' },
+    document, fetch, setTimeout, clearTimeout, console, Blob, AbortController, location: { protocol, pathname: '/' },
     URL: { createObjectURL: (b) => { const u = 'blob:' + (++nBlob); blobs[u] = b; return u; }, revokeObjectURL: () => {} },
     CustomEvent,
     addEventListener: (t, fn) => { (winListeners[t] = winListeners[t] || []).push(fn); },
@@ -431,7 +452,9 @@ await test('set, then a query snapshot ordered by updatedAt desc and limited; ch
 
   // unsubscribe stops callbacks and the poller
   unsub(); dun(); cun();
-  const frozen = snaps.length, polls = api.calls.length;
+  const frozen = snaps.length;
+  await sleep(POLL * 2);   // a poll already in flight when the last listener left may still land, once; on a busy machine that is after this line
+  const polls = api.calls.length;
   api.put('y', char('y'));
   await sleep(POLL * 3);
   eq(snaps.length, frozen, 'callbacks after unsubscribe');
@@ -525,9 +548,93 @@ for (const kind of ['401', 'redirect', 'html']) {
     let err = null; try { await col.doc('x').set(char('x')); } catch (e) { err = e; }
     eq(err && err.message, 'signed out: reload the page to sign in again', 'write after sign-out');
     ok(!api.rows.x, 'write reached the server');
+    eq(b.win.B68Runtime.status.pending, 1, 'the write is kept in the queue (E6: sent at this user\'s next visit)');
     un();
   });
 }
+
+/* E1: a request that never answers (a connection that is "up" but dead) must not hold the poller or the queue */
+await test('a poll that never answers is abandoned after the timeout (network: true, timeout: true); polling goes on and recovers', async () => {
+  const api = fakeApi(); api.put('a', char('a'));
+  const b = browser(api, { email: 'gm@x.test' });
+  b.win.__B68_TIMEOUT_MS = 100;
+  let polls = 0, hanging = true;
+  // the 2nd poll stalls, and so does every later one until the test releases them (else the 3rd poll could answer, and
+  // turn the header back online, before the offline assertion below runs on a busy machine)
+  api.hang = (m, url) => m === 'GET' && /^\/api\/characters(\?|$)/.test(url) && ++polls >= 2 && hanging;
+  const col = (await b.win.claude.use('db')).collection('characters');
+  const snaps = [], errs = [];
+  const un = col.onSnapshot((s) => snaps.push(s), (e) => errs.push(e));
+  await until(() => snaps.length);
+  const stalled = await until(() => b.fetchLog.length >= 3 && polls >= 2, 1000);   // /me, the full load, the hung poll
+  ok(stalled, 'the second poll went out');
+  const before = b.fetchLog.length;
+  // the things that used to be deferred to the request in flight: hidden -> visible, the network coming back, an own write
+  b.document.hidden = true; b.listeners.visibilitychange.forEach((fn) => fn()); b.document.hidden = false; b.listeners.visibilitychange.forEach((fn) => fn());
+  b.fire('online');
+  await sleep(50);
+  eq(b.fetchLog.length - before, 0, 'nothing could go out while the stalled request was in flight (so the timeout is the fix)');
+  await until(() => errs.length, 1000);
+  eq([errs.length, errs[0].network, errs[0].timeout, /no answer from the server in 0 s/.test(errs[0].message)], [1, true, true, true], 'the stall surfaced once as a network error: ' + (errs[0] && errs[0].message));
+  eq(b.win.B68Runtime.status.online, false, 'the header says offline while it stalls');
+  hanging = false;
+  await until(() => b.fetchLog.length > before + 1 && b.win.B68Runtime.status.online, 2000);
+  ok(b.fetchLog.length > before + 1, 'polling resumed after the abandoned request (' + (b.fetchLog.length - before) + ' later requests)');
+  eq(b.win.B68Runtime.status.online, true, 'back online once a poll answers');
+  const p = col.doc('a').update({ name: 'a2' });
+  await p;
+  eq(api.rows.a.doc.name, 'a2', 'a write after the stall lands');
+  un();
+});
+
+await test('a write whose request never answers is abandoned after the timeout, kept, retried and lands; the queue is never stuck', async () => {
+  const api = fakeApi(); api.put('a', char('a'));
+  const b = browser(api, { email: 'gm@x.test' });
+  b.win.__B68_TIMEOUT_MS = 100;
+  let hung = 0;
+  api.hang = (m) => m === 'PATCH' && ++hung === 1;                         // the first PATCH stalls, the retry answers
+  const col = (await b.win.claude.use('db')).collection('characters');
+  const snaps = []; const un = col.onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  await col.doc('a').update({ name: 'a2' });                                // resolves: queued, not refused
+  eq(hung, 1, 'the PATCH went out and stalled');
+  await until(() => api.rows.a.doc.name === 'a2', 2000);
+  eq([api.rows.a.doc.name, b.win.B68Runtime.status.pending, b.fetchLog.filter((f) => f.opts.method === 'PATCH').length], ['a2', 0, 2], 'retried after the timeout and landed');
+  await until(() => b.win.B68Runtime.status.online, 1000);
+  eq(b.win.B68Runtime.status.online, true, 'online again');
+  un();
+});
+
+/* E6: a tap after the session ended is not lost: it waits in this user's queue for the next signed-in visit */
+await test('a write after a sign-out is kept in the stored queue (rejected now with the signed-out message) and sent at this user\'s next visit, never by another account', async () => {
+  const api = fakeApi(); api.put('a', char('a', { owner: 'pl@x.test' }));
+  const st = memStorage();
+  const b = browser(api, { email: 'pl@x.test' }, { storage: st });
+  const col = (await b.win.claude.use('db')).collection('characters');
+  const snaps = [], errs = [];
+  col.onSnapshot((s) => snaps.push(s), (e) => errs.push(e));
+  await until(() => snaps.length);
+  api.status['/api/characters'] = '401';
+  await until(() => errs.length, POLL * 3);
+  delete api.status['/api/characters'];
+  let err = null; try { await col.doc('a').update({ play: { stress: 3 } }); } catch (e) { err = e; }
+  eq([err && err.code, err && err.message], ['signed_out', 'signed out: reload the page to sign in again'], 'the tap is told the session ended');
+  eq(snaps[snaps.length - 1].docs[0].data().play.stress, 3, 'the sheet shows the tap');
+  const PQ = 'b68.cf.pl@x.test#default#queue';
+  const q = read(st, PQ);
+  eq([q && q.length, q && q[0].method, q && q[0].body], [1, 'PATCH', { play: { stress: 3 } }], 'kept in the stored queue');
+  eq(api.rows.a.doc.play.stress, 0, 'nothing was sent');
+  // another account on this browser: untouched
+  const o = browser(api, { email: 'gm@x.test' }, { storage: st });
+  (await o.win.claude.use('db')).collection('characters').onSnapshot(() => {});
+  await sleep(POLL * 3);
+  eq([api.rows.a.doc.play.stress, read(st, PQ).length], [0, 1], 'the other account neither sends nor drops it');
+  // the same user, signed in again (a reload): sent on start
+  const b2 = browser(api, { email: 'pl@x.test' }, { storage: st });
+  await b2.win.claude.use('db');
+  await until(() => api.rows.a.doc.play.stress === 3 && read(st, PQ) === null, 1000);
+  eq([api.rows.a.doc.play.stress, read(st, PQ)], [3, null], 'landed at the next visit');
+});
 
 await test('visibility: hidden pages poll on the slow interval', async () => {
   const api = fakeApi();
@@ -542,7 +649,7 @@ await test('visibility: hidden pages poll on the slow interval', async () => {
   b.document.hidden = false; b.listeners.visibilitychange.forEach((fn) => fn());
   await sleep(20);
   b.win.setTimeout = real;
-  ok(timers.includes(20000), 'hidden interval: ' + timers);
+  ok(timers.includes(60000), 'hidden interval: ' + timers);
   ok(timers.includes(4000), 'visible interval: ' + timers);
   un();
 });
@@ -584,6 +691,7 @@ await test('campaign: a missing doc snapshots as the default (exists true); othe
   await sleep(POLL * 3);
   eq(snaps.length, n, 'snapshots on unchanged polls'); eq(campaignGets(api), gets, 'campaign refetched without a change');
   un();
+  await sleep(POLL * 2);   // a poll already in flight when the last listener left may still land, once
   const polls = api.calls.length; await sleep(POLL * 3); eq(api.calls.length, polls, 'polling after the last unsubscribe');
   eq(errs.length, 0, 'errors');
 });
@@ -684,6 +792,110 @@ await test('campaign: a rejected write (player PUT, 403) rejects with the API me
   eq(api.campaign.crew.name, 'Lamplighters', 'server unchanged');
   await until(() => snaps[snaps.length - 1].data().crew.name === 'Lamplighters', POLL * 3);
   eq(snaps[snaps.length - 1].data().crew.name, 'Lamplighters', 'rolled back');
+  un();
+});
+
+/* ---------- campaign clocks: clockOps (CAMPAIGN.md, *Clocks*) ---------- */
+const threeClocks = () => [
+  { id: 'c_a', name: 'Alarm', size: 4, filled: 1, kind: 'danger', hidden: false },
+  { id: 'c_b', name: 'Fence', size: 6, filled: 0, kind: 'project', hidden: false },
+  { id: 'c_c', name: 'Doomed', size: 8, filled: 2, kind: 'faction', hidden: true },
+];
+const fills = (doc) => doc.clocks.map((c) => c.filled);
+
+await test('campaign clocks: the ref takes clockOps; ticks of different clocks from two phones both land, also while the GM renames, adds and removes; on one clock the later tick wins', async () => {
+  const api = fakeApi();
+  api.setCampaign(campaignDoc({ clocks: threeClocks() }));
+  const bs = [browser(api, { email: 'pa@x.test' }), browser(api, { email: 'pb@x.test' }), browser(api, { email: 'gm@x.test' })];
+  const refs = await Promise.all(bs.map(async (b) => (await b.win.claude.use('db')).collection('campaign').doc('main')));
+  eq(refs.map((r) => r.clockOps), [true, true, true], 'the hosted ref says its update() takes clockOps');
+  const views = refs.map(() => []);
+  const uns = refs.map((r, i) => r.onSnapshot((s) => views[i].push(s.data())));
+  await until(() => views.every((v) => v.length));
+  const last = (i) => views[i][views[i].length - 1];
+  // (a) two players tick different clocks from the same copy at once: each sees its own tick at once, the server both
+  const pa = refs[0].update({ clockOps: [{ id: 'c_a', filled: 2 }] }), pb = refs[1].update({ clockOps: [{ id: 'c_b', filled: 3 }] });
+  eq([fills(last(0)), fills(last(1))], [[2, 0, 2], [1, 3, 2]], 'optimistic: each phone its own tick');
+  await Promise.all([pa, pb]);
+  eq(fills(api.campaign), [2, 3, 2], 'server: both ticks');
+  // (b, c) a player ticks while the GM renames, resizes and hides one clock, removes another and adds one
+  await Promise.all([
+    refs[0].update({ clockOps: [{ id: 'c_b', filled: 4 }] }),
+    refs[2].update({ clockOps: [{ id: 'c_a', name: 'Alarm bells', size: 6, hidden: true }, { remove: 'c_c' }, { add: { id: 'c_new', name: 'New', size: 4, filled: 0, kind: 'other', hidden: false } }] }),
+  ]);
+  eq(api.campaign.clocks.map((c) => [c.id, c.name, c.size, c.filled, c.hidden]), [['c_a', 'Alarm bells', 6, 2, true], ['c_b', 'Fence', 6, 4, false], ['c_new', 'New', 4, 0, false]], 'server: the GM\'s changes and the tick');
+  // a tick of the clock the GM removed brings nothing back
+  await refs[1].update({ clockOps: [{ id: 'c_c', filled: 5 }] });
+  eq(api.campaign.clocks.map((c) => c.id), ['c_a', 'c_b', 'c_new'], 'a removed clock stays removed');
+  // (d) the same clock from two phones: the tick the server gets last wins on that clock, nothing else moves
+  await refs[0].update({ clockOps: [{ id: 'c_b', filled: 5 }] });
+  await refs[1].update({ clockOps: [{ id: 'c_b', filled: 1 }] });
+  eq(fills(api.campaign), [2, 1, 0], 'last writer wins on c_b');
+  await until(() => views.every((v, i) => JSON.stringify(last(i).clocks) === JSON.stringify(api.campaign.clocks)), POLL * 6);
+  views.forEach((v, i) => eq(last(i).clocks, api.campaign.clocks, 'view ' + i + ' converged'));
+  // a player's op may only fill: a rename is refused (403, the server's rule) and rolled back
+  let err = null; try { await refs[1].update({ clockOps: [{ id: 'c_b', name: 'Mine now' }] }); } catch (e) { err = e; }
+  eq(err && [err.status, err.message], [403, 'only the GM can change that'], 'a player renaming');
+  await until(() => last(1).clocks[1].name === 'Fence', POLL * 4);
+  eq([last(1).clocks[1].name, api.campaign.clocks[1].name], ['Fence', 'Fence'], 'rolled back');
+  uns.forEach((u) => u());
+});
+
+await test('campaign clocks: the optimistic copy applies clockOps as the server does (random ops on id-less, repeated and odd clocks)', async () => {
+  const api = fakeApi();
+  let seed = 20261016;
+  const rnd = (n) => {   /* mulberry32: the same sequence every run */
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) % n;
+  };
+  const pick = (a) => a[rnd(a.length)];
+  const some = (o) => Object.fromEntries(Object.entries(o).filter(() => rnd(2)));
+  const oddClock = () => {
+    const c = {}, id = pick(['c_0', 'c_1', 'x', 'x', undefined, 5, '', 'constructor', '__proto__', 'c_2_']);
+    if (id !== undefined) c.id = id;
+    if (rnd(5)) c.name = pick(['Alarm', '', 'Doom']);
+    const size = pick([4, 6, 8, 10, 12, 5, '8', undefined, 0, 13]); if (size !== undefined) c.size = size;
+    const filled = pick([0, 1, 3, 9, -2, '2', undefined, 2.6]); if (filled !== undefined) c.filled = filled;
+    if (rnd(3)) c.kind = pick(CLOCK_KINDS.concat(['weird']));
+    if (rnd(3)) c.hidden = rnd(2) === 0;
+    return c;
+  };
+  const randomOp = (ids) => {
+    const id = rnd(6) ? pick(ids.length ? ids : ['gone']) : 'gone';
+    switch (rnd(5)) {
+      case 0: case 1: return { id, filled: pick([0, 1, 2, 5, 7, 12, 30, -1, 2.4]) };
+      case 2: {
+        const f = pick([() => ({ size: pick([4, 4, 6]) }), () => ({ size: pick(CLOCK_SIZES), filled: rnd(14) }), () => ({ name: pick(['Renamed', '']) }), () => ({ kind: pick(CLOCK_KINDS), hidden: rnd(2) === 0 }),
+          () => some({ name: 'Both', size: pick(CLOCK_SIZES), kind: pick(CLOCK_KINDS), hidden: rnd(2) === 0, filled: rnd(9) })])();
+        return Object.keys(f).length ? { id, ...f } : { id, size: 4 };
+      }
+      case 3: return { add: { id: pick(['n1', 'n2', 'x', 'c_0', '5', 'constructor', '__proto__']), ...some({ name: 'New', size: pick(CLOCK_SIZES), filled: pick([0, 3, 20]), kind: pick(CLOCK_KINDS), hidden: true }) } };
+      default: return { remove: id };
+    }
+  };
+  const b = browser(api, { email: 'gm@x.test' });
+  const ref = (await b.win.claude.use('db')).collection('campaign').doc('main');
+  const views = []; const un = ref.onSnapshot((s) => views.push(s.data()));
+  await until(() => views.length);
+  let ops = 0;
+  for (let round = 0; round < 25; round++) {
+    api.setCampaign(campaignDoc({ clocks: Array.from({ length: rnd(6) }, () => (rnd(10) ? oddClock() : pick([null, 3, 'x']))) }));
+    const want = JSON.stringify(api.campaign.clocks);
+    await until(() => JSON.stringify(views[views.length - 1].clocks) === want, POLL * 6);
+    eq(views[views.length - 1].clocks, api.campaign.clocks, 'round ' + round + ': the stored clocks, as stored');
+    for (let k = 0; k < 4; k++) {
+      const ids = withClockIds(clone(views[views.length - 1].clocks)).map((c) => c.id);   // clone: into this realm (isPlainObject)
+      const list = Array.from({ length: 1 + rnd(3) }, () => randomOp(ids));
+      const p = ref.update({ clockOps: list });
+      const optimistic = clone(views[views.length - 1].clocks);
+      await p;
+      ops += list.length;
+      eq(optimistic, api.campaign.clocks, 'round ' + round + ', write ' + k + ' ' + JSON.stringify(list));
+    }
+  }
+  ok(ops > 150, 'ops ' + ops);
   un();
 });
 
@@ -837,6 +1049,87 @@ await test('offline writes: optimistic, queued in order (with pending flags), fl
   eq(read(st, QUEUE), null, 'queue emptied');
 });
 
+await test('offline clock ticks: a player\'s fills fold into one write (the last per clock), a fill beside another change does not; they land on top of another phone\'s tick', async () => {
+  const api = fakeApi();
+  api.setCampaign(campaignDoc({ clocks: threeClocks() }));
+  const st = memStorage();
+  (await warm(api, st, 'pl@x.test')).close();
+  const { b, db } = await offlinePage(api, st, 'pl@x.test');
+  const camp = db.collection('campaign').doc('main');
+  const ks = []; camp.onSnapshot((s) => ks.push(s.data()));
+  await until(() => ks.length);
+  const fill = (id, n) => camp.update({ clockOps: [{ id, filled: n }], updatedAt: '2026-10-16T20:00:0' + n + '.000Z' });
+  await fill('c_a', 2); await fill('c_a', 3); await fill('c_b', 1); await fill('c_a', 4);
+  let q = read(st, PQUEUE);
+  eq(q.map((x) => x.body), [{ clockOps: [{ id: 'c_b', filled: 1 }, { id: 'c_a', filled: 4 }], updatedAt: '2026-10-16T20:00:04.000Z' }], 'four ticks, one queued write: the last fill of each clock');
+  eq(fills(ks[ks.length - 1]), [4, 1, 2], 'optimistic');
+  await camp.update({ clockOps: [{ id: 'c_b', filled: 2 }], crew: { heat: 2 } });   // a fill beside a crew change: its own write
+  await fill('c_b', 3);                                                             // and the next fill does not fold into that one
+  q = read(st, PQUEUE);
+  eq(q.map((x) => Object.keys(x.body).sort().join()), ['clockOps,updatedAt', 'clockOps,crew', 'clockOps,updatedAt'], 'a player\'s fill folds only into fills');
+  // meanwhile another phone ticks the hidden clock on the server
+  const other = clone(api.campaign); other.clocks[2].filled = 5; api.setCampaign(other);
+  delete api.status['/api/'];
+  await until(() => b.win.B68Runtime.status.pending === 0, 3000);
+  eq([fills(api.campaign), api.campaign.crew.heat], [[4, 3, 5], 2], 'server: every tick of this phone, and the other phone\'s kept');
+  await until(() => JSON.stringify(ks[ks.length - 1].clocks) === JSON.stringify(api.campaign.clocks), POLL * 6);
+  eq(fills(ks[ks.length - 1]), [4, 3, 5], 'this phone sees all of them');
+});
+
+await test('offline, the GM: clockOps concatenate in order; a whole clocks array after them is not folded; all land as made', async () => {
+  const api = fakeApi();
+  api.setCampaign(campaignDoc({ clocks: threeClocks() }));
+  const st = memStorage();
+  (await warm(api, st)).close();
+  const { b, db } = await offlinePage(api, st);
+  const camp = db.collection('campaign').doc('main');
+  const ks = []; camp.onSnapshot((s) => ks.push(s.data()));
+  await until(() => ks.length);
+  await camp.update({ clockOps: [{ id: 'c_a', name: 'Alarm bells' }] });
+  await camp.update({ clockOps: [{ id: 'c_a', size: 8 }, { remove: 'c_c' }] });
+  await camp.update({ clockOps: [{ add: { id: 'c_n', name: 'New', size: 4, filled: 0, kind: 'other', hidden: false } }, { id: 'c_a', filled: 6 }] });
+  const whole = clone(ks[ks.length - 1].clocks); whole[1].filled = 5;
+  await camp.update({ clocks: whole });                                             // the previous release's whole array
+  const q = read(st, QUEUE);
+  eq(q.length, 2, 'ops folded, the array apart: ' + JSON.stringify(q.map((x) => x.body)));
+  eq(q[0].body.clockOps.length, 5, 'the ops, concatenated');
+  eq(ks[ks.length - 1].clocks.map((c) => [c.id, c.name, c.size, c.filled]), [['c_a', 'Alarm bells', 8, 6], ['c_b', 'Fence', 6, 5], ['c_n', 'New', 4, 0]], 'optimistic');
+  delete api.status['/api/'];
+  await until(() => b.win.B68Runtime.status.pending === 0, 3000);
+  eq(api.campaign.clocks.map((c) => [c.id, c.name, c.size, c.filled]), [['c_a', 'Alarm bells', 8, 6], ['c_b', 'Fence', 6, 5], ['c_n', 'New', 4, 0]], 'server');
+});
+
+await test('a whole clocks array the previous release queued still goes out: a current one lands; one copied before another phone\'s tick is refused (412) and dropped, the table reloads, that tick stays', async () => {
+  const api = fakeApi();
+  api.setCampaign(campaignDoc({ clocks: threeClocks() }));
+  const st = memStorage();
+  (await warm(api, st, 'pl@x.test')).close();
+  const old = (clocks, qid) => ({ qid, kind: 'campaign', method: 'PATCH', path: '/campaign', body: { clocks, updatedAt: '2026-10-16T19:00:00.000Z' } });
+  const t1 = clone(api.campaign.clocks); t1[0].filled = 2;                          // as stored, with one tick
+  st.setItem(PQUEUE, JSON.stringify([old(t1, 'prev.1')]));
+  let p = await offlinePage(api, st, 'pl@x.test');
+  let errs = []; const un1 = p.db.collection('campaign').doc('main').onSnapshot(() => {}, (e) => errs.push(e));
+  delete api.status['/api/'];
+  await until(() => p.b.win.B68Runtime.status.pending === 0, 3000);
+  eq([fills(api.campaign), errs.length], [[2, 0, 2], 0], 'a current array lands');
+  un1();
+  // a stale one: copied before another phone ticked c_b (its own tick on c_a, c_b as it was)
+  const other = clone(api.campaign); other.clocks[1].filled = 3; api.setCampaign(other);
+  const t2 = clone(t1); t2[0].filled = 3;
+  st.setItem(PQUEUE, JSON.stringify([old(t2, 'prev.2')]));
+  p = await offlinePage(api, st, 'pl@x.test');
+  const ks = []; errs = [];
+  p.db.collection('campaign').doc('main').onSnapshot((s) => ks.push(s.data()), (e) => errs.push(e));
+  await until(() => ks.length);
+  delete api.status['/api/'];
+  await until(() => errs.length && p.b.win.B68Runtime.status.pending === 0, 3000);
+  eq(fills(api.campaign), [2, 3, 2], 'refused: the other phone\'s tick stays');
+  eq([errs.length, errs[0].status, errs[0].code, errs[0].message], [1, 412, 'dropped', 'a change saved while offline was not accepted: ' + STALE_CLOCKS], 'reported once');
+  await until(() => JSON.stringify(fills(ks[ks.length - 1])) === '[2,3,2]', POLL * 6);
+  eq(fills(ks[ks.length - 1]), [2, 3, 2], 'the table reloaded');
+  eq(read(st, PQUEUE), null, 'queue empty');
+});
+
 await test('online, the network drops mid-session: writes queue (resolve) and flush on the next successful poll and on `online`', async () => {
   const api = fakeApi(); api.put('a', char('a'));
   const st = memStorage();
@@ -897,13 +1190,14 @@ await test('401 while flushing: stops, keeps the queue for that user; the next s
   eq(read(st, QUEUE).length, 2, 'queue kept');
   eq(api.rows.a.doc.name, 'a', 'server unchanged');
   let err = null; try { await db.collection('characters').doc('a').update({ name: 'later' }); } catch (e) { err = e; }
-  eq(err && err.code, 'signed_out', 'writes refused after sign-out');
-  // signed in again: a fresh page flushes on start
+  eq(err && err.code, 'signed_out', 'a write after the sign-out is told so');
+  eq(read(st, QUEUE).length, 2, 'and kept (E6): folded into the last unsent entry of this tab');
+  // signed in again: a fresh page flushes on start, the write made after the sign-out included
   delete api.status['/api/characters/'];
   const b2 = browser(api, { email: 'gm@x.test' }, { storage: st });
   await b2.win.claude.use('db');
-  await until(() => api.rows.a.doc.name === 'a2' && read(st, QUEUE) === null, 1000);
-  eq([api.rows.a.doc.name, api.rows.a.doc.sheet.name, api.applied], ['a2', 'A2', ['PATCH /api/characters/a', 'PATCH /api/characters/a']], 'flushed on start');
+  await until(() => api.rows.a.doc.name === 'later' && read(st, QUEUE) === null, 1000);
+  eq([api.rows.a.doc.name, api.rows.a.doc.sheet.name, api.applied], ['later', 'A2', ['PATCH /api/characters/a', 'PATCH /api/characters/a']], 'flushed on start');
 });
 
 await test('a queue belongs to its user: another account on the same browser neither sends nor sees it', async () => {
@@ -960,7 +1254,7 @@ await test('status: B68Runtime.status and b68:runtime events follow offline, pen
   ok(b.events.length >= 1, 'no event');
   eq([b.events[0].online, b.events[0].pending], [false, 0], 'first event: offline');
   await db.collection('characters').doc('a').update({ name: 'a2' });
-  eq(b.events[b.events.length - 1], { online: false, pending: 1, lastSync: read(st, SNAP).syncedAt }, 'one waiting');
+  eq(b.events[b.events.length - 1], { online: false, pending: 1, lastSync: read(st, SNAP).syncedAt, newBuild: null }, 'one waiting');
   const t0 = new Date().toISOString();
   delete api.status['/api/'];
   await until(() => b.win.B68Runtime.status.pending === 0 && b.win.B68Runtime.status.online, 1000);
@@ -1001,9 +1295,13 @@ await test('window.claude.gm: plain calls for the GM (pack, parts, state, displa
   eq((await g.state()).doc.capture.c1.text, MARK, 'state round trip');
   eq((await g.setDisplay({ kind: 'text', text: 'hi' })).seq, 1, 'setDisplay');
   eq((await g.display(1)).unchanged, true, 'display unchanged at the current seq');
+  eq((await g.display(1, 2, 3)).unchanged, true, 'display with the ambient and the transcriber seqs too');
+  eq((await g.display(null, undefined, 3)).seq, 1, 'display with only the transcriber seq');
+  await g.display();
   await g.removePart('console');
   const sent = b.fetchLog.map((x) => (x.opts.method || 'GET') + ' ' + x.url).filter((x) => x.includes('/api/gm/'));
-  eq(sent, ['POST /api/gm/pack', 'GET /api/gm/pack', 'GET /api/gm/pack?part=console', 'PATCH /api/gm/state', 'GET /api/gm/state', 'PUT /api/gm/display', 'GET /api/gm/display?seq=1', 'DELETE /api/gm/pack?part=console'], 'requests');
+  eq(sent, ['POST /api/gm/pack', 'GET /api/gm/pack', 'GET /api/gm/pack?part=console', 'PATCH /api/gm/state', 'GET /api/gm/state', 'PUT /api/gm/display', 'GET /api/gm/display?seq=1',
+    'GET /api/gm/display?seq=1&aseq=2&sseq=3', 'GET /api/gm/display?sseq=3', 'GET /api/gm/display', 'DELETE /api/gm/pack?part=console'], 'requests');
   await sleep(60);
   ok(![...storage._m.values()].some((v) => String(v).includes(MARK)), 'GM text reached localStorage (snapshot or queue)');
   const pb = browser(api, { email: 'pl@x.test' });
@@ -1156,6 +1454,29 @@ await test('profile.setName: PATCH /api/me, the signed-in user and the cached me
   ok(err && err.status === 400, 'a refused name rejects with status 400'); eq((await u.me()).name, 'Sam the Man', 'unchanged after a refusal');
   eq((await b.win.claude.profile.setName(null)).name, 'pl', 'null clears');
   eq((await u.me()).name, 'pl'); eq(JSON.parse(b.fetchLog.filter((f) => f.opts.method === 'PATCH').pop().opts.body), { name: null });
+});
+
+/* E15: a page left open across a deploy learns the server's build from X-B68-Build and says so (boot.js: "Updated: reload") */
+await test('status.newBuild: null while the server runs this page\'s build; the server\'s build once it differs (X-B68-Build on any API answer), with a b68:runtime event; silent when the page has no build', async () => {
+  const api = fakeApi(); api.put('a', char('a')); api.build = '2026-10-16-abc1234';
+  const b = browser(api, { email: 'gm@x.test' });
+  b.win.B68_BUILD = '2026-10-16-abc1234';                                   // routes.js on the same build
+  const db = await b.win.claude.use('db');
+  eq(b.win.B68Runtime.status.newBuild, null, 'same build: nothing to say');
+  const snaps = []; const un = db.collection('characters').onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  const n = b.events.length;
+  api.build = '2026-10-17-def5678';                                         // a deploy while the page is open: the next poll's answer says so
+  await until(() => b.win.B68Runtime.status.newBuild, POLL * 4);
+  eq(b.win.B68Runtime.status.newBuild, '2026-10-17-def5678', 'the server\'s newer build');
+  ok(b.events.length > n && b.events[b.events.length - 1].newBuild === '2026-10-17-def5678', 'a b68:runtime event carried it');
+  un();
+  const o = browser(api, { email: 'gm@x.test' });                           // no routes.js (the artifact, an old page): nothing is claimed
+  await o.win.claude.use('db');
+  eq(o.win.B68Runtime.status.newBuild, null, 'no own build: silent');
+  const same = browser(api, { email: 'gm@x.test' }); same.win.B68_BUILD = '2026-10-17-def5678';
+  await same.win.claude.use('db');
+  eq(same.win.B68Runtime.status.newBuild, null, 'a page on the new build: silent');
 });
 
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');

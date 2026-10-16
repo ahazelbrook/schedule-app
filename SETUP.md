@@ -10,13 +10,18 @@ What runs: one Cloudflare Worker, `blades68`, that serves the page in `app/` and
 `functions/` (see `HOSTING.md`), a D1 database `blades68`, and a Cloudflare Access application
 in front of the host.
 
-`DEPLOY-PROMPT.md` is the same procedure written as a prompt for a Claude session on your own
+`docs/history/DEPLOY-PROMPT.md` is the same procedure written as a prompt for a Claude session on your own
 computer, which can run the commands and click through the dashboard with you.
 
 You need: the Cloudflare account that holds `fieldguide.help`, Node.js 20 or newer, and this
 repository (`ahazelbrook/schedule-app` on GitHub, cloned to your computer).
 
 ## 1. Install and sign in
+
+On Windows, run every command in this file from **Git Bash** (it comes with Git for Windows:
+Start menu → Git Bash), not from PowerShell or the Command Prompt: the deploy script is a
+POSIX shell script. The repository's `.gitattributes` keeps it, and the code and docs, with
+Unix line endings on any clone, so a fresh checkout on a new PC deploys like the old one.
 
 ```
 cd schedule-app
@@ -161,9 +166,114 @@ Roles follow at once; nobody signs in again.
 
 ## Updating the app
 
-After pulling changes: `npx wrangler deploy` (or run `scripts/deploy.sh` again, which also
-applies new migrations). The secrets stay as they are. Phones pick up the new version the next
-time they open the app online.
+### Step by step, on the Windows PC (about 10 minutes)
+
+Never on a game day: deploy the day after, so a surprise has a week to be fixed.
+
+1. **Open Git Bash** (Start menu → Git Bash). Not PowerShell, not the Command Prompt.
+2. **Go to the app's folder and fetch the latest version:**
+   ```
+   cd ~/schedule-app        # or wherever the folder is: cd "/c/Users/<you>/Documents/schedule-app"
+   git checkout main
+   git pull
+   npm install
+   ```
+3. **Check the two files that are not on GitHub are in the folder.** In File Explorer, these must exist:
+   `app\media\theme.mp3` (the opening credits' song) and `app\ambient\calling-cards.html` (the cards scene). If one
+   is missing (a new PC, a fresh clone), copy it in from the old folder or your backup. The cards scene can also be
+   rebuilt with `node tools/ambient/scenes/cards.js` when the faction art is in `tools/ambient/cards/`. The script
+   refuses to deploy without them, because a deploy without them takes them off the live site.
+4. **Find your two Access values** (once; write them down next to this file, not in it):
+   - the **team name**: Cloudflare dashboard → **Zero Trust** → **Settings** → the team domain reads
+     `<team>.cloudflareaccess.com`; the team name is the `<team>` part;
+   - the **AUD tag**: Zero Trust → **Access** → **Applications** → the app for `blades.fieldguide.help` → **Overview**
+     (or Configure) → **Application Audience (AUD) Tag**, a long string of letters and digits. Copy it whole.
+5. **Deploy** (one line; the script asks for the team name and AUD tag if you leave them out):
+   ```
+   B68_GM_EMAILS=ahazelbrook@gmail.com B68_ACCESS_TEAM=<team> B68_ACCESS_AUD=<aud tag> npm run deploy
+   ```
+6. **Read the receipt at the end.** Every line should be filled in, `smoke test` should say PASS twice, and
+   `files` should say both files were deployed. `DISPLAY_EMAILS` and `DEEPGRAM_API_KEY` show as set once you have
+   set them; they are never changed by the script.
+7. **Check it on the devices:** open the app on your phone (a page left open shows **Updated: reload**). On the iPad,
+   pin the planning meeting scene for a minute (it should move smoothly), then the opening credits, and tap once: the
+   song should play.
+
+If the script stops instead, it says why. The usual ones: *uncommitted changes* (someone edited a file in the folder:
+`git status` lists them; `git stash` sets them aside), *missing theme.mp3 / calling-cards.html* (step 3), *not logged
+in* (`npx wrangler login`). Nothing is changed on the live site until the script reaches its deploy step.
+
+### The details
+
+Not on a game day. After merging to `main` and pulling, from Git Bash:
+
+```
+B68_GM_EMAILS=you@example.com B68_ACCESS_TEAM=<team> B68_ACCESS_AUD=<aud tag> npm run deploy
+```
+
+`npm run deploy` is `scripts/deploy.sh`. The team name and the AUD tag are the ones from step 3;
+with both given the script leaves Access alone (change who may sign in with
+`scripts/access-emails.sh`, *Adding and removing players*), and without them it stops at the
+Access step to ask. `B68_GM_EMAILS` goes up again as the `GM_EMAILS` secret, so give the same
+GM emails as before. When `migrations/` has a new file, note a restore point first
+(`npx wrangler d1 time-travel info blades68`, section 7). Before anything ships the script stops
+when:
+
+- **the working tree has uncommitted changes** (it lists them). Commit them first, so the live
+  app is always a commit you can name and go back to; `B68_DIRTY_OK=1` deploys them anyway.
+- **`app/media/theme.mp3` or `app/ambient/calling-cards.html` is missing.** Both stay out of
+  git (the theme is someone's recording, the cards are the book's art) and are uploaded from
+  this disk; a deploy without them removes them from the live site. Copy them in from the GM's
+  PC first; `B68_MEDIA_OK=1` deploys without them.
+
+Then it runs the checks, applies new migrations, stamps the build into `app/routes.js` for the
+upload (and puts it back), deploys, checks from outside that Access still guards the address,
+and ends with a receipt:
+
+```
+== Receipt
+  commit       1a2b3c4 (working tree clean)
+  build        2026-10-16-1a2b3c4
+  worker       version 5e6f7a8b-...
+  migrations   all 7 applied, none pending
+  secrets      ACCESS_TEAM set, ACCESS_AUD set, GM_EMAILS set, DISPLAY_EMAILS set, DEEPGRAM_API_KEY set
+  files        app/media/theme.mp3 deployed, app/ambient/calling-cards.html deployed
+  sw cache     b68-shell-2026-10-16-1a2b3c4 (pages left open offer "Updated: reload")
+  smoke test   / PASS, /api/me PASS
+```
+
+The script sets `ACCESS_TEAM`, `ACCESS_AUD` and `GM_EMAILS`; it never touches
+`DISPLAY_EMAILS` (the table iPad's sign-in) or `DEEPGRAM_API_KEY` (the iPad's transcriber),
+which stay as they are and show as MISSING in the receipt until you set them
+(`npx wrangler secret put DISPLAY_EMAILS`, GM.md). Phones pick up the new version the next time
+they open the app online; a page left open says **Updated: reload** in its header.
+
+A plain `npx wrangler deploy` uploads the code but **skips the migrations** (and the checks,
+the build stamp and the receipt). That is harmless while every new table is created on first
+use by the server (`db.js` does), but not for a migration that changes an existing table, so
+use `npm run deploy`, or run `npx wrangler d1 migrations apply DB --remote` first.
+
+When the GM pack changed too: `npm run gm:pack`, then `npm run gm:push -- --only pack --yes`
+(or **Import GM pack** on `#gm`; GM.md, SYNC.md).
+
+## Status
+
+What is live at `https://blades.fieldguide.help` (one Worker, `blades68`, with D1 behind
+Access), as of 16 Oct 2026. The original deployment plan and its phases are in
+`docs/history/DEPLOY.md`.
+
+| Part | State |
+|---|---|
+| The creator, the living sheet, the table page (crew sheet, clocks, session, players, log), the schedule, the season print | Live since 13/10/2026 |
+| Offline use and home-screen install | Live (hosted build only) |
+| The rules wiki, the cast and "on stage" | Live (`RULES.md`, `CAST.md`) |
+| The GM's page (`#gm`), the iPad display (`#display`), display names | Live since 14 and 15/10/2026 (`GM.md`) |
+| Ambient scenes on the iPad | Live since 15/10/2026; not yet tried on the real iPad |
+| The display-only sign-in (`DISPLAY_EMAILS`) | Built and deployed, switched off: the iPad uses the GM's own email (`GM.md`) |
+| GM sync between the app and the vault | Runs on the GM's PC (`SYNC.md`) |
+| Sign-in on a phone | Fixed 15/10/2026 (a second Worker, `schedule-app`, owned the domain without the Access secrets). Left to do: delete the `schedule-app` Worker in the dashboard |
+| Reminders by Discord, email or push | Not built: the nudge on the next-session card and the copied reminder stand in |
+| Backups | No nightly job: the app's downloads, D1 Time Travel and `npx wrangler d1 export` by hand (section 7) |
 
 ## "Not signed in" on a device that has passed Access
 

@@ -52,11 +52,19 @@
  * cardLines(roll, pack?) -> [markdown line]   the sections flattened, "## title" headings
  *   between them. GM-only headings read "## [GM] title" so a plain-text reader can tell.
  *
- * glance(roll, pack?, reveal = ["public"]) -> { title, place, say, whose, security,
- *     bands: [{ band, short, count, locks, target, shown }], target: { room, band, what }, flags }
+ * glance(roll, pack?, reveal = ["public"]) -> { title, place, say, plan, whose, security,
+ *     bands: [{ band, short, count, locks, target, shown }], target: { room, band, what, locks },
+ *     rule, skips, flags }
  *   The console's at-a-glance card. GM-only as a whole; `say` alone is player-safe (it is
- *   the start of playerSummary's outside description). glanceLines() is the same as
- *   markdown (what Pin stores).
+ *   the start of playerSummary's outside description). `plan` is one plain sentence for
+ *   under Say, built only from what the glance and the player summary already show: the
+ *   front (street and its obstacle), the target's room and band, and target.locks, the
+ *   locks in the bands down to the target's. `rule` is the district rule's first sentence
+ *   (at most 110 characters; "" when the district has none). `skips` counts the ring-skips:
+ *   they sit in the Plan fold's hint, not in the flags. `flags` are only what is not true of
+ *   every roll: off their turf, a low tier holding a prize, a target outside its printed
+ *   district, a Paranormal approach where the rating is low. glanceLines() is the same as
+ *   markdown (what Pin stores), with a Plan line and, when there is one, a Rule line.
  * folds(roll, pack?, reveal = ["public"]) -> [ { id, title, hint, gm: true, lines } ]
  *   Everything else, one fold each: read aloud, ways in, one per band, opposition, block,
  *   plan, reference. Wording is shortened here, never in generate().
@@ -75,6 +83,13 @@
  *   frontmatter: false drops the YAML block and the "Rolled from" footer.
  * canvas(roll, pack) -> JSON string of an Obsidian .canvas (the vault's "Save the plan"),
  *   with ids derived from roll.seed so the same roll gives the same file.
+ * check(T) -> [string]   the table keys a pack is missing or has empty ('rumour', 'theme.<name>.areas',
+ *   'gaz.<district>', 'weather.Night', …), for the page to show when a pack is loaded. Empty = the pack is
+ *   complete. Pass pack.T (a whole part { T, extra } is accepted too). Optional: a target type's alt / mix /
+ *   district / landmark / note / forceRoom (reported only when one points at nothing: a theme the pack lacks, a
+ *   district not in its list, an area past the theme's), a theme's bandNote, a district's special, a style's
+ *   geometry (a default applies), factionThumb. factionDetail is reported only when the pack has none at all (the
+ *   rumour then names a faction without a dossier line).
  * seedRng(seed) -> () => [0,1)               the vault's mulberry32
  * ------------------------------------------------------------------------- */
 (function (root, factory) {
@@ -125,6 +140,74 @@
   function clean(v) { return v === "" || v === undefined ? null : v; }
 
   function defaults() { return { target: "", district: "", approach: "", faction: "", mix: false }; }
+
+  // --- check(): the keys generate() and the renderers read, reported when missing or empty ----------
+  function check(T) {
+    var isObj = function (v) { return v !== null && typeof v === "object" && !Array.isArray(v); };
+    if (isObj(T) && isObj(T.T) && !("theme" in T)) T = T.T;          // a whole part { T, extra }
+    if (!isObj(T)) return ["T"];
+    var miss = [], need = function (k, ok) { if (!ok) miss.push(k); };
+    var filled = function (x) { return x != null && x !== ""; };
+    var list = function (a, ok, n) { return Array.isArray(a) && a.length >= (n || 1) && a.every(ok || filled); };
+    var row = function (n) { return function (x) { return Array.isArray(x) && x.length >= n && x.slice(0, n).every(filled); }; };
+    var arr = function (a) { return Array.isArray(a) ? a : []; };
+    ["targetNames", "themeNames", "bandOrder", "furnishing", "itemRare", "itemCommon", "circulation", "streetType",
+      "streetObstacle", "blockUse", "props", "buildingRare", "buildingCommon", "colour", "style", "condition", "volume",
+      "detail", "streetDesc", "streetSound", "streetSmell", "rumour"].forEach(function (k) { need(k, list(T[k])); });
+    need("physThreat", list(T.physThreat, row(2)));
+    need("socThreat", list(T.socThreat, row(2)));
+    need("faction", list(T.faction, row(3)));
+    need("district", list(T.district, row(5)));
+    need("approach", list(T.approach, function (a) {
+      return isObj(a) && ["n", "gambit", "seat", "target", "why"].every(function (k) { return filled(a[k]); });
+    }));
+    need("weather", isObj(T.weather));
+    ["Bluetime", "Night"].forEach(function (t) { need("weather." + t, isObj(T.weather) && list(T.weather[t])); });
+    need("geometry", isObj(T.geometry));
+    var bands = arr(T.bandOrder);
+    need("bandLabel", isObj(T.bandLabel));
+    bands.forEach(function (b) { need("bandLabel." + b, isObj(T.bandLabel) && filled(T.bandLabel[b])); });
+    // the themes: every one the theme list, a target type (its theme, alt, mix) or the Paranormal approach names
+    var themes = [];
+    var addTheme = function (n) { if (filled(n) && themes.indexOf(n) < 0) themes.push(n); };
+    arr(T.themeNames).forEach(addTheme);
+    need("targetType", isObj(T.targetType));
+    var districts = arr(T.district).map(function (d) { return Array.isArray(d) ? d[0] : null; });
+    arr(T.targetNames).forEach(function (n) {
+      var tt = isObj(T.targetType) ? T.targetType[n] : null, at = "targetType." + n;
+      if (!isObj(tt) || !filled(tt.theme)) { miss.push(at); return; }
+      [tt.theme, tt.alt, tt.mix].forEach(addTheme);
+      if (filled(tt.district) && districts.indexOf(tt.district) < 0) miss.push(at + ".district");
+      var src = isObj(T.theme) ? T.theme[tt.theme] : null;
+      if (tt.forceRoom !== undefined && !(isObj(src) && Array.isArray(src.areas) && filled(src.areas[tt.forceRoom]))) miss.push(at + ".forceRoom");
+    });
+    if (arr(T.approach).some(function (a) { return isObj(a) && a.n === "Paranormal"; })) addTheme("Anomalous Zone");
+    need("theme", isObj(T.theme));
+    themes.forEach(function (n) {
+      var th = isObj(T.theme) ? T.theme[n] : null, at = "theme." + n;
+      if (!isObj(th)) { miss.push(at); return; }
+      need(at + ".areas", list(th.areas));
+      need(at + ".bands", Array.isArray(th.bands) && th.bands.length === arr(th.areas).length &&
+        th.bands.every(function (b) { return bands.indexOf(b) >= 0; }));
+      need(at + ".alsoRooms", Array.isArray(th.alsoRooms) &&
+        th.alsoRooms.every(function (x) { return Array.isArray(x) && filled(x[0]) && bands.indexOf(x[1]) >= 0; }));
+      need(at + ".obstacles", list(th.obstacles));
+      need(at + ".items", list(th.items));
+      need(at + ".impressions", list(th.impressions, null, 2));
+      need(at + ".also", filled(th.also));
+      need(at + ".p", filled(th.p));
+    });
+    // the gazetteer: one entry per district, with the lists a roll picks from
+    need("gaz", isObj(T.gaz));
+    districts.forEach(function (d) {
+      if (!filled(d)) return;
+      var g = isObj(T.gaz) ? T.gaz[d] : null, at = "gaz." + d;
+      if (!isObj(g)) { miss.push(at); return; }
+      ["named", "landmarks", "notables"].forEach(function (k) { need(at + "." + k, list(g[k])); });
+    });
+    need("factionDetail", isObj(T.factionDetail) && Object.keys(T.factionDetail).length > 0);
+    return miss;
+  }
 
   // --- The generator ----------------------------------------------------------
   function generate(pack, opts, run) {
@@ -456,13 +539,16 @@
     o.name = (tt.landmark && !o.districtClash) ? tt.landmark : streetWord + " " + targetWord;
 
     // --- Rumour, with %F% resolved -----------------------------------------------------------------------
-    var detailed = T.faction.filter(function (x) { return T.factionDetail[x[0]]; });
-    var rf = pick(detailed)[0], rd = T.factionDetail[rf];
+    // One draw either way: a faction with a dossier when the pack prints any, else any faction (an old pack with no
+    // dossiers names the faction and leaves the rest to the table, rather than throwing).
+    var FD = T.factionDetail || {};
+    var detailed = T.faction.filter(function (x) { return FD[x[0]]; });
+    var rf = pick(detailed.length ? detailed : T.faction)[0], rd = FD[rf] || null;
     o.rumour = fresh("rumour", T.rumour)
-      .replace("%F%'s allies", function () { return rf + " run with " + rd.with + "."; })
-      .replace("%F%'s enemies", function () { return rf + " are up against " + rd.against + "."; })
-      .replace("%F%'s goals", function () { return rf + ": " + rd.now; })
-      .replace("%F%'s quirk or situation", function () { return rf + " — " + rd.secret; });
+      .replace("%F%'s allies", function () { return rd ? rf + " run with " + rd.with + "." : rf + "'s allies"; })
+      .replace("%F%'s enemies", function () { return rd ? rf + " are up against " + rd.against + "." : rf + "'s enemies"; })
+      .replace("%F%'s goals", function () { return rd ? rf + ": " + rd.now : rf + "'s goals"; })
+      .replace("%F%'s quirk or situation", function () { return rd ? rf + " — " + rd.secret : rf + "'s situation"; });
 
     // --- Tensions --------------------------------------------------------------------------------------------
     o.tensions = [];
@@ -516,6 +602,23 @@
   // --- Rendering (the vault's card, DOM-free) --------------------------------------
   function heading(o) { return o.mixName ? o.themeName + " × " + o.mixName : o.themeName; }
 
+  // Author notes the vault leaves for itself ("[TODO: …]") are not for the table: the card says what to do instead.
+  // The roll keeps the vault's text (generate() is the vault's, byte for byte); only what is shown changes.
+  var NO_DOSSIER = "no dossier or thumbnail is printed for this faction: play them from the tier and the hold.";
+  var NO_STAFF_DOOR = "No staff door is printed for this kind of place: invent one (a yard gate, a hatch, a delivery door).";
+  var isNote = function (t) { return /^\s*\[TODO\b/i.test(String(t)); };
+  // a way in as the card shows it: the service side's author note becomes the neutral line
+  function howOf(v, i) { return isNote(v.how) ? (i === 1 ? NO_STAFF_DOOR : "Not printed: invent one at the table.") : v.how; }
+
+  // A band's full label, true to this roll: the ★ band says so, and a label that calls another band "the target" (the
+  // pack's Secure line, when the approach seated the target elsewhere) says where the ★ is this time instead.
+  function bandTitle(full, band, o, shortOf) {
+    if (band === o.targetBand) return full + " ★";
+    if (o.targetBand && /\bthe target\b/i.test(full)) return full.replace(/\bthe target\b/i, "the target, usually") + " (★ in " + shortOf(o.targetBand) + " this time)";
+    return full;
+  }
+  var shortOfLabels = function (labels) { return function (b) { return String(labels[b] || b).split(" — ")[0]; }; };
+
   function place(o) {
     return heading(o) + " · " + o.styleName + " · " + o.district + " · " +
       o.timeOfDay + ", " + o.weather + " · " + o.namedStreet;
@@ -562,7 +665,7 @@
     T.bandOrder.forEach(function (band) {
       var inBand = o.rooms.filter(function (r) { return r.band === band; });
       if (!inBand.length) return;
-      lines.push("### " + T.bandLabel[band] + " (" + inBand.length + ")");
+      lines.push("### " + bandTitle(T.bandLabel[band], band, o, shortOfLabels(T.bandLabel)) + " (" + inBand.length + ")");
       inBand.forEach(function (r) {
         lines.push("- **" + r.name + "**" + (r.mix ? " *(" + r.mix + ")*" : "") + " — " + r.detail);
         roomTags(o, r).forEach(function (t) { lines.push("  - " + t); });
@@ -586,8 +689,8 @@
     ]);
 
     var ways = [];
-    o.vectors.forEach(function (v) {
-      ways.push("- **" + v.n + ".** " + cap(v.how) + " " + v.cost + " *(" + v.know + ")*");
+    o.vectors.forEach(function (v, i) {
+      ways.push("- **" + v.n + ".** " + cap(howOf(v, i)) + " " + v.cost + " *(" + v.know + ")*");
     });
     sec("ways", "The way in — " + o.approachName + ": " + o.approach.gambit, true, ways);
 
@@ -609,7 +712,7 @@
       if (dd) {
         whose.push("- **Now:** " + dd.now, "- **With:** " + dd.with, "- **Against:** " + dd.against, "- **Secret:** " + dd.secret);
       } else if (th) whose.push("- **" + th.cat + ":** " + th.thumb);
-      else whose.push("- **Detail:** [TODO: neither a dossier nor a thumbnail is printed for this faction.]");
+      else whose.push("- **Detail:** " + cap(NO_DOSSIER));
     }
     sec("whose", "Whose", true, whose);
 
@@ -688,22 +791,39 @@
         target: inBand.some(function (r) { return r.isTarget; }),
         shown: reveal.indexOf(b.band) >= 0 };
     }).filter(function (b) { return b.count > 0; });
+    // Flags are only what is not true of every roll (B6): off their turf, a low tier holding a prize, a target outside
+    // its printed district, a Paranormal approach on a low rating. The district rule shows its own text (`rule`); the
+    // ring-skips live in the Plan fold's hint, since nearly every roll has one.
     var flags = realTensions(o).map(shortFlag);
-    if (o.special) flags.push("District rule");
-    if (o.skips.length) flags.push(plural(o.skips.length, "ring-skip") + " (" +
-      o.skips.map(function (s) { return s.via; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(", ") + ")");
     var targetBand = (bands.find(function (b) { return b.band === o.targetBand; }) || {}).short || o.targetBand;
+    // the locks in the bands from the street down to the target's band (the ones the glance's band row counts)
+    var deep = bands.map(function (b) { return b.band; }).indexOf(o.targetBand);
+    var locks = bands.filter(function (b, i) { return i <= deep; }).reduce(function (n, b) { return n + b.locks; }, 0);
+    var tb = String(targetBand).toLowerCase();
     return {
       title: o.name,
       place: o.district + " · " + o.timeOfDay + ", " + o.weather + " · " + o.namedStreet,
       // Built only from fields playerSummary already shows (the start of the outside description).
       say: "You come at it down " + o.streetType + " — " + o.streetDesc + ".",
+      // One sentence of plan (idea 7), from what the glance and the player summary already show: the front (its street
+      // and the obstacle outside), the target's room and band, the locks on the way down.
+      plan: "Front door on " + o.namedStreet + " (outside: " + String(o.streetObstacle).toLowerCase().replace(/[.\s]+$/, "") + "); the target, " +
+        o.targetRoom + " (" + tb + "), " + (locks ? "is behind " + plural(locks, "lock") : "has no lock in the way") + ".",
       whose: o.faction + " · Tier " + X.ROMAN[o.factionTier] + ", " + o.factionHold + " hold",
       security: o.security,
       bands: bands,
-      target: { room: o.targetRoom, band: targetBand, what: o.targetWhat },
+      target: { room: o.targetRoom, band: targetBand, what: o.targetWhat, locks: locks },
+      rule: o.special ? shortRule(o.special) : "",
+      skips: o.skips.length,
       flags: flags
     };
+  }
+  // The district rule, shortened for the glance: its first sentence, at most 110 characters.
+  function shortRule(t) {
+    var s = String(t).replace(/\s+/g, " ").trim();
+    var m = s.match(/^.*?[.!?](?=\s|$)/);
+    s = m ? m[0] : s;
+    return s.length > 110 ? s.slice(0, 109) + "…" : s;
   }
 
   function glanceLines(roll, pack, reveal) {
@@ -714,7 +834,9 @@
       "**Bands:** " + g.bands.map(function (b) {
         return b.short + " " + b.count + (b.locks ? " (" + plural(b.locks, "lock") + ")" : "") + (b.target ? " ★" : "");
       }).join(" > "),
-      "**Target:** ★ " + g.target.room + " (" + g.target.band.toLowerCase() + ") — " + g.target.what];
+      "**Target:** ★ " + g.target.room + " (" + g.target.band.toLowerCase() + ") — " + g.target.what,
+      "**Plan:** " + g.plan];
+    if (g.rule) lines.push("**Rule:** " + g.rule);
     if (g.flags.length) lines.push("**Flags:** " + g.flags.join(" · "));
     return lines;
   }
@@ -747,7 +869,7 @@
     fold("ways", "Ways in (" + v.length + ")", o.approachName, [
       "**" + o.approachName + "** — " + o.approach.gambit + ".", "",
       "- **" + wayName(v[0]) + "** — " + cap(v[0].how) + " " + v[0].cost + " · *" + v[0].know + "*",
-      "- **" + wayName(v[1]) + "** — " + cap(v[1].how) + " · *" + v[1].know + "*",
+      "- **" + wayName(v[1]) + "** — " + cap(howOf(v[1], 1)) + " · *" + v[1].know + "*",
       "- **" + wayName(v[2]) + "** — " + backHow + " · *" + v[2].know + "*"
     ]);
 
@@ -779,7 +901,7 @@
       var dd = (pack.T.factionDetail || {})[o.faction], th = (pack.T.factionThumb || {})[o.faction];
       if (dd) opp.push("- **Now:** " + dd.now, "- **With:** " + dd.with, "- **Against:** " + dd.against, "- **Secret:** " + dd.secret);
       else if (th) opp.push("- **" + th.cat + ":** " + th.thumb);
-      else opp.push("- **Detail:** [TODO: neither a dossier nor a thumbnail is printed for this faction.]");
+      else opp.push("- **Detail:** " + cap(NO_DOSSIER));
     }
     fold("opp", "Opposition", o.physThreatName + " · " + o.socThreatName + " · dossier", opp);
 
@@ -794,7 +916,7 @@
 
     var ref = [
       "**Ratings** — " + ratings(o).map(function (c) { return "`" + c + "`"; }).join(" · "),
-      "**Bands** — " + B.map(function (b) { return b.full; }).join(" · "),
+      "**Bands** — " + B.map(function (b) { return bandTitle(b.full, b.band, o, function (x) { return (B.find(function (y) { return y.band === x; }) || { short: x }).short; }); }).join(" · "),
       "**Why the target is there** — " + o.targetWhy
     ];
     if (o.bandNote) ref.push("**Band note** — *" + o.bandNote + "*");
@@ -857,7 +979,7 @@
     BAND_ORDER.forEach(function (band) {
       var inBand = o.rooms.filter(function (r) { return r.band === band; });
       if (!inBand.length) return;
-      roomsMd += "### " + BAND_LABEL[band] + "\n\n";
+      roomsMd += "### " + bandTitle(BAND_LABEL[band], band, o, shortOfLabels(BAND_LABEL)) + "\n\n";
       inBand.forEach(function (r) {
         roomsMd += "- **" + r.name + "**" + (r.mix ? " *(" + r.mix + ")*" : "") + " — " + r.detail + "\n";
         roomTags(o, r, true).forEach(function (b) { roomsMd += "    - " + b + "\n"; });
@@ -874,7 +996,7 @@
         ? "> [!warning] Seed tensions\n" + o.tensions.map(function (t) { return "> - " + t; }).join("\n") + "\n\n"
         : "") +
       "## The way in\n\n**" + o.approachName + "** — " + o.approach.gambit + ".\n\n" +
-      o.vectors.map(function (v) { return "- **" + v.n + ".** " + cap(v.how) + " " + v.cost + " *(" + v.know + ")*"; }).join("\n") +
+      o.vectors.map(function (v, i) { return "- **" + v.n + ".** " + cap(howOf(v, i)) + " " + v.cost + " *(" + v.know + ")*"; }).join("\n") +
       "\n\n## Rooms\n\n" +
       "The target is **" + o.targetRoom + "** — " + o.targetWhat + ", in the " +
       o.targetBand + " band. " + o.targetWhy + "\n\n" +
@@ -943,7 +1065,7 @@
     o.vectors.forEach(function (v, i) {
       var a = -Math.PI / 2 + (i - 1) * 0.55;
       var id = put(Math.cos(a) * X.VECTOR_R * X.RING_WIDEN, Math.sin(a) * X.VECTOR_R, "6",
-        "**" + v.n + "**\n\n" + cap(v.how) + " " + v.cost + "\n\n*" + v.know + "*");
+        "**" + v.n + "**\n\n" + cap(howOf(v, i)) + " " + v.cost + "\n\n*" + v.know + "*");
       link(id, byRoom[(doors[i % doors.length] || {}).name], v.know, "6");
     });
     o.rooms.filter(function (x) { return x.holdsAnswerTo; }).forEach(function (r) {
@@ -966,7 +1088,7 @@
     generate: generate, controls: controls, defaults: defaults,
     cardSections: cardSections, cardLines: cardLines, playerSummary: playerSummary,
     glance: glance, glanceLines: glanceLines, folds: folds,
-    describe: describe, noteBody: noteBody, canvas: canvas, seedRng: seedRng,
+    describe: describe, noteBody: noteBody, canvas: canvas, seedRng: seedRng, check: check,
     _reviveRe: reviveRe
   };
 });

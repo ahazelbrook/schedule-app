@@ -109,7 +109,7 @@ module.exports = function build() {
   fx += `<polygon id="sweep" points="${pts([[0, 0], [260, 0], [520, H], [160, H]])}" fill="url(#ww-sweep)" style="display:none"/>`;
 
   // ---------- Vanden, with a poster under his arm ----------
-  const van = L.fig(L.npc("vanden"), { id: "vanden", lod: "mid", frames: [{}, { pose: { arms: { R: { a: "pocket", b: "raise", t: .55 } } } }, { pose: { arms: { R: { a: "pocket", b: "raise", t: 1 } } } }] });
+  const van = L.fig(L.npc("vanden"), { id: "vanden", lod: "mid", place: 0.26, frames: [{}, { pose: { arms: { R: { a: "pocket", b: "raise", t: .55 } } } }, { pose: { arms: { R: { a: "pocket", b: "raise", t: 1 } } } }] });
   const vanden = `<g id="vgrp" style="display:none" transform="translate(-300 ${base + 150})">${L.at(van, 0, 0, 0.26)}</g>`;
 
   const body = `<svg class="layer" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs>${defs}</defs>

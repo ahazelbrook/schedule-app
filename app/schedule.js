@@ -4,7 +4,9 @@
       (only the changed leaves, `null` for a removed key, so a PATCH carries e.g. {avail:{<me>:{o_x:'yes'}}} and two
       people answering at once never overwrite each other), the open options, the best option and quorum, the cadence
       ("Add the next three"), the countdown, the .ics file and the Google Calendar link.
-   2. The schedule box on the table page (#tp-schedule). campaign.js owns the document, the saves and the gating; it
+   2. The schedule box on the table page (#tp-schedule). campaign.js owns the document, the saves and the gating, and
+      whether the box is drawn at all (a player only while there is a next session or an open date; the GM folded to
+      one line until opened); it
       calls box(doc, ctx) to draw and routes data-act "sched.*" to acts here (PERM says who may: 'gm' or 'any'). A
       player only ever changes schedule.avail.<me> and schedule.rsvp.<me> (their dates, and I'm in / Can't make it,
       the same answer as the card's); campaign.js also strips anything else from a player's delta.
@@ -300,7 +302,8 @@
         '</div>' + boardHtml(s, ctx, known);
     } else {
       board.want = null;
-      if (!ctx.isGM) h += '<p class="hint sc-none">No session is set yet.' + (ctx.ro || !ctx.me ? '' : ' Mark the dates you can make below; the GM confirms one.') + '</p>';
+      /* a player is only asked to mark dates while there are dates (campaign.js draws this box for a player only then) */
+      if (!ctx.isGM) h += '<p class="hint sc-none">' + (openOptions(s).length ? 'No session is set yet.' + (ctx.ro || !ctx.me ? '' : ' Mark the dates you can make below; the GM confirms one.') : 'Nothing is planned yet. The GM puts the dates here.') + '</p>';
     }
     if (editing) {
       var nd = n || {}, cad = s.cadence;
@@ -473,7 +476,7 @@
     node.querySelectorAll('.sc-lufoot').forEach(function (f) { f.style.display = w.states[+f.getAttribute('data-i')] === 'in' ? '' : 'none'; });
     (node.__slots || []).forEach(function (sl, i) {
       var d = w.docs[i], v = w.states[i] || 'none';
-      names += '<span class="sc-lun st-' + v + '" style="left:' + sl.left.toFixed(2) + '%;width:' + sl.width.toFixed(2) + '%"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc(w.owners[i] || 'Unowned') + '<span class="sc-lust"> · ' + said[v] + '</span></small></span>';
+      names += '<span class="sc-lun st-' + v + '" style="left:' + sl.left.toFixed(2) + '%;width:' + sl.width.toFixed(2) + '%"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc(w.owners[i] || 'No owner yet') + '<span class="sc-lust"> · ' + said[v] + '</span></small></span>';
     });
     var nl = node.querySelector('.sc-lunames'); if (nl && nl.innerHTML !== names) nl.innerHTML = names;
   }
@@ -491,7 +494,8 @@
     if (ctx.session == null) ctx.session = doc.session ? doc.session.number : 0;
     var s = doc.schedule, now = Date.now(), known = ordered(ctx.people, ctx.me, ctx.name), opts = openOptions(s, now), tl = tally(s, opts, known);
     var h = nextSection(s, ctx, known);
-    h += '<div class="sc-avail"><div class="tp-subh"><span class="tp-lab">Who can make it</span>' + (opts.length ? '<span class="tp-dim">' + (ctx.me && !ctx.ro ? 'tap your row: yes, maybe, no' : '') + '</span>' : '') + '</div>' + grid(s, ctx, known, opts, tl) + '</div>';
+    /* the availability grid: the GM always (it is where dates are added), a player only while there are dates to mark */
+    if (ctx.isGM || opts.length) h += '<div class="sc-avail"><div class="tp-subh"><span class="tp-lab">Who can make it</span>' + (opts.length ? '<span class="tp-dim">' + (ctx.me && !ctx.ro ? 'tap your row: yes, maybe, no' : '') + '</span>' : '') + '</div>' + grid(s, ctx, known, opts, tl) + '</div>';
     if (ctx.me && !ctx.ro && opts.length) {
       var mine = (s.avail[ctx.me] || {}).note || '';
       h += '<div class="sc-mynote"><label class="sc-row"><span class="tp-lab">Your note</span><input type="text" class="tp-in sc-grow" data-ui="sched.note" aria-label="Your availability note" placeholder="Away the week of the 20th…" value="' + esc(draft(ctx, 'sched.note', mine)) + '"></label></div>';

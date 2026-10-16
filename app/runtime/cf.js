@@ -3,7 +3,8 @@
    (see HOSTING.md) so the page runs unchanged outside the claude.ai artifact. The db serves the
    `characters` collection, the shared `campaign/main` document (CAMPAIGN.md) and the `npcs` collection (CAST.md).
    window.claude.rules (list, import, saveHouse, deleteHouse) is the rules wiki's corpus (RULES.md).
-   window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay) is the GM tools'
+   window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay, ambient,
+   patchAmbient, stt, patchStt, sttToken, transcript, addTranscript) is the GM tools'
    API (GM.md): plain calls, never queued, cached or snapshotted here.
    window.claude.profile.setName(name) changes the signed-in person's own display name (PATCH /api/me); a plain call too.
    Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network
@@ -26,14 +27,22 @@
   var MEMBERS_TTL_MS = 60000;
   var STORE = 'b68.cf.', LAST = 'b68.cf.last';   /* localStorage: b68.cf.<user id>#<campaign> (+ '#queue'), and which user was last */
   var COALESCE_MAX = 200000;     /* never merge queued patches into a body near the server's 256 KiB limit */
+  var READ_TIMEOUT_MS = 15000, WRITE_TIMEOUT_MS = 25000;   /* a request with no answer by then is abandoned (a stalled connection) */
   function snapshotMs() { return typeof window.__B68_SNAPSHOT_MS === 'number' ? window.__B68_SNAPSHOT_MS : 2000; }
+  function timeoutMs(method) {
+    if (typeof window.__B68_TIMEOUT_MS === 'number') return window.__B68_TIMEOUT_MS;
+    return method === 'GET' ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS;
+  }
 
   /* ---------- helpers ---------- */
   function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  /* how often the characters, campaign and NPCs are looked at: every 4 s while the page is in front, once a minute when it is hidden
+     (the Workers Free plan allows 100,000 requests a day for the whole site; a hidden tab learns what changed at its next look, or at
+     once when it comes back, as a visibilitychange polls straight away) */
   function pollMs() {
     if (typeof window.__B68_POLL_MS === 'number') return window.__B68_POLL_MS;
-    return document.hidden ? 20000 : 4000;
+    return document.hidden ? 60000 : 4000;
   }
   /* the server's PATCH semantics: objects merge, arrays and scalars replace, null deletes */
   function deepMerge(target, patch) {
@@ -69,11 +78,70 @@
       .map(function (x) { return x[0]; })
       .slice(0, LOG_MAX);
   }
-  /* the server's PATCH for the campaign: the deep merge above, except `log`, whose entries are added */
+  /* ---------- the campaign's clocks (CAMPAIGN.md, *Clocks*), as the server treats them (functions/_lib/campaign.js
+     withClockIds, applyClockOps): every clock has an id, and `clockOps` change one clock each, found by its id ---------- */
+  var CLOCK_SIZES = [4, 6, 8, 10, 12], CLOCK_FIELDS = ['name', 'size', 'kind', 'hidden', 'filled'], CLOCK_OPS_MAX = 200;
+  function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
+  /* the size a clock is drawn with: its own when it is one of CLOCK_SIZES, else the nearest */
+  function clockSize(c) {
+    var n = +(c && c.size);
+    if (CLOCK_SIZES.indexOf(n) >= 0) return n;
+    n = n || 4;
+    return CLOCK_SIZES.reduce(function (b, s) { return Math.abs(s - n) < Math.abs(b - n) ? s : b; }, 4);
+  }
+  function clampFill(n, size) { n = Math.round(+n || 0); return n < 0 ? 0 : n > size ? size : n; }
+  /* a clock without an id is 'c_<i>' (its place among the clocks), a repeated id gets '_' added, entries that are not
+     objects are left out (app/campaign.js normalize names them the same way); the same array when nothing changes */
+  function clockIds(list) {
+    if (!Array.isArray(list)) return list;
+    var seen = Object.create(null), out = [], changed = false;
+    list.forEach(function (c) {
+      if (!isObj(c)) { changed = true; return; }
+      var id = str(c.id) || 'c_' + out.length;
+      while (seen[id]) id += '_';
+      seen[id] = true;
+      if (id === c.id) { out.push(c); return; }
+      var o = clone(c); o.id = id; out.push(o); changed = true;
+    });
+    return changed ? out : list;
+  }
+  function withClockIds(doc) { if (doc && Array.isArray(doc.clocks)) doc.clocks = clockIds(doc.clocks); return doc; }
+  /* clockOps, in order: { id, name?, size?, kind?, hidden?, filled? } sets those fields (the fill kept within 0..size),
+     { add: clock } appends a clock unless its id is there, { remove: id } takes one out; an op for a clock that is not
+     there does nothing. A new array. */
+  function applyClockOps(list, ops) {
+    var clocks = clockIds(Array.isArray(list) ? list : []).slice();
+    (Array.isArray(ops) ? ops : []).forEach(function (op) {
+      if (!isObj(op)) return;
+      var i;
+      if (op.add !== undefined) {
+        var a = isObj(op.add) ? op.add : {};
+        if (clocks.some(function (c) { return c.id === a.id; })) return;
+        var size = a.size === undefined ? 4 : a.size;
+        clocks.push({ id: a.id, name: a.name === undefined ? '' : a.name, size: size, filled: clampFill(a.filled, size), kind: a.kind === undefined ? 'other' : a.kind, hidden: a.hidden === true });
+      } else if (op.remove !== undefined) {
+        for (i = 0; i < clocks.length; i++) if (clocks[i].id === op.remove) { clocks.splice(i, 1); break; }
+      } else {
+        for (i = 0; i < clocks.length; i++) if (clocks[i].id === op.id) break;
+        if (i >= clocks.length) return;
+        var c = clone(clocks[i]);
+        CLOCK_FIELDS.forEach(function (k) { if (op[k] !== undefined) c[k] = clone(op[k]); });
+        if (op.filled !== undefined || op.size !== undefined) c.filled = clampFill(c.filled, clockSize(c));
+        clocks[i] = c;
+      }
+    });
+    return clocks;
+  }
+  /* the server's PATCH for the campaign: the deep merge above, except `log`, whose entries are added, and `clockOps`,
+     applied after it to the clocks (a whole `clocks` array, the previous release's tick, replaces them first); every
+     write leaves each clock with an id */
   function mergeCampaign(doc, patch) {
     var rest = {};
-    Object.keys(patch).forEach(function (k) { if (k !== 'log') rest[k] = patch[k]; });
+    Object.keys(patch).forEach(function (k) { if (k !== 'log' && k !== 'clockOps') rest[k] = patch[k]; });
+    withClockIds(doc);
     deepMerge(doc, rest);
+    withClockIds(doc);
+    if (Array.isArray(patch.clockOps)) doc.clocks = applyClockOps(doc.clocks, patch.clockOps);
     if ('log' in patch && Array.isArray(patch.log)) doc.log = mergeLog(doc.log, patch.log);
     return doc;
   }
@@ -111,7 +179,17 @@
   var lastSync = null;         /* ISO time of the last successful poll or flushed write */
   var queue = [];              /* own writes not yet accepted by the server, oldest first */
   var sentStatus = null;
-  function status() { return { online: mode === 'online' && net, pending: queue.length, lastSync: lastSync }; }
+  var newBuild = null;         /* the server's build (X-B68-Build on every API answer, `build` in /api/me) when it differs from this page's */
+  function status() { return { online: mode === 'online' && net, pending: queue.length, lastSync: lastSync, newBuild: newBuild }; }
+  /* the page's build is routes.js's B68_BUILD; when the server reports another one a deploy happened while this page was
+     open, and the header offers "Updated: reload" (boot.js whoami). Unknown on this side: nothing to say. An answer
+     without the header (Access's sign-in page, a redirect) says nothing about the build and changes nothing. */
+  function noteBuild(server) {
+    if (typeof server !== 'string' || !server) return;
+    var mine = typeof window.B68_BUILD === 'string' ? window.B68_BUILD : '';
+    var next = mine && server !== mine ? server.slice(0, 40) : null;
+    if (next !== newBuild) { newBuild = next; emitStatus(); }
+  }
   function emitStatus() {
     var s = status(), j = JSON.stringify(s);
     if (window.B68Runtime) window.B68Runtime.status = s;
@@ -132,16 +210,31 @@
 
   /* fetch JSON. Rejects with Error(api error string). A 401, or anything that looks like the Access
      login page instead of our API (a followed or opaque redirect, a non-JSON body), marks the session signed out.
-     A network failure rejects with an error carrying `network: true`. */
+     A network failure rejects with an error carrying `network: true`. A request with no answer within timeoutMs()
+     (15 s for a read, 25 s for a write: a connection that is "up" but dead, a dropped stream) is abandoned and rejects
+     the same way (plus `timeout: true`), so a stalled request never holds the poller or the write queue: the next tick,
+     the `online` event and the retry timer carry on as after any other network failure. */
   var signedOutWhy = '';       /* why the last 401 said so (the server's reason, or that Access answered with its login page) */
   function api(method, path, body) {
     if (signedOut) return Promise.reject(signedOutError());
     var opts = { method: method, credentials: 'same-origin', cache: 'no-store', redirect: 'manual', headers: { Accept: 'application/json' } };
     if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    var ctl = null, timer = null, timedOut = false, limit = timeoutMs(method);
+    if (typeof AbortController === 'function') { try { ctl = new AbortController(); opts.signal = ctl.signal; } catch (e) { ctl = null; } }
+    function netFail(e) {
+      setNet(false);
+      var err;
+      if (timedOut) { err = new Error('no answer from the server in ' + Math.round(limit / 1000) + ' s'); err.timeout = true; }
+      else err = e instanceof Error ? e : new Error(String(e && e.message || e || 'network error'));
+      try { err.network = true; } catch (x) { err = new Error(err.message); err.network = true; }
+      throw err;
+    }
     var sent;
     try { sent = fetch('/api' + path, opts); } catch (e) { sent = Promise.reject(e); }
+    if (ctl) timer = setTimeout(function () { timedOut = true; try { ctl.abort(); } catch (e) {} }, limit);
     return Promise.resolve(sent).then(function (res) {
       setNet(true);
+      noteBuild(res.headers && res.headers.get ? res.headers.get('x-b68-build') : null);
       var ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
       if (res.status === 401 || res.redirected || res.type === 'opaqueredirect' || ct.indexOf('json') < 0) {
         var out = function (why) {
@@ -160,13 +253,8 @@
         var j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
         if (!res.ok) { var err = new Error((j && j.error) || ('HTTP ' + res.status)); err.status = res.status; throw err; }
         return j;
-      });
-    }, function (e) {
-      setNet(false);
-      var err = e instanceof Error ? e : new Error(String(e && e.message || e || 'network error'));
-      try { err.network = true; } catch (x) { err = new Error(err.message); err.network = true; }
-      throw err;
-    });
+      }, netFail);                               /* the headers came but the body did not (aborted, a dropped stream): a network failure too */
+    }, netFail).then(function (v) { clearTimeout(timer); return v; }, function (e) { clearTimeout(timer); throw e; });
   }
 
   /* ---------- user ---------- */
@@ -177,6 +265,7 @@
   function loadMe() {
     if (!meP) meP = api('GET', '/me').then(function (m) {
       if (!m || !m.id) return null;
+      if (typeof m.build === 'string') noteBuild(m.build);
       me = m; mode = 'online';
       writeJSON(LAST, { key: userKey(m), id: m.id });
       restore(m, null);
@@ -546,7 +635,8 @@
 
   /* on start: this user's queued writes, and the snapshot (the whole cache after an offline start; online it only
      matters for documents with queued writes, which the first full load leaves alone). Queued writes are applied
-     again on top: every one of them is idempotent (deep merge, log append with dedup, PUT, DELETE). */
+     again on top: every one of them is idempotent (deep merge, log append with dedup, clock ops that set values, PUT,
+     DELETE). */
   function restore(m, snap) {
     snap = snap || readJSON(userKey(m));
     if (snap && snap.me && snap.me.id === m.id) {
@@ -585,7 +675,7 @@
   }
   function applyLocal(q) {
     if (q.kind === 'campaign') {
-      if (q.method === 'PUT') camp.doc = trimLog(clone(q.body));
+      if (q.method === 'PUT') camp.doc = withClockIds(trimLog(clone(q.body)));
       else if (q.method === 'PATCH' && camp.doc) mergeCampaign(camp.doc, q.body);
     } else if (q.kind === 'npc') {
       if (q.method === 'PUT') npcs.docs[q.id] = clone(q.body);
@@ -637,8 +727,8 @@
      body is provably the same as the two in a row under the server's rule, whatever the stored document holds:
      at the top level anything goes except an object over a non-object; below it a null (a delete) or an object
      over a non-object is not safe (the stored value could be a non-object, which the first patch would replace
-     with its literal object). The campaign `log` appends, so the two lists concatenate. Returns the merged
-     patch or null. */
+     with its literal object). The campaign `log` appends, so the two lists concatenate; so do its `clockOps`
+     (fills alone keep the last one per clock). Returns the merged patch or null. */
   function foldPatch(a, b, depth, campaign) {
     if (!isObj(a) || !isObj(b)) return null;
     var out = clone(a), keys = Object.keys(b);
@@ -649,6 +739,15 @@
         out.log = (has ? a.log : []).concat(clone(bv));
         continue;
       }
+      /* clockOps apply in order, so the lists concatenate; `clocks` after them cannot fold (the server replaces the
+         clocks with a whole array before it applies the ops) */
+      if (campaign && depth === 0 && k === 'clockOps') {
+        if (!Array.isArray(bv) || (has && !Array.isArray(a.clockOps))) return null;
+        out.clockOps = lastFills((has ? a.clockOps : []).concat(clone(bv)));
+        if (out.clockOps.length > CLOCK_OPS_MAX) return null;
+        continue;
+      }
+      if (campaign && depth === 0 && k === 'clocks' && Object.prototype.hasOwnProperty.call(a, 'clockOps')) return null;
       if (bv === null) { if (depth > 0) return null; out[k] = null; continue; }
       if (isObj(bv)) {
         if (!has) { out[k] = clone(bv); continue; }
@@ -661,14 +760,28 @@
     }
     return out;
   }
+  /* a clock fill and nothing else ({ id, filled }); a list of them only: the last one for each clock does what they all do */
+  function isFill(op) { return isObj(op) && typeof op.id === 'string' && op.filled !== undefined && Object.keys(op).length === 2; }
+  function lastFills(ops) {
+    if (!ops.every(isFill)) return ops;
+    var last = Object.create(null);
+    ops.forEach(function (op, i) { last[op.id] = i; });
+    return ops.filter(function (op, i) { return last[op.id] === i; });
+  }
+  /* a campaign patch that only fills clocks (clockOps of fills, and the page's updatedAt) */
+  function fillsOnly(body) {
+    return isObj(body) && Array.isArray(body.clockOps) && body.clockOps.length > 0 && body.clockOps.every(isFill) &&
+      Object.keys(body).every(function (k) { return k === 'clockOps' || k === 'updatedAt'; });
+  }
   function tryFold(q) {
     var last = queue[queue.length - 1];
     if (!last || last === sendingQ || !last.mine || last.method !== 'PATCH' || q.method !== 'PATCH' || last.kind !== q.kind || last.path !== q.path) return false;
     /* never into an entry another tab is sending, or has already sent (gone from storage) */
     var x = stored().filter(function (e) { return e.qid === last.qid; })[0];
     if (last.saved ? !x || claimedElsewhere(x) : false) return false;
-    /* a player's campaign patches are checked field by field: one refused change would sink both, so never fold them */
-    if (q.kind === 'campaign' && !(me && me.role === 'gm')) return false;
+    /* a player's campaign patches are checked field by field: one refused change would sink both, so they are not folded,
+       except two that only fill clocks (the rule never refuses a fill, and a fill of a clock that is gone does nothing) */
+    if (q.kind === 'campaign' && !(me && me.role === 'gm') && !(fillsOnly(last.body) && fillsOnly(q.body))) return false;
     var merged = foldPatch(last.body, q.body, 0, q.kind === 'campaign');
     if (!merged || JSON.stringify(merged).length > COALESCE_MAX) return false;
     last.body = merged;
@@ -682,10 +795,14 @@
     if (!into) { queue.push(q); bump(q, 1); into = q; }
     saveQueue(); emitStatus();
     return new Promise(function (resolve, reject) {
-      if (offlineNow()) resolve();             /* queued: it goes out when the network is back */
+      if (offlineNow() || signedOut) resolve();   /* queued: it goes out when the network is back (or at this user's next signed-in visit) */
       else into.waiters.push({ resolve: resolve, reject: reject });
     });
   }
+  /* a write made after the session ended (E6): it stays in this user's stored queue, which the next visit (signed in again)
+     sends, and the promise rejects now with the signed-out message, so the page says what to do (reload to sign in) rather
+     than report a save that has not happened. Another account on this browser never sees or sends it (the queue is per user). */
+  function keptForNextVisit(p) { return p.then(function () { throw signedOutError(); }); }
   function retryLater() {
     if (retryTimer || !queue.length || signedOut) return;
     retryTimer = setTimeout(function () { retryTimer = null; kick(); }, pollMs());
@@ -788,13 +905,14 @@
     return reconnecting;
   }
 
-  /* an own write: update the cache now, queue it, send it; the server's version replaces the cache when it answers */
+  /* an own write: update the cache now, queue it, send it; the server's version replaces the cache when it answers.
+     After a sign-out it is still queued (kept for this user's next visit) but rejected, see keptForNextVisit. */
   function write(id, method, body, local) {
-    if (signedOut) return Promise.reject(signedOutError());
     var ch = {}; ch[id] = true;
     var p = enqueue({ kind: 'char', id: id, method: method, path: '/' + COLLECTION + '/' + encodeURIComponent(id), body: body === undefined ? undefined : clone(body) });
     epoch++;
     local(); notify(ch); persistSoon();
+    if (signedOut) return keptForNextVisit(p);
     flush();
     return p;
   }
@@ -827,13 +945,13 @@
 
   /* an own campaign write: same shape as write() above. The optimistic merge only applies to a loaded
      cache (before that there is nothing current to merge into), with the server's rule (mergeCampaign:
-     deep merge, log entries added); the server's answer then replaces it. A rejected
+     deep merge, log entries added, clockOps applied by clock id); the server's answer then replaces it. A rejected
      write (e.g. 403 for a player) forces a refetch so the optimistic change is rolled back. */
   function campaignWrite(method, body, local) {
-    if (signedOut) return Promise.reject(signedOutError());
     var p = enqueue({ kind: 'campaign', method: method, path: '/' + CAMPAIGN, body: clone(body) });
     camp.epoch++;
     if (camp.loaded) { local(); notifyCampaign(); persistSoon(); }
+    if (signedOut) return keptForNextVisit(p);
     flush();
     return p;
   }
@@ -841,6 +959,7 @@
   function campaignRef() {
     return {
       id: CAMPAIGN_ID, path: CAMPAIGN + '/' + CAMPAIGN_ID,
+      clockOps: true,          /* update() takes `clockOps`, the server's per-clock changes (the page sends whole arrays to a store without it) */
       /* always exists: the server answers the default document while none is stored */
       get: function () {
         return api('GET', '/' + CAMPAIGN).then(function (r) {
@@ -852,7 +971,7 @@
         });
       },
       set: function (doc) {
-        return campaignWrite('PUT', doc, function () { camp.doc = trimLog(clone(doc)); });
+        return campaignWrite('PUT', doc, function () { camp.doc = withClockIds(trimLog(clone(doc))); });
       },
       update: function (patch) {
         return campaignWrite('PATCH', patch, function () { mergeCampaign(camp.doc, patch); });
@@ -864,12 +983,12 @@
   /* an own write to the cast: the GM only (the server says 403 to anyone else, so a player's call is refused here at once).
      Same shape as write(): the cache changes now, the write is queued and sent, the server's version replaces it. */
   function npcWrite(id, method, body, local) {
-    if (signedOut) return Promise.reject(signedOutError());
     if (!me || me.role !== 'gm') { var e = new Error('only the GM can change the cast'); e.status = 403; return Promise.reject(e); }
     var ch = {}; ch[id] = true;
     var p = enqueue({ kind: 'npc', id: id, method: method, path: '/' + NPCS + '/' + encodeURIComponent(id), body: body === undefined ? undefined : clone(body) });
     npcs.epoch++;
     if (npcs.loaded) { local(); notifyNpcs(ch); persistSoon(); }
+    if (signedOut) return keptForNextVisit(p);
     flush();
     return p;
   }
@@ -1033,13 +1152,16 @@
     /* GET /api/gm/state -> { doc, updatedAt }; PATCH merges (maps merge, null deletes) -> { doc, updatedAt } */
     state: function () { return api('GET', '/gm/state'); },
     patchState: function (patch) { return api('PATCH', '/gm/state', patch || {}); },
-    /* GET /api/gm/display?seq=N&aseq=M -> { seq, display, updatedAt, ambient: { seq, doc, updatedAt } }. An ambient seq M that
-       is still current gives ambient: { seq, unchanged: true }; both current -> { seq, unchanged: true, ambient: { seq, unchanged: true } }.
-       seq alone (no aseq) is the old call: { seq, unchanged: true } while current, with the ambient ignored. */
-    display: function (seq, aseq) {
+    /* GET /api/gm/display?seq=N&aseq=M&sseq=K -> { seq, display, updatedAt, ambient: { seq, doc, updatedAt }, stt: { seq, want,
+       session } }. A part whose seq is still current comes as { seq, unchanged: true }; all three current -> { seq, unchanged: true,
+       ambient: { seq, unchanged: true }, stt: { seq, unchanged: true } }. stt is only what the table iPad needs of the transcriber
+       (GM.md "Listening"); without sseq the answer has no stt, and seq alone (no aseq) is the oldest call: { seq, unchanged: true }
+       while current, with the parts ignored. */
+    display: function (seq, aseq, sseq) {
       var q = [];
       if (seq !== undefined && seq !== null) q.push(qs('seq', seq));
       if (aseq !== undefined && aseq !== null) q.push(qs('aseq', aseq));
+      if (sseq !== undefined && sseq !== null) q.push(qs('sseq', sseq));
       return api('GET', '/gm/display' + (q.length ? '?' + q.join('&') : ''));
     },
     /* PUT /api/gm/display { kind: blank | dark | svg | npc | text, title, caption, svg | npcId | text } -> { seq, display, updatedAt } */
@@ -1125,7 +1247,8 @@
     }
     var nav = window.navigator;
     if (!nav || !nav.serviceWorker || typeof nav.serviceWorker.register !== 'function') return;
-    var register = function () { try { nav.serviceWorker.register('sw.js', { scope: './' }).catch(function () {}); } catch (e) {} };
+    /* updateViaCache 'none': sw.js imports routes.js (the build stamp), and the update check must fetch that import fresh too */
+    var register = function () { try { nav.serviceWorker.register('sw.js', { scope: './', updateViaCache: 'none' }).catch(function () {}); } catch (e) {} };
     if (d.readyState === 'complete' || typeof window.addEventListener !== 'function') register();
     else window.addEventListener('load', register);
   })();

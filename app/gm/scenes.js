@@ -37,6 +37,9 @@
    sc.replay(replay)  redraw a stored roll (clones replay.mem for you)
    sc.mem()           the instance's live repeat-guard memory
    Helpers: B68GmScenes.seedRng(a) · plain(md)
+   B68GmScenes.check(T) -> [string]   the table keys a pack is missing or has empty ('rumour', 'weather.Night',
+       'district.<name>.notables', …), for the page to show when a pack is loaded. Empty = the pack is complete.
+       A district's `special` is optional.
    --------------------------------------------------------------------------------------------------------------- */
 (function (root, factory) {
   'use strict';
@@ -60,6 +63,31 @@
   var cap = function (t) { return t.charAt(0).toUpperCase() + t.slice(1); };
   function plain(s) {
     return String(s).replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/\s+/g, ' ').trim();
+  }
+
+  // ---- check(): the keys generate() and the card read, reported when missing or empty -----------------------------
+  function check(T) {
+    if (!isObj(T)) return ['T'];
+    var miss = [], need = function (k, ok) { if (!ok) miss.push(k); };
+    var list = function (a) { return Array.isArray(a) && a.length > 0 && a.every(function (x) { return x != null && x !== ''; }); };
+    need('district', list(T.district));
+    (Array.isArray(T.district) ? T.district : []).forEach(function (d, i) {
+      if (!isObj(d) || !d.n) { miss.push('district.' + i); return; }
+      var at = 'district.' + d.n + '.';
+      need(at + 'p', !!d.p);
+      need(at + 'r', Array.isArray(d.r) && d.r.length >= 4);
+      ['streets', 'buildings', 'factions'].forEach(function (k) { need(at + k, !!d[k]); });
+      ['named', 'scene', 'landmarks'].forEach(function (k) { need(at + k, list(d[k])); });
+      need(at + 'notables', list(d.notables) && d.notables.every(function (x) { return Array.isArray(x) && x.length >= 3; }));
+    });
+    // two times of day: the first is the 1-in-2 draw, the second the other
+    var times = isObj(T.weather) ? Object.keys(T.weather) : [];
+    need('weather', times.length >= 2);
+    times.slice(0, 2).forEach(function (t) { need('weather.' + t, list(T.weather[t])); });
+    ['streetType', 'streetSound', 'streetSmell', 'streetObstacle', 'buildingCommon', 'buildingRare', 'rumour', 'faction']
+      .forEach(function (k) { need(k, list(T[k])); });
+    need('ratingLabels', Array.isArray(T.ratingLabels) && T.ratingLabels.length >= 4);
+    return miss;
   }
 
   // ---- the generator: generate() from the vault, on one seeded stream -------------------------------------------
@@ -175,5 +203,5 @@
     };
   }
 
-  return { create: create, seedRng: seedRng, plain: plain, ID: 'scenes' };
+  return { create: create, check: check, seedRng: seedRng, plain: plain, ID: 'scenes' };
 });

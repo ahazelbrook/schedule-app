@@ -4,10 +4,11 @@
 // fetch, atob and TextEncoder, so node (>= 20) can import it for checks/api/jwt.mjs.
 
 const JWKS_TTL_MS = 60 * 60 * 1000; // one hour
-const JWKS_REFETCH_GAP_MS = 10 * 1000; // an unknown kid triggers at most one refetch per 10 s
+const JWKS_REFETCH_GAP_MS = 10 * 1000; // an unknown kid triggers at most one refetch per 10 s; a failed fetch waits as long
+const JWKS_STALE_MAX_MS = 24 * 60 * 60 * 1000; // when refreshing fails, the last good keys serve for at most a day past their hour
 const NBF_LEEWAY_S = 60; // tolerate a little clock skew on nbf / iat
 
-// Module-level cache, one per isolate: team -> { keys: Map(kid -> CryptoKey), fetchedAt }
+// Module-level cache, one per isolate: team -> { keys: Map(kid -> CryptoKey), fetchedAt, retryAt? }
 const jwksCache = new Map();
 
 export function resetJwksCache() {
@@ -60,12 +61,28 @@ async function fetchJwks(team, now) {
   return entry;
 }
 
+// The keys for a kid. Past the hour the keys are refreshed; when that fetch fails (Cloudflare's certs endpoint having a
+// bad minute) the last good keys go on verifying, so nobody is signed out by it, for at most JWKS_STALE_MAX_MS past
+// their hour; with no keys, or older than that, the failure stands. A failed fetch is not retried for
+// JWKS_REFETCH_GAP_MS, so a run of requests does not wait on a run of failing fetches. A kid that is not among the
+// keys still refetches (rotated keys) and fails when the fetch does: stale keys never vouch for a kid they lack.
+async function refresh(team, entry, now) {
+  try { return await fetchJwks(team, now); } catch (e) { if (entry) entry.retryAt = now + JWKS_REFETCH_GAP_MS; throw e; }
+}
+
 async function keyFor(team, kid, now) {
   let entry = jwksCache.get(team);
-  if (!entry || now - entry.fetchedAt > JWKS_TTL_MS) entry = await fetchJwks(team, now);
+  const due = (e) => !(e.retryAt > now);
+  const tooOld = (e) => now - e.fetchedAt > JWKS_TTL_MS + JWKS_STALE_MAX_MS;
+  if (!entry) entry = await refresh(team, null, now);
+  else if (now - entry.fetchedAt > JWKS_TTL_MS) {
+    if (due(entry)) {
+      try { entry = await refresh(team, entry, now); } catch (e) { if (tooOld(entry)) throw e; }
+    } else if (tooOld(entry)) throw new Error('certs fetch failed: no fresh keys');
+  }
   let key = entry.keys.get(kid);
-  if (!key && now - entry.fetchedAt > JWKS_REFETCH_GAP_MS) {
-    entry = await fetchJwks(team, now); // keys may have rotated: refetch once
+  if (!key && now - entry.fetchedAt > JWKS_REFETCH_GAP_MS && due(entry)) {
+    entry = await refresh(team, entry, now); // keys may have rotated: refetch once
     key = entry.keys.get(kid);
   }
   return key || null;

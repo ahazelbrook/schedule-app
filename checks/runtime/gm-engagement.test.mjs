@@ -61,7 +61,8 @@ for (const [name, tables] of [['fixture', T], ['real', REAL]]) {
       const r = en.roll({ approach: app[0], load: ld.value, mods }, { seed: seedOf(n++) });
       const text = r.lines.map((l) => (l.md || '') + (l.rows || []).map((x) => x.k + x.md).join('')).join('\n') + r.meta.all.join('\n');
       assert.ok(!BAD.test(text), 'bad token');
-      assert.equal(r.meta.title, app[0] + ' — ' + r.pool + 'd');
+      assert.equal(r.meta.title, app[0] + ' — ' + (r.pool > 0 ? r.pool + 'd' : '0d (2d, keep lowest)'));
+      assert.ok(!/-\d+d/.test(r.meta.title + r.meta.label), 'B13: the title never shows a negative pool: ' + r.meta.title);
       assert.ok(r.meta.sub.includes(app[1]) && r.meta.sub.includes(ld.value + ' loadout, load ' + ld.load) && r.meta.sub.includes(tables.cite));
       assert.deepEqual(r.lines.map((l) => l.id), ['mods', 'result', 'roll', 'cut']);
       assert.equal(r.lines[3].md, tables.cut);
@@ -122,7 +123,11 @@ await test('card(): the preview before a roll', () => {
   assert.equal(c.pool, 0);
   assert.deepEqual(c.lines.map((l) => l.id), ['mods', 'set']);
   assert.equal(c.lines[1].md, 'Set the factors, then roll.');
-  assert.equal(c.meta.title, 'Slip — 0d');
+  assert.equal(c.meta.title, 'Slip — 0d (2d, keep lowest)');
+  // B13: below zero reads the same, never "-1d"; the pool itself keeps the arithmetic
+  assert.equal(en.card({ approach: 'Slip', load: 'Loud', mods: { tier: -1, bold: -1 } }).meta.title, 'Slip — 0d (2d, keep lowest)');
+  assert.equal(en.roll({ approach: 'Slip', load: 'Loud', mods: { tier: -1, bold: -1 } }, { seed: 1 }).pool, -1);
+  assert.deepEqual([-2, -1, 0, 1, 3].map(E.titlePool), ['0d (2d, keep lowest)', '0d (2d, keep lowest)', '0d (2d, keep lowest)', '1d', '3d']);
   assert.equal(c.meta.sub, "opening gambit is the unwatched door · Loud loadout, load 6 · '68 p.1–2");
 });
 
@@ -183,6 +188,21 @@ await test('exporter: the engagement part from an invented page, and the checks 
     must((p) => p.replace('["Smash",  "the weak hinge"],', '["Smash"],'), /T\.approach/);
     must((p) => p.replace('{ id: "tier",', '{ idd: "tier",'), /T\.factor/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// B8 (the generator review, 16/10/2026): check(T) names what a pack is missing or has empty
+await test('B8: check(T) names every key a pack is missing or has empty; the fixture is complete', () => {
+  assert.deepEqual(E.check(T), [], 'the fixture is complete');
+  if (REAL) assert.deepEqual(E.check(REAL), [], 'the real pack is complete');
+  assert.deepEqual(E.check(null), ['T']);
+  for (const k of Object.keys(T)) {
+    const del = clone(T); delete del[k];
+    assert.ok(E.check(del).includes(k), 'delete ' + k + ': ' + JSON.stringify(E.check(del)));
+  }
+  const U = clone(T); U.outcome.six = { pos: 'Ahead' }; U.factor[1] = { id: 'tier', plus: 'x' }; U.approach.push(['Lonely']); U.cut = '';
+  assert.deepEqual(E.check(U), ['approach', 'factor', 'outcome.six', 'cut']);
+  const V = clone(T); V.loadout = []; V.outcome = {};
+  assert.deepEqual(E.check(V), ['loadout', 'outcome.crit', 'outcome.six', 'outcome.risky', 'outcome.desperate']);
 });
 
 await test('the public file holds no table text and no long string literal', () => {

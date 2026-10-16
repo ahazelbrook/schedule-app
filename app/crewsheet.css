@@ -9,10 +9,10 @@
   --cs-grey: color-mix(in srgb, var(--ink) 13%, var(--card));
   --cs-bar: color-mix(in srgb, var(--mustard) 22%, color-mix(in srgb, var(--ink) 14%, var(--card)));
 }
-/* the full sheet takes the whole width; clocks and players sit side by side below it */
+/* the full sheet takes the whole width; the clocks, the log and the players (column B, which the page reads first) sit side by
+   side above it, the crew sheet and the schedule below */
 #table-page .tp-grid:has(.cs-sheet) { grid-template-columns: minmax(0, 1fr); }
-#table-page .tp-grid:has(.cs-sheet) .tp-colB { grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); align-items: start; }
-@media print, (min-width: 901px) { #table-page .tp-grid:has(.cs-sheet) .tp-colB { grid-column: 1; grid-row: 2; } }   /* the crew sheet above (column B comes first in the page, for phones) */
+#table-page .tp-grid:has(.cs-sheet) .tp-colB { grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); align-items: start; }
 #table-page .cs-body { gap: 14px; }
 #table-page .cs-row { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
 #table-page .cs-gap { flex: 1; }
@@ -254,7 +254,7 @@
 #table-page .cs-boxes.linked { gap: 4px; }
 #table-page .cs-box { position: relative; width: 14px; height: 14px; border: 2px solid var(--rule); border-radius: 3px; background: var(--card); padding: 0; cursor: pointer; }
 #table-page .cs-box.on { background: var(--rule); }
-#table-page .cs-boxes.linked .cs-box + .cs-box::before { content: ""; position: absolute; left: -6px; top: 4px; width: 4px; height: 2px; background: var(--rule); }
+#table-page .cs-boxes.linked .cs-box + .cs-box::after { content: ""; position: absolute; left: -6px; top: 4px; width: 4px; height: 2px; background: var(--rule); pointer-events: none; }   /* ::after: on touch ::before is the hit area; a tap on the line goes to the boxes it joins */
 #table-page .cs-costh { display: block; margin-top: 6px; font: 900 9.5px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-faint); }
 #table-page .cs-cost { display: block; font-size: 12.5px; }
 
@@ -286,6 +286,37 @@
   #table-page .cs-bl { font-size: 14px; padding: 3px 8px 5px; }
 }
 
+/* ---- touch: the tracks a player taps in play (rep, hold, tier, heat, wanted level, crew xp, stacks, vaults) ----
+   Each mark keeps its size and gets an invisible ::before hit area, 40px tall and as wide as its pitch in the row, as the living
+   sheet's pips do (tracker.css); a skewed or turned mark turns its area back square (--hit-t). Rows that wrap are kept 40px apart,
+   so one mark's area never lies over another's. */
+@media screen and (max-width: 760px), screen and (pointer: coarse) {
+  #table-page .cs-pill, #table-page .cs-tier, #table-page .cs-cube { position: relative; }
+  #table-page .cs-pill::before, #table-page .cs-tier::before, #table-page .cs-cube::before {
+    content: ""; position: absolute; left: 50%; top: 50%; width: var(--hit-w, 19px); height: var(--hit-h, 40px); transform: translate(-50%, -50%) var(--hit-t, rotate(0deg)); }
+  #table-page .cs-pill { --hit-w: 16px; --hit-t: rotate(-16deg); }   /* the pitch on a phone: 12px wide, 2px margin, 2px gap */
+  #table-page .cs-tier { --hit-w: 23px; }
+  #table-page .cs-cube { --hit-w: 22px; }
+  #table-page .cs-bar, #table-page .cs-pills { row-gap: 12px; }
+  #table-page .cs-cubes, #table-page .cs-vaults { row-gap: 20px; }
+  /* the Anger clock, drawn larger (its four wedges are tapped) */
+  #table-page .cs-angerbox { width: 78px; height: 78px; }
+  #table-page .cs-angerbox .tp-clocksvg { width: 66px; height: 66px; }
+  /* the ability circles (and the Utopians' circle marks), the upgrade boxes and the contact dots: the same invisible area,
+     40px tall and as wide as the mark's pitch (a circle 15px with 2px to the next, a box 14px with 2px or, linked, 4px; a
+     contact dot is alone at the start of its row). Their rows are at least 40px tall with the mark in the middle of that
+     height, so an area never reaches into the row above or below. */
+  #table-page button.cs-circ, #table-page .cs-cdot { position: relative; }
+  #table-page button.cs-circ::before, #table-page .cs-box::before, #table-page .cs-cdot::before {
+    content: ""; position: absolute; left: 50%; top: 50%; width: var(--hit-w, 19px); height: var(--hit-h, 40px); transform: translate(-50%, -50%); }
+  #table-page button.cs-circ { --hit-w: 17px; }
+  #table-page .cs-box { --hit-w: 16px; }
+  #table-page .cs-boxes.linked .cs-box { --hit-w: 18px; }
+  #table-page .cs-cdot { --hit-w: 40px; }
+  #table-page .cs-ab { padding: 11px 0; min-height: 41px; }   /* the circle 13px from the top of its first line: its area is the row's first 41px */
+  #table-page .cs-up, #table-page .cs-contact, #table-page .cs-circh { min-height: 40px; }
+}
+
 /* ---- read only ---- */
 #table-page.tp-ro .cs-pill, #table-page.tp-ro .cs-tier, #table-page.tp-ro .cs-circ, #table-page.tp-ro .cs-cube, #table-page.tp-ro .cs-box, #table-page.tp-ro .cs-unit, #table-page.tp-ro .cs-cdot, #table-page.tp-ro .cs-opt, #table-page.tp-ro .cs-word, #table-page.tp-ro .cs-cell { cursor: default; }
 #table-page.tp-ro .cs-cell:hover { box-shadow: none; }
@@ -295,8 +326,10 @@
 @media print {
   /* one column, in plain blocks: grid rows do not grow when a box inside is pushed to the next page, so what follows
      the crew sheet (schedule, clocks, players) would print over its last panels */
-  #table-page .tp-grid:has(.cs-sheet), #table-page .tp-grid:has(.cs-sheet) > .tp-col { display: block; }
-  #table-page .tp-grid:has(.cs-sheet) > * + *, #table-page .tp-grid:has(.cs-sheet) > .tp-col > * + * { margin-top: 14px; }
+  #table-page .tp-grid:has(.cs-sheet) { display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
+  #table-page .tp-grid:has(.cs-sheet) > .tp-col { display: block; }
+  #table-page .tp-grid:has(.cs-sheet) > .tp-colA { order: -1; }   /* the crew sheet first, as it always printed (the page reads column B first, for phones) */
+  #table-page .tp-grid:has(.cs-sheet) > .tp-col > * + * { margin-top: 14px; }
   #table-page .cs-pickbox, #table-page .cs-chg, #table-page .cs-endp, #table-page .cs-adv .cs-row, #table-page .cs-develop .cs-row, #table-page .cs-xpbox .cs-row .btn, #table-page .cs-legacy .tp-x { display: none !important; }
   #table-page .cs-cols { grid-template-columns: minmax(0, 1fr); gap: 4mm; }
   #table-page .cs-scroll { overflow: visible; padding: 0; }

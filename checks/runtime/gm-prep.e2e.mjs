@@ -109,9 +109,17 @@ try {
   await page.keyboard.press('r');
   check(await page.waitForSelector('#gm-prep .pp-doc', { timeout: 10000 }).then(() => true, () => false), 'R opens Prep and the note renders');
   check(await page.$eval('[data-gm="panel"][data-panel="prep"]', (b) => b.getAttribute('aria-selected')) === 'true', 'the Prep tab is selected');
+  check(await page.evaluate(() => document.activeElement && document.activeElement.id === 'gm-prep-q'), 'R focuses the note’s find box, so typing is safe');
+  await page.keyboard.type('2');
+  check((await page.$$('#gm-earlier [data-gm="replay"]')).length === 0, 'a digit typed there rolls nothing');
+  await page.fill('#gm-prep-q', 'must'); await page.keyboard.press('Enter');
+  check(await page.$$eval('#gm-prep .pp-rail .chip', (cs) => cs.filter((c) => !c.hidden).map((c) => c.textContent.trim())).then((v) => v.length === 1 && /Must land/.test(v[0])), 'the find box filters the section rail; Enter goes to the first match');
+  await page.fill('#gm-prep-q', ''); await page.keyboard.press('Escape');
+  check(await page.$$eval('#gm-prep .pp-rail .chip', (cs) => cs.every((c) => !c.hidden)), 'cleared: every section is listed again');
   const boxes = await page.$$eval('#gm-prep .pp-box', (bs) => bs.map((b) => ({ a: b.getAttribute('data-task'), locked: b.getAttribute('aria-disabled') === 'true' })));
   check(boxes.length > 0 && boxes.some((b) => b.locked) === !!boxes.find((b) => b.locked), 'task boxes are tickable checkboxes (' + boxes.length + ')');
   check((await page.$$('#gm-prep .pp-sec')).length > 1 && (await page.$$('#gm-prep .pp-rail .chip')).length > 1, 'sections and a section rail');
+  check(await page.$eval('#gm-prep-q', (q) => q.getBoundingClientRect().height < 60), 'laptop: the note’s find box in the outline is one line tall');
   await shot(page, 'prep-desktop');
   if (!REAL) {
     const open1 = boxes.find((b) => !b.locked), done1 = boxes.find((b) => b.locked);
@@ -135,6 +143,11 @@ try {
     await page.reload(); await page.waitForSelector('#gm-prep .pp-doc', { timeout: 20000 });
     check(await page.$eval('#gm-prep .pp-box[data-task="' + open1.a + '"]', (b) => b.classList.contains('here')), 'reload: the tick is still there');
   }
+  /* 1280 wide with a beat running (and the iPad showing something): the bar, which now carries Now in, still holds every item on one row */
+  await page.setViewportSize({ width: 1280, height: 900 }); await sleep(400);
+  check(await page.evaluate(() => { const b = document.querySelector('.gm-bar'), r = b.getBoundingClientRect(); return r.height < 60 && b.scrollWidth <= b.clientWidth + 1 && [...b.querySelectorAll('.gm-now, .gm-beatbar, [data-gm="find-open"], #gm-bar-ipad, [data-gm="menu"]')].every((c) => { const q = c.getBoundingClientRect(); return q.width > 0 && q.right <= innerWidth + 1; }); }), 'laptop 1280: with a beat running, the bar holds Now in, the beat, Find, the iPad pill and the Menu on one row');
+  await shot(page, 'bar-1280-beat');
+  await page.setViewportSize({ width: 1440, height: 900 }); await sleep(300);
   /* the laptop layout: one window tall, the outline follows the reading, Focus shrinks the console to its keys */
   check(await page.evaluate(() => document.body.classList.contains('gm-app') && document.documentElement.scrollHeight <= innerHeight + 1), 'laptop: the page is one window tall with the note open');
   await page.evaluate(() => { const p = document.getElementById('gm-prep'); p.scrollTop = Math.floor(p.scrollHeight / 2); });
@@ -181,7 +194,8 @@ try {
   /* ---- the Screen tab (T) ---- */
   await page.keyboard.press('t');
   check(await page.waitForSelector('#gm-rules .gs-sec', { timeout: 5000 }).then(() => true, () => false), 'T opens the Screen and its sections render');
-  check(await page.$eval('[data-gm="panel"][data-panel="rules"]', (b) => /Screen/.test(b.textContent)), 'the tab is called Screen');
+  check(await page.$eval('[data-gm="panel"][data-panel="rules"]', (b) => /GM screen/.test(b.textContent)), 'the tab is called GM screen');
+  check(await page.evaluate(() => document.activeElement && document.activeElement.id === 'gm-gs-q'), 'T focuses the screen’s find box, so typing is safe');
   if (!REAL) {
     check(JSON.stringify(await page.$$eval('#gm-rules .gs-sec .gs-h span', (s) => s.map((x) => x.textContent))) === '["Rolling","Weather","Canals"]', 'one section per ## heading, Related left in the vault');
     check(/Geese first/.test(await page.textContent('#gm-rules .gs-intro')), 'the intro (house law) sits above the sections');
@@ -199,9 +213,47 @@ try {
     check(!!rd && rd.title === 'Canals' && /Goosegate/.test(rd.md) && rd.caption === 'GM screen', 'Show on iPad sends the section as a rule');
     check(await ipad.page.waitForFunction(() => /Goosegate/.test(document.querySelector('#display-page').textContent), null, { timeout: 15000 }).then(() => true, () => false), '#display shows it');
   }
+  /* the full rules, searched in the pane (A11): listed with a snippet, one read in place, Show on iPad as the rules page sends it, never a new tab.
+     The corpus is one invented house rule (its [TODO] note is the compiler's, and must reach neither the pane nor the iPad). */
+  if (await page.$('#gm-rq')) {
+    await page.evaluate(() => window.claude.rules.saveHouse('goose-law', { title: 'Goose Law', trail: 'House rules', body: 'A goose goes first in any scene, and nobody argues.\n\nThe second paragraph is about the marsh. [TODO: GM secret note]' }));
+    const tabs0 = page.context().pages().length;
+    await page.fill('#gm-rq', 'goose'); await page.press('#gm-rq', 'Enter');
+    check(await page.waitForSelector('#gm-rq-hits .gs-hit', { timeout: 15000 }).then(() => true, () => false), 'the full rules search lists its hits in the pane');
+    check(await page.$eval('#gm-rq-hits .gs-hit', (b) => /Goose Law/.test(b.querySelector('.gs-hit-t').textContent) && !!b.querySelector('.gs-hit-t mark') && /House rules/.test(b.querySelector('.gs-hit-c').textContent) && !!b.querySelector('.gs-hit-s mark')), 'a hit shows its title, its book and a snippet, the word marked in both');
+    check(page.context().pages().length === tabs0 && await page.$eval('#gm-rq-hits .gs-hitbar a[target="_blank"]', (a) => /Open in the Rules page/.test(a.textContent) && /#rules\?q=goose$/.test(a.getAttribute('href'))), 'no new tab: the rules page is a small link (Open in the Rules page)');
+    check(await page.waitForFunction(() => { const r = document.getElementById('gm-rq-hits').getBoundingClientRect(), p = document.getElementById('gm-rules').getBoundingClientRect(); return r.top >= p.top - 1 && r.bottom <= p.bottom + 1; }, null, { timeout: 4000 }).then(() => true, () => false), 'the hits are scrolled into view in the pane');
+    await shot(page, 'screen-rules-hits');
+    await page.click('#gm-rq-hits .gs-hit');
+    check(await page.waitForSelector('#gm-rq-hits .gs-entry', { timeout: 5000 }).then(() => true, () => false) && await page.$eval('#gm-rq-hits .gs-entry .gs-body', (b) => /goose goes first/.test(b.textContent) && !/TODO|secret note/.test(b.textContent)), 'one hit opens in place, without the compiler’s [TODO] note');
+    await shot(page, 'screen-rules-entry');
+    await page.click('#gm-rq-hits [data-gm="rq-ipad"]');
+    const rr = await until(async () => { const r = await api('GET', '/gm/display'); return r.json && r.json.display && r.json.display.kind === 'rule' && r.json.display.title === 'Goose Law' ? r.json.display : null; }, 8000, 300);
+    check(!!rr && rr.caption === 'House rules' && /goose goes first/.test(rr.md) && !/TODO|secret note/.test(rr.md), 'Show on iPad sends the entry as a rule display, as the rules page does');
+    check(await ipad.page.waitForFunction(() => /goose goes first/.test(document.querySelector('#display-page').textContent), null, { timeout: 15000 }).then(() => true, () => false), '#display shows the rule');
+    await page.click('#gm-rq-hits [data-gm="rq-back"]');
+    check(await page.$$eval('#gm-rq-hits .gs-hit', (b) => b.length) === 1, 'Back is the list again');
+    /* Find (Ctrl+K) lists the rules this device now holds, and a hit opens in the pane */
+    await page.keyboard.press('Control+k'); await page.fill('#gm-find-q', 'goose');
+    check(await page.waitForFunction(() => [...document.querySelectorAll('.gm-find-hit .gm-find-kind')].some((k) => /Rules/.test(k.textContent)), null, { timeout: 5000 }).then(() => true, () => false), 'Find lists a rules entry');
+    await page.evaluate(() => { [...document.querySelectorAll('.gm-find-hit')].filter((b) => /Rules/.test(b.querySelector('.gm-find-kind').textContent))[0].click(); });
+    check(await page.waitForSelector('#gm-rq-hits .gs-entry', { timeout: 5000 }).then(() => true, () => false) && await page.$eval('#gm-find', (f) => f.hasAttribute('hidden')), 'a rules hit in Find opens it in the GM screen pane');
+    /* the screen's own find box: nothing there, one click to the same words in the rules */
+    await page.fill('#gm-gs-q', 'zzzq');
+    check(await page.$eval('#gm-rules .gs-none', (p) => !p.hidden && /Search the full rules for “zzzq”/.test(p.textContent)), 'with nothing on the screen, the find box offers the full rules for the same words');
+    await page.click('#gm-rules [data-gm="rq-find"]');
+    check(await page.waitForFunction(() => /Nothing in the rules matches “zzzq”/.test(document.getElementById('gm-rq-hits').textContent), null, { timeout: 8000 }).then(() => true, () => false), 'and the answer comes in the pane');
+    await page.fill('#gm-gs-q', '');
+  } else check(/not available/.test(await page.textContent('#gm-rules .gs-rules')), 'no rules runtime here: the pane says so');
   await shot(page, 'screen-desktop');
   await ph.page.click('.gm-segbar [data-seg="rules"]');
   check(await ph.page.waitForSelector('#gm-rules .gs-sec', { state: 'visible', timeout: 10000 }).then(() => true, () => false), 'phone: Screen is a segment');
+  if (await ph.page.$('#gm-rq')) {
+    await ph.page.fill('#gm-rq', 'goose'); await ph.page.press('#gm-rq', 'Enter');
+    check(await ph.page.waitForSelector('#gm-rq-hits .gs-hit', { state: 'visible', timeout: 15000 }).then(() => true, () => false), 'phone: the rules search lists its hits');
+    check(await ph.page.waitForFunction(() => { const r = document.querySelector('#gm-rq-hits .gs-hit').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 130 && r.bottom <= innerHeight; }, null, { timeout: 4000 }).then(() => true, () => false), 'phone: the first hit is on screen, under the sticky bars');
+    await shot(ph.page, 'screen-rules-phone');
+  }
   const over2 = await ph.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check(over2 <= 1, 'phone: the screen does not overflow (' + over2 + ' px)');
   await shot(ph.page, 'screen-phone', true);

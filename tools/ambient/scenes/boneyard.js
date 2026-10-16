@@ -152,8 +152,8 @@ module.exports = function build() {
 
   // ---------- people ----------
   const S = 0.255;
-  const brack = L.fig(L.npc("brackley"), { id: "brackley", frames: [{}, { pose: { head: { yaw: -6, tilt: -1 } } }, { pose: { head: { yaw: -18, tilt: 1 } } }] });
-  const skin = L.fig(L.npc("skinner"), { id: "skinner", lod: "lo", frames: [{}, { pose: { head: { tilt: 4, yaw: -2 } } }, { pose: { head: { tilt: -4, yaw: 4 } } }] });
+  const brack = L.fig(L.npc("brackley"), { id: "brackley", place: S, frames: [{}, { pose: { head: { yaw: -6, tilt: -1 } } }, { pose: { head: { yaw: -18, tilt: 1 } } }] });
+  const skin = L.fig(L.npc("skinner"), { id: "skinner", lod: "lo", place: 0.2, frames: [{}, { pose: { head: { tilt: 4, yaw: -2 } } }, { pose: { head: { tilt: -4, yaw: 4 } } }] });
   // porters in the haze: silhouettes carrying crates toward the mouth
   const porter = (id, x) => L.fig(Object.assign(L.pc("loader"), { id, props: [], body: {}, pose: { stance: "easy", arms: { R: "carry", L: "down" } } }), { id, silhouette: true, lod: "lo", shadow: false });
   const P1 = porter("porter1"), P2 = porter("porter2");

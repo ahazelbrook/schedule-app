@@ -1,6 +1,8 @@
 /* The table display (#display): a full-screen page for an iPad lying in front of the players, signed in as the GM.
    It shows whatever the GM last pushed through GET /api/gm/display (GM.md): a player-safe map (svg), one NPC (npc), a line
    of text (text), a rules entry (rule), or nothing (blank). It never decides anything itself: it polls, sanitises and draws.
+   The same poll carries what the transcriber (app/stt.js) needs, so the page makes one request where it made two; and a page that
+   stays signed out for ten minutes reloads itself (Pure.createPoller, Pure.createReloader below).
    Interface: window.B68DisplayPage = { mount(container, ctx), unmount() }
    with ctx = { gm: window.claude.gm, db: window.claude.use('db'), figures: window.B68Figure, cast: window.B68Cast, isGM }, plus the
    optional ambient inputs ctx.ambientDoc, ctx.ambientTiming, ctx.onAmbientLoad (see the ambient controller below).
@@ -303,49 +305,72 @@
     if (st === 'denied') return { dot: 'bad', text: 'Not signed in as the GM' };
     if (st === 'retrying') return { dot: 'warn', text: 'Connection trouble, retrying' + (at ? ' · last update ' + at : '') };
     if (st === 'offline') return { dot: 'bad', text: 'Offline, retrying' + (at ? ' · last update ' + at : '') };
-    if (st === 'paused') return { dot: 'idle', text: 'Paused' };
     return { dot: 'ok', text: !seq ? 'Waiting for the GM' : 'Updated ' + (at || 'just now') };
   };
 
   /* ---------- the poller ----------
-     o = { fetch(seq, aseq) -> Promise, onData(display, seq, updatedAt), onAmbient(doc, aseq, updatedAt), onStatus({state, fails,
-           error}), isHidden(), timers, intervalMs (2000), slowMs (10000), failLimit (3), timeoutMs (10000) }
+     o = { fetch(seq, aseq, sseq) -> Promise, onData(display, seq, updatedAt), onAmbient(doc, aseq, updatedAt), onStt(part | null),
+           onStatus({state, fails, error}), isHidden(), timers, now(), failLimit (3), timeoutMs (10000), and the beats of Pure.POLL:
+           intervalMs, idleMs, idleAfterMs, slowMs, hiddenMs }
      One request in flight at a time; the next is scheduled only when the last has finished. States: connecting (nothing yet),
      live, retrying (1 to failLimit-1 failures in a row), offline (failLimit or more: polls every slowMs), denied (401/403, also
-     slow), paused (page hidden: nothing scheduled). The first success after a failure goes back to the fast interval.
-     Responses (GET /api/gm/display?seq=N&aseq=M): { seq, unchanged: true } (an older server, or `?seq` alone), the same with an
-     ambient part { ambient: { seq, unchanged: true } }, or { seq, display, updatedAt, ambient: { seq, unchanged: true } | { seq,
-     doc, updatedAt } }. The display redraws only when its seq moved (an ambient-only change carries the display along, and it
-     must not cross-fade the same spotlight again); the ambient part, when it holds a doc, goes to onAmbient first (so the
-     first draw already has its plan). A malformed ambient part is ignored: it never stops the spotlight. */
+     slow). The first success after a failure goes back to the fast beat.
+     The beat. Workers Free allows 100,000 requests a day for the whole site and an iPad stays on all night, so: intervalMs (4 s)
+     while anything is moving; idleMs (15 s) once nothing has changed for idleAfterMs (2 hours: not the display, the ambient or the
+     transcriber's part), until the next change brings the fast beat back; slowMs (10 s) while offline or denied, never faster than the
+     beat before it; and hiddenMs (a minute) while the page is hidden, never faster than any of them. A hidden page keeps looking
+     because the transcriber's part rides on this poll: the GM's Stop must reach a microphone left open in a background tab. Becoming
+     visible, or the network coming back, polls at once (kick).
+     Responses (GET /api/gm/display?seq=N&aseq=M&sseq=K): { seq, unchanged: true } (an older server, or `?seq` alone), the same with
+     an ambient part { ambient: { seq, unchanged: true } } and a transcriber part { stt: { seq, unchanged: true } }, or { seq,
+     display, updatedAt, ambient: { seq, unchanged: true } | { seq, doc, updatedAt }, stt: { seq, unchanged: true } | { seq, want,
+     session } }. The display redraws only when its seq moved (an ambient-only change carries the display along, and it must not
+     cross-fade the same spotlight again); the ambient part, when it holds a doc, goes to onAmbient first (so the first draw already
+     has its plan), then the transcriber part to onStt. A malformed ambient or transcriber part is ignored: it never stops the
+     spotlight. onStt(part) gets { seq, want, session } when the part changed, and null once when an answer has no usable part
+     (an older server: app/stt.js then asks for itself). */
+  Pure.POLL = { intervalMs: 4000, idleMs: 15000, idleAfterMs: 2 * 3600 * 1000, slowMs: 10000, hiddenMs: 60000 };
   Pure.ambientPart = function (r) {
     var a = r && r.ambient;
     if (!isObj(a) || typeof a.seq !== 'number' || !isFinite(a.seq)) return null;
     if (a.unchanged === true) return { seq: a.seq, unchanged: true };
     return isObj(a.doc) ? { seq: a.seq, doc: a.doc, updatedAt: typeof a.updatedAt === 'string' ? a.updatedAt : null } : null;
   };
+  /* the transcriber's part of an answer: { seq, unchanged: true } | { seq, want: 'on' | 'off', session } | null (absent or malformed) */
+  Pure.sttPart = function (r) {
+    var a = r && r.stt;
+    if (!isObj(a) || typeof a.seq !== 'number' || !isFinite(a.seq)) return null;
+    if (a.unchanged === true) return { seq: a.seq, unchanged: true };
+    if (a.want !== 'on' && a.want !== 'off') return null;
+    return { seq: a.seq, want: a.want, session: typeof a.session === 'string' ? a.session.slice(0, 12) : '' };
+  };
   Pure.createPoller = function (o) {
     var T = o.timers || { setTimeout: function (f, ms) { return setTimeout(f, ms); }, clearTimeout: function (id) { clearTimeout(id); } };
-    var fast = o.intervalMs || 2000, slow = o.slowMs || 10000, limit = o.failLimit || 3, tmo = o.timeoutMs || 10000;
-    var seq = null, aseq = null, fails = 0, timer = null, inflight = false, running = false, gen = 0, state = 'connecting', lastErr = null;
+    var B = Pure.POLL, fast = o.intervalMs || B.intervalMs, idleBeat = o.idleMs || B.idleMs, idleAfter = o.idleAfterMs || B.idleAfterMs,
+        slow = o.slowMs || B.slowMs, hiddenBeat = o.hiddenMs || B.hiddenMs, limit = o.failLimit || 3, tmo = o.timeoutMs || 10000;
+    var clock = o.now || function () { return Date.now(); };
+    var seq = null, aseq = null, sseq = null, sttSeen = null, movedAt = null, fails = 0, timer = null, inflight = false, running = false, gen = 0, state = 'connecting', lastErr = null;
     function hidden() { return !!(o.isHidden && o.isHidden()); }
     function setState(s) {
       if (s === state) return;
       state = s;
       if (o.onStatus) { try { o.onStatus({ state: s, fails: fails, error: lastErr }); } catch (e) { /* the page must not stop the poller */ } }
     }
-    function delay() { return fails >= limit || state === 'denied' ? slow : fast; }
+    /* movedAt: when the display, the ambient or the transcriber's part last changed (or the poller started) */
+    function delay() {
+      var d = movedAt !== null && clock() - movedAt >= idleAfter ? idleBeat : fast;
+      if (fails >= limit || state === 'denied') d = Math.max(d, slow);
+      return hidden() ? Math.max(d, hiddenBeat) : d;
+    }
     function clearTimer() { if (timer !== null) { T.clearTimeout(timer); timer = null; } }
     function schedule() {
       clearTimer();
       if (!running) return;
-      if (hidden()) { setState('paused'); return; }
       timer = T.setTimeout(tick, delay());
     }
     function tick() {
       timer = null;
       if (!running) return;
-      if (hidden()) { setState('paused'); return; }
       if (inflight) return;
       inflight = true;
       var myGen = gen, done = false, guard = T.setTimeout(function () { finish(new Error('timeout')); }, tmo);
@@ -356,49 +381,112 @@
         inflight = false;
         if (!running) return;
         if (!err && !(r && typeof r === 'object' && typeof r.seq === 'number' && (r.unchanged === true || (r.display && typeof r.display === 'object')))) err = new Error('bad response');
-        var amb = err ? null : Pure.ambientPart(r);
+        var amb = err ? null : Pure.ambientPart(r), stt = err ? null : Pure.sttPart(r);
         if (err) {
           fails++; lastErr = err;
           var code = err.status;
           setState(code === 401 || code === 403 ? 'denied' : fails >= limit ? 'offline' : 'retrying');
         } else {
           fails = 0; lastErr = null;
+          var moved = false;
           if (amb) {
+            if (amb.seq !== aseq) moved = true;
             aseq = amb.seq;
             if (!amb.unchanged && o.onAmbient) { try { o.onAmbient(amb.doc, amb.seq, amb.updatedAt); } catch (e) { /* ditto */ } }
           }
+          if (stt) {
+            if (stt.seq !== sseq) moved = true;
+            sseq = stt.seq; sttSeen = true;
+            if (!stt.unchanged && o.onStt) { try { o.onStt({ seq: stt.seq, want: stt.want, session: stt.session }); } catch (e) { /* ditto */ } }
+          } else if (sttSeen !== false) {
+            sttSeen = false;
+            if (o.onStt) { try { o.onStt(null); } catch (e) { /* ditto */ } }
+          }
           if (r.unchanged !== true && r.seq !== seq) {
+            moved = true;
             seq = r.seq;
             if (o.onData) { try { o.onData(r.display, r.seq, r.updatedAt || null); } catch (e) { /* ditto */ } }
           }
+          if (moved) movedAt = clock();
           setState('live');
         }
         schedule();
       }
       var p;
-      try { p = Promise.resolve(o.fetch(seq, aseq)); } catch (e) { p = Promise.reject(e); }
+      try { p = Promise.resolve(o.fetch(seq, aseq, sseq)); } catch (e) { p = Promise.reject(e); }
       p.then(function (r) { finish(null, r); }, function (e) { finish(e || new Error('failed')); });
     }
     return {
-      start: function () { if (running) return; running = true; gen++; fails = 0; tick(); },
+      start: function () { if (running) return; running = true; gen++; fails = 0; movedAt = clock(); tick(); },
       stop: function () { running = false; gen++; inflight = false; clearTimer(); },
-      /* the page became hidden or visible, or the network came back: pause, or poll at once */
+      /* the page became hidden or visible, or the network came back: a hidden page waits out the hidden beat from now, a visible one polls at once */
       kick: function () {
-        if (!running) return;
-        if (hidden()) { clearTimer(); setState('paused'); return; }
-        if (inflight) return;
+        if (!running || inflight) return;
+        if (hidden()) { schedule(); return; }
         clearTimer(); tick();
       },
       /* the network is back: forget the backoff */
       reset: function () { fails = 0; if (state === 'offline' || state === 'retrying') state = 'connecting'; },
       seq: function () { return seq; },
       aseq: function () { return aseq; },
+      sseq: function () { return sseq; },
       state: function () { return state; },
       fails: function () { return fails; }
     };
   };
 
-  /* ---------- the ambient floor (AMBIENT-PLAN.md) ----------
+  /* ---------- the way out of "denied" ----------
+     When the Access sign-in ends, the adapter (app/runtime/cf.js) refuses every call from then on, for good, and nothing on the
+     page can bring it back: "Not signed in as the GM" stays up until someone reloads, and nobody touches an iPad on the table's
+     stand for hours. So the page reloads itself after deniedMs (10 minutes) signed out: a reload asks Access again, which re-issues
+     the sign-in while the single sign-on session is still good, and otherwise shows its sign-in page, which is what a person has to
+     see. At most once per gapMs (30 minutes): the time of the last reload is kept in storage (last, remember), so a page that comes
+     back still denied (a person has to sign in, or the email is not allowed) does not reload in a loop, it tries again later. With
+     no storage to keep that time in, it never reloads: a stale word is better than a loop.
+     o = { last() -> ms | null, remember(ms) -> true | false, reload(), timers, now(), deniedMs, gapMs }
+     -> { state(name) (the poller's states, as they change), stop() } */
+  Pure.RELOAD = { deniedMs: 10 * 60 * 1000, gapMs: 30 * 60 * 1000, key: 'b68.display.reload' };
+  Pure.createReloader = function (o) {
+    var T = o.timers || { setTimeout: function (f, ms) { return setTimeout(f, ms); }, clearTimeout: function (id) { clearTimeout(id); } };
+    var R = Pure.RELOAD, deniedMs = o.deniedMs || R.deniedMs, gapMs = o.gapMs || R.gapMs, clock = o.now || function () { return Date.now(); };
+    var since = null, timer = null, went = false, future = null;
+    function clearTimer() { if (timer !== null) { T.clearTimeout(timer); timer = null; } }
+    function arm(ms) { clearTimer(); timer = T.setTimeout(check, Math.max(1000, ms)); }
+    function check() {
+      timer = null;
+      if (since === null || went) return;
+      var now = clock(), last = o.last();
+      if (last !== null && last > now) { if (future === null) future = now; last = future; }   /* a clock set back: count the half hour from when this was seen */
+      else future = null;
+      var wait = Math.max(since + deniedMs - now, last === null ? 0 : last + gapMs - now);
+      if (wait > 0) { arm(wait); return; }
+      if (!o.remember(now)) return;                               /* nowhere to note it: stay as it is, rather than risk a loop */
+      went = true;
+      o.reload();
+    }
+    return {
+      state: function (name) {
+        if (name === 'denied') { if (since === null) { since = clock(); arm(deniedMs); } }
+        else if (since !== null) { since = null; clearTimer(); }
+      },
+      stop: function () { since = null; clearTimer(); }
+    };
+  };
+  /* where the page keeps the time of its last reload (win is the window): localStorage and sessionStorage both, so that either one
+     being blocked (private mode, a full quota) loses nothing, and the newer time counts. remember() says whether one of them took it. */
+  Pure.reloadStore = function (win) {
+    function each(fn) { ['localStorage', 'sessionStorage'].forEach(function (name) { try { fn(win[name]); } catch (e) { /* blocked: the other one */ } }); }
+    return {
+      last: function () {
+        var best = null;
+        each(function (st) { var n = Number(st.getItem(Pure.RELOAD.key)); if (isFinite(n) && n > 0 && (best === null || n > best)) best = n; });
+        return best;
+      },
+      remember: function (ms) { var kept = false; each(function (st) { st.setItem(Pure.RELOAD.key, String(ms)); kept = true; }); return kept; }
+    };
+  };
+
+  /* ---------- the ambient floor (GM.md, "Ambient scenes"; the plan: docs/history/AMBIENT-PLAN.md) ----------
      When no spotlight is up the display plays a self-contained scene full screen and rotates it. The registry below is the only
      source of a scene's URL (`ambient/<file>`, relative to the app root): nothing from the server ever becomes a URL. `needs`
      says what a scene waits for ('score' gates it; 'crew' is advisory, the watch feed has its own defaults); `pinOnly` keeps a
@@ -424,6 +512,26 @@
   Pure.AMBIENT_DEFAULT_PLAYLIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting'];
   /* the theme a `music: true` scene may ask the display to play: an MP3 kept on the GM's PC and deployed from disk, never committed */
   Pure.AMBIENT_MUSIC = 'media/theme.mp3';
+  /* the corner line that says where the theme is, for the table to read: one of the display's music states and its details */
+  Pure.themeText = function (st) {
+    st = st && typeof st === 'object' ? st : {};
+    var t = Math.max(0, Math.floor(Number(st.t) || 0)), mmss = Math.floor(t / 60) + ':' + (t % 60 < 10 ? '0' : '') + (t % 60);
+    switch (st.state) {
+      case 'checking': return 'Theme: looking for the file…';
+      case 'none': return 'Theme: no file on the server (app/' + Pure.AMBIENT_MUSIC + ')';
+      case 'locked': return 'Theme: tap the screen for sound';
+      case 'blocked': return 'Theme: the iPad would not play it · tap the screen';
+      case 'playing': return 'Theme: playing · ' + mmss;
+      case 'ended': return 'Theme: finished';
+      case 'error': return 'Theme: the file would not play' + (st.reason ? ' (' + String(st.reason) + ')' : '');
+      default: return '';
+    }
+  };
+  /* a HEAD answer counts as the theme only when it is audio (an HTML 200 is a sign-in page or a fallback, not the file) */
+  Pure.themeType = function (contentType) {
+    var ct = String(contentType || '').toLowerCase().trim();
+    return !ct || /^audio\//.test(ct) || /^application\/octet-stream/.test(ct);
+  };
   /* the scenes told the crew's heat and wanted (b68:crew): the watch feed and the wanted wall */
   Pure.ambientCrewScenes = function () { return Pure.AMBIENT_SCENES.filter(function (s) { return s.needs === 'crew'; }).map(function (s) { return s.id; }); };
   Pure.AMBIENT_DEFAULT_MIN = 7;
@@ -520,7 +628,7 @@
     if (!isObj(next)) return false;
     return !isObj(prev) || prev.heat !== next.heat || prev.wanted !== next.wanted;
   };
-  /* the four crew polaroids on the score scenes: cast id -> caption (the generator's constant; AMBIENT-PLAN.md 4.3) */
+  /* the four crew polaroids on the score scenes: cast id -> caption (the generator's constant; docs/history/AMBIENT-PLAN.md 4.3) */
   Pure.POLAROIDS = [{ id: 'booker', cap: 'Babel' }, { id: 'alfie', cap: 'Ashtray & Buck' }, { id: 'stacey', cap: 'Stacey' }, { id: 'loader', cap: '99.47' }];
   /* scoreMessage(score, polaroids, env) -> the message a score scene is sent in reply to its b68:ready, or null with no score.
      `board` and `iso` are the score's svgs run through the sanitiser again here (normal cap) and sent as its markup, '' when one
@@ -1019,7 +1127,7 @@
     ctx = ctx || {};
     var s = S = {
       container: container, ctx: ctx, offs: [], timers: [], stages: [], current: null, token: 0, seq: 0, updatedAt: null,
-      poll: { state: 'connecting' }, poller: null, wake: null, wakeWanted: true, enteredFs: false, dead: false
+      poll: { state: 'connecting' }, poller: null, reloader: null, wake: null, wakeWanted: true, enteredFs: false, dead: false
     };
     container.classList.add('dp-root');
     container.innerHTML = '';
@@ -1094,66 +1202,145 @@
     /* ---------- the theme ----------
        A scene marked `music: true` in the registry (the opening credits) may ask for the theme, `Pure.AMBIENT_MUSIC` (an MP3 kept
        on the GM's PC and deployed from disk, never committed), with { type: 'b68:music', cmd: 'play' | 'fade', sec }. An iPad lets a
-       page make sound only after a tap, so the first tap anywhere unlocks it; until then a small chip asks for one. The scene is
-       told where the music is ({ state: 'playing', t } once a second, or 'blocked', or 'none' when there is no file) and runs its
-       clock from that. The music stops when its scene goes: another scene, a spotlight, lights out. The fade runs through Web
-       Audio, because iOS ignores audio.volume. */
-    var M = s.music = { audio: null, ctx: null, gain: null, unlocked: false, frame: null, tick: null, failed: false };
+       page make sound only after a tap, so the first tap anywhere unlocks it; until then a chip asks for one. The scene is told
+       where the music is ({ state: 'playing', t } once a second, or 'blocked', or 'none' when there is no file) and runs its clock
+       from that. The music stops when its scene goes: another scene, a spotlight, lights out.
+       The table can read what is going on: a one-line state in the corner (Pure.themeText) says "no file on the server", "tap the
+       screen for sound", "playing · 0:42" or "would not play", so a silent iPad is never a mystery.
+       iPad rules this follows: (1) the file is looked for first (a HEAD request), because iOS does not preload an <audio> and its
+       play() refuses a missing file with the same kind of error as a locked one; (2) one <audio> element, created once in the page
+       (never in the scene's frame) and played inside the tap's own call stack, which is what unlocks it: a play() made during a
+       real gesture lifts iOS's restriction on that element for good, so the theme may start later without a tap; (3) only an event
+       that is a gesture counts: a finger's pointerdown is not one on iOS (its pointerup, touchend and click are), and a muted
+       play() succeeds there anyway, so where navigator.userActivation says the event is no gesture the tap is not spent on it;
+       (4) no Web Audio: iOS mutes an AudioContext with the ring/silent switch and parks it 'interrupted' after a call or a lock,
+       while a plain <audio> plays on; (5) iOS ignores audio.volume, so where the volume cannot move the fade is a stop at the end
+       of the fade window. */
+    var M = s.music = { audio: null, unlocked: false, pending: false, frame: null, tick: null, fade: null, watch: null, probe: null, file: null, http: 0, state: 'off', reason: '', hide: null };
     var chip = el('button', 'dp-btn dp-sound', 'Tap for sound'); chip.type = 'button'; chip.hidden = true;
-    container.appendChild(chip);
+    var themeLine = el('div', 'dp-theme'); themeLine.hidden = true; themeLine.setAttribute('role', 'status');
+    container.appendChild(chip); container.appendChild(themeLine);
     function audioEl() {
       if (M.audio) return M.audio;
       var a = M.audio = new Audio(Pure.AMBIENT_MUSIC);
       a.preload = 'auto';
-      a.addEventListener('error', function () { M.failed = true; tellMusic({ type: 'b68:music', state: 'none' }); stopMusic(); });
+      a.addEventListener('ended', function () { if (M.state === 'playing') setTheme('ended'); });
+      /* a file that fails after it started (the network, a bad MP3): say so instead of "playing" over silence */
+      a.addEventListener('error', function () { if (M.state === 'playing') { stopTick(); playFailed({ name: '' }); } });
       return a;
     }
+    /* is this event a user gesture? (navigator.userActivation: Safari 16.4+, Chrome; without it every event is tried) */
+    function gesture() { var ua = typeof navigator !== 'undefined' && navigator.userActivation; return !ua || !!ua.isActive; }
     function tellMusic(msg) { var f = M.frame; if (f && f.contentWindow) { try { f.contentWindow.postMessage(msg, location.origin); } catch (e) { /* gone */ } } }
     function musicAlive() { var f = M.frame, st = amb.state(); return !!f && f.parentNode === layer && !st.covered && st.active === f.getAttribute('data-scene'); }
-    function setGain(v) { if (M.gain && M.ctx) { M.gain.gain.cancelScheduledValues(M.ctx.currentTime); M.gain.gain.setValueAtTime(v, M.ctx.currentTime); } else if (M.audio) M.audio.volume = v; }
+    function themeState() { return { state: M.state, http: M.http, reason: M.reason, t: M.audio ? M.audio.currentTime : 0 }; }
+    function paintTheme() {
+      var text = Pure.themeText(themeState());
+      themeLine.textContent = text; themeLine.hidden = !text;
+      themeLine.className = 'dp-theme' + (M.state === 'none' || M.state === 'error' || M.state === 'blocked' ? ' dp-theme-bad' : '');
+      chip.hidden = !(M.state === 'locked' || M.state === 'blocked');
+    }
+    function setTheme(state, reason) {
+      M.state = state; M.reason = reason || '';
+      if (M.hide !== null) { clearLater(M.hide); M.hide = null; }
+      if (state === 'ended') M.hide = later(function () { M.hide = null; if (M.state === 'ended') setTheme('off'); }, 8000);
+      paintTheme();
+    }
+    function stopTick() { if (M.tick) { clearInterval(M.tick); M.tick = null; } if (M.fade) { clearInterval(M.fade); M.fade = null; } }
+    /* is the file on the server? HEAD, same origin (the Access cookie rides along). null: could not ask (offline), so try anyway. */
+    function probeTheme() {
+      if (M.probe) return M.probe;
+      var ask = typeof fetch === 'function' ? fetch(Pure.AMBIENT_MUSIC, { method: 'HEAD', credentials: 'same-origin', cache: 'no-store' }) : Promise.reject(new Error('no fetch'));
+      M.probe = Promise.resolve(ask).then(function (r) {
+        return { ok: !!(r && r.ok && Pure.themeType(r.headers && r.headers.get ? r.headers.get('Content-Type') : '')), http: r ? r.status : 0 };
+      }, function () { return { ok: null, http: 0 }; }).then(function (v) {
+        if (v.ok === null) M.probe = null;                      /* ask again next time */
+        M.file = v.ok; M.http = v.http;
+        return v;
+      });
+      return M.probe;
+    }
+    function playFailed(err) {
+      var name = err && err.name || '';
+      M.pending = false;
+      if (name === 'NotAllowedError') { M.unlocked = false; setTheme('locked'); tellMusic({ type: 'b68:music', state: 'blocked' }); return; }
+      /* the file is missing, is not audio, or would not load: a tap cannot help, say so */
+      var code = M.audio && M.audio.error ? M.audio.error.code : 0;
+      M.file = false;
+      setTheme(M.http === 404 || (!M.http && code === 4) ? 'none' : 'error', name || (code ? 'media error ' + code : 'refused'));
+      tellMusic({ type: 'b68:music', state: 'none' });
+    }
     function unlockMusic() {
-      if (M.unlocked || s.dead) return;
+      if (M.unlocked || s.dead || M.file === false || !gesture()) return;     /* (no file on the server: nothing a tap could start) */
       var a = audioEl();
-      try {
-        var AC = window.AudioContext || window.webkitAudioContext;
-        if (AC && !M.ctx) { M.ctx = new AC(); M.gain = M.ctx.createGain(); M.ctx.createMediaElementSource(a).connect(M.gain); M.gain.connect(M.ctx.destination); }
-        if (M.ctx && M.ctx.state === 'suspended') M.ctx.resume();
-      } catch (e) { M.ctx = null; M.gain = null; }
       /* the credits are waiting: start the theme in this tap, which is the unlock */
-      if (M.frame && musicAlive()) { startMusic(); return; }
-      a.muted = true;
-      var done = function () { a.pause(); a.muted = false; M.unlocked = true; chip.hidden = true; };
-      var p = a.play();
-      if (p && p.then) p.then(done, function () { a.muted = false; /* still locked: the next tap tries again */ }); else done();
+      if (M.frame && musicAlive() && M.file !== false) { startMusic(); return; }
+      /* Nothing to play yet: play() inside this gesture (that call is what iOS remembers) and pause() at once, before a sample
+         sounds. Not muted: a muted play() is allowed without any gesture, so its success would prove nothing; an unmuted one is
+         refused at once (NotAllowedError) when the tap did not count, and is only interrupted (AbortError) when it did. */
+      a.muted = false;
+      var p; try { p = a.play(); } catch (e) { return; }
+      try { a.pause(); } catch (e) { /* fine */ }
+      M.unlocked = true; paintTheme();
+      if (p && p.then) p.then(null, function (err) {
+        /* refused: no gesture after all (a browser without navigator.userActivation, or a finger's pointerdown): the next event
+           of this tap, or the next tap, tries again. Anything else (interrupted, no file): the tap did its part. */
+        if (err && err.name === 'NotAllowedError') { M.unlocked = false; paintTheme(); }
+      });
     }
     function startMusic() {
-      var a = audioEl();
-      if (M.failed) { tellMusic({ type: 'b68:music', state: 'none' }); return; }
-      setGain(1);
+      var a = audioEl(), frame = M.frame;
+      if (M.file === false) { setTheme(M.http === 404 || !M.http ? 'none' : 'error', M.http ? 'HTTP ' + M.http : ''); tellMusic({ type: 'b68:music', state: 'none' }); return; }
+      if (M.pending) return;
+      stopTick();
+      try { a.muted = false; a.volume = 1; } catch (e) { /* iOS: the volume is the user's */ }
       try { a.currentTime = 0; } catch (e) { /* not loaded yet: it starts at 0 anyway */ }
       var go = function () {
-        M.unlocked = true; chip.hidden = true;
+        M.pending = false;
+        if (s.dead || M.frame !== frame) { try { a.pause(); } catch (e) {} return; }
+        M.unlocked = true;
+        setTheme('playing');
         tellMusic({ type: 'b68:music', state: 'playing', t: a.currentTime });
-        if (M.tick) clearInterval(M.tick);
         M.tick = setInterval(function () {
           if (!musicAlive()) { stopMusic(); return; }
-          if (!a.paused) tellMusic({ type: 'b68:music', state: 'playing', t: a.currentTime });
+          if (!a.paused) { tellMusic({ type: 'b68:music', state: 'playing', t: a.currentTime }); paintTheme(); }
         }, 1000);
       };
-      var p = a.play();
-      if (p && p.then) p.then(go, function () { M.unlocked = false; chip.hidden = false; tellMusic({ type: 'b68:music', state: 'blocked' }); }); else go();
+      M.pending = true;
+      var p; try { p = a.play(); } catch (e) { playFailed(e); return; }
+      if (p && p.then) p.then(go, playFailed); else go();
+    }
+    /* the fade: volume where it moves (a PC, Android); where it does not (iOS) the theme stops where the fade would have ended */
+    function volumeMoves(a) {
+      try { var v = a.volume, w = v > 0.5 ? v - 0.01 : v + 0.01; a.volume = w; var ok = Math.abs(a.volume - w) < 0.001; a.volume = v; return ok; } catch (e) { return false; }
     }
     function fadeMusic(sec) {
-      var a = M.audio; if (!a) return;
+      var a = M.audio; if (!a || a.paused) return;
       var ms = Math.max(500, Math.min(30000, (Number(sec) || 4) * 1000));
-      if (M.gain && M.ctx) { var g = M.gain.gain, t = M.ctx.currentTime; g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + ms / 1000); }
-      later(function () { if (M.audio === a) { try { a.pause(); } catch (e) {} } if (M.tick) { clearInterval(M.tick); M.tick = null; } }, ms + 100);
-      if (!M.gain) { var t0 = Date.now(), v0 = a.volume, iv = setInterval(function () { var k = (Date.now() - t0) / ms; if (k >= 1 || a.paused) { clearInterval(iv); return; } a.volume = Math.max(0, v0 * (1 - k)); }, 100); }
+      if (M.fade) { clearInterval(M.fade); M.fade = null; }
+      if (volumeMoves(a)) {
+        var t0 = Date.now(), v0 = a.volume;
+        M.fade = setInterval(function () { var k = (Date.now() - t0) / ms; if (k >= 1 || a.paused) { clearInterval(M.fade); M.fade = null; return; } try { a.volume = Math.max(0, v0 * (1 - k)); } catch (e) {} }, 50);
+      }
+      later(function () { if (M.audio !== a) return; stopTick(); try { a.pause(); } catch (e) {} if (M.state === 'playing') setTheme('ended'); }, ms + 100);
     }
     function stopMusic() {
-      if (M.tick) { clearInterval(M.tick); M.tick = null; }
+      stopTick();
+      if (M.watch) { clearInterval(M.watch); M.watch = null; }
       if (M.audio) { try { M.audio.pause(); } catch (e) { /* fine */ } }
-      M.frame = null; chip.hidden = true;
+      M.frame = null; M.pending = false; setTheme('off');
+    }
+    /* the scene asked: look for the file first, then play, or ask for the tap. Whatever the theme's state (waiting for a tap, no
+       file, playing, finished), it ends with its scene: another scene, a spotlight, lights out. */
+    function askMusic(hit) {
+      M.frame = hit;
+      if (!M.watch) M.watch = setInterval(function () { if (M.frame && !musicAlive()) stopMusic(); }, 1000);
+      setTheme('checking');
+      probeTheme().then(function (v) {
+        if (s.dead || M.frame !== hit) return;
+        if (v.ok === false) { setTheme(v.http === 404 ? 'none' : 'error', v.http ? 'HTTP ' + v.http : 'not audio'); tellMusic({ type: 'b68:music', state: 'none' }); return; }
+        if (M.unlocked) startMusic(); else { setTheme('locked'); tellMusic({ type: 'b68:music', state: 'blocked' }); }
+      });
     }
     s.offs.push(on(window, 'message', function (ev) {
       if (s.dead || ev.origin !== location.origin || !ev.data || ev.data.type !== 'b68:music' || !ev.source) return;
@@ -1164,14 +1351,12 @@
         if (sc && sc.music) hit = frames[i];
       }
       if (!hit) return;
-      if (ev.data.cmd === 'play') {
-        M.frame = hit;
-        if (M.unlocked) startMusic(); else { chip.hidden = false; tellMusic({ type: 'b68:music', state: 'blocked' }); }
-      } else if (ev.data.cmd === 'fade' && M.frame === hit) fadeMusic(ev.data.sec);
+      if (ev.data.cmd === 'play') askMusic(hit);
+      else if (ev.data.cmd === 'fade' && M.frame === hit) fadeMusic(ev.data.sec);
     }));
-    s.offs.push(on(document, 'pointerdown', unlockMusic));
-    s.offs.push(on(document, 'keydown', unlockMusic));
-    s.offs.push(function () { stopMusic(); if (M.ctx) { try { M.ctx.close(); } catch (e) {} } });
+    /* every kind of tap: iOS counts some of these as the gesture and not others (gesture() skips the rest), the first one is enough */
+    ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'].forEach(function (type) { s.offs.push(on(document, type, unlockMusic)); });
+    s.offs.push(function () { stopMusic(); });
 
     /* status */
     function paintStatus() {
@@ -1222,12 +1407,24 @@
       swap(noteStage('', 'The table display runs on the GM’s sign-in.'));
       stext.textContent = 'Not signed in as the GM'; dot.className = 'dp-dot dp-dot-bad';
     } else {
+      /* signed out for good (the adapter refuses every call once Access has ended the session): reload, once in a while (Pure.createReloader) */
+      var reloads = Pure.reloadStore(window);
+      s.reloader = Pure.createReloader({
+        timers: { setTimeout: later, clearTimeout: clearLater },
+        now: function () { return Date.now(); },
+        last: reloads.last, remember: reloads.remember,
+        reload: function () { try { window.location.reload(); } catch (e) { /* the page stays as it is */ } }
+      });
       s.poller = Pure.createPoller({
-        fetch: function (seq, aseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq); },
+        /* sseq rides as a third argument: the adapter (app/runtime/cf.js) forwards it as ?sseq= to make the unchanged answer
+           the small one; an adapter that does not simply gets the transcriber part in full each time */
+        fetch: function (seq, aseq, sseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq); },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },
+        /* the transcriber's part of the answer goes to app/stt.js, which then makes no request of its own for it */
+        onStt: function (part) { if (s.stt && typeof s.stt.feed === 'function') { try { s.stt.feed(part); } catch (e) { /* the page goes on */ } } },
         onData: function (display, seq, at) { s.seq = seq; s.updatedAt = at; paintStatus(); show(display, seq); },
-        onStatus: function (p) { s.poll = p; paintStatus(); }
+        onStatus: function (p) { s.poll = p; paintStatus(); s.reloader.state(p.state); }
       });
       s.poller.start();
       /* the transcriber (app/stt.js): idle until the GM presses Start listening, then one tap here opens the mic */
@@ -1295,6 +1492,7 @@
     var s = S; if (!s) return;
     S = null; s.dead = true; s.token++;
     if (s.poller) s.poller.stop();
+    if (s.reloader) s.reloader.stop();
     if (s.stt) { try { s.stt.destroy(); } catch (e) {} s.stt = null; }
     if (s.amb) { try { s.amb.destroy(); } catch (e) {} s.amb = null; }
     s.timers.forEach(function (id) { clearTimeout(id); }); s.timers = [];
@@ -1314,8 +1512,13 @@
     uncover: function () { if (S && S.amb) S.amb.uncover(); },
     post: function (id, message) { return !!(S && S.amb && S.amb.post(id, message)); },
     state: function () { return S && S.amb ? S.amb.state() : null; },
-    /* the theme, for the checks: unlocked, playing, the scene it plays for, and whether the tap chip shows */
-    music: function () { var m = S && S.music; if (!m) return null; return { unlocked: m.unlocked, playing: !!(m.audio && !m.audio.paused), scene: m.frame ? m.frame.getAttribute('data-scene') : null, failed: m.failed, chip: !!S.container.querySelector('.dp-sound:not([hidden])') }; }
+    /* the theme, for the checks: unlocked, playing, the scene it plays for, the state line, and whether the tap chip shows */
+    music: function () {
+      var m = S && S.music; if (!m) return null;
+      var line = S.container.querySelector('.dp-theme');
+      return { unlocked: m.unlocked, playing: !!(m.audio && !m.audio.paused), scene: m.frame ? m.frame.getAttribute('data-scene') : null, failed: m.file === false,
+        state: m.state, file: m.file, http: m.http, text: line && !line.hidden ? line.textContent : '', chip: !!S.container.querySelector('.dp-sound:not([hidden])') };
+    }
   };
   var api = { mount: mount, unmount: unmount, ambient: ambient };
   if (typeof window !== 'undefined') window.B68DisplayPage = api;

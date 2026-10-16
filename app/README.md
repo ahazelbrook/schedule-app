@@ -2,15 +2,20 @@
 
 The whole app as one static page with no build step: the character creator, the living
 sheets, the table page, the schedule and the prints. It started as the single-page creator
-prototype from `PLAN.md` and is built on the Blades '68 Design System's figure kit v2. It
+prototype from `docs/history/PLAN.md` and is built on the Blades '68 Design System's figure kit v2. It
 runs as a claude.ai artifact or on the hosted build (a Cloudflare Worker, see `HOSTING.md`);
 storage, identity and downloads always go through `window.claude.use(...)`.
 
 - `index.html` is the page: markup, theme tokens, the `@font-face` rules and the script
   order. It holds the header (wordmark, the view's name, Home · The table · Your sheet), Home
-  (`#home`, with "The files" and the backups), the creator studio and the crew line-up, the
+  (`#home`, with the "Characters" list and the backups), the creator studio and the crew line-up, the
   empty roots the modules render into (`#nextSession`, `#dossier`, `#table-page`, `#season`),
-  the toast region and the restore preview dialog.
+  the toast region, the restore preview dialog and, in the footer, the Auto / Paper / Night switch
+  (an inline script at the top applies the saved choice before the first paint; CAMPAIGN.md, *Page*).
+- `routes.js` says which files each route needs: index.html loads the core (the sheet, rules and cast every sheet uses),
+  and `B68Load.need('table' | 'print' | 'gm' | 'display')` adds a route's bundle on first use, scripts in order. It also
+  holds the build stamp (`B68_BUILD`, 'dev' in the repository; `npm run deploy` stamps it) that the service worker and
+  `/api/me` share, which is how an open page knows to offer "Updated: reload".
 - `content.js` is the rulebook's character creation content, transcribed from the
   Characters chapter and all twelve playbook sheets (eight core, plus Ghost/Echo, Vampire and
   the two Time Travelers).
@@ -38,8 +43,10 @@ storage, identity and downloads always go through `window.claude.use(...)`.
 - `gm-page.js` and `gm.css` are the GM's page (`#gm`), and `display-page.js` and `display.css` the iPad's full-screen display
   (`#display`); both are hosted-build only (`GM.md`). `gm/` holds the pure logic behind them, one UMD module each, with no DOM,
   storage or table text (the tables arrive from the GM's pack): `console.js` (the console and its situations), `location.js`
-  (the location generator and map data), `scenes.js` (street scenes), `engagement.js` (the engagement roll), and `npc.js` with
-  `figure-map.js` (the NPC generator and its figure map: the NPC tab on `#gm`, and the sync).
+  (the location generator and map data), `scenes.js` (street scenes), `engagement.js` (the engagement roll), `npc.js` with
+  `figure-map.js` (the NPC generator and its figure map: the NPC tab on `#gm`, and the sync), `prep.js` (the Prep tab), and
+  `downtime.js` (the Downtime tab's cards). `downtime-tables.js` holds those cards' tables (`B68DowntimeTables`): original writing
+  with no book text, public like `content.js`, and outside `gm/` because it names the setting; a pack part may be laid over them.
 - `ambient/` holds the scenes the display plays when nothing is spotlit: four designer pages as delivered and two data-free
   score shells (`planning-board`, `score-exploded`) that draw what the display sends them. `_headers` lets only this origin frame
   them and blocks every network call from them (`GM.md`, "Ambient scenes").

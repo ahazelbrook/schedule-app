@@ -6,7 +6,11 @@ const ROOT = path.join(__dirname, "..", "..");
 const K = require(path.join(ROOT, "app", "figures", "figure-kit.js"));
 const cast = require(path.join(ROOT, "app", "figures", "cast.js"));
 const M = require("./motion.js");
+const { bakeNoise } = require("./noise.js");
 const { page } = require("./shell.js");
+// viewBox px -> device px on the table iPad, what the grain tiles are sampled for: the 4:3 stage covers the 1180 x 820 screen
+// (the size every display check uses) at 2x, so 1600 viewBox px are 2360 device px across
+const DEVICE = 2360 / 1600;
 
 // the design system's tokens (Blades '68 Design System, tokens.json), by name
 const C = {
@@ -31,13 +35,20 @@ const pc = (id) => JSON.parse(JSON.stringify(cast.byId[id]));
 // seeded random, so a rebuild draws the same scene
 function rng(seed = 1) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
-/** a kit figure, optionally with motion frames. o: { id, frames, lod, scheme, silhouette, shadow, outline } */
+/** a kit figure, optionally with motion frames. o: { id, frames, lod, scheme, silhouette, shadow, outline, place }
+ *  `place` is the scale at() will show it at (px per kit unit): the figure's grain is baked into a tile sampled where the
+ *  iPad's pixels fall (noise.js), so a cut does not have the browser compute fractal noise over the whole figure again. */
 function fig(spec, o = {}) {
   const id = o.id || spec.id;
   const opts = { prefix: id, lod: o.lod || "mid" };
   for (const k of ["scheme", "silhouette", "shadow", "outline", "grain"]) if (o[k] !== undefined) opts[k] = o[k];
   const f = M.figure(K, spec, o.frames || [{}], { id, opts });
   if (f.warnings.length) throw new Error(id + ": " + f.warnings.join("; "));
+  if (o.bake !== false) {
+    const [x, y, w, h] = f.vb;
+    f.svg = bakeNoise(f.svg, { upp: 1 / ((o.place || 0.36) * DEVICE), at: [x + w / 2, y + h / 2], box: [w, h] });
+    f.bytes = f.svg.length;
+  }
   return f;
 }
 /** place a figure with its feet at (x, floor), `s` px per kit unit (25 units = 1 inch, so 0.2 makes 6 ft = 360 px) */

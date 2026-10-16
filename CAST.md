@@ -98,9 +98,12 @@ Routes: `#cast` (the grid), `#cast/<id>` (one NPC), `#cast/<id>/edit` and `#cast
 
 - **The grid.** A mugshot (`K.portrait`) per NPC with name, alias, role · faction and the description. The GM also sees a
   Hidden / Revealed / On stage badge, filters (All, Revealed, Hidden, On stage), and per card **On stage** (off stage when it
-  is), **Reveal / Hide** and **Edit**; plus New NPC and Clear stage. Two columns on a phone.
+  is), **Reveal / Hide** and **Edit**; plus New NPC and Clear stage. Two columns on a phone. Above the cards a plain line says
+  who is on stage ("On stage: Grunt, Brackley") for everyone, also after a player hid the banner, with **Show the banner**
+  then.
 - **One NPC.** The full figure (`K.render`) as tall as the screen allows, the name in poster type and the description large:
-  made to be shown on a laptop to the table. The GM adds the same three controls and the GM notes.
+  made to be shown on a laptop to the table. The GM adds the same three controls and the GM notes. On a phone the name and
+  the description come first and the figure, smaller (44 vh), after them.
 - **The editor (GM).** Name, alias, role, faction, description, tags (commas), GM notes, Revealed. The figure: **Start from**
   one of the archetypes in `figures/cast.js` (or a blank figure), **paste a spec** (the textarea is always the current spec;
   edit it and press Use this spec), or adjust with dropdowns that are generated from `K.options()` (figure, height, age, shape,
@@ -114,6 +117,10 @@ Routes: `#cast` (the grid), `#cast/<id>` (one NPC), `#cast/<id>/edit` and `#cast
   NPC on stage, for everyone, within one poll (about 4 s). Tapping the portrait opens the large view. A player can **Hide** it;
   that is remembered in this browser (`localStorage` `b68.stage.dismissed` = the scene's `at`), so it stays hidden through a
   reload and **comes back when the stage changes**. The GM can hide it too, and has Clear stage on it.
+  On a player's phone (≤ 760 px) the banner is a one-line strip, about 56 px: "On stage", each portrait thumb and name. When the
+  stage changes it opens in full for about 8 s and folds back; a tap on the strip opens it (Less folds it). The last stage seen
+  is kept in `localStorage` `b68.stage.seen`, so a reload on the same stage starts folded. Its height is `--cp-stage-h`, which
+  the sheet's bottom sheets (the mark strip, the roll panels) stand on. The GM's banner and a desk's are unchanged.
 
 ## How to show an NPC at the table
 
@@ -142,6 +149,6 @@ Routes: `#cast` (the grid), `#cast/<id>` (one NPC), `#cast/<id>/edit` and `#cast
   "The Undertow"); the rest are left for the GM. No `gmNotes` are seeded.
 - Backups: "Download everything" (hosted, GM) includes `npcs`; **Restore does not read them yet**. To move a cast to another copy,
   paste the specs and descriptions in, or apply the migration there and copy the rows.
-- Not done (Phase 4 in ROADMAP.md): a log line when an NPC appears, and a cast page in the season print.
+- Not done (Phase 4 in docs/history/ROADMAP.md): a log line when an NPC appears, and a cast page in the season print.
 - Deploying: `scripts/deploy.sh` applies `migrations/0003_npcs.sql` (the table and the seven rows). The service worker cache name
   is bumped, so installed phones pick up the new page on their next visit online.

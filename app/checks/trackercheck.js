@@ -11,7 +11,7 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
     const p = await b.newPage({ viewport: { width: w, height: h }, colorScheme: dark ? 'dark' : 'light' });
     p.on('console', m => { if (m.type() === 'error') { const t = m.text(); if (!/ERR_FILE_NOT_FOUND/.test(t)) errs.push(name + ' console.error: ' + t); } });
     p.on('pageerror', e => errs.push(name + ' pageerror: ' + e.message));
-    p.on('dialog', d => d.accept());
+    p.__dialogs = []; p.on('dialog', d => { p.__dialogs.push(d.message()); d.accept(); });
     await p.goto(URL); await p.waitForTimeout(900);
     const r = await p.evaluate((pb) => {
       try {
@@ -27,7 +27,7 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
         const play = B68Tracker.initialPlay(sh, pb);
         window.saved = null;
         B68Tracker.open({ id: 't1', name: sh.name, alias: sh.alias, playbook: pb, playbookName: P.name, code: P.prefix + '-968-1234', spec: B68.S.spec, sheet: sh, play },
-          { save: p => (window.saved = p, Promise.resolve()), edit() {}, back() {}, remove() { return Promise.resolve(); }, me: null, canWrite: true });
+          { save: p => (window.saved = p, Promise.resolve()), edit() {}, back() {}, remove() { window.__removed = (window.__removed || 0) + 1; return Promise.resolve(); }, me: null, canWrite: true });
         document.body.dataset.mode = 'sheet'; document.getElementById('dossier').hidden = false;
         const st = document.querySelector('.studio'); if (st) st.hidden = true; const cr = document.querySelector('.crew'); if (cr) cr.hidden = true;
         return { ok: true, play, open: B68Tracker.isOpen(), html: document.getElementById('dossier').innerHTML.length };
@@ -61,6 +61,9 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
   assert(s && s.stress === 4, 'stress click saved: ' + (s && s.stress));
   await d.click('#dossier .ds-sbox[data-n="4"]'); await d.waitForTimeout(100);
   s = await d.evaluate(() => window.saved.play); assert(s.stress === 3, 'clicking the last box clears it: ' + s.stress);
+  /* the figure is drawn once: a tap re-renders the sheet around the same SVG node */
+  const fg = await d.evaluate(() => { const f = document.querySelector('#dossier .ds-figbox [data-k="fig"]'); document.querySelector('#dossier .ds-sbox[data-n="1"]').click(); const g = document.querySelector('#dossier .ds-figbox [data-k="fig"]'); document.querySelector('#dossier .ds-sbox[data-n="3"]').click(); return { svg: !!(g && g.querySelector('svg')), same: f === g, thumb: !!document.querySelector('#dossier img.ds-thumb') }; });
+  assert(fg.svg && fg.same && !fg.thumb, 'desk: the Figure box keeps its drawn SVG node across a tap, and no thumbnail is drawn: ' + JSON.stringify(fg));
   // xp box: playbook 3 (the one in the XP box body)
   await d.click('#dossier .ds-c2 .ds-tools .ds-xbox[data-k="playbook"][data-n="3"]'); await d.waitForTimeout(100);
   s = await d.evaluate(() => window.saved.play); assert(s.xp.playbook === 3, 'xp click saved: ' + s.xp.playbook);
@@ -115,9 +118,26 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
   // log
   await d.fill('#dossier .ds-newlog', 'Session 1: we robbed the Autodrome.'); await d.click('#dossier [data-act="log"]'); await d.waitForTimeout(100);
   s = await d.evaluate(() => window.saved.play); assert(s.log.length === 1 && /Autodrome/.test(s.log[0].text) && s.log[0].at, 'log entry');
-  // remove: two clicks
-  await d.click('#dossier [data-act="remove"]'); await d.waitForTimeout(50);
-  assert(await d.evaluate(() => /again/.test(document.querySelector('#dossier [data-act="remove"]').textContent)), 'remove asks for a second click');
+  /* Remove: out of the button row, at the foot of "…", behind a confirm that names the character */
+  assert(!(await d.$('#dossier .ds-nav > [data-act="remove"]')) && (await d.$$eval('#dossier .ds-nav .btn', ns => ns.filter(n => n.offsetParent).map(n => n.textContent))).join() === '← Back,Edit figure,Print,…', 'the row is Back, Edit figure, Print and "…": ' + (await d.$$eval('#dossier .ds-nav .btn', ns => ns.map(n => n.textContent))).join());
+  await d.click('#dossier [data-act="more"]'); await d.waitForTimeout(80);
+  const menu = await d.$$eval('#dossier .ds-menu .ds-mi', ns => ns.filter(n => n.offsetParent).map(n => n.textContent));
+  assert(menu.length === 1 && menu[0] === 'Remove Test hound…', 'desk: "…" holds Remove, named: ' + JSON.stringify(menu));
+  await d.evaluate(() => { window.__confirm = window.confirm; window.confirm = () => false; });
+  await d.click('#dossier .ds-menu [data-act="remove"]'); await d.waitForTimeout(80);
+  assert(!(await d.evaluate(() => window.__removed)) && !(await d.$('#dossier .ds-menu')), 'remove: cancelling the confirm removes nothing and closes the menu');
+  await d.evaluate(() => { window.confirm = window.__confirm; });
+  await d.click('#dossier [data-act="more"]'); d.__dialogs.length = 0;
+  await d.click('#dossier .ds-menu [data-act="remove"]'); await d.waitForTimeout(80);
+  assert((await d.evaluate(() => window.__removed)) === 1 && d.__dialogs.length === 1 && /^Remove Test hound for good\?/.test(d.__dialogs[0]) && /cannot be undone/.test(d.__dialogs[0]), 'remove: one confirm that names the character, then removed: ' + JSON.stringify(d.__dialogs));
+  await d.click('#dossier [data-act="more"]'); await d.keyboard.press('Escape'); await d.waitForTimeout(60);
+  assert(!(await d.$('#dossier .ds-menu')), 'Esc closes "…"');
+  /* who may remove: the GM, the owner; never someone else's sheet, never an unowned sheet a signed-in player opened */
+  const who = await d.evaluate(() => {
+    const sheet = (owner, me, gm) => { B68.isGM = gm; B68Tracker.open({ id: 'w1', name: 'Vera Lux', owner, playbook: 'hound', playbookName: 'Hound', code: 'HND-968-0009', spec: B68.S.spec, sheet: B68.S.sheet, play: window.saved.play }, { save: () => Promise.resolve(), edit() {}, back() {}, remove() { return Promise.resolve(); }, me, canWrite: true }); const b = document.querySelector('#dossier [data-act="more"]'); if (b && b.offsetParent) b.click(); const r = !!document.querySelector('#dossier .ds-menu [data-act="remove"]'); B68.isGM = false; return r; };
+    return { gm: sheet('u_sam', 'u_gail', true), owner: sheet('u_pat', 'u_pat', false), unowned: sheet(null, 'u_pat', false) };
+  });
+  assert(who.gm && who.owner && !who.unowned, 'Remove for the GM and the owner only: ' + JSON.stringify(who));
   // read-only re-open
   const ro = await d.evaluate(() => { B68Tracker.close(); const c = B68Tracker.isOpen(); B68Tracker.open({ id: 't2', name: 'RO', playbook: 'hound', playbookName: 'Hound', code: 'HND-968-0001', spec: B68.S.spec, sheet: B68.S.sheet, play: window.saved.play }, { save: () => Promise.resolve(), edit() {}, back() {}, remove() {}, me: null, canWrite: false }); return { closed: !c, status: document.getElementById('ds-status').textContent, disabled: document.querySelector('#dossier .ds-sbox').disabled, backOk: !document.querySelector('#dossier [data-act="back"]').disabled }; });
   assert(ro.closed && ro.status === 'Read only' && ro.disabled && ro.backOk, 'read only: ' + JSON.stringify(ro));
@@ -130,7 +150,7 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
     const named = document.getElementById('ds-status').textContent;
     document.querySelector('#dossier [data-act="view"][data-v="mug"]').click();
     const q = s => document.querySelector('#dossier ' + s);
-    return { first, named, after: document.getElementById('ds-status').textContent, edit: q('[data-act="edit"]').disabled, remove: q('[data-act="remove"]').disabled, pip: q('.ds-pip[data-act="dot"]').disabled, input: q('input[data-path="crew"]').disabled, roll: !q('[data-act="rollopen"]').disabled, ro: document.getElementById('dossier').classList.contains('ds-ro') };
+    return { first, named, after: document.getElementById('ds-status').textContent, edit: q('[data-act="edit"]').disabled, remove: !q('[data-act="remove"]') && !q('[data-act="more"]'), pip: q('.ds-pip[data-act="dot"]').disabled, input: q('input[data-path="crew"]').disabled, roll: !q('[data-act="rollopen"]').disabled, ro: document.getElementById('dossier').classList.contains('ds-ro') };
   });
   assert(fo.first === 'Read only · another player’s character' && fo.named === 'Read only · Sam’s character' && fo.after === fo.named, 'others’ sheet status: ' + JSON.stringify(fo));
   assert(fo.edit && fo.remove && fo.pip && fo.input && fo.roll && fo.ro, 'others’ sheet controls: ' + JSON.stringify(fo));
@@ -151,6 +171,72 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
   assert(hd.boxes > 10 && hd.h3 === hd.boxes && hd.h3Margin === '0px' && hd.h3Font === '11px', 'box headings: ' + JSON.stringify(hd));
   assert(hd.back === '← Back', 'back label: ' + hd.back);
   assert(hd.hitDesk === 'none', 'desktop pips carry no hit area: ' + hd.hitDesk);
+  /* offline truth: the hosted runtime resolves a save once it is queued; the status reads its queue (B68Runtime.status) */
+  const off = await d.evaluate(async () => {
+    const R = window.B68Runtime = window.B68Runtime || {}; const was = R.status;
+    const say = (st) => { R.status = st; window.dispatchEvent(new CustomEvent('b68:runtime', { detail: st })); };
+    B68Tracker.open({ id: 't5', name: 'Olly', playbook: 'hound', playbookName: 'Hound', code: 'HND-968-0004', spec: B68.S.spec, sheet: B68.S.sheet, play: window.saved.play },
+      { save: () => { say({ online: false, pending: 1, lastSync: null }); return Promise.resolve(); }, edit() {}, back() {}, remove() {}, me: null, canWrite: true });
+    document.querySelector('#dossier .ds-sbox[data-n="5"]').click(); await new Promise(r => setTimeout(r, 30));
+    const queued = document.getElementById('ds-status').textContent;
+    say({ online: false, pending: 2, lastSync: null }); const two = document.getElementById('ds-status').textContent;
+    say({ online: true, pending: 0, lastSync: new Date().toISOString() }); const synced = document.getElementById('ds-status').textContent;
+    R.status = was; return { queued, two, synced };
+  });
+  assert(off.queued === 'Saved on this phone · will sync (1)' && off.two === 'Saved on this phone · will sync (2)' && off.synced === 'Saved', 'offline: the status follows the runtime’s queue: ' + JSON.stringify(off));
+  /* "?" rules links (drawn only when the rules API exists): Harm, Armor, Load, Position / Effect, Resist, XP */
+  const rq = await d.evaluate(async () => {
+    window.claude = Object.assign(window.claude || {}, { rules: { list: () => new Promise(() => {}) } });
+    B68Tracker.refresh();
+    const sheet = [...document.querySelectorAll('#dossier .rl-q')].map(a => decodeURIComponent(a.getAttribute('href').replace('#rules?q=', '')));
+    document.querySelector('#dossier [data-act="rollopen"][data-a="Hunt"]').click(); document.querySelector('#dossier .ds-mark [data-act="rollapp"]').click();
+    const roll = [...document.querySelectorAll('#dossier .ds-roll .rl-q')].map(a => decodeURIComponent(a.getAttribute('href').replace('#rules?q=', '')));
+    document.querySelector('#dossier [data-act="resistopen"][data-attr="Prowess"]').click();
+    const resist = [...document.querySelectorAll('#dossier .ds-mark .rl-q')].map(a => decodeURIComponent(a.getAttribute('href').replace('#rules?q=', '')));
+    document.querySelector('#dossier .ds-mark .ds-roll-x').click();
+    delete window.claude.rules; B68Tracker.refresh();
+    return { sheet, roll, resist, after: document.querySelectorAll('#dossier .rl-q').length };
+  });
+  assert(['harm', 'armor', 'load', 'xp', 'stress'].every(t => rq.sheet.includes(t)) && ['position', 'effect'].every(t => rq.roll.includes(t)) && rq.resist.includes('resistance roll') && rq.after === 0, '"?" links on Harm, Armor, Load, XP, Position / Effect and Resist, only with the rules API: ' + JSON.stringify(rq));
+  /* ---- robustness (C16) ---- */
+  const rob = await d.evaluate(async () => {
+    const tick = (ms) => new Promise(r => setTimeout(r, ms || 0));
+    const base = () => JSON.parse(JSON.stringify(Object.assign({}, window.saved.play, { stress: 2, healing: 0, crew: '' })));
+    const open = (id, save) => B68Tracker.open({ id, name: 'Robin', playbook: 'hound', playbookName: 'Hound', code: 'HND-968-0010', spec: B68.S.spec, sheet: B68.S.sheet, play: base() }, { save, edit() {}, back() {}, remove() {}, me: null, canWrite: true });
+    const out = {};
+    /* 1. typing still waiting for its debounce goes out when the page is hidden (pagehide, visibilitychange) */
+    let got = []; open('r1', (pt) => { got.push(pt.play.crew); return Promise.resolve(); });
+    const crew = document.querySelector('#dossier input[data-path="crew"]'); crew.focus(); crew.value = 'The Crow'; crew.dispatchEvent(new Event('input', { bubbles: true }));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange'));
+    out.hidden = got.slice(); delete document.visibilityState;
+    crew.value = 'The Crows'; crew.dispatchEvent(new Event('input', { bubbles: true })); window.dispatchEvent(new Event('pagehide'));
+    out.pagehide = got.slice(); await tick(500); out.after = got.length;
+    /* 2. a save the store refuses (4xx) is undone on screen: the sheet shows what the store has */
+    open('r2', () => Promise.reject(Object.assign(new Error('only the owner or the GM can change this character'), { status: 403 })));
+    document.querySelector('#dossier .ds-sbox[data-n="6"]').click(); await tick(20);
+    out.refused = { stress: B68Tracker.play().stress, on: document.querySelectorAll('#dossier .ds-sbox.on').length, status: document.getElementById('ds-status').textContent, bad: document.getElementById('ds-status').classList.contains('bad') };
+    open('r3', () => Promise.reject(new Error('Failed to fetch')));   /* not a refusal: the mark stays, the runtime will retry */
+    document.querySelector('#dossier .ds-sbox[data-n="6"]').click(); await tick(20);
+    out.network = B68Tracker.play().stress;
+    /* 3. play.log keeps the newest 200 entries */
+    let last = null; const many = base(); many.log = Array.from({ length: 250 }, (x, i) => ({ at: new Date(Date.UTC(2026, 0, 1) - i * 60000).toISOString(), kind: 'note', text: 'Old ' + i }));
+    B68Tracker.open({ id: 'r4', name: 'Robin', playbook: 'hound', playbookName: 'Hound', code: 'HND-968-0010', spec: B68.S.spec, sheet: B68.S.sheet, play: many }, { save: (pt) => { last = pt.play; return Promise.resolve(); }, edit() {}, back() {}, remove() {}, me: null, canWrite: true });
+    document.querySelector('#dossier .ds-newlog').value = 'Newest'; document.querySelector('#dossier [data-act="log"]').click(); await tick(10);
+    out.log = last && { n: last.log.length, first: last.log[0].text, lastText: last.log[last.log.length - 1].text };
+    /* 4. a snapshot that arrives while a save is in flight is merged once it lands: this sheet's change kept, the rest taken */
+    let release; open('r5', () => new Promise(r => { release = r; }));
+    document.querySelector('#dossier .ds-sbox[data-n="5"]').click(); await tick(10);
+    B68Tracker.update({ id: 'r5', name: 'Robin', playbook: 'hound', playbookName: 'Hound', code: 'HND-968-0010', spec: B68.S.spec, sheet: B68.S.sheet, play: Object.assign(base(), { healing: 2 }) });   /* a GM's change, from before ours */
+    out.held = { stress: B68Tracker.play().stress, healing: B68Tracker.play().healing };
+    release(); await tick(20);
+    out.merged = { stress: B68Tracker.play().stress, healing: B68Tracker.play().healing, segs: document.querySelectorAll('#dossier .ds-heal .ds-seg.on').length, pips: document.querySelectorAll('#dossier .ds-sbox.on').length };
+    B68Tracker.close();
+    return out;
+  });
+  assert(rob.hidden.length === 1 && rob.hidden[0] === 'The Crow' && rob.pagehide.length === 2 && rob.pagehide[1] === 'The Crows' && rob.after === 2, 'typing waiting for its debounce is saved on visibilitychange (hidden) and pagehide: ' + JSON.stringify(rob));
+  assert(rob.refused.stress === 2 && rob.refused.on === 2 && rob.refused.bad && /^Not saved \(only the owner/.test(rob.refused.status) && rob.network === 6, 'a refused save (403) is undone on screen, a network failure is not: ' + JSON.stringify([rob.refused, rob.network]));
+  assert(rob.log && rob.log.n === 200 && rob.log.first === 'Newest' && rob.log.lastText === 'Old 198', 'play.log is capped at the newest 200: ' + JSON.stringify(rob.log));
+  assert(rob.held.stress === 5 && rob.held.healing === 0 && rob.merged.stress === 5 && rob.merged.healing === 2 && rob.merged.segs === 2 && rob.merged.pips === 5, 'a snapshot during a save is merged after it lands: ' + JSON.stringify([rob.held, rob.merged]));
   await d.screenshot({ path: 'out/tracker-desk-after.png', fullPage: true });
 
   /* phone light: the play order, the mugshot thumbnail, 44px targets that never take a neighbour's tap */
@@ -162,11 +248,44 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
     const lay = await q.evaluate(() => {
       const top = s => { const n = document.querySelector('#dossier ' + s); return n && n.offsetParent ? Math.round(n.getBoundingClientRect().top + scrollY) : null; };
       const th = document.querySelector('#dossier .ds-thumb');
-      return { stress: top('.ds-stressbox'), harm: top('.ds-harmbox'), actions: top('.ds-actbox'), items: top('.ds-itembox'), keys: top('.ds-keybox'), abilities: top('.ds-abbox'), fig: top('.ds-figbox'), thumb: th && th.offsetParent ? [th.naturalWidth, Math.round(th.getBoundingClientRect().width)] : null,
-        rollMin: Math.min.apply(null, [...document.querySelectorAll('#dossier .ds-actbtn')].map(n => n.getBoundingClientRect().height)) };
+      return { stress: top('.ds-stressbox'), harm: top('.ds-harmbox'), actions: top('.ds-actbox'), xp: top('.ds-xpbox'), items: top('.ds-itembox'), downtime: top('.ds-dtbox'), session: top('.ds-sessbox'), keys: top('.ds-keybox'), stacks: top('.ds-stackbox'), abilities: top('.ds-abbox'), fig: top('.ds-figbox'), thumb: th && th.offsetParent ? [th.naturalWidth, Math.round(th.getBoundingClientRect().width)] : null,
+        rollMin: Math.min.apply(null, [...document.querySelectorAll('#dossier .ds-actbtn')].map(n => n.getBoundingClientRect().height)), vh: innerHeight };
     });
-    assert(lay.stress < lay.harm && lay.harm < lay.actions && lay.actions < lay.items && lay.items < lay.keys && lay.keys < lay.abilities, tag + ': play order Stress, Harm, Actions, Items, Keys, then the rest: ' + JSON.stringify(lay));
-    assert(lay.actions < lay.keys, tag + ': Actions above Keys');
+    const order = ['stress', 'harm', 'actions', 'xp', 'items', 'downtime', 'session', 'keys', 'stacks', 'abilities'];
+    assert(order.every((k, i) => lay[k] != null && (!i || lay[order[i - 1]] < lay[k])), tag + ': play order Stress, Harm, Actions, XP, Load, Downtime, Session, Keys, Stacks, then the rest: ' + JSON.stringify(lay));
+    assert(lay.stress < lay.vh - 120, tag + ': Stress is on the first screen: ' + lay.stress);
+    /* the first screen: the identity folded into "About", a sticky bar (Back, Print, "…") with the vitals, each a jump to its box */
+    const head = await q.evaluate(() => {
+      const vis = (s) => { const n = document.querySelector('#dossier ' + s); return !!(n && n.offsetParent); };
+      const bar = document.querySelector('#dossier .ds-bar');
+      return { about: vis('.ds-about-t'), ident: vis('.ds-ident'), look: vis('.ds-bio'), crew: vis('input[data-path="crew"]'), sticky: getComputedStyle(bar).position, row: [...document.querySelectorAll('#dossier .ds-nav .btn')].filter(n => n.offsetParent).map(n => n.textContent),
+        vitals: [...document.querySelectorAll('#dossier .ds-vit')].map(n => n.textContent.replace(/\s+/g, ' ').trim()), remove: !!document.querySelector('#dossier [data-act="remove"]') };
+    });
+    assert(head.about && !head.ident && !head.look && !head.crew, tag + ': Name, Alias, Crew, Code, Look, Wearing, Heritage and Background fold into a closed About row: ' + JSON.stringify(head));
+    assert(head.sticky === 'sticky' && head.row.join() === '← Back,Print,…' && !head.remove, tag + ': a sticky bar with Back, Print and "…" (Remove inside it): ' + JSON.stringify(head));
+    assert(head.vitals.join(' | ') === 'Stress 0/9 | Harm 0 | XP 0/8 | Load 2/3', tag + ': the vitals: ' + head.vitals.join(' | '));
+    await q.click('#dossier .ds-about-t'); await q.waitForTimeout(100);
+    assert(await q.evaluate(() => !!document.querySelector('#dossier .ds-ident').offsetParent && !!document.querySelector('#dossier input[data-path="crew"]').offsetParent && document.querySelector('#dossier .ds-about-t').getAttribute('aria-expanded') === 'true'), tag + ': About opens');
+    await q.click('#dossier .ds-about-t'); await q.waitForTimeout(100);
+    await q.fill('#dossier input[data-path="harm.l2.0"]', 'Cracked ribs'); await q.waitForTimeout(50);
+    const typed = await q.evaluate(() => ({ harm: document.querySelector('#dossier .ds-vit[data-to="ds-harmbox"]').textContent.replace(/\s+/g, ' ').trim(), focus: document.activeElement && document.activeElement.dataset.path }));
+    assert(typed.harm === 'Harm 1' && typed.focus === 'harm.l2.0', tag + ': the vitals follow a typed harm line, the field keeps focus: ' + JSON.stringify(typed));
+    await q.fill('#dossier input[data-path="harm.l2.0"]', ''); await q.waitForTimeout(500);
+    await q.click('#dossier .ds-vit[data-to="ds-xpbox"]'); await q.waitForTimeout(900);
+    const jump = await q.evaluate(() => { const b = document.querySelector('#dossier .ds-bar').getBoundingClientRect(), x = document.querySelector('#dossier .ds-xpbox').getBoundingClientRect(); return { bar: Math.round(b.bottom), box: Math.round(x.top), barTop: Math.round(b.top) }; });
+    assert(jump.barTop <= 1 && jump.box >= jump.bar - 1 && jump.box <= jump.bar + 24, tag + ': XP in the vitals scrolls its box to just under the sticky bar: ' + JSON.stringify(jump));
+    await q.click('#dossier [data-act="more"]'); await q.waitForTimeout(80);
+    const pmenu = await q.$$eval('#dossier .ds-menu .ds-mi', ns => ns.filter(n => n.offsetParent).map(n => n.textContent));
+    assert(pmenu.join() === 'Edit figure,Remove Test hound…', tag + ': "…" holds Edit figure, and Remove at its foot: ' + pmenu.join());
+    await q.click('#dossier [data-act="more"]'); await q.waitForTimeout(60);
+    await q.evaluate(() => scrollTo(0, 0));
+    /* the Items box shows what is carried; Edit loadout shows the whole list */
+    const items = await q.evaluate(() => [...document.querySelectorAll('#dossier .ds-itembox .ds-item')].filter(n => n.offsetParent).map(n => n.getAttribute('aria-pressed')));
+    assert(items.length === 2 && items.every(x => x === 'true') && !(await q.$eval('#dossier .ds-newitem', n => !!n.offsetParent)), tag + ': only the carried items show: ' + JSON.stringify(items));
+    /* performance: the 360 KB figure is not drawn on a phone and the thumbnail <img> is carried from one render to the next */
+    const perf = await q.evaluate(() => { window.__th = document.querySelector('#dossier img.ds-thumb'); const html = document.getElementById('dossier').innerHTML.length - (window.__th ? window.__th.getAttribute('src').length : 0);   /* the markup a render builds: the kept thumbnail is not rebuilt */ const t0 = performance.now(); document.querySelector('#dossier .ds-sbox[data-n="1"]').click(); const ms = performance.now() - t0; document.querySelector('#dossier .ds-sbox[data-n="1"]').click(); return { html, ms: Math.round(ms), fig: !!document.querySelector('#dossier .ds-figbox svg'), same: document.querySelector('#dossier img.ds-thumb') === window.__th }; });
+    assert(perf.html < 120000 && !perf.fig && perf.same, tag + ': no figure SVG on a phone, the thumbnail kept across a tap: ' + JSON.stringify(perf));
+    console.log(tag + ' render', JSON.stringify(perf));
     assert(lay.fig === null && lay.thumb && lay.thumb[0] > 0 && lay.thumb[1] <= 100, tag + ': mugshot thumbnail instead of the Figure box: ' + JSON.stringify(lay));
     assert(lay.rollMin >= 44, tag + ': roll buttons 44px tall: ' + lay.rollMin);
     if (!dark) {
@@ -174,9 +293,33 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
       await q.fill('#dossier .ds-newlog', 'We took the Autodrome.'); await q.click('#dossier [data-act="log"]');
       await q.fill('#dossier .ds-newlog', 'Bluecoats on the bridge.'); await q.click('#dossier [data-act="log"]');
       await q.fill('#dossier .ds-newclock', 'Courier'); await q.click('#dossier [data-act="addclock"][data-n="4"]');
-      await q.fill('#dossier .ds-newitem', 'Lockpicks'); await q.click('#dossier [data-act="additem"]');
+      await q.click('#dossier [data-act="loadout"]'); await q.fill('#dossier .ds-newitem', 'Lockpicks'); await q.click('#dossier [data-act="additem"]');
       await q.fill('#dossier .ds-newab', 'Ghost Contract'); await q.click('#dossier [data-act="addability"]'); await q.waitForTimeout(150);
-      await q.click('#dossier [data-act="rollopen"][data-a="Hunt"]'); await q.waitForTimeout(150);
+      /* an action opens the mark strip as a fixed bottom sheet on a phone, its controls 40px tall; it is closed again before the sweep below
+         (a fixed sheet would sit over whatever is scrolled under it) */
+      await q.click('#dossier [data-act="rollopen"][data-a="Hunt"]'); await q.waitForTimeout(250);
+      const strip = await q.evaluate(() => { const s = document.querySelector('#dossier .ds-mark'); if (!s) return null; const r = s.getBoundingClientRect(); const hs = [...s.querySelectorAll('button')].filter(n => n.offsetParent && !n.classList.contains('ds-x')).map(n => Math.round(n.getBoundingClientRect().height)); return { pos: getComputedStyle(s).position, bottom: Math.round(r.bottom), vh: innerHeight, minH: Math.min.apply(null, hs), n: hs.length }; });
+      assert(strip && strip.pos === 'fixed' && strip.bottom <= strip.vh + 1 && strip.minH >= 40 && strip.n >= 8, tag + ': the mark strip is a fixed bottom sheet with 40px controls: ' + JSON.stringify(strip));
+      /* the in-app roll panel's Push / Assist / Bargain rows are 40px tall too */
+      await q.click('#dossier .ds-mark [data-act="rollapp"]'); await q.waitForTimeout(200);
+      const rtog = await q.evaluate(() => [...document.querySelectorAll('#dossier .ds-rtog, #dossier .ds-roll .chip.sm')].filter(n => n.offsetParent).map(n => Math.round(n.getBoundingClientRect().height)));
+      assert(rtog.length >= 9 && Math.min.apply(null, rtog) >= 40, tag + ': the roll panel’s options are 40px tall: ' + rtog.join(','));
+      await q.click('#dossier .ds-roll .ds-roll-x'); await q.waitForTimeout(150);
+      /* touch: every play control 40px tall (buttons, chips, item rows, Resist, the Armor / Heavy rows and their boxes' hit areas);
+         Mark +1 / +2 first, side by side; 16px fields (no iOS zoom on focus); no double-tap zoom on buttons */
+      const touch = await q.evaluate(() => {
+        const vis = (s) => [...document.querySelectorAll('#dossier ' + s)].filter(n => n.offsetParent);
+        const low = (s, min) => vis(s).map(n => [n.className + ' ' + (n.textContent || '').trim().slice(0, 14), Math.round(n.getBoundingClientRect().height)]).filter(x => x[1] < min);
+        const sq = vis('.ds-resrow button.ds-sq').map(n => parseFloat(getComputedStyle(n, '::before').height));
+        const tools = vis('.ds-stressbox .ds-markrow button').map(n => ({ t: n.textContent, top: Math.round(n.getBoundingClientRect().top) }));
+        const fields = vis('input:not([type="checkbox"]), textarea, select').map(n => parseFloat(getComputedStyle(n).fontSize)).filter(f => f < 16);
+        const ta = vis('button').filter(n => getComputedStyle(n).touchAction !== 'manipulation').length;
+        return { low: low('.btn.sm, .chip.sm, .ds-item, .ds-resist, .ds-resrow, .ds-coh', 40), sq, tools, fields, ta };
+      });
+      assert(!touch.low.length, tag + ': play controls under 40px: ' + JSON.stringify(touch.low.slice(0, 8)));
+      assert(touch.sq.length >= 2 && Math.min.apply(null, touch.sq) >= 40, tag + ': Armor / Heavy boxes have 40px hit areas: ' + touch.sq.join(','));
+      assert(touch.tools.length === 4 && touch.tools[0].t === 'Mark +1' && touch.tools[1].t === 'Mark +2' && touch.tools[0].top === touch.tools[1].top && /^Clear 1$/.test(touch.tools[2].t), tag + ': Mark +1 / +2 first, side by side, then Clear 1 / Clear 3: ' + JSON.stringify(touch.tools));
+      assert(!touch.fields.length && !touch.ta, tag + ': fields are 16px and buttons do not double-tap zoom: ' + JSON.stringify([touch.fields, touch.ta]));
       const hit = await q.evaluate(() => {
         const out = { min: {}, owns: [], stolen: [] };
         const kinds = { pip: '.ds-act .ds-pip', keypip: '.ds-key .ds-pip', sbox: '.ds-sbox', xbox: '.ds-attr-h .ds-xbox', xpbox: '.ds-tools .ds-xbox', bandxp: '.ds-band .ds-xbox', bank: '.ds-bank .ds-dia', stacks: '.ds-stackrow .ds-dia', x: '.ds-key .ds-x, .ds-clockrow .ds-x, .ds-roll-x', xlist: '.ds-contact .ds-x, .ds-log .ds-x, .ds-items .ds-x, .ds-custom .ds-x' };

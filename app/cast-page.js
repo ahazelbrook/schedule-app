@@ -136,28 +136,62 @@
   /* the banner: the staged NPCs the viewer may see (revealed, and still there). A player can hide it; it comes back with the
      next change of the stage (a new `at`). */
   function dismissed() { try { return localStorage.getItem(DISMISS) || dismissedMem; } catch (e) { return dismissedMem; } }
-  function dismiss() { dismissedMem = scene && scene.at || ''; try { localStorage.setItem(DISMISS, dismissedMem); } catch (e) {} renderStage(); }
+  function dismiss() { dismissedMem = scene && scene.at || ''; try { localStorage.setItem(DISMISS, dismissedMem); } catch (e) {} renderStage(); if (isOpen && !ed) render(); }
+  function undismiss() { dismissedMem = ''; try { localStorage.removeItem(DISMISS); } catch (e) {} if (phoneNow() && !gm()) expandFor(STRIP_SHOW_MS); else strip.expanded = true; stageKey = ''; renderStage(); if (isOpen && !ed) render(); }
+  /* on a player's phone the banner is a one-line strip (portrait thumbs and names) that opens to the full banner for about 8 s when
+     the stage changes, or on a tap; the GM and a desk always get the full banner. The last stage seen is remembered, so a reload
+     on the same stage starts as the strip. */
+  var SEEN = 'b68.stage.seen', seenMem = null;
+  var strip = { expanded: false, timer: null };
+  function phoneNow() { try { return !!(window.matchMedia && window.matchMedia('(max-width: 760px)').matches); } catch (e) { return false; } }
+  function seenAt() { try { var v = localStorage.getItem(SEEN); return v == null ? seenMem : v; } catch (e) { return seenMem; } }
+  function markSeen(at) { seenMem = at; try { localStorage.setItem(SEEN, at); } catch (e) {} }
+  var STRIP_SHOW_MS = 8000;
+  function expandFor(ms) { strip.expanded = true; if (strip.timer) clearTimeout(strip.timer); strip.timer = setTimeout(function () { strip.timer = null; strip.expanded = false; renderStage(); }, ms); }
+  function setExpanded(on) { if (strip.timer) { clearTimeout(strip.timer); strip.timer = null; } strip.expanded = !!on; renderStage(); }
+  function stagedNames() { return stagedIds().map(function (id) { var d = npcs[id]; return d && d.revealed === true ? str(d.name) : ''; }).filter(Boolean); }
   function renderStage() {
     var box = $('stageBanner'); if (!box) return;
     var list = stagedIds().map(function (id) { var d = npcs[id]; return d && d.revealed === true ? { id: id, doc: d } : null; }).filter(Boolean);
     var at = scene && scene.at || '';
-    if (!list.length || dismissed() === at && at) { if (stageKey) { stageKey = ''; box.hidden = true; box.innerHTML = ''; document.documentElement.style.removeProperty('--cp-stage-h'); } return; }
-    var key = at + '|' + gm() + '|' + JSON.stringify(list.map(function (x) { return [x.id, x.doc.name, x.doc.role, x.doc.faction, x.doc.description, x.doc.spec]; }));
+    if (!list.length || dismissed() === at && at) { if (stageKey) { stageKey = ''; box.hidden = true; box.innerHTML = ''; box.classList.remove('cp-collapsed'); document.documentElement.style.removeProperty('--cp-stage-h'); } return; }
+    var phone = phoneNow() && !gm();
+    if (phone && at !== seenAt()) { markSeen(at); expandFor(STRIP_SHOW_MS); }   /* a changed stage: the reveal lands in full, then folds to the strip */
+    var asStrip = phone && !strip.expanded;
+    var key = at + '|' + gm() + '|' + asStrip + '|' + JSON.stringify(list.map(function (x) { return [x.id, x.doc.name, x.doc.role, x.doc.faction, x.doc.description, x.doc.spec]; }));
     if (key === stageKey) return;
     stageKey = key;
-    var rows = list.map(function (x) {
-      var d = x.doc;
-      return '<article class="cp-st-npc"><a class="cp-st-pic" href="#cast/' + encodeURIComponent(x.id) + '" aria-label="' + esc(str(d.name)) + ', full size">' + holder('st', x.id, 'mug', 'cp-fig-mug') + '</a>' +
-        '<div class="cp-st-txt"><h3 class="cp-st-name">' + esc(d.name) + (d.alias ? ' <small>“' + esc(d.alias) + '”</small>' : '') + '</h3>' + (sub(d) ? '<p class="cp-st-sub">' + esc(sub(d)) + '</p>' : '') +
-        '<p class="cp-st-desc">' + esc(d.description) + '</p></div></article>';
-    }).join('');
-    box.innerHTML = '<div class="cp-st-head"><span class="cp-st-kick">On stage</span><span class="cp-st-acts">' +
-      (gm() ? '<button type="button" class="btn sm" data-cp="clear">Clear stage</button>' : '') +
-      '<button type="button" class="btn sm" data-cp="dismiss" aria-label="Hide this until the stage changes">Hide</button></span></div><div class="cp-st-list">' + rows + '</div>';
+    if (asStrip) {
+      var names = list.map(function (x) { return str(x.doc.name); }).join(', ');
+      box.innerHTML = '<div class="cp-st-strip" role="button" tabindex="0" data-cp="expand" aria-expanded="false" aria-label="On stage: ' + esc(names) + '. Show more"><span class="cp-st-kick">On stage</span>' +
+        list.map(function (x) { return '<span class="cp-st-npc cp-st-mini">' + holder('st', x.id, 'mug-lo', 'cp-fig-mug') + '<span class="cp-st-name">' + esc(x.doc.name) + '</span></span>'; }).join('') +
+        '<span class="cp-st-more" aria-hidden="true">▲</span></div>';
+      box.classList.add('cp-collapsed');
+    } else {
+      var rows = list.map(function (x) {
+        var d = x.doc;
+        return '<article class="cp-st-npc"><a class="cp-st-pic" href="#cast/' + encodeURIComponent(x.id) + '" aria-label="' + esc(str(d.name)) + ', full size">' + holder('st', x.id, 'mug', 'cp-fig-mug') + '</a>' +
+          '<div class="cp-st-txt"><h3 class="cp-st-name">' + esc(d.name) + (d.alias ? ' <small>“' + esc(d.alias) + '”</small>' : '') + '</h3>' + (sub(d) ? '<p class="cp-st-sub">' + esc(sub(d)) + '</p>' : '') +
+          '<p class="cp-st-desc">' + esc(d.description) + '</p></div></article>';
+      }).join('');
+      box.innerHTML = '<div class="cp-st-head"><span class="cp-st-kick">On stage</span><span class="cp-st-acts">' +
+        (gm() ? '<button type="button" class="btn sm" data-cp="clear">Clear stage</button>' : '') +
+        (phone ? '<button type="button" class="btn sm" data-cp="collapse" aria-label="Fold the banner to one line">Less</button>' : '') +
+        '<button type="button" class="btn sm" data-cp="dismiss" aria-label="Hide this until the stage changes">Hide</button></span></div><div class="cp-st-list">' + rows + '</div>';
+      box.classList.remove('cp-collapsed');
+    }
     box.hidden = false;
     fillFigures(box);
     sizeStage();
   }
+  /* the strip is for a phone; a resize across 760px redraws the banner in the other form */
+  (function () {
+    try {
+      var mq = window.matchMedia && window.matchMedia('(max-width: 760px)'); if (!mq) return;
+      var onChange = function () { stageKey = ''; renderStage(); };
+      if (mq.addEventListener) mq.addEventListener('change', onChange); else if (mq.addListener) mq.addListener(onChange);
+    } catch (e) {}
+  })();
   /* the page keeps its last lines clear of the banner */
   function sizeStage() {
     var box = $('stageBanner'); if (!box || box.hidden) return;
@@ -193,7 +227,7 @@
     var head = '<header class="cp-head"><div class="cp-title"><span class="cp-kick">Blades ’68</span><h2 class="cp-h" id="cp-h" tabindex="-1">The cast</h2></div><div class="cp-meta">' +
       (gm() ? '<span class="cp-role gm">GM</span>' : '') + '</div></header>';
     var body;
-    if (!api || !api.db()) body = api ? note('The cast needs the shared files. Open this page where the files are available (the published artifact or the hosted site).', true) : note('Opening the cast…');
+    if (!api || !api.db()) body = api ? note('The cast is not available in this view. Open the app from the table’s usual link to see it.', true) : note('Opening the cast…');
     else if (failed && !loaded) body = note(/unknown collection|not available/i.test(errText(failed)) ? 'The cast is not available in this view.' : 'The cast is offline: ' + esc(errText(failed)), true);
     else if (!loaded) body = note('Opening the cast…');
     else if (view.kind === 'edit' || view.kind === 'new') body = gm() ? editorView() : note('Only the GM can edit the cast. <a href="#cast">Back to the cast</a>');
@@ -219,6 +253,10 @@
         '<span class="cp-bar-acts">' + (staged.length ? '<button type="button" class="btn sm" data-cp="clear">Clear stage</button>' : '') + '<a class="btn sm primary" href="#cast/new" role="button">New NPC</a></span>';
     }
     h += '</div>';
+    /* who is on stage, in plain words, whether or not the banner is showing (a hidden banner leaves this and a way back) */
+    var onNow = stagedNames(), at = scene && scene.at || '';
+    if (onNow.length) h += '<p class="cp-onstage"><span class="cp-onstage-k">On stage</span><span class="cp-onstage-n">' + esc(onNow.join(', ')) + '</span>' +
+      (at && dismissed() === at ? '<button type="button" class="chip sm txt" data-cp="show">Show the banner</button>' : '') + '</p>';
     if (!list.length) {
       h += '<div class="cp-empty">' + (all.length ? 'No NPC matches that filter.' : g ? 'The cast is empty.' : 'No one has been introduced yet. When the GM puts someone on stage, they appear here.') + '</div>';
       if (g && !all.length) h += '<p><button type="button" class="btn" data-cp="seed">Add the starting NPCs</button></p>';
@@ -442,6 +480,9 @@
     else if (a === 'reveal') { ev.preventDefault(); var d = npcs[id]; if (d) setRevealed(id, d.revealed !== true); }
     else if (a === 'clear') clearStage();
     else if (a === 'dismiss') dismiss();
+    else if (a === 'expand') setExpanded(true);
+    else if (a === 'collapse') setExpanded(false);
+    else if (a === 'show') undismiss();
     else if (a === 'filter') { filter = b.getAttribute('data-f') || 'all'; render(); }
     else if (a === 'save') save();
     else if (a === 'delete') remove();
@@ -460,7 +501,7 @@
   }
   function wire() {
     var r = root(); if (r && !r.__cp) { r.__cp = true; r.addEventListener('click', onClick); r.addEventListener('input', onInput); r.addEventListener('change', onInput); }
-    var s = $('stageBanner'); if (s && !s.__cp) { s.__cp = true; s.addEventListener('click', onClick); }
+    var s = $('stageBanner'); if (s && !s.__cp) { s.__cp = true; s.addEventListener('click', onClick); s.addEventListener('keydown', function (ev) { if ((ev.key === 'Enter' || ev.key === ' ') && ev.target && ev.target.getAttribute && ev.target.getAttribute('data-cp') === 'expand') { ev.preventDefault(); setExpanded(true); } }); }
   }
   wire();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);

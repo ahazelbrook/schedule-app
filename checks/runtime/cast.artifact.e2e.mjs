@@ -79,6 +79,11 @@ try {
   check(await P.p.waitForSelector('#stageBanner:not([hidden]) .cp-st-name', { timeout: 10000 }).then(() => true, () => false) && /rubber apron/.test(await P.p.textContent('#stageBanner')), 'player: the banner shows Grunt');
   await P.p.evaluate(() => { location.hash = '#cast'; }); await sleep(500);
   check((await cards(P.p)).join() === 'Grunt', 'player: the cast holds Grunt only (the rest are hidden, though the db holds them): ' + (await cards(P.p)).join());
+  // a player who hides the banner still reads, on the cast page, who is on stage, and can bring the banner back
+  await P.p.click('#stageBanner [data-cp="dismiss"]'); await sleep(300);
+  check(await P.p.$eval('#stageBanner', (e) => e.hidden) && /On stage\s*Grunt/.test((await P.p.textContent('#cast-page .cp-onstage')) || ''), 'player: after Hide the cast page still says Grunt is on stage');
+  await P.p.click('#cast-page [data-cp="show"]'); await sleep(300);
+  check(!(await P.p.$eval('#stageBanner', (e) => e.hidden)) && !(await P.p.$('#cast-page [data-cp="show"]')), 'player: "Show the banner" brings it back');
   check(!/Brackley|Skinner/.test(await P.p.textContent('body')) && !(await P.p.$('#cast-page [data-cp="stage"], #cast-page a[href$="/edit"]')), 'player: no hidden NPC in the page and no GM controls');
   // a hidden NPC is not shown by a direct link either, and gmNotes never render for a player
   await P.p.evaluate(() => window.__stores.npcs.npc_grunt.gmNotes = 'SECRET'); await P.p.evaluate(() => { location.hash = '#cast/npc_grunt'; }); await sleep(500);

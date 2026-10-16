@@ -8,6 +8,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
@@ -191,12 +192,14 @@ function panelCheck(pack, o, label) {
   // nothing moved off the card is lost: it is in a fold
   const folded = F.map(f => f.lines.join('\n')).join('\n');
   const keep = [o.rumour, o.physThreatText, o.socThreatText, o.also, o.bandNote, o.targetWhy, o.targetNote, o.geometry.note, o.landmark, o.watcher, o.special,
-    o.vectors[0].cost, o.vectors[1].how, o.vectors[1].cost, o.vectors[2].cost, o.approach.gambit, ...ratingsOf(o), ...o.skips.map(s => s.via)].filter(Boolean);
+    o.vectors[0].cost, shownHow(o.vectors[1]), o.vectors[1].cost, o.vectors[2].cost, o.approach.gambit, ...ratingsOf(o), ...o.skips.map(s => s.via)].filter(Boolean);
   for (const s of keep) assert.ok(folded.includes(s), label + ': lost from the folds: ' + String(s).slice(0, 40));
   for (const t of o.tensions) assert.ok(folded.includes(t.replace(/^\*\*(.+?)\*\*\s*/, '').slice(0, 30)), label + ': tension lost');
   if (pack.T.factionDetail && pack.T.factionDetail[o.faction]) assert.ok(folded.includes(pack.T.factionDetail[o.faction].secret), label + ': dossier lost');
 }
 const ratingsOf = o => ['Wealth ' + o.wealth, 'Security ' + o.security, 'Criminal ' + o.criminal, 'Paranormal ' + o.paranormal];
+// a way in as the card shows it: the vault's author note on the service side reads as a neutral line (B12)
+const shownHow = v => /^\s*\[TODO\b/i.test(v.how) ? 'No staff door is printed for this kind of place' : v.how;
 
 await test('panel: glance card and folds keep everything, change nothing, and SAY is player-safe', () => {
   let n = 0;
@@ -223,6 +226,146 @@ await test('noteBody and canvas', () => {
   assert.ok(cv.nodes.length >= o.rooms.length + 4 && cv.edges.length >= 3);
   assert.equal(L.canvas(o, FIX), L.canvas(o, FIX), 'canvas ids are deterministic');
   assert.ok(new Set(cv.nodes.map(x => x.id)).size === cv.nodes.length, 'node ids unique');
+});
+
+/* the generator review (16/10/2026), robustness: B9 a pack with no faction dossiers still rolls, with the same draws;
+   B8 check(T) names every key a pack is missing or has empty */
+await test('B9: no faction dossiers: the rumour names a faction and the roll is otherwise the same draw', () => {
+  const TEMPL = ["Word is that %F%'s allies are restless.", "Word is that %F%'s enemies are close.", "Word is that %F%'s goals have changed.", "Word is that %F%'s quirk or situation is talked about."];
+  const noD = clone(FIX); noD.T.factionDetail = {}; noD.T.rumour = TEMPL;
+  const gone = clone(FIX); delete gone.T.factionDetail; gone.T.rumour = TEMPL;
+  const withD = clone(FIX); withD.T.rumour = TEMPL;
+  const strip = x => { const y = clone(x); delete y.rumour; return y; };
+  for (let s = 0; s < 60; s++) {
+    const opts = { approach: FIX.T.approach[s % FIX.T.approach.length].n, mix: s % 3 === 0 };
+    const a = L.generate(noD, opts, { seed: s, mem: {} }), b = L.generate(withD, opts, { seed: s, mem: {} }), c = L.generate(gone, opts, { seed: s, mem: {} });
+    assert.ok(!/undefined|%F%/.test(a.rumour) && /'s (allies|enemies|goals|situation)/.test(a.rumour), a.rumour);
+    assert.ok(FIX.T.faction.some(f => a.rumour.includes(f[0])), 'names a faction: ' + a.rumour);
+    assert.equal(a.rumour, c.rumour, 'an empty map and no map read the same');
+    assert.deepEqual(strip(a), strip(b), 'one draw either way: everything but the rumour is the same roll');
+    assert.ok(/ run with | are up against |: | — /.test(b.rumour) && !/%F%/.test(b.rumour), 'with dossiers the rumour carries the dossier line: ' + b.rumour);
+    checkRoll(noD, a, 'no dossiers #' + s); checkRoll(gone, c, 'no dossier map #' + s);
+    for (const t of [L.cardLines(a, noD).join('\n'), L.folds(a, noD).map(f => f.lines.join('\n')).join('\n'), JSON.stringify(L.glance(a, noD))]) assert.ok(!/undefined/.test(t));
+  }
+  assert.deepEqual(L.check(noD.T), ['factionDetail']); assert.deepEqual(L.check(gone.T), ['factionDetail']);
+});
+
+await test('B8: check(T) names what a pack is missing or has empty; the fixture is complete', () => {
+  assert.deepEqual(L.check(FIX.T), [], 'the fixture is complete'); assert.deepEqual(L.check(FIX), [], 'a whole part is accepted');
+  if (REAL) assert.deepEqual(L.check(REAL.T), [], 'the real pack is complete');
+  assert.deepEqual(L.check(null), ['T']);
+  const optional = ['factionThumb'];
+  for (const k of Object.keys(FIX.T)) {
+    const del = clone(FIX.T); delete del[k];
+    if (optional.includes(k)) { assert.deepEqual(L.check(del), [], k + ' is optional'); continue; }
+    assert.ok(L.check(del).includes(k), 'delete ' + k + ': ' + JSON.stringify(L.check(del)));
+    const emp = clone(FIX.T); emp[k] = Array.isArray(FIX.T[k]) ? [] : {};
+    if (k === 'geometry') { assert.deepEqual(L.check(emp), [], 'an empty geometry map: every style takes the default'); continue; }
+    assert.ok(L.check(emp).some(x => x === k || x.startsWith(k + '.')), 'empty ' + k + ': ' + JSON.stringify(L.check(emp)));
+  }
+  // inner holes are named by their path
+  const T = clone(FIX.T), th = FIX.T.themeNames[1], d = FIX.T.district[2][0];
+  T.theme[th].impressions = ['only one']; T.theme[th].bands = T.theme[th].bands.slice(1); T.gaz[d].notables = []; T.weather.Night = [];
+  T.targetType.Ship.district = 'Nowhere Test'; T.targetType['Records office'].forceRoom = 99; T.bandLabel.secure = '';
+  assert.deepEqual(L.check(T), ['weather.Night', 'bandLabel.secure', 'targetType.Ship.district', 'targetType.Records office.forceRoom',
+    'theme.' + th + '.bands', 'theme.' + th + '.impressions', 'gaz.' + d + '.notables']);
+  // a theme only a target type or the Paranormal approach names is checked too
+  const U = clone(FIX.T); delete U.theme['Anomalous Zone'];
+  assert.ok(L.check(U).includes('theme.Anomalous Zone'), JSON.stringify(L.check(U)));
+});
+
+/* the generator review (16/10/2026), reading: B6 flags that are not always on, the rule as text, ring-skips in the Plan
+   hint; idea 7 the one-line plan; B21 band labels true to the star; B12 no author notes where the GM reads. Presentation
+   only: the roll is the vault's (see the byte-identity digests below) */
+await test('review: flags, the rule, the plan line under Say, band labels true to the star, no author notes', () => {
+  let withRule = 0, withSkips = 0, flagged = 0, rolls = 0;
+  for (let s = 0; s < 150; s++) {
+    const o = L.generate(FIX, { approach: FIX.T.approach[s % FIX.T.approach.length].n, mix: s % 4 === 0 }, { seed: s * 7 + 1, mem: {} });
+    const g = L.glance(o, FIX), F = L.folds(o, FIX), ps = L.playerSummary(o);
+    assert.ok(!g.flags.some(f => /District rule|ring-skip/.test(f)), 'always-on flags are gone: ' + g.flags.join(' · '));
+    for (const f of g.flags) assert.ok(/^(Off their turf|Tier [IVX0]+ holding|Paranormal |.+ outside )/.test(f), 'a real flag: ' + f);
+    if (g.flags.length) flagged++;
+    if (o.special) { withRule++; assert.ok(g.rule && g.rule.length <= 110 && o.special.replace(/\s+/g, ' ').trim().startsWith(g.rule.replace(/…$/, '')), 'the rule text, shortened: ' + g.rule); }
+    else assert.equal(g.rule, '');
+    assert.equal(g.skips, o.skips.length); if (o.skips.length) withSkips++;
+    assert.equal(F.find(f => f.id === 'plan').hint, o.styleName + ' · ' + o.skips.length + ' skip' + (o.skips.length === 1 ? '' : 's'), 'ring-skips in the Plan hint');
+    // idea 7: one sentence, from what the glance and the player summary already show
+    const locks = g.bands.slice(0, g.bands.findIndex(b => b.target) + 1).reduce((n, b) => n + b.locks, 0);
+    const obstacle = o.streetObstacle.toLowerCase().replace(/[.\s]+$/, '');
+    assert.equal(g.target.locks, locks);
+    assert.equal(g.plan, 'Front door on ' + o.namedStreet + ' (outside: ' + obstacle + '); the target, ' + o.targetRoom + ' (' + g.target.band.toLowerCase() + '), ' +
+      (locks ? 'is behind ' + locks + ' lock' + (locks === 1 ? '' : 's') : 'has no lock in the way') + '.');
+    assert.ok(ps.front.includes(o.namedStreet) && ps.front.toLowerCase().includes(obstacle), 'the front is what the players are shown');
+    assert.ok(!g.plan.includes(o.vectors[2].how.replace(/ — there is always one\.$/, '')), 'no back route: neither the glance nor the summary shows it');
+    const gl = L.glanceLines(o, FIX);
+    assert.equal(gl[gl.indexOf('**Target:** ★ ' + g.target.room + ' (' + g.target.band.toLowerCase() + ') — ' + g.target.what) + 1], '**Plan:** ' + g.plan, 'Plan follows Target');
+    assert.equal(gl.some(l => l.startsWith('**Rule:** ')), !!o.special); assert.ok(gl.join('\n').length < 1500);
+    // B21: the ★ band's own label carries the star (room headings, the saved note and the Reference fold)
+    const label = FIX.T.bandLabel[o.targetBand];
+    assert.ok(L.cardLines(o, FIX).includes('### ' + label + ' ★ (' + o.rooms.filter(r => r.band === o.targetBand).length + ')'), 'card heading');
+    assert.ok(L.noteBody(o, { pack: FIX }).includes('### ' + label + ' ★\n'), 'note heading');
+    assert.ok(F.find(f => f.id === 'ref').lines.some(l => l.includes(label + ' ★')), 'reference');
+    rolls++;
+  }
+  assert.ok(withRule > 0 && withSkips > 0 && flagged < rolls, 'rule ' + withRule + ' skips ' + withSkips + ' flagged ' + flagged + ' of ' + rolls);
+});
+
+await test('B12: a theme with no staff-side room and a faction with neither dossier nor thumbnail read as plain words; the roll keeps the vault\'s text', () => {
+  const thin = clone(FIX);
+  for (const k of Object.keys(thin.T.theme)) thin.T.theme[k].alsoRooms = thin.T.theme[k].alsoRooms.filter(nb => nb[1] !== 'working' && nb[1] !== 'controlled');
+  thin.T.factionDetail = {}; thin.T.factionThumb = {};
+  let n = 0;
+  for (let s = 0; s < 40; s++) {
+    const o = L.generate(thin, { mix: s % 2 === 0 }, { seed: s, mem: {} });
+    assert.ok(/^\[TODO: /.test(o.vectors[1].how), 'the roll is the vault\'s, author note and all');
+    const shown = [L.cardLines(o, thin).join('\n'), L.folds(o, thin).map(f => f.lines.join('\n')).join('\n'), L.noteBody(o, { pack: thin }), L.canvas(o, thin), L.glanceLines(o, thin).join('\n'), L.playerSummary(o).text];
+    for (const t of shown) assert.ok(!/\[TODO|flagged for/i.test(t), 'an author note where the GM reads');
+    for (const t of shown.slice(0, 4)) assert.ok(t.includes('No staff door is printed for this kind of place: invent one'), 'the service side in plain words');
+    for (const t of shown.slice(0, 2)) assert.ok(t.includes('No dossier or thumbnail is printed for this faction'), 'the opposition in plain words');
+    n++;
+  }
+  assert.equal(n, 40);
+});
+
+await test('B21: a Secure label that says "the target" stays true when the ★ sits elsewhere', () => {
+  const named = clone(FIX);
+  named.T.bandLabel = { public: 'Public — anyone can be here', working: 'Working — staff only', controlled: 'Controlled — most locks are here', secure: 'Secure — the target' };
+  let elsewhere = 0, there = 0;
+  for (let s = 0; s < 60; s++) {
+    const o = L.generate(named, { approach: named.T.approach[s % named.T.approach.length].n }, { seed: s, mem: {} });
+    const ref = L.folds(o, named).find(f => f.id === 'ref').lines.find(l => l.startsWith('- **Bands**'));
+    const card = L.cardLines(o, named).join('\n'), note = L.noteBody(o, { pack: named });
+    assert.equal((ref.match(/★/g) || []).length, o.targetBand === 'secure' ? 1 : 2, ref);
+    if (o.targetBand === 'secure') { there++; assert.ok(ref.includes('Secure — the target ★') && !/usually/.test(ref + card + note), ref); }
+    else {
+      elsewhere++;
+      const short = named.T.bandLabel[o.targetBand].split(' — ')[0];
+      const secure = 'Secure — the target, usually (★ in ' + short + ' this time)';
+      assert.ok(ref.includes(secure) && ref.includes(named.T.bandLabel[o.targetBand] + ' ★'), ref);
+      assert.ok(!/### Secure — the target \(/.test(card) && card.includes('### ' + named.T.bandLabel[o.targetBand] + ' ★ ('), 'the room headings too');
+      if (o.rooms.some(r => r.band === 'secure')) assert.ok(card.includes('### ' + secure + ' (') && note.includes('### ' + secure + '\n'), 'the Secure heading, card and note');
+    }
+  }
+  assert.ok(elsewhere > 5 && there > 5, 'target seats: ' + elsewhere + ' elsewhere, ' + there + ' secure');
+});
+
+/* Byte-identity (the generator review, 16/10/2026): generate() is the vault's roll, so the fixes never change it. These
+   digests were taken from location.js at 7fce4b9 over the fixture (every target x district x mix, 3 seeds each, then a
+   200-roll run sharing one memory); a change here changes a stored roll. Change them only with the fixture. */
+const LOC_DIGEST = '468 4cdf81bd0df501ed98ab409e986326e680b8a0a0f45f98f84cc1b94009c10476';
+await test('byte-identity: generate() over the fixture hashes to the digest taken before the review fixes', () => {
+  const h = createHash('sha256');
+  const T = FIX.T, targets = [''].concat(T.targetNames), districts = [''].concat(T.district.map(d => d[0]));
+  const approaches = [''].concat(T.approach.map(a => a.n)), factions = [''].concat(T.faction.map(f => f[0]));
+  let n = 0;
+  for (const target of targets) for (const district of districts) for (const mix of [false, true]) for (let s = 0; s < 3; s++) {
+    const opts = { target, district, mix, approach: approaches[(n + s) % approaches.length], faction: factions[(n * 7 + s) % factions.length] };
+    h.update(JSON.stringify(L.generate(FIX, opts, { seed: (s * 2654435761 + n * 97) >>> 0, mem: {} })) + '\n'); n++;
+  }
+  const mem = {};
+  for (let i = 0; i < 200; i++) h.update(JSON.stringify(L.generate(FIX, { faction: factions[i % factions.length], mix: i % 3 === 0 }, { seed: i + 1, mem })) + '\n');
+  h.update(JSON.stringify(mem));
+  assert.equal(n + ' ' + h.digest('hex'), LOC_DIGEST, 'the rolls changed');
 });
 
 /* ---------- the player leak test ---------- */

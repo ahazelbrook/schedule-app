@@ -1,6 +1,6 @@
 // Unit test for the GM page (app/gm-page.js; no browser): its pure helpers (what may reach the iPad, replaying a console card
 // exactly, saving the GM state, the Situations cards, the session on a capture) and the page itself on a small fake DOM (the
-// Situations / Classic views and their toggle, the Position switch, replay after a reload, capture, the display-name editor). Invented fixtures, except two sweeps over the real pack
+// the four Situations (the single tables folded under the card), the Position switch, replay after a reload, capture, the display-name editor). Invented fixtures, except two sweeps over the real pack
 // (gm-private/, git-ignored) that run only when it is on this machine and print nothing from it.
 //   node checks/runtime/gm-page.test.mjs
 import fs from 'node:fs';
@@ -182,30 +182,29 @@ await test('4c. sizes are bytes (UTF-8), not characters', () => {
 const FIXC = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'console-pack.json'), 'utf8')).parts;
 const FIXS = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'scenes-pack.json'), 'utf8'));
 const SC = require(path.join(ROOT, 'app', 'gm', 'scenes.js')), EN = require(path.join(ROOT, 'app', 'gm', 'engagement.js'));
+const DT = require(path.join(ROOT, 'app', 'gm', 'downtime.js'));
+const DTT = require(path.join(ROOT, 'app', 'downtime-tables.js'));      /* the built-in tables (B68DowntimeTables), loaded before the module */
+const dtMk = (cfg) => DT.create(Object.assign({ T: DTT.T, places: DTT.PLACES }, cfg || {}));
+const CTBOX = {}; CTBOX.window = CTBOX; vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'app', 'content.js'), 'utf8'), CTBOX);
+const CT = CTBOX.B68Content;        /* the book's vices and purveyors (public: every player loads content.js), as the page passes them */
 const FIXL = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'location-pack.json'), 'utf8'));
 const mdPlain = (s) => '<p>' + String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>';   // the page passes B68Markdown here
 const count = (s, re) => (s.match(re) || []).length;
 
-await test('5a. conView: Situations unless this device chose Classic; the release switch off, or no situations layer, is Classic always', () => {
-  assert.equal(P.conView(null, true), 'situations');
-  assert.equal(P.conView('situations', true), 'situations');
-  assert.equal(P.conView('classic', true), 'classic');
-  assert.equal(P.conView('nonsense', true), 'situations');
-  assert.equal(P.conView('situations', true, false), 'classic', 'SITUATIONS_DEFAULT = false');
-  assert.equal(P.conView('situations', false), 'classic', 'a console without the layer');
-  assert.equal(P.SITUATIONS_DEFAULT, true);
-  assert.equal(P.VIEW_KEY, 'b68.gm.view');
+await test('5a. one console: no Classic view, no view preference, no release switch, no layout preference', () => {
+  assert.equal(P.conView, undefined); assert.equal(P.SITUATIONS_DEFAULT, undefined); assert.equal(P.VIEW_KEY, undefined);
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  assert.ok(!/b68\.gm\.view|b68\.gm\.layout|SITUATIONS_DEFAULT|data-view|layout-classic|layout-app/.test(src), 'nothing of the old switches is left in the page');
 });
 
-await test('5b. keyAction: 1-4 are situations in Situations (5-9 do nothing); Classic keeps 1-9; typing and modifiers stay quiet', () => {
-  for (let n = 1; n <= 4; n++) assert.deepEqual(P.keyAction({ key: String(n), view: 'situations' }), { type: 'situation', n });
-  for (let n = 5; n <= 9; n++) assert.equal(P.keyAction({ key: String(n), view: 'situations' }), null);
-  for (let n = 1; n <= 9; n++) { assert.deepEqual(P.keyAction({ key: String(n), view: 'classic' }), { type: 'button', n }); assert.deepEqual(P.keyAction({ key: String(n) }), { type: 'button', n }); }
-  assert.equal(P.keyAction({ key: '2', view: 'situations', typing: true }), null);
-  assert.equal(P.keyAction({ key: '2', view: 'situations', ctrlKey: true }), null);
-  assert.equal(P.keyAction({ key: '2', view: 'classic', metaKey: true }), null);
-  assert.deepEqual(P.keyAction({ key: 'l', view: 'situations' }), { type: 'last' });
-  assert.deepEqual(P.keyAction({ key: 'p', view: 'situations' }), { type: 'capture', bucket: 'n' });
+await test('5b. keyAction: 1-4 are situations, 5-9 do nothing (the single tables have no keys); typing and modifiers stay quiet', () => {
+  for (let n = 1; n <= 4; n++) { assert.deepEqual(P.keyAction({ key: String(n) }), { type: 'situation', n }); assert.deepEqual(P.keyAction({ key: String(n), view: 'classic' }), { type: 'situation', n }, 'a view is not a thing any more'); }
+  for (let n = 5; n <= 9; n++) assert.equal(P.keyAction({ key: String(n) }), null);
+  assert.equal(P.keyAction({ key: '2', typing: true }), null);
+  assert.equal(P.keyAction({ key: '2', ctrlKey: true }), null);
+  assert.equal(P.keyAction({ key: '2', metaKey: true }), null);
+  assert.deepEqual(P.keyAction({ key: 'l' }), { type: 'last' });
+  assert.deepEqual(P.keyAction({ key: 'p' }), { type: 'capture', bucket: 'n' });
 });
 
 await test('5c. sessionOf / captureEntry: the session number goes on the entry when the campaign has one (numbers only), else the entry is as before', () => {
@@ -297,6 +296,7 @@ class FEl {
   querySelectorAll(sel) { const alts = parseSel(sel), out = []; const walk = (n) => { for (const k of n.kids) if (k.nodeType === 1) { if (alts.some((a) => matchPath(k, a, this))) out.push(k); walk(k); } }; walk(this); return out; }
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
   focus() { this.doc.activeElement = this; } blur() { if (this.doc.activeElement === this) this.doc.activeElement = this.doc.body; }
+  getBoundingClientRect() { return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }; }     /* no layout here: the outline spy and showCard see everything at 0 */
   click() { dispatch(this, 'click'); }
 }
 function matches(el, c) {
@@ -335,7 +335,7 @@ function fakeBrowser(over) {
   const ls = new Map(), toasts = [];
   const W = { document: doc, localStorage: { getItem: (k) => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => { ls.set(k, String(v)); }, removeItem: (k) => { ls.delete(k); } },
     matchMedia: () => ({ matches: false }), addEventListener() {}, confirm: () => true, open() {}, B68: { toast: (m, bad) => toasts.push([m, !!bad]) },
-    B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmEngagement: EN, setTimeout, clearTimeout, console };
+    B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmEngagement: EN, B68GmDowntime: DT, B68DowntimeTables: DTT, B68Content: CT, setTimeout, clearTimeout, console };
   W.self = W; Object.assign(W, over || {});
   return { W, doc, ls, toasts };
 }
@@ -345,10 +345,11 @@ function loadPage(W) {
   return W.B68GmPage;
 }
 /* a fake server for the GM state: the real merge, one document */
-function fakeGm(camp) {
+function fakeGm(camp, extra) {
   const server = { doc: {}, at: 0, patches: [], displays: [] };
   const parts = { console: { version: 'c1', src: {}, body: FIXC.console }, campaign: { version: 'k1', src: FIXC.campaign.src || {}, body: camp || FIXC.campaign }, location: { version: 'l1', src: {}, body: { T: FIXL.T, extra: FIXL.extra } },
     scenes: { version: 's1', src: {}, body: { T: FIXS.parts.scenes.T } }, engagement: { version: 'e1', src: {}, body: { T: FIXS.parts.engagement.T } } };
+  Object.assign(parts, extra || {});      /* more pack parts for one test (screen, npc), or a replacement of one */
   const gm = {
     pack: async () => ({ version: 'v1', parts: Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, { version: v.version }])) }),
     packPart: async (n) => ({ part: n, version: parts[n].version, src: parts[n].src, body: parts[n].body }),
@@ -359,11 +360,11 @@ function fakeGm(camp) {
   return { gm, server };
 }
 const until = async (fn, n = 200) => { for (let i = 0; i < n; i++) { const v = await fn(); if (v) return v; await new Promise((r) => setTimeout(r, 5)); } return null; };
-async function openPage({ br, fg, camp, over } = {}) {
+async function openPage({ br, fg, camp, over, api } = {}) {
   br = br || fakeBrowser(over); fg = fg || fakeGm(); br.W.claude = { gm: fg.gm };
   const page = loadPage(br.W); const root = br.doc.createElement('div'); br.doc.body.appendChild(root);
   const cd = { current: camp === undefined ? { session: { number: 3 }, crew: {} } : camp };
-  page.open(root, { ready: async () => {}, isGM: () => true, me: () => 'gm1', gm: () => fg.gm, db: () => null, campaign: () => cd.current, saveFile() {}, copy(t) { br.copied = t; } });
+  page.open(root, Object.assign({ ready: async () => {}, isGM: () => true, me: () => 'gm1', gm: () => fg.gm, db: () => null, campaign: () => cd.current, saveFile() {}, copy(t) { br.copied = t; } }, api || {}));   /* api: more of boot's api for one test (characters, addClock) */
   const ok = await until(() => page._state() && page._state().status === 'ready' && root.querySelector('#gm-root'));
   assert.ok(ok, 'the page did not open: ' + JSON.stringify(page._state()) + ' ' + root.textContent.slice(0, 200));
   return { page, root, br, fg, press: (k, extra) => { for (const fn of br.doc.listeners.keydown || []) fn(Object.assign({ key: k, target: br.doc.body, ctrlKey: false, altKey: false, metaKey: false, preventDefault() {}, stopPropagation() {} }, extra || {})); },
@@ -372,9 +373,9 @@ async function openPage({ br, fg, camp, over } = {}) {
 }
 const cardTxt = (h) => (h.q('#gm-card').textContent || '').replace(/\s+/g, ' ').trim();
 
-await test('6a. the console opens on the four Situations: a big Position switch, the toggle, the single tables, no Result control', async () => {
+await test('6a. the console is the four Situations: a big Position switch, the single tables folded under the card, no Result control, no toggle', async () => {
   const h = await openPage();
-  assert.equal(h.q('#gm-root').getAttribute('data-view'), 'situations');
+  assert.ok(!h.q('#gm-root').hasAttribute('data-view'), 'one console: no view attribute');
   const btns = h.qa('#gm-buttons .gm-btn'); assert.equal(btns.length, 4);
   assert.deepEqual(btns.map((b) => b.getAttribute('data-sit')), ['before', 'fourfive', 'onetothree', 'someone']);
   assert.deepEqual(btns.map((b) => b.querySelector('kbd').textContent), ['1', '2', '3', '4']);
@@ -386,7 +387,12 @@ await test('6a. the console opens on the four Situations: a big Position switch,
   assert.ok(h.qa('#gm-controls [data-ctl]').length >= 4, 'scene, district, PC, NPC, threat stay');
   assert.equal(h.qa('#gm-singles [data-gm="roll"]').length, 9, 'nine single tables');
   assert.equal(h.qa('#gm-singles kbd').length, 0, 'no keys on the single tables');
-  assert.deepEqual(h.qa('[data-gm="view"]').map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed')]), [['situations', 'true'], ['classic', 'false']]);
+  assert.equal(h.qa('[data-gm="view"]').length, 0, 'no Situations | Classic toggle anywhere'); assert.ok(!h.q('.gm-conhead') && !h.q('.gm-head'), 'no console header, no page heading');
+  const col = [...h.q('.gm-console').kids].filter((k) => k.nodeType === 1).map((k) => k.id);
+  assert.deepEqual(col, ['gm-pos', 'gm-scenebox', 'gm-mini', 'gm-controls', 'gm-buttons', 'gm-card', 'gm-earlier', 'gm-singles'], 'the column: Position, Scene, the buttons, the card, Earlier, More tables');
+  assert.equal(h.q('#gm-scenebox > #gm-scene') || h.q('#gm-scenebox').querySelector('#gm-scene'), h.q('#gm-scene'), 'the Scene button sits in its box');
+  assert.equal(h.q('#gm-singles').tagName, 'DETAILS', 'the single tables are folded');
+  assert.match(h.q('#gm-scene-chips').textContent, /District: any/, 'the Scene line labels its chips');
   await h.save();
 });
 
@@ -437,32 +443,6 @@ await test('6d. reload (close and open again) redraws the same situation card, a
   await h3.save();
 });
 
-await test('6e. Classic toggle: one tap shows the nine buttons (keys 1-9, Result control, no Position switch), remembered across a reload; Situations are kept apart', async () => {
-  const fg = fakeGm(), br = fakeBrowser();
-  const h = await openPage({ fg, br });
-  h.press('2'); const sitCard = cardTxt(h);
-  h.qa('[data-gm="view"][data-v="classic"]')[0].click();
-  assert.equal(h.q('#gm-root').getAttribute('data-view'), 'classic');
-  assert.equal(br.ls.get('b68.gm.view'), 'classic');
-  assert.equal(h.qa('#gm-buttons .gm-btn').length, 9); assert.equal(h.qa('#gm-pos [data-gm="pos"]').length, 0); assert.equal(h.qa('#gm-singles button').length, 0);
-  assert.equal(h.qa('#gm-controls [data-ctl="result"]').length, 1, 'Result is back'); assert.equal(h.qa('#gm-controls [data-ctl="pos"]').length, 1);
-  assert.ok(!h.q('#gm-card .gm-lead'), 'no composed card in Classic until you roll a single table');
-  h.press('5'); assert.equal(h.q('#gm-card article').getAttribute('data-tool'), 'console'); assert.ok(!h.q('#gm-card .gm-lead'));
-  h.press('9'); const classicCard = cardTxt(h);
-  assert.equal(h.qa('#gm-earlier [data-gm="replay"]').length, 2, 'Classic history: its own two rolls');
-  await h.save();
-  assert.ok(fg.server.doc.cards.console && fg.server.doc.cards.situation, 'both cards kept, each under its own id');
-  assert.equal(Object.keys(fg.server.doc.hist.console).length, 2); assert.equal(Object.keys(fg.server.doc.hist.situation).length, 1);
-  const h2 = await openPage({ fg, br });
-  assert.equal(h2.q('#gm-root').getAttribute('data-view'), 'classic', 'the choice is remembered on this device');
-  assert.equal(cardTxt(h2), classicCard);
-  h2.qa('[data-gm="view"][data-v="situations"]')[0].click();
-  assert.equal(br.ls.get('b68.gm.view'), 'situations');
-  assert.equal(h2.qa('#gm-buttons .gm-btn').length, 4);
-  assert.ok(cardTxt(h2) === classicCard || cardTxt(h2) === sitCard, 'the newer of the two shows');
-  await h2.save();
-});
-
 await test('6f. a single table rolled from the Situations row is a classic card (stored under console), shown in the same box', async () => {
   const h = await openPage();
   h.press('1'); await new Promise((r) => setTimeout(r, 8));
@@ -474,23 +454,6 @@ await test('6f. a single table rolled from the Situations row is a classic card 
   assert.equal(h2.q('#gm-card article').getAttribute('data-tool'), 'console', 'the newest roll is what comes back');
   assert.equal(h2.qa('#gm-earlier [data-gm="replay"]').length, 2, 'Situations history lists both tools, newest first');
   await h2.save();
-});
-
-await test('6g. the release switch off (SITUATIONS_DEFAULT = false): no toggle, Classic only, even if this device remembered Situations', async () => {
-  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
-  assert.ok(/var SITUATIONS_DEFAULT = true;/.test(src), 'the constant is near the top');
-  const br = fakeBrowser(); br.ls.set('b68.gm.view', 'situations');
-  const off = src.replace('var SITUATIONS_DEFAULT = true;', 'var SITUATIONS_DEFAULT = false;');
-  const ctx = vm.createContext(br.W); vm.runInContext(off, ctx);
-  const page = br.W.B68GmPage, fg = fakeGm(), root = br.doc.createElement('div'); br.doc.body.appendChild(root);
-  page.open(root, { ready: async () => {}, isGM: () => true, me: () => 'gm1', gm: () => fg.gm, db: () => null, campaign: () => ({}), saveFile() {}, copy() {} });
-  await until(() => page._state() && page._state().status === 'ready' && root.querySelector('#gm-root'));
-  assert.equal(root.querySelectorAll('[data-gm="view"]').length, 0, 'no toggle');
-  assert.equal(root.querySelectorAll('#gm-buttons .gm-btn').length, 9);
-  assert.equal(root.querySelectorAll('#gm-pos [data-gm="pos"]').length, 0);
-  for (const fn of br.doc.listeners.keydown) fn({ key: '7', target: br.doc.body, ctrlKey: false, altKey: false, metaKey: false, preventDefault() {}, stopPropagation() {} });
-  assert.equal(root.querySelector('#gm-card article').getAttribute('data-tool'), 'console');
-  page.close();
 });
 
 await test('6h. an action on the merged row works as before: a Devil\'s Bargain accepted is owed (and the bargain\'s capture line carries the session)', async () => {
@@ -604,7 +567,7 @@ await test('8a. keyAction: S opens the street scene panel and E the engagement p
 await test('8b. S opens the panel; Roll files the card (seed, controls, memory BEFORE the roll) and a history entry; the card has the read-aloud, ratings and grid', async () => {
   const fg = fakeGm(), h = await openPage({ fg });
   assert.ok(h.q('[data-pane="scenes"]') && h.q('[data-pane="engagement"]') && h.q('#gm-scn') && h.q('#gm-eng'));
-  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,engagement,npc,cards,ipad');
+  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,engagement,npc,downtime,cards,ipad');
   h.press('s'); assert.equal(h.page._state().panel, 'scenes');
   assert.ok(!h.q('#gm-scn .gm-scncard'), 'nothing before the first roll');
   h.q('[data-gm="scnroll"]').click();
@@ -676,25 +639,30 @@ await test('8f. E opens the engagement panel on a preview (1d, no roll yet); a c
   h.press('e'); assert.equal(h.page._state().panel, 'engagement');
   assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 1d');
   assert.ok(/Set the factors, then roll\./.test(cardOf(h, '#gm-eng .gm-engcard')));
-  assert.equal(h.qa('#gm-eng select').length, 2 + T_EN.factor.length);
-  change(h.q('#gm-e-bold'), 1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
-  change(h.q('#gm-e-tier'), -1); change(h.q('#gm-e-bold'), -1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — -1d');
+  assert.equal(h.qa('#gm-eng select').length, 2, 'approach and loadout are selects');
+  assert.equal(h.qa('#gm-eng [data-gm="engtri"]').length, 3 * T_EN.factor.length, 'every factor is three chips, no select');
+  const tri = (id, v) => h.q('[data-gm="engtri"][data-id="' + id + '"][data-v="' + v + '"]').click();
+  assert.equal(h.qa('[data-gm="engtri"][data-id="bold"]').length, 3, 'a factor is three chips');
+  assert.ok(/plus|neat|bold/i.test(h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').textContent) || h.q('[data-gm="engtri"][data-id="bold"][data-v="1"] small'), 'the +1d chip carries the factor’s statement');
+  tri('bold', 1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
+  assert.equal(h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').getAttribute('aria-pressed'), 'true');
+  tri('tier', -1); tri('bold', -1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 0d (2d, keep lowest)');   // B13: never "-1d"
   change(h.q('#gm-e-approach'), 'Slip'); change(h.q('#gm-e-load'), 'Loud');
   assert.ok(/opening gambit is the unwatched door · Loud loadout, load 6/.test(cardOf(h, '#gm-eng .gm-engcard')));
   h.q('[data-gm="engroll"]').click();
   const txt = cardOf(h, '#gm-eng .gm-engcard');
-  assert.ok(/Slip — -1d/.test(txt) && /0d — rolled 2, kept the lowest/.test(txt) && /Roll/.test(txt) && txt.replace(/\*\*/g, '').includes(T_EN.cut.replace(/\*\*/g, '')), txt);
+  assert.ok(/Slip — 0d \(2d, keep lowest\)/.test(txt) && !/-1d/.test(txt) && /0d — rolled 2, kept the lowest/.test(txt) && /Roll/.test(txt) && txt.replace(/\*\*/g, '').includes(T_EN.cut.replace(/\*\*/g, '')), txt);
   await h.save();
   const c = fg.server.doc.cards.engagement;
-  assert.deepEqual(c.ui, { approach: 'Slip', load: 'Loud', mods: { bold: -1, tier: -1 } }); assert.ok(Number.isInteger(c.seed) && c.label.startsWith('Slip — -1d · '));
+  assert.deepEqual(c.ui, { approach: 'Slip', load: 'Loud', mods: { bold: -1, tier: -1 } }); assert.ok(Number.isInteger(c.seed) && c.label.startsWith('Slip — 0d (2d, keep lowest) · '));
   assert.equal(Object.keys(fg.server.doc.hist.engagement).length, 1); assert.equal(c.mem, undefined);
 });
 
 await test('8g. engagement: reload redraws the identical dice; changing a control drops the stored card (not the history); Earlier brings back the roll and its controls', async () => {
   const fg = fakeGm(), br = fakeBrowser();
   const h = await openPage({ fg, br });
-  h.press('e'); change(h.q('#gm-e-bold'), 1); h.q('[data-gm="engroll"]').click(); const a = cardOf(h, '#gm-eng .gm-engcard');
-  change(h.q('#gm-e-tier'), 1); h.q('[data-gm="engroll"]').click(); const b = cardOf(h, '#gm-eng .gm-engcard'); assert.notEqual(a, b);
+  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click(); h.q('[data-gm="engroll"]').click(); const a = cardOf(h, '#gm-eng .gm-engcard');
+  h.q('[data-gm="engtri"][data-id="tier"][data-v="1"]').click(); h.q('[data-gm="engroll"]').click(); const b = cardOf(h, '#gm-eng .gm-engcard'); assert.notEqual(a, b);
   await h.save();
   const h2 = await openPage({ fg, br });
   assert.equal(cardOf(h2, '#gm-eng .gm-engcard'), b, 'the same roll after a reload');
@@ -754,7 +722,8 @@ await test('9a. keys: I opens the iPad panel and 0 clears to ambient; never whil
     assert.equal(P.keyAction({ key: k, typing: true }), null, k + ' typing'); assert.equal(P.keyAction({ key: k, ctrlKey: true }), null, k + ' ctrl');
     assert.equal(P.keyAction({ key: k, altKey: true }), null); assert.equal(P.keyAction({ key: k, metaKey: true }), null);
   }
-  assert.deepEqual(P.keyAction({ key: 'h' }), { type: 'blank' }, 'H still blanks the GM screen'); assert.deepEqual(P.keyAction({ key: '1', view: 'classic' }), { type: 'button', n: 1 });
+  assert.deepEqual(P.keyAction({ key: 'H' }), { type: 'blank' }, 'Shift+H blanks the GM screen at once'); assert.deepEqual(P.keyAction({ key: 'h' }), { type: 'blank-tap' }, 'a plain H is one tap of two');
+  assert.deepEqual(P.keyAction({ key: '1' }), { type: 'situation', n: 1 });
 });
 
 await test('9b. crewOf: whole numbers clamped to 0-9 / 0-4; null without a number; ipadView draws from the server document', () => {
@@ -769,6 +738,13 @@ await test('9b. crewOf: whole numbers clamped to 0-9 / 0-4; null without a numbe
   assert.deepEqual(v1.tiles.filter((x) => x.pressed).map((x) => x.id), ['board']); assert.equal(v1.tiles.filter((x) => x.disabled).length, 0);
   assert.match(v1.scoreLine, /^Invented Mill · public, working · \d\d:\d\d$/);
   assert.equal(P.ipadView({ mode: 'sideways', intervalMin: 99 }).mode, 'auto'); assert.equal(P.ipadView({ intervalMin: 99 }).intervalMin, 7);
+  /* the theme line: the panel says plainly when app/media/theme.mp3 is not on the server (the credits then run silent) */
+  assert.equal(P.THEME_URL, 'media/theme.mp3');
+  assert.equal(P.themeLine('ok', 200), 'Theme for the credits: on the server.');
+  assert.match(P.themeLine('none', 404), /^Theme for the credits: NO FILE on the server\. The credits run silent\. Copy app\/media\/theme\.mp3/);
+  assert.match(P.themeLine('none', 403), /NO FILE on the server \(HTTP 403\)/);
+  assert.equal(P.themeLine('unknown', 0), 'Theme for the credits: not checked yet.');
+  assert.ok(P.themeType('audio/mpeg') && P.themeType('') && P.themeType('application/octet-stream') && !P.themeType('text/html; charset=utf-8'), 'only audio counts as the theme');
   assert.equal(P.ipadView({ mode: 'auto', scene: 'board' }).tiles.filter((x) => x.pressed).length, 0, 'only a pin presses a tile');
   assert.equal(P.displayLine({ kind: 'svg', title: 'Invented Mill' }), 'Map · Invented Mill'); assert.equal(P.displayLine({ kind: 'dark' }), 'Lights out');
   assert.equal(P.displayLine({ kind: 'rule', title: 'Invented rule' }), 'Rule · Invented rule');
@@ -955,7 +931,11 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   assert.equal(h.qa('.gm-bar .gm-save').length, 1, 'saving shows in the bar');
   assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'the menu starts shut');
   h.q('[data-gm="menu"]').click(); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), false); assert.equal(h.q('[data-gm="menu"]').getAttribute('aria-expanded'), 'true');
-  assert.ok(['note', 'update', 'layout-classic', 'forget'].every((a) => h.q('.gm-menu-list [data-gm="' + a + '"]')), 'export, update, classic and forget are in it');
+  assert.ok(['note', 'clearcap', 'update', 'forget'].every((a) => h.q('.gm-menu-list [data-gm="' + a + '"]')), 'export, clear the capture, update and forget are in it');
+  assert.ok(h.q('.gm-menu-list a[href="#display"]') && h.qa('.gm-bar a[href="#display"]').every((a) => a.closest('.gm-menu-list')), 'the display page opens from the Menu, not the bar');
+  assert.ok(!h.q('.gm-capacts [data-gm="note"]') && !h.q('.gm-capacts [data-gm="clearcap"]') && h.q('.gm-capacts [data-gm="last"]'), 'the capture bar keeps File last roll only');
+  assert.equal(h.q('#gm-bar-stt').hasAttribute('hidden'), true, 'no Listening pill while the transcriber has never been set up');
+  assert.ok(/GM screen/.test(h.q('.gm-tab[data-panel="rules"]').textContent) && /GM screen/.test(h.q('[data-gm="seg"][data-seg="rules"]').textContent), 'the Screen tab is called GM screen');
   h.q('[data-gm="menu"]').click(); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'a second press shuts it');
   h.q('[data-gm="menu"]').click(); h.press('Escape'); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'Escape shuts it');
   assert.equal(h.qa('#gm-mini button').length, 4, 'the console as its four keys');
@@ -963,17 +943,92 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   assert.equal(br.ls.get('b68.gm.prepWide'), '1', 'remembered on this device');
   h.qa('#gm-mini button')[0].click(); await until(() => fg.server.patches.some((p) => p.cards && p.cards.situation));
   assert.ok(fg.server.patches.some((p) => p.cards && p.cards.situation), 'a key in Focus rolls');
+  assert.ok(!h.q('#gm-root').classList.contains('focus') && br.ls.get('b68.gm.prepWide') === '0', 'a roll leaves Focus, so the card is never rolled into a hidden box');
+  assert.ok(h.q('#gm-card .gm-card') && br.toasts.some((x) => /Focus off/.test(x[0])), 'the card shows, and a toast says why Focus went');
+  br.toasts.length = 0; h.press('f'); h.qa('#gm-mini button')[1].click(); await until(() => fg.server.patches.filter((p) => p.cards && p.cards.situation).length >= 2);
+  assert.ok(!h.q('#gm-root').classList.contains('focus') && !br.toasts.some((x) => /Focus off/.test(x[0])), 'the second time it goes without the toast (once per page load)');
+  h.press('f'); assert.ok(h.q('#gm-root').classList.contains('focus'));
   h.q('[data-gm="focus"]').click(); assert.ok(!h.q('#gm-root').classList.contains('focus'), 'the button turns it off');
-  h.q('[data-gm="menu"]').click(); h.q('.gm-menu-list [data-gm="layout-classic"]').click();
-  assert.ok(!br.doc.body.classList.contains('gm-app') && br.ls.get('b68.gm.layout') === 'classic', 'Classic layout: off, and remembered');
+  h.q('[data-gm="menu"]').click(); h.q('.gm-menu-list [data-gm="note"]').click();
   assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'the menu shuts after an item');
-  h.q('.gm-head [data-gm="layout-app"]').click(); assert.ok(br.doc.body.classList.contains('gm-app') && !br.ls.has('b68.gm.layout'), 'Laptop layout brings it back');
+  assert.ok(!h.q('[data-gm="layout-classic"]') && !h.q('[data-gm="layout-app"]'), 'no layout switch: the app layout is the only one');
   await h.save();
   assert.ok(!br.doc.body.classList.contains('gm-app'), 'off once the page closes');
 });
-await test('10b. the rail: an empty box is one line; Classic layout survives a reopen', async () => {
-  const br = fakeBrowser(); br.ls.set('b68.gm.layout', 'classic'); const h = await openPage({ br, camp: CAMP3 });
-  assert.ok(!br.doc.body.classList.contains('gm-app'), 'classic chosen: the old layout');
+await test('10c. the full rules, searched in the GM screen pane: the hits are listed with a snippet, one opens in place with Show on iPad and its twins, the rules page stays a link; Find lists rules; a module that cannot search opens the rules page', async () => {
+  const loads = [], opened = [];
+  const ROWS = [
+    { id: 'b68/harm', book: 'b68', slug: 'harm', title: 'Harm', caption: 'Blades ’68 · Consequences', snip: 'Level 1 is <mark>lesser</mark> harm.<script>alert(1)</script>', href: '#rules/b68/harm' },
+    { id: 'house/hard-knocks', book: 'house', slug: 'hard-knocks', title: 'Hard knocks', caption: 'House rules', snip: 'Take <mark>harm</mark> twice.', href: '#rules/house/hard-knocks' }];
+  const ENTRY = {
+    'b68/harm': { id: 'b68/harm', title: 'Harm', caption: 'Blades ’68 · Consequences', href: '#rules/b68/harm', md: 'Level 1 is **lesser** harm.', also: [{ id: 'bitd/harm', label: 'In Blades in the Dark' }] },
+    'bitd/harm': { id: 'bitd/harm', title: 'Harm', caption: 'Blades in the Dark', href: '#rules/bitd/harm', md: 'The SRD’s harm.', also: [{ id: 'b68/harm', label: 'In Blades ’68' }] } };
+  const rules = { available: () => true, load: async (cacheOnly) => { loads.push(cacheOnly ? 'cache' : 'full'); return { entries: [{}] }; },
+    hits: (q) => (q === 'harm' ? { total: 9, hits: ROWS } : { total: 0, hits: [] }), entry: (id) => ENTRY[id] || null };
+  const SCREEN = { version: 'g1', src: {}, body: { v: 1, title: 'Screen', intro: '', sections: [{ id: 'rolling', title: 'Rolling', md: 'Ask what they want.' }, { id: 'weather', title: 'Weather', md: 'A squall.' }] } };
+  const br = fakeBrowser({ B68Rules: rules, open: (u) => { opened.push(u); } }), fg = fakeGm(undefined, { screen: SCREEN });
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('t');
+  assert.ok(h.q('#gm-rq') && h.q('#gm-rq-hits') && !h.q('.gs-rules a[target="_blank"]'), 'a search box and a hits box, no new-tab chips');
+  assert.ok(h.qa('[data-gm="rq"]').length >= 6, 'the common terms are buttons that search here');
+  assert.ok(h.q('[data-gm="gs-rules"]'), 'a jump chip to the full rules sits with the sections');
+  h.q('#gm-rq').value = 'harm'; dispatch(h.q('form[data-gm-form="rules"]'), 'submit');
+  assert.ok(await until(() => h.qa('.gs-hit').length === 2), 'the hits are listed in the pane'); assert.deepEqual(loads, ['full'], 'the corpus was asked for once');
+  const row = h.qa('.gs-hit')[0];
+  assert.ok(/Harm/.test(row.querySelector('.gs-hit-t').textContent) && /Blades ’68 · Consequences/.test(row.querySelector('.gs-hit-c').textContent) && /lesser harm/.test(row.querySelector('.gs-hit-s').textContent), 'title, book and chapter, a snippet');
+  assert.equal(row.querySelectorAll('.gs-hit-s mark').length, 1, 'the matched word is marked'); assert.equal(h.qa('#gm-rq-hits script').length, 0, 'nothing but <mark> survives in a snippet');
+  assert.match(h.q('.gs-hitbar .gm-lab').textContent, /2 of 9 for “harm”/);
+  const out = h.q('.gs-hitbar a[target="_blank"]');
+  assert.ok(out && out.getAttribute('href') === '#rules?q=harm' && /Open in the Rules page/.test(out.textContent) && out.getAttribute('rel') === 'noopener', 'the rules page stays as a link (a new tab)');
+  assert.equal(fg.server.displays.length, 0, 'a list sends nothing to the iPad');
+  /* a screen filter does not touch the hits, and with nothing left on the screen it offers the same words to the rules */
+  const gq = h.q('#gm-gs-q'); gq.value = 'zzz'; dispatch(gq, 'input');
+  assert.ok(!h.q('.gs-none').hidden && /Search the full rules for “zzz”/.test(h.q('[data-gm="rq-find"]').textContent), 'nothing on the screen: one click to the full rules with the same words');
+  assert.equal(h.qa('.gs-hit').filter((x) => x.hidden).length, 0, 'the screen filter leaves the hits alone');
+  gq.value = 'squall'; dispatch(gq, 'input'); h.press('Enter', { target: gq }); assert.equal(h.qa('.gs-hit').length, 2, 'Enter with a match on the screen goes to that section, not to the rules');
+  gq.value = 'harm'; dispatch(gq, 'input'); h.q('#gm-rq-hits').innerHTML = ''; h.press('Enter', { target: gq });
+  assert.ok(await until(() => h.qa('.gs-hit').length === 2), 'Enter with nothing on the screen searches the full rules'); assert.equal(h.q('#gm-rq').value, 'harm');
+  gq.value = ''; dispatch(gq, 'input');
+  /* one entry opens in place */
+  h.qa('.gs-hit')[0].click();
+  assert.equal(h.qa('.gs-hit').length, 0, 'the list gives way to the entry');
+  assert.ok(/Harm/.test(h.q('.gs-entry .gs-h').textContent) && /Blades ’68 · Consequences/.test(h.q('.gs-entry .gs-h').textContent) && /lesser/.test(h.q('.gs-entry .gs-body').textContent), 'the entry is read in place');
+  assert.ok(h.q('.gs-hitbar a[target="_blank"][href="#rules/b68/harm"]'), 'the entry on the rules page, in a new tab');
+  assert.ok(h.q('[data-gm="rq-open"][data-id="bitd/harm"]'), 'its twin in the other book is a chip');
+  h.q('[data-gm="rq-ipad"]').click(); assert.ok(await until(() => fg.server.displays.length === 1));
+  eqj(fg.server.displays[0], { kind: 'rule', title: 'Harm', caption: 'Blades ’68 · Consequences', md: 'Level 1 is **lesser** harm.' }, 'Show on iPad sends the entry as a rule display, as the rules page does');
+  assert.ok(br.toasts.some((x) => /On the iPad: Harm/.test(x[0])), 'and says so');
+  h.q('[data-gm="rq-open"][data-id="bitd/harm"]').click(); assert.match(h.q('.gs-entry .gs-body').textContent, /SRD/, 'the twin opens in the same place');
+  h.q('[data-gm="rq-back"]').click(); assert.equal(h.qa('.gs-hit').length, 2, 'Back is the list again'); assert.deepEqual(loads, ['full', 'full'], 'without a new search of its own');
+  h.qa('[data-gm="rq"]')[0].click(); assert.ok(await until(() => /Nothing in the rules matches/.test(h.q('#gm-rq-hits').textContent)), 'a term with no hit says so, in the pane');
+  assert.ok((h.q('.gs-rules a[target="_blank"]') || { getAttribute: () => '' }).getAttribute('href').startsWith('#rules?q='), 'with the rules page as a link');
+  assert.equal(opened.length, 0, 'nothing opened a new tab');
+  /* Find lists the rules this device holds, and Enter opens one in the pane */
+  h.press('k', { ctrlKey: true }); assert.ok(await until(() => loads.includes('cache')), 'Find reads the copy on this device, never the network');
+  const fq = h.q('#gm-find-q'); fq.value = 'harm'; dispatch(fq, 'input');
+  const rk = h.qa('.gm-find-hit').filter((b) => /Rules/.test(b.querySelector('.gm-find-kind').textContent));
+  assert.equal(rk.length, 2, 'two rules entries in Find'); assert.equal(rk[0].querySelectorAll('.gm-find-snip mark').length, 1, 'with the matched word marked'); assert.ok(/Blades ’68 · Consequences/.test(rk[0].textContent));
+  h.press('Escape', { target: fq }); h.press('Escape');
+  h.press('k', { ctrlKey: true }); const fq2 = h.q('#gm-find-q'); fq2.value = 'harm'; dispatch(fq2, 'input');
+  h.qa('.gm-find-hit').filter((b) => /Rules/.test(b.querySelector('.gm-find-kind').textContent))[0].click();
+  assert.ok(await until(() => h.q('.gs-entry')), 'a rules hit in Find opens the entry in the GM screen pane'); assert.equal(h.page._state().panel, 'rules'); assert.ok(h.q('#gm-find').hasAttribute('hidden'), 'Find shuts');
+  await h.save();
+  /* an empty corpus, and a failure, say so in the pane */
+  const e1 = await openPage({ br: fakeBrowser({ B68Rules: { available: () => true, load: async () => ({ entries: [] }), hits: () => ({ total: 0, hits: [] }), entry: () => null } }), camp: CAMP3 });
+  e1.press('t'); e1.q('#gm-rq').value = 'heat'; dispatch(e1.q('form[data-gm-form="rules"]'), 'submit');
+  assert.ok(await until(() => /No rules are imported yet/.test(e1.q('#gm-rq-hits').textContent)), 'an empty corpus is said, with the rules page as the way on'); await e1.save();
+  const e2 = await openPage({ br: fakeBrowser({ B68Rules: { available: () => true, load: async () => { throw new Error('offline'); }, hits: () => ({ total: 0, hits: [] }), entry: () => null } }), camp: CAMP3 });
+  e2.press('t'); e2.q('#gm-rq').value = 'heat'; dispatch(e2.q('form[data-gm-form="rules"]'), 'submit');
+  assert.ok(await until(() => /could not be searched: offline/.test(e2.q('#gm-rq-hits').textContent) && e2.q('#gm-rq-hits a[target="_blank"]')), 'a failure says why, with the rules page as the way on'); await e2.save();
+  /* a module without search: the rules page opens in a new tab, as it always did */
+  const br2 = fakeBrowser({ B68Rules: { available: () => true }, open: (u) => { opened.push(u); } }), h2 = await openPage({ br: br2, camp: CAMP3 });
+  h2.press('t'); h2.q('#gm-rq').value = 'heat'; dispatch(h2.q('form[data-gm-form="rules"]'), 'submit');
+  assert.deepEqual(opened, ['#rules?q=heat'], 'a module without hits(): the rules page opens as before');
+  await h2.save();
+});
+await test('10b. the rail: an empty box is one line; an old layout preference left in storage changes nothing', async () => {
+  const br = fakeBrowser(); br.ls.set('b68.gm.layout', 'classic'); br.ls.set('b68.gm.view', 'classic'); const h = await openPage({ br, camp: CAMP3 });
+  assert.ok(br.doc.body.classList.contains('gm-app') && h.qa('#gm-buttons .gm-btn').length === 4, 'the app layout and the four Situations, whatever this device remembered');
   const empties = [...h.qa('#gm-rail .gm-box-empty')].map((b) => b.textContent.replace(/\s+/g, ' ').trim());
   assert.ok(empties.includes('Table clocks · none'), JSON.stringify(empties));
   assert.ok(h.q('#gm-rail .gm-owed'), 'a box with something in it keeps its list (the fixture owes bargains)');
@@ -1093,7 +1148,7 @@ await test('11h. Update pack: a file that would lose a part says so, the button 
   const br = fakeBrowser({ FileReader: class { readAsText(f) { this.result = f.text; this.onload(); } }, confirm: () => { asked++; return false; } });
   const fg = fakeGm(); fg.gm.importPart = async () => { uploads++; return { version: 'x' }; };
   const h = await openPage({ br, fg, camp: CAMP3 });
-  h.q('.gm-head [data-gm="update"]').click();
+  h.q('.gm-menu-list [data-gm="update"]').click();
   const pk = { format: 1, exportedAt: new Date().toISOString(), parts: { console: { src: {}, ...FIXC.console }, location: { src: {}, T: FIXL.T, extra: FIXL.extra }, campaign: { src: {}, ...FIXC.campaign } } };
   const file = h.q('#gm-file'); file.files = [{ name: 'b68-gm-pack.json', text: JSON.stringify(pk) }]; file.id = 'gm-file';
   dispatch(file, 'change');
@@ -1102,6 +1157,1125 @@ await test('11h. Update pack: a file that would lose a part says so, the button 
   assert.equal(h.q('[data-gm="upload"]').textContent, 'Upload anyway');
   h.q('[data-gm="upload"]').click(); await tick();
   assert.equal(asked, 1); assert.equal(uploads, 0, 'refused at the question: nothing uploaded');
+  await h.save();
+});
+
+/* =====================================================================================================================
+   12. Now in (A7): one district in the bar that the console, Street, Location and NPC pickers start from
+   ===================================================================================================================== */
+const NPCM = require(path.join(ROOT, 'app', 'gm', 'npc.js'));
+const NPCFIX = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'npc-pack.json'), 'utf8'));
+const NOWD = 'Dockside Test';            /* the location fixture's own district: added below to the other tools' lists, so all four hold it */
+const cl = (o) => JSON.parse(JSON.stringify(o));
+function nowParts(extra) {
+  const con = cl(FIXC.console); con.T.district.push(NOWD);
+  const scn = cl(FIXS.parts.scenes); const d0 = cl(scn.T.district[0]); d0.n = NOWD; scn.T.district.push(d0);
+  const npc = cl(NPCFIX.parts.npc); npc.T.district.push(NOWD);
+  return Object.assign({ console: { version: 'c9', src: {}, body: con }, scenes: { version: 's9', src: {}, body: { T: scn.T } }, npc: { version: 'n9', src: {}, body: npc } }, extra || {});
+}
+const optSel = (h, sel) => (h.q(sel + ' option[selected]') || { textContent: '', getAttribute: () => null });
+function pick(h, sel, v) { const s = h.q(sel); s.value = v; dispatch(s, 'change'); }
+const stateDoc = (h) => h.page._state().doc;
+const nowPage = (over, parts) => openPage({ br: fakeBrowser(Object.assign({ B68GmNpc: NPCM }, over || {})), fg: fakeGm(NPCFIX.parts.campaign, nowParts(parts)), camp: CAMP3 });
+
+await test('12a. Now in: a select in the bar (and the phone’s Scene line) lists every tool’s districts once; the four pickers lead with "Now in: …"; it is kept in the GM state', async () => {
+  const h = await nowPage();
+  const opts = h.qa('#gm-now option').map((o) => o.getAttribute('value'));
+  assert.equal(opts[0], '', 'anywhere first'); assert.equal(new Set(opts).size, opts.length, 'each district once');
+  for (const d of ['Puddleton', 'Testfield', 'Alder Quay', 'Puddle End', NOWD]) assert.ok(opts.includes(d), d + ' is listed');
+  const key = (s) => s.toLowerCase().replace(/^the\s+/, ''), rest = opts.slice(1); assert.deepEqual(rest, [...rest].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0)), 'alphabetical (a leading "The" does not count)');
+  assert.equal(h.qa('select[data-now]').length, 2, 'one in the bar, one in the Scene line (the phone shows that one)'); assert.ok(h.q('.gm-bar #gm-now') && h.q('#gm-scenebox #gm-now-s'));
+  assert.equal(optSel(h, '#gm-now').getAttribute('value'), '', 'on anywhere');
+  for (const s of ['#gm-c-district', '#gm-l-district', '#gm-s-sel', '#gm-n-district']) {
+    assert.equal(h.q(s + ' option').textContent, 'Now in: anywhere', s + ' leads with Now in'); assert.equal(optSel(h, s).textContent, 'Now in: anywhere', s + ' follows by default');
+    assert.equal(h.qa(s + ' option').filter((o) => o.getAttribute('value') === '*').length, 1, s + ' keeps an any of its own');
+  }
+  pick(h, '#gm-now', NOWD);
+  assert.equal(stateDoc(h).now.district, NOWD, 'kept in the GM state as now.district');
+  for (const s of ['#gm-c-district', '#gm-l-district', '#gm-s-sel', '#gm-n-district']) assert.equal(optSel(h, s).textContent, 'Now in: ' + NOWD, s + ' says what it follows');
+  assert.equal(optSel(h, '#gm-now-s').getAttribute('value'), NOWD, 'the Scene line’s copy shows it too'); assert.match(h.q('#gm-scene-chips').textContent, new RegExp('District: ' + NOWD));
+  await h.save();
+  assert.equal(h.fg.server.doc.now.district, NOWD, 'saved');
+  const h2 = await openPage({ fg: h.fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
+  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), NOWD, 'a reload keeps it'); assert.equal(optSel(h2, '#gm-l-district').textContent, 'Now in: ' + NOWD);
+  await h2.save();
+});
+
+await test('12b. the four tools roll on Now in, and store the district they resolved to in the roll’s own ui', async () => {
+  const h = await nowPage();
+  pick(h, '#gm-now', NOWD);
+  h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD, 'console');
+  h.q('[data-gm="locroll"]').click(); assert.equal(stateDoc(h).cards.location.ui.district, NOWD, 'location'); assert.match(h.q('#gm-loc .gm-glance-place').textContent, new RegExp(NOWD));
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, NOWD, 'street'); assert.match(h.q('#gm-scn .gm-card-h').textContent, new RegExp(NOWD));
+  h.q('[data-gm="npcroll"]').click(); assert.equal(stateDoc(h).cards.npc.ui.district, NOWD, 'NPC');
+  const d = stateDoc(h);
+  assert.ok(!d.con || !d.con.live || d.con.live.district === undefined, 'following stores nothing in the tool: it is the default');
+  assert.ok(!d.loc || !d.loc.ui || d.loc.ui.district === undefined);
+  await h.save();
+});
+
+await test('12c. a tool’s own pick wins, stays through a change of Now in, and "Now in" in the picker gives it back; "any" is a pick too', async () => {
+  const h = await nowPage();
+  pick(h, '#gm-now', NOWD);
+  pick(h, '#gm-s-sel', 'Brindle Row');
+  assert.equal(stateDoc(h).scn.ui.sel, 'Brindle Row'); assert.equal(h.q('#gm-s-sel').value, 'Brindle Row', 'the picker shows its own pick');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, 'Brindle Row', 'the tool’s own pick wins over Now in');
+  h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD, 'the others still follow');
+  pick(h, '#gm-now', 'Puddleton');
+  assert.equal(optSel(h, '#gm-s-sel').textContent, 'Brindle Row', 'a change of Now in leaves a pick alone'); assert.match(h.q('#gm-s-sel option').textContent, /^Now in: any \(no Puddleton here\)$/, 'its first choice still says what Now in is, and that this tool lacks it');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, 'Brindle Row');
+  h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton', 'the console follows the new Now in');
+  pick(h, '#gm-s-sel', ''); assert.equal(stateDoc(h).scn.ui.sel, '', 'the first choice gives it back'); assert.equal(h.q('#gm-s-sel').value, '');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, '', 'a tool whose list lacks Now in rolls on any');
+  pick(h, '#gm-now', NOWD); pick(h, '#gm-s-sel', '*');
+  assert.equal(stateDoc(h).scn.ui.sel, '*'); assert.equal(h.q('#gm-s-sel').value, '*', 'any is picked');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, '', 'a tool on any rolls on any whatever Now in says, and no sentinel ever reaches a roll');
+  pick(h, '#gm-c-district', 'Muddle End'); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Muddle End', 'the console’s own pick wins');
+  pick(h, '#gm-l-district', 'Testfield'); h.q('[data-gm="locroll"]').click(); assert.equal(stateDoc(h).cards.location.ui.district, 'Testfield', 'the location’s own pick wins');
+  pick(h, '#gm-n-district', 'Gnome Hill'); h.q('[data-gm="npcroll"]').click(); assert.equal(stateDoc(h).cards.npc.ui.district, 'Gnome Hill', 'the NPC’s own pick wins');
+  pick(h, '#gm-now', ''); assert.equal(optSel(h, '#gm-now').getAttribute('value'), ''); assert.equal(h.q('#gm-c-district option').textContent, 'Now in: anywhere');
+  await h.save();
+});
+
+await test('12d. Now in never moves a stored card: Earlier and a reload redraw each tool’s card as it was rolled', async () => {
+  const h = await nowPage();
+  pick(h, '#gm-now', 'Puddleton'); h.press('3');
+  const A = cardTxt(h); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton');
+  pick(h, '#gm-now', NOWD);
+  assert.equal(cardTxt(h), A, 'the card on screen stays as rolled'); assert.match(h.q('#gm-scene-chips').textContent, new RegExp('District: ' + NOWD), 'the Scene line shows what the next roll uses');
+  h.press('3'); const B = cardTxt(h); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD); assert.notEqual(B, A);
+  h.qa('#gm-earlier [data-gm="replay"]')[1].click(); assert.equal(cardTxt(h), A, 'Earlier: the older card, exactly as it was, whatever Now in is'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton');
+  h.q('[data-gm="locroll"]').click(); const L1 = h.q('#gm-loc .gm-glance-place').textContent, L1name = h.q('#gm-loc .gm-locname').textContent;
+  h.q('[data-gm="scnroll"]').click(); const S1 = h.q('#gm-scn .gm-card-h').textContent;
+  h.q('[data-gm="npcroll"]').click(); const N1 = h.q('#gm-npc .gm-npccard .gm-card-h').textContent;
+  pick(h, '#gm-now', 'Testfield');                  /* a district only the location lists */
+  assert.equal(h.q('#gm-loc .gm-glance-place').textContent, L1, 'the location card does not move'); assert.equal(h.q('#gm-scn .gm-card-h').textContent, S1, 'nor the street scene'); assert.equal(h.q('#gm-npc .gm-npccard .gm-card-h').textContent, N1, 'nor the NPC');
+  await h.save();
+  const h2 = await openPage({ fg: h.fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
+  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), 'Testfield'); assert.equal(cardTxt(h2), A, 'a reload redraws the console card as rolled');
+  assert.equal(h2.q('#gm-loc .gm-glance-place').textContent, L1); assert.equal(h2.q('#gm-loc .gm-locname').textContent, L1name); assert.equal(h2.q('#gm-scn .gm-card-h').textContent, S1); assert.equal(h2.q('#gm-npc .gm-npccard .gm-card-h').textContent, N1, 'and the other three');
+  h2.q('[data-gm="locroll"]').click(); assert.equal(stateDoc(h2).cards.location.ui.district, 'Testfield', 'the next roll uses the new Now in');
+  await h2.save();
+});
+
+await test('12e. districts are matched without case, "the" or punctuation (each tool keeps its own spelling); the bar lists a name once; a Now in the packs no longer hold stays visible', async () => {
+  const scn = cl(FIXS.parts.scenes); const d0 = cl(scn.T.district[0]); d0.n = 'puddle-TON'; scn.T.district.push(d0);
+  const h = await nowPage(null, { scenes: { version: 's8', src: {}, body: { T: scn.T } } });
+  const opts = h.qa('#gm-now option').map((o) => o.getAttribute('value'));
+  assert.equal(opts.filter((o) => /^puddle-?ton$/i.test(o)).length, 1, 'one entry for the two spellings'); assert.ok(opts.includes('Puddleton'), 'the first tool’s spelling (the console)');
+  pick(h, '#gm-now', 'Puddleton');
+  assert.equal(h.q('#gm-s-sel option').textContent, 'Now in: puddle-TON', 'the Street picker names its own spelling');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, 'puddle-TON', 'and rolls on it');
+  h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton');
+  await h.save();
+  const fg = h.fg; fg.server.doc.now = { district: 'Gone Wharf' };
+  const h2 = await openPage({ fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
+  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), 'Gone Wharf', 'a district no pack lists is still what the select shows');
+  assert.match(h2.q('#gm-l-district option').textContent, /^Now in: any \(no Gone Wharf here\)$/); h2.press('3'); assert.equal(stateDoc(h2).cards.situation.ui.district, '', 'and rolls on any');
+  await h2.save();
+});
+
+await test('12f. an old state with a tool’s district already set keeps it as that tool’s own pick; a state without now follows nothing; no sentinel in the source of any roll', async () => {
+  const fg = fakeGm(NPCFIX.parts.campaign, nowParts()); fg.server.doc = { con: { live: { district: 'Muddle End' } }, scn: { ui: { sel: 'Alder Quay' } } };
+  const h = await openPage({ fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
+  assert.equal(optSel(h, '#gm-c-district').textContent, 'Muddle End'); assert.equal(optSel(h, '#gm-s-sel').textContent, 'Alder Quay'); assert.equal(optSel(h, '#gm-l-district').textContent, 'Now in: anywhere');
+  pick(h, '#gm-now', NOWD); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Muddle End', 'an older pick is that tool’s own');
+  pick(h, '#gm-c-district', ''); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD);
+  for (const t of Object.keys(stateDoc(h).cards)) assert.ok(!JSON.stringify(stateDoc(h).cards[t].ui || {}).includes('"*"'), t + ': no sentinel in a roll’s ui');
+  await h.save();
+});
+
+await test('12g. Now in is in the sticky copy: with the GM state unreachable, a reload still shows it and the pickers follow it', async () => {
+  const br = fakeBrowser({ B68GmNpc: NPCM }), fg = fakeGm(NPCFIX.parts.campaign, nowParts());
+  const h = await openPage({ br, fg, camp: CAMP3 }); pick(h, '#gm-now', NOWD); await h.save();
+  assert.equal(JSON.parse(br.ls.get('b68.gm.sticky')).now.district, NOWD, 'mirrored for a reload');
+  const fg2 = fakeGm(NPCFIX.parts.campaign, nowParts()); fg2.gm.state = async () => { throw new Error('offline'); };
+  const h2 = await openPage({ br, fg: fg2, camp: CAMP3 });
+  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), NOWD, 'drawn from the sticky copy while the notes are offline');
+  assert.equal(optSel(h2, '#gm-l-district').textContent, 'Now in: ' + NOWD);
+  await h2.save();
+});
+
+/* =====================================================================================================================
+   13. Wave 2, the generators' new fields on the cards: the spend sentence, "Why", the position on the title line, the compose
+   version, the pack check, the location plan and rule, the portrait note, Earlier chips that name the card
+   ===================================================================================================================== */
+const sitCon = () => C.create({ T: FIXC.console.T, campaign: FIXC.campaign, mem: {} });
+const stripWhy = (h) => h.replace(/<details class="gm-why">[\s\S]*?<\/details>/g, '');
+const coachTexts = (res) => res.sections.flatMap((s) => s.lines.filter((l) => l.coach).map((l) => P.plainMd(l.md)));
+const mdText = (s) => '<p>' + P.plainMd(s).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>';        // markdown as its words, so a card's text can be searched
+const textOf = (h) => h.replace(/<[^>]+>/g, ' ').replace(/&lt;/g, '<').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
+const leadBox = (h) => { const i = h.indexOf('<section class="gm-lead"'); return h.slice(i, h.indexOf('</section>', i)); };
+
+await test('13a. the lead shows its spend sentence (a threat) under the lead line; the lead\'s first line is not repeated under More', () => {
+  const con = sitCon();
+  let withSmall = 0, checked = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    for (const n of [1, 2, 3, 4]) {
+      const res = con.situation(n, Object.assign(con.situationDefaults(), { threat: 'the dog is waking up', npc: seed % 3 ? '' : 'rival:Nigel Sprocket' }), { seed });
+      const h = P.situationCardHtml(res, mdPlain), lead = res.sections[0], l0 = lead.lines[0], box = leadBox(h);
+      assert.ok(P.leadIsLine(lead), n + '/' + seed + ': the fixtures\' lead is its first line');
+      assert.ok(!box.includes('<div class="gm-want">'), n + '/' + seed + ': the lead\'s first line is not drawn again under More');
+      assert.equal(count(box, /class="gm-lead-t"/g), 1);
+      if (l0 && l0.small) {
+        withSmall++;
+        assert.ok(box.includes('<div class="gm-lead-s">' + mdPlain(l0.small) + '</div>'), n + '/' + seed + ': the spend sentence sits under the lead');
+        assert.ok(box.indexOf('gm-lead-t') < box.indexOf('gm-lead-s') && (box.indexOf('<details class="gm-more"') < 0 || box.indexOf('gm-lead-s') < box.indexOf('<details class="gm-more"')), 'under the lead, above More');
+        assert.equal(count(h, new RegExp(mdPlain(l0.small).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')), 1, 'and only once');
+      } else assert.ok(!box.includes('gm-lead-s'), 'no sentence, no box');
+      checked++;
+    }
+  }
+  assert.ok(withSmall >= 10, 'a threat gives the 4/5 lead its spend sentence in some draws (' + withSmall + ' of ' + checked + ')');
+});
+
+await test('13a. coaching lines fold under a closed "Why" in every section, and show nowhere else', () => {
+  const con = sitCon();
+  let whys = 0;
+  for (let seed = 1; seed <= 40; seed++) for (const n of [1, 2, 3, 4]) {
+    const res = con.situation(n, Object.assign(con.situationDefaults(), { pos: ['controlled', 'risky', 'desperate'][seed % 3], npc: seed % 2 ? 'rival:Nigel Sprocket' : '' }), { seed });
+    const h = P.situationCardHtml(res, mdText), coach = coachTexts(res);
+    const sectionsWithCoach = res.sections.filter((s) => s.lines.some((l) => l.coach)).length;
+    assert.equal(count(h, /<details class="gm-why"/g), sectionsWithCoach, n + '/' + seed + ': one Why per section that has coaching');
+    assert.ok(!/<details class="gm-why"[^>]*\sopen/.test(h), 'Why starts closed'); whys += sectionsWithCoach;
+    const bare = textOf(stripWhy(h)), all = textOf(h);
+    for (const t of coach) { assert.ok(!bare.includes(t.slice(0, 40)), n + '/' + seed + ': coaching shows outside Why: ' + t.slice(0, 40)); assert.ok(all.includes(t.slice(0, 40)), 'and is under Why'); }
+  }
+  assert.ok(whys > 60, 'coaching lines are common (' + whys + ' Why folds)');
+  // the lead's Why sits in More beside the other lines; a lead with nothing else gets its Why without a More round it
+  const only = { meta: { id: 'situation', situation: 'before', n: 1, title: 'T', sub: 's', actions: [] }, lines: [], sections: [{ id: 'x', role: 'lead', title: 'X', lead: 'Lead line', chips: [], lines: [{ kind: 'want', md: 'Lead line' }, { kind: 'read', md: 'Coached', coach: true }], actions: [] }] };
+  const oh = P.situationCardHtml(only, mdPlain);
+  assert.ok(!oh.includes('gm-more') && oh.includes('<details class="gm-why"><summary>Why</summary>') && oh.includes('Coached'), 'a lead with only coaching left shows Why, not an empty More');
+  assert.equal(count(oh, /Lead line/g), 1, 'and the lead line once');
+  // a lead cut at 120 characters keeps its full first line under More
+  const longMd = 'A long line ' + 'x'.repeat(150), cutLead = { meta: only.meta, lines: [], sections: [{ id: 'x', role: 'lead', title: 'X', lead: P.plainMd(longMd).slice(0, 119) + '…', chips: [], lines: [{ kind: 'want', md: longMd, small: 'spent' }], actions: [] }] };
+  const ch = P.situationCardHtml(cutLead, mdPlain);
+  assert.ok(ch.includes('<details class="gm-more">') && ch.includes(longMd) && count(ch, /spent/g) === 1, 'a cut lead keeps its whole line under More (the spend sentence stays under the lead, once)');
+  // a classic card has no Why: nothing there is flagged
+  assert.ok(!P.classicCardHtml(sitCon().roll('face', sitCon().defaults(), { seed: 5 }), mdPlain).includes('gm-why'));
+});
+
+await test('13b. situationPlain: no coaching lines, the position chip on the title line, the lead line once', () => {
+  const con = sitCon();
+  for (let seed = 1; seed <= 40; seed++) for (const n of [1, 2, 3, 4]) {
+    const res = con.situation(n, Object.assign(con.situationDefaults(), { threat: seed % 2 ? 'the dog is waking up' : '', npc: seed % 3 ? '' : 'rival:Nigel Sprocket' }), { seed });
+    const t = P.situationPlain(res), first = t.split('\n')[0];
+    assert.ok(first.includes(res.meta.chips[0]), n + '/' + seed + ': the title line carries the position chip: ' + first);
+    assert.ok(first.startsWith(res.meta.title + ' ('), first);
+    for (const c of coachTexts(res)) assert.ok(!t.includes(c.slice(0, 40)), 'coaching in the plain text: ' + c.slice(0, 40));
+    res.sections.forEach((s) => assert.equal(count(t, new RegExp(P.plainMd(s.lead).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=\\n|$)', 'g')) >= 1, true, 'the lead is there'));
+    const lead = res.sections[0];
+    assert.equal(count(t, new RegExp('^ {2}' + P.plainMd(lead.lead).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'gm')), 0, 'and not again as its first line');
+    if (lead.lines[0].small) assert.ok(t.includes('\n  ' + P.plainMd(lead.lines[0].small)), 'the spend sentence stays');
+    assert.ok(t.length <= 1500 || n === 2, 'short enough for a pin (' + t.length + ')');
+  }
+  assert.equal(P.situationPlain({ meta: { title: 'T', sub: 'risky → middling' }, sections: [] }), 'T (risky → middling)', 'without a chip the subtitle is what is there');
+});
+
+await test('13c. situationEntry stores composeVersion and replaySituationEntry passes it back: a card is not "recomposed" unless it was stored before versions', () => {
+  const con = sitCon(), res = con.situation(2, con.situationDefaults(), { seed: 77 });
+  const entry = P.situationEntry(res, {});
+  assert.equal(entry.composeVersion, C.COMPOSE_VERSION); assert.ok(C.COMPOSE_VERSION >= 2);
+  const again = P.replaySituationEntry(C, FIXC.console.T, FIXC.campaign, entry, {});
+  assert.equal(again.meta.recomposed, undefined, 'a current entry redraws without a note');
+  assert.equal(JSON.stringify(again.sections.map((s) => [s.id, s.lead])), JSON.stringify(res.sections.map((s) => [s.id, s.lead])), 'and identically');
+  assert.ok(!P.situationCardHtml(again, mdPlain).includes('Redrawn with the current tables'));
+  const old = Object.assign({}, entry); delete old.composeVersion;
+  const redone = P.replaySituationEntry(C, FIXC.console.T, FIXC.campaign, old, {});
+  assert.deepEqual(redone.meta.recomposed, { from: 1, to: C.COMPOSE_VERSION }, 'an entry from before versions says it was redrawn');
+  const html = P.situationCardHtml(redone, mdPlain);
+  assert.equal(count(html, /Redrawn with the current tables/g), 1, 'one quiet note line'); assert.ok(html.includes('class="gm-quiet"'));
+  assert.equal(P.replaySituationEntry(C, FIXC.console.T, FIXC.campaign, Object.assign({}, entry, { composeVersion: 1 }), {}).meta.recomposed.from, 1, 'an explicit older version too');
+});
+
+await test('13c. on the page: a stored card redraws without a note after a reload; one stored without a version carries the note', async () => {
+  const fg = fakeGm(), br = fakeBrowser();
+  const h = await openPage({ fg, br }); h.press('2'); const a = cardTxt(h); await h.save();
+  assert.equal(fg.server.doc.cards.situation.composeVersion, C.COMPOSE_VERSION, 'stored with the card');
+  assert.equal(Object.values(fg.server.doc.hist.situation)[0].composeVersion, C.COMPOSE_VERSION, 'and with its Earlier entry');
+  const h2 = await openPage({ fg, br }); assert.equal(cardTxt(h2), a); assert.ok(!h2.q('#gm-card .gm-quiet'), 'no note on a current card'); await h2.save();
+  delete fg.server.doc.cards.situation.composeVersion;
+  const h3 = await openPage({ fg, br }); assert.ok(h3.q('#gm-card .gm-quiet') && /Redrawn with the current tables/.test(h3.q('#gm-card .gm-quiet').textContent), 'a card stored before versions says so'); await h3.save();
+});
+
+await test('13c. replacing the stored card: replacePatch nulls what only the old card had; an Earlier entry without composeVersion brings its note back, also after a reload', async () => {
+  assert.deepEqual(P.replacePatch({ a: 1, b: { c: 2, d: 3 }, e: 5 }, { a: 9, b: { c: 4 }, f: 6 }), { e: null, a: 9, b: { d: null, c: 4 }, f: 6 });
+  assert.deepEqual(P.replacePatch(null, { x: { y: 1 } }), { x: { y: 1 } }); assert.deepEqual(P.replacePatch({ x: 1 }, {}), { x: null });
+  const old = { cards: { engagement: { hid: 'h1', seed: 7, phys: { best: 4, crit: false }, ui: { mods: { a: 1 } } } } };
+  assert.deepEqual(P.applyPatch(old, { cards: { engagement: P.replacePatch(old.cards.engagement, { hid: 'h2', seed: 8, ui: { mods: { a: 0 } } }) } }).cards.engagement, { hid: 'h2', seed: 8, ui: { mods: { a: 0 } } }, 'the merge leaves nothing of the old card');
+  const fg = fakeGm(), br = fakeBrowser();
+  const h = await openPage({ fg, br }); h.press('2'); const fresh = cardTxt(h); h.press('3'); await h.save();
+  const hist = fg.server.doc.hist.situation, ids = Object.keys(hist), older = ids.find((k) => hist[k].situation === 'fourfive');
+  delete hist[older].composeVersion;                           /* the entry as an older page stored it */
+  const h2 = await openPage({ fg, br }); assert.ok(!h2.q('#gm-card .gm-quiet'), 'the current card is a version 2 card');
+  h2.qa('#gm-earlier [data-gm="replay"]').filter((c) => c.getAttribute('data-h') === older)[0].click();
+  assert.ok(h2.q('#gm-card .gm-quiet'), 'Earlier: the older entry says it was redrawn');
+  assert.equal(cardTxt(h2).replace(/Redrawn with the current tables/, '').replace(/\s+/g, ' ').slice(0, 20), fresh.replace(/\s+/g, ' ').slice(0, 20), 'and it is the card that was rolled first (same seed)');
+  await h2.save(); assert.ok(!('composeVersion' in fg.server.doc.cards.situation), 'the stored card is that entry, version and all');
+  const h3 = await openPage({ fg, br }); assert.ok(h3.q('#gm-card .gm-quiet'), 'after a reload the note is still there'); await h3.save();
+});
+
+await test('13d. packWarnings: each module\'s own check(T), guarded; a missing table is a warning list, not an error', () => {
+  const mods = { B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmEngagement: EN, B68GmNpc: NPCM };
+  const full = { console: FIXC.console, location: { T: FIXL.T, extra: FIXL.extra }, scenes: { T: FIXS.parts.scenes.T }, engagement: { T: FIXS.parts.engagement.T }, npc: NPCFIX.parts.npc };
+  assert.deepEqual(P.packWarnings(mods, full), [], 'the fixtures are complete');
+  const sparse = cl(full); delete sparse.console.T.spend; delete sparse.engagement.T.cut; sparse.npc.T.faction = [['X', 'y']]; delete sparse.location.T.rumour;
+  const w = P.packWarnings(mods, sparse), by = Object.fromEntries(w.map((x) => [x.part, x.missing]));
+  assert.deepEqual(w.map((x) => x.part), ['console', 'location', 'npc', 'engagement'].filter((p) => by[p]), 'in part order');
+  assert.ok(by.console.some((m) => /^spend/.test(m)) && by.engagement.includes('cut') && by.location.includes('rumour'), JSON.stringify(by));
+  assert.deepEqual(by.console, C.check(sparse.console.T), 'the console\'s own words'); assert.deepEqual(by.engagement, EN.check(sparse.engagement.T));
+  assert.deepEqual(P.packWarnings({ B68GmConsole: { check() { throw new Error('boom'); } }, B68GmLocation: {} }, full), [], 'a check that throws, or a module without one, says nothing');
+  assert.deepEqual(P.packWarnings({}, full), [], 'a module that is not loaded says nothing'); assert.deepEqual(P.packWarnings(mods, {}), [], 'a part the pack lacks says nothing');
+  assert.deepEqual(P.packWarnings(mods, { scenes: {} }).map((x) => [x.part, x.missing]), [['scenes', ['T']]], 'a part without tables names T');
+  assert.match(P.packWarnLines(w, 2)[0], /^console: .*\(\+\d+ more\)$|^console: [^(]*$/);
+});
+
+await test('13d. Update pack: a file missing tables shows the warning list and still uploads; the loaded pack lists them in the Menu', async () => {
+  let uploads = 0;
+  const br = fakeBrowser({ FileReader: class { readAsText(f) { this.result = f.text; this.onload(); } }, confirm: () => true });
+  const sparseCon = cl(FIXC.console); delete sparseCon.T.spend; delete sparseCon.T.say3;
+  const fg = fakeGm(null, { console: { version: 'cs', src: {}, body: sparseCon } }); fg.gm.importPart = async () => { uploads++; return { version: 'x', packVersion: 'pv' }; };
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  // at load: the Menu holds the list, one toast says so
+  assert.ok(h.q('#gm-menu-warn') && !h.q('#gm-menu-warn').hasAttribute('hidden') && /console: /.test(h.q('#gm-menu-warn').textContent) && /spend/.test(h.q('#gm-menu-warn').textContent), 'the Menu lists the missing tables: ' + h.q('#gm-menu-warn').textContent);
+  assert.equal(br.toasts.filter((t) => /missing \d+ table entr/.test(t[0])).length, 1, 'one toast at load'); assert.ok(br.toasts.every((t) => !/missing \d+ table/.test(t[0]) || t[1] === false), 'a note, not an error');
+  h.q('.gm-menu-list [data-gm="update"]').click();
+  const pk = { format: 1, exportedAt: new Date().toISOString(), parts: { console: { src: {}, ...sparseCon }, location: { src: {}, T: FIXL.T, extra: FIXL.extra }, campaign: { src: {}, ...FIXC.campaign }, scenes: { src: {}, ...FIXS.parts.scenes }, engagement: { src: {}, ...FIXS.parts.engagement } } };
+  const file = h.q('#gm-file'); file.files = [{ name: 'b68-gm-pack.json', text: JSON.stringify(pk) }]; file.id = 'gm-file';
+  dispatch(file, 'change');
+  assert.ok(await until(() => h.q('.gm-warns')), 'the warning box');
+  assert.ok(/table entr/.test(h.q('.gm-warns').textContent) && /console/.test(h.q('.gm-warns').textContent) && /spend/.test(h.q('.gm-warns').textContent), h.q('.gm-warns').textContent);
+  assert.ok(h.q('.gm-warns').className.includes('warn') && !h.q('.gm-warns').className.split(/\s+/).includes('bad'), 'a warning, not an error');
+  assert.ok(!h.q('.gm-errs'), 'no error list'); assert.ok(!h.q('[data-gm="upload"]').hasAttribute('disabled'), 'the upload is enabled');
+  h.q('[data-gm="upload"]').click(); assert.ok(await until(() => uploads >= 5), 'and it uploads every part (' + uploads + ')');
+  await h.save();
+  const clean = await openPage({ fg: fakeGm(), br: fakeBrowser(), camp: CAMP3 });
+  assert.ok(clean.q('#gm-menu-warn').hasAttribute('hidden') && clean.q('#gm-menu-warn').textContent === '', 'a complete pack: nothing in the Menu');
+  await clean.save();
+});
+
+await test('13e. the location glance: a Plan line under Say (outside the Say box), a Rule row when the district has one, Flags only the rare ones', async () => {
+  const h = await openPage({ br: fakeBrowser(), fg: fakeGm(), camp: CAMP3 });
+  let plans = 0, rules = 0;
+  for (let i = 0; i < 25; i++) {
+    h.q('[data-gm="locroll"]').click();
+    const g = L.glance(h.page._state().locRoll, { T: FIXL.T, extra: FIXL.extra }, ['public']);
+    const plan = h.q('#gm-loc .gm-glance .gm-plan');
+    assert.ok(plan && plan.textContent.replace(/\s+/g, ' ').includes(g.plan), 'the plan line: ' + g.plan);
+    assert.ok(!plan.closest('.gm-say') && h.q('#gm-loc .gm-say') && !h.q('#gm-loc .gm-say').textContent.includes(g.plan), 'it is outside the Say box (the box the players\' "Players see" chip marks)');
+    assert.equal(/Plan/.test(plan.querySelector('.gm-lab').textContent), true); plans++;
+    const dts = h.qa('#gm-loc .gm-glance-dl dt').map((d) => d.textContent);
+    assert.equal(dts.includes('Rule'), !!g.rule, 'a Rule row exactly when the district has a rule'); if (g.rule) { rules++; assert.ok(h.qa('#gm-loc .gm-glance-dl dd')[dts.indexOf('Rule')].textContent.includes(g.rule)); }
+    assert.equal(dts.includes('Flags'), g.flags.length > 0, 'Flags only when there are rare ones');
+    assert.ok(!/ring-skip|District rule/.test(h.q('#gm-loc .gm-glance').textContent), 'ring-skips and "District rule" are not flags');
+  }
+  assert.ok(plans === 25 && rules > 0, 'rules seen: ' + rules);
+  await h.save();
+});
+
+await test('13e. the plan is GM only: not in playerSummary at any reveal, not in what Street description on iPad sends, and read by nothing but the glance card', async () => {
+  const pk = { T: FIXL.T, extra: FIXL.extra };
+  for (let seed = 1; seed <= 300; seed++) {
+    const roll = L.generate(pk, {}, { seed, mem: {} }), g = L.glance(roll, pk, ['public']);
+    for (const reveal of [['public'], ['public', 'working'], ['public', 'working', 'controlled', 'secure']]) {
+      const ps = L.playerSummary(roll, reveal), all = JSON.stringify(ps);
+      assert.ok(!all.includes(g.plan) && !ps.text.includes('behind') && !/\bis behind \d+ locks?\b|has no lock in the way/.test(all), seed + ': the plan sentence is in the player summary');
+      assert.ok(!all.includes('the target, ' + roll.targetRoom + ' ('), seed + ': nor its target clause');
+    }
+  }
+  const h = await openPage({ br: fakeBrowser(), fg: fakeGm(), camp: CAMP3 });
+  h.q('[data-gm="locroll"]').click();
+  const plan = L.glance(h.page._state().locRoll, pk, ['public']).plan;
+  h.q('[data-gm="pushtext"]').click(); await until(() => h.fg.server.displays.length);
+  const sent = h.fg.server.displays.pop();
+  assert.equal(sent.kind, 'text'); assert.ok(!JSON.stringify(sent).includes(plan) && !/Plan/.test(JSON.stringify(sent)), 'the street description on the iPad has no plan: ' + JSON.stringify(sent).slice(0, 200));
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  assert.equal(count(src, /\.plan\b/g), 2, 'the page reads a plan in one place only (its glance card: the test and the line)');
+  assert.ok(/function glanceHtml[\s\S]*?\.plan[\s\S]*?\.plan[\s\S]*?function foldsHtml/.test(src), 'and that place is glanceHtml');
+  await h.save();
+});
+
+await test('13f. the NPC portrait note is the module\'s own (fig.note); no portrait when the figure failed; "No portrait: …" when the kit throws', async () => {
+  const K = require(path.join(ROOT, 'app', 'figures', 'figure-kit.js'));
+  const npcPage = (kit) => openPage({ br: fakeBrowser({ B68GmNpc: NPCM, B68Figure: kit }), fg: fakeGm(NPCFIX.parts.campaign, { npc: { version: 'n1', src: {}, body: NPCFIX.parts.npc } }), camp: CAMP3 });
+  // a clean figure: a portrait, and no sentence about stock figures
+  let h = await npcPage(K); h.q('[data-gm="npcroll"]').click();
+  assert.ok(h.q('#gm-npc .gm-npccard .gm-npcfig svg'), 'a portrait'); assert.ok(!/nearest of the stock figures|No portrait/.test(h.q('#gm-npc .gm-npccard').textContent), h.q('#gm-npc .gm-npccard').textContent.slice(0, 300));
+  const note = h.page._state ? null : null; void note; await h.save();
+  // the module's note is what shows: a map that makes the module fall back to a stock figure
+  const fallbackKit = Object.assign({}, K);
+  h = await npcPage(fallbackKit);
+  const G = NPCM.create({ T: NPCFIX.parts.npc.T, cast: NPCFIX.parts.npc.cast, F: NPCFIX.parts.npc.F, campaign: NPCFIX.parts.campaign });
+  const stock = G.figure(G.roll({ seed: 9 }).npc, { seed: 9, K, map: () => { throw new Error('boom'); } });
+  assert.ok(stock.fallback && /^Portrait: a stock figure/.test(stock.note), 'the module says so: ' + stock.note);
+  // the figure kit cannot build anything: figure() is failed (no spec), the page draws no portrait and shows the module's note
+  const badKit = Object.assign({}, K, { options: () => { throw new Error('no options'); } });
+  h = await npcPage(badKit); h.q('[data-gm="npcroll"]').click();
+  assert.ok(!h.q('#gm-npc .gm-npccard .gm-npcfig'), 'no portrait when the figure failed');
+  assert.match(h.q('#gm-npc .gm-npccard .gm-fignote').textContent, /^No portrait: .*no options/, 'and the module\'s note says why: ' + h.q('#gm-npc .gm-npccard .gm-fignote').textContent);
+  assert.equal(h.qa('#gm-npc .gm-npccard .gm-fignote').length, 1); await h.save();
+  // the kit throws on the page's own render: no portrait, and "No portrait: <reason>"
+  const portraitBoom = Object.assign({}, K, { portrait: (spec, o) => { if (spec && spec.id === 'gm-npcg') throw new Error('portrait boom'); return K.portrait(spec, o); } });
+  h = await npcPage(portraitBoom); h.q('[data-gm="npcroll"]').click();
+  assert.ok(!h.q('#gm-npc .gm-npccard .gm-npcfig'), 'no portrait when the kit throws'); assert.equal(h.q('#gm-npc .gm-npccard .gm-fignote').textContent, 'No portrait: portrait boom.');
+  // no kit at all: the module throws, the page says why
+  h = await npcPage(undefined); h.q('[data-gm="npcroll"]').click();
+  assert.ok(!h.q('#gm-npc .gm-npccard .gm-npcfig') && /^No portrait: .*figure kit is not loaded/.test(h.q('#gm-npc .gm-npccard .gm-fignote').textContent), h.q('#gm-npc .gm-npccard .gm-fignote').textContent);
+  assert.ok(h.q('#gm-npc [data-gm="npcfile"]'), 'the card still works: Add to the cast is there'); await h.save();
+});
+
+await test('13g. Earlier chips name what the card is (the NPC for Someone / Contact / Face), with the time and the position under it', async () => {
+  const con = sitCon(), ui0 = con.situationDefaults();
+  const rival = con.situation(4, Object.assign({}, ui0, { npc: 'rival:Nigel Sprocket' }), { seed: 7 });
+  assert.ok(!rival.meta.label.includes('Nigel Sprocket'), 'the module\'s own label does not name the rival: ' + rival.meta.label);
+  assert.ok(/^Someone: Nigel Sprocket — Grumpy/.test(P.earlierLabel(rival)), P.earlierLabel(rival));
+  const friend = con.situation(4, Object.assign({}, ui0, { npc: 'friend:Marge Teacup' }), { seed: 7 });
+  assert.ok(P.earlierLabel(friend).includes('Marge Teacup') && P.earlierLabel(friend) === friend.meta.label, 'a Contact names the friend already: unchanged');
+  const face = con.situation(4, ui0, { seed: 5 });
+  assert.equal(P.earlierLabel(face), face.meta.label, 'a Face names the NPC already');
+  assert.ok(P.earlierLabel(face).includes(face.meta.face.name));
+  const before = con.situation(1, ui0, { seed: 5 });
+  assert.ok(!/Want \+1d/.test(P.earlierLabel(before)) && /^Before the roll: Hat Society/.test(P.earlierLabel(before)) && P.earlierLabel(before).length <= 'Before the roll: '.length + 45, P.earlierLabel(before));
+  const fourfive = con.situation(2, Object.assign({}, ui0, { npc: 'rival:Nigel Sprocket' }), { seed: 7 });
+  assert.equal(P.earlierLabel(fourfive), fourfive.meta.label, 'a 4/5 with a rival is about the consequence, not the rival');
+  const cl1 = con.roll('reaction', Object.assign(con.defaults(), { npc: 'rival:Nigel Sprocket' }), { seed: 3 });
+  assert.ok(/^NPC reaction: Nigel Sprocket — /.test(P.earlierLabel(cl1)), 'a single-table reaction too: ' + P.earlierLabel(cl1));
+  assert.equal(P.earlierLabel({ meta: {} }), '', 'no label, no crash');
+  // on the page: the chip is the label, the time and position are under it and in the title
+  const h = await openPage({ br: fakeBrowser(), fg: fakeGm(), camp: CAMP3 });
+  pick(h, '#gm-c-npc', 'rival:Nigel Sprocket'); h.press('4');
+  const chip = h.q('#gm-earlier [data-gm="replay"]'), when = chip.querySelector('.gm-ech-s').textContent;
+  assert.match(chip.querySelector('.gm-ech-t').textContent, /^Someone: Nigel Sprocket — /);
+  assert.match(when, /^\d\d:\d\d · risky$/, 'the time and the position: ' + when);
+  assert.ok(chip.getAttribute('title').includes(when) && chip.getAttribute('title').includes('Nigel Sprocket'), 'and the title says both');
+  h.qa('#gm-pos [data-v="desperate"]')[0].click(); h.press('3');
+  const chips = h.qa('#gm-earlier [data-gm="replay"]'); assert.equal(chips.length, 2);
+  assert.match(chips[0].querySelector('.gm-ech-s').textContent, /· desperate$/, 'each chip has its own position');
+  assert.match(chips[1].querySelector('.gm-ech-s').textContent, /· risky$/);
+  // the other tools' chips carry the time (they have no position)
+  h.q('[data-gm="scnroll"]').click(); assert.match(h.q('#gm-scn .gm-earlier .gm-ech-s').textContent, /^\d\d:\d\d$/);
+  await h.save();
+});
+
+/* =====================================================================================================================
+   14. Physical dice for the engagement roll: the table rolls, the GM taps the highest die (the lowest on a 0d pool, a crit for two 6s)
+   ===================================================================================================================== */
+const enGame = () => EN.create({ T: T_EN });
+/* a seed whose app roll gives this result (highest/lowest die best, crit or not) for these controls */
+function seedFor(en, ui, best, crit) {
+  for (let seed = 1; seed < 200000; seed++) { const r = en.roll(ui, { seed }); if (r.best === best && r.crit === crit) return seed; }
+  throw new Error('no seed for ' + best + (crit ? ' crit' : ''));
+}
+const modsUi = (en, mods) => Object.assign(en.defaults(), { mods: Object.assign(en.defaults().mods, mods) });
+
+await test('14a. engagementPhys: the card for a result called at the table is the card the app roll gives for it (position, closing line), for every pool and result', () => {
+  const en = enGame();
+  const pools = [[{ bold: -1, tier: -1 }, -1], [{ bold: -1 }, 0], [{}, 1], [{ bold: 1 }, 2], [{ bold: 1, tier: 1 }, 3]];
+  for (const [mods, pool] of pools) {
+    const ui = modsUi(en, mods);
+    assert.equal(en.pool(ui), pool, 'the pool of ' + JSON.stringify(mods));
+    const results = [1, 2, 3, 4, 5, 6].map((b) => [b, false]).concat(en.pool(ui) >= 2 ? [[6, true]] : []);
+    for (const [best, crit] of results) {
+      const app = en.roll(ui, { seed: seedFor(en, ui, best, crit) }), ph = P.engagementPhys(EN, en, T_EN, ui, { best, crit });
+      const tag = en.pool(ui) + 'd best ' + best + (crit ? ' crit' : '');
+      assert.ok(ph, tag + ': a card');
+      assert.deepEqual(ph.lines[0], app.lines[0], tag + ': the modifiers line'); assert.deepEqual(ph.lines[1], app.lines[1], tag + ': the position and its how');
+      assert.deepEqual(ph.lines[3], app.lines[3], tag + ': the closing line'); assert.equal(ph.lines.length, 4);
+      assert.equal(ph.lines[2].kind, 'grid'); assert.equal(ph.lines[2].id, 'roll'); assert.match(ph.lines[2].rows[0].md, /at the table/); assert.ok(ph.lines[2].rows[0].md.includes('**' + (crit ? 'critical' : best) + '**'), ph.lines[2].rows[0].md);
+      assert.deepEqual(ph.meta.chips, app.meta.chips, tag + ': the position chip'); assert.equal(ph.meta.title, app.meta.title); assert.equal(ph.meta.sub, app.meta.sub); assert.equal(ph.meta.label, app.meta.label);
+      assert.equal(ph.position, app.position); assert.equal(ph.pool, app.pool); assert.equal(ph.zero, app.zero); assert.equal(ph.best, best); assert.equal(ph.crit, crit);
+      assert.deepEqual(ph.meta.result.pos, app.meta.result.pos); assert.equal(ph.meta.all.length, app.meta.all.length); assert.equal(ph.meta.all[0], app.meta.all[0]);
+      assert.deepEqual(ph.replay, { id: 'engagement', phys: { best, crit }, ui: app.replay.ui }, 'replay info, no seed'); assert.ok(!('seed' in ph.replay) && ph.seed === null);
+      assert.ok(!/undefined|NaN|\[object/.test(JSON.stringify(ph)));
+      // the same position as the module's own helper gives for these dice
+      assert.equal(ph.position, EN.outcomeOf(T_EN, { crit, best }).pos);
+    }
+  }
+  const one = modsUi(en, {}), zero = modsUi(en, { bold: -1, tier: -1 });
+  assert.equal(en.pool(one), 1); assert.ok(en.pool(zero) <= 0);
+  assert.equal(P.engagementPhys(EN, en, T_EN, one, { best: 6, crit: true }), null, 'two 6s needs 2d');
+  assert.equal(P.engagementPhys(EN, en, T_EN, zero, { best: 6, crit: true }), null, 'a 0d pool has no crit');
+  for (const bad of [{ best: 0 }, { best: 7 }, { best: 'x' }, { best: 4.5 }, { best: 5, crit: true }, null, 'x']) assert.equal(P.engagementPhys(EN, en, T_EN, modsUi(en, { bold: 1 }), bad), null, JSON.stringify(bad));
+  assert.match(P.engagementPhys(EN, en, T_EN, zero, { best: 2, crit: false }).lines[2].rows[0].md, /^0d — rolled 2 at the table, kept the lowest: \*\*2\*\*$/, 'a 0d pool: the table rolls two and keeps the lowest');
+  assert.match(P.engagementPhys(EN, en, T_EN, zero, { best: 2, crit: false }).meta.title, /\(2d, keep lowest\)/, 'and the title says so, never -1d');
+});
+
+const dieBtn = (h, v) => h.q('#gm-eng [data-gm="engdie"][data-v="' + v + '"]');
+const engTxt = (h) => cardOf(h, '#gm-eng .gm-engcard').replace(/\*\*/g, '');       // this fake page shows markdown as written
+
+await test('14b. the Engage panel: the pool before the roll, Roll engagement (the app rolls), and a "Rolled at the table: highest die" row of 1-6 and Crit (two 6s)', async () => {
+  const fg = fakeGm(), h = await openPage({ fg });
+  h.press('e');
+  assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 1d', 'the pool before any roll'); assert.ok(/Set the factors, then roll\./.test(engTxt(h)));
+  assert.ok(h.q('#gm-eng [data-gm="engroll"]'), 'Roll engagement stays'); assert.equal(h.q('#gm-eng [data-gm="engroll"]').textContent, 'Roll engagement');
+  const row = h.q('#gm-eng .gm-dice'); assert.ok(row, 'the dice row');
+  assert.equal(row.querySelector('.gm-lab').textContent, 'Rolled at the table: highest die');
+  assert.deepEqual(h.qa('#gm-eng [data-gm="engdie"]').map((b) => b.textContent), ['1', '2', '3', '4', '5', '6', 'Crit (two 6s)']);
+  assert.ok(dieBtn(h, 'crit').hasAttribute('disabled') && /2d/.test(dieBtn(h, 'crit').getAttribute('title')), 'one die cannot give two 6s');
+  const all = h.q('#gm-eng').innerHTML, iRoll = all.indexOf('data-gm="engroll"'), iDice = all.indexOf('class="gm-field wide gm-dice"'), iCard = all.indexOf('gm-engcard');
+  assert.ok(iRoll < iDice && iDice < iCard, 'the row sits under Roll engagement, above the card');
+  h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click();
+  assert.ok(!dieBtn(h, 'crit').hasAttribute('disabled'), 'a 2d pool can crit');
+  h.q('[data-gm="engtri"][data-id="bold"][data-v="-1"]').click(); h.q('[data-gm="engtri"][data-id="tier"][data-v="-1"]').click();
+  assert.equal(h.q('#gm-eng .gm-dice .gm-lab').textContent, 'Rolled at the table: lowest die', 'a 0d pool rolls two and keeps the LOWEST');
+  assert.equal(h.qa('#gm-eng [data-gm="engdie"]').length, 6, 'and has no crit button'); assert.ok(/0d: roll two dice, keep the lowest/.test(h.q('#gm-eng .gm-dice').textContent), h.q('#gm-eng .gm-dice').textContent);
+  await h.save();
+});
+
+await test('14c. tap 4: the risky card; a crit; the result is stored without a seed, redrawn exactly after a reload and from Earlier', async () => {
+  const fg = fakeGm(), br = fakeBrowser();
+  const h = await openPage({ fg, br });
+  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click();                           // 2d
+  dieBtn(h, '4').click();
+  let txt = engTxt(h);
+  assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
+  assert.ok(txt.includes(T_EN.outcome.risky.pos) && txt.includes(T_EN.outcome.risky.how), 'the risky position and its line: ' + txt);
+  assert.ok(txt.replace(/\*\*/g, '').includes(T_EN.cut.replace(/\*\*/g, '')), 'the closing line'); assert.ok(/Rolled at the table: highest die 4/.test(txt), txt);
+  assert.deepEqual(h.qa('#gm-eng .gm-engcard .gm-chip').map((c) => c.textContent), [T_EN.outcome.risky.pos.split(' — ')[0]]);
+  assert.equal(dieBtn(h, '4').getAttribute('aria-pressed'), 'true', 'the tapped die is marked'); assert.equal(dieBtn(h, '5').getAttribute('aria-pressed'), 'false');
+  assert.ok(h.q('#gm-eng .gm-engcard [data-gm="pin"]') && h.q('#gm-eng .gm-engcard [data-gm="copy"]'), 'Pin and Copy on it');
+  const first = txt;
+  dieBtn(h, 'crit').click(); txt = engTxt(h);
+  assert.ok(txt.includes(T_EN.outcome.crit.pos) && txt.includes(T_EN.outcome.crit.how) && /two 6s/.test(txt) && /critical/.test(txt), 'a crit: ' + txt);
+  assert.equal(dieBtn(h, 'crit').getAttribute('aria-pressed'), 'true'); assert.equal(dieBtn(h, '4').getAttribute('aria-pressed'), 'false');
+  const crit = txt;
+  dieBtn(h, '6').click(); assert.ok(engTxt(h).includes(T_EN.outcome.six.pos + ' ') || engTxt(h).includes(T_EN.outcome.six.how), 'one 6 is the six outcome, not the crit');
+  dieBtn(h, '2').click(); assert.ok(engTxt(h).includes(T_EN.outcome.desperate.how), 'a 1-3 is the desperate outcome');
+  dieBtn(h, '4').click();
+  await h.save();
+  const c = fg.server.doc.cards.engagement;
+  assert.equal(c.id, 'engagement'); assert.deepEqual(c.phys, { best: 4, crit: false }); assert.deepEqual(c.ui, { approach: 'Smash', load: 'Quiet', mods: { bold: 1, tier: 0 } });
+  assert.ok(!('seed' in c) && !('mem' in c), 'no seed: the dice are the table\'s'); assert.ok(c.hid && c.at && /^Smash — 2d · Level · table 4$/.test(c.label), c.label);
+  assert.equal(Object.keys(fg.server.doc.hist.engagement).length, 5, 'every tap is in Earlier (five kept)');
+  const h2 = await openPage({ fg, br });
+  assert.equal(engTxt(h2), first, 'reload: exactly the same card'); assert.equal(h2.q('#gm-eng [data-gm="engdie"][data-v="4"]').getAttribute('aria-pressed'), 'true');
+  const chips = h2.qa('#gm-eng [data-gm="replay"]'); assert.equal(chips.length, 5);
+  assert.deepEqual(chips.map((x) => x.querySelector('.gm-ech-t').textContent).sort(), ['Smash — 2d · Ahead of the game · table crit', 'Smash — 2d · Ahead · table 6', 'Smash — 2d · Behind · table 2', 'Smash — 2d · Level · table 4', 'Smash — 2d · Level · table 4'].sort(), 'Earlier names the table result');
+  chips.filter((x) => x.querySelector('.gm-ech-t').textContent.endsWith('table crit'))[0].click();
+  assert.equal(engTxt(h2), crit, 'Earlier brings the crit back, card for card');
+  await h2.save();
+  const h3 = await openPage({ fg, br });
+  assert.equal(engTxt(h3), crit, 'and the replayed card is the one that comes back'); assert.equal(h3.q('#gm-eng [data-gm="engdie"][data-v="crit"]').getAttribute('aria-pressed'), 'true');
+  // a control change drops the stored card (the Earlier row keeps it); the app's own roll still works and files a seed
+  change(h3.q('#gm-e-approach'), 'Charm'); assert.ok(/Set the factors/.test(engTxt(h3)) && !h3.q('#gm-eng .gm-chip'), 'a change shows the pool again');
+  h3.q('[data-gm="engroll"]').click(); assert.ok(/\[\d \d\]/.test(engTxt(h3)), 'the app rolls real dice: ' + engTxt(h3));
+  await h3.save();
+  assert.ok(Number.isInteger(fg.server.doc.cards.engagement.seed) && !fg.server.doc.cards.engagement.phys && fg.server.doc.cards.engagement.phys === undefined, 'an app roll files a seed and no phys');
+});
+
+await test('14d. a 0d pool: the table rolls two and keeps the lowest; the tap is the lowest die; Pin, Copy and L say it was the table\'s', async () => {
+  const fg = fakeGm(), br = fakeBrowser(), h = await openPage({ fg, br });
+  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="-1"]').click(); h.q('[data-gm="engtri"][data-id="tier"][data-v="-1"]').click();
+  assert.equal(h.q('#gm-eng .gm-dice .gm-lab').textContent, 'Rolled at the table: lowest die');
+  dieBtn(h, '5').click();
+  const txt = engTxt(h);
+  assert.ok(/Smash — 0d \(2d, keep lowest\)/.test(txt) && !/-1d/.test(txt) && /0d — rolled 2 at the table, kept the lowest: 5/.test(txt), txt);
+  assert.ok(txt.includes(T_EN.outcome.risky.how), 'the lowest die 5 is the risky outcome');
+  h.q('#gm-eng [data-gm="copy"]').click(); assert.ok(/kept the lowest/.test(br.copied) && !/\*\*/.test(br.copied) && br.copied.includes(T_EN.cut.replace(/\*\*/g, '')), br.copied);
+  h.q('#gm-eng [data-gm="pin"]').click(); h.press('l'); await h.save();
+  const pins = Object.values(fg.server.doc.pins); assert.equal(pins.length, 1); assert.equal(pins[0].tool, 'engagement'); assert.ok(/at the table/.test(pins[0].text));
+  const cap = Object.values(fg.server.doc.capture); assert.ok(cap.some((e) => e.bucket === 'r' && /^Engagement: Smash — 0d \(2d, keep lowest\) · Level · table low 5$/.test(e.text)), JSON.stringify(cap));
+  assert.deepEqual(fg.server.doc.cards.engagement.phys, { best: 5, crit: false });
+});
+
+await test('14f. a table roll and an app roll never inherit each other\'s stored keys: reload and Earlier give each card back as it was', async () => {
+  const fg = fakeGm(), br = fakeBrowser(), h = await openPage({ fg, br });
+  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click();
+  dieBtn(h, '4').click(); const table = engTxt(h);
+  h.q('[data-gm="engroll"]').click(); const app = engTxt(h); assert.notEqual(app, table); assert.ok(/\[\d \d\]/.test(app));
+  await h.save();
+  let c = fg.server.doc.cards.engagement; assert.ok(Number.isInteger(c.seed) && !('phys' in c), 'the app roll replaced the table roll: no phys left on it: ' + JSON.stringify(c));
+  const h2 = await openPage({ fg, br }); assert.equal(engTxt(h2), app, 'reload: the app roll, not the table roll');
+  h2.qa('#gm-eng [data-gm="replay"]').filter((x) => /table 4$/.test(x.querySelector('.gm-ech-t').textContent))[0].click();
+  assert.equal(engTxt(h2), table, 'Earlier: the table roll'); await h2.save();
+  c = fg.server.doc.cards.engagement; assert.ok(c.phys && !('seed' in c), 'and the stored card is the table roll alone: ' + JSON.stringify(c));
+  const h3 = await openPage({ fg, br }); assert.equal(engTxt(h3), table, 'reload: still the table roll');
+  h3.qa('#gm-eng [data-gm="replay"]').filter((x) => !/table/.test(x.querySelector('.gm-ech-t').textContent))[0].click();
+  assert.equal(engTxt(h3), app, 'Earlier: the app roll again'); await h3.save();
+  assert.ok(Number.isInteger(fg.server.doc.cards.engagement.seed) && !('phys' in fg.server.doc.cards.engagement));
+});
+
+await test('14e. a pack without the engagement part: no dice row, nothing thrown', async () => {
+  const fg = fakeGm(); const full = fg.gm.pack;
+  fg.gm.pack = async () => { const r = await full(); delete r.parts.engagement; return r; };
+  const h = await openPage({ fg }); h.press('e');
+  assert.ok(/no engagement part/.test(h.q('#gm-eng').textContent) && !h.q('#gm-eng .gm-dice'));
+  await h.save();
+});
+
+/* =====================================================================================================================
+   15. E5, signed out mid-session: a 401 (Cloudflare Access expired) puts the saver on HOLD: nothing more is sent, new patches
+   merge into the pending copy, which waits in the sticky copy as PENDING (a refused patch stays refused and is never resent);
+   the bar says so plainly; the next open after a reload resends the pending copy once
+   ===================================================================================================================== */
+const SIGNED_OUT = Object.assign(new Error('signed out: reload the page to sign in again'), { status: 401, code: 'signed_out' });
+const SO_MSG = 'Signed out: reload to sign in. Your notes are kept on this device.';
+const stickyOf = (br) => JSON.parse(br.ls.get('b68.gm.sticky') || 'null');
+
+await test('15a. a 401 (or the adapter\'s signed-out error) puts the saver on hold: nothing more is sent, new patches merge into the pending copy, nothing is parked', async () => {
+  for (const err of [SIGNED_OUT, Object.assign(new Error('x'), { status: 401 }), Object.assign(new Error('x'), { code: 'signed_out' })]) {
+    const h = harness({ fail: (p, n) => (n >= 2 ? err : null) });
+    h.s.add({ a: 1 }); await h.s.flush(); await tick();
+    h.s.add({ b: { x: 1 } }); await h.s.flush(); await tick();
+    const st = h.s.state();
+    assert.equal(st.hold, true); assert.equal(st.parked, null, 'a sign-out is not a refusal'); assert.deepEqual(st.pending, { b: { x: 1 } }); assert.equal(h.timers.size, 0, 'no retry is scheduled'); assert.equal(st.error, 'signed out');
+    h.s.add({ b: { y: 2 }, c: 3 });
+    assert.equal(h.timers.size, 0, 'no debounce timer while on hold'); await h.s.flush(); await h.s.beacon(); await tick();
+    assert.deepEqual(h.sent, [{ a: 1 }, { b: { x: 1 } }], 'nothing is sent while on hold, the beacon neither');
+    assert.deepEqual(h.s.state().pending, { b: { x: 1, y: 2 }, c: 3 }, 'later patches merge into the pending copy');
+    assert.deepEqual(h.s.unsent(), { b: { x: 1, y: 2 }, c: 3 }, 'unsent() is what has not gone');
+    assert.equal(P.signedOut(err), true);
+  }
+  assert.equal(P.signedOut({ status: 400 }), false); assert.equal(P.signedOut({ status: 403 }), false); assert.equal(P.signedOut(null), false); assert.equal(P.signedOut({ network: true }), false);
+  assert.equal(P.retryable(Object.assign(new Error('x'), { status: 401 })), false, 'a 401 is still not retried on a timer');
+});
+
+await test('15b. a refused patch (400) is still parked and never resent, beside a sign-out hold; unsent() is the patch in flight and the pending one together', async () => {
+  const bad = Object.assign(new Error('capture must be an object'), { status: 400 });
+  const h = harness({ fail: (p) => (p.bad ? bad : p.out ? SIGNED_OUT : null) });
+  h.s.add({ bad: 1 }); await h.s.flush(); await tick();
+  assert.deepEqual(h.s.state().parked, { bad: 1 }); assert.equal(h.s.state().hold, false, 'a refusal is not a hold');
+  h.s.add({ out: 1 }); await h.s.flush(); await tick();
+  const st = h.s.state(); assert.equal(st.hold, true); assert.deepEqual(st.parked, { bad: 1 }, 'the refused patch stays parked'); assert.deepEqual(st.pending, { out: 1 }, 'the held one is pending');
+  assert.deepEqual(h.s.unsent(), { out: 1 }, 'the refused patch is not part of what is resent');
+  assert.deepEqual(h.sent, [{ bad: 1 }, { out: 1 }]);
+  // in flight + pending together
+  const g = harness(); const release = g.hold();
+  g.s.add({ a: 1 }); g.s.flush(); g.s.add({ b: 2 }); await tick();
+  assert.deepEqual(g.s.unsent(), { a: 1, b: 2 }, 'the write in flight is still unsent until it lands');
+  release(); await tick(); await tick(); await tick(); assert.equal(g.s.unsent(), null, 'and nothing is unsent after');
+  // the beacon: a signed-out answer holds the saver too, and keeps the patch
+  const o2 = { debounce: 800, delay: () => 1, cancel() {}, send: async () => ({ doc: {}, updatedAt: 't' }), beacon: async () => { throw SIGNED_OUT; } };
+  const s2 = P.makeSaver(o2); s2.add({ k: 1 }); await s2.beacon(); await tick();
+  assert.equal(s2.state().hold, true); assert.deepEqual(s2.state().pending, { k: 1 }, 'a beacon that meets the sign-out page keeps its patch');
+});
+
+await test('15c. the page: a 401 mid-session puts a plain message in the bar, keeps the notes on this device as pending, and a reload resends them once', async () => {
+  const br = fakeBrowser(), fg = fakeGm(), okPatch = fg.gm.patchState, seen = [];
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('3'); await h.save(); assert.ok(fg.server.doc.cards.situation, 'signed in: the roll is saved');
+  const h1 = await openPage({ br, fg, camp: CAMP3 }), before = cardTxt(h1);
+  fg.gm.patchState = async (p) => { seen.push(p); throw SIGNED_OUT; };               // the Access session ends
+  h1.press('2'); const rolled = cardTxt(h1); assert.notEqual(rolled, before);
+  h1.q('#gm-cap-in').value = 'The goose, again'; dispatch(h1.q('[data-gm-form="capture"]'), 'submit');
+  assert.ok(await until(() => h1.q('#gm-signed') && !h1.q('#gm-signed').hasAttribute('hidden') && h1.page._state(), 400), 'the bar message appears (the saver tried, got a 401)');
+  const bar = h1.q('#gm-signed');
+  assert.equal(bar.textContent, SO_MSG); assert.ok(bar.closest('.gm-bar'), 'it is in the bar'); assert.ok(h1.q('.gm-bar').className.split(/\s+/).includes('out'), 'the bar is marked');
+  assert.equal(h1.q('.gm-save').textContent, 'Signed out'); assert.ok(h1.q('.gm-save').className.includes('bad'));
+  assert.equal(br.toasts.filter((t) => t[0] === SO_MSG).length, 1, 'one toast, said once');
+  assert.ok(!/Not saved|It is kept on this device; later changes still save/.test(h1.root.textContent + JSON.stringify(br.toasts)), 'the old "later changes still save" line is not said');
+  h1.press('3'); const card1 = cardTxt(h1); h1.q('#gm-cap-in').value = 'A second line'; dispatch(h1.q('[data-gm-form="capture"]'), 'submit'); await new Promise((r) => setTimeout(r, 900));
+  assert.equal(seen.length, 1, 'one request met the 401; the later patches were not sent');
+  const sticky = stickyOf(br);
+  assert.ok(sticky && sticky.pending && sticky.pending.cards && sticky.pending.cards.situation && sticky.pending.capture, 'the sticky copy holds the pending patch');
+  assert.deepEqual(Object.values(sticky.pending.capture).map((e) => e.text).sort(), ['A second line', 'The goose, again'], 'with both lines');
+  assert.ok(!sticky.parked, 'pending is not parked');
+  assert.equal(Object.values(fg.server.doc.capture || {}).length, 0, 'the server has none of it');
+  assert.equal(cardTxt(h1).length > 10, true, 'and the page keeps working on this device (a roll still draws)');
+  const asked = []; br.W.confirm = (m) => { asked.push(m); return false; };
+  h1.q('.gm-menu-list [data-gm="forget"]').click(); assert.ok(/not been saved|not yet saved/i.test(asked[0] || ''), 'Forget warns that unsent changes would go: ' + asked[0]);
+  await h1.save(); assert.equal(seen.length, 1, 'closing the page sends nothing while signed out'); assert.ok(stickyOf(br).pending, 'and the copy is still there');
+  // the next open after a reload, signed in again: the pending copy is resent once
+  fg.gm.patchState = okPatch; fg.server.patches.length = 0;
+  const h2 = await openPage({ br, fg, camp: CAMP3 });
+  assert.ok(await until(() => fg.server.patches.some((p) => p.capture), 400), 'the pending copy was sent on the next open');
+  assert.equal(h2.q('#gm-signed').hasAttribute('hidden'), true, 'no message now'); const card2 = cardTxt(h2);
+  await h2.save();
+  const sent = fg.server.patches.filter((p) => p.capture); assert.equal(sent.length, 1, 'once');
+  assert.deepEqual(Object.values(fg.server.doc.capture).map((e) => e.text).sort(), ['A second line', 'The goose, again']);
+  assert.equal(fg.server.doc.cards.situation.hid, JSON.parse(JSON.stringify(sticky.pending.cards.situation.hid)), 'the card rolled while signed out is the stored one');
+  assert.equal(card2, card1, 'and the page draws it');
+  assert.equal(stickyOf(br).pending, undefined, 'the sticky copy no longer holds it');
+  const n = fg.server.patches.length, h3 = await openPage({ br, fg, camp: CAMP3 }); await h3.save();
+  assert.equal(fg.server.patches.filter((p) => p.capture).length, 1, 'a later open does not resend it'); assert.equal(fg.server.patches.length, n, 'nothing at all is resent');
+});
+
+await test('15d. a refused 400 stays refused: kept on this device, shown as Not saved, and never resent after a reload', async () => {
+  const br = fakeBrowser(), fg = fakeGm(), good = fg.gm.patchState;
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  fg.gm.patchState = async (p) => { if (p.capture) throw Object.assign(new Error('capture must be an object'), { status: 400 }); return good(p); };
+  h.q('#gm-cap-in').value = 'Refused line'; dispatch(h.q('[data-gm-form="capture"]'), 'submit');
+  assert.ok(await until(() => /Not saved/.test(h.q('.gm-save').textContent), 400), 'Not saved'); assert.ok(h.q('#gm-signed').hasAttribute('hidden'), 'not the sign-out message');
+  assert.ok(stickyOf(br).parked && stickyOf(br).parked.capture, 'kept on this device'); assert.equal(stickyOf(br).pending, undefined, 'and not pending');
+  h.press('3'); await h.save();
+  assert.ok(fg.server.doc.cards.situation, 'later changes still save');
+  fg.gm.patchState = good; fg.server.patches.length = 0;
+  const h2 = await openPage({ br, fg, camp: CAMP3 }); await new Promise((r) => setTimeout(r, 1000)); await h2.save();
+  assert.ok(!fg.server.patches.some((p) => p.capture), 'the refused patch was not sent again');
+  assert.ok(stickyOf(br).parked && stickyOf(br).parked.capture, 'it is still carried on this device');
+});
+
+await test('15e. the page-hide request meets the sign-in page (an opaque redirect): that is a sign-out too, not a retry loop', async () => {
+  const br = fakeBrowser({ fetch: async () => ({ ok: false, status: 0, type: 'opaqueredirect' }) }), fg = fakeGm();
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('3');
+  br.doc.hidden = true; for (const fn of br.doc.listeners.visibilitychange || []) fn();
+  assert.ok(await until(() => !h.q('#gm-signed').hasAttribute('hidden'), 400), 'a hidden tab whose keepalive request was redirected to the sign-in page shows the message');
+  assert.equal(h.q('#gm-signed').textContent, SO_MSG); assert.ok(stickyOf(br).pending && stickyOf(br).pending.cards, 'and keeps the patch'); assert.equal(fg.server.patches.length, 0);
+  br.doc.hidden = false;
+});
+
+await test('15f. an open that stops at the import screen (no pack on the server) leaves the pending copy in the sticky copy and sends nothing', async () => {
+  const br = fakeBrowser(), fg = fakeGm(), pending = { capture: { cx: { id: 'cx', bucket: 'n', text: 'Kept for later', at: '2026-10-01T12:00:00.000Z', s: 3 } } };
+  br.ls.set('b68.gm.sticky', JSON.stringify({ v: 1, user: 'gm1', live: {}, cards: {}, pending }));
+  fg.gm.pack = async () => ({ version: '0', parts: {} }); br.W.claude = { gm: fg.gm };
+  const page = loadPage(br.W), root = br.doc.createElement('div'); br.doc.body.appendChild(root);
+  page.open(root, { ready: async () => {}, isGM: () => true, me: () => 'gm1', gm: () => fg.gm, db: () => null, campaign: () => CAMP3, saveFile() {}, copy() {} });
+  assert.ok(await until(() => page._state() && page._state().status === 'import'), 'the import screen');
+  await new Promise((r) => setTimeout(r, 1000));
+  assert.equal(fg.server.patches.length, 0, 'nothing was sent'); assert.deepEqual(stickyOf(br).pending, pending, 'the pending copy is still in the sticky copy');
+  page.close();
+});
+
+/* =====================================================================================================================
+   16. E18, capture never blocks a roll: capture is budgeted by bytes; over it, the oldest lines of EARLIER sessions go first (never
+   this session's), one toast per page load; only a session that alone exceeds the budget refuses new capture text; a roll is never refused
+   ===================================================================================================================== */
+const isoAt = (i) => new Date(Date.UTC(2026, 9, 1, 12, 0, 0) + i * 60000).toISOString();
+function capLines(session, n, len, from) {
+  const m = {};
+  for (let i = 0; i < n; i++) { const id = 'c' + session + '_' + (from || 0) + '_' + i; m[id] = { id, bucket: 'm', text: 'q'.repeat(len), at: isoAt((session * 1000) + (from || 0) + i), s: session }; }
+  return m;
+}
+const capBytes = (m) => Object.keys(m).reduce((n, k) => n + P.bytes(m[k]) + k.length + 6, 0);   // what the page counts for a line: its JSON, its key and the punctuation
+
+await test('16a. capturePlan: within the budget everything stays; over it the oldest lines of earlier sessions go first, never this session\'s or a line without a session', () => {
+  assert.ok(P.LIMITS.captureBytes >= 96 * 1024 && P.LIMITS.captureBytes <= 160 * 1024 && P.LIMITS.captureBytes < P.LIMITS.stateSoft, 'a byte budget well under the soft cap: ' + P.LIMITS.captureBytes);
+  const e = (id, s) => ({ id, bucket: 'n', text: 't'.repeat(300), at: isoAt(90000), s });
+  const map = Object.assign({}, capLines(1, 4, 300), capLines(2, 4, 300), capLines(3, 3, 300));
+  map.nos = { id: 'nos', bucket: 'x', text: 'u'.repeat(300), at: isoAt(1) };                  // filed with no session known
+  const per = capBytes({ new1: e('new1', 3) }), max = capBytes(map) + per;                       // room for exactly the new line
+  let p = P.capturePlan(map, 'new1', e('new1', 3), 3, max);
+  assert.equal(p.refused, false); assert.deepEqual(p.dropped, []); assert.deepEqual(Object.keys(p.patch), ['new1'], 'under the budget: just the new line');
+  p = P.capturePlan(map, 'new1', e('new1', 3), 3, max - Math.round(per * 2.5));                  // two and a half lines too many
+  assert.equal(p.refused, false); assert.deepEqual(p.dropped, ['c1_0_0', 'c1_0_1', 'c1_0_2'], 'three of the oldest earlier lines, session 1 first, oldest first');
+  for (const id of p.dropped) assert.equal(p.patch[id], null);
+  assert.equal(p.patch.new1.text.length, 300);
+  const after = P.applyPatch({ capture: map }, { capture: p.patch }).capture; assert.ok(capBytes(after) <= max - Math.round(per * 2.5), 'it fits now');
+  for (const id of Object.keys(capLines(3, 3, 300))) assert.ok(id in after, 'this session\'s line kept'); assert.ok('nos' in after, 'a line without a session is kept');
+  p = P.capturePlan(map, 'new1', e('new1', 3), 3, capBytes(map) - per * 6);                      // more than session 1 holds: session 2 next, oldest session first
+  assert.equal(p.refused, false); assert.equal(p.dropped.length, 7);
+  assert.deepEqual(p.dropped.slice(0, 4), ['c1_0_0', 'c1_0_1', 'c1_0_2', 'c1_0_3'], 'all of session 1, then'); assert.ok(p.dropped.slice(4).every((id) => /^c2_/.test(id)), 'session 2');
+  assert.ok(!p.dropped.some((id) => /^c3_|^nos$/.test(id)));
+  // this session alone over the budget: refused, nothing dropped, nothing added
+  const solo = capLines(3, 6, 300);
+  p = P.capturePlan(solo, 'new1', e('new1', 3), 3, capBytes(solo));
+  assert.equal(p.refused, true); assert.equal(p.patch, null); assert.deepEqual(p.dropped, []);
+  const mix = Object.assign({}, capLines(1, 5, 300), capLines(3, 5, 300));
+  p = P.capturePlan(mix, 'new1', e('new1', 3), 3, capBytes(capLines(3, 5, 300)) + per - 1);
+  assert.equal(p.refused, true, 'every earlier line gone and this session still over: refused'); assert.equal(p.patch, null);
+  p = P.capturePlan(mix, 'new1', e('new1', 3), 3, capBytes(capLines(3, 5, 300)) + per);
+  assert.equal(p.refused, false); assert.equal(p.dropped.length, 5, 'and just enough room: the five earlier lines go');
+  // a session that is not known drops nothing (no line can be shown to be earlier); a later session's lines are not earlier
+  p = P.capturePlan(capLines(1, 6, 300), 'new1', e('new1'), undefined, 100); assert.equal(p.refused, true);
+  p = P.capturePlan(capLines(5, 6, 300), 'new1', e('new1', 3), 3, 100); assert.equal(p.refused, true, 'lines of a later session are not earlier');
+  // the 400-line cap still applies on top
+  const many = {}; for (let i = 0; i < P.LIMITS.capture; i++) many['m' + i] = { id: 'm' + i, bucket: 'n', text: 'z', at: isoAt(i), s: 3 };
+  p = P.capturePlan(many, 'new1', e('new1', 3), 3, 1e9); assert.equal(p.patch.m0, null, 'the oldest past 400 goes, as before'); assert.equal(p.dropped.length, 0);
+  assert.deepEqual(P.capShed(map, 1, 3), ['c1_0_0'], 'capShed names the oldest earlier line for the first byte it must find');
+  assert.equal(P.capShed(map, capBytes(capLines(1, 4, 300)) + 1, 3).length, 5, 'and goes on to the next session for more');
+  assert.deepEqual(P.capShed(capLines(3, 4, 300), 1e9, 3), [], 'never this session\'s'); assert.deepEqual(P.capShed(map, 1e9, undefined), [], 'nor anything when the session is not known');
+});
+
+const submitCap = (h, text) => { h.q('#gm-cap-in').value = text; dispatch(h.q('[data-gm-form="capture"]'), 'submit'); };
+
+await test('16b. on the page: over the byte budget, earlier sessions\' lines go first; one toast per page load says how many and that npm run gm:after files them; this session\'s are kept', async () => {
+  const fg = fakeGm(), br = fakeBrowser();
+  const earlier = Object.assign({}, capLines(1, 130, 470), capLines(2, 130, 470)), mine = capLines(3, 12, 200);
+  fg.server.doc = { capture: Object.assign({}, earlier, mine, { nos: { id: 'nos', bucket: 'n', text: 'no session', at: isoAt(5) } }) };
+  assert.ok(capBytes(fg.server.doc.capture) > P.LIMITS.captureBytes, 'the doc starts over the budget (' + capBytes(fg.server.doc.capture) + ')');
+  const h = await openPage({ br, fg, camp: CAMP3 });                                        // session 3
+  submitCap(h, 'The first new line');
+  const left = () => h.page._state().doc.capture;
+  assert.ok(capBytes(left()) <= P.LIMITS.captureBytes, 'under the budget now: ' + capBytes(left()));
+  const toasts = br.toasts.filter((t) => /Dropped \d+ /.test(t[0]));
+  assert.equal(toasts.length, 1, 'one toast: ' + JSON.stringify(br.toasts));
+  assert.match(br.toasts[br.toasts.length - 1][0], /^Dropped \d+ /, 'and it is the last thing said: "Filed under ..." does not cover it (a toast has one line)');
+  const n = +/Dropped (\d+)/.exec(toasts[0][0])[1], gone = Object.keys(earlier).filter((k) => !(k in left()));
+  assert.equal(n, gone.length, 'it names how many'); assert.ok(n > 0 && /earlier session/.test(toasts[0][0]) && /npm run gm:after/.test(toasts[0][0]) && /vault/.test(toasts[0][0]), toasts[0][0]);
+  for (const k of Object.keys(mine)) assert.ok(k in left(), 'this session\'s lines are all there'); assert.ok('nos' in left(), 'and the line with no session');
+  const order = (a, b) => a.s - b.s || (a.at < b.at ? -1 : a.at > b.at ? 1 : 0);
+  const keptEarlier = Object.keys(earlier).filter((k) => k in left()).map((k) => earlier[k]).sort(order), oldestKept = keptEarlier[0];
+  assert.ok(keptEarlier.length > 0); for (const k of gone) assert.ok(order(earlier[k], oldestKept) < 0, 'only the oldest went: ' + k);
+  for (let i = 0; i < 40; i++) submitCap(h, 'filler ' + 'y'.repeat(400));
+  assert.equal(br.toasts.filter((t) => /Dropped \d+ /.test(t[0])).length, 1, 'still one toast for the whole page load');
+  assert.ok(capBytes(left()) <= P.LIMITS.captureBytes, 'and still under the budget');
+  await h.save();
+  assert.ok(capBytes(fg.server.doc.capture) <= P.LIMITS.captureBytes, 'saved under the budget'); assert.ok(Object.values(fg.server.doc.capture).some((e) => e.text === 'The first new line'));
+  const br2 = fakeBrowser(), fg2 = fakeGm(); fg2.server.doc = { capture: Object.assign({}, earlier, capLines(3, 2, 100)) };
+  const h2 = await openPage({ br: br2, fg: fg2, camp: CAMP3 }); submitCap(h2, 'x'); assert.equal(br2.toasts.filter((t) => /Dropped \d+ /.test(t[0])).length, 1, 'a new page load says it again'); await h2.save();
+});
+
+await test('16c. a session that alone fills the budget cannot file more text (a clear message), and a roll is never refused', async () => {
+  const fg = fakeGm(), br = fakeBrowser(), mine = capLines(3, 300, 470);
+  assert.ok(capBytes(mine) > P.LIMITS.captureBytes);
+  fg.server.doc = { capture: Object.assign({}, capLines(2, 5, 100), mine) };
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  const before = Object.keys(h.page._state().doc.capture).length;
+  submitCap(h, 'one more line');
+  assert.equal(Object.keys(h.page._state().doc.capture).length, before, 'nothing was added, and nothing dropped for a line that is refused');
+  assert.ok(!Object.values(h.page._state().doc.capture).some((e) => e.text === 'one more line'), 'the line is not filed');
+  const refusal = br.toasts.filter((t) => /capture/i.test(t[0]) && t[1] === true);
+  assert.equal(refusal.length, 1, JSON.stringify(br.toasts)); assert.match(refusal[0][0], /Tonight.s capture is full/); assert.match(refusal[0][0], /Export tonight.s note/); assert.match(refusal[0][0], /rolls still work/i);
+  assert.ok(!br.toasts.some((t) => /The GM notes are full/.test(t[0])), 'not the old "notes are full" message');
+  for (const k of ['2', '3', '4', '1']) { h.press(k); assert.ok(cardTxt(h).length > 20, 'roll ' + k + ' still draws'); }
+  h.press('l'); assert.equal(br.toasts.filter((t) => /Tonight.s capture is full/.test(t[0])).length, 2, 'L files text too: refused with the same message');
+  await h.save();
+  assert.ok(fg.server.doc.cards.situation && Object.keys(fg.server.doc.hist.situation).length === 4, 'every roll was saved');
+  assert.ok(!br.toasts.some((t) => /The roll failed|notes are full/.test(t[0])));
+});
+
+await test('16d. a roll is never refused for want of room: near the server\'s cap the oldest sessions\' capture makes it', async () => {
+  const fg = fakeGm(), br = fakeBrowser(), earlier = {};
+  for (let i = 0; P.bytes({ capture: earlier }) < 257000; i++) Object.assign(earlier, capLines(1 + (i % 2), 1, 560, i));
+  fg.server.doc = { capture: Object.assign({}, earlier, capLines(3, 4, 100)) };
+  const size = P.bytes(fg.server.doc);
+  assert.ok(size > 256500 && size < P.LIMITS.stateCap - 4096, 'the doc starts just under the hard line (' + size + ')');
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  for (let i = 0; i < 6; i++) { h.press(String(1 + (i % 4))); assert.ok(cardTxt(h).length > 20, 'roll ' + (i + 1) + ' draws'); }
+  assert.ok(!br.toasts.some((t) => /notes are full|The roll failed/.test(t[0])), JSON.stringify(br.toasts));
+  assert.equal(br.toasts.filter((t) => /Dropped \d+ /.test(t[0])).length, 1, 'one toast says what made room');
+  await h.save();
+  assert.ok(P.bytes(fg.server.doc) <= P.LIMITS.stateCap - 4096, 'saved under the cap (' + P.bytes(fg.server.doc) + ')');
+  assert.ok(Object.keys(fg.server.doc.hist.situation).length === 5 && fg.server.doc.cards.situation, 'the rolls are all there');
+  for (const k of Object.keys(capLines(3, 4, 100))) assert.ok(k in fg.server.doc.capture, 'this session\'s lines are kept');
+});
+
+await test('16e. a bargain accepted while capture is full: the bargain is owed, its loose-end line is refused with the capture message, and "Accepted" does not cover it', async () => {
+  const fg = fakeGm(), br = fakeBrowser(); fg.server.doc = { capture: capLines(3, 300, 470) };
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('1');
+  const btn = h.qa('#gm-card [data-gm="intent"]').find((b) => /Accepted/.test(b.textContent)); assert.ok(btn, 'a Devil\'s Bargain card offers Accepted');
+  btn.click();
+  assert.equal(Object.keys(h.page._state().doc.con.owed).length, 1, 'the bargain is owed');
+  assert.ok(!Object.values(h.page._state().doc.capture).some((e) => /Bargain owed/.test(e.text)), 'its loose-end line was not filed');
+  assert.match(br.toasts[br.toasts.length - 1][0], /^Tonight.s capture is full/, 'and the last thing said is why, not "Accepted."');
+  await h.save();
+});
+
+/* =====================================================================================================================
+   17. Downtime (D): personal business. The PCs from the live sheets (boot's api.characters(), slim copies), the activity's one row
+       of buttons (a tap is the roll), the card (the cost box, the four options, "Overindulged?", Start a clock), replay. Invented PCs.
+   ===================================================================================================================== */
+const PCS = [
+  { id: 'c-mags', name: 'Mags Invented', alias: 'Mags', playbook: 'hound', playbookName: 'Hound', vice: 'Gambling', purveyor: 'Old Mo, Mo’s Bar',
+    contacts: [{ name: 'Pell', role: 'a fixer', kind: null }, { name: 'Nim', role: 'a dock boss', kind: 'rival' }, { name: 'Ada', role: 'a nurse', kind: 'friend' }],
+    clocks: [{ name: 'Fix the still', size: 6, filled: 6 }, { name: 'Learn the code', size: 8, filled: 3 }] },
+  { id: 'c-rook', name: 'Rook Invented', alias: '', playbook: 'brute', playbookName: 'Brute', vice: 'Gettin’ Fucked Up', purveyor: '', contacts: [], clocks: [] }
+];
+/* a page with the PCs and a table that takes clocks: rig.pcs is what characters() returns (a fresh copy each call), rig.clocks what addClock got */
+function dtRig(extra) {
+  const rig = { pcs: cl(PCS), clocks: [], fail: null };
+  rig.api = { characters: () => cl(rig.pcs), addClock: (c) => { rig.clocks.push(cl(c)); return rig.fail ? Promise.reject(rig.fail) : Promise.resolve(true); } };
+  return Object.assign(rig, extra || {});
+}
+const dtPage = (rig, o) => openPage(Object.assign({ camp: CAMP3, api: (rig || dtRig()).api }, o || {}));
+const dtCardTxt = (h) => cardOf(h, '#gm-dt .gm-dtcard');
+const dtStored = (h) => h.page._state().doc.cards.downtime;
+const dtRoll = (h, v) => h.q('#gm-dt [data-gm="dt-roll"][data-v="' + v + '"]').click();
+const dtWho = (h, id) => h.q('#gm-dt [data-gm="dt-who"][data-id="' + id + '"]').click();
+const dtAct = (h, a) => h.q('#gm-dt [data-gm="dt-act"][data-v="' + a + '"]').click();
+const pressedOpt = (h) => (h.qa('#gm-dt [data-gm="dt-pick"]').find((b) => b.getAttribute('aria-pressed') === 'true') || { getAttribute: () => null }).getAttribute('data-v');
+const leadTxt = (h) => cardOf(h, '#gm-dt .gm-dtcard .gm-want');
+const gridTxt = (h) => cardOf(h, '#gm-dt .gm-dtcard .gm-grid');
+
+await test('17a. D opens the Downtime panel (a side tab after NPC, with its key; a phone segment too); never while typing or with a modifier', async () => {
+  assert.deepEqual([P.keyAction({ key: 'd' }), P.keyAction({ key: 'D' })], [{ type: 'panel', panel: 'downtime' }, { type: 'panel', panel: 'downtime' }]);
+  assert.deepEqual([P.keyAction({ key: 'd', typing: true }), P.keyAction({ key: 'd', ctrlKey: true }), P.keyAction({ key: 'd', metaKey: true })], [null, null, null]);
+  const h = await dtPage();
+  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,engagement,npc,downtime,cards,ipad', 'Downtime sits after NPC in the generator group');
+  assert.match(h.q('.gm-tab[data-panel="downtime"]').textContent, /^Downtime D$/);
+  assert.equal(h.qa('[data-gm="seg"]').map((b) => b.getAttribute('data-seg')).join(), 'console,prep,location,scenes,engagement,npc,downtime,cards,rules,ipad,state', 'and a phone segment after NPC');
+  h.press('b'); assert.equal(h.page._state().panel, 'location');
+  h.press('d', { target: h.q('#gm-dt-purveyor') });
+  assert.equal(h.page._state().panel, 'location', 'D typed into a box is a letter, not the panel');
+  h.press('d', { ctrlKey: true }); assert.equal(h.page._state().panel, 'location', 'nor with a modifier');
+  h.press('d');
+  assert.equal(h.page._state().panel, 'downtime'); assert.equal(h.q('[data-pane="downtime"]').hidden, false);
+  assert.equal(h.q('#gm-dt .gm-band').textContent, 'Downtime · personal business', 'the heading');
+  h.q('[data-gm="seg"][data-seg="downtime"]').click(); assert.equal(h.page._state().seg, 'side', 'the phone segment opens it as a side panel');
+  await h.save();
+});
+
+await test('17b. Who: the PCs from the live sheets and "anyone"; picking one prefills the vice and purveyor from the sheet; editing the purveyor is panel state only', async () => {
+  const rig = dtRig(), h = await dtPage(rig);
+  h.press('d');
+  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-who"]').map((b) => b.textContent), ['Mags Invented', 'Rook Invented', 'anyone']);
+  assert.equal(h.q('#gm-dt [data-gm="dt-who"][data-id=""]').getAttribute('aria-pressed'), 'true', 'anyone until a PC is picked');
+  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-act"]').map((b) => b.textContent), dtMk().ACTS.map((a) => a.label), 'the activities in the module\'s order');
+  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-act"]').map((b) => b.textContent), ['Indulge vice', 'Recover', 'Long-term project', 'Train', 'Friend or rival', 'Lay low', 'Acquire']);
+  assert.equal(h.q('#gm-dt [data-gm="dt-act"][data-v="indulge"]').getAttribute('aria-pressed'), 'true', 'Indulge vice first, picked');
+  assert.deepEqual(h.qa('#gm-dt-vice option').map((o) => o.getAttribute('value')), [''].concat(dtMk().VICES), 'the seven vices (and any)');
+  dtWho(h, 'c-mags');
+  assert.equal(h.q('#gm-dt [data-gm="dt-who"][data-id="c-mags"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(optSel(h, '#gm-dt-vice').getAttribute('value'), 'Gambling', 'the sheet\'s vice is preselected');
+  assert.equal(h.q('#gm-dt-purveyor').value, 'Old Mo, Mo’s Bar', 'the sheet\'s purveyor fills the field');
+  dtWho(h, 'c-rook');
+  assert.equal(optSel(h, '#gm-dt-vice').getAttribute('value'), 'Gettin\' Fucked Up', 'a curly apostrophe on the sheet finds the vice');
+  assert.equal(optSel(h, '#gm-dt-vice').textContent, 'Gettin’ Fucked Up', 'shown as the book spells it');
+  assert.equal(h.q('#gm-dt-purveyor').value, '', 'no purveyor on the sheet: the field is empty (a stock host and place)');
+  dtWho(h, 'c-mags');
+  const pin = h.q('#gm-dt-purveyor'); pin.value = 'Old Mo, the back room'; dispatch(pin, 'change');
+  assert.equal(h.page._state().doc.dt.ui.purveyor, 'Old Mo, the back room');
+  assert.deepEqual(rig.pcs, PCS, 'the sheet is never written');
+  await h.save();
+  const ui = h.fg.server.doc.dt.ui;
+  assert.deepEqual(ui, { who: 'c-mags', vice: 'Gambling', purveyor: 'Old Mo, the back room', project: '', contact: '' }, JSON.stringify(ui));
+  assert.ok(h.fg.server.patches.every((p) => !p.characters && !p.play), 'nothing but the GM state is written');
+});
+
+await test('17c. Overindulged: one tap rolls the card; the four options right above the cost box (the drawn one pressed); stored as replay info with the resolved strings', async () => {
+  const rig = dtRig(), h = await dtPage(rig);
+  h.press('d'); dtWho(h, 'c-mags');
+  assert.ok(!h.q('#gm-dt .gm-dtcard'), 'nothing before the first roll');
+  dtRoll(h, 'over');
+  const card = h.q('#gm-dt .gm-dtcard'); assert.ok(card, 'a card');
+  assert.equal(cardOf(h, '#gm-dt .gm-dtcard h3'), 'Mags Invented · Indulge vice');
+  assert.deepEqual(h.qa('#gm-dt .gm-dtcard .gm-chip').map((c) => c.textContent), ['Overindulged', 'Gambling']);
+  const opts = h.qa('#gm-dt [data-gm="dt-pick"]');
+  assert.deepEqual(opts.map((o) => o.textContent), ['Attract trouble', 'Brag', 'Lost', 'Tapped']);
+  assert.equal(opts.filter((o) => o.getAttribute('aria-pressed') === 'true').length, 1, 'one option pressed');
+  const kids = card.children, iOpts = kids.indexOf(h.q('#gm-dt .gm-dt-opts')), iCost = kids.indexOf(h.q('#gm-dt .gm-dt-cost'));
+  assert.ok(iOpts > 0 && iCost === iOpts + 1, 'the option row sits directly above the cost box');
+  assert.ok(kids.indexOf(h.q('#gm-dt .gm-dtcard .gm-want')) < iOpts && kids.indexOf(h.q('#gm-dt .gm-dtcard .gm-grid')) > iCost, 'under the scene, above the grid');
+  const st = dtStored(h), mod = dtMk({ vices: CT.VICES }).replay({ seed: st.seed, mem: JSON.parse(st.mem), ui: st.ui });
+  assert.match(cardOf(h, '#gm-dt .gm-dt-cost'), new RegExp('^\\*\\*Overindulged: ' + mod.over.options.find((o) => o.id === mod.over.pick).title));
+  assert.equal(pressedOpt(h), mod.over.pick, 'the drawn option is the pressed one');
+  assert.equal(leadTxt(h), (mod.lines[0].md + mod.lines[0].small).replace(/\s+/g, ' ').trim(), 'the module\'s scene, as drawn (this fake page shows markdown as written)');
+  assert.ok(h.q('#gm-dt .gm-dt-opts [data-gm="dt-rule"]'), 'a "?" beside Overindulged');
+  assert.ok(!/iPad/.test(cardOf(h, '#gm-dt .gm-dtcard')) && h.qa('#gm-dt [data-gm]').every((b) => !/ipad/i.test(b.getAttribute('data-gm'))), 'no iPad button: downtime cards never go to the display');
+  assert.equal(h.q('#gm-dt [data-gm="dt-roll"][data-v="over"]').getAttribute('aria-pressed'), 'true', 'the button that made the card stays marked');
+  await h.save();
+  const d = h.fg.server.doc, c = d.cards.downtime;
+  assert.deepEqual(Object.keys(c).sort(), ['at', 'hid', 'label', 'mem', 'seed', 'ui']);
+  assert.ok(Number.isInteger(c.seed) && c.mem === '{}' && /^Mags Invented · Gambling · over: /.test(c.label), JSON.stringify(c));
+  assert.deepEqual([c.ui.act, c.ui.who, c.ui.vice, c.ui.purveyor, c.ui.res], ['indulge', 'Mags Invented', 'Gambling', 'Old Mo, Mo’s Bar', 'over'], 'the resolved strings, not the sheet\'s id');
+  assert.ok(!('lines' in c) && !('meta' in c), 'replay info only');
+  assert.equal(Object.keys(d.hist.downtime).length, 1); assert.equal(d.hist.downtime[c.hid].seed, c.seed);
+  assert.ok(isObjLike(d.mem.downtime) && Object.values(d.mem.downtime).every((a) => Array.isArray(a) && a.every(Number.isInteger)), 'the repeat guard keeps small integer arrays');
+  assert.equal(h.fg.server.displays.length, 0, 'nothing went to the iPad');
+});
+
+await test('17d. switching the option keeps the SAME card: seed, memory, hid and time; the scene and the grid stay; only the choice (and the label naming it) change', async () => {
+  const h = await dtPage();
+  h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'over');
+  const before = cl(dtStored(h)), lead = leadTxt(h), grid = gridTxt(h), mem = cl(h.page._state().doc.mem.downtime);
+  for (const pick of ['trouble', 'brag', 'lost', 'tapped'].filter((p) => p !== before.ui.pick && p !== pressedOpt(h)).concat([pressedOpt(h)])) {
+    h.q('#gm-dt [data-gm="dt-pick"][data-v="' + pick + '"]').click();
+    const after = dtStored(h);
+    assert.deepEqual([after.hid, after.seed, after.mem, after.at], [before.hid, before.seed, before.mem, before.at], pick + ': the same card');
+    assert.deepEqual(Object.assign({}, after.ui, { pick: '', res: '' }), Object.assign({}, before.ui, { pick: '', res: '' }), pick + ': no other choice moved');
+    assert.equal(after.ui.pick, pick); assert.equal(pressedOpt(h), pick, 'the picked option is pressed');
+    assert.equal(leadTxt(h), lead, pick + ': the scene above does not change'); assert.equal(gridTxt(h), grid, pick + ': nor the rows');
+    const title = h.qa('#gm-dt [data-gm="dt-pick"]').find((b) => b.getAttribute('data-v') === pick).textContent;
+    assert.ok(cardOf(h, '#gm-dt .gm-dt-cost').startsWith('**Overindulged: ' + title + '.**'), 'the cost box is the new option');
+    assert.equal(after.label, 'Mags Invented · Gambling · over: ' + title);
+    assert.deepEqual(h.page._state().doc.hist.downtime[before.hid].ui, after.ui, 'its Earlier entry follows');
+  }
+  assert.deepEqual(cl(h.page._state().doc.mem.downtime), mem, 'the repeat guard did not move');      // cl: the page's objects come from the vm's realm
+  h.press('l'); assert.ok(Object.values(h.page._state().doc.capture).some((e) => e.bucket === 'r' && e.text === 'Downtime: ' + dtStored(h).label), 'L files the card as it now reads');
+  await h.save();
+});
+
+await test('17e. "Overindulged?" on an indulgence that was not one turns the SAME card into one (same seed, the scene kept)', async () => {
+  const h = await dtPage();
+  h.press('d'); dtWho(h, 'c-rook'); dtRoll(h, '');
+  assert.deepEqual(h.qa('#gm-dt .gm-dtcard .gm-chip').map((c) => c.textContent), ['Indulged', 'Gettin\' Fucked Up']);
+  assert.ok(!h.q('#gm-dt .gm-dt-cost') && !h.q('#gm-dt [data-gm="dt-pick"]'), 'no cost box, no options');
+  assert.ok(h.q('#gm-dt .gm-dtcard [data-gm="dt-over"]'), 'a small "Overindulged?" on the card');
+  const before = cl(dtStored(h)), lead = leadTxt(h), grid = gridTxt(h);
+  h.q('#gm-dt [data-gm="dt-over"]').click();
+  const after = dtStored(h);
+  assert.deepEqual([after.hid, after.seed, after.mem], [before.hid, before.seed, before.mem], 'the same card');
+  assert.equal(after.ui.res, 'over'); assert.ok(h.q('#gm-dt .gm-dt-cost') && pressedOpt(h), 'now the cost box and its options');
+  assert.equal(leadTxt(h), lead, 'the scene stays'); assert.equal(gridTxt(h), grid);
+  assert.ok(!h.q('#gm-dt [data-gm="dt-over"]'), 'the button goes once it is one');
+  assert.equal(Object.keys(h.page._state().doc.hist.downtime).length, 1, 'still one card in Earlier');
+  await h.save();
+});
+
+await test('17f. replay: a reload redraws the stored card exactly (even after the sheet changed), and Earlier brings back an older one as it was left', async () => {
+  const rig = dtRig(), fg = fakeGm(), br = fakeBrowser();
+  const h = await dtPage(rig, { fg, br });
+  h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'over');
+  const other = ['trouble', 'brag', 'lost', 'tapped'].find((p) => p !== pressedOpt(h));
+  h.q('#gm-dt [data-gm="dt-pick"][data-v="' + other + '"]').click();
+  const a = dtCardTxt(h);
+  dtAct(h, 'recover'); dtRoll(h, '45');
+  const b = dtCardTxt(h); assert.notEqual(a, b);
+  await h.save();
+  rig.pcs[0].purveyor = 'Someone New, Elsewhere'; rig.pcs[0].name = 'Mags Renamed';      // the sheet changes after the roll
+  const h2 = await dtPage(rig, { fg, br });
+  h2.press('d');
+  assert.equal(dtCardTxt(h2), b, 'the same card after a reload');
+  const chips = h2.qa('#gm-dt [data-gm="replay"]'); assert.equal(chips.length, 2, 'two in Earlier');
+  chips.filter((c) => !c.hasAttribute('aria-current'))[0].click();
+  assert.equal(dtCardTxt(h2), a, 'Earlier redraws the first card with the option it was switched to, the old name and purveyor');
+  await h2.save();
+  const h3 = await dtPage(rig, { fg, br }); h3.press('d');
+  assert.equal(dtCardTxt(h3), a, 'and that is the card that comes back');
+  await h3.save();
+});
+
+await test('17g. Start a clock: addClock gets one hidden danger clock, once; the button is done for that card, after a reload too; the rail shows it from the table', async () => {
+  const rig = dtRig(), fg = fakeGm(), br = fakeBrowser();
+  const h = await dtPage(rig, { fg, br });
+  h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'over');
+  h.q('#gm-dt [data-gm="dt-pick"][data-v="trouble"]').click();       // attract trouble: every one of the module's trouble lines brings a clock
+  const btn = () => h.qa('#gm-dt [data-gm="dt-clock"]').find((b) => /^Start a clock: |^Clock started: /.test(b.textContent) && b.getAttribute('data-i') === '0');
+  assert.ok(btn(), 'a Start a clock button'); const label = btn().textContent, name = /^Start a clock: (.*) \((\d+)\)$/.exec(label);
+  assert.ok(name, label);
+  btn().click(); btn() && btn().click();
+  assert.ok(await until(() => br.toasts.some((t) => /^Clock started/.test(t[0]))), 'a toast');
+  assert.equal(rig.clocks.length, 1, 'addClock was called once');
+  const c = rig.clocks[0];
+  assert.ok(/^c_[a-z0-9]+$/.test(c.id), c.id);
+  assert.deepEqual(Object.assign({}, c, { id: 'x' }), { id: 'x', name: name[1], size: +name[2], filled: 0, kind: 'danger', hidden: true });
+  assert.ok(br.toasts.some((t) => t[0] === 'Clock started, hidden from the players: ' + name[1] + '. Show it from the table page.' && !t[1]), JSON.stringify(br.toasts));
+  assert.ok(btn().hasAttribute('disabled') && btn().textContent === 'Clock started: ' + name[1], 'the button is done');
+  btn().click(); await tick(); assert.equal(rig.clocks.length, 1, 'a second tap starts nothing');
+  const st = dtStored(h);
+  assert.equal(st.started[name[1]], c.id, 'the card keeps the clock\'s id'); assert.equal(h.page._state().doc.hist.downtime[st.hid].started[name[1]], c.id, 'and so does its Earlier entry');
+  h.page.campaign({ session: { number: 3 }, crew: {}, clocks: [c] });
+  assert.ok(new RegExp(name[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' hidden from players').test(cardOf(h, '#gm-rail')), 'the rail\'s Table clocks shows it, hidden');
+  await h.save();
+  const h2 = await dtPage(rig, { fg, br }); h2.press('d');
+  const b2 = h2.qa('#gm-dt [data-gm="dt-clock"]').find((b) => b.getAttribute('data-i') === '0');
+  assert.ok(b2.hasAttribute('disabled') && b2.textContent === 'Clock started: ' + name[1], 'still done after a reload');
+  dtRoll(h2, 'over');
+  assert.ok(!('started' in dtStored(h2)), 'a new card starts with no clock of the old one\'s');
+  await h2.save();
+  /* the table refuses it: the button comes back, and the toast says so */
+  const rig3 = dtRig({ fail: new Error('the table is offline') }), h3 = await dtPage(rig3);
+  h3.press('d'); dtWho(h3, 'c-mags'); dtRoll(h3, 'over'); h3.q('#gm-dt [data-gm="dt-pick"][data-v="trouble"]').click();
+  h3.q('#gm-dt [data-gm="dt-clock"]').click();
+  assert.ok(await until(() => h3.br.toasts.some((t) => /^Could not start the clock: the table is offline/.test(t[0]) && t[1])));
+  assert.ok(!h3.q('#gm-dt [data-gm="dt-clock"]').hasAttribute('disabled') && !('started' in dtStored(h3)), 'not marked started');
+  await h3.save();
+});
+
+await test('17h. Project, Friend or rival, Train and the bands: the selects come from the PC\'s own sheet; each button rolls at once with what it says', async () => {
+  const h = await dtPage();
+  h.press('d'); dtWho(h, 'c-mags'); dtAct(h, 'project');
+  assert.deepEqual(h.qa('#gm-dt-project option').map((o) => o.textContent), ['Fix the still · 6/6', 'Learn the code · 3/8', 'another project']);
+  assert.equal(optSel(h, '#gm-dt-project').getAttribute('value'), 'Learn the code', 'the first clock still open');
+  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-roll"]').map((b) => b.textContent), ['1–3', '4/5', '6', 'Crit']);
+  assert.match(cardOf(h, '#gm-dt .gm-dt-row .gm-lab'), /^Rolled at the table:$/);
+  dtRoll(h, '45');
+  assert.deepEqual([dtStored(h).ui.project, dtStored(h).ui.res], ['Learn the code', '45']);
+  assert.equal(cardOf(h, '#gm-dt .gm-dtcard h3'), 'Mags Invented · Project: Learn the code');
+  assert.deepEqual(h.qa('#gm-dt .gm-dtcard .gm-chip').map((c) => c.textContent), ['4/5', '+2 on the clock']);
+  change(h.q('#gm-dt-project'), 'Fix the still'); dtRoll(h, 'crit');
+  assert.deepEqual([dtStored(h).ui.project, dtStored(h).ui.res], ['Fix the still', 'crit']);
+  change(h.q('#gm-dt-project'), '*'); dtRoll(h, '13');
+  assert.equal(dtStored(h).ui.project, '', '"another project": the card says "the project"'); assert.equal(cardOf(h, '#gm-dt .gm-dtcard h3'), 'Mags Invented · Project');
+  dtAct(h, 'contact');
+  assert.deepEqual(h.qa('#gm-dt-contact option').map((o) => o.textContent), ['Nim, a dock boss (rival)', 'Ada, a nurse (friend)', 'Pell, a fixer', 'someone else (an old friend or rival)'], 'a friend or a rival first');
+  const rel = (r) => h.q('#gm-dt [data-gm="dt-roll"][data-v="' + r + '"]');
+  assert.ok(rel('rival').classList.contains('gm-dtb-sheet') && /on the sheet/.test(rel('rival').textContent) && !rel('friend').classList.contains('gm-dtb-sheet'), 'the contact\'s relation on the sheet is marked');
+  change(h.q('#gm-dt-contact'), 'Ada, a nurse');
+  assert.ok(rel('friend').classList.contains('gm-dtb-sheet') && !rel('rival').classList.contains('gm-dtb-sheet'), 'and follows the contact picked');
+  rel('rival').click();
+  assert.deepEqual([dtStored(h).ui.contact, dtStored(h).ui.rel], ['Ada, a nurse', 'rival'], 'the contact line and the relation the GM tapped');
+  assert.equal(cardOf(h, '#gm-dt .gm-dtcard h3'), 'Mags Invented · Rival: Ada');
+  dtAct(h, 'train');
+  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-roll"]').map((b) => b.textContent), ['Insight', 'Prowess', 'Resolve', 'Playbook']);
+  dtRoll(h, 'Prowess'); assert.equal(dtStored(h).ui.attr, 'Prowess'); assert.deepEqual(h.qa('#gm-dt .gm-dtcard .gm-chip').map((c) => c.textContent), ['Prowess', '+1 xp']);
+  for (const act of ['recover', 'heat', 'acquire']) {
+    dtAct(h, act); assert.deepEqual(h.qa('#gm-dt [data-gm="dt-roll"]').map((b) => b.getAttribute('data-v')), ['13', '45', '6', 'crit'], act);
+    dtRoll(h, '6'); assert.deepEqual([dtStored(h).ui.act, dtStored(h).ui.res], [act, '6']);
+  }
+  dtWho(h, 'c-rook'); dtAct(h, 'contact');
+  assert.ok(!h.q('#gm-dt-contact') && /No contacts on Rook Invented’s sheet/.test(cardOf(h, '#gm-dt')), 'a PC without contacts: a plain note');
+  rel('friend').click(); assert.equal(cardOf(h, '#gm-dt .gm-dtcard h3'), 'Rook Invented · Friend: An old friend');
+  dtAct(h, 'project'); assert.ok(!h.q('#gm-dt-project') && /No clocks on Rook Invented’s sheet/.test(cardOf(h, '#gm-dt')));
+  assert.equal(Object.keys(h.page._state().doc.hist.downtime).length, 5, 'Earlier keeps five');
+  await h.save();
+});
+
+await test('17i. Copy and Pin are the card as plain lines; L files "Downtime: <label>"; Now in is the card\'s district (the scroll is gm.e2e.mjs\'s)', async () => {
+  const fg = fakeGm(undefined, nowParts()), br = fakeBrowser(), h = await dtPage(undefined, { fg, br });
+  const now = h.qa('#gm-now option').map((o) => o.getAttribute('value')).filter(Boolean)[0]; assert.ok(now, 'a Now in to pick');
+  pick(h, '#gm-now', now);
+  h.press('d'); dtWho(h, 'c-mags'); dtAct(h, 'heat');
+  dtRoll(h, '45');
+  assert.equal(dtStored(h).ui.district, now, 'Now in, stored in the card\'s own ui');
+  const card = h.q('#gm-dt-card'); assert.ok(card && card.classList.contains('gm-cardbox'), 'the card sits in a card box, as the console\'s');
+  h.q('#gm-dt [data-gm="copy"]').click();
+  const all = dtMk({ vices: CT.VICES }).replay({ seed: dtStored(h).seed, mem: JSON.parse(dtStored(h).mem), ui: dtStored(h).ui }).meta.all;
+  assert.equal(br.copied, all.join('\n'), 'Copy is meta.all'); assert.ok(!/\*\*/.test(br.copied));
+  h.q('#gm-dt [data-gm="pin"]').click(); h.press('l');
+  await h.save();
+  const pins = Object.values(fg.server.doc.pins); assert.equal(pins.length, 1); assert.equal(pins[0].tool, 'downtime'); assert.equal(pins[0].text, all.join('\n'));
+  assert.ok(Object.values(fg.server.doc.capture).some((e) => e.bucket === 'r' && e.text === 'Downtime: ' + fg.server.doc.cards.downtime.label && e.s === 3), 'L, with the session');
+});
+
+await test('17j. the "?" by Overindulged opens the rules on overindulging in the GM screen pane (its own search)', async () => {
+  const asked = [];
+  const rules = { available: () => true, load: async () => ({ entries: [{}] }),
+    hits: (q) => { asked.push(q); return { total: 2, hits: [{ id: 'x/stress', title: 'Stress', caption: 'Invented book', snip: '' }, { id: 'x/vice', title: 'Indulging a vice', caption: 'Invented book', snip: '' }] }; },
+    entry: (id) => ({ id, title: id === 'x/vice' ? 'Indulging a vice' : 'Stress', caption: 'Invented book', href: '#rules/x/vice', md: 'When you **overindulge**, choose one.', also: [] }) };
+  const h = await dtPage(undefined, { br: fakeBrowser({ B68Rules: rules }) });
+  h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'over');
+  h.q('#gm-dt .gm-dt-opts [data-gm="dt-rule"]').click();
+  assert.equal(h.page._state().panel, 'rules', 'the GM screen pane');
+  assert.ok(await until(() => h.q('.gs-entry')), 'the entry opens');
+  assert.deepEqual(asked, ['overindulge']); assert.match(cardOf(h, '.gs-entry .gs-h'), /^Indulging a vice/, 'the hit about indulging, not the first hit');
+  h.press('d'); dtRoll(h, '');
+  h.q('#gm-dt .gm-dt-flip [data-gm="dt-rule"]').click(); assert.equal(h.page._state().panel, 'rules', 'the "?" by "Overindulged?" too');
+  await h.save();
+});
+
+await test('17k. without a module, without the characters, with a pack part over the tables: the panel says so or uses it; the pack check names what a part lacks', async () => {
+  const none = await openPage({ br: fakeBrowser({ B68GmDowntime: undefined }) });
+  none.press('d'); assert.match(none.q('#gm-dt').textContent, /The downtime module is missing/); none.press('2'); assert.ok(cardTxt(none).length > 20, 'the console still rolls'); await none.save();
+  const bookless = await openPage({ br: fakeBrowser({ B68DowntimeTables: undefined }) });
+  bookless.press('d'); assert.match(bookless.q('#gm-dt').textContent, /The downtime tables are missing/); await bookless.save();
+  const bare = await openPage({ camp: CAMP3 });       // an older boot without characters() or addClock()
+  bare.press('d');
+  assert.deepEqual(bare.qa('#gm-dt [data-gm="dt-who"]').map((b) => b.textContent), ['anyone']); assert.match(cardOf(bare, '#gm-dt'), /No characters are filed yet/);
+  dtRoll(bare, 'over'); assert.ok(bare.q('#gm-dt .gm-dt-cost') && dtStored(bare).ui.who === '', 'anyone: a card with a stock host');
+  bare.q('#gm-dt [data-gm="dt-pick"][data-v="trouble"]').click(); bare.q('#gm-dt [data-gm="dt-clock"]').click();
+  assert.ok(bare.br.toasts.some((t) => /table is not available here/.test(t[0])), 'no addClock: it says where to start it');
+  await bare.save();
+  const T = { vice: { Gambling: { lead: ['{Host} deals you in at {place}, and the night begins.'] } } };
+  const own = await dtPage(undefined, { fg: fakeGm(undefined, { downtime: { version: 'd1', src: {}, body: { T } } }) });
+  own.press('d'); dtWho(own, 'c-mags'); dtRoll(own, '');
+  assert.match(leadTxt(own), /^Old Mo deals you in at Mo’s Bar, and the night begins\./, 'the pack part\'s table is used');
+  await own.save();
+  const broken = { vice: { Gambling: { lead: [] } } };
+  const bad = await dtPage(undefined, { fg: fakeGm(undefined, { downtime: { version: 'd2', src: {}, body: { T: broken } } }) });
+  bad.press('d'); dtRoll(bad, 'over');
+  assert.ok(bad.q('#gm-dt .gm-dtcard') && /lacks tables, so these cards use the built-in ones/.test(cardOf(bad, '#gm-dt')), 'a part that lacks tables: the built-in ones, and a note');
+  const dmods = { B68GmDowntime: DT, B68DowntimeTables: DTT };
+  assert.deepEqual(P.packWarnings(dmods, { downtime: { T: broken } }), [{ part: 'downtime', missing: ['vice.Gambling.lead'] }], 'the pack check lists it, laid over the built-in tables');
+  assert.deepEqual(P.packWarnings(dmods, { downtime: { T: T } }), [], 'a part that replaces one table is complete over the built-in ones');
+  assert.deepEqual(P.packWarnings(dmods, { downtime: {} }), [], 'a part with no tables replaces nothing');
+  assert.deepEqual(P.packWarnings({ B68GmDowntime: DT }, { downtime: { T: broken } }), [], 'without the built-in tables loaded it says nothing');
+  await bad.save();
+});
+
+await test('17l. the characters land after the page opened (boot\'s characters()): the chips follow, and a redraw while typing the purveyor keeps the typing', async () => {
+  const rig = dtRig(); rig.pcs = [];
+  const h = await dtPage(rig);
+  h.press('d'); assert.deepEqual(h.qa('#gm-dt [data-gm="dt-who"]').map((b) => b.textContent), ['anyone']);
+  rig.pcs = cl(PCS); h.page.characters();
+  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-who"]').map((b) => b.textContent), ['Mags Invented', 'Rook Invented', 'anyone'], 'the PCs appear');
+  dtWho(h, 'c-mags');
+  const pin = h.q('#gm-dt-purveyor'); pin.focus(); pin.value = 'Old Mo, half typ';
+  rig.pcs.push({ id: 'c-wren', name: 'Wren Invented', vice: 'Faith', purveyor: '', contacts: [], clocks: [] }); h.page.characters();
+  const pin2 = h.q('#gm-dt-purveyor');
+  assert.ok(pin2 !== pin && pin2.value === 'Old Mo, half typ' && h.br.doc.activeElement === pin2, 'the field keeps its text and the cursor');
+  assert.equal(h.qa('#gm-dt [data-gm="dt-who"]').length, 4);
+  dtRoll(h, 'over'); assert.equal(dtStored(h).ui.purveyor, 'Old Mo, half typ', 'a tap rolls with what the field holds, change event or not');
+  assert.equal(h.page._state().doc.dt.ui.purveyor, 'Old Mo, half typ', 'and keeps it in the panel');
+  /* players tick their sheets all session: a snapshot that changes nothing the panel shows draws nothing, and an open list stays put */
+  const vice = h.q('#gm-dt-vice'); h.page.characters();
+  assert.equal(h.q('#gm-dt-vice'), vice, 'nothing the panel shows changed: no redraw');
+  vice.focus(); rig.pcs[0].clocks.push({ name: 'Win the bet', size: 4, filled: 0 }); h.page.characters();
+  assert.equal(h.q('#gm-dt-vice'), vice, 'not from under a select the GM has open');
+  vice.blur(); h.page.characters();
+  assert.notEqual(h.q('#gm-dt-vice'), vice, 'the next snapshot catches up');
   await h.save();
 });
 

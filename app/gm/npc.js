@@ -59,7 +59,13 @@
          md is markdown: **bold**, *italic*; never HTML.
 
    gen.figure(npc, { seed, K, map, archetypes })
-                                   -> { spec, warnings, notes, tries, fallback }
+                                   -> { spec, warnings, notes, tries, fallback, failed, note }
+       `note` is the one line to show under the portrait: '' when the figure drew clean; "Portrait: stripped props."
+       (and the like) when a rung stripped something; "Portrait: a stock figure (…)" on the archetype fallback;
+       "Portrait: drawn with the kit's warning …" when no rung was clean and there is no archetype to fall back on;
+       "No portrait: …" when nothing could be built (`failed: true`, spec {}: draw no portrait). A map or kit that
+       throws after the kit check never throws out of here: it comes back as that failed result, so the page can show
+       the note instead of a silent blank. Only a missing kit throws (there is nothing to check against).
        Builds a figure kit v2 spec for the NPC: its own random stream (seed defaults to a hash of the name), so the
        vault draws are never disturbed. K is the kit (window.B68Figure | require('../figures/figure-kit.js')).
        Contract with the figure map (app/gm/figure-map.js, package P3a), used when present:
@@ -91,6 +97,10 @@
                                          initial and its cast anchor: { name, role, faction, district, playedBy, ... }
    All of noteBody, dossierLine, dossier, castDoc, stateEntry, npcRecord are also on B68GmNpc itself (they need no
    tables except `dossier*`, which take T as opts.T). Also: B68GmNpc.seedRng(a), safeName(name), plateOf(npc).
+   B68GmNpc.check(T) -> [string]   the table keys a pack is missing or has empty ('nameFem', 'heritage', 'wearing',
+       'faction.<name>.tier' for a tier that is not a number, …), for the page to show when a pack is loaded. Empty =
+       the pack is complete. T.place, T.factionDetail and T.telltaleHeritage are optional (T.telltale is needed when the
+       last is set). A tier written as text ("3") is read as the number.
    --------------------------------------------------------------------------------------------------------------- */
 (function (root, factory) {
   'use strict';
@@ -124,7 +134,11 @@
   var ROMAN = ['0', 'I', 'II', 'III', 'IV', 'V', 'VI'];
   var cap = function (t) { return t.charAt(0).toUpperCase() + t.slice(1); };
   var holdWord = function (h) { return h === 'S' ? 'Strong' : 'Weak'; };
+  // a tier as the card writes it: the roman numeral, or the pack's own text when it is not a number 0-6 ('?' for none)
+  var tierWord = function (t) { return ROMAN[t] || (t == null || t === '' ? '?' : String(t)); };
   var facSlug = function (n) { return 'b68-' + n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); };
+  // a value the roll can read as a number: a number, or text that is one ("3"); "III", "" or nothing is not
+  var numeric = function (v) { return typeof v === 'number' ? isFinite(v) : typeof v === 'string' && v.trim() !== '' && isFinite(Number(v)); };
   var safeName = function (name) { return String(name).replace(/[\/:*?"<>|#^[\]]/g, '').trim() || 'Unnamed'; };
   function plain(s) {
     return String(s).replace(/<small>|<\/small>|<br>/g, ' ').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/\s+/g, ' ').trim();
@@ -141,7 +155,7 @@
   // --- Pure card text (the vault's identity, role, describe, play, want, chips, rows) ---------------------------
   function identity(o) { return o.alias ? o.name + ' — "' + o.alias + '"' : o.name; }
   function role(o) {
-    var fac = o.faction ? o.rank + ' ' + o.faction + ' (Tier ' + ROMAN[o.factionTier] + ', ' + holdWord(o.factionHold) + ')' : 'unaffiliated';
+    var fac = o.faction ? o.rank + ' ' + o.faction + ' (Tier ' + tierWord(o.factionTier) + ', ' + holdWord(o.factionHold) + ')' : 'unaffiliated';
     return o.profession + ' · ' + fac + ' · ' + o.district + (o.place ? ' · ' + o.place : '');
   }
   function describe(o) {
@@ -268,7 +282,7 @@
       'tags:', '  - wiki/games', '  - wiki/blades-in-the-dark', '  - wiki/faction', '---', ''
     ].join('\n') +
       '# ' + o.faction + '\n\n' +
-      '*Tier ' + ROMAN[o.factionTier] + ', ' + holdWord(o.factionHold) + "* — *Blades '68* p." + (d.p || '?') + '\n\n' +
+      '*Tier ' + tierWord(o.factionTier) + ', ' + holdWord(o.factionHold) + "* — *Blades '68* p." + (d.p || '?') + '\n\n' +
       (d.what ? '> [!quote] At a glance\n> ' + d.what + '\n>\n> **Right now:** ' + d.now + '\n\n' : '') +
       (d.turf ? '- **Turf** — ' + d.turf + '\n' : '') +
       (d.boss ? '- **Who runs it** — ' + d.boss + '\n' : '') +
@@ -322,6 +336,34 @@
     var parts = String(o.name).split(' ');
     var first = parts[0], last = parts.slice(1).join(' ');
     return last ? last + ' · ' + first.charAt(0).toUpperCase() + '.' : first;
+  }
+
+  // --- check(): the keys generate() and the card read, reported when missing or empty ------------------------------
+  function check(T) {
+    if (!isObj(T)) return ['T'];
+    var miss = [], need = function (k, ok) { if (!ok) miss.push(k); };
+    var filled = function (x) { return x != null && x !== ''; };
+    var list = function (a, ok) { return Array.isArray(a) && a.length > 0 && a.every(ok || filled); };
+    var lists = function (a) { return list(a, function (x) { return list(x); }); };
+    ['nameMasc', 'nameFem', 'nameAmb', 'family', 'alias', 'hullDesig', 'hullLook', 'hullWear', 'district', 'rank',
+      'build', 'features', 'hair', 'manner', 'standout', 'tell', 'verb', 'dial', 'traitExtra', 'interestExtra',
+      'professionExtra', 'quirk', 'quirkExtra', 'goal', 'method', 'errand', 'physThreat', 'socThreat']
+      .forEach(function (k) { need(k, list(T[k])); });
+    ['profession', 'trait', 'interest'].forEach(function (k) { need(k, lists(T[k])); });
+    need('heritage', list(T.heritage, function (h) { return isObj(h) && filled(h.n) && list(h.d); }));
+    if (T.telltaleHeritage) need('telltale', list(T.telltale));
+    need('wearing', list(T.wearing, function (w) { return isObj(w) && filled(w.r) && list(w.g) && list(w.a); }));
+    need('status', list(T.status, function (s) { return isObj(s) && filled(s.n); }));
+    need('key', list(T.key, function (k) { return Array.isArray(k) && k.length >= 3 && k.slice(0, 3).every(filled); }));
+    need('vice', list(T.vice, function (v) { return isObj(v) && filled(v.n) && list(v.p); }));
+    need('leverage', list(T.leverage, function (s) { return isObj(s) && filled(s.f) && filled(s.t); }));
+    need('attitude', list(T.attitude, function (a) { return isObj(a) && filled(a.n) && filled(a.d) && Number(a.w) > 0; }));
+    need('faction', list(T.faction, function (f) { return Array.isArray(f) && filled(f[0]) && f.length >= 3; }));
+    // a tier the roll cannot read as a number ("3" reads as 3; "III", "" or nothing does not)
+    (Array.isArray(T.faction) ? T.faction : []).forEach(function (f) {
+      if (Array.isArray(f) && filled(f[0]) && !numeric(f[1])) miss.push('faction.' + f[0] + '.tier');
+    });
+    return miss;
   }
 
   // =============================================================================================================
@@ -451,10 +493,13 @@
         var f = UI.faction ? T.faction.filter(function (x) { return x[0] === UI.faction; })[0]
           : PFAC && oneIn(2) ? fresh('faction', T.faction.filter(function (x) { return PFAC.indexOf(x[0]) >= 0; }), byName)
           : fresh('faction', T.faction, byName);
-        o.faction = f[0]; o.factionTier = f[1]; o.factionHold = f[2];
+        // the tier is a number in the pack; one carried as text ("3") is read as that number, and one that is no
+        // number at all ("III") stays as written with a middling quality, so the card never says NaN
+        var tier = numeric(f[1]) ? Number(f[1]) : NaN;
+        o.faction = f[0]; o.factionTier = isFinite(tier) ? tier : f[1]; o.factionHold = f[2];
         o.rank = fresh('rank', T.rank);
         var dr = d6();
-        o.quality = Math.max(1, Math.min(6, f[1] + (dr <= 2 ? -1 : dr >= 5 ? 1 : 0)));
+        o.quality = Math.max(1, Math.min(6, (isFinite(tier) ? tier : 2) + (dr <= 2 ? -1 : dr >= 5 ? 1 : 0)));
       }
 
       // Look
@@ -710,10 +755,31 @@
     return out;
   }
 
+  // The one-line note a card shows under the portrait: '' when the figure drew clean, what was stripped or swapped
+  // otherwise, and why there is no portrait when there is none.
+  function figureNote(r) {
+    var w = r.warnings.length ? String(r.warnings[0]).slice(0, 140) : '';
+    if (r.failed) return 'No portrait: ' + (w || 'the figure could not be built') + '.';
+    if (r.fallback) return 'Portrait: a stock figure (the nearest archetype, name swapped)' + (w ? '; the kit still warns: ' + w : '') + '.';
+    if (w) return "Portrait: drawn with the kit's warning (no stock figure to fall back on): " + w + '.';
+    var done = r.notes.filter(function (n) { return /^(stripped|dropped)/.test(n); });
+    return done.length ? 'Portrait: ' + done.join(', ') + '.' : '';
+  }
   function figure(npc, F, opts) {
     opts = opts || {};
     var K = getKit(opts);
     if (!K) throw new Error('B68GmNpc.figure: the figure kit is not loaded (pass opts.K)');
+    var out;
+    try { out = figureWith(npc, F, opts, K); }
+    catch (e) {
+      // a mapping or kit failure is a note on the card, never a silent miss (the roll itself is already drawn)
+      out = { spec: {}, warnings: ['the figure failed: ' + (e && e.message || e)], notes: ['the figure threw: ' + (e && e.message || e)], tries: 0, fallback: false };
+    }
+    out.failed = !!out.failed || !isObj(out.spec) || !Object.keys(out.spec).length;
+    out.note = figureNote(out);
+    return out;
+  }
+  function figureWith(npc, F, opts, K) {
     var seed = opts.seed != null ? opts.seed >>> 0 : fnv(npc.name);
     var rng = seedRng((seed ^ 0x9E3779B9) >>> 0);
     var O = K.options();
@@ -749,7 +815,8 @@
     // Last rung: the nearest archetype, name swapped.
     var list = getArchetypes(opts);
     var arch = nearestArchetype(spec, list, npc);
-    if (!arch) return { spec: spec || {}, warnings: last.length ? last : ['no figure spec and no archetypes'], notes: notes, tries: tries, fallback: true };
+    // no archetype to fall back on: the last spec as it stands (with the kit's warnings), or nothing at all
+    if (!arch) return { spec: spec || {}, warnings: last.length ? last : ['no figure spec and no archetypes'], notes: notes, tries: tries, fallback: false };
     var fb = fromArchetype(arch, npc, seed, spec);
     var w = [];
     try { w = checkSpec(K, fb); } catch (e) { w = ['render threw: ' + (e && e.message || e)]; }
@@ -795,7 +862,7 @@
   }
 
   return {
-    create: create, seedRng: seedRng, safeName: safeName, plateOf: plateOf, facSlug: facSlug,
+    create: create, check: check, seedRng: seedRng, safeName: safeName, plateOf: plateOf, facSlug: facSlug,
     noteBody: noteBody, dossierLine: dossierLine, dossier: dossier, castDoc: castDoc, stateEntry: stateEntry, npcRecord: npcRecord,
     figure: figure, fromArchetype: fromArchetype, nearestArchetype: nearestArchetype,
     applyLeverage: applyLeverage, describe: describe, play: play, rows: rows, role: role, identity: identity, plain: plain

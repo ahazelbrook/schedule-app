@@ -32,7 +32,7 @@ Collection `campaign`, document id `main` (one per campaign; on Cloudflare the c
     cohorts: [ { name: '', type: '', edges: '', flaws: '', harm: null | 'weak' | 'impaired' | 'broken', armor: false } ],
     factions: [ { name: '', status: 0 } ]   // -3..+3
   },
-  clocks: [ { id: 'c_xxx', name: '', size: 4 | 6 | 8 | 10 | 12, filled: 0, kind: 'danger' | 'project' | 'faction' | 'other', hidden: false } ],
+  clocks: [ { id: 'c_xxx', name: '', size: 4 | 6 | 8 | 10 | 12, filled: 0, kind: 'danger' | 'project' | 'faction' | 'other', hidden: false } ],   // see *Clocks*
   log: [ { at: ISO, by: 'u_or_email', text: '' } ],   // newest first, at most 200
   updatedAt: ISO
 }
@@ -51,7 +51,7 @@ playbooks* and *Crew sheet*).
 - GM (`user.canEdit()` true on Cloudflare; the artifact owner, `user.isOwner()`, in the
   artifact) writes everything.
 - The crew sheet is shared by the whole table: players may change anything under `crew`
-  (including arrays growing or shrinking), fill clocks (`clocks.<i>.filled`) and append to
+  (including arrays growing or shrinking), fill clocks (`clocks.<i>.filled`, see *Clocks*) and append to
   `log`. GM-only: `session`, the structure of `clocks` (add, remove, rename, resize, kind,
   hidden), rewriting or removing old log entries (a `PUT`), and any other top-level key. The
   page does not show GM-only controls (`data-gm`) to players or read-only viewers at all, rather
@@ -67,6 +67,43 @@ playbooks* and *Crew sheet*).
   (`{ log: [entry] }`) is enough; sending the whole log with the entry in front also works.
 - A missing document reads as the default above (every field present, `session.number` 0).
   The first write creates it.
+
+## Clocks
+
+Every clock has an `id`. The page names a new clock `c_<time><random>`; a clock stored without one (a document from
+before ids, a hand edit, a restored file) is named `c_<i>` by its place among the clocks, and a repeated id gets `_`
+added until it is unique. The page names them so when it reads them, and the server stores those names on its next
+write of the document (any write), so the stored shape only gains ids, which the previous release reads as before.
+
+A change to a clock is an operation on that one clock, `clockOps` in a `PATCH`, applied in order to the clocks as
+stored. The server applies them inside its write loop, which re-reads the row on every attempt, so changes to
+different clocks commute: two players ticking different clocks within a poll of each other both land, and a player's
+tick survives the GM renaming, resizing, hiding, adding or removing other clocks.
+
+```js
+{ clockOps: [
+  { id: 'c_x', filled: 3 },                                            // a tick (a wedge, the − / +): the fill, kept within 0..size
+  { id: 'c_x', name: 'Bluecoats', size: 8, kind: 'faction', hidden: true },   // the GM: these fields (a smaller size takes the fill down)
+  { add: { id: 'c_y', name: '', size: 4, filled: 0, kind: 'danger', hidden: false } },   // the GM: append it, once per id
+  { remove: 'c_x' }                                                    // the GM: take it out
+] }
+```
+
+- An op for a clock that is not there does nothing (a tick never brings back a clock the GM removed), and an op
+  applied twice gives what it gave once (the offline queue may send one again).
+- The same clock from two devices: the fill is a value, not a step, so the write the server takes last wins on that
+  clock. Two phones that both tick it from 3 leave it at 4 (one tick, not two); the other clocks never move.
+- Who may do what is judged on the result, by the rule above: a player's ops may only change `filled` (403 otherwise).
+  `hidden` stays presentation only, so a player may fill a hidden clock through the API, as before.
+- The page sends ops only to a store that says it takes them (the campaign ref's `clockOps: true`: the hosted
+  adapter, HOSTING.md); anywhere else (the artifact's own db) it sends the whole `clocks` array as before. The GM page's
+  Downtime panel adds a clock a card suggests the same way, hidden and of kind `danger` (boot.js `addTableClock`, GM.md).
+- The previous release sends a tick as the whole `clocks` array, copied from the document as that page last read it
+  with one fill changed. For one release the server still takes it under the old rule (a player may only change
+  `filled`, the same clocks, else 403), plus one: a player's array that changes the fill of more than one clock was
+  copied before another device's tick, so it is refused (`412 "the clocks changed on another device, try again"`)
+  rather than allowed to undo that tick; the adapter drops it and reloads the table. A whole array from the GM still
+  replaces the clocks. Once no page of the previous release is left, this path can go.
 
 ## Who is on stage
 
@@ -89,10 +126,13 @@ server treats `crew` as opaque JSON.
 - `PUT /api/campaign` body = whole doc (GM only) → stored, `updatedAt` stamped by the server.
 - `PATCH /api/campaign` body = partial doc, same deep merge as characters (objects merge,
   arrays and scalars replace, null deletes), except `log`, whose entries are added as above
-  (`log` must be an array of objects, else 400); player rule above checked against the
-  merged result. Returns `{ doc, updatedAt }`.
+  (`log` must be an array of objects, else 400), and `clockOps`, applied to the clocks after the
+  merge (see *Clocks*; a malformed one is `400 "clockOps: …"`); player rule above checked against the
+  merged result. A player's whole `clocks` array that changes more than one clock's fill is 412
+  (*Clocks*). Returns `{ doc, updatedAt }`.
 - In `PUT` and `PATCH`, `crew` and `session` must be plain objects when present (`400
   "crew must be an object"` / `"session must be an object"`; `null` to delete them counts).
+  `clockOps` in a `PUT` is 400. Every write stores every clock with an id (*Clocks*).
 - `GET /api/characters` and `?since=` responses gain `"campaignUpdatedAt": ISO | null` so the
   adapter knows when to refetch the campaign without a second poll.
 - Table: `campaigns(id TEXT PRIMARY KEY, updated_at TEXT NOT NULL, doc TEXT NOT NULL)`.
@@ -101,41 +141,71 @@ server treats `crew` as opaque JSON.
 ## Adapter (`cf.js`)
 
 `collection('campaign').doc('main')` → `get()`, `set()` (PUT), `update()` (PATCH),
-`onSnapshot()`. The snapshot is `{ id: 'main', exists: true, data() }` (always exists, the
-default doc when missing). It is refreshed when a poll's `campaignUpdatedAt` differs from the
-cached one, and immediately after its own writes, with optimistic local merge as for
-characters. Any other `campaign` doc id, and `collection('campaign')` queries, return empty.
+`onSnapshot()`, and `clockOps: true` (its `update()` takes `clockOps`). The snapshot is
+`{ id: 'main', exists: true, data() }` (always exists, the default doc when missing). It is refreshed
+when a poll's `campaignUpdatedAt` differs from the cached one, and immediately after its own writes,
+with optimistic local merge as for characters (`clockOps` applied by clock id exactly as the server
+applies them, ids named the same way). Any other `campaign` doc id, and `collection('campaign')`
+queries, return empty.
 
 ## Page
 
 - A third mode `body[data-mode="table"]`, reached from a new "The table" button in the header
   (next to "Back to the creator") and the hash `#t`. It hides `.studio`, `.crew`, `.roster`,
   `#dossier`, and shows `section#table-page`.
-- Contents: the header (crew name, tier and hold, the viewer's role, and a
-  "Print the season" button, see *Season print*); the session bar (number, started time, GM
-  buttons "Start session N+1" and "End session", a reminder line "Each player ends the
-  session on their own sheet", which for players starts "The GM starts sessions."); the crew panel (name, type, lair, tier, hold, rep with turf,
-  heat, wanted, vault diamonds, claims, cohorts, faction statuses −3..+3; now the full crew
-  sheet, below); the schedule box (SCHEDULE.md); shared clocks (add, rename, resize, fill by
-  clicking segments, kind chips, hidden toggle for the GM, delete with confirm); the players:
-  each member with their characters (from the existing roster), each character's stress
-  line and an "open" link; and the campaign log (append a line, newest first; each line shows
-  when and who together before the text).
-- Layout: the page's DOM order is the phone's reading order: session, schedule, clocks, players,
-  crew, log (column B, then column A). Up to 900 px it is one column in that order; on a wider
-  screen (and in print) the crew is placed back in the left column beside schedule / clocks /
-  players, or, once the full crew sheet is chosen, across the top above them. The schedule box is
-  `#tp-schedule` (the `#t/schedule` route scrolls to it).
+- Contents: the header (crew name, tier and hold, the cast and "Print the season" buttons, see *Season
+  print*, and the viewer's role as plain words with a dot, never a boxed label that looks like a button);
+  the session as one line ("Session 3 · in play"; "not started yet" or "ended 12 Oct" otherwise, with
+  "The GM starts sessions." / "The GM starts the next one." for a player then; the GM's buttons "Start
+  session N+1" and "End session" follow it, wrapping below on a narrow screen); shared clocks (add,
+  rename, resize, fill by clicking segments or by the − / + beside the count, kind chips, hidden toggle
+  for the GM, delete with confirm); the campaign log (append a line, newest first; each line shows
+  when and who together before the text; the latest three, "All N" shows the rest); the players: each
+  member with their characters (from the existing roster, "No owner yet" for a character without one),
+  each character's stress line and an "open" link; the crew (name, type, lair, tier, hold, rep with turf,
+  heat, wanted, vault diamonds, claims, cohorts, faction statuses −3..+3; now the full crew sheet,
+  below); and the schedule (SCHEDULE.md).
+- Layout: the page's DOM order is the phone's reading order: the session line, shared clocks, the log,
+  the players (column B), then the crew and the schedule (column A). Up to 760 px the crew sits behind
+  a summary row (Tier · Hold · Rep · Heat · Wanted · Stacks, the sheet's own numbers) that unfolds the
+  whole crew sheet; it starts unfolded only while the crew has neither a name nor a playbook (the table
+  is being set up). Up to 900 px it is one column in that order; on a wider screen column B is on the
+  left and column A on the right, or, once the full crew sheet is chosen, one column with column B's
+  boxes side by side above the sheet. Print still starts with the crew and prints every log line. The
+  schedule is `#tp-schedule`: a player gets the box only while a next session or an open date exists
+  (a link to `#t/schedule` shows the box with a plain "Nothing is planned yet" note); the GM gets one
+  line, "Schedule · no dates · Plan dates", that opens it, and the box opens by itself while dates exist
+  (the `#t/schedule` route and Home's schedule links open it too; its "Close" folds it back). What is
+  folded or unfolded (the crew summary, the log's "All", the schedule line) is page state: it redraws,
+  it never writes, and read-only viewers may use it.
+- Touch (screens up to 760 px, or a coarse pointer): every control on the page is at least 40 px tall.
+  Buttons, chips and text fields grow; the small marks (tier, rep, heat, wanted, the vault, stacks, the
+  crew sheet's pills, cubes, ability circles, upgrade boxes and contact dots) keep their size and get an invisible
+  `::before` hit area, 40 px tall and as wide as their pitch, in rows at least 40 px tall, so neighbours never take
+  each other's taps (checked by `app/checks/campaign.js` and `crewsheet.js`). The shared clocks are drawn 104 px wide, with a − / + beside the count (one write,
+  `{ id, filled }` for that clock, the same op a wedge makes; players may use it).
+- Words: the page speaks of characters and saving, never of "files" or "filing" ("No characters yet.", "No owner
+  yet" for a character without a player, "Saved Aldo Crane.", "Removed."); with no database it says "The table is
+  not available in this view." Home's "Session 3 has started at the table" nudge is a "Join session 3" button: it
+  opens the player's sheet scrolled to its own Join bar (the sheet's Join writes `play.session`, as before).
 - Saves go through `doc.update(patch)` with only the changed top-level fields of `crew`,
-  `clocks`, `session`, `log` (and the changed `schedule` leaves); the page never writes on open.
+  `session`, `log`, the changed `schedule` leaves, and the clock changes as `clockOps` (the whole `clocks` array to a
+  store without them, see *Clocks*); the page never writes on open.
 - Starting a session sets `session = { number: n + 1, startedAt: now, endedAt: null }` and
   appends a log line. It does not change characters; their own Session box stays per sheet.
   In the same write it updates the schedule: `next` goes when it is within 12 h, its answers
   becoming that session's attendance, and dates before now + 12 h leave the grid (SCHEDULE.md).
 - Read-only viewers (`can('data.write') === false`) see everything disabled except "Print the
-  season", Open and the phone's "Show the six crew playbooks"; GM-only controls are not shown.
+  season", "The cast", Open, the phone's "Show the six crew playbooks" and the page-state folds (the crew
+  summary row, the log's "All"); GM-only controls are not shown.
 - Same visual language as the sheet (bands, boxes, pips, accent orange), phone width 390px
   without horizontal scroll, light and dark, print hides buttons.
+- Theme: the page follows the device (light is Paper, dark is Night) until someone picks one with the small Auto /
+  Paper / Night switch in the footer. The choice is kept in this browser (`localStorage` key `b68.theme`: `light` or
+  `dark`; Auto removes it; a blocked store means the choice lasts for the visit) and a tiny inline script at the top
+  of `index.html` applies it as `html[data-theme]` before anything paints, so Night never flashes paper. Text colours
+  are 4.5:1 or better on the card: `--ink-faint` on Paper (`#6a645e`), and `--accent` (`#e8742a`), `--ink-faint`
+  (`#9a948c`) and `--ok` (`#7d9e78`) on Night (checked by `app/checks/e2e.js`).
 
 ## Crew sheet
 
@@ -188,7 +258,7 @@ Checked by `app/checks/crewsheet.js`.
 
 `#print` (or `B68Season.open()`, or `B68.openPrint()`) opens one printable document of the whole campaign. In the page
 it is the "Print the season" button in the table page's header, which stays enabled for players and read-only viewers
-(printing writes nothing). It is the DEPLOY.md phase 4 "print of every character and the crew at the end of a season". Files: `app/season.js`,
+(printing writes nothing). It is the docs/history/DEPLOY.md phase 4 "print of every character and the crew at the end of a season". Files: `app/season.js`,
 `app/season.css`, `app/checks/season.js`; boot.js adds the `print` mode (`body[data-mode="print"]` shows only
 `section#season`) and the route.
 

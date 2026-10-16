@@ -73,8 +73,8 @@ module.exports = function build() {
   over += `<g transform="translate(560 6)"><rect width="480" height="30" fill="#0e0d0b"/><text id="next" x="240" y="22" text-anchor="middle" font-family="Space Mono" font-weight="700" font-size="17" fill="#f0a830" letter-spacing="3">NEXT · APPLE LANE</text></g>`;
 
   // ---------- passengers holding the straps ----------
-  const insp = L.fig(Object.assign(JSON.parse(JSON.stringify(L.cast.byId.inspector)), { id: "pax1", props: [], pose: { stance: "easy", weight: "R", arms: { R: "raise", L: "pocket" }, hands: { R: "grip" }, head: { tilt: 3 } } }), { id: "pax1", frames: [{}, { pose: { head: { tilt: 3, yaw: -16 } } }] });
-  const intl = L.fig(Object.assign(JSON.parse(JSON.stringify(L.cast.byId.intellectual)), { id: "pax2", props: [{ type: "book", side: "L" }], pose: { stance: "easy", weight: "L", arms: { R: "raise", L: "hold" }, hands: { R: "grip" }, head: { tilt: 8 } } }), { id: "pax2", frames: [{}, { pose: { head: { tilt: 10, yaw: 6 } } }] });
+  const insp = L.fig(Object.assign(JSON.parse(JSON.stringify(L.cast.byId.inspector)), { id: "pax1", props: [], pose: { stance: "easy", weight: "R", arms: { R: "raise", L: "pocket" }, hands: { R: "grip" }, head: { tilt: 3 } } }), { id: "pax1", place: 0.255, frames: [{}, { pose: { head: { tilt: 3, yaw: -16 } } }] });
+  const intl = L.fig(Object.assign(JSON.parse(JSON.stringify(L.cast.byId.intellectual)), { id: "pax2", props: [{ type: "book", side: "L" }], pose: { stance: "easy", weight: "L", arms: { R: "raise", L: "hold" }, hands: { R: "grip" }, head: { tilt: 8 } } }), { id: "pax2", place: 0.255, frames: [{}, { pose: { head: { tilt: 10, yaw: 6 } } }] });
   people += L.at(insp, 512, 1120, 0.255) + L.at(intl, 1212, 1120, 0.255);
 
   // Layers, back to front, each composited on its own: the sky, the three strips, the carriage (static), the passengers (static

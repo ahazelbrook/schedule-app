@@ -19,16 +19,30 @@ const STUB = `(() => {
   const snapOf = (p) => ({ id: p.split('/')[1], exists: p in store, data: () => copy(store[p]), metadata: {} });
   const query = (c) => { const docs = Object.keys(store).filter(p => p.indexOf(c + '/') === 0).map(snapOf).sort((a, b) => (store[c + '/' + b.id].updatedAt || '').localeCompare(store[c + '/' + a.id].updatedAt || '')); return { docs, size: docs.length, empty: !docs.length, docChanges: () => [] }; };
   const fire = (p) => { (docSubs[p] || []).forEach(fn => fn(snapOf(p))); const c = p.split('/')[0]; (colSubs[c] || []).forEach(fn => fn(query(c))); };
-  const docRef = (c, id) => { const p = c + '/' + id; return { id,
+  /* localStorage.__ops = '1': campaign/main is a store that takes clock operations, as the hosted adapter's ref does
+     (ref.clockOps true; update() applies clockOps by clock id: set fields with the fill kept within 0..size, add once,
+     remove), so the page sends ops instead of whole arrays */
+  const ops = (() => { try { return localStorage.getItem('__ops') === '1'; } catch (e) { return false; } })();
+  const applyOps = (clocks, list) => { clocks = (clocks || []).slice(); list.forEach(op => {
+    if (op.add) { if (!clocks.some(c => c.id === op.add.id)) clocks.push(copy(op.add)); return; }
+    if (op.remove !== undefined) { clocks = clocks.filter(c => c.id !== op.remove); return; }
+    const i = clocks.findIndex(c => c.id === op.id); if (i < 0) return;
+    const c = Object.assign({}, clocks[i]); ['name', 'size', 'kind', 'hidden', 'filled'].forEach(k => { if (op[k] !== undefined) c[k] = op[k]; });
+    c.filled = Math.max(0, Math.min(c.size, Math.round(c.filled))); clocks[i] = c; }); return clocks; };
+  const docRef = (c, id) => { const p = c + '/' + id; const ref = { id,
     get: async () => snapOf(p),
     set: async (d) => { store[p] = copy(d); window.__writes.push(['set', p]); window.__patches.push(['set', p, copy(d)]); persist(); fire(p); },
-    update: async (u) => { if (!(p in store)) throw new Error('No document to update: ' + p); dm(store[p], copy(u)); window.__writes.push(['update', p]); window.__patches.push(['update', p, copy(u)]); persist(); fire(p); },
+    update: async (u) => { if (!(p in store)) throw new Error('No document to update: ' + p); const { clockOps, ...rest } = copy(u); if (clockOps && !ref.clockOps) throw new Error('this store takes no clockOps'); dm(store[p], rest); if (clockOps) store[p].clocks = applyOps(store[p].clocks, clockOps); window.__writes.push(['update', p]); window.__patches.push(['update', p, copy(u)]); persist(); fire(p); },
     delete: async () => { delete store[p]; window.__writes.push(['delete', p]); persist(); fire(p); },
-    onSnapshot: (fn) => { (docSubs[p] = docSubs[p] || []).push(fn); setTimeout(() => fn(snapOf(p)), 0); return () => { docSubs[p] = (docSubs[p] || []).filter(f => f !== fn); window.__unsubs.push(p); }; } }; };
+    onSnapshot: (fn) => { (docSubs[p] = docSubs[p] || []).push(fn); setTimeout(() => fn(snapOf(p)), 0); return () => { docSubs[p] = (docSubs[p] || []).filter(f => f !== fn); window.__unsubs.push(p); }; } };
+    if (ops && p === 'campaign/main') ref.clockOps = true;
+    return ref; };
   const col = (c) => { const q = () => ({ orderBy: q, limit: q, where: q, get: async () => query(c), onSnapshot: (fn) => { (colSubs[c] = colSubs[c] || []).push(fn); setTimeout(() => fn(query(c)), 0); return () => {}; } }); return Object.assign(q(), { doc: (id) => docRef(c, id), path: c }); };
   window.__writes = []; window.__patches = []; window.__unsubs = []; window.__store = store; window.__role = role;
   /* another viewer changes the campaign: not counted as this page's write */
   window.__remote = (patch) => { const p = 'campaign/main'; store[p] = dm(store[p] || {}, copy(patch)); persist(); fire(p); };
+  /* another phone's change this page has not heard about yet (its next poll would bring it) */
+  window.__remoteQuiet = (fn) => { const p = 'campaign/main'; fn(store[p]); persist(); };
   const ids = { gm: 'u_gm', owner: 'u_gm', player: 'u_player', ro: 'u_viewer', nodb: 'u_gm' };
   const user = { id: async () => ids[role], can: async (n) => n === 'data.write' ? role !== 'ro' : true, isOwner: async () => role === 'gm' || role === 'owner',
     me: async () => ({ id: ids[role], name: '', email: null }), profiles: async (list) => { const names = { u_gm: 'Gail the GM', u_player: 'Pat' }; const o = {}; list.forEach(id => { o[id] = { id, name: names[id] || '' }; }); return o; } };
@@ -130,25 +144,47 @@ const SHEET = `(pb) => {
   assert((await p.$$eval('.tp-crewbox [data-act="crew.tier"].on', n => n.length)) === 0, 'tier 0');
   assert(!!(await p.$('[data-act="sessstart"]')) && !(await dis('[data-act="sessstart"]')) && (await dis('[data-act="sessend"]')) === true, 'GM: start enabled, end disabled with no session');
   assert((await p.$eval('[data-act="sessstart"]', n => n.textContent)) === 'Start session 1', 'Start session 1 label');
-  assert(/Each player ends the session on their own sheet/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'session reminder line');
+  /* the session is one line: "Session — not started yet" and the GM's buttons; no reminder paragraph (the sheet's End session panel says it) */
+  assert(/not started yet/.test(await p.$eval('.tp-sessbox', n => n.textContent)) && !/Each player ends the session/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'session box: "not started yet", no reminder paragraph');
   assert(!/The GM starts sessions/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'GM: no "The GM starts sessions" line');
-  assert((await p.$$eval('#tp-schedule', n => n.length)) === 1 && (await p.$eval('#tp-schedule', n => n.classList.contains('tp-schedbox'))), 'the schedule box is #tp-schedule, once on the page');
-  /* layout: two columns on a wide screen (the crew on the left); on a phone session, schedule, clocks, players, crew, log */
-  const BOXES = ['.tp-sessbox', '#tp-schedule', '.tp-clockbox', '.tp-playbox', '.tp-crewbox', '.tp-logbox'];
-  const boxes = () => p.evaluate((sels) => sels.map(s => { const r = document.querySelector('#table-page ' + s).getBoundingClientRect(); return { s, top: Math.round(r.top + scrollY), left: Math.round(r.left), w: Math.round(r.width) }; }), BOXES);
-  async function phoneOrder(who) {
+  assert((await p.$eval('.tp-sessbox', n => n.getBoundingClientRect().height)) < 64, 'session box on a desk is one line: ' + (await p.$eval('.tp-sessbox', n => n.getBoundingClientRect().height)));
+  /* the role is words with a dot, not a box that looks like a button */
+  const roleStyle = await p.$eval('.tp-role', n => { const s = getComputedStyle(n); return { border: s.borderTopWidth, bg: s.backgroundColor, pad: s.paddingLeft }; });
+  assert(roleStyle.border === '0px' && roleStyle.bg === 'rgba(0, 0, 0, 0)' && roleStyle.pad === '0px', 'the role label has no border, fill or padding (not button-like): ' + JSON.stringify(roleStyle));
+  /* the schedule: a GM with no dates sees one folded line, "Schedule · no dates · Plan dates", that opens the box */
+  assert((await p.$$eval('#tp-schedule', n => n.length)) === 1 && (await p.$eval('#tp-schedule', n => n.classList.contains('tp-schedrow'))) && !(await p.$('.tp-schedbox')), 'GM, no dates: the schedule is one folded line (#tp-schedule), no box');
+  const rowTxt = await p.$eval('#tp-schedule', n => [n.querySelector('.tp-lab').textContent, n.querySelector('.tp-schedsum').textContent, n.querySelector('button').textContent].join(' · '));
+  assert(rowTxt === 'Schedule · no dates · Plan dates', 'the line reads Schedule · no dates · Plan dates: ' + rowTxt);
+  await none('Plan dates opens the schedule (page state, no write)', () => p.click('#tp-schedule [data-act="viewsched"]'));
+  assert((await p.$$eval('#tp-schedule', n => n.length)) === 1 && !!(await p.$('.tp-schedbox#tp-schedule')) && !!(await p.$('[data-ui="sched.odate"]')) && (await p.$eval('.tp-schedbox [data-act="viewsched"]', n => n.getAttribute('aria-expanded'))) === 'true', 'Plan dates opens the box (#tp-schedule, once, with its date form)');
+  await none('Close folds it back', () => p.click('.tp-schedbox [data-act="viewsched"]'));
+  assert(!!(await p.$('.tp-schedrow')) && !(await p.$('.tp-schedbox')), 'Close folds the box back to one line');
+  await p.evaluate(() => { location.hash = '#t/schedule'; }); await p.waitForTimeout(600);
+  assert(!!(await p.$('.tp-schedbox#tp-schedule')) && (await mode()) === 'table', '#t/schedule opens the folded schedule');
+  await p.click('.tp-schedbox [data-act="viewsched"]'); await p.waitForTimeout(150);
+  await p.evaluate(() => { location.hash = '#t'; }); await p.waitForTimeout(300);
+  assert(!!(await p.$('.tp-schedrow')) && !(await p.$('.tp-schedbox')), 'back to #t with it folded');
+  /* layout: on a wide screen two columns (clocks, log, players on the left; crew and schedule on the right); on a phone the session
+     line, clocks, the log, the players, the crew and last the schedule, top to bottom */
+  const boxes = (sels) => p.evaluate((sels) => sels.map(s => { const r = document.querySelector('#table-page ' + s).getBoundingClientRect(); return { s, top: Math.round(r.top + scrollY), left: Math.round(r.left), w: Math.round(r.width) }; }), sels);
+  async function phoneOrder(who, sels) {
     const cols = await p.evaluate(() => ['.tp-colA', '.tp-colB'].map(s => { const r = document.querySelector('#table-page ' + s).getBoundingClientRect(); return { left: Math.round(r.left), top: Math.round(r.top), w: Math.round(r.width) }; }));
-    assert(cols[0].left < cols[1].left && cols[0].top === cols[1].top && cols[1].w < 700, who + ' desk: the crew column left of the schedule column, side by side: ' + JSON.stringify(cols));
+    assert(cols[1].left < cols[0].left && cols[0].top === cols[1].top && cols[1].w < 800, who + ' desk: clocks, log and players on the left of the crew and schedule, side by side: ' + JSON.stringify(cols));
+    assert(await p.$eval('.tp-crewsum', n => getComputedStyle(n).display === 'none') && await p.$eval('.tp-crewbody', n => getComputedStyle(n).display !== 'none'), who + ' desk: no crew summary row, the crew shown in full');
     await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(250);
-    const bx = await boxes();
-    assert(bx.every((b, i) => !i || b.top > bx[i - 1].top), who + ' phone: session, schedule, clocks, players, crew, log top to bottom: ' + bx.map(b => b.s + '@' + b.top).join(' '));
-    assert(bx[1].top < (await p.evaluate(() => document.querySelector('#table-page .cs-pickbox, #table-page .tp-crewbox').getBoundingClientRect().top + scrollY)), who + ' phone: the schedule above the crew sheet');
+    const bx = await boxes(sels);
+    assert(bx.every((b, i) => !i || b.top > bx[i - 1].top), who + ' phone: ' + sels.join(', ') + ' top to bottom: ' + bx.map(b => b.s + '@' + b.top).join(' '));
     await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(150);
   }
-  await phoneOrder('GM');
+  await phoneOrder('GM', ['.tp-sessbox', '.tp-clockbox', '.tp-logbox', '.tp-playbox', '#tp-crew', '#tp-schedule']);
 
   /* crew: name (typed, debounced: one write), tier, rep, heat */
-  await one('crew name', async () => { await p.click('[data-path="crew.name"]'); await p.keyboard.type('The Lamplighters', { delay: 15 }); }, 800);
+  /* the crew is named on a phone (a table being set up): the crew stays open, so the field being typed in is not folded away under the typist */
+  await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(250);
+  assert(await p.$eval('.tp-crewbody', n => getComputedStyle(n).display !== 'none') && (await p.$eval('.tp-crewsum', n => n.getAttribute('aria-expanded'))) === 'true', 'phone, a crew with no name or playbook: shown open, not folded behind the summary');
+  await one('crew name', async () => { await p.click('[data-path="crew.name"]'); await p.keyboard.type('The Lamplighters', { delay: 15 }); }, 900);
+  assert(await p.evaluate(() => { const n = document.activeElement, b = document.querySelector('.tp-crewbody'); return !!n && n.dataset.path === 'crew.name' && n.value === 'The Lamplighters' && getComputedStyle(b).display !== 'none' && n.getClientRects().length > 0; }), 'phone: after the name is saved the crew is still open and the name field still has the focus and the text');
+  await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(250);
   let c = await camp();
   assert(c && c.crew.name === 'The Lamplighters' && c.v === 1 && Array.isArray(c.clocks) && c.session.number === 0, 'first write creates the whole document: ' + JSON.stringify(c && c.crew.name));
   assert((await p.$eval('#tp-crewname', n => n.textContent)) === 'The Lamplighters', 'heading follows the name');
@@ -204,10 +240,10 @@ const SHEET = `(pb) => {
   c = await camp(); assert(c.log[0].text === 'Scored the warehouse' && c.log.length === 2, 'log newest first');
   assert(/Gail the GM/.test(await p.$eval('.tp-log li', n => n.textContent)), 'log author named through profiles');
 
-  /* players: grouped by owner, names through profiles, Unowned last */
+  /* players: grouped by owner, names through profiles, "No owner yet" last */
   const groups = await p.$$eval('.tp-group', gs => gs.map(g => ({ head: g.querySelector('.tp-ghead b').textContent, you: !!g.querySelector('.tp-you'), chars: Array.from(g.querySelectorAll('.tp-char')).map(li => li.querySelector('.tp-cn b').textContent + ' | ' + li.querySelector('.tp-cs').textContent) })));
   notes.push('groups: ' + JSON.stringify(groups));
-  assert(groups.length === 3 && groups[0].head === 'Gail the GM' && groups[0].you && groups[1].head === 'Pat' && groups[2].head === 'Unowned', 'groups in order you, Pat, Unowned: ' + groups.map(g => g.head).join(','));
+  assert(groups.length === 3 && groups[0].head === 'Gail the GM' && groups[0].you && groups[1].head === 'Pat' && groups[2].head === 'No owner yet', 'groups in order you, Pat, No owner yet: ' + groups.map(g => g.head).join(','));
   assert(groups[0] && /^Aldo Crane \| Stress4\/9/.test(groups[0].chars[0]), 'hound under the GM with Stress 4/9: ' + (groups[0] && groups[0].chars[0]));
   assert(groups[1] && /^Unit Seven \| Drain3\/10/.test(groups[1].chars[0]), 'hull under Pat with Drain 3/10: ' + (groups[1] && groups[1].chars[0]));
   assert(groups[2] && /^Unit Kessel/.test(groups[2].chars[0]), 'time traveler unowned');
@@ -254,8 +290,13 @@ const SHEET = `(pb) => {
   assert(!(await p.$(`.tp-clock[data-id="${k1.id}"]`)) && (await p.$$eval('.tp-clock', n => n.length)) === 1, 'player: hidden clock not rendered, one visible');
   assert(!/hidden/i.test(await p.$eval('.tp-clockbox .tp-band', n => n.textContent)), 'player: no hidden count');
   assert(!(await p.$('[data-act="sessstart"]')) && !(await p.$('[data-act="sessend"]')) && !(await p.$('#table-page [data-gm]:not(input):not(textarea)')), 'player: no GM-only session buttons (hidden, not disabled)');
-  assert(/The GM starts sessions\. Each player ends the session on their own sheet/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'player: "The GM starts sessions." in the session box');
-  await phoneOrder('player');
+  /* a session is in play: one line, "Session 1 in play", no hint and no reminder paragraph */
+  const sessLine = (sel) => p.$eval(sel || '.tp-sessbox', n => [n.querySelector('.tp-sessno .tp-lab').textContent, n.querySelector('.tp-sessno b').textContent, (n.querySelector('.tp-live') || n.querySelector('.tp-sessstate')).textContent].join(' '));
+  const pst = await p.$eval('.tp-sessbox', n => n.textContent);
+  assert((await sessLine()) === 'Session 1 in play' && !/Each player ends the session/.test(pst) && !/The GM starts/.test(pst), 'player: the session box reads "Session 1 in play": ' + (await sessLine()));
+  /* nothing to answer: no schedule box (no next session, no open dates), and no "Mark the dates" nag anywhere on the page */
+  assert(!(await p.$('#tp-schedule')) && !(await p.$('.tp-schedbox')) && !/Mark the dates|No dates proposed|No session is set/.test(await p.$eval('#table-page', n => n.textContent)), 'player, no dates: no schedule box, no call to mark dates');
+  await phoneOrder('player', ['.tp-sessbox', '.tp-clockbox', '.tp-logbox', '.tp-playbox', '#tp-crew']);
   assert((await dis(`.tp-clock[data-id="${k2.id}"] .tp-in`)) === true, 'player: clock name disabled');
   assert(!(await p.$('[data-act="clockadd"]')) && !(await p.$('[data-act="clocksize"]')) && !(await p.$('[data-act="logrm"]')), 'player: no clock structure tools, no log removal');
   assert((await dis('[data-act="crew.tier"]')) === false && (await dis('[data-path="crew.name"]')) === false, 'player: crew panel editable (shared crew sheet)');
@@ -272,8 +313,85 @@ const SHEET = `(pb) => {
   await one('player log', async () => { await p.fill('[data-ui="newlog"]', 'Pat owes the Lampblacks'); await p.click('[data-act="logadd"]'); });
   c = await camp(); const lg = await lastPatch();
   assert(c.log[0].text === 'Pat owes the Lampblacks' && c.log[0].by === 'u_player' && JSON.stringify(lg[2].log.slice(1)) === JSON.stringify(logBefore), 'player log append keeps the stored lines: ' + JSON.stringify(lg && lg[2].log));
-  await none('player forces start session', () => p.evaluate(() => { const b = document.createElement('button'); b.setAttribute('data-act', 'sessstart'); document.querySelector('.tp-sessbox .tp-body').appendChild(b); b.click(); }));
+  await none('player forces start session', () => p.evaluate(() => { const b = document.createElement('button'); b.setAttribute('data-act', 'sessstart'); document.querySelector('.tp-sessbox').appendChild(b); b.click(); }));
   assert((await camp()).session.number === 1, 'player cannot start a session');
+
+  /* ---------- the player on a phone: the clock's − / +, the log's latest three, the crew behind its summary row, touch targets ---------- */
+  /* the − / + beside a clock's count: one leaf of the clock changes, one write, the same patch a wedge makes */
+  const stepSel = (d) => `.tp-stepb[data-act="clockstep"][data-d="${d}"][data-id="${k2.id}"]`;
+  const filledNow = async () => (await camp()).clocks[1].filled;
+  const f0 = await filledNow();
+  await one('player ticks a clock with +', () => p.click(stepSel(1)));
+  const sp1 = await lastPatch(); const exp1 = JSON.parse(JSON.stringify((await camp()).clocks)); exp1[1].filled = f0 + 1;
+  assert((await filledNow()) === f0 + 1 && sp1 && JSON.stringify(Object.keys(sp1[2]).sort()) === '["clocks","updatedAt"]' && JSON.stringify(sp1[2].clocks) === JSON.stringify(exp1), 'the + fills one more segment and sends the clocks with only `filled` changed: ' + JSON.stringify(sp1 && sp1[2].clocks && sp1[2].clocks[1]));
+  await one('player takes one off with −', () => p.click(stepSel(-1)));
+  assert((await filledNow()) === f0, 'the − takes one off');
+  await p.evaluate(async ([id, n]) => { const db = await window.claude.use('db'); const d = JSON.parse(JSON.stringify(window.__store['campaign/main'])); d.clocks.forEach(c => { if (c.id === id) c.filled = n; }); await db.collection('campaign').doc('main').set(d); }, [k2.id, 0]);
+  await p.waitForTimeout(250);
+  assert((await dis(stepSel(-1))) === true && (await dis(stepSel(1))) === false, 'an empty clock: − disabled, + enabled');
+  await p.evaluate(async ([id, n]) => { const db = await window.claude.use('db'); const d = JSON.parse(JSON.stringify(window.__store['campaign/main'])); d.clocks.forEach(c => { if (c.id === id) c.filled = n; }); await db.collection('campaign').doc('main').set(d); }, [k2.id, 8]);
+  await p.waitForTimeout(250);
+  assert((await dis(stepSel(1))) === true && (await dis(stepSel(-1))) === false, 'a full clock: + disabled, − enabled');
+  await p.evaluate(async ([id, n]) => { const db = await window.claude.use('db'); const d = JSON.parse(JSON.stringify(window.__store['campaign/main'])); d.clocks.forEach(c => { if (c.id === id) c.filled = n; }); await db.collection('campaign').doc('main').set(d); }, [k2.id, 2]);
+  await p.waitForTimeout(250);
+
+  /* the log shows its latest three lines; All shows the rest (page state: no write; print has every line) */
+  await one('player log 2', async () => { await p.fill('[data-ui="newlog"]', 'The Bluecoats raided the dock'); await p.click('[data-act="logadd"]'); });
+  await one('player log 3', async () => { await p.fill('[data-ui="newlog"]', 'We lost the van'); await p.click('[data-act="logadd"]'); });
+  const nLog = (await camp()).log.length;
+  const vis = (sel) => p.$$eval(sel, ns => ns.filter(n => n.getClientRects().length && getComputedStyle(n).display !== 'none').length);
+  assert(nLog > 3 && (await vis('.tp-log li')) === 3 && (await p.$eval('.tp-log', n => n.classList.contains('tp-logshort'))), 'the log shows its latest three lines of ' + nLog);
+  assert(/^We lost the van/.test(await p.$eval('.tp-log li:first-child .tp-logt', n => n.textContent)), 'newest first');
+  const allBtn = await p.$eval('[data-act="viewlog"]', n => ({ t: n.textContent, e: n.getAttribute('aria-expanded') }));
+  assert(allBtn.t === 'All ' + nLog && allBtn.e === 'false', 'the All button counts the lines: ' + JSON.stringify(allBtn));
+  await none('All shows every line (page state, no write)', () => p.click('[data-act="viewlog"]'));
+  assert((await vis('.tp-log li')) === nLog && (await p.$eval('[data-act="viewlog"]', n => n.getAttribute('aria-expanded') === 'true' && /Latest 3/.test(n.textContent))), 'All: every line shown');
+  assert(await p.evaluate(() => document.activeElement && document.activeElement.dataset.act === 'viewlog'), 'the All button keeps the focus');
+  await none('and back to the latest three', () => p.click('[data-act="viewlog"]'));
+  assert((await vis('.tp-log li')) === 3, 'back to three lines');
+  await p.emulateMedia({ media: 'print' });
+  assert((await vis('.tp-log li')) === nLog && (await p.$eval('[data-act="viewlog"]', n => getComputedStyle(n).display === 'none')), 'print: every log line, no All button');
+  await p.emulateMedia({ media: null });
+
+  /* the crew on a phone: folded behind Tier, Hold, Rep, Heat, Wanted, Stacks; one tap for the whole sheet */
+  await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(300);
+  const cr0 = (await camp()).crew;
+  assert(await p.$eval('.tp-crewsum', n => getComputedStyle(n).display !== 'none' && n.getAttribute('aria-expanded') === 'false') && await p.$eval('.tp-crewbody', n => getComputedStyle(n).display === 'none'), 'phone: the crew is folded behind its summary row');
+  const cells = () => p.$$eval('.tp-cst', ns => ns.map(n => n.querySelector('.tp-lab').textContent + ' ' + n.querySelector('b').textContent));
+  const want6 = ['Tier ' + cr0.tier, 'Hold ' + (cr0.hold === 'strong' ? 'Strong' : 'Weak'), 'Rep ' + cr0.rep + '/' + (12 - cr0.turf), 'Heat ' + cr0.heat + '/9', 'Wanted ' + cr0.wanted + '/4', 'Stacks ' + cr0.vault];
+  assert(JSON.stringify(await cells()) === JSON.stringify(want6), 'the summary row: Tier, Hold, Rep, Heat, Wanted, Stacks: ' + JSON.stringify(await cells()) + ' vs ' + JSON.stringify(want6));
+  const folded = await p.evaluate(() => { const b = document.querySelector('.tp-crewsum'); return { h: Math.round(b.getBoundingClientRect().height), top: Math.round(b.getBoundingClientRect().top + scrollY) }; });
+  assert(folded.h <= 160, 'the folded crew is a short row: ' + folded.h + 'px');
+  await none('tapping the summary unfolds the crew (page state, no write)', () => p.click('.tp-crewsum'));
+  assert(await p.$eval('.tp-crewbody', n => getComputedStyle(n).display !== 'none') && (await p.$eval('.tp-crewsum', n => n.getAttribute('aria-expanded'))) === 'true' && /Fold the crew sheet/.test(await p.$eval('.tp-crewsum', n => n.textContent)), 'the crew sheet opens under its summary');
+  assert(await p.evaluate(() => document.activeElement && document.activeElement.classList.contains('tp-crewsum')), 'the summary row keeps the focus');
+  await overflow('player phone, crew open');
+  await one('player heat on the phone', () => p.click('[data-act="crew.heat"][data-n="5"]'));
+  assert((await cells())[3] === 'Heat 5/9', 'the summary follows a tap on the sheet: ' + (await cells())[3]);
+  /* touch: every control is at least 40px tall (its own box, or the ::before hit area of a mark) and no mark's area lies over another control */
+  const touch = await p.evaluate(() => {
+    const out = { small: [], owns: [], n: 0 }, at = (x, y) => document.elementFromPoint(x, y);
+    document.querySelectorAll('#table-page button, #table-page input, #table-page textarea, #table-page select').forEach(n => {
+      if (n.disabled || !n.getClientRects().length) return;
+      n.scrollIntoView({ block: 'center' });
+      const r = n.getBoundingClientRect(); if (!r.width || !r.height) return;
+      const cs = getComputedStyle(n, '::before'), has = !!cs.content && cs.content !== 'none', pw = has ? parseFloat(cs.width) || 0 : 0, ph = has ? parseFloat(cs.height) || 0 : 0, w = Math.max(r.width, pw), h = Math.max(r.height, ph);
+      out.n++;
+      const name = (n.getAttribute('data-act') || n.getAttribute('data-path') || n.getAttribute('data-ui') || n.className) + '';
+      if (h < 39.5) out.small.push(name + ' ' + Math.round(w) + 'x' + Math.round(h));
+      if (has) { const cx = r.left + r.width / 2, cy = r.top + r.height / 2; [[cx - pw / 2 + 2, cy], [cx + pw / 2 - 2, cy], [cx, cy - ph / 2 + 2], [cx, cy + ph / 2 - 2]].forEach(pt => { const e = at(pt[0], pt[1]); if (!(e === n || n.contains(e))) out.owns.push(name + ' @' + pt.map(Math.round) + ' → ' + (e && (e.getAttribute('data-act') || e.className || e.tagName))); }); }
+    });
+    out.small = out.small.slice(0, 12); out.owns = out.owns.slice(0, 12);
+    return out;
+  });
+  notes.push('touch audit (player, 390px, crew open): ' + touch.n + ' controls');
+  assert(touch.n > 40 && !touch.small.length, 'touch: every control is at least 40px tall: ' + touch.small.join(' | '));
+  assert(!touch.owns.length, 'touch: each mark owns its whole hit area (no neighbour takes its taps): ' + touch.owns.join(' | '));
+  assert((await p.$$eval('.tp-clock .tp-clocksvg', ns => ns.map(n => n.getBoundingClientRect().width))).every(w => w >= 100), 'touch: the shared clocks are drawn at least 100px wide');
+  await p.evaluate(() => scrollTo(0, 0));
+  await none('and folds again', () => p.click('.tp-crewsum'));
+  assert(await p.$eval('.tp-crewbody', n => getComputedStyle(n).display === 'none'), 'the crew folds again');
+  await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(200);
   /* Print the season (header, every role): opens the print view; Back returns to the table; never printed itself */
   assert((await dis('.tp-head [data-act="print"]')) === false, 'player: Print the season in the header, enabled');
   await p.emulateMedia({ media: 'print' });
@@ -303,8 +421,9 @@ const SHEET = `(pb) => {
   await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
   assert((await p.$eval('.tp-role', n => n.textContent)) === 'Read only', 'role Read only');
   const enabled = await p.$$eval('#table-page button, #table-page input, #table-page textarea, #table-page select', ns => ns.filter(n => !n.disabled).map(n => n.dataset.act || n.dataset.path || n.dataset.ui || n.tagName));
-  assert(enabled.length && enabled.every(a => a === 'open' || a === 'print' || a === 'cast' || a === 'crew.cspick') && enabled.indexOf('print') >= 0, 'read only: only Open, The cast, Print the season and the crew covers toggle stay enabled: ' + enabled.join(','));
-  assert(!(await p.$('[data-act="sessstart"]')) && /The GM starts sessions/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'read only: no session buttons, the GM line instead');
+  /* what stays enabled for a read-only viewer writes nothing: Open, The cast, Print the season, the crew covers, and the page-state folds (the crew summary, the log's All) */
+  assert(enabled.length && enabled.every(a => a === 'open' || a === 'print' || a === 'cast' || a === 'crew.cspick' || a === 'viewcrew' || a === 'viewlog') && enabled.indexOf('print') >= 0, 'read only: only Open, The cast, Print the season, the crew covers and the folds stay enabled: ' + enabled.join(','));
+  assert(!(await p.$('[data-act="sessstart"]')) && !(await p.$('[data-act="sessend"]')) && (await sessLine()) === 'Session 1 in play', 'read only: no session buttons, the session as one line');
   await none('read only clicks', async () => {
     await p.click('[data-act="crew.tier"][data-n="5"]', { force: true }).catch(() => {});
     await p.click(`.tp-seg[data-id="${k2.id}"][data-n="4"]`, { force: true }).catch(() => {});
@@ -317,10 +436,57 @@ const SHEET = `(pb) => {
   await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
   assert((await p.$eval('.tp-role', n => n.textContent)) === 'GM' && !!(await p.$(`.tp-clock[data-id="${k1.id}"]`)), 'owner (no canEdit) is the GM and sees the hidden clock');
 
+  /* ---------- a store that takes clock operations (the hosted adapter, CAMPAIGN.md *Clocks*): each clock change is one op
+     on that clock, so a tick never carries the other clocks along ---------- */
+  const opsSent = async () => { const lp = await lastPatch(); return lp && lp[0] === 'update' ? lp[2] : null; };
+  const keysOf = (o) => JSON.stringify(Object.keys(o || {}).sort());
+  const shown = (id) => p.$eval(`.tp-clock[data-id="${id}"]`, n => ({ count: n.querySelector('.tp-step .mono').textContent, on: n.querySelectorAll('.tp-seg.on').length, name: n.querySelector('.tp-in').value }));
+  await p.evaluate(() => { localStorage.setItem('__role', 'gm'); localStorage.setItem('__ops', '1'); });
+  await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
+  await one('ops: the GM adds a clock', async () => { await p.fill('[data-ui="newclock"]', 'Lockdown'); await p.click('[data-act="newsize"][data-n="4"]'); await p.click('[data-act="clockadd"]'); });
+  let op = await opsSent(); c = await camp(); const k4 = c.clocks[c.clocks.length - 1];
+  assert(keysOf(op) === '["clockOps","updatedAt"]' && JSON.stringify(op.clockOps) === JSON.stringify([{ add: k4 }]) && k4.name === 'Lockdown' && k4.size === 4 && c.clocks.length === 3, 'ops: adding sends { add: clock } and nothing else: ' + JSON.stringify(op));
+  await one('ops: the GM renames it', async () => { await p.click(`.tp-clock[data-id="${k4.id}"] .tp-in`); await p.keyboard.press('End'); await p.keyboard.type(' now', { delay: 10 }); }, 800);
+  op = await opsSent(); assert(keysOf(op) === '["clockOps","updatedAt"]' && JSON.stringify(op.clockOps) === JSON.stringify([{ id: k4.id, name: 'Lockdown now' }]), 'ops: a rename is { id, name }: ' + JSON.stringify(op));
+  await one('ops: the GM resizes it', () => p.click(`[data-act="clocksize"][data-id="${k4.id}"][data-n="6"]`));
+  op = await opsSent(); assert(JSON.stringify(op.clockOps) === JSON.stringify([{ id: k4.id, size: 6 }]), 'ops: a resize is { id, size }: ' + JSON.stringify(op));
+  await one('ops: the GM changes its kind', () => p.click(`[data-act="clockkind"][data-id="${k4.id}"][data-v="faction"]`));
+  op = await opsSent(); assert(JSON.stringify(op.clockOps) === JSON.stringify([{ id: k4.id, kind: 'faction' }]), 'ops: a kind is { id, kind }: ' + JSON.stringify(op));
+  await one('ops: the GM hides it', () => p.click(`[data-act="clockhide"][data-id="${k4.id}"]`));
+  op = await opsSent(); assert(JSON.stringify(op.clockOps) === JSON.stringify([{ id: k4.id, hidden: true }]), 'ops: hiding is { id, hidden }: ' + JSON.stringify(op));
+  await one('ops: and shows it again', () => p.click(`[data-act="clockhide"][data-id="${k4.id}"]`));
+  c = await camp(); assert(c.clocks[2].name === 'Lockdown now' && c.clocks[2].size === 6 && c.clocks[2].kind === 'faction' && c.clocks[2].hidden === false && c.clocks[0].filled === 3 && c.clocks[1].filled === 2, 'ops: the store has every change, the other clocks untouched: ' + JSON.stringify(c.clocks));
+  /* the player: a tick is { id, filled }; another phone's tick of another clock this page has not heard of yet stays */
+  await p.evaluate(() => localStorage.setItem('__role', 'player'));
+  await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
+  assert((await p.$$eval('.tp-clock', n => n.length)) === 2, 'ops: the player sees the two visible clocks');
+  const g0 = (await camp()).clocks[1].filled;
+  await p.evaluate((id) => window.__remoteQuiet(d => { d.clocks.forEach(x => { if (x.id === id) x.filled = 3; }); }), k4.id);
+  assert((await shown(k4.id)).count === '0 / 6', 'ops: the page has not heard of the other phone\'s tick yet');
+  await one('ops: the player ticks with +', () => p.click(stepSel(1)));
+  op = await opsSent(); c = await camp();
+  assert(keysOf(op) === '["clockOps","updatedAt"]' && JSON.stringify(op.clockOps) === JSON.stringify([{ id: k2.id, filled: g0 + 1 }]), 'ops: the + sends { id, filled } for that clock only: ' + JSON.stringify(op));
+  assert(c.clocks[1].filled === g0 + 1 && c.clocks[2].filled === 3, 'ops: the store keeps the other phone\'s tick: ' + JSON.stringify(c.clocks.map(x => x.filled)));
+  let s2 = await shown(k2.id), s4 = await shown(k4.id);
+  assert(s2.count === (g0 + 1) + ' / 8' && s2.on === g0 + 1 && s4.count === '3 / 6' && s4.on === 3, 'ops: the page shows its tick and the other phone\'s: ' + JSON.stringify([s2, s4]));
+  await one('ops: the player taps a wedge', () => p.click(`.tp-seg[data-id="${k2.id}"][data-n="6"]`));
+  op = await opsSent(); s2 = await shown(k2.id);
+  assert(JSON.stringify(op.clockOps) === JSON.stringify([{ id: k2.id, filled: 6 }]) && s2.count === '6 / 8' && s2.on === 6 && (await camp()).clocks[1].filled === 6, 'ops: a wedge sends { id, filled }, and the page shows 6 / 8: ' + JSON.stringify([op, s2]));
+  await one('ops: the player takes one off with −', () => p.click(stepSel(-1)));
+  s2 = await shown(k2.id); assert(JSON.stringify((await opsSent()).clockOps) === JSON.stringify([{ id: k2.id, filled: 5 }]) && s2.count === '5 / 8' && s2.on === 5, 'ops: − sends 5 and shows 5 / 8: ' + JSON.stringify(s2));
+  /* the GM removes the clock: { remove: id } */
+  await p.evaluate(() => localStorage.setItem('__role', 'gm'));
+  await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
+  await one('ops: the GM deletes a clock (confirm)', () => p.click(`[data-act="clockrm"][data-id="${k4.id}"]`));
+  op = await opsSent(); c = await camp();
+  assert(JSON.stringify(op.clockOps) === JSON.stringify([{ remove: k4.id }]) && c.clocks.length === 2 && c.clocks[1].filled === 5, 'ops: deleting sends { remove: id }: ' + JSON.stringify(op));
+  notes.push('clock ops: add, rename, resize, kind, hide, +, wedge, −, remove each sent as one op; an unseen tick of another clock kept');
+  await p.evaluate(() => localStorage.removeItem('__ops'));
+
   /* ---------- no db: a clear note ---------- */
   await p.evaluate(() => localStorage.setItem('__role', 'nodb'));
   await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
-  assert((await mode()) === 'table' && /The table needs the shared files/.test(await p.$eval('#table-page', n => n.textContent)), 'no db: shared-files note');
+  assert((await mode()) === 'table' && /The table is not available in this view/.test(await p.$eval('#table-page', n => n.textContent)) && !/shared files|published artifact|hosted site/.test(await p.$eval('#table-page', n => n.textContent)), 'no db: a plain note, no talk of files or hosting');
   await p.evaluate(() => localStorage.clear());
 
   /* ---------- no window.claude at all ---------- */
@@ -329,7 +495,7 @@ const SHEET = `(pb) => {
   p2.on('pageerror', e => errs.push('no-claude pageerror: ' + e.message)); p2.on('console', m => { if (m.type() === 'error' && !/ERR_FILE_NOT_FOUND/.test(m.text())) errs.push('no-claude console.error: ' + m.text()); });
   await p2.goto(URL); await p2.waitForTimeout(900);
   await p2.click('#tableBtn'); await p2.waitForTimeout(300);
-  assert(/The table needs the shared files/.test(await p2.$eval('#table-page', n => n.textContent)), 'no window.claude: shared-files note');
+  assert(/The table is not available in this view/.test(await p2.$eval('#table-page', n => n.textContent)), 'no window.claude: the plain note');
   await p2.click('#homeBtn'); await p2.waitForTimeout(200);
   assert((await p2.evaluate(() => document.body.dataset.mode)) === 'home', 'no window.claude: back Home');
   await ctx2.close();

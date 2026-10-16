@@ -29,7 +29,7 @@ const STUB = `(() => {
   if (!E2E_URL) {
     const h = await p.evaluate(() => ({ mode: document.body.dataset.mode, title: (document.getElementById('homeTitle') || {}).textContent, steps: document.querySelectorAll('#home .hm-step').length, view: document.getElementById('viewName').textContent, doc: document.title }));
     console.log('home:', JSON.stringify(h));
-    if (h.mode !== 'home' || h.title !== 'Set up the table' || h.steps !== 4 || h.view !== 'Home') errs.push('landing is not the GM set-up Home: ' + JSON.stringify(h));
+    if (h.mode !== 'home' || h.title !== 'Set up the table' || h.steps !== 3 || h.view !== 'Home') errs.push('landing is not the GM set-up Home: ' + JSON.stringify(h));
   }
   await p.click('#home [data-hm="new"]'); await p.waitForTimeout(400);
   if (await p.evaluate(() => document.body.dataset.mode + ' ' + location.hash) !== 'create #create') errs.push('Make a character did not open the creator: ' + await p.evaluate(() => document.body.dataset.mode + ' ' + location.hash));
@@ -84,6 +84,7 @@ const STUB = `(() => {
   await p2.goto(URL); await p2.waitForTimeout(1200);
   const sw = await p2.evaluate(() => document.documentElement.scrollWidth), cw = await p2.evaluate(() => document.documentElement.clientWidth); if (sw > cw) errs.push('phone overflow ' + sw + '>' + cw);
   if (!E2E_URL) await homeStates(b, errs);
+  if (!E2E_URL) await themeStates(b, errs);
   console.log('ERRORS:', errs.length ? errs.join('\n') : 'none');
   await b.close();
 })().catch(e => { console.error('FAILED', e); process.exit(1); });
@@ -121,15 +122,18 @@ async function homeStates(b, errs) {
   const want = (ok, msg, f) => { if (!ok) errs.push('Home ' + msg + (f ? ': ' + JSON.stringify(f) : '')); };
   const where = (pg) => pg.evaluate(() => document.body.dataset.mode + ' ' + location.hash);
 
-  /* "Opening the files…" until the files settle */
+  /* "Opening your sheets…" until the files settle */
   { const c = await b.newContext(); await c.addInitScript(`window.claude = { use: (n) => n === 'db' ? new Promise(() => {}) : Promise.resolve(n === 'user' ? { id: async () => 'u_pat', can: async () => true, isOwner: async () => false, canEdit: async () => false } : null) };`);
     const pg = await c.newPage(); await pg.goto(URL); await pg.waitForTimeout(600);
-    want(/Opening the files/.test(await pg.$eval('#homeMain', n => n.textContent)) && await pg.$eval('#files', n => n.hidden), 'waits for the files'); await c.close(); }
+    want(/Opening your sheets/.test(await pg.$eval('#homeMain', n => n.textContent)) && !/files/i.test(await pg.$eval('#homeMain', n => n.textContent)) && await pg.$eval('#files', n => n.hidden), 'waits for the sheets, in plain words'); await c.close(); }
 
   /* C. a player with no character: the crew as kicker, Make your character, Mark your dates (two open dates) */
   { const { c, pg } = await open('player', { 'campaign/main': camp(), 'characters/sam-1': char('sam-1', 'Vera Lux', 'u_sam') });
     const f = await facts(pg);
     want(f.mode === 'home' && f.kick === 'The Night Shift' && f.title === 'Welcome to the table' && f.primary.join() === 'Make your character' && /2 dates need your answer/.test(f.text) && !f.mine && f.files, 'C (player, no character)', f);
+    want(/then mark the dates you can play/.test(f.text) && /Saving it opens your sheet/.test(f.text) && !/living sheet|Filing/.test(f.text), 'C: with dates the lead mentions them; plain words about saving', f.text.slice(0, 200));
+    const plain = await pg.evaluate(() => ({ title: document.getElementById('filesTitle').textContent, note: document.getElementById('rosterNote').textContent, whose: document.getElementById('rosterFilter').getAttribute('aria-label'), who: document.getElementById('whoami').textContent }));
+    want(plain.title === 'Characters' && /^Yours are saved to your account\. Everyone at the table can see all characters\.$/.test(plain.note) && plain.whose === 'Whose characters' && !/files|filing/i.test(plain.who + plain.note + plain.title), 'C: the roster section and the header speak of characters, not files', plain);
     want(f.edits.join() === 'Vera Lux:false:false', 'C: another player’s card has no Edit figure and no remove', f.edits);
     await pg.evaluate(() => B68.toast('Hello from Home')); await pg.waitForTimeout(100);
     const t = await pg.$eval('#toast', n => { const r = n.getBoundingClientRect(); return { text: n.textContent, pos: getComputedStyle(n).position, inView: r.bottom <= innerHeight && r.top >= 0 && r.height > 0, role: document.getElementById('toastMsg').getAttribute('role') }; });
@@ -154,11 +158,27 @@ async function homeStates(b, errs) {
     want(!(await pg.$('#homeMain .hm-draft')) && (await pg.evaluate(() => localStorage.getItem('b68.draft'))) === null, 'Discard clears the draft');
     await c.close(); }
 
+  /* C2. a player with no character and nothing planned: the lead does not mention dates */
+  { const { c, pg } = await open('player', { 'campaign/main': camp({ schedule: { options: {}, avail: {}, next: null, rsvp: {}, cadence: null, quorum: 0, attendance: {} } }) });
+    const f = await facts(pg);
+    want(f.title === 'Welcome to the table' && /Make your character to join the table/.test(f.text) && !/mark the dates|dates need/i.test(f.text), 'C2 (player, no character, no dates): the lead leaves dates out', f.text.slice(0, 200));
+    await c.close(); }
+
   /* D. a player with one character: Welcome back, the big card, Your sheet, the session nudge */
   { const { c, pg } = await open('player', { 'campaign/main': camp(), 'characters/sam-1': char('sam-1', 'Vera Lux', 'u_sam'), 'characters/pat-1': char('pat-1', 'Aldo Crane', 'u_pat', 2) }, '', { width: 390, height: 844 });
     const f = await facts(pg);
     want(f.title === 'Welcome back, Pat' && f.chars === 1 && f.primary.join() === 'Open sheet' && /Session 3 has started at the table/.test(f.text) && f.mine, 'D (player with a character)', f);
     want(f.edits.join() === 'Aldo Crane:true:false', 'D: the files show Mine first', f.edits);
+    const nud = await pg.$$eval('#homeMain .hm-nudges [data-hm]', ns => ns.map(n => n.dataset.hm + ':' + n.textContent));
+    want(nud.filter(x => /^join:/.test(x)).join() === 'join:Join session 3' && !nud.some(x => /^open:/.test(x)) && !/Open the sheet/.test(f.text) && /Everyone’s characters/.test(f.text) && !/Everyone’s files/.test(f.text), 'D: the nudge says Join session 3 (not a second Open sheet); the link says Everyone’s characters', nud.concat(f.primary));
+    const st = await pg.$eval('#homeMain .hm-char .st', n => parseFloat(getComputedStyle(n).fontSize));
+    want(st >= 13, 'D: the returning player\'s status line is at least 13px: ' + st);
+    await pg.click('#homeMain [data-hm="join"]'); await pg.waitForTimeout(1300);
+    const jn = await pg.evaluate(() => { const b = document.querySelector('#dossier [data-act="sessjoin"]'), r = b && b.getBoundingClientRect(); return { mode: document.body.dataset.mode, focus: !!b && document.activeElement === b, inView: !!r && r.top >= 0 && r.bottom <= innerHeight, text: b && b.textContent }; });
+    want(jn.mode === 'sheet' && jn.inView && jn.focus && jn.text === 'Join session 3', 'D: Join session 3 opens the sheet with its Join button in view and focused', jn);
+    await pg.goBack(); await pg.waitForTimeout(600);
+    await pg.click('#homeMain [data-hm="files"]'); await pg.waitForTimeout(300);
+    want(await pg.$eval('#rosterFilter [data-f="all"]', n => n.getAttribute('aria-pressed')) === 'true' && (await facts(pg)).edits.length === 2, 'D: the Everyone’s characters link shows everyone’s characters', (await facts(pg)).edits);
     await pg.click('#rosterFilter [data-f="all"]'); await pg.waitForTimeout(200);
     const ed = (await facts(pg)).edits.sort();
     want(ed.join() === 'Aldo Crane:true:false,Vera Lux:false:false', 'D: Edit figure only on your own card, no remove chips', ed);
@@ -181,16 +201,22 @@ async function homeStates(b, errs) {
   { const seed = { 'campaign/main': camp({ schedule: { options: {}, avail: {}, next: { at: T(4), minutes: 240, place: '', note: '', confirmedAt: null }, rsvp: {}, cadence: null, quorum: 0, attendance: {} } }), 'characters/sam-1': char('sam-1', 'Vera Lux', 'u_sam'), 'characters/pat-1': char('pat-1', 'Aldo Crane', 'u_pat') };
     const { c, pg } = await open('gm', seed);
     const f = await facts(pg);
-    want(f.title === 'The Night Shift' && f.primary.join() === 'Open the table' && /2 players haven’t answered/.test(f.text) && !/No dates proposed/.test(f.text) && !/Nobody has filed/.test(f.text), 'B (GM, table started)', f);
+    want(f.title === 'The Night Shift' && f.primary.join() === 'Open the table' && /2 players haven’t answered/.test(f.text) && !/No dates proposed/.test(f.text) && !/Nobody has filed/.test(f.text) && !/Plan dates/.test(f.text), 'B (GM, table started)', f);
     want(await pg.$$eval('#homePlayers .tbl tbody tr', n => n.length) === 2, 'B: the players table');
     want(f.edits.length === 2 && f.edits.every(e => /:true:false$/.test(e)), 'B: the GM gets Edit figure on every card', f.edits);
     await pg.screenshot({ path: 'out/e2e-home-gm.png', fullPage: true });
+    await c.close(); }
+  /* B2. the GM, table started, nothing planned (the dates live in the group's calendar): no Plan dates, no No dates proposed; an empty table says No characters yet */
+  { const { c, pg } = await open('gm', { 'campaign/main': camp({ schedule: { options: {}, avail: {}, next: null, rsvp: {}, cadence: null, quorum: 0, attendance: {} } }) });
+    const f = await facts(pg);
+    want(f.title === 'The Night Shift' && !/Plan dates|No dates|dates proposed/.test(f.text) && /No characters yet\./.test(f.text) && !/Nobody has filed|filed/.test(f.text), 'B2 (GM, table started, no dates, no characters): no schedule nag, plain words', f.text.slice(0, 220));
     await c.close(); }
 
   /* A. the GM before the table: the set-up page; step 1 opens the table with the crew name focused */
   { const { c, pg } = await open('gm', {});
     const f = await facts(pg);
     want(f.title === 'Set up the table' && /One table lives at this address/.test(f.text) && /a second copy of the app/.test(f.text), 'A (GM, no table)', f);
+    want(!/Plan dates|Plan the first session/.test(f.text) && /Start the table/.test(f.text) && /Invite the players/.test(f.text), 'A: the set-up steps leave out planning dates', f.text.slice(0, 200));
     await pg.click('#homeMain [data-hm="table-setup"]'); await pg.waitForTimeout(900);
     const a1 = await pg.evaluate(() => document.body.dataset.mode + ' ' + (document.activeElement && document.activeElement.dataset.path));
     want(a1 === 'table crew.name', 'A: Open the table focuses the crew name', a1);
@@ -200,5 +226,65 @@ async function homeStates(b, errs) {
   { const { c, pg } = await open('ro', { 'campaign/main': camp() });
     const f = await facts(pg); want(/You can look around but not change anything/.test(f.text) && !/Restore your characters/.test(f.text), 'read-only player', f); await c.close(); }
   { const { c, pg } = await open('none', null);
-    const f = await facts(pg); want(f.title === 'Welcome' && f.primary.join() === 'Make a character' && !f.files, 'no runtime: only Make a character', f); await c.close(); }
+    const f = await facts(pg); want(f.title === 'Welcome' && f.primary.join() === 'Make a character' && !f.files, 'no runtime: only Make a character', f);
+    want(/Saving is not available in this view/.test(f.text) && !/files|filed/i.test(f.text), 'no runtime: plain words about saving', f.text.slice(0, 200));
+    const note = await pg.$eval('#rosterNote', n => n.textContent);
+    want(note === 'Saved characters are not available in this view.', 'no runtime: the roster note speaks of saved characters, not files', note); await c.close(); }
+  /* a runtime that has a user but no storage, opened on a sheet's address: the note and the toast speak of saved characters, not files */
+  { const c = await b.newContext();
+    await c.addInitScript(`window.claude = { use: async (n) => n === 'user' ? { id: async () => 'u_pat', can: async () => true, isOwner: async () => false, canEdit: async () => false, me: async () => ({ id: 'u_pat', name: 'Pat' }), profiles: async () => ({}) } : null };`);
+    const pg = await c.newPage(); pg.on('pageerror', e => errs.push('home no-storage pageerror: ' + e.message));
+    await pg.goto(URL + '#c/aldo-1'); await pg.waitForTimeout(1000);
+    const t = await pg.evaluate(() => ({ note: document.getElementById('rosterNote').textContent, toast: (document.getElementById('toast') || {}).textContent, mode: document.body.dataset.mode }));
+    want(t.note === 'Saved characters are not available in this view.' && t.toast === 'Saved characters are not available here, so that sheet cannot open.' && !/files/i.test(t.note + t.toast) && t.mode === 'home', 'no storage: a sheet that cannot open says so in plain words and lands on Home', t); await c.close(); }
+}
+
+/* ---------- the theme: Auto / Paper / Night in the footer, remembered, applied before the first paint, with readable text ---------- */
+async function themeStates(b, errs) {
+  const fs = require('fs'), want = (ok, msg, f) => { if (!ok) errs.push('Theme ' + msg + (f ? ': ' + JSON.stringify(f) : '')); };
+  const html = fs.readFileSync(require('path').resolve(__dirname, '..', 'index.html'), 'utf8');
+  /* the inline script that applies the choice sits ahead of every stylesheet, and reads localStorage in a try */
+  const i = html.indexOf('localStorage.getItem(KEY)'), firstCss = Math.min(html.indexOf('<link'), html.indexOf('<style'));
+  want(html.indexOf('<script>') >= 0 && html.indexOf('<script>') < firstCss && i > html.indexOf('<script>') && i < firstCss && /try \{ var t = localStorage\.getItem\(KEY\)/.test(html), 'the inline script that applies the theme is in the head, before the first stylesheet, and guards storage');
+  const probe = `(() => { window.__themeAtWrap = 'none'; try { const mo = new MutationObserver(() => { if (document.querySelector('.wrap')) { window.__themeAtWrap = document.documentElement.getAttribute('data-theme'); mo.disconnect(); } }); mo.observe(document, { childList: true, subtree: true }); } catch (e) {} })();`;
+  const state = (pg) => pg.evaluate(() => { const cs = getComputedStyle(document.documentElement); return { attr: document.documentElement.getAttribute('data-theme'), stored: (() => { try { return localStorage.getItem('b68.theme'); } catch (e) { return 'blocked'; } })(), bg: getComputedStyle(document.body).backgroundColor, pressed: [...document.querySelectorAll('footer [data-theme-set]')].filter(x => x.getAttribute('aria-pressed') === 'true').map(x => x.textContent), tok: { faint: cs.getPropertyValue('--ink-faint').trim(), accent: cs.getPropertyValue('--accent').trim(), ok: cs.getPropertyValue('--ok').trim(), card: cs.getPropertyValue('--card').trim(), paper: cs.getPropertyValue('--paper').trim(), inset: cs.getPropertyValue('--inset').trim(), soft: cs.getPropertyValue('--ink-soft').trim() } }; });
+  const PAPER = 'rgb(242, 237, 225)', NIGHT = 'rgb(26, 26, 28)';
+  const lum = (h) => { const c = [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const ratio = (a, b2) => { const x = lum(a), y = lum(b2); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  async function ctxFor(scheme, init) { const c = await b.newContext({ viewport: { width: 390, height: 844 }, colorScheme: scheme }); await c.addInitScript(probe); if (init) await c.addInitScript(init); const pg = await c.newPage(); pg.on('pageerror', e => errs.push('theme (' + scheme + ') pageerror: ' + e.message)); return { c, pg }; }
+
+  /* a light device: Paper by default, nothing stored; Night on a tap, remembered, there before the first paint on the next visit */
+  { const { c, pg } = await ctxFor('light'); await pg.goto(URL); await pg.waitForTimeout(700);
+    let st = await state(pg);
+    want(st.attr === null && st.stored === null && st.bg === PAPER && st.pressed.join() === 'Auto', 'light device, no choice: Paper, Auto pressed', st);
+    want(ratio(st.tok.faint, st.tok.card) >= 4.5 && ratio(st.tok.faint, st.tok.paper) >= 4.5 && ratio(st.tok.faint, st.tok.inset) >= 4.5 && ratio(st.tok.accent, st.tok.card) >= 4.5, 'Paper: faint text is at least 4.5:1 on the card, the paper and the inset; accent text on the card too', st.tok);
+    await pg.click('footer [data-theme-set="dark"]'); await pg.waitForTimeout(150);
+    st = await state(pg);
+    want(st.attr === 'dark' && st.stored === 'dark' && st.bg === NIGHT && st.pressed.join() === 'Night', 'Night on a tap, stored, pressed', st);
+    want(ratio(st.tok.accent, st.tok.card) >= 4.5 && ratio(st.tok.accent, st.tok.paper) >= 4.5 && ratio(st.tok.faint, st.tok.card) >= 4.5 && ratio(st.tok.ok, st.tok.card) >= 4.5 && ratio(st.tok.soft, st.tok.card) >= 4.5, 'Night: accent, faint, ok and soft text are at least 4.5:1 on the card (accent on the paper too)', st.tok);
+    await pg.reload(); await pg.waitForTimeout(700);
+    st = await state(pg);
+    want(st.attr === 'dark' && st.bg === NIGHT && st.pressed.join() === 'Night' && await pg.evaluate(() => window.__themeAtWrap) === 'dark', 'the choice is remembered and applied before the page body is even parsed (no flash)', { st, atWrap: await pg.evaluate(() => window.__themeAtWrap) });
+    await pg.click('footer [data-theme-set="light"]'); await pg.waitForTimeout(150);
+    st = await state(pg); want(st.attr === 'light' && st.stored === 'light' && st.bg === PAPER && st.pressed.join() === 'Paper', 'Paper on a tap', st);
+    await pg.click('footer [data-theme-set="auto"]'); await pg.waitForTimeout(150);
+    st = await state(pg); want(st.attr === null && st.stored === null && st.bg === PAPER && st.pressed.join() === 'Auto', 'Auto forgets the choice and follows the device again', st);
+    await c.close(); }
+
+  /* a dark device: Night by default; Paper on a tap overrides it, and survives a reload */
+  { const { c, pg } = await ctxFor('dark'); await pg.goto(URL); await pg.waitForTimeout(700);
+    let st = await state(pg);
+    want(st.attr === null && st.bg === NIGHT && st.pressed.join() === 'Auto', 'dark device, no choice: Night, Auto pressed', st);
+    await pg.click('footer [data-theme-set="light"]'); await pg.waitForTimeout(150);
+    await pg.reload(); await pg.waitForTimeout(700);
+    st = await state(pg);
+    want(st.attr === 'light' && st.bg === PAPER && st.pressed.join() === 'Paper' && await pg.evaluate(() => window.__themeAtWrap) === 'light', 'Paper on a dark device is remembered and applied before the body is parsed', { st, atWrap: await pg.evaluate(() => window.__themeAtWrap) });
+    await c.close(); }
+
+  /* storage blocked (a private window, a sandboxed frame): the switch still works for the visit and nothing throws */
+  { const { c, pg } = await ctxFor('light', `Object.defineProperty(window, 'localStorage', { configurable: true, get() { throw new Error('storage blocked'); } });`); await pg.goto(URL); await pg.waitForTimeout(700);
+    await pg.click('footer [data-theme-set="dark"]'); await pg.waitForTimeout(150);
+    const st = await state(pg);
+    want(st.attr === 'dark' && st.bg === NIGHT && st.pressed.join() === 'Night', 'storage blocked: Night still applies for the visit', st);
+    await c.close(); }
 }

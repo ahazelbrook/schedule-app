@@ -22,8 +22,11 @@
        replay { id:'engagement', seed, mem:{}, ui }   en.replay(replay) redraws the same dice
        lines  [{ kind:'read', id:'mods', md }, { kind:'want', id:'result', md }, { kind:'grid', id:'roll',
               rows:[{ k:'Roll', md }] }, { kind:'read', id:'cut', md }]   md is markdown, never HTML
-       meta   { id:'engagement', title ("<approach> — 2d"), sub, chips, text, all, label, result }
-   Helpers: B68GmEngagement.seedRng(a) · poolOf(T, mods) · rollPool(n, rng) · outcomeOf(T, r) · plain(md)
+       meta   { id:'engagement', title ("<approach> — 2d"; at or below zero "<approach> — 0d (2d, keep lowest)", never a
+              negative pool: `pool` keeps the arithmetic), sub, chips, text, all, label, result }
+   Helpers: B68GmEngagement.seedRng(a) · poolOf(T, mods) · rollPool(n, rng) · outcomeOf(T, r) · titlePool(n) · plain(md)
+   B68GmEngagement.check(T) -> [string]   the table keys a pack is missing or has empty ('approach', 'outcome.six', 'cut',
+       …), for the page to show when a pack is loaded. Empty = the pack is complete.
    --------------------------------------------------------------------------------------------------------------- */
 (function (root, factory) {
   'use strict';
@@ -42,8 +45,27 @@
     };
   }
   var clone = function (o) { return JSON.parse(JSON.stringify(o == null ? {} : o)); };
+  var isObj = function (v) { return v !== null && typeof v === 'object' && !Array.isArray(v); };
   function plain(s) {
     return String(s).replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/\s+/g, ' ').trim();
+  }
+
+  // The keys a roll reads (what check() reports when missing or empty): create() needs the approach, factor and loadout
+  // lists and the outcome table; a card reads every outcome row, the cut line and the cite.
+  function check(T) {
+    if (!isObj(T)) return ['T'];
+    var miss = [], need = function (k, ok) { if (!ok) miss.push(k); };
+    var rows = function (a, ok) { return Array.isArray(a) && a.length > 0 && a.every(ok); };
+    need('approach', rows(T.approach, function (a) { return Array.isArray(a) && !!a[0] && !!a[1]; }));
+    need('factor', rows(T.factor, function (f) { return isObj(f) && !!f.id && !!f.plus && !!f.minus; }));
+    need('loadout', rows(T.loadout, function (l) { return isObj(l) && !!l.value && !!l.label && l.load != null; }));
+    need('outcome', isObj(T.outcome));
+    ['crit', 'six', 'risky', 'desperate'].forEach(function (k) {
+      var o = isObj(T.outcome) ? T.outcome[k] : null;
+      need('outcome.' + k, isObj(o) && !!o.pos && !!o.how);
+    });
+    need('cut', !!T.cut); need('cite', !!T.cite);
+    return miss;
   }
 
   // Blades pool: n d6, read the highest. Zero dice = roll 2, keep the LOWEST.
@@ -66,6 +88,8 @@
     return o.desperate;
   }
   function modOf(mods, id) { return Number(mods && mods[id]) || 0; }
+  // the pool as a card title shows it: "2d", or "0d (2d, keep lowest)" for any pool at or below zero
+  function titlePool(n) { return n > 0 ? n + 'd' : '0d (2d, keep lowest)'; }
   function poolOf(T, mods) {
     return 1 + T.factor.reduce(function (s, f) { return s + modOf(mods, f.id); }, 0);
   }
@@ -101,7 +125,8 @@
         .filter(function (f) { return n.mods[f.id] !== 0; })
         .map(function (f) { var m = n.mods[f.id]; return (m > 0 ? '**+1d**' : '**−1d**') + ' ' + (m > 0 ? f.plus.toLowerCase() : f.minus.toLowerCase()); });
       var mods = '1d base' + (active.length ? ' · ' + active.join(' · ') : ' · no modifiers');
-      return { pool: pool, title: n.app[0] + ' — ' + pool + 'd', sub: sub, mods: mods };
+      // a pool at or below zero rolls two dice and keeps the lowest: the title says so, never "-1d"
+      return { pool: pool, title: n.app[0] + ' — ' + titlePool(pool), sub: sub, mods: mods };
     }
     function meta(h, extra, lines) {
       var all = [h.title, h.sub].concat(lines.map(function (l) { return l.kind === 'grid' ? l.rows.map(function (r) { return r.k + ': ' + r.md; }).join(' ') : l.md; })).map(plain);
@@ -142,5 +167,5 @@
     };
   }
 
-  return { create: create, seedRng: seedRng, poolOf: poolOf, rollPool: rollPool, outcomeOf: outcomeOf, plain: plain, ID: 'engagement' };
+  return { create: create, check: check, seedRng: seedRng, poolOf: poolOf, rollPool: rollPool, outcomeOf: outcomeOf, titlePool: titlePool, plain: plain, ID: 'engagement' };
 });

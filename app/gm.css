@@ -12,7 +12,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page a:not(.btn):not(.chip) { color: var(--ink); text-underline-offset: 3px; }
 #gm-page a.btn, #gm-page a.chip { text-decoration: none; display: inline-flex; align-items: center; }
 #gm-page kbd { font: 700 10px/1 var(--font-mono); border: 1.5px solid currentColor; border-radius: 3px; padding: 1px 4px; opacity: .8; }
-#gm-page .gm-lab { display: block; font: 900 10px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; color: var(--ink-soft); }
+#gm-page .gm-lab { display: block; font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; color: var(--ink-soft); }
 #gm-page .gm-dim { color: var(--ink-soft); font-size: 12.5px; }
 #gm-page .gm-dim small { font-size: inherit; }
 #gm-page .gm-note { border: 2px dashed var(--hair); padding: 12px 14px; color: var(--ink-soft); font-size: 13.5px; max-width: 64ch; margin: 10px 0; }
@@ -20,7 +20,9 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-empty { border: 2px dashed var(--hair); padding: 14px; color: var(--ink-soft); font-size: 13px; margin: 10px 0; }
 #gm-page .gm-wait { font: 700 12px/1.4 var(--font-mono); color: var(--ink-soft); padding: 24px 0; }
 #gm-page .gm-warn { font: 700 11px/1.4 var(--font-mono); color: var(--ink-soft); margin: 6px 0; min-height: 1em; overflow-wrap: anywhere; }
-#gm-page .gm-chip { display: inline-block; font: 700 10.5px/1.2 var(--font-mono); border: 1.5px solid var(--rule); padding: 3px 6px; background: var(--card); margin: 0 4px 4px 0; overflow-wrap: anywhere; }
+#gm-page .gm-chip { display: inline-block; font: 700 11.5px/1.2 var(--font-mono); border: 1.5px solid var(--rule); padding: 3px 6px; background: var(--card); margin: 0 4px 4px 0; overflow-wrap: anywhere; }
+/* "Players see": what has gone, or can go, to the iPad (a revealed band and its fold, the Say box once sent) */
+#gm-page .gm-seen { display: inline-block; font: 900 9.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; background: var(--mustard); color: var(--on-mustard); padding: 3px 5px; vertical-align: 2px; white-space: nowrap; }
 #gm-page .gm-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
 #gm-page .gm-chips .gm-chip { margin: 0; }
 #gm-page .gm-badge { display: inline-block; font: 900 9.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; background: var(--accent); color: var(--on-accent); padding: 3px 5px; vertical-align: 2px; }
@@ -36,7 +38,6 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-h:focus { outline: none; }
 #gm-page .gm-exp { font: 700 11px/1.4 var(--font-mono); color: var(--ink-soft); margin: 2px 0 0; }
 #gm-page .gm-exp.stale { color: var(--on-mustard); background: var(--mustard); padding: 3px 6px; justify-self: start; }
-#gm-page .gm-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ---- the import screen ---- */
 #gm-page .gm-import { display: grid; gap: 12px; max-width: 760px; }
@@ -58,9 +59,18 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-main { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) minmax(220px, 300px); gap: 16px; align-items: start; }
 #gm-page .gm-col { display: grid; gap: 10px; align-content: start; }
 
-/* the console */
-#gm-page .gm-scene { display: none; }
-#gm-page .gm-controls { display: grid; gap: 8px; border: 2px solid var(--rule); background: var(--card); padding: 10px; }
+/* the console: the Scene line (one row of labelled chips) folds the scene / district / aim / NPC / threat controls under it at
+   every width, so nothing but Position and the four buttons sits above the card */
+#gm-page .gm-scenebox { display: block; min-width: 0; }
+#gm-page .gm-scene { display: flex; gap: 6px 8px; align-items: center; flex-wrap: wrap; width: 100%; min-height: 44px; padding: 6px 10px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); text-align: left; cursor: pointer; }
+#gm-page .gm-scene::after { content: "+"; margin-left: auto; font: 700 18px/1 var(--font-mono); }
+#gm-page .gm-scene[aria-expanded="true"]::after { content: "−"; }
+#gm-page .gm-scene .gm-lab { display: inline; }
+#gm-page .gm-scene-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; flex: 1 1 auto; min-width: 0; }
+#gm-page .gm-scene-chips .gm-chip { margin: 0; }
+#gm-page .gm-chip-k { color: var(--ink-soft); font-weight: 400; }
+#gm-root:not(.scene-open) .gm-controls { display: none; }
+#gm-page .gm-controls { display: grid; gap: 8px; border: 2px solid var(--rule); border-top: 0; background: var(--card); padding: 10px; margin-top: -10px; }
 #gm-page .gm-row { display: flex; flex-wrap: wrap; gap: 8px; }
 #gm-page .gm-field { display: grid; gap: 3px; flex: 1 1 120px; }
 #gm-page .gm-field.wide { flex-basis: 100%; }
@@ -68,7 +78,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page select:focus-visible, #gm-page input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 #gm-page .gm-check { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; min-height: 32px; }
 #gm-page .gm-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
-#gm-page .gm-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+#gm-page .gm-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 #gm-page .gm-btn { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; gap: 2px 8px; align-items: center; text-align: left; padding: 8px 10px; min-height: 52px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; box-shadow: 3px 3px 0 var(--shadow-ink); transition: background-color .16s var(--ease), color .16s var(--ease), transform .09s var(--ease), box-shadow .09s var(--ease); }
 #gm-page .gm-btn kbd { grid-row: 1 / 3; font-size: 13px; padding: 3px 6px; }
 #gm-page .gm-btn b { font: 900 12.5px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .03em; overflow-wrap: anywhere; }
@@ -86,7 +96,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-card > .gm-chips, #gm-page .gm-card > .gm-want, #gm-page .gm-card > .gm-read, #gm-page .gm-card > .gm-grid, #gm-page .gm-card > .gm-card-acts, #gm-page .gm-card > .gm-sec { margin: 0 12px; }
 #gm-page .gm-want { border-left: 6px solid var(--accent); background: var(--inset); padding: 8px 10px; font-size: 15px; line-height: 1.4; }
 #gm-page .gm-small { font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; }
-#gm-page .gm-read { font-size: 13px; color: var(--ink-soft); }
+#gm-page .gm-read { font-size: 14px; color: var(--ink); }
 #gm-page .gm-want p + p, #gm-page .gm-read p + p, #gm-page .gm-sec p + p { margin-top: 6px; }
 #gm-page .gm-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 13.5px; }
 #gm-page .gm-grid dt { font: 900 10px/1.7 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
@@ -121,7 +131,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-card > .gm-glance, #gm-page .gm-card > .gm-lfold { margin: 0 12px; }
 #gm-page .gm-glance { display: grid; gap: 6px; padding-bottom: 6px; }
 #gm-page .gm-glance-h { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; }
-#gm-page .gm-glance-h .gm-badge { margin-top: 12px; flex: none; }
+#gm-page .gm-say .gm-lab .gm-seen { margin-left: 6px; vertical-align: 0; }
 #gm-page .gm-glance-place { font: 400 12px/1.35 var(--font-mono); color: var(--ink-soft); margin: 0; }
 #gm-page .gm-say { border-left: 6px solid var(--accent); background: var(--inset); padding: 6px 10px; display: grid; gap: 4px; justify-items: start; }
 #gm-page .gm-say p { margin: 0; font-size: 15px; line-height: 1.4; }
@@ -142,7 +152,8 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-lfold > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 #gm-page .gm-lfold-t { font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }
 #gm-page .gm-lfold-h { font: 400 11.5px/1.3 var(--font-mono); color: var(--ink-soft); flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#gm-page .gm-lfold > summary .gm-badge { margin-left: auto; }
+#gm-page .gm-lfold > summary .gm-seen { margin-left: auto; }
+#gm-page .gm-gband .gm-seen { vertical-align: 1px; margin-left: 2px; }
 #gm-page .gm-lfold-b { display: grid; gap: 4px; font-size: 13.5px; padding: 0 0 8px 24px; }
 #gm-page .gm-lfold-b p + p { margin-top: 6px; }
 #gm-page .gm-dl > summary { min-height: 36px; }
@@ -166,7 +177,22 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-npcmeta b { font: 900 13px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .05em; overflow-wrap: anywhere; }
 #gm-page .gm-npcmeta small { font: 400 10.5px/1.3 var(--font-mono); color: var(--ink-soft); }
 #gm-page .gm-npcmeta .gm-badge { justify-self: start; background: var(--ink-soft); color: var(--card); }
-#gm-page .gm-npcacts { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+#gm-page .gm-npcacts { display: flex; flex-wrap: wrap; gap: 4px 8px; justify-content: flex-end; align-items: center; }
+#gm-page .gm-npclink { font: 400 11.5px/1.3 var(--font-mono); color: var(--ink-soft); text-underline-offset: 3px; white-space: nowrap; }
+#gm-page .gm-npclink:hover { color: var(--accent); }
+#gm-page .pp-find { flex: 0 1 220px; min-width: 120px; }
+#gm-page .pp-find input { min-height: 36px; padding: 5px 8px; font-size: 13px; }
+#gm-page .gm-mapopts > summary { font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; }
+#gm-page .gm-mapopts > summary .gm-dim { font: 400 11.5px/1 var(--font-mono); text-transform: none; letter-spacing: 0; }
+/* an engagement factor: three chips, +1d and −1d carrying the factor's two statements */
+#gm-page .gm-tri { gap: 0; }
+#gm-page .gm-triseg { display: flex; width: 100%; justify-self: stretch; }
+#gm-page .gm-trichip { flex: 1 1 0; min-width: 0; display: grid; gap: 3px; justify-items: center; align-content: center; text-align: center; padding: 6px 6px; min-height: 44px; }
+#gm-page .gm-trichip[data-v="0"] { flex: 0 0 52px; }
+#gm-page .gm-trichip b { font: 700 13px/1 var(--font-mono); }
+#gm-page .gm-trichip small { font: 400 11px/1.25 var(--font-text); text-transform: none; letter-spacing: 0; color: var(--ink-soft); max-width: 100%; }
+#gm-page .gm-trichip[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .gm-trichip[aria-pressed="true"] small, #gm-page .gm-trichip:hover small { color: inherit; }
 #gm-page .gm-rulesq { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
 #gm-page .gm-rulesq .gm-field { flex: 1 1 220px; }
 
@@ -184,6 +210,23 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gs-intro { margin: 0 0 4px; }
 #gm-page .gs-rules { margin-top: 16px; }
 #gm-page .gs-rules .gm-rulesq, #gm-page .gs-rules .gm-chips { margin: 8px 0; }
+/* the full rules, searched in the pane: a list (title, book · chapter, a snippet), and one entry opened in place */
+#gm-page .gs-hits { display: grid; gap: 10px; margin-top: 10px; }
+#gm-page .gs-hits:empty { display: none; }
+#gm-page .gs-hitbar { display: flex; gap: 6px 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+#gm-page .gs-hitbar .gm-lab { display: inline; }
+#gm-page .gs-hitlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+#gm-page .gs-hit { display: grid; gap: 2px; width: 100%; min-height: 44px; padding: 8px 12px; text-align: left; border: 2px solid var(--rule); border-left-width: 6px; background: var(--card); color: var(--ink); cursor: pointer; }
+#gm-page .gs-hit:hover, #gm-page .gs-hit:focus-visible { background: var(--inset); border-left-color: var(--accent); }
+#gm-page .gs-hit:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .gs-hit-t { font: 900 15px/1.2 var(--font-cond); letter-spacing: .03em; text-transform: uppercase; }
+#gm-page .gs-hit-c { font: 700 10.5px/1.3 var(--font-mono); color: var(--ink-soft); }
+#gm-page .gs-hit-s { font-size: 13.5px; line-height: 1.4; color: var(--ink-soft); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+#gm-page .gs-hits mark, #gm-page .gm-find-snip mark { background: var(--mustard); color: var(--on-mustard); padding: 0 1px; }
+#gm-page .gs-entry { margin: 0; }
+#gm-page .gs-also { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
+#gm-page .gs-also .gm-lab { display: inline; }
+#gm-page .gs-h small { font: 400 10.5px/1.2 var(--font-mono); text-transform: none; letter-spacing: 0; opacity: .85; margin-left: 6px; }
 
 /* the rail */
 #gm-page .gm-box { border: 2px solid var(--rule); background: var(--card); }
@@ -243,9 +286,13 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 @media (max-width: 599px) {
   #gm-page .gm-head { padding: 8px 0; }
   #gm-page .gm-h { font-size: 34px; }
-  #gm-page .gm-acts .btn { flex: 1 1 auto; justify-content: center; }
-  #gm-page .gm-segbar { display: flex; width: 100%; position: sticky; top: 0; z-index: 4; background: var(--paper); margin-bottom: 10px; }
-  #gm-page .gm-segbar .chip { flex: 1 1 0; min-width: 0; min-height: 44px; padding: 8px 2px; justify-content: center; font-size: 10px; letter-spacing: 0; }
+  /* the eleven segments as two full rows, six then five (30 columns: a first-row segment spans 5, a second-row one 6): all of them
+     in reach, nothing to drag sideways */
+  #gm-page .gm-segbar { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); width: 100%; position: sticky; top: 0; z-index: 4; background: var(--paper); margin-bottom: 10px; }
+  #gm-page .gm-segbar .chip { grid-column: span 5; min-width: 0; min-height: 44px; padding: 8px 2px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #gm-page .gm-segbar .chip:nth-child(n+7) { grid-column: span 6; }
+  #gm-page .gm-segbar .chip:nth-child(6) { border-right: 0; }
+  #gm-page .gm-segbar .chip:nth-child(-n+6) { border-bottom: 2px solid var(--rule); }
   #gm-page .gm-segbar .chip[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
   #gm-page .gm-main { grid-template-columns: minmax(0, 1fr); }
   #gm-page .gm-rail { grid-template-columns: minmax(0, 1fr); }
@@ -253,12 +300,8 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-root[data-seg="console"] .gm-side, #gm-root[data-seg="console"] .gm-rail,
   #gm-root[data-seg="side"] .gm-console, #gm-root[data-seg="side"] .gm-rail,
   #gm-root[data-seg="state"] .gm-console, #gm-root[data-seg="state"] .gm-side { display: none; }
-  #gm-page .gm-scene { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; min-height: 44px; padding: 8px 10px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); text-align: left; cursor: pointer; }
-  #gm-page .gm-scene::after { content: "+"; margin-left: auto; font: 700 18px/1 var(--font-mono); }
-  #gm-page .gm-scene[aria-expanded="true"]::after { content: "−"; }
-  #gm-page .gm-scene .gm-lab { display: inline; }
-  #gm-page .gm-scene-chips .gm-chip { margin: 0 4px 0 0; }
-  #gm-root:not(.scene-open) .gm-controls { display: none; }
+  #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead, #gm-page .gm-cardbox .gm-want, #gm-page .gm-cardbox .gm-card-h { scroll-margin-top: 140px; scroll-margin-bottom: 84px; }   /* under the sticky bar and the two-row segmented bar, above the capture button */
+  #gm-page .gs-rules { scroll-margin-top: 140px; }
   #gm-page .gm-btn { grid-template-columns: 1fr; grid-template-rows: auto auto; justify-items: center; text-align: center; min-height: 76px; padding: 8px 4px; }
   #gm-page .gm-btn kbd { grid-row: auto; }
   #gm-page .gm-btn small { display: none; }
@@ -283,12 +326,10 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-map.gm-leak { outline: 3px solid var(--alarm); outline-offset: -3px; }
 #gm-page .gm-warn.bad { color: var(--alarm); }
 
-/* ---- the console: Situations (default) and Classic ---- */
-#gm-page .gm-conhead { display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
-#gm-page .gm-conh { font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .16em; color: var(--ink-soft); margin: 0; }
-#gm-page .gm-viewseg .chip { min-height: 44px; }
-#gm-page .gm-viewseg .chip[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
-#gm-root[data-view="classic"] .gm-pos, #gm-root[data-view="classic"] .gm-singles { display: none; }
+/* ---- the console: the Position switch, the four Situations ---- */
+/* (wider than a phone only: on a phone the margins above clear the sticky bars and the capture button; this rule, later in the file,
+   used to override them there) */
+@media (min-width: 600px) { #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead, #gm-page .gm-cardbox .gm-want, #gm-page .gm-cardbox .gm-card-h { scroll-margin-top: 8px; scroll-margin-bottom: 8px; } }
 #gm-page .gm-pos { display: grid; gap: 4px; border: 2px solid var(--rule); background: var(--card); padding: 8px 10px 10px; }
 #gm-page .gm-posb-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 #gm-page .gm-posb { display: grid; gap: 2px; align-content: center; justify-items: center; text-align: center; min-height: 72px; padding: 8px 4px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; }
@@ -297,11 +338,17 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-posb[aria-checked="true"] { background: var(--rule); color: var(--on-ink); border-bottom: 6px solid var(--accent); box-shadow: 3px 3px 0 var(--shadow-ink); }
 #gm-page .gm-posb[aria-checked="true"] small { color: inherit; }
 #gm-page .gm-posb:focus-visible, #gm-page .gm-btn:focus-visible, #gm-page .gm-or > summary:focus-visible, #gm-page .gm-more > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-#gm-root[data-view="situations"] .gm-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #gm-page .gm-sbtn { min-height: 76px; }
 #gm-page .gm-sbtn b { font-size: clamp(15px, 4.2vw, 18px); }
-#gm-page .gm-singles { display: grid; gap: 4px; }
-#gm-page .gm-singles-b { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+/* "More tables": the nine single tables, folded under the card and Earlier */
+#gm-page .gm-singles { border-top: 1px solid var(--hair); }
+#gm-page .gm-singles:empty { display: none; }
+#gm-page .gm-singles > summary { cursor: pointer; list-style: none; min-height: 44px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#gm-page .gm-singles > summary::-webkit-details-marker { display: none; }
+#gm-page .gm-singles > summary::after { content: "+"; margin-left: auto; font: 700 18px/1 var(--font-mono); padding: 0 4px; }
+#gm-page .gm-singles[open] > summary::after { content: "−"; }
+#gm-page .gm-singles > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .gm-singles-b { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 0 0 8px; }
 
 /* the composed card: the lead box, "More", the "Or" rows */
 #gm-page .gm-card > .gm-lead, #gm-page .gm-card > .gm-or { margin: 0 12px; }
@@ -356,49 +403,96 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-ipad-body .gm-row { align-items: end; }
 @media (pointer: coarse) { #gm-page .gm-ipad-tile { min-height: 64px; } }
 
-/* ---- the laptop layout (>= 1100 px, body.gm-app; gm-page.js setApp): the window is the page ----
-   The site header and footer go; the GM page fills the window as four rows (top bar, the three columns, capture), and each
-   column scrolls on its own, so a long Prep note or the GM screen never carries the console or the state rail away. Prep and
-   Screen get their section list as an outline beside the text, the current section marked. Focus (F, or Prep's Wide) shrinks
-   the console to its keys on any tab. Below 1100 px, and with "Classic layout" chosen in the menu, none of this applies. */
-#gm-page .gm-bar, #gm-page .gm-mini, #gm-page .gm-focusbtn, #gm-page .gm-applayout { display: none; }
+/* ---- the app layout (body.gm-app; gm-page.js setApp): the window is the page ----
+   Every width: while the tools are open the site header and footer give way to a slim black bar (the session, Saved, a
+   stale-pack note, the beat, Find, iPad: what the players see, Listening once the transcriber has ever been used,
+   Clear → ambient, Lights out, Menu). The Menu holds what is not play: the display page, Export tonight's note, Clear the
+   capture, Update pack, the site's pages and Forget.
+   Laptop (>= 1100 px): four rows (the bar, three columns that each scroll on their own, capture at the foot), so a long Prep
+   note or the GM screen never carries the console or the state rail away. Prep and Screen get their section list as an
+   outline beside the text, the current section marked. Focus (F, or Prep's Wide) shrinks the console to its keys on any tab.
+   Below 1100 px the page scrolls under the sticky bar; on a phone the two-row segmented bar sticks under it. It is the only
+   layout; the loading and import screens (gm-page.js screen()) keep the site header and the .gm-head heading. */
+#gm-page .gm-bar, #gm-page .gm-mini, #gm-page .gm-focusbtn { display: none; }
+body.gm-app[data-mode="gm"] .wrap > .top, body.gm-app[data-mode="gm"] .wrap > footer { display: none; }
 #gm-page .gm-box-empty { border-style: dashed; border-color: var(--hair); background: none; }
 #gm-page .gm-box-empty .gm-band { background: none; color: var(--ink-soft); padding: 5px 10px; }
+
+/* the top bar */
+body.gm-app #gm-page .gm-bar { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 6px 12px; background: var(--rule); color: var(--on-ink); position: relative; z-index: 20; }
+#gm-page .gm-bar a.gm-bar-mark { font: 900 24px/1 var(--font-poster); color: inherit; text-decoration: none; white-space: nowrap; }
+#gm-page .gm-bar-mark b { font: 900 12px/1 var(--font-cond); letter-spacing: .14em; vertical-align: 4px; }
+#gm-page .gm-bar-sess, #gm-page .gm-bar .gm-save { font: 700 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; color: inherit; opacity: .8; margin: 0; }
+#gm-page .gm-bar .gm-save.bad { opacity: 1; background: var(--alarm); color: #fbf8f1; padding: 3px 5px; }
+#gm-page .gm-bar-exp { font: 700 11px/1 var(--font-mono); background: var(--mustard); color: var(--on-mustard); padding: 4px 6px; white-space: nowrap; }
+#gm-page .gm-bar-exp:empty { display: none; }
+#gm-page .gm-grow { flex: 1 1 auto; }
+#gm-page .gm-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; max-width: 280px; padding: 4px 9px; border: 1.5px solid currentColor; background: none; color: inherit; font: 700 11px/1.2 var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+#gm-page .gm-pill.warn { border-color: var(--mustard); }
+#gm-page .gm-pill:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+#gm-page .gm-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; }
+#gm-page .gm-dot.on { background: var(--mustard); border-color: var(--mustard); }
+#gm-page .gm-dot.warn { background: var(--accent); border-color: var(--accent); }
+#gm-page .gm-bb { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 10px; border: 0; background: var(--on-ink); color: var(--rule); font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; text-decoration: none; white-space: nowrap; cursor: pointer; }
+#gm-page .gm-bb:hover, #gm-page .gm-bb[aria-expanded="true"] { background: var(--accent); color: var(--on-accent); }
+#gm-page .gm-bb kbd { font-size: 9.5px; }
+#gm-page .gm-pill:focus-visible, #gm-page .gm-bb:focus-visible, #gm-page .gm-bar-mark:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+/* Now in: the one district the tools start from. A select in the bar (a laptop, a tablet); on a phone it sits in the Scene line */
+#gm-page .gm-now { display: inline-flex; align-items: center; gap: 6px; margin: 0; min-width: 0; }
+#gm-page .gm-nowk { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; opacity: .8; white-space: nowrap; }
+#gm-page .gm-bar .gm-now select { width: auto; min-width: 0; max-width: 170px; min-height: 32px; padding: 0 6px; border: 0; background: var(--on-ink); color: var(--rule); font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; cursor: pointer; }
+#gm-page .gm-bar .gm-now select:hover { background: var(--accent); color: var(--on-accent); }
+#gm-page .gm-bar .gm-now select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .gm-nowline { display: none; }
+#gm-page .gm-menu { position: relative; display: inline-flex; }
+#gm-page .gm-menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; display: grid; min-width: 260px; max-width: calc(100vw - 24px); background: var(--card); color: var(--ink); border: 2px solid var(--rule); box-shadow: 4px 4px 0 var(--shadow-ink); }
+#gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button { display: block; text-align: left; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--hair); background: none; color: var(--ink); font: 600 13px/1.2 var(--font-text); text-decoration: none; cursor: pointer; }
+#gm-page .gm-menu-list > :last-child { border-bottom: 0; }
+#gm-page .gm-menu-list > a:hover, #gm-page .gm-menu-list > button:hover, #gm-page .gm-menu-list > :focus-visible { background: var(--inset); outline: none; }
+#gm-page .gm-menu-list > .bad { color: var(--alarm); }
+#gm-page .gm-menu-h { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--hair); font: 600 13px/1.3 var(--font-text); display: grid; gap: 4px; }
+#gm-page .gm-menu-h .gm-exp { margin: 0; }
+#gm-page .gm-menu-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--hair); }
+#gm-page .gm-menu-row .gm-lab { display: inline; }
+/* the toast sits above the capture bar, never over its input */
+body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+@media (pointer: coarse) {
+  #gm-page .gm-bb, #gm-page .gm-pill, #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button, #gm-page .gm-bar .gm-now select { min-height: 44px; }
+  body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip { min-height: 44px; }
+}
+
+/* below a laptop: the page scrolls under a sticky bar */
+@media (max-width: 1099px) {
+  body.gm-app[data-mode="gm"] .wrap { padding-top: 0; }
+  body.gm-app #gm-page { padding-top: 0; }
+  body.gm-app #gm-page .gm-bar { position: sticky; top: 0; flex-wrap: wrap; margin: 0 calc(-1 * clamp(16px, 3vw, 36px)) 12px; padding: 4px clamp(16px, 3vw, 36px); }
+  body.gm-app #gm-page .gm-bb kbd { display: none; }
+  body.gm-app #gm-page .gm-pill { max-width: 220px; }
+  body.gm-app[data-mode="gm"] .toast { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+}
+/* a phone: a 44 px bar ('68 GM · Session · ● iPad · Menu) with the two-row segmented bar stuck under it */
+@media (max-width: 599px) {
+  body.gm-app #gm-page .gm-bar { height: 44px; min-height: 44px; flex-wrap: nowrap; gap: 6px; padding: 0 10px; margin-bottom: 0; z-index: 45; }
+  body.gm-app #gm-page .gm-bar a.gm-bar-mark { font-size: 20px; }
+  body.gm-app #gm-page .gm-bar .gm-save:not(.bad), body.gm-app #gm-page .gm-bar-exp, body.gm-app #gm-page .gm-beatbar, body.gm-app #gm-page .gm-bar [data-gm="find-open"],
+  body.gm-app #gm-page #gm-bar-stt, body.gm-app #gm-page .gm-bar [data-gm="blankipad"], body.gm-app #gm-page .gm-bar [data-gm="darkipad"] { display: none; }
+  body.gm-app #gm-page .gm-pill { max-width: 40vw; min-width: 0; flex: 0 1 auto; }
+  body.gm-app #gm-page .gm-bar .gm-now { display: none; }
+  #gm-page .gm-nowline { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; }
+  #gm-page .gm-nowline .gm-lab { flex: none; }
+  #gm-page .gm-nowline select { flex: 1 1 auto; min-height: 44px; }
+  body.gm-app #gm-page .gm-bb { padding: 0 8px; }
+  body.gm-app #gm-page .gm-segbar { top: 44px; margin: 0 calc(-1 * clamp(16px, 3vw, 36px)) 10px; width: auto; border-left: 0; border-right: 0; }
+  body.gm-app[data-mode="gm"] .toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ---- the laptop (>= 1100 px): four rows, three scrollers ---- */
 @media (min-width: 1100px) {
-  #gm-page .gm-applayout { display: inline-flex; }
-  body.gm-app #gm-page .gm-applayout { display: none; }
   body.gm-app[data-mode="gm"] { overflow: hidden; }
   body.gm-app[data-mode="gm"] .wrap { max-width: none; height: 100vh; height: 100dvh; padding: 0; display: flex; flex-direction: column; }
-  body.gm-app[data-mode="gm"] .wrap > .top, body.gm-app[data-mode="gm"] .wrap > footer { display: none; }
   body.gm-app #gm-page:not([hidden]) { flex: 1 1 auto; min-height: 0; padding: 0; }
   body.gm-app #gm-root { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
-  body.gm-app #gm-page .gm-head, body.gm-app #gm-page .gm-fab { display: none; }
-
-  /* the top bar */
-  body.gm-app #gm-page .gm-bar { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 6px 12px; background: var(--rule); color: var(--on-ink); position: relative; z-index: 20; }
-  #gm-page .gm-bar a.gm-bar-mark { font: 900 24px/1 var(--font-poster); color: inherit; text-decoration: none; white-space: nowrap; }
-  #gm-page .gm-bar-mark b { font: 900 12px/1 var(--font-cond); letter-spacing: .14em; vertical-align: 4px; }
-  #gm-page .gm-bar-sess, #gm-page .gm-bar .gm-save { font: 700 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; color: inherit; opacity: .8; margin: 0; }
-  #gm-page .gm-bar .gm-save.bad { opacity: 1; background: var(--alarm); color: #fbf8f1; padding: 3px 5px; }
-  #gm-page .gm-bar-exp { font: 700 11px/1 var(--font-mono); background: var(--mustard); color: var(--on-mustard); padding: 4px 6px; white-space: nowrap; }
-  #gm-page .gm-bar-exp:empty { display: none; }
-  #gm-page .gm-grow { flex: 1 1 auto; }
-  #gm-page .gm-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; max-width: 280px; padding: 4px 9px; border: 1.5px solid currentColor; background: none; color: inherit; font: 700 11px/1.2 var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-  #gm-page .gm-pill.warn { border-color: var(--mustard); }
-  #gm-page .gm-pill:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-  #gm-page .gm-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; }
-  #gm-page .gm-dot.on { background: var(--mustard); border-color: var(--mustard); }
-  #gm-page .gm-dot.warn { background: var(--accent); border-color: var(--accent); }
-  #gm-page .gm-bb { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 10px; border: 0; background: var(--on-ink); color: var(--rule); font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; text-decoration: none; white-space: nowrap; cursor: pointer; }
-  #gm-page .gm-bb:hover, #gm-page .gm-bb[aria-expanded="true"] { background: var(--accent); color: var(--on-accent); }
-  #gm-page .gm-bb kbd { font-size: 9.5px; }
-  #gm-page .gm-pill:focus-visible, #gm-page .gm-bb:focus-visible, #gm-page .gm-bar-mark:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-  #gm-page .gm-menu { position: relative; display: inline-flex; }
-  #gm-page .gm-menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; display: grid; min-width: 250px; background: var(--card); color: var(--ink); border: 2px solid var(--rule); box-shadow: 4px 4px 0 var(--shadow-ink); }
-  #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button { display: block; text-align: left; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--hair); background: none; color: var(--ink); font: 600 13px/1.2 var(--font-text); text-decoration: none; cursor: pointer; }
-  #gm-page .gm-menu-list > :last-child { border-bottom: 0; }
-  #gm-page .gm-menu-list > :hover, #gm-page .gm-menu-list > :focus-visible { background: var(--inset); outline: none; }
-  #gm-page .gm-menu-list > .bad { color: var(--alarm); }
+  body.gm-app #gm-page .gm-fab { display: none; }
 
   /* the three columns, each its own scroller */
   body.gm-app #gm-page .gm-main { min-height: 0; gap: 0; align-items: stretch; grid-template-columns: clamp(300px, 26vw, 400px) minmax(0, 1fr) clamp(230px, 19vw, 300px); }
@@ -407,11 +501,14 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   body.gm-app #gm-page .gm-side { padding: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 0; }
   body.gm-app #gm-page .gm-tabrow { display: flex; align-items: stretch; border-bottom: 2px solid var(--rule); background: var(--paper); }
   body.gm-app #gm-page .gm-tabs { flex: 1 1 auto; flex-wrap: nowrap; overflow-x: auto; gap: 0; border-bottom: 0; scrollbar-width: none; }
-  body.gm-app #gm-page .gm-tab { flex: 0 0 auto; border: 0; border-right: 1.5px solid var(--hair); background: none; color: var(--ink); white-space: nowrap; padding: 10px 9px; }
-  body.gm-app #gm-page .gm-tab[data-panel="location"], body.gm-app #gm-page .gm-tab[data-panel="cards"] { border-left: 2px solid var(--rule); margin-left: 8px; }
+  /* one row of tabs with their keys showing at 1280 px (nine of them since Downtime): tight padding, the key small */
+  body.gm-app #gm-page .gm-tab { flex: 0 0 auto; border: 0; border-right: 1.5px solid var(--hair); background: none; color: var(--ink); white-space: nowrap; padding: 10px 4px; font-size: 10px; letter-spacing: .04em; }
+  body.gm-app #gm-page .gm-tab kbd { font-size: 9px; padding: 1px 2px; }
+  body.gm-app #gm-page .gm-tab[data-panel="location"], body.gm-app #gm-page .gm-tab[data-panel="cards"] { border-left: 2px solid var(--rule); margin-left: 4px; }
   body.gm-app #gm-page .gm-tab[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
   body.gm-app #gm-page .gm-tab:hover { background: var(--accent); color: var(--on-accent); }
-  body.gm-app #gm-page .gm-focusbtn { display: inline-flex; align-items: center; gap: 5px; flex: none; border: 0; border-left: 2px solid var(--rule); background: var(--card); color: var(--ink); padding: 0 12px; font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; cursor: pointer; }
+  body.gm-app #gm-page .gm-focusbtn { display: inline-flex; align-items: center; gap: 5px; flex: none; border: 0; border-left: 2px solid var(--rule); background: var(--card); color: var(--ink); padding: 0 10px; font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; cursor: pointer; }
+  body.gm-app #gm-page .gm-focusbtn kbd { font-size: 9px; padding: 1px 3px; }
   body.gm-app #gm-page .gm-focusbtn[aria-pressed="true"] { background: var(--mustard); color: var(--on-mustard); }
   body.gm-app #gm-page .gm-focusbtn:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
   body.gm-app #gm-page .gm-pane { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; align-content: start; scrollbar-width: thin; }
@@ -432,9 +529,11 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-page .gm-mini button:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
   #gm-page .gm-mini button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
   body.gm-app #gm-page .pp-widebtn { display: none; }
-  /* the console column is narrower than before: the Position labels and the situations' type step down to fit */
+  /* the console column is narrower than before: the Position labels and the situations' type step down to fit; the Position
+     line the GM reads (severity · winds · harm) stays 11.5 px, in full ink on the active one */
   body.gm-app #gm-page .gm-posb b { font-size: clamp(12px, 1.05vw, 16px); }
-  body.gm-app #gm-page .gm-posb small { font-size: 10px; }
+  body.gm-app #gm-page .gm-posb small { font-size: 11.5px; }
+  body.gm-app #gm-page .gm-posb[aria-checked="true"] small { color: var(--on-ink); font-weight: 700; }
   body.gm-app #gm-page .gm-sbtn b { font-size: clamp(14px, 1.15vw, 18px); }
 
   /* Prep and Screen: the section list as an outline beside the text */
@@ -442,6 +541,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   body.gm-app #gm-prep > * { grid-column: 2; }
   body.gm-app #gm-prep > * + * { margin-top: 10px; }
   body.gm-app #gm-prep > .pp-bar { grid-column: 1; grid-row: 1 / span 30; margin: 0; position: sticky; top: 0; flex-direction: column; align-items: stretch; gap: 8px; border-bottom: 0; border-right: 2px solid var(--rule); padding: 0 10px 0 0; max-height: calc(100dvh - 190px); overflow-y: auto; scrollbar-width: thin; }
+  body.gm-app #gm-prep .pp-find { flex: 0 0 auto; min-width: 0; }   /* in the outline column the row-layout basis (220 px) would be a height */
   body.gm-app #gm-prep .pp-rail { flex-direction: column; overflow: visible; gap: 0; padding: 0; }
   body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip { display: block; width: 100%; white-space: normal; text-align: left; border: 0; border-left: 3px solid transparent; background: none; color: var(--ink); padding: 6px 8px; min-height: 0; font: 700 12px/1.25 var(--font-text); text-transform: none; letter-spacing: 0; box-shadow: none; }
   body.gm-app #gm-prep .pp-rail .chip:hover, body.gm-app #gm-rules .gs-jump .chip:hover { background: var(--inset); }
@@ -453,12 +553,8 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   body.gm-app #gm-rules .gs > .gs-top { grid-column: 1; grid-row: 1 / span 60; margin: 0; padding: 0 10px 0 0; border-bottom: 0; border-right: 2px solid var(--rule); max-height: calc(100dvh - 190px); overflow-y: auto; scrollbar-width: thin; }
   body.gm-app #gm-rules .gs-jump { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 0; }
   body.gm-app #gm-rules .gs-jump [hidden] { display: none; }
+  body.gm-app #gm-rules .gs-jump .gs-jump-rules { margin-top: 6px; padding-top: 9px; border-top: 1px solid var(--hair); font-weight: 900; }
 }
-@media (min-width: 1100px) and (pointer: coarse) {
-  #gm-page .gm-bb, #gm-page .gm-pill, #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button { min-height: 44px; }
-  body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip { min-height: 44px; }
-}
-@media (min-width: 1100px) and (max-width: 1439px) { body.gm-app #gm-page .gm-tab kbd { display: none; } }
 
 /* ---------- 17/10: Find (Ctrl+K or /), the beat in the bar, a speaker named from a line, the clocks to the iPad ---------- */
 #gm-page .gm-find { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: center; align-items: flex-start; padding: 9vh 16px 16px; background: rgba(12, 10, 8, .55); }
@@ -486,3 +582,108 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-pill.gm-beat { max-width: 340px; }
 #gm-page .gm-pill.gm-beat.due { border-color: var(--mustard); }
 #gm-page .gm-pill.gm-beat.late { background: var(--alarm); border-color: var(--alarm); color: #fbf8f1; }
+
+/* ---------- 17/10, wave 2: what the generators now give the cards ----------
+   The spend sentence under the lead; the coaching lines folded under "Why"; the quiet "redrawn" note; the plan line under Say; the
+   pack check as a warning (the preview and the Menu); the portrait note; Earlier chips with the time and position under them. */
+#gm-page .gm-lead-s { font-size: 14.5px; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+#gm-page .gm-lead-s p { margin: 0; }
+#gm-page .gm-lead-s p + p { margin-top: 4px; }
+#gm-page .gm-why { border-top: 1px dashed var(--hair); }
+#gm-page .gm-why > summary { cursor: pointer; list-style: none; min-height: 44px; display: flex; gap: 10px; align-items: center; font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; color: var(--ink-soft); }
+#gm-page .gm-why > summary::-webkit-details-marker { display: none; }
+#gm-page .gm-why > summary::after { content: "+"; margin-left: auto; font: 700 18px/1 var(--font-mono); padding: 0 4px; }
+#gm-page .gm-why[open] > summary::after { content: "−"; }
+#gm-page .gm-why > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .gm-why-b { display: grid; gap: 6px; padding: 0 0 6px; }
+#gm-page .gm-why-b .gm-read { font-size: 13px; color: var(--ink-soft); }
+#gm-page .gm-card > .gm-quiet { margin: 0 12px; }
+#gm-page .gm-quiet { font: 400 11.5px/1.3 var(--font-mono); color: var(--ink-soft); }
+#gm-page .gm-plan { margin: 0; border-left: 4px solid var(--hair); padding: 2px 0 2px 10px; font-size: 14px; line-height: 1.4; }
+#gm-page .gm-plan .gm-lab { display: inline; margin-right: 6px; }
+#gm-page .gm-note.warn { border: 2px solid var(--rule); border-left: 6px solid var(--mustard); color: var(--ink); }
+#gm-page .gm-warns p { margin: 0; }
+#gm-page .gm-warns ul { margin: 4px 0 0 18px; padding: 0; }
+#gm-page .gm-menu-list { max-height: calc(100dvh - 70px); overflow-y: auto; }
+#gm-page .gm-menu-warn { padding: 10px 12px; border-bottom: 1px solid var(--hair); border-left: 6px solid var(--mustard); font: 400 12px/1.4 var(--font-text); }
+#gm-page .gm-menu-warn[hidden] { display: none; }
+#gm-page .gm-menu-warn ul { margin: 4px 0 0 16px; padding: 0; overflow-wrap: anywhere; }
+#gm-page .gm-card > .gm-note { margin: 0 12px; }
+#gm-page .gm-fignote { font-size: 12.5px; padding: 6px 10px; }
+#gm-page .gm-earlier .gm-ech { display: inline-grid; grid-template-columns: minmax(0, 1fr); gap: 1px; justify-items: start; align-content: center; line-height: 1.25; text-align: left; }
+#gm-page .gm-ech-t { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#gm-page .gm-ech-s { font: 700 10px/1.2 var(--font-mono); letter-spacing: 0; color: var(--ink-soft); }
+#gm-page .gm-ech:hover .gm-ech-s, #gm-page .chip[aria-current="true"] .gm-ech-s { color: inherit; opacity: .85; }
+/* The Scene line's chips are drawn again whenever a control changes. Typing in Threat and then tapping the Scene line blurs the box, which
+   redraws the chips under the finger: the press started on a chip that is gone by the release, so the browser dropped the tap and the
+   controls stayed open. The chips never take the press (the button does), so the tap folds them at once. */
+#gm-page .gm-scene-chips { pointer-events: none; }
+/* signed out (E5, gm-page.js SIGNED_OUT_MSG): a plain message in the bar, on a second full-width row so the bar's buttons keep their room */
+#gm-page .gm-signed { display: none; }
+#gm-page .gm-bar.out { flex-wrap: wrap; }
+#gm-page .gm-bar.out .gm-signed { display: block; order: 99; flex: 1 1 100%; margin: 2px 0; padding: 7px 10px; background: var(--alarm); color: #fbf8f1; font: 700 13px/1.35 var(--font-text); }
+@media (max-width: 599px) {
+  body.gm-app #gm-page .gm-bar.out { height: auto; flex-wrap: wrap; row-gap: 0; padding-bottom: 4px; }
+  body.gm-app #gm-page .gm-bar.out .gm-save { display: none; }
+  body.gm-app #gm-page .gm-segbar { top: var(--gm-bar-h, 44px); }
+}
+/* the engagement roll with the table's own dice: tap the highest die (or Crit) under Roll engagement */
+#gm-page .gm-dice { gap: 6px; border-top: 1px solid var(--hair); padding-top: 8px; }
+#gm-page .gm-dice .gm-lab { color: var(--ink); font-size: 12px; }
+#gm-page .gm-dicerow { display: flex; flex-wrap: wrap; gap: 6px; }
+#gm-page .gm-die { flex: 1 1 44px; min-height: 52px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; font: 900 22px/1 var(--font-poster); letter-spacing: 0; text-transform: none; box-shadow: 2px 2px 0 var(--shadow-ink); }
+#gm-page .gm-die.gm-crit { flex: 3 1 130px; font: 900 13px/1.1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; }
+#gm-page .gm-die:disabled { opacity: .45; cursor: default; box-shadow: none; }
+#gm-page .gm-die:disabled:hover { background: var(--card); color: var(--ink); border-color: var(--rule); }
+#gm-page .gm-die:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+/* ---------- the Downtime panel (D): personal business (gm-page.js renderDowntime; GM.md "Downtime (D)") ----------
+   Who and Activity are chips; the activity's one row of buttons rolls the card on a tap (the table's dice are the roll, so the
+   buttons are as big as the engagement dice). On the card an overindulgence's four options sit right above the cost box, which
+   takes the alarm colour: after an overindulgence it is what the GM reads first. */
+#gm-page .gm-dt-ctl { display: grid; gap: 12px; padding: 10px; }
+#gm-page .gm-dt-ctl .gm-field > .gm-lab { margin-bottom: 3px; }
+#gm-page .gm-dt-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+#gm-page .gm-dt-chips .chip { min-height: 40px; padding: 8px 12px; font-size: 11.5px; }
+#gm-page .gm-dt-chips .chip[aria-pressed="true"] { box-shadow: inset 0 -4px 0 var(--accent); }
+#gm-page .gm-dt-fields { align-items: end; }
+#gm-page .gm-dt-vice { flex: 1 1 150px; }
+#gm-page .gm-dt-pur { flex: 3 1 220px; }
+#gm-page .gm-dt-ctl > p.gm-dim { margin: 0; }
+#gm-page .gm-dt-row { gap: 6px; border-top: 1px solid var(--hair); padding-top: 10px; }
+#gm-page .gm-dt-row .gm-lab { color: var(--ink); font-size: 12px; }
+#gm-page .gm-dt-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+#gm-page .gm-dtb { flex: 1 1 96px; min-width: 0; min-height: 52px; padding: 6px 8px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font: 900 14px/1.1 var(--font-cond); letter-spacing: .06em; box-shadow: 2px 2px 0 var(--shadow-ink); }
+#gm-page .gm-dtb.gm-dtb-num { flex-basis: 60px; font: 900 22px/1 var(--font-poster); letter-spacing: 0; text-transform: none; }
+#gm-page .gm-dtb b { font: inherit; }
+#gm-page .gm-dtb small { font: 700 10px/1 var(--font-mono); text-transform: none; letter-spacing: 0; }
+#gm-page .gm-dtb-sheet { border-color: var(--accent); box-shadow: inset 0 -5px 0 var(--accent), 2px 2px 0 var(--shadow-ink); }
+#gm-page .gm-dtb[aria-pressed="true"] { box-shadow: inset 0 -5px 0 var(--accent); }
+#gm-page .gm-dtb:focus-visible, #gm-page .gm-dt-chips .chip:focus-visible, #gm-page .gm-dt-opt:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+/* the card */
+#gm-page .gm-card > .gm-dt-opts, #gm-page .gm-card > .gm-dt-flip { margin: 0 12px; }
+#gm-page .gm-dt-opts { display: grid; gap: 4px; }
+#gm-page .gm-dt-opts > .gm-lab { display: flex; align-items: center; gap: 8px; color: var(--alarm); }
+#gm-page .gm-dt-optrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+#gm-page .gm-dt-opt { min-width: 0; min-height: 40px; padding: 6px 4px; display: inline-flex; align-items: center; justify-content: center; text-align: center; white-space: normal; line-height: 1.1; }
+#gm-page .gm-dt-opt[aria-pressed="true"] { box-shadow: inset 0 -5px 0 var(--alarm); }
+#gm-page .gm-dt-cost { border: 2px solid var(--alarm); border-left-width: 10px; background: var(--card); font-size: 15.5px; }
+#gm-page .gm-dt-cost .gm-small { font-size: 13.5px; color: var(--ink); }
+#gm-page .gm-dt-flip { display: flex; align-items: center; gap: 8px; }
+#gm-page .gm-q { flex: none; width: 28px; height: 28px; padding: 0; border: 2px solid currentColor; border-radius: 50%; background: var(--card); color: var(--ink); font: 900 14px/1 var(--font-cond); cursor: pointer; display: inline-grid; place-items: center; }
+#gm-page .gm-dt-opts > .gm-lab .gm-q { color: var(--alarm); }
+#gm-page .gm-q:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+#gm-page .gm-q:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (pointer: coarse) {
+  #gm-page .gm-q { width: 44px; height: 44px; }
+  #gm-page .gm-dt-chips .chip, #gm-page .gm-dt-opt { min-height: 44px; }
+}
+@media (max-width: 599px) {
+  #gm-page .gm-dt-acts .gm-dt-l { display: none; }                                        /* the short labels: two rows, not four */
+  #gm-page .gm-dt-acts .chip::after { content: attr(data-short); }
+  #gm-page .gm-dt-ctl { gap: 8px; }                     /* the row of buttons clear of the Capture button on a 360 × 740 first screen */
+  #gm-page .gm-dt-chips .chip { padding: 8px; font-size: 11px; letter-spacing: .04em; }
+  #gm-page .gm-dt-row { padding-top: 8px; }
+  #gm-page .gm-dt-optrow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #gm-page .gm-dtb { flex-basis: 40%; }                                                   /* words: two to a row */
+  #gm-page .gm-dtb.gm-dtb-num, #gm-page .gm-dtb[data-v="crit"] { flex-basis: 18%; }        /* 1–3 · 4/5 · 6 · Crit: one row */
+}

@@ -87,7 +87,7 @@ try {
   const name1 = await text(p, '#gm-npc .gm-npccard h3');
   check(name1.length > 2, 'the card has a name: ' + name1);
   check(await p.$('#gm-npc .gm-npccard .gm-npcfig svg') !== null, 'the card has a portrait');
-  check(!/nearest of the stock figures/.test(first), 'the portrait is the generated figure, not a stock fallback');
+  check(!/Portrait: a stock figure|No portrait/.test(first), 'the portrait is the generated figure, not a stock fallback');
   check(await p.$('#gm-npc .gm-npccard .gm-want') !== null && await p.$('#gm-npc .gm-npccard .gm-read') !== null && (await p.$$('#gm-npc .gm-npccard .gm-grid')).length >= 1, 'the card has the look, the want and the play grid');
   await sleep(1200);
   let st = (await api('GET', '/gm/state')).json.doc;
@@ -154,6 +154,29 @@ try {
   await p.keyboard.press('n');
   await p.waitForSelector('#gm-npc .gm-npccard', { timeout: 15000 });
   check(await sub() === chosen && await p.$eval('#gm-n-faction', (s) => s.value) === 'Teapot Union' && await p.$eval('#gm-n-place', (s) => s.value) === 'Test shop', 'reload: the same NPC, and the pickers as they were');
+  // Now in (A7): the District picker follows the bar; a pick of its own wins; the card records the district it resolved to; a stored card never moves
+  await p.selectOption('#gm-now', 'The Wobbles');
+  check(await p.$eval('#gm-n-district', (s) => s.value === '' && s.options[0].textContent === 'Now in: The Wobbles'), 'NPC: the District picker leads with "Now in: The Wobbles" and follows it');
+  await p.click('[data-gm="npcroll"]');
+  check(await p.waitForFunction(() => { const s = document.querySelector('#gm-npc .gm-npccard .gm-sub'); return s && / · The Wobbles · Test shop$/.test(s.textContent.trim()); }, null, { timeout: 15000 }).then(() => true, () => false), 'a roll lands in Now in: ' + await sub());
+  const wob = await text(p, '#gm-npc .gm-npccard');
+  const stW = await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.now && d.now.district === 'The Wobbles' && d.cards.npc.ui.district === 'The Wobbles' ? d : null; }, 8000);
+  check(!!stW && !(stW.npc.ui && stW.npc.ui.district), 'server: the card records the district it resolved to; the picker stores nothing (it follows)');
+  const hidW = stW && stW.cards.npc.hid;
+  await p.selectOption('#gm-n-district', 'Gnome Hill');
+  await p.click('[data-gm="npcroll"]');
+  check(await p.waitForFunction(() => { const s = document.querySelector('#gm-npc .gm-npccard .gm-sub'); return s && / · Gnome Hill · Test shop$/.test(s.textContent.trim()); }, null, { timeout: 15000 }).then(() => true, () => false), 'a pick of its own wins over Now in (Gnome Hill)');
+  const stG = await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.cards.npc.ui.district === 'Gnome Hill' && d.npc.ui.district === 'Gnome Hill' ? d : null; }, 8000);
+  const hidG = stG && stG.cards.npc.hid;
+  await p.selectOption('#gm-now', 'Puddle End');
+  check(await p.$eval('#gm-n-district', (s) => s.value === 'Gnome Hill' && s.options[0].textContent === 'Now in: Puddle End'), 'it stays through a change of Now in, and the first choice names the new one');
+  await p.click('#gm-npc [data-gm="replay"][data-h="' + hidW + '"]');
+  await p.waitForFunction((t) => document.querySelector('#gm-npc .gm-npccard').textContent.replace(/\s+/g, ' ').trim() === t, wob, { timeout: 8000 });
+  check((await text(p, '#gm-npc .gm-npccard')) === wob, 'Earlier: the NPC rolled in The Wobbles comes back card for card, whatever Now in is now');
+  await p.selectOption('#gm-n-district', ''); await p.selectOption('#gm-now', '');
+  await p.click('[data-gm="npcroll"]');
+  const stA = await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.cards.npc.hid !== hidG && d.cards.npc.hid !== hidW && d.cards.npc.ui.district === '' ? d : null; }, 8000);
+  check(!!stA && await p.$eval('#gm-n-district', (s) => s.value === '' && s.options[0].textContent === 'Now in: anywhere'), 'back to anywhere: the picker follows it again, and a roll stores no district');
   // Use the location: the location card's building, district and owner, kept to what the NPC tables know
   await api('PATCH', '/gm/state', { cards: { location: { hid: 'hloc', seed: 4242, ui: { target: 'Casino', district: '', approach: '', faction: '', mix: false }, mem: '{}', label: 'x', at: new Date().toISOString() } } });
   await p.reload();
@@ -164,6 +187,16 @@ try {
   check(await p.waitForFunction(() => { const s = document.querySelector('#gm-n-place'); return s && s.value === 'Casino'; }, null, { timeout: 5000 }).then(() => true, () => false) && await p.$eval('#gm-n-faction', (s) => s.value) === '', 'Use the location: Place becomes the building (Casino); the faction the NPC tables do not know goes back to any');
   await p.click('[data-gm="npcroll"]');
   check(await p.waitForFunction(() => { const s = document.querySelector('#gm-npc .gm-npccard .gm-sub'); return s && / · Teapot Row · Casino$/.test(s.textContent.trim()); }, null, { timeout: 15000 }).then(() => true, () => false), 'and the roll lands there: ' + await sub());
+  // the portrait note is the module's own (fig.note), never a sentence of the page's; and a kit that fails says so instead of a blank
+  const fnote = await p.$eval('#gm-npc .gm-npccard', (c) => { const n = c.querySelector('.gm-fignote'); return n ? n.textContent : ''; });
+  check(!fnote || /^Portrait: /.test(fnote), 'a portrait that drew shows no sentence, or the module\'s own "Portrait: …" note (' + (fnote || 'none') + ')');
+  await p.evaluate(() => { window.__kitPortrait = window.B68Figure.portrait; window.B68Figure.portrait = function (spec) { if (spec && spec.id === 'gm-npcg') throw new Error('portrait boom'); return window.__kitPortrait.apply(this, arguments); }; });
+  await p.click('[data-gm="npcroll"]');
+  check(await p.waitForFunction(() => { const n = document.querySelector('#gm-npc .gm-npccard .gm-fignote'); return n && n.textContent === 'No portrait: portrait boom.'; }, null, { timeout: 15000 }).then(() => true, () => false) && await p.$('#gm-npc .gm-npccard .gm-npcfig') === null, 'the kit throws on the portrait: no portrait, and the card says "No portrait: portrait boom."');
+  check(await p.$('#gm-npc [data-gm="npcfile"]') !== null && await p.$('#gm-npc .gm-npccard .gm-want') !== null, 'and the rest of the card is there, Add to the cast included');
+  await p.evaluate(() => { window.B68Figure.portrait = window.__kitPortrait; });
+  await p.click('[data-gm="npcroll"]');
+  check(await p.waitForSelector('#gm-npc .gm-npccard .gm-npcfig svg', { timeout: 15000 }).then(() => true, () => false), 'the kit back: the next roll has its portrait again');
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
   await G.c.close();
 
