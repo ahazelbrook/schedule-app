@@ -83,13 +83,13 @@ fails and nobody is known, nothing is purged.
   the device ("offline copy" in the header). The header shows "Campaign data exported DD/MM/YYYY", amber when
   more than three days old.
 - **Layout.** Laptop (>= 1100 px): the console (the Situations | Classic toggle, Position, controls, the four buttons, the card, "Earlier:" the last five rolls) |
-  a side panel with **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)**, **Rules (T)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
+  a side panel with **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)**, **Screen (T)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
   vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on
   stage) | the capture bar at the foot. 600–1100 px: two columns, the rail below. Phone: a Console | Location | Street | Engage | NPC |
   State bar, the Position switch at the top, the situations a 2 × 2 grid (Classic: 3 × 3), the other controls behind a "Scene" line,
   capture on a floating button.
 - **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd): `1`–`4` roll a situation (Classic: `1`–`9` roll a single table), `B` `N` `S` `E` `T` `I` switch the panel
-  (Location, NPC, Street scene, Engagement, Rules, iPad), `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
+  (Location, NPC, Street scene, Engagement, Screen, iPad), `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
   the last roll under "Rolled at the table", `H` blanks the screen until any key or tap, `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
 - **Situations and Classic.** The console opens on **Situations**: four buttons, each a moment in the roll: `1` **Before** (a Devil's
   Bargain), `2` **4/5**, `3` **1–3**, `4` **Someone**. A large three-way **Position** switch (controlled / risky / desperate, with what
@@ -167,6 +167,13 @@ fails and nobody is known, nothing is purged.
   A roll uses the pack's campaign part, not the live cast, so a freshly filed NPC is avoided by name only after the next
   pack build and push; that keeps the replay identical to the sync's. Code: `app/gm-page.js`, `app/gm/npc.js`,
   `app/gm/figure-map.js`, `scripts/lib/sync-npc.mjs`. Check: `checks/runtime/gm-npc-panel.e2e.mjs`.
+- **Screen** (`T`; on a phone the Screen segment). The GM screen: the vault note with `gm_screen: true` under the '68
+  folder, which `npm run gm:pack` cuts at its `##` headings into the pack's `screen` part (`scripts/lib/screen-export.mjs`;
+  text before the first `##` is an intro shown above them; a `## Related`, `## Provenance` or `## Sources` heading ends
+  the cut; wikilinks become plain text). Book text, so it travels only in the pack, never in git. Jump chips per section,
+  **Find on the screen** filters the sections by their words, **Show on iPad** sends one section as a `rule` display
+  (caption "GM screen"). Under it, the full rules search, as the Rules tab had. Checks: `checks/runtime/gm-screen.test.mjs`,
+  `checks/runtime/gm-prep.e2e.mjs` (the Screen part, invented text).
 - **Prep** (`R`, the first side tab; on a phone the Prep segment). The GM's prep notes as written in the vault, laid out in
   the design system. A note opts in with the property `gm_prep: true`; `npm run gm:pack` exports every such note under the
   '68 folder as the pack part `prep` (`scripts/lib/prep-export.mjs`): the note cut into Markdown blocks, each transclusion
