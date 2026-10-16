@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
-import { cleanLines, addLines, readLines, cleanSttPatch, patchStt, loadStt, grantToken, pruneLines } from '../../functions/_lib/stt.js';
+import { cleanLines, addLines, readLines, cleanSttPatch, patchStt, loadStt, loadSttPart, sttPartOf, grantToken, pruneLines } from '../../functions/_lib/stt.js';
 import { onRequest as sttApi } from '../../functions/api/gm/stt.js';
 import { onRequest as tokenApi } from '../../functions/api/gm/stt-token.js';
 import { onRequest as transcriptApi } from '../../functions/api/gm/transcript.js';
@@ -77,6 +77,36 @@ await test('server: the control document: the GM sets want, session, speakers; t
   assert.ok(Date.parse(d.status.at) > 0, 'the server stamps the report');
   for (const [p, role] of [[{ want: 'on' }, 'display'], [{ want: 'maybe' }, 'gm'], [{ session: 'x' }, 'gm'], [{ speakers: { 64: 'x' } }, 'gm'], [{ speakers: { 0: 'x'.repeat(61) } }, 'gm'], [{ status: { state: 'dancing' } }, 'display'], [{ other: 1 }, 'gm']])
     assert.throws(() => cleanSttPatch(p, role), undefined, JSON.stringify(p));
+});
+
+await test('server: the part the display GET carries is want and session only; its seq moves with those two and with nothing the iPad reports', async () => {
+  const db = await newDb();
+  const blank = await loadSttPart(db, 'default');
+  assert.deepEqual(Object.keys(blank).sort(), ['seq', 'session', 'want']);
+  assert.deepEqual([blank.want, blank.session, typeof blank.seq, Number.isInteger(blank.seq) && blank.seq >= 0], ['off', '', 'number', true], 'nothing stored: off, no session');
+  assert.deepEqual(blank, sttPartOf(null), 'a missing document reads the same as a blank one');
+  await patchStt(db, 'default', cleanSttPatch({ want: 'on', session: '9' }, 'gm'));
+  const on = await loadSttPart(db, 'default');
+  assert.deepEqual([on.want, on.session], ['on', '9']); assert.notEqual(on.seq, blank.seq, 'turning listening on moves it');
+  /* everything else the document holds: the iPad's status (which rewrites updated_at every few seconds), the names, the PC's heartbeat */
+  await patchStt(db, 'default', cleanSttPatch({ speakers: { 0: 'Alex (GM)' }, status: { state: 'listening', lines: 3, error: 'secret-ish words' } }, 'gm'));
+  await patchStt(db, 'default', cleanSttPatch({ status: { state: 'reconnecting', lines: 4, error: '' } }, 'display'));
+  await db.prepare("UPDATE gm_stt SET doc = json_set(doc, '$.copier', json(?2)) WHERE campaign = ?1").bind('default', JSON.stringify({ at: '2030-01-01T09:00:00.000Z', last: 7, host: 'LAPTOP' })).run();
+  const later = await loadSttPart(db, 'default');
+  assert.deepEqual(later, on, 'status reports, speaker names and the copier heartbeat do not move it');
+  assert.ok(!/Alex|secret|LAPTOP|listening|reconnecting|copier|speakers/.test(JSON.stringify(later)), 'and none of them rides along');
+  await patchStt(db, 'default', cleanSttPatch({ session: '9.1' }, 'gm'));
+  const s2 = await loadSttPart(db, 'default');
+  assert.deepEqual([s2.want, s2.session], ['on', '9.1']); assert.notEqual(s2.seq, on.seq, 'a new session moves it');
+  await patchStt(db, 'default', cleanSttPatch({ want: 'off' }, 'gm'));
+  const off = await loadSttPart(db, 'default');
+  assert.deepEqual([off.want, off.session], ['off', '9.1']); assert.notEqual(off.seq, s2.seq);
+  assert.equal(sttPartOf({ want: 'on', session: '9.1' }).seq, s2.seq, 'the seq is a function of the two values: the same values, the same seq');
+  /* a document written by hand or an older build: anything but a clean value reads as the blank one */
+  assert.deepEqual(sttPartOf({ want: 'yes', session: { x: 1 }, speakers: { 0: 'x' } }), blank);
+  assert.deepEqual(sttPartOf({ want: 'on', session: 'nine' }), { seq: sttPartOf({ want: 'on', session: '' }).seq, want: 'on', session: '' });
+  const seen = new Set(); for (const w of ['on', 'off']) for (const s of ['', '1', '2', '9', '9.1', '9.2', '10', '12.5']) seen.add(sttPartOf({ want: w, session: s }).seq);
+  assert.equal(seen.size, 16, 'sixteen different states, sixteen different seqs');
 });
 
 await test('server: the control document: a write that lands between another write\'s read and save is never undone', async () => {

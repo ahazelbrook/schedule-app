@@ -513,7 +513,7 @@ async function main() {
     status(await A({ mode: 'auto', playlist: ['harvest', 'duskwall'], intervalMin: 7 }), 200);
     const a = await gm('GET', '/api/gm/ambient'); status(a, 200);
     const d = await gm('GET', '/api/gm/display'); status(d, 200);
-    expect(Object.keys(d.json).sort().join() === 'ambient,display,seq,updatedAt', 'keys ' + Object.keys(d.json));
+    expect(Object.keys(d.json).sort().join() === 'ambient,display,seq,stt,updatedAt', 'keys ' + Object.keys(d.json));
     expect(JSON.stringify(d.json.ambient) === JSON.stringify(a.json) && d.json.ambient.doc.mode === 'auto', 'the full ambient: ' + d.text.slice(0, 200));
     const S = d.json.seq, AS = a.json.seq;
     expect(S > 1 && AS > 1, 'seqs are well past 0 and 1: ' + S + ' ' + AS);
@@ -543,6 +543,57 @@ async function main() {
     j = await get('?seq=' + S + '&aseq=' + AS);
     expect(j.display && j.ambient.doc && j.ambient.seq === AS + 1, 'after an ambient write the pair is stale: ' + JSON.stringify(j).slice(0, 160));
     status(await player('GET', '/api/gm/display?seq=1&aseq=1'), 403);
+    status(await player('GET', '/api/gm/display?seq=1&aseq=1&sseq=1'), 403);
+  });
+
+  await step('display GET carries the transcriber part (want and session only); ?sseq answers unchanged per part; calls without it are answered as before', async () => {
+    const get = async (q) => { const r = await gm('GET', '/api/gm/display' + q); status(r, 200); return r.json; };
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const d = await get('');
+    const T0 = d.stt, S = d.seq, AS = d.ambient.seq;
+    expect(Object.keys(T0).sort().join() === 'seq,session,want' && T0.want === 'off' && T0.session === '' && Number.isInteger(T0.seq), 'nothing stored: off, no session: ' + JSON.stringify(T0));
+    // all three current: the small answer, each part unchanged
+    let j = await get('?seq=' + S + '&aseq=' + AS + '&sseq=' + T0.seq);
+    expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true }, stt: { seq: T0.seq, unchanged: true } }), 'all three current: ' + JSON.stringify(j));
+    // the calls of a display page from before the part existed: no stt in the answer, and it never keeps their answer from being the small one
+    j = await get('?seq=' + S + '&aseq=' + AS);
+    expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true } }), 'without sseq: ' + JSON.stringify(j));
+    j = await get('?seq=' + (S - 1) + '&aseq=' + AS);
+    expect(j.display && !j.unchanged && !('stt' in j) && same(j.ambient, { seq: AS, unchanged: true }), 'without sseq, display stale: ' + Object.keys(j));
+    j = await get('?seq=' + S);
+    expect(same(j, { seq: S, unchanged: true }), 'seq alone: ' + JSON.stringify(j));
+    // the part stale: the display along with it, the others as asked
+    j = await get('?seq=' + S + '&aseq=' + AS + '&sseq=' + (T0.seq + 1));
+    expect(j.display && !j.unchanged && same(j.stt, T0) && same(j.ambient, { seq: AS, unchanged: true }), 'part stale: ' + JSON.stringify(j).slice(0, 200));
+    j = await get('?seq=' + (S - 1) + '&aseq=' + AS + '&sseq=' + T0.seq);
+    expect(j.display && same(j.stt, { seq: T0.seq, unchanged: true }) && same(j.ambient, { seq: AS, unchanged: true }), 'display stale, part current: ' + JSON.stringify(j.stt));
+    j = await get('?sseq=' + T0.seq);
+    expect(j.display && same(j.stt, { seq: T0.seq, unchanged: true }) && j.ambient.doc !== undefined, 'sseq alone: the part current, the others stale');
+    for (const odd of ['&sseq=', '&sseq=garbage', '&sseq=-1']) {
+      j = await get('?seq=' + S + '&aseq=' + AS + odd);
+      expect(j.display && same(j.stt, T0), 'an odd sseq is just stale (' + odd + '): ' + JSON.stringify(j.stt));
+    }
+    // the GM turns listening on: the part moves
+    status(await gm('PATCH', '/api/gm/stt', { want: 'on', session: '9' }), 200);
+    j = await get('?seq=' + S + '&aseq=' + AS + '&sseq=' + T0.seq);
+    expect(j.display && j.stt.want === 'on' && j.stt.session === '9' && j.stt.seq !== T0.seq, 'listening on: ' + JSON.stringify(j.stt));
+    const T1 = j.stt;
+    j = await get('?seq=' + S + '&aseq=' + AS);
+    expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true } }), 'the older call is still the small answer');
+    // everything else the control document holds neither moves it nor rides along: names, the iPad's report, its errors
+    const STT_MARK = 'tangerine-lighthouse-chorus';
+    status(await gm('PATCH', '/api/gm/stt', { speakers: { 0: 'Fixture ' + STT_MARK }, status: { state: 'listening', lines: 2, error: 'oops ' + STT_MARK } }), 200);
+    j = await get('?seq=' + S + '&aseq=' + AS + '&sseq=' + T1.seq);
+    expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true }, stt: { seq: T1.seq, unchanged: true } }), 'names and the iPad report do not move it: ' + JSON.stringify(j));
+    const whole = await gm('GET', '/api/gm/display'); status(whole, 200);
+    expect(same(whole.json.stt, T1) && !whole.text.includes(STT_MARK), 'only want and session ride on the display: ' + whole.text.slice(0, 200));
+    // a new session number moves it; off again
+    status(await gm('PATCH', '/api/gm/stt', { session: '9.1' }), 200);
+    j = await get('?seq=' + S + '&aseq=' + AS + '&sseq=' + T1.seq);
+    expect(j.stt.session === '9.1' && j.stt.want === 'on' && j.stt.seq !== T1.seq, 'a new session: ' + JSON.stringify(j.stt));
+    status(await gm('PATCH', '/api/gm/stt', { want: 'off' }), 200);
+    j = await get('');
+    expect(j.stt.want === 'off' && j.stt.session === '9.1', 'off again: ' + JSON.stringify(j.stt));
   });
 
   await step('state: {} until written; PATCH merges maps, null deletes, arrays replace; the 256 KiB cap; /api/campaign untouched', async () => {

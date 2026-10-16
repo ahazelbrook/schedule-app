@@ -69,7 +69,8 @@ Roles: `gm` when the email is in `GM_EMAILS` (comma-separated, case-insensitive)
 when it is in `DISPLAY_EMAILS` (optional, the table iPad's own sign-in: it may only make six
 calls, `GET /api/me`, `GET /api/gm/display` and the transcriber's `POST /api/gm/stt/token`,
 `GET` and `PATCH /api/gm/stt` and `POST /api/gm/transcript` (`DISPLAY_ALLOWED` in
-`functions/_lib/auth.js`); everything else is 403; GM wins if an email is in both; GM.md); else
+`functions/_lib/auth.js`; the current display page no longer calls `GET /api/gm/stt`, since the display read carries
+`want` and `session`, but older pages do); everything else is 403; GM wins if an email is in both; GM.md); else
 `player`. Players read every character and write the ones they own (`doc.owner === email`)
 plus new ones. GMs write and delete any.
 
@@ -245,12 +246,17 @@ before the body is read (no token: 401, as everywhere). Never part of `/api/expo
   key `(campaign, part)`, `version` = 12 hex digits of SHA-256 of the body, `updated_at` in ms (migration `0004_gm.sql`).
 - `GET /api/gm/state` → `{ doc, updatedAt }`; `PATCH` deep-merges (maps merge, null deletes, arrays replace; ≤ 256 KiB). Stored as
   the `campaigns` row `<CAMPAIGN>#gm`, which `/api/campaign` and `/api/export` never read.
-- `GET /api/gm/display` → `{ seq, display, updatedAt }` (`?seq=N` → `{ seq, unchanged: true }`); `PUT { kind, title, caption,
+- `GET /api/gm/display` → `{ seq, display, updatedAt, ambient, stt }` (`?seq=N` → `{ seq, unchanged: true }`); `PUT { kind, title, caption,
   svg | npcId | text }` bumps `seq`. `kind` ∈ `blank | dark | svg | npc | text` (blank: the ambient scene plays; dark: lights out); the svg (≤ 600 KiB, starts `<svg`) is refused (400) with
   scripts, `foreignObject`, HTML elements (namespaced too), `<a>`, `xml:base`, `javascript:`, `on…=` attributes, backslashes in
   attribute values, `image-set()`/`src()`, any `url()` other than `#fragment`, or any `href`/`src` other than `#fragment` (a raster
   `data:image/` only on `<image>`/`<feImage>`); GM.md has the full list. Table `gm_display(campaign, seq, updated_at, doc)`.
-  The GET also carries `ambient: { seq, doc, updatedAt }` (`&aseq=M` → `{ seq, unchanged: true }` while current).
+  The GET also carries `ambient: { seq, doc, updatedAt }` (`&aseq=M` → `{ seq, unchanged: true }` while current) and what the table iPad
+  needs of the transcriber, `stt: { seq, want, session }` (`&sseq=K` → `{ seq, unchanged: true }` while current): only whether the GM wants it
+  listening and the session number, never a name, the iPad's report or a transcript line. The display page therefore makes one request
+  where it made two, every 4 s (15 s after two hours without a change, 60 s hidden; GM.md "How it polls" has the request budget: Workers
+  Free allows 100,000 requests a day for the whole site, an always-on iPad is about 23,000 a day and was about 73,000). A call without
+  `sseq` is answered as before, with no `stt`.
 - `GET /api/gm/ambient` → `{ seq, doc, updatedAt }`; `PATCH` merges the top level (null deletes, `skip: true` bumps a counter): mode,
   scene, playlist, intervalMin, crew heat/wanted, and the score scene (`board`/`iso` svgs through the same check as the display). GM only:
   the display sign-in reads it through the display. Table `gm_ambient(campaign, seq, updated_at, doc)` (migration `0006_gm_ambient.sql`).
@@ -331,7 +337,7 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   (`GET /api/npcs`, the whole list) only when a poll's `npcsUpdatedAt` differs from the cached stamp, and only while someone listens.
   Writes use the same queue; a player's write is refused at once (403) without a request.
 - One poller feeds every listener (characters, campaign and npcs; it runs while any exists): a full `GET /api/characters` at start, then
-  `?since=` every 4 s while the page is visible and every 20 s when hidden, plus an
+  `?since=` every 4 s while the page is visible and every 60 s when hidden (the Workers Free budget, see `GET /api/gm/display` above), plus an
   immediate poll after each own write; a write also updates the cache optimistically so the
   sheet never waits on the network. Network errors are retried on the next tick and surfaced
   once through the `err` callbacks (not after an offline start, which the header shows). A request

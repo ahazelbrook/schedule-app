@@ -34,6 +34,7 @@ gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser o
 | `GET /api/gm/display` | `{ seq, display, updatedAt }` (`seq` 0, a blank display, until written). `?seq=N` → `{ seq, unchanged: true }` while N is current. |
 | `PUT /api/gm/display` | `{ kind, title?, caption?, svg \| npcId \| text \| md }` → `{ seq, display, updatedAt }`; `seq` goes up by one on every PUT. |
 | `GET /api/gm/display` (ambient) | also carries `ambient: { seq, doc, updatedAt }`. `?seq=N&aseq=M` → `{ seq, unchanged: true, ambient: { seq, unchanged: true } }` while both are current; otherwise the full display, with `ambient` `{ seq, unchanged: true }` when only M is current. `?seq=N` alone is the old answer. |
+| `GET /api/gm/display` (transcriber) | also carries `stt: { seq, want, session }`: whether the GM wants the iPad listening (`on` / `off`) and the session number to stamp on its lines, and **nothing else**: never a speaker name, the iPad's own report, the PC's heartbeat or a transcript line, whoever asks. Its `seq` is made from those two values alone, so the iPad's reports (which rewrite the control document every minute) never move it. `?seq=N&aseq=M&sseq=K` → `{ seq, unchanged: true, ambient: { seq, unchanged: true }, stt: { seq, unchanged: true } }` while all three are current; otherwise the full display, each part `{ seq, unchanged: true }` when its number is the one given and in full when not. Without `sseq` (a display page from before the transcriber rode along) there is no `stt` and the answers are the ones above. Why: one request where the display and the transcriber used to make two (see "The display", how it polls). |
 | `GET /api/gm/ambient` | `{ seq, doc, updatedAt }` (`0`, `{}`, `null` until written). GM only; the display sign-in is refused (it reads the doc through the display). |
 | `PATCH /api/gm/ambient` | top-level merge (`null` deletes, `skip: true` bumps a counter) → `{ seq, doc, updatedAt }`. Keys: `mode` auto/pin/off, `scene`, `playlist` (1–16 distinct ids), `intervalMin` 3–30, `skip`, `crew { heat 0–9, wanted 0–4 }`, `score { name, district, target, reveal, view plan/rings, board, iso }` (both svgs through `checkSvg`; the server sets `at`). Stored doc at most 1.4 MiB, in `gm_ambient` (migration 0006). |
 
@@ -65,7 +66,9 @@ gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser o
 ## Adapter (`app/runtime/cf.js`, hosted build only)
 
 `window.claude.gm = { pack(opts), packPart(name, opts), importPart(req), removePart(name), state(), patchState(patch),
-display(seq), setDisplay(d) }`; `opts.version` asks for the unchanged answer. Each returns the API's JSON, or rejects
+display(seq, aseq, sseq), setDisplay(d) }` (and `ambient`, `patchAmbient`, `stt`, `patchStt`, `sttToken`, `transcript`, `addTranscript`; HOSTING.md
+lists them all); `opts.version` asks for the unchanged answer, and the three seqs of `display` are the display's, the ambient's and the
+transcriber's. Each returns the API's JSON, or rejects
 with `err.status` (403 for a player) or `err.network = true`. In the claude.ai artifact there is no `window.claude.gm`.
 
 ## The page (`#gm`, `app/gm-page.js`, `app/gm.css`)
@@ -333,6 +336,38 @@ calls `unmount()` on leaving; anyone but the GM sees a message instead. The GM p
 The display offers **no way back** to the GM page (no link, hidden or not). Its sanitiser applies the same rules as the server's `checkSvg` (namespaced
 elements, `<a>`, `xml:base`, backslashes, `image-set()` / `src()`, raster `data:` images only on `<image>` / `<feImage>`).
 
+### How it polls (the request budget)
+
+Workers Free allows 100,000 requests a day for the whole site (counted in UTC; after that the Worker refuses until the next day), and the
+iPad stays on all night, so the display asks for one thing only: `GET /api/gm/display?seq=N&aseq=M&sseq=K` (the display, the ambient and the
+transcriber's part; each comes back as `unchanged` when it is current, see Endpoints). The beat (`Pure.POLL`, `Pure.createPoller` in
+`app/display-page.js`):
+
+| when | every |
+|---|---|
+| anything is moving | **4 s** |
+| nothing has changed for **2 hours** (not the display, the ambient settings, nor the transcriber's `want` and `session`), until the next change | **15 s** |
+| offline (three failures in a row) or signed out | 10 s, and never faster than the beat above |
+| the page is hidden (a background tab) | **60 s**, and never faster than any of the above |
+
+A change is seen by the first look after it, so after two quiet hours the first push can take up to 15 s to appear, and then the 4 s beat is
+back. Coming back to the page, or the network coming back, looks at once. A hidden page keeps looking because the transcriber's part rides on
+this poll: the GM's **Stop listening** has to reach a microphone left open in a background tab. The adapter's own poll of characters, the
+campaign and the cast (`cf.js`, HOSTING.md) is 4 s in front and 60 s hidden (it was 20 s).
+
+An iPad on all day costs about 21,600 requests at the 4 s beat, 5,760 at the 15 s beat, and about 1,440 for its status reports (once a
+minute while idle and visible; every 10 s while the mic is open). Before (display every 2 s, the transcriber's own GET every 4 s, its report
+every 10 s) that was about 73,000 a day: with a laptop or two open it could trip the cap in the middle of a session. Now it is about 23,000
+on a day when something changes at least every two hours, and about 8,500 on a day of nothing.
+
+**Signed out.** When the Access sign-in ends, the adapter refuses every call from then on (until the page is reloaded) and the corner says
+"Not signed in as the GM". Nobody touches an iPad on the table's stand for hours, so after **10 minutes** signed out the page reloads itself
+(`Pure.createReloader`): the reload asks Access again, which signs the iPad in silently while the single sign-on session is still good, and
+otherwise shows its sign-in page, which a person must see anyway. It reloads **at most once per 30 minutes**: the time of the last reload is
+kept in `localStorage` and `sessionStorage` (`b68.display.reload`), so a page that comes back still signed out (a person must sign in, or the
+email is not allowed) tries again in half an hour and not in a loop; where neither can be written it never reloads. Checks: the poller and the
+reloader in `checks/runtime/display.test.mjs` (fake clock), and in a browser, with the time jumped, `checks/runtime/display-role.e2e.mjs`.
+
 ### Ambient scenes (`app/ambient/`, the iPad panel `I`)
 
 When nothing is spotlit the display plays an **ambient scene** underneath: `blank` means "the ambient plays", and the new
@@ -408,7 +443,7 @@ and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools
 ### The display sign-in (`DISPLAY_EMAILS`)
 
 A third role, `display`, so the iPad never holds a GM session. An email in `DISPLAY_EMAILS` (comma-separated, case-insensitive,
-like `GM_EMAILS`; the GM wins if an email is in both) gets exactly six calls: `GET /api/me`, `GET /api/gm/display`, and the transcriber's `POST /api/gm/stt/token`, `GET` and `PATCH /api/gm/stt` and `POST /api/gm/transcript` (Listening).
+like `GM_EMAILS`; the GM wins if an email is in both) gets exactly six calls: `GET /api/me`, `GET /api/gm/display`, and the transcriber's `POST /api/gm/stt/token`, `GET` and `PATCH /api/gm/stt` and `POST /api/gm/transcript` (Listening; the display page no longer calls `GET /api/gm/stt`, its read of the display carries `want` and `session`, but the call stays allowed for a display page of an older build).
 Everything else, any method, known route or not, is the same 403 ("this is the table display sign-in: it can only show
 the display") from `functions/api/_middleware.js` before the body is read or the database touched, so a route added later is
 refused by default. It is never recorded in `members`, never listed as a player, and `PUT /api/gm/display` stays GM only.
@@ -424,9 +459,14 @@ The iPad sits in the middle of the table, so it hears everyone; it replaces the 
 (`Tools/blades-68-transcriber.md`, kept as the fallback). The path, and who holds what:
 
 1. **Start listening** (iPad panel, `I`): GM state in `gm_stt` (`want: on`, the session number, speaker names).
-2. **The iPad** (`#display`) polls `GET /api/gm/stt` every 4 s. While `want` is on and it is not listening, it shows
-   **Tap to start listening**: iPad Safari opens the mic only on a tap. The page's `Permissions-Policy` allows the
-   microphone for this origin only (`microphone=(self)`, `worker/app.js`).
+2. **The iPad** (`#display`) learns what the GM wants from its display poll: `GET /api/gm/display` carries `stt: { seq, want, session }`
+   (see Endpoints and "How it polls"), and `display-page.js` hands each change to `B68Stt.feed()`. The transcriber makes no request of its own
+   for it; only against a server whose display answers carry no `stt` (an older build) does it fall back to `GET /api/gm/stt` every 4 s. While
+   `want` is on and it is not listening, it shows **Tap to start listening**: iPad Safari opens the mic only on a tap. The page's
+   `Permissions-Policy` allows the microphone for this origin only (`microphone=(self)`, `worker/app.js`). It tells the server its state
+   (`PATCH /api/gm/stt`, `status`) at once when the state changes, every 10 s while the mic is open and once a minute otherwise while the page
+   is visible (a hidden page says nothing); the GM page shows how long ago from it, and calls the iPad silent after 40 s while it should be
+   listening. **Stop listening** reaches the iPad with its next look (4 s; 15 s after two quiet hours; a minute in a hidden tab).
 3. The mic goes to Deepgram's live API (`nova-3`, speaker labels) as 16 kHz 16-bit PCM over a WebSocket. It opens with
    a short-lived token from `POST /api/gm/stt/token`, which the Worker mints with its secret `DEEPGRAM_API_KEY` (never
    sent to a browser). The token rides the handshake as a subprotocol pair, `bearer` then `token`; whichever works is
@@ -462,7 +502,8 @@ first and last time, unnamed speakers), and reports the table's session counter 
 it). `--yes --prune` then clears the server's copy of the lines the vault has. Stop listening first: with listening
 still on it leaves the transcript alone.
 Endpoints are GM only. The table display sign-in (`DISPLAY_EMAILS`) may get a token, post lines and report its status,
-but not read the transcript. The transcript is never in `/api/export`. Migration `0007_gm_stt.sql`. Checks:
+but not read the transcript; the display read it gets carries `want` and `session` and never a line, a name or a report
+(`checks/api/display-role.mjs` posts lines with a marker and looks for it in every shape of that read). The transcript is never in `/api/export`. Migration `0007_gm_stt.sql`. Checks:
 `checks/runtime/stt.test.mjs`, `checks/runtime/gm-stt.e2e.mjs` (fake mic, fake Deepgram socket).
 
 **Setup, once:** `npx wrangler secret put DEEPGRAM_API_KEY` (a key with Member permission or above), then
