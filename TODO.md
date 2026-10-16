@@ -9,21 +9,24 @@ purveyor, a question, a hook; Overindulged: attract trouble / brag / lost / tapp
 scene prompt under it, a clock to start, a new purveyor from the book's list for Tapped), Recover, Long-term project,
 Train, Friend or rival, Lay low, Acquire. Original writing, no book text.
 
-**Running when this was written** (each pushes after every commit; if a session ends, read its branch and finish it):
-1. `review/display-budget` (agent finishing the uncommitted work saved in `review/display-budget-wip` f876648): E4, the
-   iPad's polling (display 2 s → 4 s, stt folded into the display GET, 15 s after 2 h idle, 60 s hidden; never transcript
-   lines to the display role) and E14 (reload once after 10 min signed out, at most once per 30 min). Checks:
-   display.test, stt.test, `npm test`, checks/api gm + display-role, check:display-ambient, display-role.e2e.
-2. `review/downtime-page` (agent): the GM page's **Downtime (D)** panel on the module: PC chips from the live sheets
-   (vice, purveyor, contacts, project clocks), activity chips, one tap on the result rolls the card (Indulged /
-   Overindulged; 1–3 · 4/5 · 6 · Crit; the attribute; Friend / Rival), the four-way option switch on the same card,
-   "Start a clock" adds a hidden danger clock to the table (clockOps add), Earlier, Pin, Copy, L. Checks: gm-page.test,
-   gm.e2e (+ phone), gm-scenes, gm-npc-panel, gm-prep, check:phone, npm test.
+**Merged since:** `review/display-budget` (8b1faba): E4, an always-on iPad from about 73,000 requests a day to about
+23,000 (one 4 s display poll that carries the transcriber's want and session, never a transcript line; 15 s after two
+quiet hours; 60 s hidden), and E14 (the display reloads once after 10 minutes signed out, at most once per 30 minutes).
+Docs sweep done (9d9427b, 7e398a4) but for one comment in app/gm-page.js (line ~317, "AMBIENT-PLAN.md"): do it after
+the Downtime panel merges. SETUP.md has the seven plain steps for updating from the Windows PC.
+
+**Running when this was written** (it pushes after every commit; if a session ends, read its branch and finish it):
+`review/downtime-page` (agent): the GM page's **Downtime (D)** panel on the module: PC chips from the live sheets
+(vice, purveyor, contacts, project clocks), activity chips, one tap on the result rolls the card (Indulged /
+Overindulged; 1–3 · 4/5 · 6 · Crit; the attribute; Friend / Rival), the four-way option switch on the same card,
+"Start a clock" adds a hidden danger clock to the table (clockOps add), Earlier, Pin, Copy, L. Checks: gm-page.test,
+gm.e2e (+ phone), gm-scenes, gm-npc-panel, gm-prep, check:phone, npm test.
 
 **Then, in order:**
-3. Merge 1 and 2 (`git merge --no-ff`), run `npm test` and `npm run check:e2e-all` (25 of 26 expected: gm-stt's fake
-   microphone fails in the cloud container, also on untouched main).
-4. Docs sweep (listed under Wave 2) and the Windows deploy steps in SETUP.md (below).
+3. Merge `review/downtime-page` (`git merge --no-ff`), fix the gm-page.js comment, run `npm test` and
+   `npm run check:e2e-all` (26 of 27 expected: gm-stt's fake microphone fails in the cloud container, also on untouched
+   main; a check that says "port … is already in use" collided with another run: re-run it alone, `PORT=<free> node …`).
+4. Update PR #26's description (ambient, clocks, display budget, the Downtime generator).
 5. Mark PR #26 ready and merge to main (Alex asked for everything merged). Merging does not deploy.
 6. Deploy (Alex, from the Windows PC): `npm run deploy` from **Git Bash** (not plain wrangler: the script stamps the
    build, which is how phones learn of a new version). It needs a clean tree; `app/media/theme.mp3` and
@@ -257,10 +260,10 @@ last unsubscribe landing after the count; 2 of 12 runs failed under heavy load, 
       gm-page branch.
 - [x] (MERGED e14c982) E3 P2 · Two players ticking different clocks within ~4 s lose one (the campaign PATCH sends the whole array). A
       per-clock operation applied inside the server's write loop and mirrored in cf.js. · M (contract change)
-- [ ] E4 P2 · Workers Free budget: an always-on iPad polls display every 2 s and stt every 4 s (≈65k requests/day);
+- [x] (MERGED 8b1faba) E4 P2 · Workers Free budget: an always-on iPad polls display every 2 s and stt every 4 s (≈65k requests/day);
       with two laptops open the daily cap can trip mid-session. Display 4 s, stt carried in the display GET, slow to 30 s
       after an hour without change, hidden tabs 60 s. · S
-- [ ] E14 P3 · The display never leaves "denied"; reload once after 10 min. · S
+- [x] (MERGED 8b1faba) E14 P3 · The display never leaves "denied"; reload once after 10 min. · S
 - [ ] Lazy loading phase 2 · The figure kit (688 KB) loaded after first paint; the three top-level captures become
       lookups. · M · Deferred: phase 1 already cut a player's first load by 42% and the service worker caches the rest;
       revisit only if phones feel slow at the table.
@@ -273,7 +276,7 @@ last unsubscribe landing after the count; 2 of 12 runs failed under heavy load, 
       checks/runtime/display-role.e2e.mjs); "shared files" wording in cast-page.js, season.js and steps.js; season.css's
       own light-token copy of --ink-faint (#8e8880 → #6a645e); crew-sheet ability circles, upgrade boxes and contact dots
       at 40 px on touch. · S
-- [ ] Docs sweep after the last merge · comments and docs still pointing at the moved docs (PLAN, AMBIENT-PLAN,
+- [x] (done 7e398a4, 9d9427b; one gm-page.js comment left) Docs sweep after the last merge · comments and docs still pointing at the moved docs (PLAN, AMBIENT-PLAN,
       ROADMAP, DEPLOY...) in app/season.js, app/gm-page.js, app/display-page.js, app/README.md (also: list routes.js),
       CAST.md, CAMPAIGN.md, functions/_lib/gm.js, functions/api/gm/ambient.js and display.js; AMBIENT-PLAN's decisions
       into GM.md. · S
