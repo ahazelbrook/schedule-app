@@ -318,6 +318,40 @@ await test('internal map honours F.halo and F = null', () => {
   assert.ok(hit > 10);
 });
 
+await test('B14: a tier carried as text still gives a numeric quality; a figure failure is a note on the result, never a throw', () => {
+  const copy = (x) => JSON.parse(JSON.stringify(x));
+  const P = copy(FIX); P.T.faction = P.T.faction.map((f) => [f[0], String(f[1]), f[2]]);
+  const g = N.create(P), g0 = N.create(FIX);
+  for (let i = 0; i < 80; i++) {
+    const f = FIX.T.faction[i % FIX.T.faction.length][0];
+    const r = g.roll({ seed: seedOf(i), ui: { faction: f } }), r0 = g0.roll({ seed: seedOf(i), ui: { faction: f } });
+    assert.ok(Number.isInteger(r.npc.quality) && r.npc.quality >= 1 && r.npc.quality <= 6, 'quality ' + r.npc.quality);
+    assert.equal(r.npc.quality, r0.npc.quality, 'the same quality as with a numeric tier');
+    assert.equal(r.npc.factionTier, r0.npc.factionTier, 'the tier reads as a number');
+    assert.deepEqual(r.card, r0.card);
+    assert.ok(!/NaN|undefined/.test(JSON.stringify(r.card)) && !/NaN/.test(g.noteBody(r.npc, { date: '14/10/2026' })));
+  }
+  // an unparsable tier: a middling quality, the tier shown as written, nothing undefined
+  const Q = copy(FIX); Q.T.faction = Q.T.faction.map((f) => [f[0], 'III', f[2]]);
+  const q = N.create(Q).roll({ seed: 5, ui: { faction: Q.T.faction[0][0] } });
+  assert.ok(q.npc.quality >= 1 && q.npc.quality <= 3 && /Tier III,/.test(q.card.meta.sub) && !/undefined|NaN/.test(JSON.stringify(q.card)), q.card.meta.sub);
+  // figure(): every result carries `note`; a map that throws falls back to a stock figure and says so; with no
+  // archetypes either, or a kit that throws, the result is failed with a "No portrait" note instead of a throw
+  const r = g0.roll({ seed: 9 });
+  const clean = g0.figure(r.npc, { seed: 9, K });
+  assert.equal(typeof clean.note, 'string');
+  if (!clean.fallback && !clean.notes.some((n) => /^(stripped|dropped)/.test(n))) assert.equal(clean.note, '');
+  const thrown = g0.figure(r.npc, { seed: 9, K, map: () => { throw new Error('boom'); } });
+  assert.ok(!thrown.failed && thrown.fallback && thrown.notes.some((n) => /the map threw: boom/.test(n)) && /^Portrait: a stock figure/.test(thrown.note), JSON.stringify(thrown.note));
+  const none = g0.figure(r.npc, { seed: 9, K, map: () => { throw new Error('boom'); }, archetypes: [] });
+  assert.ok(none.failed && none.fallback && /^No portrait: /.test(none.note) && none.warnings.length > 0, JSON.stringify(none));
+  const badKit = Object.assign({}, K, { options: () => { throw new Error('no options'); } });
+  const kf = g0.figure(r.npc, { seed: 9, K: badKit });
+  assert.ok(kf.failed && /^No portrait: .*no options/.test(kf.note) && JSON.stringify(kf.spec) === '{}', JSON.stringify(kf));
+  const stripped = g0.figure(r.npc, { seed: 9, K, map: () => ({ figure: 'masc', heightIn: 70, outfit: { base: { type: 'tee', color: 'cloth-cream' } }, props: ['no-such-prop'] }) });
+  assert.ok(/^Portrait: /.test(stripped.note) || stripped.note === '', stripped.note);
+});
+
 /* ---------- the exporter (invented vault page) ---------- */
 await test('exporter: leverage functions become data, and a function that does not round-trip fails loudly', () => {
   const shapes = [

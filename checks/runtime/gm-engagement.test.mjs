@@ -61,7 +61,8 @@ for (const [name, tables] of [['fixture', T], ['real', REAL]]) {
       const r = en.roll({ approach: app[0], load: ld.value, mods }, { seed: seedOf(n++) });
       const text = r.lines.map((l) => (l.md || '') + (l.rows || []).map((x) => x.k + x.md).join('')).join('\n') + r.meta.all.join('\n');
       assert.ok(!BAD.test(text), 'bad token');
-      assert.equal(r.meta.title, app[0] + ' — ' + r.pool + 'd');
+      assert.equal(r.meta.title, app[0] + ' — ' + (r.pool > 0 ? r.pool + 'd' : '0d (2d, keep lowest)'));
+      assert.ok(!/-\d+d/.test(r.meta.title), 'the title never shows a negative pool: ' + r.meta.title);
       assert.ok(r.meta.sub.includes(app[1]) && r.meta.sub.includes(ld.value + ' loadout, load ' + ld.load) && r.meta.sub.includes(tables.cite));
       assert.deepEqual(r.lines.map((l) => l.id), ['mods', 'result', 'roll', 'cut']);
       assert.equal(r.lines[3].md, tables.cut);
@@ -122,7 +123,9 @@ await test('card(): the preview before a roll', () => {
   assert.equal(c.pool, 0);
   assert.deepEqual(c.lines.map((l) => l.id), ['mods', 'set']);
   assert.equal(c.lines[1].md, 'Set the factors, then roll.');
-  assert.equal(c.meta.title, 'Slip — 0d');
+  assert.equal(c.meta.title, 'Slip — 0d (2d, keep lowest)');
+  assert.equal(en.card({ approach: 'Slip', load: 'Loud', mods: { tier: -1, bold: -1 } }).meta.title, 'Slip — 0d (2d, keep lowest)', 'below zero reads the same, never -1d');
+  assert.equal(en.roll({ approach: 'Slip', load: 'Loud', mods: { tier: -1, bold: -1 } }, { seed: 1 }).pool, -1, 'the pool itself still carries the arithmetic');
   assert.equal(c.meta.sub, "opening gambit is the unwatched door · Loud loadout, load 6 · '68 p.1–2");
 });
 

@@ -225,6 +225,78 @@ await test('noteBody and canvas', () => {
   assert.ok(new Set(cv.nodes.map(x => x.id)).size === cv.nodes.length, 'node ids unique');
 });
 
+/* the generator review (16/10/2026): B9 rumour with no dossiers, B6 honest flags, idea 7 the one-line plan, B21 band
+   labels true to the star, B12 no author notes on the card */
+await test('review: no-dossier rumour, flags, the plan line, band labels, no author notes', () => {
+  const BANDS = ['public', 'working', 'controlled', 'secure'];
+  const TEMPL = ["Word is that %F%'s allies are restless.", "Word is that %F%'s enemies are close.", "Word is that %F%'s goals have changed.", "Word is that %F%'s quirk or situation is talked about."];
+  // B9: no faction has a dossier (an old pack): the rumour names the faction and leaves the rest to the table; it is
+  // still one draw, so every other field of the roll is the same as with dossiers
+  const noD = clone(FIX); noD.T.factionDetail = {}; noD.T.rumour = TEMPL;
+  const gone = clone(FIX); delete gone.T.factionDetail; gone.T.rumour = TEMPL;
+  const withD = clone(FIX); withD.T.rumour = TEMPL;
+  const strip = x => { const y = clone(x); delete y.rumour; return y; };
+  for (let s = 0; s < 40; s++) {
+    const a = L.generate(noD, {}, { seed: s, mem: {} }), b = L.generate(withD, {}, { seed: s, mem: {} }), c = L.generate(gone, {}, { seed: s, mem: {} });
+    assert.ok(!/undefined|%F%/.test(a.rumour) && /'s (allies|enemies|goals|situation)/.test(a.rumour), a.rumour);
+    assert.ok(FIX.T.faction.some(f => a.rumour.includes(f[0])), 'names a faction: ' + a.rumour);
+    assert.equal(a.rumour, c.rumour);
+    assert.deepEqual(strip(a), strip(b), 'everything but the rumour is the same roll');
+    assert.ok(/ run with | are up against |: | — /.test(b.rumour) && !/%F%/.test(b.rumour), 'with dossiers the rumour carries the dossier line: ' + b.rumour);
+  }
+  // B6 / idea 7: flags only for what is not true of every roll; the rule shows its text; ring-skips sit in the Plan
+  // fold's hint; the plan line is built from the roll's own fields
+  let withRule = 0, withSkips = 0, flagged = 0;
+  for (let s = 0; s < 150; s++) {
+    const o = L.generate(FIX, { approach: FIX.T.approach[s % FIX.T.approach.length].n }, { seed: s * 7 + 1, mem: {} });
+    const g = L.glance(o, FIX), F = L.folds(o, FIX);
+    assert.ok(!g.flags.some(f => /District rule|ring-skip/.test(f)), 'always-on flags are gone: ' + g.flags.join(' · '));
+    for (const f of g.flags) assert.ok(/^(Off their turf|Tier [IVX0]+ holding|Paranormal |.+ outside )/.test(f), 'a real flag: ' + f);
+    if (g.flags.length) flagged++;
+    if (o.special) { withRule++; assert.ok(o.special.replace(/\s+/g, ' ').trim().startsWith(g.rule.replace(/…$/, '')) && g.rule.length <= 110, 'the rule text, shortened: ' + g.rule); }
+    else assert.equal(g.rule, '');
+    assert.equal(g.skips, o.skips.length); if (o.skips.length) withSkips++;
+    assert.equal(F.find(f => f.id === 'plan').hint, o.styleName + ' · ' + o.skips.length + ' skip' + (o.skips.length === 1 ? '' : 's'));
+    const locks = o.rooms.filter(r => r.obstacle && BANDS.indexOf(r.band) <= BANDS.indexOf(o.targetBand)).length;
+    const back = o.vectors[2].how.replace(/\s+—\s+there is always one\.$/, '').replace(/\.$/, '').replace(/^./, ch => ch.toLowerCase());
+    assert.equal(g.plan, 'Front via ' + o.namedStreet + ' (' + o.streetObstacle.toLowerCase().replace(/\.$/, '') + '). Target: ' + o.targetRoom + ' (' + g.target.band.toLowerCase() + ')' +
+      (locks ? ', behind ' + locks + ' lock' + (locks === 1 ? '' : 's') : ', no lock in the way') + '. Back route: ' + back + '.');
+    assert.equal(g.target.locks, locks);
+    const gl = L.glanceLines(o, FIX);
+    assert.ok(gl.includes('**Plan:** ' + g.plan)); assert.equal(gl.some(l => l.startsWith('**Rule:** ')), !!o.special); assert.ok(gl.join('\n').length < 1500);
+    // B12: no author notes anywhere a GM reads
+    const all = L.cardLines(o, FIX).join('\n') + F.map(f => f.lines.join('\n')).join('\n') + L.noteBody(o, { pack: FIX });
+    assert.ok(!/\[TODO|flagged for/i.test(all), 'author note on the card');
+  }
+  assert.ok(withRule > 0 && withSkips > 0 && flagged < 150, 'rule ' + withRule + ' skips ' + withSkips + ' flagged ' + flagged);
+  // a theme with no staff-side room: the service way says so in plain words
+  const thin = clone(FIX);
+  for (const k of Object.keys(thin.T.theme)) thin.T.theme[k].alsoRooms = thin.T.theme[k].alsoRooms.filter(nb => nb[1] !== 'working' && nb[1] !== 'controlled');
+  const t = L.generate(thin, {}, { seed: 4, mem: {} });
+  assert.ok(/^No staff door is printed/.test(t.vectors[1].how) && !/TODO/.test(t.vectors[1].how), t.vectors[1].how);
+  // a faction with neither dossier nor thumbnail: the same plain words in the card and in the fold
+  const bare = clone(FIX); bare.T.factionDetail = {}; bare.T.factionThumb = {};
+  const u = L.generate(bare, {}, { seed: 4, mem: {} });
+  assert.ok(L.cardLines(u, bare).some(l => l.includes('no dossier or thumbnail is printed')) && L.folds(u, bare).find(f => f.id === 'opp').lines.some(l => l.includes('no dossier or thumbnail is printed')));
+  // B21: a pack whose Secure label says "the target" (the real one does) stays true to the roll when the ★ sits elsewhere
+  const named = clone(FIX);
+  named.T.bandLabel = { public: 'Public — anyone can be here', working: 'Working — staff only', controlled: 'Controlled — most locks are here', secure: 'Secure — the target' };
+  let elsewhere = 0, there = 0;
+  for (let s = 0; s < 60; s++) {
+    const o = L.generate(named, { approach: named.T.approach[s % named.T.approach.length].n }, { seed: s, mem: {} });
+    const ref = L.folds(o, named).find(f => f.id === 'ref').lines.find(l => l.startsWith('- **Bands**'));
+    const card = L.cardLines(o, named).join('\n');
+    if (o.targetBand === 'secure') { there++; assert.ok(ref.includes('Secure — the target ★') && !/usually/.test(ref), ref); assert.equal((ref.match(/★/g) || []).length, 1); }
+    else {
+      elsewhere++;
+      const short = named.T.bandLabel[o.targetBand].split(' — ')[0];
+      assert.ok(ref.includes('Secure — the target, usually (★ in ' + short + ' this time)') && ref.includes(named.T.bandLabel[o.targetBand] + ' ★'), ref);
+      assert.ok(!/### Secure — the target \(/.test(card) && card.includes('### ' + named.T.bandLabel[o.targetBand] + ' ★ ('), 'the room headings too');
+    }
+  }
+  assert.ok(elsewhere > 5 && there > 5, 'target seats: ' + elsewhere + ' elsewhere, ' + there + ' secure');
+});
+
 /* ---------- the player leak test ---------- */
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 function hiddenStrings(o, reveal) {

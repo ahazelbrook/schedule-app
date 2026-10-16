@@ -59,7 +59,11 @@
          md is markdown: **bold**, *italic*; never HTML.
 
    gen.figure(npc, { seed, K, map, archetypes })
-                                   -> { spec, warnings, notes, tries, fallback }
+                                   -> { spec, warnings, notes, tries, fallback, failed?, note }
+       `note` is the one line to show under the portrait: '' when the figure drew clean, "Portrait: stripped props."
+       when a rung stripped something, "Portrait: a stock figure (…)" on the archetype fallback, "No portrait: …"
+       when nothing could be built (`failed: true`, spec {}). A mapping or kit failure after the kit check never
+       throws: it comes back as that failed result, so the page can show the note instead of a silent blank.
        Builds a figure kit v2 spec for the NPC: its own random stream (seed defaults to a hash of the name), so the
        vault draws are never disturbed. K is the kit (window.B68Figure | require('../figures/figure-kit.js')).
        Contract with the figure map (app/gm/figure-map.js, package P3a), used when present:
@@ -141,7 +145,7 @@
   // --- Pure card text (the vault's identity, role, describe, play, want, chips, rows) ---------------------------
   function identity(o) { return o.alias ? o.name + ' — "' + o.alias + '"' : o.name; }
   function role(o) {
-    var fac = o.faction ? o.rank + ' ' + o.faction + ' (Tier ' + ROMAN[o.factionTier] + ', ' + holdWord(o.factionHold) + ')' : 'unaffiliated';
+    var fac = o.faction ? o.rank + ' ' + o.faction + ' (Tier ' + (ROMAN[o.factionTier] || String(o.factionTier)) + ', ' + holdWord(o.factionHold) + ')' : 'unaffiliated';
     return o.profession + ' · ' + fac + ' · ' + o.district + (o.place ? ' · ' + o.place : '');
   }
   function describe(o) {
@@ -268,7 +272,7 @@
       'tags:', '  - wiki/games', '  - wiki/blades-in-the-dark', '  - wiki/faction', '---', ''
     ].join('\n') +
       '# ' + o.faction + '\n\n' +
-      '*Tier ' + ROMAN[o.factionTier] + ', ' + holdWord(o.factionHold) + "* — *Blades '68* p." + (d.p || '?') + '\n\n' +
+      '*Tier ' + (ROMAN[o.factionTier] || String(o.factionTier)) + ', ' + holdWord(o.factionHold) + "* — *Blades '68* p." + (d.p || '?') + '\n\n' +
       (d.what ? '> [!quote] At a glance\n> ' + d.what + '\n>\n> **Right now:** ' + d.now + '\n\n' : '') +
       (d.turf ? '- **Turf** — ' + d.turf + '\n' : '') +
       (d.boss ? '- **Who runs it** — ' + d.boss + '\n' : '') +
@@ -451,10 +455,12 @@
         var f = UI.faction ? T.faction.filter(function (x) { return x[0] === UI.faction; })[0]
           : PFAC && oneIn(2) ? fresh('faction', T.faction.filter(function (x) { return PFAC.indexOf(x[0]) >= 0; }), byName)
           : fresh('faction', T.faction, byName);
-        o.faction = f[0]; o.factionTier = f[1]; o.factionHold = f[2];
+        // the tier is a number in the pack; a pack that carries it as text ("3") must not make the quality NaN
+        var tier = Number(f[1]);
+        o.faction = f[0]; o.factionTier = isFinite(tier) ? tier : f[1]; o.factionHold = f[2];
         o.rank = fresh('rank', T.rank);
         var dr = d6();
-        o.quality = Math.max(1, Math.min(6, f[1] + (dr <= 2 ? -1 : dr >= 5 ? 1 : 0)));
+        o.quality = Math.max(1, Math.min(6, (isFinite(tier) ? tier : 2) + (dr <= 2 ? -1 : dr >= 5 ? 1 : 0)));
       }
 
       // Look
@@ -710,10 +716,28 @@
     return out;
   }
 
+  // The one-line note a card shows under the portrait: '' when the figure drew clean, what was stripped or swapped
+  // otherwise, and why there is no portrait when there is none.
+  function figureNote(r) {
+    if (r.failed) return 'No portrait: ' + (r.warnings[0] || 'the figure could not be built') + '.';
+    if (r.fallback) return 'Portrait: a stock figure (the nearest archetype, name swapped)' + (r.warnings.length ? '; the kit still warns: ' + r.warnings[0] : '') + '.';
+    var done = r.notes.filter(function (n) { return /^(stripped|dropped)/.test(n); });
+    return done.length ? 'Portrait: ' + done.join(', ') + '.' : '';
+  }
   function figure(npc, F, opts) {
     opts = opts || {};
     var K = getKit(opts);
     if (!K) throw new Error('B68GmNpc.figure: the figure kit is not loaded (pass opts.K)');
+    var out;
+    try { out = figureWith(npc, F, opts, K); }
+    catch (e) {
+      // a mapping or kit failure is a note on the card, never a silent miss (the roll itself is already drawn)
+      out = { spec: {}, warnings: ['the figure failed: ' + (e && e.message || e)], notes: ['the figure threw: ' + (e && e.message || e)], tries: 0, fallback: true, failed: true };
+    }
+    out.note = figureNote(out);
+    return out;
+  }
+  function figureWith(npc, F, opts, K) {
     var seed = opts.seed != null ? opts.seed >>> 0 : fnv(npc.name);
     var rng = seedRng((seed ^ 0x9E3779B9) >>> 0);
     var O = K.options();
@@ -749,7 +773,7 @@
     // Last rung: the nearest archetype, name swapped.
     var list = getArchetypes(opts);
     var arch = nearestArchetype(spec, list, npc);
-    if (!arch) return { spec: spec || {}, warnings: last.length ? last : ['no figure spec and no archetypes'], notes: notes, tries: tries, fallback: true };
+    if (!arch) return { spec: spec || {}, warnings: last.length ? last : ['no figure spec and no archetypes'], notes: notes, tries: tries, fallback: true, failed: true };
     var fb = fromArchetype(arch, npc, seed, spec);
     var w = [];
     try { w = checkSpec(K, fb); } catch (e) { w = ['render threw: ' + (e && e.message || e)]; }

@@ -22,7 +22,8 @@
        replay { id:'engagement', seed, mem:{}, ui }   en.replay(replay) redraws the same dice
        lines  [{ kind:'read', id:'mods', md }, { kind:'want', id:'result', md }, { kind:'grid', id:'roll',
               rows:[{ k:'Roll', md }] }, { kind:'read', id:'cut', md }]   md is markdown, never HTML
-       meta   { id:'engagement', title ("<approach> — 2d"), sub, chips, text, all, label, result }
+       meta   { id:'engagement', title ("<approach> — 2d"; at or below zero "<approach> — 0d (2d, keep lowest)"), sub,
+              chips, text, all, label, result }
    Helpers: B68GmEngagement.seedRng(a) · poolOf(T, mods) · rollPool(n, rng) · outcomeOf(T, r) · plain(md)
    --------------------------------------------------------------------------------------------------------------- */
 (function (root, factory) {
@@ -101,7 +102,8 @@
         .filter(function (f) { return n.mods[f.id] !== 0; })
         .map(function (f) { var m = n.mods[f.id]; return (m > 0 ? '**+1d**' : '**−1d**') + ' ' + (m > 0 ? f.plus.toLowerCase() : f.minus.toLowerCase()); });
       var mods = '1d base' + (active.length ? ' · ' + active.join(' · ') : ' · no modifiers');
-      return { pool: pool, title: n.app[0] + ' — ' + pool + 'd', sub: sub, mods: mods };
+      // a pool at or below zero rolls two dice and keeps the lowest: the title says so, never "-1d"
+      return { pool: pool, title: n.app[0] + ' — ' + (pool > 0 ? pool + 'd' : '0d (2d, keep lowest)'), sub: sub, mods: mods };
     }
     function meta(h, extra, lines) {
       var all = [h.title, h.sub].concat(lines.map(function (l) { return l.kind === 'grid' ? l.rows.map(function (r) { return r.k + ': ' + r.md; }).join(' ') : l.md; })).map(plain);
