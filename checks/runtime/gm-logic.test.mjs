@@ -576,6 +576,7 @@ await test('annotate: "kind — example" lead, spend sentence as small, coach fl
   const cp = con.annotate(con.roll('complication', { scene: 'chase', threat: 'the wobbly ladder' }, { seed: 4, mem: {} }));
   ok(/^Pram \d/.test(cp.meta.text) && cp.lines[0].kind === 'want' && /the wobbly ladder/.test(cp.lines[0].small), JSON.stringify(cp.lines[0]));
   eq(cp.detail.draw, cp.meta.text); eq(cp.lines.length, 3); eq(cp.lines.map(l => l.kind), ['want', 'grid', 'read']);
+  eq(cp.detail.coach, [2], 'detail.coach indexes the annotated lines (the draw moved up)'); ok(cp.lines[2].coach);
   const cq = con.annotate(con.roll('complication', { threat: 'the wobbly ladder' }, { seed: 4, mem: {} }));
   ok(/^[A-Z].*: .*\.$/.test(cq.meta.text) && /the wobbly ladder/.test(cq.lines[0].small) && cq.lines[1].kind === 'grid', 'oracle complication leads: ' + cq.meta.text);
   const cn = con.annotate(con.roll('complication', { scene: 'chase' }, { seed: 4, mem: {} }));

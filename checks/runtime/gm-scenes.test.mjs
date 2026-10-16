@@ -11,6 +11,7 @@ import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
@@ -168,6 +169,21 @@ await test('B8: check(T) names every key a pack is missing or has empty; the fix
   // a complete pack rolls clean cards; check() is what the page shows before a sparse one fails
   const sc = S.create({ T });
   for (let i = 0; i < 20; i++) checkRoll(sc.roll({ sel: '' }, { seed: seedOf(i), mem: {} }), 'complete #' + i, T);
+});
+
+// ---- Byte-identity (the generator review, 16/10/2026): the scene is the vault's roll; the fixes never change it. These
+// digests were taken from scenes.js at 7fce4b9 (anywhere and each district, 100 seeds each, then a 200-roll run sharing
+// one memory). Change them only with the fixture.
+const SCN_DIGEST = '400 525ffee17f90db69a24a9ceda2ec33c0792132dd8a40ea548a5f361cdb637903';
+await test('byte-identity: roll() over the fixture hashes to the digest taken before the review fixes', () => {
+  const h = createHash('sha256');
+  const sc = S.create({ T }), sels = [''].concat(T.district.map(d => d.n));
+  let n = 0;
+  for (const sel of sels) for (let s = 0; s < 100; s++) { h.update(JSON.stringify(sc.roll({ sel }, { seed: (s * 2654435761) >>> 0, mem: {} })) + '\n'); n++; }
+  const mem = {};
+  for (let i = 0; i < 200; i++) h.update(JSON.stringify(sc.roll({ sel: sels[i % sels.length] }, { seed: i * 13 + 1, mem })) + '\n');
+  h.update(JSON.stringify(mem));
+  assert.equal(n + ' ' + h.digest('hex'), SCN_DIGEST, 'the rolls changed');
 });
 
 // ---- the port against the invented vault page, run as the vault runs it (node:vm, one seeded Math.random) -------------
