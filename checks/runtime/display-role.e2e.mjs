@@ -74,9 +74,9 @@ try {
     }
   });
 
-  await step('only GET /api/me and GET /api/gm/display were called, and none was refused', async () => {
+  await step('only GET /api/me, GET /api/gm/display and the transcriber’s GET /api/gm/stt were called, and none was refused', async () => {
     await sleep(1500);
-    const odd = calls.filter((c) => !/^GET \/api\/(me|gm\/display) 200$/.test(c));
+    const odd = calls.filter((c) => !/^GET \/api\/(me|gm\/display|gm\/stt) 200$/.test(c));
     expect(odd.length === 0, 'unexpected API calls: ' + odd.join(' | '));
     expect(calls.some((c) => c === 'GET /api/gm/display 200'), 'display was polled: ' + calls.join(' | '));
   });
