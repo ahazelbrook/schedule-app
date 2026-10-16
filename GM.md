@@ -1,6 +1,6 @@
 # GM tools: the API and the secrecy contract
 
-The `#gm` page (the console with its Situations and Classic views, the location generator, street scenes and the engagement
+The `#gm` page (the console with its four Situations, the location generator, street scenes and the engagement
 roll) and the `#display` page (an iPad signed in as the GM) run on three GM-only endpoints. The generators' tables hold '68
 text and GM-only secrets, so they never enter git: the GM builds a **pack** from the vault on their own PC (`npm run
 gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser or with `npm run gm:push -- --only pack
@@ -91,23 +91,23 @@ fails and nobody is known, nothing is purged.
   stage) | the capture bar at the foot (buckets, the input, **File**, "N filed", **File last roll**). 600–1100 px: two columns, the rail below. Phone: the same bar as the laptop, 44 px
   (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | Engage / NPC | Cards | GM screen | iPad | State
   bar in two rows of five (every segment in reach, nothing to drag sideways), both stuck to the top; the Position switch first,
-  the situations a 2 × 2 grid (Classic: 3 × 3), the other controls behind the Scene line, capture on a floating button. After a
+  the situations a 2 × 2 grid, the other controls behind the Scene line, capture on a floating button. After a
   roll the card's header is scrolled into view (the console column on a laptop, the page on a phone): a roll is never below the fold.
-- **The app layout** (`body.gm-app`, 16/10/2026, every width since 18/10): the window is the page. While the tools are open the
-  site header and footer, the "The console" heading and its admin buttons give way to a slim top bar (the session, Saved, a
+- **The app layout** (`body.gm-app`, 16/10/2026; the only layout, at every width, since 18/10: the "Classic layout" switch and
+  the `b68.gm.layout` preference went): the window is the page. While the tools are open the
+  site header and footer give way to a slim top bar (the session, Saved, a
   stale-pack note, the beat, **Find**, **iPad:** what the players see, **Listening** with whether the PC is copying (only once
   the transcriber has ever been set up: the pill is hidden while `gm_stt` has never been written), **Clear → ambient**, **Lights out**,
   and a **Menu** with what is not play: the pack's export date, **Open the display page (for the iPad)**, Export tonight's note,
-  Clear tonight's capture (it confirms), Update pack, the console view (**Situations | Classic**), the site's pages, **Classic layout**
-  and Forget GM data). On a laptop the three columns each scroll on their own and capture sits fixed at the foot, so a
+  Clear tonight's capture (it confirms), Update pack, the site's pages and Forget GM data). On a laptop the three columns each
+  scroll on their own and capture sits fixed at the foot, so a
   long Prep note or the GM screen never carries the console or the rail away; toasts sit above the capture bar, never over its
   input. The side tabs are one row with their keys showing at 1280 px (Prep, GM screen |
   Location, Street, Engage, NPC | Cards, iPad). Prep and the GM screen show their sections as an outline beside the text, the one
   being read marked. **Focus** (`F`, or the button by the tabs) shrinks the console to its keys on any tab (it replaces Prep's
   Wide, and shares its setting, `b68.gm.prepWide`); a roll made in Focus leaves Focus so the card shows (a toast says so, once
-  per page load). Empty rail boxes are one line. Below 1100 px the page scrolls under the sticky bar. **Classic layout** in the menu brings back
-  the old page on this device (`b68.gm.layout` = classic: the site header, the heading and its buttons, the toggle beside them); **Laptop layout** in the old header returns. `body.gm-app` turns it
-  on while the tools are open; loading and import screens keep the site header.
+  per page load). Empty rail boxes are one line. Below 1100 px the page scrolls under the sticky bar. `body.gm-app` turns it
+  on while the tools are open; the loading and import screens keep the site header.
 - **Table aids** (17/10/2026):
   - **Find** (`Ctrl+K`, `/`, or **Find** in the bar): one box over the open Prep note (its sections and transclusions),
     the GM screen, the pack's NPCs, PCs, factions and world clocks, the cast's NPCs made in the app, the table clocks,
@@ -123,24 +123,25 @@ fails and nobody is known, nothing is purged.
     on that speaker's box. `Enter` saves the name.
   - **Update pack asks first** when the file would lose prep the app has (a part gone, a prep note gone or much
     shorter): the button reads **Upload anyway** and confirms (the same guard as `gm:pack` and `gm:push`, SYNC.md).
-- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (Classic: `1`–`9` roll a single table), `R` `B` `N` `S` `E` `O` `T` `I` switch the panel, `F` Focus, `/` or `Ctrl+K` Find
-  (Prep, Location, NPC, Street scene, Engagement, Cards, Screen, iPad), `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
-  the last roll under "Rolled at the table", `H` blanks the screen until any key or tap, `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
-- **Situations and Classic.** The console opens on **Situations**: four buttons, each a moment in the roll: `1` **Before** (a Devil's
+- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (`5`–`9` do nothing: the single tables have no keys), `R` `B` `N` `S` `E` `O` `T` `I` switch the panel
+  (Prep, Location, NPC, Street scene, Engagement, Cards, GM screen, iPad; `R` and `T` also put the cursor in that pane's find box, so typing
+  lands there and not on the shortcuts), `F` Focus, `/` or `Ctrl+K` Find, `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
+  the last roll under "Rolled at the table", `Shift+H`, or `H` twice within a second, blanks the screen until any key or tap (one stray `H` does
+  nothing; the first alone says how, once per page load), `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
+- **Situations.** The console is the four Situations, one mode only (the Classic nine-button view, its toggle, the `b68.gm.view`
+  preference and the `SITUATIONS_DEFAULT` switch went on 18/10/2026): four buttons, each a moment in the roll: `1` **Before** (a Devil's
   Bargain), `2` **4/5**, `3` **1–3**, `4` **Someone**. A large three-way **Position** switch (controlled / risky / desperate, with what
   it means for severity, winds and harm) sits above them, always on screen; the other controls (scene, district, PC, NPC,
   threat) fold under the **Scene** line; there is no Result control (the button is the result). A card is a **lead box** (one big line, its chips, its own
   detail under *More*), at most three one-line **Or** rows that each open to their full section, and **one** actions row merged
   from every section (bargains owed, callbacks used, ticks...), then Pin and Copy. Under the card and Earlier, **More tables**
-  folds out the nine classic rollers (no keys). **Classic** is the nine-button console exactly as it was (keys `1`–`9`, the Result
-  control; on a laptop its nine buttons sit two to a row so no label breaks mid-word): the **Situations | Classic** toggle in the
-  Menu (and in the old header, in the classic layout) is one tap and is remembered per device
-  (`localStorage` `b68.gm.view`; without storage it opens on Situations). The release switch is `SITUATIONS_DEFAULT` near the top
-  of `gm-page.js`: `false` hides the toggle and shows Classic only (the safe release; rollback is also one tap on the toggle).
-  Composed cards are stored under `cards.situation` / `hist.situation` (replay info: `{ id: 'situation', situation, seed, ui, mem }`),
-  never under `console`: code from before redraws any unknown console id as a Devil's Bargain. Classic and single tables keep
-  `cards.console` / `hist.console`. In Situations, Earlier lists the last five across both. Position is the same live control in both views.
-- **Location.** The generator's controls and Roll, then the card (since 15/10/2026), then the map.
+  folds out the nine single tables (no keys); a pack whose console has no situations layer shows a note where the four buttons
+  go, and its single tables still roll. Composed cards are stored under `cards.situation` / `hist.situation` (replay info:
+  `{ id: 'situation', situation, seed, ui, mem }`), never under `console`: code from before redraws any unknown console id as a
+  Devil's Bargain. Single tables keep `cards.console` / `hist.console`, where rolls from before the Situations also live, and
+  Earlier lists the last five across both; the newer of the two cards is the one on screen.
+- **Location.** The generator's controls and Roll, then the card (since 15/10/2026), then the map. A roll draws the GM-layer
+  **rings** map at once (the controls go to rings / GM, the theme stays; Draw is for another view, theme or layer).
   - **The glance card** (`B68GmLocation.glance`): the name and place, **Say** (the first line of the street
     description, built only from fields `playerSummary` already shows) with the **Street description on iPad** button,
     then Whose (faction, Tier, hold, district Security), the bands (room count, locks, ★ on the target's band, dashed
@@ -152,11 +153,13 @@ fails and nobody is known, nothing is purged.
     fixed lines on the service side and back route). A band note that says to call it at the table also shows in the
     band fold of the room it names. Wording is shortened in the folds only, never in `generate()`, because the map kit,
     the canvas and `playerSummary` read the roll. Open folds are remembered per device (`b68.gm.locfold`, fold ids only).
-    The glance card and every fold are GM-only and carry the badge.
+    The whole page is GM-only, so nothing on the card says so; a mustard **Players see** chip marks what the players can see:
+    a revealed band (in the bands row and on its fold) and the Say box once the street description has gone to the iPad (this
+    roll, this page load).
   - **Pin** stores the glance card; **Copy** and **Download note (.md)** keep the whole card (`cardLines`, `noteBody`).
-  - **The map**: view, theme, layer (GM / Player) and the bands revealed to the player layer, Draw; then the warning
-    line, **Show on iPad**, **Set as score scene** and **Clear → ambient** together, never in a fold; then the map;
-    Download SVG / note (.md) / canvas fold under Downloads. **Show on iPad** is enabled only on the player layer, and
+  - **The map**: layer (GM / Player) and the bands revealed to the player layer, Draw; then the warning
+    line, **Show on iPad**, **Set as score scene** and **Clear → ambient** together, never in a fold; then the map; under it
+    **View & theme** (a fold, presentation only) and Download SVG / note (.md) / canvas under Downloads. **Show on iPad** is enabled only on the player layer, and
     the code renders the player layer itself and refuses any other svg (`gate` in `gm-page.js`; tested in
     `gm-nosecrets.test.mjs`, `gm-page.test.mjs` and `gm.e2e.mjs`). The street description goes to the iPad as plain
     text through the `playerSummary` whitelist only (the gate passes non-svg kinds), so `playerSummary` and `pushText`
@@ -199,11 +202,14 @@ fails and nobody is known, nothing is purged.
   the card says so. **Add to the cast** files the NPC as a hidden cast doc (tag `generated`, the look as the description, the
   play notes as GM notes) and stores the roll's seed and memory under `npcgen[<npc id>]` in the GM state, so `npm run gm:pull`
   can rebuild the vault card from it (`SYNC.md`). Pin and Copy work as on the other cards. Under it, the app's cast with
-  portraits: **Show on iPad** (a hidden NPC asks first) and **Put on stage** (opens the NPC on the cast page, which stages it).
+  portraits: **Show on iPad** (a hidden NPC asks first) and **Put on stage**, which stages them from here (a hidden NPC is
+  revealed first, after a confirm, as the cast page does; `campaign.scene = { npcs: { id: true }, at }` through boot's
+  `saveScene`, the same document the cast page writes); the rail's **On stage** box is the feedback, the button turns into
+  **Off stage**, and a small "open in the cast" link opens them on the cast page.
   A roll uses the pack's campaign part, not the live cast, so a freshly filed NPC is avoided by name only after the next
   pack build and push; that keeps the replay identical to the sync's. Code: `app/gm-page.js`, `app/gm/npc.js`,
   `app/gm/figure-map.js`, `scripts/lib/sync-npc.mjs`. Check: `checks/runtime/gm-npc-panel.e2e.mjs`.
-- **Screen** (`T`; on a phone the Screen segment). The GM screen: the vault note with `gm_screen: true` under the '68
+- **GM screen** (`T`; on a phone the GM screen segment). The GM screen: the vault note with `gm_screen: true` under the '68
   folder, which `npm run gm:pack` cuts at its `##` headings into the pack's `screen` part (`scripts/lib/screen-export.mjs`;
   text before the first `##` is an intro shown above them; a `## Related`, `## Provenance` or `## Sources` heading ends
   the cut; wikilinks become plain text). Book text, so it travels only in the pack, never in git. Jump chips per section,
@@ -225,7 +231,9 @@ fails and nobody is known, nothing is purged.
   - `> [!quote] SAY` as a read-aloud card; a code span that is one `[bracket]` (`` `[Blade's pitch]` ``) as a provenance chip;
   - links: `[[#Heading]]` scrolls; an NPC, PC or faction opens a peek card from the pack's campaign part (an NPC in the app's
     cast gets Show on iPad and Put on stage); another prep note opens it; anything else opens in Obsidian (`obsidian://open`);
-  - **Pin** on a section keeps it, live, at the top of the rail (three at most, `prep.pins`); **Wide** hides the console (on a laptop, **Focus** shrinks it to its keys instead).
+  - **Pin** on a section keeps it, live, at the top of the rail (three at most, `prep.pins`); **Wide** hides the console (on a laptop, **Focus** shrinks it to its keys instead);
+  - **Find in the note** (the box in the bar; `R` puts the cursor there): every word somewhere in a section's heading or text keeps
+    its chip in the section list, Enter goes to the first match, Esc leaves the box.
   The header says when the part was exported and warns after a day. Prep text never goes to the iPad or to players; edits are
   made in Obsidian and reach the page with the next pack build and push. Checks: `checks/runtime/gm-prep.test.mjs`,
   `checks/runtime/gm-prep.e2e.mjs` (`PREP_PACK=<pack>` to look at a real pack locally).

@@ -32,7 +32,7 @@ app/                 the page (the Worker's static assets; app/.assetsignore kee
   schedule.js/.css   the next-session card and the schedule box (grid, RSVP board, attendance)
   season.js/.css     the season print (#print)
   cast-page.js, cast.css   the cast (#cast) and the "on stage" banner (CAST.md)
-  gm/, gm-page.js, gm.css  the GM's page (#gm): the console (situations and the nine classic rollers), the location generator and map, street scenes, the engagement roll, the NPC generator, capture (GM.md); gm/ also holds the NPC generator's logic and figure map, which the sync uses too
+  gm/, gm-page.js, gm.css  the GM's page (#gm): the console (the four situations, the nine single tables folded under the card), the location generator and map, street scenes, the engagement roll, the NPC generator, capture (GM.md); gm/ also holds the NPC generator's logic and figure map, which the sync uses too
   display-page.js, display.css   the iPad's full-screen display (#display, GM.md): the spotlight over an ambient scene
   ambient/, _headers  the ambient scenes the iPad plays when nothing is spotlit (GM.md, "Ambient scenes"), framed same-origin only
   figures/           the vendored figure kit (v2) and cast

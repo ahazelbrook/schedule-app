@@ -537,6 +537,7 @@
       gm: function () { return (window.claude && window.claude.gm) || null; },
       db: function () { return db; },
       campaign: function () { return campLoaded && isObj(tableLatest) ? clone(tableLatest) : null; },
+      saveScene: function (scene) { return campaignSave({ scene: scene }); },   /* Put on stage from the GM page: { npcs: { id: true | false }, at }, as the cast page saves it */
       saveFile: function (name, data) { saveFile(name, data); },
       copy: function (text, ok) { copyText(text, ok); }
     };

@@ -1,8 +1,8 @@
 // The GM page (#gm) and the display wiring (#display) end to end against a real local Worker (wrangler dev, DEV_USER) on
 // PORT (default 8845), with the migrations applied (the seven seeded NPCs are there) and only invented fixture tables
 // (checks/runtime/fixtures/gm/). The GM imports a fixture pack through the page; the console opens on the four Situations
-// (keys 1-4, a three-way Position switch, a lead box with "Or" rows, one merged actions row); the Situations | Classic toggle
-// shows the nine-button console and is remembered across a reload; reloading redraws the same card; capture with P / X / L
+// (keys 1-4, a three-way Position switch, a lead box with "Or" rows, one merged actions row; the nine single tables fold under
+// the card, without keys); reloading redraws the same card; capture with P / X / L
 // records the session; the Home greeting's "Change name" edits the display name (saved, cleared, the API's 400 message,
 // offline); keys stay quiet while typing, the location tab rolls and draws, only a
 // player-layer map reaches the display (a GM-layer svg is refused in code), H blanks the screen, an NPC goes to the iPad
@@ -137,8 +137,7 @@ try {
   check(await G.page.$eval('#gm-controls', (c) => getComputedStyle(c).display === 'none') && /District: any/.test(await G.page.textContent('#gm-scene-chips')), 'the scene controls fold under a Scene line of labelled chips');
   const colOrder = await G.page.$$eval('.gm-console > *', (ks) => ks.filter((k) => getComputedStyle(k).display !== 'none').map((k) => k.id).join());
   check(colOrder === 'gm-pos,gm-scene,gm-buttons,gm-card,gm-earlier,gm-singles', 'the console column: Position, Scene, the four buttons, the card, Earlier, More tables (' + colOrder + ')');
-  check(!(await G.page.$('.gm-console [data-gm="view"]')) && await G.page.$eval('.gm-menu-list [data-gm="view"][data-v="situations"]', (b) => b.getAttribute('aria-pressed') === 'true') && !!(await G.page.$('.gm-menu-list [data-gm="view"][data-v="classic"]')), 'the Situations | Classic toggle is in the Menu, not the console column');
-  const viewClick = async (page, v) => { await page.click('[data-gm="menu"]'); await page.click('.gm-menu-list [data-gm="view"][data-v="' + v + '"]'); };
+  check(!(await G.page.$('[data-gm="view"]')) && !(await G.page.$('.gm-head')), 'one console (the four Situations) and one layout: no Situations | Classic toggle, no page heading');
   check(await G.page.$eval('#gm-menu-exp', (e) => e.classList.contains('stale') && /days old/.test(e.textContent)), 'menu: the five-day-old export is flagged');
   const cached = await G.page.evaluate(() => new Promise((res) => { const r = indexedDB.open('b68-gm'); r.onsuccess = () => { const tx = r.result.transaction('kv'); const q = tx.objectStore('kv').getAllKeys(); q.onsuccess = () => res(q.result); }; r.onerror = () => res(null); }));
   check(Array.isArray(cached) && cached.length === 1 && /^pack:/.test(cached[0]), 'the pack is cached in IndexedDB under pack:<user>: ' + JSON.stringify(cached));
@@ -192,7 +191,7 @@ try {
   const campLog = (await api('GET', '/campaign', GM)).json.doc.log || [];
   check(!campLog.some((e) => /Inspector Invented|goose/.test(e.text)), 'nothing from capture reaches the campaign log');
 
-  /* ---- the Position switch, a single table, and the Classic toggle (remembered per device) ---- */
+  /* ---- the Position switch, the single tables under More tables, a reload ---- */
   await G.page.click('#gm-pos [data-v="desperate"]');
   check(await G.page.$eval('#gm-pos [data-v="desperate"]', (b) => b.getAttribute('aria-checked') === 'true'), 'Position: one tap sets desperate');
   await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
@@ -203,19 +202,13 @@ try {
   await G.page.click('#gm-singles > summary');
   await G.page.click('#gm-singles [data-gm="roll"][data-n="9"]');
   check(await G.page.$eval('#gm-card article', (a) => a.getAttribute('data-tool')) === 'console' && !(await G.page.$('#gm-card .gm-lead')), 'a single table from the fold: a classic card in the same box');
-  await viewClick(G.page, 'classic');
-  check((await G.page.$$('#gm-buttons .gm-btn')).length === 9 && (await G.page.$$('#gm-pos [data-gm="pos"]')).length === 0 && (await G.page.$$('#gm-controls [data-ctl="result"]')).length === 1, 'Classic: the nine buttons, the Result control, no Position switch');
-  check(await G.page.evaluate(() => localStorage.getItem('b68.gm.view')) === 'classic', 'Classic is remembered on this device (localStorage)');
-  await G.page.keyboard.press('7');
-  check(await G.page.$eval('#gm-card article', (a) => a.getAttribute('data-tool')) === 'console', 'Classic: key 7 rolls a single table');
+  await G.page.click('#gm-singles [data-gm="roll"][data-n="7"]');
+  check(await G.page.$eval('#gm-card article', (a) => a.getAttribute('data-tool')) === 'console' && (await G.page.$$('#gm-earlier [data-gm="replay"]')).length >= 3, 'More tables: another single table rolls (no keys: 5-9 do nothing)');
   await until(async () => { const d = await gmState(); return d.hist && Object.keys(d.hist.console || {}).length >= 2; }, 5000);
   await G.page.reload(); await G.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
-  check((await G.page.$$('#gm-buttons .gm-btn')).length === 9 && await G.page.$eval('#gm-root', (r) => r.getAttribute('data-view')) === 'classic', 'reload: still Classic');
-  check(!!(await G.page.$('#gm-card article[data-tool="console"]')), 'reload: the Classic card is back');
-  check(await G.page.$eval('#gm-buttons', (b) => getComputedStyle(b).gridTemplateColumns.split(' ').length) === 2 && await G.page.$$eval('#gm-buttons .gm-btn b', (bs) => bs.every((b) => b.scrollWidth <= b.clientWidth + 1)), 'laptop Classic: two columns, no label wider than its button');
-  await shot(G.page, '01b-gm-classic');
-  await viewClick(G.page, 'situations');
-  check((await G.page.$$('#gm-buttons .gm-btn')).length === 4 && await G.page.evaluate(() => localStorage.getItem('b68.gm.view')) === 'situations', 'back to Situations in one tap');
+  check((await G.page.$$('#gm-buttons .gm-btn')).length === 4 && !(await G.page.$('[data-gm="view"]')) && (await G.page.$$('#gm-pos [data-gm="pos"]')).length === 3, 'reload: the four Situations and the Position switch; there is no Classic view to remember');
+  check(!!(await G.page.$('#gm-card article[data-tool="console"]')) && await G.page.$eval('#gm-earlier [data-gm="replay"][data-tool="console"]', (c) => !!c), 'reload: the single-table card is back, and Earlier lists it with the situations');
+  await shot(G.page, '01b-gm-single-table');
   await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
   await G.page.keyboard.press('4'); await G.page.waitForSelector('#gm-card .gm-lead');
   await sleep(700);   // the smooth scroll
@@ -361,7 +354,7 @@ try {
     check(l.scrollWidth <= l.clientWidth + 1 && !l.wide.length, name + ': no sideways overflow ' + JSON.stringify(l.wide));
     check(!l.small.length, name + ': every visible control is at least 44 px tall ' + JSON.stringify(l.small));
     /* every width: the site header gives way to the GM bar while the tools are open; the admin buttons and the display link are in the Menu */
-    check(await V.page.$eval('header.top', (h) => getComputedStyle(h).display === 'none') && await V.page.$eval('.gm-head', (h) => getComputedStyle(h).display === 'none'), name + ': no site header and no "The console" header while the tools are open');
+    check(await V.page.$eval('header.top', (h) => getComputedStyle(h).display === 'none') && !(await V.page.$('.gm-head')), name + ': no site header and no "The console" header while the tools are open');
     const bar = await V.page.$eval('.gm-bar', (b) => { const r = b.getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(r.height), pos: getComputedStyle(b).position }; });
     check(bar.top === 0 && bar.h >= 44 && (w >= 600 || bar.h === 44) && bar.pos === 'sticky', name + ': a sticky bar at the top ' + JSON.stringify(bar));
     await V.page.click('[data-gm="menu"]');
@@ -386,11 +379,6 @@ try {
       await shot(V.page, '03a-phone-situation');
       await V.page.click('#gm-card details.gm-or > summary'); const l3 = await V.page.evaluate(layout);
       check(l3.scrollWidth <= l3.clientWidth + 1 && !l3.wide.length, 'phone: an opened "Or" row does not overflow ' + JSON.stringify(l3.wide));
-      await viewClick(V.page, 'classic');
-      check(await V.page.$eval('#gm-buttons', (b) => getComputedStyle(b).gridTemplateColumns.split(' ').length) === 3, 'phone: Classic keeps its 3 × 3 grid');
-      const l4 = await V.page.evaluate(layout);
-      check(l4.scrollWidth <= l4.clientWidth + 1 && !l4.wide.length && !l4.small.length, 'phone: Classic, no overflow and every control is at least 44 px ' + JSON.stringify([l4.wide, l4.small]));
-      await viewClick(V.page, 'situations');
       check(await V.page.$eval('#gm-controls', (c) => getComputedStyle(c).display === 'none'), 'phone: the controls fold into the Scene line');
       await V.page.click('[data-gm="seg"][data-seg="state"]');
       check(await V.page.$eval('#gm-rail', (r) => getComputedStyle(r).display !== 'none') && await V.page.$eval('.gm-console', (c) => getComputedStyle(c).display === 'none'), 'phone: State shows the rail alone');
@@ -407,7 +395,7 @@ try {
     check(pr.status === 200 && pr.json.unchanged !== true, 'server: the location part changed (a new version to fetch)');
     await G.page.route('**/api/gm/pack?part=*', (r) => r.abort());
     await G.page.goto(BASE + '/#gm'); await G.page.reload();
-    check(await G.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 }).then(() => true, () => false) && /offline copy/.test(await G.page.textContent('#gm-exp')), 'packPart fails: the console draws from the cached pack, marked offline copy');
+    check(await G.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 }).then(() => true, () => false) && /offline copy/.test(await G.page.textContent('#gm-menu-exp')), 'packPart fails: the console draws from the cached pack, marked offline copy');
     await G.page.unroute('**/api/gm/pack?part=*');
   }
 

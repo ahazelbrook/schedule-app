@@ -1,6 +1,6 @@
 // Unit test for the GM page (app/gm-page.js; no browser): its pure helpers (what may reach the iPad, replaying a console card
 // exactly, saving the GM state, the Situations cards, the session on a capture) and the page itself on a small fake DOM (the
-// Situations / Classic views and their toggle, the Position switch, replay after a reload, capture, the display-name editor). Invented fixtures, except two sweeps over the real pack
+// the four Situations (the single tables folded under the card), the Position switch, replay after a reload, capture, the display-name editor). Invented fixtures, except two sweeps over the real pack
 // (gm-private/, git-ignored) that run only when it is on this machine and print nothing from it.
 //   node checks/runtime/gm-page.test.mjs
 import fs from 'node:fs';
@@ -186,26 +186,20 @@ const FIXL = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fi
 const mdPlain = (s) => '<p>' + String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>';   // the page passes B68Markdown here
 const count = (s, re) => (s.match(re) || []).length;
 
-await test('5a. conView: Situations unless this device chose Classic; the release switch off, or no situations layer, is Classic always', () => {
-  assert.equal(P.conView(null, true), 'situations');
-  assert.equal(P.conView('situations', true), 'situations');
-  assert.equal(P.conView('classic', true), 'classic');
-  assert.equal(P.conView('nonsense', true), 'situations');
-  assert.equal(P.conView('situations', true, false), 'classic', 'SITUATIONS_DEFAULT = false');
-  assert.equal(P.conView('situations', false), 'classic', 'a console without the layer');
-  assert.equal(P.SITUATIONS_DEFAULT, true);
-  assert.equal(P.VIEW_KEY, 'b68.gm.view');
+await test('5a. one console: no Classic view, no view preference, no release switch, no layout preference', () => {
+  assert.equal(P.conView, undefined); assert.equal(P.SITUATIONS_DEFAULT, undefined); assert.equal(P.VIEW_KEY, undefined);
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  assert.ok(!/b68\.gm\.view|b68\.gm\.layout|SITUATIONS_DEFAULT|data-view|layout-classic|layout-app/.test(src), 'nothing of the old switches is left in the page');
 });
 
-await test('5b. keyAction: 1-4 are situations in Situations (5-9 do nothing); Classic keeps 1-9; typing and modifiers stay quiet', () => {
-  for (let n = 1; n <= 4; n++) assert.deepEqual(P.keyAction({ key: String(n), view: 'situations' }), { type: 'situation', n });
-  for (let n = 5; n <= 9; n++) assert.equal(P.keyAction({ key: String(n), view: 'situations' }), null);
-  for (let n = 1; n <= 9; n++) { assert.deepEqual(P.keyAction({ key: String(n), view: 'classic' }), { type: 'button', n }); assert.deepEqual(P.keyAction({ key: String(n) }), { type: 'button', n }); }
-  assert.equal(P.keyAction({ key: '2', view: 'situations', typing: true }), null);
-  assert.equal(P.keyAction({ key: '2', view: 'situations', ctrlKey: true }), null);
-  assert.equal(P.keyAction({ key: '2', view: 'classic', metaKey: true }), null);
-  assert.deepEqual(P.keyAction({ key: 'l', view: 'situations' }), { type: 'last' });
-  assert.deepEqual(P.keyAction({ key: 'p', view: 'situations' }), { type: 'capture', bucket: 'n' });
+await test('5b. keyAction: 1-4 are situations, 5-9 do nothing (the single tables have no keys); typing and modifiers stay quiet', () => {
+  for (let n = 1; n <= 4; n++) { assert.deepEqual(P.keyAction({ key: String(n) }), { type: 'situation', n }); assert.deepEqual(P.keyAction({ key: String(n), view: 'classic' }), { type: 'situation', n }, 'a view is not a thing any more'); }
+  for (let n = 5; n <= 9; n++) assert.equal(P.keyAction({ key: String(n) }), null);
+  assert.equal(P.keyAction({ key: '2', typing: true }), null);
+  assert.equal(P.keyAction({ key: '2', ctrlKey: true }), null);
+  assert.equal(P.keyAction({ key: '2', metaKey: true }), null);
+  assert.deepEqual(P.keyAction({ key: 'l' }), { type: 'last' });
+  assert.deepEqual(P.keyAction({ key: 'p' }), { type: 'capture', bucket: 'n' });
 });
 
 await test('5c. sessionOf / captureEntry: the session number goes on the entry when the campaign has one (numbers only), else the entry is as before', () => {
@@ -372,9 +366,9 @@ async function openPage({ br, fg, camp, over } = {}) {
 }
 const cardTxt = (h) => (h.q('#gm-card').textContent || '').replace(/\s+/g, ' ').trim();
 
-await test('6a. the console opens on the four Situations: a big Position switch, the toggle, the single tables, no Result control', async () => {
+await test('6a. the console is the four Situations: a big Position switch, the single tables folded under the card, no Result control, no toggle', async () => {
   const h = await openPage();
-  assert.equal(h.q('#gm-root').getAttribute('data-view'), 'situations');
+  assert.ok(!h.q('#gm-root').hasAttribute('data-view'), 'one console: no view attribute');
   const btns = h.qa('#gm-buttons .gm-btn'); assert.equal(btns.length, 4);
   assert.deepEqual(btns.map((b) => b.getAttribute('data-sit')), ['before', 'fourfive', 'onetothree', 'someone']);
   assert.deepEqual(btns.map((b) => b.querySelector('kbd').textContent), ['1', '2', '3', '4']);
@@ -386,8 +380,7 @@ await test('6a. the console opens on the four Situations: a big Position switch,
   assert.ok(h.qa('#gm-controls [data-ctl]').length >= 4, 'scene, district, PC, NPC, threat stay');
   assert.equal(h.qa('#gm-singles [data-gm="roll"]').length, 9, 'nine single tables');
   assert.equal(h.qa('#gm-singles kbd').length, 0, 'no keys on the single tables');
-  assert.deepEqual(h.qa('.gm-menu-list [data-gm="view"]').map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed')]), [['situations', 'true'], ['classic', 'false']], 'the toggle is in the Menu');
-  assert.ok(!h.q('.gm-console [data-gm="view"]') && !h.q('.gm-conhead'), 'and takes no room in the console column');
+  assert.equal(h.qa('[data-gm="view"]').length, 0, 'no Situations | Classic toggle anywhere'); assert.ok(!h.q('.gm-conhead') && !h.q('.gm-head'), 'no console header, no page heading');
   const col = [...h.q('.gm-console').kids].filter((k) => k.nodeType === 1).map((k) => k.id);
   assert.deepEqual(col, ['gm-pos', 'gm-scene', 'gm-mini', 'gm-controls', 'gm-buttons', 'gm-card', 'gm-earlier', 'gm-singles'], 'the column: Position, Scene, the buttons, the card, Earlier, More tables');
   assert.equal(h.q('#gm-singles').tagName, 'DETAILS', 'the single tables are folded');
@@ -442,32 +435,6 @@ await test('6d. reload (close and open again) redraws the same situation card, a
   await h3.save();
 });
 
-await test('6e. Classic toggle: one tap shows the nine buttons (keys 1-9, Result control, no Position switch), remembered across a reload; Situations are kept apart', async () => {
-  const fg = fakeGm(), br = fakeBrowser();
-  const h = await openPage({ fg, br });
-  h.press('2'); const sitCard = cardTxt(h);
-  h.qa('[data-gm="view"][data-v="classic"]')[0].click();
-  assert.equal(h.q('#gm-root').getAttribute('data-view'), 'classic');
-  assert.equal(br.ls.get('b68.gm.view'), 'classic');
-  assert.equal(h.qa('#gm-buttons .gm-btn').length, 9); assert.equal(h.qa('#gm-pos [data-gm="pos"]').length, 0); assert.equal(h.qa('#gm-singles button').length, 0);
-  assert.equal(h.qa('#gm-controls [data-ctl="result"]').length, 1, 'Result is back'); assert.equal(h.qa('#gm-controls [data-ctl="pos"]').length, 1);
-  assert.ok(!h.q('#gm-card .gm-lead'), 'no composed card in Classic until you roll a single table');
-  h.press('5'); assert.equal(h.q('#gm-card article').getAttribute('data-tool'), 'console'); assert.ok(!h.q('#gm-card .gm-lead'));
-  h.press('9'); const classicCard = cardTxt(h);
-  assert.equal(h.qa('#gm-earlier [data-gm="replay"]').length, 2, 'Classic history: its own two rolls');
-  await h.save();
-  assert.ok(fg.server.doc.cards.console && fg.server.doc.cards.situation, 'both cards kept, each under its own id');
-  assert.equal(Object.keys(fg.server.doc.hist.console).length, 2); assert.equal(Object.keys(fg.server.doc.hist.situation).length, 1);
-  const h2 = await openPage({ fg, br });
-  assert.equal(h2.q('#gm-root').getAttribute('data-view'), 'classic', 'the choice is remembered on this device');
-  assert.equal(cardTxt(h2), classicCard);
-  h2.qa('[data-gm="view"][data-v="situations"]')[0].click();
-  assert.equal(br.ls.get('b68.gm.view'), 'situations');
-  assert.equal(h2.qa('#gm-buttons .gm-btn').length, 4);
-  assert.ok(cardTxt(h2) === classicCard || cardTxt(h2) === sitCard, 'the newer of the two shows');
-  await h2.save();
-});
-
 await test('6f. a single table rolled from the Situations row is a classic card (stored under console), shown in the same box', async () => {
   const h = await openPage();
   h.press('1'); await new Promise((r) => setTimeout(r, 8));
@@ -479,23 +446,6 @@ await test('6f. a single table rolled from the Situations row is a classic card 
   assert.equal(h2.q('#gm-card article').getAttribute('data-tool'), 'console', 'the newest roll is what comes back');
   assert.equal(h2.qa('#gm-earlier [data-gm="replay"]').length, 2, 'Situations history lists both tools, newest first');
   await h2.save();
-});
-
-await test('6g. the release switch off (SITUATIONS_DEFAULT = false): no toggle, Classic only, even if this device remembered Situations', async () => {
-  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
-  assert.ok(/var SITUATIONS_DEFAULT = true;/.test(src), 'the constant is near the top');
-  const br = fakeBrowser(); br.ls.set('b68.gm.view', 'situations');
-  const off = src.replace('var SITUATIONS_DEFAULT = true;', 'var SITUATIONS_DEFAULT = false;');
-  const ctx = vm.createContext(br.W); vm.runInContext(off, ctx);
-  const page = br.W.B68GmPage, fg = fakeGm(), root = br.doc.createElement('div'); br.doc.body.appendChild(root);
-  page.open(root, { ready: async () => {}, isGM: () => true, me: () => 'gm1', gm: () => fg.gm, db: () => null, campaign: () => ({}), saveFile() {}, copy() {} });
-  await until(() => page._state() && page._state().status === 'ready' && root.querySelector('#gm-root'));
-  assert.equal(root.querySelectorAll('[data-gm="view"]').length, 0, 'no toggle');
-  assert.equal(root.querySelectorAll('#gm-buttons .gm-btn').length, 9);
-  assert.equal(root.querySelectorAll('#gm-pos [data-gm="pos"]').length, 0);
-  for (const fn of br.doc.listeners.keydown) fn({ key: '7', target: br.doc.body, ctrlKey: false, altKey: false, metaKey: false, preventDefault() {}, stopPropagation() {} });
-  assert.equal(root.querySelector('#gm-card article').getAttribute('data-tool'), 'console');
-  page.close();
 });
 
 await test('6h. an action on the merged row works as before: a Devil\'s Bargain accepted is owed (and the bargain\'s capture line carries the session)', async () => {
@@ -760,7 +710,7 @@ await test('9a. keys: I opens the iPad panel and 0 clears to ambient; never whil
     assert.equal(P.keyAction({ key: k, altKey: true }), null); assert.equal(P.keyAction({ key: k, metaKey: true }), null);
   }
   assert.deepEqual(P.keyAction({ key: 'H' }), { type: 'blank' }, 'Shift+H blanks the GM screen at once'); assert.deepEqual(P.keyAction({ key: 'h' }), { type: 'blank-tap' }, 'a plain H is one tap of two');
-  assert.deepEqual(P.keyAction({ key: '1', view: 'classic' }), { type: 'button', n: 1 });
+  assert.deepEqual(P.keyAction({ key: '1' }), { type: 'situation', n: 1 });
 });
 
 await test('9b. crewOf: whole numbers clamped to 0-9 / 0-4; null without a number; ipadView draws from the server document', () => {
@@ -961,7 +911,7 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   assert.equal(h.qa('.gm-bar .gm-save').length, 1, 'saving shows in the bar');
   assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'the menu starts shut');
   h.q('[data-gm="menu"]').click(); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), false); assert.equal(h.q('[data-gm="menu"]').getAttribute('aria-expanded'), 'true');
-  assert.ok(['note', 'clearcap', 'update', 'layout-classic', 'forget'].every((a) => h.q('.gm-menu-list [data-gm="' + a + '"]')), 'export, clear the capture, update, classic and forget are in it');
+  assert.ok(['note', 'clearcap', 'update', 'forget'].every((a) => h.q('.gm-menu-list [data-gm="' + a + '"]')), 'export, clear the capture, update and forget are in it');
   assert.ok(h.q('.gm-menu-list a[href="#display"]') && h.qa('.gm-bar a[href="#display"]').every((a) => a.closest('.gm-menu-list')), 'the display page opens from the Menu, not the bar');
   assert.ok(!h.q('.gm-capacts [data-gm="note"]') && !h.q('.gm-capacts [data-gm="clearcap"]') && h.q('.gm-capacts [data-gm="last"]'), 'the capture bar keeps File last roll only');
   assert.equal(h.q('#gm-bar-stt').hasAttribute('hidden'), true, 'no Listening pill while the transcriber has never been set up');
@@ -979,16 +929,15 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   assert.ok(!h.q('#gm-root').classList.contains('focus') && !br.toasts.some((x) => /Focus off/.test(x[0])), 'the second time it goes without the toast (once per page load)');
   h.press('f'); assert.ok(h.q('#gm-root').classList.contains('focus'));
   h.q('[data-gm="focus"]').click(); assert.ok(!h.q('#gm-root').classList.contains('focus'), 'the button turns it off');
-  h.q('[data-gm="menu"]').click(); h.q('.gm-menu-list [data-gm="layout-classic"]').click();
-  assert.ok(!br.doc.body.classList.contains('gm-app') && br.ls.get('b68.gm.layout') === 'classic', 'Classic layout: off, and remembered');
+  h.q('[data-gm="menu"]').click(); h.q('.gm-menu-list [data-gm="note"]').click();
   assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'the menu shuts after an item');
-  h.q('.gm-head [data-gm="layout-app"]').click(); assert.ok(br.doc.body.classList.contains('gm-app') && !br.ls.has('b68.gm.layout'), 'Laptop layout brings it back');
+  assert.ok(!h.q('[data-gm="layout-classic"]') && !h.q('[data-gm="layout-app"]'), 'no layout switch: the app layout is the only one');
   await h.save();
   assert.ok(!br.doc.body.classList.contains('gm-app'), 'off once the page closes');
 });
-await test('10b. the rail: an empty box is one line; Classic layout survives a reopen', async () => {
-  const br = fakeBrowser(); br.ls.set('b68.gm.layout', 'classic'); const h = await openPage({ br, camp: CAMP3 });
-  assert.ok(!br.doc.body.classList.contains('gm-app'), 'classic chosen: the old layout');
+await test('10b. the rail: an empty box is one line; an old layout preference left in storage changes nothing', async () => {
+  const br = fakeBrowser(); br.ls.set('b68.gm.layout', 'classic'); br.ls.set('b68.gm.view', 'classic'); const h = await openPage({ br, camp: CAMP3 });
+  assert.ok(br.doc.body.classList.contains('gm-app') && h.qa('#gm-buttons .gm-btn').length === 4, 'the app layout and the four Situations, whatever this device remembered');
   const empties = [...h.qa('#gm-rail .gm-box-empty')].map((b) => b.textContent.replace(/\s+/g, ' ').trim());
   assert.ok(empties.includes('Table clocks · none'), JSON.stringify(empties));
   assert.ok(h.q('#gm-rail .gm-owed'), 'a box with something in it keeps its list (the fixture owes bargains)');
@@ -1108,7 +1057,7 @@ await test('11h. Update pack: a file that would lose a part says so, the button 
   const br = fakeBrowser({ FileReader: class { readAsText(f) { this.result = f.text; this.onload(); } }, confirm: () => { asked++; return false; } });
   const fg = fakeGm(); fg.gm.importPart = async () => { uploads++; return { version: 'x' }; };
   const h = await openPage({ br, fg, camp: CAMP3 });
-  h.q('.gm-head [data-gm="update"]').click();
+  h.q('.gm-menu-list [data-gm="update"]').click();
   const pk = { format: 1, exportedAt: new Date().toISOString(), parts: { console: { src: {}, ...FIXC.console }, location: { src: {}, T: FIXL.T, extra: FIXL.extra }, campaign: { src: {}, ...FIXC.campaign } } };
   const file = h.q('#gm-file'); file.files = [{ name: 'b68-gm-pack.json', text: JSON.stringify(pk) }]; file.id = 'gm-file';
   dispatch(file, 'change');
