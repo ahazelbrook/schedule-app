@@ -150,7 +150,7 @@ await test('routes.js: index.html loads exactly the core bundle; every other bun
   // (crewsheet.js with B68Campaign): every bundle keeps it
   const OLD = ['figures/figure-kit.js', 'figures/cast.js', 'maps/map-kit.js', 'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'schedule.js',
     'campaign.js', 'crews.js', 'crewsheet.js', 'season.js', 'markdown.js', 'rules.js', 'cast-page.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js',
-    'gm/engagement.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm-page.js', 'stt.js', 'display-page.js', 'name-edit.js', 'runtime/cf.js', 'boot.js'];
+    'gm/engagement.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm/downtime.js', 'gm-page.js', 'stt.js', 'display-page.js', 'name-edit.js', 'runtime/cf.js', 'boot.js'];
   for (const [name, list] of Object.entries(L.BUNDLES)) {
     const known = list.filter((f) => OLD.includes(f));
     eq(known, [...known].sort((a, b) => OLD.indexOf(a) - OLD.indexOf(b)), 'bundle ' + name + ' keeps the scripts in their index.html order');
@@ -180,7 +180,7 @@ await test('routes.js: need() adds each file once, scripts in order (async off),
   eq(doc.added().length, 7, 'each file added once');
   const gm = L.need('gm');
   eq(doc.order().slice(0, 10), ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', '<style>'], 'the GM stylesheets after the cast, still before the inline style');
-  eq(doc.order().slice(14), ['maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/engagement.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm-page.js'], 'gm/*.js before gm-page.js');
+  eq(doc.order().slice(14), ['maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/engagement.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm/downtime.js', 'gm-page.js'], 'gm/*.js before gm-page.js');
   doc.settle(['gm/npc.js']);
   let err = null; try { await gm; } catch (e) { err = e; }
   eq(err && err.message, 'could not load gm/npc.js', 'a file that fails rejects the bundle');
