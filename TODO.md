@@ -1,33 +1,40 @@
-# RESUME HERE (saved 16 Oct 2026, ~10:00 UTC)
+# RESUME HERE (updated 16 Oct 2026, afternoon UTC)
 
-**State.** Branch `ccr-e0dcd379-q104ac` (draft PR #26) has ALL SIX wave-1 branches merged plus the GM wave 2, and is
-green: `npm test` 624 passed; `npm run check:e2e-all` 25 of 26 (the transcriber check fails the same four lines on
-untouched main: the fake microphone does not work in the cloud container). Nothing is deployed yet.
+**State.** Branch `ccr-e0dcd379-q104ac` (draft PR #26): all six wave-1 branches, GM wave 2 and now `review/clocks`
+(E3 + the players' leftovers, merged e14c982: `npm test` green) are in. Nothing is deployed yet.
 
-**Two branches were still running when the session ran out** (both based on this branch; merge them, run the checks):
-1. `review/clocks` (1 commit) + `review/clocks-wip` (its uncommitted work): E3, clock ticks from two phones never
-   overwrite each other (a per-clock operation applied in the server's write loop, mirrored in cf.js; old phones'
-   whole-array writes still accepted), and the small players' leftovers (plain wording in boot.js, cast-page.js,
-   season.js, steps.js; season.css --ink-faint; 40 px crew-sheet dots). Finish from the wip diff if unfinished.
-   Checks: `npm test`, app/checks campaign/crewsheet/season/table/e2e, offline, display-role, cast, phone e2e.
-2. `review/display-budget-wip` (uncommitted work only): E4, the iPad's polling (display 2 s → 4 s, stt folded into the
-   display GET, 15 s after 2 h idle, 60 s hidden; never transcript lines to the display role) and E14 (reload once
-   after 10 min signed out, at most once per 30 min). Finish from the wip diff. Checks: display.test, stt.test,
-   checks/api/gm.mjs and display-role.mjs, check:display-ambient, display-role.e2e.
+**New since the morning (Alex asked, 16 Oct): the Downtime generator** ("personal business"). The pure module is done:
+`app/gm/downtime.js` (6fc125d, `checks/runtime/gm-downtime.test.mjs` 9 pass): Indulge vice (the scene at the PC's
+purveyor, a question, a hook; Overindulged: attract trouble / brag / lost / tapped, the mechanical line in bold with a
+scene prompt under it, a clock to start, a new purveyor from the book's list for Tapped), Recover, Long-term project,
+Train, Friend or rival, Lay low, Acquire. Original writing, no book text.
+
+**Running when this was written** (each pushes after every commit; if a session ends, read its branch and finish it):
+1. `review/display-budget` (agent finishing the uncommitted work saved in `review/display-budget-wip` f876648): E4, the
+   iPad's polling (display 2 s → 4 s, stt folded into the display GET, 15 s after 2 h idle, 60 s hidden; never transcript
+   lines to the display role) and E14 (reload once after 10 min signed out, at most once per 30 min). Checks:
+   display.test, stt.test, `npm test`, checks/api gm + display-role, check:display-ambient, display-role.e2e.
+2. `review/downtime-page` (agent): the GM page's **Downtime (D)** panel on the module: PC chips from the live sheets
+   (vice, purveyor, contacts, project clocks), activity chips, one tap on the result rolls the card (Indulged /
+   Overindulged; 1–3 · 4/5 · 6 · Crit; the attribute; Friend / Rival), the four-way option switch on the same card,
+   "Start a clock" adds a hidden danger clock to the table (clockOps add), Earlier, Pin, Copy, L. Checks: gm-page.test,
+   gm.e2e (+ phone), gm-scenes, gm-npc-panel, gm-prep, check:phone, npm test.
 
 **Then, in order:**
-3. Docs sweep (listed under Wave 2): references to the docs moved into docs/history/.
-4. Deploy steps for Alex (non-technical, Windows). Use `npm run deploy` from **Git Bash** (not plain wrangler: the
-   script stamps the build, which is how phones learn of a new version). It needs: a clean tree; `app/media/theme.mp3`
-   and `app/ambient/calling-cards.html` on disk (`node tools/ambient/scenes/cards.js` builds the cards; or
-   `B68_MEDIA_OK=1`); `B68_GM_EMAILS=ahazelbrook@gmail.com`; the Access team name and AUD tag (it asks; they are in
-   the Cloudflare Zero Trust dashboard: Settings → team domain `<team>.cloudflareaccess.com`; Access → Applications →
-   the app → Application Audience (AUD) Tag). It ends with a receipt (SETUP.md, "Updating the app").
-   **Never on a game day** (Sat 17 Oct 2026 is one: deploy Sunday or later). After deploying: on the iPad pin the
+3. Merge 1 and 2 (`git merge --no-ff`), run `npm test` and `npm run check:e2e-all` (25 of 26 expected: gm-stt's fake
+   microphone fails in the cloud container, also on untouched main).
+4. Docs sweep (listed under Wave 2) and the Windows deploy steps in SETUP.md (below).
+5. Mark PR #26 ready and merge to main (Alex asked for everything merged). Merging does not deploy.
+6. Deploy (Alex, from the Windows PC): `npm run deploy` from **Git Bash** (not plain wrangler: the script stamps the
+   build, which is how phones learn of a new version). It needs a clean tree; `app/media/theme.mp3` and
+   `app/ambient/calling-cards.html` on disk (`node tools/ambient/scenes/cards.js` builds the cards; or `B68_MEDIA_OK=1`);
+   `B68_GM_EMAILS=ahazelbrook@gmail.com`; the Access team name and AUD tag (it asks; Cloudflare Zero Trust dashboard:
+   Settings → team domain `<team>.cloudflareaccess.com`; Access → Applications → the app → Application Audience (AUD)
+   Tag). **Never on a game day** (Sat 17 Oct 2026 is one: deploy Sunday or later). After deploying: on the iPad pin the
    planning meeting for a minute (lag), then pin the credits and tap once (theme); watch for heads.
-5. Mark PR #26 ready, merge to main, deploy.
-6. Optional ideas, only after a session on the new layout (see Wave 2): re-roll one row, "Make them an NPC", chaining
-   Street → Location → NPC; E16 util.js; lazy loading phase 2.
+7. Optional ideas, only after a session on the new layout (see Wave 2): re-roll one row, "Make them an NPC", chaining
+   Street → Location → NPC; E16 util.js; lazy loading phase 2; a vault page for the downtime tables (pack part
+   `downtime`) if Alex wants to write their own.
 
 **How to start the next session:** "Read TODO.md on branch ccr-e0dcd379-q104ac and follow RESUME HERE."
 
@@ -248,7 +255,7 @@ last unsubscribe landing after the count; 2 of 12 runs failed under heavy load, 
       oldest. · S
 - [x] E17 · Decided 16 Oct: the Classic console view and the Classic page layout go entirely (one mode). Done on the
       gm-page branch.
-- [ ] (in progress on `review/clocks`) E3 P2 · Two players ticking different clocks within ~4 s lose one (the campaign PATCH sends the whole array). A
+- [x] (MERGED e14c982) E3 P2 · Two players ticking different clocks within ~4 s lose one (the campaign PATCH sends the whole array). A
       per-clock operation applied inside the server's write loop and mirrored in cf.js. · M (contract change)
 - [ ] E4 P2 · Workers Free budget: an always-on iPad polls display every 2 s and stt every 4 s (≈65k requests/day);
       with two laptops open the daily cap can trip mid-session. Display 4 s, stt carried in the display GET, slow to 30 s
@@ -262,7 +269,7 @@ last unsubscribe landing after the count; 2 of 12 runs failed under heavy load, 
 - [ ] Ideas from review B · Re-roll one row of a card (per-section seeds exist); a "Tonight" strip of every roll beyond
       the five, exported into the note; "Make them an NPC" on a Face/Reaction card; "Use the street" chaining Street →
       Location → NPC. · M
-- [ ] (in progress on `review/clocks`) Small leftovers from the players' work · "Files offline:" toast wording in boot.js (with its assertion in
+- [x] (MERGED e14c982) Small leftovers from the players' work · "Files offline:" toast wording in boot.js (with its assertion in
       checks/runtime/display-role.e2e.mjs); "shared files" wording in cast-page.js, season.js and steps.js; season.css's
       own light-token copy of --ink-faint (#8e8880 → #6a645e); crew-sheet ability circles, upgrade boxes and contact dots
       at 40 px on touch. · S
