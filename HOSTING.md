@@ -36,9 +36,10 @@ Ownership: **backend** owns `worker/`, `functions/`, `schema.sql`, `migrations/`
 - **Headers.** The page: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
   `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` (only that: a
   fuller CSP would need care with the page's inline styles) and a `Permissions-Policy` that
-  turns off camera, microphone, geolocation and payment. Every API answer: `Cache-Control:
-  no-store`, `nosniff`, `Referrer-Policy: same-origin`, `X-B68-Build: <build>`. Other files keep
-  the asset server's headers.
+  turns off camera, geolocation and payment and allows the microphone for this origin only (the
+  table iPad's transcriber, GM.md "Listening"). Every API answer: `Cache-Control: no-store`,
+  `nosniff`, `Referrer-Policy: same-origin`, `X-B68-Build: <build>`. Other files keep the asset
+  server's headers.
 - **Only the custom domain.** `workers_dev = false` and `preview_urls = false`: a
   `*.workers.dev` address would skip Access (the API would still refuse it without a token,
   the page would not). The route is `{ pattern = "<host>", custom_domain = true }`; deploying
@@ -59,9 +60,11 @@ missing token is `401 {"error":"not signed in","reason":"..."}`. `reason` is a s
 `app/runtime/cf.js`; when Access answered with its login page instead of JSON the page says so).
 
 Roles: `gm` when the email is in `GM_EMAILS` (comma-separated, case-insensitive); `display`
-when it is in `DISPLAY_EMAILS` (optional, the table iPad's own sign-in: it may only
-`GET /api/me` and `GET /api/gm/display`, everything else is 403; GM wins if an email is in both;
-GM.md); else `player`. Players read every character and write the ones they own (`doc.owner === email`)
+when it is in `DISPLAY_EMAILS` (optional, the table iPad's own sign-in: it may only make six
+calls, `GET /api/me`, `GET /api/gm/display` and the transcriber's `POST /api/gm/stt/token`,
+`GET` and `PATCH /api/gm/stt` and `POST /api/gm/transcript` (`DISPLAY_ALLOWED` in
+`functions/_lib/auth.js`); everything else is 403; GM wins if an email is in both; GM.md); else
+`player`. Players read every character and write the ones they own (`doc.owner === email`)
 plus new ones. GMs write and delete any.
 
 Development: when the binding `DEV_USER` is set (an email) and there is no Access header,
@@ -82,7 +85,7 @@ Environment / bindings: `DB` (D1), `ASSETS` (the files in `app/`), the secrets `
 ## Database (`schema.sql`, `migrations/`)
 
 `schema.sql` is the whole schema as it stands; `migrations/` holds the same statements as
-numbered D1 migrations (`0001_init.sql` to `0006_gm_ambient.sql`), applied with `npx wrangler d1 migrations apply DB
+numbered D1 migrations (`0001_init.sql` to `0007_gm_stt.sql`), applied with `npx wrangler d1 migrations apply DB
 --remote` (the deploy script does it) or `npm run db:local`. A later change goes in a new
 numbered file and in `schema.sql`; `checks/api/worker.mjs` fails when the two differ. The API
 also creates the tables lazily, so a fresh database works either way.
@@ -317,8 +320,9 @@ window.claude = { use: function (name) { /* -> Promise */ } };
 - Anything else resolves `null`.
 - `window.claude.rules` (hosted build only; `list`, `import`, `saveHouse`, `deleteHouse`, see `app/CONTRACT.md`): plain calls
   on the rules API above.
-- `window.claude.gm` (hosted build only; `pack`, `packPart`, `importPart`, `removePart`, `state`, `patchState`, `display`,
-  `setDisplay`, see GM.md): plain calls on the GM API above. Never queued, never in the offline snapshot or localStorage.
+- `window.claude.gm` (hosted build only, fifteen calls: `pack`, `packPart`, `importPart`, `removePart`, `state`,
+  `patchState`, `display`, `setDisplay`, `ambient`, `patchAmbient`, `stt`, `patchStt`, `sttToken`, `transcript`,
+  `addTranscript`; see GM.md): plain calls on the GM API above. Never queued, never in the offline snapshot or localStorage.
 - `window.B68Runtime = { kind: 'cloudflare', me, status, exportAll }` once `/api/me` has answered (or the
   page started offline). `exportAll()` → Promise of the `GET /api/export` answer (rejects with
   the API's error, `status` 403 for a player); boot.js shows "Download everything" only when it
@@ -423,14 +427,16 @@ npm run db:local       # = npx wrangler d1 migrations apply DB --local (optional
 npm run dev            # = npx wrangler dev --port 8788 --ip 127.0.0.1 --var DEV_USER:gm@example.test --var GM_EMAILS:gm@example.test
 npm run build          # = npx wrangler deploy --dry-run --outdir .wrangler/dist (bundles, uploads nothing)
 npm test               # = npm run check:runtime && npm run check:api (no browser)
-npm run check:api      # checks/api/jwt.mjs, worker.mjs, flow.mjs (own servers on 8788 and 8789), then rules.mjs (8794), npcs.mjs (8841), gm.mjs (8843)
+npm run check:api      # checks/api/jwt.mjs, worker.mjs, deploy.mjs (the deploy script in a throwaway copy), flow.mjs (own servers on 8788 and 8789), then rules.mjs (8794), npcs.mjs (8841), gm.mjs (8843), name.mjs, display-role.mjs
 npm run check:gm-api   # checks/api/gm.mjs alone: the GM tools' API (own server on 8843)
-npm run check:runtime  # checks/runtime/adapter.test.mjs, pwa.test.mjs and markdown.test.mjs (plain node)
+npm run check:runtime  # 19 plain-node unit tests in checks/runtime/: adapter, pwa (and routes.js), markdown, display, the GM modules (gm-*), stt, ambient-* (README lists them)
+npm run check:sweep    # gm-figure and gm-npc with the full 500-seed sweeps (npm test runs 100: B68_SWEEP)
 npm run check:offline  # checks/runtime/offline.e2e.mjs (own server on 8790, Chromium)
 npm run check:schedule # checks/runtime/schedule.e2e.mjs (own server on 8791, Chromium)
 npm run check:phone    # checks/runtime/phone.e2e.mjs (own server on 8792, mobile Chromium)
 npm run check:rules    # checks/runtime/rules.e2e.mjs (own server on 8795, Chromium): the rules wiki, see RULES.md
 npm run check:e2e      # app/checks/e2e.js against the stubbed runtime
+npm run check:e2e-all  # every browser check in turn (checks/e2e-all.mjs), with a summary at the end
 ```
 
 The Chromium checks need `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers` (and Playwright at

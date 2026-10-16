@@ -43,7 +43,7 @@ gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser o
   `gm_pack(campaign, part, version, src, updated_at /* ms */, body)`.
 - **State.** The `campaigns` row `<CAMPAIGN>#gm` (beside the campaign document; `/api/campaign` never reads it). Patch
   and stored document at most 256 KiB each; optimistic `updated_at` check with retries, 409 when it keeps colliding.
-- **Display.** `kind` is `blank`, `dark`, `svg`, `npc`, `text` or `rule`; other keys are dropped. `title`, `caption`,
+- **Display.** `kind` is `blank`, `dark`, `svg`, `npc`, `text`, `rule` or `cards` (1 to 8 opportunity cards, see Cards below); other keys are dropped. `title`, `caption`,
   `text` at most 2000 characters (`text` required for `text`); `npcId` an id `[A-Za-z0-9_-]{1,80}`; `md` (required for
   `rule`) a rules entry's Markdown, at most 40000 characters. The rules page's **Show on iPad** (GM only, on every
   entry and on a house-rule twin) sends the entry without the compiler's `[TODO]` notes and `%%` comments; the display
@@ -310,7 +310,7 @@ and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools
 ### The display sign-in (`DISPLAY_EMAILS`)
 
 A third role, `display`, so the iPad never holds a GM session. An email in `DISPLAY_EMAILS` (comma-separated, case-insensitive,
-like `GM_EMAILS`; the GM wins if an email is in both) gets exactly two calls: `GET /api/me` and `GET /api/gm/display`.
+like `GM_EMAILS`; the GM wins if an email is in both) gets exactly six calls: `GET /api/me`, `GET /api/gm/display`, and the transcriber's `POST /api/gm/stt/token`, `GET` and `PATCH /api/gm/stt` and `POST /api/gm/transcript` (Listening).
 Everything else, any method, known route or not, is the same 403 ("this is the table display sign-in: it can only show
 the display") from `functions/api/_middleware.js` before the body is read or the database touched, so a route added later is
 refused by default. It is never recorded in `members`, never listed as a player, and `PUT /api/gm/display` stays GM only.

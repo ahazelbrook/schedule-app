@@ -132,6 +132,8 @@ try {
   await importFolder(G.page, 'bitd', path.join(FIX, 'bitd'));
   const c = (await api(GM, 'GET', '/rules')).json;
   check(c.books.bitd === 3 && c.books.b68 === 8, 'Blades in the Dark replaced by the 3 fixture entries: ' + JSON.stringify(c.books));
+  // the server answered at once; the page redraws its index a moment later
+  await G.page.waitForFunction(() => [...document.querySelectorAll('#rl-index .rl-sec > summary')].some((x) => /Blades in the Dark 1 chapter/.test(x.textContent.replace(/\s+/g, ' '))), null, { timeout: 10000 }).catch(() => {});
   const sections = await G.page.$$eval('#rl-index .rl-sec > summary', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
   check(sections.length === 2 && /^Blades \u201968 \d+ chapters? \u00b7 8 entries$/.test(sections[0]) && /^Blades in the Dark 1 chapter \u00b7 3 entries$/.test(sections[1]), 'the index lists Blades \u201968 first, then the other book: ' + sections.join(' | '));
   const gmExport = await api(GM, 'GET', '/export');
@@ -286,6 +288,7 @@ try {
   check(!!(await G.page.$('.rl-gmtools [data-rl="edit"]')), 'the GM sees Edit and Delete on a house rule');
   await R.page.goto(BASE + '/?fresh#rules?q=downtime');   /* a fresh load: this page's copy of the corpus predates the house rule */
   await R.page.waitForSelector('.rl-hit');
+  await R.page.waitForFunction(() => { const h = document.querySelector('.rl-hit'); return !!h && h.querySelectorAll('.rl-twin > summary').length >= 2; }, null, { timeout: 10000 }).catch(() => {});
   const folded = await R.page.$eval('.rl-hit', (e) => [...e.querySelectorAll('.rl-twin > summary')].map((s) => s.textContent));
   check((await titles(R.page))[0] === 'Downtime' && folded.join() === 'House rule,In Blades in the Dark', 'a house rule of the same title folds under the Blades \u201968 entry: ' + folded);
   await G.page.click('.rl-gmtools [data-rl="delhouse"]');

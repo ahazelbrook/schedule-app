@@ -1,3 +1,5 @@
+> **Parked until Nov/Dec 2026: the dates live in Google Calendar.** This is still the contract for `schedule.js` (the next-session card and the schedule box), which ships and works; nothing new is being built on it until then.
+
 # Schedule contract (Phase 3, last part)
 
 When is the next session, who can make it, and a one-tap way to say so. It lives in the shared

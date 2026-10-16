@@ -10,7 +10,7 @@ What runs: one Cloudflare Worker, `blades68`, that serves the page in `app/` and
 `functions/` (see `HOSTING.md`), a D1 database `blades68`, and a Cloudflare Access application
 in front of the host.
 
-`DEPLOY-PROMPT.md` is the same procedure written as a prompt for a Claude session on your own
+`docs/history/DEPLOY-PROMPT.md` is the same procedure written as a prompt for a Claude session on your own
 computer, which can run the commands and click through the dashboard with you.
 
 You need: the Cloudflare account that holds `fieldguide.help`, Node.js 20 or newer, and this
@@ -166,15 +166,19 @@ Roles follow at once; nobody signs in again.
 
 ## Updating the app
 
-After pulling changes, from Git Bash:
+Not on a game day. After merging to `main` and pulling, from Git Bash:
 
 ```
-B68_GM_EMAILS=you@example.com B68_PLAYER_EMAILS=player1@example.com,player2@example.com \
-npm run deploy
+B68_GM_EMAILS=you@example.com B68_ACCESS_TEAM=<team> B68_ACCESS_AUD=<aud tag> npm run deploy
 ```
 
-(`npm run deploy` is `scripts/deploy.sh`; the emails are the same as the first time.) Before
-anything ships it stops when:
+`npm run deploy` is `scripts/deploy.sh`. The team name and the AUD tag are the ones from step 3;
+with both given the script leaves Access alone (change who may sign in with
+`scripts/access-emails.sh`, *Adding and removing players*), and without them it stops at the
+Access step to ask. `B68_GM_EMAILS` goes up again as the `GM_EMAILS` secret, so give the same
+GM emails as before. When `migrations/` has a new file, note a restore point first
+(`npx wrangler d1 time-travel info blades68`, section 7). Before anything ships the script stops
+when:
 
 - **the working tree has uncommitted changes** (it lists them). Commit them first, so the live
   app is always a commit you can name and go back to; `B68_DIRTY_OK=1` deploys them anyway.
@@ -208,7 +212,29 @@ they open the app online; a page left open says **Updated: reload** in its heade
 A plain `npx wrangler deploy` uploads the code but **skips the migrations** (and the checks,
 the build stamp and the receipt). That is harmless while every new table is created on first
 use by the server (`db.js` does), but not for a migration that changes an existing table, so
-use `npm run deploy`.
+use `npm run deploy`, or run `npx wrangler d1 migrations apply DB --remote` first.
+
+When the GM pack changed too: `npm run gm:pack`, then `npm run gm:push -- --only pack --yes`
+(or **Import GM pack** on `#gm`; GM.md, SYNC.md).
+
+## Status
+
+What is live at `https://blades.fieldguide.help` (one Worker, `blades68`, with D1 behind
+Access), as of 16 Oct 2026. The original deployment plan and its phases are in
+`docs/history/DEPLOY.md`.
+
+| Part | State |
+|---|---|
+| The creator, the living sheet, the table page (crew sheet, clocks, session, players, log), the schedule, the season print | Live since 13/10/2026 |
+| Offline use and home-screen install | Live (hosted build only) |
+| The rules wiki, the cast and "on stage" | Live (`RULES.md`, `CAST.md`) |
+| The GM's page (`#gm`), the iPad display (`#display`), display names | Live since 14 and 15/10/2026 (`GM.md`) |
+| Ambient scenes on the iPad | Live since 15/10/2026; not yet tried on the real iPad |
+| The display-only sign-in (`DISPLAY_EMAILS`) | Built and deployed, switched off: the iPad uses the GM's own email (`GM.md`) |
+| GM sync between the app and the vault | Runs on the GM's PC (`SYNC.md`) |
+| Sign-in on a phone | Fixed 15/10/2026 (a second Worker, `schedule-app`, owned the domain without the Access secrets). Left to do: delete the `schedule-app` Worker in the dashboard |
+| Reminders by Discord, email or push | Not built: the nudge on the next-session card and the copied reminder stand in |
+| Backups | No nightly job: the app's downloads, D1 Time Travel and `npx wrangler d1 export` by hand (section 7) |
 
 ## "Not signed in" on a device that has passed Access
 

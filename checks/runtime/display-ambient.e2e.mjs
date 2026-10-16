@@ -1,4 +1,4 @@
-// The ambient floor on the table display in a real browser (AMBIENT-PLAN.md, phase 1): a blank display plays a scene in a
+// The ambient floor on the table display in a real browser (docs/history/AMBIENT-PLAN.md, phase 1): a blank display plays a scene in a
 // sandboxed same-origin iframe under the stages; a spotlight covers it and, after the grace, the iframe is gone; blank brings it
 // back; the rotation advances; nothing leaves the origin; nothing throws. Phase 3/4: scene URLs have no .html and answer 200 (never a
 // 307); the GM's ambient PATCHes drive the display (pin, skip, crew, lights out, a score).

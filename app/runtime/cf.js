@@ -3,7 +3,8 @@
    (see HOSTING.md) so the page runs unchanged outside the claude.ai artifact. The db serves the
    `characters` collection, the shared `campaign/main` document (CAMPAIGN.md) and the `npcs` collection (CAST.md).
    window.claude.rules (list, import, saveHouse, deleteHouse) is the rules wiki's corpus (RULES.md).
-   window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay) is the GM tools'
+   window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay, ambient,
+   patchAmbient, stt, patchStt, sttToken, transcript, addTranscript) is the GM tools'
    API (GM.md): plain calls, never queued, cached or snapshotted here.
    window.claude.profile.setName(name) changes the signed-in person's own display name (PATCH /api/me); a plain call too.
    Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network

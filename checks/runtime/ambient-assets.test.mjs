@@ -1,4 +1,4 @@
-// Static checks for the ambient scenes (AMBIENT-PLAN.md): every scene exists, none reaches off the origin, and
+// Static checks for the ambient scenes (docs/history/AMBIENT-PLAN.md): every scene exists, none reaches off the origin, and
 // app/_headers frames /ambient/* for the same origin only. Plain Node, no browser.
 //   node checks/runtime/ambient-assets.test.mjs
 import fs from 'node:fs';

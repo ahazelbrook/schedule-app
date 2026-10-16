@@ -1,5 +1,5 @@
 // The GM tools' API against a local `wrangler dev` (see GM.md, HOSTING.md): /api/gm/pack, /api/gm/state,
-// /api/gm/ambient (AMBIENT-PLAN.md) and /api/gm/display are GM only (403 for a player on every method, before the body is read; 401 without a token), the
+// /api/gm/ambient (docs/history/AMBIENT-PLAN.md) and /api/gm/display are GM only (403 for a player on every method, before the body is read; 401 without a token), the
 // caps and validation, the unchanged answers, /api/export carrying none of it, and no GM key on /api/characters (for
 // anyone). Every table, name and sentence in here is invented: the real pack is never in this repository.
 //
