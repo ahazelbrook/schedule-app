@@ -98,9 +98,12 @@ Routes: `#cast` (the grid), `#cast/<id>` (one NPC), `#cast/<id>/edit` and `#cast
 
 - **The grid.** A mugshot (`K.portrait`) per NPC with name, alias, role · faction and the description. The GM also sees a
   Hidden / Revealed / On stage badge, filters (All, Revealed, Hidden, On stage), and per card **On stage** (off stage when it
-  is), **Reveal / Hide** and **Edit**; plus New NPC and Clear stage. Two columns on a phone.
+  is), **Reveal / Hide** and **Edit**; plus New NPC and Clear stage. Two columns on a phone. Above the cards a plain line says
+  who is on stage ("On stage: Grunt, Brackley") for everyone, also after a player hid the banner, with **Show the banner**
+  then.
 - **One NPC.** The full figure (`K.render`) as tall as the screen allows, the name in poster type and the description large:
-  made to be shown on a laptop to the table. The GM adds the same three controls and the GM notes.
+  made to be shown on a laptop to the table. The GM adds the same three controls and the GM notes. On a phone the name and
+  the description come first and the figure, smaller (44 vh), after them.
 - **The editor (GM).** Name, alias, role, faction, description, tags (commas), GM notes, Revealed. The figure: **Start from**
   one of the archetypes in `figures/cast.js` (or a blank figure), **paste a spec** (the textarea is always the current spec;
   edit it and press Use this spec), or adjust with dropdowns that are generated from `K.options()` (figure, height, age, shape,

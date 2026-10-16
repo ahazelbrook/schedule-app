@@ -137,7 +137,7 @@
      next change of the stage (a new `at`). */
   function dismissed() { try { return localStorage.getItem(DISMISS) || dismissedMem; } catch (e) { return dismissedMem; } }
   function dismiss() { dismissedMem = scene && scene.at || ''; try { localStorage.setItem(DISMISS, dismissedMem); } catch (e) {} renderStage(); if (isOpen && !ed) render(); }
-  function undismiss() { dismissedMem = ''; try { localStorage.removeItem(DISMISS); } catch (e) {} strip.expanded = true; stageKey = ''; renderStage(); if (isOpen && !ed) render(); }
+  function undismiss() { dismissedMem = ''; try { localStorage.removeItem(DISMISS); } catch (e) {} if (phoneNow() && !gm()) expandFor(STRIP_SHOW_MS); else strip.expanded = true; stageKey = ''; renderStage(); if (isOpen && !ed) render(); }
   /* on a player's phone the banner is a one-line strip (portrait thumbs and names) that opens to the full banner for about 8 s when
      the stage changes, or on a tap; the GM and a desk always get the full banner. The last stage seen is remembered, so a reload
      on the same stage starts as the strip. */
@@ -253,6 +253,10 @@
         '<span class="cp-bar-acts">' + (staged.length ? '<button type="button" class="btn sm" data-cp="clear">Clear stage</button>' : '') + '<a class="btn sm primary" href="#cast/new" role="button">New NPC</a></span>';
     }
     h += '</div>';
+    /* who is on stage, in plain words, whether or not the banner is showing (a hidden banner leaves this and a way back) */
+    var onNow = stagedNames(), at = scene && scene.at || '';
+    if (onNow.length) h += '<p class="cp-onstage"><span class="cp-onstage-k">On stage</span><span class="cp-onstage-n">' + esc(onNow.join(', ')) + '</span>' +
+      (at && dismissed() === at ? '<button type="button" class="chip sm txt" data-cp="show">Show the banner</button>' : '') + '</p>';
     if (!list.length) {
       h += '<div class="cp-empty">' + (all.length ? 'No NPC matches that filter.' : g ? 'The cast is empty.' : 'No one has been introduced yet. When the GM puts someone on stage, they appear here.') + '</div>';
       if (g && !all.length) h += '<p><button type="button" class="btn" data-cp="seed">Add the starting NPCs</button></p>';
