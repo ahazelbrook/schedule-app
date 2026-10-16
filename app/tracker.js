@@ -202,11 +202,17 @@
   /* someone else's sheet: filed with an owner who is not the viewer */
   function foreign() { var o = cur && cur.doc && cur.doc.owner; return !!o && o !== (cur.api && cur.api.me); }
   function roLabel() { return 'Read only' + (foreign() ? ' · ' + (cur.ownerName || 'another player') + '’s character' : ''); }
+  /* "Saved" only when the runtime says nothing is waiting: the hosted runtime (runtime/cf.js) resolves a save as soon as it is
+     queued while offline, and window.B68Runtime.status = { online, pending } says what is still on this device */
+  function savedMsg() {
+    var R = window.B68Runtime, s = R && R.status, n = s ? Math.max(0, Math.floor(+s.pending || 0)) : 0;
+    return n ? 'Saved on this phone · will sync (' + n + ')' : 'Saved';
+  }
   /* the status line as it should read after a re-render: the last one set, never a made-up "Saved" */
   function statusNow() {
     var s = cur.status || { msg: '' };
     if (readOnly() && !s.bad && !s.transient) return { msg: roLabel() };
-    if (!readOnly() && /^Read only/.test(s.msg)) return { msg: 'Saved' };
+    if (!readOnly() && /^Read only/.test(s.msg)) return { msg: savedMsg() };
     return s;
   }
   function setStatus(msg, bad, transient) {
@@ -214,7 +220,13 @@
     var s = cur.root.querySelector('#ds-status');
     if (s) { s.textContent = msg; s.className = 'ds-status' + (bad ? ' bad' : ''); }
     if (cur.statusT) clearTimeout(cur.statusT);
-    if (transient) cur.statusT = setTimeout(function () { if (cur) setStatus(readOnly() ? roLabel() : cur.timer || cur.saving ? 'Saving…' : 'Saved'); }, 2400);
+    if (transient) cur.statusT = setTimeout(function () { if (cur) setStatus(readOnly() ? roLabel() : cur.timer || cur.saving ? 'Saving…' : savedMsg()); }, 2400);
+  }
+  /* the runtime's queue moved (b68:runtime): a "Saved…" line follows it (queued → synced, or the other way) */
+  function onRuntime() {
+    if (!cur || readOnly() || cur.timer || cur.saving) return;
+    var s = cur.status || {}; if (s.bad || s.transient || !/^Saved/.test(s.msg || '')) return;
+    var m = savedMsg(); if (m !== s.msg) setStatus(m);
   }
   function note(msg) { setStatus(msg, false, true); }
   /* the owner's name for "Read only · Sam’s character", when the runtime can name people */
@@ -226,16 +238,59 @@
       c.ownerName = String(n); if (readOnly() && !(c.status && (c.status.bad || c.status.transient))) setStatus(roLabel());
     }, function () {});
   }
+  /* ---------- saving (robustness, C16) ----------
+     cur.server: the play as the store last had it (opened, a remote snapshot applied, or a save it accepted).
+     cur.base:   cur.server when this run of local changes began (the first change after everything had landed).
+     cur.remote: a snapshot that arrived while a save was in flight or typing waited; merged once everything has landed: a field
+                 changed here since cur.base keeps this sheet's value, every other field takes the snapshot's.
+     cur.refused: a save the store refused (4xx): once everything has landed the sheet goes back to cur.server, so no mark the
+                 store does not have stays on screen. */
+  var LOG_MAX = 200;   /* play.log keeps the newest 200 entries (the campaign log's cap) */
+  function capLog(p) { if (p && Array.isArray(p.log) && p.log.length > LOG_MAX) p.log = p.log.slice(0, LOG_MAX); }
+  function addLog(p, entry) { p.log = [entry].concat(Array.isArray(p.log) ? p.log : []); capLog(p); }
+  function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function refusal(e) { var s = e && +e.status; return s >= 400 && s < 500 && s !== 401 && s !== 408 && s !== 409 && s !== 429; }   /* refused, not "not now" */
+  function begin(c) { if (!c.base) c.base = clone(c.server || c.play); }
   function flushSave() {
     if (!cur) return; if (cur.timer) { clearTimeout(cur.timer); cur.timer = null; }
     if (readOnly()) { setStatus(roLabel()); return; }
-    if (!cur.api || typeof cur.api.save !== 'function') { setStatus('Not saved: no store'); return; }
-    var snap = clone(cur.play); cur.saving++; setStatus('Saving…'); var p;
-    try { p = cur.api.save({ play: snap }); } catch (e) { cur.saving--; setStatus('Could not save: ' + (e && e.message || e), true); return; }
-    Promise.resolve(p).then(function () { if (!cur) return; cur.saving--; if (!cur.saving && !cur.timer) setStatus('Saved'); },
-      function (e) { if (!cur) return; cur.saving--; setStatus('Could not save: ' + (e && e.message || e || 'unknown error'), true); });
+    if (!cur.api || typeof cur.api.save !== 'function') { setStatus('Not saved: this view cannot save'); return; }
+    var c = cur; begin(c); capLog(c.play);
+    var snap = clone(c.play); c.saving++; setStatus('Saving…'); var p;
+    try { p = c.api.save({ play: snap }); } catch (e) { c.saving--; setStatus('Could not save: ' + (e && e.message || e), true); settle(c); return; }
+    Promise.resolve(p).then(function () {
+      if (cur !== c) return; c.saving--; if (!c.refused) c.server = snap;
+      if (!c.saving && !c.timer) { setStatus(savedMsg()); settle(c); }
+    }, function (e) {
+      if (cur !== c) return; c.saving--;
+      var why = e && e.message || e || 'unknown error';
+      if (refusal(e)) { c.refused = String(why); setStatus('Not saved (' + why + '): undone', true); }
+      else setStatus('Could not save: ' + why, true);
+      if (!c.saving && !c.timer) settle(c);
+    });
   }
-  function scheduleSave() { if (!cur) return; if (cur.timer) clearTimeout(cur.timer); setStatus('Saving…'); cur.timer = setTimeout(function () { cur.timer = null; flushSave(); }, SAVE_DELAY); }
+  function scheduleSave() { if (!cur) return; begin(cur); if (cur.timer) clearTimeout(cur.timer); setStatus('Saving…'); cur.timer = setTimeout(function () { cur.timer = null; flushSave(); }, SAVE_DELAY); }
+  /* everything this sheet sent has landed: undo a refused change, or merge what arrived meanwhile */
+  function settle(c) {
+    if (cur !== c || c.saving || c.timer) return;
+    var remote = c.remote, refused = c.refused; c.remote = null; c.refused = false;
+    if (refused) { var f = captureFocus(), back = clone(c.server); if (f && f.path) setPath(back, f.path, f.value); c.play = back; c.base = null; render(); return; }
+    if (remote) applyRemote(remote, c.base);
+    c.base = null;
+  }
+  /* a snapshot of this sheet from the store (T.update, or one held while a save was in flight). `base`: the play before this
+     sheet's own unsaved run; a field changed since then keeps this sheet's value. Never clobbers the field being typed in. */
+  function applyRemote(doc, base) {
+    var c = cur, focus = captureFocus(), incoming = normalize(doc.play, doc.sheet, doc.playbook), out = incoming;
+    if (base) { out = {}; Object.keys(incoming).forEach(function (k) { out[k] = same(c.play[k], base[k]) ? incoming[k] : c.play[k]; }); Object.keys(c.play).forEach(function (k) { if (!(k in out)) out[k] = c.play[k]; }); }
+    var head = function (d) { return [d.name, d.alias, d.code, d.owner, d.playbook, d.spec, d.sheet]; }, moved = !same(head(doc), head(c.doc));
+    if (doc.owner !== c.doc.owner) c.ownerName = null;
+    c.doc = doc; c.pb = pbOf(doc.playbook) || c.pb; c.server = clone(out);
+    if (focus && focus.path) setPath(out, focus.path, focus.value);
+    if (moved || !same(out, c.play)) { c.play = out; render(); }
+  }
+  /* the page is going away or into the background (a phone locked mid-word): typing that waits for its debounce goes out now */
+  function onHide(e) { if (!cur || !cur.timer || (e && e.type === 'visibilitychange' && document.visibilityState !== 'hidden')) return; clearTimeout(cur.timer); cur.timer = null; flushSave(); }
   /* a click changed play: redraw and save at once */
   function commit() { if (!cur) return; render(); flushSave(); }
 
@@ -268,38 +323,75 @@
     }
     if (pb && pb.backing) alt += '<div><span class="ds-lab">Backing faction</span>' + esc(sheet.backing || '—') + (sheet.mission ? '<div class="ds-dim">Mission: ' + esc(sheet.mission) + '</div>' : '') + '</div>';
     if (pb && pb.veteran) alt += '<div><span class="ds-lab">Damage</span>' + esc(sheet.damage || '—') + '</div><div><span class="ds-lab">Something that helps</span>' + esc(sheet.helps || '—') + '</div>';
-    var ro = readOnly(), st = statusNow(), th = cur.ui.static ? '' : thumb(doc); /* the season print has its own figure slot */
+    var ro = readOnly(), st = statusNow(), live = !cur.ui.static, name = doc.name || sheet.name || 'Unknown';
+    var th = live && narrow() ? thumbTag(doc, pb) : ''; /* phones only; the season print has its own figure slot */
     var desc = (pb && pb.subtitle ? esc(pb.subtitle) + ' · ' : '') + esc(pb ? pb.descriptor : '');
+    /* the wrappers (.ds-idrow, .ds-bar, .ds-about) only group on a phone: on a desk and in print they are display: contents,
+       so the head's grid is what it was. On a phone the bar (Back, the status, Print, "…" and the vitals) sticks to the top
+       and the identity folds into one closed "About" row. */
     return '<div class="ds-head">' +
-      '<div class="ds-title"><h2 class="ds-name">' + esc(doc.name || sheet.name || 'Unknown') + '</h2><div class="ds-pb">' + esc(pb ? pb.name : doc.playbookName || 'Subject') + '</div><div class="ds-desc">' + desc + '</div></div>' +
-      (th ? '<img class="ds-thumb' + (isGhost(pb) ? ' ghostly' : '') + '" src="' + th + '" alt="" aria-hidden="true">' : '') + /* phones only (tracker.css) */
-      '<div class="ds-ident">' +
-        '<div><span class="ds-lab">' + (isHull(pb) ? 'Designation' : 'Name') + '</span><b>' + esc(doc.name || sheet.name || 'Unknown') + '</b></div>' +
-        '<div><span class="ds-lab">Alias</span>' + esc(doc.alias || sheet.alias || '—') + '</div>' +
-        '<div><span class="ds-lab">Crew</span>' + input('crew', play.crew, 'Your crew') + '</div>' +
-        '<div><span class="ds-lab">File</span><span class="mono">' + esc(doc.code || '') + '</span></div>' +
+      '<div class="ds-idrow">' +
+        '<div class="ds-title"><h2 class="ds-name">' + esc(name) + '</h2><div class="ds-pb">' + esc(pb ? pb.name : doc.playbookName || 'Subject') + '</div><div class="ds-desc">' + desc + '</div></div>' + th +
       '</div>' +
-      '<div class="ds-nav">' +
-        '<button type="button" class="btn sm" data-act="back" data-always="1">← Back</button>' +
-        '<button type="button" class="btn sm" data-act="edit"' + (ro ? ' disabled' : '') + '>Edit figure</button>' +
-        '<button type="button" class="btn sm" data-act="print" data-always="1">Print</button>' +
-        '<button type="button" class="btn sm ds-remove" data-act="remove"' + (ro ? ' disabled' : '') + '>' + (cur.ui.confirmRemove ? 'Click again to remove' : 'Remove') + '</button>' +
-        '<span class="ds-status' + (st.bad ? ' bad' : '') + '" id="ds-status">' + esc(st.msg) + '</span>' +
+      '<div class="ds-bar">' +
+        '<div class="ds-nav">' +
+          '<button type="button" class="btn sm" data-act="back" data-always="1">← Back</button>' +
+          '<button type="button" class="btn sm ds-wide" data-act="edit"' + (ro ? ' disabled' : '') + '>Edit figure</button>' +
+          '<button type="button" class="btn sm" data-act="print" data-always="1">Print</button>' +
+          (live ? moreMenu(name) : '') +
+          '<span class="ds-status' + (st.bad ? ' bad' : '') + '" id="ds-status">' + esc(st.msg) + '</span>' +
+        '</div>' +
+        (live ? vitals(play, pb) : '') +
       '</div>' +
-      '<div class="ds-bio">' +
-        '<div><span class="ds-lab">Look</span>' + esc(sheet.look || '—') + '</div>' +
-        '<div><span class="ds-lab">Wearing</span>' + esc(listText(sheet.wearing) || '—') + '</div>' + alt +
+      (live ? '<button type="button" class="ds-about-t" data-act="about" data-always="1" aria-expanded="' + !!cur.ui.about + '" aria-controls="ds-about"><span>About ' + esc(name) + '</span><span class="ds-chev" aria-hidden="true">' + (cur.ui.about ? '▴' : '▾') + '</span></button>' : '') +
+      '<div class="ds-about' + (cur.ui.about ? ' open' : '') + '"' + (live ? ' id="ds-about"' : '') + '>' + (live && desc ? '<p class="ds-desc">' + desc + '</p>' : '') +
+        '<div class="ds-ident">' +
+          '<div><span class="ds-lab">' + (isHull(pb) ? 'Designation' : 'Name') + '</span><b>' + esc(name) + '</b></div>' +
+          '<div><span class="ds-lab">Alias</span>' + esc(doc.alias || sheet.alias || '—') + '</div>' +
+          '<div><span class="ds-lab">Crew</span>' + input('crew', play.crew, 'Your crew') + '</div>' +
+          '<div><span class="ds-lab">Code</span><span class="mono">' + esc(doc.code || '') + '</span></div>' +
+        '</div>' +
+        '<div class="ds-bio">' +
+          '<div><span class="ds-lab">Look</span>' + esc(sheet.look || '—') + '</div>' +
+          '<div><span class="ds-lab">Wearing</span>' + esc(listText(sheet.wearing) || '—') + '</div>' + alt +
+        '</div>' +
       '</div>' +
       '<div class="ds-printfig' + (isGhost(pb) ? ' ghostly' : '') + '" aria-hidden="true"></div>' + /* filled only while printing (see beforeprint) */
     '</div>';
   }
+  /* "…": Edit figure (on a phone; a desk has it in the row) and, at its foot, Remove, for the character's owner and the GM only */
+  function canRemove() {
+    if (!cur || cur.ui.static || readOnly() || !cur.api || typeof cur.api.remove !== 'function') return false;
+    if (B().isGM === true) return true;
+    var o = cur.doc && cur.doc.owner, me = cur.api.me || null;
+    return o ? o === me : !me;   /* an unowned sheet: only where nobody is signed in (a copy of one's own) */
+  }
+  function moreMenu(name) {
+    var ro = readOnly(), rm = canRemove(), open = !!cur.ui.more; if (ro && !rm) return '';
+    return '<span class="ds-more"><button type="button" class="btn sm ds-morebtn' + (rm ? '' : ' ds-narrow') + '" data-act="more" data-always="1" aria-haspopup="menu" aria-expanded="' + open + '" aria-label="More" title="More">…</button>' +
+      (open ? '<span class="ds-menu" role="menu">' + (ro ? '' : '<button type="button" class="ds-mi ds-narrow" role="menuitem" data-act="edit">Edit figure</button>') +
+        (rm ? '<button type="button" class="ds-mi ds-mi-rm" role="menuitem" data-act="remove">Remove ' + esc(name) + '…</button>' : '') + '</span>' : '') + '</span>';
+  }
+  /* a sticky line on a phone: Stress 6/9 · Harm 1 · XP 3/8 · Load 2/3, each a jump to its box */
+  function harmLines(hm) { var n = 0, worst = ''; [['l4', 4], ['l3', 3], ['l2', 2], ['l1', 1]].forEach(function (k) { [].concat(hm[k[0]]).forEach(function (t) { t = String(t == null ? '' : t).trim(); if (!t) return; n++; if (!worst) worst = k[1] + ': ' + t; }); }); return { n: n, worst: worst }; }
+  function vitals(play, pb) {
+    var sm = stressMax(pb), hl = harmLines(play.harm), ld = loadNow(play, pb), parts = [
+      ['ds-stressbox', stressName(pb), play.stress + '/' + sm, play.stress >= sm, stressName(pb) + ' ' + play.stress + ' of ' + sm],
+      ['ds-harmbox', isHull(pb) ? 'Damage' : 'Harm', String(hl.n), /^[34]:/.test(hl.worst), hl.n ? hl.n + ' harm, worst level ' + hl.worst : 'No harm'],
+      ['ds-xpbox', 'XP', play.xp.playbook + '/8', play.xp.playbook >= 8, 'Playbook xp ' + play.xp.playbook + ' of 8']];
+    if (ld) parts.push(['ds-itembox', 'Load', ld.total + '/' + ld.limit, ld.total > ld.limit, 'Load ' + ld.total + ' of ' + ld.limit]);
+    return '<div class="ds-vitals" style="--n:' + parts.length + '">' + parts.map(function (x) { return '<button type="button" class="ds-vit' + (x[3] ? ' hot' : '') + '" data-act="jump" data-to="' + x[0] + '" data-always="1" title="' + esc(x[4]) + '" aria-label="' + esc(x[4]) + ': go to the box"><span>' + esc(x[1]) + '</span> <b class="mono">' + esc(x[2]) + '</b></button>'; }).join('') + '</div>';
+  }
+  /* the figure: drawn only where it is shown (a desk's Figure box, and print), and only when its spec changed */
+  function figKey(doc) { var k; try { k = JSON.stringify(doc.spec || null); } catch (e) { k = ''; } return (cur.ui.mug ? 'm' : 'f') + k; }
   function figureSvg(doc) {
+    var key = figKey(doc); if (cur.ui.svgKey === key) return;
     var svg = '', warn = '';
     try { if (K && doc.spec) { var r = cur.ui.mug ? K.portrait(doc.spec) : K.render(doc.spec, { height: 420 }); svg = r && r.svg || ''; } } catch (e) { warn = 'The kit could not draw this figure: ' + e.message; }
-    cur.ui.svg = svg; cur.ui.svgWarn = warn;
+    cur.ui.svg = svg; cur.ui.svgWarn = warn; cur.ui.svgKey = key;
   }
   /* the phone's mugshot thumbnail beside the name: an <img> of the portrait, so its SVG ids never meet the Figure box's;
-     drawn once per figure */
+     drawn once per figure, and the same <img> node is carried from one render to the next (see render) */
   function thumb(doc) {
     var key; try { key = JSON.stringify(doc.spec || null); } catch (e) { key = ''; }
     if (cur.ui.thumbKey === key) return cur.ui.thumb;
@@ -307,9 +399,20 @@
     try { if (K && doc.spec) { var r = K.portrait(doc.spec, { width: 240, height: 240, chart: false, plate: false, suffix: '-t', lod: 'lo' }), s = r && r.svg || ''; if (s) { if (s.indexOf('xmlns=') < 0) s = s.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'); cur.ui.thumb = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s); } } } catch (e) {}
     return cur.ui.thumb;
   }
+  function thumbTag(doc, pb) {
+    var src = thumb(doc), old = cur.keep && cur.keep.thumb; if (!src) return '';
+    if (old && old.__k === cur.ui.thumbKey) return '<i data-keep="thumb"></i>';
+    return '<img class="ds-thumb' + (isGhost(pb) ? ' ghostly' : '') + '" data-k="thumb" src="' + src + '" alt="" aria-hidden="true">';
+  }
   function figure(doc, pb) {
-    var svg = cur.ui.svg, warn = cur.ui.svgWarn;
-    return box('Figure', '<div class="ds-art' + (cur.ui.mug ? ' mug' : '') + (isGhost(pb) ? ' ghostly' : '') + '">' + (svg || '<div class="ds-dim">' + esc(warn || 'No figure on file.') + '</div>') + '</div>',
+    var cls = 'ds-art' + (cur.ui.mug ? ' mug' : '') + (isGhost(pb) ? ' ghostly' : ''), art;
+    if (narrow() && !cur.ui.static) art = '<div class="' + cls + '"></div>';   /* a phone shows the thumbnail instead (tracker.css) */
+    else {
+      var key = figKey(doc), old = cur.keep && cur.keep.fig;
+      if (old && old.__k === key) art = '<i data-keep="fig"></i>';
+      else { figureSvg(doc); art = '<div class="' + cls + '" data-k="fig">' + (cur.ui.svg || '<div class="ds-dim">' + esc(cur.ui.svgWarn || 'No figure yet.') + '</div>') + '</div>'; }
+    }
+    return box('Figure', art,
       '<span class="seg"><button type="button" class="chip sm" data-act="view" data-v="fig" data-always="1" aria-pressed="' + (!cur.ui.mug) + '">Figure</button><button type="button" class="chip sm" data-act="view" data-v="mug" data-always="1" aria-pressed="' + (!!cur.ui.mug) + '">Mugshot</button></span>', 'ds-figbox');
   }
   function stress(play, pb) {
@@ -320,8 +423,9 @@
     else if (ghost) tools = '<button type="button" class="btn sm" data-act="consume"' + (play.stress > 0 ? '' : ' disabled') + '>Consume (clear half)</button>';
     else if (vamp) tools = '<button type="button" class="btn sm" data-act="feed">Feed</button>';
     else if (tt) tools = '<button type="button" class="btn sm" data-act="restabilize"' + (play.alluvium > 0 ? '' : ' disabled') + '>Restabilize (−5, uses one ' + esc(pb.alluviumName || 'canister') + ')</button>';
-    else tools = '<button type="button" class="btn sm" data-act="stressd" data-d="-1">Indulge −1</button><button type="button" class="btn sm" data-act="stressd" data-d="-3">Indulge −3</button>';
-    h += '<div class="row ds-tools">' + tools + '<span class="ds-gap"></span><button type="button" class="btn sm" data-act="stressd" data-d="1">Mark +1</button><button type="button" class="btn sm" data-act="stressd" data-d="2">Mark +2</button></div>';
+    else tools = '<button type="button" class="btn sm" data-act="stressd" data-d="-1" title="Indulge your vice: clear 1 ' + esc(name) + '">Clear 1</button><button type="button" class="btn sm" data-act="stressd" data-d="-3" title="Indulge your vice: clear 3 ' + esc(name) + '">Clear 3</button>';
+    /* marking is the frequent thing in play: Mark first, the vice (or its replacement) after */
+    h += '<div class="row ds-tools ds-markrow"><button type="button" class="btn sm" data-act="stressd" data-d="1">Mark +1</button><button type="button" class="btn sm" data-act="stressd" data-d="2">Mark +2</button><span class="ds-gap"></span>' + tools + '</div>';
     if (tt) {
       var an = pb.alluviumName || 'canister', am = alluvMax(pb);
       h += '<div class="ds-alluv"><span class="ds-lab">Alluvium</span>' + pipRow(am, play.alluvium, 'alluvium', '', 'ds-pip ds-vial') + '<span class="mono ds-count">' + play.alluvium + ' ' + esc(an) + (play.alluvium === 1 ? '' : 's') + ' left</span></div>' +
@@ -394,13 +498,13 @@
     '</div>';
     var side = '<div class="ds-side"><div class="ds-heal"><span class="ds-lab">' + (hull ? 'Repair' : 'Healing') + '</span>' + clockSvg(4, play.healing, 22, 'heal') + (isVamp(pb) ? '<span class="ds-dim">feeding only</span>' : '') + '</div>' +
       '<div class="ds-res"><span class="ds-lab">Resources</span>' +
-        '<div class="ds-resrow"><span>Armor</span><span class="ds-boxes">' + sq(play.armor.armor, 'armor', ' data-k="armor"') + '</span></div>' +
+        '<div class="ds-resrow"><span>Armor' + rl('armor') + '</span><span class="ds-boxes">' + sq(play.armor.armor, 'armor', ' data-k="armor"') + '</span></div>' +
         '<div class="ds-resrow"><span>Heavy</span><span class="ds-boxes">' + sq(play.armor.heavy, 'armor', ' data-k="heavy"') + '</span></div>' +
         (pbr ? '<div class="ds-resrow"><span>' + esc(pbr.charAt(0).toUpperCase() + pbr.slice(1)) + '</span><span class="ds-boxes">' + sq(play.resource[0], 'resource', ' data-k="0"') + sq(play.resource[1], 'resource', ' data-k="1"') + '</span></div>' : '') +
         (blank ? '<div class="ds-resrow"><span class="ds-blankres" aria-label="unlabelled resource"></span><span class="ds-boxes">' + sq(play.resource[0], 'resource', ' data-k="0"') + sq(play.resource[1], 'resource', ' data-k="1"') + '</span></div>' : '') +
         (hull ? '<div class="ds-dim">Built-in frame armor; it never counts for load.</div>' : '') +
       '</div></div>';
-    return box(hull ? 'Damage' : 'Harm', '<div class="ds-harmgrid">' + h + side + '</div>', '', 'ds-harmbox');
+    return box((hull ? 'Damage' : 'Harm') + rl('harm'), '<div class="ds-harmgrid">' + h + side + '</div>', '', 'ds-harmbox');
   }
   function cohort(play, pb) {
     if (!pb || !pb.cohort) return '';
@@ -456,7 +560,7 @@
     h += '<div class="row ds-tools"><span class="ds-lab">Playbook xp</span>' + pipRow(8, play.xp.playbook, 'xp', ' data-k="playbook"', 'ds-xbox') + '<span class="mono ds-count">' + play.xp.playbook + ' / 8</span></div>';
     if (full) h += tt ? '<div class="ds-advance"><button type="button" class="btn sm primary" data-act="clarity">Gain clarity</button><span class="hint ds-warn">Playbook track full: a new trait, a versatile ability, a temporal glitch and a mission detail.</span></div>'
       : '<p class="hint ds-warn">Playbook track full: pick a new special ability above (8 xp are spent when you do).</p>';
-    return box('XP', h);
+    return box('XP' + rl('xp'), h, '', 'ds-xpbox');
   }
   /* ---------- the Session box and the end-of-session panel (round 5) ---------- */
   /* the table's session (api.table, CONTRACT.md): { session, inPlay } or null when there is no table */
@@ -518,7 +622,7 @@
       if (e.result.memFull) h += '<p class="hint ds-warn">Memory complete: write it in the Human memories box. You also remember one key, a human contact, and a special ability from another playbook.</p>';
       h += '<p class="hint">Downtime next: use the Downtime box, then ' + esc(nextStart(play)) + '.</p></div>';
     }
-    return '<div class="ds-roll ds-endp" tabindex="-1" role="region" aria-label="End of session"><div class="ds-roll-h"><span class="ds-roll-t">End of session · <b>' + n + '</b></span><span class="ds-roll-sub">' + trig.length + ' triggers · 0, 1 or 2 xp each</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close the end of session panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div></div>';
+    return '<div class="ds-roll ds-endp" tabindex="-1" role="region" aria-label="End of session"><div class="ds-roll-h"><span class="ds-roll-t">End of session · <b>' + n + '</b></span><span class="ds-roll-sub">' + trig.length + ' triggers · 0, 1 or 2 xp each</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close the end of session panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div>' + panelFoot() + '</div>';
   }
 
   /* ---------- the Downtime box (round 5): one activity panel at a time, in the roll panel's style ---------- */
@@ -583,7 +687,7 @@
     }
     if (t.result && t.kind !== 'train') h += dtResult(t, pb);
     else if (t.result) h += '<div class="ds-roll-res"><div class="ds-roll-applied"><span class="ds-lab">Applied</span>' + esc(t.result.applied.join(' · ')) + '</div></div>';
-    return '<div class="ds-roll ds-dt" tabindex="-1" role="region" aria-label="Downtime"><div class="ds-roll-h"><span class="ds-roll-t">Downtime · <b>' + esc(dtName(t.kind, pb)) + '</b></span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close the downtime panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div></div>';
+    return '<div class="ds-roll ds-dt" tabindex="-1" role="region" aria-label="Downtime"><div class="ds-roll-h"><span class="ds-roll-t">Downtime · <b>' + esc(dtName(t.kind, pb)) + '</b></span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close the downtime panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div>' + panelFoot() + '</div>';
   }
   function dtResult(t, pb) {
     var res = t.result, h = '<div class="ds-roll-res">' + diceSvgs(res);
@@ -594,10 +698,10 @@
     return h + '</div>';
   }
   function actions(play, pb) {
-    var vamp = isVamp(pb), tt = isTT(pb), h = '<div class="ds-attrs">', roll = cur.ui.roll;
+    var vamp = isVamp(pb), tt = isTT(pb), h = '<div class="ds-attrs">', roll = cur.ui.roll, mark = cur.ui.mark;
     (CT.ACTIONS || []).forEach(function (g) {
       var attr = g[0], key = attr.toLowerCase(), rating = g[1].filter(function (a) { return (play.dots[a] || 0) > 0; }).length, xp = play.xp[key] || 0;
-      var majesty = vamp && play.darkMajesty === attr, resisting = roll && roll.kind === 'resist' && roll.attr === attr;
+      var majesty = vamp && play.darkMajesty === attr, resisting = (roll && roll.kind === 'resist' && roll.attr === attr) || (mark && !mark.action && mark.resist && mark.resist.attr === attr);
       h += '<div class="ds-attr"><div class="ds-attr-h"><span class="ds-attr-n">' + esc(attr) + '</span><span class="ds-rating mono">' + rating + '</span>' + (majesty ? '<span class="ds-dm">Dark Majesty</span>' : '') +
         '<button type="button" class="chip sm ds-resist" data-act="resistopen" data-attr="' + esc(attr) + '" data-always="1" aria-expanded="' + !!resisting + '" title="Resistance roll: ' + resistDice(play, pb, attr) + 'd">Resist</button>' +
         '<span class="ds-xpmini">xp ' + pipRow(6, xp, 'xp', ' data-k="' + key + '"', 'ds-xbox') + '</span></div>';
@@ -608,39 +712,102 @@
       g[1].forEach(function (a) {
         var v = play.dots[a] || 0, pr = pb && pb.printed ? (pb.printed[a] || 0) : 0, pips = '', max = dotMax(play, pb, a), shown = vamp ? 5 : 4;
         for (var i = 1; i <= shown; i++) pips += '<button type="button" class="ds-pip' + (i <= v ? ' on' : '') + (i <= pr ? ' printed' : '') + (i === 4 ? ' mastery' : '') + (i === 5 ? ' majesty' : '') + '" data-act="dot" data-a="' + esc(a) + '" data-n="' + i + '"' + (i > max ? ' disabled' : '') + ' aria-label="' + esc(a) + ' ' + i + '"></button>';
-        var open = roll && roll.kind === 'action' && roll.action === a;
-        h += '<div class="ds-act"><span class="ds-pips">' + pips + '</span><button type="button" class="ds-act-n ds-actbtn' + (open ? ' open' : '') + '" data-act="rollopen" data-a="' + esc(a) + '" data-always="1" aria-expanded="' + !!open + '" title="Roll ' + esc(a) + ' (' + v + 'd)">' + esc(a) + '</button></div>';
+        var open = (roll && roll.kind === 'action' && roll.action === a) || (mark && mark.action === a);
+        h += '<div class="ds-act"><span class="ds-pips">' + pips + '</span><button type="button" class="ds-act-n ds-actbtn' + (open ? ' open' : '') + '" data-act="rollopen" data-a="' + esc(a) + '" data-always="1" aria-expanded="' + !!open + '" title="' + esc(a) + ': ' + v + 'd, mark the roll">' + esc(a) + '</button></div>';
       });
       h += '</div>';
     });
     h += '</div>';
     if (tt) h += '<p class="hint">In play your actions may reach 4 (the limit of 3 was for creation only).</p>';
     else h += '<div class="row ds-tools"><label class="ds-check"><input type="checkbox" data-change="mastery"' + (play.mastery ? ' checked' : '') + '> Mastery (crew upgrade: ratings up to 4)</label>' + (vamp ? '<span class="ds-dim">Dark Majesty: one attribute up to 5.</span>' : '') + '</div>';
-    h += '<p class="hint ds-rollhint">Click an action to roll it; Resist rolls an attribute; Fortune rolls any number of dice.</p>';
-    return box('Actions', h, '<span class="ds-dim">attribute = actions rated 1+</span><button type="button" class="chip sm ds-fortune" data-act="fortopen" data-always="1" aria-expanded="' + !!(roll && roll.kind === 'fortune') + '">Fortune</button>', 'ds-actbox', rollPanel(play, pb));
+    h += '<p class="hint ds-rollhint">Tap an action for its dice and to mark the roll; Resist works out the ' + esc(stressName(pb)) + ' of a resistance; Fortune rolls any number of dice in the app.</p>';
+    return box('Actions', h, '<span class="ds-dim">attribute = actions rated 1+</span><button type="button" class="chip sm ds-fortune" data-act="fortopen" data-always="1" aria-expanded="' + !!(roll && roll.kind === 'fortune') + '">Fortune</button>', 'ds-actbox', markPanel(play, pb) + rollPanel(play, pb));
   }
-  /* ---------- the roll panel (round 4): one at a time, under the Actions box ---------- */
+  /* ---------- the mark strip: everyone rolls physical dice, so tapping an action shows the dice count (dots, plus Push /
+     Assist / Bargain, a die each) and one row to mark what happened: Resist (the helper below), the harm line to write on,
+     +1 stress. Push marks its 2 stress here as it is tapped (and gives it back when untapped), as the in-app roll does when it
+     rolls; an assist is paid by the crewmate who helps, on their own sheet; a Devil's Bargain costs no stress. The in-app roll
+     stays behind "Roll in the app". One panel at a time, like the others. ---------- */
   function noSave() { return readOnly() || !cur.api || typeof cur.api.save !== 'function'; }
-  function notSavedWhy() { return readOnly() ? 'read only' : 'no store'; }
+  function notSavedWhy() { return readOnly() ? 'read only' : 'this view cannot save'; }
+  function markDice(play, m) { return (play.dots[m.action] || 0) + (m.push ? 1 : 0) + (m.assist ? 1 : 0) + (m.bargain ? 1 : 0); }
+  function markPanel(play, pb) {
+    var m = cur.ui.mark; if (!m) return '';
+    var sn = stressName(pb), sm = stressMax(pb), h = '', title, sub;
+    if (m.action) {
+      var dots = play.dots[m.action] || 0, attr = attrOf(m.action) || '', total = markDice(play, m), pushBlocked = !m.push && play.stress + 2 > sm;
+      var parts = [dots + ' dot' + (dots === 1 ? '' : 's')]; if (m.push) parts.push('push'); if (m.assist) parts.push('assist'); if (m.bargain) parts.push('bargain');
+      title = esc(m.action) + ' · <b>' + total + 'd</b>'; sub = esc(attr) + ' · ' + esc(parts.join(' + ')) + (total === 0 ? ' · roll 2d, take the lowest' : '');
+      function tg(k, label, note, tip, dis) { return '<button type="button" class="chip sm ds-mtog" data-act="markopt" data-k="' + k + '" aria-pressed="' + !!m[k] + '" title="' + tip + '"' + (dis ? ' disabled' : '') + '><span>' + label + ' +1d</span><small>' + note + '</small></button>'; }
+      h += '<div class="ds-mark-row ds-mrow-dice"><span class="ds-lab">Dice</span><span class="ds-mark-opts">' +
+        tg('push', 'Push', '2 ' + esc(sn), 'Push yourself: +1d, and 2 ' + esc(sn) + ' marked on this sheet', pushBlocked) +
+        tg('assist', 'Assist', 'helper: 1 ' + esc(sn), 'A crewmate assists: +1d; they mark 1 ' + esc(sn) + ' on their own sheet') +
+        tg('bargain', 'Bargain', 'the GM’s price', 'Devil’s Bargain: +1d; the GM names the price') + '</span></div>';
+      if (pushBlocked) h += '<p class="hint ds-warn">Pushing would take ' + esc(sn) + ' past ' + sm + ': ' + esc(overflowRule(pb)) + '. Mark it by hand if you push anyway.</p>';
+      h += '<div class="ds-mark-row ds-mrow-then"><span class="ds-lab">Then</span><span class="ds-mark-cons">' +
+        '<button type="button" class="btn sm' + (m.resist ? ' primary' : '') + '" data-act="markresist" data-always="1" aria-expanded="' + !!m.resist + '" title="Resist the consequence: roll an attribute, tap the highest die">Resist</button>' +
+        [1, 2, 3].map(function (l) { return '<button type="button" class="btn sm" data-act="markharm" data-l="' + l + '" data-always="1" title="Write it on a level ' + l + ' harm line">Harm ' + l + '</button>'; }).join('') +
+        '<button type="button" class="btn sm ds-plus1" data-act="stressd" data-d="1" title="Mark 1 ' + esc(sn) + '">+1 <span>' + esc(sn) + '</span></button></span></div>';
+      if (m.push) h += '<div class="ds-roll-applied"><span class="ds-lab">Marked</span>+2 ' + esc(sn) + ' (push) <span class="ds-dim">' + play.stress + ' / ' + sm + '</span></div>';
+    } else { title = 'Resist · <b>' + esc(m.resist.attr) + '</b>'; sub = resistDice(play, pb, m.resist.attr) + 'd · physical dice'; }
+    if (m.resist) h += resistHelper(play, pb, m);
+    /* the in-app roll, second; Close ends the strip (on a phone it is a bottom sheet, so the × is not the only way out) */
+    h += '<div class="ds-mark-foot">' + (m.action
+      ? '<button type="button" class="chip sm txt" data-act="rollapp" data-a="' + esc(m.action) + '" data-always="1">Roll in the app</button>'
+      : '<button type="button" class="chip sm txt" data-act="resistapp" data-attr="' + esc(m.resist.attr) + '" data-always="1">Roll in the app</button>') +
+      '<button type="button" class="btn sm ds-mark-close" data-act="panelclose" data-always="1">Close</button></div>';
+    return '<div class="ds-roll ds-mark" tabindex="-1" role="region" aria-label="' + (m.action ? 'Mark the roll' : 'Resist') + '"><div class="ds-roll-h"><span class="ds-roll-t">' + title + '</span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div></div>';
+  }
+  /* the resist helper: the attribute (the action's by default), the dice to roll, then the player taps the highest die (the lowest with
+     0 dice) or "two sixes"; the cost is applied and logged exactly as the in-app resistance roll applies and logs it */
+  function resistHelper(play, pb, m) {
+    var r = m.resist, n = resistDice(play, pb, r.attr), sn = stressName(pb), ro = noSave(), res = r.result, low = n === 0, h = '<div class="ds-rhelp">';
+    h += '<div class="ds-mark-row ds-rattr"><span class="ds-lab">Resist with' + rl('resistance roll') + '</span><span class="seg">' + ATTRS.map(function (a) { return '<button type="button" class="chip sm" data-act="markrattr" data-v="' + esc(a) + '" data-always="1" aria-pressed="' + (r.attr === a) + '"' + (res ? ' disabled' : '') + '>' + esc(a) + ' ' + resistDice(play, pb, a) + 'd</button>'; }).join('') + '</span></div>';
+    if (!res) {
+      h += '<p class="hint">Roll <b>' + n + 'd</b>' + (low ? ' (no rating: roll 2d and take the lowest)' : '') + ' and tap the ' + (low ? 'lowest' : 'highest') + ' die: ' + esc(sn) + ' cost is 6 minus the die' + (low ? '.' : '; two sixes clear 1 ' + esc(sn) + ' instead.') + '</p>';
+      h += '<div class="ds-mark-row"><span class="ds-lab">' + (low ? 'Lowest die' : 'Highest die') + '</span><span class="ds-mark-dice">' +
+        [1, 2, 3, 4, 5, 6].map(function (v) { return '<button type="button" class="ds-dieb" data-act="markrdie" data-v="' + v + '"' + (ro ? ' disabled' : '') + ' aria-label="' + (low ? 'lowest' : 'highest') + ' die ' + v + ': ' + (6 - v ? '+' + (6 - v) : 'no') + ' ' + esc(sn) + '">' + dieSvg(v, '', 34) + '<small>' + (6 - v ? '+' + (6 - v) : '0') + '</small></button>'; }).join('') +
+        (low ? '' : '<button type="button" class="ds-dieb ds-dieb-crit" data-act="markrdie" data-v="crit"' + (ro ? ' disabled' : '') + ' aria-label="two sixes: clear 1 ' + esc(sn) + '">' + dieSvg(6, 'six', 34) + dieSvg(6, 'six', 34) + '<small>−1</small></button>') + '</span></div>';
+      if (ro) h += '<p class="hint">Not saved (' + notSavedWhy() + '): mark it by hand.</p>';
+    } else {
+      var cost = res.crit ? -1 : 6 - res.value;
+      h += '<div class="ds-roll-res">' + diceSvgs(res) + '<div class="ds-roll-read"><span class="ds-roll-word ' + res.reading + '">' + (res.crit ? 'Critical' : (res.low ? 'lowest ' : 'highest ') + res.value) + '</span><span class="ds-roll-why">' + (res.crit ? 'clear 1 ' + esc(sn) : cost === 0 ? 'no ' + esc(sn) + ' at all' : '6 − ' + res.value + ' = ' + cost + ' ' + esc(sn)) + '</span></div>' +
+        '<div class="ds-roll-applied"><span class="ds-lab">Applied</span>' + esc(res.applied.join(' · ')) + '</div><div class="row"><button type="button" class="btn sm" data-act="markrdone" data-always="1">Done</button></div></div>';
+    }
+    return h + '</div>';
+  }
+  /* the cost of a resistance roll, applied and logged; shared by the in-app roll's Apply and the helper's die taps */
+  function applyResist(attr, res) {
+    var p = cur.play, pb = cur.pb, sn = stressName(pb), sm = stressMax(pb), cost = res.crit ? -1 : 6 - res.value, before = p.stress;
+    p.stress = clamp(before + cost, 0, sm);
+    var what = res.crit ? 'clear 1 ' + sn : cost + ' ' + sn;
+    res.applied = [(res.crit ? '−' + (before - p.stress) : '+' + (p.stress - before)) + ' ' + sn + ' (' + p.stress + ' / ' + sm + ')' + (cost > 0 && before + cost > sm ? ' — track full: ' + overflowRule(pb) : '')];
+    addLog(p, { at: new Date().toISOString(), kind: 'roll', text: 'Resist ' + attr + ' ' + res.n + 'd' + (res.low ? ' (2d take lowest)' : '') + ' · ' + res.dice.join(',') + ' → ' + (res.crit ? 'critical, ' : '') + what });
+  }
   function rollPanel(play, pb) {
     var r = cur.ui.roll; if (!r) return '';
     var sn = stressName(pb), sm = stressMax(pb), h = '', title, sub = '';
     if (r.kind === 'action') {
       var dots = play.dots[r.action] || 0, attr = attrOf(r.action) || '', total = dots + (r.push ? 1 : 0) + (r.assist ? 1 : 0) + (r.bargain ? 1 : 0);
-      var pushBlocked = !r.push && play.stress + 2 > sm;
+      var pushBlocked = !r.push && play.stress + 2 > sm, rolled = !!r.result;
       title = 'Roll · <b>' + esc(r.action) + '</b>'; sub = esc(attr) + ' · ' + dots + ' dot' + (dots === 1 ? '' : 's');
       function tog(k, label, note, dis) { return '<button type="button" class="ds-rtog" data-act="rollopt" data-k="' + k + '" data-always="1" aria-pressed="' + !!r[k] + '"' + (dis ? ' disabled' : '') + '><span class="ds-sq' + (r[k] ? ' on' : '') + '"></span><span><b>' + label + '</b> <span class="ds-dim">' + note + '</span></span></button>'; }
-      h += '<div class="ds-roll-opts">' + tog('push', 'Push yourself', '+1d · 2 ' + esc(sn), pushBlocked) + tog('assist', 'Assist', '+1d · a crewmate takes 1 ' + esc(sn)) + tog('bargain', 'Devil’s Bargain', '+1d · the GM names a price') + '</div>';
-      if (pushBlocked) h += '<p class="hint ds-warn">Pushing would take ' + esc(sn) + ' past ' + sm + ': ' + esc(overflowRule(pb)) + '. Mark it by hand if you push anyway.</p>';
-      h += '<div class="ds-roll-row"><span class="ds-lab">Position</span><span class="seg">' + POSITIONS.map(function (p) { return '<button type="button" class="chip sm" data-act="rollpos" data-v="' + p + '" data-always="1" aria-pressed="' + (r.position === p) + '">' + capWord(p) + '</button>'; }).join('') + '</span>' + (r.position === 'desperate' ? '<span class="ds-dim">marks 1 ' + esc(attr) + ' xp</span>' : '') + '</div>';
-      h += '<div class="ds-roll-row"><span class="ds-lab">Effect</span><span class="seg">' + EFFECTS.map(function (p) { return '<button type="button" class="chip sm" data-act="rolleff" data-v="' + p + '" data-always="1" aria-pressed="' + (r.effect === p) + '">' + capWord(p) + '</button>'; }).join('') + '</span><span class="ds-dim">for the fiction only</span></div>';
+      /* the dice and the Roll button first, the verdict right under them (so neither moves when the result lands), the options after;
+         once rolled, the paid-for options lock and a second roll is asked for by name */
       var parts = [dots + ' dot' + (dots === 1 ? '' : 's')]; if (r.push) parts.push('push'); if (r.assist) parts.push('assist'); if (r.bargain) parts.push('bargain');
-      h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + total + 'd</b><span class="ds-dim">' + esc(parts.join(' + ')) + (total === 0 ? ' · roll 2d, take the lowest' : '') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">Roll</button></div>';
-      if (r.result) h += rollResult(r, pb);
+      /* a second roll pays its costs again (push); with nothing to pay it is just "Roll again" */
+      h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + total + 'd</b><span class="ds-dim">' + esc(parts.join(' + ')) + (total === 0 ? ' · roll 2d, take the lowest' : '') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">' + (rolled ? (r.push ? 'Roll again (pays again)' : 'Roll again') : 'Roll') + '</button></div>';
+      if (rolled) h += rollResult(r, pb);
+      var prepaid = !!(r.paid && r.paid.push);
+      h += '<div class="ds-roll-opts">' + tog('push', 'Push yourself', '+1d · 2 ' + esc(sn) + (prepaid ? ' · marked already' : rolled && r.push ? ' · paid' : ''), pushBlocked || rolled || prepaid) + tog('assist', 'Assist', '+1d · a crewmate takes 1 ' + esc(sn), rolled) + tog('bargain', 'Devil’s Bargain', '+1d · the GM names a price', rolled) + '</div>';
+      if (pushBlocked) h += '<p class="hint ds-warn">Pushing would take ' + esc(sn) + ' past ' + sm + ': ' + esc(overflowRule(pb)) + '. Mark it by hand if you push anyway.</p>';
+      h += '<div class="ds-roll-row"><span class="ds-lab">Position' + rl('position') + '</span><span class="seg">' + POSITIONS.map(function (p) { return '<button type="button" class="chip sm" data-act="rollpos" data-v="' + p + '" data-always="1" aria-pressed="' + (r.position === p) + '"' + (rolled ? ' disabled' : '') + '>' + capWord(p) + '</button>'; }).join('') + '</span>' + (r.position === 'desperate' ? '<span class="ds-dim">marks 1 ' + esc(attr) + ' xp</span>' : '') + '</div>';
+      h += '<div class="ds-roll-row"><span class="ds-lab">Effect' + rl('effect') + '</span><span class="seg">' + EFFECTS.map(function (p) { return '<button type="button" class="chip sm" data-act="rolleff" data-v="' + p + '" data-always="1" aria-pressed="' + (r.effect === p) + '"' + (rolled ? ' disabled' : '') + '>' + capWord(p) + '</button>'; }).join('') + '</span><span class="ds-dim">for the fiction only</span></div>';
+      if (rolled) h += '<p class="hint">The options stay as rolled. For a different roll, close this and tap the action again.</p>';
     } else if (r.kind === 'resist') {
       var n = resistDice(play, pb, r.attr), dm = isVamp(pb) && play.darkMajesty === r.attr;
       title = 'Resist · <b>' + esc(r.attr) + '</b>'; sub = n + 'd · ' + attrRating(play, r.attr) + ' action' + (attrRating(play, r.attr) === 1 ? '' : 's') + ' rated 1+' + (dm ? ' + 1 Dark Majesty' : '');
-      h += '<p class="hint">Resist a consequence: ' + esc(sn) + ' cost is 6 minus the highest die; a critical clears 1 ' + esc(sn) + ' instead.' + (n === 0 ? ' No rating: roll 2d and take the lowest.' : '') + '</p>';
+      h += '<p class="hint">Resist a consequence' + rl('resistance roll') + ': ' + esc(sn) + ' cost is 6 minus the highest die; a critical clears 1 ' + esc(sn) + ' instead.' + (n === 0 ? ' No rating: roll 2d and take the lowest.' : '') + '</p>';
       h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + n + 'd</b><span class="ds-dim">' + (n === 0 ? 'roll 2d, take the lowest' : esc(r.attr) + ' rating') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">' + (r.result ? 'Roll again' : 'Roll') + '</button></div>';
       if (r.result) h += rollResult(r, pb);
     } else {
@@ -649,8 +816,10 @@
       h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + r.n + 'd</b><span class="ds-dim">' + (r.n === 0 ? 'roll 2d, take the lowest' : 'read the highest die') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">' + (r.result ? 'Roll again' : 'Roll') + '</button></div>';
       if (r.result) h += rollResult(r, pb);
     }
-    return '<div class="ds-roll" tabindex="-1" role="region" aria-label="Roll"><div class="ds-roll-h"><span class="ds-roll-t">' + title + '</span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="rollclose" data-always="1" aria-label="Close the roll panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div></div>';
+    return '<div class="ds-roll" tabindex="-1" role="region" aria-label="Roll"><div class="ds-roll-h"><span class="ds-roll-t">' + title + '</span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="rollclose" data-always="1" aria-label="Close the roll panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div>' + panelFoot() + '</div>';
   }
+  /* the phone's bottom sheet ends in a Close button (hidden on a desk, where the panel sits inline with its ×) */
+  function panelFoot() { return '<div class="ds-roll-foot"><button type="button" class="btn sm" data-act="panelclose" data-always="1">Close</button></div>'; }
   function rollResult(r, pb) {
     var res = r.result, sn = stressName(pb), word = res.reading, h = '<div class="ds-roll-res">' + diceSvgs(res);
     if (r.kind === 'resist') {
@@ -671,30 +840,36 @@
   function stacks(play, pb) {
     var hull = isHull(pb), tt = isTT(pb), canBank = !hull || play.abilities.indexOf('A Room of Your Own') >= 0;
     var h = '<div class="ds-stackrow"><span class="ds-lab">Stacks</span><span class="ds-dias">' + diamonds(4, play.stacks, 'stacks') + '</span><span class="mono ds-count">' + play.stacks + '</span></div>';
-    if (tt) { h += '<p class="hint">No bank: a time traveler keeps only what they carry. A carried stack takes a load slot.</p>'; return box('Stacks', h); }
+    if (tt) { h += '<p class="hint">No bank: a time traveler keeps only what they carry. A carried stack takes a load slot.</p>'; return box('Stacks', h, '', 'ds-stackbox'); }
     h += '<div class="ds-bank"><span class="ds-lab">Bank' + (hull ? ' <span class="ds-dim">*requires A Room of Your Own</span>' : '') + '</span>';
     for (var r = 0; r < 4; r++) { h += '<span class="ds-dias">'; for (var i = 1; i <= 10; i++) { var n = r * 10 + i; h += '<button type="button" class="ds-dia' + (n <= play.bank ? ' on' : '') + '" data-act="bank" data-n="' + n + '"' + (canBank ? '' : ' disabled') + ' aria-label="bank ' + n + '"></button>'; } h += '</span>'; }
     h += '<span class="mono ds-count">' + play.bank + ' / 40</span></div>';
     if (!canBank) h += '<p class="hint">Hulls cannot put stacks into bank without the trait A Room of Your Own.</p>';
     h += '<div class="row ds-tools"><button type="button" class="btn sm" data-act="tobank" data-n="1"' + (canBank && play.stacks > 0 && play.bank < 40 ? '' : ' disabled') + '>Bank a stack</button><button type="button" class="btn sm" data-act="frombank" data-n="1"' + (play.bank > 0 && play.stacks < 4 ? '' : ' disabled') + '>Draw a stack</button></div>';
-    return box('Stacks & bank', h);
+    return box('Stacks & bank', h, '', 'ds-stackbox');
   }
   function itemLoad(play, pb, name) { var all = ((pb && pb.items) || []).concat(CT.STANDARD_ITEMS || [], (play.extraItems || []).map(function (x) { return [x.name, x.load]; })); var it = all.filter(function (i) { return i[0] === name; })[0]; return it ? +it[1] || 0 : 0; }
   function loadBonus(play) { var b = 0; if (play.abilities.indexOf('Walking Arsenal') >= 0) b += 2; if (play.abilities.indexOf('Retractable Arsenal') >= 0) b += 2; return b; }
+  /* what is carried against the limit (null for a ghost, who carries no load) */
+  function loadNow(play, pb) {
+    if (isGhost(pb)) return null;
+    var carried = play.items.reduce(function (t, n) { return t + itemLoad(play, pb, n); }, 0);
+    return { carried: carried, total: carried + play.stacks, limit: (play.loadLimit === 'loud' ? 6 : 3) + loadBonus(play) };
+  }
   function items(play, pb) {
     if (isGhost(pb)) return box('Items (with you in ghost form)', (pb.itemsRule ? '<p class="hint">' + esc(pb.itemsRule) + '</p>' : '') + textarea('ghostItems', play.ghostItems, 'Whatever came with you'), '', 'ds-itembox');
-    var hull = isHull(pb);
-    var carried = play.items.reduce(function (t, n) { return t + itemLoad(play, pb, n); }, 0), total = carried + play.stacks;
-    var limit = (play.loadLimit === 'loud' ? 6 : 3) + loadBonus(play), over = total > limit;
+    var hull = isHull(pb), ld = loadNow(play, pb), carried = ld.carried, total = ld.total, limit = ld.limit, over = total > limit, editing = !!cur.ui.loadout;
     function row(it, extra) { var on = play.items.indexOf(it[0]) >= 0, l = +it[1] || 0, lb = ''; for (var i = 0; i < l; i++) lb += '<span class="ds-ld"></span>'; return '<button type="button" class="ds-item' + (on ? ' on' : '') + '" data-act="item" data-n="' + esc(it[0]) + '" aria-pressed="' + on + '"><span class="ds-sq' + (on ? ' on' : '') + '"></span><span class="ds-item-n">' + esc(it[0]) + '</span><span class="ds-lds">' + (l ? lb : '<span class="ds-dim">0</span>') + '</span></button>' + (extra || ''); }
     var h = '<div class="ds-loadhead"><span class="seg"><button type="button" class="chip sm" data-act="limit" data-v="quiet" aria-pressed="' + (play.loadLimit !== 'loud') + '">◇ ' + (3 + loadBonus(play)) + ' quiet</button><button type="button" class="chip sm" data-act="limit" data-v="loud" aria-pressed="' + (play.loadLimit === 'loud') + '">◆ ' + (6 + loadBonus(play)) + ' loud</button></span>' +
-      '<span class="budget' + (over ? ' bad' : '') + '">' + total + ' / ' + limit + ' load</span></div>' +
+      '<span class="budget' + (over ? ' bad' : '') + '">' + total + ' / ' + limit + ' load</span>' + rl('load') + '</div>' +
       '<p class="hint">' + carried + ' from items' + (play.stacks ? ' + ' + play.stacks + ' from stacks carried' : '') + (hull ? '. Frame armor is free.' : '. A carried stack takes a load slot.') + '</p>';
+    /* a phone shows what is carried and folds the rest of the list behind "Edit loadout" (tracker.css); a desk shows it all */
+    h += '<div class="row ds-loadedit">' + (play.items.length ? '' : '<span class="hint">Nothing carried yet.</span>') + '<button type="button" class="btn sm" data-act="loadout" data-always="1" aria-expanded="' + editing + '">' + (editing ? 'Done' : 'Edit loadout') + '</button></div>';
     h += '<div class="ds-items ds-pbitems">' + ((pb && pb.items) || []).map(function (it) { return row(it); }).join('') + '</div>';
     h += '<div class="ds-items">' + (CT.STANDARD_ITEMS || []).map(function (it) { return row(it); }).join('') + '</div>';
     if (play.extraItems.length) h += '<div class="ds-items">' + play.extraItems.map(function (x) { return row([x.name, x.load], '<button type="button" class="ds-x" data-act="rmitem" data-n="' + esc(x.name) + '" title="Remove">×</button>'); }).join('') + '</div>';
     h += '<div class="row ds-addrow">' + input('', '', 'Another item', 'ds-grow ds-newitem') + '<input type="number" class="ds-in ds-num ds-newload" min="0" max="6" value="1" aria-label="load"><button type="button" class="btn sm" data-act="additem">Add</button></div>';
-    return box('Items', h, '', 'ds-itembox');
+    return box('Items', h, '', 'ds-itembox' + (editing ? ' ds-editing' : ''));
   }
   function contacts(play, pb) {
     if (isGhost(pb)) return box('Enemies & Rivals', (pb.friendsRule ? '<p class="hint">' + esc(pb.friendsRule) + '</p>' : '') + textarea('enemies', play.enemies, 'Who wants you gone, and who you haunt'));
@@ -772,10 +947,19 @@
   }
 
   /* ---------- render ---------- */
+  /* a phone (the screen rules in tracker.css): the figure is not drawn, the thumbnail is; crossing 760px draws again */
+  var MQ = null; try { MQ = window.matchMedia ? window.matchMedia('screen and (max-width: 760px)') : null; } catch (e) { MQ = null; }
+  function narrow() { return !!(MQ && MQ.matches); }
+  var printing = false;
+  if (MQ) { var onMq = function () { if (cur && !cur.ui.static && !printing) render(); }; try { if (MQ.addEventListener) MQ.addEventListener('change', onMq); else if (MQ.addListener) MQ.addListener(onMq); } catch (e) {} }
   function render() {
     if (!cur) return; var doc = cur.doc, play = cur.play, pb = cur.pb, sheet = doc.sheet || {};
     var focus = captureFocus();
-    figureSvg(doc);
+    /* the big pictures (the figure, 360 KB of SVG, and the thumbnail's data URI) are not rebuilt on every tap: the nodes
+       drawn last time move into the new markup when their figure is the same */
+    var keep = {}, fa = cur.root.querySelector('.ds-figbox [data-k="fig"]'), ti = cur.root.querySelector('img[data-k="thumb"]');
+    if (fa && fa.__k) keep.fig = fa; if (ti && ti.__k) keep.thumb = ti;
+    cur.keep = keep;
     var html = header(doc, play, pb, sheet) + tableBar(play) +
       '<div class="ds-grid">' +
         '<div class="ds-col ds-c1">' + figure(doc, pb) + stress(play, pb) + keys(play, pb) + strictures(play, pb) + harm(play, pb) + cohort(play, pb) + vice(play, pb) + '</div>' +
@@ -784,14 +968,26 @@
         '<div class="ds-col ds-c4">' + clocks(play, pb) + notes(play) + log(play) + '</div>' +
       '</div>';
     cur.root.innerHTML = html;
-    cur.root.className = 'dossier ds' + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '');
+    cur.keep = null;
+    [['fig', keep.fig], ['thumb', keep.thumb]].forEach(function (x) { var ph = cur.root.querySelector('[data-keep="' + x[0] + '"]'); if (ph && x[1]) ph.parentNode.replaceChild(x[1], ph); });
+    var nf = cur.root.querySelector('.ds-figbox [data-k="fig"]'); if (nf && !nf.__k) nf.__k = cur.ui.svgKey;
+    var nt = cur.root.querySelector('img[data-k="thumb"]'); if (nt && !nt.__k) nt.__k = cur.ui.thumbKey;
+    if (printing) printFigure(true);
+    var open = anyPanel();
+    cur.root.className = 'dossier ds' + (cur.ui.static ? ' ds-static' : ' ds-live') + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '') + (open ? ' ds-panel-open' : '');
     askOwner();
     if (readOnly()) cur.root.querySelectorAll('button, input, textarea, select').forEach(function (n) { if (!n.dataset.always) n.disabled = true; });
     restoreFocus(focus);
-    /* the roll panel: bring it into view when it opens, and keep keyboard focus inside the sheet so Esc closes it */
-    var panel = cur.ui.roll || cur.ui.dt || cur.ui.endSess ? cur.root.querySelector('.ds-roll') : null;
+    /* the roll panel: bring it (or, after a roll, its verdict) into view, and keep keyboard focus inside the sheet so Esc closes it.
+       On a phone the panel is a fixed bottom sheet (tracker.css): it is in view by itself, only its verdict may need a scroll inside it */
+    var panel = open ? cur.root.querySelector('.ds-roll') : null;
     if (panel) {
-      if (cur.ui.rollScroll) { cur.ui.rollScroll = false; try { panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {} }
+      if (cur.ui.rollScroll) {
+        var want = cur.ui.rollScroll, fixed = false; cur.ui.rollScroll = false;
+        try { fixed = getComputedStyle(panel).position === 'fixed'; } catch (e) {}
+        var tgt = want === 'res' ? panel.querySelector('.ds-roll-res') || panel : panel;
+        if (!(fixed && tgt === panel)) { try { tgt.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {} }
+      }
       var a = document.activeElement; if (!a || a === document.body || !cur.root.contains(a)) { try { panel.focus({ preventScroll: true }); } catch (e) {} }
     }
   }
@@ -833,11 +1029,27 @@
     back: function () { if (cur.api && cur.api.back) cur.api.back(); },
     edit: function () { if (cur.api && cur.api.edit) cur.api.edit(); },
     print: function () { printFigure(true); try { window.print(); } catch (e) { note('Printing is not available here'); } },
+    /* Remove deletes the character for everyone, for good: it sits at the foot of "…", for the owner and the GM, behind a
+       confirm that names the character */
     remove: function () {
-      if (!cur.ui.confirmRemove) { cur.ui.confirmRemove = true; render(); if (cur.rmT) clearTimeout(cur.rmT); cur.rmT = setTimeout(function () { if (cur) { cur.ui.confirmRemove = false; render(); } }, 4000); return; }
-      cur.ui.confirmRemove = false; if (cur.rmT) clearTimeout(cur.rmT);
-      var p; try { p = cur.api && cur.api.remove ? cur.api.remove() : null; } catch (e) { setStatus('Could not remove: ' + e.message, true); return; }
+      if (!canRemove()) return;
+      var name = cur.doc.name || (cur.doc.sheet && cur.doc.sheet.name) || 'this character';
+      if (!window.confirm('Remove ' + name + ' for good? The sheet and everything on it are deleted for everyone at the table. This cannot be undone.')) return;
+      var p; try { p = cur.api.remove(); } catch (e) { setStatus('Could not remove: ' + e.message, true); return; }
       setStatus('Removing…'); Promise.resolve(p).then(null, function (e) { if (cur) setStatus('Could not remove: ' + (e && e.message || e), true); });
+    },
+    more: function () { cur.ui.more = !cur.ui.more; render(); var mi = cur.ui.more && cur.root.querySelector('.ds-menu .ds-mi'); if (mi && mi.offsetParent) try { mi.focus({ preventScroll: true }); } catch (e) {} },
+    about: function () { cur.ui.about = !cur.ui.about; render(); },
+    loadout: function () { cur.ui.loadout = !cur.ui.loadout; render(); },
+    /* the vitals: scroll the box to just under the sticky bar */
+    jump: function (d) {
+      if (['ds-stressbox', 'ds-harmbox', 'ds-xpbox', 'ds-itembox'].indexOf(d.to) < 0) return;
+      var b = cur.root.querySelector('.ds-grid .' + d.to); if (!b) return;
+      var bar = cur.root.querySelector('.ds-bar'), off = 0;
+      try { if (bar && getComputedStyle(bar).position === 'sticky') off = bar.getBoundingClientRect().height; } catch (e) {}
+      var y = Math.max(0, b.getBoundingClientRect().top + (window.pageYOffset || 0) - off - 8);
+      try { window.scrollTo({ top: y, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, y); }
+      var h = b.querySelector('.ds-bt'); if (h) { h.setAttribute('tabindex', '-1'); try { h.focus({ preventScroll: true }); } catch (e) {} }
     },
     view: function (d) { cur.ui.mug = d.v === 'mug'; render(); },
     stress: function (d) { cur.play.stress = toggleTrack(cur.play.stress, +d.n); commit(); },
@@ -965,16 +1177,18 @@
     addclock: function (d) { var n = cur.root.querySelector('.ds-newclock'); cur.play.clocks.push({ name: n ? n.value.trim() : '', size: +d.n || 4, filled: 0 }); commit(); },
     memory: function (d) { var m = cur.play.memories[+d.i]; if (!m) return; m.filled = toggleTrack(m.filled, +d.n); commit(); },
     suspicion: function (d) { cur.play.suspicion = toggleTrack(cur.play.suspicion, +d.n); commit(); },
-    log: function () { var n = cur.root.querySelector('.ds-newlog'); var v = n && n.value.trim(); if (!v) { if (n) n.focus(); return; } cur.play.log.unshift({ at: new Date().toISOString(), kind: 'note', text: v }); commit(); },
+    log: function () { var n = cur.root.querySelector('.ds-newlog'); var v = n && n.value.trim(); if (!v) { if (n) n.focus(); return; } addLog(cur.play, { at: new Date().toISOString(), kind: 'note', text: v }); commit(); },
     rmlog: function (d) { if (!window.confirm('Remove this log entry?')) return; cur.play.log.splice(+d.i, 1); commit(); },
     /* ---- dice (round 4): the roll panel. Every control here carries data-always, so a read-only viewer can roll; nothing is written for them. ---- */
-    rollopen: function (d) { var r = cur.ui.roll; if (r && r.kind === 'action' && r.action === d.a) { cur.ui.roll = null; render(); return; } cur.ui.dt = cur.ui.endSess = null; cur.ui.roll = { kind: 'action', action: d.a, push: false, assist: false, bargain: false, position: 'risky', effect: 'standard', result: null }; cur.ui.rollScroll = true; render(); },
-    resistopen: function (d) { var r = cur.ui.roll; if (r && r.kind === 'resist' && r.attr === d.attr) { cur.ui.roll = null; render(); return; } cur.ui.dt = cur.ui.endSess = null; cur.ui.roll = { kind: 'resist', attr: d.attr, result: null }; cur.ui.rollScroll = true; render(); },
-    fortopen: function () { var r = cur.ui.roll; if (r && r.kind === 'fortune') { cur.ui.roll = null; render(); return; } cur.ui.dt = cur.ui.endSess = null; cur.ui.roll = { kind: 'fortune', n: 2, result: null }; cur.ui.rollScroll = true; render(); },
+    /* an action opens the mark strip (physical dice); the Resist chip opens the resist helper; the in-app rolls sit behind "Roll in the app" */
+    rollopen: function (d) { var m = cur.ui.mark; if (m && m.action === d.a) { cur.ui.mark = null; render(); return; } closePanels(); cur.ui.mark = { action: d.a, push: false, assist: false, bargain: false, resist: null }; cur.ui.rollScroll = true; render(); },
+    resistopen: function (d) { var m = cur.ui.mark; if (m && !m.action && m.resist && m.resist.attr === d.attr) { cur.ui.mark = null; render(); return; } closePanels(); cur.ui.mark = { action: null, resist: { attr: d.attr, result: null } }; cur.ui.rollScroll = true; render(); },
+    fortopen: function () { var r = cur.ui.roll; if (r && r.kind === 'fortune') { cur.ui.roll = null; render(); return; } closePanels(); cur.ui.roll = { kind: 'fortune', n: 2, result: null }; cur.ui.rollScroll = true; render(); },
     rollclose: function () { cur.ui.roll = null; render(); },
-    rollopt: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action') return; if (d.k === 'push' && !r.push && cur.play.stress + 2 > stressMax(cur.pb)) return; r[d.k] = !r[d.k]; r.result = null; render(); },
-    rollpos: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || POSITIONS.indexOf(d.v) < 0) return; r.position = d.v; r.result = null; render(); },
-    rolleff: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || EFFECTS.indexOf(d.v) < 0) return; r.effect = d.v; r.result = null; render(); },
+    rollopt: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || r.result) return; if (r.paid && r.paid[d.k]) return; if (d.k === 'push' && !r.push && cur.play.stress + 2 > stressMax(cur.pb)) return; r[d.k] = !r[d.k]; r.result = null; render(); },
+    /* after a roll its options are locked: the verdict stands for what was rolled */
+    rollpos: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || r.result || POSITIONS.indexOf(d.v) < 0) return; r.position = d.v; render(); },
+    rolleff: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || r.result || EFFECTS.indexOf(d.v) < 0) return; r.effect = d.v; render(); },
     fortn: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'fortune') return; r.n = clamp(d.n, 0, 6); r.result = null; render(); },
     roll: function () {
       var r = cur.ui.roll, p = cur.play, pb = cur.pb; if (!r) return;
@@ -987,7 +1201,9 @@
         res.text = r.action + ' ' + res.n + 'd' + (flags.length ? ' (' + flags.join(', ') + ')' : res.low ? ' (2d take lowest)' : '') + ' · ' + r.position + ' · ' + res.dice.join(',') + ' → ' + res.reading;
         /* consequences: listed first, written only when the sheet can be saved */
         var plan = [];
-        if (r.push) plan.push({ text: '+2 ' + sn, run: function () { p.stress = clamp(p.stress + 2, 0, sm); return '+2 ' + sn + ' (' + p.stress + ' / ' + sm + ')'; } });
+        /* a push marked in the strip is paid already, for this first roll; a roll after it pays again */
+        if (r.push && !(r.paid && r.paid.push)) plan.push({ text: '+2 ' + sn, run: function () { p.stress = clamp(p.stress + 2, 0, sm); return '+2 ' + sn + ' (' + p.stress + ' / ' + sm + ')'; } });
+        if (r.paid) r.paid.push = false;
         if (r.position === 'desperate' && key) plan.push({ text: '+1 ' + attr + ' xp', run: function () { if ((p.xp[key] || 0) >= 6) return attr + ' xp is full: advance first'; p.xp[key] = clamp((p.xp[key] || 0) + 1, 0, 6); return '+1 ' + attr + ' xp (' + p.xp[key] + ' / 6)' + (p.xp[key] >= 6 ? ' — advance ready' : ''); } });
         res.saved = !ro; res.savedWhy = ro ? notSavedWhy() : '';
         res.applied = plan.map(function (x) { return ro ? x.text : x.run(); });
@@ -998,8 +1214,8 @@
         res.text = 'Fortune ' + res.n + 'd' + (res.low ? ' (2d take lowest)' : '') + ' · ' + res.dice.join(',') + ' → ' + res.reading;
         res.saved = !ro; res.savedWhy = ro ? notSavedWhy() : ''; res.applied = [];
       }
-      r.result = res;
-      if (res.text && !ro) { p.log.unshift({ at: new Date().toISOString(), kind: 'roll', text: res.text }); commit(); } else render();
+      r.result = res; cur.ui.rollScroll = 'res';   /* the verdict comes into view, wherever the panel sits */
+      if (res.text && !ro) { addLog(p, { at: new Date().toISOString(), kind: 'roll', text: res.text }); commit(); } else render();
     },
     /* ---- sessions (round 5) ---- */
     sessstart: function () { if (tableNow()) return; startSession((cur.play.session || 0) + 1); },
@@ -1026,7 +1242,7 @@
       p.keyHitSession = {}; if (hits) lines.push('key hits cleared');
       var names = []; e.vals.forEach(function (v, i) { if (v && trig[i]) names.push(trigLabel(trig[i]) + (v === 2 ? ' ×2' : '')); });
       var text = 'Session ' + n + ' ended: +' + plan.total + ' xp' + (names.length ? ' (' + names.join('; ') + ')' : '') + (plan.toMem ? ' · ' + plan.toMem + ' to memory ' + (plan.memI + 1) : '') + (plan.lost ? ' · ' + plan.lost + ' lost to the cap' : '');
-      p.log = [{ at: new Date().toISOString(), kind: 'note', text: text }].concat(p.log || []);
+      addLog(p, { at: new Date().toISOString(), kind: 'note', text: text });
       e.result = { lines: lines, lost: plan.lost, full: p.xp.playbook >= 8, memFull: memFull };
       note('Session ' + n + ' ended'); commit();
     },
@@ -1089,7 +1305,7 @@
         };
       }
       res.saved = !ro; res.savedWhy = ro ? notSavedWhy() : ''; res.applied = applied; t.result = res;
-      if (!ro) { apply(); p.log = [{ at: new Date().toISOString(), kind: 'roll', text: res.text }].concat(p.log || []); commit(); } else render();
+      if (!ro) { apply(); addLog(p, { at: new Date().toISOString(), kind: 'roll', text: res.text }); commit(); } else render();
     },
     dttrain: function () {
       var t = cur.ui.dt, p = cur.play; if (!t || t.kind !== 'train' || noSave()) return;
@@ -1099,32 +1315,72 @@
       var v = (p.xp[k] || 0) + 1, label = k === 'playbook' ? 'playbook' : capWord(k), nx = Object.assign({}, p.xp); nx[k] = v;
       p.xp = nx; p.trainedThisDowntime = true;
       t.result = { saved: true, applied: ['+1 ' + label + ' xp (' + v + ' / ' + max + ')' + (v >= max ? ' — advance ready' : '')] };
-      p.log = [{ at: new Date().toISOString(), kind: 'roll', text: 'Train ' + label + ' · +1 xp (' + v + ' / ' + max + ')' }].concat(p.log || []);
+      addLog(p, { at: new Date().toISOString(), kind: 'roll', text: 'Train ' + label + ' · +1 xp (' + v + ' / ' + max + ')' });
       commit();
     },
     resistapply: function () {
-      var r = cur.ui.roll, p = cur.play, pb = cur.pb; if (!r || r.kind !== 'resist' || !r.result || r.result.applied) return;
-      var res = r.result, sn = stressName(pb), sm = stressMax(pb), cost = res.crit ? -1 : 6 - res.value, before = p.stress;
-      p.stress = clamp(before + cost, 0, sm);
-      var what = res.crit ? 'clear 1 ' + sn : cost + ' ' + sn;
-      res.applied = [(res.crit ? '−' + (before - p.stress) : '+' + (p.stress - before)) + ' ' + sn + ' (' + p.stress + ' / ' + sm + ')' + (cost > 0 && before + cost > sm ? ' — track full: ' + overflowRule(pb) : '')];
-      p.log.unshift({ at: new Date().toISOString(), kind: 'roll', text: 'Resist ' + r.attr + ' ' + res.n + 'd' + (res.low ? ' (2d take lowest)' : '') + ' · ' + res.dice.join(',') + ' → ' + (res.crit ? 'critical, ' : '') + what });
-      commit();
-    }
+      var r = cur.ui.roll; if (!r || r.kind !== 'resist' || !r.result || r.result.applied) return;
+      applyResist(r.attr, r.result); cur.ui.rollScroll = 'res'; commit();
+    },
+    /* ---- the mark strip (physical dice) ---- */
+    rollapp: function (d) {
+      var m = cur.ui.mark, from = m && m.action === d.a ? m : null; closePanels();
+      cur.ui.roll = { kind: 'action', action: d.a, push: !!(from && from.push), assist: !!(from && from.assist), bargain: !!(from && from.bargain), paid: { push: !!(from && from.push) }, position: 'risky', effect: 'standard', result: null };
+      cur.ui.rollScroll = true; render();
+    },
+    resistapp: function (d) { closePanels(); cur.ui.roll = { kind: 'resist', attr: d.attr, result: null }; cur.ui.rollScroll = true; render(); },
+    /* Push marks its 2 stress as it is tapped (and gives it back when untapped); Assist and a Devil's Bargain add a die and
+       cost this sheet nothing (the crewmate who assists marks their own stress) */
+    markopt: function (d) {
+      var m = cur.ui.mark, p = cur.play, pb = cur.pb; if (!m || !m.action) return;
+      var k = d.k, sn = stressName(pb), sm = stressMax(pb), on = !m[k];
+      if (k === 'push') { if (on && p.stress + 2 > sm) { note('Cannot push: ' + sn + ' would pass ' + sm); return; } p.stress = clamp(p.stress + (on ? 2 : -2), 0, sm); }
+      else if (k !== 'assist' && k !== 'bargain') return;
+      m[k] = on;
+      if (k === 'push') commit(); else render();
+    },
+    /* Harm N: the first empty line of that level, scrolled into view and focused for typing. A full level moves the harm up a
+       level, as the rules do. On a phone the strip (a bottom sheet) closes first, so it never sits over the line being typed. */
+    markharm: function (d) {
+      var l = clamp(d.l, 1, 4), lv = { 1: ['harm.l1.0', 'harm.l1.1'], 2: ['harm.l2.0', 'harm.l2.1'], 3: ['harm.l3'], 4: ['harm.l4'] };
+      var empty = function (s) { var v = getPath(cur.play, s); return !String(v == null ? '' : v).trim(); };
+      var at = l; while (at < 4 && !lv[at].some(empty)) at++;
+      if (!lv[at].some(empty)) at = l;
+      var path = lv[at].filter(empty)[0] || lv[at][0], panel = cur.root.querySelector('.ds-mark'), sheet = false;
+      try { sheet = !!panel && getComputedStyle(panel).position === 'fixed'; } catch (e) {}
+      if (sheet) { cur.ui.mark = null; render(); }
+      var target = cur.root.querySelector('[data-path="' + path + '"]'), boxEl = cur.root.querySelector('.ds-harmbox');
+      if (!target) return;
+      try { (boxEl || target).scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+      try { target.focus({ preventScroll: true }); } catch (e) {}
+      if (at !== l) note('Level ' + l + ' is full: the harm moves up to level ' + at);
+    },
+    markresist: function () { var m = cur.ui.mark; if (!m || !m.action) return; m.resist = m.resist ? null : { attr: attrOf(m.action) || ATTRS[0], result: null }; render(); },
+    markrattr: function (d) { var m = cur.ui.mark; if (!m || !m.resist || m.resist.result || ATTRS.indexOf(d.v) < 0) return; m.resist.attr = d.v; render(); },
+    /* the highest die (the lowest with 0 dice), or two sixes: the same reading and cost as the in-app roll, applied and logged */
+    markrdie: function (d) {
+      var m = cur.ui.mark, p = cur.play, pb = cur.pb; if (!m || !m.resist || m.resist.result || noSave()) return;
+      var n = resistDice(p, pb, m.resist.attr), low = n === 0, res;
+      if (d.v === 'crit') { if (low) return; res = { n: n, dice: [6, 6], value: 6, crit: true, low: false, reading: 'critical' }; }
+      else { var v = clamp(d.v, 1, 6); if (v !== +d.v) return; res = { n: n, dice: [v], value: v, crit: false, low: low, reading: v === 6 ? 'success' : v >= 4 ? 'partial' : 'failure' }; }
+      applyResist(m.resist.attr, res); m.resist.result = res; commit();
+    },
+    markrdone: function () { var m = cur.ui.mark; if (!m) return; if (m.action) m.resist = null; else cur.ui.mark = null; render(); }
   };
   /* a new session on this sheet (Start session, or Join the table's): clears the downtime and per-session flags, logs it */
   function startSession(n) {
     var p = cur.play;
     p.session = n; p.trainedThisDowntime = false;
     if (Object.keys(p.keyHitSession || {}).length) p.keyHitSession = {};
-    p.log = [{ at: new Date().toISOString(), kind: 'note', text: 'Session ' + n + ' started' }].concat(p.log || []);
+    addLog(p, { at: new Date().toISOString(), kind: 'note', text: 'Session ' + n + ' started' });
     cur.ui.endSess = null; if (cur.ui.dt && cur.ui.dt.kind === 'train') cur.ui.dt.result = null;
     note('Session ' + n + ' started'); commit();
   }
   /* roll-panel controls stay live for read-only viewers (they write nothing); everything else is gated */
-  var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1 };
-  /* one panel at a time: a roll, a downtime activity or the end of session */
-  function closePanels() { if (!cur) return; cur.ui.roll = null; cur.ui.dt = null; cur.ui.endSess = null; }
+  var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1, rollapp: 1, resistapp: 1, markharm: 1, markresist: 1, markrattr: 1, markrdone: 1, more: 1, about: 1, loadout: 1, jump: 1 };
+  /* one panel at a time: the mark strip, a roll, a downtime activity or the end of session */
+  function anyPanel() { return !!(cur && (cur.ui.mark || cur.ui.roll || cur.ui.dt || cur.ui.endSess)); }
+  function closePanels() { if (!cur) return; cur.ui.mark = null; cur.ui.roll = null; cur.ui.dt = null; cur.ui.endSess = null; }
   var CHANGES = {
     addkey: function (sel) { var v = sel.value; sel.value = ''; if (!v || cur.play.keys.length >= 4) return; var k = v === '*' ? { name: '', down: '', up: '' } : keyParts(v); k.hits = 0; k.deadlock = null; k.glitch = null; cur.play.keys.push(k); commit(); if (v === '*') { var last = cur.root.querySelectorAll('.ds-key-name'); if (last.length) last[last.length - 1].focus(); } },
     mastery: function (inp) { cur.play.mastery = !!inp.checked; commit(); },
@@ -1137,52 +1393,63 @@
     if (t.disabled) return; var act = t.getAttribute('data-act'); var fn = ACTIONS[act]; if (!fn) return;
     if (readOnly() && !RO_OK[act]) return;
     var d = {}; for (var i = 0; i < t.attributes.length; i++) { var a = t.attributes[i]; if (a.name.indexOf('data-') === 0) d[a.name.slice(5)] = a.value; }
+    var menu = act !== 'more' && cur.ui.more; if (menu) cur.ui.more = false;   /* any other control (a menu item too) closes "…" */
     try { fn(d, t); } catch (err) { setStatus('Something went wrong: ' + err.message, true); if (window.console) console.error(err); }
+    if (menu && cur && cur.root.querySelector('.ds-menu')) render();
   }
+  /* a tap anywhere outside "…" closes it */
+  function onDocClick(e) { if (!cur || !cur.ui.more) return; var t = e.target; if (t && t.closest && t.closest('.ds-more')) return; cur.ui.more = false; render(); }
   function onInput(e) {
     if (!cur) return; var t = e.target;
     if (t && t.dataset && t.dataset.ui === 'dtname' && cur.ui.dt) { cur.ui.dt.newName = t.value; return; } /* the downtime panel's new-clock name: panel state, never saved by itself */
     if (readOnly()) return; if (!t || !t.dataset || !t.dataset.path || !cur.root.contains(t)) return;
     setPath(cur.play, t.dataset.path, t.value); scheduleSave();
+    /* a harm line is typed, not tapped: the vitals' Harm count follows it without redrawing the sheet around the field */
+    if (t.dataset.path.indexOf('harm.') === 0) { var v = cur.root.querySelector('.ds-vitals'); if (v) v.outerHTML = vitals(cur.play, cur.pb); }
   }
   function onChange(e) {
     if (!cur) return; var t = e.target; if (!t || !cur.root.contains(t)) return;
     if (t.dataset && t.dataset.change && CHANGES[t.dataset.change]) { if (readOnly()) return; try { CHANGES[t.dataset.change](t); } catch (err) { setStatus('Something went wrong: ' + err.message, true); } return; }
     if (t.dataset && t.dataset.path && cur.timer) { clearTimeout(cur.timer); cur.timer = null; flushSave(); }
   }
-  function onDocKey(e) { if (!cur || !(cur.ui.roll || cur.ui.dt || cur.ui.endSess) || (e.key !== 'Escape' && e.key !== 'Esc')) return; closePanels(); render(); }
+  function onDocKey(e) {
+    if (!cur || (e.key !== 'Escape' && e.key !== 'Esc')) return;
+    if (cur.ui.more) { cur.ui.more = false; render(); var mb = cur.root.querySelector('.ds-morebtn'); if (mb) try { mb.focus({ preventScroll: true }); } catch (x) {} return; }
+    if (!anyPanel()) return; closePanels(); render();
+  }
   function onKey(e) { if (!cur || e.key !== 'Enter') return; var t = e.target; if (!t || t.tagName !== 'INPUT' || !cur.root.contains(t)) return; var map = { 'ds-newlog': 'log', 'ds-newclock': 'addclock', 'ds-newcname': 'addcontact', 'ds-newcrole': 'addcontact', 'ds-newitem': 'additem', 'ds-newab': 'addability' }; var cls = Object.keys(map).filter(function (c) { return t.classList.contains(c); })[0]; if (!cls) return; e.preventDefault(); if (readOnly()) return; ACTIONS[map[cls]]({ n: 4 }, t); }
 
   /* the small figure at the top right of the printed sheet exists only while printing, so the big SVG is never in the DOM twice */
-  function printFigure(on) { if (!cur) return; var f = cur.root.querySelector('.ds-printfig'); if (f) f.innerHTML = on ? (cur.ui.svg || '') : ''; }
-  if (window.addEventListener) { window.addEventListener('beforeprint', function () { printFigure(true); }); window.addEventListener('afterprint', function () { printFigure(false); }); }
+  /* a phone never drew the figure: it is drawn here, once, for the page that prints */
+  function printFigure(on) { if (!cur || cur.ui.static) return; var f = cur.root.querySelector('.ds-printfig'); if (!f) return; if (on) figureSvg(cur.doc); f.innerHTML = on ? (cur.ui.svg || '') : ''; }
+  if (window.addEventListener) { window.addEventListener('beforeprint', function () { printing = true; printFigure(true); }); window.addEventListener('afterprint', function () { printing = false; printFigure(false); }); }
 
   /* ---------- API ---------- */
   T.open = function (doc, api) {
     var root = document.getElementById('dossier'); if (!root) return;
     if (cur) T.close();
-    doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
-    cur.play = normalize(doc.play, doc.sheet, doc.playbook);
-    cur.status = { msg: readOnly() ? roLabel() : 'Saved' }; /* as stored */
+    doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, glitchPick: null, svg: '', svgWarn: '', mark: null, roll: null, rollScroll: false, dt: null, endSess: null, more: false, about: false, loadout: false }, timer: null, saving: 0 };
+    cur.play = normalize(doc.play, doc.sheet, doc.playbook); cur.server = clone(cur.play);
+    cur.status = { msg: readOnly() ? roLabel() : savedMsg() }; /* as stored (or still queued on this device) */
     root.addEventListener('click', onClick); root.addEventListener('input', onInput); root.addEventListener('change', onChange); root.addEventListener('keydown', onKey);
-    document.addEventListener('keydown', onDocKey);
+    document.addEventListener('keydown', onDocKey); document.addEventListener('click', onDocClick);
+    window.addEventListener('b68:runtime', onRuntime); window.addEventListener('pagehide', onHide); document.addEventListener('visibilitychange', onHide);
     render();
     if (!doc.play && !readOnly()) flushSave(); /* a doc filed without a play object gets one */
   };
   T.update = function (doc) {
     if (!cur || !doc) return; if (doc.id && cur.doc.id && doc.id !== cur.doc.id) return;
-    if (cur.timer || cur.saving) { cur.doc = Object.assign({}, cur.doc, doc, { play: cur.play }); return; } /* our own change is on its way; it will come back */
-    var focus = captureFocus(); if (doc.owner !== cur.doc.owner) cur.ownerName = null; cur.doc = doc; cur.pb = pbOf(doc.playbook) || cur.pb;
-    var incoming = normalize(doc.play, doc.sheet, doc.playbook);
-    if (focus && focus.path) setPath(incoming, focus.path, focus.value); /* never clobber what is being typed */
-    cur.play = incoming; render();
+    /* our own change is on its way: hold the snapshot (the newest one) and merge it once everything has landed (settle) */
+    if (cur.timer || cur.saving) { cur.doc = Object.assign({}, cur.doc, doc, { play: cur.play }); cur.remote = doc; return; }
+    applyRemote(doc, null);
   };
   T.close = function () {
     if (!cur) return; var c = cur;
     if (c.timer) { clearTimeout(c.timer); c.timer = null; flushSave(); } /* typed text still waiting goes out before the sheet closes */
-    cur = null; if (c.rmT) clearTimeout(c.rmT); if (c.statusT) clearTimeout(c.statusT);
+    cur = null; if (c.statusT) clearTimeout(c.statusT);
     c.root.removeEventListener('click', onClick); c.root.removeEventListener('input', onInput); c.root.removeEventListener('change', onChange); c.root.removeEventListener('keydown', onKey);
-    document.removeEventListener('keydown', onDocKey);
+    document.removeEventListener('keydown', onDocKey); document.removeEventListener('click', onDocClick);
+    window.removeEventListener('b68:runtime', onRuntime); window.removeEventListener('pagehide', onHide); document.removeEventListener('visibilitychange', onHide);
     c.root.innerHTML = ''; c.root.className = 'dossier';
   };
   /* something the sheet reads from outside its document changed (the table's session, api.table): redraw */
@@ -1196,7 +1463,7 @@
   T.renderStatic = function (root, doc) {
     if (!root) return null;
     doc = doc || {}; var live = cur;
-    cur = { doc: doc, api: { canWrite: null }, pb: pbOf(doc.playbook), root: root, ui: { static: true, mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
+    cur = { doc: doc, api: { canWrite: null }, pb: pbOf(doc.playbook), root: root, ui: { static: true, mug: false, advance: null, glitchPick: null, svg: '', svgWarn: '', mark: null, roll: null, rollScroll: false, dt: null, endSess: null, more: false, about: false, loadout: false }, timer: null, saving: 0 };
     try {
       cur.play = normalize(doc.play, doc.sheet, doc.playbook);
       render();

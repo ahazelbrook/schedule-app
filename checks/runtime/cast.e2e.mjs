@@ -196,6 +196,7 @@ try {
   await P.page.goto(BASE + '/#cast'); await P.page.waitForSelector('#stageBanner:not([hidden])');
   await P.page.click('#stageBanner [data-cp="dismiss"]');
   check(await P.page.$eval('#stageBanner', (b) => b.hidden), 'player: Hide hides the banner');
+  check(/On stage\s*Grunt/.test((await P.page.textContent('#cast-page .cp-onstage').catch(() => '')) || '') && !!(await P.page.$('#cast-page [data-cp="show"]')), 'player: after Hide the cast page still says who is on stage, with a way to show the banner');
   await P.page.reload(); await P.page.waitForFunction(() => window.B68Runtime && window.B68Runtime.me); await sleep(2500);
   check(await P.page.$eval('#stageBanner', (b) => b.hidden), 'player: it stays hidden after a reload while the stage is the same');
   await G.page.goto(BASE + '/#cast'); await waitCards(G.page, 7);
@@ -239,6 +240,7 @@ try {
     const l = await M.page.evaluate(layout);
     check(l.vw === 360 && l.scrollWidth <= l.clientWidth, name + ': no horizontal scroll (scrollWidth ' + l.scrollWidth + ', clientWidth ' + l.clientWidth + ')' + (l.wide.length ? ' wide: ' + l.wide.join(', ') : ''));
     if (l.banner) check(l.banner.left >= 0 && l.banner.right <= 360 && l.banner.height <= 740 * 0.6, name + ': the banner fits the screen ' + JSON.stringify(l.banner));
+    if (hash === '#cast/npc_grunt') check(await M.page.evaluate(() => { const t = document.querySelector('#cast-page .cp-text'), f = document.querySelector('#cast-page .cp-fig-big'); return !!(t && f) && t.getBoundingClientRect().top < f.getBoundingClientRect().top && f.getBoundingClientRect().height <= innerHeight * 0.6; }), name + ': the name and description come before a smaller figure');
     await shot(M.page, '06-phone-' + name.replace(/[^a-z]+/g, '-'));
   }
   await M.page.goto(BASE + '/#cast'); await waitCards(M.page, 2);

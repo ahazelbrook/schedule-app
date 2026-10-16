@@ -73,7 +73,7 @@ B68Tracker.refresh()                        // something the sheet reads outside
 //                                   //   (filing sends only the changed play fields as an update, falling back to a whole set)
 //   edit()                          // load this character into the creator (filing switches mode)
 //   back()                          // the previous view in this tab (history.back()), else Home; the button reads "← Back"
-//   remove() -> Promise             // delete (after the tracker's own confirm)
+//   remove() -> Promise             // delete (after the tracker's own confirm; offered to the owner and the GM, B68.isGM)
 //   me: 'u_..' | null,              // viewer id
 //   canWrite: true | false | null   // null = unknown, keep controls enabled and let a refused save decide. Per document, read on
 //                                   //   every check (boot passes a getter): false when the viewer cannot write at all, or is a
@@ -86,6 +86,12 @@ B68Tracker.refresh()                        // something the sheet reads outside
 // }
 ```
 
+Saving, in the tracker (no shape change): typing waits 400 ms but is sent at once on `pagehide` and on `visibilitychange` to
+hidden; a snapshot (`update`) that arrives while a save is in flight or typing waits is held and merged once everything has
+landed (a field this sheet changed meanwhile keeps its value, every other field takes the snapshot's); a save the store
+refuses (a 4xx other than 401 / 408 / 409 / 429) puts the sheet back to the store's copy once everything has landed, with
+"Not saved (reason): undone"; `play.log` keeps the newest 200 entries.
+
 With `api.table()` the sheet follows the table instead of its own counter: a bar under the header reads "Table: session N ·
 in play" (or "· ended"), and when the table is ahead of `play.session` it carries the one primary **Join session N**, which
 sets `play.session = N` and runs the Start session logic (clears `trainedThisDowntime` and `keyHitSession`, logs `Session N
@@ -93,11 +99,20 @@ started`). End of session closes the table's session N (and sets `play.session =
 "Start session N+1" button exists only when `table()` is missing or returns null; at table session 0 End session waits for the GM.
 
 The sheet's title is the character's name; the playbook and its descriptor sit small under it. Box titles are `h3.ds-bt`
-inside `.ds-band`. On phones (screen ≤ 760px) the boxes leave their columns and run Stress, Harm, Actions, Items, Keys,
-Session, then the rest; the Figure box gives way to a mugshot thumbnail beside the name (`img.ds-thumb`, a data URI, so
-its SVG ids never meet the Figure box's); pips, xp boxes, diamonds and × get invisible `::before` hit areas (44px tall where
-the row has room, as wide as their pitch so neighbours never take each other's taps) and each action's roll button is 44px
-tall. Print is unchanged by all of this (the phone rules are `screen` only).
+inside `.ds-band`. On phones (screen ≤ 760px) the boxes leave their columns and run Stress, Harm, Actions, XP, Items (what is
+carried; the rest of the list behind "Edit loadout"), Downtime, Session, Keys, Stacks, then the rest; the Figure box gives way to a
+mugshot thumbnail beside the name (`img.ds-thumb`, a data URI, so its SVG ids never meet the Figure box's). The figure is drawn
+only where it is shown (a desk's Figure box, and the print slot on `beforeprint`), and the figure and thumbnail nodes are carried
+from one render to the next, so a tap does not rebuild them. On the live sheet (`#dossier.ds-live`; a season copy is `ds-static`)
+the identity folds into a closed "About" row and a sticky bar holds ← Back, the status, Print, "…" (Edit figure, and Remove at its
+foot) and the vitals "Stress 6/9 · Harm 1 · XP 3/8 · Load 2/3", each a jump to its box. Remove is never in the button row: it is
+under "…" on every screen, for the character's owner and the GM only, behind a confirm that names the character. Pips, xp
+boxes, diamonds and × get invisible `::before` hit areas (44px tall where the row has room, as wide as their pitch so
+neighbours never take each other's taps), the other play controls are at least 40px tall on touch, fields are 16px, and each
+action's button is 44px tall. Print is unchanged by all of this (the phone rules are `screen` only).
+The status line reads the hosted runtime's queue: "Saved on this phone · will sync (N)" while `window.B68Runtime.status.pending`
+is N > 0 (it follows the `b68:runtime` event), "Saved" once nothing waits. Harm, Armor, Load, Position / Effect, Resist and XP
+carry a "?" rules link, like Stress, where the rules API exists.
 
 ### Filing API (`window.B68` additions, boot.js)
 
@@ -183,6 +198,7 @@ Ownership as before: tracker = `tracker.js`, `tracker.css`; filing = `boot.js`, 
 ## Dice (tracker)
 Forged in the Dark rules, assumed standard: action roll = d6 per action dot (0 dots: roll 2d6 and take the LOWEST); +1d for pushing yourself (costs 2 Stress, or Drain / Instability for the variant playbooks), +1d for an assist, +1d for a Devil's Bargain; read the single highest die: 6 success, 4–5 partial, 1–3 failure, two or more 6s a critical. Position controlled / risky / desperate; a desperate roll marks 1 xp in the action's attribute. Resistance roll = d6 per attribute rating (count of actions rated 1+ in that attribute; 0 → 2d take lowest), Stress cost = 6 − highest die, a critical clears 1 Stress instead. Fortune roll = any number of dice, same reading. Vampire Dark Majesty +1 resistance dot in that attribute applies to resistance rolls.
 `play.log[]` entries gain an optional `kind: 'roll' | 'note'` and rolls are logged as `{ at, kind: 'roll', text: 'Skirmish 3d (push) · risky · 6,4,2 → success' }`. `window.B68Tracker._rng` may be replaced by tests with a deterministic function returning 0..1.
+(Later: the table rolls physical dice. Tapping an action opens the **mark strip**: "Skirmish · 2d", Push / Assist / Bargain (+1d each; Push marks its 2 Stress at once and gives it back when untapped; an assist is paid by the helper on their own sheet), then Resist · Harm 1 · Harm 2 · Harm 3 · +1 Stress. Resist opens a helper: the attribute (the action's by default), its dice, and the player taps the highest die (or two sixes); the cost is applied and logged as the in-app resistance roll logs it (`Resist Prowess 2d · 4 → 2 Stress`). The in-app roll is behind "Roll in the app"; after a roll its options are locked and the button reads "Roll again (pays again)" when the roll pushed. On phones the strip and the roll panels are bottom sheets standing on the on-stage banner (`--cp-stage-h`). No `play` field changed.)
 
 ## GM table and backups (filing)
 `A.roster` (array of docs, as subscribed today) stays the source. The "Your files" section gets a view toggle Cards / Table; the table has one row per character with name, playbook, stress label and value (pb.stressName), worst harm text, healing, playbook xp, load, struck keys count, updatedAt; clicking a row opens the sheet. Backup: "Download all (JSON)" writes `{ v: 1, exportedAt, characters: [docs] }` through the downloads capability (hidden when unavailable); "Restore (JSON)" takes a file input and files each character as a NEW doc (new id, owner = me, createdAt now) so nothing is overwritten. (Later: the file also carries the table's campaign document as `campaign`, a player's copy without hidden clocks; Restore also reads the hosted `/api/export` file and restores the campaign document for the GM only, after a confirm; the hosted GM gets "Download everything". See CAMPAIGN.md, *Backups*.)
