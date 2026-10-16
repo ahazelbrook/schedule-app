@@ -86,6 +86,12 @@ B68Tracker.refresh()                        // something the sheet reads outside
 // }
 ```
 
+Saving, in the tracker (no shape change): typing waits 400 ms but is sent at once on `pagehide` and on `visibilitychange` to
+hidden; a snapshot (`update`) that arrives while a save is in flight or typing waits is held and merged once everything has
+landed (a field this sheet changed meanwhile keeps its value, every other field takes the snapshot's); a save the store
+refuses (a 4xx other than 401 / 408 / 409 / 429) puts the sheet back to the store's copy once everything has landed, with
+"Not saved (reason): undone"; `play.log` keeps the newest 200 entries.
+
 With `api.table()` the sheet follows the table instead of its own counter: a bar under the header reads "Table: session N ·
 in play" (or "· ended"), and when the table is ahead of `play.session` it carries the one primary **Join session N**, which
 sets `play.session = N` and runs the Start session logic (clears `trainedThisDowntime` and `keyHitSession`, logs `Session N

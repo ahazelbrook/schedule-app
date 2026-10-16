@@ -238,16 +238,59 @@
       c.ownerName = String(n); if (readOnly() && !(c.status && (c.status.bad || c.status.transient))) setStatus(roLabel());
     }, function () {});
   }
+  /* ---------- saving (robustness, C16) ----------
+     cur.server: the play as the store last had it (opened, a remote snapshot applied, or a save it accepted).
+     cur.base:   cur.server when this run of local changes began (the first change after everything had landed).
+     cur.remote: a snapshot that arrived while a save was in flight or typing waited; merged once everything has landed: a field
+                 changed here since cur.base keeps this sheet's value, every other field takes the snapshot's.
+     cur.refused: a save the store refused (4xx): once everything has landed the sheet goes back to cur.server, so no mark the
+                 store does not have stays on screen. */
+  var LOG_MAX = 200;   /* play.log keeps the newest 200 entries (the campaign log's cap) */
+  function capLog(p) { if (p && Array.isArray(p.log) && p.log.length > LOG_MAX) p.log = p.log.slice(0, LOG_MAX); }
+  function addLog(p, entry) { p.log = [entry].concat(Array.isArray(p.log) ? p.log : []); capLog(p); }
+  function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function refusal(e) { var s = e && +e.status; return s >= 400 && s < 500 && s !== 401 && s !== 408 && s !== 409 && s !== 429; }   /* refused, not "not now" */
+  function begin(c) { if (!c.base) c.base = clone(c.server || c.play); }
   function flushSave() {
     if (!cur) return; if (cur.timer) { clearTimeout(cur.timer); cur.timer = null; }
     if (readOnly()) { setStatus(roLabel()); return; }
     if (!cur.api || typeof cur.api.save !== 'function') { setStatus('Not saved: this view cannot save'); return; }
-    var snap = clone(cur.play); cur.saving++; setStatus('Saving…'); var p;
-    try { p = cur.api.save({ play: snap }); } catch (e) { cur.saving--; setStatus('Could not save: ' + (e && e.message || e), true); return; }
-    Promise.resolve(p).then(function () { if (!cur) return; cur.saving--; if (!cur.saving && !cur.timer) setStatus(savedMsg()); },
-      function (e) { if (!cur) return; cur.saving--; setStatus('Could not save: ' + (e && e.message || e || 'unknown error'), true); });
+    var c = cur; begin(c); capLog(c.play);
+    var snap = clone(c.play); c.saving++; setStatus('Saving…'); var p;
+    try { p = c.api.save({ play: snap }); } catch (e) { c.saving--; setStatus('Could not save: ' + (e && e.message || e), true); settle(c); return; }
+    Promise.resolve(p).then(function () {
+      if (cur !== c) return; c.saving--; if (!c.refused) c.server = snap;
+      if (!c.saving && !c.timer) { setStatus(savedMsg()); settle(c); }
+    }, function (e) {
+      if (cur !== c) return; c.saving--;
+      var why = e && e.message || e || 'unknown error';
+      if (refusal(e)) { c.refused = String(why); setStatus('Not saved (' + why + '): undone', true); }
+      else setStatus('Could not save: ' + why, true);
+      if (!c.saving && !c.timer) settle(c);
+    });
   }
-  function scheduleSave() { if (!cur) return; if (cur.timer) clearTimeout(cur.timer); setStatus('Saving…'); cur.timer = setTimeout(function () { cur.timer = null; flushSave(); }, SAVE_DELAY); }
+  function scheduleSave() { if (!cur) return; begin(cur); if (cur.timer) clearTimeout(cur.timer); setStatus('Saving…'); cur.timer = setTimeout(function () { cur.timer = null; flushSave(); }, SAVE_DELAY); }
+  /* everything this sheet sent has landed: undo a refused change, or merge what arrived meanwhile */
+  function settle(c) {
+    if (cur !== c || c.saving || c.timer) return;
+    var remote = c.remote, refused = c.refused; c.remote = null; c.refused = false;
+    if (refused) { var f = captureFocus(), back = clone(c.server); if (f && f.path) setPath(back, f.path, f.value); c.play = back; c.base = null; render(); return; }
+    if (remote) applyRemote(remote, c.base);
+    c.base = null;
+  }
+  /* a snapshot of this sheet from the store (T.update, or one held while a save was in flight). `base`: the play before this
+     sheet's own unsaved run; a field changed since then keeps this sheet's value. Never clobbers the field being typed in. */
+  function applyRemote(doc, base) {
+    var c = cur, focus = captureFocus(), incoming = normalize(doc.play, doc.sheet, doc.playbook), out = incoming;
+    if (base) { out = {}; Object.keys(incoming).forEach(function (k) { out[k] = same(c.play[k], base[k]) ? incoming[k] : c.play[k]; }); Object.keys(c.play).forEach(function (k) { if (!(k in out)) out[k] = c.play[k]; }); }
+    var head = function (d) { return [d.name, d.alias, d.code, d.owner, d.playbook, d.spec, d.sheet]; }, moved = !same(head(doc), head(c.doc));
+    if (doc.owner !== c.doc.owner) c.ownerName = null;
+    c.doc = doc; c.pb = pbOf(doc.playbook) || c.pb; c.server = clone(out);
+    if (focus && focus.path) setPath(out, focus.path, focus.value);
+    if (moved || !same(out, c.play)) { c.play = out; render(); }
+  }
+  /* the page is going away or into the background (a phone locked mid-word): typing that waits for its debounce goes out now */
+  function onHide(e) { if (!cur || !cur.timer || (e && e.type === 'visibilitychange' && document.visibilityState !== 'hidden')) return; clearTimeout(cur.timer); cur.timer = null; flushSave(); }
   /* a click changed play: redraw and save at once */
   function commit() { if (!cur) return; render(); flushSave(); }
 
@@ -739,7 +782,7 @@
     p.stress = clamp(before + cost, 0, sm);
     var what = res.crit ? 'clear 1 ' + sn : cost + ' ' + sn;
     res.applied = [(res.crit ? '−' + (before - p.stress) : '+' + (p.stress - before)) + ' ' + sn + ' (' + p.stress + ' / ' + sm + ')' + (cost > 0 && before + cost > sm ? ' — track full: ' + overflowRule(pb) : '')];
-    p.log.unshift({ at: new Date().toISOString(), kind: 'roll', text: 'Resist ' + attr + ' ' + res.n + 'd' + (res.low ? ' (2d take lowest)' : '') + ' · ' + res.dice.join(',') + ' → ' + (res.crit ? 'critical, ' : '') + what });
+    addLog(p, { at: new Date().toISOString(), kind: 'roll', text: 'Resist ' + attr + ' ' + res.n + 'd' + (res.low ? ' (2d take lowest)' : '') + ' · ' + res.dice.join(',') + ' → ' + (res.crit ? 'critical, ' : '') + what });
   }
   function rollPanel(play, pb) {
     var r = cur.ui.roll; if (!r) return '';
@@ -1134,7 +1177,7 @@
     addclock: function (d) { var n = cur.root.querySelector('.ds-newclock'); cur.play.clocks.push({ name: n ? n.value.trim() : '', size: +d.n || 4, filled: 0 }); commit(); },
     memory: function (d) { var m = cur.play.memories[+d.i]; if (!m) return; m.filled = toggleTrack(m.filled, +d.n); commit(); },
     suspicion: function (d) { cur.play.suspicion = toggleTrack(cur.play.suspicion, +d.n); commit(); },
-    log: function () { var n = cur.root.querySelector('.ds-newlog'); var v = n && n.value.trim(); if (!v) { if (n) n.focus(); return; } cur.play.log.unshift({ at: new Date().toISOString(), kind: 'note', text: v }); commit(); },
+    log: function () { var n = cur.root.querySelector('.ds-newlog'); var v = n && n.value.trim(); if (!v) { if (n) n.focus(); return; } addLog(cur.play, { at: new Date().toISOString(), kind: 'note', text: v }); commit(); },
     rmlog: function (d) { if (!window.confirm('Remove this log entry?')) return; cur.play.log.splice(+d.i, 1); commit(); },
     /* ---- dice (round 4): the roll panel. Every control here carries data-always, so a read-only viewer can roll; nothing is written for them. ---- */
     /* an action opens the mark strip (physical dice); the Resist chip opens the resist helper; the in-app rolls sit behind "Roll in the app" */
@@ -1172,7 +1215,7 @@
         res.saved = !ro; res.savedWhy = ro ? notSavedWhy() : ''; res.applied = [];
       }
       r.result = res; cur.ui.rollScroll = 'res';   /* the verdict comes into view, wherever the panel sits */
-      if (res.text && !ro) { p.log.unshift({ at: new Date().toISOString(), kind: 'roll', text: res.text }); commit(); } else render();
+      if (res.text && !ro) { addLog(p, { at: new Date().toISOString(), kind: 'roll', text: res.text }); commit(); } else render();
     },
     /* ---- sessions (round 5) ---- */
     sessstart: function () { if (tableNow()) return; startSession((cur.play.session || 0) + 1); },
@@ -1199,7 +1242,7 @@
       p.keyHitSession = {}; if (hits) lines.push('key hits cleared');
       var names = []; e.vals.forEach(function (v, i) { if (v && trig[i]) names.push(trigLabel(trig[i]) + (v === 2 ? ' ×2' : '')); });
       var text = 'Session ' + n + ' ended: +' + plan.total + ' xp' + (names.length ? ' (' + names.join('; ') + ')' : '') + (plan.toMem ? ' · ' + plan.toMem + ' to memory ' + (plan.memI + 1) : '') + (plan.lost ? ' · ' + plan.lost + ' lost to the cap' : '');
-      p.log = [{ at: new Date().toISOString(), kind: 'note', text: text }].concat(p.log || []);
+      addLog(p, { at: new Date().toISOString(), kind: 'note', text: text });
       e.result = { lines: lines, lost: plan.lost, full: p.xp.playbook >= 8, memFull: memFull };
       note('Session ' + n + ' ended'); commit();
     },
@@ -1262,7 +1305,7 @@
         };
       }
       res.saved = !ro; res.savedWhy = ro ? notSavedWhy() : ''; res.applied = applied; t.result = res;
-      if (!ro) { apply(); p.log = [{ at: new Date().toISOString(), kind: 'roll', text: res.text }].concat(p.log || []); commit(); } else render();
+      if (!ro) { apply(); addLog(p, { at: new Date().toISOString(), kind: 'roll', text: res.text }); commit(); } else render();
     },
     dttrain: function () {
       var t = cur.ui.dt, p = cur.play; if (!t || t.kind !== 'train' || noSave()) return;
@@ -1272,7 +1315,7 @@
       var v = (p.xp[k] || 0) + 1, label = k === 'playbook' ? 'playbook' : capWord(k), nx = Object.assign({}, p.xp); nx[k] = v;
       p.xp = nx; p.trainedThisDowntime = true;
       t.result = { saved: true, applied: ['+1 ' + label + ' xp (' + v + ' / ' + max + ')' + (v >= max ? ' — advance ready' : '')] };
-      p.log = [{ at: new Date().toISOString(), kind: 'roll', text: 'Train ' + label + ' · +1 xp (' + v + ' / ' + max + ')' }].concat(p.log || []);
+      addLog(p, { at: new Date().toISOString(), kind: 'roll', text: 'Train ' + label + ' · +1 xp (' + v + ' / ' + max + ')' });
       commit();
     },
     resistapply: function () {
@@ -1329,7 +1372,7 @@
     var p = cur.play;
     p.session = n; p.trainedThisDowntime = false;
     if (Object.keys(p.keyHitSession || {}).length) p.keyHitSession = {};
-    p.log = [{ at: new Date().toISOString(), kind: 'note', text: 'Session ' + n + ' started' }].concat(p.log || []);
+    addLog(p, { at: new Date().toISOString(), kind: 'note', text: 'Session ' + n + ' started' });
     cur.ui.endSess = null; if (cur.ui.dt && cur.ui.dt.kind === 'train') cur.ui.dt.result = null;
     note('Session ' + n + ' started'); commit();
   }
@@ -1384,21 +1427,19 @@
     var root = document.getElementById('dossier'); if (!root) return;
     if (cur) T.close();
     doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, glitchPick: null, svg: '', svgWarn: '', mark: null, roll: null, rollScroll: false, dt: null, endSess: null, more: false, about: false, loadout: false }, timer: null, saving: 0 };
-    cur.play = normalize(doc.play, doc.sheet, doc.playbook);
+    cur.play = normalize(doc.play, doc.sheet, doc.playbook); cur.server = clone(cur.play);
     cur.status = { msg: readOnly() ? roLabel() : savedMsg() }; /* as stored (or still queued on this device) */
     root.addEventListener('click', onClick); root.addEventListener('input', onInput); root.addEventListener('change', onChange); root.addEventListener('keydown', onKey);
     document.addEventListener('keydown', onDocKey); document.addEventListener('click', onDocClick);
-    window.addEventListener('b68:runtime', onRuntime);
+    window.addEventListener('b68:runtime', onRuntime); window.addEventListener('pagehide', onHide); document.addEventListener('visibilitychange', onHide);
     render();
     if (!doc.play && !readOnly()) flushSave(); /* a doc filed without a play object gets one */
   };
   T.update = function (doc) {
     if (!cur || !doc) return; if (doc.id && cur.doc.id && doc.id !== cur.doc.id) return;
-    if (cur.timer || cur.saving) { cur.doc = Object.assign({}, cur.doc, doc, { play: cur.play }); return; } /* our own change is on its way; it will come back */
-    var focus = captureFocus(); if (doc.owner !== cur.doc.owner) cur.ownerName = null; cur.doc = doc; cur.pb = pbOf(doc.playbook) || cur.pb;
-    var incoming = normalize(doc.play, doc.sheet, doc.playbook);
-    if (focus && focus.path) setPath(incoming, focus.path, focus.value); /* never clobber what is being typed */
-    cur.play = incoming; render();
+    /* our own change is on its way: hold the snapshot (the newest one) and merge it once everything has landed (settle) */
+    if (cur.timer || cur.saving) { cur.doc = Object.assign({}, cur.doc, doc, { play: cur.play }); cur.remote = doc; return; }
+    applyRemote(doc, null);
   };
   T.close = function () {
     if (!cur) return; var c = cur;
@@ -1406,7 +1447,7 @@
     cur = null; if (c.statusT) clearTimeout(c.statusT);
     c.root.removeEventListener('click', onClick); c.root.removeEventListener('input', onInput); c.root.removeEventListener('change', onChange); c.root.removeEventListener('keydown', onKey);
     document.removeEventListener('keydown', onDocKey); document.removeEventListener('click', onDocClick);
-    window.removeEventListener('b68:runtime', onRuntime);
+    window.removeEventListener('b68:runtime', onRuntime); window.removeEventListener('pagehide', onHide); document.removeEventListener('visibilitychange', onHide);
     c.root.innerHTML = ''; c.root.className = 'dossier';
   };
   /* something the sheet reads from outside its document changed (the table's session, api.table): redraw */

@@ -198,6 +198,45 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
     return { sheet, roll, resist, after: document.querySelectorAll('#dossier .rl-q').length };
   });
   assert(['harm', 'armor', 'load', 'xp', 'stress'].every(t => rq.sheet.includes(t)) && ['position', 'effect'].every(t => rq.roll.includes(t)) && rq.resist.includes('resistance roll') && rq.after === 0, '"?" links on Harm, Armor, Load, XP, Position / Effect and Resist, only with the rules API: ' + JSON.stringify(rq));
+  /* ---- robustness (C16) ---- */
+  const rob = await d.evaluate(async () => {
+    const tick = (ms) => new Promise(r => setTimeout(r, ms || 0));
+    const base = () => JSON.parse(JSON.stringify(Object.assign({}, window.saved.play, { stress: 2, healing: 0, crew: '' })));
+    const open = (id, save) => B68Tracker.open({ id, name: 'Robin', playbook: 'hound', playbookName: 'Hound', code: 'HND-968-0010', spec: B68.S.spec, sheet: B68.S.sheet, play: base() }, { save, edit() {}, back() {}, remove() {}, me: null, canWrite: true });
+    const out = {};
+    /* 1. typing still waiting for its debounce goes out when the page is hidden (pagehide, visibilitychange) */
+    let got = []; open('r1', (pt) => { got.push(pt.play.crew); return Promise.resolve(); });
+    const crew = document.querySelector('#dossier input[data-path="crew"]'); crew.focus(); crew.value = 'The Crow'; crew.dispatchEvent(new Event('input', { bubbles: true }));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange'));
+    out.hidden = got.slice(); delete document.visibilityState;
+    crew.value = 'The Crows'; crew.dispatchEvent(new Event('input', { bubbles: true })); window.dispatchEvent(new Event('pagehide'));
+    out.pagehide = got.slice(); await tick(500); out.after = got.length;
+    /* 2. a save the store refuses (4xx) is undone on screen: the sheet shows what the store has */
+    open('r2', () => Promise.reject(Object.assign(new Error('only the owner or the GM can change this character'), { status: 403 })));
+    document.querySelector('#dossier .ds-sbox[data-n="6"]').click(); await tick(20);
+    out.refused = { stress: B68Tracker.play().stress, on: document.querySelectorAll('#dossier .ds-sbox.on').length, status: document.getElementById('ds-status').textContent, bad: document.getElementById('ds-status').classList.contains('bad') };
+    open('r3', () => Promise.reject(new Error('Failed to fetch')));   /* not a refusal: the mark stays, the runtime will retry */
+    document.querySelector('#dossier .ds-sbox[data-n="6"]').click(); await tick(20);
+    out.network = B68Tracker.play().stress;
+    /* 3. play.log keeps the newest 200 entries */
+    let last = null; const many = base(); many.log = Array.from({ length: 250 }, (x, i) => ({ at: new Date(Date.UTC(2026, 0, 1) - i * 60000).toISOString(), kind: 'note', text: 'Old ' + i }));
+    B68Tracker.open({ id: 'r4', name: 'Robin', playbook: 'hound', playbookName: 'Hound', code: 'HND-968-0010', spec: B68.S.spec, sheet: B68.S.sheet, play: many }, { save: (pt) => { last = pt.play; return Promise.resolve(); }, edit() {}, back() {}, remove() {}, me: null, canWrite: true });
+    document.querySelector('#dossier .ds-newlog').value = 'Newest'; document.querySelector('#dossier [data-act="log"]').click(); await tick(10);
+    out.log = last && { n: last.log.length, first: last.log[0].text, lastText: last.log[last.log.length - 1].text };
+    /* 4. a snapshot that arrives while a save is in flight is merged once it lands: this sheet's change kept, the rest taken */
+    let release; open('r5', () => new Promise(r => { release = r; }));
+    document.querySelector('#dossier .ds-sbox[data-n="5"]').click(); await tick(10);
+    B68Tracker.update({ id: 'r5', name: 'Robin', playbook: 'hound', playbookName: 'Hound', code: 'HND-968-0010', spec: B68.S.spec, sheet: B68.S.sheet, play: Object.assign(base(), { healing: 2 }) });   /* a GM's change, from before ours */
+    out.held = { stress: B68Tracker.play().stress, healing: B68Tracker.play().healing };
+    release(); await tick(20);
+    out.merged = { stress: B68Tracker.play().stress, healing: B68Tracker.play().healing, segs: document.querySelectorAll('#dossier .ds-heal .ds-seg.on').length, pips: document.querySelectorAll('#dossier .ds-sbox.on').length };
+    B68Tracker.close();
+    return out;
+  });
+  assert(rob.hidden.length === 1 && rob.hidden[0] === 'The Crow' && rob.pagehide.length === 2 && rob.pagehide[1] === 'The Crows' && rob.after === 2, 'typing waiting for its debounce is saved on visibilitychange (hidden) and pagehide: ' + JSON.stringify(rob));
+  assert(rob.refused.stress === 2 && rob.refused.on === 2 && rob.refused.bad && /^Not saved \(only the owner/.test(rob.refused.status) && rob.network === 6, 'a refused save (403) is undone on screen, a network failure is not: ' + JSON.stringify([rob.refused, rob.network]));
+  assert(rob.log && rob.log.n === 200 && rob.log.first === 'Newest' && rob.log.lastText === 'Old 198', 'play.log is capped at the newest 200: ' + JSON.stringify(rob.log));
+  assert(rob.held.stress === 5 && rob.held.healing === 0 && rob.merged.stress === 5 && rob.merged.healing === 2 && rob.merged.segs === 2 && rob.merged.pips === 5, 'a snapshot during a save is merged after it lands: ' + JSON.stringify([rob.held, rob.merged]));
   await d.screenshot({ path: 'out/tracker-desk-after.png', fullPage: true });
 
   /* phone light: the play order, the mugshot thumbnail, 44px targets that never take a neighbour's tap */
