@@ -304,7 +304,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-root[data-seg="console"] .gm-side, #gm-root[data-seg="console"] .gm-rail,
   #gm-root[data-seg="side"] .gm-console, #gm-root[data-seg="side"] .gm-rail,
   #gm-root[data-seg="state"] .gm-console, #gm-root[data-seg="state"] .gm-side { display: none; }
-  #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead, #gm-page .gm-cardbox .gm-want, #gm-page .gm-cardbox .gm-card-h { scroll-margin-top: 140px; scroll-margin-bottom: 84px; }   /* under the sticky bar and the two-row segmented bar, above the capture button */
+  #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead, #gm-page .gm-cardbox .gm-want, #gm-page .gm-cardbox .gm-card-h, #gm-page .gm-cardbox .gm-dt-morning, #gm-page .gm-cardbox .gm-dt-mh { scroll-margin-top: 140px; scroll-margin-bottom: 84px; }   /* under the sticky bar and the two-row segmented bar, above the capture button */
   #gm-page .gs-rules { scroll-margin-top: 140px; }
   #gm-page #gm-prep .pp-sec, #gm-page #gm-prep .pp-doc h3, #gm-page #gm-prep .pp-doc h4, #gm-page #gm-prep .pp-doc h5, #gm-page #gm-prep .pp-doc h6, #gm-page #gm-prep .pp-embed { scroll-margin-top: 140px; }   /* a prep link lands under the two sticky bars, not beneath them */
   #gm-page .gm-btn { grid-template-columns: 1fr; grid-template-rows: auto auto; justify-items: center; text-align: center; min-height: 76px; padding: 8px 4px; }
@@ -334,7 +334,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 /* ---- the console: the Position switch, the four Situations ---- */
 /* (wider than a phone only: on a phone the margins above clear the sticky bars and the capture button; this rule, later in the file,
    used to override them there) */
-@media (min-width: 600px) { #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead, #gm-page .gm-cardbox .gm-want, #gm-page .gm-cardbox .gm-card-h { scroll-margin-top: 8px; scroll-margin-bottom: 8px; } }
+@media (min-width: 600px) { #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead, #gm-page .gm-cardbox .gm-want, #gm-page .gm-cardbox .gm-card-h, #gm-page .gm-cardbox .gm-dt-morning, #gm-page .gm-cardbox .gm-dt-mh { scroll-margin-top: 8px; scroll-margin-bottom: 8px; } }
 #gm-page .gm-pos { display: grid; gap: 4px; border: 2px solid var(--rule); background: var(--card); padding: 8px 10px 10px; }
 #gm-page .gm-posb-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 #gm-page .gm-posb { display: grid; gap: 2px; align-content: center; justify-items: center; text-align: center; min-height: 72px; padding: 8px 4px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; }
@@ -643,8 +643,9 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 #gm-page .gm-die:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 /* ---------- the Downtime panel (D): personal business (gm-page.js renderDowntime; GM.md "Downtime (D)") ----------
    Who and Activity are chips; the activity's one row of buttons rolls the card on a tap (the table's dice are the roll, so the
-   buttons are as big as the engagement dice). On the card an overindulgence's four options sit right above the cost box, which
-   takes the alarm colour: after an overindulgence it is what the GM reads first. */
+   buttons are as big as the engagement dice). On an Indulge vice card the morning after sits right under the scene: a d100 box,
+   then the two cards it deals, each with Keep; a Mishap takes the alarm colour, since after an overindulgence it is what the GM
+   reads first. */
 #gm-page .gm-dt-ctl { display: grid; gap: 12px; padding: 10px; }
 #gm-page .gm-dt-ctl .gm-field > .gm-lab { margin-bottom: 3px; }
 #gm-page .gm-dt-chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -663,24 +664,36 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 #gm-page .gm-dtb small { font: 700 10px/1 var(--font-mono); text-transform: none; letter-spacing: 0; }
 #gm-page .gm-dtb-sheet { border-color: var(--accent); box-shadow: inset 0 -5px 0 var(--accent), 2px 2px 0 var(--shadow-ink); }
 #gm-page .gm-dtb[aria-pressed="true"] { box-shadow: inset 0 -5px 0 var(--accent); }
-#gm-page .gm-dtb:focus-visible, #gm-page .gm-dt-chips .chip:focus-visible, #gm-page .gm-dt-opt:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .gm-dtb:focus-visible, #gm-page .gm-dt-chips .chip:focus-visible, #gm-page .gm-dt-d100row input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 /* the card */
-#gm-page .gm-card > .gm-dt-opts, #gm-page .gm-card > .gm-dt-flip { margin: 0 12px; }
-#gm-page .gm-dt-opts { display: grid; gap: 4px; }
-#gm-page .gm-dt-opts > .gm-lab { display: flex; align-items: center; gap: 8px; color: var(--alarm); }
-#gm-page .gm-dt-optrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
-#gm-page .gm-dt-opt { min-width: 0; min-height: 40px; padding: 6px 4px; display: inline-flex; align-items: center; justify-content: center; text-align: center; white-space: normal; line-height: 1.1; }
-#gm-page .gm-dt-opt[aria-pressed="true"] { box-shadow: inset 0 -5px 0 var(--alarm); }
-#gm-page .gm-dt-cost { border: 2px solid var(--alarm); border-left-width: 10px; background: var(--card); font-size: 15.5px; }
-#gm-page .gm-dt-cost .gm-small { font-size: 13.5px; color: var(--ink); }
+#gm-page .gm-card > .gm-dt-morning, #gm-page .gm-card > .gm-dt-flip { margin: 0 12px; }
+#gm-page .gm-dt-morning { display: grid; gap: 8px; }
+#gm-page .gm-dt-mh { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#gm-page .gm-dt-mh > .gm-lab { color: var(--ink); font-size: 12px; }
+#gm-page .gm-dt-bad .gm-dt-mh > .gm-lab, #gm-page .gm-dt-bad .gm-dt-mh .gm-q { color: var(--alarm); }
+#gm-page .gm-dt-redo { margin-left: auto; }
+#gm-page .gm-dt-d100row { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+#gm-page .gm-dt-d100row input { width: 5.5em; min-height: 52px; font: 900 26px/1 var(--font-poster); text-align: center; }
+#gm-page .gm-dt-d100row .btn { min-height: 52px; }
+#gm-page .gm-dt-morning > p.gm-dim { margin: 0; }
+#gm-page .gm-dt-mcard { margin: 0; border-left-width: 6px; font-size: 15.5px; }
+#gm-page .gm-dt-bad .gm-dt-mcard { border-color: var(--alarm); }
+#gm-page .gm-dt-mcard.gm-dt-alt { opacity: .92; }
+#gm-page .gm-dt-mcard.gm-dt-kept { box-shadow: inset 0 -5px 0 var(--accent); opacity: 1; }
+#gm-page .gm-dt-bad .gm-dt-mcard.gm-dt-kept { box-shadow: inset 0 -5px 0 var(--alarm); }
+#gm-page .gm-dt-mcard.gm-dt-off { opacity: .6; padding-top: 6px; padding-bottom: 6px; }
+#gm-page .gm-dt-mt { margin: 0 0 4px; }
+#gm-page .gm-dt-mn { font: 900 13px/1 var(--font-mono); letter-spacing: .02em; }
+#gm-page .gm-dt-mcard .gm-small { font-size: 13.5px; color: var(--ink); }
+#gm-page .gm-dt-mcard .gm-dt-mcost { color: var(--alarm); }
+#gm-page .gm-dt-macts { margin: 6px 0 0; display: flex; gap: 8px; flex-wrap: wrap; }
 #gm-page .gm-dt-flip { display: flex; align-items: center; gap: 8px; }
 #gm-page .gm-q { flex: none; width: 28px; height: 28px; padding: 0; border: 2px solid currentColor; border-radius: 50%; background: var(--card); color: var(--ink); font: 900 14px/1 var(--font-cond); cursor: pointer; display: inline-grid; place-items: center; }
-#gm-page .gm-dt-opts > .gm-lab .gm-q { color: var(--alarm); }
 #gm-page .gm-q:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 #gm-page .gm-q:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 @media (pointer: coarse) {
   #gm-page .gm-q { width: 44px; height: 44px; }
-  #gm-page .gm-dt-chips .chip, #gm-page .gm-dt-opt { min-height: 44px; }
+  #gm-page .gm-dt-chips .chip, #gm-page .gm-dt-macts .btn { min-height: 44px; }
 }
 @media (max-width: 599px) {
   #gm-page .gm-dt-acts .gm-dt-l { display: none; }                                        /* the short labels: two rows, not four */
@@ -688,8 +701,6 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   #gm-page .gm-dt-ctl { gap: 8px; }                     /* the row of buttons clear of the Capture button on a 360 × 740 first screen */
   #gm-page .gm-dt-chips .chip { padding: 8px; font-size: 11px; letter-spacing: .04em; }
   #gm-page .gm-dt-row { padding-top: 8px; }
-  #gm-page .gm-dt-optrow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #gm-page .gm-dtb { flex-basis: 40%; }                                                   /* words: two to a row */
   #gm-page .gm-dtb.gm-dtb-num, #gm-page .gm-dtb[data-v="crit"] { flex-basis: 18%; }        /* 1–3 · 4/5 · 6 · Crit: one row */
-  #gm-page .gm-dtb.gm-dtb-over { flex-grow: 0; }   /* under the vice results, at the left: as wide as its word, clear of the Capture button */
 }

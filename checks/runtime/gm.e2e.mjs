@@ -452,8 +452,10 @@ try {
   check((await api('GET', '/npcs', GM)).json.docs.some((d) => d.id === 'npc_mira' && d.doc.revealed === true && !!d.doc.firstSeen), 'and the hidden NPC was revealed first (firstSeen set)');
   check(await G.page.waitForFunction(() => /Mira/.test((document.querySelector('#gm-rail') || {}).textContent || '') && !/Nobody: the cast/.test(document.querySelector('#gm-rail').textContent), null, { timeout: 8000 }).then(() => true, () => false) && G.page.url().endsWith('#gm'), 'the rail’s On stage box shows Mira, and the page did not leave #gm');
 
-  /* ---- Downtime (D): two invented PCs filed through the API reach the panel; two taps (the PC, Overindulged) give a card with its cost
-          box on screen; switching the option keeps the scene and the seed; Start a clock puts a hidden danger clock on the table ---- */
+  /* ---- Downtime (D): two invented PCs filed through the API reach the panel, and an invented downtime part (the morning tables, and a
+          Gambling hook with a clock) pushed as gm:push does; two taps (the PC, Overindulged) give a card with the d100 box on screen; the
+          d100 deals two cards from one band and keeps the scene and the seed; Keep folds the other; Start a clock puts a hidden danger
+          clock on the table ---- */
   {
     const spec = await G.page.evaluate(() => window.B68.BASE_FIGURE);
     const pc = (name, play) => ({ v: 2, name, alias: '', code: '', playbook: 'hound', playbookName: 'Hound', spec, sheet: { name }, play });
@@ -461,6 +463,17 @@ try {
       contacts: [{ name: 'Nim', role: 'a dock boss', kind: 'rival' }, { name: 'Ada', role: 'a nurse', kind: 'friend' }], clocks: [{ name: 'Learn the code', size: 8, filled: 3 }] }));
     const put2 = await api('PUT', '/characters/dt-rook', GM, pc('Rook Invented', { vice: 'Weird', purveyor: '', contacts: [], clocks: [] }));
     check(put1.status === 200 && put2.status === 200, 'two invented PCs are filed');
+    const e = (lo, hi, band, title, md, play) => ({ lo, hi, band, title, md, play });
+    const DT_T = {
+      benefit: [e(1, 50, '01–50 · Small', 'The biscuit', 'A baker hands you a biscuit. *"Mind the crumbs."* **Nothing much.**', 'who baked it?'),
+        e(51, 100, '51–00 · Big', 'The medal', 'A clerk pins a medal on you. *"For services."* **Standing.**', 'what services?')],
+      mishap: [e(1, 60, '01–80 · Bad', 'The cell', 'You wake in a cell. *"Talk."* **Attract Trouble: a questioning.**', 'talk, or not?'),
+        e(61, 80, '01–80 · Bad', 'The song', 'A busker sings about you. *"Here they are!"* **Brag: +2 Heat.**', 'take a bow?'),
+        e(81, 100, '81–00 · Silly', 'The door', '{Host} shuts the door. *"Not tonight."* **Tapped.**', 'who got there first?')],
+      vice: { Gambling: { hook: ['A debt comes due at {place}. || The debt at {place} (4)'] } }
+    };
+    check((await api('POST', '/gm/pack', GM, { part: 'downtime', src: { exportedAt: new Date().toISOString() }, body: { v: 2, T: DT_T } })).status === 200, 'an invented downtime part is stored');
+    await G.page.reload(); await G.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
     await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     await G.page.keyboard.press('d');
     check(await G.page.$eval('#gm-dt', (p) => !p.hidden && /Downtime · personal business/.test(p.querySelector('.gm-band').textContent)), 'D opens the Downtime panel');
@@ -469,33 +482,38 @@ try {
     await G.page.click('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]');
     check(await G.page.$eval('#gm-dt-vice', (s) => s.value) === 'Gambling' && await G.page.$eval('#gm-dt-purveyor', (i) => i.value) === 'Old Mo, Mo’s Bar', 'picking the PC prefills the vice and purveyor from their sheet');
     await G.page.click('#gm-dt [data-gm="dt-roll"][data-v="over"]');
-    await G.page.waitForSelector('#gm-dt .gm-dt-cost', { timeout: 5000 }); await sleep(700);   // the smooth scroll
-    check(await G.page.$eval('#gm-dt .gm-dt-cost', (c) => { const r = c.getBoundingClientRect(), p = document.getElementById('gm-dt').getBoundingClientRect(); return r.height > 20 && r.top >= p.top - 1 && r.bottom <= p.bottom + 1; }), 'two taps from "Mags overindulged": the card is drawn and its cost box is on screen');
-    const opts = await G.page.$$eval('#gm-dt [data-gm="dt-pick"]', (bs) => bs.map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed')]));
-    check(opts.length === 6 && opts.filter((o) => o[1] === 'true').length === 1 && await G.page.$eval('#gm-dt .gm-dt-opts', (o) => o.nextElementSibling && o.nextElementSibling.classList.contains('gm-dt-cost')), 'the six options sit right above the cost box, one pressed');
-    check(await G.page.$eval('#gm-dt .gm-dt-cost', (c) => getComputedStyle(c).borderTopColor !== getComputedStyle(document.querySelector('#gm-dt .gm-dtcard .gm-want')).borderLeftColor), 'the cost box has an accent of its own');
+    await G.page.waitForSelector('#gm-dt-d100', { timeout: 5000 }); await sleep(700);   // the smooth scroll
+    check(await G.page.$eval('#gm-dt .gm-dt-morning', (c) => { const r = c.getBoundingClientRect(), p = document.getElementById('gm-dt').getBoundingClientRect(); return r.height > 20 && r.top >= p.top - 1 && r.bottom <= p.bottom + 1 && !!c.previousElementSibling && c.previousElementSibling.classList.contains('gm-want'); }), 'two taps from "Mags overindulged": the card is drawn and its d100 box is on screen, right under the scene');
+    check(await G.page.$eval('#gm-dt .gm-dt-mh', (h) => /Mishaps/.test(h.textContent) && getComputedStyle(h.querySelector('.gm-lab')).color !== getComputedStyle(document.querySelector('#gm-dt .gm-dtcard h3')).color), 'the Mishaps heading has a colour of its own');
     const st1 = await until(async () => { const d = await gmState(); return d.cards && d.cards.downtime && d.cards.downtime.ui.res === 'over' ? d.cards.downtime : null; }, 5000);
-    check(!!st1 && st1.ui.who === 'Mags Invented' && st1.ui.purveyor === 'Old Mo, Mo’s Bar' && typeof st1.mem === 'string' && Number.isInteger(st1.seed), 'state: the card is replay info with the resolved strings');
+    check(!!st1 && st1.ui.who === 'Mags Invented' && st1.ui.purveyor === 'Old Mo, Mo’s Bar' && st1.ui.d100 === '' && typeof st1.mem === 'string' && Number.isInteger(st1.seed), 'state: the card is replay info with the resolved strings');
     const lead = await G.page.textContent('#gm-dt .gm-dtcard .gm-want');
-    await G.page.click('#gm-dt [data-gm="dt-pick"][data-v="trouble"]');
-    const pickTrouble = await until(async () => { const d = await gmState(); return d.cards.downtime.ui.pick === 'trouble' ? d.cards.downtime : null; }, 5000);
-    check(!!pickTrouble && pickTrouble.seed === st1.seed && pickTrouble.hid === st1.hid && pickTrouble.mem === st1.mem && (await G.page.textContent('#gm-dt .gm-dtcard .gm-want')) === lead && /^Overindulged: Attract trouble\./.test((await G.page.textContent('#gm-dt .gm-dt-cost')).trim()), 'Attract trouble: the same card (seed, memory, the scene above), its cost box switched');
+    await G.page.fill('#gm-dt-d100', '73'); await G.page.keyboard.press('Enter');
+    const st2 = await until(async () => { const d = await gmState(); return d.cards.downtime.ui.d100 === '73' ? d.cards.downtime : null; }, 5000);
+    check(!!st2 && st2.seed === st1.seed && st2.hid === st1.hid && st2.mem === st1.mem && (await G.page.textContent('#gm-dt .gm-dtcard .gm-want')) === lead, 'the d100 (typed, then Enter): the same card (seed, memory, the scene above)');
+    const cards = await G.page.$$eval('#gm-dt .gm-dt-mcard', (cs) => cs.map((c) => [c.getAttribute('data-which'), c.querySelector('.gm-dt-mt b').textContent]));
+    check(JSON.stringify(cards) === JSON.stringify([['roll', 'The song'], ['alt', 'The cell']]), '73 lands on The song, and the second card is the other in its band: ' + JSON.stringify(cards));
+    check(/\+2 heat/.test(await G.page.textContent('#gm-dt .gm-dt-mcard[data-which="roll"] .gm-dt-mcost')), 'the cost under it: the book\'s line, in our words');
+    /* a three-card table keeps one in its guard (the window is half the table): the second card dealt */
+    check(!!(await until(async () => { const d = await gmState(); return d.mem && d.mem.downtime && JSON.stringify(d.mem.downtime['morning.mishap']) === '[0]'; }, 5000)), 'the cards dealt went into the repeat guard');
+    await G.page.click('#gm-dt [data-gm="dt-keep"][data-v="alt"]');
+    check(!!(await until(async () => { const d = await gmState(); return d.cards.downtime.ui.keep === 'alt'; }, 5000)) && await G.page.$eval('#gm-dt .gm-dt-mcard[data-which="roll"]', (c) => c.classList.contains('gm-dt-off') && c.getBoundingClientRect().height < 110), 'Keep the second card: the first folds to its title');
     const clockLabel = await G.page.$eval('#gm-dt [data-gm="dt-clock"][data-i="0"]', (b) => b.textContent);
     const clockName = (/^Start a clock: (.*) \(\d+\)$/.exec(clockLabel) || [])[1];
     await G.page.click('#gm-dt [data-gm="dt-clock"][data-i="0"]');
     const tc = await until(async () => { const d = (await api('GET', '/campaign', GM)).json.doc; return (d.clocks || []).find((c) => c.name === clockName) || null; }, 8000);
-    check(!!clockName && !!tc && tc.hidden === true && tc.kind === 'danger' && tc.size === 4 && tc.filled === 0 && /^c_/.test(tc.id), 'Start a clock: a hidden danger clock on the table: ' + clockName);
+    check(clockName === 'The debt at Mo’s Bar' && !!tc && tc.hidden === true && tc.kind === 'danger' && tc.size === 4 && tc.filled === 0 && /^c_/.test(tc.id), 'Start a clock: a hidden danger clock on the table: ' + clockName);
     check(await G.page.waitForFunction((n) => /Clock started, hidden from the players/.test(document.getElementById('toastMsg').textContent) && [...document.querySelectorAll('#gm-rail .gm-clocks li')].some((li) => li.textContent.includes(n) && /hidden from players/.test(li.textContent)), clockName, { timeout: 8000 }).then(() => true, () => false), 'a toast says so, and the rail\'s Table clocks shows it, hidden');
     check(await G.page.$eval('#gm-dt [data-gm="dt-clock"][data-i="0"]', (b) => b.disabled && /^Clock started: /.test(b.textContent)), 'the button is done for this card');
     await shot(G.page, 'downtime-laptop');
     await G.page.reload(); await G.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
     await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     await G.page.keyboard.press('d');
-    check(await G.page.waitForSelector('#gm-dt .gm-dt-cost', { timeout: 10000 }).then(() => true, () => false) && (await G.page.textContent('#gm-dt .gm-dtcard .gm-want')) === lead && await G.page.$eval('#gm-dt [data-gm="dt-clock"][data-i="0"]', (b) => b.disabled), 'reload: the same card, its clock still started');
+    check(await G.page.waitForSelector('#gm-dt .gm-dt-kept', { timeout: 10000 }).then(() => true, () => false) && (await G.page.textContent('#gm-dt .gm-dtcard .gm-want')) === lead && await G.page.$eval('#gm-dt [data-gm="dt-clock"][data-i="0"]', (b) => b.disabled), 'reload: the same card, the card kept, its clock still started');
     await G.page.click('#gm-dt [data-gm="dt-act"][data-v="recover"]'); await G.page.click('#gm-dt [data-gm="dt-roll"][data-v="45"]');
     await G.page.waitForFunction(() => /Recover/.test(document.querySelector('#gm-dt .gm-dtcard h3').textContent));
     await G.page.click('#gm-dt .gm-earlier [data-gm="replay"]:not([aria-current])');
-    check(await G.page.waitForFunction((l) => document.querySelector('#gm-dt .gm-dtcard .gm-want') && document.querySelector('#gm-dt .gm-dtcard .gm-want').textContent === l, lead, { timeout: 5000 }).then(() => true, () => false), 'Earlier brings the overindulgence back as it was left');
+    check(await G.page.waitForFunction((l) => document.querySelector('#gm-dt .gm-dtcard .gm-want') && document.querySelector('#gm-dt .gm-dtcard .gm-want').textContent === l && !!document.querySelector('#gm-dt .gm-dt-kept'), lead, { timeout: 5000 }).then(() => true, () => false), 'Earlier brings the overindulgence back as it was left');
     await G.page.click('#gm-dt [data-gm="dt-act"][data-v="indulge"]');
     await G.page.keyboard.press('b');
   }
@@ -572,23 +590,25 @@ try {
       await V.page.selectOption('#gm-now-s', 'Puddleton');
       check(await V.page.$eval('#gm-now', (sel) => sel.value === 'Puddleton') && /District: Puddleton/.test(await V.page.textContent('#gm-scene-chips')) && !!(await until(async () => { const d = await gmState(); return d.now && d.now.district === 'Puddleton'; }, 5000)), 'phone: choosing it there sets Now in (the bar’s copy follows, the Scene line shows the district)');
       await V.page.selectOption('#gm-now-s', '');
-      /* the Downtime segment: the PC and Overindulged on the first screen (clear of the Capture button), the card's cost box on screen
-         after the tap, nothing too wide or too small (taps, not clicks: a touch screen) */
+      /* the Downtime segment: the PC and the two vice buttons on the first screen (clear of the Capture button), the card's d100 box on
+         screen after the tap, then the two cards; nothing too wide or too small (taps, not clicks: a touch screen) */
       await V.page.tap('[data-gm="seg"][data-seg="downtime"]'); await V.page.evaluate(() => scrollTo(0, 0));
       check(await V.page.waitForSelector('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]', { timeout: 10000 }).then(() => true, () => false), 'phone: the Downtime segment shows the panel with the PCs');
       await V.page.tap('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]');
       if (await V.page.$eval('#gm-dt [data-gm="dt-act"][data-v="indulge"]', (b) => b.getAttribute('aria-pressed') !== 'true')) await V.page.tap('#gm-dt [data-gm="dt-act"][data-v="indulge"]');
-      /* the vice result (1–3 · 4/5 · 6 · Crit, the Morning After) is the tap every indulgence needs: its row is on the first screen above
-         the Capture button; Overindulged, under it at the left, is on the first screen too and clear of the button (above it, or beside it) */
-      const ob = await V.page.$eval('#gm-dt [data-gm="dt-roll"][data-v="over"]', (b) => { const r = b.getBoundingClientRect(), f = document.querySelector('.gm-fab').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), right: Math.round(r.right), fab: Math.round(f.top), fabLeft: Math.round(f.left), ih: innerHeight }; });
-      const rb = await V.page.$$eval('#gm-dt [data-gm="dt-roll"][data-k="vres"]', (bs) => ({ n: bs.length, bottom: Math.round(Math.max(...bs.map((b) => b.getBoundingClientRect().bottom))), fab: Math.round(document.querySelector('.gm-fab').getBoundingClientRect().top) }));
-      check(rb.n === 4 && rb.bottom <= rb.fab, 'phone: after the PC, the four vice results are on the first screen, above the Capture button ' + JSON.stringify(rb));
-      check(ob.bottom <= ob.ih && (ob.bottom <= ob.fab || ob.right <= ob.fabLeft), 'phone: Overindulged is on the first screen, clear of the Capture button ' + JSON.stringify(ob));
+      /* how the vice roll went (Indulged · Overindulged) is the tap every indulgence needs: both on the first screen, clear of the Capture
+         button (above it, or beside it) */
+      const rb = await V.page.$$eval('#gm-dt [data-gm="dt-roll"][data-k="res"]', (bs) => { const f = document.querySelector('.gm-fab').getBoundingClientRect(); return { n: bs.length, v: bs.map((b) => b.getAttribute('data-v')).join(), bottom: Math.round(Math.max(...bs.map((b) => b.getBoundingClientRect().bottom))), right: Math.round(Math.max(...bs.map((b) => b.getBoundingClientRect().right))), fab: Math.round(f.top), fabLeft: Math.round(f.left), ih: innerHeight }; });
+      check(rb.n === 2 && rb.v === 'in,over' && rb.bottom <= rb.ih && (rb.bottom <= rb.fab || rb.right <= rb.fabLeft), 'phone: after the PC, Indulged and Overindulged are on the first screen, clear of the Capture button ' + JSON.stringify(rb));
       const ld = await V.page.evaluate(layout);
       check(ld.scrollWidth <= ld.clientWidth + 1 && !ld.wide.length && !ld.small.length, 'phone Downtime: no overflow and every control is at least 44 px ' + JSON.stringify([ld.wide, ld.small]));
-      await V.page.tap('#gm-dt [data-gm="dt-roll"][data-v="over"]'); await V.page.waitForSelector('#gm-dt .gm-dt-cost'); await sleep(800);
-      const cv = await V.page.$eval('#gm-dt .gm-dt-cost', (c) => { const r = c.getBoundingClientRect(), f = document.querySelector('.gm-fab').getBoundingClientRect(), seg = document.querySelector('.gm-segbar').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), bars: Math.round(seg.bottom), fab: Math.round(f.top) }; });
-      check(cv.top >= cv.bars && cv.bottom <= cv.fab, 'phone: after the tap the cost box is on screen, under the bars and above the Capture button ' + JSON.stringify(cv));
+      await V.page.tap('#gm-dt [data-gm="dt-roll"][data-v="over"]'); await V.page.waitForSelector('#gm-dt-d100'); await sleep(800);
+      const cv = await V.page.$eval('#gm-dt .gm-dt-d100row', (c) => { const r = c.getBoundingClientRect(), f = document.querySelector('.gm-fab').getBoundingClientRect(), seg = document.querySelector('.gm-segbar').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), bars: Math.round(seg.bottom), fab: Math.round(f.top) }; });
+      check(cv.top >= cv.bars && cv.bottom <= cv.fab, 'phone: after the tap the d100 box is on screen, under the bars and above the Capture button ' + JSON.stringify(cv));
+      await V.page.tap('#gm-dt-d100'); await V.page.keyboard.type('45'); await V.page.tap('#gm-dt [data-gm="dt-d100"]');
+      await V.page.waitForSelector('#gm-dt .gm-dt-mcard'); await sleep(800);
+      const mc = await V.page.$eval('#gm-dt .gm-dt-mcard', (c) => { const r = c.getBoundingClientRect(), seg = document.querySelector('.gm-segbar').getBoundingClientRect(); return { top: Math.round(r.top), bars: Math.round(seg.bottom), ih: innerHeight, n: document.querySelectorAll('#gm-dt .gm-dt-mcard').length }; });
+      check(mc.n === 2 && mc.top >= mc.bars && mc.top < mc.ih, 'phone: the d100 deals two cards, the first on screen under the bars ' + JSON.stringify(mc));
       const ld2 = await V.page.evaluate(layout);
       check(ld2.scrollWidth <= ld2.clientWidth + 1 && !ld2.wide.length && !ld2.small.length, 'phone: with the downtime card showing, no overflow and every control is at least 44 px ' + JSON.stringify([ld2.wide, ld2.small]));
       await shot(V.page, '03b-phone-downtime');
@@ -694,6 +714,7 @@ try {
 
   /* ---- the pack check: a pack file that lacks tables is a warning (the modules' own check(T)), never an error; the upload stays on ---- */
   {
+    check((await api('DELETE', '/gm/pack?part=downtime', GM)).status === 200, 'the Downtime section\'s part is taken off again (the fixture pack has none, so a file without it would read as a part lost)');
     const sparse = JSON.parse(JSON.stringify(PACK)); delete sparse.parts.console.T.spend; delete sparse.parts.location.T.rumour;
     const sparseFile = path.join(stateDir, 'sparse-pack.json'); writeFileSync(sparseFile, JSON.stringify(sparse));
     const U = await open(GM, '#gm');

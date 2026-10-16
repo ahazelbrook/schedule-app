@@ -2269,10 +2269,12 @@
      contacts fill the Project and Contact selects. A card is { hid, seed, ui, mem, label, at, started? } under cards.downtime (five
      in hist.downtime): `ui` holds the RESOLVED strings (the PC's name, the vice, the purveyor line, the contact line, the project's
      name, the district), so a reload or an Earlier click redraws the same card after a sheet changes, and `mem` is the repeat guard
-     before the roll (the guard itself is mem.downtime). An overindulgence's option, "Overindulged?" and the vice result tapped on the
-     card ("Rolled", the house rule the Morning After: a 6 leaves a Good Morning, a crit two) redraw the SAME card (its seed and memory:
-     the module keeps the scene above as it was). A clock a card suggests goes onto the table's clocks, hidden
-     (api.addClock), and the card keeps its id under `started`. Nothing here goes to the iPad: the prompts and hooks are the GM's. */
+     before the roll (the guard itself is mem.downtime). Indulge vice is the house rule the Morning After: the card asks for the
+     morning's d100 (rolled at the table and typed in, or "Roll one"), then shows the Benefit or the Mishap it lands on and a second
+     from the same band, and the GM keeps one. The d100, Keep, Another, Change and "Overindulged?" all redraw the SAME card (its seed
+     and memory: the module keeps the scene above as it was); once a d100 is in, its two cards go into the repeat guard
+     (dt.remember) so the next card deals others. A clock a card suggests goes onto the table's clocks, hidden (api.addClock), and
+     the card keeps its id under `started`. Nothing here goes to the iPad: the prompts and hooks are the GM's. */
   var DT_BANDS = [['13', '1–3'], ['45', '4/5'], ['6', '6'], ['crit', 'Crit']];
   var DT_NONE = '*';      /* the Project and Contact selects' "none of the sheet's"; '' follows the sheet */
   var DT_Q = '<button type="button" class="gm-q" data-gm="dt-rule" title="The rules on overindulging, in the GM screen" aria-label="The rules on overindulging, in the GM screen">?</button>';
@@ -2340,10 +2342,7 @@
   /* what a tap rolls: the panel's choices resolved to the strings the card keeps */
   function dtRollUi(dt, v) {
     var u = dtUi(), pc = dtPc(dtPcs()), act = dtActOf(dt, u.act), ui = { act: act, who: pc ? pcName(pc) : '', district: dtDistrict() };
-    if (act === 'indulge') {
-      ui.vice = dtViceOf(dt, u.vice); ui.purveyor = u.purveyor.trim(); ui.res = v === 'over' ? 'over' : '';
-      ui.vres = DT_BANDS.some(function (b) { return b[0] === v; }) ? v : '';     /* the vice roll's result: a 6 or a crit leaves Good Mornings */
-    }
+    if (act === 'indulge') { ui.vice = dtViceOf(dt, u.vice); ui.purveyor = u.purveyor.trim(); ui.res = v === 'over' ? 'over' : ''; }
     else if (act === 'train') ui.attr = v;
     else if (act === 'contact') { var c = dtContact(pc); ui.contact = c ? contactLine(c) : ''; ui.rel = v === 'rival' ? 'rival' : 'friend'; }
     else { ui.res = v; if (act === 'project') ui.project = dtProject(pc); }
@@ -2368,21 +2367,35 @@
     if (!ok) return;
     S.dtRoll = roll; S.dtSig = dtSig(card); S.last = { text: 'Downtime: ' + entry.label };
     renderDowntime(true);
-    showIn($q('#gm-dt-card'), $q('#gm-dt'), ['.gm-dt-cost', '.gm-want', '.gm-card-h']);
+    showIn($q('#gm-dt-card'), $q('#gm-dt'), ['.gm-dt-morning', '.gm-want', '.gm-card-h']);
   }
-  /* The SAME card redrawn with one choice changed (an overindulgence's option, "Overindulged?" or the vice result): its own seed and
-     memory, so the scene above stays as it was (the module draws the six options, then the Good Mornings, last). Only the choice, and
-     the label that names it, change in the stored card and its Earlier entry; the hid, seed, memory and time stay. */
+  /* The SAME card redrawn with one choice changed (the morning's d100, Keep, Another, "Overindulged?"): its own seed and memory, so
+     the scene above stays as it was (the module draws the morning last). Only the choice, and the label that names it, change in the
+     stored card and its Earlier entry; the hid, seed, memory and time stay. Once a d100 is in, the morning's two cards go into the
+     repeat guard (never the card's own memory: a replay must not move). */
   function dtRedraw(change) {
-    var cur = dtCard(); if (!cur || !dtInst()) return;
+    var cur = dtCard(), dt = dtInst(); if (!cur || !dt) return null;
     var roll = replayDowntime(Object.assign({}, cur, { ui: Object.assign({}, isObj(cur.ui) ? cur.ui : {}, change) }));
-    if (!roll) { toast('That card could not be redrawn.', true); return; }
+    if (!roll) { toast('That card could not be redrawn.', true); return null; }
     var x = { ui: clone(roll.replay.ui), label: str(roll.meta.label) }, p = { cards: { downtime: x } };
     if (isObj(dtHist()[cur.hid])) { p.hist = { downtime: {} }; p.hist.downtime[cur.hid] = clone(x); }
-    if (!patch(p, { force: true })) return;
+    if (typeof dt.remember === 'function' && dt.remember(roll, S.dtMem)) p.mem = { downtime: clone(S.dtMem) };
+    if (!patch(p, { force: true })) return null;
     S.dtRoll = roll; S.dtSig = dtSig(dtCard()); S.last = { text: 'Downtime: ' + x.label };
     renderDowntime(true);
+    return roll;
   }
+  /* the morning's d100: the number typed on the card (a percentile 00 is 100), or one the page rolls; a new number deals afresh */
+  function dtD100(v) {
+    var M = W.B68GmDowntime, n = M && typeof M.d100 === 'function' ? M.d100(v) : '';
+    if (!n) { toast('A d100 is 1 to 100 (00 is 100).', true); var f = $q('#gm-dt-d100'); if (f) { try { f.focus(); f.select(); } catch (e) {} } return; }
+    if (dtRedraw({ d100: n, keep: '', deal: '' })) showIn($q('#gm-dt-card .gm-dt-morning'), $q('#gm-dt'), ['.gm-dt-mcard', '.gm-dt-mh']);
+  }
+  function dtD100Roll() { dtD100(String(1 + Math.floor(Math.random() * 100))); }
+  /* Keep: the card the GM reads (a second tap puts both back); Another: the next card from the band; Change: type the d100 again */
+  function dtKeep(v) { var c = dtCard(), k = c && isObj(c.ui) ? str(c.ui.keep) : ''; dtRedraw({ keep: k === v ? '' : v }); }
+  function dtDeal() { var c = dtCard(), n = c && isObj(c.ui) ? +c.ui.deal || 0 : 0; dtRedraw({ deal: String(n + 1), keep: '' }); }
+  function dtD100Clear() { if (dtRedraw({ d100: '', keep: '', deal: '' })) { var f = $q('#gm-dt-d100'); if (f) { try { f.focus(); } catch (e) {} } } }
   /* a PC chip: their vice and purveyor from the sheet into the panel (never back into the sheet); the Project and Contact selects go
      back to following their sheet. A tap on the chip already picked fills them from the sheet again. */
   function dtSetWho(id) {
@@ -2442,8 +2455,9 @@
      screen stays marked while it is this PC's card for this activity */
   function dtRowHtml(dt, act, u, pc, roll) {
     var on = roll && roll.replay ? roll.replay.ui : null, who = pc ? pcName(pc) : '', mine = !!on && on.act === act && on.who === who;
-    var btn = function (k, v, label, cls, extra) {
-      return '<button type="button" class="chip gm-dtb' + (cls ? ' ' + cls : '') + '" data-gm="dt-roll" data-k="' + k + '" data-v="' + esc(v) + '" aria-pressed="' + (mine && str(on[k]) === v) + '"' + (extra || '') + '>' + label + '</button>';
+    var btn = function (k, v, label, cls, extra, pressed) {
+      var p = pressed == null ? mine && str(on[k]) === v : pressed;
+      return '<button type="button" class="chip gm-dtb' + (cls ? ' ' + cls : '') + '" data-gm="dt-roll" data-k="' + k + '" data-v="' + esc(v) + '" aria-pressed="' + p + '"' + (extra || '') + '>' + label + '</button>';
     };
     var row = function (label, btns) { return '<div class="gm-field wide gm-dt-row" role="group" aria-label="' + esc(label) + '"><span class="gm-lab">' + esc(label) + ':</span><div class="gm-dt-btns">' + btns + '</div></div>'; };
     if (act === 'indulge') {
@@ -2451,7 +2465,7 @@
         dt.VICES.map(function (v) { return '<option value="' + esc(v) + '"' + (v === u.vice ? ' selected' : '') + '>' + esc(dtViceLabel(v)) + '</option>'; }).join('') + '</select></label>' +
         '<label class="gm-field gm-dt-pur" for="gm-dt-purveyor"><span class="gm-lab">Purveyor</span><input type="text" id="gm-dt-purveyor" data-dtf="purveyor" maxlength="200" autocomplete="off" value="' + esc(u.purveyor) + '"' +
         ' placeholder="' + (pc ? 'Name, place, district' : 'any: a stock host and place') + '" title="Filled from the sheet. A change here is for these cards only: the sheet keeps its own."></label></div>' +
-        row('Rolled at the table', DT_BANDS.map(function (b) { return btn('vres', b[0], esc(b[1]), b[0] === 'crit' ? '' : 'gm-dtb-num'); }).join('') + btn('res', 'over', 'Overindulged', 'gm-dtb-over'));
+        row('Rolled at the table', btn('res', 'in', 'Indulged', 'gm-dtb-in', '', mine && str(on.res) !== 'over') + btn('res', 'over', 'Overindulged', 'gm-dtb-over', '', mine && str(on.res) === 'over'));
     }
     if (act === 'train') return row('Which xp track', dt.ATTRS.map(function (a) { return btn('attr', a, esc(a)); }).join(''));
     if (act === 'contact') {
@@ -2472,26 +2486,46 @@
       : pc ? '<p class="gm-dim">No clocks on ' + esc(who) + '’s sheet: the card says “the project”.</p>' : '') +
       row('Rolled at the table', DT_BANDS.map(function (b) { return btn('res', b[0], esc(b[1]), b[0] === 'crit' ? '' : 'gm-dtb-num'); }).join(''));
   }
+  /* the morning after (Indulge vice): before the d100, a box to type it in (or "Roll one"); after it, the card it lands on and the
+     second from its band, each with Keep (the other folds to its title; a second tap unfolds it), Another on the second card while
+     neither is kept, and Change in the heading to type the number again. A Mishap's cost sits under it, in the alarm colour. */
+  function dtMorningHtml(mo) {
+    var over = mo.table === 'mishap';
+    var h = '<div class="gm-dt-morning' + (over ? ' gm-dt-bad' : '') + '" role="group" aria-label="The morning after"><p class="gm-dt-mh"><span class="gm-lab">The morning after · ' + (over ? 'Mishaps' : 'Benefits') +
+      (mo.n ? ' · ' + esc(String(mo.n)) + (mo.band ? ' · ' + esc(mo.band) : '') : '') + '</span>' + (over ? DT_Q : '') +
+      (mo.n ? '<button type="button" class="btn sm gm-dt-redo" data-gm="dt-d100-clear" title="Type the d100 again">Change</button>' : '') + '</p>';
+    if (!mo.n) {
+      return h + '<div class="gm-dt-d100row"><label class="gm-field" for="gm-dt-d100"><span class="gm-lab">d100</span>' +
+        '<input type="text" id="gm-dt-d100" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" placeholder="1–100" aria-describedby="gm-dt-d100h"></label>' +
+        '<button type="button" class="btn primary" data-gm="dt-d100">Read it</button>' +
+        '<button type="button" class="btn" data-gm="dt-d100-roll" title="No dice to hand? The page rolls one">Roll one</button></div>' +
+        '<p class="gm-dim" id="gm-dt-d100h">Roll high: the higher, the ' + (over ? 'lighter the Mishap' : 'better the Benefit') + '. 00 is 100. You get the card it lands on and one more from its band.</p></div>';
+    }
+    return h + mo.cards.map(function (c) {
+      var kept = mo.keep === c.which, off = !!mo.keep && !kept;
+      return '<div class="gm-want gm-dt-mcard' + (c.which === 'alt' ? ' gm-dt-alt' : '') + (kept ? ' gm-dt-kept' : '') + (off ? ' gm-dt-off' : '') + '" data-which="' + c.which + '">' +
+        '<p class="gm-dt-mt"><span class="gm-dt-mn">' + (c.which === 'alt' ? 'Or ' : '') + esc(c.range) + '</span> <b>' + esc(c.title) + '</b></p>' +
+        (off ? '' : md(c.md) + (c.play ? '<div class="gm-small">' + md('**Play it:** ' + c.play) + '</div>' : '') +
+          (c.cost ? '<div class="gm-small gm-dt-mcost">' + md('**Cost: ' + c.cost.title + '.** ' + c.cost.mech) + '</div>' : '') +
+          (c.source ? '<div class="gm-small">' + md('*A new source to find: ' + c.source + '.*') + '</div>' : '')) +
+        '<p class="gm-dt-macts"><button type="button" class="btn sm' + (kept ? ' primary' : '') + '" data-gm="dt-keep" data-v="' + c.which + '" aria-pressed="' + kept + '">' + (kept ? 'Kept' : off ? 'Use this one' : 'Keep this') + '</button>' +
+        (c.which === 'alt' && !mo.keep ? '<button type="button" class="btn sm" data-gm="dt-deal" title="Another card from the same band">Another</button>' : '') + '</p></div>';
+    }).join('') + '</div>';
+  }
   /* the card: the existing card's parts (header, chips, the lead box with its small line, the grid, one actions row with Pin and Copy).
-     An overindulgence puts its six options right above the cost box (the picked one pressed), the cost box in its own colour and a "?"
-     for the rules; an indulgence that was not one carries a small "Overindulged?" that turns the same card into one, and one whose
-     result was not tapped a small "Rolled" row (a 6 or a crit adds the Good Mornings to the same card). */
+     Indulge vice adds the morning after under the scene (its own box, above), then a small "Overindulged?" (or "Not overindulged?")
+     that turns the same card to the other table, with a "?" for the rules. With no table in the pack, the morning is one line that
+     says where the tables are. */
   function dtCardHtml(roll, cur) {
-    var m = roll.meta || {}, over = roll.over, started = cur && isObj(cur.started) ? cur.started : {};
-    var rui = roll.replay && isObj(roll.replay.ui) ? roll.replay.ui : {}, noRes = rui.act === 'indulge' && !rui.vres;
+    var m = roll.meta || {}, over = roll.over, mo = roll.morning, started = cur && isObj(cur.started) ? cur.started : {};
     var h = '<article class="gm-card gm-dtcard" data-tool="downtime"><header class="gm-card-h"><div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' + chipsHtml(m.chips);
     (roll.lines || []).forEach(function (l) {
-      if (l.id === 'over' && over) {
-        h += '<div class="gm-dt-opts" role="group" aria-label="What overindulging costs"><span class="gm-lab">Overindulged ' + DT_Q + '</span><div class="gm-dt-optrow">' +
-          over.options.map(function (o) { return '<button type="button" class="chip gm-dt-opt" data-gm="dt-pick" data-v="' + esc(o.id) + '" aria-pressed="' + (o.id === over.pick) + '">' + esc(o.title) + '</button>'; }).join('') + '</div></div>' +
-          '<div class="gm-want gm-dt-cost">' + md(l.md) + (l.small ? '<div class="gm-small">' + md(l.small) + '</div>' : '') + '</div>';
-        return;
-      }
+      if ((l.id === 'morning' || l.id === 'morning2') && mo && mo.has) return;     /* the morning box draws them */
       h += linesHtml([l], md);
-      if (l.id === 'lead' && over && !over.shown) h += '<p class="gm-dt-flip"><button type="button" class="btn sm" data-gm="dt-over" title="The same card, overindulged: the scene above stays">Overindulged?</button>' + DT_Q + '</p>';
-      if (l.id === 'lead' && noRes) h += '<p class="gm-dt-flip gm-dt-vres"><span class="gm-lab">Rolled</span>' + DT_BANDS.map(function (b) {
-        return '<button type="button" class="btn sm" data-gm="dt-vres" data-v="' + esc(b[0]) + '" title="The same card with the vice roll’s result: a 6 leaves a Good Morning, a crit two (the Morning After)">' + esc(b[1]) + '</button>';
-      }).join('') + '</p>';
+      if (l.id !== 'lead' || !over) return;
+      if (mo && mo.has) h += dtMorningHtml(mo);
+      h += '<p class="gm-dt-flip"><button type="button" class="btn sm" data-gm="dt-over" data-v="' + (over.shown ? 'in' : 'over') + '" title="The same card ' + (over.shown ? 'as a night that did not overindulge' : 'overindulged') +
+        ': the scene above stays">' + (over.shown ? 'Not overindulged?' : 'Overindulged?') + '</button>' + DT_Q + '</p>';
     });
     return h + '<div class="gm-card-acts">' + (m.actions || []).map(function (a, i) {
       var name = isObj(a.intent) ? str(a.intent.name) : '', done = !!name && Object.prototype.hasOwnProperty.call(started, name);
@@ -3175,6 +3209,7 @@
     if (ev.key === 'Enter' && tg && tg.hasAttribute && tg.hasAttribute('data-sttspk')) { ev.preventDefault(); tg.blur(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-prep-q') { ev.preventDefault(); prepFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-gs-q') { ev.preventDefault(); screenFindGo(); return; }
+    if (ev.key === 'Enter' && tg && tg.id === 'gm-dt-d100') { ev.preventDefault(); dtD100(tg.value); return; }     /* the morning's d100 */
     var ml = $q('.gm-menu-list'); if (ml && !ml.hasAttribute('hidden') && ev.key === 'Escape') { menuOpen(false); var mb = $q('[data-gm="menu"]'); if (mb) mb.focus(); ev.preventDefault(); return; }
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
     if (!a) return;
@@ -3273,9 +3308,12 @@
       case 'dt-who': dtSetWho(str(b.getAttribute('data-id'))); break;
       case 'dt-act': dtSetAct(b.getAttribute('data-v')); break;
       case 'dt-roll': rollDowntime(str(b.getAttribute('data-v'))); break;
-      case 'dt-pick': dtRedraw({ res: 'over', pick: b.getAttribute('data-v') }); break;
-      case 'dt-over': dtRedraw({ res: 'over' }); break;
-      case 'dt-vres': dtRedraw({ vres: str(b.getAttribute('data-v')) }); break;
+      case 'dt-over': dtRedraw({ res: b.getAttribute('data-v') === 'in' ? '' : 'over', keep: '', deal: '' }); break;
+      case 'dt-d100': { var df = $q('#gm-dt-d100'); dtD100(df ? df.value : ''); break; }
+      case 'dt-d100-roll': dtD100Roll(); break;
+      case 'dt-d100-clear': dtD100Clear(); break;
+      case 'dt-keep': dtKeep(str(b.getAttribute('data-v'))); break;
+      case 'dt-deal': dtDeal(); break;
       case 'dt-clock': dtClock(+b.getAttribute('data-i')); break;
       case 'dt-rule': dtRule(); break;
       case 'layer': setMap('layer', b.getAttribute('data-v')); renderLocation(); break;

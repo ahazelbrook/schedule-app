@@ -1955,9 +1955,28 @@ await test('16e. a bargain accepted while capture is full: the bargain is owed, 
 
 /* =====================================================================================================================
    17. Downtime (D): personal business. The PCs from the live sheets (boot's api.characters(), slim copies), the activity's one row
-       of buttons (a tap is the roll), the card (the cost box, the six options, "Overindulged?", the vice result and its Good Mornings,
-       Start a clock), replay. Invented PCs.
+       of buttons (a tap is the roll), the card (the morning after: the d100 box, the two cards, Keep, Another, Change, "Overindulged?";
+       Start a clock), replay. Invented PCs, and invented morning tables in a pack part (the real ones never leave the vault).
    ===================================================================================================================== */
+const ment = (lo, hi, band, title, md, play) => ({ lo, hi, band, title, md, play });
+const MT = {
+  benefit: [
+    ment(1, 30, '01–30 · Small', 'The biscuit', 'A baker at {place} hands you a biscuit. *"Mind the crumbs."* **Nothing much.**', 'who baked it?'),
+    ment(31, 50, '31–70 · Middling', 'The word', 'A neighbour stops you. *"I heard a thing."* **One answer, free.**', 'what thing?'),
+    ment(51, 60, '31–70 · Middling', 'The tab', '{Host} waves your money away. *"Paid."* **A stack.**', 'who paid?'),
+    ment(61, 70, '31–70 · Middling', 'The lift', 'A driver idles at the kerb. *"Hop in."* **A free ride.**', 'where to?'),
+    ment(71, 100, '71–00 · Big', 'The jackpot', 'Everyone cheers at {place}. *"Again!"* **Keep both cards.**', 'the best moment?')
+  ],
+  mishap: [
+    ment(1, 30, '01–50 · Bad', 'The cell', 'You wake in a cell. *"Talk."* **Attract Trouble: a questioning.**', 'talk, or not?'),
+    ment(31, 50, '01–50 · Bad', 'The bill', 'A bill for a window. *"Pay up."* **Bad Decision: the glazier\'s clock.**', 'whose window?'),
+    ment(51, 100, '51–00 · Silly', 'The song', 'A busker sings about you. *"Here they are!"* **Brag: +2 Heat.**', 'take a bow?')
+  ]
+};
+const MPACK = (extraT) => ({ downtime: { version: 'm1', src: {}, body: { v: 2, T: Object.assign({}, MT, extraT || {}) } } });
+const CLOCKHOOK = { vice: { Gambling: { hook: ['A debt comes due at {place}. || The debt at {place} (4)'] } } };     /* every Gambling card offers a clock */
+const dtD100 = (h, v) => { const f = h.q('#gm-dt-d100'); f.value = v; h.q('#gm-dt [data-gm="dt-d100"]').click(); };
+const mcards = (h) => h.qa('#gm-dt .gm-dt-mcard').map((c) => [c.getAttribute('data-which'), c.querySelector('.gm-dt-mt b').textContent]);
 const PCS = [
   { id: 'c-mags', name: 'Mags Invented', alias: 'Mags', playbook: 'hound', playbookName: 'Hound', vice: 'Gambling', purveyor: 'Old Mo, Mo’s Bar',
     contacts: [{ name: 'Pell', role: 'a fixer', kind: null }, { name: 'Nim', role: 'a dock boss', kind: 'rival' }, { name: 'Ada', role: 'a nurse', kind: 'friend' }],
@@ -1976,7 +1995,6 @@ const dtStored = (h) => h.page._state().doc.cards.downtime;
 const dtRoll = (h, v) => h.q('#gm-dt [data-gm="dt-roll"][data-v="' + v + '"]').click();
 const dtWho = (h, id) => h.q('#gm-dt [data-gm="dt-who"][data-id="' + id + '"]').click();
 const dtAct = (h, a) => h.q('#gm-dt [data-gm="dt-act"][data-v="' + a + '"]').click();
-const pressedOpt = (h) => (h.qa('#gm-dt [data-gm="dt-pick"]').find((b) => b.getAttribute('aria-pressed') === 'true') || { getAttribute: () => null }).getAttribute('data-v');
 const leadTxt = (h) => cardOf(h, '#gm-dt .gm-dtcard .gm-want');
 const gridTxt = (h) => cardOf(h, '#gm-dt .gm-dtcard .gm-grid');
 
@@ -2025,83 +2043,117 @@ await test('17b. Who: the PCs from the live sheets and "anyone"; picking one pre
   assert.ok(h.fg.server.patches.every((p) => !p.characters && !p.play), 'nothing but the GM state is written');
 });
 
-await test('17c. Overindulged: one tap rolls the card; the six options (the book\'s order) right above the cost box (the drawn one pressed); stored as replay info with the resolved strings', async () => {
-  const rig = dtRig(), h = await dtPage(rig);
+await test('17c. Overindulged: one tap rolls the card; the morning\'s d100 box sits right under the scene (the Mishaps, a "?"); stored as replay info with the resolved strings', async () => {
+  const rig = dtRig(), h = await dtPage(rig, { fg: fakeGm(undefined, MPACK()) });
   h.press('d'); dtWho(h, 'c-mags');
   assert.ok(!h.q('#gm-dt .gm-dtcard'), 'nothing before the first roll');
+  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-roll"]').map((b) => [b.getAttribute('data-v'), b.textContent]), [['in', 'Indulged'], ['over', 'Overindulged']], 'two buttons: how the vice roll went');
   dtRoll(h, 'over');
   const card = h.q('#gm-dt .gm-dtcard'); assert.ok(card, 'a card');
   assert.equal(cardOf(h, '#gm-dt .gm-dtcard h3'), 'Mags Invented · Indulge vice');
   assert.deepEqual(h.qa('#gm-dt .gm-dtcard .gm-chip').map((c) => c.textContent), ['Overindulged', 'Gambling']);
-  const opts = h.qa('#gm-dt [data-gm="dt-pick"]');
-  assert.deepEqual(opts.map((o) => o.textContent), ['Attract trouble', 'Bad decision', 'Bender', 'Brag', 'Brawl', 'Tapped']);
-  assert.equal(opts.filter((o) => o.getAttribute('aria-pressed') === 'true').length, 1, 'one option pressed');
-  const kids = card.children, iOpts = kids.indexOf(h.q('#gm-dt .gm-dt-opts')), iCost = kids.indexOf(h.q('#gm-dt .gm-dt-cost'));
-  assert.ok(iOpts > 0 && iCost === iOpts + 1, 'the option row sits directly above the cost box');
-  assert.ok(kids.indexOf(h.q('#gm-dt .gm-dtcard .gm-want')) < iOpts && kids.indexOf(h.q('#gm-dt .gm-dtcard .gm-grid')) > iCost, 'under the scene, above the grid');
-  const st = dtStored(h), mod = dtMk({ vices: CT.VICES }).replay({ seed: st.seed, mem: JSON.parse(st.mem), ui: st.ui });
-  assert.match(cardOf(h, '#gm-dt .gm-dt-cost'), new RegExp('^\\*\\*Overindulged: ' + mod.over.options.find((o) => o.id === mod.over.pick).title));
-  assert.equal(pressedOpt(h), mod.over.pick, 'the drawn option is the pressed one');
+  const kids = card.children, iLead = kids.indexOf(h.q('#gm-dt .gm-dtcard .gm-want')), iMorn = kids.indexOf(h.q('#gm-dt .gm-dt-morning')), iGrid = kids.indexOf(h.q('#gm-dt .gm-dtcard .gm-grid'));
+  assert.ok(iLead >= 0 && iMorn === iLead + 1 && iGrid > iMorn, 'the morning sits right under the scene, above the grid');
+  assert.ok(h.q('#gm-dt .gm-dt-morning').classList.contains('gm-dt-bad'), 'a Mishap box, in the alarm colour');
+  assert.match(cardOf(h, '#gm-dt .gm-dt-mh'), /^The morning after · Mishaps/);
+  assert.ok(h.q('#gm-dt .gm-dt-mh [data-gm="dt-rule"]'), 'a "?" for the rules on overindulging');
+  assert.ok(h.q('#gm-dt-d100') && h.q('#gm-dt [data-gm="dt-d100"]') && h.q('#gm-dt [data-gm="dt-d100-roll"]'), 'the d100 box, Read it, and Roll one');
+  assert.equal(h.q('#gm-dt-d100').getAttribute('inputmode'), 'numeric', 'a number pad on a phone');
+  assert.ok(!h.q('#gm-dt .gm-dt-mcard'), 'no cards before the d100');
+  assert.ok(h.q('#gm-dt .gm-dtcard [data-gm="dt-over"][data-v="in"]'), 'and a small "Not overindulged?"');
+  const st = dtStored(h), mod = dtMk({ vices: CT.VICES, pack: MT }).replay({ seed: st.seed, mem: JSON.parse(st.mem), ui: st.ui });
   assert.equal(leadTxt(h), (mod.lines[0].md + mod.lines[0].small).replace(/\s+/g, ' ').trim(), 'the module\'s scene, as drawn (this fake page shows markdown as written)');
-  assert.ok(h.q('#gm-dt .gm-dt-opts [data-gm="dt-rule"]'), 'a "?" beside Overindulged');
   assert.ok(!/iPad/.test(cardOf(h, '#gm-dt .gm-dtcard')) && h.qa('#gm-dt [data-gm]').every((b) => !/ipad/i.test(b.getAttribute('data-gm'))), 'no iPad button: downtime cards never go to the display');
   assert.equal(h.q('#gm-dt [data-gm="dt-roll"][data-v="over"]').getAttribute('aria-pressed'), 'true', 'the button that made the card stays marked');
+  assert.equal(h.q('#gm-dt [data-gm="dt-roll"][data-v="in"]').getAttribute('aria-pressed'), 'false');
   await h.save();
   const d = h.fg.server.doc, c = d.cards.downtime;
   assert.deepEqual(Object.keys(c).sort(), ['at', 'hid', 'label', 'mem', 'seed', 'ui']);
-  assert.ok(Number.isInteger(c.seed) && c.mem === '{}' && /^Mags Invented · Gambling · over: /.test(c.label), JSON.stringify(c));
-  assert.deepEqual([c.ui.act, c.ui.who, c.ui.vice, c.ui.purveyor, c.ui.res], ['indulge', 'Mags Invented', 'Gambling', 'Old Mo, Mo’s Bar', 'over'], 'the resolved strings, not the sheet\'s id');
+  assert.ok(Number.isInteger(c.seed) && c.mem === '{}' && c.label === 'Mags Invented · Gambling · overindulged', JSON.stringify(c));
+  assert.deepEqual([c.ui.act, c.ui.who, c.ui.vice, c.ui.purveyor, c.ui.res, c.ui.d100], ['indulge', 'Mags Invented', 'Gambling', 'Old Mo, Mo’s Bar', 'over', ''], 'the resolved strings, not the sheet\'s id');
   assert.ok(!('lines' in c) && !('meta' in c), 'replay info only');
   assert.equal(Object.keys(d.hist.downtime).length, 1); assert.equal(d.hist.downtime[c.hid].seed, c.seed);
   assert.ok(isObjLike(d.mem.downtime) && Object.values(d.mem.downtime).every((a) => Array.isArray(a) && a.every(Number.isInteger)), 'the repeat guard keeps small integer arrays');
   assert.equal(h.fg.server.displays.length, 0, 'nothing went to the iPad');
 });
 
-await test('17d. switching the option keeps the SAME card: seed, memory, hid and time; the scene and the grid stay; only the choice (and the label naming it) change', async () => {
-  const h = await dtPage();
-  h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'over');
-  const before = cl(dtStored(h)), lead = leadTxt(h), grid = gridTxt(h), mem = cl(h.page._state().doc.mem.downtime);
-  for (const pick of ['trouble', 'decision', 'lost', 'brag', 'brawl', 'tapped'].filter((p) => p !== before.ui.pick && p !== pressedOpt(h)).concat([pressedOpt(h)])) {
-    h.q('#gm-dt [data-gm="dt-pick"][data-v="' + pick + '"]').click();
-    const after = dtStored(h);
-    assert.deepEqual([after.hid, after.seed, after.mem, after.at], [before.hid, before.seed, before.mem, before.at], pick + ': the same card');
-    assert.deepEqual(Object.assign({}, after.ui, { pick: '', res: '' }), Object.assign({}, before.ui, { pick: '', res: '' }), pick + ': no other choice moved');
-    assert.equal(after.ui.pick, pick); assert.equal(pressedOpt(h), pick, 'the picked option is pressed');
-    assert.equal(leadTxt(h), lead, pick + ': the scene above does not change'); assert.equal(gridTxt(h), grid, pick + ': nor the rows');
-    const title = h.qa('#gm-dt [data-gm="dt-pick"]').find((b) => b.getAttribute('data-v') === pick).textContent;
-    assert.ok(cardOf(h, '#gm-dt .gm-dt-cost').startsWith('**Overindulged: ' + title + '.**'), 'the cost box is the new option');
-    assert.equal(after.label, 'Mags Invented · Gambling · over: ' + title);
-    assert.deepEqual(h.page._state().doc.hist.downtime[before.hid].ui, after.ui, 'its Earlier entry follows');
-  }
-  assert.deepEqual(cl(h.page._state().doc.mem.downtime), mem, 'the repeat guard did not move');      // cl: the page's objects come from the vm's realm
-  h.press('l'); assert.ok(Object.values(h.page._state().doc.capture).some((e) => e.bucket === 'r' && e.text === 'Downtime: ' + dtStored(h).label), 'L files the card as it now reads');
+await test('17d. the d100 redraws the SAME card: the card it lands on and a second from its band; Keep folds the other; Another deals the next; Change asks again; both cards go into the repeat guard', async () => {
+  const h = await dtPage(undefined, { fg: fakeGm(undefined, MPACK()) });
+  h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'in');
+  assert.match(cardOf(h, '#gm-dt .gm-dt-mh'), /^The morning after · Benefits/);
+  const before = cl(dtStored(h)), lead = leadTxt(h), grid = gridTxt(h);
+  dtD100(h, '45');
+  const after = () => dtStored(h), same = (x) => assert.deepEqual([x.hid, x.seed, x.mem, x.at], [before.hid, before.seed, before.mem, before.at], 'the same card');
+  same(after()); assert.equal(after().ui.d100, '45');
+  assert.equal(leadTxt(h), lead, 'the scene above does not change'); assert.equal(gridTxt(h), grid, 'nor the rows');
+  const two = mcards(h);
+  assert.deepEqual(two[0], ['roll', 'The word'], '45 lands on The word');
+  assert.ok(two[1][0] === 'alt' && ['The tab', 'The lift'].includes(two[1][1]), 'the second card from the same band: ' + two[1]);
+  assert.match(cardOf(h, '#gm-dt .gm-dt-mh'), /^The morning after · Benefits · 45 · 31–70 · Middling/);
+  assert.ok(!h.q('#gm-dt-d100'), 'the box goes once the number is in');
+  assert.match(cardOf(h, '#gm-dt .gm-dt-mcard'), /\*\*Play it:\*\* what thing\?/, 'Play it under the card');
+  assert.deepEqual(h.qa('#gm-dt .gm-dtcard .gm-chip').map((c) => c.textContent), ['Indulged', 'Gambling', 'Benefit 45']);
+  assert.equal(after().label, 'Mags Invented · Gambling · The word');
+  assert.deepEqual(h.page._state().doc.hist.downtime[before.hid].ui, after().ui, 'its Earlier entry follows');
+  const guard = cl(h.page._state().doc.mem.downtime['morning.benefit']);
+  assert.deepEqual(guard.sort(), [1, MT.benefit.findIndex((e) => e.title === two[1][1])].sort(), 'both cards are in the repeat guard now');
+  /* Keep the second card: the first folds to its title; a second tap unfolds it */
+  h.q('#gm-dt [data-gm="dt-keep"][data-v="alt"]').click();
+  same(after()); assert.equal(after().ui.keep, 'alt');
+  const roll = h.q('#gm-dt .gm-dt-mcard[data-which="roll"]'), alt = h.q('#gm-dt .gm-dt-mcard[data-which="alt"]');
+  assert.ok(roll.classList.contains('gm-dt-off') && !/neighbour/.test(cardOf(h, '#gm-dt .gm-dt-mcard[data-which="roll"]')), 'the other card folds to its title');
+  assert.ok(alt.classList.contains('gm-dt-kept') && h.q('#gm-dt [data-gm="dt-keep"][data-v="alt"]').getAttribute('aria-pressed') === 'true' && /Kept/.test(cardOf(h, '#gm-dt [data-gm="dt-keep"][data-v="alt"]')));
+  assert.ok(!h.q('#gm-dt [data-gm="dt-deal"]'), 'no Another while a card is kept');
+  assert.equal(after().label, 'Mags Invented · Gambling · ' + two[1][1], 'the label names the card kept');
+  h.q('#gm-dt [data-gm="dt-keep"][data-v="alt"]').click();
+  assert.equal(after().ui.keep, '', 'a second tap puts both back'); assert.ok(!h.q('#gm-dt .gm-dt-off'));
+  /* Another: the band's other card, then round again */
+  h.q('#gm-dt [data-gm="dt-deal"]').click(); same(after());
+  assert.equal(after().ui.deal, '1'); const next = mcards(h)[1][1];
+  assert.ok(['The tab', 'The lift'].includes(next) && next !== two[1][1], 'Another deals the other card in the band: ' + next);
+  h.q('#gm-dt [data-gm="dt-deal"]').click(); assert.equal(mcards(h)[1][1], two[1][1], 'then round again');
+  assert.equal(leadTxt(h), lead, 'the scene never moved');
+  /* Change: the box again; Enter reads it; 00 is 100; a number that is not a d100 says so and changes nothing */
+  h.q('#gm-dt [data-gm="dt-d100-clear"]').click();
+  assert.ok(h.q('#gm-dt-d100') && !h.q('#gm-dt .gm-dt-mcard') && after().ui.d100 === '' && after().ui.deal === '', 'Change: the box is back');
+  h.q('#gm-dt-d100').value = '140'; h.q('#gm-dt [data-gm="dt-d100"]').click();
+  assert.ok(h.br.toasts.some((t) => /^A d100 is 1 to 100/.test(t[0]) && t[1]) && after().ui.d100 === '', 'not a d100: a toast, nothing stored');
+  h.q('#gm-dt-d100').value = '00'; h.press('Enter', { target: h.q('#gm-dt-d100') });
+  assert.equal(after().ui.d100, '100'); assert.deepEqual(mcards(h)[0], ['roll', 'The jackpot'], 'Enter reads it, and 00 is 100');
+  assert.ok(!h.q('#gm-dt .gm-dt-alt'), 'a band of one: no second card');
+  h.q('#gm-dt [data-gm="dt-d100-clear"]').click(); h.q('#gm-dt [data-gm="dt-d100-roll"]').click();
+  assert.ok(+after().ui.d100 >= 1 && +after().ui.d100 <= 100 && h.q('#gm-dt .gm-dt-mcard'), 'Roll one: the page rolls the d100: ' + after().ui.d100);
+  same(after());
+  h.press('l'); assert.ok(Object.values(h.page._state().doc.capture).some((e) => e.bucket === 'r' && e.text === 'Downtime: ' + after().label), 'L files the card as it now reads');
   await h.save();
 });
 
-await test('17e. "Overindulged?" on an indulgence that was not one turns the SAME card into one (same seed, the scene kept)', async () => {
-  const h = await dtPage();
-  h.press('d'); dtWho(h, 'c-rook'); dtRoll(h, '45');
-  assert.deepEqual(h.qa('#gm-dt .gm-dtcard .gm-chip').map((c) => c.textContent), ['Indulged', 'Gettin\' Fucked Up', '4/5']);
-  assert.ok(!h.q('#gm-dt .gm-dt-cost') && !h.q('#gm-dt [data-gm="dt-pick"]'), 'no cost box, no options');
-  assert.ok(h.q('#gm-dt .gm-dtcard [data-gm="dt-over"]'), 'a small "Overindulged?" on the card');
+await test('17e. "Overindulged?" and "Not overindulged?" turn the SAME card to the other table (same seed, the scene kept); a d100 already in reads the other table', async () => {
+  const h = await dtPage(undefined, { fg: fakeGm(undefined, MPACK()) });
+  h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'in'); dtD100(h, '15');
+  assert.deepEqual(mcards(h)[0], ['roll', 'The biscuit']);
   const before = cl(dtStored(h)), lead = leadTxt(h), grid = gridTxt(h);
-  h.q('#gm-dt [data-gm="dt-over"]').click();
-  const after = dtStored(h);
+  h.q('#gm-dt [data-gm="dt-over"][data-v="over"]').click();
+  let after = dtStored(h);
   assert.deepEqual([after.hid, after.seed, after.mem], [before.hid, before.seed, before.mem], 'the same card');
-  assert.equal(after.ui.res, 'over'); assert.ok(h.q('#gm-dt .gm-dt-cost') && pressedOpt(h), 'now the cost box and its options');
+  assert.deepEqual([after.ui.res, after.ui.d100], ['over', '15'], 'overindulged, the d100 kept');
+  assert.deepEqual(mcards(h).map((c) => c[1]).sort(), ['The bill', 'The cell'], 'the Mishaps it lands on, and its band\'s other');
+  assert.match(cardOf(h, '#gm-dt .gm-dt-mcard'), /\*\*Attract Trouble: a questioning\.\*\*.*\*\*Cost: Attract trouble\.\*\* Trouble follows you home/, 'the cost under it, the book\'s line in our words');
   assert.equal(leadTxt(h), lead, 'the scene stays'); assert.equal(gridTxt(h), grid);
-  assert.ok(!h.q('#gm-dt [data-gm="dt-over"]'), 'the button goes once it is one');
+  h.q('#gm-dt [data-gm="dt-over"][data-v="in"]').click();
+  after = dtStored(h); assert.deepEqual([after.ui.res, after.ui.d100], ['', '15'], 'and back');
+  assert.deepEqual(mcards(h)[0], ['roll', 'The biscuit']);
   assert.equal(Object.keys(h.page._state().doc.hist.downtime).length, 1, 'still one card in Earlier');
   await h.save();
 });
 
 await test('17f. replay: a reload redraws the stored card exactly (even after the sheet changed), and Earlier brings back an older one as it was left', async () => {
-  const rig = dtRig(), fg = fakeGm(), br = fakeBrowser();
+  const rig = dtRig(), fg = fakeGm(undefined, MPACK()), br = fakeBrowser();
   const h = await dtPage(rig, { fg, br });
-  h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'over');
-  const other = ['trouble', 'decision', 'lost', 'brag', 'brawl', 'tapped'].find((p) => p !== pressedOpt(h));
-  h.q('#gm-dt [data-gm="dt-pick"][data-v="' + other + '"]').click();
+  h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'over'); dtD100(h, '60');
+  h.q('#gm-dt [data-gm="dt-keep"][data-v="roll"]').click();
   const a = dtCardTxt(h);
+  assert.ok(/The song/.test(a) && dtStored(h).ui.keep === 'roll');
   dtAct(h, 'recover'); dtRoll(h, '45');
   const b = dtCardTxt(h); assert.notEqual(a, b);
   await h.save();
@@ -2111,7 +2163,7 @@ await test('17f. replay: a reload redraws the stored card exactly (even after th
   assert.equal(dtCardTxt(h2), b, 'the same card after a reload');
   const chips = h2.qa('#gm-dt [data-gm="replay"]'); assert.equal(chips.length, 2, 'two in Earlier');
   chips.filter((c) => !c.hasAttribute('aria-current'))[0].click();
-  assert.equal(dtCardTxt(h2), a, 'Earlier redraws the first card with the option it was switched to, the old name and purveyor');
+  assert.equal(dtCardTxt(h2), a, 'Earlier redraws the first card with its d100 and the card kept, the old name and purveyor');
   await h2.save();
   const h3 = await dtPage(rig, { fg, br }); h3.press('d');
   assert.equal(dtCardTxt(h3), a, 'and that is the card that comes back');
@@ -2119,10 +2171,9 @@ await test('17f. replay: a reload redraws the stored card exactly (even after th
 });
 
 await test('17g. Start a clock: addClock gets one hidden danger clock, once; the button is done for that card, after a reload too; the rail shows it from the table', async () => {
-  const rig = dtRig(), fg = fakeGm(), br = fakeBrowser();
+  const rig = dtRig(), fg = fakeGm(undefined, MPACK(CLOCKHOOK)), br = fakeBrowser();
   const h = await dtPage(rig, { fg, br });
-  h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'over');
-  h.q('#gm-dt [data-gm="dt-pick"][data-v="trouble"]').click();       // attract trouble: every one of the module's trouble lines brings a clock
+  h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'over');       // the pack's Gambling hook brings a clock on every card
   const btn = () => h.qa('#gm-dt [data-gm="dt-clock"]').find((b) => /^Start a clock: |^Clock started: /.test(b.textContent) && b.getAttribute('data-i') === '0');
   assert.ok(btn(), 'a Start a clock button'); const label = btn().textContent, name = /^Start a clock: (.*) \((\d+)\)$/.exec(label);
   assert.ok(name, label);
@@ -2147,8 +2198,8 @@ await test('17g. Start a clock: addClock gets one hidden danger clock, once; the
   assert.ok(!('started' in dtStored(h2)), 'a new card starts with no clock of the old one\'s');
   await h2.save();
   /* the table refuses it: the button comes back, and the toast says so */
-  const rig3 = dtRig({ fail: new Error('the table is offline') }), h3 = await dtPage(rig3);
-  h3.press('d'); dtWho(h3, 'c-mags'); dtRoll(h3, 'over'); h3.q('#gm-dt [data-gm="dt-pick"][data-v="trouble"]').click();
+  const rig3 = dtRig({ fail: new Error('the table is offline') }), h3 = await dtPage(rig3, { fg: fakeGm(undefined, MPACK(CLOCKHOOK)) });
+  h3.press('d'); dtWho(h3, 'c-mags'); dtRoll(h3, 'over');
   h3.q('#gm-dt [data-gm="dt-clock"]').click();
   assert.ok(await until(() => h3.br.toasts.some((t) => /^Could not start the clock: the table is offline/.test(t[0]) && t[1])));
   assert.ok(!h3.q('#gm-dt [data-gm="dt-clock"]').hasAttribute('disabled') && !('started' in dtStored(h3)), 'not marked started');
@@ -2216,13 +2267,14 @@ await test('17j. the "?" by Overindulged opens the rules on overindulging in the
   const rules = { available: () => true, load: async () => ({ entries: [{}] }),
     hits: (q) => { asked.push(q); return { total: 2, hits: [{ id: 'x/stress', title: 'Stress', caption: 'Invented book', snip: '' }, { id: 'x/vice', title: 'Indulging a vice', caption: 'Invented book', snip: '' }] }; },
     entry: (id) => ({ id, title: id === 'x/vice' ? 'Indulging a vice' : 'Stress', caption: 'Invented book', href: '#rules/x/vice', md: 'When you **overindulge**, choose one.', also: [] }) };
-  const h = await dtPage(undefined, { br: fakeBrowser({ B68Rules: rules }) });
+  const h = await dtPage(undefined, { br: fakeBrowser({ B68Rules: rules }), fg: fakeGm(undefined, MPACK()) });
   h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'over');
-  h.q('#gm-dt .gm-dt-opts [data-gm="dt-rule"]').click();
+  h.q('#gm-dt .gm-dt-mh [data-gm="dt-rule"]').click();
   assert.equal(h.page._state().panel, 'rules', 'the GM screen pane');
   assert.ok(await until(() => h.q('.gs-entry')), 'the entry opens');
   assert.deepEqual(asked, ['overindulge']); assert.match(cardOf(h, '.gs-entry .gs-h'), /^Indulging a vice/, 'the hit about indulging, not the first hit');
-  h.press('d'); dtRoll(h, '45');
+  h.press('d'); dtRoll(h, 'in');
+  assert.ok(!h.q('#gm-dt .gm-dt-mh [data-gm="dt-rule"]'), 'a Benefit has no "?" in its heading');
   h.q('#gm-dt .gm-dt-flip [data-gm="dt-rule"]').click(); assert.equal(h.page._state().panel, 'rules', 'the "?" by "Overindulged?" too');
   await h.save();
 });
@@ -2235,13 +2287,15 @@ await test('17k. without a module, without the characters, with a pack part over
   const bare = await openPage({ camp: CAMP3 });       // an older boot without characters() or addClock()
   bare.press('d');
   assert.deepEqual(bare.qa('#gm-dt [data-gm="dt-who"]').map((b) => b.textContent), ['anyone']); assert.match(cardOf(bare, '#gm-dt'), /No characters are filed yet/);
-  dtRoll(bare, 'over'); assert.ok(bare.q('#gm-dt .gm-dt-cost') && dtStored(bare).ui.who === '', 'anyone: a card with a stock host');
-  bare.q('#gm-dt [data-gm="dt-pick"][data-v="trouble"]').click(); bare.q('#gm-dt [data-gm="dt-clock"]').click();
-  assert.ok(bare.br.toasts.some((t) => /table is not available here/.test(t[0])), 'no addClock: it says where to start it');
+  dtRoll(bare, 'over'); assert.ok(bare.q('#gm-dt .gm-dtcard') && dtStored(bare).ui.who === '', 'anyone: a card with a stock host');
   await bare.save();
+  const bare2 = await openPage({ camp: CAMP3, fg: fakeGm(undefined, MPACK({ vice: { [dtMk().VICES[0]]: { hook: ['A debt comes due. || The debt (4)'] } } })) });
+  bare2.press('d'); pick(bare2, '#gm-dt-vice', dtMk().VICES[0]); dtRoll(bare2, 'over'); bare2.q('#gm-dt [data-gm="dt-clock"]').click();
+  assert.ok(bare2.br.toasts.some((t) => /table is not available here/.test(t[0])), 'no addClock: it says where to start it');
+  await bare2.save();
   const T = { vice: { Gambling: { lead: ['{Host} deals you in at {place}, and the night begins.'] } } };
   const own = await dtPage(undefined, { fg: fakeGm(undefined, { downtime: { version: 'd1', src: {}, body: { T } } }) });
-  own.press('d'); dtWho(own, 'c-mags'); dtRoll(own, '45');
+  own.press('d'); dtWho(own, 'c-mags'); dtRoll(own, 'in');
   assert.match(leadTxt(own), /^Old Mo deals you in at Mo’s Bar, and the night begins\./, 'the pack part\'s table is used');
   await own.save();
   const broken = { vice: { Gambling: { lead: [] } } };
@@ -2256,37 +2310,26 @@ await test('17k. without a module, without the characters, with a pack part over
   await bad.save();
 });
 
-await test('17m. the vice result (the Morning After): 1–3, 4/5, 6 and Crit before Overindulged; a 6 adds a Good Morning from the pack\'s downtime part, a crit two; "Rolled" on a card redraws the SAME card', async () => {
-  const good = [{ kind: 'Invented kind', lines: ['A friend at {place} owes you.', '{Host} let something go.', 'A parcel turned up.'] }];
-  const h = await dtPage(undefined, { fg: fakeGm(undefined, { downtime: { version: 'g1', src: {}, body: { T: { good } } } }) });
-  h.press('d'); dtWho(h, 'c-mags');
-  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-roll"]').map((b) => b.getAttribute('data-v')), ['13', '45', '6', 'crit', 'over'], 'the four results, then Overindulged');
-  const goods = () => h.qa('#gm-dt .gm-dtcard .gm-want').map((w) => w.textContent).filter((t) => /^\*\*Good Morning\.\*\*/.test(t));
-  dtRoll(h, '6');
-  assert.equal(goods().length, 1, 'a 6: one Good Morning');
-  assert.match(goods()[0], /Invented kind · the Morning After$/, goods()[0]);
-  assert.ok(!/[{}]/.test(goods()[0]), 'its slots filled: ' + goods()[0]);
-  assert.deepEqual(h.qa('#gm-dt .gm-dtcard .gm-chip').map((c) => c.textContent), ['Indulged', 'Gambling', '6']);
-  assert.equal(dtStored(h).ui.vres, '6'); assert.equal(dtStored(h).label, 'Mags Invented · Gambling · a good morning');
-  assert.equal(h.q('#gm-dt [data-gm="dt-roll"][data-v="6"]').getAttribute('aria-pressed'), 'true', 'the result that made the card stays marked');
-  assert.ok(!h.q('#gm-dt [data-gm="dt-vres"]'), 'no "Rolled" row once the result is said');
-  dtRoll(h, 'crit'); assert.equal(goods().length, 2, 'a crit: two');
-  dtRoll(h, '45'); assert.equal(goods().length, 0, 'a 4/5: a night out, nothing more');
-  dtRoll(h, 'over');
-  const before = cl(dtStored(h)), lead = leadTxt(h);
-  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-vres"]').map((b) => b.getAttribute('data-v')), ['13', '45', '6', 'crit'], 'overindulged with no result said: a "Rolled" row');
-  h.q('#gm-dt [data-gm="dt-vres"][data-v="6"]').click();
-  const after = dtStored(h);
-  assert.deepEqual([after.hid, after.seed, after.mem, after.at], [before.hid, before.seed, before.mem, before.at], 'the same card');
-  assert.equal(after.ui.vres, '6'); assert.equal(after.ui.res, 'over', 'still overindulged');
-  assert.equal(leadTxt(h), lead, 'the scene stays'); assert.equal(goods().length, 1, 'and the Good Morning joins it');
-  assert.ok(h.q('#gm-dt .gm-dt-cost') && !h.q('#gm-dt [data-gm="dt-vres"]'), 'the cost box stays; the row goes');
-  assert.deepEqual(h.page._state().doc.hist.downtime[before.hid].ui, after.ui, 'its Earlier entry follows');
-  await h.save();
+await test('17m. the morning after without the pack\'s tables: one line that says where they are, no d100 box; a pack with Benefits only still says where the Mishaps are; an older card (Good Mornings, a picked option) still opens', async () => {
   const bare = await dtPage();
-  bare.press('d'); dtWho(bare, 'c-mags'); dtRoll(bare, 'crit');
-  assert.match(cardOf(bare, '#gm-dt .gm-dtcard'), /Two Good Mornings\.\*\* Roll on the table in the vault/, 'no pack part: it says where the table is');
+  bare.press('d'); dtWho(bare, 'c-mags'); dtRoll(bare, 'in');
+  assert.ok(!bare.q('#gm-dt-d100') && !bare.q('#gm-dt .gm-dt-morning'), 'no d100 box without the tables');
+  assert.match(cardOf(bare, '#gm-dt .gm-dtcard'), /\*\*A Benefit\.\*\* Roll a d100 on the table in the vault: the Morning After\.\s*The pack carries no Benefits yet/, 'it says where the table is');
+  bare.q('#gm-dt [data-gm="dt-over"][data-v="over"]').click();
+  assert.match(cardOf(bare, '#gm-dt .gm-dtcard'), /\*\*A Mishap\.\*\* Roll a d100 on the table in the vault/);
   await bare.save();
+  const half = await dtPage(undefined, { fg: fakeGm(undefined, { downtime: { version: 'b1', src: {}, body: { T: { benefit: MT.benefit } } } }) });
+  half.press('d'); dtWho(half, 'c-mags'); dtRoll(half, 'in');
+  assert.ok(half.q('#gm-dt-d100'), 'the Benefits are there: a d100 box');
+  dtRoll(half, 'over'); assert.ok(!half.q('#gm-dt-d100') && /\*\*A Mishap\.\*\* Roll a d100/.test(cardOf(half, '#gm-dt .gm-dtcard')), 'no Mishaps: it says where they are');
+  await half.save();
+  /* a card stored by the version before (a vice result, a picked overindulgence) replays as a night with the d100 still to come */
+  const fg = fakeGm(undefined, MPACK());
+  fg.server.doc = { cards: { downtime: { hid: 'h_old', seed: 77, mem: '{}', label: 'Mags · Gambling · over: Brag', at: '2026-10-16T10:00:00.000Z', ui: { act: 'indulge', who: 'Mags', vice: 'Gambling', purveyor: '', res: 'over', pick: 'brag', vres: '6' } } } };
+  const old = await dtPage(undefined, { fg }); old.press('d');
+  assert.ok(old.q('#gm-dt .gm-dtcard') && old.q('#gm-dt-d100') && /Mishaps/.test(cardOf(old, '#gm-dt .gm-dt-mh')), 'the old card opens: overindulged, the d100 to come');
+  dtD100(old, '70'); assert.deepEqual(mcards(old)[0], ['roll', 'The song']);
+  await old.save();
 });
 
 await test('17l. the characters land after the page opened (boot\'s characters()): the chips follow, and a redraw while typing the purveyor keeps the typing', async () => {

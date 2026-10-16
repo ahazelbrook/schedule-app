@@ -8,8 +8,8 @@ text and GM-only secrets, so they never enter git (the downtime cards' tables ar
 moves what happened at the table back into the vault). Code: `functions/_lib/gm.js`, `functions/api/gm/*.js`; tables in
 `migrations/0004_gm.sql`. The pack parts are `console`, `location`, `campaign`, `npc`, `scenes`, `engagement`, `prep`,
 `screen` and `downtime` (the last three optional; `scripts/gm-pack.mjs` lists what each holds). The `downtime` part carries the
-house rule's Good Mornings (`T.good`, from the vault note with `gm_downtime: true`) and is laid over the Downtime panel's built-in
-tables (see Downtime (D) below).
+house rule's two d100 tables, the Benefits and the Mishaps (`T.benefit`, `T.mishap`, from the vault note with `gm_downtime: true`),
+and is laid over the Downtime panel's built-in tables (see Downtime (D) below).
 
 ## Secrecy rules (server enforced)
 
@@ -265,35 +265,40 @@ fails and nobody is known, nothing is purged.
   book text, so the panel works with any pack: `app/downtime-tables.js` (`B68DowntimeTables`, public like `content.js`, loaded before the
   module; it names the setting, so the module and `app/gm-page.js` name nothing of it). A pack part `downtime` is laid over them (any top-level
   key of its `T` replaces that table, a vice's tables one by one: the module's header). A part that lacks tables is listed by the Pack check,
-  and the panel uses the built-in tables with a note. **The Good Mornings come only from that part**: `npm run gm:pack` builds it from the
-  vault note with `gm_downtime: true` (the house rule *the Morning After*: its "## The Good Morning" tables; `scripts/lib/downtime-export.mjs`).
-  They are drawn from a zine that is for personal use, so they never go into this public repo; with no part, a 6 says where the table is.
+  and the panel uses the built-in tables with a note. **The Benefits and the Mishaps come only from that part**: `npm run gm:pack` builds it
+  from the vault note with `gm_downtime: true` (the house rule *the Morning After*, version 3: its "## Benefits" and "## Mishaps" entries,
+  `**41–42 · Title.** …` under `### 41–60 · Band` headings, with a `**Play it:**` line; `scripts/lib/downtime-export.mjs`). They are drawn
+  from a zine that is for personal use, so they never go into this public repo; with no part, the card says where the tables are.
   - **Who**: a chip per PC from the live sheets (boot's `characters()`: a slim copy of each filed character, never the figure spec, read on
     every draw and again when the characters snapshot changes) and **anyone**. Picking a PC prefills the vice (a select of the seven, theirs
     picked) and the purveyor (a text field) from their sheet; an edit is panel state (`dt.ui`), never written to the sheet.
   - **Activity**: chips in the module's order (Indulge vice, Recover, Long-term project, Train, Friend or rival, Lay low, Acquire; a phone shows
     the module's short labels). Then the activity's ONE row of buttons, each rolling the card at once (everyone rolls physical dice: the tap on
-    the result is the roll): for Indulge vice, under the Vice and Purveyor, the vice roll's result **1–3** **4/5** **6** **Crit** (after any
-    stacks spent on it: the house rule the Morning After, where a 6 leaves one Good Morning and a crit two) and **Overindulged** (on a phone
-    the results fill the first row and Overindulged sits under them at the left, clear of the Capture button); "Rolled at the table:" **1–3**
+    the result is the roll): for Indulge vice, under the Vice and Purveyor, how the vice roll went, **Indulged** or **Overindulged** (on a
+    phone one row, clear of the Capture button); "Rolled at the table:" **1–3**
     **4/5** **6** **Crit** for Recover, Lay low, Acquire and Long-term project (which also gets a select of the PC's own clocks, the first still open picked, or
     another project); **Insight** **Prowess** **Resolve** **Playbook** for Train; **Friend** / **Rival** under a select of the PC's contacts (a
     friend or a rival first), the relation the sheet gives that contact marked "on the sheet". The button that made the card on screen stays
     marked.
-  - **The card** is the usual card (title and sub, chips, the lead box with its small line, the grid, one actions row with Pin and Copy). A
-    6 puts one **Good Morning** box under the scene (the line, then its kind), a crit two. An overindulgence puts its six options, in the
-    book's order (**Attract trouble · Bad decision · Bender · Brag · Brawl · Tapped**, the drawn or picked one pressed), right above the cost
-    box, in the alarm colour: it is what the GM reads first. Tapping another option switches it on the SAME card (its seed and memory: the
-    scene above never moves; only `ui.pick` and the label that names it change). A **?** beside Overindulged opens the rules on overindulging
-    in the GM screen pane (its rules search for "overindulge"; the first hit about indulging opens). An indulgence that was not one carries a
-    small **Overindulged?** that turns the same card into one, and one whose result was not tapped a small **Rolled** row (1–3 · 4/5 · 6 ·
-    Crit) that adds it to the same card. The module draws the six options, then the Good Mornings, after everything else, so neither moves the
-    scene; the first four options are drawn as first shipped, so an older card replays the same (`lost` keeps its id; the book calls it Bender).
+  - **The card** is the usual card (title and sub, chips, the lead box with its small line, the grid, one actions row with Pin and Copy). An
+    Indulge vice card's lead is the night: a picture, then the line the host says, in quotes, for the GM to read aloud. Right under it sits
+    **the morning after** (the house rule, version 3): "The morning after · Benefits" (or "· Mishaps", in the alarm colour, with a **?** that
+    opens the rules on overindulging in the GM screen pane: its rules search for "overindulge"; the first hit about indulging opens), a **d100**
+    box (a number pad on a phone; Enter or **Read it** reads it, 0 and 00 are 100; **Roll one** rolls it on the page), and a line that says
+    roll high. Once the number is in, the box gives way to **two cards**: the entry it lands on, and one more from the same band (the same
+    size, another story), each with its range, title, text, **Play it** and, for a Mishap, its cost (the overindulgence it names, with
+    T.over's line in our words; Tapped adds a new source from the book). **Keep this** marks one and folds the other to its title (a second
+    tap unfolds it); **Another** deals the band's next card in a seeded order (fresh ones first) while neither is kept; **Change** in the
+    heading brings the box back. A small **Overindulged?** (or **Not overindulged?**) under the morning turns the same card to the other
+    table, the d100 kept. All of these redraw the SAME card (its seed and memory: the module draws the morning last, so the scene above never
+    moves; only `ui.res`, `ui.d100`, `ui.keep`, `ui.deal` and the label that names the card change). Once a d100 is in, both cards go into the
+    repeat guard (`mem.downtime['morning.benefit' | 'morning.mishap']`, half the table at most), so the next card deals others; the card's own
+    `mem` never moves. A card stored by the version before (a vice result, a picked overindulgence) opens as the night with the d100 to come.
   - **Start a clock: <name> (4)** (a clock the card suggests) puts it on the table's clocks through boot's `addClock` (an `add` op where the
     store takes `clockOps`, else the whole array: CAMPAIGN.md "Clocks"): `{ id: 'c_…', name, size, filled: 0, kind: 'danger', hidden: true }`,
     with the toast "Clock started, hidden from the players: <name>. Show it from the table page." The rail's Table clocks shows it. The card
     keeps the clock's id (`started`), so its button stays done after a reload and on its Earlier entry.
-  - After a roll the card is scrolled into view as the console's is (when it is taller than the pane: its cost box, else its lead). `L` files
+  - After a roll the card is scrolled into view as the console's is (when it is taller than the pane: its morning box, else its lead). `L` files
     "Downtime: <label>"; Earlier keeps five. **Nothing goes to the iPad**: the prompts and hooks are the GM's, so there is no Show on iPad.
   - State: `cards.downtime` `{ hid, seed, ui, mem, label, at, started? }`, where `ui` holds the resolved strings (the PC's name, the vice, the
     purveyor line, the contact line, the project's name, the district), so a reload or an Earlier click redraws the same card after a sheet

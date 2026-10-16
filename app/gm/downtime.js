@@ -1,24 +1,26 @@
 /* gm/downtime.js — personal business at the table (the downtime phase), as pure logic (no DOM, no storage, no network).
    One card per activity a PC takes: a scene prompt to frame it, a question for the player, and something to pull on
-   later. Indulging a vice gives the scene at the PC's purveyor; an overindulgence adds what it costs (the six of the
-   book's p.165: attract trouble, bad decision, bender, brag, brawl, tapped; the mechanical line in bold) with a scene
-   prompt under it, and a clock the GM can start. The vice roll's result (`vres`) is the house rule the Morning After
-   (the vault's House rules/blades-68-face-and-the-morning-after.md): a 6 leaves one Good Morning, a crit two.
-   Everyone rolls physical dice: the page passes the result in (`res`, `vres`), this file never rolls a die.
+   later. Indulging a vice gives the night at the PC's purveyor, then the house rule the Morning After (the vault's
+   House rules/blades-68-face-and-the-morning-after.md, version 3): a d100 the players roll at the table, on the
+   Benefits if they did not overindulge and on the Mishaps if they did, roll high on both. The card shows the entry the
+   number lands on and ONE MORE from the same band (the same size, another story), and the GM keeps one. A Mishap names
+   one of the book's six overindulgences (p.165: attract trouble, bad decision, bender, brag, brawl, tapped), and that
+   is its cost; the card puts the mechanical line from T.over beside it.
+   Everyone rolls physical dice: the page passes the numbers in (`res`, `d100`), this file never rolls a die.
 
    The tables are not in this file (it names nothing of the setting: checks/runtime/gm-nosecrets.test.mjs): they are
    app/downtime-tables.js (B68DowntimeTables: original writing, public like content.js), which the GM bundle loads
    first. A pack part `downtime` may replace them later: any top-level key of its `T` replaces the table of that name,
-   and a vice in `T.vice` replaces that vice's tables one by one (check(T) lists what is missing). The Good Mornings
-   come ONLY from that part (`T.good`, built by scripts/lib/downtime-export.mjs from the vault page): they are drawn
-   from a zine that is for personal use, so they never go into this public repo. No part: the card says where the
-   table is.
+   and a vice in `T.vice` replaces that vice's tables one by one (check(T) lists what is missing). The Benefits and the
+   Mishaps come ONLY from that part (`T.benefit`, `T.mishap`, built by scripts/lib/downtime-export.mjs from the vault
+   page): they are drawn from a zine that is for personal use, so they never go into this public repo. No part: the
+   card says where the tables are.
 
    Every draw comes from one seeded mulberry32 stream in a fixed order, and the repeat guard keeps INDICES (never the
-   text), so { seed, mem, ui } redraws the same card and a stored memory stays small. The overindulgence's options
-   are drawn after everything else, whatever `res` and `pick` say (the first four as first shipped, then bad decision
-   and brawl), and the Good Mornings after those, so ticking "Overindulged", tapping the result or switching the
-   option after a roll keeps the scene above it as it was.
+   text), so { seed, mem, ui } redraws the same card and a stored memory stays small. The night is drawn first and the
+   morning last, so ticking "Overindulged?", typing the d100, keeping a card or dealing another after a roll keeps the
+   scene above as it was. The morning's second card reads the memory and never writes it (a replay must not move it);
+   remember(roll, mem) puts a morning's two cards into a memory once the d100 is in, so later cards deal others.
 
    ---------------------------------------------------------------------------------------------------------------
    API
@@ -32,9 +34,9 @@
        districts  optional: district names for {district} when nothing else gives one (default: T.districts)
    dt.ACTS        [{ id, label, short, res }]  res: 'over' (indulge) | 'band' (1-3 / 4/5 / 6 / crit) | 'attr' | 'rel'
    dt.VICES       the vice names, in the tables' order
-   dt.defaults()  { act:'indulge', who:'', vice:'', purveyor:'', district:'', res:'', pick:'', attr:'', contact:'',
-                    rel:'', project:'', vres:'' }
-   dt.roll(ui, { seed, mem }) -> { lines, meta, over, seed, replay }
+   dt.defaults()  { act:'indulge', who:'', vice:'', purveyor:'', district:'', res:'', d100:'', keep:'', deal:'', attr:'',
+                    contact:'', rel:'', project:'' }
+   dt.roll(ui, { seed, mem }) -> { lines, meta, over, morning, seed, replay }
        ui.act      'indulge' | 'recover' | 'project' | 'train' | 'contact' | 'heat' | 'acquire'
        ui.who      the PC's name ('' leaves it out)
        ui.vice     indulge: a vice name ('' = drawn); ui.purveyor the sheet's line ("Pat, bookmaker at the Old Track,
@@ -42,26 +44,34 @@
        ui.district '' = the purveyor's district, else drawn
        ui.res      indulge: 'over' | '' · recover, project, heat, acquire: '13' | '45' | '6' | 'crit' ('' reads as 4/5,
                    with no ticks) · train: unused
-       ui.vres     indulge: the vice roll's result after any stacks, '13' | '45' | '6' | 'crit' | '' (not said): a 6
-                   adds a Good Morning, a crit two · the others: unused
-       ui.pick     indulge: 'trouble' | 'decision' | 'lost' | 'brag' | 'brawl' | 'tapped' ('' = drawn)
+       ui.d100     indulge: the morning's d100 as rolled, '1'..'100' ('0' and '00' read as 100; '' = not rolled yet)
+       ui.keep     indulge: the card the GM kept, 'roll' | 'alt' ('' = both still on the table)
+       ui.deal     indulge: how many times the second card was dealt again, '0'..'99' ('' = 0)
        ui.attr     train: 'Insight' | 'Prowess' | 'Resolve' | 'Playbook' ('' = drawn)
        ui.contact  contact: the sheet's line ("Sam, a nosy neighbour"); ui.rel 'friend' | 'rival' ('' = drawn)
        ui.project  project: the clock's name on the sheet ('' = "the project")
        seed        uint32; omit for a fresh one
        mem         the repeat-guard memory to use and MUTATE (default: the instance's)
-       lines   [{ kind:'want', id:'lead', md, small }, ({ kind:'want', id:'good' | 'good2', md, small }),
-               ({ kind:'want', id:'over', md, small }), { kind:'grid', id:'more', rows:[{ k, md }] }]   md is markdown
-               (bold and italics only), never HTML
-       over    indulge only: { pick, shown, options:[{ id, title, mech, md, clock, source }] }  shown: res is 'over';
-               the six options in the book's order (p.165)
+       lines   [{ kind:'want', id:'lead', md, small }, ({ kind:'want', id:'morning' | 'morning2', md, small }),
+               { kind:'grid', id:'more', rows:[{ k, md }] }]   md is markdown (bold and italics only), never HTML.
+               morning: the card kept, else the one rolled; morning2: the second card while neither is kept. With no
+               table in the pack, one morning line says where the tables are.
+       over    indulge only: { shown }   shown: res is 'over'
+       morning indulge only: { table:'benefit' | 'mishap', has, n, band, keep, deal, size, cards:[{ which:'roll' | 'alt',
+               i, range, title, md, play, cost, source }] }   has: the pack carries that table; n: 0 until the d100 is
+               in; cards: the entry rolled, then the second from its band ([] until the d100); cost (a mishap):
+               { id, title, mech } from T.over, else null; source: a new purveyor from the book when the cost is Tapped
        meta    { id:'downtime', act, title, sub, chips, text, all, label, actions:[{ label, intent:{ type:'clock',
                name, size } }] }   all: the card as plain lines (Pin / Copy)
        replay  { id:'downtime', seed, mem, ui }   mem is a deep copy BEFORE this roll; dt.replay(replay) redraws it
    dt.mem()       the instance's live repeat-guard memory
+   dt.remember(roll, mem)  puts the morning's cards into `mem` (default: the instance's), under the same window as the
+                  draws; returns true when it added any
    Helpers: B68GmDowntime.seedRng(a) · plain(md) · purveyor(line, districts, places) -> { host, place, district, near }
+   B68GmDowntime.d100(v) -> '1'..'100' | ''   a typed d100 as the card keeps it
    B68GmDowntime.check(T, pack) -> [string]   the table keys T (with the pack laid over it) lacks or has empty.
-   Optional table: T.good [{ kind, lines:[string] }] (the Good Mornings; a malformed kind or line is left out, unchecked).
+   Optional tables: T.benefit, T.mishap [{ lo, hi, band, title, md, play, cost }] (lo..hi within 1..100; cost: an
+   overindulgence id, else read off the first bold words of md; a malformed entry is left out, unchecked).
    --------------------------------------------------------------------------------------------------------------- */
 (function (root, factory) {
   'use strict';
@@ -104,10 +114,21 @@
   var ATTRS = ['Insight', 'Prowess', 'Resolve', 'Playbook'];
   var KINDS = { friend: ['need', 'offer', 'news'], rival: ['move', 'truce', 'weak'] };
   var VICE_TABLES = ['places', 'hosts', 'lead', 'detail', 'ask', 'hook'];
-  /* the overindulgences: drawn in OVER_IDS order (the first four as first shipped, so an older card replays the same),
-     shown in the book's order (p.165) */
-  var OVER_IDS = ['trouble', 'brag', 'lost', 'tapped', 'decision', 'brawl'];
-  var OVER_SHOWN = ['trouble', 'decision', 'lost', 'brag', 'brawl', 'tapped'];
+  /* the six overindulgences (T.over: our words for the book's p.165), and how a Mishap names one: the first bold words
+     of its text ("**Brag: +2 Heat.**"). `lost` keeps its id from the first version; the book calls it a bender. */
+  var OVER_IDS = ['trouble', 'decision', 'lost', 'brag', 'brawl', 'tapped'];
+  var COST_RE = /\*\*\s*(attract trouble|bad decision|bender|brag|brawl|tapped)\b/i;
+  var COST_ID = { 'attract trouble': 'trouble', 'bad decision': 'decision', 'bender': 'lost', 'brag': 'brag', 'brawl': 'brawl', 'tapped': 'tapped' };
+  var MORNING = { benefit: 'Benefit', mishap: 'Mishap' };
+  var DEALS = 99;      /* "another" as many times as this, then it wraps round the band */
+  /* a typed d100 as the card keeps it: '1'..'100', with 0 and 00 (percentile dice) as 100; anything else '' */
+  function d100(v) {
+    var s = str(v).trim();
+    if (/^0{1,2}$/.test(s)) return '100';
+    if (!/^\d{1,3}$/.test(s)) return '';
+    var n = +s; return n >= 1 && n <= 100 ? String(n) : '';
+  }
+  var pad2 = function (n) { return n >= 100 ? '00' : (n < 10 ? '0' : '') + n; };
 
   /* a purveyor line -> who you deal with and where. The book's lines come annotated (B68DowntimeTables.PLACES, matched on
      their first two parts, so a line copied without its district still matches); anything else is read as "Name, place,
@@ -177,14 +198,24 @@
     return out;
   }
   function list(a) { return Array.isArray(a) && a.length > 0 && a.every(function (x) { return typeof x === 'string' && x.trim() !== ''; }); }
-  /* the Good Mornings, T.good [{ kind, lines }], as one list of { kind, line }: a malformed kind or line is left out */
-  function goodList(T) {
+  /* a morning table (T.benefit or T.mishap: [{ lo, hi, band, title, md, play, cost }]) as the roll reads it, sorted by
+     its numbers: a malformed entry is left out; a cost that is not an overindulgence id is read off the text */
+  function costOf(md) { var m = COST_RE.exec(str(md)); return m ? COST_ID[m[1].toLowerCase()] : ''; }
+  function morningList(a) {
     var out = [];
-    (isObj(T) && Array.isArray(T.good) ? T.good : []).forEach(function (k) {
-      if (!isObj(k) || typeof k.kind !== 'string' || !k.kind.trim() || !Array.isArray(k.lines)) return;
-      k.lines.forEach(function (l) { if (typeof l === 'string' && l.trim()) out.push({ kind: k.kind.trim(), line: l }); });
+    (Array.isArray(a) ? a : []).forEach(function (e) {
+      if (!isObj(e)) return;
+      var lo = Math.floor(+e.lo), hi = Math.floor(+e.hi);
+      if (!(lo >= 1 && hi <= 100 && lo <= hi) || typeof e.md !== 'string' || !e.md.trim() || typeof e.title !== 'string' || !e.title.trim()) return;
+      out.push({ lo: lo, hi: hi, band: str(e.band).trim(), title: e.title.trim(), md: e.md.trim(), play: str(e.play).trim(), cost: OVER_IDS.indexOf(e.cost) >= 0 ? e.cost : costOf(e.md) });
     });
-    return out;
+    return out.sort(function (x, y) { return x.lo - y.lo; });
+  }
+  /* the entry a number lands on: the one whose numbers hold it, else the last one below it (a gap), else the first */
+  function landOn(L, n) {
+    var at = -1;
+    for (var i = 0; i < L.length; i++) { if (L[i].lo <= n) at = i; if (n >= L[i].lo && n <= L[i].hi) return i; }
+    return at >= 0 ? at : 0;
   }
   /* the keys a roll reads, reported when missing or empty, in T with the pack's replacements laid over it */
   function check(T, pack) {
@@ -197,7 +228,6 @@
     Object.keys(isObj(M.vice) ? M.vice : {}).forEach(function (v) {
       var V = M.vice[v];
       VICE_TABLES.forEach(function (t) { need('vice.' + v + '.' + t, list(V && V[t])); });
-      OVER_IDS.forEach(function (o) { need('vice.' + v + '.over.' + o, isObj(V && V.over) && list(V.over[o])); });
     });
     var R = M.recover || {};
     need('recover.healers', list(R.healers)); need('recover.cost', list(R.cost)); need('recover.detail', list(R.detail)); need('recover.ask', list(R.ask));
@@ -256,6 +286,13 @@
         var win = Math.max(1, Math.min(20, Math.floor(a.length / 2)));
         used.push(idx); while (used.length > win) used.shift();
         return a[idx];
+      },
+      /* the indices `idx` in a seeded order, those the repeat guard `key` has not seen first: it READS the memory and
+         never writes it (a morning's second card; remember() writes it once the d100 is in) */
+      order: function (key, idx) {
+        var used = Array.isArray(MEM[key]) ? MEM[key] : [];
+        var mix = function (x) { for (var j = x.length - 1; j > 0; j--) { var k = Math.floor(rnd() * (j + 1)), t = x[j]; x[j] = x[k]; x[k] = t; } return x; };
+        return mix(idx.filter(function (i) { return used.indexOf(i) < 0; })).concat(mix(idx.filter(function (i) { return used.indexOf(i) >= 0; })));
       }
     };
   }
@@ -267,7 +304,8 @@
     if (!isObj(base)) throw new Error('B68GmDowntime.create: the tables are required (app/downtime-tables.js)');
     var miss = check(base, cfg.pack);
     if (miss.length) throw new Error('B68GmDowntime.create: the tables lack ' + miss.slice(0, 5).join(', ') + (miss.length > 5 ? ' and ' + (miss.length - 5) + ' more' : ''));
-    var T = merged(base, cfg.pack), ix = placesIndex(cfg.places || (book && book.PLACES)), GOOD = goodList(T);
+    var T = merged(base, cfg.pack), ix = placesIndex(cfg.places || (book && book.PLACES));
+    var TABLES = { benefit: morningList(T.benefit), mishap: morningList(T.mishap) };
     var MEM = isObj(cfg.mem) ? cfg.mem : {};
     var districts = list(cfg.districts) ? cfg.districts.slice() : T.districts.slice();
     var allDistricts = districts.concat(T.districts.filter(function (d) { return districts.indexOf(d) < 0; }));
@@ -282,19 +320,49 @@
       var n = normName(vice), b = books.filter(function (x) { return normName(x.name) === n; })[0];
       return b && Array.isArray(b.purveyors) ? b.purveyors.filter(function (p) { return typeof p === 'string' && p.trim(); }) : [];
     }
-    function defaults() { return { act: 'indulge', who: '', vice: '', purveyor: '', district: '', res: '', pick: '', attr: '', contact: '', rel: '', project: '', vres: '' }; }
+    function defaults() { return { act: 'indulge', who: '', vice: '', purveyor: '', district: '', res: '', d100: '', keep: '', deal: '', attr: '', contact: '', rel: '', project: '' }; }
     function norm(ui) {
       var u = defaults(), x = isObj(ui) ? ui : {};
       Object.keys(u).forEach(function (k) { u[k] = str(x[k]).trim().slice(0, 200); });
       if (!ACT[u.act]) u.act = 'indulge';
       var r = ACT[u.act].res;
-      if (r === 'over') { u.res = u.res === 'over' ? 'over' : ''; if (OVER_IDS.indexOf(u.pick) < 0) u.pick = ''; if (BANDS.indexOf(u.vres) < 0) u.vres = ''; }
-      else if (r === 'band') { if (BANDS.indexOf(u.res) < 0) u.res = ''; u.pick = ''; u.vres = ''; }
-      else { u.res = ''; u.pick = ''; u.vres = ''; }
+      if (r === 'over') {
+        u.res = u.res === 'over' ? 'over' : ''; u.d100 = d100(u.d100);
+        u.keep = u.d100 && (u.keep === 'roll' || u.keep === 'alt') ? u.keep : '';
+        var dl = /^\d{1,2}$/.test(u.deal) ? Math.min(DEALS, +u.deal) : 0; u.deal = u.d100 && dl ? String(dl) : '';
+      }
+      else { u.d100 = ''; u.keep = ''; u.deal = ''; if (r !== 'band' || BANDS.indexOf(u.res) < 0) u.res = ''; }
       if (ATTRS.indexOf(u.attr) < 0) u.attr = '';
       if (u.rel !== 'friend' && u.rel !== 'rival') u.rel = '';
       u.vice = viceKey(u.vice);   /* a vice the tables do not know reads as none: the roll draws one */
       return u;
+    }
+
+    /* ---- the morning after: the entry the d100 lands on, and a second from its band ---- */
+    function morningCard(L, i, which, ctx, source) {
+      var e = L[i], c = e.cost ? T.over.filter(function (o) { return o.id === e.cost; })[0] : null;
+      return { which: which, i: i, range: pad2(e.lo) + '–' + pad2(e.hi), title: e.title, md: fill(e.md, ctx), play: fill(e.play, ctx),
+        cost: c ? { id: c.id, title: c.title, mech: fill(c.mech, ctx) } : null, source: e.cost === 'tapped' ? source : '' };
+    }
+    function morning(ui, R, table, ctx, source) {
+      var L = TABLES[table], name = MORNING[table], out = { table: table, has: L.length > 0, n: 0, band: '', keep: '', deal: 0, size: L.length, cards: [] }, lines = [];
+      if (!L.length) {
+        lines.push({ kind: 'want', id: 'morning', md: '**A ' + name + '.** Roll a d100 on the table in the vault: the Morning After.', small: 'The pack carries no ' + name + 's yet (its downtime part).' });
+        return { out: out, lines: lines };
+      }
+      var n = +ui.d100 || 0; if (!n) return { out: out, lines: lines };
+      var i = landOn(L, n), band = L[i].band, idx = [];
+      for (var j = 0; j < L.length; j++) if (j !== i && L[j].band === band) idx.push(j);
+      var ord = R.order('morning.' + table, idx), deal = ord.length ? (+ui.deal || 0) % ord.length : 0;
+      var cards = [morningCard(L, i, 'roll', ctx, source)];
+      if (ord.length) cards.push(morningCard(L, ord[deal], 'alt', ctx, source));
+      var keep = ui.keep === 'alt' && cards.length < 2 ? '' : ui.keep;
+      out.n = n; out.band = band; out.keep = keep; out.deal = deal; out.cards = cards;
+      (keep ? cards.filter(function (c) { return c.which === keep; }) : cards).forEach(function (c, k) {
+        lines.push({ kind: 'want', id: k ? 'morning2' : 'morning', md: '**' + (k ? 'Or ' : name + ' ') + c.range + ' · ' + c.title + '.** ' + c.md,
+          small: [c.play ? '*Play it:* ' + c.play : '', c.cost ? '*Cost:* ' + c.cost.title + '. ' + c.cost.mech : '', c.source ? '*A new source to find: ' + c.source + '.*' : ''].filter(Boolean).join(' ') });
+      });
+      return { out: out, lines: lines };
     }
 
     /* ---- the activities ---- */
@@ -306,38 +374,22 @@
       var ctx = { host: host, place: place, district: district };
       var lead = split(R.fresh(vice + '.lead', V.lead), ctx), detail = fill(R.fresh(vice + '.detail', V.detail), ctx);
       var ask = fill(R.fresh(vice + '.ask', V.ask), ctx), hook = split(R.fresh(vice + '.hook', V.hook), ctx);
-      /* the six options, always drawn and in this order (see the header) */
-      var options = OVER_IDS.map(function (id) {
-        var O = T.over.filter(function (o) { return o.id === id; })[0];
-        var s = split(R.fresh(vice + '.over.' + id, V.over[id]), ctx), o = { id: id, title: O.title, mech: fill(O.mech, ctx), md: s.text, clock: s.clock, source: '' };
-        if (id === 'tapped') {
-          var mine = normName(ui.purveyor), others = bookPurveyors(vice).filter(function (x) { return normName(x) !== mine && purveyor(x, allDistricts, ix).host !== host; });
-          if (others.length) o.source = R.pick(others);
-        }
-        return o;
-      });
-      var drawn = R.pick(OVER_IDS);
-      var pick = ui.pick || drawn, shown = ui.res === 'over', opt = options.filter(function (o) { return o.id === pick; })[0];
-      /* the Morning After: a 6 leaves one Good Morning, a crit two; drawn last, so they never move what is above */
-      var nGood = ui.vres === 'crit' ? 2 : ui.vres === '6' ? 1 : 0, goods = [];
-      for (var g = 0; g < nGood && GOOD.length; g++) goods.push(R.fresh('good', GOOD));
+      /* Tapped's new source: another of the book's purveyors for the vice, drawn before the morning so it never moves */
+      var mine = normName(ui.purveyor), others = bookPurveyors(vice).filter(function (x) { return normName(x) !== mine && purveyor(x, allDistricts, ix).host !== host; });
+      var source = others.length ? R.pick(others) : '';
+      /* the morning, drawn last (see the header) */
+      var shown = ui.res === 'over', m = morning(ui, R, shown ? 'mishap' : 'benefit', ctx, source), mo = m.out;
       var where = '**' + cap(place) + '**' + (host && host !== place ? ' · ' + host : '') + (near ? ' · ' + near : '');
-      var lines = [{ kind: 'want', id: 'lead', md: lead.text, small: detail }];
-      goods.forEach(function (x, i) { lines.push({ kind: 'want', id: i ? 'good' + (i + 1) : 'good', md: '**Good Morning.** ' + fill(x.line, ctx), small: x.kind + ' · the Morning After' }); });
-      if (nGood && !goods.length) lines.push({ kind: 'want', id: 'good', md: '**' + (nGood === 2 ? 'Two Good Mornings' : 'A Good Morning') + '.** Roll on the table in the vault: the Morning After.', small: 'The pack carries no Good Mornings yet (its downtime part).' });
-      if (shown) lines.push({ kind: 'want', id: 'over', md: '**Overindulged: ' + opt.title + '.** ' + opt.mech, small: opt.md + (opt.source ? ' *A new source to find: ' + opt.source + '.*' : '') });
-      var rows = [{ k: 'Where', md: where }, { k: 'Ask', md: ask }, { k: 'Hook', md: hook.text }];
-      lines.push({ kind: 'grid', id: 'more', rows: rows });
-      var acts = [];
-      if (shown && opt.clock) acts.push(opt.clock);
-      if (hook.clock) acts.push(hook.clock);
+      var lines = [{ kind: 'want', id: 'lead', md: lead.text, small: detail }].concat(m.lines);
+      lines.push({ kind: 'grid', id: 'more', rows: [{ k: 'Where', md: where }, { k: 'Ask', md: ask }, { k: 'Hook', md: hook.text }] });
       var chips = [shown ? 'Overindulged' : 'Indulged', vice];
-      if (ui.vres) chips.push(BAND_LABEL[ui.vres]);
+      if (mo.n) chips.push(MORNING[mo.table] + ' ' + (mo.n < 10 ? '0' : '') + mo.n);
+      var kept = mo.cards.filter(function (c) { return c.which === (mo.keep || 'roll'); })[0];
       return {
-        lines: lines, chips: chips, clocks: acts,
+        lines: lines, chips: chips, clocks: hook.clock ? [hook.clock] : [],
         title: (ui.who ? ui.who + ' · ' : '') + 'Indulge vice', sub: vice + ' · ' + cap(host === place ? place : host + ', ' + place) + (near ? ' · ' + near : ''),
-        label: (ui.who ? ui.who + ' · ' : '') + vice + (nGood ? ' · ' + (nGood === 2 ? 'two good mornings' : 'a good morning') : '') + (shown ? ' · over: ' + opt.title : ''),
-        over: { pick: pick, shown: shown, options: OVER_SHOWN.map(function (id) { return options.filter(function (o) { return o.id === id; })[0]; }) }
+        label: (ui.who ? ui.who + ' · ' : '') + vice + (shown ? ' · overindulged' : '') + (kept ? ' · ' + kept.title : ''),
+        over: { shown: shown }, morning: mo
       };
     }
     function band(ui) { return ui.res || '45'; }
@@ -430,7 +482,19 @@
       var meta = { id: 'downtime', act: ui.act, title: c.title, sub: c.sub, chips: c.chips, text: plain(c.lines[0].md), all: all, label: c.label.slice(0, 80), actions: actions };
       var out = { lines: c.lines, meta: meta, seed: seed, replay: { id: 'downtime', seed: seed, mem: before, ui: ui } };
       if (c.over) out.over = c.over;
+      if (c.morning) out.morning = c.morning;
       return out;
+    }
+    /* a morning's two cards into a repeat-guard memory (the page calls it once the d100 is in), under the window the
+       draws use, so the next card's second card is another; a card already in the memory is not added twice */
+    function remember(r, mem) {
+      var M = isObj(mem) ? mem : MEM, m = r && r.morning;
+      if (!isObj(m) || !m.n || !Array.isArray(m.cards) || !m.cards.length || !MORNING[m.table]) return false;
+      var key = 'morning.' + m.table, used = Array.isArray(M[key]) ? M[key] : (M[key] = []), added = false;
+      var win = Math.max(1, Math.min(20, Math.floor((+m.size || 0) / 2)));
+      m.cards.forEach(function (c) { if (isObj(c) && Number.isInteger(c.i) && used.indexOf(c.i) < 0) { used.push(c.i); added = true; } });
+      while (used.length > win) used.shift();
+      return added;
     }
     return {
       ACTS: ACTS.map(function (a) { return { id: a.id, label: a.label, short: a.short, res: a.res }; }),
@@ -439,10 +503,11 @@
       defaults: defaults,
       roll: roll,
       replay: function (r) { return roll(r.ui, { seed: r.seed, mem: clone(r.mem) }); },
+      remember: remember,
       mem: function () { return MEM; }
     };
   }
 
-  return { create: create, check: check, seedRng: seedRng, plain: plain, ID: 'downtime', BANDS: BANDS.slice(), BAND_LABEL: clone(BAND_LABEL), TICKS: clone(TICKS),
+  return { create: create, check: check, seedRng: seedRng, plain: plain, d100: d100, ID: 'downtime', BANDS: BANDS.slice(), BAND_LABEL: clone(BAND_LABEL), TICKS: clone(TICKS),
     purveyor: function (line, districts, places) { return purveyor(line, districts, placesIndex(places)); } };
 });
