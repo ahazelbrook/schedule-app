@@ -2,7 +2,7 @@
 // sign-in (role 'display', DISPLAY_EMAILS) may GET only. Never part of /api/export. A player gets 403 on every method,
 // before the body is read.
 //   GET            -> { seq, display, updatedAt, ambient: { seq, doc, updatedAt }, stt: { seq, want, session } }
-//                     (seq 0 and a blank display while none is stored. The ambient document, AMBIENT-PLAN.md and
+//                     (seq 0 and a blank display while none is stored. The ambient document, GM.md "Ambient scenes" and
 //                     functions/api/gm/ambient.js, rides along because the display sign-in may not call /api/gm/ambient.
 //                     So does what the iPad needs of the transcriber, so that one poll does the work of two (GM.md "Listening"):
 //                     `want` ('on' | 'off': the GM wants it listening) and `session` (the number to stamp on its lines), and

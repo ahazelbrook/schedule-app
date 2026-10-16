@@ -486,7 +486,7 @@
     };
   };
 
-  /* ---------- the ambient floor (AMBIENT-PLAN.md) ----------
+  /* ---------- the ambient floor (GM.md, "Ambient scenes"; the plan: docs/history/AMBIENT-PLAN.md) ----------
      When no spotlight is up the display plays a self-contained scene full screen and rotates it. The registry below is the only
      source of a scene's URL (`ambient/<file>`, relative to the app root): nothing from the server ever becomes a URL. `needs`
      says what a scene waits for ('score' gates it; 'crew' is advisory, the watch feed has its own defaults); `pinOnly` keeps a
@@ -628,7 +628,7 @@
     if (!isObj(next)) return false;
     return !isObj(prev) || prev.heat !== next.heat || prev.wanted !== next.wanted;
   };
-  /* the four crew polaroids on the score scenes: cast id -> caption (the generator's constant; AMBIENT-PLAN.md 4.3) */
+  /* the four crew polaroids on the score scenes: cast id -> caption (the generator's constant; docs/history/AMBIENT-PLAN.md 4.3) */
   Pure.POLAROIDS = [{ id: 'booker', cap: 'Babel' }, { id: 'alfie', cap: 'Ashtray & Buck' }, { id: 'stacey', cap: 'Stacey' }, { id: 'loader', cap: '99.47' }];
   /* scoreMessage(score, polaroids, env) -> the message a score scene is sent in reply to its b68:ready, or null with no score.
      `board` and `iso` are the score's svgs run through the sanitiser again here (normal cap) and sent as its markup, '' when one

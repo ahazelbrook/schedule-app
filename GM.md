@@ -435,10 +435,23 @@ and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools
 - **Checks.** `check:ambient` (assets, shells, frames), `check:display-ambient` (e2e), plus the ambient cases in
   `checks/api/gm.mjs`, `display-role.mjs`, `display.test.mjs`, `gm-page.test.mjs` and `gm-nosecrets.test.mjs`. The e2e checks take
   `PW_CHANNEL=msedge` when Playwright's own Chromium is not installed.
-- **Deploy.** `npx wrangler d1 migrations apply DB --remote` (0006) before `wrangler deploy`. Copy `app/media/theme.mp3` into the
-  deploying checkout too (gitignored; without it the credits run silent). Before a deploy, build the calling cards
-  on the deploying PC (`node tools/ambient/scenes/cards.js`, needs `tools/ambient/cards/*.jpg`): the file is gitignored, and the
-  asset upload takes whatever is on disk. Without it the `cards` scene 404s and `check:ambient` prints SKIP.
+- **Deploy.** `npm run deploy` (SETUP.md, "Updating the app") applies the migrations and refuses to ship without
+  `app/media/theme.mp3` and `app/ambient/calling-cards.html` on disk: both are gitignored, and the asset upload takes whatever
+  is on disk. The cards are built on the deploying PC (`node tools/ambient/scenes/cards.js`, from `tools/ambient/cards/*.jpg`);
+  without the file the `cards` scene 404s and `check:ambient` prints SKIP.
+- **Decisions** (Alex, 15/10/2026; the plan as written is `docs/history/AMBIENT-PLAN.md`). Rotation is a playlist plus pin (auto
+  every 7 minutes, cross-faded; pin one; skip). The score scenes are live from the current location roll, player layer only, and
+  never update on their own. **Clear** goes back to the ambient; **Lights out** is true black. Heat and wanted come from the
+  campaign by themselves.
+- **Secrecy.** The score maps are the only route from a roll to the players' screen, and they pass every gate Show on iPad
+  uses: the page's own player-layer render, the hidden-name scan, a confirm for bands beyond public, `checkSvg` on the server and
+  `sanitiseSvg` on the iPad. The ambient document is never in `/api/export`; a player and the display sign-in get 403 on
+  `/api/gm/ambient` before the body is read, and the display reads the document only through `GET /api/gm/display`.
+- **Open items.** Thermals: `watch-feed` is a 2.2 MB svg animated at about 30 fps; if the iPad runs hot over a long session, the
+  knob is a frame rate in the scenes (regenerate them). The four static scenes (`second-harvest`, `watch-feed`,
+  `duskwall-after-dark`, `test-card`) have no generator here: `tools/ambient/redress.js` patches small things (a suit, a
+  cigarette), anything bigger means asking the design tool again. The score scenes' polaroids are a fixed list (`Pure.POLAROIDS`): move it to the campaign document when the roster
+  changes. Offline, a scene never played before shows blank and the watchdog skips it.
 
 ### The display sign-in (`DISPLAY_EMAILS`)
 
