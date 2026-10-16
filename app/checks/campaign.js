@@ -165,7 +165,12 @@ const SHEET = `(pb) => {
   await phoneOrder('GM', ['.tp-sessbox', '.tp-clockbox', '.tp-logbox', '.tp-playbox', '#tp-crew', '#tp-schedule']);
 
   /* crew: name (typed, debounced: one write), tier, rep, heat */
-  await one('crew name', async () => { await p.click('[data-path="crew.name"]'); await p.keyboard.type('The Lamplighters', { delay: 15 }); }, 800);
+  /* the crew is named on a phone (a table being set up): the crew stays open, so the field being typed in is not folded away under the typist */
+  await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(250);
+  assert(await p.$eval('.tp-crewbody', n => getComputedStyle(n).display !== 'none') && (await p.$eval('.tp-crewsum', n => n.getAttribute('aria-expanded'))) === 'true', 'phone, a crew with no name or playbook: shown open, not folded behind the summary');
+  await one('crew name', async () => { await p.click('[data-path="crew.name"]'); await p.keyboard.type('The Lamplighters', { delay: 15 }); }, 900);
+  assert(await p.evaluate(() => { const n = document.activeElement, b = document.querySelector('.tp-crewbody'); return !!n && n.dataset.path === 'crew.name' && n.value === 'The Lamplighters' && getComputedStyle(b).display !== 'none' && n.getClientRects().length > 0; }), 'phone: after the name is saved the crew is still open and the name field still has the focus and the text');
+  await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(250);
   let c = await camp();
   assert(c && c.crew.name === 'The Lamplighters' && c.v === 1 && Array.isArray(c.clocks) && c.session.number === 0, 'first write creates the whole document: ' + JSON.stringify(c && c.crew.name));
   assert((await p.$eval('#tp-crewname', n => n.textContent)) === 'The Lamplighters', 'heading follows the name');

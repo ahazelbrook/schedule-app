@@ -405,8 +405,15 @@
     var max = 12 - clamp(crew.turf, 0, 6);
     return { tier: crew.tier, hold: crew.hold, rep: Math.min(crew.rep, max), repMax: max, heat: crew.heat, wanted: crew.wanted, stacks: crew.vault, vault: 0 };
   }
-  /* unfolded when the viewer chose so; until they choose, only while the crew is still to be set up (name, playbook) */
-  function crewOpen(crew) { var v = cur.drafts['tp.crew']; return v === 'open' ? true : v === 'closed' ? false : !(crew.name || crew.playbook); }
+  /* unfolded when the viewer chose so; until they choose, only while the crew is still to be set up (name, playbook). Once
+     it was drawn open for that reason it stays open for the visit: naming the crew must not fold away the field being typed in. */
+  function crewOpen(crew) {
+    var v = cur.drafts['tp.crew'];
+    if (v === 'open') return true;
+    if (v === 'closed') return false;
+    if (crew.name || crew.playbook) return false;
+    cur.drafts['tp.crew'] = 'open'; return true;
+  }
   function crewSection(doc) {
     var c = doc.crew, f = crewFacts(c), open = crewOpen(c);
     function cell(label, val, extra, bad) { return '<span class="tp-cst' + (bad ? ' bad' : '') + '"><span class="tp-lab">' + label + '</span><b class="mono">' + val + '</b>' + (extra ? '<small>' + extra + '</small>' : '') + '</span>'; }
