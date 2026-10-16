@@ -147,7 +147,7 @@ additive secrets on deploy; schema.sql = migrations.
 
 ## Wave 2 (after the wave-1 merges)
 
-- [ ] Generators, page side (needs gm-page merged first; exact list from the generators agent):
+- [ ] Generators, page side (in progress on `review/gm-wave2`; exact list from the generators agent):
       1. Situations card: show `sections[0].lines[0].small` under the lead (with a threat, the spend sentence); under
          More skip the lead's first line; fold `coach: true` lines under "Why" in every section.
       2. `situationPlain` (Pin/Copy/L): skip `coach` lines; put `meta.chips[0]` (the position chip) on the title line.
@@ -158,9 +158,9 @@ additive secrets on deploy; schema.sql = migrations.
       5. Location glance: `g.plan` under Say (GM only, never to the iPad); a Rule row when `g.rule` is set.
       6. NPC portrait: show `fig.note`; no portrait when `fig.failed`; "No portrait: ..." when the kit throws.
       7. Earlier chips name the NPC and show the time and position (B15). · S-M
-- [ ] E5 P2 · After Access expires mid-session the GM saver parks every later patch for good and the toast says the
+- [ ] (in progress on `review/gm-wave2`) E5 P2 · After Access expires mid-session the GM saver parks every later patch for good and the toast says the
       opposite. Treat 401 as pending-until-sign-in, say "reload to sign in, notes kept", resend. · S-M
-- [ ] E18 P3 · Capture alone can hit the 240 KiB soft cap, after which every roll is refused; cap by bytes, drop the
+- [ ] (in progress on `review/gm-wave2`) E18 P3 · Capture alone can hit the 240 KiB soft cap, after which every roll is refused; cap by bytes, drop the
       oldest. · S
 - [x] E17 · Decided 16 Oct: the Classic console view and the Classic page layout go entirely (one mode). Done on the
       gm-page branch.
@@ -172,7 +172,7 @@ additive secrets on deploy; schema.sql = migrations.
 - [ ] E14 P3 · The display never leaves "denied"; reload once after 10 min. · S
 - [ ] Lazy loading phase 2 · The figure kit (688 KB) loaded after first paint; the three top-level captures become
       lookups. · M
-- [ ] Physical dice on the GM page · The engagement roll: let the GM roll physically and tap the highest die instead
+- [ ] (in progress on `review/gm-wave2`) Physical dice on the GM page · The engagement roll: let the GM roll physically and tap the highest die instead
       of the app rolling (the pool is still computed by the app); the same for any GM-side roll. · S
 - [ ] Ideas from review B · Re-roll one row of a card (per-section seeds exist); a "Tonight" strip of every roll beyond
       the five, exported into the note; "Make them an NPC" on a Face/Reaction card; "Use the street" chaining Street →
@@ -211,6 +211,7 @@ Everything is on GitHub, nothing lives only in a container.
   | `review/players` | section 3, the phone sheet: the mark strip and resist helper, the first screen, the cast banner |
   | `review/players-table` | section 3, the table page, Home, plain words, the Night/Paper switch |
   | `review/engineering` | section 4, timeouts, the service worker, lazy loading, the deploy receipt, docs |
+  | `review/gm-wave2` | wave 2 on the GM page: the new generator fields on the cards, physical dice for the engagement roll, E5, E18 (started from the integration branch after generators and gm-page merged) |
   `review/*-wip` are snapshots of uncommitted work saved when the first agents stopped; ignore them once the
   matching branch has moved past them.
 - **To resume:** `git fetch origin && git checkout ccr-e0dcd379-q104ac`, then for each work branch, in this order
