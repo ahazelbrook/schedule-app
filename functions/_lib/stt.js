@@ -163,7 +163,8 @@ export async function patchStt(db, campaign, patch) {
 
 /** A short-lived Deepgram token, minted with the Worker's key. 503 when the key is not set; 502 when Deepgram refuses. */
 export async function grantToken(env, fetchFn = fetch) {
-  const key = env && env.DEEPGRAM_API_KEY;
+  /* trimmed: a secret piped in from Windows PowerShell arrives with a CRLF, and Deepgram answers 400 */
+  const key = env && typeof env.DEEPGRAM_API_KEY === 'string' ? env.DEEPGRAM_API_KEY.trim() : '';
   if (!key) throw new HttpError(503, 'listening is not set up: the Worker has no DEEPGRAM_API_KEY secret');
   /* the checks' stand-in for Deepgram (gm-stt.e2e.mjs): honoured only on a loopback address, so the key can go nowhere else */
   const url = typeof env.DEEPGRAM_GRANT_URL === 'string' && /^http:\/\/127\.0\.0\.1:\d+\//.test(env.DEEPGRAM_GRANT_URL) ? env.DEEPGRAM_GRANT_URL : DEEPGRAM_GRANT;
