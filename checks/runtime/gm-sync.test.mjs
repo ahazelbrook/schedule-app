@@ -298,7 +298,8 @@ await test('the board (b68g-factions.md) is never written; the writer refuses no
   const before = fs.readFileSync(V.abs(env.vault, V.NEVER[0]));
   await sync(env, ['both', '--yes']);
   ok(fs.readFileSync(V.abs(env.vault, V.NEVER[0])).equals(before));
-  for (const p of [V.NEVER[0], 'TTRPG/x.md', '.obsidian/app.json', 'Wiki/Other/page.md', S + '/b68g-s01-transcript.md']) {
+  /* transcript notes are writable since the iPad's transcriber (gm-transcript.mjs appends to them; stt.test.mjs) */
+  for (const p of [V.NEVER[0], 'TTRPG/x.md', '.obsidian/app.json', 'Wiki/Other/page.md', S + '/b68g-s01-notes.md']) {
     let threw = false; try { V.assertWritable(p); } catch (e) { threw = true; } ok(threw, 'writable: ' + p);
   }
 });

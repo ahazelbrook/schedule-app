@@ -169,6 +169,21 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-rulesq { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
 #gm-page .gm-rulesq .gm-field { flex: 1 1 220px; }
 
+/* the Screen tab (T): the GM screen's sections, prep's typography (.pp-doc) for their bodies */
+#gm-page .gs-top { position: sticky; top: 0; z-index: 2; background: var(--paper, var(--card)); padding: 0 0 8px; border-bottom: 2px solid var(--rule); margin-bottom: 10px; }
+#gm-page .gs-jump { margin: 8px 0 0; gap: 4px; }
+#gm-page .gs-jump .chip { padding: 3px 7px; font-size: 10px; }
+#gm-page .gs-jump [hidden] { display: none; }
+#gm-page .gs-sec { border: 2px solid var(--rule); background: var(--card); margin: 0 0 12px; scroll-margin-top: 140px; }
+#gm-page .gs-sec[hidden] { display: none; }
+#gm-page .gs-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--rule); color: var(--on-ink); font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 5px 6px 5px 10px; margin: 0; }
+#gm-page .gs-h .btn { flex: none; }
+#gm-page .gs-body { padding: 10px 12px 2px; }
+#gm-page .gs-body table thead:not(:has(th:not(:empty))) { display: none; }   /* a table with a blank header row: no band */
+#gm-page .gs-intro { margin: 0 0 4px; }
+#gm-page .gs-rules { margin-top: 16px; }
+#gm-page .gs-rules .gm-rulesq, #gm-page .gs-rules .gm-chips { margin: 8px 0; }
+
 /* the rail */
 #gm-page .gm-box { border: 2px solid var(--rule); background: var(--card); }
 #gm-page .gm-band { background: var(--rule); color: var(--on-ink); font: 900 11px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 6px 10px; margin: 0; }

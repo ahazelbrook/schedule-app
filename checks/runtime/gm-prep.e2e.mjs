@@ -15,6 +15,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { buildPrep } from '../../scripts/lib/prep-export.mjs';
+import { buildScreen } from '../../scripts/lib/screen-export.mjs';
 import { basenames } from '../../scripts/lib/vault.mjs';
 
 const require = createRequire(import.meta.url);
@@ -46,9 +47,13 @@ else {
     '![[pip-pockets#A. The goose job]]', '', '# Play log', '', '## Names', '', '-', '', '## Loose ends', '', '-', '', '## Moments', '', '-', '', '## Rolled at the table', '', '-', ''].join('\n'));
   w(G + '/pip-pockets.md', ['# Pockets', '', '## A. The goose job', '', '| | |', '|---|---|', '| **Target** | A goose |', '| **Pays** | 2 |', '', '- [ ] Ask the goose', ''].join('\n'));
   w('Wiki/Games/Blades in the Dark/NPCs/Odo Plim.md', '# Odo\n');
+  w('Wiki/Games/Blades in the Dark/Rules/pip-screen.md', ['---', 'gm_screen: true', '---', '', '# Pip\'s screen', '', '> [!danger] House law', '> Geese first.', '',
+    '## Rolling', '', '1. **Ask** what they want.', '2. **Say** what could go wrong.', '', '## Weather', '', '| | |', '|---|---|', '| 0 | drizzle |', '| 1 | a squall |', '',
+    '## Canals', '', '| Canal | Rule |', '|---|---|', '| **Goosegate** | Bread is +1d. |', '| **Lampwick** | Fog all night. |', '', '## Related', '', '- [[pip-pockets]]', ''].join('\n'));
   const prep = buildPrep({ vault, repo: ROOT, exportedAt: new Date().toISOString(), basenames: basenames(vault) });
+  const screen = buildScreen({ vault, repo: ROOT, exportedAt: new Date().toISOString() });
   PACK = { format: 1, exportedAt: new Date().toISOString(), parts: { console: conFix.parts.console, campaign: conFix.parts.campaign,
-    location: { src: { file: 'fixture/location', blockSha: '0', exportedAt: new Date().toISOString() }, T: locFix.T, extra: locFix.extra }, prep } };
+    location: { src: { file: 'fixture/location', blockSha: '0', exportedAt: new Date().toISOString() }, T: locFix.T, extra: locFix.extra }, prep, screen } };
 }
 const packFile = path.join(stateDir, 'b68-gm-pack.json');
 writeFileSync(packFile, JSON.stringify(PACK));
@@ -168,6 +173,34 @@ try {
   await page.click('[data-gm="opp-show"][data-mode="spread"]');
   check(await ipad.page.waitForSelector('#display-page .dp-cards-spread', { timeout: 15000 }).then(() => true, () => false), 'Spread on iPad lays all three out');
   await sleep(1500); await shot(ipad.page, 'ipad-spread');
+
+  /* ---- the Screen tab (T) ---- */
+  await page.keyboard.press('t');
+  check(await page.waitForSelector('#gm-rules .gs-sec', { timeout: 5000 }).then(() => true, () => false), 'T opens the Screen and its sections render');
+  check(await page.$eval('[data-gm="panel"][data-panel="rules"]', (b) => /Screen/.test(b.textContent)), 'the tab is called Screen');
+  if (!REAL) {
+    check(JSON.stringify(await page.$$eval('#gm-rules .gs-sec .gs-h span', (s) => s.map((x) => x.textContent))) === '["Rolling","Weather","Canals"]', 'one section per ## heading, Related left in the vault');
+    check(/Geese first/.test(await page.textContent('#gm-rules .gs-intro')), 'the intro (house law) sits above the sections');
+    check(await page.$eval('#gm-rules [data-gs="canals"] table', (t) => !!t), 'tables render');
+    check(await page.$eval('#gm-rules [data-gs="weather"] thead', (t) => getComputedStyle(t).display === 'none'), 'a blank header row is hidden');
+    await page.fill('#gm-gs-q', 'lampwick');
+    check(JSON.stringify(await page.$$eval('#gm-rules .gs-sec:not([hidden])', (s) => s.map((x) => x.getAttribute('data-gs')))) === '["canals"]', 'the filter keeps only the sections that match');
+    check(await page.$$eval('#gm-rules [data-gm="gs-jump"]:not([hidden])', (c) => c.length) === 1, 'and only their jump chips');
+    await page.fill('#gm-gs-q', 'zzz');
+    check(await page.$eval('#gm-rules .gs-none', (p) => !p.hidden), 'nothing matching says so');
+    await page.fill('#gm-gs-q', '');
+    check(await page.$$eval('#gm-rules .gs-sec:not([hidden])', (s) => s.length) === 3, 'clearing the filter shows everything again');
+    await page.click('#gm-rules [data-gm="gs-ipad"][data-id="canals"]');
+    const rd = await until(async () => { const r = await api('GET', '/gm/display'); return r.json && r.json.display && r.json.display.kind === 'rule' ? r.json.display : null; }, 8000, 300);
+    check(!!rd && rd.title === 'Canals' && /Goosegate/.test(rd.md) && rd.caption === 'GM screen', 'Show on iPad sends the section as a rule');
+    check(await ipad.page.waitForFunction(() => /Goosegate/.test(document.querySelector('#display-page').textContent), null, { timeout: 15000 }).then(() => true, () => false), '#display shows it');
+  }
+  await shot(page, 'screen-desktop');
+  await ph.page.click('.gm-segbar [data-seg="rules"]');
+  check(await ph.page.waitForSelector('#gm-rules .gs-sec', { state: 'visible', timeout: 10000 }).then(() => true, () => false), 'phone: Screen is a segment');
+  const over2 = await ph.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  check(over2 <= 1, 'phone: the screen does not overflow (' + over2 + ' px)');
+  await shot(ph.page, 'screen-phone', true);
 
   check(!errors.length, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 4).join(' | ') : ''));
   await browser.close();
