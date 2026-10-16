@@ -343,12 +343,16 @@ circle.
 
 `app/sw.js` (cache `b68-shell-v<n>`; bump to drop old caches):
 
-- Ignores (does not intercept) non-GET requests, other origins, `/api/*` and `/cdn-cgi/*`.
+- Ignores (does not intercept) non-GET requests, other origins, `/api/*`, `/cdn-cgi/*` and `/media/*`.
 - Every other request is network first: the network's answer is returned as it is (a redirect
   from Access included) and, when it is `200`, same-origin (`basic`) and not redirected,
-  stored. Only when fetch itself fails does the cached copy answer; a navigation falls back
-  to the cached page. The page is stored under the scope URL (`/`), whether it was asked for
-  as `/`, `/index.html` or `/?…`.
+  stored. When fetch itself fails the cached copy answers at once; a navigation falls back
+  to the cached page. When the cache holds the file and the network has not answered within
+  4 s (a navigation) or 8 s (anything else: a venue's wifi that is up but dead), the cached
+  copy answers and the network's answer, when it comes, still refreshes the cache for next
+  time; a file the cache lacks waits for the network however long it takes. The page is stored
+  under the scope URL (`/`), whether it was asked for as `/`, `/index.html` or `/?…`; any other
+  file under its path alone, so `boot.js?v=<build>` finds the precached `boot.js`.
 - Install precaches the app shell (the `SHELL` array: the page and every file `index.html`
   loads, fonts included; `checks/runtime/pwa.test.mjs` fails when `index.html` names a file
   the array lacks), one file at a time so a failure does not stop the install, then

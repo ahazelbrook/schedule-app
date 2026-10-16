@@ -35,8 +35,10 @@ await test('manifest: valid JSON with the install fields, and every icon exists 
 /* ---------- sw.js in a fake ServiceWorkerGlobalScope ---------- */
 const SW = fs.readFileSync(path.join(APP, 'sw.js'), 'utf8');
 const ORIGIN = 'https://b68.test';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function worker() {
-  const handlers = {}, store = {}, net = { down: false, answers: {}, log: [] };
+  /* net.slow[url]: that fetch answers only when the test resolves net.pending[url] (a stalled connection) */
+  const handlers = {}, store = {}, net = { down: false, answers: {}, log: [], slow: {}, pending: {} };
   const caches = {
     _stores: store,
     open: async (name) => {
@@ -52,6 +54,7 @@ function worker() {
     const url = typeof req === 'string' ? req : req.url;
     net.log.push(url);
     if (net.down) throw new TypeError('Failed to fetch');
+    if (net.slow[url]) return new Promise((resolve, reject) => { net.pending[url] = { resolve, reject }; });
     return net.answers[url] || res(200, { body: 'net:' + url });
   }
   class Request { constructor(url, init = {}) { this.url = url; this.method = 'GET'; this.mode = 'cors'; Object.assign(this, init); } }
@@ -62,19 +65,26 @@ function worker() {
     skipWaiting: async () => { self.skipped = true; },
     clients: { claim: async () => { self.claimed = true; } },
   };
-  const ctx = { self, caches, fetch, Request, URL, Promise, console };
+  /* the worker's clock: its setTimeout calls are recorded and fired by the test (tick), never by time passing */
+  const timers = [];
+  const ctx = { self, caches, fetch, Request, URL, Promise, console,
+    setTimeout: (fn, ms) => { const t = { fn, ms, done: false }; timers.push(t); return t; },
+    clearTimeout: (t) => { if (t) t.done = true; } };
+  const tick = () => { timers.forEach((t) => { if (!t.done) { t.done = true; t.fn(); } }); };
   vm.createContext(ctx);
   vm.runInContext(SW, ctx, { filename: 'sw.js' });
-  async function dispatch(type, extra = {}) {
+  /* during(): the test's hand on the clock and the network while the event is in flight */
+  async function dispatch(type, extra = {}, during) {
     let waits = [], responded = null;
     const ev = { ...extra, waitUntil: (p) => waits.push(p), respondWith: (p) => { responded = p; } };
     handlers[type](ev);
+    if (during) await during();
     const r = responded ? await responded.then((x) => ({ ok: true, res: x }), (e) => ({ ok: false, err: e })) : null;
-    await Promise.all(waits);
+    await Promise.all(waits.map((p) => Promise.resolve(p).catch(() => {})));
     return { responded: !!responded, r };
   }
-  const get = (p, mode = 'no-cors') => dispatch('fetch', { request: new Request(p.startsWith('http') ? p : ORIGIN + p, { mode }) });
-  return { self, caches, net, res, dispatch, get, SHELL: ctx.SHELL || vm.runInContext('SHELL', ctx), CACHE: vm.runInContext('CACHE', ctx) };
+  const get = (p, mode = 'no-cors', during) => dispatch('fetch', { request: new Request(p.startsWith('http') ? p : ORIGIN + p, { mode }) }, during);
+  return { self, caches, net, res, dispatch, get, timers, tick, SHELL: ctx.SHELL || vm.runInContext('SHELL', ctx), CACHE: vm.runInContext('CACHE', ctx) };
 }
 
 await test('sw: the precache list covers every local file index.html loads, and they all exist', async () => {
@@ -142,6 +152,51 @@ await test('sw: network first (fresh answers win and refresh the cache); offline
   w.net.down = false; w.net.answers[ORIGIN + '/core.js'] = w.res(500);
   await w.get('/core.js'); w.net.down = true;
   eq((await w.get('/core.js')).r.ok, false, 'a 500 was cached');
+  // a versioned request (boot.js?v=<build>) finds the copy stored under the path alone
+  eq((await w.get('/boot.js?v=2026-10-16-1')).r.res.body, 'v2', 'the query string is not part of the cache key');
+  w.net.down = false; w.net.answers[ORIGIN + '/boot.js?v=2026-10-16-1'] = w.res(200, { body: 'v4' });
+  await w.get('/boot.js?v=2026-10-16-1'); w.net.down = true;
+  eq((await w.get('/boot.js')).r.res.body, 'v4', 'and a versioned answer is stored under the path alone');
+});
+
+await test('sw: a slow network (up but dead) with a cached copy: the cache answers at the limit (4 s page, 8 s files) and the late answer still refreshes the cache; a fast network wins; without a cached copy the network is waited for', async () => {
+  const w = worker();
+  const BOOT = ORIGIN + '/boot.js', PAGE = ORIGIN + '/';
+  await w.get('/boot.js');                                                   // cached as net:…/boot.js
+  w.net.answers[PAGE] = w.res(200, { body: 'page' }); await w.get('/', 'navigate');
+  const pending = async () => { await sleep(10); return w.timers.filter((t) => !t.done).map((t) => t.ms); };
+  // a file: the 8 s limit passes, the cached copy answers, the network's late answer refreshes the cache
+  w.net.slow[BOOT] = true;
+  let r = await w.get('/boot.js', 'no-cors', async () => {
+    eq(await pending(), [8000], 'an 8 s limit for a file the cache holds');
+    w.tick(); await sleep(10);
+    w.net.pending[BOOT].resolve(w.res(200, { body: 'late' }));
+  });
+  eq(r.r.res.body, 'net:' + BOOT, 'the cached copy answered when the network was slow');
+  eq(w.caches._stores[w.CACHE].get(BOOT).body, 'late', 'the late answer refreshed the cache');
+  eq((await w.get('/boot.js', 'no-cors', async () => { await sleep(10); w.net.pending[BOOT].resolve(w.res(200, { body: 'later' })); })).r.res.body, 'later', 'a network answer before the limit wins');
+  // the page: 4 s
+  w.net.slow[PAGE] = true;
+  r = await w.get('/', 'navigate', async () => {
+    eq(await pending(), [4000], 'a 4 s limit for a navigation the cache holds');
+    w.tick(); await sleep(10);
+    w.net.pending[PAGE].reject(new TypeError('Failed to fetch'));                // and then it fails: the cached page already answered
+  });
+  eq(r.r.res.body, 'page', 'the cached page answered the slow navigation');
+  // a fast network: the timer is cleared, the network answer is served
+  delete w.net.slow[BOOT]; w.net.answers[BOOT] = w.res(200, { body: 'v3' });
+  const before = w.timers.length;
+  r = await w.get('/boot.js');
+  eq([r.r.res.body, w.timers.slice(before).every((t) => t.done)], ['v3', true], 'fast network: served, the timer cleared');
+  // a failing network with a cached copy: the cache answers at once, no waiting for the limit
+  w.net.down = true;
+  eq((await w.get('/boot.js')).r.res.body, 'v3', 'offline: the cached copy at once');
+  w.net.down = false;
+  // nothing cached: no limit, the network is waited for however long it takes
+  const NEW = ORIGIN + '/new.js'; w.net.slow[NEW] = true;
+  const t0 = w.timers.length;
+  r = await w.get('/new.js', 'no-cors', async () => { await sleep(10); eq(w.timers.length, t0, 'no timer without a cached copy'); w.net.pending[NEW].resolve(w.res(200, { body: 'eventually' })); });
+  eq(r.r.res.body, 'eventually', 'uncached: the network answer, late as it was');
 });
 
 /* ---------- cf.js wires the install bits only on the hosted build ---------- */
