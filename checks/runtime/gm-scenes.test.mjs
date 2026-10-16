@@ -11,6 +11,7 @@ import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
@@ -148,6 +149,41 @@ await test('card text: the read-aloud and the grid read like the vault (a worked
   assert.equal(g[1].md, `**Sir Marl** *(Pompous, Lonely)* — Owns half the lamps.`);
   assert.equal(g[5].k, 'Rule here');
   assert.ok(r.meta.all.every((x) => !/\*\*|\*/.test(x)), 'plain lines carry no markdown');
+});
+
+// ---- B8 (the generator review, 16/10/2026): check(T) names what a pack is missing or has empty -------------------------
+await test('B8: check(T) names every key a pack is missing or has empty; the fixture is complete', () => {
+  assert.deepEqual(S.check(T), [], 'the fixture is complete');
+  if (REAL) assert.deepEqual(S.check(REAL), [], 'the real pack is complete');
+  assert.deepEqual(S.check(undefined), ['T']);
+  for (const k of Object.keys(T)) {
+    const del = clone(T); delete del[k];
+    assert.ok(S.check(del).includes(k), 'delete ' + k + ': ' + JSON.stringify(S.check(del)));
+    const emp = clone(T); emp[k] = Array.isArray(T[k]) ? [] : {};
+    assert.ok(S.check(emp).includes(k), 'empty ' + k + ': ' + JSON.stringify(S.check(emp)));
+  }
+  const d = T.district[1].n, times = Object.keys(T.weather);
+  const U = clone(T); U.district[1].notables = [['Only a name']]; delete U.district[1].streets; U.district[1].r = ['High']; U.weather[times[1]] = [];
+  delete U.district[0].special;                                   // a district rule is optional
+  assert.deepEqual(S.check(U), ['district.' + d + '.r', 'district.' + d + '.streets', 'district.' + d + '.notables', 'weather.' + times[1]]);
+  // a complete pack rolls clean cards; check() is what the page shows before a sparse one fails
+  const sc = S.create({ T });
+  for (let i = 0; i < 20; i++) checkRoll(sc.roll({ sel: '' }, { seed: seedOf(i), mem: {} }), 'complete #' + i, T);
+});
+
+// ---- Byte-identity (the generator review, 16/10/2026): the scene is the vault's roll; the fixes never change it. These
+// digests were taken from scenes.js at 7fce4b9 (anywhere and each district, 100 seeds each, then a 200-roll run sharing
+// one memory). Change them only with the fixture.
+const SCN_DIGEST = '400 525ffee17f90db69a24a9ceda2ec33c0792132dd8a40ea548a5f361cdb637903';
+await test('byte-identity: roll() over the fixture hashes to the digest taken before the review fixes', () => {
+  const h = createHash('sha256');
+  const sc = S.create({ T }), sels = [''].concat(T.district.map(d => d.n));
+  let n = 0;
+  for (const sel of sels) for (let s = 0; s < 100; s++) { h.update(JSON.stringify(sc.roll({ sel }, { seed: (s * 2654435761) >>> 0, mem: {} })) + '\n'); n++; }
+  const mem = {};
+  for (let i = 0; i < 200; i++) h.update(JSON.stringify(sc.roll({ sel: sels[i % sels.length] }, { seed: i * 13 + 1, mem })) + '\n');
+  h.update(JSON.stringify(mem));
+  assert.equal(n + ' ' + h.digest('hex'), SCN_DIGEST, 'the rolls changed');
 });
 
 // ---- the port against the invented vault page, run as the vault runs it (node:vm, one seeded Math.random) -------------

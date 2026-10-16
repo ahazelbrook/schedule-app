@@ -678,15 +678,15 @@ await test('8f. E opens the engagement panel on a preview (1d, no roll yet); a c
   assert.ok(/Set the factors, then roll\./.test(cardOf(h, '#gm-eng .gm-engcard')));
   assert.equal(h.qa('#gm-eng select').length, 2 + T_EN.factor.length);
   change(h.q('#gm-e-bold'), 1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
-  change(h.q('#gm-e-tier'), -1); change(h.q('#gm-e-bold'), -1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — -1d');
+  change(h.q('#gm-e-tier'), -1); change(h.q('#gm-e-bold'), -1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 0d (2d, keep lowest)');   // B13: never "-1d"
   change(h.q('#gm-e-approach'), 'Slip'); change(h.q('#gm-e-load'), 'Loud');
   assert.ok(/opening gambit is the unwatched door · Loud loadout, load 6/.test(cardOf(h, '#gm-eng .gm-engcard')));
   h.q('[data-gm="engroll"]').click();
   const txt = cardOf(h, '#gm-eng .gm-engcard');
-  assert.ok(/Slip — -1d/.test(txt) && /0d — rolled 2, kept the lowest/.test(txt) && /Roll/.test(txt) && txt.replace(/\*\*/g, '').includes(T_EN.cut.replace(/\*\*/g, '')), txt);
+  assert.ok(/Slip — 0d \(2d, keep lowest\)/.test(txt) && !/-1d/.test(txt) && /0d — rolled 2, kept the lowest/.test(txt) && /Roll/.test(txt) && txt.replace(/\*\*/g, '').includes(T_EN.cut.replace(/\*\*/g, '')), txt);
   await h.save();
   const c = fg.server.doc.cards.engagement;
-  assert.deepEqual(c.ui, { approach: 'Slip', load: 'Loud', mods: { bold: -1, tier: -1 } }); assert.ok(Number.isInteger(c.seed) && c.label.startsWith('Slip — -1d · '));
+  assert.deepEqual(c.ui, { approach: 'Slip', load: 'Loud', mods: { bold: -1, tier: -1 } }); assert.ok(Number.isInteger(c.seed) && c.label.startsWith('Slip — 0d (2d, keep lowest) · '));
   assert.equal(Object.keys(fg.server.doc.hist.engagement).length, 1); assert.equal(c.mem, undefined);
 });
 

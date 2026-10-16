@@ -9,6 +9,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
@@ -316,6 +317,85 @@ await test('internal map honours F.halo and F = null', () => {
     assert.deepEqual(g0.figure(r.npc, { seed: r.seed, K, map: false }).warnings, []);
   }
   assert.ok(hit > 10);
+});
+
+await test('B14: a tier carried as text still gives a numeric quality; a figure failure is a note on the result, never a throw', () => {
+  const P = clone(FIX); P.T.faction = P.T.faction.map((f) => [f[0], String(f[1]), f[2]]);
+  const g = N.create(P), g0 = N.create(FIX);
+  for (let i = 0; i < 80; i++) {
+    const f = FIX.T.faction[i % FIX.T.faction.length][0];
+    const r = g.roll({ seed: seedOf(i), ui: { faction: f } }), r0 = g0.roll({ seed: seedOf(i), ui: { faction: f } });
+    assert.ok(Number.isInteger(r.npc.quality) && r.npc.quality >= 1 && r.npc.quality <= 6, 'quality ' + r.npc.quality);
+    assert.deepEqual(r.npc, r0.npc, 'the same NPC as with a numeric tier (the tier reads as the number)');
+    assert.deepEqual(r.card, r0.card);
+    assert.ok(!/NaN|undefined/.test(JSON.stringify(r.card)) && !/NaN/.test(g.noteBody(r.npc, { date: '14/10/2026' })));
+  }
+  // no number at all: a middling quality (2, drifted one step), the tier shown as written ('?' when there is none)
+  for (const [tier, shown] of [['III', 'III'], ['', '?'], [null, '?']]) {
+    const Q = clone(FIX); Q.T.faction = Q.T.faction.map((f) => [f[0], tier, f[2]]);
+    for (let i = 0; i < 20; i++) {
+      const q = N.create(Q).roll({ seed: seedOf(i), ui: { faction: Q.T.faction[0][0] } });
+      assert.ok(q.npc.quality >= 1 && q.npc.quality <= 3, 'quality ' + q.npc.quality);
+      assert.ok(q.card.meta.sub.includes('(Tier ' + shown + ', ') && !/undefined|NaN/.test(JSON.stringify(q.card)), q.card.meta.sub);
+    }
+    assert.deepEqual(N.check(Q.T), Q.T.faction.map((f) => 'faction.' + f[0] + '.tier'), 'check() names each tier that is no number');
+  }
+  assert.deepEqual(N.check(P.T), [], 'a tier written "3" reads as 3: not reported');
+  // figure(): every result carries `note` and `failed`; a map that throws falls back to a stock figure and says so;
+  // with no archetypes either, or a kit that throws, the result is failed with a "No portrait" note instead of a throw
+  const r = g0.roll({ seed: 9 });
+  const clean = g0.figure(r.npc, { seed: 9, K });
+  assert.equal(typeof clean.note, 'string'); assert.equal(clean.failed, false);
+  if (!clean.fallback && !clean.notes.some((n) => /^(stripped|dropped)/.test(n))) assert.equal(clean.note, '');
+  const thrown = g0.figure(r.npc, { seed: 9, K, map: () => { throw new Error('boom'); } });
+  assert.ok(!thrown.failed && thrown.fallback && thrown.notes.some((n) => /the map threw: boom/.test(n)) && /^Portrait: a stock figure/.test(thrown.note), JSON.stringify(thrown.note));
+  const none = g0.figure(r.npc, { seed: 9, K, map: () => { throw new Error('boom'); }, archetypes: [] });
+  assert.ok(none.failed && !none.fallback && /^No portrait: /.test(none.note) && none.warnings.length > 0 && JSON.stringify(none.spec) === '{}', JSON.stringify(none));
+  const badKit = Object.assign({}, K, { options: () => { throw new Error('no options'); } });
+  const kf = g0.figure(r.npc, { seed: 9, K: badKit });
+  assert.ok(kf.failed && !kf.fallback && /^No portrait: .*no options/.test(kf.note) && JSON.stringify(kf.spec) === '{}', JSON.stringify(kf));
+  // a fault no strip cures and no archetype to fall back on: the spec as it stands, and the note says the kit warns
+  const warned = g0.figure(r.npc, { seed: 9, K, archetypes: [], map: () => ({ figure: 'masc', heightIn: 'tall', shape: 'lean', skin: 'fair', age: 40, hair: { style: 'short', color: 'cloth-brown' },
+    outfit: { base: { type: 'shirt', color: 'cloth-cream' }, bottom: { type: 'trousers', color: 'cloth-charcoal' }, feet: { type: 'oxfords', color: 'cloth-black' } } }) });
+  assert.ok(!warned.failed && !warned.fallback && warned.warnings.length > 0 && warned.spec.name === r.npc.name && /^Portrait: drawn with the kit's warning/.test(warned.note), JSON.stringify(warned.note));
+  const stripped = g0.figure(r.npc, { seed: 9, K, map: () => ({ figure: 'masc', heightIn: 70, outfit: { base: { type: 'tee', color: 'cloth-cream' } }, props: ['no-such-prop'] }) });
+  assert.ok(/^Portrait: /.test(stripped.note) || stripped.note === '', stripped.note);
+});
+
+await test('B8: check(T) names what a pack is missing or has empty; the fixture is complete', () => {
+  assert.deepEqual(N.check(FIX.T), [], 'the fixture is complete');
+  if (REAL) assert.deepEqual(N.check(REAL.T), [], 'the real pack is complete');
+  assert.deepEqual(N.check(null), ['T']);
+  const optional = ['place', 'factionDetail', 'telltaleHeritage'];       // (telltale is needed while telltaleHeritage is set)
+  for (const k of Object.keys(FIX.T)) {
+    const del = clone(FIX.T); delete del[k];
+    if (optional.includes(k)) { assert.deepEqual(N.check(del), [], k + ' is optional'); continue; }
+    assert.ok(N.check(del).includes(k), 'delete ' + k + ': ' + JSON.stringify(N.check(del)));
+    if (Array.isArray(FIX.T[k])) { const emp = clone(FIX.T); emp[k] = []; assert.ok(N.check(emp).includes(k), 'empty ' + k); }
+  }
+  const tt = clone(FIX.T); delete tt.telltale; assert.deepEqual(N.check(tt), ['telltale'], 'a telltale heritage needs the telltale list');
+  delete tt.telltaleHeritage; assert.deepEqual(N.check(tt), [], 'and without one, no telltale list is needed');
+  const hole = clone(FIX.T); hole.wearing[0].a = []; hole.heritage[1].d = []; hole.key[0] = ['k', 'flip'];
+  assert.deepEqual(N.check(hole), ['heritage', 'wearing', 'key'], 'a row with an empty inner list is reported under its table');
+});
+
+/* Byte-identity (the generator review, 16/10/2026): roll() is the vault's NPC, so the fixes (B14) never change it for a
+   well-formed pack. These digests were taken from npc.js at 7fce4b9 over the fixture (no choice, unaffiliated, each
+   faction, district and place, 40 seeds each with the saved note, then a 200-roll run sharing one memory). */
+const NPC_DIGEST = '680 5e6e023889891d76389a86f789f972e64a2cd2fbd0149b4304a6b9dcf820b337';
+await test('byte-identity: roll() and noteBody() over the fixture hash to the digest taken before the review fixes', () => {
+  const h = createHash('sha256');
+  const g = N.create(FIX), T = FIX.T;
+  const UIS = [{}, { faction: '-' }].concat(T.faction.map(f => ({ faction: f[0] })), T.district.map(d => ({ district: d })), Object.keys(T.place || {}).map(p => ({ place: p })));
+  let n = 0;
+  for (let u = 0; u < UIS.length; u++) for (let s = 0; s < 40; s++) {
+    const r = g.roll({ seed: (Math.imul(s + 1, 2654435761) ^ (u * 7919)) >>> 0, mem: {}, ui: UIS[u] });
+    h.update(JSON.stringify(r) + '\n' + g.noteBody(r.npc, { date: '16/10/2026' }) + '\n'); n++;
+  }
+  const mem = {};
+  for (let i = 0; i < 200; i++) h.update(JSON.stringify(g.roll({ seed: i * 31 + 7, mem, ui: UIS[i % UIS.length] })) + '\n');
+  h.update(JSON.stringify(mem));
+  assert.equal(n + ' ' + h.digest('hex'), NPC_DIGEST, 'the rolls changed');
 });
 
 /* ---------- the exporter (invented vault page) ---------- */

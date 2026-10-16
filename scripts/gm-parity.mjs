@@ -15,6 +15,8 @@
 //                    is keyed by name in the port, because the vault's never fires once the memory is JSON-cloned)
 //     --engagement   --en cases (default 400) of the vault engagement page vs engagement.js: every line the page puts on the
 //                    card, before a roll and after, with the page's Math.random and the port's dice on one seeded stream
+//                    (one deliberate difference: a pool at or below zero is titled "<approach> — 0d (2d, keep lowest)" in
+//                    the port, never "-1d"; the vault's title line is read through the port's titlePool() before comparing)
 //     --all          all five
 //   --pack defaults to $B68_PACK, then gm-private/b68-gm-pack.json. --npc, --scenes and --engagement need a pack with that part
 //   (npm run gm:pack builds one). --app points at another app/ directory (a mutated copy, to prove a mode can fail).
@@ -176,7 +178,7 @@ async function situations() {
   const sits = con.situations(), positions = con.positions.map(p => p.value);
   const friends = opts('npc').filter(v => v.indexOf('friend:') === 0);      // a quarter of the cards: a friend (Contact)
   let cards = 0, cardsOk = 0, sections = 0, secOk = 0, memOk = 0, seedOk = 0, replayOk = 0;
-  const byId = {};
+  const byId = {}, HINTED = 'contact (hinted: no vault equivalent, not compared)';
   const fails = [];
   for (const sit of sits) {
     for (const pos of positions) {
@@ -197,11 +199,19 @@ async function situations() {
         let cardGood = true;
         for (let k = 0; k < card.sections.length; k++) {
           const s = card.sections[k], rp = s.replay;
+          const slot = s.slot == null ? k : s.slot;                                   // compose v2: a section keeps its slot's draw
           sections++; byId[s.id] = (byId[s.id] || 0) + 1;
-          if (s.seed === stream[k] && rp.seed === s.seed && rp.id === s.id) seedOk++;
-          else { cardGood = false; fails.push({ situation: sit.id, pos, seed, section: k, id: s.id, what: 'section seed is not stream draw ' + k }); }
+          if (s.seed === stream[slot] && rp.seed === s.seed && rp.id === s.id) seedOk++;
+          else { cardGood = false; fails.push({ situation: sit.id, pos, seed, section: k, id: s.id, what: 'section seed is not stream draw ' + slot }); }
+          // A Contact aimed at a chosen friend (ui.contact, compose v2) has no vault equivalent: view.js draws among all
+          // that PC's friends, the port makes no such draw. So neither its lines nor its memory are compared (the vault
+          // page is not run for it): it counts as passing in both tallies and is listed apart in the note.
+          if (rp.ui && rp.ui.contact) { secOk++; memOk++; byId[HINTED] = (byId[HINTED] || 0) + 1; continue; }
+          // The section's lines are the classic roll read through annotate(); view.js is compared with the classic roll
+          // itself (the section's replay).
+          const classic = con.roll(rp.id, clone(rp.ui), { seed: rp.seed, mem: clone(rp.mem) });
           const v = await vaultCard({ fn: rp.id, seed: rp.seed, mem: clone(rp.mem), ui: clone(rp.ui) });
-          const A = norm(v.all), B = norm(s.meta.all);
+          const A = norm(v.all), B = norm(classic.meta.all);
           if (same(A, B)) secOk++;
           else { cardGood = false; fails.push({ situation: sit.id, pos, seed, section: k, id: s.id, sectionSeed: rp.seed, line: firstDiff(A, B), vaultLines: (v.all || []).length, portLines: B.length }); }
           const next = k + 1 < card.sections.length ? card.sections[k + 1].replay.mem : endMem;
@@ -370,7 +380,11 @@ async function engagement() {
   try { drive = vm.runInContext(wrapped, ctx, { filename: 'engagement-roll.md' }); } catch (e) { return cannot('engagement', 'the vault page did not run: ' + e.message); }
   const rng = C.seedRng((SEED ^ 0xe46a6e) >>> 0);
   const pick = (a) => a[Math.floor(rng() * a.length)];
-  let okRoll = 0, okPrev = 0, crit = 0, zero = 0;
+  // the one deliberate difference (B13): the vault titles the pool as it stands ("Smash — -1d"); the port titles any pool
+  // at or below zero "0d (2d, keep lowest)". The vault's title (its first line) is read through the port's rule.
+  if (typeof EN.titlePool !== 'function') return cannot('engagement', 'engagement.js has no titlePool(): update the parity script');
+  const titled = (lines) => lines.map((l, k) => k ? l : String(l).replace(/^(.*) — (-?\d+)d$/, (m, a, n) => a + ' — ' + EN.titlePool(Number(n))));
+  let okRoll = 0, okPrev = 0, crit = 0, zero = 0, below = 0;
   const fails = [];
   for (let i = 0; i < EN_N; i++) {
     const app = pick(T.approach)[0], load = pick(T.loadout).value;
@@ -381,7 +395,8 @@ async function engagement() {
     const vPrev = log.slice();
     const pc = en.card({ approach: app, load, mods });
     const pPrev = [pc.meta.title, pc.meta.sub].concat(pc.lines.map(l => l.md));
-    if (same(vPrev, pPrev)) okPrev++; else fails.push({ i, preview: 'line ' + firstDiff(vPrev, pPrev) });
+    if (pc.pool <= 0) below++;
+    if (same(titled(vPrev), pPrev)) okPrev++; else fails.push({ i, preview: 'line ' + firstDiff(titled(vPrev), pPrev) });
     // the roll: the page's Math.random is the same seeded stream the port rolls with
     const stream = EN.seedRng(seed);
     next.f = stream;
@@ -390,10 +405,10 @@ async function engagement() {
     const pr = en.roll({ approach: app, load, mods }, { seed });
     const pRoll = [pr.meta.title, pr.meta.sub, pr.lines[0].md, pr.lines[1].md, pr.lines[2].rows[0].k, pr.lines[2].rows[0].md, pr.lines[3].md];
     if (pr.crit) crit++; if (pr.zero) zero++;
-    if (same(vRoll, pRoll)) okRoll++; else fails.push({ i, seed, roll: 'line ' + firstDiff(vRoll, pRoll), vaultLines: vRoll.length, portLines: pRoll.length });
+    if (same(titled(vRoll), pRoll)) okRoll++; else fails.push({ i, seed, roll: 'line ' + firstDiff(titled(vRoll), pRoll), vaultLines: vRoll.length, portLines: pRoll.length });
   }
   results.push({ mode: 'engagement', cases: EN_N, ok: okRoll, unit: 'rolled cards (every line)', extra: [['previews identical', okPrev, EN_N]],
-    note: crit + ' criticals and ' + zero + ' zero-dice pools among them', fails });
+    note: crit + ' criticals and ' + zero + ' zero-dice pools among them (' + below + ' previews at or below zero, titled by the port\'s rule)', fails });
 }
 
 /* ============================== run and report ============================== */
