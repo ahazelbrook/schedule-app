@@ -302,6 +302,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-root[data-seg="state"] .gm-console, #gm-root[data-seg="state"] .gm-side { display: none; }
   #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead, #gm-page .gm-cardbox .gm-want, #gm-page .gm-cardbox .gm-card-h { scroll-margin-top: 140px; scroll-margin-bottom: 84px; }   /* under the sticky bar and the two-row segmented bar, above the capture button */
   #gm-page .gs-rules { scroll-margin-top: 140px; }
+  #gm-page #gm-prep .pp-sec, #gm-page #gm-prep .pp-doc h3, #gm-page #gm-prep .pp-doc h4, #gm-page #gm-prep .pp-doc h5, #gm-page #gm-prep .pp-doc h6, #gm-page #gm-prep .pp-embed { scroll-margin-top: 140px; }   /* a prep link lands under the two sticky bars, not beneath them */
   #gm-page .gm-btn { grid-template-columns: 1fr; grid-template-rows: auto auto; justify-items: center; text-align: center; min-height: 76px; padding: 8px 4px; }
   #gm-page .gm-btn kbd { grid-row: auto; }
   #gm-page .gm-btn small { display: none; }
@@ -546,7 +547,7 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip { display: block; width: 100%; white-space: normal; text-align: left; border: 0; border-left: 3px solid transparent; background: none; color: var(--ink); padding: 6px 8px; min-height: 0; font: 700 12px/1.25 var(--font-text); text-transform: none; letter-spacing: 0; box-shadow: none; }
   body.gm-app #gm-prep .pp-rail .chip:hover, body.gm-app #gm-rules .gs-jump .chip:hover { background: var(--inset); }
   body.gm-app #gm-prep .pp-rail .chip[aria-current="true"], body.gm-app #gm-rules .gs-jump .chip[aria-current="true"] { border-left-color: var(--accent); background: var(--inset); color: var(--ink); font-weight: 900; }
-  body.gm-app #gm-prep .pp-sec, body.gm-app #gm-prep .pp-doc h3, body.gm-app #gm-rules .gs-sec { scroll-margin-top: 8px; }
+  body.gm-app #gm-prep .pp-sec, body.gm-app #gm-prep .pp-doc h3, body.gm-app #gm-prep .pp-doc h4, body.gm-app #gm-prep .pp-doc h5, body.gm-app #gm-prep .pp-doc h6, body.gm-app #gm-prep .pp-embed, body.gm-app #gm-rules .gs-sec { scroll-margin-top: 8px; }
   body.gm-app #gm-prep .pp-peek { top: 0; }
   body.gm-app #gm-rules .gs { display: grid; grid-template-columns: 200px minmax(0, 1fr); column-gap: 16px; row-gap: 0; align-items: start; }
   body.gm-app #gm-rules .gs > * { grid-column: 2; }
@@ -686,4 +687,5 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   #gm-page .gm-dt-optrow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #gm-page .gm-dtb { flex-basis: 40%; }                                                   /* words: two to a row */
   #gm-page .gm-dtb.gm-dtb-num, #gm-page .gm-dtb[data-v="crit"] { flex-basis: 18%; }        /* 1–3 · 4/5 · 6 · Crit: one row */
+  #gm-page .gm-dtb.gm-dtb-over { flex-grow: 0; }   /* under the vice results, at the left: as wide as its word, clear of the Capture button */
 }

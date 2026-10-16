@@ -43,9 +43,11 @@ else {
     '## Must land', '', '- [ ] **#1** The lamp flickers', '- [x] **#2** The dog barks twice', '',
     '> [!quote] SAY', '> *"The fog comes in off the canal."* `[Invented pitch]`', '',
     '> [!warning] Mind the time', '> Cut the scene at ten minutes.', '',
-    '## Cast', '', 'Open on [[Odo Plim]]. Then the [[pip-pockets#A. The goose job|goose job]].', '',
-    '![[pip-pockets#A. The goose job]]', '', '# Play log', '', '## Names', '', '-', '', '## Loose ends', '', '-', '', '## Moments', '', '-', '', '## Rolled at the table', '', '-', ''].join('\n'));
-  w(G + '/pip-pockets.md', ['# Pockets', '', '## A. The goose job', '', '| | |', '|---|---|', '| **Target** | A goose |', '| **Pays** | 2 |', '', '- [ ] Ask the goose', ''].join('\n'));
+    '## Cast', '', 'Open on [[Odo Plim]]. Then the [[pip-pockets#A. The goose job|goose job]], the [[pip-pockets#B. The swan job|swan job]], and back to [[b68g-s07#Must land|the list]].', '',
+    '![[pip-pockets#A. The goose job]]', '', '![[pip-pockets#B. The swan job]]', '', '# Play log', '', '## Names', '', '-', '', '## Loose ends', '', '-', '', '## Moments', '', '-', '', '## Rolled at the table', '', '-', ''].join('\n'));
+  w(G + '/pip-pockets.md', ['# Pockets', '', '## A. The goose job', '', '| | |', '|---|---|', '| **Target** | A goose |', '| **Pays** | 2 |', '', '- [ ] Ask the goose', '',
+    /* a second section, long enough that a link to it has somewhere to scroll */
+    '## B. The swan job', '', '| | |', '|---|---|', '| **Target** | A swan |', '| **Pays** | 3 |', ''].concat(Array.from({ length: 40 }, (_, i) => 'The swan glides past lock ' + (i + 1) + '.\n')).join('\n'));
   w('Wiki/Games/Blades in the Dark/NPCs/Odo Plim.md', '# Odo\n');
   w('Wiki/Games/Blades in the Dark/Rules/pip-screen.md', ['---', 'gm_screen: true', '---', '', '# Pip\'s screen', '', '> [!danger] House law', '> Geese first.', '',
     '## Rolling', '', '1. **Ask** what they want.', '2. **Say** what could go wrong.', '', '## Weather', '', '| | |', '|---|---|', '| 0 | drizzle |', '| 1 | a squall |', '',
@@ -134,7 +136,7 @@ try {
     check(await until(async () => { const d = await gmState(); return d.prep && d.prep.beats && Object.keys(d.prep.beats).length === 1; }, 8000, 300), 'a beat starts');
     check(/0:0\d \/ 5:00/.test(await page.textContent('#gm-prep .pp-clock.run')), 'the beat clock runs against its 5 min budget');
     check(await page.$eval('#gm-prep .rl-callout.pp-say', () => true).catch(() => false) && await page.$eval('#gm-prep code.pp-prov', () => true).catch(() => false), 'SAY card and provenance chip');
-    check((await page.$$('#gm-prep .pp-embed')).length === 1, 'the transcluded section is carried in');
+    check((await page.$$('#gm-prep .pp-embed')).length === 2, 'the transcluded sections are carried in');
     await page.click('#gm-prep #pp-must-land .pp-pin');
     check(await page.waitForSelector('#gm-rail .pp-pinbox .pp-box', { timeout: 5000 }).then(() => true, () => false), 'a pinned section sits in the rail with its boxes');
     await page.click('#gm-prep a[href^="#pp:npc:"]');
@@ -156,6 +158,20 @@ try {
   check(await page.$eval('#gm-root .gm-console', (c) => c.getBoundingClientRect().width < 100) && await page.$eval('#gm-mini', (m) => getComputedStyle(m).display !== 'none' && m.querySelectorAll('button').length > 0), 'Focus shrinks the console to its keys');
   await shot(page, 'prep-wide');
   await page.click('[data-gm="focus"]');
+  /* where a prep link lands, once its smooth scroll has stopped: the top of an element against the top of the pane */
+  const settled = async (p, js) => { let last = null, same = 0; for (let i = 0; i < 60; i++) { const v = await p.evaluate(js); if (v === last) { if (++same >= 4) return v; } else { same = 0; last = v; } await sleep(100); } return last; };
+  /* the swan heading's top: against the prep pane's top (the laptop, where the pane scrolls), or the window's (the phone, where the page does) */
+  const SWAN = (pane) => '(() => { const h = [...document.querySelectorAll("#gm-prep .pp-embed h3")].find((x) => /--b-the-swan-job$/.test(x.id)); return h ? Math.round(h.getBoundingClientRect().top' + (pane ? ' - document.getElementById("gm-prep").getBoundingClientRect().top' : '') + ') : null; })()';
+  if (!REAL) {
+    /* the swan job is the SECOND transclusion of the same note: a link to its heading must not stop at the first; and the note's own
+       name with a heading scrolls here rather than leaving for Obsidian */
+    await page.click('#gm-prep a[href*="B.%20The%20swan%20job"]');
+    const swan = await settled(page, SWAN(true));
+    check(swan != null && swan >= -2 && swan <= 40, 'laptop: a link to the second transclusion\'s heading lands on it, not on the first (' + swan + ' px from the top)');
+    await page.click('#gm-prep a[href*="Must%20land"]');
+    const must = await settled(page, '(() => Math.round(document.getElementById("pp-must-land").getBoundingClientRect().top - document.getElementById("gm-prep").getBoundingClientRect().top))()');
+    check(must >= -2 && must <= 40 && page.url().endsWith('#gm'), 'laptop: the note\'s own name with a heading scrolls to it here (' + must + ' px), and stays on the page');
+  }
 
   /* ---- the phone ---- */
   const ph = await open('#gm', { width: 390, height: 844, mobile: true });
@@ -165,6 +181,11 @@ try {
   const over = await ph.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check(over <= 1, 'phone: the note does not overflow the screen (' + over + ' px)');
   await shot(ph.page, 'prep-phone');
+  if (!REAL) {
+    await ph.page.click('#gm-prep a[href*="B.%20The%20swan%20job"]');
+    const top = await settled(ph.page, SWAN(false));
+    check(top != null && top >= 130 && top <= 260, 'phone: a heading link lands under the two sticky bars, not beneath them (' + top + ' px)');
+  }
 
   /* ---- Cards ---- */
   await page.keyboard.press('o');

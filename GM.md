@@ -6,9 +6,10 @@ text and GM-only secrets, so they never enter git (the downtime cards' tables ar
 `app/downtime-tables.js`): the GM builds a **pack** from the vault on their own PC (`npm run gm:pack`, into the git-ignored
 `gm-private/`) and uploads it, from the browser or with `npm run gm:push -- --only pack --yes` (see `SYNC.md`, which also
 moves what happened at the table back into the vault). Code: `functions/_lib/gm.js`, `functions/api/gm/*.js`; tables in
-`migrations/0004_gm.sql`. The pack parts are `console`, `location`, `campaign`, `npc`, `scenes`, `engagement`, `prep` and
-`screen` (the last two optional; `scripts/gm-pack.mjs` lists what each holds). An optional `downtime` part (none is built
-yet) would be laid over the Downtime panel's built-in tables (see Downtime (D) below).
+`migrations/0004_gm.sql`. The pack parts are `console`, `location`, `campaign`, `npc`, `scenes`, `engagement`, `prep`,
+`screen` and `downtime` (the last three optional; `scripts/gm-pack.mjs` lists what each holds). The `downtime` part carries the
+house rule's Good Mornings (`T.good`, from the vault note with `gm_downtime: true`) and is laid over the Downtime panel's built-in
+tables (see Downtime (D) below).
 
 ## Secrecy rules (server enforced)
 
@@ -262,23 +263,30 @@ fails and nobody is known, nothing is purged.
   book text, so the panel works with any pack: `app/downtime-tables.js` (`B68DowntimeTables`, public like `content.js`, loaded before the
   module; it names the setting, so the module and `app/gm-page.js` name nothing of it). A pack part `downtime` is laid over them (any top-level
   key of its `T` replaces that table, a vice's tables one by one: the module's header). A part that lacks tables is listed by the Pack check,
-  and the panel uses the built-in tables with a note.
+  and the panel uses the built-in tables with a note. **The Good Mornings come only from that part**: `npm run gm:pack` builds it from the
+  vault note with `gm_downtime: true` (the house rule *the Morning After*: its "## The Good Morning" tables; `scripts/lib/downtime-export.mjs`).
+  They are drawn from a zine that is for personal use, so they never go into this public repo; with no part, a 6 says where the table is.
   - **Who**: a chip per PC from the live sheets (boot's `characters()`: a slim copy of each filed character, never the figure spec, read on
     every draw and again when the characters snapshot changes) and **anyone**. Picking a PC prefills the vice (a select of the seven, theirs
     picked) and the purveyor (a text field) from their sheet; an edit is panel state (`dt.ui`), never written to the sheet.
   - **Activity**: chips in the module's order (Indulge vice, Recover, Long-term project, Train, Friend or rival, Lay low, Acquire; a phone shows
     the module's short labels). Then the activity's ONE row of buttons, each rolling the card at once (everyone rolls physical dice: the tap on
-    the result is the roll): **Indulged** / **Overindulged** under the Vice and Purveyor; "Rolled at the table:" **1–3** **4/5** **6** **Crit**
-    for Recover, Lay low, Acquire and Long-term project (which also gets a select of the PC's own clocks, the first still open picked, or
+    the result is the roll): for Indulge vice, under the Vice and Purveyor, the vice roll's result **1–3** **4/5** **6** **Crit** (after any
+    stacks spent on it: the house rule the Morning After, where a 6 leaves one Good Morning and a crit two) and **Overindulged** (on a phone
+    the results fill the first row and Overindulged sits under them at the left, clear of the Capture button); "Rolled at the table:" **1–3**
+    **4/5** **6** **Crit** for Recover, Lay low, Acquire and Long-term project (which also gets a select of the PC's own clocks, the first still open picked, or
     another project); **Insight** **Prowess** **Resolve** **Playbook** for Train; **Friend** / **Rival** under a select of the PC's contacts (a
     friend or a rival first), the relation the sheet gives that contact marked "on the sheet". The button that made the card on screen stays
     marked.
-  - **The card** is the usual card (title and sub, chips, the lead box with its small line, the grid, one actions row with Pin and Copy). An
-    overindulgence puts its four options (**Attract trouble · Brag · Lost · Tapped**, the drawn or picked one pressed) right above the cost
+  - **The card** is the usual card (title and sub, chips, the lead box with its small line, the grid, one actions row with Pin and Copy). A
+    6 puts one **Good Morning** box under the scene (the line, then its kind), a crit two. An overindulgence puts its six options, in the
+    book's order (**Attract trouble · Bad decision · Bender · Brag · Brawl · Tapped**, the drawn or picked one pressed), right above the cost
     box, in the alarm colour: it is what the GM reads first. Tapping another option switches it on the SAME card (its seed and memory: the
     scene above never moves; only `ui.pick` and the label that names it change). A **?** beside Overindulged opens the rules on overindulging
     in the GM screen pane (its rules search for "overindulge"; the first hit about indulging opens). An indulgence that was not one carries a
-    small **Overindulged?** that turns the same card into one.
+    small **Overindulged?** that turns the same card into one, and one whose result was not tapped a small **Rolled** row (1–3 · 4/5 · 6 ·
+    Crit) that adds it to the same card. The module draws the six options, then the Good Mornings, after everything else, so neither moves the
+    scene; the first four options are drawn as first shipped, so an older card replays the same (`lost` keeps its id; the book calls it Bender).
   - **Start a clock: <name> (4)** (a clock the card suggests) puts it on the table's clocks through boot's `addClock` (an `add` op where the
     store takes `clockOps`, else the whole array: CAMPAIGN.md "Clocks"): `{ id: 'c_…', name, size, filled: 0, kind: 'danger', hidden: true }`,
     with the toast "Clock started, hidden from the players: <name>. Show it from the table page." The rail's Table clocks shows it. The card
@@ -291,7 +299,8 @@ fails and nobody is known, nothing is purged.
     `dt.ui` `{ who (a character id, '' for anyone), act, vice, purveyor, project, contact }` (`project` and `contact` '' follow the sheet, `*`
     is none of the sheet's). Now in is the card's district: the tables' own spelling when their list holds it, else as the bar has it (a
     downtime card reads a district as words in a sentence, never as a table key).
-  - Checks: `checks/runtime/gm-downtime.test.mjs` (the module), `gm-page.test.mjs` (17a–17l), `gm.e2e.mjs` (the laptop and the phone).
+  - Checks: `checks/runtime/gm-downtime.test.mjs` (the module), `gm-downtime-export.test.mjs` (the part), `gm-page.test.mjs` (17a–17m),
+    `gm.e2e.mjs` (the laptop and the phone).
 - **GM screen** (`T`; on a phone the GM screen segment). The GM screen: the vault note with `gm_screen: true` under the '68
   folder, which `npm run gm:pack` cuts at its `##` headings into the pack's `screen` part (`scripts/lib/screen-export.mjs`;
   text before the first `##` is an intro shown above them; a `## Related`, `## Provenance` or `## Sources` heading ends
@@ -320,7 +329,11 @@ fails and nobody is known, nothing is purged.
     (`prep.beats`) and the running beat's time against its budget, amber at the budget and red at half as much again;
   - `> [!quote] SAY` as a read-aloud card; a code span that is one `[bracket]` (`` `[Blade's pitch]` ``) as a provenance chip;
   - links: `[[#Heading]]` scrolls; an NPC, PC or faction opens a peek card from the pack's campaign part (an NPC in the app's
-    cast gets Show on iPad and Put on stage); another prep note opens it; anything else opens in Obsidian (`obsidian://open`);
+    cast gets Show on iPad and Put on stage); another prep note opens it, at the heading the link names; a note carried in as a
+    transclusion scrolls to the heading the link names inside it (`[[pockets#B. The swan job]]` lands on B, not on the note's
+    first transclusion), else to the transclusion; the open note by its own name scrolls here rather than leaving for Obsidian;
+    anything else opens in Obsidian (`obsidian://open`). A jump lands under the sticky bars (`scroll-margin-top` on the sections,
+    the headings and the transclusions: 140 px on a phone, 8 px in the laptop layout);
   - **Pin** on a section keeps it, live, at the top of the rail (three at most, `prep.pins`); **Wide** hides the console (on a laptop, **Focus** shrinks it to its keys instead);
   - **Find in the note** (the box in the bar; `R` puts the cursor there): every word somewhere in a section's heading or text keeps
     its chip in the section list, Enter goes to the first match, Esc leaves the box.

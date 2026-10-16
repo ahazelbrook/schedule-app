@@ -1955,7 +1955,8 @@ await test('16e. a bargain accepted while capture is full: the bargain is owed, 
 
 /* =====================================================================================================================
    17. Downtime (D): personal business. The PCs from the live sheets (boot's api.characters(), slim copies), the activity's one row
-       of buttons (a tap is the roll), the card (the cost box, the four options, "Overindulged?", Start a clock), replay. Invented PCs.
+       of buttons (a tap is the roll), the card (the cost box, the six options, "Overindulged?", the vice result and its Good Mornings,
+       Start a clock), replay. Invented PCs.
    ===================================================================================================================== */
 const PCS = [
   { id: 'c-mags', name: 'Mags Invented', alias: 'Mags', playbook: 'hound', playbookName: 'Hound', vice: 'Gambling', purveyor: 'Old Mo, Mo’s Bar',
@@ -2024,7 +2025,7 @@ await test('17b. Who: the PCs from the live sheets and "anyone"; picking one pre
   assert.ok(h.fg.server.patches.every((p) => !p.characters && !p.play), 'nothing but the GM state is written');
 });
 
-await test('17c. Overindulged: one tap rolls the card; the four options right above the cost box (the drawn one pressed); stored as replay info with the resolved strings', async () => {
+await test('17c. Overindulged: one tap rolls the card; the six options (the book\'s order) right above the cost box (the drawn one pressed); stored as replay info with the resolved strings', async () => {
   const rig = dtRig(), h = await dtPage(rig);
   h.press('d'); dtWho(h, 'c-mags');
   assert.ok(!h.q('#gm-dt .gm-dtcard'), 'nothing before the first roll');
@@ -2033,7 +2034,7 @@ await test('17c. Overindulged: one tap rolls the card; the four options right ab
   assert.equal(cardOf(h, '#gm-dt .gm-dtcard h3'), 'Mags Invented · Indulge vice');
   assert.deepEqual(h.qa('#gm-dt .gm-dtcard .gm-chip').map((c) => c.textContent), ['Overindulged', 'Gambling']);
   const opts = h.qa('#gm-dt [data-gm="dt-pick"]');
-  assert.deepEqual(opts.map((o) => o.textContent), ['Attract trouble', 'Brag', 'Lost', 'Tapped']);
+  assert.deepEqual(opts.map((o) => o.textContent), ['Attract trouble', 'Bad decision', 'Bender', 'Brag', 'Brawl', 'Tapped']);
   assert.equal(opts.filter((o) => o.getAttribute('aria-pressed') === 'true').length, 1, 'one option pressed');
   const kids = card.children, iOpts = kids.indexOf(h.q('#gm-dt .gm-dt-opts')), iCost = kids.indexOf(h.q('#gm-dt .gm-dt-cost'));
   assert.ok(iOpts > 0 && iCost === iOpts + 1, 'the option row sits directly above the cost box');
@@ -2060,7 +2061,7 @@ await test('17d. switching the option keeps the SAME card: seed, memory, hid and
   const h = await dtPage();
   h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'over');
   const before = cl(dtStored(h)), lead = leadTxt(h), grid = gridTxt(h), mem = cl(h.page._state().doc.mem.downtime);
-  for (const pick of ['trouble', 'brag', 'lost', 'tapped'].filter((p) => p !== before.ui.pick && p !== pressedOpt(h)).concat([pressedOpt(h)])) {
+  for (const pick of ['trouble', 'decision', 'lost', 'brag', 'brawl', 'tapped'].filter((p) => p !== before.ui.pick && p !== pressedOpt(h)).concat([pressedOpt(h)])) {
     h.q('#gm-dt [data-gm="dt-pick"][data-v="' + pick + '"]').click();
     const after = dtStored(h);
     assert.deepEqual([after.hid, after.seed, after.mem, after.at], [before.hid, before.seed, before.mem, before.at], pick + ': the same card');
@@ -2079,8 +2080,8 @@ await test('17d. switching the option keeps the SAME card: seed, memory, hid and
 
 await test('17e. "Overindulged?" on an indulgence that was not one turns the SAME card into one (same seed, the scene kept)', async () => {
   const h = await dtPage();
-  h.press('d'); dtWho(h, 'c-rook'); dtRoll(h, '');
-  assert.deepEqual(h.qa('#gm-dt .gm-dtcard .gm-chip').map((c) => c.textContent), ['Indulged', 'Gettin\' Fucked Up']);
+  h.press('d'); dtWho(h, 'c-rook'); dtRoll(h, '45');
+  assert.deepEqual(h.qa('#gm-dt .gm-dtcard .gm-chip').map((c) => c.textContent), ['Indulged', 'Gettin\' Fucked Up', '4/5']);
   assert.ok(!h.q('#gm-dt .gm-dt-cost') && !h.q('#gm-dt [data-gm="dt-pick"]'), 'no cost box, no options');
   assert.ok(h.q('#gm-dt .gm-dtcard [data-gm="dt-over"]'), 'a small "Overindulged?" on the card');
   const before = cl(dtStored(h)), lead = leadTxt(h), grid = gridTxt(h);
@@ -2098,7 +2099,7 @@ await test('17f. replay: a reload redraws the stored card exactly (even after th
   const rig = dtRig(), fg = fakeGm(), br = fakeBrowser();
   const h = await dtPage(rig, { fg, br });
   h.press('d'); dtWho(h, 'c-mags'); dtRoll(h, 'over');
-  const other = ['trouble', 'brag', 'lost', 'tapped'].find((p) => p !== pressedOpt(h));
+  const other = ['trouble', 'decision', 'lost', 'brag', 'brawl', 'tapped'].find((p) => p !== pressedOpt(h));
   h.q('#gm-dt [data-gm="dt-pick"][data-v="' + other + '"]').click();
   const a = dtCardTxt(h);
   dtAct(h, 'recover'); dtRoll(h, '45');
@@ -2221,7 +2222,7 @@ await test('17j. the "?" by Overindulged opens the rules on overindulging in the
   assert.equal(h.page._state().panel, 'rules', 'the GM screen pane');
   assert.ok(await until(() => h.q('.gs-entry')), 'the entry opens');
   assert.deepEqual(asked, ['overindulge']); assert.match(cardOf(h, '.gs-entry .gs-h'), /^Indulging a vice/, 'the hit about indulging, not the first hit');
-  h.press('d'); dtRoll(h, '');
+  h.press('d'); dtRoll(h, '45');
   h.q('#gm-dt .gm-dt-flip [data-gm="dt-rule"]').click(); assert.equal(h.page._state().panel, 'rules', 'the "?" by "Overindulged?" too');
   await h.save();
 });
@@ -2240,7 +2241,7 @@ await test('17k. without a module, without the characters, with a pack part over
   await bare.save();
   const T = { vice: { Gambling: { lead: ['{Host} deals you in at {place}, and the night begins.'] } } };
   const own = await dtPage(undefined, { fg: fakeGm(undefined, { downtime: { version: 'd1', src: {}, body: { T } } }) });
-  own.press('d'); dtWho(own, 'c-mags'); dtRoll(own, '');
+  own.press('d'); dtWho(own, 'c-mags'); dtRoll(own, '45');
   assert.match(leadTxt(own), /^Old Mo deals you in at Mo’s Bar, and the night begins\./, 'the pack part\'s table is used');
   await own.save();
   const broken = { vice: { Gambling: { lead: [] } } };
@@ -2253,6 +2254,39 @@ await test('17k. without a module, without the characters, with a pack part over
   assert.deepEqual(P.packWarnings(dmods, { downtime: {} }), [], 'a part with no tables replaces nothing');
   assert.deepEqual(P.packWarnings({ B68GmDowntime: DT }, { downtime: { T: broken } }), [], 'without the built-in tables loaded it says nothing');
   await bad.save();
+});
+
+await test('17m. the vice result (the Morning After): 1–3, 4/5, 6 and Crit before Overindulged; a 6 adds a Good Morning from the pack\'s downtime part, a crit two; "Rolled" on a card redraws the SAME card', async () => {
+  const good = [{ kind: 'Invented kind', lines: ['A friend at {place} owes you.', '{Host} let something go.', 'A parcel turned up.'] }];
+  const h = await dtPage(undefined, { fg: fakeGm(undefined, { downtime: { version: 'g1', src: {}, body: { T: { good } } } }) });
+  h.press('d'); dtWho(h, 'c-mags');
+  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-roll"]').map((b) => b.getAttribute('data-v')), ['13', '45', '6', 'crit', 'over'], 'the four results, then Overindulged');
+  const goods = () => h.qa('#gm-dt .gm-dtcard .gm-want').map((w) => w.textContent).filter((t) => /^\*\*Good Morning\.\*\*/.test(t));
+  dtRoll(h, '6');
+  assert.equal(goods().length, 1, 'a 6: one Good Morning');
+  assert.match(goods()[0], /Invented kind · the Morning After$/, goods()[0]);
+  assert.ok(!/[{}]/.test(goods()[0]), 'its slots filled: ' + goods()[0]);
+  assert.deepEqual(h.qa('#gm-dt .gm-dtcard .gm-chip').map((c) => c.textContent), ['Indulged', 'Gambling', '6']);
+  assert.equal(dtStored(h).ui.vres, '6'); assert.equal(dtStored(h).label, 'Mags Invented · Gambling · a good morning');
+  assert.equal(h.q('#gm-dt [data-gm="dt-roll"][data-v="6"]').getAttribute('aria-pressed'), 'true', 'the result that made the card stays marked');
+  assert.ok(!h.q('#gm-dt [data-gm="dt-vres"]'), 'no "Rolled" row once the result is said');
+  dtRoll(h, 'crit'); assert.equal(goods().length, 2, 'a crit: two');
+  dtRoll(h, '45'); assert.equal(goods().length, 0, 'a 4/5: a night out, nothing more');
+  dtRoll(h, 'over');
+  const before = cl(dtStored(h)), lead = leadTxt(h);
+  assert.deepEqual(h.qa('#gm-dt [data-gm="dt-vres"]').map((b) => b.getAttribute('data-v')), ['13', '45', '6', 'crit'], 'overindulged with no result said: a "Rolled" row');
+  h.q('#gm-dt [data-gm="dt-vres"][data-v="6"]').click();
+  const after = dtStored(h);
+  assert.deepEqual([after.hid, after.seed, after.mem, after.at], [before.hid, before.seed, before.mem, before.at], 'the same card');
+  assert.equal(after.ui.vres, '6'); assert.equal(after.ui.res, 'over', 'still overindulged');
+  assert.equal(leadTxt(h), lead, 'the scene stays'); assert.equal(goods().length, 1, 'and the Good Morning joins it');
+  assert.ok(h.q('#gm-dt .gm-dt-cost') && !h.q('#gm-dt [data-gm="dt-vres"]'), 'the cost box stays; the row goes');
+  assert.deepEqual(h.page._state().doc.hist.downtime[before.hid].ui, after.ui, 'its Earlier entry follows');
+  await h.save();
+  const bare = await dtPage();
+  bare.press('d'); dtWho(bare, 'c-mags'); dtRoll(bare, 'crit');
+  assert.match(cardOf(bare, '#gm-dt .gm-dtcard'), /Two Good Mornings\.\*\* Roll on the table in the vault/, 'no pack part: it says where the table is');
+  await bare.save();
 });
 
 await test('17l. the characters land after the page opened (boot\'s characters()): the chips follow, and a redraw while typing the purveyor keeps the typing', async () => {
