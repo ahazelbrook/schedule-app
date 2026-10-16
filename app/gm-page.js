@@ -317,7 +317,7 @@
   }
   P.makeGate = makeGate;
 
-  /* ---------- the iPad panel: the ambient scenes, the crew sync, the score scene (AMBIENT-PLAN.md) ---------- */
+  /* ---------- the iPad panel: the ambient scenes, the crew sync, the score scene (GM.md, "Ambient scenes") ---------- */
   /* The scenes the picker offers (ids mirror Pure.AMBIENT_SCENES in display-page.js and AMBIENT_SCENES in functions/_lib/gm.js). */
   P.IPAD_SCENES = [
     { id: 'harvest', label: 'The lair' }, { id: 'watch', label: 'City Watch feed' }, { id: 'duskwall', label: 'The city after dark' },
