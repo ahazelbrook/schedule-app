@@ -375,6 +375,14 @@
     };
   }
   P.ipadView = ipadView;
+  /* the theme the credits play (display-page.js Pure.AMBIENT_MUSIC), and the panel's line about it */
+  P.THEME_URL = 'media/theme.mp3';
+  P.themeType = function (contentType) { var ct = String(contentType || '').toLowerCase().trim(); return !ct || /^audio\//.test(ct) || /^application\/octet-stream/.test(ct); };
+  P.themeLine = function (state, http) {
+    if (state === 'ok') return 'Theme for the credits: on the server.';
+    if (state === 'none') return 'Theme for the credits: NO FILE on the server' + (http && http !== 404 ? ' (HTTP ' + http + ')' : '') + '. The credits run silent. Copy app/media/theme.mp3 into the deploying checkout and deploy again.';
+    return 'Theme for the credits: not checked yet.';
+  };
 
   /* The score scene (Location panel, "Set as score scene"): the board and the exploded site, rendered HERE from the roll on the
      PLAYER layer at the revealed bands, run through the same hidden-name scan as Show on iPad. The board is the plan on the board
@@ -672,6 +680,9 @@
   /* The ambient document as the server holds it (the truth), what the iPad was last told to spotlight, and the panel's state.
      Module-level, not in S: the heat / wanted sync keeps running while the page is closed. */
   var AM = { doc: null, seq: null, updatedAt: null, shown: null, loaded: false, busy: 0, error: '', displayRead: false };
+  /* The theme the opening credits play, app/media/theme.mp3: gitignored, so it is on the server only when the deploying PC had it.
+     The panel asks the server (HEAD, same origin) when it opens, and says so, because a silent iPad is otherwise a mystery. */
+  var THEME = { state: 'unknown', http: 0, at: 0, busy: false };
 
   function toast(msg, bad) { var A = W.B68; if (A && A.toast) A.toast(msg, !!bad); }
   function errText(e) { return e && e.message || String(e || 'unknown error'); }
@@ -1540,12 +1551,27 @@
         return '<button type="button" class="gm-ipad-tile" data-gm="ambscene" data-id="' + esc(s.id) + '" aria-pressed="' + s.pressed + '"' + (s.disabled || off || busy ? ' disabled' : '') + '><b>' + esc(s.label) + '</b>' + (s.note ? '<small>' + esc(s.note) + '</small>' : '') + '</button>';
       }).join('') + '</div></div>' +
       '<div class="gm-row"><label class="gm-field" for="gm-amb-int"><span class="gm-lab">Auto changes every</span><select id="gm-amb-int" data-ambint="1"' + (off || busy ? ' disabled' : '') + '>' + v.intervals.map(function (n) { return '<option value="' + n + '"' + (n === v.intervalMin ? ' selected' : '') + '>' + n + ' min</option>'; }).join('') + '</select></label>' +
-      '<button type="button" class="btn" data-gm="ambskip"' + (off || busy || v.mode !== 'auto' ? ' disabled' : '') + ' title="Auto mode only">Next scene</button></div></div></section>';
+      '<button type="button" class="btn" data-gm="ambskip"' + (off || busy || v.mode !== 'auto' ? ' disabled' : '') + ' title="Auto mode only">Next scene</button></div>' +
+      '<p class="gm-dim gm-ipad-theme" id="gm-ipad-theme" role="status">' + esc(P.themeLine(THEME.state, THEME.http)) + '</p></div></section>';
     h += '<section class="gm-box gm-ipad-score"><h3 class="gm-band">Score scene</h3><div class="gm-ipad-body"><p class="gm-ipad-line" id="gm-ipad-score">' + (v.hasScore ? esc(v.scoreLine) : '<span class="gm-dim">None set. Use Set as score scene in the Location panel.</span>') + '</p>' +
       '<button type="button" class="btn sm" data-gm="clearscore"' + (!v.hasScore || off || busy ? ' disabled' : '') + '>Clear score</button></div></section>';
     box.innerHTML = '<div id="gm-stt"></div>' + h;
     renderStt(true);
     renderBar();
+    probeTheme();
+  }
+  /* is app/media/theme.mp3 on the server? asked once a minute at most, on the hosted app only; the answer goes into the panel's line */
+  function probeTheme() {
+    if (THEME.busy || Date.now() - THEME.at < 60000 || typeof W.fetch !== 'function' || !gmApi()) return;
+    THEME.busy = true;
+    var me = S;
+    Promise.resolve().then(function () { return W.fetch(P.THEME_URL, { method: 'HEAD', credentials: 'same-origin', cache: 'no-store' }); }).then(function (r) {
+      THEME.state = r && r.ok && P.themeType(r.headers && r.headers.get ? r.headers.get('Content-Type') : '') ? 'ok' : 'none'; THEME.http = r ? r.status : 0; THEME.at = Date.now();
+    }, function () { THEME.state = 'unknown'; THEME.http = 0; THEME.at = Date.now() - 50000; /* ask again soon */ }).then(function () {
+      THEME.busy = false;
+      var p = S === me ? $q('#gm-ipad-theme') : null;
+      if (p) p.textContent = P.themeLine(THEME.state, THEME.http);
+    });
   }
 
   /* ---------- Listening: the table iPad's transcriber (app/stt.js, GM.md "Listening") ----------
