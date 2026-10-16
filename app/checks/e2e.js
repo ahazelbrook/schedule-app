@@ -177,6 +177,8 @@ async function homeStates(b, errs) {
     const jn = await pg.evaluate(() => { const b = document.querySelector('#dossier [data-act="sessjoin"]'), r = b && b.getBoundingClientRect(); return { mode: document.body.dataset.mode, focus: !!b && document.activeElement === b, inView: !!r && r.top >= 0 && r.bottom <= innerHeight, text: b && b.textContent }; });
     want(jn.mode === 'sheet' && jn.inView && jn.focus && jn.text === 'Join session 3', 'D: Join session 3 opens the sheet with its Join button in view and focused', jn);
     await pg.goBack(); await pg.waitForTimeout(600);
+    await pg.click('#homeMain [data-hm="files"]'); await pg.waitForTimeout(300);
+    want(await pg.$eval('#rosterFilter [data-f="all"]', n => n.getAttribute('aria-pressed')) === 'true' && (await facts(pg)).edits.length === 2, 'D: the Everyone’s characters link shows everyone’s characters', (await facts(pg)).edits);
     await pg.click('#rosterFilter [data-f="all"]'); await pg.waitForTimeout(200);
     const ed = (await facts(pg)).edits.sort();
     want(ed.join() === 'Aldo Crane:true:false,Vera Lux:false:false', 'D: Edit figure only on your own card, no remove chips', ed);

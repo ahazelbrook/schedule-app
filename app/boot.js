@@ -1034,7 +1034,7 @@
     else if (a === 'print') openPrint();
     else if (a === 'rules') openRules();
     else if (a === 'cast') { try { location.hash = '#cast'; } catch (e) {} }
-    else if (a === 'files' || a === 'backups') { var n = $(a); if (n) { try { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} } }
+    else if (a === 'files' || a === 'backups') { if (a === 'files' && filter !== 'all') { filter = 'all'; filterChosen = true; renderRoster(roster); } var n = $(a); if (n) { try { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} } }   /* "Everyone’s characters" shows everyone's */
     else if (a === 'restore') pickRestore();
     else if (a === 'copylink') copyText(hosted() ? location.origin + location.pathname : location.href.split('#')[0], 'Link copied. Send it to your players.');
   }
