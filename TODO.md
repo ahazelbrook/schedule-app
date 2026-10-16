@@ -13,7 +13,9 @@ Train, Friend or rival, Lay low, Acquire. Original writing, no book text.
 23,000 (one 4 s display poll that carries the transcriber's want and session, never a transcript line; 15 s after two
 quiet hours; 60 s hidden), and E14 (the display reloads once after 10 minutes signed out, at most once per 30 minutes).
 Docs sweep done (9d9427b, 7e398a4) but for one comment in app/gm-page.js (line ~317, "AMBIENT-PLAN.md"): do it after
-the Downtime panel merges. SETUP.md has the seven plain steps for updating from the Windows PC.
+the Downtime panel merges. SETUP.md has the seven plain steps for updating from the Windows PC. The downtime tables
+moved to `app/downtime-tables.js` (51b495e): app/gm/ holds logic only and gm-nosecrets (a) checks it for the setting's
+and the campaign's names (on the GM's PC, every name in the pack). `npm test` on the combined branch: 693 PASS, 0 FAIL.
 
 **Running when this was written** (it pushes after every commit; if a session ends, read its branch and finish it):
 `review/downtime-page` (agent): the GM page's **Downtime (D)** panel on the module: PC chips from the live sheets
