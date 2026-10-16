@@ -241,12 +241,13 @@ async function main() {
   if (o.follow) console.log('Copying the iPad\'s transcript into the vault every ' + o.every + ' s. Ctrl+C stops.');
   if (o.watch) say('watching (pid ' + process.pid + '): a look every ' + o.idle + ' s, a pass every ' + o.every + ' s while listening is on', true);
   const ctx = { vault: o.vault, db, campaign: toml.campaign, ledger: camp, session: o.session, dryRun: o.dryRun, prune: o.prune, every: o.every, idle: o.idle };
-  let want = 'off';
+  let want = 'off', failing = false;
   do {
     let wait = o.every * 1000;
     try {
       const r = o.watch ? await watchStep(ctx) : await pass(ctx);
       if (!o.dryRun) saveLedger(privateDir, ledger);
+      if (failing) { failing = false; say('working again: the last pass reached Cloudflare', true); }
       if (o.watch) { if (r.want !== want) say('listening ' + r.want, true); want = r.want; wait = r.wait; if (r.other) say('standing back: ' + r.other + ' is copying'); }
       if (r.filed || !looping) say((o.dryRun ? 'would copy ' : 'copied ') + r.filed + ' line' + (r.filed === 1 ? '' : 's') + (r.notes.length ? ' into ' + r.notes.join(', ') : ''), true);
       else if (o.watch && !r.other) said = '';
@@ -254,6 +255,7 @@ async function main() {
       if (!o.dryRun) { try { saveLedger(privateDir, ledger); } catch (_) {} }   /* what did land is remembered */
       const why = e.kind === 'auth' ? 'not logged in to Cloudflare: run `npx wrangler login`' : e.kind === 'offline' ? 'offline or Cloudflare unreachable' : e.code === 'RACE' ? 'Obsidian was saving the note: next pass' : e.message;
       say('skipped a pass: ' + why);
+      failing = true;
       if (!looping) process.exit(2);
       if (o.watch && e.code !== 'RACE') wait = o.idle * 1000;
     }
