@@ -2139,8 +2139,9 @@
      contacts fill the Project and Contact selects. A card is { hid, seed, ui, mem, label, at, started? } under cards.downtime (five
      in hist.downtime): `ui` holds the RESOLVED strings (the PC's name, the vice, the purveyor line, the contact line, the project's
      name, the district), so a reload or an Earlier click redraws the same card after a sheet changes, and `mem` is the repeat guard
-     before the roll (the guard itself is mem.downtime). An overindulgence's option and "Overindulged?" redraw the SAME card (its seed
-     and memory: the module keeps the scene above as it was). A clock a card suggests goes onto the table's clocks, hidden
+     before the roll (the guard itself is mem.downtime). An overindulgence's option, "Overindulged?" and the vice result tapped on the
+     card ("Rolled", the house rule the Morning After: a 6 leaves a Good Morning, a crit two) redraw the SAME card (its seed and memory:
+     the module keeps the scene above as it was). A clock a card suggests goes onto the table's clocks, hidden
      (api.addClock), and the card keeps its id under `started`. Nothing here goes to the iPad: the prompts and hooks are the GM's. */
   var DT_BANDS = [['13', '1–3'], ['45', '4/5'], ['6', '6'], ['crit', 'Crit']];
   var DT_NONE = '*';      /* the Project and Contact selects' "none of the sheet's"; '' follows the sheet */
@@ -2209,7 +2210,10 @@
   /* what a tap rolls: the panel's choices resolved to the strings the card keeps */
   function dtRollUi(dt, v) {
     var u = dtUi(), pc = dtPc(dtPcs()), act = dtActOf(dt, u.act), ui = { act: act, who: pc ? pcName(pc) : '', district: dtDistrict() };
-    if (act === 'indulge') { ui.vice = dtViceOf(dt, u.vice); ui.purveyor = u.purveyor.trim(); ui.res = v === 'over' ? 'over' : ''; }
+    if (act === 'indulge') {
+      ui.vice = dtViceOf(dt, u.vice); ui.purveyor = u.purveyor.trim(); ui.res = v === 'over' ? 'over' : '';
+      ui.vres = DT_BANDS.some(function (b) { return b[0] === v; }) ? v : '';     /* the vice roll's result: a 6 or a crit leaves Good Mornings */
+    }
     else if (act === 'train') ui.attr = v;
     else if (act === 'contact') { var c = dtContact(pc); ui.contact = c ? contactLine(c) : ''; ui.rel = v === 'rival' ? 'rival' : 'friend'; }
     else { ui.res = v; if (act === 'project') ui.project = dtProject(pc); }
@@ -2236,9 +2240,9 @@
     renderDowntime(true);
     showIn($q('#gm-dt-card'), $q('#gm-dt'), ['.gm-dt-cost', '.gm-want', '.gm-card-h']);
   }
-  /* The SAME card redrawn with one choice changed (an overindulgence's option, or "Overindulged?"): its own seed and memory, so the
-     scene above stays as it was (the module draws the four options last). Only the choice, and the label that names it, change in
-     the stored card and its Earlier entry; the hid, seed, memory and time stay. */
+  /* The SAME card redrawn with one choice changed (an overindulgence's option, "Overindulged?" or the vice result): its own seed and
+     memory, so the scene above stays as it was (the module draws the six options, then the Good Mornings, last). Only the choice, and
+     the label that names it, change in the stored card and its Earlier entry; the hid, seed, memory and time stay. */
   function dtRedraw(change) {
     var cur = dtCard(); if (!cur || !dtInst()) return;
     var roll = replayDowntime(Object.assign({}, cur, { ui: Object.assign({}, isObj(cur.ui) ? cur.ui : {}, change) }));
@@ -2317,7 +2321,7 @@
         dt.VICES.map(function (v) { return '<option value="' + esc(v) + '"' + (v === u.vice ? ' selected' : '') + '>' + esc(dtViceLabel(v)) + '</option>'; }).join('') + '</select></label>' +
         '<label class="gm-field gm-dt-pur" for="gm-dt-purveyor"><span class="gm-lab">Purveyor</span><input type="text" id="gm-dt-purveyor" data-dtf="purveyor" maxlength="200" autocomplete="off" value="' + esc(u.purveyor) + '"' +
         ' placeholder="' + (pc ? 'Name, place, district' : 'any: a stock host and place') + '" title="Filled from the sheet. A change here is for these cards only: the sheet keeps its own."></label></div>' +
-        row('Rolled at the table', btn('res', '', 'Indulged') + btn('res', 'over', 'Overindulged', 'gm-dtb-over'));
+        row('Rolled at the table', DT_BANDS.map(function (b) { return btn('vres', b[0], esc(b[1]), b[0] === 'crit' ? '' : 'gm-dtb-num'); }).join('') + btn('res', 'over', 'Overindulged', 'gm-dtb-over'));
     }
     if (act === 'train') return row('Which xp track', dt.ATTRS.map(function (a) { return btn('attr', a, esc(a)); }).join(''));
     if (act === 'contact') {
@@ -2339,10 +2343,12 @@
       row('Rolled at the table', DT_BANDS.map(function (b) { return btn('res', b[0], esc(b[1]), b[0] === 'crit' ? '' : 'gm-dtb-num'); }).join(''));
   }
   /* the card: the existing card's parts (header, chips, the lead box with its small line, the grid, one actions row with Pin and Copy).
-     An overindulgence puts its four options right above the cost box (the picked one pressed), the cost box in its own colour and a "?"
-     for the rules; an indulgence that was not one carries a small "Overindulged?" that turns the same card into one. */
+     An overindulgence puts its six options right above the cost box (the picked one pressed), the cost box in its own colour and a "?"
+     for the rules; an indulgence that was not one carries a small "Overindulged?" that turns the same card into one, and one whose
+     result was not tapped a small "Rolled" row (a 6 or a crit adds the Good Mornings to the same card). */
   function dtCardHtml(roll, cur) {
     var m = roll.meta || {}, over = roll.over, started = cur && isObj(cur.started) ? cur.started : {};
+    var rui = roll.replay && isObj(roll.replay.ui) ? roll.replay.ui : {}, noRes = rui.act === 'indulge' && !rui.vres;
     var h = '<article class="gm-card gm-dtcard" data-tool="downtime"><header class="gm-card-h"><div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' + chipsHtml(m.chips);
     (roll.lines || []).forEach(function (l) {
       if (l.id === 'over' && over) {
@@ -2353,6 +2359,9 @@
       }
       h += linesHtml([l], md);
       if (l.id === 'lead' && over && !over.shown) h += '<p class="gm-dt-flip"><button type="button" class="btn sm" data-gm="dt-over" title="The same card, overindulged: the scene above stays">Overindulged?</button>' + DT_Q + '</p>';
+      if (l.id === 'lead' && noRes) h += '<p class="gm-dt-flip gm-dt-vres"><span class="gm-lab">Rolled</span>' + DT_BANDS.map(function (b) {
+        return '<button type="button" class="btn sm" data-gm="dt-vres" data-v="' + esc(b[0]) + '" title="The same card with the vice roll’s result: a 6 leaves a Good Morning, a crit two (the Morning After)">' + esc(b[1]) + '</button>';
+      }).join('') + '</p>';
     });
     return h + '<div class="gm-card-acts">' + (m.actions || []).map(function (a, i) {
       var name = isObj(a.intent) ? str(a.intent.name) : '', done = !!name && Object.prototype.hasOwnProperty.call(started, name);
@@ -2650,20 +2659,34 @@
     if (S.panel !== 'prep') setPanel('prep');
     try { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) { el.scrollIntoView(); }
   }
-  /* a link in a prep note: a heading here, a peek card for an NPC, PC or faction, another prep note, or Obsidian */
+  /* the element a heading's words name in the Prep tab: a section (its ## heading), else a heading inside a section or a transclusion;
+     within `scope` (one transclusion) when given. Matched by slug, as the ids are made (gm/prep.js). */
+  function prepHeadingEl(text, scope) {
+    var want = W.B68GmPrep.slug(text), root = scope || $q('#gm-prep'); if (!root || !want) return null;
+    var sec = scope ? null : $q('#gm-prep [id="pp-' + want + '"]'); if (sec) return sec;
+    return root.querySelector(['h2', 'h3', 'h4', 'h5', 'h6'].map(function (t) { return t + '[id$="--' + want + '"]'; }).join(', '));
+  }
+  function prepScroll(el) { if (!el) return; try { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) { el.scrollIntoView(); } }
+  /* a link in a prep note: a heading here, a peek card for an NPC, PC or faction, another prep note (at the heading it names), a
+     transclusion in this one (at the heading it names), this note by its own name (at the heading), or Obsidian */
   function prepLink(href) {
     var B = W.B68GmPrep, pk = part('prep'), l = B && B.link(href); if (!l || !pk) return;
     if (l.type === 'top') { var d = $q('#gm-prep'); if (d) d.scrollIntoView(); return; }
-    if (l.type === 'heading') {
-      var want = B.slug(l.text), hit = $q('#gm-prep [id="pp-' + want + '"]') || $q('#gm-prep h2[id$="--' + want + '"], #gm-prep h3[id$="--' + want + '"], #gm-prep h4[id$="--' + want + '"], #gm-prep h5[id$="--' + want + '"]');
-      if (hit) { try { hit.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) { hit.scrollIntoView(); } } else toast('That heading is not in this note.', true);
-      return;
-    }
+    if (l.type === 'heading') { var hit = prepHeadingEl(l.text); if (hit) prepScroll(hit); else toast('That heading is not in this note.', true); return; }
     var L = isObj(pk.links) ? pk.links[l.key] : null; if (!L) return;
+    var frag = l.frag && l.frag.charAt(0) !== '^' ? l.frag : '';
     if (l.kind === 'note') {
       var other = B.notes(pk).filter(function (n) { var full = (pk.notes || []).filter(function (x) { return x.id === n.id; })[0]; return full && full.rel === L.rel; })[0];
-      if (other && other.id !== prepNoteId(pk)) { try { W.localStorage.setItem(PREP_NOTE, other.id); } catch (e) {} renderPrep(true); return; }
-      var emb = $q('#gm-prep .pp-embed[data-from="' + str(L.rel).replace(/"/g, '') + '"]'); if (emb) { emb.scrollIntoView(); return; }
+      if (other && other.id !== prepNoteId(pk)) {
+        try { W.localStorage.setItem(PREP_NOTE, other.id); } catch (e) {}
+        renderPrep(true); if (frag) prepScroll(prepHeadingEl(frag)); return;
+      }
+      if (other) { var here = frag ? prepHeadingEl(frag) : null; if (here) prepScroll(here); else { var top = $q('#gm-prep'); if (top) top.scrollIntoView(); } return; }
+      var embs = S.root ? [].slice.call(S.root.querySelectorAll('#gm-prep .pp-embed[data-from="' + str(L.rel).replace(/"/g, '') + '"]')) : [];
+      if (embs.length) {
+        var inside = null; if (frag) embs.some(function (e) { inside = prepHeadingEl(frag, e); return !!inside; });
+        prepScroll(inside || embs[0]); return;
+      }
     }
     if (l.kind === 'npc' || l.kind === 'pc' || l.kind === 'faction') { prepPeek(l.kind, L); return; }
     W.location.href = B.obsidianUri(pk, L.rel);
@@ -3121,6 +3144,7 @@
       case 'dt-roll': rollDowntime(str(b.getAttribute('data-v'))); break;
       case 'dt-pick': dtRedraw({ res: 'over', pick: b.getAttribute('data-v') }); break;
       case 'dt-over': dtRedraw({ res: 'over' }); break;
+      case 'dt-vres': dtRedraw({ vres: str(b.getAttribute('data-v')) }); break;
       case 'dt-clock': dtClock(+b.getAttribute('data-i')); break;
       case 'dt-rule': dtRule(); break;
       case 'layer': setMap('layer', b.getAttribute('data-v')); renderLocation(); break;

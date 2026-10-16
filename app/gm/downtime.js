@@ -1,17 +1,23 @@
 /* gm/downtime.js — personal business at the table (the downtime phase), as pure logic (no DOM, no storage, no network).
    One card per activity a PC takes: a scene prompt to frame it, a question for the player, and something to pull on
-   later. Indulging a vice gives the scene at the PC's purveyor; an overindulgence adds what it costs (attract trouble,
-   brag, lost, tapped: the mechanical line in bold) with a scene prompt under it, and a clock the GM can start.
-   Everyone rolls physical dice: the page passes the result in (`res`), this file never rolls a die.
+   later. Indulging a vice gives the scene at the PC's purveyor; an overindulgence adds what it costs (the six of the
+   book's p.165: attract trouble, bad decision, bender, brag, brawl, tapped; the mechanical line in bold) with a scene
+   prompt under it, and a clock the GM can start. The vice roll's result (`vres`) is the house rule the Morning After
+   (the vault's House rules/blades-68-face-and-the-morning-after.md): a 6 leaves one Good Morning, a crit two.
+   Everyone rolls physical dice: the page passes the result in (`res`, `vres`), this file never rolls a die.
 
    The tables are not in this file (it names nothing of the setting: checks/runtime/gm-nosecrets.test.mjs): they are
    app/downtime-tables.js (B68DowntimeTables: original writing, public like content.js), which the GM bundle loads
    first. A pack part `downtime` may replace them later: any top-level key of its `T` replaces the table of that name,
-   and a vice in `T.vice` replaces that vice's tables one by one (check(T) lists what is missing).
+   and a vice in `T.vice` replaces that vice's tables one by one (check(T) lists what is missing). The Good Mornings
+   come ONLY from that part (`T.good`, built by scripts/lib/downtime-export.mjs from the vault page): they are drawn
+   from a zine that is for personal use, so they never go into this public repo. No part: the card says where the
+   table is.
 
    Every draw comes from one seeded mulberry32 stream in a fixed order, and the repeat guard keeps INDICES (never the
-   text), so { seed, mem, ui } redraws the same card and a stored memory stays small. The overindulgence's four
-   options are drawn after everything else, whatever `res` and `pick` say, so ticking "Overindulged" or switching the
+   text), so { seed, mem, ui } redraws the same card and a stored memory stays small. The overindulgence's options
+   are drawn after everything else, whatever `res` and `pick` say (the first four as first shipped, then bad decision
+   and brawl), and the Good Mornings after those, so ticking "Overindulged", tapping the result or switching the
    option after a roll keeps the scene above it as it was.
 
    ---------------------------------------------------------------------------------------------------------------
@@ -27,7 +33,7 @@
    dt.ACTS        [{ id, label, short, res }]  res: 'over' (indulge) | 'band' (1-3 / 4/5 / 6 / crit) | 'attr' | 'rel'
    dt.VICES       the vice names, in the tables' order
    dt.defaults()  { act:'indulge', who:'', vice:'', purveyor:'', district:'', res:'', pick:'', attr:'', contact:'',
-                    rel:'', project:'' }
+                    rel:'', project:'', vres:'' }
    dt.roll(ui, { seed, mem }) -> { lines, meta, over, seed, replay }
        ui.act      'indulge' | 'recover' | 'project' | 'train' | 'contact' | 'heat' | 'acquire'
        ui.who      the PC's name ('' leaves it out)
@@ -36,21 +42,26 @@
        ui.district '' = the purveyor's district, else drawn
        ui.res      indulge: 'over' | '' · recover, project, heat, acquire: '13' | '45' | '6' | 'crit' ('' reads as 4/5,
                    with no ticks) · train: unused
-       ui.pick     indulge: 'trouble' | 'brag' | 'lost' | 'tapped' ('' = drawn)
+       ui.vres     indulge: the vice roll's result after any stacks, '13' | '45' | '6' | 'crit' | '' (not said): a 6
+                   adds a Good Morning, a crit two · the others: unused
+       ui.pick     indulge: 'trouble' | 'decision' | 'lost' | 'brag' | 'brawl' | 'tapped' ('' = drawn)
        ui.attr     train: 'Insight' | 'Prowess' | 'Resolve' | 'Playbook' ('' = drawn)
        ui.contact  contact: the sheet's line ("Sam, a nosy neighbour"); ui.rel 'friend' | 'rival' ('' = drawn)
        ui.project  project: the clock's name on the sheet ('' = "the project")
        seed        uint32; omit for a fresh one
        mem         the repeat-guard memory to use and MUTATE (default: the instance's)
-       lines   [{ kind:'want', id:'lead', md, small }, ({ kind:'want', id:'over', md, small }), { kind:'grid',
-               id:'more', rows:[{ k, md }] }]   md is markdown (bold and italics only), never HTML
-       over    indulge only: { pick, shown, options:[{ id, title, mech, md, clock, source }] }  shown: res is 'over'
+       lines   [{ kind:'want', id:'lead', md, small }, ({ kind:'want', id:'good' | 'good2', md, small }),
+               ({ kind:'want', id:'over', md, small }), { kind:'grid', id:'more', rows:[{ k, md }] }]   md is markdown
+               (bold and italics only), never HTML
+       over    indulge only: { pick, shown, options:[{ id, title, mech, md, clock, source }] }  shown: res is 'over';
+               the six options in the book's order (p.165)
        meta    { id:'downtime', act, title, sub, chips, text, all, label, actions:[{ label, intent:{ type:'clock',
                name, size } }] }   all: the card as plain lines (Pin / Copy)
        replay  { id:'downtime', seed, mem, ui }   mem is a deep copy BEFORE this roll; dt.replay(replay) redraws it
    dt.mem()       the instance's live repeat-guard memory
    Helpers: B68GmDowntime.seedRng(a) · plain(md) · purveyor(line, districts, places) -> { host, place, district, near }
    B68GmDowntime.check(T, pack) -> [string]   the table keys T (with the pack laid over it) lacks or has empty.
+   Optional table: T.good [{ kind, lines:[string] }] (the Good Mornings; a malformed kind or line is left out, unchecked).
    --------------------------------------------------------------------------------------------------------------- */
 (function (root, factory) {
   'use strict';
@@ -93,7 +104,10 @@
   var ATTRS = ['Insight', 'Prowess', 'Resolve', 'Playbook'];
   var KINDS = { friend: ['need', 'offer', 'news'], rival: ['move', 'truce', 'weak'] };
   var VICE_TABLES = ['places', 'hosts', 'lead', 'detail', 'ask', 'hook'];
-  var OVER_IDS = ['trouble', 'brag', 'lost', 'tapped'];
+  /* the overindulgences: drawn in OVER_IDS order (the first four as first shipped, so an older card replays the same),
+     shown in the book's order (p.165) */
+  var OVER_IDS = ['trouble', 'brag', 'lost', 'tapped', 'decision', 'brawl'];
+  var OVER_SHOWN = ['trouble', 'decision', 'lost', 'brag', 'brawl', 'tapped'];
 
   /* a purveyor line -> who you deal with and where. The book's lines come annotated (B68DowntimeTables.PLACES, matched on
      their first two parts, so a line copied without its district still matches); anything else is read as "Name, place,
@@ -163,6 +177,15 @@
     return out;
   }
   function list(a) { return Array.isArray(a) && a.length > 0 && a.every(function (x) { return typeof x === 'string' && x.trim() !== ''; }); }
+  /* the Good Mornings, T.good [{ kind, lines }], as one list of { kind, line }: a malformed kind or line is left out */
+  function goodList(T) {
+    var out = [];
+    (isObj(T) && Array.isArray(T.good) ? T.good : []).forEach(function (k) {
+      if (!isObj(k) || typeof k.kind !== 'string' || !k.kind.trim() || !Array.isArray(k.lines)) return;
+      k.lines.forEach(function (l) { if (typeof l === 'string' && l.trim()) out.push({ kind: k.kind.trim(), line: l }); });
+    });
+    return out;
+  }
   /* the keys a roll reads, reported when missing or empty, in T with the pack's replacements laid over it */
   function check(T, pack) {
     if (!isObj(T)) return ['T'];
@@ -244,7 +267,7 @@
     if (!isObj(base)) throw new Error('B68GmDowntime.create: the tables are required (app/downtime-tables.js)');
     var miss = check(base, cfg.pack);
     if (miss.length) throw new Error('B68GmDowntime.create: the tables lack ' + miss.slice(0, 5).join(', ') + (miss.length > 5 ? ' and ' + (miss.length - 5) + ' more' : ''));
-    var T = merged(base, cfg.pack), ix = placesIndex(cfg.places || (book && book.PLACES));
+    var T = merged(base, cfg.pack), ix = placesIndex(cfg.places || (book && book.PLACES)), GOOD = goodList(T);
     var MEM = isObj(cfg.mem) ? cfg.mem : {};
     var districts = list(cfg.districts) ? cfg.districts.slice() : T.districts.slice();
     var allDistricts = districts.concat(T.districts.filter(function (d) { return districts.indexOf(d) < 0; }));
@@ -259,15 +282,15 @@
       var n = normName(vice), b = books.filter(function (x) { return normName(x.name) === n; })[0];
       return b && Array.isArray(b.purveyors) ? b.purveyors.filter(function (p) { return typeof p === 'string' && p.trim(); }) : [];
     }
-    function defaults() { return { act: 'indulge', who: '', vice: '', purveyor: '', district: '', res: '', pick: '', attr: '', contact: '', rel: '', project: '' }; }
+    function defaults() { return { act: 'indulge', who: '', vice: '', purveyor: '', district: '', res: '', pick: '', attr: '', contact: '', rel: '', project: '', vres: '' }; }
     function norm(ui) {
       var u = defaults(), x = isObj(ui) ? ui : {};
       Object.keys(u).forEach(function (k) { u[k] = str(x[k]).trim().slice(0, 200); });
       if (!ACT[u.act]) u.act = 'indulge';
       var r = ACT[u.act].res;
-      if (r === 'over') { u.res = u.res === 'over' ? 'over' : ''; if (OVER_IDS.indexOf(u.pick) < 0) u.pick = ''; }
-      else if (r === 'band') { if (BANDS.indexOf(u.res) < 0) u.res = ''; u.pick = ''; }
-      else { u.res = ''; u.pick = ''; }
+      if (r === 'over') { u.res = u.res === 'over' ? 'over' : ''; if (OVER_IDS.indexOf(u.pick) < 0) u.pick = ''; if (BANDS.indexOf(u.vres) < 0) u.vres = ''; }
+      else if (r === 'band') { if (BANDS.indexOf(u.res) < 0) u.res = ''; u.pick = ''; u.vres = ''; }
+      else { u.res = ''; u.pick = ''; u.vres = ''; }
       if (ATTRS.indexOf(u.attr) < 0) u.attr = '';
       if (u.rel !== 'friend' && u.rel !== 'rival') u.rel = '';
       u.vice = viceKey(u.vice);   /* a vice the tables do not know reads as none: the roll draws one */
@@ -283,7 +306,7 @@
       var ctx = { host: host, place: place, district: district };
       var lead = split(R.fresh(vice + '.lead', V.lead), ctx), detail = fill(R.fresh(vice + '.detail', V.detail), ctx);
       var ask = fill(R.fresh(vice + '.ask', V.ask), ctx), hook = split(R.fresh(vice + '.hook', V.hook), ctx);
-      /* the four options, always drawn and in this order (see the header) */
+      /* the six options, always drawn and in this order (see the header) */
       var options = OVER_IDS.map(function (id) {
         var O = T.over.filter(function (o) { return o.id === id; })[0];
         var s = split(R.fresh(vice + '.over.' + id, V.over[id]), ctx), o = { id: id, title: O.title, mech: fill(O.mech, ctx), md: s.text, clock: s.clock, source: '' };
@@ -295,8 +318,13 @@
       });
       var drawn = R.pick(OVER_IDS);
       var pick = ui.pick || drawn, shown = ui.res === 'over', opt = options.filter(function (o) { return o.id === pick; })[0];
+      /* the Morning After: a 6 leaves one Good Morning, a crit two; drawn last, so they never move what is above */
+      var nGood = ui.vres === 'crit' ? 2 : ui.vres === '6' ? 1 : 0, goods = [];
+      for (var g = 0; g < nGood && GOOD.length; g++) goods.push(R.fresh('good', GOOD));
       var where = '**' + cap(place) + '**' + (host && host !== place ? ' · ' + host : '') + (near ? ' · ' + near : '');
       var lines = [{ kind: 'want', id: 'lead', md: lead.text, small: detail }];
+      goods.forEach(function (x, i) { lines.push({ kind: 'want', id: i ? 'good' + (i + 1) : 'good', md: '**Good Morning.** ' + fill(x.line, ctx), small: x.kind + ' · the Morning After' }); });
+      if (nGood && !goods.length) lines.push({ kind: 'want', id: 'good', md: '**' + (nGood === 2 ? 'Two Good Mornings' : 'A Good Morning') + '.** Roll on the table in the vault: the Morning After.', small: 'The pack carries no Good Mornings yet (its downtime part).' });
       if (shown) lines.push({ kind: 'want', id: 'over', md: '**Overindulged: ' + opt.title + '.** ' + opt.mech, small: opt.md + (opt.source ? ' *A new source to find: ' + opt.source + '.*' : '') });
       var rows = [{ k: 'Where', md: where }, { k: 'Ask', md: ask }, { k: 'Hook', md: hook.text }];
       lines.push({ kind: 'grid', id: 'more', rows: rows });
@@ -304,11 +332,12 @@
       if (shown && opt.clock) acts.push(opt.clock);
       if (hook.clock) acts.push(hook.clock);
       var chips = [shown ? 'Overindulged' : 'Indulged', vice];
+      if (ui.vres) chips.push(BAND_LABEL[ui.vres]);
       return {
         lines: lines, chips: chips, clocks: acts,
         title: (ui.who ? ui.who + ' · ' : '') + 'Indulge vice', sub: vice + ' · ' + cap(host === place ? place : host + ', ' + place) + (near ? ' · ' + near : ''),
-        label: (ui.who ? ui.who + ' · ' : '') + vice + (shown ? ' · over: ' + opt.title : ''),
-        over: { pick: pick, shown: shown, options: options }
+        label: (ui.who ? ui.who + ' · ' : '') + vice + (nGood ? ' · ' + (nGood === 2 ? 'two good mornings' : 'a good morning') : '') + (shown ? ' · over: ' + opt.title : ''),
+        over: { pick: pick, shown: shown, options: OVER_SHOWN.map(function (id) { return options.filter(function (o) { return o.id === id; })[0]; }) }
       };
     }
     function band(ui) { return ui.res || '45'; }

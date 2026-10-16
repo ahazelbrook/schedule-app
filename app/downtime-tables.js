@@ -24,11 +24,14 @@
     districts: ['Brightstone', 'Charhollow', 'Charterhall', 'Coalridge', 'Crowfoot', 'the Docks', 'Nightmarket', 'Silkshore',
       'Six Towers', 'Whitecrown', 'New Horizon', 'Barrowcleft'],
 
-    /* the four ways an overindulgence goes: the mechanical line (in our words; the book has the rule) */
+    /* the six ways an overindulgence goes: the mechanical line (in our words; the book has the rule). `lost` keeps its
+       id from the first version, so a stored card still replays; the book calls it a bender */
     over: [
-      { id: 'trouble', title: 'Attract trouble', mech: "Trouble follows you home: one more entanglement. Roll it, or use this one." },
+      { id: 'trouble', title: 'Attract trouble', mech: "Trouble follows you home: one more Crew or Local Trouble. Roll it, or use this one." },
+      { id: 'decision', title: 'Bad decision', mech: "You made a bad call: the GM ticks a clock of their choice, a rival's, a faction's or the ticking timebomb." },
+      { id: 'lost', title: 'Bender', mech: "Gone on a bender for weeks: play another character until this one surfaces. They come back with their harm healed." },
       { id: 'brag', title: 'Brag', mech: "You talked about the crew's business: +2 heat." },
-      { id: 'lost', title: 'Lost', mech: "Gone on a bender for weeks: play another character until this one surfaces. They come back with their harm healed." },
+      { id: 'brawl', title: 'Brawl', mech: "You fought people you shouldn't have: −1 status with their faction, or mark level 2 harm." },
       { id: 'tapped', title: 'Tapped', mech: "{Host} cuts you off: find a new source for your vice." }
     ],
 
@@ -81,6 +84,16 @@
             "{Host} reads your name from the front as one who has strayed. The doors of {place} are closed to you.",
             "{Host} says your money isn't clean enough for the plate any more, and won't take it.",
             "The congregation votes. You're not welcome until you've made amends, and they decide what amends means."
+          ],
+          decision: [
+            "You named someone in confession: a person the crew needs kept quiet. {Host} knows exactly who to pass it to.",
+            "Carried away by the sermon, you promised the congregation the crew would deal with their landlord. The landlord has heard.",
+            "You gave {host} the crew's address, for the prayer list."
+          ],
+          brawl: [
+            "A heckler mocked the service, and you put him through the collection table. His friends wear colours.",
+            "You took the lectern from a rival preacher by force, and {host} had to pull you off.",
+            "Two congregations argued over the hall at {place}. You settled it, badly."
           ]
         }
       },
@@ -133,6 +146,16 @@
             "{Host} has your name on a list behind the bar. You're not welcome at {place}.",
             "{Host} calls in your tab, all of it, and closes your book.",
             "The house decides you count cards. Two very large people walk you out of {place} and tell you not to come back."
+          ],
+          decision: [
+            "You staked the details of the crew's next job on a hand, and lost them to the table.",
+            "To cover a marker, you told {host} when the crew will be out of the lair.",
+            "You backed a fixed race with the wrong people's money. They'll want to know who placed the bet."
+          ],
+          brawl: [
+            "You called the dealer a cheat, and the house answered for them, with its fists.",
+            "A sore loser at {place} called you a cheat. You argued the point with a chair.",
+            "You fought one of {host's} runners over a slip that wasn't worth the paper."
           ]
         }
       },
@@ -184,6 +207,16 @@
             "{Host} returns your deposit with a note: not our sort of client.",
             "Your account at {place} is closed, and {host} won't say who asked.",
             "{Host} saw your picture in the wrong newspaper and doesn't want you seen at {place} again."
+          ],
+          decision: [
+            "You took a table at a charity dinner under the crew's real name.",
+            "To get the suite, you gave {host} a reference: the crew's fence, by name.",
+            "You bid against someone dangerous at an auction, and won. They remember your face."
+          ],
+          brawl: [
+            "Someone at {place} sat at your table. You explained whose table it was, with the wine bottle.",
+            "A member blackballed you, so you blacked his eye in the cloakroom.",
+            "You fought a society photographer for the film. The pictures of the fight came out better."
           ]
         }
       },
@@ -235,6 +268,16 @@
             "{Host} tells you not to come back until you've stopped doing what you do.",
             "The family meets without you and decides: you're not to come to {place}.",
             "{Host} returns every bit of money you ever sent, with a note: we don't want it."
+          ],
+          decision: [
+            "You promised the union the crew would stand with them on the picket line. The other side heard you say it.",
+            "Your family needed money, so you told {host} where the crew keeps its own.",
+            "You told the old neighbourhood who's really behind the sweeps. Some of them will repeat it."
+          ],
+          brawl: [
+            "Someone insulted your family at {place}. You settled it the old way.",
+            "The new crew on the block laughed at {host}. You stopped them laughing.",
+            "A family argument became a fight in the stairwell, and the neighbours called it in."
           ]
         }
       },
@@ -286,6 +329,16 @@
             "{Host} has had enough of your scenes: you're barred from {place}.",
             "{Host} has fallen for someone who can't stand you. You're out.",
             "{Place} shuts its doors to you after you broke something expensive, or someone."
+          ],
+          decision: [
+            "You brought a new lover back to the lair. They saw everything.",
+            "Showing off for {host}, you promised a favour the crew can't afford to give.",
+            "You gave a stranger a lift home in a crew car, and they kept the keys."
+          ],
+          brawl: [
+            "Someone cut in on your dance at {place}. You cut back.",
+            "{Host's} other admirer took exception to you. The bouncers took exception to you both.",
+            "A heckler talked through the whole set, so you stopped him with the microphone stand."
           ]
         }
       },
@@ -335,6 +388,16 @@
             "{Host} won't serve you any more: \"You'll die on my floor and bring the Bluecoats.\"",
             "{Host} has been picked up, bought out or scared off. Either way, your supply is gone.",
             "{Host} cuts you off after you threatened them. You don't remember threatening them."
+          ],
+          decision: [
+            "You fronted the crew's money to {host} for a shipment that is never coming.",
+            "Out of your skull, you told the room who the crew's next target is.",
+            "You let {host} keep something at the lair, just for one night. It's still there."
+          ],
+          brawl: [
+            "You climbed into somebody else's fight at {place}, and finished it.",
+            "The doorman wouldn't let you back in, so you went through him.",
+            "You woke up with split knuckles and someone's teeth marks in your hand. Their crew remembers whose."
           ]
         }
       },
@@ -386,6 +449,16 @@
             "{Host} says you've drawn too much attention, and stops answering the door.",
             "The Ministry shuts {place} overnight. {Host} is gone.",
             "{Host} says the thing you've been feeding doesn't want you any more."
+          ],
+          decision: [
+            "In the séance you asked the spirits about the crew's next job, out loud. Someone in the circle was taking notes.",
+            "You lent {host} the strangest thing the crew owns, for an experiment.",
+            "You signed {host's} register: your name, your address, and what you've seen."
+          ],
+          brawl: [
+            "A sceptic at {place} called it all a fraud. You argued the point with your fists.",
+            "You fought something in the dark at {place}. You won, but the members saw what it was.",
+            "A rival circle broke up the meeting, and you led the charge that threw them out."
           ]
         }
       }

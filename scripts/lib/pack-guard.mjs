@@ -35,7 +35,7 @@ export function packLosses(before, after, { missing = true } = {}) {
     if (old == null) continue;
     const now = isObj(after) ? after[name] : undefined;
     if (now == null) {
-      if (missing) out.push({ part: name, what: 'the ' + name + ' part is gone' + (name === 'prep' ? ' (no note has gm_prep: true now)' : name === 'screen' ? ' (no note has gm_screen: true now)' : '') });
+      if (missing) out.push({ part: name, what: 'the ' + name + ' part is gone' + (name === 'prep' ? ' (no note has gm_prep: true now)' : name === 'screen' ? ' (no note has gm_screen: true now)' : name === 'downtime' ? ' (no note has gm_downtime: true now)' : '') });
       continue;
     }
     const b0 = sizeOf(old), b1 = sizeOf(now);

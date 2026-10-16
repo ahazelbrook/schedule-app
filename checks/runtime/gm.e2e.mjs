@@ -472,7 +472,7 @@ try {
     await G.page.waitForSelector('#gm-dt .gm-dt-cost', { timeout: 5000 }); await sleep(700);   // the smooth scroll
     check(await G.page.$eval('#gm-dt .gm-dt-cost', (c) => { const r = c.getBoundingClientRect(), p = document.getElementById('gm-dt').getBoundingClientRect(); return r.height > 20 && r.top >= p.top - 1 && r.bottom <= p.bottom + 1; }), 'two taps from "Mags overindulged": the card is drawn and its cost box is on screen');
     const opts = await G.page.$$eval('#gm-dt [data-gm="dt-pick"]', (bs) => bs.map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed')]));
-    check(opts.length === 4 && opts.filter((o) => o[1] === 'true').length === 1 && await G.page.$eval('#gm-dt .gm-dt-opts', (o) => o.nextElementSibling && o.nextElementSibling.classList.contains('gm-dt-cost')), 'the four options sit right above the cost box, one pressed');
+    check(opts.length === 6 && opts.filter((o) => o[1] === 'true').length === 1 && await G.page.$eval('#gm-dt .gm-dt-opts', (o) => o.nextElementSibling && o.nextElementSibling.classList.contains('gm-dt-cost')), 'the six options sit right above the cost box, one pressed');
     check(await G.page.$eval('#gm-dt .gm-dt-cost', (c) => getComputedStyle(c).borderTopColor !== getComputedStyle(document.querySelector('#gm-dt .gm-dtcard .gm-want')).borderLeftColor), 'the cost box has an accent of its own');
     const st1 = await until(async () => { const d = await gmState(); return d.cards && d.cards.downtime && d.cards.downtime.ui.res === 'over' ? d.cards.downtime : null; }, 5000);
     check(!!st1 && st1.ui.who === 'Mags Invented' && st1.ui.purveyor === 'Old Mo, Mo’s Bar' && typeof st1.mem === 'string' && Number.isInteger(st1.seed), 'state: the card is replay info with the resolved strings');
@@ -578,8 +578,12 @@ try {
       check(await V.page.waitForSelector('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]', { timeout: 10000 }).then(() => true, () => false), 'phone: the Downtime segment shows the panel with the PCs');
       await V.page.tap('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]');
       if (await V.page.$eval('#gm-dt [data-gm="dt-act"][data-v="indulge"]', (b) => b.getAttribute('aria-pressed') !== 'true')) await V.page.tap('#gm-dt [data-gm="dt-act"][data-v="indulge"]');
-      const ob = await V.page.$eval('#gm-dt [data-gm="dt-roll"][data-v="over"]', (b) => { const r = b.getBoundingClientRect(), f = document.querySelector('.gm-fab').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), fab: Math.round(f.top), ih: innerHeight }; });
-      check(ob.bottom <= ob.fab && ob.bottom <= ob.ih, 'phone: after the PC, Overindulged is on the first screen, clear of the Capture button ' + JSON.stringify(ob));
+      /* the vice result (1–3 · 4/5 · 6 · Crit, the Morning After) is the tap every indulgence needs: its row is on the first screen above
+         the Capture button; Overindulged, under it at the left, is on the first screen too and clear of the button (above it, or beside it) */
+      const ob = await V.page.$eval('#gm-dt [data-gm="dt-roll"][data-v="over"]', (b) => { const r = b.getBoundingClientRect(), f = document.querySelector('.gm-fab').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), right: Math.round(r.right), fab: Math.round(f.top), fabLeft: Math.round(f.left), ih: innerHeight }; });
+      const rb = await V.page.$$eval('#gm-dt [data-gm="dt-roll"][data-k="vres"]', (bs) => ({ n: bs.length, bottom: Math.round(Math.max(...bs.map((b) => b.getBoundingClientRect().bottom))), fab: Math.round(document.querySelector('.gm-fab').getBoundingClientRect().top) }));
+      check(rb.n === 4 && rb.bottom <= rb.fab, 'phone: after the PC, the four vice results are on the first screen, above the Capture button ' + JSON.stringify(rb));
+      check(ob.bottom <= ob.ih && (ob.bottom <= ob.fab || ob.right <= ob.fabLeft), 'phone: Overindulged is on the first screen, clear of the Capture button ' + JSON.stringify(ob));
       const ld = await V.page.evaluate(layout);
       check(ld.scrollWidth <= ld.clientWidth + 1 && !ld.wide.length && !ld.small.length, 'phone Downtime: no overflow and every control is at least 44 px ' + JSON.stringify([ld.wide, ld.small]));
       await V.page.tap('#gm-dt [data-gm="dt-roll"][data-v="over"]'); await V.page.waitForSelector('#gm-dt .gm-dt-cost'); await sleep(800);

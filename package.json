@@ -20,7 +20,7 @@
     "check:clocks": "node checks/api/clocks.mjs",
     "check:clocks-e2e": "node checks/runtime/clocks.e2e.mjs",
     "check:gm-api": "node checks/api/gm.mjs",
-    "check:runtime": "node checks/runtime/adapter.test.mjs && node checks/runtime/pwa.test.mjs && node checks/runtime/markdown.test.mjs && node checks/runtime/display.test.mjs && node checks/runtime/gm-nosecrets.test.mjs && node checks/runtime/gm-logic.test.mjs && node checks/runtime/gm-location.test.mjs && node checks/runtime/gm-page.test.mjs && node checks/runtime/gm-figure.test.mjs && node checks/runtime/gm-npc.test.mjs && node checks/runtime/gm-sync.test.mjs && node checks/runtime/gm-scenes.test.mjs && node checks/runtime/gm-engagement.test.mjs && node checks/runtime/gm-downtime.test.mjs && node checks/runtime/gm-prep.test.mjs && node checks/runtime/gm-screen.test.mjs && node checks/runtime/stt.test.mjs && node checks/runtime/ambient-assets.test.mjs && node checks/runtime/ambient-shells.test.mjs && node checks/runtime/ambient-frames.test.mjs && node checks/runtime/gm-after.test.mjs",
+    "check:runtime": "node checks/runtime/adapter.test.mjs && node checks/runtime/pwa.test.mjs && node checks/runtime/markdown.test.mjs && node checks/runtime/display.test.mjs && node checks/runtime/gm-nosecrets.test.mjs && node checks/runtime/gm-logic.test.mjs && node checks/runtime/gm-location.test.mjs && node checks/runtime/gm-page.test.mjs && node checks/runtime/gm-figure.test.mjs && node checks/runtime/gm-npc.test.mjs && node checks/runtime/gm-sync.test.mjs && node checks/runtime/gm-scenes.test.mjs && node checks/runtime/gm-engagement.test.mjs && node checks/runtime/gm-downtime.test.mjs && node checks/runtime/gm-downtime-export.test.mjs && node checks/runtime/gm-prep.test.mjs && node checks/runtime/gm-screen.test.mjs && node checks/runtime/stt.test.mjs && node checks/runtime/ambient-assets.test.mjs && node checks/runtime/ambient-shells.test.mjs && node checks/runtime/ambient-frames.test.mjs && node checks/runtime/gm-after.test.mjs",
     "check:e2e": "cd app/checks && node e2e.js",
     "check:e2e-all": "node checks/e2e-all.mjs",
     "check:sweep": "node checks/runtime/gm-figure.test.mjs --sweep=500 && node checks/runtime/gm-npc.test.mjs --sweep=500",
@@ -43,7 +43,7 @@
     "check:gm": "node checks/runtime/gm.e2e.mjs",
     "check:gm-scenes": "node checks/runtime/gm-scenes.e2e.mjs",
     "check:gm-page": "node checks/runtime/gm-page.test.mjs",
-    "check:gm-downtime": "node checks/runtime/gm-downtime.test.mjs"
+    "check:gm-downtime": "node checks/runtime/gm-downtime.test.mjs && node checks/runtime/gm-downtime-export.test.mjs"
   },
   "keywords": [],
   "author": "",
