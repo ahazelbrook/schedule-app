@@ -82,21 +82,31 @@ fails and nobody is known, nothing is purged.
   versions with `pack()` and fetches only what changed; if a part will not download, the page carries on with the copy on
   the device ("offline copy" in the header). The header shows "Campaign data exported DD/MM/YYYY", amber when
   more than three days old.
-- **Layout.** Laptop (>= 1100 px): the console (the Situations | Classic toggle, Position, controls, the four buttons, the card, "Earlier:" the last five rolls) |
-  a side panel with **Prep (R)**, **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)**, **Cards (O)**, **Screen (T)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
+- **Layout.** Laptop (>= 1100 px): the console column, top to bottom, nothing above the card but what rolls it: **Position**,
+  the **Scene** line (one row of labelled chips, `Scene: any · District: any · Aim: anyone · NPC: … · Threat: 3`, that opens
+  to the scene, district, PC, NPC and threat controls; closed by default at every width), the four Situation buttons, the
+  card, "Earlier:" the last five rolls, and **More tables** (the nine single tables, folded) |
+  a side panel with **Prep (R)**, **GM screen (T)**, **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)**, **Cards (O)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
   vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on
-  stage) | the capture bar at the foot. 600–1100 px: two columns, the rail below. Phone: a Console | Prep | Location | Street | Engage |
-  NPC | Cards | Screen | iPad | State bar, the Position switch at the top, the situations a 2 × 2 grid (Classic: 3 × 3), the other controls behind a "Scene" line,
-  capture on a floating button.
-- **The laptop layout** (>= 1100 px, 16/10/2026): the window is the page. The site header and footer give way to a slim top
-  bar (the session, Saved, a stale-pack note, **iPad:** what the players see, **Listening** with whether the PC is copying,
-  **Clear → ambient**, **Lights out**, **Display**, and a **Menu** with Export tonight's note, Update pack, the site's pages,
-  **Classic layout** and Forget GM data). The three columns each scroll on their own and capture sits fixed at the foot, so a
-  long Prep note or the GM screen never carries the console or the rail away. The side tabs are one row (Prep, Screen |
-  Location, Street, Engage, NPC | Cards, iPad). Prep and Screen show their sections as an outline beside the text, the one
+  stage) | the capture bar at the foot (buckets, the input, **File**, "N filed", **File last roll**). 600–1100 px: two columns, the rail below. Phone: the same bar as the laptop, 44 px
+  (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | Engage / NPC | Cards | GM screen | iPad | State
+  bar in two rows of five (every segment in reach, nothing to drag sideways), both stuck to the top; the Position switch first,
+  the situations a 2 × 2 grid (Classic: 3 × 3), the other controls behind the Scene line, capture on a floating button. After a
+  roll the card's header is scrolled into view (the console column on a laptop, the page on a phone): a roll is never below the fold.
+- **The app layout** (`body.gm-app`, 16/10/2026, every width since 18/10): the window is the page. While the tools are open the
+  site header and footer, the "The console" heading and its admin buttons give way to a slim top bar (the session, Saved, a
+  stale-pack note, the beat, **Find**, **iPad:** what the players see, **Listening** with whether the PC is copying (only once
+  the transcriber has ever been set up: the pill is hidden while `gm_stt` has never been written), **Clear → ambient**, **Lights out**,
+  and a **Menu** with what is not play: the pack's export date, **Open the display page (for the iPad)**, Export tonight's note,
+  Clear tonight's capture (it confirms), Update pack, the console view (**Situations | Classic**), the site's pages, **Classic layout**
+  and Forget GM data). On a laptop the three columns each scroll on their own and capture sits fixed at the foot, so a
+  long Prep note or the GM screen never carries the console or the rail away; toasts sit above the capture bar, never over its
+  input. The side tabs are one row with their keys showing at 1280 px (Prep, GM screen |
+  Location, Street, Engage, NPC | Cards, iPad). Prep and the GM screen show their sections as an outline beside the text, the one
   being read marked. **Focus** (`F`, or the button by the tabs) shrinks the console to its keys on any tab (it replaces Prep's
-  Wide, and shares its setting, `b68.gm.prepWide`). Empty rail boxes are one line. **Classic layout** in the menu brings back
-  the old page on this device (`b68.gm.layout` = classic); **Laptop layout** in the old header returns. `body.gm-app` turns it
+  Wide, and shares its setting, `b68.gm.prepWide`); a roll made in Focus leaves Focus so the card shows (a toast says so, once
+  per page load). Empty rail boxes are one line. Below 1100 px the page scrolls under the sticky bar. **Classic layout** in the menu brings back
+  the old page on this device (`b68.gm.layout` = classic: the site header, the heading and its buttons, the toggle beside them); **Laptop layout** in the old header returns. `body.gm-app` turns it
   on while the tools are open; loading and import screens keep the site header.
 - **Table aids** (17/10/2026):
   - **Find** (`Ctrl+K`, `/`, or **Find** in the bar): one box over the open Prep note (its sections and transclusions),
@@ -118,12 +128,13 @@ fails and nobody is known, nothing is purged.
   the last roll under "Rolled at the table", `H` blanks the screen until any key or tap, `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
 - **Situations and Classic.** The console opens on **Situations**: four buttons, each a moment in the roll: `1` **Before** (a Devil's
   Bargain), `2` **4/5**, `3` **1–3**, `4` **Someone**. A large three-way **Position** switch (controlled / risky / desperate, with what
-  it means for severity, winds and harm) sits above them, always on screen; the other controls stay (scene, district, PC, NPC,
-  threat); there is no Result control (the button is the result). A card is a **lead box** (one big line, its chips, its own
+  it means for severity, winds and harm) sits above them, always on screen; the other controls (scene, district, PC, NPC,
+  threat) fold under the **Scene** line; there is no Result control (the button is the result). A card is a **lead box** (one big line, its chips, its own
   detail under *More*), at most three one-line **Or** rows that each open to their full section, and **one** actions row merged
-  from every section (bargains owed, callbacks used, ticks...), then Pin and Copy. Under the cards a small **Single tables** row
-  holds the nine classic rollers (no keys). **Classic** is the nine-button console exactly as it was (keys `1`–`9`, the Result
-  control): the **Situations | Classic** toggle in the console header is one tap and is remembered per device
+  from every section (bargains owed, callbacks used, ticks...), then Pin and Copy. Under the card and Earlier, **More tables**
+  folds out the nine classic rollers (no keys). **Classic** is the nine-button console exactly as it was (keys `1`–`9`, the Result
+  control; on a laptop its nine buttons sit two to a row so no label breaks mid-word): the **Situations | Classic** toggle in the
+  Menu (and in the old header, in the classic layout) is one tap and is remembered per device
   (`localStorage` `b68.gm.view`; without storage it opens on Situations). The release switch is `SITUATIONS_DEFAULT` near the top
   of `gm-page.js`: `false` hides the toggle and shows Classic only (the safe release; rollback is also one tap on the toggle).
   Composed cards are stored under `cards.situation` / `hist.situation` (replay info: `{ id: 'situation', situation, seed, ui, mem }`),
@@ -245,7 +256,7 @@ fails and nobody is known, nothing is purged.
 
 Full screen (no header, nav or banner) for an iPad signed in as the GM. Boot mounts
 `B68DisplayPage.mount(container, { gm, db, figures, cast, isGM })` once the files settle (`db` is the resolved db) and
-calls `unmount()` on leaving; anyone but the GM sees a message instead. The GM page's **Display** button opens it.
+calls `unmount()` on leaving; anyone but the GM sees a message instead. The GM page's Menu (**Open the display page**) opens it.
 
 The display offers **no way back** to the GM page (no link, hidden or not). Its sanitiser applies the same rules as the server's `checkSvg` (namespaced
 elements, `<a>`, `xml:base`, backslashes, `image-set()` / `src()`, raster `data:` images only on `<image>` / `<feImage>`).

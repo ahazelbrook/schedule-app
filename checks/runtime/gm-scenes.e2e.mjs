@@ -131,7 +131,9 @@ try {
   // a phone: ten segments, nothing wider than the screen, every control 44 px or more
   const M = await open('#gm', { width: 390, height: 844, mobile: true });
   const mp = M.page;
-  check((await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => x.getAttribute('data-seg')).join())) === 'console,prep,location,scenes,engagement,npc,cards,rules,ipad,state', 'phone: the bar is Console, Prep, Location, Street, Engage, NPC, Cards, Screen, iPad, State');
+  check((await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => x.getAttribute('data-seg')).join())) === 'console,prep,location,scenes,engagement,npc,cards,rules,ipad,state', 'phone: the bar is Console, Prep, Location, Street, Engage, NPC, Cards, GM screen, iPad, State');
+  const segRows = await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.right)]; }));
+  check(new Set(segRows.map((r) => r[0])).size === 2 && segRows.every((r) => r[1] <= 390), 'phone: two rows of five, every segment on screen (' + JSON.stringify(segRows) + ')');
   for (const seg of ['scenes', 'engagement']) {
     await mp.click('.gm-segbar [data-seg="' + seg + '"]');
     await mp.waitForSelector('#gm-' + (seg === 'scenes' ? 'scn' : 'eng') + ' select', { state: 'visible', timeout: 5000 });

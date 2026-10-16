@@ -109,6 +109,13 @@ try {
   await page.keyboard.press('r');
   check(await page.waitForSelector('#gm-prep .pp-doc', { timeout: 10000 }).then(() => true, () => false), 'R opens Prep and the note renders');
   check(await page.$eval('[data-gm="panel"][data-panel="prep"]', (b) => b.getAttribute('aria-selected')) === 'true', 'the Prep tab is selected');
+  check(await page.evaluate(() => document.activeElement && document.activeElement.id === 'gm-prep-q'), 'R focuses the note’s find box, so typing is safe');
+  await page.keyboard.type('2');
+  check((await page.$$('#gm-earlier [data-gm="replay"]')).length === 0, 'a digit typed there rolls nothing');
+  await page.fill('#gm-prep-q', 'must'); await page.keyboard.press('Enter');
+  check(await page.$$eval('#gm-prep .pp-rail .chip', (cs) => cs.filter((c) => !c.hidden).map((c) => c.textContent.trim())).then((v) => v.length === 1 && /Must land/.test(v[0])), 'the find box filters the section rail; Enter goes to the first match');
+  await page.fill('#gm-prep-q', ''); await page.keyboard.press('Escape');
+  check(await page.$$eval('#gm-prep .pp-rail .chip', (cs) => cs.every((c) => !c.hidden)), 'cleared: every section is listed again');
   const boxes = await page.$$eval('#gm-prep .pp-box', (bs) => bs.map((b) => ({ a: b.getAttribute('data-task'), locked: b.getAttribute('aria-disabled') === 'true' })));
   check(boxes.length > 0 && boxes.some((b) => b.locked) === !!boxes.find((b) => b.locked), 'task boxes are tickable checkboxes (' + boxes.length + ')');
   check((await page.$$('#gm-prep .pp-sec')).length > 1 && (await page.$$('#gm-prep .pp-rail .chip')).length > 1, 'sections and a section rail');
@@ -181,7 +188,8 @@ try {
   /* ---- the Screen tab (T) ---- */
   await page.keyboard.press('t');
   check(await page.waitForSelector('#gm-rules .gs-sec', { timeout: 5000 }).then(() => true, () => false), 'T opens the Screen and its sections render');
-  check(await page.$eval('[data-gm="panel"][data-panel="rules"]', (b) => /Screen/.test(b.textContent)), 'the tab is called Screen');
+  check(await page.$eval('[data-gm="panel"][data-panel="rules"]', (b) => /GM screen/.test(b.textContent)), 'the tab is called GM screen');
+  check(await page.evaluate(() => document.activeElement && document.activeElement.id === 'gm-gs-q'), 'T focuses the screen’s find box, so typing is safe');
   if (!REAL) {
     check(JSON.stringify(await page.$$eval('#gm-rules .gs-sec .gs-h span', (s) => s.map((x) => x.textContent))) === '["Rolling","Weather","Canals"]', 'one section per ## heading, Related left in the vault');
     check(/Geese first/.test(await page.textContent('#gm-rules .gs-intro')), 'the intro (house law) sits above the sections');

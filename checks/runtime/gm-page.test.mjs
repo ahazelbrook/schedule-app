@@ -759,7 +759,8 @@ await test('9a. keys: I opens the iPad panel and 0 clears to ambient; never whil
     assert.equal(P.keyAction({ key: k, typing: true }), null, k + ' typing'); assert.equal(P.keyAction({ key: k, ctrlKey: true }), null, k + ' ctrl');
     assert.equal(P.keyAction({ key: k, altKey: true }), null); assert.equal(P.keyAction({ key: k, metaKey: true }), null);
   }
-  assert.deepEqual(P.keyAction({ key: 'h' }), { type: 'blank' }, 'H still blanks the GM screen'); assert.deepEqual(P.keyAction({ key: '1', view: 'classic' }), { type: 'button', n: 1 });
+  assert.deepEqual(P.keyAction({ key: 'H' }), { type: 'blank' }, 'Shift+H blanks the GM screen at once'); assert.deepEqual(P.keyAction({ key: 'h' }), { type: 'blank-tap' }, 'a plain H is one tap of two');
+  assert.deepEqual(P.keyAction({ key: '1', view: 'classic' }), { type: 'button', n: 1 });
 });
 
 await test('9b. crewOf: whole numbers clamped to 0-9 / 0-4; null without a number; ipadView draws from the server document', () => {
@@ -960,7 +961,11 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   assert.equal(h.qa('.gm-bar .gm-save').length, 1, 'saving shows in the bar');
   assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'the menu starts shut');
   h.q('[data-gm="menu"]').click(); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), false); assert.equal(h.q('[data-gm="menu"]').getAttribute('aria-expanded'), 'true');
-  assert.ok(['note', 'update', 'layout-classic', 'forget'].every((a) => h.q('.gm-menu-list [data-gm="' + a + '"]')), 'export, update, classic and forget are in it');
+  assert.ok(['note', 'clearcap', 'update', 'layout-classic', 'forget'].every((a) => h.q('.gm-menu-list [data-gm="' + a + '"]')), 'export, clear the capture, update, classic and forget are in it');
+  assert.ok(h.q('.gm-menu-list a[href="#display"]') && h.qa('.gm-bar a[href="#display"]').every((a) => a.closest('.gm-menu-list')), 'the display page opens from the Menu, not the bar');
+  assert.ok(!h.q('.gm-capacts [data-gm="note"]') && !h.q('.gm-capacts [data-gm="clearcap"]') && h.q('.gm-capacts [data-gm="last"]'), 'the capture bar keeps File last roll only');
+  assert.equal(h.q('#gm-bar-stt').hasAttribute('hidden'), true, 'no Listening pill while the transcriber has never been set up');
+  assert.ok(/GM screen/.test(h.q('.gm-tab[data-panel="rules"]').textContent) && /GM screen/.test(h.q('[data-gm="seg"][data-seg="rules"]').textContent), 'the Screen tab is called GM screen');
   h.q('[data-gm="menu"]').click(); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'a second press shuts it');
   h.q('[data-gm="menu"]').click(); h.press('Escape'); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'Escape shuts it');
   assert.equal(h.qa('#gm-mini button').length, 4, 'the console as its four keys');

@@ -252,8 +252,11 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-page .gm-head { padding: 8px 0; }
   #gm-page .gm-h { font-size: 34px; }
   #gm-page .gm-acts .btn { flex: 1 1 auto; justify-content: center; }
-  #gm-page .gm-segbar { display: flex; width: 100%; position: sticky; top: 0; z-index: 4; background: var(--paper); margin-bottom: 10px; }
-  #gm-page .gm-segbar .chip { flex: 1 1 0; min-width: 0; min-height: 44px; padding: 8px 2px; justify-content: center; font-size: 10px; letter-spacing: 0; }
+  /* the ten segments as two rows of five: all of them in reach, nothing to drag sideways */
+  #gm-page .gm-segbar { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 100%; position: sticky; top: 0; z-index: 4; background: var(--paper); margin-bottom: 10px; }
+  #gm-page .gm-segbar .chip { min-width: 0; min-height: 44px; padding: 8px 2px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #gm-page .gm-segbar .chip:nth-child(5n) { border-right: 0; }
+  #gm-page .gm-segbar .chip:nth-child(-n+5) { border-bottom: 2px solid var(--rule); }
   #gm-page .gm-segbar .chip[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
   #gm-page .gm-main { grid-template-columns: minmax(0, 1fr); }
   #gm-page .gm-rail { grid-template-columns: minmax(0, 1fr); }
@@ -261,7 +264,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-root[data-seg="console"] .gm-side, #gm-root[data-seg="console"] .gm-rail,
   #gm-root[data-seg="side"] .gm-console, #gm-root[data-seg="side"] .gm-rail,
   #gm-root[data-seg="state"] .gm-console, #gm-root[data-seg="state"] .gm-side { display: none; }
-  #gm-page .gm-cardbox { scroll-margin-top: 140px; }   /* under the sticky bar and the two-row segmented bar */
+  #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-card-h { scroll-margin-top: 140px; }   /* under the sticky bar and the two-row segmented bar */
   #gm-page .gm-btn { grid-template-columns: 1fr; grid-template-rows: auto auto; justify-items: center; text-align: center; min-height: 76px; padding: 8px 4px; }
   #gm-page .gm-btn kbd { grid-row: auto; }
   #gm-page .gm-btn small { display: none; }
@@ -289,7 +292,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 /* ---- the console: Situations (default) and Classic (the toggle lives in the Menu, and in the old header) ---- */
 #gm-page .gm-viewseg .chip { min-height: 44px; }
 #gm-page .gm-viewseg .chip[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
-#gm-page .gm-cardbox { scroll-margin-top: 8px; }
+#gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-card-h { scroll-margin-top: 8px; }
 #gm-root[data-view="classic"] .gm-pos, #gm-root[data-view="classic"] .gm-singles { display: none; }
 #gm-page .gm-pos { display: grid; gap: 4px; border: 2px solid var(--rule); background: var(--card); padding: 8px 10px 10px; }
 #gm-page .gm-posb-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
@@ -365,50 +368,87 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-ipad-body .gm-row { align-items: end; }
 @media (pointer: coarse) { #gm-page .gm-ipad-tile { min-height: 64px; } }
 
-/* ---- the laptop layout (>= 1100 px, body.gm-app; gm-page.js setApp): the window is the page ----
-   The site header and footer go; the GM page fills the window as four rows (top bar, the three columns, capture), and each
-   column scrolls on its own, so a long Prep note or the GM screen never carries the console or the state rail away. Prep and
-   Screen get their section list as an outline beside the text, the current section marked. Focus (F, or Prep's Wide) shrinks
-   the console to its keys on any tab. Below 1100 px, and with "Classic layout" chosen in the menu, none of this applies. */
-#gm-page .gm-bar, #gm-page .gm-mini, #gm-page .gm-focusbtn, #gm-page .gm-applayout { display: none; }
+/* ---- the app layout (body.gm-app; gm-page.js setApp): the window is the page ----
+   Every width: while the tools are open the site header and footer give way to a slim black bar (the session, Saved, a
+   stale-pack note, the beat, Find, iPad: what the players see, Listening once the transcriber has ever been used,
+   Clear → ambient, Lights out, Menu). The Menu holds what is not play: the display page, Export tonight's note, Clear the
+   capture, Update pack, the Situations | Classic view, the site's pages, Classic layout and Forget.
+   Laptop (>= 1100 px): four rows (the bar, three columns that each scroll on their own, capture at the foot), so a long Prep
+   note or the GM screen never carries the console or the state rail away. Prep and Screen get their section list as an
+   outline beside the text, the current section marked. Focus (F, or Prep's Wide) shrinks the console to its keys on any tab.
+   Below 1100 px the page scrolls under the sticky bar; on a phone the two-row segmented bar sticks under it.
+   "Classic layout" in the menu turns all of this off on this device (the old header and its buttons come back). */
+#gm-page .gm-bar, #gm-page .gm-mini, #gm-page .gm-focusbtn { display: none; }
+#gm-page .gm-applayout { display: inline-flex; }
+body.gm-app #gm-page .gm-applayout, body.gm-app #gm-page .gm-head { display: none; }
+body.gm-app[data-mode="gm"] .wrap > .top, body.gm-app[data-mode="gm"] .wrap > footer { display: none; }
 #gm-page .gm-box-empty { border-style: dashed; border-color: var(--hair); background: none; }
 #gm-page .gm-box-empty .gm-band { background: none; color: var(--ink-soft); padding: 5px 10px; }
+
+/* the top bar */
+body.gm-app #gm-page .gm-bar { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 6px 12px; background: var(--rule); color: var(--on-ink); position: relative; z-index: 20; }
+#gm-page .gm-bar a.gm-bar-mark { font: 900 24px/1 var(--font-poster); color: inherit; text-decoration: none; white-space: nowrap; }
+#gm-page .gm-bar-mark b { font: 900 12px/1 var(--font-cond); letter-spacing: .14em; vertical-align: 4px; }
+#gm-page .gm-bar-sess, #gm-page .gm-bar .gm-save { font: 700 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; color: inherit; opacity: .8; margin: 0; }
+#gm-page .gm-bar .gm-save.bad { opacity: 1; background: var(--alarm); color: #fbf8f1; padding: 3px 5px; }
+#gm-page .gm-bar-exp { font: 700 11px/1 var(--font-mono); background: var(--mustard); color: var(--on-mustard); padding: 4px 6px; white-space: nowrap; }
+#gm-page .gm-bar-exp:empty { display: none; }
+#gm-page .gm-grow { flex: 1 1 auto; }
+#gm-page .gm-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; max-width: 280px; padding: 4px 9px; border: 1.5px solid currentColor; background: none; color: inherit; font: 700 11px/1.2 var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+#gm-page .gm-pill.warn { border-color: var(--mustard); }
+#gm-page .gm-pill:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+#gm-page .gm-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; }
+#gm-page .gm-dot.on { background: var(--mustard); border-color: var(--mustard); }
+#gm-page .gm-dot.warn { background: var(--accent); border-color: var(--accent); }
+#gm-page .gm-bb { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 10px; border: 0; background: var(--on-ink); color: var(--rule); font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; text-decoration: none; white-space: nowrap; cursor: pointer; }
+#gm-page .gm-bb:hover, #gm-page .gm-bb[aria-expanded="true"] { background: var(--accent); color: var(--on-accent); }
+#gm-page .gm-bb kbd { font-size: 9.5px; }
+#gm-page .gm-pill:focus-visible, #gm-page .gm-bb:focus-visible, #gm-page .gm-bar-mark:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .gm-menu { position: relative; display: inline-flex; }
+#gm-page .gm-menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; display: grid; min-width: 260px; max-width: calc(100vw - 24px); background: var(--card); color: var(--ink); border: 2px solid var(--rule); box-shadow: 4px 4px 0 var(--shadow-ink); }
+#gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button { display: block; text-align: left; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--hair); background: none; color: var(--ink); font: 600 13px/1.2 var(--font-text); text-decoration: none; cursor: pointer; }
+#gm-page .gm-menu-list > :last-child { border-bottom: 0; }
+#gm-page .gm-menu-list > a:hover, #gm-page .gm-menu-list > button:hover, #gm-page .gm-menu-list > :focus-visible { background: var(--inset); outline: none; }
+#gm-page .gm-menu-list > .bad { color: var(--alarm); }
+#gm-page .gm-menu-h { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--hair); font: 600 13px/1.3 var(--font-text); display: grid; gap: 4px; }
+#gm-page .gm-menu-h .gm-exp { margin: 0; }
+#gm-page .gm-menu-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--hair); }
+#gm-page .gm-menu-row .gm-lab { display: inline; }
+/* the toast sits above the capture bar, never over its input */
+body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+@media (pointer: coarse) {
+  #gm-page .gm-bb, #gm-page .gm-pill, #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button { min-height: 44px; }
+  body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip { min-height: 44px; }
+}
+
+/* below a laptop: the page scrolls under a sticky bar */
+@media (max-width: 1099px) {
+  body.gm-app[data-mode="gm"] .wrap { padding-top: 0; }
+  body.gm-app #gm-page { padding-top: 0; }
+  body.gm-app #gm-page .gm-bar { position: sticky; top: 0; flex-wrap: wrap; margin: 0 calc(-1 * clamp(16px, 3vw, 36px)) 12px; padding: 4px clamp(16px, 3vw, 36px); }
+  body.gm-app #gm-page .gm-bb kbd { display: none; }
+  body.gm-app #gm-page .gm-pill { max-width: 220px; }
+  body.gm-app[data-mode="gm"] .toast { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+}
+/* a phone: a 44 px bar ('68 GM · Session · ● iPad · Menu) with the two-row segmented bar stuck under it */
+@media (max-width: 599px) {
+  body.gm-app #gm-page .gm-bar { height: 44px; min-height: 44px; flex-wrap: nowrap; gap: 6px; padding: 0 10px; margin-bottom: 0; z-index: 45; }
+  body.gm-app #gm-page .gm-bar a.gm-bar-mark { font-size: 20px; }
+  body.gm-app #gm-page .gm-bar .gm-save:not(.bad), body.gm-app #gm-page .gm-bar-exp, body.gm-app #gm-page .gm-beatbar, body.gm-app #gm-page .gm-bar [data-gm="find-open"],
+  body.gm-app #gm-page #gm-bar-stt, body.gm-app #gm-page .gm-bar [data-gm="blankipad"], body.gm-app #gm-page .gm-bar [data-gm="darkipad"] { display: none; }
+  body.gm-app #gm-page .gm-pill { max-width: 40vw; min-width: 0; flex: 0 1 auto; }
+  body.gm-app #gm-page .gm-bb { padding: 0 8px; }
+  body.gm-app #gm-page .gm-segbar { top: 44px; margin: 0 calc(-1 * clamp(16px, 3vw, 36px)) 10px; width: auto; border-left: 0; border-right: 0; }
+  body.gm-app[data-mode="gm"] .toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ---- the laptop (>= 1100 px): four rows, three scrollers ---- */
 @media (min-width: 1100px) {
-  #gm-page .gm-applayout { display: inline-flex; }
-  body.gm-app #gm-page .gm-applayout { display: none; }
   body.gm-app[data-mode="gm"] { overflow: hidden; }
   body.gm-app[data-mode="gm"] .wrap { max-width: none; height: 100vh; height: 100dvh; padding: 0; display: flex; flex-direction: column; }
-  body.gm-app[data-mode="gm"] .wrap > .top, body.gm-app[data-mode="gm"] .wrap > footer { display: none; }
   body.gm-app #gm-page:not([hidden]) { flex: 1 1 auto; min-height: 0; padding: 0; }
   body.gm-app #gm-root { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
-  body.gm-app #gm-page .gm-head, body.gm-app #gm-page .gm-fab { display: none; }
-
-  /* the top bar */
-  body.gm-app #gm-page .gm-bar { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 6px 12px; background: var(--rule); color: var(--on-ink); position: relative; z-index: 20; }
-  #gm-page .gm-bar a.gm-bar-mark { font: 900 24px/1 var(--font-poster); color: inherit; text-decoration: none; white-space: nowrap; }
-  #gm-page .gm-bar-mark b { font: 900 12px/1 var(--font-cond); letter-spacing: .14em; vertical-align: 4px; }
-  #gm-page .gm-bar-sess, #gm-page .gm-bar .gm-save { font: 700 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; color: inherit; opacity: .8; margin: 0; }
-  #gm-page .gm-bar .gm-save.bad { opacity: 1; background: var(--alarm); color: #fbf8f1; padding: 3px 5px; }
-  #gm-page .gm-bar-exp { font: 700 11px/1 var(--font-mono); background: var(--mustard); color: var(--on-mustard); padding: 4px 6px; white-space: nowrap; }
-  #gm-page .gm-bar-exp:empty { display: none; }
-  #gm-page .gm-grow { flex: 1 1 auto; }
-  #gm-page .gm-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; max-width: 280px; padding: 4px 9px; border: 1.5px solid currentColor; background: none; color: inherit; font: 700 11px/1.2 var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-  #gm-page .gm-pill.warn { border-color: var(--mustard); }
-  #gm-page .gm-pill:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-  #gm-page .gm-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; }
-  #gm-page .gm-dot.on { background: var(--mustard); border-color: var(--mustard); }
-  #gm-page .gm-dot.warn { background: var(--accent); border-color: var(--accent); }
-  #gm-page .gm-bb { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 10px; border: 0; background: var(--on-ink); color: var(--rule); font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; text-decoration: none; white-space: nowrap; cursor: pointer; }
-  #gm-page .gm-bb:hover, #gm-page .gm-bb[aria-expanded="true"] { background: var(--accent); color: var(--on-accent); }
-  #gm-page .gm-bb kbd { font-size: 9.5px; }
-  #gm-page .gm-pill:focus-visible, #gm-page .gm-bb:focus-visible, #gm-page .gm-bar-mark:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-  #gm-page .gm-menu { position: relative; display: inline-flex; }
-  #gm-page .gm-menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; display: grid; min-width: 250px; background: var(--card); color: var(--ink); border: 2px solid var(--rule); box-shadow: 4px 4px 0 var(--shadow-ink); }
-  #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button { display: block; text-align: left; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--hair); background: none; color: var(--ink); font: 600 13px/1.2 var(--font-text); text-decoration: none; cursor: pointer; }
-  #gm-page .gm-menu-list > :last-child { border-bottom: 0; }
-  #gm-page .gm-menu-list > :hover, #gm-page .gm-menu-list > :focus-visible { background: var(--inset); outline: none; }
-  #gm-page .gm-menu-list > .bad { color: var(--alarm); }
-  #gm-page .gm-menu-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--hair); }
+  body.gm-app #gm-page .gm-fab { display: none; }
 
   /* the three columns, each its own scroller */
   body.gm-app #gm-page .gm-main { min-height: 0; gap: 0; align-items: stretch; grid-template-columns: clamp(300px, 26vw, 400px) minmax(0, 1fr) clamp(230px, 19vw, 300px); }
@@ -417,11 +457,14 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   body.gm-app #gm-page .gm-side { padding: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 0; }
   body.gm-app #gm-page .gm-tabrow { display: flex; align-items: stretch; border-bottom: 2px solid var(--rule); background: var(--paper); }
   body.gm-app #gm-page .gm-tabs { flex: 1 1 auto; flex-wrap: nowrap; overflow-x: auto; gap: 0; border-bottom: 0; scrollbar-width: none; }
-  body.gm-app #gm-page .gm-tab { flex: 0 0 auto; border: 0; border-right: 1.5px solid var(--hair); background: none; color: var(--ink); white-space: nowrap; padding: 10px 9px; }
-  body.gm-app #gm-page .gm-tab[data-panel="location"], body.gm-app #gm-page .gm-tab[data-panel="cards"] { border-left: 2px solid var(--rule); margin-left: 8px; }
+  /* one row of tabs with their keys showing at 1280 px: tight padding, the key small */
+  body.gm-app #gm-page .gm-tab { flex: 0 0 auto; border: 0; border-right: 1.5px solid var(--hair); background: none; color: var(--ink); white-space: nowrap; padding: 10px 7px; font-size: 10.5px; letter-spacing: .06em; }
+  body.gm-app #gm-page .gm-tab kbd { font-size: 9px; padding: 1px 3px; }
+  body.gm-app #gm-page .gm-tab[data-panel="location"], body.gm-app #gm-page .gm-tab[data-panel="cards"] { border-left: 2px solid var(--rule); margin-left: 6px; }
   body.gm-app #gm-page .gm-tab[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
   body.gm-app #gm-page .gm-tab:hover { background: var(--accent); color: var(--on-accent); }
-  body.gm-app #gm-page .gm-focusbtn { display: inline-flex; align-items: center; gap: 5px; flex: none; border: 0; border-left: 2px solid var(--rule); background: var(--card); color: var(--ink); padding: 0 12px; font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; cursor: pointer; }
+  body.gm-app #gm-page .gm-focusbtn { display: inline-flex; align-items: center; gap: 5px; flex: none; border: 0; border-left: 2px solid var(--rule); background: var(--card); color: var(--ink); padding: 0 10px; font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; cursor: pointer; }
+  body.gm-app #gm-page .gm-focusbtn kbd { font-size: 9px; padding: 1px 3px; }
   body.gm-app #gm-page .gm-focusbtn[aria-pressed="true"] { background: var(--mustard); color: var(--on-mustard); }
   body.gm-app #gm-page .gm-focusbtn:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
   body.gm-app #gm-page .gm-pane { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; align-content: start; scrollbar-width: thin; }
@@ -448,7 +491,8 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   body.gm-app #gm-page .gm-posb small { font-size: 10px; }
   body.gm-app #gm-page .gm-sbtn b { font-size: clamp(14px, 1.15vw, 18px); }
   body.gm-app #gm-root[data-view="classic"] .gm-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  body.gm-app #gm-root[data-view="classic"] .gm-btn b { overflow-wrap: normal; }
+  body.gm-app #gm-root[data-view="classic"] .gm-btn { padding: 8px 7px; gap: 2px 6px; }
+  body.gm-app #gm-root[data-view="classic"] .gm-btn b { overflow-wrap: normal; font-size: 12px; letter-spacing: .02em; }
 
   /* Prep and Screen: the section list as an outline beside the text */
   body.gm-app #gm-prep:not([hidden]) { grid-template-columns: 200px minmax(0, 1fr); column-gap: 16px; row-gap: 0; align-items: start; }
@@ -467,11 +511,6 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   body.gm-app #gm-rules .gs-jump { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 0; }
   body.gm-app #gm-rules .gs-jump [hidden] { display: none; }
 }
-@media (min-width: 1100px) and (pointer: coarse) {
-  #gm-page .gm-bb, #gm-page .gm-pill, #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button { min-height: 44px; }
-  body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip { min-height: 44px; }
-}
-@media (min-width: 1100px) and (max-width: 1439px) { body.gm-app #gm-page .gm-tab kbd { display: none; } }
 
 /* ---------- 17/10: Find (Ctrl+K or /), the beat in the bar, a speaker named from a line, the clocks to the iPad ---------- */
 #gm-page .gm-find { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: center; align-items: flex-start; padding: 9vh 16px 16px; background: rgba(12, 10, 8, .55); }
