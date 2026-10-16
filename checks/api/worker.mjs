@@ -10,7 +10,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { worker, matchApi, effectiveEnv, withPageHead, handlePage, PAGE_HEAD, isLoopback } from '../../worker/app.js';
-import { onRequest as me } from '../../functions/api/me.js';
+import { onRequest as me, BUILD } from '../../functions/api/me.js';
 import { onRequest as members } from '../../functions/api/members.js';
 import { onRequest as exportAll } from '../../functions/api/export.js';
 import { onRequest as campaign } from '../../functions/api/campaign.js';
@@ -114,6 +114,18 @@ await step('page: doctype, charset and viewport in front of index.html, security
   expect(sw.status === 200 && (await sw.text()) === 'sw', 'other assets untouched');
   const missing = await worker.fetch(new Request('https://blades.example.test/nope'), env, {});
   expect(missing.status === 404, 'missing file: asset 404');
+});
+
+await step('build: app/routes.js is committed as dev (deploy.sh stamps it), /api/me answers it and every API answer carries X-B68-Build', async () => {
+  const routes = readFileSync(join(ROOT, 'app', 'routes.js'), 'utf8');
+  expect(/^\s*var BUILD = 'dev';/m.test(routes), "app/routes.js must say var BUILD = 'dev' in the repository: scripts/deploy.sh stamps it for the upload and puts it back");
+  expect(BUILD === 'dev', 'the Worker reads the same constant (got ' + BUILD + ')');
+  const env = { DEV_USER: 'gm@example.test', GM_EMAILS: 'gm@example.test', DB: fakeDb(), CAMPAIGN: 'default' };
+  const r = await worker.fetch(new Request('http://127.0.0.1:8788/api/me'), env, {});
+  expect(r.headers.get('X-B68-Build') === 'dev', 'X-B68-Build on /api/me: ' + r.headers.get('X-B68-Build'));
+  expect((await r.json()).build === 'dev', '/api/me carries build');
+  const other = await worker.fetch(new Request('http://127.0.0.1:8788/api/nope'), env, {});
+  expect(other.headers.get('X-B68-Build') === 'dev', 'X-B68-Build on every API answer, a 404 included');
 });
 
 const TOML = readFileSync(join(ROOT, 'wrangler.toml'), 'utf8');

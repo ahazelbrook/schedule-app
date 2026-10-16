@@ -36,9 +36,10 @@ Ownership: **backend** owns `worker/`, `functions/`, `schema.sql`, `migrations/`
 - **Headers.** The page: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
   `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` (only that: a
   fuller CSP would need care with the page's inline styles) and a `Permissions-Policy` that
-  turns off camera, microphone, geolocation and payment. Every API answer: `Cache-Control:
-  no-store`, `nosniff`, `Referrer-Policy: same-origin`. Other files keep the asset server's
-  headers.
+  turns off camera, geolocation and payment and allows the microphone for this origin only (the
+  table iPad's transcriber, GM.md "Listening"). Every API answer: `Cache-Control: no-store`,
+  `nosniff`, `Referrer-Policy: same-origin`, `X-B68-Build: <build>`. Other files keep the asset
+  server's headers.
 - **Only the custom domain.** `workers_dev = false` and `preview_urls = false`: a
   `*.workers.dev` address would skip Access (the API would still refuse it without a token,
   the page would not). The route is `{ pattern = "<host>", custom_domain = true }`; deploying
@@ -107,8 +108,10 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
 
 ## API (all JSON; errors are `{ "error": "message" }` with 400 / 401 / 403 / 404)
 
-- `GET /api/me` → `{ "id": email, "email", "name", "role": "gm" | "player" | "display", "campaign" }`; `name` is the
-  display name the person chose, else the one from the Access claim.
+- `GET /api/me` → `{ "id": email, "email", "name", "role": "gm" | "player" | "display", "campaign", "build" }`; `name` is the
+  display name the person chose, else the one from the Access claim. `build` is the Worker's build stamp (`app/routes.js`
+  `B68_BUILD`, bundled into the Worker by `functions/api/me.js`; `'dev'` outside a deploy), and every API answer carries it
+  as the `X-B68-Build` header too, so a page left open learns that a deploy happened (see *Adapter*, `status.newBuild`).
 - `PATCH /api/me` `{ "name" }` → the same shape: sets the caller's own display name (`members.name_override`, migration
   `0005_member_name.sql`; 1 to 40 characters, no control characters or `<` `>`; `""` or `null` clears it back to the
   Access-derived name). The sign-in upsert never touches the override, nobody can set another person's, and the
@@ -230,9 +233,29 @@ before the body is read (no token: 401, as everywhere). Never part of `/api/expo
   the display sign-in reads it through the display. Table `gm_ambient(campaign, seq, updated_at, doc)` (migration `0006_gm_ambient.sql`).
 - `GET /api/characters` carries nothing about the GM tools (the GM page refetches its state on focus instead).
 
+## Lazy bundles (`app/routes.js`)
+
+`index.html` loads only the core (the creator, the sheet, Home with its next-session card and the "on
+stage" banner, the rules wiki whose "?" links sit on every sheet, the cast page, `runtime/cf.js`,
+`routes.js`, `boot.js`). `routes.js` holds the build stamp (`B68_BUILD`: `'dev'` in the repository,
+stamped by `scripts/deploy.sh` for the upload; `checks/api/worker.mjs` refuses a committed stamp) and
+the `BUNDLES` map (`table` and `print`, the same files: crewsheet.css, season.css, crews.js, crewsheet.js,
+campaign.js, season.js, since the table's "Print the season" button calls `B68Season` straight from
+campaign.js; `gm`: gm.css, prep.css, maps/map-kit.js, gm/*.js, gm-page.js; `display`: display.css,
+stt.js, display-page.js). `window.B68Load.need(name)` appends the bundle's `<link>` and
+`<script>` tags once (relative URLs with `?v=<build>`, so the claude.ai artifact and the `file://`
+checks resolve them like the static tags; scripts fetch in parallel and run in order), resolves when
+every file has loaded and rejects on the first that fails (forgotten, so the next `need` tries again);
+`B68Load.done(name)` says whether a bundle is in, `B68Load.files()` lists every bundle file for `sw.js`.
+`boot.js`'s route starters (`startTable`, `startPrint`, `startGm`, `startDisplay`, `openSchedule`)
+fetch their bundle on first use and run again when it is in; a viewer known not to be the GM still
+gets the GM pack purge (`gm-page.js` `purge`), for which the GM bundle is fetched only when the browser
+holds the pack's IndexedDB database or the sticky copy. Measured cold loads (JS + CSS from the network):
+Home and a sheet 1.49 MB instead of 2.55 MB; the table 1.67 MB.
+
 ## Adapter (`app/runtime/cf.js`)
 
-Loaded before `boot.js`. If `window.claude` already exists it does nothing. Otherwise:
+Loaded before `routes.js` and `boot.js`. If `window.claude` already exists it does nothing. Otherwise:
 
 ```js
 window.claude = { use: function (name) { /* -> Promise */ } };
@@ -283,12 +306,15 @@ window.claude = { use: function (name) { /* -> Promise */ } };
 - `window.B68Runtime = { kind: 'cloudflare', me, status, exportAll }` once `/api/me` has answered (or the
   page started offline). `exportAll()` → Promise of the `GET /api/export` answer (rejects with
   the API's error, `status` 403 for a player); boot.js shows "Download everything" only when it
-  exists and the viewer is the GM. `status = { online, pending, lastSync }`: `online` is false while the
+  exists and the viewer is the GM. `status = { online, pending, lastSync, newBuild }`: `online` is false while the
   network is unreachable or after an offline start until `/api/me` answers again, `pending` is
   the number of queued writes, `lastSync` the ISO time of the last successful poll or flushed
-  write (after an offline start, the snapshot's). Every change dispatches the `window` event
+  write (after an offline start, the snapshot's), `newBuild` the server's build when it differs
+  from this page's (`window.B68_BUILD` from `routes.js` against the `X-B68-Build` header of any
+  API answer, or `/api/me`'s `build`; `null` while they agree or either is unknown). Every change dispatches the `window` event
   `b68:runtime` (`detail` = the status); `boot.js` `whoami()` turns it into "Offline · N changes
-  waiting" / "Saving N changes…" after "Signed in as …".
+  waiting" / "Saving N changes…" after "Signed in as …", and into an "Updated: reload" chip
+  (a reload) when `newBuild` is set.
 
 ### Offline (hosted build only)
 
@@ -341,7 +367,9 @@ in ink on an alarm-red halo on paper with "68", regenerated by `npm run icons`
 (`checks/runtime/icons.mjs`, Playwright); the maskable one keeps the mark inside the 80% safe
 circle.
 
-`app/sw.js` (cache `b68-shell-v<n>`; bump to drop old caches):
+`app/sw.js` (cache `b68-shell-<build>`: it `importScripts('routes.js')` and names the cache after `B68_BUILD`, so
+every deploy drops the previous cache on activation, and the changed import is what makes the browser install the new
+worker; `cf.js` registers it with `updateViaCache: 'none'` so that import is fetched fresh on each update check):
 
 - Ignores (does not intercept) non-GET requests, other origins, `/api/*`, `/cdn-cgi/*` and `/media/*`.
 - Every other request is network first: the network's answer is returned as it is (a redirect
@@ -353,9 +381,10 @@ circle.
   time; a file the cache lacks waits for the network however long it takes. The page is stored
   under the scope URL (`/`), whether it was asked for as `/`, `/index.html` or `/?…`; any other
   file under its path alone, so `boot.js?v=<build>` finds the precached `boot.js`.
-- Install precaches the app shell (the `SHELL` array: the page and every file `index.html`
-  loads, fonts included; `checks/runtime/pwa.test.mjs` fails when `index.html` names a file
-  the array lacks), one file at a time so a failure does not stop the install, then
+- Install precaches the app shell (`SHELL` = the `CORE` array, the page and every file `index.html`
+  loads, fonts included, plus every file of every route bundle from `routes.js`, so each route
+  still works offline; `checks/runtime/pwa.test.mjs` fails when `index.html` or a bundle names a
+  file the list lacks), one file at a time so a failure does not stop the install, then
   `skipWaiting`; activate deletes older `b68-shell-*` caches and `clients.claim`s.
 
 Checks: `npm run check:runtime` runs the adapter's unit test (mocked fetch and localStorage, offline

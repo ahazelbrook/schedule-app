@@ -98,7 +98,7 @@ async function main() {
 
   await step('GET /api/me as the display: role "display", same keys as anyone, and no member row is recorded', async () => {
     const r = await call('GET', '/api/me', { user: IPAD }); status(r, 200);
-    expect(Object.keys(r.json).sort().join() === 'campaign,email,id,name,role', 'keys ' + Object.keys(r.json));
+    expect(Object.keys(r.json).sort().join() === 'build,campaign,email,id,name,role', 'keys ' + Object.keys(r.json));
     expect(r.json.role === 'display' && r.json.email === IPAD && r.json.campaign === 'displaycheck', r.text);
     const m = await call('GET', '/api/members', { user: GM }); status(m, 200);
     expect(!m.json.members.some((x) => x.id === IPAD), 'the display is never listed as a player: ' + m.text);

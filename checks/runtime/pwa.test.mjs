@@ -69,7 +69,9 @@ function worker() {
   const timers = [];
   const ctx = { self, caches, fetch, Request, URL, Promise, console,
     setTimeout: (fn, ms) => { const t = { fn, ms, done: false }; timers.push(t); return t; },
-    clearTimeout: (t) => { if (t) t.done = true; } };
+    clearTimeout: (t) => { if (t) t.done = true; },
+    /* importScripts('routes.js'): the real file, run in this scope (self.B68_BUILD, self.B68Load) */
+    importScripts: (...names) => { for (const n of names) vm.runInContext(fs.readFileSync(path.join(APP, n), 'utf8'), ctx, { filename: n }); } };
   const tick = () => { timers.forEach((t) => { if (!t.done) { t.done = true; t.fn(); } }); };
   vm.createContext(ctx);
   vm.runInContext(SW, ctx, { filename: 'sw.js' });
@@ -87,7 +89,7 @@ function worker() {
   return { self, caches, net, res, dispatch, get, timers, tick, SHELL: ctx.SHELL || vm.runInContext('SHELL', ctx), CACHE: vm.runInContext('CACHE', ctx) };
 }
 
-await test('sw: the precache list covers every local file index.html loads, and they all exist', async () => {
+await test('sw: the precache list covers every local file index.html loads and every route bundle (routes.js), they all exist, and the cache is named after the build', async () => {
   const w = worker();
   const html = fs.readFileSync(path.join(APP, 'index.html'), 'utf8');
   const refs = new Set();
@@ -95,8 +97,22 @@ await test('sw: the precache list covers every local file index.html loads, and 
   for (const m of html.matchAll(/url\("?((?!data:)[^")]+)"?\)/g)) refs.add(m[1]);
   const missing = [...refs].filter((r) => /^[\w./-]+\.\w+$/.test(r) && !w.SHELL.includes(r));
   eq(missing, [], 'in index.html but not in SHELL (app/sw.js)');
+  // routes.js in its own scope: the bundles the page fetches lazily are precached too, so every route works offline
+  const rt = { self: {} }; rt.window = rt.self; vm.createContext(rt); vm.runInContext(fs.readFileSync(path.join(APP, 'routes.js'), 'utf8'), rt, { filename: 'routes.js' });
+  const L = rt.self.B68Load;
+  ok(L && L.BUNDLES && typeof L.need === 'function', 'routes.js defines B68Load');
+  for (const name of ['table', 'print', 'gm', 'display']) ok(Array.isArray(L.BUNDLES[name]) && L.BUNDLES[name].length, 'bundle ' + name);
+  const bundled = L.files();
+  eq(bundled.filter((f) => !w.SHELL.includes(f)), [], 'in a bundle (routes.js) but not in SHELL (app/sw.js)');
+  eq(bundled.filter((f) => refs.has(f)), [], 'a file both in index.html and in a bundle (loaded twice)');
+  for (const f of bundled) ok(/\.(js|css)$/.test(f), 'a bundle file is a script or a stylesheet: ' + f);
+  eq(L.url('gm-page.js'), 'gm-page.js?v=' + rt.self.B68_BUILD, 'bundle URLs carry ?v=<build>');
   for (const f of w.SHELL) if (f !== './') ok(fs.existsSync(path.join(APP, f)), 'SHELL names a missing file: ' + f);
-  ok(w.SHELL.includes('./'), 'the page itself');
+  ok(w.SHELL.includes('./') && w.SHELL.includes('routes.js'), 'the page itself, and routes.js');
+  eq(w.CACHE, 'b68-shell-' + rt.self.B68_BUILD, 'the cache is named after routes.js B68_BUILD');
+  eq(rt.self.B68_BUILD, 'dev', "the committed build is 'dev' (scripts/deploy.sh stamps it)");
+  // a GM-only file (the pack text's readers) is never in the core index.html loads
+  for (const f of ['gm-page.js', 'display-page.js', 'maps/map-kit.js']) ok(!refs.has(f), f + ' is lazy, not in index.html');
 });
 
 await test('sw: install precaches the shell (page under the scope URL), skips waiting; activate drops old caches and claims', async () => {
@@ -219,7 +235,7 @@ await test('cf.js: injects the manifest (with credentials), theme colour, icons,
   eq(by('meta', 'name', 'theme-color').attrs.content, '#14110e', 'theme colour');
   eq(by('link', 'rel', 'apple-touch-icon').attrs.href, 'icons/apple-touch-icon.png', 'apple-touch-icon');
   eq([by('meta', 'name', 'apple-mobile-web-app-capable').attrs.content, by('meta', 'name', 'apple-mobile-web-app-title').attrs.content], ['yes', "Blades '68"]);
-  eq(p.regs, [['sw.js', { scope: './' }]], 'service worker registration');
+  eq(p.regs, [['sw.js', { scope: './', updateViaCache: 'none' }]], 'service worker registration (updateViaCache none: sw.js imports routes.js, which must be fetched fresh on an update check)');
   for (const opts of [{ preset: { use() {} } }, { protocol: 'file:' }]) {
     const q = page(opts); eq([q.added.length, q.regs.length], [0, 0], 'inert: ' + JSON.stringify(opts));
   }

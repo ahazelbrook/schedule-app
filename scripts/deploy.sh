@@ -6,6 +6,14 @@
 #   B68_DRY_RUN=1 ... scripts/deploy.sh   prints every change and API call, makes none
 #
 # Safe to run again at any time: every step looks first and changes only what is missing or different.
+# On Windows run it from Git Bash (npm run deploy does: it is a POSIX sh script; .gitattributes keeps it LF).
+#
+# Before anything ships it refuses a working tree with uncommitted changes (B68_DIRTY_OK=1 deploys them anyway)
+# and a checkout missing the two gitignored files the upload takes from disk, app/media/theme.mp3 and
+# app/ambient/calling-cards.html (B68_MEDIA_OK=1 deploys without them). For the upload it stamps app/routes.js
+# (B68_BUILD = <date>-<commit>: the page, the service worker's cache and /api/me carry it) and puts 'dev' back
+# afterwards, whatever happens. It ends with a receipt: commit, build, Worker version, migrations, the secrets
+# by name, the on-disk files, the service worker cache, the smoke results.
 #
 # Sign-in for the script (one of):
 #   npx wrangler login          browser sign-in; covers D1, the Worker, its secrets and the custom domain,

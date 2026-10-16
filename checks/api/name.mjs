@@ -100,7 +100,7 @@ async function main() {
 
   await step('GET before any override is unchanged: the same keys, the name derived from the email', async () => {
     const r = await get(PLAYER); status(r, 200);
-    expect(Object.keys(r.json).sort().join() === 'campaign,email,id,name,role', 'keys ' + Object.keys(r.json));
+    expect(Object.keys(r.json).sort().join() === 'build,campaign,email,id,name,role', 'keys ' + Object.keys(r.json));
     expect(r.json.name === 'player' && r.json.id === PLAYER && r.json.email === PLAYER && r.json.role === 'player' && r.json.campaign === 'namecheck', r.text);
     const g = await get(GM); status(g, 200);
     expect(g.json.name === 'gm' && g.json.role === 'gm', g.text);
@@ -120,7 +120,7 @@ async function main() {
 
   await step('PATCH sets the override: returned in the GET shape, no-store, and shown by the next GET', async () => {
     const r = await patch(PLAYER, '  Sam   the Man '); status(r, 200);
-    expect(Object.keys(r.json).sort().join() === 'campaign,email,id,name,role', 'keys ' + Object.keys(r.json));
+    expect(Object.keys(r.json).sort().join() === 'build,campaign,email,id,name,role', 'keys ' + Object.keys(r.json));
     expect(r.json.name === 'Sam the Man' && r.json.id === PLAYER && r.json.role === 'player' && r.json.campaign === 'namecheck', r.text);
     expect(r.headers.get('cache-control') === 'no-store', 'no-store');
     const g = await get(PLAYER); status(g, 200);

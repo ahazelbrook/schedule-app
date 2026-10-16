@@ -14,7 +14,7 @@
 // Plain ES module with no Cloudflare-only imports, so node can import it (checks/api/worker.mjs).
 
 import { onRequest as middleware } from '../functions/api/_middleware.js';
-import { onRequest as me } from '../functions/api/me.js';
+import { onRequest as me, BUILD } from '../functions/api/me.js';
 import { onRequest as members } from '../functions/api/members.js';
 import { onRequest as exportAll } from '../functions/api/export.js';
 import { onRequest as campaign } from '../functions/api/campaign.js';
@@ -176,7 +176,8 @@ export const worker = {
     const url = new URL(request.url);
     const e = effectiveEnv(request, env);
     if (isApiPath(url.pathname)) {
-      return withHeaders(await handleApi(request, e, ctx), { 'Referrer-Policy': 'same-origin', 'X-Content-Type-Options': 'nosniff' });
+      // X-B68-Build: the Worker's build stamp (app/routes.js), so a page left open learns that the server moved on
+      return withHeaders(await handleApi(request, e, ctx), { 'Referrer-Policy': 'same-origin', 'X-Content-Type-Options': 'nosniff', 'X-B68-Build': BUILD });
     }
     const res = await e.ASSETS.fetch(request);
     if (url.pathname === '/' || url.pathname === '/index.html') return handlePage(res);

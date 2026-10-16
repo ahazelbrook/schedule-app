@@ -9,26 +9,33 @@
    own offline copy. */
 'use strict';
 
-var CACHE = 'b68-shell-v15';     /* bump to drop every cached file on the next activation */
+/* routes.js: the build stamp (B68_BUILD, stamped by scripts/deploy.sh) and the route bundles. A new build is a new cache
+   name, so the next activation drops the old one; a deploy also changes this import's bytes, which is what makes the
+   browser install the new worker (cf.js registers with updateViaCache 'none' so the import is fetched fresh). */
+try { importScripts('routes.js'); } catch (e) {}
+var BUILD = typeof self.B68_BUILD === 'string' && self.B68_BUILD ? self.B68_BUILD : 'dev';
+var CACHE = 'b68-shell-' + BUILD;
 var PREFIX = 'b68-shell-';
 var NAV_MS = 4000;               /* a navigation with a cached page: how long the network may take before the cache answers */
 var ASSET_MS = 8000;             /* the same for a script, stylesheet, font or icon the cache holds */
 
-/* the app shell: the page and everything index.html loads (checks/runtime/pwa.test.mjs keeps this in step with it) */
-var SHELL = [
+/* the app shell: the page and everything index.html loads (CORE; checks/runtime/pwa.test.mjs keeps it in step), plus every
+   file of every route bundle (routes.js), so install still precaches the whole app in the background and every route
+   works offline while nothing but the core blocks the first paint */
+var CORE = [
   './',
-  'tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css',
+  'tracker.css', 'campaign.css', 'schedule.css', 'rules.css', 'cast.css',
   'fonts/ArchivoCompressed-Black.woff2', 'fonts/ArchivoCondensed-Variable.woff2',
   'fonts/GTAmericaArabic-Regular.woff2', 'fonts/GTAmericaArabic-Bold.woff2', 'fonts/GTAmericaArabic-Black.woff2',
   'fonts/SpaceMono-Regular.woff2', 'fonts/SpaceMono-Bold.woff2',
   'fonts/CourierPrime-Regular.woff2', 'fonts/CourierPrime-Bold.woff2', 'fonts/Yellowtail-Regular.woff2',
-  'figures/figure-kit.js', 'figures/cast.js', 'maps/map-kit.js',
-  'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'campaign.js', 'schedule.js', 'crews.js', 'crewsheet.js', 'season.js', 'markdown.js', 'rules.js',
-  'runtime/cf.js', 'boot.js',
-  'cast.css', 'cast-page.js',
-  'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/engagement.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm.css', 'prep.css', 'gm-page.js', 'display.css', 'stt.js', 'display-page.js', 'name-edit.js',
+  'figures/figure-kit.js', 'figures/cast.js',
+  'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'schedule.js', 'markdown.js', 'rules.js', 'cast-page.js', 'name-edit.js',
+  'runtime/cf.js', 'routes.js', 'boot.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'
 ];
+var SHELL = CORE.slice();
+((self.B68Load && typeof self.B68Load.files === 'function') ? self.B68Load.files() : []).forEach(function (f) { if (SHELL.indexOf(f) < 0) SHELL.push(f); });
 
 var scopeUrl = new URL(self.registration ? self.registration.scope : './', self.location.href);
 var INDEX = new URL('./', scopeUrl).href;

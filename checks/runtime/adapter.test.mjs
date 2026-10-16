@@ -222,7 +222,8 @@ function browser(server, user, { preset, protocol = 'https:', storage } = {}) {
     await sleep(2);
     const body = opts.body ? JSON.parse(opts.body) : undefined;
     const r = server.handle(user, opts.method || 'GET', url, body);
-    const mk = (status, text, ct, extra = {}) => ({ status, ok: status >= 200 && status < 300, redirected: false, type: 'basic', headers: { get: (h) => (h.toLowerCase() === 'content-type' ? ct : null) }, text: async () => text, ...extra });
+    /* server.build: the Worker's build stamp, as worker/app.js puts it on every API answer (X-B68-Build) */
+    const mk = (status, text, ct, extra = {}) => ({ status, ok: status >= 200 && status < 300, redirected: false, type: 'basic', headers: { get: (h) => (h.toLowerCase() === 'content-type' ? ct : h.toLowerCase() === 'x-b68-build' ? (server.build || null) : null) }, text: async () => text, ...extra });
     if (r.forced === 'down') throw new TypeError('Failed to fetch');
     if (r.forced === 'redirect') return mk(0, '', null, { type: 'opaqueredirect', ok: false });
     if (r.forced === 'html') return mk(200, '<html>Sign in</html>', 'text/html', { redirected: true });
@@ -1052,7 +1053,7 @@ await test('status: B68Runtime.status and b68:runtime events follow offline, pen
   ok(b.events.length >= 1, 'no event');
   eq([b.events[0].online, b.events[0].pending], [false, 0], 'first event: offline');
   await db.collection('characters').doc('a').update({ name: 'a2' });
-  eq(b.events[b.events.length - 1], { online: false, pending: 1, lastSync: read(st, SNAP).syncedAt }, 'one waiting');
+  eq(b.events[b.events.length - 1], { online: false, pending: 1, lastSync: read(st, SNAP).syncedAt, newBuild: null }, 'one waiting');
   const t0 = new Date().toISOString();
   delete api.status['/api/'];
   await until(() => b.win.B68Runtime.status.pending === 0 && b.win.B68Runtime.status.online, 1000);
@@ -1248,6 +1249,29 @@ await test('profile.setName: PATCH /api/me, the signed-in user and the cached me
   ok(err && err.status === 400, 'a refused name rejects with status 400'); eq((await u.me()).name, 'Sam the Man', 'unchanged after a refusal');
   eq((await b.win.claude.profile.setName(null)).name, 'pl', 'null clears');
   eq((await u.me()).name, 'pl'); eq(JSON.parse(b.fetchLog.filter((f) => f.opts.method === 'PATCH').pop().opts.body), { name: null });
+});
+
+/* E15: a page left open across a deploy learns the server's build from X-B68-Build and says so (boot.js: "Updated: reload") */
+await test('status.newBuild: null while the server runs this page\'s build; the server\'s build once it differs (X-B68-Build on any API answer), with a b68:runtime event; silent when the page has no build', async () => {
+  const api = fakeApi(); api.put('a', char('a')); api.build = '2026-10-16-abc1234';
+  const b = browser(api, { email: 'gm@x.test' });
+  b.win.B68_BUILD = '2026-10-16-abc1234';                                   // routes.js on the same build
+  const db = await b.win.claude.use('db');
+  eq(b.win.B68Runtime.status.newBuild, null, 'same build: nothing to say');
+  const snaps = []; const un = db.collection('characters').onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  const n = b.events.length;
+  api.build = '2026-10-17-def5678';                                         // a deploy while the page is open: the next poll's answer says so
+  await until(() => b.win.B68Runtime.status.newBuild, POLL * 4);
+  eq(b.win.B68Runtime.status.newBuild, '2026-10-17-def5678', 'the server\'s newer build');
+  ok(b.events.length > n && b.events[b.events.length - 1].newBuild === '2026-10-17-def5678', 'a b68:runtime event carried it');
+  un();
+  const o = browser(api, { email: 'gm@x.test' });                           // no routes.js (the artifact, an old page): nothing is claimed
+  await o.win.claude.use('db');
+  eq(o.win.B68Runtime.status.newBuild, null, 'no own build: silent');
+  const same = browser(api, { email: 'gm@x.test' }); same.win.B68_BUILD = '2026-10-17-def5678';
+  await same.win.claude.use('db');
+  eq(same.win.B68Runtime.status.newBuild, null, 'a page on the new build: silent');
 });
 
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
