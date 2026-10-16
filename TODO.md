@@ -1,3 +1,38 @@
+# RESUME HERE (saved 16 Oct 2026, ~10:00 UTC)
+
+**State.** Branch `ccr-e0dcd379-q104ac` (draft PR #26) has ALL SIX wave-1 branches merged plus the GM wave 2, and is
+green: `npm test` 624 passed; `npm run check:e2e-all` 25 of 26 (the transcriber check fails the same four lines on
+untouched main: the fake microphone does not work in the cloud container). Nothing is deployed yet.
+
+**Two branches were still running when the session ran out** (both based on this branch; merge them, run the checks):
+1. `review/clocks` (1 commit) + `review/clocks-wip` (its uncommitted work): E3, clock ticks from two phones never
+   overwrite each other (a per-clock operation applied in the server's write loop, mirrored in cf.js; old phones'
+   whole-array writes still accepted), and the small players' leftovers (plain wording in boot.js, cast-page.js,
+   season.js, steps.js; season.css --ink-faint; 40 px crew-sheet dots). Finish from the wip diff if unfinished.
+   Checks: `npm test`, app/checks campaign/crewsheet/season/table/e2e, offline, display-role, cast, phone e2e.
+2. `review/display-budget-wip` (uncommitted work only): E4, the iPad's polling (display 2 s → 4 s, stt folded into the
+   display GET, 15 s after 2 h idle, 60 s hidden; never transcript lines to the display role) and E14 (reload once
+   after 10 min signed out, at most once per 30 min). Finish from the wip diff. Checks: display.test, stt.test,
+   checks/api/gm.mjs and display-role.mjs, check:display-ambient, display-role.e2e.
+
+**Then, in order:**
+3. Docs sweep (listed under Wave 2): references to the docs moved into docs/history/.
+4. Deploy steps for Alex (non-technical, Windows). Use `npm run deploy` from **Git Bash** (not plain wrangler: the
+   script stamps the build, which is how phones learn of a new version). It needs: a clean tree; `app/media/theme.mp3`
+   and `app/ambient/calling-cards.html` on disk (`node tools/ambient/scenes/cards.js` builds the cards; or
+   `B68_MEDIA_OK=1`); `B68_GM_EMAILS=ahazelbrook@gmail.com`; the Access team name and AUD tag (it asks; they are in
+   the Cloudflare Zero Trust dashboard: Settings → team domain `<team>.cloudflareaccess.com`; Access → Applications →
+   the app → Application Audience (AUD) Tag). It ends with a receipt (SETUP.md, "Updating the app").
+   **Never on a game day** (Sat 17 Oct 2026 is one: deploy Sunday or later). After deploying: on the iPad pin the
+   planning meeting for a minute (lag), then pin the credits and tap once (theme); watch for heads.
+5. Mark PR #26 ready, merge to main, deploy.
+6. Optional ideas, only after a session on the new layout (see Wave 2): re-roll one row, "Make them an NPC", chaining
+   Street → Location → NPC; E16 util.js; lazy loading phase 2.
+
+**How to start the next session:** "Read TODO.md on branch ccr-e0dcd379-q104ac and follow RESUME HERE."
+
+---
+
 # TODO: the fresh-eyes review (16 Oct 2026)
 
 The central list for the review-and-improve pass. Update it as items land (move them to **Done** with the commit), so
@@ -269,7 +304,8 @@ Everything is on GitHub, nothing lives only in a container.
   | `review/players` | section 3, the phone sheet: the mark strip and resist helper, the first screen, the cast banner |
   | `review/players-table` | section 3, the table page, Home, plain words, the Night/Paper switch |
   | `review/engineering` | section 4, timeouts, the service worker, lazy loading, the deploy receipt, docs |
-  | `review/clocks` | wave 2: clock ticks that never overwrite each other (E3) and the small players' leftovers |
+  | `review/clocks` (+ `-wip`) | wave 2: clock ticks that never overwrite each other (E3) and the small players' leftovers |
+  | `review/display-budget-wip` | wave 2: the iPad's polling budget (E4) and reload after sign-out (E14) |
   | `review/gm-wave2` | wave 2 on the GM page: the new generator fields on the cards, physical dice for the engagement roll, E5, E18 (started from the integration branch after generators and gm-page merged) |
   `review/*-wip` are snapshots of uncommitted work saved when the first agents stopped; ignore them once the
   matching branch has moved past them.
