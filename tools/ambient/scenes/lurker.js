@@ -80,7 +80,7 @@ module.exports = function build() {
 
   // the pressman, minding the press
   const pm = Object.assign(JSON.parse(JSON.stringify(L.cast.byId["dock-heavy"])), { id: "pressman", outfit: { base: { type: "shirt", color: "cloth-cream" }, mid: { type: "apron", color: "cloth-navy", length: "knee" }, bottom: { type: "trousers", color: "cloth-charcoal" }, feet: { type: "oxfords", color: "cloth-black" } }, hair: { style: "crew", color: "cloth-rust", hat: { type: "flat-cap", color: "cloth-warm-grey" } }, pose: { stance: "easy", weight: "L", arms: { R: "cross", L: "cross" }, head: { tilt: -2, yaw: 14 } } });
-  const pman = L.fig(pm, { id: "pressman", frames: [{}, { pose: { arms: { R: { a: "cross", b: "hold", t: .6 }, L: "cross" }, head: { tilt: 4, yaw: 20 } } }, { pose: { arms: { R: "hold", L: "cross" }, head: { tilt: 8, yaw: 22 } } }] });
+  const pman = L.fig(pm, { id: "pressman", place: 0.24, frames: [{}, { pose: { arms: { R: { a: "cross", b: "hold", t: .6 }, L: "cross" }, head: { tilt: 4, yaw: 20 } } }, { pose: { arms: { R: "hold", L: "cross" }, head: { tilt: 8, yaw: 22 } } }] });
   stack += L.at(pman, 460, 1010, 0.24);
   const body = `<svg class="layer" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs>${defs}</defs>
   ${room}${press}${stack}${page}<rect width="${W}" height="${H}" fill="url(#lp-lamp)" style="mix-blend-mode:screen"/>

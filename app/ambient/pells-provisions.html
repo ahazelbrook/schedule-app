@@ -114,7 +114,7 @@ const Motion=(()=>{const figs={};
   root.forEach(r=>r.querySelectorAll('[data-mv]').forEach(p=>{const vs=[];for(const c of p.children)vs.push({el:c,f:c.getAttribute('data-f')});pts.push(vs);}));
   return figs[id]={pts,cur:0};}
  function show(id,k){const F=idx(id);if(F.cur===k)return;const key=' '+k+' ';
-  for(const vs of F.pts)for(const v of vs){const on=v.f.indexOf(key)>=0;const d=on?'':'none';if(v.el.style.display!==d)v.el.style.display=d;}F.cur=k;}
+  for(const vs of F.pts)for(const v of vs){const on=v.f.indexOf(key)>=0;const d=on?'':'hidden';if(v.el.style.visibility!==d)v.el.style.visibility=d;}F.cur=k;}
  function play(id,seq){return new Promise(res=>{let i=0;const next=()=>{if(i>=seq.length)return res();const [k,ms]=seq[i++];show(id,k);setTimeout(next,ms);};next();});}
  return {show,play};})();
 

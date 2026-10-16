@@ -40,7 +40,7 @@ module.exports = function build() {
     const frames = [{}, look(-16), look(16),
       { pose: { arms: Object.assign({}, base, c.gest[0].arms), head: { yaw: 0, tilt: -3 } } },
       { pose: { arms: Object.assign({}, base, c.gest[1].arms), head: { yaw: 0, tilt: 2 } } }];
-    const f = L.fig(spec, { id: "m-" + c.id, frames });
+    const f = L.fig(spec, { id: "m-" + c.id, frames, place: S });
     people += L.at(f, c.x, FLOOR, S);
   });
 
@@ -78,11 +78,12 @@ function give(n){floor=n;ids.forEach((id,i)=>{if(i===n)return;Motion.show(id,i<n
 every(5,9,()=>{let n;do{n=Math.floor(Math.random()*4);}while(n===floor);give(n);},2);
 // now and then the room relaxes: everyone back to neutral
 every(20,40,()=>{ids.forEach((id,i)=>{if(i!==floor)Motion.show(id,0);});});
-const fish=$('fish'),smoke=$('smoke'),neon=$('neon');
+const fish=$('fish'),smoke=$('smoke'),neon=$('neon');let neonOp='1';
 loop((dt,c)=>{
  fish.setAttribute('transform','translate('+(115+Math.sin(c*.35)*80).toFixed(1)+' '+(60+Math.sin(c*.9)*14).toFixed(1)+') scale('+(Math.cos(c*.35)>0?-1:1)+' 1)');
  smoke.setAttribute('transform','translate('+(Math.sin(c*.6)*8).toFixed(1)+' 0) skewX('+(Math.sin(c*.4)*6).toFixed(1)+')');
- neon.setAttribute('opacity',Math.random()<.006?'.3':'1');
+ // the flicker: written only when it changes (a write of the same value is still a style change to the browser, every tick)
+ const op=Math.random()<.006?'.3':'1';if(op!==neonOp){neonOp=op;neon.setAttribute('opacity',op);}
 });
 `;
   return L.build({ file: "planning-meeting.html", title: "The planning meeting", fonts: ["Yellowtail", "Courier Prime Bold"], body, script, grain: .16, vignette: .55, bg: "#0b0d0a", fps: 24 });

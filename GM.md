@@ -290,6 +290,14 @@ and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools
   The display tells the scene where the music is (`{ state: 'playing', t }` each second, `blocked`, or `none` with no file) and the
   scene runs its cuts from that. Another scene, a spotlight or lights out stops it. `/media/` bypasses the service worker. To replay
   the credits, pin another scene and pin them again. Episode line and cast: the top of `tools/ambient/scenes/credits.js`.
+  While the credits are up, a **Theme:** line in the display's corner says what is happening, large enough to read across the table:
+  `no file on the server (app/media/theme.mp3)` (the display asks the server with a HEAD request before it tries to play, because an
+  iPad does not preload audio and refuses a missing file with the same error as a locked one), `tap the screen for sound`,
+  `playing · 0:42`, `the iPad would not play it`, or `the file would not play`. The iPad panel on the GM page says the same thing
+  (`Theme for the credits: on the server` / `NO FILE on the server`). The theme plays through one plain `<audio>` element started
+  inside the tap (no Web Audio: iOS mutes an AudioContext with the ring/silent switch and leaves it `interrupted` after a call or a
+  lock, while an `<audio>` plays on). iOS ignores `audio.volume`, so on the iPad the fade is a stop where the fade would have ended;
+  a PC fades.
 - **Heat and wanted.** The GM page sends the campaign's crew heat and wanted (debounced 2 s) while the ambient is not off. The page
   has to have been opened as the GM in that page load; the iPad panel also corrects a stale value when it opens. The display passes
   them (`b68:crew`) to every scene with `needs: 'crew'` (`Pure.ambientCrewScenes()`: `watch`, `wanted`) when it loads and on each change.

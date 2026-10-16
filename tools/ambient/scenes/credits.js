@@ -54,7 +54,7 @@ module.exports = function build() {
   };
   CAST.forEach((c, i) => {
     const spec = L.pc(c.id);
-    const fig = L.fig(spec, { id: "cr-" + c.id, frames: moves[c.id] });
+    const fig = L.fig(spec, { id: "cr-" + c.id, frames: moves[c.id], place: 0.42 });
     const big = L.at(fig, 1140, 1190, 0.42);
     const silBig = L.at(sil[c.id], 1140, 1190, 0.42, `fill="${c.deep}"`);
     const nameSize = c.name.length > 18 ? 104 : 124;

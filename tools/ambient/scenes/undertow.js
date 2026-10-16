@@ -108,7 +108,7 @@ module.exports = function build() {
   stage += `<polygon class="spot" points="${pts([[800, -10], [860, -10], [970, 720], [690, 720]])}" fill="url(#mc-spot)" style="mix-blend-mode:screen"/>`;
 
   // ---------- the bar and Mira ----------
-  const mira = L.fig(L.npc("mira"), { id: "mira", frames: [{},
+  const mira = L.fig(L.npc("mira"), { id: "mira", place: 0.255, frames: [{},
     { pose: { arms: { R: { a: "hold", b: "smoke", t: .45, as: "hold" } } } },
     { pose: { arms: { R: { a: "hold", b: "smoke", t: .85, as: "hold" } }, head: { tilt: -8 } } }] });
   bar += `<g transform="translate(1060 0)">`;
