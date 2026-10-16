@@ -41,7 +41,7 @@
                  across tables without case, a leading "the" or punctuation.
        campaign  pack.parts.campaign: crew { type, tier, enemies[], abilities[] } (or null), standing [{ faction, status }],
                  pcs [{ first, friend[], rival[] }], npcs [{ name }]. Everything is optional.
-       mem       optional repeat-guard memory ({ key: [recent values] }), kept by the instance between rolls
+       mem       optional repeat-guard memory ({ key: [a short hash of each recent pick] }), kept by the instance between rolls
    gen.setCampaign(campaign)               swap the campaign
    gen.mem()                               the instance's live repeat-guard memory
 
@@ -384,6 +384,8 @@
       if (streams[name]) return streams[name];
       var rnd = seedRng(fnv(seed + ':' + name + ':' + (bump[name] || 0)));
       var used = function (key) { if (!Array.isArray(mem[key])) mem[key] = []; return mem[key]; };
+      // the guard keeps a short hash of each recent pick, not its text: the GM notes keep the memory of six cards
+      var h = function (v) { return fnv(v).toString(36); };
       var note = function (key, pool, v) { var u = used(key), w = Math.max(1, Math.min(20, Math.floor(pool.length / 2))); u.push(v); while (u.length > w) u.shift(); };
       var s = {
         r: rnd,
@@ -392,20 +394,20 @@
         fresh: function (key, pool, keyFn) {
           if (!pool.length) return undefined;
           keyFn = keyFn || function (x) { return x; };
-          var u = used(key), open = pool.filter(function (x) { return u.indexOf(keyFn(x)) < 0; }), from = open.length ? open : pool;
+          var u = used(key), open = pool.filter(function (x) { return u.indexOf(h(keyFn(x))) < 0; }), from = open.length ? open : pool;
           var choice = from[Math.floor(rnd() * from.length)];
-          note(key, pool, keyFn(choice));
+          note(key, pool, h(keyFn(choice)));
           return choice;
         },
         // the same, each candidate worth its weight
         weighted: function (key, pool, wFn, keyFn) {
           if (!pool.length) return undefined;
           keyFn = keyFn || function (x) { return x; };
-          var u = used(key), open = pool.filter(function (x) { return u.indexOf(keyFn(x)) < 0; }), from = open.length ? open : pool;
+          var u = used(key), open = pool.filter(function (x) { return u.indexOf(h(keyFn(x))) < 0; }), from = open.length ? open : pool;
           var ws = from.map(function (x) { return Math.max(0, +wFn(x) || 0); }), tot = ws.reduce(function (a, b) { return a + b; }, 0), choice = null;
           if (tot > 0) { var r = rnd() * tot; for (var i = 0; i < from.length && !choice; i++) { r -= ws[i]; if (r < 0) choice = from[i]; } }
           choice = choice || from[Math.floor(rnd() * from.length)];
-          note(key, pool, keyFn(choice));
+          note(key, pool, h(keyFn(choice)));
           return choice;
         }
       };
