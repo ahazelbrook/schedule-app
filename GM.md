@@ -196,6 +196,8 @@ fails and nobody is known, nothing is purged.
     a revealed band (in the bands row and on its fold) and the Say box once the street description has gone to the iPad (this
     roll, this page load).
   - **Pin** stores the glance card; **Copy** and **Download note (.md)** keep the whole card (`cardLines`, `noteBody`).
+  - **Site for a score** (a row under the card, only when the pack's prep part has score cards): a select of the scores and
+    **Save as the site for …**. See **Score sites** below.
   - **The map**: layer (GM / Player) and the bands revealed to the player layer, Draw; then the warning
     line, **Show on iPad**, **Set as score scene** and **Clear → ambient** together, never in a fold; then the map; under it
     **View & theme** (a fold, presentation only) and Download SVG / note (.md) / canvas under Downloads. **Show on iPad** is enabled only on the player layer, and
@@ -335,6 +337,7 @@ fails and nobody is known, nothing is purged.
     anything else opens in Obsidian (`obsidian://open`). A jump lands under the sticky bars (`scroll-margin-top` on the sections,
     the headings and the transclusions: 140 px on a phone, 8 px in the laptop layout);
   - **Pin** on a section keeps it, live, at the top of the rail (three at most, `prep.pins`); **Wide** hides the console (on a laptop, **Focus** shrinks it to its keys instead);
+  - an embedded **score card** (the exporter's `score` on the block) gets a **Site** strip under its header: see **Score sites** below;
   - **Find in the note** (the box in the bar; `R` puts the cursor there): every word somewhere in a section's heading or text keeps
     its chip in the section list, Enter goes to the first match, Esc leaves the box.
   The header says when the part was exported and warns after a day. Prep text never goes to the iPad or to players; edits are
@@ -346,6 +349,25 @@ fails and nobody is known, nothing is purged.
   on the left goes back); **Spread on iPad** lays them all out; **Show this one** sends a single card. GM state `opps`:
   `{ list: { id: { from, client, target, type, note, payout, order, at } }, interval }`. Only typed text goes out, and only
   on a Show button; the server keeps the six lines of each card (120 characters each) and nothing else.
+- **Score sites** (17/10/2026; the design is the vault page `Projects/blades-68-score-sites.md`). A location roll saved against a
+  score card, so the same map comes back on any device, any night, and the vault gets it after the game.
+  - **Which scores.** `npm run gm:pack` marks every note embedded in a prep note that is a score card (tagged `wiki/b68-score`, or
+    kept in a `Scores/` folder): the embed block carries `score: { key, label, site }`, the key being the card's file name, the label
+    the heading just above the embed ("F · The goose job"), and `site` the card's optional `site_target`, `site_district`,
+    `site_faction` and `site_approach` properties. `B68GmPrep.scores(part)` lists them once each; `view()` leaves each card a slot,
+    `<div class="pp-site" data-score>`.
+  - **Save.** The Location panel's **Site for a score** row: pick a score (or arrive from its strip), press **Save as the site for …**.
+    The current card's replay info goes into the GM state, `sites[<key>] = { seed, ui, mem, name, district, label, map: { view, theme },
+    at }`, replacing the score's earlier site after a confirm. Saving is always a press. At most 24 (`P.SITE_MAX`, about 3 KB each,
+    mostly the generator's memory); past that the page says to clear a played score's site.
+  - **The strip in Prep.** Saved: the place and district, **Open map**, **Roll another**, **Clear** (asks). Not saved: the card's hints
+    and **Roll a site**. Roll a site sets the Location pickers from the hints (`P.siteUi`: matched as Now in matches names; a hint the
+    tables lack rolls on any and a toast names it; no district hint is any, not Now in), opens the panel and rolls; the save row then
+    points at that score (`S.siteFor`, this page only). **Open map** makes the saved roll the Location card, on the GM layer, in the view
+    and theme it was saved with, public band only, and draws it; if the location tables changed since, a toast says the seed now
+    gives another place. Show on iPad and Set as score scene then work as always: no push starts from Prep.
+  - **The vault.** `npm run gm:pull` (and `gm:after`) files each site (SYNC.md, "Score sites"). Checks: `gm-page.test.mjs` (S1–S3),
+    `gm-prep.test.mjs` (score sites), `gm-sites.test.mjs`, `gm-prep.e2e.mjs` (the score site block).
 - **State.** The GM state document holds `con` (the console state: `live` controls, `owed`, `struck`, `used`), `loc`
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,
@@ -353,7 +375,7 @@ fails and nobody is known, nothing is purged.
   `hist` (five per tool), `npc` (`ui`: the NPC pickers), `npcgen` (`{ seed, mem, at, s?, ui? }` per generated NPC id: the
   roll that made them, `ui` only when a picker was set), `dt` (`ui`: the Downtime panel's choices; its cards are `cards.downtime` /
   `hist.downtime` / `mem.downtime`, see Downtime (D)), `pins` (50, text), `capture` (400, and 128 KiB: `{ id, bucket: n|x|m|r, text, at, s? }`),
-  `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab), `opps` (the Cards panel) and `now` (`{ district }`: Now in). Capture never touches
+  `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab), `opps` (the Cards panel), `sites` (Score sites) and `now` (`{ district }`: Now in). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
   `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
   there was none), on typed lines, on lines filed by a card's action (a bargain accepted) and on rolls filed with `L`, so the sync

@@ -11,7 +11,7 @@ import path from 'node:path';
 export const LEDGER = 'sync-ledger.json';
 export const SYNC_LOG = 'sync-log.jsonl';
 
-export function emptyCampaign() { return { filed: {}, npcs: {}, pack: {}, ticked: {} }; }
+export function emptyCampaign() { return { filed: {}, npcs: {}, pack: {}, ticked: {}, sites: {} }; }
 
 /** { data, lost: bool, bad: bool } */
 export function loadLedger(dir) {
@@ -28,7 +28,7 @@ export function loadLedger(dir) {
 
 export function campaignLedger(ledger, campaign) {
   const c = ledger.data.campaigns[campaign] || (ledger.data.campaigns[campaign] = emptyCampaign());
-  c.filed = c.filed || {}; c.npcs = c.npcs || {}; c.pack = c.pack || {}; c.ticked = c.ticked || {};
+  c.filed = c.filed || {}; c.npcs = c.npcs || {}; c.pack = c.pack || {}; c.ticked = c.ticked || {}; c.sites = c.sites || {};
   return c;
 }
 

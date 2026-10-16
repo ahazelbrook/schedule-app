@@ -2313,5 +2313,112 @@ await test('17l. the characters land after the page opened (boot\'s characters()
   await h.save();
 });
 
+/* =====================================================================================================================
+   Score sites (GM.md "Score sites"): a location roll saved against a score card of the prep part
+   ===================================================================================================================== */
+const PR = require(path.join(ROOT, 'app', 'gm', 'prep.js'));
+const MDN = (() => { const box = { window: {} }; vm.createContext(box); vm.runInContext(fs.readFileSync(path.join(ROOT, 'app', 'markdown.js'), 'utf8'), box); return box.window.B68Markdown; })();
+const LC = L.controls({ T: FIXL.T, extra: FIXL.extra }).controls;
+const optOf = (k, i) => LC.find((c) => c.key === k).options.filter((o) => o.value)[i].value;
+const SITE_T = optOf('target', 0), SITE_D = optOf('district', 1);
+const PREP_REL = 'Wiki/Games/Blades in the Dark/Campaigns/Group/Sessions/b68g-s10.md';
+const prepPart = { prep: { version: 'p1', src: { exportedAt: new Date().toISOString() }, body: { v: 1, vault: 'Test Vault', links: {}, notes: [{ id: 'b68g-s10', rel: PREP_REL, title: 'Session 10', session: '10', date: '', status: 'prep', blocks: [
+  { k: 'md', from: PREP_REL, src: '## Scores\n\n### F · The goose job', tasks: [] },
+  { k: 'embed', from: 'Wiki/Games/Blades in the Dark/Campaigns/Group/Scores/b68g-score-goose.md', heading: '', score: { key: 'b68g-score-goose', label: 'F · The goose job', site: { target: SITE_T, district: SITE_D, faction: 'The Nobody Guild' } }, src: '**Steal the goose.**', tasks: [] },
+  { k: 'md', from: PREP_REL, src: '### G · The plain job', tasks: [] },
+  { k: 'embed', from: 'Wiki/Games/Blades in the Dark/Campaigns/Group/Scores/b68g-score-plain.md', heading: '', score: { key: 'b68g-score-plain', label: 'G · The plain job' }, src: 'Plain.', tasks: [] },
+] }] } } };
+const SITE_OVER = { B68GmPrep: PR, B68Markdown: MDN, B68Map: M };
+
+await test('S1. score sites, pure: the card\'s hints to the Location pickers (unknown ones reported), the entry saved, the hint line', () => {
+  const r = P.siteUi(LC, { target: SITE_T.toUpperCase(), district: 'the ' + SITE_D, faction: 'The Nobody Guild' });
+  assert.deepEqual(r.ui, { target: SITE_T, district: SITE_D, faction: '', approach: '' }, 'matched without case or a leading "the"');
+  assert.deepEqual(r.missed, [['faction', 'The Nobody Guild']]);
+  assert.deepEqual(P.siteUi(LC, {}).ui, { target: '', district: '*', faction: '', approach: '' }, 'no district hint rolls on any, not on Now in');
+  assert.deepEqual(P.siteUi(LC, { district: 'Atlantis' }), { ui: { target: '', district: '*', faction: '', approach: '' }, missed: [['district', 'Atlantis']] });
+  const roll = L.generate({ T: FIXL.T, extra: FIXL.extra }, {}, { seed: 99, mem: {} });
+  const e = P.siteEntry({ hid: 'h1', seed: 99, ui: { target: 'x' }, mem: '{"a":[1]}', label: 'L', at: 't' }, roll, 'F · Job', { view: 'iso', theme: 'board', layer: 'player' });
+  assert.deepEqual(Object.keys(e), ['seed', 'ui', 'mem', 'name', 'district', 'label', 'map', 'at']);
+  assert.deepEqual([e.seed, e.ui.target, e.mem, e.name, e.district, e.label, e.map.view, e.map.theme], [99, 'x', '{"a":[1]}', roll.name, roll.district, 'F · Job', 'iso', 'board']);
+  assert.deepEqual(P.siteEntry({ seed: 1 }, roll, '', { view: 'nope', theme: 'nope' }).map, { view: 'rings', theme: 'rulebook' });
+  assert.equal(P.siteEntry(null, roll), null); assert.equal(P.siteEntry({ seed: 'x' }, roll), null); assert.equal(P.siteEntry({ seed: 1 }, null), null);
+  assert.equal(P.hintLine({ approach: 'Quiet', target: 'Bank', faction: 'F', district: 'D' }), 'Bank · D · F · Quiet');
+  const sites = P.sitesIn({ sites: { a: { seed: 3 }, b: { seed: 4 }, c: null, d: { name: 'no seed' } } });
+  assert.deepEqual(Object.keys(sites), ['a', 'b']); assert.deepEqual(P.siteKeysOf(sites, { seed: 4 }), ['b']); assert.deepEqual(P.siteKeysOf(sites, null), []);
+});
+
+await test('S2. score sites, page: Roll a site from a score card in Prep, save it, see it on the card, open it again after another roll, clear it', async () => {
+  const h = await openPage({ fg: fakeGm(undefined, prepPart), over: SITE_OVER });
+  h.press('r');
+  const slot = () => h.q('.pp-site[data-score="b68g-score-goose"]');
+  assert.ok(slot() && h.q('.pp-site[data-score="b68g-score-plain"]'), 'a slot in each score card');
+  assert.match(slot().textContent, new RegExp('None yet · ' + SITE_T + ' · ' + SITE_D + ' · The Nobody Guild'));
+  slot().querySelector('[data-gm="siteroll"]').click();
+  assert.equal(h.page._state().panel, 'location');
+  const d = stateDoc(h);
+  assert.deepEqual([d.loc.ui.target, d.loc.ui.district, d.loc.ui.faction, d.loc.ui.approach], [SITE_T, SITE_D, '', '']);
+  assert.equal(d.cards.location.ui.target, SITE_T, 'the roll used the card\'s hints'); assert.equal(d.cards.location.ui.district, SITE_D);
+  assert.ok(h.br.toasts.some(([m, bad]) => bad && /rolled on any: faction “The Nobody Guild”/.test(m)), 'a hint the generator lacks is reported');
+  const btn = h.q('[data-gm="sitesave"]');
+  assert.equal(btn.textContent, 'Save as the site for F · The goose job'); assert.ok(!btn.hasAttribute('disabled'));
+  btn.click();
+  const s = stateDoc(h).sites['b68g-score-goose'];
+  assert.equal(s.seed, stateDoc(h).cards.location.seed); assert.equal(s.name, h.page._state().locRoll.name); assert.equal(s.label, 'F · The goose job');
+  assert.deepEqual({ ...s.map }, { view: 'rings', theme: 'rulebook' });       /* a copy: the page's objects come from the vm's realm */
+  assert.equal(h.q('[data-gm="sitesave"]').textContent, 'Saved as its site'); assert.ok(h.q('[data-gm="sitesave"]').hasAttribute('disabled'));
+  assert.match(h.q('#gm-siterow').textContent, /This roll is the site for F · The goose job/);
+  h.press('r');
+  assert.ok(slot().textContent.includes(s.name) && slot().querySelector('[data-gm="siteopen"]'), 'the card shows its site');
+  h.press('b'); h.q('[data-gm="locroll"]').click();
+  assert.notEqual(stateDoc(h).cards.location.seed, s.seed, 'another roll is on the card now');
+  assert.ok(!/This roll is the site/.test(h.q('#gm-siterow').textContent));
+  h.press('r'); slot().querySelector('[data-gm="siteopen"]').click();
+  assert.equal(h.page._state().panel, 'location');
+  assert.equal(stateDoc(h).cards.location.seed, s.seed); assert.equal(h.page._state().locRoll.name, s.name, 'the same place');
+  assert.ok(h.page._state().map && h.page._state().map.layer === 'gm', 'drawn, on the GM layer');
+  h.press('r'); slot().querySelector('[data-gm="siteclear"]').click();
+  assert.ok(!(stateDoc(h).sites || {})['b68g-score-goose']); assert.match(slot().textContent, /None yet/);
+  await h.save();
+  assert.ok(!(h.fg.server.doc.sites || {})['b68g-score-goose'], 'cleared on the server too');
+});
+
+await test('S3. score sites, page: the row lists the scores; replacing a site asks; 24 at most; a site the tables no longer make says so; no scores, no row', async () => {
+  const h0 = await openPage(); h0.press('b'); h0.q('[data-gm="locroll"]').click();
+  assert.ok(!h0.q('#gm-siterow'), 'no prep part: no row'); await h0.save();
+
+  const h = await openPage({ fg: fakeGm(undefined, prepPart), over: SITE_OVER });
+  h.press('b'); h.q('[data-gm="locroll"]').click();
+  const sel = () => h.q('#gm-site-pick');
+  assert.deepEqual(sel().querySelectorAll('option').map((o) => o.getAttribute('value')), ['', 'b68g-score-goose', 'b68g-score-plain']);
+  assert.ok(h.q('[data-gm="sitesave"]').hasAttribute('disabled'), 'no score chosen: nothing to save');
+  const s1 = sel(); s1.value = 'b68g-score-plain'; dispatch(s1, 'change');
+  h.q('[data-gm="sitesave"]').click();
+  const first = stateDoc(h).sites['b68g-score-plain'].seed;
+  h.q('[data-gm="locroll"]').click();
+  assert.equal(h.q('[data-gm="sitesave"]').textContent, 'Save as the site for G · The plain job', 'the row still points at the score');
+  let asked = ''; h.br.W.confirm = (m) => { asked = m; return false; };
+  h.q('[data-gm="sitesave"]').click();
+  assert.match(asked, /Replace the site saved for G · The plain job/); assert.equal(stateDoc(h).sites['b68g-score-plain'].seed, first, 'declined: kept');
+  h.br.W.confirm = () => true; h.q('[data-gm="sitesave"]').click();
+  assert.notEqual(stateDoc(h).sites['b68g-score-plain'].seed, first, 'replaced');
+  assert.match(sel().querySelector('option[value="b68g-score-plain"]').textContent, /· this site$/);
+  await h.save();
+
+  const fg2 = fakeGm(undefined, prepPart);
+  fg2.server.doc = { sites: Object.fromEntries(Array.from({ length: 24 }, (_, i) => ['k' + i, { seed: i + 1, name: 'N' + i }])) };
+  const h2 = await openPage({ fg: fg2, over: SITE_OVER }); h2.press('b'); h2.q('[data-gm="locroll"]').click();
+  const s2 = h2.q('#gm-site-pick'); s2.value = 'b68g-score-goose'; dispatch(s2, 'change'); h2.q('[data-gm="sitesave"]').click();
+  assert.ok(!stateDoc(h2).sites['b68g-score-goose'] && h2.br.toasts.some(([m, bad]) => bad && /24 sites are saved already/.test(m)));
+  await h2.save();
+
+  const fg3 = fakeGm(undefined, prepPart);
+  fg3.server.doc = { sites: { 'b68g-score-goose': { seed: 5, ui: {}, mem: '{}', name: 'Not This Place', district: 'X', label: 'F · The goose job', map: { view: 'plan', theme: 'blueprint' }, at: '2030-01-01T00:00:00Z' } } };
+  const h3 = await openPage({ fg: fg3, over: SITE_OVER }); h3.press('r');
+  h3.q('.pp-site[data-score="b68g-score-goose"] [data-gm="siteopen"]').click();
+  assert.ok(h3.br.toasts.some(([m, bad]) => bad && /tables have changed since this site was saved/.test(m)));
+  const mp = stateDoc(h3).loc.map; assert.deepEqual([mp.view, mp.theme, mp.layer], ['plan', 'blueprint', 'gm'], 'opened in the view and theme it was saved with, on the GM layer');
+  await h3.save();
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

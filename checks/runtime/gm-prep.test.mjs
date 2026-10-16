@@ -200,6 +200,42 @@ await test('cards: the server keeps only the six lines of up to 8 cards; mode, i
   assert.deepEqual([Pure.cardStep(0, 3, -1), Pure.cardStep(2, 3, 1)], [2, 0]);
 });
 
+/* ---------- 6. score sites (GM.md "Score sites"): the exporter marks embedded score cards; the page module lists them ---------- */
+await test('score sites: an embedded score card carries its key, the heading above it as its label, and its site hints; nothing else does', async () => {
+  const v = fs.mkdtempSync(path.join(os.tmpdir(), 'b68-sites-'));
+  try {
+    const w = (rel, text) => { const f = path.join(v, ...rel.split('/')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); };
+    w(G + '/Sessions/b68g-s10.md', ['---', 'session: 10', 'gm_prep: true', '---', '', '# Session 10', '', '## Scores', '',
+      '### F · The goose job', '', '![[b68g-score-goose]]', '', '### G · Plain', '', '![[pip-plain]]', '', '![[b68g-score-folder]]', '',
+      '## After', '', '![[b68g-score-titled]]', ''].join('\n'));
+    w(G + '/Scores/b68g-score-goose.md', ['---', 'tags:', '  - wiki/games', '  - wiki/b68-score', 'site_target: Warehouse', 'site_district: Dockside', 'site_faction: ""', 'site_approach:', '---', '', '**Steal the goose.**', ''].join('\n'));
+    w(G + '/pip-plain.md', ['---', 'tags: [wiki/games]', '---', '', 'Plain.', ''].join('\n'));
+    w(G + '/Scores/b68g-score-folder.md', ['# The folder job', '', 'No tags, but it lives in Scores/.', ''].join('\n'));
+    w(G + '/b68g-score-titled.md', ['---', 'title: The titled job', 'tags: wiki/b68-score', 'site_approach: Stealth', '---', '', 'Tagged, outside Scores/.', ''].join('\n'));
+    const pt = buildPrep({ vault: v, repo: ROOT, exportedAt: '2030-01-01T00:00:00Z', basenames: basenames(v) });
+    const embeds = pt.notes[0].blocks.filter((b) => b.k === 'embed');
+    assert.deepEqual(embeds.map((b) => b.score || null), [
+      { key: 'b68g-score-goose', label: 'F · The goose job', site: { target: 'Warehouse', district: 'Dockside' } },
+      null,                                                           // not a score card
+      { key: 'b68g-score-folder', label: 'The folder job' },         // its heading belongs to the embed above: the card's # heading
+      { key: 'b68g-score-titled', label: 'The titled job', site: { approach: 'Stealth' } },   // a ## heading is a section, not a label
+    ]);
+    const list = PR.scores(pt);
+    assert.deepEqual(list.map((s) => [s.key, s.label, JSON.stringify(s.site)]), [
+      ['b68g-score-goose', 'F · The goose job', '{"target":"Warehouse","district":"Dockside"}'],
+      ['b68g-score-folder', 'The folder job', '{}'],
+      ['b68g-score-titled', 'The titled job', '{"approach":"Stealth"}'],
+    ]);
+    assert.equal(list[0].rel, G + '/Scores/b68g-score-goose.md');
+    const html = PR.view(pt, 'b68g-s10', { M }).html;
+    assert.equal((html.match(/<div class="pp-site" data-score="/g) || []).length, 3, 'a slot per score card');
+    assert.ok(/<section class="pp-embed" data-from="[^"]*b68g-score-goose\.md" data-score="b68g-score-goose">/.test(html));
+    assert.ok(/<section class="pp-embed" data-from="[^"]*pip-plain\.md"><header/.test(html), 'a plain embed has no slot');
+    // a key the exporter would never make is not trusted
+    assert.deepEqual(PR.scores({ notes: [{ id: 'x', blocks: [{ k: 'embed', from: 'a', score: { key: 'x"><script>' } }, { k: 'md', score: { key: 'y' } }] }] }), []);
+  } finally { fs.rmSync(v, { recursive: true, force: true }); }
+});
+
 fs.rmSync(V, { recursive: true, force: true });
 console.log(failed ? `\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);
 process.exit(failed ? 1 : 0);

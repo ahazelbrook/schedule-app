@@ -2,11 +2,12 @@
 // Two-way sync between the GM page (D1) and Alex's Obsidian vault. Full contract: SYNC.md.
 //
 //   node scripts/gm-sync.mjs [pull|push|both] [--dry-run] [--yes] [--vault <path>] [--campaign <id>]
-//                            [--session <N>] [--baseline] [--only notes|npcs|pack] [--pack <file>] [--private <dir>] [--allow-shrink]
+//                            [--session <N>] [--baseline] [--only notes|npcs|pack|sites] [--pack <file>] [--private <dir>] [--allow-shrink]
 //
 //   pull   app -> vault: capture lines, L rolls, pins, bargains and callbacks into the session note; NPCs made in the
 //          app as new NPC cards; reveals and GM notes into a card's "## In play"; the Prep tab's ticks into their task
-//          boxes ([ ] -> [x], never back) and its beat times under "## At the table (app)". Writes the vault unless --dry-run.
+//          boxes ([ ] -> [x], never back) and its beat times under "## At the table (app)"; the sites saved against score
+//          cards as location notes and maps in Locations/, linked from the card's site:. Writes the vault unless --dry-run.
 //   push   vault -> D1: NPC name / description / figure spec (field ownership + three-way merge), the GM pack parts
 //          (staged in pieces, swapped in with one statement). Writes D1 ONLY with --yes; otherwise a plan. A pack that
 //          would lose prep against the server's is refused (lib/pack-guard.mjs) unless --allow-shrink.
@@ -16,7 +17,8 @@
 // stops before it writes anything. Exit: 0 fine, 1 something refused / in conflict, 2 stopped.
 //
 // The pull of session notes (lib/sync-notes.mjs) is the core. NPCs (lib/sync-npc.mjs) and the pack
-// (lib/sync-pack.mjs) and the Prep tab (lib/sync-prep.mjs) are loaded only if present, so the core ships on its own.
+// (lib/sync-pack.mjs) and the Prep tab (lib/sync-prep.mjs) and the score sites (lib/sync-sites.mjs) are loaded only if
+// present, so the core ships on its own.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -51,7 +53,7 @@ export function parseArgs(argv) {
     else if (a === '--pack') o.packFile = need(++i, a);
     else if (a === '--private') o.privateDir = need(++i, a);
     else if (a === '--session') { const s = Number(need(++i, a)); if (!(s > 0)) throw new Error('--session needs a session number'); o.session = s; }
-    else if (a === '--only') { const v = need(++i, a); if (!['notes', 'npcs', 'pack'].includes(v)) throw new Error('--only takes notes, npcs or pack'); o.only = v; }
+    else if (a === '--only') { const v = need(++i, a); if (!['notes', 'npcs', 'pack', 'sites'].includes(v)) throw new Error('--only takes notes, npcs, pack or sites'); o.only = v; }
     else if (a === '--help' || a === '-h') o.help = true;
     else throw new Error('unknown argument: ' + a);
   }
@@ -90,6 +92,7 @@ export async function run(opts) {
   const npcMod = want('npcs') ? (opts.npcSync || await optional('sync-npc.mjs')) : null;
   const packMod = want('pack') && o.mode !== 'pull' ? (opts.packSync || await optional('sync-pack.mjs')) : null;
   const prepMod = want('notes') && o.mode !== 'push' ? (opts.prepSync || await optional('sync-prep.mjs')) : null;
+  const siteMod = want('sites') && o.mode !== 'push' ? (opts.siteSync || await optional('sync-sites.mjs')) : null;
   if (want('npcs') && !npcMod) report.note('NPC sync is not installed in this build (lib/sync-npc.mjs): skipped');
   if (want('pack') && o.mode !== 'pull' && !packMod) report.note('pack push is not installed in this build (lib/sync-pack.mjs): skipped');
 
@@ -98,6 +101,7 @@ export async function run(opts) {
   try {
     if (o.mode !== 'push' && want('notes')) state = await loadState(db, campaign);
     if (npcMod) { rows = await npcMod.readNpcs(db, campaign); if (!state) state = await loadState(db, campaign); }
+    if (siteMod && !state) state = await loadState(db, campaign);
   } catch (e) {
     report.errors.push((e.kind === 'auth' ? 'not logged in to Cloudflare: run `npx wrangler login`, then try again. ' : e.kind === 'offline' ? 'offline or Cloudflare unreachable. ' : '') + 'Nothing was written. (' + e.message + ')');
     return done(2);
@@ -109,6 +113,7 @@ export async function run(opts) {
       if (want('notes')) pullNotes(ctx);
       if (prepMod) prepMod.pullPrep(ctx);
       if (npcMod) await npcMod.pullNpcs(ctx, opts.npcModule);
+      if (siteMod) siteMod.pullSites(ctx, opts.siteKit);
     }
     if (o.mode !== 'pull') {
       if (npcMod) await npcMod.pushNpcs(ctx);
@@ -125,7 +130,7 @@ export async function run(opts) {
 
 const USAGE = [
   'node scripts/gm-sync.mjs [pull|push|both] [--dry-run] [--yes] [--vault <path>] [--campaign <id>]',
-  '                         [--session <N>] [--baseline] [--only notes|npcs|pack] [--pack <file>] [--private <dir>] [--allow-shrink]',
+  '                         [--session <N>] [--baseline] [--only notes|npcs|pack|sites] [--pack <file>] [--private <dir>] [--allow-shrink]',
   'pull writes the vault unless --dry-run; push writes D1 only with --yes. See SYNC.md.',
 ];
 

@@ -449,6 +449,51 @@
   }
   P.scoreScene = scoreScene;
 
+  /* Score sites (GM.md, "Score sites"): a location roll saved against a score card of the prep part. GM state
+     sites: { <score key>: { seed, ui, mem, name, district, label, map: { view, theme }, at } }; the replay recipe is the one
+     cards.location holds, so the same map redraws on any device; the sync files it into the vault (SYNC.md). */
+  var SITE_MAX = P.SITE_MAX = 24;
+  var SITE_PICKS = P.SITE_PICKS = ['target', 'district', 'faction', 'approach'];
+  /* a name as a picker compares it: no case, no leading "the", no punctuation (Now in's rule) */
+  function pickKey(s) { return str(s).toLowerCase().replace(/^the\s+/, '').replace(/[^a-z0-9]+/g, ''); }
+  /* the site entry for the location card on screen: its replay info (cards.location) and the roll's place, the score's label, the map's
+     view and theme (the sync draws the vault's copy that way). null without a card or a roll. */
+  function siteEntry(card, roll, label, map) {
+    if (!isObj(card) || typeof card.seed !== 'number' || !roll) return null;
+    var m = isObj(map) ? map : {};
+    return {
+      seed: card.seed, ui: clone(isObj(card.ui) ? card.ui : {}), mem: typeof card.mem === 'string' ? card.mem : JSON.stringify(isObj(card.mem) ? card.mem : {}),
+      name: str(roll.name).slice(0, 120), district: str(roll.district).slice(0, 60), label: str(label).slice(0, 120),
+      map: { view: VIEWS.indexOf(m.view) >= 0 ? m.view : 'rings', theme: THEMES.indexOf(m.theme) >= 0 ? m.theme : 'rulebook' }, at: nowIso()
+    };
+  }
+  P.siteEntry = siteEntry;
+  /* the Location pickers for a score card's site hints: each matched to its control's options by pickKey; a hint the tool lacks
+     rolls on any and is reported. No district hint rolls on any (NOW_ANY), not on Now in: the site is wherever the score is.
+     controls: B68GmLocation.controls(pack).controls. -> { ui: { target, district, approach, faction }, missed: [[key, value]] } */
+  function siteUi(controls, hints) {
+    var ui = {}, missed = [], h = isObj(hints) ? hints : {};
+    (Array.isArray(controls) ? controls : []).forEach(function (c) {
+      if (!isObj(c) || SITE_PICKS.indexOf(c.key) < 0) return;
+      var none = c.key === 'district' ? '*' : '', want = str(h[c.key]).trim();
+      if (!want) { ui[c.key] = none; return; }
+      var hit = (Array.isArray(c.options) ? c.options : []).filter(function (o) { return isObj(o) && str(o.value) && pickKey(o.value) === pickKey(want); })[0];
+      if (hit) ui[c.key] = str(hit.value); else { ui[c.key] = none; missed.push([c.key, want]); }
+    });
+    return { ui: ui, missed: missed };
+  }
+  P.siteUi = siteUi;
+  /* the saved sites (only entries that can replay), and the keys whose site is this location card */
+  function sitesIn(doc) {
+    var s = isObj(doc) && isObj(doc.sites) ? doc.sites : {}, out = {};
+    Object.keys(s).forEach(function (k) { if (isObj(s[k]) && typeof s[k].seed === 'number') out[k] = s[k]; });
+    return out;
+  }
+  function siteKeysOf(sites, card) { return isObj(card) && typeof card.seed === 'number' ? Object.keys(sites).filter(function (k) { return sites[k].seed === card.seed; }) : []; }
+  /* "Warehouse · Dockside · The Goose Guild · Stealth": a card's hints as one line */
+  function hintLine(site) { var s = isObj(site) ? site : {}; return SITE_PICKS.map(function (k) { return str(s[k]).trim(); }).filter(Boolean).join(' · '); }
+  P.sitesIn = sitesIn; P.siteKeysOf = siteKeysOf; P.hintLine = hintLine;
+
   /* a key press on #gm -> an action, or null. ev: { key, ctrlKey, altKey, metaKey, typing }
      1-4 roll a situation; 5-9 do nothing (the nine single tables have no keys: More tables, under the card). Blanking the
      laptop takes Shift+H (`blank`), or a plain H twice within a second (`blank-tap`): a stray key never blacks it out. */
@@ -1725,6 +1770,7 @@
     if (roll) {
       h += '<article class="gm-card gm-loccard" data-tool="location">' + glanceHtml(L, roll, pk, revealList(mu)) + foldsHtml(L, roll, pk, revealList(mu)) +
         '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="location" title="Pins the glance card">Pin</button>' + '<button type="button" class="btn sm" data-gm="copy" data-tool="location" title="Copies the whole card">Copy</button></div></article>';
+      h += siteRowHtml(cur);
       /* the iPad controls (Layer, Reveal, the warning, Show on iPad, Set as score scene) stay visible together: never in a fold;
          View and Theme (presentation) fold under the map */
       h += '<section class="gm-mapbox" aria-label="Map"><h4>Map</h4><div class="gm-map-ctl">' +
@@ -1840,6 +1886,90 @@
   /* Clear -> ambient: nothing spotlit, the ambient scene plays. Lights out: true black. */
   function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('Cleared: the iPad plays the ambient scene.'); }, function (e) { toast('Could not clear the iPad: ' + errText(e), true); }); }
   function darkIpad() { pushDisplay({ kind: 'dark' }).then(function () { toast('Lights out on the iPad.'); }, function (e) { toast('Could not turn the lights out: ' + errText(e), true); }); }
+
+  /* ---------- score sites (GM.md, "Score sites"): a location roll saved against a score card; the Prep tab's site strip ----------
+     The scores are the prep part's embedded score cards (gm/prep.js scores()). S.siteFor is the score the save row points at on
+     this page: the one whose Roll a site or Open map brought the GM here, else none. Saving is always a press. */
+  function scoreList() { var pk = part('prep'), B = W.B68GmPrep; try { return pk && B && B.scores ? B.scores(pk) : []; } catch (e) { return []; } }
+  function scoreOf(key) { return scoreList().filter(function (s) { return s.key === key; })[0] || null; }
+  function siteLabel(key) { var s = scoreOf(key), x = sitesIn(S.doc)[key]; return s ? s.label : x && x.label ? x.label : key; }
+  function siteRowHtml(cur) {
+    var list = scoreList(); if (!list.length) return '';
+    var sites = sitesIn(S.doc), mine = siteKeysOf(sites, cur), pick = S.siteFor && list.some(function (s) { return s.key === S.siteFor; }) ? S.siteFor : mine[0] || '';
+    var sc = list.filter(function (s) { return s.key === pick; })[0], same = sc && mine.indexOf(sc.key) >= 0;
+    var opts = '<option value="">Choose a score…</option>' + list.map(function (s) {
+      var x = sites[s.key], note = !x ? '' : mine.indexOf(s.key) >= 0 ? ' · this site' : ' · has a site';
+      return '<option value="' + esc(s.key) + '"' + (s.key === pick ? ' selected' : '') + '>' + esc(s.label + note) + '</option>';
+    }).join('');
+    return '<section class="gm-siterow" id="gm-siterow" aria-label="Site for a score"><label class="gm-field" for="gm-site-pick"><span class="gm-lab">Site for a score</span><select id="gm-site-pick" data-site="pick">' + opts + '</select></label>' +
+      '<button type="button" class="btn sm' + (sc && !same ? ' primary' : '') + '" data-gm="sitesave"' + (sc && !same ? '' : ' disabled') + '>' + (same ? 'Saved as its site' : sc ? 'Save as the site for ' + esc(sc.label) : 'Save as the site') + '</button>' +
+      (mine.length ? '<p class="gm-dim gm-site-is">This roll is the site for ' + esc(mine.map(siteLabel).join(', ')) + '.</p>' : '') + '</section>';
+  }
+  function saveSite() {
+    var key = S.siteFor || str(($q('#gm-site-pick') || {}).value), sc = scoreOf(key), cur = isObj(S.doc.cards) ? S.doc.cards.location : null;
+    if (!S.locRoll || !isObj(cur)) { toast('Roll a location first.', true); return; }
+    if (!sc) { toast('Choose the score this site is for.', true); return; }
+    var sites = sitesIn(S.doc), old = sites[key];
+    if (old && old.seed === cur.seed) { toast('This roll is already the site for ' + sc.label + '.'); return; }
+    if (!old && Object.keys(sites).length >= SITE_MAX) { toast(SITE_MAX + ' sites are saved already. Clear the site of a played score (its strip in Prep) first.', true); return; }
+    if (old && !W.confirm('Replace the site saved for ' + sc.label + ' (' + (old.name || 'a saved roll') + ')? The vault keeps a location note the sync already filed.')) return;
+    var e = siteEntry(cur, S.locRoll, sc.label, mapUi()); if (!e) { toast('Roll a location first.', true); return; }
+    var p = { sites: {} }; p.sites[key] = replacePatch(isObj(S.doc.sites) ? S.doc.sites[key] : null, e);
+    if (!patch(p)) return;
+    S.siteFor = key;
+    toast('Saved: ' + (e.name || 'this roll') + ' is the site for ' + sc.label + '.');
+    renderLocation(); decoratePrep($q('#gm-prep'));
+  }
+  /* a panel opened by a button: as its key does (the phone shows the side panel) */
+  function showPanel(p) { setPanel(p); if (isPhone()) { S.seg = 'side'; syncPanels(); } }
+  /* Open map: the saved roll becomes the Location card, on the GM layer in the view and theme it was saved with, public band only */
+  function openSite(key) {
+    var x = sitesIn(S.doc)[key]; if (!x) return;
+    var cur = { hid: uid('h'), seed: x.seed, ui: clone(isObj(x.ui) ? x.ui : {}), mem: typeof x.mem === 'string' ? x.mem : '{}', label: str(x.name) + (x.district ? ' · ' + x.district : ''), at: nowIso() };
+    var m = isObj(x.map) ? x.map : {};
+    patch({ cards: { location: replacePatch(isObj(S.doc.cards) ? S.doc.cards.location : null, cur) }, loc: { map: { reveal: clone(P.REVEAL0), view: VIEWS.indexOf(m.view) >= 0 ? m.view : 'rings', theme: THEMES.indexOf(m.theme) >= 0 ? m.theme : 'rulebook', layer: 'gm' } } }, { force: true });
+    S.locRoll = null; S.map = null; S.siteFor = key; S.last = { text: 'Location: ' + cur.label };
+    showPanel('location');
+    renderLocation();
+    if (S.locRoll && W.B68Map && W.B68Map.render) drawMap(true);
+    if (!S.locRoll) toast('That site would not redraw: the location tables are missing.', true);
+    else if (x.name && str(S.locRoll.name) !== str(x.name)) toast('The location tables have changed since this site was saved: this is its seed on the new tables (' + str(S.locRoll.name) + '), not ' + x.name + '.', true);
+  }
+  /* Roll a site / Roll another: the Location pickers from the card's hints, then a roll; the save row points at the score */
+  function rollSite(key) {
+    var L = W.B68GmLocation, pk = part('location'), sc = scoreOf(key); if (!L || !pk || !sc) { if (!sc) toast('That score is not in the pack any more.', true); return; }
+    var r; try { r = siteUi(L.controls(pk).controls, sc.site); } catch (e) { r = { ui: {}, missed: [] }; }
+    patch({ loc: { ui: r.ui } });
+    S.siteFor = key;
+    showPanel('location');
+    rollLocation();
+    if (r.missed.length) toast('Not in the generator, so rolled on any: ' + r.missed.map(function (m) { return m[0] + ' “' + m[1] + '”'; }).join(', ') + '. Fix the card’s site_ properties in Obsidian.', true);
+  }
+  function clearSite(key) {
+    var x = sitesIn(S.doc)[key]; if (!x) return;
+    if (!W.confirm('Clear the site saved for ' + siteLabel(key) + ' (' + (x.name || 'a saved roll') + ')? A location note the sync already filed stays in the vault.')) return;
+    var p = { sites: {} }; p.sites[key] = null;
+    if (!patch(p, { force: true })) return;
+    toast('Cleared the site for ' + siteLabel(key) + '.');
+    renderLocation(); decoratePrep($q('#gm-prep'));
+  }
+  /* the strip in each embedded score card (the slot gm/prep.js leaves): redrawn only when its site changed */
+  function decorateSites(el) {
+    if (!el || !el.querySelectorAll) return;
+    var slots = el.querySelectorAll('.pp-site[data-score]'); if (!slots.length) return;
+    var sites = sitesIn(S.doc), byKey = {}; scoreList().forEach(function (s) { byKey[s.key] = s; });
+    [].forEach.call(slots, function (slot) {
+      var key = slot.getAttribute('data-score'), sc = byKey[key] || { key: key, label: key, site: {} }, x = sites[key], k = esc(key);
+      var sig = JSON.stringify([x ? [x.seed, x.name, x.district, x.at] : null, hintLine(sc.site)]);
+      if (slot.getAttribute('data-sig') === sig) return;
+      slot.setAttribute('data-sig', sig); slot.classList.toggle('has', !!x);
+      slot.innerHTML = x
+        ? '<span class="gm-lab">Site</span><span class="pp-site-t"><b>' + esc(x.name || 'saved') + '</b>' + (x.district ? ' <span class="gm-dim">· ' + esc(x.district) + '</span>' : '') + '</span>' +
+          '<span class="pp-site-acts"><button type="button" class="btn sm primary" data-gm="siteopen" data-score="' + k + '">Open map</button><button type="button" class="btn sm" data-gm="siteroll" data-score="' + k + '">Roll another</button><button type="button" class="btn sm" data-gm="siteclear" data-score="' + k + '">Clear</button></span>'
+        : '<span class="gm-lab">Site</span><span class="pp-site-t gm-dim">None yet' + (hintLine(sc.site) ? ' · ' + esc(hintLine(sc.site)) : '') + '</span>' +
+          '<span class="pp-site-acts"><button type="button" class="btn sm" data-gm="siteroll" data-score="' + k + '">Roll a site</button></span>';
+    });
+  }
 
   /* ---------- the iPad panel (I): the ambient scenes. The server's document is the truth ---------- */
   function noteShown(d) { if (isObj(d)) { AM.shown = { kind: str(d.kind), title: str(d.title) }; renderIpad(); } }
@@ -2603,6 +2733,7 @@
     var p = prepDoc(), pins = isObj(p.pins) ? p.pins : {};
     W.B68GmPrep.decorate(el, { ticks: p.ticks, cells: p.cells, beats: p.beats });
     el.querySelectorAll('.pp-pin').forEach(function (b) { var on = isObj(pins[b.getAttribute('data-sec')]); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Pinned' : 'Pin'; });
+    decorateSites(el);
   }
   function prepRedecorate() { decoratePrep($q('#gm-prep')); renderRail(); renderBeat(); }
   /* the note's find box: every word somewhere in a section's heading or text keeps its chip in the rail; Enter goes to the first */
@@ -3154,6 +3285,10 @@
       case 'blankipad': blankIpad(); break;
       case 'darkipad': darkIpad(); break;
       case 'scorescene': setScoreScene(); break;
+      case 'sitesave': saveSite(); break;
+      case 'siteopen': openSite(str(b.getAttribute('data-score'))); break;
+      case 'siteroll': rollSite(str(b.getAttribute('data-score'))); break;
+      case 'siteclear': clearSite(str(b.getAttribute('data-score'))); break;
       case 'ambretry': loadAmbient(); break;
       case 'ambmode': { var am = b.getAttribute('data-v'); if (am === 'pin') patchAmbient({ mode: 'pin', scene: AM.doc && ipadView(AM.doc).scene || 'harvest' }); else patchAmbient({ mode: am }); break; }
       case 'ambscene': patchAmbient({ mode: 'pin', scene: b.getAttribute('data-id') }); break;
@@ -3189,6 +3324,7 @@
     if (t.hasAttribute('data-ctl')) { if (ev.type === 'change' || t.tagName === 'SELECT') setLive(t.getAttribute('data-ctl'), t.value); return; }
     if (ev.type !== 'change') return;
     if (t.hasAttribute('data-ambint')) { patchAmbient({ intervalMin: Math.round(+t.value) }); return; }
+    if (t.hasAttribute('data-site')) { S.siteFor = str(t.value); renderLocation(); return; }     /* the save row's score: this page only */
     if (t.hasAttribute('data-loc')) { var l = {}; l[t.getAttribute('data-loc')] = t.type === 'checkbox' ? t.checked : t.value; patch({ loc: { ui: l } }); }
     else if (t.hasAttribute('data-map')) setMap(t.getAttribute('data-map'), t.value);
     else if (t.hasAttribute('data-scn')) { var sc = {}; sc[t.getAttribute('data-scn')] = t.value; patch({ scn: { ui: sc } }); }
