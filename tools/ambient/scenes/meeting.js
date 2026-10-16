@@ -8,11 +8,11 @@ const { C, f2, pts, rng } = L;
 module.exports = function build() {
   const W = 1600, H = 1200, r = rng(180);
   const WALL = "#4a5246", WALL2 = "#3e463b";
-  let defs = "", room = "", table = "", front = "";
-  defs += `<radialGradient id="pm-lamp" cx=".5" cy=".55" r=".55"><stop offset="0" stop-color="#ffe2a0" stop-opacity=".42"/><stop offset=".55" stop-color="#e8b860" stop-opacity=".1"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
-  <radialGradient id="pm-dark" cx=".5" cy=".45" r=".72"><stop offset=".4" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#0b0d0a" stop-opacity=".82"/></radialGradient>
-  <linearGradient id="pm-cone" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff0c0" stop-opacity=".2"/><stop offset="1" stop-color="#fff0c0" stop-opacity="0"/></linearGradient>
-  <pattern id="pm-paper" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="${WALL}"/><circle cx="23" cy="23" r="9" fill="none" stroke="${WALL2}" stroke-width="3"/><circle cx="0" cy="0" r="5" fill="${WALL2}"/><circle cx="46" cy="46" r="5" fill="${WALL2}"/></pattern>`;
+  let room = "", table = "";
+  const lampDef = `<radialGradient id="pm-lamp" cx=".5" cy=".55" r=".55"><stop offset="0" stop-color="#ffe2a0" stop-opacity=".42"/><stop offset=".55" stop-color="#e8b860" stop-opacity=".1"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>`;
+  const darkDef = `<radialGradient id="pm-dark" cx=".5" cy=".45" r=".72"><stop offset=".4" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#0b0d0a" stop-opacity=".82"/></radialGradient>`;
+  const coneDef = `<linearGradient id="pm-cone" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff0c0" stop-opacity=".2"/><stop offset="1" stop-color="#fff0c0" stop-opacity="0"/></linearGradient>`;
+  const paperDef = `<pattern id="pm-paper" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="${WALL}"/><circle cx="23" cy="23" r="9" fill="none" stroke="${WALL2}" stroke-width="3"/><circle cx="0" cy="0" r="5" fill="${WALL2}"/><circle cx="46" cy="46" r="5" fill="${WALL2}"/></pattern>`;
 
   // ---------- the lair: wallpaper, the neon, the boarded window, the goldfish ----------
   room += `<rect width="${W}" height="${H}" fill="url(#pm-paper)"/><rect y="760" width="${W}" height="${H - 760}" fill="#2e2a22"/>`;
@@ -62,29 +62,46 @@ module.exports = function build() {
   table += `<g transform="translate(1340 ${TY + 30})"><rect x="0" y="-70" width="120" height="70" rx="10" fill="${C.rust700}"/><rect x="10" y="-60" width="60" height="44" rx="4" fill="#d8c79a"/><circle cx="96" cy="-38" r="14" fill="#2a2521"/></g>`;
   table += `<g transform="translate(1100 ${TY + 50})"><rect x="-12" y="-36" width="24" height="36" rx="4" fill="#c46a1e" opacity=".85"/><rect x="-14" y="-46" width="28" height="12" fill="${C.paper100}"/></g>`;
 
-  // ---------- the lamp ----------
-  front += `<polygon points="${pts([[740, 300], [860, 300], [1300, TY], [300, TY]])}" fill="url(#pm-cone)"/>`;
-  front += `<g id="lampg"><line x1="800" y1="0" x2="800" y2="260" stroke="${C.ink900}" stroke-width="3"/><path d="M730 300 L870 300 L840 260 L760 260z" fill="${C.covert700}"/><ellipse cx="800" cy="300" rx="70" ry="9" fill="#fff0c0"/></g>`;
-  front += `<rect width="${W}" height="${H}" fill="url(#pm-lamp)" style="mix-blend-mode:screen"/><rect width="${W}" height="${H}" fill="url(#pm-dark)"/>`;
-  front += `<g id="smoke" fill="none" stroke="#e8e2d4" stroke-linecap="round" opacity=".18"><path d="M1290 ${TY + 50} q-30 -80 10 -160 q40 -80 -10 -180" stroke-width="10"/></g>`;
+  // ---------- the lamp, its light, the dark, the smoke ----------
+  table += `<polygon points="${pts([[740, 300], [860, 300], [1300, TY], [300, TY]])}" fill="url(#pm-cone)"/>`;
+  table += `<g id="lampg"><line x1="800" y1="0" x2="800" y2="260" stroke="${C.ink900}" stroke-width="3"/><path d="M730 300 L870 300 L840 260 L760 260z" fill="${C.covert700}"/><ellipse cx="800" cy="300" rx="70" ry="9" fill="#fff0c0"/></g>`;
+  const light = `<rect width="${W}" height="${H}" fill="url(#pm-lamp)"/>`, dark = `<rect width="${W}" height="${H}" fill="url(#pm-dark)"/>`;
+  const smoke = `<g id="smoke" fill="none" stroke="#e8e2d4" stroke-linecap="round" opacity=".18"><path d="M1290 ${TY + 50} q-30 -80 10 -160 q40 -80 -10 -180" stroke-width="10"/></g>`;
 
-  const body = `<svg class="layer" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs>${defs}</defs>${room}${people}${table}${front}</svg>`;
+  // Four layers, each composited on its own (the night tram's way): the room with the crew round the table, the lamp's
+  // light (a screen blend over everything below it), the dark of the room's edges, and the smoke in a small layer of its own.
+  // On the iPad an SVG repaint re-renders every figure under it, masks and grain filters included: on one flat SVG the smoke
+  // over Alfie did that 24 times a second, and every cut redrew the full-screen blend and the dark over the figure as well.
+  // Now the smoke never touches a figure, the fish and the neon redraw small patches of wall well away from them, and a cut
+  // redraws its figure (and the table and wall behind it) and nothing else.
+  const SM = [1120, 640, 360, 380];              // the smoke's box, its sway included: a layer only that big
+  const V = (inner, o = {}) => `<svg class="ml${o.cls ? " " + o.cls : ""}"${o.id ? ` id="${o.id}"` : ""} viewBox="${(o.vb || [0, 0, W, H]).join(" ")}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${inner}</svg>`;
+  const body = V(`<defs>${paperDef}${coneDef}</defs>${room}${people}${table}`) + V(`<defs>${lampDef}</defs>${light}`, { cls: "light" }) +
+    V(`<defs>${darkDef}</defs>${dark}`) + V(smoke, { id: "smokel", vb: SM });
+  const pct = (v, of) => +(v / of * 100).toFixed(4) + "%";
+  const css = `.ml{position:absolute;inset:0;width:100%;height:100%;display:block;will-change:transform}
+.ml.light{mix-blend-mode:screen}
+#smokel{inset:auto;left:${pct(SM[0], W)};top:${pct(SM[1], H)};width:${pct(SM[2], W)};height:${pct(SM[3], H)}}`;
 
   const script = `
 const ids=['m-loader','m-booker','m-stacey','m-alfie'];let floor=-1;
-// whoever has the floor gestures; everyone else turns to look at them (left or right of where they stand)
-function give(n){floor=n;ids.forEach((id,i)=>{if(i===n)return;Motion.show(id,i<n?2:1);});
+// whoever has the floor gestures; everyone else turns to look at them (left or right of where they stand), the nearest first,
+// a beat apart: each cut redraws a whole figure, and four at once held the iPad up for one long frame
+function give(n){floor=n;
+ ids.map((id,i)=>[id,i]).filter(([,i])=>i!==n).sort((a,b)=>Math.abs(a[1]-n)-Math.abs(b[1]-n))
+  .forEach(([id,i],k)=>setTimeout(()=>{if(floor===n)Motion.show(id,i<n?2:1);},140*(k+1)));
  const g=ids[n];move(g,[[3,R(900,1500)],[4,R(700,1300)],[3,R(800,1400)],[4,R(600,1000)],[3,R(500,900)],[0,0]]);}
 every(5,9,()=>{let n;do{n=Math.floor(Math.random()*4);}while(n===floor);give(n);},2);
-// now and then the room relaxes: everyone back to neutral
-every(20,40,()=>{ids.forEach((id,i)=>{if(i!==floor)Motion.show(id,0);});});
-const fish=$('fish'),smoke=$('smoke'),neon=$('neon');
+// now and then the room relaxes: everyone back to neutral, one after another
+every(20,40,()=>{let k=0;ids.forEach((id,i)=>{if(i!==floor)setTimeout(()=>{if(i!==floor)Motion.show(id,0);},160*k++);});});
+const fish=$('fish'),smoke=$('smoke'),neon=$('neon');let neonOp='1';
 loop((dt,c)=>{
  fish.setAttribute('transform','translate('+(115+Math.sin(c*.35)*80).toFixed(1)+' '+(60+Math.sin(c*.9)*14).toFixed(1)+') scale('+(Math.cos(c*.35)>0?-1:1)+' 1)');
  smoke.setAttribute('transform','translate('+(Math.sin(c*.6)*8).toFixed(1)+' 0) skewX('+(Math.sin(c*.4)*6).toFixed(1)+')');
- neon.setAttribute('opacity',Math.random()<.006?'.3':'1');
+ // the flicker: written only when it changes (a write of the same value is still a style change to the browser, every tick)
+ const op=Math.random()<.006?'.3':'1';if(op!==neonOp){neonOp=op;neon.setAttribute('opacity',op);}
 });
 `;
-  return L.build({ file: "planning-meeting.html", title: "The planning meeting", fonts: ["Yellowtail", "Courier Prime Bold"], body, script, grain: .16, vignette: .55, bg: "#0b0d0a", fps: 24 });
+  return L.build({ file: "planning-meeting.html", title: "The planning meeting", fonts: ["Yellowtail", "Courier Prime Bold"], body, css, script, grain: .16, vignette: .55, bg: "#0b0d0a", fps: 24 });
 };
 if (require.main === module) module.exports();
