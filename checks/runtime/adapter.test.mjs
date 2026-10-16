@@ -441,7 +441,9 @@ await test('set, then a query snapshot ordered by updatedAt desc and limited; ch
 
   // unsubscribe stops callbacks and the poller
   unsub(); dun(); cun();
-  const frozen = snaps.length, polls = api.calls.length;
+  const frozen = snaps.length;
+  await sleep(POLL * 2);   // a poll already in flight when the last listener left may still land, once; on a busy machine that is after this line
+  const polls = api.calls.length;
   api.put('y', char('y'));
   await sleep(POLL * 3);
   eq(snaps.length, frozen, 'callbacks after unsubscribe');
@@ -678,6 +680,7 @@ await test('campaign: a missing doc snapshots as the default (exists true); othe
   await sleep(POLL * 3);
   eq(snaps.length, n, 'snapshots on unchanged polls'); eq(campaignGets(api), gets, 'campaign refetched without a change');
   un();
+  await sleep(POLL * 2);   // a poll already in flight when the last listener left may still land, once
   const polls = api.calls.length; await sleep(POLL * 3); eq(api.calls.length, polls, 'polling after the last unsubscribe');
   eq(errs.length, 0, 'errors');
 });
