@@ -190,20 +190,21 @@ untouched main: the fake microphone does not work in this container).
       oldest. · S
 - [x] E17 · Decided 16 Oct: the Classic console view and the Classic page layout go entirely (one mode). Done on the
       gm-page branch.
-- [ ] E3 P2 · Two players ticking different clocks within ~4 s lose one (the campaign PATCH sends the whole array). A
+- [ ] (in progress on `review/clocks`) E3 P2 · Two players ticking different clocks within ~4 s lose one (the campaign PATCH sends the whole array). A
       per-clock operation applied inside the server's write loop and mirrored in cf.js. · M (contract change)
 - [ ] E4 P2 · Workers Free budget: an always-on iPad polls display every 2 s and stt every 4 s (≈65k requests/day);
       with two laptops open the daily cap can trip mid-session. Display 4 s, stt carried in the display GET, slow to 30 s
       after an hour without change, hidden tabs 60 s. · S
 - [ ] E14 P3 · The display never leaves "denied"; reload once after 10 min. · S
 - [ ] Lazy loading phase 2 · The figure kit (688 KB) loaded after first paint; the three top-level captures become
-      lookups. · M
+      lookups. · M · Deferred: phase 1 already cut a player's first load by 42% and the service worker caches the rest;
+      revisit only if phones feel slow at the table.
 - [x] (MERGED, gm-wave2) Physical dice on the GM page · The engagement roll: let the GM roll physically and tap the highest die instead
       of the app rolling (the pool is still computed by the app); the same for any GM-side roll. · S
 - [ ] Ideas from review B · Re-roll one row of a card (per-section seeds exist); a "Tonight" strip of every roll beyond
       the five, exported into the note; "Make them an NPC" on a Face/Reaction card; "Use the street" chaining Street →
       Location → NPC. · M
-- [ ] Small leftovers from the players' work · "Files offline:" toast wording in boot.js (with its assertion in
+- [ ] (in progress on `review/clocks`) Small leftovers from the players' work · "Files offline:" toast wording in boot.js (with its assertion in
       checks/runtime/display-role.e2e.mjs); "shared files" wording in cast-page.js, season.js and steps.js; season.css's
       own light-token copy of --ink-faint (#8e8880 → #6a645e); crew-sheet ability circles, upgrade boxes and contact dots
       at 40 px on touch. · S
@@ -245,6 +246,7 @@ Everything is on GitHub, nothing lives only in a container.
   | `review/players` | section 3, the phone sheet: the mark strip and resist helper, the first screen, the cast banner |
   | `review/players-table` | section 3, the table page, Home, plain words, the Night/Paper switch |
   | `review/engineering` | section 4, timeouts, the service worker, lazy loading, the deploy receipt, docs |
+  | `review/clocks` | wave 2: clock ticks that never overwrite each other (E3) and the small players' leftovers |
   | `review/gm-wave2` | wave 2 on the GM page: the new generator fields on the cards, physical dice for the engagement roll, E5, E18 (started from the integration branch after generators and gm-page merged) |
   `review/*-wip` are snapshots of uncommitted work saved when the first agents stopped; ignore them once the
   matching branch has moved past them.
