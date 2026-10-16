@@ -235,32 +235,43 @@
   function bytes(o) { var s; try { s = typeof o === 'string' ? o : JSON.stringify(o); } catch (e) { return 0; } return bytesOf(s || ''); }
   P.bytes = bytes;
   /* Is it worth retrying a failed write? A network error, a conflict (409), a rate limit (429) or a server error (5xx) is;
-     any other 4xx (malformed, too large, forbidden) will fail the same way again. */
+     any other 4xx (malformed, too large, forbidden) will fail the same way again. A 401 is neither: see signedOut. */
   function retryable(e) { var s = e && e.status; return !s || s === 409 || s === 429 || s >= 500; }
-  P.retryable = retryable;
+  /* The Cloudflare Access session ended: a 401, or the adapter's own signed-out error (code 'signed_out', which it gives to every call
+     after the first 401). Nothing sent will work until the page is reloaded and signed in again. */
+  function signedOut(e) { return !!e && (e.status === 401 || e.code === 'signed_out'); }
+  P.retryable = retryable; P.signedOut = signedOut;
   /* The write queue for one page session. add() folds a patch into the pending one and saves after `debounce` ms; one
      write is in flight at a time, and whatever was added meanwhile goes as soon as it lands (even after the page closed:
      the session flushes itself, it does not look at whether the page is still open). A retryable failure puts the patch
      back and retries with backoff; any other is parked (kept for the sticky copy, never resent) so later patches still
-     save. o = { send(patch) -> Promise<{ doc, updatedAt }>, beacon?(patch) -> Promise, saved(r, pendingAfter),
+     save. A signed-out failure (signedOut) is neither: the saver goes on HOLD (`hold`): the patch goes back to pending, nothing more is
+     sent (not by flush, not by the beacon), no retry is scheduled, and later patches keep merging into the pending copy.
+     unsent() is that copy (the write in flight too): the page keeps it in the sticky copy and resends it on the next open.
+     o = { send(patch) -> Promise<{ doc, updatedAt }>, beacon?(patch) -> Promise, saved(r, pendingAfter),
      changed(state), delay(fn, ms) -> handle, cancel(handle), debounce } */
   function makeSaver(o) {
-    var st = { pending: null, writing: false, parked: null, error: '', retryMs: 0, timer: null };
+    var st = { pending: null, flying: [], writing: false, parked: null, hold: false, error: '', retryMs: 0, timer: null };
     function changed() { if (o.changed) { try { o.changed(st); } catch (e) {} } }
     function schedule(ms) { if (st.timer !== null) o.cancel(st.timer); st.timer = o.delay(function () { st.timer = null; flush(); }, ms); }
-    function add(p) { st.pending = st.pending ? mergePatch(st.pending, p) : clone(p); schedule(o.debounce); changed(); }
+    function add(p) { st.pending = st.pending ? mergePatch(st.pending, p) : clone(p); if (!st.hold) schedule(o.debounce); changed(); }
+    function holdOn(p) { st.pending = st.pending ? mergePatch(p, st.pending) : p; st.hold = true; st.error = 'signed out'; }
+    function landed(p) { var i = st.flying.indexOf(p); if (i >= 0) st.flying.splice(i, 1); }
+    /* what has not gone: the writes in flight, then the pending patch, as one patch */
+    function unsent() { var all = st.flying.concat(st.pending ? [st.pending] : []); return all.length ? all.reduce(function (a, b) { return a ? mergePatch(a, b) : clone(b); }, null) : null; }
     function flush() {
       if (st.timer !== null) { o.cancel(st.timer); st.timer = null; }
-      if (st.writing || !st.pending) return Promise.resolve();
-      var p = st.pending; st.pending = null; st.writing = true; changed();
+      if (st.hold || st.writing || !st.pending) return Promise.resolve();
+      var p = st.pending; st.pending = null; st.flying.push(p); st.writing = true; changed();
       return Promise.resolve().then(function () { return o.send(p); }).then(function (r) {
-        st.writing = false; st.retryMs = 0; if (!st.parked) st.error = '';
+        st.writing = false; landed(p); st.retryMs = 0; if (!st.parked) st.error = '';
         if (o.saved) { try { o.saved(r, st.pending); } catch (e) {} }
         changed();
         if (st.pending) return flush();
       }, function (e) {
-        st.writing = false;
-        if (retryable(e)) {
+        st.writing = false; landed(p);
+        if (signedOut(e)) holdOn(p);
+        else if (retryable(e)) {
           st.pending = st.pending ? mergePatch(p, st.pending) : p;
           st.retryMs = Math.min(30000, st.retryMs ? st.retryMs * 2 : 2500);
           st.error = 'retrying'; schedule(st.retryMs);
@@ -275,12 +286,13 @@
     /* the page is going away: send what is pending now, with keepalive, even if a write is in flight */
     function beacon() {
       if (st.timer !== null) { o.cancel(st.timer); st.timer = null; }
+      if (st.hold) return Promise.resolve();
       if (!st.pending || !o.beacon) return flush();
-      var p = st.pending; st.pending = null;
-      return Promise.resolve().then(function () { return o.beacon(p); }).then(function (r) { if (r && o.saved) { try { o.saved(r, st.pending); } catch (e) {} } },
-        function () { st.pending = st.pending ? mergePatch(p, st.pending) : p; });
+      var p = st.pending; st.pending = null; st.flying.push(p);
+      return Promise.resolve().then(function () { return o.beacon(p); }).then(function (r) { landed(p); if (r && o.saved) { try { o.saved(r, st.pending); } catch (e) {} } changed(); },
+        function (e) { landed(p); if (signedOut(e)) { holdOn(p); changed(); } else st.pending = st.pending ? mergePatch(p, st.pending) : p; });
     }
-    return { add: add, flush: flush, beacon: beacon, state: function () { return st; } };
+    return { add: add, flush: flush, beacon: beacon, unsent: unsent, state: function () { return st; } };
   }
   P.makeSaver = makeSaver;
   /* the display gate: an svg goes out only if playerDisplay made it; every other kind passes */
@@ -749,6 +761,8 @@
      ===================================================================================================================== */
   var document = W.document;
   var IDB = 'b68-gm', STORE = 'kv', STICKY = 'b68.gm.sticky', PREP_NOTE = 'b68.gm.prepNote', PREP_WIDE = 'b68.gm.prepWide';
+  /* what the bar says when the Access session has ended (the saver is on hold; GM.md "Saving"), and the error a request that meets the sign-in page gets */
+  var SIGNED_OUT_MSG = 'Signed out: reload to sign in. Your notes are kept on this device.', SIGNED_OUT_ERR = 'signed out: reload the page to sign in again';
   /* The app layout (gm.css): the window is the page, a slim top bar in place of the site header, and on a laptop the columns
      scroll on their own with capture at the foot. body.gm-app turns it on while the tools are open; the loading and import
      screens keep the site header. */
@@ -812,11 +826,25 @@
 
   /* ---------- sticky (localStorage): live controls and current cards (replay info only), and any refused patch ---------- */
   function readSticky() { try { var s = JSON.parse(W.localStorage.getItem(STICKY) || 'null'); return isObj(s) && s.v === 1 && s.user === S.me ? s : null; } catch (e) { return null; } }
+  /* `parked` is a patch the server REFUSED (kept, never resent). `pending` is what has not gone because the Access session ended
+     (E5), or was resent after a reload and not yet answered: it is sent once on the next open. They are never the same thing. */
   function writeSticky() {
     if (!S) return;
-    var parked = S.saver ? S.saver.state().parked : null;
+    var st = S.saver ? S.saver.state() : null, parked = st ? st.parked : null, pending = null;
     if (S.carriedParked) parked = parked ? mergePatch(S.carriedParked, parked) : S.carriedParked;
-    try { W.localStorage.setItem(STICKY, JSON.stringify({ v: 1, user: S.me, live: (S.doc.con || {}).live || {}, cards: S.doc.cards || {}, now: isObj(S.doc.now) ? S.doc.now : undefined, parked: parked || undefined, at: nowIso() })); } catch (e) {}
+    if (S.saver && (st.hold || S.resent)) { pending = S.saver.unsent(); if (!pending) S.resent = false; }
+    try { W.localStorage.setItem(STICKY, JSON.stringify({ v: 1, user: S.me, live: (S.doc.con || {}).live || {}, cards: S.doc.cards || {}, now: isObj(S.doc.now) ? S.doc.now : undefined, parked: parked || undefined, pending: pending || undefined, at: nowIso() })); } catch (e) {}
+  }
+  /* a closed session met the sign-out (its write was in flight when the page was left): only its unsent changes go into the sticky copy,
+     never its live controls or cards (a newer session may be open) */
+  function keepPending(me) {
+    try {
+      var u = me.saver && me.saver.unsent(), s = JSON.parse(W.localStorage.getItem(STICKY) || 'null');
+      if (!isObj(s) || s.v !== 1 || s.user !== me.me) { if (!u) return; s = { v: 1, user: me.me, live: {}, cards: {} }; }
+      var carried = isObj(s.pending) ? s.pending : null;
+      s.pending = u ? (carried ? mergePatch(carried, u) : u) : (carried || undefined);
+      W.localStorage.setItem(STICKY, JSON.stringify(s));
+    } catch (e) {}
   }
 
   /* ---------- the GM state document ---------- */
@@ -842,7 +870,12 @@
         var body = JSON.stringify(p);
         if (bytesOf(body) > 60000 || typeof W.fetch !== 'function') { var g = W.claude && W.claude.gm; return g ? g.patchState(p) : Promise.reject(new Error('no gm')); }
         return W.fetch('/api/gm/state', { method: 'PATCH', keepalive: true, credentials: 'same-origin', cache: 'no-store', redirect: 'manual', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: body })
-          .then(function (res) { if (!res.ok) { var e = new Error('HTTP ' + res.status); e.status = res.status; throw e; } return res.json(); });
+          .then(function (res) {
+            /* the sign-in page instead of the API (a 401, or Access's redirect, which `redirect: 'manual'` shows as an opaque one) is the sign-out */
+            if (res.status === 401 || res.type === 'opaqueredirect' || res.redirected) { var so = new Error(SIGNED_OUT_ERR); so.status = 401; so.code = 'signed_out'; throw so; }
+            if (!res.ok) { var e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
+            return res.json();
+          });
       },
       saved: function (r, pendingAfter) {
         if (!r || !isObj(r.doc)) return;
@@ -850,8 +883,10 @@
         me.doc = pendingAfter ? applyPatch(r.doc, pendingAfter) : r.doc;
       },
       changed: function (st) {
-        if (S !== me) return;
+        if (S !== me) { if (st.hold) keepPending(me); return; }
         syncSave();
+        if (st.hold && !me.holdToasted) { me.holdToasted = true; toast(SIGNED_OUT_MSG, true); }
+        if (st.hold || me.resent) writeSticky();
         if (st.parked && !me.parkedToasted) { me.parkedToasted = true; toast('Not saved: the server refused a change (' + st.error + '). It is kept on this device; later changes still save.', true); writeSticky(); }
       }
     });
@@ -862,10 +897,16 @@
     if (!S || !S.root || !S.saver) return;
     var st = S.saver.state();
     [].forEach.call(S.root.querySelectorAll('.gm-save'), function (n) {
-      n.textContent = st.parked ? 'Not saved' : st.error === 'retrying' ? 'Offline: retrying' : st.writing || st.pending ? 'Saving…' : S.updatedAt ? 'Saved' : '';
-      n.classList.toggle('bad', !!st.parked || st.error === 'retrying');
-      if (st.parked) n.title = 'The server refused a change: ' + st.error;
+      n.textContent = st.hold ? 'Signed out' : st.parked ? 'Not saved' : st.error === 'retrying' ? 'Offline: retrying' : st.writing || st.pending ? 'Saving…' : S.updatedAt ? 'Saved' : '';
+      n.classList.toggle('bad', !!st.hold || !!st.parked || st.error === 'retrying');
+      if (st.hold) n.title = SIGNED_OUT_MSG; else if (st.parked) n.title = 'The server refused a change: ' + st.error;
     });
+    /* signed out: a plain message across the bar (a full-width second row of it, so it never squeezes the bar's buttons) */
+    var bar = $q('.gm-bar'), msg = $q('#gm-signed');
+    if (bar) bar.classList.toggle('out', !!st.hold);
+    if (msg) { msg.hidden = !st.hold; if (st.hold) msg.removeAttribute('hidden'); else msg.setAttribute('hidden', ''); }
+    var rt = S.root.querySelector && S.root.querySelector('#gm-root');
+    if (rt && rt.style && rt.style.setProperty && bar && bar.getBoundingClientRect) { var bh = Math.round(bar.getBoundingClientRect().height); if (bh > 0) rt.style.setProperty('--gm-bar-h', bh + 'px'); }
   }
   /* another device changed the state: take it when nothing of ours is waiting */
   function refetch() {
@@ -1015,6 +1056,12 @@
       if (r && isObj(r.doc)) { me.doc = r.doc; me.updatedAt = r.updatedAt || null; }
       else if (sticky) { me.doc = { con: { live: sticky.live || {} }, cards: sticky.cards || {} }; if (isObj(sticky.now)) me.doc.now = sticky.now; toast('The GM notes are offline: showing this device’s last copy.', true); }
       if (sticky && isObj(sticky.parked)) me.carriedParked = sticky.parked;   /* a change the server refused earlier stays on this device */
+      /* what an earlier visit could not send because the Access session had ended (E5): drawn now, and sent once. It stays in the sticky
+         copy until the server has answered (a failure there holds it again; a refusal parks it, as any refused patch). */
+      if (sticky && isObj(sticky.pending) && Object.keys(sticky.pending).length) {
+        me.doc = applyPatch(me.doc, sticky.pending); me.resent = true;
+        me.saver.add(sticky.pending); me.saver.flush();
+      }
       if (res[0] === 'forbidden') { purge(); screen(note('GM only.', 'The server says this account is not the GM.')); me.status = 'off'; return; }
       if (res[0] === 'nopack' || !me.pack) { me.status = 'import'; importScreen(false); return; }
       start();
@@ -1136,7 +1183,8 @@
     rd.readAsText(file);
   }
   function forget() {
-    if (!S || !W.confirm('Forget the GM pack and the GM notes cached on this device? The server keeps its copy; the page reloads it next time.')) return;
+    var unsent = S && S.saver ? S.saver.unsent() : null;
+    if (!S || !W.confirm('Forget the GM pack and the GM notes cached on this device? The server keeps its copy; the page reloads it next time.' + (unsent ? '\n\nChanges not yet saved to the server (' + (S.saver.state().hold ? 'you are signed out' : 'still sending') + ') would be lost with it.' : ''))) return;
     var me = S;
     Promise.all([kvDel('pack:' + me.me).catch(function () {}), Promise.resolve().then(function () { try { W.localStorage.removeItem(STICKY); } catch (e) {} })]).then(function () {
       if (S !== me) return;
@@ -1216,7 +1264,8 @@
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
-      '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span></div>';
+      '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
+      '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
   }
   function menuOpen(on) {
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
@@ -2507,7 +2556,7 @@
   /* ---------- capture ---------- */
   function renderCapture() {
     var box = $q('#gm-foot'); if (!box) return;
-    var keep = W.document.activeElement && W.document.activeElement.id === 'gm-cap-in' ? $q('#gm-cap-in').value : null;
+    var inp = $q('#gm-cap-in'), keep = inp && W.document.activeElement === inp ? inp.value : null;
     var all = newest(S.doc.capture);
     box.innerHTML = '<div class="gm-cap"><div class="seg gm-capb" role="group" aria-label="File as">' + BUCKETS.map(function (b) { return '<button type="button" class="chip sm" data-gm="arm" data-b="' + b.k + '" aria-pressed="' + (S.arm === b.k) + '">' + esc(b.label) + ' <kbd>' + b.key + '</kbd></button>'; }).join('') + '</div>' +
       '<form class="gm-capf" data-gm-form="capture"><label class="sr" for="gm-cap-in">Capture</label><input type="text" id="gm-cap-in" maxlength="' + LIMITS.captureText + '" autocomplete="off" placeholder="' + esc(placeholder(S.arm)) + '"><button type="submit" class="btn primary">File</button></form>' +

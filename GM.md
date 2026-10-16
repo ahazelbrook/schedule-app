@@ -303,7 +303,14 @@ fails and nobody is known, nothing is purged.
 - **Saving.** Writes are debounced 800 ms, one in flight at a time; what is added meanwhile goes when it lands, even
   after leaving the page, and a hidden tab or `pagehide` sends what is pending as a `keepalive` request. A network error,
   409, 429 or 5xx retries with backoff; any other refusal is shown as "Not saved", kept in `b68.gm.sticky` and never
-  resent, so later changes still save. Sizes are measured in bytes: past 240 KiB only rolls are taken, past the server's
+  resent, so later changes still save. **Signed out** (the Cloudflare Access session ended): the saver gets a 401 (or the
+  adapter's own signed-out error, or the keepalive request meets the sign-in page's redirect). It does not park the patch: it goes on
+  **hold**. Nothing more is sent (no retry, not the page-hide request either), later changes keep merging into the pending copy, and
+  the bar carries a plain message on a second row, "Signed out: reload to sign in. Your notes are kept on this device." (and the
+  status reads "Signed out"). The pending copy waits in `b68.gm.sticky` as `pending`, which is not `parked` (a patch the server
+  refused: that stays refused and is never resent). On the next open after a reload, drawn and signed in again, the pending copy is
+  drawn into the page and sent once; it stays in the sticky copy until the server has answered. Forget GM data warns when changes have not gone.
+  Sizes are measured in bytes: past 240 KiB only rolls are taken, past the server's
   256 KiB nothing. The page refetches the state on focus.
 
 ## The display (`#display`, `app/display-page.js`, `app/display.css`)

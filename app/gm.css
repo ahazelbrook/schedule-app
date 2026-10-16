@@ -610,6 +610,19 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 #gm-page .gm-ech-t { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #gm-page .gm-ech-s { font: 700 10px/1.2 var(--font-mono); letter-spacing: 0; color: var(--ink-soft); }
 #gm-page .gm-ech:hover .gm-ech-s, #gm-page .chip[aria-current="true"] .gm-ech-s { color: inherit; opacity: .85; }
+/* The Scene line's chips are drawn again whenever a control changes. Typing in Threat and then tapping the Scene line blurs the box, which
+   redraws the chips under the finger: the press started on a chip that is gone by the release, so the browser dropped the tap and the
+   controls stayed open. The chips never take the press (the button does), so the tap folds them at once. */
+#gm-page .gm-scene-chips { pointer-events: none; }
+/* signed out (E5, gm-page.js SIGNED_OUT_MSG): a plain message in the bar, on a second full-width row so the bar's buttons keep their room */
+#gm-page .gm-signed { display: none; }
+#gm-page .gm-bar.out { flex-wrap: wrap; }
+#gm-page .gm-bar.out .gm-signed { display: block; order: 99; flex: 1 1 100%; margin: 2px 0; padding: 7px 10px; background: var(--alarm); color: #fbf8f1; font: 700 13px/1.35 var(--font-text); }
+@media (max-width: 599px) {
+  body.gm-app #gm-page .gm-bar.out { height: auto; flex-wrap: wrap; row-gap: 0; padding-bottom: 4px; }
+  body.gm-app #gm-page .gm-bar.out .gm-save { display: none; }
+  body.gm-app #gm-page .gm-segbar { top: var(--gm-bar-h, 44px); }
+}
 /* the engagement roll with the table's own dice: tap the highest die (or Crit) under Roll engagement */
 #gm-page .gm-dice { gap: 6px; border-top: 1px solid var(--hair); padding-top: 8px; }
 #gm-page .gm-dice .gm-lab { color: var(--ink); font-size: 12px; }

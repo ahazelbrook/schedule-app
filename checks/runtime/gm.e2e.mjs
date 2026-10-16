@@ -230,7 +230,7 @@ try {
     await G.page.fill('#gm-c-threat', 'the dog is waking up');
     await until(async () => ((await gmState()).con || {}).live && (await gmState()).con.live.threat === 'the dog is waking up', 5000);
     if (await sceneOpen()) await G.page.click('#gm-scene');
-    check(!(await sceneOpen()), 'the Scene controls are folded again');
+    check(!(await sceneOpen()), 'one tap on the Scene line folds the controls right after typing in Threat (the blur redraws the chips: that tap used to be lost)');
     let spend = '';
     for (let i = 0; i < 6 && !spend; i++) { await G.page.keyboard.press('2'); await G.page.waitForSelector('#gm-card .gm-lead'); spend = await G.page.$eval('#gm-card .gm-lead', (l) => (l.querySelector('.gm-lead-s') || { textContent: '' }).textContent.trim()).catch(() => ''); }
     check(/the dog is waking up/.test(spend), 'a 4/5 with a threat: the spend sentence sits under the lead line (' + spend + ')');
@@ -524,6 +524,39 @@ try {
     const keys = await up.evaluate(() => new Promise((res) => { const r = indexedDB.open('b68-gm'); r.onsuccess = () => { try { const q = r.result.transaction('kv').objectStore('kv').getAllKeys(); q.onsuccess = () => res(q.result); } catch (e) { res([]); } }; r.onerror = () => res(null); }));
     check(Array.isArray(keys) && keys.length === 1, '/api/me failing (who is this?): the cached pack is left alone ' + JSON.stringify(keys));
     await U.close();
+  }
+
+  /* ---- E5: the Access session ends mid-session: the saver holds, the bar says so, the notes are kept and resent once after a reload ---- */
+  {
+    const SO = 'Signed out: reload to sign in. Your notes are kept on this device.';
+    const S5 = await open(GM, '#gm');
+    await S5.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
+    await S5.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    let hits = 0;
+    await S5.page.route('**/api/gm/state', (r) => { if (r.request().method() !== 'PATCH') return r.continue(); hits++; return r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'unauthorized', reason: 'expired' }) }); });
+    await S5.page.keyboard.press('3');
+    await S5.page.waitForSelector('#gm-card .gm-lead');
+    check(await S5.page.waitForFunction((m) => { const b = document.getElementById('gm-signed'); return b && !b.hidden && b.textContent === m && getComputedStyle(b).display !== 'none'; }, SO, { timeout: 8000 }).then(() => true, () => false), 'signed out mid-session: the bar says "' + SO + '"');
+    check(await S5.page.$eval('.gm-save', (s) => s.textContent === 'Signed out' && s.classList.contains('bad')) && await S5.page.$eval('.gm-bar', (b) => b.classList.contains('out') && b.getBoundingClientRect().bottom <= 120), 'and the bar\'s status reads Signed out, the message on a second row of the bar');
+    await S5.page.keyboard.press('2'); await S5.page.waitForSelector('#gm-card .gm-lead');
+    const card2 = (await S5.page.textContent('#gm-card')).replace(/\s+/g, ' ');
+    await S5.page.keyboard.press('p'); await S5.page.keyboard.type('Written while signed out'); await S5.page.keyboard.press('Enter'); await S5.page.keyboard.press('Escape');
+    await sleep(1500);
+    check(hits === 1, 'only the first request met the 401: later changes are held, not sent (' + hits + ')');
+    const sticky5 = await S5.page.evaluate(() => JSON.parse(localStorage.getItem('b68.gm.sticky')));
+    check(!!sticky5.pending && !!sticky5.pending.cards && !!sticky5.pending.cards.situation && Object.values(sticky5.pending.capture || {}).some((e) => e.text === 'Written while signed out') && !sticky5.parked, 'the notes wait on this device as pending (the cards and the capture line), not as a refused patch');
+    check(!Object.values((await gmState()).capture || {}).some((e) => e.text === 'Written while signed out'), 'the server has not seen them');
+    check(/Written while signed out/.test(await S5.page.textContent('#gm-foot')) || /1 filed/.test(await S5.page.textContent('#gm-foot')), 'the page still files it (the capture bar counts it)');
+    await shot(S5.page, 'wave2-signed-out');
+    await S5.page.unroute('**/api/gm/state');
+    await S5.page.reload(); await S5.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
+    const sent5 = await until(async () => { const d = await gmState(); return Object.values(d.capture || {}).some((e) => e.text === 'Written while signed out') && d.cards.situation && d.cards.situation.hid === sticky5.pending.cards.situation.hid ? d : null; }, 8000);
+    check(!!sent5, 'after a reload the pending copy goes up once: the line and the card are on the server');
+    check(await S5.page.$eval('#gm-signed', (b) => b.hidden) && (await S5.page.textContent('#gm-card')).replace(/\s+/g, ' ') === card2, 'the bar is quiet again and the page shows the card rolled while signed out');
+    await sleep(1200);
+    check(await S5.page.evaluate(() => JSON.parse(localStorage.getItem('b68.gm.sticky')).pending === undefined), 'the sticky copy no longer holds it');
+    check(Object.values((await gmState()).capture || {}).filter((e) => e.text === 'Written while signed out').length === 1, 'and it was filed once, not twice');
+    await S5.ctx.close();
   }
 
   /* ---- the display name: "Change name" under the Home greeting ---- */

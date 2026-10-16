@@ -1691,5 +1691,117 @@ await test('14e. a pack without the engagement part: no dice row, nothing thrown
   await h.save();
 });
 
+/* =====================================================================================================================
+   15. E5, signed out mid-session: a 401 (Cloudflare Access expired) puts the saver on HOLD: nothing more is sent, new patches
+   merge into the pending copy, which waits in the sticky copy as PENDING (a refused patch stays refused and is never resent);
+   the bar says so plainly; the next open after a reload resends the pending copy once
+   ===================================================================================================================== */
+const SIGNED_OUT = Object.assign(new Error('signed out: reload the page to sign in again'), { status: 401, code: 'signed_out' });
+const SO_MSG = 'Signed out: reload to sign in. Your notes are kept on this device.';
+const stickyOf = (br) => JSON.parse(br.ls.get('b68.gm.sticky') || 'null');
+
+await test('15a. a 401 (or the adapter\'s signed-out error) puts the saver on hold: nothing more is sent, new patches merge into the pending copy, nothing is parked', async () => {
+  for (const err of [SIGNED_OUT, Object.assign(new Error('x'), { status: 401 }), Object.assign(new Error('x'), { code: 'signed_out' })]) {
+    const h = harness({ fail: (p, n) => (n >= 2 ? err : null) });
+    h.s.add({ a: 1 }); await h.s.flush(); await tick();
+    h.s.add({ b: { x: 1 } }); await h.s.flush(); await tick();
+    const st = h.s.state();
+    assert.equal(st.hold, true); assert.equal(st.parked, null, 'a sign-out is not a refusal'); assert.deepEqual(st.pending, { b: { x: 1 } }); assert.equal(h.timers.size, 0, 'no retry is scheduled'); assert.equal(st.error, 'signed out');
+    h.s.add({ b: { y: 2 }, c: 3 });
+    assert.equal(h.timers.size, 0, 'no debounce timer while on hold'); await h.s.flush(); await h.s.beacon(); await tick();
+    assert.deepEqual(h.sent, [{ a: 1 }, { b: { x: 1 } }], 'nothing is sent while on hold, the beacon neither');
+    assert.deepEqual(h.s.state().pending, { b: { x: 1, y: 2 }, c: 3 }, 'later patches merge into the pending copy');
+    assert.deepEqual(h.s.unsent(), { b: { x: 1, y: 2 }, c: 3 }, 'unsent() is what has not gone');
+    assert.equal(P.signedOut(err), true);
+  }
+  assert.equal(P.signedOut({ status: 400 }), false); assert.equal(P.signedOut({ status: 403 }), false); assert.equal(P.signedOut(null), false); assert.equal(P.signedOut({ network: true }), false);
+  assert.equal(P.retryable(Object.assign(new Error('x'), { status: 401 })), false, 'a 401 is still not retried on a timer');
+});
+
+await test('15b. a refused patch (400) is still parked and never resent, beside a sign-out hold; unsent() is the patch in flight and the pending one together', async () => {
+  const bad = Object.assign(new Error('capture must be an object'), { status: 400 });
+  const h = harness({ fail: (p) => (p.bad ? bad : p.out ? SIGNED_OUT : null) });
+  h.s.add({ bad: 1 }); await h.s.flush(); await tick();
+  assert.deepEqual(h.s.state().parked, { bad: 1 }); assert.equal(h.s.state().hold, false, 'a refusal is not a hold');
+  h.s.add({ out: 1 }); await h.s.flush(); await tick();
+  const st = h.s.state(); assert.equal(st.hold, true); assert.deepEqual(st.parked, { bad: 1 }, 'the refused patch stays parked'); assert.deepEqual(st.pending, { out: 1 }, 'the held one is pending');
+  assert.deepEqual(h.s.unsent(), { out: 1 }, 'the refused patch is not part of what is resent');
+  assert.deepEqual(h.sent, [{ bad: 1 }, { out: 1 }]);
+  // in flight + pending together
+  const g = harness(); const release = g.hold();
+  g.s.add({ a: 1 }); g.s.flush(); g.s.add({ b: 2 }); await tick();
+  assert.deepEqual(g.s.unsent(), { a: 1, b: 2 }, 'the write in flight is still unsent until it lands');
+  release(); await tick(); await tick(); await tick(); assert.equal(g.s.unsent(), null, 'and nothing is unsent after');
+  // the beacon: a signed-out answer holds the saver too, and keeps the patch
+  const o2 = { debounce: 800, delay: () => 1, cancel() {}, send: async () => ({ doc: {}, updatedAt: 't' }), beacon: async () => { throw SIGNED_OUT; } };
+  const s2 = P.makeSaver(o2); s2.add({ k: 1 }); await s2.beacon(); await tick();
+  assert.equal(s2.state().hold, true); assert.deepEqual(s2.state().pending, { k: 1 }, 'a beacon that meets the sign-out page keeps its patch');
+});
+
+await test('15c. the page: a 401 mid-session puts a plain message in the bar, keeps the notes on this device as pending, and a reload resends them once', async () => {
+  const br = fakeBrowser(), fg = fakeGm(), okPatch = fg.gm.patchState, seen = [];
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('3'); await h.save(); assert.ok(fg.server.doc.cards.situation, 'signed in: the roll is saved');
+  const h1 = await openPage({ br, fg, camp: CAMP3 }), before = cardTxt(h1);
+  fg.gm.patchState = async (p) => { seen.push(p); throw SIGNED_OUT; };               // the Access session ends
+  h1.press('2'); const rolled = cardTxt(h1); assert.notEqual(rolled, before);
+  h1.q('#gm-cap-in').value = 'The goose, again'; dispatch(h1.q('[data-gm-form="capture"]'), 'submit');
+  assert.ok(await until(() => h1.q('#gm-signed') && !h1.q('#gm-signed').hasAttribute('hidden') && h1.page._state(), 400), 'the bar message appears (the saver tried, got a 401)');
+  const bar = h1.q('#gm-signed');
+  assert.equal(bar.textContent, SO_MSG); assert.ok(bar.closest('.gm-bar'), 'it is in the bar'); assert.ok(h1.q('.gm-bar').className.split(/\s+/).includes('out'), 'the bar is marked');
+  assert.equal(h1.q('.gm-save').textContent, 'Signed out'); assert.ok(h1.q('.gm-save').className.includes('bad'));
+  assert.equal(br.toasts.filter((t) => t[0] === SO_MSG).length, 1, 'one toast, said once');
+  assert.ok(!/Not saved|It is kept on this device; later changes still save/.test(h1.root.textContent + JSON.stringify(br.toasts)), 'the old "later changes still save" line is not said');
+  h1.press('3'); const card1 = cardTxt(h1); h1.q('#gm-cap-in').value = 'A second line'; dispatch(h1.q('[data-gm-form="capture"]'), 'submit'); await new Promise((r) => setTimeout(r, 900));
+  assert.equal(seen.length, 1, 'one request met the 401; the later patches were not sent');
+  const sticky = stickyOf(br);
+  assert.ok(sticky && sticky.pending && sticky.pending.cards && sticky.pending.cards.situation && sticky.pending.capture, 'the sticky copy holds the pending patch');
+  assert.deepEqual(Object.values(sticky.pending.capture).map((e) => e.text).sort(), ['A second line', 'The goose, again'], 'with both lines');
+  assert.ok(!sticky.parked, 'pending is not parked');
+  assert.equal(Object.values(fg.server.doc.capture || {}).length, 0, 'the server has none of it');
+  assert.equal(cardTxt(h1).length > 10, true, 'and the page keeps working on this device (a roll still draws)');
+  const asked = []; br.W.confirm = (m) => { asked.push(m); return false; };
+  h1.q('.gm-menu-list [data-gm="forget"]').click(); assert.ok(/not been saved|not yet saved/i.test(asked[0] || ''), 'Forget warns that unsent changes would go: ' + asked[0]);
+  await h1.save(); assert.equal(seen.length, 1, 'closing the page sends nothing while signed out'); assert.ok(stickyOf(br).pending, 'and the copy is still there');
+  // the next open after a reload, signed in again: the pending copy is resent once
+  fg.gm.patchState = okPatch; fg.server.patches.length = 0;
+  const h2 = await openPage({ br, fg, camp: CAMP3 });
+  assert.ok(await until(() => fg.server.patches.some((p) => p.capture), 400), 'the pending copy was sent on the next open');
+  assert.equal(h2.q('#gm-signed').hasAttribute('hidden'), true, 'no message now'); const card2 = cardTxt(h2);
+  await h2.save();
+  const sent = fg.server.patches.filter((p) => p.capture); assert.equal(sent.length, 1, 'once');
+  assert.deepEqual(Object.values(fg.server.doc.capture).map((e) => e.text).sort(), ['A second line', 'The goose, again']);
+  assert.equal(fg.server.doc.cards.situation.hid, JSON.parse(JSON.stringify(sticky.pending.cards.situation.hid)), 'the card rolled while signed out is the stored one');
+  assert.equal(card2, card1, 'and the page draws it');
+  assert.equal(stickyOf(br).pending, undefined, 'the sticky copy no longer holds it');
+  const n = fg.server.patches.length, h3 = await openPage({ br, fg, camp: CAMP3 }); await h3.save();
+  assert.equal(fg.server.patches.filter((p) => p.capture).length, 1, 'a later open does not resend it'); assert.equal(fg.server.patches.length, n, 'nothing at all is resent');
+});
+
+await test('15d. a refused 400 stays refused: kept on this device, shown as Not saved, and never resent after a reload', async () => {
+  const br = fakeBrowser(), fg = fakeGm(), good = fg.gm.patchState;
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  fg.gm.patchState = async (p) => { if (p.capture) throw Object.assign(new Error('capture must be an object'), { status: 400 }); return good(p); };
+  h.q('#gm-cap-in').value = 'Refused line'; dispatch(h.q('[data-gm-form="capture"]'), 'submit');
+  assert.ok(await until(() => /Not saved/.test(h.q('.gm-save').textContent), 400), 'Not saved'); assert.ok(h.q('#gm-signed').hasAttribute('hidden'), 'not the sign-out message');
+  assert.ok(stickyOf(br).parked && stickyOf(br).parked.capture, 'kept on this device'); assert.equal(stickyOf(br).pending, undefined, 'and not pending');
+  h.press('3'); await h.save();
+  assert.ok(fg.server.doc.cards.situation, 'later changes still save');
+  fg.gm.patchState = good; fg.server.patches.length = 0;
+  const h2 = await openPage({ br, fg, camp: CAMP3 }); await new Promise((r) => setTimeout(r, 1000)); await h2.save();
+  assert.ok(!fg.server.patches.some((p) => p.capture), 'the refused patch was not sent again');
+  assert.ok(stickyOf(br).parked && stickyOf(br).parked.capture, 'it is still carried on this device');
+});
+
+await test('15e. the page-hide request meets the sign-in page (an opaque redirect): that is a sign-out too, not a retry loop', async () => {
+  const br = fakeBrowser({ fetch: async () => ({ ok: false, status: 0, type: 'opaqueredirect' }) }), fg = fakeGm();
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('3');
+  br.doc.hidden = true; for (const fn of br.doc.listeners.visibilitychange || []) fn();
+  assert.ok(await until(() => !h.q('#gm-signed').hasAttribute('hidden'), 400), 'a hidden tab whose keepalive request was redirected to the sign-in page shows the message');
+  assert.equal(h.q('#gm-signed').textContent, SO_MSG); assert.ok(stickyOf(br).pending && stickyOf(br).pending.cards, 'and keeps the patch'); assert.equal(fg.server.patches.length, 0);
+  br.doc.hidden = false;
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
