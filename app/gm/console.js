@@ -62,7 +62,7 @@
    con.check()      B68GmConsole.check(T) for this instance's tables
 
    B68GmConsole.check(T) -> [string]   the table keys a pack is missing or has empty ('district', 'spend.Harm',
-       'say3.Grumpy', 'scene.fight.harm', …), for the page to show when a pack is loaded. Empty = the pack is
+       'say3.<reaction>', 'scene.<scene>.harm', …), for the page to show when a pack is loaded. Empty = the pack is
        complete. Every roller falls back to a neutral word or line for a missing key rather than throwing (an old or
        sparse pack still rolls); create() itself needs only T.severity and T.scene.
 
@@ -516,8 +516,9 @@
       var t = threat();
       if (t) return { line: 'Whatever you roll, the threat lands anyway: **' + t + '**.', cat: 'the danger you telegraphed, landing regardless (name its cost from the seven, BitD p.21)', anchor: 'the threat on screen', kind: 'threat', short: t };
 
+      // A scene's bargain list weighs in whenever the pack names one (as the vault did, even an empty one); an empty
+      // or broken list, drawn, reads as the generic bargain below instead of throwing.
       var pc = pcOf(), sc = UI.scene && isObj(T.dbScene) ? T.dbScene[UI.scene] : null;
-      if (!has(sc)) sc = null;
       var hooksOf = function (p) { return ['wont', 'friend', 'rival', 'extra'].filter(function (h) { return p[h].length; }); };
       var pool = [];
       if (pc && hooksOf(pc).length) pool.push([5, 'pc']);   // aiming means it: their own lines lead
@@ -533,7 +534,7 @@
         return { line: String(tpl).replace('{x}', x), cat: catOf(isObj(T.aimCat) ? T.aimCat[h] : null, "the player's own price"),
                  anchor: pc.first + "'s sheet: " + (h === 'wont' ? "their Won't" : h === 'extra' ? 'a bargain they wrote' : h), kind: kind, short: x };
       }
-      if (kind === 'scene') {
+      if (kind === 'scene' && has(sc)) {
         var s = fresh('dbScene:' + UI.scene, sc, function (y) { return y[1]; });
         var sl = fill(str(s[1], ''));
         return { line: sl, cat: catOf(s[0], str(s[0], 'a price')), anchor: 'the ' + scLabel(T.scene[UI.scene]) + ' itself', kind: kind, short: sl };
@@ -578,7 +579,7 @@
         grid([['Category', b.cat], ['Anchor', b.anchor]]);
         D.bargains = [{ text: lead, label: b.short, who: who }];
       }
-      if (veteran && T.arsenal) grid([['Or, for ' + veteran.first, T.arsenal]]);
+      if (veteran && T.arsenal != null) grid([['Or, for ' + veteran.first, String(T.arsenal)]]);
 
       coach('**Say it before the dice.** +1d if accepted. It happens *whatever the roll*. They can refuse ' +
             'or counter-offer. **Never with a push.** Priced at about one push (2 stress).');
@@ -618,8 +619,9 @@
       var sc = sceneOf();
       var al = isObj(T.allowed) && isObj(T.allowed[UI.pos]) ? T.allowed[UI.pos] : {};
       var a45 = has(al['45']) ? al['45'] : [], a13 = has(al['13']) ? al['13'] : [];
+      // (either result: the vault's concat, kept as it was, so a pack with no 1-3 list still reads the same)
       var allow = UI.result ? (UI.result === '45' ? a45 : a13)
-        : a45.concat(a13).filter(function (x, i, a) { return a.indexOf(x) === i; });
+        : (has(al['45']) ? al['45'].concat(al['13']) : a13).filter(function (x, i, a) { return a.indexOf(x) === i; });
       var rows0 = has(T.consequence) ? T.consequence : [CONS0];
       if (!allow.length) allow = rows0.map(function (x) { return x[0]; });
       var list = rows0.filter(function (x) { return allow.indexOf(x[0]) >= 0; });
@@ -852,13 +854,14 @@
 
     // The controls, cleaned: an unknown position / result / scene reads as the default; a district, PC or NPC the
     // pack no longer holds reads as "any" (a stale control from an older pack never labels a stranger a friend).
+    // A district is checked against T.district only when the pack has that list (check() reports it when it does not).
     function sanitise(ui) {
       var u = Object.assign({}, LIVE0, isObj(ui) ? ui : {});
       Object.keys(LIVE0).forEach(function (k) { u[k] = u[k] == null ? '' : String(u[k]); });
       if (!T.severity[u.pos]) u.pos = LIVE0.pos;
       if (u.result !== '45' && u.result !== '13') u.result = '';
       if (u.scene && !T.scene[u.scene]) u.scene = '';
-      if (u.district && (Array.isArray(T.district) ? T.district : []).indexOf(u.district) < 0) u.district = '';
+      if (u.district && has(T.district) && T.district.indexOf(u.district) < 0) u.district = '';
       if (u.pc && !PCS.some(function (p) { return p.name === u.pc; })) u.pc = '';
       if (u.npc && !npcKnown(u.npc)) u.npc = '';
       u.threat = u.threat.trim();
@@ -927,7 +930,7 @@
       var meta = clone(res && res.meta);
       var detail = { coach: [] };
       if (d) {
-        d.coach.forEach(function (i) { if (lines[i]) { lines[i].coach = true; detail.coach.push(i); } });
+        d.coach.forEach(function (i) { if (lines[i]) lines[i].coach = true; });
         if (meta.id === 'consequence' && d.kind) {
           var ex = d.example;
           if (d.kind === 'Harm' && !d.scene) ex = levelExample(d) || ex;
@@ -964,6 +967,8 @@
         }
         if (d.result) detail.result = d.result;
       }
+      // where the coaching lines sit in the NEW lines (a threat's complication moves its draw up)
+      lines.forEach(function (l, i) { if (l.coach) detail.coach.push(i); });
       meta.all = textOf(lines);
       meta.text = lines.length ? (lines[0].kind === 'grid' ? meta.all[0] : plain(lines[0].md)) : '';
       var t = meta.text.replace(/\s+/g, ' ');

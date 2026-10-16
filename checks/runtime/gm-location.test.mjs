@@ -225,6 +225,52 @@ await test('noteBody and canvas', () => {
   assert.ok(new Set(cv.nodes.map(x => x.id)).size === cv.nodes.length, 'node ids unique');
 });
 
+/* the generator review (16/10/2026), robustness: B9 a pack with no faction dossiers still rolls, with the same draws;
+   B8 check(T) names every key a pack is missing or has empty */
+await test('B9: no faction dossiers: the rumour names a faction and the roll is otherwise the same draw', () => {
+  const TEMPL = ["Word is that %F%'s allies are restless.", "Word is that %F%'s enemies are close.", "Word is that %F%'s goals have changed.", "Word is that %F%'s quirk or situation is talked about."];
+  const noD = clone(FIX); noD.T.factionDetail = {}; noD.T.rumour = TEMPL;
+  const gone = clone(FIX); delete gone.T.factionDetail; gone.T.rumour = TEMPL;
+  const withD = clone(FIX); withD.T.rumour = TEMPL;
+  const strip = x => { const y = clone(x); delete y.rumour; return y; };
+  for (let s = 0; s < 60; s++) {
+    const opts = { approach: FIX.T.approach[s % FIX.T.approach.length].n, mix: s % 3 === 0 };
+    const a = L.generate(noD, opts, { seed: s, mem: {} }), b = L.generate(withD, opts, { seed: s, mem: {} }), c = L.generate(gone, opts, { seed: s, mem: {} });
+    assert.ok(!/undefined|%F%/.test(a.rumour) && /'s (allies|enemies|goals|situation)/.test(a.rumour), a.rumour);
+    assert.ok(FIX.T.faction.some(f => a.rumour.includes(f[0])), 'names a faction: ' + a.rumour);
+    assert.equal(a.rumour, c.rumour, 'an empty map and no map read the same');
+    assert.deepEqual(strip(a), strip(b), 'one draw either way: everything but the rumour is the same roll');
+    assert.ok(/ run with | are up against |: | — /.test(b.rumour) && !/%F%/.test(b.rumour), 'with dossiers the rumour carries the dossier line: ' + b.rumour);
+    checkRoll(noD, a, 'no dossiers #' + s); checkRoll(gone, c, 'no dossier map #' + s);
+    for (const t of [L.cardLines(a, noD).join('\n'), L.folds(a, noD).map(f => f.lines.join('\n')).join('\n'), JSON.stringify(L.glance(a, noD))]) assert.ok(!/undefined/.test(t));
+  }
+  assert.deepEqual(L.check(noD.T), ['factionDetail']); assert.deepEqual(L.check(gone.T), ['factionDetail']);
+});
+
+await test('B8: check(T) names what a pack is missing or has empty; the fixture is complete', () => {
+  assert.deepEqual(L.check(FIX.T), [], 'the fixture is complete'); assert.deepEqual(L.check(FIX), [], 'a whole part is accepted');
+  if (REAL) assert.deepEqual(L.check(REAL.T), [], 'the real pack is complete');
+  assert.deepEqual(L.check(null), ['T']);
+  const optional = ['factionThumb'];
+  for (const k of Object.keys(FIX.T)) {
+    const del = clone(FIX.T); delete del[k];
+    if (optional.includes(k)) { assert.deepEqual(L.check(del), [], k + ' is optional'); continue; }
+    assert.ok(L.check(del).includes(k), 'delete ' + k + ': ' + JSON.stringify(L.check(del)));
+    const emp = clone(FIX.T); emp[k] = Array.isArray(FIX.T[k]) ? [] : {};
+    if (k === 'geometry') { assert.deepEqual(L.check(emp), [], 'an empty geometry map: every style takes the default'); continue; }
+    assert.ok(L.check(emp).some(x => x === k || x.startsWith(k + '.')), 'empty ' + k + ': ' + JSON.stringify(L.check(emp)));
+  }
+  // inner holes are named by their path
+  const T = clone(FIX.T), th = FIX.T.themeNames[1], d = FIX.T.district[2][0];
+  T.theme[th].impressions = ['only one']; T.theme[th].bands = T.theme[th].bands.slice(1); T.gaz[d].notables = []; T.weather.Night = [];
+  T.targetType.Ship.district = 'Nowhere Test'; T.targetType['Records office'].forceRoom = 99; T.bandLabel.secure = '';
+  assert.deepEqual(L.check(T), ['weather.Night', 'bandLabel.secure', 'targetType.Ship.district', 'targetType.Records office.forceRoom',
+    'theme.' + th + '.bands', 'theme.' + th + '.impressions', 'gaz.' + d + '.notables']);
+  // a theme only a target type or the Paranormal approach names is checked too
+  const U = clone(FIX.T); delete U.theme['Anomalous Zone'];
+  assert.ok(L.check(U).includes('theme.Anomalous Zone'), JSON.stringify(L.check(U)));
+});
+
 /* ---------- the player leak test ---------- */
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 function hiddenStrings(o, reveal) {

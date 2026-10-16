@@ -75,6 +75,13 @@
  *   frontmatter: false drops the YAML block and the "Rolled from" footer.
  * canvas(roll, pack) -> JSON string of an Obsidian .canvas (the vault's "Save the plan"),
  *   with ids derived from roll.seed so the same roll gives the same file.
+ * check(T) -> [string]   the table keys a pack is missing or has empty ('rumour', 'theme.<name>.areas',
+ *   'gaz.<district>', 'weather.Night', …), for the page to show when a pack is loaded. Empty = the pack is
+ *   complete. Pass pack.T (a whole part { T, extra } is accepted too). Optional: a target type's alt / mix /
+ *   district / landmark / note / forceRoom (reported only when one points at nothing: a theme the pack lacks, a
+ *   district not in its list, an area past the theme's), a theme's bandNote, a district's special, a style's
+ *   geometry (a default applies), factionThumb. factionDetail is reported only when the pack has none at all (the
+ *   rumour then names a faction without a dossier line).
  * seedRng(seed) -> () => [0,1)               the vault's mulberry32
  * ------------------------------------------------------------------------- */
 (function (root, factory) {
@@ -125,6 +132,74 @@
   function clean(v) { return v === "" || v === undefined ? null : v; }
 
   function defaults() { return { target: "", district: "", approach: "", faction: "", mix: false }; }
+
+  // --- check(): the keys generate() and the renderers read, reported when missing or empty ----------
+  function check(T) {
+    var isObj = function (v) { return v !== null && typeof v === "object" && !Array.isArray(v); };
+    if (isObj(T) && isObj(T.T) && !("theme" in T)) T = T.T;          // a whole part { T, extra }
+    if (!isObj(T)) return ["T"];
+    var miss = [], need = function (k, ok) { if (!ok) miss.push(k); };
+    var filled = function (x) { return x != null && x !== ""; };
+    var list = function (a, ok, n) { return Array.isArray(a) && a.length >= (n || 1) && a.every(ok || filled); };
+    var row = function (n) { return function (x) { return Array.isArray(x) && x.length >= n && x.slice(0, n).every(filled); }; };
+    var arr = function (a) { return Array.isArray(a) ? a : []; };
+    ["targetNames", "themeNames", "bandOrder", "furnishing", "itemRare", "itemCommon", "circulation", "streetType",
+      "streetObstacle", "blockUse", "props", "buildingRare", "buildingCommon", "colour", "style", "condition", "volume",
+      "detail", "streetDesc", "streetSound", "streetSmell", "rumour"].forEach(function (k) { need(k, list(T[k])); });
+    need("physThreat", list(T.physThreat, row(2)));
+    need("socThreat", list(T.socThreat, row(2)));
+    need("faction", list(T.faction, row(3)));
+    need("district", list(T.district, row(5)));
+    need("approach", list(T.approach, function (a) {
+      return isObj(a) && ["n", "gambit", "seat", "target", "why"].every(function (k) { return filled(a[k]); });
+    }));
+    need("weather", isObj(T.weather));
+    ["Bluetime", "Night"].forEach(function (t) { need("weather." + t, isObj(T.weather) && list(T.weather[t])); });
+    need("geometry", isObj(T.geometry));
+    var bands = arr(T.bandOrder);
+    need("bandLabel", isObj(T.bandLabel));
+    bands.forEach(function (b) { need("bandLabel." + b, isObj(T.bandLabel) && filled(T.bandLabel[b])); });
+    // the themes: every one the theme list, a target type (its theme, alt, mix) or the Paranormal approach names
+    var themes = [];
+    var addTheme = function (n) { if (filled(n) && themes.indexOf(n) < 0) themes.push(n); };
+    arr(T.themeNames).forEach(addTheme);
+    need("targetType", isObj(T.targetType));
+    var districts = arr(T.district).map(function (d) { return Array.isArray(d) ? d[0] : null; });
+    arr(T.targetNames).forEach(function (n) {
+      var tt = isObj(T.targetType) ? T.targetType[n] : null, at = "targetType." + n;
+      if (!isObj(tt) || !filled(tt.theme)) { miss.push(at); return; }
+      [tt.theme, tt.alt, tt.mix].forEach(addTheme);
+      if (filled(tt.district) && districts.indexOf(tt.district) < 0) miss.push(at + ".district");
+      var src = isObj(T.theme) ? T.theme[tt.theme] : null;
+      if (tt.forceRoom !== undefined && !(isObj(src) && Array.isArray(src.areas) && filled(src.areas[tt.forceRoom]))) miss.push(at + ".forceRoom");
+    });
+    if (arr(T.approach).some(function (a) { return isObj(a) && a.n === "Paranormal"; })) addTheme("Anomalous Zone");
+    need("theme", isObj(T.theme));
+    themes.forEach(function (n) {
+      var th = isObj(T.theme) ? T.theme[n] : null, at = "theme." + n;
+      if (!isObj(th)) { miss.push(at); return; }
+      need(at + ".areas", list(th.areas));
+      need(at + ".bands", Array.isArray(th.bands) && th.bands.length === arr(th.areas).length &&
+        th.bands.every(function (b) { return bands.indexOf(b) >= 0; }));
+      need(at + ".alsoRooms", Array.isArray(th.alsoRooms) &&
+        th.alsoRooms.every(function (x) { return Array.isArray(x) && filled(x[0]) && bands.indexOf(x[1]) >= 0; }));
+      need(at + ".obstacles", list(th.obstacles));
+      need(at + ".items", list(th.items));
+      need(at + ".impressions", list(th.impressions, null, 2));
+      need(at + ".also", filled(th.also));
+      need(at + ".p", filled(th.p));
+    });
+    // the gazetteer: one entry per district, with the lists a roll picks from
+    need("gaz", isObj(T.gaz));
+    districts.forEach(function (d) {
+      if (!filled(d)) return;
+      var g = isObj(T.gaz) ? T.gaz[d] : null, at = "gaz." + d;
+      if (!isObj(g)) { miss.push(at); return; }
+      ["named", "landmarks", "notables"].forEach(function (k) { need(at + "." + k, list(g[k])); });
+    });
+    need("factionDetail", isObj(T.factionDetail) && Object.keys(T.factionDetail).length > 0);
+    return miss;
+  }
 
   // --- The generator ----------------------------------------------------------
   function generate(pack, opts, run) {
@@ -456,13 +531,16 @@
     o.name = (tt.landmark && !o.districtClash) ? tt.landmark : streetWord + " " + targetWord;
 
     // --- Rumour, with %F% resolved -----------------------------------------------------------------------
-    var detailed = T.faction.filter(function (x) { return T.factionDetail[x[0]]; });
-    var rf = pick(detailed)[0], rd = T.factionDetail[rf];
+    // One draw either way: a faction with a dossier when the pack prints any, else any faction (an old pack with no
+    // dossiers names the faction and leaves the rest to the table, rather than throwing).
+    var FD = T.factionDetail || {};
+    var detailed = T.faction.filter(function (x) { return FD[x[0]]; });
+    var rf = pick(detailed.length ? detailed : T.faction)[0], rd = FD[rf] || null;
     o.rumour = fresh("rumour", T.rumour)
-      .replace("%F%'s allies", function () { return rf + " run with " + rd.with + "."; })
-      .replace("%F%'s enemies", function () { return rf + " are up against " + rd.against + "."; })
-      .replace("%F%'s goals", function () { return rf + ": " + rd.now; })
-      .replace("%F%'s quirk or situation", function () { return rf + " — " + rd.secret; });
+      .replace("%F%'s allies", function () { return rd ? rf + " run with " + rd.with + "." : rf + "'s allies"; })
+      .replace("%F%'s enemies", function () { return rd ? rf + " are up against " + rd.against + "." : rf + "'s enemies"; })
+      .replace("%F%'s goals", function () { return rd ? rf + ": " + rd.now : rf + "'s goals"; })
+      .replace("%F%'s quirk or situation", function () { return rd ? rf + " — " + rd.secret : rf + "'s situation"; });
 
     // --- Tensions --------------------------------------------------------------------------------------------
     o.tensions = [];
@@ -966,7 +1044,7 @@
     generate: generate, controls: controls, defaults: defaults,
     cardSections: cardSections, cardLines: cardLines, playerSummary: playerSummary,
     glance: glance, glanceLines: glanceLines, folds: folds,
-    describe: describe, noteBody: noteBody, canvas: canvas, seedRng: seedRng,
+    describe: describe, noteBody: noteBody, canvas: canvas, seedRng: seedRng, check: check,
     _reviveRe: reviveRe
   };
 });

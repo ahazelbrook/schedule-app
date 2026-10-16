@@ -176,7 +176,7 @@ async function situations() {
   const sits = con.situations(), positions = con.positions.map(p => p.value);
   const friends = opts('npc').filter(v => v.indexOf('friend:') === 0);      // a quarter of the cards: a friend (Contact)
   let cards = 0, cardsOk = 0, sections = 0, secOk = 0, memOk = 0, seedOk = 0, replayOk = 0;
-  const byId = {};
+  const byId = {}, HINTED = 'contact (hinted: no vault equivalent, not compared)';
   const fails = [];
   for (const sit of sits) {
     for (const pos of positions) {
@@ -201,16 +201,17 @@ async function situations() {
           sections++; byId[s.id] = (byId[s.id] || 0) + 1;
           if (s.seed === stream[slot] && rp.seed === s.seed && rp.id === s.id) seedOk++;
           else { cardGood = false; fails.push({ situation: sit.id, pos, seed, section: k, id: s.id, what: 'section seed is not stream draw ' + slot }); }
+          // A Contact aimed at a chosen friend (ui.contact, compose v2) has no vault equivalent: view.js draws among all
+          // that PC's friends, the port makes no such draw. So neither its lines nor its memory are compared (the vault
+          // page is not run for it): it counts as passing in both tallies and is listed apart in the note.
+          if (rp.ui && rp.ui.contact) { secOk++; memOk++; byId[HINTED] = (byId[HINTED] || 0) + 1; continue; }
           // The section's lines are the classic roll read through annotate(); view.js is compared with the classic roll
-          // itself (the section's replay). A Contact aimed at a chosen friend (ui.contact, compose v2) has no vault
-          // equivalent: view.js draws among all that PC's friends, so only its memory chain is checked.
+          // itself (the section's replay).
           const classic = con.roll(rp.id, clone(rp.ui), { seed: rp.seed, mem: clone(rp.mem) });
           const v = await vaultCard({ fn: rp.id, seed: rp.seed, mem: clone(rp.mem), ui: clone(rp.ui) });
           const A = norm(v.all), B = norm(classic.meta.all);
-          if (rp.ui && rp.ui.contact) { secOk++; byId['contact (hinted, lines not compared)'] = (byId['contact (hinted, lines not compared)'] || 0) + 1; }
-          else if (same(A, B)) secOk++;
+          if (same(A, B)) secOk++;
           else { cardGood = false; fails.push({ situation: sit.id, pos, seed, section: k, id: s.id, sectionSeed: rp.seed, line: firstDiff(A, B), vaultLines: (v.all || []).length, portLines: B.length }); }
-          if (rp.ui && rp.ui.contact) { memOk++; continue; }
           const next = k + 1 < card.sections.length ? card.sections[k + 1].replay.mem : endMem;
           if (same(v.cur.mem, rp.mem) && same(v.after, next)) memOk++;
           else { cardGood = false; fails.push({ situation: sit.id, pos, seed, section: k, id: s.id, what: 'memory ' + (same(v.cur.mem, rp.mem) ? 'after the section is not the next start' : 'before the section') }); }

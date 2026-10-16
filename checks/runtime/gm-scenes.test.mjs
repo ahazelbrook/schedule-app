@@ -150,6 +150,26 @@ await test('card text: the read-aloud and the grid read like the vault (a worked
   assert.ok(r.meta.all.every((x) => !/\*\*|\*/.test(x)), 'plain lines carry no markdown');
 });
 
+// ---- B8 (the generator review, 16/10/2026): check(T) names what a pack is missing or has empty -------------------------
+await test('B8: check(T) names every key a pack is missing or has empty; the fixture is complete', () => {
+  assert.deepEqual(S.check(T), [], 'the fixture is complete');
+  if (REAL) assert.deepEqual(S.check(REAL), [], 'the real pack is complete');
+  assert.deepEqual(S.check(undefined), ['T']);
+  for (const k of Object.keys(T)) {
+    const del = clone(T); delete del[k];
+    assert.ok(S.check(del).includes(k), 'delete ' + k + ': ' + JSON.stringify(S.check(del)));
+    const emp = clone(T); emp[k] = Array.isArray(T[k]) ? [] : {};
+    assert.ok(S.check(emp).includes(k), 'empty ' + k + ': ' + JSON.stringify(S.check(emp)));
+  }
+  const d = T.district[1].n, times = Object.keys(T.weather);
+  const U = clone(T); U.district[1].notables = [['Only a name']]; delete U.district[1].streets; U.district[1].r = ['High']; U.weather[times[1]] = [];
+  delete U.district[0].special;                                   // a district rule is optional
+  assert.deepEqual(S.check(U), ['district.' + d + '.r', 'district.' + d + '.streets', 'district.' + d + '.notables', 'weather.' + times[1]]);
+  // a complete pack rolls clean cards; check() is what the page shows before a sparse one fails
+  const sc = S.create({ T });
+  for (let i = 0; i < 20; i++) checkRoll(sc.roll({ sel: '' }, { seed: seedOf(i), mem: {} }), 'complete #' + i, T);
+});
+
 // ---- the port against the invented vault page, run as the vault runs it (node:vm, one seeded Math.random) -------------
 function vaultRunner(block) {
   // the one deliberate difference (see the header of scenes.js): the notable guard is keyed by name in the port

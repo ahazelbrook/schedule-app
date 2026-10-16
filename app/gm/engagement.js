@@ -24,6 +24,8 @@
               rows:[{ k:'Roll', md }] }, { kind:'read', id:'cut', md }]   md is markdown, never HTML
        meta   { id:'engagement', title ("<approach> — 2d"), sub, chips, text, all, label, result }
    Helpers: B68GmEngagement.seedRng(a) · poolOf(T, mods) · rollPool(n, rng) · outcomeOf(T, r) · plain(md)
+   B68GmEngagement.check(T) -> [string]   the table keys a pack is missing or has empty ('approach', 'outcome.six', 'cut',
+       …), for the page to show when a pack is loaded. Empty = the pack is complete.
    --------------------------------------------------------------------------------------------------------------- */
 (function (root, factory) {
   'use strict';
@@ -42,8 +44,27 @@
     };
   }
   var clone = function (o) { return JSON.parse(JSON.stringify(o == null ? {} : o)); };
+  var isObj = function (v) { return v !== null && typeof v === 'object' && !Array.isArray(v); };
   function plain(s) {
     return String(s).replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/\s+/g, ' ').trim();
+  }
+
+  // The keys a roll reads (what check() reports when missing or empty): create() needs the approach, factor and loadout
+  // lists and the outcome table; a card reads every outcome row, the cut line and the cite.
+  function check(T) {
+    if (!isObj(T)) return ['T'];
+    var miss = [], need = function (k, ok) { if (!ok) miss.push(k); };
+    var rows = function (a, ok) { return Array.isArray(a) && a.length > 0 && a.every(ok); };
+    need('approach', rows(T.approach, function (a) { return Array.isArray(a) && !!a[0] && !!a[1]; }));
+    need('factor', rows(T.factor, function (f) { return isObj(f) && !!f.id && !!f.plus && !!f.minus; }));
+    need('loadout', rows(T.loadout, function (l) { return isObj(l) && !!l.value && !!l.label && l.load != null; }));
+    need('outcome', isObj(T.outcome));
+    ['crit', 'six', 'risky', 'desperate'].forEach(function (k) {
+      var o = isObj(T.outcome) ? T.outcome[k] : null;
+      need('outcome.' + k, isObj(o) && !!o.pos && !!o.how);
+    });
+    need('cut', !!T.cut); need('cite', !!T.cite);
+    return miss;
   }
 
   // Blades pool: n d6, read the highest. Zero dice = roll 2, keep the LOWEST.
@@ -142,5 +163,5 @@
     };
   }
 
-  return { create: create, seedRng: seedRng, poolOf: poolOf, rollPool: rollPool, outcomeOf: outcomeOf, plain: plain, ID: 'engagement' };
+  return { create: create, check: check, seedRng: seedRng, poolOf: poolOf, rollPool: rollPool, outcomeOf: outcomeOf, plain: plain, ID: 'engagement' };
 });

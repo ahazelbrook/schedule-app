@@ -185,6 +185,21 @@ await test('exporter: the engagement part from an invented page, and the checks 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// B8 (the generator review, 16/10/2026): check(T) names what a pack is missing or has empty
+await test('B8: check(T) names every key a pack is missing or has empty; the fixture is complete', () => {
+  assert.deepEqual(E.check(T), [], 'the fixture is complete');
+  if (REAL) assert.deepEqual(E.check(REAL), [], 'the real pack is complete');
+  assert.deepEqual(E.check(null), ['T']);
+  for (const k of Object.keys(T)) {
+    const del = clone(T); delete del[k];
+    assert.ok(E.check(del).includes(k), 'delete ' + k + ': ' + JSON.stringify(E.check(del)));
+  }
+  const U = clone(T); U.outcome.six = { pos: 'Ahead' }; U.factor[1] = { id: 'tier', plus: 'x' }; U.approach.push(['Lonely']); U.cut = '';
+  assert.deepEqual(E.check(U), ['approach', 'factor', 'outcome.six', 'cut']);
+  const V = clone(T); V.loadout = []; V.outcome = {};
+  assert.deepEqual(E.check(V), ['loadout', 'outcome.crit', 'outcome.six', 'outcome.risky', 'outcome.desperate']);
+});
+
 await test('the public file holds no table text and no long string literal', () => {
   const src = read(path.join(ROOT, 'app', 'gm', 'engagement.js'));
   const NL = String.fromCharCode(10), BS = String.fromCharCode(92), SQ = String.fromCharCode(39), DQ = String.fromCharCode(34);

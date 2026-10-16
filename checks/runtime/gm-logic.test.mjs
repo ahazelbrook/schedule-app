@@ -766,6 +766,52 @@ await test('Classic byte-identity: 9 buttons x 24 variants x 300 seeds hash to t
   eq(h.digest('hex'), '08ddc2b4a63db4b6f7fe0a1e535132406d1e401d45fcc802503614f093d8c548', 'the classic dump changed');
 });
 
+// Sparse packs against the source from before the fixes (7fce4b9), when git can supply it: wherever that version drew a
+// clean card (no throw, no "undefined" or NaN), this one draws the same bytes; it differs only where the old one broke.
+await test('sparse packs: where 7fce4b9 drew a clean card, the same bytes (optional)', () => {
+  let src = null;
+  try { src = execFileSync('git', ['show', '7fce4b9:app/gm/console.js'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { /* not available */ }
+  if (!src) { console.log('     (7fce4b9 not available here: skipped)'); return; }
+  const tmp = path.join(os.tmpdir(), 'b68-console-7fce4b9-' + process.pid + '.cjs');
+  fs.writeFileSync(tmp, src);
+  try {
+    const OLD = require(tmp), T0 = FIX.parts.console.T, camp = FIX.parts.campaign;
+    const UIS = [{}, { pos: 'controlled', scene: 'fight', threat: 'x' }, { pos: 'desperate', scene: 'chase', result: '13', pc: 'Pip Wobble', npc: 'friend:Marge Teacup' },
+      { district: 'Puddleton', scene: 'chase', result: '45', npc: 'fac:Hat Society' }, { scene: 'talk', district: 'Crumbhall', npc: 'rival:Nigel Sprocket', threat: 'y' },
+      { scene: 'street', pc: 'Dot Crumble' }, { scene: 'sneak', pos: 'desperate', result: '45' }, { district: 'Lower Fluff', pc: 'Moss' }];
+    const muts = [];
+    for (const k of Object.keys(T0)) {
+      muts.push([k, t => { delete t[k]; }], [k + ' empty', t => { t[k] = Array.isArray(T0[k]) ? [] : typeof T0[k] === 'object' ? {} : ''; }]);
+      if (T0[k] && typeof T0[k] === 'object' && !Array.isArray(T0[k])) for (const sk of Object.keys(T0[k])) {
+        muts.push([k + '.' + sk, t => { delete t[k][sk]; }]);
+        if (Array.isArray(T0[k][sk])) muts.push([k + '.' + sk + ' empty', t => { t[k][sk] = []; }]);
+      }
+    }
+    muts.push(['blank arsenal', t => { t.arsenal = ''; }]);
+    let same = 0, broke = 0;
+    const bad = [];
+    for (const [name, mut] of muts) {
+      const T = clone(T0); mut(T);
+      let co = null, cn = null;
+      try { co = OLD.create({ T: clone(T), campaign: camp, seed: 1 }); } catch (e) { /* create() needs severity and scene */ }
+      try { cn = C.create({ T: clone(T), campaign: camp, seed: 1 }); } catch (e) { /* likewise */ }
+      ok(!!co === !!cn, name + ': create() agrees');
+      if (!co) continue;
+      for (let b = 1; b <= 9; b++) for (let u = 0; u < UIS.length; u++) for (let s = 0; s < 4; s++) {
+        const seed = (s * 977 + u * 31 + b) >>> 0;
+        let a = null; try { a = JSON.stringify(co.roll(b, UIS[u], { seed, mem: {} })); } catch (e) { a = null; }
+        const z = JSON.stringify(cn.roll(b, UIS[u], { seed, mem: {} }));
+        if (a === z) same++;
+        else if (a === null || /undefined|\bNaN\b/.test(a)) broke++;
+        else bad.push(name + ' b=' + b + ' u=' + u + ' seed=' + seed);
+      }
+    }
+    console.log('     ' + same + ' identical, ' + broke + ' differ where 7fce4b9 threw or printed undefined');
+    eq(bad.slice(0, 5), [], 'a clean card changed');
+    ok(same > 20000 && broke > 500, 'coverage: ' + same + ' ' + broke);
+  } finally { fs.unlinkSync(tmp); }
+});
+
 // --- the real pack, only when it is on this machine (never committed) -------------------------------------------
 if (fs.existsSync(REAL)) {
   const real = JSON.parse(fs.readFileSync(REAL, 'utf8'));
