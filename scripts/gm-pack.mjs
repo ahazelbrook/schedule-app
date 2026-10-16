@@ -28,9 +28,9 @@
 //   screen    the GM screen: the note under the '68 folder with `gm_screen: true`, cut at its ## headings into sections
 //             of Markdown (lib/screen-export.mjs). No such note: no part.
 //
-//   downtime  T.good, the house rule's Good Mornings (the Morning After), from the note under the '68 folder with
-//             `gm_downtime: true`: its "## The Good Morning" tables (lib/downtime-export.mjs). Laid over the app's built-in
-//             downtime tables; it is the only place the Good Mornings live outside the vault. No such note: no part.
+//   downtime  T.benefit and T.mishap, the house rule's two d100 tables (the Morning After), from the note under the '68
+//             folder with `gm_downtime: true`: its "## Benefits" and "## Mishaps" entries (lib/downtime-export.mjs). Laid
+//             over the app's built-in downtime tables; it is the only place they live outside the vault. No such note: no part.
 //
 // F (the figure map) comes from the vault page Tools/blades-68-npc-figure-map.md, read as JSON from fenced code blocks:
 //   ```json F          the whole F object (use this form for a small map), or
@@ -771,7 +771,7 @@ function main() {
     const sc = parts.screen;
     console.log("  screen: " + (sc ? sc.sections.length + " sections from " + path.basename(sc.rel) : "none (no note has gm_screen: true)"));
     const dp = parts.downtime;
-    console.log("  downtime: " + (dp ? dp.T.good.length + " kinds, " + dp.T.good.reduce((n, k) => n + k.lines.length, 0) + " Good Mornings from " + path.basename(dp.rel) : "none (no note has gm_downtime: true)"));
+    console.log("  downtime: " + (dp ? dp.T.benefit.length + " Benefits and " + dp.T.mishap.length + " Mishaps from " + path.basename(dp.rel) : "none (no note has gm_downtime: true)"));
   }
   for (const [name, part] of Object.entries(parts)) {
     const n = Buffer.byteLength(JSON.stringify(part));

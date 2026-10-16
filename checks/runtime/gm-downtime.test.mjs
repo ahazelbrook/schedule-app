@@ -1,6 +1,7 @@
-// Unit test for app/gm/downtime.js (personal business: the downtime activities' scene prompts, and an overindulgence's cost)
-// on its tables, app/downtime-tables.js (original writing, committed), and the book's purveyors from app/content.js
-// (B68Content.VICES), as the page has them.
+// Unit test for app/gm/downtime.js (personal business: the downtime activities' scene prompts, and the Morning After's
+// Benefits and Mishaps) on its tables, app/downtime-tables.js (original writing, committed), the book's purveyors from
+// app/content.js (B68Content.VICES), as the page has them, and an invented pair of morning tables (the real ones are the
+// vault's, never committed).
 //   node checks/runtime/gm-downtime.test.mjs
 import path from 'node:path';
 import vm from 'node:vm';
@@ -26,7 +27,7 @@ const ACTS = ['indulge', 'recover', 'project', 'train', 'contact', 'heat', 'acqu
 const PURVEYORS = [].concat(...CT.VICES.map((v) => v.purveyors));
 /* text that went wrong: a slot left in, a value that was not there, doubled or orphaned punctuation, a clock marker */
 const JUNK = /[{}]|undefined|null|NaN|\[object|\s\s|\s[.,:;!?]|(?<!\.)\.\.(?!\.)|\b(?:a|an) (?:a|an|the)\b|\|\|/;
-const texts = (r) => r.meta.all.concat(r.meta.actions.map((a) => a.label), r.over ? r.over.options.flatMap((o) => [o.title, o.mech, o.md, o.source]) : []).filter(Boolean);
+const texts = (r) => r.meta.all.concat(r.meta.actions.map((a) => a.label), r.morning ? r.morning.cards.flatMap((c) => [c.title, c.md, c.play, c.cost && c.cost.mech, c.source]) : []).filter(Boolean);
 
 await test('check(): the tables are complete; a pack\'s broken replacement is named; create() refuses it and needs the tables', () => {
   assert.deepEqual(D.check(T), []);
@@ -38,39 +39,58 @@ await test('check(): the tables are complete; a pack\'s broken replacement is na
   assert.ok(D.check(T, { recover: { band: { '13': ['x'] } } }).includes('recover.healers'), 'a replaced activity table is checked whole');
   assert.ok(D.check(T, { over: [{ id: 'brag', title: 'Brag', mech: 'x' }] }).includes('over'), 'all six overindulgences');
   assert.ok(D.check(T, { over: T.over.filter((o) => o.id !== 'brawl') }).includes('over'), 'brawl is one of the six');
-  assert.deepEqual(D.check(T, { good: 'not a table' }), [], 'the Good Mornings are optional and never block the cards');
+  assert.deepEqual(D.check(T, { benefit: 'not a table', mishap: 7, good: [] }), [], 'the morning tables are optional and never block the cards');
+  assert.ok(Object.values(T.vice).every((V) => !('over' in V)), 'the vices carry no overindulgence lines now: the Mishaps name the cost');
+  assert.ok(!('benefit' in T) && !('mishap' in T), 'and no morning tables: those live only in the pack');
   assert.throws(() => mk({ pack: { vice: { Faith: { lead: [] } } } }), /vice\.Faith\.lead/);
   assert.throws(() => D.create({}), /the tables are required/);
   const dt = mk({ pack: { vice: { Faith: { lead: ['{Host} waits at {place}.'] } } } });
   assert.equal(dt.roll({ act: 'indulge', vice: 'Faith', purveyor: 'Preceptor Aldo, the Sanctorium grand cathedral, Brightstone' }, { seed: 1 }).meta.text, 'Preceptor Aldo waits at the Sanctorium.', 'a replaced table is used');
 });
 
-/* invented Good Mornings, as a pack part would carry them (the real ones are the vault's, never committed) */
-const GOOD = [
-  { kind: 'Someone', lines: ['A regular at {place} owes you one.', '{Host} introduces you to a friend of {host\'s}.', 'You talked a stranger round.'] },
-  { kind: 'Something in hand', lines: ['You came home with a parcel.', '{Host} let something go.', 'You won a bet at {place}.'] }
+/* invented morning tables, as a pack part carries them (the real ones are the vault's, never committed): three bands, roll high */
+const ent = (lo, hi, band, title, md, play, cost) => ({ lo, hi, band, title, md, play, cost });
+const BEN = [
+  ent(1, 10, '01–30 · Small', 'The biscuit', 'A baker at {place} hands you a biscuit. *"Mind the crumbs."* **Nothing much.**', 'who baked it?'),
+  ent(11, 20, '01–30 · Small', 'The penny', '{Host} flips you a penny. *"Heads you win."* **A penny.**', 'what is it for?'),
+  ent(21, 30, '01–30 · Small', 'The umbrella', 'Somebody lends you an umbrella. *"Bring it back dry."* **Dry feet.**', ''),
+  ent(31, 50, '31–70 · Middling', 'The word', 'A neighbour stops you. *"I heard a thing."* **One answer, free.**', 'what thing?'),
+  ent(51, 60, '31–70 · Middling', 'The tab', '{Host} waves your money away. *"Paid."* **A stack.**', 'who paid?'),
+  ent(61, 70, '31–70 · Middling', 'The lift', 'A driver idles at the kerb. *"Hop in."* **A free ride.**', 'where to?'),
+  ent(71, 90, '71–00 · Big', 'The medal', 'A clerk pins a medal on you. *"For services."* **Standing.**', 'what services?'),
+  ent(91, 100, '71–00 · Big', 'The jackpot', 'Everyone cheers at {place}. *"Again!"* **Keep both cards.**', 'the best moment?')
 ];
+const MIS = [
+  ent(1, 20, '01–50 · Bad', 'The cell', 'You wake in a cell. *"Talk."* **Attract Trouble: a questioning.**', 'talk, or not?'),
+  ent(21, 35, '01–50 · Bad', 'The bill', 'A bill comes for a window. *"Pay up."* **Bad Decision: the glazier\'s clock.**', 'whose window?'),
+  ent(36, 50, '01–50 · Bad', 'The lost week', 'You come round on a beach. *"Morning, sleepyhead."* **Bender.**', 'what happened?'),
+  ent(51, 70, '51–00 · Silly', 'The song', 'A busker sings about you. *"Here they are!"* **Brag: +2 Heat.**', 'take a bow?'),
+  ent(71, 85, '51–00 · Silly', 'The scuffle', 'A man with a pie is cross. *"My pie!"* **Brawl: −1 status with the bakers, or level 2 harm.**', 'apologise?'),
+  ent(86, 100, '51–00 · Silly', 'The door', '{Host} shuts the door on you at {place}. *"Not tonight."* **Tapped.**', 'who got there first?')
+];
+const MORN = { benefit: BEN, mishap: MIS };
 
 await test('every activity, result and choice: 5,600 rolls with no broken text, each one replaying identically', () => {
   let n = 0;
-  for (const pack of [undefined, { good: GOOD }]) {
+  for (const pack of [undefined, MORN]) {
     const dt = mk({ vices: CT.VICES, pack });
     for (const act of ACTS) for (let seed = 1; seed <= 400; seed++) {
       const ui = {
         act, who: seed % 3 ? 'Mags' : '', vice: seed % 9 ? CT.VICES[seed % CT.VICES.length].name : '', purveyor: seed % 4 ? PURVEYORS[seed % PURVEYORS.length] : '',
-        res: act === 'indulge' ? (seed % 2 ? 'over' : '') : ['13', '45', '6', 'crit', ''][seed % 5], pick: ['', 'trouble', 'decision', 'lost', 'brag', 'brawl', 'tapped'][seed % 7],
-        vres: ['', '13', '45', '6', 'crit'][(seed >> 1) % 5],
+        res: act === 'indulge' ? (seed % 2 ? 'over' : '') : ['13', '45', '6', 'crit', ''][seed % 5],
+        d100: ['', String(seed % 100 + 1), '00', '0', '101', 'x'][seed % 6], keep: ['', 'roll', 'alt', 'nope'][seed % 4], deal: ['', '1', '7', '200'][(seed >> 2) % 4],
         attr: ['', 'Insight', 'Prowess', 'Resolve', 'Playbook'][seed % 5], rel: ['', 'friend', 'rival'][seed % 3], contact: seed % 2 ? 'Vanden, a lazy Bluecoat' : '',
         project: seed % 2 ? 'Build the still' : '', district: seed % 7 ? '' : 'Crowfoot'
       };
       const r = dt.roll(ui, { seed });
       for (const t of texts(r)) assert.ok(!JUNK.test(t), act + ' seed ' + seed + ': ' + t);
       assert.ok(r.lines.length >= 2 && r.lines[0].kind === 'want' && r.lines[0].md, 'a lead box first');
-      if (act !== 'indulge') assert.equal(r.replay.ui.vres, '', 'only an indulgence keeps a vice result');
+      if (act !== 'indulge') assert.deepEqual([r.replay.ui.d100, r.replay.ui.keep, r.replay.ui.deal, 'morning' in r], ['', '', '', false], 'only an indulgence has a morning');
+      else assert.ok(['', '100'].concat(Array.from({ length: 100 }, (_, i) => String(i + 1))).includes(r.replay.ui.d100), 'a d100 or nothing: ' + r.replay.ui.d100);
       const again = dt.replay(JSON.parse(JSON.stringify(r.replay)));
       assert.deepEqual(again.lines, r.lines, 'replay lines ' + act + ' ' + seed);
       assert.deepEqual(again.meta, r.meta, 'replay meta ' + act + ' ' + seed);
-      assert.deepEqual(again.over, r.over, 'replay options ' + act + ' ' + seed);
+      assert.deepEqual(again.morning, r.morning, 'replay morning ' + act + ' ' + seed);
       n++;
     }
   }
@@ -90,75 +110,115 @@ await test('the memory keeps indices, stays small, and keeps a lead from coming 
   for (let i = win; i < leads.length; i++) assert.ok(!leads.slice(i - win, i).includes(leads[i]), 'a lead repeated within ' + win + ': ' + leads[i]);
 });
 
-await test('indulge: "Overindulged" and the option switch leave the scene above as it was; the cost line is bold, its scene under it', () => {
-  const dt = mk({ vices: CT.VICES });
-  const base = { act: 'indulge', who: 'Mags', vice: 'Gambling', purveyor: 'Vesper, bookmaker at the Vreen Autodrome, Nightmarket' };
-  const mem = { 'Gambling.lead': [2] };
-  const plainRoll = dt.roll(base, { seed: 99, mem: JSON.parse(JSON.stringify(mem)) });
-  assert.equal(plainRoll.over.shown, false);
-  assert.ok(!plainRoll.lines.some((l) => l.id === 'over'), 'no cost line unless overindulged');
-  assert.deepEqual(plainRoll.meta.chips, ['Indulged', 'Gambling']);
-  assert.deepEqual(plainRoll.over.options.map((o) => o.id), ['trouble', 'decision', 'lost', 'brag', 'brawl', 'tapped'], 'the six, in the book\'s order (p.165)');
-  assert.deepEqual(plainRoll.over.options.map((o) => o.title), ['Attract trouble', 'Bad decision', 'Bender', 'Brag', 'Brawl', 'Tapped']);
-  for (const pick of ['trouble', 'decision', 'lost', 'brag', 'brawl', 'tapped']) {
-    const r = dt.roll(Object.assign({ res: 'over', pick }, base), { seed: 99, mem: JSON.parse(JSON.stringify(mem)) });
-    assert.deepEqual(r.lines[0], plainRoll.lines[0], 'the scene stays (' + pick + ')');
-    assert.deepEqual(r.lines.find((l) => l.id === 'more'), plainRoll.lines.find((l) => l.id === 'more'), 'the rows stay (' + pick + ')');
-    assert.deepEqual(r.over.options, plainRoll.over.options, 'the six options are drawn whatever is picked');
-    assert.equal(r.over.pick, pick);
-    const o = r.over.options.find((x) => x.id === pick), line = r.lines[1];
-    assert.equal(line.id, 'over', 'the cost comes straight under the scene');
-    assert.ok(line.md.startsWith('**Overindulged: ' + o.title + '.**') && line.md.includes(o.mech), 'the mechanical line, in bold');
-    assert.ok(line.small.startsWith(o.md), 'the scene prompt under it');
-    assert.deepEqual(r.meta.chips, ['Overindulged', 'Gambling']);
-    assert.match(r.meta.label, new RegExp('^Mags · Gambling · over: ' + o.title + '$'));
-    if (pick === 'trouble') assert.ok(r.meta.actions.some((a) => a.intent.type === 'clock' && a.intent.name === o.clock.name && a.intent.size === o.clock.size), 'trouble offers its clock');
-    if (pick === 'brag') assert.match(o.mech, /\+2 heat/);
-    if (pick === 'decision') assert.match(o.mech, /ticks a clock of their choice/);
-    if (pick === 'brawl') assert.match(o.mech, /−1 status with their faction, or mark level 2 harm/);
-    if (pick === 'trouble') assert.ok(!/entanglement/.test(o.mech), '\'68 has no entanglements: ' + o.mech);
-    if (pick === 'tapped') {
-      assert.match(o.mech, /^Vesper cuts you off/);
-      const book = CT.VICES.find((v) => v.name === 'Gambling').purveyors;
-      assert.ok(book.includes(o.source) && !/^Vesper/.test(o.source), 'a new source from the book, never the old one: ' + o.source);
-      assert.ok(line.small.includes('A new source to find: ' + o.source));
-    }
-  }
-  const drawn = dt.roll(Object.assign({ res: 'over' }, base), { seed: 99, mem: JSON.parse(JSON.stringify(mem)) });
-  assert.ok(['trouble', 'decision', 'lost', 'brag', 'brawl', 'tapped'].includes(drawn.over.pick), 'no pick: one is drawn');
-  const seen = new Set();
-  for (let seed = 1; seed <= 300; seed++) seen.add(dt.roll(Object.assign({ res: 'over' }, base), { seed }).over.pick);
-  assert.equal(seen.size, 6, 'any of the six can be the one drawn: ' + [...seen]);
+const BASE = { act: 'indulge', who: 'Mags', vice: 'Gambling', purveyor: 'Vesper, bookmaker at the Vreen Autodrome, Nightmarket' };
+const morningIds = (r) => r.lines.filter((l) => /^morning/.test(l.id)).map((l) => l.id);
+
+await test('the morning after, before the d100: the night only, a box to type it in; the table follows "Overindulged"', () => {
+  const dt = mk({ vices: CT.VICES, pack: MORN });
+  const night = dt.roll(BASE, { seed: 99, mem: {} });
+  assert.deepEqual(night.over, { shown: false });
+  assert.deepEqual(night.morning, { table: 'benefit', has: true, n: 0, band: '', keep: '', deal: 0, size: 8, cards: [] }, 'no d100 yet: the Benefits, no cards');
+  assert.deepEqual(morningIds(night), [], 'and no morning line: the page draws the box');
+  assert.deepEqual(night.lines.map((l) => l.id), ['lead', 'more']);
+  assert.deepEqual(night.meta.chips, ['Indulged', 'Gambling']); assert.equal(night.meta.label, 'Mags · Gambling');
+  const over = dt.roll(Object.assign({ res: 'over' }, BASE), { seed: 99, mem: {} });
+  assert.deepEqual([over.over.shown, over.morning.table, over.morning.size], [true, 'mishap', 6], 'overindulged: the Mishaps');
+  assert.deepEqual(over.lines[0], night.lines[0], 'the same scene'); assert.deepEqual(over.lines.find((l) => l.id === 'more'), night.lines.find((l) => l.id === 'more'), 'and the same rows');
+  assert.deepEqual(over.meta.chips, ['Overindulged', 'Gambling']); assert.equal(over.meta.label, 'Mags · Gambling · overindulged');
+  assert.deepEqual(over.meta.actions.length, night.meta.actions.length, 'the only clock a card offers is its hook\'s');
 });
 
-await test('indulge, the Morning After: a 6 leaves one Good Morning and a crit two, from the pack only; drawn last, so nothing above moves', () => {
-  const base = { act: 'indulge', who: 'Mags', vice: 'Gambling', purveyor: 'Vesper, bookmaker at the Vreen Autodrome, Nightmarket' };
-  const dt = mk({ vices: CT.VICES, pack: { good: GOOD } });
-  const goods = (r) => r.lines.filter((l) => /^good/.test(l.id));
-  const none = dt.roll(base, { seed: 31, mem: {} });
-  assert.equal(goods(none).length, 0, 'no result said: no Good Morning');
-  for (const vres of ['13', '45']) assert.equal(goods(dt.roll(Object.assign({ vres }, base), { seed: 31, mem: {} })).length, 0, vres + ': a night out, nothing more');
-  const six = dt.roll(Object.assign({ vres: '6' }, base), { seed: 31, mem: {} }), crit = dt.roll(Object.assign({ vres: 'crit', res: 'over' }, base), { seed: 31, mem: {} });
-  assert.deepEqual(goods(six).map((l) => l.id), ['good']); assert.deepEqual(goods(crit).map((l) => l.id), ['good', 'good2']);
-  assert.notEqual(goods(crit)[0].md, goods(crit)[1].md, 'two different Good Mornings');
-  const lines = GOOD.flatMap((k) => k.lines.map((l) => ({ kind: k.kind, l })));
-  for (const g of goods(six).concat(goods(crit))) {
-    assert.ok(g.md.startsWith('**Good Morning.** '), g.md);
-    const src = lines.find((x) => g.small === x.kind + ' · the Morning After');
-    assert.ok(src, 'the kind under it: ' + g.small);
-    assert.ok(!/[{}]/.test(g.md) && /Vesper|Vreen Autodrome|^\*\*Good Morning\.\*\* [A-Z]/.test(g.md), 'its slots filled from the purveyor: ' + g.md);
+await test('the d100 lands on its entry and deals a second from the same band; 0 and 00 are 100; nothing above moves; the label names the card', () => {
+  const dt = mk({ vices: CT.VICES, pack: MORN });
+  const night = dt.roll(BASE, { seed: 7, mem: {} });
+  for (const [d, title, band] of [['1', 'The biscuit', '01–30 · Small'], ['15', 'The penny', '01–30 · Small'], ['50', 'The word', '31–70 · Middling'], ['100', 'The jackpot', '71–00 · Big'], ['00', 'The jackpot', '71–00 · Big'], ['0', 'The jackpot', '71–00 · Big']]) {
+    const r = dt.roll(Object.assign({ d100: d }, BASE), { seed: 7, mem: {} }), m = r.morning;
+    assert.equal(m.cards[0].title, title, d + ' lands on ' + title);
+    assert.deepEqual([m.cards[0].which, m.cards[1].which, m.band], ['roll', 'alt', band]);
+    assert.ok(BEN[m.cards[1].i].band === band && m.cards[1].i !== m.cards[0].i, 'the second card is another from the same band');
+    assert.deepEqual(r.lines[0], night.lines[0], 'the scene stays'); assert.deepEqual(r.lines.at(-1), night.lines.at(-1), 'and the rows');
+    assert.deepEqual(morningIds(r), ['morning', 'morning2'], 'both cards, under the scene, while neither is kept');
+    assert.equal(r.meta.chips[2], 'Benefit ' + (d === '0' || d === '00' ? '100' : d.padStart(2, '0')));
+    assert.equal(r.meta.label, 'Mags · Gambling · ' + title, 'the label names the card rolled');
+    assert.ok(r.lines[1].md.startsWith('**Benefit ' + m.cards[0].range + ' · ' + title + '.** ') && r.lines[2].md.startsWith('**Or ' + m.cards[1].range + ' · '), r.lines[1].md);
   }
-  assert.deepEqual(six.lines[0], none.lines[0], 'the scene stays when the result is tapped');
-  assert.deepEqual(six.lines.find((l) => l.id === 'more'), none.lines.find((l) => l.id === 'more'), 'and the rows');
-  assert.deepEqual([six.over.options, six.over.pick], [none.over.options, none.over.pick], 'and the overindulgence options');
-  assert.deepEqual(crit.lines.map((l) => l.id), ['lead', 'good', 'good2', 'over', 'more'], 'the Good Mornings under the scene, the cost under them');
-  assert.deepEqual(six.meta.chips, ['Indulged', 'Gambling', '6']); assert.deepEqual(crit.meta.chips, ['Overindulged', 'Gambling', 'crit']);
-  assert.match(six.meta.label, /^Mags · Gambling · a good morning$/); assert.match(crit.meta.label, /^Mags · Gambling · two good mornings · over: /);
-  const bare = mk({ vices: CT.VICES }).roll(Object.assign({ vres: 'crit' }, base), { seed: 31, mem: {} });
-  assert.deepEqual(goods(bare).map((l) => l.id), ['good'], 'no pack: one line that says where the table is');
-  assert.match(goods(bare)[0].md, /^\*\*Two Good Mornings\.\*\* Roll on the table in the vault/);
-  assert.match(mk({ pack: { good: [{ kind: '', lines: ['x'] }, { kind: 'K', lines: [7, ''] }, 'junk'] } }).roll(Object.assign({ vres: '6' }, base), { seed: 3, mem: {} }).lines[1].md, /^\*\*A Good Morning\.\*\* Roll on the table/, 'a malformed table is no table');
-  assert.equal(dt.roll(Object.assign({ vres: '7' }, base), { seed: 1 }).replay.ui.vres, '', 'a result that is not one is dropped');
+  const r = dt.roll(Object.assign({ d100: '93' }, BASE), { seed: 7, mem: {} });
+  assert.deepEqual([r.morning.cards[0].range, r.morning.cards[1].range], ['91–00', '71–90'], 'a two-card band: the other one');
+  assert.ok(!/[{}]/.test(r.morning.cards[0].md) && /the Vreen Autodrome/.test(r.morning.cards[0].md), 'its slots filled from the purveyor: ' + r.morning.cards[0].md);
+  assert.equal(r.morning.cards[0].play, 'the best moment?');
+  assert.deepEqual(dt.roll(Object.assign({ d100: '101' }, BASE), { seed: 7 }).replay.ui.d100, '', 'not a d100: dropped');
+  assert.equal(D.d100(' 07 '), '7'); assert.deepEqual(['00', '0', '100', '1'].map(D.d100), ['100', '100', '100', '1']); assert.deepEqual(['', 'x', '101', '-3', '4.5', '1000'].map(D.d100), ['', '', '', '', '', '']);
+  /* a gap in a table: the entry below it; a number below the first entry: the first */
+  const gap = mk({ pack: { benefit: [ent(10, 20, 'A', 'Low', 'Low. *"x"* **y.**', ''), ent(40, 60, 'A', 'High', 'High. *"x"* **y.**', '')] } });
+  assert.deepEqual(['30', '5', '99'].map((d) => gap.roll({ act: 'indulge', d100: d }, { seed: 1 }).morning.cards[0].title), ['Low', 'Low', 'High']);
+});
+
+await test('Keep folds to one card; Another walks the band; the second card reads the memory and never writes it; remember() writes both', () => {
+  const dt = mk({ vices: CT.VICES, pack: MORN });
+  const both = dt.roll(Object.assign({ d100: '45' }, BASE), { seed: 5, mem: {} });
+  const keepAlt = dt.roll(Object.assign({ d100: '45', keep: 'alt' }, BASE), { seed: 5, mem: {} });
+  assert.deepEqual(keepAlt.morning.cards, both.morning.cards, 'keeping changes no card');
+  assert.deepEqual(morningIds(keepAlt), ['morning'], 'one card in the lines: the one kept');
+  assert.ok(keepAlt.lines[1].md.includes(both.morning.cards[1].title) && keepAlt.meta.label.endsWith(both.morning.cards[1].title), 'the alternative, kept, is the card and the label');
+  assert.equal(dt.roll(Object.assign({ keep: 'roll' }, BASE), { seed: 5 }).replay.ui.keep, '', 'no d100: nothing to keep');
+  /* Another: the band's others in turn, then round again */
+  const seen = [];
+  for (let k = 0; k < 4; k++) seen.push(dt.roll(Object.assign({ d100: '45', deal: String(k) }, BASE), { seed: 5, mem: {} }).morning.cards[1].title);
+  assert.deepEqual(new Set(seen.slice(0, 2)).size, 2, 'two others in the band, two different cards: ' + seen);
+  assert.deepEqual(seen.slice(2), seen.slice(0, 2), 'then round again');
+  assert.ok(!seen.includes(both.morning.cards[0].title), 'never the card rolled');
+  /* the memory: an index the guard has seen is dealt last; the roll never writes the morning into it */
+  const mem = { 'morning.benefit': [] }, r1 = dt.roll(Object.assign({ d100: '45' }, BASE), { seed: 5, mem });
+  assert.deepEqual(mem['morning.benefit'], [], 'the roll wrote no morning card');
+  const alt = r1.morning.cards[1].i, other = [3, 4, 5].find((i) => i !== alt && i !== r1.morning.cards[0].i);
+  const r2 = dt.roll(Object.assign({ d100: '45' }, BASE), { seed: 5, mem: { 'morning.benefit': [alt] } });
+  assert.equal(r2.morning.cards[1].i, other, 'a card the guard has seen comes after the fresh one');
+  const m = {};
+  assert.equal(dt.remember(r1, m), true); assert.deepEqual(m['morning.benefit'].sort(), [r1.morning.cards[0].i, alt].sort(), 'remember(): both cards');
+  assert.equal(dt.remember(r1, m), false, 'not twice');
+  assert.equal(dt.remember(dt.roll(BASE, { seed: 5 }), m), false, 'no d100: nothing to remember');
+  for (let i = 0; i < 20; i++) dt.remember({ morning: { table: 'benefit', n: 1, size: 8, cards: [{ i }] } }, m);
+  assert.equal(m['morning.benefit'].length, 4, 'the window is half the table');
+  assert.equal(dt.remember(r1), true); assert.ok(Array.isArray(dt.mem()['morning.benefit']), 'with no memory given: the instance\'s');
+});
+
+await test('a Mishap names its cost: the book\'s mechanical line beside it (in our words); Tapped brings a new source from the book', () => {
+  const dt = mk({ vices: CT.VICES, pack: MORN });
+  const at = (d) => dt.roll(Object.assign({ res: 'over', d100: d }, BASE), { seed: 3, mem: {} }).morning.cards[0];
+  const want = { 10: 'trouble', 30: 'decision', 40: 'lost', 60: 'brag', 80: 'brawl', 99: 'tapped' };
+  for (const [d, id] of Object.entries(want)) {
+    const c = at(d), o = T.over.find((x) => x.id === id);
+    assert.deepEqual([c.cost.id, c.cost.title], [id, o.title], d + ': ' + id);
+    if (id === 'brag') assert.match(c.cost.mech, /\+2 heat/);
+    if (id === 'decision') assert.match(c.cost.mech, /ticks a clock of their choice/);
+    if (id === 'brawl') assert.match(c.cost.mech, /−1 status with their faction, or mark level 2 harm/);
+    if (id === 'trouble') assert.ok(!/entanglement/.test(c.cost.mech) && /Crew or Local Trouble/.test(c.cost.mech), '\'68 has no entanglements: ' + c.cost.mech);
+    if (id === 'lost') assert.match(c.cost.mech, /harm healed/);
+    if (id === 'tapped') {
+      assert.match(c.cost.mech, /^Vesper cuts you off/);
+      const book = CT.VICES.find((v) => v.name === 'Gambling').purveyors;
+      assert.ok(book.includes(c.source) && !/^Vesper/.test(c.source), 'a new source from the book, never the old one: ' + c.source);
+    } else assert.equal(c.source, '', 'a new source only for Tapped');
+  }
+  const line = dt.roll(Object.assign({ res: 'over', d100: '99', keep: 'roll' }, BASE), { seed: 3, mem: {} }).lines[1];
+  assert.ok(line.md.startsWith('**Mishap 86–00 · The door.** ') && /\*Cost:\* Tapped\. Vesper cuts you off/.test(line.small) && /A new source to find: /.test(line.small), JSON.stringify(line));
+  assert.equal(at('10').cost.id, 'trouble', 'the cost is read off the first bold words when the pack gives none');
+  assert.equal(mk({ pack: { mishap: [ent(1, 100, 'X', 'Odd', 'Odd. **Who knows.**', '', 'brag')] } }).roll({ act: 'indulge', res: 'over', d100: '5' }, { seed: 1 }).morning.cards[0].cost.id, 'brag', 'or given outright');
+  assert.equal(mk({ pack: { mishap: [ent(1, 100, 'X', 'Odd', 'Odd. **Who knows.**', '')] } }).roll({ act: 'indulge', res: 'over', d100: '5' }, { seed: 1 }).morning.cards[0].cost, null, 'none named: no cost line');
+  assert.equal(dt.roll(Object.assign({ d100: '60' }, BASE), { seed: 3 }).morning.cards[0].cost, null, 'a Benefit has no cost');
+});
+
+await test('no table in the pack: one line that says where the tables are; a malformed entry is left out', () => {
+  const bare = mk({ vices: CT.VICES }).roll(Object.assign({ res: 'over', d100: '50' }, BASE), { seed: 31, mem: {} });
+  assert.deepEqual([bare.morning.has, bare.morning.n, bare.morning.cards.length], [false, 0, 0]);
+  assert.deepEqual(morningIds(bare), ['morning']);
+  assert.match(bare.lines[1].md, /^\*\*A Mishap\.\*\* Roll a d100 on the table in the vault/);
+  assert.match(bare.lines[1].small, /no Mishaps yet/);
+  const onlyBen = mk({ pack: { benefit: BEN } }).roll({ act: 'indulge', res: 'over', d100: '50' }, { seed: 1 });
+  assert.equal(onlyBen.morning.has, false, 'Benefits but no Mishaps: the Mishaps say where they are');
+  const junk = [7, null, 'x', { lo: 0, hi: 5, title: 'T', md: 'M' }, { lo: 5, hi: 101, title: 'T', md: 'M' }, { lo: 9, hi: 3, title: 'T', md: 'M' }, { lo: 1, hi: 5, title: '', md: 'M' }, { lo: 1, hi: 5, title: 'T', md: ' ' }];
+  assert.equal(mk({ pack: { benefit: junk } }).roll({ act: 'indulge', d100: '3' }, { seed: 1 }).morning.has, false, 'only malformed entries: no table');
+  assert.equal(mk({ pack: { benefit: junk.concat([ent(1, 100, '', 'Good', 'Good. *"y"*', '')]) } }).roll({ act: 'indulge', d100: '3' }, { seed: 1 }).morning.cards.map((c) => c.title).join(), 'Good', 'the good one is kept, and a table of one deals no second card');
 });
 
 await test('indulge: the sheet\'s vice and purveyor; curly or straight apostrophes; an unknown vice is drawn; no purveyor gets a stock one', () => {
@@ -224,7 +284,8 @@ await test('no rules text in the tables (no page references), prompts short enou
   const mod = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'downtime.js'), 'utf8');
   for (const d of T.districts) assert.ok(!new RegExp('\\b' + d.replace(/^the /, '') + '\\b').test(mod), 'the module names no district: ' + d);
   for (const k of Object.keys(X.PLACES)) assert.ok(!mod.includes(X.PLACES[k][0].replace(/^the /, '')) || /^your family$/.test(X.PLACES[k][0]), 'the module names no purveyor: ' + X.PLACES[k][0]);
-  for (const v of Object.values(T.vice)) for (const k of ['lead', 'hook']) for (const t of v[k]) assert.ok(t.length <= 160, 'short enough to read at a glance: ' + t);
+  for (const v of Object.values(T.vice)) for (const k of ['lead', 'hook']) for (const t of v[k]) assert.ok(t.length <= 200, 'short enough to read at a glance: ' + t);
+  for (const v of Object.values(T.vice)) for (const t of v.lead) assert.match(t, /\*"[^"]+"\*$/, 'every night ends on the line someone says to the PC: ' + t);
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
