@@ -116,7 +116,17 @@
   var lastSync = null;         /* ISO time of the last successful poll or flushed write */
   var queue = [];              /* own writes not yet accepted by the server, oldest first */
   var sentStatus = null;
-  function status() { return { online: mode === 'online' && net, pending: queue.length, lastSync: lastSync }; }
+  var newBuild = null;         /* the server's build (X-B68-Build on every API answer, `build` in /api/me) when it differs from this page's */
+  function status() { return { online: mode === 'online' && net, pending: queue.length, lastSync: lastSync, newBuild: newBuild }; }
+  /* the page's build is routes.js's B68_BUILD; when the server reports another one a deploy happened while this page was
+     open, and the header offers "Updated: reload" (boot.js whoami). Unknown on this side: nothing to say. An answer
+     without the header (Access's sign-in page, a redirect) says nothing about the build and changes nothing. */
+  function noteBuild(server) {
+    if (typeof server !== 'string' || !server) return;
+    var mine = typeof window.B68_BUILD === 'string' ? window.B68_BUILD : '';
+    var next = mine && server !== mine ? server.slice(0, 40) : null;
+    if (next !== newBuild) { newBuild = next; emitStatus(); }
+  }
   function emitStatus() {
     var s = status(), j = JSON.stringify(s);
     if (window.B68Runtime) window.B68Runtime.status = s;
@@ -161,6 +171,7 @@
     if (ctl) timer = setTimeout(function () { timedOut = true; try { ctl.abort(); } catch (e) {} }, limit);
     return Promise.resolve(sent).then(function (res) {
       setNet(true);
+      noteBuild(res.headers && res.headers.get ? res.headers.get('x-b68-build') : null);
       var ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
       if (res.status === 401 || res.redirected || res.type === 'opaqueredirect' || ct.indexOf('json') < 0) {
         var out = function (why) {
@@ -191,6 +202,7 @@
   function loadMe() {
     if (!meP) meP = api('GET', '/me').then(function (m) {
       if (!m || !m.id) return null;
+      if (typeof m.build === 'string') noteBuild(m.build);
       me = m; mode = 'online';
       writeJSON(LAST, { key: userKey(m), id: m.id });
       restore(m, null);
@@ -1144,7 +1156,8 @@
     }
     var nav = window.navigator;
     if (!nav || !nav.serviceWorker || typeof nav.serviceWorker.register !== 'function') return;
-    var register = function () { try { nav.serviceWorker.register('sw.js', { scope: './' }).catch(function () {}); } catch (e) {} };
+    /* updateViaCache 'none': sw.js imports routes.js (the build stamp), and the update check must fetch that import fresh too */
+    var register = function () { try { nav.serviceWorker.register('sw.js', { scope: './', updateViaCache: 'none' }).catch(function () {}); } catch (e) {} };
     if (d.readyState === 'complete' || typeof window.addEventListener !== 'function') register();
     else window.addEventListener('load', register);
   })();

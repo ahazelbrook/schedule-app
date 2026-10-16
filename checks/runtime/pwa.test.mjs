@@ -36,7 +36,7 @@ await test('manifest: valid JSON with the install fields, and every icon exists 
 const SW = fs.readFileSync(path.join(APP, 'sw.js'), 'utf8');
 const ORIGIN = 'https://b68.test';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-function worker() {
+function worker(opts = {}) {
   /* net.slow[url]: that fetch answers only when the test resolves net.pending[url] (a stalled connection) */
   const handlers = {}, store = {}, net = { down: false, answers: {}, log: [], slow: {}, pending: {} };
   const caches = {
@@ -69,7 +69,15 @@ function worker() {
   const timers = [];
   const ctx = { self, caches, fetch, Request, URL, Promise, console,
     setTimeout: (fn, ms) => { const t = { fn, ms, done: false }; timers.push(t); return t; },
-    clearTimeout: (t) => { if (t) t.done = true; } };
+    clearTimeout: (t) => { if (t) t.done = true; },
+    /* importScripts('routes.js'): the real file (or opts.routes, the source to use instead; null: the import fails), run in
+       this scope (self.B68_BUILD, self.B68Load) */
+    importScripts: (...names) => {
+      for (const n of names) {
+        if (n === 'routes.js' && opts.routes === null) throw new Error('NetworkError: routes.js could not be fetched');
+        vm.runInContext(n === 'routes.js' && opts.routes ? opts.routes : fs.readFileSync(path.join(APP, n), 'utf8'), ctx, { filename: n });
+      }
+    } };
   const tick = () => { timers.forEach((t) => { if (!t.done) { t.done = true; t.fn(); } }); };
   vm.createContext(ctx);
   vm.runInContext(SW, ctx, { filename: 'sw.js' });
@@ -87,16 +95,130 @@ function worker() {
   return { self, caches, net, res, dispatch, get, timers, tick, SHELL: ctx.SHELL || vm.runInContext('SHELL', ctx), CACHE: vm.runInContext('CACHE', ctx) };
 }
 
-await test('sw: the precache list covers every local file index.html loads, and they all exist', async () => {
-  const w = worker();
-  const html = fs.readFileSync(path.join(APP, 'index.html'), 'utf8');
+/* ---------- routes.js (B68_BUILD, B68Load) ---------- */
+const ROUTES = fs.readFileSync(path.join(APP, 'routes.js'), 'utf8');
+const STAMP = '2026-10-16-abc1234';
+const stamped = (src = ROUTES) => src.replace(/^(\s*var BUILD = )'dev';/m, "$1'" + STAMP + "';");
+/* a <head> holding index.html's stylesheet links and its inline <style>; elements added later record their order */
+function fakeDoc(links) {
+  const head = { children: [] };
+  const at = (el) => head.children.indexOf(el);
+  const mk = (tag) => {
+    const el = { tagName: tag.toUpperCase(), parentNode: null, getAttribute(k) { return this[k] == null ? null : String(this[k]); } };
+    Object.defineProperty(el, 'nextSibling', { get() { const i = at(el); return i < 0 ? null : head.children[i + 1] || null; } });
+    return el;
+  };
+  head.appendChild = (el) => { el.parentNode = head; head.children.push(el); return el; };
+  head.insertBefore = (el, ref) => { el.parentNode = head; const i = ref ? at(ref) : -1; if (i < 0) head.children.push(el); else head.children.splice(i, 0, el); return el; };
+  head.removeChild = (el) => { head.children.splice(at(el), 1); el.parentNode = null; return el; };
+  for (const f of links) { const l = mk('link'); l.rel = 'stylesheet'; l.href = f; head.appendChild(l); }
+  head.appendChild(mk('style'));
+  const doc = { head, createElement: mk, querySelectorAll: (sel) => (sel === 'link[rel="stylesheet"]' ? head.children.filter((e) => e.tagName === 'LINK' && e.rel === 'stylesheet') : []) };
+  const name = (e) => (e.tagName === 'STYLE' ? '<style>' : String(e.href || e.src));
+  doc.order = () => head.children.map(name);
+  doc.added = () => head.children.filter((e) => e.onload);
+  doc.settle = (fail = []) => { for (const e of doc.added()) if (!e.settled) { e.settled = true; (fail.some((f) => name(e).startsWith(f)) ? e.onerror : e.onload)(); } };
+  return doc;
+}
+/* routes.js run as the page runs it (a window; with a document when given) */
+function routes(src = ROUTES, doc) {
+  const ctx = { window: { document: doc } }; vm.createContext(ctx);
+  vm.runInContext(src, ctx, { filename: 'routes.js' });
+  return ctx.window;
+}
+const HTML = fs.readFileSync(path.join(APP, 'index.html'), 'utf8');
+/* index.html's own <link rel=stylesheet> and <script src> tags, in document order */
+const htmlTags = () => [...HTML.matchAll(/<link rel="stylesheet" href="([^"]+)">|<script src="([^"]+)"><\/script>/g)].map((m) => m[1] || m[2]);
+
+await test('routes.js: index.html loads exactly the core bundle; every other bundle file is lazy, exists and is a script or a stylesheet; one cascade order for every stylesheet', async () => {
+  const W = routes(), L = W.B68Load;
+  ok(L && typeof L.need === 'function' && typeof L.files === 'function', 'routes.js defines B68Load');
+  eq(W.B68_BUILD, 'dev', "the committed build is 'dev' (scripts/deploy.sh stamps it for the upload)");
+  eq(Object.keys(L.BUNDLES), ['core', 'table', 'print', 'gm', 'display'], 'the bundles');
+  eq(htmlTags(), L.BUNDLES.core, "index.html's stylesheet and script tags are BUNDLES.core, in order");
+  const core = new Set(L.BUNDLES.core);
+  for (const [name, list] of Object.entries(L.BUNDLES)) {
+    ok(list.length && new Set(list).size === list.length, 'bundle ' + name + ' is a list without repeats');
+    for (const f of list) {
+      ok(/\.(js|css)$/.test(f) && fs.existsSync(path.join(APP, f)), name + ': ' + f + ' exists and is a script or a stylesheet');
+      if (name !== 'core') ok(!core.has(f), name + ': ' + f + ' is in the core too (loaded twice)');
+    }
+  }
+  for (const f of ['gm-page.js', 'gm/console.js', 'display-page.js', 'stt.js', 'maps/map-kit.js', 'campaign.js', 'season.js']) ok(!core.has(f) && !HTML.includes('"' + f + '"'), f + ' is lazy, not in index.html');
+  eq(L.BUNDLES.print, L.BUNDLES.table, "#print and #t need the same files (the table's print button calls B68Season)");
+  // the scripts ran in this order when index.html loaded them all, and some register with another as they run
+  // (crewsheet.js with B68Campaign): every bundle keeps it
+  const OLD = ['figures/figure-kit.js', 'figures/cast.js', 'maps/map-kit.js', 'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'schedule.js',
+    'campaign.js', 'crews.js', 'crewsheet.js', 'season.js', 'markdown.js', 'rules.js', 'cast-page.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js',
+    'gm/engagement.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm-page.js', 'stt.js', 'display-page.js', 'name-edit.js', 'runtime/cf.js', 'boot.js'];
+  for (const [name, list] of Object.entries(L.BUNDLES)) {
+    const known = list.filter((f) => OLD.includes(f));
+    eq(known, [...known].sort((a, b) => OLD.indexOf(a) - OLD.indexOf(b)), 'bundle ' + name + ' keeps the scripts in their index.html order');
+  }
+  const css = L.files().filter((f) => f.endsWith('.css'));
+  eq(css.filter((f) => !L.CSS_ORDER.includes(f)), [], 'a stylesheet with no place in CSS_ORDER');
+  eq(L.CSS_ORDER.filter((f) => !css.includes(f)), [], 'CSS_ORDER names a stylesheet no bundle has');
+  const coreCss = L.BUNDLES.core.filter((f) => f.endsWith('.css'));
+  eq(coreCss, L.CSS_ORDER.filter((f) => coreCss.includes(f)), "index.html's stylesheets follow CSS_ORDER");
+});
+
+await test('routes.js: need() adds each file once, scripts in order (async off), stylesheets at their cascade place before the inline style; resolves when all have loaded; the core needs nothing', async () => {
+  const doc = fakeDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load;
+  eq(await L.need('core'), 'core', 'the core is already in'); eq(doc.added().length, 0, 'nothing added for the core');
+  ok(L.done('core') && !L.done('table'), 'done(): core yes, table not yet');
+  let settled = null;
+  const p = L.need('table').then((v) => { settled = v; });
+  await sleep(1);
+  eq(settled, null, 'pending until every file has loaded');
+  eq(doc.order(), ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', '<style>', 'campaign.js', 'crews.js', 'crewsheet.js', 'season.js'],
+    "stylesheets where index.html had them (before the inline style), scripts after, in the bundle's order");
+  ok(doc.added().filter((e) => e.tagName === 'SCRIPT').every((e) => e.async === false), 'scripts run in insertion order (async false)');
+  const again = L.need('print');
+  doc.settle(); await p;
+  eq([settled, await again, L.done('table'), L.done('print')], ['table', 'print', true, true], 'resolved; #print needed nothing more');
+  eq(doc.added().length, 7, 'each file added once');
+  const gm = L.need('gm');
+  eq(doc.order().slice(0, 10), ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', '<style>'], 'the GM stylesheets after the cast, still before the inline style');
+  eq(doc.order().slice(14), ['maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/engagement.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm-page.js'], 'gm/*.js before gm-page.js');
+  doc.settle(['gm/npc.js']);
+  let err = null; try { await gm; } catch (e) { err = e; }
+  eq(err && err.message, 'could not load gm/npc.js', 'a file that fails rejects the bundle');
+  ok(!doc.order().includes('gm/npc.js') && !L.done('gm'), 'the failed tag is removed; the bundle is not done');
+  const retry = L.need('gm');
+  eq(doc.order().filter((f) => f === 'gm/npc.js').length + doc.order().filter((f) => f === 'gm-page.js').length, 2, 'a retry adds only the file that failed');
+  doc.settle(); eq(await retry, 'gm', 'the retry loads it'); ok(L.done('gm'), 'done');
+  let unknown = null; try { await L.need('nope'); } catch (e) { unknown = e.message; }
+  eq(unknown, 'unknown bundle: nope', 'an unknown bundle rejects');
+  let noDoc = null; try { await routes(ROUTES, undefined).B68Load.need('gm'); } catch (e) { noDoc = e.message; }
+  eq(noDoc, 'no document to load gm.css into', 'no document (the service worker): rejects');
+});
+
+await test('routes.js: an unstamped build (the repository, the artifact, file://) asks for the plain files; a stamped one adds ?v=<build>', async () => {
+  const dev = routes().B68Load;
+  eq([dev.url('gm-page.js'), dev.url('gm.css')], ['gm-page.js', 'gm.css'], 'dev: the paths the static tags always used');
+  const doc = fakeDoc(['tracker.css']);
+  const W = routes(stamped(), doc);
+  eq(W.B68_BUILD, STAMP, 'the stamp is B68_BUILD');
+  W.B68Load.need('display');
+  eq(doc.order(), ['tracker.css', 'display.css?v=' + STAMP, '<style>', 'stt.js?v=' + STAMP, 'display-page.js?v=' + STAMP], 'a stamped build versions every bundle URL');
+});
+
+await test('sw: the precache list is the page, the fonts and install files, and every bundle file (the core first); all exist; the cache is named after the build', async () => {
+  const w = worker(), L = routes().B68Load;
   const refs = new Set();
-  for (const m of html.matchAll(/(?:src|href)="([^"#:]+)"/g)) refs.add(m[1]);
-  for (const m of html.matchAll(/url\("?((?!data:)[^")]+)"?\)/g)) refs.add(m[1]);
-  const missing = [...refs].filter((r) => /^[\w./-]+\.\w+$/.test(r) && !w.SHELL.includes(r));
-  eq(missing, [], 'in index.html but not in SHELL (app/sw.js)');
+  for (const m of HTML.matchAll(/(?:src|href)="([^"#:]+)"/g)) refs.add(m[1]);
+  for (const m of HTML.matchAll(/url\("?((?!data:)[^")]+)"?\)/g)) refs.add(m[1]);
+  eq([...refs].filter((r) => /^[\w./-]+\.\w+$/.test(r) && !w.SHELL.includes(r)), [], 'in index.html but not in SHELL (app/sw.js)');
+  eq(L.files().filter((f) => !w.SHELL.includes(f)), [], 'in a bundle (routes.js) but not in SHELL: that route would not work offline');
+  eq(w.SHELL.filter((f) => f.endsWith('.js') || f.endsWith('.css')), L.files(), 'every script and stylesheet SHELL holds comes from routes.js, the core first');
+  eq(new Set(w.SHELL).size, w.SHELL.length, 'no file twice');
   for (const f of w.SHELL) if (f !== './') ok(fs.existsSync(path.join(APP, f)), 'SHELL names a missing file: ' + f);
-  ok(w.SHELL.includes('./'), 'the page itself');
+  ok(w.SHELL[0] === './' && w.SHELL.includes('routes.js'), 'the page itself, and routes.js');
+  eq(w.CACHE, 'b68-shell-dev', "the cache is named after routes.js B68_BUILD ('dev' in the repository)");
+  eq(worker({ routes: stamped() }).CACHE, 'b68-shell-' + STAMP, 'a stamped build is a new cache (the next activation drops the old one)');
+  let threw = null; try { worker({ routes: null }); } catch (e) { threw = e.message; }
+  ok(/routes\.js could not be fetched/.test(threw || ''), 'a worker that cannot import routes.js fails to install (the previous one keeps serving): ' + threw);
 });
 
 await test('sw: install precaches the shell (page under the scope URL), skips waiting; activate drops old caches and claims', async () => {
@@ -219,7 +341,7 @@ await test('cf.js: injects the manifest (with credentials), theme colour, icons,
   eq(by('meta', 'name', 'theme-color').attrs.content, '#14110e', 'theme colour');
   eq(by('link', 'rel', 'apple-touch-icon').attrs.href, 'icons/apple-touch-icon.png', 'apple-touch-icon');
   eq([by('meta', 'name', 'apple-mobile-web-app-capable').attrs.content, by('meta', 'name', 'apple-mobile-web-app-title').attrs.content], ['yes', "Blades '68"]);
-  eq(p.regs, [['sw.js', { scope: './' }]], 'service worker registration');
+  eq(p.regs, [['sw.js', { scope: './', updateViaCache: 'none' }]], 'service worker registration (updateViaCache none: sw.js imports routes.js, which must be fetched fresh on an update check)');
   for (const opts of [{ preset: { use() {} } }, { protocol: 'file:' }]) {
     const q = page(opts); eq([q.added.length, q.regs.length], [0, 0], 'inert: ' + JSON.stringify(opts));
   }

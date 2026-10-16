@@ -39,6 +39,7 @@ app/                 the page (the Worker's static assets; app/.assetsignore kee
   maps/              the vendored map kit (B68Map): a location roll drawn as a rings, plan, iso or section SVG
   fonts/ icons/      vendored fonts; install icons
   runtime/cf.js      the hosted build's window.claude adapter
+  routes.js          the build stamp (B68_BUILD) and the route bundles the page fetches on first use (table, print, gm, display)
   sw.js, manifest.webmanifest   offline and install (hosted build only)
   checks/            Playwright page checks (file://, with a stubbed window.claude)
 worker/              the Worker: routes /api/* to functions/, serves the page with its doctype and viewport

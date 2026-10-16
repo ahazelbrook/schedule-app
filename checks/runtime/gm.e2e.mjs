@@ -107,6 +107,32 @@ try {
   const cardText = (page) => page.$eval('#gm-card .gm-card', (c) => c.textContent).catch(() => '');
   const gmState = async () => (await api('GET', '/gm/state', GM)).json.doc;
 
+  /* ---- lazy bundles (app/routes.js): Home asks for the core only; the GM's files come with #gm, in order ---- */
+  {
+    const scripts = (asked) => asked.filter((f) => /\.(js|css)$/.test(f));
+    const LAZY = ['gm-page.js', 'gm/console.js', 'gm.css', 'maps/map-kit.js', 'display-page.js', 'stt.js', 'campaign.js', 'crewsheet.js', 'season.js'];
+    for (const user of [GM, PLAYER]) {
+      const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, serviceWorkers: 'block' });
+      const page = await c.newPage(), asked = [];
+      page.on('request', (r) => { const u = new URL(r.url()); if (u.origin === BASE) asked.push(u.pathname.slice(1)); });
+      page.on('pageerror', (e) => errors.push(user + ' lazy pageerror: ' + e.message));
+      await page.goto(BASE + '/#');
+      await page.waitForFunction(() => window.B68Runtime && window.B68Runtime.me && document.querySelector('#home'), null, { timeout: 30000 });
+      await sleep(1500);
+      const who = user === GM ? 'GM' : 'player';
+      check(scripts(asked).includes('boot.js') && scripts(asked).includes('routes.js'), who + ' Home: the core loaded (' + scripts(asked).length + ' files)');
+      check(!LAZY.some((f) => asked.includes(f)), who + ' Home: no GM, display or table file was fetched: ' + LAZY.filter((f) => asked.includes(f)).join(', '));
+      if (user === GM) {
+        await page.evaluate(() => { location.hash = '#gm'; });
+        check(await page.waitForSelector('#gm-file', { state: 'attached', timeout: 20000 }).then(() => true, () => false), 'GM: #gm fetches its bundle and draws (the import screen: no pack yet)');
+        const at = (f) => asked.indexOf(f);
+        check(at('gm/console.js') > 0 && at('gm/console.js') < at('gm-page.js') && at('maps/map-kit.js') > 0 && at('gm.css') > 0, 'GM: the bundle came in its order (gm/console.js before gm-page.js), map kit and stylesheet included');
+        check(await page.evaluate(() => { const l = [...document.querySelectorAll('link[rel="stylesheet"]')].map((x) => x.getAttribute('href')); return l.indexOf('gm.css') > l.indexOf('cast.css') && !!document.querySelector('link[href="gm.css"] ~ style'); }), 'GM: gm.css went in after cast.css and before the inline style (the cascade index.html had)');
+      }
+      await c.close();
+    }
+  }
+
   /* ---- a player first: no GM button, "GM only", 403 from the API ---- */
   const P = await open(PLAYER, '#gm');
   check(await P.page.waitForSelector('#gm-page .gm-note', { timeout: 20000 }).then(() => true, () => false) && /GM only/.test(await P.page.textContent('#gm-page')), 'player: #gm says GM only');
@@ -403,6 +429,18 @@ try {
     await N.page.reload(); await N.page.waitForSelector('#home .hm-name', { timeout: 20000 });
     check(!/Rex Invented/.test(await N.page.textContent('#home .hm-name')), 'after a reload the cleared name stays cleared');
     await N.ctx.close();
+  }
+
+  /* ---- a player's sign-in on a browser that holds only the pack's database (no sticky copy) purges it too: the GM bundle,
+     which holds the purge, is fetched for it (boot.js purgeGm) ---- */
+  {
+    const D = await open(PLAYER, '#');
+    await D.page.evaluate(() => new Promise((res) => { const r = indexedDB.open('b68-gm', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => { const tx = r.result.transaction('kv', 'readwrite'); tx.objectStore('kv').put({ parts: {} }, 'pack:gm@example.test'); tx.oncomplete = () => { r.result.close(); res(); }; }; }));
+    const asked = []; D.page.on('request', (r) => asked.push(new URL(r.url()).pathname.slice(1)));
+    await D.page.reload(); await D.page.waitForFunction(() => window.B68Runtime && window.B68Runtime.me, null, { timeout: 20000 });
+    const gone = await until(async () => { const k = await D.page.evaluate(() => new Promise((res) => { const r = indexedDB.open('b68-gm'); r.onsuccess = () => { try { const q = r.result.transaction('kv').objectStore('kv').getAllKeys(); q.onsuccess = () => res(q.result); } catch (e) { res([]); } }; r.onerror = () => res(null); })); return Array.isArray(k) && k.length === 0 ? k : null; }, 8000);
+    check(!!gone && asked.includes('gm-page.js'), 'a player with only the pack database: the GM bundle is fetched and the pack:* key purged');
+    await D.ctx.close();
   }
 
   /* ---- a player's sign-in on a browser that holds a GM pack purges it ---- */
