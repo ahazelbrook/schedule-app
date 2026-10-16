@@ -12,14 +12,31 @@ wave-1 merge. Everything merges only with the checks green (`npm test`, the e2e 
 
 ## Wave 1 (in progress)
 
-### 0. The iPad display: reported bugs (branch: ambient)
+### 0. The iPad display: reported bugs (branch: ambient) · MERGED 16 Oct (9a356eb)
 
-- [ ] P1 · The planning-meeting scene lags on the iPad (3.1 MB svg, 550 motion groups, 8 filters / 12 feTurbulence, a
+- [x] P1 · The planning-meeting scene lags on the iPad (3.1 MB svg, 550 motion groups, 8 filters / 12 feTurbulence, a
       24 fps loop rewriting transforms). Fix in the generator (tools/ambient), regenerate. · M
-- [ ] P1 · The opening-credits theme is silent on the iPad (file missing on the server / audio unlock / WebAudio and the
+- [x] P1 · The opening-credits theme is silent on the iPad (file missing on the server / audio unlock / WebAudio and the
       mute switch). Diagnose, fix, and make the display SAY which it is. · S-M
-- [ ] P1 · Figures' heads sometimes disappear (the motion merge leaves a frame with no version of a part, or a clip path
+- [x] P1 · Figures' heads sometimes disappear (the motion merge leaves a frame with no version of a part, or a clip path
       inside a hidden group that WebKit will not resolve). Fix in motion.js, regenerate, prove with a frame walk. · M
+
+What was wrong, and what changed (measured in WebKit, the iPad's engine, since Chromium hides two of the three):
+- **Lag.** Every cut (a figure changing pose) re-rendered the whole figure's grain filter (feTurbulence) on the main
+  thread, `display:none` frames rebuilt their filters when shown, and the smoke repainted Alfie every tick. Now the
+  figure grain is a small baked tile, hidden frames use `visibility:hidden`, and the scene is four composited layers
+  like the tram. Whole scene: 531 → 209 ms CPU per second; a cut 236 → 90 ms; painting per tick 5.5 → 0.6 ms.
+- **Heads.** 8 of the 11 scenes with moving figures had duplicate ids inside their figures (85 in the meeting: three
+  hair masks sharing one id; the head clip was the union of all five head shapes). WebKit and Chromium resolve
+  duplicates differently, so ears and shading went wrong or vanished on the iPad only. motion.js now gives every
+  version its own id and refuses to build unless each frame extracted from the merged figure equals its own render;
+  `checks/runtime/ambient-frames.test.mjs` walks every figure and frame (in `check:ambient` and `check:runtime`).
+- **Theme.** It played through Web Audio, which the iPad's silent switch mutes; the unlock listened for pointerdown,
+  which iOS does not count as a tap; and theme.mp3 is gitignored, so a deploy from another checkout ships none. Now one
+  `<audio>` element, `play()` inside the tap, the corner of the iPad and the GM page's iPad panel say when the file is
+  not on the server, and "Tap for sound" shows while the credits wait.
+Not provable here: the real frame rate on the iPad, audio unlock with a finger and the silent switch. Check both at
+the next session: pin the planning meeting for a minute, then pin the credits and tap once.
 
 ### 1. The GM page: quick access (branch: gm-page) · MERGED 16 Oct (f8c9d5f)
 
@@ -240,7 +257,7 @@ Everything is on GitHub, nothing lives only in a container.
   agents restarted on Opus/Sonnet from where each stopped (the players' work split in two):
   | branch | holds |
   |---|---|
-  | `review/ambient` | section 0, the three iPad bugs |
+  | `review/ambient` | section 0, the three iPad bugs · MERGED |
   | `review/generators` | section 2, the pure generator modules |
   | `review/gm-page` | section 1, the GM page (Classic removed; A7 and A11 last) |
   | `review/players` | section 3, the phone sheet: the mark strip and resist helper, the first screen, the cast banner |
