@@ -7,9 +7,12 @@
 //
 // Part body:
 //   { v: 1, vault: <vault folder name, for obsidian:// links>,
-//     notes: [{ id, rel, title, session, date, status, blocks: [{ k: 'md' | 'embed', from, heading?, src, tasks: [{ a, t, d }] }] }],
+//     notes: [{ id, rel, title, session, date, status, blocks: [{ k: 'md' | 'embed', from, heading?, score?, src, tasks: [{ a, t, d }] }] }],
 //     links: { <page, lower case>: { k: 'npc' | 'pc' | 'faction' | 'note' | 'vault', rel, name } } }
 //   A task is { a: anchor or null (not tickable: the renderer and the line scan disagreed), t: its text, d: ticked in the note }.
+//   `score` marks an embedded score card (tagged wiki/b68-score, or kept in a Scores/ folder): { key: its file name, label:
+//   the heading just above the embed ("F · The goose job"), site: the card's site_target / site_district / site_approach /
+//   site_faction properties, those it has }. The GM page saves a location roll against `key` (GM.md, "Score sites").
 // Nothing is dropped from a note: a transclusion that does not resolve stays as its line (shown as a link), with a warning.
 
 import fs from 'node:fs';
@@ -47,6 +50,21 @@ function walkMd(dir, out = []) {
 }
 const truthy = (v) => v === true || /^(true|yes|1)$/i.test(String(Array.isArray(v) ? v[0] : v == null ? '' : v).trim());
 const one = (v) => (Array.isArray(v) ? v[0] : v) == null ? '' : String(Array.isArray(v) ? v[0] : v);
+
+export const SCORE_TAG = 'wiki/b68-score';
+/** The site hints a score card may carry (GM.md, "Score sites"): property -> the Location picker it sets. */
+export const SITE_KEYS = { site_target: 'target', site_district: 'district', site_approach: 'approach', site_faction: 'faction' };
+const tagList = (v) => (Array.isArray(v) ? v : v == null ? [] : String(v).split(/[\s,]+/)).map((t) => String(t).trim().replace(/^#/, '').toLowerCase()).filter(Boolean);
+/** Is the note a score card? Its tags hold wiki/b68-score, or it sits in a Scores/ folder. */
+export function isScore(rel, fm) {
+  return tagList(fm && fm.tags).includes(SCORE_TAG) || /(^|\/)Scores\/[^/]+\.md$/i.test(rel);
+}
+/** The card's site hints, those it has: { target?, district?, approach?, faction? } (strings, trimmed, at most 80 characters). */
+export function siteHints(fm) {
+  const out = {};
+  for (const [k, key] of Object.entries(SITE_KEYS)) { const v = one(fm && fm[k]).trim().slice(0, 80); if (v) out[key] = v; }
+  return out;
+}
 
 /**
  * Build the part. opts: { vault, repo, exportedAt, basenames (Map lower-case basename -> [rel]), warn }.
@@ -91,10 +109,23 @@ export function buildPrep({ vault, repo, exportedAt, basenames, warn = () => {} 
     return Object.assign({ k, from: rel, src, tasks }, extra || {});
   }
 
+  /* an embedded score card: its key, the heading just above the embed as its label (when no other embed sits between them),
+     else the card's title, # heading or file name; and its site hints */
+  const fmOf = (rel) => { try { return M.parseFrontmatter(load(rel)).meta.raw || {}; } catch (_) { return {}; } };
+  function scoreMeta(target, hostScan, line, afterLine) {
+    const fm = fmOf(target);
+    if (!isScore(target, fm)) return null;
+    const key = path.posix.basename(target, '.md');
+    const h = hostScan.headings.filter((x) => x.line < line).pop(), h1 = scanOf(target).headings.find((x) => x.level === 1);
+    const label = (h && h.level >= 3 && h.line > afterLine ? h.text : '') || one(fm.title).trim() || (h1 ? h1.text : '') || key;
+    const site = siteHints(fm);
+    return Object.assign({ key, label: label.slice(0, 120) }, Object.keys(site).length ? { site } : {});
+  }
+
   const notes = [], ids = new Set();
   for (const { rel, fm } of chosen) {
     const scan = scanOf(rel), blocks = [];
-    let from = bodyStart(scan.lines);
+    let from = bodyStart(scan.lines), lastEmbed = -1;
     for (let i = from; i < scan.lines.length; i++) {
       const e = embedOf(scan.lines[i]);
       if (!e) continue;
@@ -104,7 +135,10 @@ export function buildPrep({ vault, repo, exportedAt, basenames, warn = () => {} 
       const sec = e.heading ? sectionOf(tscan, e.heading) : { start: bodyStart(tscan.lines), end: tscan.lines.length, text: '' };
       if (!sec) { warn('prep: a transclusion in ' + path.basename(rel) + ' (line ' + (i + 1) + ') names a heading that ' + path.basename(target) + ' does not have'); continue; }
       if (i > from) blocks.push(block('md', rel, from, i));
-      blocks.push(block('embed', target, sec.start, sec.end, { heading: sec.text }));
+      const extra = { heading: sec.text }, sc = scoreMeta(target, scan, i, lastEmbed);
+      if (sc) extra.score = sc;
+      blocks.push(block('embed', target, sec.start, sec.end, extra));
+      lastEmbed = i;
       from = i + 1;
     }
     if (from < scan.lines.length) blocks.push(block('md', rel, from, scan.lines.length));

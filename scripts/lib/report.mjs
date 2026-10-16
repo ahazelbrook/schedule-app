@@ -68,6 +68,16 @@ export function formatReport(r, o) {
   }
   const npcSkips = r.skipped.filter((x) => x.kind === 'npc' || x.kind === 'reveal' || x.kind === 'gmnotes');
   if (npcSkips.length) out.push('  skipped: ' + Object.entries(count(npcSkips, (x) => x.why)).map(([k, v]) => v + ' ' + k).join(' · '));
+  // score sites (lib/sync-sites.mjs): a location note and its map per site; the card's site: link
+  const sites = r.filed.filter((x) => x.kind === 'site' || x.kind === 'sitelink'), siteSkips = r.skipped.filter((x) => x.kind === 'site');
+  if (sites.length || siteSkips.length) {
+    out.push('', 'Score sites (app -> vault)');
+    for (const f of sites) {
+      if (f.kind === 'site') out.push('  ' + (o.dryRun ? 'would create ' : 'created ') + 'Locations/' + f.note + '.md and its map, the site for ' + f.id);
+      else out.push('  ' + (o.dryRun ? 'would link ' : 'linked ') + f.note + '.md to its site (site:)');
+    }
+    if (siteSkips.length) out.push('  skipped: ' + Object.entries(count(siteSkips, (x) => x.why)).map(([k, v]) => v + ' ' + k).join(' · '));
+  }
   if (r.conflicts.length) {
     out.push('', 'CONFLICTS (nothing overwritten on either side)');
     for (const c of r.conflicts) out.push('  ' + c.npc + ' ' + c.field + ': ' + c.why);

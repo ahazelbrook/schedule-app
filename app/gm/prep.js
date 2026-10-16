@@ -18,6 +18,9 @@
      section(part, noteId, secId, o)      the html of one section (for a pin in the rail), or ''
      link(href)                           { type: 'heading', id } | { type: 'top' } | { type: 'page', kind, key, frag } | null
      obsidianUri(part, rel)               obsidian://open?vault=…&file=…
+     scores(part)                         [{ key, label, site, rel }] every embedded score card once (the exporter's `score`),
+                                          in the notes' order; view() gives each its slot, <div class="pp-site" data-score>, which
+                                          the GM page fills with the site strip (GM.md, "Score sites")
      decorate(el, o)                      DOM: boxes, cells, beats, chips, SAY. o = { ticks, cells, beats, now }
      budget(text)                         minutes in "10 min", "35–40 min" (the upper end), or null
      hash(text)                           a short stable key (FNV-1a, hex) */
@@ -91,8 +94,9 @@
       if (!isObj(b)) return;
       var tasks = Array.isArray(b.tasks) ? b.tasks : [], st = { k: 0 };
       if (b.k === 'embed') {
-        html += '<section class="pp-embed" data-from="' + esc(b.from) + '"><header class="pp-embed-h"><span class="pp-from">From <b>' + esc(fileName(b.from)) + '</b></span>' +
-          '<a class="btn sm" href="' + esc(obsidianUri(part, b.from)) + '">Open in Obsidian</a></header>' + renderPiece(M, str(b.src), tasks, st, ro, 'pe' + bi + '--') + '</section>';
+        var sk = scoreOf(b) ? esc(b.score.key) : '';
+        html += '<section class="pp-embed" data-from="' + esc(b.from) + '"' + (sk ? ' data-score="' + sk + '"' : '') + '><header class="pp-embed-h"><span class="pp-from">From <b>' + esc(fileName(b.from)) + '</b></span>' +
+          '<a class="btn sm" href="' + esc(obsidianUri(part, b.from)) + '">Open in Obsidian</a></header>' + (sk ? '<div class="pp-site" data-score="' + sk + '"></div>' : '') + renderPiece(M, str(b.src), tasks, st, ro, 'pe' + bi + '--') + '</section>';
         return;
       }
       /* the note's own # title repeats the header above it: drop that one line (it holds no task box) */
@@ -112,6 +116,23 @@
     var head = '<header class="pp-head"><p class="gm-kick">Prep' + (o.exportedAt ? ' · exported ' + esc(o.exportedAt) : '') + '</p><h2 class="pp-title">' + esc(n.title) + '</h2>' +
       (meta ? '<p class="pp-meta">' + esc(meta) + '</p>' : '') + '<p class="pp-acts"><a class="btn sm" href="' + esc(obsidianUri(part, n.rel)) + '">Open in Obsidian</a></p></header>';
     return { html: head + html, rail: rail, secs: secs, note: n };
+  }
+
+  /* a block that is an embedded score card (the exporter's `score`, its key a plain file name) */
+  var KEY_RE = /^[^\u0000-\u001f"<>\\]{1,120}$/;
+  function scoreOf(b) { return isObj(b) && b.k === 'embed' && isObj(b.score) && KEY_RE.test(str(b.score.key)) ? b.score : null; }
+  function scores(part) {
+    var out = [], seen = {};
+    notesOf(part).forEach(function (n) {
+      (Array.isArray(n.blocks) ? n.blocks : []).forEach(function (b) {
+        var s = scoreOf(b); if (!s || seen[s.key]) return;
+        seen[s.key] = 1;
+        var site = {};
+        if (isObj(s.site)) ['target', 'district', 'approach', 'faction'].forEach(function (k) { if (str(s.site[k]).trim()) site[k] = str(s.site[k]).trim(); });
+        out.push({ key: str(s.key), label: str(s.label).trim() || str(s.key), site: site, rel: str(b.from) });
+      });
+    });
+    return out;
   }
 
   /* one section again, with its own boxes (a pin in the rail) */
@@ -201,5 +222,5 @@
     });
   }
 
-  return { notes: notes, view: view, section: section, link: link, obsidianUri: obsidianUri, decorate: decorate, budget: budget, hash: hash, cut: cut, slug: slug, norm: norm };
+  return { notes: notes, view: view, section: section, link: link, obsidianUri: obsidianUri, decorate: decorate, budget: budget, hash: hash, cut: cut, slug: slug, norm: norm, scores: scores };
 });

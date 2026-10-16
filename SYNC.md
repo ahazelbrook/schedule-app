@@ -13,7 +13,7 @@ npm run gm:push -- --yes     # ... and writes it
 npm run gm:sync              # both (pull, then push; push still needs --yes)
 
 node scripts/gm-sync.mjs [pull|push|both] [--dry-run] [--yes] [--vault <path>] [--campaign <id>]
-                         [--session <N>] [--baseline] [--only notes|npcs|pack] [--pack <file>] [--private <dir>]
+                         [--session <N>] [--baseline] [--only notes|npcs|pack|sites] [--pack <file>] [--private <dir>]
 ```
 
 Exit code 0: done. 1: something was refused or is in conflict (read the report). 2: stopped before writing (not logged
@@ -32,12 +32,20 @@ in, offline, no vault) or mid-push (what landed is in the ledger; run it again).
 | A task box ticked in the Prep tab (`prep.ticks`) | that box, in its own note: `- [ ]` becomes `- [x]` | one character; nothing else in the note changes | the ledger's `ticked`: a box the GM unticks by hand afterwards is not ticked again |
 | A tick whose box is gone (reworded, moved under another heading, or the same task twice) | the session note, `## At the table (app)` (added after Bargains, Pinned or Rolled at the table) | `- **HH:MM** Ticked at the table: text (not found in <note>) ^b68-tick-<anchor>` | the block id, as above |
 | A beat started, a tick-column cell ticked (`prep.beats`, `prep.cells`) | the same heading | `- **HH:MM** Beat started: label ^b68-beat-<key>`, `Ticked at the table: label ^b68-cell-<key>` | same |
+| A site saved against a score card (`sites[<key>]`, GM.md "Score sites") | a new `Locations/<Name>.md` and `Locations/<Name>.svg`; the score card's frontmatter | the vault location generator's Save format (replayed through `app/gm/location.js` from the site's seed, picks and memory and the local pack), with `score:` and `site_seed:` added, the map embedded under its title and a dated line under `## In play`; the map from `app/maps/map-kit.js`, GM layer, in the view and theme saved with the site; on the card one line, `site: "[[<Name>]]"`; one `Wiki/log.md` entry per run that files sites | a location note whose frontmatter has this score and this seed: then only the card's link is checked. The name is checked across the whole vault (any note, and any file of the map's name) -> `<Name> (location).md` |
 
 **Prep.** A tick only ever ticks: the sync never unticks a box, and a box already ticked in the note is left as it is. The
 box is found by its anchor (`scripts/lib/prep.mjs`): a hash of the note's path, the heading the task sits under, its text
 and how many identical tasks come before it under that heading, so it survives edits elsewhere and a renamed note title.
 It is never guessed onto another line. The notes a tick may edit are fixed in code (`assertPrepWritable`): the group
 campaign's folder and its `Sessions/`, never a transcript, the faction board, `Characters/` or `Clocks/`.
+
+**Score sites** (`scripts/lib/sync-sites.mjs`). A site saved again (another seed) gets a new location note and the card's
+`site:` moves to it; the old note and its map stay (nothing is deleted). A link removed by hand is put back while the site
+stands. The card is edited only in `Campaigns/Group/Scores/` (`assertSiteWritable`): a card elsewhere gets its location note
+and a refusal for the link. Refused, with nothing written: no card of that name in the vault; no local pack (the replay needs
+the location tables); **the replay gives another place than the one saved** (the location tables changed since: open the
+site in the app and save it again). `--only sites` runs just this.
 
 **Which session note.** A capture or pin carries `s`, the session number the page stamps on it: `s: 2` ->
 `b68g-s02.md` (or `b68g-s2.md`), `s: 1.5` -> `b68g-s1.5.md`. Entries without `s` (the table's counter was 0, or older
@@ -57,7 +65,8 @@ unchanged, rename over it (Obsidian saving mid-run: redo the edit on the fresh c
 own ending (CRLF, LF or mixed) and all Unicode are kept; only the inserted lines are new. New files are created with
 a hard link from the temp file, so an existing file is never replaced. Nothing is ever deleted from the vault. A
 second run with nothing new leaves every file byte-identical. Writable paths are fixed in code (`assertWritable`):
-session notes, `NPCs/*.md`, `Factions/*.md` (append), `Wiki/log.md` (append).
+session notes, `NPCs/*.md`, `Factions/*.md` (append), `Locations/*.md` and `*.svg` (created only), `Wiki/log.md` (append);
+plus the two narrow rules: a prep note's task box (`assertPrepWritable`) and a score card's `site:` line (`assertSiteWritable`).
 
 ## Push: vault -> D1 (only with `--yes`)
 
@@ -116,5 +125,7 @@ command-line limit, counting node's escaping), so a pack piece is about 13-25 KB
 | `scripts/lib/sync-npc.mjs` | pull and push: NPC cards and fields (optional: loaded only if present) |
 | `scripts/lib/sync-pack.mjs` | push: the pack (optional: loaded only if present) |
 | `scripts/lib/sync-prep.mjs`, `prep.mjs` | pull: the Prep tab's ticks, beats and cells (optional); the line scan and anchors it shares with the exporter |
+| `scripts/lib/sync-sites.mjs` | pull: the score sites, as location notes, their maps and the cards' `site:` (optional) |
 | `scripts/lib/ledger.mjs`, `report.mjs` | the ledger, the log, the printout |
 | `checks/runtime/gm-sync.test.mjs` | `node checks/runtime/gm-sync.test.mjs` |
+| `checks/runtime/gm-sites.test.mjs` | `node checks/runtime/gm-sites.test.mjs` (the score sites) |

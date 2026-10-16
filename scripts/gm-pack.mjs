@@ -766,7 +766,8 @@ function main() {
       ", owed " + c.owed.length + ", npcs " + c.npcs.length + ", names " + c.names.first.length + "/" + c.names.family.length + ", clocks " + c.clocks.length);
     const pr = parts.prep;
     console.log("  prep: " + (pr ? pr.notes.length + " note(s), " + pr.notes.reduce((n, x) => n + x.blocks.length, 0) + " blocks, " +
-      pr.notes.reduce((n, x) => n + x.blocks.reduce((m, b) => m + b.tasks.length, 0), 0) + " task boxes, " + Object.keys(pr.links).length + " linked pages" : "none (no note has gm_prep: true)"));
+      pr.notes.reduce((n, x) => n + x.blocks.reduce((m, b) => m + b.tasks.length, 0), 0) + " task boxes, " + Object.keys(pr.links).length + " linked pages, " +
+      new Set(pr.notes.flatMap((x) => x.blocks.filter((b) => b.score).map((b) => b.score.key))).size + " score cards (GM.md, Score sites)" : "none (no note has gm_prep: true)"));
     const sc = parts.screen;
     console.log("  screen: " + (sc ? sc.sections.length + " sections from " + path.basename(sc.rel) : "none (no note has gm_screen: true)"));
     const dp = parts.downtime;

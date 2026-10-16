@@ -14,10 +14,12 @@ export const SESSIONS = ROOT + '/Campaigns/Group/Sessions';
 export const NPCS = ROOT + '/NPCs';
 export const FIGURES = NPCS + '/figures';
 export const FACTIONS = ROOT + '/Factions';
+export const LOCATIONS = ROOT + '/Locations';                         // the location generator's saved sites (lib/sync-sites.mjs)
 export const LOG = 'Wiki/log.md';
 export const NEVER = [ROOT + '/Campaigns/Group/b68g-factions.md'];   // the board: Blade copies to it at close, never the sync
 
 export const GROUP = ROOT + '/Campaigns/Group';
+export const SCORES = GROUP + '/Scores';                              // the score cards (one note each)
 
 export const BUCKETS = { n: 'Names', x: 'Loose ends', m: 'Moments', r: 'Rolled at the table' };
 export const PINNED = 'Pinned';
@@ -38,8 +40,23 @@ export function assertWritable(rel) {
     // the transcript the table iPad heard (scripts/gm-transcript.mjs: append only)
     (r.startsWith(SESSIONS + '/') && /^b68g-s[0-9.]+-transcript(-ipad)?\.md$/.test(r.slice(SESSIONS.length + 1))) ||
     (r.startsWith(NPCS + '/') && !r.slice(NPCS.length + 1).includes('/') && r.endsWith('.md')) ||
-    (r.startsWith(FACTIONS + '/') && !r.slice(FACTIONS.length + 1).includes('/') && r.endsWith('.md'));
+    (r.startsWith(FACTIONS + '/') && !r.slice(FACTIONS.length + 1).includes('/') && r.endsWith('.md')) ||
+    // a score's site: its location note and its map (lib/sync-sites.mjs: created, never replaced)
+    (r.startsWith(LOCATIONS + '/') && !r.slice(LOCATIONS.length + 1).includes('/') && /\.(md|svg)$/.test(r));
   if (!ok) throw new Error('not a path the sync writes: ' + r);
+  return r;
+}
+
+/**
+ * The one edit the site sync makes to a score card (lib/sync-sites.mjs): the `site:` line in its frontmatter. Score cards live
+ * in the group campaign's Scores/ folder; anything else is refused.
+ */
+export function assertSiteWritable(rel) {
+  const r = posix(rel);
+  if (NEVER.includes(r)) throw new Error('the sync never writes ' + r);
+  if (/(^|\/)\./.test(r) || r.startsWith('TTRPG/') || r.startsWith('_Templates/') || r.startsWith('_archive/')) throw new Error('no-touch zone: ' + r);
+  const tail = r.startsWith(SCORES + '/') ? r.slice(SCORES.length + 1) : null;
+  if (tail === null || !/^[^/]+\.md$/.test(tail)) throw new Error('not a score card the site sync links: ' + r);
   return r;
 }
 
@@ -198,9 +215,10 @@ function renameOver(tmp, file) {
  * Edit an existing note: `edit(note)` returns the new text, or null for "nothing to do" (a refusal is a throw).
  * Returns { changed, text }. Retries once if the note changes between the read and the rename.
  * opts.prep: the path rule is assertPrepWritable (ticking a box in a prep note), not assertWritable.
+ * opts.site: the path rule is assertSiteWritable (a score card's site: line).
  */
 export function editNote(vault, rel, edit, opts) {
-  (opts && opts.prep ? assertPrepWritable : assertWritable)(rel);
+  (opts && opts.prep ? assertPrepWritable : opts && opts.site ? assertSiteWritable : assertWritable)(rel);
   const file = abs(vault, rel);
   for (let attempt = 0; attempt < 2; attempt++) {
     const note = readNote(file);

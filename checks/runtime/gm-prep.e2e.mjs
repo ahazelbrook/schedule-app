@@ -44,7 +44,11 @@ else {
     '> [!quote] SAY', '> *"The fog comes in off the canal."* `[Invented pitch]`', '',
     '> [!warning] Mind the time', '> Cut the scene at ten minutes.', '',
     '## Cast', '', 'Open on [[Odo Plim]]. Then the [[pip-pockets#A. The goose job|goose job]], the [[pip-pockets#B. The swan job|swan job]], and back to [[b68g-s07#Must land|the list]].', '',
-    '![[pip-pockets#A. The goose job]]', '', '![[pip-pockets#B. The swan job]]', '', '# Play log', '', '## Names', '', '-', '', '## Loose ends', '', '-', '', '## Moments', '', '-', '', '## Rolled at the table', '', '-', ''].join('\n'));
+    '![[pip-pockets#A. The goose job]]', '', '![[pip-pockets#B. The swan job]]', '', '### F · The heron job', '', '![[b68g-score-heron]]', '',
+    '# Play log', '', '## Names', '', '-', '', '## Loose ends', '', '-', '', '## Moments', '', '-', '', '## Rolled at the table', '', '-', ''].join('\n'));
+  /* a score card (GM.md "Score sites"): tagged, with site hints the fixture's tables hold */
+  const LC = require(path.join(ROOT, 'app', 'gm', 'location.js')).controls({ T: locFix.T, extra: locFix.extra }).controls, firstOf = (k) => LC.find((c) => c.key === k).options.filter((o) => o.value)[0].value;
+  w(G + '/Scores/b68g-score-heron.md', ['---', 'tags:', '  - wiki/b68-score', 'site_target: ' + firstOf('target'), 'site_district: ' + firstOf('district'), '---', '', '**Steal the heron.**', ''].join('\n'));
   w(G + '/pip-pockets.md', ['# Pockets', '', '## A. The goose job', '', '| | |', '|---|---|', '| **Target** | A goose |', '| **Pays** | 2 |', '', '- [ ] Ask the goose', '',
     /* a second section, long enough that a link to it has somewhere to scroll */
     '## B. The swan job', '', '| | |', '|---|---|', '| **Target** | A swan |', '| **Pays** | 3 |', ''].concat(Array.from({ length: 40 }, (_, i) => 'The swan glides past lock ' + (i + 1) + '.\n')).join('\n'));
@@ -136,7 +140,7 @@ try {
     check(await until(async () => { const d = await gmState(); return d.prep && d.prep.beats && Object.keys(d.prep.beats).length === 1; }, 8000, 300), 'a beat starts');
     check(/0:0\d \/ 5:00/.test(await page.textContent('#gm-prep .pp-clock.run')), 'the beat clock runs against its 5 min budget');
     check(await page.$eval('#gm-prep .rl-callout.pp-say', () => true).catch(() => false) && await page.$eval('#gm-prep code.pp-prov', () => true).catch(() => false), 'SAY card and provenance chip');
-    check((await page.$$('#gm-prep .pp-embed')).length === 2, 'the transcluded sections are carried in');
+    check((await page.$$('#gm-prep .pp-embed')).length === 3, 'the transcluded sections are carried in');
     await page.click('#gm-prep #pp-must-land .pp-pin');
     check(await page.waitForSelector('#gm-rail .pp-pinbox .pp-box', { timeout: 5000 }).then(() => true, () => false), 'a pinned section sits in the rail with its boxes');
     await page.click('#gm-prep a[href^="#pp:npc:"]');
@@ -171,6 +175,29 @@ try {
     await page.click('#gm-prep a[href*="Must%20land"]');
     const must = await settled(page, '(() => Math.round(document.getElementById("pp-must-land").getBoundingClientRect().top - document.getElementById("gm-prep").getBoundingClientRect().top))()');
     check(must >= -2 && must <= 40 && page.url().endsWith('#gm'), 'laptop: the note\'s own name with a heading scrolls to it here (' + must + ' px), and stays on the page');
+  }
+
+  /* ---- score sites (GM.md "Score sites"): Roll a site from the score card, save it, see it on the card, open it after another roll ---- */
+  if (!REAL) {
+    const SLOT = '#gm-prep .pp-site[data-score="b68g-score-heron"]', tab = (p) => page.click('[data-gm="panel"][data-panel="' + p + '"]');
+    await tab('prep');
+    check(await page.waitForSelector(SLOT + ' [data-gm="siteroll"]', { timeout: 5000 }).then(() => true, () => false) && /None yet/.test(await page.textContent(SLOT)), 'a score card in Prep has a Site strip: none yet, and Roll a site');
+    await page.click(SLOT + ' [data-gm="siteroll"]');
+    check(await page.waitForSelector('#gm-loc .gm-loccard', { state: 'visible', timeout: 5000 }).then(() => true, () => false), 'Roll a site opens the Location panel on a roll');
+    check(/Save as the site for F · The heron job/.test(await page.textContent('#gm-siterow [data-gm="sitesave"]')), 'the save row points at the score');
+    const place = (await page.textContent('#gm-loc .gm-locname')).trim();
+    await page.click('#gm-siterow [data-gm="sitesave"]');
+    const saved = await until(async () => { const d = await gmState(); return d.sites && d.sites['b68g-score-heron']; }, 8000, 300);
+    check(!!saved && saved.name === place && saved.label === 'F · The heron job' && typeof saved.seed === 'number', 'Save puts the site in the GM state, against the score (' + place + ')');
+    await shot(page, 'score-site-saved');
+    await page.click('#gm-loc [data-gm="locroll"]');
+    await tab('prep');
+    check(await page.waitForFunction(([s, n]) => { const el = document.querySelector(s); return el && el.textContent.includes(n) && el.querySelector('[data-gm="siteopen"]'); }, [SLOT, place], { timeout: 5000 }).then(() => true, () => false), 'the card\'s strip shows the place, with Open map');
+    await shot(page, 'score-site-strip');
+    await page.click(SLOT + ' [data-gm="siteopen"]');
+    check(await page.waitForFunction((n) => { const el = document.querySelector('#gm-loc .gm-locname'); return el && el.textContent.trim() === n && document.querySelector('#gm-map svg'); }, place, { timeout: 8000 }).then(() => true, () => false), 'Open map: after another roll, the same place again, its map drawn');
+    await page.reload(); await page.waitForSelector('#gm-root', { timeout: 20000 }); await tab('prep');
+    check(await page.waitForFunction(([s, n]) => { const el = document.querySelector(s); return el && el.textContent.includes(n); }, [SLOT, place], { timeout: 8000 }).then(() => true, () => false), 'reload: the strip still names the site');
   }
 
   /* ---- the phone ---- */
