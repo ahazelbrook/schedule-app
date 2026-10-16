@@ -340,6 +340,7 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     await click(p, '#dossier [data-act="endval"][data-i="0"][data-v="1"]'); await click(p, '#dossier [data-act="endval"][data-i="1"][data-v="2"]');
     await overflow(p, tag + ' end panel');
     await shot(p, '#dossier .ds-sessbox', 'out/session-' + tag + '-panel.png');
+    if (w < 760) await click(p, '#dossier .ds-endp .ds-roll-x');   /* on a phone the panel is a bottom sheet over the page: closed before the next tap */
     await click(p, '#dossier .ds-sbox[data-n="6"]');
     await click(p, '#dossier [data-act="dtopen"][data-k="indulge"]'); await p.evaluate(RNG([6, 6, 6])); await click(p, '#dossier .ds-dt [data-act="dtroll"]');
     await overflow(p, tag + ' indulge');

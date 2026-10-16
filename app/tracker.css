@@ -22,8 +22,19 @@
 #dossier .ds-status.bad { color: var(--alarm); }
 #dossier .ds-bio { grid-area: bio; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px 18px; font-size: 13px; }
 #dossier .ds-bio > div { min-width: 0; overflow-wrap: anywhere; }
-#dossier .ds-remove:hover { background: var(--alarm); border-color: var(--alarm); color: var(--on-accent); }
 #dossier .ds-thumb { display: none; }
+/* the head's wrappers group only on a phone: elsewhere they are display: contents, so the desk's grid and print are unchanged */
+#dossier .ds-idrow, #dossier .ds-bar, #dossier .ds-about { display: contents; }
+#dossier .ds-vitals, #dossier .ds-about-t, #dossier .ds-loadedit, #dossier .ds-narrow, #dossier .ds-about .ds-desc { display: none; }
+/* "…": Edit figure (phones) and, at its foot, Remove */
+#dossier .ds-more { position: relative; display: inline-flex; }
+#dossier .ds-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; display: grid; min-width: 210px; max-width: min(320px, calc(100vw - 32px)); background: var(--card); border: 2px solid var(--rule); box-shadow: 4px 4px 0 var(--shadow-ink); }
+#dossier .ds-mi { font: 700 13px/1.25 var(--font-text); text-align: left; background: transparent; border: 0; border-top: 1px solid var(--hair); padding: 11px 14px; color: var(--ink); cursor: pointer; min-height: 44px; overflow-wrap: anywhere; }
+#dossier .ds-mi:first-child { border-top: 0; }
+#dossier .ds-mi:hover, #dossier .ds-mi:focus-visible { background: var(--inset); outline: none; }
+#dossier .ds-menu .ds-mi-rm { color: var(--alarm); border-top: 2px solid var(--rule); }
+#dossier .ds-menu .ds-mi-rm:first-child { border-top: 0; }
+#dossier .ds-menu .ds-mi-rm:hover, #dossier .ds-menu .ds-mi-rm:focus-visible { background: var(--alarm); color: var(--on-accent); }
 /* the table's session, under the header (api.table): Join when the table is ahead of this sheet */
 #dossier .ds-tablebar { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; border: 2px solid var(--rule); background: var(--card); padding: 7px 8px 7px 12px; margin: 2px 0 14px; }
 #dossier .ds-tablebar.ahead { border-color: var(--accent); border-left-width: 6px; }
@@ -378,13 +389,47 @@
 /* ---- phones: one column in the order play needs it (screen only, so print keeps its three columns) ---- */
 @media screen and (max-width: 760px) {
   #dossier .ds-col { display: contents; }
-  #dossier .ds-grid .ds-box { order: 9; }
+  #dossier .ds-grid .ds-box { order: 10; }
   #dossier .ds-grid .ds-stressbox { order: 1; }
   #dossier .ds-grid .ds-harmbox { order: 2; }
   #dossier .ds-grid .ds-actbox { order: 3; }
-  #dossier .ds-grid .ds-itembox { order: 4; }
-  #dossier .ds-grid .ds-keybox { order: 5; }
-  #dossier .ds-grid .ds-sessbox { order: 6; }
+  #dossier .ds-grid .ds-xpbox { order: 4; }
+  #dossier .ds-grid .ds-itembox { order: 5; }
+  #dossier .ds-grid .ds-dtbox { order: 6; }
+  #dossier .ds-grid .ds-sessbox { order: 7; }
+  #dossier .ds-grid .ds-keybox { order: 8; }
+  #dossier .ds-grid .ds-stackbox { order: 9; }
+  /* the first screen of the live sheet: the name and thumbnail; a sticky bar (Back, the status, Print, "…", and the vitals,
+     each a jump to its box); "About" folded; then the table bar and the boxes in play order */
+  #dossier.ds-live .ds-head { display: contents; }
+  #dossier.ds-live .ds-idrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; align-items: start; border-top: 4px solid var(--rule); padding-top: 12px; }
+  #dossier.ds-live :is(.ds-title, .ds-thumb, .ds-nav, .ds-ident, .ds-bio) { grid-area: auto; }   /* the head's named areas are not used here */
+  #dossier.ds-live .ds-thumb { width: 72px; height: 72px; }
+  #dossier.ds-live .ds-title .ds-desc { display: none; }   /* the playbook's descriptor moves into About */
+  #dossier.ds-live .ds-about .ds-desc { display: block; margin: 0; }
+  #dossier.ds-live .ds-bar { display: grid; gap: 6px; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30; margin: 12px calc(-1 * clamp(16px, 3vw, 36px)) 0; padding: 6px clamp(16px, 3vw, 36px) 8px; background: var(--paper); border-top: 2px solid var(--rule); border-bottom: 2px solid var(--rule); }
+  #dossier.ds-live .ds-nav { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
+  #dossier.ds-live .ds-nav .ds-wide { display: none; }
+  #dossier.ds-live .ds-nav > .btn { order: 2; flex: 0 0 auto; }
+  #dossier.ds-live .ds-nav > [data-act="back"] { order: 0; }
+  #dossier.ds-live .ds-status { order: 1; flex: 1 1 auto; min-width: 0; white-space: normal; padding: 0; font-size: 10.5px; line-height: 1.25; }
+  #dossier.ds-live .ds-more { order: 3; }
+  #dossier.ds-live .ds-morebtn.ds-narrow { display: inline-block; }
+  #dossier.ds-live .ds-mi.ds-narrow { display: block; }
+  #dossier.ds-live .ds-vitals { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); gap: 6px; }
+  #dossier.ds-live .ds-vit { min-height: 40px; min-width: 0; display: grid; place-content: center; justify-items: center; gap: 2px; padding: 3px 4px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; font: 900 9.5px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
+  #dossier.ds-live .ds-vit b { font: 700 14px/1 var(--font-mono); letter-spacing: 0; text-transform: none; }
+  #dossier.ds-live .ds-vit.hot { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+  #dossier.ds-live .ds-about-t { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin-top: 4px; padding: 8px 0; border: 0; border-bottom: 2px solid var(--rule); background: transparent; color: var(--ink-soft); cursor: pointer; text-align: left; font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; }
+  #dossier.ds-live .ds-about-t[aria-expanded="true"] { color: var(--ink); border-bottom-width: 1px; border-bottom-color: var(--hair); }
+  #dossier.ds-live .ds-about { display: none; }
+  #dossier.ds-live .ds-about.open { display: grid; gap: 12px; padding: 10px 0 14px; border-bottom: 2px solid var(--rule); }
+  #dossier.ds-live .ds-tablebar, #dossier.ds-live .ds-grid { margin-top: 14px; }
+  /* Items on a phone: what is carried; the rest of the list behind "Edit loadout" */
+  #dossier.ds-live .ds-loadedit { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #dossier.ds-live .ds-loadedit .btn { margin-left: auto; }
+  #dossier.ds-live .ds-itembox:not(.ds-editing) .ds-item:not(.on), #dossier.ds-live .ds-itembox:not(.ds-editing) .ds-addrow, #dossier.ds-live .ds-itembox:not(.ds-editing) .ds-items .ds-x { display: none; }
+  #dossier.ds-live .ds-itembox:not(.ds-editing) .ds-items { border-top: 0; padding-top: 0; }
   /* the figure: a mugshot thumbnail beside the name instead of the Figure box */
   #dossier .ds-figbox { display: none; }
   #dossier .ds-head { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title thumb" "nav nav" "ident ident" "bio bio"; }
@@ -470,7 +515,7 @@
   /* dice: the roll panel and its buttons never print; action names print as plain text */
   #dossier .ds-roll, #dossier .ds-resist, #dossier .ds-fortune, #dossier .ds-rollhint { display: none !important; }
   /* session and downtime are table tools: never printed */
-  #dossier .ds-sessbox, #dossier .ds-dtbox, #dossier .ds-hitnow, #dossier .ds-tablebar, #dossier .ds-thumb { display: none !important; }
+  #dossier .ds-sessbox, #dossier .ds-dtbox, #dossier .ds-hitnow, #dossier .ds-tablebar, #dossier .ds-thumb, #dossier .ds-vitals, #dossier .ds-about-t, #dossier .ds-loadedit, #dossier .ds-menu { display: none !important; }
   #dossier .ds-actbtn { text-decoration: none; background: transparent !important; color: #000 !important; padding: 0; font-size: 10.5px; }
   #dossier .ds-log li.roll .ds-logt { font-size: 9px; }
   #dossier .ds-logdie .ds-die rect { stroke: #000; fill: #fff; }

@@ -73,7 +73,7 @@ B68Tracker.refresh()                        // something the sheet reads outside
 //                                   //   (filing sends only the changed play fields as an update, falling back to a whole set)
 //   edit()                          // load this character into the creator (filing switches mode)
 //   back()                          // the previous view in this tab (history.back()), else Home; the button reads "← Back"
-//   remove() -> Promise             // delete (after the tracker's own confirm)
+//   remove() -> Promise             // delete (after the tracker's own confirm; offered to the owner and the GM, B68.isGM)
 //   me: 'u_..' | null,              // viewer id
 //   canWrite: true | false | null   // null = unknown, keep controls enabled and let a refused save decide. Per document, read on
 //                                   //   every check (boot passes a getter): false when the viewer cannot write at all, or is a
@@ -93,11 +93,20 @@ started`). End of session closes the table's session N (and sets `play.session =
 "Start session N+1" button exists only when `table()` is missing or returns null; at table session 0 End session waits for the GM.
 
 The sheet's title is the character's name; the playbook and its descriptor sit small under it. Box titles are `h3.ds-bt`
-inside `.ds-band`. On phones (screen ≤ 760px) the boxes leave their columns and run Stress, Harm, Actions, Items, Keys,
-Session, then the rest; the Figure box gives way to a mugshot thumbnail beside the name (`img.ds-thumb`, a data URI, so
-its SVG ids never meet the Figure box's); pips, xp boxes, diamonds and × get invisible `::before` hit areas (44px tall where
-the row has room, as wide as their pitch so neighbours never take each other's taps) and each action's roll button is 44px
-tall. Print is unchanged by all of this (the phone rules are `screen` only).
+inside `.ds-band`. On phones (screen ≤ 760px) the boxes leave their columns and run Stress, Harm, Actions, XP, Items (what is
+carried; the rest of the list behind "Edit loadout"), Downtime, Session, Keys, Stacks, then the rest; the Figure box gives way to a
+mugshot thumbnail beside the name (`img.ds-thumb`, a data URI, so its SVG ids never meet the Figure box's). The figure is drawn
+only where it is shown (a desk's Figure box, and the print slot on `beforeprint`), and the figure and thumbnail nodes are carried
+from one render to the next, so a tap does not rebuild them. On the live sheet (`#dossier.ds-live`; a season copy is `ds-static`)
+the identity folds into a closed "About" row and a sticky bar holds ← Back, the status, Print, "…" (Edit figure, and Remove at its
+foot) and the vitals "Stress 6/9 · Harm 1 · XP 3/8 · Load 2/3", each a jump to its box. Remove is never in the button row: it is
+under "…" on every screen, for the character's owner and the GM only, behind a confirm that names the character. Pips, xp
+boxes, diamonds and × get invisible `::before` hit areas (44px tall where the row has room, as wide as their pitch so
+neighbours never take each other's taps), the other play controls are at least 40px tall on touch, fields are 16px, and each
+action's button is 44px tall. Print is unchanged by all of this (the phone rules are `screen` only).
+The status line reads the hosted runtime's queue: "Saved on this phone · will sync (N)" while `window.B68Runtime.status.pending`
+is N > 0 (it follows the `b68:runtime` event), "Saved" once nothing waits. Harm, Armor, Load, Position / Effect, Resist and XP
+carry a "?" rules link, like Stress, where the rules API exists.
 
 ### Filing API (`window.B68` additions, boot.js)
 

@@ -202,11 +202,17 @@
   /* someone else's sheet: filed with an owner who is not the viewer */
   function foreign() { var o = cur && cur.doc && cur.doc.owner; return !!o && o !== (cur.api && cur.api.me); }
   function roLabel() { return 'Read only' + (foreign() ? ' · ' + (cur.ownerName || 'another player') + '’s character' : ''); }
+  /* "Saved" only when the runtime says nothing is waiting: the hosted runtime (runtime/cf.js) resolves a save as soon as it is
+     queued while offline, and window.B68Runtime.status = { online, pending } says what is still on this device */
+  function savedMsg() {
+    var R = window.B68Runtime, s = R && R.status, n = s ? Math.max(0, Math.floor(+s.pending || 0)) : 0;
+    return n ? 'Saved on this phone · will sync (' + n + ')' : 'Saved';
+  }
   /* the status line as it should read after a re-render: the last one set, never a made-up "Saved" */
   function statusNow() {
     var s = cur.status || { msg: '' };
     if (readOnly() && !s.bad && !s.transient) return { msg: roLabel() };
-    if (!readOnly() && /^Read only/.test(s.msg)) return { msg: 'Saved' };
+    if (!readOnly() && /^Read only/.test(s.msg)) return { msg: savedMsg() };
     return s;
   }
   function setStatus(msg, bad, transient) {
@@ -214,7 +220,13 @@
     var s = cur.root.querySelector('#ds-status');
     if (s) { s.textContent = msg; s.className = 'ds-status' + (bad ? ' bad' : ''); }
     if (cur.statusT) clearTimeout(cur.statusT);
-    if (transient) cur.statusT = setTimeout(function () { if (cur) setStatus(readOnly() ? roLabel() : cur.timer || cur.saving ? 'Saving…' : 'Saved'); }, 2400);
+    if (transient) cur.statusT = setTimeout(function () { if (cur) setStatus(readOnly() ? roLabel() : cur.timer || cur.saving ? 'Saving…' : savedMsg()); }, 2400);
+  }
+  /* the runtime's queue moved (b68:runtime): a "Saved…" line follows it (queued → synced, or the other way) */
+  function onRuntime() {
+    if (!cur || readOnly() || cur.timer || cur.saving) return;
+    var s = cur.status || {}; if (s.bad || s.transient || !/^Saved/.test(s.msg || '')) return;
+    var m = savedMsg(); if (m !== s.msg) setStatus(m);
   }
   function note(msg) { setStatus(msg, false, true); }
   /* the owner's name for "Read only · Sam’s character", when the runtime can name people */
@@ -229,10 +241,10 @@
   function flushSave() {
     if (!cur) return; if (cur.timer) { clearTimeout(cur.timer); cur.timer = null; }
     if (readOnly()) { setStatus(roLabel()); return; }
-    if (!cur.api || typeof cur.api.save !== 'function') { setStatus('Not saved: no store'); return; }
+    if (!cur.api || typeof cur.api.save !== 'function') { setStatus('Not saved: this view cannot save'); return; }
     var snap = clone(cur.play); cur.saving++; setStatus('Saving…'); var p;
     try { p = cur.api.save({ play: snap }); } catch (e) { cur.saving--; setStatus('Could not save: ' + (e && e.message || e), true); return; }
-    Promise.resolve(p).then(function () { if (!cur) return; cur.saving--; if (!cur.saving && !cur.timer) setStatus('Saved'); },
+    Promise.resolve(p).then(function () { if (!cur) return; cur.saving--; if (!cur.saving && !cur.timer) setStatus(savedMsg()); },
       function (e) { if (!cur) return; cur.saving--; setStatus('Could not save: ' + (e && e.message || e || 'unknown error'), true); });
   }
   function scheduleSave() { if (!cur) return; if (cur.timer) clearTimeout(cur.timer); setStatus('Saving…'); cur.timer = setTimeout(function () { cur.timer = null; flushSave(); }, SAVE_DELAY); }
@@ -268,38 +280,75 @@
     }
     if (pb && pb.backing) alt += '<div><span class="ds-lab">Backing faction</span>' + esc(sheet.backing || '—') + (sheet.mission ? '<div class="ds-dim">Mission: ' + esc(sheet.mission) + '</div>' : '') + '</div>';
     if (pb && pb.veteran) alt += '<div><span class="ds-lab">Damage</span>' + esc(sheet.damage || '—') + '</div><div><span class="ds-lab">Something that helps</span>' + esc(sheet.helps || '—') + '</div>';
-    var ro = readOnly(), st = statusNow(), th = cur.ui.static ? '' : thumb(doc); /* the season print has its own figure slot */
+    var ro = readOnly(), st = statusNow(), live = !cur.ui.static, name = doc.name || sheet.name || 'Unknown';
+    var th = live && narrow() ? thumbTag(doc, pb) : ''; /* phones only; the season print has its own figure slot */
     var desc = (pb && pb.subtitle ? esc(pb.subtitle) + ' · ' : '') + esc(pb ? pb.descriptor : '');
+    /* the wrappers (.ds-idrow, .ds-bar, .ds-about) only group on a phone: on a desk and in print they are display: contents,
+       so the head's grid is what it was. On a phone the bar (Back, the status, Print, "…" and the vitals) sticks to the top
+       and the identity folds into one closed "About" row. */
     return '<div class="ds-head">' +
-      '<div class="ds-title"><h2 class="ds-name">' + esc(doc.name || sheet.name || 'Unknown') + '</h2><div class="ds-pb">' + esc(pb ? pb.name : doc.playbookName || 'Subject') + '</div><div class="ds-desc">' + desc + '</div></div>' +
-      (th ? '<img class="ds-thumb' + (isGhost(pb) ? ' ghostly' : '') + '" src="' + th + '" alt="" aria-hidden="true">' : '') + /* phones only (tracker.css) */
-      '<div class="ds-ident">' +
-        '<div><span class="ds-lab">' + (isHull(pb) ? 'Designation' : 'Name') + '</span><b>' + esc(doc.name || sheet.name || 'Unknown') + '</b></div>' +
-        '<div><span class="ds-lab">Alias</span>' + esc(doc.alias || sheet.alias || '—') + '</div>' +
-        '<div><span class="ds-lab">Crew</span>' + input('crew', play.crew, 'Your crew') + '</div>' +
-        '<div><span class="ds-lab">File</span><span class="mono">' + esc(doc.code || '') + '</span></div>' +
+      '<div class="ds-idrow">' +
+        '<div class="ds-title"><h2 class="ds-name">' + esc(name) + '</h2><div class="ds-pb">' + esc(pb ? pb.name : doc.playbookName || 'Subject') + '</div><div class="ds-desc">' + desc + '</div></div>' + th +
       '</div>' +
-      '<div class="ds-nav">' +
-        '<button type="button" class="btn sm" data-act="back" data-always="1">← Back</button>' +
-        '<button type="button" class="btn sm" data-act="edit"' + (ro ? ' disabled' : '') + '>Edit figure</button>' +
-        '<button type="button" class="btn sm" data-act="print" data-always="1">Print</button>' +
-        '<button type="button" class="btn sm ds-remove" data-act="remove"' + (ro ? ' disabled' : '') + '>' + (cur.ui.confirmRemove ? 'Click again to remove' : 'Remove') + '</button>' +
-        '<span class="ds-status' + (st.bad ? ' bad' : '') + '" id="ds-status">' + esc(st.msg) + '</span>' +
+      '<div class="ds-bar">' +
+        '<div class="ds-nav">' +
+          '<button type="button" class="btn sm" data-act="back" data-always="1">← Back</button>' +
+          '<button type="button" class="btn sm ds-wide" data-act="edit"' + (ro ? ' disabled' : '') + '>Edit figure</button>' +
+          '<button type="button" class="btn sm" data-act="print" data-always="1">Print</button>' +
+          (live ? moreMenu(name) : '') +
+          '<span class="ds-status' + (st.bad ? ' bad' : '') + '" id="ds-status">' + esc(st.msg) + '</span>' +
+        '</div>' +
+        (live ? vitals(play, pb) : '') +
       '</div>' +
-      '<div class="ds-bio">' +
-        '<div><span class="ds-lab">Look</span>' + esc(sheet.look || '—') + '</div>' +
-        '<div><span class="ds-lab">Wearing</span>' + esc(listText(sheet.wearing) || '—') + '</div>' + alt +
+      (live ? '<button type="button" class="ds-about-t" data-act="about" data-always="1" aria-expanded="' + !!cur.ui.about + '" aria-controls="ds-about"><span>About ' + esc(name) + '</span><span class="ds-chev" aria-hidden="true">' + (cur.ui.about ? '▴' : '▾') + '</span></button>' : '') +
+      '<div class="ds-about' + (cur.ui.about ? ' open' : '') + '"' + (live ? ' id="ds-about"' : '') + '>' + (live && desc ? '<p class="ds-desc">' + desc + '</p>' : '') +
+        '<div class="ds-ident">' +
+          '<div><span class="ds-lab">' + (isHull(pb) ? 'Designation' : 'Name') + '</span><b>' + esc(name) + '</b></div>' +
+          '<div><span class="ds-lab">Alias</span>' + esc(doc.alias || sheet.alias || '—') + '</div>' +
+          '<div><span class="ds-lab">Crew</span>' + input('crew', play.crew, 'Your crew') + '</div>' +
+          '<div><span class="ds-lab">Code</span><span class="mono">' + esc(doc.code || '') + '</span></div>' +
+        '</div>' +
+        '<div class="ds-bio">' +
+          '<div><span class="ds-lab">Look</span>' + esc(sheet.look || '—') + '</div>' +
+          '<div><span class="ds-lab">Wearing</span>' + esc(listText(sheet.wearing) || '—') + '</div>' + alt +
+        '</div>' +
       '</div>' +
       '<div class="ds-printfig' + (isGhost(pb) ? ' ghostly' : '') + '" aria-hidden="true"></div>' + /* filled only while printing (see beforeprint) */
     '</div>';
   }
+  /* "…": Edit figure (on a phone; a desk has it in the row) and, at its foot, Remove, for the character's owner and the GM only */
+  function canRemove() {
+    if (!cur || cur.ui.static || readOnly() || !cur.api || typeof cur.api.remove !== 'function') return false;
+    if (B().isGM === true) return true;
+    var o = cur.doc && cur.doc.owner, me = cur.api.me || null;
+    return o ? o === me : !me;   /* an unowned sheet: only where nobody is signed in (a copy of one's own) */
+  }
+  function moreMenu(name) {
+    var ro = readOnly(), rm = canRemove(), open = !!cur.ui.more; if (ro && !rm) return '';
+    return '<span class="ds-more"><button type="button" class="btn sm ds-morebtn' + (rm ? '' : ' ds-narrow') + '" data-act="more" data-always="1" aria-haspopup="menu" aria-expanded="' + open + '" aria-label="More" title="More">…</button>' +
+      (open ? '<span class="ds-menu" role="menu">' + (ro ? '' : '<button type="button" class="ds-mi ds-narrow" role="menuitem" data-act="edit">Edit figure</button>') +
+        (rm ? '<button type="button" class="ds-mi ds-mi-rm" role="menuitem" data-act="remove">Remove ' + esc(name) + '…</button>' : '') + '</span>' : '') + '</span>';
+  }
+  /* a sticky line on a phone: Stress 6/9 · Harm 1 · XP 3/8 · Load 2/3, each a jump to its box */
+  function harmLines(hm) { var n = 0, worst = ''; [['l4', 4], ['l3', 3], ['l2', 2], ['l1', 1]].forEach(function (k) { [].concat(hm[k[0]]).forEach(function (t) { t = String(t == null ? '' : t).trim(); if (!t) return; n++; if (!worst) worst = k[1] + ': ' + t; }); }); return { n: n, worst: worst }; }
+  function vitals(play, pb) {
+    var sm = stressMax(pb), hl = harmLines(play.harm), ld = loadNow(play, pb), parts = [
+      ['ds-stressbox', stressName(pb), play.stress + '/' + sm, play.stress >= sm, stressName(pb) + ' ' + play.stress + ' of ' + sm],
+      ['ds-harmbox', isHull(pb) ? 'Damage' : 'Harm', String(hl.n), /^[34]:/.test(hl.worst), hl.n ? hl.n + ' harm, worst level ' + hl.worst : 'No harm'],
+      ['ds-xpbox', 'XP', play.xp.playbook + '/8', play.xp.playbook >= 8, 'Playbook xp ' + play.xp.playbook + ' of 8']];
+    if (ld) parts.push(['ds-itembox', 'Load', ld.total + '/' + ld.limit, ld.total > ld.limit, 'Load ' + ld.total + ' of ' + ld.limit]);
+    return '<div class="ds-vitals" style="--n:' + parts.length + '">' + parts.map(function (x) { return '<button type="button" class="ds-vit' + (x[3] ? ' hot' : '') + '" data-act="jump" data-to="' + x[0] + '" data-always="1" title="' + esc(x[4]) + '" aria-label="' + esc(x[4]) + ': go to the box"><span>' + esc(x[1]) + '</span> <b class="mono">' + esc(x[2]) + '</b></button>'; }).join('') + '</div>';
+  }
+  /* the figure: drawn only where it is shown (a desk's Figure box, and print), and only when its spec changed */
+  function figKey(doc) { var k; try { k = JSON.stringify(doc.spec || null); } catch (e) { k = ''; } return (cur.ui.mug ? 'm' : 'f') + k; }
   function figureSvg(doc) {
+    var key = figKey(doc); if (cur.ui.svgKey === key) return;
     var svg = '', warn = '';
     try { if (K && doc.spec) { var r = cur.ui.mug ? K.portrait(doc.spec) : K.render(doc.spec, { height: 420 }); svg = r && r.svg || ''; } } catch (e) { warn = 'The kit could not draw this figure: ' + e.message; }
-    cur.ui.svg = svg; cur.ui.svgWarn = warn;
+    cur.ui.svg = svg; cur.ui.svgWarn = warn; cur.ui.svgKey = key;
   }
   /* the phone's mugshot thumbnail beside the name: an <img> of the portrait, so its SVG ids never meet the Figure box's;
-     drawn once per figure */
+     drawn once per figure, and the same <img> node is carried from one render to the next (see render) */
   function thumb(doc) {
     var key; try { key = JSON.stringify(doc.spec || null); } catch (e) { key = ''; }
     if (cur.ui.thumbKey === key) return cur.ui.thumb;
@@ -307,9 +356,20 @@
     try { if (K && doc.spec) { var r = K.portrait(doc.spec, { width: 240, height: 240, chart: false, plate: false, suffix: '-t', lod: 'lo' }), s = r && r.svg || ''; if (s) { if (s.indexOf('xmlns=') < 0) s = s.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'); cur.ui.thumb = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s); } } } catch (e) {}
     return cur.ui.thumb;
   }
+  function thumbTag(doc, pb) {
+    var src = thumb(doc), old = cur.keep && cur.keep.thumb; if (!src) return '';
+    if (old && old.__k === cur.ui.thumbKey) return '<i data-keep="thumb"></i>';
+    return '<img class="ds-thumb' + (isGhost(pb) ? ' ghostly' : '') + '" data-k="thumb" src="' + src + '" alt="" aria-hidden="true">';
+  }
   function figure(doc, pb) {
-    var svg = cur.ui.svg, warn = cur.ui.svgWarn;
-    return box('Figure', '<div class="ds-art' + (cur.ui.mug ? ' mug' : '') + (isGhost(pb) ? ' ghostly' : '') + '">' + (svg || '<div class="ds-dim">' + esc(warn || 'No figure on file.') + '</div>') + '</div>',
+    var cls = 'ds-art' + (cur.ui.mug ? ' mug' : '') + (isGhost(pb) ? ' ghostly' : ''), art;
+    if (narrow() && !cur.ui.static) art = '<div class="' + cls + '"></div>';   /* a phone shows the thumbnail instead (tracker.css) */
+    else {
+      var key = figKey(doc), old = cur.keep && cur.keep.fig;
+      if (old && old.__k === key) art = '<i data-keep="fig"></i>';
+      else { figureSvg(doc); art = '<div class="' + cls + '" data-k="fig">' + (cur.ui.svg || '<div class="ds-dim">' + esc(cur.ui.svgWarn || 'No figure yet.') + '</div>') + '</div>'; }
+    }
+    return box('Figure', art,
       '<span class="seg"><button type="button" class="chip sm" data-act="view" data-v="fig" data-always="1" aria-pressed="' + (!cur.ui.mug) + '">Figure</button><button type="button" class="chip sm" data-act="view" data-v="mug" data-always="1" aria-pressed="' + (!!cur.ui.mug) + '">Mugshot</button></span>', 'ds-figbox');
   }
   function stress(play, pb) {
@@ -395,13 +455,13 @@
     '</div>';
     var side = '<div class="ds-side"><div class="ds-heal"><span class="ds-lab">' + (hull ? 'Repair' : 'Healing') + '</span>' + clockSvg(4, play.healing, 22, 'heal') + (isVamp(pb) ? '<span class="ds-dim">feeding only</span>' : '') + '</div>' +
       '<div class="ds-res"><span class="ds-lab">Resources</span>' +
-        '<div class="ds-resrow"><span>Armor</span><span class="ds-boxes">' + sq(play.armor.armor, 'armor', ' data-k="armor"') + '</span></div>' +
+        '<div class="ds-resrow"><span>Armor' + rl('armor') + '</span><span class="ds-boxes">' + sq(play.armor.armor, 'armor', ' data-k="armor"') + '</span></div>' +
         '<div class="ds-resrow"><span>Heavy</span><span class="ds-boxes">' + sq(play.armor.heavy, 'armor', ' data-k="heavy"') + '</span></div>' +
         (pbr ? '<div class="ds-resrow"><span>' + esc(pbr.charAt(0).toUpperCase() + pbr.slice(1)) + '</span><span class="ds-boxes">' + sq(play.resource[0], 'resource', ' data-k="0"') + sq(play.resource[1], 'resource', ' data-k="1"') + '</span></div>' : '') +
         (blank ? '<div class="ds-resrow"><span class="ds-blankres" aria-label="unlabelled resource"></span><span class="ds-boxes">' + sq(play.resource[0], 'resource', ' data-k="0"') + sq(play.resource[1], 'resource', ' data-k="1"') + '</span></div>' : '') +
         (hull ? '<div class="ds-dim">Built-in frame armor; it never counts for load.</div>' : '') +
       '</div></div>';
-    return box(hull ? 'Damage' : 'Harm', '<div class="ds-harmgrid">' + h + side + '</div>', '', 'ds-harmbox');
+    return box((hull ? 'Damage' : 'Harm') + rl('harm'), '<div class="ds-harmgrid">' + h + side + '</div>', '', 'ds-harmbox');
   }
   function cohort(play, pb) {
     if (!pb || !pb.cohort) return '';
@@ -457,7 +517,7 @@
     h += '<div class="row ds-tools"><span class="ds-lab">Playbook xp</span>' + pipRow(8, play.xp.playbook, 'xp', ' data-k="playbook"', 'ds-xbox') + '<span class="mono ds-count">' + play.xp.playbook + ' / 8</span></div>';
     if (full) h += tt ? '<div class="ds-advance"><button type="button" class="btn sm primary" data-act="clarity">Gain clarity</button><span class="hint ds-warn">Playbook track full: a new trait, a versatile ability, a temporal glitch and a mission detail.</span></div>'
       : '<p class="hint ds-warn">Playbook track full: pick a new special ability above (8 xp are spent when you do).</p>';
-    return box('XP', h);
+    return box('XP' + rl('xp'), h, '', 'ds-xpbox');
   }
   /* ---------- the Session box and the end-of-session panel (round 5) ---------- */
   /* the table's session (api.table, CONTRACT.md): { session, inPlay } or null when there is no table */
@@ -737,30 +797,36 @@
   function stacks(play, pb) {
     var hull = isHull(pb), tt = isTT(pb), canBank = !hull || play.abilities.indexOf('A Room of Your Own') >= 0;
     var h = '<div class="ds-stackrow"><span class="ds-lab">Stacks</span><span class="ds-dias">' + diamonds(4, play.stacks, 'stacks') + '</span><span class="mono ds-count">' + play.stacks + '</span></div>';
-    if (tt) { h += '<p class="hint">No bank: a time traveler keeps only what they carry. A carried stack takes a load slot.</p>'; return box('Stacks', h); }
+    if (tt) { h += '<p class="hint">No bank: a time traveler keeps only what they carry. A carried stack takes a load slot.</p>'; return box('Stacks', h, '', 'ds-stackbox'); }
     h += '<div class="ds-bank"><span class="ds-lab">Bank' + (hull ? ' <span class="ds-dim">*requires A Room of Your Own</span>' : '') + '</span>';
     for (var r = 0; r < 4; r++) { h += '<span class="ds-dias">'; for (var i = 1; i <= 10; i++) { var n = r * 10 + i; h += '<button type="button" class="ds-dia' + (n <= play.bank ? ' on' : '') + '" data-act="bank" data-n="' + n + '"' + (canBank ? '' : ' disabled') + ' aria-label="bank ' + n + '"></button>'; } h += '</span>'; }
     h += '<span class="mono ds-count">' + play.bank + ' / 40</span></div>';
     if (!canBank) h += '<p class="hint">Hulls cannot put stacks into bank without the trait A Room of Your Own.</p>';
     h += '<div class="row ds-tools"><button type="button" class="btn sm" data-act="tobank" data-n="1"' + (canBank && play.stacks > 0 && play.bank < 40 ? '' : ' disabled') + '>Bank a stack</button><button type="button" class="btn sm" data-act="frombank" data-n="1"' + (play.bank > 0 && play.stacks < 4 ? '' : ' disabled') + '>Draw a stack</button></div>';
-    return box('Stacks & bank', h);
+    return box('Stacks & bank', h, '', 'ds-stackbox');
   }
   function itemLoad(play, pb, name) { var all = ((pb && pb.items) || []).concat(CT.STANDARD_ITEMS || [], (play.extraItems || []).map(function (x) { return [x.name, x.load]; })); var it = all.filter(function (i) { return i[0] === name; })[0]; return it ? +it[1] || 0 : 0; }
   function loadBonus(play) { var b = 0; if (play.abilities.indexOf('Walking Arsenal') >= 0) b += 2; if (play.abilities.indexOf('Retractable Arsenal') >= 0) b += 2; return b; }
+  /* what is carried against the limit (null for a ghost, who carries no load) */
+  function loadNow(play, pb) {
+    if (isGhost(pb)) return null;
+    var carried = play.items.reduce(function (t, n) { return t + itemLoad(play, pb, n); }, 0);
+    return { carried: carried, total: carried + play.stacks, limit: (play.loadLimit === 'loud' ? 6 : 3) + loadBonus(play) };
+  }
   function items(play, pb) {
     if (isGhost(pb)) return box('Items (with you in ghost form)', (pb.itemsRule ? '<p class="hint">' + esc(pb.itemsRule) + '</p>' : '') + textarea('ghostItems', play.ghostItems, 'Whatever came with you'), '', 'ds-itembox');
-    var hull = isHull(pb);
-    var carried = play.items.reduce(function (t, n) { return t + itemLoad(play, pb, n); }, 0), total = carried + play.stacks;
-    var limit = (play.loadLimit === 'loud' ? 6 : 3) + loadBonus(play), over = total > limit;
+    var hull = isHull(pb), ld = loadNow(play, pb), carried = ld.carried, total = ld.total, limit = ld.limit, over = total > limit, editing = !!cur.ui.loadout;
     function row(it, extra) { var on = play.items.indexOf(it[0]) >= 0, l = +it[1] || 0, lb = ''; for (var i = 0; i < l; i++) lb += '<span class="ds-ld"></span>'; return '<button type="button" class="ds-item' + (on ? ' on' : '') + '" data-act="item" data-n="' + esc(it[0]) + '" aria-pressed="' + on + '"><span class="ds-sq' + (on ? ' on' : '') + '"></span><span class="ds-item-n">' + esc(it[0]) + '</span><span class="ds-lds">' + (l ? lb : '<span class="ds-dim">0</span>') + '</span></button>' + (extra || ''); }
     var h = '<div class="ds-loadhead"><span class="seg"><button type="button" class="chip sm" data-act="limit" data-v="quiet" aria-pressed="' + (play.loadLimit !== 'loud') + '">◇ ' + (3 + loadBonus(play)) + ' quiet</button><button type="button" class="chip sm" data-act="limit" data-v="loud" aria-pressed="' + (play.loadLimit === 'loud') + '">◆ ' + (6 + loadBonus(play)) + ' loud</button></span>' +
-      '<span class="budget' + (over ? ' bad' : '') + '">' + total + ' / ' + limit + ' load</span></div>' +
+      '<span class="budget' + (over ? ' bad' : '') + '">' + total + ' / ' + limit + ' load</span>' + rl('load') + '</div>' +
       '<p class="hint">' + carried + ' from items' + (play.stacks ? ' + ' + play.stacks + ' from stacks carried' : '') + (hull ? '. Frame armor is free.' : '. A carried stack takes a load slot.') + '</p>';
+    /* a phone shows what is carried and folds the rest of the list behind "Edit loadout" (tracker.css); a desk shows it all */
+    h += '<div class="row ds-loadedit">' + (play.items.length ? '' : '<span class="hint">Nothing carried yet.</span>') + '<button type="button" class="btn sm" data-act="loadout" data-always="1" aria-expanded="' + editing + '">' + (editing ? 'Done' : 'Edit loadout') + '</button></div>';
     h += '<div class="ds-items ds-pbitems">' + ((pb && pb.items) || []).map(function (it) { return row(it); }).join('') + '</div>';
     h += '<div class="ds-items">' + (CT.STANDARD_ITEMS || []).map(function (it) { return row(it); }).join('') + '</div>';
     if (play.extraItems.length) h += '<div class="ds-items">' + play.extraItems.map(function (x) { return row([x.name, x.load], '<button type="button" class="ds-x" data-act="rmitem" data-n="' + esc(x.name) + '" title="Remove">×</button>'); }).join('') + '</div>';
     h += '<div class="row ds-addrow">' + input('', '', 'Another item', 'ds-grow ds-newitem') + '<input type="number" class="ds-in ds-num ds-newload" min="0" max="6" value="1" aria-label="load"><button type="button" class="btn sm" data-act="additem">Add</button></div>';
-    return box('Items', h, '', 'ds-itembox');
+    return box('Items', h, '', 'ds-itembox' + (editing ? ' ds-editing' : ''));
   }
   function contacts(play, pb) {
     if (isGhost(pb)) return box('Enemies & Rivals', (pb.friendsRule ? '<p class="hint">' + esc(pb.friendsRule) + '</p>' : '') + textarea('enemies', play.enemies, 'Who wants you gone, and who you haunt'));
@@ -838,10 +904,19 @@
   }
 
   /* ---------- render ---------- */
+  /* a phone (the screen rules in tracker.css): the figure is not drawn, the thumbnail is; crossing 760px draws again */
+  var MQ = null; try { MQ = window.matchMedia ? window.matchMedia('screen and (max-width: 760px)') : null; } catch (e) { MQ = null; }
+  function narrow() { return !!(MQ && MQ.matches); }
+  var printing = false;
+  if (MQ) { var onMq = function () { if (cur && !cur.ui.static && !printing) render(); }; try { if (MQ.addEventListener) MQ.addEventListener('change', onMq); else if (MQ.addListener) MQ.addListener(onMq); } catch (e) {} }
   function render() {
     if (!cur) return; var doc = cur.doc, play = cur.play, pb = cur.pb, sheet = doc.sheet || {};
     var focus = captureFocus();
-    figureSvg(doc);
+    /* the big pictures (the figure, 360 KB of SVG, and the thumbnail's data URI) are not rebuilt on every tap: the nodes
+       drawn last time move into the new markup when their figure is the same */
+    var keep = {}, fa = cur.root.querySelector('.ds-figbox [data-k="fig"]'), ti = cur.root.querySelector('img[data-k="thumb"]');
+    if (fa && fa.__k) keep.fig = fa; if (ti && ti.__k) keep.thumb = ti;
+    cur.keep = keep;
     var html = header(doc, play, pb, sheet) + tableBar(play) +
       '<div class="ds-grid">' +
         '<div class="ds-col ds-c1">' + figure(doc, pb) + stress(play, pb) + keys(play, pb) + strictures(play, pb) + harm(play, pb) + cohort(play, pb) + vice(play, pb) + '</div>' +
@@ -850,8 +925,13 @@
         '<div class="ds-col ds-c4">' + clocks(play, pb) + notes(play) + log(play) + '</div>' +
       '</div>';
     cur.root.innerHTML = html;
+    cur.keep = null;
+    [['fig', keep.fig], ['thumb', keep.thumb]].forEach(function (x) { var ph = cur.root.querySelector('[data-keep="' + x[0] + '"]'); if (ph && x[1]) ph.parentNode.replaceChild(x[1], ph); });
+    var nf = cur.root.querySelector('.ds-figbox [data-k="fig"]'); if (nf && !nf.__k) nf.__k = cur.ui.svgKey;
+    var nt = cur.root.querySelector('img[data-k="thumb"]'); if (nt && !nt.__k) nt.__k = cur.ui.thumbKey;
+    if (printing) printFigure(true);
     var open = anyPanel();
-    cur.root.className = 'dossier ds' + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '') + (open ? ' ds-panel-open' : '');
+    cur.root.className = 'dossier ds' + (cur.ui.static ? ' ds-static' : ' ds-live') + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '') + (open ? ' ds-panel-open' : '');
     askOwner();
     if (readOnly()) cur.root.querySelectorAll('button, input, textarea, select').forEach(function (n) { if (!n.dataset.always) n.disabled = true; });
     restoreFocus(focus);
@@ -906,11 +986,27 @@
     back: function () { if (cur.api && cur.api.back) cur.api.back(); },
     edit: function () { if (cur.api && cur.api.edit) cur.api.edit(); },
     print: function () { printFigure(true); try { window.print(); } catch (e) { note('Printing is not available here'); } },
+    /* Remove deletes the character for everyone, for good: it sits at the foot of "…", for the owner and the GM, behind a
+       confirm that names the character */
     remove: function () {
-      if (!cur.ui.confirmRemove) { cur.ui.confirmRemove = true; render(); if (cur.rmT) clearTimeout(cur.rmT); cur.rmT = setTimeout(function () { if (cur) { cur.ui.confirmRemove = false; render(); } }, 4000); return; }
-      cur.ui.confirmRemove = false; if (cur.rmT) clearTimeout(cur.rmT);
-      var p; try { p = cur.api && cur.api.remove ? cur.api.remove() : null; } catch (e) { setStatus('Could not remove: ' + e.message, true); return; }
+      if (!canRemove()) return;
+      var name = cur.doc.name || (cur.doc.sheet && cur.doc.sheet.name) || 'this character';
+      if (!window.confirm('Remove ' + name + ' for good? The sheet and everything on it are deleted for everyone at the table. This cannot be undone.')) return;
+      var p; try { p = cur.api.remove(); } catch (e) { setStatus('Could not remove: ' + e.message, true); return; }
       setStatus('Removing…'); Promise.resolve(p).then(null, function (e) { if (cur) setStatus('Could not remove: ' + (e && e.message || e), true); });
+    },
+    more: function () { cur.ui.more = !cur.ui.more; render(); var mi = cur.ui.more && cur.root.querySelector('.ds-menu .ds-mi'); if (mi && mi.offsetParent) try { mi.focus({ preventScroll: true }); } catch (e) {} },
+    about: function () { cur.ui.about = !cur.ui.about; render(); },
+    loadout: function () { cur.ui.loadout = !cur.ui.loadout; render(); },
+    /* the vitals: scroll the box to just under the sticky bar */
+    jump: function (d) {
+      if (['ds-stressbox', 'ds-harmbox', 'ds-xpbox', 'ds-itembox'].indexOf(d.to) < 0) return;
+      var b = cur.root.querySelector('.ds-grid .' + d.to); if (!b) return;
+      var bar = cur.root.querySelector('.ds-bar'), off = 0;
+      try { if (bar && getComputedStyle(bar).position === 'sticky') off = bar.getBoundingClientRect().height; } catch (e) {}
+      var y = Math.max(0, b.getBoundingClientRect().top + (window.pageYOffset || 0) - off - 8);
+      try { window.scrollTo({ top: y, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, y); }
+      var h = b.querySelector('.ds-bt'); if (h) { h.setAttribute('tabindex', '-1'); try { h.focus({ preventScroll: true }); } catch (e) {} }
     },
     view: function (d) { cur.ui.mug = d.v === 'mug'; render(); },
     stress: function (d) { cur.play.stress = toggleTrack(cur.play.stress, +d.n); commit(); },
@@ -1238,7 +1334,7 @@
     note('Session ' + n + ' started'); commit();
   }
   /* roll-panel controls stay live for read-only viewers (they write nothing); everything else is gated */
-  var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1, rollapp: 1, resistapp: 1, markharm: 1, markresist: 1, markrattr: 1, markrdone: 1 };
+  var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1, rollapp: 1, resistapp: 1, markharm: 1, markresist: 1, markrattr: 1, markrdone: 1, more: 1, about: 1, loadout: 1, jump: 1 };
   /* one panel at a time: the mark strip, a roll, a downtime activity or the end of session */
   function anyPanel() { return !!(cur && (cur.ui.mark || cur.ui.roll || cur.ui.dt || cur.ui.endSess)); }
   function closePanels() { if (!cur) return; cur.ui.mark = null; cur.ui.roll = null; cur.ui.dt = null; cur.ui.endSess = null; }
@@ -1254,8 +1350,12 @@
     if (t.disabled) return; var act = t.getAttribute('data-act'); var fn = ACTIONS[act]; if (!fn) return;
     if (readOnly() && !RO_OK[act]) return;
     var d = {}; for (var i = 0; i < t.attributes.length; i++) { var a = t.attributes[i]; if (a.name.indexOf('data-') === 0) d[a.name.slice(5)] = a.value; }
+    var menu = act !== 'more' && cur.ui.more; if (menu) cur.ui.more = false;   /* any other control (a menu item too) closes "…" */
     try { fn(d, t); } catch (err) { setStatus('Something went wrong: ' + err.message, true); if (window.console) console.error(err); }
+    if (menu && cur && cur.root.querySelector('.ds-menu')) render();
   }
+  /* a tap anywhere outside "…" closes it */
+  function onDocClick(e) { if (!cur || !cur.ui.more) return; var t = e.target; if (t && t.closest && t.closest('.ds-more')) return; cur.ui.more = false; render(); }
   function onInput(e) {
     if (!cur) return; var t = e.target;
     if (t && t.dataset && t.dataset.ui === 'dtname' && cur.ui.dt) { cur.ui.dt.newName = t.value; return; } /* the downtime panel's new-clock name: panel state, never saved by itself */
@@ -1267,22 +1367,28 @@
     if (t.dataset && t.dataset.change && CHANGES[t.dataset.change]) { if (readOnly()) return; try { CHANGES[t.dataset.change](t); } catch (err) { setStatus('Something went wrong: ' + err.message, true); } return; }
     if (t.dataset && t.dataset.path && cur.timer) { clearTimeout(cur.timer); cur.timer = null; flushSave(); }
   }
-  function onDocKey(e) { if (!cur || !anyPanel() || (e.key !== 'Escape' && e.key !== 'Esc')) return; closePanels(); render(); }
+  function onDocKey(e) {
+    if (!cur || (e.key !== 'Escape' && e.key !== 'Esc')) return;
+    if (cur.ui.more) { cur.ui.more = false; render(); var mb = cur.root.querySelector('.ds-morebtn'); if (mb) try { mb.focus({ preventScroll: true }); } catch (x) {} return; }
+    if (!anyPanel()) return; closePanels(); render();
+  }
   function onKey(e) { if (!cur || e.key !== 'Enter') return; var t = e.target; if (!t || t.tagName !== 'INPUT' || !cur.root.contains(t)) return; var map = { 'ds-newlog': 'log', 'ds-newclock': 'addclock', 'ds-newcname': 'addcontact', 'ds-newcrole': 'addcontact', 'ds-newitem': 'additem', 'ds-newab': 'addability' }; var cls = Object.keys(map).filter(function (c) { return t.classList.contains(c); })[0]; if (!cls) return; e.preventDefault(); if (readOnly()) return; ACTIONS[map[cls]]({ n: 4 }, t); }
 
   /* the small figure at the top right of the printed sheet exists only while printing, so the big SVG is never in the DOM twice */
-  function printFigure(on) { if (!cur) return; var f = cur.root.querySelector('.ds-printfig'); if (f) f.innerHTML = on ? (cur.ui.svg || '') : ''; }
-  if (window.addEventListener) { window.addEventListener('beforeprint', function () { printFigure(true); }); window.addEventListener('afterprint', function () { printFigure(false); }); }
+  /* a phone never drew the figure: it is drawn here, once, for the page that prints */
+  function printFigure(on) { if (!cur || cur.ui.static) return; var f = cur.root.querySelector('.ds-printfig'); if (!f) return; if (on) figureSvg(cur.doc); f.innerHTML = on ? (cur.ui.svg || '') : ''; }
+  if (window.addEventListener) { window.addEventListener('beforeprint', function () { printing = true; printFigure(true); }); window.addEventListener('afterprint', function () { printing = false; printFigure(false); }); }
 
   /* ---------- API ---------- */
   T.open = function (doc, api) {
     var root = document.getElementById('dossier'); if (!root) return;
     if (cur) T.close();
-    doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', mark: null, roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
+    doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, glitchPick: null, svg: '', svgWarn: '', mark: null, roll: null, rollScroll: false, dt: null, endSess: null, more: false, about: false, loadout: false }, timer: null, saving: 0 };
     cur.play = normalize(doc.play, doc.sheet, doc.playbook);
-    cur.status = { msg: readOnly() ? roLabel() : 'Saved' }; /* as stored */
+    cur.status = { msg: readOnly() ? roLabel() : savedMsg() }; /* as stored (or still queued on this device) */
     root.addEventListener('click', onClick); root.addEventListener('input', onInput); root.addEventListener('change', onChange); root.addEventListener('keydown', onKey);
-    document.addEventListener('keydown', onDocKey);
+    document.addEventListener('keydown', onDocKey); document.addEventListener('click', onDocClick);
+    window.addEventListener('b68:runtime', onRuntime);
     render();
     if (!doc.play && !readOnly()) flushSave(); /* a doc filed without a play object gets one */
   };
@@ -1297,9 +1403,10 @@
   T.close = function () {
     if (!cur) return; var c = cur;
     if (c.timer) { clearTimeout(c.timer); c.timer = null; flushSave(); } /* typed text still waiting goes out before the sheet closes */
-    cur = null; if (c.rmT) clearTimeout(c.rmT); if (c.statusT) clearTimeout(c.statusT);
+    cur = null; if (c.statusT) clearTimeout(c.statusT);
     c.root.removeEventListener('click', onClick); c.root.removeEventListener('input', onInput); c.root.removeEventListener('change', onChange); c.root.removeEventListener('keydown', onKey);
-    document.removeEventListener('keydown', onDocKey);
+    document.removeEventListener('keydown', onDocKey); document.removeEventListener('click', onDocClick);
+    window.removeEventListener('b68:runtime', onRuntime);
     c.root.innerHTML = ''; c.root.className = 'dossier';
   };
   /* something the sheet reads from outside its document changed (the table's session, api.table): redraw */
@@ -1313,7 +1420,7 @@
   T.renderStatic = function (root, doc) {
     if (!root) return null;
     doc = doc || {}; var live = cur;
-    cur = { doc: doc, api: { canWrite: null }, pb: pbOf(doc.playbook), root: root, ui: { static: true, mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', mark: null, roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
+    cur = { doc: doc, api: { canWrite: null }, pb: pbOf(doc.playbook), root: root, ui: { static: true, mug: false, advance: null, glitchPick: null, svg: '', svgWarn: '', mark: null, roll: null, rollScroll: false, dt: null, endSess: null, more: false, about: false, loadout: false }, timer: null, saving: 0 };
     try {
       cur.play = normalize(doc.play, doc.sheet, doc.playbook);
       render();
