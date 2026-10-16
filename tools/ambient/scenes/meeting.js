@@ -40,7 +40,7 @@ module.exports = function build() {
     const frames = [{}, look(-16), look(16),
       { pose: { arms: Object.assign({}, base, c.gest[0].arms), head: { yaw: 0, tilt: -3 } } },
       { pose: { arms: Object.assign({}, base, c.gest[1].arms), head: { yaw: 0, tilt: 2 } } }];
-    const f = L.fig(spec, { id: "m-" + c.id, frames });
+    const f = L.fig(spec, { id: "m-" + c.id, frames, place: S });
     people += L.at(f, c.x, FLOOR, S);
   });
 

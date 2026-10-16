@@ -54,7 +54,7 @@ module.exports = function build() {
   };
   CAST.forEach((c, i) => {
     const spec = L.pc(c.id);
-    const fig = L.fig(spec, { id: "cr-" + c.id, frames: moves[c.id] });
+    const fig = L.fig(spec, { id: "cr-" + c.id, frames: moves[c.id], place: 0.42 });
     const big = L.at(fig, 1140, 1190, 0.42);
     // the silhouette again, big: its ids renamed, so no id is defined twice (a reference resolves to the first copy, and that
     // one sits in another shot, display:none, which older WebKit does not resolve into)
