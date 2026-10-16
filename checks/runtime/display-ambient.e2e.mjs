@@ -5,7 +5,7 @@
 // Timings are shortened through the loopback-only hook localStorage['b68.display.ambientTiming'] (display-page.js).
 //   PW_MODULE=<path to playwright> node checks/runtime/display-ambient.e2e.mjs      (invented fixtures only)
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -261,6 +261,25 @@ try {
   await step('clearing the score drops the score scenes out of a pin', async () => {
     await ambient({ score: null });
     await D.page.waitForFunction(() => { const f = document.querySelector('.dp-ambient iframe.dp-amb-in'); const s = f && f.getAttribute('data-scene'); return !!s && s !== 'exploded' && s !== 'board'; }, null, { timeout: 30000 });
+  });
+
+  await step('opening credits: pinned, they ask for the theme; one tap lets it play; another scene stops it', async () => {
+    // the theme is an MP3 kept on the GM's PC (gitignored): without it the scene still runs, silent
+    const have = existsSync(path.join(ROOT, 'app', 'media', 'theme.mp3'));
+    await ambient({ mode: 'pin', scene: 'credits' });
+    await shows(D.page, 'credits');
+    const music = () => D.page.evaluate(() => window.B68DisplayPage && window.B68DisplayPage.ambient && window.B68DisplayPage.ambient.music ? window.B68DisplayPage.ambient.music() : null);
+    let m = null; for (let i = 0; i < 40; i++) { m = await music(); if (m && m.scene === 'credits') break; await sleep(250); }
+    expect(m && m.scene === 'credits', 'the credits asked for the theme: ' + JSON.stringify(m));
+    expect(m.playing || m.chip, 'either it plays (autoplay allowed) or the tap chip shows: ' + JSON.stringify(m));
+    await D.page.mouse.click(40, 40);
+    for (let i = 0; i < 60; i++) { m = await music(); if ((m.unlocked && m.playing) || m.failed) break; await sleep(250); }
+    if (have) expect(m.unlocked && m.playing && !m.chip, 'after a tap the theme plays: ' + JSON.stringify(m));
+    else expect(m.failed || !m.playing, 'no file: nothing plays and nothing breaks');
+    await ambient({ mode: 'pin', scene: 'duskwall' });
+    await shows(D.page, 'duskwall');
+    for (let i = 0; i < 20; i++) { m = await music(); if (!m.playing) break; await sleep(250); }
+    expect(!m.playing && m.scene === null, 'another scene stopped the theme: ' + JSON.stringify(m));
   });
 
   await step('the whole run: only same-origin requests, no scene called the API, no page errors, no CSP refusals', async () => {

@@ -14,3 +14,7 @@ gm-private/
 # (node tools/ambient/scenes/cards.js) and deployed from disk, never committed. See tools/ambient/README.md.
 app/ambient/calling-cards.html
 tools/ambient/cards/
+
+# The theme the opening credits play is someone's recording: kept on the GM's PC (app/media/theme.mp3), deployed from disk,
+# never committed.
+app/media/

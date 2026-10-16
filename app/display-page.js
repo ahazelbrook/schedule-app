@@ -415,11 +415,15 @@
     { id: 'cards', file: 'calling-cards.html', label: 'Calling cards' },
     { id: 'pells', file: 'pells-provisions.html', label: "Pell's Provisions" },
     { id: 'wanted', file: 'wanted-wall.html', label: 'Wanted wall', needs: 'crew' },
+    { id: 'meeting', file: 'planning-meeting.html', label: 'The planning meeting' },
+    { id: 'credits', file: 'opening-credits.html', label: 'Opening credits', pinOnly: true, music: true },
     { id: 'board', file: 'planning-board.html', label: 'Planning board', needs: 'score' },
     { id: 'exploded', file: 'score-exploded.html', label: 'Score site, exploded', needs: 'score' },
     { id: 'testcard', file: 'test-card.html', label: 'Please stand by', pinOnly: true }
   ];
-  Pure.AMBIENT_DEFAULT_PLAYLIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted'];
+  Pure.AMBIENT_DEFAULT_PLAYLIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting'];
+  /* the theme a `music: true` scene may ask the display to play: an MP3 kept on the GM's PC and deployed from disk, never committed */
+  Pure.AMBIENT_MUSIC = 'media/theme.mp3';
   /* the scenes told the crew's heat and wanted (b68:crew): the watch feed and the wanted wall */
   Pure.ambientCrewScenes = function () { return Pure.AMBIENT_SCENES.filter(function (s) { return s.needs === 'crew'; }).map(function (s) { return s.id; }); };
   Pure.AMBIENT_DEFAULT_MIN = 7;
@@ -1087,6 +1091,88 @@
       if (hit) sendScore(hit.contentWindow);
     }));
 
+    /* ---------- the theme ----------
+       A scene marked `music: true` in the registry (the opening credits) may ask for the theme, `Pure.AMBIENT_MUSIC` (an MP3 kept
+       on the GM's PC and deployed from disk, never committed), with { type: 'b68:music', cmd: 'play' | 'fade', sec }. An iPad lets a
+       page make sound only after a tap, so the first tap anywhere unlocks it; until then a small chip asks for one. The scene is
+       told where the music is ({ state: 'playing', t } once a second, or 'blocked', or 'none' when there is no file) and runs its
+       clock from that. The music stops when its scene goes: another scene, a spotlight, lights out. The fade runs through Web
+       Audio, because iOS ignores audio.volume. */
+    var M = s.music = { audio: null, ctx: null, gain: null, unlocked: false, frame: null, tick: null, failed: false };
+    var chip = el('button', 'dp-btn dp-sound', 'Tap for sound'); chip.type = 'button'; chip.hidden = true;
+    container.appendChild(chip);
+    function audioEl() {
+      if (M.audio) return M.audio;
+      var a = M.audio = new Audio(Pure.AMBIENT_MUSIC);
+      a.preload = 'auto';
+      a.addEventListener('error', function () { M.failed = true; tellMusic({ type: 'b68:music', state: 'none' }); stopMusic(); });
+      return a;
+    }
+    function tellMusic(msg) { var f = M.frame; if (f && f.contentWindow) { try { f.contentWindow.postMessage(msg, location.origin); } catch (e) { /* gone */ } } }
+    function musicAlive() { var f = M.frame, st = amb.state(); return !!f && f.parentNode === layer && !st.covered && st.active === f.getAttribute('data-scene'); }
+    function setGain(v) { if (M.gain && M.ctx) { M.gain.gain.cancelScheduledValues(M.ctx.currentTime); M.gain.gain.setValueAtTime(v, M.ctx.currentTime); } else if (M.audio) M.audio.volume = v; }
+    function unlockMusic() {
+      if (M.unlocked || s.dead) return;
+      var a = audioEl();
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (AC && !M.ctx) { M.ctx = new AC(); M.gain = M.ctx.createGain(); M.ctx.createMediaElementSource(a).connect(M.gain); M.gain.connect(M.ctx.destination); }
+        if (M.ctx && M.ctx.state === 'suspended') M.ctx.resume();
+      } catch (e) { M.ctx = null; M.gain = null; }
+      /* the credits are waiting: start the theme in this tap, which is the unlock */
+      if (M.frame && musicAlive()) { startMusic(); return; }
+      a.muted = true;
+      var done = function () { a.pause(); a.muted = false; M.unlocked = true; chip.hidden = true; };
+      var p = a.play();
+      if (p && p.then) p.then(done, function () { a.muted = false; /* still locked: the next tap tries again */ }); else done();
+    }
+    function startMusic() {
+      var a = audioEl();
+      if (M.failed) { tellMusic({ type: 'b68:music', state: 'none' }); return; }
+      setGain(1);
+      try { a.currentTime = 0; } catch (e) { /* not loaded yet: it starts at 0 anyway */ }
+      var go = function () {
+        M.unlocked = true; chip.hidden = true;
+        tellMusic({ type: 'b68:music', state: 'playing', t: a.currentTime });
+        if (M.tick) clearInterval(M.tick);
+        M.tick = setInterval(function () {
+          if (!musicAlive()) { stopMusic(); return; }
+          if (!a.paused) tellMusic({ type: 'b68:music', state: 'playing', t: a.currentTime });
+        }, 1000);
+      };
+      var p = a.play();
+      if (p && p.then) p.then(go, function () { M.unlocked = false; chip.hidden = false; tellMusic({ type: 'b68:music', state: 'blocked' }); }); else go();
+    }
+    function fadeMusic(sec) {
+      var a = M.audio; if (!a) return;
+      var ms = Math.max(500, Math.min(30000, (Number(sec) || 4) * 1000));
+      if (M.gain && M.ctx) { var g = M.gain.gain, t = M.ctx.currentTime; g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + ms / 1000); }
+      later(function () { if (M.audio === a) { try { a.pause(); } catch (e) {} } if (M.tick) { clearInterval(M.tick); M.tick = null; } }, ms + 100);
+      if (!M.gain) { var t0 = Date.now(), v0 = a.volume, iv = setInterval(function () { var k = (Date.now() - t0) / ms; if (k >= 1 || a.paused) { clearInterval(iv); return; } a.volume = Math.max(0, v0 * (1 - k)); }, 100); }
+    }
+    function stopMusic() {
+      if (M.tick) { clearInterval(M.tick); M.tick = null; }
+      if (M.audio) { try { M.audio.pause(); } catch (e) { /* fine */ } }
+      M.frame = null; chip.hidden = true;
+    }
+    s.offs.push(on(window, 'message', function (ev) {
+      if (s.dead || ev.origin !== location.origin || !ev.data || ev.data.type !== 'b68:music' || !ev.source) return;
+      var frames = layer.querySelectorAll('iframe'), hit = null;
+      for (var i = 0; i < frames.length; i++) {
+        if (frames[i].contentWindow !== ev.source) continue;
+        var sc = Pure.ambientScene(frames[i].getAttribute('data-scene'));
+        if (sc && sc.music) hit = frames[i];
+      }
+      if (!hit) return;
+      if (ev.data.cmd === 'play') {
+        M.frame = hit;
+        if (M.unlocked) startMusic(); else { chip.hidden = false; tellMusic({ type: 'b68:music', state: 'blocked' }); }
+      } else if (ev.data.cmd === 'fade' && M.frame === hit) fadeMusic(ev.data.sec);
+    }));
+    s.offs.push(on(document, 'pointerdown', unlockMusic));
+    s.offs.push(on(document, 'keydown', unlockMusic));
+    s.offs.push(function () { stopMusic(); if (M.ctx) { try { M.ctx.close(); } catch (e) {} } });
+
     /* status */
     function paintStatus() {
       var v = Pure.statusView(s.poll, s.seq, s.updatedAt);
@@ -1227,7 +1313,9 @@
     cover: function () { if (S && S.amb) S.amb.cover(); },
     uncover: function () { if (S && S.amb) S.amb.uncover(); },
     post: function (id, message) { return !!(S && S.amb && S.amb.post(id, message)); },
-    state: function () { return S && S.amb ? S.amb.state() : null; }
+    state: function () { return S && S.amb ? S.amb.state() : null; },
+    /* the theme, for the checks: unlocked, playing, the scene it plays for, and whether the tap chip shows */
+    music: function () { var m = S && S.music; if (!m) return null; return { unlocked: m.unlocked, playing: !!(m.audio && !m.audio.paused), scene: m.frame ? m.frame.getAttribute('data-scene') : null, failed: m.failed, chip: !!S.container.querySelector('.dp-sound:not([hidden])') }; }
   };
   var api = { mount: mount, unmount: unmount, ambient: ambient };
   if (typeof window !== 'undefined') window.B68DisplayPage = api;

@@ -25,6 +25,8 @@ node tools/ambient/scenes/lurker.js       # lurker-press.html    the Lurker pres
 node tools/ambient/scenes/cards.js        # calling-cards.html   faction cards (local only, see below)
 node tools/ambient/scenes/pells.js        # pells-provisions.html Pell's Provisions
 node tools/ambient/scenes/wanted.js       # wanted-wall.html     the wanted wall (heat and wanted like the watch feed)
+node tools/ambient/scenes/meeting.js      # planning-meeting.html the crew round the table, taking turns
+node tools/ambient/scenes/credits.js      # opening-credits.html  the title sequence (EPISODE and CAST at the top)
 node tools/ambient/redress.js             # Booker's suit and Alfie's cigarette in the lair, the rooftop and the watch feed
 ```
 
