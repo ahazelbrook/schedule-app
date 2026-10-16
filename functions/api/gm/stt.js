@@ -13,7 +13,7 @@ export async function onRequest({ request, env, data }) {
   const role = requireListener(data, true);
   if (!METHODS.includes(request.method)) return methodNotAllowed(METHODS);
   const db = await getDb(env), campaign = campaignOf(env);
-  if (request.method === 'GET') return json(await loadStt(db, campaign));
+  if (request.method === 'GET') { const { doc, updatedAt } = await loadStt(db, campaign); return json({ doc, updatedAt }); }
   const patch = cleanSttPatch(await readJsonObject(request, 16 * 1024), role);
   return json(await patchStt(db, campaign, patch));
 }

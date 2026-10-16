@@ -1146,7 +1146,9 @@
   function foldState() { try { var a = JSON.parse(W.localStorage.getItem(FOLD_KEY) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
   function foldOpen(id) { return foldState().indexOf(id) >= 0; }
   function onToggle(ev) {
-    var d = ev.target; if (!d || !d.getAttribute || !d.hasAttribute('data-fold')) return;
+    var d = ev.target; if (!d || !d.getAttribute) return;
+    if (d.hasAttribute('data-sttfold')) { STT.fold = !!d.open; return; }   /* "Who is who": kept open or shut across the 5 s refresh */
+    if (!d.hasAttribute('data-fold')) return;
     var id = d.getAttribute('data-fold'), a = foldState().filter(function (x) { return x !== id && /^[a-z-]{1,24}$/.test(x); });
     if (d.open) a.push(id);
     try { W.localStorage.setItem(FOLD_KEY, JSON.stringify(a.slice(-20))); } catch (e) {}
@@ -1300,7 +1302,7 @@
       (st.error && st.state !== 'listening' ? '<p class="gm-note bad">' + esc(st.error) + '</p>' : '') +
       '<div class="gm-ipad-acts">' + (on ? '<button type="button" class="btn" data-gm="stt-off">Stop listening</button>'
         : '<button type="button" class="btn primary" data-gm="stt-on" title="The iPad shows a button: tap it once to open the mic">Start listening</button>') + '</div>' +
-      '<details class="gm-fold"' + (on ? ' open' : '') + '><summary>Who is who</summary><div class="gm-stt-spk">' + nums.map(function (n) {
+      '<details class="gm-fold" data-sttfold="1"' + ((STT.fold === undefined ? on : STT.fold) ? ' open' : '') + '><summary>Who is who</summary><div class="gm-stt-spk">' + nums.map(function (n) {
         return '<label class="gm-field" for="gm-stt-s' + n + '"><span class="gm-lab">S' + n + '</span><input type="text" id="gm-stt-s' + n + '" data-sttspk="' + n + '" maxlength="60" autocomplete="off" placeholder="Name (Character)" value="' + esc(isObj(d.speakers) ? d.speakers[String(n)] || '' : '') + '"></label>';
       }).join('') + '</div><p class="gm-dim">Numbers are Deepgram’s guesses and restart after a reconnect. Names apply to lines the PC copies from now on.</p></details>' +
       (STT.tail.length ? '<ol class="gm-stt-tail">' + STT.tail.map(function (l) {

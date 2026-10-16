@@ -79,6 +79,29 @@ await test('server: the control document: the GM sets want, session, speakers; t
     assert.throws(() => cleanSttPatch(p, role), undefined, JSON.stringify(p));
 });
 
+await test('server: the control document: a write that lands between another write\'s read and save is never undone', async () => {
+  const db = await newDb();
+  await patchStt(db, 'default', cleanSttPatch({ want: 'off', session: '9' }, 'gm'));
+  /* wrap the db so the first read of gm_stt runs `meanwhile` before it answers: another write lands mid-PATCH */
+  const racing = (meanwhile) => {
+    let done = false;
+    return { prepare(sql) {
+      const st = db.prepare(sql);
+      if (done || !/^SELECT updated_at, doc FROM gm_stt/.test(sql)) return st;
+      return { bind(...a) { const b = st.bind(...a); return { async first() { const r = await b.first(); done = true; await meanwhile(); return r; } }; } };
+    } };
+  };
+  /* the iPad's status report reads, then the GM turns listening on before the report saves */
+  await patchStt(racing(() => patchStt(db, 'default', cleanSttPatch({ want: 'on' }, 'gm'))), 'default', cleanSttPatch({ status: { state: 'listening', lines: 2 } }, 'display'));
+  const d = (await loadStt(db, 'default')).doc;
+  assert.deepEqual([d.want, d.status.state, d.status.lines], ['on', 'listening', 2], 'both writes kept');
+  /* the PC's heartbeat sets copier in place (updated_at unmoved): a PATCH read before it does not wipe it */
+  const beat = () => db.prepare("UPDATE gm_stt SET doc = json_set(doc, '$.copier', json(?2)) WHERE campaign = ?1").bind('default', JSON.stringify({ at: '2030-01-01T09:00:00.000Z', last: 7, host: 'LAPTOP' })).run();
+  await patchStt(racing(beat), 'default', cleanSttPatch({ speakers: { 0: 'Alex (GM)' } }, 'gm'));
+  const e = (await loadStt(db, 'default')).doc;
+  assert.deepEqual([e.copier.host, e.copier.last, e.speakers[0], e.want], ['LAPTOP', 7, 'Alex (GM)', 'on']);
+});
+
 await test('server: the token: no secret is 503, Deepgram refusing is 502 (403 names the permission), else the token and nothing else', async () => {
   await assert.rejects(grantToken({}), (e) => e.status === 503);
   const calls = [];

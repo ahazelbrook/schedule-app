@@ -53,7 +53,7 @@ export function assertPrepWritable(rel) {
   if (NEVER.includes(r)) throw new Error('the sync never writes ' + r);
   if (/(^|\/)\./.test(r) || r.startsWith('TTRPG/') || r.startsWith('_Templates/') || r.startsWith('_archive/')) throw new Error('no-touch zone: ' + r);
   const tail = r.startsWith(GROUP + '/') ? r.slice(GROUP.length + 1) : null;
-  if (tail === null || !/^(Sessions\/)?[^/]+\.md$/.test(tail) || /-transcript\.md$/i.test(tail)) throw new Error('not a note the prep sync ticks: ' + r);
+  if (tail === null || !/^(Sessions\/)?[^/]+\.md$/.test(tail) || /-transcript(-ipad)?\.md$/i.test(tail)) throw new Error('not a note the prep sync ticks: ' + r);
   return r;
 }
 

@@ -135,7 +135,7 @@ export function roleFor(email, gmEmails, displayEmails) {
 }
 
 // ---------- the display role: an allow-list, applied by functions/api/_middleware.js before any handler ----------
-// The table display may read itself and its own identity, nothing else. Every other method and path (other /api/gm/*
+// The table display may read itself and its own identity, and run the transcriber; nothing else. Every other method and path (other /api/gm/*
 // routes, the campaign, characters, NPCs, rules, members, export, unknown paths) is 403 with the same message, before
 // the body is read or the database touched, so the display cannot tell which routes exist. A route added later is
 // refused by default. The patterns are the router's own (worker/app.js ROUTES: an optional trailing slash).
@@ -143,6 +143,11 @@ export const DISPLAY_ONLY = 'this is the table display sign-in: it can only show
 export const DISPLAY_ALLOWED = [
   { method: 'GET', re: /^\/api\/me\/?$/ },
   { method: 'GET', re: /^\/api\/gm\/display\/?$/ },
+  // the transcriber (GM.md "Listening"): get a token, read and report its status, post lines; never read the transcript
+  { method: 'POST', re: /^\/api\/gm\/stt\/token\/?$/ },
+  { method: 'GET', re: /^\/api\/gm\/stt\/?$/ },
+  { method: 'PATCH', re: /^\/api\/gm\/stt\/?$/ },
+  { method: 'POST', re: /^\/api\/gm\/transcript\/?$/ },
 ];
 
 /** true when the display role may make this call (method and the raw URL pathname, as the router matches it). */
