@@ -127,36 +127,47 @@ saving robustness (pagehide flush, refused saves undone, log capped at 200, cros
 "On stage: ..." line after Hide. A table-page touch block the first agent wrote in campaign.css was taken out of
 this branch (the table-page agent owns that file); its text is in `review/players-wip` (15fbac1) if wanted.
 
-### 4. Engineering (branch: engineering)
+### 4. Engineering (branch: engineering) · MERGED 16 Oct (0e8afca)
 
 Keep: optimistic write loops with 409; role gates before the body is read; RS256 JWT with pinned alg and JWKS cache;
 the display path failing closed (checkSvg + sanitiseSvg agree; markdown.js fuzzed clean); the offline queue design;
 additive secrets on deploy; schema.sql = migrations.
 
-- [ ] E1 P1 · A stalled request freezes the poller and the save queue for good while the header says online (no
+- [x] E1 P1 · A stalled request freezes the poller and the save queue for good while the header says online (no
       timeout in cf.js api()). AbortController timeouts; adapter test. · S
-- [ ] E6 P2 · A player's tap after a sign-out is rejected before queueing and lost on reload. Queue it. · S
-- [ ] E2 + C11 P2 · The service worker is network-first with no timeout: dead venue wifi blocks launch though a cache
+- [x] E6 P2 · A player's tap after a sign-out is rejected before queueing and lost on reload. Queue it. · S
+- [x] E2 + C11 P2 · The service worker is network-first with no timeout: dead venue wifi blocks launch though a cache
       exists. Race with a timeout; bump the cache. · S
-- [ ] Lazy loading, phase 1 + 3 P2 · 2.3 MB of JS and 230 KB of CSS load synchronously for every player on every route.
+- [x] Lazy loading, phase 1 + 3 P2 · 2.3 MB of JS and 230 KB of CSS load synchronously for every player on every route.
       routes.js bundles per route; index.html keeps the core; the SW still precaches everything; a build id, `?v=`
       on bundles, and an "Updated: reload" chip. · M
-- [ ] E7, E8 P2 · Deploy from Windows: `.gitattributes` (LF), "run from Git Bash"; the script checks the two gitignored
+- [x] E7, E8 P2 · Deploy from Windows: `.gitattributes` (LF), "run from Git Bash"; the script checks the two gitignored
       files (theme.mp3, calling-cards.html), lists the five secrets present/missing, refuses a dirty tree, prints a
       receipt. · S
-- [ ] E9 P3 · display.test and gm-location.test not in check:runtime; the two 500-seed sweeps make npm test 3× slower
+- [x] E9 P3 · display.test and gm-location.test not in check:runtime; the two 500-seed sweeps make npm test 3× slower
       (B68_SWEEP); a check:e2e-all script. · S
-- [ ] E10 P3 · Seven stale doc claims (migrations count, microphone, claude.gm calls, display's "two calls", kind
+- [x] E10 P3 · Seven stale doc claims (migrations count, microphone, claude.gm calls, display's "two calls", kind
       `cards`...). · S
-- [ ] E11 P3 · The vault path hard-coded six times in package.json (B68_VAULT). · S
-- [ ] Docs consolidation · PLAN, RESEARCH, AMBIENT-PLAN, DEPLOY-PROMPT, ROADMAP to docs/history/; SCHEDULE.md marked
+- [x] E11 P3 · The vault path hard-coded six times in package.json (B68_VAULT). · S
+- [x] Docs consolidation · PLAN, RESEARCH, AMBIENT-PLAN, DEPLOY-PROMPT, ROADMAP to docs/history/; SCHEDULE.md marked
       parked; DEPLOY.md folded into SETUP.md; README leads with the four commands a non-programmer needs. · S
-- [ ] E12 P3 · A Content-Security-Policy, report-only first. · S
-- [ ] E13 P3 · A failed JWKS refetch after the 1 h TTL makes every call 401 until Cloudflare answers; keep stale keys. · S
+- [x] E12 P3 · A Content-Security-Policy, report-only first. · S
+- [x] E13 P3 · A failed JWKS refetch after the 1 h TTL makes every call 401 until Cloudflare answers; keep stale keys. · S
+
+Landed: request timeouts (a stalled poll or save no longer freezes the app); a write after a sign-out is queued;
+the service worker answers from its cache when the network stalls (4 s pages, 8 s files); lazy route bundles (Home and
+a sheet fetch 1.48 MB of JS and CSS instead of 2.54 MB; rules and cast stay in the core because every sheet uses them);
+one build stamp (`app/routes.js`) shared by the page, the service worker and `/api/me`, with an "Updated: reload" chip;
+the deploy script refuses a dirty tree or missing on-disk media, stamps the build and ends with a receipt
+(`checks/api/deploy.mjs`); `.gitattributes` (LF); the sweeps at 100 seeds in `npm test` (`check:sweep` for 500);
+`check:e2e-all` (all 26 browser checks); `B68_VAULT`; seven stale doc claims fixed; history docs in `docs/history/`;
+the last good Access keys kept when a refresh fails; a full CSP sent as Report-Only.
+Checks on the merge: `npm test` 580 pass; `check:e2e-all` 25 of 26 (the transcriber check fails the same four lines on
+untouched main: the fake microphone does not work in this container).
 
 ## Wave 2 (after the wave-1 merges)
 
-- [ ] Generators, page side (in progress on `review/gm-wave2`; exact list from the generators agent):
+- [x] Generators, page side (MERGED with `review/gm-wave2`):
       1. Situations card: show `sections[0].lines[0].small` under the lead (with a threat, the spend sentence); under
          More skip the lead's first line; fold `coach: true` lines under "Why" in every section.
       2. `situationPlain` (Pin/Copy/L): skip `coach` lines; put `meta.chips[0]` (the position chip) on the title line.
@@ -167,9 +178,9 @@ additive secrets on deploy; schema.sql = migrations.
       5. Location glance: `g.plan` under Say (GM only, never to the iPad); a Rule row when `g.rule` is set.
       6. NPC portrait: show `fig.note`; no portrait when `fig.failed`; "No portrait: ..." when the kit throws.
       7. Earlier chips name the NPC and show the time and position (B15). · S-M
-- [ ] (in progress on `review/gm-wave2`) E5 P2 · After Access expires mid-session the GM saver parks every later patch for good and the toast says the
+- [x] (MERGED, gm-wave2) E5 P2 · After Access expires mid-session the GM saver parks every later patch for good and the toast says the
       opposite. Treat 401 as pending-until-sign-in, say "reload to sign in, notes kept", resend. · S-M
-- [ ] (in progress on `review/gm-wave2`) E18 P3 · Capture alone can hit the 240 KiB soft cap, after which every roll is refused; cap by bytes, drop the
+- [x] (MERGED, gm-wave2) E18 P3 · Capture alone can hit the 240 KiB soft cap, after which every roll is refused; cap by bytes, drop the
       oldest. · S
 - [x] E17 · Decided 16 Oct: the Classic console view and the Classic page layout go entirely (one mode). Done on the
       gm-page branch.
@@ -181,11 +192,15 @@ additive secrets on deploy; schema.sql = migrations.
 - [ ] E14 P3 · The display never leaves "denied"; reload once after 10 min. · S
 - [ ] Lazy loading phase 2 · The figure kit (688 KB) loaded after first paint; the three top-level captures become
       lookups. · M
-- [ ] (in progress on `review/gm-wave2`) Physical dice on the GM page · The engagement roll: let the GM roll physically and tap the highest die instead
+- [x] (MERGED, gm-wave2) Physical dice on the GM page · The engagement roll: let the GM roll physically and tap the highest die instead
       of the app rolling (the pool is still computed by the app); the same for any GM-side roll. · S
 - [ ] Ideas from review B · Re-roll one row of a card (per-section seeds exist); a "Tonight" strip of every roll beyond
       the five, exported into the note; "Make them an NPC" on a Face/Reaction card; "Use the street" chaining Street →
       Location → NPC. · M
+- [ ] Docs sweep after the last merge · comments and docs still pointing at the moved docs (PLAN, AMBIENT-PLAN,
+      ROADMAP, DEPLOY...) in app/season.js, app/gm-page.js, app/display-page.js, app/README.md (also: list routes.js),
+      CAST.md, CAMPAIGN.md, functions/_lib/gm.js, functions/api/gm/ambient.js and display.js; AMBIENT-PLAN's decisions
+      into GM.md. · S
 - [ ] E16 P3 · One app/util.js for the twelve copies of esc/isObj/clone (adopt per touched module). · M
 
 ## Later or parked
