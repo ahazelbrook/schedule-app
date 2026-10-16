@@ -134,6 +134,16 @@ await test('purveyor(): every line in the book reads as a host and a place; type
   assert.deepEqual(D.purveyor(''), { host: '', place: '', district: '', near: '' });
 });
 
+await test('purveyor(): a known host whose place is the line\'s own second part gets it as written, its role word off (no setting name in the module)', () => {
+  const line = PURVEYORS.find((p) => /^Ms\.? Asta,/.test(p));     // read from the book (content.js): this file names no setting either
+  assert.ok(line, 'the book still has the line');
+  const parts = line.split(',').map((x) => x.trim());
+  assert.match(parts[1], /\scontroller$/);
+  assert.deepEqual(D.purveyor(line), { host: 'Ms. Asta', place: parts[1].replace(/\s+controller$/, ''), district: 'the Docks', near: '' });
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'downtime.js'), 'utf8');
+  assert.ok(!src.includes(parts[1].split(' ')[0]), 'the place is not written into the module');
+});
+
 await test('the dice: recover and project carry the sheet\'s ticks (1 / 2 / 3 / 5); before the dice there are none', () => {
   const dt = D.create();
   const want = { '13': 1, '45': 2, '6': 3, crit: 5 };

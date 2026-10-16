@@ -624,7 +624,7 @@
     [/^chef lisanne/i, 'Chef Lisanne', 'the Golden Plum'],
     [/^family/i, 'your family', 'home'],
     [/^carro|^cake/i, 'Cake Danfield', 'the Iron gym'],
-    [/^ms\.? asta/i, 'Ms. Asta', 'Blackthorn Park'],
+    [/^ms\.? asta/i, 'Ms. Asta', viaRole],      /* the park, from the line itself: no setting name in this file (gm-nosecrets (a)) */
     [/^director of success/i, 'the Director of Success', 'the New Dawn Center'],
     [/^helda/i, 'Helda', 'the Skovlander community hall'],
     [/^benson/i, 'Benson', 'the Black Goat'],
@@ -646,6 +646,8 @@
   ];
   var ROLE = /^(?:a |an |the )?(?:[\w'’-]+ )*?(?:bookmaker|librarian|president|dealer|handler|controller|leader|pilot|guide|owner|manager|chef|keeper|host)\s+(?:at|of|in)\s+/i;
   var ROLE_TAIL = /\s+(?:controller|handler|leader|owner|manager|keeper|host)$/i;
+  /* a KNOWN place that is the line's second part as written, its role word taken off ("X Park controller" -> "X Park") */
+  function viaRole(parts) { return str(parts[1]).replace(ROLE_TAIL, '').trim(); }
   function normName(s) { return str(s).toLowerCase().replace(/[’`]/g, "'").replace(/^the\s+/, '').replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
   function districtOf(s, districts) {
     var n = normName(s); if (!n) return '';
@@ -662,9 +664,9 @@
     var parts = str(line).split(',').map(function (x) { return x.trim(); }).filter(Boolean), out = { host: '', place: '', district: '', near: '' };
     if (!parts.length) return out;
     if (parts.length > 1) { var d = districtOf(parts[parts.length - 1], districts); if (d) { out.district = d; parts.pop(); } }
-    /* a third part that is not a district is still where it is ("above Doskvol"): shown, never put into a sentence */
+    /* a third part that is not a district is still where it is ("above the city"): shown, never put into a sentence */
     if (!out.district && parts.length > 2) out.near = parts.pop();
-    for (var k = 0; k < KNOWN.length; k++) if (KNOWN[k][0].test(parts.join(', '))) { out.host = KNOWN[k][1]; out.place = KNOWN[k][2]; return out; }
+    for (var k = 0; k < KNOWN.length; k++) if (KNOWN[k][0].test(parts.join(', '))) { out.host = KNOWN[k][1]; out.place = typeof KNOWN[k][2] === 'function' ? KNOWN[k][2](parts) : KNOWN[k][2]; return out; }
     var first = parts[0], at = /^(.+?)\s+at\s+(.+)$/i.exec(first);
     if (/[’']s\b/.test(first) && parts.length === 1) { out.host = first.split(/[’']s\b/)[0].trim(); out.place = first; return out; }
     if (at && parts.length === 1) { out.host = at[1].trim(); out.place = /^the\s/i.test(at[2]) || !/^[A-Z]/.test(at[2]) ? at[2].trim() : 'the ' + at[2].trim(); return out; }
