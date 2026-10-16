@@ -248,7 +248,9 @@ failure rejects with `.network = true`. The page caches the corpus itself (Index
 sends the cached `version` to get a cheap `unchanged`, and falls back to the cache when the network is down.
 
 `window.B68Rules` (rules.js): `available()`, `help(term)` (HTML for a "?" link to `#rules?q=<term>`, `''` when unavailable;
-tracker.js, crewsheet.js and campaign.js use it), `open(root, api)`, `route()`, `close()`. boot.js owns the `rules` mode
+tracker.js, crewsheet.js and campaign.js use it), `open(root, api)`, `route()`, `close()`, and for the GM page's rules search and Find
+`load(cacheOnly)` (the corpus with the page closed: memory, this device's copy, then the server), `hits(q, n)` (`{ total, hits }`: the best n,
+each a plain row with its snippet) and `entry(id)` (one entry's Markdown as the players may see it). boot.js owns the `rules` mode
 (`body[data-mode="rules"]`, `#rules-page`), the `#rules` hash routes (`#rules`, `#rules?q=<words>`, `#rules?edit=<slug>`,
 `#rules/<book>/<slug>`), the Rules button in the header and the link on Home; `A.openRules()`. `window.B68Markdown`
 (markdown.js): `render(src, { resolve, headingOffset })`, `parseFrontmatter`, `splitFile`, `plain`, `safeUrl`, `esc`. The

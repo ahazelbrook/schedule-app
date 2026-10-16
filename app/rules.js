@@ -13,6 +13,9 @@
      open(root, api)              draw into `root` for the current hash (boot.js calls it when the mode becomes `rules`)
      route()                      the hash changed inside the mode
      close()
+     load(cacheOnly)              (the GM page) the corpus, with this page closed: memory, this device's copy, then the server
+     hits(q, n)                   { total, hits: [{ id, book, slug, title, titleHtml, caption, snip, href }] }: the best n hits of a search
+     entry(id)                    { id, title, caption, md, href, also } for 'book/slug': md as the players may see it
    api (boot.js): { ready() -> Promise, isGM() -> bool, me() -> id|null, back() }
    Markdown is rendered by markdown.js (B68Markdown), which escapes all HTML; nothing here sets innerHTML from rule text
    except through it or esc(). */
@@ -741,10 +744,11 @@
       try { window.dispatchEvent(new CustomEvent('b68:display', { detail: { kind: d.kind, title: d.title || '' } })); } catch (e) {}
     }, function (e) { ipadMsg('Could not reach the iPad: ' + (e && e.message || e), true); });
   }
+  /* the line under an entry's title on the iPad (and in the GM page's hits): the book, and the chapter when it says more */
+  function captionOf(e) { var ch = e._ch && e._ch.name; return BOOKS[e.book] + (ch && ch !== e.t && norm(ch) !== norm(BOOKS[e.book]) ? ' · ' + ch : ''); }
   function showOnIpad(id) {
     var e = S.corpus && S.corpus.byId[id]; if (!e) return;
-    var ch = e._ch && e._ch.name, caption = BOOKS[e.book] + (ch && ch !== e.t && norm(ch) !== norm(BOOKS[e.book]) ? ' · ' + ch : '');
-    pushIpad({ kind: 'rule', title: e.t.slice(0, 2000), caption: caption.slice(0, 2000), md: forTable(e.body) || '—' }, 'On the iPad: ' + e.t + '.');
+    pushIpad({ kind: 'rule', title: e.t.slice(0, 2000), caption: captionOf(e).slice(0, 2000), md: forTable(e.body) || '—' }, 'On the iPad: ' + e.t + '.');
   }
 
   /* ---------- events ---------- */
@@ -852,5 +856,32 @@
   function route() { if (active && root) { draw(); if (S.corpus && Date.now() - S.checkedAt > 60000) load(false); } }
   function close() { active = false; S.token++; if (hashT) { clearTimeout(hashT); hashT = null; } }
 
-  window.B68Rules = { available: available, help: help, open: open, route: route, close: close, KEYWORDS: KEYWORDS, _search: function (q) { var r = search(q); return r.hits.map(function (h) { return h.primary.book + '/' + h.primary.slug; }); } };
+  /* ---------- for the GM page (gm-page.js: the GM screen's rules search, and Find) ----------
+     The page searches and reads the rules without this page being open, so the three things it needs are plain data. */
+  /* the corpus: in memory, else the copy this device holds, else (unless cacheOnly) the server. One older than a minute is refreshed
+     behind the answer. null when cacheOnly and this device holds none (Find never starts a download). */
+  function ensureCorpus(cacheOnly) {
+    if (!runtime()) return Promise.reject(new Error('the rules need the hosted app'));
+    function have() { if (!cacheOnly && Date.now() - S.checkedAt > 60000) fetchRules().then(null, function () {}); return S.corpus; }
+    if (S.corpus) return Promise.resolve(have());
+    return cacheGet().then(function (c) {
+      if (c && Array.isArray(c.entries) && !S.corpus) setCorpus(c, true, c.savedAt);
+      return S.corpus ? have() : cacheOnly ? null : fetchRules();
+    });
+  }
+  function describe(e) { return { id: e.book + '/' + e.slug, book: e.book, slug: e.slug, title: e.t, caption: captionOf(e), href: hrefOf(e) }; }
+  /* a search: { total, hits: [the best n, as rows with the title and a snippet as escaped HTML, <mark> the only tag] }; nothing before the corpus is loaded */
+  function hitsOf(q, n) {
+    var r = search(q);
+    return { total: r.hits.length, hits: r.hits.slice(0, Math.max(1, Math.min(30, +n || 10))).map(function (h) { var d = describe(h.primary); d.titleHtml = highlight(h.primary.t, r.terms); d.snip = snippet(h.primary, r.terms); return d; }) };
+  }
+  /* one entry: its Markdown as the players may see it (forTable, what Show on iPad sends), and the entries of the same title in the other books */
+  function entryOf(id) {
+    var e = S.corpus && S.corpus.byId[id]; if (!e) return null;
+    var d = describe(e), all = e._g ? S.corpus.groups[e._g] || [e] : [e];
+    d.md = forTable(e.body) || '—';
+    d.also = all.filter(function (x) { return x !== e; }).map(function (x) { return { id: x.book + '/' + x.slug, label: twinLabel(x.book) }; });
+    return d;
+  }
+  window.B68Rules = { available: available, help: help, open: open, route: route, close: close, KEYWORDS: KEYWORDS, load: ensureCorpus, hits: hitsOf, entry: entryOf, _search: function (q) { var r = search(q); return r.hits.map(function (h) { return h.primary.book + '/' + h.primary.slug; }); } };
 })();

@@ -26,6 +26,7 @@ const PARTS = {
   scenes: sc.parts.scenes, engagement: sc.parts.engagement,
 };
 const T_SC = sc.parts.scenes.T;
+PARTS.console.T.district.push('Cobb Hill');       /* one district both the console and the street scenes list, so Now in is shared by two tools (in memory only) */
 
 const stateDir = mkdtempSync(path.join(tmpdir(), 'b68-scenes-e2e-'));
 const WRANGLER = path.join(ROOT, 'node_modules', '.bin', 'wrangler');
@@ -105,13 +106,49 @@ try {
   await p.click('#gm-scn [data-gm="replay"]:not([aria-current])');
   check(await text(p, '#gm-scn .gm-scncard h3') === name, 'Earlier: the first card is back');
 
+  // Now in (A7): one district in the bar; the Street picker and the console follow it, a pick of its own wins, a stored card never moves
+  await p.selectOption('#gm-s-sel', '');                      // its own pick (Cobb Hill) given back to Now in
+  await p.selectOption('#gm-now', 'Brindle Row');
+  check(await p.$eval('#gm-s-sel', (s) => s.value === '' && s.options[0].textContent === 'Now in: Brindle Row'), 'Street: the District picker leads with "Now in: Brindle Row" and follows it');
+  await p.click('[data-gm="scnroll"]');
+  await p.waitForFunction(() => document.querySelector('#gm-scn .gm-scncard h3').textContent === 'Brindle Row', null, { timeout: 8000 });
+  const brindle = await text(p, '#gm-scn .gm-scncard');
+  const stB = await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.now && d.now.district === 'Brindle Row' && d.cards.scenes.ui.sel === 'Brindle Row' ? d : null; }, 8000);
+  check(!!stB && !(stB.scn && stB.scn.ui && stB.scn.ui.sel), 'Street: a roll uses Now in; the card stores the district it resolved to, the picker stores nothing (it follows)');
+  const hidB = stB && stB.cards.scenes.hid;
+  await p.selectOption('#gm-now', 'Alder Quay');
+  check((await text(p, '#gm-scn .gm-scncard')) === brindle, 'Now in changed: the street scene on screen stays as rolled');
+  await p.selectOption('#gm-s-sel', 'Cobb Hill');             // a pick of its own
+  await p.click('[data-gm="scnroll"]');
+  await p.waitForFunction(() => document.querySelector('#gm-scn .gm-scncard h3').textContent === 'Cobb Hill', null, { timeout: 8000 });
+  await p.selectOption('#gm-now', 'Brindle Row');
+  check(await p.$eval('#gm-s-sel', (s) => s.value === 'Cobb Hill' && s.options[0].textContent === 'Now in: Brindle Row'), 'a pick of its own stays through a change of Now in, and the first choice names the new Now in');
+  await p.click('[data-gm="scnroll"]');
+  await p.waitForFunction(() => document.querySelector('#gm-scn .gm-scncard h3').textContent === 'Cobb Hill', null, { timeout: 8000 });
+  check(await text(p, '#gm-scn .gm-scncard h3') === 'Cobb Hill', 'and a roll still uses the pick (Cobb Hill) while Now in is Brindle Row');
+  await p.selectOption('#gm-s-sel', ''); await p.selectOption('#gm-now', 'Cobb Hill');
+  await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  await p.keyboard.press('3');                                // the console follows the same Now in
+  await p.waitForSelector('#gm-card .gm-lead');
+  await p.keyboard.press('s'); await p.click('[data-gm="scnroll"]');
+  await p.waitForFunction(() => document.querySelector('#gm-scn .gm-scncard h3').textContent === 'Cobb Hill', null, { timeout: 8000 });
+  const stC = await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.cards.situation && d.cards.situation.ui.district === 'Cobb Hill' && d.cards.scenes.ui.sel === 'Cobb Hill' ? d : null; }, 8000);
+  check(!!stC, 'one Now in (Cobb Hill) for two tools: the console roll and the street scene both store it');
+  await p.click('#gm-scn [data-gm="replay"][data-h="' + hidB + '"]');
+  check((await text(p, '#gm-scn .gm-scncard')) === brindle && (await text(p, '#gm-scn .gm-scncard h3')) === 'Brindle Row', 'Earlier: the Brindle Row card comes back exactly as rolled, whatever Now in is (Cobb Hill)');
+  await p.reload(); await p.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  check(await p.$eval('#gm-now', (s) => s.value === 'Cobb Hill') && await text(p, '#gm-scn .gm-scncard h3') === 'Brindle Row', 'reload: Now in is kept, and the street card is still the one that was on screen');
+  await p.selectOption('#gm-now', '');
+  await p.keyboard.press('s');
+
   // engagement
   await p.keyboard.press('e');
   check(await p.$eval('#gm-root', (r) => r.getAttribute('data-panel')) === 'engagement', 'key E opens the engagement panel');
   check(await text(p, '#gm-eng .gm-engcard h3') === 'Smash — 1d', 'the preview shows the pool before any roll');
-  await p.selectOption('#gm-e-bold', '1');
-  await p.selectOption('#gm-e-tier', '1');
-  check(await text(p, '#gm-eng .gm-engcard h3') === 'Smash — 3d', 'two +1d factors: 3d');
+  check((await p.$$('#gm-eng [data-gm="engtri"][data-id="bold"]')).length === 3 && (await p.$$('#gm-eng select[data-engmod]')).length === 0, 'each factor is three chips (−1d / 0 / +1d), its two statements as the labels');
+  await p.click('#gm-eng [data-gm="engtri"][data-id="bold"][data-v="1"]');
+  await p.click('#gm-eng [data-gm="engtri"][data-id="tier"][data-v="1"]');
+  check(await p.$eval('#gm-eng [data-gm="engtri"][data-id="bold"][data-v="1"]', (b) => b.getAttribute('aria-pressed') === 'true') && await text(p, '#gm-eng .gm-engcard h3') === 'Smash — 3d', 'two +1d factors: 3d');
   await p.click('[data-gm="engroll"]');
   await p.waitForFunction(() => /Roll/.test(document.querySelector('#gm-eng .gm-engcard').textContent) && !/Set the factors/.test(document.querySelector('#gm-eng .gm-engcard').textContent));
   const roll = await text(p, '#gm-eng .gm-engcard');
@@ -131,7 +168,9 @@ try {
   // a phone: ten segments, nothing wider than the screen, every control 44 px or more
   const M = await open('#gm', { width: 390, height: 844, mobile: true });
   const mp = M.page;
-  check((await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => x.getAttribute('data-seg')).join())) === 'console,prep,location,scenes,engagement,npc,cards,rules,ipad,state', 'phone: the bar is Console, Prep, Location, Street, Engage, NPC, Cards, Screen, iPad, State');
+  check((await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => x.getAttribute('data-seg')).join())) === 'console,prep,location,scenes,engagement,npc,cards,rules,ipad,state', 'phone: the bar is Console, Prep, Location, Street, Engage, NPC, Cards, GM screen, iPad, State');
+  const segRows = await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.right)]; }));
+  check(new Set(segRows.map((r) => r[0])).size === 2 && segRows.every((r) => r[1] <= 390), 'phone: two rows of five, every segment on screen (' + JSON.stringify(segRows) + ')');
   for (const seg of ['scenes', 'engagement']) {
     await mp.click('.gm-segbar [data-seg="' + seg + '"]');
     await mp.waitForSelector('#gm-' + (seg === 'scenes' ? 'scn' : 'eng') + ' select', { state: 'visible', timeout: 5000 });

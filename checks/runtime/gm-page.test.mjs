@@ -1,6 +1,6 @@
 // Unit test for the GM page (app/gm-page.js; no browser): its pure helpers (what may reach the iPad, replaying a console card
 // exactly, saving the GM state, the Situations cards, the session on a capture) and the page itself on a small fake DOM (the
-// Situations / Classic views and their toggle, the Position switch, replay after a reload, capture, the display-name editor). Invented fixtures, except two sweeps over the real pack
+// the four Situations (the single tables folded under the card), the Position switch, replay after a reload, capture, the display-name editor). Invented fixtures, except two sweeps over the real pack
 // (gm-private/, git-ignored) that run only when it is on this machine and print nothing from it.
 //   node checks/runtime/gm-page.test.mjs
 import fs from 'node:fs';
@@ -186,26 +186,20 @@ const FIXL = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fi
 const mdPlain = (s) => '<p>' + String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>';   // the page passes B68Markdown here
 const count = (s, re) => (s.match(re) || []).length;
 
-await test('5a. conView: Situations unless this device chose Classic; the release switch off, or no situations layer, is Classic always', () => {
-  assert.equal(P.conView(null, true), 'situations');
-  assert.equal(P.conView('situations', true), 'situations');
-  assert.equal(P.conView('classic', true), 'classic');
-  assert.equal(P.conView('nonsense', true), 'situations');
-  assert.equal(P.conView('situations', true, false), 'classic', 'SITUATIONS_DEFAULT = false');
-  assert.equal(P.conView('situations', false), 'classic', 'a console without the layer');
-  assert.equal(P.SITUATIONS_DEFAULT, true);
-  assert.equal(P.VIEW_KEY, 'b68.gm.view');
+await test('5a. one console: no Classic view, no view preference, no release switch, no layout preference', () => {
+  assert.equal(P.conView, undefined); assert.equal(P.SITUATIONS_DEFAULT, undefined); assert.equal(P.VIEW_KEY, undefined);
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  assert.ok(!/b68\.gm\.view|b68\.gm\.layout|SITUATIONS_DEFAULT|data-view|layout-classic|layout-app/.test(src), 'nothing of the old switches is left in the page');
 });
 
-await test('5b. keyAction: 1-4 are situations in Situations (5-9 do nothing); Classic keeps 1-9; typing and modifiers stay quiet', () => {
-  for (let n = 1; n <= 4; n++) assert.deepEqual(P.keyAction({ key: String(n), view: 'situations' }), { type: 'situation', n });
-  for (let n = 5; n <= 9; n++) assert.equal(P.keyAction({ key: String(n), view: 'situations' }), null);
-  for (let n = 1; n <= 9; n++) { assert.deepEqual(P.keyAction({ key: String(n), view: 'classic' }), { type: 'button', n }); assert.deepEqual(P.keyAction({ key: String(n) }), { type: 'button', n }); }
-  assert.equal(P.keyAction({ key: '2', view: 'situations', typing: true }), null);
-  assert.equal(P.keyAction({ key: '2', view: 'situations', ctrlKey: true }), null);
-  assert.equal(P.keyAction({ key: '2', view: 'classic', metaKey: true }), null);
-  assert.deepEqual(P.keyAction({ key: 'l', view: 'situations' }), { type: 'last' });
-  assert.deepEqual(P.keyAction({ key: 'p', view: 'situations' }), { type: 'capture', bucket: 'n' });
+await test('5b. keyAction: 1-4 are situations, 5-9 do nothing (the single tables have no keys); typing and modifiers stay quiet', () => {
+  for (let n = 1; n <= 4; n++) { assert.deepEqual(P.keyAction({ key: String(n) }), { type: 'situation', n }); assert.deepEqual(P.keyAction({ key: String(n), view: 'classic' }), { type: 'situation', n }, 'a view is not a thing any more'); }
+  for (let n = 5; n <= 9; n++) assert.equal(P.keyAction({ key: String(n) }), null);
+  assert.equal(P.keyAction({ key: '2', typing: true }), null);
+  assert.equal(P.keyAction({ key: '2', ctrlKey: true }), null);
+  assert.equal(P.keyAction({ key: '2', metaKey: true }), null);
+  assert.deepEqual(P.keyAction({ key: 'l' }), { type: 'last' });
+  assert.deepEqual(P.keyAction({ key: 'p' }), { type: 'capture', bucket: 'n' });
 });
 
 await test('5c. sessionOf / captureEntry: the session number goes on the entry when the campaign has one (numbers only), else the entry is as before', () => {
@@ -297,6 +291,7 @@ class FEl {
   querySelectorAll(sel) { const alts = parseSel(sel), out = []; const walk = (n) => { for (const k of n.kids) if (k.nodeType === 1) { if (alts.some((a) => matchPath(k, a, this))) out.push(k); walk(k); } }; walk(this); return out; }
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
   focus() { this.doc.activeElement = this; } blur() { if (this.doc.activeElement === this) this.doc.activeElement = this.doc.body; }
+  getBoundingClientRect() { return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }; }     /* no layout here: the outline spy and showCard see everything at 0 */
   click() { dispatch(this, 'click'); }
 }
 function matches(el, c) {
@@ -345,10 +340,11 @@ function loadPage(W) {
   return W.B68GmPage;
 }
 /* a fake server for the GM state: the real merge, one document */
-function fakeGm(camp) {
+function fakeGm(camp, extra) {
   const server = { doc: {}, at: 0, patches: [], displays: [] };
   const parts = { console: { version: 'c1', src: {}, body: FIXC.console }, campaign: { version: 'k1', src: FIXC.campaign.src || {}, body: camp || FIXC.campaign }, location: { version: 'l1', src: {}, body: { T: FIXL.T, extra: FIXL.extra } },
     scenes: { version: 's1', src: {}, body: { T: FIXS.parts.scenes.T } }, engagement: { version: 'e1', src: {}, body: { T: FIXS.parts.engagement.T } } };
+  Object.assign(parts, extra || {});      /* more pack parts for one test (screen, npc), or a replacement of one */
   const gm = {
     pack: async () => ({ version: 'v1', parts: Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, { version: v.version }])) }),
     packPart: async (n) => ({ part: n, version: parts[n].version, src: parts[n].src, body: parts[n].body }),
@@ -372,9 +368,9 @@ async function openPage({ br, fg, camp, over } = {}) {
 }
 const cardTxt = (h) => (h.q('#gm-card').textContent || '').replace(/\s+/g, ' ').trim();
 
-await test('6a. the console opens on the four Situations: a big Position switch, the toggle, the single tables, no Result control', async () => {
+await test('6a. the console is the four Situations: a big Position switch, the single tables folded under the card, no Result control, no toggle', async () => {
   const h = await openPage();
-  assert.equal(h.q('#gm-root').getAttribute('data-view'), 'situations');
+  assert.ok(!h.q('#gm-root').hasAttribute('data-view'), 'one console: no view attribute');
   const btns = h.qa('#gm-buttons .gm-btn'); assert.equal(btns.length, 4);
   assert.deepEqual(btns.map((b) => b.getAttribute('data-sit')), ['before', 'fourfive', 'onetothree', 'someone']);
   assert.deepEqual(btns.map((b) => b.querySelector('kbd').textContent), ['1', '2', '3', '4']);
@@ -386,7 +382,12 @@ await test('6a. the console opens on the four Situations: a big Position switch,
   assert.ok(h.qa('#gm-controls [data-ctl]').length >= 4, 'scene, district, PC, NPC, threat stay');
   assert.equal(h.qa('#gm-singles [data-gm="roll"]').length, 9, 'nine single tables');
   assert.equal(h.qa('#gm-singles kbd').length, 0, 'no keys on the single tables');
-  assert.deepEqual(h.qa('[data-gm="view"]').map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed')]), [['situations', 'true'], ['classic', 'false']]);
+  assert.equal(h.qa('[data-gm="view"]').length, 0, 'no Situations | Classic toggle anywhere'); assert.ok(!h.q('.gm-conhead') && !h.q('.gm-head'), 'no console header, no page heading');
+  const col = [...h.q('.gm-console').kids].filter((k) => k.nodeType === 1).map((k) => k.id);
+  assert.deepEqual(col, ['gm-pos', 'gm-scenebox', 'gm-mini', 'gm-controls', 'gm-buttons', 'gm-card', 'gm-earlier', 'gm-singles'], 'the column: Position, Scene, the buttons, the card, Earlier, More tables');
+  assert.equal(h.q('#gm-scenebox > #gm-scene') || h.q('#gm-scenebox').querySelector('#gm-scene'), h.q('#gm-scene'), 'the Scene button sits in its box');
+  assert.equal(h.q('#gm-singles').tagName, 'DETAILS', 'the single tables are folded');
+  assert.match(h.q('#gm-scene-chips').textContent, /District: any/, 'the Scene line labels its chips');
   await h.save();
 });
 
@@ -437,32 +438,6 @@ await test('6d. reload (close and open again) redraws the same situation card, a
   await h3.save();
 });
 
-await test('6e. Classic toggle: one tap shows the nine buttons (keys 1-9, Result control, no Position switch), remembered across a reload; Situations are kept apart', async () => {
-  const fg = fakeGm(), br = fakeBrowser();
-  const h = await openPage({ fg, br });
-  h.press('2'); const sitCard = cardTxt(h);
-  h.qa('[data-gm="view"][data-v="classic"]')[0].click();
-  assert.equal(h.q('#gm-root').getAttribute('data-view'), 'classic');
-  assert.equal(br.ls.get('b68.gm.view'), 'classic');
-  assert.equal(h.qa('#gm-buttons .gm-btn').length, 9); assert.equal(h.qa('#gm-pos [data-gm="pos"]').length, 0); assert.equal(h.qa('#gm-singles button').length, 0);
-  assert.equal(h.qa('#gm-controls [data-ctl="result"]').length, 1, 'Result is back'); assert.equal(h.qa('#gm-controls [data-ctl="pos"]').length, 1);
-  assert.ok(!h.q('#gm-card .gm-lead'), 'no composed card in Classic until you roll a single table');
-  h.press('5'); assert.equal(h.q('#gm-card article').getAttribute('data-tool'), 'console'); assert.ok(!h.q('#gm-card .gm-lead'));
-  h.press('9'); const classicCard = cardTxt(h);
-  assert.equal(h.qa('#gm-earlier [data-gm="replay"]').length, 2, 'Classic history: its own two rolls');
-  await h.save();
-  assert.ok(fg.server.doc.cards.console && fg.server.doc.cards.situation, 'both cards kept, each under its own id');
-  assert.equal(Object.keys(fg.server.doc.hist.console).length, 2); assert.equal(Object.keys(fg.server.doc.hist.situation).length, 1);
-  const h2 = await openPage({ fg, br });
-  assert.equal(h2.q('#gm-root').getAttribute('data-view'), 'classic', 'the choice is remembered on this device');
-  assert.equal(cardTxt(h2), classicCard);
-  h2.qa('[data-gm="view"][data-v="situations"]')[0].click();
-  assert.equal(br.ls.get('b68.gm.view'), 'situations');
-  assert.equal(h2.qa('#gm-buttons .gm-btn').length, 4);
-  assert.ok(cardTxt(h2) === classicCard || cardTxt(h2) === sitCard, 'the newer of the two shows');
-  await h2.save();
-});
-
 await test('6f. a single table rolled from the Situations row is a classic card (stored under console), shown in the same box', async () => {
   const h = await openPage();
   h.press('1'); await new Promise((r) => setTimeout(r, 8));
@@ -474,23 +449,6 @@ await test('6f. a single table rolled from the Situations row is a classic card 
   assert.equal(h2.q('#gm-card article').getAttribute('data-tool'), 'console', 'the newest roll is what comes back');
   assert.equal(h2.qa('#gm-earlier [data-gm="replay"]').length, 2, 'Situations history lists both tools, newest first');
   await h2.save();
-});
-
-await test('6g. the release switch off (SITUATIONS_DEFAULT = false): no toggle, Classic only, even if this device remembered Situations', async () => {
-  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
-  assert.ok(/var SITUATIONS_DEFAULT = true;/.test(src), 'the constant is near the top');
-  const br = fakeBrowser(); br.ls.set('b68.gm.view', 'situations');
-  const off = src.replace('var SITUATIONS_DEFAULT = true;', 'var SITUATIONS_DEFAULT = false;');
-  const ctx = vm.createContext(br.W); vm.runInContext(off, ctx);
-  const page = br.W.B68GmPage, fg = fakeGm(), root = br.doc.createElement('div'); br.doc.body.appendChild(root);
-  page.open(root, { ready: async () => {}, isGM: () => true, me: () => 'gm1', gm: () => fg.gm, db: () => null, campaign: () => ({}), saveFile() {}, copy() {} });
-  await until(() => page._state() && page._state().status === 'ready' && root.querySelector('#gm-root'));
-  assert.equal(root.querySelectorAll('[data-gm="view"]').length, 0, 'no toggle');
-  assert.equal(root.querySelectorAll('#gm-buttons .gm-btn').length, 9);
-  assert.equal(root.querySelectorAll('#gm-pos [data-gm="pos"]').length, 0);
-  for (const fn of br.doc.listeners.keydown) fn({ key: '7', target: br.doc.body, ctrlKey: false, altKey: false, metaKey: false, preventDefault() {}, stopPropagation() {} });
-  assert.equal(root.querySelector('#gm-card article').getAttribute('data-tool'), 'console');
-  page.close();
 });
 
 await test('6h. an action on the merged row works as before: a Devil\'s Bargain accepted is owed (and the bargain\'s capture line carries the session)', async () => {
@@ -676,9 +634,14 @@ await test('8f. E opens the engagement panel on a preview (1d, no roll yet); a c
   h.press('e'); assert.equal(h.page._state().panel, 'engagement');
   assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 1d');
   assert.ok(/Set the factors, then roll\./.test(cardOf(h, '#gm-eng .gm-engcard')));
-  assert.equal(h.qa('#gm-eng select').length, 2 + T_EN.factor.length);
-  change(h.q('#gm-e-bold'), 1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
-  change(h.q('#gm-e-tier'), -1); change(h.q('#gm-e-bold'), -1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 0d (2d, keep lowest)');   // B13: never "-1d"
+  assert.equal(h.qa('#gm-eng select').length, 2, 'approach and loadout are selects');
+  assert.equal(h.qa('#gm-eng [data-gm="engtri"]').length, 3 * T_EN.factor.length, 'every factor is three chips, no select');
+  const tri = (id, v) => h.q('[data-gm="engtri"][data-id="' + id + '"][data-v="' + v + '"]').click();
+  assert.equal(h.qa('[data-gm="engtri"][data-id="bold"]').length, 3, 'a factor is three chips');
+  assert.ok(/plus|neat|bold/i.test(h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').textContent) || h.q('[data-gm="engtri"][data-id="bold"][data-v="1"] small'), 'the +1d chip carries the factor’s statement');
+  tri('bold', 1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
+  assert.equal(h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').getAttribute('aria-pressed'), 'true');
+  tri('tier', -1); tri('bold', -1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 0d (2d, keep lowest)');   // B13: never "-1d"
   change(h.q('#gm-e-approach'), 'Slip'); change(h.q('#gm-e-load'), 'Loud');
   assert.ok(/opening gambit is the unwatched door · Loud loadout, load 6/.test(cardOf(h, '#gm-eng .gm-engcard')));
   h.q('[data-gm="engroll"]').click();
@@ -693,8 +656,8 @@ await test('8f. E opens the engagement panel on a preview (1d, no roll yet); a c
 await test('8g. engagement: reload redraws the identical dice; changing a control drops the stored card (not the history); Earlier brings back the roll and its controls', async () => {
   const fg = fakeGm(), br = fakeBrowser();
   const h = await openPage({ fg, br });
-  h.press('e'); change(h.q('#gm-e-bold'), 1); h.q('[data-gm="engroll"]').click(); const a = cardOf(h, '#gm-eng .gm-engcard');
-  change(h.q('#gm-e-tier'), 1); h.q('[data-gm="engroll"]').click(); const b = cardOf(h, '#gm-eng .gm-engcard'); assert.notEqual(a, b);
+  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click(); h.q('[data-gm="engroll"]').click(); const a = cardOf(h, '#gm-eng .gm-engcard');
+  h.q('[data-gm="engtri"][data-id="tier"][data-v="1"]').click(); h.q('[data-gm="engroll"]').click(); const b = cardOf(h, '#gm-eng .gm-engcard'); assert.notEqual(a, b);
   await h.save();
   const h2 = await openPage({ fg, br });
   assert.equal(cardOf(h2, '#gm-eng .gm-engcard'), b, 'the same roll after a reload');
@@ -754,7 +717,8 @@ await test('9a. keys: I opens the iPad panel and 0 clears to ambient; never whil
     assert.equal(P.keyAction({ key: k, typing: true }), null, k + ' typing'); assert.equal(P.keyAction({ key: k, ctrlKey: true }), null, k + ' ctrl');
     assert.equal(P.keyAction({ key: k, altKey: true }), null); assert.equal(P.keyAction({ key: k, metaKey: true }), null);
   }
-  assert.deepEqual(P.keyAction({ key: 'h' }), { type: 'blank' }, 'H still blanks the GM screen'); assert.deepEqual(P.keyAction({ key: '1', view: 'classic' }), { type: 'button', n: 1 });
+  assert.deepEqual(P.keyAction({ key: 'H' }), { type: 'blank' }, 'Shift+H blanks the GM screen at once'); assert.deepEqual(P.keyAction({ key: 'h' }), { type: 'blank-tap' }, 'a plain H is one tap of two');
+  assert.deepEqual(P.keyAction({ key: '1' }), { type: 'situation', n: 1 });
 });
 
 await test('9b. crewOf: whole numbers clamped to 0-9 / 0-4; null without a number; ipadView draws from the server document', () => {
@@ -955,7 +919,11 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   assert.equal(h.qa('.gm-bar .gm-save').length, 1, 'saving shows in the bar');
   assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'the menu starts shut');
   h.q('[data-gm="menu"]').click(); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), false); assert.equal(h.q('[data-gm="menu"]').getAttribute('aria-expanded'), 'true');
-  assert.ok(['note', 'update', 'layout-classic', 'forget'].every((a) => h.q('.gm-menu-list [data-gm="' + a + '"]')), 'export, update, classic and forget are in it');
+  assert.ok(['note', 'clearcap', 'update', 'forget'].every((a) => h.q('.gm-menu-list [data-gm="' + a + '"]')), 'export, clear the capture, update and forget are in it');
+  assert.ok(h.q('.gm-menu-list a[href="#display"]') && h.qa('.gm-bar a[href="#display"]').every((a) => a.closest('.gm-menu-list')), 'the display page opens from the Menu, not the bar');
+  assert.ok(!h.q('.gm-capacts [data-gm="note"]') && !h.q('.gm-capacts [data-gm="clearcap"]') && h.q('.gm-capacts [data-gm="last"]'), 'the capture bar keeps File last roll only');
+  assert.equal(h.q('#gm-bar-stt').hasAttribute('hidden'), true, 'no Listening pill while the transcriber has never been set up');
+  assert.ok(/GM screen/.test(h.q('.gm-tab[data-panel="rules"]').textContent) && /GM screen/.test(h.q('[data-gm="seg"][data-seg="rules"]').textContent), 'the Screen tab is called GM screen');
   h.q('[data-gm="menu"]').click(); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'a second press shuts it');
   h.q('[data-gm="menu"]').click(); h.press('Escape'); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'Escape shuts it');
   assert.equal(h.qa('#gm-mini button').length, 4, 'the console as its four keys');
@@ -963,17 +931,92 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   assert.equal(br.ls.get('b68.gm.prepWide'), '1', 'remembered on this device');
   h.qa('#gm-mini button')[0].click(); await until(() => fg.server.patches.some((p) => p.cards && p.cards.situation));
   assert.ok(fg.server.patches.some((p) => p.cards && p.cards.situation), 'a key in Focus rolls');
+  assert.ok(!h.q('#gm-root').classList.contains('focus') && br.ls.get('b68.gm.prepWide') === '0', 'a roll leaves Focus, so the card is never rolled into a hidden box');
+  assert.ok(h.q('#gm-card .gm-card') && br.toasts.some((x) => /Focus off/.test(x[0])), 'the card shows, and a toast says why Focus went');
+  br.toasts.length = 0; h.press('f'); h.qa('#gm-mini button')[1].click(); await until(() => fg.server.patches.filter((p) => p.cards && p.cards.situation).length >= 2);
+  assert.ok(!h.q('#gm-root').classList.contains('focus') && !br.toasts.some((x) => /Focus off/.test(x[0])), 'the second time it goes without the toast (once per page load)');
+  h.press('f'); assert.ok(h.q('#gm-root').classList.contains('focus'));
   h.q('[data-gm="focus"]').click(); assert.ok(!h.q('#gm-root').classList.contains('focus'), 'the button turns it off');
-  h.q('[data-gm="menu"]').click(); h.q('.gm-menu-list [data-gm="layout-classic"]').click();
-  assert.ok(!br.doc.body.classList.contains('gm-app') && br.ls.get('b68.gm.layout') === 'classic', 'Classic layout: off, and remembered');
+  h.q('[data-gm="menu"]').click(); h.q('.gm-menu-list [data-gm="note"]').click();
   assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'the menu shuts after an item');
-  h.q('.gm-head [data-gm="layout-app"]').click(); assert.ok(br.doc.body.classList.contains('gm-app') && !br.ls.has('b68.gm.layout'), 'Laptop layout brings it back');
+  assert.ok(!h.q('[data-gm="layout-classic"]') && !h.q('[data-gm="layout-app"]'), 'no layout switch: the app layout is the only one');
   await h.save();
   assert.ok(!br.doc.body.classList.contains('gm-app'), 'off once the page closes');
 });
-await test('10b. the rail: an empty box is one line; Classic layout survives a reopen', async () => {
-  const br = fakeBrowser(); br.ls.set('b68.gm.layout', 'classic'); const h = await openPage({ br, camp: CAMP3 });
-  assert.ok(!br.doc.body.classList.contains('gm-app'), 'classic chosen: the old layout');
+await test('10c. the full rules, searched in the GM screen pane: the hits are listed with a snippet, one opens in place with Show on iPad and its twins, the rules page stays a link; Find lists rules; a module that cannot search opens the rules page', async () => {
+  const loads = [], opened = [];
+  const ROWS = [
+    { id: 'b68/harm', book: 'b68', slug: 'harm', title: 'Harm', caption: 'Blades ’68 · Consequences', snip: 'Level 1 is <mark>lesser</mark> harm.<script>alert(1)</script>', href: '#rules/b68/harm' },
+    { id: 'house/hard-knocks', book: 'house', slug: 'hard-knocks', title: 'Hard knocks', caption: 'House rules', snip: 'Take <mark>harm</mark> twice.', href: '#rules/house/hard-knocks' }];
+  const ENTRY = {
+    'b68/harm': { id: 'b68/harm', title: 'Harm', caption: 'Blades ’68 · Consequences', href: '#rules/b68/harm', md: 'Level 1 is **lesser** harm.', also: [{ id: 'bitd/harm', label: 'In Blades in the Dark' }] },
+    'bitd/harm': { id: 'bitd/harm', title: 'Harm', caption: 'Blades in the Dark', href: '#rules/bitd/harm', md: 'The SRD’s harm.', also: [{ id: 'b68/harm', label: 'In Blades ’68' }] } };
+  const rules = { available: () => true, load: async (cacheOnly) => { loads.push(cacheOnly ? 'cache' : 'full'); return { entries: [{}] }; },
+    hits: (q) => (q === 'harm' ? { total: 9, hits: ROWS } : { total: 0, hits: [] }), entry: (id) => ENTRY[id] || null };
+  const SCREEN = { version: 'g1', src: {}, body: { v: 1, title: 'Screen', intro: '', sections: [{ id: 'rolling', title: 'Rolling', md: 'Ask what they want.' }, { id: 'weather', title: 'Weather', md: 'A squall.' }] } };
+  const br = fakeBrowser({ B68Rules: rules, open: (u) => { opened.push(u); } }), fg = fakeGm(undefined, { screen: SCREEN });
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('t');
+  assert.ok(h.q('#gm-rq') && h.q('#gm-rq-hits') && !h.q('.gs-rules a[target="_blank"]'), 'a search box and a hits box, no new-tab chips');
+  assert.ok(h.qa('[data-gm="rq"]').length >= 6, 'the common terms are buttons that search here');
+  assert.ok(h.q('[data-gm="gs-rules"]'), 'a jump chip to the full rules sits with the sections');
+  h.q('#gm-rq').value = 'harm'; dispatch(h.q('form[data-gm-form="rules"]'), 'submit');
+  assert.ok(await until(() => h.qa('.gs-hit').length === 2), 'the hits are listed in the pane'); assert.deepEqual(loads, ['full'], 'the corpus was asked for once');
+  const row = h.qa('.gs-hit')[0];
+  assert.ok(/Harm/.test(row.querySelector('.gs-hit-t').textContent) && /Blades ’68 · Consequences/.test(row.querySelector('.gs-hit-c').textContent) && /lesser harm/.test(row.querySelector('.gs-hit-s').textContent), 'title, book and chapter, a snippet');
+  assert.equal(row.querySelectorAll('.gs-hit-s mark').length, 1, 'the matched word is marked'); assert.equal(h.qa('#gm-rq-hits script').length, 0, 'nothing but <mark> survives in a snippet');
+  assert.match(h.q('.gs-hitbar .gm-lab').textContent, /2 of 9 for “harm”/);
+  const out = h.q('.gs-hitbar a[target="_blank"]');
+  assert.ok(out && out.getAttribute('href') === '#rules?q=harm' && /Open in the Rules page/.test(out.textContent) && out.getAttribute('rel') === 'noopener', 'the rules page stays as a link (a new tab)');
+  assert.equal(fg.server.displays.length, 0, 'a list sends nothing to the iPad');
+  /* a screen filter does not touch the hits, and with nothing left on the screen it offers the same words to the rules */
+  const gq = h.q('#gm-gs-q'); gq.value = 'zzz'; dispatch(gq, 'input');
+  assert.ok(!h.q('.gs-none').hidden && /Search the full rules for “zzz”/.test(h.q('[data-gm="rq-find"]').textContent), 'nothing on the screen: one click to the full rules with the same words');
+  assert.equal(h.qa('.gs-hit').filter((x) => x.hidden).length, 0, 'the screen filter leaves the hits alone');
+  gq.value = 'squall'; dispatch(gq, 'input'); h.press('Enter', { target: gq }); assert.equal(h.qa('.gs-hit').length, 2, 'Enter with a match on the screen goes to that section, not to the rules');
+  gq.value = 'harm'; dispatch(gq, 'input'); h.q('#gm-rq-hits').innerHTML = ''; h.press('Enter', { target: gq });
+  assert.ok(await until(() => h.qa('.gs-hit').length === 2), 'Enter with nothing on the screen searches the full rules'); assert.equal(h.q('#gm-rq').value, 'harm');
+  gq.value = ''; dispatch(gq, 'input');
+  /* one entry opens in place */
+  h.qa('.gs-hit')[0].click();
+  assert.equal(h.qa('.gs-hit').length, 0, 'the list gives way to the entry');
+  assert.ok(/Harm/.test(h.q('.gs-entry .gs-h').textContent) && /Blades ’68 · Consequences/.test(h.q('.gs-entry .gs-h').textContent) && /lesser/.test(h.q('.gs-entry .gs-body').textContent), 'the entry is read in place');
+  assert.ok(h.q('.gs-hitbar a[target="_blank"][href="#rules/b68/harm"]'), 'the entry on the rules page, in a new tab');
+  assert.ok(h.q('[data-gm="rq-open"][data-id="bitd/harm"]'), 'its twin in the other book is a chip');
+  h.q('[data-gm="rq-ipad"]').click(); assert.ok(await until(() => fg.server.displays.length === 1));
+  eqj(fg.server.displays[0], { kind: 'rule', title: 'Harm', caption: 'Blades ’68 · Consequences', md: 'Level 1 is **lesser** harm.' }, 'Show on iPad sends the entry as a rule display, as the rules page does');
+  assert.ok(br.toasts.some((x) => /On the iPad: Harm/.test(x[0])), 'and says so');
+  h.q('[data-gm="rq-open"][data-id="bitd/harm"]').click(); assert.match(h.q('.gs-entry .gs-body').textContent, /SRD/, 'the twin opens in the same place');
+  h.q('[data-gm="rq-back"]').click(); assert.equal(h.qa('.gs-hit').length, 2, 'Back is the list again'); assert.deepEqual(loads, ['full', 'full'], 'without a new search of its own');
+  h.qa('[data-gm="rq"]')[0].click(); assert.ok(await until(() => /Nothing in the rules matches/.test(h.q('#gm-rq-hits').textContent)), 'a term with no hit says so, in the pane');
+  assert.ok((h.q('.gs-rules a[target="_blank"]') || { getAttribute: () => '' }).getAttribute('href').startsWith('#rules?q='), 'with the rules page as a link');
+  assert.equal(opened.length, 0, 'nothing opened a new tab');
+  /* Find lists the rules this device holds, and Enter opens one in the pane */
+  h.press('k', { ctrlKey: true }); assert.ok(await until(() => loads.includes('cache')), 'Find reads the copy on this device, never the network');
+  const fq = h.q('#gm-find-q'); fq.value = 'harm'; dispatch(fq, 'input');
+  const rk = h.qa('.gm-find-hit').filter((b) => /Rules/.test(b.querySelector('.gm-find-kind').textContent));
+  assert.equal(rk.length, 2, 'two rules entries in Find'); assert.equal(rk[0].querySelectorAll('.gm-find-snip mark').length, 1, 'with the matched word marked'); assert.ok(/Blades ’68 · Consequences/.test(rk[0].textContent));
+  h.press('Escape', { target: fq }); h.press('Escape');
+  h.press('k', { ctrlKey: true }); const fq2 = h.q('#gm-find-q'); fq2.value = 'harm'; dispatch(fq2, 'input');
+  h.qa('.gm-find-hit').filter((b) => /Rules/.test(b.querySelector('.gm-find-kind').textContent))[0].click();
+  assert.ok(await until(() => h.q('.gs-entry')), 'a rules hit in Find opens the entry in the GM screen pane'); assert.equal(h.page._state().panel, 'rules'); assert.ok(h.q('#gm-find').hasAttribute('hidden'), 'Find shuts');
+  await h.save();
+  /* an empty corpus, and a failure, say so in the pane */
+  const e1 = await openPage({ br: fakeBrowser({ B68Rules: { available: () => true, load: async () => ({ entries: [] }), hits: () => ({ total: 0, hits: [] }), entry: () => null } }), camp: CAMP3 });
+  e1.press('t'); e1.q('#gm-rq').value = 'heat'; dispatch(e1.q('form[data-gm-form="rules"]'), 'submit');
+  assert.ok(await until(() => /No rules are imported yet/.test(e1.q('#gm-rq-hits').textContent)), 'an empty corpus is said, with the rules page as the way on'); await e1.save();
+  const e2 = await openPage({ br: fakeBrowser({ B68Rules: { available: () => true, load: async () => { throw new Error('offline'); }, hits: () => ({ total: 0, hits: [] }), entry: () => null } }), camp: CAMP3 });
+  e2.press('t'); e2.q('#gm-rq').value = 'heat'; dispatch(e2.q('form[data-gm-form="rules"]'), 'submit');
+  assert.ok(await until(() => /could not be searched: offline/.test(e2.q('#gm-rq-hits').textContent) && e2.q('#gm-rq-hits a[target="_blank"]')), 'a failure says why, with the rules page as the way on'); await e2.save();
+  /* a module without search: the rules page opens in a new tab, as it always did */
+  const br2 = fakeBrowser({ B68Rules: { available: () => true }, open: (u) => { opened.push(u); } }), h2 = await openPage({ br: br2, camp: CAMP3 });
+  h2.press('t'); h2.q('#gm-rq').value = 'heat'; dispatch(h2.q('form[data-gm-form="rules"]'), 'submit');
+  assert.deepEqual(opened, ['#rules?q=heat'], 'a module without hits(): the rules page opens as before');
+  await h2.save();
+});
+await test('10b. the rail: an empty box is one line; an old layout preference left in storage changes nothing', async () => {
+  const br = fakeBrowser(); br.ls.set('b68.gm.layout', 'classic'); br.ls.set('b68.gm.view', 'classic'); const h = await openPage({ br, camp: CAMP3 });
+  assert.ok(br.doc.body.classList.contains('gm-app') && h.qa('#gm-buttons .gm-btn').length === 4, 'the app layout and the four Situations, whatever this device remembered');
   const empties = [...h.qa('#gm-rail .gm-box-empty')].map((b) => b.textContent.replace(/\s+/g, ' ').trim());
   assert.ok(empties.includes('Table clocks · none'), JSON.stringify(empties));
   assert.ok(h.q('#gm-rail .gm-owed'), 'a box with something in it keeps its list (the fixture owes bargains)');
@@ -1093,7 +1136,7 @@ await test('11h. Update pack: a file that would lose a part says so, the button 
   const br = fakeBrowser({ FileReader: class { readAsText(f) { this.result = f.text; this.onload(); } }, confirm: () => { asked++; return false; } });
   const fg = fakeGm(); fg.gm.importPart = async () => { uploads++; return { version: 'x' }; };
   const h = await openPage({ br, fg, camp: CAMP3 });
-  h.q('.gm-head [data-gm="update"]').click();
+  h.q('.gm-menu-list [data-gm="update"]').click();
   const pk = { format: 1, exportedAt: new Date().toISOString(), parts: { console: { src: {}, ...FIXC.console }, location: { src: {}, T: FIXL.T, extra: FIXL.extra }, campaign: { src: {}, ...FIXC.campaign } } };
   const file = h.q('#gm-file'); file.files = [{ name: 'b68-gm-pack.json', text: JSON.stringify(pk) }]; file.id = 'gm-file';
   dispatch(file, 'change');
@@ -1103,6 +1146,142 @@ await test('11h. Update pack: a file that would lose a part says so, the button 
   h.q('[data-gm="upload"]').click(); await tick();
   assert.equal(asked, 1); assert.equal(uploads, 0, 'refused at the question: nothing uploaded');
   await h.save();
+});
+
+/* =====================================================================================================================
+   12. Now in (A7): one district in the bar that the console, Street, Location and NPC pickers start from
+   ===================================================================================================================== */
+const NPCM = require(path.join(ROOT, 'app', 'gm', 'npc.js'));
+const NPCFIX = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'npc-pack.json'), 'utf8'));
+const NOWD = 'Dockside Test';            /* the location fixture's own district: added below to the other tools' lists, so all four hold it */
+const cl = (o) => JSON.parse(JSON.stringify(o));
+function nowParts(extra) {
+  const con = cl(FIXC.console); con.T.district.push(NOWD);
+  const scn = cl(FIXS.parts.scenes); const d0 = cl(scn.T.district[0]); d0.n = NOWD; scn.T.district.push(d0);
+  const npc = cl(NPCFIX.parts.npc); npc.T.district.push(NOWD);
+  return Object.assign({ console: { version: 'c9', src: {}, body: con }, scenes: { version: 's9', src: {}, body: { T: scn.T } }, npc: { version: 'n9', src: {}, body: npc } }, extra || {});
+}
+const optSel = (h, sel) => (h.q(sel + ' option[selected]') || { textContent: '', getAttribute: () => null });
+function pick(h, sel, v) { const s = h.q(sel); s.value = v; dispatch(s, 'change'); }
+const stateDoc = (h) => h.page._state().doc;
+const nowPage = (over, parts) => openPage({ br: fakeBrowser(Object.assign({ B68GmNpc: NPCM }, over || {})), fg: fakeGm(NPCFIX.parts.campaign, nowParts(parts)), camp: CAMP3 });
+
+await test('12a. Now in: a select in the bar (and the phone’s Scene line) lists every tool’s districts once; the four pickers lead with "Now in: …"; it is kept in the GM state', async () => {
+  const h = await nowPage();
+  const opts = h.qa('#gm-now option').map((o) => o.getAttribute('value'));
+  assert.equal(opts[0], '', 'anywhere first'); assert.equal(new Set(opts).size, opts.length, 'each district once');
+  for (const d of ['Puddleton', 'Testfield', 'Alder Quay', 'Puddle End', NOWD]) assert.ok(opts.includes(d), d + ' is listed');
+  const key = (s) => s.toLowerCase().replace(/^the\s+/, ''), rest = opts.slice(1); assert.deepEqual(rest, [...rest].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0)), 'alphabetical (a leading "The" does not count)');
+  assert.equal(h.qa('select[data-now]').length, 2, 'one in the bar, one in the Scene line (the phone shows that one)'); assert.ok(h.q('.gm-bar #gm-now') && h.q('#gm-scenebox #gm-now-s'));
+  assert.equal(optSel(h, '#gm-now').getAttribute('value'), '', 'on anywhere');
+  for (const s of ['#gm-c-district', '#gm-l-district', '#gm-s-sel', '#gm-n-district']) {
+    assert.equal(h.q(s + ' option').textContent, 'Now in: anywhere', s + ' leads with Now in'); assert.equal(optSel(h, s).textContent, 'Now in: anywhere', s + ' follows by default');
+    assert.equal(h.qa(s + ' option').filter((o) => o.getAttribute('value') === '*').length, 1, s + ' keeps an any of its own');
+  }
+  pick(h, '#gm-now', NOWD);
+  assert.equal(stateDoc(h).now.district, NOWD, 'kept in the GM state as now.district');
+  for (const s of ['#gm-c-district', '#gm-l-district', '#gm-s-sel', '#gm-n-district']) assert.equal(optSel(h, s).textContent, 'Now in: ' + NOWD, s + ' says what it follows');
+  assert.equal(optSel(h, '#gm-now-s').getAttribute('value'), NOWD, 'the Scene line’s copy shows it too'); assert.match(h.q('#gm-scene-chips').textContent, new RegExp('District: ' + NOWD));
+  await h.save();
+  assert.equal(h.fg.server.doc.now.district, NOWD, 'saved');
+  const h2 = await openPage({ fg: h.fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
+  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), NOWD, 'a reload keeps it'); assert.equal(optSel(h2, '#gm-l-district').textContent, 'Now in: ' + NOWD);
+  await h2.save();
+});
+
+await test('12b. the four tools roll on Now in, and store the district they resolved to in the roll’s own ui', async () => {
+  const h = await nowPage();
+  pick(h, '#gm-now', NOWD);
+  h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD, 'console');
+  h.q('[data-gm="locroll"]').click(); assert.equal(stateDoc(h).cards.location.ui.district, NOWD, 'location'); assert.match(h.q('#gm-loc .gm-glance-place').textContent, new RegExp(NOWD));
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, NOWD, 'street'); assert.match(h.q('#gm-scn .gm-card-h').textContent, new RegExp(NOWD));
+  h.q('[data-gm="npcroll"]').click(); assert.equal(stateDoc(h).cards.npc.ui.district, NOWD, 'NPC');
+  const d = stateDoc(h);
+  assert.ok(!d.con || !d.con.live || d.con.live.district === undefined, 'following stores nothing in the tool: it is the default');
+  assert.ok(!d.loc || !d.loc.ui || d.loc.ui.district === undefined);
+  await h.save();
+});
+
+await test('12c. a tool’s own pick wins, stays through a change of Now in, and "Now in" in the picker gives it back; "any" is a pick too', async () => {
+  const h = await nowPage();
+  pick(h, '#gm-now', NOWD);
+  pick(h, '#gm-s-sel', 'Brindle Row');
+  assert.equal(stateDoc(h).scn.ui.sel, 'Brindle Row'); assert.equal(h.q('#gm-s-sel').value, 'Brindle Row', 'the picker shows its own pick');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, 'Brindle Row', 'the tool’s own pick wins over Now in');
+  h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD, 'the others still follow');
+  pick(h, '#gm-now', 'Puddleton');
+  assert.equal(optSel(h, '#gm-s-sel').textContent, 'Brindle Row', 'a change of Now in leaves a pick alone'); assert.match(h.q('#gm-s-sel option').textContent, /^Now in: any \(no Puddleton here\)$/, 'its first choice still says what Now in is, and that this tool lacks it');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, 'Brindle Row');
+  h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton', 'the console follows the new Now in');
+  pick(h, '#gm-s-sel', ''); assert.equal(stateDoc(h).scn.ui.sel, '', 'the first choice gives it back'); assert.equal(h.q('#gm-s-sel').value, '');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, '', 'a tool whose list lacks Now in rolls on any');
+  pick(h, '#gm-now', NOWD); pick(h, '#gm-s-sel', '*');
+  assert.equal(stateDoc(h).scn.ui.sel, '*'); assert.equal(h.q('#gm-s-sel').value, '*', 'any is picked');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, '', 'a tool on any rolls on any whatever Now in says, and no sentinel ever reaches a roll');
+  pick(h, '#gm-c-district', 'Muddle End'); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Muddle End', 'the console’s own pick wins');
+  pick(h, '#gm-l-district', 'Testfield'); h.q('[data-gm="locroll"]').click(); assert.equal(stateDoc(h).cards.location.ui.district, 'Testfield', 'the location’s own pick wins');
+  pick(h, '#gm-n-district', 'Gnome Hill'); h.q('[data-gm="npcroll"]').click(); assert.equal(stateDoc(h).cards.npc.ui.district, 'Gnome Hill', 'the NPC’s own pick wins');
+  pick(h, '#gm-now', ''); assert.equal(optSel(h, '#gm-now').getAttribute('value'), ''); assert.equal(h.q('#gm-c-district option').textContent, 'Now in: anywhere');
+  await h.save();
+});
+
+await test('12d. Now in never moves a stored card: Earlier and a reload redraw each tool’s card as it was rolled', async () => {
+  const h = await nowPage();
+  pick(h, '#gm-now', 'Puddleton'); h.press('3');
+  const A = cardTxt(h); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton');
+  pick(h, '#gm-now', NOWD);
+  assert.equal(cardTxt(h), A, 'the card on screen stays as rolled'); assert.match(h.q('#gm-scene-chips').textContent, new RegExp('District: ' + NOWD), 'the Scene line shows what the next roll uses');
+  h.press('3'); const B = cardTxt(h); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD); assert.notEqual(B, A);
+  h.qa('#gm-earlier [data-gm="replay"]')[1].click(); assert.equal(cardTxt(h), A, 'Earlier: the older card, exactly as it was, whatever Now in is'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton');
+  h.q('[data-gm="locroll"]').click(); const L1 = h.q('#gm-loc .gm-glance-place').textContent, L1name = h.q('#gm-loc .gm-locname').textContent;
+  h.q('[data-gm="scnroll"]').click(); const S1 = h.q('#gm-scn .gm-card-h').textContent;
+  h.q('[data-gm="npcroll"]').click(); const N1 = h.q('#gm-npc .gm-npccard .gm-card-h').textContent;
+  pick(h, '#gm-now', 'Testfield');                  /* a district only the location lists */
+  assert.equal(h.q('#gm-loc .gm-glance-place').textContent, L1, 'the location card does not move'); assert.equal(h.q('#gm-scn .gm-card-h').textContent, S1, 'nor the street scene'); assert.equal(h.q('#gm-npc .gm-npccard .gm-card-h').textContent, N1, 'nor the NPC');
+  await h.save();
+  const h2 = await openPage({ fg: h.fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
+  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), 'Testfield'); assert.equal(cardTxt(h2), A, 'a reload redraws the console card as rolled');
+  assert.equal(h2.q('#gm-loc .gm-glance-place').textContent, L1); assert.equal(h2.q('#gm-loc .gm-locname').textContent, L1name); assert.equal(h2.q('#gm-scn .gm-card-h').textContent, S1); assert.equal(h2.q('#gm-npc .gm-npccard .gm-card-h').textContent, N1, 'and the other three');
+  h2.q('[data-gm="locroll"]').click(); assert.equal(stateDoc(h2).cards.location.ui.district, 'Testfield', 'the next roll uses the new Now in');
+  await h2.save();
+});
+
+await test('12e. districts are matched without case, "the" or punctuation (each tool keeps its own spelling); the bar lists a name once; a Now in the packs no longer hold stays visible', async () => {
+  const scn = cl(FIXS.parts.scenes); const d0 = cl(scn.T.district[0]); d0.n = 'puddle-TON'; scn.T.district.push(d0);
+  const h = await nowPage(null, { scenes: { version: 's8', src: {}, body: { T: scn.T } } });
+  const opts = h.qa('#gm-now option').map((o) => o.getAttribute('value'));
+  assert.equal(opts.filter((o) => /^puddle-?ton$/i.test(o)).length, 1, 'one entry for the two spellings'); assert.ok(opts.includes('Puddleton'), 'the first tool’s spelling (the console)');
+  pick(h, '#gm-now', 'Puddleton');
+  assert.equal(h.q('#gm-s-sel option').textContent, 'Now in: puddle-TON', 'the Street picker names its own spelling');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, 'puddle-TON', 'and rolls on it');
+  h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton');
+  await h.save();
+  const fg = h.fg; fg.server.doc.now = { district: 'Gone Wharf' };
+  const h2 = await openPage({ fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
+  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), 'Gone Wharf', 'a district no pack lists is still what the select shows');
+  assert.match(h2.q('#gm-l-district option').textContent, /^Now in: any \(no Gone Wharf here\)$/); h2.press('3'); assert.equal(stateDoc(h2).cards.situation.ui.district, '', 'and rolls on any');
+  await h2.save();
+});
+
+await test('12f. an old state with a tool’s district already set keeps it as that tool’s own pick; a state without now follows nothing; no sentinel in the source of any roll', async () => {
+  const fg = fakeGm(NPCFIX.parts.campaign, nowParts()); fg.server.doc = { con: { live: { district: 'Muddle End' } }, scn: { ui: { sel: 'Alder Quay' } } };
+  const h = await openPage({ fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
+  assert.equal(optSel(h, '#gm-c-district').textContent, 'Muddle End'); assert.equal(optSel(h, '#gm-s-sel').textContent, 'Alder Quay'); assert.equal(optSel(h, '#gm-l-district').textContent, 'Now in: anywhere');
+  pick(h, '#gm-now', NOWD); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Muddle End', 'an older pick is that tool’s own');
+  pick(h, '#gm-c-district', ''); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD);
+  for (const t of Object.keys(stateDoc(h).cards)) assert.ok(!JSON.stringify(stateDoc(h).cards[t].ui || {}).includes('"*"'), t + ': no sentinel in a roll’s ui');
+  await h.save();
+});
+
+await test('12g. Now in is in the sticky copy: with the GM state unreachable, a reload still shows it and the pickers follow it', async () => {
+  const br = fakeBrowser({ B68GmNpc: NPCM }), fg = fakeGm(NPCFIX.parts.campaign, nowParts());
+  const h = await openPage({ br, fg, camp: CAMP3 }); pick(h, '#gm-now', NOWD); await h.save();
+  assert.equal(JSON.parse(br.ls.get('b68.gm.sticky')).now.district, NOWD, 'mirrored for a reload');
+  const fg2 = fakeGm(NPCFIX.parts.campaign, nowParts()); fg2.gm.state = async () => { throw new Error('offline'); };
+  const h2 = await openPage({ br, fg: fg2, camp: CAMP3 });
+  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), NOWD, 'drawn from the sticky copy while the notes are offline');
+  assert.equal(optSel(h2, '#gm-l-district').textContent, 'Now in: ' + NOWD);
+  await h2.save();
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
