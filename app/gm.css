@@ -537,6 +537,7 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-prep > * { grid-column: 2; }
   body.gm-app #gm-prep > * + * { margin-top: 10px; }
   body.gm-app #gm-prep > .pp-bar { grid-column: 1; grid-row: 1 / span 30; margin: 0; position: sticky; top: 0; flex-direction: column; align-items: stretch; gap: 8px; border-bottom: 0; border-right: 2px solid var(--rule); padding: 0 10px 0 0; max-height: calc(100dvh - 190px); overflow-y: auto; scrollbar-width: thin; }
+  body.gm-app #gm-prep .pp-find { flex: 0 0 auto; min-width: 0; }   /* in the outline column the row-layout basis (220 px) would be a height */
   body.gm-app #gm-prep .pp-rail { flex-direction: column; overflow: visible; gap: 0; padding: 0; }
   body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip { display: block; width: 100%; white-space: normal; text-align: left; border: 0; border-left: 3px solid transparent; background: none; color: var(--ink); padding: 6px 8px; min-height: 0; font: 700 12px/1.25 var(--font-text); text-transform: none; letter-spacing: 0; box-shadow: none; }
   body.gm-app #gm-prep .pp-rail .chip:hover, body.gm-app #gm-rules .gs-jump .chip:hover { background: var(--inset); }

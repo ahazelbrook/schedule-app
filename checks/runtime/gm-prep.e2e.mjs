@@ -119,6 +119,7 @@ try {
   const boxes = await page.$$eval('#gm-prep .pp-box', (bs) => bs.map((b) => ({ a: b.getAttribute('data-task'), locked: b.getAttribute('aria-disabled') === 'true' })));
   check(boxes.length > 0 && boxes.some((b) => b.locked) === !!boxes.find((b) => b.locked), 'task boxes are tickable checkboxes (' + boxes.length + ')');
   check((await page.$$('#gm-prep .pp-sec')).length > 1 && (await page.$$('#gm-prep .pp-rail .chip')).length > 1, 'sections and a section rail');
+  check(await page.$eval('#gm-prep-q', (q) => q.getBoundingClientRect().height < 60), 'laptop: the note’s find box in the outline is one line tall');
   await shot(page, 'prep-desktop');
   if (!REAL) {
     const open1 = boxes.find((b) => !b.locked), done1 = boxes.find((b) => b.locked);
