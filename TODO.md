@@ -1,47 +1,37 @@
 # RESUME HERE (updated 16 Oct 2026, afternoon UTC)
 
-**State.** Branch `ccr-e0dcd379-q104ac` (draft PR #26): all six wave-1 branches, GM wave 2 and now `review/clocks`
-(E3 + the players' leftovers, merged e14c982: `npm test` green) are in. Nothing is deployed yet.
+**State.** Branch `ccr-e0dcd379-q104ac` (PR #26) holds everything: the six wave-1 branches, GM wave 2,
+`review/clocks` (E3 + the players' leftovers, e14c982), `review/display-budget` (E4 + E14, 8b1faba) and the new
+**Downtime generator** (the module 6fc125d, its tables in `app/downtime-tables.js` 51b495e, the GM page's panel
+`review/downtime-page` 1637354). Docs sweep done (7e398a4, 9d9427b, 13b632e). Nothing is deployed yet.
 
-**New since the morning (Alex asked, 16 Oct): the Downtime generator** ("personal business"). The pure module is done:
-`app/gm/downtime.js` (6fc125d, `checks/runtime/gm-downtime.test.mjs` 9 pass): Indulge vice (the scene at the PC's
-purveyor, a question, a hook; Overindulged: attract trouble / brag / lost / tapped, the mechanical line in bold with a
-scene prompt under it, a clock to start, a new purveyor from the book's list for Tapped), Recover, Long-term project,
-Train, Friend or rival, Lay low, Acquire. Original writing, no book text.
-
-**Merged since:** `review/display-budget` (8b1faba): E4, an always-on iPad from about 73,000 requests a day to about
-23,000 (one 4 s display poll that carries the transcriber's want and session, never a transcript line; 15 s after two
-quiet hours; 60 s hidden), and E14 (the display reloads once after 10 minutes signed out, at most once per 30 minutes).
-Docs sweep done (9d9427b, 7e398a4) but for one comment in app/gm-page.js (line ~317, "AMBIENT-PLAN.md"): do it after
-the Downtime panel merges. SETUP.md has the seven plain steps for updating from the Windows PC. The downtime tables
-moved to `app/downtime-tables.js` (51b495e): app/gm/ holds logic only and gm-nosecrets (a) checks it for the setting's
-and the campaign's names (on the GM's PC, every name in the pack). `npm test` on the combined branch: 693 PASS, 0 FAIL.
-
-**Running when this was written** (it pushes after every commit; if a session ends, read its branch and finish it):
-`review/downtime-page` (agent): the GM page's **Downtime (D)** panel on the module: PC chips from the live sheets
-(vice, purveyor, contacts, project clocks), activity chips, one tap on the result rolls the card (Indulged /
-Overindulged; 1–3 · 4/5 · 6 · Crit; the attribute; Friend / Rival), the four-way option switch on the same card,
-"Start a clock" adds a hidden danger clock to the table (clockOps add), Earlier, Pin, Copy, L. Checks: gm-page.test,
-gm.e2e (+ phone), gm-scenes, gm-npc-panel, gm-prep, check:phone, npm test.
+**The Downtime generator** (Alex asked, 16 Oct: "an indulge vice generator ... and any other personal business
+generators"). GM page, key **D**: tap the PC (their vice and purveyor fill in from their sheet), the activity, then the
+result, which rolls the card at once. Indulge vice: the scene at the purveyor, a question for the player, a hook;
+**Overindulged** puts Attract trouble · Brag · Lost · Tapped over a cost box (the mechanical line in bold, a scene prompt
+under it; trouble brings "Start a clock" (a hidden danger clock on the table), Tapped names a new source from the book).
+Also Recover, Long-term project, Train, Friend or rival (from the sheet's contacts), Lay low, Acquire. Original writing;
+the overindulgence lines follow Blades in the Dark (check them against the '68 book: `app/downtime-tables.js`, `over`).
+Checks: `checks/runtime/gm-downtime.test.mjs` (9), gm-page.test (109), gm.e2e (231), all of `npm test` (705).
 
 **Then, in order:**
-3. Merge `review/downtime-page` (`git merge --no-ff`), fix the gm-page.js comment, run `npm test` and
-   `npm run check:e2e-all` (26 of 27 expected: gm-stt's fake microphone fails in the cloud container, also on untouched
-   main; a check that says "port … is already in use" collided with another run: re-run it alone, `PORT=<free> node …`).
-4. Update PR #26's description (ambient, clocks, display budget, the Downtime generator).
-5. Mark PR #26 ready and merge to main (Alex asked for everything merged). Merging does not deploy.
-6. Deploy (Alex, from the Windows PC): `npm run deploy` from **Git Bash** (not plain wrangler: the script stamps the
-   build, which is how phones learn of a new version). It needs a clean tree; `app/media/theme.mp3` and
-   `app/ambient/calling-cards.html` on disk (`node tools/ambient/scenes/cards.js` builds the cards; or `B68_MEDIA_OK=1`);
-   `B68_GM_EMAILS=ahazelbrook@gmail.com`; the Access team name and AUD tag (it asks; Cloudflare Zero Trust dashboard:
-   Settings → team domain `<team>.cloudflareaccess.com`; Access → Applications → the app → Application Audience (AUD)
-   Tag). **Never on a game day** (Sat 17 Oct 2026 is one: deploy Sunday or later). After deploying: on the iPad pin the
-   planning meeting for a minute (lag), then pin the credits and tap once (theme); watch for heads.
-7. Optional ideas, only after a session on the new layout (see Wave 2): re-roll one row, "Make them an NPC", chaining
+1. The final verification on 13b632e (`npm test`, `npm run check:e2e-all`: 26 of 27 expected, gm-stt's fake microphone
+   fails in the cloud container, also on untouched main; "port … is already in use" means two runs collided: re-run that
+   check alone with `PORT=<free>`).
+2. Update PR #26's description, mark it ready and merge to main (Alex asked for everything merged). Merging does not deploy.
+3. Deploy (Alex, from the Windows PC; SETUP.md "Updating the app" has it in seven plain steps): `npm run deploy` from
+   **Git Bash** (not plain wrangler: the script stamps the build, which is how phones learn of a new version). It needs a
+   clean tree; `app/media/theme.mp3` and `app/ambient/calling-cards.html` on disk; `B68_GM_EMAILS=ahazelbrook@gmail.com`;
+   the Access team name and AUD tag (it asks; Cloudflare Zero Trust dashboard: Settings → team domain
+   `<team>.cloudflareaccess.com`; Access → Applications → the app → Application Audience (AUD) Tag). **Never on a game
+   day** (Sat 17 Oct 2026 is one: deploy Sunday or later). After deploying: on the iPad pin the planning meeting for a
+   minute (lag), then pin the credits and tap once (theme); watch for heads. Try the Downtime tab at the next session.
+4. Optional ideas, only after a session on the new layout (see Wave 2): re-roll one row, "Make them an NPC", chaining
    Street → Location → NPC; E16 util.js; lazy loading phase 2; a vault page for the downtime tables (pack part
    `downtime`) if Alex wants to write their own.
 
-**How to start the next session:** "Read TODO.md on branch ccr-e0dcd379-q104ac and follow RESUME HERE."
+**How to start the next session:** "Read TODO.md on branch ccr-e0dcd379-q104ac and follow RESUME HERE." (Once PR #26
+is merged, work continues on main or a fresh branch from it.)
 
 ---
 
@@ -282,6 +272,9 @@ last unsubscribe landing after the count; 2 of 12 runs failed under heavy load, 
       ROADMAP, DEPLOY...) in app/season.js, app/gm-page.js, app/display-page.js, app/README.md (also: list routes.js),
       CAST.md, CAMPAIGN.md, functions/_lib/gm.js, functions/api/gm/ambient.js and display.js; AMBIENT-PLAN's decisions
       into GM.md. · S
+- [x] (MERGED 1637354) Downtime generator (Alex, 16 Oct): personal business at the table, the GM page's **D** panel. Indulge
+      vice with the overindulgence's cost and a clock; Recover, Long-term project, Train, Friend or rival, Lay low, Acquire.
+      `app/gm/downtime.js` (logic), `app/downtime-tables.js` (the writing), boot's `characters()` and `addClock()`. · M
 - [ ] E16 P3 · One app/util.js for the twelve copies of esc/isObj/clone (adopt per touched module). · M
 
 ## Later or parked
