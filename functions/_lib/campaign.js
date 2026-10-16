@@ -1,5 +1,5 @@
 // The shared campaign document (see CAMPAIGN.md): its default shape, the player write rule,
-// and the read-modify-write loop on the `campaigns` table.
+// the clocks' ids and operations, and the read-modify-write loop on the `campaigns` table.
 //
 // Plain ES module with no Cloudflare-specific imports. The page keeps its own copy of the
 // default document (app/campaign.js); keep the two in step.
@@ -90,6 +90,7 @@ function withSchedule(doc) {
  * `crew`, `clocks.<i>.filled` (same number of clocks), and the caller's own entries
  * `schedule.avail.<meId>` and `schedule.rsvp.<meId>`. `log` is not compared here: a PATCH adds
  * to it through mergeLog, and only the GM can PUT. updatedAt is ignored: the server stamps it.
+ * `clockOps` are judged by their result, so a player's may only fill clocks that are there.
  */
 export function playerMayWrite(before, after, meId) {
   const { log: _l1, crew: _c1, updatedAt: _u1, ...oldRest } = withSchedule(before);
@@ -135,14 +136,167 @@ export function mergeLog(stored, incoming, gm) {
     .slice(0, LOG_MAX);
 }
 
+// ---------- clocks: stable ids, and a change as an operation on one clock ----------
+//
+// A PATCH replaces arrays, so a tick sent as the whole `clocks` array (what the previous release does) drops a tick
+// another device made in the meantime. The page now sends `clockOps`: each change names one clock by its id and says
+// only what changed. The PATCH handler applies them inside writeCampaign's loop, to the document as stored (re-read on
+// every attempt), so changes to different clocks commute, and two ticks of the same clock leave the later one (last
+// writer wins on that clock). CAMPAIGN.md, *Clocks*. app/runtime/cf.js applies the same rules to its optimistic copy:
+// keep the two in step.
+
+export const CLOCK_SIZES = [4, 6, 8, 10, 12];
+export const CLOCK_KINDS = ['danger', 'project', 'faction', 'other'];
+export const CLOCK_OPS_MAX = 200;
+export const STALE_CLOCKS = 'the clocks changed on another device, try again';
+const CLOCK_FIELDS = ['name', 'size', 'kind', 'hidden', 'filled'];   // what an op may set, in the order it is applied
+
+const str = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
+
+/** The size a clock is drawn with: its own when it is one of CLOCK_SIZES, else the nearest (as app/campaign.js reads it). */
+export function clockSize(c) {
+  let n = +(c && c.size);
+  if (CLOCK_SIZES.includes(n)) return n;
+  n = n || 4;
+  return CLOCK_SIZES.reduce((b, s) => (Math.abs(s - n) < Math.abs(b - n) ? s : b), 4);
+}
+
+/** A fill as a whole number within 0..size (the page's clamp). */
+export function clampFill(n, size) {
+  n = Math.round(+n || 0);
+  return n < 0 ? 0 : n > size ? size : n;
+}
+
+/**
+ * The clocks with an id each, named as the page names them (app/campaign.js normalize): a clock without an id is
+ * 'c_<i>' (its place among the clocks), a repeated id gets '_' added until it is unique, and an entry that is not an
+ * object is left out. Every write stores this (the in-place migration of a document from before ids), so an op the page
+ * made for a clock it read without an id finds that clock. Returns the same array when nothing changes.
+ */
+export function withClockIds(list) {
+  if (!Array.isArray(list)) return list;
+  const seen = new Set(), out = [];
+  let changed = false;
+  for (const c of list) {
+    if (!isPlainObject(c)) { changed = true; continue; }
+    let id = str(c.id) || 'c_' + out.length;
+    while (seen.has(id)) id += '_';
+    seen.add(id);
+    if (id === c.id) out.push(c);
+    else { changed = true; out.push({ ...c, id }); }
+  }
+  return changed ? out : list;
+}
+
+/** The document with its clocks' ids filled in (withClockIds); the same object when they all have one. */
+function withIds(doc) {
+  if (!isPlainObject(doc) || !Array.isArray(doc.clocks)) return doc;
+  const clocks = withClockIds(doc.clocks);
+  return clocks === doc.clocks ? doc : { ...doc, clocks };
+}
+
+/** A clock from an `add` op, with the page's defaults for what the op leaves out. */
+function newClock(a) {
+  const size = a.size === undefined ? 4 : a.size;
+  return {
+    id: a.id, name: a.name === undefined ? '' : a.name, size, filled: clampFill(a.filled, size),
+    kind: a.kind === undefined ? 'other' : a.kind, hidden: a.hidden === true,
+  };
+}
+
+/**
+ * Apply `clockOps` (checked by checkClockOps) to a clocks array, in order:
+ *   { id, name?, size?, kind?, hidden?, filled? }    set those fields of the clock with that id; its fill stays within
+ *                                                    0..size, so a smaller size takes the fill down with it
+ *   { add: { id, name, size, filled, kind, hidden } } append a new clock, unless that id is already there
+ *   { remove: id }                                   take that clock out
+ * An op for a clock that is not there does nothing (a tick never brings back a clock the GM removed), and an op applied
+ * twice gives what it gave once (the offline queue may send one again). Returns a new array; the clocks it changes are
+ * new objects.
+ */
+export function applyClockOps(list, ops) {
+  const clocks = withClockIds(Array.isArray(list) ? list : []).slice();
+  for (const op of ops) {
+    if (op.add !== undefined) {
+      if (!clocks.some((c) => c.id === op.add.id)) clocks.push(newClock(op.add));
+    } else if (op.remove !== undefined) {
+      const i = clocks.findIndex((c) => c.id === op.remove);
+      if (i >= 0) clocks.splice(i, 1);
+    } else {
+      const i = clocks.findIndex((c) => c.id === op.id);
+      if (i < 0) continue;
+      const c = { ...clocks[i] };
+      for (const k of CLOCK_FIELDS) if (op[k] !== undefined) c[k] = op[k];
+      if (op.filled !== undefined || op.size !== undefined) c.filled = clampFill(c.filled, clockSize(c));
+      clocks[i] = c;
+    }
+  }
+  return clocks;
+}
+
+/**
+ * `clockOps` in a PATCH: a list of at most CLOCK_OPS_MAX ops in the shapes applyClockOps takes, every field of the type
+ * the page writes (name text, size one of CLOCK_SIZES, filled a number, kind one of CLOCK_KINDS, hidden true or false)
+ * and a new clock's id a plain id (ID_RE); anything else is 400. Who may do what is not decided here: the player rule
+ * compares the result with the stored document, as for every other change (a player may only change `filled`).
+ */
+export function checkClockOps(ops) {
+  const bad = (msg) => { throw new HttpError(400, 'clockOps: ' + msg); };
+  const isId = (v) => typeof v === 'string' && v !== '';
+  const fields = (o) => {
+    for (const k of Object.keys(o)) if (k !== 'id' && !CLOCK_FIELDS.includes(k)) bad('unknown field ' + JSON.stringify(k).slice(0, 40));
+    if (o.name !== undefined && typeof o.name !== 'string') bad('name must be text');
+    if (o.size !== undefined && !CLOCK_SIZES.includes(o.size)) bad('size must be one of ' + CLOCK_SIZES.join(', '));
+    if (o.filled !== undefined && !(typeof o.filled === 'number' && Number.isFinite(o.filled))) bad('filled must be a number');
+    if (o.kind !== undefined && !CLOCK_KINDS.includes(o.kind)) bad('kind must be one of ' + CLOCK_KINDS.join(', '));
+    if (o.hidden !== undefined && typeof o.hidden !== 'boolean') bad('hidden must be true or false');
+  };
+  if (!Array.isArray(ops)) bad('must be a list of clock changes');
+  if (ops.length > CLOCK_OPS_MAX) bad('at most ' + CLOCK_OPS_MAX + ' changes in one write');
+  for (const op of ops) {
+    if (!isPlainObject(op)) bad('each change must be an object');
+    const keys = Object.keys(op);
+    if (keys.includes('add')) {
+      if (keys.length !== 1 || !isPlainObject(op.add)) bad('add takes one new clock and nothing else');
+      if (typeof op.add.id !== 'string' || !ID_RE.test(op.add.id)) bad('a new clock needs an id of letters, digits, _ or -');
+      fields(op.add);
+    } else if (keys.includes('remove')) {
+      if (keys.length !== 1 || !isId(op.remove)) bad('remove takes a clock id and nothing else');
+    } else {
+      if (!isId(op.id)) bad('a change needs the clock id');
+      if (keys.length < 2) bad('a change needs a field to set');
+      fields(op);
+    }
+  }
+}
+
+/**
+ * How many of the clocks in `incoming` (a whole array) have another fill than the stored clock with the same id. The
+ * previous release sends a tick as the whole array, copied from the document as that device last read it with one fill
+ * changed: from a player, more than one changed fill means the copy is older than another device's tick, and storing
+ * it would undo that tick (the PATCH handler refuses it with 412, STALE_CLOCKS).
+ */
+export function changedFills(stored, incoming) {
+  const before = new Map();
+  for (const c of withClockIds(Array.isArray(stored) ? stored : [])) before.set(c.id, c);
+  let n = 0;
+  for (const c of withClockIds(Array.isArray(incoming) ? incoming : [])) {
+    const s = before.get(c.id);
+    if (s && clampFill(s.filled, clockSize(s)) !== clampFill(c.filled, clockSize(c))) n++;
+  }
+  return n;
+}
+
 /**
  * `crew`, `session`, `schedule` and `scene`, when a body names them, must be plain objects (400
  * otherwise). `scene` (who is on stage, see CAST.md) is { npcs: { <id>: true | false | null }, at }.
+ * `clockOps` must pass checkClockOps.
  */
 export function checkShape(body) {
   for (const k of ['crew', 'session', 'schedule', 'scene']) {
     if (k in body && !isPlainObject(body[k])) throw new HttpError(400, k + ' must be an object');
   }
+  if ('clockOps' in body) checkClockOps(body.clockOps);
   const sc = body.scene;
   if (sc === undefined) return;
   if ('npcs' in sc) {
@@ -155,9 +309,9 @@ export function checkShape(body) {
   if ('at' in sc && sc.at !== null && (typeof sc.at !== 'string' || sc.at.length > 40)) throw new HttpError(400, 'scene.at must be a time or null');
 }
 
-/** Server-side finishing touches: newest LOG_MAX log entries, updatedAt stamped. */
+/** Server-side finishing touches: newest LOG_MAX log entries, every clock with an id, updatedAt stamped. */
 export function finish(doc, now) {
-  const next = { ...doc };
+  const next = withIds({ ...doc });
   if (Array.isArray(next.log) && next.log.length > LOG_MAX) next.log = next.log.slice(0, LOG_MAX);
   next.updatedAt = now;
   return next;
@@ -186,15 +340,16 @@ export function campaignDoc(row) {
 
 /**
  * Read-modify-write loop, as for characters. `build(current, now)` gets the stored document
- * (or the default one) and the timestamp to stamp, checks permissions (throwing HttpError),
- * and returns the new document. The write only lands when the row is unchanged since it was
- * read; otherwise it is retried, and after MAX_ATTEMPTS the caller gets a 409.
+ * (or the default one; its clocks with ids, see withClockIds) and the timestamp to stamp, checks
+ * permissions (throwing HttpError), and returns the new document. The write only lands when the
+ * row is unchanged since it was read; otherwise it is retried (build runs again on the new row),
+ * and after MAX_ATTEMPTS the caller gets a 409.
  */
 export async function writeCampaign(db, id, build) {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const row = await loadCampaignRow(db, id);
     const now = nowIso(row && row.updated_at);
-    const doc = finish(build(campaignDoc(row), now), now);
+    const doc = finish(build(withIds(campaignDoc(row)), now), now);
     const text = JSON.stringify(doc);
     if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) throw new HttpError(413, 'document too large');
     const result = row

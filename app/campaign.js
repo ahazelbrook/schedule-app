@@ -1,7 +1,8 @@
 /* campaign.js — the shared table page (CAMPAIGN.md): the session bar, the crew panel, shared clocks, the players with
    their characters, and the campaign log. One document, campaign/main. Renders into section#table-page; boot.js owns
    the subscription and hands each snapshot to B68Campaign.update(data). Every change goes out through api.save(patch)
-   carrying only what changed (clicks at once, typing debounced); nothing is written on open.
+   carrying only what changed (clicks at once, typing debounced); nothing is written on open. A clock change is an
+   operation on that one clock (clockOps, by its id) where the store takes them, so ticks from two phones both land.
 
    Permissions: the GM writes everything. A player may edit the whole crew panel (the crew sheet is shared), fill
    clock segments and append to the log; the session buttons, clock structure (add, remove, rename, resize, kind,
@@ -99,7 +100,9 @@
     var out = defaults(), s = isObj(d.session) ? d.session : {};
     out.session = { number: clamp(s.number, 0, 9999), startedAt: isoOrNull(s.startedAt), endedAt: isoOrNull(s.endedAt) };
     out.crew = normCrew(d.crew);
-    var seen = {};
+    /* a clock without an id is 'c_<i>', a repeated id gets '_': the server gives a stored clock the same id on its next
+       write (functions/_lib/campaign.js withClockIds), so a change the page sends by id finds it either way */
+    var seen = Object.create(null);
     out.clocks = (Array.isArray(d.clocks) ? d.clocks : []).filter(isObj).map(function (c, i) {
       var id = str(c.id) || 'c_' + i; while (seen[id]) id += '_'; seen[id] = true;
       var size = SIZES.indexOf(+c.size) >= 0 ? +c.size : nearestSize(c.size);
@@ -136,9 +139,30 @@
   }
   function idleStatus() { return ro() ? 'Read only' : cur.timer || cur.saving ? 'Saving…' : cur.everSaved ? 'Saved' : 'Up to date'; }
 
-  /* what changed since the last known server state: session, clocks and log whole; crew field by field */
-  /* Outside crew the server compares the stored document path by path, so a clock fill or a log append is built from
-     the arrays exactly as stored (only `filled` changed / new entries in front); anything else sends the page's copy. */
+  /* what changed since the last known server state: session whole, crew field by field, clocks as operations (or whole),
+     new log lines */
+  /* Clocks, where the store takes operations (api.clockOps: the hosted API, CAMPAIGN.md *Clocks*): each op names one clock
+     by its id and carries only what changed (a tick is { id, filled }), so it lands on the clocks as stored and never
+     carries the other clocks along: two people ticking different clocks both land. Removed clocks first, then the rest in
+     the page's order (a new clock goes at the end, where the server appends it). */
+  var CLOCK_KEYS = ['name', 'size', 'kind', 'hidden', 'filled'];
+  function clockOps(bC, dC) {
+    var ops = [], before = Object.create(null), after = Object.create(null);
+    bC.forEach(function (c) { before[c.id] = c; });
+    dC.forEach(function (c) { after[c.id] = c; });
+    bC.forEach(function (c) { if (!after[c.id]) ops.push({ remove: c.id }); });
+    dC.forEach(function (c) {
+      var o = before[c.id];
+      if (!o) { ops.push({ add: clone(c) }); return; }
+      var op = { id: c.id }, any = false;
+      CLOCK_KEYS.forEach(function (k) { if (!same(c[k], o[k])) { op[k] = clone(c[k]); any = true; } });
+      if (any) ops.push(op);
+    });
+    return ops;
+  }
+  /* A store without operations (the artifact's own db) gets the whole array. The server (and the hosted API for an older
+     page) compares the stored document path by path, so a clock fill or a log append is built from the arrays exactly as
+     stored (only `filled` changed / new entries in front); anything else sends the page's copy. */
   function fillOnly(rawC, bC, dC) {
     if (!Array.isArray(rawC) || rawC.length !== bC.length || dC.length !== bC.length || !rawC.every(isObj)) return null;
     for (var i = 0; i < dC.length; i++) { var x = Object.assign({}, dC[i], { filled: 0 }), y = Object.assign({}, bC[i], { filled: 0 }); if (!same(x, y)) return null; }
@@ -156,7 +180,10 @@
   function delta() {
     var out = {}, any = false, d = cur.doc, b = cur.base, raw = cur.raw || {};
     if (!same(d.session, b.session)) { out.session = clone(d.session); any = true; }
-    if (!same(d.clocks, b.clocks)) { out.clocks = fillOnly(raw.clocks, b.clocks, d.clocks) || clone(d.clocks); any = true; }
+    if (!same(d.clocks, b.clocks)) {
+      if (cur.api && cur.api.clockOps === true) { var ops = clockOps(b.clocks, d.clocks); if (ops.length) { out.clockOps = ops; any = true; } }
+      else { out.clocks = fillOnly(raw.clocks, b.clocks, d.clocks) || clone(d.clocks); any = true; }
+    }
     if (!same(d.log, b.log)) { var ap = appendOnly(raw.log, b.log, d.log); if (!ap) return { replace: true }; out.log = ap; any = true; }   /* a patch can only add log lines */
     var cd = {}, cany = false;
     Object.keys(d.crew).forEach(function (f) { if (!same(d.crew[f], b.crew[f])) { cd[f] = clone(d.crew[f]); cany = true; } });
@@ -185,8 +212,8 @@
       return;
     }
     cur.base = clone(cur.doc); cur.saving++; setStatus('Saving…');
-    var raw = cur.raw = clone(cur.raw || {});   /* what the store holds once this lands, for the next delta before the echo */
-    Object.keys(patch).forEach(function (k) { if (k === 'crew') raw.crew = Object.assign(isObj(raw.crew) ? raw.crew : {}, clone(patch.crew)); else if (k === 'schedule') raw.schedule = mergeNull(isObj(raw.schedule) ? raw.schedule : {}, patch.schedule); else raw[k] = clone(patch[k]); });
+    var raw = cur.raw = clone(cur.raw || {});   /* what the store holds once this lands, for the next delta before the echo (clockOps: the clocks are not read from it) */
+    Object.keys(patch).forEach(function (k) { if (k === 'crew') raw.crew = Object.assign(isObj(raw.crew) ? raw.crew : {}, clone(patch.crew)); else if (k === 'schedule') raw.schedule = mergeNull(isObj(raw.schedule) ? raw.schedule : {}, patch.schedule); else if (k !== 'clockOps') raw[k] = clone(patch[k]); });
     var c = cur, p;
     try { p = c.api.save(patch); } catch (e) { c.saving--; setStatus('Could not save: ' + (e && e.message || e), true); return; }
     Promise.resolve(p).then(function () { c.saving--; c.everSaved = true; if (cur === c && !c.saving && !c.timer) setStatus('Saved'); },
@@ -606,8 +633,9 @@
   }
 
   /* ---------- API ---------- */
-  /* api = { save(patch) -> Promise, replace(wholeDoc) -> Promise (GM only: log removals), me, canWrite, isGM, roster(), openCharacter(id), playStatus(doc), playFacts(doc), profiles(ids) | null }
-     patch: changed top-level fields of session / clocks / log, the changed crew fields, and the changed schedule leaves */
+  /* api = { save(patch) -> Promise, replace(wholeDoc) -> Promise (GM only: log removals), me, canWrite, isGM, clockOps, roster(), openCharacter(id), playStatus(doc), playFacts(doc), profiles(ids) | null }
+     patch: changed top-level fields of session / log, the changed crew fields, the changed schedule leaves, and the clock
+     changes: `clockOps` when api.clockOps is true (the store applies them by clock id), else the whole `clocks` array */
   M.open = function (api) {
     var root = document.getElementById('table-page'); if (!root) return;
     if (cur) M.close();

@@ -165,6 +165,21 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
   the same number of clocks are allowed. Any other change (`session`, adding/removing/renaming/
   resizing a clock, its kind or `hidden`, any other key) is
   `403 {"error":"only the GM can change that"}`. `updatedAt` in a body is ignored.
+- Clocks (CAMPAIGN.md, *Clocks*): `clockOps` in a PATCH is a list (at most 200) of changes to single
+  clocks, applied in order after the merge to the clocks as stored, inside the write loop (so they
+  are applied to the row as it is on each attempt, and changes to different clocks commute):
+  `{ "id", "filled"?, "name"?, "size"?, "kind"?, "hidden"? }` sets those fields of the clock with that
+  id (the fill kept within 0..size, a smaller size taking it down), `{ "add": { "id", "name", "size",
+  "filled", "kind", "hidden" } }` appends a clock unless the id is there, `{ "remove": id }` takes one
+  out; an op for a clock that is not there does nothing. Types: `name` text, `size` 4, 6, 8, 10 or 12,
+  `filled` a number, `kind` `danger` | `project` | `faction` | `other`, `hidden` true or false, a new
+  clock's id `[A-Za-z0-9_-]{1,80}`; anything else is `400 {"error":"clockOps: …"}`, and `clockOps` in
+  a PUT is 400. The player rule judges the result, so a player's ops may only fill. Two writes to the
+  same clock's fill: the later one wins. Every write gives each clock without an id the one the page
+  reads it under (`c_<i>`, its place; a repeated id gets `_`). A whole `clocks` array (the previous
+  release's tick) still replaces the clocks under the rule above, but a player's that changes the fill
+  of more than one clock is `412 {"error":"the clocks changed on another device, try again"}` and
+  stores nothing.
 - Schedule (SCHEDULE.md): the document has a `schedule` key (`options`, `avail`, `next`, `rsvp`,
   `cadence`, `quorum`, and `attendance` once the GM records one; a stored document without it
   reads as the default one, and the player rule compares against that default, so a first
@@ -300,12 +315,14 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   `{ docs: [documentSnapshot] }`. `onSnapshot` returns an unsubscribe function and fires
   once with the current cache as soon as the first full load has happened.
 - `collection('campaign').doc('main')` → `{ id, get(), set(doc) (PUT), update(patch) (PATCH),
-  onSnapshot(cb, err) }`. Its snapshot is always `{ id: 'main', exists: true, data() }` (the
+  onSnapshot(cb, err), clockOps: true }` (`clockOps: true`: `update()` takes `clockOps`, so the table
+  page sends a clock change as an op rather than the whole array). Its snapshot is always `{ id: 'main', exists: true, data() }` (the
   default document while none is stored). The cached copy is refetched (`GET /api/campaign`)
   when a poll's `campaignUpdatedAt` differs from the cached `updatedAt`; own writes merge
   optimistically with the server's rule (deep merge, log entries added and deduplicated,
-  newest `at` first, at most 200) and then take the server's answer; a
-  rejected write (e.g. 403) refetches, which rolls the optimistic change back. Campaign
+  newest `at` first, at most 200, `clockOps` applied by clock id and clocks named as the server
+  names them) and then take the server's answer; a
+  rejected write (e.g. 403, or 412 for a stale whole `clocks` array) refetches, which rolls the optimistic change back. Campaign
   listeners hear only campaign changes (first snapshot once loaded, then only when the document
   actually changed), character listeners only character changes. Any other `campaign` doc id
   never exists and refuses writes; `collection('campaign')` queries are always empty.
@@ -375,8 +392,11 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   this tab) is merged into it only when one merged PATCH is provably the same as the two in a
   row under the server's merge for any stored document: anything at the top level except an
   object over a non-object, and below it no `null` and no object over a non-object; campaign
-  `log` lists concatenate; campaign patches fold for the GM only (a player's are checked field
-  by field, so one refused change would sink both). Otherwise they stay separate, in order.
+  `log` lists concatenate, and so do `clockOps` (a list of fills alone keeps the last fill of each
+  clock), but a whole `clocks` array after `clockOps` does not fold (the server applies the array
+  first); campaign patches fold for the GM only (a player's are checked field by field, so one
+  refused change would sink both), except two that only fill clocks (`clockOps` of `{ id, filled }`,
+  which the rule never refuses). Otherwise they stay separate, in order.
 - **Several tabs** of one user share the stored queue: a tab claims an entry in storage before
   sending it (30 s claim), removes it when answered, skips entries another tab has claimed,
   and forgets entries another tab finished.
@@ -433,7 +453,7 @@ npm run db:local       # = npx wrangler d1 migrations apply DB --local (optional
 npm run dev            # = npx wrangler dev --port 8788 --ip 127.0.0.1 --var DEV_USER:gm@example.test --var GM_EMAILS:gm@example.test
 npm run build          # = npx wrangler deploy --dry-run --outdir .wrangler/dist (bundles, uploads nothing)
 npm test               # = npm run check:runtime && npm run check:api (no browser)
-npm run check:api      # checks/api/jwt.mjs, worker.mjs, deploy.mjs (the deploy script in a throwaway copy), flow.mjs (own servers on 8788 and 8789), then rules.mjs (8794), npcs.mjs (8841), gm.mjs (8843), name.mjs, display-role.mjs
+npm run check:api      # checks/api/jwt.mjs, worker.mjs, deploy.mjs (the deploy script in a throwaway copy), flow.mjs (own servers on 8788 and 8789), clocks.mjs (the clocks under concurrent writes, 8788), then rules.mjs (8794), npcs.mjs (8841), gm.mjs (8843), name.mjs, display-role.mjs
 npm run check:gm-api   # checks/api/gm.mjs alone: the GM tools' API (own server on 8843)
 npm run check:runtime  # 19 plain-node unit tests in checks/runtime/: adapter, pwa (and routes.js), markdown, display, the GM modules (gm-*), stt, ambient-* (README lists them)
 npm run check:sweep    # gm-figure and gm-npc with the full 500-seed sweeps (npm test runs 100: B68_SWEEP)
@@ -441,6 +461,7 @@ npm run check:offline  # checks/runtime/offline.e2e.mjs (own server on 8790, Chr
 npm run check:schedule # checks/runtime/schedule.e2e.mjs (own server on 8791, Chromium)
 npm run check:phone    # checks/runtime/phone.e2e.mjs (own server on 8792, mobile Chromium)
 npm run check:rules    # checks/runtime/rules.e2e.mjs (own server on 8795, Chromium): the rules wiki, see RULES.md
+npm run check:clocks-e2e  # checks/runtime/clocks.e2e.mjs (own server on 8797, Chromium): two players and the GM tick and edit clocks from stale copies
 npm run check:e2e      # app/checks/e2e.js against the stubbed runtime
 npm run check:e2e-all  # every browser check in turn (checks/e2e-all.mjs), with a summary at the end
 ```

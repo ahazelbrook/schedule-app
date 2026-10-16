@@ -19,16 +19,30 @@ const STUB = `(() => {
   const snapOf = (p) => ({ id: p.split('/')[1], exists: p in store, data: () => copy(store[p]), metadata: {} });
   const query = (c) => { const docs = Object.keys(store).filter(p => p.indexOf(c + '/') === 0).map(snapOf).sort((a, b) => (store[c + '/' + b.id].updatedAt || '').localeCompare(store[c + '/' + a.id].updatedAt || '')); return { docs, size: docs.length, empty: !docs.length, docChanges: () => [] }; };
   const fire = (p) => { (docSubs[p] || []).forEach(fn => fn(snapOf(p))); const c = p.split('/')[0]; (colSubs[c] || []).forEach(fn => fn(query(c))); };
-  const docRef = (c, id) => { const p = c + '/' + id; return { id,
+  /* localStorage.__ops = '1': campaign/main is a store that takes clock operations, as the hosted adapter's ref does
+     (ref.clockOps true; update() applies clockOps by clock id: set fields with the fill kept within 0..size, add once,
+     remove), so the page sends ops instead of whole arrays */
+  const ops = (() => { try { return localStorage.getItem('__ops') === '1'; } catch (e) { return false; } })();
+  const applyOps = (clocks, list) => { clocks = (clocks || []).slice(); list.forEach(op => {
+    if (op.add) { if (!clocks.some(c => c.id === op.add.id)) clocks.push(copy(op.add)); return; }
+    if (op.remove !== undefined) { clocks = clocks.filter(c => c.id !== op.remove); return; }
+    const i = clocks.findIndex(c => c.id === op.id); if (i < 0) return;
+    const c = Object.assign({}, clocks[i]); ['name', 'size', 'kind', 'hidden', 'filled'].forEach(k => { if (op[k] !== undefined) c[k] = op[k]; });
+    c.filled = Math.max(0, Math.min(c.size, Math.round(c.filled))); clocks[i] = c; }); return clocks; };
+  const docRef = (c, id) => { const p = c + '/' + id; const ref = { id,
     get: async () => snapOf(p),
     set: async (d) => { store[p] = copy(d); window.__writes.push(['set', p]); window.__patches.push(['set', p, copy(d)]); persist(); fire(p); },
-    update: async (u) => { if (!(p in store)) throw new Error('No document to update: ' + p); dm(store[p], copy(u)); window.__writes.push(['update', p]); window.__patches.push(['update', p, copy(u)]); persist(); fire(p); },
+    update: async (u) => { if (!(p in store)) throw new Error('No document to update: ' + p); const { clockOps, ...rest } = copy(u); if (clockOps && !ref.clockOps) throw new Error('this store takes no clockOps'); dm(store[p], rest); if (clockOps) store[p].clocks = applyOps(store[p].clocks, clockOps); window.__writes.push(['update', p]); window.__patches.push(['update', p, copy(u)]); persist(); fire(p); },
     delete: async () => { delete store[p]; window.__writes.push(['delete', p]); persist(); fire(p); },
-    onSnapshot: (fn) => { (docSubs[p] = docSubs[p] || []).push(fn); setTimeout(() => fn(snapOf(p)), 0); return () => { docSubs[p] = (docSubs[p] || []).filter(f => f !== fn); window.__unsubs.push(p); }; } }; };
+    onSnapshot: (fn) => { (docSubs[p] = docSubs[p] || []).push(fn); setTimeout(() => fn(snapOf(p)), 0); return () => { docSubs[p] = (docSubs[p] || []).filter(f => f !== fn); window.__unsubs.push(p); }; } };
+    if (ops && p === 'campaign/main') ref.clockOps = true;
+    return ref; };
   const col = (c) => { const q = () => ({ orderBy: q, limit: q, where: q, get: async () => query(c), onSnapshot: (fn) => { (colSubs[c] = colSubs[c] || []).push(fn); setTimeout(() => fn(query(c)), 0); return () => {}; } }); return Object.assign(q(), { doc: (id) => docRef(c, id), path: c }); };
   window.__writes = []; window.__patches = []; window.__unsubs = []; window.__store = store; window.__role = role;
   /* another viewer changes the campaign: not counted as this page's write */
   window.__remote = (patch) => { const p = 'campaign/main'; store[p] = dm(store[p] || {}, copy(patch)); persist(); fire(p); };
+  /* another phone's change this page has not heard about yet (its next poll would bring it) */
+  window.__remoteQuiet = (fn) => { const p = 'campaign/main'; fn(store[p]); persist(); };
   const ids = { gm: 'u_gm', owner: 'u_gm', player: 'u_player', ro: 'u_viewer', nodb: 'u_gm' };
   const user = { id: async () => ids[role], can: async (n) => n === 'data.write' ? role !== 'ro' : true, isOwner: async () => role === 'gm' || role === 'owner',
     me: async () => ({ id: ids[role], name: '', email: null }), profiles: async (list) => { const names = { u_gm: 'Gail the GM', u_player: 'Pat' }; const o = {}; list.forEach(id => { o[id] = { id, name: names[id] || '' }; }); return o; } };
@@ -421,6 +435,53 @@ const SHEET = `(pb) => {
   await p.evaluate(() => localStorage.setItem('__role', 'owner'));
   await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
   assert((await p.$eval('.tp-role', n => n.textContent)) === 'GM' && !!(await p.$(`.tp-clock[data-id="${k1.id}"]`)), 'owner (no canEdit) is the GM and sees the hidden clock');
+
+  /* ---------- a store that takes clock operations (the hosted adapter, CAMPAIGN.md *Clocks*): each clock change is one op
+     on that clock, so a tick never carries the other clocks along ---------- */
+  const opsSent = async () => { const lp = await lastPatch(); return lp && lp[0] === 'update' ? lp[2] : null; };
+  const keysOf = (o) => JSON.stringify(Object.keys(o || {}).sort());
+  const shown = (id) => p.$eval(`.tp-clock[data-id="${id}"]`, n => ({ count: n.querySelector('.tp-step .mono').textContent, on: n.querySelectorAll('.tp-seg.on').length, name: n.querySelector('.tp-in').value }));
+  await p.evaluate(() => { localStorage.setItem('__role', 'gm'); localStorage.setItem('__ops', '1'); });
+  await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
+  await one('ops: the GM adds a clock', async () => { await p.fill('[data-ui="newclock"]', 'Lockdown'); await p.click('[data-act="newsize"][data-n="4"]'); await p.click('[data-act="clockadd"]'); });
+  let op = await opsSent(); c = await camp(); const k4 = c.clocks[c.clocks.length - 1];
+  assert(keysOf(op) === '["clockOps","updatedAt"]' && JSON.stringify(op.clockOps) === JSON.stringify([{ add: k4 }]) && k4.name === 'Lockdown' && k4.size === 4 && c.clocks.length === 3, 'ops: adding sends { add: clock } and nothing else: ' + JSON.stringify(op));
+  await one('ops: the GM renames it', async () => { await p.click(`.tp-clock[data-id="${k4.id}"] .tp-in`); await p.keyboard.press('End'); await p.keyboard.type(' now', { delay: 10 }); }, 800);
+  op = await opsSent(); assert(keysOf(op) === '["clockOps","updatedAt"]' && JSON.stringify(op.clockOps) === JSON.stringify([{ id: k4.id, name: 'Lockdown now' }]), 'ops: a rename is { id, name }: ' + JSON.stringify(op));
+  await one('ops: the GM resizes it', () => p.click(`[data-act="clocksize"][data-id="${k4.id}"][data-n="6"]`));
+  op = await opsSent(); assert(JSON.stringify(op.clockOps) === JSON.stringify([{ id: k4.id, size: 6 }]), 'ops: a resize is { id, size }: ' + JSON.stringify(op));
+  await one('ops: the GM changes its kind', () => p.click(`[data-act="clockkind"][data-id="${k4.id}"][data-v="faction"]`));
+  op = await opsSent(); assert(JSON.stringify(op.clockOps) === JSON.stringify([{ id: k4.id, kind: 'faction' }]), 'ops: a kind is { id, kind }: ' + JSON.stringify(op));
+  await one('ops: the GM hides it', () => p.click(`[data-act="clockhide"][data-id="${k4.id}"]`));
+  op = await opsSent(); assert(JSON.stringify(op.clockOps) === JSON.stringify([{ id: k4.id, hidden: true }]), 'ops: hiding is { id, hidden }: ' + JSON.stringify(op));
+  await one('ops: and shows it again', () => p.click(`[data-act="clockhide"][data-id="${k4.id}"]`));
+  c = await camp(); assert(c.clocks[2].name === 'Lockdown now' && c.clocks[2].size === 6 && c.clocks[2].kind === 'faction' && c.clocks[2].hidden === false && c.clocks[0].filled === 3 && c.clocks[1].filled === 2, 'ops: the store has every change, the other clocks untouched: ' + JSON.stringify(c.clocks));
+  /* the player: a tick is { id, filled }; another phone's tick of another clock this page has not heard of yet stays */
+  await p.evaluate(() => localStorage.setItem('__role', 'player'));
+  await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
+  assert((await p.$$eval('.tp-clock', n => n.length)) === 2, 'ops: the player sees the two visible clocks');
+  const g0 = (await camp()).clocks[1].filled;
+  await p.evaluate((id) => window.__remoteQuiet(d => { d.clocks.forEach(x => { if (x.id === id) x.filled = 3; }); }), k4.id);
+  assert((await shown(k4.id)).count === '0 / 6', 'ops: the page has not heard of the other phone\'s tick yet');
+  await one('ops: the player ticks with +', () => p.click(stepSel(1)));
+  op = await opsSent(); c = await camp();
+  assert(keysOf(op) === '["clockOps","updatedAt"]' && JSON.stringify(op.clockOps) === JSON.stringify([{ id: k2.id, filled: g0 + 1 }]), 'ops: the + sends { id, filled } for that clock only: ' + JSON.stringify(op));
+  assert(c.clocks[1].filled === g0 + 1 && c.clocks[2].filled === 3, 'ops: the store keeps the other phone\'s tick: ' + JSON.stringify(c.clocks.map(x => x.filled)));
+  let s2 = await shown(k2.id), s4 = await shown(k4.id);
+  assert(s2.count === (g0 + 1) + ' / 8' && s2.on === g0 + 1 && s4.count === '3 / 6' && s4.on === 3, 'ops: the page shows its tick and the other phone\'s: ' + JSON.stringify([s2, s4]));
+  await one('ops: the player taps a wedge', () => p.click(`.tp-seg[data-id="${k2.id}"][data-n="6"]`));
+  op = await opsSent(); s2 = await shown(k2.id);
+  assert(JSON.stringify(op.clockOps) === JSON.stringify([{ id: k2.id, filled: 6 }]) && s2.count === '6 / 8' && s2.on === 6 && (await camp()).clocks[1].filled === 6, 'ops: a wedge sends { id, filled }, and the page shows 6 / 8: ' + JSON.stringify([op, s2]));
+  await one('ops: the player takes one off with −', () => p.click(stepSel(-1)));
+  s2 = await shown(k2.id); assert(JSON.stringify((await opsSent()).clockOps) === JSON.stringify([{ id: k2.id, filled: 5 }]) && s2.count === '5 / 8' && s2.on === 5, 'ops: − sends 5 and shows 5 / 8: ' + JSON.stringify(s2));
+  /* the GM removes the clock: { remove: id } */
+  await p.evaluate(() => localStorage.setItem('__role', 'gm'));
+  await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
+  await one('ops: the GM deletes a clock (confirm)', () => p.click(`[data-act="clockrm"][data-id="${k4.id}"]`));
+  op = await opsSent(); c = await camp();
+  assert(JSON.stringify(op.clockOps) === JSON.stringify([{ remove: k4.id }]) && c.clocks.length === 2 && c.clocks[1].filled === 5, 'ops: deleting sends { remove: id }: ' + JSON.stringify(op));
+  notes.push('clock ops: add, rename, resize, kind, hide, +, wedge, −, remove each sent as one op; an unseen tick of another clock kept');
+  await p.evaluate(() => localStorage.removeItem('__ops'));
 
   /* ---------- no db: a clear note ---------- */
   await p.evaluate(() => localStorage.setItem('__role', 'nodb'));

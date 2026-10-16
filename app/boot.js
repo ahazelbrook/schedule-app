@@ -347,9 +347,11 @@
       return out;
     }).catch(function () { return {}; });
   }
-  /* patch: changed top-level fields of session / crew / clocks / log (crew may be partial) and the changed schedule
-     and scene leaves (null deletes). Only what differs from the latest known document is sent; the first write to a missing
-     document creates it whole. Used by the table page and by the next-session card (an RSVP from any mode). */
+  /* patch: changed top-level fields of session / crew / clocks / log (crew may be partial), the changed schedule
+     and scene leaves (null deletes), and `clockOps` (changes to single clocks, CAMPAIGN.md *Clocks*; the table page sends
+     them only to a store whose ref says clockOps, and they go out as they are). Only what differs from the latest known
+     document is sent; the first write to a missing document creates it whole. Used by the table page and by the
+     next-session card (an RSVP from any mode). */
   function campaignSave(patch) {
     var ref = campRef;
     if (!ref) return Promise.reject(new Error('The table is not available here.'));
@@ -361,19 +363,21 @@
       if ((k === 'schedule' || k === 'scene') && isObj(nv)) { var sp = prune(nv, ov); if (sp) { out[k] = sp; any = true; } return; }
       if (!same(nv, ov)) { out[k] = nv; any = true; }
     });
+    if (patch && Array.isArray(patch.clockOps) && patch.clockOps.length) { out.clockOps = clone(patch.clockOps); any = true; }
     if (!any) return Promise.resolve(false);
     out.updatedAt = nowIso();
-    var rest = {}; Object.keys(out).forEach(function (k) { if (k !== 'schedule' && k !== 'scene') rest[k] = out[k]; });
+    /* the local copy until the store's snapshot answers (the adapter's comes at once, with the clockOps applied) */
+    var rest = {}; Object.keys(out).forEach(function (k) { if (k !== 'schedule' && k !== 'scene' && k !== 'clockOps') rest[k] = out[k]; });
     var merged = deepMerge(clone(before), clone(rest)), Cm = campaignMod(), write;
     if (out.schedule) merged.schedule = mergeNull(isObj(merged.schedule) ? merged.schedule : {}, out.schedule);
     if (out.scene) merged.scene = mergeNull(isObj(merged.scene) ? merged.scene : {}, out.scene);
-    if (!tableExists && typeof ref.set === 'function') {
+    if (!tableExists && typeof ref.set === 'function' && !out.clockOps) {
       var full = Cm && Cm.normalize ? Cm.normalize(merged) : merged; full.updatedAt = out.updatedAt;
       tableExists = true; tableLatest = full; write = ref.set(clone(full));
     } else {
       tableLatest = merged;
       write = Promise.resolve().then(function () { return ref.update(clone(out)); }).catch(function (e) {
-        if (/not.?found|no document|does not exist|missing/i.test(String(e && e.message || e)) && typeof ref.set === 'function') { var f2 = Cm && Cm.normalize ? Cm.normalize(merged) : merged; f2.updatedAt = out.updatedAt; return ref.set(clone(f2)); }
+        if (/not.?found|no document|does not exist|missing/i.test(String(e && e.message || e)) && typeof ref.set === 'function' && !out.clockOps) { var f2 = Cm && Cm.normalize ? Cm.normalize(merged) : merged; f2.updatedAt = out.updatedAt; return ref.set(clone(f2)); }
         throw e;
       });
     }
@@ -390,6 +394,7 @@
         return Promise.resolve().then(function () { return ref.set(clone(full)); }).then(function () { return true; }, function (e) { toast('Could not save the table: ' + (e && e.message || e), true); throw e; });
       },
       me: A.me, canWrite: A.canWrite, isGM: A.isGM === true,
+      clockOps: !!(ref && ref.clockOps === true),   /* the store applies per-clock changes (the hosted adapter); else whole arrays */
       roster: function () { return roster.slice(); },
       openCharacter: function (id) { openCharacter(id); },
       updateCharacter: updateCharacter,
@@ -417,7 +422,8 @@
       var Gp = gmMod(); if (Gp && Gp.campaign) { try { Gp.campaign(data ? clone(data) : null); } catch (e) { if (window.console) console.error(e); } }
       var T2 = tracker(); if (openId && T2 && T2.refresh) { try { T2.refresh(); } catch (e) {} }   /* the open sheet reads the table's session */
     }
-    function failed(e) { if (campRef !== ref) return; if (!campLoaded && !campGaveUp) { campGaveUp = true; renderHome(); } if (!tableOn) return; toast('The table is offline: ' + (e && e.message || e), true); }
+    /* a write the server refused after it was queued (code 'dropped': the table is reloaded) is not an outage: say what it was */
+    function failed(e) { if (campRef !== ref) return; if (!campLoaded && !campGaveUp) { campGaveUp = true; renderHome(); } if (!tableOn) return; var m = String(e && e.message || e); toast(e && e.code === 'dropped' ? m.charAt(0).toUpperCase() + m.slice(1) : 'The table is offline: ' + m, true); }
     campaignArrived = arrived; campaignFailed = failed;
     if (typeof ref.onSnapshot === 'function') { try { campUnsub = ref.onSnapshot(arrived, failed); campLive = !!campUnsub; } catch (e) { campUnsub = null; campLive = false; } }
     if (!campLive) readCampaignOnce();

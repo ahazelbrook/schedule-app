@@ -75,11 +75,70 @@
       .map(function (x) { return x[0]; })
       .slice(0, LOG_MAX);
   }
-  /* the server's PATCH for the campaign: the deep merge above, except `log`, whose entries are added */
+  /* ---------- the campaign's clocks (CAMPAIGN.md, *Clocks*), as the server treats them (functions/_lib/campaign.js
+     withClockIds, applyClockOps): every clock has an id, and `clockOps` change one clock each, found by its id ---------- */
+  var CLOCK_SIZES = [4, 6, 8, 10, 12], CLOCK_FIELDS = ['name', 'size', 'kind', 'hidden', 'filled'], CLOCK_OPS_MAX = 200;
+  function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
+  /* the size a clock is drawn with: its own when it is one of CLOCK_SIZES, else the nearest */
+  function clockSize(c) {
+    var n = +(c && c.size);
+    if (CLOCK_SIZES.indexOf(n) >= 0) return n;
+    n = n || 4;
+    return CLOCK_SIZES.reduce(function (b, s) { return Math.abs(s - n) < Math.abs(b - n) ? s : b; }, 4);
+  }
+  function clampFill(n, size) { n = Math.round(+n || 0); return n < 0 ? 0 : n > size ? size : n; }
+  /* a clock without an id is 'c_<i>' (its place among the clocks), a repeated id gets '_' added, entries that are not
+     objects are left out (app/campaign.js normalize names them the same way); the same array when nothing changes */
+  function clockIds(list) {
+    if (!Array.isArray(list)) return list;
+    var seen = Object.create(null), out = [], changed = false;
+    list.forEach(function (c) {
+      if (!isObj(c)) { changed = true; return; }
+      var id = str(c.id) || 'c_' + out.length;
+      while (seen[id]) id += '_';
+      seen[id] = true;
+      if (id === c.id) { out.push(c); return; }
+      var o = clone(c); o.id = id; out.push(o); changed = true;
+    });
+    return changed ? out : list;
+  }
+  function withClockIds(doc) { if (doc && Array.isArray(doc.clocks)) doc.clocks = clockIds(doc.clocks); return doc; }
+  /* clockOps, in order: { id, name?, size?, kind?, hidden?, filled? } sets those fields (the fill kept within 0..size),
+     { add: clock } appends a clock unless its id is there, { remove: id } takes one out; an op for a clock that is not
+     there does nothing. A new array. */
+  function applyClockOps(list, ops) {
+    var clocks = clockIds(Array.isArray(list) ? list : []).slice();
+    (Array.isArray(ops) ? ops : []).forEach(function (op) {
+      if (!isObj(op)) return;
+      var i;
+      if (op.add !== undefined) {
+        var a = isObj(op.add) ? op.add : {};
+        if (clocks.some(function (c) { return c.id === a.id; })) return;
+        var size = a.size === undefined ? 4 : a.size;
+        clocks.push({ id: a.id, name: a.name === undefined ? '' : a.name, size: size, filled: clampFill(a.filled, size), kind: a.kind === undefined ? 'other' : a.kind, hidden: a.hidden === true });
+      } else if (op.remove !== undefined) {
+        for (i = 0; i < clocks.length; i++) if (clocks[i].id === op.remove) { clocks.splice(i, 1); break; }
+      } else {
+        for (i = 0; i < clocks.length; i++) if (clocks[i].id === op.id) break;
+        if (i >= clocks.length) return;
+        var c = clone(clocks[i]);
+        CLOCK_FIELDS.forEach(function (k) { if (op[k] !== undefined) c[k] = clone(op[k]); });
+        if (op.filled !== undefined || op.size !== undefined) c.filled = clampFill(c.filled, clockSize(c));
+        clocks[i] = c;
+      }
+    });
+    return clocks;
+  }
+  /* the server's PATCH for the campaign: the deep merge above, except `log`, whose entries are added, and `clockOps`,
+     applied after it to the clocks (a whole `clocks` array, the previous release's tick, replaces them first); every
+     write leaves each clock with an id */
   function mergeCampaign(doc, patch) {
     var rest = {};
-    Object.keys(patch).forEach(function (k) { if (k !== 'log') rest[k] = patch[k]; });
+    Object.keys(patch).forEach(function (k) { if (k !== 'log' && k !== 'clockOps') rest[k] = patch[k]; });
+    withClockIds(doc);
     deepMerge(doc, rest);
+    withClockIds(doc);
+    if (Array.isArray(patch.clockOps)) doc.clocks = applyClockOps(doc.clocks, patch.clockOps);
     if ('log' in patch && Array.isArray(patch.log)) doc.log = mergeLog(doc.log, patch.log);
     return doc;
   }
@@ -573,7 +632,8 @@
 
   /* on start: this user's queued writes, and the snapshot (the whole cache after an offline start; online it only
      matters for documents with queued writes, which the first full load leaves alone). Queued writes are applied
-     again on top: every one of them is idempotent (deep merge, log append with dedup, PUT, DELETE). */
+     again on top: every one of them is idempotent (deep merge, log append with dedup, clock ops that set values, PUT,
+     DELETE). */
   function restore(m, snap) {
     snap = snap || readJSON(userKey(m));
     if (snap && snap.me && snap.me.id === m.id) {
@@ -612,7 +672,7 @@
   }
   function applyLocal(q) {
     if (q.kind === 'campaign') {
-      if (q.method === 'PUT') camp.doc = trimLog(clone(q.body));
+      if (q.method === 'PUT') camp.doc = withClockIds(trimLog(clone(q.body)));
       else if (q.method === 'PATCH' && camp.doc) mergeCampaign(camp.doc, q.body);
     } else if (q.kind === 'npc') {
       if (q.method === 'PUT') npcs.docs[q.id] = clone(q.body);
@@ -664,8 +724,8 @@
      body is provably the same as the two in a row under the server's rule, whatever the stored document holds:
      at the top level anything goes except an object over a non-object; below it a null (a delete) or an object
      over a non-object is not safe (the stored value could be a non-object, which the first patch would replace
-     with its literal object). The campaign `log` appends, so the two lists concatenate. Returns the merged
-     patch or null. */
+     with its literal object). The campaign `log` appends, so the two lists concatenate; so do its `clockOps`
+     (fills alone keep the last one per clock). Returns the merged patch or null. */
   function foldPatch(a, b, depth, campaign) {
     if (!isObj(a) || !isObj(b)) return null;
     var out = clone(a), keys = Object.keys(b);
@@ -676,6 +736,15 @@
         out.log = (has ? a.log : []).concat(clone(bv));
         continue;
       }
+      /* clockOps apply in order, so the lists concatenate; `clocks` after them cannot fold (the server replaces the
+         clocks with a whole array before it applies the ops) */
+      if (campaign && depth === 0 && k === 'clockOps') {
+        if (!Array.isArray(bv) || (has && !Array.isArray(a.clockOps))) return null;
+        out.clockOps = lastFills((has ? a.clockOps : []).concat(clone(bv)));
+        if (out.clockOps.length > CLOCK_OPS_MAX) return null;
+        continue;
+      }
+      if (campaign && depth === 0 && k === 'clocks' && Object.prototype.hasOwnProperty.call(a, 'clockOps')) return null;
       if (bv === null) { if (depth > 0) return null; out[k] = null; continue; }
       if (isObj(bv)) {
         if (!has) { out[k] = clone(bv); continue; }
@@ -688,14 +757,28 @@
     }
     return out;
   }
+  /* a clock fill and nothing else ({ id, filled }); a list of them only: the last one for each clock does what they all do */
+  function isFill(op) { return isObj(op) && typeof op.id === 'string' && op.filled !== undefined && Object.keys(op).length === 2; }
+  function lastFills(ops) {
+    if (!ops.every(isFill)) return ops;
+    var last = Object.create(null);
+    ops.forEach(function (op, i) { last[op.id] = i; });
+    return ops.filter(function (op, i) { return last[op.id] === i; });
+  }
+  /* a campaign patch that only fills clocks (clockOps of fills, and the page's updatedAt) */
+  function fillsOnly(body) {
+    return isObj(body) && Array.isArray(body.clockOps) && body.clockOps.length > 0 && body.clockOps.every(isFill) &&
+      Object.keys(body).every(function (k) { return k === 'clockOps' || k === 'updatedAt'; });
+  }
   function tryFold(q) {
     var last = queue[queue.length - 1];
     if (!last || last === sendingQ || !last.mine || last.method !== 'PATCH' || q.method !== 'PATCH' || last.kind !== q.kind || last.path !== q.path) return false;
     /* never into an entry another tab is sending, or has already sent (gone from storage) */
     var x = stored().filter(function (e) { return e.qid === last.qid; })[0];
     if (last.saved ? !x || claimedElsewhere(x) : false) return false;
-    /* a player's campaign patches are checked field by field: one refused change would sink both, so never fold them */
-    if (q.kind === 'campaign' && !(me && me.role === 'gm')) return false;
+    /* a player's campaign patches are checked field by field: one refused change would sink both, so they are not folded,
+       except two that only fill clocks (the rule never refuses a fill, and a fill of a clock that is gone does nothing) */
+    if (q.kind === 'campaign' && !(me && me.role === 'gm') && !(fillsOnly(last.body) && fillsOnly(q.body))) return false;
     var merged = foldPatch(last.body, q.body, 0, q.kind === 'campaign');
     if (!merged || JSON.stringify(merged).length > COALESCE_MAX) return false;
     last.body = merged;
@@ -859,7 +942,7 @@
 
   /* an own campaign write: same shape as write() above. The optimistic merge only applies to a loaded
      cache (before that there is nothing current to merge into), with the server's rule (mergeCampaign:
-     deep merge, log entries added); the server's answer then replaces it. A rejected
+     deep merge, log entries added, clockOps applied by clock id); the server's answer then replaces it. A rejected
      write (e.g. 403 for a player) forces a refetch so the optimistic change is rolled back. */
   function campaignWrite(method, body, local) {
     var p = enqueue({ kind: 'campaign', method: method, path: '/' + CAMPAIGN, body: clone(body) });
@@ -873,6 +956,7 @@
   function campaignRef() {
     return {
       id: CAMPAIGN_ID, path: CAMPAIGN + '/' + CAMPAIGN_ID,
+      clockOps: true,          /* update() takes `clockOps`, the server's per-clock changes (the page sends whole arrays to a store without it) */
       /* always exists: the server answers the default document while none is stored */
       get: function () {
         return api('GET', '/' + CAMPAIGN).then(function (r) {
@@ -884,7 +968,7 @@
         });
       },
       set: function (doc) {
-        return campaignWrite('PUT', doc, function () { camp.doc = trimLog(clone(doc)); });
+        return campaignWrite('PUT', doc, function () { camp.doc = withClockIds(trimLog(clone(doc))); });
       },
       update: function (patch) {
         return campaignWrite('PATCH', patch, function () { mergeCampaign(camp.doc, patch); });
