@@ -108,7 +108,7 @@ export async function loadStt(db, campaign) {
   const row = await db.prepare('SELECT updated_at, doc FROM gm_stt WHERE campaign = ?1').bind(campaign).first();
   let doc = null;
   try { doc = row ? JSON.parse(row.doc) : null; } catch (_) { doc = null; }
-  return { doc: deepMerge(structuredClone(BLANK_STT), isPlainObject(doc) ? doc : {}), updatedAt: row ? row.updated_at : null };
+  return { doc: deepMerge(structuredClone(BLANK_STT), isPlainObject(doc) ? doc : {}), updatedAt: row ? row.updated_at : null, raw: row ? row.doc : null };
 }
 
 /**
@@ -144,19 +144,29 @@ export function cleanSttPatch(raw, role) {
   return out;
 }
 
+const STT_ATTEMPTS = 5;
+/**
+ * Merge a cleanSttPatch() result into the stored document. The write lands only while the stored text is still what was
+ * read (the iPad reports its status every few seconds, the GM turns listening on and off, and the PC's heartbeat sets
+ * `copier` in place without moving updated_at), so none of them can undo another's change; 409 when it keeps colliding.
+ */
 export async function patchStt(db, campaign, patch) {
-  const cur = await loadStt(db, campaign);
-  const doc = deepMerge(cur.doc, patch);
-  if (isPlainObject(doc.speakers)) {
-    for (const k of Object.keys(doc.speakers)) if (doc.speakers[k] === null) delete doc.speakers[k];
-    if (Object.keys(doc.speakers).length > STT_LIMITS.speakers) throw new HttpError(400, 'at most ' + STT_LIMITS.speakers + ' named speakers');
+  for (let attempt = 0; attempt < STT_ATTEMPTS; attempt++) {
+    const cur = await loadStt(db, campaign);
+    const doc = deepMerge(cur.doc, patch);
+    if (isPlainObject(doc.speakers)) {
+      for (const k of Object.keys(doc.speakers)) if (doc.speakers[k] === null) delete doc.speakers[k];
+      if (Object.keys(doc.speakers).length > STT_LIMITS.speakers) throw new HttpError(400, 'at most ' + STT_LIMITS.speakers + ' named speakers');
+    }
+    const text = JSON.stringify(doc);
+    if (new TextEncoder().encode(text).byteLength > STT_LIMITS.doc) throw new HttpError(413, 'the listening document is too large');
+    const now = nowIso(cur.updatedAt);
+    const result = cur.raw === null
+      ? await db.prepare('INSERT INTO gm_stt (campaign, updated_at, doc) VALUES (?1, ?2, ?3) ON CONFLICT (campaign) DO NOTHING').bind(campaign, now, text).run()
+      : await db.prepare('UPDATE gm_stt SET updated_at = ?2, doc = ?3 WHERE campaign = ?1 AND doc = ?4').bind(campaign, now, text, cur.raw).run();
+    if (result && result.meta && result.meta.changes > 0) return { doc, updatedAt: now };
   }
-  const text = JSON.stringify(doc);
-  if (new TextEncoder().encode(text).byteLength > STT_LIMITS.doc) throw new HttpError(413, 'the listening document is too large');
-  const now = nowIso(cur.updatedAt);
-  await db.prepare('INSERT INTO gm_stt (campaign, updated_at, doc) VALUES (?1, ?2, ?3) ON CONFLICT (campaign) DO UPDATE SET updated_at = excluded.updated_at, doc = excluded.doc')
-    .bind(campaign, now, text).run();
-  return { doc, updatedAt: now };
+  throw new HttpError(409, 'the listening settings changed while saving, try again');
 }
 
 /* ---------- the Deepgram token ---------- */

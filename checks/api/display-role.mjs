@@ -1,5 +1,5 @@
 // The table display sign-in (DISPLAY_EMAILS, GM.md "The display sign-in") against a local `wrangler dev`: the role reads the
-// display and its own identity and nothing else, every other route (known or not) is 403 with the same message, the GM
+// display and its own identity and runs the transcriber, nothing else; every other route (known or not) is 403 with the same message, the GM
 // keeps PUT, GM wins when an email is in both lists, and with DISPLAY_EMAILS unset nobody is 'display'. Invented emails only.
 //
 //   node checks/api/display-role.mjs   (Windows: node --require <winspawn.cjs>, or it uses shell for wrangler itself)
@@ -67,8 +67,11 @@ await step('roleFor: gm wins, then display, else player; unset DISPLAY_EMAILS ma
   expect(roleFor('', GM, IPAD) === 'player' && roleFor(null, GM, IPAD) === 'player', 'no email');
 });
 
-await step('displayMayCall: exactly GET /api/me and GET /api/gm/display (optional trailing slash), nothing else', () => {
+await step('displayMayCall: GET /api/me, GET /api/gm/display and the transcriber calls (optional trailing slash), nothing else', () => {
   expect(displayMayCall('GET', '/api/me') && displayMayCall('GET', '/api/me/') && displayMayCall('GET', '/api/gm/display') && displayMayCall('GET', '/api/gm/display/'), 'allowed');
+  expect(displayMayCall('POST', '/api/gm/stt/token') && displayMayCall('GET', '/api/gm/stt') && displayMayCall('PATCH', '/api/gm/stt/') && displayMayCall('POST', '/api/gm/transcript'), 'the transcriber is allowed');
+  for (const [m, p] of [['GET', '/api/gm/transcript'], ['DELETE', '/api/gm/transcript'], ['GET', '/api/gm/stt/token'], ['PUT', '/api/gm/stt'], ['POST', '/api/gm/stt/tokenx']])
+    expect(!displayMayCall(m, p), m + ' ' + p + ' should be refused');
   for (const [m, p] of [['PATCH', '/api/me'], ['PUT', '/api/gm/display'], ['POST', '/api/gm/display'], ['GET', '/api/gm/pack'], ['GET', '/api/gm/state'],
     ['GET', '/api/gm/ambient'], ['PATCH', '/api/gm/ambient'], ['GET', '/api/gm/ambient/'], ['GET', '/api/gm/'], ['GET', '/api/campaign'], ['GET', '/api/characters'], ['GET', '/api/npcs'], ['GET', '/api/members'], ['GET', '/api/export'],
     ['GET', '/api/rules'], ['GET', '/api/me/x'], ['GET', '/api/gm/display/x'], ['GET', '/api/nothing'], ['GET', '/api/ME'], ['GET', ''], ['GET', undefined]]) {
@@ -145,6 +148,19 @@ async function main() {
     }
     expect(msgs.size === 1, 'one message for all, so the display cannot map the routes: ' + [...msgs].join(' | '));
     expect(/table display/.test([...msgs][0]), [...msgs][0]);
+  });
+
+  await step('the display may run the transcriber: post lines and report status (not the GM keys), but never read the transcript', async () => {
+    const t = await call('POST', '/api/gm/stt/token', { user: IPAD });
+    expect(t.status !== 403, 'token: past the allow-list (no key here, so 503), got ' + t.status + ' ' + t.text.slice(0, 120));
+    status(await call('GET', '/api/gm/stt', { user: IPAD }), 200);
+    status(await call('PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'listening', lines: 1 } } }), 200);
+    status(await call('PATCH', '/api/gm/stt', { user: IPAD, body: { want: 'on' } }), 403);
+    const p = await call('POST', '/api/gm/transcript', { user: IPAD, body: { lines: [{ id: 'd1', at: '2026-10-16T10:00:00.000Z', text: 'hello' }] } });
+    status(p, 200);
+    expect(p.json.added === 1, p.text);
+    status(await call('GET', '/api/gm/transcript?after=0', { user: IPAD }), 403);
+    status(await call('DELETE', '/api/gm/transcript?through=9', { user: IPAD }), 403);
   });
 
   await step('an email in both lists is the GM (can PUT); the GM and players are unchanged', async () => {
