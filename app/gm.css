@@ -58,9 +58,17 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-main { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) minmax(220px, 300px); gap: 16px; align-items: start; }
 #gm-page .gm-col { display: grid; gap: 10px; align-content: start; }
 
-/* the console */
-#gm-page .gm-scene { display: none; }
-#gm-page .gm-controls { display: grid; gap: 8px; border: 2px solid var(--rule); background: var(--card); padding: 10px; }
+/* the console: the Scene line (one row of labelled chips) folds the scene / district / aim / NPC / threat controls under it at
+   every width, so nothing but Position and the four buttons sits above the card */
+#gm-page .gm-scene { display: flex; gap: 6px 8px; align-items: center; flex-wrap: wrap; width: 100%; min-height: 44px; padding: 6px 10px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); text-align: left; cursor: pointer; }
+#gm-page .gm-scene::after { content: "+"; margin-left: auto; font: 700 18px/1 var(--font-mono); }
+#gm-page .gm-scene[aria-expanded="true"]::after { content: "−"; }
+#gm-page .gm-scene .gm-lab { display: inline; }
+#gm-page .gm-scene-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; flex: 1 1 auto; min-width: 0; }
+#gm-page .gm-scene-chips .gm-chip { margin: 0; }
+#gm-page .gm-chip-k { color: var(--ink-soft); font-weight: 400; }
+#gm-root:not(.scene-open) .gm-controls { display: none; }
+#gm-page .gm-controls { display: grid; gap: 8px; border: 2px solid var(--rule); border-top: 0; background: var(--card); padding: 10px; margin-top: -10px; }
 #gm-page .gm-row { display: flex; flex-wrap: wrap; gap: 8px; }
 #gm-page .gm-field { display: grid; gap: 3px; flex: 1 1 120px; }
 #gm-page .gm-field.wide { flex-basis: 100%; }
@@ -253,12 +261,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-root[data-seg="console"] .gm-side, #gm-root[data-seg="console"] .gm-rail,
   #gm-root[data-seg="side"] .gm-console, #gm-root[data-seg="side"] .gm-rail,
   #gm-root[data-seg="state"] .gm-console, #gm-root[data-seg="state"] .gm-side { display: none; }
-  #gm-page .gm-scene { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; min-height: 44px; padding: 8px 10px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); text-align: left; cursor: pointer; }
-  #gm-page .gm-scene::after { content: "+"; margin-left: auto; font: 700 18px/1 var(--font-mono); }
-  #gm-page .gm-scene[aria-expanded="true"]::after { content: "−"; }
-  #gm-page .gm-scene .gm-lab { display: inline; }
-  #gm-page .gm-scene-chips .gm-chip { margin: 0 4px 0 0; }
-  #gm-root:not(.scene-open) .gm-controls { display: none; }
+  #gm-page .gm-cardbox { scroll-margin-top: 140px; }   /* under the sticky bar and the two-row segmented bar */
   #gm-page .gm-btn { grid-template-columns: 1fr; grid-template-rows: auto auto; justify-items: center; text-align: center; min-height: 76px; padding: 8px 4px; }
   #gm-page .gm-btn kbd { grid-row: auto; }
   #gm-page .gm-btn small { display: none; }
@@ -283,11 +286,10 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-map.gm-leak { outline: 3px solid var(--alarm); outline-offset: -3px; }
 #gm-page .gm-warn.bad { color: var(--alarm); }
 
-/* ---- the console: Situations (default) and Classic ---- */
-#gm-page .gm-conhead { display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
-#gm-page .gm-conh { font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .16em; color: var(--ink-soft); margin: 0; }
+/* ---- the console: Situations (default) and Classic (the toggle lives in the Menu, and in the old header) ---- */
 #gm-page .gm-viewseg .chip { min-height: 44px; }
 #gm-page .gm-viewseg .chip[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .gm-cardbox { scroll-margin-top: 8px; }
 #gm-root[data-view="classic"] .gm-pos, #gm-root[data-view="classic"] .gm-singles { display: none; }
 #gm-page .gm-pos { display: grid; gap: 4px; border: 2px solid var(--rule); background: var(--card); padding: 8px 10px 10px; }
 #gm-page .gm-posb-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
@@ -300,8 +302,15 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-root[data-view="situations"] .gm-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #gm-page .gm-sbtn { min-height: 76px; }
 #gm-page .gm-sbtn b { font-size: clamp(15px, 4.2vw, 18px); }
-#gm-page .gm-singles { display: grid; gap: 4px; }
-#gm-page .gm-singles-b { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+/* "More tables": the nine single tables, folded under the card and Earlier */
+#gm-page .gm-singles { border-top: 1px solid var(--hair); }
+#gm-page .gm-singles:empty { display: none; }
+#gm-page .gm-singles > summary { cursor: pointer; list-style: none; min-height: 44px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#gm-page .gm-singles > summary::-webkit-details-marker { display: none; }
+#gm-page .gm-singles > summary::after { content: "+"; margin-left: auto; font: 700 18px/1 var(--font-mono); padding: 0 4px; }
+#gm-page .gm-singles[open] > summary::after { content: "−"; }
+#gm-page .gm-singles > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .gm-singles-b { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 0 0 8px; }
 
 /* the composed card: the lead box, "More", the "Or" rows */
 #gm-page .gm-card > .gm-lead, #gm-page .gm-card > .gm-or { margin: 0 12px; }
@@ -399,6 +408,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-page .gm-menu-list > :last-child { border-bottom: 0; }
   #gm-page .gm-menu-list > :hover, #gm-page .gm-menu-list > :focus-visible { background: var(--inset); outline: none; }
   #gm-page .gm-menu-list > .bad { color: var(--alarm); }
+  #gm-page .gm-menu-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--hair); }
 
   /* the three columns, each its own scroller */
   body.gm-app #gm-page .gm-main { min-height: 0; gap: 0; align-items: stretch; grid-template-columns: clamp(300px, 26vw, 400px) minmax(0, 1fr) clamp(230px, 19vw, 300px); }
@@ -432,10 +442,13 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-page .gm-mini button:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
   #gm-page .gm-mini button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
   body.gm-app #gm-page .pp-widebtn { display: none; }
-  /* the console column is narrower than before: the Position labels and the situations' type step down to fit */
+  /* the console column is narrower than before: the Position labels and the situations' type step down to fit; the nine
+     Classic buttons go two to a row so no label breaks mid-word */
   body.gm-app #gm-page .gm-posb b { font-size: clamp(12px, 1.05vw, 16px); }
   body.gm-app #gm-page .gm-posb small { font-size: 10px; }
   body.gm-app #gm-page .gm-sbtn b { font-size: clamp(14px, 1.15vw, 18px); }
+  body.gm-app #gm-root[data-view="classic"] .gm-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.gm-app #gm-root[data-view="classic"] .gm-btn b { overflow-wrap: normal; }
 
   /* Prep and Screen: the section list as an outline beside the text */
   body.gm-app #gm-prep:not([hidden]) { grid-template-columns: 200px minmax(0, 1fr); column-gap: 16px; row-gap: 0; align-items: start; }

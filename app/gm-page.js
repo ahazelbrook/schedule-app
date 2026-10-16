@@ -993,13 +993,16 @@
     var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['cards', 'Cards'], ['rules', 'Screen'], ['ipad', 'iPad'], ['state', 'State']];
     S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '" data-view="' + esc(S.view) + '">' + barHtml() +
       '<div class="gm-head"><div class="gm-title"><p class="gm-kick">GM tools <span id="gm-save" class="gm-save" role="status"></span></p>' + '<h1 class="gm-h" tabindex="-1">The console</h1><p class="gm-exp" id="gm-exp"></p></div>' +
-      '<div class="gm-acts"><a class="btn sm primary" href="#display" id="gm-display" title="The players’ screen: open this on the iPad">Display</a>' + '<button type="button" class="btn sm" data-gm="note">Export tonight’s note</button><button type="button" class="btn sm" data-gm="update">Update pack</button>' + '<button type="button" class="btn sm" data-gm="forget">Forget GM data on this device</button>' + '<button type="button" class="btn sm gm-applayout" data-gm="layout-app" title="One screen: the columns scroll on their own">Laptop layout</button></div></div>' +
+      '<div class="gm-acts"><a class="btn sm primary" href="#display" id="gm-display" title="The players’ screen: open this on the iPad">Display</a>' + '<button type="button" class="btn sm" data-gm="note">Export tonight’s note</button><button type="button" class="btn sm" data-gm="clearcap">Clear tonight’s capture</button>' + '<button type="button" class="btn sm" data-gm="update">Update pack</button>' + '<button type="button" class="btn sm" data-gm="forget">Forget GM data on this device</button>' + '<button type="button" class="btn sm gm-applayout" data-gm="layout-app" title="One screen: the columns scroll on their own">Laptop layout</button>' + viewToggle() + '</div></div>' +
       '<div class="seg gm-segbar" role="tablist" aria-label="Show">' + segs.map(function (s) { return '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
       '<div class="gm-main">' +
-      '<section class="gm-col gm-console" aria-label="Console">' + '<div class="gm-conhead"><h2 class="gm-conh">Console</h2>' + viewToggle() + '</div>' +
+      /* the console column, top to bottom: Position, the Scene line (its controls fold under it), the four buttons, the card,
+         Earlier, and the nine single tables folded under "More tables". Nothing sits above the card but what rolls it. */
+      '<section class="gm-col gm-console" aria-label="Console">' +
       '<div class="gm-pos" id="gm-pos" role="radiogroup" aria-label="Position"></div>' +
-      '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"><span class="gm-lab">Scene</span>' + '<span class="gm-scene-chips" id="gm-scene-chips"></span></button>' +
-      '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-singles" id="gm-singles"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div></section>' +
+      '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls" title="Scene, district, who it aims at, the NPC, the threat on screen">' + '<span class="gm-lab">Scene</span><span class="gm-scene-chips" id="gm-scene-chips"></span></button>' +
+      '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div>' +
+      '<details class="gm-singles" id="gm-singles"></details></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
       [['prep', 'Prep', 'R'], ['rules', 'Screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
       '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
@@ -1026,6 +1029,7 @@
       '<a class="gm-bb" href="#display" title="The players’ screen: open this on the iPad">Display</a>' +
       '<span class="gm-menu"><button type="button" class="gm-bb" data-gm="menu" aria-expanded="false" aria-haspopup="true">Menu</button><span class="gm-menu-list" hidden>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="update">Update pack</button>' +
+      menuViewRow() +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
       '<button type="button" data-gm="layout-classic">Classic layout (this device)</button><button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span></div>';
   }
@@ -1164,13 +1168,15 @@
     pushDisplay({ kind: 'svg', title: 'Clocks', caption: 'The table clocks', svg: svg }).then(function () { if (!quiet) toast('On the iPad: the clocks. They follow the table while they are up.'); }, function (e) { toast('Could not send the clocks: ' + errText(e), true); });
   }
 
-  /* the one-tap Situations | Classic toggle in the console header; none while the release switch is off */
+  /* the one-tap Situations | Classic toggle (the Menu, and the old header in the classic layout: a per-device preference, so
+     it takes no room in the console column); none while the release switch is off */
   function viewToggle() {
     if (!SITUATIONS_DEFAULT || !hasSit()) return '';
     return '<div class="seg gm-viewseg" role="group" aria-label="Console view">' + [['situations', 'Situations'], ['classic', 'Classic']].map(function (o) {
       return '<button type="button" class="chip" data-gm="view" data-v="' + o[0] + '" aria-pressed="' + (S.view === o[0]) + '">' + o[1] + '</button>';
     }).join('') + '</div>';
   }
+  function menuViewRow() { var t = viewToggle(); return t ? '<div class="gm-menu-row"><span class="gm-lab">Console</span>' + t + '</div>' : ''; }
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
     syncHead(); renderBar(); syncPanels(); renderView(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
@@ -1226,14 +1232,17 @@
     box.innerHTML = html;
     renderChips();
   }
-  /* the Scene line's chips: what the controls are set to (the phone shows only this until the disclosure opens) */
+  /* the Scene line's chips: every control with its label ("District: any · Threat: 3"), since the line is all that shows until
+     the disclosure opens; an empty text control says nothing */
+  function chipLabel(l) { return str(l).replace(/ on screen$/i, '').replace(/^Aim at$/i, 'Aim').replace(/^NPC is$/i, 'NPC'); }
   function renderChips() {
     var chips = $q('#gm-scene-chips'); if (!chips || !S.con) return;
     var lv = uiNow(), bits = [];
     ctlList().forEach(function (c) {
-      var v = str(lv[c.id]); if (!v) return;
-      var o = (c.options || []).filter(function (x) { return str(x.value) === v; })[0];
-      bits.push('<span class="gm-chip">' + esc(o ? o.label : v.length > 28 ? v.slice(0, 26) + '…' : v) + '</span>');
+      var v = str(lv[c.id]), o = (c.options || []).filter(function (x) { return str(x.value) === v; })[0];
+      var shown = o ? str(o.label) : v.length > 28 ? v.slice(0, 26) + '…' : v;
+      if (!shown && c.type === 'text') return;
+      bits.push('<span class="gm-chip"><span class="gm-chip-k">' + esc(chipLabel(c.label)) + ':</span> ' + esc(shown || 'any') + '</span>');
     });
     chips.innerHTML = bits.join('') || '<span class="gm-dim">any</span>';
   }
@@ -1263,13 +1272,15 @@
       return '<button type="button" class="gm-btn" data-gm="roll" data-n="' + b.n + '" title="' + esc(b.hint || '') + '"><kbd>' + b.n + '</kbd><b>' + esc(b.label) + '</b><small>' + esc(b.hint || '') + '</small></button>';
     }).join('');
   }
-  /* the nine classic rollers as a small row under the Situations (no keys) */
+  /* the nine classic rollers (no keys), folded under "More tables" below the card and Earlier; the fold keeps its state across a redraw */
   function renderSingles() {
     var box = $q('#gm-singles'); if (!box) return;
     if (!S.con || !sit()) { box.innerHTML = ''; return; }
-    box.innerHTML = '<span class="gm-lab">Single tables</span><div class="gm-singles-b">' + S.con.buttons.map(function (b) {
+    var open = !!box.open;
+    box.innerHTML = '<summary><span class="gm-lab">More tables</span><span class="gm-dim">the nine single tables</span></summary><div class="gm-singles-b">' + S.con.buttons.map(function (b) {
       return '<button type="button" class="chip sm" data-gm="roll" data-n="' + b.n + '" title="' + esc(b.hint || '') + '">' + esc(b.label) + '</button>';
     }).join('') + '</div>';
+    if (open) box.open = true;
   }
   /* Situations | Classic: redraw everything that depends on it */
   function renderView() {
@@ -1285,7 +1296,28 @@
     renderView();
   }
   function setPos(v) { setLive('pos', v); renderPos(); }
-  function stamp(kind, res) { S.conRes = res; S.shown = kind; S.last = { text: lastText(res) }; drawConsoleCard(res); }
+  /* a roll is never invisible: Focus (which hides the card) goes, said once per page load, and the card's header is scrolled
+     into view in the console column */
+  var focusLeftToasted = false;
+  function stamp(kind, res) {
+    S.conRes = res; S.shown = kind; S.last = { text: lastText(res) }; drawConsoleCard(res);
+    if (S.prepWide) { toggleFocus(); if (!focusLeftToasted) { focusLeftToasted = true; toast('Focus off so the card shows. F brings it back.'); } }
+    showCard();
+  }
+  /* the card's header to the top of its scroller (the console column on a laptop, the page on a phone) unless the whole card
+     is on screen already; the sticky bars are allowed for through the box's scroll-margin-top */
+  function showCard() {
+    var box = $q('#gm-card'), h = box && (box.querySelector('.gm-card-h') || box);
+    if (!h || typeof h.scrollIntoView !== 'function' || typeof box.getBoundingClientRect !== 'function') return;
+    var col = $q('.gm-console'), r = box.getBoundingClientRect(), top = 0, bottom = +W.innerHeight || 0, c;
+    try {
+      if (col && W.getComputedStyle && /auto|scroll/.test(W.getComputedStyle(col).overflowY)) { c = col.getBoundingClientRect(); top = c.top; bottom = c.bottom; }
+      else { var m = parseFloat(W.getComputedStyle ? W.getComputedStyle(box).scrollMarginTop : 0) || 0; top += m; }
+    } catch (e) {}
+    if (r.top >= top && r.bottom <= bottom) return;
+    var smooth = true; try { smooth = !(W.matchMedia && W.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
+    try { h.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' }); } catch (e) { try { h.scrollIntoView(); } catch (x) {} }
+  }
   function rollConsole(n) {
     if (!S || !S.con) return;
     var res; try { res = S.con.roll(n, uiNow()); } catch (e) { toast('The roll failed: ' + errText(e), true); return; }
@@ -1363,9 +1395,12 @@
     try { roll = L.generate(pk, opts, { mem: S.locMem }); } catch (e) { toast('The location roll failed: ' + errText(e), true); return; }
     var entry = { seed: roll.seed, ui: opts, mem: before, label: str(roll.name) + (roll.district ? ' · ' + roll.district : ''), at: nowIso() };
     var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.location) ? S.doc.hist.location : {};
-    patch({ cards: { location: Object.assign({ hid: hid }, entry) }, mem: { location: clone(S.locMem) }, hist: { location: addCapped(hist, hid, entry, LIMITS.hist) }, loc: { map: { reveal: clone(P.REVEAL0) } } }, { force: true });
+    /* a new site starts from the public band only, on the GM layer, as rings: the map draws at once (Draw stays for another
+       view, theme or layer; the theme is kept) */
+    patch({ cards: { location: Object.assign({ hid: hid }, entry) }, mem: { location: clone(S.locMem) }, hist: { location: addCapped(hist, hid, entry, LIMITS.hist) }, loc: { map: { reveal: clone(P.REVEAL0), view: 'rings', layer: 'gm' } } }, { force: true });
     S.locRoll = roll; S.map = null; S.last = { text: 'Location: ' + entry.label };
     renderLocation(true);
+    if (W.B68Map && W.B68Map.render) drawMap(true);
   }
   function renderLocation(fresh) {
     var box = $q('#gm-loc'), L = W.B68GmLocation, pk = part('location'); if (!box) return;
@@ -1433,11 +1468,11 @@
     try { W.localStorage.setItem(FOLD_KEY, JSON.stringify(a.slice(-20))); } catch (e) {}
   }
   function sel(key, label, list, v) { return '<label class="gm-field" for="gm-m-' + key + '"><span class="gm-lab">' + label + '</span><select id="gm-m-' + key + '" data-map="' + key + '">' + list.map(function (o) { return '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select></label>'; }
-  function drawMap() {
-    var K = W.B68Map; if (!S.locRoll) { toast('Roll a location first.', true); return; }
-    if (!K || !K.render) { toast('The map kit is missing.', true); return; }
+  function drawMap(quiet) {
+    var K = W.B68Map; if (!S.locRoll) { if (!quiet) toast('Roll a location first.', true); return; }
+    if (!K || !K.render) { if (!quiet) toast('The map kit is missing.', true); return; }
     var mu = mapUi(), r;
-    try { r = K.render(S.locRoll, { view: mu.view, theme: mu.theme, layer: mu.layer === 'player' ? 'player' : 'gm', reveal: revealList(mu), width: 1400 }); } catch (e) { toast('The map could not be drawn: ' + errText(e), true); return; }
+    try { r = K.render(S.locRoll, { view: mu.view, theme: mu.theme, layer: mu.layer === 'player' ? 'player' : 'gm', reveal: revealList(mu), width: 1400 }); } catch (e) { if (!quiet) toast('The map could not be drawn: ' + errText(e), true); return; }
     S.map = { svg: r.svg, warnings: r.warnings || [], layer: mu.layer === 'player' ? 'player' : 'gm', view: mu.view, theme: mu.theme };
     S.map.leak = S.map.layer === 'player' && leaks(r.svg, S.locRoll, revealList(mu)).length > 0;
     showMap();

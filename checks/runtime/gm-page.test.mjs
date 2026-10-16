@@ -386,7 +386,12 @@ await test('6a. the console opens on the four Situations: a big Position switch,
   assert.ok(h.qa('#gm-controls [data-ctl]').length >= 4, 'scene, district, PC, NPC, threat stay');
   assert.equal(h.qa('#gm-singles [data-gm="roll"]').length, 9, 'nine single tables');
   assert.equal(h.qa('#gm-singles kbd').length, 0, 'no keys on the single tables');
-  assert.deepEqual(h.qa('[data-gm="view"]').map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed')]), [['situations', 'true'], ['classic', 'false']]);
+  assert.deepEqual(h.qa('.gm-menu-list [data-gm="view"]').map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed')]), [['situations', 'true'], ['classic', 'false']], 'the toggle is in the Menu');
+  assert.ok(!h.q('.gm-console [data-gm="view"]') && !h.q('.gm-conhead'), 'and takes no room in the console column');
+  const col = [...h.q('.gm-console').kids].filter((k) => k.nodeType === 1).map((k) => k.id);
+  assert.deepEqual(col, ['gm-pos', 'gm-scene', 'gm-mini', 'gm-controls', 'gm-buttons', 'gm-card', 'gm-earlier', 'gm-singles'], 'the column: Position, Scene, the buttons, the card, Earlier, More tables');
+  assert.equal(h.q('#gm-singles').tagName, 'DETAILS', 'the single tables are folded');
+  assert.match(h.q('#gm-scene-chips').textContent, /District: any/, 'the Scene line labels its chips');
   await h.save();
 });
 
@@ -963,6 +968,11 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   assert.equal(br.ls.get('b68.gm.prepWide'), '1', 'remembered on this device');
   h.qa('#gm-mini button')[0].click(); await until(() => fg.server.patches.some((p) => p.cards && p.cards.situation));
   assert.ok(fg.server.patches.some((p) => p.cards && p.cards.situation), 'a key in Focus rolls');
+  assert.ok(!h.q('#gm-root').classList.contains('focus') && br.ls.get('b68.gm.prepWide') === '0', 'a roll leaves Focus, so the card is never rolled into a hidden box');
+  assert.ok(h.q('#gm-card .gm-card') && br.toasts.some((x) => /Focus off/.test(x[0])), 'the card shows, and a toast says why Focus went');
+  br.toasts.length = 0; h.press('f'); h.qa('#gm-mini button')[1].click(); await until(() => fg.server.patches.filter((p) => p.cards && p.cards.situation).length >= 2);
+  assert.ok(!h.q('#gm-root').classList.contains('focus') && !br.toasts.some((x) => /Focus off/.test(x[0])), 'the second time it goes without the toast (once per page load)');
+  h.press('f'); assert.ok(h.q('#gm-root').classList.contains('focus'));
   h.q('[data-gm="focus"]').click(); assert.ok(!h.q('#gm-root').classList.contains('focus'), 'the button turns it off');
   h.q('[data-gm="menu"]').click(); h.q('.gm-menu-list [data-gm="layout-classic"]').click();
   assert.ok(!br.doc.body.classList.contains('gm-app') && br.ls.get('b68.gm.layout') === 'classic', 'Classic layout: off, and remembered');

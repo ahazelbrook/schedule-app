@@ -132,10 +132,14 @@ try {
   check(Object.keys(idx.parts).sort().join() === 'campaign,console,location', 'server: the three parts are stored: ' + Object.keys(idx.parts));
   check((await G.page.$$('#gm-buttons .gm-btn')).length === 4 && (await G.page.$$eval('#gm-buttons .gm-btn kbd', (k) => k.map((x) => x.textContent).join(''))) === '1234', 'console: opens on the four Situations (keys 1-4)');
   check((await G.page.$$('#gm-pos [data-gm="pos"]')).length === 3 && (await G.page.$eval('#gm-pos [aria-checked="true"]', (b) => b.getAttribute('data-v'))) === 'risky', 'console: the three-way Position switch, risky by default');
-  check((await G.page.$$('#gm-singles [data-gm="roll"]')).length === 9 && (await G.page.$$('#gm-singles kbd')).length === 0, 'console: the nine single tables sit under the situations, without keys');
+  check((await G.page.$$('#gm-singles [data-gm="roll"]')).length === 9 && (await G.page.$$('#gm-singles kbd')).length === 0 && await G.page.$eval('#gm-singles', (d) => d.tagName === 'DETAILS' && !d.open), 'console: the nine single tables fold under "More tables" below the card, without keys');
   check((await G.page.$$('#gm-controls [data-ctl="result"]')).length === 0, 'Situations: no Result control (the button is the result)');
-  check(await G.page.$eval('[data-gm="view"][data-v="situations"]', (b) => b.getAttribute('aria-pressed') === 'true') && !!(await G.page.$('[data-gm="view"][data-v="classic"]')), 'the Situations | Classic toggle is in the console header');
-  check(await G.page.$eval('#gm-exp', (e) => e.classList.contains('stale') && /days old/.test(e.textContent)), 'header: the five-day-old export is flagged');
+  check(await G.page.$eval('#gm-controls', (c) => getComputedStyle(c).display === 'none') && /District: any/.test(await G.page.textContent('#gm-scene-chips')), 'the scene controls fold under a Scene line of labelled chips');
+  const colOrder = await G.page.$$eval('.gm-console > *', (ks) => ks.filter((k) => getComputedStyle(k).display !== 'none').map((k) => k.id).join());
+  check(colOrder === 'gm-pos,gm-scene,gm-buttons,gm-card,gm-earlier,gm-singles', 'the console column: Position, Scene, the four buttons, the card, Earlier, More tables (' + colOrder + ')');
+  check(!(await G.page.$('.gm-console [data-gm="view"]')) && await G.page.$eval('.gm-menu-list [data-gm="view"][data-v="situations"]', (b) => b.getAttribute('aria-pressed') === 'true') && !!(await G.page.$('.gm-menu-list [data-gm="view"][data-v="classic"]')), 'the Situations | Classic toggle is in the Menu, not the console column');
+  const viewClick = async (page, v) => { await page.click('[data-gm="menu"]'); await page.click('.gm-menu-list [data-gm="view"][data-v="' + v + '"]'); };
+  check(await G.page.$eval('#gm-menu-exp', (e) => e.classList.contains('stale') && /days old/.test(e.textContent)), 'menu: the five-day-old export is flagged');
   const cached = await G.page.evaluate(() => new Promise((res) => { const r = indexedDB.open('b68-gm'); r.onsuccess = () => { const tx = r.result.transaction('kv'); const q = tx.objectStore('kv').getAllKeys(); q.onsuccess = () => res(q.result); }; r.onerror = () => res(null); }));
   check(Array.isArray(cached) && cached.length === 1 && /^pack:/.test(cached[0]), 'the pack is cached in IndexedDB under pack:<user>: ' + JSON.stringify(cached));
   await shot(G.page, '01-gm-console');
@@ -156,7 +160,9 @@ try {
   const card1 = await cardText(G.page);
   check(/Before the roll/i.test(card1) && /Devil/i.test(await G.page.textContent('#gm-card')), 'key 1: a Devil’s Bargain card (Before the roll)');
   check((await G.page.$$('#gm-earlier [data-gm="replay"]')).length === 2, 'Earlier: two rolls');
-  // the keys never fire while typing
+  // the keys never fire while typing (the Scene line opens the controls)
+  await G.page.click('#gm-scene');
+  check(await G.page.$eval('#gm-controls', (c) => getComputedStyle(c).display !== 'none'), 'the Scene line opens the controls');
   await G.page.click('#gm-c-threat');
   await G.page.keyboard.type('3');
   check((await cardText(G.page)) === card1 && (await G.page.$$('#gm-earlier [data-gm="replay"]')).length === 2, 'typing a digit in a text box rolls nothing');
@@ -194,9 +200,10 @@ try {
   check(/^desperate/.test(await G.page.textContent('#gm-card .gm-sub')), 'the next card is rolled at that Position');
   await until(async () => ((await gmState()).con || {}).live && (await gmState()).con.live.pos === 'desperate', 5000);
   await G.page.click('#gm-pos [data-v="risky"]');
+  await G.page.click('#gm-singles > summary');
   await G.page.click('#gm-singles [data-gm="roll"][data-n="9"]');
-  check(await G.page.$eval('#gm-card article', (a) => a.getAttribute('data-tool')) === 'console' && !(await G.page.$('#gm-card .gm-lead')), 'a single table from the row: a classic card in the same box');
-  await G.page.click('[data-gm="view"][data-v="classic"]');
+  check(await G.page.$eval('#gm-card article', (a) => a.getAttribute('data-tool')) === 'console' && !(await G.page.$('#gm-card .gm-lead')), 'a single table from the fold: a classic card in the same box');
+  await viewClick(G.page, 'classic');
   check((await G.page.$$('#gm-buttons .gm-btn')).length === 9 && (await G.page.$$('#gm-pos [data-gm="pos"]')).length === 0 && (await G.page.$$('#gm-controls [data-ctl="result"]')).length === 1, 'Classic: the nine buttons, the Result control, no Position switch');
   check(await G.page.evaluate(() => localStorage.getItem('b68.gm.view')) === 'classic', 'Classic is remembered on this device (localStorage)');
   await G.page.keyboard.press('7');
@@ -205,11 +212,20 @@ try {
   await G.page.reload(); await G.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
   check((await G.page.$$('#gm-buttons .gm-btn')).length === 9 && await G.page.$eval('#gm-root', (r) => r.getAttribute('data-view')) === 'classic', 'reload: still Classic');
   check(!!(await G.page.$('#gm-card article[data-tool="console"]')), 'reload: the Classic card is back');
+  check(await G.page.$eval('#gm-buttons', (b) => getComputedStyle(b).gridTemplateColumns.split(' ').length) === 2 && await G.page.$$eval('#gm-buttons .gm-btn b', (bs) => bs.every((b) => b.scrollWidth <= b.clientWidth + 1)), 'laptop Classic: two columns, no label wider than its button');
   await shot(G.page, '01b-gm-classic');
-  await G.page.click('[data-gm="view"][data-v="situations"]');
+  await viewClick(G.page, 'situations');
   check((await G.page.$$('#gm-buttons .gm-btn')).length === 4 && await G.page.evaluate(() => localStorage.getItem('b68.gm.view')) === 'situations', 'back to Situations in one tap');
   await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
   await G.page.keyboard.press('4'); await G.page.waitForSelector('#gm-card .gm-lead');
+  await sleep(700);   // the smooth scroll
+  const cardPos = await G.page.$eval('#gm-card .gm-lead-t', (e) => { const r = e.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom) }; });
+  check(cardPos.top >= 0 && cardPos.bottom <= 900, 'a roll: the lead line is on screen at 1280×900 ' + JSON.stringify(cardPos));
+  // Focus hides the card: a roll in Focus leaves Focus, so the card shows (said once)
+  await G.page.keyboard.press('f');
+  check(await G.page.$eval('#gm-root', (r) => r.classList.contains('focus')) && await G.page.$eval('#gm-card', (c) => c.getBoundingClientRect().height === 0), 'F: Focus hides the card');
+  await G.page.keyboard.press('3'); await sleep(700);
+  check(!(await G.page.$eval('#gm-root', (r) => r.classList.contains('focus'))) && await G.page.$eval('#gm-card .gm-lead-t', (e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.top >= 0 && r.bottom <= 900; }), 'a roll in Focus leaves Focus and shows the card');
   await shot(G.page, '01c-gm-situation');
 
   /* ---- the location tab and the map ---- */
@@ -219,6 +235,7 @@ try {
   await G.page.waitForSelector('#gm-loc .gm-loccard', { timeout: 10000 });
   check((await G.page.$$('#gm-loc .gm-secret')).length > 0 && /GM only/.test(await G.page.textContent('#gm-loc .gm-loccard')), 'location: the card marks its GM-only sections');
   check(await G.page.$eval('[data-gm="ipad"]', (b) => b.disabled), 'map: Show on iPad is off on the GM layer');
+  check(!!(await G.page.$('#gm-map svg')) && await G.page.$eval('#gm-map', (m) => m.getAttribute('data-layer') === 'gm') && await G.page.$eval('#gm-m-view', (s) => s.value === 'rings'), 'a roll draws the GM-layer rings map at once');
   await G.page.click('[data-gm="draw"]');
   check(await G.page.waitForSelector('#gm-map svg', { timeout: 10000 }).then(() => true, () => false), 'map: the GM layer draws inline');
   // a GM-layer render forced at the display is refused in code, and the server's display is unchanged
@@ -339,11 +356,11 @@ try {
       await shot(V.page, '03a-phone-situation');
       await V.page.click('#gm-card details.gm-or > summary'); const l3 = await V.page.evaluate(layout);
       check(l3.scrollWidth <= l3.clientWidth + 1 && !l3.wide.length, 'phone: an opened "Or" row does not overflow ' + JSON.stringify(l3.wide));
-      await V.page.click('[data-gm="view"][data-v="classic"]');
+      await viewClick(V.page, 'classic');
       check(await V.page.$eval('#gm-buttons', (b) => getComputedStyle(b).gridTemplateColumns.split(' ').length) === 3, 'phone: Classic keeps its 3 × 3 grid');
       const l4 = await V.page.evaluate(layout);
       check(l4.scrollWidth <= l4.clientWidth + 1 && !l4.wide.length && !l4.small.length, 'phone: Classic, no overflow and every control is at least 44 px ' + JSON.stringify([l4.wide, l4.small]));
-      await V.page.click('[data-gm="view"][data-v="situations"]');
+      await viewClick(V.page, 'situations');
       check(await V.page.$eval('#gm-controls', (c) => getComputedStyle(c).display === 'none'), 'phone: the controls fold into the Scene line');
       await V.page.click('[data-gm="seg"][data-seg="state"]');
       check(await V.page.$eval('#gm-rail', (r) => getComputedStyle(r).display !== 'none') && await V.page.$eval('.gm-console', (c) => getComputedStyle(c).display === 'none'), 'phone: State shows the rail alone');
