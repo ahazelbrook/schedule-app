@@ -154,6 +154,29 @@ try {
   await p.keyboard.press('n');
   await p.waitForSelector('#gm-npc .gm-npccard', { timeout: 15000 });
   check(await sub() === chosen && await p.$eval('#gm-n-faction', (s) => s.value) === 'Teapot Union' && await p.$eval('#gm-n-place', (s) => s.value) === 'Test shop', 'reload: the same NPC, and the pickers as they were');
+  // Now in (A7): the District picker follows the bar; a pick of its own wins; the card records the district it resolved to; a stored card never moves
+  await p.selectOption('#gm-now', 'The Wobbles');
+  check(await p.$eval('#gm-n-district', (s) => s.value === '' && s.options[0].textContent === 'Now in: The Wobbles'), 'NPC: the District picker leads with "Now in: The Wobbles" and follows it');
+  await p.click('[data-gm="npcroll"]');
+  check(await p.waitForFunction(() => { const s = document.querySelector('#gm-npc .gm-npccard .gm-sub'); return s && / · The Wobbles · Test shop$/.test(s.textContent.trim()); }, null, { timeout: 15000 }).then(() => true, () => false), 'a roll lands in Now in: ' + await sub());
+  const wob = await text(p, '#gm-npc .gm-npccard');
+  const stW = await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.now && d.now.district === 'The Wobbles' && d.cards.npc.ui.district === 'The Wobbles' ? d : null; }, 8000);
+  check(!!stW && !(stW.npc.ui && stW.npc.ui.district), 'server: the card records the district it resolved to; the picker stores nothing (it follows)');
+  const hidW = stW && stW.cards.npc.hid;
+  await p.selectOption('#gm-n-district', 'Gnome Hill');
+  await p.click('[data-gm="npcroll"]');
+  check(await p.waitForFunction(() => { const s = document.querySelector('#gm-npc .gm-npccard .gm-sub'); return s && / · Gnome Hill · Test shop$/.test(s.textContent.trim()); }, null, { timeout: 15000 }).then(() => true, () => false), 'a pick of its own wins over Now in (Gnome Hill)');
+  const stG = await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.cards.npc.ui.district === 'Gnome Hill' && d.npc.ui.district === 'Gnome Hill' ? d : null; }, 8000);
+  const hidG = stG && stG.cards.npc.hid;
+  await p.selectOption('#gm-now', 'Puddle End');
+  check(await p.$eval('#gm-n-district', (s) => s.value === 'Gnome Hill' && s.options[0].textContent === 'Now in: Puddle End'), 'it stays through a change of Now in, and the first choice names the new one');
+  await p.click('#gm-npc [data-gm="replay"][data-h="' + hidW + '"]');
+  await p.waitForFunction((t) => document.querySelector('#gm-npc .gm-npccard').textContent.replace(/\s+/g, ' ').trim() === t, wob, { timeout: 8000 });
+  check((await text(p, '#gm-npc .gm-npccard')) === wob, 'Earlier: the NPC rolled in The Wobbles comes back card for card, whatever Now in is now');
+  await p.selectOption('#gm-n-district', ''); await p.selectOption('#gm-now', '');
+  await p.click('[data-gm="npcroll"]');
+  const stA = await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.cards.npc.hid !== hidG && d.cards.npc.hid !== hidW && d.cards.npc.ui.district === '' ? d : null; }, 8000);
+  check(!!stA && await p.$eval('#gm-n-district', (s) => s.value === '' && s.options[0].textContent === 'Now in: anywhere'), 'back to anywhere: the picker follows it again, and a roll stores no district');
   // Use the location: the location card's building, district and owner, kept to what the NPC tables know
   await api('PATCH', '/gm/state', { cards: { location: { hid: 'hloc', seed: 4242, ui: { target: 'Casino', district: '', approach: '', faction: '', mix: false }, mem: '{}', label: 'x', at: new Date().toISOString() } } });
   await p.reload();

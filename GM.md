@@ -91,12 +91,13 @@ fails and nobody is known, nothing is purged.
   stage) | the capture bar at the foot (buckets, the input, **File**, "N filed", **File last roll**). 600–1100 px: two columns, the rail below. Phone: the same bar as the laptop, 44 px
   (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | Engage / NPC | Cards | GM screen | iPad | State
   bar in two rows of five (every segment in reach, nothing to drag sideways), both stuck to the top; the Position switch first,
-  the situations a 2 × 2 grid, the other controls behind the Scene line, capture on a floating button. After a
+  **Now in** (its select moves into the Scene line here) and the Scene line, the situations a 2 × 2 grid, the other controls behind the
+  Scene line, capture on a floating button. After a
   roll the card is scrolled into view by the least scroll that shows it (the whole card when it fits, else its lead box; the
   console column on a laptop, the page on a phone), so Position stays on screen when there is room: a roll is never below the fold.
 - **The app layout** (`body.gm-app`, 16/10/2026; the only layout, at every width, since 18/10: the "Classic layout" switch and
   the `b68.gm.layout` preference went): the window is the page. While the tools are open the
-  site header and footer give way to a slim top bar (the session, Saved, a
+  site header and footer give way to a slim top bar (the session, **Now in**, Saved, a
   stale-pack note, the beat, **Find**, **iPad:** what the players see, **Listening** with whether the PC is copying (only once
   the transcriber has ever been set up: the pill is hidden while `gm_stt` has never been written), **Clear → ambient**, **Lights out**,
   and a **Menu** with what is not play: the pack's export date, **Open the display page (for the iPad)**, Export tonight's note,
@@ -143,6 +144,17 @@ fails and nobody is known, nothing is purged.
   `{ id: 'situation', situation, seed, ui, mem }`), never under `console`: code from before redraws any unknown console id as a
   Devil's Bargain. Single tables keep `cards.console` / `hist.console`, where rolls from before the Situations also live, and
   Earlier lists the last five across both; the newer of the two cards is the one on screen.
+- **Now in** (the district every tool starts from, 18/10/2026). One select in the top bar (on a phone, where the bar has no room, in the
+  Scene line), kept in the GM state as `now: { district }` (`''`: anywhere). The console's **District**, the Street scene's, the
+  Location's and the NPC generator's pickers each lead with **Now in: <district>**, which follows it; picking a district there is that
+  tool's own and stays through a change of Now in, **any** keeps a tool on any, and the first choice gives the tool back to Now in.
+  Each tool has its own district list (its pack part's), so a name is matched without case, a leading "the" or punctuation (the
+  tool's own spelling is what it rolls on), and a tool whose list lacks it says so ("Now in: any (no <district> here)") and rolls on any. A roll
+  stores the district it resolved to in its own `ui` (`cards.<tool>.ui`, the same as before), so Earlier, a reload and a replay never
+  move when Now in does; Now in changes what the *next* roll starts from, never a stored card. A tool's stored choice (`con.live.district`,
+  `loc.ui.district`, `scn.ui.sel`, `npc.ui.district`) is `''` or absent (never set here: follows Now in), `'*'` (any) or a name (its
+  own); `'*'` never reaches a roll, and a state from before Now in reads the same (a district already set is that tool's own pick).
+  Checks: `gm-page.test.mjs` (12a–12f), `gm.e2e.mjs`, `gm-scenes.e2e.mjs`, `gm-npc-panel.e2e.mjs`.
 - **Location.** The generator's controls and Roll, then the card (since 15/10/2026), then the map. A roll draws the GM-layer
   **rings** map at once (the controls go to rings / GM, the theme stays; Draw is for another view, theme or layer).
   - **The glance card** (`B68GmLocation.glance`): the name and place, **Say** (the first line of the street
@@ -260,7 +272,7 @@ fails and nobody is known, nothing is purged.
   so a reload or an Earlier click redraws exactly the same card even after a callback was used or a bargain collected),
   `hist` (five per tool), `npc` (`ui`: the NPC pickers), `npcgen` (`{ seed, mem, at, s?, ui? }` per generated NPC id: the
   roll that made them, `ui` only when a picker was set), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at, s? }`),
-  `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab) and `opps` (the Cards panel). Capture never touches
+  `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab), `opps` (the Cards panel) and `now` (`{ district }`: Now in). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
   `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
   there was none), on typed lines, on lines filed by a card's action (a bargain accepted) and on rolls filed with `L`, so the sync

@@ -714,7 +714,7 @@
     if (!S) return;
     var parked = S.saver ? S.saver.state().parked : null;
     if (S.carriedParked) parked = parked ? mergePatch(S.carriedParked, parked) : S.carriedParked;
-    try { W.localStorage.setItem(STICKY, JSON.stringify({ v: 1, user: S.me, live: (S.doc.con || {}).live || {}, cards: S.doc.cards || {}, parked: parked || undefined, at: nowIso() })); } catch (e) {}
+    try { W.localStorage.setItem(STICKY, JSON.stringify({ v: 1, user: S.me, live: (S.doc.con || {}).live || {}, cards: S.doc.cards || {}, now: isObj(S.doc.now) ? S.doc.now : undefined, parked: parked || undefined, at: nowIso() })); } catch (e) {}
   }
 
   /* ---------- the GM state document ---------- */
@@ -776,6 +776,68 @@
     }).catch(function () {});
   }
   function live() { var c = S.doc.con; return isObj(c) && isObj(c.live) ? c.live : {}; }
+
+  /* ---------- Now in: the one district the tools start from ----------
+     GM state `now: { district }`, set in the top bar (on a phone, in the Scene line). The console's District, the Street scene's,
+     the Location's and the NPC generator's pickers each lead with "Now in: …", which follows it; picking a district there is that
+     tool's own and stays through a change of Now in; "any" keeps a tool on any. A tool's stored choice is '' (never set: it
+     follows), NOW_ANY ('*': any) or a district name (its own). A roll stores the district it resolved to in its own `ui`, so
+     Earlier and a replay never move when Now in does. Each tool has its own list (its pack part's), so a name is matched without
+     case, a leading "the" or punctuation, and a tool whose list lacks it rolls on any. */
+  var NOW_ANY = '*';
+  function dkey(s) { return str(s).toLowerCase().replace(/^the\s+/, '').replace(/[^a-z0-9]+/g, ''); }
+  function nowDistrict() { return S && S.doc && isObj(S.doc.now) ? str(S.doc.now.district).trim() : ''; }
+  function uiOf(k) { var d = S.doc[k]; return isObj(d) && isObj(d.ui) ? d.ui : {}; }
+  /* each tool's district picker: its control (the options are the tool's own list), where its choice is kept, and its select */
+  var DIST = {
+    con: { sel: '#gm-c-district', ctl: function () { return ctlList().filter(function (c) { return c.id === 'district'; })[0]; }, raw: function () { return live().district; } },
+    loc: { sel: '#gm-l-district', ctl: function () { var L = W.B68GmLocation, pk = part('location'); try { return L && pk ? L.controls(pk).controls.filter(function (x) { return x.key === 'district'; })[0] : null; } catch (e) { return null; } }, raw: function () { return uiOf('loc').district; } },
+    scn: { sel: '#gm-s-sel', ctl: function () { var sc = scnInst(); return sc ? sc.controls.filter(function (x) { return x.id === 'sel'; })[0] : null; }, raw: function () { return uiOf('scn').sel; } },
+    npc: { sel: '#gm-n-district', ctl: function () { var g = npcgInst(); return g ? g.controls.filter(function (x) { return x.id === 'district'; })[0] : null; }, raw: function () { return uiOf('npc').district; } }
+  };
+  function distOpts(t) { var c = DIST[t].ctl(); return c && Array.isArray(c.options) ? c.options : []; }
+  function distNames(t) { return distOpts(t).map(function (o) { return str(o.value); }).filter(Boolean); }
+  /* the tool's own spelling of Now in, '' when its list does not hold it */
+  function nowIn(names) { var k = dkey(nowDistrict()); return k ? names.filter(function (n) { return dkey(n) === k; })[0] || '' : ''; }
+  /* the district a tool rolls on: its own pick, else Now in (when its list holds it), else any */
+  function distFor(t) { var v = str(DIST[t].raw()); return v === NOW_ANY ? '' : v ? v : nowIn(distNames(t)); }
+  /* a picker's options: Now in first (it follows), then any (this tool's own, kept), then the districts */
+  function distOptionsHtml(t) {
+    var opts = distOpts(t), raw = str(DIST[t].raw()), now = nowDistrict(), mine = nowIn(distNames(t)), any = opts.filter(function (o) { return str(o.value) === ''; })[0];
+    var list = [{ value: '', label: 'Now in: ' + (!now ? 'anywhere' : mine ? mine : 'any (no ' + now + ' here)') }, { value: NOW_ANY, label: any ? str(any.label) : 'any' }].concat(opts.filter(function (o) { return str(o.value) !== ''; }));
+    if (raw && raw !== NOW_ANY && !list.some(function (o) { return str(o.value) === raw; })) list.push({ value: raw, label: raw });
+    return list.map(function (o) { return '<option value="' + esc(o.value) + '"' + (str(o.value) === raw ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('');
+  }
+  /* the bar's list: every tool's districts once (alphabetical), and a Now in the packs no longer hold, so the select tells the truth */
+  function nowNames() {
+    var out = [], seen = {}, cur = nowDistrict();
+    Object.keys(DIST).forEach(function (t) { distNames(t).forEach(function (n) { var k = dkey(n); if (k && !seen[k]) { seen[k] = 1; out.push(n); } }); });
+    out.sort(function (a, b) { return dkey(a) < dkey(b) ? -1 : dkey(a) > dkey(b) ? 1 : 0; });
+    if (cur && !seen[dkey(cur)]) out.push(cur);
+    return out;
+  }
+  /* the Now in selects (the bar's and the phone's Scene line's) are redrawn only when what they show changed: a redraw would
+     close a list that is open */
+  function renderNow(force) {
+    if (!S || S.status !== 'ready' || !S.root) return;
+    var names = nowNames(), cur = nowDistrict(), k = dkey(cur), sig = JSON.stringify([names, cur]);
+    [].forEach.call(S.root.querySelectorAll('select[data-now]'), function (sel) {
+      if (force || sel.__sig !== sig) {
+        sel.innerHTML = '<option value=""' + (cur ? '' : ' selected') + '>anywhere</option>' + names.map(function (n) { return '<option value="' + esc(n) + '"' + (k && dkey(n) === k ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+        sel.__sig = sig;
+      }
+      var box = sel.closest ? sel.closest('.gm-now, .gm-nowline') : null; if (box) { box.hidden = !names.length; if (names.length) box.removeAttribute('hidden'); else box.setAttribute('hidden', ''); }
+    });
+  }
+  /* the four pickers' first choice names Now in: redrawn in place (never the panes), and the Scene line's chips follow */
+  function syncDistricts() {
+    Object.keys(DIST).forEach(function (t) { var el = $q(DIST[t].sel); if (!el) return; var html = distOptionsHtml(t); if (el.__opts !== html || el.value !== str(DIST[t].raw())) { el.innerHTML = html; el.__opts = html; } });
+    renderChips();
+  }
+  function setNow(v) {
+    v = str(v).trim().slice(0, 120); if (v === nowDistrict()) return;
+    patch({ now: { district: v } }); renderNow(); syncDistricts();
+  }
   function adoptMem() {
     var m = isObj(S.doc.mem) ? S.doc.mem : {};
     if (S.con) { var cm = S.con.mem(); Object.keys(cm).forEach(function (k) { delete cm[k]; }); Object.assign(cm, clone(m.console || {})); }
@@ -849,7 +911,7 @@
       if (S !== me) return;
       var r = res[1];
       if (r && isObj(r.doc)) { me.doc = r.doc; me.updatedAt = r.updatedAt || null; }
-      else if (sticky) { me.doc = { con: { live: sticky.live || {} }, cards: sticky.cards || {} }; toast('The GM notes are offline: showing this device’s last copy.', true); }
+      else if (sticky) { me.doc = { con: { live: sticky.live || {} }, cards: sticky.cards || {} }; if (isObj(sticky.now)) me.doc.now = sticky.now; toast('The GM notes are offline: showing this device’s last copy.', true); }
       if (sticky && isObj(sticky.parked)) me.carriedParked = sticky.parked;   /* a change the server refused earlier stays on this device */
       if (res[0] === 'forbidden') { purge(); screen(note('GM only.', 'The server says this account is not the GM.')); me.status = 'off'; return; }
       if (res[0] === 'nopack' || !me.pack) { me.status = 'import'; importScreen(false); return; }
@@ -986,7 +1048,8 @@
       '<div class="gm-pos" id="gm-pos" role="radiogroup" aria-label="Position"></div>' +
       /* the Scene button sits in a plain div: a <button> as a direct grid item of the scrolling column collapses to its min-height once
          the column overflows (Chromium sizes the track from the button's min-height, not its wrapped content) */
-      '<div class="gm-scenebox" id="gm-scenebox"><button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"' + ' title="Scene, district, who it aims at, the NPC, the threat on screen">' + '<span class="gm-lab">Scene</span><span class="gm-scene-chips" id="gm-scene-chips"></span></button></div>' +
+      '<div class="gm-scenebox" id="gm-scenebox">' + '<label class="gm-nowline" for="gm-now-s"><span class="gm-lab">Now in</span><select data-now id="gm-now-s"></select></label>' +
+      '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"' + ' title="Scene, district, who it aims at, the NPC, the threat on screen">' + '<span class="gm-lab">Scene</span><span class="gm-scene-chips" id="gm-scene-chips"></span></button></div>' +
       '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div>' +
       '<details class="gm-singles" id="gm-singles"></details></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
@@ -1006,6 +1069,8 @@
      the site's pages, Forget. On a phone the bar is ’68 GM · Session · iPad · Menu (gm.css) */
   function barHtml() {
     return '<div class="gm-bar"><a class="gm-bar-mark" href="#" title="Home">’68 <b>GM</b></a><span class="gm-bar-sess" id="gm-bar-sess"></span>' +
+      '<label class="gm-now" title="The district the tools start from: the console, Street, Location and NPC pickers follow it until you pick one there">' +
+      '<span class="gm-nowk">Now in</span><select data-now id="gm-now" aria-label="Now in: the district the tools start from"></select></label>' +
       '<span class="gm-save" role="status"></span><span class="gm-bar-exp" id="gm-bar-exp"></span>' +
       '<span class="gm-beatbar" id="gm-bar-beat" hidden><button type="button" class="gm-pill gm-beat" data-gm="beat-go" id="gm-bar-beatgo" title="The beat running (the Prep tab’s run order)"></button>' +
       '<button type="button" class="gm-bb" data-gm="beat-next" title="Start the next beat in the run order">Next beat</button></span><span class="gm-grow"></span>' +
@@ -1029,7 +1094,7 @@
     if (!S || !S.root) return;
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
-    renderBeat();
+    renderBeat(); renderNow();
     var ip = $q('#gm-bar-ipad');
     if (ip) {
       var shown = AM.shown ? (AM.shown.kind === 'blank' || !AM.shown.kind ? 'ambient' : displayLine(AM.shown)) : 'not known yet';
@@ -1201,7 +1266,8 @@
      tables still roll. */
   function hasSit() { return !!(S && S.con && typeof S.con.situation === 'function' && Array.isArray(S.con.situationControls) && typeof S.con.situations === 'function'); }
   function ctlList() { return !S.con ? [] : hasSit() ? S.con.situationControls.filter(function (c) { return c.id !== 'pos'; }) : S.con.controls; }
-  function uiNow() { return clone(Object.assign(hasSit() ? S.con.situationDefaults() : S.con.defaults(), live())); }
+  /* the live controls, with the district resolved (Now in, a pick of this tool's, or any): what a roll stores in its own ui */
+  function uiNow() { var u = clone(Object.assign(hasSit() ? S.con.situationDefaults() : S.con.defaults(), live())); u.district = distFor('con'); return u; }
   function renderControls() {
     var box = $q('#gm-controls'), chips = $q('#gm-scene-chips'); if (!box) return;
     if (!S.con) { box.innerHTML = ''; if (chips) chips.textContent = ''; return; }
@@ -1212,7 +1278,7 @@
         var id = 'gm-c-' + esc(c.id), v = str(lv[c.id]);
         if (c.type === 'text') return '<label class="gm-field wide" for="' + id + '"><span class="gm-lab">' + esc(c.label) + '</span><input type="text" id="' + id + '" data-ctl="' + esc(c.id) + '" value="' + esc(v) + '" placeholder="' + esc(c.placeholder || '') + '" autocomplete="off"></label>';
         return '<label class="gm-field" for="' + id + '"><span class="gm-lab">' + esc(c.label) + '</span><select id="' + id + '" data-ctl="' + esc(c.id) + '">' +
-          (c.options || []).map(function (o) { return '<option value="' + esc(o.value) + '"' + (str(o.value) === v ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('') + '</select></label>';
+          (c.id === 'district' ? distOptionsHtml('con') : (c.options || []).map(function (o) { return '<option value="' + esc(o.value) + '"' + (str(o.value) === v ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('')) + '</select></label>';
       }).join('') + '</div>';
     }).join('');
     box.innerHTML = html;
@@ -1353,7 +1419,7 @@
   }
 
   /* ---------- the location generator ---------- */
-  function locUi() { var l = isObj(S.doc.loc) && isObj(S.doc.loc.ui) ? S.doc.loc.ui : {}; return Object.assign(W.B68GmLocation ? W.B68GmLocation.defaults() : {}, l); }
+  function locUi() { var u = Object.assign(W.B68GmLocation ? W.B68GmLocation.defaults() : {}, uiOf('loc')); u.district = distFor('loc'); return u; }
   function mapUi() { var l = isObj(S.doc.loc) && isObj(S.doc.loc.map) ? S.doc.loc.map : {}; var m = Object.assign(clone(P.MAP0), l); m.reveal = Object.assign({}, P.MAP0.reveal, isObj(l.reveal) ? l.reveal : {}); return m; }
   function replayLocation(e) {
     var L = W.B68GmLocation, pk = part('location'); if (!L || !pk || !isObj(e)) return null;
@@ -1382,7 +1448,7 @@
     var h = '<div class="gm-loc-ctl">' + c.controls.map(function (x) {
       var id = 'gm-l-' + esc(x.key);
       if (x.kind === 'toggle') return '<label class="gm-check" for="' + id + '"><input type="checkbox" id="' + id + '" data-loc="' + esc(x.key) + '"' + (ui[x.key] ? ' checked' : '') + '> <span>' + esc(x.label) + '</span></label>';
-      return '<label class="gm-field" for="' + id + '"><span class="gm-lab">' + esc(x.label) + '</span><select id="' + id + '" data-loc="' + esc(x.key) + '">' + (x.options || []).map(function (o) { return '<option value="' + esc(o.value) + '"' + (str(o.value) === str(ui[x.key]) ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('') + '</select></label>';
+      return '<label class="gm-field" for="' + id + '"><span class="gm-lab">' + esc(x.label) + '</span><select id="' + id + '" data-loc="' + esc(x.key) + '">' + (x.key === 'district' ? distOptionsHtml('loc') : (x.options || []).map(function (o) { return '<option value="' + esc(o.value) + '"' + (str(o.value) === str(ui[x.key]) ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('')) + '</select></label>';
     }).join('') + '<button type="button" class="btn primary gm-roll" data-gm="locroll">Roll a location</button></div>';
     if (roll) {
       h += '<article class="gm-card gm-loccard" data-tool="location">' + glanceHtml(L, roll, pk, revealList(mu)) + foldsHtml(L, roll, pk, revealList(mu)) +
@@ -1635,10 +1701,10 @@
       return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="' + esc(tool) + '" data-h="' + esc(x._id) + '"' + (cur && cur.hid === x._id ? ' aria-current="true"' : '') + '>' + esc(x.label) + '</button>';
     }).join('') + '</div>' : '';
   }
-  function selectHtml(id, attr, key, label, options, value) {
-    return '<label class="gm-field" for="' + id + '"><span class="gm-lab">' + esc(label) + '</span><select id="' + id + '" ' + attr + '="' + esc(key) + '">' + options.map(function (o) {
+  function selectHtml(id, attr, key, label, options, value, inner) {
+    return '<label class="gm-field" for="' + id + '"><span class="gm-lab">' + esc(label) + '</span><select id="' + id + '" ' + attr + '="' + esc(key) + '">' + (inner != null ? inner : options.map(function (o) {
       return '<option value="' + esc(o.value) + '"' + (str(o.value) === str(value) ? ' selected' : '') + '>' + esc(o.label) + '</option>';
-    }).join('') + '</select></label>';
+    }).join('')) + '</select></label>';
   }
 
   function scnInst() {
@@ -1649,7 +1715,7 @@
     try { S.scn = M.create({ T: pk.T }); S.scnErr = ''; } catch (e) { S.scnErr = 'The street scenes could not start: ' + errText(e); }
     return S.scn;
   }
-  function scnUi() { var l = isObj(S.doc.scn) && isObj(S.doc.scn.ui) ? S.doc.scn.ui : {}, sc = scnInst(); return Object.assign(sc ? sc.defaults() : {}, l); }
+  function scnUi() { var sc = scnInst(), u = Object.assign(sc ? sc.defaults() : {}, uiOf('scn')); if (sc) u.sel = distFor('scn'); return u; }
   function replayScenes(e) {
     var sc = scnInst(); if (!sc || !isObj(e)) return null;
     var mem = {}; try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
@@ -1672,7 +1738,7 @@
     var cur = isObj(S.doc.cards) ? S.doc.cards.scenes : null;
     if (!fresh && cur && (!S.scnRoll || S.scnRoll.seed !== cur.seed)) S.scnRoll = replayScenes(cur);
     var ui = scnUi(), roll = S.scnRoll;
-    var h = '<div class="gm-loc-ctl">' + sc.controls.map(function (x) { return selectHtml('gm-s-' + x.id, 'data-scn', x.id, x.label, x.options, ui[x.id]); }).join('') +
+    var h = '<div class="gm-loc-ctl">' + sc.controls.map(function (x) { return selectHtml('gm-s-' + x.id, 'data-scn', x.id, x.label, x.options, ui[x.id], x.id === 'sel' ? distOptionsHtml('scn') : null); }).join('') +
       '<button type="button" class="btn primary gm-roll" data-gm="scnroll">Roll a street scene</button></div>';
     if (roll) {
       var m = roll.meta;
@@ -1825,7 +1891,7 @@
     try { return npcWithFigure(g, g.roll({ seed: e.seed, mem: mem, ui: isObj(e.ui) ? e.ui : {} })); } catch (x) { return null; }
   }
   /* the GM's choices (faction, district, place), kept in npc.ui; anything the pack does not hold reads as any */
-  function npcUi() { var l = isObj(S.doc.npc) && isObj(S.doc.npc.ui) ? S.doc.npc.ui : {}, g = npcgInst(); return g ? g.cleanUi(l) : {}; }
+  function npcUi() { var g = npcgInst(); return g ? g.cleanUi(Object.assign({}, uiOf('npc'), { district: distFor('npc') })) : {}; }
   /* the current location card's roll, redrawn from its seed when this tab has not drawn it yet */
   function locationNow() {
     var cur = isObj(S.doc.cards) ? S.doc.cards.location : null;
@@ -1872,7 +1938,7 @@
     var cur = isObj(S.doc.cards) ? S.doc.cards.npc : null;
     if (!fresh && cur && (!S.npcRoll || S.npcRoll.roll.seed !== cur.seed)) S.npcRoll = replayNpc(cur);
     var ui = npcUi(), hasLoc = isObj(S.doc.cards) && isObj(S.doc.cards.location);
-    var r = S.npcRoll, h = '<div class="gm-loc-ctl">' + g.controls.map(function (x) { return selectHtml('gm-n-' + x.id, 'data-npcui', x.id, x.label, x.options, ui[x.id]); }).join('') +
+    var r = S.npcRoll, h = '<div class="gm-loc-ctl">' + g.controls.map(function (x) { return selectHtml('gm-n-' + x.id, 'data-npcui', x.id, x.label, x.options, ui[x.id], x.id === 'district' ? distOptionsHtml('npc') : null); }).join('') +
       (hasLoc ? '<button type="button" class="btn" data-gm="npcloc" title="Sets the faction, district and place from the location card">Use the location</button>' : '') +
       '<button type="button" class="btn primary gm-roll" data-gm="npcroll">Roll an NPC</button></div>';
     if (r) {
@@ -2486,6 +2552,7 @@
   function onChange(ev) {
     var t = ev.target; if (!S || !t) return;
     if (t.id === 'gm-file') { readPackFile(t.files && t.files[0]); return; }
+    if (t.hasAttribute && t.hasAttribute('data-now')) { setNow(t.value); try { t.blur(); } catch (e) {} return; }      /* the keys work again at once */
     if (t.hasAttribute && t.hasAttribute('data-opp')) {      /* a card's line: saved when the field is left (the change event), not per key */
       if (ev.type === 'change') { var ol = {}, ox = {}; ox[t.getAttribute('data-f')] = str(t.value).slice(0, 120); ol[t.getAttribute('data-opp')] = ox; patch({ opps: { list: ol } }); }
       return;
@@ -2573,7 +2640,7 @@
     available: function () { return !!(W.claude && W.claude.gm); },
     _pure: P,
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */
-    _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer }, panel: S.panel, seg: S.seg } : null; },
+    _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer }, panel: S.panel, seg: S.seg, doc: S.doc } : null; },
     _pushDisplay: function (d) { return pushDisplay(d); },
     _ambient: function () { return { doc: AM.doc, shown: AM.shown, loaded: AM.loaded, crew: crewSync.state().lastSent }; }
   };

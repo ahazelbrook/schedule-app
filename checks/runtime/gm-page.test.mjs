@@ -1148,5 +1148,141 @@ await test('11h. Update pack: a file that would lose a part says so, the button 
   await h.save();
 });
 
+/* =====================================================================================================================
+   12. Now in (A7): one district in the bar that the console, Street, Location and NPC pickers start from
+   ===================================================================================================================== */
+const NPCM = require(path.join(ROOT, 'app', 'gm', 'npc.js'));
+const NPCFIX = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'npc-pack.json'), 'utf8'));
+const NOWD = 'Dockside Test';            /* the location fixture's own district: added below to the other tools' lists, so all four hold it */
+const cl = (o) => JSON.parse(JSON.stringify(o));
+function nowParts(extra) {
+  const con = cl(FIXC.console); con.T.district.push(NOWD);
+  const scn = cl(FIXS.parts.scenes); const d0 = cl(scn.T.district[0]); d0.n = NOWD; scn.T.district.push(d0);
+  const npc = cl(NPCFIX.parts.npc); npc.T.district.push(NOWD);
+  return Object.assign({ console: { version: 'c9', src: {}, body: con }, scenes: { version: 's9', src: {}, body: { T: scn.T } }, npc: { version: 'n9', src: {}, body: npc } }, extra || {});
+}
+const optSel = (h, sel) => (h.q(sel + ' option[selected]') || { textContent: '', getAttribute: () => null });
+function pick(h, sel, v) { const s = h.q(sel); s.value = v; dispatch(s, 'change'); }
+const stateDoc = (h) => h.page._state().doc;
+const nowPage = (over, parts) => openPage({ br: fakeBrowser(Object.assign({ B68GmNpc: NPCM }, over || {})), fg: fakeGm(NPCFIX.parts.campaign, nowParts(parts)), camp: CAMP3 });
+
+await test('12a. Now in: a select in the bar (and the phone’s Scene line) lists every tool’s districts once; the four pickers lead with "Now in: …"; it is kept in the GM state', async () => {
+  const h = await nowPage();
+  const opts = h.qa('#gm-now option').map((o) => o.getAttribute('value'));
+  assert.equal(opts[0], '', 'anywhere first'); assert.equal(new Set(opts).size, opts.length, 'each district once');
+  for (const d of ['Puddleton', 'Testfield', 'Alder Quay', 'Puddle End', NOWD]) assert.ok(opts.includes(d), d + ' is listed');
+  const key = (s) => s.toLowerCase().replace(/^the\s+/, ''), rest = opts.slice(1); assert.deepEqual(rest, [...rest].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0)), 'alphabetical (a leading "The" does not count)');
+  assert.equal(h.qa('select[data-now]').length, 2, 'one in the bar, one in the Scene line (the phone shows that one)'); assert.ok(h.q('.gm-bar #gm-now') && h.q('#gm-scenebox #gm-now-s'));
+  assert.equal(optSel(h, '#gm-now').getAttribute('value'), '', 'on anywhere');
+  for (const s of ['#gm-c-district', '#gm-l-district', '#gm-s-sel', '#gm-n-district']) {
+    assert.equal(h.q(s + ' option').textContent, 'Now in: anywhere', s + ' leads with Now in'); assert.equal(optSel(h, s).textContent, 'Now in: anywhere', s + ' follows by default');
+    assert.equal(h.qa(s + ' option').filter((o) => o.getAttribute('value') === '*').length, 1, s + ' keeps an any of its own');
+  }
+  pick(h, '#gm-now', NOWD);
+  assert.equal(stateDoc(h).now.district, NOWD, 'kept in the GM state as now.district');
+  for (const s of ['#gm-c-district', '#gm-l-district', '#gm-s-sel', '#gm-n-district']) assert.equal(optSel(h, s).textContent, 'Now in: ' + NOWD, s + ' says what it follows');
+  assert.equal(optSel(h, '#gm-now-s').getAttribute('value'), NOWD, 'the Scene line’s copy shows it too'); assert.match(h.q('#gm-scene-chips').textContent, new RegExp('District: ' + NOWD));
+  await h.save();
+  assert.equal(h.fg.server.doc.now.district, NOWD, 'saved');
+  const h2 = await openPage({ fg: h.fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
+  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), NOWD, 'a reload keeps it'); assert.equal(optSel(h2, '#gm-l-district').textContent, 'Now in: ' + NOWD);
+  await h2.save();
+});
+
+await test('12b. the four tools roll on Now in, and store the district they resolved to in the roll’s own ui', async () => {
+  const h = await nowPage();
+  pick(h, '#gm-now', NOWD);
+  h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD, 'console');
+  h.q('[data-gm="locroll"]').click(); assert.equal(stateDoc(h).cards.location.ui.district, NOWD, 'location'); assert.match(h.q('#gm-loc .gm-glance-place').textContent, new RegExp(NOWD));
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, NOWD, 'street'); assert.match(h.q('#gm-scn .gm-card-h').textContent, new RegExp(NOWD));
+  h.q('[data-gm="npcroll"]').click(); assert.equal(stateDoc(h).cards.npc.ui.district, NOWD, 'NPC');
+  const d = stateDoc(h);
+  assert.ok(!d.con || !d.con.live || d.con.live.district === undefined, 'following stores nothing in the tool: it is the default');
+  assert.ok(!d.loc || !d.loc.ui || d.loc.ui.district === undefined);
+  await h.save();
+});
+
+await test('12c. a tool’s own pick wins, stays through a change of Now in, and "Now in" in the picker gives it back; "any" is a pick too', async () => {
+  const h = await nowPage();
+  pick(h, '#gm-now', NOWD);
+  pick(h, '#gm-s-sel', 'Brindle Row');
+  assert.equal(stateDoc(h).scn.ui.sel, 'Brindle Row'); assert.equal(h.q('#gm-s-sel').value, 'Brindle Row', 'the picker shows its own pick');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, 'Brindle Row', 'the tool’s own pick wins over Now in');
+  h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD, 'the others still follow');
+  pick(h, '#gm-now', 'Puddleton');
+  assert.equal(optSel(h, '#gm-s-sel').textContent, 'Brindle Row', 'a change of Now in leaves a pick alone'); assert.match(h.q('#gm-s-sel option').textContent, /^Now in: any \(no Puddleton here\)$/, 'its first choice still says what Now in is, and that this tool lacks it');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, 'Brindle Row');
+  h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton', 'the console follows the new Now in');
+  pick(h, '#gm-s-sel', ''); assert.equal(stateDoc(h).scn.ui.sel, '', 'the first choice gives it back'); assert.equal(h.q('#gm-s-sel').value, '');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, '', 'a tool whose list lacks Now in rolls on any');
+  pick(h, '#gm-now', NOWD); pick(h, '#gm-s-sel', '*');
+  assert.equal(stateDoc(h).scn.ui.sel, '*'); assert.equal(h.q('#gm-s-sel').value, '*', 'any is picked');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, '', 'a tool on any rolls on any whatever Now in says, and no sentinel ever reaches a roll');
+  pick(h, '#gm-c-district', 'Muddle End'); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Muddle End', 'the console’s own pick wins');
+  pick(h, '#gm-l-district', 'Testfield'); h.q('[data-gm="locroll"]').click(); assert.equal(stateDoc(h).cards.location.ui.district, 'Testfield', 'the location’s own pick wins');
+  pick(h, '#gm-n-district', 'Gnome Hill'); h.q('[data-gm="npcroll"]').click(); assert.equal(stateDoc(h).cards.npc.ui.district, 'Gnome Hill', 'the NPC’s own pick wins');
+  pick(h, '#gm-now', ''); assert.equal(optSel(h, '#gm-now').getAttribute('value'), ''); assert.equal(h.q('#gm-c-district option').textContent, 'Now in: anywhere');
+  await h.save();
+});
+
+await test('12d. Now in never moves a stored card: Earlier and a reload redraw each tool’s card as it was rolled', async () => {
+  const h = await nowPage();
+  pick(h, '#gm-now', 'Puddleton'); h.press('3');
+  const A = cardTxt(h); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton');
+  pick(h, '#gm-now', NOWD);
+  assert.equal(cardTxt(h), A, 'the card on screen stays as rolled'); assert.match(h.q('#gm-scene-chips').textContent, new RegExp('District: ' + NOWD), 'the Scene line shows what the next roll uses');
+  h.press('3'); const B = cardTxt(h); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD); assert.notEqual(B, A);
+  h.qa('#gm-earlier [data-gm="replay"]')[1].click(); assert.equal(cardTxt(h), A, 'Earlier: the older card, exactly as it was, whatever Now in is'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton');
+  h.q('[data-gm="locroll"]').click(); const L1 = h.q('#gm-loc .gm-glance-place').textContent, L1name = h.q('#gm-loc .gm-locname').textContent;
+  h.q('[data-gm="scnroll"]').click(); const S1 = h.q('#gm-scn .gm-card-h').textContent;
+  h.q('[data-gm="npcroll"]').click(); const N1 = h.q('#gm-npc .gm-npccard .gm-card-h').textContent;
+  pick(h, '#gm-now', 'Testfield');                  /* a district only the location lists */
+  assert.equal(h.q('#gm-loc .gm-glance-place').textContent, L1, 'the location card does not move'); assert.equal(h.q('#gm-scn .gm-card-h').textContent, S1, 'nor the street scene'); assert.equal(h.q('#gm-npc .gm-npccard .gm-card-h').textContent, N1, 'nor the NPC');
+  await h.save();
+  const h2 = await openPage({ fg: h.fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
+  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), 'Testfield'); assert.equal(cardTxt(h2), A, 'a reload redraws the console card as rolled');
+  assert.equal(h2.q('#gm-loc .gm-glance-place').textContent, L1); assert.equal(h2.q('#gm-loc .gm-locname').textContent, L1name); assert.equal(h2.q('#gm-scn .gm-card-h').textContent, S1); assert.equal(h2.q('#gm-npc .gm-npccard .gm-card-h').textContent, N1, 'and the other three');
+  h2.q('[data-gm="locroll"]').click(); assert.equal(stateDoc(h2).cards.location.ui.district, 'Testfield', 'the next roll uses the new Now in');
+  await h2.save();
+});
+
+await test('12e. districts are matched without case, "the" or punctuation (each tool keeps its own spelling); the bar lists a name once; a Now in the packs no longer hold stays visible', async () => {
+  const scn = cl(FIXS.parts.scenes); const d0 = cl(scn.T.district[0]); d0.n = 'puddle-TON'; scn.T.district.push(d0);
+  const h = await nowPage(null, { scenes: { version: 's8', src: {}, body: { T: scn.T } } });
+  const opts = h.qa('#gm-now option').map((o) => o.getAttribute('value'));
+  assert.equal(opts.filter((o) => /^puddle-?ton$/i.test(o)).length, 1, 'one entry for the two spellings'); assert.ok(opts.includes('Puddleton'), 'the first tool’s spelling (the console)');
+  pick(h, '#gm-now', 'Puddleton');
+  assert.equal(h.q('#gm-s-sel option').textContent, 'Now in: puddle-TON', 'the Street picker names its own spelling');
+  h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, 'puddle-TON', 'and rolls on it');
+  h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton');
+  await h.save();
+  const fg = h.fg; fg.server.doc.now = { district: 'Gone Wharf' };
+  const h2 = await openPage({ fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
+  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), 'Gone Wharf', 'a district no pack lists is still what the select shows');
+  assert.match(h2.q('#gm-l-district option').textContent, /^Now in: any \(no Gone Wharf here\)$/); h2.press('3'); assert.equal(stateDoc(h2).cards.situation.ui.district, '', 'and rolls on any');
+  await h2.save();
+});
+
+await test('12f. an old state with a tool’s district already set keeps it as that tool’s own pick; a state without now follows nothing; no sentinel in the source of any roll', async () => {
+  const fg = fakeGm(NPCFIX.parts.campaign, nowParts()); fg.server.doc = { con: { live: { district: 'Muddle End' } }, scn: { ui: { sel: 'Alder Quay' } } };
+  const h = await openPage({ fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
+  assert.equal(optSel(h, '#gm-c-district').textContent, 'Muddle End'); assert.equal(optSel(h, '#gm-s-sel').textContent, 'Alder Quay'); assert.equal(optSel(h, '#gm-l-district').textContent, 'Now in: anywhere');
+  pick(h, '#gm-now', NOWD); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Muddle End', 'an older pick is that tool’s own');
+  pick(h, '#gm-c-district', ''); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD);
+  for (const t of Object.keys(stateDoc(h).cards)) assert.ok(!JSON.stringify(stateDoc(h).cards[t].ui || {}).includes('"*"'), t + ': no sentinel in a roll’s ui');
+  await h.save();
+});
+
+await test('12g. Now in is in the sticky copy: with the GM state unreachable, a reload still shows it and the pickers follow it', async () => {
+  const br = fakeBrowser({ B68GmNpc: NPCM }), fg = fakeGm(NPCFIX.parts.campaign, nowParts());
+  const h = await openPage({ br, fg, camp: CAMP3 }); pick(h, '#gm-now', NOWD); await h.save();
+  assert.equal(JSON.parse(br.ls.get('b68.gm.sticky')).now.district, NOWD, 'mirrored for a reload');
+  const fg2 = fakeGm(NPCFIX.parts.campaign, nowParts()); fg2.gm.state = async () => { throw new Error('offline'); };
+  const h2 = await openPage({ br, fg: fg2, camp: CAMP3 });
+  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), NOWD, 'drawn from the sticky copy while the notes are offline');
+  assert.equal(optSel(h2, '#gm-l-district').textContent, 'Now in: ' + NOWD);
+  await h2.save();
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

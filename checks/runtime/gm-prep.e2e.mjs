@@ -142,6 +142,11 @@ try {
     await page.reload(); await page.waitForSelector('#gm-prep .pp-doc', { timeout: 20000 });
     check(await page.$eval('#gm-prep .pp-box[data-task="' + open1.a + '"]', (b) => b.classList.contains('here')), 'reload: the tick is still there');
   }
+  /* 1280 wide with a beat running (and the iPad showing something): the bar, which now carries Now in, still holds every item on one row */
+  await page.setViewportSize({ width: 1280, height: 900 }); await sleep(400);
+  check(await page.evaluate(() => { const b = document.querySelector('.gm-bar'), r = b.getBoundingClientRect(); return r.height < 60 && b.scrollWidth <= b.clientWidth + 1 && [...b.querySelectorAll('.gm-now, .gm-beatbar, [data-gm="find-open"], #gm-bar-ipad, [data-gm="menu"]')].every((c) => { const q = c.getBoundingClientRect(); return q.width > 0 && q.right <= innerWidth + 1; }); }), 'laptop 1280: with a beat running, the bar holds Now in, the beat, Find, the iPad pill and the Menu on one row');
+  await shot(page, 'bar-1280-beat');
+  await page.setViewportSize({ width: 1440, height: 900 }); await sleep(300);
   /* the laptop layout: one window tall, the outline follows the reading, Focus shrinks the console to its keys */
   check(await page.evaluate(() => document.body.classList.contains('gm-app') && document.documentElement.scrollHeight <= innerHeight + 1), 'laptop: the page is one window tall with the note open');
   await page.evaluate(() => { const p = document.getElementById('gm-prep'); p.scrollTop = Math.floor(p.scrollHeight / 2); });

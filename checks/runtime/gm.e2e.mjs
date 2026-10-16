@@ -303,6 +303,71 @@ try {
   check(!!rv && !(await G.page.isChecked('[data-reveal="working"]')) && await G.page.isVisible('[data-reveal="working"]'), 'a new roll resets the reveal to public only (the ticks stay visible)');
   await shot(G.page, '02-gm-location');
 
+  /* ---- Now in (A7): one district in the bar; the pickers follow it; a pick of their own wins; a stored card never moves ---- */
+  {
+    const optText = (sel) => G.page.$eval(sel + ' option', (o) => o.textContent);
+    const stateNow = gmState;
+    const opts = await G.page.$$eval('#gm-now option', (os) => os.map((o) => o.value));
+    check(opts[0] === '' && new Set(opts).size === opts.length && opts.includes('Puddleton') && opts.includes('Dockside Test') && await G.page.$eval('#gm-now', (s) => s.getBoundingClientRect().height > 0 && s.value === ''), 'Now in: a select in the bar, on anywhere, listing the console’s and the location tool’s districts once each (' + opts.length + ')');
+    check(await G.page.$eval('#gm-now-s', (s) => getComputedStyle(s.closest('.gm-nowline')).display === 'none') && await G.page.$eval('#gm-now', (s) => s.getBoundingClientRect().right <= innerWidth), 'Now in: the Scene-line copy is for the phone only; the bar’s fits the laptop');
+    check(await optText('#gm-l-district') === 'Now in: anywhere' && await optText('#gm-c-district') === 'Now in: anywhere', 'the Location and console District pickers lead with "Now in: anywhere"');
+    await G.page.selectOption('#gm-now', 'Dockside Test');
+    check(!!(await until(async () => { const d = await stateNow(); return d.now && d.now.district === 'Dockside Test'; }, 5000)), 'Now in: kept in the GM state (now.district)');
+    check(await G.page.$eval('#gm-l-district', (s) => s.value === '' && s.options[0].textContent === 'Now in: Dockside Test') && /^Now in: any \(no Dockside Test here\)$/.test(await optText('#gm-c-district')), 'the Location picker follows it; the console, whose list lacks it, says so and stays on any');
+    await G.page.click('[data-gm="locroll"]'); await G.page.waitForSelector('#gm-loc .gm-loccard');
+    let st = await until(async () => { const x = await stateNow(); return x.cards && x.cards.location && x.cards.location.ui && x.cards.location.ui.district === 'Dockside Test' ? x : null; }, 5000);
+    check(!!st && /Dockside Test/.test(await G.page.textContent('#gm-loc .gm-glance-place')), 'a location roll uses it, and stores the district in the roll’s own ui');
+    const first = st ? { hid: st.cards.location.hid, place: await G.page.textContent('#gm-loc .gm-glance-place') } : null;
+    await G.page.selectOption('#gm-now', 'Quietside Test');
+    check((await G.page.textContent('#gm-loc .gm-glance-place')) === (first && first.place), 'Now in changed: the location card on screen does not move');
+    await G.page.click('[data-gm="locroll"]'); await G.page.waitForFunction((p) => document.querySelector('#gm-loc .gm-glance-place').textContent !== p, first && first.place, { timeout: 5000 });
+    st = await until(async () => { const x = await stateNow(); return x.cards.location.ui.district === 'Quietside Test' ? x : null; }, 5000);
+    check(!!st && /Quietside Test/.test(await G.page.textContent('#gm-loc .gm-glance-place')), 'the next roll uses the new Now in');
+    await G.page.click('#gm-loc .gm-earlier [data-gm="replay"][data-h="' + (first && first.hid) + '"]');
+    check((await G.page.textContent('#gm-loc .gm-glance-place')) === (first && first.place) && !!(await until(async () => (await stateNow()).cards.location.ui.district === 'Dockside Test', 5000)), 'Earlier: the older location card comes back exactly as rolled, whatever Now in is');
+    /* a pick of its own wins, through a change of Now in; the first choice gives it back */
+    await G.page.selectOption('#gm-l-district', 'Hightown Test');
+    await G.page.click('[data-gm="locroll"]');
+    check(!!(await until(async () => { const x = await stateNow(); return x.cards.location.ui.district === 'Hightown Test' && x.loc.ui.district === 'Hightown Test' ? x : null; }, 5000)), 'the Location picker’s own pick wins over Now in (Quietside Test)');
+    await G.page.selectOption('#gm-now', 'Lowmarsh Test');
+    check(await G.page.$eval('#gm-l-district', (s) => s.value === 'Hightown Test') && await G.page.$eval('#gm-l-district', (s) => s.options[0].textContent === 'Now in: Lowmarsh Test'), 'Now in changed: the pick stays, and the picker’s first choice names the new Now in');
+    await G.page.selectOption('#gm-l-district', ''); await G.page.click('[data-gm="locroll"]');
+    check(!!(await until(async () => { const x = await stateNow(); return x.cards.location.ui.district === 'Lowmarsh Test' && x.loc.ui.district === '' ? x : null; }, 5000)), 'the first choice ("Now in: …") gives the tool back to Now in');
+    await G.page.selectOption('#gm-l-district', '*'); await G.page.selectOption('#gm-now', 'Dockside Test'); await G.page.click('[data-gm="locroll"]');
+    check(!!(await until(async () => { const x = await stateNow(); return x.cards.location.ui.district === '' && x.loc.ui.district === '*' ? x : null; }, 5000)), '"any" is a pick too: the tool rolls on any whatever Now in says, and no "*" reaches the roll');
+    await G.page.selectOption('#gm-l-district', '');
+    /* the console: the same default, an own pick, a replay that does not move */
+    await G.page.selectOption('#gm-now', 'Puddleton');
+    check(/District: Puddleton/.test(await G.page.textContent('#gm-scene-chips')) && /^Now in: Puddleton$/.test(await optText('#gm-c-district')), 'the console’s Scene line and picker follow Now in (Puddleton)');
+    await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await G.page.keyboard.press('3'); await G.page.waitForSelector('#gm-card .gm-lead');
+    const cardA = await cardText(G.page);
+    check(!!(await until(async () => { const x = await stateNow(); return x.cards.situation.ui.district === 'Puddleton'; }, 5000)), 'a console roll stores Puddleton in its own ui');
+    await G.page.selectOption('#gm-now', 'Crumbhall');
+    check((await cardText(G.page)) === cardA && /District: Crumbhall/.test(await G.page.textContent('#gm-scene-chips')), 'Now in changed: the card on screen stays, the Scene line shows what the next roll uses');
+    await G.page.keyboard.press('3'); await sleep(300);
+    check(!!(await until(async () => { const x = await stateNow(); return x.cards.situation.ui.district === 'Crumbhall'; }, 5000)), 'the next console roll uses Crumbhall');
+    const olders = await G.page.$$('#gm-earlier [data-gm="replay"][data-tool="situation"]');
+    await olders[1].click();
+    check((await cardText(G.page)) === cardA, 'Earlier: the older console card, exactly as it was');
+    const sceneShut = () => G.page.$eval('#gm-controls', (c) => getComputedStyle(c).display === 'none');
+    if (await sceneShut()) await G.page.click('#gm-scene');
+    await G.page.selectOption('#gm-c-district', 'Muddle End');
+    await G.page.selectOption('#gm-now', 'Puddleton');
+    await G.page.keyboard.press('3'); await sleep(300);
+    check(!!(await until(async () => { const x = await stateNow(); return x.cards.situation.ui.district === 'Muddle End' && x.con.live.district === 'Muddle End'; }, 5000)) && /District: Muddle End/.test(await G.page.textContent('#gm-scene-chips')), 'the console’s own pick wins (Muddle End), and its chip says so');
+    await G.page.selectOption('#gm-c-district', '');
+    if (!(await sceneShut())) await G.page.click('#gm-scene');
+    await G.page.reload(); await G.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
+    check(await G.page.$eval('#gm-now', (s) => s.value === 'Puddleton') && await G.page.$eval('#gm-now-s', (s) => s.value === 'Puddleton'), 'reload: Now in is still Puddleton (the GM state), in both selects');
+    await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await G.page.keyboard.press('3'); await sleep(700);
+    await shot(G.page, '01d-gm-now-in');
+    await G.page.selectOption('#gm-now', '');
+    check(!!(await until(async () => { const x = await stateNow(); return x.now && x.now.district === ''; }, 5000)) && await optText('#gm-l-district') === 'Now in: anywhere', 'Now in: back to anywhere, and the pickers say so');
+    await G.page.keyboard.press('b');
+  }
+
   /* ---- the NPC tab: the cast, Show on iPad for a hidden one after a confirm ---- */
   await G.page.keyboard.press('n');
   check(await G.page.waitForFunction(() => document.querySelectorAll('#gm-npc .gm-npcrow').length === 7, null, { timeout: 15000 }).then(() => true, () => false), 'N: the NPC tab lists the seven seeded NPCs');
@@ -381,6 +446,10 @@ try {
       await V.page.click('#gm-card details.gm-or > summary'); const l3 = await V.page.evaluate(layout);
       check(l3.scrollWidth <= l3.clientWidth + 1 && !l3.wide.length, 'phone: an opened "Or" row does not overflow ' + JSON.stringify(l3.wide));
       check(await V.page.$eval('#gm-controls', (c) => getComputedStyle(c).display === 'none'), 'phone: the controls fold into the Scene line');
+      check(await V.page.$eval('#gm-now-s', (sel) => { const r = sel.getBoundingClientRect(); return r.height >= 44 && r.right <= innerWidth && getComputedStyle(sel.closest('.gm-nowline')).display !== 'none'; }) && await V.page.$eval('#gm-now', (sel) => getComputedStyle(sel.closest('.gm-now')).display === 'none'), 'phone: Now in is a select in the Scene line (the bar keeps the session and the iPad)');
+      await V.page.selectOption('#gm-now-s', 'Puddleton');
+      check(await V.page.$eval('#gm-now', (sel) => sel.value === 'Puddleton') && /District: Puddleton/.test(await V.page.textContent('#gm-scene-chips')) && !!(await until(async () => { const d = await gmState(); return d.now && d.now.district === 'Puddleton'; }, 5000)), 'phone: choosing it there sets Now in (the bar’s copy follows, the Scene line shows the district)');
+      await V.page.selectOption('#gm-now-s', '');
       await V.page.click('[data-gm="seg"][data-seg="state"]');
       check(await V.page.$eval('#gm-rail', (r) => getComputedStyle(r).display !== 'none') && await V.page.$eval('.gm-console', (c) => getComputedStyle(c).display === 'none'), 'phone: State shows the rail alone');
       await V.page.click('.gm-fab');

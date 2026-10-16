@@ -433,6 +433,13 @@ body.gm-app #gm-page .gm-bar { display: flex; align-items: center; gap: 8px; min
 #gm-page .gm-bb:hover, #gm-page .gm-bb[aria-expanded="true"] { background: var(--accent); color: var(--on-accent); }
 #gm-page .gm-bb kbd { font-size: 9.5px; }
 #gm-page .gm-pill:focus-visible, #gm-page .gm-bb:focus-visible, #gm-page .gm-bar-mark:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+/* Now in: the one district the tools start from. A select in the bar (a laptop, a tablet); on a phone it sits in the Scene line */
+#gm-page .gm-now { display: inline-flex; align-items: center; gap: 6px; margin: 0; min-width: 0; }
+#gm-page .gm-nowk { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; opacity: .8; white-space: nowrap; }
+#gm-page .gm-bar .gm-now select { width: auto; min-width: 0; max-width: 170px; min-height: 32px; padding: 0 6px; border: 0; background: var(--on-ink); color: var(--rule); font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; cursor: pointer; }
+#gm-page .gm-bar .gm-now select:hover { background: var(--accent); color: var(--on-accent); }
+#gm-page .gm-bar .gm-now select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .gm-nowline { display: none; }
 #gm-page .gm-menu { position: relative; display: inline-flex; }
 #gm-page .gm-menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; display: grid; min-width: 260px; max-width: calc(100vw - 24px); background: var(--card); color: var(--ink); border: 2px solid var(--rule); box-shadow: 4px 4px 0 var(--shadow-ink); }
 #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button { display: block; text-align: left; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--hair); background: none; color: var(--ink); font: 600 13px/1.2 var(--font-text); text-decoration: none; cursor: pointer; }
@@ -446,7 +453,7 @@ body.gm-app #gm-page .gm-bar { display: flex; align-items: center; gap: 8px; min
 /* the toast sits above the capture bar, never over its input */
 body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
 @media (pointer: coarse) {
-  #gm-page .gm-bb, #gm-page .gm-pill, #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button { min-height: 44px; }
+  #gm-page .gm-bb, #gm-page .gm-pill, #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button, #gm-page .gm-bar .gm-now select { min-height: 44px; }
   body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip { min-height: 44px; }
 }
 
@@ -466,6 +473,10 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-page .gm-bar .gm-save:not(.bad), body.gm-app #gm-page .gm-bar-exp, body.gm-app #gm-page .gm-beatbar, body.gm-app #gm-page .gm-bar [data-gm="find-open"],
   body.gm-app #gm-page #gm-bar-stt, body.gm-app #gm-page .gm-bar [data-gm="blankipad"], body.gm-app #gm-page .gm-bar [data-gm="darkipad"] { display: none; }
   body.gm-app #gm-page .gm-pill { max-width: 40vw; min-width: 0; flex: 0 1 auto; }
+  body.gm-app #gm-page .gm-bar .gm-now { display: none; }
+  #gm-page .gm-nowline { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; }
+  #gm-page .gm-nowline .gm-lab { flex: none; }
+  #gm-page .gm-nowline select { flex: 1 1 auto; min-height: 44px; }
   body.gm-app #gm-page .gm-bb { padding: 0 8px; }
   body.gm-app #gm-page .gm-segbar { top: 44px; margin: 0 calc(-1 * clamp(16px, 3vw, 36px)) 10px; width: auto; border-left: 0; border-right: 0; }
   body.gm-app[data-mode="gm"] .toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
