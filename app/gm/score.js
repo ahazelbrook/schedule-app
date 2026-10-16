@@ -268,7 +268,8 @@
     });
     return M;
   }
-  var crewKeyOf = function (M, k) { k = str(k); return has(isObj(M.T.crew) ? M.T.crew : {}, k) ? k : ''; };
+  // a crew type as the tables spell it, however a sheet spells it (case, spaces, punctuation)
+  var crewKeyOf = function (M, k) { var q = fkey(k); return q ? M.crewKeys.filter(function (c) { return fkey(c) === q; })[0] || '' : ''; };
   var clientList = function (M, name) { return arr(M.T.client).filter(function (c) { return Array.isArray(c) && str(c[0]) === name; })[0] || null; };
   function distOf(M, name) { var k = fkey(name); return k ? M.districts.filter(function (d) { return fkey(d) === k; })[0] || '' : ''; }
   function facOf(M, name) { return M.facBy[fkey(name)] || null; }

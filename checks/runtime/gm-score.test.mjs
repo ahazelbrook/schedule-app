@@ -114,6 +114,10 @@ await test('replay.ui holds the crew and Tier as resolved (a replay does not fol
   assert.equal(G.cleanUi({ tier: 9 }).tier, ''); assert.equal(G.cleanUi({ tier: 2.5 }).tier, '');
   assert.equal(G.cleanUi({ district: 'testfield' }).district, DIST[0], 'a district in the location part\'s own spelling');
   assert.deepEqual([G.cleanUi({ district: '*' }).district, G.cleanUi({ district: 'now' }).district], ['*', 'now']);
+  assert.deepEqual([G.cleanUi({ crew: 'tunnellers' }).crew, G.cleanUi({ crew: 'STAGE-HANDS!' }).crew, G.cleanUi({ crew: '' }).crew], ['Tunnellers', 'Stagehands', ''], 'a crew type matches without case, spaces or punctuation');
+  const sheet = S.create({ T, campaign: Object.assign({}, CAMP, { crew: Object.assign({}, CAMP.crew, { type: 'stage hands', tier: 2 }) }) });
+  assert.equal(sheet.roll({ seed: 1, mem: {} }).score.crew.type, 'Stagehands', 'and so does the sheet\'s');
+  assert.equal(sheet.controls({}).find((c) => c.id === 'crew').groups[0].options[0].label, 'Stagehands (the crew)');
 });
 
 // ---- a reroll moves only its own row and what reads it ----------------------------------------------------------------------------
