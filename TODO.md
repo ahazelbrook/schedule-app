@@ -80,8 +80,11 @@ row; the location Say built only from player-safe fields; the NPC figure ladder;
 Keep: one visual language; Night as legible as Paper; the returning player's one-tap Home; the sheet's phone order
 and 44 px pips; Push/Desperate writing their own cost; the offline queue; role-aware table; revealed-only cast.
 
-- [ ] C1 P1 · The roll verdict lands below the fold; a second tap on Roll pays stress again. Scroll to the verdict,
-      lock the options, "Roll again (pays again)"; then a fixed bottom roll sheet on phones. · S then M
+- [ ] C1 P1 · (Re-scoped 16 Oct: everyone rolls physical dice.) Tapping an action opens a compact "mark" strip at
+      the foot of the phone: the dice count with Push / Assist / Bargain, then one row of consequence buttons
+      (Resist · Harm 1 · Harm 2 · Harm 3 · +1 stress). Resist is a helper for a physical roll: tap the highest die and
+      the stress is applied. The in-app roll stays reachable but secondary ("Roll in the app"), with its verdict
+      scrolled into view, options locked after a roll and "Roll again (pays again)". · M
 - [ ] C2 P1 · The on-stage banner (262 px for two NPCs) covers the roll panel and comes back on every stage change.
       A one-line strip on phones, auto-expanded 8 s. · S-M
 - [ ] C3 P1 · "Remove" (deletes the character) sits 8 px from Print with a 4 s double-tap "confirm". To the foot, a real
@@ -151,6 +154,8 @@ additive secrets on deploy; schema.sql = migrations.
 - [ ] Lazy loading phase 2 · The figure kit (688 KB) loaded after first paint; the three top-level captures become
       lookups. · M
 - [ ] A7 / A11 / A19 if not done in wave 1.
+- [ ] Physical dice on the GM page · The engagement roll: let the GM roll physically and tap the highest die instead
+      of the app rolling (the pool is still computed by the app); the same for any GM-side roll. · S
 - [ ] Ideas from review B · Re-roll one row of a card (per-section seeds exist); a "Tonight" strip of every roll beyond
       the five, exported into the note; "Make them an NPC" on a Face/Reaction card; "Use the street" chaining Street →
       Location → NPC. · M
@@ -168,7 +173,8 @@ additive secrets on deploy; schema.sql = migrations.
 
 1. The NPC seed in the public repo: leave as is.
 2. Classic view and Classic layout: removed; one mode.
-3. The phone roll panel as a bottom sheet (C1): yes, try it.
+3. The phone roll panel as a bottom sheet (C1): yes, try it. Then: everyone rolls physical dice, so the strip is for
+   MARKING what happened (stress, harm, resist), and the in-app roll is secondary.
 
 ## Done
 
