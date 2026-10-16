@@ -53,7 +53,7 @@
 #dossier .ds-band .ds-xpmini { color: var(--on-ink); }
 #dossier .ds-band .ds-xbox { border-color: var(--on-ink); }
 #dossier .ds-band .ds-xbox.on { background: var(--accent); border-color: var(--accent); }
-#dossier .ds-body { padding: 10px 12px 12px; display: grid; gap: 8px; min-width: 0; }
+#dossier .ds-body { padding: 10px 12px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
 #dossier .ds-body p { margin: 0; }
 #dossier .ds-dlhead { background: var(--accent); color: var(--on-accent); padding: 2px 8px; margin: -2px -4px; font-weight: 900; }
 
@@ -103,7 +103,7 @@
 /* ---- keys ---- */
 #dossier .ds-key { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--hair); }
 #dossier .ds-key:first-child { border-top: 0; }
-#dossier .ds-key-main { display: grid; gap: 2px; min-width: 0; }
+#dossier .ds-key-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-width: 0; }
 #dossier .ds-key-name { font-weight: 700; font-family: var(--font-cond); font-size: 14px; text-transform: uppercase; letter-spacing: .04em; }
 #dossier .ds-key-dl { display: flex; align-items: center; gap: 4px; min-width: 0; }
 #dossier .ds-key-word { font-size: 12.5px; padding: 2px 4px; border-bottom-color: var(--hair); }
@@ -207,7 +207,7 @@
 #dossier .ds-roll-sub { font: 400 11px/1 var(--font-mono); opacity: .85; }
 #dossier .ds-roll-x { margin-left: auto; color: var(--on-accent); font-size: 16px; line-height: 1; padding: 2px 8px; }
 #dossier .ds-roll-x:hover { color: var(--on-accent); background: rgba(0, 0, 0, .18); }
-#dossier .ds-roll-body { padding: 10px 12px 12px; display: grid; gap: 8px; }
+#dossier .ds-roll-body { padding: 10px 12px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 #dossier .ds-roll-opts { display: grid; gap: 2px; }
 #dossier .ds-rtog { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start; background: transparent; border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; padding: 4px 0; font-size: 13px; line-height: 1.35; }
 #dossier .ds-rtog .ds-sq { margin-top: 2px; }
@@ -238,11 +238,32 @@
 #dossier .ds-roll-applied { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font: 400 12px/1.4 var(--font-mono); }
 #dossier .ds-roll-applied .ds-lab { margin: 0; color: var(--accent); }
 #dossier .ds-roll-apply { gap: 10px; }
+/* a scroll to the panel or its verdict clears the on-stage banner (cast.css sets --cp-stage-h) */
+#dossier .ds-roll, #dossier .ds-roll-res { scroll-margin-bottom: calc(var(--cp-stage-h, 0px) + 12px); }
+#dossier .ds-roll-foot { display: none; }
 @media (max-width: 480px) {
   #dossier .ds-roll-row { align-items: flex-start; flex-direction: column; gap: 4px; }
   #dossier .ds-roll-go .btn { margin-left: 0; }
   #dossier .ds-roll-word { font-size: 28px; }
 }
+/* ---- the mark strip and the resist helper (physical dice): the same panel chrome as the roll panel ---- */
+#dossier .ds-mark .ds-roll-body { gap: 10px; }
+#dossier .ds-mark-row { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
+#dossier .ds-mark-row .ds-lab { margin: 0; min-width: 56px; }
+#dossier .ds-mark-opts, #dossier .ds-mark-cons { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+#dossier .ds-mtog { display: inline-grid; justify-items: start; gap: 2px; text-align: left; padding: 5px 9px; }
+#dossier .ds-mtog small { font: 400 10px/1.2 var(--font-mono); text-transform: none; letter-spacing: 0; opacity: .8; }
+#dossier .ds-mark-dice { display: flex; flex-wrap: wrap; gap: 4px; }
+#dossier .ds-dieb { display: inline-grid; justify-items: center; gap: 2px; border: 0; background: transparent; padding: 3px 2px; cursor: pointer; border-radius: 4px; }
+#dossier .ds-dieb .ds-die { width: 34px; height: 34px; }
+#dossier .ds-dieb small { font: 700 10px/1 var(--font-mono); color: var(--ink-soft); }
+#dossier .ds-dieb:hover .ds-die rect, #dossier .ds-dieb:focus-visible .ds-die rect { stroke: var(--accent); stroke-width: 3.5; }
+#dossier .ds-dieb[disabled] { opacity: .45; cursor: default; }
+#dossier .ds-dieb-crit { grid-template-columns: auto auto; column-gap: 2px; }
+#dossier .ds-dieb-crit small { grid-column: 1 / -1; }
+#dossier .ds-rhelp { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--hair); }
+#dossier .ds-mark-foot { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding-top: 2px; }
+#dossier .ds-mark-close { display: none; }
 #dossier .ds-advance { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 6px 0; }
 #dossier .ds-advance .ds-lab { margin: 0; }
 
@@ -371,6 +392,31 @@
   #dossier .ds-thumb.ghostly { opacity: .72; filter: blur(.35px) saturate(1.4); }
   /* rolling is the main thing at the table: each action's roll button fills the rest of its row, 44px tall */
   #dossier .ds-actbtn { min-height: 44px; flex: 1 1 auto; }
+  /* the roll, downtime and end-of-session panels: a bottom sheet fixed to the foot of the screen, stacked on top of the on-stage
+     banner (cast.css sets --cp-stage-h), scrolling inside itself; the page gets room below so nothing stays hidden under it */
+  #dossier .ds-roll { position: fixed; left: 0; right: 0; bottom: var(--cp-stage-h, 0px); z-index: 55; max-height: min(72vh, calc(100vh - var(--cp-stage-h, 0px) - 64px)); overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; border: 0; border-top: 2px solid var(--rule); box-shadow: 0 -8px 28px rgba(20, 17, 14, .28); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  #dossier .ds-roll-h { position: sticky; top: 0; z-index: 1; }
+  #dossier .ds-roll-foot { display: flex; justify-content: flex-end; padding: 8px 12px 12px; border-top: 1px solid var(--hair); }
+  #dossier.ds-panel-open { padding-bottom: 64vh; }
+  /* the mark strip, compact: the dice toggles three across, the five consequences in one row, the dice faces seven across */
+  #dossier .ds-mark .ds-roll-body { padding: 8px 10px 10px; gap: 8px; }
+  #dossier .ds-mrow-dice > .ds-lab, #dossier .ds-mrow-then > .ds-lab { display: none; }
+  #dossier .ds-mark-opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: 1 1 100%; }
+  #dossier .ds-mtog { padding: 4px 7px; }
+  #dossier .ds-mark-cons { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; flex: 1 1 100%; }
+  #dossier .ds-mark-cons .btn { padding: 4px 2px; letter-spacing: .03em; min-width: 0; line-height: 1.1; overflow-wrap: anywhere; box-shadow: 2px 2px 0 var(--shadow-ink); }
+  #dossier .ds-plus1 span { font-size: 9px; letter-spacing: 0; }   /* "+1" over the stress name, which can be as long as Instability */
+  #dossier .ds-mark-dice { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; flex: 1 1 100%; }
+  #dossier .ds-dieb { min-height: 44px; padding: 3px 0; }
+  #dossier .ds-dieb-crit .ds-die { width: 20px; height: 20px; }
+  #dossier .ds-rattr .seg { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #dossier .ds-mark-foot { justify-content: space-between; }
+  #dossier .ds-mark-close { display: inline-block; }
+  /* Mark +1 / +2 and the vice buttons as a 2 × 2 grid, so none wraps alone */
+  #dossier .ds-markrow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #dossier .ds-markrow .ds-gap { display: none; }
+  /* iOS zooms the page when it focuses a control smaller than 16px (the class names outrank the sheet's own field sizes) */
+  #dossier :is(input, textarea, select, .ds-in, .ds-ta, .ds-sel) { font-size: 16px; }
 }
 /* touch targets: an invisible ::before widens each small mark without moving anything. A mark's area is 44px tall
    where its row has the room and as wide as its pitch in the row (--hit-w), so neighbours tile and never take each
@@ -391,6 +437,21 @@
   #dossier .ds-log .ds-x, #dossier .ds-detail .ds-x { --hit-h: 28px; }
   #dossier .ds-custom .ds-x { --hit-h: 22px; }
   #dossier .ds-items .ds-x { --hit-h: 100%; }
+  /* the play controls themselves are at least 40px tall on touch: buttons, chips, the push / assist / bargain rows, item rows,
+     Resist (as tall as its attribute row), the Armor / Heavy / resource boxes (a hit area as wide as their pitch), the bursts */
+  #dossier button, #dossier a, #dossier [role="button"] { touch-action: manipulation; }
+  #dossier .btn.sm, #dossier .chip.sm { min-height: 40px; }
+  #dossier .ds-band .chip.sm { margin-block: -6px; }   /* 40px tall in a band that grows only by what the band's padding cannot hold */
+  #dossier .ds-heal .ds-clock { width: 64px; height: 64px; }   /* four healing segments a thumb can tell apart */
+  #dossier .ds-rtog, #dossier .ds-item, #dossier .ds-coh, #dossier .ds-feat { min-height: 40px; align-items: center; }
+  #dossier .ds-rtog .ds-sq, #dossier .ds-item .ds-sq, #dossier .ds-feat .ds-sq { margin-top: 0; }
+  #dossier .ds-attr-h { min-height: 44px; }
+  #dossier .ds-resist { align-self: stretch; display: inline-flex; align-items: center; }
+  #dossier .ds-resrow { min-height: 40px; }   /* Armor, Heavy and the resource row 40px apart, so their hit areas tile */
+  #dossier button.ds-sq { position: relative; }
+  #dossier button.ds-sq::before { content: ""; position: absolute; left: 50%; top: 50%; width: 19px; height: 40px; transform: translate(-50%, -50%); }
+  #dossier .ds-burst { width: 40px; height: 40px; }
+  #dossier .ds-burst.on { width: auto; height: auto; }
 }
 
 /* ---- print: the dossier alone, on white, letter or A4 portrait ---- */

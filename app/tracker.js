@@ -320,8 +320,9 @@
     else if (ghost) tools = '<button type="button" class="btn sm" data-act="consume"' + (play.stress > 0 ? '' : ' disabled') + '>Consume (clear half)</button>';
     else if (vamp) tools = '<button type="button" class="btn sm" data-act="feed">Feed</button>';
     else if (tt) tools = '<button type="button" class="btn sm" data-act="restabilize"' + (play.alluvium > 0 ? '' : ' disabled') + '>Restabilize (−5, uses one ' + esc(pb.alluviumName || 'canister') + ')</button>';
-    else tools = '<button type="button" class="btn sm" data-act="stressd" data-d="-1">Indulge −1</button><button type="button" class="btn sm" data-act="stressd" data-d="-3">Indulge −3</button>';
-    h += '<div class="row ds-tools">' + tools + '<span class="ds-gap"></span><button type="button" class="btn sm" data-act="stressd" data-d="1">Mark +1</button><button type="button" class="btn sm" data-act="stressd" data-d="2">Mark +2</button></div>';
+    else tools = '<button type="button" class="btn sm" data-act="stressd" data-d="-1" title="Indulge your vice: clear 1 ' + esc(name) + '">Clear 1</button><button type="button" class="btn sm" data-act="stressd" data-d="-3" title="Indulge your vice: clear 3 ' + esc(name) + '">Clear 3</button>';
+    /* marking is the frequent thing in play: Mark first, the vice (or its replacement) after */
+    h += '<div class="row ds-tools ds-markrow"><button type="button" class="btn sm" data-act="stressd" data-d="1">Mark +1</button><button type="button" class="btn sm" data-act="stressd" data-d="2">Mark +2</button><span class="ds-gap"></span>' + tools + '</div>';
     if (tt) {
       var an = pb.alluviumName || 'canister', am = alluvMax(pb);
       h += '<div class="ds-alluv"><span class="ds-lab">Alluvium</span>' + pipRow(am, play.alluvium, 'alluvium', '', 'ds-pip ds-vial') + '<span class="mono ds-count">' + play.alluvium + ' ' + esc(an) + (play.alluvium === 1 ? '' : 's') + ' left</span></div>' +
@@ -518,7 +519,7 @@
       if (e.result.memFull) h += '<p class="hint ds-warn">Memory complete: write it in the Human memories box. You also remember one key, a human contact, and a special ability from another playbook.</p>';
       h += '<p class="hint">Downtime next: use the Downtime box, then ' + esc(nextStart(play)) + '.</p></div>';
     }
-    return '<div class="ds-roll ds-endp" tabindex="-1" role="region" aria-label="End of session"><div class="ds-roll-h"><span class="ds-roll-t">End of session · <b>' + n + '</b></span><span class="ds-roll-sub">' + trig.length + ' triggers · 0, 1 or 2 xp each</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close the end of session panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div></div>';
+    return '<div class="ds-roll ds-endp" tabindex="-1" role="region" aria-label="End of session"><div class="ds-roll-h"><span class="ds-roll-t">End of session · <b>' + n + '</b></span><span class="ds-roll-sub">' + trig.length + ' triggers · 0, 1 or 2 xp each</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close the end of session panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div>' + panelFoot() + '</div>';
   }
 
   /* ---------- the Downtime box (round 5): one activity panel at a time, in the roll panel's style ---------- */
@@ -583,7 +584,7 @@
     }
     if (t.result && t.kind !== 'train') h += dtResult(t, pb);
     else if (t.result) h += '<div class="ds-roll-res"><div class="ds-roll-applied"><span class="ds-lab">Applied</span>' + esc(t.result.applied.join(' · ')) + '</div></div>';
-    return '<div class="ds-roll ds-dt" tabindex="-1" role="region" aria-label="Downtime"><div class="ds-roll-h"><span class="ds-roll-t">Downtime · <b>' + esc(dtName(t.kind, pb)) + '</b></span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close the downtime panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div></div>';
+    return '<div class="ds-roll ds-dt" tabindex="-1" role="region" aria-label="Downtime"><div class="ds-roll-h"><span class="ds-roll-t">Downtime · <b>' + esc(dtName(t.kind, pb)) + '</b></span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close the downtime panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div>' + panelFoot() + '</div>';
   }
   function dtResult(t, pb) {
     var res = t.result, h = '<div class="ds-roll-res">' + diceSvgs(res);
@@ -594,10 +595,10 @@
     return h + '</div>';
   }
   function actions(play, pb) {
-    var vamp = isVamp(pb), tt = isTT(pb), h = '<div class="ds-attrs">', roll = cur.ui.roll;
+    var vamp = isVamp(pb), tt = isTT(pb), h = '<div class="ds-attrs">', roll = cur.ui.roll, mark = cur.ui.mark;
     (CT.ACTIONS || []).forEach(function (g) {
       var attr = g[0], key = attr.toLowerCase(), rating = g[1].filter(function (a) { return (play.dots[a] || 0) > 0; }).length, xp = play.xp[key] || 0;
-      var majesty = vamp && play.darkMajesty === attr, resisting = roll && roll.kind === 'resist' && roll.attr === attr;
+      var majesty = vamp && play.darkMajesty === attr, resisting = (roll && roll.kind === 'resist' && roll.attr === attr) || (mark && !mark.action && mark.resist && mark.resist.attr === attr);
       h += '<div class="ds-attr"><div class="ds-attr-h"><span class="ds-attr-n">' + esc(attr) + '</span><span class="ds-rating mono">' + rating + '</span>' + (majesty ? '<span class="ds-dm">Dark Majesty</span>' : '') +
         '<button type="button" class="chip sm ds-resist" data-act="resistopen" data-attr="' + esc(attr) + '" data-always="1" aria-expanded="' + !!resisting + '" title="Resistance roll: ' + resistDice(play, pb, attr) + 'd">Resist</button>' +
         '<span class="ds-xpmini">xp ' + pipRow(6, xp, 'xp', ' data-k="' + key + '"', 'ds-xbox') + '</span></div>';
@@ -608,39 +609,102 @@
       g[1].forEach(function (a) {
         var v = play.dots[a] || 0, pr = pb && pb.printed ? (pb.printed[a] || 0) : 0, pips = '', max = dotMax(play, pb, a), shown = vamp ? 5 : 4;
         for (var i = 1; i <= shown; i++) pips += '<button type="button" class="ds-pip' + (i <= v ? ' on' : '') + (i <= pr ? ' printed' : '') + (i === 4 ? ' mastery' : '') + (i === 5 ? ' majesty' : '') + '" data-act="dot" data-a="' + esc(a) + '" data-n="' + i + '"' + (i > max ? ' disabled' : '') + ' aria-label="' + esc(a) + ' ' + i + '"></button>';
-        var open = roll && roll.kind === 'action' && roll.action === a;
-        h += '<div class="ds-act"><span class="ds-pips">' + pips + '</span><button type="button" class="ds-act-n ds-actbtn' + (open ? ' open' : '') + '" data-act="rollopen" data-a="' + esc(a) + '" data-always="1" aria-expanded="' + !!open + '" title="Roll ' + esc(a) + ' (' + v + 'd)">' + esc(a) + '</button></div>';
+        var open = (roll && roll.kind === 'action' && roll.action === a) || (mark && mark.action === a);
+        h += '<div class="ds-act"><span class="ds-pips">' + pips + '</span><button type="button" class="ds-act-n ds-actbtn' + (open ? ' open' : '') + '" data-act="rollopen" data-a="' + esc(a) + '" data-always="1" aria-expanded="' + !!open + '" title="' + esc(a) + ': ' + v + 'd, mark the roll">' + esc(a) + '</button></div>';
       });
       h += '</div>';
     });
     h += '</div>';
     if (tt) h += '<p class="hint">In play your actions may reach 4 (the limit of 3 was for creation only).</p>';
     else h += '<div class="row ds-tools"><label class="ds-check"><input type="checkbox" data-change="mastery"' + (play.mastery ? ' checked' : '') + '> Mastery (crew upgrade: ratings up to 4)</label>' + (vamp ? '<span class="ds-dim">Dark Majesty: one attribute up to 5.</span>' : '') + '</div>';
-    h += '<p class="hint ds-rollhint">Click an action to roll it; Resist rolls an attribute; Fortune rolls any number of dice.</p>';
-    return box('Actions', h, '<span class="ds-dim">attribute = actions rated 1+</span><button type="button" class="chip sm ds-fortune" data-act="fortopen" data-always="1" aria-expanded="' + !!(roll && roll.kind === 'fortune') + '">Fortune</button>', 'ds-actbox', rollPanel(play, pb));
+    h += '<p class="hint ds-rollhint">Tap an action for its dice and to mark the roll; Resist works out the ' + esc(stressName(pb)) + ' of a resistance; Fortune rolls any number of dice in the app.</p>';
+    return box('Actions', h, '<span class="ds-dim">attribute = actions rated 1+</span><button type="button" class="chip sm ds-fortune" data-act="fortopen" data-always="1" aria-expanded="' + !!(roll && roll.kind === 'fortune') + '">Fortune</button>', 'ds-actbox', markPanel(play, pb) + rollPanel(play, pb));
   }
-  /* ---------- the roll panel (round 4): one at a time, under the Actions box ---------- */
+  /* ---------- the mark strip: everyone rolls physical dice, so tapping an action shows the dice count (dots, plus Push /
+     Assist / Bargain, a die each) and one row to mark what happened: Resist (the helper below), the harm line to write on,
+     +1 stress. Push marks its 2 stress here as it is tapped (and gives it back when untapped), as the in-app roll does when it
+     rolls; an assist is paid by the crewmate who helps, on their own sheet; a Devil's Bargain costs no stress. The in-app roll
+     stays behind "Roll in the app". One panel at a time, like the others. ---------- */
   function noSave() { return readOnly() || !cur.api || typeof cur.api.save !== 'function'; }
-  function notSavedWhy() { return readOnly() ? 'read only' : 'no store'; }
+  function notSavedWhy() { return readOnly() ? 'read only' : 'this view cannot save'; }
+  function markDice(play, m) { return (play.dots[m.action] || 0) + (m.push ? 1 : 0) + (m.assist ? 1 : 0) + (m.bargain ? 1 : 0); }
+  function markPanel(play, pb) {
+    var m = cur.ui.mark; if (!m) return '';
+    var sn = stressName(pb), sm = stressMax(pb), h = '', title, sub;
+    if (m.action) {
+      var dots = play.dots[m.action] || 0, attr = attrOf(m.action) || '', total = markDice(play, m), pushBlocked = !m.push && play.stress + 2 > sm;
+      var parts = [dots + ' dot' + (dots === 1 ? '' : 's')]; if (m.push) parts.push('push'); if (m.assist) parts.push('assist'); if (m.bargain) parts.push('bargain');
+      title = esc(m.action) + ' · <b>' + total + 'd</b>'; sub = esc(attr) + ' · ' + esc(parts.join(' + ')) + (total === 0 ? ' · roll 2d, take the lowest' : '');
+      function tg(k, label, note, tip, dis) { return '<button type="button" class="chip sm ds-mtog" data-act="markopt" data-k="' + k + '" aria-pressed="' + !!m[k] + '" title="' + tip + '"' + (dis ? ' disabled' : '') + '><span>' + label + ' +1d</span><small>' + note + '</small></button>'; }
+      h += '<div class="ds-mark-row ds-mrow-dice"><span class="ds-lab">Dice</span><span class="ds-mark-opts">' +
+        tg('push', 'Push', '2 ' + esc(sn), 'Push yourself: +1d, and 2 ' + esc(sn) + ' marked on this sheet', pushBlocked) +
+        tg('assist', 'Assist', 'helper: 1 ' + esc(sn), 'A crewmate assists: +1d; they mark 1 ' + esc(sn) + ' on their own sheet') +
+        tg('bargain', 'Bargain', 'the GM’s price', 'Devil’s Bargain: +1d; the GM names the price') + '</span></div>';
+      if (pushBlocked) h += '<p class="hint ds-warn">Pushing would take ' + esc(sn) + ' past ' + sm + ': ' + esc(overflowRule(pb)) + '. Mark it by hand if you push anyway.</p>';
+      h += '<div class="ds-mark-row ds-mrow-then"><span class="ds-lab">Then</span><span class="ds-mark-cons">' +
+        '<button type="button" class="btn sm' + (m.resist ? ' primary' : '') + '" data-act="markresist" data-always="1" aria-expanded="' + !!m.resist + '" title="Resist the consequence: roll an attribute, tap the highest die">Resist</button>' +
+        [1, 2, 3].map(function (l) { return '<button type="button" class="btn sm" data-act="markharm" data-l="' + l + '" data-always="1" title="Write it on a level ' + l + ' harm line">Harm ' + l + '</button>'; }).join('') +
+        '<button type="button" class="btn sm ds-plus1" data-act="stressd" data-d="1" title="Mark 1 ' + esc(sn) + '">+1 <span>' + esc(sn) + '</span></button></span></div>';
+      if (m.push) h += '<div class="ds-roll-applied"><span class="ds-lab">Marked</span>+2 ' + esc(sn) + ' (push) <span class="ds-dim">' + play.stress + ' / ' + sm + '</span></div>';
+    } else { title = 'Resist · <b>' + esc(m.resist.attr) + '</b>'; sub = resistDice(play, pb, m.resist.attr) + 'd · physical dice'; }
+    if (m.resist) h += resistHelper(play, pb, m);
+    /* the in-app roll, second; Close ends the strip (on a phone it is a bottom sheet, so the × is not the only way out) */
+    h += '<div class="ds-mark-foot">' + (m.action
+      ? '<button type="button" class="chip sm txt" data-act="rollapp" data-a="' + esc(m.action) + '" data-always="1">Roll in the app</button>'
+      : '<button type="button" class="chip sm txt" data-act="resistapp" data-attr="' + esc(m.resist.attr) + '" data-always="1">Roll in the app</button>') +
+      '<button type="button" class="btn sm ds-mark-close" data-act="panelclose" data-always="1">Close</button></div>';
+    return '<div class="ds-roll ds-mark" tabindex="-1" role="region" aria-label="' + (m.action ? 'Mark the roll' : 'Resist') + '"><div class="ds-roll-h"><span class="ds-roll-t">' + title + '</span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div></div>';
+  }
+  /* the resist helper: the attribute (the action's by default), the dice to roll, then the player taps the highest die (the lowest with
+     0 dice) or "two sixes"; the cost is applied and logged exactly as the in-app resistance roll applies and logs it */
+  function resistHelper(play, pb, m) {
+    var r = m.resist, n = resistDice(play, pb, r.attr), sn = stressName(pb), ro = noSave(), res = r.result, low = n === 0, h = '<div class="ds-rhelp">';
+    h += '<div class="ds-mark-row ds-rattr"><span class="ds-lab">Resist with' + rl('resistance roll') + '</span><span class="seg">' + ATTRS.map(function (a) { return '<button type="button" class="chip sm" data-act="markrattr" data-v="' + esc(a) + '" data-always="1" aria-pressed="' + (r.attr === a) + '"' + (res ? ' disabled' : '') + '>' + esc(a) + ' ' + resistDice(play, pb, a) + 'd</button>'; }).join('') + '</span></div>';
+    if (!res) {
+      h += '<p class="hint">Roll <b>' + n + 'd</b>' + (low ? ' (no rating: roll 2d and take the lowest)' : '') + ' and tap the ' + (low ? 'lowest' : 'highest') + ' die: ' + esc(sn) + ' cost is 6 minus the die' + (low ? '.' : '; two sixes clear 1 ' + esc(sn) + ' instead.') + '</p>';
+      h += '<div class="ds-mark-row"><span class="ds-lab">' + (low ? 'Lowest die' : 'Highest die') + '</span><span class="ds-mark-dice">' +
+        [1, 2, 3, 4, 5, 6].map(function (v) { return '<button type="button" class="ds-dieb" data-act="markrdie" data-v="' + v + '"' + (ro ? ' disabled' : '') + ' aria-label="' + (low ? 'lowest' : 'highest') + ' die ' + v + ': ' + (6 - v ? '+' + (6 - v) : 'no') + ' ' + esc(sn) + '">' + dieSvg(v, '', 34) + '<small>' + (6 - v ? '+' + (6 - v) : '0') + '</small></button>'; }).join('') +
+        (low ? '' : '<button type="button" class="ds-dieb ds-dieb-crit" data-act="markrdie" data-v="crit"' + (ro ? ' disabled' : '') + ' aria-label="two sixes: clear 1 ' + esc(sn) + '">' + dieSvg(6, 'six', 34) + dieSvg(6, 'six', 34) + '<small>−1</small></button>') + '</span></div>';
+      if (ro) h += '<p class="hint">Not saved (' + notSavedWhy() + '): mark it by hand.</p>';
+    } else {
+      var cost = res.crit ? -1 : 6 - res.value;
+      h += '<div class="ds-roll-res">' + diceSvgs(res) + '<div class="ds-roll-read"><span class="ds-roll-word ' + res.reading + '">' + (res.crit ? 'Critical' : (res.low ? 'lowest ' : 'highest ') + res.value) + '</span><span class="ds-roll-why">' + (res.crit ? 'clear 1 ' + esc(sn) : cost === 0 ? 'no ' + esc(sn) + ' at all' : '6 − ' + res.value + ' = ' + cost + ' ' + esc(sn)) + '</span></div>' +
+        '<div class="ds-roll-applied"><span class="ds-lab">Applied</span>' + esc(res.applied.join(' · ')) + '</div><div class="row"><button type="button" class="btn sm" data-act="markrdone" data-always="1">Done</button></div></div>';
+    }
+    return h + '</div>';
+  }
+  /* the cost of a resistance roll, applied and logged; shared by the in-app roll's Apply and the helper's die taps */
+  function applyResist(attr, res) {
+    var p = cur.play, pb = cur.pb, sn = stressName(pb), sm = stressMax(pb), cost = res.crit ? -1 : 6 - res.value, before = p.stress;
+    p.stress = clamp(before + cost, 0, sm);
+    var what = res.crit ? 'clear 1 ' + sn : cost + ' ' + sn;
+    res.applied = [(res.crit ? '−' + (before - p.stress) : '+' + (p.stress - before)) + ' ' + sn + ' (' + p.stress + ' / ' + sm + ')' + (cost > 0 && before + cost > sm ? ' — track full: ' + overflowRule(pb) : '')];
+    p.log.unshift({ at: new Date().toISOString(), kind: 'roll', text: 'Resist ' + attr + ' ' + res.n + 'd' + (res.low ? ' (2d take lowest)' : '') + ' · ' + res.dice.join(',') + ' → ' + (res.crit ? 'critical, ' : '') + what });
+  }
   function rollPanel(play, pb) {
     var r = cur.ui.roll; if (!r) return '';
     var sn = stressName(pb), sm = stressMax(pb), h = '', title, sub = '';
     if (r.kind === 'action') {
       var dots = play.dots[r.action] || 0, attr = attrOf(r.action) || '', total = dots + (r.push ? 1 : 0) + (r.assist ? 1 : 0) + (r.bargain ? 1 : 0);
-      var pushBlocked = !r.push && play.stress + 2 > sm;
+      var pushBlocked = !r.push && play.stress + 2 > sm, rolled = !!r.result;
       title = 'Roll · <b>' + esc(r.action) + '</b>'; sub = esc(attr) + ' · ' + dots + ' dot' + (dots === 1 ? '' : 's');
       function tog(k, label, note, dis) { return '<button type="button" class="ds-rtog" data-act="rollopt" data-k="' + k + '" data-always="1" aria-pressed="' + !!r[k] + '"' + (dis ? ' disabled' : '') + '><span class="ds-sq' + (r[k] ? ' on' : '') + '"></span><span><b>' + label + '</b> <span class="ds-dim">' + note + '</span></span></button>'; }
-      h += '<div class="ds-roll-opts">' + tog('push', 'Push yourself', '+1d · 2 ' + esc(sn), pushBlocked) + tog('assist', 'Assist', '+1d · a crewmate takes 1 ' + esc(sn)) + tog('bargain', 'Devil’s Bargain', '+1d · the GM names a price') + '</div>';
-      if (pushBlocked) h += '<p class="hint ds-warn">Pushing would take ' + esc(sn) + ' past ' + sm + ': ' + esc(overflowRule(pb)) + '. Mark it by hand if you push anyway.</p>';
-      h += '<div class="ds-roll-row"><span class="ds-lab">Position</span><span class="seg">' + POSITIONS.map(function (p) { return '<button type="button" class="chip sm" data-act="rollpos" data-v="' + p + '" data-always="1" aria-pressed="' + (r.position === p) + '">' + capWord(p) + '</button>'; }).join('') + '</span>' + (r.position === 'desperate' ? '<span class="ds-dim">marks 1 ' + esc(attr) + ' xp</span>' : '') + '</div>';
-      h += '<div class="ds-roll-row"><span class="ds-lab">Effect</span><span class="seg">' + EFFECTS.map(function (p) { return '<button type="button" class="chip sm" data-act="rolleff" data-v="' + p + '" data-always="1" aria-pressed="' + (r.effect === p) + '">' + capWord(p) + '</button>'; }).join('') + '</span><span class="ds-dim">for the fiction only</span></div>';
+      /* the dice and the Roll button first, the verdict right under them (so neither moves when the result lands), the options after;
+         once rolled, the paid-for options lock and a second roll is asked for by name */
       var parts = [dots + ' dot' + (dots === 1 ? '' : 's')]; if (r.push) parts.push('push'); if (r.assist) parts.push('assist'); if (r.bargain) parts.push('bargain');
-      h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + total + 'd</b><span class="ds-dim">' + esc(parts.join(' + ')) + (total === 0 ? ' · roll 2d, take the lowest' : '') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">Roll</button></div>';
-      if (r.result) h += rollResult(r, pb);
+      /* a second roll pays its costs again (push); with nothing to pay it is just "Roll again" */
+      h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + total + 'd</b><span class="ds-dim">' + esc(parts.join(' + ')) + (total === 0 ? ' · roll 2d, take the lowest' : '') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">' + (rolled ? (r.push ? 'Roll again (pays again)' : 'Roll again') : 'Roll') + '</button></div>';
+      if (rolled) h += rollResult(r, pb);
+      var prepaid = !!(r.paid && r.paid.push);
+      h += '<div class="ds-roll-opts">' + tog('push', 'Push yourself', '+1d · 2 ' + esc(sn) + (prepaid ? ' · marked already' : rolled && r.push ? ' · paid' : ''), pushBlocked || rolled || prepaid) + tog('assist', 'Assist', '+1d · a crewmate takes 1 ' + esc(sn), rolled) + tog('bargain', 'Devil’s Bargain', '+1d · the GM names a price', rolled) + '</div>';
+      if (pushBlocked) h += '<p class="hint ds-warn">Pushing would take ' + esc(sn) + ' past ' + sm + ': ' + esc(overflowRule(pb)) + '. Mark it by hand if you push anyway.</p>';
+      h += '<div class="ds-roll-row"><span class="ds-lab">Position' + rl('position') + '</span><span class="seg">' + POSITIONS.map(function (p) { return '<button type="button" class="chip sm" data-act="rollpos" data-v="' + p + '" data-always="1" aria-pressed="' + (r.position === p) + '"' + (rolled ? ' disabled' : '') + '>' + capWord(p) + '</button>'; }).join('') + '</span>' + (r.position === 'desperate' ? '<span class="ds-dim">marks 1 ' + esc(attr) + ' xp</span>' : '') + '</div>';
+      h += '<div class="ds-roll-row"><span class="ds-lab">Effect' + rl('effect') + '</span><span class="seg">' + EFFECTS.map(function (p) { return '<button type="button" class="chip sm" data-act="rolleff" data-v="' + p + '" data-always="1" aria-pressed="' + (r.effect === p) + '"' + (rolled ? ' disabled' : '') + '>' + capWord(p) + '</button>'; }).join('') + '</span><span class="ds-dim">for the fiction only</span></div>';
+      if (rolled) h += '<p class="hint">The options stay as rolled. For a different roll, close this and tap the action again.</p>';
     } else if (r.kind === 'resist') {
       var n = resistDice(play, pb, r.attr), dm = isVamp(pb) && play.darkMajesty === r.attr;
       title = 'Resist · <b>' + esc(r.attr) + '</b>'; sub = n + 'd · ' + attrRating(play, r.attr) + ' action' + (attrRating(play, r.attr) === 1 ? '' : 's') + ' rated 1+' + (dm ? ' + 1 Dark Majesty' : '');
-      h += '<p class="hint">Resist a consequence: ' + esc(sn) + ' cost is 6 minus the highest die; a critical clears 1 ' + esc(sn) + ' instead.' + (n === 0 ? ' No rating: roll 2d and take the lowest.' : '') + '</p>';
+      h += '<p class="hint">Resist a consequence' + rl('resistance roll') + ': ' + esc(sn) + ' cost is 6 minus the highest die; a critical clears 1 ' + esc(sn) + ' instead.' + (n === 0 ? ' No rating: roll 2d and take the lowest.' : '') + '</p>';
       h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + n + 'd</b><span class="ds-dim">' + (n === 0 ? 'roll 2d, take the lowest' : esc(r.attr) + ' rating') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">' + (r.result ? 'Roll again' : 'Roll') + '</button></div>';
       if (r.result) h += rollResult(r, pb);
     } else {
@@ -649,8 +713,10 @@
       h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + r.n + 'd</b><span class="ds-dim">' + (r.n === 0 ? 'roll 2d, take the lowest' : 'read the highest die') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">' + (r.result ? 'Roll again' : 'Roll') + '</button></div>';
       if (r.result) h += rollResult(r, pb);
     }
-    return '<div class="ds-roll" tabindex="-1" role="region" aria-label="Roll"><div class="ds-roll-h"><span class="ds-roll-t">' + title + '</span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="rollclose" data-always="1" aria-label="Close the roll panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div></div>';
+    return '<div class="ds-roll" tabindex="-1" role="region" aria-label="Roll"><div class="ds-roll-h"><span class="ds-roll-t">' + title + '</span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="rollclose" data-always="1" aria-label="Close the roll panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div>' + panelFoot() + '</div>';
   }
+  /* the phone's bottom sheet ends in a Close button (hidden on a desk, where the panel sits inline with its ×) */
+  function panelFoot() { return '<div class="ds-roll-foot"><button type="button" class="btn sm" data-act="panelclose" data-always="1">Close</button></div>'; }
   function rollResult(r, pb) {
     var res = r.result, sn = stressName(pb), word = res.reading, h = '<div class="ds-roll-res">' + diceSvgs(res);
     if (r.kind === 'resist') {
@@ -784,14 +850,21 @@
         '<div class="ds-col ds-c4">' + clocks(play, pb) + notes(play) + log(play) + '</div>' +
       '</div>';
     cur.root.innerHTML = html;
-    cur.root.className = 'dossier ds' + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '');
+    var open = anyPanel();
+    cur.root.className = 'dossier ds' + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '') + (open ? ' ds-panel-open' : '');
     askOwner();
     if (readOnly()) cur.root.querySelectorAll('button, input, textarea, select').forEach(function (n) { if (!n.dataset.always) n.disabled = true; });
     restoreFocus(focus);
-    /* the roll panel: bring it into view when it opens, and keep keyboard focus inside the sheet so Esc closes it */
-    var panel = cur.ui.roll || cur.ui.dt || cur.ui.endSess ? cur.root.querySelector('.ds-roll') : null;
+    /* the roll panel: bring it (or, after a roll, its verdict) into view, and keep keyboard focus inside the sheet so Esc closes it.
+       On a phone the panel is a fixed bottom sheet (tracker.css): it is in view by itself, only its verdict may need a scroll inside it */
+    var panel = open ? cur.root.querySelector('.ds-roll') : null;
     if (panel) {
-      if (cur.ui.rollScroll) { cur.ui.rollScroll = false; try { panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {} }
+      if (cur.ui.rollScroll) {
+        var want = cur.ui.rollScroll, fixed = false; cur.ui.rollScroll = false;
+        try { fixed = getComputedStyle(panel).position === 'fixed'; } catch (e) {}
+        var tgt = want === 'res' ? panel.querySelector('.ds-roll-res') || panel : panel;
+        if (!(fixed && tgt === panel)) { try { tgt.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {} }
+      }
       var a = document.activeElement; if (!a || a === document.body || !cur.root.contains(a)) { try { panel.focus({ preventScroll: true }); } catch (e) {} }
     }
   }
@@ -968,13 +1041,15 @@
     log: function () { var n = cur.root.querySelector('.ds-newlog'); var v = n && n.value.trim(); if (!v) { if (n) n.focus(); return; } cur.play.log.unshift({ at: new Date().toISOString(), kind: 'note', text: v }); commit(); },
     rmlog: function (d) { if (!window.confirm('Remove this log entry?')) return; cur.play.log.splice(+d.i, 1); commit(); },
     /* ---- dice (round 4): the roll panel. Every control here carries data-always, so a read-only viewer can roll; nothing is written for them. ---- */
-    rollopen: function (d) { var r = cur.ui.roll; if (r && r.kind === 'action' && r.action === d.a) { cur.ui.roll = null; render(); return; } cur.ui.dt = cur.ui.endSess = null; cur.ui.roll = { kind: 'action', action: d.a, push: false, assist: false, bargain: false, position: 'risky', effect: 'standard', result: null }; cur.ui.rollScroll = true; render(); },
-    resistopen: function (d) { var r = cur.ui.roll; if (r && r.kind === 'resist' && r.attr === d.attr) { cur.ui.roll = null; render(); return; } cur.ui.dt = cur.ui.endSess = null; cur.ui.roll = { kind: 'resist', attr: d.attr, result: null }; cur.ui.rollScroll = true; render(); },
-    fortopen: function () { var r = cur.ui.roll; if (r && r.kind === 'fortune') { cur.ui.roll = null; render(); return; } cur.ui.dt = cur.ui.endSess = null; cur.ui.roll = { kind: 'fortune', n: 2, result: null }; cur.ui.rollScroll = true; render(); },
+    /* an action opens the mark strip (physical dice); the Resist chip opens the resist helper; the in-app rolls sit behind "Roll in the app" */
+    rollopen: function (d) { var m = cur.ui.mark; if (m && m.action === d.a) { cur.ui.mark = null; render(); return; } closePanels(); cur.ui.mark = { action: d.a, push: false, assist: false, bargain: false, resist: null }; cur.ui.rollScroll = true; render(); },
+    resistopen: function (d) { var m = cur.ui.mark; if (m && !m.action && m.resist && m.resist.attr === d.attr) { cur.ui.mark = null; render(); return; } closePanels(); cur.ui.mark = { action: null, resist: { attr: d.attr, result: null } }; cur.ui.rollScroll = true; render(); },
+    fortopen: function () { var r = cur.ui.roll; if (r && r.kind === 'fortune') { cur.ui.roll = null; render(); return; } closePanels(); cur.ui.roll = { kind: 'fortune', n: 2, result: null }; cur.ui.rollScroll = true; render(); },
     rollclose: function () { cur.ui.roll = null; render(); },
-    rollopt: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action') return; if (d.k === 'push' && !r.push && cur.play.stress + 2 > stressMax(cur.pb)) return; r[d.k] = !r[d.k]; r.result = null; render(); },
-    rollpos: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || POSITIONS.indexOf(d.v) < 0) return; r.position = d.v; r.result = null; render(); },
-    rolleff: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || EFFECTS.indexOf(d.v) < 0) return; r.effect = d.v; r.result = null; render(); },
+    rollopt: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || r.result) return; if (r.paid && r.paid[d.k]) return; if (d.k === 'push' && !r.push && cur.play.stress + 2 > stressMax(cur.pb)) return; r[d.k] = !r[d.k]; r.result = null; render(); },
+    /* after a roll its options are locked: the verdict stands for what was rolled */
+    rollpos: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || r.result || POSITIONS.indexOf(d.v) < 0) return; r.position = d.v; render(); },
+    rolleff: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || r.result || EFFECTS.indexOf(d.v) < 0) return; r.effect = d.v; render(); },
     fortn: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'fortune') return; r.n = clamp(d.n, 0, 6); r.result = null; render(); },
     roll: function () {
       var r = cur.ui.roll, p = cur.play, pb = cur.pb; if (!r) return;
@@ -987,7 +1062,9 @@
         res.text = r.action + ' ' + res.n + 'd' + (flags.length ? ' (' + flags.join(', ') + ')' : res.low ? ' (2d take lowest)' : '') + ' · ' + r.position + ' · ' + res.dice.join(',') + ' → ' + res.reading;
         /* consequences: listed first, written only when the sheet can be saved */
         var plan = [];
-        if (r.push) plan.push({ text: '+2 ' + sn, run: function () { p.stress = clamp(p.stress + 2, 0, sm); return '+2 ' + sn + ' (' + p.stress + ' / ' + sm + ')'; } });
+        /* a push marked in the strip is paid already, for this first roll; a roll after it pays again */
+        if (r.push && !(r.paid && r.paid.push)) plan.push({ text: '+2 ' + sn, run: function () { p.stress = clamp(p.stress + 2, 0, sm); return '+2 ' + sn + ' (' + p.stress + ' / ' + sm + ')'; } });
+        if (r.paid) r.paid.push = false;
         if (r.position === 'desperate' && key) plan.push({ text: '+1 ' + attr + ' xp', run: function () { if ((p.xp[key] || 0) >= 6) return attr + ' xp is full: advance first'; p.xp[key] = clamp((p.xp[key] || 0) + 1, 0, 6); return '+1 ' + attr + ' xp (' + p.xp[key] + ' / 6)' + (p.xp[key] >= 6 ? ' — advance ready' : ''); } });
         res.saved = !ro; res.savedWhy = ro ? notSavedWhy() : '';
         res.applied = plan.map(function (x) { return ro ? x.text : x.run(); });
@@ -998,7 +1075,7 @@
         res.text = 'Fortune ' + res.n + 'd' + (res.low ? ' (2d take lowest)' : '') + ' · ' + res.dice.join(',') + ' → ' + res.reading;
         res.saved = !ro; res.savedWhy = ro ? notSavedWhy() : ''; res.applied = [];
       }
-      r.result = res;
+      r.result = res; cur.ui.rollScroll = 'res';   /* the verdict comes into view, wherever the panel sits */
       if (res.text && !ro) { p.log.unshift({ at: new Date().toISOString(), kind: 'roll', text: res.text }); commit(); } else render();
     },
     /* ---- sessions (round 5) ---- */
@@ -1103,14 +1180,53 @@
       commit();
     },
     resistapply: function () {
-      var r = cur.ui.roll, p = cur.play, pb = cur.pb; if (!r || r.kind !== 'resist' || !r.result || r.result.applied) return;
-      var res = r.result, sn = stressName(pb), sm = stressMax(pb), cost = res.crit ? -1 : 6 - res.value, before = p.stress;
-      p.stress = clamp(before + cost, 0, sm);
-      var what = res.crit ? 'clear 1 ' + sn : cost + ' ' + sn;
-      res.applied = [(res.crit ? '−' + (before - p.stress) : '+' + (p.stress - before)) + ' ' + sn + ' (' + p.stress + ' / ' + sm + ')' + (cost > 0 && before + cost > sm ? ' — track full: ' + overflowRule(pb) : '')];
-      p.log.unshift({ at: new Date().toISOString(), kind: 'roll', text: 'Resist ' + r.attr + ' ' + res.n + 'd' + (res.low ? ' (2d take lowest)' : '') + ' · ' + res.dice.join(',') + ' → ' + (res.crit ? 'critical, ' : '') + what });
-      commit();
-    }
+      var r = cur.ui.roll; if (!r || r.kind !== 'resist' || !r.result || r.result.applied) return;
+      applyResist(r.attr, r.result); cur.ui.rollScroll = 'res'; commit();
+    },
+    /* ---- the mark strip (physical dice) ---- */
+    rollapp: function (d) {
+      var m = cur.ui.mark, from = m && m.action === d.a ? m : null; closePanels();
+      cur.ui.roll = { kind: 'action', action: d.a, push: !!(from && from.push), assist: !!(from && from.assist), bargain: !!(from && from.bargain), paid: { push: !!(from && from.push) }, position: 'risky', effect: 'standard', result: null };
+      cur.ui.rollScroll = true; render();
+    },
+    resistapp: function (d) { closePanels(); cur.ui.roll = { kind: 'resist', attr: d.attr, result: null }; cur.ui.rollScroll = true; render(); },
+    /* Push marks its 2 stress as it is tapped (and gives it back when untapped); Assist and a Devil's Bargain add a die and
+       cost this sheet nothing (the crewmate who assists marks their own stress) */
+    markopt: function (d) {
+      var m = cur.ui.mark, p = cur.play, pb = cur.pb; if (!m || !m.action) return;
+      var k = d.k, sn = stressName(pb), sm = stressMax(pb), on = !m[k];
+      if (k === 'push') { if (on && p.stress + 2 > sm) { note('Cannot push: ' + sn + ' would pass ' + sm); return; } p.stress = clamp(p.stress + (on ? 2 : -2), 0, sm); }
+      else if (k !== 'assist' && k !== 'bargain') return;
+      m[k] = on;
+      if (k === 'push') commit(); else render();
+    },
+    /* Harm N: the first empty line of that level, scrolled into view and focused for typing. A full level moves the harm up a
+       level, as the rules do. On a phone the strip (a bottom sheet) closes first, so it never sits over the line being typed. */
+    markharm: function (d) {
+      var l = clamp(d.l, 1, 4), lv = { 1: ['harm.l1.0', 'harm.l1.1'], 2: ['harm.l2.0', 'harm.l2.1'], 3: ['harm.l3'], 4: ['harm.l4'] };
+      var empty = function (s) { var v = getPath(cur.play, s); return !String(v == null ? '' : v).trim(); };
+      var at = l; while (at < 4 && !lv[at].some(empty)) at++;
+      if (!lv[at].some(empty)) at = l;
+      var path = lv[at].filter(empty)[0] || lv[at][0], panel = cur.root.querySelector('.ds-mark'), sheet = false;
+      try { sheet = !!panel && getComputedStyle(panel).position === 'fixed'; } catch (e) {}
+      if (sheet) { cur.ui.mark = null; render(); }
+      var target = cur.root.querySelector('[data-path="' + path + '"]'), boxEl = cur.root.querySelector('.ds-harmbox');
+      if (!target) return;
+      try { (boxEl || target).scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+      try { target.focus({ preventScroll: true }); } catch (e) {}
+      if (at !== l) note('Level ' + l + ' is full: the harm moves up to level ' + at);
+    },
+    markresist: function () { var m = cur.ui.mark; if (!m || !m.action) return; m.resist = m.resist ? null : { attr: attrOf(m.action) || ATTRS[0], result: null }; render(); },
+    markrattr: function (d) { var m = cur.ui.mark; if (!m || !m.resist || m.resist.result || ATTRS.indexOf(d.v) < 0) return; m.resist.attr = d.v; render(); },
+    /* the highest die (the lowest with 0 dice), or two sixes: the same reading and cost as the in-app roll, applied and logged */
+    markrdie: function (d) {
+      var m = cur.ui.mark, p = cur.play, pb = cur.pb; if (!m || !m.resist || m.resist.result || noSave()) return;
+      var n = resistDice(p, pb, m.resist.attr), low = n === 0, res;
+      if (d.v === 'crit') { if (low) return; res = { n: n, dice: [6, 6], value: 6, crit: true, low: false, reading: 'critical' }; }
+      else { var v = clamp(d.v, 1, 6); if (v !== +d.v) return; res = { n: n, dice: [v], value: v, crit: false, low: low, reading: v === 6 ? 'success' : v >= 4 ? 'partial' : 'failure' }; }
+      applyResist(m.resist.attr, res); m.resist.result = res; commit();
+    },
+    markrdone: function () { var m = cur.ui.mark; if (!m) return; if (m.action) m.resist = null; else cur.ui.mark = null; render(); }
   };
   /* a new session on this sheet (Start session, or Join the table's): clears the downtime and per-session flags, logs it */
   function startSession(n) {
@@ -1122,9 +1238,10 @@
     note('Session ' + n + ' started'); commit();
   }
   /* roll-panel controls stay live for read-only viewers (they write nothing); everything else is gated */
-  var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1 };
-  /* one panel at a time: a roll, a downtime activity or the end of session */
-  function closePanels() { if (!cur) return; cur.ui.roll = null; cur.ui.dt = null; cur.ui.endSess = null; }
+  var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1, rollapp: 1, resistapp: 1, markharm: 1, markresist: 1, markrattr: 1, markrdone: 1 };
+  /* one panel at a time: the mark strip, a roll, a downtime activity or the end of session */
+  function anyPanel() { return !!(cur && (cur.ui.mark || cur.ui.roll || cur.ui.dt || cur.ui.endSess)); }
+  function closePanels() { if (!cur) return; cur.ui.mark = null; cur.ui.roll = null; cur.ui.dt = null; cur.ui.endSess = null; }
   var CHANGES = {
     addkey: function (sel) { var v = sel.value; sel.value = ''; if (!v || cur.play.keys.length >= 4) return; var k = v === '*' ? { name: '', down: '', up: '' } : keyParts(v); k.hits = 0; k.deadlock = null; k.glitch = null; cur.play.keys.push(k); commit(); if (v === '*') { var last = cur.root.querySelectorAll('.ds-key-name'); if (last.length) last[last.length - 1].focus(); } },
     mastery: function (inp) { cur.play.mastery = !!inp.checked; commit(); },
@@ -1150,7 +1267,7 @@
     if (t.dataset && t.dataset.change && CHANGES[t.dataset.change]) { if (readOnly()) return; try { CHANGES[t.dataset.change](t); } catch (err) { setStatus('Something went wrong: ' + err.message, true); } return; }
     if (t.dataset && t.dataset.path && cur.timer) { clearTimeout(cur.timer); cur.timer = null; flushSave(); }
   }
-  function onDocKey(e) { if (!cur || !(cur.ui.roll || cur.ui.dt || cur.ui.endSess) || (e.key !== 'Escape' && e.key !== 'Esc')) return; closePanels(); render(); }
+  function onDocKey(e) { if (!cur || !anyPanel() || (e.key !== 'Escape' && e.key !== 'Esc')) return; closePanels(); render(); }
   function onKey(e) { if (!cur || e.key !== 'Enter') return; var t = e.target; if (!t || t.tagName !== 'INPUT' || !cur.root.contains(t)) return; var map = { 'ds-newlog': 'log', 'ds-newclock': 'addclock', 'ds-newcname': 'addcontact', 'ds-newcrole': 'addcontact', 'ds-newitem': 'additem', 'ds-newab': 'addability' }; var cls = Object.keys(map).filter(function (c) { return t.classList.contains(c); })[0]; if (!cls) return; e.preventDefault(); if (readOnly()) return; ACTIONS[map[cls]]({ n: 4 }, t); }
 
   /* the small figure at the top right of the printed sheet exists only while printing, so the big SVG is never in the DOM twice */
@@ -1161,7 +1278,7 @@
   T.open = function (doc, api) {
     var root = document.getElementById('dossier'); if (!root) return;
     if (cur) T.close();
-    doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
+    doc = doc || {}; cur = { doc: doc, api: api || {}, pb: pbOf(doc.playbook), root: root, ui: { mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', mark: null, roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
     cur.play = normalize(doc.play, doc.sheet, doc.playbook);
     cur.status = { msg: readOnly() ? roLabel() : 'Saved' }; /* as stored */
     root.addEventListener('click', onClick); root.addEventListener('input', onInput); root.addEventListener('change', onChange); root.addEventListener('keydown', onKey);
@@ -1196,7 +1313,7 @@
   T.renderStatic = function (root, doc) {
     if (!root) return null;
     doc = doc || {}; var live = cur;
-    cur = { doc: doc, api: { canWrite: null }, pb: pbOf(doc.playbook), root: root, ui: { static: true, mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
+    cur = { doc: doc, api: { canWrite: null }, pb: pbOf(doc.playbook), root: root, ui: { static: true, mug: false, advance: null, confirmRemove: false, glitchPick: null, svg: '', svgWarn: '', mark: null, roll: null, rollScroll: false, dt: null, endSess: null }, timer: null, saving: 0 };
     try {
       cur.play = normalize(doc.play, doc.sheet, doc.playbook);
       render();

@@ -176,7 +176,31 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
       await q.fill('#dossier .ds-newclock', 'Courier'); await q.click('#dossier [data-act="addclock"][data-n="4"]');
       await q.fill('#dossier .ds-newitem', 'Lockpicks'); await q.click('#dossier [data-act="additem"]');
       await q.fill('#dossier .ds-newab', 'Ghost Contract'); await q.click('#dossier [data-act="addability"]'); await q.waitForTimeout(150);
-      await q.click('#dossier [data-act="rollopen"][data-a="Hunt"]'); await q.waitForTimeout(150);
+      /* an action opens the mark strip as a fixed bottom sheet on a phone, its controls 40px tall; it is closed again before the sweep below
+         (a fixed sheet would sit over whatever is scrolled under it) */
+      await q.click('#dossier [data-act="rollopen"][data-a="Hunt"]'); await q.waitForTimeout(250);
+      const strip = await q.evaluate(() => { const s = document.querySelector('#dossier .ds-mark'); if (!s) return null; const r = s.getBoundingClientRect(); const hs = [...s.querySelectorAll('button')].filter(n => n.offsetParent && !n.classList.contains('ds-x')).map(n => Math.round(n.getBoundingClientRect().height)); return { pos: getComputedStyle(s).position, bottom: Math.round(r.bottom), vh: innerHeight, minH: Math.min.apply(null, hs), n: hs.length }; });
+      assert(strip && strip.pos === 'fixed' && strip.bottom <= strip.vh + 1 && strip.minH >= 40 && strip.n >= 8, tag + ': the mark strip is a fixed bottom sheet with 40px controls: ' + JSON.stringify(strip));
+      /* the in-app roll panel's Push / Assist / Bargain rows are 40px tall too */
+      await q.click('#dossier .ds-mark [data-act="rollapp"]'); await q.waitForTimeout(200);
+      const rtog = await q.evaluate(() => [...document.querySelectorAll('#dossier .ds-rtog, #dossier .ds-roll .chip.sm')].filter(n => n.offsetParent).map(n => Math.round(n.getBoundingClientRect().height)));
+      assert(rtog.length >= 9 && Math.min.apply(null, rtog) >= 40, tag + ': the roll panel’s options are 40px tall: ' + rtog.join(','));
+      await q.click('#dossier .ds-roll .ds-roll-x'); await q.waitForTimeout(150);
+      /* touch: every play control 40px tall (buttons, chips, item rows, Resist, the Armor / Heavy rows and their boxes' hit areas);
+         Mark +1 / +2 first, side by side; 16px fields (no iOS zoom on focus); no double-tap zoom on buttons */
+      const touch = await q.evaluate(() => {
+        const vis = (s) => [...document.querySelectorAll('#dossier ' + s)].filter(n => n.offsetParent);
+        const low = (s, min) => vis(s).map(n => [n.className + ' ' + (n.textContent || '').trim().slice(0, 14), Math.round(n.getBoundingClientRect().height)]).filter(x => x[1] < min);
+        const sq = vis('.ds-resrow button.ds-sq').map(n => parseFloat(getComputedStyle(n, '::before').height));
+        const tools = vis('.ds-stressbox .ds-markrow button').map(n => ({ t: n.textContent, top: Math.round(n.getBoundingClientRect().top) }));
+        const fields = vis('input:not([type="checkbox"]), textarea, select').map(n => parseFloat(getComputedStyle(n).fontSize)).filter(f => f < 16);
+        const ta = vis('button').filter(n => getComputedStyle(n).touchAction !== 'manipulation').length;
+        return { low: low('.btn.sm, .chip.sm, .ds-item, .ds-resist, .ds-resrow, .ds-coh', 40), sq, tools, fields, ta };
+      });
+      assert(!touch.low.length, tag + ': play controls under 40px: ' + JSON.stringify(touch.low.slice(0, 8)));
+      assert(touch.sq.length >= 2 && Math.min.apply(null, touch.sq) >= 40, tag + ': Armor / Heavy boxes have 40px hit areas: ' + touch.sq.join(','));
+      assert(touch.tools.length === 4 && touch.tools[0].t === 'Mark +1' && touch.tools[1].t === 'Mark +2' && touch.tools[0].top === touch.tools[1].top && /^Clear 1$/.test(touch.tools[2].t), tag + ': Mark +1 / +2 first, side by side, then Clear 1 / Clear 3: ' + JSON.stringify(touch.tools));
+      assert(!touch.fields.length && !touch.ta, tag + ': fields are 16px and buttons do not double-tap zoom: ' + JSON.stringify([touch.fields, touch.ta]));
       const hit = await q.evaluate(() => {
         const out = { min: {}, owns: [], stolen: [] };
         const kinds = { pip: '.ds-act .ds-pip', keypip: '.ds-key .ds-pip', sbox: '.ds-sbox', xbox: '.ds-attr-h .ds-xbox', xpbox: '.ds-tools .ds-xbox', bandxp: '.ds-band .ds-xbox', bank: '.ds-bank .ds-dia', stacks: '.ds-stackrow .ds-dia', x: '.ds-key .ds-x, .ds-clockrow .ds-x, .ds-roll-x', xlist: '.ds-contact .ds-x, .ds-log .ds-x, .ds-items .ds-x, .ds-custom .ds-x' };

@@ -55,7 +55,7 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
   const overflow = async (p, name) => {
     const sw = await p.evaluate(() => document.documentElement.scrollWidth), cw = await p.evaluate(() => document.documentElement.clientWidth);
     if (sw > cw) errs.push(name + ' horizontal overflow ' + sw + '>' + cw);
-    const clipped = await p.evaluate(() => { const root = document.getElementById('dossier'); const R = root.getBoundingClientRect(); const out = []; root.querySelectorAll('.ds-box, .ds-roll, .ds-roll *, button, input').forEach(n => { const r = n.getBoundingClientRect(); if (r.width && (r.right > R.right + 1 || r.left < R.left - 1)) out.push(n.className + ' ' + Math.round(r.left) + '-' + Math.round(r.right) + ' vs ' + Math.round(R.right)); }); return out.slice(0, 5); });
+    const clipped = await p.evaluate(() => { const root = document.getElementById('dossier'); const R = root.getBoundingClientRect(); const out = []; root.querySelectorAll('.ds-box, .ds-roll, .ds-roll *, button, input').forEach(n => { const r = n.getBoundingClientRect(), sheet = n.closest('.ds-roll'), fx = !!sheet && getComputedStyle(sheet).position === 'fixed', lo = fx ? 0 : R.left, hi = fx ? innerWidth : R.right; /* a phone's bottom sheet spans the screen */ if (r.width && (r.right > hi + 1 || r.left < lo - 1)) out.push(n.className + ' ' + Math.round(r.left) + '-' + Math.round(r.right) + ' vs ' + Math.round(R.right)); }); return out.slice(0, 5); });
     if (clipped.length) errs.push(name + ' elements outside the dossier: ' + clipped.join(' | '));
   };
   const play = (p) => p.evaluate(() => B68Tracker.play());

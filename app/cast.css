@@ -117,8 +117,23 @@ body .wrap { padding-bottom: calc(48px + var(--cp-stage-h, 0px)); }
 }
 @media (max-width: 760px) {
   #cast-page .cp-detail { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  #cast-page .cp-fig svg { height: min(62vh, 560px); }
+  #cast-page .cp-text { order: -1; }   /* the name and the description first; the figure, smaller, after them */
+  #cast-page .cp-fig svg { height: min(44vh, 420px); }
   #cast-page .cp-ddesc { font-size: 17px; }
+  /* the banner as a one-line strip: portrait thumbs and names, about 56px; it opens to the full banner on a tap (cast-page.js) */
+  #stageBanner.cp-stage.cp-collapsed { padding: 5px 12px calc(5px + env(safe-area-inset-bottom, 0px)); max-height: none; overflow: hidden; }
+  #stageBanner .cp-st-strip { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; overflow-x: auto; scrollbar-width: none; outline-offset: -2px; }
+  #stageBanner .cp-st-strip::-webkit-scrollbar { display: none; }
+  #stageBanner .cp-st-strip .cp-st-kick { flex: 0 0 auto; }
+  #stageBanner .cp-st-mini { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+  #stageBanner .cp-st-mini .cp-fig-mug { width: 38px; height: 42px; aspect-ratio: auto; border: 2px solid var(--rule); background: var(--chart); overflow: hidden; }
+  #stageBanner .cp-st-mini .cp-st-name { font-size: 17px; white-space: nowrap; }
+  #stageBanner .cp-st-more { margin-left: auto; padding-left: 6px; font-size: 11px; color: var(--ink-soft); flex: 0 0 auto; }
+}
+/* touch: the banner's buttons a thumb's height, no double-tap zoom */
+@media screen and (max-width: 760px), screen and (pointer: coarse) {
+  #stageBanner button, #stageBanner a, #stageBanner .cp-st-strip { touch-action: manipulation; }
+  #stageBanner .btn.sm { min-height: 40px; }
 }
 @media (max-width: 560px) {
   #cast-page .cp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

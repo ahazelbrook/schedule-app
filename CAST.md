@@ -114,6 +114,10 @@ Routes: `#cast` (the grid), `#cast/<id>` (one NPC), `#cast/<id>/edit` and `#cast
   NPC on stage, for everyone, within one poll (about 4 s). Tapping the portrait opens the large view. A player can **Hide** it;
   that is remembered in this browser (`localStorage` `b68.stage.dismissed` = the scene's `at`), so it stays hidden through a
   reload and **comes back when the stage changes**. The GM can hide it too, and has Clear stage on it.
+  On a player's phone (≤ 760 px) the banner is a one-line strip, about 56 px: "On stage", each portrait thumb and name. When the
+  stage changes it opens in full for about 8 s and folds back; a tap on the strip opens it (Less folds it). The last stage seen
+  is kept in `localStorage` `b68.stage.seen`, so a reload on the same stage starts folded. Its height is `--cp-stage-h`, which
+  the sheet's bottom sheets (the mark strip, the roll panels) stand on. The GM's banner and a desk's are unchanged.
 
 ## How to show an NPC at the table
 
