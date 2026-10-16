@@ -1803,5 +1803,143 @@ await test('15e. the page-hide request meets the sign-in page (an opaque redirec
   br.doc.hidden = false;
 });
 
+await test('15f. an open that stops at the import screen (no pack on the server) leaves the pending copy in the sticky copy and sends nothing', async () => {
+  const br = fakeBrowser(), fg = fakeGm(), pending = { capture: { cx: { id: 'cx', bucket: 'n', text: 'Kept for later', at: '2026-10-01T12:00:00.000Z', s: 3 } } };
+  br.ls.set('b68.gm.sticky', JSON.stringify({ v: 1, user: 'gm1', live: {}, cards: {}, pending }));
+  fg.gm.pack = async () => ({ version: '0', parts: {} }); br.W.claude = { gm: fg.gm };
+  const page = loadPage(br.W), root = br.doc.createElement('div'); br.doc.body.appendChild(root);
+  page.open(root, { ready: async () => {}, isGM: () => true, me: () => 'gm1', gm: () => fg.gm, db: () => null, campaign: () => CAMP3, saveFile() {}, copy() {} });
+  assert.ok(await until(() => page._state() && page._state().status === 'import'), 'the import screen');
+  await new Promise((r) => setTimeout(r, 1000));
+  assert.equal(fg.server.patches.length, 0, 'nothing was sent'); assert.deepEqual(stickyOf(br).pending, pending, 'the pending copy is still in the sticky copy');
+  page.close();
+});
+
+/* =====================================================================================================================
+   16. E18, capture never blocks a roll: capture is budgeted by bytes; over it, the oldest lines of EARLIER sessions go first (never
+   this session's), one toast per page load; only a session that alone exceeds the budget refuses new capture text; a roll is never refused
+   ===================================================================================================================== */
+const isoAt = (i) => new Date(Date.UTC(2026, 9, 1, 12, 0, 0) + i * 60000).toISOString();
+function capLines(session, n, len, from) {
+  const m = {};
+  for (let i = 0; i < n; i++) { const id = 'c' + session + '_' + (from || 0) + '_' + i; m[id] = { id, bucket: 'm', text: 'q'.repeat(len), at: isoAt((session * 1000) + (from || 0) + i), s: session }; }
+  return m;
+}
+const capBytes = (m) => Object.keys(m).reduce((n, k) => n + P.bytes(m[k]) + k.length + 6, 0);   // what the page counts for a line: its JSON, its key and the punctuation
+
+await test('16a. capturePlan: within the budget everything stays; over it the oldest lines of earlier sessions go first, never this session\'s or a line without a session', () => {
+  assert.ok(P.LIMITS.captureBytes >= 96 * 1024 && P.LIMITS.captureBytes <= 160 * 1024 && P.LIMITS.captureBytes < P.LIMITS.stateSoft, 'a byte budget well under the soft cap: ' + P.LIMITS.captureBytes);
+  const e = (id, s) => ({ id, bucket: 'n', text: 't'.repeat(300), at: isoAt(90000), s });
+  const map = Object.assign({}, capLines(1, 4, 300), capLines(2, 4, 300), capLines(3, 3, 300));
+  map.nos = { id: 'nos', bucket: 'x', text: 'u'.repeat(300), at: isoAt(1) };                  // filed with no session known
+  const per = capBytes({ new1: e('new1', 3) }), max = capBytes(map) + per;                       // room for exactly the new line
+  let p = P.capturePlan(map, 'new1', e('new1', 3), 3, max);
+  assert.equal(p.refused, false); assert.deepEqual(p.dropped, []); assert.deepEqual(Object.keys(p.patch), ['new1'], 'under the budget: just the new line');
+  p = P.capturePlan(map, 'new1', e('new1', 3), 3, max - Math.round(per * 2.5));                  // two and a half lines too many
+  assert.equal(p.refused, false); assert.deepEqual(p.dropped, ['c1_0_0', 'c1_0_1', 'c1_0_2'], 'three of the oldest earlier lines, session 1 first, oldest first');
+  for (const id of p.dropped) assert.equal(p.patch[id], null);
+  assert.equal(p.patch.new1.text.length, 300);
+  const after = P.applyPatch({ capture: map }, { capture: p.patch }).capture; assert.ok(capBytes(after) <= max - Math.round(per * 2.5), 'it fits now');
+  for (const id of Object.keys(capLines(3, 3, 300))) assert.ok(id in after, 'this session\'s line kept'); assert.ok('nos' in after, 'a line without a session is kept');
+  p = P.capturePlan(map, 'new1', e('new1', 3), 3, capBytes(map) - per * 6);                      // more than session 1 holds: session 2 next, oldest session first
+  assert.equal(p.refused, false); assert.equal(p.dropped.length, 7);
+  assert.deepEqual(p.dropped.slice(0, 4), ['c1_0_0', 'c1_0_1', 'c1_0_2', 'c1_0_3'], 'all of session 1, then'); assert.ok(p.dropped.slice(4).every((id) => /^c2_/.test(id)), 'session 2');
+  assert.ok(!p.dropped.some((id) => /^c3_|^nos$/.test(id)));
+  // this session alone over the budget: refused, nothing dropped, nothing added
+  const solo = capLines(3, 6, 300);
+  p = P.capturePlan(solo, 'new1', e('new1', 3), 3, capBytes(solo));
+  assert.equal(p.refused, true); assert.equal(p.patch, null); assert.deepEqual(p.dropped, []);
+  const mix = Object.assign({}, capLines(1, 5, 300), capLines(3, 5, 300));
+  p = P.capturePlan(mix, 'new1', e('new1', 3), 3, capBytes(capLines(3, 5, 300)) + per - 1);
+  assert.equal(p.refused, true, 'every earlier line gone and this session still over: refused'); assert.equal(p.patch, null);
+  p = P.capturePlan(mix, 'new1', e('new1', 3), 3, capBytes(capLines(3, 5, 300)) + per);
+  assert.equal(p.refused, false); assert.equal(p.dropped.length, 5, 'and just enough room: the five earlier lines go');
+  // a session that is not known drops nothing (no line can be shown to be earlier); a later session's lines are not earlier
+  p = P.capturePlan(capLines(1, 6, 300), 'new1', e('new1'), undefined, 100); assert.equal(p.refused, true);
+  p = P.capturePlan(capLines(5, 6, 300), 'new1', e('new1', 3), 3, 100); assert.equal(p.refused, true, 'lines of a later session are not earlier');
+  // the 400-line cap still applies on top
+  const many = {}; for (let i = 0; i < P.LIMITS.capture; i++) many['m' + i] = { id: 'm' + i, bucket: 'n', text: 'z', at: isoAt(i), s: 3 };
+  p = P.capturePlan(many, 'new1', e('new1', 3), 3, 1e9); assert.equal(p.patch.m0, null, 'the oldest past 400 goes, as before'); assert.equal(p.dropped.length, 0);
+  assert.deepEqual(P.capShed(map, 1, 3), ['c1_0_0'], 'capShed names the oldest earlier line for the first byte it must find');
+  assert.equal(P.capShed(map, capBytes(capLines(1, 4, 300)) + 1, 3).length, 5, 'and goes on to the next session for more');
+  assert.deepEqual(P.capShed(capLines(3, 4, 300), 1e9, 3), [], 'never this session\'s'); assert.deepEqual(P.capShed(map, 1e9, undefined), [], 'nor anything when the session is not known');
+});
+
+const submitCap = (h, text) => { h.q('#gm-cap-in').value = text; dispatch(h.q('[data-gm-form="capture"]'), 'submit'); };
+
+await test('16b. on the page: over the byte budget, earlier sessions\' lines go first; one toast per page load says how many and that npm run gm:after files them; this session\'s are kept', async () => {
+  const fg = fakeGm(), br = fakeBrowser();
+  const earlier = Object.assign({}, capLines(1, 130, 470), capLines(2, 130, 470)), mine = capLines(3, 12, 200);
+  fg.server.doc = { capture: Object.assign({}, earlier, mine, { nos: { id: 'nos', bucket: 'n', text: 'no session', at: isoAt(5) } }) };
+  assert.ok(capBytes(fg.server.doc.capture) > P.LIMITS.captureBytes, 'the doc starts over the budget (' + capBytes(fg.server.doc.capture) + ')');
+  const h = await openPage({ br, fg, camp: CAMP3 });                                        // session 3
+  submitCap(h, 'The first new line');
+  const left = () => h.page._state().doc.capture;
+  assert.ok(capBytes(left()) <= P.LIMITS.captureBytes, 'under the budget now: ' + capBytes(left()));
+  const toasts = br.toasts.filter((t) => /Dropped \d+ /.test(t[0]));
+  assert.equal(toasts.length, 1, 'one toast: ' + JSON.stringify(br.toasts));
+  assert.match(br.toasts[br.toasts.length - 1][0], /^Dropped \d+ /, 'and it is the last thing said: "Filed under ..." does not cover it (a toast has one line)');
+  const n = +/Dropped (\d+)/.exec(toasts[0][0])[1], gone = Object.keys(earlier).filter((k) => !(k in left()));
+  assert.equal(n, gone.length, 'it names how many'); assert.ok(n > 0 && /earlier session/.test(toasts[0][0]) && /npm run gm:after/.test(toasts[0][0]) && /vault/.test(toasts[0][0]), toasts[0][0]);
+  for (const k of Object.keys(mine)) assert.ok(k in left(), 'this session\'s lines are all there'); assert.ok('nos' in left(), 'and the line with no session');
+  const order = (a, b) => a.s - b.s || (a.at < b.at ? -1 : a.at > b.at ? 1 : 0);
+  const keptEarlier = Object.keys(earlier).filter((k) => k in left()).map((k) => earlier[k]).sort(order), oldestKept = keptEarlier[0];
+  assert.ok(keptEarlier.length > 0); for (const k of gone) assert.ok(order(earlier[k], oldestKept) < 0, 'only the oldest went: ' + k);
+  for (let i = 0; i < 40; i++) submitCap(h, 'filler ' + 'y'.repeat(400));
+  assert.equal(br.toasts.filter((t) => /Dropped \d+ /.test(t[0])).length, 1, 'still one toast for the whole page load');
+  assert.ok(capBytes(left()) <= P.LIMITS.captureBytes, 'and still under the budget');
+  await h.save();
+  assert.ok(capBytes(fg.server.doc.capture) <= P.LIMITS.captureBytes, 'saved under the budget'); assert.ok(Object.values(fg.server.doc.capture).some((e) => e.text === 'The first new line'));
+  const br2 = fakeBrowser(), fg2 = fakeGm(); fg2.server.doc = { capture: Object.assign({}, earlier, capLines(3, 2, 100)) };
+  const h2 = await openPage({ br: br2, fg: fg2, camp: CAMP3 }); submitCap(h2, 'x'); assert.equal(br2.toasts.filter((t) => /Dropped \d+ /.test(t[0])).length, 1, 'a new page load says it again'); await h2.save();
+});
+
+await test('16c. a session that alone fills the budget cannot file more text (a clear message), and a roll is never refused', async () => {
+  const fg = fakeGm(), br = fakeBrowser(), mine = capLines(3, 300, 470);
+  assert.ok(capBytes(mine) > P.LIMITS.captureBytes);
+  fg.server.doc = { capture: Object.assign({}, capLines(2, 5, 100), mine) };
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  const before = Object.keys(h.page._state().doc.capture).length;
+  submitCap(h, 'one more line');
+  assert.equal(Object.keys(h.page._state().doc.capture).length, before, 'nothing was added, and nothing dropped for a line that is refused');
+  assert.ok(!Object.values(h.page._state().doc.capture).some((e) => e.text === 'one more line'), 'the line is not filed');
+  const refusal = br.toasts.filter((t) => /capture/i.test(t[0]) && t[1] === true);
+  assert.equal(refusal.length, 1, JSON.stringify(br.toasts)); assert.match(refusal[0][0], /Tonight.s capture is full/); assert.match(refusal[0][0], /Export tonight.s note/); assert.match(refusal[0][0], /rolls still work/i);
+  assert.ok(!br.toasts.some((t) => /The GM notes are full/.test(t[0])), 'not the old "notes are full" message');
+  for (const k of ['2', '3', '4', '1']) { h.press(k); assert.ok(cardTxt(h).length > 20, 'roll ' + k + ' still draws'); }
+  h.press('l'); assert.equal(br.toasts.filter((t) => /Tonight.s capture is full/.test(t[0])).length, 2, 'L files text too: refused with the same message');
+  await h.save();
+  assert.ok(fg.server.doc.cards.situation && Object.keys(fg.server.doc.hist.situation).length === 4, 'every roll was saved');
+  assert.ok(!br.toasts.some((t) => /The roll failed|notes are full/.test(t[0])));
+});
+
+await test('16d. a roll is never refused for want of room: near the server\'s cap the oldest sessions\' capture makes it', async () => {
+  const fg = fakeGm(), br = fakeBrowser(), earlier = {};
+  for (let i = 0; P.bytes({ capture: earlier }) < 257000; i++) Object.assign(earlier, capLines(1 + (i % 2), 1, 560, i));
+  fg.server.doc = { capture: Object.assign({}, earlier, capLines(3, 4, 100)) };
+  const size = P.bytes(fg.server.doc);
+  assert.ok(size > 256500 && size < P.LIMITS.stateCap - 4096, 'the doc starts just under the hard line (' + size + ')');
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  for (let i = 0; i < 6; i++) { h.press(String(1 + (i % 4))); assert.ok(cardTxt(h).length > 20, 'roll ' + (i + 1) + ' draws'); }
+  assert.ok(!br.toasts.some((t) => /notes are full|The roll failed/.test(t[0])), JSON.stringify(br.toasts));
+  assert.equal(br.toasts.filter((t) => /Dropped \d+ /.test(t[0])).length, 1, 'one toast says what made room');
+  await h.save();
+  assert.ok(P.bytes(fg.server.doc) <= P.LIMITS.stateCap - 4096, 'saved under the cap (' + P.bytes(fg.server.doc) + ')');
+  assert.ok(Object.keys(fg.server.doc.hist.situation).length === 5 && fg.server.doc.cards.situation, 'the rolls are all there');
+  for (const k of Object.keys(capLines(3, 4, 100))) assert.ok(k in fg.server.doc.capture, 'this session\'s lines are kept');
+});
+
+await test('16e. a bargain accepted while capture is full: the bargain is owed, its loose-end line is refused with the capture message, and "Accepted" does not cover it', async () => {
+  const fg = fakeGm(), br = fakeBrowser(); fg.server.doc = { capture: capLines(3, 300, 470) };
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('1');
+  const btn = h.qa('#gm-card [data-gm="intent"]').find((b) => /Accepted/.test(b.textContent)); assert.ok(btn, 'a Devil\'s Bargain card offers Accepted');
+  btn.click();
+  assert.equal(Object.keys(h.page._state().doc.con.owed).length, 1, 'the bargain is owed');
+  assert.ok(!Object.values(h.page._state().doc.capture).some((e) => /Bargain owed/.test(e.text)), 'its loose-end line was not filed');
+  assert.match(br.toasts[br.toasts.length - 1][0], /^Tonight.s capture is full/, 'and the last thing said is why, not "Accepted."');
+  await h.save();
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

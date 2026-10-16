@@ -103,8 +103,11 @@ fails and nobody is known, nothing is purged.
   site header and footer give way to a slim top bar (the session, **Now in**, Saved, a
   stale-pack note, the beat, **Find**, **iPad:** what the players see, **Listening** with whether the PC is copying (only once
   the transcriber has ever been set up: the pill is hidden while `gm_stt` has never been written), **Clear → ambient**, **Lights out**,
-  and a **Menu** with what is not play: the pack's export date, **Open the display page (for the iPad)**, Export tonight's note,
-  Clear tonight's capture (it confirms), Update pack, the site's pages and Forget GM data). On a laptop the three columns each
+  and a **Menu** with what is not play: the pack's export date, the **Pack check** (the table entries the pack lacks, only when it lacks
+  some), **Open the display page (for the iPad)**, Export tonight's note,
+  Clear tonight's capture (it confirms), Update pack, the site's pages and Forget GM data). When the Access session has ended a red
+  **Signed out: reload to sign in. Your notes are kept on this device.** strip runs across a second row of the bar (see Saving).
+  On a laptop the three columns each
   scroll on their own and capture sits fixed at the foot, so a
   long Prep note or the GM screen never carries the console or the rail away; toasts sit above the capture bar, never over its
   input. The side tabs are one row with their keys showing at 1280 px (Prep, GM screen |
@@ -144,8 +147,8 @@ fails and nobody is known, nothing is purged.
   line), at most three one-line **Or** rows that each open to their full section, and **one** actions row merged
   from every section (bargains owed, callbacks used, ticks...), then Pin and Copy. The console's recurring coaching lines
   (`coach: true`: "say it before the dice...") sit under a closed **Why** in every section (in More for the lead, in the body of an
-  Or row), so the card reads as the draw and its numbers; Pin, Copy and `L` leave them out, and put the position chip
-  ("risky → 2 winds · harm 2") on the title line. Under the card and Earlier, **More tables**
+  Or row), so the card reads as the draw and its numbers; Pin and Copy leave them out, show the lead line once, and put the position
+  chip ("risky → 2 winds · harm 2") on the title line (`L` files the title and the lead, which never held coaching). Under the card and Earlier, **More tables**
   folds out the nine single tables (no keys); a pack whose console has no situations layer shows a note where the four buttons
   go, and its single tables still roll. Composed cards are stored under `cards.situation` / `hist.situation` (replay info:
   `{ id: 'situation', situation, seed, ui, mem, composeVersion }`), never under `console`: code from before redraws any unknown console id as a
@@ -294,7 +297,7 @@ fails and nobody is known, nothing is purged.
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,
   so a reload or an Earlier click redraws exactly the same card even after a callback was used or a bargain collected),
   `hist` (five per tool), `npc` (`ui`: the NPC pickers), `npcgen` (`{ seed, mem, at, s?, ui? }` per generated NPC id: the
-  roll that made them, `ui` only when a picker was set), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at, s? }`),
+  roll that made them, `ui` only when a picker was set), `pins` (50, text), `capture` (400, and 128 KiB: `{ id, bucket: n|x|m|r, text, at, s? }`),
   `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab), `opps` (the Cards panel) and `now` (`{ district }`: Now in). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
   `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
@@ -311,7 +314,15 @@ fails and nobody is known, nothing is purged.
   refused: that stays refused and is never resent). On the next open after a reload, drawn and signed in again, the pending copy is
   drawn into the page and sent once; it stays in the sticky copy until the server has answered. Forget GM data warns when changes have not gone.
   Sizes are measured in bytes: past 240 KiB only rolls are taken, past the server's
-  256 KiB nothing. The page refetches the state on focus.
+  256 KiB nothing. **Capture never blocks a roll** (E18): the capture lines have a byte budget of their own, 128 KiB
+  (`LIMITS.captureBytes`; the 400-line cap still applies). Filing a line over the budget drops the oldest lines of EARLIER
+  sessions first (`s` below the table's session number, oldest session first, then oldest line; never this session's, never a
+  line with no session), with one toast per page load that says how many went and that `npm run gm:after` files them into the
+  vault (run it after each game: a session it has filed is safe in its note, and its lines are the ones that go first). Only when
+  this session alone fills the budget is new capture
+  text (typed, an accepted bargain's line, `L`) refused, with "Tonight's capture is full ... Export tonight's note, then clear the
+  capture to file more. Rolls still work." A roll is never refused for this: it is not capture, and if the document is still past
+  the hard line (256 KiB less a margin) the same oldest-first drop makes room for it. The page refetches the state on focus.
 
 ## The display (`#display`, `app/display-page.js`, `app/display.css`)
 

@@ -16,7 +16,9 @@
    The GM state document (GET/PATCH /api/gm/state) holds the live controls, the current card per tool as replay info
    ({seed, ui, mem-before}, never the card), the last five rolls per tool, pins, capture and the console's bargains;
    patches are maps (null deletes), debounced 800 ms. `b68.gm.sticky` in localStorage mirrors the live controls and the
-   current cards (replay info only) so a reload draws at once. Nothing from capture is written to the campaign log.
+   current cards (replay info only) so a reload draws at once, and keeps two kinds of change that have not gone: `parked` (a patch
+   the server refused: never resent) and `pending` (what could not be sent because the Access session ended: sent once on the next
+   open). Capture has a byte budget of its own; a roll is never refused for it. Nothing from capture is written to the campaign log.
 
    Safety. Pack text and cards reach the page through B68Markdown.render (which escapes all HTML) or esc(); there is no
    eval. Only a player-layer map render, made here, can be sent to the display (`gate`, checks/runtime/gm-nosecrets
@@ -33,7 +35,8 @@
      Pure helpers (no DOM)
      ===================================================================================================================== */
   var P = {};
-  var LIMITS = P.LIMITS = { hist: 5, pins: 50, capture: 400, captureText: 500, stateSoft: 240 * 1024, stateCap: 256 * 1024, debounce: 800, staleDays: 3, partBytes: 900 * 1024, parts: 12 };
+  /* captureBytes: what the capture lines may take of the state document (E18), well under the soft cap so a roll always has room */
+  var LIMITS = P.LIMITS = { hist: 5, pins: 50, capture: 400, captureText: 500, captureBytes: 128 * 1024, stateSoft: 240 * 1024, stateCap: 256 * 1024, debounce: 800, staleDays: 3, partBytes: 900 * 1024, parts: 12 };
   var BANDS = P.BANDS = ['public', 'working', 'controlled', 'secure'];
   var BUCKETS = P.BUCKETS = [
     { k: 'n', label: 'Name', head: 'Names', key: 'P' },
@@ -631,6 +634,38 @@
     return e;
   }
   P.captureEntry = captureEntry;
+  /* ---------- capture within a byte budget (E18): capture never blocks a roll ----------
+     Capture used to grow to the state document's soft cap, after which rolls were refused mid-session. Now capture has its own byte
+     budget (LIMITS.captureBytes). Over it, the oldest lines of EARLIER sessions (`s` a number below this session's) go first, oldest
+     session first; this session's lines never go, nor a line with no session (nothing shows it is earlier). Only when this session
+     alone is over the budget is new capture text refused. A roll is not capture: it is never refused for this. */
+  function captureSize(id, e) { return bytes(e) + bytesOf(id) + 6; }       /* a line as the document counts it: its JSON, its key, the punctuation */
+  function earlierLines(map, session) {
+    if (typeof session !== 'number') return [];
+    var m = isObj(map) ? map : {};
+    return Object.keys(m).filter(function (k) { return isObj(m[k]) && typeof m[k].s === 'number' && m[k].s < session; })
+      .sort(function (a, b) { var x = m[a], y = m[b]; return x.s - y.s || (str(x.at) < str(y.at) ? -1 : str(x.at) > str(y.at) ? 1 : a < b ? -1 : 1); });
+  }
+  /* the ids of earlier sessions' lines to drop to free `need` bytes (all of them when that is not enough) */
+  function capShed(map, need, session) {
+    var out = [], freed = 0;
+    earlierLines(map, session).forEach(function (k) { if (freed < need) { out.push(k); freed += captureSize(k, map[k]); } });
+    return out;
+  }
+  /* The patch that files one line: the 400-line cap as before, then the byte budget. -> { patch, dropped: [id], refused, bytes }
+     (`patch` null when refused: this session alone is over the budget, so the line is not filed and nothing is dropped for it) */
+  function capturePlan(map, id, entry, session, max) {
+    var budget = max == null ? LIMITS.captureBytes : max, p = addCapped(map, id, entry, LIMITS.capture), cur = Object.assign({}, isObj(map) ? map : {}), dropped = [];
+    cur[id] = entry;
+    Object.keys(p).forEach(function (k) { if (p[k] === null) delete cur[k]; });
+    var total = Object.keys(cur).reduce(function (n, k) { return n + captureSize(k, cur[k]); }, 0);
+    if (total > budget) {
+      var list = earlierLines(cur, session);                               /* the new line is this session's: never in it */
+      for (var i = 0; i < list.length && total > budget; i++) { total -= captureSize(list[i], cur[list[i]]); p[list[i]] = null; dropped.push(list[i]); }
+    }
+    return total > budget ? { patch: null, dropped: [], refused: true, bytes: total } : { patch: p, dropped: dropped, refused: false, bytes: total };
+  }
+  P.capturePlan = capturePlan; P.capShed = capShed; P.captureSize = captureSize;
   /* the history / current-card entry for a composed card (id 'situation', never 'console'): replay info only */
   function situationEntry(res, con) {
     var rp = res.replay;
@@ -853,12 +888,32 @@
   function patch(p, opts) {
     if (!S || !S.saver) return false;
     var next = applyPatch(S.doc, p), b = bytes(next), force = !!(opts && opts.force);
+    /* A roll is never refused for want of room (E18): past the hard line the oldest lines of EARLIER sessions' capture make it (never
+       this session's). The nulls ride in the same patch, so the server frees them as it takes the roll. */
+    for (var guard = 0; force && b > HARD && guard < 4; guard++) {
+      var shed = capShed(next.capture, b - HARD, sessionOf(camp));
+      if (!shed.length) break;
+      var nulls = {}; shed.forEach(function (k) { nulls[k] = null; });
+      p = mergePatch(p, { capture: nulls }); next = applyPatch(S.doc, p); b = bytes(next);
+      capDropped(shed.length);
+    }
     if (b > (force ? HARD : LIMITS.stateSoft)) { toast('The GM notes are full (' + Math.round(b / 1024) + ' of 256 KiB). Export tonight’s note and clear the capture first.', true); return false; }
     S.doc = next;
     S.saver.add(p);
     writeSticky();
+    if (guard) renderCapture();
     return true;
   }
+  /* one toast per page load when capture lines of earlier sessions were dropped to keep the notes small (E18) */
+  var capDroppedToasted = false;
+  /* -> true when it said so (the caller must not cover that toast with its own) */
+  function capDropped(n) {
+    if (!n || capDroppedToasted) return false;
+    capDroppedToasted = true;
+    toast('Dropped ' + n + ' old capture line' + (n === 1 ? '' : 's') + ' from earlier sessions to keep the notes small. npm run gm:after files them into the vault: run it after each game.', true);
+    return true;
+  }
+  var CAP_FULL = 'Tonight’s capture is full: this session alone has filled its ' + (LIMITS.captureBytes / 1024) + ' KiB. Export tonight’s note, then clear the capture to file more. Rolls still work.';
   /* one saver per page session: it keeps flushing after close() until what was pending has gone */
   function makeSessionSaver(me) {
     return makeSaver({
@@ -1056,12 +1111,7 @@
       if (r && isObj(r.doc)) { me.doc = r.doc; me.updatedAt = r.updatedAt || null; }
       else if (sticky) { me.doc = { con: { live: sticky.live || {} }, cards: sticky.cards || {} }; if (isObj(sticky.now)) me.doc.now = sticky.now; toast('The GM notes are offline: showing this device’s last copy.', true); }
       if (sticky && isObj(sticky.parked)) me.carriedParked = sticky.parked;   /* a change the server refused earlier stays on this device */
-      /* what an earlier visit could not send because the Access session had ended (E5): drawn now, and sent once. It stays in the sticky
-         copy until the server has answered (a failure there holds it again; a refusal parks it, as any refused patch). */
-      if (sticky && isObj(sticky.pending) && Object.keys(sticky.pending).length) {
-        me.doc = applyPatch(me.doc, sticky.pending); me.resent = true;
-        me.saver.add(sticky.pending); me.saver.flush();
-      }
+      if (sticky && isObj(sticky.pending) && Object.keys(sticky.pending).length) me.stickyPending = sticky.pending;   /* sent by start() (resendPending) */
       if (res[0] === 'forbidden') { purge(); screen(note('GM only.', 'The server says this account is not the GM.')); me.status = 'off'; return; }
       if (res[0] === 'nopack' || !me.pack) { me.status = 'import'; importScreen(false); return; }
       start();
@@ -1195,7 +1245,18 @@
   }
 
   /* ---------- start: the console instance, the generator, the layout ---------- */
+  /* What an earlier visit could not send because the Access session had ended (E5), found in the sticky copy by load(): drawn into the
+     page now (before the console is built from the state) and sent once. It stays in the sticky copy until the server has answered
+     (a failure there holds it again; a refusal parks it, as any refused patch). Called by start(), so a visit that goes no further
+     than the import screen leaves it where it is. */
+  function resendPending() {
+    var p = S.stickyPending; if (!p || S.resent) return;
+    S.stickyPending = null; S.resent = true;
+    S.doc = applyPatch(S.doc, p);
+    S.saver.add(p); S.saver.flush();
+  }
   function start() {
+    resendPending();
     var cp = part('console'), C = W.B68GmConsole, m = isObj(S.doc.mem) ? S.doc.mem : {};
     S.con = null; S.conErr = '';
     if (!C || !cp || !isObj(cp.T)) S.conErr = !C ? 'The console module is missing.' : 'The pack has no console part. Update the pack.';
@@ -1601,9 +1662,9 @@
     var res = S.conRes, a = res && res.meta && res.meta.actions && res.meta.actions[i], C = W.B68GmConsole; if (!a || !C) return;
     var it = a.intent, p; try { p = C.intentPatch(it, { date: dmy(new Date()) }); } catch (e) { toast(errText(e), true); return; }
     patch({ con: p });
-    if (it.capture && it.capture.text) addCapture(it.capture.bucket || 'x', it.capture.text, true);
+    var filed = !(it.capture && it.capture.text) || addCapture(it.capture.bucket || 'x', it.capture.text, true);   /* a refused line, or lines dropped to make room, say so: that toast is not covered by this one */
     try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {}
-    toast(a.label.replace(/:.*$/, '') + '.');
+    if (filed === true) toast(a.label.replace(/:.*$/, '') + '.');
     renderControls(); renderPos(); renderRail();
   }
 
@@ -2574,10 +2635,14 @@
   function addCapture(bucket, text, quiet) {
     text = str(text).replace(/\s+/g, ' ').trim().slice(0, LIMITS.captureText); if (!text) return false;
     var id = uid('c'), entry = captureEntry(id, bucket, text, nowIso(), camp);
-    if (!patch({ capture: addCapped(S.doc.capture, id, entry, LIMITS.capture) })) return false;
+    /* capture has a byte budget of its own (E18): earlier sessions' oldest lines make room; a session that alone fills it files no more text */
+    var plan = capturePlan(S.doc.capture, id, entry, sessionOf(camp));
+    if (plan.refused) { toast(CAP_FULL, true); return false; }
+    if (!patch({ capture: plan.patch })) return false;
+    var said = capDropped(plan.dropped.length);       /* a toast has one line: "Filed under ..." must not cover what was dropped */
     renderCapture();
-    if (!quiet) { var b = BUCKETS.filter(function (x) { return x.k === bucket; })[0]; toast('Filed under ' + (b ? b.head : bucket) + '.'); }
-    return true;
+    if (!quiet && !said) { var b = BUCKETS.filter(function (x) { return x.k === bucket; })[0]; toast('Filed under ' + (b ? b.head : bucket) + '.'); }
+    return said ? 'said' : true;     /* 'said': filed, and the toast already up must stand */
   }
   function fileLast() { if (!S.last) { toast('Nothing rolled yet.', true); return; } addCapture('r', S.last.text); }
   /* in the Menu (and the old header): the capture bar keeps only File and File last roll */

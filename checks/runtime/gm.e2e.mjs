@@ -559,6 +559,59 @@ try {
     await S5.ctx.close();
   }
 
+  /* ---- E18: capture is budgeted by bytes: earlier sessions' oldest lines make room, one toast says so; a session that alone fills the budget
+          files no more text; a roll is never refused ---- */
+  {
+    const lines = (session, n, from) => { const m = {}; for (let i = 0; i < n; i++) { const id = 's' + session + '_' + i; m[id] = { id, bucket: 'm', text: ('Line ' + id + ' ').padEnd(470, 'x'), at: new Date(Date.UTC(2026, 8, 1) + (from + i) * 60000).toISOString(), s: session }; } return m; };
+    const capBytes = (c) => Buffer.byteLength(JSON.stringify(c));
+    const toastErr = (E, re) => E.page.waitForFunction((src) => new RegExp(src).test(document.getElementById('toastErr').textContent), re.source, { timeout: 8000 }).then(() => true, () => false);
+    const mine = Object.values((await gmState()).capture || {}).filter((e) => e.s === 4).length;
+    check((await api('PATCH', '/gm/state', GM, { capture: lines(3, 300, 0) })).status === 200 && capBytes((await gmState()).capture) > 160 * 1024, 'server: 300 capture lines from session 3 (over 160 KiB) are stored beside this session\'s ' + mine);
+    const E = await open(GM, '#gm');
+    await E.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
+    await E.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await E.page.keyboard.press('p'); await E.page.keyboard.type('Session four, past the budget'); await E.page.keyboard.press('Enter'); await E.page.keyboard.press('Escape');
+    check(await toastErr(E, /Dropped \d+ old capture lines? from earlier sessions.*npm run gm:after files them into the vault/), 'a toast says how many earlier-session lines were dropped and that npm run gm:after files them into the vault: ' + (await E.page.textContent('#toastErr')));
+    const droppedM = /Dropped (\d+)/.exec(await E.page.textContent('#toastErr')), dropped = droppedM ? +droppedM[1] : -1;
+    const st = await until(async () => { const d = await gmState(); const c = d.capture || {}; return Object.values(c).some((e) => e.text === 'Session four, past the budget') ? d : null; }, 8000);
+    const left = st ? st.capture : {};
+    check(!!st && capBytes(left) <= 128 * 1024 + 200 && !left.s3_0 && !!left.s3_299 && Object.keys(left).filter((k) => /^s3_/.test(k)).length === 300 - dropped, 'server: the capture is back under 128 KiB, the oldest lines of session 3 went (' + dropped + '), the newest stayed');
+    check(Object.values(left).filter((e) => e.s === 4).length === mine + 1, 'and every line of this session is still there (' + (mine + 1) + ')');
+    await E.page.keyboard.press('2'); await E.page.waitForSelector('#gm-card .gm-lead');
+    check(!!(await until(async () => { const d = await gmState(); return d.cards.situation && d.cards.situation.situation === 'fourfive' ? d : null; }, 8000)) && !(await E.page.textContent('#toastErr')).includes('notes are full'), 'a roll is taken and saved');
+    // this session alone over the budget: new text is refused (clear message), rolls still go
+    await api('PATCH', '/gm/state', GM, { capture: null });
+    check((await api('PATCH', '/gm/state', GM, { capture: lines(4, 300, 0) })).status === 200, 'server: now this session alone has 300 lines');
+    await E.page.reload(); await E.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
+    await E.page.keyboard.press('p'); await E.page.keyboard.type('One more line'); await E.page.keyboard.press('Enter'); await E.page.keyboard.press('Escape');
+    check(await toastErr(E, /Tonight.s capture is full.*Export tonight.s note.*Rolls still work/), 'this session alone over the budget: "Tonight’s capture is full … Rolls still work."');
+    const before = (await gmState()).cards.situation;
+    await E.page.keyboard.press('3'); await E.page.waitForSelector('#gm-card .gm-lead');
+    const after = await until(async () => { const d = await gmState(); return d.cards.situation && d.cards.situation.hid !== (before && before.hid) ? d : null; }, 8000);
+    check(!!after && !Object.values(after.capture || {}).some((e) => e.text === 'One more line'), 'the line was not filed, and the roll was saved');
+    await api('PATCH', '/gm/state', GM, { capture: null });
+    await E.ctx.close();
+  }
+
+  /* ---- the pack check: a pack file that lacks tables is a warning (the modules' own check(T)), never an error; the upload stays on ---- */
+  {
+    const sparse = JSON.parse(JSON.stringify(PACK)); delete sparse.parts.console.T.spend; delete sparse.parts.location.T.rumour;
+    const sparseFile = path.join(stateDir, 'sparse-pack.json'); writeFileSync(sparseFile, JSON.stringify(sparse));
+    const U = await open(GM, '#gm');
+    await U.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
+    check(await U.page.$eval('#gm-menu-warn', (b) => b.hidden && b.textContent === ''), 'a complete pack: the Menu has no Pack check');
+    await U.page.click('[data-gm="menu"]'); await U.page.click('.gm-menu-list [data-gm="update"]');
+    await U.page.setInputFiles('#gm-file', sparseFile);
+    await U.page.waitForSelector('#gm-prev table', { timeout: 10000 });
+    const w = await U.page.$eval('#gm-prev .gm-warns', (b) => ({ text: b.textContent, cls: b.className })).catch(() => null);
+    check(!!w && /console/.test(w.text) && /spend/.test(w.text) && /location/.test(w.text) && /rumour/.test(w.text) && /warning, not an error/.test(w.text), 'Update pack with a sparse file: a warning lists the missing tables by part (' + (w ? w.text.slice(0, 120) : 'none') + ')');
+    check(!!w && /\bwarn\b/.test(w.cls) && !/\bbad\b/.test(w.cls) && !(await U.page.$('#gm-prev .gm-errs')) && await U.page.$eval('[data-gm="upload"]', (b) => !b.disabled && !b.classList.contains('bad')), 'it is a warning (not an error list), and Upload stays on');
+    await shot(U.page, 'wave2-pack-warning');
+    await U.page.click('[data-gm="cancel-import"]');
+    check(await U.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 10000 }).then(() => true, () => false), 'Cancel: back to the console on the pack the page has');
+    await U.ctx.close();
+  }
+
   /* ---- the display name: "Change name" under the Home greeting ---- */
   {
     const N = await open(GM, '#');
