@@ -1284,5 +1284,249 @@ await test('12g. Now in is in the sticky copy: with the GM state unreachable, a 
   await h2.save();
 });
 
+/* =====================================================================================================================
+   13. Wave 2, the generators' new fields on the cards: the spend sentence, "Why", the position on the title line, the compose
+   version, the pack check, the location plan and rule, the portrait note, Earlier chips that name the card
+   ===================================================================================================================== */
+const sitCon = () => C.create({ T: FIXC.console.T, campaign: FIXC.campaign, mem: {} });
+const stripWhy = (h) => h.replace(/<details class="gm-why">[\s\S]*?<\/details>/g, '');
+const coachTexts = (res) => res.sections.flatMap((s) => s.lines.filter((l) => l.coach).map((l) => P.plainMd(l.md)));
+const mdText = (s) => '<p>' + P.plainMd(s).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>';        // markdown as its words, so a card's text can be searched
+const textOf = (h) => h.replace(/<[^>]+>/g, ' ').replace(/&lt;/g, '<').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
+const leadBox = (h) => { const i = h.indexOf('<section class="gm-lead"'); return h.slice(i, h.indexOf('</section>', i)); };
+
+await test('13a. the lead shows its spend sentence (a threat) under the lead line; the lead\'s first line is not repeated under More', () => {
+  const con = sitCon();
+  let withSmall = 0, checked = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    for (const n of [1, 2, 3, 4]) {
+      const res = con.situation(n, Object.assign(con.situationDefaults(), { threat: 'the dog is waking up', npc: seed % 3 ? '' : 'rival:Nigel Sprocket' }), { seed });
+      const h = P.situationCardHtml(res, mdPlain), lead = res.sections[0], l0 = lead.lines[0], box = leadBox(h);
+      assert.ok(P.leadIsLine(lead), n + '/' + seed + ': the fixtures\' lead is its first line');
+      assert.ok(!box.includes('<div class="gm-want">'), n + '/' + seed + ': the lead\'s first line is not drawn again under More');
+      assert.equal(count(box, /class="gm-lead-t"/g), 1);
+      if (l0 && l0.small) {
+        withSmall++;
+        assert.ok(box.includes('<div class="gm-lead-s">' + mdPlain(l0.small) + '</div>'), n + '/' + seed + ': the spend sentence sits under the lead');
+        assert.ok(box.indexOf('gm-lead-t') < box.indexOf('gm-lead-s') && (box.indexOf('<details class="gm-more"') < 0 || box.indexOf('gm-lead-s') < box.indexOf('<details class="gm-more"')), 'under the lead, above More');
+        assert.equal(count(h, new RegExp(mdPlain(l0.small).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')), 1, 'and only once');
+      } else assert.ok(!box.includes('gm-lead-s'), 'no sentence, no box');
+      checked++;
+    }
+  }
+  assert.ok(withSmall >= 10, 'a threat gives the 4/5 lead its spend sentence in some draws (' + withSmall + ' of ' + checked + ')');
+});
+
+await test('13a. coaching lines fold under a closed "Why" in every section, and show nowhere else', () => {
+  const con = sitCon();
+  let whys = 0;
+  for (let seed = 1; seed <= 40; seed++) for (const n of [1, 2, 3, 4]) {
+    const res = con.situation(n, Object.assign(con.situationDefaults(), { pos: ['controlled', 'risky', 'desperate'][seed % 3], npc: seed % 2 ? 'rival:Nigel Sprocket' : '' }), { seed });
+    const h = P.situationCardHtml(res, mdText), coach = coachTexts(res);
+    const sectionsWithCoach = res.sections.filter((s) => s.lines.some((l) => l.coach)).length;
+    assert.equal(count(h, /<details class="gm-why"/g), sectionsWithCoach, n + '/' + seed + ': one Why per section that has coaching');
+    assert.ok(!/<details class="gm-why"[^>]*\sopen/.test(h), 'Why starts closed'); whys += sectionsWithCoach;
+    const bare = textOf(stripWhy(h)), all = textOf(h);
+    for (const t of coach) { assert.ok(!bare.includes(t.slice(0, 40)), n + '/' + seed + ': coaching shows outside Why: ' + t.slice(0, 40)); assert.ok(all.includes(t.slice(0, 40)), 'and is under Why'); }
+  }
+  assert.ok(whys > 60, 'coaching lines are common (' + whys + ' Why folds)');
+  // the lead's Why sits in More beside the other lines; a lead with nothing else gets its Why without a More round it
+  const only = { meta: { id: 'situation', situation: 'before', n: 1, title: 'T', sub: 's', actions: [] }, lines: [], sections: [{ id: 'x', role: 'lead', title: 'X', lead: 'Lead line', chips: [], lines: [{ kind: 'want', md: 'Lead line' }, { kind: 'read', md: 'Coached', coach: true }], actions: [] }] };
+  const oh = P.situationCardHtml(only, mdPlain);
+  assert.ok(!oh.includes('gm-more') && oh.includes('<details class="gm-why"><summary>Why</summary>') && oh.includes('Coached'), 'a lead with only coaching left shows Why, not an empty More');
+  assert.equal(count(oh, /Lead line/g), 1, 'and the lead line once');
+  // a lead cut at 120 characters keeps its full first line under More
+  const longMd = 'A long line ' + 'x'.repeat(150), cutLead = { meta: only.meta, lines: [], sections: [{ id: 'x', role: 'lead', title: 'X', lead: P.plainMd(longMd).slice(0, 119) + '…', chips: [], lines: [{ kind: 'want', md: longMd, small: 'spent' }], actions: [] }] };
+  const ch = P.situationCardHtml(cutLead, mdPlain);
+  assert.ok(ch.includes('<details class="gm-more">') && ch.includes(longMd) && count(ch, /spent/g) === 1, 'a cut lead keeps its whole line under More (the spend sentence stays under the lead, once)');
+  // a classic card has no Why: nothing there is flagged
+  assert.ok(!P.classicCardHtml(sitCon().roll('face', sitCon().defaults(), { seed: 5 }), mdPlain).includes('gm-why'));
+});
+
+await test('13b. situationPlain: no coaching lines, the position chip on the title line, the lead line once', () => {
+  const con = sitCon();
+  for (let seed = 1; seed <= 40; seed++) for (const n of [1, 2, 3, 4]) {
+    const res = con.situation(n, Object.assign(con.situationDefaults(), { threat: seed % 2 ? 'the dog is waking up' : '', npc: seed % 3 ? '' : 'rival:Nigel Sprocket' }), { seed });
+    const t = P.situationPlain(res), first = t.split('\n')[0];
+    assert.ok(first.includes(res.meta.chips[0]), n + '/' + seed + ': the title line carries the position chip: ' + first);
+    assert.ok(first.startsWith(res.meta.title + ' ('), first);
+    for (const c of coachTexts(res)) assert.ok(!t.includes(c.slice(0, 40)), 'coaching in the plain text: ' + c.slice(0, 40));
+    res.sections.forEach((s) => assert.equal(count(t, new RegExp(P.plainMd(s.lead).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=\\n|$)', 'g')) >= 1, true, 'the lead is there'));
+    const lead = res.sections[0];
+    assert.equal(count(t, new RegExp('^ {2}' + P.plainMd(lead.lead).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'gm')), 0, 'and not again as its first line');
+    if (lead.lines[0].small) assert.ok(t.includes('\n  ' + P.plainMd(lead.lines[0].small)), 'the spend sentence stays');
+    assert.ok(t.length <= 1500 || n === 2, 'short enough for a pin (' + t.length + ')');
+  }
+  assert.equal(P.situationPlain({ meta: { title: 'T', sub: 'risky → middling' }, sections: [] }), 'T (risky → middling)', 'without a chip the subtitle is what is there');
+});
+
+await test('13c. situationEntry stores composeVersion and replaySituationEntry passes it back: a card is not "recomposed" unless it was stored before versions', () => {
+  const con = sitCon(), res = con.situation(2, con.situationDefaults(), { seed: 77 });
+  const entry = P.situationEntry(res, {});
+  assert.equal(entry.composeVersion, C.COMPOSE_VERSION); assert.ok(C.COMPOSE_VERSION >= 2);
+  const again = P.replaySituationEntry(C, FIXC.console.T, FIXC.campaign, entry, {});
+  assert.equal(again.meta.recomposed, undefined, 'a current entry redraws without a note');
+  assert.equal(JSON.stringify(again.sections.map((s) => [s.id, s.lead])), JSON.stringify(res.sections.map((s) => [s.id, s.lead])), 'and identically');
+  assert.ok(!P.situationCardHtml(again, mdPlain).includes('Redrawn with the current tables'));
+  const old = Object.assign({}, entry); delete old.composeVersion;
+  const redone = P.replaySituationEntry(C, FIXC.console.T, FIXC.campaign, old, {});
+  assert.deepEqual(redone.meta.recomposed, { from: 1, to: C.COMPOSE_VERSION }, 'an entry from before versions says it was redrawn');
+  const html = P.situationCardHtml(redone, mdPlain);
+  assert.equal(count(html, /Redrawn with the current tables/g), 1, 'one quiet note line'); assert.ok(html.includes('class="gm-quiet"'));
+  assert.equal(P.replaySituationEntry(C, FIXC.console.T, FIXC.campaign, Object.assign({}, entry, { composeVersion: 1 }), {}).meta.recomposed.from, 1, 'an explicit older version too');
+});
+
+await test('13c. on the page: a stored card redraws without a note after a reload; one stored without a version carries the note', async () => {
+  const fg = fakeGm(), br = fakeBrowser();
+  const h = await openPage({ fg, br }); h.press('2'); const a = cardTxt(h); await h.save();
+  assert.equal(fg.server.doc.cards.situation.composeVersion, C.COMPOSE_VERSION, 'stored with the card');
+  assert.equal(Object.values(fg.server.doc.hist.situation)[0].composeVersion, C.COMPOSE_VERSION, 'and with its Earlier entry');
+  const h2 = await openPage({ fg, br }); assert.equal(cardTxt(h2), a); assert.ok(!h2.q('#gm-card .gm-quiet'), 'no note on a current card'); await h2.save();
+  delete fg.server.doc.cards.situation.composeVersion;
+  const h3 = await openPage({ fg, br }); assert.ok(h3.q('#gm-card .gm-quiet') && /Redrawn with the current tables/.test(h3.q('#gm-card .gm-quiet').textContent), 'a card stored before versions says so'); await h3.save();
+});
+
+await test('13d. packWarnings: each module\'s own check(T), guarded; a missing table is a warning list, not an error', () => {
+  const mods = { B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmEngagement: EN, B68GmNpc: NPCM };
+  const full = { console: FIXC.console, location: { T: FIXL.T, extra: FIXL.extra }, scenes: { T: FIXS.parts.scenes.T }, engagement: { T: FIXS.parts.engagement.T }, npc: NPCFIX.parts.npc };
+  assert.deepEqual(P.packWarnings(mods, full), [], 'the fixtures are complete');
+  const sparse = cl(full); delete sparse.console.T.spend; delete sparse.engagement.T.cut; sparse.npc.T.faction = [['X', 'y']]; delete sparse.location.T.rumour;
+  const w = P.packWarnings(mods, sparse), by = Object.fromEntries(w.map((x) => [x.part, x.missing]));
+  assert.deepEqual(w.map((x) => x.part), ['console', 'location', 'npc', 'engagement'].filter((p) => by[p]), 'in part order');
+  assert.ok(by.console.some((m) => /^spend/.test(m)) && by.engagement.includes('cut') && by.location.includes('rumour'), JSON.stringify(by));
+  assert.deepEqual(by.console, C.check(sparse.console.T), 'the console\'s own words'); assert.deepEqual(by.engagement, EN.check(sparse.engagement.T));
+  assert.deepEqual(P.packWarnings({ B68GmConsole: { check() { throw new Error('boom'); } }, B68GmLocation: {} }, full), [], 'a check that throws, or a module without one, says nothing');
+  assert.deepEqual(P.packWarnings({}, full), [], 'a module that is not loaded says nothing'); assert.deepEqual(P.packWarnings(mods, {}), [], 'a part the pack lacks says nothing');
+  assert.deepEqual(P.packWarnings(mods, { scenes: {} }).map((x) => [x.part, x.missing]), [['scenes', ['T']]], 'a part without tables names T');
+  assert.match(P.packWarnLines(w, 2)[0], /^console: .*\(\+\d+ more\)$|^console: [^(]*$/);
+});
+
+await test('13d. Update pack: a file missing tables shows the warning list and still uploads; the loaded pack lists them in the Menu', async () => {
+  let uploads = 0;
+  const br = fakeBrowser({ FileReader: class { readAsText(f) { this.result = f.text; this.onload(); } }, confirm: () => true });
+  const sparseCon = cl(FIXC.console); delete sparseCon.T.spend; delete sparseCon.T.say3;
+  const fg = fakeGm(null, { console: { version: 'cs', src: {}, body: sparseCon } }); fg.gm.importPart = async () => { uploads++; return { version: 'x', packVersion: 'pv' }; };
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  // at load: the Menu holds the list, one toast says so
+  assert.ok(h.q('#gm-menu-warn') && !h.q('#gm-menu-warn').hasAttribute('hidden') && /console: /.test(h.q('#gm-menu-warn').textContent) && /spend/.test(h.q('#gm-menu-warn').textContent), 'the Menu lists the missing tables: ' + h.q('#gm-menu-warn').textContent);
+  assert.equal(br.toasts.filter((t) => /missing \d+ table entr/.test(t[0])).length, 1, 'one toast at load'); assert.ok(br.toasts.every((t) => !/missing \d+ table/.test(t[0]) || t[1] === false), 'a note, not an error');
+  h.q('.gm-menu-list [data-gm="update"]').click();
+  const pk = { format: 1, exportedAt: new Date().toISOString(), parts: { console: { src: {}, ...sparseCon }, location: { src: {}, T: FIXL.T, extra: FIXL.extra }, campaign: { src: {}, ...FIXC.campaign }, scenes: { src: {}, ...FIXS.parts.scenes }, engagement: { src: {}, ...FIXS.parts.engagement } } };
+  const file = h.q('#gm-file'); file.files = [{ name: 'b68-gm-pack.json', text: JSON.stringify(pk) }]; file.id = 'gm-file';
+  dispatch(file, 'change');
+  assert.ok(await until(() => h.q('.gm-warns')), 'the warning box');
+  assert.ok(/table entr/.test(h.q('.gm-warns').textContent) && /console/.test(h.q('.gm-warns').textContent) && /spend/.test(h.q('.gm-warns').textContent), h.q('.gm-warns').textContent);
+  assert.ok(h.q('.gm-warns').className.includes('warn') && !h.q('.gm-warns').className.split(/\s+/).includes('bad'), 'a warning, not an error');
+  assert.ok(!h.q('.gm-errs'), 'no error list'); assert.ok(!h.q('[data-gm="upload"]').hasAttribute('disabled'), 'the upload is enabled');
+  h.q('[data-gm="upload"]').click(); assert.ok(await until(() => uploads >= 5), 'and it uploads every part (' + uploads + ')');
+  await h.save();
+  const clean = await openPage({ fg: fakeGm(), br: fakeBrowser(), camp: CAMP3 });
+  assert.ok(clean.q('#gm-menu-warn').hasAttribute('hidden') && clean.q('#gm-menu-warn').textContent === '', 'a complete pack: nothing in the Menu');
+  await clean.save();
+});
+
+await test('13e. the location glance: a Plan line under Say (outside the Say box), a Rule row when the district has one, Flags only the rare ones', async () => {
+  const h = await openPage({ br: fakeBrowser(), fg: fakeGm(), camp: CAMP3 });
+  let plans = 0, rules = 0;
+  for (let i = 0; i < 25; i++) {
+    h.q('[data-gm="locroll"]').click();
+    const g = L.glance(h.page._state().locRoll, { T: FIXL.T, extra: FIXL.extra }, ['public']);
+    const plan = h.q('#gm-loc .gm-glance .gm-plan');
+    assert.ok(plan && plan.textContent.replace(/\s+/g, ' ').includes(g.plan), 'the plan line: ' + g.plan);
+    assert.ok(!plan.closest('.gm-say') && h.q('#gm-loc .gm-say') && !h.q('#gm-loc .gm-say').textContent.includes(g.plan), 'it is outside the Say box (the box the players\' "Players see" chip marks)');
+    assert.equal(/Plan/.test(plan.querySelector('.gm-lab').textContent), true); plans++;
+    const dts = h.qa('#gm-loc .gm-glance-dl dt').map((d) => d.textContent);
+    assert.equal(dts.includes('Rule'), !!g.rule, 'a Rule row exactly when the district has a rule'); if (g.rule) { rules++; assert.ok(h.qa('#gm-loc .gm-glance-dl dd')[dts.indexOf('Rule')].textContent.includes(g.rule)); }
+    assert.equal(dts.includes('Flags'), g.flags.length > 0, 'Flags only when there are rare ones');
+    assert.ok(!/ring-skip|District rule/.test(h.q('#gm-loc .gm-glance').textContent), 'ring-skips and "District rule" are not flags');
+  }
+  assert.ok(plans === 25 && rules > 0, 'rules seen: ' + rules);
+  await h.save();
+});
+
+await test('13e. the plan is GM only: not in playerSummary at any reveal, not in what Street description on iPad sends, and read by nothing but the glance card', async () => {
+  const pk = { T: FIXL.T, extra: FIXL.extra };
+  for (let seed = 1; seed <= 300; seed++) {
+    const roll = L.generate(pk, {}, { seed, mem: {} }), g = L.glance(roll, pk, ['public']);
+    for (const reveal of [['public'], ['public', 'working'], ['public', 'working', 'controlled', 'secure']]) {
+      const ps = L.playerSummary(roll, reveal), all = JSON.stringify(ps);
+      assert.ok(!all.includes(g.plan) && !ps.text.includes('behind') && !/\bis behind \d+ locks?\b|has no lock in the way/.test(all), seed + ': the plan sentence is in the player summary');
+      assert.ok(!all.includes('the target, ' + roll.targetRoom + ' ('), seed + ': nor its target clause');
+    }
+  }
+  const h = await openPage({ br: fakeBrowser(), fg: fakeGm(), camp: CAMP3 });
+  h.q('[data-gm="locroll"]').click();
+  const plan = L.glance(h.page._state().locRoll, pk, ['public']).plan;
+  h.q('[data-gm="pushtext"]').click(); await until(() => h.fg.server.displays.length);
+  const sent = h.fg.server.displays.pop();
+  assert.equal(sent.kind, 'text'); assert.ok(!JSON.stringify(sent).includes(plan) && !/Plan/.test(JSON.stringify(sent)), 'the street description on the iPad has no plan: ' + JSON.stringify(sent).slice(0, 200));
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  assert.equal(count(src, /\.plan\b/g), 2, 'the page reads a plan in one place only (its glance card: the test and the line)');
+  assert.ok(/function glanceHtml[\s\S]*?\.plan[\s\S]*?\.plan[\s\S]*?function foldsHtml/.test(src), 'and that place is glanceHtml');
+  await h.save();
+});
+
+await test('13f. the NPC portrait note is the module\'s own (fig.note); no portrait when the figure failed; "No portrait: …" when the kit throws', async () => {
+  const K = require(path.join(ROOT, 'app', 'figures', 'figure-kit.js'));
+  const npcPage = (kit) => openPage({ br: fakeBrowser({ B68GmNpc: NPCM, B68Figure: kit }), fg: fakeGm(NPCFIX.parts.campaign, { npc: { version: 'n1', src: {}, body: NPCFIX.parts.npc } }), camp: CAMP3 });
+  // a clean figure: a portrait, and no sentence about stock figures
+  let h = await npcPage(K); h.q('[data-gm="npcroll"]').click();
+  assert.ok(h.q('#gm-npc .gm-npccard .gm-npcfig svg'), 'a portrait'); assert.ok(!/nearest of the stock figures|No portrait/.test(h.q('#gm-npc .gm-npccard').textContent), h.q('#gm-npc .gm-npccard').textContent.slice(0, 300));
+  const note = h.page._state ? null : null; void note; await h.save();
+  // the module's note is what shows: a map that makes the module fall back to a stock figure
+  const fallbackKit = Object.assign({}, K);
+  h = await npcPage(fallbackKit);
+  const G = NPCM.create({ T: NPCFIX.parts.npc.T, cast: NPCFIX.parts.npc.cast, F: NPCFIX.parts.npc.F, campaign: NPCFIX.parts.campaign });
+  const stock = G.figure(G.roll({ seed: 9 }).npc, { seed: 9, K, map: () => { throw new Error('boom'); } });
+  assert.ok(stock.fallback && /^Portrait: a stock figure/.test(stock.note), 'the module says so: ' + stock.note);
+  // the figure kit cannot build anything: figure() is failed (no spec), the page draws no portrait and shows the module's note
+  const badKit = Object.assign({}, K, { options: () => { throw new Error('no options'); } });
+  h = await npcPage(badKit); h.q('[data-gm="npcroll"]').click();
+  assert.ok(!h.q('#gm-npc .gm-npccard .gm-npcfig'), 'no portrait when the figure failed');
+  assert.match(h.q('#gm-npc .gm-npccard .gm-fignote').textContent, /^No portrait: .*no options/, 'and the module\'s note says why: ' + h.q('#gm-npc .gm-npccard .gm-fignote').textContent);
+  assert.equal(h.qa('#gm-npc .gm-npccard .gm-fignote').length, 1); await h.save();
+  // the kit throws on the page's own render: no portrait, and "No portrait: <reason>"
+  const portraitBoom = Object.assign({}, K, { portrait: (spec, o) => { if (spec && spec.id === 'gm-npcg') throw new Error('portrait boom'); return K.portrait(spec, o); } });
+  h = await npcPage(portraitBoom); h.q('[data-gm="npcroll"]').click();
+  assert.ok(!h.q('#gm-npc .gm-npccard .gm-npcfig'), 'no portrait when the kit throws'); assert.equal(h.q('#gm-npc .gm-npccard .gm-fignote').textContent, 'No portrait: portrait boom.');
+  // no kit at all: the module throws, the page says why
+  h = await npcPage(undefined); h.q('[data-gm="npcroll"]').click();
+  assert.ok(!h.q('#gm-npc .gm-npccard .gm-npcfig') && /^No portrait: .*figure kit is not loaded/.test(h.q('#gm-npc .gm-npccard .gm-fignote').textContent), h.q('#gm-npc .gm-npccard .gm-fignote').textContent);
+  assert.ok(h.q('#gm-npc [data-gm="npcfile"]'), 'the card still works: Add to the cast is there'); await h.save();
+});
+
+await test('13g. Earlier chips name what the card is (the NPC for Someone / Contact / Face), with the time and the position under it', async () => {
+  const con = sitCon(), ui0 = con.situationDefaults();
+  const rival = con.situation(4, Object.assign({}, ui0, { npc: 'rival:Nigel Sprocket' }), { seed: 7 });
+  assert.ok(!rival.meta.label.includes('Nigel Sprocket'), 'the module\'s own label does not name the rival: ' + rival.meta.label);
+  assert.ok(/^Someone: Nigel Sprocket — Grumpy/.test(P.earlierLabel(rival)), P.earlierLabel(rival));
+  const friend = con.situation(4, Object.assign({}, ui0, { npc: 'friend:Marge Teacup' }), { seed: 7 });
+  assert.ok(P.earlierLabel(friend).includes('Marge Teacup') && P.earlierLabel(friend) === friend.meta.label, 'a Contact names the friend already: unchanged');
+  const face = con.situation(4, ui0, { seed: 5 });
+  assert.equal(P.earlierLabel(face), face.meta.label, 'a Face names the NPC already');
+  assert.ok(P.earlierLabel(face).includes(face.meta.face.name));
+  const before = con.situation(1, ui0, { seed: 5 });
+  assert.ok(!/Want \+1d/.test(P.earlierLabel(before)) && /^Before the roll: Hat Society/.test(P.earlierLabel(before)) && P.earlierLabel(before).length <= 'Before the roll: '.length + 45, P.earlierLabel(before));
+  const fourfive = con.situation(2, Object.assign({}, ui0, { npc: 'rival:Nigel Sprocket' }), { seed: 7 });
+  assert.equal(P.earlierLabel(fourfive), fourfive.meta.label, 'a 4/5 with a rival is about the consequence, not the rival');
+  const cl1 = con.roll('reaction', Object.assign(con.defaults(), { npc: 'rival:Nigel Sprocket' }), { seed: 3 });
+  assert.ok(/^NPC reaction: Nigel Sprocket — /.test(P.earlierLabel(cl1)), 'a single-table reaction too: ' + P.earlierLabel(cl1));
+  assert.equal(P.earlierLabel({ meta: {} }), '', 'no label, no crash');
+  // on the page: the chip is the label, the time and position are under it and in the title
+  const h = await openPage({ br: fakeBrowser(), fg: fakeGm(), camp: CAMP3 });
+  pick(h, '#gm-c-npc', 'rival:Nigel Sprocket'); h.press('4');
+  const chip = h.q('#gm-earlier [data-gm="replay"]'), when = chip.querySelector('.gm-ech-s').textContent;
+  assert.match(chip.querySelector('.gm-ech-t').textContent, /^Someone: Nigel Sprocket — /);
+  assert.match(when, /^\d\d:\d\d · risky$/, 'the time and the position: ' + when);
+  assert.ok(chip.getAttribute('title').includes(when) && chip.getAttribute('title').includes('Nigel Sprocket'), 'and the title says both');
+  h.qa('#gm-pos [data-v="desperate"]')[0].click(); h.press('3');
+  const chips = h.qa('#gm-earlier [data-gm="replay"]'); assert.equal(chips.length, 2);
+  assert.match(chips[0].querySelector('.gm-ech-s').textContent, /· desperate$/, 'each chip has its own position');
+  assert.match(chips[1].querySelector('.gm-ech-s').textContent, /· risky$/);
+  // the other tools' chips carry the time (they have no position)
+  h.q('[data-gm="scnroll"]').click(); assert.match(h.q('#gm-scn .gm-earlier .gm-ech-s').textContent, /^\d\d:\d\d$/);
+  await h.save();
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

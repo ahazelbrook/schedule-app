@@ -189,10 +189,29 @@
 
   /* ---------- console replay: a card is redrawn with the bargains and callbacks as they were when it was rolled ---------- */
   function conSnapshot(con) { var c = isObj(con) ? con : {}; return JSON.stringify({ owed: c.owed || {}, struck: c.struck || {}, used: c.used || {} }); }
+  /* What an Earlier chip says (B15): the module's own label, with the NPC a Someone card is about up front (the Face, the Contact,
+     or the NPC a reaction is for) when the label lacks the name, and a Devil's Bargain without its leading bold "Want +1d?" token. */
+  function earlierLabel(res) {
+    var m = res && res.meta || {}, lead = res && res.sections && res.sections[0], label = str(m.label);
+    if (!label) return label;
+    var kind = lead ? lead.id : m.id, first = ((lead ? lead.lines : res && res.lines) || [])[0];
+    if (kind === 'devilsBargain' && first && first.kind !== 'grid') {
+      var rest = plainMd(str(first.md).replace(/^\*\*[^*]+\*\*\s*/, ''));
+      if (rest) return str(m.title) + ': ' + shortLabel(rest, 44);
+    }
+    var who = kind === 'face' ? m.face && m.face.name : kind === 'contact' ? m.contact && m.contact.name : kind === 'reaction' ? m.reaction && m.reaction.npc : '';
+    who = str(who).trim();
+    if (who && label.toLowerCase().indexOf(who.toLowerCase()) < 0) {
+      var i = label.indexOf(': ');
+      label = i < 0 ? who + ' — ' + label : label.slice(0, i + 2) + who + ' — ' + label.slice(i + 2);
+    }
+    return label;
+  }
+  P.earlierLabel = earlierLabel;
   /* the history / current-card entry for a console roll: replay info only, never the card */
   function consoleEntry(res, con) {
     var rp = res.replay;
-    return { id: rp.id, seed: rp.seed, ui: rp.ui, mem: JSON.stringify(rp.mem), con: conSnapshot(con), label: str(res.meta && res.meta.label), at: nowIso() };
+    return { id: rp.id, seed: rp.seed, ui: rp.ui, mem: JSON.stringify(rp.mem), con: conSnapshot(con), label: earlierLabel(res), at: nowIso() };
   }
   /* redraw an entry: its own snapshot of the console state (entries from before snapshots use `fallback`), its own memory */
   function replayConsoleEntry(C, T, campaign, e, fallback) {
@@ -554,6 +573,29 @@
   }
   P.packLosses = packLosses;
 
+  /* The tables a pack lacks, by each module's own check(T) (console, location, npc, scenes, engagement), for the preview and the load to
+     show as WARNINGS (never errors: the upload still works, and every roller falls back to a neutral word for a missing table).
+     mods: { B68GmConsole, ... }; parts: { <part>: body }. -> [{ part, missing: [path] }]. A part the pack lacks, a module that is not
+     loaded and a check that throws say nothing. */
+  var CHECKED = [['console', 'B68GmConsole'], ['location', 'B68GmLocation'], ['npc', 'B68GmNpc'], ['scenes', 'B68GmScenes'], ['engagement', 'B68GmEngagement']];
+  function packWarnings(mods, parts) {
+    var out = [];
+    CHECKED.forEach(function (c) {
+      var M = mods && mods[c[1]], body = parts && parts[c[0]];
+      if (!M || typeof M.check !== 'function' || !isObj(body)) return;
+      var miss; try { miss = M.check(body.T); } catch (e) { return; }
+      miss = (Array.isArray(miss) ? miss : []).map(str).filter(Boolean);
+      if (miss.length) out.push({ part: c[0], missing: miss });
+    });
+    return out;
+  }
+  /* "console: district, spend.Harm (+3 more)", one line per part, for a toast or a list */
+  function packWarnLines(warns, n) {
+    var k = n || 6;
+    return (warns || []).map(function (w) { return w.part + ': ' + w.missing.slice(0, k).join(', ') + (w.missing.length > k ? ' (+' + (w.missing.length - k) + ' more)' : ''); });
+  }
+  P.packWarnings = packWarnings; P.packWarnLines = packWarnLines;
+
   /* ---------- Situations: the session on a capture, and the composed card ---------- */
   /* the session number the campaign document holds (a whole number >= 1), or undefined */
   function sessionOf(doc) {
@@ -572,29 +614,40 @@
   /* the history / current-card entry for a composed card (id 'situation', never 'console'): replay info only */
   function situationEntry(res, con) {
     var rp = res.replay;
-    return { id: rp.id, situation: rp.situation, seed: rp.seed, ui: rp.ui, mem: JSON.stringify(rp.mem), con: conSnapshot(con), label: str(res.meta && res.meta.label), at: nowIso() };
+    return { id: rp.id, situation: rp.situation, seed: rp.seed, ui: rp.ui, mem: JSON.stringify(rp.mem), con: conSnapshot(con), composeVersion: rp.composeVersion, label: earlierLabel(res), at: nowIso() };
   }
+  /* an entry stored before the composition was versioned has no composeVersion: the console reads that as version 1 and says it
+     redrew the card (meta.recomposed), so the card never silently changes */
   function replaySituationEntry(C, T, campaign, e, fallback) {
     if (!C || !T || !isObj(e) || e.id !== 'situation') return null;
     var mem = {}, state = fallback || {};
     try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
     if (typeof e.con === 'string') { try { state = JSON.parse(e.con); } catch (x) {} }
-    try { return C.create({ T: T, campaign: campaign || {}, state: state, mem: {} }).replay({ id: 'situation', situation: e.situation, seed: e.seed, ui: e.ui || {}, mem: mem }); } catch (x) { return null; }
+    try { return C.create({ T: T, campaign: campaign || {}, state: state, mem: {} }).replay({ id: 'situation', situation: e.situation, seed: e.seed, ui: e.ui || {}, mem: mem, composeVersion: e.composeVersion }); } catch (x) { return null; }
   }
   P.situationEntry = situationEntry; P.replaySituationEntry = replaySituationEntry;
-  /* a composed card as plain text (Copy, Pin, "L files last roll") */
+  /* a composed card as plain text (Copy, Pin, "L files last roll"): the position chip on the title line, no coaching lines, and a
+     lead's first line only for what the lead does not already say (the spend sentence under it) */
   function situationPlain(res) {
-    var m = res && res.meta || {}, out = [str(m.title) + (m.sub ? ' (' + str(m.sub) + ')' : '')];
+    var m = res && res.meta || {}, chip = m.chips && m.chips[0] ? str(m.chips[0]) : '', sub = chip || str(m.sub);
+    var out = [str(m.title) + (sub ? ' (' + sub + ')' : '')];
     (res && res.sections || []).forEach(function (s, i) {
       out.push((i ? 'Or ' : '') + str(s.title) + ': ' + plainMd(s.lead));
-      (s.lines || []).forEach(function (l) {
-        if (l.kind === 'grid') (l.rows || []).forEach(function (r) { out.push('  ' + str(r.k) + ': ' + plainMd(r.md)); });
-        else out.push('  ' + plainMd(l.md) + (l.small ? ' ' + plainMd(l.small) : ''));
+      (s.lines || []).forEach(function (l, j) {
+        if (l.coach) return;
+        if (l.kind === 'grid') { (l.rows || []).forEach(function (r) { out.push('  ' + str(r.k) + ': ' + plainMd(r.md)); }); return; }
+        if (j === 0 && leadIsLine(s)) { if (l.small) out.push('  ' + plainMd(l.small)); return; }
+        out.push('  ' + plainMd(l.md) + (l.small ? ' ' + plainMd(l.small) : ''));
       });
     });
     return out.join('\n');
   }
-  P.situationPlain = situationPlain;
+  /* the section's first line is exactly its lead (not a cut-down version of it): the card shows the lead once */
+  function leadIsLine(s) {
+    var l = s && s.lines && s.lines[0];
+    return !!l && l.kind !== 'grid' && plainMd(l.md) === plainMd(s.lead);
+  }
+  P.situationPlain = situationPlain; P.leadIsLine = leadIsLine;
   /* a roll's one-line text for "L" (the title and the lead) */
   function lastText(res) {
     var m = res && res.meta || {};
@@ -623,18 +676,34 @@
     return '<article class="gm-card" data-tool="console"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>' +
       chipsHtml(m.chips) + linesHtml(res.lines, mdf) + actsHtml(m, 'console') + '</article>';
   }
-  /* The composed card: the LEAD box (big line, chips, its own lines under "More"), then at most three one-line "Or"
-     rows that open to their full section, then ONE merged actions row. */
+  /* The coaching lines of a section ("Say it before the dice...": recurring guidance, flagged `coach` by the console) fold under a
+     closed "Why", so a card reads as the draw and its numbers and the reasons are one tap away. */
+  function whyHtml(lines, mdf) {
+    return lines.length ? '<details class="gm-why"><summary>Why</summary><div class="gm-why-b">' + linesHtml(lines, mdf) + '</div></details>' : '';
+  }
+  function splitCoach(lines) {
+    var plain = [], coach = [];
+    (lines || []).forEach(function (l) { (l && l.coach ? coach : plain).push(l); });
+    return { plain: plain, coach: coach };
+  }
+  /* The composed card: the LEAD box (big line, the spend sentence under it, chips, its own lines under "More"), then at most three
+     one-line "Or" rows that open to their full section, then ONE merged actions row. */
   function situationCardHtml(res, mdf) {
     var m = res.meta || {}, secs = res.sections || [];
     var h = '<article class="gm-card gm-sit" data-tool="situation" data-sit="' + esc(m.situation) + '"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>';
+    if (isObj(m.recomposed)) h += '<p class="gm-quiet" role="note">Redrawn with the current tables</p>';
     if (!secs.length) return h + linesHtml(res.lines, mdf) + actsHtml(m, 'situation') + '</article>';
-    var lead = secs[0];
-    h += '<section class="gm-lead" data-sec="' + esc(lead.id) + '"><p class="gm-lead-k">' + esc(lead.title) + '</p><p class="gm-lead-t">' + esc(lead.lead) + '</p>' + chipsHtml(lead.chips) +
-      ((lead.lines || []).length ? '<details class="gm-more"><summary>More</summary><div class="gm-more-b">' + linesHtml(lead.lines, mdf) + '</div></details>' : '') + '</section>';
+    var lead = secs[0], ll = lead.lines || [], skip = leadIsLine(lead), cut = splitCoach(ll.slice(skip ? 1 : 0));
+    /* the lead's first line IS the lead box (its `small`, a threat's spend sentence, sits under it); a lead cut at 120 characters keeps its full line under More */
+    var small = ll[0] && ll[0].small ? '<div class="gm-lead-s">' + mdf(ll[0].small) + '</div>' : '';
+    if (!skip && ll[0] && ll[0].small) cut.plain = cut.plain.map(function (l) { return l === ll[0] ? Object.assign({}, l, { small: '' }) : l; });
+    var why = whyHtml(cut.coach, mdf);
+    h += '<section class="gm-lead" data-sec="' + esc(lead.id) + '"><p class="gm-lead-k">' + esc(lead.title) + '</p><p class="gm-lead-t">' + esc(lead.lead) + '</p>' + small + chipsHtml(lead.chips) +
+      (cut.plain.length ? '<details class="gm-more"><summary>More</summary><div class="gm-more-b">' + linesHtml(cut.plain, mdf) + why + '</div></details>' : why) + '</section>';
     secs.slice(1, 4).forEach(function (s) {
+      var c = splitCoach(s.lines);
       h += '<details class="gm-or" data-sec="' + esc(s.id) + '"><summary><span class="gm-or-k">Or</span><span class="gm-or-t"><b>' + esc(s.title) + '</b> ' + esc(s.lead) + '</span></summary><div class="gm-or-b">' +
-        (s.sub ? '<p class="gm-sub">' + esc(s.sub) + '</p>' : '') + chipsHtml(s.chips) + linesHtml(s.lines, mdf) + '</div></details>';
+        (s.sub ? '<p class="gm-sub">' + esc(s.sub) + '</p>' : '') + chipsHtml(s.chips) + linesHtml(c.plain, mdf) + whyHtml(c.coach, mdf) + '</div></details>';
     });
     return h + actsHtml(m, 'situation') + '</article>';
   }
@@ -955,14 +1024,45 @@
       losses = packLosses(before, after);
     }
     S.importLosses = losses;
+    /* the tables the file lacks, by each module's own check: a warning (the upload still works) */
+    var warns = [];
+    if (v.ok) { var bodies = {}; Object.keys(pk.parts).forEach(function (n) { if (isObj(pk.parts[n])) bodies[n] = partBody(pk.parts[n]); }); warns = packWarnings(modMap(), bodies); }
     var rows = v.parts.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td class="num">' + (p.bytes / 1024).toFixed(1) + ' KiB</td><td>' + esc(p.src && p.src.exportedAt ? dmy(p.src.exportedAt) : '') + '</td></tr>'; }).join('');
     box.innerHTML = '<h2>' + esc(name || 'The pack') + '</h2>' +
       (v.exportedAt ? '<p class="gm-dim">Exported ' + esc(dmy(v.exportedAt)) + ' · ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's') + '</p>' : '') +
       (rows ? '<table class="gm-tbl"><thead><tr><th>Part</th><th class="num">Size</th><th>Exported</th></tr></thead><tbody>' + rows + '</tbody></table>' : '') +
       (v.errors.length ? '<ul class="gm-errs">' + v.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>' : '') +
+      packWarnHtml(warns) +
       (losses.length ? '<div class="gm-note bad gm-losses"><p><b>This pack would lose prep the app has now:</b></p><ul>' + losses.map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ul>' +
         '<p>Usually Obsidian Sync brought back an old copy of a note. Restore it (Obsidian: right-click the note › Open version history), run <code>npm run gm:pack</code>, then choose the new file.</p></div>' : '') +
       '<p class="gm-up"><button type="button" class="btn ' + (losses.length ? 'bad' : 'primary') + '" data-gm="upload"' + (v.ok ? '' : ' disabled') + '>' + (losses.length ? 'Upload anyway' : 'Upload ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's')) + '</button> <progress id="gm-prog" max="' + Math.max(1, v.parts.length) + '" value="0" hidden></progress> <span id="gm-upmsg" class="gm-dim" role="status"></span></p>';
+  }
+  /* the pack check as a list: a warning, never an error (the rollers use a neutral word for a table the pack lacks) */
+  function modMap() { return { B68GmConsole: W.B68GmConsole, B68GmLocation: W.B68GmLocation, B68GmNpc: W.B68GmNpc, B68GmScenes: W.B68GmScenes, B68GmEngagement: W.B68GmEngagement }; }
+  function packWarnHtml(warns) {
+    if (!warns.length) return '';
+    var n = warns.reduce(function (k, w) { return k + w.missing.length; }, 0);
+    return '<div class="gm-note warn gm-warns" role="status"><p><b>' + n + ' table entr' + (n === 1 ? 'y is' : 'ies are') + ' missing.</b> This is a warning, not an error: the upload works, and a roll that needs one uses a neutral word.</p><ul>' +
+      warns.map(function (w) { return '<li><b>' + esc(w.part) + '</b>: ' + esc(w.missing.slice(0, 12).join(', ')) + (w.missing.length > 12 ? ' (+' + (w.missing.length - 12) + ' more)' : '') + '</li>'; }).join('') + '</ul></div>';
+  }
+  /* the loaded pack's check: the Menu keeps the list, and a toast says so once per page load (per distinct list) */
+  var packWarnSeen = '';
+  function checkPack() {
+    var bodies = {}; Object.keys(S.pack && S.pack.parts || {}).forEach(function (n) { var b = S.pack.parts[n] && S.pack.parts[n].body; if (isObj(b)) bodies[n] = b; });
+    S.packWarn = packWarnings(modMap(), bodies);
+    renderPackWarn();
+    var sig = JSON.stringify(S.packWarn);
+    if (S.packWarn.length && sig !== packWarnSeen) {
+      packWarnSeen = sig;
+      var n = S.packWarn.reduce(function (k, w) { return k + w.missing.length; }, 0);
+      toast('The pack is missing ' + n + ' table entr' + (n === 1 ? 'y' : 'ies') + ' (' + S.packWarn.map(function (w) { return w.part; }).join(', ') + '): rolls use a neutral word for them. The Menu lists them.');
+    }
+  }
+  function renderPackWarn() {
+    var box = $q('#gm-menu-warn'); if (!box) return;
+    var w = S.packWarn || [];
+    box.hidden = !w.length; if (w.length) box.removeAttribute('hidden'); else box.setAttribute('hidden', '');
+    box.innerHTML = w.length ? '<b>Pack check</b> <span class="gm-dim">a warning: rolls use a neutral word for these</span><ul>' + w.map(function (x) { return '<li><b>' + esc(x.part) + '</b>: ' + esc(x.missing.slice(0, 8).join(', ')) + (x.missing.length > 8 ? ' (+' + (x.missing.length - 8) + ' more)' : '') + '</li>'; }).join('') + '</ul>' : '';
   }
   function upload() {
     var pk = S && S.importing, g = gmApi(); if (!pk || !g) return;
@@ -1022,7 +1122,7 @@
     S.locMem = clone(m.location || {}); S.locErr = ''; S.scnMem = clone(m.scenes || {}); S.scn = null; S.eng = null; S.npcg = null; S.npcMem = clone(m.npc || {}); S.npcRoll = null;
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
-    layout(); redrawAll(); subscribeNpcs();
+    layout(); redrawAll(); subscribeNpcs(); checkPack();
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -1079,7 +1179,7 @@
       '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-stt" title="The transcriber (the iPad tab)" hidden></button>' +
       '<button type="button" class="gm-bb" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' + '<button type="button" class="gm-bb" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
       '<span class="gm-menu"><button type="button" class="gm-bb" data-gm="menu" aria-expanded="false" aria-haspopup="true">Menu</button><span class="gm-menu-list" hidden>' +
-      '<p class="gm-menu-h"><span><b>GM tools</b> · The console</span><span class="gm-exp" id="gm-menu-exp"></span></p>' +
+      '<p class="gm-menu-h"><span><b>GM tools</b> · The console</span><span class="gm-exp" id="gm-menu-exp"></span></p>' + '<div class="gm-menu-warn" id="gm-menu-warn" hidden></div>' +
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
@@ -1406,7 +1506,14 @@
     ['situation', 'console'].forEach(function (t) { newest(h[t]).forEach(function (x) { x._tool = t; list.push(x); }); });
     list.sort(function (a, b) { return str(a.at) < str(b.at) ? 1 : str(a.at) > str(b.at) ? -1 : 0; });
     list = list.slice(0, LIMITS.hist);
-    er.innerHTML = list.length ? '<span class="gm-lab">Earlier:</span>' + list.map(function (x) { return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="' + x._tool + '" data-h="' + esc(x._id) + '"' + (cards[x._tool] && cards[x._tool].hid === x._id && S.shown === x._tool ? ' aria-current="true"' : '') + '>' + esc(x.label || x.id) + '</button>'; }).join('') : '';
+    er.innerHTML = list.length ? '<span class="gm-lab">Earlier:</span>' + list.map(function (x) { return earlierChip(x, x._tool, cards[x._tool] && cards[x._tool].hid === x._id && S.shown === x._tool); }).join('') : '';
+  }
+  /* an Earlier chip names what the card is; under it, small, the time it was rolled and its position (also the title, for a label
+     the chip has to cut) */
+  function earlierChip(x, tool, current) {
+    var when = [hm(x.at), isObj(x.ui) ? str(x.ui.pos) : ''].filter(Boolean).join(' · '), label = str(x.label || x.id);
+    return '<button type="button" class="chip txt sm gm-ech" data-gm="replay" data-tool="' + esc(tool) + '" data-h="' + esc(x._id) + '"' + (current ? ' aria-current="true"' : '') + ' title="' + esc(label + (when ? ' (' + when + ')' : '')) + '">' +
+      '<span class="gm-ech-t">' + esc(label) + '</span>' + (when ? '<small class="gm-ech-s">' + esc(when) + '</small>' : '') + '</button>';
   }
   function doIntent(i) {
     var res = S.conRes, a = res && res.meta && res.meta.actions && res.meta.actions[i], C = W.B68GmConsole; if (!a || !C) return;
@@ -1468,7 +1575,7 @@
         '<details class="gm-more gm-dl"' + (foldOpen('dl') ? ' open' : '') + ' data-fold="dl"><summary>Downloads</summary><div class="gm-map-acts">' + '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button></div></details>' + '</section>';
     } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what the players can see.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></p>';
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
-    if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="location" data-h="' + esc(x._id) + '"' + (cur && cur.hid === x._id ? ' aria-current="true"' : '') + '>' + esc(x.label) + '</button>'; }).join('') + '</div>';
+    if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return earlierChip(x, 'location', cur && cur.hid === x._id); }).join('') + '</div>';
     box.innerHTML = h;
     if (S.map) showMap();
   }
@@ -1484,9 +1591,13 @@
     return '<section class="gm-glance gm-secret" data-sec="glance"><div class="gm-glance-h"><h3 class="gm-locname">' + esc(g.title) + '</h3></div>' +
       '<p class="gm-glance-place">' + esc(g.place) + '</p>' +
       '<div class="gm-say"><span class="gm-lab">Say' + (S.locSent === roll.seed ? ' ' + SEEN : '') + '</span><p>“' + esc(g.say) + '”</p><button type="button" class="btn sm" data-gm="pushtext">Street description on iPad</button></div>' +
+      /* the plan names the target room and its locks: GM only. It sits outside the Say box on purpose (that box is what the players
+         see once the street description is sent), and no push (pushText, the score scene, Show on iPad) ever reads it */
+      (g.plan ? '<p class="gm-plan"><span class="gm-lab">Plan</span> ' + esc(g.plan) + '</p>' : '') +
       '<dl class="gm-grid gm-glance-dl"><dt>Whose</dt><dd>' + esc(g.whose) + ' · Security <b>' + esc(g.security) + '</b></dd>' +
       '<dt>Bands</dt><dd><ol class="gm-gbands">' + bands + '</ol></dd>' +
       '<dt>Target</dt><dd>★ <b>' + esc(g.target.room) + '</b> (' + esc(String(g.target.band).toLowerCase()) + ') — ' + esc(g.target.what) + '</dd>' +
+      (g.rule ? '<dt>Rule</dt><dd>' + esc(g.rule) + '</dd>' : '') +
       (g.flags.length ? '<dt>Flags</dt><dd>' + g.flags.map(function (f) { return '<span class="gm-flag">! ' + esc(f) + '</span>'; }).join(' ') + '</dd>' : '') + '</dl></section>';
   }
   function foldsHtml(L, roll, pk, reveal) {
@@ -1697,9 +1808,7 @@
   }
   function earlierHtml(tool, cur) {
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).slice(0, LIMITS.hist);
-    return hist.length ? '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) {
-      return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="' + esc(tool) + '" data-h="' + esc(x._id) + '"' + (cur && cur.hid === x._id ? ' aria-current="true"' : '') + '>' + esc(x.label) + '</button>';
-    }).join('') + '</div>' : '';
+    return hist.length ? '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return earlierChip(x, tool, cur && cur.hid === x._id); }).join('') + '</div>' : '';
   }
   function selectHtml(id, attr, key, label, options, value, inner) {
     return '<label class="gm-field" for="' + id + '"><span class="gm-lab">' + esc(label) + '</span><select id="' + id + '" ' + attr + '="' + esc(key) + '">' + (inner != null ? inner : options.map(function (o) {
@@ -1878,12 +1987,19 @@
     try { S.npcg = M.create({ T: pk.T, cast: pk.cast || [], F: pk.F || null, campaign: part('campaign') || {}, mem: clone(S.npcMem) }); S.npcgErr = ''; } catch (e) { S.npcgErr = 'The NPC generator could not start: ' + errText(e); }
     return S.npcg;
   }
-  /* the figure for a roll: drawn once per roll and kept, since the kit's render checks are the slow part */
+  /* the figure for a roll: drawn once per roll and kept, since the kit's render checks are the slow part. `note` is the one line
+     under the portrait (the module's own `fig.note`: what was stripped, a stock figure, or why there is none); when the kit itself
+     throws (not loaded, or it fails on the spec) there is no portrait and the note says why, never a silent blank. */
   function npcWithFigure(g, roll) {
-    var K = W.B68Figure, fig = null, svg = '';
-    try { fig = g.figure(roll.npc, { K: K }); } catch (e) { fig = null; }
-    if (fig && fig.spec && K && K.portrait) { try { var sp = clone(fig.spec); sp.id = 'gm-npcg'; svg = stripSize(K.portrait(sp, { lod: 'lo' }).svg); } catch (e) { svg = ''; } }
-    return { roll: roll, fig: fig, svg: svg };
+    var K = W.B68Figure, fig = null, svg = '', note = '';
+    try { fig = g.figure(roll.npc, { K: K }); } catch (e) { fig = null; note = 'No portrait: ' + errText(e) + '.'; }
+    if (fig) {
+      note = str(fig.note);
+      if (!fig.failed && fig.spec && K && K.portrait) {
+        try { var sp = clone(fig.spec); sp.id = 'gm-npcg'; svg = stripSize(K.portrait(sp, { lod: 'lo' }).svg); } catch (e) { svg = ''; note = 'No portrait: ' + errText(e) + '.'; }
+      } else if (!fig.failed && !(K && K.portrait)) note = 'No portrait: the figure kit is not loaded.';
+    }
+    return { roll: roll, fig: fig, svg: svg, note: note };
   }
   function replayNpc(e) {
     var g = npcgInst(); if (!g || !isObj(e)) return null;
@@ -1944,7 +2060,7 @@
     if (r) {
       var c = r.roll.card, m = c.meta, inCast = npcInCast(r.roll.npc.name);
       h += '<article class="gm-card gm-npccard" data-tool="npc"><header class="gm-card-h">' + (r.svg ? '<div class="gm-thumb gm-npcfig" aria-hidden="true">' + r.svg + '</div>' : '') + '<div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' +
-        (m.figureNote ? '<p class="gm-note">' + esc(m.figureNote) + '</p>' : '') + (r.fig && r.fig.fallback ? '<p class="gm-note">The portrait is the nearest of the stock figures (the generated one would not draw).</p>' : '') +
+        (m.figureNote ? '<p class="gm-note">' + esc(m.figureNote) + '</p>' : '') + (r.note ? '<p class="gm-note gm-fignote">' + esc(r.note) + '</p>' : '') +
         npcGenLinesHtml(c.lines) +
         '<div class="gm-card-acts"><button type="button" class="btn sm primary" data-gm="npcfile"' + (inCast ? ' disabled' : '') + ' title="Adds them to the cast, hidden from the players">' + (inCast ? 'In the cast' : 'Add to the cast') + '</button>' +
         '<button type="button" class="btn sm" data-gm="pin" data-tool="npc">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="npc">Copy</button></div></article>';

@@ -222,6 +222,38 @@ try {
   check(await G.page.$eval('#gm-scene', (b) => { const r = b.getBoundingClientRect(); return [...b.querySelectorAll('.gm-chip')].every((c) => c.getBoundingClientRect().bottom <= r.bottom + 1); }), 'with the column overflowing, the Scene line still holds all its chips (no clipped button)');
   await shot(G.page, '01c-gm-situation');
 
+  /* ---- wave 2: the generators' fields on the card: the spend sentence under the lead, the coaching under "Why", the position on the pin ---- */
+  {
+    await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    const sceneOpen = () => G.page.$eval('#gm-root', (r) => r.classList.contains('scene-open'));
+    if (!(await sceneOpen())) await G.page.click('#gm-scene');
+    await G.page.fill('#gm-c-threat', 'the dog is waking up');
+    await until(async () => ((await gmState()).con || {}).live && (await gmState()).con.live.threat === 'the dog is waking up', 5000);
+    if (await sceneOpen()) await G.page.click('#gm-scene');
+    check(!(await sceneOpen()), 'the Scene controls are folded again');
+    let spend = '';
+    for (let i = 0; i < 6 && !spend; i++) { await G.page.keyboard.press('2'); await G.page.waitForSelector('#gm-card .gm-lead'); spend = await G.page.$eval('#gm-card .gm-lead', (l) => (l.querySelector('.gm-lead-s') || { textContent: '' }).textContent.trim()).catch(() => ''); }
+    check(/the dog is waking up/.test(spend), 'a 4/5 with a threat: the spend sentence sits under the lead line (' + spend + ')');
+    check(await G.page.$eval('#gm-card .gm-lead', (l) => { const t = l.querySelector('.gm-lead-t').getBoundingClientRect(), s = l.querySelector('.gm-lead-s').getBoundingClientRect(); return s.top >= t.bottom - 1 && s.height > 10; }), 'and it is drawn right under it');
+    const whys = await G.page.$$eval('#gm-card details.gm-why', (ds) => ds.map((d) => d.open));
+    check(whys.length >= 1 && whys.every((o) => !o), 'the coaching lines are folded under closed "Why" folds (' + whys.length + ')');
+    check(await G.page.$eval('#gm-card .gm-lead .gm-more', (m) => !m.open) && !(await G.page.$('#gm-card .gm-lead .gm-more .gm-want')), 'More starts shut, and does not repeat the lead line');
+    await G.page.click('#gm-card .gm-lead .gm-more > summary');
+    /* a closed <details> keeps its content's layout size in Chromium, so "shown" is checkVisibility() (false while closed) and a real height */
+    const whyShown = async () => G.page.$eval('#gm-card .gm-lead .gm-why-b', (b) => b.checkVisibility() && b.getBoundingClientRect().height > 20).catch(() => false);
+    check(!(await whyShown()), 'a closed Why shows none of its text');
+    await G.page.click('#gm-card .gm-lead .gm-why > summary');
+    check(await whyShown(), 'a tap on Why opens the coaching');
+    const coachWords = (await G.page.$eval('#gm-card .gm-lead .gm-why-b', (b) => b.textContent.replace(/\s+/g, ' ').trim())).slice(0, 30);
+    await G.page.evaluate(() => { document.querySelector('.gm-console').scrollTop = document.querySelector('#gm-card').offsetTop - 70; });
+    await sleep(300);
+    await shot(G.page, 'wave2-situation-why');
+    await G.page.click('#gm-card [data-gm="pin"]');
+    const pin = await until(async () => { const d = await gmState(); const p = Object.values(d.pins || {}); return p.length ? p[p.length - 1] : null; }, 5000);
+    check(!!pin && coachWords.length > 10 && /^A 4\/5 \(risky → .*harm \d/.test(pin.text.split('\n')[0]) && !pin.text.includes(coachWords), 'Pin: the position chip is on the title line, and the coaching is left out (' + (pin ? pin.text.split('\n')[0] : '') + ')');
+    check(await G.page.$eval('#gm-card', (c) => !c.querySelector('.gm-quiet')), 'a current card carries no "redrawn" note');
+  }
+
   /* ---- the location tab and the map ---- */
   await G.page.keyboard.press('b');
   check(await G.page.$eval('#gm-loc', (p) => !p.hidden), 'B shows the Location tab');
@@ -230,6 +262,17 @@ try {
   check((await G.page.$$('#gm-loc .gm-secret')).length > 0 && !/GM only/i.test(await G.page.textContent('#gm-loc .gm-loccard')) && (await G.page.$$('#gm-loc .gm-badge')).length === 0, 'location: no "GM only" badges (the whole page is GM only); the orange rule stays');
   check((await G.page.$$eval('#gm-loc .gm-gband.shown .gm-seen', (xs) => xs.length)) === 1 && (await G.page.$$eval('#gm-loc .gm-gband:not(.shown) .gm-seen', (xs) => xs.length)) === 0 && (await G.page.$$eval('#gm-loc .gm-lfold[data-fold="band-public"] summary .gm-seen', (xs) => xs.length)) === 1, 'a "Players see" chip marks the public band and its fold, nothing else yet');
   check(!(await G.page.$('#gm-loc .gm-say .gm-seen')), 'the Say box carries no "Players see" chip until it has gone to the iPad');
+  {   /* wave 2: the plan under Say (GM only), a Rule row, Flags only the rare ones */
+    const gl = await G.page.evaluate((pk) => { const st = window.B68GmPage._state(), g = window.B68GmLocation.glance(st.locRoll, pk, ['public']); return { plan: g.plan, rule: g.rule, flags: g.flags }; }, { T: PACK.parts.location.T, extra: PACK.parts.location.extra });
+    check(!!gl.plan && await G.page.$eval('#gm-loc .gm-plan', (p, t) => p.textContent.replace(/\s+/g, ' ').includes(t) && /Plan/.test(p.querySelector('.gm-lab').textContent) && !p.closest('.gm-say'), gl.plan), 'location: a Plan line under Say, outside the Say box: ' + gl.plan);
+    check(await G.page.$eval('#gm-loc .gm-glance', (g) => { const say = g.querySelector('.gm-say').getBoundingClientRect(), plan = g.querySelector('.gm-plan').getBoundingClientRect(); return plan.top >= say.bottom - 1; }), 'and it is drawn under the Say box');
+    const dts = await G.page.$$eval('#gm-loc .gm-glance-dl dt', (xs) => xs.map((x) => x.textContent));
+    check(dts.includes('Rule') === !!gl.rule && dts.includes('Flags') === (gl.flags.length > 0) && !/ring-skip|District rule/.test(await G.page.textContent('#gm-loc .gm-glance')), 'a Rule row when the district has a rule (' + !!gl.rule + '); Flags only the rare ones (' + gl.flags.length + ')');
+    await G.page.evaluate(() => { const p = document.querySelector('#gm-loc'); p.scrollTop = 0; document.querySelector('.gm-console').scrollTop = document.querySelector('#gm-card').offsetTop - 70; });
+    await G.page.waitForFunction(() => !document.getElementById('toastMsg').textContent && !document.getElementById('toastErr').textContent, null, { timeout: 9000 }).catch(() => {});
+    await sleep(200);
+    await shot(G.page, 'wave2-location-plan');
+  }
   check(await G.page.$eval('[data-gm="ipad"]', (b) => b.disabled), 'map: Show on iPad is off on the GM layer');
   check(!!(await G.page.$('#gm-map svg')) && await G.page.$eval('#gm-map', (m) => m.getAttribute('data-layer') === 'gm') && await G.page.$eval('#gm-m-view', (s) => s.value === 'rings'), 'a roll draws the GM-layer rings map at once');
   check(await G.page.$eval('#gm-m-view', (s) => !!s.closest('details.gm-mapopts') && !s.closest('details').open) && await G.page.$eval('#gm-map', (m) => m.compareDocumentPosition(document.querySelector('.gm-mapopts')) & Node.DOCUMENT_POSITION_FOLLOWING) && await G.page.$eval('.gm-map-ctl [data-gm="draw"]', (b) => !b.closest('details')), 'View and Theme fold under the map; Layer, Reveal and Draw stay above it');

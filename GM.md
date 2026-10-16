@@ -77,7 +77,10 @@ fails and nobody is known, nothing is purged.
 
 - **First run.** With no pack on the server the page asks for `gm-private/b68-gm-pack.json` (built by `npm run gm:pack`),
   checks it (`format` 1, `console` and `location` parts with `T`), previews the parts and uploads one part per
-  `importPart` with a progress bar; parts the server holds that the file lacks are removed. **Update pack** does the same
+  `importPart` with a progress bar; parts the server holds that the file lacks are removed. Each module checks its own part
+  (`B68GmConsole`, `B68GmLocation`, `B68GmNpc`, `B68GmScenes`, `B68GmEngagement`: `check(T)`): the table entries a part lacks are listed
+  as a **warning** in the preview and, for the pack the page loads, in the Menu under **Pack check** (with one toast per page load).
+  A warning never stops the upload, and a roll that needs a missing entry uses a neutral word. **Update pack** does the same
   again; **Forget GM data on this device** drops the local copies. After that, each visit compares the cached part
   versions with `pack()` and fetches only what changed; if a part will not download, the page carries on with the copy on
   the device ("offline copy" in the header). The header shows "Campaign data exported DD/MM/YYYY", amber when
@@ -136,14 +139,22 @@ fails and nobody is known, nothing is purged.
   preference and the `SITUATIONS_DEFAULT` switch went on 18/10/2026): four buttons, each a moment in the roll: `1` **Before** (a Devil's
   Bargain), `2` **4/5**, `3` **1–3**, `4` **Someone**. A large three-way **Position** switch (controlled / risky / desperate, with what
   it means for severity, winds and harm) sits above them, always on screen; the other controls (scene, district, PC, NPC,
-  threat) fold under the **Scene** line; there is no Result control (the button is the result). A card is a **lead box** (one big line, its chips, its own
-  detail under *More*), at most three one-line **Or** rows that each open to their full section, and **one** actions row merged
-  from every section (bargains owed, callbacks used, ticks...), then Pin and Copy. Under the card and Earlier, **More tables**
+  threat) fold under the **Scene** line; there is no Result control (the button is the result). A card is a **lead box** (one big line,
+  with the **spend sentence** under it when a threat is set, its chips, its own detail under *More*, which does not repeat the lead
+  line), at most three one-line **Or** rows that each open to their full section, and **one** actions row merged
+  from every section (bargains owed, callbacks used, ticks...), then Pin and Copy. The console's recurring coaching lines
+  (`coach: true`: "say it before the dice...") sit under a closed **Why** in every section (in More for the lead, in the body of an
+  Or row), so the card reads as the draw and its numbers; Pin, Copy and `L` leave them out, and put the position chip
+  ("risky → 2 winds · harm 2") on the title line. Under the card and Earlier, **More tables**
   folds out the nine single tables (no keys); a pack whose console has no situations layer shows a note where the four buttons
   go, and its single tables still roll. Composed cards are stored under `cards.situation` / `hist.situation` (replay info:
-  `{ id: 'situation', situation, seed, ui, mem }`), never under `console`: code from before redraws any unknown console id as a
-  Devil's Bargain. Single tables keep `cards.console` / `hist.console`, where rolls from before the Situations also live, and
-  Earlier lists the last five across both; the newer of the two cards is the one on screen.
+  `{ id: 'situation', situation, seed, ui, mem, composeVersion }`), never under `console`: code from before redraws any unknown console id as a
+  Devil's Bargain. A card stored before the composition was versioned has no `composeVersion`: it is redrawn with the current
+  composition and a quiet line on the card says so ("Redrawn with the current tables"). Single tables keep `cards.console` /
+  `hist.console`, where rolls from before the Situations also live, and
+  Earlier lists the last five across both; the newer of the two cards is the one on screen. An **Earlier** chip names what the
+  card is (the NPC for a Someone, Contact or Face card; a Devil's Bargain without its "Want +1d?" lead-in), with the time it was rolled and its
+  position (`21:14 · risky`) in small type under it and in its tooltip; the other tools' chips carry the time.
 - **Now in** (the district every tool starts from, 18/10/2026). One select in the top bar (on a phone, where the bar has no room, in the
   Scene line), kept in the GM state as `now: { district }` (`''`: anywhere). The console's **District**, the Street scene's, the
   Location's and the NPC generator's pickers each lead with **Now in: <district>**, which follows it; picking a district there is that
@@ -159,9 +170,12 @@ fails and nobody is known, nothing is purged.
   **rings** map at once (the controls go to rings / GM, the theme stays; Draw is for another view, theme or layer).
   - **The glance card** (`B68GmLocation.glance`): the name and place, **Say** (the first line of the street
     description, built only from fields `playerSummary` already shows) with the **Street description on iPad** button,
+    the **Plan** (one sentence under Say, outside its box: the front door and its obstacle, the target room and band, the
+    locks on the way down; it names the target, so it is GM only and reaches no push: `gm-nosecrets.test.mjs` (h)),
     then Whose (faction, Tier, hold, district Security), the bands (room count, locks, ★ on the target's band, dashed
-    when the players can see it), the target, and Flags (off turf, a low Tier holding a high-value target, a district
-    clash, low paranormal, a district rule, ring-skips).
+    when the players can see it), the target, the district **Rule** (its first sentence, a row only when there is one), and
+    Flags, which are now only the rare cases (off turf, a low Tier holding a high-value target, a district clash, low
+    paranormal; the ring-skips sit in the Plan fold's hint).
   - **Folds** (`B68GmLocation.folds`), closed by default: Read aloud, Ways in, one per band, Opposition (both threats and
     the dossier), Block & word out, Plan & routes (the ring-skips), Reference (the four ratings, the band labels, why
     the target is there, the band note, the target type's note, the flags in full, Also here, the plan geometry, the
@@ -214,8 +228,10 @@ fails and nobody is known, nothing is purged.
   every picker on any the draws are the vault generator's, unchanged. A roll is a seed, the repeat-guard memory and the
   choices, so a reload or an Earlier click (five kept) redraws the same NPC and the same portrait. The portrait comes from
   `app/gm/figure-map.js` (an NPC's fields to a figure kit spec, with a built-in map while the vault's
-  `Tools/blades-68-npc-figure-map.md` page does not exist); if the kit will not draw it, the nearest stock figure is used and
-  the card says so. **Add to the cast** files the NPC as a hidden cast doc (tag `generated`, the look as the description, the
+  `Tools/blades-68-npc-figure-map.md` page does not exist); the one line under the portrait is the module's own `fig.note`
+  (what was stripped, "a stock figure" when the kit would not draw it, or why there is none). When the figure could not be
+  built (`fig.failed`), or the kit itself throws or is not loaded, the card draws no portrait and the note reads
+  "No portrait: <reason>", never a blank. **Add to the cast** files the NPC as a hidden cast doc (tag `generated`, the look as the description, the
   play notes as GM notes) and stores the roll's seed and memory under `npcgen[<npc id>]` in the GM state, so `npm run gm:pull`
   can rebuild the vault card from it (`SYNC.md`). Pin and Copy work as on the other cards. Under it, the app's cast with
   portraits: **Show on iPad** (a hidden NPC asks first) and **Put on stage**, which stages them from here (a hidden NPC is
