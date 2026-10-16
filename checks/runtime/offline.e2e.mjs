@@ -4,7 +4,8 @@
 // says so) and lands on the server once the browser is back online. Also: the manifest is served and valid,
 // and there are no console errors while online.
 //   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node checks/runtime/offline.e2e.mjs      (PORT=8790 by default)
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+const WIN = process.platform === 'win32';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -23,10 +24,10 @@ const stateDir = mkdtempSync(path.join(tmpdir(), 'b68-offline-check-'));
 const server = spawn(path.join(ROOT, 'node_modules', '.bin', 'wrangler'), ['dev', '--port', String(PORT), '--ip', '127.0.0.1',
   '--inspector-port', String(PORT + 20000), '--show-interactive-dev-session', 'false', '--persist-to', stateDir, '--log-level', 'warn',
   '--var', 'DEV_USER:gm@example.test', '--var', 'GM_EMAILS:gm@example.test'],
-{ cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+{ cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: !WIN, shell: WIN, stdio: ['ignore', 'pipe', 'pipe'] });
 let serverLog = '';
 server.stdout.on('data', (d) => { serverLog += d; }); server.stderr.on('data', (d) => { serverLog += d; });
-function killServer(sig = 'SIGTERM') { try { process.kill(-server.pid, sig); } catch (_) {} }
+function killServer(sig = 'SIGTERM') { try { WIN ? spawnSync('taskkill', ['/pid', String(server.pid), '/T', '/F'], { stdio: 'ignore' }) : process.kill(-server.pid, sig); } catch (_) {} }
 process.on('exit', () => { killServer('SIGKILL'); try { rmSync(stateDir, { recursive: true, force: true }); } catch (_) {} });
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
 
@@ -54,7 +55,7 @@ try {
     check(ir.ok && (ir.headers.get('content-type') || '').startsWith(i.type), 'icon ' + i.src + ' served as ' + ir.headers.get('content-type'));
   }
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await ctx.newPage();
   const online = { errors: [] };

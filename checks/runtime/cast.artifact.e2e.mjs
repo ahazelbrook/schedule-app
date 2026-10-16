@@ -44,7 +44,7 @@ const STUB = (canEdit, withNpcs) => `(() => {
     downloads: { save: async () => {} } })[name] || null };
 })();`;
 
-const b = await chromium.launch();
+const b = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
 const errs = [];
 async function open(canEdit, withNpcs = true) {
   const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });

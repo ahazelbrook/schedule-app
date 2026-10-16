@@ -604,7 +604,7 @@ await test('8a. keyAction: S opens the street scene panel and E the engagement p
 await test('8b. S opens the panel; Roll files the card (seed, controls, memory BEFORE the roll) and a history entry; the card has the read-aloud, ratings and grid', async () => {
   const fg = fakeGm(), h = await openPage({ fg });
   assert.ok(h.q('[data-pane="scenes"]') && h.q('[data-pane="engagement"]') && h.q('#gm-scn') && h.q('#gm-eng'));
-  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,location,scenes,engagement,npc,cards,rules,ipad');
+  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,engagement,npc,cards,ipad');
   h.press('s'); assert.equal(h.page._state().panel, 'scenes');
   assert.ok(!h.q('#gm-scn .gm-scncard'), 'nothing before the first roll');
   h.q('[data-gm="scnroll"]').click();
@@ -943,6 +943,40 @@ await test('9l. Set as score scene: a player-layer plan and iso from the roll, n
   h.q('[data-reveal="working"]').checked = true; dispatch(h.q('[data-reveal="working"]'), 'change'); await tick(); await tick();
   assert.equal(fg.server.ambPatches.length, 1, 'revealing a band sends nothing'); assert.equal(JSON.stringify(fg.server.amb.doc.score), before);
   h.press('i'); await until(() => h.q('#gm-ipad-score')); assert.match(h.q('#gm-ipad-score').textContent, new RegExp('^' + roll.name.replace(/[.*+?^$${}()|[\]\\]/g, '\\$&')));
+  await h.save();
+});
+
+await test('10a. the laptop layout: body.gm-app while open, the top bar (session, iPad, listening), the menu, F for Focus with the console as its keys, Classic layout on this device', async () => {
+  const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
+  assert.ok(br.doc.body.classList.contains('gm-app'), 'on while the tools are open');
+  assert.equal(h.q('#gm-bar-sess').textContent, 'Session 3');
+  await until(() => /^iPad: /.test(h.q('#gm-bar-ipad').textContent)); assert.match(h.q('#gm-bar-ipad').textContent, /^iPad: /);
+  assert.ok(/Clear → ambient/.test(h.q('.gm-bar [data-gm="blankipad"]').textContent) && h.q('.gm-bar [data-gm="darkipad"]'), 'Clear and Lights out in the bar');
+  assert.equal(h.qa('.gm-bar .gm-save').length, 1, 'saving shows in the bar');
+  assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'the menu starts shut');
+  h.q('[data-gm="menu"]').click(); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), false); assert.equal(h.q('[data-gm="menu"]').getAttribute('aria-expanded'), 'true');
+  assert.ok(['note', 'update', 'layout-classic', 'forget'].every((a) => h.q('.gm-menu-list [data-gm="' + a + '"]')), 'export, update, classic and forget are in it');
+  h.q('[data-gm="menu"]').click(); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'a second press shuts it');
+  h.q('[data-gm="menu"]').click(); h.press('Escape'); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'Escape shuts it');
+  assert.equal(h.qa('#gm-mini button').length, 4, 'the console as its four keys');
+  h.press('f'); assert.ok(h.q('#gm-root').classList.contains('focus')); assert.equal(h.q('[data-gm="focus"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(br.ls.get('b68.gm.prepWide'), '1', 'remembered on this device');
+  h.qa('#gm-mini button')[0].click(); await until(() => fg.server.patches.some((p) => p.cards && p.cards.situation));
+  assert.ok(fg.server.patches.some((p) => p.cards && p.cards.situation), 'a key in Focus rolls');
+  h.q('[data-gm="focus"]').click(); assert.ok(!h.q('#gm-root').classList.contains('focus'), 'the button turns it off');
+  h.q('[data-gm="menu"]').click(); h.q('.gm-menu-list [data-gm="layout-classic"]').click();
+  assert.ok(!br.doc.body.classList.contains('gm-app') && br.ls.get('b68.gm.layout') === 'classic', 'Classic layout: off, and remembered');
+  assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'the menu shuts after an item');
+  h.q('.gm-head [data-gm="layout-app"]').click(); assert.ok(br.doc.body.classList.contains('gm-app') && !br.ls.has('b68.gm.layout'), 'Laptop layout brings it back');
+  await h.save();
+  assert.ok(!br.doc.body.classList.contains('gm-app'), 'off once the page closes');
+});
+await test('10b. the rail: an empty box is one line; Classic layout survives a reopen', async () => {
+  const br = fakeBrowser(); br.ls.set('b68.gm.layout', 'classic'); const h = await openPage({ br, camp: CAMP3 });
+  assert.ok(!br.doc.body.classList.contains('gm-app'), 'classic chosen: the old layout');
+  const empties = [...h.qa('#gm-rail .gm-box-empty')].map((b) => b.textContent.replace(/\s+/g, ' ').trim());
+  assert.ok(empties.includes('Table clocks · none'), JSON.stringify(empties));
+  assert.ok(h.q('#gm-rail .gm-owed'), 'a box with something in it keeps its list (the fixture owes bargains)');
   await h.save();
 });
 

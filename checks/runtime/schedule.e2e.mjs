@@ -2,7 +2,8 @@
 // through the API, a player answers in the grid, the GM confirms a date in the page, the player RSVPs on the card,
 // and the server holds each change (the player's writes pass the API's own-keys rule). No console errors.
 //   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node checks/runtime/schedule.e2e.mjs
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+const WIN = process.platform === 'win32';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -13,15 +14,15 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const stateDir = mkdtempSync(path.join(tmpdir(), 'b68-int-'));
-const server = spawn(path.join(ROOT, 'node_modules', '.bin', 'wrangler'), ['dev', '--port', String(PORT), '--ip', '127.0.0.1', '--inspector-port', String(PORT + 20000), '--show-interactive-dev-session', 'false', '--persist-to', stateDir, '--log-level', 'warn', '--var', 'DEV_USER:gm@example.test', '--var', 'GM_EMAILS:gm@example.test'], { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: true, stdio: 'ignore' });
-process.on('exit', () => { try { process.kill(-server.pid, 'SIGKILL'); } catch (_) {} try { rmSync(stateDir, { recursive: true, force: true }); } catch (_) {} });
+const server = spawn(path.join(ROOT, 'node_modules', '.bin', 'wrangler'), ['dev', '--port', String(PORT), '--ip', '127.0.0.1', '--inspector-port', String(PORT + 20000), '--show-interactive-dev-session', 'false', '--persist-to', stateDir, '--log-level', 'warn', '--var', 'DEV_USER:gm@example.test', '--var', 'GM_EMAILS:gm@example.test'], { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: !WIN, shell: WIN, stdio: 'ignore' });
+process.on('exit', () => { try { WIN ? spawnSync('taskkill', ['/pid', String(server.pid), '/T', '/F'], { stdio: 'ignore' }) : process.kill(-server.pid, 'SIGKILL'); } catch (_) {} try { rmSync(stateDir, { recursive: true, force: true }); } catch (_) {} });
 let fails = 0; const check = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 const api = (method, p, user, body) => fetch(BASE + '/api' + p, { method, headers: { 'X-Dev-User': user, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
 for (let i = 0; i < 100; i++) { try { const r = await fetch(BASE + '/index.html'); if (r.ok) break; } catch (_) {} await sleep(300); }
 const at1 = new Date(Date.now() + 5 * 864e5).toISOString(), at2 = new Date(Date.now() + 12 * 864e5).toISOString();
 let r = await api('PATCH', '/campaign', 'gm@example.test', { schedule: { options: { o_a: { at: at1, minutes: 240, note: '' }, o_b: { at: at2, minutes: 240, note: '' } } } });
 check(r.status === 200, 'GM seeds two options via API');
-const b = await chromium.launch();
+const b = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
 async function page(user) {
   const ctx = await b.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: 390, height: 900 } });
   const p = await ctx.newPage(); const errs = []; p.on('dialog', (d) => d.accept());

@@ -57,7 +57,7 @@ try {
   }
   await api('PATCH', '/campaign', { session: { number: 4 } });
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const errors = [];
   async function open(hash, { width = 1280, height = 900, mobile = false } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile });

@@ -88,7 +88,17 @@ fails and nobody is known, nothing is purged.
   stage) | the capture bar at the foot. 600–1100 px: two columns, the rail below. Phone: a Console | Prep | Location | Street | Engage |
   NPC | Cards | Screen | iPad | State bar, the Position switch at the top, the situations a 2 × 2 grid (Classic: 3 × 3), the other controls behind a "Scene" line,
   capture on a floating button.
-- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd): `1`–`4` roll a situation (Classic: `1`–`9` roll a single table), `R` `B` `N` `S` `E` `O` `T` `I` switch the panel
+- **The laptop layout** (>= 1100 px, 16/10/2026): the window is the page. The site header and footer give way to a slim top
+  bar (the session, Saved, a stale-pack note, **iPad:** what the players see, **Listening** with whether the PC is copying,
+  **Clear → ambient**, **Lights out**, **Display**, and a **Menu** with Export tonight's note, Update pack, the site's pages,
+  **Classic layout** and Forget GM data). The three columns each scroll on their own and capture sits fixed at the foot, so a
+  long Prep note or the GM screen never carries the console or the rail away. The side tabs are one row (Prep, Screen |
+  Location, Street, Engage, NPC | Cards, iPad). Prep and Screen show their sections as an outline beside the text, the one
+  being read marked. **Focus** (`F`, or the button by the tabs) shrinks the console to its keys on any tab (it replaces Prep's
+  Wide, and shares its setting, `b68.gm.prepWide`). Empty rail boxes are one line. **Classic layout** in the menu brings back
+  the old page on this device (`b68.gm.layout` = classic); **Laptop layout** in the old header returns. `body.gm-app` turns it
+  on while the tools are open; loading and import screens keep the site header.
+- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd): `1`–`4` roll a situation (Classic: `1`–`9` roll a single table), `R` `B` `N` `S` `E` `O` `T` `I` switch the panel, `F` Focus
   (Prep, Location, NPC, Street scene, Engagement, Cards, Screen, iPad), `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
   the last roll under "Rolled at the table", `H` blanks the screen until any key or tap, `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
 - **Situations and Classic.** The console opens on **Situations**: four buttons, each a moment in the roll: `1` **Before** (a Devil's
@@ -189,7 +199,7 @@ fails and nobody is known, nothing is purged.
   - `> [!quote] SAY` as a read-aloud card; a code span that is one `[bracket]` (`` `[Blade's pitch]` ``) as a provenance chip;
   - links: `[[#Heading]]` scrolls; an NPC, PC or faction opens a peek card from the pack's campaign part (an NPC in the app's
     cast gets Show on iPad and Put on stage); another prep note opens it; anything else opens in Obsidian (`obsidian://open`);
-  - **Pin** on a section keeps it, live, at the top of the rail (three at most, `prep.pins`); **Wide** hides the console.
+  - **Pin** on a section keeps it, live, at the top of the rail (three at most, `prep.pins`); **Wide** hides the console (on a laptop, **Focus** shrinks it to its keys instead).
   The header says when the part was exported and warns after a day. Prep text never goes to the iPad or to players; edits are
   made in Obsidian and reach the page with the next pack build and push. Checks: `checks/runtime/gm-prep.test.mjs`,
   `checks/runtime/gm-prep.e2e.mjs` (`PREP_PACK=<pack>` to look at a real pack locally).

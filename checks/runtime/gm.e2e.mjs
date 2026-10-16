@@ -302,7 +302,7 @@ try {
   check(!(await G.page.$('.gm-blank')), 'any key restores the page');
 
   /* ---- Export tonight's note ---- */
-  const [dl] = await Promise.all([G.page.waitForEvent('download', { timeout: 10000 }), G.page.click('.gm-head [data-gm="note"]')]);
+  const [dl] = await Promise.all([G.page.waitForEvent('download', { timeout: 10000 }), G.page.click('.gm-capacts [data-gm="note"]')]);
   const noteText = readFileSync(await dl.path(), 'utf8');
   check(/^b68g-s\d\d-notes\.md$/.test(dl.suggestedFilename()) && ['## Names', '## Loose ends', '## Moments', '## Rolled at the table'].every((h) => noteText.includes(h)) && /Inspector Invented/.test(noteText), 'the note downloads with its four headings: ' + dl.suggestedFilename());
 
@@ -314,7 +314,8 @@ try {
   check(await G.page.waitForFunction(() => /Mira/.test(document.getElementById('display-page').textContent), null, { timeout: 15000 }).then(() => true, () => false), '#display: it shows the NPC last pushed (Mira, from the cast)');
   check(await G.page.$$eval('#display-page a, #display-page [href]', (xs) => xs.filter((x) => x.tagName.toLowerCase() === 'a' || /gm/i.test(x.getAttribute('href') || '')).length) === 0, '#display: no link anywhere in the display (no way to the GM page)');
   await G.page.goto(BASE + '/#gm'); await G.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
-  check(await G.page.$eval('header.top', (h) => getComputedStyle(h).display !== 'none') && (await G.page.$eval('#display-page', (d) => d.hidden && d.childElementCount === 0)), 'leaving #display: unmounted, the header is back');
+  /* on a laptop the GM page brings its own top bar instead of the site header (the laptop layout) */
+  check(await G.page.evaluate(() => getComputedStyle(document.querySelector('header.top')).display !== 'none' || (document.body.classList.contains('gm-app') && getComputedStyle(document.querySelector('.gm-bar')).display !== 'none')) && (await G.page.$eval('#display-page', (d) => d.hidden && d.childElementCount === 0)), 'leaving #display: unmounted, the header (or the GM bar) is back');
 
   /* ---- layouts: the phone at 360 px, the iPad both ways ---- */
   for (const [w, h, name] of [[360, 740, 'phone'], [768, 1024, 'iPad portrait'], [1024, 768, 'iPad landscape']]) {

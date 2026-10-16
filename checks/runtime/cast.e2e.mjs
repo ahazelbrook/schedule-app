@@ -60,7 +60,7 @@ try {
   if (!ready) throw new Error('server not ready:\n' + serverLog);
   if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const errors = [];
   async function open(user, hash, { width = 1280, height = 900, mobile = false, scheme } = {}) {
     const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile, deviceScaleFactor: mobile ? 2 : 1, colorScheme: scheme });
