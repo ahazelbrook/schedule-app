@@ -382,7 +382,8 @@ await test('6a. the console is the four Situations: a big Position switch, the s
   assert.equal(h.qa('#gm-singles kbd').length, 0, 'no keys on the single tables');
   assert.equal(h.qa('[data-gm="view"]').length, 0, 'no Situations | Classic toggle anywhere'); assert.ok(!h.q('.gm-conhead') && !h.q('.gm-head'), 'no console header, no page heading');
   const col = [...h.q('.gm-console').kids].filter((k) => k.nodeType === 1).map((k) => k.id);
-  assert.deepEqual(col, ['gm-pos', 'gm-scene', 'gm-mini', 'gm-controls', 'gm-buttons', 'gm-card', 'gm-earlier', 'gm-singles'], 'the column: Position, Scene, the buttons, the card, Earlier, More tables');
+  assert.deepEqual(col, ['gm-pos', 'gm-scenebox', 'gm-mini', 'gm-controls', 'gm-buttons', 'gm-card', 'gm-earlier', 'gm-singles'], 'the column: Position, Scene, the buttons, the card, Earlier, More tables');
+  assert.equal(h.q('#gm-scenebox > #gm-scene') || h.q('#gm-scenebox').querySelector('#gm-scene'), h.q('#gm-scene'), 'the Scene button sits in its box');
   assert.equal(h.q('#gm-singles').tagName, 'DETAILS', 'the single tables are folded');
   assert.match(h.q('#gm-scene-chips').textContent, /District: any/, 'the Scene line labels its chips');
   await h.save();
@@ -631,9 +632,14 @@ await test('8f. E opens the engagement panel on a preview (1d, no roll yet); a c
   h.press('e'); assert.equal(h.page._state().panel, 'engagement');
   assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 1d');
   assert.ok(/Set the factors, then roll\./.test(cardOf(h, '#gm-eng .gm-engcard')));
-  assert.equal(h.qa('#gm-eng select').length, 2 + T_EN.factor.length);
-  change(h.q('#gm-e-bold'), 1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
-  change(h.q('#gm-e-tier'), -1); change(h.q('#gm-e-bold'), -1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — -1d');
+  assert.equal(h.qa('#gm-eng select').length, 2, 'approach and loadout are selects');
+  assert.equal(h.qa('#gm-eng [data-gm="engtri"]').length, 3 * T_EN.factor.length, 'every factor is three chips, no select');
+  const tri = (id, v) => h.q('[data-gm="engtri"][data-id="' + id + '"][data-v="' + v + '"]').click();
+  assert.equal(h.qa('[data-gm="engtri"][data-id="bold"]').length, 3, 'a factor is three chips');
+  assert.ok(/plus|neat|bold/i.test(h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').textContent) || h.q('[data-gm="engtri"][data-id="bold"][data-v="1"] small'), 'the +1d chip carries the factor’s statement');
+  tri('bold', 1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
+  assert.equal(h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').getAttribute('aria-pressed'), 'true');
+  tri('tier', -1); tri('bold', -1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — -1d');
   change(h.q('#gm-e-approach'), 'Slip'); change(h.q('#gm-e-load'), 'Loud');
   assert.ok(/opening gambit is the unwatched door · Loud loadout, load 6/.test(cardOf(h, '#gm-eng .gm-engcard')));
   h.q('[data-gm="engroll"]').click();
@@ -648,8 +654,8 @@ await test('8f. E opens the engagement panel on a preview (1d, no roll yet); a c
 await test('8g. engagement: reload redraws the identical dice; changing a control drops the stored card (not the history); Earlier brings back the roll and its controls', async () => {
   const fg = fakeGm(), br = fakeBrowser();
   const h = await openPage({ fg, br });
-  h.press('e'); change(h.q('#gm-e-bold'), 1); h.q('[data-gm="engroll"]').click(); const a = cardOf(h, '#gm-eng .gm-engcard');
-  change(h.q('#gm-e-tier'), 1); h.q('[data-gm="engroll"]').click(); const b = cardOf(h, '#gm-eng .gm-engcard'); assert.notEqual(a, b);
+  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click(); h.q('[data-gm="engroll"]').click(); const a = cardOf(h, '#gm-eng .gm-engcard');
+  h.q('[data-gm="engtri"][data-id="tier"][data-v="1"]').click(); h.q('[data-gm="engroll"]').click(); const b = cardOf(h, '#gm-eng .gm-engcard'); assert.notEqual(a, b);
   await h.save();
   const h2 = await openPage({ fg, br });
   assert.equal(cardOf(h2, '#gm-eng .gm-engcard'), b, 'the same roll after a reload');

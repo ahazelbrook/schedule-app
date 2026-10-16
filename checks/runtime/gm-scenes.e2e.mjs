@@ -109,9 +109,10 @@ try {
   await p.keyboard.press('e');
   check(await p.$eval('#gm-root', (r) => r.getAttribute('data-panel')) === 'engagement', 'key E opens the engagement panel');
   check(await text(p, '#gm-eng .gm-engcard h3') === 'Smash — 1d', 'the preview shows the pool before any roll');
-  await p.selectOption('#gm-e-bold', '1');
-  await p.selectOption('#gm-e-tier', '1');
-  check(await text(p, '#gm-eng .gm-engcard h3') === 'Smash — 3d', 'two +1d factors: 3d');
+  check((await p.$$('#gm-eng [data-gm="engtri"][data-id="bold"]')).length === 3 && (await p.$$('#gm-eng select[data-engmod]')).length === 0, 'each factor is three chips (−1d / 0 / +1d), its two statements as the labels');
+  await p.click('#gm-eng [data-gm="engtri"][data-id="bold"][data-v="1"]');
+  await p.click('#gm-eng [data-gm="engtri"][data-id="tier"][data-v="1"]');
+  check(await p.$eval('#gm-eng [data-gm="engtri"][data-id="bold"][data-v="1"]', (b) => b.getAttribute('aria-pressed') === 'true') && await text(p, '#gm-eng .gm-engcard h3') === 'Smash — 3d', 'two +1d factors: 3d');
   await p.click('[data-gm="engroll"]');
   await p.waitForFunction(() => /Roll/.test(document.querySelector('#gm-eng .gm-engcard').textContent) && !/Set the factors/.test(document.querySelector('#gm-eng .gm-engcard').textContent));
   const roll = await text(p, '#gm-eng .gm-engcard');

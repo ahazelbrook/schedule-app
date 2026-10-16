@@ -92,7 +92,8 @@ fails and nobody is known, nothing is purged.
   (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | Engage / NPC | Cards | GM screen | iPad | State
   bar in two rows of five (every segment in reach, nothing to drag sideways), both stuck to the top; the Position switch first,
   the situations a 2 × 2 grid, the other controls behind the Scene line, capture on a floating button. After a
-  roll the card's header is scrolled into view (the console column on a laptop, the page on a phone): a roll is never below the fold.
+  roll the card is scrolled into view by the least scroll that shows it (the whole card when it fits, else its lead box; the
+  console column on a laptop, the page on a phone), so Position stays on screen when there is room: a roll is never below the fold.
 - **The app layout** (`body.gm-app`, 16/10/2026; the only layout, at every width, since 18/10: the "Classic layout" switch and
   the `b68.gm.layout` preference went): the window is the page. While the tools are open the
   site header and footer give way to a slim top bar (the session, Saved, a
@@ -180,7 +181,8 @@ fails and nobody is known, nothing is purged.
   **Street**: a district select (or anywhere) and **Roll a street scene**: three read-aloud paragraphs, the four ratings, and a
   GM grid (landmark, who is out, what is in the way, word out, factions, the district rule). **Read-aloud to the iPad** sends
   only the three paragraphs as plain text (never the notable, the rumour or the rule). **Engage**: approach, loadout (Quiet
-  3 / Loud 6) and one -1d / 0 / +1d control per factor; the card shows the pool before a roll, **Roll engagement** rolls it
+  3 / Loud 6) and three chips per factor (**+1d** carrying the factor's plus statement, **0**, **−1d** its minus statement, so
+  which is which reads at a glance); the card shows the pool before a roll, **Roll engagement** rolls it
   (a 0d pool rolls two and keeps the lowest) and the card gives the position, the dice and the closing "cut to the first
   obstacle" line. Both file a card under `cards.scenes` / `cards.engagement` (`{ hid, seed, ui, mem?, label, at }`; the street
   scene keeps its repeat-guard in `mem.scenes`, the engagement roll has none), five Earlier per tool, Pin, Copy and `L`. A reload

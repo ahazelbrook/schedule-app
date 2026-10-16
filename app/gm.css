@@ -61,6 +61,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 
 /* the console: the Scene line (one row of labelled chips) folds the scene / district / aim / NPC / threat controls under it at
    every width, so nothing but Position and the four buttons sits above the card */
+#gm-page .gm-scenebox { display: block; min-width: 0; }
 #gm-page .gm-scene { display: flex; gap: 6px 8px; align-items: center; flex-wrap: wrap; width: 100%; min-height: 44px; padding: 6px 10px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); text-align: left; cursor: pointer; }
 #gm-page .gm-scene::after { content: "+"; margin-left: auto; font: 700 18px/1 var(--font-mono); }
 #gm-page .gm-scene[aria-expanded="true"]::after { content: "−"; }
@@ -183,6 +184,15 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .pp-find input { min-height: 36px; padding: 5px 8px; font-size: 13px; }
 #gm-page .gm-mapopts > summary { font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; }
 #gm-page .gm-mapopts > summary .gm-dim { font: 400 11.5px/1 var(--font-mono); text-transform: none; letter-spacing: 0; }
+/* an engagement factor: three chips, +1d and −1d carrying the factor's two statements */
+#gm-page .gm-tri { gap: 0; }
+#gm-page .gm-triseg { display: flex; width: 100%; justify-self: stretch; }
+#gm-page .gm-trichip { flex: 1 1 0; min-width: 0; display: grid; gap: 3px; justify-items: center; align-content: center; text-align: center; padding: 6px 6px; min-height: 44px; }
+#gm-page .gm-trichip[data-v="0"] { flex: 0 0 52px; }
+#gm-page .gm-trichip b { font: 700 13px/1 var(--font-mono); }
+#gm-page .gm-trichip small { font: 400 11px/1.25 var(--font-text); text-transform: none; letter-spacing: 0; color: var(--ink-soft); max-width: 100%; }
+#gm-page .gm-trichip[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .gm-trichip[aria-pressed="true"] small, #gm-page .gm-trichip:hover small { color: inherit; }
 #gm-page .gm-rulesq { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
 #gm-page .gm-rulesq .gm-field { flex: 1 1 220px; }
 
@@ -271,7 +281,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-root[data-seg="console"] .gm-side, #gm-root[data-seg="console"] .gm-rail,
   #gm-root[data-seg="side"] .gm-console, #gm-root[data-seg="side"] .gm-rail,
   #gm-root[data-seg="state"] .gm-console, #gm-root[data-seg="state"] .gm-side { display: none; }
-  #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-card-h { scroll-margin-top: 140px; }   /* under the sticky bar and the two-row segmented bar */
+  #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead { scroll-margin-top: 140px; scroll-margin-bottom: 84px; }   /* under the sticky bar and the two-row segmented bar, above the capture button */
   #gm-page .gm-btn { grid-template-columns: 1fr; grid-template-rows: auto auto; justify-items: center; text-align: center; min-height: 76px; padding: 8px 4px; }
   #gm-page .gm-btn kbd { grid-row: auto; }
   #gm-page .gm-btn small { display: none; }
@@ -297,7 +307,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-warn.bad { color: var(--alarm); }
 
 /* ---- the console: the Position switch, the four Situations ---- */
-#gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-card-h { scroll-margin-top: 8px; }
+#gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead { scroll-margin-top: 8px; scroll-margin-bottom: 8px; }
 #gm-page .gm-pos { display: grid; gap: 4px; border: 2px solid var(--rule); background: var(--card); padding: 8px 10px 10px; }
 #gm-page .gm-posb-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 #gm-page .gm-posb { display: grid; gap: 2px; align-content: center; justify-items: center; text-align: center; min-height: 72px; padding: 8px 4px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; }

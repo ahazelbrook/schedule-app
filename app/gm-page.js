@@ -984,7 +984,9 @@
          Earlier, and the nine single tables folded under "More tables". Nothing sits above the card but what rolls it. */
       '<section class="gm-col gm-console" aria-label="Console">' +
       '<div class="gm-pos" id="gm-pos" role="radiogroup" aria-label="Position"></div>' +
-      '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls" title="Scene, district, who it aims at, the NPC, the threat on screen">' + '<span class="gm-lab">Scene</span><span class="gm-scene-chips" id="gm-scene-chips"></span></button>' +
+      /* the Scene button sits in a plain div: a <button> as a direct grid item of the scrolling column collapses to its min-height once
+         the column overflows (Chromium sizes the track from the button's min-height, not its wrapped content) */
+      '<div class="gm-scenebox" id="gm-scenebox"><button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"' + ' title="Scene, district, who it aims at, the NPC, the threat on screen">' + '<span class="gm-lab">Scene</span><span class="gm-scene-chips" id="gm-scene-chips"></span></button></div>' +
       '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div>' +
       '<details class="gm-singles" id="gm-singles"></details></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
@@ -1266,19 +1268,22 @@
     if (S.prepWide) { toggleFocus(); if (!focusLeftToasted) { focusLeftToasted = true; toast('Focus off so the card shows. F brings it back.'); } }
     showCard();
   }
-  /* the card's header to the top of its scroller (the console column on a laptop, the page on a phone) unless the whole card
-     is on screen already; the sticky bars are allowed for through the box's scroll-margin-top */
+  /* the card into view in its scroller (the console column on a laptop, the page on a phone), by the least scroll that shows
+     it: the whole card when it fits, else its lead box (the header just above it), so the Position switch stays on screen
+     whenever there is room; nothing moves when the card is on screen already. The sticky bars and the phone's capture
+     button are allowed for through scroll-margins. */
   function showCard() {
-    var box = $q('#gm-card'), h = box && (box.querySelector('.gm-card-h') || box);
-    if (!h || typeof h.scrollIntoView !== 'function' || typeof box.getBoundingClientRect !== 'function') return;
+    var box = $q('#gm-card');
+    if (!box || typeof box.scrollIntoView !== 'function' || typeof box.getBoundingClientRect !== 'function') return;
     var col = $q('.gm-console'), r = box.getBoundingClientRect(), top = 0, bottom = +W.innerHeight || 0, c;
     try {
       if (col && W.getComputedStyle && /auto|scroll/.test(W.getComputedStyle(col).overflowY)) { c = col.getBoundingClientRect(); top = c.top; bottom = c.bottom; }
-      else { var m = parseFloat(W.getComputedStyle ? W.getComputedStyle(box).scrollMarginTop : 0) || 0; top += m; }
+      else if (W.getComputedStyle) { var cs = W.getComputedStyle(box); top += parseFloat(cs.scrollMarginTop) || 0; bottom -= parseFloat(cs.scrollMarginBottom) || 0; }
     } catch (e) {}
     if (r.top >= top && r.bottom <= bottom) return;
+    var target = r.height <= bottom - top ? box : (box.querySelector('.gm-lead') || box.querySelector('.gm-card-h') || box);
     var smooth = true; try { smooth = !(W.matchMedia && W.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
-    try { h.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' }); } catch (e) { try { h.scrollIntoView(); } catch (x) {} }
+    try { target.scrollIntoView({ block: 'nearest', behavior: smooth ? 'smooth' : 'auto' }); } catch (e) { try { target.scrollIntoView(); } catch (x) {} }
   }
   function rollConsole(n) {
     if (!S || !S.con) return;
@@ -1721,11 +1726,11 @@
     var cur = isObj(S.doc.cards) ? S.doc.cards.engagement : null;
     if (!fresh && cur && (!S.engRoll || S.engRoll.seed !== cur.seed)) S.engRoll = replayEngagement(cur);
     var ui = engUi(), roll = S.engRoll, c = roll || en.card(ui);
-    var TRI = [{ value: 0, label: '—' }, { value: 1, label: '+1d' }, { value: -1, label: '−1d' }];
+    /* a factor is three chips: +1d with the factor's plus statement, 0, −1d with its minus statement, so which is which reads */
     var h = '<div class="gm-loc-ctl">' + en.controls.map(function (x) {
-      if (x.type === 'tri') return '<label class="gm-field wide" for="gm-e-' + esc(x.id) + '"><span class="gm-lab">' + esc(x.label) + '</span><select id="gm-e-' + esc(x.id) + '" data-engmod="' + esc(x.id) + '">' + TRI.map(function (o) {
-        return '<option value="' + o.value + '"' + (+ui.mods[x.id] === o.value ? ' selected' : '') + '>' + o.label + '</option>';
-      }).join('') + '</select></label>';
+      if (x.type === 'tri') return '<div class="gm-field wide gm-tri" role="group" aria-label="' + esc(str(x.plus) + ' / ' + str(x.minus)) + '" data-tri="' + esc(x.id) + '"><div class="seg gm-triseg">' + [[1, '+1d', x.plus], [0, '0', ''], [-1, '−1d', x.minus]].map(function (o) {
+        return '<button type="button" class="chip gm-trichip" data-gm="engtri" data-id="' + esc(x.id) + '" data-v="' + o[0] + '" aria-pressed="' + (+ui.mods[x.id] === o[0]) + '"><b>' + o[1] + '</b>' + (o[2] ? '<small>' + esc(o[2]) + '</small>' : '') + '</button>';
+      }).join('') + '</div></div>';
       return selectHtml('gm-e-' + x.id, 'data-eng', x.id, x.label, x.options, ui[x.id]);
     }).join('') + '<button type="button" class="btn primary gm-roll" data-gm="engroll">Roll engagement</button></div>';
     h += '<article class="gm-card gm-engcard" data-tool="engagement"><header class="gm-card-h"><div><h3>' + esc(c.meta.title) + '</h3><p class="gm-sub">' + esc(c.meta.sub) + '</p></div></header>' + chipsHtml(roll ? c.meta.chips : []) + genLinesHtml(c.lines) +
@@ -2361,6 +2366,7 @@
       case 'npcfile': fileNpc(); break;
       case 'scnipad': scenesToIpad(); break;
       case 'engroll': rollEngagement(); break;
+      case 'engtri': setEngagement(b.getAttribute('data-id'), b.getAttribute('data-v'), true); break;
       case 'layer': setMap('layer', b.getAttribute('data-v')); renderLocation(); break;
       case 'draw': drawMap(); break;
       case 'ipad': showOnIpad(); break;
