@@ -269,7 +269,11 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   `?since=` every 4 s while the page is visible and every 20 s when hidden, plus an
   immediate poll after each own write; a write also updates the cache optimistically so the
   sheet never waits on the network. Network errors are retried on the next tick and surfaced
-  once through the `err` callbacks (not after an offline start, which the header shows).
+  once through the `err` callbacks (not after an offline start, which the header shows). A request
+  with no answer in 15 s (a read) or 25 s (a write) is abandoned (`AbortController`) and counts as a
+  network error (`network: true`, `timeout: true`, "no answer from the server in 15 s"), so a
+  connection that is up but dead never holds the poller or the write queue: the status goes offline,
+  the next tick polls again, and a stalled write is retried like any other network failure.
 - `use('downloads')`: `{ save({ filename, data }) }` → Blob + anchor click, resolves.
 - Anything else resolves `null`.
 - `window.claude.rules` (hosted build only; `list`, `import`, `saveHouse`, `deleteHouse`, see `app/CONTRACT.md`): plain calls
@@ -310,7 +314,10 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   restored cache; all of them are idempotent). A 400/403/404/413 for an already-resolved
   queued write drops it, resyncs (full load, or campaign refetch) and reports one error
   (`code: 'dropped'`) through the `err` callbacks; the rest go on. A 401 or redirect stops
-  flushing and keeps the queue for that user's next visit. Snapshots carry
+  flushing and keeps the queue for that user's next visit; a write made after that is still
+  queued (kept for the same user's next visit, never sent or seen by another account on the
+  browser) and its promise rejects with the signed-out message, so the page tells the person to
+  reload and sign in rather than report a save that has not happened. Snapshots carry
   `metadata.hasPendingWrites: true` while a queued write for that document exists.
 - **Folding.** A PATCH right behind a PATCH to the same document (not yet being sent, created by
   this tab) is merged into it only when one merged PATCH is provably the same as the two in a
