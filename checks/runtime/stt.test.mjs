@@ -90,6 +90,9 @@ await test('server: the token: no secret is 503, Deepgram refusing is 502 (403 n
   const c = calls[calls.length - 1];
   assert.equal(c.url, 'https://api.deepgram.com/v1/auth/grant'); assert.equal(c.init.method, 'POST'); assert.equal(c.init.headers.Authorization, 'Token secret-key');
   assert.ok(!JSON.stringify(ok).includes('secret-key'), 'the key is never in the answer');
+  await grantToken({ DEEPGRAM_API_KEY: 'secret-key\r\n' }, fake(200, { access_token: 'jwt' }));
+  assert.equal(calls[calls.length - 1].init.headers.Authorization, 'Token secret-key', 'a piped-in CRLF is trimmed');
+  await assert.rejects(grantToken({ DEEPGRAM_API_KEY: ' \r\n' }), (e) => e.status === 503);
 });
 
 await test('server: roles: a player gets 403 on all three before anything; the display may post lines and its status but not read the transcript', async () => {
