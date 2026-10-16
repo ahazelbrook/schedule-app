@@ -36,7 +36,7 @@ export const CARD_LIMITS = { cards: 8, field: 120, interval: 120 };
 
 // The ambient scenes (AMBIENT-PLAN.md): the ids mirror Pure.AMBIENT_SCENES in app/display-page.js; the bands are the
 // four reveal layers of a score site, lowest first.
-export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'bluetime', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'board', 'exploded', 'testcard'];
+export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'board', 'exploded', 'testcard'];
 export const AMBIENT_MODES = ['auto', 'pin', 'off'];
 export const BANDS = ['public', 'working', 'controlled', 'secure'];
 

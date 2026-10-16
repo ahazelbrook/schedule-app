@@ -39,9 +39,11 @@ module.exports = function build() {
   CARDS.forEach((c, i) => {
     const b64 = fs.readFileSync(path.join(__dirname, "..", "cards", c + ".jpg")).toString("base64");
     cards += `<g class="card" id="cd${i}" style="display:none" data-x="${spots[i][0]}" data-y="${spots[i][1]}" data-r="${spots[i][2]}">
-      <rect x="${-CW / 2 + 8}" y="${-CH / 2 + 12}" width="${CW}" height="${CH}" rx="10" fill="#000" opacity=".4"/>
+      <rect class="sh" x="${-CW / 2}" y="${-CH / 2}" width="${CW}" height="${CH}" rx="10" fill="#000" opacity=".4" transform="translate(8 12)"/>
+      <g class="lift">
       <g class="back"><rect x="${-CW / 2}" y="${-CH / 2}" width="${CW}" height="${CH}" rx="10" fill="url(#cc-back)" stroke="${C.paper100}" stroke-width="6"/></g>
-      <g class="face" style="display:none"><rect x="${-CW / 2 - 3}" y="${-CH / 2 - 3}" width="${CW + 6}" height="${CH + 6}" rx="11" fill="${C.paper100}"/><image href="data:image/jpeg;base64,${b64}" x="${-CW / 2}" y="${-CH / 2}" width="${CW}" height="${CH}" preserveAspectRatio="xMidYMid slice"/></g></g>`;
+      <g class="face" style="display:none"><rect x="${-CW / 2 - 3}" y="${-CH / 2 - 3}" width="${CW + 6}" height="${CH + 6}" rx="11" fill="${C.paper100}"/><image href="data:image/jpeg;base64,${b64}" x="${-CW / 2}" y="${-CH / 2}" width="${CW}" height="${CH}" preserveAspectRatio="xMidYMid slice"/></g>
+      <rect class="shade" x="${-CW / 2 - 3}" y="${-CH / 2 - 3}" width="${CW + 6}" height="${CH + 6}" rx="11" fill="#000" opacity="0"/></g></g>`;
   });
 
   const body = `<svg class="layer" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs>${defs}</defs>
@@ -49,21 +51,31 @@ module.exports = function build() {
   <g transform="translate(800 0)"><line x1="0" y1="0" x2="0" y2="40" stroke="${C.ink900}" stroke-width="4"/><path d="M-120 40 L120 40 L80 90 L-80 90z" fill="${C.covert900}"/><ellipse cx="0" cy="90" rx="80" ry="10" fill="#fff2c0"/></g></svg>`;
 
   const script = `
-const DX=${DX},DY=${DY};const cards=[...document.querySelectorAll('.card')].map(g=>({g,x:+g.dataset.x,y:+g.dataset.y,r:+g.dataset.r,back:g.querySelector('.back'),face:g.querySelector('.face')}));
+const DX=${DX},DY=${DY};const cards=[...document.querySelectorAll('.card')].map(g=>({g,x:+g.dataset.x,y:+g.dataset.y,r:+g.dataset.r,back:g.querySelector('.back'),face:g.querySelector('.face'),lift:g.querySelector('.lift'),sh:g.querySelector('.sh'),shade:g.querySelector('.shade')}));
 const host=$('cards'),wisp=$('wisp');
 const sleep=ms=>new Promise(res=>setTimeout(res,ms));
-const ease=t=>1-Math.pow(1-t,3);
-function put(c,x,y,r,sx){c.g.setAttribute('transform','translate('+x.toFixed(1)+' '+y.toFixed(1)+') rotate('+r.toFixed(2)+') scale('+(sx==null?1:sx).toFixed(3)+' 1)');}
-function fly(c,from,to,ms){return new Promise(res=>{const t0=performance.now();const f=()=>{const t=Math.min(1,(performance.now()-t0)/ms),e=ease(t);put(c,from[0]+(to[0]-from[0])*e,from[1]+(to[1]-from[1])*e,from[2]+(to[2]-from[2])*e);if(t<1)requestAnimationFrame(f);else res();};f();});}
-async function flip(c){for(const s of [.6,.15]){put(c,c.x,c.y,c.r,s);await sleep(50);}c.back.style.display='none';c.face.style.display='';for(const s of [.15,.6,1]){put(c,c.x,c.y,c.r,s);await sleep(50);}}
+const ease=t=>1-Math.pow(1-t,3), inout=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+function tween(ms,f){return new Promise(res=>{const t0=performance.now();const step=()=>{const t=Math.min(1,(performance.now()-t0)/ms);f(t);if(t<1)requestAnimationFrame(step);else res();};step();});}
+// where the card sits on the table, and how it stands off it: sx is the turn (1 flat, 0 edge-on), l the lift (0 on the baize, 1 up)
+function put(c,x,y,r){c.g.setAttribute('transform','translate('+x.toFixed(1)+' '+y.toFixed(1)+') rotate('+r.toFixed(2)+')');}
+function pose(c,sx,l){const k=1+.06*l;
+ c.lift.setAttribute('transform','translate(0 '+(-18*l).toFixed(2)+') scale('+(Math.max(.002,sx)*k).toFixed(4)+' '+k.toFixed(4)+')');
+ c.sh.setAttribute('transform','translate('+(8+12*l).toFixed(2)+' '+(12+20*l).toFixed(2)+') scale('+Math.max(.002,sx).toFixed(4)+' 1)');
+ c.sh.setAttribute('opacity',(.4-.18*l).toFixed(3));c.shade.setAttribute('opacity',((1-sx)*.6).toFixed(3));}
+// dealt from the deck: it sails in a little off the table and settles
+function fly(c,from,to,ms,sweep){return tween(ms,t=>{const e=ease(t);put(c,from[0]+(to[0]-from[0])*e,from[1]+(to[1]-from[1])*e-Math.sin(Math.PI*e)*40,from[2]+(to[2]-from[2])*e);pose(c,1,sweep?Math.sin(Math.PI*e)*.6:(1-e)*.8);});}
+// turned over: lifted off the baize, rolled over its long axis, set back down
+function flip(c){let turned=false;return tween(620,t=>{const a=Math.PI*inout(t);const sx=Math.abs(Math.cos(a));const l=Math.sin(Math.PI*t);
+ if(!turned&&a>Math.PI/2){turned=true;c.back.style.display='none';c.face.style.display='';}
+ put(c,c.x,c.y,c.r+Math.sin(Math.PI*t)*2.5);pose(c,sx,l);});}
 async function round(){
  const order=cards.slice().sort(()=>Math.random()-.5);
  // the deal order decides the spots, so the spread changes every round
  const spots=cards.map(c=>[c.x,c.y,c.r]);
- for(let i=0;i<order.length;i++){const c=order[i];[c.x,c.y,c.r]=spots[i];c.back.style.display='';c.face.style.display='none';c.g.style.display='';host.appendChild(c.g);
-  await fly(c,[DX,DY,0],[c.x,c.y,c.r],520);await sleep(260);await flip(c);await sleep(R(1800,3200));}
+ for(let i=0;i<order.length;i++){const c=order[i];[c.x,c.y,c.r]=spots[i];c.back.style.display='';c.face.style.display='none';pose(c,1,0);c.g.style.display='';host.appendChild(c.g);
+  await fly(c,[DX,DY,0],[c.x,c.y,c.r],620);await sleep(320);await flip(c);await sleep(R(1800,3200));}
  await sleep(R(20000,32000));
- for(const c of order.slice().reverse()){await fly(c,[c.x,c.y,c.r],[DX,DY,0],300);c.g.style.display='none';}
+ for(const c of order.slice().reverse()){await fly(c,[c.x,c.y,c.r],[DX,DY,0],320,true);c.g.style.display='none';}
  await sleep(1800);round();
 }
 // ?spread shows the whole spread at once (for a still)

@@ -409,7 +409,6 @@
     { id: 'duskwall', file: 'duskwall-after-dark.html', label: 'The city after dark' },
     { id: 'boneyard', file: 'boneyard-dawn.html', label: 'The Boneyard at dawn' },
     { id: 'undertow', file: 'undertow.html', label: 'The Undertow' },
-    { id: 'bluetime', file: 'bluetime.html', label: 'Bluetime' },
     { id: 'vet', file: 'grunts-vet.html', label: "Grunt's" },
     { id: 'tram', file: 'night-tram.html', label: 'Night tram' },
     { id: 'lurker', file: 'lurker-press.html', label: 'The Lurker press room' },
@@ -420,7 +419,7 @@
     { id: 'exploded', file: 'score-exploded.html', label: 'Score site, exploded', needs: 'score' },
     { id: 'testcard', file: 'test-card.html', label: 'Please stand by', pinOnly: true }
   ];
-  Pure.AMBIENT_DEFAULT_PLAYLIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'bluetime', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted'];
+  Pure.AMBIENT_DEFAULT_PLAYLIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted'];
   /* the scenes told the crew's heat and wanted (b68:crew): the watch feed and the wanted wall */
   Pure.ambientCrewScenes = function () { return Pure.AMBIENT_SCENES.filter(function (s) { return s.needs === 'crew'; }).map(function (s) { return s.id; }); };
   Pure.AMBIENT_DEFAULT_MIN = 7;

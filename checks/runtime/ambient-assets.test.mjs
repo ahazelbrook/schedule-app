@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const AMB = path.join(ROOT, 'app', 'ambient');
 const SCENES = ['second-harvest.html', 'watch-feed.html', 'duskwall-after-dark.html', 'test-card.html', 'planning-board.html', 'score-exploded.html',
-  'boneyard-dawn.html', 'undertow.html', 'bluetime.html', 'grunts-vet.html', 'night-tram.html', 'lurker-press.html', 'calling-cards.html',
+  'boneyard-dawn.html', 'undertow.html', 'grunts-vet.html', 'night-tram.html', 'lurker-press.html', 'calling-cards.html',
   'pells-provisions.html', 'wanted-wall.html'];
 // built on the GM's PC from the book's faction art and never committed (.gitignore): checked when present, skipped when not
 const LOCAL_ONLY = ['calling-cards.html'];
@@ -21,7 +21,7 @@ async function test(name, fn) {
 }
 const ok = (v, msg) => { if (!v) throw new Error(msg || 'expected truthy'); };
 
-await test('the fifteen scenes exist and are not empty', () => {
+await test('the fourteen scenes exist and are not empty', () => {
   for (const f of HERE) {
     const p = path.join(AMB, f);
     ok(fs.existsSync(p), f + ' is missing');

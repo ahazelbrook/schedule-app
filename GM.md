@@ -250,7 +250,6 @@ service worker never caches a redirect. The registry ids, in picker order:
 | `duskwall` | `duskwall-after-dark` | The crew on a rooftop in the rain |
 | `boneyard` | `boneyard-dawn` | The Boneyard at dawn: the Flensing Yard inside the leviathan, Brackley and Skinner |
 | `undertow` | `undertow` | Mira's club in the drained baths: oil-wheel light, go-go cages, the deep end, Mira at the bar |
-| `bluetime` | `bluetime` | The skyline under the B.L.U.E. Array; now and then the sky hard-cuts to Bluetime and back |
 | `vet` | `grunts-vet` | Grunt's: steel table, one bulb, LARGE ANIMALS · NO BIRDS |
 | `tram` | `night-tram` | Across a tram carriage, Crowfoot sliding past, a next-stop board |
 | `lurker` | `lurker-press` | The Lurker going to press: a new front page every ten seconds or so |
@@ -260,7 +259,7 @@ service worker never caches a redirect. The registry ids, in picker order:
 | `board`, `exploded` | `planning-board`, `score-exploded` | The score scenes |
 | `testcard` | `test-card` | Please stand by (pin only) |
 
-The nine scenes from `boneyard` on are built by `tools/ambient/scenes/*.js` (see `tools/ambient/README.md`); their figures move now
+The eight scenes from `boneyard` on are built by `tools/ambient/scenes/*.js` (see `tools/ambient/README.md`); their figures move now
 and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools/ambient/redress.js` re-dressed Booker in his suit in
 `harvest`, `watch` and `duskwall` and gave Alfie his cigarette there.
 

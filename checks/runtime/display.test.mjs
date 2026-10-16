@@ -536,7 +536,7 @@ await test('scoreMessage: board and iso are re-sanitised (script gone), the fiel
 
 /* ---------- the ambient floor: registry, plan and rotation ---------- */
 await test('ambient registry: ordered, URLs come only from it, the watch feed is always ?api=off', () => {
-  assert.deepEqual(P.AMBIENT_SCENES.map((s) => s.id), ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'bluetime', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'board', 'exploded', 'testcard']);
+  assert.deepEqual(P.AMBIENT_SCENES.map((s) => s.id), ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'board', 'exploded', 'testcard']);
   assert.equal(P.ambientUrl('harvest'), 'ambient/second-harvest');
   assert.equal(P.ambientUrl('wanted'), 'ambient/wanted-wall', 'the wanted wall polls nothing: no ?api=off');
   assert.equal(P.ambientUrl('vet'), 'ambient/grunts-vet');
@@ -549,7 +549,7 @@ await test('ambient registry: ordered, URLs come only from it, the watch feed is
   assert.equal(P.AMBIENT_SCENES.filter((s) => s.pinOnly).map((s) => s.id).join(), 'testcard');
 });
 
-const DEFAULT_LIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'bluetime', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted'];
+const DEFAULT_LIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted'];
 await test('ambientPlan: defaults for nothing, null, {} and rubbish', () => {
   const want = { mode: 'auto', scene: null, playlist: DEFAULT_LIST, intervalMin: 7, skip: 0, crew: null, score: null };
   for (const d of [undefined, null, {}, 'x', 42, [], { mode: 'sideways', playlist: 'no', intervalMin: 'soon', skip: -3, crew: 'hot', score: 'none' }]) assert.deepEqual(P.ambientPlan(d), want);

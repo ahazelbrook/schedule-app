@@ -78,16 +78,16 @@ loop((dt,c)=>{
  for(const w of wheels){w.g.setAttribute('transform','rotate('+(c*w.v).toFixed(2)+' '+w.cx+' '+w.cy+')');for(const b of w.b)b.c.setAttribute('r',(b.r*(1+Math.sin(c*.4+b.ph)*.18)).toFixed(1));}
  for(const s of specks){const a=s.a+c*.25;const x=560+Math.cos(a)*s.d;const y=120+s.y*600+Math.sin(a*2)*20;s.e.setAttribute('x',x.toFixed(0));s.e.setAttribute('y',y.toFixed(0));s.e.style.display=(Math.cos(a)>-.2)?'':'none';}
  const ph=(c/beat)%1;
- // a slow sway from the feet, on the beat; the groove itself is the frame cuts below
- for(const d of pool){d.g.setAttribute('transform','translate('+d.x+' '+d.y+') rotate('+(Math.sin((c/beat)*Math.PI+d.ph)*2.2).toFixed(2)+')');}
+ // the deep-end dancers hold still between pose changes (see below): no sway, no bob
  if(Math.random()<.02){const t=tiles[Math.floor(Math.random()*tiles.length)];t.setAttribute('opacity',(.15+Math.random()*.7).toFixed(2));}
  neon.setAttribute('opacity',Math.random()<.004?'.25':'1');
 });
 // the dancers: a four-frame groove on the beat, in turn
-let n1=0,n2=2;every(beat*2,beat*2,()=>{n1=(n1+1)%4;Motion.show('dancer1',n1);},0);
-every(beat*2,beat*2,()=>{n2=(n2+3)%4;Motion.show('dancer2',n2);},beat);
-// the deep end: everyone on their own count, half of them on the off-beat
-every(beat,beat,()=>{for(const d of pool){if(Math.random()<.55){d.k=(d.k+1)%4;Motion.show('pool'+d.i,d.k);}}},beat/2);
+// the cage dancers hold each pose for a bar (four beats), and take turns
+let n1=0,n2=2;every(beat*8,beat*8,()=>{n1=(n1+1)%4;Motion.show('dancer1',n1);},beat*4);
+every(beat*8,beat*8,()=>{n2=(n2+3)%4;Motion.show('dancer2',n2);},beat*8);
+// the deep end: now and then one dancer changes pose, never two at once
+every(beat*2,beat*6,()=>{const d=pool[Math.floor(Math.random()*pool.length)];d.k=(d.k+1)%4;Motion.show('pool'+d.i,d.k);},beat*2);
 // Mira sips, now and then
 every(10,24,()=>move('mira',[[1,160],[2,1800],[1,160],[0,0]]),6);
 
