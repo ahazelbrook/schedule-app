@@ -1404,6 +1404,8 @@
     if (t && t.dataset && t.dataset.ui === 'dtname' && cur.ui.dt) { cur.ui.dt.newName = t.value; return; } /* the downtime panel's new-clock name: panel state, never saved by itself */
     if (readOnly()) return; if (!t || !t.dataset || !t.dataset.path || !cur.root.contains(t)) return;
     setPath(cur.play, t.dataset.path, t.value); scheduleSave();
+    /* a harm line is typed, not tapped: the vitals' Harm count follows it without redrawing the sheet around the field */
+    if (t.dataset.path.indexOf('harm.') === 0) { var v = cur.root.querySelector('.ds-vitals'); if (v) v.outerHTML = vitals(cur.play, cur.pb); }
   }
   function onChange(e) {
     if (!cur) return; var t = e.target; if (!t || !cur.root.contains(t)) return;
