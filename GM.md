@@ -6,7 +6,7 @@ text and GM-only secrets, so they never enter git: the GM builds a **pack** from
 gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser or with `npm run gm:push -- --only pack
 --yes` (see `SYNC.md`, which also moves what happened at the table back into the vault). Code: `functions/_lib/gm.js`,
 `functions/api/gm/*.js`; tables in `migrations/0004_gm.sql`. The pack parts are `console`, `location`, `campaign`, `npc`,
-`scenes` and `engagement` (`scripts/gm-pack.mjs` lists what each holds).
+`scenes`, `engagement`, `prep` and `screen` (the last two optional; `scripts/gm-pack.mjs` lists what each holds).
 
 ## Secrecy rules (server enforced)
 
@@ -83,13 +83,13 @@ fails and nobody is known, nothing is purged.
   the device ("offline copy" in the header). The header shows "Campaign data exported DD/MM/YYYY", amber when
   more than three days old.
 - **Layout.** Laptop (>= 1100 px): the console (the Situations | Classic toggle, Position, controls, the four buttons, the card, "Earlier:" the last five rolls) |
-  a side panel with **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)**, **Screen (T)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
+  a side panel with **Prep (R)**, **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)**, **Cards (O)**, **Screen (T)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
   vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on
-  stage) | the capture bar at the foot. 600–1100 px: two columns, the rail below. Phone: a Console | Location | Street | Engage | NPC |
-  State bar, the Position switch at the top, the situations a 2 × 2 grid (Classic: 3 × 3), the other controls behind a "Scene" line,
+  stage) | the capture bar at the foot. 600–1100 px: two columns, the rail below. Phone: a Console | Prep | Location | Street | Engage |
+  NPC | Cards | Screen | iPad | State bar, the Position switch at the top, the situations a 2 × 2 grid (Classic: 3 × 3), the other controls behind a "Scene" line,
   capture on a floating button.
-- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd): `1`–`4` roll a situation (Classic: `1`–`9` roll a single table), `B` `N` `S` `E` `T` `I` switch the panel
-  (Location, NPC, Street scene, Engagement, Screen, iPad), `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
+- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd): `1`–`4` roll a situation (Classic: `1`–`9` roll a single table), `R` `B` `N` `S` `E` `O` `T` `I` switch the panel
+  (Prep, Location, NPC, Street scene, Engagement, Cards, Screen, iPad), `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
   the last roll under "Rolled at the table", `H` blanks the screen until any key or tap, `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
 - **Situations and Classic.** The console opens on **Situations**: four buttons, each a moment in the roll: `1` **Before** (a Devil's
   Bargain), `2` **4/5**, `3` **1–3**, `4` **Someone**. A large three-way **Position** switch (controlled / risky / desperate, with what
@@ -275,7 +275,8 @@ The iPad sits in the middle of the table, so it hears everyone; it replaces the 
 3. The mic goes to Deepgram's live API (`nova-3`, speaker labels) as 16 kHz 16-bit PCM over a WebSocket. It opens with
    a short-lived token from `POST /api/gm/stt/token`, which the Worker mints with its secret `DEEPGRAM_API_KEY` (never
    sent to a browser). The token rides the handshake as a subprotocol pair, `bearer` then `token`; whichever works is
-   remembered on the iPad. `npm run check:stt-live` (with the key in `DEEPGRAM_API_KEY`) says which one Deepgram accepts.
+   remembered on the iPad. `npm run check:stt-live` (with the key in `DEEPGRAM_API_KEY`) says which one Deepgram accepts:
+   on 16/10/2026 it was `bearer` (`token` is refused with 1006).
 4. Finished words are merged into lines (same speaker within 4 s of audio), as the vault transcriber does. They are
    posted to `POST /api/gm/transcript` every 3 s with their own ids, so a resend is skipped. A dropped connection
    reconnects with a new token and files a `reconnected` mark (Deepgram renumbers speakers). Stop, leaving `#display`
@@ -299,6 +300,7 @@ but not read the transcript. The transcript is never in `/api/export`. Migration
 `checks/runtime/stt.test.mjs`, `checks/runtime/gm-stt.e2e.mjs` (fake mic, fake Deepgram socket).
 
 **Setup, once:** `npx wrangler secret put DEEPGRAM_API_KEY` (a key with Member permission or above), then
-`npm run check:stt-live`. On the PC, `npm run gm:transcript -- --install` writes a hidden launcher
+`npm run check:stt-live`. On the PC that goes to the table (it needs the repo, `npm install` and `npx wrangler login`,
+not the Deepgram key), `npm run gm:transcript -- --install` writes a hidden launcher
 (`b68-transcript.vbs`) into the Windows Startup folder and starts the copier; it starts at every sign-in after that.
 `-- --uninstall` stops it and removes the launcher. It runs the repo's checked-out copy of the script.

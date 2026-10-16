@@ -1269,7 +1269,7 @@
   /* ---------- Listening: the table iPad's transcriber (app/stt.js, GM.md "Listening") ----------
      GET/PATCH /api/gm/stt: want on | off, the session, speaker names, and the iPad's own report; the newest lines from
      GET /api/gm/transcript?tail=. Read every 5 s while the iPad panel is open. The vault copy is the PC's job
-     (npm run gm:transcript -- --follow). */
+     (the background copier, npm run gm:transcript -- --install; GM.md "Listening"). */
   var STT = { doc: null, tail: [], error: '', loaded: false };
   var STT_LABEL = { idle: 'Not listening', starting: 'Starting…', listening: 'Listening', reconnecting: 'Reconnecting…', stopped: 'Stopped', error: 'Stopped by an error' };
   function loadStt() {
