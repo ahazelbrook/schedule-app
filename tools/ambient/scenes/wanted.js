@@ -128,14 +128,18 @@ function draw(animate){
  if(animate&&wanted>prev&&prev>=0)paste(wanted-1);
  shown=wanted;
 }
-function set(h,w,src){h=Math.max(0,Math.min(9,Math.round(+h||0)));w=Math.max(0,Math.min(4,Math.round(+w||0)));const up=w>wanted;heat=h;wanted=w;lineEl.textContent='LINE · '+src;draw(up&&shown>=0);}
+// the first value a freshly loaded wall hears is the state of play, not news: Vanden only pastes a poster when Wanted goes up
+// after that (the display re-sends the crew every time the scene loads)
+let heard=false;
+function set(h,w,src){h=Math.max(0,Math.min(9,Math.round(+h||0)));w=Math.max(0,Math.min(4,Math.round(+w||0)));const up=w>wanted&&heard;heard=true;heat=h;wanted=w;lineEl.textContent='LINE · '+src;draw(up);}
 // Vanden walks in, pastes the poster, walks off
 let walking=null;
-function paste(i){const p=posters[i];const tx=+p.dataset.x+60;const g=$('vgrp');g.style.display='';let x=-300,phase=0,t=0;
- walking=(dt)=>{t+=dt;if(phase===0){x+=170*dt;if(x>=tx){x=tx;phase=1;t=0;move('vanden',[[1,140],[2,1500],[1,140],[0,0]]);}}
+function paste(i){const p=posters[i];const tx=+p.dataset.x+60;const g=$('vgrp');g.style.display='';let x=-200,phase=0,t=0;
+ if(walking&&walking.poster&&walking.poster.style.display==='none')walking.poster.style.display='';
+ walking=(dt)=>{t+=dt;if(phase===0){x+=260*dt;if(x>=tx){x=tx;phase=1;t=0;move('vanden',[[1,140],[2,1500],[1,140],[0,0]]);}}
   else if(phase===1){if(t>.45&&p.style.display==='none'){p.style.display='';}if(t>2.2){phase=2;}}
-  else{x+=170*dt;if(x>1900){g.style.display='none';walking=null;}}
-  const bob=phase===1?0:Math.abs(Math.sin(t*7))*5;g.setAttribute('transform','translate('+x.toFixed(1)+' '+(${base + 150}-bob).toFixed(1)+')');};}
+  else{x+=260*dt;if(x>1900){g.style.display='none';walking=null;}}
+  const bob=phase===1?0:Math.abs(Math.sin(t*7))*5;g.setAttribute('transform','translate('+x.toFixed(1)+' '+(${base + 150}-bob).toFixed(1)+')');};walking.poster=p;}
 addEventListener('message',e=>{if(e.origin!==location.origin)return;const d=e.data;if(d&&d.type==='b68:crew')set(d.heat,d.wanted,'PUSHED');});
 if(Q.has('heat')||Q.has('wanted'))set(Q.get('heat'),Q.get('wanted'),'MANUAL');else draw(false);
 // rain, ripples, the lamp, the searchlight
