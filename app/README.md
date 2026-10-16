@@ -2,7 +2,7 @@
 
 The whole app as one static page with no build step: the character creator, the living
 sheets, the table page, the schedule and the prints. It started as the single-page creator
-prototype from `PLAN.md` and is built on the Blades '68 Design System's figure kit v2. It
+prototype from `docs/history/PLAN.md` and is built on the Blades '68 Design System's figure kit v2. It
 runs as a claude.ai artifact or on the hosted build (a Cloudflare Worker, see `HOSTING.md`);
 storage, identity and downloads always go through `window.claude.use(...)`.
 
@@ -12,6 +12,10 @@ storage, identity and downloads always go through `window.claude.use(...)`.
   empty roots the modules render into (`#nextSession`, `#dossier`, `#table-page`, `#season`),
   the toast region, the restore preview dialog and, in the footer, the Auto / Paper / Night switch
   (an inline script at the top applies the saved choice before the first paint; CAMPAIGN.md, *Page*).
+- `routes.js` says which files each route needs: index.html loads the core (the sheet, rules and cast every sheet uses),
+  and `B68Load.need('table' | 'print' | 'gm' | 'display')` adds a route's bundle on first use, scripts in order. It also
+  holds the build stamp (`B68_BUILD`, 'dev' in the repository; `npm run deploy` stamps it) that the service worker and
+  `/api/me` share, which is how an open page knows to offer "Updated: reload".
 - `content.js` is the rulebook's character creation content, transcribed from the
   Characters chapter and all twelve playbook sheets (eight core, plus Ghost/Echo, Vampire and
   the two Time Travelers).

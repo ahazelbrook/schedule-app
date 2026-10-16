@@ -149,6 +149,6 @@ Routes: `#cast` (the grid), `#cast/<id>` (one NPC), `#cast/<id>/edit` and `#cast
   "The Undertow"); the rest are left for the GM. No `gmNotes` are seeded.
 - Backups: "Download everything" (hosted, GM) includes `npcs`; **Restore does not read them yet**. To move a cast to another copy,
   paste the specs and descriptions in, or apply the migration there and copy the rows.
-- Not done (Phase 4 in ROADMAP.md): a log line when an NPC appears, and a cast page in the season print.
+- Not done (Phase 4 in docs/history/ROADMAP.md): a log line when an NPC appears, and a cast page in the season print.
 - Deploying: `scripts/deploy.sh` applies `migrations/0003_npcs.sql` (the table and the seven rows). The service worker cache name
   is bumped, so installed phones pick up the new page on their next visit online.

@@ -257,7 +257,7 @@ Checked by `app/checks/crewsheet.js`.
 
 `#print` (or `B68Season.open()`, or `B68.openPrint()`) opens one printable document of the whole campaign. In the page
 it is the "Print the season" button in the table page's header, which stays enabled for players and read-only viewers
-(printing writes nothing). It is the DEPLOY.md phase 4 "print of every character and the crew at the end of a season". Files: `app/season.js`,
+(printing writes nothing). It is the docs/history/DEPLOY.md phase 4 "print of every character and the crew at the end of a season". Files: `app/season.js`,
 `app/season.css`, `app/checks/season.js`; boot.js adds the `print` mode (`body[data-mode="print"]` shows only
 `section#season`) and the route.
 

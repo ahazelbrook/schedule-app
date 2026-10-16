@@ -34,7 +34,7 @@ export const DISPLAY_KINDS = ['blank', 'dark', 'svg', 'npc', 'text', 'rule', 'ca
 export const CARD_FIELDS = ['from', 'client', 'target', 'type', 'note', 'payout'];
 export const CARD_LIMITS = { cards: 8, field: 120, interval: 120 };
 
-// The ambient scenes (AMBIENT-PLAN.md): the ids mirror Pure.AMBIENT_SCENES in app/display-page.js; the bands are the
+// The ambient scenes (GM.md, "Ambient scenes"; the plan: docs/history/AMBIENT-PLAN.md): the ids mirror Pure.AMBIENT_SCENES in app/display-page.js; the bands are the
 // four reveal layers of a score site, lowest first.
 export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting', 'credits', 'board', 'exploded', 'testcard'];
 export const AMBIENT_MODES = ['auto', 'pin', 'off'];
@@ -283,7 +283,7 @@ export async function putDisplay(db, campaign, display) {
   return { seq: row.seq, display, updatedAt: row.updated_at };
 }
 // ---------- the ambient document ----------
-// What plays on the table display when nothing is spotlit (AMBIENT-PLAN.md). Its own table, `gm_ambient`, so an NPC push
+// What plays on the table display when nothing is spotlit (GM.md, "Ambient scenes"; the plan: docs/history/AMBIENT-PLAN.md). Its own table, `gm_ambient`, so an NPC push
 // (which replaces the display document) can never wipe the score maps. Never part of /api/export. Merge-patched by the
 // GM only; the display sign-in reads it through GET /api/gm/display, never from /api/gm/ambient.
 
