@@ -142,6 +142,10 @@ characters. Any other `campaign` doc id, and `collection('campaign')` queries, r
   as wide as their pitch, so neighbours never take each other's taps (checked by `app/checks/campaign.js`
   and `crewsheet.js`). The shared clocks are drawn 104 px wide, with a − / + beside the count (one write
   of `clocks.<i>.filled`, the same patch a wedge makes; players may use it).
+- Words: the page speaks of characters and saving, never of "files" or "filing" ("No characters yet.", "No owner
+  yet" for a character without a player, "Saved Aldo Crane.", "Removed."); with no database it says "The table is
+  not available in this view." Home's "Session 3 has started at the table" nudge is a "Join session 3" button: it
+  opens the player's sheet scrolled to its own Join bar (the sheet's Join writes `play.session`, as before).
 - Saves go through `doc.update(patch)` with only the changed top-level fields of `crew`,
   `clocks`, `session`, `log` (and the changed `schedule` leaves); the page never writes on open.
 - Starting a session sets `session = { number: n + 1, startedAt: now, endedAt: null }` and

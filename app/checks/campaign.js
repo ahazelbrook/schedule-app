@@ -221,10 +221,10 @@ const SHEET = `(pb) => {
   c = await camp(); assert(c.log[0].text === 'Scored the warehouse' && c.log.length === 2, 'log newest first');
   assert(/Gail the GM/.test(await p.$eval('.tp-log li', n => n.textContent)), 'log author named through profiles');
 
-  /* players: grouped by owner, names through profiles, Unowned last */
+  /* players: grouped by owner, names through profiles, "No owner yet" last */
   const groups = await p.$$eval('.tp-group', gs => gs.map(g => ({ head: g.querySelector('.tp-ghead b').textContent, you: !!g.querySelector('.tp-you'), chars: Array.from(g.querySelectorAll('.tp-char')).map(li => li.querySelector('.tp-cn b').textContent + ' | ' + li.querySelector('.tp-cs').textContent) })));
   notes.push('groups: ' + JSON.stringify(groups));
-  assert(groups.length === 3 && groups[0].head === 'Gail the GM' && groups[0].you && groups[1].head === 'Pat' && groups[2].head === 'Unowned', 'groups in order you, Pat, Unowned: ' + groups.map(g => g.head).join(','));
+  assert(groups.length === 3 && groups[0].head === 'Gail the GM' && groups[0].you && groups[1].head === 'Pat' && groups[2].head === 'No owner yet', 'groups in order you, Pat, No owner yet: ' + groups.map(g => g.head).join(','));
   assert(groups[0] && /^Aldo Crane \| Stress4\/9/.test(groups[0].chars[0]), 'hound under the GM with Stress 4/9: ' + (groups[0] && groups[0].chars[0]));
   assert(groups[1] && /^Unit Seven \| Drain3\/10/.test(groups[1].chars[0]), 'hull under Pat with Drain 3/10: ' + (groups[1] && groups[1].chars[0]));
   assert(groups[2] && /^Unit Kessel/.test(groups[2].chars[0]), 'time traveler unowned');
@@ -420,7 +420,7 @@ const SHEET = `(pb) => {
   /* ---------- no db: a clear note ---------- */
   await p.evaluate(() => localStorage.setItem('__role', 'nodb'));
   await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
-  assert((await mode()) === 'table' && /The table needs the shared files/.test(await p.$eval('#table-page', n => n.textContent)), 'no db: shared-files note');
+  assert((await mode()) === 'table' && /The table is not available in this view/.test(await p.$eval('#table-page', n => n.textContent)) && !/shared files|published artifact|hosted site/.test(await p.$eval('#table-page', n => n.textContent)), 'no db: a plain note, no talk of files or hosting');
   await p.evaluate(() => localStorage.clear());
 
   /* ---------- no window.claude at all ---------- */
@@ -429,7 +429,7 @@ const SHEET = `(pb) => {
   p2.on('pageerror', e => errs.push('no-claude pageerror: ' + e.message)); p2.on('console', m => { if (m.type() === 'error' && !/ERR_FILE_NOT_FOUND/.test(m.text())) errs.push('no-claude console.error: ' + m.text()); });
   await p2.goto(URL); await p2.waitForTimeout(900);
   await p2.click('#tableBtn'); await p2.waitForTimeout(300);
-  assert(/The table needs the shared files/.test(await p2.$eval('#table-page', n => n.textContent)), 'no window.claude: shared-files note');
+  assert(/The table is not available in this view/.test(await p2.$eval('#table-page', n => n.textContent)), 'no window.claude: the plain note');
   await p2.click('#homeBtn'); await p2.waitForTimeout(200);
   assert((await p2.evaluate(() => document.body.dataset.mode)) === 'home', 'no window.claude: back Home');
   await ctx2.close();

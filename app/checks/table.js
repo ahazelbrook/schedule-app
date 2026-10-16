@@ -220,7 +220,7 @@ const SHEET = `(pb) => {
   /* the remembered view survives a reload (the store does not, so the empty state shows in the table box) */
   await p.reload(); await p.waitForTimeout(1200);
   assert((await p.$eval('#rosterView [data-v="table"]', n => n.getAttribute('aria-pressed'))) === 'true' && !(await p.$eval('#table', n => n.hidden)), 'table view remembered after reload');
-  assert((await p.$eval('#table', n => n.textContent)).indexOf('No one is on file yet') >= 0, 'empty state in the table box');
+  assert((await p.$eval('#table', n => n.textContent)).indexOf('No characters yet') >= 0 && !/on file|filed/.test(await p.$eval('#table', n => n.textContent)), 'empty state in the table box, in plain words');
 
   /* phone: 390px, light and dark, no horizontal scroll */
   await p.evaluate(`(${SHEET})('hound'); true`); await p.waitForTimeout(900);

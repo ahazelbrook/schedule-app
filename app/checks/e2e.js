@@ -29,7 +29,7 @@ const STUB = `(() => {
   if (!E2E_URL) {
     const h = await p.evaluate(() => ({ mode: document.body.dataset.mode, title: (document.getElementById('homeTitle') || {}).textContent, steps: document.querySelectorAll('#home .hm-step').length, view: document.getElementById('viewName').textContent, doc: document.title }));
     console.log('home:', JSON.stringify(h));
-    if (h.mode !== 'home' || h.title !== 'Set up the table' || h.steps !== 4 || h.view !== 'Home') errs.push('landing is not the GM set-up Home: ' + JSON.stringify(h));
+    if (h.mode !== 'home' || h.title !== 'Set up the table' || h.steps !== 3 || h.view !== 'Home') errs.push('landing is not the GM set-up Home: ' + JSON.stringify(h));
   }
   await p.click('#home [data-hm="new"]'); await p.waitForTimeout(400);
   if (await p.evaluate(() => document.body.dataset.mode + ' ' + location.hash) !== 'create #create') errs.push('Make a character did not open the creator: ' + await p.evaluate(() => document.body.dataset.mode + ' ' + location.hash));
@@ -121,15 +121,18 @@ async function homeStates(b, errs) {
   const want = (ok, msg, f) => { if (!ok) errs.push('Home ' + msg + (f ? ': ' + JSON.stringify(f) : '')); };
   const where = (pg) => pg.evaluate(() => document.body.dataset.mode + ' ' + location.hash);
 
-  /* "Opening the files…" until the files settle */
+  /* "Opening your sheets…" until the files settle */
   { const c = await b.newContext(); await c.addInitScript(`window.claude = { use: (n) => n === 'db' ? new Promise(() => {}) : Promise.resolve(n === 'user' ? { id: async () => 'u_pat', can: async () => true, isOwner: async () => false, canEdit: async () => false } : null) };`);
     const pg = await c.newPage(); await pg.goto(URL); await pg.waitForTimeout(600);
-    want(/Opening the files/.test(await pg.$eval('#homeMain', n => n.textContent)) && await pg.$eval('#files', n => n.hidden), 'waits for the files'); await c.close(); }
+    want(/Opening your sheets/.test(await pg.$eval('#homeMain', n => n.textContent)) && !/files/i.test(await pg.$eval('#homeMain', n => n.textContent)) && await pg.$eval('#files', n => n.hidden), 'waits for the sheets, in plain words'); await c.close(); }
 
   /* C. a player with no character: the crew as kicker, Make your character, Mark your dates (two open dates) */
   { const { c, pg } = await open('player', { 'campaign/main': camp(), 'characters/sam-1': char('sam-1', 'Vera Lux', 'u_sam') });
     const f = await facts(pg);
     want(f.mode === 'home' && f.kick === 'The Night Shift' && f.title === 'Welcome to the table' && f.primary.join() === 'Make your character' && /2 dates need your answer/.test(f.text) && !f.mine && f.files, 'C (player, no character)', f);
+    want(/then mark the dates you can play/.test(f.text) && /Saving it opens your sheet/.test(f.text) && !/living sheet|Filing/.test(f.text), 'C: with dates the lead mentions them; plain words about saving', f.text.slice(0, 200));
+    const plain = await pg.evaluate(() => ({ title: document.getElementById('filesTitle').textContent, note: document.getElementById('rosterNote').textContent, whose: document.getElementById('rosterFilter').getAttribute('aria-label'), who: document.getElementById('whoami').textContent }));
+    want(plain.title === 'Characters' && /^Yours are saved to your account\. Everyone at the table can see all characters\.$/.test(plain.note) && plain.whose === 'Whose characters' && !/files|filing/i.test(plain.who + plain.note + plain.title), 'C: the roster section and the header speak of characters, not files', plain);
     want(f.edits.join() === 'Vera Lux:false:false', 'C: another player’s card has no Edit figure and no remove', f.edits);
     await pg.evaluate(() => B68.toast('Hello from Home')); await pg.waitForTimeout(100);
     const t = await pg.$eval('#toast', n => { const r = n.getBoundingClientRect(); return { text: n.textContent, pos: getComputedStyle(n).position, inView: r.bottom <= innerHeight && r.top >= 0 && r.height > 0, role: document.getElementById('toastMsg').getAttribute('role') }; });
@@ -154,11 +157,25 @@ async function homeStates(b, errs) {
     want(!(await pg.$('#homeMain .hm-draft')) && (await pg.evaluate(() => localStorage.getItem('b68.draft'))) === null, 'Discard clears the draft');
     await c.close(); }
 
+  /* C2. a player with no character and nothing planned: the lead does not mention dates */
+  { const { c, pg } = await open('player', { 'campaign/main': camp({ schedule: { options: {}, avail: {}, next: null, rsvp: {}, cadence: null, quorum: 0, attendance: {} } }) });
+    const f = await facts(pg);
+    want(f.title === 'Welcome to the table' && /Make your character to join the table/.test(f.text) && !/mark the dates|dates need/i.test(f.text), 'C2 (player, no character, no dates): the lead leaves dates out', f.text.slice(0, 200));
+    await c.close(); }
+
   /* D. a player with one character: Welcome back, the big card, Your sheet, the session nudge */
   { const { c, pg } = await open('player', { 'campaign/main': camp(), 'characters/sam-1': char('sam-1', 'Vera Lux', 'u_sam'), 'characters/pat-1': char('pat-1', 'Aldo Crane', 'u_pat', 2) }, '', { width: 390, height: 844 });
     const f = await facts(pg);
     want(f.title === 'Welcome back, Pat' && f.chars === 1 && f.primary.join() === 'Open sheet' && /Session 3 has started at the table/.test(f.text) && f.mine, 'D (player with a character)', f);
     want(f.edits.join() === 'Aldo Crane:true:false', 'D: the files show Mine first', f.edits);
+    const nud = await pg.$$eval('#homeMain .hm-nudges [data-hm]', ns => ns.map(n => n.dataset.hm + ':' + n.textContent));
+    want(nud.filter(x => /^join:/.test(x)).join() === 'join:Join session 3' && !nud.some(x => /^open:/.test(x)) && !/Open the sheet/.test(f.text) && /Everyone’s characters/.test(f.text) && !/Everyone’s files/.test(f.text), 'D: the nudge says Join session 3 (not a second Open sheet); the link says Everyone’s characters', nud.concat(f.primary));
+    const st = await pg.$eval('#homeMain .hm-char .st', n => parseFloat(getComputedStyle(n).fontSize));
+    want(st >= 13, 'D: the returning player\'s status line is at least 13px: ' + st);
+    await pg.click('#homeMain [data-hm="join"]'); await pg.waitForTimeout(1300);
+    const jn = await pg.evaluate(() => { const b = document.querySelector('#dossier [data-act="sessjoin"]'), r = b && b.getBoundingClientRect(); return { mode: document.body.dataset.mode, focus: !!b && document.activeElement === b, inView: !!r && r.top >= 0 && r.bottom <= innerHeight, text: b && b.textContent }; });
+    want(jn.mode === 'sheet' && jn.inView && jn.focus && jn.text === 'Join session 3', 'D: Join session 3 opens the sheet with its Join button in view and focused', jn);
+    await pg.goBack(); await pg.waitForTimeout(600);
     await pg.click('#rosterFilter [data-f="all"]'); await pg.waitForTimeout(200);
     const ed = (await facts(pg)).edits.sort();
     want(ed.join() === 'Aldo Crane:true:false,Vera Lux:false:false', 'D: Edit figure only on your own card, no remove chips', ed);
@@ -181,16 +198,22 @@ async function homeStates(b, errs) {
   { const seed = { 'campaign/main': camp({ schedule: { options: {}, avail: {}, next: { at: T(4), minutes: 240, place: '', note: '', confirmedAt: null }, rsvp: {}, cadence: null, quorum: 0, attendance: {} } }), 'characters/sam-1': char('sam-1', 'Vera Lux', 'u_sam'), 'characters/pat-1': char('pat-1', 'Aldo Crane', 'u_pat') };
     const { c, pg } = await open('gm', seed);
     const f = await facts(pg);
-    want(f.title === 'The Night Shift' && f.primary.join() === 'Open the table' && /2 players haven’t answered/.test(f.text) && !/No dates proposed/.test(f.text) && !/Nobody has filed/.test(f.text), 'B (GM, table started)', f);
+    want(f.title === 'The Night Shift' && f.primary.join() === 'Open the table' && /2 players haven’t answered/.test(f.text) && !/No dates proposed/.test(f.text) && !/Nobody has filed/.test(f.text) && !/Plan dates/.test(f.text), 'B (GM, table started)', f);
     want(await pg.$$eval('#homePlayers .tbl tbody tr', n => n.length) === 2, 'B: the players table');
     want(f.edits.length === 2 && f.edits.every(e => /:true:false$/.test(e)), 'B: the GM gets Edit figure on every card', f.edits);
     await pg.screenshot({ path: 'out/e2e-home-gm.png', fullPage: true });
+    await c.close(); }
+  /* B2. the GM, table started, nothing planned (the dates live in the group's calendar): no Plan dates, no No dates proposed; an empty table says No characters yet */
+  { const { c, pg } = await open('gm', { 'campaign/main': camp({ schedule: { options: {}, avail: {}, next: null, rsvp: {}, cadence: null, quorum: 0, attendance: {} } }) });
+    const f = await facts(pg);
+    want(f.title === 'The Night Shift' && !/Plan dates|No dates|dates proposed/.test(f.text) && /No characters yet\./.test(f.text) && !/Nobody has filed|filed/.test(f.text), 'B2 (GM, table started, no dates, no characters): no schedule nag, plain words', f.text.slice(0, 220));
     await c.close(); }
 
   /* A. the GM before the table: the set-up page; step 1 opens the table with the crew name focused */
   { const { c, pg } = await open('gm', {});
     const f = await facts(pg);
     want(f.title === 'Set up the table' && /One table lives at this address/.test(f.text) && /a second copy of the app/.test(f.text), 'A (GM, no table)', f);
+    want(!/Plan dates|Plan the first session/.test(f.text) && /Start the table/.test(f.text) && /Invite the players/.test(f.text), 'A: the set-up steps leave out planning dates', f.text.slice(0, 200));
     await pg.click('#homeMain [data-hm="table-setup"]'); await pg.waitForTimeout(900);
     const a1 = await pg.evaluate(() => document.body.dataset.mode + ' ' + (document.activeElement && document.activeElement.dataset.path));
     want(a1 === 'table crew.name', 'A: Open the table focuses the crew name', a1);
@@ -200,5 +223,6 @@ async function homeStates(b, errs) {
   { const { c, pg } = await open('ro', { 'campaign/main': camp() });
     const f = await facts(pg); want(/You can look around but not change anything/.test(f.text) && !/Restore your characters/.test(f.text), 'read-only player', f); await c.close(); }
   { const { c, pg } = await open('none', null);
-    const f = await facts(pg); want(f.title === 'Welcome' && f.primary.join() === 'Make a character' && !f.files, 'no runtime: only Make a character', f); await c.close(); }
+    const f = await facts(pg); want(f.title === 'Welcome' && f.primary.join() === 'Make a character' && !f.files, 'no runtime: only Make a character', f);
+    want(/Saving is not available in this view/.test(f.text) && !/files|filed/i.test(f.text), 'no runtime: plain words about saving', f.text.slice(0, 200)); await c.close(); }
 }

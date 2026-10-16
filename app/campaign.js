@@ -173,7 +173,7 @@
     if (ro()) { setStatus('Read only'); return; }
     var patch = delta(); cur.dirty = {};
     if (!patch) { setStatus(idleStatus()); return; }
-    if (!cur.api || typeof cur.api.save !== 'function') { setStatus('Not saved: no store', true); return; }
+    if (!cur.api || typeof cur.api.save !== 'function') { setStatus('Not saved: this view cannot save.', true); return; }
     if (patch.replace) {
       /* removing or rewriting log lines: the GM writes the whole document (PUT); a patch never removes log entries */
       if (!gm() || typeof cur.api.replace !== 'function') { setStatus('Only the GM can change old log lines', true); return; }
@@ -347,7 +347,7 @@
     return box('Shared clocks' + rl('clocks'), h, '<span class="tp-dim">' + list.length + ' clock' + (list.length === 1 ? '' : 's') + (gm() && hiddenN ? ' · ' + hiddenN + ' hidden' : '') + '</span>', 'tp-clockbox');
   }
   function nameOf(id) {
-    if (!id) return 'Unowned';
+    if (!id) return 'No owner yet';
     var n = cur && cur.names[id]; return n || id;
   }
   /* the schedule: everyone the page knows (owners of filed characters, everyone who answered, me) and their names */
@@ -424,14 +424,14 @@
     var me = api.me || null, groups = {}, order = [];
     docs.forEach(function (d) { var k = d.owner || ''; if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(d); });
     order.sort(function (a, b) {
-      if (!a !== !b) return a ? -1 : 1;                 /* Unowned last */
+      if (!a !== !b) return a ? -1 : 1;                 /* "No owner yet" last */
       if (me && (a === me) !== (b === me)) return a === me ? -1 : 1;   /* you first */
       return nameOf(a).toLowerCase() < nameOf(b).toLowerCase() ? -1 : nameOf(a).toLowerCase() > nameOf(b).toLowerCase() ? 1 : 0;
     });
     var h = '';
     order.forEach(function (k) {
       var list = groups[k].slice().sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || '')); });
-      h += '<div class="tp-group" data-owner="' + esc(k || '') + '"><div class="tp-ghead"><b>' + esc(k ? nameOf(k) : 'Unowned') + '</b>' + (k && k === me ? '<span class="tp-you">you</span>' : '') + '<span class="tp-dim mono">' + list.length + '</span></div><ul class="tp-chars">';
+      h += '<div class="tp-group" data-owner="' + esc(k || '') + '"><div class="tp-ghead"><b>' + esc(k ? nameOf(k) : 'No owner yet') + '</b>' + (k && k === me ? '<span class="tp-you">you</span>' : '') + '<span class="tp-dim mono">' + list.length + '</span></div><ul class="tp-chars">';
       list.forEach(function (d) {
         var facts = null, status = '';
         try { if (typeof api.playFacts === 'function') facts = api.playFacts(d); } catch (e) { facts = null; }
@@ -443,7 +443,7 @@
       });
       h += '</ul></div>';
     });
-    if (!order.length) h = '<p class="hint">No characters are filed yet. Each player files theirs from the creator; they appear here under their owner.</p>';
+    if (!order.length) h = '<p class="hint">No characters yet. Each player makes theirs from Home; they appear here under their name.</p>';
     return box('The players', h, '<span class="tp-dim">' + docs.length + ' character' + (docs.length === 1 ? '' : 's') + '</span>', 'tp-playbox');
   }
   /* the log shows its latest three lines; "All" unfolds the rest (page state; every line is in the page, so print has them all) */

@@ -371,6 +371,7 @@ const CREWS = ['dealers', 'hit-squad', 'militants', 'racers', 'shadows', 'utopia
   /* on a phone the six covers fold behind one button (page state, no write); a wide screen shows them, no button */
   await fresh('player');
   const fold = () => p.evaluate(() => { const t = document.querySelector('.cs-pickt'), c = document.querySelector('.cs-covers'); return { btn: !!t && getComputedStyle(t).display !== 'none', exp: t && t.getAttribute('aria-expanded'), covers: !!c && getComputedStyle(c).display !== 'none', label: t && t.textContent }; });
+  assert(/No characters yet/.test(await p.$eval('.tp-playbox', n => n.textContent)) && !/filed|files/.test(await p.$eval('.tp-playbox', n => n.textContent)), 'an empty table: the players box says "No characters yet"');
   let fd = await fold();
   assert(!fd.btn && fd.covers, 'desk: the covers shown, no fold button: ' + JSON.stringify(fd));
   await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(300);

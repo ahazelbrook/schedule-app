@@ -97,6 +97,12 @@ are kept: a write that records a session deletes the older keys with `null`.
     an option, "Confirm" an option (sets `next` from it, logs "Next session: <date>",
     and removes options at or before it), cadence and quorum settings.
   - Past options (`at` older than 12 h) are hidden and the GM can "Clear past dates".
+- Home does not ask for dates while there are none. The GM's set-up steps (Start the table, Invite the players,
+  Moving from another copy?) leave planning out; the table-started page has no "No dates proposed / Plan dates"
+  nudge (it keeps "N players haven't answered for <date>" while a next session exists); a new player's lead says
+  "mark the dates you can play" only while a date is open, else "Make your character to join the table."; a player
+  is nudged to mark dates only while a date waits for their answer. The schedule stays reachable from the table
+  page (the folded line, `#t/schedule`).
 - Starting session N (session bar) clears `next` when it is within 12 h of now, records the
   answers for it as `attendance[N]` (in -> true, out -> false, no answer -> not recorded), and
   drops the past options, in the same write.

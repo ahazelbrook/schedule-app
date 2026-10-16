@@ -476,7 +476,7 @@
     node.querySelectorAll('.sc-lufoot').forEach(function (f) { f.style.display = w.states[+f.getAttribute('data-i')] === 'in' ? '' : 'none'; });
     (node.__slots || []).forEach(function (sl, i) {
       var d = w.docs[i], v = w.states[i] || 'none';
-      names += '<span class="sc-lun st-' + v + '" style="left:' + sl.left.toFixed(2) + '%;width:' + sl.width.toFixed(2) + '%"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc(w.owners[i] || 'Unowned') + '<span class="sc-lust"> · ' + said[v] + '</span></small></span>';
+      names += '<span class="sc-lun st-' + v + '" style="left:' + sl.left.toFixed(2) + '%;width:' + sl.width.toFixed(2) + '%"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc(w.owners[i] || 'No owner yet') + '<span class="sc-lust"> · ' + said[v] + '</span></small></span>';
     });
     var nl = node.querySelector('.sc-lunames'); if (nl && nl.innerHTML !== names) nl.innerHTML = names;
   }
