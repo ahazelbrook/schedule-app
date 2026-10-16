@@ -260,13 +260,24 @@ function checkSituation(card, sid, where) {
   ok(card.sections.length >= 1 && card.sections.length <= 4, where + ': 1 lead + at most 3 Or, got ' + card.sections.length);
   eq(card.sections.map(s => s.role), card.sections.map((s, i) => i ? 'or' : 'lead'), where + ': roles');
   eq(card.meta.id, 'situation', where + ': id'); eq(card.replay.id, 'situation', where + ': replay id');
-  eq(card.meta.situation, sid, where + ': situation id'); eq(card.meta.composeVersion, 1, where + ': composeVersion');
+  eq(card.meta.situation, sid, where + ': situation id'); eq(card.meta.composeVersion, C.COMPOSE_VERSION, where + ': composeVersion');
   eq(card.meta.sections.map(s => s.id), card.sections.map(s => s.id));
+  eq(card.meta.sections.map(s => s.slot), card.sections.map(s => s.slot), where + ': slots in meta');
+  // slots: the lead is slot 0; the Or rows keep their own slots (1..3), rising, gaps allowed
+  eq(card.sections[0].slot, 0, where + ': lead slot');
+  for (let i = 1; i < card.sections.length; i++) ok(card.sections[i].slot > card.sections[i - 1].slot && card.sections[i].slot <= 3, where + ': slots rise');
+  // the position chip leads the card's chips and the lead's; no section repeats the result as a chip
+  ok(/^(controlled|risky|desperate) → .+ · harm /.test(card.meta.chips[0]) && card.sections[0].chips[0] === card.meta.chips[0], where + ': position chip ' + card.meta.chips[0]);
+  ok(card.meta.position && card.meta.position.pos === card.replay.ui.pos, where + ': meta.position');
+  ok(!card.meta.chips.some(c => /^Result: /.test(c)) && card.sections.every(s => !s.chips.some(c => /^Result: /.test(c))), where + ': a Result chip');
   for (const s of card.sections) {
     ok(s.lines.length && typeof s.title === 'string' && s.title, where + ': empty section ' + s.id);
     ok(s.lead && s.lead.length <= 120, where + ': lead line ' + JSON.stringify(s.lead));
     checkCard({ lines: s.lines, meta: s.meta, seed: s.seed }, where + ' / ' + s.id);
     for (const re of BAD) ok(!re.test(s.lead), where + ': ' + re + ' in lead');
+    ok(s.detail && Array.isArray(s.detail.coach), where + ': detail ' + s.id);
+    for (const l of s.lines) if (l.coach) ok(l.kind === 'read', where + ': coach flag on a ' + l.kind + ' line');
+    for (const t of s.meta.all) ok(!/\[(flagged for|TODO)/i.test(t), where + ': author note on the card: ' + t);
   }
   eq(card.lines, card.sections.flatMap(s => s.lines), where + ': lines are the sections flattened');
   const keys = card.meta.actions.map(a => JSON.stringify(a.intent));
@@ -299,7 +310,7 @@ await test('situations: shape, keys, positions, controls without Result, exports
   eq(con.situationControls.map(c => c.id), ['pos', 'scene', 'district', 'pc', 'npc', 'threat']);
   eq(con.situationDefaults(), { pos: 'risky', scene: '', district: '', pc: '', npc: '', threat: '' });
   eq(con.defaults(), { pos: 'risky', scene: '', district: '', pc: '', result: '', npc: '', threat: '' }, 'classic defaults unchanged');
-  eq(C.SITUATION_ID, 'situation'); eq(C.COMPOSE_VERSION, 1); eq(C.SITUATIONS.map(s => s.id), con.situations().map(s => s.id));
+  eq(C.SITUATION_ID, 'situation'); eq(C.COMPOSE_VERSION, 2); eq(C.SITUATIONS.map(s => s.id), con.situations().map(s => s.id));
   con.setCampaign({}, {});
   eq(con.situationControls.map(c => c.id), ['pos', 'scene', 'district', 'pc', 'npc', 'threat'], 'rebuilt by setCampaign');
   // by number; an unknown id rolls before
@@ -317,9 +328,12 @@ await test('situations (fixture, empty campaign): clean cards with no PCs, callb
   const n = sitSweep(FIX.parts.console.T, {}, 100);
   console.log('     ' + n + ' empty-campaign situation cards');
   const con = C.create({ T: FIX.parts.console.T, campaign: {} });
-  eq(con.situation('fourfive', {}, { seed: 2, mem: {} }).sections.map(s => s.id), ['consequence', 'complication'], 'no callbacks on file: no callback section');
-  // a friend that is on no sheet still composes (contact is unaimed and says so)
-  checkSituation(con.situation('someone', { npc: 'friend:Nobody' }, { seed: 2, mem: {} }), 'someone', 'friend off-sheet');
+  const ff = con.situation('fourfive', {}, { seed: 2, mem: {} });
+  eq(ff.sections.map(s => s.id), ['consequence', ff.sections[0].detail.kind === 'Complication' ? 'payThePrice' : 'complication'], 'no callbacks on file: no callback section');
+  // a friend that is on no sheet reads as nobody set (a name, then 2d), and still composes
+  const off = con.situation('someone', { npc: 'friend:Nobody' }, { seed: 2, mem: {} });
+  checkSituation(off, 'someone', 'friend off-sheet');
+  eq(off.sections.map(s => s.id), ['face', 'reaction']); eq(off.replay.ui.npc, '', 'the stale control is dropped from the replay');
 });
 
 await test('situations: exact replay, instance memory, and the stored triple redraws the whole card', () => {
@@ -362,16 +376,18 @@ await test('situations: every section is a classic roll with its own seed; memor
     const start = clone(mem);
     const seed = (i * 40503 + 9) >>> 0;
     const card = con.situation(sid, ui, { seed, mem });
-    // the section seeds are the card seed's second mulberry32 stream
+    // the section seeds are the card seed's second mulberry32 stream, one draw per SLOT (a gap keeps its draw)
     const r2 = C.seedRng(seed), expect = [0, 1, 2, 3].map(() => (r2() * 4294967296) >>> 0);
-    card.sections.forEach((s, j) => eq(s.seed, expect[j], sid + ' section seed ' + j));
+    card.sections.forEach((s) => eq(s.seed, expect[s.slot], sid + ' section seed, slot ' + s.slot));
     // memory: each section starts from what the one before left, the first from the card's start, the last leaves mem
     let chain = clone(start);
     for (const s of card.sections) {
       eq(s.replay.mem, chain, sid + ': ' + s.id + ' starts from the previous section\'s memory');
       eq(s.replay.seed, s.seed);
       const re = con.roll(s.replay.id, s.replay.ui, { seed: s.replay.seed, mem: chain });   // classic replay advances chain
-      eq(re.lines, s.lines, sid + ': ' + s.id + ' is a classic roll'); eq(re.meta, s.meta);
+      const an = con.annotate(re);                                                            // the section is that roll, read for the table
+      eq(an.lines, s.lines, sid + ': ' + s.id + ' is an annotated classic roll'); eq(an.meta, s.meta); eq(an.detail, s.detail);
+      eq(s.actions, an.meta.actions);
     }
     eq(chain, mem, sid + ': the last section leaves the memory');
     // result is forced per section: 4/5 for the 4/5 card, 1-3 for the 1-3 card
@@ -379,9 +395,16 @@ await test('situations: every section is a classic roll with its own seed; memor
       if (sid === 'fourfive') eq(s.replay.ui.result, '45'); else if (sid === 'onetothree') eq(s.replay.ui.result, '13'); else eq(s.replay.ui.result, '');
     }
   }
-  // the guard works across cards: with shared memory a section never repeats inside its window
+  // the guard works across cards: with shared memory the scene's complication palette never repeats inside its window.
+  // Two sections draw from it on a 4/5 card: the lead when it IS a Complication (its example), then the Or Complication.
   const mem = {}, seen = [];
-  for (let i = 0; i < 200; i++) seen.push(con.situation('fourfive', { scene: 'chase' }, { mem }).sections[1].meta.text);
+  for (let i = 0; i < 200; i++) {
+    const card = con.situation('fourfive', { scene: 'chase' }, { mem });
+    if (card.sections[0].detail.kind === 'Complication') seen.push(card.sections[0].detail.example);
+    const or = card.sections.find(s => s.id === 'complication');
+    if (or) seen.push(or.detail.draw);
+  }
+  ok(seen.length >= 200, 'draws seen: ' + seen.length);
   for (let i = 4; i < seen.length; i++) ok(new Set(seen.slice(i - 4, i)).size === 4, 'complication repeated inside the window at ' + i);
 });
 
@@ -389,12 +412,34 @@ await test('situations: what each one offers (lead, then at most three Or)', () 
   const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign });
   const ids = (sid, ui, seed) => con.situation(sid, ui, { seed: seed || 1, mem: {} }).sections.map(s => s.id);
   eq(ids('before', {}), ['devilsBargain']);
-  eq(ids('fourfive', {}), ['consequence', 'complication', 'callback']);
-  eq(ids('fourfive', { npc: 'rival:Nigel Sprocket' }), ['consequence', 'complication', 'callback', 'reaction']);
-  eq(ids('onetothree', {}), ['consequence', 'payThePrice', 'harm']);
-  eq(ids('onetothree', { npc: 'fac:Hat Society' }), ['consequence', 'payThePrice', 'harm', 'reaction']);
+  // 4/5 and 1-3: the Or rows are planned after the lead, never a twin of its kind, each in its own slot
+  let compLead = 0, harmLead = 0;
+  for (let s = 0; s < 300; s++) {
+    const npc = s % 2 ? 'rival:Nigel Sprocket' : '';
+    const ff = con.situation('fourfive', { npc, pos: POS[s % 3] }, { seed: s, mem: {} }), k = ff.sections[0].detail.kind;
+    if (k === 'Complication') compLead++;
+    eq(ff.sections.map(x => x.id), ['consequence', k === 'Complication' ? 'payThePrice' : 'complication', 'callback'].concat(npc ? ['reaction'] : []), 'fourfive #' + s + ' lead ' + k);
+    eq(ff.sections.map(x => x.slot), npc ? [0, 1, 2, 3] : [0, 1, 2], 'fourfive slots #' + s);
+    const ot = con.situation('onetothree', { npc, pos: POS[s % 3] }, { seed: s, mem: {} }), k2 = ot.sections[0].detail.kind;
+    if (k2 === 'Harm') harmLead++;
+    eq(ot.sections.map(x => x.id), ['consequence', 'payThePrice', k2 === 'Harm' ? 'callback' : 'harm'].concat(npc ? ['reaction'] : []), 'onetothree #' + s + ' lead ' + k2);
+    eq(ot.sections.map(x => x.slot), npc ? [0, 1, 2, 3] : [0, 1, 2], 'onetothree slots #' + s);
+    ok(!ot.sections.some(x => x.id === 'harm') === (k2 === 'Harm'), 'a Harm lead carries Resist itself');
+  }
+  ok(compLead > 30 && harmLead > 30, 'both kinds led often enough: ' + compLead + ' / ' + harmLead);
+  // with no callbacks on file a Harm lead on a 1-3 leaves slot 2 empty: the card is the lead and the price
+  const bare = C.create({ T: FIX.parts.console.T, campaign: { pcs: FIX.parts.campaign.pcs } });
+  let gaps = 0;
+  for (let s = 0; s < 200; s++) {
+    const ot = bare.situation('onetothree', {}, { seed: s, mem: {} });
+    if (ot.sections[0].detail.kind !== 'Harm') continue;
+    gaps++; eq(ot.sections.map(x => [x.id, x.slot]), [['consequence', 0], ['payThePrice', 1]], 'seed ' + s);
+    const r2 = C.seedRng(s), st = [0, 1, 2, 3].map(() => (r2() * 4294967296) >>> 0);
+    eq(ot.sections[1].seed, st[1], 'the price keeps slot 1\'s seed');
+  }
+  ok(gaps > 10, 'Harm leads seen: ' + gaps);
   eq(ids('someone', {}), ['face', 'reaction']);
-  eq(ids('someone', { npc: 'friend:Marge Teacup' }), ['contact', 'reaction']);
+  eq(ids('someone', { npc: 'friend:Marge Teacup' }), ['contact'], 'a friend: the Contact card is the reaction, no Or row');
   eq(ids('someone', { npc: 'rival:Nigel Sprocket' }), ['reaction']);
   eq(ids('someone', { npc: 'fac:The Teaspoons' }), ['reaction']);
   // NPC variants carry their pool through to the reaction
@@ -410,34 +455,43 @@ await test('situations: what each one offers (lead, then at most three Or)', () 
     ok(/1–3/.test(l13.sections[0].meta.sub), '1-3 lead says so');
     ok(!/^Worse position/.test(con.situation('fourfive', { pos: 'desperate' }, { seed: s, mem: {} }).sections[0].meta.text), 'desperate 4/5 lead offered worse position');
   }
-  // someone/friend: contact is aimed at the friend's PC, so Marge (Pip's friend) is among Pip's contacts
+  // someone/friend: contact is aimed at the friend's PC AND at that friend, so Marge (one of Pip's two) always answers
   let marge = 0, flan = 0;
   for (let s = 0; s < 60; s++) {
-    if (con.situation('someone', { npc: 'friend:Marge Teacup' }, { seed: s, mem: {} }).sections[0].meta.contact.pc === 'Pip Wobble') marge++;
+    const mc = con.situation('someone', { npc: 'friend:Marge Teacup' }, { seed: s, mem: {} }).sections[0].meta.contact;
+    if (mc.pc === 'Pip Wobble' && mc.name === 'Marge Teacup') marge++;
     if (/Auntie Flan/.test(con.situation('someone', { npc: 'friend:Auntie Flan' }, { seed: s, mem: {} }).sections[0].meta.text)) flan++;
   }
-  eq(marge, 60, 'friend contact is aimed at the friend\'s PC'); eq(flan, 60, 'a sole friend is always the one called');
+  eq(marge, 60, 'friend contact is the chosen friend, aimed at their PC'); eq(flan, 60, 'a sole friend is always the one called');
   // someone with nobody set: a name, then 2d
   const sm = con.situation('someone', { district: 'Lower Fluff' }, { seed: 3, mem: {} });
   eq(sm.sections[1].meta.reaction.pool, 2); ok(sm.meta.face, 'face extra surfaces on the card');
   // 1-3 and 4/5 differ in what they offer at each position: severity and harm level follow Position
   const ob = (pos) => con.situation('onetothree', { pos }, { seed: 6, mem: {} });
   ok(/→ mild/.test(ob('controlled').meta.sub) && /→ spicy/.test(ob('desperate').meta.sub), 'sub shows severity');
-  ok(/level 1 \(lesser\)/.test(ob('controlled').sections[2].meta.sub) && /level 3/.test(ob('desperate').sections[2].meta.sub), 'harm level follows position');
-  ok(/→ mild/.test(con.situation('fourfive', { pos: 'controlled' }, { seed: 6, mem: {} }).sections[1].meta.sub), 'complication severity follows position');
-  ok(con.situation('fourfive', { pos: 'desperate' }, { seed: 6, mem: {} }).sections[1].meta.all.some(t => /^Severity: .*3 winds/.test(t)), 'clock ticks follow position');
-  // dots flow into harm & resist; the aim chip and threat chip surface on the card
+  eq(ob('controlled').meta.position, { pos: 'controlled', severity: 'mild', ticks: '1 wind', harm: '1 (lesser)' }, 'meta.position');
+  eq(ob('desperate').meta.chips[0], 'desperate → 3 winds · harm 3', 'the position chip');
+  const harmSec = (pos) => { for (let s = 0; s < 100; s++) { const h = con.situation('onetothree', { pos }, { seed: s, mem: {} }).sections.find(x => x.id === 'harm'); if (h) return h; } return null; };
+  ok(/level 1 \(lesser\)/.test(harmSec('controlled').meta.sub) && /level 3/.test(harmSec('desperate').meta.sub), 'harm level follows position');
+  const compSec = (pos) => { for (let s = 0; s < 100; s++) { const c = con.situation('fourfive', { pos }, { seed: s, mem: {} }).sections.find(x => x.id === 'complication'); if (c) return c; } return null; };
+  ok(/→ mild/.test(compSec('controlled').meta.sub), 'complication severity follows position');
+  ok(compSec('desperate').meta.all.some(t => /^Severity: .*3 winds/.test(t)), 'clock ticks follow position');
+  // dots flow into harm & resist (the Or Harm, or the lead's own Resist row when the lead is Harm); the aim chip surfaces
   const h = con.situation('onetothree', { pc: 'Dot Crumble', dots: { 'Dot Crumble': { prowess: 3 } } }, { seed: 2, mem: {} });
-  ok(h.sections[2].meta.all.some(t => /Dot 3d/.test(t)), 'ui.dots reach the sections'); ok(h.meta.chips.includes('Aim: Dot'), 'aim chip');
+  ok(h.sections.some(s => s.meta.all.some(t => /Dot 3d/.test(t))), 'ui.dots reach the sections'); ok(h.meta.chips.includes('Aim: Dot'), 'aim chip');
   eq(h.replay.ui.dots, { 'Dot Crumble': { prowess: 3 } }, 'dots in the replay ui');
   eq(con.replay(h.replay).lines, h.lines, 'dots replay');
 });
 
 await test('situations: actions merge across sections (one threat-spent button, bargain, collected, callback used)', () => {
   const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign });
-  const th = con.situation('onetothree', { threat: 'the wobbly ladder' }, { seed: 8, mem: {} });
-  eq(th.meta.actions.filter(a => a.intent.type === 'threatSpent').length, 1, 'one threat-spent button for the whole card');
-  ok(th.sections.filter(s => s.actions.some(a => a.intent.type === 'threatSpent')).length > 1, 'but several sections offered it');
+  let several = 0;
+  for (let s = 0; s < 40; s++) {
+    const th = con.situation('onetothree', { threat: 'the wobbly ladder' }, { seed: s, mem: {} });
+    eq(th.meta.actions.filter(a => a.intent.type === 'threatSpent').length, 1, 'one threat-spent button for the whole card');
+    if (th.sections.filter(x => x.actions.some(a => a.intent.type === 'threatSpent')).length > 1) several++;
+  }
+  ok(several > 0, 'several sections offered it on some cards (the lead and the Or Harm)');
   const b = con.situation('before', { pc: 'Pip Wobble' }, { seed: 8, mem: {} });
   ok(b.meta.actions.some(a => a.intent.type === 'bargainOwed' && a.from === 'devilsBargain'), 'bargain owed');
   ok(b.meta.bargain && b.meta.bargain.kind, 'bargain extra');
@@ -449,6 +503,201 @@ await test('situations: actions merge across sections (one threat-spent button, 
   // intents still go through applyIntent unchanged
   const st = C.applyIntent({}, col.intent);
   ok(Object.keys(st.struck).length === 1);
+  // B10: a printed district bargain plus its Or = two bargains on the card = one Accepted action each
+  let two = 0;
+  for (let s = 0; s < 20; s++) {
+    const pb = con.situation('before', { district: 'Puddleton', scene: 'chase', pc: 'Pip Wobble' }, { seed: s, mem: {} });
+    const acc = pb.meta.actions.filter(a => a.intent.type === 'bargainOwed');
+    eq(acc.length, 2, 'one Accepted per bargain shown, seed ' + s);
+    ok(acc.every(a => /^Accepted: .+/.test(a.label) && a.label !== 'Accepted: they owe it' && a.intent.who === 'Pip' && a.intent.capture.bucket === 'x'), 'labelled with its own words');
+    ok(acc[0].intent.text !== acc[1].intent.text && acc[0].intent.key !== acc[1].intent.key, 'two different bargains');
+    ok(acc[0].intent.text.startsWith('Puddleton (fixture p.1): ') && acc[1].intent.text === C.plain(pb.sections[0].lines[1].rows[0].md).replace(/^Want \+1d\? /, ''), 'the printed one and the Or');
+    ok(!/\{[a-z]+\}/.test(acc[1].label), 'label from the filled line: ' + acc[1].label);
+    eq(pb.sections[0].detail.bargains, acc.map(a => a.intent.text));
+    two++;
+  }
+  eq(two, 20);
+  eq(con.situation('before', { pc: 'Pip Wobble' }, { seed: 8, mem: {} }).meta.actions.filter(a => a.intent.type === 'bargainOwed').map(a => a.label), ['Accepted: they owe it'], 'one bargain: the classic button');
+});
+
+await test('situations: the chosen friend answers (B2): Contact honours ui.contact, which the classic ui never sets', () => {
+  const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign });
+  for (let s = 0; s < 100; s++) {
+    const c = con.situation('someone', { npc: 'friend:Old Bert' }, { seed: s, mem: {} });
+    eq(c.sections.map(x => x.id), ['contact'], 'no Or reaction for a friend: the Contact card is the reaction');
+    eq(c.meta.contact.name, 'Old Bert'); eq(c.meta.contact.pc, 'Pip Wobble');
+    ok(/^Old Bert \(Pip's friend\): /.test(c.sections[0].lead), c.sections[0].lead);
+    eq(c.sections[0].replay.ui.contact, 'Old Bert', 'the hint rides on the section replay');
+    ok(!('contact' in c.replay.ui), 'and never on the card\'s');
+    const re = con.roll(c.sections[0].replay.id, c.sections[0].replay.ui, { seed: c.sections[0].seed, mem: clone(c.sections[0].replay.mem) });
+    eq(re.meta.contact.name, 'Old Bert', 'the section replays exactly as a classic roll with the hint');
+    eq(c.sections[0].detail.result, c.meta.contact.result);
+  }
+  // unaimed Classic still rotates through the sheet's friends (the hint is absent)
+  const names = new Set();
+  for (let s = 0; s < 60; s++) names.add(con.roll('contact', { pc: 'Pip Wobble' }, { seed: s, mem: {} }).meta.contact.name);
+  eq([...names].sort(), ['Marge Teacup', 'Old Bert']);
+  // a hint the pack cannot honour (not that PC's friend) falls back to the draw
+  ok(['Marge Teacup', 'Old Bert'].includes(con.roll('contact', { pc: 'Pip Wobble', contact: 'Auntie Flan' }, { seed: 3, mem: {} }).meta.contact.name));
+  ok(!('contact' in con.roll('contact', { pc: 'Pip Wobble', contact: '' }, { seed: 3, mem: {} }).replay.ui), 'an empty hint is dropped');
+});
+
+await test('annotate: "kind — example" lead, spend sentence as small, coach flags, author notes out; the classic roll untouched', () => {
+  const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign });
+  let harmNoScene = 0;
+  for (let s = 0; s < 120; s++) {
+    const r = con.roll('consequence', { scene: s % 2 ? 'fight' : '', threat: s % 3 ? '' : 'the wobbly ladder', pos: POS[s % 3] }, { seed: s, mem: {} });
+    const before = JSON.stringify(r);
+    const a = con.annotate(r);
+    eq(JSON.stringify(r), before, 'annotate leaves the roll alone');
+    ok(a.meta.text === a.detail.kind + ' — ' + a.detail.example, 'lead is kind — example: ' + a.meta.text);
+    ok(a.lines[0].kind === 'want' && a.lines[0].md.startsWith('**' + a.detail.kind + '** — '), 'want line');
+    ok(a.meta.label.startsWith('Consequence: ' + a.detail.kind + ' — '), 'history label carries the example');
+    ok(!a.lines.some(l => l.kind === 'grid' && l.rows.some(x => x.k === 'Like')), 'Like row folded into the lead');
+    ok(a.lines.some(l => l.kind === 'grid' && l.rows.some(x => x.k === 'What it is')), 'the rest of the grid stays');
+    if (s % 3 === 0) { ok(/the wobbly ladder/.test(a.lines[0].small) && !/the wobbly ladder/.test(a.lines[0].md), 'the spend sentence is the small line'); }
+    else ok(!('small' in a.lines[0]), 'no small without a threat');
+    const co = a.lines.filter(l => l.coach);
+    eq(co.length, 1); ok(co[0].kind === 'read' && /Telegraph first|You telegraphed it/.test(co[0].md), 'the telegraph line is the coaching');
+    eq(a.meta.all.length, a.lines.reduce((n, l) => n + (l.kind === 'grid' ? l.rows.length : 1), 0), 'all[] rebuilt from the new lines');
+    eq(a.meta.all[0], C.plain(a.lines[0].md + (a.lines[0].small ? ' ' + a.lines[0].small : '')));
+    if (a.detail.kind === 'Harm' && !(s % 2)) {
+      harmNoScene++;
+      const ex = a.lines[0].md.replace(/^\*\*Harm\*\* — /, '');
+      ok(/^Level [^:]+: \*\*(Bump|Bruise|Sprain)\*\*$/.test(ex) && !/Level \d.*Level \d/.test(ex), 'one level only: ' + ex);
+      ok(ex.includes('Level ' + a.detail.level + ': '), ex);
+      const want = { controlled: 'Bump', risky: 'Bruise', desperate: 'Sprain' }[POS[s % 3]];
+      ok(ex.endsWith('**' + want + '**'), 'this level\'s entry: ' + ex);
+    }
+    ok(!/\bundefined\b|\bNaN\b/.test(JSON.stringify(a)));
+  }
+  ok(harmNoScene > 3, 'harm without a scene seen: ' + harmNoScene);
+  // complication with a threat: the draw leads, the spend sentence under it; without a threat the draw leads anyway
+  const cp = con.annotate(con.roll('complication', { scene: 'chase', threat: 'the wobbly ladder' }, { seed: 4, mem: {} }));
+  ok(/^Pram \d/.test(cp.meta.text) && cp.lines[0].kind === 'want' && /the wobbly ladder/.test(cp.lines[0].small), JSON.stringify(cp.lines[0]));
+  eq(cp.detail.draw, cp.meta.text); eq(cp.lines.length, 3); eq(cp.lines.map(l => l.kind), ['want', 'grid', 'read']);
+  const cq = con.annotate(con.roll('complication', { threat: 'the wobbly ladder' }, { seed: 4, mem: {} }));
+  ok(/^[A-Z].*: .*\.$/.test(cq.meta.text) && /the wobbly ladder/.test(cq.lines[0].small) && cq.lines[1].kind === 'grid', 'oracle complication leads: ' + cq.meta.text);
+  const cn = con.annotate(con.roll('complication', { scene: 'chase' }, { seed: 4, mem: {} }));
+  eq(cn.detail.draw, cn.meta.text); ok(!('small' in cn.lines[0]));
+  // author notes: the vault's 21 flag row on a 1-3 keeps "[flagged for Alex]" in Classic, loses it when annotated
+  let flagged = null;
+  for (let s = 0; s < 4000 && !flagged; s++) { const r = con.roll('payThePrice', { result: '13' }, { seed: s, mem: {} }); if (r.meta.d66 === 21) flagged = r; }
+  ok(flagged && /flagged for Alex/.test(JSON.stringify(flagged.lines)), 'classic keeps the vault note');
+  const fa = con.annotate(flagged);
+  ok(!/flagged for|TODO|`\s*$/.test(JSON.stringify(fa.lines)) && /roll again\./.test(JSON.stringify(fa.lines)), 'annotate drops it: ' + JSON.stringify(fa.lines[1]));
+  ok(!fa.meta.all.some(t => /flagged/.test(t)));
+  // every roller: exactly its recurring guidance line is flagged, as a read line
+  const COACH = { devilsBargain: /Say it before the dice/, complication: /Don't negate a success/, consequence: /Telegraph first|You telegraphed it/, payThePrice: /Reach for this third/,
+    reaction: /On \*Conditional\*/, callback: /cheapest complication/, harm: /harm has no in-score penalty/, contact: /Session 1's lesson/, face: /Name the opposition/ };
+  for (const b of con.buttons) for (let s = 0; s < 20; s++) {
+    const a = con.annotate(con.roll(b.id, { npc: 'friend:Marge Teacup', pc: 'Pip Wobble', threat: s % 2 ? 'x' : '', district: s % 3 ? '' : 'Puddleton', scene: s % 4 ? '' : 'fight' }, { seed: s, mem: {} }));
+    const co = a.lines.filter(l => l.coach);
+    eq(co.length, 1, b.id + ' one coach line'); ok(co[0].kind === 'read' && COACH[b.id].test(co[0].md), b.id + ': ' + co[0].md);
+    eq(a.detail.coach.length, 1);
+  }
+  // a JSON-cloned result (no detail behind it) still annotates: plain copies, no flags
+  const r9 = con.roll('face', {}, { seed: 1, mem: {} }), a9 = con.annotate(JSON.parse(JSON.stringify(r9)));
+  eq(a9.lines.map(l => l.kind), r9.lines.map(l => l.kind)); ok(!a9.lines.some(l => l.coach)); eq(a9.detail, { coach: [] }); eq(a9.meta.all, r9.meta.all);
+  // B11: Pay the price 66 "roll twice more": every 61-62 among the extras gets its Collected action (Classic has none on a 66)
+  let sixes = 0, due = 0;
+  for (let s = 0; s < 20000 && due < 4; s++) {
+    const r = con.roll('payThePrice', {}, { seed: s, mem: {} });
+    if (r.meta.d66 !== 66) continue;
+    sixes++;
+    const a = con.annotate(r), col = a.meta.actions.filter(x => x.intent.type === 'bargainCollected');
+    eq(r.meta.actions.filter(x => x.intent.type === 'bargainCollected').length, 0, 'classic: none on a 66');
+    const shown = a.lines[1].rows.filter(x => /comes due/.test(x.md)).length;
+    eq(col.length, shown, 'seed ' + s + ': one Collected per bargain that came due');
+    eq(a.detail.due.length, shown);
+    for (const t of a.detail.due) ok(col.some(x => x.intent.text === t && x.intent.key === C.keyOf(t)), 'action for ' + t);
+    if (shown > 1) ok(col.every(x => x.label !== 'Collected: strike it off' && /^Collected: /.test(x.label)), 'two: labelled apart');
+    if (shown === 1) eq(col[0].label, 'Collected: strike it off');
+    if (shown) due++;
+  }
+  ok(sixes >= 4 && due >= 4, 'seen ' + sixes + ' 66s, ' + due + ' with a bargain due');
+  // the single-row 61-62 card keeps its one classic action, unchanged
+  for (let s = 0; s < 3000; s++) {
+    const r = con.roll('payThePrice', {}, { seed: s, mem: {} });
+    if (r.meta.d66 !== 61 && r.meta.d66 !== 62) continue;
+    eq(con.annotate(r).meta.actions, r.meta.actions); break;
+  }
+});
+
+await test('composeVersion: replay carries it; a stored card from an older composition redraws as recomposed', () => {
+  const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign });
+  const a = con.situation('fourfive', { npc: 'rival:Nigel Sprocket' }, { seed: 5, mem: {} });
+  eq(a.replay.composeVersion, C.COMPOSE_VERSION); eq(a.meta.composeVersion, C.COMPOSE_VERSION); ok(!('recomposed' in a.meta));
+  const same = con.replay(a.replay);
+  ok(!('recomposed' in same.meta)); eq(same.sections, a.sections); eq(same.meta, a.meta);
+  // an entry stored before the version was kept (no field) replays with the current composition and says so
+  const old = con.replay({ id: 'situation', situation: 'fourfive', seed: 5, ui: a.replay.ui, mem: a.replay.mem });
+  eq(old.meta.recomposed, { from: 1, to: C.COMPOSE_VERSION }); eq(old.sections, a.sections, 'drawn with the current composition');
+  eq(con.situation('fourfive', { npc: 'rival:Nigel Sprocket' }, { seed: 5, mem: {}, composeVersion: 1 }).meta.recomposed, { from: 1, to: C.COMPOSE_VERSION });
+  eq(con.replay(JSON.parse(JSON.stringify(a.replay))).meta, a.meta, 'JSON round trip keeps the version');
+});
+
+await test('sparse packs (B8): every table key missing or empty still rolls clean cards; check(T) names what is missing', () => {
+  const T0 = FIX.parts.console.T, camp = FIX.parts.campaign;
+  eq(C.check(T0), [], 'the fixture is complete');
+  const UIS = [{}, { pos: 'controlled', scene: 'fight', threat: 'x' }, { pos: 'desperate', scene: 'chase', result: '13', pc: 'Pip Wobble', npc: 'friend:Marge Teacup' },
+    { district: 'Puddleton', scene: 'chase', result: '45', npc: 'fac:Hat Society' }, { scene: 'talk', district: 'Crumbhall', npc: 'rival:Nigel Sprocket', threat: 'y' }];
+  const muts = [];
+  for (const k of Object.keys(T0)) {
+    muts.push(['delete ' + k, t => { delete t[k]; }]);
+    if (Array.isArray(T0[k])) muts.push(['empty ' + k, t => { t[k] = []; }]);
+    else if (T0[k] && typeof T0[k] === 'object') {
+      muts.push(['empty ' + k, t => { t[k] = {}; }]);
+      for (const sk of Object.keys(T0[k])) {
+        muts.push(['delete ' + k + '.' + sk, t => { delete t[k][sk]; }]);
+        if (Array.isArray(T0[k][sk])) muts.push(['empty ' + k + '.' + sk, t => { t[k][sk] = []; }]);
+        else if (T0[k][sk] && typeof T0[k][sk] === 'object') for (const ssk of Object.keys(T0[k][sk])) muts.push(['delete ' + k + '.' + sk + '.' + ssk, t => { delete t[k][sk][ssk]; }]);
+      }
+    } else muts.push(['blank ' + k, t => { t[k] = ''; }]);
+  }
+  muts.push(['short price', t => { t.price = t.price.slice(0, 3); }], ['short reaction', t => { t.reaction = t.reaction.slice(0, 2); }], ['string level', t => { t.severity.risky[3] = '2'; }]);
+  let n = 0;
+  for (const [name, mut] of muts) {
+    const T = clone(T0); mut(T);
+    if (name === 'delete severity' || name === 'delete scene') { let threw = false; try { C.create({ T, campaign: camp }); } catch (e) { threw = true; } ok(threw, name + ': create() still requires it'); continue; }
+    const con = C.create({ T, campaign: camp, seed: 1 });
+    for (let b = 1; b <= 9; b++) for (let u = 0; u < UIS.length; u++) for (let s = 0; s < 3; s++) { checkCard(con.roll(b, UIS[u], { seed: s * 977 + u, mem: {} }), name + ' roll ' + b + ' ui ' + u); n++; }
+    for (let k = 1; k <= 4; k++) for (let u = 0; u < UIS.length; u++) checkSituation(con.situation(k, UIS[u], { seed: 31 + u, mem: {} }), con.situations()[k - 1].id, name + ' situation ' + k + ' ui ' + u);
+    // every missing or emptied table key is reported, except the two optional tables (printed district bargains, the
+    // arsenal) and a whole scene taken out (a pack may carry fewer scenes; the ones it has must be complete)
+    if (/^(delete|empty) /.test(name) && !/^(delete|empty) (dbDistrict|arsenal)\b/.test(name) && !/^delete scene\.\w+$/.test(name)) ok(C.check(T).length > 0, name + ': check() reports it');
+    if (/^(delete|empty) (dbDistrict|arsenal)\b/.test(name)) eq(C.check(T), [], name + ': optional, not reported');
+  }
+  ok(n > 3000, 'rolls: ' + n);
+  // the neutral fallbacks read as words, never table placeholders
+  const T1 = clone(T0); T1.district = []; delete T1.spend.Harm; T1.say3 = {}; T1.crumbBits = [];
+  eq(C.check(T1), ['spend.Harm', 'say3.Delighted', 'say3.Helpful', 'say3.Fussy', 'say3.Grumpy', 'crumbBits', 'district']);
+  // (generic bargains, the ones with {district} in them, are drawn only when nothing on the board can anchor one)
+  const c1 = C.create({ T: T1, campaign: {}, seed: 1 }), c2 = C.create({ T: T1, campaign: camp, seed: 1 });
+  let dist = 0, lands = 0, say = 0;
+  for (let s = 0; s < 400; s++) {
+    const db = con0(c1, 'devilsBargain', {}, s); if (/the district/.test(db.meta.text)) dist++; ok(!/undefined/.test(db.meta.text));
+    const cs = con0(c2, 'consequence', { threat: 'the dog', pos: 'desperate' }, s); if (/^the dog lands\. Harm$/.test(cs.meta.text)) lands++;
+    const rx = con0(c2, 'reaction', {}, s); if (rx.meta.all.some(t => /^Say it: The answer first/.test(t))) say++;
+  }
+  ok(dist > 0 && lands > 0 && say === 400, 'fallbacks used: ' + dist + ' ' + lands + ' ' + say);
+  ok(/They drop a crumb: something small but real/.test(JSON.stringify([...Array(200)].map((_, s) => con0(c2, 'contact', { pc: 'Pip Wobble' }, s).meta.text))), 'crumb bit fallback');
+  function con0(c, id, ui, s) { return c.roll(id, ui, { seed: s, mem: {} }); }
+});
+
+await test('stale controls (B19): a district, PC or NPC the pack no longer holds reads as any and leaves the replay', () => {
+  const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign });
+  const r = con.roll('reaction', { npc: 'friend:Ghost', district: 'Gone Town', pc: 'Nobody' }, { seed: 1, mem: {} });
+  eq(r.meta.reaction.pool, 2, 'a friend on no sheet is nobody, 2d'); ok(/someone neutral/.test(r.meta.sub));
+  eq([r.replay.ui.npc, r.replay.ui.district, r.replay.ui.pc], ['', '', '']); eq(r.meta.chips, []);
+  const db = con.roll('devilsBargain', { district: 'Gone Town', scene: 'chase' }, { seed: 1, mem: {} });
+  ok(!/Gone Town/.test(JSON.stringify(db)), 'no stale district in the text or the chips');
+  eq(con.roll('reaction', { npc: 'rival:Stranger' }, { seed: 1, mem: {} }).meta.reaction.pool, 2);
+  eq(con.roll('reaction', { npc: 'fac:No Such Lot' }, { seed: 1, mem: {} }).meta.reaction.pool, 2);
+  // the values the pack does hold are untouched
+  const ok1 = con.roll('reaction', { npc: 'friend:Marge Teacup', district: 'Puddleton', pc: 'Pip Wobble' }, { seed: 1, mem: {} });
+  eq([ok1.replay.ui.npc, ok1.replay.ui.district, ok1.replay.ui.pc], ['friend:Marge Teacup', 'Puddleton', 'Pip Wobble']); eq(ok1.meta.reaction.pool, 3);
+  eq(con.situation('someone', { npc: 'friend:Nobody' }, { seed: 2, mem: {} }).sections.map(s => s.id), ['face', 'reaction']);
 });
 
 // Classic parity: the nine rollers' output for fixed inputs, hashed with the version that shipped before situations
@@ -489,6 +738,32 @@ await test('Classic matches the pre-situations source when git can supply it (op
     const prev = require(tmp);
     for (const b of C.BUTTONS) eq(classicDigest(b.id), classicDigest(b.id, prev), 'vs previous ' + b.id);
   } finally { fs.unlinkSync(tmp); }
+});
+// The byte-identity dump: nine buttons x 24 control variants x 300 seeds, each roll JSON-stringified, hashed against the
+// dump taken from console.js at 7fce4b9 (before the generator-review fixes). Every control value here is one the fixture
+// pack and campaign hold; a stale value is the one thing sanitise() now changes (B19), by design.
+const DUMP_UIS = [
+  {}, { pos: 'controlled' }, { pos: 'desperate' },
+  { scene: 'fight' }, { scene: 'chase', pos: 'desperate' }, { scene: 'talk', result: '45' }, { scene: 'sneak', result: '13' }, { scene: 'street' },
+  { district: 'Puddleton', scene: 'chase' }, { district: 'Crumbhall', scene: 'talk' }, { district: 'Lower Fluff' },
+  { pc: 'Pip Wobble', scene: 'fight' }, { pc: 'Dot Crumble' }, { pc: 'Moss', result: '13', pos: 'desperate' },
+  { npc: 'friend:Marge Teacup' }, { npc: 'friend:Old Bert', pc: 'Pip Wobble' }, { npc: 'rival:Nigel Sprocket' }, { npc: 'fac:Hat Society' }, { npc: 'fac:The Teaspoons', result: '45' },
+  { threat: 'the dog is waking up' }, { threat: 'the dog is waking up', scene: 'fight', pos: 'desperate', pc: 'Pip Wobble', district: 'Puddleton' },
+  { threat: 'a placeholder hazard', result: '13', npc: 'friend:Marge Teacup' },
+  { pc: 'Dot Crumble', dots: { 'Dot Crumble': { prowess: 3, insight: 0 } } },
+  { pos: 'risky', result: '45', scene: 'fight', district: 'Puddleton', pc: 'Pip Wobble', npc: 'rival:Nigel Sprocket', threat: 'x' }
+];
+await test('Classic byte-identity: 9 buttons x 24 variants x 300 seeds hash to the dump taken before the generator-review fixes', () => {
+  const con = C.create({ T: FIX.parts.console.T, campaign: FIX.parts.campaign, seed: 1 });
+  const h = createHash('sha256');
+  let lines = 0;
+  for (let n = 1; n <= 9; n++) for (let u = 0; u < DUMP_UIS.length; u++) for (let s = 0; s < 300; s++) {
+    const seed = (s * 2654435761 + u * 97 + n) >>> 0;
+    h.update((lines ? '\n' : '') + 'classic n=' + n + ' ui=' + u + ' seed=' + seed + ' ' + JSON.stringify(con.roll(n, DUMP_UIS[u], { seed, mem: {} })));
+    lines++;
+  }
+  eq(lines, 64800);
+  eq(h.digest('hex'), '08ddc2b4a63db4b6f7fe0a1e535132406d1e401d45fcc802503614f093d8c548', 'the classic dump changed');
 });
 
 // --- the real pack, only when it is on this machine (never committed) -------------------------------------------

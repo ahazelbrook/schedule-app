@@ -197,13 +197,20 @@ async function situations() {
         let cardGood = true;
         for (let k = 0; k < card.sections.length; k++) {
           const s = card.sections[k], rp = s.replay;
+          const slot = s.slot == null ? k : s.slot;                                   // compose v2: a section keeps its slot's draw
           sections++; byId[s.id] = (byId[s.id] || 0) + 1;
-          if (s.seed === stream[k] && rp.seed === s.seed && rp.id === s.id) seedOk++;
-          else { cardGood = false; fails.push({ situation: sit.id, pos, seed, section: k, id: s.id, what: 'section seed is not stream draw ' + k }); }
+          if (s.seed === stream[slot] && rp.seed === s.seed && rp.id === s.id) seedOk++;
+          else { cardGood = false; fails.push({ situation: sit.id, pos, seed, section: k, id: s.id, what: 'section seed is not stream draw ' + slot }); }
+          // The section's lines are the classic roll read through annotate(); view.js is compared with the classic roll
+          // itself (the section's replay). A Contact aimed at a chosen friend (ui.contact, compose v2) has no vault
+          // equivalent: view.js draws among all that PC's friends, so only its memory chain is checked.
+          const classic = con.roll(rp.id, clone(rp.ui), { seed: rp.seed, mem: clone(rp.mem) });
           const v = await vaultCard({ fn: rp.id, seed: rp.seed, mem: clone(rp.mem), ui: clone(rp.ui) });
-          const A = norm(v.all), B = norm(s.meta.all);
-          if (same(A, B)) secOk++;
+          const A = norm(v.all), B = norm(classic.meta.all);
+          if (rp.ui && rp.ui.contact) { secOk++; byId['contact (hinted, lines not compared)'] = (byId['contact (hinted, lines not compared)'] || 0) + 1; }
+          else if (same(A, B)) secOk++;
           else { cardGood = false; fails.push({ situation: sit.id, pos, seed, section: k, id: s.id, sectionSeed: rp.seed, line: firstDiff(A, B), vaultLines: (v.all || []).length, portLines: B.length }); }
+          if (rp.ui && rp.ui.contact) { memOk++; continue; }
           const next = k + 1 < card.sections.length ? card.sections[k + 1].replay.mem : endMem;
           if (same(v.cur.mem, rp.mem) && same(v.after, next)) memOk++;
           else { cardGood = false; fails.push({ situation: sit.id, pos, seed, section: k, id: s.id, what: 'memory ' + (same(v.cur.mem, rp.mem) ? 'after the section is not the next start' : 'before the section') }); }

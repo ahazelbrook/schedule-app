@@ -7,7 +7,7 @@
    API (the UI author reads only this block)
    ---------------------------------------------------------------------------------------------------------------
    const con = B68GmConsole.create({ T, campaign, state, mem, seed })
-       T         pack.parts.console.T (required)
+       T         pack.parts.console.T (required). B68GmConsole.check(T) lists the keys a pack is missing (below).
        campaign  pack.parts.campaign: { pcs, callbacks, cast, standing, owed, npcs, names } (any may be missing)
        state     optional console state (see "State and intents"): table-side changes laid over the campaign
        mem       optional repeat-guard memory, a plain JSON object; default {} (kept by the instance)
@@ -23,7 +23,8 @@
    con.defaults()   the starting controls: { pos: 'risky', scene: '', district: '', pc: '', result: '', npc: '', threat: '' }
    con.roll(id, ui, { seed, mem })  -> { lines, meta, seed, replay }
        id     a button id, or its number 1..9 (an unknown id rolls devilsBargain, as the vault did)
-       ui     the controls (merged over defaults()). Optional extra: ui.dots = { '<pc name>': { insight, prowess,
+       ui     the controls (merged over defaults()). A district, PC or NPC the pack no longer holds reads as "any"
+              (and is dropped from replay.ui). Optional extra: ui.dots = { '<pc name>': { insight, prowess,
               resolve } } overrides the attribute dots the pack carries (campaign.pcs[i].insight/prowess/resolve,
               read from the character sheets' frontmatter when the pack was built). Harm & resist and the
               Consequence resist row use them; feed live sheets here if the app has them.
@@ -44,8 +45,26 @@
        actions     buttons the card offers; pressing one hands its `intent` to applyIntent (they never re-roll)
        extra       per button: bargain {kind, anchor, cat} · d66 · reaction {pool, dice, best, crit, result}
                    · contact {name, pc, dice, result} · face {npc: page name | null, name}
+     Classic output is the vault's, byte for byte, for a well-formed pack: nothing below changes what roll() returns.
+   con.annotate(res) -> { lines, meta, seed, replay, detail }   the same roll, read for the table (a NEW object; `res`
+       is untouched). Situations use it for every section; a page may use it on a classic card too:
+       · lines carry `coach: true` on the recurring guidance lines (fold them; Pin / Copy may skip them)
+       · a Consequence leads "**kind** — example" (the example row folded into it; a threat's spend sentence is its
+         `small`); the Harm example without a scene is this level's entry; a Complication with a threat leads with the
+         drawn complication and the spend sentence as its `small`
+       · one "Accepted" action per bargain shown (a printed district bargain plus its Or); one "Collected" per
+         bargain that came due (Pay the price 66 "roll twice more" included); author notes ("[flagged for …]",
+         "[TODO: …]") dropped
+       · meta.all / text / label are rebuilt from the new lines (text = the lead line without its `small`)
+       · detail: { coach: [], kind?, example?, level?, draw?, bargains?, due?, result? } what the roll drew
    con.setCampaign(campaign, state)  swap the campaign (and/or console state); rebuilds con.controls
    con.mem()        the instance's repeat-guard memory (the live object)
+   con.check()      B68GmConsole.check(T) for this instance's tables
+
+   B68GmConsole.check(T) -> [string]   the table keys a pack is missing or has empty ('district', 'spend.Harm',
+       'say3.Grumpy', 'scene.fight.harm', …), for the page to show when a pack is loaded. Empty = the pack is
+       complete. Every roller falls back to a neutral word or line for a missing key rather than throwing (an old or
+       sparse pack still rolls); create() itself needs only T.severity and T.scene.
 
    State and intents. Nothing here writes anywhere; a card's action returns an intent, and the UI keeps the result
    in GM state. The console state is a plain object of maps (merge-friendly for PATCH /api/gm/state):
@@ -61,10 +80,10 @@
    An intent's `capture` (bargainOwed only) is the line the vault also filed under Loose ends (bucket 'x').
 
    Helpers: B68GmConsole.seedRng(a) (mulberry32, as the vault) · resistOdds(n) · poolRoll(n, rng) · plain(md)
-            · LIVE0 · BUTTONS (ids and labels only) · SITUATIONS · SITUATION_ID · COMPOSE_VERSION
+            · LIVE0 · BUTTONS (ids and labels only) · SITUATIONS · SITUATION_ID · COMPOSE_VERSION · check(T)
    ---------------------------------------------------------------------------------------------------------------
    SITUATIONS (composed cards; phase 2). Classic (everything above) is untouched: situations are a layer that runs
-   classic rolls as sections. Nothing below changes what con.roll() returns.
+   classic rolls as sections, each read through annotate(). Nothing below changes what con.roll() returns.
    ---------------------------------------------------------------------------------------------------------------
    con.situations()  -> [{ id, label, key, hint }]: before (key 1, Devil's Bargain) · fourfive (2, a 4/5) ·
                         onetothree (3, a 1-3) · someone (4). Keys 1-4 in Situations; Classic keeps 1-9.
@@ -73,35 +92,48 @@
    con.situationControls   con.controls without Result (the button is the result): pos, scene, district, pc, npc, threat.
                         Rebuilt by setCampaign(), like con.controls.
    con.situationDefaults() the starting controls for Situations (con.defaults() minus result).
-   con.situation(id, ui, { seed, mem }) -> { lines, meta, sections, seed, replay }
+   con.situation(id, ui, { seed, mem, composeVersion }) -> { lines, meta, sections, seed, replay }
        id     a situation id, or its number 1..4 (an unknown id rolls 'before')
        ui     the controls (as roll(); any ui.result is ignored: the situation decides it). ui.dots works as in roll().
        seed   uint32 for the whole card; omit for a fresh one. mem the repeat-guard memory, MUTATED, default the
               instance's. Same rules as roll(): replay.mem is a deep copy BEFORE the card.
+       composeVersion  the version a stored card was composed with (con.replay passes it; absent = 1). When it is not
+              the current COMPOSE_VERSION the card is redrawn with the CURRENT composition and meta.recomposed =
+              { from, to } says so (the Or rows may differ from what was shown; the lead's seed is the same).
        sections  ordered; sections[0] is the LEAD (render it as the lead box), the rest are at most three "Or" entries
                  (render each as a one-line `lead`, opening to its full lines). Each section:
-                 { id: classic button id, role: 'lead'|'or', title, lead: one plain line (<= 120 chars),
-                   sub, chips, lines: [classic lines], actions: [{ label, intent }], meta: the classic meta,
-                   seed, replay: { id, seed, mem, ui } }  (replay is a classic roll: con.roll(id, ui, { seed, mem }))
+                 { id: classic button id, role: 'lead'|'or', slot: 0..3, title, lead: one plain line (<= 120 chars),
+                   sub, chips (no "Result:" chip; the lead's start with the position chip), lines, actions, meta,
+                   detail (all from annotate()), seed, replay: { id, seed, mem, ui } }
+                 replay is a classic roll: con.roll(id, ui, { seed, mem }); the section equals con.annotate() of it.
        lines  every section's lines flattened in order (a plain fallback; the page should render `sections`)
        actions  meta.actions is the merged list from every section (duplicates dropped; each carries `from`, the
                 section id). Pressing one hands its `intent` to applyIntent as always.
-       meta   { id: 'situation', situation: <situation id>, n: 1..4, composeVersion: 1, title, sub, chips, text (the
-              lead's first line), all (every section's lines as text), label, actions, sections: [{ id, role, title,
-              seed }], plus the first bargain / d66 / reaction / contact / face extras among the sections }
-       replay { id: 'situation', situation, seed, mem, ui }: con.replay(replay) redraws the whole card exactly.
+       meta   { id: 'situation', situation: <situation id>, n: 1..4, composeVersion, title, sub, chips (the position
+              chip "risky → 2 winds · harm 2" first), position: { pos, severity, ticks, harm }, text (the lead's line),
+              all (every section's lines as text), label, actions, sections: [{ id, role, slot, title, seed }],
+              recomposed? { from, to }, plus the first bargain / d66 / reaction / contact / face extras among the
+              sections }
+       replay { id: 'situation', situation, seed, mem, ui, composeVersion }: con.replay(replay) redraws the whole card.
    con.replay(replay) redraws a stored card: id 'situation' -> situation(), anything else -> roll(). It clones
-                      replay.mem for you.
-   Section seeds come from a second mulberry32 stream started from the card's seed (one draw per possible section,
-   in a fixed order, whether or not the section appears), and mem runs through the sections in order.
+                      replay.mem for you and passes replay.composeVersion through (absent = 1).
+   Section seeds come from a second mulberry32 stream started from the card's seed (one draw per SLOT, four draws
+   always, in a fixed order, whether or not the slot is filled: a section's seed never depends on which others
+   appear), and mem runs through the sections in order. Slot 0 is the lead; the Or rows are planned AFTER the lead is
+   drawn (its kind decides them) and keep their slots.
    STORE COMPOSED CARDS AND HISTORY UNDER THE ID 'situation' (B68GmConsole.SITUATION_ID), NEVER 'console': code from
-   before this change redraws any unknown id as a Devil's Bargain, so a rollback would misread them.
+   before this change redraws any unknown id as a Devil's Bargain, so a rollback would misread them. Store
+   replay.composeVersion with them and pass it back, so an older card is redrawn as "recomposed" rather than silently.
    Which sections appear: before = Devil's Bargain. fourfive = Consequence (4/5) · Or Complication (4/5, with the
-   clock ticks) · Or Callback (only if callbacks are on file) · Or NPC reaction (only if the NPC control is set).
-   onetothree = Consequence (1-3) · Or Pay the price · Or Harm & resist · Or NPC reaction (NPC set).
-   someone = NPC control empty: Face · Or NPC reaction (2d). A friend: Contact (aimed at that friend's PC; with
-   several friends on one sheet it may pick another of them) · Or NPC reaction (3d). A rival or faction: NPC reaction
-   with that pool. B68GmConsole.SITUATIONS and COMPOSE_VERSION are exported too.
+   clock ticks) — or, when the lead IS a Complication, Or Pay the price (4/5) instead · Or Callback (only if callbacks
+   are on file) · Or NPC reaction (only if the NPC control is set).
+   onetothree = Consequence (1-3) · Or Pay the price · Or Harm & resist — dropped when the lead IS Harm (it carries
+   Resist already; a Callback takes the slot if any are on file) · Or NPC reaction (NPC set).
+   someone = NPC control empty: Face · Or NPC reaction (2d). A friend: Contact, aimed at that friend's PC and at that
+   friend (ui.contact, a hint only situations set): the Contact card is the reaction, so no Or row. A rival or
+   faction: NPC reaction with that pool. B68GmConsole.SITUATIONS and COMPOSE_VERSION are exported too.
+   COMPOSE_VERSION history: 1 the first composition · 2 the Or rows planned after the lead, Contact aimed at the
+   chosen friend (no Or reaction), sections read through annotate().
    --------------------------------------------------------------------------------------------------------------- */
 (function (root, factory) {
   'use strict';
@@ -161,6 +193,8 @@
 
   var clone = function (o) { return JSON.parse(JSON.stringify(o == null ? {} : o)); };
   var isObj = function (v) { return v !== null && typeof v === 'object' && !Array.isArray(v); };
+  var has = function (a) { return Array.isArray(a) && a.length > 0; };
+  var str = function (v, d) { return v == null ? d : String(v); };
   function deepMerge(target, patch) {
     var out = isObj(target) ? Object.assign({}, target) : {};
     Object.keys(patch || {}).forEach(function (k) {
@@ -237,7 +271,7 @@
 
   // --- Situations (composed cards): the id the page must file them under, and the compose version ----------------
   var SITUATION_ID = 'situation';
-  var COMPOSE_VERSION = 1;
+  var COMPOSE_VERSION = 2;
   var SITUATIONS = [
     { id: 'before',     label: 'Before',  key: 1, hint: "before the roll: a Devil's Bargain to offer" },
     { id: 'fourfive',   label: '4/5',     key: 2, hint: 'they rolled a 4 or 5: a consequence, or a complication' },
@@ -246,6 +280,70 @@
   ];
   var LEAD_MAX = 120;
   var cut = function (t) { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > LEAD_MAX ? t.slice(0, LEAD_MAX - 1) + '…' : t; };
+
+  // --- Neutral fallbacks for a sparse pack (never table text; a well-formed pack never reaches them) --------------
+  var POSITIONS = ['controlled', 'risky', 'desperate'];
+  var SEV0 = { sev: 'moderate', ticks: '1 tick', menu: 'what fits the position', lvl: 2 };
+  var REACT0 = [['Critical', 'they go further than asked'], ['Yes', 'they do it'], ['Yes, but', 'a price or a condition'], ['No', 'not now, not for free']];
+  var SAY0 = ['The answer first', 'then the price', 'then one detail'];
+  var CONS0 = ['Complication', 'New trouble arrives.', 'Something gets in the way.'];
+  var PRICE0 = [11, 66, 'The obvious price: name it, then move on.'];
+  var DBF0 = ['faction', '**{f}** hears of it.'];
+  var DBG0 = ['collateral', 'Something nearby breaks.'];
+  var SRC0 = ['A bystander', 'whoever is nearest'];
+  var SHAPE0 = ['Something goes wrong', 'the obvious thing'];
+  function sevNorm(sv) {
+    sv = Array.isArray(sv) ? sv : [];
+    return { sev: str(sv[0], SEV0.sev), ticks: str(sv[1], SEV0.ticks), menu: str(sv[2], SEV0.menu), lvl: Number(sv[3]) || SEV0.lvl };
+  }
+
+  // The keys a pack must carry for every roller to draw from its tables (what check() reports as missing).
+  // A list counts only when it has entries and no hole; a keyed table only when every key a roller reaches is there.
+  function full(a, n) {
+    if (!Array.isArray(a) || a.length < (n || 1)) return false;
+    for (var i = 0; i < a.length; i++) if (a[i] == null || a[i] === '') return false;
+    return true;
+  }
+  function check(T) {
+    var miss = [];
+    if (!isObj(T)) return ['T'];
+    var need = function (k, okay) { if (!okay) miss.push(k); };
+    var rows = function (v) { return Array.isArray(v) ? v.filter(Array.isArray) : []; };
+    need('severity', isObj(T.severity));
+    POSITIONS.forEach(function (p) { need('severity.' + p, isObj(T.severity) && full(T.severity[p], 4)); });
+    need('scene', isObj(T.scene) && Object.keys(T.scene).length > 0);
+    Object.keys(isObj(T.scene) ? T.scene : {}).forEach(function (k) {
+      var s = T.scene[k];
+      need('scene.' + k + '.label', isObj(s) && s.label != null && s.label !== '');
+      need('scene.' + k + '.comp', isObj(s) && full(s.comp));
+      ['reduced', 'lost', 'worse', 'resist'].forEach(function (f) { need('scene.' + k + '.' + f, isObj(s) && s[f] != null && s[f] !== ''); });
+      need('scene.' + k + '.harm', isObj(s) && full(s.harm, 3) && [0, 1, 2].every(function (i) { return full(s.harm[i]); }));
+      need('dbScene.' + k, isObj(T.dbScene) && full(T.dbScene[k]));
+    });
+    need('allowed', isObj(T.allowed));
+    POSITIONS.forEach(function (p) { ['45', '13'].forEach(function (r) { need('allowed.' + p + '.' + r, isObj(T.allowed) && isObj(T.allowed[p]) && full(T.allowed[p][r])); }); });
+    need('consequence', full(T.consequence));
+    need('spend', isObj(T.spend));
+    rows(T.consequence).forEach(function (c) { need('spend.' + c[0], isObj(T.spend) && !!T.spend[c[0]]); });
+    need('price', full(T.price));
+    need('reaction', full(T.reaction, 4));
+    need('say3', isObj(T.say3)); need('crumb', isObj(T.crumb));
+    rows(T.reaction).forEach(function (r) {
+      need('say3.' + r[0], isObj(T.say3) && full(T.say3[r[0]], 3));
+      need('crumb.' + r[0], isObj(T.crumb) && !!T.crumb[r[0]]);
+    });
+    ['crumbBits', 'compSource', 'compShape', 'faction', 'district', 'clock', 'db', 'dbFaction'].forEach(function (k) { need(k, full(T[k])); });
+    need('aim', isObj(T.aim)); need('aimCat', isObj(T.aimCat));
+    ['wont', 'friend', 'rival', 'extra'].forEach(function (h) { need('aim.' + h, isObj(T.aim) && full(T.aim[h])); need('aimCat.' + h, isObj(T.aimCat) && h in T.aimCat); });
+    // every category a bargain row or an aim hook names must have its text
+    need('cat', isObj(T.cat) && Object.keys(T.cat).length > 0);
+    var cats = [];
+    rows(T.db).concat(rows(T.dbFaction)).forEach(function (r) { cats.push(r[0]); });
+    Object.keys(isObj(T.dbScene) ? T.dbScene : {}).forEach(function (k) { rows(T.dbScene[k]).forEach(function (r) { cats.push(r[0]); }); });
+    Object.keys(isObj(T.aimCat) ? T.aimCat : {}).forEach(function (h) { if (T.aimCat[h]) cats.push(T.aimCat[h]); });
+    cats.filter(function (c, i, a) { return c != null && c !== '' && a.indexOf(c) === i; }).forEach(function (c) { need('cat.' + c, isObj(T.cat) && !!T.cat[c]); });
+    return miss;
+  }
 
   function create(options) {
     var o = options || {};
@@ -301,21 +399,31 @@
         npc.push(opt(s.faction + ' (' + (s.status >= 0 ? '+' : '') + s.status + '), ' + Math.max(0, s.status + 2) + 'd', 'fac:' + s.faction));
       });
       return [
-        { id: 'pos', label: 'Position', type: 'select', row: 0, options: ['controlled', 'risky', 'desperate'].map(function (p) { return opt(p, p); }) },
+        { id: 'pos', label: 'Position', type: 'select', row: 0, options: POSITIONS.map(function (p) { return opt(p, p); }) },
         { id: 'result', label: 'Result', type: 'select', row: 0, options: [opt('either', ''), opt('4/5', '45'), opt('1–3', '13')] },
         { id: 'scene', label: 'Scene', type: 'select', row: 0,
-          options: [opt('any', '')].concat(Object.keys(T.scene).map(function (k) { return opt(String(T.scene[k].label).toLowerCase(), k); })) },
+          options: [opt('any', '')].concat(Object.keys(T.scene).map(function (k) { return opt(String(isObj(T.scene[k]) && T.scene[k].label != null ? T.scene[k].label : k).toLowerCase(), k); })) },
         { id: 'district', label: 'District', type: 'select', row: 0, options: [opt('any', '')].concat((T.district || []).map(function (d) { return opt(d, d); })) },
         { id: 'pc', label: 'Aim at', type: 'select', row: 1, options: [opt('anyone', '')].concat(PCS.map(function (p) { return opt(p.first, p.name); })) },
         { id: 'npc', label: 'NPC is', type: 'select', row: 1, options: npc },
         { id: 'threat', label: 'Threat on screen', type: 'text', row: 2, placeholder: 'the danger everyone can see: a consequence or a bargain spends it' }
       ];
     }
+    // Is this NPC control value one the campaign holds? (friend:/rival: on a sheet, fac: on the board)
+    function npcKnown(v) {
+      if (v.indexOf('friend:') === 0) return PCS.some(function (p) { return p.friend.indexOf(v.slice(7)) >= 0; });
+      if (v.indexOf('rival:') === 0) return PCS.some(function (p) { return p.rival.indexOf(v.slice(6)) >= 0; });
+      if (v.indexOf('fac:') === 0) return STANDING.some(function (s) { return s.faction === v.slice(4); });
+      return false;
+    }
 
     // --- Per-roll state (set by roll(); the rollers below read it, exactly as view.js's UI / MEM / Math.random) --
-    var UI, MEM, R, DOTS, out;
+    // D is the roll's detail: what it drew, which lines are coaching (annotate() reads it; the card never shows it).
+    var UI, MEM, R, DOTS, out, D;
+    var DETAILS = typeof WeakMap === 'function' ? new WeakMap() : null;
     var rnd = function () { return R(); };
     var pick = function (a) { return a[Math.floor(rnd() * a.length)]; };
+    var pickOr = function (a, fallback) { return has(a) ? pick(a) : fallback; };
     var d6 = function () { return 1 + Math.floor(rnd() * 6); };
     function fresh(key, list, keyFn) {
       keyFn = keyFn || function (x) { return x; };
@@ -328,6 +436,8 @@
       if (used.length > winSize) used.shift();
       return choice;
     }
+    // fresh() over a list the pack may not hold: the fallback, with no draw, when it is missing or empty.
+    function freshOr(key, list, fallback, keyFn) { return has(list) ? fresh(key, list, keyFn) : fallback; }
     function weighted(items) {          // [[weight, value], ...]
       var total = items.reduce(function (s, x) { return s + x[0]; }, 0);
       var r = rnd() * total;
@@ -337,20 +447,32 @@
     var castNames = function () { return CAST.map(function (c) { return c.text; }); };
     function fill(s) {
       var facs = castNames().length ? castNames() : T.faction;
-      return s.replace(/\{faction\}|\{f\}/g, function () { return fresh('faction', facs); })
-              .replace(/\{district\}/g, function () { return UI.district || fresh('district', T.district); })
-              .replace(/\{clock\}/g, function () { return fresh('clock', T.clock); });
+      return String(s).replace(/\{faction\}|\{f\}/g, function () { return freshOr('faction', facs, 'a faction'); })
+              .replace(/\{district\}/g, function () { return UI.district || freshOr('district', T.district, 'the district'); })
+              .replace(/\{clock\}/g, function () { return freshOr('clock', T.clock, 'a clock'); });
     }
 
     var sceneOf = function () { return UI.scene ? T.scene[UI.scene] : null; };
+    var scLabel = function (sc) { return String(sc && sc.label != null ? sc.label : UI.scene).toLowerCase(); };
+    var sevOf = function () { return sevNorm(T.severity[UI.pos]); };
     var pcOf = function () { return PCS.find(function (p) { return p.name === UI.pc; }) || null; };
     var threat = function () { return (UI.threat || '').trim(); };
     var cap = function (s) { return s.charAt(0).toUpperCase() + s.slice(1); };
     var resLabel = function (r) { return r === '45' ? '4/5' : r === '13' ? '1–3' : ''; };
     var dotsOf = function (p, attr) {
       var d = DOTS && DOTS[p.name];
-      return d && d[attr] != null && isFinite(Number(d[attr])) ? Number(d[attr]) : p[attr];
+      return d && d[attr] != null && isFinite(Number(d[attr])) ? Number(d[attr]) : (Number(p[attr]) || 0);
     };
+    var attrOf = function (sc) { return sc && sc.resist ? String(sc.resist) : 'prowess'; };
+    // A scene's harm name for a level: the printed palette, or a neutral word when the pack has none.
+    function harmName(sc, lvl) { var row = sc && Array.isArray(sc.harm) ? sc.harm[lvl - 1] : null; return has(row) ? pick(row) : 'harm'; }
+    var spendOf = function (kind) { return isObj(T.spend) && T.spend[kind] ? String(T.spend[kind]) : '**{t}** lands.'; };
+    var catOf = function (key, dflt) { return (isObj(T.cat) && key != null && T.cat[key]) || dflt; };
+    function reactOf(idx) {
+      var row = has(T.reaction) ? T.reaction[idx] : null;
+      return Array.isArray(row) ? [str(row[0], REACT0[idx][0]), str(row[1], REACT0[idx][1])] : REACT0[idx];
+    }
+    function say3Of(name) { var s = isObj(T.say3) ? T.say3[name] : null; return Array.isArray(s) && s.length >= 3 ? s : SAY0; }
 
     // --- Card output (replaces head / say / grid / actions / dv.el) ---
     function chips(which) {
@@ -370,6 +492,8 @@
       if (small) item.small = small;
       out.lines.push(item);
     }
+    // A recurring guidance line: the same card as say(md, 'read'); annotate() marks it coach: true.
+    function coach(md) { say(md, 'read'); D.coach.push(out.lines.length - 1); }
     function grid(rows) {
       out.lines.push({ kind: 'grid', rows: rows.map(function (r) { out.all.push(r[0] + ': ' + plain(r[1])); return { k: r[0], md: r[1] }; }) });
     }
@@ -390,9 +514,10 @@
     // ---- 1 Devil's Bargain ----
     function composeBargain() {
       var t = threat();
-      if (t) return { line: 'Whatever you roll, the threat lands anyway: **' + t + '**.', cat: 'the danger you telegraphed, landing regardless (name its cost from the seven, BitD p.21)', anchor: 'the threat on screen', kind: 'threat' };
+      if (t) return { line: 'Whatever you roll, the threat lands anyway: **' + t + '**.', cat: 'the danger you telegraphed, landing regardless (name its cost from the seven, BitD p.21)', anchor: 'the threat on screen', kind: 'threat', short: t };
 
-      var pc = pcOf(), sc = UI.scene ? T.dbScene[UI.scene] : null;
+      var pc = pcOf(), sc = UI.scene && isObj(T.dbScene) ? T.dbScene[UI.scene] : null;
+      if (!has(sc)) sc = null;
       var hooksOf = function (p) { return ['wont', 'friend', 'rival', 'extra'].filter(function (h) { return p[h].length; }); };
       var pool = [];
       if (pc && hooksOf(pc).length) pool.push([5, 'pc']);   // aiming means it: their own lines lead
@@ -404,52 +529,60 @@
       if (kind === 'pc') {
         var h = fresh('aimHook:' + pc.name, hooksOf(pc));
         var x = pick(pc[h]);
-        return { line: pick(T.aim[h]).replace('{x}', x), cat: T.cat[T.aimCat[h]] || "the player's own price",
-                 anchor: pc.first + "'s sheet: " + (h === 'wont' ? "their Won't" : h === 'extra' ? 'a bargain they wrote' : h), kind: kind };
+        var tpl = pickOr(isObj(T.aim) ? T.aim[h] : null, 'It costs **{x}**.');
+        return { line: String(tpl).replace('{x}', x), cat: catOf(isObj(T.aimCat) ? T.aimCat[h] : null, "the player's own price"),
+                 anchor: pc.first + "'s sheet: " + (h === 'wont' ? "their Won't" : h === 'extra' ? 'a bargain they wrote' : h), kind: kind, short: x };
       }
       if (kind === 'scene') {
         var s = fresh('dbScene:' + UI.scene, sc, function (y) { return y[1]; });
-        return { line: fill(s[1]), cat: T.cat[s[0]], anchor: 'the ' + String(T.scene[UI.scene].label).toLowerCase() + ' itself', kind: kind };
+        var sl = fill(str(s[1], ''));
+        return { line: sl, cat: catOf(s[0], str(s[0], 'a price')), anchor: 'the ' + scLabel(T.scene[UI.scene]) + ' itself', kind: kind, short: sl };
       }
       if (kind === 'cast') {
         var fac = fresh('castFac', CAST, function (y) { return y.text; });
-        var f = fresh('dbFaction', T.dbFaction, function (y) { return y[1]; });
-        return { line: fill(f[1].replace(/\{f\}/g, fac.text)), cat: T.cat[f[0]], anchor: 'on the board: ' + fac.text + (fac.src ? ' (' + fac.src + ')' : ''), kind: kind };
+        var f = freshOr('dbFaction', T.dbFaction, DBF0, function (y) { return y[1]; });
+        var fl = fill(str(f[1], '').replace(/\{f\}/g, fac.text));
+        return { line: fl, cat: catOf(f[0], str(f[0], 'a price')), anchor: 'on the board: ' + fac.text + (fac.src ? ' (' + fac.src + ')' : ''), kind: kind, short: fl };
       }
       if (kind === 'callback') {
         var cb = fresh('callback', CALLBACKS, function (y) { return y.text; });
-        return { line: 'Whatever you roll, this comes with it: **' + cb.text + '**', cat: 'a complication already in play', anchor: 'already in play: ' + (cb.src || 'the board'), kind: kind };
+        return { line: 'Whatever you roll, this comes with it: **' + cb.text + '**', cat: 'a complication already in play', anchor: 'already in play: ' + (cb.src || 'the board'), kind: kind, short: cb.text };
       }
-      var g = fresh('dbGeneric', T.db, function (y) { return y[1]; });
-      return { line: fill(g[1]), cat: T.cat[g[0]], anchor: 'generic: nothing on screen to hang it on', kind: 'generic' };
+      var g = freshOr('dbGeneric', T.db, DBG0, function (y) { return y[1]; });
+      var gl = fill(str(g[1], ''));
+      return { line: gl, cat: catOf(g[0], str(g[0], 'a price')), anchor: 'generic: nothing on screen to hang it on', kind: 'generic', short: gl };
     }
 
     function devilsBargain() {
       var pc = pcOf();
-      var dd = T.dbDistrict || {};
-      var printed = UI.district && dd[UI.district] && dd[UI.district].scenes.indexOf(UI.scene) >= 0 ? dd[UI.district] : null;
-      var veteran = UI.scene === 'fight' || UI.scene === ''
+      var dd = isObj(T.dbDistrict) ? T.dbDistrict : {};
+      var pd = UI.district && isObj(dd[UI.district]) ? dd[UI.district] : null;
+      var printed = pd && (Array.isArray(pd.scenes) ? pd.scenes : []).indexOf(UI.scene) >= 0 ? pd : null;
+      // The arsenal row is a fight-only offer (the Veteran's), so the Veteran is only looked for in a fight.
+      var veteran = UI.scene === 'fight'
         ? (pc ? (/veteran/i.test(pc.playbook) ? pc : null) : PCS.find(function (p) { return /veteran/i.test(p.playbook); }) || null)
         : null;
       var b = composeBargain();
 
       head("Devil's Bargain", UI.pos + ' · BitD p.21' + (printed ? ' · ' + UI.district : ''), 'aim threat district');
-      var lead;
+      var lead, who = pc ? pc.first : 'the crew';
       if (printed) {
-        lead = UI.district + ' (' + printed.page + '): ' + plain(printed.text);
-        say('**Want +1d?** Printed for **' + UI.district + '** (' + printed.page + '): ' + printed.text);
+        var ptext = str(printed.text, ''), ppage = str(printed.page, '');
+        lead = UI.district + ' (' + ppage + '): ' + plain(ptext);
+        say('**Want +1d?** Printed for **' + UI.district + '** (' + ppage + '): ' + ptext);
         grid([['Or', '**Want +1d?** ' + b.line], ['Category', b.cat], ['Anchor', b.anchor]]);
+        D.bargains = [{ text: lead, label: ptext, who: who }, { text: plain(b.line), label: b.short, who: who }];
       } else {
         lead = plain(b.line);
         say('**Want +1d?** ' + b.line);
         grid([['Category', b.cat], ['Anchor', b.anchor]]);
+        D.bargains = [{ text: lead, label: b.short, who: who }];
       }
-      if (veteran && UI.scene === 'fight') grid([['Or, for ' + veteran.first, T.arsenal]]);
+      if (veteran && T.arsenal) grid([['Or, for ' + veteran.first, T.arsenal]]);
 
-      say('**Say it before the dice.** +1d if accepted. It happens *whatever the roll*. They can refuse ' +
-          'or counter-offer. **Never with a push.** Priced at about one push (2 stress).', 'read');
+      coach('**Say it before the dice.** +1d if accepted. It happens *whatever the roll*. They can refuse ' +
+            'or counter-offer. **Never with a push.** Priced at about one push (2 stress).');
       if (b.kind === 'threat') spentButton();
-      var who = pc ? pc.first : 'the crew';
       action('Accepted: they owe it', { type: 'bargainOwed', key: keyOf(lead), text: lead, who: who,
                                         capture: { bucket: 'x', text: 'Bargain owed (' + who + '): ' + lead } });
       out.extra.bargain = { kind: printed ? 'printed' : b.kind, anchor: b.anchor, cat: b.cat };
@@ -457,82 +590,94 @@
 
     // ---- 2 Complication ----
     function complication() {
-      var sv = T.severity[UI.pos], sev = sv[0], ticks = sv[1], menu = sv[2];
+      var sv = sevOf();
       var sc = sceneOf();
-      head('Complication', UI.pos + ' → ' + sev + (sc ? ' · ' + String(sc.label).toLowerCase() : ' · oracle-tables §3'));
-      if (threat()) say(T.spend['Complication'].replace('{t}', threat()));
+      head('Complication', UI.pos + ' → ' + sv.sev + (sc ? ' · ' + scLabel(sc) : ' · oracle-tables §3'));
+      if (threat()) { D.spend = spendOf('Complication').replace('{t}', threat()); say(D.spend); }
       if (sc) {
-        var c = fresh('comp:' + UI.scene, sc.comp);
+        var c = freshOr('comp:' + UI.scene, sc.comp, 'something gets in the way');
+        D.drawAt = out.lines.length;
         say(c, threat() ? 'read' : 'want');
-        grid([['Severity', '**' + sev + '**: ' + ticks + " on a clock if you'd rather tick than narrate"]]);
+        grid([['Severity', '**' + sv.sev + '**: ' + sv.ticks + " on a clock if you'd rather tick than narrate"]]);
       } else {
-        var s = fresh('compSource', T.compSource, function (x) { return x[0]; });
-        var sh = fresh('compShape', T.compShape, function (x) { return x[0]; });
-        say('**' + s[0] + ': ' + sh[0].toLowerCase() + '.**', threat() ? 'read' : 'want', s[1] + '; ' + sh[1]);
+        var s = freshOr('compSource', T.compSource, SRC0, function (x) { return x[0]; });
+        var sh = freshOr('compShape', T.compShape, SHAPE0, function (x) { return x[0]; });
+        D.drawAt = out.lines.length;
+        say('**' + s[0] + ': ' + String(sh[0]).toLowerCase() + '.**', threat() ? 'read' : 'want', s[1] + '; ' + sh[1]);
         grid([['Source', '**' + s[0] + '**: ' + s[1]], ['Shape', '**' + sh[0] + '**: ' + sh[1]],
-              ['Severity', '**' + sev + '**: ' + ticks + " on a clock if you'd rather tick than narrate"]]);
+              ['Severity', '**' + sv.sev + '**: ' + sv.ticks + " on a clock if you'd rather tick than narrate"]]);
       }
-      say('At ' + UI.pos + ': ' + menu + ". **Don't negate a success.** If they cornered the enemy on a 4/5, " +
-          'the enemy stays cornered.', 'read');
+      coach('At ' + UI.pos + ': ' + sv.menu + ". **Don't negate a success.** If they cornered the enemy on a 4/5, " +
+            'the enemy stays cornered.');
       if (threat()) spentButton();
     }
 
     // ---- 3 Consequence ----
     function consequence() {
-      var sv = T.severity[UI.pos], sev = sv[0], ticks = sv[1], lvl = sv[3];
+      var sv = sevOf();
       var sc = sceneOf();
-      var al = T.allowed[UI.pos];
-      var allow = UI.result ? al[UI.result]
-        : al['45'].concat(al['13']).filter(function (x, i, a) { return a.indexOf(x) === i; });
-      var c = fresh('cons:' + UI.pos + UI.result, T.consequence.filter(function (x) { return allow.indexOf(x[0]) >= 0; }), function (x) { return x[0]; });
-      head('Consequence', UI.pos + (UI.result ? ' ' + resLabel(UI.result) : '') + ' → ' + sev + (sc ? ' · ' + String(sc.label).toLowerCase() : '') + ' · BitD p.23, p.30–31');
+      var al = isObj(T.allowed) && isObj(T.allowed[UI.pos]) ? T.allowed[UI.pos] : {};
+      var a45 = has(al['45']) ? al['45'] : [], a13 = has(al['13']) ? al['13'] : [];
+      var allow = UI.result ? (UI.result === '45' ? a45 : a13)
+        : a45.concat(a13).filter(function (x, i, a) { return a.indexOf(x) === i; });
+      var rows0 = has(T.consequence) ? T.consequence : [CONS0];
+      if (!allow.length) allow = rows0.map(function (x) { return x[0]; });
+      var list = rows0.filter(function (x) { return allow.indexOf(x[0]) >= 0; });
+      if (!list.length) list = rows0;
+      var c = fresh('cons:' + UI.pos + UI.result, list, function (x) { return x[0]; });
+      var kind = str(c[0], CONS0[0]);
+      head('Consequence', UI.pos + (UI.result ? ' ' + resLabel(UI.result) : '') + ' → ' + sv.sev + (sc ? ' · ' + scLabel(sc) : '') + ' · BitD p.23, p.30–31');
 
-      if (threat()) say(T.spend[c[0]].replace('{t}', threat()), 'want', c[0]);
-      else say('**' + c[0] + '**');
+      if (threat()) { D.spend = spendOf(kind).replace('{t}', threat()); say(D.spend, 'want', kind); }
+      else say('**' + kind + '**');
 
-      var hl = UI.pos === 'controlled' ? '1 (lesser)' : String(lvl);
-      var example = '*' + c[2] + '*';
+      var hl = UI.pos === 'controlled' ? '1 (lesser)' : String(sv.lvl);
+      var example = '*' + str(c[2], '') + '*';
       if (sc) {
-        if (c[0] === 'Reduced effect') example = sc.reduced;
-        else if (c[0] === 'Lost opportunity') example = sc.lost;
-        else if (c[0] === 'Worse position') example = sc.worse;
-        else if (c[0] === 'Complication') example = fresh('comp:' + UI.scene, sc.comp);
-        else if (c[0] === 'Harm') example = 'Level ' + hl + ': **' + pick(sc.harm[lvl - 1]) + '**';
-      } else if (c[0] === 'Harm') {
-        example = 'Level ' + hl + ': ' + c[2];
+        if (kind === 'Reduced effect') example = str(sc.reduced, example);
+        else if (kind === 'Lost opportunity') example = str(sc.lost, example);
+        else if (kind === 'Worse position') example = str(sc.worse, example);
+        else if (kind === 'Complication') example = freshOr('comp:' + UI.scene, sc.comp, example);
+        else if (kind === 'Harm') example = 'Level ' + hl + ': **' + harmName(sc, sv.lvl) + '**';
+      } else if (kind === 'Harm') {
+        example = 'Level ' + hl + ': ' + str(c[2], '');
       }
-      var rows = [['What it is', c[1]], ['Like', example],
-                  ['Severity', '**' + sev + '** · a complication here is worth **' + ticks + '**'],
+      D.kind = kind; D.example = example; D.row = c; D.level = hl; D.lvl = sv.lvl; D.scene = !!sc;
+      var rows = [['What it is', str(c[1], '')], ['Like', example],
+                  ['Severity', '**' + sv.sev + '** · a complication here is worth **' + sv.ticks + '**'],
                   ['Fits', UI.pos + (UI.result ? ' ' + resLabel(UI.result) : '') + ': ' + allow.join(' · ')]];
-      if (c[0] === 'Harm') rows.push.apply(rows, resistRows(sc ? sc.resist : 'prowess'));
+      if (kind === 'Harm') rows.push.apply(rows, resistRows(attrOf(sc)));
       else rows.push(['Resist', "Prowess if it's physical · Insight if it's a trick · Resolve if it's nerve. Cost 6 − highest die"]);
       grid(rows);
-      say(threat()
+      coach(threat()
         ? "**You telegraphed it; now it lands.** That's why it doesn't feel invented after a bad roll."
-        : '**Telegraph first.** Type the danger in *Threat on screen* before the roll, then a 4/5 spends the thing everyone already saw.',
-        'read');
+        : '**Telegraph first.** Type the danger in *Threat on screen* before the roll, then a 4/5 spends the thing everyone already saw.');
       spentButton();
     }
 
     // ---- 4 Pay the price ----
-    function priceRow(r) { return T.price.find(function (x) { return r >= x[0] && r <= x[1]; }) || T.price[T.price.length - 1]; }
+    function priceRow(r) {
+      if (!has(T.price)) return PRICE0;
+      return T.price.find(function (x) { return r >= x[0] && r <= x[1]; }) || T.price[T.price.length - 1];
+    }
     function priceText(row) {
-      var lvl = T.severity[UI.pos][3];
+      var lvl = sevOf().lvl;
       if (row[0] === 51) return '**Harm, level ' + (UI.pos === 'controlled' ? '1 (lesser)' : lvl) + '** (' + UI.pos + ').' +
-        (sceneOf() ? ' Like: **' + pick(sceneOf().harm[lvl - 1]) + '**.' : '');
+        (sceneOf() ? ' Like: **' + harmName(sceneOf(), lvl) + '**.' : '');
       if (row[0] === 61) {
-        if (OWED.length) { var ow = fresh('owed', OWED, function (x) { return x.text; }); return "**A devil's bargain comes due:** " + ow.text + (ow.src ? ' *(' + ow.src + ')*' : ''); }
-        return row[2] + ' *No bargains on file. Read it as something they did earlier coming back.*';
+        if (OWED.length) { var ow = fresh('owed', OWED, function (x) { return x.text; }); D.due.push(ow); return "**A devil's bargain comes due:** " + ow.text + (ow.src ? ' *(' + ow.src + ')*' : ''); }
+        return str(row[2], '') + ' *No bargains on file. Read it as something they did earlier coming back.*';
       }
-      return row[2];
+      return str(row[2], '');
     }
     function payThePrice() {
       var r = d6() * 10 + d6();
       var row = priceRow(r);
+      D.due = [];
       head('Pay the price', 'd66 → ' + r + ' · ' + UI.pos + (UI.result ? ' ' + resLabel(UI.result) : '') + ' · oracle-tables §9');
       out.extra.d66 = r;
       if (row[0] === 66) {
-        say(row[2]);
+        say(str(row[2], ''));
         var extra = [];
         while (extra.length < 2) { var r2 = d6() * 10 + d6(); if (r2 !== 66) extra.push([r2, priceRow(r2)]); }
         grid(extra.map(function (e) { return ['d66 ' + e[0], priceText(e[1])]; }));
@@ -544,8 +689,8 @@
         }
       }
       if (threat()) say('Make it come from **' + threat() + '**.', 'read');
-      say('**Reach for this third, not first.** Draw the obvious conclusion, then pick between two ' +
-          'options, *then* roll here. **Adapt, don\'t read out.**', 'read');
+      coach('**Reach for this third, not first.** Draw the obvious conclusion, then pick between two ' +
+            'options, *then* roll here. **Adapt, don\'t read out.**');
       if (row && row[0] === 61 && OWED.length) {
         var shown = out.all[0] || '';
         var o2 = OWED.find(function (x) { return shown.indexOf(plain(x.text).slice(0, 30)) >= 0; });
@@ -565,10 +710,10 @@
         who = v.slice(4) + ' (status ' + (s && s.status >= 0 ? '+' : '') + (s ? s.status : 0) + ')';
       }
       var r = poolRoll(pool, rnd);
-      var res = T.reaction[r.idx];
+      var res = reactOf(r.idx);
       head('NPC reaction', who + ' · ' + pool + 'd' + (pool < 1 ? ' (2d keep lowest)' : '') + ' · Alone in the Dark', 'aim');
       say('**' + res[0] + '**: ' + res[1]);
-      var s3 = T.say3[res[0]];
+      var s3 = say3Of(res[0]);
       var rows = [['Say it', '**' + s3[0] + '** · *' + s3[1] + '* · *' + s3[2] + '*. Three sentences, then stop and look at the player']];
       var nm = v.indexOf(':') >= 0 && v.indexOf('fac:') !== 0 ? v.slice(v.indexOf(':') + 1) : '';
       var card = nm ? NPCS.find(function (n) { return n.name.toLowerCase() === nm.toLowerCase(); }) : null;
@@ -577,8 +722,9 @@
       rows.push(['Roll', '[' + r.dice.join(' ') + '] → ' + (r.crit ? '**critical**' : r.best)],
                 ['Pool', 'Set it in **NPC is**: 3d friend · 2d neutral · 1d rival · faction status +2d (from the board\'s `standing:`)']);
       grid(rows);
-      say('On *Conditional*, the price should cost the crew something the **players** care about. ' +
-          'Stacks is the boring answer. If the players reached for this person, **give them a crumb, never silence**.', 'read');
+      coach('On *Conditional*, the price should cost the crew something the **players** care about. ' +
+            'Stacks is the boring answer. If the players reached for this person, **give them a crumb, never silence**.');
+      D.result = res[0];
       out.extra.reaction = { pool: pool, dice: r.dice, best: r.best, crit: r.crit, result: res[0], npc: card ? card.name : null };
     }
     function playRow(n) {
@@ -591,8 +737,8 @@
 
     // ---- 6 Callback ----
     function callback() {
-      var sv = T.severity[UI.pos], sev = sv[0], ticks = sv[1];
-      head('Callback', UI.pos + ' → ' + sev + ' · trouble already in play');
+      var sv = sevOf();
+      head('Callback', UI.pos + ' → ' + sv.sev + ' · trouble already in play');
       if (!CALLBACKS.length) {
         say('**No callbacks on file.** Add lines to the `callbacks:` property of **b68g-factions** ' +
             '(`what happens | where it comes from`), rebuild the GM pack, and they\'ll turn up here.');
@@ -607,27 +753,28 @@
       }
       var c = fresh('callback' + (pc ? ':' + pc.name : ''), list, function (x) { return x.text; });
       say(c.text);
-      grid([['Comes from', c.src || '–'], ['Severity', '**' + sev + '**: ' + ticks + ' if it ticks a clock']]);
-      say('**The cheapest complication is one they already caused.** A name they know beats a stranger.', 'read');
+      grid([['Comes from', c.src || '–'], ['Severity', '**' + sv.sev + '**: ' + sv.ticks + ' if it ticks a clock']]);
+      coach('**The cheapest complication is one they already caused.** A name they know beats a stranger.');
       action('Used: retire it from the board', { type: 'callbackUsed', key: keyOf(c.text), text: c.text });
     }
 
     // ---- 7 Harm & resist ----
     function harm() {
-      var sv = T.severity[UI.pos], sev = sv[0], lvl = sv[3];
+      var sv = sevOf();
       var sc = sceneOf();
-      var hl = UI.pos === 'controlled' ? '1 (lesser)' : String(lvl);
-      head('Harm & resist', UI.pos + ' → level ' + hl + (sc ? ' · ' + String(sc.label).toLowerCase() : ''));
+      var hl = UI.pos === 'controlled' ? '1 (lesser)' : String(sv.lvl);
+      head('Harm & resist', UI.pos + ' → level ' + hl + (sc ? ' · ' + scLabel(sc) : ''));
       // No scene: the vault's fixed three are the fight palette's first column; read from T, not repeated here.
-      var dflt = T.scene.fight ? T.scene.fight.harm.map(function (h) { return h[0]; }) : ['harm', 'harm', 'harm'];
-      var name = sc ? pick(sc.harm[lvl - 1]) : dflt[lvl - 1];
+      var fh = isObj(T.scene.fight) ? T.scene.fight.harm : null;
+      var dflt = Array.isArray(fh) ? fh.map(function (h) { return has(h) ? h[0] : 'harm'; }) : ['harm', 'harm', 'harm'];
+      var name = sc ? harmName(sc, sv.lvl) : str(dflt[sv.lvl - 1], 'harm');
       say((threat() ? '**' + threat() + '**: ' : '') + 'level ' + hl + ': **' + name + '**');
-      grid([['Level', '**' + lvl + '** (' + sev + ') · controlled 1 · risky 2 · desperate 3 · level 4 is mortal']]
-        .concat(resistRows(sc ? sc.resist : 'prowess'),
+      grid([['Level', '**' + sv.lvl + '** (' + sv.sev + ') · controlled 1 · risky 2 · desperate 3 · level 4 is mortal']]
+        .concat(resistRows(attrOf(sc)),
           [['Armour', '**Armour** (3 load) or a hull: **−1 level to all physical harm, every time.** **Light armour** (2 load) negates one instance. Total armour by choice to resist one instance fully (p.153)'],
            ['Hard mode', '**One resistance roll per consequence.** Say before they roll whether resisting reduces it a level or avoids it']]));
-      say("**'68: harm has no in-score penalty** (p.152). Write it down and keep playing; it bites in the " +
-          "aftermath's harm-complication roll (p.192).", 'read');
+      coach("**'68: harm has no in-score penalty** (p.152). Write it down and keep playing; it bites in the " +
+            "aftermath's harm-complication roll (p.192).");
       spentButton();
     }
 
@@ -641,20 +788,25 @@
         say('**No friends on the sheets.** Add `friends:` to a character sheet, rebuild the GM pack, and they\'ll answer here.');
         return;
       }
-      var pf = fresh('contact', pairs, function (x) { return x[1]; }), p = pf[0], f = pf[1];
+      // ui.contact (a hint only situations set): the friend the GM chose answers, no draw
+      var hint = String(UI.contact || '').toLowerCase();
+      var mine = hint ? pairs.filter(function (x) { return String(x[1]).toLowerCase() === hint; }) : [];
+      var pf = mine.length ? mine[0] : fresh('contact', pairs, function (x) { return x[1]; }), p = pf[0], f = pf[1];
       var r = poolRoll(3, rnd);
-      var res = T.reaction[r.idx][0];
-      var crumb = T.crumb[res].replace('{c}', fresh('crumbBit', T.crumbBits));
+      var res = reactOf(r.idx)[0];
+      var bit = freshOr('crumbBit', T.crumbBits, 'something small but real');
+      var crumb = (isObj(T.crumb) && T.crumb[res] != null ? String(T.crumb[res]) : '**a crumb**: {c}').replace('{c}', bit);
       say('**' + f + '** (' + p.first + "'s friend): " + crumb);
       var rows = [['Roll', '3d friend [' + r.dice.join(' ') + '] → **' + res + '**']];
-      var s3 = T.say3[res];
+      var s3 = say3Of(res);
       rows.unshift(['Say it', '**' + s3[0] + '** · *' + s3[1] + '* · *' + s3[2] + '*']);
       var pr = playRow(NPCS.find(function (n) { return n.name.toLowerCase() === String(f).toLowerCase(); }));
       if (pr) rows.unshift(pr);
       if (r.best === 6) rows.push(['And', '**Tick one open clock** this contact could move, once (Find a Buyer, say).']);
       rows.push(['+1d', f + ' can also help a downtime roll as a friend (+1d).']);
       grid(rows);
-      say("**Session 1's lesson:** the players reached for a contact three times and got silence three times. A crumb keeps the thread alive.", 'read');
+      coach("**Session 1's lesson:** the players reached for a contact three times and got silence three times. A crumb keeps the thread alive.");
+      D.result = res;
       out.extra.contact = { name: f, pc: p.name, dice: r.dice, result: res };
     }
 
@@ -692,25 +844,32 @@
               ['Want more?', '`N` opens the NPC generator in the side panel.']]);
         out.extra.face = { npc: null, name: nm };
       }
-      say('**Name the opposition.** A named rider gets angry when his mate dies; an anonymous one doesn\'t (s01, lesson 4).', 'read');
+      coach('**Name the opposition.** A named rider gets angry when his mate dies; an anonymous one doesn\'t (s01, lesson 4).');
     }
 
     var FN = { devilsBargain: devilsBargain, complication: complication, consequence: consequence, payThePrice: payThePrice,
                reaction: reaction, callback: callback, harm: harm, contact: contact, face: face };
 
+    // The controls, cleaned: an unknown position / result / scene reads as the default; a district, PC or NPC the
+    // pack no longer holds reads as "any" (a stale control from an older pack never labels a stranger a friend).
     function sanitise(ui) {
       var u = Object.assign({}, LIVE0, isObj(ui) ? ui : {});
       Object.keys(LIVE0).forEach(function (k) { u[k] = u[k] == null ? '' : String(u[k]); });
       if (!T.severity[u.pos]) u.pos = LIVE0.pos;
       if (u.result !== '45' && u.result !== '13') u.result = '';
       if (u.scene && !T.scene[u.scene]) u.scene = '';
+      if (u.district && (Array.isArray(T.district) ? T.district : []).indexOf(u.district) < 0) u.district = '';
+      if (u.pc && !PCS.some(function (p) { return p.name === u.pc; })) u.pc = '';
+      if (u.npc && !npcKnown(u.npc)) u.npc = '';
       u.threat = u.threat.trim();
+      if ('contact' in u) { u.contact = u.contact == null ? '' : String(u.contact); if (!u.contact) delete u.contact; }
       return u;
     }
 
     con.buttons = BUTTONS.map(function (b) { return Object.assign({}, b); });
     con.defaults = function () { return Object.assign({}, LIVE0); };
     con.mem = function () { return instMem; };
+    con.check = function () { return check(T); };
     con.setCampaign = function (campaign, state) { load(campaign, state); return con; };
     con.roll = function (id, ui, ro) {
       var r = ro || {};
@@ -720,48 +879,132 @@
       var mem = isObj(r.mem) ? r.mem : instMem;
       var memBefore = clone(mem);
       var u = sanitise(ui);
-      UI = u; MEM = mem; R = seedRng(seed); DOTS = isObj(ui) && isObj(ui.dots) ? ui.dots : null;
+      UI = u; MEM = mem; R = seedRng(seed); DOTS = isObj(ui) && isObj(ui.dots) ? ui.dots : null; D = { coach: [] };
       try { FN[fnId](); }
       finally { UI = null; MEM = null; R = null; DOTS = null; }
-      var o2 = out; out = null;
+      var o2 = out, d = D; out = null; D = null;
       var t = (o2.all[0] || '').replace(/\s+/g, ' ');
       var meta = Object.assign({ id: fnId, n: BUTTONS.find(function (x) { return x.id === fnId; }).n,
         title: o2.title, sub: o2.sub, chips: o2.chips, text: o2.all[0] || '', all: o2.all,
         label: o2.title + ': ' + (t.length > 38 ? t.slice(0, 36) + '…' : t), actions: o2.actions }, o2.extra);
       var replayUi = Object.assign({}, u);
       if (isObj(ui) && isObj(ui.dots)) replayUi.dots = clone(ui.dots);
-      return { lines: o2.lines, meta: meta, seed: seed, replay: { id: fnId, seed: seed, mem: memBefore, ui: replayUi } };
+      var result = { lines: o2.lines, meta: meta, seed: seed, replay: { id: fnId, seed: seed, mem: memBefore, ui: replayUi } };
+      if (DETAILS) DETAILS.set(result, d);
+      return result;
     };
 
-    // --- Situations: composed cards. Each section is a classic con.roll(); nothing above is touched. ---------------
-    function planFor(sid, u) {
+    // --- annotate(): the roll read for the table. Classic output above is never touched; this returns a new object.
+    var AUTHOR_TAG = /\s*`?\[(?:flagged for [^\]]*|TODO:?[^\]]*)\]`?/gi;
+    var untag = function (s) { return String(s).replace(AUTHOR_TAG, ''); };
+    function copyLine(l) {
+      if (l.kind === 'grid') return { kind: 'grid', rows: (l.rows || []).map(function (r) { return { k: untag(r.k), md: untag(r.md) }; }) };
+      var o = { kind: l.kind, md: untag(l.md) };
+      if (l.small != null) o.small = untag(l.small);
+      return o;
+    }
+    function textOf(lines) {
+      var all = [];
+      lines.forEach(function (l) {
+        if (l.kind === 'grid') l.rows.forEach(function (r) { all.push(r.k + ': ' + plain(r.md)); });
+        else all.push(plain(l.small ? l.md + ' ' + l.small : l.md));
+      });
+      return all;
+    }
+    var short = function (t, n) { t = plain(t); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+    // The Harm row without a scene lists one example per level ("Level 1 X · Level 2 Y · …"): this level's entry.
+    function levelExample(d) {
+      var parts = String(d.row && d.row[2] || '').split(' · ');
+      var re = new RegExp('^Level ' + d.lvl + '\\b\\s*:?\\s*');
+      var hit = parts.map(function (p) { return p.trim(); }).find(function (p) { return re.test(p); });
+      if (!hit) return null;
+      var name = hit.replace(re, '').replace(/[.\s]+$/, '');
+      return name ? 'Level ' + d.level + ': **' + name + '**' : null;
+    }
+    function annotate(res) {
+      var d = DETAILS && res ? DETAILS.get(res) : null;
+      var lines = (res && res.lines || []).map(copyLine);
+      var meta = clone(res && res.meta);
+      var detail = { coach: [] };
+      if (d) {
+        d.coach.forEach(function (i) { if (lines[i]) { lines[i].coach = true; detail.coach.push(i); } });
+        if (meta.id === 'consequence' && d.kind) {
+          var ex = d.example;
+          if (d.kind === 'Harm' && !d.scene) ex = levelExample(d) || ex;
+          var want = { kind: 'want', md: '**' + d.kind + '** — ' + ex };
+          if (d.spend) want.small = d.spend;
+          lines[0] = want;
+          lines.forEach(function (l) { if (l.kind === 'grid') l.rows = l.rows.filter(function (r) { return r.k !== 'Like'; }); });
+          detail.kind = d.kind; detail.example = plain(ex); detail.level = d.level;
+        }
+        if (meta.id === 'complication' && d.drawAt != null && lines[d.drawAt]) {
+          var draw = lines[d.drawAt];
+          detail.draw = plain(draw.md);
+          if (d.spend) {                       // a threat: the drawn complication leads, the spend sentence under it
+            lines.splice(d.drawAt, 1);
+            lines[0] = { kind: 'want', md: draw.md, small: d.spend };
+          }
+        }
+        if (d.bargains && d.bargains.length > 1) {
+          meta.actions = meta.actions.filter(function (a) { return a.intent.type !== 'bargainOwed'; }).concat(d.bargains.map(function (b) {
+            return { label: 'Accepted: ' + short(b.label, 28), intent: { type: 'bargainOwed', key: keyOf(b.text), text: b.text, who: b.who,
+                     capture: { bucket: 'x', text: 'Bargain owed (' + b.who + '): ' + b.text } } };
+          }));
+          detail.bargains = d.bargains.map(function (b) { return b.text; });
+        }
+        if (d.due) {                         // Pay the price: every bargain that came due (the 66's extras included)
+          var have = meta.actions.filter(function (a) { return a.intent.type === 'bargainCollected'; });
+          d.due.forEach(function (ow) {
+            if (have.some(function (a) { return a.intent.text === ow.text; })) return;
+            var a = { label: 'Collected: strike it off', intent: { type: 'bargainCollected', key: keyOf(ow.text), text: ow.text } };
+            meta.actions.push(a); have.push(a);
+          });
+          if (have.length > 1) have.forEach(function (a) { a.label = 'Collected: ' + short(a.intent.text, 28); });
+          detail.due = d.due.map(function (ow) { return ow.text; });
+        }
+        if (d.result) detail.result = d.result;
+      }
+      meta.all = textOf(lines);
+      meta.text = lines.length ? (lines[0].kind === 'grid' ? meta.all[0] : plain(lines[0].md)) : '';
+      var t = meta.text.replace(/\s+/g, ' ');
+      meta.label = meta.title + ': ' + (t.length > 38 ? t.slice(0, 36) + '…' : t);
+      return { lines: lines, meta: meta, seed: res.seed, replay: res.replay, detail: detail };
+    }
+    con.annotate = annotate;
+
+    // --- Situations: composed cards. Each section is a classic con.roll() read through annotate(). -------------------
+    var sec = function (id, role, result, extraUi) { return { id: id, role: role, result: result, ui: extraUi || null }; };
+    function leadFor(sid, u) {
       var npc = u.npc || '';
-      var sec = function (id, role, result, extraUi) { return { id: id, role: role, result: result, ui: extraUi || null }; };
-      if (sid === 'before') return [sec('devilsBargain', 'lead', '')];
-      if (sid === 'fourfive') {
-        var p = [sec('consequence', 'lead', '45'), sec('complication', 'or', '45')];
-        if (CALLBACKS.length) p.push(sec('callback', 'or', '45'));
-        if (npc) p.push(sec('reaction', 'or', '45'));
-        return p;
-      }
-      if (sid === 'onetothree') {
-        var q = [sec('consequence', 'lead', '13'), sec('payThePrice', 'or', '13'), sec('harm', 'or', '13')];
-        if (npc) q.push(sec('reaction', 'or', '13'));
-        return q;
-      }
-      // someone
-      if (npc.indexOf('friend:') === 0) {
+      if (sid === 'before') return sec('devilsBargain', 'lead', '');
+      if (sid === 'fourfive') return sec('consequence', 'lead', '45');
+      if (sid === 'onetothree') return sec('consequence', 'lead', '13');
+      if (npc.indexOf('friend:') === 0) {                                      // the chosen friend answers
         var friend = npc.slice(7), owner = PCS.find(function (pc) { return pc.friend.indexOf(friend) >= 0; });
-        return [sec('contact', 'lead', '', owner ? { pc: owner.name } : null), sec('reaction', 'or', '')];
+        return sec('contact', 'lead', '', owner ? { pc: owner.name, contact: friend } : { contact: friend });
       }
-      if (npc) return [sec('reaction', 'lead', '')];                          // a rival or a faction: that pool
-      return [sec('face', 'lead', ''), sec('reaction', 'or', '')];            // nobody set: a name, then 2d
+      if (npc) return sec('reaction', 'lead', '');                             // a rival or a faction: that pool
+      return sec('face', 'lead', '');                                          // nobody set: a name, then 2d
+    }
+    // The Or rows by slot (1..3), decided once the lead is drawn: never a twin of the lead's kind.
+    function orsFor(sid, u, lead) {
+      var npc = u.npc || '', kind = lead && lead.kind || '';
+      if (sid === 'fourfive') return [
+        kind === 'Complication' ? sec('payThePrice', 'or', '45') : sec('complication', 'or', '45'),
+        CALLBACKS.length ? sec('callback', 'or', '45') : null,
+        npc ? sec('reaction', 'or', '45') : null];
+      if (sid === 'onetothree') return [
+        sec('payThePrice', 'or', '13'),
+        kind === 'Harm' ? (CALLBACKS.length ? sec('callback', 'or', '13') : null) : sec('harm', 'or', '13'),
+        npc ? sec('reaction', 'or', '13') : null];
+      if (sid === 'someone' && !npc) return [sec('reaction', 'or', '')];
+      return [];
     }
 
     con.situations = function () { return SITUATIONS.map(function (x) { return Object.assign({}, x); }); };
-    con.positions = ['controlled', 'risky', 'desperate'].filter(function (k) { return T.severity[k]; }).map(function (k) {
-      var sv = T.severity[k];
-      return { value: k, label: k, severity: sv[0], ticks: sv[1], harm: k === 'controlled' ? '1 (lesser)' : String(sv[3]) };
+    con.positions = POSITIONS.filter(function (k) { return T.severity[k]; }).map(function (k) {
+      var sv = sevNorm(T.severity[k]);
+      return { value: k, label: k, severity: sv.sev, ticks: sv.ticks, harm: k === 'controlled' ? '1 (lesser)' : String(sv.lvl) };
     });
     con.situationDefaults = function () { var d = Object.assign({}, LIVE0); delete d.result; return d; };
     con.situation = function (id, ui, ro) {
@@ -770,21 +1013,28 @@
       var seed = r.seed == null || !isFinite(Number(r.seed)) ? newSeed() : Number(r.seed) >>> 0;
       var mem = isObj(r.mem) ? r.mem : instMem;
       var memBefore = clone(mem);
-      var u = sanitise(ui); u.result = '';
+      var u = sanitise(ui); u.result = ''; delete u.contact;
       var dots = isObj(ui) && isObj(ui.dots) ? ui.dots : null;
-      var plan = planFor(sit.id, u);
-      // Section seeds: a second mulberry32 stream from the card's seed, four draws always, so a section's seed never
-      // depends on which others appear.
+      // Section seeds: a second mulberry32 stream from the card's seed, four draws always (one per slot), so a
+      // section's seed never depends on which others appear.
       var r2 = seedRng(seed);
       var seeds = [0, 1, 2, 3].map(function () { return (r2() * 4294967296) >>> 0; });
+      var sv = sevNorm(T.severity[u.pos]);
+      var harmLvl = u.pos === 'controlled' ? '1 (lesser)' : String(sv.lvl);
+      var posChip = u.pos + ' → ' + sv.ticks + ' · harm ' + harmLvl;
 
-      var sections = plan.map(function (p, i) {
+      function section(p, slot) {
         var su = Object.assign({}, u, p.ui || {}, { result: p.result });
         if (dots) su.dots = dots;
-        var c = con.roll(p.id, su, { seed: seeds[i], mem: mem });
-        return { id: p.id, role: p.role, title: c.meta.title, lead: cut(c.meta.text), sub: c.meta.sub, chips: c.meta.chips,
-                 lines: c.lines, actions: c.meta.actions, meta: c.meta, seed: seeds[i], replay: c.replay };
-      });
+        var c = con.roll(p.id, su, { seed: seeds[slot], mem: mem });
+        var a = annotate(c);
+        var ch = a.meta.chips.filter(function (x) { return x.indexOf('Result: ') !== 0; });
+        if (p.role === 'lead') ch.unshift(posChip);
+        return { id: p.id, role: p.role, slot: slot, title: a.meta.title, lead: cut(a.meta.text), sub: a.meta.sub, chips: ch,
+                 lines: a.lines, actions: a.meta.actions, meta: a.meta, detail: a.detail, seed: seeds[slot], replay: c.replay };
+      }
+      var sections = [section(leadFor(sit.id, u), 0)];
+      orsFor(sit.id, u, sections[0].detail).forEach(function (p, i) { if (p) sections.push(section(p, i + 1)); });
 
       var actions = [], seen = {}, chips = [], lines = [], all = [];
       sections.forEach(function (s) {
@@ -801,20 +1051,22 @@
       var text = sections[0].meta.text;
       var t = text.replace(/\s+/g, ' ');
       var meta = { id: SITUATION_ID, situation: sit.id, n: sit.key, composeVersion: COMPOSE_VERSION, title: title,
-        sub: u.pos + ' → ' + T.severity[u.pos][0], chips: chips, text: text, all: all,
-        label: title + ': ' + (t.length > 38 ? t.slice(0, 36) + '…' : t), actions: actions,
-        sections: sections.map(function (s) { return { id: s.id, role: s.role, title: s.title, seed: s.seed }; }) };
+        sub: u.pos + ' → ' + sv.sev, chips: chips, position: { pos: u.pos, severity: sv.sev, ticks: sv.ticks, harm: harmLvl },
+        text: text, all: all, label: title + ': ' + (t.length > 38 ? t.slice(0, 36) + '…' : t), actions: actions,
+        sections: sections.map(function (s) { return { id: s.id, role: s.role, slot: s.slot, title: s.title, seed: s.seed }; }) };
       ['bargain', 'd66', 'reaction', 'contact', 'face'].forEach(function (k) {
         for (var i = 0; i < sections.length; i++) if (k in sections[i].meta) { meta[k] = sections[i].meta[k]; break; }
       });
+      var from = r.composeVersion == null ? null : (Number(r.composeVersion) || 1);
+      if (from != null && from !== COMPOSE_VERSION) meta.recomposed = { from: from, to: COMPOSE_VERSION };
       var replayUi = Object.assign({}, u);
       if (dots) replayUi.dots = clone(dots);
       return { lines: lines, meta: meta, sections: sections, seed: seed,
-               replay: { id: SITUATION_ID, situation: sit.id, seed: seed, mem: memBefore, ui: replayUi } };
+               replay: { id: SITUATION_ID, situation: sit.id, seed: seed, mem: memBefore, ui: replayUi, composeVersion: COMPOSE_VERSION } };
     };
     con.replay = function (rp) {
       var x = rp || {};
-      if (x.id === SITUATION_ID) return con.situation(x.situation, x.ui, { seed: x.seed, mem: clone(x.mem) });
+      if (x.id === SITUATION_ID) return con.situation(x.situation, x.ui, { seed: x.seed, mem: clone(x.mem), composeVersion: x.composeVersion == null ? 1 : x.composeVersion });
       return con.roll(x.id, x.ui, { seed: x.seed, mem: clone(x.mem) });
     };
 
@@ -823,7 +1075,7 @@
   }
 
   return {
-    create: create, applyIntent: applyIntent, intentPatch: intentPatch, campaignWith: campaignWith,
+    create: create, applyIntent: applyIntent, intentPatch: intentPatch, campaignWith: campaignWith, check: check,
     seedRng: seedRng, resistOdds: resistOdds, poolRoll: poolRoll, plain: plain, keyOf: keyOf,
     SITUATION_ID: SITUATION_ID, COMPOSE_VERSION: COMPOSE_VERSION, SITUATIONS: SITUATIONS.map(function (x) { return Object.assign({}, x); }),
     LIVE0: Object.assign({}, LIVE0), BUTTONS: BUTTONS.map(function (b) { return { n: b.n, id: b.id, label: b.label }; })
