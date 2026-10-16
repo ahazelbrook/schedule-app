@@ -207,9 +207,47 @@ try {
     check(!!rd && rd.title === 'Canals' && /Goosegate/.test(rd.md) && rd.caption === 'GM screen', 'Show on iPad sends the section as a rule');
     check(await ipad.page.waitForFunction(() => /Goosegate/.test(document.querySelector('#display-page').textContent), null, { timeout: 15000 }).then(() => true, () => false), '#display shows it');
   }
+  /* the full rules, searched in the pane (A11): listed with a snippet, one read in place, Show on iPad as the rules page sends it, never a new tab.
+     The corpus is one invented house rule (its [TODO] note is the compiler's, and must reach neither the pane nor the iPad). */
+  if (await page.$('#gm-rq')) {
+    await page.evaluate(() => window.claude.rules.saveHouse('goose-law', { title: 'Goose Law', trail: 'House rules', body: 'A goose goes first in any scene, and nobody argues.\n\nThe second paragraph is about the marsh. [TODO: GM secret note]' }));
+    const tabs0 = page.context().pages().length;
+    await page.fill('#gm-rq', 'goose'); await page.press('#gm-rq', 'Enter');
+    check(await page.waitForSelector('#gm-rq-hits .gs-hit', { timeout: 15000 }).then(() => true, () => false), 'the full rules search lists its hits in the pane');
+    check(await page.$eval('#gm-rq-hits .gs-hit', (b) => /Goose Law/.test(b.querySelector('.gs-hit-t').textContent) && !!b.querySelector('.gs-hit-t mark') && /House rules/.test(b.querySelector('.gs-hit-c').textContent) && !!b.querySelector('.gs-hit-s mark')), 'a hit shows its title, its book and a snippet, the word marked in both');
+    check(page.context().pages().length === tabs0 && await page.$eval('#gm-rq-hits .gs-hitbar a[target="_blank"]', (a) => /Open in the Rules page/.test(a.textContent) && /#rules\?q=goose$/.test(a.getAttribute('href'))), 'no new tab: the rules page is a small link (Open in the Rules page)');
+    check(await page.waitForFunction(() => { const r = document.getElementById('gm-rq-hits').getBoundingClientRect(), p = document.getElementById('gm-rules').getBoundingClientRect(); return r.top >= p.top - 1 && r.bottom <= p.bottom + 1; }, null, { timeout: 4000 }).then(() => true, () => false), 'the hits are scrolled into view in the pane');
+    await shot(page, 'screen-rules-hits');
+    await page.click('#gm-rq-hits .gs-hit');
+    check(await page.waitForSelector('#gm-rq-hits .gs-entry', { timeout: 5000 }).then(() => true, () => false) && await page.$eval('#gm-rq-hits .gs-entry .gs-body', (b) => /goose goes first/.test(b.textContent) && !/TODO|secret note/.test(b.textContent)), 'one hit opens in place, without the compiler’s [TODO] note');
+    await shot(page, 'screen-rules-entry');
+    await page.click('#gm-rq-hits [data-gm="rq-ipad"]');
+    const rr = await until(async () => { const r = await api('GET', '/gm/display'); return r.json && r.json.display && r.json.display.kind === 'rule' && r.json.display.title === 'Goose Law' ? r.json.display : null; }, 8000, 300);
+    check(!!rr && rr.caption === 'House rules' && /goose goes first/.test(rr.md) && !/TODO|secret note/.test(rr.md), 'Show on iPad sends the entry as a rule display, as the rules page does');
+    check(await ipad.page.waitForFunction(() => /goose goes first/.test(document.querySelector('#display-page').textContent), null, { timeout: 15000 }).then(() => true, () => false), '#display shows the rule');
+    await page.click('#gm-rq-hits [data-gm="rq-back"]');
+    check(await page.$$eval('#gm-rq-hits .gs-hit', (b) => b.length) === 1, 'Back is the list again');
+    /* Find (Ctrl+K) lists the rules this device now holds, and a hit opens in the pane */
+    await page.keyboard.press('Control+k'); await page.fill('#gm-find-q', 'goose');
+    check(await page.waitForFunction(() => [...document.querySelectorAll('.gm-find-hit .gm-find-kind')].some((k) => /Rules/.test(k.textContent)), null, { timeout: 5000 }).then(() => true, () => false), 'Find lists a rules entry');
+    await page.evaluate(() => { [...document.querySelectorAll('.gm-find-hit')].filter((b) => /Rules/.test(b.querySelector('.gm-find-kind').textContent))[0].click(); });
+    check(await page.waitForSelector('#gm-rq-hits .gs-entry', { timeout: 5000 }).then(() => true, () => false) && await page.$eval('#gm-find', (f) => f.hasAttribute('hidden')), 'a rules hit in Find opens it in the GM screen pane');
+    /* the screen's own find box: nothing there, one click to the same words in the rules */
+    await page.fill('#gm-gs-q', 'zzzq');
+    check(await page.$eval('#gm-rules .gs-none', (p) => !p.hidden && /Search the full rules for “zzzq”/.test(p.textContent)), 'with nothing on the screen, the find box offers the full rules for the same words');
+    await page.click('#gm-rules [data-gm="rq-find"]');
+    check(await page.waitForFunction(() => /Nothing in the rules matches “zzzq”/.test(document.getElementById('gm-rq-hits').textContent), null, { timeout: 8000 }).then(() => true, () => false), 'and the answer comes in the pane');
+    await page.fill('#gm-gs-q', '');
+  } else check(/not available/.test(await page.textContent('#gm-rules .gs-rules')), 'no rules runtime here: the pane says so');
   await shot(page, 'screen-desktop');
   await ph.page.click('.gm-segbar [data-seg="rules"]');
   check(await ph.page.waitForSelector('#gm-rules .gs-sec', { state: 'visible', timeout: 10000 }).then(() => true, () => false), 'phone: Screen is a segment');
+  if (await ph.page.$('#gm-rq')) {
+    await ph.page.fill('#gm-rq', 'goose'); await ph.page.press('#gm-rq', 'Enter');
+    check(await ph.page.waitForSelector('#gm-rq-hits .gs-hit', { state: 'visible', timeout: 15000 }).then(() => true, () => false), 'phone: the rules search lists its hits');
+    check(await ph.page.waitForFunction(() => { const r = document.querySelector('#gm-rq-hits .gs-hit').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 130 && r.bottom <= innerHeight; }, null, { timeout: 4000 }).then(() => true, () => false), 'phone: the first hit is on screen, under the sticky bars');
+    await shot(ph.page, 'screen-rules-phone');
+  }
   const over2 = await ph.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check(over2 <= 1, 'phone: the screen does not overflow (' + over2 + ' px)');
   await shot(ph.page, 'screen-phone', true);

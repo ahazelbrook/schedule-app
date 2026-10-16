@@ -112,8 +112,10 @@ fails and nobody is known, nothing is purged.
 - **Table aids** (17/10/2026):
   - **Find** (`Ctrl+K`, `/`, or **Find** in the bar): one box over the open Prep note (its sections and transclusions),
     the GM screen, the pack's NPCs, PCs, factions and world clocks, the cast's NPCs made in the app, the table clocks,
-    callbacks, and tonight's capture lines. Every word must match; title matches first. `↑` `↓` choose, `Enter` jumps
-    (an NPC, PC or faction opens its peek card in the Prep tab; a capture or callback is copied), `Esc` shuts it.
+    callbacks, and tonight's capture lines, and a few entries of the rules (from the copy this device already holds: Find never
+    starts a download). Every word must match; title matches first. `↑` `↓` choose, `Enter` jumps
+    (an NPC, PC or faction opens its peek card in the Prep tab; a rules entry opens in the GM screen pane; a capture or callback is
+    copied), `Esc` shuts it.
   - **The beat in the bar**: the newest beat started in the Prep tab's run order, with its minutes against the row's
     budget (amber at the budget, red at 1.5x). Tap it to see the row; **Next beat** starts the next row not yet started.
   - **The session in the bar**: while the table's counter is 0 it shows the open Prep note's session, "(prep)".
@@ -216,8 +218,15 @@ fails and nobody is known, nothing is purged.
   text before the first `##` is an intro shown above them; a `## Related`, `## Provenance` or `## Sources` heading ends
   the cut; wikilinks become plain text). Book text, so it travels only in the pack, never in git. Jump chips per section,
   **Find on the screen** filters the sections by their words, **Show on iPad** sends one section as a `rule` display
-  (caption "GM screen"). Under it, the full rules search, as the Rules tab had. Checks: `checks/runtime/gm-screen.test.mjs`,
-  `checks/runtime/gm-prep.e2e.mjs` (the Screen part, invented text).
+  (caption "GM screen"). Under it, **The full rules** (also the last jump chip in the outline): a search box and the twelve common terms
+  as buttons, answered in the pane by the rules page's own search over the rules this device holds (`B68Rules.load`, `.hits`,
+  `.entry`; the server only when this device holds none). The hits are listed (title, book and chapter, a snippet with the words
+  marked); one opens in place with **Show on iPad** (a `rule` display whose caption is the book and chapter, exactly what the
+  rules page sends: the compiler's `[TODO]` notes never go) and a chip for the entries of the same title in the other books; **Open in the
+  Rules page** (a new tab) stays as the way out, and is the whole answer when the module cannot search. In **Find on the screen**, a
+  query with no section left offers the same words to the rules, and `Enter` there goes to the first section still showing (or
+  searches the rules when none is). Checks: `checks/runtime/gm-screen.test.mjs`, `gm-page.test.mjs` (10c),
+  `checks/runtime/gm-prep.e2e.mjs` (the Screen part, invented text; one invented house rule is the rules corpus).
 - **Prep** (`R`, the first side tab; on a phone the Prep segment). The GM's prep notes as written in the vault, laid out in
   the design system. A note opts in with the property `gm_prep: true`; `npm run gm:pack` exports every such note under the
   '68 folder as the pack part `prep` (`scripts/lib/prep-export.mjs`): the note cut into Markdown blocks, each transclusion

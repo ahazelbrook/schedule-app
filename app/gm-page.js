@@ -1112,16 +1112,19 @@
     var f = $q('#gm-find'), q = $q('#gm-find-q'); if (!f || !q) return;
     S.findIdx = findIndex(); f.hidden = false; f.removeAttribute('hidden'); q.focus(); try { q.select(); } catch (e) {}
     findRender(q.value);
+    /* the rules, when this device holds a copy: read behind the box, then the list is drawn again with them */
+    var R = rulesApi(), me = S;
+    if (R && typeof R.load === 'function') Promise.resolve().then(function () { return R.load(true); }).then(function (c) { var fq = $q('#gm-find-q'); if (c && S === me && findOn() && fq && fq.value.trim()) findRender(fq.value); }, function () {});
   }
   function findClose() { var f = $q('#gm-find'), q = $q('#gm-find-q'); if (f) { f.hidden = true; f.setAttribute('hidden', ''); } if (q && document.activeElement === q) q.blur(); S.findIdx = null; }
   function findRender(q) {
     var list = $q('#gm-find-list'); if (!list) return;
-    var hits = S.findHits = findHits(S.findIdx || [], q, 40); S.findSel = 0;
-    list.innerHTML = !str(q).trim() ? '<li class="gm-find-none">Prep, the screen, NPCs, PCs, factions, clocks, callbacks, and what you filed tonight.</li>'
+    var hits = S.findHits = findHits(S.findIdx || [], q, 30).concat(rulesFindHits(q)); S.findSel = 0;
+    list.innerHTML = !str(q).trim() ? '<li class="gm-find-none">Prep, the screen, the rules, NPCs, PCs, factions, clocks, callbacks, and what you filed tonight.</li>'
       : !hits.length ? '<li class="gm-find-none">Nothing matches “' + esc(q) + '”.</li>'
       : hits.map(function (h, i) {
         return '<li><button type="button" class="gm-find-hit" data-gm="find-go" data-i="' + i + '" aria-selected="' + (i === 0) + '"><span class="gm-find-kind">' + esc(h.kind) + '</span><b>' + esc(h.title) + '</b>' +
-          (h.sub ? ' <small>' + esc(h.sub) + '</small>' : '') + (h.snip ? '<span class="gm-find-snip">' + esc(h.snip) + '</span>' : '') + '</button></li>';
+          (h.sub ? ' <small>' + esc(h.sub) + '</small>' : '') + (h.snipHtml ? '<span class="gm-find-snip">' + h.snipHtml + '</span>' : h.snip ? '<span class="gm-find-snip">' + esc(h.snip) + '</span>' : '') + '</button></li>';
       }).join('');
   }
   function findMove(d) {
@@ -1146,6 +1149,7 @@
       setPanel('prep'); prepPeek(g.t, linkFor(g.t, g.name));
     }
     else if (g.t === 'npcapp') setPanel('npc');
+    else if (g.t === 'rule') { setPanel('rules'); if (isPhone()) { S.seg = 'side'; syncPanels(); } rulesSearch(g.q, g.id); }
     else if (g.t === 'rail') { if (isPhone()) { S.seg = 'state'; syncPanels(); } flash($q('#gm-rail .gm-clocks')); }
   }
 
@@ -2110,27 +2114,107 @@
     if (list.length) {
       h += '<div class="gs"><div class="gs-top"><label class="gm-field wide" for="gm-gs-q"><span class="gm-lab">Find on the screen</span>' +
         '<input type="search" id="gm-gs-q" autocomplete="off" placeholder="armour, heat, a district…"></label>' +
-        '<p class="gm-chips gs-jump">' + list.map(function (s) { return '<button type="button" class="chip sm" data-gm="gs-jump" data-id="' + esc(s.id) + '">' + esc(s.title) + '</button>'; }).join('') + '</p></div>' +
+        '<p class="gm-chips gs-jump">' + list.map(function (s) { return '<button type="button" class="chip sm" data-gm="gs-jump" data-id="' + esc(s.id) + '">' + esc(s.title) + '</button>'; }).join('') +
+        (on ? '<button type="button" class="chip sm gs-jump-rules" data-gm="gs-rules">The full rules</button>' : '') + '</p></div>' +
         (sc.intro ? '<div class="gs-intro pp-doc">' + md(sc.intro) + '</div>' : '') +
         list.map(function (s) {
           return '<section class="gs-sec" id="gs-' + esc(s.id) + '" data-gs="' + esc(s.id) + '"><h3 class="gs-h"><span>' + esc(s.title) + '</span>' +
             '<button type="button" class="btn sm" data-gm="gs-ipad" data-id="' + esc(s.id) + '" title="Show this section on the iPad">Show on iPad</button></h3><div class="gs-body pp-doc">' + md(s.md) + '</div></section>';
-        }).join('') + '<p class="gm-dim gs-none" hidden>Nothing on the screen matches.</p></div>';
+        }).join('') + '<p class="gm-dim gs-none" hidden><span>Nothing on the screen matches.</span>' + (on ? ' <button type="button" class="btn sm" data-gm="rq-find">Search the full rules</button>' : '') + '</p></div>';
     } else h += '<p class="gm-note">No GM screen in the pack yet. It comes from the vault note with <code>gm_screen: true</code>: run <code>npm run gm:pack</code>, then push the pack.</p>';
-    h += '<section class="gs-rules"><h3 class="gm-band">The full rules</h3>' + (on ? '<form class="gm-rulesq" data-gm-form="rules"><label class="gm-field wide" for="gm-rq"><span class="gm-lab">Search the rules (opens a new tab)</span>' + '<input type="search" id="gm-rq" autocomplete="off" placeholder="push yourself, gambits…"></label><button type="submit" class="btn primary">Search</button></form>' +
-      '<p class="gm-chips">' + RULE_TERMS.map(function (t) { return '<a class="chip sm" target="_blank" rel="noopener" href="#rules?q=' + encodeURIComponent(t) + '">' + esc(t) + '</a>'; }).join('') + '</p>' : '<p class="gm-note">The rules are not available here.</p>') + '</section>';
+    h += '<section class="gs-rules"><h3 class="gm-band">The full rules</h3>' + (on ? '<form class="gm-rulesq" data-gm-form="rules"><label class="gm-field wide" for="gm-rq"><span class="gm-lab">Search the rules</span>' + '<input type="search" id="gm-rq" autocomplete="off" placeholder="push yourself, gambits…"></label><button type="submit" class="btn primary">Search</button></form>' +
+      '<p class="gm-chips">' + RULE_TERMS.map(function (t) { return '<button type="button" class="chip sm" data-gm="rq" data-q="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</p><div class="gs-hits" id="gm-rq-hits" aria-live="polite"></div>' : '<p class="gm-note">The rules are not available here.</p>') + '</section>';
     box.innerHTML = h;
+    var rq = $q('#gm-rq'); if (rq && S.rq) { rq.value = S.rq.q; if (!S.rq.busy) drawRq(); }      /* a rebuilt pane keeps the search it showed */
+  }
+  /* ---------- the full rules, searched in the pane ----------
+     B68Rules is the rules page's own search over the rules this device holds. The hits are listed (title, book and chapter, a
+     snippet); one opens in place with Show on iPad (a `rule` display, exactly what the rules page sends) and its twins from the
+     other books; "Open in the Rules page" (a new tab) is the way out, and the whole answer when the module cannot search.
+     S.rq = { q, hits, total, open: entry | null, empty, busy, err } (this page load only). */
+  var RQ_N = 12;
+  function rulesApi() { var R = W.B68Rules; return R && typeof R.hits === 'function' && typeof R.entry === 'function' ? R : null; }
+  function rulesPage(q) { return '#rules?q=' + encodeURIComponent(q); }
+  /* a snippet from the rules module is escaped text with <mark> round the matched words: anything else in it is dropped */
+  function snipHtml(s) { return str(s).replace(/<(\/?)mark>|<[^>]*>?/g, function (m, c) { return c === undefined ? '' : m; }); }
+  function rulesSearch(q, openId) {
+    q = str(q).trim(); if (!q) return;
+    var R = rulesApi(), box = $q('#gm-rq-hits'), rq = $q('#gm-rq'); if (rq && rq.value !== q) rq.value = q;
+    if (!R || !box) { try { W.open(rulesPage(q), '_blank', 'noopener'); } catch (e) {} return; }
+    var me = S, mine = S.rq = { q: q, hits: [], total: 0, open: null, empty: false, busy: true, err: '' };
+    drawRq();
+    Promise.resolve().then(function () { return R.load ? R.load() : null; }).then(function (c) {
+      if (S !== me || S.rq !== mine) return;
+      var r = {}; try { r = R.hits(q, RQ_N) || {}; } catch (e) { mine.err = errText(e); }
+      mine.hits = Array.isArray(r.hits) ? r.hits : []; mine.total = Math.max(+r.total || 0, mine.hits.length);
+      mine.empty = !!(c && Array.isArray(c.entries) && !c.entries.length); mine.busy = false;
+      if (openId && !mine.err) rulesOpen(openId); else drawRq(true);
+    }, function (e) { if (S !== me || S.rq !== mine) return; mine.busy = false; mine.err = errText(e); drawRq(true); });
+  }
+  function drawRq(scroll) {
+    var box = $q('#gm-rq-hits'), s = S && S.rq; if (!box || !s) return;
+    var link = function (href, label) { return '<a class="chip sm gs-out" target="_blank" rel="noopener" href="' + esc(href) + '">' + label + ' ↗</a>'; };
+    var h;
+    if (s.busy) h = '<p class="gm-dim" role="status">Searching the rules…</p>';
+    else if (s.err) h = '<p class="gm-note bad">The rules could not be searched: ' + esc(s.err) + '</p><p>' + link(rulesPage(s.q), 'Open in the Rules page') + '</p>';
+    else if (s.open) {
+      var o = s.open;
+      h = '<div class="gs-hitbar"><button type="button" class="btn sm" data-gm="rq-back">← Results for “' + esc(shortLabel(s.q, 28)) + '”</button>' + link(o.href, 'Open in the Rules page') + '</div>' +
+        '<section class="gs-sec gs-entry"><h3 class="gs-h"><span>' + esc(o.title) + (o.caption ? ' <small>' + esc(o.caption) + '</small>' : '') + '</span>' +
+        '<button type="button" class="btn sm" data-gm="rq-ipad" title="Show this entry on the iPad">Show on iPad</button></h3><div class="gs-body pp-doc">' + md(o.md) + '</div></section>' +
+        (Array.isArray(o.also) && o.also.length ? '<p class="gs-also"><span class="gm-lab">Also</span>' + o.also.map(function (a) { return '<button type="button" class="chip sm" data-gm="rq-open" data-id="' + esc(a.id) + '">' + esc(a.label) + '</button>'; }).join('') + '</p>' : '');
+    } else if (!s.hits.length) {
+      h = '<p class="gm-note">' + (s.empty ? 'No rules are imported yet: the GM imports them on the Rules page.' : 'Nothing in the rules matches “' + esc(s.q) + '”.') + '</p><p>' + link(s.empty ? '#rules' : rulesPage(s.q), 'Open in the Rules page') + '</p>';
+    } else {
+      h = '<div class="gs-hitbar"><span class="gm-lab">' + (s.total > s.hits.length ? s.hits.length + ' of ' + s.total : s.total) + ' for “' + esc(shortLabel(s.q, 28)) + '”</span>' + link(rulesPage(s.q), 'Open in the Rules page') + '</div>' +
+        '<ol class="gs-hitlist">' + s.hits.map(function (x) {
+          return '<li><button type="button" class="gs-hit" data-gm="rq-open" data-id="' + esc(x.id) + '"><span class="gs-hit-t">' + (x.titleHtml ? snipHtml(x.titleHtml) : esc(x.title)) + '</span><span class="gs-hit-c">' + esc(x.caption) + '</span>' +
+            (x.snip ? '<span class="gs-hit-s">' + snipHtml(x.snip) + '</span>' : '') + '</button></li>';
+        }).join('') + '</ol>';
+    }
+    box.innerHTML = h;
+    if (scroll) rulesIntoView();
+  }
+  /* the search box with its results under it, at the top of the pane (a pane that scrolls on its own, or the page under the phone's bars) */
+  function rulesIntoView() {
+    var sec = $q('.gs-rules'); if (!sec || typeof sec.scrollIntoView !== 'function') return;
+    var smooth = true; try { smooth = !(W.matchMedia && W.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
+    try { sec.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' }); } catch (e) { try { sec.scrollIntoView(); } catch (x) {} }
+  }
+  function rulesOpen(id) {
+    var R = rulesApi(), s = S.rq; if (!R || !s) return;
+    var x = null; try { x = R.entry(str(id)); } catch (e) { x = null; }
+    if (!x) { toast('That entry is not in the rules this device holds.', true); return; }
+    s.open = x; drawRq(true);
+  }
+  function rulesToIpad() {
+    var o = S.rq && S.rq.open; if (!o) return;
+    pushDisplay({ kind: 'rule', title: str(o.title).slice(0, 2000), caption: str(o.caption).slice(0, 2000), md: str(o.md).slice(0, 40000) || '—' })
+      .then(function () { toast('On the iPad: ' + o.title + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+  }
+  /* rules for Find, from the copy this device holds (Find never starts a download): a few hits, each opening in the GM screen pane */
+  function rulesFindHits(q) {
+    var R = rulesApi(), t = str(q).trim(); if (!R || t.length < 2) return [];
+    var r = null; try { r = R.hits(t, 6); } catch (e) { return []; }
+    return (r && Array.isArray(r.hits) ? r.hits : []).map(function (x) { return { kind: 'Rules', title: x.title, sub: x.caption, snipHtml: snipHtml(x.snip), go: { t: 'rule', id: x.id, q: t } }; });
   }
   /* every word of the query somewhere in a section's title or text */
   function filterScreen(q) {
     var box = $q('#gm-rules'); if (!box) return;
     var words = str(q).toLowerCase().split(/\s+/).filter(Boolean), shown = 0;
-    box.querySelectorAll('.gs-sec').forEach(function (sec) {
+    box.querySelectorAll('.gs .gs-sec').forEach(function (sec) {
       var t = sec.textContent.toLowerCase(), hit = words.every(function (w) { return t.indexOf(w) >= 0; });
       sec.hidden = !hit; if (hit) shown++;
       var chip = box.querySelector('[data-gm="gs-jump"][data-id="' + sec.getAttribute('data-gs') + '"]'); if (chip) chip.hidden = !hit;
     });
-    var none = box.querySelector('.gs-none'); if (none) none.hidden = shown > 0;
+    var none = box.querySelector('.gs-none');
+    if (none) { none.hidden = shown > 0; var rb = none.querySelector('[data-gm="rq-find"]'); if (rb) rb.textContent = 'Search the full rules for “' + shortLabel(q, 30) + '”'; }
+  }
+  /* Enter in "Find on the screen": the first section that still shows, or, with none left, the full rules for the same words */
+  function screenFindGo() {
+    var q = $q('#gm-gs-q'), v = q ? str(q.value).trim() : ''; if (!v) return;
+    var first = [].filter.call(S.root.querySelectorAll('#gm-rules .gs .gs-sec'), function (s) { return !s.hidden; })[0];
+    if (first) { screenJump(first.getAttribute('data-gs')); flash(first); } else rulesSearch(v);
   }
   function screenJump(id) { var sec = $q('#gm-rules [data-gs="' + str(id).replace(/"/g, '') + '"]'); if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
   function screenToIpad(id) {
@@ -2280,6 +2364,7 @@
     /* a speaker's name: Enter saves it (the change event); the note's find box: Enter goes to the first match */
     if (ev.key === 'Enter' && tg && tg.hasAttribute && tg.hasAttribute('data-sttspk')) { ev.preventDefault(); tg.blur(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-prep-q') { ev.preventDefault(); prepFindGo(); return; }
+    if (ev.key === 'Enter' && tg && tg.id === 'gm-gs-q') { ev.preventDefault(); screenFindGo(); return; }
     var ml = $q('.gm-menu-list'); if (ml && !ml.hasAttribute('hidden') && ev.key === 'Escape') { menuOpen(false); var mb = $q('[data-gm="menu"]'); if (mb) mb.focus(); ev.preventDefault(); return; }
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
     if (!a) return;
@@ -2358,6 +2443,12 @@
       case 'pin': pin(b.getAttribute('data-tool')); break;
       case 'gs-jump': screenJump(b.getAttribute('data-id')); break;
       case 'gs-ipad': screenToIpad(b.getAttribute('data-id')); break;
+      case 'rq': rulesSearch(b.getAttribute('data-q')); break;
+      case 'rq-find': { var gq = $q('#gm-gs-q'); if (gq) rulesSearch(gq.value); break; }
+      case 'rq-open': rulesOpen(b.getAttribute('data-id')); break;
+      case 'rq-back': if (S.rq) { S.rq.open = null; drawRq(true); } break;
+      case 'rq-ipad': rulesToIpad(); break;
+      case 'gs-rules': { rulesIntoView(); var rbx = $q('#gm-rq'); if (rbx) { try { rbx.focus(); } catch (e) {} } break; }
       case 'copy': copy(b.getAttribute('data-tool')); break;
       case 'locroll': rollLocation(); break;
       case 'scnroll': rollScenes(); break;
@@ -2441,7 +2532,7 @@
     var k = f.getAttribute('data-gm-form'); if (!k) return;
     ev.preventDefault();
     if (k === 'capture') { var i = $q('#gm-cap-in'); if (i && addCapture(S.arm, i.value)) { i = $q('#gm-cap-in'); if (i) { i.value = ''; i.focus(); } } }
-    else if (k === 'rules') { var q = $q('#gm-rq'); if (q && q.value.trim()) { try { W.open('#rules?q=' + encodeURIComponent(q.value.trim()), '_blank', 'noopener'); } catch (e) {} } }
+    else if (k === 'rules') { var q = $q('#gm-rq'); if (q && q.value.trim()) rulesSearch(q.value); }
   }
   function wire(el) {
     if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'gm-find-q') { findRender(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-prep-q') { prepFilter(ev.target.value); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); el.addEventListener('scroll', onScroll, true); }

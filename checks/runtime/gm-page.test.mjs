@@ -291,6 +291,7 @@ class FEl {
   querySelectorAll(sel) { const alts = parseSel(sel), out = []; const walk = (n) => { for (const k of n.kids) if (k.nodeType === 1) { if (alts.some((a) => matchPath(k, a, this))) out.push(k); walk(k); } }; walk(this); return out; }
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
   focus() { this.doc.activeElement = this; } blur() { if (this.doc.activeElement === this) this.doc.activeElement = this.doc.body; }
+  getBoundingClientRect() { return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }; }     /* no layout here: the outline spy and showCard see everything at 0 */
   click() { dispatch(this, 'click'); }
 }
 function matches(el, c) {
@@ -339,10 +340,11 @@ function loadPage(W) {
   return W.B68GmPage;
 }
 /* a fake server for the GM state: the real merge, one document */
-function fakeGm(camp) {
+function fakeGm(camp, extra) {
   const server = { doc: {}, at: 0, patches: [], displays: [] };
   const parts = { console: { version: 'c1', src: {}, body: FIXC.console }, campaign: { version: 'k1', src: FIXC.campaign.src || {}, body: camp || FIXC.campaign }, location: { version: 'l1', src: {}, body: { T: FIXL.T, extra: FIXL.extra } },
     scenes: { version: 's1', src: {}, body: { T: FIXS.parts.scenes.T } }, engagement: { version: 'e1', src: {}, body: { T: FIXS.parts.engagement.T } } };
+  Object.assign(parts, extra || {});      /* more pack parts for one test (screen, npc), or a replacement of one */
   const gm = {
     pack: async () => ({ version: 'v1', parts: Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, { version: v.version }])) }),
     packPart: async (n) => ({ part: n, version: parts[n].version, src: parts[n].src, body: parts[n].body }),
@@ -940,6 +942,77 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   assert.ok(!h.q('[data-gm="layout-classic"]') && !h.q('[data-gm="layout-app"]'), 'no layout switch: the app layout is the only one');
   await h.save();
   assert.ok(!br.doc.body.classList.contains('gm-app'), 'off once the page closes');
+});
+await test('10c. the full rules, searched in the GM screen pane: the hits are listed with a snippet, one opens in place with Show on iPad and its twins, the rules page stays a link; Find lists rules; a module that cannot search opens the rules page', async () => {
+  const loads = [], opened = [];
+  const ROWS = [
+    { id: 'b68/harm', book: 'b68', slug: 'harm', title: 'Harm', caption: 'Blades ’68 · Consequences', snip: 'Level 1 is <mark>lesser</mark> harm.<script>alert(1)</script>', href: '#rules/b68/harm' },
+    { id: 'house/hard-knocks', book: 'house', slug: 'hard-knocks', title: 'Hard knocks', caption: 'House rules', snip: 'Take <mark>harm</mark> twice.', href: '#rules/house/hard-knocks' }];
+  const ENTRY = {
+    'b68/harm': { id: 'b68/harm', title: 'Harm', caption: 'Blades ’68 · Consequences', href: '#rules/b68/harm', md: 'Level 1 is **lesser** harm.', also: [{ id: 'bitd/harm', label: 'In Blades in the Dark' }] },
+    'bitd/harm': { id: 'bitd/harm', title: 'Harm', caption: 'Blades in the Dark', href: '#rules/bitd/harm', md: 'The SRD’s harm.', also: [{ id: 'b68/harm', label: 'In Blades ’68' }] } };
+  const rules = { available: () => true, load: async (cacheOnly) => { loads.push(cacheOnly ? 'cache' : 'full'); return { entries: [{}] }; },
+    hits: (q) => (q === 'harm' ? { total: 9, hits: ROWS } : { total: 0, hits: [] }), entry: (id) => ENTRY[id] || null };
+  const SCREEN = { version: 'g1', src: {}, body: { v: 1, title: 'Screen', intro: '', sections: [{ id: 'rolling', title: 'Rolling', md: 'Ask what they want.' }, { id: 'weather', title: 'Weather', md: 'A squall.' }] } };
+  const br = fakeBrowser({ B68Rules: rules, open: (u) => { opened.push(u); } }), fg = fakeGm(undefined, { screen: SCREEN });
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('t');
+  assert.ok(h.q('#gm-rq') && h.q('#gm-rq-hits') && !h.q('.gs-rules a[target="_blank"]'), 'a search box and a hits box, no new-tab chips');
+  assert.ok(h.qa('[data-gm="rq"]').length >= 6, 'the common terms are buttons that search here');
+  assert.ok(h.q('[data-gm="gs-rules"]'), 'a jump chip to the full rules sits with the sections');
+  h.q('#gm-rq').value = 'harm'; dispatch(h.q('form[data-gm-form="rules"]'), 'submit');
+  assert.ok(await until(() => h.qa('.gs-hit').length === 2), 'the hits are listed in the pane'); assert.deepEqual(loads, ['full'], 'the corpus was asked for once');
+  const row = h.qa('.gs-hit')[0];
+  assert.ok(/Harm/.test(row.querySelector('.gs-hit-t').textContent) && /Blades ’68 · Consequences/.test(row.querySelector('.gs-hit-c').textContent) && /lesser harm/.test(row.querySelector('.gs-hit-s').textContent), 'title, book and chapter, a snippet');
+  assert.equal(row.querySelectorAll('.gs-hit-s mark').length, 1, 'the matched word is marked'); assert.equal(h.qa('#gm-rq-hits script').length, 0, 'nothing but <mark> survives in a snippet');
+  assert.match(h.q('.gs-hitbar .gm-lab').textContent, /2 of 9 for “harm”/);
+  const out = h.q('.gs-hitbar a[target="_blank"]');
+  assert.ok(out && out.getAttribute('href') === '#rules?q=harm' && /Open in the Rules page/.test(out.textContent) && out.getAttribute('rel') === 'noopener', 'the rules page stays as a link (a new tab)');
+  assert.equal(fg.server.displays.length, 0, 'a list sends nothing to the iPad');
+  /* a screen filter does not touch the hits, and with nothing left on the screen it offers the same words to the rules */
+  const gq = h.q('#gm-gs-q'); gq.value = 'zzz'; dispatch(gq, 'input');
+  assert.ok(!h.q('.gs-none').hidden && /Search the full rules for “zzz”/.test(h.q('[data-gm="rq-find"]').textContent), 'nothing on the screen: one click to the full rules with the same words');
+  assert.equal(h.qa('.gs-hit').filter((x) => x.hidden).length, 0, 'the screen filter leaves the hits alone');
+  gq.value = 'squall'; dispatch(gq, 'input'); h.press('Enter', { target: gq }); assert.equal(h.qa('.gs-hit').length, 2, 'Enter with a match on the screen goes to that section, not to the rules');
+  gq.value = 'harm'; dispatch(gq, 'input'); h.q('#gm-rq-hits').innerHTML = ''; h.press('Enter', { target: gq });
+  assert.ok(await until(() => h.qa('.gs-hit').length === 2), 'Enter with nothing on the screen searches the full rules'); assert.equal(h.q('#gm-rq').value, 'harm');
+  gq.value = ''; dispatch(gq, 'input');
+  /* one entry opens in place */
+  h.qa('.gs-hit')[0].click();
+  assert.equal(h.qa('.gs-hit').length, 0, 'the list gives way to the entry');
+  assert.ok(/Harm/.test(h.q('.gs-entry .gs-h').textContent) && /Blades ’68 · Consequences/.test(h.q('.gs-entry .gs-h').textContent) && /lesser/.test(h.q('.gs-entry .gs-body').textContent), 'the entry is read in place');
+  assert.ok(h.q('.gs-hitbar a[target="_blank"][href="#rules/b68/harm"]'), 'the entry on the rules page, in a new tab');
+  assert.ok(h.q('[data-gm="rq-open"][data-id="bitd/harm"]'), 'its twin in the other book is a chip');
+  h.q('[data-gm="rq-ipad"]').click(); assert.ok(await until(() => fg.server.displays.length === 1));
+  eqj(fg.server.displays[0], { kind: 'rule', title: 'Harm', caption: 'Blades ’68 · Consequences', md: 'Level 1 is **lesser** harm.' }, 'Show on iPad sends the entry as a rule display, as the rules page does');
+  assert.ok(br.toasts.some((x) => /On the iPad: Harm/.test(x[0])), 'and says so');
+  h.q('[data-gm="rq-open"][data-id="bitd/harm"]').click(); assert.match(h.q('.gs-entry .gs-body').textContent, /SRD/, 'the twin opens in the same place');
+  h.q('[data-gm="rq-back"]').click(); assert.equal(h.qa('.gs-hit').length, 2, 'Back is the list again'); assert.deepEqual(loads, ['full', 'full'], 'without a new search of its own');
+  h.qa('[data-gm="rq"]')[0].click(); assert.ok(await until(() => /Nothing in the rules matches/.test(h.q('#gm-rq-hits').textContent)), 'a term with no hit says so, in the pane');
+  assert.ok((h.q('.gs-rules a[target="_blank"]') || { getAttribute: () => '' }).getAttribute('href').startsWith('#rules?q='), 'with the rules page as a link');
+  assert.equal(opened.length, 0, 'nothing opened a new tab');
+  /* Find lists the rules this device holds, and Enter opens one in the pane */
+  h.press('k', { ctrlKey: true }); assert.ok(await until(() => loads.includes('cache')), 'Find reads the copy on this device, never the network');
+  const fq = h.q('#gm-find-q'); fq.value = 'harm'; dispatch(fq, 'input');
+  const rk = h.qa('.gm-find-hit').filter((b) => /Rules/.test(b.querySelector('.gm-find-kind').textContent));
+  assert.equal(rk.length, 2, 'two rules entries in Find'); assert.equal(rk[0].querySelectorAll('.gm-find-snip mark').length, 1, 'with the matched word marked'); assert.ok(/Blades ’68 · Consequences/.test(rk[0].textContent));
+  h.press('Escape', { target: fq }); h.press('Escape');
+  h.press('k', { ctrlKey: true }); const fq2 = h.q('#gm-find-q'); fq2.value = 'harm'; dispatch(fq2, 'input');
+  h.qa('.gm-find-hit').filter((b) => /Rules/.test(b.querySelector('.gm-find-kind').textContent))[0].click();
+  assert.ok(await until(() => h.q('.gs-entry')), 'a rules hit in Find opens the entry in the GM screen pane'); assert.equal(h.page._state().panel, 'rules'); assert.ok(h.q('#gm-find').hasAttribute('hidden'), 'Find shuts');
+  await h.save();
+  /* an empty corpus, and a failure, say so in the pane */
+  const e1 = await openPage({ br: fakeBrowser({ B68Rules: { available: () => true, load: async () => ({ entries: [] }), hits: () => ({ total: 0, hits: [] }), entry: () => null } }), camp: CAMP3 });
+  e1.press('t'); e1.q('#gm-rq').value = 'heat'; dispatch(e1.q('form[data-gm-form="rules"]'), 'submit');
+  assert.ok(await until(() => /No rules are imported yet/.test(e1.q('#gm-rq-hits').textContent)), 'an empty corpus is said, with the rules page as the way on'); await e1.save();
+  const e2 = await openPage({ br: fakeBrowser({ B68Rules: { available: () => true, load: async () => { throw new Error('offline'); }, hits: () => ({ total: 0, hits: [] }), entry: () => null } }), camp: CAMP3 });
+  e2.press('t'); e2.q('#gm-rq').value = 'heat'; dispatch(e2.q('form[data-gm-form="rules"]'), 'submit');
+  assert.ok(await until(() => /could not be searched: offline/.test(e2.q('#gm-rq-hits').textContent) && e2.q('#gm-rq-hits a[target="_blank"]')), 'a failure says why, with the rules page as the way on'); await e2.save();
+  /* a module without search: the rules page opens in a new tab, as it always did */
+  const br2 = fakeBrowser({ B68Rules: { available: () => true }, open: (u) => { opened.push(u); } }), h2 = await openPage({ br: br2, camp: CAMP3 });
+  h2.press('t'); h2.q('#gm-rq').value = 'heat'; dispatch(h2.q('form[data-gm-form="rules"]'), 'submit');
+  assert.deepEqual(opened, ['#rules?q=heat'], 'a module without hits(): the rules page opens as before');
+  await h2.save();
 });
 await test('10b. the rail: an empty box is one line; an old layout preference left in storage changes nothing', async () => {
   const br = fakeBrowser(); br.ls.set('b68.gm.layout', 'classic'); br.ls.set('b68.gm.view', 'classic'); const h = await openPage({ br, camp: CAMP3 });

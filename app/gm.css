@@ -210,6 +210,23 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gs-intro { margin: 0 0 4px; }
 #gm-page .gs-rules { margin-top: 16px; }
 #gm-page .gs-rules .gm-rulesq, #gm-page .gs-rules .gm-chips { margin: 8px 0; }
+/* the full rules, searched in the pane: a list (title, book · chapter, a snippet), and one entry opened in place */
+#gm-page .gs-hits { display: grid; gap: 10px; margin-top: 10px; }
+#gm-page .gs-hits:empty { display: none; }
+#gm-page .gs-hitbar { display: flex; gap: 6px 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+#gm-page .gs-hitbar .gm-lab { display: inline; }
+#gm-page .gs-hitlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+#gm-page .gs-hit { display: grid; gap: 2px; width: 100%; min-height: 44px; padding: 8px 12px; text-align: left; border: 2px solid var(--rule); border-left-width: 6px; background: var(--card); color: var(--ink); cursor: pointer; }
+#gm-page .gs-hit:hover, #gm-page .gs-hit:focus-visible { background: var(--inset); border-left-color: var(--accent); }
+#gm-page .gs-hit:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .gs-hit-t { font: 900 15px/1.2 var(--font-cond); letter-spacing: .03em; text-transform: uppercase; }
+#gm-page .gs-hit-c { font: 700 10.5px/1.3 var(--font-mono); color: var(--ink-soft); }
+#gm-page .gs-hit-s { font-size: 13.5px; line-height: 1.4; color: var(--ink-soft); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+#gm-page .gs-hits mark, #gm-page .gm-find-snip mark { background: var(--mustard); color: var(--on-mustard); padding: 0 1px; }
+#gm-page .gs-entry { margin: 0; }
+#gm-page .gs-also { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
+#gm-page .gs-also .gm-lab { display: inline; }
+#gm-page .gs-h small { font: 400 10.5px/1.2 var(--font-mono); text-transform: none; letter-spacing: 0; opacity: .85; margin-left: 6px; }
 
 /* the rail */
 #gm-page .gm-box { border: 2px solid var(--rule); background: var(--card); }
@@ -282,6 +299,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-root[data-seg="side"] .gm-console, #gm-root[data-seg="side"] .gm-rail,
   #gm-root[data-seg="state"] .gm-console, #gm-root[data-seg="state"] .gm-side { display: none; }
   #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead { scroll-margin-top: 140px; scroll-margin-bottom: 84px; }   /* under the sticky bar and the two-row segmented bar, above the capture button */
+  #gm-page .gs-rules { scroll-margin-top: 140px; }
   #gm-page .gm-btn { grid-template-columns: 1fr; grid-template-rows: auto auto; justify-items: center; text-align: center; min-height: 76px; padding: 8px 4px; }
   #gm-page .gm-btn kbd { grid-row: auto; }
   #gm-page .gm-btn small { display: none; }
@@ -519,6 +537,7 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-rules .gs > .gs-top { grid-column: 1; grid-row: 1 / span 60; margin: 0; padding: 0 10px 0 0; border-bottom: 0; border-right: 2px solid var(--rule); max-height: calc(100dvh - 190px); overflow-y: auto; scrollbar-width: thin; }
   body.gm-app #gm-rules .gs-jump { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 0; }
   body.gm-app #gm-rules .gs-jump [hidden] { display: none; }
+  body.gm-app #gm-rules .gs-jump .gs-jump-rules { margin-top: 6px; padding-top: 9px; border-top: 1px solid var(--hair); font-weight: 900; }
 }
 
 /* ---------- 17/10: Find (Ctrl+K or /), the beat in the bar, a speaker named from a line, the clocks to the iPad ---------- */
