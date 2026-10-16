@@ -79,7 +79,9 @@ await push(BLANK);
 const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});   // PW_CHANNEL=msedge uses an installed Edge
 try {
   /* ---- A: the cover / grace / uncover cycle (no rotation) ---- */
-  const A = await openDisplay(browser, { intervalMs: 600000, graceMs: 4000 });
+  /* the grace is shortened for the run (30 s in use), but it has to outlast a quick spotlight as the display sees it: the text is
+     noticed at one look and the blank at the next, a whole 4 s beat later (it was 2 s), so 4 s of grace could never hold */
+  const A = await openDisplay(browser, { intervalMs: 600000, graceMs: 9000 });
 
   await step('a blank display plays the lair in a sandboxed iframe under the stages', async () => {
     await shows(A.page, 'harvest');

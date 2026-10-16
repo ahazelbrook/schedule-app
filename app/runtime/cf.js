@@ -37,9 +37,12 @@
   /* ---------- helpers ---------- */
   function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  /* how often the characters, campaign and NPCs are looked at: every 4 s while the page is in front, once a minute when it is hidden
+     (the Workers Free plan allows 100,000 requests a day for the whole site; a hidden tab learns what changed at its next look, or at
+     once when it comes back, as a visibilitychange polls straight away) */
   function pollMs() {
     if (typeof window.__B68_POLL_MS === 'number') return window.__B68_POLL_MS;
-    return document.hidden ? 20000 : 4000;
+    return document.hidden ? 60000 : 4000;
   }
   /* the server's PATCH semantics: objects merge, arrays and scalars replace, null deletes */
   function deepMerge(target, patch) {
@@ -1065,13 +1068,16 @@
     /* GET /api/gm/state -> { doc, updatedAt }; PATCH merges (maps merge, null deletes) -> { doc, updatedAt } */
     state: function () { return api('GET', '/gm/state'); },
     patchState: function (patch) { return api('PATCH', '/gm/state', patch || {}); },
-    /* GET /api/gm/display?seq=N&aseq=M -> { seq, display, updatedAt, ambient: { seq, doc, updatedAt } }. An ambient seq M that
-       is still current gives ambient: { seq, unchanged: true }; both current -> { seq, unchanged: true, ambient: { seq, unchanged: true } }.
-       seq alone (no aseq) is the old call: { seq, unchanged: true } while current, with the ambient ignored. */
-    display: function (seq, aseq) {
+    /* GET /api/gm/display?seq=N&aseq=M&sseq=K -> { seq, display, updatedAt, ambient: { seq, doc, updatedAt }, stt: { seq, want,
+       session } }. A part whose seq is still current comes as { seq, unchanged: true }; all three current -> { seq, unchanged: true,
+       ambient: { seq, unchanged: true }, stt: { seq, unchanged: true } }. stt is only what the table iPad needs of the transcriber
+       (GM.md "Listening"); without sseq the answer has no stt, and seq alone (no aseq) is the oldest call: { seq, unchanged: true }
+       while current, with the parts ignored. */
+    display: function (seq, aseq, sseq) {
       var q = [];
       if (seq !== undefined && seq !== null) q.push(qs('seq', seq));
       if (aseq !== undefined && aseq !== null) q.push(qs('aseq', aseq));
+      if (sseq !== undefined && sseq !== null) q.push(qs('sseq', sseq));
       return api('GET', '/gm/display' + (q.length ? '?' + q.join('&') : ''));
     },
     /* PUT /api/gm/display { kind: blank | dark | svg | npc | text, title, caption, svg | npcId | text } -> { seq, display, updatedAt } */

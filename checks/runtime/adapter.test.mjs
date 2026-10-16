@@ -638,7 +638,7 @@ await test('visibility: hidden pages poll on the slow interval', async () => {
   b.document.hidden = false; b.listeners.visibilitychange.forEach((fn) => fn());
   await sleep(20);
   b.win.setTimeout = real;
-  ok(timers.includes(20000), 'hidden interval: ' + timers);
+  ok(timers.includes(60000), 'hidden interval: ' + timers);
   ok(timers.includes(4000), 'visible interval: ' + timers);
   un();
 });
@@ -1099,9 +1099,13 @@ await test('window.claude.gm: plain calls for the GM (pack, parts, state, displa
   eq((await g.state()).doc.capture.c1.text, MARK, 'state round trip');
   eq((await g.setDisplay({ kind: 'text', text: 'hi' })).seq, 1, 'setDisplay');
   eq((await g.display(1)).unchanged, true, 'display unchanged at the current seq');
+  eq((await g.display(1, 2, 3)).unchanged, true, 'display with the ambient and the transcriber seqs too');
+  eq((await g.display(null, undefined, 3)).seq, 1, 'display with only the transcriber seq');
+  await g.display();
   await g.removePart('console');
   const sent = b.fetchLog.map((x) => (x.opts.method || 'GET') + ' ' + x.url).filter((x) => x.includes('/api/gm/'));
-  eq(sent, ['POST /api/gm/pack', 'GET /api/gm/pack', 'GET /api/gm/pack?part=console', 'PATCH /api/gm/state', 'GET /api/gm/state', 'PUT /api/gm/display', 'GET /api/gm/display?seq=1', 'DELETE /api/gm/pack?part=console'], 'requests');
+  eq(sent, ['POST /api/gm/pack', 'GET /api/gm/pack', 'GET /api/gm/pack?part=console', 'PATCH /api/gm/state', 'GET /api/gm/state', 'PUT /api/gm/display', 'GET /api/gm/display?seq=1',
+    'GET /api/gm/display?seq=1&aseq=2&sseq=3', 'GET /api/gm/display?sseq=3', 'GET /api/gm/display', 'DELETE /api/gm/pack?part=console'], 'requests');
   await sleep(60);
   ok(![...storage._m.values()].some((v) => String(v).includes(MARK)), 'GM text reached localStorage (snapshot or queue)');
   const pb = browser(api, { email: 'pl@x.test' });
