@@ -116,6 +116,21 @@ await step('page: doctype, charset and viewport in front of index.html, security
   expect(missing.status === 404, 'missing file: asset 404');
 });
 
+await step('page: a full Content-Security-Policy is reported, not enforced; the enforced one stays frame-ancestors only', async () => {
+  const r = await worker.fetch(new Request('https://blades.example.test/'), { ASSETS: fakeAssets() }, {});
+  expect(r.headers.get('Content-Security-Policy') === "frame-ancestors 'none'", 'enforced CSP: ' + r.headers.get('Content-Security-Policy'));
+  const ro = r.headers.get('Content-Security-Policy-Report-Only') || '';
+  const dir = Object.fromEntries(ro.split(';').map((d) => d.trim()).filter(Boolean).map((d) => { const [k, ...v] = d.split(/\s+/); return [k, v.join(' ')]; }));
+  const want = {
+    'script-src': "'self'", 'style-src': "'self' 'unsafe-inline'", 'img-src': "'self' data: blob:", 'connect-src': "'self' wss://api.deepgram.com",
+    'frame-src': "'self'", 'media-src': "'self'", 'font-src': "'self'", 'frame-ancestors': "'none'",
+  };
+  expect(JSON.stringify(dir) === JSON.stringify(want), 'report-only policy: ' + ro);
+  expect(!/unsafe-eval|\*/.test(dir['script-src']) && !/unsafe-inline/.test(dir['script-src']), 'scripts: same-origin files only');
+  const api = await worker.fetch(new Request('http://127.0.0.1:8788/api/me'), { DEV_USER: 'gm@example.test', GM_EMAILS: 'gm@example.test', DB: fakeDb(), CAMPAIGN: 'default' }, {});
+  expect(api.headers.get('Content-Security-Policy-Report-Only') === null, 'the API answers carry no page policy');
+});
+
 await step('build: app/routes.js is committed as dev (deploy.sh stamps it), /api/me answers it and every API answer carries X-B68-Build', async () => {
   const routes = readFileSync(join(ROOT, 'app', 'routes.js'), 'utf8');
   expect(/^\s*var BUILD = 'dev';/m.test(routes), "app/routes.js must say var BUILD = 'dev' in the repository: scripts/deploy.sh stamps it for the upload and puts it back");

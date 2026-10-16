@@ -34,8 +34,12 @@ Ownership: **backend** owns `worker/`, `functions/`, `schema.sql`, `migrations/`
   lays the page out 980 px wide in quirks mode. The service worker caches the page as served,
   so the offline copy has the same head. `cf.js` also adds the viewport meta when it is missing.
 - **Headers.** The page: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
-  `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` (only that: a
-  fuller CSP would need care with the page's inline styles) and a `Permissions-Policy` that
+  `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` (enforced), a fuller
+  policy as `Content-Security-Policy-Report-Only` (`script-src 'self'; style-src 'self'
+  'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://api.deepgram.com; frame-src
+  'self'; media-src 'self'; font-src 'self'; frame-ancestors 'none'`: the browser blocks nothing and
+  names in its console what it would block; every route loads with no violation in Chromium, so it
+  can be enforced once the browser checks have run clean on the real devices) and a `Permissions-Policy` that
   turns off camera, geolocation and payment and allows the microphone for this origin only (the
   table iPad's transcriber, GM.md "Listening"). Every API answer: `Cache-Control: no-store`,
   `nosniff`, `Referrer-Policy: same-origin`, `X-B68-Build: <build>`. Other files keep the asset
@@ -51,7 +55,9 @@ Ownership: **backend** owns `worker/`, `functions/`, `schema.sql`, `migrations/`
 Cloudflare Access protects every path of the site (the page and `/api/*`). Access adds the
 `Cf-Access-Jwt-Assertion` header (an RS256 JWT) to each request. The API verifies it against
 the team's JWKS at `https://<ACCESS_TEAM>.cloudflareaccess.com/cdn-cgi/access/certs`
-(cached in memory for an hour) and requires `aud` to contain `ACCESS_AUD`, `iss` to be
+(cached in memory for an hour; when a refresh fails the last good keys go on verifying for at
+most a day past their hour, retried every 10 s, and never for a key id they do not hold) and
+requires `aud` to contain `ACCESS_AUD`, `iss` to be
 `https://<ACCESS_TEAM>.cloudflareaccess.com`, and `exp` in the future. Claims used: `email`
 (the user id everywhere), `sub`, and `name` when present. A request with an invalid or
 missing token is `401 {"error":"not signed in","reason":"..."}`. `reason` is a short fixed phrase from the token check (`no token`,
