@@ -248,6 +248,38 @@ try {
   check(await G.page.$eval('#gm-scene', (b) => { const r = b.getBoundingClientRect(); return [...b.querySelectorAll('.gm-chip')].every((c) => c.getBoundingClientRect().bottom <= r.bottom + 1); }), 'with the column overflowing, the Scene line still holds all its chips (no clipped button)');
   await shot(G.page, '01c-gm-situation');
 
+  /* ---- wave 2: the generators' fields on the card: the spend sentence under the lead, the coaching under "Why", the position on the pin ---- */
+  {
+    await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    const sceneOpen = () => G.page.$eval('#gm-root', (r) => r.classList.contains('scene-open'));
+    if (!(await sceneOpen())) await G.page.click('#gm-scene');
+    await G.page.fill('#gm-c-threat', 'the dog is waking up');
+    await until(async () => ((await gmState()).con || {}).live && (await gmState()).con.live.threat === 'the dog is waking up', 5000);
+    if (await sceneOpen()) await G.page.click('#gm-scene');
+    check(!(await sceneOpen()), 'one tap on the Scene line folds the controls right after typing in Threat (the blur redraws the chips: that tap used to be lost)');
+    let spend = '';
+    for (let i = 0; i < 6 && !spend; i++) { await G.page.keyboard.press('2'); await G.page.waitForSelector('#gm-card .gm-lead'); spend = await G.page.$eval('#gm-card .gm-lead', (l) => (l.querySelector('.gm-lead-s') || { textContent: '' }).textContent.trim()).catch(() => ''); }
+    check(/the dog is waking up/.test(spend), 'a 4/5 with a threat: the spend sentence sits under the lead line (' + spend + ')');
+    check(await G.page.$eval('#gm-card .gm-lead', (l) => { const t = l.querySelector('.gm-lead-t').getBoundingClientRect(), s = l.querySelector('.gm-lead-s').getBoundingClientRect(); return s.top >= t.bottom - 1 && s.height > 10; }), 'and it is drawn right under it');
+    const whys = await G.page.$$eval('#gm-card details.gm-why', (ds) => ds.map((d) => d.open));
+    check(whys.length >= 1 && whys.every((o) => !o), 'the coaching lines are folded under closed "Why" folds (' + whys.length + ')');
+    check(await G.page.$eval('#gm-card .gm-lead .gm-more', (m) => !m.open) && !(await G.page.$('#gm-card .gm-lead .gm-more .gm-want')), 'More starts shut, and does not repeat the lead line');
+    await G.page.click('#gm-card .gm-lead .gm-more > summary');
+    /* a closed <details> keeps its content's layout size in Chromium, so "shown" is checkVisibility() (false while closed) and a real height */
+    const whyShown = async () => G.page.$eval('#gm-card .gm-lead .gm-why-b', (b) => b.checkVisibility() && b.getBoundingClientRect().height > 20).catch(() => false);
+    check(!(await whyShown()), 'a closed Why shows none of its text');
+    await G.page.click('#gm-card .gm-lead .gm-why > summary');
+    check(await whyShown(), 'a tap on Why opens the coaching');
+    const coachWords = (await G.page.$eval('#gm-card .gm-lead .gm-why-b', (b) => b.textContent.replace(/\s+/g, ' ').trim())).slice(0, 30);
+    await G.page.evaluate(() => { document.querySelector('.gm-console').scrollTop = document.querySelector('#gm-card').offsetTop - 70; });
+    await sleep(300);
+    await shot(G.page, 'wave2-situation-why');
+    await G.page.click('#gm-card [data-gm="pin"]');
+    const pin = await until(async () => { const d = await gmState(); const p = Object.values(d.pins || {}); return p.length ? p[p.length - 1] : null; }, 5000);
+    check(!!pin && coachWords.length > 10 && /^A 4\/5 \(risky → .*harm \d/.test(pin.text.split('\n')[0]) && !pin.text.includes(coachWords), 'Pin: the position chip is on the title line, and the coaching is left out (' + (pin ? pin.text.split('\n')[0] : '') + ')');
+    check(await G.page.$eval('#gm-card', (c) => !c.querySelector('.gm-quiet')), 'a current card carries no "redrawn" note');
+  }
+
   /* ---- the location tab and the map ---- */
   await G.page.keyboard.press('b');
   check(await G.page.$eval('#gm-loc', (p) => !p.hidden), 'B shows the Location tab');
@@ -256,6 +288,17 @@ try {
   check((await G.page.$$('#gm-loc .gm-secret')).length > 0 && !/GM only/i.test(await G.page.textContent('#gm-loc .gm-loccard')) && (await G.page.$$('#gm-loc .gm-badge')).length === 0, 'location: no "GM only" badges (the whole page is GM only); the orange rule stays');
   check((await G.page.$$eval('#gm-loc .gm-gband.shown .gm-seen', (xs) => xs.length)) === 1 && (await G.page.$$eval('#gm-loc .gm-gband:not(.shown) .gm-seen', (xs) => xs.length)) === 0 && (await G.page.$$eval('#gm-loc .gm-lfold[data-fold="band-public"] summary .gm-seen', (xs) => xs.length)) === 1, 'a "Players see" chip marks the public band and its fold, nothing else yet');
   check(!(await G.page.$('#gm-loc .gm-say .gm-seen')), 'the Say box carries no "Players see" chip until it has gone to the iPad');
+  {   /* wave 2: the plan under Say (GM only), a Rule row, Flags only the rare ones */
+    const gl = await G.page.evaluate((pk) => { const st = window.B68GmPage._state(), g = window.B68GmLocation.glance(st.locRoll, pk, ['public']); return { plan: g.plan, rule: g.rule, flags: g.flags }; }, { T: PACK.parts.location.T, extra: PACK.parts.location.extra });
+    check(!!gl.plan && await G.page.$eval('#gm-loc .gm-plan', (p, t) => p.textContent.replace(/\s+/g, ' ').includes(t) && /Plan/.test(p.querySelector('.gm-lab').textContent) && !p.closest('.gm-say'), gl.plan), 'location: a Plan line under Say, outside the Say box: ' + gl.plan);
+    check(await G.page.$eval('#gm-loc .gm-glance', (g) => { const say = g.querySelector('.gm-say').getBoundingClientRect(), plan = g.querySelector('.gm-plan').getBoundingClientRect(); return plan.top >= say.bottom - 1; }), 'and it is drawn under the Say box');
+    const dts = await G.page.$$eval('#gm-loc .gm-glance-dl dt', (xs) => xs.map((x) => x.textContent));
+    check(dts.includes('Rule') === !!gl.rule && dts.includes('Flags') === (gl.flags.length > 0) && !/ring-skip|District rule/.test(await G.page.textContent('#gm-loc .gm-glance')), 'a Rule row when the district has a rule (' + !!gl.rule + '); Flags only the rare ones (' + gl.flags.length + ')');
+    await G.page.evaluate(() => { const p = document.querySelector('#gm-loc'); p.scrollTop = 0; document.querySelector('.gm-console').scrollTop = document.querySelector('#gm-card').offsetTop - 70; });
+    await G.page.waitForFunction(() => !document.getElementById('toastMsg').textContent && !document.getElementById('toastErr').textContent, null, { timeout: 9000 }).catch(() => {});
+    await sleep(200);
+    await shot(G.page, 'wave2-location-plan');
+  }
   check(await G.page.$eval('[data-gm="ipad"]', (b) => b.disabled), 'map: Show on iPad is off on the GM layer');
   check(!!(await G.page.$('#gm-map svg')) && await G.page.$eval('#gm-map', (m) => m.getAttribute('data-layer') === 'gm') && await G.page.$eval('#gm-m-view', (s) => s.value === 'rings'), 'a roll draws the GM-layer rings map at once');
   check(await G.page.$eval('#gm-m-view', (s) => !!s.closest('details.gm-mapopts') && !s.closest('details').open) && await G.page.$eval('#gm-map', (m) => m.compareDocumentPosition(document.querySelector('.gm-mapopts')) & Node.DOCUMENT_POSITION_FOLLOWING) && await G.page.$eval('.gm-map-ctl [data-gm="draw"]', (b) => !b.closest('details')), 'View and Theme fold under the map; Layer, Reveal and Draw stay above it');
@@ -507,6 +550,92 @@ try {
     const keys = await up.evaluate(() => new Promise((res) => { const r = indexedDB.open('b68-gm'); r.onsuccess = () => { try { const q = r.result.transaction('kv').objectStore('kv').getAllKeys(); q.onsuccess = () => res(q.result); } catch (e) { res([]); } }; r.onerror = () => res(null); }));
     check(Array.isArray(keys) && keys.length === 1, '/api/me failing (who is this?): the cached pack is left alone ' + JSON.stringify(keys));
     await U.close();
+  }
+
+  /* ---- E5: the Access session ends mid-session: the saver holds, the bar says so, the notes are kept and resent once after a reload ---- */
+  {
+    const SO = 'Signed out: reload to sign in. Your notes are kept on this device.';
+    const S5 = await open(GM, '#gm');
+    await S5.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
+    await S5.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    let hits = 0;
+    await S5.page.route('**/api/gm/state', (r) => { if (r.request().method() !== 'PATCH') return r.continue(); hits++; return r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'unauthorized', reason: 'expired' }) }); });
+    await S5.page.keyboard.press('3');
+    await S5.page.waitForSelector('#gm-card .gm-lead');
+    check(await S5.page.waitForFunction((m) => { const b = document.getElementById('gm-signed'); return b && !b.hidden && b.textContent === m && getComputedStyle(b).display !== 'none'; }, SO, { timeout: 8000 }).then(() => true, () => false), 'signed out mid-session: the bar says "' + SO + '"');
+    check(await S5.page.$eval('.gm-save', (s) => s.textContent === 'Signed out' && s.classList.contains('bad')) && await S5.page.$eval('.gm-bar', (b) => b.classList.contains('out') && b.getBoundingClientRect().bottom <= 120), 'and the bar\'s status reads Signed out, the message on a second row of the bar');
+    await S5.page.keyboard.press('2'); await S5.page.waitForSelector('#gm-card .gm-lead');
+    const card2 = (await S5.page.textContent('#gm-card')).replace(/\s+/g, ' ');
+    await S5.page.keyboard.press('p'); await S5.page.keyboard.type('Written while signed out'); await S5.page.keyboard.press('Enter'); await S5.page.keyboard.press('Escape');
+    await sleep(1500);
+    check(hits === 1, 'only the first request met the 401: later changes are held, not sent (' + hits + ')');
+    const sticky5 = await S5.page.evaluate(() => JSON.parse(localStorage.getItem('b68.gm.sticky')));
+    check(!!sticky5.pending && !!sticky5.pending.cards && !!sticky5.pending.cards.situation && Object.values(sticky5.pending.capture || {}).some((e) => e.text === 'Written while signed out') && !sticky5.parked, 'the notes wait on this device as pending (the cards and the capture line), not as a refused patch');
+    check(!Object.values((await gmState()).capture || {}).some((e) => e.text === 'Written while signed out'), 'the server has not seen them');
+    check(/Written while signed out/.test(await S5.page.textContent('#gm-foot')) || /1 filed/.test(await S5.page.textContent('#gm-foot')), 'the page still files it (the capture bar counts it)');
+    await shot(S5.page, 'wave2-signed-out');
+    await S5.page.unroute('**/api/gm/state');
+    await S5.page.reload(); await S5.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
+    const sent5 = await until(async () => { const d = await gmState(); return Object.values(d.capture || {}).some((e) => e.text === 'Written while signed out') && d.cards.situation && d.cards.situation.hid === sticky5.pending.cards.situation.hid ? d : null; }, 8000);
+    check(!!sent5, 'after a reload the pending copy goes up once: the line and the card are on the server');
+    check(await S5.page.$eval('#gm-signed', (b) => b.hidden) && (await S5.page.textContent('#gm-card')).replace(/\s+/g, ' ') === card2, 'the bar is quiet again and the page shows the card rolled while signed out');
+    await sleep(1200);
+    check(await S5.page.evaluate(() => JSON.parse(localStorage.getItem('b68.gm.sticky')).pending === undefined), 'the sticky copy no longer holds it');
+    check(Object.values((await gmState()).capture || {}).filter((e) => e.text === 'Written while signed out').length === 1, 'and it was filed once, not twice');
+    await S5.ctx.close();
+  }
+
+  /* ---- E18: capture is budgeted by bytes: earlier sessions' oldest lines make room, one toast says so; a session that alone fills the budget
+          files no more text; a roll is never refused ---- */
+  {
+    const lines = (session, n, from) => { const m = {}; for (let i = 0; i < n; i++) { const id = 's' + session + '_' + i; m[id] = { id, bucket: 'm', text: ('Line ' + id + ' ').padEnd(470, 'x'), at: new Date(Date.UTC(2026, 8, 1) + (from + i) * 60000).toISOString(), s: session }; } return m; };
+    const capBytes = (c) => Buffer.byteLength(JSON.stringify(c));
+    const toastErr = (E, re) => E.page.waitForFunction((src) => new RegExp(src).test(document.getElementById('toastErr').textContent), re.source, { timeout: 8000 }).then(() => true, () => false);
+    const mine = Object.values((await gmState()).capture || {}).filter((e) => e.s === 4).length;
+    check((await api('PATCH', '/gm/state', GM, { capture: lines(3, 300, 0) })).status === 200 && capBytes((await gmState()).capture) > 160 * 1024, 'server: 300 capture lines from session 3 (over 160 KiB) are stored beside this session\'s ' + mine);
+    const E = await open(GM, '#gm');
+    await E.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
+    await E.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await E.page.keyboard.press('p'); await E.page.keyboard.type('Session four, past the budget'); await E.page.keyboard.press('Enter'); await E.page.keyboard.press('Escape');
+    check(await toastErr(E, /Dropped \d+ old capture lines? from earlier sessions.*npm run gm:after files them into the vault/), 'a toast says how many earlier-session lines were dropped and that npm run gm:after files them into the vault: ' + (await E.page.textContent('#toastErr')));
+    const droppedM = /Dropped (\d+)/.exec(await E.page.textContent('#toastErr')), dropped = droppedM ? +droppedM[1] : -1;
+    const st = await until(async () => { const d = await gmState(); const c = d.capture || {}; return Object.values(c).some((e) => e.text === 'Session four, past the budget') ? d : null; }, 8000);
+    const left = st ? st.capture : {};
+    check(!!st && capBytes(left) <= 128 * 1024 + 200 && !left.s3_0 && !!left.s3_299 && Object.keys(left).filter((k) => /^s3_/.test(k)).length === 300 - dropped, 'server: the capture is back under 128 KiB, the oldest lines of session 3 went (' + dropped + '), the newest stayed');
+    check(Object.values(left).filter((e) => e.s === 4).length === mine + 1, 'and every line of this session is still there (' + (mine + 1) + ')');
+    await E.page.keyboard.press('2'); await E.page.waitForSelector('#gm-card .gm-lead');
+    check(!!(await until(async () => { const d = await gmState(); return d.cards.situation && d.cards.situation.situation === 'fourfive' ? d : null; }, 8000)) && !(await E.page.textContent('#toastErr')).includes('notes are full'), 'a roll is taken and saved');
+    // this session alone over the budget: new text is refused (clear message), rolls still go
+    await api('PATCH', '/gm/state', GM, { capture: null });
+    check((await api('PATCH', '/gm/state', GM, { capture: lines(4, 300, 0) })).status === 200, 'server: now this session alone has 300 lines');
+    await E.page.reload(); await E.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
+    await E.page.keyboard.press('p'); await E.page.keyboard.type('One more line'); await E.page.keyboard.press('Enter'); await E.page.keyboard.press('Escape');
+    check(await toastErr(E, /Tonight.s capture is full.*Export tonight.s note.*Rolls still work/), 'this session alone over the budget: "Tonight’s capture is full … Rolls still work."');
+    const before = (await gmState()).cards.situation;
+    await E.page.keyboard.press('3'); await E.page.waitForSelector('#gm-card .gm-lead');
+    const after = await until(async () => { const d = await gmState(); return d.cards.situation && d.cards.situation.hid !== (before && before.hid) ? d : null; }, 8000);
+    check(!!after && !Object.values(after.capture || {}).some((e) => e.text === 'One more line'), 'the line was not filed, and the roll was saved');
+    await api('PATCH', '/gm/state', GM, { capture: null });
+    await E.ctx.close();
+  }
+
+  /* ---- the pack check: a pack file that lacks tables is a warning (the modules' own check(T)), never an error; the upload stays on ---- */
+  {
+    const sparse = JSON.parse(JSON.stringify(PACK)); delete sparse.parts.console.T.spend; delete sparse.parts.location.T.rumour;
+    const sparseFile = path.join(stateDir, 'sparse-pack.json'); writeFileSync(sparseFile, JSON.stringify(sparse));
+    const U = await open(GM, '#gm');
+    await U.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
+    check(await U.page.$eval('#gm-menu-warn', (b) => b.hidden && b.textContent === ''), 'a complete pack: the Menu has no Pack check');
+    await U.page.click('[data-gm="menu"]'); await U.page.click('.gm-menu-list [data-gm="update"]');
+    await U.page.setInputFiles('#gm-file', sparseFile);
+    await U.page.waitForSelector('#gm-prev table', { timeout: 10000 });
+    const w = await U.page.$eval('#gm-prev .gm-warns', (b) => ({ text: b.textContent, cls: b.className })).catch(() => null);
+    check(!!w && /console/.test(w.text) && /spend/.test(w.text) && /location/.test(w.text) && /rumour/.test(w.text) && /warning, not an error/.test(w.text), 'Update pack with a sparse file: a warning lists the missing tables by part (' + (w ? w.text.slice(0, 120) : 'none') + ')');
+    check(!!w && /\bwarn\b/.test(w.cls) && !/\bbad\b/.test(w.cls) && !(await U.page.$('#gm-prev .gm-errs')) && await U.page.$eval('[data-gm="upload"]', (b) => !b.disabled && !b.classList.contains('bad')), 'it is a warning (not an error list), and Upload stays on');
+    await shot(U.page, 'wave2-pack-warning');
+    await U.page.click('[data-gm="cancel-import"]');
+    check(await U.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 10000 }).then(() => true, () => false), 'Cancel: back to the console on the pack the page has');
+    await U.ctx.close();
   }
 
   /* ---- the display name: "Change name" under the Home greeting ---- */

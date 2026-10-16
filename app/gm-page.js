@@ -16,7 +16,9 @@
    The GM state document (GET/PATCH /api/gm/state) holds the live controls, the current card per tool as replay info
    ({seed, ui, mem-before}, never the card), the last five rolls per tool, pins, capture and the console's bargains;
    patches are maps (null deletes), debounced 800 ms. `b68.gm.sticky` in localStorage mirrors the live controls and the
-   current cards (replay info only) so a reload draws at once. Nothing from capture is written to the campaign log.
+   current cards (replay info only) so a reload draws at once, and keeps two kinds of change that have not gone: `parked` (a patch
+   the server refused: never resent) and `pending` (what could not be sent because the Access session ended: sent once on the next
+   open). Capture has a byte budget of its own; a roll is never refused for it. Nothing from capture is written to the campaign log.
 
    Safety. Pack text and cards reach the page through B68Markdown.render (which escapes all HTML) or esc(); there is no
    eval. Only a player-layer map render, made here, can be sent to the display (`gate`, checks/runtime/gm-nosecrets
@@ -33,7 +35,8 @@
      Pure helpers (no DOM)
      ===================================================================================================================== */
   var P = {};
-  var LIMITS = P.LIMITS = { hist: 5, pins: 50, capture: 400, captureText: 500, stateSoft: 240 * 1024, stateCap: 256 * 1024, debounce: 800, staleDays: 3, partBytes: 900 * 1024, parts: 12 };
+  /* captureBytes: what the capture lines may take of the state document (E18), well under the soft cap so a roll always has room */
+  var LIMITS = P.LIMITS = { hist: 5, pins: 50, capture: 400, captureText: 500, captureBytes: 128 * 1024, stateSoft: 240 * 1024, stateCap: 256 * 1024, debounce: 800, staleDays: 3, partBytes: 900 * 1024, parts: 12 };
   var BANDS = P.BANDS = ['public', 'working', 'controlled', 'secure'];
   var BUCKETS = P.BUCKETS = [
     { k: 'n', label: 'Name', head: 'Names', key: 'P' },
@@ -75,7 +78,15 @@
     });
     return out;
   }
-  P.applyPatch = applyPatch; P.mergePatch = mergePatch;
+  /* the patch that makes `old` become exactly `now` under the server's merge: now's values, and null for every key only `old` has
+     (a plain merge would keep them: a stored card that was a table roll (phys) would stay one under an app roll's seed) */
+  function replacePatch(old, now) {
+    var o = isObj(old) ? old : {}, n = isObj(now) ? now : {}, out = {};
+    Object.keys(o).forEach(function (k) { if (!(k in n)) out[k] = null; });
+    Object.keys(n).forEach(function (k) { out[k] = isObj(n[k]) && isObj(o[k]) ? replacePatch(o[k], n[k]) : clone(n[k]); });
+    return out;
+  }
+  P.applyPatch = applyPatch; P.mergePatch = mergePatch; P.replacePatch = replacePatch;
 
   /* entries of a map { id: { at } } newest first */
   function newest(map) {
@@ -189,10 +200,29 @@
 
   /* ---------- console replay: a card is redrawn with the bargains and callbacks as they were when it was rolled ---------- */
   function conSnapshot(con) { var c = isObj(con) ? con : {}; return JSON.stringify({ owed: c.owed || {}, struck: c.struck || {}, used: c.used || {} }); }
+  /* What an Earlier chip says (B15): the module's own label, with the NPC a Someone card is about up front (the Face, the Contact,
+     or the NPC a reaction is for) when the label lacks the name, and a Devil's Bargain without its leading bold "Want +1d?" token. */
+  function earlierLabel(res) {
+    var m = res && res.meta || {}, lead = res && res.sections && res.sections[0], label = str(m.label);
+    if (!label) return label;
+    var kind = lead ? lead.id : m.id, first = ((lead ? lead.lines : res && res.lines) || [])[0];
+    if (kind === 'devilsBargain' && first && first.kind !== 'grid') {
+      var rest = plainMd(str(first.md).replace(/^\*\*[^*]+\*\*\s*/, ''));
+      if (rest) return str(m.title) + ': ' + shortLabel(rest, 44);
+    }
+    var who = kind === 'face' ? m.face && m.face.name : kind === 'contact' ? m.contact && m.contact.name : kind === 'reaction' ? m.reaction && m.reaction.npc : '';
+    who = str(who).trim();
+    if (who && label.toLowerCase().indexOf(who.toLowerCase()) < 0) {
+      var i = label.indexOf(': ');
+      label = i < 0 ? who + ' — ' + label : label.slice(0, i + 2) + who + ' — ' + label.slice(i + 2);
+    }
+    return label;
+  }
+  P.earlierLabel = earlierLabel;
   /* the history / current-card entry for a console roll: replay info only, never the card */
   function consoleEntry(res, con) {
     var rp = res.replay;
-    return { id: rp.id, seed: rp.seed, ui: rp.ui, mem: JSON.stringify(rp.mem), con: conSnapshot(con), label: str(res.meta && res.meta.label), at: nowIso() };
+    return { id: rp.id, seed: rp.seed, ui: rp.ui, mem: JSON.stringify(rp.mem), con: conSnapshot(con), label: earlierLabel(res), at: nowIso() };
   }
   /* redraw an entry: its own snapshot of the console state (entries from before snapshots use `fallback`), its own memory */
   function replayConsoleEntry(C, T, campaign, e, fallback) {
@@ -208,32 +238,43 @@
   function bytes(o) { var s; try { s = typeof o === 'string' ? o : JSON.stringify(o); } catch (e) { return 0; } return bytesOf(s || ''); }
   P.bytes = bytes;
   /* Is it worth retrying a failed write? A network error, a conflict (409), a rate limit (429) or a server error (5xx) is;
-     any other 4xx (malformed, too large, forbidden) will fail the same way again. */
+     any other 4xx (malformed, too large, forbidden) will fail the same way again. A 401 is neither: see signedOut. */
   function retryable(e) { var s = e && e.status; return !s || s === 409 || s === 429 || s >= 500; }
-  P.retryable = retryable;
+  /* The Cloudflare Access session ended: a 401, or the adapter's own signed-out error (code 'signed_out', which it gives to every call
+     after the first 401). Nothing sent will work until the page is reloaded and signed in again. */
+  function signedOut(e) { return !!e && (e.status === 401 || e.code === 'signed_out'); }
+  P.retryable = retryable; P.signedOut = signedOut;
   /* The write queue for one page session. add() folds a patch into the pending one and saves after `debounce` ms; one
      write is in flight at a time, and whatever was added meanwhile goes as soon as it lands (even after the page closed:
      the session flushes itself, it does not look at whether the page is still open). A retryable failure puts the patch
      back and retries with backoff; any other is parked (kept for the sticky copy, never resent) so later patches still
-     save. o = { send(patch) -> Promise<{ doc, updatedAt }>, beacon?(patch) -> Promise, saved(r, pendingAfter),
+     save. A signed-out failure (signedOut) is neither: the saver goes on HOLD (`hold`): the patch goes back to pending, nothing more is
+     sent (not by flush, not by the beacon), no retry is scheduled, and later patches keep merging into the pending copy.
+     unsent() is that copy (the write in flight too): the page keeps it in the sticky copy and resends it on the next open.
+     o = { send(patch) -> Promise<{ doc, updatedAt }>, beacon?(patch) -> Promise, saved(r, pendingAfter),
      changed(state), delay(fn, ms) -> handle, cancel(handle), debounce } */
   function makeSaver(o) {
-    var st = { pending: null, writing: false, parked: null, error: '', retryMs: 0, timer: null };
+    var st = { pending: null, flying: [], writing: false, parked: null, hold: false, error: '', retryMs: 0, timer: null };
     function changed() { if (o.changed) { try { o.changed(st); } catch (e) {} } }
     function schedule(ms) { if (st.timer !== null) o.cancel(st.timer); st.timer = o.delay(function () { st.timer = null; flush(); }, ms); }
-    function add(p) { st.pending = st.pending ? mergePatch(st.pending, p) : clone(p); schedule(o.debounce); changed(); }
+    function add(p) { st.pending = st.pending ? mergePatch(st.pending, p) : clone(p); if (!st.hold) schedule(o.debounce); changed(); }
+    function holdOn(p) { st.pending = st.pending ? mergePatch(p, st.pending) : p; st.hold = true; st.error = 'signed out'; }
+    function landed(p) { var i = st.flying.indexOf(p); if (i >= 0) st.flying.splice(i, 1); }
+    /* what has not gone: the writes in flight, then the pending patch, as one patch */
+    function unsent() { var all = st.flying.concat(st.pending ? [st.pending] : []); return all.length ? all.reduce(function (a, b) { return a ? mergePatch(a, b) : clone(b); }, null) : null; }
     function flush() {
       if (st.timer !== null) { o.cancel(st.timer); st.timer = null; }
-      if (st.writing || !st.pending) return Promise.resolve();
-      var p = st.pending; st.pending = null; st.writing = true; changed();
+      if (st.hold || st.writing || !st.pending) return Promise.resolve();
+      var p = st.pending; st.pending = null; st.flying.push(p); st.writing = true; changed();
       return Promise.resolve().then(function () { return o.send(p); }).then(function (r) {
-        st.writing = false; st.retryMs = 0; if (!st.parked) st.error = '';
+        st.writing = false; landed(p); st.retryMs = 0; if (!st.parked) st.error = '';
         if (o.saved) { try { o.saved(r, st.pending); } catch (e) {} }
         changed();
         if (st.pending) return flush();
       }, function (e) {
-        st.writing = false;
-        if (retryable(e)) {
+        st.writing = false; landed(p);
+        if (signedOut(e)) holdOn(p);
+        else if (retryable(e)) {
           st.pending = st.pending ? mergePatch(p, st.pending) : p;
           st.retryMs = Math.min(30000, st.retryMs ? st.retryMs * 2 : 2500);
           st.error = 'retrying'; schedule(st.retryMs);
@@ -248,12 +289,13 @@
     /* the page is going away: send what is pending now, with keepalive, even if a write is in flight */
     function beacon() {
       if (st.timer !== null) { o.cancel(st.timer); st.timer = null; }
+      if (st.hold) return Promise.resolve();
       if (!st.pending || !o.beacon) return flush();
-      var p = st.pending; st.pending = null;
-      return Promise.resolve().then(function () { return o.beacon(p); }).then(function (r) { if (r && o.saved) { try { o.saved(r, st.pending); } catch (e) {} } },
-        function () { st.pending = st.pending ? mergePatch(p, st.pending) : p; });
+      var p = st.pending; st.pending = null; st.flying.push(p);
+      return Promise.resolve().then(function () { return o.beacon(p); }).then(function (r) { landed(p); if (r && o.saved) { try { o.saved(r, st.pending); } catch (e) {} } changed(); },
+        function (e) { landed(p); if (signedOut(e)) { holdOn(p); changed(); } else st.pending = st.pending ? mergePatch(p, st.pending) : p; });
     }
-    return { add: add, flush: flush, beacon: beacon, state: function () { return st; } };
+    return { add: add, flush: flush, beacon: beacon, unsent: unsent, state: function () { return st; } };
   }
   P.makeSaver = makeSaver;
   /* the display gate: an svg goes out only if playerDisplay made it; every other kind passes */
@@ -554,6 +596,29 @@
   }
   P.packLosses = packLosses;
 
+  /* The tables a pack lacks, by each module's own check(T) (console, location, npc, scenes, engagement), for the preview and the load to
+     show as WARNINGS (never errors: the upload still works, and every roller falls back to a neutral word for a missing table).
+     mods: { B68GmConsole, ... }; parts: { <part>: body }. -> [{ part, missing: [path] }]. A part the pack lacks, a module that is not
+     loaded and a check that throws say nothing. */
+  var CHECKED = [['console', 'B68GmConsole'], ['location', 'B68GmLocation'], ['npc', 'B68GmNpc'], ['scenes', 'B68GmScenes'], ['engagement', 'B68GmEngagement']];
+  function packWarnings(mods, parts) {
+    var out = [];
+    CHECKED.forEach(function (c) {
+      var M = mods && mods[c[1]], body = parts && parts[c[0]];
+      if (!M || typeof M.check !== 'function' || !isObj(body)) return;
+      var miss; try { miss = M.check(body.T); } catch (e) { return; }
+      miss = (Array.isArray(miss) ? miss : []).map(str).filter(Boolean);
+      if (miss.length) out.push({ part: c[0], missing: miss });
+    });
+    return out;
+  }
+  /* "console: district, spend.Harm (+3 more)", one line per part, for a toast or a list */
+  function packWarnLines(warns, n) {
+    var k = n || 6;
+    return (warns || []).map(function (w) { return w.part + ': ' + w.missing.slice(0, k).join(', ') + (w.missing.length > k ? ' (+' + (w.missing.length - k) + ' more)' : ''); });
+  }
+  P.packWarnings = packWarnings; P.packWarnLines = packWarnLines;
+
   /* ---------- Situations: the session on a capture, and the composed card ---------- */
   /* the session number the campaign document holds (a whole number >= 1), or undefined */
   function sessionOf(doc) {
@@ -569,32 +634,75 @@
     return e;
   }
   P.captureEntry = captureEntry;
+  /* ---------- capture within a byte budget (E18): capture never blocks a roll ----------
+     Capture used to grow to the state document's soft cap, after which rolls were refused mid-session. Now capture has its own byte
+     budget (LIMITS.captureBytes). Over it, the oldest lines of EARLIER sessions (`s` a number below this session's) go first, oldest
+     session first; this session's lines never go, nor a line with no session (nothing shows it is earlier). Only when this session
+     alone is over the budget is new capture text refused. A roll is not capture: it is never refused for this. */
+  function captureSize(id, e) { return bytes(e) + bytesOf(id) + 6; }       /* a line as the document counts it: its JSON, its key, the punctuation */
+  function earlierLines(map, session) {
+    if (typeof session !== 'number') return [];
+    var m = isObj(map) ? map : {};
+    return Object.keys(m).filter(function (k) { return isObj(m[k]) && typeof m[k].s === 'number' && m[k].s < session; })
+      .sort(function (a, b) { var x = m[a], y = m[b]; return x.s - y.s || (str(x.at) < str(y.at) ? -1 : str(x.at) > str(y.at) ? 1 : a < b ? -1 : 1); });
+  }
+  /* the ids of earlier sessions' lines to drop to free `need` bytes (all of them when that is not enough) */
+  function capShed(map, need, session) {
+    var out = [], freed = 0;
+    earlierLines(map, session).forEach(function (k) { if (freed < need) { out.push(k); freed += captureSize(k, map[k]); } });
+    return out;
+  }
+  /* The patch that files one line: the 400-line cap as before, then the byte budget. -> { patch, dropped: [id], refused, bytes }
+     (`patch` null when refused: this session alone is over the budget, so the line is not filed and nothing is dropped for it) */
+  function capturePlan(map, id, entry, session, max) {
+    var budget = max == null ? LIMITS.captureBytes : max, p = addCapped(map, id, entry, LIMITS.capture), cur = Object.assign({}, isObj(map) ? map : {}), dropped = [];
+    cur[id] = entry;
+    Object.keys(p).forEach(function (k) { if (p[k] === null) delete cur[k]; });
+    var total = Object.keys(cur).reduce(function (n, k) { return n + captureSize(k, cur[k]); }, 0);
+    if (total > budget) {
+      var list = earlierLines(cur, session);                               /* the new line is this session's: never in it */
+      for (var i = 0; i < list.length && total > budget; i++) { total -= captureSize(list[i], cur[list[i]]); p[list[i]] = null; dropped.push(list[i]); }
+    }
+    return total > budget ? { patch: null, dropped: [], refused: true, bytes: total } : { patch: p, dropped: dropped, refused: false, bytes: total };
+  }
+  P.capturePlan = capturePlan; P.capShed = capShed; P.captureSize = captureSize;
   /* the history / current-card entry for a composed card (id 'situation', never 'console'): replay info only */
   function situationEntry(res, con) {
     var rp = res.replay;
-    return { id: rp.id, situation: rp.situation, seed: rp.seed, ui: rp.ui, mem: JSON.stringify(rp.mem), con: conSnapshot(con), label: str(res.meta && res.meta.label), at: nowIso() };
+    return { id: rp.id, situation: rp.situation, seed: rp.seed, ui: rp.ui, mem: JSON.stringify(rp.mem), con: conSnapshot(con), composeVersion: rp.composeVersion, label: earlierLabel(res), at: nowIso() };
   }
+  /* an entry stored before the composition was versioned has no composeVersion: the console reads that as version 1 and says it
+     redrew the card (meta.recomposed), so the card never silently changes */
   function replaySituationEntry(C, T, campaign, e, fallback) {
     if (!C || !T || !isObj(e) || e.id !== 'situation') return null;
     var mem = {}, state = fallback || {};
     try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
     if (typeof e.con === 'string') { try { state = JSON.parse(e.con); } catch (x) {} }
-    try { return C.create({ T: T, campaign: campaign || {}, state: state, mem: {} }).replay({ id: 'situation', situation: e.situation, seed: e.seed, ui: e.ui || {}, mem: mem }); } catch (x) { return null; }
+    try { return C.create({ T: T, campaign: campaign || {}, state: state, mem: {} }).replay({ id: 'situation', situation: e.situation, seed: e.seed, ui: e.ui || {}, mem: mem, composeVersion: e.composeVersion }); } catch (x) { return null; }
   }
   P.situationEntry = situationEntry; P.replaySituationEntry = replaySituationEntry;
-  /* a composed card as plain text (Copy, Pin, "L files last roll") */
+  /* a composed card as plain text (Copy, Pin, "L files last roll"): the position chip on the title line, no coaching lines, and a
+     lead's first line only for what the lead does not already say (the spend sentence under it) */
   function situationPlain(res) {
-    var m = res && res.meta || {}, out = [str(m.title) + (m.sub ? ' (' + str(m.sub) + ')' : '')];
+    var m = res && res.meta || {}, chip = m.chips && m.chips[0] ? str(m.chips[0]) : '', sub = chip || str(m.sub);
+    var out = [str(m.title) + (sub ? ' (' + sub + ')' : '')];
     (res && res.sections || []).forEach(function (s, i) {
       out.push((i ? 'Or ' : '') + str(s.title) + ': ' + plainMd(s.lead));
-      (s.lines || []).forEach(function (l) {
-        if (l.kind === 'grid') (l.rows || []).forEach(function (r) { out.push('  ' + str(r.k) + ': ' + plainMd(r.md)); });
-        else out.push('  ' + plainMd(l.md) + (l.small ? ' ' + plainMd(l.small) : ''));
+      (s.lines || []).forEach(function (l, j) {
+        if (l.coach) return;
+        if (l.kind === 'grid') { (l.rows || []).forEach(function (r) { out.push('  ' + str(r.k) + ': ' + plainMd(r.md)); }); return; }
+        if (j === 0 && leadIsLine(s)) { if (l.small) out.push('  ' + plainMd(l.small)); return; }
+        out.push('  ' + plainMd(l.md) + (l.small ? ' ' + plainMd(l.small) : ''));
       });
     });
     return out.join('\n');
   }
-  P.situationPlain = situationPlain;
+  /* the section's first line is exactly its lead (not a cut-down version of it): the card shows the lead once */
+  function leadIsLine(s) {
+    var l = s && s.lines && s.lines[0];
+    return !!l && l.kind !== 'grid' && plainMd(l.md) === plainMd(s.lead);
+  }
+  P.situationPlain = situationPlain; P.leadIsLine = leadIsLine;
   /* a roll's one-line text for "L" (the title and the lead) */
   function lastText(res) {
     var m = res && res.meta || {};
@@ -623,22 +731,63 @@
     return '<article class="gm-card" data-tool="console"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>' +
       chipsHtml(m.chips) + linesHtml(res.lines, mdf) + actsHtml(m, 'console') + '</article>';
   }
-  /* The composed card: the LEAD box (big line, chips, its own lines under "More"), then at most three one-line "Or"
-     rows that open to their full section, then ONE merged actions row. */
+  /* The coaching lines of a section ("Say it before the dice...": recurring guidance, flagged `coach` by the console) fold under a
+     closed "Why", so a card reads as the draw and its numbers and the reasons are one tap away. */
+  function whyHtml(lines, mdf) {
+    return lines.length ? '<details class="gm-why"><summary>Why</summary><div class="gm-why-b">' + linesHtml(lines, mdf) + '</div></details>' : '';
+  }
+  function splitCoach(lines) {
+    var plain = [], coach = [];
+    (lines || []).forEach(function (l) { (l && l.coach ? coach : plain).push(l); });
+    return { plain: plain, coach: coach };
+  }
+  /* The composed card: the LEAD box (big line, the spend sentence under it, chips, its own lines under "More"), then at most three
+     one-line "Or" rows that open to their full section, then ONE merged actions row. */
   function situationCardHtml(res, mdf) {
     var m = res.meta || {}, secs = res.sections || [];
     var h = '<article class="gm-card gm-sit" data-tool="situation" data-sit="' + esc(m.situation) + '"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>';
+    if (isObj(m.recomposed)) h += '<p class="gm-quiet" role="note">Redrawn with the current tables</p>';
     if (!secs.length) return h + linesHtml(res.lines, mdf) + actsHtml(m, 'situation') + '</article>';
-    var lead = secs[0];
-    h += '<section class="gm-lead" data-sec="' + esc(lead.id) + '"><p class="gm-lead-k">' + esc(lead.title) + '</p><p class="gm-lead-t">' + esc(lead.lead) + '</p>' + chipsHtml(lead.chips) +
-      ((lead.lines || []).length ? '<details class="gm-more"><summary>More</summary><div class="gm-more-b">' + linesHtml(lead.lines, mdf) + '</div></details>' : '') + '</section>';
+    var lead = secs[0], ll = lead.lines || [], skip = leadIsLine(lead), cut = splitCoach(ll.slice(skip ? 1 : 0));
+    /* the lead's first line IS the lead box (its `small`, a threat's spend sentence, sits under it); a lead cut at 120 characters keeps its full line under More */
+    var small = ll[0] && ll[0].small ? '<div class="gm-lead-s">' + mdf(ll[0].small) + '</div>' : '';
+    if (!skip && ll[0] && ll[0].small) cut.plain = cut.plain.map(function (l) { return l === ll[0] ? Object.assign({}, l, { small: '' }) : l; });
+    var why = whyHtml(cut.coach, mdf);
+    h += '<section class="gm-lead" data-sec="' + esc(lead.id) + '"><p class="gm-lead-k">' + esc(lead.title) + '</p><p class="gm-lead-t">' + esc(lead.lead) + '</p>' + small + chipsHtml(lead.chips) +
+      (cut.plain.length ? '<details class="gm-more"><summary>More</summary><div class="gm-more-b">' + linesHtml(cut.plain, mdf) + why + '</div></details>' : why) + '</section>';
     secs.slice(1, 4).forEach(function (s) {
+      var c = splitCoach(s.lines);
       h += '<details class="gm-or" data-sec="' + esc(s.id) + '"><summary><span class="gm-or-k">Or</span><span class="gm-or-t"><b>' + esc(s.title) + '</b> ' + esc(s.lead) + '</span></summary><div class="gm-or-b">' +
-        (s.sub ? '<p class="gm-sub">' + esc(s.sub) + '</p>' : '') + chipsHtml(s.chips) + linesHtml(s.lines, mdf) + '</div></details>';
+        (s.sub ? '<p class="gm-sub">' + esc(s.sub) + '</p>' : '') + chipsHtml(s.chips) + linesHtml(c.plain, mdf) + whyHtml(c.coach, mdf) + '</div></details>';
     });
     return h + actsHtml(m, 'situation') + '</article>';
   }
   P.linesHtml = linesHtml; P.classicCardHtml = classicCardHtml; P.situationCardHtml = situationCardHtml;
+
+  /* ---------- the engagement roll made with the table's own dice ----------
+     Everyone rolls physical dice. The GM taps the highest die (the LOWEST on a pool at or below 0d, which rolls two and keeps the
+     lowest), or a crit (two 6s, from 2d). This is the card the app's roll gives for that result: the module's own title, modifiers
+     line, position (outcomeOf) and closing line; only the Roll row says the dice were the table's. phys = { best, crit }.
+     M = B68GmEngagement, en = its instance, T = the pack's engagement tables, ui = the controls.
+     -> the roll object (the module's shape, `seed` null, `phys`, `replay` with no seed), or null for a result the pool cannot give
+     (a crit under 2d or without a 6, a die off 1-6). */
+  function engagementPhys(M, en, T, ui, phys) {
+    if (!M || !en || !isObj(T) || !isObj(phys)) return null;
+    var best = +phys.best, crit = !!phys.crit;
+    if (!(best >= 1 && best <= 6) || best !== Math.floor(best)) return null;
+    var base = en.roll(ui, { seed: 0 });      /* the module's own title, subtitle, modifiers and closing line, and the controls as it reads them; its dice are replaced below */
+    if (crit && (base.zero || base.pool < 2 || best !== 6)) return null;
+    var oc = M.outcomeOf(T, { crit: crit, best: best, zero: base.zero }), byId = {};
+    base.lines.forEach(function (l) { byId[l.id] = l; });
+    var rollMd = base.zero ? '0d — rolled 2 at the table, kept the lowest: **' + best + '**'
+      : crit ? 'Rolled at the table: two 6s → **critical**' : 'Rolled at the table: highest die **' + best + '**';
+    var lines = [byId.mods, { kind: 'want', id: 'result', md: '**' + oc.pos + '**  \n' + oc.how }, { kind: 'grid', id: 'roll', rows: [{ k: 'Roll', md: rollMd }] }, byId.cut].filter(Boolean);
+    var all = [base.meta.title, base.meta.sub].concat(lines.map(function (l) { return l.kind === 'grid' ? l.rows.map(function (r) { return r.k + ': ' + r.md; }).join(' ') : l.md; })).map(M.plain);
+    var meta = Object.assign({}, base.meta, { chips: [str(oc.pos).split(' — ')[0]], text: all[2], all: all, result: { pool: base.pool, zero: base.zero, dice: [], crit: crit, best: best, pos: oc.pos } });
+    return { lines: lines, meta: meta, seed: null, pool: base.pool, zero: base.zero, dice: [], crit: crit, best: best, position: oc.pos,
+      phys: { best: best, crit: crit }, replay: { id: 'engagement', phys: { best: best, crit: crit }, ui: base.replay.ui } };
+  }
+  P.engagementPhys = engagementPhys;
 
   if (!W || !W.document) return { _pure: P };
 
@@ -647,6 +796,8 @@
      ===================================================================================================================== */
   var document = W.document;
   var IDB = 'b68-gm', STORE = 'kv', STICKY = 'b68.gm.sticky', PREP_NOTE = 'b68.gm.prepNote', PREP_WIDE = 'b68.gm.prepWide';
+  /* what the bar says when the Access session has ended (the saver is on hold; GM.md "Saving"), and the error a request that meets the sign-in page gets */
+  var SIGNED_OUT_MSG = 'Signed out: reload to sign in. Your notes are kept on this device.', SIGNED_OUT_ERR = 'signed out: reload the page to sign in again';
   /* The app layout (gm.css): the window is the page, a slim top bar in place of the site header, and on a laptop the columns
      scroll on their own with capture at the foot. body.gm-app turns it on while the tools are open; the loading and import
      screens keep the site header. */
@@ -710,11 +861,25 @@
 
   /* ---------- sticky (localStorage): live controls and current cards (replay info only), and any refused patch ---------- */
   function readSticky() { try { var s = JSON.parse(W.localStorage.getItem(STICKY) || 'null'); return isObj(s) && s.v === 1 && s.user === S.me ? s : null; } catch (e) { return null; } }
+  /* `parked` is a patch the server REFUSED (kept, never resent). `pending` is what has not gone because the Access session ended
+     (E5), or was resent after a reload and not yet answered: it is sent once on the next open. They are never the same thing. */
   function writeSticky() {
     if (!S) return;
-    var parked = S.saver ? S.saver.state().parked : null;
+    var st = S.saver ? S.saver.state() : null, parked = st ? st.parked : null, pending = null;
     if (S.carriedParked) parked = parked ? mergePatch(S.carriedParked, parked) : S.carriedParked;
-    try { W.localStorage.setItem(STICKY, JSON.stringify({ v: 1, user: S.me, live: (S.doc.con || {}).live || {}, cards: S.doc.cards || {}, now: isObj(S.doc.now) ? S.doc.now : undefined, parked: parked || undefined, at: nowIso() })); } catch (e) {}
+    if (S.saver && (st.hold || S.resent)) { pending = S.saver.unsent(); if (!pending) S.resent = false; }
+    try { W.localStorage.setItem(STICKY, JSON.stringify({ v: 1, user: S.me, live: (S.doc.con || {}).live || {}, cards: S.doc.cards || {}, now: isObj(S.doc.now) ? S.doc.now : undefined, parked: parked || undefined, pending: pending || undefined, at: nowIso() })); } catch (e) {}
+  }
+  /* a closed session met the sign-out (its write was in flight when the page was left): only its unsent changes go into the sticky copy,
+     never its live controls or cards (a newer session may be open) */
+  function keepPending(me) {
+    try {
+      var u = me.saver && me.saver.unsent(), s = JSON.parse(W.localStorage.getItem(STICKY) || 'null');
+      if (!isObj(s) || s.v !== 1 || s.user !== me.me) { if (!u) return; s = { v: 1, user: me.me, live: {}, cards: {} }; }
+      var carried = isObj(s.pending) ? s.pending : null;
+      s.pending = u ? (carried ? mergePatch(carried, u) : u) : (carried || undefined);
+      W.localStorage.setItem(STICKY, JSON.stringify(s));
+    } catch (e) {}
   }
 
   /* ---------- the GM state document ---------- */
@@ -723,12 +888,32 @@
   function patch(p, opts) {
     if (!S || !S.saver) return false;
     var next = applyPatch(S.doc, p), b = bytes(next), force = !!(opts && opts.force);
+    /* A roll is never refused for want of room (E18): past the hard line the oldest lines of EARLIER sessions' capture make it (never
+       this session's). The nulls ride in the same patch, so the server frees them as it takes the roll. */
+    for (var guard = 0; force && b > HARD && guard < 4; guard++) {
+      var shed = capShed(next.capture, b - HARD, sessionOf(camp));
+      if (!shed.length) break;
+      var nulls = {}; shed.forEach(function (k) { nulls[k] = null; });
+      p = mergePatch(p, { capture: nulls }); next = applyPatch(S.doc, p); b = bytes(next);
+      capDropped(shed.length);
+    }
     if (b > (force ? HARD : LIMITS.stateSoft)) { toast('The GM notes are full (' + Math.round(b / 1024) + ' of 256 KiB). Export tonight’s note and clear the capture first.', true); return false; }
     S.doc = next;
     S.saver.add(p);
     writeSticky();
+    if (guard) renderCapture();
     return true;
   }
+  /* one toast per page load when capture lines of earlier sessions were dropped to keep the notes small (E18) */
+  var capDroppedToasted = false;
+  /* -> true when it said so (the caller must not cover that toast with its own) */
+  function capDropped(n) {
+    if (!n || capDroppedToasted) return false;
+    capDroppedToasted = true;
+    toast('Dropped ' + n + ' old capture line' + (n === 1 ? '' : 's') + ' from earlier sessions to keep the notes small. npm run gm:after files them into the vault: run it after each game.', true);
+    return true;
+  }
+  var CAP_FULL = 'Tonight’s capture is full: this session alone has filled its ' + (LIMITS.captureBytes / 1024) + ' KiB. Export tonight’s note, then clear the capture to file more. Rolls still work.';
   /* one saver per page session: it keeps flushing after close() until what was pending has gone */
   function makeSessionSaver(me) {
     return makeSaver({
@@ -740,7 +925,12 @@
         var body = JSON.stringify(p);
         if (bytesOf(body) > 60000 || typeof W.fetch !== 'function') { var g = W.claude && W.claude.gm; return g ? g.patchState(p) : Promise.reject(new Error('no gm')); }
         return W.fetch('/api/gm/state', { method: 'PATCH', keepalive: true, credentials: 'same-origin', cache: 'no-store', redirect: 'manual', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: body })
-          .then(function (res) { if (!res.ok) { var e = new Error('HTTP ' + res.status); e.status = res.status; throw e; } return res.json(); });
+          .then(function (res) {
+            /* the sign-in page instead of the API (a 401, or Access's redirect, which `redirect: 'manual'` shows as an opaque one) is the sign-out */
+            if (res.status === 401 || res.type === 'opaqueredirect' || res.redirected) { var so = new Error(SIGNED_OUT_ERR); so.status = 401; so.code = 'signed_out'; throw so; }
+            if (!res.ok) { var e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
+            return res.json();
+          });
       },
       saved: function (r, pendingAfter) {
         if (!r || !isObj(r.doc)) return;
@@ -748,8 +938,10 @@
         me.doc = pendingAfter ? applyPatch(r.doc, pendingAfter) : r.doc;
       },
       changed: function (st) {
-        if (S !== me) return;
+        if (S !== me) { if (st.hold) keepPending(me); return; }
         syncSave();
+        if (st.hold && !me.holdToasted) { me.holdToasted = true; toast(SIGNED_OUT_MSG, true); }
+        if (st.hold || me.resent) writeSticky();
         if (st.parked && !me.parkedToasted) { me.parkedToasted = true; toast('Not saved: the server refused a change (' + st.error + '). It is kept on this device; later changes still save.', true); writeSticky(); }
       }
     });
@@ -760,10 +952,16 @@
     if (!S || !S.root || !S.saver) return;
     var st = S.saver.state();
     [].forEach.call(S.root.querySelectorAll('.gm-save'), function (n) {
-      n.textContent = st.parked ? 'Not saved' : st.error === 'retrying' ? 'Offline: retrying' : st.writing || st.pending ? 'Saving…' : S.updatedAt ? 'Saved' : '';
-      n.classList.toggle('bad', !!st.parked || st.error === 'retrying');
-      if (st.parked) n.title = 'The server refused a change: ' + st.error;
+      n.textContent = st.hold ? 'Signed out' : st.parked ? 'Not saved' : st.error === 'retrying' ? 'Offline: retrying' : st.writing || st.pending ? 'Saving…' : S.updatedAt ? 'Saved' : '';
+      n.classList.toggle('bad', !!st.hold || !!st.parked || st.error === 'retrying');
+      if (st.hold) n.title = SIGNED_OUT_MSG; else if (st.parked) n.title = 'The server refused a change: ' + st.error;
     });
+    /* signed out: a plain message across the bar (a full-width second row of it, so it never squeezes the bar's buttons) */
+    var bar = $q('.gm-bar'), msg = $q('#gm-signed');
+    if (bar) bar.classList.toggle('out', !!st.hold);
+    if (msg) { msg.hidden = !st.hold; if (st.hold) msg.removeAttribute('hidden'); else msg.setAttribute('hidden', ''); }
+    var rt = S.root.querySelector && S.root.querySelector('#gm-root');
+    if (rt && rt.style && rt.style.setProperty && bar && bar.getBoundingClientRect) { var bh = Math.round(bar.getBoundingClientRect().height); if (bh > 0) rt.style.setProperty('--gm-bar-h', bh + 'px'); }
   }
   /* another device changed the state: take it when nothing of ours is waiting */
   function refetch() {
@@ -884,7 +1082,7 @@
   function open(rootEl, api) {
     close();
     S = { root: rootEl, api: api, me: null, status: 'loading', doc: {}, updatedAt: null, saver: null, carriedParked: null,
-      pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console', scn: null, scnRoll: null, scnMem: {}, scnErr: '', eng: null, engRoll: null, engErr: '',
+      pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console', scn: null, scnRoll: null, scnMem: {}, scnErr: '', eng: null, engRoll: null, engHid: null, engErr: '',
       arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, pinOpen: null, figMemo: {}, importing: null, shown: 'console' };
     try { S.panel = W.localStorage.getItem('b68.gm.panel') || 'location'; S.prepWide = W.localStorage.getItem(PREP_WIDE) === '1'; } catch (e) {}
     if (SIDE.indexOf(S.panel) < 0) S.panel = 'location';
@@ -913,6 +1111,7 @@
       if (r && isObj(r.doc)) { me.doc = r.doc; me.updatedAt = r.updatedAt || null; }
       else if (sticky) { me.doc = { con: { live: sticky.live || {} }, cards: sticky.cards || {} }; if (isObj(sticky.now)) me.doc.now = sticky.now; toast('The GM notes are offline: showing this device’s last copy.', true); }
       if (sticky && isObj(sticky.parked)) me.carriedParked = sticky.parked;   /* a change the server refused earlier stays on this device */
+      if (sticky && isObj(sticky.pending) && Object.keys(sticky.pending).length) me.stickyPending = sticky.pending;   /* sent by start() (resendPending) */
       if (res[0] === 'forbidden') { purge(); screen(note('GM only.', 'The server says this account is not the GM.')); me.status = 'off'; return; }
       if (res[0] === 'nopack' || !me.pack) { me.status = 'import'; importScreen(false); return; }
       start();
@@ -955,14 +1154,45 @@
       losses = packLosses(before, after);
     }
     S.importLosses = losses;
+    /* the tables the file lacks, by each module's own check: a warning (the upload still works) */
+    var warns = [];
+    if (v.ok) { var bodies = {}; Object.keys(pk.parts).forEach(function (n) { if (isObj(pk.parts[n])) bodies[n] = partBody(pk.parts[n]); }); warns = packWarnings(modMap(), bodies); }
     var rows = v.parts.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td class="num">' + (p.bytes / 1024).toFixed(1) + ' KiB</td><td>' + esc(p.src && p.src.exportedAt ? dmy(p.src.exportedAt) : '') + '</td></tr>'; }).join('');
     box.innerHTML = '<h2>' + esc(name || 'The pack') + '</h2>' +
       (v.exportedAt ? '<p class="gm-dim">Exported ' + esc(dmy(v.exportedAt)) + ' · ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's') + '</p>' : '') +
       (rows ? '<table class="gm-tbl"><thead><tr><th>Part</th><th class="num">Size</th><th>Exported</th></tr></thead><tbody>' + rows + '</tbody></table>' : '') +
       (v.errors.length ? '<ul class="gm-errs">' + v.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>' : '') +
+      packWarnHtml(warns) +
       (losses.length ? '<div class="gm-note bad gm-losses"><p><b>This pack would lose prep the app has now:</b></p><ul>' + losses.map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ul>' +
         '<p>Usually Obsidian Sync brought back an old copy of a note. Restore it (Obsidian: right-click the note › Open version history), run <code>npm run gm:pack</code>, then choose the new file.</p></div>' : '') +
       '<p class="gm-up"><button type="button" class="btn ' + (losses.length ? 'bad' : 'primary') + '" data-gm="upload"' + (v.ok ? '' : ' disabled') + '>' + (losses.length ? 'Upload anyway' : 'Upload ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's')) + '</button> <progress id="gm-prog" max="' + Math.max(1, v.parts.length) + '" value="0" hidden></progress> <span id="gm-upmsg" class="gm-dim" role="status"></span></p>';
+  }
+  /* the pack check as a list: a warning, never an error (the rollers use a neutral word for a table the pack lacks) */
+  function modMap() { return { B68GmConsole: W.B68GmConsole, B68GmLocation: W.B68GmLocation, B68GmNpc: W.B68GmNpc, B68GmScenes: W.B68GmScenes, B68GmEngagement: W.B68GmEngagement }; }
+  function packWarnHtml(warns) {
+    if (!warns.length) return '';
+    var n = warns.reduce(function (k, w) { return k + w.missing.length; }, 0);
+    return '<div class="gm-note warn gm-warns" role="status"><p><b>' + n + ' table entr' + (n === 1 ? 'y is' : 'ies are') + ' missing.</b> This is a warning, not an error: the upload works, and a roll that needs one uses a neutral word.</p><ul>' +
+      warns.map(function (w) { return '<li><b>' + esc(w.part) + '</b>: ' + esc(w.missing.slice(0, 12).join(', ')) + (w.missing.length > 12 ? ' (+' + (w.missing.length - 12) + ' more)' : '') + '</li>'; }).join('') + '</ul></div>';
+  }
+  /* the loaded pack's check: the Menu keeps the list, and a toast says so once per page load (per distinct list) */
+  var packWarnSeen = '';
+  function checkPack() {
+    var bodies = {}; Object.keys(S.pack && S.pack.parts || {}).forEach(function (n) { var b = S.pack.parts[n] && S.pack.parts[n].body; if (isObj(b)) bodies[n] = b; });
+    S.packWarn = packWarnings(modMap(), bodies);
+    renderPackWarn();
+    var sig = JSON.stringify(S.packWarn);
+    if (S.packWarn.length && sig !== packWarnSeen) {
+      packWarnSeen = sig;
+      var n = S.packWarn.reduce(function (k, w) { return k + w.missing.length; }, 0);
+      toast('The pack is missing ' + n + ' table entr' + (n === 1 ? 'y' : 'ies') + ' (' + S.packWarn.map(function (w) { return w.part; }).join(', ') + '): rolls use a neutral word for them. The Menu lists them.');
+    }
+  }
+  function renderPackWarn() {
+    var box = $q('#gm-menu-warn'); if (!box) return;
+    var w = S.packWarn || [];
+    box.hidden = !w.length; if (w.length) box.removeAttribute('hidden'); else box.setAttribute('hidden', '');
+    box.innerHTML = w.length ? '<b>Pack check</b> <span class="gm-dim">a warning: rolls use a neutral word for these</span><ul>' + w.map(function (x) { return '<li><b>' + esc(x.part) + '</b>: ' + esc(x.missing.slice(0, 8).join(', ')) + (x.missing.length > 8 ? ' (+' + (x.missing.length - 8) + ' more)' : '') + '</li>'; }).join('') + '</ul>' : '';
   }
   function upload() {
     var pk = S && S.importing, g = gmApi(); if (!pk || !g) return;
@@ -1003,7 +1233,8 @@
     rd.readAsText(file);
   }
   function forget() {
-    if (!S || !W.confirm('Forget the GM pack and the GM notes cached on this device? The server keeps its copy; the page reloads it next time.')) return;
+    var unsent = S && S.saver ? S.saver.unsent() : null;
+    if (!S || !W.confirm('Forget the GM pack and the GM notes cached on this device? The server keeps its copy; the page reloads it next time.' + (unsent ? '\n\nChanges not yet saved to the server (' + (S.saver.state().hold ? 'you are signed out' : 'still sending') + ') would be lost with it.' : ''))) return;
     var me = S;
     Promise.all([kvDel('pack:' + me.me).catch(function () {}), Promise.resolve().then(function () { try { W.localStorage.removeItem(STICKY); } catch (e) {} })]).then(function () {
       if (S !== me) return;
@@ -1014,7 +1245,18 @@
   }
 
   /* ---------- start: the console instance, the generator, the layout ---------- */
+  /* What an earlier visit could not send because the Access session had ended (E5), found in the sticky copy by load(): drawn into the
+     page now (before the console is built from the state) and sent once. It stays in the sticky copy until the server has answered
+     (a failure there holds it again; a refusal parks it, as any refused patch). Called by start(), so a visit that goes no further
+     than the import screen leaves it where it is. */
+  function resendPending() {
+    var p = S.stickyPending; if (!p || S.resent) return;
+    S.stickyPending = null; S.resent = true;
+    S.doc = applyPatch(S.doc, p);
+    S.saver.add(p); S.saver.flush();
+  }
   function start() {
+    resendPending();
     var cp = part('console'), C = W.B68GmConsole, m = isObj(S.doc.mem) ? S.doc.mem : {};
     S.con = null; S.conErr = '';
     if (!C || !cp || !isObj(cp.T)) S.conErr = !C ? 'The console module is missing.' : 'The pack has no console part. Update the pack.';
@@ -1022,7 +1264,7 @@
     S.locMem = clone(m.location || {}); S.locErr = ''; S.scnMem = clone(m.scenes || {}); S.scn = null; S.eng = null; S.npcg = null; S.npcMem = clone(m.npc || {}); S.npcRoll = null;
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
-    layout(); redrawAll(); subscribeNpcs();
+    layout(); redrawAll(); subscribeNpcs(); checkPack();
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -1079,11 +1321,12 @@
       '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-stt" title="The transcriber (the iPad tab)" hidden></button>' +
       '<button type="button" class="gm-bb" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' + '<button type="button" class="gm-bb" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
       '<span class="gm-menu"><button type="button" class="gm-bb" data-gm="menu" aria-expanded="false" aria-haspopup="true">Menu</button><span class="gm-menu-list" hidden>' +
-      '<p class="gm-menu-h"><span><b>GM tools</b> · The console</span><span class="gm-exp" id="gm-menu-exp"></span></p>' +
+      '<p class="gm-menu-h"><span><b>GM tools</b> · The console</span><span class="gm-exp" id="gm-menu-exp"></span></p>' + '<div class="gm-menu-warn" id="gm-menu-warn" hidden></div>' +
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
-      '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span></div>';
+      '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
+      '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
   }
   function menuOpen(on) {
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
@@ -1406,15 +1649,22 @@
     ['situation', 'console'].forEach(function (t) { newest(h[t]).forEach(function (x) { x._tool = t; list.push(x); }); });
     list.sort(function (a, b) { return str(a.at) < str(b.at) ? 1 : str(a.at) > str(b.at) ? -1 : 0; });
     list = list.slice(0, LIMITS.hist);
-    er.innerHTML = list.length ? '<span class="gm-lab">Earlier:</span>' + list.map(function (x) { return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="' + x._tool + '" data-h="' + esc(x._id) + '"' + (cards[x._tool] && cards[x._tool].hid === x._id && S.shown === x._tool ? ' aria-current="true"' : '') + '>' + esc(x.label || x.id) + '</button>'; }).join('') : '';
+    er.innerHTML = list.length ? '<span class="gm-lab">Earlier:</span>' + list.map(function (x) { return earlierChip(x, x._tool, cards[x._tool] && cards[x._tool].hid === x._id && S.shown === x._tool); }).join('') : '';
+  }
+  /* an Earlier chip names what the card is; under it, small, the time it was rolled and its position (also the title, for a label
+     the chip has to cut) */
+  function earlierChip(x, tool, current) {
+    var when = [hm(x.at), isObj(x.ui) ? str(x.ui.pos) : ''].filter(Boolean).join(' · '), label = str(x.label || x.id);
+    return '<button type="button" class="chip txt sm gm-ech" data-gm="replay" data-tool="' + esc(tool) + '" data-h="' + esc(x._id) + '"' + (current ? ' aria-current="true"' : '') + ' title="' + esc(label + (when ? ' (' + when + ')' : '')) + '">' +
+      '<span class="gm-ech-t">' + esc(label) + '</span>' + (when ? '<small class="gm-ech-s">' + esc(when) + '</small>' : '') + '</button>';
   }
   function doIntent(i) {
     var res = S.conRes, a = res && res.meta && res.meta.actions && res.meta.actions[i], C = W.B68GmConsole; if (!a || !C) return;
     var it = a.intent, p; try { p = C.intentPatch(it, { date: dmy(new Date()) }); } catch (e) { toast(errText(e), true); return; }
     patch({ con: p });
-    if (it.capture && it.capture.text) addCapture(it.capture.bucket || 'x', it.capture.text, true);
+    var filed = !(it.capture && it.capture.text) || addCapture(it.capture.bucket || 'x', it.capture.text, true);   /* a refused line, or lines dropped to make room, say so: that toast is not covered by this one */
     try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {}
-    toast(a.label.replace(/:.*$/, '') + '.');
+    if (filed === true) toast(a.label.replace(/:.*$/, '') + '.');
     renderControls(); renderPos(); renderRail();
   }
 
@@ -1468,7 +1718,7 @@
         '<details class="gm-more gm-dl"' + (foldOpen('dl') ? ' open' : '') + ' data-fold="dl"><summary>Downloads</summary><div class="gm-map-acts">' + '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button></div></details>' + '</section>';
     } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what the players can see.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></p>';
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
-    if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="location" data-h="' + esc(x._id) + '"' + (cur && cur.hid === x._id ? ' aria-current="true"' : '') + '>' + esc(x.label) + '</button>'; }).join('') + '</div>';
+    if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return earlierChip(x, 'location', cur && cur.hid === x._id); }).join('') + '</div>';
     box.innerHTML = h;
     if (S.map) showMap();
   }
@@ -1484,9 +1734,13 @@
     return '<section class="gm-glance gm-secret" data-sec="glance"><div class="gm-glance-h"><h3 class="gm-locname">' + esc(g.title) + '</h3></div>' +
       '<p class="gm-glance-place">' + esc(g.place) + '</p>' +
       '<div class="gm-say"><span class="gm-lab">Say' + (S.locSent === roll.seed ? ' ' + SEEN : '') + '</span><p>“' + esc(g.say) + '”</p><button type="button" class="btn sm" data-gm="pushtext">Street description on iPad</button></div>' +
+      /* the plan names the target room and its locks: GM only. It sits outside the Say box on purpose (that box is what the players
+         see once the street description is sent), and no push (pushText, the score scene, Show on iPad) ever reads it */
+      (g.plan ? '<p class="gm-plan"><span class="gm-lab">Plan</span> ' + esc(g.plan) + '</p>' : '') +
       '<dl class="gm-grid gm-glance-dl"><dt>Whose</dt><dd>' + esc(g.whose) + ' · Security <b>' + esc(g.security) + '</b></dd>' +
       '<dt>Bands</dt><dd><ol class="gm-gbands">' + bands + '</ol></dd>' +
       '<dt>Target</dt><dd>★ <b>' + esc(g.target.room) + '</b> (' + esc(String(g.target.band).toLowerCase()) + ') — ' + esc(g.target.what) + '</dd>' +
+      (g.rule ? '<dt>Rule</dt><dd>' + esc(g.rule) + '</dd>' : '') +
       (g.flags.length ? '<dt>Flags</dt><dd>' + g.flags.map(function (f) { return '<span class="gm-flag">! ' + esc(f) + '</span>'; }).join(' ') + '</dd>' : '') + '</dl></section>';
   }
   function foldsHtml(L, roll, pk, reveal) {
@@ -1697,9 +1951,7 @@
   }
   function earlierHtml(tool, cur) {
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).slice(0, LIMITS.hist);
-    return hist.length ? '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) {
-      return '<button type="button" class="chip txt sm" data-gm="replay" data-tool="' + esc(tool) + '" data-h="' + esc(x._id) + '"' + (cur && cur.hid === x._id ? ' aria-current="true"' : '') + '>' + esc(x.label) + '</button>';
-    }).join('') + '</div>' : '';
+    return hist.length ? '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return earlierChip(x, tool, cur && cur.hid === x._id); }).join('') + '</div>' : '';
   }
   function selectHtml(id, attr, key, label, options, value, inner) {
     return '<label class="gm-field" for="' + id + '"><span class="gm-lab">' + esc(label) + '</span><select id="' + id + '" ' + attr + '="' + esc(key) + '">' + (inner != null ? inner : options.map(function (o) {
@@ -1768,18 +2020,43 @@
     var l = isObj(S.doc.eng) && isObj(S.doc.eng.ui) ? S.doc.eng.ui : {}, en = engInst(), d = en ? en.defaults() : { mods: {} };
     return { approach: l.approach || d.approach, load: l.load || d.load, mods: Object.assign({}, d.mods, isObj(l.mods) ? l.mods : {}) };
   }
+  /* A stored engagement card is either the app's roll ({ seed, ui }: redrawn from its seed) or a result called from the table's own
+     dice ({ id: 'engagement', ui, phys: { best, crit } }: no seed, redrawn from the result). */
   function replayEngagement(e) {
     var en = engInst(); if (!en || !isObj(e)) return null;
-    try { return en.roll(e.ui || {}, { seed: e.seed }); } catch (x) { return null; }
+    try {
+      if (isObj(e.phys)) return engagementPhys(W.B68GmEngagement, en, part('engagement').T, e.ui || {}, e.phys);
+      return en.roll(e.ui || {}, { seed: e.seed });
+    } catch (x) { return null; }
+  }
+  /* A stored card names its dice one way: the app's `seed`, or the table's `phys` (and `id`). The way it does not use is sent as null,
+     so a merge into the server's copy never keeps the other's key (the card is dropped and set again within one save more than once:
+     the saver folds that into a plain set, which would keep a stale `phys` under a new seed and replay it as the table's roll). */
+  function engCardPatch(entry) { return Object.assign({ id: null, seed: null, phys: null }, entry); }
+  /* the new current card REPLACES the stored one */
+  function engHistory(entry) {
+    var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.engagement) ? S.doc.hist.engagement : {};
+    patch({ cards: { engagement: engCardPatch(Object.assign({ hid: hid }, entry)) }, hist: { engagement: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
+    return hid;
   }
   function rollEngagement() {
     var en = engInst(); if (!en) { renderEngagement(); return; }
     var roll;
     try { roll = en.roll(engUi(), {}); } catch (e) { toast('The engagement roll failed: ' + errText(e), true); return; }
     var entry = { seed: roll.seed, ui: roll.replay.ui, label: str(roll.meta.title) + ' · ' + str(roll.position).split(' — ')[0], at: nowIso() };
-    var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.engagement) ? S.doc.hist.engagement : {};
-    patch({ cards: { engagement: Object.assign({ hid: hid }, entry) }, hist: { engagement: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
+    S.engHid = engHistory(entry);
     S.engRoll = roll; S.last = { text: 'Engagement: ' + entry.label };
+    renderEngagement(true);
+  }
+  /* the table rolled: a tap on the highest die (the lowest on a 0d pool), or on Crit; v is '1'-'6' or 'crit' */
+  function rollEngagementPhys(v) {
+    var en = engInst(); if (!en) { renderEngagement(); return; }
+    var crit = v === 'crit', best = crit ? 6 : Math.floor(+v), roll;
+    try { roll = engagementPhys(W.B68GmEngagement, en, part('engagement').T, engUi(), { best: best, crit: crit }); } catch (e) { toast('The engagement card failed: ' + errText(e), true); return; }
+    if (!roll) { toast(crit ? 'Two 6s needs a pool of 2d or more.' : 'That is not a die.', true); return; }
+    var label = str(roll.meta.title) + ' · ' + str(roll.position).split(' — ')[0] + ' · table ' + (crit ? 'crit' : (roll.zero ? 'low ' : '') + best);
+    S.engHid = engHistory({ id: 'engagement', ui: roll.replay.ui, phys: roll.phys, label: label, at: nowIso() });
+    S.engRoll = roll; S.last = { text: 'Engagement: ' + label };
     renderEngagement(true);
   }
   /* a control changed: the roll on screen no longer matches, so it goes (the Earlier row keeps it) and the pool is shown again */
@@ -1787,14 +2064,23 @@
     var u = {};
     if (mod) { u.mods = {}; u.mods[key] = +value || 0; } else u[key] = value;
     patch({ eng: { ui: u }, cards: { engagement: null } });
-    S.engRoll = null; renderEngagement();
+    S.engRoll = null; S.engHid = null; renderEngagement();
+  }
+  /* "Rolled at the table": tap the highest die (the lowest on a 0d pool, which rolls two and keeps the LOWEST), or Crit (two 6s, from
+     2d). The tapped die stays marked while its card is on screen. */
+  function engDiceHtml(pool, phys) {
+    var zero = pool <= 0, on = function (v) { return !!phys && (v === 'crit' ? !!phys.crit : !phys.crit && phys.best === v); };
+    return '<div class="gm-field wide gm-dice" role="group" aria-label="Rolled at the table"><span class="gm-lab">Rolled at the table: ' + (zero ? 'lowest die' : 'highest die') + '</span><div class="gm-dicerow">' +
+      [1, 2, 3, 4, 5, 6].map(function (n) { return '<button type="button" class="chip gm-die" data-gm="engdie" data-v="' + n + '" aria-pressed="' + on(n) + '">' + n + '</button>'; }).join('') +
+      (zero ? '' : '<button type="button" class="chip gm-die gm-crit" data-gm="engdie" data-v="crit" aria-pressed="' + on('crit') + '"' + (pool < 2 ? ' disabled title="Two 6s needs a pool of 2d or more"' : '') + '>Crit (two 6s)</button>') +
+      '</div><span class="gm-dim">' + (zero ? '0d: roll two dice, keep the lowest' : 'Pool ' + pool + 'd: roll them, tap the highest') + '</span></div>';
   }
   function renderEngagement(fresh) {
     var box = $q('#gm-eng'); if (!box) return;
     var en = engInst();
     if (!en) { box.innerHTML = '<p class="gm-note bad">' + esc(S.engErr || 'The engagement roll is not available.') + '</p>'; return; }
     var cur = isObj(S.doc.cards) ? S.doc.cards.engagement : null;
-    if (!fresh && cur && (!S.engRoll || S.engRoll.seed !== cur.seed)) S.engRoll = replayEngagement(cur);
+    if (!fresh && cur && (!S.engRoll || S.engHid !== cur.hid)) { S.engRoll = replayEngagement(cur); S.engHid = cur.hid; }
     var ui = engUi(), roll = S.engRoll, c = roll || en.card(ui);
     /* a factor is three chips: +1d with the factor's plus statement, 0, −1d with its minus statement, so which is which reads */
     var h = '<div class="gm-loc-ctl">' + en.controls.map(function (x) {
@@ -1802,7 +2088,7 @@
         return '<button type="button" class="chip gm-trichip" data-gm="engtri" data-id="' + esc(x.id) + '" data-v="' + o[0] + '" aria-pressed="' + (+ui.mods[x.id] === o[0]) + '"><b>' + o[1] + '</b>' + (o[2] ? '<small>' + esc(o[2]) + '</small>' : '') + '</button>';
       }).join('') + '</div></div>';
       return selectHtml('gm-e-' + x.id, 'data-eng', x.id, x.label, x.options, ui[x.id]);
-    }).join('') + '<button type="button" class="btn primary gm-roll" data-gm="engroll">Roll engagement</button></div>';
+    }).join('') + '<button type="button" class="btn primary gm-roll" data-gm="engroll">Roll engagement</button>' + engDiceHtml(en.pool(ui), roll && roll.phys) + '</div>';
     h += '<article class="gm-card gm-engcard" data-tool="engagement"><header class="gm-card-h"><div><h3>' + esc(c.meta.title) + '</h3><p class="gm-sub">' + esc(c.meta.sub) + '</p></div></header>' + chipsHtml(roll ? c.meta.chips : []) + genLinesHtml(c.lines) +
       (roll ? '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="engagement">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="engagement">Copy</button></div>' : '') + '</article>';
     box.innerHTML = h + earlierHtml('engagement', cur);
@@ -1878,12 +2164,19 @@
     try { S.npcg = M.create({ T: pk.T, cast: pk.cast || [], F: pk.F || null, campaign: part('campaign') || {}, mem: clone(S.npcMem) }); S.npcgErr = ''; } catch (e) { S.npcgErr = 'The NPC generator could not start: ' + errText(e); }
     return S.npcg;
   }
-  /* the figure for a roll: drawn once per roll and kept, since the kit's render checks are the slow part */
+  /* the figure for a roll: drawn once per roll and kept, since the kit's render checks are the slow part. `note` is the one line
+     under the portrait (the module's own `fig.note`: what was stripped, a stock figure, or why there is none); when the kit itself
+     throws (not loaded, or it fails on the spec) there is no portrait and the note says why, never a silent blank. */
   function npcWithFigure(g, roll) {
-    var K = W.B68Figure, fig = null, svg = '';
-    try { fig = g.figure(roll.npc, { K: K }); } catch (e) { fig = null; }
-    if (fig && fig.spec && K && K.portrait) { try { var sp = clone(fig.spec); sp.id = 'gm-npcg'; svg = stripSize(K.portrait(sp, { lod: 'lo' }).svg); } catch (e) { svg = ''; } }
-    return { roll: roll, fig: fig, svg: svg };
+    var K = W.B68Figure, fig = null, svg = '', note = '';
+    try { fig = g.figure(roll.npc, { K: K }); } catch (e) { fig = null; note = 'No portrait: ' + errText(e) + '.'; }
+    if (fig) {
+      note = str(fig.note);
+      if (!fig.failed && fig.spec && K && K.portrait) {
+        try { var sp = clone(fig.spec); sp.id = 'gm-npcg'; svg = stripSize(K.portrait(sp, { lod: 'lo' }).svg); } catch (e) { svg = ''; note = 'No portrait: ' + errText(e) + '.'; }
+      } else if (!fig.failed && !(K && K.portrait)) note = 'No portrait: the figure kit is not loaded.';
+    }
+    return { roll: roll, fig: fig, svg: svg, note: note };
   }
   function replayNpc(e) {
     var g = npcgInst(); if (!g || !isObj(e)) return null;
@@ -1944,7 +2237,7 @@
     if (r) {
       var c = r.roll.card, m = c.meta, inCast = npcInCast(r.roll.npc.name);
       h += '<article class="gm-card gm-npccard" data-tool="npc"><header class="gm-card-h">' + (r.svg ? '<div class="gm-thumb gm-npcfig" aria-hidden="true">' + r.svg + '</div>' : '') + '<div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' +
-        (m.figureNote ? '<p class="gm-note">' + esc(m.figureNote) + '</p>' : '') + (r.fig && r.fig.fallback ? '<p class="gm-note">The portrait is the nearest of the stock figures (the generated one would not draw).</p>' : '') +
+        (m.figureNote ? '<p class="gm-note">' + esc(m.figureNote) + '</p>' : '') + (r.note ? '<p class="gm-note gm-fignote">' + esc(r.note) + '</p>' : '') +
         npcGenLinesHtml(c.lines) +
         '<div class="gm-card-acts"><button type="button" class="btn sm primary" data-gm="npcfile"' + (inCast ? ' disabled' : '') + ' title="Adds them to the cast, hidden from the players">' + (inCast ? 'In the cast' : 'Add to the cast') + '</button>' +
         '<button type="button" class="btn sm" data-gm="pin" data-tool="npc">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="npc">Copy</button></div></article>';
@@ -2324,7 +2617,7 @@
   /* ---------- capture ---------- */
   function renderCapture() {
     var box = $q('#gm-foot'); if (!box) return;
-    var keep = W.document.activeElement && W.document.activeElement.id === 'gm-cap-in' ? $q('#gm-cap-in').value : null;
+    var inp = $q('#gm-cap-in'), keep = inp && W.document.activeElement === inp ? inp.value : null;
     var all = newest(S.doc.capture);
     box.innerHTML = '<div class="gm-cap"><div class="seg gm-capb" role="group" aria-label="File as">' + BUCKETS.map(function (b) { return '<button type="button" class="chip sm" data-gm="arm" data-b="' + b.k + '" aria-pressed="' + (S.arm === b.k) + '">' + esc(b.label) + ' <kbd>' + b.key + '</kbd></button>'; }).join('') + '</div>' +
       '<form class="gm-capf" data-gm-form="capture"><label class="sr" for="gm-cap-in">Capture</label><input type="text" id="gm-cap-in" maxlength="' + LIMITS.captureText + '" autocomplete="off" placeholder="' + esc(placeholder(S.arm)) + '"><button type="submit" class="btn primary">File</button></form>' +
@@ -2342,10 +2635,14 @@
   function addCapture(bucket, text, quiet) {
     text = str(text).replace(/\s+/g, ' ').trim().slice(0, LIMITS.captureText); if (!text) return false;
     var id = uid('c'), entry = captureEntry(id, bucket, text, nowIso(), camp);
-    if (!patch({ capture: addCapped(S.doc.capture, id, entry, LIMITS.capture) })) return false;
+    /* capture has a byte budget of its own (E18): earlier sessions' oldest lines make room; a session that alone fills it files no more text */
+    var plan = capturePlan(S.doc.capture, id, entry, sessionOf(camp));
+    if (plan.refused) { toast(CAP_FULL, true); return false; }
+    if (!patch({ capture: plan.patch })) return false;
+    var said = capDropped(plan.dropped.length);       /* a toast has one line: "Filed under ..." must not cover what was dropped */
     renderCapture();
-    if (!quiet) { var b = BUCKETS.filter(function (x) { return x.k === bucket; })[0]; toast('Filed under ' + (b ? b.head : bucket) + '.'); }
-    return true;
+    if (!quiet && !said) { var b = BUCKETS.filter(function (x) { return x.k === bucket; })[0]; toast('Filed under ' + (b ? b.head : bucket) + '.'); }
+    return said ? 'said' : true;     /* 'said': filed, and the toast already up must stand */
   }
   function fileLast() { if (!S.last) { toast('Nothing rolled yet.', true); return; } addCapture('r', S.last.text); }
   /* in the Menu (and the old header): the capture bar keeps only File and File last roll */
@@ -2486,7 +2783,7 @@
         var tool = b.getAttribute('data-tool'), e = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).filter(function (x) { return x._id === b.getAttribute('data-h'); })[0]; if (!e) break;
         var cur = {}; Object.keys(e).forEach(function (k) { if (k !== '_id') cur[k] = e[k]; }); cur.hid = e._id;
         cur.at = nowIso();      /* the current card now: after a reload the newest of the two still shows */
-        var cp = { cards: {} }; cp.cards[tool] = cur; patch(cp, { force: true });
+        var cp = { cards: {} }; cp.cards[tool] = replacePatch(isObj(S.doc.cards) ? S.doc.cards[tool] : null, tool === 'engagement' ? engCardPatch(cur) : cur); patch(cp, { force: true });   /* replaces the stored card: no key of the card it was survives */
         if (tool === 'console' || tool === 'situation') { S.conRes = null; drawConsoleCard(); }
         else if (tool === 'scenes') { S.scnRoll = null; renderScenes(); }
         else if (tool === 'npc') { S.npcRoll = null; renderNpcGen(); }
@@ -2523,6 +2820,7 @@
       case 'npcfile': fileNpc(); break;
       case 'scnipad': scenesToIpad(); break;
       case 'engroll': rollEngagement(); break;
+      case 'engdie': rollEngagementPhys(b.getAttribute('data-v')); break;
       case 'engtri': setEngagement(b.getAttribute('data-id'), b.getAttribute('data-v'), true); break;
       case 'layer': setMap('layer', b.getAttribute('data-v')); renderLocation(); break;
       case 'draw': drawMap(); break;

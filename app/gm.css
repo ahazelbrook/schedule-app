@@ -578,3 +578,57 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 #gm-page .gm-pill.gm-beat { max-width: 340px; }
 #gm-page .gm-pill.gm-beat.due { border-color: var(--mustard); }
 #gm-page .gm-pill.gm-beat.late { background: var(--alarm); border-color: var(--alarm); color: #fbf8f1; }
+
+/* ---------- 17/10, wave 2: what the generators now give the cards ----------
+   The spend sentence under the lead; the coaching lines folded under "Why"; the quiet "redrawn" note; the plan line under Say; the
+   pack check as a warning (the preview and the Menu); the portrait note; Earlier chips with the time and position under them. */
+#gm-page .gm-lead-s { font-size: 14.5px; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+#gm-page .gm-lead-s p { margin: 0; }
+#gm-page .gm-lead-s p + p { margin-top: 4px; }
+#gm-page .gm-why { border-top: 1px dashed var(--hair); }
+#gm-page .gm-why > summary { cursor: pointer; list-style: none; min-height: 44px; display: flex; gap: 10px; align-items: center; font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; color: var(--ink-soft); }
+#gm-page .gm-why > summary::-webkit-details-marker { display: none; }
+#gm-page .gm-why > summary::after { content: "+"; margin-left: auto; font: 700 18px/1 var(--font-mono); padding: 0 4px; }
+#gm-page .gm-why[open] > summary::after { content: "−"; }
+#gm-page .gm-why > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .gm-why-b { display: grid; gap: 6px; padding: 0 0 6px; }
+#gm-page .gm-why-b .gm-read { font-size: 13px; color: var(--ink-soft); }
+#gm-page .gm-card > .gm-quiet { margin: 0 12px; }
+#gm-page .gm-quiet { font: 400 11.5px/1.3 var(--font-mono); color: var(--ink-soft); }
+#gm-page .gm-plan { margin: 0; border-left: 4px solid var(--hair); padding: 2px 0 2px 10px; font-size: 14px; line-height: 1.4; }
+#gm-page .gm-plan .gm-lab { display: inline; margin-right: 6px; }
+#gm-page .gm-note.warn { border: 2px solid var(--rule); border-left: 6px solid var(--mustard); color: var(--ink); }
+#gm-page .gm-warns p { margin: 0; }
+#gm-page .gm-warns ul { margin: 4px 0 0 18px; padding: 0; }
+#gm-page .gm-menu-list { max-height: calc(100dvh - 70px); overflow-y: auto; }
+#gm-page .gm-menu-warn { padding: 10px 12px; border-bottom: 1px solid var(--hair); border-left: 6px solid var(--mustard); font: 400 12px/1.4 var(--font-text); }
+#gm-page .gm-menu-warn[hidden] { display: none; }
+#gm-page .gm-menu-warn ul { margin: 4px 0 0 16px; padding: 0; overflow-wrap: anywhere; }
+#gm-page .gm-card > .gm-note { margin: 0 12px; }
+#gm-page .gm-fignote { font-size: 12.5px; padding: 6px 10px; }
+#gm-page .gm-earlier .gm-ech { display: inline-grid; grid-template-columns: minmax(0, 1fr); gap: 1px; justify-items: start; align-content: center; line-height: 1.25; text-align: left; }
+#gm-page .gm-ech-t { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#gm-page .gm-ech-s { font: 700 10px/1.2 var(--font-mono); letter-spacing: 0; color: var(--ink-soft); }
+#gm-page .gm-ech:hover .gm-ech-s, #gm-page .chip[aria-current="true"] .gm-ech-s { color: inherit; opacity: .85; }
+/* The Scene line's chips are drawn again whenever a control changes. Typing in Threat and then tapping the Scene line blurs the box, which
+   redraws the chips under the finger: the press started on a chip that is gone by the release, so the browser dropped the tap and the
+   controls stayed open. The chips never take the press (the button does), so the tap folds them at once. */
+#gm-page .gm-scene-chips { pointer-events: none; }
+/* signed out (E5, gm-page.js SIGNED_OUT_MSG): a plain message in the bar, on a second full-width row so the bar's buttons keep their room */
+#gm-page .gm-signed { display: none; }
+#gm-page .gm-bar.out { flex-wrap: wrap; }
+#gm-page .gm-bar.out .gm-signed { display: block; order: 99; flex: 1 1 100%; margin: 2px 0; padding: 7px 10px; background: var(--alarm); color: #fbf8f1; font: 700 13px/1.35 var(--font-text); }
+@media (max-width: 599px) {
+  body.gm-app #gm-page .gm-bar.out { height: auto; flex-wrap: wrap; row-gap: 0; padding-bottom: 4px; }
+  body.gm-app #gm-page .gm-bar.out .gm-save { display: none; }
+  body.gm-app #gm-page .gm-segbar { top: var(--gm-bar-h, 44px); }
+}
+/* the engagement roll with the table's own dice: tap the highest die (or Crit) under Roll engagement */
+#gm-page .gm-dice { gap: 6px; border-top: 1px solid var(--hair); padding-top: 8px; }
+#gm-page .gm-dice .gm-lab { color: var(--ink); font-size: 12px; }
+#gm-page .gm-dicerow { display: flex; flex-wrap: wrap; gap: 6px; }
+#gm-page .gm-die { flex: 1 1 44px; min-height: 52px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; font: 900 22px/1 var(--font-poster); letter-spacing: 0; text-transform: none; box-shadow: 2px 2px 0 var(--shadow-ink); }
+#gm-page .gm-die.gm-crit { flex: 3 1 130px; font: 900 13px/1.1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; }
+#gm-page .gm-die:disabled { opacity: .45; cursor: default; box-shadow: none; }
+#gm-page .gm-die:disabled:hover { background: var(--card); color: var(--ink); border-color: var(--rule); }
+#gm-page .gm-die:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }

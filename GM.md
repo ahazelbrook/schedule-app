@@ -77,7 +77,10 @@ fails and nobody is known, nothing is purged.
 
 - **First run.** With no pack on the server the page asks for `gm-private/b68-gm-pack.json` (built by `npm run gm:pack`),
   checks it (`format` 1, `console` and `location` parts with `T`), previews the parts and uploads one part per
-  `importPart` with a progress bar; parts the server holds that the file lacks are removed. **Update pack** does the same
+  `importPart` with a progress bar; parts the server holds that the file lacks are removed. Each module checks its own part
+  (`B68GmConsole`, `B68GmLocation`, `B68GmNpc`, `B68GmScenes`, `B68GmEngagement`: `check(T)`): the table entries a part lacks are listed
+  as a **warning** in the preview and, for the pack the page loads, in the Menu under **Pack check** (with one toast per page load).
+  A warning never stops the upload, and a roll that needs a missing entry uses a neutral word. **Update pack** does the same
   again; **Forget GM data on this device** drops the local copies. After that, each visit compares the cached part
   versions with `pack()` and fetches only what changed; if a part will not download, the page carries on with the copy on
   the device ("offline copy" in the header). The header shows "Campaign data exported DD/MM/YYYY", amber when
@@ -100,8 +103,11 @@ fails and nobody is known, nothing is purged.
   site header and footer give way to a slim top bar (the session, **Now in**, Saved, a
   stale-pack note, the beat, **Find**, **iPad:** what the players see, **Listening** with whether the PC is copying (only once
   the transcriber has ever been set up: the pill is hidden while `gm_stt` has never been written), **Clear → ambient**, **Lights out**,
-  and a **Menu** with what is not play: the pack's export date, **Open the display page (for the iPad)**, Export tonight's note,
-  Clear tonight's capture (it confirms), Update pack, the site's pages and Forget GM data). On a laptop the three columns each
+  and a **Menu** with what is not play: the pack's export date, the **Pack check** (the table entries the pack lacks, only when it lacks
+  some), **Open the display page (for the iPad)**, Export tonight's note,
+  Clear tonight's capture (it confirms), Update pack, the site's pages and Forget GM data). When the Access session has ended a red
+  **Signed out: reload to sign in. Your notes are kept on this device.** strip runs across a second row of the bar (see Saving).
+  On a laptop the three columns each
   scroll on their own and capture sits fixed at the foot, so a
   long Prep note or the GM screen never carries the console or the rail away; toasts sit above the capture bar, never over its
   input. The side tabs are one row with their keys showing at 1280 px (Prep, GM screen |
@@ -136,14 +142,22 @@ fails and nobody is known, nothing is purged.
   preference and the `SITUATIONS_DEFAULT` switch went on 18/10/2026): four buttons, each a moment in the roll: `1` **Before** (a Devil's
   Bargain), `2` **4/5**, `3` **1–3**, `4` **Someone**. A large three-way **Position** switch (controlled / risky / desperate, with what
   it means for severity, winds and harm) sits above them, always on screen; the other controls (scene, district, PC, NPC,
-  threat) fold under the **Scene** line; there is no Result control (the button is the result). A card is a **lead box** (one big line, its chips, its own
-  detail under *More*), at most three one-line **Or** rows that each open to their full section, and **one** actions row merged
-  from every section (bargains owed, callbacks used, ticks...), then Pin and Copy. Under the card and Earlier, **More tables**
+  threat) fold under the **Scene** line; there is no Result control (the button is the result). A card is a **lead box** (one big line,
+  with the **spend sentence** under it when a threat is set, its chips, its own detail under *More*, which does not repeat the lead
+  line), at most three one-line **Or** rows that each open to their full section, and **one** actions row merged
+  from every section (bargains owed, callbacks used, ticks...), then Pin and Copy. The console's recurring coaching lines
+  (`coach: true`: "say it before the dice...") sit under a closed **Why** in every section (in More for the lead, in the body of an
+  Or row), so the card reads as the draw and its numbers; Pin and Copy leave them out, show the lead line once, and put the position
+  chip ("risky → 2 winds · harm 2") on the title line (`L` files the title and the lead, which never held coaching). Under the card and Earlier, **More tables**
   folds out the nine single tables (no keys); a pack whose console has no situations layer shows a note where the four buttons
   go, and its single tables still roll. Composed cards are stored under `cards.situation` / `hist.situation` (replay info:
-  `{ id: 'situation', situation, seed, ui, mem }`), never under `console`: code from before redraws any unknown console id as a
-  Devil's Bargain. Single tables keep `cards.console` / `hist.console`, where rolls from before the Situations also live, and
-  Earlier lists the last five across both; the newer of the two cards is the one on screen.
+  `{ id: 'situation', situation, seed, ui, mem, composeVersion }`), never under `console`: code from before redraws any unknown console id as a
+  Devil's Bargain. A card stored before the composition was versioned has no `composeVersion`: it is redrawn with the current
+  composition and a quiet line on the card says so ("Redrawn with the current tables"). Single tables keep `cards.console` /
+  `hist.console`, where rolls from before the Situations also live, and
+  Earlier lists the last five across both; the newer of the two cards is the one on screen. An **Earlier** chip names what the
+  card is (the NPC for a Someone, Contact or Face card; a Devil's Bargain without its "Want +1d?" lead-in), with the time it was rolled and its
+  position (`21:14 · risky`) in small type under it and in its tooltip; the other tools' chips carry the time.
 - **Now in** (the district every tool starts from, 18/10/2026). One select in the top bar (on a phone, where the bar has no room, in the
   Scene line), kept in the GM state as `now: { district }` (`''`: anywhere). The console's **District**, the Street scene's, the
   Location's and the NPC generator's pickers each lead with **Now in: <district>**, which follows it; picking a district there is that
@@ -159,9 +173,12 @@ fails and nobody is known, nothing is purged.
   **rings** map at once (the controls go to rings / GM, the theme stays; Draw is for another view, theme or layer).
   - **The glance card** (`B68GmLocation.glance`): the name and place, **Say** (the first line of the street
     description, built only from fields `playerSummary` already shows) with the **Street description on iPad** button,
+    the **Plan** (one sentence under Say, outside its box: the front door and its obstacle, the target room and band, the
+    locks on the way down; it names the target, so it is GM only and reaches no push: `gm-nosecrets.test.mjs` (h)),
     then Whose (faction, Tier, hold, district Security), the bands (room count, locks, ★ on the target's band, dashed
-    when the players can see it), the target, and Flags (off turf, a low Tier holding a high-value target, a district
-    clash, low paranormal, a district rule, ring-skips).
+    when the players can see it), the target, the district **Rule** (its first sentence, a row only when there is one), and
+    Flags, which are now only the rare cases (off turf, a low Tier holding a high-value target, a district clash, low
+    paranormal; the ring-skips sit in the Plan fold's hint).
   - **Folds** (`B68GmLocation.folds`), closed by default: Read aloud, Ways in, one per band, Opposition (both threats and
     the dossier), Block & word out, Plan & routes (the ring-skips), Reference (the four ratings, the band labels, why
     the target is there, the band note, the target type's note, the flags in full, Also here, the plan geometry, the
@@ -196,11 +213,18 @@ fails and nobody is known, nothing is purged.
   GM grid (landmark, who is out, what is in the way, word out, factions, the district rule). **Read-aloud to the iPad** sends
   only the three paragraphs as plain text (never the notable, the rumour or the rule). **Engage**: approach, loadout (Quiet
   3 / Loud 6) and three chips per factor (**+1d** carrying the factor's plus statement, **0**, **−1d** its minus statement, so
-  which is which reads at a glance); the card shows the pool before a roll, **Roll engagement** rolls it
+  which is which reads at a glance); the card shows the pool before a roll, **Roll engagement** rolls it in the app
   (a 0d pool rolls two and keeps the lowest) and the card gives the position, the dice and the closing "cut to the first
-  obstacle" line. Both file a card under `cards.scenes` / `cards.engagement` (`{ hid, seed, ui, mem?, label, at }`; the street
-  scene keeps its repeat-guard in `mem.scenes`, the engagement roll has none), five Earlier per tool, Pin, Copy and `L`. A reload
-  or an Earlier click redraws the same card from the seed. Changing an engagement control drops the stored roll (the Earlier row
+  obstacle" line. **Everyone rolls physical dice**, so under Roll engagement sits a row **Rolled at the table: highest die**
+  with the buttons `1 2 3 4 5 6` and **Crit (two 6s)** (disabled under 2d): the GM rolls the pool, taps the highest die, and
+  gets the card the app's roll would give for that result (position, how, the closing line; the Roll row says "Rolled at the
+  table"). A 0d pool rolls two dice and keeps the LOWEST, so its row reads **Rolled at the table: lowest die** and has no crit.
+  Both file a card under `cards.scenes` / `cards.engagement` (an app roll `{ hid, seed, ui, label, at }`, a table roll
+  `{ hid, id: 'engagement', ui, phys: { best, crit }, label, at }` with no seed and a label ending "table 4" / "table crit" /
+  "table low 2"; the street scene keeps its repeat-guard in `mem.scenes`, the engagement roll has none), five Earlier per tool, Pin, Copy and `L`. A reload
+  or an Earlier click redraws the same card (from the seed, or from the result called at the table). A stored card is replaced, never merged:
+  the way of rolling it does not use is sent as null, so a table roll never keeps an old seed nor an app roll an old `phys`.
+  Changing an engagement control drops the stored roll (the Earlier row
   keeps it) and shows the pool again; the controls live in `eng.ui` and `scn.ui`. Parity with the vault pages:
   `node scripts/gm-parity.mjs --scenes --engagement` (see the header of that script for the one deliberate difference).
 - **NPC (`N`).** At the top the generator: **Roll an NPC** draws a card (the vault generator's port, `app/gm/npc.js`, fed by the
@@ -214,8 +238,10 @@ fails and nobody is known, nothing is purged.
   every picker on any the draws are the vault generator's, unchanged. A roll is a seed, the repeat-guard memory and the
   choices, so a reload or an Earlier click (five kept) redraws the same NPC and the same portrait. The portrait comes from
   `app/gm/figure-map.js` (an NPC's fields to a figure kit spec, with a built-in map while the vault's
-  `Tools/blades-68-npc-figure-map.md` page does not exist); if the kit will not draw it, the nearest stock figure is used and
-  the card says so. **Add to the cast** files the NPC as a hidden cast doc (tag `generated`, the look as the description, the
+  `Tools/blades-68-npc-figure-map.md` page does not exist); the one line under the portrait is the module's own `fig.note`
+  (what was stripped, "a stock figure" when the kit would not draw it, or why there is none). When the figure could not be
+  built (`fig.failed`), or the kit itself throws or is not loaded, the card draws no portrait and the note reads
+  "No portrait: <reason>", never a blank. **Add to the cast** files the NPC as a hidden cast doc (tag `generated`, the look as the description, the
   play notes as GM notes) and stores the roll's seed and memory under `npcgen[<npc id>]` in the GM state, so `npm run gm:pull`
   can rebuild the vault card from it (`SYNC.md`). Pin and Copy work as on the other cards. Under it, the app's cast with
   portraits: **Show on iPad** (a hidden NPC asks first) and **Put on stage**, which stages them from here (a hidden NPC is
@@ -271,7 +297,7 @@ fails and nobody is known, nothing is purged.
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,
   so a reload or an Earlier click redraws exactly the same card even after a callback was used or a bargain collected),
   `hist` (five per tool), `npc` (`ui`: the NPC pickers), `npcgen` (`{ seed, mem, at, s?, ui? }` per generated NPC id: the
-  roll that made them, `ui` only when a picker was set), `pins` (50, text), `capture` (400: `{ id, bucket: n|x|m|r, text, at, s? }`),
+  roll that made them, `ui` only when a picker was set), `pins` (50, text), `capture` (400, and 128 KiB: `{ id, bucket: n|x|m|r, text, at, s? }`),
   `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab), `opps` (the Cards panel) and `now` (`{ district }`: Now in). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
   `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
@@ -280,8 +306,23 @@ fails and nobody is known, nothing is purged.
 - **Saving.** Writes are debounced 800 ms, one in flight at a time; what is added meanwhile goes when it lands, even
   after leaving the page, and a hidden tab or `pagehide` sends what is pending as a `keepalive` request. A network error,
   409, 429 or 5xx retries with backoff; any other refusal is shown as "Not saved", kept in `b68.gm.sticky` and never
-  resent, so later changes still save. Sizes are measured in bytes: past 240 KiB only rolls are taken, past the server's
-  256 KiB nothing. The page refetches the state on focus.
+  resent, so later changes still save. **Signed out** (the Cloudflare Access session ended): the saver gets a 401 (or the
+  adapter's own signed-out error, or the keepalive request meets the sign-in page's redirect). It does not park the patch: it goes on
+  **hold**. Nothing more is sent (no retry, not the page-hide request either), later changes keep merging into the pending copy, and
+  the bar carries a plain message on a second row, "Signed out: reload to sign in. Your notes are kept on this device." (and the
+  status reads "Signed out"). The pending copy waits in `b68.gm.sticky` as `pending`, which is not `parked` (a patch the server
+  refused: that stays refused and is never resent). On the next open after a reload, drawn and signed in again, the pending copy is
+  drawn into the page and sent once; it stays in the sticky copy until the server has answered. Forget GM data warns when changes have not gone.
+  Sizes are measured in bytes: past 240 KiB only rolls are taken, past the server's
+  256 KiB nothing. **Capture never blocks a roll** (E18): the capture lines have a byte budget of their own, 128 KiB
+  (`LIMITS.captureBytes`; the 400-line cap still applies). Filing a line over the budget drops the oldest lines of EARLIER
+  sessions first (`s` below the table's session number, oldest session first, then oldest line; never this session's, never a
+  line with no session), with one toast per page load that says how many went and that `npm run gm:after` files them into the
+  vault (run it after each game: a session it has filed is safe in its note, and its lines are the ones that go first). Only when
+  this session alone fills the budget is new capture
+  text (typed, an accepted bargain's line, `L`) refused, with "Tonight's capture is full ... Export tonight's note, then clear the
+  capture to file more. Rolls still work." A roll is never refused for this: it is not capture, and if the document is still past
+  the hard line (256 KiB less a margin) the same oldest-first drop makes room for it. The page refetches the state on focus.
 
 ## The display (`#display`, `app/display-page.js`, `app/display.css`)
 

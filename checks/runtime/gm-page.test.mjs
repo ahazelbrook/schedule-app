@@ -1284,5 +1284,662 @@ await test('12g. Now in is in the sticky copy: with the GM state unreachable, a 
   await h2.save();
 });
 
+/* =====================================================================================================================
+   13. Wave 2, the generators' new fields on the cards: the spend sentence, "Why", the position on the title line, the compose
+   version, the pack check, the location plan and rule, the portrait note, Earlier chips that name the card
+   ===================================================================================================================== */
+const sitCon = () => C.create({ T: FIXC.console.T, campaign: FIXC.campaign, mem: {} });
+const stripWhy = (h) => h.replace(/<details class="gm-why">[\s\S]*?<\/details>/g, '');
+const coachTexts = (res) => res.sections.flatMap((s) => s.lines.filter((l) => l.coach).map((l) => P.plainMd(l.md)));
+const mdText = (s) => '<p>' + P.plainMd(s).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>';        // markdown as its words, so a card's text can be searched
+const textOf = (h) => h.replace(/<[^>]+>/g, ' ').replace(/&lt;/g, '<').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
+const leadBox = (h) => { const i = h.indexOf('<section class="gm-lead"'); return h.slice(i, h.indexOf('</section>', i)); };
+
+await test('13a. the lead shows its spend sentence (a threat) under the lead line; the lead\'s first line is not repeated under More', () => {
+  const con = sitCon();
+  let withSmall = 0, checked = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    for (const n of [1, 2, 3, 4]) {
+      const res = con.situation(n, Object.assign(con.situationDefaults(), { threat: 'the dog is waking up', npc: seed % 3 ? '' : 'rival:Nigel Sprocket' }), { seed });
+      const h = P.situationCardHtml(res, mdPlain), lead = res.sections[0], l0 = lead.lines[0], box = leadBox(h);
+      assert.ok(P.leadIsLine(lead), n + '/' + seed + ': the fixtures\' lead is its first line');
+      assert.ok(!box.includes('<div class="gm-want">'), n + '/' + seed + ': the lead\'s first line is not drawn again under More');
+      assert.equal(count(box, /class="gm-lead-t"/g), 1);
+      if (l0 && l0.small) {
+        withSmall++;
+        assert.ok(box.includes('<div class="gm-lead-s">' + mdPlain(l0.small) + '</div>'), n + '/' + seed + ': the spend sentence sits under the lead');
+        assert.ok(box.indexOf('gm-lead-t') < box.indexOf('gm-lead-s') && (box.indexOf('<details class="gm-more"') < 0 || box.indexOf('gm-lead-s') < box.indexOf('<details class="gm-more"')), 'under the lead, above More');
+        assert.equal(count(h, new RegExp(mdPlain(l0.small).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')), 1, 'and only once');
+      } else assert.ok(!box.includes('gm-lead-s'), 'no sentence, no box');
+      checked++;
+    }
+  }
+  assert.ok(withSmall >= 10, 'a threat gives the 4/5 lead its spend sentence in some draws (' + withSmall + ' of ' + checked + ')');
+});
+
+await test('13a. coaching lines fold under a closed "Why" in every section, and show nowhere else', () => {
+  const con = sitCon();
+  let whys = 0;
+  for (let seed = 1; seed <= 40; seed++) for (const n of [1, 2, 3, 4]) {
+    const res = con.situation(n, Object.assign(con.situationDefaults(), { pos: ['controlled', 'risky', 'desperate'][seed % 3], npc: seed % 2 ? 'rival:Nigel Sprocket' : '' }), { seed });
+    const h = P.situationCardHtml(res, mdText), coach = coachTexts(res);
+    const sectionsWithCoach = res.sections.filter((s) => s.lines.some((l) => l.coach)).length;
+    assert.equal(count(h, /<details class="gm-why"/g), sectionsWithCoach, n + '/' + seed + ': one Why per section that has coaching');
+    assert.ok(!/<details class="gm-why"[^>]*\sopen/.test(h), 'Why starts closed'); whys += sectionsWithCoach;
+    const bare = textOf(stripWhy(h)), all = textOf(h);
+    for (const t of coach) { assert.ok(!bare.includes(t.slice(0, 40)), n + '/' + seed + ': coaching shows outside Why: ' + t.slice(0, 40)); assert.ok(all.includes(t.slice(0, 40)), 'and is under Why'); }
+  }
+  assert.ok(whys > 60, 'coaching lines are common (' + whys + ' Why folds)');
+  // the lead's Why sits in More beside the other lines; a lead with nothing else gets its Why without a More round it
+  const only = { meta: { id: 'situation', situation: 'before', n: 1, title: 'T', sub: 's', actions: [] }, lines: [], sections: [{ id: 'x', role: 'lead', title: 'X', lead: 'Lead line', chips: [], lines: [{ kind: 'want', md: 'Lead line' }, { kind: 'read', md: 'Coached', coach: true }], actions: [] }] };
+  const oh = P.situationCardHtml(only, mdPlain);
+  assert.ok(!oh.includes('gm-more') && oh.includes('<details class="gm-why"><summary>Why</summary>') && oh.includes('Coached'), 'a lead with only coaching left shows Why, not an empty More');
+  assert.equal(count(oh, /Lead line/g), 1, 'and the lead line once');
+  // a lead cut at 120 characters keeps its full first line under More
+  const longMd = 'A long line ' + 'x'.repeat(150), cutLead = { meta: only.meta, lines: [], sections: [{ id: 'x', role: 'lead', title: 'X', lead: P.plainMd(longMd).slice(0, 119) + '…', chips: [], lines: [{ kind: 'want', md: longMd, small: 'spent' }], actions: [] }] };
+  const ch = P.situationCardHtml(cutLead, mdPlain);
+  assert.ok(ch.includes('<details class="gm-more">') && ch.includes(longMd) && count(ch, /spent/g) === 1, 'a cut lead keeps its whole line under More (the spend sentence stays under the lead, once)');
+  // a classic card has no Why: nothing there is flagged
+  assert.ok(!P.classicCardHtml(sitCon().roll('face', sitCon().defaults(), { seed: 5 }), mdPlain).includes('gm-why'));
+});
+
+await test('13b. situationPlain: no coaching lines, the position chip on the title line, the lead line once', () => {
+  const con = sitCon();
+  for (let seed = 1; seed <= 40; seed++) for (const n of [1, 2, 3, 4]) {
+    const res = con.situation(n, Object.assign(con.situationDefaults(), { threat: seed % 2 ? 'the dog is waking up' : '', npc: seed % 3 ? '' : 'rival:Nigel Sprocket' }), { seed });
+    const t = P.situationPlain(res), first = t.split('\n')[0];
+    assert.ok(first.includes(res.meta.chips[0]), n + '/' + seed + ': the title line carries the position chip: ' + first);
+    assert.ok(first.startsWith(res.meta.title + ' ('), first);
+    for (const c of coachTexts(res)) assert.ok(!t.includes(c.slice(0, 40)), 'coaching in the plain text: ' + c.slice(0, 40));
+    res.sections.forEach((s) => assert.equal(count(t, new RegExp(P.plainMd(s.lead).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=\\n|$)', 'g')) >= 1, true, 'the lead is there'));
+    const lead = res.sections[0];
+    assert.equal(count(t, new RegExp('^ {2}' + P.plainMd(lead.lead).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'gm')), 0, 'and not again as its first line');
+    if (lead.lines[0].small) assert.ok(t.includes('\n  ' + P.plainMd(lead.lines[0].small)), 'the spend sentence stays');
+    assert.ok(t.length <= 1500 || n === 2, 'short enough for a pin (' + t.length + ')');
+  }
+  assert.equal(P.situationPlain({ meta: { title: 'T', sub: 'risky → middling' }, sections: [] }), 'T (risky → middling)', 'without a chip the subtitle is what is there');
+});
+
+await test('13c. situationEntry stores composeVersion and replaySituationEntry passes it back: a card is not "recomposed" unless it was stored before versions', () => {
+  const con = sitCon(), res = con.situation(2, con.situationDefaults(), { seed: 77 });
+  const entry = P.situationEntry(res, {});
+  assert.equal(entry.composeVersion, C.COMPOSE_VERSION); assert.ok(C.COMPOSE_VERSION >= 2);
+  const again = P.replaySituationEntry(C, FIXC.console.T, FIXC.campaign, entry, {});
+  assert.equal(again.meta.recomposed, undefined, 'a current entry redraws without a note');
+  assert.equal(JSON.stringify(again.sections.map((s) => [s.id, s.lead])), JSON.stringify(res.sections.map((s) => [s.id, s.lead])), 'and identically');
+  assert.ok(!P.situationCardHtml(again, mdPlain).includes('Redrawn with the current tables'));
+  const old = Object.assign({}, entry); delete old.composeVersion;
+  const redone = P.replaySituationEntry(C, FIXC.console.T, FIXC.campaign, old, {});
+  assert.deepEqual(redone.meta.recomposed, { from: 1, to: C.COMPOSE_VERSION }, 'an entry from before versions says it was redrawn');
+  const html = P.situationCardHtml(redone, mdPlain);
+  assert.equal(count(html, /Redrawn with the current tables/g), 1, 'one quiet note line'); assert.ok(html.includes('class="gm-quiet"'));
+  assert.equal(P.replaySituationEntry(C, FIXC.console.T, FIXC.campaign, Object.assign({}, entry, { composeVersion: 1 }), {}).meta.recomposed.from, 1, 'an explicit older version too');
+});
+
+await test('13c. on the page: a stored card redraws without a note after a reload; one stored without a version carries the note', async () => {
+  const fg = fakeGm(), br = fakeBrowser();
+  const h = await openPage({ fg, br }); h.press('2'); const a = cardTxt(h); await h.save();
+  assert.equal(fg.server.doc.cards.situation.composeVersion, C.COMPOSE_VERSION, 'stored with the card');
+  assert.equal(Object.values(fg.server.doc.hist.situation)[0].composeVersion, C.COMPOSE_VERSION, 'and with its Earlier entry');
+  const h2 = await openPage({ fg, br }); assert.equal(cardTxt(h2), a); assert.ok(!h2.q('#gm-card .gm-quiet'), 'no note on a current card'); await h2.save();
+  delete fg.server.doc.cards.situation.composeVersion;
+  const h3 = await openPage({ fg, br }); assert.ok(h3.q('#gm-card .gm-quiet') && /Redrawn with the current tables/.test(h3.q('#gm-card .gm-quiet').textContent), 'a card stored before versions says so'); await h3.save();
+});
+
+await test('13c. replacing the stored card: replacePatch nulls what only the old card had; an Earlier entry without composeVersion brings its note back, also after a reload', async () => {
+  assert.deepEqual(P.replacePatch({ a: 1, b: { c: 2, d: 3 }, e: 5 }, { a: 9, b: { c: 4 }, f: 6 }), { e: null, a: 9, b: { d: null, c: 4 }, f: 6 });
+  assert.deepEqual(P.replacePatch(null, { x: { y: 1 } }), { x: { y: 1 } }); assert.deepEqual(P.replacePatch({ x: 1 }, {}), { x: null });
+  const old = { cards: { engagement: { hid: 'h1', seed: 7, phys: { best: 4, crit: false }, ui: { mods: { a: 1 } } } } };
+  assert.deepEqual(P.applyPatch(old, { cards: { engagement: P.replacePatch(old.cards.engagement, { hid: 'h2', seed: 8, ui: { mods: { a: 0 } } }) } }).cards.engagement, { hid: 'h2', seed: 8, ui: { mods: { a: 0 } } }, 'the merge leaves nothing of the old card');
+  const fg = fakeGm(), br = fakeBrowser();
+  const h = await openPage({ fg, br }); h.press('2'); const fresh = cardTxt(h); h.press('3'); await h.save();
+  const hist = fg.server.doc.hist.situation, ids = Object.keys(hist), older = ids.find((k) => hist[k].situation === 'fourfive');
+  delete hist[older].composeVersion;                           /* the entry as an older page stored it */
+  const h2 = await openPage({ fg, br }); assert.ok(!h2.q('#gm-card .gm-quiet'), 'the current card is a version 2 card');
+  h2.qa('#gm-earlier [data-gm="replay"]').filter((c) => c.getAttribute('data-h') === older)[0].click();
+  assert.ok(h2.q('#gm-card .gm-quiet'), 'Earlier: the older entry says it was redrawn');
+  assert.equal(cardTxt(h2).replace(/Redrawn with the current tables/, '').replace(/\s+/g, ' ').slice(0, 20), fresh.replace(/\s+/g, ' ').slice(0, 20), 'and it is the card that was rolled first (same seed)');
+  await h2.save(); assert.ok(!('composeVersion' in fg.server.doc.cards.situation), 'the stored card is that entry, version and all');
+  const h3 = await openPage({ fg, br }); assert.ok(h3.q('#gm-card .gm-quiet'), 'after a reload the note is still there'); await h3.save();
+});
+
+await test('13d. packWarnings: each module\'s own check(T), guarded; a missing table is a warning list, not an error', () => {
+  const mods = { B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmEngagement: EN, B68GmNpc: NPCM };
+  const full = { console: FIXC.console, location: { T: FIXL.T, extra: FIXL.extra }, scenes: { T: FIXS.parts.scenes.T }, engagement: { T: FIXS.parts.engagement.T }, npc: NPCFIX.parts.npc };
+  assert.deepEqual(P.packWarnings(mods, full), [], 'the fixtures are complete');
+  const sparse = cl(full); delete sparse.console.T.spend; delete sparse.engagement.T.cut; sparse.npc.T.faction = [['X', 'y']]; delete sparse.location.T.rumour;
+  const w = P.packWarnings(mods, sparse), by = Object.fromEntries(w.map((x) => [x.part, x.missing]));
+  assert.deepEqual(w.map((x) => x.part), ['console', 'location', 'npc', 'engagement'].filter((p) => by[p]), 'in part order');
+  assert.ok(by.console.some((m) => /^spend/.test(m)) && by.engagement.includes('cut') && by.location.includes('rumour'), JSON.stringify(by));
+  assert.deepEqual(by.console, C.check(sparse.console.T), 'the console\'s own words'); assert.deepEqual(by.engagement, EN.check(sparse.engagement.T));
+  assert.deepEqual(P.packWarnings({ B68GmConsole: { check() { throw new Error('boom'); } }, B68GmLocation: {} }, full), [], 'a check that throws, or a module without one, says nothing');
+  assert.deepEqual(P.packWarnings({}, full), [], 'a module that is not loaded says nothing'); assert.deepEqual(P.packWarnings(mods, {}), [], 'a part the pack lacks says nothing');
+  assert.deepEqual(P.packWarnings(mods, { scenes: {} }).map((x) => [x.part, x.missing]), [['scenes', ['T']]], 'a part without tables names T');
+  assert.match(P.packWarnLines(w, 2)[0], /^console: .*\(\+\d+ more\)$|^console: [^(]*$/);
+});
+
+await test('13d. Update pack: a file missing tables shows the warning list and still uploads; the loaded pack lists them in the Menu', async () => {
+  let uploads = 0;
+  const br = fakeBrowser({ FileReader: class { readAsText(f) { this.result = f.text; this.onload(); } }, confirm: () => true });
+  const sparseCon = cl(FIXC.console); delete sparseCon.T.spend; delete sparseCon.T.say3;
+  const fg = fakeGm(null, { console: { version: 'cs', src: {}, body: sparseCon } }); fg.gm.importPart = async () => { uploads++; return { version: 'x', packVersion: 'pv' }; };
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  // at load: the Menu holds the list, one toast says so
+  assert.ok(h.q('#gm-menu-warn') && !h.q('#gm-menu-warn').hasAttribute('hidden') && /console: /.test(h.q('#gm-menu-warn').textContent) && /spend/.test(h.q('#gm-menu-warn').textContent), 'the Menu lists the missing tables: ' + h.q('#gm-menu-warn').textContent);
+  assert.equal(br.toasts.filter((t) => /missing \d+ table entr/.test(t[0])).length, 1, 'one toast at load'); assert.ok(br.toasts.every((t) => !/missing \d+ table/.test(t[0]) || t[1] === false), 'a note, not an error');
+  h.q('.gm-menu-list [data-gm="update"]').click();
+  const pk = { format: 1, exportedAt: new Date().toISOString(), parts: { console: { src: {}, ...sparseCon }, location: { src: {}, T: FIXL.T, extra: FIXL.extra }, campaign: { src: {}, ...FIXC.campaign }, scenes: { src: {}, ...FIXS.parts.scenes }, engagement: { src: {}, ...FIXS.parts.engagement } } };
+  const file = h.q('#gm-file'); file.files = [{ name: 'b68-gm-pack.json', text: JSON.stringify(pk) }]; file.id = 'gm-file';
+  dispatch(file, 'change');
+  assert.ok(await until(() => h.q('.gm-warns')), 'the warning box');
+  assert.ok(/table entr/.test(h.q('.gm-warns').textContent) && /console/.test(h.q('.gm-warns').textContent) && /spend/.test(h.q('.gm-warns').textContent), h.q('.gm-warns').textContent);
+  assert.ok(h.q('.gm-warns').className.includes('warn') && !h.q('.gm-warns').className.split(/\s+/).includes('bad'), 'a warning, not an error');
+  assert.ok(!h.q('.gm-errs'), 'no error list'); assert.ok(!h.q('[data-gm="upload"]').hasAttribute('disabled'), 'the upload is enabled');
+  h.q('[data-gm="upload"]').click(); assert.ok(await until(() => uploads >= 5), 'and it uploads every part (' + uploads + ')');
+  await h.save();
+  const clean = await openPage({ fg: fakeGm(), br: fakeBrowser(), camp: CAMP3 });
+  assert.ok(clean.q('#gm-menu-warn').hasAttribute('hidden') && clean.q('#gm-menu-warn').textContent === '', 'a complete pack: nothing in the Menu');
+  await clean.save();
+});
+
+await test('13e. the location glance: a Plan line under Say (outside the Say box), a Rule row when the district has one, Flags only the rare ones', async () => {
+  const h = await openPage({ br: fakeBrowser(), fg: fakeGm(), camp: CAMP3 });
+  let plans = 0, rules = 0;
+  for (let i = 0; i < 25; i++) {
+    h.q('[data-gm="locroll"]').click();
+    const g = L.glance(h.page._state().locRoll, { T: FIXL.T, extra: FIXL.extra }, ['public']);
+    const plan = h.q('#gm-loc .gm-glance .gm-plan');
+    assert.ok(plan && plan.textContent.replace(/\s+/g, ' ').includes(g.plan), 'the plan line: ' + g.plan);
+    assert.ok(!plan.closest('.gm-say') && h.q('#gm-loc .gm-say') && !h.q('#gm-loc .gm-say').textContent.includes(g.plan), 'it is outside the Say box (the box the players\' "Players see" chip marks)');
+    assert.equal(/Plan/.test(plan.querySelector('.gm-lab').textContent), true); plans++;
+    const dts = h.qa('#gm-loc .gm-glance-dl dt').map((d) => d.textContent);
+    assert.equal(dts.includes('Rule'), !!g.rule, 'a Rule row exactly when the district has a rule'); if (g.rule) { rules++; assert.ok(h.qa('#gm-loc .gm-glance-dl dd')[dts.indexOf('Rule')].textContent.includes(g.rule)); }
+    assert.equal(dts.includes('Flags'), g.flags.length > 0, 'Flags only when there are rare ones');
+    assert.ok(!/ring-skip|District rule/.test(h.q('#gm-loc .gm-glance').textContent), 'ring-skips and "District rule" are not flags');
+  }
+  assert.ok(plans === 25 && rules > 0, 'rules seen: ' + rules);
+  await h.save();
+});
+
+await test('13e. the plan is GM only: not in playerSummary at any reveal, not in what Street description on iPad sends, and read by nothing but the glance card', async () => {
+  const pk = { T: FIXL.T, extra: FIXL.extra };
+  for (let seed = 1; seed <= 300; seed++) {
+    const roll = L.generate(pk, {}, { seed, mem: {} }), g = L.glance(roll, pk, ['public']);
+    for (const reveal of [['public'], ['public', 'working'], ['public', 'working', 'controlled', 'secure']]) {
+      const ps = L.playerSummary(roll, reveal), all = JSON.stringify(ps);
+      assert.ok(!all.includes(g.plan) && !ps.text.includes('behind') && !/\bis behind \d+ locks?\b|has no lock in the way/.test(all), seed + ': the plan sentence is in the player summary');
+      assert.ok(!all.includes('the target, ' + roll.targetRoom + ' ('), seed + ': nor its target clause');
+    }
+  }
+  const h = await openPage({ br: fakeBrowser(), fg: fakeGm(), camp: CAMP3 });
+  h.q('[data-gm="locroll"]').click();
+  const plan = L.glance(h.page._state().locRoll, pk, ['public']).plan;
+  h.q('[data-gm="pushtext"]').click(); await until(() => h.fg.server.displays.length);
+  const sent = h.fg.server.displays.pop();
+  assert.equal(sent.kind, 'text'); assert.ok(!JSON.stringify(sent).includes(plan) && !/Plan/.test(JSON.stringify(sent)), 'the street description on the iPad has no plan: ' + JSON.stringify(sent).slice(0, 200));
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  assert.equal(count(src, /\.plan\b/g), 2, 'the page reads a plan in one place only (its glance card: the test and the line)');
+  assert.ok(/function glanceHtml[\s\S]*?\.plan[\s\S]*?\.plan[\s\S]*?function foldsHtml/.test(src), 'and that place is glanceHtml');
+  await h.save();
+});
+
+await test('13f. the NPC portrait note is the module\'s own (fig.note); no portrait when the figure failed; "No portrait: …" when the kit throws', async () => {
+  const K = require(path.join(ROOT, 'app', 'figures', 'figure-kit.js'));
+  const npcPage = (kit) => openPage({ br: fakeBrowser({ B68GmNpc: NPCM, B68Figure: kit }), fg: fakeGm(NPCFIX.parts.campaign, { npc: { version: 'n1', src: {}, body: NPCFIX.parts.npc } }), camp: CAMP3 });
+  // a clean figure: a portrait, and no sentence about stock figures
+  let h = await npcPage(K); h.q('[data-gm="npcroll"]').click();
+  assert.ok(h.q('#gm-npc .gm-npccard .gm-npcfig svg'), 'a portrait'); assert.ok(!/nearest of the stock figures|No portrait/.test(h.q('#gm-npc .gm-npccard').textContent), h.q('#gm-npc .gm-npccard').textContent.slice(0, 300));
+  const note = h.page._state ? null : null; void note; await h.save();
+  // the module's note is what shows: a map that makes the module fall back to a stock figure
+  const fallbackKit = Object.assign({}, K);
+  h = await npcPage(fallbackKit);
+  const G = NPCM.create({ T: NPCFIX.parts.npc.T, cast: NPCFIX.parts.npc.cast, F: NPCFIX.parts.npc.F, campaign: NPCFIX.parts.campaign });
+  const stock = G.figure(G.roll({ seed: 9 }).npc, { seed: 9, K, map: () => { throw new Error('boom'); } });
+  assert.ok(stock.fallback && /^Portrait: a stock figure/.test(stock.note), 'the module says so: ' + stock.note);
+  // the figure kit cannot build anything: figure() is failed (no spec), the page draws no portrait and shows the module's note
+  const badKit = Object.assign({}, K, { options: () => { throw new Error('no options'); } });
+  h = await npcPage(badKit); h.q('[data-gm="npcroll"]').click();
+  assert.ok(!h.q('#gm-npc .gm-npccard .gm-npcfig'), 'no portrait when the figure failed');
+  assert.match(h.q('#gm-npc .gm-npccard .gm-fignote').textContent, /^No portrait: .*no options/, 'and the module\'s note says why: ' + h.q('#gm-npc .gm-npccard .gm-fignote').textContent);
+  assert.equal(h.qa('#gm-npc .gm-npccard .gm-fignote').length, 1); await h.save();
+  // the kit throws on the page's own render: no portrait, and "No portrait: <reason>"
+  const portraitBoom = Object.assign({}, K, { portrait: (spec, o) => { if (spec && spec.id === 'gm-npcg') throw new Error('portrait boom'); return K.portrait(spec, o); } });
+  h = await npcPage(portraitBoom); h.q('[data-gm="npcroll"]').click();
+  assert.ok(!h.q('#gm-npc .gm-npccard .gm-npcfig'), 'no portrait when the kit throws'); assert.equal(h.q('#gm-npc .gm-npccard .gm-fignote').textContent, 'No portrait: portrait boom.');
+  // no kit at all: the module throws, the page says why
+  h = await npcPage(undefined); h.q('[data-gm="npcroll"]').click();
+  assert.ok(!h.q('#gm-npc .gm-npccard .gm-npcfig') && /^No portrait: .*figure kit is not loaded/.test(h.q('#gm-npc .gm-npccard .gm-fignote').textContent), h.q('#gm-npc .gm-npccard .gm-fignote').textContent);
+  assert.ok(h.q('#gm-npc [data-gm="npcfile"]'), 'the card still works: Add to the cast is there'); await h.save();
+});
+
+await test('13g. Earlier chips name what the card is (the NPC for Someone / Contact / Face), with the time and the position under it', async () => {
+  const con = sitCon(), ui0 = con.situationDefaults();
+  const rival = con.situation(4, Object.assign({}, ui0, { npc: 'rival:Nigel Sprocket' }), { seed: 7 });
+  assert.ok(!rival.meta.label.includes('Nigel Sprocket'), 'the module\'s own label does not name the rival: ' + rival.meta.label);
+  assert.ok(/^Someone: Nigel Sprocket — Grumpy/.test(P.earlierLabel(rival)), P.earlierLabel(rival));
+  const friend = con.situation(4, Object.assign({}, ui0, { npc: 'friend:Marge Teacup' }), { seed: 7 });
+  assert.ok(P.earlierLabel(friend).includes('Marge Teacup') && P.earlierLabel(friend) === friend.meta.label, 'a Contact names the friend already: unchanged');
+  const face = con.situation(4, ui0, { seed: 5 });
+  assert.equal(P.earlierLabel(face), face.meta.label, 'a Face names the NPC already');
+  assert.ok(P.earlierLabel(face).includes(face.meta.face.name));
+  const before = con.situation(1, ui0, { seed: 5 });
+  assert.ok(!/Want \+1d/.test(P.earlierLabel(before)) && /^Before the roll: Hat Society/.test(P.earlierLabel(before)) && P.earlierLabel(before).length <= 'Before the roll: '.length + 45, P.earlierLabel(before));
+  const fourfive = con.situation(2, Object.assign({}, ui0, { npc: 'rival:Nigel Sprocket' }), { seed: 7 });
+  assert.equal(P.earlierLabel(fourfive), fourfive.meta.label, 'a 4/5 with a rival is about the consequence, not the rival');
+  const cl1 = con.roll('reaction', Object.assign(con.defaults(), { npc: 'rival:Nigel Sprocket' }), { seed: 3 });
+  assert.ok(/^NPC reaction: Nigel Sprocket — /.test(P.earlierLabel(cl1)), 'a single-table reaction too: ' + P.earlierLabel(cl1));
+  assert.equal(P.earlierLabel({ meta: {} }), '', 'no label, no crash');
+  // on the page: the chip is the label, the time and position are under it and in the title
+  const h = await openPage({ br: fakeBrowser(), fg: fakeGm(), camp: CAMP3 });
+  pick(h, '#gm-c-npc', 'rival:Nigel Sprocket'); h.press('4');
+  const chip = h.q('#gm-earlier [data-gm="replay"]'), when = chip.querySelector('.gm-ech-s').textContent;
+  assert.match(chip.querySelector('.gm-ech-t').textContent, /^Someone: Nigel Sprocket — /);
+  assert.match(when, /^\d\d:\d\d · risky$/, 'the time and the position: ' + when);
+  assert.ok(chip.getAttribute('title').includes(when) && chip.getAttribute('title').includes('Nigel Sprocket'), 'and the title says both');
+  h.qa('#gm-pos [data-v="desperate"]')[0].click(); h.press('3');
+  const chips = h.qa('#gm-earlier [data-gm="replay"]'); assert.equal(chips.length, 2);
+  assert.match(chips[0].querySelector('.gm-ech-s').textContent, /· desperate$/, 'each chip has its own position');
+  assert.match(chips[1].querySelector('.gm-ech-s').textContent, /· risky$/);
+  // the other tools' chips carry the time (they have no position)
+  h.q('[data-gm="scnroll"]').click(); assert.match(h.q('#gm-scn .gm-earlier .gm-ech-s').textContent, /^\d\d:\d\d$/);
+  await h.save();
+});
+
+/* =====================================================================================================================
+   14. Physical dice for the engagement roll: the table rolls, the GM taps the highest die (the lowest on a 0d pool, a crit for two 6s)
+   ===================================================================================================================== */
+const enGame = () => EN.create({ T: T_EN });
+/* a seed whose app roll gives this result (highest/lowest die best, crit or not) for these controls */
+function seedFor(en, ui, best, crit) {
+  for (let seed = 1; seed < 200000; seed++) { const r = en.roll(ui, { seed }); if (r.best === best && r.crit === crit) return seed; }
+  throw new Error('no seed for ' + best + (crit ? ' crit' : ''));
+}
+const modsUi = (en, mods) => Object.assign(en.defaults(), { mods: Object.assign(en.defaults().mods, mods) });
+
+await test('14a. engagementPhys: the card for a result called at the table is the card the app roll gives for it (position, closing line), for every pool and result', () => {
+  const en = enGame();
+  const pools = [[{ bold: -1, tier: -1 }, -1], [{ bold: -1 }, 0], [{}, 1], [{ bold: 1 }, 2], [{ bold: 1, tier: 1 }, 3]];
+  for (const [mods, pool] of pools) {
+    const ui = modsUi(en, mods);
+    assert.equal(en.pool(ui), pool, 'the pool of ' + JSON.stringify(mods));
+    const results = [1, 2, 3, 4, 5, 6].map((b) => [b, false]).concat(en.pool(ui) >= 2 ? [[6, true]] : []);
+    for (const [best, crit] of results) {
+      const app = en.roll(ui, { seed: seedFor(en, ui, best, crit) }), ph = P.engagementPhys(EN, en, T_EN, ui, { best, crit });
+      const tag = en.pool(ui) + 'd best ' + best + (crit ? ' crit' : '');
+      assert.ok(ph, tag + ': a card');
+      assert.deepEqual(ph.lines[0], app.lines[0], tag + ': the modifiers line'); assert.deepEqual(ph.lines[1], app.lines[1], tag + ': the position and its how');
+      assert.deepEqual(ph.lines[3], app.lines[3], tag + ': the closing line'); assert.equal(ph.lines.length, 4);
+      assert.equal(ph.lines[2].kind, 'grid'); assert.equal(ph.lines[2].id, 'roll'); assert.match(ph.lines[2].rows[0].md, /at the table/); assert.ok(ph.lines[2].rows[0].md.includes('**' + (crit ? 'critical' : best) + '**'), ph.lines[2].rows[0].md);
+      assert.deepEqual(ph.meta.chips, app.meta.chips, tag + ': the position chip'); assert.equal(ph.meta.title, app.meta.title); assert.equal(ph.meta.sub, app.meta.sub); assert.equal(ph.meta.label, app.meta.label);
+      assert.equal(ph.position, app.position); assert.equal(ph.pool, app.pool); assert.equal(ph.zero, app.zero); assert.equal(ph.best, best); assert.equal(ph.crit, crit);
+      assert.deepEqual(ph.meta.result.pos, app.meta.result.pos); assert.equal(ph.meta.all.length, app.meta.all.length); assert.equal(ph.meta.all[0], app.meta.all[0]);
+      assert.deepEqual(ph.replay, { id: 'engagement', phys: { best, crit }, ui: app.replay.ui }, 'replay info, no seed'); assert.ok(!('seed' in ph.replay) && ph.seed === null);
+      assert.ok(!/undefined|NaN|\[object/.test(JSON.stringify(ph)));
+      // the same position as the module's own helper gives for these dice
+      assert.equal(ph.position, EN.outcomeOf(T_EN, { crit, best }).pos);
+    }
+  }
+  const one = modsUi(en, {}), zero = modsUi(en, { bold: -1, tier: -1 });
+  assert.equal(en.pool(one), 1); assert.ok(en.pool(zero) <= 0);
+  assert.equal(P.engagementPhys(EN, en, T_EN, one, { best: 6, crit: true }), null, 'two 6s needs 2d');
+  assert.equal(P.engagementPhys(EN, en, T_EN, zero, { best: 6, crit: true }), null, 'a 0d pool has no crit');
+  for (const bad of [{ best: 0 }, { best: 7 }, { best: 'x' }, { best: 4.5 }, { best: 5, crit: true }, null, 'x']) assert.equal(P.engagementPhys(EN, en, T_EN, modsUi(en, { bold: 1 }), bad), null, JSON.stringify(bad));
+  assert.match(P.engagementPhys(EN, en, T_EN, zero, { best: 2, crit: false }).lines[2].rows[0].md, /^0d — rolled 2 at the table, kept the lowest: \*\*2\*\*$/, 'a 0d pool: the table rolls two and keeps the lowest');
+  assert.match(P.engagementPhys(EN, en, T_EN, zero, { best: 2, crit: false }).meta.title, /\(2d, keep lowest\)/, 'and the title says so, never -1d');
+});
+
+const dieBtn = (h, v) => h.q('#gm-eng [data-gm="engdie"][data-v="' + v + '"]');
+const engTxt = (h) => cardOf(h, '#gm-eng .gm-engcard').replace(/\*\*/g, '');       // this fake page shows markdown as written
+
+await test('14b. the Engage panel: the pool before the roll, Roll engagement (the app rolls), and a "Rolled at the table: highest die" row of 1-6 and Crit (two 6s)', async () => {
+  const fg = fakeGm(), h = await openPage({ fg });
+  h.press('e');
+  assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 1d', 'the pool before any roll'); assert.ok(/Set the factors, then roll\./.test(engTxt(h)));
+  assert.ok(h.q('#gm-eng [data-gm="engroll"]'), 'Roll engagement stays'); assert.equal(h.q('#gm-eng [data-gm="engroll"]').textContent, 'Roll engagement');
+  const row = h.q('#gm-eng .gm-dice'); assert.ok(row, 'the dice row');
+  assert.equal(row.querySelector('.gm-lab').textContent, 'Rolled at the table: highest die');
+  assert.deepEqual(h.qa('#gm-eng [data-gm="engdie"]').map((b) => b.textContent), ['1', '2', '3', '4', '5', '6', 'Crit (two 6s)']);
+  assert.ok(dieBtn(h, 'crit').hasAttribute('disabled') && /2d/.test(dieBtn(h, 'crit').getAttribute('title')), 'one die cannot give two 6s');
+  const all = h.q('#gm-eng').innerHTML, iRoll = all.indexOf('data-gm="engroll"'), iDice = all.indexOf('class="gm-field wide gm-dice"'), iCard = all.indexOf('gm-engcard');
+  assert.ok(iRoll < iDice && iDice < iCard, 'the row sits under Roll engagement, above the card');
+  h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click();
+  assert.ok(!dieBtn(h, 'crit').hasAttribute('disabled'), 'a 2d pool can crit');
+  h.q('[data-gm="engtri"][data-id="bold"][data-v="-1"]').click(); h.q('[data-gm="engtri"][data-id="tier"][data-v="-1"]').click();
+  assert.equal(h.q('#gm-eng .gm-dice .gm-lab').textContent, 'Rolled at the table: lowest die', 'a 0d pool rolls two and keeps the LOWEST');
+  assert.equal(h.qa('#gm-eng [data-gm="engdie"]').length, 6, 'and has no crit button'); assert.ok(/0d: roll two dice, keep the lowest/.test(h.q('#gm-eng .gm-dice').textContent), h.q('#gm-eng .gm-dice').textContent);
+  await h.save();
+});
+
+await test('14c. tap 4: the risky card; a crit; the result is stored without a seed, redrawn exactly after a reload and from Earlier', async () => {
+  const fg = fakeGm(), br = fakeBrowser();
+  const h = await openPage({ fg, br });
+  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click();                           // 2d
+  dieBtn(h, '4').click();
+  let txt = engTxt(h);
+  assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
+  assert.ok(txt.includes(T_EN.outcome.risky.pos) && txt.includes(T_EN.outcome.risky.how), 'the risky position and its line: ' + txt);
+  assert.ok(txt.replace(/\*\*/g, '').includes(T_EN.cut.replace(/\*\*/g, '')), 'the closing line'); assert.ok(/Rolled at the table: highest die 4/.test(txt), txt);
+  assert.deepEqual(h.qa('#gm-eng .gm-engcard .gm-chip').map((c) => c.textContent), [T_EN.outcome.risky.pos.split(' — ')[0]]);
+  assert.equal(dieBtn(h, '4').getAttribute('aria-pressed'), 'true', 'the tapped die is marked'); assert.equal(dieBtn(h, '5').getAttribute('aria-pressed'), 'false');
+  assert.ok(h.q('#gm-eng .gm-engcard [data-gm="pin"]') && h.q('#gm-eng .gm-engcard [data-gm="copy"]'), 'Pin and Copy on it');
+  const first = txt;
+  dieBtn(h, 'crit').click(); txt = engTxt(h);
+  assert.ok(txt.includes(T_EN.outcome.crit.pos) && txt.includes(T_EN.outcome.crit.how) && /two 6s/.test(txt) && /critical/.test(txt), 'a crit: ' + txt);
+  assert.equal(dieBtn(h, 'crit').getAttribute('aria-pressed'), 'true'); assert.equal(dieBtn(h, '4').getAttribute('aria-pressed'), 'false');
+  const crit = txt;
+  dieBtn(h, '6').click(); assert.ok(engTxt(h).includes(T_EN.outcome.six.pos + ' ') || engTxt(h).includes(T_EN.outcome.six.how), 'one 6 is the six outcome, not the crit');
+  dieBtn(h, '2').click(); assert.ok(engTxt(h).includes(T_EN.outcome.desperate.how), 'a 1-3 is the desperate outcome');
+  dieBtn(h, '4').click();
+  await h.save();
+  const c = fg.server.doc.cards.engagement;
+  assert.equal(c.id, 'engagement'); assert.deepEqual(c.phys, { best: 4, crit: false }); assert.deepEqual(c.ui, { approach: 'Smash', load: 'Quiet', mods: { bold: 1, tier: 0 } });
+  assert.ok(!('seed' in c) && !('mem' in c), 'no seed: the dice are the table\'s'); assert.ok(c.hid && c.at && /^Smash — 2d · Level · table 4$/.test(c.label), c.label);
+  assert.equal(Object.keys(fg.server.doc.hist.engagement).length, 5, 'every tap is in Earlier (five kept)');
+  const h2 = await openPage({ fg, br });
+  assert.equal(engTxt(h2), first, 'reload: exactly the same card'); assert.equal(h2.q('#gm-eng [data-gm="engdie"][data-v="4"]').getAttribute('aria-pressed'), 'true');
+  const chips = h2.qa('#gm-eng [data-gm="replay"]'); assert.equal(chips.length, 5);
+  assert.deepEqual(chips.map((x) => x.querySelector('.gm-ech-t').textContent).sort(), ['Smash — 2d · Ahead of the game · table crit', 'Smash — 2d · Ahead · table 6', 'Smash — 2d · Behind · table 2', 'Smash — 2d · Level · table 4', 'Smash — 2d · Level · table 4'].sort(), 'Earlier names the table result');
+  chips.filter((x) => x.querySelector('.gm-ech-t').textContent.endsWith('table crit'))[0].click();
+  assert.equal(engTxt(h2), crit, 'Earlier brings the crit back, card for card');
+  await h2.save();
+  const h3 = await openPage({ fg, br });
+  assert.equal(engTxt(h3), crit, 'and the replayed card is the one that comes back'); assert.equal(h3.q('#gm-eng [data-gm="engdie"][data-v="crit"]').getAttribute('aria-pressed'), 'true');
+  // a control change drops the stored card (the Earlier row keeps it); the app's own roll still works and files a seed
+  change(h3.q('#gm-e-approach'), 'Charm'); assert.ok(/Set the factors/.test(engTxt(h3)) && !h3.q('#gm-eng .gm-chip'), 'a change shows the pool again');
+  h3.q('[data-gm="engroll"]').click(); assert.ok(/\[\d \d\]/.test(engTxt(h3)), 'the app rolls real dice: ' + engTxt(h3));
+  await h3.save();
+  assert.ok(Number.isInteger(fg.server.doc.cards.engagement.seed) && !fg.server.doc.cards.engagement.phys && fg.server.doc.cards.engagement.phys === undefined, 'an app roll files a seed and no phys');
+});
+
+await test('14d. a 0d pool: the table rolls two and keeps the lowest; the tap is the lowest die; Pin, Copy and L say it was the table\'s', async () => {
+  const fg = fakeGm(), br = fakeBrowser(), h = await openPage({ fg, br });
+  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="-1"]').click(); h.q('[data-gm="engtri"][data-id="tier"][data-v="-1"]').click();
+  assert.equal(h.q('#gm-eng .gm-dice .gm-lab').textContent, 'Rolled at the table: lowest die');
+  dieBtn(h, '5').click();
+  const txt = engTxt(h);
+  assert.ok(/Smash — 0d \(2d, keep lowest\)/.test(txt) && !/-1d/.test(txt) && /0d — rolled 2 at the table, kept the lowest: 5/.test(txt), txt);
+  assert.ok(txt.includes(T_EN.outcome.risky.how), 'the lowest die 5 is the risky outcome');
+  h.q('#gm-eng [data-gm="copy"]').click(); assert.ok(/kept the lowest/.test(br.copied) && !/\*\*/.test(br.copied) && br.copied.includes(T_EN.cut.replace(/\*\*/g, '')), br.copied);
+  h.q('#gm-eng [data-gm="pin"]').click(); h.press('l'); await h.save();
+  const pins = Object.values(fg.server.doc.pins); assert.equal(pins.length, 1); assert.equal(pins[0].tool, 'engagement'); assert.ok(/at the table/.test(pins[0].text));
+  const cap = Object.values(fg.server.doc.capture); assert.ok(cap.some((e) => e.bucket === 'r' && /^Engagement: Smash — 0d \(2d, keep lowest\) · Level · table low 5$/.test(e.text)), JSON.stringify(cap));
+  assert.deepEqual(fg.server.doc.cards.engagement.phys, { best: 5, crit: false });
+});
+
+await test('14f. a table roll and an app roll never inherit each other\'s stored keys: reload and Earlier give each card back as it was', async () => {
+  const fg = fakeGm(), br = fakeBrowser(), h = await openPage({ fg, br });
+  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click();
+  dieBtn(h, '4').click(); const table = engTxt(h);
+  h.q('[data-gm="engroll"]').click(); const app = engTxt(h); assert.notEqual(app, table); assert.ok(/\[\d \d\]/.test(app));
+  await h.save();
+  let c = fg.server.doc.cards.engagement; assert.ok(Number.isInteger(c.seed) && !('phys' in c), 'the app roll replaced the table roll: no phys left on it: ' + JSON.stringify(c));
+  const h2 = await openPage({ fg, br }); assert.equal(engTxt(h2), app, 'reload: the app roll, not the table roll');
+  h2.qa('#gm-eng [data-gm="replay"]').filter((x) => /table 4$/.test(x.querySelector('.gm-ech-t').textContent))[0].click();
+  assert.equal(engTxt(h2), table, 'Earlier: the table roll'); await h2.save();
+  c = fg.server.doc.cards.engagement; assert.ok(c.phys && !('seed' in c), 'and the stored card is the table roll alone: ' + JSON.stringify(c));
+  const h3 = await openPage({ fg, br }); assert.equal(engTxt(h3), table, 'reload: still the table roll');
+  h3.qa('#gm-eng [data-gm="replay"]').filter((x) => !/table/.test(x.querySelector('.gm-ech-t').textContent))[0].click();
+  assert.equal(engTxt(h3), app, 'Earlier: the app roll again'); await h3.save();
+  assert.ok(Number.isInteger(fg.server.doc.cards.engagement.seed) && !('phys' in fg.server.doc.cards.engagement));
+});
+
+await test('14e. a pack without the engagement part: no dice row, nothing thrown', async () => {
+  const fg = fakeGm(); const full = fg.gm.pack;
+  fg.gm.pack = async () => { const r = await full(); delete r.parts.engagement; return r; };
+  const h = await openPage({ fg }); h.press('e');
+  assert.ok(/no engagement part/.test(h.q('#gm-eng').textContent) && !h.q('#gm-eng .gm-dice'));
+  await h.save();
+});
+
+/* =====================================================================================================================
+   15. E5, signed out mid-session: a 401 (Cloudflare Access expired) puts the saver on HOLD: nothing more is sent, new patches
+   merge into the pending copy, which waits in the sticky copy as PENDING (a refused patch stays refused and is never resent);
+   the bar says so plainly; the next open after a reload resends the pending copy once
+   ===================================================================================================================== */
+const SIGNED_OUT = Object.assign(new Error('signed out: reload the page to sign in again'), { status: 401, code: 'signed_out' });
+const SO_MSG = 'Signed out: reload to sign in. Your notes are kept on this device.';
+const stickyOf = (br) => JSON.parse(br.ls.get('b68.gm.sticky') || 'null');
+
+await test('15a. a 401 (or the adapter\'s signed-out error) puts the saver on hold: nothing more is sent, new patches merge into the pending copy, nothing is parked', async () => {
+  for (const err of [SIGNED_OUT, Object.assign(new Error('x'), { status: 401 }), Object.assign(new Error('x'), { code: 'signed_out' })]) {
+    const h = harness({ fail: (p, n) => (n >= 2 ? err : null) });
+    h.s.add({ a: 1 }); await h.s.flush(); await tick();
+    h.s.add({ b: { x: 1 } }); await h.s.flush(); await tick();
+    const st = h.s.state();
+    assert.equal(st.hold, true); assert.equal(st.parked, null, 'a sign-out is not a refusal'); assert.deepEqual(st.pending, { b: { x: 1 } }); assert.equal(h.timers.size, 0, 'no retry is scheduled'); assert.equal(st.error, 'signed out');
+    h.s.add({ b: { y: 2 }, c: 3 });
+    assert.equal(h.timers.size, 0, 'no debounce timer while on hold'); await h.s.flush(); await h.s.beacon(); await tick();
+    assert.deepEqual(h.sent, [{ a: 1 }, { b: { x: 1 } }], 'nothing is sent while on hold, the beacon neither');
+    assert.deepEqual(h.s.state().pending, { b: { x: 1, y: 2 }, c: 3 }, 'later patches merge into the pending copy');
+    assert.deepEqual(h.s.unsent(), { b: { x: 1, y: 2 }, c: 3 }, 'unsent() is what has not gone');
+    assert.equal(P.signedOut(err), true);
+  }
+  assert.equal(P.signedOut({ status: 400 }), false); assert.equal(P.signedOut({ status: 403 }), false); assert.equal(P.signedOut(null), false); assert.equal(P.signedOut({ network: true }), false);
+  assert.equal(P.retryable(Object.assign(new Error('x'), { status: 401 })), false, 'a 401 is still not retried on a timer');
+});
+
+await test('15b. a refused patch (400) is still parked and never resent, beside a sign-out hold; unsent() is the patch in flight and the pending one together', async () => {
+  const bad = Object.assign(new Error('capture must be an object'), { status: 400 });
+  const h = harness({ fail: (p) => (p.bad ? bad : p.out ? SIGNED_OUT : null) });
+  h.s.add({ bad: 1 }); await h.s.flush(); await tick();
+  assert.deepEqual(h.s.state().parked, { bad: 1 }); assert.equal(h.s.state().hold, false, 'a refusal is not a hold');
+  h.s.add({ out: 1 }); await h.s.flush(); await tick();
+  const st = h.s.state(); assert.equal(st.hold, true); assert.deepEqual(st.parked, { bad: 1 }, 'the refused patch stays parked'); assert.deepEqual(st.pending, { out: 1 }, 'the held one is pending');
+  assert.deepEqual(h.s.unsent(), { out: 1 }, 'the refused patch is not part of what is resent');
+  assert.deepEqual(h.sent, [{ bad: 1 }, { out: 1 }]);
+  // in flight + pending together
+  const g = harness(); const release = g.hold();
+  g.s.add({ a: 1 }); g.s.flush(); g.s.add({ b: 2 }); await tick();
+  assert.deepEqual(g.s.unsent(), { a: 1, b: 2 }, 'the write in flight is still unsent until it lands');
+  release(); await tick(); await tick(); await tick(); assert.equal(g.s.unsent(), null, 'and nothing is unsent after');
+  // the beacon: a signed-out answer holds the saver too, and keeps the patch
+  const o2 = { debounce: 800, delay: () => 1, cancel() {}, send: async () => ({ doc: {}, updatedAt: 't' }), beacon: async () => { throw SIGNED_OUT; } };
+  const s2 = P.makeSaver(o2); s2.add({ k: 1 }); await s2.beacon(); await tick();
+  assert.equal(s2.state().hold, true); assert.deepEqual(s2.state().pending, { k: 1 }, 'a beacon that meets the sign-out page keeps its patch');
+});
+
+await test('15c. the page: a 401 mid-session puts a plain message in the bar, keeps the notes on this device as pending, and a reload resends them once', async () => {
+  const br = fakeBrowser(), fg = fakeGm(), okPatch = fg.gm.patchState, seen = [];
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('3'); await h.save(); assert.ok(fg.server.doc.cards.situation, 'signed in: the roll is saved');
+  const h1 = await openPage({ br, fg, camp: CAMP3 }), before = cardTxt(h1);
+  fg.gm.patchState = async (p) => { seen.push(p); throw SIGNED_OUT; };               // the Access session ends
+  h1.press('2'); const rolled = cardTxt(h1); assert.notEqual(rolled, before);
+  h1.q('#gm-cap-in').value = 'The goose, again'; dispatch(h1.q('[data-gm-form="capture"]'), 'submit');
+  assert.ok(await until(() => h1.q('#gm-signed') && !h1.q('#gm-signed').hasAttribute('hidden') && h1.page._state(), 400), 'the bar message appears (the saver tried, got a 401)');
+  const bar = h1.q('#gm-signed');
+  assert.equal(bar.textContent, SO_MSG); assert.ok(bar.closest('.gm-bar'), 'it is in the bar'); assert.ok(h1.q('.gm-bar').className.split(/\s+/).includes('out'), 'the bar is marked');
+  assert.equal(h1.q('.gm-save').textContent, 'Signed out'); assert.ok(h1.q('.gm-save').className.includes('bad'));
+  assert.equal(br.toasts.filter((t) => t[0] === SO_MSG).length, 1, 'one toast, said once');
+  assert.ok(!/Not saved|It is kept on this device; later changes still save/.test(h1.root.textContent + JSON.stringify(br.toasts)), 'the old "later changes still save" line is not said');
+  h1.press('3'); const card1 = cardTxt(h1); h1.q('#gm-cap-in').value = 'A second line'; dispatch(h1.q('[data-gm-form="capture"]'), 'submit'); await new Promise((r) => setTimeout(r, 900));
+  assert.equal(seen.length, 1, 'one request met the 401; the later patches were not sent');
+  const sticky = stickyOf(br);
+  assert.ok(sticky && sticky.pending && sticky.pending.cards && sticky.pending.cards.situation && sticky.pending.capture, 'the sticky copy holds the pending patch');
+  assert.deepEqual(Object.values(sticky.pending.capture).map((e) => e.text).sort(), ['A second line', 'The goose, again'], 'with both lines');
+  assert.ok(!sticky.parked, 'pending is not parked');
+  assert.equal(Object.values(fg.server.doc.capture || {}).length, 0, 'the server has none of it');
+  assert.equal(cardTxt(h1).length > 10, true, 'and the page keeps working on this device (a roll still draws)');
+  const asked = []; br.W.confirm = (m) => { asked.push(m); return false; };
+  h1.q('.gm-menu-list [data-gm="forget"]').click(); assert.ok(/not been saved|not yet saved/i.test(asked[0] || ''), 'Forget warns that unsent changes would go: ' + asked[0]);
+  await h1.save(); assert.equal(seen.length, 1, 'closing the page sends nothing while signed out'); assert.ok(stickyOf(br).pending, 'and the copy is still there');
+  // the next open after a reload, signed in again: the pending copy is resent once
+  fg.gm.patchState = okPatch; fg.server.patches.length = 0;
+  const h2 = await openPage({ br, fg, camp: CAMP3 });
+  assert.ok(await until(() => fg.server.patches.some((p) => p.capture), 400), 'the pending copy was sent on the next open');
+  assert.equal(h2.q('#gm-signed').hasAttribute('hidden'), true, 'no message now'); const card2 = cardTxt(h2);
+  await h2.save();
+  const sent = fg.server.patches.filter((p) => p.capture); assert.equal(sent.length, 1, 'once');
+  assert.deepEqual(Object.values(fg.server.doc.capture).map((e) => e.text).sort(), ['A second line', 'The goose, again']);
+  assert.equal(fg.server.doc.cards.situation.hid, JSON.parse(JSON.stringify(sticky.pending.cards.situation.hid)), 'the card rolled while signed out is the stored one');
+  assert.equal(card2, card1, 'and the page draws it');
+  assert.equal(stickyOf(br).pending, undefined, 'the sticky copy no longer holds it');
+  const n = fg.server.patches.length, h3 = await openPage({ br, fg, camp: CAMP3 }); await h3.save();
+  assert.equal(fg.server.patches.filter((p) => p.capture).length, 1, 'a later open does not resend it'); assert.equal(fg.server.patches.length, n, 'nothing at all is resent');
+});
+
+await test('15d. a refused 400 stays refused: kept on this device, shown as Not saved, and never resent after a reload', async () => {
+  const br = fakeBrowser(), fg = fakeGm(), good = fg.gm.patchState;
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  fg.gm.patchState = async (p) => { if (p.capture) throw Object.assign(new Error('capture must be an object'), { status: 400 }); return good(p); };
+  h.q('#gm-cap-in').value = 'Refused line'; dispatch(h.q('[data-gm-form="capture"]'), 'submit');
+  assert.ok(await until(() => /Not saved/.test(h.q('.gm-save').textContent), 400), 'Not saved'); assert.ok(h.q('#gm-signed').hasAttribute('hidden'), 'not the sign-out message');
+  assert.ok(stickyOf(br).parked && stickyOf(br).parked.capture, 'kept on this device'); assert.equal(stickyOf(br).pending, undefined, 'and not pending');
+  h.press('3'); await h.save();
+  assert.ok(fg.server.doc.cards.situation, 'later changes still save');
+  fg.gm.patchState = good; fg.server.patches.length = 0;
+  const h2 = await openPage({ br, fg, camp: CAMP3 }); await new Promise((r) => setTimeout(r, 1000)); await h2.save();
+  assert.ok(!fg.server.patches.some((p) => p.capture), 'the refused patch was not sent again');
+  assert.ok(stickyOf(br).parked && stickyOf(br).parked.capture, 'it is still carried on this device');
+});
+
+await test('15e. the page-hide request meets the sign-in page (an opaque redirect): that is a sign-out too, not a retry loop', async () => {
+  const br = fakeBrowser({ fetch: async () => ({ ok: false, status: 0, type: 'opaqueredirect' }) }), fg = fakeGm();
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('3');
+  br.doc.hidden = true; for (const fn of br.doc.listeners.visibilitychange || []) fn();
+  assert.ok(await until(() => !h.q('#gm-signed').hasAttribute('hidden'), 400), 'a hidden tab whose keepalive request was redirected to the sign-in page shows the message');
+  assert.equal(h.q('#gm-signed').textContent, SO_MSG); assert.ok(stickyOf(br).pending && stickyOf(br).pending.cards, 'and keeps the patch'); assert.equal(fg.server.patches.length, 0);
+  br.doc.hidden = false;
+});
+
+await test('15f. an open that stops at the import screen (no pack on the server) leaves the pending copy in the sticky copy and sends nothing', async () => {
+  const br = fakeBrowser(), fg = fakeGm(), pending = { capture: { cx: { id: 'cx', bucket: 'n', text: 'Kept for later', at: '2026-10-01T12:00:00.000Z', s: 3 } } };
+  br.ls.set('b68.gm.sticky', JSON.stringify({ v: 1, user: 'gm1', live: {}, cards: {}, pending }));
+  fg.gm.pack = async () => ({ version: '0', parts: {} }); br.W.claude = { gm: fg.gm };
+  const page = loadPage(br.W), root = br.doc.createElement('div'); br.doc.body.appendChild(root);
+  page.open(root, { ready: async () => {}, isGM: () => true, me: () => 'gm1', gm: () => fg.gm, db: () => null, campaign: () => CAMP3, saveFile() {}, copy() {} });
+  assert.ok(await until(() => page._state() && page._state().status === 'import'), 'the import screen');
+  await new Promise((r) => setTimeout(r, 1000));
+  assert.equal(fg.server.patches.length, 0, 'nothing was sent'); assert.deepEqual(stickyOf(br).pending, pending, 'the pending copy is still in the sticky copy');
+  page.close();
+});
+
+/* =====================================================================================================================
+   16. E18, capture never blocks a roll: capture is budgeted by bytes; over it, the oldest lines of EARLIER sessions go first (never
+   this session's), one toast per page load; only a session that alone exceeds the budget refuses new capture text; a roll is never refused
+   ===================================================================================================================== */
+const isoAt = (i) => new Date(Date.UTC(2026, 9, 1, 12, 0, 0) + i * 60000).toISOString();
+function capLines(session, n, len, from) {
+  const m = {};
+  for (let i = 0; i < n; i++) { const id = 'c' + session + '_' + (from || 0) + '_' + i; m[id] = { id, bucket: 'm', text: 'q'.repeat(len), at: isoAt((session * 1000) + (from || 0) + i), s: session }; }
+  return m;
+}
+const capBytes = (m) => Object.keys(m).reduce((n, k) => n + P.bytes(m[k]) + k.length + 6, 0);   // what the page counts for a line: its JSON, its key and the punctuation
+
+await test('16a. capturePlan: within the budget everything stays; over it the oldest lines of earlier sessions go first, never this session\'s or a line without a session', () => {
+  assert.ok(P.LIMITS.captureBytes >= 96 * 1024 && P.LIMITS.captureBytes <= 160 * 1024 && P.LIMITS.captureBytes < P.LIMITS.stateSoft, 'a byte budget well under the soft cap: ' + P.LIMITS.captureBytes);
+  const e = (id, s) => ({ id, bucket: 'n', text: 't'.repeat(300), at: isoAt(90000), s });
+  const map = Object.assign({}, capLines(1, 4, 300), capLines(2, 4, 300), capLines(3, 3, 300));
+  map.nos = { id: 'nos', bucket: 'x', text: 'u'.repeat(300), at: isoAt(1) };                  // filed with no session known
+  const per = capBytes({ new1: e('new1', 3) }), max = capBytes(map) + per;                       // room for exactly the new line
+  let p = P.capturePlan(map, 'new1', e('new1', 3), 3, max);
+  assert.equal(p.refused, false); assert.deepEqual(p.dropped, []); assert.deepEqual(Object.keys(p.patch), ['new1'], 'under the budget: just the new line');
+  p = P.capturePlan(map, 'new1', e('new1', 3), 3, max - Math.round(per * 2.5));                  // two and a half lines too many
+  assert.equal(p.refused, false); assert.deepEqual(p.dropped, ['c1_0_0', 'c1_0_1', 'c1_0_2'], 'three of the oldest earlier lines, session 1 first, oldest first');
+  for (const id of p.dropped) assert.equal(p.patch[id], null);
+  assert.equal(p.patch.new1.text.length, 300);
+  const after = P.applyPatch({ capture: map }, { capture: p.patch }).capture; assert.ok(capBytes(after) <= max - Math.round(per * 2.5), 'it fits now');
+  for (const id of Object.keys(capLines(3, 3, 300))) assert.ok(id in after, 'this session\'s line kept'); assert.ok('nos' in after, 'a line without a session is kept');
+  p = P.capturePlan(map, 'new1', e('new1', 3), 3, capBytes(map) - per * 6);                      // more than session 1 holds: session 2 next, oldest session first
+  assert.equal(p.refused, false); assert.equal(p.dropped.length, 7);
+  assert.deepEqual(p.dropped.slice(0, 4), ['c1_0_0', 'c1_0_1', 'c1_0_2', 'c1_0_3'], 'all of session 1, then'); assert.ok(p.dropped.slice(4).every((id) => /^c2_/.test(id)), 'session 2');
+  assert.ok(!p.dropped.some((id) => /^c3_|^nos$/.test(id)));
+  // this session alone over the budget: refused, nothing dropped, nothing added
+  const solo = capLines(3, 6, 300);
+  p = P.capturePlan(solo, 'new1', e('new1', 3), 3, capBytes(solo));
+  assert.equal(p.refused, true); assert.equal(p.patch, null); assert.deepEqual(p.dropped, []);
+  const mix = Object.assign({}, capLines(1, 5, 300), capLines(3, 5, 300));
+  p = P.capturePlan(mix, 'new1', e('new1', 3), 3, capBytes(capLines(3, 5, 300)) + per - 1);
+  assert.equal(p.refused, true, 'every earlier line gone and this session still over: refused'); assert.equal(p.patch, null);
+  p = P.capturePlan(mix, 'new1', e('new1', 3), 3, capBytes(capLines(3, 5, 300)) + per);
+  assert.equal(p.refused, false); assert.equal(p.dropped.length, 5, 'and just enough room: the five earlier lines go');
+  // a session that is not known drops nothing (no line can be shown to be earlier); a later session's lines are not earlier
+  p = P.capturePlan(capLines(1, 6, 300), 'new1', e('new1'), undefined, 100); assert.equal(p.refused, true);
+  p = P.capturePlan(capLines(5, 6, 300), 'new1', e('new1', 3), 3, 100); assert.equal(p.refused, true, 'lines of a later session are not earlier');
+  // the 400-line cap still applies on top
+  const many = {}; for (let i = 0; i < P.LIMITS.capture; i++) many['m' + i] = { id: 'm' + i, bucket: 'n', text: 'z', at: isoAt(i), s: 3 };
+  p = P.capturePlan(many, 'new1', e('new1', 3), 3, 1e9); assert.equal(p.patch.m0, null, 'the oldest past 400 goes, as before'); assert.equal(p.dropped.length, 0);
+  assert.deepEqual(P.capShed(map, 1, 3), ['c1_0_0'], 'capShed names the oldest earlier line for the first byte it must find');
+  assert.equal(P.capShed(map, capBytes(capLines(1, 4, 300)) + 1, 3).length, 5, 'and goes on to the next session for more');
+  assert.deepEqual(P.capShed(capLines(3, 4, 300), 1e9, 3), [], 'never this session\'s'); assert.deepEqual(P.capShed(map, 1e9, undefined), [], 'nor anything when the session is not known');
+});
+
+const submitCap = (h, text) => { h.q('#gm-cap-in').value = text; dispatch(h.q('[data-gm-form="capture"]'), 'submit'); };
+
+await test('16b. on the page: over the byte budget, earlier sessions\' lines go first; one toast per page load says how many and that npm run gm:after files them; this session\'s are kept', async () => {
+  const fg = fakeGm(), br = fakeBrowser();
+  const earlier = Object.assign({}, capLines(1, 130, 470), capLines(2, 130, 470)), mine = capLines(3, 12, 200);
+  fg.server.doc = { capture: Object.assign({}, earlier, mine, { nos: { id: 'nos', bucket: 'n', text: 'no session', at: isoAt(5) } }) };
+  assert.ok(capBytes(fg.server.doc.capture) > P.LIMITS.captureBytes, 'the doc starts over the budget (' + capBytes(fg.server.doc.capture) + ')');
+  const h = await openPage({ br, fg, camp: CAMP3 });                                        // session 3
+  submitCap(h, 'The first new line');
+  const left = () => h.page._state().doc.capture;
+  assert.ok(capBytes(left()) <= P.LIMITS.captureBytes, 'under the budget now: ' + capBytes(left()));
+  const toasts = br.toasts.filter((t) => /Dropped \d+ /.test(t[0]));
+  assert.equal(toasts.length, 1, 'one toast: ' + JSON.stringify(br.toasts));
+  assert.match(br.toasts[br.toasts.length - 1][0], /^Dropped \d+ /, 'and it is the last thing said: "Filed under ..." does not cover it (a toast has one line)');
+  const n = +/Dropped (\d+)/.exec(toasts[0][0])[1], gone = Object.keys(earlier).filter((k) => !(k in left()));
+  assert.equal(n, gone.length, 'it names how many'); assert.ok(n > 0 && /earlier session/.test(toasts[0][0]) && /npm run gm:after/.test(toasts[0][0]) && /vault/.test(toasts[0][0]), toasts[0][0]);
+  for (const k of Object.keys(mine)) assert.ok(k in left(), 'this session\'s lines are all there'); assert.ok('nos' in left(), 'and the line with no session');
+  const order = (a, b) => a.s - b.s || (a.at < b.at ? -1 : a.at > b.at ? 1 : 0);
+  const keptEarlier = Object.keys(earlier).filter((k) => k in left()).map((k) => earlier[k]).sort(order), oldestKept = keptEarlier[0];
+  assert.ok(keptEarlier.length > 0); for (const k of gone) assert.ok(order(earlier[k], oldestKept) < 0, 'only the oldest went: ' + k);
+  for (let i = 0; i < 40; i++) submitCap(h, 'filler ' + 'y'.repeat(400));
+  assert.equal(br.toasts.filter((t) => /Dropped \d+ /.test(t[0])).length, 1, 'still one toast for the whole page load');
+  assert.ok(capBytes(left()) <= P.LIMITS.captureBytes, 'and still under the budget');
+  await h.save();
+  assert.ok(capBytes(fg.server.doc.capture) <= P.LIMITS.captureBytes, 'saved under the budget'); assert.ok(Object.values(fg.server.doc.capture).some((e) => e.text === 'The first new line'));
+  const br2 = fakeBrowser(), fg2 = fakeGm(); fg2.server.doc = { capture: Object.assign({}, earlier, capLines(3, 2, 100)) };
+  const h2 = await openPage({ br: br2, fg: fg2, camp: CAMP3 }); submitCap(h2, 'x'); assert.equal(br2.toasts.filter((t) => /Dropped \d+ /.test(t[0])).length, 1, 'a new page load says it again'); await h2.save();
+});
+
+await test('16c. a session that alone fills the budget cannot file more text (a clear message), and a roll is never refused', async () => {
+  const fg = fakeGm(), br = fakeBrowser(), mine = capLines(3, 300, 470);
+  assert.ok(capBytes(mine) > P.LIMITS.captureBytes);
+  fg.server.doc = { capture: Object.assign({}, capLines(2, 5, 100), mine) };
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  const before = Object.keys(h.page._state().doc.capture).length;
+  submitCap(h, 'one more line');
+  assert.equal(Object.keys(h.page._state().doc.capture).length, before, 'nothing was added, and nothing dropped for a line that is refused');
+  assert.ok(!Object.values(h.page._state().doc.capture).some((e) => e.text === 'one more line'), 'the line is not filed');
+  const refusal = br.toasts.filter((t) => /capture/i.test(t[0]) && t[1] === true);
+  assert.equal(refusal.length, 1, JSON.stringify(br.toasts)); assert.match(refusal[0][0], /Tonight.s capture is full/); assert.match(refusal[0][0], /Export tonight.s note/); assert.match(refusal[0][0], /rolls still work/i);
+  assert.ok(!br.toasts.some((t) => /The GM notes are full/.test(t[0])), 'not the old "notes are full" message');
+  for (const k of ['2', '3', '4', '1']) { h.press(k); assert.ok(cardTxt(h).length > 20, 'roll ' + k + ' still draws'); }
+  h.press('l'); assert.equal(br.toasts.filter((t) => /Tonight.s capture is full/.test(t[0])).length, 2, 'L files text too: refused with the same message');
+  await h.save();
+  assert.ok(fg.server.doc.cards.situation && Object.keys(fg.server.doc.hist.situation).length === 4, 'every roll was saved');
+  assert.ok(!br.toasts.some((t) => /The roll failed|notes are full/.test(t[0])));
+});
+
+await test('16d. a roll is never refused for want of room: near the server\'s cap the oldest sessions\' capture makes it', async () => {
+  const fg = fakeGm(), br = fakeBrowser(), earlier = {};
+  for (let i = 0; P.bytes({ capture: earlier }) < 257000; i++) Object.assign(earlier, capLines(1 + (i % 2), 1, 560, i));
+  fg.server.doc = { capture: Object.assign({}, earlier, capLines(3, 4, 100)) };
+  const size = P.bytes(fg.server.doc);
+  assert.ok(size > 256500 && size < P.LIMITS.stateCap - 4096, 'the doc starts just under the hard line (' + size + ')');
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  for (let i = 0; i < 6; i++) { h.press(String(1 + (i % 4))); assert.ok(cardTxt(h).length > 20, 'roll ' + (i + 1) + ' draws'); }
+  assert.ok(!br.toasts.some((t) => /notes are full|The roll failed/.test(t[0])), JSON.stringify(br.toasts));
+  assert.equal(br.toasts.filter((t) => /Dropped \d+ /.test(t[0])).length, 1, 'one toast says what made room');
+  await h.save();
+  assert.ok(P.bytes(fg.server.doc) <= P.LIMITS.stateCap - 4096, 'saved under the cap (' + P.bytes(fg.server.doc) + ')');
+  assert.ok(Object.keys(fg.server.doc.hist.situation).length === 5 && fg.server.doc.cards.situation, 'the rolls are all there');
+  for (const k of Object.keys(capLines(3, 4, 100))) assert.ok(k in fg.server.doc.capture, 'this session\'s lines are kept');
+});
+
+await test('16e. a bargain accepted while capture is full: the bargain is owed, its loose-end line is refused with the capture message, and "Accepted" does not cover it', async () => {
+  const fg = fakeGm(), br = fakeBrowser(); fg.server.doc = { capture: capLines(3, 300, 470) };
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('1');
+  const btn = h.qa('#gm-card [data-gm="intent"]').find((b) => /Accepted/.test(b.textContent)); assert.ok(btn, 'a Devil\'s Bargain card offers Accepted');
+  btn.click();
+  assert.equal(Object.keys(h.page._state().doc.con.owed).length, 1, 'the bargain is owed');
+  assert.ok(!Object.values(h.page._state().doc.capture).some((e) => /Bargain owed/.test(e.text)), 'its loose-end line was not filed');
+  assert.match(br.toasts[br.toasts.length - 1][0], /^Tonight.s capture is full/, 'and the last thing said is why, not "Accepted."');
+  await h.save();
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

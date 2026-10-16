@@ -87,7 +87,7 @@ try {
   const name1 = await text(p, '#gm-npc .gm-npccard h3');
   check(name1.length > 2, 'the card has a name: ' + name1);
   check(await p.$('#gm-npc .gm-npccard .gm-npcfig svg') !== null, 'the card has a portrait');
-  check(!/nearest of the stock figures/.test(first), 'the portrait is the generated figure, not a stock fallback');
+  check(!/Portrait: a stock figure|No portrait/.test(first), 'the portrait is the generated figure, not a stock fallback');
   check(await p.$('#gm-npc .gm-npccard .gm-want') !== null && await p.$('#gm-npc .gm-npccard .gm-read') !== null && (await p.$$('#gm-npc .gm-npccard .gm-grid')).length >= 1, 'the card has the look, the want and the play grid');
   await sleep(1200);
   let st = (await api('GET', '/gm/state')).json.doc;
@@ -187,6 +187,16 @@ try {
   check(await p.waitForFunction(() => { const s = document.querySelector('#gm-n-place'); return s && s.value === 'Casino'; }, null, { timeout: 5000 }).then(() => true, () => false) && await p.$eval('#gm-n-faction', (s) => s.value) === '', 'Use the location: Place becomes the building (Casino); the faction the NPC tables do not know goes back to any');
   await p.click('[data-gm="npcroll"]');
   check(await p.waitForFunction(() => { const s = document.querySelector('#gm-npc .gm-npccard .gm-sub'); return s && / · Teapot Row · Casino$/.test(s.textContent.trim()); }, null, { timeout: 15000 }).then(() => true, () => false), 'and the roll lands there: ' + await sub());
+  // the portrait note is the module's own (fig.note), never a sentence of the page's; and a kit that fails says so instead of a blank
+  const fnote = await p.$eval('#gm-npc .gm-npccard', (c) => { const n = c.querySelector('.gm-fignote'); return n ? n.textContent : ''; });
+  check(!fnote || /^Portrait: /.test(fnote), 'a portrait that drew shows no sentence, or the module\'s own "Portrait: …" note (' + (fnote || 'none') + ')');
+  await p.evaluate(() => { window.__kitPortrait = window.B68Figure.portrait; window.B68Figure.portrait = function (spec) { if (spec && spec.id === 'gm-npcg') throw new Error('portrait boom'); return window.__kitPortrait.apply(this, arguments); }; });
+  await p.click('[data-gm="npcroll"]');
+  check(await p.waitForFunction(() => { const n = document.querySelector('#gm-npc .gm-npccard .gm-fignote'); return n && n.textContent === 'No portrait: portrait boom.'; }, null, { timeout: 15000 }).then(() => true, () => false) && await p.$('#gm-npc .gm-npccard .gm-npcfig') === null, 'the kit throws on the portrait: no portrait, and the card says "No portrait: portrait boom."');
+  check(await p.$('#gm-npc [data-gm="npcfile"]') !== null && await p.$('#gm-npc .gm-npccard .gm-want') !== null, 'and the rest of the card is there, Add to the cast included');
+  await p.evaluate(() => { window.B68Figure.portrait = window.__kitPortrait; });
+  await p.click('[data-gm="npcroll"]');
+  check(await p.waitForSelector('#gm-npc .gm-npccard .gm-npcfig svg', { timeout: 15000 }).then(() => true, () => false), 'the kit back: the next roll has its portrait again');
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
   await G.c.close();
 

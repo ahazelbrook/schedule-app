@@ -10,7 +10,9 @@
 //   (f) when the pack has the scenes and engagement parts: app/gm/scenes.js and app/gm/engagement.js hold none of their
 //       text (districts, streets, landmarks, notables, factions, rumours, approaches, factors, outcome wording);
 //   (e) when the pack has the npc part: app/gm/npc.js and app/gm/figure-map.js name no faction of npc.T / npc.F (the
-//       figure map's faction palette lives in the pack for exactly that reason).
+//       figure map's faction palette lives in the pack for exactly that reason);
+//   (h) the location glance's one-sentence plan (it names the target room and its locks) is GM only: it is in no player summary,
+//       and the page reads it in the glance card alone.
 // The pack: $B68_PACK if set (it must then load), else gm-private/b68-gm-pack.json (git-ignored) when present.
 // The vault readers (scripts/gm-pack.mjs, gm-parity.mjs, gm-sync.mjs, scripts/lib/**) get no exemption: they find
 // the vault's tables by page path, code-fence, heading and frontmatter key, never by a table's content, so they need
@@ -435,6 +437,38 @@ await test('(d) state patches: the server merge (null deletes), pending patches 
   const m = {}; for (let i = 0; i < 5; i++) m['h' + i] = { at: '2026-10-17T10:0' + i + ':00Z' };
   const p = GP.addCapped(m, 'h9', { at: '2026-10-17T11:00:00Z' }, 5);
   assertEq(Object.keys(p).sort(), ['h0', 'h9'], 'one added, the oldest dropped'); assertEq(p.h0, null);
+});
+
+/* ---------- (h) the glance card's plan: GM only ---------- */
+// glance().plan is one sentence under Say that names the target room, its band and the locks in the way. It is a GM secret: it sits
+// outside the Say box, and no route to the players (the street description, the map, the score scene) may carry it.
+await test('(h) the location plan names the target and is GM only: never in the player summary at any reveal, never in what the iPad is sent, and the page reads it in one place', async () => {
+  const L = createRequire(import.meta.url)(path.join(ROOT, 'app', 'gm', 'location.js'));
+  const fx = JSON.parse(read(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'location-pack.json')));
+  const pk = { T: fx.T, extra: fx.extra };
+  let n = 0;
+  for (let seed = 1; seed <= 300; seed++) {
+    const roll = L.generate(pk, {}, { seed, mem: {} }), g = L.glance(roll, pk, ['public']);
+    if (typeof g.plan !== 'string' || !g.plan) throw new Error('seed ' + seed + ': the glance has no plan (has its shape changed?)');
+    const secret = g.plan.slice(g.plan.indexOf('; ') + 2);       // "the target, <room> (<band>), is behind N locks.": what the front door line does not say
+    if (secret.length < 15 || !secret.includes(roll.targetRoom)) throw new Error('seed ' + seed + ': the plan\'s target clause is not what this check expects: ' + secret);
+    for (const reveal of [['public'], ['public', 'working'], ['public', 'working', 'controlled', 'secure']]) {
+      const ps = L.playerSummary(roll, reveal), all = JSON.stringify(ps);
+      if (all.includes(g.plan) || all.includes(secret)) throw new Error('seed ' + seed + ' reveal ' + reveal.join('+') + ': the plan reached the player summary');
+      if (/\b(is behind \d+ locks?|has no lock in the way)\b/.test(all)) throw new Error('seed ' + seed + ': lock counts reached the player summary');
+    }
+    n++;
+  }
+  // the page: .plan is read inside glanceHtml and nowhere else; every push to the iPad is built from the player summary, a player render or typed text
+  const src = read(path.join(ROOT, 'app', 'gm-page.js'));
+  const from = src.indexOf('function glanceHtml'), to = src.indexOf('function foldsHtml');
+  if (from < 0 || to < from) throw new Error('glanceHtml not found');
+  const outside = (src.slice(0, from) + src.slice(to)).match(/\.plan\b/g) || [];
+  if (outside.length) throw new Error('the plan is read outside the glance card ' + outside.length + ' time(s)');
+  if (!/function pushText[\s\S]*?playerSummary\([\s\S]*?pushDisplay\(/.test(src)) throw new Error('pushText no longer builds the street description from playerSummary');
+  const push = src.slice(src.indexOf('function pushText'), src.indexOf('function blankIpad'));
+  if (/glance|\.plan|\.say\b/.test(push)) throw new Error('pushText reads the glance card');
+  console.log('     ' + n + ' fixture rolls × 3 reveals');
 });
 
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
