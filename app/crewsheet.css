@@ -254,7 +254,7 @@
 #table-page .cs-boxes.linked { gap: 4px; }
 #table-page .cs-box { position: relative; width: 14px; height: 14px; border: 2px solid var(--rule); border-radius: 3px; background: var(--card); padding: 0; cursor: pointer; }
 #table-page .cs-box.on { background: var(--rule); }
-#table-page .cs-boxes.linked .cs-box + .cs-box::before { content: ""; position: absolute; left: -6px; top: 4px; width: 4px; height: 2px; background: var(--rule); }
+#table-page .cs-boxes.linked .cs-box + .cs-box::after { content: ""; position: absolute; left: -6px; top: 4px; width: 4px; height: 2px; background: var(--rule); pointer-events: none; }   /* ::after: on touch ::before is the hit area; a tap on the line goes to the boxes it joins */
 #table-page .cs-costh { display: block; margin-top: 6px; font: 900 9.5px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-faint); }
 #table-page .cs-cost { display: block; font-size: 12.5px; }
 
@@ -302,6 +302,19 @@
   /* the Anger clock, drawn larger (its four wedges are tapped) */
   #table-page .cs-angerbox { width: 78px; height: 78px; }
   #table-page .cs-angerbox .tp-clocksvg { width: 66px; height: 66px; }
+  /* the ability circles (and the Utopians' circle marks), the upgrade boxes and the contact dots: the same invisible area,
+     40px tall and as wide as the mark's pitch (a circle 15px with 2px to the next, a box 14px with 2px or, linked, 4px; a
+     contact dot is alone at the start of its row). Their rows are at least 40px tall with the mark in the middle of that
+     height, so an area never reaches into the row above or below. */
+  #table-page button.cs-circ, #table-page .cs-cdot { position: relative; }
+  #table-page button.cs-circ::before, #table-page .cs-box::before, #table-page .cs-cdot::before {
+    content: ""; position: absolute; left: 50%; top: 50%; width: var(--hit-w, 19px); height: var(--hit-h, 40px); transform: translate(-50%, -50%); }
+  #table-page button.cs-circ { --hit-w: 17px; }
+  #table-page .cs-box { --hit-w: 16px; }
+  #table-page .cs-boxes.linked .cs-box { --hit-w: 18px; }
+  #table-page .cs-cdot { --hit-w: 40px; }
+  #table-page .cs-ab { padding: 11px 0; min-height: 41px; }   /* the circle 13px from the top of its first line: its area is the row's first 41px */
+  #table-page .cs-up, #table-page .cs-contact, #table-page .cs-circh { min-height: 40px; }
 }
 
 /* ---- read only ---- */

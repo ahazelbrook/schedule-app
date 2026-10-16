@@ -179,9 +179,9 @@ queries, return empty.
   it never writes, and read-only viewers may use it.
 - Touch (screens up to 760 px, or a coarse pointer): every control on the page is at least 40 px tall.
   Buttons, chips and text fields grow; the small marks (tier, rep, heat, wanted, the vault, stacks, the
-  crew sheet's pills and cubes) keep their size and get an invisible `::before` hit area, 40 px tall and
-  as wide as their pitch, so neighbours never take each other's taps (checked by `app/checks/campaign.js`
-  and `crewsheet.js`). The shared clocks are drawn 104 px wide, with a − / + beside the count (one write,
+  crew sheet's pills, cubes, ability circles, upgrade boxes and contact dots) keep their size and get an invisible
+  `::before` hit area, 40 px tall and as wide as their pitch, in rows at least 40 px tall, so neighbours never take
+  each other's taps (checked by `app/checks/campaign.js` and `crewsheet.js`). The shared clocks are drawn 104 px wide, with a − / + beside the count (one write,
   `{ id, filled }` for that clock, the same op a wedge makes; players may use it).
 - Words: the page speaks of characters and saving, never of "files" or "filing" ("No characters yet.", "No owner
   yet" for a character without a player, "Saved Aldo Crane.", "Removed."); with no database it says "The table is
