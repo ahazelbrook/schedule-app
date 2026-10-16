@@ -1,6 +1,9 @@
 /* stt.js — the table iPad's transcriber (GM.md "Listening"). The iPad sits in the middle of the table, so it hears everyone.
    The GM presses Start listening on the GM page (GET/PATCH /api/gm/stt: want on); the iPad's display shows a button, and
-   one tap (iPad Safari only opens the mic on a tap) starts it. The mic goes to Deepgram's live API as 16 kHz 16-bit PCM
+   one tap (iPad Safari only opens the mic on a tap) starts it. What the GM wants (want, and the session to stamp) comes with
+   the display page's own poll: `stt: { seq, want, session }` in GET /api/gm/display, handed over with feed() below, so this
+   module makes no request of its own for it. Only while the display answers carry no such part (an older server) does it ask
+   GET /api/gm/stt every 4 s itself, as it used to. The mic goes to Deepgram's live API as 16 kHz 16-bit PCM
    (the same on iPad Safari and Chrome, whose recorders make different containers) over a WebSocket opened with a
    short-lived token from POST /api/gm/stt/token: the Deepgram key never reaches the iPad. Deepgram's finished words are
    cut into runs by speaker and merged into lines the way the vault's own transcriber does (same speaker within 4 s of
@@ -8,10 +11,12 @@
    with its own id so a resend after a dropped answer is harmless. A dropped connection reconnects with a fresh token and
    files a "reconnected" mark (Deepgram renumbers speakers on every connection). The GM's Stop, leaving the display, or
    6 hours stops it. While it listens, a small "Listening" mark shows on the iPad. Nothing is kept on the iPad but the
-   unsent lines, in memory.
+   unsent lines, in memory. It reports its state to PATCH /api/gm/stt when the state changes, every 10 s while the mic is
+   open, and once a minute otherwise while the page is visible (the GM page shows "N s ago" from it).
    Plain script, UMD: window.B68Stt in the browser, module.exports (the pure helpers) under Node.
 
-   B68Stt.attach(container, { gm })   gm = window.claude.gm (stt, patchStt, sttToken, addTranscript) -> { destroy, state }
+   B68Stt.attach(container, { gm })   gm = window.claude.gm (stt, patchStt, sttToken, addTranscript) -> { destroy, state, feed }
+     feed(part)  the display poll's transcriber part { want, session } (null: that answer had none, ask GET /api/gm/stt yourself)
    Pure: downsample(f32, inRate, outRate) -> Int16Array · runsOf(words) · makeMerger(emit) · lineId() · DG_URL */
 (function (root, factory) {
   'use strict';
@@ -25,7 +30,10 @@
     'endpointing=300', 'encoding=linear16', 'sample_rate=16000', 'channels=1'];
   var DG_URL = 'wss://api.deepgram.com/v1/listen?' + DG_PARAMS.join('&');
   var RATE = 16000;
-  var T = { poll: 4000, flush: 3000, status: 10000, keepalive: 4000, tick: 1000, stopGrace: 3000, maxSession: 6 * 3600 * 1000 };
+  /* poll: the fallback's own GET (only while the display answers carry no transcriber part). status: how often the iPad's report is
+     considered while the mic is open (the GM page calls it stale after 40 s); idleStatus: the report that says "still here" when it
+     is not listening and the page is visible (a change of state is always reported at once); a hidden page reports nothing. */
+  var T = { poll: 4000, flush: 3000, status: 10000, idleStatus: 60000, keepalive: 4000, tick: 1000, stopGrace: 3000, maxSession: 6 * 3600 * 1000 };
   var MERGE_GAP_S = 4, IDLE_CLOSE_MS = 4000, MAX_OPEN_MS = 20000, MAX_LINE = 700, MAX_QUEUE = 3000, MAX_BUFFER = 240, BATCH = 50;
   var BACKOFF = [1000, 2000, 5000, 10000];
   var SCHEMES = ['bearer', 'token'];          /* how the token rides the WebSocket handshake: Deepgram's subprotocol pair */
@@ -89,7 +97,7 @@
   function attach(container, opts) {
     var gm = opts && opts.gm;
     if (!gm || typeof gm.stt !== 'function' || typeof gm.sttToken !== 'function') return { destroy: function () {}, state: function () { return 'off'; } };
-    var s = { dead: false, want: 'off', session: '', running: false, state: 'idle', error: '', sent: 0, queue: [], posting: false,
+    var s = { dead: false, want: 'off', session: '', fed: null, lastReport: 0, running: false, state: 'idle', error: '', sent: 0, queue: [], posting: false,
       ws: null, conn: '', connAt: 0, scheme: lsGet(SCHEME_KEY), stream: null, ctx: null, src: null, proc: null, buffer: [], lastSent: 0,
       attempt: 0, startedAt: 0, timers: [], retry: null, stopping: false, merger: null };
     var tap = el('button', 'dp-btn stt-tap', 'Tap to start listening'); tap.type = 'button'; tap.hidden = true;
@@ -109,6 +117,7 @@
     }
     function report() {
       if (!gm.patchStt) return;
+      s.lastReport = Date.now();
       Promise.resolve().then(function () { return gm.patchStt({ status: { state: s.state, lines: s.sent, error: s.error } }); }).catch(function () {});
     }
     function setState(st, err) { s.state = st; if (err !== undefined) s.error = err; paint(); report(); }
@@ -230,18 +239,30 @@
     }
 
     /* ---- the loop: what the GM wants, the merger's clock, the sender, keepalive, status ---- */
+    function take(want, session) {
+      s.want = want === 'on' ? 'on' : 'off'; s.session = typeof session === 'string' ? session : '';
+      if (s.want === 'off' && s.running && !s.stopping) stop();
+      paint();
+    }
+    /* what the GM wants comes with the display page's poll (feed); this GET is the fallback for a server whose display answers
+       carry no such part, and for the moment before the first answer. It does nothing while the display poll is feeding. */
     function poll() {
+      if (s.dead || s.fed === true) return;
       Promise.resolve().then(function () { return gm.stt(); }).then(function (r) {
+        if (s.dead || s.fed === true) return;       /* the display poll took over while this was out */
         var d = r && r.doc || {};
-        s.want = d.want === 'on' ? 'on' : 'off'; s.session = typeof d.session === 'string' ? d.session : '';
-        if (s.want === 'off' && s.running && !s.stopping) stop();
-        paint();
+        take(d.want, d.session);
       }, function () {});
     }
-    every(poll, T.poll); poll();
+    function feed(part) {
+      if (s.dead) return;
+      if (part && (part.want === 'on' || part.want === 'off')) { s.fed = true; take(part.want, part.session); }
+      else if (s.fed !== false) { s.fed = false; poll(); }       /* no part in the answer: the old way, starting now */
+    }
+    every(poll, T.poll);
     every(function () { s.merger.tick(); }, T.tick);
     every(send, T.flush);
-    every(report, T.status);
+    every(function () { if (s.running || (!document.hidden && Date.now() - s.lastReport >= T.idleStatus)) report(); }, T.status);
     every(function () {
       if (s.ws && s.ws.readyState === 1 && Date.now() - s.lastSent > 3000) { try { s.ws.send(JSON.stringify({ type: 'KeepAlive' })); } catch (e) {} }
       if (s.running && Date.now() - s.startedAt > T.maxSession) { s.error = 'stopped after 6 hours'; stop(); }
@@ -255,7 +276,8 @@
     document.addEventListener('visibilitychange', onVis);
 
     return {
-      state: function () { return { want: s.want, running: s.running, state: s.state, queued: s.queue.length, sent: s.sent, scheme: s.scheme, error: s.error }; },
+      state: function () { return { want: s.want, session: s.session, fed: s.fed, running: s.running, state: s.state, queued: s.queue.length, sent: s.sent, scheme: s.scheme, error: s.error }; },
+      feed: feed,
       destroy: function () {
         s.timers.forEach(function (id) { W.clearInterval(id); }); s.timers = [];
         document.removeEventListener('visibilitychange', onVis);

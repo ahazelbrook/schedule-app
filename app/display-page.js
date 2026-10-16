@@ -308,26 +308,37 @@
   };
 
   /* ---------- the poller ----------
-     o = { fetch(seq, aseq) -> Promise, onData(display, seq, updatedAt), onAmbient(doc, aseq, updatedAt), onStatus({state, fails,
-           error}), isHidden(), timers, intervalMs (2000), slowMs (10000), failLimit (3), timeoutMs (10000) }
+     o = { fetch(seq, aseq, sseq) -> Promise, onData(display, seq, updatedAt), onAmbient(doc, aseq, updatedAt), onStt(part | null),
+           onStatus({state, fails, error}), isHidden(), timers, intervalMs (2000), slowMs (10000), failLimit (3), timeoutMs (10000) }
      One request in flight at a time; the next is scheduled only when the last has finished. States: connecting (nothing yet),
      live, retrying (1 to failLimit-1 failures in a row), offline (failLimit or more: polls every slowMs), denied (401/403, also
      slow), paused (page hidden: nothing scheduled). The first success after a failure goes back to the fast interval.
-     Responses (GET /api/gm/display?seq=N&aseq=M): { seq, unchanged: true } (an older server, or `?seq` alone), the same with an
-     ambient part { ambient: { seq, unchanged: true } }, or { seq, display, updatedAt, ambient: { seq, unchanged: true } | { seq,
-     doc, updatedAt } }. The display redraws only when its seq moved (an ambient-only change carries the display along, and it
-     must not cross-fade the same spotlight again); the ambient part, when it holds a doc, goes to onAmbient first (so the
-     first draw already has its plan). A malformed ambient part is ignored: it never stops the spotlight. */
+     Responses (GET /api/gm/display?seq=N&aseq=M&sseq=K): { seq, unchanged: true } (an older server, or `?seq` alone), the same with
+     an ambient part { ambient: { seq, unchanged: true } } and a transcriber part { stt: { seq, unchanged: true } }, or { seq,
+     display, updatedAt, ambient: { seq, unchanged: true } | { seq, doc, updatedAt }, stt: { seq, unchanged: true } | { seq, want,
+     session } }. The display redraws only when its seq moved (an ambient-only change carries the display along, and it must not
+     cross-fade the same spotlight again); the ambient part, when it holds a doc, goes to onAmbient first (so the first draw already
+     has its plan), then the transcriber part to onStt. A malformed ambient or transcriber part is ignored: it never stops the
+     spotlight. onStt(part) gets { seq, want, session } when the part changed, and null once when an answer has no usable part
+     (an older server: app/stt.js then asks for itself). */
   Pure.ambientPart = function (r) {
     var a = r && r.ambient;
     if (!isObj(a) || typeof a.seq !== 'number' || !isFinite(a.seq)) return null;
     if (a.unchanged === true) return { seq: a.seq, unchanged: true };
     return isObj(a.doc) ? { seq: a.seq, doc: a.doc, updatedAt: typeof a.updatedAt === 'string' ? a.updatedAt : null } : null;
   };
+  /* the transcriber's part of an answer: { seq, unchanged: true } | { seq, want: 'on' | 'off', session } | null (absent or malformed) */
+  Pure.sttPart = function (r) {
+    var a = r && r.stt;
+    if (!isObj(a) || typeof a.seq !== 'number' || !isFinite(a.seq)) return null;
+    if (a.unchanged === true) return { seq: a.seq, unchanged: true };
+    if (a.want !== 'on' && a.want !== 'off') return null;
+    return { seq: a.seq, want: a.want, session: typeof a.session === 'string' ? a.session.slice(0, 12) : '' };
+  };
   Pure.createPoller = function (o) {
     var T = o.timers || { setTimeout: function (f, ms) { return setTimeout(f, ms); }, clearTimeout: function (id) { clearTimeout(id); } };
     var fast = o.intervalMs || 2000, slow = o.slowMs || 10000, limit = o.failLimit || 3, tmo = o.timeoutMs || 10000;
-    var seq = null, aseq = null, fails = 0, timer = null, inflight = false, running = false, gen = 0, state = 'connecting', lastErr = null;
+    var seq = null, aseq = null, sseq = null, sttSeen = null, fails = 0, timer = null, inflight = false, running = false, gen = 0, state = 'connecting', lastErr = null;
     function hidden() { return !!(o.isHidden && o.isHidden()); }
     function setState(s) {
       if (s === state) return;
@@ -356,7 +367,7 @@
         inflight = false;
         if (!running) return;
         if (!err && !(r && typeof r === 'object' && typeof r.seq === 'number' && (r.unchanged === true || (r.display && typeof r.display === 'object')))) err = new Error('bad response');
-        var amb = err ? null : Pure.ambientPart(r);
+        var amb = err ? null : Pure.ambientPart(r), stt = err ? null : Pure.sttPart(r);
         if (err) {
           fails++; lastErr = err;
           var code = err.status;
@@ -367,6 +378,13 @@
             aseq = amb.seq;
             if (!amb.unchanged && o.onAmbient) { try { o.onAmbient(amb.doc, amb.seq, amb.updatedAt); } catch (e) { /* ditto */ } }
           }
+          if (stt) {
+            sseq = stt.seq; sttSeen = true;
+            if (!stt.unchanged && o.onStt) { try { o.onStt({ seq: stt.seq, want: stt.want, session: stt.session }); } catch (e) { /* ditto */ } }
+          } else if (sttSeen !== false) {
+            sttSeen = false;
+            if (o.onStt) { try { o.onStt(null); } catch (e) { /* ditto */ } }
+          }
           if (r.unchanged !== true && r.seq !== seq) {
             seq = r.seq;
             if (o.onData) { try { o.onData(r.display, r.seq, r.updatedAt || null); } catch (e) { /* ditto */ } }
@@ -376,7 +394,7 @@
         schedule();
       }
       var p;
-      try { p = Promise.resolve(o.fetch(seq, aseq)); } catch (e) { p = Promise.reject(e); }
+      try { p = Promise.resolve(o.fetch(seq, aseq, sseq)); } catch (e) { p = Promise.reject(e); }
       p.then(function (r) { finish(null, r); }, function (e) { finish(e || new Error('failed')); });
     }
     return {
@@ -393,6 +411,7 @@
       reset: function () { fails = 0; if (state === 'offline' || state === 'retrying') state = 'connecting'; },
       seq: function () { return seq; },
       aseq: function () { return aseq; },
+      sseq: function () { return sseq; },
       state: function () { return state; },
       fails: function () { return fails; }
     };
@@ -1320,9 +1339,13 @@
       stext.textContent = 'Not signed in as the GM'; dot.className = 'dp-dot dp-dot-bad';
     } else {
       s.poller = Pure.createPoller({
-        fetch: function (seq, aseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq); },
+        /* sseq rides as a third argument: the adapter (app/runtime/cf.js) forwards it as ?sseq= to make the unchanged answer
+           the small one; an adapter that does not simply gets the transcriber part in full each time */
+        fetch: function (seq, aseq, sseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq); },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },
+        /* the transcriber's part of the answer goes to app/stt.js, which then makes no request of its own for it */
+        onStt: function (part) { if (s.stt && typeof s.stt.feed === 'function') { try { s.stt.feed(part); } catch (e) { /* the page goes on */ } } },
         onData: function (display, seq, at) { s.seq = seq; s.updatedAt = at; paintStatus(); show(display, seq); },
         onStatus: function (p) { s.poll = p; paintStatus(); }
       });

@@ -1,13 +1,15 @@
 // Unit test for app/display-page.js (the table display, #display): the pure parts only, in plain Node, no browser, no deps.
 // Covered: the SVG sanitiser (against malicious samples, run on a small XML parser stub that stands in for DOMParser), the
-// poll / backoff state machine (fake gm, fake timers), the display -> view-model mapping (an npc push never carries gmNotes),
-// the zoom maths and the corner-status text. The DOM layer (mount, gestures, fade, wake lock) needs a browser and is left to
-// the Playwright run. Invented fixtures only.
+// poll / backoff state machine (fake gm, fake timers), the transcriber part of the display answer and app/stt.js taking it
+// (and its fallback GET), the display -> view-model mapping (an npc push never carries gmNotes), the zoom maths and the
+// corner-status text. The DOM layer (mount, gestures, fade, wake lock) needs a browser and is left to the Playwright run.
+// Invented fixtures only.
 //   node checks/runtime/display.test.mjs
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -473,6 +475,132 @@ await test('poller: an onAmbient that throws does not stop the display from draw
   const seen = []; const r = rig({ onAmbient: () => { throw new Error('plan failed'); }, onData: (d, seq) => seen.push(seq) });
   r.g.handler = () => Promise.resolve(aok(3, 1, { mode: 'auto' })); r.poller.start(); await r.c.advance(0);
   assert.deepEqual(seen, [3]); assert.equal(r.poller.state(), 'live'); r.poller.stop();
+});
+
+/* ---------- the poller with the transcriber part (GET /api/gm/display?seq=N&aseq=M&sseq=K) ---------- */
+const sok = (seq, sseq, part, display) => ({ seq, display: display || { kind: 'blank' }, updatedAt: '2026-10-17T09:00:00.000Z', ambient: { seq: 1, unchanged: true }, stt: part ? { seq: sseq, ...part } : { seq: sseq, unchanged: true } });
+await test('poller: fetch gets all three seqs (null on the first call); the transcriber part reaches onStt once per change, never when unchanged', async () => {
+  const calls = [], got = []; const r = rig({ fetch: (seq, aseq, sseq) => { calls.push([seq, aseq, sseq]); return Promise.resolve(r.g.res); }, onStt: (p) => got.push(p) });
+  r.g.res = sok(4, 77, { want: 'off', session: '' });
+  r.poller.start(); await r.c.advance(0);
+  r.g.res = { seq: 4, unchanged: true, ambient: { seq: 1, unchanged: true }, stt: { seq: 77, unchanged: true } };
+  await r.c.advance(2000); await r.c.advance(2000);
+  r.g.res = { seq: 4, unchanged: true, ambient: { seq: 1, unchanged: true }, stt: { seq: 88, want: 'on', session: '9.1' } };   // only the GM's listening changed: no display along
+  await r.c.advance(2000);
+  r.g.res = { seq: 4, unchanged: true, ambient: { seq: 1, unchanged: true }, stt: { seq: 88, unchanged: true } };
+  await r.c.advance(2000);
+  assert.deepEqual(calls, [[null, null, null], [4, 1, 77], [4, 1, 77], [4, 1, 77], [4, 1, 88]]);
+  assert.deepEqual(got, [{ seq: 77, want: 'off', session: '' }, { seq: 88, want: 'on', session: '9.1' }]);
+  assert.equal(r.poller.sseq(), 88); assert.equal(r.data.length, 1, 'the display drew once: a transcriber change is not a redraw'); assert.equal(r.poller.state(), 'live'); r.poller.stop();
+});
+await test('poller: the transcriber part comes after the ambient and before the display on one answer', async () => {
+  const order = []; const r = rig({ onAmbient: () => order.push('amb'), onStt: (p) => order.push('stt:' + (p && p.want)), onData: (d, seq) => order.push('data:' + seq) });
+  r.g.handler = () => Promise.resolve({ seq: 3, display: { kind: 'blank' }, ambient: { seq: 2, doc: { mode: 'auto' } }, stt: { seq: 5, want: 'on', session: '' } });
+  r.poller.start(); await r.c.advance(0); assert.deepEqual(order, ['amb', 'stt:on', 'data:3']); r.poller.stop();
+});
+await test('poller: an answer with no transcriber part (an older server, or ?seq alone) tells onStt(null) once, and the display carries on', async () => {
+  const got = [], seen = []; const r = rig({ onStt: (p) => got.push(p), onData: (d, seq) => seen.push(seq) });
+  r.g.handler = (seq) => Promise.resolve(seq === null ? ok(2, { kind: 'blank' }) : { seq: 2, unchanged: true });
+  r.poller.start(); await r.c.advance(0); await r.c.advance(2000); await r.c.advance(2000);
+  assert.deepEqual(got, [null], 'once, not on every answer'); assert.deepEqual(seen, [2]); assert.equal(r.poller.sseq(), null); assert.equal(r.poller.state(), 'live');
+  r.g.handler = () => Promise.resolve(sok(2, 5, { want: 'on', session: '3' }));   // the server was upgraded under it
+  await r.c.advance(2000); assert.deepEqual(got, [null, { seq: 5, want: 'on', session: '3' }]);
+  r.g.handler = () => Promise.resolve({ seq: 2, unchanged: true });                 // and rolled back: told once more
+  await r.c.advance(2000); assert.deepEqual(got.slice(2), [null]); r.poller.stop();
+});
+await test('poller: a malformed transcriber part is ignored like a missing one, never an error; an onStt that throws does not stop polling', async () => {
+  const got = []; const r = rig({ onStt: (p) => got.push(p) });
+  r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true }); r.poller.start(); await r.c.advance(0);
+  for (const bad of [null, 'x', 7, [], { seq: 'x', want: 'on' }, { seq: 3 }, { seq: 3, want: 'maybe' }, { want: 'on' }, { seq: NaN, want: 'on' }]) {
+    r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true, stt: bad }); await r.c.advance(2000);
+    assert.equal(r.poller.state(), 'live', JSON.stringify(bad)); assert.equal(r.poller.sseq(), null, 'a bad part did not move the seq: ' + JSON.stringify(bad));
+  }
+  assert.deepEqual(got, [null], 'told once that there is no usable part');
+  assert.deepEqual(P.sttPart({ stt: { seq: 2, want: 'on', session: '12345678901234567890', extra: 'x' } }), { seq: 2, want: 'on', session: '123456789012' }, 'only want and session, the session capped');
+  assert.equal(P.sttPart({ stt: { seq: 2, want: 'on', session: 5 } }).session, '');
+  const t = rig({ onStt: () => { throw new Error('feed failed'); } }); t.g.handler = () => Promise.resolve(sok(1, 1, { want: 'on', session: '' }));
+  t.poller.start(); await t.c.advance(0); await t.c.advance(2000); assert.equal(t.calls.length, 2); assert.equal(t.poller.state(), 'live'); t.poller.stop(); r.poller.stop();
+});
+
+/* ---------- app/stt.js: what the GM wants comes from the display poll; its own GET is only the fallback ---------- */
+function sttRig() {
+  const timers = []; let now = 0, id = 0; const base = 1.7e12;
+  const add = (fn, ms, every) => { timers.push({ id: ++id, at: now + ms, fn, every }); return id; };
+  const drop = (i) => { const k = timers.findIndex((t) => t.id === i); if (k >= 0) timers.splice(k, 1); };
+  const el = (tag) => ({ tag, className: '', textContent: '', hidden: false, kids: [], attrs: {}, listeners: {}, appendChild(c) { this.kids.push(c); return c; }, setAttribute(k, v) { this.attrs[k] = v; }, remove() {},
+    addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }, classList: { toggle() {} } });
+  const doc = { hidden: false, createElement: el, listeners: {}, addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }, removeEventListener(t, f) { this.listeners[t] = (this.listeners[t] || []).filter((x) => x !== f); } };
+  class FakeDate extends Date { static now() { return base + now; } }
+  const win = { document: doc, navigator: {}, Date: FakeDate, setTimeout: (f, ms) => add(f, ms, 0), setInterval: (f, ms) => add(f, ms, ms), clearTimeout: drop, clearInterval: drop, console };
+  win.self = win;
+  vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'app', 'stt.js'), 'utf8'), win);
+  const calls = { stt: 0, patch: [] }, server = { want: 'off', session: '' };
+  const gm = {
+    stt: () => { calls.stt++; return Promise.resolve({ doc: { want: server.want, session: server.session } }); },
+    sttToken: () => Promise.reject(new Error('no token here')), addTranscript: () => Promise.resolve({ added: 0 }),
+    patchStt: (p) => { calls.patch.push(p); return Promise.resolve({}); }
+  };
+  const container = el('div'); const ctl = win.B68Stt.attach(container, { gm });
+  const tap = container.kids[0];
+  return { ctl, gm, calls, server, doc, tap, now: () => now,
+    async advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        await flush(); timers.sort((a, b) => a.at - b.at || a.id - b.id);
+        if (!timers.length || timers[0].at > end) break;
+        const t = timers.shift(); now = Math.max(now, t.at); if (t.every) { t.at = now + t.every; timers.push(t); } t.fn();
+      }
+      now = end; await flush();
+    } };
+}
+await test('stt.js: fed by the display poll it makes no request of its own for what the GM wants, and shows the tap while want is on', async () => {
+  const r = sttRig(); r.ctl.feed({ seq: 5, want: 'off', session: '' });
+  assert.equal(r.tap.hidden, true); assert.deepEqual([r.ctl.state().fed, r.ctl.state().want], [true, 'off']);
+  await r.advance(60000); assert.equal(r.calls.stt, 0, 'no GET /api/gm/stt in a minute');
+  r.ctl.feed({ seq: 6, want: 'on', session: '9.1' });
+  assert.equal(r.tap.hidden, false, 'want on and not listening: Tap to start listening'); assert.equal(r.ctl.state().session, '9.1');
+  await r.advance(60000); assert.equal(r.calls.stt, 0);
+  r.ctl.feed({ seq: 7, want: 'off', session: '9.1' }); assert.equal(r.tap.hidden, true, 'the GM said stop: the tap goes');
+  r.doc.hidden = true; r.doc.listeners.visibilitychange.forEach((f) => f()); await r.advance(60000); assert.equal(r.calls.stt, 0, 'nor on a visibility change');
+  r.ctl.destroy();
+});
+await test('stt.js: an answer with no transcriber part (null) makes it ask GET /api/gm/stt itself at once and every 4 s; a part again ends that', async () => {
+  const r = sttRig(); r.server.want = 'on'; r.server.session = '7';
+  r.ctl.feed(null); await r.advance(0);
+  assert.equal(r.calls.stt, 1, 'at once'); assert.deepEqual([r.ctl.state().fed, r.ctl.state().want, r.ctl.state().session], [false, 'on', '7']); assert.equal(r.tap.hidden, false);
+  await r.advance(3999); assert.equal(r.calls.stt, 1); await r.advance(1); assert.equal(r.calls.stt, 2);
+  await r.advance(8000); assert.equal(r.calls.stt, 4, 'every 4 s');
+  r.ctl.feed(null); r.ctl.feed(null); await r.advance(0); assert.equal(r.calls.stt, 4, 'more nulls change nothing');
+  r.server.want = 'off'; await r.advance(4000); assert.equal(r.ctl.state().want, 'off'); assert.equal(r.tap.hidden, true, 'the fallback hears the GM stop too');
+  r.ctl.feed({ seq: 9, want: 'on', session: '' }); const n = r.calls.stt; await r.advance(60000); assert.equal(r.calls.stt, n, 'fed again: the fallback is quiet');
+  r.ctl.feed(null); await r.advance(0); assert.equal(r.calls.stt, n + 1, 'and starts again when the parts stop');
+  r.ctl.destroy();
+});
+await test('stt.js: before any display answer (or with a display page that never feeds it) it polls for itself, as it always did', async () => {
+  const r = sttRig(); r.server.want = 'on';
+  await r.advance(3999); assert.equal(r.calls.stt, 0); await r.advance(1); assert.equal(r.calls.stt, 1); assert.equal(r.ctl.state().fed, null);
+  assert.equal(r.tap.hidden, false); await r.advance(8000); assert.equal(r.calls.stt, 3);
+  r.ctl.destroy(); await r.advance(20000); assert.equal(r.calls.stt, 3, 'destroyed: nothing more');
+  const late = sttRig(); late.server.want = 'on'; late.ctl.feed(null); late.ctl.destroy(); await late.advance(0); await late.advance(20000); assert.equal(late.calls.stt, 1, 'a feed after destroy is ignored');
+});
+await test('stt.js: a fallback answer that lands after the display poll has taken over is dropped', async () => {
+  const r = sttRig(); let release; r.gm.stt = () => new Promise((res) => { release = res; });
+  r.ctl.feed(null); await r.advance(0);                                              // the fallback GET is out
+  r.ctl.feed({ seq: 3, want: 'off', session: '' });                                // the display poll answers first
+  release({ doc: { want: 'on', session: '5' } }); await r.advance(0);
+  assert.equal(r.ctl.state().want, 'off', 'the older fallback answer did not overwrite the display poll\'s'); assert.equal(r.tap.hidden, true); r.ctl.destroy();
+});
+await test('stt.js: the iPad reports its state at once on a change, then once a minute while visible and idle, and not at all while hidden', async () => {
+  const r = sttRig(); r.ctl.feed({ seq: 1, want: 'off', session: '' });
+  await r.advance(9999); assert.equal(r.calls.patch.length, 0); await r.advance(1); assert.equal(r.calls.patch.length, 1, 'the first look at 10 s');
+  assert.equal(r.calls.patch[0].status.state, 'idle');
+  await r.advance(59000); assert.equal(r.calls.patch.length, 1, 'then a minute apart, not every 10 s'); await r.advance(1000); assert.equal(r.calls.patch.length, 2);
+  r.doc.hidden = true; await r.advance(10 * 60000); assert.equal(r.calls.patch.length, 2, 'a hidden page says nothing');
+  r.doc.hidden = false; await r.advance(10000); assert.equal(r.calls.patch.length, 3, 'visible again: the next look reports');
+  r.ctl.feed({ seq: 2, want: 'on', session: '' }); r.tap.listeners.click[0]({ stopPropagation() {} }); await r.advance(0);   // a tap: no microphone here, so it starts and fails at once
+  assert.deepEqual(r.calls.patch.slice(3).map((p) => p.status.state), ['starting', 'error'], 'a change of state is reported at once');
+  assert.ok(/microphone/.test(r.calls.patch[4].status.error), r.calls.patch[4].status.error);
+  r.ctl.destroy();
 });
 
 /* ---------- lights out, the crew and the score messages ---------- */

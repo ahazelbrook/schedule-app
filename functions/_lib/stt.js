@@ -112,6 +112,27 @@ export async function loadStt(db, campaign) {
 }
 
 /**
+ * What the table iPad needs of the control document, carried in GET /api/gm/display the way the ambient is (GM.md "Listening",
+ * "The display"): whether the GM wants it listening, and the session number to stamp on its lines. Nothing else rides: no
+ * speaker names, no status, no heartbeat, never a transcript line.
+ * `seq` is a number made from those two values alone (32-bit FNV-1a), not the document's updated_at: the iPad reports its own
+ * status every few seconds and each report moves updated_at, which would make every poll look changed. It moves when the GM
+ * turns listening on or off or changes the session, and only then.
+ */
+export function sttPartOf(doc) {
+  const want = doc && doc.want === 'on' ? 'on' : 'off';
+  const session = doc && typeof doc.session === 'string' && SESSION.test(doc.session) ? doc.session : '';
+  let h = 0x811c9dc5;
+  for (const c of want + '|' + session) { h ^= c.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
+  return { seq: h >>> 0, want, session };
+}
+
+/** { seq, want, session } for the display GET: `{ seq, want: 'off', session: '' }` while nothing is stored. */
+export async function loadSttPart(db, campaign) {
+  return sttPartOf((await loadStt(db, campaign)).doc);
+}
+
+/**
  * A PATCH body -> the patch to merge. The GM may set want, session, speakers and status; the display sign-in only status.
  * speakers: { "0": "Pat", "3": null } (null deletes).
  */
