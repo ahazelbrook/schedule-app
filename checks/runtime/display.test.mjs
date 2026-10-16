@@ -536,7 +536,7 @@ await test('scoreMessage: board and iso are re-sanitised (script gone), the fiel
 
 /* ---------- the ambient floor: registry, plan and rotation ---------- */
 await test('ambient registry: ordered, URLs come only from it, the watch feed is always ?api=off', () => {
-  assert.deepEqual(P.AMBIENT_SCENES.map((s) => s.id), ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'board', 'exploded', 'testcard']);
+  assert.deepEqual(P.AMBIENT_SCENES.map((s) => s.id), ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting', 'credits', 'board', 'exploded', 'testcard']);
   assert.equal(P.ambientUrl('harvest'), 'ambient/second-harvest');
   assert.equal(P.ambientUrl('wanted'), 'ambient/wanted-wall', 'the wanted wall polls nothing: no ?api=off');
   assert.equal(P.ambientUrl('vet'), 'ambient/grunts-vet');
@@ -546,10 +546,12 @@ await test('ambient registry: ordered, URLs come only from it, the watch feed is
   for (const s of P.AMBIENT_SCENES) assert.ok(!/\.html/.test(P.ambientUrl(s.id)), s.id + ': no .html in the URL (the asset server 307s it)');
   assert.equal(P.ambientUrl('board'), 'ambient/planning-board'); assert.equal(P.ambientUrl('exploded'), 'ambient/score-exploded');
   assert.equal(P.ambientUrl('../../etc/passwd'), ''); assert.equal(P.ambientUrl('https://evil.example/x'), ''); assert.equal(P.ambientUrl(undefined), '');
-  assert.equal(P.AMBIENT_SCENES.filter((s) => s.pinOnly).map((s) => s.id).join(), 'testcard');
+  assert.equal(P.AMBIENT_SCENES.filter((s) => s.pinOnly).map((s) => s.id).join(), 'credits,testcard');
+  assert.equal(P.AMBIENT_SCENES.filter((s) => s.music).map((s) => s.id).join(), 'credits', 'only the credits may ask for the theme');
+  assert.equal(P.AMBIENT_MUSIC, 'media/theme.mp3');
 });
 
-const DEFAULT_LIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted'];
+const DEFAULT_LIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting'];
 await test('ambientPlan: defaults for nothing, null, {} and rubbish', () => {
   const want = { mode: 'auto', scene: null, playlist: DEFAULT_LIST, intervalMin: 7, skip: 0, crew: null, score: null };
   for (const d of [undefined, null, {}, 'x', 42, [], { mode: 'sideways', playlist: 'no', intervalMin: 'soon', skip: -3, crew: 'hot', score: 'none' }]) assert.deepEqual(P.ambientPlan(d), want);
@@ -601,7 +603,8 @@ await test('nextScene: next in the rotation, wrapping; first when the current on
   const plan = P.ambientPlan({});
   assert.equal(P.nextScene(plan, 'harvest'), 'watch'); assert.equal(P.nextScene(plan, 'watch'), 'duskwall');
   assert.equal(P.nextScene(plan, 'duskwall'), 'boneyard');
-  assert.equal(P.nextScene(plan, 'wanted'), 'harvest', 'wraps');
+  assert.equal(P.nextScene(plan, 'wanted'), 'meeting');
+  assert.equal(P.nextScene(plan, 'meeting'), 'harvest', 'wraps');
   assert.equal(P.nextScene(plan, null), 'harvest'); assert.equal(P.nextScene(plan, 'testcard'), 'harvest'); assert.equal(P.nextScene(plan, 'nope'), 'harvest');
   assert.equal(P.nextScene(null, 'harvest'), 'watch', 'a missing plan is the default plan');
   assert.equal(P.nextScene(P.ambientPlan({ playlist: ['duskwall'] }), 'duskwall'), 'duskwall', 'a single scene is its own next');

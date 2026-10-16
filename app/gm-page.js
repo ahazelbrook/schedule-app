@@ -283,6 +283,7 @@
     { id: 'boneyard', label: 'The Boneyard at dawn' }, { id: 'undertow', label: 'The Undertow' },
     { id: 'vet', label: "Grunt's" }, { id: 'tram', label: 'Night tram' }, { id: 'lurker', label: 'The Lurker press room' },
     { id: 'cards', label: 'Calling cards' }, { id: 'pells', label: "Pell's Provisions" }, { id: 'wanted', label: 'Wanted wall' },
+    { id: 'meeting', label: 'The planning meeting' }, { id: 'credits', label: 'Opening credits', pinOnly: true },
     { id: 'board', label: 'Planning board', needs: 'score' }, { id: 'exploded', label: 'Score site, exploded', needs: 'score' },
     { id: 'testcard', label: 'Please stand by', pinOnly: true }
   ];

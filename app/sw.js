@@ -60,6 +60,8 @@ self.addEventListener('fetch', function (event) {
   var url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname === '/api' || url.pathname.indexOf('/api/') === 0 || url.pathname.indexOf('/cdn-cgi/') === 0) return;
+  /* media (the theme) goes straight to the network: Safari plays audio through range requests, which a worker in the way can break */
+  if (url.pathname.indexOf('/media/') === 0) return;
   var key = keyFor(req);
   event.respondWith(fetch(req).then(function (res) {
     if (cacheable(res)) {

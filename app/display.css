@@ -183,3 +183,7 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
 .stt-pill.stt-warn .stt-dot { background: var(--dp-warn); }
 @keyframes stt-pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .stt-dot { animation: none; } }
+
+/* the theme: asks for the one tap an iPad needs before a page may make sound */
+.dp-sound { position: absolute; right: max(16px, calc(env(safe-area-inset-right) + 12px)); bottom: max(16px, calc(env(safe-area-inset-bottom) + 12px)); z-index: 5; }
+.dp-sound[hidden] { display: none; }

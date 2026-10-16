@@ -271,10 +271,12 @@ service worker never caches a redirect. The registry ids, in picker order:
 | `cards` | `calling-cards` | Faction cards dealt onto baize. **Built locally, never committed** (the art is the book's) |
 | `pells` | `pells-provisions` | A Daggerite grocer in Charhollow at night |
 | `wanted` | `wanted-wall` | Crew posters on wet brick: one per Wanted Level, curfew bills at Heat 4+; told heat and wanted like `watch` |
+| `meeting` | `planning-meeting` | The crew round the table in the lair over a generic map; they take turns talking |
+| `credits` | `opening-credits` | A 90-second title sequence cut to the theme; **pin only**, plays once and holds on the title card |
 | `board`, `exploded` | `planning-board`, `score-exploded` | The score scenes |
 | `testcard` | `test-card` | Please stand by (pin only) |
 
-The eight scenes from `boneyard` on are built by `tools/ambient/scenes/*.js` (see `tools/ambient/README.md`); their figures move now
+The scenes from `boneyard` on are built by `tools/ambient/scenes/*.js` (see `tools/ambient/README.md`); their figures move now
 and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools/ambient/redress.js` re-dressed Booker in his suit in
 `harvest`, `watch` and `duskwall` and gave Alfie his cigarette there.
 
@@ -282,6 +284,12 @@ and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools
   scene), or Off. A playlist holds 1–16 scenes. A playlist the GM already saved keeps its scenes: tick the new ones in the panel. **Next scene** skips.
   A covered scene is kept for 30 s, then its frame is removed (a hidden frame gets no `visibilitychange` and would animate all night),
   and reloaded when the spotlight clears. A scene that has not loaded in 20 s is benched for 10 min.
+- **The theme.** A scene marked `music: true` (the credits) may ask the display for `Pure.AMBIENT_MUSIC` (`app/media/theme.mp3`,
+  **gitignored**: someone's recording, kept on the GM's PC and deployed from disk) with a same-origin `b68:music` message (`play`,
+  `fade`). An iPad plays sound only after a tap, so the first tap on the display unlocks it; until then a **Tap for sound** chip shows.
+  The display tells the scene where the music is (`{ state: 'playing', t }` each second, `blocked`, or `none` with no file) and the
+  scene runs its cuts from that. Another scene, a spotlight or lights out stops it. `/media/` bypasses the service worker. To replay
+  the credits, pin another scene and pin them again. Episode line and cast: the top of `tools/ambient/scenes/credits.js`.
 - **Heat and wanted.** The GM page sends the campaign's crew heat and wanted (debounced 2 s) while the ambient is not off. The page
   has to have been opened as the GM in that page load; the iPad panel also corrects a stale value when it opens. The display passes
   them (`b68:crew`) to every scene with `needs: 'crew'` (`Pure.ambientCrewScenes()`: `watch`, `wanted`) when it loads and on each change.
@@ -294,7 +302,8 @@ and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools
 - **Checks.** `check:ambient` (assets), `ambient-shells.test.mjs`, `check:display-ambient` (e2e), plus the ambient cases in
   `checks/api/gm.mjs`, `display-role.mjs`, `display.test.mjs`, `gm-page.test.mjs` and `gm-nosecrets.test.mjs`. The e2e checks take
   `PW_CHANNEL=msedge` when Playwright's own Chromium is not installed.
-- **Deploy.** `npx wrangler d1 migrations apply DB --remote` (0006) before `wrangler deploy`. Before a deploy, build the calling cards
+- **Deploy.** `npx wrangler d1 migrations apply DB --remote` (0006) before `wrangler deploy`. Copy `app/media/theme.mp3` into the
+  deploying checkout too (gitignored; without it the credits run silent). Before a deploy, build the calling cards
   on the deploying PC (`node tools/ambient/scenes/cards.js`, needs `tools/ambient/cards/*.jpg`): the file is gitignored, and the
   asset upload takes whatever is on disk. Without it the `cards` scene 404s and `check:ambient` prints SKIP.
 
