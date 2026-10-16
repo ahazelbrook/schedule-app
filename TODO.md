@@ -85,7 +85,7 @@ packs: 150,336 rolls, no clean card changed. Stored digests keep this checked (g
 gm-scenes). The vault parity script could not run here (it needs the vault): run `node scripts/gm-parity.mjs` on the
 PC once after this lands.
 
-### 3. The players' side (branches: players · MERGED 16 Oct; players-table in progress)
+### 3. The players' side (branches: players and players-table · both MERGED 16 Oct)
 
 Keep: one visual language; Night as legible as Paper; the returning player's one-tap Home; the sheet's phone order
 and 44 px pips; Push/Desperate writing their own cost; the offline queue; role-aware table; revealed-only cast.
@@ -103,20 +103,20 @@ and 44 px pips; Push/Desperate writing their own cost; the offline queue; role-a
       fold, a sticky vitals strip with jump anchors, play-first order. · M
 - [x] C5 P2 · Every tap rebuilds 722 KB of figure svg + thumbnail data URI the phone never shows (313 ms at 4× CPU).
       Lazy figure, Blob thumb. · S-M
-- [ ] C6 P2 · (the sheet: done in players; the table page: players-table) · Play controls 19-27 px tall; the table page has no phone hit areas. 40 px everywhere. · S
+- [x] C6 P2 · (the sheet: done in players; the table page: players-table) · Play controls 19-27 px tall; the table page has no phone hit areas. 40 px everywhere. · S
 - [x] C7 P2 · Offline, the sheet says "Saved" while the change is queued; the cue is off screen. Truthful status and
       an "Offline · N waiting" pill. · S
-- [ ] C8 P2 · The table page for a player: a dead Schedule box first, the log 2400 px down. Hide the schedule without
+- [x] C8 P2 · The table page for a player: a dead Schedule box first, the log 2400 px down. Hide the schedule without
       dates, collapse it for the GM, phone order clocks · log · players · crew (summary row) · schedule. · S-M
 - [x] C9 P2 · iPhone zooms on focus (13 px inputs). 16 px at phone widths; touch-action: manipulation. · S
 - [x] C10 P2 · No "?" rules link on Harm, Armor, Load, Position/Effect, Resist, XP. · S
-- [ ] C12 P3 · (the sheet's strings: done in players; Home and the table: players-table) · Code-speak strings ("the files", "Filed", "no store", "Unowned", "Indulge -1/-3"). · S
-- [ ] C13 P3 · Back is a button, a crumb or absent; "Open sheet" twice on Home. · S
-- [ ] C14 P3 · The Home status line is 10.5 px; --ink-faint at 3.3:1; no Night/Paper switch. · S
+- [x] C12 P3 · (the sheet's strings: done in players; Home and the table: players-table) · Code-speak strings ("the files", "Filed", "no store", "Unowned", "Indulge -1/-3"). · S
+- [x] C13 P3 · Back is a button, a crumb or absent; "Open sheet" twice on Home. · S
+- [x] C14 P3 · The Home status line is 10.5 px; --ink-faint at 3.3:1; no Night/Paper switch. · S
 - [x] C15 P3 · Cast: after Hide nothing says who is on stage; phone detail figure 62vh before the text. · S
 - [x] C16 P3 · Typing debounce not flushed on pagehide; a refused save leaves optimistic marks; play.log unbounded;
       a remote snapshot dropped during an in-flight save. · S each, careful
-- [ ] C17 P3 · "Plan dates" nags on Home while the schedule is parked. · S
+- [x] C17 P3 · "Plan dates" nags on Home while the schedule is parked. · S
 
 Landed in `review/players`: the mark strip for physical dice (Push +2 stress; Assist +1 die, the HELPER pays its
 stress, as the rules say; Bargain; Resist · Harm 1-3 · +1 stress), the resist helper (tap the highest die), the in-app
@@ -126,6 +126,12 @@ first screen (vitals line, About fold, play-first order), the figure not drawn o
 saving robustness (pagehide flush, refused saves undone, log capped at 200, crossing snapshots merged), the cast's
 "On stage: ..." line after Hide. A table-page touch block the first agent wrote in campaign.css was taken out of
 this branch (the table-page agent owns that file); its text is in `review/players-wip` (15fbac1) if wanted.
+
+Landed in `review/players-table`: the table page for phones (clocks first with − / + steppers, the log's latest three,
+the players, the crew behind a summary row, the schedule only when there is something to plan; the GM sees one line),
+the Session box as one line, 40 px touch targets (95 on the table page, 82 on the crew sheet), plain words on Home and
+the table, "Join session N", no schedule nags while there are no dates, the Home status line at 13 px, a Night / Paper
+/ Auto switch in the footer applied before first paint, readable faint text (5.5:1) and Night accent (5.0:1).
 
 ### 4. Engineering (branch: engineering) · MERGED 16 Oct (0e8afca)
 
@@ -197,6 +203,10 @@ untouched main: the fake microphone does not work in this container).
 - [ ] Ideas from review B · Re-roll one row of a card (per-section seeds exist); a "Tonight" strip of every roll beyond
       the five, exported into the note; "Make them an NPC" on a Face/Reaction card; "Use the street" chaining Street →
       Location → NPC. · M
+- [ ] Small leftovers from the players' work · "Files offline:" toast wording in boot.js (with its assertion in
+      checks/runtime/display-role.e2e.mjs); "shared files" wording in cast-page.js, season.js and steps.js; season.css's
+      own light-token copy of --ink-faint (#8e8880 → #6a645e); crew-sheet ability circles, upgrade boxes and contact dots
+      at 40 px on touch. · S
 - [ ] Docs sweep after the last merge · comments and docs still pointing at the moved docs (PLAN, AMBIENT-PLAN,
       ROADMAP, DEPLOY...) in app/season.js, app/gm-page.js, app/display-page.js, app/README.md (also: list routes.js),
       CAST.md, CAMPAIGN.md, functions/_lib/gm.js, functions/api/gm/ambient.js and display.js; AMBIENT-PLAN's decisions
