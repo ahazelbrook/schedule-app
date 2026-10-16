@@ -21,30 +21,34 @@ wave-1 merge. Everything merges only with the checks green (`npm test`, the e2e 
 - [ ] P1 · Figures' heads sometimes disappear (the motion merge leaves a frame with no version of a part, or a clip path
       inside a hidden group that WebKit will not resolve). Fix in motion.js, regenerate, prove with a frame walk. · M
 
-### 1. The GM page: quick access (branch: gm-page)
+### 1. The GM page: quick access (branch: gm-page) · MERGED 16 Oct (f8c9d5f)
 
 Keep: the Position switch; the four Situations and the composed card; single-letter keys; the one-window laptop layout;
 Find; the location glance card and its secrecy gate; the rail; capture; the beat pill.
 
-- [ ] A1 P1 · The result card is the last thing in the console column, below the fold at 1280×900. Card under the four
+- [x] A1 P1 · The result card is the last thing in the console column, below the fold at 1280×900. Card under the four
       buttons; Scene controls folded behind a labelled one-line disclosure at every width; single tables under "More
       tables"; scroll the card into view on a roll. · M
-- [ ] A2 P1 · Focus hides the roll: keys 1-4 still roll but the card is display:none. A roll leaves Focus. · S
-- [ ] A3 P1 · Phone: the first screen is the site header, H1, pack note and four admin buttons. The app layout (44 px
+- [x] A2 P1 · Focus hides the roll: keys 1-4 still roll but the card is display:none. A roll leaves Focus. · S
+- [x] A3 P1 · Phone: the first screen is the site header, H1, pack note and four admin buttons. The app layout (44 px
       bar + menu) at every width. · M
-- [ ] A4 P1 · Phone: ten segments, five visible, no scroll. Two rows. · S
-- [ ] A5 P2 · Classic 3×3 breaks words mid-syllable at 1280. · S
-- [ ] A6 P2 · Tab key hints hidden between 1100 and 1439 px. · S
-- [ ] A8 P2 · "GM ONLY" badge on every fold of an all-GM page; mark what PLAYERS SEE instead. · S
-- [ ] A9 P2 · "Put on stage" navigates away mid-scene; stage from the GM page. · S-M
-- [ ] A10 P2 · Keys vs typing: R/T focus the pane's find box; H needs Shift or a double tap. · S
-- [ ] A12 P2 · A location roll draws the rings map at once. · S
-- [ ] A13-A18, A20, A21 P3 · Labelled scene chips; toasts above the capture input; the Situations|Classic toggle,
+- [x] A4 P1 · Phone: ten segments, five visible, no scroll. Two rows. · S
+- [x] A5 P2 · Classic 3×3 breaks words mid-syllable at 1280. · S
+- [x] A6 P2 · Tab key hints hidden between 1100 and 1439 px. · S
+- [x] A8 P2 · "GM ONLY" badge on every fold of an all-GM page; mark what PLAYERS SEE instead. · S
+- [x] A9 P2 · "Put on stage" navigates away mid-scene; stage from the GM page. · S-M
+- [x] A10 P2 · Keys vs typing: R/T focus the pane's find box; H needs Shift or a double tap. · S
+- [x] A12 P2 · A location roll draws the rings map at once. · S
+- [x] A13-A18, A20, A21 P3 · Labelled scene chips; toasts above the capture input; the Situations|Classic toggle,
       Display link, Export and Forget into the Menu; "GM screen"; larger labels; Listening pill only once used; map
       View/Theme folded. · S each
-- [ ] A7 P2 · One "Now in" district that the console, Street, Location and NPC default to (if time; else wave 2). · M
-- [ ] A11 P2 · Rules search results inside the GM screen pane, not a new tab (if time; else wave 2). · M
-- [ ] A19 P3 · Engagement factors as three-chip segments (if time; else wave 2). · S
+- [x] A7 P2 · One "Now in" district that the console, Street, Location and NPC default to (done). · M
+- [x] A11 P2 · Rules search results inside the GM screen pane, not a new tab (done). · M
+- [x] A19 P3 · Engagement factors as three-chip segments (done). · S
+
+Also landed: the Classic console view and Classic layout removed (one mode); rules entries in Find (Ctrl+K); the
+Prep outline's find box one line tall. Checks on the branch: gm-page unit 68, gm.e2e 168, gm-scenes 34, gm-npc-panel
+41, gm-prep 62, rules 96, the secrecy scan clean.
 
 ### 2. The generators (branch: generators; pure modules only) · MERGED 16 Oct (4d8a1df)
 
@@ -168,7 +172,6 @@ additive secrets on deploy; schema.sql = migrations.
 - [ ] E14 P3 · The display never leaves "denied"; reload once after 10 min. · S
 - [ ] Lazy loading phase 2 · The figure kit (688 KB) loaded after first paint; the three top-level captures become
       lookups. · M
-- [ ] A7 / A11 / A19 if not done in wave 1.
 - [ ] Physical dice on the GM page · The engagement roll: let the GM roll physically and tap the highest die instead
       of the app rolling (the pool is still computed by the app); the same for any GM-side roll. · S
 - [ ] Ideas from review B · Re-roll one row of a card (per-section seeds exist); a "Tonight" strip of every roll beyond
