@@ -76,7 +76,7 @@ try {
 
   const G = await open('#gm');
   const p = G.page;
-  check((await p.$$eval('.gm-tab', (t) => t.map((x) => x.getAttribute('data-panel')).join())) === 'prep,rules,location,scenes,engagement,npc,cards,ipad', 'the side tabs: Prep, Screen, Location, Street, Engage, NPC, Cards, iPad');
+  check((await p.$$eval('.gm-tab', (t) => t.map((x) => x.getAttribute('data-panel')).join())) === 'prep,rules,location,scenes,engagement,npc,downtime,cards,ipad', 'the side tabs: Prep, Screen, Location, Street, Engage, NPC, Downtime, Cards, iPad');
   await p.keyboard.press('s');
   check(await p.$eval('#gm-root', (r) => r.getAttribute('data-panel')) === 'scenes' && await p.$eval('#gm-scn', (e) => !e.closest('[hidden]') && !e.hidden), 'key S opens the street scene panel');
   await p.click('[data-gm="scnroll"]');
@@ -198,12 +198,13 @@ try {
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
   await G.c.close();
 
-  // a phone: ten segments, nothing wider than the screen, every control 44 px or more
+  // a phone: eleven segments, nothing wider than the screen, every control 44 px or more
   const M = await open('#gm', { width: 390, height: 844, mobile: true });
   const mp = M.page;
-  check((await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => x.getAttribute('data-seg')).join())) === 'console,prep,location,scenes,engagement,npc,cards,rules,ipad,state', 'phone: the bar is Console, Prep, Location, Street, Engage, NPC, Cards, GM screen, iPad, State');
+  check((await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => x.getAttribute('data-seg')).join())) === 'console,prep,location,scenes,engagement,npc,downtime,cards,rules,ipad,state', 'phone: the bar is Console, Prep, Location, Street, Engage, NPC, Downtime, Cards, GM screen, iPad, State');
   const segRows = await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.right)]; }));
-  check(new Set(segRows.map((r) => r[0])).size === 2 && segRows.every((r) => r[1] <= 390), 'phone: two rows of five, every segment on screen (' + JSON.stringify(segRows) + ')');
+  const perRow = segRows.reduce((m, r) => { m[r[0]] = (m[r[0]] || 0) + 1; return m; }, {});
+  check(JSON.stringify(Object.values(perRow)) === '[6,5]' && segRows.every((r) => r[1] <= 390), 'phone: two rows (six, then five), every segment on screen (' + JSON.stringify(segRows) + ')');
   for (const seg of ['scenes', 'engagement']) {
     await mp.click('.gm-segbar [data-seg="' + seg + '"]');
     await mp.waitForSelector('#gm-' + (seg === 'scenes' ? 'scn' : 'eng') + ' select', { state: 'visible', timeout: 5000 });

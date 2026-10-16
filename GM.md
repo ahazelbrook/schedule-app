@@ -1,12 +1,14 @@
 # GM tools: the API and the secrecy contract
 
-The `#gm` page (the console with its four Situations, the location generator, street scenes and the engagement
-roll) and the `#display` page (an iPad signed in as the GM) run on three GM-only endpoints. The generators' tables hold '68
-text and GM-only secrets, so they never enter git: the GM builds a **pack** from the vault on their own PC (`npm run
+The `#gm` page (the console with its four Situations, the location generator, street scenes, the engagement roll and the
+downtime cards) and the `#display` page (an iPad signed in as the GM) run on three GM-only endpoints. The generators' tables hold '68
+text and GM-only secrets, so they never enter git (the downtime cards' tables are the module's own writing, so they are in git): the
+GM builds a **pack** from the vault on their own PC (`npm run
 gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser or with `npm run gm:push -- --only pack
 --yes` (see `SYNC.md`, which also moves what happened at the table back into the vault). Code: `functions/_lib/gm.js`,
 `functions/api/gm/*.js`; tables in `migrations/0004_gm.sql`. The pack parts are `console`, `location`, `campaign`, `npc`,
-`scenes`, `engagement`, `prep` and `screen` (the last two optional; `scripts/gm-pack.mjs` lists what each holds).
+`scenes`, `engagement`, `prep` and `screen` (the last two optional; `scripts/gm-pack.mjs` lists what each holds). An optional
+`downtime` part (none is built yet) would replace the Downtime panel's own tables (see Downtime (D) below).
 
 ## Secrecy rules (server enforced)
 
@@ -78,7 +80,7 @@ fails and nobody is known, nothing is purged.
 - **First run.** With no pack on the server the page asks for `gm-private/b68-gm-pack.json` (built by `npm run gm:pack`),
   checks it (`format` 1, `console` and `location` parts with `T`), previews the parts and uploads one part per
   `importPart` with a progress bar; parts the server holds that the file lacks are removed. Each module checks its own part
-  (`B68GmConsole`, `B68GmLocation`, `B68GmNpc`, `B68GmScenes`, `B68GmEngagement`: `check(T)`): the table entries a part lacks are listed
+  (`B68GmConsole`, `B68GmLocation`, `B68GmNpc`, `B68GmScenes`, `B68GmEngagement`, `B68GmDowntime`: `check(T)`): the table entries a part lacks are listed
   as a **warning** in the preview and, for the pack the page loads, in the Menu under **Pack check** (with one toast per page load).
   A warning never stops the upload, and a roll that needs a missing entry uses a neutral word. **Update pack** does the same
   again; **Forget GM data on this device** drops the local copies. After that, each visit compares the cached part
@@ -89,11 +91,11 @@ fails and nobody is known, nothing is purged.
   the **Scene** line (one row of labelled chips, `Scene: any · District: any · Aim: anyone · NPC: … · Threat: 3`, that opens
   to the scene, district, PC, NPC and threat controls; closed by default at every width), the four Situation buttons, the
   card, "Earlier:" the last five rolls, and **More tables** (the nine single tables, folded) |
-  a side panel with **Prep (R)**, **GM screen (T)**, **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)**, **Cards (O)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
+  a side panel with **Prep (R)**, **GM screen (T)**, **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)**, **Downtime (D)**, **Cards (O)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
   vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on
   stage) | the capture bar at the foot (buckets, the input, **File**, "N filed", **File last roll**). 600–1100 px: two columns, the rail below. Phone: the same bar as the laptop, 44 px
-  (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | Engage / NPC | Cards | GM screen | iPad | State
-  bar in two rows of five (every segment in reach, nothing to drag sideways), both stuck to the top; the Position switch first,
+  (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | Engage | NPC / Downtime | Cards | GM screen | iPad | State
+  bar in two full rows, six then five (every segment in reach, nothing to drag sideways), both stuck to the top; the Position switch first,
   **Now in** (its select moves into the Scene line here) and the Scene line, the situations a 2 × 2 grid, the other controls behind the
   Scene line, capture on a floating button. After a
   roll the card is scrolled into view by the least scroll that shows it (the whole card when it fits, else its lead box; the
@@ -111,7 +113,7 @@ fails and nobody is known, nothing is purged.
   scroll on their own and capture sits fixed at the foot, so a
   long Prep note or the GM screen never carries the console or the rail away; toasts sit above the capture bar, never over its
   input. The side tabs are one row with their keys showing at 1280 px (Prep, GM screen |
-  Location, Street, Engage, NPC | Cards, iPad). Prep and the GM screen show their sections as an outline beside the text, the one
+  Location, Street, Engage, NPC, Downtime | Cards, iPad). Prep and the GM screen show their sections as an outline beside the text, the one
   being read marked. **Focus** (`F`, or the button by the tabs) shrinks the console to its keys on any tab (it replaces Prep's
   Wide, and shares its setting, `b68.gm.prepWide`); a roll made in Focus leaves Focus so the card shows (a toast says so, once
   per page load). Empty rail boxes are one line. Below 1100 px the page scrolls under the sticky bar. `body.gm-app` turns it
@@ -133,8 +135,8 @@ fails and nobody is known, nothing is purged.
     on that speaker's box. `Enter` saves the name.
   - **Update pack asks first** when the file would lose prep the app has (a part gone, a prep note gone or much
     shorter): the button reads **Upload anyway** and confirms (the same guard as `gm:pack` and `gm:push`, SYNC.md).
-- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (`5`–`9` do nothing: the single tables have no keys), `R` `B` `N` `S` `E` `O` `T` `I` switch the panel
-  (Prep, Location, NPC, Street scene, Engagement, Cards, GM screen, iPad; `R` and `T` also put the cursor in that pane's find box, so typing
+- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (`5`–`9` do nothing: the single tables have no keys), `R` `B` `N` `S` `E` `D` `O` `T` `I` switch the panel
+  (Prep, Location, NPC, Street scene, Engagement, Downtime, Cards, GM screen, iPad; `R` and `T` also put the cursor in that pane's find box, so typing
   lands there and not on the shortcuts), `F` Focus, `/` or `Ctrl+K` Find, `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
   the last roll under "Rolled at the table", `Shift+H`, or `H` twice within a second, blanks the screen until any key or tap (one stray `H` does
   nothing; the first alone says how, once per page load), `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
@@ -251,6 +253,39 @@ fails and nobody is known, nothing is purged.
   A roll uses the pack's campaign part, not the live cast, so a freshly filed NPC is avoided by name only after the next
   pack build and push; that keeps the replay identical to the sync's. Code: `app/gm-page.js`, `app/gm/npc.js`,
   `app/gm/figure-map.js`, `scripts/lib/sync-npc.mjs`. Check: `checks/runtime/gm-npc-panel.e2e.mjs`.
+- **Downtime (`D`; on a phone the Downtime segment).** Personal business, heading "Downtime · personal business": one card per activity a
+  PC takes in the downtime phase, to frame it at the table (`app/gm/downtime.js`, `B68GmDowntime`). The tables are the module's own writing
+  (no book text, so the panel works with any pack); a pack part `downtime` may replace them (any top-level key of its `T`, a vice's tables one
+  by one: the module's header). A part that lacks tables is listed by the Pack check, and the panel uses the built-in tables with a note.
+  - **Who**: a chip per PC from the live sheets (boot's `characters()`: a slim copy of each filed character, never the figure spec, read on
+    every draw and again when the characters snapshot changes) and **anyone**. Picking a PC prefills the vice (a select of the seven, theirs
+    picked) and the purveyor (a text field) from their sheet; an edit is panel state (`dt.ui`), never written to the sheet.
+  - **Activity**: chips in the module's order (Indulge vice, Recover, Long-term project, Train, Friend or rival, Lay low, Acquire; a phone shows
+    the module's short labels). Then the activity's ONE row of buttons, each rolling the card at once (everyone rolls physical dice: the tap on
+    the result is the roll): **Indulged** / **Overindulged** under the Vice and Purveyor; "Rolled at the table:" **1–3** **4/5** **6** **Crit**
+    for Recover, Lay low, Acquire and Long-term project (which also gets a select of the PC's own clocks, the first still open picked, or
+    another project); **Insight** **Prowess** **Resolve** **Playbook** for Train; **Friend** / **Rival** under a select of the PC's contacts (a
+    friend or a rival first), the relation the sheet gives that contact marked "on the sheet". The button that made the card on screen stays
+    marked.
+  - **The card** is the usual card (title and sub, chips, the lead box with its small line, the grid, one actions row with Pin and Copy). An
+    overindulgence puts its four options (**Attract trouble · Brag · Lost · Tapped**, the drawn or picked one pressed) right above the cost
+    box, in the alarm colour: it is what the GM reads first. Tapping another option switches it on the SAME card (its seed and memory: the
+    scene above never moves; only `ui.pick` and the label that names it change). A **?** beside Overindulged opens the rules on overindulging
+    in the GM screen pane (its rules search for "overindulge"; the first hit about indulging opens). An indulgence that was not one carries a
+    small **Overindulged?** that turns the same card into one.
+  - **Start a clock: <name> (4)** (a clock the card suggests) puts it on the table's clocks through boot's `addClock` (an `add` op where the
+    store takes `clockOps`, else the whole array: CAMPAIGN.md "Clocks"): `{ id: 'c_…', name, size, filled: 0, kind: 'danger', hidden: true }`,
+    with the toast "Clock started, hidden from the players: <name>. Show it from the table page." The rail's Table clocks shows it. The card
+    keeps the clock's id (`started`), so its button stays done after a reload and on its Earlier entry.
+  - After a roll the card is scrolled into view as the console's is (when it is taller than the pane: its cost box, else its lead). `L` files
+    "Downtime: <label>"; Earlier keeps five. **Nothing goes to the iPad**: the prompts and hooks are the GM's, so there is no Show on iPad.
+  - State: `cards.downtime` `{ hid, seed, ui, mem, label, at, started? }`, where `ui` holds the resolved strings (the PC's name, the vice, the
+    purveyor line, the contact line, the project's name, the district), so a reload or an Earlier click redraws the same card after a sheet
+    changes, and `mem` is the repeat guard before the roll; `hist.downtime` (five); `mem.downtime` (the guard itself: small integer arrays);
+    `dt.ui` `{ who (a character id, '' for anyone), act, vice, purveyor, project, contact }` (`project` and `contact` '' follow the sheet, `*`
+    is none of the sheet's). Now in is the card's district: the module's own spelling when its list holds it, else as the bar has it (a
+    downtime card reads a district as words in a sentence, never as a table key).
+  - Checks: `checks/runtime/gm-downtime.test.mjs` (the module), `gm-page.test.mjs` (17a–17l), `gm.e2e.mjs` (the laptop and the phone).
 - **GM screen** (`T`; on a phone the GM screen segment). The GM screen: the vault note with `gm_screen: true` under the '68
   folder, which `npm run gm:pack` cuts at its `##` headings into the pack's `screen` part (`scripts/lib/screen-export.mjs`;
   text before the first `##` is an intro shown above them; a `## Related`, `## Provenance` or `## Sources` heading ends
@@ -297,7 +332,8 @@ fails and nobody is known, nothing is purged.
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,
   so a reload or an Earlier click redraws exactly the same card even after a callback was used or a bargain collected),
   `hist` (five per tool), `npc` (`ui`: the NPC pickers), `npcgen` (`{ seed, mem, at, s?, ui? }` per generated NPC id: the
-  roll that made them, `ui` only when a picker was set), `pins` (50, text), `capture` (400, and 128 KiB: `{ id, bucket: n|x|m|r, text, at, s? }`),
+  roll that made them, `ui` only when a picker was set), `dt` (`ui`: the Downtime panel's choices; its cards are `cards.downtime` /
+  `hist.downtime` / `mem.downtime`, see Downtime (D)), `pins` (50, text), `capture` (400, and 128 KiB: `{ id, bucket: n|x|m|r, text, at, s? }`),
   `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab), `opps` (the Cards panel) and `now` (`{ district }`: Now in). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
   `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
