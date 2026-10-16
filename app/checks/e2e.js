@@ -227,7 +227,16 @@ async function homeStates(b, errs) {
     const f = await facts(pg); want(/You can look around but not change anything/.test(f.text) && !/Restore your characters/.test(f.text), 'read-only player', f); await c.close(); }
   { const { c, pg } = await open('none', null);
     const f = await facts(pg); want(f.title === 'Welcome' && f.primary.join() === 'Make a character' && !f.files, 'no runtime: only Make a character', f);
-    want(/Saving is not available in this view/.test(f.text) && !/files|filed/i.test(f.text), 'no runtime: plain words about saving', f.text.slice(0, 200)); await c.close(); }
+    want(/Saving is not available in this view/.test(f.text) && !/files|filed/i.test(f.text), 'no runtime: plain words about saving', f.text.slice(0, 200));
+    const note = await pg.$eval('#rosterNote', n => n.textContent);
+    want(note === 'Saved characters are not available in this view.', 'no runtime: the roster note speaks of saved characters, not files', note); await c.close(); }
+  /* a runtime that has a user but no storage, opened on a sheet's address: the note and the toast speak of saved characters, not files */
+  { const c = await b.newContext();
+    await c.addInitScript(`window.claude = { use: async (n) => n === 'user' ? { id: async () => 'u_pat', can: async () => true, isOwner: async () => false, canEdit: async () => false, me: async () => ({ id: 'u_pat', name: 'Pat' }), profiles: async () => ({}) } : null };`);
+    const pg = await c.newPage(); pg.on('pageerror', e => errs.push('home no-storage pageerror: ' + e.message));
+    await pg.goto(URL + '#c/aldo-1'); await pg.waitForTimeout(1000);
+    const t = await pg.evaluate(() => ({ note: document.getElementById('rosterNote').textContent, toast: (document.getElementById('toast') || {}).textContent, mode: document.body.dataset.mode }));
+    want(t.note === 'Saved characters are not available in this view.' && t.toast === 'Saved characters are not available here, so that sheet cannot open.' && !/files/i.test(t.note + t.toast) && t.mode === 'home', 'no storage: a sheet that cannot open says so in plain words and lands on Home', t); await c.close(); }
 }
 
 /* ---------- the theme: Auto / Paper / Night in the footer, remembered, applied before the first paint, with readable text ---------- */

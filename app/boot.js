@@ -1179,7 +1179,7 @@
         startCampaign();
         var Cp0 = castMod(); if (Cp0) { try { Cp0.init(castApi()); } catch (e) { if (window.console) console.error(e); } }
         if (document.body.dataset.mode === 'table') startTable();
-        if (!d) { $('rosterNote').textContent = 'The files are unavailable in this view'; cannotOpen('The files are not available here, so that sheet cannot open.'); renderHome(); return; }
+        if (!d) { $('rosterNote').textContent = 'Saved characters are not available in this view.'; cannotOpen('Saved characters are not available here, so that sheet cannot open.'); renderHome(); return; }
         $('rosterNote').textContent = A.me ? 'Yours are saved to your account. Everyone at the table can see all characters.' : 'Everyone who opens this page sees the same characters.';
         renderHome();
         col().orderBy('updatedAt', 'desc').limit(60).onSnapshot(function (snap) {
@@ -1189,8 +1189,8 @@
           if (A._followCache && openId) A._followCache(openId);
           if (pendingOpen) { var id = pendingOpen; pendingOpen = null; openCharacter(id); }
         }, function (e) { rosterSeen = true; renderHome(); toast('Files offline: ' + (e && e.message || e), true); });
-      }).catch(function () { dbSettled = true; cannotOpen('The files are not available here, so that sheet cannot open.'); renderHome(); if (document.body.dataset.mode === 'table') startTable(); });
-    } else { dbSettled = true; $('rosterNote').textContent = 'The files are unavailable in this view'; whoami(); syncBackups(); cannotOpen(''); renderHome(); if (document.body.dataset.mode === 'table') startTable(); }
+      }).catch(function () { dbSettled = true; cannotOpen('Saved characters are not available here, so that sheet cannot open.'); renderHome(); if (document.body.dataset.mode === 'table') startTable(); });
+    } else { dbSettled = true; $('rosterNote').textContent = 'Saved characters are not available in this view.'; whoami(); syncBackups(); cannotOpen(''); renderHome(); if (document.body.dataset.mode === 'table') startTable(); }
   }
   if (hot && hot.ready) hot.ready(function (data) { boot(data || {}); }); else boot((hot && hot.data) || {});
 })();
