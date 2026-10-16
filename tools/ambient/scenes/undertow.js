@@ -124,13 +124,25 @@ module.exports = function build() {
   bar += `<path d="M1040 900 L1600 880 L1600 1200 L1070 1200z" fill="#5e1840"/><path d="M1040 900 L1600 880 L1600 904 L1046 926z" fill="${MUS}"/><path d="M1046 926 L1600 904 L1600 920 L1052 942z" fill="#1a0a14" opacity=".6"/>${[0,1,2,3,4,5].map((k) => `<line x1="${1090 + k * 90}" y1="${942 - k * 3}" x2="${1100 + k * 90}" y2="1200" stroke="#1a0a14" stroke-width="3" opacity=".35"/>`).join("")}`;
   bar += `<g transform="translate(1160 895)"><rect x="-10" y="-30" width="20" height="30" fill="${C.paraA}" opacity=".55"/><rect x="40" y="-46" width="16" height="46" rx="3" fill="${C.covert700}"/><rect x="45" y="-56" width="6" height="12" fill="${C.covert700}"/></g>`;
 
-  // ---------- the crowd in the foreground: heads and shoulders bobbing ----------
+  // ---------- the crowd down in the deep end: kit silhouettes dancing, a four-frame groove each, no jumping ----------
+  const grooves = [
+    [{ R: "raise", L: "hip" }, { R: { a: "raise", b: "hip", t: .5 }, L: { a: "hip", b: "raise", t: .5 } }, { R: "hip", L: "raise" }, { R: "raise", L: "raise" }],
+    [{ R: "hold", L: "hold" }, { R: "raise", L: "hold" }, { R: "hold", L: "hold" }, { R: "hold", L: "raise" }],
+    [{ R: "down", L: "raise" }, { R: { a: "down", b: "raise", t: .5 }, L: { a: "raise", b: "down", t: .5 } }, { R: "raise", L: "down" }, { R: "hip", L: "hip" }],
+  ];
+  const tilts = [6, 0, -6, 0];
+  const who = ["socialite", "racer", "militant", "fence", "noble", "urchin", "intellectual", "bartender"];
+  const spots = [[110, 1080, .14], [280, 1070, .14], [450, 1082, .14], [620, 1072, .14], [790, 1080, .14], [190, 1270, .2], [480, 1262, .2], [770, 1275, .2]];
   crowd += `<g id="crowd">`;
-  for (let k = 0; k < 13; k++) {
-    const x = -40 + k * 92 + r() * 30, y = 1110 + r() * 40, s = .9 + r() * .4;
-    const hair = r() < .3 ? `<ellipse cx="0" cy="-118" rx="34" ry="40" fill="${C.ink900}"/>` : r() < .5 ? `<rect x="-26" y="-150" width="52" height="34" rx="16" fill="${C.ink900}"/>` : "";
-    crowd += `<g class="bob" data-x="${f2(x)}" data-y="${f2(y)}" data-s="${f2(s)}" data-ph="${f2(r() * 6)}">${hair}<ellipse cx="0" cy="-100" rx="26" ry="32" fill="#1a0a14"/><path d="M-70 40 Q-66 -40 -20 -56 L20 -56 Q66 -40 70 40z" fill="#1a0a14"/></g>`;
-  }
+  who.forEach((id, i) => {
+    const base = JSON.parse(JSON.stringify(L.cast.byId[id]));
+    const spec = Object.assign(base, { id: "pool" + i, props: [], companion: undefined });
+    delete spec.companion;
+    const g = grooves[i % grooves.length];
+    const f = L.fig(spec, { id: "pool" + i, silhouette: true, lod: "lo", shadow: false, frames: g.map((arms, k) => ({ pose: { arms, head: { tilt: tilts[(k + i) % 4] }, stance: "easy" } })) });
+    const [x, y, s] = spots[i];
+    crowd += `<g class="pooldancer" data-x="${x}" data-y="${y}" data-i="${i}" data-ph="${f2(r() * 6)}" transform="translate(${x} ${y})">${L.at(f, 0, 0, s)}</g>`;
+  });
   crowd += `</g>`;
 
   const body = `<svg class="layer" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs>${defs}</defs>
@@ -139,20 +151,23 @@ module.exports = function build() {
   const script = `
 const wheels=[...document.querySelectorAll('.wheel')].map(g=>({g,cx:+g.dataset.cx,cy:+g.dataset.cy,v:+g.dataset.v,b:[...g.querySelectorAll('.blob')].map(c=>({c,r:+c.dataset.r,ph:+c.dataset.ph}))}));
 const specks=[...document.querySelectorAll('#specks rect')].map(e=>({e,a:+e.dataset.a,d:+e.dataset.d,y:+e.dataset.y}));
-const bobs=[...document.querySelectorAll('.bob')].map(g=>({g,x:+g.dataset.x,y:+g.dataset.y,s:+g.dataset.s,ph:+g.dataset.ph}));
+const pool=[...document.querySelectorAll('.pooldancer')].map(g=>({g,x:+g.dataset.x,y:+g.dataset.y,i:+g.dataset.i,ph:+g.dataset.ph,k:+g.dataset.i%4}));
 const tiles=[...document.querySelectorAll('.tile')];const neon=$('neon');
 const BPM=118, beat=60/BPM;
 loop((dt,c)=>{
  for(const w of wheels){w.g.setAttribute('transform','rotate('+(c*w.v).toFixed(2)+' '+w.cx+' '+w.cy+')');for(const b of w.b)b.c.setAttribute('r',(b.r*(1+Math.sin(c*.4+b.ph)*.18)).toFixed(1));}
  for(const s of specks){const a=s.a+c*.25;const x=560+Math.cos(a)*s.d;const y=120+s.y*600+Math.sin(a*2)*20;s.e.setAttribute('x',x.toFixed(0));s.e.setAttribute('y',y.toFixed(0));s.e.style.display=(Math.cos(a)>-.2)?'':'none';}
  const ph=(c/beat)%1;
- for(const b of bobs){const k=Math.max(0,Math.sin((c/beat)*Math.PI*2+b.ph));b.g.setAttribute('transform','translate('+b.x+' '+(b.y-k*14).toFixed(1)+') scale('+b.s+')');}
+ // a slow sway from the feet, on the beat; the groove itself is the frame cuts below
+ for(const d of pool){d.g.setAttribute('transform','translate('+d.x+' '+d.y+') rotate('+(Math.sin((c/beat)*Math.PI+d.ph)*2.2).toFixed(2)+')');}
  if(Math.random()<.02){const t=tiles[Math.floor(Math.random()*tiles.length)];t.setAttribute('opacity',(.15+Math.random()*.7).toFixed(2));}
  neon.setAttribute('opacity',Math.random()<.004?'.25':'1');
 });
 // the dancers: a four-frame groove on the beat, in turn
 let n1=0,n2=2;every(beat*2,beat*2,()=>{n1=(n1+1)%4;Motion.show('dancer1',n1);},0);
 every(beat*2,beat*2,()=>{n2=(n2+3)%4;Motion.show('dancer2',n2);},beat);
+// the deep end: everyone on their own count, half of them on the off-beat
+every(beat,beat,()=>{for(const d of pool){if(Math.random()<.55){d.k=(d.k+1)%4;Motion.show('pool'+d.i,d.k);}}},beat/2);
 // Mira sips, now and then
 every(10,24,()=>move('mira',[[1,160],[2,1800],[1,160],[0,0]]),6);
 `;

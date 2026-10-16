@@ -146,9 +146,9 @@ module.exports = function build() {
   // the gang's sign hanging from the nearest rib
   const sx = 520, sy = 300;
   front += `<g id="sign" transform="translate(${sx} ${sy})"><line x1="-70" y1="-260" x2="-70" y2="0" stroke="${C.ink900}" stroke-width="4"/><line x1="70" y1="-260" x2="70" y2="0" stroke="${C.ink900}" stroke-width="4"/>
-    <rect x="-150" y="0" width="300" height="104" fill="${C.rust700}"/><rect x="-142" y="8" width="284" height="88" fill="none" stroke="${C.paper200}" stroke-width="3" opacity=".8"/>
-    <text x="0" y="62" text-anchor="middle" font-family="Archivo Compressed" font-weight="900" font-size="58" fill="${C.paper100}" letter-spacing="2">FLENSING YARD</text>
-    <text x="0" y="86" text-anchor="middle" font-family="Space Mono" font-size="15" fill="${C.paper200}" letter-spacing="3">LIMMERFIELD · NO CREDIT</text></g>`;
+    <rect x="-170" y="0" width="340" height="112" fill="${C.rust700}"/><rect x="-161" y="9" width="322" height="94" fill="none" stroke="${C.paper200}" stroke-width="3" opacity=".8"/>
+    <text x="0" y="62" text-anchor="middle" font-family="Archivo Compressed" font-weight="900" font-size="50" fill="${C.paper100}" textLength="276" lengthAdjust="spacingAndGlyphs">FLENSING YARD</text>
+    <text x="0" y="90" text-anchor="middle" font-family="Space Mono" font-size="14" fill="${C.paper200}" textLength="252" lengthAdjust="spacingAndGlyphs">LIMMERFIELD · NO CREDIT</text></g>`;
 
   // ---------- people ----------
   const S = 0.255;
