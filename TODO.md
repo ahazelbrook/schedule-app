@@ -188,6 +188,12 @@ the last good Access keys kept when a refresh fails; a full CSP sent as Report-O
 Checks on the merge: `npm test` 580 pass; `check:e2e-all` 25 of 26 (the transcriber check fails the same four lines on
 untouched main: the fake microphone does not work in this container).
 
+**All six wave-1 branches merged (16 Oct).** On the combined branch: `npm test` 624 passed, 0 failed;
+`npm run check:e2e-all` 25 of 26 (the transcriber check fails the same four lines on untouched main: the fake
+microphone does not work in the build container). A race in the adapter test's poll count (a poll in flight at the
+last unsubscribe landing after the count; 2 of 12 runs failed under heavy load, 0 of 12 after the fix) is fixed in
+51b942d.
+
 ## Wave 2 (after the wave-1 merges)
 
 - [x] Generators, page side (MERGED with `review/gm-wave2`):
