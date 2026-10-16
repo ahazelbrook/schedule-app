@@ -6,37 +6,12 @@ things off during play, and have the GM see everyone at a glance. The prototype 
 `prototype/creator/`, now `app/`) already did all of that inside a claude.ai artifact. This
 plan is about turning it into something the table opens every week without thinking about it.
 
-## Status (updated)
+## Status
 
-The hosted build is **one Cloudflare Worker + Access + D1** at `https://blades.fieldguide.help`
-(a subdomain of the domain you already have on Cloudflare; the apex and `www` are left alone),
-instead of GitHub Pages + Firebase: Access gives emailed one-time codes (and Google, when you
-add it) with an allowlist and no sign-in code of our own. It started as a Pages project and
-moved to a Worker with static assets, so one deploy carries the page, the API, the custom
-domain and the secrets. `SETUP.md` has the deploy (`scripts/deploy.sh`, then a few Access
-steps in the dashboard); `DEPLOY-PROMPT.md` is that procedure as a prompt for a local Claude
-session; `HOSTING.md` the Worker, API and adapter contract; `CAMPAIGN.md` the campaign layer; `SCHEDULE.md` the schedule;
-the root `README.md` the repository layout, local runs and checks. The same page still runs as the claude.ai
-artifact.
-
-| Phase | State |
-|---|---|
-| 0. Table features on the artifact (dice, GM table, backups) | Done |
-| 1. Repository, hosting, sign-in, API, adapter, field-level saves | Done and live at https://blades.fieldguide.help since 13/10/2026 (first deploy: `scripts/deploy.sh` plus the Access dashboard steps, `SETUP.md`) |
-| 2. Campaign layer: the six crew sheets, shared clocks, session number, players, log | Done |
-| 3. Night-of-play: end of session, downtime | Done (session wrap-up and downtime on each sheet) |
-| 3. Night-of-play: schedule (next-session card, availability grid, RSVP, calendar) | Done (`SCHEDULE.md`) |
-| 3. Schedule, second round: the RSVP board (the crew line-up coloured by each owner's answer), attendance recorded when the GM starts a session and correctable by the GM, the "missed N" streak and the best-date tie-break, the "Are you in?" nudge within 3 days, GM "Copy reminder" and "Copy date poll" | Done (`SCHEDULE.md`) |
-| Sign-in on a phone | **Fixed 15/10/2026.** The cause was a second Worker, `schedule-app` (a Workers Builds link to this repository), which owned `blades.fieldguide.help` without the Access secrets. Its Git link is disconnected and `npx wrangler deploy` moved the domain back to `blades68`. Left to do: delete the `schedule-app` Worker in the dashboard. A 401 still names its `reason` (PR #8). |
-| 3. Reminders by Discord, email or push | Not built: the app sends no mail (a Worker could run them on a cron trigger, but nothing does yet); the nudge on the card and the copied reminder for the group chat stand in |
-| 4. Installable, offline reading and queued saves | Done (hosted build only) |
-| 5. The rules wiki and the cast (NPC portraits, "on stage") | Done and live (`RULES.md`, `CAST.md`) |
-| 6. GM tools: the `#gm` console (situations and classic), location generator and map, street scenes, engagement roll, capture, the `#display` iPad view, a display name for everyone | Done and live since 14/10/2026 and 15/10/2026 (`GM.md`). The NPC generator panel in the NPC tab is new on 15/10/2026 (`GM.md`) |
-| 6. GM sync: what happened at the table into the vault, the vault's NPC cards and the pack back to the app | Done (`SYNC.md`; runs on the GM's PC) |
-| 6. Ambient scenes on the iPad: a scene plays under the spotlight when nothing is shown (auto / pin / off, lights out), the iPad panel (`I`) on `#gm`, heat and wanted to the City Watch feed, score scenes from the current roll | Done and live since 15/10/2026 (`GM.md`, "Ambient scenes"; migration 0006). Not yet tried on the real iPad |
-| 6. A display-only sign-in for the iPad (`DISPLAY_EMAILS`) | Built and deployed, switched off: the iPad uses the GM's own email (`GM.md`) |
-| 4. Season print: every character and the crew in one printable document (`#print`, "Print the season" on the table page) | Done (`CAMPAIGN.md`, "Season print") |
-| 4. Backups | Done, without a nightly job (none scheduled; `npx wrangler d1 export` makes a full copy by hand): "Download all (JSON)" in the app (the characters and the table page's campaign document; a player's copy leaves out hidden clocks), "Restore (JSON)" (characters as new files for anyone; the table for the GM only, after a confirm; it reads both that file and `/api/export`), the GM's "Download everything" on the hosted build (`/api/export`: characters, campaign, members), and D1 Time Travel (7 days of point-in-time restore on the free plan, 30 on Workers Paid) |
+The live status that stood here (what is deployed, since when, and what is left) is now
+`SETUP.md`, *Status*, and the release steps are `SETUP.md`, *Updating the app*. The hosted build
+became **one Cloudflare Worker + Access + D1** at `https://blades.fieldguide.help` instead of
+GitHub Pages + Firebase; the docs at the repository root describe it as it is.
 
 All four decisions below are settled. Fonts (3): keep GT America. All four families are
 vendored in `app/fonts/` and the hosted build serves them behind Access; the site is private
@@ -45,13 +20,8 @@ or an emailed code). For decision 4: the full rulebook text is not kept in the r
 `app/content.js` and `app/crews.js` hold only what the sheets need. The character creator in
 `app/` is the prototype's; a new creator is being built separately.
 
-**Redeploys.** After the first deploy, a release is: merge to `main`, `npx wrangler d1 migrations apply DB --remote` (only
-when `migrations/` has a new file; note `npx wrangler d1 time-travel info <database>` first for a restore point), then
-`npx wrangler deploy`. `scripts/deploy.sh` is for the first deploy and for changing who is allowed in: it rewrites the
-Access allow policy and needs the player list. Then `npm run gm:pack` and `npm run gm:push -- --only pack --yes` (or
-Import GM pack on `#gm`). Not on a game day.
-
-The sections below are the original plan, kept for reference.
+The sections below are the original plan, kept for reference (`PLAN.md`, beside this file, is the product plan it
+refers to).
 
 ## 0. Where we are
 

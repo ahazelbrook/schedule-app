@@ -14,7 +14,7 @@
 // Plain ES module with no Cloudflare-only imports, so node can import it (checks/api/worker.mjs).
 
 import { onRequest as middleware } from '../functions/api/_middleware.js';
-import { onRequest as me } from '../functions/api/me.js';
+import { onRequest as me, BUILD } from '../functions/api/me.js';
 import { onRequest as members } from '../functions/api/members.js';
 import { onRequest as exportAll } from '../functions/api/export.js';
 import { onRequest as campaign } from '../functions/api/campaign.js';
@@ -142,6 +142,12 @@ export const PAGE_HEADERS = {
   'Content-Security-Policy': "frame-ancestors 'none'",
   // the microphone for this origin only: the table iPad's transcriber (GM.md "Listening"); still never for a frame
   'Permissions-Policy': 'camera=(), microphone=(self), geolocation=(), payment=()',
+  // The fuller policy the page could carry, REPORTED ONLY: the browser blocks nothing and names in its console what it
+  // would block (no report endpoint). Every script is a same-origin file; 'unsafe-inline' is for styles only (the
+  // <style> in index.html, style attributes); data: and blob: images; the transcriber's Deepgram socket; the ambient
+  // scenes are same-origin frames. Once the browser checks run with no "[Report Only]" message, it can become the
+  // enforced Content-Security-Policy (checks/api/worker.mjs asserts it is report-only until then).
+  'Content-Security-Policy-Report-Only': "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://api.deepgram.com; frame-src 'self'; media-src 'self'; font-src 'self'; frame-ancestors 'none'",
 };
 
 export async function handlePage(res) {
@@ -176,7 +182,8 @@ export const worker = {
     const url = new URL(request.url);
     const e = effectiveEnv(request, env);
     if (isApiPath(url.pathname)) {
-      return withHeaders(await handleApi(request, e, ctx), { 'Referrer-Policy': 'same-origin', 'X-Content-Type-Options': 'nosniff' });
+      // X-B68-Build: the Worker's build stamp (app/routes.js), so a page left open learns that the server moved on
+      return withHeaders(await handleApi(request, e, ctx), { 'Referrer-Policy': 'same-origin', 'X-Content-Type-Options': 'nosniff', 'X-B68-Build': BUILD });
     }
     const res = await e.ASSETS.fetch(request);
     if (url.pathname === '/' || url.pathname === '/index.html') return handlePage(res);

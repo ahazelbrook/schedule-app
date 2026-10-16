@@ -1,4 +1,4 @@
-// Static checks for the two score-scene shells (AMBIENT-PLAN.md, Architecture and Secrecy): they hold no campaign data, reach
+// Static checks for the two score-scene shells (docs/history/AMBIENT-PLAN.md, Architecture and Secrecy): they hold no campaign data, reach
 // nothing off the origin, never turn a received string into markup, and only listen to their parent. Plain Node, no browser.
 //   node checks/runtime/ambient-shells.test.mjs
 import fs from 'node:fs';

@@ -66,6 +66,7 @@ const iso = (n) => new Date(T0 + n * DAY).toISOString();
   const ids = await p.evaluate(() => Object.keys(window.__store).filter(k => k.indexOf('characters/') === 0).map(k => k.slice(11)));
   assert(ids.length === 4, 'seed: expected 4 filed characters, got ' + ids.length);
   /* marks on the living sheets, a fifth hound filed before the tracker existed (no play), and the campaign */
+  await p.evaluate(() => window.B68Load ? B68Load.need('table') : null);   /* the crew sheet seeds through the table's module, which loads with its route */
   await p.evaluate(({ ids, iso }) => {
     const st = window.__store, CR = B68Crews;
     ids.forEach((id, i) => { const d = JSON.parse(JSON.stringify(st['characters/' + id])); d.play.stress = 2 + i; d.play.harm.l2[0] = 'Cracked ribs'; d.play.xp.playbook = 3; d.play.notes = 'Owes the Lampblacks.\nNever trust Inspector Dahl.\nThird line of notes that should print whole, not clipped by a fixed-height box.\nFourth line.\nFifth line.'; d.play.log = [{ at: iso[2], kind: 'note', text: 'Session 2 ended: +2 xp' }, { at: iso[1], kind: 'roll', text: 'Skirmish 2d · risky · 6,3 → success' }]; window.__seed('characters/' + id, d); });

@@ -10,7 +10,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { worker, matchApi, effectiveEnv, withPageHead, handlePage, PAGE_HEAD, isLoopback } from '../../worker/app.js';
-import { onRequest as me } from '../../functions/api/me.js';
+import { onRequest as me, BUILD } from '../../functions/api/me.js';
 import { onRequest as members } from '../../functions/api/members.js';
 import { onRequest as exportAll } from '../../functions/api/export.js';
 import { onRequest as campaign } from '../../functions/api/campaign.js';
@@ -116,6 +116,33 @@ await step('page: doctype, charset and viewport in front of index.html, security
   expect(missing.status === 404, 'missing file: asset 404');
 });
 
+await step('page: a full Content-Security-Policy is reported, not enforced; the enforced one stays frame-ancestors only', async () => {
+  const r = await worker.fetch(new Request('https://blades.example.test/'), { ASSETS: fakeAssets() }, {});
+  expect(r.headers.get('Content-Security-Policy') === "frame-ancestors 'none'", 'enforced CSP: ' + r.headers.get('Content-Security-Policy'));
+  const ro = r.headers.get('Content-Security-Policy-Report-Only') || '';
+  const dir = Object.fromEntries(ro.split(';').map((d) => d.trim()).filter(Boolean).map((d) => { const [k, ...v] = d.split(/\s+/); return [k, v.join(' ')]; }));
+  const want = {
+    'script-src': "'self'", 'style-src': "'self' 'unsafe-inline'", 'img-src': "'self' data: blob:", 'connect-src': "'self' wss://api.deepgram.com",
+    'frame-src': "'self'", 'media-src': "'self'", 'font-src': "'self'", 'frame-ancestors': "'none'",
+  };
+  expect(JSON.stringify(dir) === JSON.stringify(want), 'report-only policy: ' + ro);
+  expect(!/unsafe-eval|\*/.test(dir['script-src']) && !/unsafe-inline/.test(dir['script-src']), 'scripts: same-origin files only');
+  const api = await worker.fetch(new Request('http://127.0.0.1:8788/api/me'), { DEV_USER: 'gm@example.test', GM_EMAILS: 'gm@example.test', DB: fakeDb(), CAMPAIGN: 'default' }, {});
+  expect(api.headers.get('Content-Security-Policy-Report-Only') === null, 'the API answers carry no page policy');
+});
+
+await step('build: app/routes.js is committed as dev (deploy.sh stamps it), /api/me answers it and every API answer carries X-B68-Build', async () => {
+  const routes = readFileSync(join(ROOT, 'app', 'routes.js'), 'utf8');
+  expect(/^\s*var BUILD = 'dev';/m.test(routes), "app/routes.js must say var BUILD = 'dev' in the repository: scripts/deploy.sh stamps it for the upload and puts it back");
+  expect(BUILD === 'dev', 'the Worker reads the same constant (got ' + BUILD + ')');
+  const env = { DEV_USER: 'gm@example.test', GM_EMAILS: 'gm@example.test', DB: fakeDb(), CAMPAIGN: 'default' };
+  const r = await worker.fetch(new Request('http://127.0.0.1:8788/api/me'), env, {});
+  expect(r.headers.get('X-B68-Build') === 'dev', 'X-B68-Build on /api/me: ' + r.headers.get('X-B68-Build'));
+  expect((await r.json()).build === 'dev', '/api/me carries build');
+  const other = await worker.fetch(new Request('http://127.0.0.1:8788/api/nope'), env, {});
+  expect(other.headers.get('X-B68-Build') === 'dev', 'X-B68-Build on every API answer, a 404 included');
+});
+
 const TOML = readFileSync(join(ROOT, 'wrangler.toml'), 'utf8');
 const live = TOML.split('\n').filter((l) => !/^\s*#/.test(l)).map((l) => l.replace(/\s+#.*$/, '')).join('\n');
 
@@ -132,6 +159,16 @@ await step('wrangler.toml: a Worker with assets, the API and page first, workers
   expect(host.split('.').length >= 3 && !/^www\./.test(host), 'the route is a subdomain, never the apex or www: ' + host);
   expect(/^CAMPAIGN\s*=\s*"/m.test(live), '[vars] CAMPAIGN');
   expect(/^\[dev\][\s\S]*?host\s*=\s*"localhost"/m.test(live), '[dev] host = localhost (keeps the loopback origin)');
+});
+
+await step('line endings: .gitattributes keeps scripts, code and docs LF on every clone (Git for Windows would make them CRLF), and the shell scripts are LF', async () => {
+  const attrs = readFileSync(join(ROOT, '.gitattributes'), 'utf8');
+  for (const pat of ['*.sh', '*.mjs', '*.js', '*.json', '*.md', '*.css', '*.html', '*.sql', '*.toml']) {
+    expect(new RegExp('^' + pat.replace(/[.*]/g, (c) => '\\' + c) + '\\s+text\\s+eol=lf\\s*$', 'm').test(attrs), '.gitattributes: ' + pat + ' text eol=lf');
+  }
+  for (const f of ['scripts/deploy.sh', 'scripts/lib/common.sh', 'scripts/access-emails.sh']) expect(!readFileSync(join(ROOT, f), 'utf8').includes('\r'), f + ' has CR line endings');
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  expect(pkg.scripts.deploy === 'sh scripts/deploy.sh', 'npm run deploy runs the POSIX script with sh (Git Bash on Windows)');
 });
 
 await step('production config cannot carry DEV_USER or Access secrets', async () => {

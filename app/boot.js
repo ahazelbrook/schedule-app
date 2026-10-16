@@ -437,8 +437,27 @@
       profiles: userCap && typeof userCap.profiles === 'function' ? profiles : null
     };
   }
+  /* ---------- lazy bundles (routes.js, B68Load): a route's own scripts and stylesheets are fetched the first time it opens ----------
+     lazily(name, mode, fn, what, show): true when the bundle is being fetched, after which fn() runs again if the page is
+     still in `mode`; false when there is nothing to fetch (no loader, or the bundle is in and the module is still missing),
+     so the starter says the module is missing as before. show(text) puts "Loading …" in the route's panel, and the reason
+     there when the fetch fails (toasted too); opening the route again tries again. */
+  function lazily(name, mode, fn, what, show) {
+    var L = window.B68Load;
+    if (!L || typeof L.need !== 'function' || !L.BUNDLES || !L.BUNDLES[name] || L.done(name)) return false;
+    show('Loading ' + what + '…');
+    L.need(name).then(function () { if (document.body.dataset.mode === mode) fn(); }, function (e) {
+      var msg = 'Could not load ' + what + ': ' + (e && e.message || e);
+      toast(msg, true);
+      if (document.body.dataset.mode === mode) show(msg + '. Check the connection, then open it again.');
+    });
+    return true;
+  }
+  /* the note in a route's panel while its bundle loads: into an empty panel, or over the note itself */
+  function panelNote(id) { return function (text) { var el = $(id); if (el && (!el.firstChild || el.querySelector('.b68-loading'))) el.innerHTML = '<p class="hint b68-loading" style="padding:24px 16px">' + esc(text) + '</p>'; }; }
   function startTable() {
-    var Cm = campaignMod(); if (!Cm) { toast('The table module is missing.', true); return; }
+    var Cm = campaignMod();
+    if (!Cm) { if (!lazily('table', 'table', startTable, 'the table', panelNote('table-page'))) toast('The table module is missing.', true); return; }
     if (tableOn) return;
     if (!dbSettled) { Cm.notice('Opening the table…'); return; }   /* boot calls again once the files settle */
     startCampaign();
@@ -461,7 +480,11 @@
   function openSchedule() {
     if (document.body.dataset.mode !== 'table') setMode('table', true);
     if ((location.hash || '') !== '#t/schedule') pushHash('#t/schedule');
-    whenDrawn(function () { return $('tp-schedule') || document.querySelector('#table-page .tp-schedbox'); }, function (n) { try { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} });
+    var scroll = function () { whenDrawn(function () { return $('tp-schedule') || document.querySelector('#table-page .tp-schedbox'); }, function (n) { try { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} }); };
+    /* the table's bundle may still be on its way (startTable fetches it and says so): look for the box once it is here */
+    var L = window.B68Load;
+    if (!campaignMod() && L && typeof L.need === 'function') { L.need('table').then(function () { if (document.body.dataset.mode !== 'table') return; if (!tableOn) startTable(); scroll(); }, function () {}); return; }
+    scroll();
   }
   /* run fn(node) once find() returns a node while the table is open (it draws when the campaign arrives) */
   function whenDrawn(find, fn) {
@@ -482,7 +505,11 @@
       back: leavePrint
     };
   }
-  function startPrint() { var Sn = seasonMod(); if (!Sn) { toast('The season print module is missing.', true); return; } try { Sn.render(printApi()); } catch (e) { toast('The season print could not render: ' + (e && e.message || e), true); } }
+  function startPrint() {
+    var Sn = seasonMod();
+    if (!Sn) { if (!lazily('print', 'print', startPrint, 'the season print', panelNote('season'))) toast('The season print module is missing.', true); return; }
+    try { Sn.render(printApi()); } catch (e) { toast('The season print could not render: ' + (e && e.message || e), true); }
+  }
   function closePrint() { var Sn = seasonMod(); if (Sn && Sn.close) { try { Sn.close(); } catch (e) {} } }
   function openPrint() { setMode('print'); window.scrollTo(0, 0); }
   function leavePrint() { goBack(); }
@@ -542,8 +569,28 @@
       copy: function (text, ok) { copyText(text, ok); }
     };
   }
-  function startGm() { var G = gmMod(), el = $('gm-page'); if (!G || !el) { toast('The GM page module is missing.', true); return; } try { G.open(el, gmPageApi()); } catch (e) { toast('The GM page could not open: ' + (e && e.message || e), true); } }
+  function startGm() {
+    var G = gmMod(), el = $('gm-page');
+    if (!G && el && lazily('gm', 'gm', startGm, 'the GM page', panelNote('gm-page'))) return;
+    if (!G || !el) { toast('The GM page module is missing.', true); return; }
+    try { G.open(el, gmPageApi()); } catch (e) { toast('The GM page could not open: ' + (e && e.message || e), true); }
+  }
   function closeGm() { var G = gmMod(); if (G && G.close) { try { G.close(); } catch (e) {} } }
+  /* a viewer KNOWN not to be the GM drops every GM pack cached in this browser (gm-page.js purge: IndexedDB `b68-gm`, the
+     sticky copy in localStorage). The GM bundle is lazy, so for that alone it is fetched only when this browser holds the
+     pack's database or the sticky copy (a browser that cannot list its databases fetches it to be sure). */
+  function purgeGm() {
+    var G = gmMod();
+    var run = function () { var G2 = gmMod(); if (G2 && G2.purge) { try { G2.purge(); } catch (e) {} } };
+    if (G) { run(); return; }
+    var load = function () { var L = window.B68Load; if (L && typeof L.need === 'function') L.need('gm').then(run, function () {}); };
+    var sticky = false; try { sticky = localStorage.getItem('b68.gm.sticky') !== null; } catch (e) {}
+    if (sticky) { load(); return; }
+    var idb = window.indexedDB;
+    if (!idb) return;
+    if (typeof idb.databases !== 'function') { load(); return; }
+    Promise.resolve().then(function () { return idb.databases(); }).then(function (l) { if ((l || []).some(function (d) { return d && d.name === 'b68-gm'; })) load(); }, load);
+  }
   function openGm() { setMode('gm'); window.scrollTo(0, 0); }
   A.openGm = openGm;
   /* ---------- the display (display-page.js): #display, full screen for the iPad signed in as the GM; no header or nav ---------- */
@@ -556,7 +603,7 @@
     settled().then(function () {
       if (document.body.dataset.mode !== 'display' || displayMounted) return;
       var D = displayMod();
-      if (!D) { displayNote(el, 'The display module is missing.'); return; }
+      if (!D) { if (!lazily('display', 'display', startDisplay, 'the display', function (t) { displayNote(el, t); })) displayNote(el, 'The display module is missing.'); return; }
       if (!(window.claude && window.claude.gm)) { displayNote(el, 'GM tools are available on the hosted app.'); return; }
       if (A.isGM !== true && A.isDisplay !== true) { displayNote(el, 'GM only: the display is for an iPad signed in as the GM or as the table display.'); return; }
       el.innerHTML = '';
@@ -1089,6 +1136,8 @@
       var st = isHosted && rt.status, n = st ? st.pending || 0 : 0, ch = n === 1 ? ' change' : ' changes';
       var sync = !st ? '' : !st.online ? 'Offline' + (n ? ' · ' + n + ch + ' waiting' : '') : n ? 'Saving ' + n + ch + '…' : '';
       if (sync) { var sy = document.createElement('span'); sy.className = 'sync' + (st.online ? '' : ' off'); sy.setAttribute('role', 'status'); sy.textContent = sync; w.appendChild(sy); }
+      /* the server runs a newer build than this page (routes.js B68_BUILD against the API's X-B68-Build): a reload gets it */
+      if (st && st.newBuild) { var up = document.createElement('a'); up.className = 'sync'; up.href = location.href; up.style.textDecoration = 'none'; up.textContent = 'Updated: reload'; up.title = 'A newer version of the app is on the server (' + st.newBuild + '). Reload to get it.'; up.onclick = function (ev) { ev.preventDefault(); location.reload(); }; w.appendChild(up); }
       w.classList.remove('off');
     }
     else if (isHosted) {
@@ -1167,7 +1216,7 @@
       who.then(function () {
         whoami(); syncFilter(); A.syncAll(); syncNav();
         /* the GM pack is cached per browser (IndexedDB): a viewer KNOWN not to be the GM drops every cached copy (not when /api/me failed) */
-        if (A.roleKnown === true && A.isGM !== true) { var G0 = gmMod(); if (G0 && G0.purge) { try { G0.purge(); } catch (e) {} } }
+        if (A.roleKnown === true && A.isGM !== true) purgeGm();
         if (A.isDisplay === true) return null;   /* the display sign-in may not read the files: no db, no roster, no campaign */
         return window.claude.use('db');
       }).then(function (d) {

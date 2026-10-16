@@ -3,7 +3,8 @@
    (see HOSTING.md) so the page runs unchanged outside the claude.ai artifact. The db serves the
    `characters` collection, the shared `campaign/main` document (CAMPAIGN.md) and the `npcs` collection (CAST.md).
    window.claude.rules (list, import, saveHouse, deleteHouse) is the rules wiki's corpus (RULES.md).
-   window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay) is the GM tools'
+   window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay, ambient,
+   patchAmbient, stt, patchStt, sttToken, transcript, addTranscript) is the GM tools'
    API (GM.md): plain calls, never queued, cached or snapshotted here.
    window.claude.profile.setName(name) changes the signed-in person's own display name (PATCH /api/me); a plain call too.
    Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network
@@ -26,7 +27,12 @@
   var MEMBERS_TTL_MS = 60000;
   var STORE = 'b68.cf.', LAST = 'b68.cf.last';   /* localStorage: b68.cf.<user id>#<campaign> (+ '#queue'), and which user was last */
   var COALESCE_MAX = 200000;     /* never merge queued patches into a body near the server's 256 KiB limit */
+  var READ_TIMEOUT_MS = 15000, WRITE_TIMEOUT_MS = 25000;   /* a request with no answer by then is abandoned (a stalled connection) */
   function snapshotMs() { return typeof window.__B68_SNAPSHOT_MS === 'number' ? window.__B68_SNAPSHOT_MS : 2000; }
+  function timeoutMs(method) {
+    if (typeof window.__B68_TIMEOUT_MS === 'number') return window.__B68_TIMEOUT_MS;
+    return method === 'GET' ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS;
+  }
 
   /* ---------- helpers ---------- */
   function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
@@ -111,7 +117,17 @@
   var lastSync = null;         /* ISO time of the last successful poll or flushed write */
   var queue = [];              /* own writes not yet accepted by the server, oldest first */
   var sentStatus = null;
-  function status() { return { online: mode === 'online' && net, pending: queue.length, lastSync: lastSync }; }
+  var newBuild = null;         /* the server's build (X-B68-Build on every API answer, `build` in /api/me) when it differs from this page's */
+  function status() { return { online: mode === 'online' && net, pending: queue.length, lastSync: lastSync, newBuild: newBuild }; }
+  /* the page's build is routes.js's B68_BUILD; when the server reports another one a deploy happened while this page was
+     open, and the header offers "Updated: reload" (boot.js whoami). Unknown on this side: nothing to say. An answer
+     without the header (Access's sign-in page, a redirect) says nothing about the build and changes nothing. */
+  function noteBuild(server) {
+    if (typeof server !== 'string' || !server) return;
+    var mine = typeof window.B68_BUILD === 'string' ? window.B68_BUILD : '';
+    var next = mine && server !== mine ? server.slice(0, 40) : null;
+    if (next !== newBuild) { newBuild = next; emitStatus(); }
+  }
   function emitStatus() {
     var s = status(), j = JSON.stringify(s);
     if (window.B68Runtime) window.B68Runtime.status = s;
@@ -132,16 +148,31 @@
 
   /* fetch JSON. Rejects with Error(api error string). A 401, or anything that looks like the Access
      login page instead of our API (a followed or opaque redirect, a non-JSON body), marks the session signed out.
-     A network failure rejects with an error carrying `network: true`. */
+     A network failure rejects with an error carrying `network: true`. A request with no answer within timeoutMs()
+     (15 s for a read, 25 s for a write: a connection that is "up" but dead, a dropped stream) is abandoned and rejects
+     the same way (plus `timeout: true`), so a stalled request never holds the poller or the write queue: the next tick,
+     the `online` event and the retry timer carry on as after any other network failure. */
   var signedOutWhy = '';       /* why the last 401 said so (the server's reason, or that Access answered with its login page) */
   function api(method, path, body) {
     if (signedOut) return Promise.reject(signedOutError());
     var opts = { method: method, credentials: 'same-origin', cache: 'no-store', redirect: 'manual', headers: { Accept: 'application/json' } };
     if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    var ctl = null, timer = null, timedOut = false, limit = timeoutMs(method);
+    if (typeof AbortController === 'function') { try { ctl = new AbortController(); opts.signal = ctl.signal; } catch (e) { ctl = null; } }
+    function netFail(e) {
+      setNet(false);
+      var err;
+      if (timedOut) { err = new Error('no answer from the server in ' + Math.round(limit / 1000) + ' s'); err.timeout = true; }
+      else err = e instanceof Error ? e : new Error(String(e && e.message || e || 'network error'));
+      try { err.network = true; } catch (x) { err = new Error(err.message); err.network = true; }
+      throw err;
+    }
     var sent;
     try { sent = fetch('/api' + path, opts); } catch (e) { sent = Promise.reject(e); }
+    if (ctl) timer = setTimeout(function () { timedOut = true; try { ctl.abort(); } catch (e) {} }, limit);
     return Promise.resolve(sent).then(function (res) {
       setNet(true);
+      noteBuild(res.headers && res.headers.get ? res.headers.get('x-b68-build') : null);
       var ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
       if (res.status === 401 || res.redirected || res.type === 'opaqueredirect' || ct.indexOf('json') < 0) {
         var out = function (why) {
@@ -160,13 +191,8 @@
         var j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
         if (!res.ok) { var err = new Error((j && j.error) || ('HTTP ' + res.status)); err.status = res.status; throw err; }
         return j;
-      });
-    }, function (e) {
-      setNet(false);
-      var err = e instanceof Error ? e : new Error(String(e && e.message || e || 'network error'));
-      try { err.network = true; } catch (x) { err = new Error(err.message); err.network = true; }
-      throw err;
-    });
+      }, netFail);                               /* the headers came but the body did not (aborted, a dropped stream): a network failure too */
+    }, netFail).then(function (v) { clearTimeout(timer); return v; }, function (e) { clearTimeout(timer); throw e; });
   }
 
   /* ---------- user ---------- */
@@ -177,6 +203,7 @@
   function loadMe() {
     if (!meP) meP = api('GET', '/me').then(function (m) {
       if (!m || !m.id) return null;
+      if (typeof m.build === 'string') noteBuild(m.build);
       me = m; mode = 'online';
       writeJSON(LAST, { key: userKey(m), id: m.id });
       restore(m, null);
@@ -682,10 +709,14 @@
     if (!into) { queue.push(q); bump(q, 1); into = q; }
     saveQueue(); emitStatus();
     return new Promise(function (resolve, reject) {
-      if (offlineNow()) resolve();             /* queued: it goes out when the network is back */
+      if (offlineNow() || signedOut) resolve();   /* queued: it goes out when the network is back (or at this user's next signed-in visit) */
       else into.waiters.push({ resolve: resolve, reject: reject });
     });
   }
+  /* a write made after the session ended (E6): it stays in this user's stored queue, which the next visit (signed in again)
+     sends, and the promise rejects now with the signed-out message, so the page says what to do (reload to sign in) rather
+     than report a save that has not happened. Another account on this browser never sees or sends it (the queue is per user). */
+  function keptForNextVisit(p) { return p.then(function () { throw signedOutError(); }); }
   function retryLater() {
     if (retryTimer || !queue.length || signedOut) return;
     retryTimer = setTimeout(function () { retryTimer = null; kick(); }, pollMs());
@@ -788,13 +819,14 @@
     return reconnecting;
   }
 
-  /* an own write: update the cache now, queue it, send it; the server's version replaces the cache when it answers */
+  /* an own write: update the cache now, queue it, send it; the server's version replaces the cache when it answers.
+     After a sign-out it is still queued (kept for this user's next visit) but rejected, see keptForNextVisit. */
   function write(id, method, body, local) {
-    if (signedOut) return Promise.reject(signedOutError());
     var ch = {}; ch[id] = true;
     var p = enqueue({ kind: 'char', id: id, method: method, path: '/' + COLLECTION + '/' + encodeURIComponent(id), body: body === undefined ? undefined : clone(body) });
     epoch++;
     local(); notify(ch); persistSoon();
+    if (signedOut) return keptForNextVisit(p);
     flush();
     return p;
   }
@@ -830,10 +862,10 @@
      deep merge, log entries added); the server's answer then replaces it. A rejected
      write (e.g. 403 for a player) forces a refetch so the optimistic change is rolled back. */
   function campaignWrite(method, body, local) {
-    if (signedOut) return Promise.reject(signedOutError());
     var p = enqueue({ kind: 'campaign', method: method, path: '/' + CAMPAIGN, body: clone(body) });
     camp.epoch++;
     if (camp.loaded) { local(); notifyCampaign(); persistSoon(); }
+    if (signedOut) return keptForNextVisit(p);
     flush();
     return p;
   }
@@ -864,12 +896,12 @@
   /* an own write to the cast: the GM only (the server says 403 to anyone else, so a player's call is refused here at once).
      Same shape as write(): the cache changes now, the write is queued and sent, the server's version replaces it. */
   function npcWrite(id, method, body, local) {
-    if (signedOut) return Promise.reject(signedOutError());
     if (!me || me.role !== 'gm') { var e = new Error('only the GM can change the cast'); e.status = 403; return Promise.reject(e); }
     var ch = {}; ch[id] = true;
     var p = enqueue({ kind: 'npc', id: id, method: method, path: '/' + NPCS + '/' + encodeURIComponent(id), body: body === undefined ? undefined : clone(body) });
     npcs.epoch++;
     if (npcs.loaded) { local(); notifyNpcs(ch); persistSoon(); }
+    if (signedOut) return keptForNextVisit(p);
     flush();
     return p;
   }
@@ -1125,7 +1157,8 @@
     }
     var nav = window.navigator;
     if (!nav || !nav.serviceWorker || typeof nav.serviceWorker.register !== 'function') return;
-    var register = function () { try { nav.serviceWorker.register('sw.js', { scope: './' }).catch(function () {}); } catch (e) {} };
+    /* updateViaCache 'none': sw.js imports routes.js (the build stamp), and the update check must fetch that import fresh too */
+    var register = function () { try { nav.serviceWorker.register('sw.js', { scope: './', updateViaCache: 'none' }).catch(function () {}); } catch (e) {} };
     if (d.readyState === 'complete' || typeof window.addEventListener !== 'function') register();
     else window.addEventListener('load', register);
   })();

@@ -60,7 +60,8 @@ try {
   const page = await ctx.newPage();
   const online = { errors: [] };
   let phase = 'online';
-  page.on('console', (m) => { if (m.type() === 'error' && phase === 'online') online.errors.push(m.text()); });
+  // (a request that went out while offline may be reported a moment after the network is back: that is not an error online)
+  page.on('console', (m) => { if (m.type() === 'error' && phase === 'online' && !/ERR_INTERNET_DISCONNECTED/.test(m.text())) online.errors.push(m.text()); });
   page.on('pageerror', (e) => online.errors.push('pageerror: ' + e.message));
   page.on('dialog', (d) => d.accept());
 
@@ -75,6 +76,7 @@ try {
   check(head.manifest && /crossorigin="use-credentials"/.test(head.manifest) && head.theme === '#14110e' && head.apple, 'manifest link, theme colour and touch icon in the page: ' + JSON.stringify(head));
   const cached = await until(() => page.evaluate(async () => { const ks = await caches.keys(); if (!ks.length) return null; const c = await caches.open(ks[0]); return (await c.keys()).map((r) => new URL(r.url).pathname); }), 10000);
   check(cached && cached.includes('/') && cached.includes('/boot.js') && cached.includes('/fonts/SpaceMono-Regular.woff2') && !cached.some((p) => p.startsWith('/api/')), 'app shell precached (' + (cached || []).length + ' files), no /api/');
+  check(cached && ['/campaign.js', '/season.js', '/gm-page.js', '/gm/console.js', '/display-page.js', '/gm.css'].every((f) => cached.includes(f)), 'the lazily loaded route bundles (app/routes.js) are precached too, though the page never asked for them');
   const cachedPage = await page.evaluate(async () => { const ks = await caches.keys(); const c = await caches.open(ks[0]); const r = await c.match(location.origin + '/'); return r ? (await r.text()).slice(0, 200) : null; });
   check(cachedPage && /^<!doctype html><meta charset=utf-8><meta name=viewport /i.test(cachedPage), 'the cached page carries the Worker\'s doctype and viewport: ' + JSON.stringify((cachedPage || '').slice(0, 60)));
   check(await page.evaluate(() => document.compatMode === 'CSS1Compat' && !!document.querySelector('meta[name="viewport"]')), 'online: standards mode with a viewport meta');
@@ -116,6 +118,10 @@ try {
   const st = await page.evaluate(() => window.B68Runtime.status);
   check(st.online === false && st.pending === 1, 'status offline with 1 pending: ' + JSON.stringify(st));
   check((await serverDoc(id)).play.stress === s1, 'server still has the old value while offline');
+  // a route whose files load on first use (app/routes.js) opens offline too: its bundle comes from the precache
+  await page.evaluate(() => { location.hash = '#t'; });
+  const table = await until(() => page.evaluate(() => { const t = document.getElementById('table-page'); return t && !t.hidden && window.B68Campaign && t.querySelector('.tp-head, .tp-note') && !/Could not load/.test(t.textContent) ? t.textContent.trim().slice(0, 40) : null; }), 15000);
+  check(!!table, 'offline: the table, a lazily loaded route, opens from the precache: ' + JSON.stringify(table));
 
   // back online: the queued write lands
   phase = 'online';

@@ -1,7 +1,8 @@
 // Unit test for app/gm/npc.js (the NPC generator port) and the npc part of scripts/gm-pack.mjs.
 // Committed tests use only the invented fixture checks/runtime/fixtures/gm/npc-pack.json. When a real pack with an `npc`
 // part is available (gm-private/b68-gm-pack.json, or the file named by B68_NPC_PACK), the same sweeps also run on the real
-// tables; nothing from the real pack is printed, only counts.
+// tables; nothing from the real pack is printed, only counts. The sweeps roll B68_SWEEP seeds (default 100; the fixture
+// pack at most 300): --sweep=500 (or B68_SWEEP=500) is the full run, npm run check:sweep.
 //   node checks/runtime/gm-npc.test.mjs
 import fs from 'node:fs';
 import os from 'node:os';
@@ -11,6 +12,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
+/* seeds per sweep: 100 in npm test, 500 in check:sweep (--sweep=<n> or B68_SWEEP=<n>; the fixture at most 300) */
+const SWEEP = Number((process.argv.find((a) => /^--sweep=\d+$/.test(a)) || '').slice(8) || process.env.B68_SWEEP) || 100;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
 const N = require(path.join(ROOT, 'app', 'gm', 'npc.js'));
@@ -69,7 +72,7 @@ function checkRoll(r, label) {
 /* ---------- the generator ---------- */
 for (const [label, pk] of [['fixture', FIX], ['real', REAL]]) {
   if (!pk) { console.log('SKIP ' + label + ' pack sweeps: no real pack with an npc part (gm-private/ or B68_NPC_PACK)'); continue; }
-  const count = label === 'real' ? 500 : 300;
+  const count = label === 'real' ? SWEEP : Math.min(SWEEP, 300);
 
   await test(label + ': ' + count + ' seeds roll without throwing; cards hold every section', () => {
     const g = N.create(pk);
@@ -208,7 +211,7 @@ const kitSays = (spec) => K.render(spec).warnings.concat(K.portrait(spec).warnin
 
 for (const [label, pk] of [['fixture', FIX], ['real', REAL]]) {
   if (!pk) continue;
-  const count = label === 'real' ? 500 : 300;
+  const count = label === 'real' ? SWEEP : Math.min(SWEEP, 300);
   await test(label + ': figure() always gives a spec the kit renders and draws with no warnings (' + count + ' seeds)', () => {
     const g = N.create(pk);
     let fallback = 0, hulls = 0; const tries = {};

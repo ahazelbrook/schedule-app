@@ -210,10 +210,20 @@ function browser(server, user, { preset, protocol = 'https:', storage } = {}) {
   let nBlob = 0;
   async function fetch(url, opts = {}) {
     fetchLog.push({ url, opts });
+    /* server.hang(method, url) true: a request that never answers (a stalled connection). It settles only when the
+       adapter aborts it through opts.signal, with the AbortError a real fetch gives. */
+    if (server.hang && server.hang(opts.method || 'GET', url)) {
+      return new Promise((_, reject) => {
+        const sig = opts.signal; if (!sig) return;
+        const abort = () => reject(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }));
+        if (sig.aborted) abort(); else sig.addEventListener('abort', abort);
+      });
+    }
     await sleep(2);
     const body = opts.body ? JSON.parse(opts.body) : undefined;
     const r = server.handle(user, opts.method || 'GET', url, body);
-    const mk = (status, text, ct, extra = {}) => ({ status, ok: status >= 200 && status < 300, redirected: false, type: 'basic', headers: { get: (h) => (h.toLowerCase() === 'content-type' ? ct : null) }, text: async () => text, ...extra });
+    /* server.build: the Worker's build stamp, as worker/app.js puts it on every API answer (X-B68-Build) */
+    const mk = (status, text, ct, extra = {}) => ({ status, ok: status >= 200 && status < 300, redirected: false, type: 'basic', headers: { get: (h) => (h.toLowerCase() === 'content-type' ? ct : h.toLowerCase() === 'x-b68-build' ? (server.build || null) : null) }, text: async () => text, ...extra });
     if (r.forced === 'down') throw new TypeError('Failed to fetch');
     if (r.forced === 'redirect') return mk(0, '', null, { type: 'opaqueredirect', ok: false });
     if (r.forced === 'html') return mk(200, '<html>Sign in</html>', 'text/html', { redirected: true });
@@ -224,7 +234,7 @@ function browser(server, user, { preset, protocol = 'https:', storage } = {}) {
   const events = [];                                   // every b68:runtime detail, in order
   class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } }
   const win = {
-    document, fetch, setTimeout, clearTimeout, console, Blob, location: { protocol, pathname: '/' },
+    document, fetch, setTimeout, clearTimeout, console, Blob, AbortController, location: { protocol, pathname: '/' },
     URL: { createObjectURL: (b) => { const u = 'blob:' + (++nBlob); blobs[u] = b; return u; }, revokeObjectURL: () => {} },
     CustomEvent,
     addEventListener: (t, fn) => { (winListeners[t] = winListeners[t] || []).push(fn); },
@@ -525,9 +535,93 @@ for (const kind of ['401', 'redirect', 'html']) {
     let err = null; try { await col.doc('x').set(char('x')); } catch (e) { err = e; }
     eq(err && err.message, 'signed out: reload the page to sign in again', 'write after sign-out');
     ok(!api.rows.x, 'write reached the server');
+    eq(b.win.B68Runtime.status.pending, 1, 'the write is kept in the queue (E6: sent at this user\'s next visit)');
     un();
   });
 }
+
+/* E1: a request that never answers (a connection that is "up" but dead) must not hold the poller or the queue */
+await test('a poll that never answers is abandoned after the timeout (network: true, timeout: true); polling goes on and recovers', async () => {
+  const api = fakeApi(); api.put('a', char('a'));
+  const b = browser(api, { email: 'gm@x.test' });
+  b.win.__B68_TIMEOUT_MS = 100;
+  let polls = 0, hanging = true;
+  // the 2nd poll stalls, and so does every later one until the test releases them (else the 3rd poll could answer, and
+  // turn the header back online, before the offline assertion below runs on a busy machine)
+  api.hang = (m, url) => m === 'GET' && /^\/api\/characters(\?|$)/.test(url) && ++polls >= 2 && hanging;
+  const col = (await b.win.claude.use('db')).collection('characters');
+  const snaps = [], errs = [];
+  const un = col.onSnapshot((s) => snaps.push(s), (e) => errs.push(e));
+  await until(() => snaps.length);
+  const stalled = await until(() => b.fetchLog.length >= 3 && polls >= 2, 1000);   // /me, the full load, the hung poll
+  ok(stalled, 'the second poll went out');
+  const before = b.fetchLog.length;
+  // the things that used to be deferred to the request in flight: hidden -> visible, the network coming back, an own write
+  b.document.hidden = true; b.listeners.visibilitychange.forEach((fn) => fn()); b.document.hidden = false; b.listeners.visibilitychange.forEach((fn) => fn());
+  b.fire('online');
+  await sleep(50);
+  eq(b.fetchLog.length - before, 0, 'nothing could go out while the stalled request was in flight (so the timeout is the fix)');
+  await until(() => errs.length, 1000);
+  eq([errs.length, errs[0].network, errs[0].timeout, /no answer from the server in 0 s/.test(errs[0].message)], [1, true, true, true], 'the stall surfaced once as a network error: ' + (errs[0] && errs[0].message));
+  eq(b.win.B68Runtime.status.online, false, 'the header says offline while it stalls');
+  hanging = false;
+  await until(() => b.fetchLog.length > before + 1 && b.win.B68Runtime.status.online, 2000);
+  ok(b.fetchLog.length > before + 1, 'polling resumed after the abandoned request (' + (b.fetchLog.length - before) + ' later requests)');
+  eq(b.win.B68Runtime.status.online, true, 'back online once a poll answers');
+  const p = col.doc('a').update({ name: 'a2' });
+  await p;
+  eq(api.rows.a.doc.name, 'a2', 'a write after the stall lands');
+  un();
+});
+
+await test('a write whose request never answers is abandoned after the timeout, kept, retried and lands; the queue is never stuck', async () => {
+  const api = fakeApi(); api.put('a', char('a'));
+  const b = browser(api, { email: 'gm@x.test' });
+  b.win.__B68_TIMEOUT_MS = 100;
+  let hung = 0;
+  api.hang = (m) => m === 'PATCH' && ++hung === 1;                         // the first PATCH stalls, the retry answers
+  const col = (await b.win.claude.use('db')).collection('characters');
+  const snaps = []; const un = col.onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  await col.doc('a').update({ name: 'a2' });                                // resolves: queued, not refused
+  eq(hung, 1, 'the PATCH went out and stalled');
+  await until(() => api.rows.a.doc.name === 'a2', 2000);
+  eq([api.rows.a.doc.name, b.win.B68Runtime.status.pending, b.fetchLog.filter((f) => f.opts.method === 'PATCH').length], ['a2', 0, 2], 'retried after the timeout and landed');
+  await until(() => b.win.B68Runtime.status.online, 1000);
+  eq(b.win.B68Runtime.status.online, true, 'online again');
+  un();
+});
+
+/* E6: a tap after the session ended is not lost: it waits in this user's queue for the next signed-in visit */
+await test('a write after a sign-out is kept in the stored queue (rejected now with the signed-out message) and sent at this user\'s next visit, never by another account', async () => {
+  const api = fakeApi(); api.put('a', char('a', { owner: 'pl@x.test' }));
+  const st = memStorage();
+  const b = browser(api, { email: 'pl@x.test' }, { storage: st });
+  const col = (await b.win.claude.use('db')).collection('characters');
+  const snaps = [], errs = [];
+  col.onSnapshot((s) => snaps.push(s), (e) => errs.push(e));
+  await until(() => snaps.length);
+  api.status['/api/characters'] = '401';
+  await until(() => errs.length, POLL * 3);
+  delete api.status['/api/characters'];
+  let err = null; try { await col.doc('a').update({ play: { stress: 3 } }); } catch (e) { err = e; }
+  eq([err && err.code, err && err.message], ['signed_out', 'signed out: reload the page to sign in again'], 'the tap is told the session ended');
+  eq(snaps[snaps.length - 1].docs[0].data().play.stress, 3, 'the sheet shows the tap');
+  const PQ = 'b68.cf.pl@x.test#default#queue';
+  const q = read(st, PQ);
+  eq([q && q.length, q && q[0].method, q && q[0].body], [1, 'PATCH', { play: { stress: 3 } }], 'kept in the stored queue');
+  eq(api.rows.a.doc.play.stress, 0, 'nothing was sent');
+  // another account on this browser: untouched
+  const o = browser(api, { email: 'gm@x.test' }, { storage: st });
+  (await o.win.claude.use('db')).collection('characters').onSnapshot(() => {});
+  await sleep(POLL * 3);
+  eq([api.rows.a.doc.play.stress, read(st, PQ).length], [0, 1], 'the other account neither sends nor drops it');
+  // the same user, signed in again (a reload): sent on start
+  const b2 = browser(api, { email: 'pl@x.test' }, { storage: st });
+  await b2.win.claude.use('db');
+  await until(() => api.rows.a.doc.play.stress === 3 && read(st, PQ) === null, 1000);
+  eq([api.rows.a.doc.play.stress, read(st, PQ)], [3, null], 'landed at the next visit');
+});
 
 await test('visibility: hidden pages poll on the slow interval', async () => {
   const api = fakeApi();
@@ -897,13 +991,14 @@ await test('401 while flushing: stops, keeps the queue for that user; the next s
   eq(read(st, QUEUE).length, 2, 'queue kept');
   eq(api.rows.a.doc.name, 'a', 'server unchanged');
   let err = null; try { await db.collection('characters').doc('a').update({ name: 'later' }); } catch (e) { err = e; }
-  eq(err && err.code, 'signed_out', 'writes refused after sign-out');
-  // signed in again: a fresh page flushes on start
+  eq(err && err.code, 'signed_out', 'a write after the sign-out is told so');
+  eq(read(st, QUEUE).length, 2, 'and kept (E6): folded into the last unsent entry of this tab');
+  // signed in again: a fresh page flushes on start, the write made after the sign-out included
   delete api.status['/api/characters/'];
   const b2 = browser(api, { email: 'gm@x.test' }, { storage: st });
   await b2.win.claude.use('db');
-  await until(() => api.rows.a.doc.name === 'a2' && read(st, QUEUE) === null, 1000);
-  eq([api.rows.a.doc.name, api.rows.a.doc.sheet.name, api.applied], ['a2', 'A2', ['PATCH /api/characters/a', 'PATCH /api/characters/a']], 'flushed on start');
+  await until(() => api.rows.a.doc.name === 'later' && read(st, QUEUE) === null, 1000);
+  eq([api.rows.a.doc.name, api.rows.a.doc.sheet.name, api.applied], ['later', 'A2', ['PATCH /api/characters/a', 'PATCH /api/characters/a']], 'flushed on start');
 });
 
 await test('a queue belongs to its user: another account on the same browser neither sends nor sees it', async () => {
@@ -960,7 +1055,7 @@ await test('status: B68Runtime.status and b68:runtime events follow offline, pen
   ok(b.events.length >= 1, 'no event');
   eq([b.events[0].online, b.events[0].pending], [false, 0], 'first event: offline');
   await db.collection('characters').doc('a').update({ name: 'a2' });
-  eq(b.events[b.events.length - 1], { online: false, pending: 1, lastSync: read(st, SNAP).syncedAt }, 'one waiting');
+  eq(b.events[b.events.length - 1], { online: false, pending: 1, lastSync: read(st, SNAP).syncedAt, newBuild: null }, 'one waiting');
   const t0 = new Date().toISOString();
   delete api.status['/api/'];
   await until(() => b.win.B68Runtime.status.pending === 0 && b.win.B68Runtime.status.online, 1000);
@@ -1156,6 +1251,29 @@ await test('profile.setName: PATCH /api/me, the signed-in user and the cached me
   ok(err && err.status === 400, 'a refused name rejects with status 400'); eq((await u.me()).name, 'Sam the Man', 'unchanged after a refusal');
   eq((await b.win.claude.profile.setName(null)).name, 'pl', 'null clears');
   eq((await u.me()).name, 'pl'); eq(JSON.parse(b.fetchLog.filter((f) => f.opts.method === 'PATCH').pop().opts.body), { name: null });
+});
+
+/* E15: a page left open across a deploy learns the server's build from X-B68-Build and says so (boot.js: "Updated: reload") */
+await test('status.newBuild: null while the server runs this page\'s build; the server\'s build once it differs (X-B68-Build on any API answer), with a b68:runtime event; silent when the page has no build', async () => {
+  const api = fakeApi(); api.put('a', char('a')); api.build = '2026-10-16-abc1234';
+  const b = browser(api, { email: 'gm@x.test' });
+  b.win.B68_BUILD = '2026-10-16-abc1234';                                   // routes.js on the same build
+  const db = await b.win.claude.use('db');
+  eq(b.win.B68Runtime.status.newBuild, null, 'same build: nothing to say');
+  const snaps = []; const un = db.collection('characters').onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  const n = b.events.length;
+  api.build = '2026-10-17-def5678';                                         // a deploy while the page is open: the next poll's answer says so
+  await until(() => b.win.B68Runtime.status.newBuild, POLL * 4);
+  eq(b.win.B68Runtime.status.newBuild, '2026-10-17-def5678', 'the server\'s newer build');
+  ok(b.events.length > n && b.events[b.events.length - 1].newBuild === '2026-10-17-def5678', 'a b68:runtime event carried it');
+  un();
+  const o = browser(api, { email: 'gm@x.test' });                           // no routes.js (the artifact, an old page): nothing is claimed
+  await o.win.claude.use('db');
+  eq(o.win.B68Runtime.status.newBuild, null, 'no own build: silent');
+  const same = browser(api, { email: 'gm@x.test' }); same.win.B68_BUILD = '2026-10-17-def5678';
+  await same.win.claude.use('db');
+  eq(same.win.B68Runtime.status.newBuild, null, 'a page on the new build: silent');
 });
 
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');

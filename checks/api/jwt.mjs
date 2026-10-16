@@ -65,11 +65,13 @@ function claims(extra = {}) {
 // --- mocked JWKS endpoint -------------------------------------------------------------
 let published = [];
 let certFetches = 0;
+let certsDown = false;   // Cloudflare's certs endpoint having a bad minute: 503
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
   if (url === certsUrl(TEAM)) {
     certFetches++;
+    if (certsDown) return new Response('unavailable', { status: 503 });
     return new Response(JSON.stringify({ keys: published, public_cert: {}, public_certs: [] }), {
       headers: { 'content-type': 'application/json' },
     });
@@ -137,6 +139,44 @@ await step('JWKS cache expires after an hour', async () => {
   const before = certFetches;
   await verifyAccessJwt(await sign(k1, 'k1', claims({ exp: nowS() + 7200 })), { ...opts, now: Date.now() + 61 * 60 * 1000 });
   expect(certFetches === before + 1, 'expected a refetch, got ' + (certFetches - before));
+});
+
+await step('a failed refresh after the hour keeps the last good keys (nobody is signed out by it), retried after 10 s, not on every request', async () => {
+  resetJwksCache();
+  published = [await publicJwk(k1, 'k1')];
+  const t0 = Date.now(), tok = await sign(k1, 'k1', claims({ exp: nowS() + 3 * 3600 }));
+  await verifyAccessJwt(tok, { ...opts, now: t0 });
+  certsDown = true;
+  const before = certFetches, at = t0 + 61 * 60 * 1000;
+  const c = await verifyAccessJwt(tok, { ...opts, now: at });
+  expect(c.email === 'Player@Example.test', 'verified with the cached keys');
+  expect(certFetches === before + 1, 'one refresh tried, got ' + (certFetches - before));
+  await verifyAccessJwt(tok, { ...opts, now: at + 5000 });
+  expect(certFetches === before + 1, 'no refetch inside the 10 s pause, got ' + (certFetches - before));
+  await verifyAccessJwt(tok, { ...opts, now: at + 11000 });
+  expect(certFetches === before + 2, 'tried again after the pause, got ' + (certFetches - before));
+  // a kid the cached keys do not hold is never vouched for by them
+  await expectReject(verifyAccessJwt(await sign(other, 'k9', claims({ exp: nowS() + 3 * 3600 })), { ...opts, now: at + 12000 }), 'unknown kid');
+  expect(certFetches === before + 2, 'and inside the pause it fetches nothing');
+  certsDown = false;
+  await verifyAccessJwt(tok, { ...opts, now: at + 25000 });
+  expect(certFetches === before + 3, 'refreshed as soon as the endpoint answers, got ' + (certFetches - before));
+  await verifyAccessJwt(tok, { ...opts, now: at + 26000 });
+  expect(certFetches === before + 3, 'and fresh again: served from the cache');
+});
+
+await step('the last good keys serve for at most a day past their hour; with none cached a failed fetch is refused', async () => {
+  resetJwksCache();
+  const t0 = Date.now(), tok = await sign(k1, 'k1', claims({ exp: nowS() + 30 * 3600 }));
+  await verifyAccessJwt(tok, { ...opts, now: t0 });
+  certsDown = true;
+  await verifyAccessJwt(tok, { ...opts, now: t0 + 24 * 3600 * 1000 });   // 23 h past the hour: still served
+  await expectReject(verifyAccessJwt(tok, { ...opts, now: t0 + 25 * 3600 * 1000 + 60000 }), 'certs fetch failed: 503');
+  await expectReject(verifyAccessJwt(tok, { ...opts, now: t0 + 25 * 3600 * 1000 + 65000 }), 'certs fetch failed: no fresh keys');   // inside the pause
+  resetJwksCache();
+  await expectReject(verifyAccessJwt(tok, opts), 'certs fetch failed: 503');
+  certsDown = false;
+  resetJwksCache();
 });
 
 await step('garbage is refused', async () => {

@@ -1,3 +1,5 @@
+> **What landed since (16 Oct 2026):** phase 1, display names (`PATCH /api/me`, "Change name" on Home), phase 4, the cast (`CAST.md`), and phase 5, the rules wiki (`RULES.md`). Phases 2, 3 and 6, the scheduling work, are parked until November or December: the dates live in Google Calendar. Kept as the plan was written; the live docs are at the repository root.
+
 # Roadmap: names, the season calendar, the cast, the rules
 
 Date: 2026-10-13. Planning only. Nothing here is built yet. It follows on from `PLAN.md` (status section),

@@ -6,12 +6,17 @@
 //   Only `name_override` is written: the sign-in upsert below never touches it.
 // The table display sign-in (role 'display', DISPLAY_EMAILS, GM.md) gets its identity from GET and nothing else: it is
 // never recorded in `members` (so it never shows up as a player), and PATCH is 403 (the middleware refuses it first).
+// Both answers also carry `build`: the Worker's build stamp (app/routes.js B68_BUILD, bundled into the Worker so the page
+// and the API cannot disagree; 'dev' outside a deploy). worker/app.js puts the same value on every API answer as the
+// X-B68-Build header, which the page compares with its own to show "Updated: reload".
 
+import '../../app/routes.js';   // a plain script: defines B68_BUILD on the global (self in a Worker, globalThis in node)
 import { getDb } from '../_lib/db.js';
 import { DISPLAY_ONLY } from '../_lib/auth.js';
 import { HttpError, json, methodNotAllowed, campaignOf, nowIso, readJsonObject } from '../_lib/http.js';
 
 export const NAME_MAX = 40;
+export const BUILD = typeof globalThis.B68_BUILD === 'string' && globalThis.B68_BUILD ? globalThis.B68_BUILD : 'dev';
 
 // -> the cleaned name, or null when it is empty (clear the override). Throws a 400 for anything not acceptable.
 export function cleanName(v) {
@@ -28,7 +33,7 @@ export function cleanName(v) {
 async function shape(db, me, env) {
   const row = await db.prepare('SELECT name_override FROM members WHERE email = ?1').bind(me.email).first();
   const name = (row && row.name_override) || me.name;
-  return json({ id: me.id, email: me.email, name, role: me.role, campaign: campaignOf(env) });
+  return json({ id: me.id, email: me.email, name, role: me.role, campaign: campaignOf(env), build: BUILD });
 }
 
 export async function onRequest({ request, env, data }) {
@@ -37,7 +42,7 @@ export async function onRequest({ request, env, data }) {
   const me = data.me;
   if (me.role === 'display') {
     if (method !== 'GET') throw new HttpError(403, DISPLAY_ONLY);
-    return json({ id: me.id, email: me.email, name: me.name, role: me.role, campaign: campaignOf(env) });
+    return json({ id: me.id, email: me.email, name: me.name, role: me.role, campaign: campaignOf(env), build: BUILD });
   }
   let override = null;   // PATCH only: the new override (a string), or null to clear
   if (method === 'PATCH') {

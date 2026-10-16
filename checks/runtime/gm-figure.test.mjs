@@ -1,6 +1,7 @@
 // Unit test for app/gm/figure-map.js (NPC fields -> figure kit v2 spec). Uses only the invented fixture
 // checks/runtime/fixtures/gm/figure-map.json (generic words, made-up factions); no real table text.
-//   node checks/runtime/gm-figure.test.mjs                       run the checks
+//   node checks/runtime/gm-figure.test.mjs                       run the checks (a 100-seed sweep)
+//   node checks/runtime/gm-figure.test.mjs --sweep=500           the full sweep (npm run check:sweep; or B68_SWEEP=500)
 //   node checks/runtime/gm-figure.test.mjs --sheet <file.html>   also write a contact sheet of 24 portraits
 import fs from 'node:fs';
 import path from 'node:path';
@@ -46,7 +47,8 @@ function mkNpc(seed) {
   }
   return npc;
 }
-const N = 500;
+/* seeds in the sweep: 100 in npm test, 500 in check:sweep (--sweep=<n> or B68_SWEEP=<n>) */
+const N = Math.max(24, Number((process.argv.find((a) => /^--sweep=\d+$/.test(a)) || '').slice(8) || process.env.B68_SWEEP) || 100);
 const runs = [];
 for (let s = 1; s <= N; s++) {
   const npc = mkNpc(s);
@@ -115,7 +117,7 @@ await test('a different seed changes the result (the rng is really used)', () =>
   assert.ok(JSON.stringify(a) !== JSON.stringify(b) || JSON.stringify(b) !== JSON.stringify(c));
 });
 
-await test('before any retry at least 95% render and portrait with no warnings (500 seeds)', () => {
+await test('before any retry at least 95% render and portrait with no warnings (' + N + ' seeds)', () => {
   const clean = runs.filter((r) => r.w.length === 0).length;
   console.log('   clean on first map: ' + clean + '/' + N);
   if (clean < N) console.log('   first warnings: ' + runs.filter((r) => r.w.length).slice(0, 4).map((r) => r.s + ': ' + r.w[0].slice(0, 110)).join(' | '));
@@ -212,7 +214,7 @@ await test('props only appear when F lists them, and a prop that needs a hand ge
     assert.equal(m.spec.props.length, 0, 'seed ' + r.s);
   }
   const withCane = runs.find((r) => r.m.spec.props.some((p) => p.type === 'cane'));
-  assert.ok(withCane, 'some cane in 500 runs');
+  assert.ok(withCane, 'some cane in ' + N + ' runs');
   const a = withCane.m.spec.pose.arms;
   assert.ok(a.R === 'carry' || a.L === 'carry');
   const withBook = runs.find((r) => r.m.spec.props.some((p) => p.type === 'book'));
@@ -255,7 +257,7 @@ await test('facial hair is dropped on a fem figure, with a note', () => {
 
 await test('Hulls are drawn as human figures with a note', () => {
   const hulls = runs.filter((r) => r.npc.isHull);
-  assert.ok(hulls.length > 10);
+  assert.ok(hulls.length > N / 50, hulls.length + ' Hulls in ' + N + ' seeds');   /* about 8% of them */
   for (const h of hulls) assert.ok(h.m.notes.some((n) => /Hull/.test(n)));
 });
 

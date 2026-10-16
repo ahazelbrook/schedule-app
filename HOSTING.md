@@ -34,11 +34,16 @@ Ownership: **backend** owns `worker/`, `functions/`, `schema.sql`, `migrations/`
   lays the page out 980 px wide in quirks mode. The service worker caches the page as served,
   so the offline copy has the same head. `cf.js` also adds the viewport meta when it is missing.
 - **Headers.** The page: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
-  `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` (only that: a
-  fuller CSP would need care with the page's inline styles) and a `Permissions-Policy` that
-  turns off camera, microphone, geolocation and payment. Every API answer: `Cache-Control:
-  no-store`, `nosniff`, `Referrer-Policy: same-origin`. Other files keep the asset server's
-  headers.
+  `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` (enforced), a fuller
+  policy as `Content-Security-Policy-Report-Only` (`script-src 'self'; style-src 'self'
+  'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://api.deepgram.com; frame-src
+  'self'; media-src 'self'; font-src 'self'; frame-ancestors 'none'`: the browser blocks nothing and
+  names in its console what it would block; every route loads with no violation in Chromium, so it
+  can be enforced once the browser checks have run clean on the real devices) and a `Permissions-Policy` that
+  turns off camera, geolocation and payment and allows the microphone for this origin only (the
+  table iPad's transcriber, GM.md "Listening"). Every API answer: `Cache-Control: no-store`,
+  `nosniff`, `Referrer-Policy: same-origin`, `X-B68-Build: <build>`. Other files keep the asset
+  server's headers.
 - **Only the custom domain.** `workers_dev = false` and `preview_urls = false`: a
   `*.workers.dev` address would skip Access (the API would still refuse it without a token,
   the page would not). The route is `{ pattern = "<host>", custom_domain = true }`; deploying
@@ -50,7 +55,9 @@ Ownership: **backend** owns `worker/`, `functions/`, `schema.sql`, `migrations/`
 Cloudflare Access protects every path of the site (the page and `/api/*`). Access adds the
 `Cf-Access-Jwt-Assertion` header (an RS256 JWT) to each request. The API verifies it against
 the team's JWKS at `https://<ACCESS_TEAM>.cloudflareaccess.com/cdn-cgi/access/certs`
-(cached in memory for an hour) and requires `aud` to contain `ACCESS_AUD`, `iss` to be
+(cached in memory for an hour; when a refresh fails the last good keys go on verifying for at
+most a day past their hour, retried every 10 s, and never for a key id they do not hold) and
+requires `aud` to contain `ACCESS_AUD`, `iss` to be
 `https://<ACCESS_TEAM>.cloudflareaccess.com`, and `exp` in the future. Claims used: `email`
 (the user id everywhere), `sub`, and `name` when present. A request with an invalid or
 missing token is `401 {"error":"not signed in","reason":"..."}`. `reason` is a short fixed phrase from the token check (`no token`,
@@ -59,9 +66,11 @@ missing token is `401 {"error":"not signed in","reason":"..."}`. `reason` is a s
 `app/runtime/cf.js`; when Access answered with its login page instead of JSON the page says so).
 
 Roles: `gm` when the email is in `GM_EMAILS` (comma-separated, case-insensitive); `display`
-when it is in `DISPLAY_EMAILS` (optional, the table iPad's own sign-in: it may only
-`GET /api/me` and `GET /api/gm/display`, everything else is 403; GM wins if an email is in both;
-GM.md); else `player`. Players read every character and write the ones they own (`doc.owner === email`)
+when it is in `DISPLAY_EMAILS` (optional, the table iPad's own sign-in: it may only make six
+calls, `GET /api/me`, `GET /api/gm/display` and the transcriber's `POST /api/gm/stt/token`,
+`GET` and `PATCH /api/gm/stt` and `POST /api/gm/transcript` (`DISPLAY_ALLOWED` in
+`functions/_lib/auth.js`); everything else is 403; GM wins if an email is in both; GM.md); else
+`player`. Players read every character and write the ones they own (`doc.owner === email`)
 plus new ones. GMs write and delete any.
 
 Development: when the binding `DEV_USER` is set (an email) and there is no Access header,
@@ -82,7 +91,7 @@ Environment / bindings: `DB` (D1), `ASSETS` (the files in `app/`), the secrets `
 ## Database (`schema.sql`, `migrations/`)
 
 `schema.sql` is the whole schema as it stands; `migrations/` holds the same statements as
-numbered D1 migrations (`0001_init.sql` to `0006_gm_ambient.sql`), applied with `npx wrangler d1 migrations apply DB
+numbered D1 migrations (`0001_init.sql` to `0007_gm_stt.sql`), applied with `npx wrangler d1 migrations apply DB
 --remote` (the deploy script does it) or `npm run db:local`. A later change goes in a new
 numbered file and in `schema.sql`; `checks/api/worker.mjs` fails when the two differ. The API
 also creates the tables lazily, so a fresh database works either way.
@@ -107,8 +116,10 @@ from it for queries. A delete keeps the row as a tombstone (`deleted = 1`, `doc 
 
 ## API (all JSON; errors are `{ "error": "message" }` with 400 / 401 / 403 / 404)
 
-- `GET /api/me` → `{ "id": email, "email", "name", "role": "gm" | "player" | "display", "campaign" }`; `name` is the
-  display name the person chose, else the one from the Access claim.
+- `GET /api/me` → `{ "id": email, "email", "name", "role": "gm" | "player" | "display", "campaign", "build" }`; `name` is the
+  display name the person chose, else the one from the Access claim. `build` is the Worker's build stamp (`app/routes.js`
+  `B68_BUILD`, bundled into the Worker by `functions/api/me.js`; `'dev'` outside a deploy), and every API answer carries it
+  as the `X-B68-Build` header too, so a page left open learns that a deploy happened (see *Adapter*, `status.newBuild`).
 - `PATCH /api/me` `{ "name" }` → the same shape: sets the caller's own display name (`members.name_override`, migration
   `0005_member_name.sql`; 1 to 40 characters, no control characters or `<` `>`; `""` or `null` clears it back to the
   Access-derived name). The sign-in upsert never touches the override, nobody can set another person's, and the
@@ -230,9 +241,46 @@ before the body is read (no token: 401, as everywhere). Never part of `/api/expo
   the display sign-in reads it through the display. Table `gm_ambient(campaign, seq, updated_at, doc)` (migration `0006_gm_ambient.sql`).
 - `GET /api/characters` carries nothing about the GM tools (the GM page refetches its state on focus instead).
 
+## Lazy bundles (`app/routes.js`)
+
+`index.html` loads only the core, which `routes.js` lists as `BUNDLES.core` (`checks/runtime/pwa.test.mjs`
+keeps the two equal): the creator, the sheet, Home with its next-session card (`schedule.js`), the rules
+wiki (every sheet draws its "?" links while it renders, and the Rules button shows when it is there), the
+cast (its "on stage" banner shows on every screen during a scene), `runtime/cf.js`, `routes.js` and
+`boot.js`. The other bundles load with their route: `table` and `print` (the same files: campaign.css,
+crewsheet.css, season.css, campaign.js, crews.js, crewsheet.js, season.js, since the table's "Print the
+season" button calls `B68Season` straight from campaign.js), `gm` (gm.css, prep.css, maps/map-kit.js,
+gm/*.js, gm-page.js) and `display` (display.css, stt.js, display-page.js).
+
+`window.B68Load.need(name)` appends the bundle's `<link>` and `<script>` tags once each and resolves when
+every file has loaded; it rejects on the first that fails, and that file is forgotten so the next `need`
+tries again. URLs are relative, exactly like the static tags, so the claude.ai artifact and the `file://`
+checks resolve them unchanged; a stamped build adds `?v=<build>`. Scripts fetch in parallel and run in
+the order `index.html` gave them (crewsheet.js registers itself with `B68Campaign` as it runs), and a
+stylesheet goes in at its place in `CSS_ORDER` (index.html's old order, before the inline `<style>`), so
+the cascade is the same whichever routes have opened. `B68Load.done(name)` says whether a bundle is in;
+`B68Load.files()` lists every file of every bundle for `sw.js`. `boot.js`'s route starters (`startTable`,
+`startPrint`, `startGm`, `startDisplay`; `openSchedule` waits for the table's) fetch their bundle on first
+use, show "Loading …" in the route's panel (the reason there when it fails), and run again when it is in.
+A viewer known not to be the GM still gets the GM pack purge (`gm-page.js` `purge`), for which the GM
+bundle is fetched only when the browser holds the pack's IndexedDB database or the sticky copy.
+
+`routes.js` also holds the build stamp, `B68_BUILD`: `'dev'` in the repository (`checks/api/worker.mjs`
+refuses a committed stamp), stamped by `scripts/deploy.sh` for the upload as `<date>-<commit>` and put
+back afterwards. The page, its bundle URLs, the service worker's cache name and `/api/me` all read it
+from this one file. A page left open across a deploy keeps the files it has; a route opened for the
+first time after the deploy fetches the new build's files, and the header's "Updated: reload" chip
+(the `X-B68-Build` header against the page's build) says a reload is due.
+
+Measured on cold loads against `wrangler dev` (a fresh browser, the service worker blocked so only the
+page's own requests count; decoded bytes of JS + CSS, gzip estimate in brackets): before, every route
+fetched 39 files, 2.54 MB (707 kB); now Home and a sheet fetch 19 files, 1.48 MB (398 kB), the table 26
+files, 1.71 MB (463 kB), the GM page 30 files, 2.21 MB (612 kB). On the first visit after a deploy the
+service worker still precaches everything in the background, after the page is up.
+
 ## Adapter (`app/runtime/cf.js`)
 
-Loaded before `boot.js`. If `window.claude` already exists it does nothing. Otherwise:
+Loaded before `routes.js` and `boot.js`. If `window.claude` already exists it does nothing. Otherwise:
 
 ```js
 window.claude = { use: function (name) { /* -> Promise */ } };
@@ -269,22 +317,30 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   `?since=` every 4 s while the page is visible and every 20 s when hidden, plus an
   immediate poll after each own write; a write also updates the cache optimistically so the
   sheet never waits on the network. Network errors are retried on the next tick and surfaced
-  once through the `err` callbacks (not after an offline start, which the header shows).
+  once through the `err` callbacks (not after an offline start, which the header shows). A request
+  with no answer in 15 s (a read) or 25 s (a write) is abandoned (`AbortController`) and counts as a
+  network error (`network: true`, `timeout: true`, "no answer from the server in 15 s"), so a
+  connection that is up but dead never holds the poller or the write queue: the status goes offline,
+  the next tick polls again, and a stalled write is retried like any other network failure.
 - `use('downloads')`: `{ save({ filename, data }) }` → Blob + anchor click, resolves.
 - Anything else resolves `null`.
 - `window.claude.rules` (hosted build only; `list`, `import`, `saveHouse`, `deleteHouse`, see `app/CONTRACT.md`): plain calls
   on the rules API above.
-- `window.claude.gm` (hosted build only; `pack`, `packPart`, `importPart`, `removePart`, `state`, `patchState`, `display`,
-  `setDisplay`, see GM.md): plain calls on the GM API above. Never queued, never in the offline snapshot or localStorage.
+- `window.claude.gm` (hosted build only, fifteen calls: `pack`, `packPart`, `importPart`, `removePart`, `state`,
+  `patchState`, `display`, `setDisplay`, `ambient`, `patchAmbient`, `stt`, `patchStt`, `sttToken`, `transcript`,
+  `addTranscript`; see GM.md): plain calls on the GM API above. Never queued, never in the offline snapshot or localStorage.
 - `window.B68Runtime = { kind: 'cloudflare', me, status, exportAll }` once `/api/me` has answered (or the
   page started offline). `exportAll()` → Promise of the `GET /api/export` answer (rejects with
   the API's error, `status` 403 for a player); boot.js shows "Download everything" only when it
-  exists and the viewer is the GM. `status = { online, pending, lastSync }`: `online` is false while the
+  exists and the viewer is the GM. `status = { online, pending, lastSync, newBuild }`: `online` is false while the
   network is unreachable or after an offline start until `/api/me` answers again, `pending` is
   the number of queued writes, `lastSync` the ISO time of the last successful poll or flushed
-  write (after an offline start, the snapshot's). Every change dispatches the `window` event
+  write (after an offline start, the snapshot's), `newBuild` the server's build when it differs
+  from this page's (`window.B68_BUILD` from `routes.js` against the `X-B68-Build` header of any
+  API answer, or `/api/me`'s `build`; `null` while they agree or either is unknown). Every change dispatches the `window` event
   `b68:runtime` (`detail` = the status); `boot.js` `whoami()` turns it into "Offline · N changes
-  waiting" / "Saving N changes…" after "Signed in as …".
+  waiting" / "Saving N changes…" after "Signed in as …", and into an "Updated: reload" chip
+  (a reload) when `newBuild` is set.
 
 ### Offline (hosted build only)
 
@@ -310,7 +366,10 @@ window.claude = { use: function (name) { /* -> Promise */ } };
   restored cache; all of them are idempotent). A 400/403/404/413 for an already-resolved
   queued write drops it, resyncs (full load, or campaign refetch) and reports one error
   (`code: 'dropped'`) through the `err` callbacks; the rest go on. A 401 or redirect stops
-  flushing and keeps the queue for that user's next visit. Snapshots carry
+  flushing and keeps the queue for that user's next visit; a write made after that is still
+  queued (kept for the same user's next visit, never sent or seen by another account on the
+  browser) and its promise rejects with the signed-out message, so the page tells the person to
+  reload and sign in rather than report a save that has not happened. Snapshots carry
   `metadata.hasPendingWrites: true` while a queued write for that document exists.
 - **Folding.** A PATCH right behind a PATCH to the same document (not yet being sent, created by
   this tab) is merged into it only when one merged PATCH is provably the same as the two in a
@@ -334,18 +393,28 @@ in ink on an alarm-red halo on paper with "68", regenerated by `npm run icons`
 (`checks/runtime/icons.mjs`, Playwright); the maskable one keeps the mark inside the 80% safe
 circle.
 
-`app/sw.js` (cache `b68-shell-v<n>`; bump to drop old caches):
+`app/sw.js` (cache `b68-shell-<build>`: it `importScripts('routes.js')` and names the cache after `B68_BUILD`, so
+every deploy drops the previous cache on activation, and the changed import is what makes the browser install the new
+worker; `cf.js` registers it with `updateViaCache: 'none'` so that import is fetched fresh on each update check. A
+deploy that skips the stamp, a plain `npx wrangler deploy`, keeps `b68-shell-dev`: still network first, so pages get the
+new files, but the cache is not renewed in one go):
 
-- Ignores (does not intercept) non-GET requests, other origins, `/api/*` and `/cdn-cgi/*`.
+- Ignores (does not intercept) non-GET requests, other origins, `/api/*`, `/cdn-cgi/*` and `/media/*`.
 - Every other request is network first: the network's answer is returned as it is (a redirect
   from Access included) and, when it is `200`, same-origin (`basic`) and not redirected,
-  stored. Only when fetch itself fails does the cached copy answer; a navigation falls back
-  to the cached page. The page is stored under the scope URL (`/`), whether it was asked for
-  as `/`, `/index.html` or `/?…`.
-- Install precaches the app shell (the `SHELL` array: the page and every file `index.html`
-  loads, fonts included; `checks/runtime/pwa.test.mjs` fails when `index.html` names a file
-  the array lacks), one file at a time so a failure does not stop the install, then
-  `skipWaiting`; activate deletes older `b68-shell-*` caches and `clients.claim`s.
+  stored. When fetch itself fails the cached copy answers at once; a navigation falls back
+  to the cached page. When the cache holds the file and the network has not answered within
+  4 s (a navigation) or 8 s (anything else: a venue's wifi that is up but dead), the cached
+  copy answers and the network's answer, when it comes, still refreshes the cache for next
+  time; a file the cache lacks waits for the network however long it takes. The page is stored
+  under the scope URL (`/`), whether it was asked for as `/`, `/index.html` or `/?…`; any other
+  file under its path alone, so `boot.js?v=<build>` finds the precached `boot.js`.
+- Install precaches the app shell (`SHELL`: the page, its fonts, the manifest and icons, then every
+  file of every bundle in `routes.js`, the core first, so each route still works offline;
+  `checks/runtime/pwa.test.mjs` fails when `index.html` or a bundle names a file the list lacks), one
+  file at a time so a failure does not stop the install, then `skipWaiting`; activate deletes older
+  `b68-shell-*` caches and `clients.claim`s. A worker that cannot import `routes.js` fails to install,
+  and the previous one keeps serving its complete cache.
 
 Checks: `npm run check:runtime` runs the adapter's unit test (mocked fetch and localStorage, offline
 cases included) and `checks/runtime/pwa.test.mjs` (manifest, icons, precache list, the
@@ -364,14 +433,16 @@ npm run db:local       # = npx wrangler d1 migrations apply DB --local (optional
 npm run dev            # = npx wrangler dev --port 8788 --ip 127.0.0.1 --var DEV_USER:gm@example.test --var GM_EMAILS:gm@example.test
 npm run build          # = npx wrangler deploy --dry-run --outdir .wrangler/dist (bundles, uploads nothing)
 npm test               # = npm run check:runtime && npm run check:api (no browser)
-npm run check:api      # checks/api/jwt.mjs, worker.mjs, flow.mjs (own servers on 8788 and 8789), then rules.mjs (8794), npcs.mjs (8841), gm.mjs (8843)
+npm run check:api      # checks/api/jwt.mjs, worker.mjs, deploy.mjs (the deploy script in a throwaway copy), flow.mjs (own servers on 8788 and 8789), then rules.mjs (8794), npcs.mjs (8841), gm.mjs (8843), name.mjs, display-role.mjs
 npm run check:gm-api   # checks/api/gm.mjs alone: the GM tools' API (own server on 8843)
-npm run check:runtime  # checks/runtime/adapter.test.mjs, pwa.test.mjs and markdown.test.mjs (plain node)
+npm run check:runtime  # 19 plain-node unit tests in checks/runtime/: adapter, pwa (and routes.js), markdown, display, the GM modules (gm-*), stt, ambient-* (README lists them)
+npm run check:sweep    # gm-figure and gm-npc with the full 500-seed sweeps (npm test runs 100: B68_SWEEP)
 npm run check:offline  # checks/runtime/offline.e2e.mjs (own server on 8790, Chromium)
 npm run check:schedule # checks/runtime/schedule.e2e.mjs (own server on 8791, Chromium)
 npm run check:phone    # checks/runtime/phone.e2e.mjs (own server on 8792, mobile Chromium)
 npm run check:rules    # checks/runtime/rules.e2e.mjs (own server on 8795, Chromium): the rules wiki, see RULES.md
 npm run check:e2e      # app/checks/e2e.js against the stubbed runtime
+npm run check:e2e-all  # every browser check in turn (checks/e2e-all.mjs), with a summary at the end
 ```
 
 The Chromium checks need `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers` (and Playwright at

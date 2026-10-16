@@ -312,7 +312,8 @@ const CREWS = ['dealers', 'hit-squad', 'militants', 'racers', 'shadows', 'utopia
   /* ---------- read only ---------- */
   await as('ro');
   const enabled = await p.$$eval('#table-page button, #table-page input, #table-page textarea, #table-page select', ns => ns.filter(n => !n.disabled).map(n => n.dataset.act || n.dataset.path || n.dataset.ui || n.tagName));
-  assert(enabled.every(a => a === 'open' || a === 'print'), 'read only: everything disabled but Open and Print the season: ' + enabled.join(','));
+  /* "The cast" (data-always) only opens the NPC page, which a read-only viewer may look at too */
+  assert(enabled.every(a => a === 'open' || a === 'print' || a === 'cast'), 'read only: everything disabled but Open, Print the season and The cast: ' + enabled.join(','));
   assert(!(await p.$('.cs-chg')) && !(await p.$('#table-page [data-gm]:not(input):not(textarea)')), 'read only: no GM-only controls shown');
   await none('read only clicks', async () => {
     for (const sel of ['[data-act="crew.ability"][data-k="Sleepy Time"][data-n="1"]', '[data-act="crew.claim"][data-id="turf"]', '[data-act="crew.upgrade"][data-k="Gear"][data-n="1"]', '[data-act="crew.contact"][data-k="Bloom"]', '[data-act="crew.heat"][data-n="7"]'])
