@@ -248,7 +248,7 @@
   }
   function openCharacter(id) {
     if (!id) return;
-    if (!db) { pendingOpen = id; if (dbSettled) toast('The files are not available in this view.', true); return; }
+    if (!db) { pendingOpen = id; if (dbSettled) toast('Saved characters are not available in this view.', true); return; }
     var T = tracker(); if (!T) { toast('The sheet module is missing.', true); return; }
     if (openId === id && T.isOpen && T.isOpen()) { setMode('sheet'); return; }
     closeSheet(); openId = id; latest = null;
@@ -265,7 +265,7 @@
       },
       edit: function () { editFigure(Object.assign({ id: id }, latest || cache[id] || {})); },
       back: function () { goBack(); },
-      remove: function () { var r2 = ref; return r2.delete().then(function () { delete cache[id]; toast('Removed from the files.'); goBack(); }).catch(function (e) { toast('Could not remove: ' + (e && e.message || e), true); throw e; }); },
+      remove: function () { var r2 = ref; return r2.delete().then(function () { delete cache[id]; toast('Removed.'); goBack(); }).catch(function (e) { toast('Could not remove: ' + (e && e.message || e), true); throw e; }); },
       me: A.me,
       /* per document, as the server decides: a player writes only their own (or an unowned) sheet, the GM any */
       get canWrite() { var d = latest || cache[id] || {}; return A.canWrite === false ? false : (A.isGM || !d.owner || d.owner === A.me) ? A.canWrite : false; },
@@ -279,7 +279,7 @@
     };
     function arrived(data) {
       if (openId !== id) return;
-      if (!data) { toast(first ? 'There is no such file.' : 'This file was removed.', true); goBack(); return; }
+      if (!data) { toast(first ? 'That character was not found.' : 'This character was removed.', true); goBack(); return; }
       latest = data; cache[id] = data;
       var doc = Object.assign({ id: id }, clone(data));
       try { if (first) { first = false; T.open(doc, api); } else if (T.update) T.update(doc); syncTitle(); }
@@ -301,9 +301,9 @@
   /* Change a filed character from outside its sheet (the crew sheet's bank payout): `patch.play` is merged over the
      character's stored play, and only what changed goes out through the same delta path as the sheet's own saves. */
   function updateCharacter(id, patch) {
-    if (!db) return Promise.reject(new Error('The files are not available in this view.'));
+    if (!db) return Promise.reject(new Error('Saved characters are not available in this view.'));
     var before = (openId === id && latest) || cache[id];
-    if (!before) return Promise.reject(new Error('There is no such file: ' + id));
+    if (!before) return Promise.reject(new Error('That character was not found.'));
     var full = {};
     Object.keys(patch || {}).forEach(function (k) { full[k] = k === 'play' && isObj(patch.play) ? Object.assign({}, isObj(before.play) ? clone(before.play) : {}, clone(patch.play)) : clone(patch[k]); });
     if (!Object.keys(full).some(function (k) { return !same(full[k], before[k]); })) return Promise.resolve(false);
@@ -319,7 +319,7 @@
      the top of the creator, the sheet and the table reads it too. The table page only attaches to that subscription
      while it is open; nothing is written on open. */
   var campRef = null, campUnsub = null, campLive = false, campLoaded = false, tableOn = false, tableLatest = null, tableExists = false;
-  var NO_TABLE = 'The table needs the shared files. Open this page where the files are available (the published artifact or the hosted site) to see the crew, the clocks and the players.';
+  var NO_TABLE = 'The table is not available in this view.';
   function campaignMod() { var Cm = window.B68Campaign; return Cm && typeof Cm.open === 'function' ? Cm : null; }
   function schedMod() { var Sm = window.B68Schedule; return Sm && Sm.card ? Sm : null; }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -485,6 +485,11 @@
     var L = window.B68Load;
     if (!campaignMod() && L && typeof L.need === 'function') { L.need('table').then(function () { if (document.body.dataset.mode !== 'table') return; if (!tableOn) startTable(); scroll(); }, function () {}); return; }
     scroll();
+  }
+  /* run fn(node) once find() returns a node while a sheet is open (it draws when the character arrives) */
+  function whenSheet(find, fn) {
+    var t0 = Date.now();
+    (function look() { if (document.body.dataset.mode !== 'sheet') return; var n = find(); if (n) { fn(n); return; } if (Date.now() - t0 < 4000) setTimeout(look, 100); })();
   }
   /* run fn(node) once find() returns a node while the table is open (it draws when the campaign arrives) */
   function whenDrawn(find, fn) {
@@ -671,7 +676,7 @@
     var seg = $('rosterView'); if (seg) seg.querySelectorAll('.chip').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.v === view)); });
     var c = $('cards'), t = $('table'); if (c) c.hidden = view === 'table'; if (t) t.hidden = view !== 'table';
   }
-  function emptyHtml() { return '<div class="empty">' + (roster.length ? 'None of these are yours yet. File a character from the last step and it is saved to your account.' : 'No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.') + '</div>'; }
+  function emptyHtml() { return '<div class="empty">' + (roster.length ? 'None of these are yours yet. Make a character and it is saved to your account.' : 'No characters yet. Make one with “Make a character”; it appears here once it is saved.') + '</div>'; }
   function renderTable(list, into) {
     var box = into || $('table'); if (!box) return;
     if (!list.length) { box.innerHTML = emptyHtml(); return; }
@@ -792,7 +797,7 @@
   /* accepts Download all files ({ v: 1, exportedAt, characters: [doc], campaign? }) and the hosted /api/export file
      ({ exportedAt, campaign: { id, doc, updatedAt }, characters: [{ id, doc, updatedAt }], members }, no v) */
   function restoreDocs(data, choice) {
-    if (!db) { toast('The files are not available in this view.', true); return Promise.resolve(0); }
+    if (!db) { toast('Saved characters are not available in this view.', true); return Promise.resolve(0); }
     if (!data || typeof data !== 'object' || !Array.isArray(data.characters)) { toast('That is not a Blades ’68 backup: no characters list.', true); return Promise.resolve(0); }
     var exported = data.v === undefined && isObj(data.campaign) && isObj(data.campaign.doc);
     if (data.v !== 1 && !exported) { toast('Unknown backup version ' + data.v + '. Expected 1.', true); return Promise.resolve(0); }
@@ -903,14 +908,14 @@
     return { v: 2, name: S.sheet.name, alias: S.sheet.alias || '', code: S.spec.code || '', playbook: S.sheet.playbook || null, playbookName: p.name ? pbName(p.id) : '', spec: clone(S.spec), sheet: sheet, updatedAt: nowIso() };
   }
   function fileCharacter() {
-    if (!db) { toast('Filing is not available in this view.', true); return; }
+    if (!db) { toast('Saving is not available in this view.', true); return; }
     if (!S.sheet.name) { toast('Give the character a name first (Identity step).', true); showStep(14); return; }
     var fields = docFields(), id = S.sheet.docId;
     function create() {
       id = A.slug(S.sheet.name) + '-' + Date.now().toString(36);
       var play = {}; var T = tracker(); if (T && T.initialPlay) { try { play = T.initialPlay(clone(S.sheet), S.sheet.playbook) || {}; } catch (e) { play = {}; } }
       var doc = Object.assign(fields, { play: play, owner: A.me || null, createdAt: fields.updatedAt });
-      return col().doc(id).set(doc).then(function () { cache[id] = doc; S.sheet.docId = id; S.dirty = false; clearDraft(); A.changed(); toast('Filed ' + S.sheet.name + '. Opening the sheet.'); openCharacter(id); });
+      return col().doc(id).set(doc).then(function () { cache[id] = doc; S.sheet.docId = id; S.dirty = false; clearDraft(); A.changed(); toast('Saved ' + S.sheet.name + '. Opening the sheet.'); openCharacter(id); });
     }
     var done;
     if (id) {
@@ -919,16 +924,16 @@
       done = p.then(function (cur) {
         if (!cur) return create();
         var doc = Object.assign({}, cur, fields, { play: cur.play || {}, owner: cur.owner === undefined ? (A.me || null) : cur.owner, createdAt: cur.createdAt || fields.updatedAt });
-        return ref.set(doc).then(function () { cache[id] = doc; if (openId === id) latest = doc; S.dirty = false; clearDraft(); A.changed(); toast('Updated the file for ' + S.sheet.name + '.'); openCharacter(id); });
+        return ref.set(doc).then(function () { cache[id] = doc; if (openId === id) latest = doc; S.dirty = false; clearDraft(); A.changed(); toast('Updated ' + S.sheet.name + '.'); openCharacter(id); });
       });
     } else done = create();
-    done.catch(function (e) { toast('Could not file: ' + (e && e.message || e), true); });
+    done.catch(function (e) { toast('Could not save: ' + (e && e.message || e), true); });
   }
   A.fileCharacter = fileCharacter;
   /* returns false when the person chose to keep what the creator holds */
   function newCharacter() {
     var dr = draftInfo();
-    if ((S.dirty || dr) && !window.confirm(dr && !S.sheet.docId ? 'Start a new character? Your draft (' + dr + ') is cleared. Cancel continues the draft.' : 'Start a new character? The one in the creator is cleared' + (S.sheet.docId ? ' (the filed copy stays in the files)' : '') + '.')) return false;
+    if ((S.dirty || dr) && !window.confirm(dr && !S.sheet.docId ? 'Start a new character? Your draft (' + dr + ') is cleared. Cancel continues the draft.' : 'Start a new character? The one in the creator is cleared' + (S.sheet.docId ? ' (the saved copy stays in your characters)' : '') + '.')) return false;
     blankCreator(); window.scrollTo({ top: 0, behavior: 'smooth' }); toast('A blank form.');
     return true;
   }
@@ -971,7 +976,7 @@
       case 'copyLink': copyText(location.href.split('#')[0] + '#s' + b64url(JSON.stringify({ spec: S.spec, sheet: Object.assign({}, S.sheet, { docId: undefined }) })), 'Link copied. It carries the whole character.'); break;
     }
   });
-  function pickRestore() { var i = $('restoreFile'); if (!db) { toast('The files are not available in this view.', true); return; } if (i) i.click(); }
+  function pickRestore() { var i = $('restoreFile'); if (!db) { toast('Saved characters are not available in this view.', true); return; } if (i) i.click(); }
 
   /* ---------- home: the start page, drawn from the data (the viewer's role, the table, their characters, a draft) ---------- */
   var DRAFT = 'b68.draft', draftT = null;
@@ -1004,9 +1009,8 @@
     var url = hosted() ? location.origin + location.pathname : location.href.split('#')[0];
     var steps = [
       [!!f.crew.name, 'Start the table', 'Name the crew and choose the crew playbook.', btn('table-setup', 'Open the table', 'btn primary')],
-      [!!(f.next || f.open.length), 'Plan the first session', 'Propose a few dates; everyone marks the ones they can make.', btn('schedule', 'Plan dates')],
       [roster.some(function (d) { return d.owner && d.owner !== A.me; }), 'Invite the players', hosted() ? 'Players sign in here with Google or an emailed code. Their email must be on the sign-in list first (SETUP.md, step 5).' : 'Share this page with your players; each one opens it signed in.', btn('copylink', 'Copy the link') + '<p class="hint mono">' + esc(url) + '</p>'],
-      [false, 'Moving from another copy?', 'Restore the characters and the table from a backup file.', db && A.canWrite !== false ? btn('restore', 'Restore from a backup…') : '<p class="hint">Restoring needs the shared files.</p>']
+      [false, 'Moving from another copy?', 'Restore the characters and the table from a backup file.', db && A.canWrite !== false ? btn('restore', 'Restore from a backup…') : '<p class="hint">Restoring is not available in this view.</p>']
     ];
     return head('Blades ’68 · you’re the GM', 'Set up the table', '', 'One table lives at this address. Set it up once; your players sign in here and join it.') + draftHtml() +
       '<ol class="hm-steps">' + steps.map(function (s, i) { return '<li class="hm-step' + (s[0] ? ' done' : '') + '"><span class="hm-n" aria-hidden="true">' + (i + 1) + '</span>' + (s[0] ? '<span class="hm-done">Done</span>' : '') + '<h3>' + (s[0] ? '<span class="sr">Done: </span>' : '') + s[1] + '</h3><p>' + s[2] + '</p>' + s[3] + '</li>'; }).join('') + '</ol>' +
@@ -1022,8 +1026,7 @@
       var waiting = ids.filter(function (id) { return id !== A.me && !Sm.rsvpOf(f.s, id); }).length;
       if (waiting) list.push('<span>' + (waiting === 1 ? 'One player hasn’t' : waiting + ' players haven’t') + ' answered for ' + esc(dayOf(f.next.at)) + '.</span>' + btn('schedule', 'See the schedule', 'btn sm'));
     }
-    if (!f.next && !f.open.length) list.push('<span>No dates proposed.</span>' + btn('schedule', 'Plan dates', 'btn sm'));
-    if (!roster.length) list.push('<span>Nobody has filed yet.</span>' + btn('copylink', 'Copy the link for the players', 'btn sm'));
+    if (!roster.length) list.push('<span>No characters yet.</span>' + btn('copylink', 'Copy the link for the players', 'btn sm'));
     return head('The table · you’re the GM', esc(f.crew.name || 'An unnamed crew'), sessionLine(f), '') +
       '<div class="hm-acts">' + btn('table', 'Open the table', 'btn primary') + '</div>' + nudges(list) + draftHtml() +
       (roster.length ? '<section class="hm-box" aria-label="The players"><div class="hm-band">The players</div><div id="homePlayers"></div></section>' : '') +
@@ -1032,10 +1035,10 @@
   /* C. a player with no character yet */
   function homeWelcome(f) {
     var kick = esc(f.crew.name || 'Blades ’68');
-    if (!db) return head(kick, 'Welcome', '', 'The shared files are not available in this view, so nothing can be filed here. You can still make a character and save the figure.') + draftHtml() + '<div class="hm-acts">' + btn('new', 'Make a character', 'btn primary') + '</div>';
+    if (!db) return head(kick, 'Welcome', '', 'Saving is not available in this view, so nothing you make can be kept here. You can still make a character and save the figure.') + draftHtml() + '<div class="hm-acts">' + btn('new', 'Make a character', 'btn primary') + '</div>';
     var ro = A.canWrite === false, n = myOpenDates(f);
-    return head(kick, 'Welcome to the table', '', 'Make your character, then mark the dates you can play.') + draftHtml() +
-      '<div class="hm-big"><h2>Make your character</h2><p>Sixteen steps: pick a playbook, dress the figure, fill in the sheet. Filing it opens your living sheet.</p>' + btn('new', 'Make your character', 'btn primary') + '</div>' +
+    return head(kick, 'Welcome to the table', '', f.open.length ? 'Make your character, then mark the dates you can play.' : 'Make your character to join the table.') + draftHtml() +
+      '<div class="hm-big"><h2>Make your character</h2><p>Sixteen steps: pick a playbook, dress the figure, fill in the sheet. Saving it opens your sheet.</p>' + btn('new', 'Make your character', 'btn primary') + '</div>' +
       (n ? '<div class="hm-big"><h2>Mark your dates</h2><p>' + (n === 1 ? 'One date needs' : n + ' dates need') + ' your answer.</p>' + btn('schedule', 'Mark your dates') + '</div>' : '') +
       (ro ? '<p class="hm-note">You can look around but not change anything.</p>' : '') +
       '<div class="hm-links">' + link('table', 'See the table') + link('cast', 'The cast') + (ro ? '' : link('restore', 'Restore your characters from a backup')) + '</div>';
@@ -1044,20 +1047,20 @@
   function homeBack(f, mine) {
     var list = [], dn = datesNudge(f), sn = +f.session.number || 0;
     if (dn) list.push(dn);
-    if (sn && f.session.startedAt && !f.session.endedAt) mine.forEach(function (d) { var ps = isObj(d.play) ? +d.play.session || 0 : 0; if (ps < sn) list.push('<span>Session ' + sn + ' has started at the table' + (mine.length > 1 ? ' (' + esc(d.name || 'Unnamed') + ')' : '') + '.</span>' + btn('open', 'Open the sheet', 'btn sm', d.id)); });
+    if (sn && f.session.startedAt && !f.session.endedAt) mine.forEach(function (d) { var ps = isObj(d.play) ? +d.play.session || 0 : 0; if (ps < sn) list.push('<span>Session ' + sn + ' has started at the table' + (mine.length > 1 ? ' (' + esc(d.name || 'Unnamed') + ')' : '') + '.</span>' + btn('join', 'Join session ' + sn, 'btn sm', d.id)); });
     var one = mine.length === 1;
     return head(esc(f.crew.name || 'Blades ’68'), 'Welcome back' + (A.myName ? ', ' + esc(A.myName) : ''), '', '') +
       '<div class="hm-chars">' + mine.map(function (d) {
         return '<article class="hm-char"><div class="pic' + ((A.CT.byId[d.playbook] || {}).ghost ? ' ghostly' : '') + '" data-fig="' + esc(d.id) + '"></div><div class="meta"><h2 class="nm">' + esc(d.name || 'Unnamed') + '</h2><span class="cd">' + esc((d.playbookName || pbName(d.playbook)) + (d.code ? ' · ' + d.code : '')) + '</span><span class="st">' + esc(playStatus(d)) + '</span>' + btn('open', 'Open sheet', one ? 'btn primary' : 'btn', d.id) + '</div></article>';
       }).join('') + '</div>' + nudges(list) + draftHtml() +
-      '<div class="hm-links">' + link('table', 'The table') + link('cast', 'The cast') + link('new', 'Make another character') + link('files', 'Everyone’s files') + link('print', 'Print the season') + link('backups', 'Backups') + '</div>';
+      '<div class="hm-links">' + link('table', 'The table') + link('cast', 'The cast') + link('new', 'Make another character') + link('files', 'Everyone’s characters') + link('print', 'Print the season') + link('backups', 'Backups') + '</div>';
   }
   function renderHome() {
     if (document.body.dataset.mode !== 'home') return;
     var box = $('homeMain'), files = $('files'); if (!box) return;
     var ready = homeReady();
     if (files) files.hidden = !ready || !db;
-    if (!ready) { box.innerHTML = '<p class="hm-wait" role="status">Opening the files…</p>'; return; }
+    if (!ready) { box.innerHTML = '<p class="hm-wait" role="status">Opening your sheets…</p>'; return; }
     var act = document.activeElement, keep = act && box.contains(act) ? (act.id === 'homeTitle' ? '#homeTitle' : act.id === 'homeNameIn' ? '#homeNameIn' : act.getAttribute('data-hm') ? '[data-hm="' + act.getAttribute('data-hm') + '"]' + (act.dataset.id ? '[data-id="' + act.dataset.id + '"]' : '') : null) : null;
     var f = tableFacts(), mine = A.me ? roster.filter(function (d) { return d.owner === A.me; }) : [];
     box.innerHTML = A.isGM === true && db ? (f.started ? homeGm(f) : homeSetup(f)) : mine.length ? homeBack(f, mine) : homeWelcome(f);
@@ -1075,10 +1078,11 @@
     else if (a === 'create') { setMode('create'); window.scrollTo(0, 0); }
     else if (a === 'discard') { if (window.confirm('Discard your draft (' + draftInfo() + ')? It cannot be brought back.')) { blankCreator(); renderHome(); toast('Draft discarded.'); } }
     else if (a === 'open' && id) openCharacter(id);
+    else if (a === 'join' && id) { openCharacter(id); whenSheet(function () { return document.querySelector('#dossier [data-act="sessjoin"]'); }, function (n) { try { n.scrollIntoView({ behavior: 'smooth', block: 'center' }); n.focus({ preventScroll: true }); } catch (e) {} }); }   /* the sheet opens at its Join bar */
     else if (a === 'print') openPrint();
     else if (a === 'rules') openRules();
     else if (a === 'cast') { try { location.hash = '#cast'; } catch (e) {} }
-    else if (a === 'files' || a === 'backups') { var n = $(a); if (n) { try { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} } }
+    else if (a === 'files' || a === 'backups') { if (a === 'files' && filter !== 'all') { filter = 'all'; filterChosen = true; renderRoster(roster); } var n = $(a); if (n) { try { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} } }   /* "Everyone’s characters" shows everyone's */
     else if (a === 'restore') pickRestore();
     else if (a === 'copylink') copyText(hosted() ? location.origin + location.pathname : location.href.split('#')[0], 'Link copied. Send it to your players.');
   }
@@ -1130,7 +1134,7 @@
     if (isHosted && !whoami.listening && typeof window.addEventListener === 'function') { whoami.listening = true; window.addEventListener('b68:runtime', function () { whoami(); }); }
     if (A.me) {
       var who = isHosted && rt.me ? (rt.me.name || rt.me.email || '') : '';
-      w.textContent = who ? 'Signed in as ' + who + (rt.me.role === 'gm' ? ' · GM' : '') + ' · ' : 'Signed in · your files are saved to your account';
+      w.textContent = who ? 'Signed in as ' + who + (rt.me.role === 'gm' ? ' · GM' : '') + ' · ' : 'Signed in · saved to your account';
       if (who) { var out = document.createElement('a'); out.href = '/cdn-cgi/access/logout'; out.textContent = 'Sign out'; out.className = 'signout'; w.appendChild(out); }
       /* hosted: the runtime's sync state (runtime/cf.js: B68Runtime.status, the b68:runtime event), as a chip */
       var st = isHosted && rt.status, n = st ? st.pending || 0 : 0, ch = n === 1 ? ' change' : ' changes';
@@ -1147,7 +1151,7 @@
       w.textContent = 'Not signed in' + (why ? ' (' + why + ')' : '') + ' · ';
       var inl = document.createElement('a'); inl.href = '/cdn-cgi/access/logout?returnTo=' + encodeURIComponent(location.origin + '/'); inl.textContent = 'Sign in'; inl.className = 'signout'; w.appendChild(inl); w.classList.add('off');
     }
-    else { w.textContent = db ? 'Not signed in · files are not marked as yours' : 'Not signed in · filing unavailable'; w.classList.add('off'); }
+    else { w.textContent = db ? 'Not signed in · characters are not marked as yours' : 'Not signed in · saving unavailable'; w.classList.add('off'); }
   }
   function hashOpen() { var h = location.hash || ''; return h.indexOf('#c/') === 0 ? decodeURIComponent(h.slice(3)) : null; }
   /* the routes: (none) Home · #new a blank creator (asks first when there is a draft) · #create the creator as it is ·
@@ -1225,8 +1229,8 @@
         startCampaign();
         var Cp0 = castMod(); if (Cp0) { try { Cp0.init(castApi()); } catch (e) { if (window.console) console.error(e); } }
         if (document.body.dataset.mode === 'table') startTable();
-        if (!d) { $('rosterNote').textContent = 'The files are unavailable in this view'; cannotOpen('The files are not available here, so that sheet cannot open.'); renderHome(); return; }
-        $('rosterNote').textContent = A.me ? 'Yours are saved to your account · everyone with the link sees the shared files' : 'Everyone who opens this page sees the same files';
+        if (!d) { $('rosterNote').textContent = 'Saved characters are not available in this view.'; cannotOpen('Saved characters are not available here, so that sheet cannot open.'); renderHome(); return; }
+        $('rosterNote').textContent = A.me ? 'Yours are saved to your account. Everyone at the table can see all characters.' : 'Everyone who opens this page sees the same characters.';
         renderHome();
         col().orderBy('updatedAt', 'desc').limit(60).onSnapshot(function (snap) {
           var docs = [], seen = {};
@@ -1235,8 +1239,8 @@
           if (A._followCache && openId) A._followCache(openId);
           if (pendingOpen) { var id = pendingOpen; pendingOpen = null; openCharacter(id); }
         }, function (e) { rosterSeen = true; renderHome(); toast('Files offline: ' + (e && e.message || e), true); });
-      }).catch(function () { dbSettled = true; cannotOpen('The files are not available here, so that sheet cannot open.'); renderHome(); if (document.body.dataset.mode === 'table') startTable(); });
-    } else { dbSettled = true; $('rosterNote').textContent = 'The files are unavailable in this view'; whoami(); syncBackups(); cannotOpen(''); renderHome(); if (document.body.dataset.mode === 'table') startTable(); }
+      }).catch(function () { dbSettled = true; cannotOpen('Saved characters are not available here, so that sheet cannot open.'); renderHome(); if (document.body.dataset.mode === 'table') startTable(); });
+    } else { dbSettled = true; $('rosterNote').textContent = 'Saved characters are not available in this view.'; whoami(); syncBackups(); cannotOpen(''); renderHome(); if (document.body.dataset.mode === 'table') startTable(); }
   }
   if (hot && hot.ready) hot.ready(function (data) { boot(data || {}); }); else boot((hot && hot.data) || {});
 })();

@@ -1,5 +1,25 @@
 <meta charset="utf-8">
 <title>Blades '68</title>
+<script>
+/* The theme, before anything paints (so Night does not flash paper): the choice a player made with the switch in the footer
+   (localStorage b68.theme: "dark" = Night, "light" = Paper), else nothing is set and the tokens below follow the device
+   (prefers-color-scheme). The switch is wired here too, by delegation, so it works whatever loads later. Storage may be
+   blocked (a private window, a sandboxed frame): then the choice lasts for the visit only. */
+(function () {
+  var KEY = 'b68.theme', root = document.documentElement, mem = '';
+  function read() { try { var t = localStorage.getItem(KEY); return t === 'dark' || t === 'light' ? t : ''; } catch (e) { return mem; } }
+  function apply(t) { if (t) root.setAttribute('data-theme', t); else root.removeAttribute('data-theme'); }
+  function mark() { var cur = read() || 'auto', bs = document.querySelectorAll('[data-theme-set]'); for (var i = 0; i < bs.length; i++) bs[i].setAttribute('aria-pressed', bs[i].getAttribute('data-theme-set') === cur ? 'true' : 'false'); }
+  apply(read());
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mark); else mark();
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-theme-set]') : null; if (!b) return;
+    var v = b.getAttribute('data-theme-set'); v = v === 'dark' || v === 'light' ? v : '';
+    mem = v; try { if (v) localStorage.setItem(KEY, v); else localStorage.removeItem(KEY); } catch (x) {}
+    apply(v); mark();
+  });
+})();
+</script>
 <link rel="stylesheet" href="tracker.css">
 <link rel="stylesheet" href="schedule.css">
 <link rel="stylesheet" href="rules.css">
@@ -10,7 +30,7 @@
      down a sheet on the right; Back / Next sit at the foot of the sheet. Paper theme by default, Night in dark. */
   :root {
     --paper: #f2ede1; --card: #fbf8f1; --inset: #e8e2d4; --hair: #dcd4c2;
-    --ink: #14110e; --ink-soft: #55504a; --ink-faint: #8e8880; --rule: #14110e; --on-ink: #fbf8f1;
+    --ink: #14110e; --ink-soft: #55504a; --ink-faint: #6a645e; --rule: #14110e; --on-ink: #fbf8f1;
     --accent: #b8481a; --on-accent: #fbf8f1; --mustard: #e8c33c; --on-mustard: #14110e;
     --alarm: #a8210f; --ok: #41633e; --focus: #b8481a; --shadow-ink: #14110e;
     --chart: #e8e2d4; --chart-ink: #14110e;
@@ -24,15 +44,15 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --paper: #1a1a1c; --card: #2a2521; --inset: #14110e; --hair: #55504a;
-      --ink: #f2ede1; --ink-soft: #c9c3b8; --ink-faint: #8e8880; --rule: #f2ede1; --on-ink: #14110e;
-      --accent: #e0691e; --on-accent: #14110e; --alarm: #d9736e; --ok: #6e8f6a; --focus: #e8c33c; --shadow-ink: #b8481a;
+      --ink: #f2ede1; --ink-soft: #c9c3b8; --ink-faint: #9a948c; --rule: #f2ede1; --on-ink: #14110e;
+      --accent: #e8742a; --on-accent: #14110e; --alarm: #d9736e; --ok: #7d9e78; --focus: #e8c33c; --shadow-ink: #b8481a;
       color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
     --paper: #1a1a1c; --card: #2a2521; --inset: #14110e; --hair: #55504a;
-    --ink: #f2ede1; --ink-soft: #c9c3b8; --ink-faint: #8e8880; --rule: #f2ede1; --on-ink: #14110e;
-    --accent: #e0691e; --on-accent: #14110e; --alarm: #d9736e; --ok: #6e8f6a; --focus: #e8c33c; --shadow-ink: #b8481a;
+    --ink: #f2ede1; --ink-soft: #c9c3b8; --ink-faint: #9a948c; --rule: #f2ede1; --on-ink: #14110e;
+    --accent: #e8742a; --on-accent: #14110e; --alarm: #d9736e; --ok: #7d9e78; --focus: #e8c33c; --shadow-ink: #b8481a;
     color-scheme: dark;
   }
   @font-face { font-family: "Archivo Compressed"; src: url("fonts/ArchivoCompressed-Black.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
@@ -162,7 +182,7 @@
   .hm-char .meta { padding: 12px; display: grid; gap: 4px; align-content: start; min-width: 0; }
   .hm-char .nm { font: 900 24px/.95 var(--font-poster); overflow-wrap: anywhere; margin: 0; }
   .hm-char .cd { font: 400 10.5px/1.3 var(--font-mono); letter-spacing: .06em; color: var(--ink-soft); }
-  .hm-char .st { font: 700 10.5px/1.3 var(--font-mono); color: var(--accent); }
+  .hm-char .st { font: 700 13px/1.35 var(--font-mono); color: var(--accent); }
   .hm-char .btn { justify-self: start; margin-top: 6px; }
   .hm-box { border: 2px solid var(--rule); background: var(--card); min-width: 0; }
   .hm-band { background: var(--rule); color: var(--on-ink); font: 900 11px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 6px 10px; }
@@ -447,6 +467,12 @@
     .tbl tr.mine { box-shadow: inset 4px 0 0 var(--accent); }
   }
   footer { margin-top: 36px; border-top: 2px solid var(--rule); padding-top: 12px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--ink-soft); }
+  /* the Auto / Paper / Night switch (the inline script at the top wires it) */
+  footer .theme { display: inline-flex; align-items: center; gap: 4px; }
+  footer .theme .label { margin-right: 6px; }
+  footer .theme .chip { padding: 7px 10px; font-size: 10.5px; }
+  @media (max-width: 760px) { footer .theme .chip { min-height: 40px; } }
+  @media print { footer .theme { display: none; } }
 
   @media (max-width: 1000px) {
     .studio { grid-template-columns: 1fr; gap: 14px; }
@@ -471,7 +497,7 @@
     <a class="wordmark" id="homeLink" href="#" title="Home"><span class="yr">’68</span><span class="ttl">Blades ’68<small id="viewName" tabindex="-1">Home</small></span></a>
     <nav class="rail" id="rail" aria-label="Steps"></nav>
     <nav class="topnav" aria-label="Pages"><button class="btn sm" id="homeBtn" type="button">Home</button><button class="btn sm" id="tableBtn" type="button" title="The crew, shared clocks, the players and the campaign log">The table</button><button class="btn sm" id="rulesBtn" type="button" title="The rulebooks, searchable">Rules</button><button class="btn sm" id="mineBtn" type="button" hidden>Your sheet</button><button class="btn sm" id="gmBtn" type="button" hidden title="The GM console, the location generator and the iPad display">GM</button></nav>
-    <span class="label who off" id="whoami">Not signed in · filing unavailable</span>
+    <span class="label who off" id="whoami">Not signed in · saving unavailable</span>
   </header>
 
   <section class="nx" id="nextSession" hidden aria-label="Next session"></section>
@@ -482,11 +508,11 @@
   <section class="cp" id="cast-page" hidden aria-label="The cast"></section>
   <section class="gm-page" id="gm-page" hidden aria-label="GM tools"></section>
   <section class="home" id="home" hidden aria-labelledby="homeTitle">
-    <div class="hm" id="homeMain"><p class="hm-wait">Opening the files…</p></div>
+    <div class="hm" id="homeMain"><p class="hm-wait">Opening your sheets…</p></div>
     <section class="roster" id="files" aria-labelledby="filesTitle" hidden>
-      <div class="head"><h2 id="filesTitle">The files</h2><div class="tools"><div class="seg" id="rosterView" role="group" aria-label="View"><button class="chip" type="button" data-v="cards" aria-pressed="true">Cards</button><button class="chip" type="button" data-v="table" aria-pressed="false">Table</button></div><div class="seg" id="rosterFilter" role="group" aria-label="Whose files" hidden><button class="chip" type="button" data-f="mine" aria-pressed="true">Mine</button><button class="chip" type="button" data-f="all" aria-pressed="false">Everyone</button></div><span class="label" id="rosterNote">Everyone who opens this page sees the same files</span></div></div>
-      <div class="cards" id="cards"><div class="empty">No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.</div></div>
-      <div class="table" id="table" hidden><div class="empty">No one is on file yet. Finish the dossier and file the character from the last step: that opens the living sheet, and the file appears here.</div></div>
+      <div class="head"><h2 id="filesTitle">Characters</h2><div class="tools"><div class="seg" id="rosterView" role="group" aria-label="View"><button class="chip" type="button" data-v="cards" aria-pressed="true">Cards</button><button class="chip" type="button" data-v="table" aria-pressed="false">Table</button></div><div class="seg" id="rosterFilter" role="group" aria-label="Whose characters" hidden><button class="chip" type="button" data-f="mine" aria-pressed="true">Mine</button><button class="chip" type="button" data-f="all" aria-pressed="false">Everyone</button></div><span class="label" id="rosterNote">Everyone who opens this page sees the same characters.</span></div></div>
+      <div class="cards" id="cards"><div class="empty">No characters yet. Make one with “Make a character”; it appears here once it is saved.</div></div>
+      <div class="table" id="table" hidden><div class="empty">No characters yet. Make one with “Make a character”; it appears here once it is saved.</div></div>
       <div class="backups" id="backups" hidden><span class="label">Backups</span><button class="btn sm" id="dlAll" type="button" hidden>Download a backup</button><button class="btn sm" id="dlEverything" type="button" hidden title="The server's full export: every character, the table and the members">Download everything</button><button class="btn sm" id="restoreBtn" type="button" hidden>Restore from a backup…</button><input type="file" id="restoreFile" accept="application/json,.json" hidden><p class="hint" id="backupHint"></p></div>
     </section>
   </section>
@@ -532,6 +558,7 @@
 
   <footer>
     <span>Drawn by the Blades ’68 figure kit v2. Rules text transcribed from the Characters chapter. The year is 968 AC.</span>
+    <span class="theme" role="group" aria-label="Colour theme"><span class="label">Theme</span><button class="chip sm" type="button" data-theme-set="auto" aria-pressed="true" title="Follow this device’s light or dark setting">Auto</button><button class="chip sm" type="button" data-theme-set="light" aria-pressed="false">Paper</button><button class="chip sm" type="button" data-theme-set="dark" aria-pressed="false">Night</button></span>
   </footer>
 </div>
 

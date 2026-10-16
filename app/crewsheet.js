@@ -377,11 +377,11 @@
       var paid = isObj(crew.advancePaid) ? Object.keys(crew.advancePaid).filter(function (k) { return crew.advancePaid[k] === true; }).length : 0;
       var list = (ctx.isGM ? all : mine).map(function (d) { var b0 = bankOf(d); return '<li>' + esc(d.name || 'Unnamed') + ' <span class="mono tp-dim">bank ' + b0 + ' → ' + Math.min(40, b0 + amt) + '</span></li>'; }).join('');
       h += '<div class="cs-adv"><div class="cs-advh">Crew advance</div><p><b>' + esc(COMMON.footer) + '</b>: Tier ' + tier + ' + 2 = <b class="mono">' + amt + '</b> into each bank (capped at 40).</p>' +
-        (list ? '<ul class="cs-payees">' + list + '</ul>' : '<p class="hint">' + (ctx.isGM ? 'No filed character left to pay' : 'None of your characters is left to pay') + (paid ? ' (' + paid + ' paid already).' : '.') + ' Time travelers keep no bank; a Hull needs A Room of Your Own.</p>') +
+        (list ? '<ul class="cs-payees">' + list + '</ul>' : '<p class="hint">' + (ctx.isGM ? 'No character left to pay' : 'None of your characters is left to pay') + (paid ? ' (' + paid + ' paid already).' : '.') + ' Time travelers keep no bank; a Hull needs A Room of Your Own.</p>') +
         '<div class="cs-row">' + (ctx.isGM ? '<button type="button" class="btn sm primary" data-act="crew.cspayall" data-gm="1">Pay each PC Tier+2 to bank</button>'
           : '<button type="button" class="btn sm primary" data-act="crew.cspaymine"' + (mine.length ? '' : ' disabled') + '>Pay my characters Tier+2</button>') +
         '<button type="button" class="btn sm" data-act="crew.csxpreset">Reset crew xp to 0</button></div>' +
-        '<p class="hint">' + (ctx.isGM ? 'Pays every filed character not yet paid for this advance, then resets crew xp to 0.' : 'Players pay their own characters; the GM’s button pays everyone and resets crew xp.') + '</p></div>';
+        '<p class="hint">' + (ctx.isGM ? 'Pays every character not yet paid for this advance, then resets crew xp to 0.' : 'Players pay their own characters; the GM’s button pays everyone and resets crew xp.') + '</p></div>';
     }
     return panel('Crew xp', h + '<p class="cs-foot">' + esc(COMMON.footer) + '</p>', { cls: 'cs-xpbox' });
   }
@@ -471,7 +471,7 @@
   }
   function pay(list, crew) {
     var amt = clamp(crew.tier, 0, 6) + 2, up = A().updateCharacter;
-    if (typeof up !== 'function') { toast('Paying banks needs the files.', true); return 0; }
+    if (typeof up !== 'function') { toast('Paying banks needs saved characters, which this view does not have.', true); return 0; }
     var n = 0;
     list.forEach(function (d) {
       var nb = Math.min(40, bankOf(d) + amt);
@@ -614,7 +614,14 @@
   });
   ['cohortadd', 'cohortharm', 'cohortarmor', 'cohortrm', 'factionadd', 'factionstatus', 'factionrm'].forEach(function (k) { acts[k] = function (d, crew, ctx, t) { return G.acts[k](d, crew, ctx, t); }; });
 
-  M.setCrewPanel({ render: render, acts: acts, enter: {}, PERM: { cspick: 'all' } });
+  /* the numbers on the phone's summary row (campaign.js): the ones the sheet itself shows (turf and the Vault upgrade change them) */
+  function summary(crew) {
+    var r = rec(crew); if (!r) return null;
+    var max = repMax(crew, r);
+    return { tier: clamp(crew.tier, 0, 6), hold: crew.hold === 'strong' ? 'strong' : 'weak', rep: Math.min(clamp(crew.rep, 0, 12), max), repMax: max,
+      heat: clamp(crew.heat, 0, COMMON.heat.pips), wanted: clamp(crew.wanted, 0, COMMON.wantedLevel.pips), stacks: clamp(crew.stacks, 0, COMMON.stacks.pips), vault: Math.min(clamp(crew.vault, 0, 16), vaultCap(crew, r)) };
+  }
+  M.setCrewPanel({ render: render, acts: acts, enter: {}, PERM: { cspick: 'all' }, summary: summary });
   M.crewSheet = { seed: seed, turfCount: turfCount, claimable: claimable, vaultCap: vaultCap,
     /* the crew sheet's markup for a copy outside the table page (the season print): ctx as campaign.js builds it; the
        live panel's text-path parent stays the table's own crew */

@@ -68,7 +68,15 @@ are kept: a write that records a session deletes the older keys with `null`.
   RSVP tally with names, the viewer's own In / Can't make it buttons, and "Add to calendar"
   (an `.ics` download through `downloads`, plus a Google Calendar link). One line on a phone
   when collapsed. Hidden when there is no next session.
-- **Schedule box on the table page** (`#tp-schedule`), above the clocks:
+- **Schedule box on the table page** (`#tp-schedule`), the last thing on the page (on a phone: after the clocks, the
+  log, the players and the crew). Scheduling can be parked (the dates live in the group's calendar), so the box is not
+  drawn until there is something to answer. A player (or a read-only viewer) gets it only while a next session or an
+  open date exists; with neither there is no box and no "mark your dates" anywhere, except that a link to
+  `#t/schedule` shows the box with "Nothing is planned yet." The GM gets one line, "Schedule · no dates · Plan dates"
+  (with a next session or open dates: "Schedule · next Sat 31 Oct, 19:00 · 2 dates open · Open"), that opens the box;
+  while there are dates the box is open by itself, and its "Close" folds it back to the line. `#t/schedule` (Home's
+  schedule links, a typed link) opens it and scrolls to it. A player is not asked to mark dates when there are none,
+  and the "Who can make it" grid is left out for a player while no date is open. The box holds:
   - The confirmed next session (GM: set or change date/time, length, place, note; clear it), with
     the viewer's own "I’m in / Can’t make it" under the tally while it is ahead (not for read-only
     viewers).
@@ -91,6 +99,12 @@ are kept: a write that records a session deletes the older keys with `null`.
     an option, "Confirm" an option (sets `next` from it, logs "Next session: <date>",
     and removes options at or before it), cadence and quorum settings.
   - Past options (`at` older than 12 h) are hidden and the GM can "Clear past dates".
+- Home does not ask for dates while there are none. The GM's set-up steps (Start the table, Invite the players,
+  Moving from another copy?) leave planning out; the table-started page has no "No dates proposed / Plan dates"
+  nudge (it keeps "N players haven't answered for <date>" while a next session exists); a new player's lead says
+  "mark the dates you can play" only while a date is open, else "Make your character to join the table."; a player
+  is nudged to mark dates only while a date waits for their answer. The schedule stays reachable from the table
+  page (the folded line, `#t/schedule`).
 - Starting session N (session bar) clears `next` when it is within 12 h of now, records the
   answers for it as `attendance[N]` (in -> true, out -> false, no answer -> not recorded), and
   drops the past options, in the same write.

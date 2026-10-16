@@ -312,8 +312,8 @@ const CREWS = ['dealers', 'hit-squad', 'militants', 'racers', 'shadows', 'utopia
   /* ---------- read only ---------- */
   await as('ro');
   const enabled = await p.$$eval('#table-page button, #table-page input, #table-page textarea, #table-page select', ns => ns.filter(n => !n.disabled).map(n => n.dataset.act || n.dataset.path || n.dataset.ui || n.tagName));
-  /* "The cast" (data-always) only opens the NPC page, which a read-only viewer may look at too */
-  assert(enabled.every(a => a === 'open' || a === 'print' || a === 'cast'), 'read only: everything disabled but Open, Print the season and The cast: ' + enabled.join(','));
+  /* what a read-only viewer can still press writes nothing: Open, The cast, Print the season, and the folds of the page (the crew summary row on a phone, the log's All) */
+  assert(enabled.length && enabled.every(a => a === 'open' || a === 'print' || a === 'cast' || a === 'viewcrew' || a === 'viewlog'), 'read only: everything disabled but Open, The cast, Print the season and the folds: ' + enabled.join(','));
   assert(!(await p.$('.cs-chg')) && !(await p.$('#table-page [data-gm]:not(input):not(textarea)')), 'read only: no GM-only controls shown');
   await none('read only clicks', async () => {
     for (const sel of ['[data-act="crew.ability"][data-k="Sleepy Time"][data-n="1"]', '[data-act="crew.claim"][data-id="turf"]', '[data-act="crew.upgrade"][data-k="Gear"][data-n="1"]', '[data-act="crew.contact"][data-k="Bloom"]', '[data-act="crew.heat"][data-n="7"]'])
@@ -329,19 +329,49 @@ const CREWS = ['dealers', 'hit-squad', 'militants', 'racers', 'shadows', 'utopia
   await p.locator('.cs-sheet').screenshot({ path: path.join(OUT, 'crewsheet-print.png') });
   await p.emulateMedia({ media: 'screen' });
 
-  /* ---------- layout: the full sheet above the schedule on a wide screen, below it on a phone ---------- */
-  const tops = () => p.evaluate(() => ['.cs-sheet', '#tp-schedule', '.tp-playbox'].map(s => Math.round(document.querySelector('#table-page ' + s).getBoundingClientRect().top + scrollY)));
-  let tp = await tops();
-  assert(tp[0] < tp[1] && tp[0] < tp[2], 'desk: the crew sheet above the schedule and players: ' + tp.join(','));
+  /* ---------- layout: clocks, log and players above the full sheet on a wide screen, the schedule below it; on a phone the crew
+     sits behind its summary row (Tier, Hold, Rep, Heat, Wanted, Stacks) between the players and the schedule ---------- */
+  const tops = (sels) => p.evaluate((sels) => sels.map(s => Math.round(document.querySelector('#table-page ' + s).getBoundingClientRect().top + scrollY)), sels);
+  let tp = await tops(['.tp-playbox', '.cs-sheet', '#tp-schedule']);
+  assert(tp[0] < tp[1] && tp[1] < tp[2], 'desk: the players above the crew sheet, the schedule below it: ' + tp.join(','));
   await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(300);
-  tp = await tops();
-  assert(tp[1] < tp[2] && tp[2] < tp[0], 'phone: schedule, then players, then the crew sheet: ' + tp.join(','));
+  tp = await tops(['.tp-playbox', '#tp-crew', '#tp-schedule']);
+  assert(tp[0] < tp[1] && tp[1] < tp[2], 'phone: players, then the crew (its summary row), then the schedule: ' + tp.join(','));
+  assert(await p.$eval('.tp-crewbody', n => getComputedStyle(n).display === 'none') && await p.$eval('.cs-sheet', n => n.getClientRects().length === 0), 'phone: the crew sheet is folded away until the summary is tapped');
+  const crShadows = await crew();
+  const turfN = await p.evaluate((c) => B68Campaign.crewSheet.turfCount(c, B68Crews.byId[c.playbook]), crShadows);
+  const sumCells = () => p.$$eval('.tp-cst', ns => ns.map(n => n.querySelector('.tp-lab').textContent + ' ' + n.querySelector('b').textContent));
+  const wantCells = ['Tier ' + crShadows.tier, 'Hold ' + (crShadows.hold === 'strong' ? 'Strong' : 'Weak'), 'Rep ' + Math.min(crShadows.rep, 12 - turfN) + '/' + (12 - turfN), 'Heat ' + crShadows.heat + '/9', 'Wanted ' + crShadows.wanted + '/4', 'Stacks ' + (crShadows.stacks || 0)];
+  assert(JSON.stringify(await sumCells()) === JSON.stringify(wantCells), 'phone: the summary row shows the crew sheet\'s own numbers: ' + JSON.stringify(await sumCells()) + ' vs ' + JSON.stringify(wantCells));
+  await p.evaluate(() => window.__remote({ crew: { upgrades: { Vault: 2 } } })); await p.waitForTimeout(250);   /* the Vault upgrade opens the vault cubes (locked without it) */
+  await none('phone: the summary unfolds the sheet', () => p.click('.tp-crewsum'));
+  assert(await p.$eval('.cs-sheet', n => n.getClientRects().length > 0), 'phone: the crew sheet opens');
+  /* touch: the tracks a player taps in play are at least 40px tall (the mark's own box or its ::before area) and each owns its whole area */
+  const ttrack = await p.evaluate(() => {
+    const out = { n: 0, small: [], owns: [], kinds: {} }, at = (x, y) => document.elementFromPoint(x, y);
+    document.querySelectorAll('#table-page .cs-pill, #table-page .cs-tier, #table-page .cs-cube, #table-page .cs-sheet .btn, #table-page .cs-sheet .chip, #table-page .cs-sheet .tp-in').forEach(n => {
+      if (n.disabled || !n.getClientRects().length) return;
+      n.scrollIntoView({ block: 'center' });
+      const r = n.getBoundingClientRect(), cs = getComputedStyle(n, '::before'), has = !!cs.content && cs.content !== 'none';
+      const pw = has ? parseFloat(cs.width) || 0 : 0, ph = has ? parseFloat(cs.height) || 0 : 0, w = Math.max(r.width, pw), h = Math.max(r.height, ph), k = (n.getAttribute('data-act') || n.className) + '';
+      out.n++; out.kinds[k] = Math.min(out.kinds[k] || 1e9, Math.round(h));
+      if (h < 39.5) out.small.push(k + ' ' + Math.round(w) + 'x' + Math.round(h));
+      if (has) { const cx = r.left + r.width / 2, cy = r.top + r.height / 2; [[cx - pw / 2 + 2, cy], [cx + pw / 2 - 2, cy], [cx, cy - ph / 2 + 2], [cx, cy + ph / 2 - 2]].forEach(pt => { const e = at(pt[0], pt[1]); if (!(e === n || n.contains(e))) out.owns.push(k + ' ' + (n.getAttribute('data-n') || '') + ' @' + pt.map(Math.round) + ' → ' + (e && (e.getAttribute('data-act') || e.className || e.tagName))); }); }
+    });
+    out.small = out.small.slice(0, 12); out.owns = out.owns.slice(0, 12); return out;
+  });
+  notes.push('crew sheet touch audit: ' + ttrack.n + ' controls; smallest heights ' + JSON.stringify(ttrack.kinds));
+  assert(['crew.heat', 'crew.wanted', 'crew.rep', 'crew.tier', 'crew.stacks', 'crew.vault'].every(k => ttrack.kinds[k] >= 40) && !ttrack.small.length, 'phone touch: heat, wanted, rep, tier, stacks and vault marks and the sheet\'s buttons are at least 40px tall: ' + ttrack.small.join(' | '));
+  assert(!ttrack.owns.length, 'phone touch: each mark owns its whole hit area: ' + ttrack.owns.join(' | '));
+  await overflow('crew sheet phone, open');
+  await p.evaluate(() => scrollTo(0, 0));
   await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(200);
 
   /* ---------- a player can choose the playbook on a fresh table ---------- */
   /* on a phone the six covers fold behind one button (page state, no write); a wide screen shows them, no button */
   await fresh('player');
   const fold = () => p.evaluate(() => { const t = document.querySelector('.cs-pickt'), c = document.querySelector('.cs-covers'); return { btn: !!t && getComputedStyle(t).display !== 'none', exp: t && t.getAttribute('aria-expanded'), covers: !!c && getComputedStyle(c).display !== 'none', label: t && t.textContent }; });
+  assert(/No characters yet/.test(await p.$eval('.tp-playbox', n => n.textContent)) && !/filed|files/.test(await p.$eval('.tp-playbox', n => n.textContent)), 'an empty table: the players box says "No characters yet"');
   let fd = await fold();
   assert(!fd.btn && fd.covers, 'desk: the covers shown, no fold button: ' + JSON.stringify(fd));
   await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(300);
@@ -373,6 +403,7 @@ const CREWS = ['dealers', 'hit-squad', 'militants', 'racers', 'shadows', 'utopia
     await p.locator('.cs-sheet').screenshot({ path: path.join(OUT, 'crewsheet-' + prefix + '-dark.png') });
     await p.evaluate(() => { delete document.documentElement.dataset.theme; });
     await p.setViewportSize({ width: 390, height: 900 }); await p.waitForTimeout(300);
+    const sum = await p.$('.tp-crewsum'); if (sum && (await sum.getAttribute('aria-expanded')) === 'false') { await sum.click(); await p.waitForTimeout(200); }   /* the sheet is folded behind its summary row on a phone */
     await overflow(prefix + ' phone');
     await p.locator('.cs-sheet').screenshot({ path: path.join(OUT, 'crewsheet-' + prefix + '-phone.png') });
     await p.evaluate(() => { document.documentElement.dataset.theme = 'dark'; }); await p.waitForTimeout(350);

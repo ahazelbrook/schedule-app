@@ -130,25 +130,47 @@ const SHEET = `(pb) => {
   assert((await p.$$eval('.tp-crewbox [data-act="crew.tier"].on', n => n.length)) === 0, 'tier 0');
   assert(!!(await p.$('[data-act="sessstart"]')) && !(await dis('[data-act="sessstart"]')) && (await dis('[data-act="sessend"]')) === true, 'GM: start enabled, end disabled with no session');
   assert((await p.$eval('[data-act="sessstart"]', n => n.textContent)) === 'Start session 1', 'Start session 1 label');
-  assert(/Each player ends the session on their own sheet/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'session reminder line');
+  /* the session is one line: "Session — not started yet" and the GM's buttons; no reminder paragraph (the sheet's End session panel says it) */
+  assert(/not started yet/.test(await p.$eval('.tp-sessbox', n => n.textContent)) && !/Each player ends the session/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'session box: "not started yet", no reminder paragraph');
   assert(!/The GM starts sessions/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'GM: no "The GM starts sessions" line');
-  assert((await p.$$eval('#tp-schedule', n => n.length)) === 1 && (await p.$eval('#tp-schedule', n => n.classList.contains('tp-schedbox'))), 'the schedule box is #tp-schedule, once on the page');
-  /* layout: two columns on a wide screen (the crew on the left); on a phone session, schedule, clocks, players, crew, log */
-  const BOXES = ['.tp-sessbox', '#tp-schedule', '.tp-clockbox', '.tp-playbox', '.tp-crewbox', '.tp-logbox'];
-  const boxes = () => p.evaluate((sels) => sels.map(s => { const r = document.querySelector('#table-page ' + s).getBoundingClientRect(); return { s, top: Math.round(r.top + scrollY), left: Math.round(r.left), w: Math.round(r.width) }; }), BOXES);
-  async function phoneOrder(who) {
+  assert((await p.$eval('.tp-sessbox', n => n.getBoundingClientRect().height)) < 64, 'session box on a desk is one line: ' + (await p.$eval('.tp-sessbox', n => n.getBoundingClientRect().height)));
+  /* the role is words with a dot, not a box that looks like a button */
+  const roleStyle = await p.$eval('.tp-role', n => { const s = getComputedStyle(n); return { border: s.borderTopWidth, bg: s.backgroundColor, pad: s.paddingLeft }; });
+  assert(roleStyle.border === '0px' && roleStyle.bg === 'rgba(0, 0, 0, 0)' && roleStyle.pad === '0px', 'the role label has no border, fill or padding (not button-like): ' + JSON.stringify(roleStyle));
+  /* the schedule: a GM with no dates sees one folded line, "Schedule · no dates · Plan dates", that opens the box */
+  assert((await p.$$eval('#tp-schedule', n => n.length)) === 1 && (await p.$eval('#tp-schedule', n => n.classList.contains('tp-schedrow'))) && !(await p.$('.tp-schedbox')), 'GM, no dates: the schedule is one folded line (#tp-schedule), no box');
+  const rowTxt = await p.$eval('#tp-schedule', n => [n.querySelector('.tp-lab').textContent, n.querySelector('.tp-schedsum').textContent, n.querySelector('button').textContent].join(' · '));
+  assert(rowTxt === 'Schedule · no dates · Plan dates', 'the line reads Schedule · no dates · Plan dates: ' + rowTxt);
+  await none('Plan dates opens the schedule (page state, no write)', () => p.click('#tp-schedule [data-act="viewsched"]'));
+  assert((await p.$$eval('#tp-schedule', n => n.length)) === 1 && !!(await p.$('.tp-schedbox#tp-schedule')) && !!(await p.$('[data-ui="sched.odate"]')) && (await p.$eval('.tp-schedbox [data-act="viewsched"]', n => n.getAttribute('aria-expanded'))) === 'true', 'Plan dates opens the box (#tp-schedule, once, with its date form)');
+  await none('Close folds it back', () => p.click('.tp-schedbox [data-act="viewsched"]'));
+  assert(!!(await p.$('.tp-schedrow')) && !(await p.$('.tp-schedbox')), 'Close folds the box back to one line');
+  await p.evaluate(() => { location.hash = '#t/schedule'; }); await p.waitForTimeout(600);
+  assert(!!(await p.$('.tp-schedbox#tp-schedule')) && (await mode()) === 'table', '#t/schedule opens the folded schedule');
+  await p.click('.tp-schedbox [data-act="viewsched"]'); await p.waitForTimeout(150);
+  await p.evaluate(() => { location.hash = '#t'; }); await p.waitForTimeout(300);
+  assert(!!(await p.$('.tp-schedrow')) && !(await p.$('.tp-schedbox')), 'back to #t with it folded');
+  /* layout: on a wide screen two columns (clocks, log, players on the left; crew and schedule on the right); on a phone the session
+     line, clocks, the log, the players, the crew and last the schedule, top to bottom */
+  const boxes = (sels) => p.evaluate((sels) => sels.map(s => { const r = document.querySelector('#table-page ' + s).getBoundingClientRect(); return { s, top: Math.round(r.top + scrollY), left: Math.round(r.left), w: Math.round(r.width) }; }), sels);
+  async function phoneOrder(who, sels) {
     const cols = await p.evaluate(() => ['.tp-colA', '.tp-colB'].map(s => { const r = document.querySelector('#table-page ' + s).getBoundingClientRect(); return { left: Math.round(r.left), top: Math.round(r.top), w: Math.round(r.width) }; }));
-    assert(cols[0].left < cols[1].left && cols[0].top === cols[1].top && cols[1].w < 700, who + ' desk: the crew column left of the schedule column, side by side: ' + JSON.stringify(cols));
+    assert(cols[1].left < cols[0].left && cols[0].top === cols[1].top && cols[1].w < 800, who + ' desk: clocks, log and players on the left of the crew and schedule, side by side: ' + JSON.stringify(cols));
+    assert(await p.$eval('.tp-crewsum', n => getComputedStyle(n).display === 'none') && await p.$eval('.tp-crewbody', n => getComputedStyle(n).display !== 'none'), who + ' desk: no crew summary row, the crew shown in full');
     await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(250);
-    const bx = await boxes();
-    assert(bx.every((b, i) => !i || b.top > bx[i - 1].top), who + ' phone: session, schedule, clocks, players, crew, log top to bottom: ' + bx.map(b => b.s + '@' + b.top).join(' '));
-    assert(bx[1].top < (await p.evaluate(() => document.querySelector('#table-page .cs-pickbox, #table-page .tp-crewbox').getBoundingClientRect().top + scrollY)), who + ' phone: the schedule above the crew sheet');
+    const bx = await boxes(sels);
+    assert(bx.every((b, i) => !i || b.top > bx[i - 1].top), who + ' phone: ' + sels.join(', ') + ' top to bottom: ' + bx.map(b => b.s + '@' + b.top).join(' '));
     await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(150);
   }
-  await phoneOrder('GM');
+  await phoneOrder('GM', ['.tp-sessbox', '.tp-clockbox', '.tp-logbox', '.tp-playbox', '#tp-crew', '#tp-schedule']);
 
   /* crew: name (typed, debounced: one write), tier, rep, heat */
-  await one('crew name', async () => { await p.click('[data-path="crew.name"]'); await p.keyboard.type('The Lamplighters', { delay: 15 }); }, 800);
+  /* the crew is named on a phone (a table being set up): the crew stays open, so the field being typed in is not folded away under the typist */
+  await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(250);
+  assert(await p.$eval('.tp-crewbody', n => getComputedStyle(n).display !== 'none') && (await p.$eval('.tp-crewsum', n => n.getAttribute('aria-expanded'))) === 'true', 'phone, a crew with no name or playbook: shown open, not folded behind the summary');
+  await one('crew name', async () => { await p.click('[data-path="crew.name"]'); await p.keyboard.type('The Lamplighters', { delay: 15 }); }, 900);
+  assert(await p.evaluate(() => { const n = document.activeElement, b = document.querySelector('.tp-crewbody'); return !!n && n.dataset.path === 'crew.name' && n.value === 'The Lamplighters' && getComputedStyle(b).display !== 'none' && n.getClientRects().length > 0; }), 'phone: after the name is saved the crew is still open and the name field still has the focus and the text');
+  await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(250);
   let c = await camp();
   assert(c && c.crew.name === 'The Lamplighters' && c.v === 1 && Array.isArray(c.clocks) && c.session.number === 0, 'first write creates the whole document: ' + JSON.stringify(c && c.crew.name));
   assert((await p.$eval('#tp-crewname', n => n.textContent)) === 'The Lamplighters', 'heading follows the name');
@@ -204,10 +226,10 @@ const SHEET = `(pb) => {
   c = await camp(); assert(c.log[0].text === 'Scored the warehouse' && c.log.length === 2, 'log newest first');
   assert(/Gail the GM/.test(await p.$eval('.tp-log li', n => n.textContent)), 'log author named through profiles');
 
-  /* players: grouped by owner, names through profiles, Unowned last */
+  /* players: grouped by owner, names through profiles, "No owner yet" last */
   const groups = await p.$$eval('.tp-group', gs => gs.map(g => ({ head: g.querySelector('.tp-ghead b').textContent, you: !!g.querySelector('.tp-you'), chars: Array.from(g.querySelectorAll('.tp-char')).map(li => li.querySelector('.tp-cn b').textContent + ' | ' + li.querySelector('.tp-cs').textContent) })));
   notes.push('groups: ' + JSON.stringify(groups));
-  assert(groups.length === 3 && groups[0].head === 'Gail the GM' && groups[0].you && groups[1].head === 'Pat' && groups[2].head === 'Unowned', 'groups in order you, Pat, Unowned: ' + groups.map(g => g.head).join(','));
+  assert(groups.length === 3 && groups[0].head === 'Gail the GM' && groups[0].you && groups[1].head === 'Pat' && groups[2].head === 'No owner yet', 'groups in order you, Pat, No owner yet: ' + groups.map(g => g.head).join(','));
   assert(groups[0] && /^Aldo Crane \| Stress4\/9/.test(groups[0].chars[0]), 'hound under the GM with Stress 4/9: ' + (groups[0] && groups[0].chars[0]));
   assert(groups[1] && /^Unit Seven \| Drain3\/10/.test(groups[1].chars[0]), 'hull under Pat with Drain 3/10: ' + (groups[1] && groups[1].chars[0]));
   assert(groups[2] && /^Unit Kessel/.test(groups[2].chars[0]), 'time traveler unowned');
@@ -254,8 +276,13 @@ const SHEET = `(pb) => {
   assert(!(await p.$(`.tp-clock[data-id="${k1.id}"]`)) && (await p.$$eval('.tp-clock', n => n.length)) === 1, 'player: hidden clock not rendered, one visible');
   assert(!/hidden/i.test(await p.$eval('.tp-clockbox .tp-band', n => n.textContent)), 'player: no hidden count');
   assert(!(await p.$('[data-act="sessstart"]')) && !(await p.$('[data-act="sessend"]')) && !(await p.$('#table-page [data-gm]:not(input):not(textarea)')), 'player: no GM-only session buttons (hidden, not disabled)');
-  assert(/The GM starts sessions\. Each player ends the session on their own sheet/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'player: "The GM starts sessions." in the session box');
-  await phoneOrder('player');
+  /* a session is in play: one line, "Session 1 in play", no hint and no reminder paragraph */
+  const sessLine = (sel) => p.$eval(sel || '.tp-sessbox', n => [n.querySelector('.tp-sessno .tp-lab').textContent, n.querySelector('.tp-sessno b').textContent, (n.querySelector('.tp-live') || n.querySelector('.tp-sessstate')).textContent].join(' '));
+  const pst = await p.$eval('.tp-sessbox', n => n.textContent);
+  assert((await sessLine()) === 'Session 1 in play' && !/Each player ends the session/.test(pst) && !/The GM starts/.test(pst), 'player: the session box reads "Session 1 in play": ' + (await sessLine()));
+  /* nothing to answer: no schedule box (no next session, no open dates), and no "Mark the dates" nag anywhere on the page */
+  assert(!(await p.$('#tp-schedule')) && !(await p.$('.tp-schedbox')) && !/Mark the dates|No dates proposed|No session is set/.test(await p.$eval('#table-page', n => n.textContent)), 'player, no dates: no schedule box, no call to mark dates');
+  await phoneOrder('player', ['.tp-sessbox', '.tp-clockbox', '.tp-logbox', '.tp-playbox', '#tp-crew']);
   assert((await dis(`.tp-clock[data-id="${k2.id}"] .tp-in`)) === true, 'player: clock name disabled');
   assert(!(await p.$('[data-act="clockadd"]')) && !(await p.$('[data-act="clocksize"]')) && !(await p.$('[data-act="logrm"]')), 'player: no clock structure tools, no log removal');
   assert((await dis('[data-act="crew.tier"]')) === false && (await dis('[data-path="crew.name"]')) === false, 'player: crew panel editable (shared crew sheet)');
@@ -272,8 +299,85 @@ const SHEET = `(pb) => {
   await one('player log', async () => { await p.fill('[data-ui="newlog"]', 'Pat owes the Lampblacks'); await p.click('[data-act="logadd"]'); });
   c = await camp(); const lg = await lastPatch();
   assert(c.log[0].text === 'Pat owes the Lampblacks' && c.log[0].by === 'u_player' && JSON.stringify(lg[2].log.slice(1)) === JSON.stringify(logBefore), 'player log append keeps the stored lines: ' + JSON.stringify(lg && lg[2].log));
-  await none('player forces start session', () => p.evaluate(() => { const b = document.createElement('button'); b.setAttribute('data-act', 'sessstart'); document.querySelector('.tp-sessbox .tp-body').appendChild(b); b.click(); }));
+  await none('player forces start session', () => p.evaluate(() => { const b = document.createElement('button'); b.setAttribute('data-act', 'sessstart'); document.querySelector('.tp-sessbox').appendChild(b); b.click(); }));
   assert((await camp()).session.number === 1, 'player cannot start a session');
+
+  /* ---------- the player on a phone: the clock's − / +, the log's latest three, the crew behind its summary row, touch targets ---------- */
+  /* the − / + beside a clock's count: one leaf of the clock changes, one write, the same patch a wedge makes */
+  const stepSel = (d) => `.tp-stepb[data-act="clockstep"][data-d="${d}"][data-id="${k2.id}"]`;
+  const filledNow = async () => (await camp()).clocks[1].filled;
+  const f0 = await filledNow();
+  await one('player ticks a clock with +', () => p.click(stepSel(1)));
+  const sp1 = await lastPatch(); const exp1 = JSON.parse(JSON.stringify((await camp()).clocks)); exp1[1].filled = f0 + 1;
+  assert((await filledNow()) === f0 + 1 && sp1 && JSON.stringify(Object.keys(sp1[2]).sort()) === '["clocks","updatedAt"]' && JSON.stringify(sp1[2].clocks) === JSON.stringify(exp1), 'the + fills one more segment and sends the clocks with only `filled` changed: ' + JSON.stringify(sp1 && sp1[2].clocks && sp1[2].clocks[1]));
+  await one('player takes one off with −', () => p.click(stepSel(-1)));
+  assert((await filledNow()) === f0, 'the − takes one off');
+  await p.evaluate(async ([id, n]) => { const db = await window.claude.use('db'); const d = JSON.parse(JSON.stringify(window.__store['campaign/main'])); d.clocks.forEach(c => { if (c.id === id) c.filled = n; }); await db.collection('campaign').doc('main').set(d); }, [k2.id, 0]);
+  await p.waitForTimeout(250);
+  assert((await dis(stepSel(-1))) === true && (await dis(stepSel(1))) === false, 'an empty clock: − disabled, + enabled');
+  await p.evaluate(async ([id, n]) => { const db = await window.claude.use('db'); const d = JSON.parse(JSON.stringify(window.__store['campaign/main'])); d.clocks.forEach(c => { if (c.id === id) c.filled = n; }); await db.collection('campaign').doc('main').set(d); }, [k2.id, 8]);
+  await p.waitForTimeout(250);
+  assert((await dis(stepSel(1))) === true && (await dis(stepSel(-1))) === false, 'a full clock: + disabled, − enabled');
+  await p.evaluate(async ([id, n]) => { const db = await window.claude.use('db'); const d = JSON.parse(JSON.stringify(window.__store['campaign/main'])); d.clocks.forEach(c => { if (c.id === id) c.filled = n; }); await db.collection('campaign').doc('main').set(d); }, [k2.id, 2]);
+  await p.waitForTimeout(250);
+
+  /* the log shows its latest three lines; All shows the rest (page state: no write; print has every line) */
+  await one('player log 2', async () => { await p.fill('[data-ui="newlog"]', 'The Bluecoats raided the dock'); await p.click('[data-act="logadd"]'); });
+  await one('player log 3', async () => { await p.fill('[data-ui="newlog"]', 'We lost the van'); await p.click('[data-act="logadd"]'); });
+  const nLog = (await camp()).log.length;
+  const vis = (sel) => p.$$eval(sel, ns => ns.filter(n => n.getClientRects().length && getComputedStyle(n).display !== 'none').length);
+  assert(nLog > 3 && (await vis('.tp-log li')) === 3 && (await p.$eval('.tp-log', n => n.classList.contains('tp-logshort'))), 'the log shows its latest three lines of ' + nLog);
+  assert(/^We lost the van/.test(await p.$eval('.tp-log li:first-child .tp-logt', n => n.textContent)), 'newest first');
+  const allBtn = await p.$eval('[data-act="viewlog"]', n => ({ t: n.textContent, e: n.getAttribute('aria-expanded') }));
+  assert(allBtn.t === 'All ' + nLog && allBtn.e === 'false', 'the All button counts the lines: ' + JSON.stringify(allBtn));
+  await none('All shows every line (page state, no write)', () => p.click('[data-act="viewlog"]'));
+  assert((await vis('.tp-log li')) === nLog && (await p.$eval('[data-act="viewlog"]', n => n.getAttribute('aria-expanded') === 'true' && /Latest 3/.test(n.textContent))), 'All: every line shown');
+  assert(await p.evaluate(() => document.activeElement && document.activeElement.dataset.act === 'viewlog'), 'the All button keeps the focus');
+  await none('and back to the latest three', () => p.click('[data-act="viewlog"]'));
+  assert((await vis('.tp-log li')) === 3, 'back to three lines');
+  await p.emulateMedia({ media: 'print' });
+  assert((await vis('.tp-log li')) === nLog && (await p.$eval('[data-act="viewlog"]', n => getComputedStyle(n).display === 'none')), 'print: every log line, no All button');
+  await p.emulateMedia({ media: null });
+
+  /* the crew on a phone: folded behind Tier, Hold, Rep, Heat, Wanted, Stacks; one tap for the whole sheet */
+  await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(300);
+  const cr0 = (await camp()).crew;
+  assert(await p.$eval('.tp-crewsum', n => getComputedStyle(n).display !== 'none' && n.getAttribute('aria-expanded') === 'false') && await p.$eval('.tp-crewbody', n => getComputedStyle(n).display === 'none'), 'phone: the crew is folded behind its summary row');
+  const cells = () => p.$$eval('.tp-cst', ns => ns.map(n => n.querySelector('.tp-lab').textContent + ' ' + n.querySelector('b').textContent));
+  const want6 = ['Tier ' + cr0.tier, 'Hold ' + (cr0.hold === 'strong' ? 'Strong' : 'Weak'), 'Rep ' + cr0.rep + '/' + (12 - cr0.turf), 'Heat ' + cr0.heat + '/9', 'Wanted ' + cr0.wanted + '/4', 'Stacks ' + cr0.vault];
+  assert(JSON.stringify(await cells()) === JSON.stringify(want6), 'the summary row: Tier, Hold, Rep, Heat, Wanted, Stacks: ' + JSON.stringify(await cells()) + ' vs ' + JSON.stringify(want6));
+  const folded = await p.evaluate(() => { const b = document.querySelector('.tp-crewsum'); return { h: Math.round(b.getBoundingClientRect().height), top: Math.round(b.getBoundingClientRect().top + scrollY) }; });
+  assert(folded.h <= 160, 'the folded crew is a short row: ' + folded.h + 'px');
+  await none('tapping the summary unfolds the crew (page state, no write)', () => p.click('.tp-crewsum'));
+  assert(await p.$eval('.tp-crewbody', n => getComputedStyle(n).display !== 'none') && (await p.$eval('.tp-crewsum', n => n.getAttribute('aria-expanded'))) === 'true' && /Fold the crew sheet/.test(await p.$eval('.tp-crewsum', n => n.textContent)), 'the crew sheet opens under its summary');
+  assert(await p.evaluate(() => document.activeElement && document.activeElement.classList.contains('tp-crewsum')), 'the summary row keeps the focus');
+  await overflow('player phone, crew open');
+  await one('player heat on the phone', () => p.click('[data-act="crew.heat"][data-n="5"]'));
+  assert((await cells())[3] === 'Heat 5/9', 'the summary follows a tap on the sheet: ' + (await cells())[3]);
+  /* touch: every control is at least 40px tall (its own box, or the ::before hit area of a mark) and no mark's area lies over another control */
+  const touch = await p.evaluate(() => {
+    const out = { small: [], owns: [], n: 0 }, at = (x, y) => document.elementFromPoint(x, y);
+    document.querySelectorAll('#table-page button, #table-page input, #table-page textarea, #table-page select').forEach(n => {
+      if (n.disabled || !n.getClientRects().length) return;
+      n.scrollIntoView({ block: 'center' });
+      const r = n.getBoundingClientRect(); if (!r.width || !r.height) return;
+      const cs = getComputedStyle(n, '::before'), has = !!cs.content && cs.content !== 'none', pw = has ? parseFloat(cs.width) || 0 : 0, ph = has ? parseFloat(cs.height) || 0 : 0, w = Math.max(r.width, pw), h = Math.max(r.height, ph);
+      out.n++;
+      const name = (n.getAttribute('data-act') || n.getAttribute('data-path') || n.getAttribute('data-ui') || n.className) + '';
+      if (h < 39.5) out.small.push(name + ' ' + Math.round(w) + 'x' + Math.round(h));
+      if (has) { const cx = r.left + r.width / 2, cy = r.top + r.height / 2; [[cx - pw / 2 + 2, cy], [cx + pw / 2 - 2, cy], [cx, cy - ph / 2 + 2], [cx, cy + ph / 2 - 2]].forEach(pt => { const e = at(pt[0], pt[1]); if (!(e === n || n.contains(e))) out.owns.push(name + ' @' + pt.map(Math.round) + ' → ' + (e && (e.getAttribute('data-act') || e.className || e.tagName))); }); }
+    });
+    out.small = out.small.slice(0, 12); out.owns = out.owns.slice(0, 12);
+    return out;
+  });
+  notes.push('touch audit (player, 390px, crew open): ' + touch.n + ' controls');
+  assert(touch.n > 40 && !touch.small.length, 'touch: every control is at least 40px tall: ' + touch.small.join(' | '));
+  assert(!touch.owns.length, 'touch: each mark owns its whole hit area (no neighbour takes its taps): ' + touch.owns.join(' | '));
+  assert((await p.$$eval('.tp-clock .tp-clocksvg', ns => ns.map(n => n.getBoundingClientRect().width))).every(w => w >= 100), 'touch: the shared clocks are drawn at least 100px wide');
+  await p.evaluate(() => scrollTo(0, 0));
+  await none('and folds again', () => p.click('.tp-crewsum'));
+  assert(await p.$eval('.tp-crewbody', n => getComputedStyle(n).display === 'none'), 'the crew folds again');
+  await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(200);
   /* Print the season (header, every role): opens the print view; Back returns to the table; never printed itself */
   assert((await dis('.tp-head [data-act="print"]')) === false, 'player: Print the season in the header, enabled');
   await p.emulateMedia({ media: 'print' });
@@ -303,8 +407,9 @@ const SHEET = `(pb) => {
   await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
   assert((await p.$eval('.tp-role', n => n.textContent)) === 'Read only', 'role Read only');
   const enabled = await p.$$eval('#table-page button, #table-page input, #table-page textarea, #table-page select', ns => ns.filter(n => !n.disabled).map(n => n.dataset.act || n.dataset.path || n.dataset.ui || n.tagName));
-  assert(enabled.length && enabled.every(a => a === 'open' || a === 'print' || a === 'cast' || a === 'crew.cspick') && enabled.indexOf('print') >= 0, 'read only: only Open, The cast, Print the season and the crew covers toggle stay enabled: ' + enabled.join(','));
-  assert(!(await p.$('[data-act="sessstart"]')) && /The GM starts sessions/.test(await p.$eval('.tp-sessbox', n => n.textContent)), 'read only: no session buttons, the GM line instead');
+  /* what stays enabled for a read-only viewer writes nothing: Open, The cast, Print the season, the crew covers, and the page-state folds (the crew summary, the log's All) */
+  assert(enabled.length && enabled.every(a => a === 'open' || a === 'print' || a === 'cast' || a === 'crew.cspick' || a === 'viewcrew' || a === 'viewlog') && enabled.indexOf('print') >= 0, 'read only: only Open, The cast, Print the season, the crew covers and the folds stay enabled: ' + enabled.join(','));
+  assert(!(await p.$('[data-act="sessstart"]')) && !(await p.$('[data-act="sessend"]')) && (await sessLine()) === 'Session 1 in play', 'read only: no session buttons, the session as one line');
   await none('read only clicks', async () => {
     await p.click('[data-act="crew.tier"][data-n="5"]', { force: true }).catch(() => {});
     await p.click(`.tp-seg[data-id="${k2.id}"][data-n="4"]`, { force: true }).catch(() => {});
@@ -320,7 +425,7 @@ const SHEET = `(pb) => {
   /* ---------- no db: a clear note ---------- */
   await p.evaluate(() => localStorage.setItem('__role', 'nodb'));
   await p.goto(URL + '#t'); await p.reload(); await p.waitForTimeout(1300);
-  assert((await mode()) === 'table' && /The table needs the shared files/.test(await p.$eval('#table-page', n => n.textContent)), 'no db: shared-files note');
+  assert((await mode()) === 'table' && /The table is not available in this view/.test(await p.$eval('#table-page', n => n.textContent)) && !/shared files|published artifact|hosted site/.test(await p.$eval('#table-page', n => n.textContent)), 'no db: a plain note, no talk of files or hosting');
   await p.evaluate(() => localStorage.clear());
 
   /* ---------- no window.claude at all ---------- */
@@ -329,7 +434,7 @@ const SHEET = `(pb) => {
   p2.on('pageerror', e => errs.push('no-claude pageerror: ' + e.message)); p2.on('console', m => { if (m.type() === 'error' && !/ERR_FILE_NOT_FOUND/.test(m.text())) errs.push('no-claude console.error: ' + m.text()); });
   await p2.goto(URL); await p2.waitForTimeout(900);
   await p2.click('#tableBtn'); await p2.waitForTimeout(300);
-  assert(/The table needs the shared files/.test(await p2.$eval('#table-page', n => n.textContent)), 'no window.claude: shared-files note');
+  assert(/The table is not available in this view/.test(await p2.$eval('#table-page', n => n.textContent)), 'no window.claude: the plain note');
   await p2.click('#homeBtn'); await p2.waitForTimeout(200);
   assert((await p2.evaluate(() => document.body.dataset.mode)) === 'home', 'no window.claude: back Home');
   await ctx2.close();

@@ -8,9 +8,10 @@ storage, identity and downloads always go through `window.claude.use(...)`.
 
 - `index.html` is the page: markup, theme tokens, the `@font-face` rules and the script
   order. It holds the header (wordmark, the view's name, Home · The table · Your sheet), Home
-  (`#home`, with "The files" and the backups), the creator studio and the crew line-up, the
+  (`#home`, with the "Characters" list and the backups), the creator studio and the crew line-up, the
   empty roots the modules render into (`#nextSession`, `#dossier`, `#table-page`, `#season`),
-  the toast region and the restore preview dialog.
+  the toast region, the restore preview dialog and, in the footer, the Auto / Paper / Night switch
+  (an inline script at the top applies the saved choice before the first paint; CAMPAIGN.md, *Page*).
 - `content.js` is the rulebook's character creation content, transcribed from the
   Characters chapter and all twelve playbook sheets (eight core, plus Ghost/Echo, Vampire and
   the two Time Travelers).
