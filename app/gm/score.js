@@ -81,7 +81,8 @@
    score   the roll as data: { crew, seed (the lead seed or null), pitch, objective, op, client { type: 'npc'|'faction'|'kind'|
            'nobody', name, faction, ... }, target { name, tier, hold, boss, enemy, foe }, asset, site { type, place, district },
            ways[], why, twist, threats, pay { dice, zero, total, scope, payer }, shot { text, value }, cost, earns, clock { name,
-           size }, engage { gap, factor, notes[], district }, rule, locks { client, lead, job, target } }
+           size }, engage { gap, factor, notes[], district }, rule, locks { client, lead, job, target } }; op.book is op.def with the crew's
+           enemy phrase read as the target; a faction client carries atOdds (it is in the target's against list)
    card    { lines, meta }   the shapes of the other generators' cards:
        lines   { kind:'chips', id:'chips', chips }
                { kind:'want', id:'lead', md, reroll:true }                           the pitch
@@ -90,10 +91,12 @@
                                                                                      and on a row that cannot move: the GM fixed it,
                                                                                      or the tables leave one choice, as a seed that
                                                                                      names a single operation does)
-               { kind:'grid', id:'cloud', title:'The cloud', collapsed:true, rows } In the way, Their friends, Right now, Secret,
-                                                                                     Clock, Engagement, Called Shot, Even if it goes
-                                                                                     well, Also earns, District (a row the tables
-                                                                                     cannot fill is left out)
+               { kind:'grid', id:'cloud', title:'The cloud', collapsed:true, rows } By the book (the operation's definition, the
+                                                                                     crew's enemy phrase read as the target), In the
+                                                                                     way, Their friends, Right now, Secret, Clock,
+                                                                                     Engagement, Called Shot, Even if it goes well,
+                                                                                     Also earns, District (a row the tables cannot
+                                                                                     fill is left out)
                md is markdown (**bold**, *italic*), never HTML; the page escapes.
        meta    { id:'score', title ("<operation> · <target>"), sub ("Tier <roman> · <district> · <n> stacks, <scope>"), chips, text
                (the pitch), all [plain lines for Copy, Pin and L], label (short, for Earlier and L) }
@@ -367,7 +370,11 @@
     });
   }
   function endStop(t) { return str(t).replace(/[\s.!?]+$/, '') + '.'; }
-  function shortScope(t) { return cut(plain(t).split(/ — |: |\. | \(/)[0], 40); }
+  // the scope as a phrase after "n stacks,": no full stop, and a lower-case start unless the word opens with two capitals
+  function shortScope(t) {
+    var c = cut(plain(t).split(/ — |: |\. | \(/)[0], 40).replace(/[.\s]+$/, '');
+    return /^[A-Z]{2}/.test(c) ? c : c.charAt(0).toLowerCase() + c.slice(1);
+  }
 
   // --- The roll ------------------------------------------------------------------------------------------------------------------------
   function generate(M, campaign, o) {
@@ -581,9 +588,10 @@
     var cc = { type: client.type, name: client.name };
     ['kind', 'faction', 'role', 'district', 'want'].forEach(function (k) { if (client[k]) cc[k] = client[k]; });
     if (client.fac) { cc.tier = client.fac.tier; cc.hold = client.fac.hold; }
+    if (client.type === 'faction') cc.atOdds = (M.against[target.key] || []).indexOf(client.fac) >= 0;
     return {
       crew: crew, seed: lead ? { t: str(lead.t), enemy: !!lead.enemy, kind: str(lead.kind) } : null, pitch: pitch, objective: objective,
-      op: { name: job, verb: str(op.verb), def: str(op.def), loud: !!op.loud, ways: ways },
+      op: { name: job, verb: str(op.verb), def: str(op.def), book: swapEnemy(str(op.def), crewT.enemyPhrase, target.name).trim(), loud: !!op.loud, ways: ways },
       client: cc, target: tgt, asset: { kind: kind, phrase: phrase },
       site: { type: btype, place: place, district: district }, vector: vector, ways: wayRows,
       why: { text: fillDistrict(wy[0], district), clock: wc, size: wsize > 0 ? wsize : 0 }, twist: { list: tw.list, text: twistText },
@@ -603,12 +611,12 @@
     if (c.type === 'nobody') return "Nobody's asking";
     if (c.type === 'kind') return cap(c.name) + (c.kind ? ' *(' + c.kind + ')*' : '');
     var tail = c.type === 'npc' ? [c.role, c.faction].filter(Boolean).join(' · ') : 'Tier ' + romanOf(c.tier) + (c.hold ? ' ' + holdWord(c.hold) : '');
-    return '**' + c.name + '**' + (tail ? ' (' + tail + ')' : '') + (c.type === 'npc' && c.want ? ' — *wants ' + c.want.replace(/\*+/g, '') + '*' : '');
+    return '**' + c.name + '**' + (tail ? ' (' + tail + ')' : '') + (c.type === 'npc' && c.want ? ' — *wants ' + c.want.replace(/\*+/g, '') + '*' : '') + (c.atOdds ? ' · at odds with the target' : '');
   }
   function payMd(s) {
     var p = s.pay, dice = p.dice.length + 'd [' + p.dice.join(' ') + ']' + (p.zero ? ' keep lowest' : '') + ' → ' + p.kept;
     var plus = ', + Tier ' + romanOf(s.target.tier) + (p.district ? ', ' + signed(p.district) + ' district' : '');
-    return '**' + stacks(p.total) + '** · ' + dice + plus + ' · ' + (p.payer.type === 'client' ? 'paid by ' : '') + p.payer.text;
+    return '**' + stacks(p.total) + '** · ' + dice + plus + ' · ' + (p.payer.type === 'client' ? 'paid by ' : p.payer.type === 'line' ? 'paid through ' : '') + p.payer.text;
   }
   function cardOf(s) {
     var w = s.site, where = w.place ? w.place + ' (' + w.type + ')' : w.type, th = s.threats, e = s.engage, d = s.dossier;
@@ -619,17 +627,19 @@
     var aim = s.asset.phrase ? ' · aim at their *' + fillDistrict(s.asset.phrase, w.district).replace(/\*+/g, '') + '*' : '';
     var rows = [
       { k: "Who's asking", md: clientMd(s), id: 'client', reroll: !s.locks.client },
-      { k: 'The job', md: '**' + s.op.name + '**' + (s.op.def ? ' — ' + s.op.def : '') + aim, id: 'job', reroll: !s.locks.job },
+      { k: 'The job', md: '**' + s.op.name + '**' + aim, id: 'job', reroll: !s.locks.job },
       { k: 'Target', md: '**' + s.target.name + '** · Tier ' + romanOf(s.target.tier) + (s.target.hold ? ' ' + holdWord(s.target.hold) : '') + (s.target.boss ? ' · ' + s.target.boss : ''), id: 'target', reroll: !s.locks.target },
       { k: 'Where', md: where + (w.district ? ' · ' + w.district : ''), id: 'site', reroll: true },
       { k: 'Why now', md: s.why.text, id: 'why', reroll: true },
-      { k: 'Twist', md: s.twist.text, id: 'twist', reroll: true },
+      { k: 'Twist', md: cap(s.twist.text) + (s.twist.text && s.twist.list ? ' *(' + s.twist.list.toLowerCase().replace(/\*+/g, '') + ')*' : ''), id: 'twist', reroll: true },
       { k: 'Ways in', md: wayMd, id: 'ways', reroll: false },
       { k: 'Pays', md: payMd(s), id: 'pay', reroll: true }
     ].filter(function (r) { return !blank(r.md); });
-    var engMd = ['Tier **' + (e.factor > 0 ? '+1d' : e.factor < 0 ? '−1d' : '0') + '** (' + romanOf(s.target.tier) + ' against ' + romanOf(s.crew.tier) + ')']
-      .concat(e.notes, e.district ? ['District **' + signed(e.district) + 'd**'] : []).join(' · ');
+    // a penalty and the ability that answers it read as "−1d — but ..."; a bonus or an even match just lists the notes
+    var engMd = 'Tier **' + (e.factor > 0 ? '+1d' : e.factor < 0 ? '−1d' : '0') + '** (' + romanOf(s.target.tier) + ' against ' + romanOf(s.crew.tier) + ')' +
+      (e.notes.length ? (e.factor < 0 ? ' — but ' : ' · ') + e.notes.join(' · ') : '') + (e.district ? ' · District **' + signed(e.district) + 'd**' : '');
     var cloud = [
+      { k: 'By the book', md: s.op.book, id: 'def' },
       { k: 'In the way', md: ['*' + th.phys.name + '*: ' + th.phys.text, '*' + th.soc.name + '*: ' + th.soc.text].filter(function (x) { return !blank(x); }).join(' · '), id: 'threat' },
       { k: 'Their friends', md: d.friends, id: 'friends' },
       { k: 'Right now', md: d.now, id: 'now' },

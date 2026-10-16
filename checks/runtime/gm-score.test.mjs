@@ -204,7 +204,7 @@ await test('lock: an NPC asks (from ui.who): they are the client, the pitch and 
 });
 
 await test('lock: a faction asks; a kind of client; nobody (the crew\'s own pay lines, else "seized from the target")', () => {
-  for (const r of sweep(60, { client: 'fac:' + FAC[6] })) { assert.deepEqual([r.score.client.type, r.score.client.name], ['faction', FAC[6]]); assert.notEqual(r.score.target.name, FAC[6]); assert.match(rowOf(r, 'client').md, /^\*\*The Hobb30 Guild\*\* \(Tier I weak\)$/); assert.equal(S.npcHints(r.score).faction, FAC[6]); }
+  for (const r of sweep(60, { client: 'fac:' + FAC[6] })) { assert.deepEqual([r.score.client.type, r.score.client.name], ['faction', FAC[6]]); assert.notEqual(r.score.target.name, FAC[6]); assert.match(rowOf(r, 'client').md, /^\*\*The Hobb30 Guild\*\* \(Tier I weak\)( · at odds with the target)?$/); assert.equal(S.npcHints(r.score).faction, FAC[6]); }
   const kinds = Object.fromEntries(T.client.map((c) => [c[0], c[1]]));
   for (const k of Object.keys(kinds)) for (const r of sweep(40, { client: 'kind:' + k })) {
     assert.equal(r.score.client.type, 'kind'); assert.equal(r.score.client.kind, k); assert.ok(kinds[k].includes(r.score.client.name));
@@ -326,7 +326,8 @@ await test('scope: the first row of T.scope whose threshold is at or under the p
     assert.equal(r.score.pay.scope, expect(n), 'payout ' + n);
     const w = r.score.why, want = w.clock && w.size ? w.size : n >= 8 ? 8 : n >= 6 ? 6 : 4;
     assert.equal(r.score.clock.size, want, 'payout ' + n + ' clock'); if (w.clock) assert.equal(r.score.clock.name, w.clock); else assert.ok(T.op[r.score.op.name].clock.includes(r.score.clock.name));
-    assert.match(r.card.meta.sub, new RegExp(' · ' + n + ' stacks?, ' + rows.find((x) => x[0] <= n)[1].split(/ — |: |\. | \(/)[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'), r.card.meta.sub);
+    const phrase = rows.find((x) => x[0] <= n)[1].split(/ — |: |\. | \(/)[0].replace(/\.$/, ''), low = phrase.charAt(0).toLowerCase() + phrase.slice(1);
+    assert.ok(r.card.meta.sub.endsWith(' · ' + n + (n === 1 ? ' stack, ' : ' stacks, ') + low), r.card.meta.sub + ' / ' + low);
   }
   for (const n of [3, 4, 5, 6, 7, 8, 9, 10, 11]) assert.ok(seen.has(n), 'payout ' + n + ' came up');
   const edge = clone(T); edge.scope = [[0, 'low'], [7, 'high']];            // unsorted rows still read highest first; a payout under every threshold takes the last
@@ -365,7 +366,7 @@ await test('engagement: the Tier factor (above -1d, below +1d, level 0) and the 
   assert.deepEqual(note(1, 3, ['Something else']).score.engage.notes, [], 'an ability the table has no note for');
   assert.deepEqual(note(1, 3, []).score.engage.notes, [], 'no ability on the sheet');
   const md = note(1, 3, ['Tunnel rats']).card.lines.find((l) => l.id === 'cloud').rows.find((x) => x.id === 'engage').md;
-  assert.match(md, /^Tier \*\*−1d\*\* \(III against I\) · No Tier penalty: the crew goes under it\./);
+  assert.match(md, /^Tier \*\*−1d\*\* \(III against I\) — but No Tier penalty: the crew goes under it\./);
 });
 
 // ---- the twist's tokens ----------------------------------------------------------------------------------------------------------
@@ -447,6 +448,98 @@ await test('cardEntry: the Cards panel\'s index card, every field 120 characters
   let cut = 0;
   for (let i = 0; i < 80; i++) { const e = S.cardEntry(big.roll({ seed: seedOf(i), ui: { target: 'enemy', client: 'fac:' + long.faction[0][0] }, mem: {} }).score); for (const k of Object.keys(e)) { assert.ok(e[k].length <= 120, k); if (e[k].endsWith('…')) cut++; } }
   assert.ok(cut > 0, 'a long name is cut at a word with an ellipsis');
+});
+
+// ---- the card's wording ------------------------------------------------------------------------------------------------------------------------
+await test('wording: the twist row starts with a capital and names its list in italics, lower-case; the score keeps the text as drawn', () => {
+  const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1), lists = new Set();
+  for (const r of sweep(150)) {
+    const t = r.score.twist, md = rowOf(r, 'twist').md;
+    assert.ok(['Trouble', 'Surprise'].includes(t.list)); lists.add(t.list);
+    assert.equal(md, cap(t.text) + ' *(' + t.list.toLowerCase() + ')*'); assert.match(md, /^[A-Z0-9]/);
+    assert.ok(r.card.meta.all.includes('Twist: ' + cap(t.text) + ' (' + t.list.toLowerCase() + ')'), 'plain lines drop the italics');
+  }
+  assert.equal(lists.size, 2, 'both lists came up');
+  const t = clone(T); t.twist = [['Connected To Someone', ['{pcFriend}', 'a quiet word reaches {npc}']], ['Political or logistical', ['the job needs a boat']]];
+  const g = S.create({ T: t, campaign: CAMP });
+  const seen = new Set();
+  for (let i = 0; i < 120; i++) { const r = g.roll({ seed: seedOf(i), mem: {} }), md = rowOf(r, 'twist').md; seen.add(md); assert.match(md, /^[A-Z]/, md); }
+  assert.ok([...seen].some((m) => /^A quiet word reaches .+ \*\(connected to someone\)\*$/.test(m)), 'lower-case text is capitalised: ' + [...seen].join(' | '));
+  assert.ok(seen.has('The job needs a boat *(political or logistical)*'));
+  assert.ok([...seen].some((m) => /^[A-Z][a-z]+( [A-Z][a-z]+)*, [A-Z][a-z]+'s friend \*\(connected to someone\)\*$/.test(m)), 'a bare token result keeps its context: ' + [...seen].join(' | '));
+  const noList = clone(T); noList.twist = [['', ['plain words']]];
+  assert.equal(rowOf(S.create({ T: noList, campaign: CAMP }).roll({ seed: 1, mem: {} }), 'twist').md, 'Plain words', 'no list name, nothing to append');
+});
+
+await test('wording: the scope after "n stacks," has no full stop and starts in lower case (unless it opens with capitals)', () => {
+  const cases = [['A minor job', 'a minor job'], ['A small job.', 'a small job'], ['A big score: the kind that changes a crew', 'a big score'], ['A legendary score — they will tell it for years.', 'a legendary score'],
+    ['ABC outfit job', 'ABC outfit job'], ['A scrape...', 'a scrape'], ['A standard score (worth the planning). Really.', 'a standard score'], ['Short', 'short']];
+  for (const [text, want] of cases) {
+    const g = S.create({ T: Object.assign(clone(T), { scope: [[0, text]] }), campaign: CAMP });
+    for (let i = 0; i < 6; i++) { const r = g.roll({ seed: seedOf(i), mem: {} }); assert.equal(r.score.pay.scopeShort, want, text); assert.ok(r.card.meta.sub.endsWith(', ' + want), r.card.meta.sub); assert.equal(r.score.pay.scope, text, 'the full scope is kept as written'); }
+  }
+  const long = S.create({ T: Object.assign(clone(T), { scope: [[0, 'A remarkably long description of a score that goes on and on without any punctuation to cut it short']] }), campaign: CAMP }).roll({ seed: 1, mem: {} });
+  assert.ok(long.score.pay.scopeShort.length <= 40 && long.score.pay.scopeShort.endsWith('…') && /^a remarkably/.test(long.score.pay.scopeShort), long.score.pay.scopeShort);
+  assert.match(sweep(1, { tier: 0 })[0].card.meta.sub, / · \d+ stacks?, [a-z]/);
+});
+
+await test('wording: the job row is short ("<operation> · aim at their <asset>"); the definition is the first row of the cloud, "By the book", with the crew\'s enemy phrase read as the target', () => {
+  for (const r of sweep(150)) {
+    const s = r.score, md = rowOf(r, 'job').md;
+    assert.equal(md, '**' + s.op.name + '** · aim at their *' + s.asset.phrase.replace(/\{district\}/g, s.site.district || 'the district') + '*'); assert.ok(!md.includes(s.op.def) && !md.includes('—'));
+    const cloud = r.card.lines.find((l) => l.id === 'cloud').rows;
+    assert.deepEqual([cloud[0].k, cloud[0].id, cloud[0].md, cloud[0].reroll], ['By the book', 'def', T.op[s.op.name].def, false], 'a definition without the phrase is as written');
+    assert.ok(r.card.meta.all.includes('By the book: ' + T.op[s.op.name].def));
+  }
+  const t = clone(T); t.op['Break in'].def = 'An Enemy Of The Crew is made to pay; or an enemy of the crew is robbed.'; t.op.Lift.def = 'An enemy of the crew is robbed.';
+  const g = S.create({ T: t, campaign: CAMP });
+  const a = g.roll({ seed: 4, ui: { job: 'Break in', target: 'fac:' + FAC[3] }, mem: {} });
+  assert.equal(a.card.lines.find((l) => l.id === 'cloud').rows[0].md, 'The Eskel30 Guild is made to pay; or the Eskel30 Guild is robbed.', 'sentence start keeps its capital, mid-sentence "The" goes down');
+  assert.equal(a.score.op.book, 'The Eskel30 Guild is made to pay; or the Eskel30 Guild is robbed.'); assert.match(a.score.op.def, /^An Enemy Of The Crew/, 'op.def stays as written');
+  const b = g.roll({ seed: 4, ui: { job: 'Lift', target: 'fac:' + FAC[0], crew: 'Stagehands' }, mem: {} });
+  assert.equal(b.card.lines.find((l) => l.id === 'cloud').rows[0].md, 'An enemy of the crew is robbed.', 'a crew with no enemy phrase leaves the text alone');
+  const c = g.roll({ seed: 4, ui: { job: 'Lift', target: 'fac:' + FAC[0] }, mem: {} });
+  assert.equal(c.card.lines.find((l) => l.id === 'cloud').rows[0].md, 'The Brisk30 Guild is robbed.', 'even when the target is not an enemy');
+  const e = clone(T); e.op.Lift.def = ''; assert.ok(!S.create({ T: e, campaign: CAMP }).roll({ seed: 1, ui: { job: 'Lift' }, mem: {} }).card.lines.find((l) => l.id === 'cloud').rows.some((x) => x.k === 'By the book'), 'no definition, no row');
+});
+
+await test('wording: when nobody asks, a crew pay line reads "paid through <line>"; a client "paid by <client>"; "seized from the target" stands as it is', () => {
+  for (const r of sweep(60, { client: '-' })) {
+    assert.equal(r.score.pay.payer.type, 'line'); const md = rowOf(r, 'pay').md;
+    assert.ok(md.endsWith(' · paid through ' + r.score.pay.payer.text), md); assert.ok(T.crew.Tunnellers.pays.includes(r.score.pay.payer.text));
+  }
+  for (const r of sweep(20, { client: '-', crew: 'Stagehands' })) assert.ok(rowOf(r, 'pay').md.endsWith(' · seized from the target') && !/paid/.test(rowOf(r, 'pay').md), rowOf(r, 'pay').md);
+  for (const r of sweep(20, { client: 'kind:Civilian' })) assert.ok(rowOf(r, 'pay').md.endsWith(' · paid by ' + r.score.client.name), rowOf(r, 'pay').md);
+});
+
+await test('wording: ability notes follow a Tier penalty after " — but "; with a bonus or an even match they just list', () => {
+  const at = (tier, tt, abilities) => S.create({ T, campaign: Object.assign({}, CAMP, { crew: Object.assign({}, CAMP.crew, { tier, abilities }) }) })
+    .roll({ seed: 5, ui: { target: 'fac:' + T.faction.find((x) => x[1] === tt)[0], district: DIST[3] }, mem: {} }).card.lines.find((l) => l.id === 'cloud').rows.find((x) => x.id === 'engage').md;
+  assert.equal(at(1, 3, ['Tunnel rats', 'Dark eyes']), 'Tier **−1d** (III against I) — but No Tier penalty: the crew goes under it. · +1d when the lights are out.');
+  assert.equal(at(1, 3, []), 'Tier **−1d** (III against I)', 'no ability, nothing after the Tier part');
+  assert.equal(at(1, 1, ['Dark eyes']), 'Tier **0** (I against I) · +1d when the lights are out.', 'an even match: not a contradiction, so no "but"');
+  const always = clone(T); always.crew.Tunnellers.note[1].minGap = -9;                 // a note with a negative minGap applies against a weaker target too
+  assert.equal(S.create({ T: always, campaign: Object.assign({}, CAMP, { crew: Object.assign({}, CAMP.crew, { tier: 3, abilities: ['Dark eyes'] }) }) }).roll({ seed: 5, ui: { target: 'fac:' + FAC[0], district: DIST[3] }, mem: {} }).card.lines.find((l) => l.id === 'cloud').rows.find((x) => x.id === 'engage').md, 'Tier **+1d** (I against III) · +1d when the lights are out.', 'a bonus: no "but" either');
+  assert.equal(at(3, 1, ['Dark eyes']), 'Tier **+1d** (I against III)', 'minGap 0 needs the target level or above');
+  const rd = S.create({ T, campaign: CAMP }).roll({ seed: 5, ui: { target: 'fac:' + FAC[2], district: DIST[2] }, mem: {} }).card.lines.find((l) => l.id === 'cloud').rows.find((x) => x.id === 'engage').md;
+  assert.equal(rd, 'Tier **−1d** (III against I) — but No Tier penalty: the crew goes under it. · +1d when the lights are out. · District **+1d**', 'the district\'s modifier comes last');
+});
+
+await test('wording: a faction that asks and is at odds with the target (it is in the target\'s against list) says so on the row', () => {
+  const rivals = new Set([FAC[1], FAC[4], FAC[8]]);                       // FAC[0]'s dossier names FAC[1] and FAC[4]; FAC[8]'s names FAC[0]
+  for (const f of FAC) for (const r of sweep(12, { client: 'fac:' + FAC[0], target: 'fac:' + f })) {
+    if (f === FAC[0]) continue;
+    const md = rowOf(r, 'client').md, odd = rivals.has(f);
+    assert.equal(r.score.client.atOdds, odd, f); assert.equal(/ · at odds with the target$/.test(md), odd, md);
+  }
+  assert.equal(rowOf(G.roll({ seed: 3, ui: { client: 'fac:' + FAC[0], target: 'fac:' + FAC[1] }, mem: {} }), 'client').md, '**The Brisk30 Guild** (Tier I weak) · at odds with the target');
+  let drawn = 0;
+  for (const r of sweep(400)) {
+    if (r.score.client.type === 'faction') { drawn++; assert.equal(r.score.client.atOdds, true, 'a client drawn against the target is at odds with it'); assert.ok(rowOf(r, 'client').md.endsWith(' · at odds with the target')); }
+    else { assert.ok(!('atOdds' in r.score.client)); assert.ok(!/at odds/.test(rowOf(r, 'client').md)); }
+  }
+  assert.ok(drawn > 20, 'factions are drawn as clients: ' + drawn);
+  for (const r of sweep(40, { client: 'npc:n', who: WHO, target: 'fac:' + FAC[1] })) assert.ok(!/at odds/.test(rowOf(r, 'client').md), 'an NPC\'s row is as it was');
 });
 
 // ---- without the optional tables ----------------------------------------------------------------------------------------------------------
