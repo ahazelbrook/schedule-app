@@ -22,7 +22,7 @@ export const LIMITS = {
   ambient: 1400 * KiB,          // bytes of the stored ambient document (under D1's 2 MB row)
   ambientRequest: 2560 * KiB,   // one PATCH /api/gm/ambient (two 600 KiB svgs whose quotes double when JSON-escaped)
   ambientString: 200,           // characters of a score's name, district or target
-  playlist: 12,                 // scenes in a playlist
+  playlist: 16,                 // scenes in a playlist
 };
 
 export const PART_RE = /^[a-z0-9-]{1,32}$/;
@@ -36,7 +36,7 @@ export const CARD_LIMITS = { cards: 8, field: 120, interval: 120 };
 
 // The ambient scenes (AMBIENT-PLAN.md): the ids mirror Pure.AMBIENT_SCENES in app/display-page.js; the bands are the
 // four reveal layers of a score site, lowest first.
-export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'board', 'exploded', 'testcard'];
+export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'bluetime', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'board', 'exploded', 'testcard'];
 export const AMBIENT_MODES = ['auto', 'pin', 'off'];
 export const BANDS = ['public', 'working', 'controlled', 'secure'];
 
@@ -298,7 +298,7 @@ function sceneId(v, name) {
 /**
  * Validate one PATCH /api/gm/ambient body into a patch. Only these keys are kept (others are dropped); `null` on any
  * but `skip` means "delete this key":
- *   mode 'auto'|'pin'|'off', scene (a scene id), playlist (1 to 12 distinct scene ids, replaces), intervalMin (integer 3-30),
+ *   mode 'auto'|'pin'|'off', scene (a scene id), playlist (1 to 16 distinct scene ids, replaces), intervalMin (integer 3-30),
  *   skip (only `true`: the server adds one to its counter), crew ({ heat 0-9, wanted 0-4 }, replaces),
  *   score ({ name, district, target (each at most 200 characters), reveal (distinct bands), view 'plan'|'rings',
  *            board and iso (player-safe svgs, each through checkSvg) }, replaces; `at` is set here, to the server's time).

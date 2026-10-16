@@ -35,7 +35,7 @@ gm:pack`, into the git-ignored `gm-private/`) and uploads it, from the browser o
 | `PUT /api/gm/display` | `{ kind, title?, caption?, svg \| npcId \| text \| md }` → `{ seq, display, updatedAt }`; `seq` goes up by one on every PUT. |
 | `GET /api/gm/display` (ambient) | also carries `ambient: { seq, doc, updatedAt }`. `?seq=N&aseq=M` → `{ seq, unchanged: true, ambient: { seq, unchanged: true } }` while both are current; otherwise the full display, with `ambient` `{ seq, unchanged: true }` when only M is current. `?seq=N` alone is the old answer. |
 | `GET /api/gm/ambient` | `{ seq, doc, updatedAt }` (`0`, `{}`, `null` until written). GM only; the display sign-in is refused (it reads the doc through the display). |
-| `PATCH /api/gm/ambient` | top-level merge (`null` deletes, `skip: true` bumps a counter) → `{ seq, doc, updatedAt }`. Keys: `mode` auto/pin/off, `scene`, `playlist` (1–12 distinct ids), `intervalMin` 3–30, `skip`, `crew { heat 0–9, wanted 0–4 }`, `score { name, district, target, reveal, view plan/rings, board, iso }` (both svgs through `checkSvg`; the server sets `at`). Stored doc at most 1.4 MiB, in `gm_ambient` (migration 0006). |
+| `PATCH /api/gm/ambient` | top-level merge (`null` deletes, `skip: true` bumps a counter) → `{ seq, doc, updatedAt }`. Keys: `mode` auto/pin/off, `scene`, `playlist` (1–16 distinct ids), `intervalMin` 3–30, `skip`, `crew { heat 0–9, wanted 0–4 }`, `score { name, district, target, reveal, view plan/rings, board, iso }` (both svgs through `checkSvg`; the server sets `at`). Stored doc at most 1.4 MiB, in `gm_ambient` (migration 0006). |
 
 - **Pack.** Part names `[a-z0-9-]{1,32}`; at most 12 parts; `body` a JSON object (or a string holding one), at most
   900 KiB as JSON; `src` an object, at most 2 KiB. A part's `version` is the first 12 hex digits of the SHA-256 of
@@ -241,14 +241,36 @@ When nothing is spotlit the display plays an **ambient scene** underneath: `blan
 kind `dark` is lights out (true black). Scenes are same-origin pages in `app/ambient/`, framed with
 `sandbox="allow-scripts allow-same-origin"` and served with `X-Frame-Options: SAMEORIGIN` and a no-network CSP (`app/_headers`).
 URLs are built from the registry (`Pure.AMBIENT_SCENES`) and have **no `.html`**: the asset server 307s `x.html` → `x`, and the
-service worker never caches a redirect. The registry ids are `harvest`, `watch` (City Watch feed, always `?api=off`, told heat and wanted by
-`postMessage`), `duskwall`, `board` and `exploded` (the score scenes), and `testcard` (pin only).
+service worker never caches a redirect. The registry ids, in picker order:
 
-- **Rotation.** Auto (default `harvest` → `watch` → `duskwall`, every 7 min, cross-faded), Pin (one scene), or Off. **Next scene** skips.
+| id | file | scene |
+|---|---|---|
+| `harvest` | `second-harvest` | The lair: the crew at home in Second Harvest |
+| `watch` | `watch-feed` | City Watch monitors; always `?api=off`, told heat and wanted by `postMessage` |
+| `duskwall` | `duskwall-after-dark` | The crew on a rooftop in the rain |
+| `boneyard` | `boneyard-dawn` | The Boneyard at dawn: the Flensing Yard inside the leviathan, Brackley and Skinner |
+| `undertow` | `undertow` | Mira's club in the drained baths: oil-wheel light, go-go cages, the deep end, Mira at the bar |
+| `bluetime` | `bluetime` | The skyline under the B.L.U.E. Array; now and then the sky hard-cuts to Bluetime and back |
+| `vet` | `grunts-vet` | Grunt's: steel table, one bulb, LARGE ANIMALS · NO BIRDS |
+| `tram` | `night-tram` | Across a tram carriage, Crowfoot sliding past, a next-stop board |
+| `lurker` | `lurker-press` | The Lurker going to press: a new front page every ten seconds or so |
+| `cards` | `calling-cards` | Faction cards dealt onto baize. **Built locally, never committed** (the art is the book's) |
+| `pells` | `pells-provisions` | A Daggerite grocer in Charhollow at night |
+| `wanted` | `wanted-wall` | Crew posters on wet brick: one per Wanted Level, curfew bills at Heat 4+; told heat and wanted like `watch` |
+| `board`, `exploded` | `planning-board`, `score-exploded` | The score scenes |
+| `testcard` | `test-card` | Please stand by (pin only) |
+
+The nine scenes from `boneyard` on are built by `tools/ambient/scenes/*.js` (see `tools/ambient/README.md`); their figures move now
+and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools/ambient/redress.js` re-dressed Booker in his suit in
+`harvest`, `watch` and `duskwall` and gave Alfie his cigarette there.
+
+- **Rotation.** Auto (default: every scene but the score scenes and the test card, in picker order, every 7 min, cross-faded), Pin (one
+  scene), or Off. A playlist holds 1–16 scenes. A playlist the GM already saved keeps its scenes: tick the new ones in the panel. **Next scene** skips.
   A covered scene is kept for 30 s, then its frame is removed (a hidden frame gets no `visibilitychange` and would animate all night),
   and reloaded when the spotlight clears. A scene that has not loaded in 20 s is benched for 10 min.
 - **Heat and wanted.** The GM page sends the campaign's crew heat and wanted (debounced 2 s) while the ambient is not off. The page
-  has to have been opened as the GM in that page load; the iPad panel also corrects a stale value when it opens.
+  has to have been opened as the GM in that page load; the iPad panel also corrects a stale value when it opens. The display passes
+  them (`b68:crew`) to every scene with `needs: 'crew'` (`Pure.ambientCrewScenes()`: `watch`, `wanted`) when it loads and on each change.
 - **Score scenes.** **Set as score scene** (Location panel, player layer only) renders the board (`plan`, board theme) and the exploded
   site (`iso`, blueprint) from the current roll at the revealed bands, through the same gate and hidden-name scan as Show on iPad.
   A plan that names a hidden room is redrawn as `rings`; a leaking iso is refused. Bands beyond public ask first. Only the place name and
@@ -258,7 +280,9 @@ service worker never caches a redirect. The registry ids are `harvest`, `watch` 
 - **Checks.** `check:ambient` (assets), `ambient-shells.test.mjs`, `check:display-ambient` (e2e), plus the ambient cases in
   `checks/api/gm.mjs`, `display-role.mjs`, `display.test.mjs`, `gm-page.test.mjs` and `gm-nosecrets.test.mjs`. The e2e checks take
   `PW_CHANNEL=msedge` when Playwright's own Chromium is not installed.
-- **Deploy.** `npx wrangler d1 migrations apply DB --remote` (0006) before `wrangler deploy`.
+- **Deploy.** `npx wrangler d1 migrations apply DB --remote` (0006) before `wrangler deploy`. Before a deploy, build the calling cards
+  on the deploying PC (`node tools/ambient/scenes/cards.js`, needs `tools/ambient/cards/*.jpg`): the file is gitignored, and the
+  asset upload takes whatever is on disk. Without it the `cards` scene 404s and `check:ambient` prints SKIP.
 
 ### The display sign-in (`DISPLAY_EMAILS`)
 

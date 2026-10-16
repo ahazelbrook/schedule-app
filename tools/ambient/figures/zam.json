@@ -1,0 +1,65 @@
+{
+ "id": "zam",
+ "name": "Zam",
+ "plate": "Zam · Z.",
+ "code": "NPC-968-0107",
+ "halo": "signal-500",
+ "heightIn": 56,
+ "shape": "column",
+ "heads": 6.4,
+ "build": 0.85,
+ "skin": "brown",
+ "age": 13,
+ "pose": {
+  "stance": "wide",
+  "arms": {
+   "R": "pocket",
+   "L": "hip"
+  },
+  "head": {
+   "tilt": -6,
+   "yaw": 8
+  }
+ },
+ "head": {
+  "shape": "round"
+ },
+ "face": {
+  "eyes": "round",
+  "brows": "arched",
+  "nose": "button",
+  "mouth": "wide",
+  "expression": "smirk"
+ },
+ "hair": {
+  "style": "afro",
+  "color": "cloth-black",
+  "volume": 0.9
+ },
+ "outfit": {
+  "base": {
+   "type": "tee",
+   "color": "cloth-mustard"
+  },
+  "outer": {
+   "type": "suit-jacket",
+   "color": "cloth-warm-grey",
+   "open": true,
+   "ease": 0.12
+  },
+  "bottom": {
+   "type": "trousers",
+   "color": "cloth-brown"
+  },
+  "waist": {
+   "type": "chain-belt",
+   "color": "metal-steel",
+   "at": "hip"
+  },
+  "feet": {
+   "type": "sneakers",
+   "color": "cloth-red"
+  }
+ },
+ "props": []
+}

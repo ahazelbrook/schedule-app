@@ -1,0 +1,68 @@
+{
+ "id": "grunt",
+ "name": "Grunt",
+ "plate": "Grunt · G.",
+ "code": "NPC-968-0102",
+ "halo": "alarm-500",
+ "heightIn": 73,
+ "shape": "invtri",
+ "heads": 7.3,
+ "build": 1.18,
+ "skin": "tan",
+ "age": 48,
+ "body": {
+  "type": "muscular"
+ },
+ "pose": {
+  "stance": "square",
+  "arms": {
+   "R": "cross",
+   "L": "cross"
+  },
+  "head": {
+   "tilt": 2
+  }
+ },
+ "head": {
+  "shape": "wedge",
+  "jaw": 1.15
+ },
+ "face": {
+  "eyes": "deepset",
+  "brows": "heavy",
+  "browWeight": 1.4,
+  "nose": "broken",
+  "mouth": "grim",
+  "expression": "stern",
+  "facialHair": {
+   "type": "moustache",
+   "color": "cloth-chocolate"
+  }
+ },
+ "hair": {
+  "style": "buzz",
+  "color": "cloth-chocolate"
+ },
+ "outfit": {
+  "base": {
+   "type": "shirt",
+   "color": "cloth-cream",
+   "sleeves": "rolled",
+   "collar": "open"
+  },
+  "mid": {
+   "type": "apron",
+   "color": "cloth-chocolate",
+   "length": "calf"
+  },
+  "bottom": {
+   "type": "trousers",
+   "color": "cloth-charcoal"
+  },
+  "feet": {
+   "type": "combat-boots",
+   "color": "cloth-black"
+  }
+ },
+ "props": []
+}

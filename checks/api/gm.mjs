@@ -442,7 +442,7 @@ async function main() {
       [{ scene: 'nope' }, 400, /scene must be one of/], [{ scene: 5 }, 400, /scene must be one of/], [{ scene: '' }, 400, /scene must be one of/],
       [{ playlist: 'harvest' }, 400, /playlist must be a non-empty array/], [{ playlist: [] }, 400, /playlist must be a non-empty array/],
       [{ playlist: ['harvest', 'nope'] }, 400, /playlist entries must be one of/], [{ playlist: [1] }, 400, /playlist entries/],
-      [{ playlist: ['watch', 'watch'] }, 400, /must not repeat/], [{ playlist: Array(13).fill('harvest') }, 413, /playlist is too long/],
+      [{ playlist: ['watch', 'watch'] }, 400, /must not repeat/], [{ playlist: Array(17).fill('harvest') }, 413, /playlist is too long/],
       [{ intervalMin: 2 }, 400, /intervalMin must be/], [{ intervalMin: 31 }, 400, /intervalMin must be/], [{ intervalMin: 7.5 }, 400, /intervalMin must be/],
       [{ intervalMin: '7' }, 400, /intervalMin must be/], [{ intervalMin: 0 }, 400, /intervalMin must be/], [{ intervalMin: true }, 400, /intervalMin must be/],
       [{ skip: false }, 400, /skip must be true/], [{ skip: 1 }, 400, /skip must be true/], [{ skip: 'yes' }, 400, /skip must be true/], [{ skip: null }, 400, /skip must be true/],
