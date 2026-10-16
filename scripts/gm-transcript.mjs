@@ -14,14 +14,17 @@
 // One copier at a time (gm-private/transcript.lock): a --follow while the background one runs says so and stops.
 //
 // Where: Sessions/b68g-sNN-transcript.md for the line's session (the session the GM page stamped when listening started;
-// else --session, else the highest-numbered session note). The note is created the first time, in the vault
+// else --session; else the session note dated for the night the line was heard (before 06:00 counts as the night
+// before); else the highest-numbered session note). The note is created the first time, in the vault
 // transcriber's format: frontmatter with `speakers:`, a header callout, `## Transcript`, then lines appended as
 //   - **[HH:MM] Name:** text        (Melbourne time; Name from the GM page's "Who is who", else S0, S1...)
 //   *[HH:MM] — reconnected*        (Deepgram renumbers speakers after a reconnect)
 // A transcript note the vault's own transcriber made (no `source: ipad`) is never written into: the iPad's lines then
 // go to b68g-sNN-transcript-ipad.md, so the two never interleave. Append only: nothing in a note is changed but the
 // `speakers:` lines of a note this script made. The ledger (gm-private/sync-ledger.json, `transcript`) remembers the
-// last line filed. --prune then deletes the filed lines from the server. Nothing here prints the transcript's text.
+// last line filed. --prune then deletes the filed lines from the server. A line three minutes old or more that is already
+// in its note (same minute, same words: the other PC copied it and Sync brought it here) is not added again; each line
+// in the note covers one. Nothing here prints the transcript's text.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -29,7 +32,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { asD1, wranglerExec, readWranglerToml } from './lib/d1.mjs';
-import { SESSIONS, abs, readNote, createNote, appendNote, editNote, sessionNotes, highestNote, hhmm, dmy } from './lib/vault.mjs';
+import { SESSIONS, abs, readNote, createNote, appendNote, editNote, sessionNotes, highestNote, hhmm, dmy, noteDates, noteForNight } from './lib/vault.mjs';
 import { loadLedger, campaignLedger, saveLedger } from './lib/ledger.mjs';
 import { readLines, loadStt, pruneLines } from '../functions/_lib/stt.js';
 
@@ -89,6 +92,18 @@ export function withSpeakers(text, speakers) {
   return block === m[2] ? null : text.slice(0, m.index) + m[1] + block + m[3] + text.slice(m.index + m[0].length);
 }
 
+/** "HH:MM|words" -> how many times, for the lines already in a transcript note (a line another PC copied is not added twice). */
+export function heardKeys(text) {
+  const out = new Map();
+  for (const raw of String(text || '').split('\n')) {
+    const l = raw.replace(/\r$/, ''), m = /^- \*\*\[([0-9:-]{5})\] .*?:\*\* (.*)$/.exec(l) || /^\*\[([0-9:-]{5})\] — (.*)\*$/.exec(l);
+    if (m) { const k = m[1] + '|' + clean(m[2]); out.set(k, (out.get(k) || 0) + 1); }
+  }
+  return out;
+}
+export const SEEN_AGE_MS = 180000;
+const keyOf = (l) => (hhmm(l.at) || '--:--') + '|' + (clean(l.text) || (l.kind === 'mark' ? 'reconnected' : ''));
+
 /**
  * One pass. ctx: { vault, db, campaign, ledger (campaign part), session, dryRun, prune, now, print }. Returns { filed, notes }.
  */
@@ -100,22 +115,28 @@ export async function pass(ctx) {
   for (;;) {
     const { lines } = await readLines(ctx.db, ctx.campaign, { after: t.last });
     if (!lines.length) break;
-    const fallback = ctx.session || ctl.session || (() => { const h = highestNote(sessionNotes(ctx.vault)); return h.note ? String(h.note.num) : '0'; })();
+    const notesNow = sessionNotes(ctx.vault), dates = noteDates(ctx.vault, notesNow);
+    const fallback = ctl.session || (() => { const h = highestNote(notesNow); return h.note ? String(h.note.num) : '0'; })();
+    const sessionOfLine = (l) => { if (clean(l.session)) return clean(l.session); if (ctx.session) return ctx.session; const n = noteForNight(notesNow, dates, l.at); return n ? String(n.note.num) : fallback; };
     /* runs of consecutive lines for one session, in order; the ledger moves on after each run lands, so a failure
        part-way never copies a run twice */
     const runs = [];
-    for (const l of lines) { const s = clean(l.session) || fallback; if (!runs.length || runs[runs.length - 1].s !== s) runs.push({ s, list: [] }); runs[runs.length - 1].list.push(l); }
+    for (const l of lines) { const s = sessionOfLine(l); if (!runs.length || runs[runs.length - 1].s !== s) runs.push({ s, list: [] }); runs[runs.length - 1].list.push(l); }
     for (const { s, list } of runs) {
       let name = noteName(s, false), rel = SESSIONS + '/' + name, note = readNote(abs(ctx.vault, rel));
       if (note && !/^source:\s*ipad\s*$/m.test(note.text.split(/^---\s*$/m)[1] || '')) { name = noteName(s, true); rel = SESSIONS + '/' + name; note = readNote(abs(ctx.vault, rel)); }
-      const body = list.map((l) => lineOf(l, speakers));
+      /* a line still fresh is always new (two "Yes." in one minute are two lines); an older one already in the note was
+         copied by the other PC, and each copy there covers one line */
+      const have = note ? heardKeys(note.text) : new Map(), nowMs = typeof ctx.now === 'function' ? ctx.now() : Date.now();
+      const fresh = list.filter((l) => { const k = keyOf(l), n = have.get(k) || 0; if (n && nowMs - Date.parse(l.at) >= SEEN_AGE_MS) { have.set(k, n - 1); return false; } return true; });
+      const body = fresh.map((l) => lineOf(l, speakers));
       if (!ctx.dryRun) {
         if (!note) createNote(ctx.vault, rel, newNote(s, speakers, list[0].at) + body.join('\n') + '\n');
-        else appendNote(ctx.vault, rel, body);
+        else if (body.length) appendNote(ctx.vault, rel, body);
         t.last = list[list.length - 1].seq;
         if (note && JSON.stringify(t.speakers) !== JSON.stringify(speakers)) { try { editNote(ctx.vault, rel, (n) => withSpeakers(n.text, speakers)); } catch (_) { /* the next pass tries again */ } }
       }
-      filed += list.length; notes.add(name);
+      filed += fresh.length; if (fresh.length) notes.add(name);
     }
     if (ctx.dryRun) break;
   }
@@ -153,7 +174,7 @@ export async function watchStep(ctx) {
   if (theirs && now - Date.parse(p.copier.at) < OTHER_FRESH_MS) return { filed: 0, notes: [], want: p.want, wait: ctx.idle * 1000, other: p.copier.host };
   if (theirs && p.copier.last > t.last) t.last = p.copier.last;
   const r = p.want === 'on' || p.top > t.last ? await pass(ctx) : { filed: 0, notes: [] };
-  if (p.want === 'on' && (r.filed || theirs || !ctx.beatAt || now - ctx.beatAt >= 60000)) {
+  if ((p.want === 'on' && (r.filed || theirs || !ctx.beatAt || now - ctx.beatAt >= 60000)) || (p.want !== 'on' && r.filed)) {
     await beat(ctx.db, ctx.campaign, { at: new Date(now).toISOString(), last: t.last, host });
     ctx.beatAt = now;
   }

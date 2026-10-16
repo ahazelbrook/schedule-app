@@ -7,12 +7,15 @@
 // the staged byte length and piece count are complete. A push that fails part-way leaves the old part in place. The
 // stored part is read back and its hash compared with the version, as the server would compute it.
 // Parts the server holds that the file lacks are left alone and reported (the sync never deletes).
+// The guard (lib/pack-guard.mjs): a part far smaller than the server's, or a prep note the server has that the file lacks
+// or has much shorter, is refused and nothing in the pack is written, unless --allow-shrink.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { cleanPart, shortHash, packHeads, LIMITS } from '../../functions/_lib/gm.js';
 import { bindSql, literal, charCost, MAX_COMMAND_COST } from './d1.mjs';
+import { packLosses } from './pack-guard.mjs';
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 export const STAGE_DDL = 'CREATE TABLE IF NOT EXISTS gm_sync_stage (token TEXT NOT NULL, campaign TEXT NOT NULL, part TEXT NOT NULL, ' +
@@ -65,6 +68,22 @@ export async function pushPack(ctx) {
   }
   for (const h of heads) if (!pk.parts.some((p) => p.part === h.part)) report.note('pack: the server has a part "' + h.part + '" the file lacks; left in place');
   if (!todo.length) return;
+  /* the guard: sizes from the index; the server's prep notes from its body */
+  const before = {}, after = {};
+  for (const t of todo) {
+    const h = byName.get(t.part); if (!h) continue;
+    before[t.part] = h.bytes || 0; after[t.part] = t.bytes;
+    if (t.part === 'prep') {
+      const row = await db.prepare('SELECT body FROM gm_pack WHERE campaign = ?1 AND part = ?2').bind(campaign, 'prep').first();
+      try { before.prep = row ? JSON.parse(row.body) : before.prep; after.prep = JSON.parse(t.body); } catch (_) { /* sizes only */ }
+    }
+  }
+  const losses = packLosses(before, after, { missing: false });
+  if (losses.length && !ctx.allowShrink) {
+    for (const l of losses) report.refuse('pack:' + l.part, l.what + ': nothing in the pack was pushed. Restore the note (Obsidian: Open version history), run npm run gm:pack, push again; or push with --allow-shrink', []);
+    return;
+  }
+  for (const l of losses) report.note('pack: allowed by --allow-shrink: ' + l.what);
   if (ctx.dryRun || !ctx.yes) {
     for (const t of todo) report.planned.push({ id: t.part, what: 'pack part ' + t.part + ' v' + t.version + ' (' + Math.ceil(t.bytes / 1024) + ' KiB, ' + pieces(t.body, ctx.pieceBudget).length + ' pieces)' });
     return;

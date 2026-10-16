@@ -980,5 +980,130 @@ await test('10b. the rail: an empty box is one line; Classic layout survives a r
   await h.save();
 });
 
+/* =====================================================================================================================
+   11. Table aids (17/10): Find, the beat in the bar, a speaker named from a line, the clocks to the iPad, the pack guard
+   ===================================================================================================================== */
+await test('11a. findHits: every word somewhere, the title first, curly and straight apostrophes are one; the snippet sits on the word', () => {
+  const idx = [
+    { kind: 'Prep', title: 'The score', text: 'Bazso’s crew waits at the ferry. ' + 'x '.repeat(80) + 'Later: the lamp.' },
+    { kind: 'NPC', title: 'Marge Teacup', sub: 'Fence', text: 'Sells lamps; owes Bazso.' },
+    { kind: 'Screen', title: 'Lamps and light', text: 'Rules for lamps.' },
+  ];
+  assert.deepEqual(P.findHits(idx, 'lamp').map((h) => h.title), ['Lamps and light', 'The score', 'Marge Teacup'], 'title hits first, then index order');
+  assert.deepEqual(P.findHits(idx, "bazso's").map((h) => h.title), ['The score'], 'a straight apostrophe finds a curly one');
+  assert.deepEqual(P.findHits(idx, 'marge fence').map((h) => h.title), ['Marge Teacup'], 'words may sit in title and sub');
+  assert.deepEqual(P.findHits(idx, '   '), []);
+  const sn = P.findHits(idx, 'later')[0].snip;
+  assert.ok(sn.startsWith('…') && sn.includes('Later: the lamp.'), sn);
+});
+
+await test('11a2. findText reads Markdown as words (callouts, quotes, boxes, tables out); shortLabel cuts at a word', () => {
+  assert.equal(P.findText('> [!quote] SAY\n> "There are Bluecoats," she says.\n- [ ] #4 Find the car ^b68-x1\n| A | B |\n|---|---|\n| one | two |\n## Head'), 'SAY "There are Bluecoats," she says. #4 Find the car A B one two Head');
+  assert.equal(P.shortLabel('0 Table chat, voicing line, rules fixes, hand Isaac his sheet', 40), '0 Table chat, voicing line, rules fixes…');
+  assert.equal(P.shortLabel('3 The score', 40), '3 The score');
+});
+
+await test('11b. clocksSvg: the players’ clocks only, wedges filled to the count, names escaped; none -> null; it passes the server’s svg check', () => {
+  assert.equal(P.clocksSvg([]), null); assert.equal(P.clocksSvg([{ name: 'Secret', filled: 1, size: 4, hidden: true }]), null);
+  const svg = P.clocksSvg([{ name: 'Bluecoats <close> in', filled: 2, size: 6 }, { name: 'Secret', filled: 1, size: 4, hidden: true }, { name: 'Rival', filled: 9, size: 4 }]);
+  assert.ok(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900">'));
+  assert.ok(!svg.includes('Secret') && svg.includes('Bluecoats &lt;close&gt; in') && svg.includes('2 / 6') && svg.includes('4 / 4'), 'hidden left out, filled capped at the size');
+  assert.equal((svg.match(/<path /g) || []).length, 10); assert.equal((svg.match(/fill="#d8a93b"/g) || []).length, 6);
+  checkSvg(svg);
+});
+
+await test('11c. packLosses: a part gone, a prep note gone or much shorter; growth is fine', () => {
+  const note = (rel, n) => ({ id: rel, rel, blocks: [{ src: 'x'.repeat(n) }] });
+  const before = { prep: { notes: [note('S/b68g-s02.md', 44000)] }, scenes: { T: { a: 'y'.repeat(5000) } } };
+  assert.deepEqual(P.packLosses(before, JSON.parse(JSON.stringify(before))), []);
+  assert.deepEqual(P.packLosses(before, { scenes: before.scenes }), ['the prep part is gone (no note has gm_prep: true now)']);
+  const r = P.packLosses(before, { prep: { notes: [note('S/b68g-s02.md', 19000)] }, scenes: before.scenes });
+  assert.ok(r.some((x) => /prep note b68g-s02 shrank from 44000 to 19000 characters/.test(x)), JSON.stringify(r));
+});
+
+await test('11d. Find: Ctrl+K and / open it, typing lists hits, arrows choose, Enter copies a filed line, Esc and Ctrl+K shut it; no shortcuts while it is open', async () => {
+  const fg = fakeGm(); fg.server.doc = { capture: { c1: { id: 'c1', bucket: 'n', text: 'Harl the ferry clerk', at: new Date().toISOString() } } };
+  const h = await openPage({ fg, camp: CAMP3 });
+  assert.equal(h.q('#gm-find').hidden !== false || h.q('#gm-find').hasAttribute('hidden'), true, 'shut at first');
+  h.press('k', { ctrlKey: true }); assert.ok(!h.q('#gm-find').hasAttribute('hidden'), 'Ctrl+K opens it');
+  const q = h.q('#gm-find-q'); assert.equal(h.br.doc.activeElement, q, 'the box has the focus');
+  q.value = 'harl'; dispatch(q, 'input');
+  const hits = h.qa('.gm-find-hit'); assert.ok(hits.length >= 1 && /Harl the ferry clerk/.test(hits[0].textContent) && /Name · filed/.test(hits[0].textContent), h.q('#gm-find-list').textContent);
+  q.value = 'marge'; dispatch(q, 'input'); assert.ok(/Marge Teacup/.test(h.q('#gm-find-list').textContent), 'an NPC from the pack');
+  q.value = 'zzzz nothing'; dispatch(q, 'input'); assert.ok(/Nothing matches/.test(h.q('#gm-find-list').textContent));
+  q.value = 'ferry clerk'; dispatch(q, 'input');
+  h.press('ArrowDown', { target: q }); h.press('ArrowUp', { target: q });
+  h.press('1', { target: q }); assert.ok(!h.fg.server.patches.some((p) => p.cards), 'a digit while Find is open does not roll');
+  h.press('Enter', { target: q }); assert.equal(h.br.copied, 'Harl the ferry clerk', 'Enter on a filed line copies it');
+  h.press('Escape', { target: q }); assert.ok(h.q('#gm-find').hasAttribute('hidden'), 'Esc shuts it');
+  h.press('/'); assert.ok(!h.q('#gm-find').hasAttribute('hidden'), '/ opens it');
+  h.press('k', { ctrlKey: true }); assert.ok(h.q('#gm-find').hasAttribute('hidden'), 'Ctrl+K again shuts it');
+  h.q('.gm-bar [data-gm="find-open"]').click(); assert.ok(!h.q('#gm-find').hasAttribute('hidden'), 'the bar button opens it');
+  dispatch(h.q('#gm-find'), 'click'); assert.ok(h.q('#gm-find').hasAttribute('hidden'), 'a click around it shuts it');
+  await h.save();
+});
+
+await test('11e. the beat in the bar: the newest started beat with its minutes; none -> hidden; the bar shows the prep session while the counter is 0', async () => {
+  const fg = fakeGm(); fg.server.doc = { prep: { beats: { b1: { at: new Date(Date.now() - 30 * 60000).toISOString(), label: '2 Downtime' }, b2: { at: new Date(Date.now() - 8 * 60000 - 5000).toISOString(), label: '3 The score' }, b3: null } } };
+  const h = await openPage({ fg, camp: CAMP3 });
+  const go = h.q('#gm-bar-beatgo');
+  assert.ok(!h.q('#gm-bar-beat').hidden, 'shown'); assert.match(go.textContent, /3 The score · 8 min/);
+  assert.ok(h.q('[data-gm="beat-next"]').hidden, 'no run order on the page: no Next');
+  await h.save();
+  const h2 = await openPage({ camp: { session: { number: 0 }, crew: {} } });
+  assert.ok(h2.q('#gm-bar-beat').hidden, 'no beat: hidden');
+  assert.equal(h2.q('#gm-bar-sess').textContent, 'Session 0', 'no prep in the pack: 0 as it is');
+  await h2.save();
+});
+
+await test('11f. listening: a speaker in the lines is a button; it opens Who is who on that speaker’s box; Enter in the box saves it', async () => {
+  const fg = fakeGm(), sent = [];
+  fg.gm.stt = async () => ({ doc: { want: 'on', speakers: { 0: 'Alex (GM)' }, status: { state: 'listening', at: new Date().toISOString(), lines: 2 } } });
+  fg.gm.transcript = async () => ({ lines: [{ speaker: 0, kind: 'line', text: 'Nobody moves.' }, { speaker: 2, kind: 'line', text: 'Who knocks?' }, { speaker: null, kind: 'mark', text: '' }] });
+  fg.gm.patchStt = async (p) => { sent.push(p); return { doc: { want: 'on', speakers: Object.assign({ 0: 'Alex (GM)' }, p.speakers || {}), status: { state: 'listening' } } }; };
+  const h = await openPage({ fg, camp: CAMP3 });
+  h.press('i');
+  assert.ok(await until(() => h.qa('#gm-stt .gm-stt-who').length === 2), 'two named-or-numbered speakers as buttons');
+  const who = h.qa('#gm-stt .gm-stt-who'); assert.deepEqual(who.map((b) => b.textContent), ['Alex (GM)', 'S2']);
+  who[1].click();
+  assert.equal(h.br.doc.activeElement && h.br.doc.activeElement.id, 'gm-stt-s2', 'the S2 box has the focus');
+  assert.ok(h.q('[data-sttfold]').hasAttribute('open'), 'Who is who opened');
+  const box = h.q('#gm-stt-s2'); box.value = 'Pat (Vex)';
+  h.press('Enter', { target: box }); assert.notEqual(h.br.doc.activeElement, box, 'Enter leaves the box (the change event saves)');
+  dispatch(box, 'change'); await until(() => sent.length); assert.equal(JSON.stringify(sent.pop()), JSON.stringify({ speakers: { 2: 'Pat (Vex)' } }));
+  await h.save();
+});
+
+await test('11g. clocks to the iPad: Show on iPad sends the players’ clocks as a checked svg; a clock changing on the table sends them again', async () => {
+  const camp = { session: { number: 3 }, crew: {}, clocks: [{ name: 'Bluecoats close in', filled: 2, size: 6 }, { name: 'Secret plan', filled: 1, size: 4, hidden: true }] };
+  const fg = fakeGm(), h = await openPage({ fg, camp });
+  h.q('#gm-rail [data-gm="clocks-ipad"]').click();
+  assert.ok(await until(() => fg.server.displays.length === 1));
+  const d = fg.server.displays[0]; assert.equal(d.kind, 'svg'); assert.equal(d.title, 'Clocks'); assert.ok(!d.svg.includes('Secret')); checkSvg(d.svg);
+  h.page.campaign({ ...camp, clocks: [{ name: 'Bluecoats close in', filled: 3, size: 6 }, camp.clocks[1]] });
+  assert.ok(await until(() => fg.server.displays.length === 2, 300), 'sent again after a change');
+  assert.ok(fg.server.displays[1].svg.includes('3 / 6'));
+  h.page.campaign({ ...camp, clocks: [{ name: 'Bluecoats close in', filled: 3, size: 6 }, { name: 'Secret plan', filled: 2, size: 4, hidden: true }] });
+  await new Promise((r) => setTimeout(r, 900)); assert.equal(fg.server.displays.length, 2, 'a hidden clock moving sends nothing (the picture is the same)');
+  await h.save();
+});
+
+await test('11h. Update pack: a file that would lose a part says so, the button reads Upload anyway, and it asks before uploading', async () => {
+  let asked = 0, uploads = 0;
+  const br = fakeBrowser({ FileReader: class { readAsText(f) { this.result = f.text; this.onload(); } }, confirm: () => { asked++; return false; } });
+  const fg = fakeGm(); fg.gm.importPart = async () => { uploads++; return { version: 'x' }; };
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.q('.gm-head [data-gm="update"]').click();
+  const pk = { format: 1, exportedAt: new Date().toISOString(), parts: { console: { src: {}, ...FIXC.console }, location: { src: {}, T: FIXL.T, extra: FIXL.extra }, campaign: { src: {}, ...FIXC.campaign } } };
+  const file = h.q('#gm-file'); file.files = [{ name: 'b68-gm-pack.json', text: JSON.stringify(pk) }]; file.id = 'gm-file';
+  dispatch(file, 'change');
+  assert.ok(await until(() => h.q('.gm-losses')), 'the losses box');
+  assert.ok(/the scenes part is gone/.test(h.q('.gm-losses').textContent) && /the engagement part is gone/.test(h.q('.gm-losses').textContent));
+  assert.equal(h.q('[data-gm="upload"]').textContent, 'Upload anyway');
+  h.q('[data-gm="upload"]').click(); await tick();
+  assert.equal(asked, 1); assert.equal(uploads, 0, 'refused at the question: nothing uploaded');
+  await h.save();
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

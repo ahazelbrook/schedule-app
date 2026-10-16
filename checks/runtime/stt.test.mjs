@@ -14,7 +14,7 @@ import { onRequest as sttApi } from '../../functions/api/gm/stt.js';
 import { onRequest as tokenApi } from '../../functions/api/gm/stt-token.js';
 import { onRequest as transcriptApi } from '../../functions/api/gm/transcript.js';
 import { matchApi, PAGE_HEADERS } from '../../worker/app.js';
-import { pass, lineOf, newNote, withSpeakers, parseArgs, probe, watchStep, takeLock, launcherText } from '../../scripts/gm-transcript.mjs';
+import { pass, lineOf, newNote, withSpeakers, parseArgs, probe, watchStep, takeLock, launcherText, heardKeys } from '../../scripts/gm-transcript.mjs';
 import { assertWritable } from '../../scripts/lib/vault.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -266,6 +266,44 @@ await test('watch: one copier at a time (a live pid holds the lock, a dead one d
   assert.equal(takeLock(dir), live.pid, 'a live pid: refused');
   live.kill();
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+await test('vault: no session on a line -> the session note dated for that night (after midnight counts as the night before); else the highest', async () => {
+  const v = makeVault(), db = await newDb(), ledger = {}, dir = path.join(v, ...S.split('/'));
+  fs.writeFileSync(path.join(dir, 'b68g-s02.md'), '---\nsession: 2\ndate: 17/10/2026\n---\n# Session 2\n');
+  fs.writeFileSync(path.join(dir, 'b68g-s03.md'), '---\nsession: 3\ndate: "[TODO: session date]"\n---\n# Session 3\n');
+  await addLines(db, 'default', cleanLines({ lines: [
+    L('a', 'evening', { session: '', at: '2026-10-17T09:30:00.000Z' }),     // 20:30 on 17/10 in Melbourne
+    L('b', 'after midnight', { session: '', at: '2026-10-17T14:30:00.000Z' }),   // 01:30 on 18/10: still the night of 17/10
+    L('c', 'another night', { session: '', at: '2026-10-20T09:30:00.000Z' }),    // no note dated 20/10: the highest (s09)
+    L('d', 'stamped', { session: '3', at: '2026-10-17T09:31:00.000Z' }),        // a stamped session always wins
+  ] }));
+  const r = await pass({ vault: v, db, campaign: 'default', ledger });
+  assert.deepEqual(r.notes.sort(), ['b68g-s02-transcript.md', 'b68g-s03-transcript.md', 'b68g-s09-transcript.md']);
+  const t2 = fs.readFileSync(path.join(dir, 'b68g-s02-transcript.md'), 'utf8');
+  assert.ok(/evening/.test(t2) && /after midnight/.test(t2) && !/another night/.test(t2));
+  assert.ok(/another night/.test(fs.readFileSync(path.join(dir, 'b68g-s09-transcript.md'), 'utf8')));
+  assert.ok(/stamped/.test(fs.readFileSync(path.join(dir, 'b68g-s03-transcript.md'), 'utf8')));
+  fs.rmSync(v, { recursive: true, force: true });
+});
+
+await test('vault: a line the other PC already copied (old, same minute and words) is not added twice; a fresh repeat is a new line', async () => {
+  const v = makeVault(), db = await newDb(), dir = path.join(v, ...S.split('/'));
+  const old = '2030-01-01T09:00:00.000Z', now = () => Date.parse(old) + 3600000;
+  /* the laptop copied a and b (and Sync brought its note here); this PC's ledger is behind */
+  fs.writeFileSync(path.join(dir, 'b68g-s09-transcript.md'), newNote('9', {}, old) + '- **[20:00] S0:** Yes.\n- **[20:00] Pat:** Who knocks?\n');
+  await addLines(db, 'default', cleanLines({ lines: [L('a', 'Yes.'), L('b', 'Who knocks?', { speaker: 1 }), L('c', 'Yes.'), L('d', 'New words.')] }));
+  const r = await pass({ vault: v, db, campaign: 'default', ledger: {}, now });
+  assert.equal(r.filed, 2, 'a and b were there; c (a second "Yes." that minute) and d are new');
+  const t = fs.readFileSync(path.join(dir, 'b68g-s09-transcript.md'), 'utf8');
+  assert.equal(t.match(/Yes\./g).length, 2); assert.equal(t.match(/Who knocks/g).length, 1); assert.ok(/New words\./.test(t));
+  /* live: the same words again within the minute, seconds old, are always copied */
+  const v2 = makeVault(), db2 = await newDb(), led2 = {};
+  await addLines(db2, 'default', cleanLines({ lines: [L('a', 'Yes.')] }));
+  await pass({ vault: v2, db: db2, campaign: 'default', ledger: led2, now: () => Date.parse(old) + 10000 });
+  await addLines(db2, 'default', cleanLines({ lines: [L('b', 'Yes.', { speaker: 1 })] }));
+  assert.equal((await pass({ vault: v2, db: db2, campaign: 'default', ledger: led2, now: () => Date.parse(old) + 20000 })).filed, 1);
+  fs.rmSync(v, { recursive: true, force: true }); fs.rmSync(v2, { recursive: true, force: true });
 });
 
 console.log(failed ? `\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);

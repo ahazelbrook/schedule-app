@@ -5,15 +5,16 @@
 //   pins             ->  a collapsed callout, then "^b68-<id>"  under ## Pinned (added after Rolled at the table)
 //   con.owed/struck/used -> "- **Owed:** ..." lines        under ## Bargains and callbacks (added after Pinned)
 //
-// Which note: an entry's `s` (the session number the page stamps on it); entries without one go to the highest-numbered
-// b68g-sNN.md, as the station does (or --session N). Duplicate guard: the block id anywhere in any session note; a
+// Which note: an entry's `s` (the session number the page stamps on it). Entries without one: --session N if given; else
+// the session note whose `date:` is the night the entry was made (before 06:00 counts as the night before); else the
+// highest-numbered b68g-sNN.md, as the station does. Duplicate guard: the block id anywhere in any session note; a
 // block the ledger says was filed but is no longer in any note was removed by hand and is not filed again.
 // A target note that is missing, not UTF-8, lacks one of the four headings or has any heading twice gets nothing.
 // Nothing here prints or logs the text of an entry.
 
 import {
   BUCKETS, PINNED, BARGAINS, SESSION_HEADINGS, abs, readNote, toLines, fromLines, headings, insertBlock, addHeading,
-  blockId, hasBlock, editNote, sessionNotes, noteForSession, highestNote, hhmm,
+  blockId, hasBlock, editNote, sessionNotes, noteForSession, highestNote, hhmm, noteDate, noteForNight,
 } from './vault.mjs';
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -115,6 +116,9 @@ export function pullNotes(ctx) {
   }
   const where = (bid) => { for (const [name, t] of texts) if (t && hasBlock(t, bid)) return name; return null; };
   const fallback = ctx.session != null ? noteForSession(notes, ctx.session) : highestNote(notes);
+  const dates = new Map();
+  for (const [name, t] of texts) { const d = t && noteDate(t); if (d) dates.set(name, d); }
+  const undated = (it) => (ctx.session == null && it.at && noteForNight(notes, dates, it.at)) || fallback;
 
   const items = collectItems(ctx.doc);
   const groups = new Map();
@@ -125,7 +129,7 @@ export function pullNotes(ctx) {
     const inNote = where(it.bid);
     if (inNote) { report.skip(it, 'already in the vault'); continue; }
     if (ledger.filed[it.bid]) { report.skip(it, 'removed from its note since it was filed (not filed again)'); continue; }
-    const t = it.s != null ? noteForSession(notes, it.s) : fallback;
+    const t = it.s != null ? noteForSession(notes, it.s) : undated(it);
     const key = t.note ? t.note.rel : 'ERR:' + t.error;
     if (!groups.has(key)) groups.set(key, { target: t, items: [] });
     groups.get(key).items.push(it);

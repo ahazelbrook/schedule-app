@@ -14,7 +14,7 @@
 import path from 'node:path';
 import {
   BUCKETS, PINNED, BARGAINS, AT_TABLE, SESSION_HEADINGS, abs, readNote, toLines, fromLines, headings, insertBlock, addHeading,
-  blockId, hasBlock, editNote, sessionNotes, noteForSession, highestNote, hhmm, assertPrepWritable,
+  blockId, hasBlock, editNote, sessionNotes, noteForSession, highestNote, hhmm, assertPrepWritable, noteDate, noteForNight,
 } from './vault.mjs';
 import { tickLines } from './prep.mjs';
 import { Refusal, sessionOf } from './sync-notes.mjs';
@@ -109,11 +109,13 @@ export function pullPrep(ctx) {
   for (const n of notes) { try { const r = readNote(abs(vault, n.rel)); texts.set(n.name, r ? r.text : null); } catch (_) { texts.set(n.name, null); } }
   const inVault = (bid) => { for (const t of texts.values()) if (t && hasBlock(t, bid)) return true; return false; };
   const fallback = ctx.session != null ? noteForSession(notes, ctx.session) : highestNote(notes);
+  const dates = new Map();
+  for (const [name, t] of texts) { const d = t && noteDate(t); if (d) dates.set(name, d); }
   const groups = new Map();
   for (const it of lines) {
     if (inVault(it.bid)) { report.skip(it, 'already in the vault'); continue; }
     if (ledger.filed[it.bid]) { report.skip(it, 'removed from its note since it was filed (not filed again)'); continue; }
-    const t = it.s != null ? noteForSession(notes, it.s) : fallback, key = t.note ? t.note.rel : 'ERR:' + t.error;
+    const t = it.s != null ? noteForSession(notes, it.s) : (ctx.session == null && it.at && noteForNight(notes, dates, it.at)) || fallback, key = t.note ? t.note.rel : 'ERR:' + t.error;
     if (!groups.has(key)) groups.set(key, { target: t, items: [] });
     groups.get(key).items.push(it);
   }

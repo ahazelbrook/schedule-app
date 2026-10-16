@@ -65,6 +65,11 @@ function parts(d) {
 }
 export function hhmm(iso) { const d = new Date(iso); if (isNaN(d)) return null; const p = parts(d); return p.hour + ':' + p.minute; }
 export function dmy(iso) { const d = iso instanceof Date ? iso : new Date(iso); if (isNaN(d)) return null; const p = parts(d); return p.day + '/' + p.month + '/' + p.year; }
+/** The night an instant belongs to (DD/MM/YYYY): its Melbourne date, or the day before when it is before 06:00 (a session runs past midnight). */
+export function nightOf(iso) {
+  const d = iso instanceof Date ? iso : new Date(iso); if (isNaN(d)) return null;
+  return +parts(d).hour < 6 ? dmy(new Date(d.getTime() - 6 * 3600000)) : dmy(d);
+}
 
 // ---------- reading a note ----------
 const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
@@ -266,6 +271,33 @@ export function highestNote(notes) {
   if (!ints.length) return { error: 'no session note (b68g-sNN.md) in ' + SESSIONS };
   const top = ints[ints.length - 1].num, hits = ints.filter((n) => n.num === top);
   return hits.length > 1 ? { error: 'two notes for session ' + top + ': ' + hits.map((h) => h.name).join(', ') } : { note: hits[0] };
+}
+
+/** A note's frontmatter `date:` as DD/MM/YYYY (quoted or not, D/M padded), or null ("[TODO: session date]", no frontmatter). */
+export function noteDate(text) {
+  const fm = /^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(String(text || '')); if (!fm) return null;
+  const m = /^date:[ \t]*["']?(\d{1,2})\/(\d{1,2})\/(\d{4})["']?[ \t]*\r?$/m.exec(fm[1]); if (!m) return null;
+  return m[1].padStart(2, '0') + '/' + m[2].padStart(2, '0') + '/' + m[3];
+}
+
+/**
+ * Filing by date: the session note whose `date:` is the night of `iso` (nightOf), else its calendar date. { note } when
+ * exactly one note carries that date, else null (two notes on one date, or none: the caller falls back). dates: name -> date.
+ */
+export function noteForNight(notes, dates, iso) {
+  for (const day of [...new Set([nightOf(iso), dmy(iso)])]) {
+    if (!day) continue;
+    const hits = notes.filter((n) => dates.get(n.name) === day);
+    if (hits.length === 1) return { note: hits[0] };
+    if (hits.length > 1) return null;
+  }
+  return null;
+}
+/** name -> DD/MM/YYYY for every session note that has a date (unreadable notes are left out). */
+export function noteDates(vault, notes) {
+  const out = new Map();
+  for (const n of notes) { try { const r = readNote(abs(vault, n.rel)); const d = r && noteDate(r.text); if (d) out.set(n.name, d); } catch (_) {} }
+  return out;
 }
 
 /** Every .md basename in the vault (lower case) -> [rel...]. Dot folders (.obsidian, .trash, .claude, .git) are skipped. */
