@@ -146,6 +146,16 @@ await step('wrangler.toml: a Worker with assets, the API and page first, workers
   expect(/^\[dev\][\s\S]*?host\s*=\s*"localhost"/m.test(live), '[dev] host = localhost (keeps the loopback origin)');
 });
 
+await step('line endings: .gitattributes keeps scripts, code and docs LF on every clone (Git for Windows would make them CRLF), and the shell scripts are LF', async () => {
+  const attrs = readFileSync(join(ROOT, '.gitattributes'), 'utf8');
+  for (const pat of ['*.sh', '*.mjs', '*.js', '*.json', '*.md', '*.css', '*.html', '*.sql', '*.toml']) {
+    expect(new RegExp('^' + pat.replace(/[.*]/g, (c) => '\\' + c) + '\\s+text\\s+eol=lf\\s*$', 'm').test(attrs), '.gitattributes: ' + pat + ' text eol=lf');
+  }
+  for (const f of ['scripts/deploy.sh', 'scripts/lib/common.sh', 'scripts/access-emails.sh']) expect(!readFileSync(join(ROOT, f), 'utf8').includes('\r'), f + ' has CR line endings');
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  expect(pkg.scripts.deploy === 'sh scripts/deploy.sh', 'npm run deploy runs the POSIX script with sh (Git Bash on Windows)');
+});
+
 await step('production config cannot carry DEV_USER or Access secrets', async () => {
   for (const name of ['DEV_USER', 'ACCESS_AUD', 'ACCESS_TEAM', 'GM_EMAILS']) {
     expect(!new RegExp('^\\s*' + name + '\\s*=', 'm').test(live), name + ' must not be set in wrangler.toml');

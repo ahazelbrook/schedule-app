@@ -1,0 +1,11 @@
+# Line endings: the deploy script and the checks are POSIX sh and node files that must stay LF on every clone,
+# whatever Git for Windows' core.autocrlf says (a CRLF `set -eu` kills scripts/deploy.sh on its first line).
+*.sh text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.sql text eol=lf
+*.toml text eol=lf

@@ -6,6 +6,14 @@
 #   B68_DRY_RUN=1 ... scripts/deploy.sh   prints every change and API call, makes none
 #
 # Safe to run again at any time: every step looks first and changes only what is missing or different.
+# On Windows run it from Git Bash (npm run deploy does: it is a POSIX sh script; .gitattributes keeps it LF).
+#
+# Before anything ships it refuses a working tree with uncommitted changes (B68_DIRTY_OK=1 deploys them anyway)
+# and a checkout missing the two gitignored files the upload takes from disk, app/media/theme.mp3 and
+# app/ambient/calling-cards.html (B68_MEDIA_OK=1 deploys without them). For the upload it stamps app/routes.js
+# (B68_BUILD = <date>-<commit>: the page, the service worker's cache and /api/me carry it) and puts 'dev' back
+# afterwards, whatever happens. It ends with a receipt: commit, build, Worker version, migrations, the secrets
+# by name, the on-disk files, the service worker cache, the smoke results.
 #
 # Sign-in for the script (one of):
 #   npx wrangler login          browser sign-in; covers D1, the Worker, its secrets and the custom domain,
@@ -29,11 +37,32 @@
 #   B68_D1_NAME          default blades68
 #   B68_SKIP_SMOKE=1     skip the final checks against https://<host>/
 #   B68_DRY_RUN=1        print, do not change (wrangler.toml is left alone; the Worker is still bundled)
+#   B68_DIRTY_OK=1       deploy uncommitted changes anyway (the receipt then says "dirty")
+#   B68_MEDIA_OK=1       deploy without app/media/theme.mp3 or app/ambient/calling-cards.html (the live site
+#                        then loses them: a deploy uploads app/ as it is on this disk)
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 . "$ROOT/scripts/lib/common.sh"
+
+# The build stamp lives in app/routes.js (var BUILD = 'dev'; HOSTING.md "Lazy bundles"): the page, its bundle URLs, the
+# service worker's cache name and /api/me all read it there. It is stamped for the upload only, and put back to 'dev'
+# when this script ends, however it ends (an error, Ctrl-C, the window closed).
+ROUTES=$ROOT/app/routes.js
+STAMPED=0
+build_of() { node -e 'const m = require("fs").readFileSync(process.argv[1], "utf8").match(/^\s*var BUILD = \x27([^\x27]*)\x27;/m); if (!m) process.exit(1); console.log(m[1]);' "$ROUTES"; }
+set_build() {
+  node -e '
+    const fs = require("fs"), f = process.argv[1], b = process.argv[2], re = /^(\s*var BUILD = )\x27[^\x27]*\x27;/m;
+    const s = fs.readFileSync(f, "utf8");
+    if (!re.test(s) || !/^[\w.-]{1,40}$/.test(b)) process.exit(1);
+    fs.writeFileSync(f, s.replace(re, (all, head) => head + "\x27" + b + "\x27;"));
+  ' "$ROUTES" "$1"
+}
+unstamp() { if [ "$STAMPED" = 1 ]; then set_build dev || warn "could not put app/routes.js back to 'dev': run  git checkout app/routes.js"; STAMPED=0; fi; }
+trap 'unstamp; cleanup' EXIT
+trap 'unstamp; cleanup; exit 130' INT TERM HUP
 
 FINISH=0
 for a in "$@"; do
@@ -65,6 +94,53 @@ say "GMs:      $GM_EMAILS"
 say "allowed:  $ALLOWED"
 say "sign-in:  $IDPS, sessions of $SESSION"
 [ "$DRY" = 1 ] && say "DRY RUN: nothing will be changed"
+
+# A deploy that was killed before it could clean up leaves app/routes.js stamped: put 'dev' back first.
+NOW_BUILD=$(build_of) || die "app/routes.js has no  var BUILD = '...';  line"
+if [ "$NOW_BUILD" != dev ]; then
+  say "app/routes.js still carries the build of an earlier deploy ($NOW_BUILD): putting 'dev' back"
+  set_build dev || die "could not reset the build in app/routes.js: run  git checkout app/routes.js"
+fi
+
+# What is about to ship must be what is committed: a half-edited file is the likeliest way to break the live app.
+GIT_STATE=unknown COMMIT=unknown
+if command -v git >/dev/null 2>&1 && git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  COMMIT=$(git -C "$ROOT" rev-parse --short=7 HEAD 2>/dev/null || echo unknown)
+  # tracked changes anywhere, and new files where they would ship (app/, worker/, functions/, migrations/)
+  { git -C "$ROOT" status --porcelain --untracked-files=no
+    git -C "$ROOT" status --porcelain --untracked-files=all -- app worker functions migrations | grep '^??' || true; } >"$TMP/dirty.txt"
+  if [ -s "$TMP/dirty.txt" ]; then
+    GIT_STATE=dirty
+    say "uncommitted changes:"; sed 's/^/  /' "$TMP/dirty.txt"
+    if [ "${B68_DIRTY_OK:-0}" = 1 ]; then warn "deploying them anyway (B68_DIRTY_OK=1)"
+    elif [ "$DRY" = 1 ]; then warn "a real run stops here: commit them first, or set B68_DIRTY_OK=1"
+    else die "the working tree has uncommitted changes (above). Commit them (or undo them) first, so the live app is a commit you can name and go back to; or run again with B68_DIRTY_OK=1 to deploy them as they are."
+    fi
+  else
+    GIT_STATE=clean
+  fi
+else
+  warn "not a git checkout (or git is missing): cannot tell whether what ships is committed"
+fi
+say "commit:   $COMMIT ($GIT_STATE)"
+
+# Two files are deployed from this disk and are not in git (.gitignore): the theme the opening credits play and the
+# calling-cards scene. A deploy uploads app/ as it is here, so without them the live site loses them.
+MEDIA="app/media/theme.mp3 app/ambient/calling-cards.html"
+MISSING_MEDIA=
+for f in $MEDIA; do [ -f "$ROOT/$f" ] || MISSING_MEDIA="$MISSING_MEDIA $f"; done
+if [ -n "$MISSING_MEDIA" ]; then
+  say ""
+  say "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  say "!!  Missing on this disk (not in git, deployed from here):$MISSING_MEDIA"
+  say "!!  Deploying now would REMOVE them from the live site: the opening credits would play no"
+  say "!!  theme and the calling-cards scene would be gone. Copy them in from the GM's PC first."
+  say "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  if [ "${B68_MEDIA_OK:-0}" = 1 ]; then warn "deploying without them anyway (B68_MEDIA_OK=1)"
+  elif [ "$DRY" = 1 ]; then warn "a real run stops here: put the files in place, or set B68_MEDIA_OK=1"
+  else die "missing:$MISSING_MEDIA (above). Put them in place, or run again with B68_MEDIA_OK=1 to deploy without them."
+  fi
+fi
 
 # Production must never carry DEV_USER (it signs everyone in without Access); the Worker ignores it off
 # loopback anyway, but the config is checked here and by checks/api/worker.mjs before anything ships.
@@ -314,15 +390,32 @@ fi
 # ACCESS_TEAM, ACCESS_AUD and GM_EMAILS go up as secrets in the same version as the code
 # (wrangler deploy --secrets-file: like `wrangler secret put`, and it also works before the first deploy).
 (umask 077 && ACCESS_TEAM=$TEAM ACCESS_AUD=$AUD GM_EMAILS=$GM_EMAILS j secrets-json ACCESS_TEAM ACCESS_AUD GM_EMAILS >"$TMP/secrets-upload.json")
+
+# The build: <date>-<commit>, plus -dirty-<time> when uncommitted changes go up (B68_DIRTY_OK=1), so an upload is never
+# taken for the previous one (a new build is a new service-worker cache, and open pages offer "Updated: reload").
+BUILD=$(date -u +%Y-%m-%d)-$COMMIT
+[ "$COMMIT" = unknown ] && BUILD=$(date -u +%Y-%m-%d-%H%M%S)
+[ "$GIT_STATE" = dirty ] && BUILD=$BUILD-dirty-$(date -u +%H%M%S)
+STAMPED=1
+set_build "$BUILD" || die "could not stamp the build into app/routes.js"
+say "build:    $BUILD (the page, the service worker's cache, /api/me)"
+
+VERSION=
 if [ "$DRY" = 1 ]; then
   say "DRY-RUN  secrets: ACCESS_TEAM=$TEAM ACCESS_AUD=$AUD GM_EMAILS=$GM_EMAILS"
   say "DRY-RUN  wrangler deploy --secrets-file <temp file>"
   say "bundling for real (wrangler deploy --dry-run) to prove the Worker builds:"
   wr deploy --dry-run --outdir "$TMP/dist" 2>&1 | grep -v 'Proxy environment' | grep -v '^[[:space:]]*$' | sed 's/^/  /'
+  if grep -rqF "$BUILD" "$TMP/dist" 2>/dev/null; then say "the Worker bundle carries build $BUILD"; else warn "the Worker bundle does not carry build $BUILD"; fi
+  VERSION="none (dry run)"
 else
-  wr deploy --secrets-file "$TMP/secrets-upload.json"
+  # the output goes to the screen as it comes, and to a file for the receipt (the exit status through a file: no pipefail in sh)
+  { wr deploy --secrets-file "$TMP/secrets-upload.json"; echo $? >"$TMP/deploy.rc"; } 2>&1 | tee "$TMP/deploy.txt"
+  [ "$(cat "$TMP/deploy.rc" 2>/dev/null)" = 0 ] || die "wrangler deploy failed (above): fix that and run this again"
+  VERSION=$(sed -n 's/.*Current Version ID: *\([0-9a-fA-F-]*\).*/\1/p' "$TMP/deploy.txt" | head -n 1)
 fi
 rm -f "$TMP/secrets-upload.json"
+unstamp
 
 # ---------------------------------------------------------------- smoke test
 step "Checking https://$HOST from outside (not signed in)"
@@ -354,12 +447,55 @@ smoke() {
 SMOKE_OK=1
 if [ "$DRY" = 1 ]; then
   say "DRY-RUN  curl https://$HOST/ and https://$HOST/api/me: both must redirect to $TEAM.cloudflareaccess.com"
+  SMOKE="not run (dry run)"
 elif [ "${B68_SKIP_SMOKE:-0}" = 1 ]; then
   say "skipped (B68_SKIP_SMOKE=1)"
+  SMOKE="skipped (B68_SKIP_SMOKE=1)"
 else
-  smoke / || SMOKE_OK=0
-  smoke /api/me || SMOKE_OK=0
+  if smoke /; then SMOKE="/ PASS"; else SMOKE="/ FAIL"; SMOKE_OK=0; fi
+  if smoke /api/me; then SMOKE="$SMOKE, /api/me PASS"; else SMOKE="$SMOKE, /api/me FAIL"; SMOKE_OK=0; fi
 fi
+
+# ---------------------------------------------------------------- receipt
+step "Receipt"
+# migrations: how many there are here, and whether the remote database still lacks any
+LOCAL_MIG=$(ls "$ROOT/migrations" | grep -c '\.sql$' || true)
+if [ "$DRY" = 1 ]; then
+  MIGS="$LOCAL_MIG in migrations/ (dry run: the remote database was not asked)"
+elif wr d1 migrations list DB --remote >"$TMP/migs.txt" 2>&1; then
+  if grep -q 'No migrations to apply' "$TMP/migs.txt"; then
+    MIGS="all $LOCAL_MIG applied, none pending"
+  else
+    MIGS="PENDING: $(sed -n 's/.*\(0[0-9][0-9][0-9]_[A-Za-z0-9_.-]*\.sql\).*/\1/p' "$TMP/migs.txt" | tr '\n' ' ')(npx wrangler d1 migrations apply DB --remote)"
+  fi
+else
+  MIGS="could not ask the remote database (npx wrangler d1 migrations list DB --remote)"
+fi
+# the secrets by name: the three this script uploads, and the two it never touches (GM.md: the display sign-in, Listening)
+SECRETS= SECRETS_MISSING=
+if [ "$DRY" = 1 ]; then
+  SECRETS="not listed (dry run)"
+elif wr secret list --format json >"$TMP/secrets-after.json" 2>/dev/null; then
+  for n in ACCESS_TEAM ACCESS_AUD GM_EMAILS DISPLAY_EMAILS DEEPGRAM_API_KEY; do
+    if j has-secret "$n" <"$TMP/secrets-after.json"; then SECRETS="$SECRETS$n set, "; else SECRETS="$SECRETS$n MISSING, "; SECRETS_MISSING="$SECRETS_MISSING $n"; fi
+  done
+  SECRETS=${SECRETS%, }
+else
+  SECRETS="could not list them (npx wrangler secret list)"
+fi
+ON_DISK=
+for f in $MEDIA; do if [ -f "$ROOT/$f" ]; then ON_DISK="$ON_DISK$f deployed, "; else ON_DISK="$ON_DISK$f MISSING, "; fi; done
+ON_DISK=${ON_DISK%, }
+cat <<EOF
+  commit       $COMMIT (working tree $GIT_STATE)
+  build        $BUILD
+  worker       version ${VERSION:-unknown (see the wrangler output above)}
+  migrations   $MIGS
+  secrets      $SECRETS
+  files        $ON_DISK
+  sw cache     b68-shell-$BUILD (pages left open offer "Updated: reload")
+  smoke test   $SMOKE
+EOF
 
 # ---------------------------------------------------------------- next steps
 step "Next"
@@ -372,6 +508,9 @@ cat <<EOF
     (with an API token; without one, SETUP.md "Adding and removing players" has the dashboard steps).
  5. Commit wrangler.toml if this run changed it (it now names the database and the host).
 EOF
+case " $SECRETS_MISSING " in *" DISPLAY_EMAILS "*) say " -  DISPLAY_EMAILS is not set, so the table iPad cannot sign in as the display (GM.md, The display sign-in):  npx wrangler secret put DISPLAY_EMAILS" ;; esac
+case " $SECRETS_MISSING " in *" DEEPGRAM_API_KEY "*) say " -  DEEPGRAM_API_KEY is not set, so the iPad cannot transcribe (GM.md, Listening):  npx wrangler secret put DEEPGRAM_API_KEY" ;; esac
+if [ -n "$MISSING_MEDIA" ]; then say " -  Not on the live site (missing on this disk):$MISSING_MEDIA. Copy them in and deploy again."; fi
 if [ "$SMOKE_OK" = 0 ]; then
   die "the check against https://$HOST failed (above): fix Access before sharing the address"
 fi

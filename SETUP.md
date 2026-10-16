@@ -18,6 +18,11 @@ repository (`ahazelbrook/schedule-app` on GitHub, cloned to your computer).
 
 ## 1. Install and sign in
 
+On Windows, run every command in this file from **Git Bash** (it comes with Git for Windows:
+Start menu → Git Bash), not from PowerShell or the Command Prompt: the deploy script is a
+POSIX shell script. The repository's `.gitattributes` keeps it, and the code and docs, with
+Unix line endings on any clone, so a fresh checkout on a new PC deploys like the old one.
+
 ```
 cd schedule-app
 npm install
@@ -161,9 +166,49 @@ Roles follow at once; nobody signs in again.
 
 ## Updating the app
 
-After pulling changes: `npx wrangler deploy` (or run `scripts/deploy.sh` again, which also
-applies new migrations). The secrets stay as they are. Phones pick up the new version the next
-time they open the app online.
+After pulling changes, from Git Bash:
+
+```
+B68_GM_EMAILS=you@example.com B68_PLAYER_EMAILS=player1@example.com,player2@example.com \
+npm run deploy
+```
+
+(`npm run deploy` is `scripts/deploy.sh`; the emails are the same as the first time.) Before
+anything ships it stops when:
+
+- **the working tree has uncommitted changes** (it lists them). Commit them first, so the live
+  app is always a commit you can name and go back to; `B68_DIRTY_OK=1` deploys them anyway.
+- **`app/media/theme.mp3` or `app/ambient/calling-cards.html` is missing.** Both stay out of
+  git (the theme is someone's recording, the cards are the book's art) and are uploaded from
+  this disk; a deploy without them removes them from the live site. Copy them in from the GM's
+  PC first; `B68_MEDIA_OK=1` deploys without them.
+
+Then it runs the checks, applies new migrations, stamps the build into `app/routes.js` for the
+upload (and puts it back), deploys, checks from outside that Access still guards the address,
+and ends with a receipt:
+
+```
+== Receipt
+  commit       1a2b3c4 (working tree clean)
+  build        2026-10-16-1a2b3c4
+  worker       version 5e6f7a8b-...
+  migrations   all 7 applied, none pending
+  secrets      ACCESS_TEAM set, ACCESS_AUD set, GM_EMAILS set, DISPLAY_EMAILS set, DEEPGRAM_API_KEY set
+  files        app/media/theme.mp3 deployed, app/ambient/calling-cards.html deployed
+  sw cache     b68-shell-2026-10-16-1a2b3c4 (pages left open offer "Updated: reload")
+  smoke test   / PASS, /api/me PASS
+```
+
+The script sets `ACCESS_TEAM`, `ACCESS_AUD` and `GM_EMAILS`; it never touches
+`DISPLAY_EMAILS` (the table iPad's sign-in) or `DEEPGRAM_API_KEY` (the iPad's transcriber),
+which stay as they are and show as MISSING in the receipt until you set them
+(`npx wrangler secret put DISPLAY_EMAILS`, GM.md). Phones pick up the new version the next time
+they open the app online; a page left open says **Updated: reload** in its header.
+
+A plain `npx wrangler deploy` uploads the code but **skips the migrations** (and the checks,
+the build stamp and the receipt). That is harmless while every new table is created on first
+use by the server (`db.js` does), but not for a migration that changes an existing table, so
+use `npm run deploy`.
 
 ## "Not signed in" on a device that has passed Access
 
