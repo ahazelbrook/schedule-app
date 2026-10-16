@@ -7,8 +7,8 @@
 //       functions/, checks/ or scripts/. Strings the pack shares with app/content.js (the rulebook's public
 //       character-creation text, already shipped to every player) are exempt.
 //   (d) the GM page's pure guards: only a player-layer map reaches the display, keys, pack validation, the note, patches.
-//   (f) when the pack has the scenes and engagement parts: app/gm/scenes.js and app/gm/engagement.js hold none of their
-//       text (districts, streets, landmarks, notables, factions, rumours, approaches, factors, outcome wording);
+//   (f) when the pack has the scenes part, and the score part: app/gm/scenes.js and app/gm/score.js hold none of their text
+//       (districts, streets, landmarks, notables, factions, rumours; operations, seeds, assets, twists, threats, the pay lines);
 //   (e) when the pack has the npc part: app/gm/npc.js and app/gm/figure-map.js name no faction of npc.T / npc.F (the
 //       figure map's faction palette lives in the pack for exactly that reason);
 //   (h) the location glance's one-sentence plan (it names the target room and its locks) is GM only: it is in no player summary,
@@ -244,12 +244,12 @@ await test('(c) no string of 25+ characters from the real pack appears in a publ
   console.log('     ' + originals.size + ' pack strings (' + exempt.size + ' exempt: already public in app/content.js), ' + files.length + ' files (' + files.filter((f) => rel(f).startsWith('scripts/')).length + ' under scripts/), ' + Math.round(bytes / 1024) + ' KiB scanned');
 });
 
-/* ---------- (f) the scenes and engagement modules hold none of their parts' table text ---------- */
-// Everything the two parts carry (districts, streets, landmarks, notables, factions, rumours, the approaches, the factors, the
-// outcome wording, the closing line) lives in the pack. The modules hold arithmetic, labels and card layout only.
+/* ---------- (f) the scenes and score modules hold none of their parts' table text ---------- */
+// Everything the two parts carry (districts, streets, landmarks, notables, factions, rumours; the crews' seeds and pay lines, the
+// operations, assets, twists, threats, scopes) lives in the pack. The modules hold arithmetic, labels and card layout only.
 function sceneStrings(pk) {
   const out = new Set(), add = (v) => { const s = typeof v === 'string' ? v.trim() : ''; if (s.length >= 4) out.add(s); };
-  const parts = (pk && pk.parts) || {}, sT = (parts.scenes && parts.scenes.T) || {}, eT = (parts.engagement && parts.engagement.T) || {};
+  const parts = (pk && pk.parts) || {}, sT = (parts.scenes && parts.scenes.T) || {};
   for (const d of sT.district || []) {
     add(d.n); add(d.streets); add(d.buildings); add(d.factions); add(d.special);
     for (const k of ['named', 'scene', 'landmarks']) (d[k] || []).forEach(add);
@@ -258,30 +258,36 @@ function sceneStrings(pk) {
   for (const k of ['streetType', 'streetSound', 'streetSmell', 'streetObstacle', 'buildingCommon', 'buildingRare', 'rumour', 'faction']) (sT[k] || []).forEach(add);
   for (const k of Object.keys(sT.weather || {})) { add(k); (sT.weather[k] || []).forEach(add); }
   (sT.ratingLabels || []).forEach(add);
-  for (const a of eT.approach || []) a.forEach(add);
-  for (const f of eT.factor || []) { add(f.plus); add(f.minus); }
-  for (const l of eT.loadout || []) { add(l.value); add(l.label); }
-  for (const o of Object.values(eT.outcome || {})) { add(o.pos); add(o.how); }
-  add(eT.cut); add(eT.cite);
   return [...out];
 }
-await test('(f) app/gm/scenes.js and app/gm/engagement.js hold no text of the pack\'s scenes or engagement parts', async () => {
-  if (!PACK || !PACK.parts.scenes || !PACK.parts.engagement) { console.log('     skipped: the pack has no scenes and engagement parts'); return; }
-  const files = ['scenes.js', 'engagement.js'].map((f) => path.join(ROOT, 'app', 'gm', f));
-  const missing = files.filter((f) => !fs.existsSync(f));
-  if (missing.length) throw new Error('missing: ' + missing.map(rel).join(', '));
-  const strings = sceneStrings(PACK);
-  if (strings.length < 100) throw new Error('only ' + strings.length + ' strings found in the scenes and engagement parts (has their shape changed?)');
-  const hits = [];
-  for (const f of files) {
-    const text = read(f);
-    for (const n of strings) {
-      const re = new RegExp('(^|[^A-Za-z0-9_])' + reEsc(n) + '(?![A-Za-z0-9_])', 'g');
-      let m; while ((m = re.exec(text))) hits.push(rel(f) + ':' + lineOf(text, m.index + m[1].length) + ' ' + mask(n));
-    }
+// the score part: every phrase its tables hold (twelve characters or more: the short ones are vocabulary the module uses, such as the asset kinds), and the names it is keyed by
+function scoreStrings(pk) {
+  const out = new Set(), add = (v, n) => { const s = typeof v === 'string' ? v.trim() : ''; if (s.length >= n) out.add(s); };
+  const T = (pk && pk.parts && pk.parts.score && pk.parts.score.T) || {};
+  (function walk(v) { if (typeof v === 'string') add(v, 12); else if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') Object.keys(v).forEach((k) => walk(v[k])); })(T);
+  for (const m of [T.crew, T.op, T.holding, T.districtRule]) Object.keys(m || {}).forEach((k) => add(k, 4));
+  return [...out];
+}
+function noTableText(file, strings, label) {
+  const text = read(path.join(ROOT, 'app', 'gm', file)), hits = [];
+  for (const n of strings) {
+    const re = new RegExp('(^|[^A-Za-z0-9_])' + reEsc(n) + '(?![A-Za-z0-9_])', 'g');
+    let m; while ((m = re.exec(text))) hits.push('app/gm/' + file + ':' + lineOf(text, m.index + m[1].length) + ' ' + mask(n));
   }
-  if (hits.length) throw new Error(hits.length + ' hit(s):\n  ' + hits.slice(0, 20).join('\n  '));
-  console.log('     ' + files.length + ' files, ' + strings.length + ' strings');
+  if (hits.length) throw new Error(hits.length + ' hit(s) in ' + label + ':\n  ' + hits.slice(0, 20).join('\n  '));
+  console.log('     ' + file + ': ' + strings.length + ' strings');
+}
+await test('(f) app/gm/scenes.js holds no text of the pack\'s scenes part', async () => {
+  if (!PACK || !PACK.parts.scenes) { console.log('     skipped: the pack has no scenes part'); return; }
+  const strings = sceneStrings(PACK);
+  if (strings.length < 100) throw new Error('only ' + strings.length + ' strings found in the scenes part (has its shape changed?)');
+  noTableText('scenes.js', strings, 'the scenes module');
+});
+await test('(f) app/gm/score.js holds no text of the pack\'s score part', async () => {
+  if (!PACK || !PACK.parts.score) { console.log('     skipped: the pack has no score part'); return; }
+  const strings = scoreStrings(PACK);
+  if (strings.length < 100) throw new Error('only ' + strings.length + ' strings found in the score part (has its shape changed?)');
+  noTableText('score.js', strings, 'the score module');
 });
 
 /* ---------- (e) the NPC and figure-map modules name no faction of the npc part ---------- */
@@ -343,11 +349,11 @@ await test('(d) only a player-layer render goes to the display: GM layer refused
   if (!gate.allows({ kind: 'blank' }) || !gate.allows({ kind: 'npc', npcId: 'x' }) || !gate.allows({ kind: 'text', text: 'x' })) throw new Error('other kinds should pass');
 });
 
-await test('(d) keys: never while typing (Esc only) or with a modifier; 1-4 (5-9 nothing), N B S E T, P X M, L, H twice or Shift+H', async () => {
+await test('(d) keys: never while typing (Esc only) or with a modifier; 1-4 (5-9 nothing), N B S T, P X M, L, H twice or Shift+H', async () => {
   const k = (key, x = {}) => GP.keyAction({ key, ...x });
   assertEq([k('1'), k('4'), k('9'), k('0')], [{ type: 'situation', n: 1 }, { type: 'situation', n: 4 }, null, { type: 'clear' }], 'digits (0 clears the iPad to ambient; 5-9 do nothing)');
   assertEq([k('i').panel, k('0', { typing: true }), k('i', { ctrlKey: true })], ['ipad', null, null], 'the iPad panel key');
-  assertEq([k('n').panel, k('B').panel, k('t').panel, k('s').panel, k('E').panel], ['npc', 'location', 'rules', 'scenes', 'engagement'], 'panels');
+  assertEq([k('n').panel, k('B').panel, k('t').panel, k('s').panel, k('E'), k('e')], ['npc', 'location', 'rules', 'scenes', null, null], 'panels (E went with Engage)');
   assertEq([k('p').bucket, k('x').bucket, k('M').bucket, k('l').type, k('h').type, k('H').type], ['n', 'x', 'm', 'last', 'blank-tap', 'blank'], 'capture, and the blank key');
   assertEq([k('1', { typing: true }), k('h', { typing: true }), k('Escape', { typing: true })], [null, null, { type: 'esc' }], 'typing');
   assertEq([k('1', { ctrlKey: true }), k('h', { metaKey: true }), k('p', { altKey: true })], [null, null, null], 'modifiers');

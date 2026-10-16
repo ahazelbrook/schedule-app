@@ -18,9 +18,6 @@
 //   scenes    T from the district scene roller (Tools/blades-68-district-scenes.md, cut at `// --- Machinery`), plus
 //             T.ratingLabels (the four district rating labels, probed from the vault's ratings()). Checked: the time-of-day
 //             rule in generate() matches the keys of T.weather, the %F% placeholder is still used, every district is complete.
-//   engagement T from the engagement roll page (Tools/blades-68-engagement-roll.md): approach, factor, plus loadout
-//             [{value,label,load}], outcome {crit,six,risky,desperate: {pos,how}} (probed from the vault's outcome() over
-//             every result, and the grouping is verified), cut (the closing line) and cite (the page reference).
 //
 //   prep      the prep notes: every note under the '68 folder with `gm_prep: true`, cut into Markdown blocks with their
 //             transclusions carried in, each task box with its anchor (lib/prep-export.mjs). No such note: no part.
@@ -356,10 +353,10 @@ function buildNpc(vault, exportedAt) {
   };
 }
 
-// ---- parts: scenes and engagement -----------------------------------------------------------------------
-// Both are read from the vault page's dataviewjs block. The tables are what runs; the few facts generate() and the UI hold
-// as literals (the rating labels, the loadout loads, the outcome wording, the closing line, the page reference) are probed
-// or lifted by pattern, and every one is checked, so a vault edit that moves them stops the export instead of drifting.
+// ---- part: scenes ---------------------------------------------------------------------------------------
+// Read from the vault page's dataviewjs block. The tables are what runs; the few facts generate() and the UI hold
+// as literals (the rating labels, the time-of-day rule, the rumour placeholder) are probed or lifted by pattern, and every one
+// is checked, so a vault edit that moves them stops the export instead of drifting.
 const TOOLS = ["Wiki", "Games", "Blades in the Dark", "Tools"];
 function pageBlock(vault, name, label) {
   const file = path.join(vault, ...TOOLS, name);
@@ -436,59 +433,6 @@ function buildScenes(vault, exportedAt) {
     if (!m || Number(m[2]) !== i || !m[1]) throw new Error(label + ": ratings() entry " + i + " does not read '<label> r[" + i + "]'");
     return m[1];
   });
-  return { src: { file: rel(vault, file), blockSha: sha(block), exportedAt }, T };
-}
-
-function buildEngagement(vault, exportedAt) {
-  const label = "engagement";
-  const { file, block } = pageBlock(vault, "blades-68-engagement-roll.md", label);
-  const T = runTables(block, label, file);
-  if (!Array.isArray(T.approach) || T.approach.length < 1 || !T.approach.every(a => Array.isArray(a) && a.length === 2 && a.every(x => typeof x === "string"))) {
-    throw new Error(label + ": T.approach is not [[name, gambit], ...]");
-  }
-  if (!Array.isArray(T.factor) || T.factor.length < 1 || !T.factor.every(f => f && typeof f.id === "string" && typeof f.plus === "string" && typeof f.minus === "string")) {
-    throw new Error(label + ": T.factor is not [{ id, plus, minus }, ...]");
-  }
-
-  // loadout: the options of the Loadout select, and the load each one means
-  const opts = [...block.matchAll(/loadSel\.createEl\("option",\s*\{\s*text:\s*("(?:[^"\\]|\\.)*"),\s*value:\s*("(?:[^"\\]|\\.)*")\s*\}\)/g)]
-    .map(m => ({ value: JSON.parse(m[2]), label: JSON.parse(m[1]) }));
-  if (!opts.length) throw new Error(label + ": the Loadout options were not found; update the exporter");
-  const ld = block.match(/loadSel\.value\s*===\s*("(?:[^"\\]|\\.)*")\s*\?\s*(\d+)\s*:\s*(\d+)/);
-  if (!ld) throw new Error(label + ": the load rule (`loadSel.value === \"X\" ? a : b`) was not found; update the exporter");
-  if (opts.length !== 2 || opts[0].value !== JSON.parse(ld[1])) throw new Error(label + ": the load rule does not match the two Loadout options");
-  opts[0].load = Number(ld[2]); opts[1].load = Number(ld[3]);
-  opts.forEach(o => { const n = o.label.match(/load (\d+)/); if (n && Number(n[1]) !== o.load) throw new Error(label + ": the load in the label '" + o.label + "' disagrees with the rule"); });
-  T.loadout = opts;
-
-  // outcome(): probed over every result, then the grouping is verified
-  const src = cutFunction(block, "outcome", label);
-  const probe = "const __o = " + src.replace(/^function outcome/, "function") + ";\n" +
-    "globalThis.__O = { crit: __o({ crit: true, best: 6, zero: false }), crit5: __o({ crit: true, best: 5, zero: false })," +
-    " six: __o({ crit: false, best: 6, zero: false }), zero6: __o({ crit: false, best: 6, zero: true })," +
-    " b5: __o({ crit: false, best: 5, zero: false }), b4: __o({ crit: false, best: 4, zero: false })," +
-    " b3: __o({ crit: false, best: 3, zero: false }), b2: __o({ crit: false, best: 2, zero: false }), b1: __o({ crit: false, best: 1, zero: false }) };";
-  const { ctx, error } = runBody(probe, "outcome");
-  if (error || !ctx.__O) throw new Error(label + ": outcome() could not be probed" + (error ? ": " + error.message : ""));
-  const O = JSON.parse(JSON.stringify(ctx.__O));
-  const one = k => { const v = O[k]; if (!Array.isArray(v) || v.length !== 2 || !v.every(x => typeof x === "string" && x)) throw new Error(label + ": outcome() did not return [position, how] for " + k); return { pos: v[0], how: v[1] }; };
-  const same = (a, b) => a.pos === b.pos && a.how === b.how;
-  const out = { crit: one("crit"), six: one("six"), risky: one("b5"), desperate: one("b1") };
-  if (!same(one("crit5"), out.crit)) throw new Error(label + ": outcome() groups a critical by its best die; the port assumes a critical is one result");
-  if (!same(one("zero6"), out.six)) throw new Error(label + ": outcome() treats a 0d six differently; update the exporter and the port");
-  if (!same(one("b4"), out.risky)) throw new Error(label + ": outcome() splits 4 and 5; the port groups them");
-  if (!same(one("b3"), out.desperate) || !same(one("b2"), out.desperate)) throw new Error(label + ": outcome() splits 1-3; the port groups them");
-  if (same(out.crit, out.six) || same(out.six, out.risky) || same(out.risky, out.desperate)) throw new Error(label + ": outcome() does not distinguish the four results");
-  T.outcome = out;
-
-  // the closing line the card shows after a roll, and the page reference in the role line
-  const cut = block.match(/dv\.el\("div",\s*((?:"(?:[^"\\]|\\.)*"\s*\+\s*)*"(?:[^"\\]|\\.)*"),\s*\{ container: card, cls: "b68-read" \}\);\s*\n\s*\} else \{/);
-  if (!cut) throw new Error(label + ": the closing line after a roll was not found; update the exporter");
-  T.cut = vm.runInNewContext(cut[1]);
-  if (typeof T.cut !== "string" || !T.cut) throw new Error(label + ": the closing line is empty");
-  const cite = block.match(/·\s*('68 p\.[0-9–-]+)`/);
-  if (!cite) throw new Error(label + ": the page reference in the role line was not found; update the exporter");
-  T.cite = cite[1];
   return { src: { file: rel(vault, file), blockSha: sha(block), exportedAt }, T };
 }
 
@@ -702,7 +646,7 @@ function main() {
 
   const parts = {};
   const failures = [];
-  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["engagement", buildEngagement], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart]];
+  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart]];
   let npcLeverage = 0;
   let locationExtraNames = [];
   for (const [name, fn] of builders) {
@@ -760,7 +704,6 @@ function main() {
     console.log("  npc.T       (" + Object.keys(parts.npc.T).length + ")  " + summariseKeys(parts.npc.T).join(" "));
     console.log("  npc: cast " + parts.npc.cast.length + ", leverage shapes " + npcLeverage + " (round-trip tested), F " + (parts.npc.F ? "present (" + Object.keys(parts.npc.F).join(", ") + ")" : "null"));
     console.log("  scenes.T     (" + Object.keys(parts.scenes.T).length + ")  " + summariseKeys(parts.scenes.T).join(" "));
-    console.log("  engagement.T (" + Object.keys(parts.engagement.T).length + ")  " + summariseKeys(parts.engagement.T).join(" "));
     const c = parts.campaign;
     console.log("  campaign: pcs " + c.pcs.length + ", callbacks " + c.callbacks.length + ", cast " + c.cast.length + ", standing " + c.standing.length +
       ", owed " + c.owed.length + ", npcs " + c.npcs.length + ", names " + c.names.first.length + "/" + c.names.family.length + ", clocks " + c.clocks.length);
@@ -782,5 +725,5 @@ function main() {
 }
 
 // Runs as a script; importing the file (the unit test does) only exposes the npc helpers below.
-export { buildNpc, buildScenes, buildEngagement, leverageToData, applyLeverage, parseCast, parseFigureMap, warnings as exportWarnings };
+export { buildNpc, buildScenes, leverageToData, applyLeverage, parseCast, parseFigureMap, warnings as exportWarnings };
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

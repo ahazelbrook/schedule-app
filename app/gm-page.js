@@ -1,6 +1,6 @@
 /* gm-page.js — the GM's page (#gm, GM.md): the console (the four Situations; the nine single tables fold under the card), the location generator
    with its map, the cast as a list to push to the iPad, the state rail (crew, clocks, bargains owed, pins, who is on stage) and
-   the capture bar. S opens the street scene roller and E the engagement roll, beside the location generator (side panels), and
+   the capture bar. S opens the street scene roller beside the location generator (a side panel), and
    D the downtime cards (personal business: a scene prompt per activity a PC takes, an overindulgence's cost).
    Hosted build only (window.claude.gm); in the claude.ai artifact, or for a player, the page says so and does nothing.
 
@@ -510,7 +510,6 @@
       case 'b': return { type: 'panel', panel: 'location' };
       case 't': return { type: 'panel', panel: 'rules' };
       case 's': return { type: 'panel', panel: 'scenes' };
-      case 'e': return { type: 'panel', panel: 'engagement' };
       case 'd': return { type: 'panel', panel: 'downtime' };
       case 'p': return { type: 'capture', bucket: 'n' };
       case 'x': return { type: 'capture', bucket: 'x' };
@@ -653,13 +652,13 @@
   }
   P.packLosses = packLosses;
 
-  /* The tables a pack lacks, by each module's own check(T) (console, location, npc, scenes, engagement, downtime), for the preview and the
+  /* The tables a pack lacks, by each module's own check(T) (console, location, npc, scenes, downtime), for the preview and the
      load to show as WARNINGS (never errors: the upload still works, and every roller falls back to a neutral word for a missing table;
      the downtime cards to the built-in tables). mods: { B68GmConsole, ..., B68DowntimeTables }; parts: { <part>: body }.
      -> [{ part, missing: [path] }]. A downtime part is laid over the built-in tables (app/downtime-tables.js, the third name), so it is
      checked laid over them: check(T, part's T). A part the pack lacks, a module or base tables not loaded and a check that throws say
      nothing. */
-  var CHECKED = [['console', 'B68GmConsole'], ['location', 'B68GmLocation'], ['npc', 'B68GmNpc'], ['scenes', 'B68GmScenes'], ['engagement', 'B68GmEngagement'], ['downtime', 'B68GmDowntime', 'B68DowntimeTables']];
+  var CHECKED = [['console', 'B68GmConsole'], ['location', 'B68GmLocation'], ['npc', 'B68GmNpc'], ['scenes', 'B68GmScenes'], ['downtime', 'B68GmDowntime', 'B68DowntimeTables']];
   function packWarnings(mods, parts) {
     var out = [];
     CHECKED.forEach(function (c) {
@@ -822,31 +821,6 @@
     return h + actsHtml(m, 'situation') + '</article>';
   }
   P.linesHtml = linesHtml; P.classicCardHtml = classicCardHtml; P.situationCardHtml = situationCardHtml;
-
-  /* ---------- the engagement roll made with the table's own dice ----------
-     Everyone rolls physical dice. The GM taps the highest die (the LOWEST on a pool at or below 0d, which rolls two and keeps the
-     lowest), or a crit (two 6s, from 2d). This is the card the app's roll gives for that result: the module's own title, modifiers
-     line, position (outcomeOf) and closing line; only the Roll row says the dice were the table's. phys = { best, crit }.
-     M = B68GmEngagement, en = its instance, T = the pack's engagement tables, ui = the controls.
-     -> the roll object (the module's shape, `seed` null, `phys`, `replay` with no seed), or null for a result the pool cannot give
-     (a crit under 2d or without a 6, a die off 1-6). */
-  function engagementPhys(M, en, T, ui, phys) {
-    if (!M || !en || !isObj(T) || !isObj(phys)) return null;
-    var best = +phys.best, crit = !!phys.crit;
-    if (!(best >= 1 && best <= 6) || best !== Math.floor(best)) return null;
-    var base = en.roll(ui, { seed: 0 });      /* the module's own title, subtitle, modifiers and closing line, and the controls as it reads them; its dice are replaced below */
-    if (crit && (base.zero || base.pool < 2 || best !== 6)) return null;
-    var oc = M.outcomeOf(T, { crit: crit, best: best, zero: base.zero }), byId = {};
-    base.lines.forEach(function (l) { byId[l.id] = l; });
-    var rollMd = base.zero ? '0d — rolled 2 at the table, kept the lowest: **' + best + '**'
-      : crit ? 'Rolled at the table: two 6s → **critical**' : 'Rolled at the table: highest die **' + best + '**';
-    var lines = [byId.mods, { kind: 'want', id: 'result', md: '**' + oc.pos + '**  \n' + oc.how }, { kind: 'grid', id: 'roll', rows: [{ k: 'Roll', md: rollMd }] }, byId.cut].filter(Boolean);
-    var all = [base.meta.title, base.meta.sub].concat(lines.map(function (l) { return l.kind === 'grid' ? l.rows.map(function (r) { return r.k + ': ' + r.md; }).join(' ') : l.md; })).map(M.plain);
-    var meta = Object.assign({}, base.meta, { chips: [str(oc.pos).split(' — ')[0]], text: all[2], all: all, result: { pool: base.pool, zero: base.zero, dice: [], crit: crit, best: best, pos: oc.pos } });
-    return { lines: lines, meta: meta, seed: null, pool: base.pool, zero: base.zero, dice: [], crit: crit, best: best, position: oc.pos,
-      phys: { best: best, crit: crit }, replay: { id: 'engagement', phys: { best: best, crit: crit }, ui: base.replay.ui } };
-  }
-  P.engagementPhys = engagementPhys;
 
   if (!W || !W.document) return { _pure: P };
 
@@ -1144,7 +1118,7 @@
   function open(rootEl, api) {
     close();
     S = { root: rootEl, api: api, me: null, status: 'loading', doc: {}, updatedAt: null, saver: null, carriedParked: null,
-      pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console', scn: null, scnRoll: null, scnMem: {}, scnErr: '', eng: null, engRoll: null, engHid: null, engErr: '',
+      pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console', scn: null, scnRoll: null, scnMem: {}, scnErr: '',
       dt: null, dtDists: null, dtRoll: null, dtSig: null, dtMem: {}, dtErr: '', dtNote: '', dtBusy: {},
       arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, pinOpen: null, figMemo: {}, importing: null, shown: 'console' };
     try { S.panel = W.localStorage.getItem('b68.gm.panel') || 'location'; S.prepWide = W.localStorage.getItem(PREP_WIDE) === '1'; } catch (e) {}
@@ -1231,7 +1205,7 @@
       '<p class="gm-up"><button type="button" class="btn ' + (losses.length ? 'bad' : 'primary') + '" data-gm="upload"' + (v.ok ? '' : ' disabled') + '>' + (losses.length ? 'Upload anyway' : 'Upload ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's')) + '</button> <progress id="gm-prog" max="' + Math.max(1, v.parts.length) + '" value="0" hidden></progress> <span id="gm-upmsg" class="gm-dim" role="status"></span></p>';
   }
   /* the pack check as a list: a warning, never an error (the rollers use a neutral word for a table the pack lacks) */
-  function modMap() { return { B68GmConsole: W.B68GmConsole, B68GmLocation: W.B68GmLocation, B68GmNpc: W.B68GmNpc, B68GmScenes: W.B68GmScenes, B68GmEngagement: W.B68GmEngagement, B68GmDowntime: W.B68GmDowntime, B68DowntimeTables: W.B68DowntimeTables }; }
+  function modMap() { return { B68GmConsole: W.B68GmConsole, B68GmLocation: W.B68GmLocation, B68GmNpc: W.B68GmNpc, B68GmScenes: W.B68GmScenes, B68GmDowntime: W.B68GmDowntime, B68DowntimeTables: W.B68DowntimeTables }; }
   function packWarnHtml(warns) {
     if (!warns.length) return '';
     var n = warns.reduce(function (k, w) { return k + w.missing.length; }, 0);
@@ -1318,13 +1292,22 @@
     S.doc = applyPatch(S.doc, p);
     S.saver.add(p); S.saver.flush();
   }
+  /* Engage went on 17/10/2026: the controls, the current card and the history it stored in the notes are dropped (once; nothing else reads them) */
+  function dropEngage() {
+    var d = S.doc, c = isObj(d.cards) ? d.cards : {}, h = isObj(d.hist) ? d.hist : {}, p = {};
+    if (d.eng !== undefined) p.eng = null;
+    if (c.engagement !== undefined) p.cards = { engagement: null };
+    if (h.engagement !== undefined) p.hist = { engagement: null };
+    if (Object.keys(p).length) patch(p, { force: true });
+  }
   function start() {
     resendPending();
+    dropEngage();
     var cp = part('console'), C = W.B68GmConsole, m = isObj(S.doc.mem) ? S.doc.mem : {};
     S.con = null; S.conErr = '';
     if (!C || !cp || !isObj(cp.T)) S.conErr = !C ? 'The console module is missing.' : 'The pack has no console part. Update the pack.';
     else { try { S.con = C.create({ T: cp.T, campaign: part('campaign') || {}, state: S.doc.con || {}, mem: clone(m.console || {}) }); } catch (e) { S.conErr = 'The console could not start: ' + errText(e); } }
-    S.locMem = clone(m.location || {}); S.locErr = ''; S.scnMem = clone(m.scenes || {}); S.scn = null; S.eng = null; S.npcg = null; S.npcMem = clone(m.npc || {}); S.npcRoll = null;
+    S.locMem = clone(m.location || {}); S.locErr = ''; S.scnMem = clone(m.scenes || {}); S.scn = null; S.npcg = null; S.npcMem = clone(m.npc || {}); S.npcRoll = null;
     S.dt = null; S.dtDists = null; S.dtRoll = null; S.dtSig = null; S.dtMem = clone(m.downtime || {});
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
@@ -1344,7 +1327,7 @@
     }, function () {});
   }
   function layout() {
-    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['engagement', 'Engage'], ['npc', 'NPC'], ['downtime', 'Downtime'], ['cards', 'Cards'], ['rules', 'GM screen'], ['ipad', 'iPad'], ['state', 'State']];
+    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['npc', 'NPC'], ['downtime', 'Downtime'], ['cards', 'Cards'], ['rules', 'GM screen'], ['ipad', 'iPad'], ['state', 'State']];
     S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' + barHtml() +
       '<div class="seg gm-segbar" role="tablist" aria-label="Show">' + segs.map(function (s) { return '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
       '<div class="gm-main">' +
@@ -1359,8 +1342,8 @@
       '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div>' +
       '<details class="gm-singles" id="gm-singles"></details></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['engagement', 'Engage', 'E'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
-      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
+      [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
+      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
       '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button>' +
@@ -1536,7 +1519,7 @@
 
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderEngagement(); renderNpcs(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
+    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderNpcs(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
   }
   /* the pack's export date: in the Menu in full, in the bar only when stale or an offline copy */
   function syncHead() {
@@ -2111,8 +2094,8 @@
   }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
 
-  var SIDE = ['prep', 'location', 'scenes', 'engagement', 'npc', 'downtime', 'cards', 'rules', 'ipad'];
-  /* ---------- the street scene roller (S) and the engagement roll (E): side panels ---------- */
+  var SIDE = ['prep', 'location', 'scenes', 'npc', 'downtime', 'cards', 'rules', 'ipad'];
+  /* ---------- the street scene roller (S): a side panel ---------- */
   function genLinesHtml(lines) {
     return (lines || []).map(function (l) { return l.kind === 'chips' ? chipsHtml(l.chips) : linesHtml([l], md); }).join('');
   }
@@ -2173,92 +2156,6 @@
     var read = r.lines.filter(function (l) { return l.kind === 'read'; }).map(function (l) { return plainMd(l.md); });
     pushDisplay({ kind: 'text', title: plainMd(r.meta.title).slice(0, 2000), caption: plainMd(r.meta.sub).slice(0, 2000), text: read.join('\n\n').slice(0, 2000) })
       .then(function () { toast('On the iPad: ' + plainMd(r.meta.title) + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
-  }
-
-  function engInst() {
-    if (S.eng) return S.eng;
-    var M = W.B68GmEngagement, pk = part('engagement');
-    if (!M) { S.engErr = 'The engagement module is missing.'; return null; }
-    if (!pk || !isObj(pk.T)) { S.engErr = 'The pack has no engagement part. Update the pack.'; return null; }
-    try { S.eng = M.create({ T: pk.T }); S.engErr = ''; } catch (e) { S.engErr = 'The engagement roll could not start: ' + errText(e); }
-    return S.eng;
-  }
-  function engUi() {
-    var l = isObj(S.doc.eng) && isObj(S.doc.eng.ui) ? S.doc.eng.ui : {}, en = engInst(), d = en ? en.defaults() : { mods: {} };
-    return { approach: l.approach || d.approach, load: l.load || d.load, mods: Object.assign({}, d.mods, isObj(l.mods) ? l.mods : {}) };
-  }
-  /* A stored engagement card is either the app's roll ({ seed, ui }: redrawn from its seed) or a result called from the table's own
-     dice ({ id: 'engagement', ui, phys: { best, crit } }: no seed, redrawn from the result). */
-  function replayEngagement(e) {
-    var en = engInst(); if (!en || !isObj(e)) return null;
-    try {
-      if (isObj(e.phys)) return engagementPhys(W.B68GmEngagement, en, part('engagement').T, e.ui || {}, e.phys);
-      return en.roll(e.ui || {}, { seed: e.seed });
-    } catch (x) { return null; }
-  }
-  /* A stored card names its dice one way: the app's `seed`, or the table's `phys` (and `id`). The way it does not use is sent as null,
-     so a merge into the server's copy never keeps the other's key (the card is dropped and set again within one save more than once:
-     the saver folds that into a plain set, which would keep a stale `phys` under a new seed and replay it as the table's roll). */
-  function engCardPatch(entry) { return Object.assign({ id: null, seed: null, phys: null }, entry); }
-  /* the new current card REPLACES the stored one */
-  function engHistory(entry) {
-    var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.engagement) ? S.doc.hist.engagement : {};
-    patch({ cards: { engagement: engCardPatch(Object.assign({ hid: hid }, entry)) }, hist: { engagement: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
-    return hid;
-  }
-  function rollEngagement() {
-    var en = engInst(); if (!en) { renderEngagement(); return; }
-    var roll;
-    try { roll = en.roll(engUi(), {}); } catch (e) { toast('The engagement roll failed: ' + errText(e), true); return; }
-    var entry = { seed: roll.seed, ui: roll.replay.ui, label: str(roll.meta.title) + ' · ' + str(roll.position).split(' — ')[0], at: nowIso() };
-    S.engHid = engHistory(entry);
-    S.engRoll = roll; S.last = { text: 'Engagement: ' + entry.label };
-    renderEngagement(true);
-  }
-  /* the table rolled: a tap on the highest die (the lowest on a 0d pool), or on Crit; v is '1'-'6' or 'crit' */
-  function rollEngagementPhys(v) {
-    var en = engInst(); if (!en) { renderEngagement(); return; }
-    var crit = v === 'crit', best = crit ? 6 : Math.floor(+v), roll;
-    try { roll = engagementPhys(W.B68GmEngagement, en, part('engagement').T, engUi(), { best: best, crit: crit }); } catch (e) { toast('The engagement card failed: ' + errText(e), true); return; }
-    if (!roll) { toast(crit ? 'Two 6s needs a pool of 2d or more.' : 'That is not a die.', true); return; }
-    var label = str(roll.meta.title) + ' · ' + str(roll.position).split(' — ')[0] + ' · table ' + (crit ? 'crit' : (roll.zero ? 'low ' : '') + best);
-    S.engHid = engHistory({ id: 'engagement', ui: roll.replay.ui, phys: roll.phys, label: label, at: nowIso() });
-    S.engRoll = roll; S.last = { text: 'Engagement: ' + label };
-    renderEngagement(true);
-  }
-  /* a control changed: the roll on screen no longer matches, so it goes (the Earlier row keeps it) and the pool is shown again */
-  function setEngagement(key, value, mod) {
-    var u = {};
-    if (mod) { u.mods = {}; u.mods[key] = +value || 0; } else u[key] = value;
-    patch({ eng: { ui: u }, cards: { engagement: null } });
-    S.engRoll = null; S.engHid = null; renderEngagement();
-  }
-  /* "Rolled at the table": tap the highest die (the lowest on a 0d pool, which rolls two and keeps the LOWEST), or Crit (two 6s, from
-     2d). The tapped die stays marked while its card is on screen. */
-  function engDiceHtml(pool, phys) {
-    var zero = pool <= 0, on = function (v) { return !!phys && (v === 'crit' ? !!phys.crit : !phys.crit && phys.best === v); };
-    return '<div class="gm-field wide gm-dice" role="group" aria-label="Rolled at the table"><span class="gm-lab">Rolled at the table: ' + (zero ? 'lowest die' : 'highest die') + '</span><div class="gm-dicerow">' +
-      [1, 2, 3, 4, 5, 6].map(function (n) { return '<button type="button" class="chip gm-die" data-gm="engdie" data-v="' + n + '" aria-pressed="' + on(n) + '">' + n + '</button>'; }).join('') +
-      (zero ? '' : '<button type="button" class="chip gm-die gm-crit" data-gm="engdie" data-v="crit" aria-pressed="' + on('crit') + '"' + (pool < 2 ? ' disabled title="Two 6s needs a pool of 2d or more"' : '') + '>Crit (two 6s)</button>') +
-      '</div><span class="gm-dim">' + (zero ? '0d: roll two dice, keep the lowest' : 'Pool ' + pool + 'd: roll them, tap the highest') + '</span></div>';
-  }
-  function renderEngagement(fresh) {
-    var box = $q('#gm-eng'); if (!box) return;
-    var en = engInst();
-    if (!en) { box.innerHTML = '<p class="gm-note bad">' + esc(S.engErr || 'The engagement roll is not available.') + '</p>'; return; }
-    var cur = isObj(S.doc.cards) ? S.doc.cards.engagement : null;
-    if (!fresh && cur && (!S.engRoll || S.engHid !== cur.hid)) { S.engRoll = replayEngagement(cur); S.engHid = cur.hid; }
-    var ui = engUi(), roll = S.engRoll, c = roll || en.card(ui);
-    /* a factor is three chips: +1d with the factor's plus statement, 0, −1d with its minus statement, so which is which reads */
-    var h = '<div class="gm-loc-ctl">' + en.controls.map(function (x) {
-      if (x.type === 'tri') return '<div class="gm-field wide gm-tri" role="group" aria-label="' + esc(str(x.plus) + ' / ' + str(x.minus)) + '" data-tri="' + esc(x.id) + '"><div class="seg gm-triseg">' + [[1, '+1d', x.plus], [0, '0', ''], [-1, '−1d', x.minus]].map(function (o) {
-        return '<button type="button" class="chip gm-trichip" data-gm="engtri" data-id="' + esc(x.id) + '" data-v="' + o[0] + '" aria-pressed="' + (+ui.mods[x.id] === o[0]) + '"><b>' + o[1] + '</b>' + (o[2] ? '<small>' + esc(o[2]) + '</small>' : '') + '</button>';
-      }).join('') + '</div></div>';
-      return selectHtml('gm-e-' + x.id, 'data-eng', x.id, x.label, x.options, ui[x.id]);
-    }).join('') + '<button type="button" class="btn primary gm-roll" data-gm="engroll">Roll engagement</button>' + engDiceHtml(en.pool(ui), roll && roll.phys) + '</div>';
-    h += '<article class="gm-card gm-engcard" data-tool="engagement"><header class="gm-card-h"><div><h3>' + esc(c.meta.title) + '</h3><p class="gm-sub">' + esc(c.meta.sub) + '</p></div></header>' + chipsHtml(roll ? c.meta.chips : []) + genLinesHtml(c.lines) +
-      (roll ? '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="engagement">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="engagement">Copy</button></div>' : '') + '</article>';
-    box.innerHTML = h + earlierHtml('engagement', cur);
   }
 
   /* ---------- Downtime (D): personal business, one card per activity a PC takes (app/gm/downtime.js; GM.md "Downtime (D)") ----------
@@ -3140,7 +3037,7 @@
   /* ---------- pins and copy ---------- */
   function cardFor(tool) {
     if (tool === 'console' || tool === 'situation') { var r = S.conRes; return r ? { label: str(r.meta.label), title: str(r.meta.title), text: r.sections ? situationPlain(r) : consolePlain(r) } : null; }
-    if (tool === 'scenes' || tool === 'engagement' || tool === 'downtime') { var g = tool === 'scenes' ? S.scnRoll : tool === 'engagement' ? S.engRoll : S.dtRoll; return g ? { label: str(g.meta.label), title: str(g.meta.title), text: g.meta.all.join('\n') } : null; }
+    if (tool === 'scenes' || tool === 'downtime') { var g = tool === 'scenes' ? S.scnRoll : S.dtRoll; return g ? { label: str(g.meta.label), title: str(g.meta.title), text: g.meta.all.join('\n') } : null; }
     if (tool === 'npc') { var nr = S.npcRoll; return nr ? { label: str(nr.roll.card.meta.label), title: str(nr.roll.card.meta.title), text: nr.roll.card.meta.all.join('\n') } : null; }
     var L = W.B68GmLocation, roll = S.locRoll; if (!L || !roll) return null;
     var lines = []; try { lines = L.cardLines(roll, part('location')); } catch (e) {}
@@ -3265,12 +3162,11 @@
         var tool = b.getAttribute('data-tool'), e = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).filter(function (x) { return x._id === b.getAttribute('data-h'); })[0]; if (!e) break;
         var cur = {}; Object.keys(e).forEach(function (k) { if (k !== '_id') cur[k] = e[k]; }); cur.hid = e._id;
         cur.at = nowIso();      /* the current card now: after a reload the newest of the two still shows */
-        var cp = { cards: {} }; cp.cards[tool] = replacePatch(isObj(S.doc.cards) ? S.doc.cards[tool] : null, tool === 'engagement' ? engCardPatch(cur) : cur); patch(cp, { force: true });   /* replaces the stored card: no key of the card it was survives */
+        var cp = { cards: {} }; cp.cards[tool] = replacePatch(isObj(S.doc.cards) ? S.doc.cards[tool] : null, cur); patch(cp, { force: true });   /* replaces the stored card: no key of the card it was survives */
         if (tool === 'console' || tool === 'situation') { S.conRes = null; drawConsoleCard(); }
         else if (tool === 'scenes') { S.scnRoll = null; renderScenes(); }
         else if (tool === 'npc') { S.npcRoll = null; renderNpcGen(); }
         else if (tool === 'downtime') { S.dtRoll = null; S.dtSig = null; renderDowntime(); }
-        else if (tool === 'engagement') { S.engRoll = null; patch({ eng: { ui: clone(e.ui || {}) } }); renderEngagement(); }
         else { S.locRoll = null; S.map = null; renderLocation(); }
         break;
       }
@@ -3302,9 +3198,6 @@
       case 'npcloc': npcFromLocation(); break;
       case 'npcfile': fileNpc(); break;
       case 'scnipad': scenesToIpad(); break;
-      case 'engroll': rollEngagement(); break;
-      case 'engdie': rollEngagementPhys(b.getAttribute('data-v')); break;
-      case 'engtri': setEngagement(b.getAttribute('data-id'), b.getAttribute('data-v'), true); break;
       case 'dt-who': dtSetWho(str(b.getAttribute('data-id'))); break;
       case 'dt-act': dtSetAct(b.getAttribute('data-v')); break;
       case 'dt-roll': rollDowntime(str(b.getAttribute('data-v'))); break;
@@ -3368,8 +3261,6 @@
     else if (t.hasAttribute('data-scn')) { var sc = {}; sc[t.getAttribute('data-scn')] = t.value; patch({ scn: { ui: sc } }); }
     else if (t.hasAttribute('data-npcui')) { var nu = {}; nu[t.getAttribute('data-npcui')] = t.value; patch({ npc: { ui: nu } }); }
     else if (t.hasAttribute('data-dtf')) dtField(t.getAttribute('data-dtf'), t.value);
-    else if (t.hasAttribute('data-eng')) setEngagement(t.getAttribute('data-eng'), t.value, false);
-    else if (t.hasAttribute('data-engmod')) setEngagement(t.getAttribute('data-engmod'), t.value, true);
     else if (t.hasAttribute('data-reveal')) { var rv = {}; rv[t.getAttribute('data-reveal')] = t.checked; patch({ loc: { map: { reveal: rv } } }); if (S.map) drawMap(); renderLocation(); }
   }
   /* the outline of a long tab (Prep, Screen): the section being read is marked in its list */

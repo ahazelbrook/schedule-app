@@ -1,12 +1,12 @@
 # GM tools: the API and the secrecy contract
 
-The `#gm` page (the console with its four Situations, the location generator, street scenes, the engagement roll and the
+The `#gm` page (the console with its four Situations, the location generator, street scenes and the
 downtime cards) and the `#display` page (an iPad signed in as the GM) run on three GM-only endpoints. The generators' tables hold '68
 text and GM-only secrets, so they never enter git (the downtime cards' tables are original writing, so they are in git, in
 `app/downtime-tables.js`): the GM builds a **pack** from the vault on their own PC (`npm run gm:pack`, into the git-ignored
 `gm-private/`) and uploads it, from the browser or with `npm run gm:push -- --only pack --yes` (see `SYNC.md`, which also
 moves what happened at the table back into the vault). Code: `functions/_lib/gm.js`, `functions/api/gm/*.js`; tables in
-`migrations/0004_gm.sql`. The pack parts are `console`, `location`, `campaign`, `npc`, `scenes`, `engagement`, `prep`,
+`migrations/0004_gm.sql`. The pack parts are `console`, `location`, `campaign`, `npc`, `scenes`, `prep`,
 `screen` and `downtime` (the last three optional; `scripts/gm-pack.mjs` lists what each holds). The `downtime` part carries the
 house rule's two d100 tables, the Benefits and the Mishaps (`T.benefit`, `T.mishap`, from the vault note with `gm_downtime: true`),
 and is laid over the Downtime panel's built-in tables (see Downtime (D) below).
@@ -84,7 +84,7 @@ fails and nobody is known, nothing is purged.
 - **First run.** With no pack on the server the page asks for `gm-private/b68-gm-pack.json` (built by `npm run gm:pack`),
   checks it (`format` 1, `console` and `location` parts with `T`), previews the parts and uploads one part per
   `importPart` with a progress bar; parts the server holds that the file lacks are removed. Each module checks its own part
-  (`B68GmConsole`, `B68GmLocation`, `B68GmNpc`, `B68GmScenes`, `B68GmEngagement`: `check(T)`; `B68GmDowntime`: `check(T, part)`, the part laid
+  (`B68GmConsole`, `B68GmLocation`, `B68GmNpc`, `B68GmScenes`: `check(T)`; `B68GmDowntime`: `check(T, part)`, the part laid
   over the built-in tables): the table entries a part lacks are listed
   as a **warning** in the preview and, for the pack the page loads, in the Menu under **Pack check** (with one toast per page load).
   A warning never stops the upload, and a roll that needs a missing entry uses a neutral word. **Update pack** does the same
@@ -96,10 +96,10 @@ fails and nobody is known, nothing is purged.
   the **Scene** line (one row of labelled chips, `Scene: any · District: any · Aim: anyone · NPC: … · Threat: 3`, that opens
   to the scene, district, PC, NPC and threat controls; closed by default at every width), the four Situation buttons, the
   card, "Earlier:" the last five rolls, and **More tables** (the nine single tables, folded) |
-  a side panel with **Prep (R)**, **GM screen (T)**, **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)**, **Downtime (D)**, **Cards (O)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
+  a side panel with **Prep (R)**, **GM screen (T)**, **Location (B)**, **Street (S)**, **NPC (N)**, **Downtime (D)**, **Cards (O)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
   vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on
   stage) | the capture bar at the foot (buckets, the input, **File**, "N filed", **File last roll**). 600–1100 px: two columns, the rail below. Phone: the same bar as the laptop, 44 px
-  (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | Engage | NPC / Downtime | Cards | GM screen | iPad | State
+  (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | NPC / Downtime | Cards | GM screen | iPad | State
   bar in two full rows, six then five (every segment in reach, nothing to drag sideways), both stuck to the top; the Position switch first,
   **Now in** (its select moves into the Scene line here) and the Scene line, the situations a 2 × 2 grid, the other controls behind the
   Scene line, capture on a floating button. After a
@@ -118,7 +118,7 @@ fails and nobody is known, nothing is purged.
   scroll on their own and capture sits fixed at the foot, so a
   long Prep note or the GM screen never carries the console or the rail away; toasts sit above the capture bar, never over its
   input. The side tabs are one row with their keys showing at 1280 px (Prep, GM screen |
-  Location, Street, Engage, NPC, Downtime | Cards, iPad). Prep and the GM screen show their sections as an outline beside the text, the one
+  Location, Street, NPC, Downtime | Cards, iPad). Prep and the GM screen show their sections as an outline beside the text, the one
   being read marked. **Focus** (`F`, or the button by the tabs) shrinks the console to its keys on any tab (it replaces Prep's
   Wide, and shares its setting, `b68.gm.prepWide`); a roll made in Focus leaves Focus so the card shows (a toast says so, once
   per page load). Empty rail boxes are one line. Below 1100 px the page scrolls under the sticky bar. `body.gm-app` turns it
@@ -140,8 +140,8 @@ fails and nobody is known, nothing is purged.
     on that speaker's box. `Enter` saves the name.
   - **Update pack asks first** when the file would lose prep the app has (a part gone, a prep note gone or much
     shorter): the button reads **Upload anyway** and confirms (the same guard as `gm:pack` and `gm:push`, SYNC.md).
-- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (`5`–`9` do nothing: the single tables have no keys), `R` `B` `N` `S` `E` `D` `O` `T` `I` switch the panel
-  (Prep, Location, NPC, Street scene, Engagement, Downtime, Cards, GM screen, iPad; `R` and `T` also put the cursor in that pane's find box, so typing
+- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (`5`–`9` do nothing: the single tables have no keys), `R` `B` `N` `S` `D` `O` `T` `I` switch the panel
+  (Prep, Location, NPC, Street scene, Downtime, Cards, GM screen, iPad; `R` and `T` also put the cursor in that pane's find box, so typing
   lands there and not on the shortcuts), `F` Focus, `/` or `Ctrl+K` Find, `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
   the last roll under "Rolled at the table", `Shift+H`, or `H` twice within a second, blanks the screen until any key or tap (one stray `H` does
   nothing; the first alone says how, once per page load), `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
@@ -215,27 +215,15 @@ fails and nobody is known, nothing is purged.
   threats and a hidden target, and refuses to send it ("This view would name a hidden room: use Rings or Iso, or reveal
   more bands"); the in-page Player draw shows the same warning and the Player SVG download is refused. `rings` and `iso`
   are clean.
-- **Street (S) and Engage (E).** Two more side panels, ports of the vault pages `Tools/blades-68-district-scenes.md` and
-  `Tools/blades-68-engagement-roll.md` (`app/gm/scenes.js`, `app/gm/engagement.js`; tables from the pack parts `scenes` and
-  `engagement`; both optional: an older pack shows "The pack has no scenes part. Update the pack." in the panel).
-  **Street**: a district select (or anywhere) and **Roll a street scene**: three read-aloud paragraphs, the four ratings, and a
-  GM grid (landmark, who is out, what is in the way, word out, factions, the district rule). **Read-aloud to the iPad** sends
-  only the three paragraphs as plain text (never the notable, the rumour or the rule). **Engage**: approach, loadout (Quiet
-  3 / Loud 6) and three chips per factor (**+1d** carrying the factor's plus statement, **0**, **−1d** its minus statement, so
-  which is which reads at a glance); the card shows the pool before a roll, **Roll engagement** rolls it in the app
-  (a 0d pool rolls two and keeps the lowest) and the card gives the position, the dice and the closing "cut to the first
-  obstacle" line. **Everyone rolls physical dice**, so under Roll engagement sits a row **Rolled at the table: highest die**
-  with the buttons `1 2 3 4 5 6` and **Crit (two 6s)** (disabled under 2d): the GM rolls the pool, taps the highest die, and
-  gets the card the app's roll would give for that result (position, how, the closing line; the Roll row says "Rolled at the
-  table"). A 0d pool rolls two dice and keeps the LOWEST, so its row reads **Rolled at the table: lowest die** and has no crit.
-  Both file a card under `cards.scenes` / `cards.engagement` (an app roll `{ hid, seed, ui, label, at }`, a table roll
-  `{ hid, id: 'engagement', ui, phys: { best, crit }, label, at }` with no seed and a label ending "table 4" / "table crit" /
-  "table low 2"; the street scene keeps its repeat-guard in `mem.scenes`, the engagement roll has none), five Earlier per tool, Pin, Copy and `L`. A reload
-  or an Earlier click redraws the same card (from the seed, or from the result called at the table). A stored card is replaced, never merged:
-  the way of rolling it does not use is sent as null, so a table roll never keeps an old seed nor an app roll an old `phys`.
-  Changing an engagement control drops the stored roll (the Earlier row
-  keeps it) and shows the pool again; the controls live in `eng.ui` and `scn.ui`. Parity with the vault pages:
-  `node scripts/gm-parity.mjs --scenes --engagement` (see the header of that script for the one deliberate difference).
+- **Street (S).** A side panel, a port of the vault page `Tools/blades-68-district-scenes.md` (`app/gm/scenes.js`; tables from the
+  pack part `scenes`, optional: an older pack shows "The pack has no scenes part. Update the pack." in the panel). A district select
+  (or anywhere) and **Roll a street scene**: three read-aloud paragraphs, the four ratings, and a GM grid (landmark, who is out, what
+  is in the way, word out, factions, the district rule). **Read-aloud to the iPad** sends only the three paragraphs as plain text
+  (never the notable, the rumour or the rule). The card is filed under `cards.scenes` (`{ hid, seed, ui, label, at }`; the repeat-guard
+  is `mem.scenes`), five Earlier, Pin, Copy and `L`. A reload or an Earlier click redraws the same card from its seed; the district
+  control lives in `scn.ui`. Parity with the vault page: `node scripts/gm-parity.mjs --scenes`. Engage (E, the engagement roll
+  calculator) went on 17/10/2026, with its `engagement` pack part and the `eng` / `cards.engagement` / `hist.engagement` keys of the
+  notes (the page drops them from the state once); the vault page `Tools/blades-68-engagement-roll.md` stays as a reference.
 - **NPC (`N`).** At the top the generator: **Roll an NPC** draws a card (the vault generator's port, `app/gm/npc.js`, fed by the
   pack's `npc` part and the campaign part): a portrait, what the table could see, what they want, how to play them (cast,
   status, dial, mannerism, verb), the levers, and the faction's dossier folded away. Above the button three pickers, each on
