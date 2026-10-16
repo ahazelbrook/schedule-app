@@ -180,6 +180,25 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
   #table-page .tp-sessbtns { flex-basis: 100%; }
 }
 
+/* ---- touch: every control at least 40px tall; the small marks get an invisible hit area as wide as their pitch (the sheet's
+   ::before trick, tracker.css) so neighbours never take each other's taps; iOS zooms on a control under 16px ---- */
+@media screen and (max-width: 760px), screen and (pointer: coarse) {
+  #table-page button { touch-action: manipulation; }
+  #table-page .btn.sm, #table-page .chip.sm { min-height: 40px; }
+  #table-page .tp-band .btn.sm, #table-page .tp-band .chip.sm { min-height: 36px; margin-block: -6px; }
+  #table-page .tp-coh { min-height: 40px; }
+  #table-page .tp-pip, #table-page .tp-sq, #table-page .tp-sbox, #table-page .tp-dia, #table-page .tp-x, #table-page .cs-pill, #table-page .cs-tier, #table-page .cs-cube { position: relative; }
+  #table-page .tp-pip::before, #table-page .tp-sq::before, #table-page .tp-sbox::before, #table-page .tp-dia::before, #table-page .cs-pill::before, #table-page .cs-tier::before, #table-page .cs-cube::before {
+    content: ""; position: absolute; left: 50%; top: 50%; width: var(--hit-w, 19px); height: var(--hit-h, 44px); transform: translate(-50%, -50%) var(--hit-t, rotate(0deg)); }
+  #table-page .tp-sbox { --hit-w: 20px; --hit-t: skewX(14deg); }
+  #table-page .tp-dia { --hit-w: 24px; --hit-h: 22px; --hit-t: rotate(-45deg); }   /* the vault's four rows sit 22px apart */
+  #table-page .cs-pill { --hit-w: 17px; --hit-t: rotate(-16deg); }
+  #table-page .cs-tier { --hit-w: 23px; }
+  #table-page .cs-cube { --hit-w: 22px; }
+  #table-page .tp-x::before { content: ""; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); }
+}
+@media screen and (max-width: 760px) { #table-page :is(input, textarea, select) { font-size: 16px; } }
+
 /* ---- read only ---- */
 #table-page.tp-ro .tp-in, #table-page.tp-ro .tp-ta { opacity: .85; }
 

@@ -238,11 +238,31 @@
 #dossier .ds-roll-applied { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font: 400 12px/1.4 var(--font-mono); }
 #dossier .ds-roll-applied .ds-lab { margin: 0; color: var(--accent); }
 #dossier .ds-roll-apply { gap: 10px; }
+/* a scroll to the panel or its verdict clears the on-stage banner (cast.css sets --cp-stage-h) */
+#dossier .ds-roll, #dossier .ds-roll-res { scroll-margin-bottom: calc(var(--cp-stage-h, 0px) + 12px); }
+#dossier .ds-roll-foot { display: none; }
 @media (max-width: 480px) {
   #dossier .ds-roll-row { align-items: flex-start; flex-direction: column; gap: 4px; }
   #dossier .ds-roll-go .btn { margin-left: 0; }
   #dossier .ds-roll-word { font-size: 28px; }
 }
+/* ---- the mark strip and the resist helper (physical dice): the same panel chrome as the roll panel ---- */
+#dossier .ds-mark .ds-roll-body { gap: 10px; }
+#dossier .ds-mark-row { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
+#dossier .ds-mark-row .ds-lab { margin: 0; min-width: 56px; }
+#dossier .ds-mark-opts, #dossier .ds-mark-cons { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+#dossier .ds-mtog { display: inline-grid; justify-items: start; gap: 2px; text-align: left; padding: 5px 9px; }
+#dossier .ds-mtog small { font: 400 10px/1.2 var(--font-mono); text-transform: none; letter-spacing: 0; opacity: .8; }
+#dossier .ds-mark-dice { display: flex; flex-wrap: wrap; gap: 4px; }
+#dossier .ds-dieb { display: inline-grid; justify-items: center; gap: 2px; border: 0; background: transparent; padding: 3px 2px; cursor: pointer; border-radius: 4px; }
+#dossier .ds-dieb .ds-die { width: 34px; height: 34px; }
+#dossier .ds-dieb small { font: 700 10px/1 var(--font-mono); color: var(--ink-soft); }
+#dossier .ds-dieb:hover .ds-die rect, #dossier .ds-dieb:focus-visible .ds-die rect { stroke: var(--accent); stroke-width: 3.5; }
+#dossier .ds-dieb[disabled] { opacity: .45; cursor: default; }
+#dossier .ds-dieb-crit { grid-template-columns: auto auto; column-gap: 2px; }
+#dossier .ds-dieb-crit small { grid-column: 1 / -1; }
+#dossier .ds-rhelp { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--hair); }
+#dossier .ds-mark-foot { display: flex; justify-content: flex-end; padding-top: 2px; }
 #dossier .ds-advance { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 6px 0; }
 #dossier .ds-advance .ds-lab { margin: 0; }
 
@@ -371,6 +391,17 @@
   #dossier .ds-thumb.ghostly { opacity: .72; filter: blur(.35px) saturate(1.4); }
   /* rolling is the main thing at the table: each action's roll button fills the rest of its row, 44px tall */
   #dossier .ds-actbtn { min-height: 44px; flex: 1 1 auto; }
+  /* the roll, downtime and end-of-session panels: a bottom sheet fixed to the foot of the screen, stacked on top of the on-stage
+     banner (cast.css sets --cp-stage-h), scrolling inside itself; the page gets room below so nothing stays hidden under it */
+  #dossier .ds-roll { position: fixed; left: clamp(16px, 3vw, 36px); right: clamp(16px, 3vw, 36px); bottom: var(--cp-stage-h, 0px); z-index: 55; max-height: min(72vh, calc(100vh - var(--cp-stage-h, 0px) - 64px)); overflow-y: auto; -webkit-overflow-scrolling: touch; border: 2px solid var(--rule); border-bottom: 0; box-shadow: 0 -8px 28px rgba(20, 17, 14, .28); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  #dossier .ds-roll-h { position: sticky; top: 0; z-index: 1; }
+  #dossier .ds-roll-foot { display: flex; justify-content: flex-end; padding: 8px 12px 12px; border-top: 1px solid var(--hair); }
+  #dossier.ds-panel-open { padding-bottom: 64vh; }
+  /* Mark +1 / +2 and the vice buttons as a 2 × 2 grid, so none wraps alone */
+  #dossier .ds-markrow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #dossier .ds-markrow .ds-gap { display: none; }
+  /* iOS zooms the page when it focuses a control smaller than 16px */
+  #dossier :is(input, textarea, select) { font-size: 16px; }
 }
 /* touch targets: an invisible ::before widens each small mark without moving anything. A mark's area is 44px tall
    where its row has the room and as wide as its pitch in the row (--hit-w), so neighbours tile and never take each
@@ -391,6 +422,20 @@
   #dossier .ds-log .ds-x, #dossier .ds-detail .ds-x { --hit-h: 28px; }
   #dossier .ds-custom .ds-x { --hit-h: 22px; }
   #dossier .ds-items .ds-x { --hit-h: 100%; }
+  /* the play controls themselves are at least 40px tall on touch: buttons, chips, the push / assist / bargain rows, item rows,
+     Resist (as tall as its attribute row), the Armor / Heavy / resource boxes (a hit area as wide as their pitch), the bursts */
+  #dossier button { touch-action: manipulation; }
+  #dossier .btn.sm, #dossier .chip.sm { min-height: 40px; }
+  #dossier .ds-band .chip.sm { min-height: 36px; margin-block: -6px; }
+  #dossier .ds-rtog, #dossier .ds-item, #dossier .ds-coh, #dossier .ds-feat { min-height: 40px; align-items: center; }
+  #dossier .ds-rtog .ds-sq, #dossier .ds-item .ds-sq, #dossier .ds-feat .ds-sq { margin-top: 0; }
+  #dossier .ds-attr-h { min-height: 44px; }
+  #dossier .ds-resist { align-self: stretch; display: inline-flex; align-items: center; }
+  #dossier .ds-resrow { min-height: 40px; }   /* Armor, Heavy and the resource row 40px apart, so their hit areas tile */
+  #dossier button.ds-sq { position: relative; }
+  #dossier button.ds-sq::before { content: ""; position: absolute; left: 50%; top: 50%; width: 19px; height: 40px; transform: translate(-50%, -50%); }
+  #dossier .ds-burst { width: 40px; height: 40px; }
+  #dossier .ds-burst.on { width: auto; height: auto; }
 }
 
 /* ---- print: the dossier alone, on white, letter or A4 portrait ---- */

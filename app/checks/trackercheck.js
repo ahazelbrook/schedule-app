@@ -176,7 +176,12 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
       await q.fill('#dossier .ds-newclock', 'Courier'); await q.click('#dossier [data-act="addclock"][data-n="4"]');
       await q.fill('#dossier .ds-newitem', 'Lockpicks'); await q.click('#dossier [data-act="additem"]');
       await q.fill('#dossier .ds-newab', 'Ghost Contract'); await q.click('#dossier [data-act="addability"]'); await q.waitForTimeout(150);
-      await q.click('#dossier [data-act="rollopen"][data-a="Hunt"]'); await q.waitForTimeout(150);
+      /* an action opens the mark strip as a fixed bottom sheet on a phone, its controls 40px tall; it is closed again before the sweep below
+         (a fixed sheet would sit over whatever is scrolled under it) */
+      await q.click('#dossier [data-act="rollopen"][data-a="Hunt"]'); await q.waitForTimeout(250);
+      const strip = await q.evaluate(() => { const s = document.querySelector('#dossier .ds-mark'); if (!s) return null; const r = s.getBoundingClientRect(); const hs = [...s.querySelectorAll('button')].filter(n => n.offsetParent && !n.classList.contains('ds-x')).map(n => Math.round(n.getBoundingClientRect().height)); return { pos: getComputedStyle(s).position, bottom: Math.round(r.bottom), vh: innerHeight, minH: Math.min.apply(null, hs), n: hs.length }; });
+      assert(strip && strip.pos === 'fixed' && strip.bottom <= strip.vh + 1 && strip.minH >= 40 && strip.n >= 8, tag + ': the mark strip is a fixed bottom sheet with 40px controls: ' + JSON.stringify(strip));
+      await q.click('#dossier .ds-mark .ds-roll-x'); await q.waitForTimeout(150);
       const hit = await q.evaluate(() => {
         const out = { min: {}, owns: [], stolen: [] };
         const kinds = { pip: '.ds-act .ds-pip', keypip: '.ds-key .ds-pip', sbox: '.ds-sbox', xbox: '.ds-attr-h .ds-xbox', xpbox: '.ds-tools .ds-xbox', bandxp: '.ds-band .ds-xbox', bank: '.ds-bank .ds-dia', stacks: '.ds-stackrow .ds-dia', x: '.ds-key .ds-x, .ds-clockrow .ds-x, .ds-roll-x', xlist: '.ds-contact .ds-x, .ds-log .ds-x, .ds-items .ds-x, .ds-custom .ds-x' };

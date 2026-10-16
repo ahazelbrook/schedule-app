@@ -137,27 +137,59 @@
      next change of the stage (a new `at`). */
   function dismissed() { try { return localStorage.getItem(DISMISS) || dismissedMem; } catch (e) { return dismissedMem; } }
   function dismiss() { dismissedMem = scene && scene.at || ''; try { localStorage.setItem(DISMISS, dismissedMem); } catch (e) {} renderStage(); }
+  function undismiss() { dismissedMem = ''; try { localStorage.removeItem(DISMISS); } catch (e) {} strip.expanded = true; stageKey = ''; renderStage(); }
+  /* on a phone the banner is a one-line strip (portrait thumbs and names) that opens to the full banner for a while when the stage
+     changes, or on a tap; a desk always gets the full banner */
+  var strip = { expanded: false, timer: null, seenAt: null };
+  function phoneNow() { try { return !!(window.matchMedia && window.matchMedia('(max-width: 760px)').matches); } catch (e) { return false; } }
+  var STRIP_SHOW_MS = 8000;
+  function expandFor(ms) { strip.expanded = true; if (strip.timer) clearTimeout(strip.timer); strip.timer = setTimeout(function () { strip.timer = null; strip.expanded = false; renderStage(); }, ms); }
+  function setExpanded(on) { if (strip.timer) { clearTimeout(strip.timer); strip.timer = null; } strip.expanded = !!on; renderStage(); }
+  function stagedNames() { return stagedIds().map(function (id) { var d = npcs[id]; return d && d.revealed === true ? str(d.name) : ''; }).filter(Boolean); }
+  M.onStage = stagedNames;
+  M.showStage = undismiss;
   function renderStage() {
     var box = $('stageBanner'); if (!box) return;
     var list = stagedIds().map(function (id) { var d = npcs[id]; return d && d.revealed === true ? { id: id, doc: d } : null; }).filter(Boolean);
     var at = scene && scene.at || '';
-    if (!list.length || dismissed() === at && at) { if (stageKey) { stageKey = ''; box.hidden = true; box.innerHTML = ''; document.documentElement.style.removeProperty('--cp-stage-h'); } return; }
-    var key = at + '|' + gm() + '|' + JSON.stringify(list.map(function (x) { return [x.id, x.doc.name, x.doc.role, x.doc.faction, x.doc.description, x.doc.spec]; }));
+    if (!list.length || dismissed() === at && at) { if (stageKey) { stageKey = ''; box.hidden = true; box.innerHTML = ''; box.classList.remove('cp-collapsed'); document.documentElement.style.removeProperty('--cp-stage-h'); } return; }
+    var phone = phoneNow();
+    if (phone && at !== strip.seenAt) { strip.seenAt = at; expandFor(STRIP_SHOW_MS); }   /* a changed stage: the reveal lands in full, then folds to the strip */
+    var asStrip = phone && !strip.expanded;
+    var key = at + '|' + gm() + '|' + asStrip + '|' + JSON.stringify(list.map(function (x) { return [x.id, x.doc.name, x.doc.role, x.doc.faction, x.doc.description, x.doc.spec]; }));
     if (key === stageKey) return;
     stageKey = key;
-    var rows = list.map(function (x) {
-      var d = x.doc;
-      return '<article class="cp-st-npc"><a class="cp-st-pic" href="#cast/' + encodeURIComponent(x.id) + '" aria-label="' + esc(str(d.name)) + ', full size">' + holder('st', x.id, 'mug', 'cp-fig-mug') + '</a>' +
-        '<div class="cp-st-txt"><h3 class="cp-st-name">' + esc(d.name) + (d.alias ? ' <small>“' + esc(d.alias) + '”</small>' : '') + '</h3>' + (sub(d) ? '<p class="cp-st-sub">' + esc(sub(d)) + '</p>' : '') +
-        '<p class="cp-st-desc">' + esc(d.description) + '</p></div></article>';
-    }).join('');
-    box.innerHTML = '<div class="cp-st-head"><span class="cp-st-kick">On stage</span><span class="cp-st-acts">' +
-      (gm() ? '<button type="button" class="btn sm" data-cp="clear">Clear stage</button>' : '') +
-      '<button type="button" class="btn sm" data-cp="dismiss" aria-label="Hide this until the stage changes">Hide</button></span></div><div class="cp-st-list">' + rows + '</div>';
+    if (asStrip) {
+      var names = list.map(function (x) { return str(x.doc.name); }).join(', ');
+      box.innerHTML = '<div class="cp-st-strip" role="button" tabindex="0" data-cp="expand" aria-expanded="false" aria-label="On stage: ' + esc(names) + '. Show more"><span class="cp-st-kick">On stage</span>' +
+        list.map(function (x) { return '<span class="cp-st-npc cp-st-mini">' + holder('st', x.id, 'mug-lo', 'cp-fig-mug') + '<span class="cp-st-name">' + esc(x.doc.name) + '</span></span>'; }).join('') +
+        '<span class="cp-st-more" aria-hidden="true">▲</span></div>';
+      box.classList.add('cp-collapsed');
+    } else {
+      var rows = list.map(function (x) {
+        var d = x.doc;
+        return '<article class="cp-st-npc"><a class="cp-st-pic" href="#cast/' + encodeURIComponent(x.id) + '" aria-label="' + esc(str(d.name)) + ', full size">' + holder('st', x.id, 'mug', 'cp-fig-mug') + '</a>' +
+          '<div class="cp-st-txt"><h3 class="cp-st-name">' + esc(d.name) + (d.alias ? ' <small>“' + esc(d.alias) + '”</small>' : '') + '</h3>' + (sub(d) ? '<p class="cp-st-sub">' + esc(sub(d)) + '</p>' : '') +
+          '<p class="cp-st-desc">' + esc(d.description) + '</p></div></article>';
+      }).join('');
+      box.innerHTML = '<div class="cp-st-head"><span class="cp-st-kick">On stage</span><span class="cp-st-acts">' +
+        (gm() ? '<button type="button" class="btn sm" data-cp="clear">Clear stage</button>' : '') +
+        (phone ? '<button type="button" class="btn sm" data-cp="collapse" aria-label="Fold the banner to one line">Less</button>' : '') +
+        '<button type="button" class="btn sm" data-cp="dismiss" aria-label="Hide this until the stage changes">Hide</button></span></div><div class="cp-st-list">' + rows + '</div>';
+      box.classList.remove('cp-collapsed');
+    }
     box.hidden = false;
     fillFigures(box);
     sizeStage();
   }
+  /* the strip is for a phone; a resize across 760px redraws the banner in the other form */
+  (function () {
+    try {
+      var mq = window.matchMedia && window.matchMedia('(max-width: 760px)'); if (!mq) return;
+      var onChange = function () { stageKey = ''; renderStage(); };
+      if (mq.addEventListener) mq.addEventListener('change', onChange); else if (mq.addListener) mq.addListener(onChange);
+    } catch (e) {}
+  })();
   /* the page keeps its last lines clear of the banner */
   function sizeStage() {
     var box = $('stageBanner'); if (!box || box.hidden) return;
@@ -442,6 +474,9 @@
     else if (a === 'reveal') { ev.preventDefault(); var d = npcs[id]; if (d) setRevealed(id, d.revealed !== true); }
     else if (a === 'clear') clearStage();
     else if (a === 'dismiss') dismiss();
+    else if (a === 'expand') setExpanded(true);
+    else if (a === 'collapse') setExpanded(false);
+    else if (a === 'show') undismiss();
     else if (a === 'filter') { filter = b.getAttribute('data-f') || 'all'; render(); }
     else if (a === 'save') save();
     else if (a === 'delete') remove();
@@ -460,7 +495,7 @@
   }
   function wire() {
     var r = root(); if (r && !r.__cp) { r.__cp = true; r.addEventListener('click', onClick); r.addEventListener('input', onInput); r.addEventListener('change', onInput); }
-    var s = $('stageBanner'); if (s && !s.__cp) { s.__cp = true; s.addEventListener('click', onClick); }
+    var s = $('stageBanner'); if (s && !s.__cp) { s.__cp = true; s.addEventListener('click', onClick); s.addEventListener('keydown', function (ev) { if ((ev.key === 'Enter' || ev.key === ' ') && ev.target && ev.target.getAttribute && ev.target.getAttribute('data-cp') === 'expand') { ev.preventDefault(); setExpanded(true); } }); }
   }
   wire();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
