@@ -263,23 +263,29 @@ try {
     await D.page.waitForFunction(() => { const f = document.querySelector('.dp-ambient iframe.dp-amb-in'); const s = f && f.getAttribute('data-scene'); return !!s && s !== 'exploded' && s !== 'board'; }, null, { timeout: 30000 });
   });
 
-  await step('opening credits: pinned, they ask for the theme; one tap lets it play; another scene stops it', async () => {
-    // the theme is an MP3 kept on the GM's PC (gitignored): without it the scene still runs, silent
+  await step('opening credits: pinned, they ask for the theme; the display looks for the file and says what it found; one tap lets it play; another scene stops it', async () => {
+    // the theme is an MP3 kept on the GM's PC (gitignored): without it the scene still runs, silent, and the corner line says so
     const have = existsSync(path.join(ROOT, 'app', 'media', 'theme.mp3'));
     await ambient({ mode: 'pin', scene: 'credits' });
     await shows(D.page, 'credits');
     const music = () => D.page.evaluate(() => window.B68DisplayPage && window.B68DisplayPage.ambient && window.B68DisplayPage.ambient.music ? window.B68DisplayPage.ambient.music() : null);
-    let m = null; for (let i = 0; i < 40; i++) { m = await music(); if (m && m.scene === 'credits') break; await sleep(250); }
+    let m = null; for (let i = 0; i < 40; i++) { m = await music(); if (m && m.scene === 'credits' && m.state !== 'checking' && m.state !== 'off') break; await sleep(250); }
     expect(m && m.scene === 'credits', 'the credits asked for the theme: ' + JSON.stringify(m));
-    expect(m.playing || m.chip, 'either it plays (autoplay allowed) or the tap chip shows: ' + JSON.stringify(m));
+    const probed = D.seen.requests.some((u) => /\/media\/theme\.mp3$/.test(u));
+    expect(probed, 'the display asked the server for the file: ' + D.seen.requests.filter((u) => /media/.test(u)).join(' | '));
+    if (have) expect(m.state === 'playing' || m.state === 'locked', 'with the file: it plays (autoplay allowed) or waits for the tap: ' + JSON.stringify(m));
+    else expect(m.state === 'none' && m.failed && !m.chip && /^Theme: no file on the server/.test(m.text), 'no file: the corner line says so and no tap is asked for: ' + JSON.stringify(m));
+    expect(m.chip === (m.state === 'locked'), 'the tap chip shows exactly while a tap is needed: ' + JSON.stringify(m));
     await D.page.mouse.click(40, 40);
     for (let i = 0; i < 60; i++) { m = await music(); if ((m.unlocked && m.playing) || m.failed) break; await sleep(250); }
-    if (have) expect(m.unlocked && m.playing && !m.chip, 'after a tap the theme plays: ' + JSON.stringify(m));
-    else expect(m.failed || !m.playing, 'no file: nothing plays and nothing breaks');
+    if (have) expect(m.unlocked && m.playing && !m.chip && /^Theme: playing · \d+:\d\d$/.test(m.text), 'after a tap the theme plays and the line says so: ' + JSON.stringify(m));
+    else expect(m.failed && !m.playing && m.state === 'none', 'no file: nothing plays and nothing breaks: ' + JSON.stringify(m));
+    const line = await D.page.evaluate(() => { const l = document.querySelector('.dp-theme'); if (!l) return null; const cs = getComputedStyle(l); return { shown: !l.hidden && cs.display !== 'none', px: parseFloat(cs.fontSize), text: l.textContent }; });
+    expect(line && line.shown && line.px >= 14, 'the theme line is on screen, readable: ' + JSON.stringify(line));
     await ambient({ mode: 'pin', scene: 'duskwall' });
     await shows(D.page, 'duskwall');
-    for (let i = 0; i < 20; i++) { m = await music(); if (!m.playing) break; await sleep(250); }
-    expect(!m.playing && m.scene === null, 'another scene stopped the theme: ' + JSON.stringify(m));
+    for (let i = 0; i < 20; i++) { m = await music(); if (!m.playing && m.state === 'off') break; await sleep(250); }
+    expect(!m.playing && m.scene === null && m.state === 'off' && m.text === '', 'another scene stopped the theme and cleared the line: ' + JSON.stringify(m));
   });
 
   await step('the whole run: only same-origin requests, no scene called the API, no page errors, no CSP refusals', async () => {

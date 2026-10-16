@@ -36,7 +36,15 @@ node tools/ambient/redress.js             # Booker's suit and Alfie's cigarette 
   per-frame variants, any reference that differs between frames given its own id. The page's `Motion.show(id, k)` and
   `move(id, [[frame, ms], ...])` cut between frames, the book's hard-cut motion rather than a tween. Arm moves use the kit's pose
   blend, `pose.arms.R = { a: "down", b: "smoke", t: 0.7, as: "smoke" }` (added to `app/figures/figure-kit.js`: the joint angles are
-  blended, the parts read the arm as pose `as`, so a held cigarette or glass stays in the hand).
+  blended, the parts read the arm as pose `as`, so a held cigarette or glass stays in the hand). A version not shown is
+  `visibility:hidden` (a cut is a repaint on the iPad, not a relayout), every id is unique per frame, every variant point has a
+  version for every frame (empty where the part is elsewhere), and the build stops unless each frame projected out of the merge is
+  exactly that frame's render. `checks/runtime/ambient-frames.test.mjs` walks the built pages the same way.
+- `noise.js`: the kit's grain (`feTurbulence` over the whole figure, recomputed by the browser on every cut) baked once into a
+  128 px, 4-bit tile placed inside the filter region (`feImage` + `feTile`); `lib.fig(spec, { place })` samples it for the
+  iPad's pixels at the scale the figure is shown. The stipple keeps its `feTurbulence` (no one tile position fits every band).
+- Keep what moves every frame off the figures: on the iPad an SVG repaint re-renders every figure under it. The planning meeting
+  is four composited layers like the night tram (room and crew, the lamp's screen-blended light, the dark, the smoke).
 - `redress.js` swaps figures inside the designer-built pages. It finds the render options that reproduce each original exactly
   (scale, silhouette, shadow), learns the page's colour treatment from the old cast (git `a3d5370`), and renders the new spec or
   motion frames the same way. It always starts from the committed page, so it can be re-run.

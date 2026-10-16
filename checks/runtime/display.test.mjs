@@ -551,6 +551,21 @@ await test('ambient registry: ordered, URLs come only from it, the watch feed is
   assert.equal(P.AMBIENT_MUSIC, 'media/theme.mp3');
 });
 
+await test('the theme line: every music state reads as one plain line for the table, and only audio counts as the file', () => {
+  assert.equal(P.themeText({ state: 'none', http: 404 }), 'Theme: no file on the server (app/media/theme.mp3)');
+  assert.equal(P.themeText({ state: 'locked' }), 'Theme: tap the screen for sound');
+  assert.equal(P.themeText({ state: 'playing', t: 62.7 }), 'Theme: playing · 1:02');
+  assert.equal(P.themeText({ state: 'playing', t: 'x' }), 'Theme: playing · 0:00');
+  assert.equal(P.themeText({ state: 'blocked' }), 'Theme: the iPad would not play it · tap the screen');
+  assert.equal(P.themeText({ state: 'error', reason: 'NotSupportedError' }), 'Theme: the file would not play (NotSupportedError)');
+  assert.equal(P.themeText({ state: 'error' }), 'Theme: the file would not play');
+  assert.equal(P.themeText({ state: 'checking' }), 'Theme: looking for the file…');
+  assert.equal(P.themeText({ state: 'ended' }), 'Theme: finished');
+  assert.equal(P.themeText({ state: 'off' }), ''); assert.equal(P.themeText(null), ''); assert.equal(P.themeText({ state: 'bogus' }), '');
+  assert.ok(P.themeType('audio/mpeg') && P.themeType('AUDIO/MP3') && P.themeType('') && P.themeType(null) && P.themeType('application/octet-stream'));
+  assert.ok(!P.themeType('text/html; charset=utf-8') && !P.themeType('application/json'), 'a sign-in page or a fallback 200 is not the theme');
+});
+
 const DEFAULT_LIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting'];
 await test('ambientPlan: defaults for nothing, null, {} and rubbish', () => {
   const want = { mode: 'auto', scene: null, playlist: DEFAULT_LIST, intervalMin: 7, skip: 0, crew: null, score: null };

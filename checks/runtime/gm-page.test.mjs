@@ -733,6 +733,13 @@ await test('9b. crewOf: whole numbers clamped to 0-9 / 0-4; null without a numbe
   assert.deepEqual(v1.tiles.filter((x) => x.pressed).map((x) => x.id), ['board']); assert.equal(v1.tiles.filter((x) => x.disabled).length, 0);
   assert.match(v1.scoreLine, /^Invented Mill · public, working · \d\d:\d\d$/);
   assert.equal(P.ipadView({ mode: 'sideways', intervalMin: 99 }).mode, 'auto'); assert.equal(P.ipadView({ intervalMin: 99 }).intervalMin, 7);
+  /* the theme line: the panel says plainly when app/media/theme.mp3 is not on the server (the credits then run silent) */
+  assert.equal(P.THEME_URL, 'media/theme.mp3');
+  assert.equal(P.themeLine('ok', 200), 'Theme for the credits: on the server.');
+  assert.match(P.themeLine('none', 404), /^Theme for the credits: NO FILE on the server\. The credits run silent\. Copy app\/media\/theme\.mp3/);
+  assert.match(P.themeLine('none', 403), /NO FILE on the server \(HTTP 403\)/);
+  assert.equal(P.themeLine('unknown', 0), 'Theme for the credits: not checked yet.');
+  assert.ok(P.themeType('audio/mpeg') && P.themeType('') && P.themeType('application/octet-stream') && !P.themeType('text/html; charset=utf-8'), 'only audio counts as the theme');
   assert.equal(P.ipadView({ mode: 'auto', scene: 'board' }).tiles.filter((x) => x.pressed).length, 0, 'only a pin presses a tile');
   assert.equal(P.displayLine({ kind: 'svg', title: 'Invented Mill' }), 'Map · Invented Mill'); assert.equal(P.displayLine({ kind: 'dark' }), 'Lights out');
   assert.equal(P.displayLine({ kind: 'rule', title: 'Invented rule' }), 'Rule · Invented rule');

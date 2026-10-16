@@ -187,3 +187,9 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
 /* the theme: asks for the one tap an iPad needs before a page may make sound */
 .dp-sound { position: absolute; right: max(16px, calc(env(safe-area-inset-right) + 12px)); bottom: max(16px, calc(env(safe-area-inset-bottom) + 12px)); z-index: 5; }
 .dp-sound[hidden] { display: none; }
+/* and says where the theme is, large enough to read from across the table: no file on the server, tap for sound, playing, would not play */
+.dp-theme { position: absolute; right: max(16px, calc(env(safe-area-inset-right) + 12px)); bottom: max(72px, calc(env(safe-area-inset-bottom) + 68px)); z-index: 5; max-width: 70vw;
+  padding: 8px 12px; border-radius: 6px; background: rgba(20, 17, 14, .8); color: var(--dp-soft, #c9c3b8); pointer-events: none;
+  font: 700 clamp(14px, 2.2vmin, 22px)/1.25 var(--font-mono, "Space Mono", monospace); letter-spacing: .06em; text-transform: uppercase; }
+.dp-theme.dp-theme-bad { color: var(--dp-warn, #e8c33c); }
+.dp-theme[hidden] { display: none; }
