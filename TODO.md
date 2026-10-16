@@ -85,38 +85,47 @@ packs: 150,336 rolls, no clean card changed. Stored digests keep this checked (g
 gm-scenes). The vault parity script could not run here (it needs the vault): run `node scripts/gm-parity.mjs` on the
 PC once after this lands.
 
-### 3. The players' side (branch: players)
+### 3. The players' side (branches: players · MERGED 16 Oct; players-table in progress)
 
 Keep: one visual language; Night as legible as Paper; the returning player's one-tap Home; the sheet's phone order
 and 44 px pips; Push/Desperate writing their own cost; the offline queue; role-aware table; revealed-only cast.
 
-- [ ] C1 P1 · (Re-scoped 16 Oct: everyone rolls physical dice.) Tapping an action opens a compact "mark" strip at
+- [x] C1 P1 · (Re-scoped 16 Oct: everyone rolls physical dice.) Tapping an action opens a compact "mark" strip at
       the foot of the phone: the dice count with Push / Assist / Bargain, then one row of consequence buttons
       (Resist · Harm 1 · Harm 2 · Harm 3 · +1 stress). Resist is a helper for a physical roll: tap the highest die and
       the stress is applied. The in-app roll stays reachable but secondary ("Roll in the app"), with its verdict
       scrolled into view, options locked after a roll and "Roll again (pays again)". · M
-- [ ] C2 P1 · The on-stage banner (262 px for two NPCs) covers the roll panel and comes back on every stage change.
+- [x] C2 P1 · The on-stage banner (262 px for two NPCs) covers the roll panel and comes back on every stage change.
       A one-line strip on phones, auto-expanded 8 s. · S-M
-- [ ] C3 P1 · "Remove" (deletes the character) sits 8 px from Print with a 4 s double-tap "confirm". To the foot, a real
+- [x] C3 P1 · "Remove" (deletes the character) sits 8 px from Print with a 4 s double-tap "confirm". To the foot, a real
       confirm naming the character. · S
-- [ ] C4 P2 · The phone sheet opens on 770 px of identity text; Stress starts at y 771; page 6171 px tall. An "About"
+- [x] C4 P2 · The phone sheet opens on 770 px of identity text; Stress starts at y 771; page 6171 px tall. An "About"
       fold, a sticky vitals strip with jump anchors, play-first order. · M
-- [ ] C5 P2 · Every tap rebuilds 722 KB of figure svg + thumbnail data URI the phone never shows (313 ms at 4× CPU).
+- [x] C5 P2 · Every tap rebuilds 722 KB of figure svg + thumbnail data URI the phone never shows (313 ms at 4× CPU).
       Lazy figure, Blob thumb. · S-M
-- [ ] C6 P2 · Play controls 19-27 px tall; the table page has no phone hit areas. 40 px everywhere. · S
-- [ ] C7 P2 · Offline, the sheet says "Saved" while the change is queued; the cue is off screen. Truthful status and
+- [ ] C6 P2 · (the sheet: done in players; the table page: players-table) · Play controls 19-27 px tall; the table page has no phone hit areas. 40 px everywhere. · S
+- [x] C7 P2 · Offline, the sheet says "Saved" while the change is queued; the cue is off screen. Truthful status and
       an "Offline · N waiting" pill. · S
 - [ ] C8 P2 · The table page for a player: a dead Schedule box first, the log 2400 px down. Hide the schedule without
       dates, collapse it for the GM, phone order clocks · log · players · crew (summary row) · schedule. · S-M
-- [ ] C9 P2 · iPhone zooms on focus (13 px inputs). 16 px at phone widths; touch-action: manipulation. · S
-- [ ] C10 P2 · No "?" rules link on Harm, Armor, Load, Position/Effect, Resist, XP. · S
-- [ ] C12 P3 · Code-speak strings ("the files", "Filed", "no store", "Unowned", "Indulge -1/-3"). · S
+- [x] C9 P2 · iPhone zooms on focus (13 px inputs). 16 px at phone widths; touch-action: manipulation. · S
+- [x] C10 P2 · No "?" rules link on Harm, Armor, Load, Position/Effect, Resist, XP. · S
+- [ ] C12 P3 · (the sheet's strings: done in players; Home and the table: players-table) · Code-speak strings ("the files", "Filed", "no store", "Unowned", "Indulge -1/-3"). · S
 - [ ] C13 P3 · Back is a button, a crumb or absent; "Open sheet" twice on Home. · S
 - [ ] C14 P3 · The Home status line is 10.5 px; --ink-faint at 3.3:1; no Night/Paper switch. · S
-- [ ] C15 P3 · Cast: after Hide nothing says who is on stage; phone detail figure 62vh before the text. · S
-- [ ] C16 P3 · Typing debounce not flushed on pagehide; a refused save leaves optimistic marks; play.log unbounded;
+- [x] C15 P3 · Cast: after Hide nothing says who is on stage; phone detail figure 62vh before the text. · S
+- [x] C16 P3 · Typing debounce not flushed on pagehide; a refused save leaves optimistic marks; play.log unbounded;
       a remote snapshot dropped during an in-flight save. · S each, careful
 - [ ] C17 P3 · "Plan dates" nags on Home while the schedule is parked. · S
+
+Landed in `review/players`: the mark strip for physical dice (Push +2 stress; Assist +1 die, the HELPER pays its
+stress, as the rules say; Bargain; Resist · Harm 1-3 · +1 stress), the resist helper (tap the highest die), the in-app
+roll kept behind "Roll in the app" with its fixes, the one-line on-stage strip, 40 px controls and 16 px fields, the
+first screen (vitals line, About fold, play-first order), the figure not drawn on phones (a tap rebuilds 52 KB, was
+720 KB), Remove under "…" with a named confirm (owner and GM only), "Saved on this phone · will sync (N)", "?" links,
+saving robustness (pagehide flush, refused saves undone, log capped at 200, crossing snapshots merged), the cast's
+"On stage: ..." line after Hide. A table-page touch block the first agent wrote in campaign.css was taken out of
+this branch (the table-page agent owns that file); its text is in `review/players-wip` (15fbac1) if wanted.
 
 ### 4. Engineering (branch: engineering)
 
