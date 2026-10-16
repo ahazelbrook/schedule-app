@@ -46,34 +46,40 @@ Find; the location glance card and its secrecy gate; the rail; capture; the beat
 - [ ] A11 P2 · Rules search results inside the GM screen pane, not a new tab (if time; else wave 2). · M
 - [ ] A19 P3 · Engagement factors as three-chip segments (if time; else wave 2). · S
 
-### 2. The generators (branch: generators; pure modules only)
+### 2. The generators (branch: generators; pure modules only) · MERGED 16 Oct (4d8a1df)
 
 Keep: seeded replay with mem-before; the second seed stream for situation sections; the lead box / Or rows / one actions
 row; the location Say built only from player-safe fields; the NPC figure ladder; read-aloud first on street scenes.
 
-- [ ] B2 P1 · "Someone" with a chosen friend answers as a different friend half the time, and its Contact and Or
+- [x] B2 P1 · "Someone" with a chosen friend answers as a different friend half the time, and its Contact and Or
       reaction disagree two thirds of the time. Honour the chosen NPC; one person per card. · S-M (compose version bump)
-- [ ] B4 P2 · The 4/5 and 1-3 cards carry a twin of their lead (28% / 19% of rolls, often contradicting it). Plan the Or
+- [x] B4 P2 · The 4/5 and 1-3 cards carry a twin of their lead (28% / 19% of rolls, often contradicting it). Plan the Or
       rows after the lead's kind. · M (compose version bump)
-- [ ] B10 P2 · Two bargains shown, one Accepted button. · S
-- [ ] B11 P3 · Pay the price "roll twice more": extras get no Collected action. · S
-- [ ] B8 P2 · Sparse pack: "Someone in undefined", throws on a missing T.spend / T.say3. Neutral fallbacks and a key
+- [x] B10 P2 · Two bargains shown, one Accepted button. · S
+- [x] B11 P3 · Pay the price "roll twice more": extras get no Collected action. · S
+- [x] B8 P2 · Sparse pack: "Someone in undefined", throws on a missing T.spend / T.say3. Neutral fallbacks and a key
       check at pack time. · S
-- [ ] B9 P2 · location.js throws with no faction dossiers. · S
-- [ ] B14 P3 · NPC "Quality NaN" when a tier is a string; silent figure failures. · S
-- [ ] B19 P3 · Stale district / pc / npc choices survive a pack change. · S
-- [ ] B3 P2 · The 4/5 and 1-3 lead is a bare category word ("Harm"); the usable example sits under More. Lead = kind —
+- [x] B9 P2 · location.js throws with no faction dossiers. · S
+- [x] B14 P3 · NPC "Quality NaN" when a tier is a string; silent figure failures. · S
+- [x] B19 P3 · Stale district / pc / npc choices survive a pack change. · S
+- [x] B3 P2 · The 4/5 and 1-3 lead is a bare category word ("Harm"); the usable example sits under More. Lead = kind —
       example; Earlier labels too. · S
-- [ ] B5 P2 · With a threat set, the drawn complication is demoted under the spend sentence. · S
-- [ ] B6 P2 · Location Flags fire on every roll (ring-skips, district rule). Skips to the Plan hint, the rule's text
+- [x] B5 P2 · With a threat set, the drawn complication is demoted under the spend sentence. · S
+- [x] B6 P2 · Location Flags fire on every roll (ring-skips, district rule). Skips to the Plan hint, the rule's text
       shown, Flags kept for the rare cases. · S
-- [ ] B7 P2 · Pin/Copy are mostly repeated coaching lines (1200-1800 chars vs the 1500 cap). Mark them `coach`; the
+- [x] B7 P2 · Pin/Copy are mostly repeated coaching lines (1200-1800 chars vs the 1500 cap). Mark them `coach`; the
       page folds them (wave 2) and Pin/Copy/L skip them. · S
-- [ ] B12, B13, B16, B17, B18, B21 P3 · Author notes on cards; "Smash — -1d"; doubled "Level"; dead veteran guard;
+- [x] B12, B13, B16, B17, B18, B21 P3 · Author notes on cards; "Smash — -1d"; doubled "Level"; dead veteran guard;
       "Result: 4/5" chip on every section; the secure band called "the target" when the ★ is elsewhere. · S each
-- [ ] Idea 2 · A position/severity chip on the Situations card. · S
-- [ ] Idea 7 · Location: a one-sentence plan under Say. · S
+- [x] Idea 2 · A position/severity chip on the Situations card. · S
+- [x] Idea 7 · Location: a one-sentence plan under Say. · S
 - B20 · Controlled 1-3 strictly alternates Worse position / Lost opportunity: vault behaviour, parity; note only.
+
+Proof: the nine classic rollers are byte-identical to main over 332,110 roll lines (9 buttons × 121 control
+variants × 300 seeds, plus shared-memory runs); location, NPC and street rolls identical over 10,651 lines; sparse
+packs: 150,336 rolls, no clean card changed. Stored digests keep this checked (gm-logic, gm-location, gm-npc,
+gm-scenes). The vault parity script could not run here (it needs the vault): run `node scripts/gm-parity.mjs` on the
+PC once after this lands.
 
 ### 3. The players' side (branch: players)
 
@@ -137,8 +143,17 @@ additive secrets on deploy; schema.sql = migrations.
 
 ## Wave 2 (after the wave-1 merges)
 
-- [ ] B7 / B15 / B14 page side · Fold coaching lines on the card; Pin/Copy/L skip them; Earlier chips name the NPC and
-      show the time and position; a figure fallback note on the NPC card. · S
+- [ ] Generators, page side (needs gm-page merged first; exact list from the generators agent):
+      1. Situations card: show `sections[0].lines[0].small` under the lead (with a threat, the spend sentence); under
+         More skip the lead's first line; fold `coach: true` lines under "Why" in every section.
+      2. `situationPlain` (Pin/Copy/L): skip `coach` lines; put `meta.chips[0]` (the position chip) on the title line.
+      3. `situationEntry` stores `composeVersion: rp.composeVersion`; `replaySituationEntry` passes it back; when
+         `meta.recomposed` is set, one note line on the card.
+      4. Pack warnings: in `previewPack` and at pack load, call each module's `check(T)` (console, location, npc,
+         scenes, engagement) and show missing paths as warnings.
+      5. Location glance: `g.plan` under Say (GM only, never to the iPad); a Rule row when `g.rule` is set.
+      6. NPC portrait: show `fig.note`; no portrait when `fig.failed`; "No portrait: ..." when the kit throws.
+      7. Earlier chips name the NPC and show the time and position (B15). · S-M
 - [ ] E5 P2 · After Access expires mid-session the GM saver parks every later patch for good and the toast says the
       opposite. Treat 401 as pending-until-sign-in, say "reload to sign in, notes kept", resend. · S-M
 - [ ] E18 P3 · Capture alone can hit the 240 KiB soft cap, after which every roll is refused; cap by bytes, drop the
