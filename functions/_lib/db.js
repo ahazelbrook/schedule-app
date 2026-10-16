@@ -70,6 +70,24 @@ const SCHEMA = [
     updated_at TEXT NOT NULL,
     doc TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS gm_transcript (
+    campaign TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    id TEXT NOT NULL,
+    session TEXT NOT NULL DEFAULT '',
+    at TEXT NOT NULL,
+    conn TEXT NOT NULL DEFAULT '',
+    speaker INTEGER,
+    kind TEXT NOT NULL DEFAULT 'line',
+    text TEXT NOT NULL,
+    PRIMARY KEY (campaign, seq)
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS gm_transcript_id ON gm_transcript (campaign, id)`,
+  `CREATE TABLE IF NOT EXISTS gm_stt (
+    campaign TEXT PRIMARY KEY,
+    updated_at TEXT NOT NULL,
+    doc TEXT NOT NULL
+  )`,
 ];
 
 let ready = null; // Promise, per isolate

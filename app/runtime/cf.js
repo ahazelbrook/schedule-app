@@ -1047,7 +1047,17 @@
     /* GET /api/gm/ambient -> { seq, doc, updatedAt }; PATCH merges at the top level (null deletes a key, skip: true bumps the
        counter) -> { seq, doc, updatedAt }. GM only: the table display gets the ambient through display() above. */
     ambient: function () { return api('GET', '/gm/ambient'); },
-    patchAmbient: function (p) { return api('PATCH', '/gm/ambient', p || {}); }
+    patchAmbient: function (p) { return api('PATCH', '/gm/ambient', p || {}); },
+    /* the table iPad's transcriber (GM.md "Listening"). GET /api/gm/stt -> { doc, updatedAt }: { want: on | off, session,
+       speakers: { n: name }, status: { state, at, lines, error } }; PATCH merges (null deletes) -> { doc, updatedAt } */
+    stt: function () { return api('GET', '/gm/stt'); },
+    patchStt: function (p) { return api('PATCH', '/gm/stt', p || {}); },
+    /* POST /api/gm/stt/token -> { token, expiresIn }: a short-lived Deepgram token (the key stays a Worker secret) */
+    sttToken: function () { return api('POST', '/gm/stt/token', {}); },
+    /* GET /api/gm/transcript?after=N | ?tail=N -> { lines: [{ seq, id, session, at, conn, speaker, kind, text }], last };
+       POST { lines } -> { added, last } (a line's id makes a resend harmless) */
+    transcript: function (o) { return api('GET', '/gm/transcript?' + (o && o.tail ? qs('tail', o.tail) : qs('after', o && o.after || 0))); },
+    addTranscript: function (lines) { return api('POST', '/gm/transcript', { lines: lines || [] }); }
   };
 
   /* ---------- profile: the signed-in person's own display name (PATCH /api/me). A plain call: never queued, so it

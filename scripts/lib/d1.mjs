@@ -214,8 +214,14 @@ export function asD1(exec) {
         },
         async all() { const [r] = await exec.batch(bindSql(sql, params)); return { results: (r && r.results) || [], meta: (r && r.meta) || {} }; },
         async run() { const [r] = await exec.batch(bindSql(sql, params)); return { success: true, meta: (r && r.meta) || {} }; },
+        bound() { return bindSql(sql, params); },
       };
       return stmt;
+    },
+    /* D1's batch: the statements as one script, run as one unit */
+    async batch(stmts) {
+      const out = await exec.batch(stmts.map((s) => s.bound().replace(/;\s*$/, '')).join(';\n'));
+      return out.map((r) => ({ success: true, results: (r && r.results) || [], meta: (r && r.meta) || {} }));
     },
   };
 }

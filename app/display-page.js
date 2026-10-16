@@ -1134,6 +1134,8 @@
         onStatus: function (p) { s.poll = p; paintStatus(); }
       });
       s.poller.start();
+      /* the transcriber (app/stt.js): idle until the GM presses Start listening, then one tap here opens the mic */
+      if (root.B68Stt && typeof root.B68Stt.attach === 'function') { try { s.stt = root.B68Stt.attach(container, { gm: ctx.gm }); } catch (e) { s.stt = null; } }
     }
 
     /* visibility: pause polling while hidden, poll at once on return, and take the wake lock back */
@@ -1197,6 +1199,7 @@
     var s = S; if (!s) return;
     S = null; s.dead = true; s.token++;
     if (s.poller) s.poller.stop();
+    if (s.stt) { try { s.stt.destroy(); } catch (e) {} s.stt = null; }
     if (s.amb) { try { s.amb.destroy(); } catch (e) {} s.amb = null; }
     s.timers.forEach(function (id) { clearTimeout(id); }); s.timers = [];
     s.offs.forEach(function (f) { try { f(); } catch (e) {} }); s.offs = [];

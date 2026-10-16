@@ -35,6 +35,8 @@ export function assertWritable(rel) {
   if (/(^|\/)\./.test(r) || r.startsWith('TTRPG/') || r.startsWith('_Templates/') || r.startsWith('_archive/')) throw new Error('no-touch zone: ' + r);
   const ok = r === LOG ||
     (r.startsWith(SESSIONS + '/') && /^b68g-s[0-9.]+\.md$/.test(r.slice(SESSIONS.length + 1))) ||
+    // the transcript the table iPad heard (scripts/gm-transcript.mjs: append only)
+    (r.startsWith(SESSIONS + '/') && /^b68g-s[0-9.]+-transcript(-ipad)?\.md$/.test(r.slice(SESSIONS.length + 1))) ||
     (r.startsWith(NPCS + '/') && !r.slice(NPCS.length + 1).includes('/') && r.endsWith('.md')) ||
     (r.startsWith(FACTIONS + '/') && !r.slice(FACTIONS.length + 1).includes('/') && r.endsWith('.md'));
   if (!ok) throw new Error('not a path the sync writes: ' + r);

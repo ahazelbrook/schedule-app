@@ -177,6 +177,10 @@ const CONTENT_JS = path.join(ROOT, 'app', 'content.js');
    and with its apostrophes escaped for a single-quoted JS literal. Returns Map(form -> original). */
 function packStrings(pk, MIN) {
   const forms = new Map();
+  /* the prep part: its note text and task lines are scanned; its vault paths, note titles and the link map's page names are
+     provenance, like a part's src (a page name such as a tool's file name is in the code as a path, and is no secret) */
+  const parts = { ...pk.parts };
+  if (parts.prep && typeof parts.prep === 'object') parts.prep = { notes: (parts.prep.notes || []).map((n) => ({ blocks: (n && n.blocks || []).map((b) => ({ src: b && b.src, tasks: b && b.tasks })) })) };
   (function collect(v, key) {
     if (key === 'src') return;
     if (typeof v === 'string') {
@@ -185,7 +189,7 @@ function packStrings(pk, MIN) {
     }
     else if (Array.isArray(v)) v.forEach((x) => collect(x));
     else if (v && typeof v === 'object') for (const k of Object.keys(v)) { collect(k); collect(v[k], k); }
-  })(pk.parts);
+  })(parts);
   return forms;
 }
 /* scan texts for pack strings: [{ name, text }] -> hits (masked) */
