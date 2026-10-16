@@ -571,8 +571,7 @@
     var el = $('display-page'); if (el) el.innerHTML = '';
   }
 
-  /* roster */
-  var roster = [];
+  /* roster: the one declared with the line-up above (a second `var roster` here reset it) */
   /* what a filed sheet says about itself: the cards' status line and the GM table both read these facts, so they never disagree */
   function itemLoadOf(pb, play, name) { var all = ((pb && pb.items) || []).concat(A.CT.STANDARD_ITEMS || [], (play.extraItems || []).map(function (x) { return [x && x.name, x && x.load]; })); var it = all.filter(function (i) { return i && i[0] === name; })[0]; return it ? +it[1] || 0 : 0; }
   function playFacts(d) {
