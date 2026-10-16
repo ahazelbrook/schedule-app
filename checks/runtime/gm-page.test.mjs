@@ -941,6 +941,27 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   await h.save();
   assert.ok(!br.doc.body.classList.contains('gm-app'), 'off once the page closes');
 });
+await test('10c. the full rules searched in the GM screen pane: hits render there with Show on iPad (a rule display); the rules page stays a link; without the module the search opens the rules page', async () => {
+  const loads = [], opened = [];
+  const rules = { available: () => true, load: async () => { loads.push(1); }, hits: (q) => (q === 'harm' ? [{ id: 'b68/harm', title: 'Harm', caption: 'Blades ’68 · Consequences', md: 'Level 1 is **lesser** harm.', href: '#rules/b68/harm' }] : []) };
+  const br = fakeBrowser({ B68Rules: rules, open: (u) => { opened.push(u); } }), fg = fakeGm();
+  const h = await openPage({ br, fg, camp: CAMP3 });
+  h.press('t'); assert.ok(h.q('#gm-rq') && h.q('#gm-rq-hits') && !h.q('.gs-rules a[target="_blank"]'), 'a search box and a hits box, no new-tab chips');
+  assert.ok(h.qa('[data-gm="rq"]').length >= 6, 'the common terms are buttons that search here');
+  h.q('#gm-rq').value = 'harm'; dispatch(h.q('form[data-gm-form="rules"]'), 'submit');
+  assert.ok(await until(() => h.q('.gs-hit')), 'a hit renders in the pane'); assert.equal(loads.length, 1, 'the corpus was loaded once');
+  assert.ok(/Harm/.test(h.q('.gs-hit .gs-h').textContent) && /lesser/.test(h.q('.gs-hit .gs-body').textContent) && /Blades ’68/.test(h.q('.gs-hit').textContent), 'title, book and the entry');
+  assert.ok(h.q('.gs-hits-h a[target="_blank"][href="#rules?q=harm"]'), 'the rules page in a new tab stays as the way out');
+  h.q('[data-gm="rq-ipad"]').click(); assert.ok(await until(() => fg.server.displays.length === 1));
+  assert.deepEqual(fg.server.displays[0], { kind: 'rule', title: 'Harm', caption: 'Blades ’68 · Consequences', md: 'Level 1 is **lesser** harm.' }, 'Show on iPad sends the entry as a rule display');
+  h.q('[data-gm="rq"]').click(); assert.ok(await until(() => /Nothing in the rules matches/.test(h.q('#gm-rq-hits').textContent)), 'a term with no hit says so, in the pane');
+  assert.equal(opened.length, 0, 'nothing opened a new tab');
+  await h.save();
+  const br2 = fakeBrowser({ B68Rules: { available: () => true }, open: (u) => { opened.push(u); } }), h2 = await openPage({ br: br2, camp: CAMP3 });
+  h2.press('t'); h2.q('#gm-rq').value = 'heat'; dispatch(h2.q('form[data-gm-form="rules"]'), 'submit');
+  assert.deepEqual(opened, ['#rules?q=heat'], 'a module without hits(): the rules page opens as before');
+  await h2.save();
+});
 await test('10b. the rail: an empty box is one line; an old layout preference left in storage changes nothing', async () => {
   const br = fakeBrowser(); br.ls.set('b68.gm.layout', 'classic'); br.ls.set('b68.gm.view', 'classic'); const h = await openPage({ br, camp: CAMP3 });
   assert.ok(br.doc.body.classList.contains('gm-app') && h.qa('#gm-buttons .gm-btn').length === 4, 'the app layout and the four Situations, whatever this device remembered');

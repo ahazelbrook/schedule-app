@@ -216,7 +216,9 @@ fails and nobody is known, nothing is purged.
   text before the first `##` is an intro shown above them; a `## Related`, `## Provenance` or `## Sources` heading ends
   the cut; wikilinks become plain text). Book text, so it travels only in the pack, never in git. Jump chips per section,
   **Find on the screen** filters the sections by their words, **Show on iPad** sends one section as a `rule` display
-  (caption "GM screen"). Under it, the full rules search, as the Rules tab had. Checks: `checks/runtime/gm-screen.test.mjs`,
+  (caption "GM screen"). Under it, the full rules search: the hits render in the pane (the rules page's own search through
+  `B68Rules.hits`; title, book and chapter, the entry as the players may see it, **Show on iPad** as the rules page sends it),
+  with the rules page in a new tab as the way out; the twelve common terms are buttons that search here. Checks: `checks/runtime/gm-screen.test.mjs`,
   `checks/runtime/gm-prep.e2e.mjs` (the Screen part, invented text).
 - **Prep** (`R`, the first side tab; on a phone the Prep segment). The GM's prep notes as written in the vault, laid out in
   the design system. A note opts in with the property `gm_prep: true`; `npm run gm:pack` exports every such note under the

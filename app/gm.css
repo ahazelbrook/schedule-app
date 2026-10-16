@@ -210,6 +210,12 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gs-intro { margin: 0 0 4px; }
 #gm-page .gs-rules { margin-top: 16px; }
 #gm-page .gs-rules .gm-rulesq, #gm-page .gs-rules .gm-chips { margin: 8px 0; }
+/* the full rules' hits, in the pane */
+#gm-page .gs-hits { display: grid; gap: 10px; margin-top: 10px; }
+#gm-page .gs-hits:empty { display: none; }
+#gm-page .gs-hits-h { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; margin: 0; }
+#gm-page .gs-hits .gs-sec { margin: 0; }
+#gm-page .gs-h small { font: 400 10.5px/1.2 var(--font-mono); text-transform: none; letter-spacing: 0; opacity: .85; margin-left: 6px; }
 
 /* the rail */
 #gm-page .gm-box { border: 2px solid var(--rule); background: var(--card); }

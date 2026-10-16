@@ -2117,9 +2117,34 @@
             '<button type="button" class="btn sm" data-gm="gs-ipad" data-id="' + esc(s.id) + '" title="Show this section on the iPad">Show on iPad</button></h3><div class="gs-body pp-doc">' + md(s.md) + '</div></section>';
         }).join('') + '<p class="gm-dim gs-none" hidden>Nothing on the screen matches.</p></div>';
     } else h += '<p class="gm-note">No GM screen in the pack yet. It comes from the vault note with <code>gm_screen: true</code>: run <code>npm run gm:pack</code>, then push the pack.</p>';
-    h += '<section class="gs-rules"><h3 class="gm-band">The full rules</h3>' + (on ? '<form class="gm-rulesq" data-gm-form="rules"><label class="gm-field wide" for="gm-rq"><span class="gm-lab">Search the rules (opens a new tab)</span>' + '<input type="search" id="gm-rq" autocomplete="off" placeholder="push yourself, gambits…"></label><button type="submit" class="btn primary">Search</button></form>' +
-      '<p class="gm-chips">' + RULE_TERMS.map(function (t) { return '<a class="chip sm" target="_blank" rel="noopener" href="#rules?q=' + encodeURIComponent(t) + '">' + esc(t) + '</a>'; }).join('') + '</p>' : '<p class="gm-note">The rules are not available here.</p>') + '</section>';
+    h += '<section class="gs-rules"><h3 class="gm-band">The full rules</h3>' + (on ? '<form class="gm-rulesq" data-gm-form="rules"><label class="gm-field wide" for="gm-rq"><span class="gm-lab">Search the rules</span>' + '<input type="search" id="gm-rq" autocomplete="off" placeholder="push yourself, gambits…"></label><button type="submit" class="btn primary">Search</button></form>' +
+      '<p class="gm-chips">' + RULE_TERMS.map(function (t) { return '<button type="button" class="chip sm" data-gm="rq" data-q="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</p><div class="gs-hits" id="gm-rq-hits"></div>' : '<p class="gm-note">The rules are not available here.</p>') + '</section>';
     box.innerHTML = h;
+  }
+  /* the full rules, searched here: the rules page's own search (B68Rules.hits) renders its hits in the pane, each with Show on
+     iPad (a `rule` display, as the rules page sends); the rules page in a new tab stays as the way out, and is the fallback when
+     the module cannot search */
+  function rulesSearch(q) {
+    q = str(q).trim(); var R = W.B68Rules, box = $q('#gm-rq-hits'); if (!q) return;
+    var rq = $q('#gm-rq'); if (rq && rq.value !== q) rq.value = q;
+    if (!box || !R || typeof R.hits !== 'function') { try { W.open('#rules?q=' + encodeURIComponent(q), '_blank', 'noopener'); } catch (e) {} return; }
+    var me = S, out = '#rules?q=' + encodeURIComponent(q);
+    box.innerHTML = '<p class="gm-dim">Searching…</p>';
+    Promise.resolve().then(function () { return R.load ? R.load() : null; }).then(function () {
+      if (S !== me) return;
+      var hits = R.hits(q, 8) || []; S.rqHits = hits;
+      box.innerHTML = '<p class="gs-hits-h"><span class="gm-lab">' + (hits.length ? hits.length + (hits.length >= 8 ? '+' : '') + ' for “' + esc(q) + '”' : 'Nothing in the rules matches “' + esc(q) + '”') + '</span>' +
+        '<a class="chip sm" target="_blank" rel="noopener" href="' + esc(out) + '">On the rules page ↗</a></p>' +
+        hits.map(function (x, i) {
+          return '<section class="gs-sec gs-hit"><h3 class="gs-h"><span>' + esc(x.title) + (x.caption ? ' <small>' + esc(x.caption) + '</small>' : '') + '</span>' +
+            '<button type="button" class="btn sm" data-gm="rq-ipad" data-i="' + i + '" title="Show this entry on the iPad">Show on iPad</button></h3><div class="gs-body pp-doc">' + md(x.md) + '</div></section>';
+        }).join('');
+    }, function (e) { if (S === me) box.innerHTML = '<p class="gm-note bad">The rules could not be searched: ' + esc(errText(e)) + ' <a target="_blank" rel="noopener" href="' + esc(out) + '">Open the rules page</a>.</p>'; });
+  }
+  function ruleHitToIpad(i) {
+    var x = S.rqHits && S.rqHits[i]; if (!x) return;
+    pushDisplay({ kind: 'rule', title: str(x.title).slice(0, 2000), caption: str(x.caption).slice(0, 2000), md: str(x.md).slice(0, 40000) || '—' })
+      .then(function () { toast('On the iPad: ' + x.title + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
   }
   /* every word of the query somewhere in a section's title or text */
   function filterScreen(q) {
@@ -2358,6 +2383,8 @@
       case 'pin': pin(b.getAttribute('data-tool')); break;
       case 'gs-jump': screenJump(b.getAttribute('data-id')); break;
       case 'gs-ipad': screenToIpad(b.getAttribute('data-id')); break;
+      case 'rq': rulesSearch(b.getAttribute('data-q')); break;
+      case 'rq-ipad': ruleHitToIpad(+b.getAttribute('data-i')); break;
       case 'copy': copy(b.getAttribute('data-tool')); break;
       case 'locroll': rollLocation(); break;
       case 'scnroll': rollScenes(); break;
@@ -2441,7 +2468,7 @@
     var k = f.getAttribute('data-gm-form'); if (!k) return;
     ev.preventDefault();
     if (k === 'capture') { var i = $q('#gm-cap-in'); if (i && addCapture(S.arm, i.value)) { i = $q('#gm-cap-in'); if (i) { i.value = ''; i.focus(); } } }
-    else if (k === 'rules') { var q = $q('#gm-rq'); if (q && q.value.trim()) { try { W.open('#rules?q=' + encodeURIComponent(q.value.trim()), '_blank', 'noopener'); } catch (e) {} } }
+    else if (k === 'rules') { var q = $q('#gm-rq'); if (q && q.value.trim()) rulesSearch(q.value); }
   }
   function wire(el) {
     if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'gm-find-q') { findRender(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-prep-q') { prepFilter(ev.target.value); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); el.addEventListener('scroll', onScroll, true); }

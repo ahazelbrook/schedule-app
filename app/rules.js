@@ -852,5 +852,20 @@
   function route() { if (active && root) { draw(); if (S.corpus && Date.now() - S.checkedAt > 60000) load(false); } }
   function close() { active = false; S.token++; if (hashT) { clearTimeout(hashT); hashT = null; } }
 
-  window.B68Rules = { available: available, help: help, open: open, route: route, close: close, KEYWORDS: KEYWORDS, _search: function (q) { var r = search(q); return r.hits.map(function (h) { return h.primary.book + '/' + h.primary.slug; }); } };
+  /* for the GM page (gm-page.js, the GM screen's "full rules" search): the corpus loaded without this page being open (what this
+     device holds first, then the server), and a search's hits as plain data, each with the entry's Markdown as the players may
+     see it (forTable), so the GM page can show a hit in its pane and send it to the iPad as the Show on iPad here does */
+  function ensureCorpus() {
+    if (S.corpus) return Promise.resolve(S.corpus);
+    if (!runtime()) return Promise.reject(new Error('the rules need the hosted app'));
+    return cacheGet().then(function (c) { if (c && Array.isArray(c.entries) && !S.corpus) setCorpus(c, true, c.savedAt); return S.corpus || fetchRules(); }, function () { return fetchRules(); });
+  }
+  function hitsOf(q, n) {
+    var r = search(q);
+    return r.hits.slice(0, Math.max(1, Math.min(20, +n || 8))).map(function (h) {
+      var e = h.primary, ch = e._ch && e._ch.name;
+      return { id: e.book + '/' + e.slug, book: e.book, slug: e.slug, title: e.t, caption: BOOKS[e.book] + (ch && ch !== e.t && norm(ch) !== norm(BOOKS[e.book]) ? ' · ' + ch : ''), md: forTable(e.body) || '—', href: hrefOf(e) };
+    });
+  }
+  window.B68Rules = { available: available, help: help, open: open, route: route, close: close, KEYWORDS: KEYWORDS, load: ensureCorpus, hits: hitsOf, _search: function (q) { var r = search(q); return r.hits.map(function (h) { return h.primary.book + '/' + h.primary.slug; }); } };
 })();

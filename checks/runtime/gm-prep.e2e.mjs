@@ -207,6 +207,12 @@ try {
     check(!!rd && rd.title === 'Canals' && /Goosegate/.test(rd.md) && rd.caption === 'GM screen', 'Show on iPad sends the section as a rule');
     check(await ipad.page.waitForFunction(() => /Goosegate/.test(document.querySelector('#display-page').textContent), null, { timeout: 15000 }).then(() => true, () => false), '#display shows it');
   }
+  /* the full rules search renders in the pane, never a new tab (no rules are imported here, so the answer is "nothing matches") */
+  if (await page.$('#gm-rq')) {
+    const tabs0 = page.context().pages().length;
+    await page.fill('#gm-rq', 'goose'); await page.press('#gm-rq', 'Enter');
+    check(await page.waitForFunction(() => /Nothing in the rules matches|for “goose”/.test((document.getElementById('gm-rq-hits') || {}).textContent || ''), null, { timeout: 15000 }).then(() => true, () => false) && page.context().pages().length === tabs0 && !!(await page.$('#gm-rq-hits a[target="_blank"]')), 'the rules search answers in the pane, with the rules page as a link');
+  } else check(/not available/.test(await page.textContent('#gm-rules .gs-rules')), 'no rules runtime here: the pane says so');
   await shot(page, 'screen-desktop');
   await ph.page.click('.gm-segbar [data-seg="rules"]');
   check(await ph.page.waitForSelector('#gm-rules .gs-sec', { state: 'visible', timeout: 10000 }).then(() => true, () => false), 'phone: Screen is a segment');
