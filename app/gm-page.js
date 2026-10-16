@@ -422,6 +422,7 @@
       case 'r': return { type: 'panel', panel: 'prep' };
       case 'o': return { type: 'panel', panel: 'cards' };
       case 'f': return { type: 'focus' };
+      case '/': return { type: 'find' };
       case '0': return { type: 'clear' };
       case 'escape': return { type: 'esc' };
     }
@@ -473,6 +474,86 @@
   P.plainMd = plainMd; P.consolePlain = consolePlain;
   function stripSize(svg) { return str(svg).replace(/<svg([^>]*?)\swidth="[^"]*"/, '<svg$1').replace(/<svg([^>]*?)\sheight="[^"]*"/, '<svg$1'); }
   P.stripSize = stripSize;
+
+  /* ---------- Find (Ctrl+K or /): one search over what the GM page holds ----------
+     index: [{ kind, title, sub, text, go }]. Every word must be somewhere in title, sub or text; the title matching comes
+     first. Curly and straight apostrophes are one. */
+  function foldQ(s) { return str(s).toLowerCase().replace(/[’‘]/g, "'"); }
+  function snippet(text, words) {
+    var t = str(text).replace(/\s+/g, ' ').trim(), lo = foldQ(t), at = -1;
+    (words || []).forEach(function (w) { var k = lo.indexOf(w); if (k >= 0 && (at < 0 || k < at)) at = k; });
+    if (at < 0) return t.length > 110 ? t.slice(0, 110) + '…' : t;
+    var a = Math.max(0, at - 40), b = Math.min(t.length, at + 90);
+    return (a ? '…' : '') + t.slice(a, b) + (b < t.length ? '…' : '');
+  }
+  function findHits(index, q, max) {
+    var words = foldQ(q).split(/\s+/).filter(Boolean), out = []; if (!words.length) return out;
+    (index || []).forEach(function (e, i) {
+      if (!isObj(e)) return;
+      var t = foldQ(e.title), all = t + ' ' + foldQ(e.sub) + ' ' + foldQ(e.text);
+      if (!words.every(function (w) { return all.indexOf(w) >= 0; })) return;
+      var score = t.indexOf(words.join(' ')) === 0 ? 4 : words.every(function (w) { return t.indexOf(w) >= 0; }) ? 3 : words.some(function (w) { return t.indexOf(w) >= 0; }) ? 2 : 1;
+      out.push({ e: e, score: score, i: i });
+    });
+    out.sort(function (a, b) { return b.score - a.score || a.i - b.i; });
+    return out.slice(0, max || 40).map(function (h) { return Object.assign({}, h.e, { snip: h.score >= 3 && !str(h.e.text).trim() ? '' : snippet(h.e.text, words) }); });
+  }
+  /* Markdown as words for Find: callout and quote markers, task boxes, table pipes and rules out, then plainMd */
+  function findText(mdSrc) {
+    return plainMd(str(mdSrc).replace(/^[ \t]*(?:>[ \t]?)+/gm, '').replace(/\[![\w-]+\][-+]?/g, '').replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\[[ xX]\][ \t]*/gm, '')
+      .replace(/^[ \t]*#{1,6}[ \t]+/gm, '').replace(/^[ \t]*\|?[ \t:|-]*-{3,}[ \t:|-]*$/gm, ' ').replace(/\|/g, ' ').replace(/^[ \t]*[-*+][ \t]+/gm, '').replace(/\^[\w-]+$/gm, ''));
+  }
+  /* a label cut at a word, its trailing punctuation dropped */
+  function shortLabel(t, n) { t = str(t).replace(/\s+/g, ' ').trim(); if (t.length <= n) return t; var c = t.slice(0, n + 1), sp = c.lastIndexOf(' '); return (sp > n * 0.5 ? c.slice(0, sp) : c).replace(/[\s,;:.·–—-]+$/, '') + '…'; }
+  P.findHits = findHits; P.snippet = snippet; P.findText = findText; P.shortLabel = shortLabel;
+
+  /* the table clocks the players may see, drawn for the iPad (a hidden clock never goes): an svg, or null with none to show */
+  function fx(v) { return String(Math.round(v * 10) / 10); }
+  function clocksSvg(clocks) {
+    var list = (Array.isArray(clocks) ? clocks : []).filter(function (c) { return isObj(c) && !c.hidden; }).slice(0, 8);
+    if (!list.length) return null;
+    var cols = list.length <= 3 ? list.length : list.length === 4 ? 2 : list.length <= 6 ? 3 : 4, rows = Math.ceil(list.length / cols);
+    var W0 = 1600, H0 = 900, cw = W0 / cols, ch = H0 / rows, r = Math.min(cw * 0.3, ch * 0.28), big = cols > 3 || rows > 1 ? 40 : 52;
+    var out = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W0 + ' ' + H0 + '"><rect width="' + W0 + '" height="' + H0 + '" fill="#15120e"/>';
+    list.forEach(function (c, i) {
+      var n = Math.max(2, Math.min(12, Math.floor(+c.size || 4))), f = Math.max(0, Math.min(n, Math.floor(+c.filled || 0)));
+      var cx = cw * (i % cols) + cw / 2, cy = ch * Math.floor(i / cols) + ch * 0.42;
+      out += '<g>';
+      for (var k = 0; k < n; k++) {
+        var a0 = k / n * 2 * Math.PI - Math.PI / 2, a1 = (k + 1) / n * 2 * Math.PI - Math.PI / 2;
+        out += '<path d="M' + fx(cx) + ' ' + fx(cy) + 'L' + fx(cx + r * Math.cos(a0)) + ' ' + fx(cy + r * Math.sin(a0)) + 'A' + fx(r) + ' ' + fx(r) + ' 0 0 1 ' + fx(cx + r * Math.cos(a1)) + ' ' + fx(cy + r * Math.sin(a1)) +
+          'Z" fill="' + (k < f ? '#d8a93b' : '#2b251d') + '" stroke="#f3ead8" stroke-width="5" stroke-linejoin="round"/>';
+      }
+      var name = str(c.name || 'Clock').replace(/\s+/g, ' ').trim();
+      out += '<text x="' + fx(cx) + '" y="' + fx(cy + r + big + 14) + '" text-anchor="middle" font-family="Georgia, serif" font-size="' + big + '" fill="#f3ead8">' + esc(name.length > 34 ? name.slice(0, 33) + '…' : name) + '</text>' +
+        '<text x="' + fx(cx) + '" y="' + fx(cy + r + big * 2 + 18) + '" text-anchor="middle" font-family="monospace" font-size="' + Math.round(big * 0.62) + '" fill="#bfb39c">' + f + ' / ' + n + '</text></g>';
+    });
+    return out + '</svg>';
+  }
+  P.clocksSvg = clocksSvg;
+
+  /* the pack guard (scripts/lib/pack-guard.mjs, the same rules): what a new pack would lose against the one the page has.
+     before / after: { <part>: body }. -> [what, ...] */
+  function packLosses(before, after) {
+    var out = [], kib = function (n) { return (n / 1024).toFixed(1) + ' KiB'; }, size = function (v) { return bytesOf(JSON.stringify(v)); };
+    var base = function (rel) { return str(rel).split('/').pop().replace(/\.md$/i, ''); };
+    var notesOf = function (b) { var m = {}; (isObj(b) && Array.isArray(b.notes) ? b.notes : []).forEach(function (n) { if (isObj(n)) m[str(n.rel || n.id)] = (Array.isArray(n.blocks) ? n.blocks : []).reduce(function (k, x) { return k + (isObj(x) ? str(x.src).length : 0); }, 0); }); return m; };
+    Object.keys(isObj(before) ? before : {}).forEach(function (name) {
+      var old = before[name]; if (old == null) return;
+      var now = isObj(after) ? after[name] : undefined;
+      if (now == null) { out.push('the ' + name + ' part is gone' + (name === 'prep' ? ' (no note has gm_prep: true now)' : name === 'screen' ? ' (no note has gm_screen: true now)' : '')); return; }
+      var b0 = size(old), b1 = size(now);
+      if (b0 >= 2048 && b1 < b0 * 0.75) out.push('the ' + name + ' part shrank from ' + kib(b0) + ' to ' + kib(b1));
+      if (name !== 'prep') return;
+      var n0 = notesOf(old), n1 = notesOf(now);
+      Object.keys(n0).forEach(function (rel) {
+        if (!Object.prototype.hasOwnProperty.call(n1, rel)) out.push('prep note ' + base(rel) + ' is gone (its gm_prep: true is missing, or it moved)');
+        else if (n0[rel] >= 1000 && n1[rel] < n0[rel] * 0.75) out.push('prep note ' + base(rel) + ' shrank from ' + n0[rel] + ' to ' + n1[rel] + ' characters');
+      });
+    });
+    return out;
+  }
+  P.packLosses = packLosses;
 
   /* ---------- Situations: which console shows, the session on a capture, and the composed card ---------- */
   P.SITUATIONS_DEFAULT = SITUATIONS_DEFAULT;
@@ -815,15 +896,27 @@
   function previewPack(pk, name) {
     var v = validatePack(pk), box = $q('#gm-prev'); if (!box) return;
     S.importing = v.ok ? pk : null;
+    /* the guard: what this file would lose against the pack the page has (16/10: an old note from Sync dropped the prep) */
+    var losses = [];
+    if (v.ok && S.pack && isObj(S.pack.parts)) {
+      var before = {}, after = {};
+      Object.keys(S.pack.parts).forEach(function (n) { var x = S.pack.parts[n]; if (x && isObj(x.body)) before[n] = x.body; });
+      Object.keys(pk.parts).forEach(function (n) { after[n] = partBody(pk.parts[n]); });
+      losses = packLosses(before, after);
+    }
+    S.importLosses = losses;
     var rows = v.parts.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td class="num">' + (p.bytes / 1024).toFixed(1) + ' KiB</td><td>' + esc(p.src && p.src.exportedAt ? dmy(p.src.exportedAt) : '') + '</td></tr>'; }).join('');
     box.innerHTML = '<h2>' + esc(name || 'The pack') + '</h2>' +
       (v.exportedAt ? '<p class="gm-dim">Exported ' + esc(dmy(v.exportedAt)) + ' · ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's') + '</p>' : '') +
       (rows ? '<table class="gm-tbl"><thead><tr><th>Part</th><th class="num">Size</th><th>Exported</th></tr></thead><tbody>' + rows + '</tbody></table>' : '') +
       (v.errors.length ? '<ul class="gm-errs">' + v.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>' : '') +
-      '<p class="gm-up"><button type="button" class="btn primary" data-gm="upload"' + (v.ok ? '' : ' disabled') + '>Upload ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's') + '</button> <progress id="gm-prog" max="' + Math.max(1, v.parts.length) + '" value="0" hidden></progress> <span id="gm-upmsg" class="gm-dim" role="status"></span></p>';
+      (losses.length ? '<div class="gm-note bad gm-losses"><p><b>This pack would lose prep the app has now:</b></p><ul>' + losses.map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ul>' +
+        '<p>Usually Obsidian Sync brought back an old copy of a note. Restore it (Obsidian: right-click the note › Open version history), run <code>npm run gm:pack</code>, then choose the new file.</p></div>' : '') +
+      '<p class="gm-up"><button type="button" class="btn ' + (losses.length ? 'bad' : 'primary') + '" data-gm="upload"' + (v.ok ? '' : ' disabled') + '>' + (losses.length ? 'Upload anyway' : 'Upload ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's')) + '</button> <progress id="gm-prog" max="' + Math.max(1, v.parts.length) + '" value="0" hidden></progress> <span id="gm-upmsg" class="gm-dim" role="status"></span></p>';
   }
   function upload() {
     var pk = S && S.importing, g = gmApi(); if (!pk || !g) return;
+    if (S.importLosses && S.importLosses.length && !W.confirm('This pack would lose prep the app has now:\n- ' + S.importLosses.join('\n- ') + '\n\nUpload it anyway?')) return;
     var reqs = partRequests(pk), prog = $q('#gm-prog'), msg = $q('#gm-upmsg'), btn = $q('[data-gm="upload"]'), me = S, done = {}, packVersion = null, i = 0;
     if (btn) btn.disabled = true; if (prog) prog.hidden = false;
     var chain = Promise.resolve();
@@ -882,7 +975,7 @@
     S.status = 'ready'; S.prepKey = null;
     layout(); redrawAll(); subscribeNpcs();
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
-    if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden && (S.panel === 'ipad' || n2 % 3 === 0)) loadStt(); }, 5000); }
+    if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
     if (S.panel === 'ipad') loadAmbient(); else loadShown();
     loadStt();
@@ -911,7 +1004,10 @@
       '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="engagement" id="gm-eng"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
       '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
       '<div class="gm-foot" id="gm-foot"></div>' +
-      '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button></div>';
+      '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button>' +
+      '<div class="gm-find" id="gm-find" hidden><div class="gm-find-box" role="dialog" aria-label="Find"><label class="sr" for="gm-find-q">Find</label>' +
+      '<input type="search" id="gm-find-q" autocomplete="off" spellcheck="false" placeholder="Find a name, a rule, a scene, a line you filed…">' +
+      '<ol class="gm-find-list" id="gm-find-list"></ol><p class="gm-find-help"><kbd>↑</kbd> <kbd>↓</kbd> choose · <kbd>Enter</kbd> go (or copy) · <kbd>Esc</kbd> close</p></div></div></div>';
     renderRules();
     setApp(appPref());
   }
@@ -919,7 +1015,10 @@
      listening, Clear and Lights out, the Display link, and a menu with the rest of the old header and the site's pages */
   function barHtml() {
     return '<div class="gm-bar"><a class="gm-bar-mark" href="#" title="Home">’68 <b>GM</b></a><span class="gm-bar-sess" id="gm-bar-sess"></span>' +
-      '<span class="gm-save" role="status"></span><span class="gm-bar-exp" id="gm-bar-exp"></span><span class="gm-grow"></span>' +
+      '<span class="gm-save" role="status"></span><span class="gm-bar-exp" id="gm-bar-exp"></span>' +
+      '<span class="gm-beatbar" id="gm-bar-beat" hidden><button type="button" class="gm-pill gm-beat" data-gm="beat-go" id="gm-bar-beatgo" title="The beat running (the Prep tab’s run order)"></button>' +
+      '<button type="button" class="gm-bb" data-gm="beat-next" title="Start the next beat in the run order">Next beat</button></span><span class="gm-grow"></span>' +
+      '<button type="button" class="gm-bb" data-gm="find-open" title="Find anything: prep, the screen, NPCs, clocks, what you filed (Ctrl+K or /)">Find <kbd>Ctrl K</kbd></button>' +
       '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-ipad" title="What the players see (the iPad tab)"></button>' +
       '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-stt" title="The transcriber (the iPad tab)"></button>' +
       '<button type="button" class="gm-bb" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' + '<button type="button" class="gm-bb" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
@@ -936,7 +1035,9 @@
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
-    var s = $q('#gm-bar-sess'); if (s) s.textContent = 'Session ' + (isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0);
+    var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
+    if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
+    renderBeat();
     var ip = $q('#gm-bar-ipad');
     if (ip) {
       var shown = AM.shown ? (AM.shown.kind === 'blank' || !AM.shown.kind ? 'ambient' : displayLine(AM.shown)) : 'not known yet';
@@ -951,6 +1052,117 @@
     sp.innerHTML = '<span class="gm-dot' + (on ? warn ? ' warn' : ' on' : '') + '"></span>' + esc(text);
     sp.classList.toggle('warn', warn);
   }
+  /* the open Prep note's session ('' without one): the bar's stand-in while the table's counter is 0 */
+  function prepNoteSession() {
+    var pk = part('prep'), B = W.B68GmPrep; if (!pk || !B) return '';
+    var id = prepNoteId(pk), n = B.notes(pk).filter(function (x) { return x.id === id; })[0];
+    return n && /^\d+(\.\d+)?$/.test(str(n.session).trim()) ? str(n.session).trim() : '';
+  }
+  /* the beat running in the Prep tab's run order (the newest started), with its time against the row's budget */
+  function runningBeat() {
+    var b = prepDoc().beats, best = null; if (!isObj(b)) return null;
+    Object.keys(b).forEach(function (k) { if (isObj(b[k]) && (!best || str(b[k].at) > best.at)) best = { key: k, at: str(b[k].at), label: str(b[k].label) }; });
+    return best;
+  }
+  function beatButton(key) { return key ? $q('#gm-prep [data-beat="' + str(key).replace(/"/g, '') + '"]') : null; }
+  function nextBeatButton(btn) {
+    if (!btn || !S.root) return null;
+    var all = [].slice.call(S.root.querySelectorAll('#gm-prep .pp-beat')), i = all.indexOf(btn);
+    for (var j = i + 1; i >= 0 && j < all.length; j++) if (all[j].getAttribute('aria-pressed') !== 'true') return all[j];
+    return null;
+  }
+  function renderBeat() {
+    var box = $q('#gm-bar-beat'), go = $q('#gm-bar-beatgo'); if (!box || !go) return;
+    var r = S && S.doc ? runningBeat() : null; if (!r) { box.hidden = true; return; }
+    var btn = beatButton(r.key), tr = btn && btn.closest ? btn.closest('tr') : null, min = tr ? +tr.getAttribute('data-min') || 0 : 0;
+    var m = Math.max(0, Math.floor((Date.now() - Date.parse(r.at)) / 60000)), over = min ? m / min : 0;
+    go.innerHTML = '<span class="gm-dot on"></span>' + esc(shortLabel(r.label, 40)) + ' · <b>' + m + (min ? ' / ' + min : '') + ' min</b>';
+    go.className = 'gm-pill gm-beat' + (over >= 1.5 ? ' late' : over >= 1 ? ' due' : '');
+    go.title = 'Running since ' + hm(r.at) + (min ? ', budget ' + min + ' min' : '') + '. Opens it in the Prep tab.';
+    var nx = $q('[data-gm="beat-next"]'); if (nx) nx.hidden = !nextBeatButton(btn);
+    box.hidden = false;
+  }
+  function beatGo() {
+    var r = runningBeat(), btn = r && beatButton(r.key); setPanel('prep');
+    if (btn) { var tr = btn.closest ? btn.closest('tr') : btn; try { tr.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} flash(tr); }
+  }
+  function beatNext() {
+    var r = runningBeat(), nx = nextBeatButton(r && beatButton(r.key));
+    if (!nx) { toast('No beat after this one in the run order.', true); return; }
+    prepBeat(nx); toast('Started: ' + str(nx.getAttribute('data-label')).slice(0, 60) + '.');
+  }
+  function flash(el) { if (!el || !el.classList) return; el.classList.add('gm-flash'); setTimeout(function () { if (el.classList) el.classList.remove('gm-flash'); }, 1700); }
+
+  /* ---------- Find (Ctrl+K or /): an overlay over the page ---------- */
+  function findIndex() {
+    var out = [], c = part('campaign') || {}, lc = function (x) { return str(x).toLowerCase(); }, known = {}, v = S.prepView;
+    if (v && v.note) {
+      Object.keys(v.secs || {}).forEach(function (id) { var x = v.secs[id]; out.push({ kind: 'Prep', title: x.head || v.note.title, text: findText(x.src), go: { t: 'prep', id: id } }); });
+      (v.note.blocks || []).forEach(function (b) { if (isObj(b) && b.k === 'embed') out.push({ kind: 'Prep', title: str(b.from).split('/').pop().replace(/\.md$/i, '') + (b.heading ? ' › ' + b.heading : ''), text: findText(b.src), go: { t: 'embed', from: str(b.from) } }); });
+    }
+    screenSections().forEach(function (x) { out.push({ kind: 'Screen', title: x.title, text: findText(x.md), go: { t: 'screen', id: x.id } }); });
+    (c.npcs || []).forEach(function (n) { if (!isObj(n) || !n.name) return; known[lc(n.name)] = 1; out.push({ kind: 'NPC', title: n.name, sub: [n.role, n.faction, n.district].filter(Boolean).join(' · '), text: [n.glance, n.mannerism, (Array.isArray(n.say) ? n.say : []).join(' '), n.playedBy ? 'played by ' + n.playedBy : ''].join(' '), go: { t: 'npc', name: n.name } }); });
+    Object.keys(S.npcs || {}).forEach(function (id) { var n = S.npcs[id]; if (!isObj(n) || !n.name || known[lc(n.name)]) return; out.push({ kind: 'NPC (app)', title: n.name, sub: [n.role, n.faction].filter(Boolean).join(' · '), text: str(n.description), go: { t: 'npcapp' } }); });
+    (c.pcs || []).forEach(function (x) { if (isObj(x) && x.name) out.push({ kind: 'PC', title: x.name, sub: x.playbook, text: [].concat(x.friend || [], x.rival || [], x.vice || []).join(' '), go: { t: 'pc', name: x.file || x.name } }); });
+    (c.standing || []).forEach(function (x) { if (isObj(x) && x.faction) out.push({ kind: 'Faction', title: x.faction, sub: 'status with the crew ' + (x.status > 0 ? '+' : '') + (+x.status || 0), go: { t: 'faction', name: B68slug(x.faction) } }); });
+    (Array.isArray(camp && camp.clocks) ? camp.clocks : []).forEach(function (k) { if (isObj(k)) out.push({ kind: 'Table clock', title: k.name || 'Clock', sub: (+k.filled || 0) + '/' + (+k.size || 0) + (k.hidden ? ' · hidden from players' : ''), go: { t: 'rail' } }); });
+    (c.clocks || []).forEach(function (k) { if (isObj(k)) out.push({ kind: 'World clock', title: k.goal || k.name, sub: [k.faction, (+k.filled || 0) + '/' + (+k.segments || 0)].filter(Boolean).join(' · '), text: [k.name, k.district].join(' '), go: { t: 'rail' } }); });
+    (c.callbacks || []).forEach(function (x) { if (isObj(x) && x.text) out.push({ kind: 'Callback', title: x.text, sub: x.src, go: null }); });
+    (c.cast || []).forEach(function (x) { if (isObj(x) && x.text) out.push({ kind: 'Cast', title: x.text, sub: x.src, go: null }); });
+    newest(S.doc.capture).forEach(function (e) { var b = BUCKETS.filter(function (x) { return x.k === e.bucket; })[0]; if (str(e.text).trim()) out.push({ kind: (b ? b.label : 'Filed') + ' · filed', title: e.text, sub: hm(e.at), go: null }); });
+    return out;
+  }
+  function findOn() { return !!(S && S.findIdx); }
+  function findOpen() {
+    var f = $q('#gm-find'), q = $q('#gm-find-q'); if (!f || !q) return;
+    S.findIdx = findIndex(); f.hidden = false; f.removeAttribute('hidden'); q.focus(); try { q.select(); } catch (e) {}
+    findRender(q.value);
+  }
+  function findClose() { var f = $q('#gm-find'), q = $q('#gm-find-q'); if (f) { f.hidden = true; f.setAttribute('hidden', ''); } if (q && document.activeElement === q) q.blur(); S.findIdx = null; }
+  function findRender(q) {
+    var list = $q('#gm-find-list'); if (!list) return;
+    var hits = S.findHits = findHits(S.findIdx || [], q, 40); S.findSel = 0;
+    list.innerHTML = !str(q).trim() ? '<li class="gm-find-none">Prep, the screen, NPCs, PCs, factions, clocks, callbacks, and what you filed tonight.</li>'
+      : !hits.length ? '<li class="gm-find-none">Nothing matches “' + esc(q) + '”.</li>'
+      : hits.map(function (h, i) {
+        return '<li><button type="button" class="gm-find-hit" data-gm="find-go" data-i="' + i + '" aria-selected="' + (i === 0) + '"><span class="gm-find-kind">' + esc(h.kind) + '</span><b>' + esc(h.title) + '</b>' +
+          (h.sub ? ' <small>' + esc(h.sub) + '</small>' : '') + (h.snip ? '<span class="gm-find-snip">' + esc(h.snip) + '</span>' : '') + '</button></li>';
+      }).join('');
+  }
+  function findMove(d) {
+    var hs = S.findHits || []; if (!hs.length) return;
+    S.findSel = ((S.findSel || 0) + d + hs.length) % hs.length;
+    [].forEach.call(S.root.querySelectorAll('.gm-find-hit'), function (b, i) { b.setAttribute('aria-selected', String(i === S.findSel)); if (i === S.findSel) { try { b.scrollIntoView({ block: 'nearest' }); } catch (e) {} } });
+  }
+  function linkFor(kind, name) {
+    var pk = part('prep'), links = pk && isObj(pk.links) ? pk.links : {}, want = B68slug(name);
+    return Object.keys(links).map(function (k) { return links[k]; }).filter(function (L) { return isObj(L) && L.k === kind && B68slug(L.name) === want; })[0] || { name: name, rel: '' };
+  }
+  function findGo(i) {
+    var h = S.findHits && S.findHits[i]; if (!h) return;
+    var g = h.go;
+    if (!g) { if (S.api && S.api.copy) S.api.copy(str(h.title), 'Copied.'); return; }
+    findClose();
+    if (g.t === 'prep') { prepGo(g.id); flash($q('#' + g.id)); }
+    else if (g.t === 'embed') { setPanel('prep'); var em = $q('#gm-prep .pp-embed[data-from="' + g.from.replace(/"/g, '') + '"]'); if (em) { try { em.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {} flash(em); } }
+    else if (g.t === 'screen') { setPanel('rules'); var fq = $q('#gm-gs-q'); if (fq && fq.value) { fq.value = ''; filterScreen(''); } screenJump(g.id); flash($q('#gm-rules [data-gs="' + str(g.id).replace(/"/g, '') + '"]')); }
+    else if (g.t === 'npc' || g.t === 'pc' || g.t === 'faction') {
+      if (!$q('#gm-prep-peek')) { toast(h.kind + ': ' + h.title + (h.sub ? ' (' + h.sub + ')' : ''), false); return; }
+      setPanel('prep'); prepPeek(g.t, linkFor(g.t, g.name));
+    }
+    else if (g.t === 'npcapp') setPanel('npc');
+    else if (g.t === 'rail') { if (isPhone()) { S.seg = 'state'; syncPanels(); } flash($q('#gm-rail .gm-clocks')); }
+  }
+
+  /* the table clocks to the iPad (an svg made here; the server checks it like any map). While the iPad shows them, a change
+     to a clock on the table sends them again. */
+  function tableClocks() { return Array.isArray(camp && camp.clocks) ? camp.clocks.filter(isObj) : []; }
+  function clocksToIpad(quiet) {
+    var svg = clocksSvg(tableClocks()); if (!svg) { if (!quiet) toast('No clock the players can see.', true); return; }
+    gate.mark(svg); S.clocksSvg = svg;
+    pushDisplay({ kind: 'svg', title: 'Clocks', caption: 'The table clocks', svg: svg }).then(function () { if (!quiet) toast('On the iPad: the clocks. They follow the table while they are up.'); }, function (e) { toast('Could not send the clocks: ' + errText(e), true); });
+  }
+
   /* the one-tap Situations | Classic toggle in the console header; none while the release switch is off */
   function viewToggle() {
     if (!SITUATIONS_DEFAULT || !hasSit()) return '';
@@ -1343,7 +1555,7 @@
   var STT_LABEL = { idle: 'Not listening', starting: 'Starting…', listening: 'Listening', reconnecting: 'Reconnecting…', stopped: 'Stopped', error: 'Stopped by an error' };
   function loadStt() {
     var g = gmApi(); if (!g || typeof g.stt !== 'function') return;
-    Promise.all([g.stt(), g.transcript({ tail: 6 }).then(function (r) { return r; }, function () { return null; })]).then(function (res) {
+    Promise.all([g.stt(), g.transcript({ tail: 8 }).then(function (r) { return r; }, function () { return null; })]).then(function (res) {
       STT.doc = res[0] && res[0].doc || null; STT.tail = res[1] && Array.isArray(res[1].lines) ? res[1].lines : STT.tail; STT.error = ''; STT.loaded = true; renderStt(); renderBar();
     }, function (e) { STT.error = errText(e); STT.loaded = true; renderStt(); renderBar(); });
   }
@@ -1371,9 +1583,9 @@
         : '<button type="button" class="btn primary" data-gm="stt-on" title="The iPad shows a button: tap it once to open the mic">Start listening</button>') + '</div>' +
       '<details class="gm-fold" data-sttfold="1"' + ((STT.fold === undefined ? on : STT.fold) ? ' open' : '') + '><summary>Who is who</summary><div class="gm-stt-spk">' + nums.map(function (n) {
         return '<label class="gm-field" for="gm-stt-s' + n + '"><span class="gm-lab">S' + n + '</span><input type="text" id="gm-stt-s' + n + '" data-sttspk="' + n + '" maxlength="60" autocomplete="off" placeholder="Name (Character)" value="' + esc(isObj(d.speakers) ? d.speakers[String(n)] || '' : '') + '"></label>';
-      }).join('') + '</div><p class="gm-dim">Numbers are Deepgram’s guesses and restart after a reconnect. Names apply to lines the PC copies from now on.</p></details>' +
+      }).join('') + '</div><p class="gm-dim">Numbers are Deepgram’s guesses and restart after a reconnect. Names apply to lines the PC copies from now on. Tap a name in the lines below to set it.</p></details>' +
       (STT.tail.length ? '<ol class="gm-stt-tail">' + STT.tail.map(function (l) {
-        return '<li>' + (l.kind === 'mark' ? '<i>— ' + esc(l.text || 'reconnected') + ' —</i>' : '<span class="gm-lab">' + esc(sttName(d, l.speaker)) + '</span> ' + esc(l.text)) + '</li>';
+        return '<li>' + (l.kind === 'mark' ? '<i>— ' + esc(l.text || 'reconnected') + ' —</i>' : (typeof l.speaker === 'number' ? '<button type="button" class="gm-lab gm-stt-who" data-gm="stt-name" data-sp="' + l.speaker + '" title="Name this speaker">' + esc(sttName(d, l.speaker)) + '</button>' : '<span class="gm-lab">' + esc(sttName(d, l.speaker)) + '</span>') + ' ' + esc(l.text)) + '</li>';
       }).join('') + '</ol>' : '') +
       sttCopier(d, on) + '</div></section>';
   }
@@ -1693,7 +1905,7 @@
     W.B68GmPrep.decorate(el, { ticks: p.ticks, cells: p.cells, beats: p.beats });
     el.querySelectorAll('.pp-pin').forEach(function (b) { var on = isObj(pins[b.getAttribute('data-sec')]); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Pinned' : 'Pin'; });
   }
-  function prepRedecorate() { decoratePrep($q('#gm-prep')); renderRail(); }
+  function prepRedecorate() { decoratePrep($q('#gm-prep')); renderRail(); renderBeat(); }
   function prepTick(a) {
     var info = S.prepTasks && S.prepTasks[a]; if (!info) return;
     if (info.d) { toast('Ticked in the note already.'); return; }
@@ -1885,7 +2097,8 @@
       '<p class="gm-dim">Session ' + esc(isObj(d.session) ? +d.session.number || 0 : 0) + ' · read-only here; change it on <a href="#t">the table</a>.</p></section>';
     var tc = Array.isArray(d.clocks) ? d.clocks : [];
     function none(title) { return '<section class="gm-box gm-box-empty"><h3 class="gm-band">' + title + ' <small>· none</small></h3></section>'; }
-    h += tc.length ? '<section class="gm-box"><h3 class="gm-band">Table clocks</h3><ul class="gm-clocks">' + tc.map(function (c) { return clockLi(c.name, c.filled, c.size, c.hidden ? 'hidden from players' : c.kind); }).join('') + '</ul></section>' : none('Table clocks');
+    h += tc.length ? '<section class="gm-box"><h3 class="gm-band">Table clocks</h3><ul class="gm-clocks">' + tc.map(function (c) { return clockLi(c.name, c.filled, c.size, c.hidden ? 'hidden from players' : c.kind); }).join('') + '</ul>' +
+      (tc.some(function (c) { return isObj(c) && !c.hidden; }) ? '<p class="gm-clockacts"><button type="button" class="btn sm" data-gm="clocks-ipad" title="The clocks the players may see, on the iPad; they follow the table while up">Show on iPad</button></p>' : '') + '</section>' : none('Table clocks');
     var wc = (part('campaign') || {}).clocks; wc = Array.isArray(wc) ? wc : [];
     h += wc.length ? '<section class="gm-box"><h3 class="gm-band">World clocks <small>(pack)</small></h3><ul class="gm-clocks">' + wc.map(function (c) { return clockLi(c.goal || c.name, c.filled, c.segments || c.size, [c.faction, c.tier != null && c.tier !== '' ? 'Tier ' + c.tier : ''].filter(Boolean).join(' · ')); }).join('') + '</ul></section>' : none('World clocks');
     var owed = []; try { owed = W.B68GmConsole ? W.B68GmConsole.campaignWith(part('campaign') || {}, S.doc.con || {}).owed : []; } catch (e) { owed = []; }
@@ -1990,6 +2203,16 @@
     if ((ev.key === ' ' || ev.key === 'Enter') && tg && tg.matches && S.root.contains(tg) && tg.matches('.rl-task[data-task], td[data-cell]')) {
       ev.preventDefault(); if (tg.hasAttribute('data-task')) prepTick(tg.getAttribute('data-task')); else prepCell(tg); return;
     }
+    /* Find: Ctrl+K (or Cmd+K) anywhere opens and shuts it; while open, its own keys only */
+    if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && str(ev.key).toLowerCase() === 'k') { ev.preventDefault(); if (findOn()) findClose(); else findOpen(); return; }
+    if (findOn()) {
+      if (ev.key === 'Escape') { ev.preventDefault(); findClose(); return; }
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); findMove(ev.key === 'ArrowDown' ? 1 : -1); return; }
+      if (ev.key === 'Enter' && tg && tg.id === 'gm-find-q') { ev.preventDefault(); findGo(S.findSel || 0); }
+      return;
+    }
+    /* a speaker's name: Enter saves it (the change event) */
+    if (ev.key === 'Enter' && tg && tg.hasAttribute && tg.hasAttribute('data-sttspk')) { ev.preventDefault(); tg.blur(); return; }
     var ml = $q('.gm-menu-list'); if (ml && !ml.hasAttribute('hidden') && ev.key === 'Escape') { menuOpen(false); var mb = $q('[data-gm="menu"]'); if (mb) mb.focus(); ev.preventDefault(); return; }
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target), view: S.view });
     if (!a) return;
@@ -2004,6 +2227,7 @@
     else if (a.type === 'blank') blank();
     else if (a.type === 'clear') blankIpad();
     else if (a.type === 'focus') toggleFocus();
+    else if (a.type === 'find') findOpen();
   }
   function toggleFocus() { S.prepWide = !S.prepWide; try { W.localStorage.setItem(PREP_WIDE, S.prepWide ? '1' : '0'); } catch (e) {} syncPanels(); }
   function onClick(ev) {
@@ -2012,6 +2236,7 @@
     var pl = ev.target.closest('a[href^="#pp:"]'); if (pl && S.root.contains(pl)) { ev.preventDefault(); prepLink(pl.getAttribute('href')); return; }
     var pt = ev.target.closest('.rl-task[data-task]'); if (pt && S.root.contains(pt)) { ev.preventDefault(); prepTick(pt.getAttribute('data-task')); return; }
     var pc = ev.target.closest('td[data-cell]'); if (pc && S.root.contains(pc)) { prepCell(pc); return; }
+    if (ev.target.id === 'gm-find') { findClose(); return; }      /* a click on the dimmed page around Find shuts it */
     var inMenu = ev.target.closest('.gm-menu');
     if (!inMenu || ev.target.closest('.gm-menu-list')) menuOpen(false);   /* a click outside the menu, or on one of its items: it closes */
     var b = ev.target.closest('[data-gm]'); if (!b || !S.root.contains(b)) return;
@@ -2019,6 +2244,12 @@
     switch (a) {
       case 'menu': { var ml2 = $q('.gm-menu-list'); menuOpen(!!(ml2 && ml2.hasAttribute('hidden'))); break; }
       case 'focus': toggleFocus(); break;
+      case 'find-open': findOpen(); break;
+      case 'find-go': findGo(+b.getAttribute('data-i')); break;
+      case 'beat-go': beatGo(); break;
+      case 'beat-next': beatNext(); break;
+      case 'clocks-ipad': clocksToIpad(false); break;
+      case 'stt-name': { var spn = b.getAttribute('data-sp'); STT.fold = true; renderStt(true); var si = $q('#gm-stt-s' + spn); if (si) { si.focus(); try { si.select(); } catch (e) {} } break; }
       case 'layout-classic': try { W.localStorage.setItem(LAYOUT, 'classic'); } catch (e) {} setApp(false); toast('Classic layout on this device. “Laptop layout” in the header brings the new one back.'); break;
       case 'layout-app': try { W.localStorage.removeItem(LAYOUT); } catch (e) {} setApp(true); break;
       case 'retry': load(); break;
@@ -2147,7 +2378,7 @@
     else if (k === 'rules') { var q = $q('#gm-rq'); if (q && q.value.trim()) { try { W.open('#rules?q=' + encodeURIComponent(q.value.trim()), '_blank', 'noopener'); } catch (e) {} } }
   }
   function wire(el) {
-    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); el.addEventListener('scroll', onScroll, true); }
+    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'gm-find-q') { findRender(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); el.addEventListener('scroll', onScroll, true); }
     if (!wire.global) {
       wire.global = true;
       document.addEventListener('keydown', onKey, true);
@@ -2164,7 +2395,13 @@
      campaign document reaches every signed-in person, and only the GM may write the ambient) */
   function campaign(doc) {
     camp = isObj(doc) ? doc : null;
-    if (S && S.status === 'ready') { renderRail(); renderBar(); }
+    if (S && S.status === 'ready') {
+      renderRail(); renderBar();
+      if (S.clocksSvg && AM.shown && AM.shown.kind === 'svg' && AM.shown.title === 'Clocks') {
+        var me = S; clearTimeout(S.clocksT);
+        S.clocksT = setTimeout(function () { if (S !== me || !AM.shown || AM.shown.title !== 'Clocks') return; var svg = clocksSvg(tableClocks()); if (svg && svg !== S.clocksSvg) clocksToIpad(true); }, 700);
+      }
+    }
     var api = (S && S.api) || keptApi;
     if (api && api.isGM && api.isGM() === true && keptApi) crewSync.note(camp);
   }

@@ -2,13 +2,14 @@
 // Two-way sync between the GM page (D1) and Alex's Obsidian vault. Full contract: SYNC.md.
 //
 //   node scripts/gm-sync.mjs [pull|push|both] [--dry-run] [--yes] [--vault <path>] [--campaign <id>]
-//                            [--session <N>] [--baseline] [--only notes|npcs|pack] [--pack <file>] [--private <dir>]
+//                            [--session <N>] [--baseline] [--only notes|npcs|pack] [--pack <file>] [--private <dir>] [--allow-shrink]
 //
 //   pull   app -> vault: capture lines, L rolls, pins, bargains and callbacks into the session note; NPCs made in the
 //          app as new NPC cards; reveals and GM notes into a card's "## In play"; the Prep tab's ticks into their task
 //          boxes ([ ] -> [x], never back) and its beat times under "## At the table (app)". Writes the vault unless --dry-run.
 //   push   vault -> D1: NPC name / description / figure spec (field ownership + three-way merge), the GM pack parts
-//          (staged in pieces, swapped in with one statement). Writes D1 ONLY with --yes; otherwise a plan.
+//          (staged in pieces, swapped in with one statement). Writes D1 ONLY with --yes; otherwise a plan. A pack that
+//          would lose prep against the server's is refused (lib/pack-guard.mjs) unless --allow-shrink.
 //   both   pull, then push (the default).
 //
 // Auth: the GM's own `wrangler login` (wrangler d1 execute <db> --remote --json). Not logged in or offline: the run
@@ -36,7 +37,7 @@ async function optional(file) {
 }
 
 export function parseArgs(argv) {
-  const o = { mode: 'both', dryRun: false, yes: false, baseline: false, only: null };
+  const o = { mode: 'both', dryRun: false, yes: false, baseline: false, only: null, allowShrink: false };
   const need = (i, f) => { if (i >= argv.length || argv[i].startsWith('--')) throw new Error(f + ' needs a value'); return argv[i]; };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -44,6 +45,7 @@ export function parseArgs(argv) {
     else if (a === '--dry-run' || a === '-n') o.dryRun = true;
     else if (a === '--yes') o.yes = true;
     else if (a === '--baseline') o.baseline = true;
+    else if (a === '--allow-shrink') o.allowShrink = true;
     else if (a === '--vault') o.vault = need(++i, a);
     else if (a === '--campaign') o.campaign = need(++i, a);
     else if (a === '--pack') o.packFile = need(++i, a);
@@ -123,7 +125,7 @@ export async function run(opts) {
 
 const USAGE = [
   'node scripts/gm-sync.mjs [pull|push|both] [--dry-run] [--yes] [--vault <path>] [--campaign <id>]',
-  '                         [--session <N>] [--baseline] [--only notes|npcs|pack] [--pack <file>] [--private <dir>]',
+  '                         [--session <N>] [--baseline] [--only notes|npcs|pack] [--pack <file>] [--private <dir>] [--allow-shrink]',
   'pull writes the vault unless --dry-run; push writes D1 only with --yes. See SYNC.md.',
 ];
 

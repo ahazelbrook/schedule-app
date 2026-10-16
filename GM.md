@@ -98,7 +98,22 @@ fails and nobody is known, nothing is purged.
   Wide, and shares its setting, `b68.gm.prepWide`). Empty rail boxes are one line. **Classic layout** in the menu brings back
   the old page on this device (`b68.gm.layout` = classic); **Laptop layout** in the old header returns. `body.gm-app` turns it
   on while the tools are open; loading and import screens keep the site header.
-- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd): `1`–`4` roll a situation (Classic: `1`–`9` roll a single table), `R` `B` `N` `S` `E` `O` `T` `I` switch the panel, `F` Focus
+- **Table aids** (17/10/2026):
+  - **Find** (`Ctrl+K`, `/`, or **Find** in the bar): one box over the open Prep note (its sections and transclusions),
+    the GM screen, the pack's NPCs, PCs, factions and world clocks, the cast's NPCs made in the app, the table clocks,
+    callbacks, and tonight's capture lines. Every word must match; title matches first. `↑` `↓` choose, `Enter` jumps
+    (an NPC, PC or faction opens its peek card in the Prep tab; a capture or callback is copied), `Esc` shuts it.
+  - **The beat in the bar**: the newest beat started in the Prep tab's run order, with its minutes against the row's
+    budget (amber at the budget, red at 1.5x). Tap it to see the row; **Next beat** starts the next row not yet started.
+  - **The session in the bar**: while the table's counter is 0 it shows the open Prep note's session, "(prep)".
+  - **Clocks on the iPad**: **Show on iPad** under Table clocks in the rail sends the clocks the players may see (never
+    a hidden one) as a picture (an svg, checked by the server like a map). While it is up, a clock changing on the table
+    sends it again.
+  - **Naming a speaker from a line**: in the iPad panel's newest lines, the speaker is a button; it opens **Who is who**
+    on that speaker's box. `Enter` saves the name.
+  - **Update pack asks first** when the file would lose prep the app has (a part gone, a prep note gone or much
+    shorter): the button reads **Upload anyway** and confirms (the same guard as `gm:pack` and `gm:push`, SYNC.md).
+- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (Classic: `1`–`9` roll a single table), `R` `B` `N` `S` `E` `O` `T` `I` switch the panel, `F` Focus, `/` or `Ctrl+K` Find
   (Prep, Location, NPC, Street scene, Engagement, Cards, Screen, iPad), `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
   the last roll under "Rolled at the table", `H` blanks the screen until any key or tap, `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
 - **Situations and Classic.** The console opens on **Situations**: four buttons, each a moment in the roll: `1` **Before** (a Devil's
@@ -318,7 +333,11 @@ The iPad sits in the middle of the table, so it hears everyone; it replaces the 
 5. **Into the vault, by itself:** the PC's background copier (`scripts/gm-transcript.mjs --watch`) looks at `gm_stt`
    once a minute (one query). While `want` is on, or lines are waiting, it copies new lines every 10 s into
    `Sessions/b68g-sNN-transcript.md`, in the vault transcriber's format, with names from **Who is who**, and sets
-   `copier: { at, last }` in `gm_stt` at most once a minute, so the panel can say the PC is copying. It never writes
+   `copier: { at, last }` in `gm_stt` at most once a minute (and after any pass that copied lines once listening is
+   off), so the panel can say the PC is copying. The session is the one stamped when listening started; with none
+   (the table's counter at 0), the session note dated for that night (before 06:00 counts as the night before), else
+   the highest-numbered note. A line three minutes old or more that is already in the note (same minute, same words:
+   the other PC copied it) is not added again. It never writes
    into a transcript the Obsidian transcriber made (no `source: ipad`); those lines go to `b68g-sNN-transcript-ipad.md`
    instead. Append only; the ledger's `transcript.last` remembers the last line filed. Lines the PC missed (off, asleep)
    wait on the server and land on its next look. Two PCs on one vault (desk and laptop, through Obsidian Sync): the
@@ -327,8 +346,15 @@ The iPad sits in the middle of the table, so it hears everyone; it replaces the 
    `gm-private/transcript-watch.log`. By hand: `npm run gm:transcript` (one pass), `-- --follow` (every 10 s, in a
    terminal), `-- --prune` (delete filed lines from the server).
 
-The panel shows the iPad's last report (state, lines sent, how long ago), the newest six lines, the speaker names, and
-whether the PC is copying.
+The panel shows the iPad's last report (state, lines sent, how long ago), the newest eight lines (tap a speaker to name
+them), the speaker names, and whether the PC is copying.
+
+**After the game, in one command:** `npm run gm:after` shows the plan; `npm run gm:after -- --yes` does it
+(`scripts/gm-after.mjs`). It works out last night's session (the note dated last night, or `--session N`), copies any
+transcript lines still on the server, runs `gm:pull` for that session, sets the two transcripts side by side (lines,
+first and last time, unnamed speakers), and reports the table's session counter against the vault (`--counter N` sets
+it). `--yes --prune` then clears the server's copy of the lines the vault has. Stop listening first: with listening
+still on it leaves the transcript alone.
 Endpoints are GM only. The table display sign-in (`DISPLAY_EMAILS`) may get a token, post lines and report its status,
 but not read the transcript. The transcript is never in `/api/export`. Migration `0007_gm_stt.sql`. Checks:
 `checks/runtime/stt.test.mjs`, `checks/runtime/gm-stt.e2e.mjs` (fake mic, fake Deepgram socket).

@@ -293,6 +293,31 @@ await test('--session N sends lines without a session there; old-style highest n
   ok(read(env.vault, S + '/b68g-s01.md').includes('ZQX for one ^b68-c1'), 'went to s01');
 });
 
+await test('by date: a capture with no session goes to the note dated that night (before 06:00: the night before); --session still wins', async () => {
+  eq(V.noteDate('---\ndate: 17/10/2026\n---\n'), '17/10/2026'); eq(V.noteDate('---\ndate: "7/9/2026"\n---\n'), '07/09/2026');
+  eq(V.noteDate('---\ndate: "[TODO: session date]"\n---\n'), null); eq(V.noteDate('# no frontmatter\ndate: 17/10/2026'), null);
+  eq(V.nightOf('2026-10-17T14:30:00.000Z'), '17/10/2026', '01:30 on 18/10 is the night of 17/10'); eq(V.nightOf('2026-10-17T20:00:00.000Z'), '18/10/2026', '07:00 is the next day');
+  const doc = { capture: {
+    d1: { bucket: 'n', text: 'ZQX on the night', at: '2026-10-17T09:30:00.000Z' },
+    d2: { bucket: 'x', text: 'ZQX after midnight', at: '2026-10-17T14:30:00.000Z' },
+    d3: { bucket: 'm', text: 'ZQX a week later', at: '2026-10-24T09:30:00.000Z' },
+    d4: { bucket: 'm', text: 'ZQX stamped', at: '2026-10-17T09:31:00.000Z', s: 2 },
+  } };
+  const env = await setup({ doc });
+  const s01 = V.abs(env.vault, S + '/b68g-s01.md');
+  fs.writeFileSync(s01, fs.readFileSync(s01, 'utf8').replace(/^---\n/, '---\ndate: 17/10/2026\n'));
+  await sync(env, ['pull', '--only', 'notes']);
+  const one = read(env.vault, S + '/b68g-s01.md'), two = read(env.vault, S + '/b68g-s02.md');
+  ok(one.includes('ZQX on the night ^b68-d1') && one.includes('ZQX after midnight ^b68-d2'), 'dated captures went to s01 (dated 17/10)');
+  ok(two.includes('ZQX a week later ^b68-d3'), 'no note dated 24/10: the highest note');
+  ok(two.includes('ZQX stamped ^b68-d4') && !one.includes('ZQX stamped'), 'a stamped session wins over the date');
+  const env2 = await setup({ doc: { capture: { e1: { bucket: 'n', text: 'ZQX forced', at: '2026-10-17T09:30:00.000Z' } } } });
+  const s01b = V.abs(env2.vault, S + '/b68g-s01.md');
+  fs.writeFileSync(s01b, fs.readFileSync(s01b, 'utf8').replace(/^---\n/, '---\ndate: 17/10/2026\n'));
+  await sync(env2, ['pull', '--only', 'notes', '--session', '2']);
+  ok(read(env2.vault, S + '/b68g-s02.md').includes('ZQX forced'), '--session overrides the date');
+});
+
 await test('the board (b68g-factions.md) is never written; the writer refuses no-touch paths', async () => {
   const env = await setup();
   const before = fs.readFileSync(V.abs(env.vault, V.NEVER[0]));
@@ -590,6 +615,42 @@ await testPack('pack: a server part the file lacks is left alone; a bad part nam
   ok(env.exec.db.prepare("SELECT count(*) AS n FROM gm_pack WHERE part = 'extra'").get().n === 1, 'extra part deleted');
   ok(/server has a part "extra"/.test(r.out));
   ok(r.report.refused.find((x) => x.target === 'pack:Bad Name'));
+  for (const m of MARKERS) ok(!r.out.includes(m) && !logText(env).includes(m));
+});
+
+import { packLosses } from '../../scripts/lib/pack-guard.mjs';
+await test('the pack guard: a prep note gone or much shorter, a part gone or far smaller -> listed; growth and small parts are fine', async () => {
+  const note = (rel, n) => ({ id: rel, rel, blocks: [{ k: 'md', src: 'x'.repeat(n) }] });
+  const before = { prep: { notes: [note('S/b68g-s02.md', 44000), note('S/b68g-s1.5.md', 18000)], links: {} }, screen: { sections: ['y'.repeat(9000)] }, tiny: { a: 1 } };
+  eq(packLosses(before, JSON.parse(JSON.stringify(before))).length, 0, 'the same pack');
+  eq(packLosses(before, { ...before, prep: { notes: [note('S/b68g-s02.md', 46000), note('S/b68g-s1.5.md', 18000), note('S/b68g-s03.md', 5)] } }).length, 0, 'growth, a new note');
+  const rolled = packLosses(before, { ...before, prep: { notes: [note('S/b68g-s02.md', 19000), note('S/b68g-s1.5.md', 18000)] } });
+  ok(rolled.some((l) => /b68g-s02 shrank from 44000 to 19000/.test(l.what)), JSON.stringify(rolled));
+  const gone = packLosses(before, { screen: before.screen, tiny: {} });
+  ok(gone.some((l) => /prep part is gone \(no note has gm_prep/.test(l.what)), 'prep gone');
+  eq(packLosses(before, { screen: before.screen, tiny: {} }, { missing: false }).length, 0, 'the push leaves missing parts alone');
+  ok(packLosses({ screen: 9000 }, { screen: 2000 }).some((l) => /screen part shrank/.test(l.what)), 'sizes from the server index');
+});
+
+await testPack('pack: the push refuses a pack that would lose prep (the 16/10 Sync rollback), and --allow-shrink pushes it', async () => {
+  const env = await setup({ doc: null });
+  const pk = writePack(env);
+  const note = (n) => ({ id: 's02', rel: 'S/b68g-s02.md', title: 'Session 2', session: '2', date: '17/10/2026', status: 'prep', blocks: [{ k: 'md', from: 'S/b68g-s02.md', src: 'ZQXprep '.repeat(n), tasks: [] }] });
+  pk.parts.prep = { src: { file: 'S/', blockSha: 'p1' }, notes: [note(5000)], links: {} };
+  fs.writeFileSync(path.join(env.priv, 'b68-gm-pack.json'), JSON.stringify(pk));
+  eq((await sync(env, ['push', '--yes', '--only', 'pack'])).code, 0);
+  const full = env.exec.db.prepare("SELECT version FROM gm_pack WHERE part = 'prep'").get().version;
+  pk.parts.prep = { src: { file: 'S/', blockSha: 'p2' }, notes: [note(2000)], links: {} };
+  pk.parts.console.T.a.push(4);
+  fs.writeFileSync(path.join(env.priv, 'b68-gm-pack.json'), JSON.stringify(pk));
+  const r = await sync(env, ['push', '--yes', '--only', 'pack']);
+  eq(r.code, 1, r.out);
+  ok(r.report.refused.some((x) => x.target === 'pack:prep' && /b68g-s02 shrank/.test(x.why)), r.out);
+  eq(env.exec.db.prepare("SELECT version FROM gm_pack WHERE part = 'prep'").get().version, full, 'prep untouched');
+  ok(!env.exec.db.prepare("SELECT body FROM gm_pack WHERE part = 'console'").get().body.includes('4]'), 'nothing in the pack pushed, not even the safe part');
+  const forced = await sync(env, ['push', '--yes', '--only', 'pack', '--allow-shrink']);
+  eq(forced.code, 0, forced.out);
+  ok(env.exec.db.prepare("SELECT version FROM gm_pack WHERE part = 'prep'").get().version !== full, 'pushed with --allow-shrink');
   for (const m of MARKERS) ok(!r.out.includes(m) && !logText(env).includes(m));
 });
 

@@ -35,6 +35,10 @@
 //   A block that is not valid JSON fails the export.
 //
 // Idempotent: a part whose source is unchanged keeps its previous exportedAt, so a second run writes the same bytes.
+//
+// The guard (lib/pack-guard.mjs): when the new pack would lose prep against the pack file already there (the prep or
+// screen part gone, a prep note gone or much shorter, any part far smaller), nothing is written and the run exits 1.
+// --allow-shrink writes it anyway.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -43,6 +47,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { basenames } from "./lib/vault.mjs";
 import { buildPrep } from "./lib/prep-export.mjs";
+import { packLosses, lossLines } from "./lib/pack-guard.mjs";
 import { buildScreen } from "./lib/screen-export.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -51,13 +56,14 @@ const PART_CAP = 900 * 1024;        // the server's per-part cap (contract)
 
 // ---- args ---------------------------------------------------------------------------------------------
 function args(argv) {
-  const o = { vault: process.env.B68_VAULT || "", out: "gm-private/b68-gm-pack.json", quiet: false };
+  const o = { vault: process.env.B68_VAULT || "", out: "gm-private/b68-gm-pack.json", quiet: false, allowShrink: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--vault") o.vault = argv[++i];
     else if (a === "--out") o.out = argv[++i];
     else if (a === "--quiet") o.quiet = true;
-    else if (a === "-h" || a === "--help") { console.log("usage: node scripts/gm-pack.mjs --vault <vault dir> [--out gm-private/b68-gm-pack.json] [--quiet]"); process.exit(0); }
+    else if (a === "--allow-shrink") o.allowShrink = true;
+    else if (a === "-h" || a === "--help") { console.log("usage: node scripts/gm-pack.mjs --vault <vault dir> [--out gm-private/b68-gm-pack.json] [--quiet] [--allow-shrink]"); process.exit(0); }
     else { console.error("unknown argument: " + a); process.exit(2); }
   }
   if (!o.vault) { console.error("--vault <vault dir> is required (or set B68_VAULT)"); process.exit(2); }
@@ -705,6 +711,15 @@ function main() {
     } catch (e) { failures.push(name + ": " + e.message); }
   }
   if (failures.length) { for (const f of failures) console.error("FAILED  " + f); process.exit(1); }
+
+  // the guard: never lose prep quietly (the 16/10/2026 Sync rollback)
+  const losses = prev && prev.parts && typeof prev.parts === "object" ? packLosses(prev.parts, parts) : [];
+  if (losses.length && !a.allowShrink) {
+    for (const l of lossLines(losses, "npm run gm:pack --")) console.error(l);
+    console.error("Nothing written: " + path.relative(REPO, out) + " is still the pack from before.");
+    process.exit(1);
+  }
+  for (const l of losses) warn("allowed by --allow-shrink: " + l.what);
 
   let exportedAt = now;
   const pack = { format: 1, exportedAt, parts };

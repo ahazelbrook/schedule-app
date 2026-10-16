@@ -40,9 +40,12 @@ It is never guessed onto another line. The notes a tick may edit are fixed in co
 campaign's folder and its `Sessions/`, never a transcript, the faction board, `Characters/` or `Clocks/`.
 
 **Which session note.** A capture or pin carries `s`, the session number the page stamps on it: `s: 2` ->
-`b68g-s02.md` (or `b68g-s2.md`), `s: 1.5` -> `b68g-s1.5.md`. Entries without `s` (older lines) and the bargains go to
-the highest-numbered `b68g-sNN.md`, as the station does (interludes like `b68g-s1.5.md` are never chosen that way), or
-to `--session N`.
+`b68g-s02.md` (or `b68g-s2.md`), `s: 1.5` -> `b68g-s1.5.md`. Entries without `s` (the table's counter was 0, or older
+lines) go to `--session N` when given; else to the session note whose frontmatter `date:` (DD/MM/YYYY) is the night the
+entry was made (before 06:00 counts as the night before), so a session 3 note made the next day cannot take session 2's
+lines; else, and the bargains, to the highest-numbered `b68g-sNN.md`, as the station does (interludes like
+`b68g-s1.5.md` are never chosen that way). Prep ticks' and beats' lines under `## At the table (app)` follow the same
+rule. The transcript copier (`gm-transcript.mjs`) does too.
 
 **When it refuses** (writes nothing to that note or card, reports it, and carries on with the others): the note is
 missing; a session note lacks one of the four headings; any of the six headings appears twice; a card has no
@@ -78,6 +81,14 @@ whose version and `src` match the server's is skipped. A changed part is written
 there; a failure part-way leaves the old part in place. The stored part is read back and its hash checked against the
 version, as the API computes it. A part on the server that the file lacks is left alone and reported.
 
+**The pack guard** (`scripts/lib/pack-guard.mjs`, 17/10/2026). On 16/10 Obsidian Sync put an old copy of
+`b68g-s02.md` back: no `gm_prep: true`, 26 000 characters shorter, so the next pack had no prep at all. Now:
+`npm run gm:pack` compares the new pack with the file already there, and the push compares each changed part with the
+server's (sizes from the index; the prep notes from the server's prep part). A part gone (gm:pack only: the push leaves
+missing parts alone), a part under 75% of its size, or a prep note gone or under 75% of its length is a loss: gm:pack
+writes nothing and exits 1; the push refuses and pushes nothing of the pack. `--allow-shrink` overrides either, for a
+loss that is meant. The GM page's **Update pack** runs the same rules against the pack it holds and asks before
+uploading.
 ## Auth and the database
 
 `wrangler d1 execute <database_name> --remote --json --command=<sql>` with the repo's own wrangler, started by node
