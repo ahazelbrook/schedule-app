@@ -1,0 +1,74 @@
+{
+ "id": "mira",
+ "name": "Mira",
+ "plate": "Mira · M.",
+ "code": "NPC-968-0105",
+ "halo": "swing-500",
+ "heightIn": 67,
+ "figure": "fem",
+ "shape": "hourglass",
+ "heads": 7.8,
+ "build": 1,
+ "skin": "olive",
+ "age": 36,
+ "pose": {
+  "stance": "easy",
+  "weight": "L",
+  "arms": {
+   "R": "hold",
+   "L": "hip"
+  },
+  "head": {
+   "tilt": -4,
+   "yaw": -10
+  }
+ },
+ "head": {
+  "shape": "heart"
+ },
+ "face": {
+  "eyes": "upturned",
+  "brows": "arched",
+  "nose": "straight",
+  "mouth": "pout",
+  "expression": "cool",
+  "makeup": {
+   "type": "classic",
+   "lips": "cloth-oxblood"
+  }
+ },
+ "hair": {
+  "style": "beehive",
+  "color": "cloth-black"
+ },
+ "outfit": {
+  "dress": {
+   "type": "a-line-dress",
+   "color": "cloth-petrol",
+   "sleeves": "short",
+   "neckline": "v",
+   "hem": "knee",
+   "pinch": 0.05
+  },
+  "waist": {
+   "type": "chain-belt",
+   "color": "metal-brass",
+   "at": "hip"
+  },
+  "legs": {
+   "type": "tights",
+   "color": "cloth-charcoal"
+  },
+  "feet": {
+   "type": "heels",
+   "color": "cloth-black"
+  }
+ },
+ "props": [
+  {
+   "type": "glass",
+   "side": "R",
+   "style": "tumbler"
+  }
+ ]
+}

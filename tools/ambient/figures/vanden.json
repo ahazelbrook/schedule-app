@@ -1,0 +1,79 @@
+{
+ "id": "vanden",
+ "name": "Vanden",
+ "plate": "Vanden · V.",
+ "code": "NPC-968-0111",
+ "halo": "slate-500",
+ "heightIn": 71,
+ "shape": "oval",
+ "heads": 7.3,
+ "build": 1.08,
+ "skin": "fair",
+ "age": 46,
+ "body": {
+  "belly": 0.6
+ },
+ "pose": {
+  "stance": "easy",
+  "weight": "R",
+  "arms": {
+   "R": "pocket",
+   "L": "pocket"
+  },
+  "head": {
+   "tilt": -7,
+   "yaw": 12
+  },
+  "stoop": 0.3
+ },
+ "head": {
+  "shape": "oval"
+ },
+ "face": {
+  "eyes": "heavy",
+  "bags": true,
+  "brows": "straight",
+  "nose": "broad",
+  "mouth": "wide",
+  "expression": "smirk",
+  "facialHair": {
+   "type": "stubble",
+   "color": "cloth-brown"
+  }
+ },
+ "hair": {
+  "style": "short",
+  "color": "cloth-brown",
+  "hat": {
+   "type": "peaked-cap",
+   "color": "cloth-navy"
+  }
+ },
+ "outfit": {
+  "base": {
+   "type": "shirt",
+   "color": "cloth-sky",
+   "collar": "open"
+  },
+  "outer": {
+   "type": "watch-tunic",
+   "color": "cloth-navy",
+   "open": true,
+   "belt": false,
+   "badge": false
+  },
+  "bottom": {
+   "type": "trousers",
+   "color": "cloth-navy"
+  },
+  "feet": {
+   "type": "oxfords",
+   "color": "cloth-black"
+  }
+ },
+ "props": [
+  {
+   "type": "badge"
+  }
+ ]
+}

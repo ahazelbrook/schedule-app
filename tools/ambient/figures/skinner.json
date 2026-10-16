@@ -1,0 +1,59 @@
+{
+ "id": "skinner",
+ "name": "Skinner",
+ "plate": "Skinner · S.",
+ "code": "NPC-968-0106",
+ "halo": "ink-700",
+ "heightIn": 64,
+ "shape": "column",
+ "heads": 7.2,
+ "build": 0.86,
+ "skin": "pale",
+ "age": 50,
+ "body": {
+  "type": "bony"
+ },
+ "pose": {
+  "stance": "square",
+  "arms": {
+   "R": "hold",
+   "L": "hold"
+  },
+  "head": {
+   "tilt": 10,
+   "yaw": -6
+  },
+  "stoop": 0.2
+ },
+ "head": {
+  "shape": "long"
+ },
+ "face": {
+  "eyes": "heavy",
+  "brows": "straight",
+  "nose": "hooked",
+  "mouth": "thin",
+  "expression": "amused",
+  "ageStyle": "lines"
+ },
+ "hair": {
+  "style": "balding",
+  "color": "cloth-graphite"
+ },
+ "outfit": {
+  "base": {
+   "type": "knit",
+   "color": "cloth-cream",
+   "cable": true
+  },
+  "bottom": {
+   "type": "trousers",
+   "color": "cloth-navy"
+  },
+  "feet": {
+   "type": "combat-boots",
+   "color": "cloth-black"
+  }
+ },
+ "props": []
+}

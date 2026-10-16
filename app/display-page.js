@@ -407,11 +407,22 @@
     { id: 'harvest', file: 'second-harvest.html', label: 'The lair' },
     { id: 'watch', file: 'watch-feed.html', label: 'City Watch feed', needs: 'crew' },
     { id: 'duskwall', file: 'duskwall-after-dark.html', label: 'The city after dark' },
+    { id: 'boneyard', file: 'boneyard-dawn.html', label: 'The Boneyard at dawn' },
+    { id: 'undertow', file: 'undertow.html', label: 'The Undertow' },
+    { id: 'bluetime', file: 'bluetime.html', label: 'Bluetime' },
+    { id: 'vet', file: 'grunts-vet.html', label: "Grunt's" },
+    { id: 'tram', file: 'night-tram.html', label: 'Night tram' },
+    { id: 'lurker', file: 'lurker-press.html', label: 'The Lurker press room' },
+    { id: 'cards', file: 'calling-cards.html', label: 'Calling cards' },
+    { id: 'pells', file: 'pells-provisions.html', label: "Pell's Provisions" },
+    { id: 'wanted', file: 'wanted-wall.html', label: 'Wanted wall', needs: 'crew' },
     { id: 'board', file: 'planning-board.html', label: 'Planning board', needs: 'score' },
     { id: 'exploded', file: 'score-exploded.html', label: 'Score site, exploded', needs: 'score' },
     { id: 'testcard', file: 'test-card.html', label: 'Please stand by', pinOnly: true }
   ];
-  Pure.AMBIENT_DEFAULT_PLAYLIST = ['harvest', 'watch', 'duskwall'];
+  Pure.AMBIENT_DEFAULT_PLAYLIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'bluetime', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted'];
+  /* the scenes told the crew's heat and wanted (b68:crew): the watch feed and the wanted wall */
+  Pure.ambientCrewScenes = function () { return Pure.AMBIENT_SCENES.filter(function (s) { return s.needs === 'crew'; }).map(function (s) { return s.id; }); };
   Pure.AMBIENT_DEFAULT_MIN = 7;
 
   Pure.ambientScene = function (id) {
@@ -1035,9 +1046,9 @@
        scene asks (b68:ready) and is answered, and is sent the new score when it changes. */
     s.crew = null; s.score = null; s.scoreMsg = null; s.scoreKey = ''; s.polaroids = null; s.plan = Pure.ambientPlan(ctx.ambientDoc);
     s.onLoad = function (id) {
-      if (id !== 'watch') return;
+      if (Pure.ambientCrewScenes().indexOf(id) < 0) return;
       var m = Pure.crewMessage(s.plan);
-      if (m) amb.post('watch', m);
+      if (m) amb.post(id, m);
     };
     function polaroids() {
       if (s.polaroids) return s.polaroids;
@@ -1060,7 +1071,7 @@
     function applyAmbient(doc) {
       var p = s.plan = Pure.ambientPlan(doc);
       amb.setPlan(p);
-      if (Pure.crewChanged(s.crew, p.crew)) amb.post('watch', Pure.crewMessage(p));
+      if (Pure.crewChanged(s.crew, p.crew)) Pure.ambientCrewScenes().forEach(function (id) { amb.post(id, Pure.crewMessage(p)); });
       s.crew = p.crew;
       var key = p.score ? [p.score.at, p.score.name, p.score.district, p.score.target, p.score.view, p.score.board.length, p.score.iso.length].join('|') : '';
       if (key !== s.scoreKey) {

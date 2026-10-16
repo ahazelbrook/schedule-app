@@ -280,6 +280,9 @@
   /* The scenes the picker offers (ids mirror Pure.AMBIENT_SCENES in display-page.js and AMBIENT_SCENES in functions/_lib/gm.js). */
   P.IPAD_SCENES = [
     { id: 'harvest', label: 'The lair' }, { id: 'watch', label: 'City Watch feed' }, { id: 'duskwall', label: 'The city after dark' },
+    { id: 'boneyard', label: 'The Boneyard at dawn' }, { id: 'undertow', label: 'The Undertow' }, { id: 'bluetime', label: 'Bluetime' },
+    { id: 'vet', label: "Grunt's" }, { id: 'tram', label: 'Night tram' }, { id: 'lurker', label: 'The Lurker press room' },
+    { id: 'cards', label: 'Calling cards' }, { id: 'pells', label: "Pell's Provisions" }, { id: 'wanted', label: 'Wanted wall' },
     { id: 'board', label: 'Planning board', needs: 'score' }, { id: 'exploded', label: 'Score site, exploded', needs: 'score' },
     { id: 'testcard', label: 'Please stand by', pinOnly: true }
   ];

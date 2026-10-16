@@ -9,3 +9,8 @@ rules-private/
 
 # GM pack: the generators' tables are GM-only table data; built by scripts/gm-pack.mjs, never committed.
 gm-private/
+
+# Calling cards: the faction deck's art is the book's (Tim Denee's), so the scene and its card images are built on the GM's PC
+# (node tools/ambient/scenes/cards.js) and deployed from disk, never committed. See tools/ambient/README.md.
+app/ambient/calling-cards.html
+tools/ambient/cards/
