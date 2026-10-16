@@ -66,7 +66,15 @@ are kept: a write that records a session deletes the older keys with `null`.
   RSVP tally with names, the viewer's own In / Can't make it buttons, and "Add to calendar"
   (an `.ics` download through `downloads`, plus a Google Calendar link). One line on a phone
   when collapsed. Hidden when there is no next session.
-- **Schedule box on the table page** (`#tp-schedule`), above the clocks:
+- **Schedule box on the table page** (`#tp-schedule`), the last thing on the page (on a phone: after the clocks, the
+  log, the players and the crew). Scheduling can be parked (the dates live in the group's calendar), so the box is not
+  drawn until there is something to answer. A player (or a read-only viewer) gets it only while a next session or an
+  open date exists; with neither there is no box and no "mark your dates" anywhere, except that a link to
+  `#t/schedule` shows the box with "Nothing is planned yet." The GM gets one line, "Schedule · no dates · Plan dates"
+  (with a next session or open dates: "Schedule · next Sat 31 Oct, 19:00 · 2 dates open · Open"), that opens the box;
+  while there are dates the box is open by itself, and its "Close" folds it back to the line. `#t/schedule` (Home's
+  schedule links, a typed link) opens it and scrolls to it. A player is not asked to mark dates when there are none,
+  and the "Who can make it" grid is left out for a player while no date is open. The box holds:
   - The confirmed next session (GM: set or change date/time, length, place, note; clear it), with
     the viewer's own "I’m in / Can’t make it" under the tally while it is ahead (not for read-only
     viewers).

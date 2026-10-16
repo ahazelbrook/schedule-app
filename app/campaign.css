@@ -17,8 +17,12 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
 #table-page .tp-crewname { font: 900 clamp(38px, 6vw, 68px)/.85 var(--font-poster); letter-spacing: -.01em; text-transform: none; overflow-wrap: anywhere; }
 #table-page .tp-subtitle { font: 900 10.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
 #table-page .tp-meta { padding-right: 2px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-#table-page .tp-role { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; border: 2px solid var(--rule); padding: 5px 8px; }
-#table-page .tp-role.gm { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+/* who you are here: plain words with a dot, not a box (a boxed label next to two buttons reads as a third button) */
+#table-page .tp-role { display: inline-flex; align-items: center; gap: 6px; font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; color: var(--ink-soft); }
+#table-page .tp-role::before { content: ""; width: 7px; height: 7px; border-radius: 999px; background: currentColor; flex: 0 0 auto; }
+#table-page .tp-role.gm { color: var(--accent); }
+#table-page .tp-role.ro { color: var(--ink); }
+#table-page .tp-role.ro::before { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
 #table-page .tp-status { font: 700 11px/1 var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
 #table-page .tp-status.bad { color: var(--alarm); white-space: normal; }
 
@@ -31,12 +35,11 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
 #table-page .tp-body { padding: 10px 12px 12px; display: grid; gap: 10px; min-width: 0; }
 #table-page .tp-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 #table-page .tp-col { display: grid; gap: 14px; min-width: 0; }
-/* column B (schedule, clocks, players) comes first in the page so a phone reads it before the crew; a wide screen (and
-   print) puts the crew back in the left column */
-#table-page .tp-colA { grid-column: 1; grid-row: 1; }
-#table-page .tp-colB { grid-column: 2; grid-row: 1; }
+/* column B (clocks, the log, the players) comes first in the page, so a phone reads what the table needs before the crew
+   and the schedule (column A); a wide screen keeps that priority: column B on the left, column A on the right. Print
+   puts the crew back on the left, as it always printed. */
+@media print { #table-page .tp-colA { grid-column: 1; grid-row: 1; } #table-page .tp-colB { grid-column: 2; grid-row: 1; } }
 @media (max-width: 900px) { #table-page .tp-grid { grid-template-columns: minmax(0, 1fr); } }
-@media screen and (max-width: 900px) { #table-page .tp-colA, #table-page .tp-colB { grid-column: auto; grid-row: auto; } }
 #table-page #tp-schedule { scroll-margin-top: 12px; }
 
 /* ---- inputs and controls ---- */
@@ -67,14 +70,15 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
 #table-page .tp-vault { display: grid; grid-template-columns: repeat(4, 18px); gap: 4px 6px; }
 #table-page .tp-pips button[disabled], #table-page .tp-sq[disabled] { cursor: default; }
 
-/* ---- session bar ---- */
-#table-page .tp-sess { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; }
-#table-page .tp-sessno { display: inline-grid; justify-items: center; border: 2px solid var(--rule); padding: 4px 12px 3px; min-width: 70px; }
+/* ---- session bar: one line, "Session 3 · in play" (the GM's buttons follow, and wrap below on a narrow screen) ---- */
+#table-page .tp-sess { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; padding: 8px 12px; min-height: 52px; }
+#table-page .tp-sessno { display: inline-flex; align-items: baseline; gap: 8px; }
 #table-page .tp-sessno .tp-lab { margin: 0; }
-#table-page .tp-sessno b { font: 900 34px/1 var(--font-poster); letter-spacing: -.01em; }
-#table-page .tp-sessinfo { display: grid; gap: 3px; flex: 1 1 220px; min-width: 0; }
-#table-page .tp-sessline { font: 700 12.5px/1.35 var(--font-mono); }
-#table-page .tp-sessbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+#table-page .tp-sessno b { font: 900 30px/1 var(--font-poster); letter-spacing: -.01em; }
+#table-page .tp-sessstate { font: 700 12.5px/1.35 var(--font-mono); }
+#table-page .tp-sessmore, #table-page .tp-sesshint { font-size: 12px; color: var(--ink-soft); }
+#table-page .tp-sessbtns { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+@media (max-width: 760px) { #table-page .tp-sessmore { display: none; } }
 
 /* ---- the crew panel ---- */
 #table-page .tp-ident { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px 16px; }
@@ -125,6 +129,10 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
 #table-page .tp-clockmeta { display: grid; gap: 5px; min-width: 0; }
 #table-page .tp-clockmeta > .tp-in { font-weight: 700; }
 #table-page .tp-clockline { display: flex; gap: 6px 10px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+#table-page .tp-step { display: inline-flex; align-items: center; gap: 6px; }
+#table-page .tp-stepb { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 2px solid var(--rule); border-radius: 0; background: var(--card); color: var(--ink); font: 900 16px/1 var(--font-mono); cursor: pointer; }
+#table-page .tp-stepb:not(:disabled):hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+#table-page .tp-stepb:disabled { opacity: .35; cursor: default; }
 #table-page .tp-kind, #table-page .tp-hidtag, #table-page .tp-fulltag { font: 900 9.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; padding: 3px 5px; border: 1.5px solid var(--rule); }
 #table-page .tp-kind.k-danger { border-color: var(--alarm); color: var(--alarm); }
 #table-page .tp-kind.k-project { border-color: var(--ok); color: var(--ok); }
@@ -160,7 +168,36 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
   #table-page .tp-char .btn { grid-column: 2; grid-row: 1 / span 2; }
 }
 
+/* ---- the crew, behind a summary row on a phone: Tier, Hold, Rep, Heat, Wanted, Stacks; tap it for the whole sheet ----
+   The sheet is always in the page (print and the season print draw it in full); only screens up to 760px fold it. */
+#table-page .tp-crew, #table-page .tp-crewbody { display: grid; gap: 14px; min-width: 0; }
+#table-page .tp-crewsum { display: none; }
+#table-page .tp-crewsum { width: 100%; margin: 0; padding: 0; text-align: left; font: inherit; color: var(--ink); background: var(--card); border: 2px solid var(--rule); cursor: pointer; min-width: 0; }
+#table-page .tp-csh { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--rule); color: var(--on-ink); font: 900 11px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 8px 10px; min-height: 40px; }
+#table-page .tp-csgo { display: inline-flex; align-items: center; gap: 8px; font-weight: 400; letter-spacing: .04em; text-transform: none; white-space: nowrap; }
+#table-page .tp-csgo::after { content: ""; width: 7px; height: 7px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(45deg) translate(-2px, -2px); }
+#table-page .tp-crewsum[aria-expanded="true"] .tp-csgo::after { transform: rotate(-135deg) translate(-2px, -2px); }
+#table-page .tp-csg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#table-page .tp-cst { display: grid; gap: 2px; align-content: start; padding: 8px 10px 9px; border-left: 1px solid var(--hair); border-top: 1px solid var(--hair); min-width: 0; }
+#table-page .tp-cst:nth-child(-n+3) { border-top: 0; }
+#table-page .tp-cst:nth-child(3n+1) { border-left: 0; }
+#table-page .tp-cst .tp-lab { margin: 0; }
+#table-page .tp-cst b { font: 700 18px/1.1 var(--font-mono); letter-spacing: -.01em; }
+#table-page .tp-cst small { font: 400 10.5px/1.2 var(--font-mono); color: var(--ink-soft); }
+#table-page .tp-cst.bad b { color: var(--alarm); }
+@media screen and (max-width: 760px) {
+  body[data-mode="table"] #table-page .tp-crewsum { display: block; }
+  body[data-mode="table"] #table-page .tp-crew.tp-fold .tp-crewbody { display: none; }
+}
+/* ---- the schedule, folded to one line for the GM: "Schedule · no dates · Plan dates" ---- */
+#table-page .tp-schedrow { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; padding: 6px 12px; min-height: 52px; }
+#table-page .tp-schedrow .tp-lab { margin: 0; }
+#table-page .tp-schedsum { flex: 1 1 120px; min-width: 0; font: 700 12px/1.35 var(--font-mono); color: var(--ink-soft); }
+#table-page .tp-sclose { margin-left: 6px; }
+
 /* ---- the log ---- */
+#table-page .tp-logmore { display: flex; padding-top: 8px; }
+@media screen { #table-page .tp-log.tp-logshort li.tp-logold { display: none; } }
 #table-page .tp-log { margin: 0; padding: 0; list-style: none; display: grid; }
 /* each line: when and who together on the left (a fixed column, so the texts line up), then the text */
 #table-page .tp-log li { display: grid; grid-template-columns: 15em minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; padding: 5px 0; border-top: 1px solid var(--hair); font-size: 13px; }
@@ -180,6 +217,33 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
   #table-page .tp-sessbtns { flex-basis: 100%; }
 }
 
+/* ---- touch: every control on the page is at least 40px tall ----
+   Buttons and chips grow. The small marks (tier, rep, heat, wanted, the vault, the claim squares) keep their size and get an
+   invisible ::before hit area, as the living sheet's pips do (tracker.css): 40px tall, as wide as the mark's pitch in its row
+   (--hit-w), so neighbours tile and never take each other's taps; skewed and rotated marks turn their area back square
+   (--hit-t). Rows that hold marks are at least 40px apart. The clock is drawn larger, so a wedge of a twelve-part clock
+   is still a thumb's width. */
+@media screen and (max-width: 760px), screen and (pointer: coarse) {
+  #table-page .btn, #table-page .chip, #table-page .tp-in, #table-page .sc-sel, #table-page .sc-attp { min-height: 40px; }
+  #table-page .tp-clocktools .chip, #table-page .tp-addclock .chip { padding: 4px 9px; font-size: 11px; }
+  #table-page .tp-x { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; min-height: 40px; font-size: 16px; }
+  #table-page .tp-coh { min-height: 40px; padding: 4px 6px; }
+  #table-page .tp-pip, #table-page .tp-sq, #table-page .tp-sbox, #table-page .tp-dia { position: relative; }
+  #table-page .tp-pip::before, #table-page .tp-sq::before, #table-page .tp-sbox::before, #table-page .tp-dia::before {
+    content: ""; position: absolute; left: 50%; top: 50%; width: var(--hit-w, 19px); height: var(--hit-h, 40px); transform: translate(-50%, -50%) var(--hit-t, rotate(0deg)); }
+  #table-page .tp-sbox { --hit-w: 20px; --hit-t: skewX(14deg); }
+  #table-page .tp-dia { --hit-w: 24px; --hit-t: rotate(-45deg); }
+  #table-page .tp-track { padding: 9px 0; }
+  #table-page .tp-vault { row-gap: 22px; }
+  #table-page .tp-claim { min-height: 40px; }
+  /* the shared clocks: drawn larger, and a − / + beside the count (the wedges stay for setting a clock straight to a segment) */
+  #table-page .tp-clock { gap: 14px; }
+  #table-page .tp-clock > .tp-clocksvg { width: 104px; height: 104px; }
+  #table-page .tp-stepb { width: 40px; height: 40px; }
+  /* the schedule's grid cells (a player marks dates there) */
+  #table-page .sc-cell { min-width: 40px; min-height: 40px; }
+}
+
 /* ---- read only ---- */
 #table-page.tp-ro .tp-in, #table-page.tp-ro .tp-ta { opacity: .85; }
 
@@ -188,7 +252,10 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
   #table-page { --paper: #fff; --card: #fff; --inset: #eee; --hair: #999; --ink: #000; --ink-soft: #333; --ink-faint: #666; --rule: #000; --on-ink: #fff;
     --accent: #b8481a; --on-accent: #fff; --alarm: #a8210f; --ok: #41633e; padding: 0; font-size: 11px; }
   #table-page * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; }
-  #table-page .btn, #table-page .tp-x, #table-page .tp-addclock, #table-page .tp-addrow, #table-page .tp-clocktools, #table-page .tp-sessbtns, #table-page .tp-status { display: none !important; }
+  #table-page .btn, #table-page .tp-x, #table-page .tp-addclock, #table-page .tp-addrow, #table-page .tp-clocktools, #table-page .tp-sessbtns, #table-page .tp-status, #table-page .tp-crewsum, #table-page .tp-logmore, #table-page .tp-sclose, #table-page .tp-stepb, #table-page .tp-schedrow { display: none !important; }
+  /* grid rows do not grow when a box inside them is pushed to the next page: the crew (a long sheet) is plain blocks in print */
+  #table-page .tp-crew, #table-page .tp-crewbody { display: block; }
+  #table-page .tp-crewbody > * + * { margin-top: 14px; }
   #table-page .tp-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   #table-page .tp-box { break-inside: avoid; page-break-inside: avoid; }
   #table-page .tp-logbox, #table-page .tp-crewbox { break-inside: auto; page-break-inside: auto; }

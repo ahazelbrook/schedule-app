@@ -9,11 +9,16 @@
    (a GM-only text field still shows its value, disabled); where that leaves a player nothing, a short line says who
    does it ("The GM starts sessions."). Read-only viewers see the rest disabled.
 
-   Layout: the DOM order is the phone's reading order (session, schedule, clocks, players, crew, log); on a wide screen
-   campaign.css places the crew back in the left column. The schedule box (schedule.js, SCHEDULE.md) sits above the
-   clocks, as #tp-schedule (the #t/schedule route scrolls to it): data-act "sched.*" goes to B68Schedule.acts, with
-   its own PERM. A player may change only schedule.avail.<me> and schedule.rsvp.<me>; anything else under schedule is
-   stripped from a player's delta, and schedule changes go out as the changed leaves only (null deletes a key).
+   Layout: the DOM order is the phone's reading order: the session line, then shared clocks, the campaign log (the
+   latest three, "All" shows the rest), the players, the crew (behind a summary row on a phone: Tier, Hold, Rep, Heat,
+   Wanted, Stacks) and last the schedule. On a wide screen campaign.css puts the first three in the left column and the
+   crew and schedule in the right one. The schedule box (schedule.js, SCHEDULE.md) is #tp-schedule (the #t/schedule
+   route opens and scrolls to it): a player sees it only while a next session or an open date exists; the GM sees a one
+   line row ("Schedule · no dates · Plan dates") until there is something to plan or the row is opened. data-act
+   "sched.*" goes to B68Schedule.acts, with its own PERM. A player may change only schedule.avail.<me> and
+   schedule.rsvp.<me>; anything else under schedule is stripped from a player's delta, and schedule changes go out as
+   the changed leaves only (null deletes a key). What is folded or unfolded (the crew, the log, the schedule) is page
+   state only, never written (data-act "view*", open to read-only viewers too).
 
    The crew panel is self-contained (a render function and its own action table, data-act "crew.*"), so a full crew
    sheet can replace it later through B68Campaign.setCrewPanel({ render(crew, ctx), acts, enter }). */
@@ -121,6 +126,7 @@
   function gm() { return !!(cur && cur.api && cur.api.isGM === true) && !ro(); }
   function can(what) { return what === 'gm' ? gm() : !ro(); }
   function role() { return ro() ? 'Read only' : gm() ? 'GM' : 'Player'; }
+  function roleCls() { return ro() ? ' ro' : gm() ? ' gm' : ''; }
 
   function setStatus(msg, bad, transient) {
     if (!cur) return; var s = cur.root.querySelector('#tp-status'); if (!s) return;
@@ -300,16 +306,19 @@
     var c = doc.crew;
     return '<header class="tp-head"><div class="tp-title"><span class="tp-kick">The table</span><h2 class="tp-crewname" id="tp-crewname">' + esc(c.name || 'An unnamed crew') + '</h2>' +
       '<span class="tp-subtitle">' + esc([c.type, 'Tier ' + c.tier + ' · ' + c.hold + ' hold', doc.session.number ? 'session ' + doc.session.number : ''].filter(Boolean).join(' · ')) + '</span></div>' +
-      '<div class="tp-meta">' + rulesLink() + '<button type="button" class="btn sm" data-act="cast" data-always="1" title="The NPCs the table has met">The cast</button><button type="button" class="btn sm" data-act="print" data-always="1" title="Every character and the crew, one document">Print the season</button><span class="tp-role' + (gm() ? ' gm' : '') + '">' + esc(role()) + '</span><span class="tp-status mono" id="tp-status" aria-live="polite"></span></div></header>';
+      '<div class="tp-meta">' + rulesLink() + '<button type="button" class="btn sm" data-act="cast" data-always="1" title="The NPCs the table has met">The cast</button><button type="button" class="btn sm" data-act="print" data-always="1" title="Every character and the crew, one document">Print the season</button><span class="tp-role' + roleCls() + '">' + esc(role()) + '</span><span class="tp-status mono" id="tp-status" aria-live="polite"></span></div></header>';
   }
+  /* the session, as one line: "Session 3 · in play" (the GM's two buttons follow it). Starting and ending are the GM's;
+     what each player does at the end of a session is on their own sheet (its End session panel says so). */
   function sessionBar(doc) {
     var s = doc.session, running = s.number > 0 && !!s.startedAt && !s.endedAt;
-    var info = !s.number ? 'No session has started yet.' : 'Started ' + esc(when(s.startedAt, true) || '—') + (s.endedAt ? ' · ended ' + esc(when(s.endedAt, true)) : ' · in play');
-    var h = '<div class="tp-sess"><div class="tp-sessno"><span class="tp-lab">Session</span><b>' + (s.number || '—') + '</b></div>' +
-      '<div class="tp-sessinfo"><span class="tp-sessline">' + info + '</span><span class="hint">' + (gm() ? '' : 'The GM starts sessions. ') + 'Each player ends the session on their own sheet.</span></div>' +
+    var state = !s.number ? '<span class="tp-sessstate">not started yet</span>' : running ? '<span class="tp-live">in play</span>' : '<span class="tp-sessstate">ended' + (s.endedAt ? ' ' + esc(when(s.endedAt)) : '') + '</span>';
+    var since = running ? '<span class="tp-sessmore">since ' + esc(when(s.startedAt, true) || '—') + '</span>' : '';
+    var hint = !gm() && !running ? '<span class="tp-sesshint">The GM starts ' + (s.number ? 'the next one' : 'sessions') + '.</span>' : '';
+    var h = '<div class="tp-sess"><span class="tp-sessno"><span class="tp-lab">Session</span><b>' + (s.number || '—') + '</b></span>' + state + since + hint +
       (gm() ? '<div class="tp-sessbtns"><button type="button" class="btn sm primary" data-act="sessstart" data-gm="1">Start session ' + (s.number + 1) + '</button>' +
       '<button type="button" class="btn sm" data-act="sessend" data-gm="1"' + (running ? '' : ' disabled') + '>End session</button></div>' : '') + '</div>';
-    return box('Session', h, running ? '<span class="tp-live">in play</span>' : '', 'tp-sessbox');
+    return '<section class="tp-box tp-sessbox" aria-label="Session">' + h + '</section>';
   }
   function clocks(doc) {
     var list = doc.clocks.filter(function (c) { return gm() || !c.hidden; }), h = '<div class="tp-clocks">';
@@ -317,7 +326,8 @@
       var idx = ' data-id="' + esc(c.id) + '"';
       h += '<div class="tp-clock' + (c.hidden ? ' hid' : '') + (c.filled >= c.size ? ' full' : '') + '"' + idx + '>' + clockSvg(c.size, c.filled, 34, 'clockfill', idx) +
         '<div class="tp-clockmeta">' + input('clocks.#' + c.id + '.name', c.name, 'What is this clock for?', { gm: true, label: 'Clock name' }) +
-        '<div class="tp-clockline"><span class="mono">' + c.filled + ' / ' + c.size + '</span><span class="tp-kind k-' + c.kind + '">' + esc(c.kind) + '</span>' + (c.hidden ? '<span class="tp-hidtag">hidden from players</span>' : '') + (c.filled >= c.size ? '<span class="tp-fulltag">full</span>' : '') + '</div>' +
+        '<div class="tp-clockline"><span class="tp-step"><button type="button" class="tp-stepb" data-act="clockstep" data-d="-1"' + idx + (c.filled <= 0 ? ' disabled' : '') + ' aria-label="Take one off">−</button><span class="mono">' + c.filled + ' / ' + c.size + '</span>' +
+          '<button type="button" class="tp-stepb" data-act="clockstep" data-d="1"' + idx + (c.filled >= c.size ? ' disabled' : '') + ' aria-label="Fill one more">+</button></span><span class="tp-kind k-' + c.kind + '">' + esc(c.kind) + '</span>' + (c.hidden ? '<span class="tp-hidtag">hidden from players</span>' : '') + (c.filled >= c.size ? '<span class="tp-fulltag">full</span>' : '') + '</div>' +
         (gm() ? '<div class="tp-clocktools"><span class="seg">' + SIZES.map(function (n) { return chip(String(n), 'clocksize', c.size === n, idx + ' data-n="' + n + '"', { gm: true, title: n + ' segments' }); }).join('') + '</span>' +
           '<span class="seg">' + KINDS.map(function (k) { return chip(k, 'clockkind', c.kind === k, idx + ' data-v="' + k + '"', { gm: true }); }).join('') + '</span>' +
           chip('Hidden', 'clockhide', c.hidden, idx, { gm: true, title: 'Hide this clock from the players' }) +
@@ -358,10 +368,53 @@
       commit: commit, render: render, confirm: function (m) { return window.confirm(m); }, logLine: logLine,
       status: setStatus, focus: function (sel) { var n = cur && cur.root.querySelector(sel); if (n && !n.disabled) { try { n.focus(); } catch (e) {} } },
       find: function (sel) { return cur ? cur.root.querySelector(sel) : null; },
-      esc: esc, box: box, chip: chip
+      esc: esc, box: schedBox, chip: chip
     };
   }
+  /* the schedule's own box, with the GM's "Close" in its band (the GM can fold it back to one line) */
+  function schedBox(title, body, right, cls, id) {
+    return box(title, body, (right || '') + (gm() ? '<button type="button" class="chip sm tp-sclose" data-act="viewsched" data-always="1" aria-expanded="true">Close</button>' : ''), cls, id);
+  }
   function scheduleBox(doc) { var Sm = sched(); if (!Sm || typeof Sm.box !== 'function') return ''; try { return Sm.box(doc, schedCtx()); } catch (e) { if (window.console) console.error(e); return box('Schedule', '<p class="hint bad">The schedule could not be drawn.</p>', '', 'tp-schedbox', 'tp-schedule'); } }
+
+  /* ---------- the schedule: only while there is something to answer (players), one line until opened (the GM) ---------- */
+  /* Scheduling is parked while the dates live elsewhere: a player sees the box only when a next session or an open
+     date exists; the GM sees "Schedule · no dates · Plan dates" and opens it from there, or by #t/schedule. */
+  function routeIsSchedule() { return /^#t\/schedule/.test(location.hash || ''); }
+  function schedDated(doc) { var Sm = sched(); if (!Sm || !Sm.upcoming || !Sm.openOptions) return false; try { return !!(Sm.upcoming(doc.schedule) || Sm.openOptions(doc.schedule).length); } catch (e) { return false; } }
+  function schedOpen(dated) { var v = cur.drafts['tp.sched']; return v === 'open' ? true : v === 'closed' ? false : dated; }
+  function schedRow(doc, dated) {
+    var Sm = sched(), s = doc.schedule, bits = [], n = Sm.upcoming(s), k = Sm.openOptions(s).length;
+    if (n) bits.push('next ' + esc(Sm.fmtWhen(n.at)));
+    if (k) bits.push(k + ' date' + (k === 1 ? '' : 's') + ' open');
+    if (!bits.length) bits.push('no dates');
+    return '<section class="tp-box tp-schedrow" id="tp-schedule" aria-label="Schedule"><span class="tp-lab">Schedule</span><span class="tp-schedsum">' + bits.join(' · ') + '</span>' +
+      '<button type="button" class="btn sm" data-act="viewsched" data-always="1" aria-expanded="false">' + (dated ? 'Open' : 'Plan dates') + '</button></section>';
+  }
+  function scheduleSection(doc) {
+    var Sm = sched(); if (!Sm || typeof Sm.box !== 'function') return '';
+    var dated = schedDated(doc);
+    if (!gm()) return dated || routeIsSchedule() ? scheduleBox(doc) : '';   /* a link to #t/schedule still shows a player what there is: nothing yet */
+    return schedOpen(dated) ? scheduleBox(doc) : schedRow(doc, dated);
+  }
+
+  /* ---------- the crew: behind a summary row on a phone (campaign.css hides the sheet while it is folded) ---------- */
+  /* Tier, Hold, Rep, Heat, Wanted, Stacks. The crew sheet gives its own numbers (turf and the vault upgrade change them). */
+  function crewFacts(crew) {
+    var f = crewPanel.summary ? crewPanel.summary(crew) : null; if (f) return f;
+    var max = 12 - clamp(crew.turf, 0, 6);
+    return { tier: crew.tier, hold: crew.hold, rep: Math.min(crew.rep, max), repMax: max, heat: crew.heat, wanted: crew.wanted, stacks: crew.vault, vault: 0 };
+  }
+  /* unfolded when the viewer chose so; until they choose, only while the crew is still to be set up (name, playbook) */
+  function crewOpen(crew) { var v = cur.drafts['tp.crew']; return v === 'open' ? true : v === 'closed' ? false : !(crew.name || crew.playbook); }
+  function crewSection(doc) {
+    var c = doc.crew, f = crewFacts(c), open = crewOpen(c);
+    function cell(label, val, extra, bad) { return '<span class="tp-cst' + (bad ? ' bad' : '') + '"><span class="tp-lab">' + label + '</span><b class="mono">' + val + '</b>' + (extra ? '<small>' + extra + '</small>' : '') + '</span>'; }
+    var cells = cell('Tier', f.tier) + cell('Hold', f.hold === 'strong' ? 'Strong' : 'Weak') + cell('Rep', f.rep + '/' + f.repMax) + cell('Heat', f.heat + '/9', '', f.heat >= 7) + cell('Wanted', f.wanted + '/4', '', f.wanted >= 3) + cell('Stacks', f.stacks, f.vault ? '+' + f.vault + ' in vaults' : '');
+    return '<div class="tp-crew' + (open ? '' : ' tp-fold') + '" id="tp-crew"><button type="button" class="tp-crewsum" data-act="viewcrew" data-always="1" aria-expanded="' + open + '" aria-controls="tp-crewbody">' +
+      '<span class="tp-csh"><span>The crew' + (c.type ? ' · ' + esc(c.type) : '') + '</span><span class="tp-csgo">' + (open ? 'Fold the crew sheet' : 'Open the crew sheet') + '</span></span><span class="tp-csg">' + cells + '</span></button>' +
+      '<div class="tp-crewbody" id="tp-crewbody">' + crewPanel.render(c, crewCtx()) + '</div></div>';
+  }
 
   /* the status line without the stress bit already shown beside it */
   function rest(status, f) { var head = f.stressName + ' ' + f.stress + '/' + f.stressMax; status = String(status || ''); return status.indexOf(head) === 0 ? status.slice(head.length).replace(/^\s*·\s*/, '') : status; }
@@ -393,13 +446,17 @@
     if (!order.length) h = '<p class="hint">No characters are filed yet. Each player files theirs from the creator; they appear here under their owner.</p>';
     return box('The players', h, '<span class="tp-dim">' + docs.length + ' character' + (docs.length === 1 ? '' : 's') + '</span>', 'tp-playbox');
   }
+  /* the log shows its latest three lines; "All" unfolds the rest (page state; every line is in the page, so print has them all) */
+  var LOG_SHORT = 3;
   function logBox(doc) {
-    var h = '<div class="tp-addrow">' + draftInput('newlog', 'What happened? A line for the whole table', { cls: 'tp-grow', label: 'New log line' }) + '<button type="button" class="btn sm" data-act="logadd">Log</button></div><ol class="tp-log">';
+    var all = cur.drafts['tp.log'] === 'all', many = doc.log.length > LOG_SHORT;
+    var h = '<div class="tp-addrow">' + draftInput('newlog', 'What happened? A line for the whole table', { cls: 'tp-grow', label: 'New log line' }) + '<button type="button" class="btn sm" data-act="logadd">Log</button></div><ol class="tp-log' + (many && !all ? ' tp-logshort' : '') + '">';
     doc.log.forEach(function (e, i) {
-      h += '<li><span class="tp-logm"><span class="tp-logd mono">' + esc(when(e.at, true) || '—') + '</span>' + (e.by ? '<span class="tp-logby">' + esc(nameOf(e.by)) + '</span>' : '') + '</span><span class="tp-logt">' + esc(e.text) + '</span>' +
+      h += '<li' + (i >= LOG_SHORT ? ' class="tp-logold"' : '') + '><span class="tp-logm"><span class="tp-logd mono">' + esc(when(e.at, true) || '—') + '</span>' + (e.by ? '<span class="tp-logby">' + esc(nameOf(e.by)) + '</span>' : '') + '</span><span class="tp-logt">' + esc(e.text) + '</span>' +
         (gm() ? '<button type="button" class="tp-x" data-act="logrm" data-i="' + i + '" data-gm="1" title="Remove this line" aria-label="Remove this line">×</button>' : '') + '</li>';
     });
     h += '</ol>' + (!doc.log.length ? '<p class="hint">Nothing logged yet. Session starts and ends are logged here too.</p>' : '');
+    if (many) h += '<div class="tp-logmore"><button type="button" class="btn sm" data-act="viewlog" data-always="1" aria-expanded="' + all + '">' + (all ? 'Latest ' + LOG_SHORT + ' only' : 'All ' + doc.log.length) + '</button></div>';
     return box('Campaign log', h, '<span class="tp-dim">newest first' + (doc.log.length ? ' · ' + doc.log.length : '') + '</span>', 'tp-logbox');
   }
 
@@ -427,11 +484,11 @@
     if (!cur.loaded) { cur.root.className = 'tp'; cur.root.innerHTML = '<div class="tp-note">Reading the table…</div>'; return; }
     var focus = captureFocus(), doc = cur.doc, scroll = window.scrollY;
     var gridEl = cur.root.querySelector('.sc-scroll'), gridX = gridEl ? gridEl.scrollLeft : 0;   /* the availability grid keeps its sideways scroll */
-    /* column B first: on a phone the page reads session, schedule, clocks, players, crew, log (campaign.css puts the
-       crew back on the left of a wide screen) */
+    /* column B first: on a phone the page reads the session line, shared clocks, the log, the players, the crew and last
+       the schedule (campaign.css sets column B on the left of a wide screen, the crew and schedule on the right) */
     var html = head(doc) + sessionBar(doc) +
-      '<div class="tp-grid"><div class="tp-col tp-colB">' + scheduleBox(doc) + clocks(doc) + players() + '</div>' +
-      '<div class="tp-col tp-colA">' + crewPanel.render(doc.crew, crewCtx()) + '</div></div>' + logBox(doc);
+      '<div class="tp-grid"><div class="tp-col tp-colB">' + clocks(doc) + logBox(doc) + players() + '</div>' +
+      '<div class="tp-col tp-colA">' + crewSection(doc) + scheduleSection(doc) + '</div></div>';
     cur.root.innerHTML = html;
     var Sm = sched(); if (Sm && Sm.mountBoard) { try { Sm.mountBoard(cur.root); } catch (e) { if (window.console) console.error(e); } }   /* the kept line-up SVG goes back in */
     cur.root.className = 'tp' + (ro() ? ' tp-ro' : '') + (gm() ? ' tp-gm' : ' tp-player');
@@ -446,7 +503,7 @@
   }
   function captureFocus() {
     if (!cur) return null; var a = document.activeElement; if (!a || !cur.root.contains(a)) return null;
-    if (a.tagName === 'BUTTON' && /^sched\.|^crew\.cspick$/.test(a.dataset.act || '')) return { btn: '[data-act="' + a.dataset.act + '"]' + (a.dataset.o ? '[data-o="' + a.dataset.o + '"]' : '') + (a.dataset.n ? '[data-n="' + a.dataset.n + '"]' : '') + (a.dataset.v ? '[data-v="' + a.dataset.v + '"]' : '') + (a.dataset.u ? '[data-u="' + a.dataset.u.replace(/["\\]/g, '\\$&') + '"]' : '') };   /* a schedule cell or chip, or the covers' toggle, keeps the keyboard focus */
+    if (a.tagName === 'BUTTON' && /^sched\.|^crew\.cspick$|^view(crew|log|sched)$|^clockstep$/.test(a.dataset.act || '')) return { btn: '[data-act="' + a.dataset.act + '"]' + (a.dataset.o ? '[data-o="' + a.dataset.o + '"]' : '') + (a.dataset.n ? '[data-n="' + a.dataset.n + '"]' : '') + (a.dataset.v ? '[data-v="' + a.dataset.v + '"]' : '') + (a.dataset.u ? '[data-u="' + a.dataset.u.replace(/["\\]/g, '\\$&') + '"]' : '') + (a.dataset.act === 'clockstep' ? '[data-id="' + String(a.dataset.id || '').replace(/["\\]/g, '\\$&') + '"][data-d="' + a.dataset.d + '"]' : '') };   /* a schedule cell or chip, a clock's − / +, or the covers' toggle keeps the keyboard focus */
     if (a.tagName !== 'INPUT' && a.tagName !== 'TEXTAREA' && a.tagName !== 'SELECT') return null;
     return { path: a.dataset.path || null, ui: a.dataset.ui || null, value: a.value, s: a.selectionStart, e: a.selectionEnd };
   }
@@ -462,7 +519,7 @@
   /* ---------- actions (each says who may do it) ---------- */
   function byId(id) { return cur.doc.clocks.filter(function (c) { return c.id === id; })[0] || null; }
   function logLine(text) { cur.doc.log.unshift({ at: nowIso(), by: cur.api.me || null, text: text }); if (cur.doc.log.length > LOG_MAX) cur.doc.log.length = LOG_MAX; }
-  var PERM = { sessstart: 'gm', sessend: 'gm', clockfill: 'any', clocksize: 'gm', clockkind: 'gm', clockhide: 'gm', clockrm: 'gm', clockadd: 'gm', newsize: 'gm', newkind: 'gm', logadd: 'any', logrm: 'gm', open: 'all', print: 'all', cast: 'all' };
+  var PERM = { sessstart: 'gm', sessend: 'gm', clockfill: 'any', clockstep: 'any', clocksize: 'gm', clockkind: 'gm', clockhide: 'gm', clockrm: 'gm', clockadd: 'gm', newsize: 'gm', newkind: 'gm', logadd: 'any', logrm: 'gm', open: 'all', print: 'all', cast: 'all', viewcrew: 'all', viewlog: 'all', viewsched: 'all' };
   var ACTS = {
     sessstart: function () {
       var n = cur.doc.session.number + 1, now = nowIso();
@@ -475,6 +532,7 @@
       s.endedAt = nowIso(); logLine('Session ' + s.number + ' ended'); commit();
     },
     clockfill: function (d) { var c = byId(d.id); if (!c) return; c.filled = clamp(toggleTrack(c.filled, +d.n), 0, c.size); commit(); },
+    clockstep: function (d) { var c = byId(d.id); if (!c) return; var n = clamp(c.filled + (+d.d < 0 ? -1 : 1), 0, c.size); if (n === c.filled) return; c.filled = n; commit(); },
     clocksize: function (d) { var c = byId(d.id); if (!c) return; var n = +d.n; if (SIZES.indexOf(n) < 0 || c.size === n) return; c.size = n; c.filled = Math.min(c.filled, n); commit(); },
     clockkind: function (d) { var c = byId(d.id); if (!c || KINDS.indexOf(d.v) < 0 || c.kind === d.v) return; c.kind = d.v; commit(); },
     clockhide: function (d) { var c = byId(d.id); if (!c) return; c.hidden = !c.hidden; commit(); },
@@ -494,6 +552,10 @@
       var n2 = cur.root.querySelector('[data-ui="newlog"]'); if (n2) try { n2.focus(); } catch (e) {}
     },
     logrm: function (d) { var e = cur.doc.log[+d.i]; if (!e) return; if (!window.confirm('Remove this line from the log?\n' + e.text)) return; cur.doc.log.splice(+d.i, 1); commit(); },
+    /* what is folded away is page state only: it redraws, it never saves (read-only viewers may unfold too) */
+    viewcrew: function () { cur.drafts['tp.crew'] = crewOpen(cur.doc.crew) ? 'closed' : 'open'; render(); },
+    viewlog: function () { cur.drafts['tp.log'] = cur.drafts['tp.log'] === 'all' ? '' : 'all'; render(); },
+    viewsched: function () { cur.drafts['tp.sched'] = schedOpen(schedDated(cur.doc)) ? 'closed' : 'open'; render(); },
     open: function (d) { if (cur.api && typeof cur.api.openCharacter === 'function') cur.api.openCharacter(d.id); },
     print: function () { if (window.B68Season && typeof B68Season.open === 'function') B68Season.open(); },
     cast: function () { if (window.B68CastPage && typeof B68CastPage.open === 'function') location.hash = '#cast'; }
@@ -543,9 +605,13 @@
     var root = document.getElementById('table-page'); if (!root) return;
     if (cur) M.close();
     cur = { api: api || {}, root: root, doc: normalize(null), base: normalize(null), raw: {}, loaded: false, dirty: {}, timer: null, saving: 0, drafts: {}, names: {}, asked: {}, statusT: null, everSaved: false };
+    if (routeIsSchedule()) cur.drafts['tp.sched'] = 'open';
     root.addEventListener('click', onClick); root.addEventListener('input', onInput); root.addEventListener('change', onChange); root.addEventListener('keydown', onKey);
+    window.addEventListener('hashchange', onHash);
     render();
   };
+  /* #t/schedule (Home's "Plan dates", a link): the schedule opens, wherever it was folded */
+  function onHash() { if (!cur || !routeIsSchedule()) return; cur.drafts['tp.sched'] = 'open'; if (cur.loaded) render(); }
   /* a snapshot arrived (first or newer): null / partial documents read as the default */
   M.update = function (data) {
     if (!cur) return;
@@ -568,6 +634,7 @@
     if (c.timer) { clearTimeout(c.timer); c.timer = null; flushSave(); }   /* typed text still waiting goes out first */
     cur = null; if (c.statusT) clearTimeout(c.statusT);
     c.root.removeEventListener('click', onClick); c.root.removeEventListener('input', onInput); c.root.removeEventListener('change', onChange); c.root.removeEventListener('keydown', onKey);
+    window.removeEventListener('hashchange', onHash);
     c.root.innerHTML = ''; c.root.className = 'tp';
   };
   M.isOpen = function () { return !!cur; };

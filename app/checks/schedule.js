@@ -119,9 +119,15 @@ const SHEET = `(() => {
   const w0 = cw();
   await g.click('#tableBtn'); await settle(g, 600);
   assert(cw() === w0 && camp() === null, 'opening the table writes nothing');
-  assert(!!(await g.$('.tp-schedbox')), 'schedule box on the table page');
-  const order = await g.$$eval('.tp-colB > .tp-box', ns => ns.map(n => n.className));
-  assert(/tp-schedbox/.test(order[0]) && /tp-clockbox/.test(order[1]), 'schedule box above the clocks: ' + order.join(' | '));
+  /* nothing planned (the dates live in the group's calendar): the GM sees ONE folded line, "Schedule · no dates · Plan dates"; a player sees nothing */
+  assert(!!(await g.$('.tp-schedrow#tp-schedule')) && !(await g.$('.tp-schedbox')), 'GM, no dates: the schedule is one folded line, no box');
+  const order = await g.$$eval('.tp-colA > *', ns => ns.map(n => n.id));
+  assert(order.join() === 'tp-crew,tp-schedule', 'the schedule comes after the crew (column A), clocks, log and players are column B: ' + order.join(' | '));
+  const a = await person(ALEX, {});
+  await a.goto(URL + '#t'); await settle(a, 1200);
+  assert(!(await a.$('#tp-schedule')) && !(await a.$('.tp-schedbox')) && !/Mark the dates|No dates proposed|No session is set|Who can make it/.test(await a.$eval('#table-page', n => n.textContent)), 'player, nothing planned: no schedule box and no call to mark dates');
+  await none(g, 'Plan dates opens the schedule (page state, no write)', () => g.click('#tp-schedule [data-act="viewsched"]'));
+  assert(!!(await g.$('.tp-schedbox#tp-schedule')) && !(await g.$('.tp-schedrow')), 'Plan dates opens the schedule box');
   const rows0 = await g.$$eval('.sc-grid tbody .sc-who b', ns => ns.map(n => n.textContent)).catch(() => []);
   notes.push('GM grid rows before any date: ' + JSON.stringify(rows0));
 
@@ -133,6 +139,8 @@ const SHEET = `(() => {
   assert(camp().v === 1 && Array.isArray(camp().clocks), 'first write creates the whole document');
   const rows1 = await g.$$eval('.sc-grid tbody .sc-who b', ns => ns.map(n => n.textContent));
   assert(rows1.length === 2 && rows1[0] === 'Gail' && rows1[1] === 'Alex', 'grid rows: me first, then the owner of a filed character: ' + JSON.stringify(rows1));
+  await settle(a, 400);
+  assert(!!(await a.$('.tp-schedbox#tp-schedule')) && !!(await a.$('.sc-cell[data-act="sched.cycle"]')), 'the first date appears on the player\'s page by itself: the schedule box is there now');
   assert(/Sat/.test(await g.$eval(`.sc-opt[data-o="${o17}"]`, n => n.textContent)) && /19:00/.test(await g.$eval(`.sc-opt[data-o="${o17}"]`, n => n.textContent)), 'column shows Sat … 19:00 local');
   await none(g, 'adding the same date again', async () => { await g.fill('[data-ui="sched.odate"]', '2026-10-17'); await g.click('[data-act="sched.optadd"]'); });
 
@@ -161,8 +169,8 @@ const SHEET = `(() => {
   await one(g, GM, 'crew name', async () => { await g.click('[data-path="crew.name"]'); await g.keyboard.type('Lamplighters, Ltd', { delay: 5 }); }, 900);
 
   /* ---------- two players answer from their own pages ---------- */
-  const a = await person(ALEX, {}), pt = await person(PAT, {});
-  await a.goto(URL + '#t'); await pt.goto(URL + '#t'); await settle(a, 1400);
+  const pt = await person(PAT, {});
+  await pt.goto(URL + '#t'); await settle(pt, 1400); await settle(a, 200);
   assert(await a.$eval('.tp-role', n => n.textContent) === 'Player', 'alex is a player');
   assert(!(await a.$('[data-act="sched.optadd"]')) && !(await a.$('[data-act="sched.confirm"]')) && !(await a.$('[data-act="sched.cad3"]')), 'player: no GM schedule tools');
   wp = await one(a, ALEX, 'alex: 17 Oct yes', () => a.click(cellSel(o17)));
@@ -468,6 +476,21 @@ const SHEET = `(() => {
   const printBtns = await g.$$eval('.tp-schedbox .btn, .tp-schedbox .sc-tools, .tp-schedbox .sc-confirm, #nextSession', ns => ns.filter(n => getComputedStyle(n).display !== 'none').length);
   assert(printBtns === 0, 'print hides the schedule buttons and the card: ' + printBtns);
   await g.emulateMedia({ media: 'screen' });
+
+  /* ---------- what a player is shown as the plans shrink: a next session without open dates, then nothing ---------- */
+  await a.setViewportSize({ width: 1360, height: 900 }); await a.click('#tableBtn'); await settle(a, 500);
+  const keepOpts = copy(store['campaign/main'].schedule.options), keepNext = copy(store['campaign/main'].schedule.next), keepRsvp = copy(store['campaign/main'].schedule.rsvp);
+  store['campaign/main'].schedule.options = {}; broadcast('campaign/main'); await settle(a, 500); await settle(g, 300);
+  assert(!!(await a.$('.tp-schedbox .sc-next')) && !(await a.$('.sc-avail')) && !(await a.$('.sc-empty')), 'player, a next session but no open date: the session and the line-up, no empty "Who can make it" grid');
+  assert(!!(await g.$('.tp-schedbox .sc-avail')), 'the GM keeps the grid (it is where dates are added)');
+  store['campaign/main'].schedule.next = null; store['campaign/main'].schedule.rsvp = {}; broadcast('campaign/main'); await settle(a, 500); await settle(g, 300);
+  assert(!(await a.$('#tp-schedule')) && !(await a.$('.tp-schedbox')), 'player, nothing planned: no schedule box');
+  assert(!!(await g.$('.tp-schedrow#tp-schedule')) && !(await g.$('.tp-schedbox')) && await g.$eval('#tp-schedule .tp-schedsum', n => n.textContent) === 'no dates' || !!(await g.$('.tp-schedbox')), 'the GM: the folded "no dates" line again, or the box they left open');
+  await a.evaluate(() => { location.hash = '#t/schedule'; }); await settle(a, 600);
+  const note = await a.$eval('#tp-schedule', n => n.textContent).catch(() => '');
+  assert(/Nothing is planned yet/.test(note) && !/Mark the dates/.test(note), '#t/schedule with nothing planned shows a player a plain note, not a call to mark dates: ' + note.replace(/\s+/g, ' ').slice(0, 120));
+  await a.evaluate(() => { location.hash = '#t'; }); await settle(a, 300);
+  store['campaign/main'].schedule.options = keepOpts; store['campaign/main'].schedule.next = keepNext; store['campaign/main'].schedule.rsvp = keepRsvp; broadcast('campaign/main'); await settle(a, 400); await settle(g, 300);
 
   /* ---------- starting the session clears next and the dates around it, and records attendance, in the same write ---------- */
   /* history as the server holds it: sessions 1-21, pat missed 21, 20 and 18 (none recorded for him in 19), came to 17 */

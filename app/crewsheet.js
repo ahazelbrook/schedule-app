@@ -614,7 +614,14 @@
   });
   ['cohortadd', 'cohortharm', 'cohortarmor', 'cohortrm', 'factionadd', 'factionstatus', 'factionrm'].forEach(function (k) { acts[k] = function (d, crew, ctx, t) { return G.acts[k](d, crew, ctx, t); }; });
 
-  M.setCrewPanel({ render: render, acts: acts, enter: {}, PERM: { cspick: 'all' } });
+  /* the numbers on the phone's summary row (campaign.js): the ones the sheet itself shows (turf and the Vault upgrade change them) */
+  function summary(crew) {
+    var r = rec(crew); if (!r) return null;
+    var max = repMax(crew, r);
+    return { tier: clamp(crew.tier, 0, 6), hold: crew.hold === 'strong' ? 'strong' : 'weak', rep: Math.min(clamp(crew.rep, 0, 12), max), repMax: max,
+      heat: clamp(crew.heat, 0, COMMON.heat.pips), wanted: clamp(crew.wanted, 0, COMMON.wantedLevel.pips), stacks: clamp(crew.stacks, 0, COMMON.stacks.pips), vault: Math.min(clamp(crew.vault, 0, 16), vaultCap(crew, r)) };
+  }
+  M.setCrewPanel({ render: render, acts: acts, enter: {}, PERM: { cspick: 'all' }, summary: summary });
   M.crewSheet = { seed: seed, turfCount: turfCount, claimable: claimable, vaultCap: vaultCap,
     /* the crew sheet's markup for a copy outside the table page (the season print): ctx as campaign.js builds it; the
        live panel's text-path parent stays the table's own crew */

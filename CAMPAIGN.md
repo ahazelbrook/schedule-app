@@ -111,21 +111,37 @@ characters. Any other `campaign` doc id, and `collection('campaign')` queries, r
 - A third mode `body[data-mode="table"]`, reached from a new "The table" button in the header
   (next to "Back to the creator") and the hash `#t`. It hides `.studio`, `.crew`, `.roster`,
   `#dossier`, and shows `section#table-page`.
-- Contents: the header (crew name, tier and hold, the viewer's role, and a
-  "Print the season" button, see *Season print*); the session bar (number, started time, GM
-  buttons "Start session N+1" and "End session", a reminder line "Each player ends the
-  session on their own sheet", which for players starts "The GM starts sessions."); the crew panel (name, type, lair, tier, hold, rep with turf,
-  heat, wanted, vault diamonds, claims, cohorts, faction statuses −3..+3; now the full crew
-  sheet, below); the schedule box (SCHEDULE.md); shared clocks (add, rename, resize, fill by
-  clicking segments, kind chips, hidden toggle for the GM, delete with confirm); the players:
-  each member with their characters (from the existing roster), each character's stress
-  line and an "open" link; and the campaign log (append a line, newest first; each line shows
-  when and who together before the text).
-- Layout: the page's DOM order is the phone's reading order: session, schedule, clocks, players,
-  crew, log (column B, then column A). Up to 900 px it is one column in that order; on a wider
-  screen (and in print) the crew is placed back in the left column beside schedule / clocks /
-  players, or, once the full crew sheet is chosen, across the top above them. The schedule box is
-  `#tp-schedule` (the `#t/schedule` route scrolls to it).
+- Contents: the header (crew name, tier and hold, the cast and "Print the season" buttons, see *Season
+  print*, and the viewer's role as plain words with a dot, never a boxed label that looks like a button);
+  the session as one line ("Session 3 · in play"; "not started yet" or "ended 12 Oct" otherwise, with
+  "The GM starts sessions." / "The GM starts the next one." for a player then; the GM's buttons "Start
+  session N+1" and "End session" follow it, wrapping below on a narrow screen); shared clocks (add,
+  rename, resize, fill by clicking segments or by the − / + beside the count, kind chips, hidden toggle
+  for the GM, delete with confirm); the campaign log (append a line, newest first; each line shows
+  when and who together before the text; the latest three, "All N" shows the rest); the players: each
+  member with their characters (from the existing roster, "No owner yet" for a character without one),
+  each character's stress line and an "open" link; the crew (name, type, lair, tier, hold, rep with turf,
+  heat, wanted, vault diamonds, claims, cohorts, faction statuses −3..+3; now the full crew sheet,
+  below); and the schedule (SCHEDULE.md).
+- Layout: the page's DOM order is the phone's reading order: the session line, shared clocks, the log,
+  the players (column B), then the crew and the schedule (column A). Up to 760 px the crew sits behind
+  a summary row (Tier · Hold · Rep · Heat · Wanted · Stacks, the sheet's own numbers) that unfolds the
+  whole crew sheet; it starts unfolded only while the crew has neither a name nor a playbook (the table
+  is being set up). Up to 900 px it is one column in that order; on a wider screen column B is on the
+  left and column A on the right, or, once the full crew sheet is chosen, one column with column B's
+  boxes side by side above the sheet. Print still starts with the crew and prints every log line. The
+  schedule is `#tp-schedule`: a player gets the box only while a next session or an open date exists
+  (a link to `#t/schedule` shows the box with a plain "Nothing is planned yet" note); the GM gets one
+  line, "Schedule · no dates · Plan dates", that opens it, and the box opens by itself while dates exist
+  (the `#t/schedule` route and Home's schedule links open it too; its "Close" folds it back). What is
+  folded or unfolded (the crew summary, the log's "All", the schedule line) is page state: it redraws,
+  it never writes, and read-only viewers may use it.
+- Touch (screens up to 760 px, or a coarse pointer): every control on the page is at least 40 px tall.
+  Buttons, chips and text fields grow; the small marks (tier, rep, heat, wanted, the vault, stacks, the
+  crew sheet's pills and cubes) keep their size and get an invisible `::before` hit area, 40 px tall and
+  as wide as their pitch, so neighbours never take each other's taps (checked by `app/checks/campaign.js`
+  and `crewsheet.js`). The shared clocks are drawn 104 px wide, with a − / + beside the count (one write
+  of `clocks.<i>.filled`, the same patch a wedge makes; players may use it).
 - Saves go through `doc.update(patch)` with only the changed top-level fields of `crew`,
   `clocks`, `session`, `log` (and the changed `schedule` leaves); the page never writes on open.
 - Starting a session sets `session = { number: n + 1, startedAt: now, endedAt: null }` and
@@ -133,7 +149,8 @@ characters. Any other `campaign` doc id, and `collection('campaign')` queries, r
   In the same write it updates the schedule: `next` goes when it is within 12 h, its answers
   becoming that session's attendance, and dates before now + 12 h leave the grid (SCHEDULE.md).
 - Read-only viewers (`can('data.write') === false`) see everything disabled except "Print the
-  season", Open and the phone's "Show the six crew playbooks"; GM-only controls are not shown.
+  season", "The cast", Open, the phone's "Show the six crew playbooks" and the page-state folds (the crew
+  summary row, the log's "All"); GM-only controls are not shown.
 - Same visual language as the sheet (bands, boxes, pips, accent orange), phone width 390px
   without horizontal scroll, light and dark, print hides buttons.
 
