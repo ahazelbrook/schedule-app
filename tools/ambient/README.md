@@ -13,13 +13,12 @@ Six full-screen idle scenes for the table iPad. Each page is self-contained, 4:3
 
 ## The scenes built here (16/10/2026)
 
-Nine more scenes are built in this folder, from the Blades '68 design system (palette tokens, fonts, figure kit), one script each in
+Eight more scenes are built in this folder, from the Blades '68 design system (palette tokens, fonts, figure kit), one script each in
 `scenes/`:
 
 ```
 node tools/ambient/scenes/boneyard.js     # boneyard-dawn.html   the Boneyard at dawn
 node tools/ambient/scenes/undertow.js     # undertow.html        Mira's club in the drained baths
-node tools/ambient/scenes/bluetime.js     # bluetime.html        the city under the B.L.U.E. Array
 node tools/ambient/scenes/vet.js          # grunts-vet.html      Grunt's
 node tools/ambient/scenes/tram.js         # night-tram.html      the night tram
 node tools/ambient/scenes/lurker.js       # lurker-press.html    the Lurker press room (edit HEADLINES at the top)

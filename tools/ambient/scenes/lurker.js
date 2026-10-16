@@ -1,4 +1,4 @@
-// The Lurker press room: the Doskvol Lurker (faction card 27) going to press. A rotary press turns, sheets run past, and a new
+// The Lurker press room: the Doskvol Lurker (faction card 27) going to press. A rotary press turns, folded papers ride the belt off the edge of the frame, and a new
 // front page lands on the stack every so often. HEADLINES is the list to edit: dry, specific, never winking, and nothing the
 // players haven't seen (no score targets, nothing from the GM's notes).
 "use strict";
@@ -43,11 +43,20 @@ module.exports = function build() {
     press += `<circle cx="${x}" cy="${y}" r="${rr * .22}" fill="#9aa09b"/></g>`;
   }
   // the paper web threading the drums
-  press += `<path d="M560 230 C640 180 760 200 700 410 C680 500 860 560 830 380 C820 300 940 200 960 410 C980 520 1120 520 1180 490 L1330 560" fill="none" stroke="${C.paper200}" stroke-width="10" opacity=".85"/>`;
+  const WEB = "M560 230 C640 180 760 200 700 410 C680 500 860 560 830 380 C820 300 940 200 960 410 C980 520 1120 520 1180 490 L1330 545";
+  press += `<path d="${WEB}" fill="none" stroke="${C.paper200}" stroke-width="10" opacity=".85"/>`;
+  // print on the web, running through the drums
+  press += `<path id="webprint" d="${WEB}" fill="none" stroke="${C.ink700}" stroke-width="4" stroke-dasharray="14 10 4 22" opacity=".55"/>`;
   press += `<g transform="translate(1000 640)"><rect width="200" height="56" fill="#262b29"/><text x="100" y="36" text-anchor="middle" font-family="Archivo Compressed" font-weight="900" font-size="30" fill="${C.caution500}">ROTARY · 1951</text></g>`;
   press += `<g transform="translate(620 620)"><circle r="34" fill="${C.paper100}"/><circle r="28" fill="none" stroke="${C.ink900}" stroke-width="3"/><line id="gauge" x1="0" y1="0" x2="0" y2="-24" stroke="${C.alarm700}" stroke-width="4"/></g>`;
-  // the delivery conveyor, sheets running off it
-  press += `<rect x="1300" y="560" width="300" height="20" fill="#262b29"/><g id="sheets">${Array.from({ length: 4 }, (_, k) => `<rect class="sheet" y="534" width="120" height="26" fill="${C.paper100}" data-o="${k * 80}"/>`).join("")}</g>`;
+  // the delivery belt: folded papers ride out of the press and off the edge of the frame, one after another. They are born
+  // under the press's side cover and leave past x 1600, so nobody ever sees one wrap round.
+  let belt = `<rect x="1290" y="556" width="330" height="16" fill="#262b29"/><path id="beltmarks" d="M1290 557 H1620" stroke="#4a524e" stroke-width="5" stroke-dasharray="6 18"/>`;
+  belt += `<rect x="1300" y="572" width="14" height="250" fill="#262b29"/><rect x="1560" y="572" width="14" height="250" fill="#262b29"/>`;
+  belt += `<g id="sheets">${Array.from({ length: 5 }, (_, k) => `<g class="sheet" data-o="${k * 110}"><rect x="0" y="-16" width="96" height="16" fill="${C.paper100}"/><rect x="0" y="-16" width="96" height="3" fill="${C.paper300}"/><rect x="8" y="-11" width="40" height="2" fill="${C.ink500}"/><rect x="8" y="-7" width="62" height="2" fill="${C.ink300}"/><rect x="0" y="-1" width="96" height="1.5" fill="${C.ink300}"/></g>`).join("")}</g>`;
+  // the press's side cover hides where the papers come from
+  belt += `<rect x="1300" y="470" width="40" height="110" fill="#3b4340"/><rect x="1300" y="470" width="40" height="8" fill="#545e5a"/>`;
+  press += belt;
 
   // ---------- bundles on the floor ----------
   const bundle = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})"><rect x="0" y="-90" width="200" height="90" fill="${C.paper200}"/>${[0, 1, 2, 3, 4, 5].map((k) => `<line x1="0" y1="${-14 - k * 13}" x2="200" y2="${-14 - k * 13}" stroke="${C.ink300}" stroke-width="2"/>`).join("")}<line x1="60" y1="-90" x2="60" y2="0" stroke="${C.rust700}" stroke-width="5"/><line x1="140" y1="-90" x2="140" y2="0" stroke="${C.rust700}" stroke-width="5"/><rect x="0" y="-104" width="200" height="14" fill="${C.paper100}"/></g>`;
@@ -81,12 +90,13 @@ module.exports = function build() {
 const HL=${JSON.stringify(HEADLINES)};let hi=0;
 const drums=[...document.querySelectorAll('.drum')].map(g=>({g,x:+g.dataset.x,y:+g.dataset.y,v:+g.dataset.v}));
 const sheets=[...document.querySelectorAll('.sheet')].map(e=>({e,o:+e.dataset.o}));
-const page=$('page'),hl=$('hl'),sub=$('sub'),gauge=$('gauge');
+const page=$('page'),hl=$('hl'),sub=$('sub'),gauge=$('gauge'),web=$('webprint'),belt=$('beltmarks');
 function fit(){hl.removeAttribute('textLength');hl.removeAttribute('lengthAdjust');try{if(hl.getComputedTextLength()>520){hl.setAttribute('textLength','520');hl.setAttribute('lengthAdjust','spacingAndGlyphs');}}catch(e){}}
 fit();
 loop((dt,c)=>{
  for(const d of drums)d.g.setAttribute('transform','rotate('+((c*d.v*57)%360).toFixed(1)+' '+d.x+' '+d.y+')');
- for(const s of sheets){const x=1300+((c*120+s.o)%320);s.e.setAttribute('x',x.toFixed(0));}
+ for(const s of sheets){const x=1290+((c*120+s.o)%550);s.e.setAttribute('transform','translate('+x.toFixed(1)+' 556)');}
+ web.setAttribute('stroke-dashoffset',(-c*120).toFixed(1));belt.setAttribute('stroke-dashoffset',(-c*120).toFixed(1));
  gauge.setAttribute('transform','rotate('+(30+Math.sin(c*2.3)*8+Math.random()*3).toFixed(1)+')');
 });
 // a new front page: it drops onto the stack with a hard cut and a little settle
