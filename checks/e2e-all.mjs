@@ -30,6 +30,7 @@ const CHECKS = [
   ['checks/runtime/schedule.e2e.mjs', 'the schedule (8791)'],
   ['checks/runtime/phone.e2e.mjs', 'a 390 px phone: device width, standards mode, no overflow (8792)'],
   ['checks/runtime/rules.e2e.mjs', 'the rules wiki (8795)'],
+  ['checks/runtime/clocks.e2e.mjs', 'the shared clocks: two players and the GM, each on a stale copy (8797)'],
   ['checks/runtime/cast.e2e.mjs', 'the cast, a GM and a player (8842)'],
   ['checks/runtime/gm.e2e.mjs', 'the GM page, its lazy bundle, the display wiring (8845)'],
   ['checks/runtime/gm-prep.e2e.mjs', 'the prep view (8846)'],

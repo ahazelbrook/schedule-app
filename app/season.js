@@ -231,7 +231,7 @@
       cover(camp, chars, seasonOf(camp));
       crewPage(camp, isGM, me, nm);
       chars.forEach(sheetPage);
-      if (data.nodb) c.pages.insertBefore(el('div', 'sn-note', esc('The shared files are not available in this view, so the crew and the clocks are empty.')), c.pages.firstChild);
+      if (data.nodb) c.pages.insertBefore(el('div', 'sn-note', esc('The table is not available in this view, so the crew and the clocks are empty.')), c.pages.firstChild);
       return Promise.all(c.links).then(function () {
         if (cur !== c) return;
         var n = c.pages.querySelectorAll('.sn-page').length;

@@ -19,7 +19,7 @@ body[data-mode="print"] #season:not([hidden]) { display: block; }
 /* ---- the paper: always the light paper, also in the night theme ---- */
 #season .sn-pages { display: grid; gap: 22px; }
 #season .sn-page {
-  --paper: #f2ede1; --card: #fbf8f1; --inset: #e8e2d4; --hair: #dcd4c2; --ink: #14110e; --ink-soft: #55504a; --ink-faint: #8e8880; --rule: #14110e; --on-ink: #fbf8f1;
+  --paper: #f2ede1; --card: #fbf8f1; --inset: #e8e2d4; --hair: #dcd4c2; --ink: #14110e; --ink-soft: #55504a; --ink-faint: #6a645e; --rule: #14110e; --on-ink: #fbf8f1;
   --accent: #b8481a; --on-accent: #fbf8f1; --mustard: #e8c33c; --on-mustard: #14110e; --alarm: #a8210f; --ok: #41633e; --focus: #b8481a; --shadow-ink: #14110e; --chart: #e8e2d4; --chart-ink: #14110e;
   color-scheme: light; color: var(--ink); background: var(--card); width: 100%; max-width: 1280px; margin: 0 auto; min-width: 0;
   padding: clamp(12px, 2.6vw, 34px); border: 1px solid var(--hair); box-shadow: 0 1px 0 var(--hair), 0 10px 26px rgba(20, 17, 14, .18);

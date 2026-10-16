@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withClockIds, applyClockOps, checkClockOps, changedFills, playerMayWrite, STALE_CLOCKS, CLOCK_SIZES, CLOCK_KINDS } from '../../functions/_lib/campaign.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'app', 'runtime', 'cf.js'), 'utf8');
@@ -118,17 +119,26 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
       return [200, { now: new Date(tick - 2000).toISOString(), docs: list, campaignUpdatedAt: s.campaign ? s.campaign.updatedAt : null, npcsUpdatedAt: s.npcsAt() }];   // like the real API: 2 s behind, so rows repeat
     }
     if (p === '/api/campaign') {
-      // the player rule is reduced to "players may not PUT" here; the full rule is checked in checks/api/flow.mjs.
-      // A PATCH adds log entries (same at + by + text: skipped; same at + by, other text: 403 for a player),
-      // newest `at` first, like functions/_lib/campaign.js mergeLog.
+      // the player rule (functions/_lib/campaign.js playerMayWrite) is the server's own; checks/api/flow.mjs and clocks.mjs
+      // check it against the real Worker. A PATCH adds log entries (same at + by + text: skipped; same at + by, other text:
+      // 403 for a player), newest `at` first, like mergeLog; `clockOps` and a whole `clocks` array go through the server's
+      // own functions (withClockIds, applyClockOps, changedFills), so the adapter's optimistic copy is compared with them.
       if (method === 'GET') return [200, { doc: clone(s.campaign || defaultCampaign()), updatedAt: s.campaign ? s.campaign.updatedAt : null }];
       if (method === 'PUT' && me.role !== 'gm') return [403, { error: 'only the GM can change that' }];
-      const base = s.campaign || defaultCampaign();
+      const base = clone(s.campaign || defaultCampaign());
+      if (Array.isArray(base.clocks)) base.clocks = withClockIds(base.clocks);
       let doc = null;
       if (method === 'PUT') doc = clone(body);
       else if (method === 'PATCH') {
-        const { log, ...rest } = body;
+        const { log, clockOps, ...rest } = body;
         doc = merge(clone(base), rest);
+        if (Array.isArray(rest.clocks)) doc.clocks = withClockIds(doc.clocks);
+        if (clockOps !== undefined) {
+          try { checkClockOps(clockOps); } catch (e) { return [e.status, { error: e.message }]; }
+          doc.clocks = applyClockOps(doc.clocks, clockOps);
+        }
+        if (me.role !== 'gm' && !playerMayWrite(base, doc, me.id)) return [403, { error: 'only the GM can change that' }];
+        if (me.role !== 'gm' && Array.isArray(rest.clocks) && changedFills(base.clocks, rest.clocks) > 1) return [412, { error: STALE_CLOCKS }];
         if (log) {
           const key = (e) => JSON.stringify([e.at, e.by, e.text]), slot = (e) => JSON.stringify([e.at, e.by]);
           const have = new Set(base.log.map(key)), slots = new Set(base.log.map(slot));
@@ -144,6 +154,7 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
       }
       if (!doc) return [405, { error: 'method not allowed' }];
       if (Array.isArray(doc.log)) doc.log = doc.log.slice(0, 200);
+      if (Array.isArray(doc.clocks)) doc.clocks = withClockIds(doc.clocks);
       doc.updatedAt = now(); s.campaign = doc;
       return [200, { doc: clone(doc), updatedAt: doc.updatedAt }];
     }
@@ -784,6 +795,110 @@ await test('campaign: a rejected write (player PUT, 403) rejects with the API me
   un();
 });
 
+/* ---------- campaign clocks: clockOps (CAMPAIGN.md, *Clocks*) ---------- */
+const threeClocks = () => [
+  { id: 'c_a', name: 'Alarm', size: 4, filled: 1, kind: 'danger', hidden: false },
+  { id: 'c_b', name: 'Fence', size: 6, filled: 0, kind: 'project', hidden: false },
+  { id: 'c_c', name: 'Doomed', size: 8, filled: 2, kind: 'faction', hidden: true },
+];
+const fills = (doc) => doc.clocks.map((c) => c.filled);
+
+await test('campaign clocks: the ref takes clockOps; ticks of different clocks from two phones both land, also while the GM renames, adds and removes; on one clock the later tick wins', async () => {
+  const api = fakeApi();
+  api.setCampaign(campaignDoc({ clocks: threeClocks() }));
+  const bs = [browser(api, { email: 'pa@x.test' }), browser(api, { email: 'pb@x.test' }), browser(api, { email: 'gm@x.test' })];
+  const refs = await Promise.all(bs.map(async (b) => (await b.win.claude.use('db')).collection('campaign').doc('main')));
+  eq(refs.map((r) => r.clockOps), [true, true, true], 'the hosted ref says its update() takes clockOps');
+  const views = refs.map(() => []);
+  const uns = refs.map((r, i) => r.onSnapshot((s) => views[i].push(s.data())));
+  await until(() => views.every((v) => v.length));
+  const last = (i) => views[i][views[i].length - 1];
+  // (a) two players tick different clocks from the same copy at once: each sees its own tick at once, the server both
+  const pa = refs[0].update({ clockOps: [{ id: 'c_a', filled: 2 }] }), pb = refs[1].update({ clockOps: [{ id: 'c_b', filled: 3 }] });
+  eq([fills(last(0)), fills(last(1))], [[2, 0, 2], [1, 3, 2]], 'optimistic: each phone its own tick');
+  await Promise.all([pa, pb]);
+  eq(fills(api.campaign), [2, 3, 2], 'server: both ticks');
+  // (b, c) a player ticks while the GM renames, resizes and hides one clock, removes another and adds one
+  await Promise.all([
+    refs[0].update({ clockOps: [{ id: 'c_b', filled: 4 }] }),
+    refs[2].update({ clockOps: [{ id: 'c_a', name: 'Alarm bells', size: 6, hidden: true }, { remove: 'c_c' }, { add: { id: 'c_new', name: 'New', size: 4, filled: 0, kind: 'other', hidden: false } }] }),
+  ]);
+  eq(api.campaign.clocks.map((c) => [c.id, c.name, c.size, c.filled, c.hidden]), [['c_a', 'Alarm bells', 6, 2, true], ['c_b', 'Fence', 6, 4, false], ['c_new', 'New', 4, 0, false]], 'server: the GM\'s changes and the tick');
+  // a tick of the clock the GM removed brings nothing back
+  await refs[1].update({ clockOps: [{ id: 'c_c', filled: 5 }] });
+  eq(api.campaign.clocks.map((c) => c.id), ['c_a', 'c_b', 'c_new'], 'a removed clock stays removed');
+  // (d) the same clock from two phones: the tick the server gets last wins on that clock, nothing else moves
+  await refs[0].update({ clockOps: [{ id: 'c_b', filled: 5 }] });
+  await refs[1].update({ clockOps: [{ id: 'c_b', filled: 1 }] });
+  eq(fills(api.campaign), [2, 1, 0], 'last writer wins on c_b');
+  await until(() => views.every((v, i) => JSON.stringify(last(i).clocks) === JSON.stringify(api.campaign.clocks)), POLL * 6);
+  views.forEach((v, i) => eq(last(i).clocks, api.campaign.clocks, 'view ' + i + ' converged'));
+  // a player's op may only fill: a rename is refused (403, the server's rule) and rolled back
+  let err = null; try { await refs[1].update({ clockOps: [{ id: 'c_b', name: 'Mine now' }] }); } catch (e) { err = e; }
+  eq(err && [err.status, err.message], [403, 'only the GM can change that'], 'a player renaming');
+  await until(() => last(1).clocks[1].name === 'Fence', POLL * 4);
+  eq([last(1).clocks[1].name, api.campaign.clocks[1].name], ['Fence', 'Fence'], 'rolled back');
+  uns.forEach((u) => u());
+});
+
+await test('campaign clocks: the optimistic copy applies clockOps as the server does (random ops on id-less, repeated and odd clocks)', async () => {
+  const api = fakeApi();
+  let seed = 20261016;
+  const rnd = (n) => {   /* mulberry32: the same sequence every run */
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) % n;
+  };
+  const pick = (a) => a[rnd(a.length)];
+  const some = (o) => Object.fromEntries(Object.entries(o).filter(() => rnd(2)));
+  const oddClock = () => {
+    const c = {}, id = pick(['c_0', 'c_1', 'x', 'x', undefined, 5, '', 'constructor', '__proto__', 'c_2_']);
+    if (id !== undefined) c.id = id;
+    if (rnd(5)) c.name = pick(['Alarm', '', 'Doom']);
+    const size = pick([4, 6, 8, 10, 12, 5, '8', undefined, 0, 13]); if (size !== undefined) c.size = size;
+    const filled = pick([0, 1, 3, 9, -2, '2', undefined, 2.6]); if (filled !== undefined) c.filled = filled;
+    if (rnd(3)) c.kind = pick(CLOCK_KINDS.concat(['weird']));
+    if (rnd(3)) c.hidden = rnd(2) === 0;
+    return c;
+  };
+  const randomOp = (ids) => {
+    const id = rnd(6) ? pick(ids.length ? ids : ['gone']) : 'gone';
+    switch (rnd(5)) {
+      case 0: case 1: return { id, filled: pick([0, 1, 2, 5, 7, 12, 30, -1, 2.4]) };
+      case 2: {
+        const f = pick([() => ({ size: pick([4, 4, 6]) }), () => ({ size: pick(CLOCK_SIZES), filled: rnd(14) }), () => ({ name: pick(['Renamed', '']) }), () => ({ kind: pick(CLOCK_KINDS), hidden: rnd(2) === 0 }),
+          () => some({ name: 'Both', size: pick(CLOCK_SIZES), kind: pick(CLOCK_KINDS), hidden: rnd(2) === 0, filled: rnd(9) })])();
+        return Object.keys(f).length ? { id, ...f } : { id, size: 4 };
+      }
+      case 3: return { add: { id: pick(['n1', 'n2', 'x', 'c_0', '5', 'constructor', '__proto__']), ...some({ name: 'New', size: pick(CLOCK_SIZES), filled: pick([0, 3, 20]), kind: pick(CLOCK_KINDS), hidden: true }) } };
+      default: return { remove: id };
+    }
+  };
+  const b = browser(api, { email: 'gm@x.test' });
+  const ref = (await b.win.claude.use('db')).collection('campaign').doc('main');
+  const views = []; const un = ref.onSnapshot((s) => views.push(s.data()));
+  await until(() => views.length);
+  let ops = 0;
+  for (let round = 0; round < 25; round++) {
+    api.setCampaign(campaignDoc({ clocks: Array.from({ length: rnd(6) }, () => (rnd(10) ? oddClock() : pick([null, 3, 'x']))) }));
+    const want = JSON.stringify(api.campaign.clocks);
+    await until(() => JSON.stringify(views[views.length - 1].clocks) === want, POLL * 6);
+    eq(views[views.length - 1].clocks, api.campaign.clocks, 'round ' + round + ': the stored clocks, as stored');
+    for (let k = 0; k < 4; k++) {
+      const ids = withClockIds(clone(views[views.length - 1].clocks)).map((c) => c.id);   // clone: into this realm (isPlainObject)
+      const list = Array.from({ length: 1 + rnd(3) }, () => randomOp(ids));
+      const p = ref.update({ clockOps: list });
+      const optimistic = clone(views[views.length - 1].clocks);
+      await p;
+      ops += list.length;
+      eq(optimistic, api.campaign.clocks, 'round ' + round + ', write ' + k + ' ' + JSON.stringify(list));
+    }
+  }
+  ok(ops > 150, 'ops ' + ops);
+  un();
+});
+
 /* ---------- offline: snapshot, offline start, write queue, status ---------- */
 const SNAP = 'b68.cf.gm@x.test#default', QUEUE = SNAP + '#queue';
 const PSNAP = 'b68.cf.pl@x.test#default', PQUEUE = PSNAP + '#queue';
@@ -932,6 +1047,87 @@ await test('offline writes: optimistic, queued in order (with pending flags), fl
   await until(() => !da[da.length - 1].metadata.hasPendingWrites, POLL * 4);
   eq(da[da.length - 1].metadata.hasPendingWrites, false, 'pending cleared');
   eq(read(st, QUEUE), null, 'queue emptied');
+});
+
+await test('offline clock ticks: a player\'s fills fold into one write (the last per clock), a fill beside another change does not; they land on top of another phone\'s tick', async () => {
+  const api = fakeApi();
+  api.setCampaign(campaignDoc({ clocks: threeClocks() }));
+  const st = memStorage();
+  (await warm(api, st, 'pl@x.test')).close();
+  const { b, db } = await offlinePage(api, st, 'pl@x.test');
+  const camp = db.collection('campaign').doc('main');
+  const ks = []; camp.onSnapshot((s) => ks.push(s.data()));
+  await until(() => ks.length);
+  const fill = (id, n) => camp.update({ clockOps: [{ id, filled: n }], updatedAt: '2026-10-16T20:00:0' + n + '.000Z' });
+  await fill('c_a', 2); await fill('c_a', 3); await fill('c_b', 1); await fill('c_a', 4);
+  let q = read(st, PQUEUE);
+  eq(q.map((x) => x.body), [{ clockOps: [{ id: 'c_b', filled: 1 }, { id: 'c_a', filled: 4 }], updatedAt: '2026-10-16T20:00:04.000Z' }], 'four ticks, one queued write: the last fill of each clock');
+  eq(fills(ks[ks.length - 1]), [4, 1, 2], 'optimistic');
+  await camp.update({ clockOps: [{ id: 'c_b', filled: 2 }], crew: { heat: 2 } });   // a fill beside a crew change: its own write
+  await fill('c_b', 3);                                                             // and the next fill does not fold into that one
+  q = read(st, PQUEUE);
+  eq(q.map((x) => Object.keys(x.body).sort().join()), ['clockOps,updatedAt', 'clockOps,crew', 'clockOps,updatedAt'], 'a player\'s fill folds only into fills');
+  // meanwhile another phone ticks the hidden clock on the server
+  const other = clone(api.campaign); other.clocks[2].filled = 5; api.setCampaign(other);
+  delete api.status['/api/'];
+  await until(() => b.win.B68Runtime.status.pending === 0, 3000);
+  eq([fills(api.campaign), api.campaign.crew.heat], [[4, 3, 5], 2], 'server: every tick of this phone, and the other phone\'s kept');
+  await until(() => JSON.stringify(ks[ks.length - 1].clocks) === JSON.stringify(api.campaign.clocks), POLL * 6);
+  eq(fills(ks[ks.length - 1]), [4, 3, 5], 'this phone sees all of them');
+});
+
+await test('offline, the GM: clockOps concatenate in order; a whole clocks array after them is not folded; all land as made', async () => {
+  const api = fakeApi();
+  api.setCampaign(campaignDoc({ clocks: threeClocks() }));
+  const st = memStorage();
+  (await warm(api, st)).close();
+  const { b, db } = await offlinePage(api, st);
+  const camp = db.collection('campaign').doc('main');
+  const ks = []; camp.onSnapshot((s) => ks.push(s.data()));
+  await until(() => ks.length);
+  await camp.update({ clockOps: [{ id: 'c_a', name: 'Alarm bells' }] });
+  await camp.update({ clockOps: [{ id: 'c_a', size: 8 }, { remove: 'c_c' }] });
+  await camp.update({ clockOps: [{ add: { id: 'c_n', name: 'New', size: 4, filled: 0, kind: 'other', hidden: false } }, { id: 'c_a', filled: 6 }] });
+  const whole = clone(ks[ks.length - 1].clocks); whole[1].filled = 5;
+  await camp.update({ clocks: whole });                                             // the previous release's whole array
+  const q = read(st, QUEUE);
+  eq(q.length, 2, 'ops folded, the array apart: ' + JSON.stringify(q.map((x) => x.body)));
+  eq(q[0].body.clockOps.length, 5, 'the ops, concatenated');
+  eq(ks[ks.length - 1].clocks.map((c) => [c.id, c.name, c.size, c.filled]), [['c_a', 'Alarm bells', 8, 6], ['c_b', 'Fence', 6, 5], ['c_n', 'New', 4, 0]], 'optimistic');
+  delete api.status['/api/'];
+  await until(() => b.win.B68Runtime.status.pending === 0, 3000);
+  eq(api.campaign.clocks.map((c) => [c.id, c.name, c.size, c.filled]), [['c_a', 'Alarm bells', 8, 6], ['c_b', 'Fence', 6, 5], ['c_n', 'New', 4, 0]], 'server');
+});
+
+await test('a whole clocks array the previous release queued still goes out: a current one lands; one copied before another phone\'s tick is refused (412) and dropped, the table reloads, that tick stays', async () => {
+  const api = fakeApi();
+  api.setCampaign(campaignDoc({ clocks: threeClocks() }));
+  const st = memStorage();
+  (await warm(api, st, 'pl@x.test')).close();
+  const old = (clocks, qid) => ({ qid, kind: 'campaign', method: 'PATCH', path: '/campaign', body: { clocks, updatedAt: '2026-10-16T19:00:00.000Z' } });
+  const t1 = clone(api.campaign.clocks); t1[0].filled = 2;                          // as stored, with one tick
+  st.setItem(PQUEUE, JSON.stringify([old(t1, 'prev.1')]));
+  let p = await offlinePage(api, st, 'pl@x.test');
+  let errs = []; const un1 = p.db.collection('campaign').doc('main').onSnapshot(() => {}, (e) => errs.push(e));
+  delete api.status['/api/'];
+  await until(() => p.b.win.B68Runtime.status.pending === 0, 3000);
+  eq([fills(api.campaign), errs.length], [[2, 0, 2], 0], 'a current array lands');
+  un1();
+  // a stale one: copied before another phone ticked c_b (its own tick on c_a, c_b as it was)
+  const other = clone(api.campaign); other.clocks[1].filled = 3; api.setCampaign(other);
+  const t2 = clone(t1); t2[0].filled = 3;
+  st.setItem(PQUEUE, JSON.stringify([old(t2, 'prev.2')]));
+  p = await offlinePage(api, st, 'pl@x.test');
+  const ks = []; errs = [];
+  p.db.collection('campaign').doc('main').onSnapshot((s) => ks.push(s.data()), (e) => errs.push(e));
+  await until(() => ks.length);
+  delete api.status['/api/'];
+  await until(() => errs.length && p.b.win.B68Runtime.status.pending === 0, 3000);
+  eq(fills(api.campaign), [2, 3, 2], 'refused: the other phone\'s tick stays');
+  eq([errs.length, errs[0].status, errs[0].code, errs[0].message], [1, 412, 'dropped', 'a change saved while offline was not accepted: ' + STALE_CLOCKS], 'reported once');
+  await until(() => JSON.stringify(fills(ks[ks.length - 1])) === '[2,3,2]', POLL * 6);
+  eq(fills(ks[ks.length - 1]), [2, 3, 2], 'the table reloaded');
+  eq(read(st, PQUEUE), null, 'queue empty');
 });
 
 await test('online, the network drops mid-session: writes queue (resolve) and flush on the next successful poll and on `online`', async () => {

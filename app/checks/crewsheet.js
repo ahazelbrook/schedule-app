@@ -346,22 +346,11 @@ const CREWS = ['dealers', 'hit-squad', 'militants', 'racers', 'shadows', 'utopia
   await p.evaluate(() => window.__remote({ crew: { upgrades: { Vault: 2 } } })); await p.waitForTimeout(250);   /* the Vault upgrade opens the vault cubes (locked without it) */
   await none('phone: the summary unfolds the sheet', () => p.click('.tp-crewsum'));
   assert(await p.$eval('.cs-sheet', n => n.getClientRects().length > 0), 'phone: the crew sheet opens');
-  /* touch: the tracks a player taps in play are at least 40px tall (the mark's own box or its ::before area) and each owns its whole area */
-  const ttrack = await p.evaluate(() => {
-    const out = { n: 0, small: [], owns: [], kinds: {} }, at = (x, y) => document.elementFromPoint(x, y);
-    document.querySelectorAll('#table-page .cs-pill, #table-page .cs-tier, #table-page .cs-cube, #table-page .cs-sheet .btn, #table-page .cs-sheet .chip, #table-page .cs-sheet .tp-in').forEach(n => {
-      if (n.disabled || !n.getClientRects().length) return;
-      n.scrollIntoView({ block: 'center' });
-      const r = n.getBoundingClientRect(), cs = getComputedStyle(n, '::before'), has = !!cs.content && cs.content !== 'none';
-      const pw = has ? parseFloat(cs.width) || 0 : 0, ph = has ? parseFloat(cs.height) || 0 : 0, w = Math.max(r.width, pw), h = Math.max(r.height, ph), k = (n.getAttribute('data-act') || n.className) + '';
-      out.n++; out.kinds[k] = Math.min(out.kinds[k] || 1e9, Math.round(h));
-      if (h < 39.5) out.small.push(k + ' ' + Math.round(w) + 'x' + Math.round(h));
-      if (has) { const cx = r.left + r.width / 2, cy = r.top + r.height / 2; [[cx - pw / 2 + 2, cy], [cx + pw / 2 - 2, cy], [cx, cy - ph / 2 + 2], [cx, cy + ph / 2 - 2]].forEach(pt => { const e = at(pt[0], pt[1]); if (!(e === n || n.contains(e))) out.owns.push(k + ' ' + (n.getAttribute('data-n') || '') + ' @' + pt.map(Math.round) + ' → ' + (e && (e.getAttribute('data-act') || e.className || e.tagName))); }); }
-    });
-    out.small = out.small.slice(0, 12); out.owns = out.owns.slice(0, 12); return out;
-  });
+  /* touch: the tracks a player taps in play, the ability circles, the upgrade boxes and the contact dots are at least 40px tall (the
+     mark's own box or its ::before area) and each owns its whole area */
+  const ttrack = await touchAudit();
   notes.push('crew sheet touch audit: ' + ttrack.n + ' controls; smallest heights ' + JSON.stringify(ttrack.kinds));
-  assert(['crew.heat', 'crew.wanted', 'crew.rep', 'crew.tier', 'crew.stacks', 'crew.vault'].every(k => ttrack.kinds[k] >= 40) && !ttrack.small.length, 'phone touch: heat, wanted, rep, tier, stacks and vault marks and the sheet\'s buttons are at least 40px tall: ' + ttrack.small.join(' | '));
+  assert(['crew.heat', 'crew.wanted', 'crew.rep', 'crew.tier', 'crew.stacks', 'crew.vault', 'crew.ability', 'crew.upgrade', 'crew.contact'].every(k => ttrack.kinds[k] >= 40) && !ttrack.small.length, 'phone touch: heat, wanted, rep, tier, stacks and vault marks, ability circles, upgrade boxes, contact dots and the sheet\'s buttons are at least 40px tall: ' + ttrack.small.join(' | ') + ' ' + JSON.stringify(ttrack.kinds));
   assert(!ttrack.owns.length, 'phone touch: each mark owns its whole hit area: ' + ttrack.owns.join(' | '));
   await overflow('crew sheet phone, open');
   await p.evaluate(() => scrollTo(0, 0));
@@ -396,6 +385,21 @@ const CREWS = ['dealers', 'hit-squad', 'militants', 'racers', 'shadows', 'utopia
   assert(fd.covers && (await dis('[data-act="crew.cschoose"]')) === true, 'read only: covers shown, Choose disabled: ' + JSON.stringify(fd));
   await p.setViewportSize({ width: 1360, height: 900 }); await p.waitForTimeout(200);
 
+  /* touch: every control of the crew sheet a player taps (marks, circles, boxes, dots, buttons, chips, fields) at least 40px tall,
+     its own box or its ::before area, and each owning its whole area (no neighbour takes its taps); the smallest height per kind */
+  function touchAudit() { return p.evaluate(() => {
+    const out = { n: 0, small: [], owns: [], kinds: {} }, at = (x, y) => document.elementFromPoint(x, y);
+    document.querySelectorAll('#table-page .cs-pill, #table-page .cs-tier, #table-page .cs-cube, #table-page button.cs-circ, #table-page .cs-box, #table-page .cs-cdot, #table-page .cs-sheet .btn, #table-page .cs-sheet .chip, #table-page .cs-sheet .tp-in').forEach(n => {
+      if (n.disabled || !n.getClientRects().length) return;
+      n.scrollIntoView({ block: 'center' });
+      const r = n.getBoundingClientRect(), cs = getComputedStyle(n, '::before'), has = !!cs.content && cs.content !== 'none';
+      const pw = has ? parseFloat(cs.width) || 0 : 0, ph = has ? parseFloat(cs.height) || 0 : 0, w = Math.max(r.width, pw), h = Math.max(r.height, ph), k = (n.getAttribute('data-act') || n.className) + '';
+      out.n++; out.kinds[k] = Math.min(out.kinds[k] || 1e9, Math.round(h));
+      if (h < 39.5) out.small.push(k + ' ' + Math.round(w) + 'x' + Math.round(h));
+      if (has) { const cx = r.left + r.width / 2, cy = r.top + r.height / 2; [[cx - pw / 2 + 2, cy], [cx + pw / 2 - 2, cy], [cx, cy - ph / 2 + 2], [cx, cy + ph / 2 - 2]].forEach(pt => { const e = at(pt[0], pt[1]); if (!(e === n || n.contains(e))) out.owns.push(k + ' ' + (n.getAttribute('data-n') || '') + ' @' + pt.map(Math.round) + ' → ' + (e && (e.getAttribute('data-act') || e.className || e.tagName))); }); }
+    });
+    out.small = out.small.slice(0, 12); out.owns = out.owns.slice(0, 12); return out;
+  }); }
   async function shots(prefix, phoneDark) {
     await p.locator('.cs-sheet').screenshot({ path: path.join(OUT, 'crewsheet-' + prefix + '.png') });
     if (!phoneDark) return;
@@ -405,6 +409,10 @@ const CREWS = ['dealers', 'hit-squad', 'militants', 'racers', 'shadows', 'utopia
     await p.setViewportSize({ width: 390, height: 900 }); await p.waitForTimeout(300);
     const sum = await p.$('.tp-crewsum'); if (sum && (await sum.getAttribute('aria-expanded')) === 'false') { await sum.click(); await p.waitForTimeout(200); }   /* the sheet is folded behind its summary row on a phone */
     await overflow(prefix + ' phone');
+    const ta = await touchAudit();
+    notes.push(prefix + ' phone touch audit: ' + ta.n + ' controls');
+    assert(ta.n > 20 && !ta.small.length && !ta.owns.length, prefix + ' phone touch: every control at least 40px tall and owning its area: ' + ta.small.concat(ta.owns).join(' | '));
+    await p.evaluate(() => scrollTo(0, 0));
     await p.locator('.cs-sheet').screenshot({ path: path.join(OUT, 'crewsheet-' + prefix + '-phone.png') });
     await p.evaluate(() => { document.documentElement.dataset.theme = 'dark'; }); await p.waitForTimeout(350);
     await overflow(prefix + ' phone dark');

@@ -32,7 +32,7 @@ Collection `campaign`, document id `main` (one per campaign; on Cloudflare the c
     cohorts: [ { name: '', type: '', edges: '', flaws: '', harm: null | 'weak' | 'impaired' | 'broken', armor: false } ],
     factions: [ { name: '', status: 0 } ]   // -3..+3
   },
-  clocks: [ { id: 'c_xxx', name: '', size: 4 | 6 | 8 | 10 | 12, filled: 0, kind: 'danger' | 'project' | 'faction' | 'other', hidden: false } ],
+  clocks: [ { id: 'c_xxx', name: '', size: 4 | 6 | 8 | 10 | 12, filled: 0, kind: 'danger' | 'project' | 'faction' | 'other', hidden: false } ],   // see *Clocks*
   log: [ { at: ISO, by: 'u_or_email', text: '' } ],   // newest first, at most 200
   updatedAt: ISO
 }
@@ -51,7 +51,7 @@ playbooks* and *Crew sheet*).
 - GM (`user.canEdit()` true on Cloudflare; the artifact owner, `user.isOwner()`, in the
   artifact) writes everything.
 - The crew sheet is shared by the whole table: players may change anything under `crew`
-  (including arrays growing or shrinking), fill clocks (`clocks.<i>.filled`) and append to
+  (including arrays growing or shrinking), fill clocks (`clocks.<i>.filled`, see *Clocks*) and append to
   `log`. GM-only: `session`, the structure of `clocks` (add, remove, rename, resize, kind,
   hidden), rewriting or removing old log entries (a `PUT`), and any other top-level key. The
   page does not show GM-only controls (`data-gm`) to players or read-only viewers at all, rather
@@ -67,6 +67,42 @@ playbooks* and *Crew sheet*).
   (`{ log: [entry] }`) is enough; sending the whole log with the entry in front also works.
 - A missing document reads as the default above (every field present, `session.number` 0).
   The first write creates it.
+
+## Clocks
+
+Every clock has an `id`. The page names a new clock `c_<time><random>`; a clock stored without one (a document from
+before ids, a hand edit, a restored file) is named `c_<i>` by its place among the clocks, and a repeated id gets `_`
+added until it is unique. The page names them so when it reads them, and the server stores those names on its next
+write of the document (any write), so the stored shape only gains ids, which the previous release reads as before.
+
+A change to a clock is an operation on that one clock, `clockOps` in a `PATCH`, applied in order to the clocks as
+stored. The server applies them inside its write loop, which re-reads the row on every attempt, so changes to
+different clocks commute: two players ticking different clocks within a poll of each other both land, and a player's
+tick survives the GM renaming, resizing, hiding, adding or removing other clocks.
+
+```js
+{ clockOps: [
+  { id: 'c_x', filled: 3 },                                            // a tick (a wedge, the − / +): the fill, kept within 0..size
+  { id: 'c_x', name: 'Bluecoats', size: 8, kind: 'faction', hidden: true },   // the GM: these fields (a smaller size takes the fill down)
+  { add: { id: 'c_y', name: '', size: 4, filled: 0, kind: 'danger', hidden: false } },   // the GM: append it, once per id
+  { remove: 'c_x' }                                                    // the GM: take it out
+] }
+```
+
+- An op for a clock that is not there does nothing (a tick never brings back a clock the GM removed), and an op
+  applied twice gives what it gave once (the offline queue may send one again).
+- The same clock from two devices: the fill is a value, not a step, so the write the server takes last wins on that
+  clock. Two phones that both tick it from 3 leave it at 4 (one tick, not two); the other clocks never move.
+- Who may do what is judged on the result, by the rule above: a player's ops may only change `filled` (403 otherwise).
+  `hidden` stays presentation only, so a player may fill a hidden clock through the API, as before.
+- The page sends ops only to a store that says it takes them (the campaign ref's `clockOps: true`: the hosted
+  adapter, HOSTING.md); anywhere else (the artifact's own db) it sends the whole `clocks` array as before.
+- The previous release sends a tick as the whole `clocks` array, copied from the document as that page last read it
+  with one fill changed. For one release the server still takes it under the old rule (a player may only change
+  `filled`, the same clocks, else 403), plus one: a player's array that changes the fill of more than one clock was
+  copied before another device's tick, so it is refused (`412 "the clocks changed on another device, try again"`)
+  rather than allowed to undo that tick; the adapter drops it and reloads the table. A whole array from the GM still
+  replaces the clocks. Once no page of the previous release is left, this path can go.
 
 ## Who is on stage
 
@@ -89,10 +125,13 @@ server treats `crew` as opaque JSON.
 - `PUT /api/campaign` body = whole doc (GM only) → stored, `updatedAt` stamped by the server.
 - `PATCH /api/campaign` body = partial doc, same deep merge as characters (objects merge,
   arrays and scalars replace, null deletes), except `log`, whose entries are added as above
-  (`log` must be an array of objects, else 400); player rule above checked against the
-  merged result. Returns `{ doc, updatedAt }`.
+  (`log` must be an array of objects, else 400), and `clockOps`, applied to the clocks after the
+  merge (see *Clocks*; a malformed one is `400 "clockOps: …"`); player rule above checked against the
+  merged result. A player's whole `clocks` array that changes more than one clock's fill is 412
+  (*Clocks*). Returns `{ doc, updatedAt }`.
 - In `PUT` and `PATCH`, `crew` and `session` must be plain objects when present (`400
   "crew must be an object"` / `"session must be an object"`; `null` to delete them counts).
+  `clockOps` in a `PUT` is 400. Every write stores every clock with an id (*Clocks*).
 - `GET /api/characters` and `?since=` responses gain `"campaignUpdatedAt": ISO | null` so the
   adapter knows when to refetch the campaign without a second poll.
 - Table: `campaigns(id TEXT PRIMARY KEY, updated_at TEXT NOT NULL, doc TEXT NOT NULL)`.
@@ -101,10 +140,12 @@ server treats `crew` as opaque JSON.
 ## Adapter (`cf.js`)
 
 `collection('campaign').doc('main')` → `get()`, `set()` (PUT), `update()` (PATCH),
-`onSnapshot()`. The snapshot is `{ id: 'main', exists: true, data() }` (always exists, the
-default doc when missing). It is refreshed when a poll's `campaignUpdatedAt` differs from the
-cached one, and immediately after its own writes, with optimistic local merge as for
-characters. Any other `campaign` doc id, and `collection('campaign')` queries, return empty.
+`onSnapshot()`, and `clockOps: true` (its `update()` takes `clockOps`). The snapshot is
+`{ id: 'main', exists: true, data() }` (always exists, the default doc when missing). It is refreshed
+when a poll's `campaignUpdatedAt` differs from the cached one, and immediately after its own writes,
+with optimistic local merge as for characters (`clockOps` applied by clock id exactly as the server
+applies them, ids named the same way). Any other `campaign` doc id, and `collection('campaign')`
+queries, return empty.
 
 ## Page
 
@@ -138,16 +179,17 @@ characters. Any other `campaign` doc id, and `collection('campaign')` queries, r
   it never writes, and read-only viewers may use it.
 - Touch (screens up to 760 px, or a coarse pointer): every control on the page is at least 40 px tall.
   Buttons, chips and text fields grow; the small marks (tier, rep, heat, wanted, the vault, stacks, the
-  crew sheet's pills and cubes) keep their size and get an invisible `::before` hit area, 40 px tall and
-  as wide as their pitch, so neighbours never take each other's taps (checked by `app/checks/campaign.js`
-  and `crewsheet.js`). The shared clocks are drawn 104 px wide, with a − / + beside the count (one write
-  of `clocks.<i>.filled`, the same patch a wedge makes; players may use it).
+  crew sheet's pills, cubes, ability circles, upgrade boxes and contact dots) keep their size and get an invisible
+  `::before` hit area, 40 px tall and as wide as their pitch, in rows at least 40 px tall, so neighbours never take
+  each other's taps (checked by `app/checks/campaign.js` and `crewsheet.js`). The shared clocks are drawn 104 px wide, with a − / + beside the count (one write,
+  `{ id, filled }` for that clock, the same op a wedge makes; players may use it).
 - Words: the page speaks of characters and saving, never of "files" or "filing" ("No characters yet.", "No owner
   yet" for a character without a player, "Saved Aldo Crane.", "Removed."); with no database it says "The table is
   not available in this view." Home's "Session 3 has started at the table" nudge is a "Join session 3" button: it
   opens the player's sheet scrolled to its own Join bar (the sheet's Join writes `play.session`, as before).
 - Saves go through `doc.update(patch)` with only the changed top-level fields of `crew`,
-  `clocks`, `session`, `log` (and the changed `schedule` leaves); the page never writes on open.
+  `session`, `log`, the changed `schedule` leaves, and the clock changes as `clockOps` (the whole `clocks` array to a
+  store without them, see *Clocks*); the page never writes on open.
 - Starting a session sets `session = { number: n + 1, startedAt: now, endedAt: null }` and
   appends a log line. It does not change characters; their own Session box stays per sheet.
   In the same write it updates the schedule: `next` goes when it is within 12 h, its answers
