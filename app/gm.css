@@ -188,15 +188,6 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .pp-find input { min-height: 36px; padding: 5px 8px; font-size: 13px; }
 #gm-page .gm-mapopts > summary { font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; }
 #gm-page .gm-mapopts > summary .gm-dim { font: 400 11.5px/1 var(--font-mono); text-transform: none; letter-spacing: 0; }
-/* an engagement factor: three chips, +1d and −1d carrying the factor's two statements */
-#gm-page .gm-tri { gap: 0; }
-#gm-page .gm-triseg { display: flex; width: 100%; justify-self: stretch; }
-#gm-page .gm-trichip { flex: 1 1 0; min-width: 0; display: grid; gap: 3px; justify-items: center; align-content: center; text-align: center; padding: 6px 6px; min-height: 44px; }
-#gm-page .gm-trichip[data-v="0"] { flex: 0 0 52px; }
-#gm-page .gm-trichip b { font: 700 13px/1 var(--font-mono); }
-#gm-page .gm-trichip small { font: 400 11px/1.25 var(--font-text); text-transform: none; letter-spacing: 0; color: var(--ink-soft); max-width: 100%; }
-#gm-page .gm-trichip[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
-#gm-page .gm-trichip[aria-pressed="true"] small, #gm-page .gm-trichip:hover small { color: inherit; }
 #gm-page .gm-rulesq { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
 #gm-page .gm-rulesq .gm-field { flex: 1 1 220px; }
 
@@ -632,18 +623,31 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-page .gm-bar.out .gm-save { display: none; }
   body.gm-app #gm-page .gm-segbar { top: var(--gm-bar-h, 44px); }
 }
-/* the engagement roll with the table's own dice: tap the highest die (or Crit) under Roll engagement */
-#gm-page .gm-dice { gap: 6px; border-top: 1px solid var(--hair); padding-top: 8px; }
-#gm-page .gm-dice .gm-lab { color: var(--ink); font-size: 12px; }
-#gm-page .gm-dicerow { display: flex; flex-wrap: wrap; gap: 6px; }
-#gm-page .gm-die { flex: 1 1 44px; min-height: 52px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; font: 900 22px/1 var(--font-poster); letter-spacing: 0; text-transform: none; box-shadow: 2px 2px 0 var(--shadow-ink); }
-#gm-page .gm-die.gm-crit { flex: 3 1 130px; font: 900 13px/1.1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; }
-#gm-page .gm-die:disabled { opacity: .45; cursor: default; box-shadow: none; }
-#gm-page .gm-die:disabled:hover { background: var(--card); color: var(--ink); border-color: var(--rule); }
-#gm-page .gm-die:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+/* ---------- the Score panel (J): the outline of a heist (gm-page.js renderScore; GM.md "Score (J)") ----------
+   Six pickers and Roll a score in the same wrapping row as the other generators. On the card every row that can be rolled again
+   has a small ↻ at its right (44 px on a touch screen), and the pitch one in its corner; the cloud folds away. On a phone the
+   label sits over its row, so the text has the width. */
+#gm-page .gm-sc-ctl .gm-field { flex: 1 1 150px; }
+#gm-page .gm-sc-want { position: relative; padding-right: 46px; }
+#gm-page .gm-sc-want .gm-bump { position: absolute; top: 4px; right: 4px; }
+#gm-page .gm-sc-grid dd { display: flex; align-items: flex-start; gap: 6px; }
+#gm-page .gm-sc-md { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+#gm-page .gm-sc-md p + p { margin-top: 4px; }
+#gm-page .gm-bump { flex: none; width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font: 700 17px/1 var(--font-text); border: 1.5px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; }
+#gm-page .gm-bump:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+#gm-page .gm-bump:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+/* a name in the rail's On stage box and its Job button, side by side */
+#gm-page .gm-onstage { display: inline-flex; align-items: stretch; gap: 2px; }
+@media (pointer: coarse) { #gm-page .gm-bump { width: 44px; height: 44px; } #gm-page .gm-sc-want { padding-right: 56px; } }
+@media (max-width: 599px) {
+  #gm-page .gm-bump { width: 44px; height: 44px; }
+  #gm-page .gm-sc-want { padding-right: 56px; }
+  #gm-page .gm-sc-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  #gm-page .gm-sc-grid dt { margin-top: 8px; }
+}
 /* ---------- the Downtime panel (D): personal business (gm-page.js renderDowntime; GM.md "Downtime (D)") ----------
    Who and Activity are chips; the activity's one row of buttons rolls the card on a tap (the table's dice are the roll, so the
-   buttons are as big as the engagement dice). On an Indulge vice card the morning after sits right under the scene: a d100 box,
+   buttons are big enough to hit with the dice in the other hand). On an Indulge vice card the morning after sits right under the scene: a d100 box,
    then the two cards it deals, each with Keep; a Mishap takes the alarm colour, since after an overindulgence it is what the GM
    reads first. */
 #gm-page .gm-dt-ctl { display: grid; gap: 12px; padding: 10px; }

@@ -1,15 +1,18 @@
 # GM tools: the API and the secrecy contract
 
-The `#gm` page (the console with its four Situations, the location generator, street scenes, the engagement roll and the
+The `#gm` page (the console with its four Situations, the location generator, street scenes, the score generator and the
 downtime cards) and the `#display` page (an iPad signed in as the GM) run on three GM-only endpoints. The generators' tables hold '68
 text and GM-only secrets, so they never enter git (the downtime cards' tables are original writing, so they are in git, in
 `app/downtime-tables.js`): the GM builds a **pack** from the vault on their own PC (`npm run gm:pack`, into the git-ignored
 `gm-private/`) and uploads it, from the browser or with `npm run gm:push -- --only pack --yes` (see `SYNC.md`, which also
 moves what happened at the table back into the vault). Code: `functions/_lib/gm.js`, `functions/api/gm/*.js`; tables in
-`migrations/0004_gm.sql`. The pack parts are `console`, `location`, `campaign`, `npc`, `scenes`, `engagement`, `prep`,
-`screen` and `downtime` (the last three optional; `scripts/gm-pack.mjs` lists what each holds). The `downtime` part carries the
+`migrations/0004_gm.sql`. The pack parts are `console`, `location`, `campaign`, `npc`, `scenes`, `score`, `prep`,
+`screen` and `downtime` (`score` and the last three optional; `scripts/gm-pack.mjs` lists what each holds). The `downtime` part carries the
 house rule's two d100 tables, the Benefits and the Mishaps (`T.benefit`, `T.mishap`, from the vault note with `gm_downtime: true`),
-and is laid over the Downtime panel's built-in tables (see Downtime (D) below).
+and is laid over the Downtime panel's built-in tables (see Downtime (D) below). The `score` part carries the score generator's tables (`T`,
+from `Tools/blades-68-score-generator.md`) with the location part's faction dossiers, district names and notables, and building types laid
+over them as `T.loc`, so each has one source; the `campaign` part also carries `crew`, the crew sheet's type, Tier, hold, enemies and
+abilities (see Score (J) below). The `engagement` part went with Engage.
 
 ## Secrecy rules (server enforced)
 
@@ -84,7 +87,7 @@ fails and nobody is known, nothing is purged.
 - **First run.** With no pack on the server the page asks for `gm-private/b68-gm-pack.json` (built by `npm run gm:pack`),
   checks it (`format` 1, `console` and `location` parts with `T`), previews the parts and uploads one part per
   `importPart` with a progress bar; parts the server holds that the file lacks are removed. Each module checks its own part
-  (`B68GmConsole`, `B68GmLocation`, `B68GmNpc`, `B68GmScenes`, `B68GmEngagement`: `check(T)`; `B68GmDowntime`: `check(T, part)`, the part laid
+  (`B68GmConsole`, `B68GmLocation`, `B68GmNpc`, `B68GmScenes`, `B68GmScore`: `check(T)`; `B68GmDowntime`: `check(T, part)`, the part laid
   over the built-in tables): the table entries a part lacks are listed
   as a **warning** in the preview and, for the pack the page loads, in the Menu under **Pack check** (with one toast per page load).
   A warning never stops the upload, and a roll that needs a missing entry uses a neutral word. **Update pack** does the same
@@ -96,10 +99,10 @@ fails and nobody is known, nothing is purged.
   the **Scene** line (one row of labelled chips, `Scene: any · District: any · Aim: anyone · NPC: … · Threat: 3`, that opens
   to the scene, district, PC, NPC and threat controls; closed by default at every width), the four Situation buttons, the
   card, "Earlier:" the last five rolls, and **More tables** (the nine single tables, folded) |
-  a side panel with **Prep (R)**, **GM screen (T)**, **Location (B)**, **Street (S)**, **Engage (E)**, **NPC (N)**, **Downtime (D)**, **Cards (O)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
+  a side panel with **Prep (R)**, **GM screen (T)**, **Location (B)**, **Street (S)**, **Score (J)**, **NPC (N)**, **Downtime (D)**, **Cards (O)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
   vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on
   stage) | the capture bar at the foot (buckets, the input, **File**, "N filed", **File last roll**). 600–1100 px: two columns, the rail below. Phone: the same bar as the laptop, 44 px
-  (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | Engage | NPC / Downtime | Cards | GM screen | iPad | State
+  (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | Score | NPC / Downtime | Cards | GM screen | iPad | State
   bar in two full rows, six then five (every segment in reach, nothing to drag sideways), both stuck to the top; the Position switch first,
   **Now in** (its select moves into the Scene line here) and the Scene line, the situations a 2 × 2 grid, the other controls behind the
   Scene line, capture on a floating button. After a
@@ -118,7 +121,7 @@ fails and nobody is known, nothing is purged.
   scroll on their own and capture sits fixed at the foot, so a
   long Prep note or the GM screen never carries the console or the rail away; toasts sit above the capture bar, never over its
   input. The side tabs are one row with their keys showing at 1280 px (Prep, GM screen |
-  Location, Street, Engage, NPC, Downtime | Cards, iPad). Prep and the GM screen show their sections as an outline beside the text, the one
+  Location, Street, Score, NPC, Downtime | Cards, iPad). Prep and the GM screen show their sections as an outline beside the text, the one
   being read marked. **Focus** (`F`, or the button by the tabs) shrinks the console to its keys on any tab (it replaces Prep's
   Wide, and shares its setting, `b68.gm.prepWide`); a roll made in Focus leaves Focus so the card shows (a toast says so, once
   per page load). Empty rail boxes are one line. Below 1100 px the page scrolls under the sticky bar. `body.gm-app` turns it
@@ -139,9 +142,10 @@ fails and nobody is known, nothing is purged.
   - **Naming a speaker from a line**: in the iPad panel's newest lines, the speaker is a button; it opens **Who is who**
     on that speaker's box. `Enter` saves the name.
   - **Update pack asks first** when the file would lose prep the app has (a part gone, a prep note gone or much
-    shorter): the button reads **Upload anyway** and confirms (the same guard as `gm:pack` and `gm:push`, SYNC.md).
-- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (`5`–`9` do nothing: the single tables have no keys), `R` `B` `N` `S` `E` `D` `O` `T` `I` switch the panel
-  (Prep, Location, NPC, Street scene, Engagement, Downtime, Cards, GM screen, iPad; `R` and `T` also put the cursor in that pane's find box, so typing
+    shorter): the button reads **Upload anyway** and confirms (the same guard as `gm:pack` and `gm:push`, SYNC.md). A part the app
+    retired on purpose (`engagement`, Engage's) is not a loss, in either guard (`RETIRED_PARTS`).
+- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (`5`–`9` do nothing: the single tables have no keys), `R` `B` `N` `S` `J` `D` `O` `T` `I` switch the panel
+  (Prep, Location, NPC, Street scene, Score, Downtime, Cards, GM screen, iPad; `R` and `T` also put the cursor in that pane's find box, so typing
   lands there and not on the shortcuts), `F` Focus, `/` or `Ctrl+K` Find, `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
   the last roll under "Rolled at the table", `Shift+H`, or `H` twice within a second, blanks the screen until any key or tap (one stray `H` does
   nothing; the first alone says how, once per page load), `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
@@ -175,7 +179,9 @@ fails and nobody is known, nothing is purged.
   move when Now in does; Now in changes what the *next* roll starts from, never a stored card. A tool's stored choice (`con.live.district`,
   `loc.ui.district`, `scn.ui.sel`, `npc.ui.district`) is `''` or absent (never set here: follows Now in), `'*'` (any) or a name (its
   own); `'*'` never reaches a roll, and a state from before Now in reads the same (a district already set is that tool's own pick).
-  Checks: `gm-page.test.mjs` (12a–12f), `gm.e2e.mjs`, `gm-scenes.e2e.mjs`, `gm-npc-panel.e2e.mjs`.
+  The Score panel's **Where** is the exception: its default is where the *target* is (the score happens wherever the target is), and
+  **Now in: <district>** is one of its choices (`sc.ui.district` is `''`, `'now'`, `'*'` or a name; a card stores the district it resolved to).
+  Checks: `gm-page.test.mjs` (12a–12f, 18d), `gm.e2e.mjs`, `gm-scenes.e2e.mjs`, `gm-npc-panel.e2e.mjs`.
 - **Location.** The generator's controls and Roll, then the card (since 15/10/2026), then the map. A roll draws the GM-layer
   **rings** map at once (the controls go to rings / GM, the theme stays; Draw is for another view, theme or layer).
   - **The glance card** (`B68GmLocation.glance`): the name and place, **Say** (the first line of the street
@@ -215,27 +221,59 @@ fails and nobody is known, nothing is purged.
   threats and a hidden target, and refuses to send it ("This view would name a hidden room: use Rings or Iso, or reveal
   more bands"); the in-page Player draw shows the same warning and the Player SVG download is refused. `rings` and `iso`
   are clean.
-- **Street (S) and Engage (E).** Two more side panels, ports of the vault pages `Tools/blades-68-district-scenes.md` and
-  `Tools/blades-68-engagement-roll.md` (`app/gm/scenes.js`, `app/gm/engagement.js`; tables from the pack parts `scenes` and
-  `engagement`; both optional: an older pack shows "The pack has no scenes part. Update the pack." in the panel).
-  **Street**: a district select (or anywhere) and **Roll a street scene**: three read-aloud paragraphs, the four ratings, and a
-  GM grid (landmark, who is out, what is in the way, word out, factions, the district rule). **Read-aloud to the iPad** sends
-  only the three paragraphs as plain text (never the notable, the rumour or the rule). **Engage**: approach, loadout (Quiet
-  3 / Loud 6) and three chips per factor (**+1d** carrying the factor's plus statement, **0**, **−1d** its minus statement, so
-  which is which reads at a glance); the card shows the pool before a roll, **Roll engagement** rolls it in the app
-  (a 0d pool rolls two and keeps the lowest) and the card gives the position, the dice and the closing "cut to the first
-  obstacle" line. **Everyone rolls physical dice**, so under Roll engagement sits a row **Rolled at the table: highest die**
-  with the buttons `1 2 3 4 5 6` and **Crit (two 6s)** (disabled under 2d): the GM rolls the pool, taps the highest die, and
-  gets the card the app's roll would give for that result (position, how, the closing line; the Roll row says "Rolled at the
-  table"). A 0d pool rolls two dice and keeps the LOWEST, so its row reads **Rolled at the table: lowest die** and has no crit.
-  Both file a card under `cards.scenes` / `cards.engagement` (an app roll `{ hid, seed, ui, label, at }`, a table roll
-  `{ hid, id: 'engagement', ui, phys: { best, crit }, label, at }` with no seed and a label ending "table 4" / "table crit" /
-  "table low 2"; the street scene keeps its repeat-guard in `mem.scenes`, the engagement roll has none), five Earlier per tool, Pin, Copy and `L`. A reload
-  or an Earlier click redraws the same card (from the seed, or from the result called at the table). A stored card is replaced, never merged:
-  the way of rolling it does not use is sent as null, so a table roll never keeps an old seed nor an app roll an old `phys`.
-  Changing an engagement control drops the stored roll (the Earlier row
-  keeps it) and shows the pool again; the controls live in `eng.ui` and `scn.ui`. Parity with the vault pages:
-  `node scripts/gm-parity.mjs --scenes --engagement` (see the header of that script for the one deliberate difference).
+- **Street (S).** A side panel, a port of the vault page `Tools/blades-68-district-scenes.md` (`app/gm/scenes.js`; tables from the
+  pack part `scenes`, optional: an older pack shows "The pack has no scenes part. Update the pack." in the panel). A district select
+  (or anywhere) and **Roll a street scene**: three read-aloud paragraphs, the four ratings, and a GM grid (landmark, who is out, what
+  is in the way, word out, factions, the district rule). **Read-aloud to the iPad** sends only the three paragraphs as plain text
+  (never the notable, the rumour or the rule). The card is filed under `cards.scenes` (`{ hid, seed, ui, label, at }`; the repeat-guard
+  is `mem.scenes`), five Earlier, Pin, Copy and `L`. A reload or an Earlier click redraws the same card from its seed; the district
+  control lives in `scn.ui`. Parity with the vault page: `node scripts/gm-parity.mjs --scenes`. Engage (E, the engagement roll
+  calculator) went on 17/10/2026, with its `engagement` pack part and the `eng` / `cards.engagement` / `hist.engagement` keys of the
+  notes (the page drops them from the state once); the vault page `Tools/blades-68-engagement-roll.md` stays as a reference.
+- **Score (`J`; on a phone the Score segment).** The outline of a heist, rolled for inspiration: for when the table is lost, has a rough idea,
+  or an NPC turns up and the players start poking around for a favour. It took Engage's place in the tab row. `app/gm/score.js`
+  (`B68GmScore`: pure logic, seeded, no DOM and no table text) draws it from the pack part `score` (optional: an older pack shows "The pack
+  has no score part. Update the pack." in the panel, and the Pack check names what a part lacks), the campaign part and the GM's choices.
+  **Nothing in this panel goes to the iPad**: **To Cards** is the one road to the players, through the Cards panel's own Show buttons.
+  - **The pickers** (each on **any** by default; they are the planning meeting's slots, and the GM can set none, one or several):
+    **Who's asking** (an NPC on stage, the last NPC roll, the cast, a campaign NPC, a faction, a kind of client from the tables, or
+    **nobody**), **Target** (a faction with its Tier, the crew's enemies, someone on bad terms from the board's standing), **Job** (the
+    crew's favoured operations first, then all), **Where** (the default is where the target is; or Now in, anywhere, or a district), **Crew**
+    and **Tier**. Crew and Tier follow the table: the campaign document's `crew.type` and `crew.tier`, else the pack's crew sheet
+    (`campaign.crew`), shown as "<crew> (the crew)"; picking another is for this panel only and never touches the table. An NPC picked as
+    the client is kept with the choices as the strings the page resolved when they were picked (name, faction, district, role, want), so a
+    replay never depends on a list that changed. The pickers follow the table, the stage and the last NPC roll, but never redraw under a
+    list the GM has open.
+  - **The card.** Title ("<job> · <target>"), sub (Tier · district · stacks, the scope), chips, then the **pitch** in the lead box (one of
+    the crew's own opportunity seeds from the tables with its enemy phrase read as the target, or a composed line), **Who's asking**,
+    **The job**, **Target**, **Where**, **Why now**, **Twist**, **Ways in** and **Pays** (the crew's Tier in dice, 0d being two dice
+    keep the lowest, plus the target's Tier and a district's pay; who pays), and **The cloud**, folded (open or shut is remembered per
+    device, with the Location folds): By the book, In the way, Their friends, Right now, Secret, Clock, Engagement (the Tier gap and the
+    crew's ability notes), Called Shot, Even if it goes well, Also earns and District. A row the tables cannot fill is left out.
+  - **↻ on a row** (the pitch, Who's asking, The job, Target, Where, Why now, Twist, Pays) rolls just that row again and keeps the rest;
+    what reads the row follows (a new target brings a new place, new friends and new pay). Every section of a roll draws from its own
+    seeded stream (`fnv(seed:section:bump)`), so ↻ raises that section's bump, the card keeps its seed, and no section before it moves;
+    the new draw is repeated (up to 12 times) when it lands on the text already shown. A row the GM fixed with a picker has no ↻, and
+    neither has one the tables leave a single choice for. The card and its Earlier entry change in place (no new entry), and a reload or
+    an Earlier click redraws exactly the same card.
+  - **Actions.** **To Cards** adds the score to the Cards panel as an opportunity card (From, Client, Target, Type, note, Payout; 120
+    characters a field; after the last, eight at most) and says so in a toast. **Roll the site** opens Location with its pickers set from
+    the score, as Score sites does, and rolls (what the location generator lacks is named in a toast and rolled on any). **A face** opens
+    NPC with the faction and district pickers set from the client's faction, or the target's when nobody asks (not offered when an NPC
+    asks). **Start the clock** puts the card's danger clock on the table's clocks, hidden, once (as Downtime does it; the card keeps the
+    clock's id under `started`, so the button stays done after a reload). **Pin**, **Copy**, `L` (files "Score: <label>") and Earlier (five).
+  - **A job for them**, on the NPC card, and **Job**, beside each name in the rail's On stage box, make that NPC the client, open Score and roll.
+  - **State:** `sc.ui` `{ client, who, target, job, district, crew, tier }` (the pickers); `cards.score` `{ hid, seed, ui, mem, bump?, label, at,
+    started? }` (`ui` the choices as the roll resolved them, `mem` the repeat guard before the roll, `bump` the sections rolled again);
+    `hist.score` (five); `mem.score` (the guard itself: a short hash of each recent pick, per section). Never any table text.
+  - **The pack.** `npm run gm:pack` builds the `score` part from the vault page `Tools/blades-68-score-generator.md` (`buildScore` in
+    `scripts/gm-pack.mjs`), lays the location part's dossiers, district names, notables and building types over it as `T.loc`, and reads the
+    crew sheet (the active note under `Campaigns/Group/` with `crew_type`) into `campaign.crew`; what it finds wrong is a warning (the
+    script's header lists the checks). There is no parity script: the machinery is designed in the app, and the vault page's own roller is
+    a simpler cousin.
+  - Checks: `gm-score.test.mjs` (the module; with `B68_SCORE_PACK` set to a pack file, or `gm-private/b68-gm-pack.json` present, it also runs
+    on the real tables and prints counts only), `gm-score-export.test.mjs` (the exporter, on an invented vault), `gm-page.test.mjs`
+    (18a–18n), `gm-score.e2e.mjs`, and the secrecy sweeps in `gm-nosecrets.test.mjs`.
 - **NPC (`N`).** At the top the generator: **Roll an NPC** draws a card (the vault generator's port, `app/gm/npc.js`, fed by the
   pack's `npc` part and the campaign part): a portrait, what the table could see, what they want, how to play them (cast,
   status, dial, mannerism, verb), the levers, and the faction's dossier folded away. Above the button three pickers, each on
@@ -378,7 +416,8 @@ fails and nobody is known, nothing is purged.
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,
   so a reload or an Earlier click redraws exactly the same card even after a callback was used or a bargain collected),
   `hist` (five per tool), `npc` (`ui`: the NPC pickers), `npcgen` (`{ seed, mem, at, s?, ui? }` per generated NPC id: the
-  roll that made them, `ui` only when a picker was set), `dt` (`ui`: the Downtime panel's choices; its cards are `cards.downtime` /
+  roll that made them, `ui` only when a picker was set), `sc` (`ui`: the Score panel's choices; its cards are `cards.score` /
+  `hist.score` / `mem.score`, see Score (J)), `dt` (`ui`: the Downtime panel's choices; its cards are `cards.downtime` /
   `hist.downtime` / `mem.downtime`, see Downtime (D)), `pins` (50, text), `capture` (400, and 128 KiB: `{ id, bucket: n|x|m|r, text, at, s? }`),
   `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab), `opps` (the Cards panel), `sites` (Score sites) and `now` (`{ district }`: Now in). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.

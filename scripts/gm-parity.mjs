@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Parity check (local only): the vault's GM tools against their ports in app/gm/. Five modes:
+// Parity check (local only): the vault's GM tools against their ports in app/gm/. Four modes:
 //
 //   node scripts/gm-parity.mjs [mode] [--vault <dir>] [--pack <pack.json>] [--seed <uint>] [--app <dir>]
 //     --classic      (default) every classic console button x --n cards (default 40): view.js vs console.js roll()
@@ -13,12 +13,8 @@
 //                    object, the read-aloud lines, the grid and ratings, and the repeat-guard memory after the roll
 //                    (one deliberate difference, patched in the copy of the page that is run: the notable repeat-guard
 //                    is keyed by name in the port, because the vault's never fires once the memory is JSON-cloned)
-//     --engagement   --en cases (default 400) of the vault engagement page vs engagement.js: every line the page puts on the
-//                    card, before a roll and after, with the page's Math.random and the port's dice on one seeded stream
-//                    (one deliberate difference: a pool at or below zero is titled "<approach> — 0d (2d, keep lowest)" in
-//                    the port, never "-1d"; the vault's title line is read through the port's titlePool() before comparing)
-//     --all          all five
-//   --pack defaults to $B68_PACK, then gm-private/b68-gm-pack.json. --npc, --scenes and --engagement need a pack with that part
+//     --all          all four
+//   --pack defaults to $B68_PACK, then gm-private/b68-gm-pack.json. --npc and --scenes need a pack with that part
 //   (npm run gm:pack builds one). --app points at another app/ directory (a mutated copy, to prove a mode can fail).
 //   Exit 0 = every compared case identical; 1 = any mismatch; 2 = a requested mode could not run (vault page, pack or
 //   pack part missing). Prints counts, ids, seeds, field names and line indexes only, never table text.
@@ -46,10 +42,10 @@ const VAULT = arg('--vault', process.env.B68_VAULT || 'C:/Vault/Hazel Second Bra
 const PACK = path.resolve(REPO, arg('--pack', process.env.B68_PACK || 'gm-private/b68-gm-pack.json'));
 const APP = path.resolve(arg('--app', path.join(REPO, 'app')));
 const N = Number(arg('--n', 40)), SN = Number(arg('--sn', 20)), NN = Number(arg('--nn', 300));
-const SCN = Number(arg('--scn', 300)), EN_N = Number(arg('--en', 400));
+const SCN = Number(arg('--scn', 300));
 const SEED = Number(arg('--seed', 20261017)) >>> 0;
 const ALL = flag('--all');
-const ALL_MODES = ['classic', 'situations', 'npc', 'scenes', 'engagement'];
+const ALL_MODES = ['classic', 'situations', 'npc', 'scenes'];
 const MODES = ALL ? ALL_MODES : ALL_MODES.filter((m) => flag('--' + m));
 if (!MODES.length) MODES.push('classic');
 
@@ -292,7 +288,7 @@ async function npc() {
     note: hulls + ' Hulls among them' + (npcPart.F ? '' : '; the pack has no figure map (F), which the generator does not read'), fails });
 }
 
-/* ============================== the vault's pages for scenes and engagement ============================== */
+/* ============================== the vault's page for the district scenes ============================== */
 function pageBlock(file, mode) {
   if (!fs.existsSync(file)) return { cannot: 'no vault page at ' + file };
   const text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
@@ -359,60 +355,8 @@ async function scenes() {
     note: seenDistricts.size + '/' + names.length + ' districts among them; one deliberate difference: the notable repeat-guard is keyed by name', fails });
 }
 
-/* ============================== --engagement ============================== */
-async function engagement() {
-  const page = pageBlock(path.join(VAULT, ROOT, 'Tools/blades-68-engagement-roll.md'), 'engagement');
-  if (page.cannot) return cannot('engagement', page.cannot);
-  if (!pack || !pack.parts || !pack.parts.engagement) return cannot('engagement', 'the pack at ' + PACK + ' has no engagement part (build one with gm-pack.mjs)');
-  const EN = require(path.join(APP, 'gm', 'engagement.js'));
-  const T = pack.parts.engagement.T;
-  const en = EN.create({ T });
-  // the page is booted once (its own draw(false) runs); then each case sets the controls and calls draw() itself
-  const { el, log } = recorder();
-  const next = { f: () => 0 };
-  const ctx = { dv: { container: el(), el: (t, md) => { log.push(md); return el(); } }, console, document: { getElementById: () => true, head: el() }, window: {}, __next: () => next.f() };
-  ctx.window = ctx;
-  vm.createContext(ctx);
-  vm.runInContext('Math.random = () => __next();', ctx);
-  const wrapped = '(function (dv, document, window) {\n' + page.block +
-    '\n;return function (app, load, mods, doRoll) { appSel.value = app; loadSel.value = load; for (const f of T.factor) states[f.id].value = String(mods[f.id]); draw(doRoll); };\n})(dv, document, window)';
-  let drive;
-  try { drive = vm.runInContext(wrapped, ctx, { filename: 'engagement-roll.md' }); } catch (e) { return cannot('engagement', 'the vault page did not run: ' + e.message); }
-  const rng = C.seedRng((SEED ^ 0xe46a6e) >>> 0);
-  const pick = (a) => a[Math.floor(rng() * a.length)];
-  // the one deliberate difference (B13): the vault titles the pool as it stands ("Smash — -1d"); the port titles any pool
-  // at or below zero "0d (2d, keep lowest)". The vault's title (its first line) is read through the port's rule.
-  if (typeof EN.titlePool !== 'function') return cannot('engagement', 'engagement.js has no titlePool(): update the parity script');
-  const titled = (lines) => lines.map((l, k) => k ? l : String(l).replace(/^(.*) — (-?\d+)d$/, (m, a, n) => a + ' — ' + EN.titlePool(Number(n))));
-  let okRoll = 0, okPrev = 0, crit = 0, zero = 0, below = 0;
-  const fails = [];
-  for (let i = 0; i < EN_N; i++) {
-    const app = pick(T.approach)[0], load = pick(T.loadout).value;
-    const mods = {}; for (const f of T.factor) mods[f.id] = pick([-1, 0, 0, 1]);
-    const seed = (rng() * 4294967296) >>> 0;
-    // the preview
-    drive(app, load, mods, false);
-    const vPrev = log.slice();
-    const pc = en.card({ approach: app, load, mods });
-    const pPrev = [pc.meta.title, pc.meta.sub].concat(pc.lines.map(l => l.md));
-    if (pc.pool <= 0) below++;
-    if (same(titled(vPrev), pPrev)) okPrev++; else fails.push({ i, preview: 'line ' + firstDiff(titled(vPrev), pPrev) });
-    // the roll: the page's Math.random is the same seeded stream the port rolls with
-    const stream = EN.seedRng(seed);
-    next.f = stream;
-    drive(app, load, mods, true);
-    const vRoll = log.slice();
-    const pr = en.roll({ approach: app, load, mods }, { seed });
-    const pRoll = [pr.meta.title, pr.meta.sub, pr.lines[0].md, pr.lines[1].md, pr.lines[2].rows[0].k, pr.lines[2].rows[0].md, pr.lines[3].md];
-    if (pr.crit) crit++; if (pr.zero) zero++;
-    if (same(titled(vRoll), pRoll)) okRoll++; else fails.push({ i, seed, roll: 'line ' + firstDiff(titled(vRoll), pRoll), vaultLines: vRoll.length, portLines: pRoll.length });
-  }
-  results.push({ mode: 'engagement', cases: EN_N, ok: okRoll, unit: 'rolled cards (every line)', extra: [['previews identical', okPrev, EN_N]],
-    note: crit + ' criticals and ' + zero + ' zero-dice pools among them (' + below + ' previews at or below zero, titled by the port\'s rule)', fails });
-}
-
 /* ============================== run and report ============================== */
-for (const m of MODES) await ({ classic, situations, npc, scenes, engagement })[m]();
+for (const m of MODES) await ({ classic, situations, npc, scenes })[m]();
 let bad = false, cant = false;
 for (const r of results) {
   if (r.cannot) { cant = true; console.log(`${r.mode}: CANNOT RUN (${r.cannot})`); continue; }

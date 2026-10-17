@@ -181,7 +181,8 @@ await test('4c. sizes are bytes (UTF-8), not characters', () => {
    ===================================================================================================================== */
 const FIXC = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'console-pack.json'), 'utf8')).parts;
 const FIXS = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'scenes-pack.json'), 'utf8'));
-const SC = require(path.join(ROOT, 'app', 'gm', 'scenes.js')), EN = require(path.join(ROOT, 'app', 'gm', 'engagement.js'));
+const SC = require(path.join(ROOT, 'app', 'gm', 'scenes.js')), SCM = require(path.join(ROOT, 'app', 'gm', 'score.js'));
+const SCFIX = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'score-pack.json'), 'utf8')).parts;
 const DT = require(path.join(ROOT, 'app', 'gm', 'downtime.js'));
 const DTT = require(path.join(ROOT, 'app', 'downtime-tables.js'));      /* the built-in tables (B68DowntimeTables), loaded before the module */
 const dtMk = (cfg) => DT.create(Object.assign({ T: DTT.T, places: DTT.PLACES }, cfg || {}));
@@ -335,7 +336,7 @@ function fakeBrowser(over) {
   const ls = new Map(), toasts = [];
   const W = { document: doc, localStorage: { getItem: (k) => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => { ls.set(k, String(v)); }, removeItem: (k) => { ls.delete(k); } },
     matchMedia: () => ({ matches: false }), addEventListener() {}, confirm: () => true, open() {}, B68: { toast: (m, bad) => toasts.push([m, !!bad]) },
-    B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmEngagement: EN, B68GmDowntime: DT, B68DowntimeTables: DTT, B68Content: CT, setTimeout, clearTimeout, console };
+    B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmScore: SCM, B68GmDowntime: DT, B68DowntimeTables: DTT, B68Content: CT, setTimeout, clearTimeout, console };
   W.self = W; Object.assign(W, over || {});
   return { W, doc, ls, toasts };
 }
@@ -348,7 +349,7 @@ function loadPage(W) {
 function fakeGm(camp, extra) {
   const server = { doc: {}, at: 0, patches: [], displays: [] };
   const parts = { console: { version: 'c1', src: {}, body: FIXC.console }, campaign: { version: 'k1', src: FIXC.campaign.src || {}, body: camp || FIXC.campaign }, location: { version: 'l1', src: {}, body: { T: FIXL.T, extra: FIXL.extra } },
-    scenes: { version: 's1', src: {}, body: { T: FIXS.parts.scenes.T } }, engagement: { version: 'e1', src: {}, body: { T: FIXS.parts.engagement.T } } };
+    scenes: { version: 's1', src: {}, body: { T: FIXS.parts.scenes.T } }, score: { version: 'sc1', src: {}, body: { T: SCFIX.score.T } } };
   Object.assign(parts, extra || {});      /* more pack parts for one test (screen, npc), or a replacement of one */
   const gm = {
     pack: async () => ({ version: 'v1', parts: Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, { version: v.version }])) }),
@@ -551,23 +552,23 @@ await test('7c. boot.js wires it: the box goes under the greeting, only on the h
   assert.ok(idx.indexOf('<script src="name-edit.js">') > 0 && idx.indexOf('<script src="name-edit.js">') < idx.indexOf('<script src="boot.js">'), 'loaded before boot.js');
 });
 
-/* ---------- 8. the street scene roller (S) and the engagement roll (E) ---------- */
+/* ---------- 8. the street scene roller (S) ---------- */
 const cardOf = (h, sel) => (h.q(sel).textContent || '').replace(/\s+/g, ' ').trim();
 const change = (el, v) => { el.value = String(v); dispatch(el, 'change'); };
 const isObjLike = (v) => v && typeof v === 'object' && !Array.isArray(v);
-const T_SC = FIXS.parts.scenes.T, T_EN = FIXS.parts.engagement.T;
+const T_SC = FIXS.parts.scenes.T;
 
-await test('8a. keyAction: S opens the street scene panel and E the engagement panel (no longer reserved)', () => {
+await test('8a. keyAction: S opens the street scene panel; E opens nothing any more (Engage went)', () => {
   assert.deepEqual(P.keyAction({ key: 's' }), { type: 'panel', panel: 'scenes' });
-  assert.deepEqual(P.keyAction({ key: 'E' }), { type: 'panel', panel: 'engagement' });
+  assert.equal(P.keyAction({ key: 'E' }), null); assert.equal(P.keyAction({ key: 'e' }), null);
   assert.equal(P.keyAction({ key: 's', ctrlKey: true }), null);
-  assert.equal(P.keyAction({ key: 'e', typing: true }), null);
+  assert.equal(P.keyAction({ key: 's', typing: true }), null);
 });
 
 await test('8b. S opens the panel; Roll files the card (seed, controls, memory BEFORE the roll) and a history entry; the card has the read-aloud, ratings and grid', async () => {
   const fg = fakeGm(), h = await openPage({ fg });
-  assert.ok(h.q('[data-pane="scenes"]') && h.q('[data-pane="engagement"]') && h.q('#gm-scn') && h.q('#gm-eng'));
-  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,engagement,npc,downtime,cards,ipad');
+  assert.ok(h.q('[data-pane="scenes"]') && h.q('#gm-scn') && h.q('[data-pane="score"]') && h.q('#gm-score') && !h.q('[data-pane="engagement"]') && !h.q('#gm-eng'));
+  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,score,npc,downtime,cards,ipad');
   h.press('s'); assert.equal(h.page._state().panel, 'scenes');
   assert.ok(!h.q('#gm-scn .gm-scncard'), 'nothing before the first roll');
   h.q('[data-gm="scnroll"]').click();
@@ -634,63 +635,32 @@ await test('8e. Read-aloud to the iPad sends only the three read-aloud paragraph
   fg.server.displays.length = 0;
 });
 
-await test('8f. E opens the engagement panel on a preview (1d, no roll yet); a control changes the pool and the preview; Roll files seed and controls', async () => {
-  const fg = fakeGm(), h = await openPage({ fg });
-  h.press('e'); assert.equal(h.page._state().panel, 'engagement');
-  assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 1d');
-  assert.ok(/Set the factors, then roll\./.test(cardOf(h, '#gm-eng .gm-engcard')));
-  assert.equal(h.qa('#gm-eng select').length, 2, 'approach and loadout are selects');
-  assert.equal(h.qa('#gm-eng [data-gm="engtri"]').length, 3 * T_EN.factor.length, 'every factor is three chips, no select');
-  const tri = (id, v) => h.q('[data-gm="engtri"][data-id="' + id + '"][data-v="' + v + '"]').click();
-  assert.equal(h.qa('[data-gm="engtri"][data-id="bold"]').length, 3, 'a factor is three chips');
-  assert.ok(/plus|neat|bold/i.test(h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').textContent) || h.q('[data-gm="engtri"][data-id="bold"][data-v="1"] small'), 'the +1d chip carries the factor’s statement');
-  tri('bold', 1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
-  assert.equal(h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').getAttribute('aria-pressed'), 'true');
-  tri('tier', -1); tri('bold', -1); assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 0d (2d, keep lowest)');   // B13: never "-1d"
-  change(h.q('#gm-e-approach'), 'Slip'); change(h.q('#gm-e-load'), 'Loud');
-  assert.ok(/opening gambit is the unwatched door · Loud loadout, load 6/.test(cardOf(h, '#gm-eng .gm-engcard')));
-  h.q('[data-gm="engroll"]').click();
-  const txt = cardOf(h, '#gm-eng .gm-engcard');
-  assert.ok(/Slip — 0d \(2d, keep lowest\)/.test(txt) && !/-1d/.test(txt) && /0d — rolled 2, kept the lowest/.test(txt) && /Roll/.test(txt) && txt.replace(/\*\*/g, '').includes(T_EN.cut.replace(/\*\*/g, '')), txt);
-  await h.save();
-  const c = fg.server.doc.cards.engagement;
-  assert.deepEqual(c.ui, { approach: 'Slip', load: 'Loud', mods: { bold: -1, tier: -1 } }); assert.ok(Number.isInteger(c.seed) && c.label.startsWith('Slip — 0d (2d, keep lowest) · '));
-  assert.equal(Object.keys(fg.server.doc.hist.engagement).length, 1); assert.equal(c.mem, undefined);
-});
-
-await test('8g. engagement: reload redraws the identical dice; changing a control drops the stored card (not the history); Earlier brings back the roll and its controls', async () => {
-  const fg = fakeGm(), br = fakeBrowser();
-  const h = await openPage({ fg, br });
-  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click(); h.q('[data-gm="engroll"]').click(); const a = cardOf(h, '#gm-eng .gm-engcard');
-  h.q('[data-gm="engtri"][data-id="tier"][data-v="1"]').click(); h.q('[data-gm="engroll"]').click(); const b = cardOf(h, '#gm-eng .gm-engcard'); assert.notEqual(a, b);
-  await h.save();
-  const h2 = await openPage({ fg, br });
-  assert.equal(cardOf(h2, '#gm-eng .gm-engcard'), b, 'the same roll after a reload');
-  const chips = h2.qa('#gm-eng [data-gm="replay"]'); assert.equal(chips.length, 2);
-  chips.filter((c) => !c.hasAttribute('aria-current'))[0].click();
-  assert.equal(cardOf(h2, '#gm-eng .gm-engcard'), a, 'Earlier redraws the first roll');
-  change(h2.q('#gm-e-approach'), 'Charm');
-  assert.equal(cardOf(h2, '#gm-eng .gm-engcard h3'), 'Charm — 2d', 'a control change shows the preview again');
-  await h2.save();
-  assert.equal(fg.server.doc.cards.engagement, undefined, 'the stored card went with it');
-  assert.equal(Object.keys(fg.server.doc.hist.engagement).length, 2, 'the history stays');
-  assert.deepEqual(fg.server.doc.eng.ui, { approach: 'Charm', load: 'Quiet', mods: { bold: 1, tier: 0 } }, 'the replayed rolls controls came back, then the new approach');
-});
-
-await test('8h. a pack without the scenes or engagement part: the panels say so and the rest of the page works', async () => {
+await test('8h. a pack without the scenes part: the panel says so and the rest of the page works', async () => {
   const fg = fakeGm(); const full = fg.gm.pack, part = fg.gm.packPart;
-  fg.gm.pack = async () => { const r = await full(); delete r.parts.scenes; delete r.parts.engagement; return r; };
+  fg.gm.pack = async () => { const r = await full(); delete r.parts.scenes; return r; };
   const h = await openPage({ fg });
   h.press('s'); assert.ok(/no scenes part/.test(h.q('#gm-scn').textContent));
-  h.press('e'); assert.ok(/no engagement part/.test(h.q('#gm-eng').textContent));
   h.press('2'); assert.ok(cardTxt(h).length > 20, 'the console still rolls');
   void part;
 });
 
-await test('8i. the missing modules (an old shell): a one-line message each, nothing thrown', async () => {
-  const br = fakeBrowser({ B68GmScenes: undefined, B68GmEngagement: undefined });
+await test('8i. the missing module (an old shell): a one-line message, nothing thrown', async () => {
+  const br = fakeBrowser({ B68GmScenes: undefined });
   const h = await openPage({ br });
-  assert.ok(/module is missing/.test(h.q('#gm-scn').textContent) && /module is missing/.test(h.q('#gm-eng').textContent));
+  assert.ok(/module is missing/.test(h.q('#gm-scn').textContent));
+});
+
+await test('8j. Engage left its stored controls, current card and history in the notes: the page drops them once, and touches nothing else', async () => {
+  const fg = fakeGm();
+  fg.server.doc = { eng: { ui: { approach: 'x', mods: { a: 1 } } }, cards: { engagement: { hid: 'h1', seed: 3, ui: {} }, scenes: { hid: 'h9', seed: 5, ui: { sel: '' }, mem: '{}', label: 'x', at: '2026-10-16T00:00:00.000Z' } },
+    hist: { engagement: { h1: { seed: 3, at: 'x' } }, scenes: { h9: { seed: 5, at: 'x' } } }, scn: { ui: { sel: '' } } };
+  const h = await openPage({ fg });
+  await h.save();
+  const d = fg.server.doc;
+  assert.ok(!('eng' in d) && !('engagement' in d.cards) && !('engagement' in d.hist), 'Engage\'s keys are gone: ' + JSON.stringify(Object.keys(d)));
+  assert.equal(d.cards.scenes.hid, 'h9'); assert.equal(Object.keys(d.hist.scenes).length, 1); assert.deepEqual(d.scn, { ui: { sel: '' } });
+  const before = fg.server.patches.length, h2 = await openPage({ fg }); await h2.save();
+  assert.equal(fg.server.patches.length, before, 'and a clean state is not written again');
 });
 
 /* ---------- 9. the iPad panel (I): ambient scenes, Clear and Lights out, the heat sync, the score scene ---------- */
@@ -1074,6 +1044,9 @@ await test('11c. packLosses: a part gone, a prep note gone or much shorter; grow
   assert.deepEqual(P.packLosses(before, { scenes: before.scenes }), ['the prep part is gone (no note has gm_prep: true now)']);
   const r = P.packLosses(before, { prep: { notes: [note('S/b68g-s02.md', 19000)] }, scenes: before.scenes });
   assert.ok(r.some((x) => /prep note b68g-s02 shrank from 44000 to 19000 characters/.test(x)), JSON.stringify(r));
+  // a part the app retired on purpose (Engage's) is not a loss, here and in the exporter's guard (same list)
+  assert.deepEqual(P.packLosses({ ...before, engagement: { T: { a: 'z'.repeat(9000) } } }, JSON.parse(JSON.stringify(before))), []);
+  assert.deepEqual(P.RETIRED_PARTS, ['engagement']);
 });
 
 await test('11d. Find: Ctrl+K and / open it, typing lists hits, arrows choose, Enter copies a filed line, Esc and Ctrl+K shut it; no shortcuts while it is open', async () => {
@@ -1153,7 +1126,7 @@ await test('11h. Update pack: a file that would lose a part says so, the button 
   const file = h.q('#gm-file'); file.files = [{ name: 'b68-gm-pack.json', text: JSON.stringify(pk) }]; file.id = 'gm-file';
   dispatch(file, 'change');
   assert.ok(await until(() => h.q('.gm-losses')), 'the losses box');
-  assert.ok(/the scenes part is gone/.test(h.q('.gm-losses').textContent) && /the engagement part is gone/.test(h.q('.gm-losses').textContent));
+  assert.ok(/the scenes part is gone/.test(h.q('.gm-losses').textContent));
   assert.equal(h.q('[data-gm="upload"]').textContent, 'Upload anyway');
   h.q('[data-gm="upload"]').click(); await tick();
   assert.equal(asked, 1); assert.equal(uploads, 0, 'refused at the question: nothing uploaded');
@@ -1401,8 +1374,8 @@ await test('13c. on the page: a stored card redraws without a note after a reloa
 await test('13c. replacing the stored card: replacePatch nulls what only the old card had; an Earlier entry without composeVersion brings its note back, also after a reload', async () => {
   assert.deepEqual(P.replacePatch({ a: 1, b: { c: 2, d: 3 }, e: 5 }, { a: 9, b: { c: 4 }, f: 6 }), { e: null, a: 9, b: { d: null, c: 4 }, f: 6 });
   assert.deepEqual(P.replacePatch(null, { x: { y: 1 } }), { x: { y: 1 } }); assert.deepEqual(P.replacePatch({ x: 1 }, {}), { x: null });
-  const old = { cards: { engagement: { hid: 'h1', seed: 7, phys: { best: 4, crit: false }, ui: { mods: { a: 1 } } } } };
-  assert.deepEqual(P.applyPatch(old, { cards: { engagement: P.replacePatch(old.cards.engagement, { hid: 'h2', seed: 8, ui: { mods: { a: 0 } } }) } }).cards.engagement, { hid: 'h2', seed: 8, ui: { mods: { a: 0 } } }, 'the merge leaves nothing of the old card');
+  const old = { cards: { scenes: { hid: 'h1', seed: 7, started: { x: 'c1' }, ui: { sel: { a: 1 } } } } };
+  assert.deepEqual(P.applyPatch(old, { cards: { scenes: P.replacePatch(old.cards.scenes, { hid: 'h2', seed: 8, ui: { sel: { a: 0 } } }) } }).cards.scenes, { hid: 'h2', seed: 8, ui: { sel: { a: 0 } } }, 'the merge leaves nothing of the old card');
   const fg = fakeGm(), br = fakeBrowser();
   const h = await openPage({ fg, br }); h.press('2'); const fresh = cardTxt(h); h.press('3'); await h.save();
   const hist = fg.server.doc.hist.situation, ids = Object.keys(hist), older = ids.find((k) => hist[k].situation === 'fourfive');
@@ -1416,14 +1389,14 @@ await test('13c. replacing the stored card: replacePatch nulls what only the old
 });
 
 await test('13d. packWarnings: each module\'s own check(T), guarded; a missing table is a warning list, not an error', () => {
-  const mods = { B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmEngagement: EN, B68GmNpc: NPCM };
-  const full = { console: FIXC.console, location: { T: FIXL.T, extra: FIXL.extra }, scenes: { T: FIXS.parts.scenes.T }, engagement: { T: FIXS.parts.engagement.T }, npc: NPCFIX.parts.npc };
+  const mods = { B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmNpc: NPCM };
+  const full = { console: FIXC.console, location: { T: FIXL.T, extra: FIXL.extra }, scenes: { T: FIXS.parts.scenes.T }, npc: NPCFIX.parts.npc };
   assert.deepEqual(P.packWarnings(mods, full), [], 'the fixtures are complete');
-  const sparse = cl(full); delete sparse.console.T.spend; delete sparse.engagement.T.cut; sparse.npc.T.faction = [['X', 'y']]; delete sparse.location.T.rumour;
+  const sparse = cl(full); delete sparse.console.T.spend; delete sparse.scenes.T.rumour; sparse.npc.T.faction = [['X', 'y']]; delete sparse.location.T.rumour;
   const w = P.packWarnings(mods, sparse), by = Object.fromEntries(w.map((x) => [x.part, x.missing]));
-  assert.deepEqual(w.map((x) => x.part), ['console', 'location', 'npc', 'engagement'].filter((p) => by[p]), 'in part order');
-  assert.ok(by.console.some((m) => /^spend/.test(m)) && by.engagement.includes('cut') && by.location.includes('rumour'), JSON.stringify(by));
-  assert.deepEqual(by.console, C.check(sparse.console.T), 'the console\'s own words'); assert.deepEqual(by.engagement, EN.check(sparse.engagement.T));
+  assert.deepEqual(w.map((x) => x.part), ['console', 'location', 'npc', 'scenes'].filter((p) => by[p]), 'in part order');
+  assert.ok(by.console.some((m) => /^spend/.test(m)) && by.scenes.includes('rumour') && by.location.includes('rumour'), JSON.stringify(by));
+  assert.deepEqual(by.console, C.check(sparse.console.T), 'the console\'s own words'); assert.deepEqual(by.scenes, SC.check(sparse.scenes.T));
   assert.deepEqual(P.packWarnings({ B68GmConsole: { check() { throw new Error('boom'); } }, B68GmLocation: {} }, full), [], 'a check that throws, or a module without one, says nothing');
   assert.deepEqual(P.packWarnings({}, full), [], 'a module that is not loaded says nothing'); assert.deepEqual(P.packWarnings(mods, {}), [], 'a part the pack lacks says nothing');
   assert.deepEqual(P.packWarnings(mods, { scenes: {} }).map((x) => [x.part, x.missing]), [['scenes', ['T']]], 'a part without tables names T');
@@ -1440,14 +1413,14 @@ await test('13d. Update pack: a file missing tables shows the warning list and s
   assert.ok(h.q('#gm-menu-warn') && !h.q('#gm-menu-warn').hasAttribute('hidden') && /console: /.test(h.q('#gm-menu-warn').textContent) && /spend/.test(h.q('#gm-menu-warn').textContent), 'the Menu lists the missing tables: ' + h.q('#gm-menu-warn').textContent);
   assert.equal(br.toasts.filter((t) => /missing \d+ table entr/.test(t[0])).length, 1, 'one toast at load'); assert.ok(br.toasts.every((t) => !/missing \d+ table/.test(t[0]) || t[1] === false), 'a note, not an error');
   h.q('.gm-menu-list [data-gm="update"]').click();
-  const pk = { format: 1, exportedAt: new Date().toISOString(), parts: { console: { src: {}, ...sparseCon }, location: { src: {}, T: FIXL.T, extra: FIXL.extra }, campaign: { src: {}, ...FIXC.campaign }, scenes: { src: {}, ...FIXS.parts.scenes }, engagement: { src: {}, ...FIXS.parts.engagement } } };
+  const pk = { format: 1, exportedAt: new Date().toISOString(), parts: { console: { src: {}, ...sparseCon }, location: { src: {}, T: FIXL.T, extra: FIXL.extra }, campaign: { src: {}, ...FIXC.campaign }, scenes: { src: {}, ...FIXS.parts.scenes } } };
   const file = h.q('#gm-file'); file.files = [{ name: 'b68-gm-pack.json', text: JSON.stringify(pk) }]; file.id = 'gm-file';
   dispatch(file, 'change');
   assert.ok(await until(() => h.q('.gm-warns')), 'the warning box');
   assert.ok(/table entr/.test(h.q('.gm-warns').textContent) && /console/.test(h.q('.gm-warns').textContent) && /spend/.test(h.q('.gm-warns').textContent), h.q('.gm-warns').textContent);
   assert.ok(h.q('.gm-warns').className.includes('warn') && !h.q('.gm-warns').className.split(/\s+/).includes('bad'), 'a warning, not an error');
   assert.ok(!h.q('.gm-errs'), 'no error list'); assert.ok(!h.q('[data-gm="upload"]').hasAttribute('disabled'), 'the upload is enabled');
-  h.q('[data-gm="upload"]').click(); assert.ok(await until(() => uploads >= 5), 'and it uploads every part (' + uploads + ')');
+  h.q('[data-gm="upload"]').click(); assert.ok(await until(() => uploads >= 4), 'and it uploads every part (' + uploads + ')');
   await h.save();
   const clean = await openPage({ fg: fakeGm(), br: fakeBrowser(), camp: CAMP3 });
   assert.ok(clean.q('#gm-menu-warn').hasAttribute('hidden') && clean.q('#gm-menu-warn').textContent === '', 'a complete pack: nothing in the Menu');
@@ -1554,152 +1527,6 @@ await test('13g. Earlier chips name what the card is (the NPC for Someone / Cont
   assert.match(chips[1].querySelector('.gm-ech-s').textContent, /· risky$/);
   // the other tools' chips carry the time (they have no position)
   h.q('[data-gm="scnroll"]').click(); assert.match(h.q('#gm-scn .gm-earlier .gm-ech-s').textContent, /^\d\d:\d\d$/);
-  await h.save();
-});
-
-/* =====================================================================================================================
-   14. Physical dice for the engagement roll: the table rolls, the GM taps the highest die (the lowest on a 0d pool, a crit for two 6s)
-   ===================================================================================================================== */
-const enGame = () => EN.create({ T: T_EN });
-/* a seed whose app roll gives this result (highest/lowest die best, crit or not) for these controls */
-function seedFor(en, ui, best, crit) {
-  for (let seed = 1; seed < 200000; seed++) { const r = en.roll(ui, { seed }); if (r.best === best && r.crit === crit) return seed; }
-  throw new Error('no seed for ' + best + (crit ? ' crit' : ''));
-}
-const modsUi = (en, mods) => Object.assign(en.defaults(), { mods: Object.assign(en.defaults().mods, mods) });
-
-await test('14a. engagementPhys: the card for a result called at the table is the card the app roll gives for it (position, closing line), for every pool and result', () => {
-  const en = enGame();
-  const pools = [[{ bold: -1, tier: -1 }, -1], [{ bold: -1 }, 0], [{}, 1], [{ bold: 1 }, 2], [{ bold: 1, tier: 1 }, 3]];
-  for (const [mods, pool] of pools) {
-    const ui = modsUi(en, mods);
-    assert.equal(en.pool(ui), pool, 'the pool of ' + JSON.stringify(mods));
-    const results = [1, 2, 3, 4, 5, 6].map((b) => [b, false]).concat(en.pool(ui) >= 2 ? [[6, true]] : []);
-    for (const [best, crit] of results) {
-      const app = en.roll(ui, { seed: seedFor(en, ui, best, crit) }), ph = P.engagementPhys(EN, en, T_EN, ui, { best, crit });
-      const tag = en.pool(ui) + 'd best ' + best + (crit ? ' crit' : '');
-      assert.ok(ph, tag + ': a card');
-      assert.deepEqual(ph.lines[0], app.lines[0], tag + ': the modifiers line'); assert.deepEqual(ph.lines[1], app.lines[1], tag + ': the position and its how');
-      assert.deepEqual(ph.lines[3], app.lines[3], tag + ': the closing line'); assert.equal(ph.lines.length, 4);
-      assert.equal(ph.lines[2].kind, 'grid'); assert.equal(ph.lines[2].id, 'roll'); assert.match(ph.lines[2].rows[0].md, /at the table/); assert.ok(ph.lines[2].rows[0].md.includes('**' + (crit ? 'critical' : best) + '**'), ph.lines[2].rows[0].md);
-      assert.deepEqual(ph.meta.chips, app.meta.chips, tag + ': the position chip'); assert.equal(ph.meta.title, app.meta.title); assert.equal(ph.meta.sub, app.meta.sub); assert.equal(ph.meta.label, app.meta.label);
-      assert.equal(ph.position, app.position); assert.equal(ph.pool, app.pool); assert.equal(ph.zero, app.zero); assert.equal(ph.best, best); assert.equal(ph.crit, crit);
-      assert.deepEqual(ph.meta.result.pos, app.meta.result.pos); assert.equal(ph.meta.all.length, app.meta.all.length); assert.equal(ph.meta.all[0], app.meta.all[0]);
-      assert.deepEqual(ph.replay, { id: 'engagement', phys: { best, crit }, ui: app.replay.ui }, 'replay info, no seed'); assert.ok(!('seed' in ph.replay) && ph.seed === null);
-      assert.ok(!/undefined|NaN|\[object/.test(JSON.stringify(ph)));
-      // the same position as the module's own helper gives for these dice
-      assert.equal(ph.position, EN.outcomeOf(T_EN, { crit, best }).pos);
-    }
-  }
-  const one = modsUi(en, {}), zero = modsUi(en, { bold: -1, tier: -1 });
-  assert.equal(en.pool(one), 1); assert.ok(en.pool(zero) <= 0);
-  assert.equal(P.engagementPhys(EN, en, T_EN, one, { best: 6, crit: true }), null, 'two 6s needs 2d');
-  assert.equal(P.engagementPhys(EN, en, T_EN, zero, { best: 6, crit: true }), null, 'a 0d pool has no crit');
-  for (const bad of [{ best: 0 }, { best: 7 }, { best: 'x' }, { best: 4.5 }, { best: 5, crit: true }, null, 'x']) assert.equal(P.engagementPhys(EN, en, T_EN, modsUi(en, { bold: 1 }), bad), null, JSON.stringify(bad));
-  assert.match(P.engagementPhys(EN, en, T_EN, zero, { best: 2, crit: false }).lines[2].rows[0].md, /^0d — rolled 2 at the table, kept the lowest: \*\*2\*\*$/, 'a 0d pool: the table rolls two and keeps the lowest');
-  assert.match(P.engagementPhys(EN, en, T_EN, zero, { best: 2, crit: false }).meta.title, /\(2d, keep lowest\)/, 'and the title says so, never -1d');
-});
-
-const dieBtn = (h, v) => h.q('#gm-eng [data-gm="engdie"][data-v="' + v + '"]');
-const engTxt = (h) => cardOf(h, '#gm-eng .gm-engcard').replace(/\*\*/g, '');       // this fake page shows markdown as written
-
-await test('14b. the Engage panel: the pool before the roll, Roll engagement (the app rolls), and a "Rolled at the table: highest die" row of 1-6 and Crit (two 6s)', async () => {
-  const fg = fakeGm(), h = await openPage({ fg });
-  h.press('e');
-  assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 1d', 'the pool before any roll'); assert.ok(/Set the factors, then roll\./.test(engTxt(h)));
-  assert.ok(h.q('#gm-eng [data-gm="engroll"]'), 'Roll engagement stays'); assert.equal(h.q('#gm-eng [data-gm="engroll"]').textContent, 'Roll engagement');
-  const row = h.q('#gm-eng .gm-dice'); assert.ok(row, 'the dice row');
-  assert.equal(row.querySelector('.gm-lab').textContent, 'Rolled at the table: highest die');
-  assert.deepEqual(h.qa('#gm-eng [data-gm="engdie"]').map((b) => b.textContent), ['1', '2', '3', '4', '5', '6', 'Crit (two 6s)']);
-  assert.ok(dieBtn(h, 'crit').hasAttribute('disabled') && /2d/.test(dieBtn(h, 'crit').getAttribute('title')), 'one die cannot give two 6s');
-  const all = h.q('#gm-eng').innerHTML, iRoll = all.indexOf('data-gm="engroll"'), iDice = all.indexOf('class="gm-field wide gm-dice"'), iCard = all.indexOf('gm-engcard');
-  assert.ok(iRoll < iDice && iDice < iCard, 'the row sits under Roll engagement, above the card');
-  h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click();
-  assert.ok(!dieBtn(h, 'crit').hasAttribute('disabled'), 'a 2d pool can crit');
-  h.q('[data-gm="engtri"][data-id="bold"][data-v="-1"]').click(); h.q('[data-gm="engtri"][data-id="tier"][data-v="-1"]').click();
-  assert.equal(h.q('#gm-eng .gm-dice .gm-lab').textContent, 'Rolled at the table: lowest die', 'a 0d pool rolls two and keeps the LOWEST');
-  assert.equal(h.qa('#gm-eng [data-gm="engdie"]').length, 6, 'and has no crit button'); assert.ok(/0d: roll two dice, keep the lowest/.test(h.q('#gm-eng .gm-dice').textContent), h.q('#gm-eng .gm-dice').textContent);
-  await h.save();
-});
-
-await test('14c. tap 4: the risky card; a crit; the result is stored without a seed, redrawn exactly after a reload and from Earlier', async () => {
-  const fg = fakeGm(), br = fakeBrowser();
-  const h = await openPage({ fg, br });
-  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click();                           // 2d
-  dieBtn(h, '4').click();
-  let txt = engTxt(h);
-  assert.equal(cardOf(h, '#gm-eng .gm-engcard h3'), 'Smash — 2d');
-  assert.ok(txt.includes(T_EN.outcome.risky.pos) && txt.includes(T_EN.outcome.risky.how), 'the risky position and its line: ' + txt);
-  assert.ok(txt.replace(/\*\*/g, '').includes(T_EN.cut.replace(/\*\*/g, '')), 'the closing line'); assert.ok(/Rolled at the table: highest die 4/.test(txt), txt);
-  assert.deepEqual(h.qa('#gm-eng .gm-engcard .gm-chip').map((c) => c.textContent), [T_EN.outcome.risky.pos.split(' — ')[0]]);
-  assert.equal(dieBtn(h, '4').getAttribute('aria-pressed'), 'true', 'the tapped die is marked'); assert.equal(dieBtn(h, '5').getAttribute('aria-pressed'), 'false');
-  assert.ok(h.q('#gm-eng .gm-engcard [data-gm="pin"]') && h.q('#gm-eng .gm-engcard [data-gm="copy"]'), 'Pin and Copy on it');
-  const first = txt;
-  dieBtn(h, 'crit').click(); txt = engTxt(h);
-  assert.ok(txt.includes(T_EN.outcome.crit.pos) && txt.includes(T_EN.outcome.crit.how) && /two 6s/.test(txt) && /critical/.test(txt), 'a crit: ' + txt);
-  assert.equal(dieBtn(h, 'crit').getAttribute('aria-pressed'), 'true'); assert.equal(dieBtn(h, '4').getAttribute('aria-pressed'), 'false');
-  const crit = txt;
-  dieBtn(h, '6').click(); assert.ok(engTxt(h).includes(T_EN.outcome.six.pos + ' ') || engTxt(h).includes(T_EN.outcome.six.how), 'one 6 is the six outcome, not the crit');
-  dieBtn(h, '2').click(); assert.ok(engTxt(h).includes(T_EN.outcome.desperate.how), 'a 1-3 is the desperate outcome');
-  dieBtn(h, '4').click();
-  await h.save();
-  const c = fg.server.doc.cards.engagement;
-  assert.equal(c.id, 'engagement'); assert.deepEqual(c.phys, { best: 4, crit: false }); assert.deepEqual(c.ui, { approach: 'Smash', load: 'Quiet', mods: { bold: 1, tier: 0 } });
-  assert.ok(!('seed' in c) && !('mem' in c), 'no seed: the dice are the table\'s'); assert.ok(c.hid && c.at && /^Smash — 2d · Level · table 4$/.test(c.label), c.label);
-  assert.equal(Object.keys(fg.server.doc.hist.engagement).length, 5, 'every tap is in Earlier (five kept)');
-  const h2 = await openPage({ fg, br });
-  assert.equal(engTxt(h2), first, 'reload: exactly the same card'); assert.equal(h2.q('#gm-eng [data-gm="engdie"][data-v="4"]').getAttribute('aria-pressed'), 'true');
-  const chips = h2.qa('#gm-eng [data-gm="replay"]'); assert.equal(chips.length, 5);
-  assert.deepEqual(chips.map((x) => x.querySelector('.gm-ech-t').textContent).sort(), ['Smash — 2d · Ahead of the game · table crit', 'Smash — 2d · Ahead · table 6', 'Smash — 2d · Behind · table 2', 'Smash — 2d · Level · table 4', 'Smash — 2d · Level · table 4'].sort(), 'Earlier names the table result');
-  chips.filter((x) => x.querySelector('.gm-ech-t').textContent.endsWith('table crit'))[0].click();
-  assert.equal(engTxt(h2), crit, 'Earlier brings the crit back, card for card');
-  await h2.save();
-  const h3 = await openPage({ fg, br });
-  assert.equal(engTxt(h3), crit, 'and the replayed card is the one that comes back'); assert.equal(h3.q('#gm-eng [data-gm="engdie"][data-v="crit"]').getAttribute('aria-pressed'), 'true');
-  // a control change drops the stored card (the Earlier row keeps it); the app's own roll still works and files a seed
-  change(h3.q('#gm-e-approach'), 'Charm'); assert.ok(/Set the factors/.test(engTxt(h3)) && !h3.q('#gm-eng .gm-chip'), 'a change shows the pool again');
-  h3.q('[data-gm="engroll"]').click(); assert.ok(/\[\d \d\]/.test(engTxt(h3)), 'the app rolls real dice: ' + engTxt(h3));
-  await h3.save();
-  assert.ok(Number.isInteger(fg.server.doc.cards.engagement.seed) && !fg.server.doc.cards.engagement.phys && fg.server.doc.cards.engagement.phys === undefined, 'an app roll files a seed and no phys');
-});
-
-await test('14d. a 0d pool: the table rolls two and keeps the lowest; the tap is the lowest die; Pin, Copy and L say it was the table\'s', async () => {
-  const fg = fakeGm(), br = fakeBrowser(), h = await openPage({ fg, br });
-  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="-1"]').click(); h.q('[data-gm="engtri"][data-id="tier"][data-v="-1"]').click();
-  assert.equal(h.q('#gm-eng .gm-dice .gm-lab').textContent, 'Rolled at the table: lowest die');
-  dieBtn(h, '5').click();
-  const txt = engTxt(h);
-  assert.ok(/Smash — 0d \(2d, keep lowest\)/.test(txt) && !/-1d/.test(txt) && /0d — rolled 2 at the table, kept the lowest: 5/.test(txt), txt);
-  assert.ok(txt.includes(T_EN.outcome.risky.how), 'the lowest die 5 is the risky outcome');
-  h.q('#gm-eng [data-gm="copy"]').click(); assert.ok(/kept the lowest/.test(br.copied) && !/\*\*/.test(br.copied) && br.copied.includes(T_EN.cut.replace(/\*\*/g, '')), br.copied);
-  h.q('#gm-eng [data-gm="pin"]').click(); h.press('l'); await h.save();
-  const pins = Object.values(fg.server.doc.pins); assert.equal(pins.length, 1); assert.equal(pins[0].tool, 'engagement'); assert.ok(/at the table/.test(pins[0].text));
-  const cap = Object.values(fg.server.doc.capture); assert.ok(cap.some((e) => e.bucket === 'r' && /^Engagement: Smash — 0d \(2d, keep lowest\) · Level · table low 5$/.test(e.text)), JSON.stringify(cap));
-  assert.deepEqual(fg.server.doc.cards.engagement.phys, { best: 5, crit: false });
-});
-
-await test('14f. a table roll and an app roll never inherit each other\'s stored keys: reload and Earlier give each card back as it was', async () => {
-  const fg = fakeGm(), br = fakeBrowser(), h = await openPage({ fg, br });
-  h.press('e'); h.q('[data-gm="engtri"][data-id="bold"][data-v="1"]').click();
-  dieBtn(h, '4').click(); const table = engTxt(h);
-  h.q('[data-gm="engroll"]').click(); const app = engTxt(h); assert.notEqual(app, table); assert.ok(/\[\d \d\]/.test(app));
-  await h.save();
-  let c = fg.server.doc.cards.engagement; assert.ok(Number.isInteger(c.seed) && !('phys' in c), 'the app roll replaced the table roll: no phys left on it: ' + JSON.stringify(c));
-  const h2 = await openPage({ fg, br }); assert.equal(engTxt(h2), app, 'reload: the app roll, not the table roll');
-  h2.qa('#gm-eng [data-gm="replay"]').filter((x) => /table 4$/.test(x.querySelector('.gm-ech-t').textContent))[0].click();
-  assert.equal(engTxt(h2), table, 'Earlier: the table roll'); await h2.save();
-  c = fg.server.doc.cards.engagement; assert.ok(c.phys && !('seed' in c), 'and the stored card is the table roll alone: ' + JSON.stringify(c));
-  const h3 = await openPage({ fg, br }); assert.equal(engTxt(h3), table, 'reload: still the table roll');
-  h3.qa('#gm-eng [data-gm="replay"]').filter((x) => !/table/.test(x.querySelector('.gm-ech-t').textContent))[0].click();
-  assert.equal(engTxt(h3), app, 'Earlier: the app roll again'); await h3.save();
-  assert.ok(Number.isInteger(fg.server.doc.cards.engagement.seed) && !('phys' in fg.server.doc.cards.engagement));
-});
-
-await test('14e. a pack without the engagement part: no dice row, nothing thrown', async () => {
-  const fg = fakeGm(); const full = fg.gm.pack;
-  fg.gm.pack = async () => { const r = await full(); delete r.parts.engagement; return r; };
-  const h = await openPage({ fg }); h.press('e');
-  assert.ok(/no engagement part/.test(h.q('#gm-eng').textContent) && !h.q('#gm-eng .gm-dice'));
   await h.save();
 });
 
@@ -2002,9 +1829,9 @@ await test('17a. D opens the Downtime panel (a side tab after NPC, with its key;
   assert.deepEqual([P.keyAction({ key: 'd' }), P.keyAction({ key: 'D' })], [{ type: 'panel', panel: 'downtime' }, { type: 'panel', panel: 'downtime' }]);
   assert.deepEqual([P.keyAction({ key: 'd', typing: true }), P.keyAction({ key: 'd', ctrlKey: true }), P.keyAction({ key: 'd', metaKey: true })], [null, null, null]);
   const h = await dtPage();
-  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,engagement,npc,downtime,cards,ipad', 'Downtime sits after NPC in the generator group');
+  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,score,npc,downtime,cards,ipad', 'Downtime sits after NPC in the generator group');
   assert.match(h.q('.gm-tab[data-panel="downtime"]').textContent, /^Downtime D$/);
-  assert.equal(h.qa('[data-gm="seg"]').map((b) => b.getAttribute('data-seg')).join(), 'console,prep,location,scenes,engagement,npc,downtime,cards,rules,ipad,state', 'and a phone segment after NPC');
+  assert.equal(h.qa('[data-gm="seg"]').map((b) => b.getAttribute('data-seg')).join(), 'console,prep,location,scenes,score,npc,downtime,cards,rules,ipad,state', 'and a phone segment after NPC');
   h.press('b'); assert.equal(h.page._state().panel, 'location');
   h.press('d', { target: h.q('#gm-dt-purveyor') });
   assert.equal(h.page._state().panel, 'location', 'D typed into a box is a letter, not the panel');
@@ -2461,6 +2288,355 @@ await test('S3. score sites, page: the row lists the scores; replacing a site as
   assert.ok(h3.br.toasts.some(([m, bad]) => bad && /tables have changed since this site was saved/.test(m)));
   const mp = stateDoc(h3).loc.map; assert.deepEqual([mp.view, mp.theme, mp.layer], ['plan', 'blueprint', 'gm'], 'opened in the view and theme it was saved with, on the GM layer');
   await h3.save();
+});
+
+/* =====================================================================================================================
+   18. Score (J): the outline of a heist, rolled for inspiration (app/gm/score.js; GM.md "Score (J)")
+   ===================================================================================================================== */
+const SCT = SCFIX.score.T, SFAC = SCT.faction.map((f) => f[0]), SDIST = SCT.loc.district;
+const SC_DOC = { session: { number: 3 }, crew: { type: 'Tunnellers', tier: 1 } };
+const SCAMP = Object.assign({}, FIXC.campaign, SCFIX.campaign);       /* the console fixture's PCs and NPCs, the score fixture's crew and standing */
+/* a table that takes clocks and holds a cast: rig.clocks is what addClock got, rig.cast the NPC docs (id -> doc) the cast collection holds */
+function scRig(extra) {
+  const rig = { clocks: [], fail: null, cast: {} };
+  rig.api = { addClock: (c) => { rig.clocks.push(cl(c)); return rig.fail ? Promise.reject(rig.fail) : Promise.resolve(true); },
+    db: () => ({ collection: () => ({ onSnapshot: (cb) => { cb({ docs: Object.keys(rig.cast).map((id) => ({ id, data: () => cl(rig.cast[id]) })) }); return () => {}; } }) }) };
+  return Object.assign(rig, extra || {});
+}
+const scPage = (o) => openPage(Object.assign({ camp: SC_DOC, fg: fakeGm(SCAMP) }, o || {}));
+const scText = (h, sel) => cardOf(h, '#gm-score ' + (sel || '.gm-sccard'));
+/* the rows of a grid on the card as { label: text } (the ↻ buttons left out) */
+const scRows = (h, i) => {
+  const dl = h.qa('#gm-score dl.gm-sc-grid')[i || 0], dd = dl.querySelectorAll('dd'), out = {};
+  dl.querySelectorAll('dt').forEach((d, k) => { out[d.textContent] = dd[k].textContent.replace(/\s+/g, ' ').replace(/↻/g, '').replace(/\*+/g, '').trim(); });
+  return out;
+};
+const scRoll = (h) => h.q('#gm-score [data-gm="scoreroll"]').click();
+const scStored = (h) => h.page._state().doc.cards.score;
+/* the score the stored card redraws to (a fresh instance on the same tables and campaign) */
+const scReplay = (h, T) => SCM.create({ T: T || SCT, campaign: SCAMP }).replay({ seed: scStored(h).seed, mem: JSON.parse(scStored(h).mem), ui: scStored(h).ui, bump: scStored(h).bump || {} });
+const scOpts = (h, id) => h.qa('#gm-sc-' + id + ' option').map((o) => o.getAttribute('value'));
+const scGroups = (h, id) => h.qa('#gm-sc-' + id + ' optgroup').map((g) => g.getAttribute('label'));
+
+await test('18a. J opens the Score panel (a side tab after Street with its key, a phone segment too); never while typing or with a modifier; E opens nothing', async () => {
+  assert.deepEqual([P.keyAction({ key: 'j' }), P.keyAction({ key: 'J' })], [{ type: 'panel', panel: 'score' }, { type: 'panel', panel: 'score' }]);
+  assert.deepEqual([P.keyAction({ key: 'j', typing: true }), P.keyAction({ key: 'j', ctrlKey: true }), P.keyAction({ key: 'j', metaKey: true }), P.keyAction({ key: 'e' })], [null, null, null, null]);
+  const h = await scPage();
+  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,score,npc,downtime,cards,ipad', 'the tab sits in the slot Engage had, after Street');
+  assert.match(h.q('.gm-tab[data-panel="score"]').textContent, /^Score J$/);
+  assert.equal(h.qa('[data-gm="seg"]').map((b) => b.getAttribute('data-seg')).join(), 'console,prep,location,scenes,score,npc,downtime,cards,rules,ipad,state');
+  assert.equal(h.q('[data-gm="seg"][data-seg="score"]').textContent, 'Score');
+  h.press('j'); assert.equal(h.page._state().panel, 'score');
+  h.press('b'); h.press('j', { target: h.q('#gm-cap-in') }); assert.equal(h.page._state().panel, 'location', 'J typed into a box is a letter, not the panel');
+  h.press('e'); assert.equal(h.page._state().panel, 'location', 'E does nothing');
+  h.q('[data-gm="seg"][data-seg="score"]').click(); assert.equal(h.page._state().panel, 'score'); assert.equal(h.page._state().seg, 'side');
+  await h.save();
+});
+
+await test('18b. Roll a score files the card (seed, the choices as resolved, the memory BEFORE the roll) and one Earlier entry; the card is its title, chips, pitch, eight rows, the folded cloud and the actions', async () => {
+  const fg = fakeGm(SCAMP), h = await scPage({ fg });
+  h.press('j');
+  assert.ok(!h.q('#gm-score .gm-sccard'), 'nothing before the first roll'); assert.match(h.q('#gm-score .gm-empty').textContent, /Nothing here goes to the iPad/);
+  assert.deepEqual(h.qa('#gm-score select').map((s) => s.getAttribute('data-scui')), ['client', 'target', 'job', 'district', 'crew', 'tier']);
+  assert.deepEqual(h.qa('#gm-score label .gm-lab').map((l) => l.textContent), ["Who's asking", 'Target', 'Job', 'Where', 'Crew', 'Tier']);
+  assert.deepEqual(scGroups(h, 'client'), ['Campaign NPCs', 'Factions', 'Kinds'], 'optgroups: the pack\'s NPCs (no cast here), the factions, the kinds of client');
+  assert.deepEqual(scGroups(h, 'job'), ['Favoured by Tunnellers', 'All operations']); assert.deepEqual(scOpts(h, 'tier'), ['', '0', '1', '2', '3', '4', '5', '6']);
+  assert.equal(h.q('#gm-sc-crew option').textContent, 'Tunnellers (the crew)'); assert.equal(h.q('#gm-sc-tier option').textContent, 'Tier I (the crew)');
+  assert.equal(h.q('#gm-score [data-gm="scoreroll"]').textContent, 'Roll a score');
+  scRoll(h);
+  const card = h.q('#gm-score .gm-sccard'); assert.ok(card, 'a card'); assert.equal(card.getAttribute('data-tool'), 'score');
+  assert.match(cardOf(h, '#gm-score .gm-sccard h3'), /^(Break in|Lift|Torch) · /); assert.match(cardOf(h, '#gm-score .gm-sccard .gm-sub'), /^Tier [IV]+ · .+ · \d+ stacks?, .+$/);
+  assert.equal(h.qa('#gm-score .gm-sccard .gm-chip').length, 4);
+  assert.ok(h.q('#gm-score .gm-sc-want') && h.q('#gm-score .gm-sc-want .gm-bump[data-row="lead"]'), 'the pitch box has its ↻ in the corner');
+  const grids = h.qa('#gm-score dl.gm-sc-grid'); assert.equal(grids.length, 2);
+  assert.deepEqual(grids[0].querySelectorAll('dt').map((d) => d.textContent), ["Who's asking", 'The job', 'Target', 'Where', 'Why now', 'Twist', 'Ways in', 'Pays']);
+  const cloud = h.q('#gm-score details.gm-sc-cloud'); assert.ok(cloud && !cloud.hasAttribute('open'), 'the cloud is folded'); assert.equal(cloud.querySelector('summary').textContent, 'The cloud');
+  assert.equal(cloud.querySelectorAll('dt')[0].textContent, 'By the book'); assert.ok(cloud.querySelectorAll('dt').map((d) => d.textContent).includes('Called Shot'));
+  const bumps = h.qa('#gm-score .gm-bump'), rows = bumps.map((b) => b.getAttribute('data-row'));
+  assert.ok(rows.length >= 6 && rows.length <= 8, 'a ↻ on each row that can move: ' + rows); assert.ok(rows.every((r) => ['lead', 'client', 'job', 'target', 'site', 'why', 'twist', 'pay'].includes(r)));
+  assert.ok(bumps.every((b) => b.getAttribute('data-gm') === 'scorebump' && /^Reroll \S/.test(b.getAttribute('aria-label')) && b.textContent === '↻'), 'each has its label');
+  assert.deepEqual(h.qa('#gm-score .gm-sccard .gm-card-acts button').map((b) => b.getAttribute('data-gm')), ['scorecards', 'scoresite', 'scoreface', 'scoreclock', 'pin', 'copy']);
+  assert.deepEqual(h.qa('#gm-score .gm-sccard .gm-card-acts button').map((b) => b.textContent), ['To Cards', 'Roll the site', 'A face', 'Start the clock', 'Pin', 'Copy']);
+  assert.equal(h.qa('#gm-score .gm-earlier [data-gm="replay"]').length, 1, 'Earlier: one');
+  await h.save();
+  const c = fg.server.doc.cards.score, d = fg.server.doc;
+  assert.ok(Number.isInteger(c.seed) && c.hid && c.label && c.at && typeof c.mem === 'string' && !('bump' in c) && !('started' in c), JSON.stringify(Object.keys(c)));
+  assert.equal(c.mem, '{}', 'the guard as it was before the first roll');
+  assert.equal(c.ui.crew, 'Tunnellers'); assert.equal(c.ui.tier, 1, 'the crew and Tier as they were resolved'); assert.equal(c.ui.nowIn, '');
+  assert.equal(Object.keys(d.hist.score).length, 1); assert.ok(Object.keys(d.mem.score).length > 5, 'the live repeat guard is kept');
+  assert.ok(!/Invented (secret|right-now)|Notable \d Invented|pumping annex/.test(JSON.stringify(d)), 'no table text in the notes: replay info only');
+  assert.equal(fg.server.displays.length, 0, 'nothing went to the iPad');
+});
+
+await test('18c. a reload redraws the same card, Earlier brings the first back, and ↻ rolls one row again in the same card and its Earlier entry (no new entry)', async () => {
+  const fg = fakeGm(SCAMP), br = fakeBrowser();
+  const h = await scPage({ fg, br }); h.press('j');
+  scRoll(h); const a = scText(h); scRoll(h); const b = scText(h); assert.notEqual(a, b);
+  await h.save();
+  const h2 = await scPage({ fg, br }); h2.press('j');
+  assert.equal(scText(h2), b, 'the same card after a reload');
+  const chips = h2.qa('#gm-score [data-gm="replay"]'); assert.equal(chips.length, 2);
+  chips.filter((c) => !c.hasAttribute('aria-current'))[0].click();
+  assert.equal(scText(h2), a, 'Earlier redraws the first card');
+  // ↻ on Why now: that row changes, the other core rows stay, the card keeps its seed and its place in Earlier
+  const was = scRows(h2), seed = scStored(h2).seed, hid = scStored(h2).hid;
+  h2.q('#gm-score .gm-bump[data-row="why"]').click();
+  const now = scRows(h2); assert.notEqual(now['Why now'], was['Why now'], 'the row moved');
+  for (const k of Object.keys(was)) if (k !== 'Why now') assert.equal(now[k], was[k], k + ' stayed');
+  const st = scStored(h2); assert.equal(st.seed, seed); assert.equal(st.hid, hid); assert.ok(st.bump.why >= 1 && Object.keys(st.bump).join() === 'why');
+  assert.equal(h2.qa('#gm-score [data-gm="replay"]').length, 2, 'a reroll adds no Earlier entry');
+  assert.deepEqual(h2.page._state().doc.hist.score[hid].bump, st.bump, 'the Earlier entry has the bump too');
+  const after = scText(h2);
+  await h2.save();
+  const h3 = await scPage({ fg, br }); h3.press('j');
+  assert.equal(scText(h3), after, 'the rerolled card comes back after a reload');
+  // the pitch ↻, a second ↻ on the same row, and a new roll starts clean
+  h3.q('#gm-score .gm-bump[data-row="lead"]').click();
+  assert.ok(Object.keys(scStored(h3).bump).sort().join() === 'lead,why', 'bumps are kept per section: ' + JSON.stringify(scStored(h3).bump));
+  scRoll(h3); assert.ok(!('bump' in scStored(h3)) && scStored(h3).hid !== hid, 'a new roll has no bumps');
+  await h3.save();
+  assert.ok(!('bump' in fg.server.doc.cards.score), 'and none are left in the notes (the old card\'s are nulled)');
+});
+
+await test('18d. the pickers shape the next roll and are kept; Now in follows the Where picker; a stored card never moves with them', async () => {
+  const fg = fakeGm(SCAMP), br = fakeBrowser();
+  const h = await scPage({ fg, br }); h.press('j');
+  pick(h, '#gm-sc-target', 'fac:' + SFAC[3]); pick(h, '#gm-sc-job', 'Lift'); pick(h, '#gm-sc-district', SDIST[1]);
+  scRoll(h);
+  const rows = scRows(h); assert.match(rows['Target'], new RegExp('^' + SFAC[3])); assert.match(rows['The job'], /^Lift/); assert.match(rows['Where'], new RegExp(SDIST[1] + '$'));
+  const card = scText(h);
+  pick(h, '#gm-sc-target', ''); pick(h, '#gm-sc-district', '');
+  assert.equal(scText(h), card, 'a picker changes the next roll, not the card on screen');
+  eqj(stateDoc(h).sc.ui, { target: '', job: 'Lift', district: '' });
+  // Now in: the Where picker names it and follows it; 'now' rolls there; the card keeps the district it resolved
+  assert.deepEqual(scOpts(h, 'district').slice(0, 3), ['', 'now', '*']); assert.equal(h.q('#gm-sc-district option[value="now"]').textContent, 'Now in: anywhere');
+  pick(h, '#gm-now', SDIST[2]);
+  assert.equal(h.q('#gm-sc-district option[value="now"]').textContent, 'Now in: ' + SDIST[2], 'the picker follows Now in');
+  pick(h, '#gm-sc-district', 'now'); pick(h, '#gm-sc-target', 'fac:' + SFAC[5]); scRoll(h);
+  assert.match(scRows(h)['Where'], new RegExp(SDIST[2] + '$')); const stored = scStored(h); assert.equal(stored.ui.district, 'now'); assert.equal(stored.ui.nowIn, SDIST[2]);
+  const rolled = scText(h);
+  pick(h, '#gm-now', SDIST[0]);
+  assert.equal(scText(h), rolled, 'Now in changed: the card on screen stays as rolled'); assert.equal(h.q('#gm-sc-district option[value="now"]').textContent, 'Now in: ' + SDIST[0]);
+  await h.save();
+  const h2 = await scPage({ fg, br }); h2.press('j');
+  assert.equal(scText(h2), rolled, 'and so does a reload'); assert.equal(optSel(h2, '#gm-sc-job').getAttribute('value'), 'Lift', 'the pickers came back');
+  assert.equal(optSel(h2, '#gm-sc-target').getAttribute('value'), 'fac:' + SFAC[5]); assert.equal(optSel(h2, '#gm-sc-district').getAttribute('value'), 'now');
+  // a Now in the score tables do not hold: the picker says so, and 'now' rolls where the target is
+  pick(h2, '#gm-now', ''); assert.equal(h2.q('#gm-sc-district option[value="now"]').textContent, 'Now in: anywhere');
+  await h2.save();
+});
+
+await test('18e. the crew: the live campaign document first (type, Tier), then the pack\'s crew sheet; the GM can pick another crew or Tier; the table changing moves the labels', async () => {
+  const fg = fakeGm(SCAMP);
+  const h = await scPage({ fg, camp: { session: { number: 3 }, crew: { type: 'Stagehands', tier: 3 } } }); h.press('j');
+  assert.equal(h.q('#gm-sc-crew option').textContent, 'Stagehands (the crew)'); assert.equal(h.q('#gm-sc-tier option').textContent, 'Tier III (the crew)');
+  assert.deepEqual(h.qa('#gm-sc-job optgroup')[0].querySelectorAll('option').map((o) => o.getAttribute('value')), ['Torch', 'Lift'], 'the Job picker\'s favoured group is that crew\'s');
+  scRoll(h); const c1 = scStored(h); assert.equal(c1.ui.crew, 'Stagehands'); assert.equal(c1.ui.tier, 3);
+  assert.match(scRows(h)['Pays'], /3d \[\d \d \d\]/, 'three dice for a Tier III crew');
+  pick(h, '#gm-sc-crew', 'Tunnellers'); pick(h, '#gm-sc-tier', '5');
+  assert.deepEqual(h.qa('#gm-sc-job optgroup')[0].querySelectorAll('option').map((o) => o.getAttribute('value')), SCT.crew.Tunnellers.ops, 'picking a crew redraws the Job picker');
+  scRoll(h); const c2 = scStored(h); assert.equal(c2.ui.crew, 'Tunnellers'); assert.equal(c2.ui.tier, 5); assert.match(scRows(h)['Pays'], /5d \[\d \d \d \d \d\]/);
+  const was = scText(h);
+  h.page.campaign({ session: { number: 3 }, crew: { type: 'Stagehands', tier: 2 } });
+  assert.equal(scText(h), was, 'the table changed: the card stays'); assert.equal(h.q('#gm-sc-crew option').textContent, 'Stagehands (the crew)'); assert.equal(h.q('#gm-sc-tier option').textContent, 'Tier II (the crew)', 'the labels follow the table');
+  assert.equal(optSel(h, '#gm-sc-crew').getAttribute('value'), 'Tunnellers', 'the GM\'s pick stays');
+  pick(h, '#gm-sc-crew', ''); pick(h, '#gm-sc-tier', ''); scRoll(h); const c3 = scStored(h); assert.equal(c3.ui.crew, 'Stagehands'); assert.equal(c3.ui.tier, 2, 'back to following the table');
+  await h.save();
+  // no type on the table's sheet: the pack's sheet; no document at all: the pack's Tier too
+  const h2 = await scPage({ fg: fakeGm(SCAMP), camp: { session: { number: 3 }, crew: { type: '', tier: 4 } } }); h2.press('j'); scRoll(h2);
+  assert.equal(scStored(h2).ui.crew, 'Tunnellers', 'the sheet\'s type'); assert.equal(scStored(h2).ui.tier, 4, 'the table\'s Tier'); await h2.save();
+  const h3 = await scPage({ fg: fakeGm(SCAMP), camp: null }); h3.press('j'); scRoll(h3);
+  assert.equal(scStored(h3).ui.crew, 'Tunnellers'); assert.equal(scStored(h3).ui.tier, 1, 'the sheet\'s Tier'); await h3.save();
+  const h4 = await scPage({ fg: fakeGm(FIXC.campaign), camp: null }); h4.press('j'); scRoll(h4);
+  assert.equal(scStored(h4).ui.crew, 'Tunnellers', 'no sheet either: the first crew in the tables'); assert.equal(scStored(h4).ui.tier, 0); await h4.save();
+});
+
+const SCAST = { n1: { name: 'Ada Invented', role: 'a lamplighter', faction: SFAC[0], revealed: true }, n2: { name: 'Bram Invented', role: '', faction: '', revealed: false } };
+await test('18f. Who\'s asking: the NPCs on stage, the last NPC roll, the cast and the campaign\'s own, in optgroups; one asks and is the client, the pitch and the payer', async () => {
+  const rig = scRig({ cast: cl(SCAST) }), fg = fakeGm(SCAMP);
+  const h = await scPage({ fg, api: rig.api, camp: Object.assign(cl(SC_DOC), { scene: { npcs: { n1: true } } }) }); h.press('j');
+  assert.deepEqual(scGroups(h, 'client'), ['On stage', 'The cast', 'Campaign NPCs', 'Factions', 'Kinds']);
+  const grp = (i) => h.qa('#gm-sc-client optgroup')[i].querySelectorAll('option').map((o) => [o.getAttribute('value'), o.textContent]);
+  assert.deepEqual(grp(0), [['npc:app-n1', 'Ada Invented (' + SFAC[0] + ')']]); assert.deepEqual(grp(1), [['npc:app-n2', 'Bram Invented']], 'the cast has the rest: each NPC once');
+  assert.ok(grp(2).length >= 3 && grp(2).every((o) => /^npc:pack-/.test(o[0])), 'the campaign\'s NPCs, none already listed');
+  pick(h, '#gm-sc-client', 'npc:app-n1'); eqj(stateDoc(h).sc.ui.who, { name: 'Ada Invented', faction: SFAC[0], district: '', role: 'a lamplighter', want: '' });
+  scRoll(h);
+  assert.match(scRows(h)["Who's asking"], /^Ada Invented \(a lamplighter · The Brisk30 Guild\)/); assert.match(scRows(h)['Pays'], /paid by Ada Invented$/);
+  { const s = scReplay(h).score, pitch = cardOf(h, '#gm-score .gm-sc-want').replace(/\u21bb/g, '').trim(); assert.ok(s.seed ? pitch === s.pitch : pitch.startsWith('**Ada Invented** wants you to '), pitch); }
+  assert.ok(!h.q('#gm-score [data-gm="scoreface"]'), 'A face is for a client who is not an NPC yet');
+  const st = scStored(h); assert.equal(st.ui.client, 'npc:app-n1'); assert.equal(st.ui.who.name, 'Ada Invented'); assert.equal(st.ui.who.role, 'a lamplighter');
+  const card = scText(h);
+  await h.save();
+  // the cast changes under the card: a replay still reads the stored who, so the card is the same
+  rig.cast.n1.name = 'Someone Else'; const h2 = await scPage({ fg, api: rig.api, camp: Object.assign(cl(SC_DOC), { scene: { npcs: { n1: true } } }) }); h2.press('j');
+  assert.equal(scText(h2), card, 'a reload redraws the card from the NPC the score kept'); assert.equal(optSel(h2, '#gm-sc-client').getAttribute('value'), 'npc:app-n1');
+  assert.ok(h2.qa('#gm-sc-client optgroup').some((g) => g.getAttribute('label') === 'On stage'));
+  await h2.save();
+  // an NPC picked earlier who is in no list now stays pickable (and chosen)
+  const fg3 = fakeGm(SCAMP); fg3.server.doc = { sc: { ui: { client: 'npc:app-gone', who: { name: 'Gone Invented', faction: '', district: '', role: 'a ferryman', want: 'peace' } } } };
+  const h3 = await scPage({ fg: fg3 }); h3.press('j');
+  assert.deepEqual(scGroups(h3, 'client')[0], 'Picked'); assert.equal(optSel(h3, '#gm-sc-client').textContent, 'Gone Invented (a ferryman)');
+  scRoll(h3); assert.match(scRows(h3)["Who's asking"], /^Gone Invented \(a ferryman\) — wants peace$/); await h3.save();
+});
+
+await test('18g. A job for them (on the NPC card) and Job (beside a name in the rail\'s On stage box) set the NPC as the client, open the Score tab and roll', async () => {
+  const K = require(path.join(ROOT, 'app', 'figures', 'figure-kit.js'));
+  const rig = scRig({ cast: cl(SCAST) }), fg = fakeGm(Object.assign({}, NPCFIX.parts.campaign, SCFIX.campaign), { npc: { version: 'n1', src: {}, body: NPCFIX.parts.npc } });
+  const camp = Object.assign(cl(SC_DOC), { scene: { npcs: { n1: true } } });
+  const h = await openPage({ br: fakeBrowser({ B68GmNpc: NPCM, B68Figure: K }), fg, api: rig.api, camp });
+  // the rail: a Job button beside each name on stage
+  const jb = h.q('#gm-rail [data-gm="scorestage"][data-id="n1"]'); assert.ok(jb && jb.textContent === 'Job' && /A job for Ada Invented/.test(jb.getAttribute('aria-label')), 'a Job button beside the name');
+  assert.ok(!h.q('#gm-rail [data-gm="scorestage"][data-id="n2"]'), 'only for those on stage'); assert.equal(h.qa('#gm-rail .gm-onstage a').length, 1);
+  jb.click();
+  assert.equal(h.page._state().panel, 'score'); assert.ok(h.q('#gm-score .gm-sccard'), 'it rolled');
+  assert.match(scRows(h)["Who's asking"], /^Ada Invented/); assert.equal(scStored(h).ui.client, 'npc:app-n1');
+  // the NPC card: A job for them
+  h.press('n'); h.q('[data-gm="npcroll"]').click();
+  const nm = cardOf(h, '#gm-npc .gm-npccard h3').split(' — ')[0];
+  const nj = h.q('#gm-npc .gm-npccard [data-gm="npcjob"]'); assert.ok(nj && nj.textContent === 'A job for them');
+  nj.click();
+  assert.equal(h.page._state().panel, 'score', 'the Score tab opened');
+  assert.match(scRows(h)["Who's asking"], new RegExp('^' + nm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))); assert.equal(scStored(h).ui.client.indexOf('npc:roll-'), 0);
+  assert.ok(h.qa('#gm-sc-client optgroup').some((g) => g.getAttribute('label') === 'Last NPC roll'), 'the last NPC roll is in the picker');
+  assert.equal(h.qa('#gm-score .gm-earlier [data-gm="replay"]').length, 2, 'each roll is in Earlier');
+  await h.save();
+  assert.equal(fg.server.displays.length, 0);
+});
+
+await test('18h. To Cards adds the opportunity to the Cards panel after the last, eight at most; it is shown to the players only from there', async () => {
+  const fg = fakeGm(SCAMP), h = await scPage({ fg }); h.press('j'); scRoll(h);
+  const e = SCM.cardEntry(scReplay(h).score);
+  h.q('#gm-score [data-gm="scorecards"]').click();
+  const list = () => Object.values(stateDoc(h).opps.list).sort((a, b) => a.order - b.order);
+  assert.equal(list().length, 1); const o = list()[0];
+  assert.deepEqual({ from: o.from, client: o.client, target: o.target, type: o.type, note: o.note, payout: o.payout }, e); assert.equal(o.order, 1);
+  assert.ok(h.br.toasts.some((t) => t[0] === 'On the Cards panel: ' + e.type + ' · ' + e.target + '. Show it from there.' && !t[1]), JSON.stringify(h.br.toasts));
+  h.press('o'); assert.equal(h.qa('#gm-cards .oc-in[data-f="type"]').map((i) => i.getAttribute('value'))[0], e.type, 'it is on the Cards panel');
+  for (let i = 0; i < 7; i++) { scRoll(h); h.q('#gm-score [data-gm="scorecards"]').click(); }
+  assert.deepEqual(list().map((x) => x.order), [1, 2, 3, 4, 5, 6, 7, 8], 'in order, after the last');
+  h.br.toasts.length = 0; scRoll(h); h.q('#gm-score [data-gm="scorecards"]').click();
+  assert.equal(list().length, 8, 'the ninth is refused'); assert.ok(h.br.toasts.some((t) => /Cards panel holds 8 cards already/.test(t[0]) && t[1]), JSON.stringify(h.br.toasts));
+  const finalList = list();
+  await h.save();
+  assert.equal(fg.server.displays.length, 0, 'nothing went to the iPad: the Cards panel\'s own Show buttons do that');
+  for (const o2 of finalList) for (const k of ['from', 'client', 'target', 'type', 'note', 'payout']) assert.ok(typeof o2[k] === 'string' && o2[k].length <= 120, k);
+});
+
+await test('18i. Roll the site sets the Location pickers from the score (the way Score sites does), opens Location and rolls; what the generator lacks is named', async () => {
+  // approaches the location fixture holds, so every hint matches
+  const T2 = cl(SCT), WAYS = ['Quiet', 'Loud'];
+  for (const op of Object.values(T2.op)) op.ways = WAYS.slice(); T2.vector = { Quiet: ['a quiet way in'], Loud: ['a loud way in'] }; T2.approach = [['Quiet', 'the quiet way'], ['Loud', 'the loud way']];
+  const fg = fakeGm(SCAMP, { score: { version: 'sc2', src: {}, body: { T: T2 } } }), h = await scPage({ fg }); h.press('j');
+  pick(h, '#gm-sc-target', 'fac:' + SFAC[1]); scRoll(h);
+  const rows = scRows(h);
+  h.q('#gm-score [data-gm="scoresite"]').click();
+  const st = h.page._state(); assert.equal(st.panel, 'location'); assert.ok(st.locRoll, 'a location was rolled');
+  const lu = stateDoc(h).loc.ui; assert.equal(lu.faction, SFAC[1]); assert.equal(lu.approach, 'Quiet'); assert.ok(SDIST.includes(lu.district) && rows['Where'].endsWith(lu.district), JSON.stringify(lu) + ' / ' + rows['Where']);
+  assert.ok(FIXL.T.targetNames.includes(lu.target) && rows['Where'].includes(lu.target), 'the building type is the location generator\'s');
+  assert.ok(!h.br.toasts.some((t) => /Not in the generator/.test(t[0])), 'every hint matched');
+  assert.equal(stateDoc(h).cards.location.ui.faction, SFAC[1], 'the location card was rolled with them');
+  await h.save();
+  // the default fixture\'s approaches are the score tables\' own (Stealth ...), which the location fixture lacks: rolled on any, and said so
+  const h2 = await scPage({ fg: fakeGm(SCAMP) }); h2.press('j'); scRoll(h2);
+  h2.q('#gm-score [data-gm="scoresite"]').click();
+  assert.equal(h2.page._state().panel, 'location'); assert.equal(stateDoc(h2).loc.ui.approach, '', 'an approach the generator lacks rolls on any');
+  assert.ok(h2.br.toasts.some((t) => t[1] && /^Not in the generator, so rolled on any: approach “\w+”\.$/.test(t[0])), JSON.stringify(h2.br.toasts));
+  await h2.save();
+});
+
+await test('18j. A face sets the NPC pickers from the score (the client\'s faction, or the target\'s when nobody asks, and the district), opens NPC and says what it set; it is not offered when an NPC asks', async () => {
+  const npcPart = cl(NPCFIX.parts.npc); for (const f of SFAC.slice(0, 3)) npcPart.T.faction.push([f, 3, 'S']); for (const d of SDIST.slice(0, 2)) npcPart.T.district.push(d);
+  const mk = (camp) => fakeGm(camp || Object.assign({}, NPCFIX.parts.campaign, SCFIX.campaign), { npc: { version: 'n9', src: {}, body: npcPart } });
+  const open = (fg) => openPage({ br: fakeBrowser({ B68GmNpc: NPCM }), fg, camp: SC_DOC });
+  let h = await open(mk()); h.press('j');
+  pick(h, '#gm-sc-client', 'fac:' + SFAC[0]); pick(h, '#gm-sc-district', SDIST[0]); scRoll(h);
+  h.q('#gm-score [data-gm="scoreface"]').click();
+  assert.equal(h.page._state().panel, 'npc'); eqj(stateDoc(h).npc.ui, { faction: SFAC[0], district: SDIST[0], place: '' });
+  assert.equal(optSel(h, '#gm-n-faction').getAttribute('value'), SFAC[0], 'the NPC pickers show it');
+  assert.ok(h.br.toasts.some((t) => !t[1] && t[0] === 'For a face: ' + SFAC[0] + ', ' + SDIST[0] + '. Change either before you roll.'), JSON.stringify(h.br.toasts));
+  await h.save();
+  // nobody asks: the target's faction; a district the NPC tables lack: any (not whatever Now in is)
+  h = await open(mk()); h.press('j');
+  pick(h, '#gm-sc-client', '-'); pick(h, '#gm-sc-target', 'fac:' + SFAC[2]); pick(h, '#gm-sc-district', SDIST[3]); scRoll(h);
+  h.q('#gm-score [data-gm="scoreface"]').click();
+  eqj(stateDoc(h).npc.ui, { faction: SFAC[2], district: '*', place: '' }); assert.ok(h.br.toasts.some((t) => t[0] === 'For a face: ' + SFAC[2] + '. Change either before you roll.'), JSON.stringify(h.br.toasts));
+  await h.save();
+  // a kind of client has no faction
+  h = await open(mk()); h.press('j'); pick(h, '#gm-sc-client', 'kind:Civilian'); pick(h, '#gm-sc-district', SDIST[3]); scRoll(h);
+  h.q('#gm-score [data-gm="scoreface"]').click(); eqj(stateDoc(h).npc.ui, { faction: '', district: '*', place: '' });
+  assert.ok(h.br.toasts.some((t) => /hold neither the faction nor the district/.test(t[0])), JSON.stringify(h.br.toasts)); await h.save();
+  // an NPC who asks: no A face
+  h = await open(mk(SCAMP)); h.press('j'); pick(h, '#gm-sc-client', 'npc:pack-' + P.slug('Marge Teacup')); scRoll(h);
+  assert.ok(!h.q('#gm-score [data-gm="scoreface"]')); await h.save();
+});
+
+await test('18k. Start the clock: addClock gets one hidden danger clock, once; the button is done for that card, after a reload and on its Earlier entry; a new card starts clean', async () => {
+  const rig = scRig(), fg = fakeGm(SCAMP), br = fakeBrowser();
+  const h = await scPage({ fg, br, api: rig.api }); h.press('j'); scRoll(h);
+  const btn = () => h.q('#gm-score [data-gm="scoreclock"]'), want = SCM.clockOf(scReplay(h).score);
+  assert.equal(btn().textContent, 'Start the clock');
+  btn().click(); btn() && btn().click();
+  assert.ok(await until(() => br.toasts.some((t) => /^Clock started/.test(t[0]))), 'a toast');
+  assert.equal(rig.clocks.length, 1, 'addClock was called once'); const c = rig.clocks[0];
+  assert.ok(/^c_[a-z0-9]+$/.test(c.id), c.id); assert.deepEqual(Object.assign({}, c, { id: 'x' }), { id: 'x', name: want.name, size: want.size, filled: 0, kind: 'danger', hidden: true });
+  assert.ok(br.toasts.some((t) => t[0] === 'Clock started, hidden from the players: ' + want.name + '. Show it from the table page.' && !t[1]), JSON.stringify(br.toasts));
+  assert.ok(btn().hasAttribute('disabled') && btn().textContent === 'Clock started: ' + want.name, 'the button is done');
+  btn().click(); await tick(); assert.equal(rig.clocks.length, 1, 'a second tap starts nothing');
+  const st = scStored(h); assert.equal(st.started[want.name], c.id, 'the card keeps the clock\'s id'); assert.equal(stateDoc(h).hist.score[st.hid].started[want.name], c.id, 'and so does its Earlier entry');
+  await h.save();
+  const h2 = await scPage({ fg, br, api: rig.api }); h2.press('j');
+  assert.ok(h2.q('#gm-score [data-gm="scoreclock"]').hasAttribute('disabled') && h2.q('#gm-score [data-gm="scoreclock"]').textContent === 'Clock started: ' + want.name, 'still done after a reload');
+  scRoll(h2); assert.ok(!('started' in scStored(h2)), 'a new card starts with no clock of the old one\'s'); assert.equal(h2.q('#gm-score [data-gm="scoreclock"]').textContent, 'Start the clock');
+  h2.qa('#gm-score [data-gm="replay"]').filter((x) => !x.hasAttribute('aria-current'))[0].click();
+  assert.equal(h2.q('#gm-score [data-gm="scoreclock"]').textContent, 'Clock started: ' + want.name, 'Earlier brings the card back with its clock started');
+  await h2.save();
+  // the table refuses it: the button comes back and the toast says so; with no table at all, it says where to start it
+  const rig3 = scRig({ fail: new Error('the table is offline') }), h3 = await scPage({ api: rig3.api }); h3.press('j'); scRoll(h3);
+  h3.q('#gm-score [data-gm="scoreclock"]').click();
+  assert.ok(await until(() => h3.br.toasts.some((t) => /^Could not start the clock: the table is offline/.test(t[0]) && t[1]))); assert.ok(!h3.q('#gm-score [data-gm="scoreclock"]').hasAttribute('disabled'), 'the button is back'); await h3.save();
+  const h4 = await scPage({}); h4.press('j'); scRoll(h4); h4.q('#gm-score [data-gm="scoreclock"]').click();
+  assert.ok(h4.br.toasts.some((t) => /table is not available here/.test(t[0]) && t[1])); await h4.save();
+});
+
+await test('18l. Pin and Copy are the card as plain lines; L files "Score: <label>"; nothing in the Score panel ever goes to the iPad', async () => {
+  const fg = fakeGm(SCAMP), br = fakeBrowser(), rig = scRig(), h = await scPage({ fg, br, api: rig.api }); h.press('j'); scRoll(h);
+  h.q('#gm-score [data-gm="copy"]').click();
+  assert.ok(/^\S.* · \S/.test(br.copied.split('\n')[0]) && /\nWho's asking: /.test(br.copied) && /\nBy the book: /.test(br.copied) && !/\*\*|↻|<[a-z]/.test(br.copied), br.copied.slice(0, 200));
+  h.q('#gm-score [data-gm="pin"]').click(); h.press('l');
+  h.q('#gm-score .gm-bump[data-row="why"]').click(); h.q('#gm-score [data-gm="scorecards"]').click(); h.q('#gm-score [data-gm="scoreclock"]').click(); h.q('#gm-score [data-gm="scoresite"]').click();
+  await h.save();
+  const pins = Object.values(fg.server.doc.pins); assert.equal(pins.length, 1); assert.equal(pins[0].tool, 'score'); assert.ok(pins[0].text.length > 100 && pins[0].text.length <= 1500);
+  const cap = Object.values(fg.server.doc.capture); assert.ok(cap.some((e) => e.bucket === 'r' && /^Score: .+ · .+/.test(e.text)), JSON.stringify(cap));
+  assert.equal(fg.server.displays.length, 0, 'no roll, ↻, To Cards, clock, site, pin or copy sent anything to the iPad');
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8'), sec = src.slice(src.indexOf('Score (J): the outline of a heist'), src.indexOf('Downtime (D): personal business'));
+  assert.ok(sec.length > 5000 && !/pushDisplay|setDisplay|kind: 'cards'|oppShow/.test(sec), 'the Score section of the page has no road to the display');
+});
+
+await test('18m. a pack without the score part, or an old shell without the module: the panel says so, the Job buttons are not offered, the rest works; the Pack check names what the part lacks', async () => {
+  const fg = fakeGm(SCAMP); const full = fg.gm.pack; fg.gm.pack = async () => { const r = await full(); delete r.parts.score; return r; };
+  const rig = scRig({ cast: cl(SCAST) });
+  const h = await scPage({ fg, api: rig.api, camp: Object.assign(cl(SC_DOC), { scene: { npcs: { n1: true } } }) }); h.press('j');
+  assert.equal(h.q('#gm-score').textContent, 'The pack has no score part. Update the pack.'); assert.ok(!h.q('#gm-rail [data-gm="scorestage"]'), 'no Job button without a score part');
+  h.press('2'); assert.ok(cardTxt(h).length > 20, 'the console still rolls'); await h.save();
+  const h2 = await scPage({ br: fakeBrowser({ B68GmScore: undefined }) }); h2.press('j');
+  assert.match(h2.q('#gm-score').textContent, /score generator module is missing/); await h2.save();
+  const sparse = cl(SCFIX.score.T); delete sparse.why; sparse.op.Lift.verb = 'no placeholder';
+  const h3 = await scPage({ fg: fakeGm(SCAMP, { score: { version: 'sc3', src: {}, body: { T: sparse } } }) });
+  assert.ok(/score: op\.Lift\.verb, why/.test(h3.q('#gm-menu-warn').textContent), 'the Menu lists them: ' + h3.q('#gm-menu-warn').textContent);
+  assert.deepEqual(P.packWarnings({ B68GmScore: SCM }, { score: { T: sparse } }), [{ part: 'score', missing: SCM.check(sparse) }]);
+  assert.deepEqual(P.packWarnings({ B68GmScore: SCM }, { score: { T: SCT } }), [], 'the fixture is complete');
+  h3.press('j'); scRoll(h3); assert.ok(h3.q('#gm-score .gm-sccard'), 'a roll still works on a pack that lacks entries'); await h3.save();
+});
+
+await test('18n. the cloud stays as the GM left it (open or shut) through a ↻ and a reload; every ↻ and button in the panel is a real control', async () => {
+  const fg = fakeGm(SCAMP), br = fakeBrowser(), h = await scPage({ fg, br }); h.press('j'); scRoll(h);
+  const cloud = () => h.q('#gm-score details.gm-sc-cloud');
+  assert.ok(!cloud().hasAttribute('open')); cloud().setAttribute('open', ''); cloud().open = true; dispatch(cloud(), 'toggle');
+  h.q('#gm-score .gm-bump[data-row="twist"]').click(); assert.ok(cloud().hasAttribute('open'), 'a ↻ leaves the cloud open');
+  await h.save();
+  const h2 = await scPage({ fg, br }); h2.press('j'); assert.ok(h2.q('#gm-score details.gm-sc-cloud').hasAttribute('open'), 'and so does a reload (this device)');
+  for (const b of h2.qa('#gm-score button')) assert.equal(b.getAttribute('type'), 'button', 'no stray submit buttons');
+  await h2.save();
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

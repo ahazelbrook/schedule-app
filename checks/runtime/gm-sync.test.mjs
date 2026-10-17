@@ -630,6 +630,8 @@ await test('the pack guard: a prep note gone or much shorter, a part gone or far
   ok(gone.some((l) => /prep part is gone \(no note has gm_prep/.test(l.what)), 'prep gone');
   eq(packLosses(before, { screen: before.screen, tiny: {} }, { missing: false }).length, 0, 'the push leaves missing parts alone');
   ok(packLosses({ screen: 9000 }, { screen: 2000 }).some((l) => /screen part shrank/.test(l.what)), 'sizes from the server index');
+  eq(packLosses({ ...before, engagement: { T: { a: 'z'.repeat(9000) } } }, before).length, 0, 'a retired part (engagement) that the pack no longer carries is not a loss');
+  eq(packLosses({ engagement: 90000 }, {}).length, 0, 'nor from the server index');
 });
 
 await testPack('pack: the push refuses a pack that would lose prep (the 16/10 Sync rollback), and --allow-shrink pushes it', async () => {
