@@ -1,37 +1,42 @@
-# RESUME HERE (updated 16 Oct 2026, afternoon UTC)
+# RESUME HERE (updated 17 Oct 2026, morning AEDT)
 
-**State.** Branch `ccr-e0dcd379-q104ac` (PR #26) holds everything: the six wave-1 branches, GM wave 2,
-`review/clocks` (E3 + the players' leftovers, e14c982), `review/display-budget` (E4 + E14, 8b1faba) and the new
-**Downtime generator** (the module 6fc125d, its tables in `app/downtime-tables.js` 51b495e, the GM page's panel
-`review/downtime-page` 1637354). Docs sweep done (7e398a4, 9d9427b, 13b632e). Nothing is deployed yet.
+**State.** `main` is live: Worker `47f70eaf`, deployed 17 Oct (a game day, on Alex's go-ahead), rollback
+`npx wrangler rollback 656410da`. Every PR from #14 to #29 is merged and deployed. The vault keeps the deploy history
+(its app plan page, "Status 17/10/2026"); `GM.md` describes every panel as it now stands.
 
-**The Downtime generator** (Alex asked, 16 Oct: "an indulge vice generator ... and any other personal business
-generators"). GM page, key **D**: tap the PC (their vice and purveyor fill in from their sheet), the activity, then the
-result, which rolls the card at once. Indulge vice: the scene at the purveyor, a question for the player, a hook;
-**Overindulged** puts Attract trouble · Brag · Lost · Tapped over a cost box (the mechanical line in bold, a scene prompt
-under it; trouble brings "Start a clock" (a hidden danger clock on the table), Tapped names a new source from the book).
-Also Recover, Long-term project, Train, Friend or rival (from the sheet's contacts), Lay low, Acquire. Original writing;
-the overindulgence lines follow Blades in the Dark (check them against the '68 book: `app/downtime-tables.js`, `over`).
-Checks: `checks/runtime/gm-downtime.test.mjs` (9), gm-page.test (109), gm.e2e (231), all of `npm test` (705).
+**The Downtime panel (D) and the Morning After** (the vault's house rule, version 3; PRs #26, #27 and #29). Personal
+business at the table: tap the PC, the activity, then the result. Indulge vice shows the night (a picture, then the line
+the host says), then **the morning after**: the player's d100 on the **Benefits** (Indulged) or the **Mishaps**
+(Overindulged), roll high on both. The card shows the entry the number lands on and one more from its band; **Keep**,
+**Another** and **Change** let the GM choose. A Mishap names one of the book's six overindulgences as its cost. The two
+tables come from the vault note into the private `downtime` pack part (`{ v: 2, T: { benefit, mishap } }`, 50 + 50,
+zine-derived, so never in git). The vice scenes are original writing in `app/downtime-tables.js`. Checks:
+`gm-downtime.test` (13), `gm-downtime-export.test` (4), `gm-page.test` 17a–17m (113), `gm.e2e` (237, laptop and phone).
+
+**How the deploys went on 16–17 Oct** (every one worked this way):
+1. A clean worktree of `origin/main`, with `node_modules` linked in and the git-ignored media copied from the GM's PC:
+   `app/ambient/calling-cards.html`, `tools/ambient/cards/` and `app/media/theme.mp3`.
+2. On that copy, unstamped: `npm run check:runtime`, then the API checks one by one (`checks/api/clocks.mjs` can't run
+   on Windows: its setup chain breaks; the rest pass).
+3. Stamp `var BUILD` in `app/routes.js` as `<UTC date>-<commit7>`, so open pages show "Updated: reload".
+4. `npx wrangler deploy`; then check that every path answers 302 to Access.
+5. A changed pack part goes up on its own: build the pack, write a file holding only that part, and run
+   `npm run gm:push -- --only pack --pack <file> --yes` (the other parts stay as they are). Push the code first when a
+   part's shape changes.
+6. Remove the worktree (unlink `node_modules` first) and `git pull` main.
+`npm run deploy` (scripts/deploy.sh, SETUP.md "Updating the app") is the route documented for Alex; it also re-uploads
+the Access secrets and can rewrite the Access policy.
 
 **Then, in order:**
-1. ~~The final verification~~ DONE on 13b632e: `npm test` 705 PASS, 0 FAIL; `npm run check:e2e-all` 26 of 27 (only
-   gm-stt, its same four fake-microphone lines, as on untouched main).
-2. ~~Update PR #26's description, mark it ready and merge to main~~ (doing it now; Alex asked for everything merged).
-   Merging does not deploy.
-3. Deploy (Alex, from the Windows PC; SETUP.md "Updating the app" has it in seven plain steps): `npm run deploy` from
-   **Git Bash** (not plain wrangler: the script stamps the build, which is how phones learn of a new version). It needs a
-   clean tree; `app/media/theme.mp3` and `app/ambient/calling-cards.html` on disk; `B68_GM_EMAILS=ahazelbrook@gmail.com`;
-   the Access team name and AUD tag (it asks; Cloudflare Zero Trust dashboard: Settings → team domain
-   `<team>.cloudflareaccess.com`; Access → Applications → the app → Application Audience (AUD) Tag). **Never on a game
-   day** (Sat 17 Oct 2026 is one: deploy Sunday or later). After deploying: on the iPad pin the planning meeting for a
-   minute (lag), then pin the credits and tap once (theme); watch for heads. Try the Downtime tab at the next session.
-4. Optional ideas, only after a session on the new layout (see Wave 2): re-roll one row, "Make them an NPC", chaining
-   Street → Location → NPC; E16 util.js; lazy loading phase 2; a vault page for the downtime tables (pack part
-   `downtime`) if Alex wants to write their own.
+1. After tonight's session (17 Oct): `npm run gm:after` (a plan by default; `--yes` files the night into the vault),
+   and see how the Downtime card played at the table.
+2. Open items: a full pass on Safari and the real iPad; delete the stray `schedule-app` Worker in the Cloudflare
+   dashboard; make the repo private (Alex); the NPC figure-map vault page; the vault district-scenes repeat-guard bug.
+3. Optional ideas: re-roll one row, "Make them an NPC", chaining Street → Location → NPC; E16 util.js; lazy loading
+   phase 2; move the vice scenes into the vault too (a pack part can already replace any table), if Alex wants to edit
+   them there.
 
-**How to start the next session:** "Read TODO.md on branch ccr-e0dcd379-q104ac and follow RESUME HERE." (Once PR #26
-is merged, work continues on main or a fresh branch from it.)
+**How to start the next session:** "Read TODO.md on main and follow RESUME HERE."
 
 ---
 
@@ -272,9 +277,11 @@ last unsubscribe landing after the count; 2 of 12 runs failed under heavy load, 
       ROADMAP, DEPLOY...) in app/season.js, app/gm-page.js, app/display-page.js, app/README.md (also: list routes.js),
       CAST.md, CAMPAIGN.md, functions/_lib/gm.js, functions/api/gm/ambient.js and display.js; AMBIENT-PLAN's decisions
       into GM.md. · S
-- [x] (MERGED 1637354) Downtime generator (Alex, 16 Oct): personal business at the table, the GM page's **D** panel. Indulge
-      vice with the overindulgence's cost and a clock; Recover, Long-term project, Train, Friend or rival, Lay low, Acquire.
-      `app/gm/downtime.js` (logic), `app/downtime-tables.js` (the writing), boot's `characters()` and `addClock()`. · M
+- [x] (MERGED 1637354; live 17 Oct with PR #26) Downtime generator (Alex, 16 Oct): personal business at the table, the GM
+      page's **D** panel. Indulge vice with the overindulgence's cost and a clock; Recover, Long-term project, Train, Friend
+      or rival, Lay low, Acquire. `app/gm/downtime.js` (logic), `app/downtime-tables.js` (the writing), boot's
+      `characters()` and `addClock()`. · M Since then (17 Oct) Indulge vice is the vault's house rule the Morning After:
+      Good Mornings in PR #27, then the d100 of Benefits or Mishaps with two cards to choose from in PR #29 (RESUME HERE).
 - [ ] E16 P3 · One app/util.js for the twelve copies of esc/isObj/clone (adopt per touched module). · M
 
 ## Later or parked
