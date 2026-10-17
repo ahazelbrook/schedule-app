@@ -461,7 +461,7 @@ npm run build          # = npx wrangler deploy --dry-run --outdir .wrangler/dist
 npm test               # = npm run check:runtime && npm run check:api (no browser)
 npm run check:api      # checks/api/jwt.mjs, worker.mjs, deploy.mjs (the deploy script in a throwaway copy), flow.mjs (own servers on 8788 and 8789), clocks.mjs (the clocks under concurrent writes, 8788), then rules.mjs (8794), npcs.mjs (8841), gm.mjs (8843), name.mjs, display-role.mjs
 npm run check:gm-api   # checks/api/gm.mjs alone: the GM tools' API (own server on 8843)
-npm run check:runtime  # 19 plain-node unit tests in checks/runtime/: adapter, pwa (and routes.js), markdown, display, the GM modules (gm-*), stt, ambient-* (README lists them)
+npm run check:runtime  # 24 plain-node unit tests in checks/runtime/: adapter, pwa (and routes.js), markdown, display, the GM modules (gm-*), stt, ambient-* (README lists them)
 npm run check:sweep    # gm-figure and gm-npc with the full 500-seed sweeps (npm test runs 100: B68_SWEEP)
 npm run check:offline  # checks/runtime/offline.e2e.mjs (own server on 8790, Chromium)
 npm run check:schedule # checks/runtime/schedule.e2e.mjs (own server on 8791, Chromium)

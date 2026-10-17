@@ -1019,7 +1019,8 @@
      tool's own and stays through a change of Now in; "any" keeps a tool on any. A tool's stored choice is '' (never set: it
      follows), NOW_ANY ('*': any) or a district name (its own). A roll stores the district it resolved to in its own `ui`, so
      Earlier and a replay never move when Now in does. Each tool has its own list (its pack part's), so a name is matched without
-     case, a leading "the" or punctuation, and a tool whose list lacks it rolls on any. */
+     case, a leading "the" or punctuation, and a tool whose list lacks it rolls on any. (The Score panel's Where is the exception: it
+     defaults to where the target is, and offers Now in as one of its choices.) */
   var NOW_ANY = '*';
   function dkey(s) { return str(s).toLowerCase().replace(/^the\s+/, '').replace(/[^a-z0-9]+/g, ''); }
   function nowDistrict() { return S && S.doc && isObj(S.doc.now) ? str(S.doc.now.district).trim() : ''; }
