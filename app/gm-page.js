@@ -632,12 +632,13 @@
 
   /* the pack guard (scripts/lib/pack-guard.mjs, the same rules): what a new pack would lose against the one the page has.
      before / after: { <part>: body }. -> [what, ...] */
+  var RETIRED_PARTS = P.RETIRED_PARTS = ['engagement'];        /* parts the app dropped on purpose (Engage, replaced by Score 17/10/2026): not a loss */
   function packLosses(before, after) {
     var out = [], kib = function (n) { return (n / 1024).toFixed(1) + ' KiB'; }, size = function (v) { return bytesOf(JSON.stringify(v)); };
     var base = function (rel) { return str(rel).split('/').pop().replace(/\.md$/i, ''); };
     var notesOf = function (b) { var m = {}; (isObj(b) && Array.isArray(b.notes) ? b.notes : []).forEach(function (n) { if (isObj(n)) m[str(n.rel || n.id)] = (Array.isArray(n.blocks) ? n.blocks : []).reduce(function (k, x) { return k + (isObj(x) ? str(x.src).length : 0); }, 0); }); return m; };
     Object.keys(isObj(before) ? before : {}).forEach(function (name) {
-      var old = before[name]; if (old == null) return;
+      var old = before[name]; if (old == null || RETIRED_PARTS.indexOf(name) >= 0) return;
       var now = isObj(after) ? after[name] : undefined;
       if (now == null) { out.push('the ' + name + ' part is gone' + (name === 'prep' ? ' (no note has gm_prep: true now)' : name === 'screen' ? ' (no note has gm_screen: true now)' : '')); return; }
       var b0 = size(old), b1 = size(now);

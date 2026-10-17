@@ -1044,6 +1044,9 @@ await test('11c. packLosses: a part gone, a prep note gone or much shorter; grow
   assert.deepEqual(P.packLosses(before, { scenes: before.scenes }), ['the prep part is gone (no note has gm_prep: true now)']);
   const r = P.packLosses(before, { prep: { notes: [note('S/b68g-s02.md', 19000)] }, scenes: before.scenes });
   assert.ok(r.some((x) => /prep note b68g-s02 shrank from 44000 to 19000 characters/.test(x)), JSON.stringify(r));
+  // a part the app retired on purpose (Engage's) is not a loss, here and in the exporter's guard (same list)
+  assert.deepEqual(P.packLosses({ ...before, engagement: { T: { a: 'z'.repeat(9000) } } }, JSON.parse(JSON.stringify(before))), []);
+  assert.deepEqual(P.RETIRED_PARTS, ['engagement']);
 });
 
 await test('11d. Find: Ctrl+K and / open it, typing lists hits, arrows choose, Enter copies a filed line, Esc and Ctrl+K shut it; no shortcuts while it is open', async () => {

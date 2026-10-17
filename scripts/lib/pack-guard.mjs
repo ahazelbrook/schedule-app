@@ -8,6 +8,9 @@
 
 export const SHRINK = 0.75;        // a loss: under 75% of the size before
 const MIN_BYTES = 2048, MIN_CHARS = 1000;
+// Parts the app has retired on purpose: the pack file or the server may still hold one, and a pack without it has lost nothing.
+// (`engagement` was the Engage panel's, which the Score generator replaced on 17/10/2026; app/gm-page.js keeps the same list.)
+export const RETIRED_PARTS = ['engagement'];
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const sizeOf = (v) => (typeof v === 'number' ? v : Buffer.byteLength(typeof v === 'string' ? v : JSON.stringify(v)));
@@ -32,7 +35,7 @@ export function prepNotes(body) {
 export function packLosses(before, after, { missing = true } = {}) {
   const out = [];
   for (const [name, old] of Object.entries(isObj(before) ? before : {})) {
-    if (old == null) continue;
+    if (old == null || RETIRED_PARTS.includes(name)) continue;
     const now = isObj(after) ? after[name] : undefined;
     if (now == null) {
       if (missing) out.push({ part: name, what: 'the ' + name + ' part is gone' + (name === 'prep' ? ' (no note has gm_prep: true now)' : name === 'screen' ? ' (no note has gm_screen: true now)' : name === 'downtime' ? ' (no note has gm_downtime: true now)' : '') });
