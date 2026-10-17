@@ -12,12 +12,19 @@
 //   location  T (+ extra: the other top-level consts the generator reads) from the location generator
 //   campaign  pcs, callbacks, cast, standing, owed, npcs, names, clocks (mirrors view.js readPCs/pipeList/readNPCs/readNames)
 //             (pcs[].file is each character sheet's file name: the NPC generator's initials rule uses file names)
+//             and crew: the crew sheet's { name, type, tier, hold, enemies[], abilities[] } (the note under Campaigns/Group/
+//             whose frontmatter has `crew_type`; wikilinks reduced to their text), or null when there is no such note
 //   npc       T (NPC generator tables, cut before `const POOL`), cast (anchor rows from blades-68-npc-cast.md, the vault's own
 //             regex), F (the figure map). T.leverage[].t are functions in the vault; they are stored as data
 //             { f, t: "...{v}...", lower, head } and every one is round-trip tested, or the export fails.
 //   scenes    T from the district scene roller (Tools/blades-68-district-scenes.md, cut at `// --- Machinery`), plus
 //             T.ratingLabels (the four district rating labels, probed from the vault's ratings()). Checked: the time-of-day
 //             rule in generate() matches the keys of T.weather, the %F% placeholder is still used, every district is complete.
+//   score     (optional) T from the score generator page (Tools/blades-68-score-generator.md, cut at `// --- Machinery`), with
+//             T.loc laid over it from the location part: factionDetail, factionThumb, district (the names), gaz { <district>:
+//             { factions[], notables[] } } and targetNames, so the dossiers and districts have one source. No such page: no
+//             part. Checked: the app module's own check(T), the faction master against the location page's, and every building
+//             type, district and faction a table borrows from the location page; all of these are warnings.
 //
 //   prep      the prep notes: every note under the '68 folder with `gm_prep: true`, cut into Markdown blocks with their
 //             transclusions carried in, each task box with its anchor (lib/prep-export.mjs). No such note: no part.
@@ -45,6 +52,7 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { basenames } from "./lib/vault.mjs";
 import { buildPrep } from "./lib/prep-export.mjs";
@@ -55,6 +63,7 @@ import { buildDowntime } from "./lib/downtime-export.mjs";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..");
 const PART_CAP = 900 * 1024;        // the server's per-part cap (contract)
+const Score = createRequire(import.meta.url)("../app/gm/score.js");     // check(T) and fkey(): the app's own definitions of a complete table set and of a matching name
 
 // ---- args ---------------------------------------------------------------------------------------------
 function args(argv) {
@@ -436,6 +445,107 @@ function buildScenes(vault, exportedAt) {
   return { src: { file: rel(vault, file), blockSha: sha(block), exportedAt }, T };
 }
 
+// ---- part: score ----------------------------------------------------------------------------------------
+// The tables are read from the score generator's vault page the way the scenes page's are. What that page does not hold (the faction
+// dossiers, the district names and their notables, the building types) is the location part's, laid in as T.loc: one source for it.
+// An optional part: no page, no part. Everything below is checked, and every finding is a warning (the app's Pack check treats a
+// missing table the same way: the upload works, and a roll that needs one falls back to a neutral word); only a page that cannot be
+// read as tables at all (no marker, a statement that throws, a value that is not JSON) stops the export.
+const SCORE_PAGE = "blades-68-score-generator.md";
+const isStr = v => typeof v === "string" && v.trim() !== "";
+const isObj = v => v !== null && typeof v === "object" && !Array.isArray(v);
+const nameList = (a, n = 4) => a.slice(0, n).join(", ") + (a.length > n ? ", … (+" + (a.length - n) + " more)" : "");
+
+// The location page keeps a district as a row ([name, ...ratings]) and a district's factions as one comma-separated string; the
+// score part carries names and lists, and only the fields the generator reads.
+function layLocation(L) {
+  const names = (Array.isArray(L.district) ? L.district : []).map(r => (Array.isArray(r) ? r[0] : r)).filter(isStr);
+  const gazIn = isObj(L.gaz) ? L.gaz : {};
+  const gaz = {};
+  for (const d of names.length ? names : Object.keys(gazIn)) {
+    const g = gazIn[d];
+    if (!isObj(g)) continue;
+    const f = Array.isArray(g.factions) ? g.factions : String(g.factions == null ? "" : g.factions).split(",");
+    gaz[d] = { factions: f.map(s => String(s).trim()).filter(Boolean), notables: (Array.isArray(g.notables) ? g.notables : []).filter(isStr) };
+  }
+  const types = Array.isArray(L.targetNames) && L.targetNames.length ? L.targetNames : isObj(L.targetType) ? Object.keys(L.targetType) : [];
+  return {
+    factionDetail: isObj(L.factionDetail) ? L.factionDetail : {},
+    factionThumb: isObj(L.factionThumb) ? L.factionThumb : {},
+    district: names.length ? names : Object.keys(gaz),
+    gaz,
+    targetNames: types.filter(isStr),
+  };
+}
+
+// What the score tables borrow from the location page must be there, spelled the way the generators match it.
+function checkScore(T, L, loc) {
+  const label = "score";
+  const fk = Score.fkey;
+  const miss = Score.check(T);
+  if (miss.length) warn(label + ": the tables lack " + nameList(miss, 12));
+  const master = rows => new Map((Array.isArray(rows) ? rows : []).filter(r => Array.isArray(r) && isStr(r[0])).map(r => [fk(r[0]), r]));
+  const mine = master(T.faction), theirs = master(L.faction);
+  if (theirs.size) {                                         // the page keeps the 58 for its own roller; the location page's is the source
+    const here = [...mine.keys()].filter(k => !theirs.has(k)).map(k => mine.get(k)[0]);
+    const there = [...theirs.keys()].filter(k => !mine.has(k)).map(k => theirs.get(k)[0]);
+    const differ = [...mine.keys()].filter(k => theirs.has(k) && (mine.get(k)[1] !== theirs.get(k)[1] || mine.get(k)[2] !== theirs.get(k)[2])).map(k => mine.get(k)[0]);
+    const say = (a, what) => a.length ? a.length + " " + what + " (" + nameList(a) + ")" : "";
+    if (here.length || there.length || differ.length) warn(label + ": T.faction is not the location page's: " + [say(here, "only here"), say(there, "only there"), say(differ, "with another Tier or hold")].filter(Boolean).join("; "));
+  }
+  if (!loc) return;
+  const types = new Set(loc.targetNames), dists = new Set(loc.district.map(fk));
+  const badType = [], badFac = [], badDist = [];
+  const note = (a, v) => { if (isStr(v) && !a.includes(v)) a.push(v); };
+  for (const k of Object.keys(isObj(T.site) ? T.site : {})) for (const t of Array.isArray(T.site[k]) ? T.site[k] : []) if (types.size && !types.has(t)) note(badType, t);
+  for (const f of Object.keys(isObj(T.holding) ? T.holding : {})) {
+    if (mine.size && !mine.has(fk(f))) note(badFac, f);
+    for (const h of Array.isArray(T.holding[f]) ? T.holding[f] : []) {
+      if (!Array.isArray(h)) continue;
+      if (types.size && isStr(h[1]) && !types.has(h[1])) note(badType, h[1]);
+      if (dists.size && isStr(h[2]) && !dists.has(fk(h[2]))) note(badDist, h[2]);
+    }
+  }
+  for (const d of Object.keys(isObj(T.districtRule) ? T.districtRule : {})) if (dists.size && !dists.has(fk(d))) note(badDist, d);
+  if (badType.length) warn(label + ": building types the location page lacks, so Roll the site would not match: " + nameList(badType));
+  if (badFac.length) warn(label + ": T.holding names factions the faction master lacks: " + nameList(badFac));
+  if (badDist.length) warn(label + ": districts the location page lacks (in T.holding or T.districtRule): " + nameList(badDist));
+  const gazFac = [];
+  for (const d of Object.keys(loc.gaz)) for (const f of loc.gaz[d].factions) if (mine.size && !mine.has(fk(f))) note(gazFac, f);
+  if (gazFac.length) warn(label + ": the location page's gazetteer names factions the faction master lacks: " + nameList(gazFac));
+  const noGaz = loc.district.filter(d => !loc.gaz[d]);
+  if (noGaz.length) warn(label + ": districts with no gazetteer entry on the location page: " + nameList(noGaz));
+}
+
+function buildScore(vault, exportedAt, location) {
+  const label = "score";
+  const file = path.join(vault, ...TOOLS, SCORE_PAGE);
+  if (!fs.existsSync(file)) { warn(label + ": Tools/" + SCORE_PAGE + " does not exist yet, so there is no score part (the Score tab says the pack lacks it)"); return null; }
+  const { block } = pageBlock(vault, SCORE_PAGE, label);
+  const T = runTables(block, label, file);
+  const L = location && isObj(location.T) ? location.T : null;
+  let loc = null;
+  if (L) {
+    if (T.loc !== undefined) warn(label + ": the page sets T.loc; the location part's replaces it");
+    loc = T.loc = layLocation(L);
+  } else warn(label + ": there is no location part to lay the faction dossiers, districts and building types from, so the score part has no T.loc (Where, Their friends and the client's rivals fall back to what the tables hold)");
+  checkScore(T, L || {}, loc);
+  return { src: { file: rel(vault, file) + (loc ? " (+ the location part's dossiers)" : ""), blockSha: sha(block + "\u0000" + (loc ? JSON.stringify(loc) : "")), exportedAt }, T };
+}
+
+// Across the parts: the crew the campaign part carries must be one the score tables know.
+function crossCheckScore(score, campaign) {
+  const T = score.T, crew = campaign && campaign.crew, fk = Score.fkey;
+  if (!crew) { warn("score: the campaign part has no crew sheet (a note under Campaigns/Group/ with crew_type:), so the Score tab follows the table's own crew and has no enemies"); return; }
+  const types = Object.keys(isObj(T.crew) ? T.crew : {});
+  if (types.length && !types.some(t => fk(t) === fk(crew.type))) warn("score: the crew sheet's type (" + crew.type + ") has no row in T.crew (" + nameList(types) + "), so the Score tab has no seeds, favoured operations or ability notes for it");
+  const facs = new Set((Array.isArray(T.faction) ? T.faction : []).filter(r => Array.isArray(r)).map(r => fk(r[0])));
+  const unknown = (a) => a.filter(n => facs.size && !facs.has(fk(n)));
+  const badE = unknown(crew.enemies), badS = unknown((Array.isArray(campaign.standing) ? campaign.standing : []).map(s => s.faction));
+  if (badE.length) warn("score: the crew sheet's enemies the faction master lacks: " + nameList(badE));
+  if (badS.length) warn("score: the board's standing names factions the faction master lacks: " + nameList(badS));
+}
+
 // ---- tiny YAML frontmatter parser ---------------------------------------------------------------------
 // Handles what Dataview would hand view.js for these notes: scalars (numbers, booleans, null), quoted strings,
 // [a, b] flow lists, and `- item` block lists. Not a general YAML parser.
@@ -608,10 +718,32 @@ function buildCampaign(vault, exportedAt) {
     });
   }
 
+  // the crew sheet: the active note directly under Campaigns/Group/ whose frontmatter has `crew_type` (the file is named after the type,
+  // but the property is what is read). Generic keys, so no book term is in the app: the Score generator takes the crew's type, Tier,
+  // hold, enemies (factions) and abilities from here.
+  const sheets = [];
+  for (const f of mdFiles(group)) {
+    const text = readText(f), fm = parseFrontmatter(text);
+    if (!isStr(fm.crew_type) || String(fm.status ?? "active").toLowerCase() !== "active" || String(fm.campaign ?? "group").toLowerCase() === "solo") continue;
+    used.push([rel(vault, f), text]);
+    sheets.push({ file: path.basename(f), fm });
+  }
+  if (sheets.length > 1) warn("campaign: " + sheets.length + " active notes under Campaigns/Group/ have crew_type; the first (" + sheets[0].file + ") is the crew");
+  let crew = null;
+  if (sheets.length) {
+    const { file, fm } = sheets[0];
+    crew = {
+      name: String(fm.crew_name ?? "").trim(), type: String(fm.crew_type).trim(), tier: Number(fm.tier) || 0, hold: String(fm.hold ?? "").trim(),
+      enemies: rawList(fm.enemies).map(bare), abilities: rawList(fm.abilities).map(bare),
+    };
+    if (fm.enemies === undefined) warn("campaign: the crew sheet (" + file + ") has no `enemies:` property, so the Score generator knows no enemies of the crew");
+    if (fm.abilities === undefined) warn("campaign: the crew sheet (" + file + ") has no `abilities:` property, so the Score generator adds no ability notes");
+  } else warn("campaign: no active note under Campaigns/Group/ has crew_type, so the campaign part has no crew");
+
   const stamp = used.slice().sort((a, b) => a[0] < b[0] ? -1 : 1).map(([p, t]) => p + "\n" + t).join("\n\u0000\n");
   return {
-    src: { file: "Wiki/Games/Blades in the Dark/{Campaigns/Group/b68g-factions.md, Campaigns/Group/Characters/, NPCs/, Clocks/, Tools/blades-68-npc-generator.md} (" + used.length + " files)", blockSha: sha(stamp), exportedAt },
-    pcs, callbacks, cast, standing, owed, npcs, names, clocks,
+    src: { file: "Wiki/Games/Blades in the Dark/{Campaigns/Group/b68g-factions.md, Campaigns/Group/Characters/, Campaigns/Group/ (the crew sheet), NPCs/, Clocks/, Tools/blades-68-npc-generator.md} (" + used.length + " files)", blockSha: sha(stamp), exportedAt },
+    pcs, callbacks, cast, standing, owed, npcs, names, clocks, crew,
   };
 }
 
@@ -646,12 +778,13 @@ function main() {
 
   const parts = {};
   const failures = [];
-  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart]];
+  // score comes after location: it lays the location part's dossiers and districts over its own tables
+  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart]];
   let npcLeverage = 0;
   let locationExtraNames = [];
   for (const [name, fn] of builders) {
     try {
-      const part = fn(vault, now);
+      const part = fn(vault, now, parts.location);
       if (part === null) continue;                           // an optional part with nothing to carry (prep, screen)
       if (name === "location") { locationExtraNames = part._extraNames; delete part._extraNames; }
       if (name === "npc") { npcLeverage = part._leverage; delete part._leverage; }
@@ -665,6 +798,7 @@ function main() {
     } catch (e) { failures.push(name + ": " + e.message); }
   }
   if (failures.length) { for (const f of failures) console.error("FAILED  " + f); process.exit(1); }
+  if (parts.score) crossCheckScore(parts.score, parts.campaign);
 
   // the guard: never lose prep quietly (the 16/10/2026 Sync rollback)
   const losses = prev && prev.parts && typeof prev.parts === "object" ? packLosses(prev.parts, parts) : [];
@@ -704,9 +838,13 @@ function main() {
     console.log("  npc.T       (" + Object.keys(parts.npc.T).length + ")  " + summariseKeys(parts.npc.T).join(" "));
     console.log("  npc: cast " + parts.npc.cast.length + ", leverage shapes " + npcLeverage + " (round-trip tested), F " + (parts.npc.F ? "present (" + Object.keys(parts.npc.F).join(", ") + ")" : "null"));
     console.log("  scenes.T     (" + Object.keys(parts.scenes.T).length + ")  " + summariseKeys(parts.scenes.T).join(" "));
+    const sc0 = parts.score;
+    console.log("  score: " + (sc0 ? "T (" + Object.keys(sc0.T).length + ")  " + summariseKeys(sc0.T).join(" ") : "none (no Tools/" + SCORE_PAGE + ")"));
+    if (sc0 && sc0.T.loc) console.log("  score.T.loc: " + Object.keys(sc0.T.loc.factionDetail).length + " dossiers, " + Object.keys(sc0.T.loc.factionThumb).length + " thumbnails, " + sc0.T.loc.district.length + " districts, " + sc0.T.loc.targetNames.length + " building types (laid from the location part)");
     const c = parts.campaign;
     console.log("  campaign: pcs " + c.pcs.length + ", callbacks " + c.callbacks.length + ", cast " + c.cast.length + ", standing " + c.standing.length +
-      ", owed " + c.owed.length + ", npcs " + c.npcs.length + ", names " + c.names.first.length + "/" + c.names.family.length + ", clocks " + c.clocks.length);
+      ", owed " + c.owed.length + ", npcs " + c.npcs.length + ", names " + c.names.first.length + "/" + c.names.family.length + ", clocks " + c.clocks.length +
+      ", crew " + (c.crew ? c.crew.type + " Tier " + c.crew.tier + " (" + c.crew.enemies.length + " enemies, " + c.crew.abilities.length + " abilities)" : "none"));
     const pr = parts.prep;
     console.log("  prep: " + (pr ? pr.notes.length + " note(s), " + pr.notes.reduce((n, x) => n + x.blocks.length, 0) + " blocks, " +
       pr.notes.reduce((n, x) => n + x.blocks.reduce((m, b) => m + b.tasks.length, 0), 0) + " task boxes, " + Object.keys(pr.links).length + " linked pages, " +
@@ -725,5 +863,5 @@ function main() {
 }
 
 // Runs as a script; importing the file (the unit test does) only exposes the npc helpers below.
-export { buildNpc, buildScenes, leverageToData, applyLeverage, parseCast, parseFigureMap, warnings as exportWarnings };
+export { buildNpc, buildScenes, buildScore, buildCampaign, layLocation, crossCheckScore, leverageToData, applyLeverage, parseCast, parseFigureMap, warnings as exportWarnings };
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

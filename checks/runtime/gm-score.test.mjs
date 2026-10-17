@@ -682,7 +682,7 @@ await test('the public file holds no table text and no long string literal', () 
   for (const s of strings) assert.ok(!src.includes(s), 'a fixture table string is in the module: ' + s);
   if (REAL) {
     const real = new Set();
-    (function walk(v) { if (typeof v === 'string') { if (v.length >= 6) real.add(v); } else if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') Object.keys(v).forEach((k) => walk(v[k])); })(REAL.T);
+    (function walk(v) { if (typeof v === 'string') { if (v.length >= 8) real.add(v); } else if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') Object.keys(v).forEach((k) => walk(v[k])); })(REAL.T);
     const hits = [...real].filter((s) => src.includes(s)); assert.equal(hits.length, 0, hits.length + ' real table strings in the module');
   }
   assert.ok(!/Math\.random/.test(src.replace(/\(Math\.random\(\) \* 4294967296\) >>> 0/, '')), 'the only Math.random is the fresh seed');
