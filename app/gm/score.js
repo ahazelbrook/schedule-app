@@ -142,7 +142,8 @@
   var arr = function (a) { return Array.isArray(a) ? a : []; };
   var strs = function (a) { return arr(a).map(str).map(function (x) { return x.trim(); }).filter(Boolean); };
   var ROMAN = ['0', 'I', 'II', 'III', 'IV', 'V', 'VI'];
-  var cap = function (t) { t = str(t); return t.charAt(0).toUpperCase() + t.slice(1); };
+  /* the first letter in capitals, past any emphasis mark the tables wrap an entry in ("**the job is a test**") */
+  var cap = function (t) { return str(t).replace(/^([*_\s]*)(\S)/, function (m, pre, c) { return pre + c.toUpperCase(); }); };
   var numeric = function (v) { return typeof v === 'number' ? isFinite(v) : typeof v === 'string' && v.trim() !== '' && isFinite(Number(v)); };
   var tierOf = function (v) { return numeric(v) ? Math.max(0, Math.min(6, Math.round(Number(v)))) : null; };
   var romanOf = function (t) { return t === null || t === undefined || t === '' ? '?' : ROMAN[t] || String(t); };
@@ -488,7 +489,8 @@
       }
     }
     var dos = M.dossier[target.key] || {};
-    var tgt = { name: target.name, tier: target.tier, hold: target.hold, boss: str(dos.boss).trim(), enemy: isEnemy(target), foe: isFoe(target) };
+    var boss = str(dos.boss).trim();        /* a dossier that names the faction as its own boss says nothing more */
+    var tgt = { name: target.name, tier: target.tier, hold: target.hold, boss: fkey(boss) === fkey(target.name) ? '' : boss, enemy: isEnemy(target), foe: isFoe(target) };
 
     // 6. the client, on any: a faction against the target about 40%, a kind about 45%, nobody about 15%
     if (!client) {

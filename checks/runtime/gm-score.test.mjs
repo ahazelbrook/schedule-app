@@ -475,6 +475,22 @@ await test('wording: the twist row starts with a capital and names its list in i
   assert.equal(rowOf(S.create({ T: noList, campaign: CAMP }).roll({ seed: 1, mem: {} }), 'twist').md, 'Plain words', 'no list name, nothing to append');
 });
 
+await test('wording: a twist entry the tables wrap in emphasis marks still starts with a capital, after the marks', () => {
+  const t = clone(T); t.twist = [['Trouble', ['**the job is bold**', '__the job is under__', '*the job is slanted* and more', 'there is a **bold** word inside']]];
+  const g = S.create({ T: t, campaign: CAMP }), seen = new Set();
+  for (let i = 0; i < 200; i++) seen.add(rowOf(g.roll({ seed: seedOf(i), mem: {} }), 'twist').md);
+  assert.deepEqual([...seen].sort(), ['**The job is bold** *(trouble)*', '*The job is slanted* and more *(trouble)*', 'There is a **bold** word inside *(trouble)*', '__The job is under__ *(trouble)*'].sort());
+});
+
+await test('wording: a dossier whose boss is the faction itself adds nothing to the Target row; another name does', () => {
+  const t = clone(T); t.loc.factionDetail[FAC[0]].boss = FAC[0].toLowerCase();      /* the same name, spelled another way */
+  const g = S.create({ T: t, campaign: CAMP });
+  const own = g.roll({ seed: 5, mem: {}, ui: { target: 'fac:' + FAC[0] } });
+  assert.equal(own.score.target.boss, ''); assert.equal(rowOf(own, 'target').md, '**' + FAC[0] + '** · Tier I weak');
+  const other = g.roll({ seed: 5, mem: {}, ui: { target: 'fac:' + FAC[1] } });
+  assert.equal(other.score.target.boss, 'Boss B Invented'); assert.equal(rowOf(other, 'target').md, '**' + FAC[1] + '** · Tier II strong · Boss B Invented');
+});
+
 await test('wording: the scope after "n stacks," has no full stop and starts in lower case (unless it opens with capitals)', () => {
   const cases = [['A minor job', 'a minor job'], ['A small job.', 'a small job'], ['A big score: the kind that changes a crew', 'a big score'], ['A legendary score — they will tell it for years.', 'a legendary score'],
     ['ABC outfit job', 'ABC outfit job'], ['A scrape...', 'a scrape'], ['A standard score (worth the planning). Really.', 'a standard score'], ['Short', 'short']];
