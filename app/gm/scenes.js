@@ -7,10 +7,10 @@
    mulberry32 while a roll replays), so here every draw comes from ONE seeded stream in the vault's order: the same
    { seed, mem, ui } over the same tables gives the same scene.
 
-   One deliberate difference: the vault keys the repeat-guard for a district's notables by the notable ARRAY, which
-   stops working the moment the memory is JSON-cloned (every sticky replay does that), so the guard never fires there.
-   Here it is keyed by the notable's name, so it holds. scripts/gm-parity.mjs --scenes patches that one call in its
-   copy of the vault page and compares everything else as is.
+   The repeat-guard for a district's notables is keyed by the notable's name. The vault page keyed it by the notable
+   ARRAY until 17/10/2026, which stops working the moment the memory is JSON-cloned (every sticky replay does that), so
+   the guard never fired there; the page now keys it by name too. scripts/gm-parity.mjs --scenes patches an older copy
+   of the page to match and compares everything else as is.
 
    ---------------------------------------------------------------------------------------------------------------
    API
