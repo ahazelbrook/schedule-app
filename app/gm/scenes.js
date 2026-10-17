@@ -37,7 +37,7 @@
    sc.replay(replay)  redraw a stored roll (clones replay.mem for you)
    sc.mem()           the instance's live repeat-guard memory
    Helpers: B68GmScenes.seedRng(a) · plain(md)
-   B68GmScenes.check(T) -> [string]   the table keys a pack is missing or has empty ('rumour', 'weather.Night',
+   B68GmScenes.check(T) -> [string]   the table keys a pack is missing or has empty ('rumour', 'weather.<time of day>',
        'district.<name>.notables', …), for the page to show when a pack is loaded. Empty = the pack is complete.
        A district's `special` is optional.
    --------------------------------------------------------------------------------------------------------------- */
