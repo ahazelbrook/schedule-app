@@ -38,6 +38,7 @@ const CHECKS = [
   ['checks/runtime/display-role.e2e.mjs', 'the display-only sign-in, its request budget, the reload when signed out (8856)'],
   ['checks/runtime/gm-scenes.e2e.mjs', 'the Street panel (8857)'],
   ['checks/runtime/gm-npc-panel.e2e.mjs', 'the NPC generator panel (8858)'],
+  ['checks/runtime/gm-score.e2e.mjs', 'the Score panel (8859)'],
   ['checks/runtime/display-ambient.e2e.mjs', 'the ambient floor on the display (8871)'],
 ];
 
