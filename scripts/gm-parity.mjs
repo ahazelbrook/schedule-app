@@ -11,8 +11,8 @@
 //                    object, noteBody() and the repeat-guard memory after the roll
 //     --scenes       --scn rolls (default 300) of the vault district scene page's dataviewjs block vs scenes.js: the scene
 //                    object, the read-aloud lines, the grid and ratings, and the repeat-guard memory after the roll
-//                    (one deliberate difference, patched in the copy of the page that is run: the notable repeat-guard
-//                    is keyed by name in the port, because the vault's never fires once the memory is JSON-cloned)
+//                    (the notable repeat-guard is keyed by name on both sides; a copy of the page from before
+//                    17/10/2026 keys it by the list, which never fires once the memory is JSON-cloned, and is patched)
 //     --all          all four
 //   --pack defaults to $B68_PACK, then gm-private/b68-gm-pack.json. --npc and --scenes need a pack with that part
 //   (npm run gm:pack builds one). --app points at another app/ directory (a mutated copy, to prove a mode can fail).
@@ -311,10 +311,14 @@ async function scenes() {
   if (page.cannot) return cannot('scenes', page.cannot);
   if (!pack || !pack.parts || !pack.parts.scenes) return cannot('scenes', 'the pack at ' + PACK + ' has no scenes part (build one with gm-pack.mjs)');
   const SC = require(path.join(APP, 'gm', 'scenes.js'));
-  // the one deliberate difference (see the header of app/gm/scenes.js): the notable repeat-guard is keyed by name in the port
-  const call = 'fresh("notable-" + d.n, d.notables)';
-  if (!page.block.includes(call)) return cannot('scenes', 'the notable call in generate() was not found, so the one deliberate difference cannot be applied; update the parity script');
-  const block = page.block.replace(call, 'fresh("notable-" + d.n, d.notables, x => x[0])');
+  // the notable repeat-guard is keyed by name, in the port and (since 17/10/2026) in the vault page. A copy of the page
+  // from before that keys it by the list itself, which never fires after a sticky replay: patch that one call to match.
+  const byName = 'fresh("notable-" + d.n, d.notables, x => x[0])', byList = 'fresh("notable-" + d.n, d.notables)';
+  let block = page.block;
+  if (!block.includes(byName)) {
+    if (!block.includes(byList)) return cannot('scenes', 'the notable call in generate() was not found; update the parity script');
+    block = block.replace(byList, byName);
+  }
   const sc = SC.create({ T: pack.parts.scenes.T });
   async function vaultRoll(seed, mem, sel) {
     const store = new Map([['b68-sticky:district', JSON.stringify({ cur: { seed, mem, ui: { sel } }, hist: [] })]]);
@@ -352,7 +356,7 @@ async function scenes() {
   }
   results.push({ mode: 'scenes', cases: SCN, ok, unit: 'scene objects (every field)',
     extra: [['read-aloud triples identical', readOk, SCN], ['grids and ratings identical', rowsOk, SCN], ['repeat-guard memories identical', memOk, SCN]],
-    note: seenDistricts.size + '/' + names.length + ' districts among them; one deliberate difference: the notable repeat-guard is keyed by name', fails });
+    note: seenDistricts.size + '/' + names.length + ' districts among them' + (block === page.block ? '' : '; an older vault page, patched to key the notable repeat-guard by name'), fails });
 }
 
 /* ============================== run and report ============================== */
