@@ -464,13 +464,13 @@ await test('wording: the twist row starts with a capital and names its list in i
     assert.ok(r.card.meta.all.includes('Twist: ' + cap(t.text) + ' (' + t.list.toLowerCase() + ')'), 'plain lines drop the italics');
   }
   assert.equal(lists.size, 2, 'both lists came up');
-  const t = clone(T); t.twist = [['Connected To Someone', ['{pcFriend}', 'a quiet word reaches {npc}']], ['Political or logistical', ['the job needs a boat']]];
+  const t = clone(T); t.twist = [['Linked To A Person', ['{pcFriend}', 'a quiet word reaches {npc}']], ['Boats or bridges', ['the job needs a boat']]];
   const g = S.create({ T: t, campaign: CAMP });
   const seen = new Set();
   for (let i = 0; i < 120; i++) { const r = g.roll({ seed: seedOf(i), mem: {} }), md = rowOf(r, 'twist').md; seen.add(md); assert.match(md, /^[A-Z]/, md); }
-  assert.ok([...seen].some((m) => /^A quiet word reaches .+ \*\(connected to someone\)\*$/.test(m)), 'lower-case text is capitalised: ' + [...seen].join(' | '));
-  assert.ok(seen.has('The job needs a boat *(political or logistical)*'));
-  assert.ok([...seen].some((m) => /^[A-Z][a-z]+( [A-Z][a-z]+)*, [A-Z][a-z]+'s friend \*\(connected to someone\)\*$/.test(m)), 'a bare token result keeps its context: ' + [...seen].join(' | '));
+  assert.ok([...seen].some((m) => /^A quiet word reaches .+ \*\(linked to a person\)\*$/.test(m)), 'lower-case text is capitalised: ' + [...seen].join(' | '));
+  assert.ok(seen.has('The job needs a boat *(boats or bridges)*'));
+  assert.ok([...seen].some((m) => /^[A-Z][a-z]+( [A-Z][a-z]+)*, [A-Z][a-z]+'s friend \*\(linked to a person\)\*$/.test(m)), 'a bare token result keeps its context: ' + [...seen].join(' | '));
   const noList = clone(T); noList.twist = [['', ['plain words']]];
   assert.equal(rowOf(S.create({ T: noList, campaign: CAMP }).roll({ seed: 1, mem: {} }), 'twist').md, 'Plain words', 'no list name, nothing to append');
 });
@@ -492,7 +492,7 @@ await test('wording: a dossier whose boss is the faction itself adds nothing to 
 });
 
 await test('wording: the scope after "n stacks," has no full stop and starts in lower case (unless it opens with capitals)', () => {
-  const cases = [['A minor job', 'a minor job'], ['A small job.', 'a small job'], ['A big score: the kind that changes a crew', 'a big score'], ['A legendary score — they will tell it for years.', 'a legendary score'],
+  const cases = [['A minor job', 'a minor job'], ['A tiny job.', 'a tiny job'], ['A big score: the kind that changes a crew', 'a big score'], ['A legendary score — they will tell it for years.', 'a legendary score'],
     ['ABC outfit job', 'ABC outfit job'], ['A scrape...', 'a scrape'], ['A standard score (worth the planning). Really.', 'a standard score'], ['Short', 'short']];
   for (const [text, want] of cases) {
     const g = S.create({ T: Object.assign(clone(T), { scope: [[0, text]] }), campaign: CAMP });
