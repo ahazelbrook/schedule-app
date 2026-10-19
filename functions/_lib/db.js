@@ -88,6 +88,23 @@ const SCHEMA = [
     updated_at TEXT NOT NULL,
     doc TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS gm_assist_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  campaign TEXT NOT NULL DEFAULT 'default',
+  at TEXT NOT NULL,
+  session TEXT NOT NULL DEFAULT '',
+  seat TEXT NOT NULL,
+  model TEXT NOT NULL,
+  effort TEXT NOT NULL DEFAULT '',
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read INTEGER NOT NULL DEFAULT 0,
+  cache_write INTEGER NOT NULL DEFAULT 0,
+  cents REAL NOT NULL DEFAULT 0,
+  flags TEXT NOT NULL DEFAULT '',
+  card TEXT
+)`,
+  `CREATE INDEX IF NOT EXISTS gm_assist_log_at ON gm_assist_log (campaign, at)`,
 ];
 
 let ready = null; // Promise, per isolate
