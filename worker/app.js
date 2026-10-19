@@ -32,6 +32,7 @@ import { onRequest as gmAmbient } from '../functions/api/gm/ambient.js';
 import { onRequest as gmStt } from '../functions/api/gm/stt.js';
 import { onRequest as gmSttToken } from '../functions/api/gm/stt-token.js';
 import { onRequest as gmTranscript } from '../functions/api/gm/transcript.js';
+import { onRequest as gmAssist } from '../functions/api/gm/assist.js';
 import { gmNotFound } from '../functions/_lib/gm.js';
 import { onRequest as notFound } from '../functions/api/[[path]].js';
 
@@ -57,6 +58,8 @@ export const ROUTES = [
   { re: /^\/api\/gm\/stt\/?$/, handler: gmStt, path: '/api/gm/stt' },
   { re: /^\/api\/gm\/stt\/token\/?$/, handler: gmSttToken, path: '/api/gm/stt/token' },
   { re: /^\/api\/gm\/transcript\/?$/, handler: gmTranscript, path: '/api/gm/transcript' },
+  // Claude at the table (the assist build plan): POST /api/gm/assist/tick and /fit, GM only
+  { re: /^\/api\/gm\/assist\/(tick|fit)\/?$/, handler: gmAssist, path: '/api/gm/assist/:action', params: ['action'] },
   { re: /^\/api\/gm(?:\/.*)?$/, handler: gmNotFound, path: '/api/gm/[[path]]' },
 ];
 
