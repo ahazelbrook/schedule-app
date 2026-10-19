@@ -45,16 +45,19 @@ function fakeBrowser({ phone = false } = {}) {
 }
 const GOOD = { cards: [], updates: [], flags: [], spend: { tonight: 1.234, cap: 20, tier: 'all', tick: 0.01 }, last: 10 };
 function rig(over = {}, brOpts) {
-  const br = fakeBrowser(brOpts), calls = { stt: 0, tick: [], fit: [] };
+  const br = fakeBrowser(brOpts), calls = { stt: 0, tick: [], fit: [], cards: 0, marks: [] };
   const timers = [];
   const gm = {
     stt: async () => { calls.stt++; return { doc: { want: gm.want } }; }, want: 'on',
     assistTick: async (after) => { calls.tick.push(after); if (gm.tickErr) throw gm.tickErr; return gm.reply || GOOD; },
     assistFit: async (req) => { calls.fit.push(req); if (gm.fitErr) throw gm.fitErr; return gm.fitReply; },
+    assistCards: async () => { calls.cards++; if (gm.cardsErr) throw gm.cardsErr; return gm.stored || { cards: [], updates: [] }; },
+    assistMark: async (req) => { calls.marks.push(req); if (gm.markErr) throw gm.markErr; return { marked: req.items.length }; },
   };
   // anything else on the api (state, display, ambient, transcript...) fails the test: the box has no business there
   const api = new Proxy(gm, { get: (t, k) => (k in t ? t[k] : (typeof k === 'string' && !['then', 'toJSON'].includes(k) ? () => { throw new Error('the box called gm.' + k); } : undefined)) });
   const notes = [];
+  gm.stored = over.stored; gm.cardsErr = over.cardsErr; delete over.stored; delete over.cardsErr;
   const ctl = A.create({ gm: api, doc: br.doc, win: br.win, noTimer: true, onNote: (t) => { notes.push(t); return true; }, setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; }, clearTimeout() {}, ...over });
   return { br, gm, calls, ctl, notes, timers };
 }
@@ -236,7 +239,7 @@ await test('the box is in the GM bundle only, before gm-page.js, and the avatar 
 
 await test('GM only and never player-visible: the box touches nothing but stt / assistTick / assistFit, stores nothing, no network of its own', () => {
   const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'assist-panel.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.deepEqual([...new Set([...src.matchAll(/\bgm\.(\w+)/g)].map((m) => m[1]))].sort(), ['assistFit', 'assistTick', 'stt']);
+  assert.deepEqual([...new Set([...src.matchAll(/\bgm\.(\w+)/g)].map((m) => m[1]))].sort(), ['assistCards', 'assistFit', 'assistMark', 'assistTick', 'stt']);
   assert.ok(!/localStorage|sessionStorage|indexedDB|fetch\(|XMLHttpRequest|setDisplay|patchState|patchAmbient|patchStt|sendBeacon|eval\(|innerHTML\s*=\s*[^'"(\s]*\bc\.text/.test(src), 'no storage, no network, no display or state write');
   const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
   const m = /function mountAssist\(\) \{[\s\S]*?\n  \}\n/.exec(page);
@@ -249,6 +252,78 @@ await test('the gm adapter has assistTick (POST, cursor only when known) and ass
   const src = fs.readFileSync(path.join(ROOT, 'app', 'runtime', 'cf.js'), 'utf8');
   assert.ok(/assistTick: function \(after\) \{ return api\('POST', '\/gm\/assist\/tick'/.test(src));
   assert.ok(/assistFit: function \(req\) \{ return api\('POST', '\/gm\/assist\/fit'/.test(src));
+  assert.ok(/assistCards: function \(\) \{ return api\('GET', '\/gm\/assist\/cards'\)/.test(src));
+  assert.ok(/assistMark: function \(req\) \{ return api\('POST', '\/gm\/assist\/cards'/.test(src));
+});
+
+// ---------- memory: a reload restores the chat; Keep files a Moment; high-importance cards say where they are saved ----------
+const REF = { seat: 'ref', at: '2026-01-01T00:10:00Z', text: 'A slip, made up.', detail: { said_at: '22:14', rule: 'p. 12' } };
+await test('reload: tonight\'s cards come back with their read marks; unread count and no banner; dismissed ones never return', async () => {
+  const r = rig({ stored: { cards: [{ ...REF, seen: false }, { seat: 'clerk', at: '2026-01-01T00:20:00Z', text: 'A name, made up.', seen: true }, { seat: 'clerk', at: '2026-01-01T00:21:00Z', text: 'gone', dismissed: true }],
+    updates: [{ seat: 'ledger', at: '2026-01-01T00:20:00Z', key: 'k', text: 'Two stress, made up.' }] } });
+  await r.ctl.ready;
+  const s = r.ctl.state();
+  assert.deepEqual(s.cards.map((c) => c.seat), ['ref', 'clerk']); assert.equal(s.unread, 1, 'one was read already');
+  assert.equal(r.br.stub('#as-count').textContent, '1'); assert.equal(s.updates.length, 1);
+  assert.equal(s.banner, '', 'a restored card pops no banner');
+  assert.match(r.br.stub('#as-list').innerHTML, /A slip, made up/);
+  // the same card arriving by tick is the same card
+  r.gm.reply = { ...GOOD, cards: [REF] }; await r.ctl.poll();
+  assert.equal(r.ctl.state().cards.length, 2, 'not doubled');
+  assert.equal(r.calls.marks.length, 0, 'restoring marks nothing');
+  r.ctl.open(); await tick();
+  assert.deepEqual(r.calls.marks, [{ op: 'seen', items: [{ at: REF.at, text: REF.text }] }], 'opening marks the unread ones read, on the server');
+  assert.equal(r.ctl.state().unread, 0);
+});
+
+await test('reload: if the log cannot be read the box starts empty as before; no assistCards on the api is fine', async () => {
+  const r = rig({ cardsErr: err(500, 'x') }); await r.ctl.ready;
+  assert.equal(r.ctl.state().cards.length, 0); assert.equal(r.calls.cards, 1);
+  const e = r.ctl.state(); assert.equal(e.error, '');
+  const bare = A.create({ gm: { stt: async () => ({}), assistTick: async () => GOOD, assistFit: async () => ({}) }, doc: fakeBrowser().doc, win: fakeBrowser().win, noTimer: true });
+  await bare.ready; assert.equal(bare.state().cards.length, 0);
+});
+
+await test('Got it, Done and Note it mark the server (dismiss); a failed mark changes nothing on screen', async () => {
+  const r = rig();
+  r.gm.reply = { ...GOOD, cards: [REF], updates: [{ seat: 'ledger', at: 'a', key: 'k', text: 'U one.' }, { seat: 'ledger', at: 'a', key: 'j', text: 'U two.' }] }; await r.ctl.poll();
+  r.gm.markErr = err(500, 'x');
+  const st = r.ctl.state();
+  r.br.click('ack', st.cards[0].id); await tick();
+  assert.deepEqual(r.calls.marks[0], { op: 'dismiss', items: [{ at: REF.at, text: REF.text }] });
+  assert.equal(r.ctl.state().cards.length, 0, 'gone from the screen even though the mark failed');
+  r.br.click('done', st.updates[0].id); await tick();
+  assert.deepEqual(r.calls.marks[1], { op: 'dismiss', items: [{ at: 'a', text: 'U one.', key: 'k' }] });
+  r.br.click('note', st.updates[1].id); await tick();
+  assert.deepEqual(r.calls.marks[2], { op: 'dismiss', items: [{ at: 'a', text: 'U two.', key: 'j' }] });
+  assert.deepEqual(r.notes, ['U two.']);
+});
+
+await test('Keep (star): files the card as a Moment through the page\'s capture, marks it kept once, and shows Kept; no capture, no Keep', async () => {
+  const r = rig();
+  r.gm.reply = { ...GOOD, cards: [REF] }; await r.ctl.poll();
+  assert.match(r.br.stub('#as-list').innerHTML, /data-as="keep"/);
+  r.br.click('keep', r.ctl.state().cards[0].id); await tick();
+  assert.equal(r.notes.length, 1); assert.match(r.notes[0], /^Blade, rule slip \(\d\d:\d\d\): A slip, made up\. \[said 22:14; p\. 12\]$/);
+  assert.deepEqual(r.calls.marks, [{ op: 'keep', items: [{ at: REF.at, text: REF.text }] }]);
+  assert.equal(r.ctl.state().cards[0].kept, true);
+  assert.match(r.br.stub('#as-list').innerHTML, /Kept/); assert.ok(!/data-as="keep"/.test(r.br.stub('#as-list').innerHTML));
+  r.br.click('keep', r.ctl.state().cards[0].id); await tick();
+  assert.equal(r.notes.length, 1, 'a kept card is not filed twice'); assert.equal(r.calls.marks.length, 1);
+  const f = rig({ onNote: () => false }); f.gm.reply = { ...GOOD, cards: [REF] }; await f.ctl.poll();
+  f.br.click('keep', f.ctl.state().cards[0].id); await tick();
+  assert.equal(f.ctl.state().cards[0].kept, false, 'the capture refused: not kept'); assert.equal(f.calls.marks.length, 0);
+  const q = rig({ onNote: undefined }); q.gm.reply = { ...GOOD, cards: [REF] }; await q.ctl.poll();
+  assert.ok(!/data-as="keep"/.test(q.br.stub('#as-list').innerHTML));
+});
+
+await test('a Ref slip says it is in the log, and "saved to campaign history" once gm:after has filed it; a Clerk note says neither', async () => {
+  const r = rig({ stored: { cards: [{ ...REF, filed: false }, { seat: 'clerk', at: '2026-01-01T00:20:00Z', text: 'A name.' }] } }); await r.ctl.ready;
+  let h = r.br.stub('#as-list').innerHTML;
+  assert.equal((h.match(/In tonight’s log/g) || []).length, 1, 'only the Ref slip'); assert.ok(!/Saved to campaign history/.test(h));
+  const f = rig({ stored: { cards: [{ ...REF, filed: true }] } }); await f.ctl.ready;
+  assert.match(f.br.stub('#as-list').innerHTML, /Saved to campaign history/);
+  assert.equal(P.momentText({ seat: 'clerk', at: 'bad', text: ' x ', detail: null }), 'Blade, clerk (): x');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

@@ -4,23 +4,28 @@
    "Fit it" for the Fixer. Plain script, UMD: window.B68GmAssist in the browser, module.exports under Node.
 
    GM only, by construction: gm-page.js creates it once the GM's page is ready and destroys it on close, so the player and display
-   pages never see it. It calls exactly three things on window.claude.gm: stt() (is Listening on), assistTick() and assistFit().
-   Nothing it receives is stored anywhere (no state document, no display, no localStorage): the cards live in this object until
-   the page closes. The page's own capture bar is the only thing it can write to, and only when the GM taps "Note it".
+   pages never see it. It calls exactly five things on window.claude.gm: stt() (is Listening on), assistTick(), assistFit(), and
+   assistCards() / assistMark() (tonight's cards back from the server's log, and the marks seen / dismissed / kept).
+   Nothing is stored in the browser (no state document, no display, no localStorage): the cards live in this object, and the server's
+   assist log is the memory, so a reload restores the chat, the unread count and what was dismissed. The page's own capture bar is
+   the only other thing it writes to: "Note it" on a Ledger update, and "Keep" (a star) on a card, each file a Moment there.
+   A Ref rule slip is "important": it shows that it is in the log, and "saved to history" once gm:after has put it in the session note.
 
    API
      B68GmAssist.create({ gm, doc?, win?, onNote?(text) -> bool, avatar?, interval?, bannerMs? })
          gm        window.claude.gm (stt, assistTick, assistFit)
-         onNote    the page's capture: "Note it" on a Ledger update files its text as a Moment (the update itself changes no state)
+         onNote    the page's capture: "Note it" on a Ledger update and "Keep" on a card file their text as a Moment (the update
+                   itself changes no state)
      ctl.open() / close() / toggle()      the box
      ctl.poll()      one polling decision now: Listening on, page visible, not paused -> one tick (resolves when done)
      ctl.fit(position, effect) -> Promise     the Fixer for a position
+     ctl.ready       a promise: tonight's cards have been restored (or could not be)
      ctl.resume()    clear a pause (cap reached / busy) and poll again
      ctl.state()     a copy of what the box holds (for checks)
      ctl.destroy()   timers, listeners and the element go
    Polling: about once a minute, only while Listening is on and the page is visible; the `after` cursor is the `last` of the answer
    before. A 429 (busy, or the night's cap) or a spend tier of "off" stops the polling and says so until the GM taps Check again.
-   _pure: errKind, errLine, fitLines, tierLabel, spendLine, absorb, hhmm, clip. */
+   _pure: errKind, errLine, fitLines, tierLabel, spendLine, absorb, restore, momentText, hhmm, clip. */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -89,7 +94,7 @@
       if (!isObj(c) || !str(c.text).trim()) return;
       var id = str(c.seat) + '|' + str(c.at) + '|' + str(c.text);
       if (st.cards.some(function (x) { return x.id === id; })) return;
-      var card = { id: id, seat: str(c.seat), at: str(c.at) || nowIso, text: str(c.text).trim(), detail: isObj(c.detail) ? { said_at: str(c.detail.said_at), rule: clip(c.detail.rule, 220) } : null, seen: false };
+      var card = { id: id, seat: str(c.seat), at: str(c.at) || nowIso, text: str(c.text).trim(), detail: isObj(c.detail) ? { said_at: str(c.detail.said_at), rule: clip(c.detail.rule, 220) } : null, seen: false, kept: false, filed: false, important: str(c.seat) === 'ref' };
       st.cards.push(card); fresh.push(card);
     });
     (Array.isArray(r.updates) ? r.updates : []).forEach(function (u) {
@@ -106,6 +111,42 @@
   }
   P.absorb = absorb;
 
+  /* tonight's cards and updates from the server's log (GET /gm/assist/cards) into the box, after a reload. Cards already here are
+     left alone (the id is the same three values the tick answer carries). Restored cards keep the server's read / kept / filed
+     marks, so the unread count survives a reload; none of them pops a banner. Returns how many cards were added. */
+  function restore(st, res) {
+    var r = isObj(res) ? res : {}, n = 0;
+    (Array.isArray(r.cards) ? r.cards : []).forEach(function (c) {
+      if (!isObj(c) || !str(c.text).trim() || c.dismissed) return;
+      var id = str(c.seat) + '|' + str(c.at) + '|' + str(c.text);
+      if (st.cards.some(function (x) { return x.id === id; })) return;
+      st.cards.push({ id: id, seat: str(c.seat), at: str(c.at), text: str(c.text).trim(), detail: isObj(c.detail) ? { said_at: str(c.detail.said_at), rule: clip(c.detail.rule, 220) } : null,
+        seen: !!c.seen, kept: !!c.kept, filed: !!c.filed, important: str(c.seat) === 'ref' });
+      n++;
+    });
+    st.cards.sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
+    (Array.isArray(r.updates) ? r.updates : []).forEach(function (u) {
+      if (!isObj(u) || !str(u.text).trim()) return;
+      var id = 'u|' + str(u.at) + '|' + str(u.key) + '|' + str(u.text);
+      if (st.updates.some(function (x) { return x.id === id; })) return;
+      st.updates.push({ id: id, at: str(u.at), key: str(u.key), text: clip(u.text, 240) });
+    });
+    if (st.cards.length > MAX_CARDS) st.cards = st.cards.slice(-MAX_CARDS);
+    if (st.updates.length > MAX_UPDATES) st.updates = st.updates.slice(-MAX_UPDATES);
+    return n;
+  }
+  P.restore = restore;
+
+  /* the line "Keep" files as a Moment: who, when, what was said and the rule */
+  function momentText(c) {
+    var d = c && c.detail, bits = [];
+    if (d && d.said_at) bits.push('said ' + d.said_at);
+    if (d && d.rule) bits.push(d.rule);
+    return 'Blade, ' + (SEAT[c.seat] || c.seat).toLowerCase() + ' (' + hhmm(c.at) + '): ' + str(c.text).trim() + (bits.length ? ' [' + bits.join('; ') + ']' : '');
+  }
+  P.momentText = momentText;
+  function markOf(it) { var m = { at: it.at, text: it.text }; if (it.key !== undefined) m.key = it.key; return m; }
+
   function create(o) {
     o = o || {};
     var gm = o.gm, doc = o.doc || (W && W.document), win = o.win || W;
@@ -121,6 +162,19 @@
     function hidden() { return !!(doc && doc.hidden); }
     function unread() { return st.cards.filter(function (c) { return !c.seen; }).length; }
     function q(sel) { return host ? host.querySelector(sel) : null; }
+    /* a mark goes to the server's log in the background; a failure is silent (the box still works, it just forgets on reload) */
+    function mark(op, items) {
+      if (!items.length || !gm || typeof gm.assistMark !== 'function') return;
+      Promise.resolve().then(function () { return gm.assistMark({ op: op, items: items.map(markOf) }); }).then(null, function () {});
+    }
+    function markSeen() { var u = st.cards.filter(function (c) { return !c.seen; }); u.forEach(function (c) { c.seen = true; }); mark('seen', u); }
+    function load() {
+      if (!gm || typeof gm.assistCards !== 'function') return Promise.resolve();
+      return Promise.resolve().then(function () { return gm.assistCards(); }).then(function (res) {
+        if (gone) return;
+        restore(st, res); render();
+      }, function () { /* the log could not be read: the box starts empty, as it did before */ });
+    }
 
     /* ---------- drawing ---------- */
     function build() {
@@ -183,8 +237,11 @@
       if (!st.cards.length) { el.innerHTML = '<li class="as-empty">Nothing yet. Blade speaks up only when there is something worth the table’s time.</li>'; return; }
       el.innerHTML = st.cards.slice().reverse().map(function (c) {
         var d = c.detail, cite = d && (d.rule || d.said_at) ? '<p class="as-cite">' + (d.rule ? esc(d.rule) : '') + (d.rule && d.said_at ? ' · ' : '') + (d.said_at ? 'said ' + esc(d.said_at) : '') + '</p>' : '';
-        return '<li class="as-card" data-seat="' + esc(c.seat) + '"><div class="as-meta"><b>' + esc(SEAT[c.seat] || c.seat) + '</b><time>' + esc(hhmm(c.at)) + '</time>' +
-          '<button type="button" class="as-ack" data-as="ack" data-id="' + esc(c.id) + '" aria-label="Dismiss this card">Got it</button></div><p class="as-text">' + esc(c.text) + '</p>' + cite + '</li>';
+        var keep = c.kept ? '<span class="as-kept" title="Kept: filed as a Moment">★ Kept</span>'
+          : typeof o.onNote === 'function' ? '<button type="button" class="as-star" data-as="keep" data-id="' + esc(c.id) + '" aria-label="Keep this card: file it as a Moment">☆ Keep</button>' : '';
+        var saved = c.important ? '<p class="as-saved">' + (c.filed ? 'Saved to campaign history' : 'In tonight’s log; gm:after files it to history') + '</p>' : '';
+        return '<li class="as-card" data-seat="' + esc(c.seat) + '"><div class="as-meta"><b>' + esc(SEAT[c.seat] || c.seat) + '</b><time>' + esc(hhmm(c.at)) + '</time>' + keep +
+          '<button type="button" class="as-ack" data-as="ack" data-id="' + esc(c.id) + '" aria-label="Dismiss this card">Got it</button></div><p class="as-text">' + esc(c.text) + '</p>' + cite + saved + '</li>';
       }).join('');
     }
     function renderUpdates() {
@@ -228,7 +285,7 @@
     function open() {
       if (gone) return;
       st.open = true; hideBanner();
-      st.cards.forEach(function (c) { c.seen = true; });
+      markSeen();
       render();
       var nm = q('#as-name'); if (nm) { try { nm.focus(); } catch (e) {} }
     }
@@ -249,7 +306,7 @@
         if (gone) return;
         var fresh = absorb(st, res, new Date().toISOString());
         st.error = ''; st.checkedAt = hhmm(new Date().toISOString());
-        if (st.open) st.cards.forEach(function (c) { c.seen = true; });
+        if (st.open) markSeen();
         else if (fresh.length) showBanner(fresh[fresh.length - 1]);
         if (st.spend && st.spend.tier === 'off') st.paused = 'cap';
       }, function (e) {
@@ -299,9 +356,10 @@
       if (a === 'toggle') toggle();
       else if (a === 'close') close();
       else if (a === 'banner') open();
-      else if (a === 'ack') { remove(st.cards, id); render(); }
-      else if (a === 'done') { remove(st.updates, id); render(); }
-      else if (a === 'note') { var u = st.updates.filter(function (x) { return x.id === id; })[0]; if (u && typeof o.onNote === 'function' && o.onNote(u.text)) { remove(st.updates, id); render(); } }
+      else if (a === 'ack') { var k = st.cards.filter(function (x) { return x.id === id; })[0]; if (k) mark('dismiss', [k]); remove(st.cards, id); render(); }
+      else if (a === 'keep') { var kc = st.cards.filter(function (x) { return x.id === id; })[0]; if (kc && !kc.kept && typeof o.onNote === 'function' && o.onNote(momentText(kc))) { kc.kept = true; mark('keep', [kc]); render(); } }
+      else if (a === 'done') { var d = st.updates.filter(function (x) { return x.id === id; })[0]; if (d) mark('dismiss', [d]); remove(st.updates, id); render(); }
+      else if (a === 'note') { var u = st.updates.filter(function (x) { return x.id === id; })[0]; if (u && typeof o.onNote === 'function' && o.onNote(u.text)) { mark('dismiss', [u]); remove(st.updates, id); render(); } }
       else if (a === 'resume') resume();
       else if (a === 'fitclear') { st.fit.card = null; st.fit.error = ''; renderFit(); }
     }
@@ -320,12 +378,13 @@
     function onVis() { if (doc && !doc.hidden) poll(); }
 
     build();
+    var ready = load();
     if (doc && doc.addEventListener) doc.addEventListener('visibilitychange', onVis);
     if (setI && !o.noTimer) timer = setI(poll, o.interval || POLL_MS);
     if (!o.noTimer) setTimeout(function () { poll(); }, 1500);
 
     return {
-      open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, poll: poll, resume: resume, fit: fit,
+      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, poll: poll, resume: resume, fit: fit,
       state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, banner: bannerCard ? bannerCard.text : '' })); },
       el: function () { return host; },
       destroy: function () {

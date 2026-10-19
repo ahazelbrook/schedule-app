@@ -10,6 +10,10 @@
 //        The Tap seats read the last four MINUTES of talk (not a fixed count of lines).
 //   POST /api/gm/assist/fit { position, effect? } -> { cards: [fixer card], flags: [], spend, last }
 //        The Fixer for a position the GM names: what could happen on a 1-3, 4-5, 6 and crit, and a Devil's Bargain.
+//   GET  /api/gm/assist/cards?session=&since= -> { cards, updates }   tonight's shown cards and open Ledger updates (last 12 h unless
+//        `since`), so a reloaded GM page restores its chat. Dismissed cards and finished updates are left out. No model, no key.
+//   POST /api/gm/assist/cards { op: 'seen'|'dismiss'|'keep', items: [{ at, text, key? }] } -> { marked }   the box's marks, kept on the
+//        log row (functions/_lib/assist/cards.js). A card is shown once (`shown: 1` on its row); the log is also what gm:after files.
 //   card: { seat, at (ISO), text }, plus the Fixer's { read, one_three, four_five, six, crit, bargain }
 //   spend: { tonight, cap, tier, tick } in dollars; tier is all | reduced | core | off (the badge says so when it is off)
 // Every call is logged to gm_assist_log (seat, model, effort, tokens, cents, flags, the card): that table IS the cost meter and
@@ -34,6 +38,7 @@ import { makeClient, callSeat } from '../../_lib/assist/claude.js';
 import { SEATS } from '../../_lib/assist/seats.js';
 import { DEFAULT_CAP, budgetTier, canRun, decide } from '../../_lib/assist/conductor.js';
 import { toCandidate, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
+import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
 
 const BODY_MAX = 8 * 1024;
 const NIGHT_MS = 12 * 60 * 60 * 1000;      // "tonight" is the last 12 hours of the log
@@ -129,8 +134,23 @@ function errorOf(e) {
 export function makeHandler({ clientFor = defaultClient, now = () => Date.now(), call = callSeat, seats = SEATS } = {}) {
   return async function onRequest({ request, env, data }) {
     requireGm(data);                                   // first: before the method, the body or the database
-    const action = /\/api\/gm\/assist\/(tick|fit)\/?$/.exec(new URL(request.url).pathname);
+    const url = new URL(request.url);
+    const action = /\/api\/gm\/assist\/(tick|fit|cards)\/?$/.exec(url.pathname);
     if (!action) throw new HttpError(404, 'not found');
+    if (action[1] === 'cards') {                       // the box's memory: no key, no model
+      if (request.method === 'GET') {
+        const since = url.searchParams.get('since'), session = url.searchParams.get('session');
+        if (since !== null && (since.length > 40 || Number.isNaN(Date.parse(since)))) throw new HttpError(400, 'since must be a date');
+        if (session !== null && session.length > 20) throw new HttpError(400, 'session is too long');
+        const out = await nightCards(await getDb(env), campaignOf(env), { now: now(), ...(since !== null ? { since: new Date(since).toISOString() } : {}), ...(session ? { session } : {}) });
+        return json({ cards: out.cards, updates: out.updates });
+      }
+      if (request.method !== 'POST') return methodNotAllowed(['GET', 'POST']);
+      const b = await readJsonObject(request, BODY_MAX);
+      const items = cleanMarks(b.items);
+      if (!OPS.includes(b.op) || !items) throw new HttpError(400, 'op is seen, dismiss or keep, with 1-50 items { at, text }');
+      return json({ marked: await markCards(await getDb(env), campaignOf(env), b.op, items) });
+    }
     if (request.method !== 'POST') return methodNotAllowed(['POST']);
     const body = await readJsonObject(request, BODY_MAX);
     const db = await getDb(env), campaign = campaignOf(env), t0 = now();
@@ -221,11 +241,11 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const isShown = !!(cand && !cand.pending && edit.card && edit.card.seat === x.name && edit.card.text === cand.text);
       const held = !!(cand && cand.seat === 'ref' && edit.held.includes(cand));
       const isUpdate = !!(cand && cand.seat === 'ledger');
-      const card = x.r ? { out: x.r.json, text: cand ? cand.text : '', keys: cand ? cand.keys : [], shown: isShown ? 1 : 0, ...(held ? { held: 1, ...(cand.detail ? { detail: cand.detail } : {}) } : {}), ...(isUpdate ? { update: 1 } : {}) } : { error: errors.find((e) => e.seat === x.name)?.error || 'no reply' };
+      const card = x.r ? { out: x.r.json, text: cand ? cand.text : '', keys: cand ? cand.keys : [], shown: isShown ? 1 : 0, ...(held ? { held: 1 } : {}), ...(cand && cand.detail ? { detail: cand.detail } : {}), ...(isUpdate ? { update: 1, items: cand.items } : {}) } : { error: errors.find((e) => e.seat === x.name)?.error || 'no reply' };
       return logRow(db, campaign, { at, session, seat: x.name, cfg: x.cfg, usage: x.r && x.r.usage, cost: x.r && x.r.cost, flags, card });
     });
     // a pending Ref card shown now has no row of its own this tick: record the showing (no cost) so the gap and repeats see it
-    if (edit.card && edit.card.pending) rows.push(logRow(db, campaign, { at, session, seat: 'editor', cfg: { model: 'editor' }, flags, card: { text: edit.card.text, keys: edit.card.keys, shown: 1, from_pending: 1 } }));
+    if (edit.card && edit.card.pending) rows.push(logRow(db, campaign, { at, session, seat: 'editor', cfg: { model: 'editor' }, flags, card: { seat: 'ref', text: edit.card.text, keys: edit.card.keys, ...(edit.card.detail ? { detail: edit.card.detail } : {}), shown: 1, from_pending: 1 } }));
     await db.batch(rows);
     const cardOut = edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}) }] : [];
     const updatesOut = edit.updates.flatMap((u) => (u.items || [{ key: (u.keys || [])[0] || '', text: u.text }]).map((it) => ({ seat: 'ledger', at, key: it.key, text: it.text })));

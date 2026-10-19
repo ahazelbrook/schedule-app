@@ -745,7 +745,9 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 .gm-assist .as-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
 .gm-assist .as-meta b, .gm-assist .as-lab { font: 900 10.5px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; }
 .gm-assist .as-meta time { font: 700 11px/1 var(--font-mono); color: var(--ink-soft); flex: 1 1 auto; }
-.gm-assist .as-ack, .gm-assist .as-upbtns button { font-size: 11.5px; padding: 3px 8px; border: 1.5px solid var(--rule); background: var(--card); }
+.gm-assist .as-saved { margin: 4px 0 0; font: 700 10.5px/1.3 var(--font-mono); color: var(--ink-soft); }
+.gm-assist .as-kept { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
+.gm-assist .as-star, .gm-assist .as-ack, .gm-assist .as-upbtns button { font-size: 11.5px; padding: 3px 8px; border: 1.5px solid var(--rule); background: var(--card); }
 .gm-assist .as-text { margin: 0; }
 .gm-assist .as-cite { margin: 4px 0 0; font: 700 11px/1.4 var(--font-mono); color: var(--ink-soft); }
 .gm-assist .as-lab { margin: 0 0 4px; color: var(--ink-soft); }

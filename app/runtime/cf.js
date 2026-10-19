@@ -4,7 +4,7 @@
    `characters` collection, the shared `campaign/main` document (CAMPAIGN.md) and the `npcs` collection (CAST.md).
    window.claude.rules (list, import, saveHouse, deleteHouse) is the rules wiki's corpus (RULES.md).
    window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay, ambient,
-   patchAmbient, stt, patchStt, sttToken, transcript, addTranscript, assistTick, assistFit) is the GM tools'
+   patchAmbient, stt, patchStt, sttToken, transcript, addTranscript, assistTick, assistFit, assistCards, assistMark) is the GM tools'
    API (GM.md): plain calls, never queued, cached or snapshotted here.
    window.claude.profile.setName(name) changes the signed-in person's own display name (PATCH /api/me); a plain call too.
    Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network
@@ -1183,7 +1183,11 @@
     /* Claude at the table (app/gm/assist-panel.js). POST /api/gm/assist/tick { after? } -> { cards, updates, flags, spend, last }; 429: busy or
        the night's cap reached. POST /api/gm/assist/fit { position, effect? } -> { cards: [fixer card], spend }; the Fixer may take 30 s, so it waits 60 */
     assistTick: function (after) { return api('POST', '/gm/assist/tick', after === undefined || after === null ? {} : { after: after }, 45000); },
-    assistFit: function (req) { return api('POST', '/gm/assist/fit', req || {}, 60000); }
+    assistFit: function (req) { return api('POST', '/gm/assist/fit', req || {}, 60000); },
+    /* GET /api/gm/assist/cards -> { cards, updates }: tonight's shown cards (the box restores its chat after a reload);
+       POST { op: 'seen' | 'dismiss' | 'keep', items: [{ at, text, key? }] } -> { marked } */
+    assistCards: function () { return api('GET', '/gm/assist/cards'); },
+    assistMark: function (req) { return api('POST', '/gm/assist/cards', req || {}); }
   };
 
   /* ---------- profile: the signed-in person's own display name (PATCH /api/me). A plain call: never queued, so it

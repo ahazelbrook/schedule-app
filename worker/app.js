@@ -58,8 +58,8 @@ export const ROUTES = [
   { re: /^\/api\/gm\/stt\/?$/, handler: gmStt, path: '/api/gm/stt' },
   { re: /^\/api\/gm\/stt\/token\/?$/, handler: gmSttToken, path: '/api/gm/stt/token' },
   { re: /^\/api\/gm\/transcript\/?$/, handler: gmTranscript, path: '/api/gm/transcript' },
-  // Claude at the table (the assist build plan): POST /api/gm/assist/tick and /fit, GM only
-  { re: /^\/api\/gm\/assist\/(tick|fit)\/?$/, handler: gmAssist, path: '/api/gm/assist/:action', params: ['action'] },
+  // Claude at the table (the assist build plan): POST /api/gm/assist/tick and /fit, GET and POST /cards, GM only
+  { re: /^\/api\/gm\/assist\/(tick|fit|cards)\/?$/, handler: gmAssist, path: '/api/gm/assist/:action', params: ['action'] },
   { re: /^\/api\/gm(?:\/.*)?$/, handler: gmNotFound, path: '/api/gm/[[path]]' },
 ];
 

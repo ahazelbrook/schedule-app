@@ -10,6 +10,9 @@
 //   2. The transcript: copy whatever the table iPad heard that is not in the vault yet (gm-transcript.mjs's pass; lines the
 //      other PC copied are not copied twice).
 //   3. The pull: gm-sync.mjs pull --session N (captures, pins, bargains, Prep ticks and beat times, NPCs made in the app).
+//   3b. Claude's notes: the night's shown Ref rule slips and Clerk notes, read from the assist log (gm_assist_log) through the same
+//      database access as the rest, appended under "## Claude's notes" in the session note (append only; a line already there,
+//      by its ^b68-a<row> id, is not added twice) and marked filed so the GM page can say "saved to history". Vault side only.
 //   4. The two transcripts side by side: the laptop's (Obsidian transcriber, b68g-sNN-transcript.md) and the iPad's
 //      (-transcript-ipad.md, or the iPad's own note when it is the only one): lines, first and last time, speakers named.
 //   5. --prune: delete the copied lines from the server (only lines the vault has; only with --yes).
@@ -22,7 +25,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { asD1, wranglerExec, readWranglerToml } from './lib/d1.mjs';
-import { SESSIONS, abs, readNote, sessionNotes, highestNote, noteDates, nightOf, dmy } from './lib/vault.mjs';
+import { SESSIONS, abs, readNote, sessionNotes, highestNote, noteDates, nightOf, dmy, hhmm, toLines, fromLines, headings, insertBlock, blockId, hasBlock, editNote } from './lib/vault.mjs';
+import { nightCards, markFiled } from '../functions/_lib/assist/cards.js';
 import { loadLedger, campaignLedger, saveLedger } from './lib/ledger.mjs';
 import { pass, probe } from './gm-transcript.mjs';
 import { run as syncRun } from './gm-sync.mjs';
@@ -74,6 +78,41 @@ export function transcriptStats(text) {
   return { lines: times.length, first: times[0] || '', last: times[times.length - 1] || '', speakers: [...named].sort(), unnamed: [...unnamed].sort() };
 }
 
+export const CLAUDE_NOTES = 'Claude\'s notes';
+const one = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+
+/**
+ * The night's shown Ref rule slips and Clerk notes (from the assist log, read through the same db as the rest of this script)
+ * as session-note lines: "- **22:14** Rule slip: ... (said 22:10; rule and page) ^b68-a<row>". Rows logged under this session, or
+ * under none on this session's night. Ledger updates are not here (the GM files those with "Note it"). -> [{ row, bid, line }]
+ */
+export async function claudeNoteLines(db, campaign, { vault, note, N, now }) {
+  const date = noteDates(vault, [note]).get(note.name) || null;
+  const { cards } = await nightCards(db, campaign, { since: new Date(now - 4 * 86400000).toISOString(), now, all: true });
+  return cards.filter((c) => (c.seat === 'ref' || c.seat === 'clerk') && (c.session ? c.session === String(N) : !!date && nightOf(c.at) === date)).map((c) => {
+    const t = hhmm(c.at), d = c.detail, bits = [];
+    if (c.seat === 'ref') { if (d && d.said_at) bits.push('said ' + one(d.said_at)); if (d && d.rule) bits.push(one(d.rule)); }
+    const bid = blockId('a' + c.row);
+    return { row: c.row, seat: c.seat, bid, line: '- ' + (t ? '**' + t + '** ' : '') + (c.seat === 'ref' ? 'Rule slip: ' : 'Clerk: ') + one(c.text) + (bits.length ? ' (' + bits.join('; ') + ')' : '') + ' ^' + bid };
+  });
+}
+
+/** Append the lines not already in the note under "## Claude's notes" (made at the end when absent). Never touches anything else. */
+export function addClaudeNotes(vault, rel, items) {
+  return editNote(vault, rel, (note) => {
+    const fresh = items.filter((x) => !hasBlock(note.text, x.bid));
+    if (!fresh.length) return null;
+    const lines = toLines(note.text), at = headings(lines)[CLAUDE_NOTES];
+    if (at && at.length > 1) { const e = new Error('heading twice: ## ' + CLAUDE_NOTES); e.code = 'REFUSED'; throw e; }
+    if (at) insertBlock(lines, at[0], fresh.map((x) => x.line), { list: true, eol: note.eol });
+    else {
+      while (lines.length && lines[lines.length - 1].replace(/\r$/, '').trim() === '') lines.pop();
+      lines.push(...['', '## ' + CLAUDE_NOTES, '', ...fresh.map((x) => x.line)].map((l) => (note.eol === '\r\n' ? l + '\r' : l)), '');
+    }
+    return fromLines(lines);
+  });
+}
+
 /** One run. opts: parseArgs() output plus, for tests, { db, exec, now, print, privateDir, campaign, host }. Returns { code }. */
 export async function run(opts) {
   const print = opts.print || ((s) => process.stdout.write(s + '\n'));
@@ -121,6 +160,27 @@ export async function run(opts) {
   const pulled = await syncRun({ mode: 'pull', dryRun: !opts.yes, yes: false, baseline: false, only: null, vault: opts.vault, session: N, campaign, exec: opts.syncExec || exec, now, privateDir, root: opts.root, print: (l) => print('  ' + l) });
   if (pulled.code === 2) return { code: 2 };
   if (pulled.code === 1) code = 1;
+
+  // 3b. Claude's notes: the shown Ref slips and Clerk notes from the assist log, into the session note (append only)
+  try {
+    const items = await claudeNoteLines(db, campaign, { vault: opts.vault, note: w.note, N, now });
+    if (!items.length) say('3b. Claude\'s notes', ['no Ref slips or Clerk notes in the assist log for session ' + N]);
+    else {
+      const text = (readNote(abs(opts.vault, w.note.rel)) || { text: '' }).text;
+      const fresh = items.filter((x) => !hasBlock(text, x.bid));
+      const r = items.filter((x) => x.seat === 'ref').length;
+      const what = items.length + ' (' + r + ' rule slip' + (r === 1 ? '' : 's') + ', ' + (items.length - r) + ' clerk note' + (items.length - r === 1 ? '' : 's') + ')';
+      if (!opts.yes) say('3b. Claude\'s notes', [(fresh.length ? 'would add ' + fresh.length + ' of ' + what : 'all ' + what + ' are already in the note') + ' under "## ' + CLAUDE_NOTES + '" in ' + label]);
+      else {
+        if (fresh.length) addClaudeNotes(opts.vault, w.note.rel, items);
+        const marked = await markFiled(db, campaign, items.map((x) => x.row));
+        say('3b. Claude\'s notes', [(fresh.length ? 'added ' + fresh.length + ' of ' + what : 'all ' + what + ' were already in the note') + ' under "## ' + CLAUDE_NOTES + '" in ' + label + (marked ? '; the box now shows them as saved to history' : '')]);
+      }
+    }
+  } catch (e) {
+    say('3b. Claude\'s notes', ['could not file them: ' + e.message + '. Nothing else was affected.']);
+    code = 1;
+  }
 
   // 4. the two transcripts
   const dir = SESSIONS + '/', pad = /^\d+$/.test(String(N)) ? String(N).padStart(2, '0') : String(N);

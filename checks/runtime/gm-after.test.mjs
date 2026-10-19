@@ -92,6 +92,47 @@ await test('listening still on: the transcript step says stop first; the other P
   assert.ok(!fs.existsSync(path.join(env.dir, 'b68g-s02-transcript-ipad.md')) && !fs.existsSync(path.join(env.dir, 'b68g-s02-transcript.md')));
 });
 
+await test('Claude\'s notes: the night\'s shown Ref slips and Clerk notes are appended under their own heading once, with their ids; the plan writes nothing; the rest of the note is untouched', async () => {
+  const env = await setup();
+  const ins = env.exec.db.prepare("INSERT INTO gm_assist_log (campaign, at, session, seat, model, card) VALUES ('default', ?, ?, ?, 'm', ?)");
+  ins.run('2026-10-17T11:14:00.000Z', '2', 'ref', JSON.stringify({ text: 'ZQX slip card', keys: ['a'], shown: 1, detail: { said_at: '22:10', rule: 'ZQX rule (p.9)' } }));
+  ins.run('2026-10-17T11:20:00.000Z', '2', 'clerk', JSON.stringify({ text: 'New name: ZQX Harl', keys: ['b'], shown: 1 }));
+  ins.run('2026-10-17T11:21:00.000Z', '2', 'ref', JSON.stringify({ text: 'ZQX held, never shown', keys: ['c'], shown: 0, held: 1 }));
+  ins.run('2026-10-17T11:22:00.000Z', '2', 'ledger', JSON.stringify({ text: 'ZQX ledger', keys: ['d'], shown: 0, update: 1 }));
+  ins.run('2026-10-17T11:30:00.000Z', '2', 'clerk', JSON.stringify({ text: 'ZQX dismissed but shown', keys: ['e'], shown: 1, dismissed: 1 }));
+  ins.run('2026-10-10T11:30:00.000Z', '1', 'ref', JSON.stringify({ text: 'ZQX last game', keys: ['f'], shown: 1 }));
+  ins.run('2026-10-17T11:40:00.000Z', '', 'ref', JSON.stringify({ seat: 'ref', text: 'ZQX no session, same night', keys: ['g'], shown: 1, from_pending: 1 }));
+  const file = path.join(env.dir, 'b68g-s02.md'), before = fs.readFileSync(file, 'utf8');
+  const plan = await after(env, []);
+  assert.match(plan.out, /3b\. Claude's notes\n\s+would add 4 of 4 \(2 rule slips, 2 clerk notes\)/);
+  assert.equal(fs.readFileSync(file, 'utf8'), before, 'the plan wrote the note');
+  const done = await after(env, ['--yes']);
+  assert.match(done.out, /added 4 of 4/); assert.match(done.out, /saved to history/);
+  const note = fs.readFileSync(file, 'utf8');
+  assert.ok(note.startsWith(before.trimEnd()), 'everything that was there is untouched, in place');
+  const sec = note.slice(note.indexOf('## Claude\'s notes'));
+  assert.match(sec, /- \*\*22:14\*\* Rule slip: ZQX slip card \(said 22:10; ZQX rule \(p\.9\)\) \^b68-a1\n/);
+  assert.match(sec, /- \*\*22:20\*\* Clerk: New name: ZQX Harl \^b68-a2\n/);
+  assert.match(sec, /Clerk: ZQX dismissed but shown/); assert.match(sec, /Rule slip: ZQX no session, same night/);
+  assert.ok(!/held, never shown|ZQX ledger|last game/.test(note), 'held, ledger and other sessions\' rows stay out');
+  for (const o of [plan.out, done.out]) assert.ok(!/ZQX/.test(o), 'text in the printout');
+  const filed = env.exec.db.prepare('SELECT card FROM gm_assist_log WHERE id = 1').get();
+  assert.equal(JSON.parse(filed.card).filed, 1, 'marked filed for the GM page');
+  // again: nothing added twice, and new ones go under the same heading
+  const again = await after(env, ['--yes']);
+  assert.match(again.out, /all 4 \(2 rule slips, 2 clerk notes\) were already in the note/);
+  assert.equal(fs.readFileSync(file, 'utf8'), note);
+  ins.run('2026-10-17T11:50:00.000Z', '2', 'clerk', JSON.stringify({ text: 'Clue: ZQX later', keys: ['h'], shown: 1 }));
+  await after(env, ['--yes']);
+  const note2 = fs.readFileSync(file, 'utf8');
+  assert.equal((note2.match(/## Claude's notes/g) || []).length, 1); assert.ok(note2.startsWith(note.trimEnd()) && /Clerk: Clue: ZQX later \^b68-a8/.test(note2));
+  // nothing in the log: said so, nothing written
+  const none = await setup();
+  const r = await after(none, ['--yes']);
+  assert.match(r.out, /no Ref slips or Clerk notes in the assist log for session 2/);
+  assert.ok(!fs.readFileSync(path.join(none.dir, 'b68g-s02.md'), 'utf8').includes('Claude'));
+});
+
 await test('transcript stats: lines, first and last, named and unnamed speakers', async () => {
   const st = transcriptStats(newNote('2', {}, '2026-10-17T09:30:00.000Z') + '- **[20:30] S0:** a\n*[20:31] — reconnected*\n- **[20:40] Pat (Vex):** b\n- **[21:02] ?:** c\n');
   assert.deepEqual(st, { lines: 3, first: '20:30', last: '21:02', speakers: ['Pat (Vex)'], unnamed: ['?', 'S0'] });
