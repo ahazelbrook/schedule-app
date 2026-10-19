@@ -49,6 +49,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "wrangler": "^4.149.0"
   },
   "private": true
