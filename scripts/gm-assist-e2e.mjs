@@ -66,9 +66,16 @@ for (const l of raw.split('\n')) {
 }
 if (!minutes.size) die('no transcript lines in that window');
 const first = Math.min(...minutes.keys()), last = Math.max(...minutes.keys());
+// A label "S<n>" is Deepgram's own speaker number n (left unnamed, as the page shows it before "Who is who" names it); any other
+// label is a name the GM gave, kept in the control document (at most 16) under an id of its own from 40 up.
 const speakerIds = new Map();
-for (const t of [...minutes.keys()].sort((a, b) => a - b)) for (const x of minutes.get(t)) if (!speakerIds.has(x.who)) speakerIds.set(x.who, speakerIds.size);
-if (speakerIds.size > 16) die('more than 16 speakers: the control document holds at most 16');
+for (const t of [...minutes.keys()].sort((a, b) => a - b)) for (const x of minutes.get(t)) {
+  if (speakerIds.has(x.who)) continue;
+  const m = /^S(\d{1,2})$/.exec(x.who);
+  speakerIds.set(x.who, m && Number(m[1]) < 40 ? Number(m[1]) : 40 + [...speakerIds.keys()].filter((k) => !/^S\d{1,2}$/.test(k) || Number(k.slice(1)) >= 40).length);
+}
+const named = [...speakerIds].filter(([name]) => !/^S\d{1,2}$/.test(name));
+if (named.length > 16 || speakerIds.size > 64) die('too many speaker labels for the control document');
 
 // Melbourne wall-clock -> epoch ms (the handler formats stamps in Australia/Melbourne)
 const melb = new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Melbourne', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -105,7 +112,7 @@ if (fake) {
 const exec = await memoryExec({ schemaFile: path.join(REPO, 'schema.sql') });
 const db = asD1(exec);
 const CAMPAIGN = 'e2e';
-await patchStt(db, CAMPAIGN, { speakers: Object.fromEntries([...speakerIds].map(([name, id]) => [String(id), name])) });
+await patchStt(db, CAMPAIGN, { speakers: Object.fromEntries(named.map(([name, id]) => [String(id), name])) });
 if (prefix) exec.db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES (?, 'assist', 'e2e', '{}', 0, ?)").run(CAMPAIGN, JSON.stringify({ prefix }));
 
 let clock = melbMs(first, 0);
