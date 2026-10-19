@@ -36,6 +36,10 @@
 //             folder with `gm_downtime: true`: its "## Benefits" and "## Mishaps" entries (lib/downtime-export.mjs). Laid
 //             over the app's built-in downtime tables; it is the only place they live outside the vault. No such note: no part.
 //
+//   assist    { prefix }: the cached prefix for "Claude at the table" (functions/api/gm/assist.js): the rules reference, the NPC
+//             cast and tonight's prep as <context name="..."> blocks (lib/assist-export.mjs). GM only. Tonight's prep is
+//             --assist-prep <vault-relative note> or "prep" in gm-private/assist-config.json; warns past ~90k tokens.
+//
 // F (the figure map) comes from the vault page Tools/blades-68-npc-figure-map.md, read as JSON from fenced code blocks:
 //   ```json F          the whole F object (use this form for a small map), or
 //   ```json F.<key>    one top-level key of F per block (e.g. ```json F.faction), merged in page order.
@@ -59,6 +63,7 @@ import { buildPrep } from "./lib/prep-export.mjs";
 import { packLosses, lossLines } from "./lib/pack-guard.mjs";
 import { buildScreen } from "./lib/screen-export.mjs";
 import { buildDowntime } from "./lib/downtime-export.mjs";
+import { buildAssist, readConfig } from "./lib/assist-export.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..");
@@ -74,7 +79,9 @@ function args(argv) {
     else if (a === "--out") o.out = argv[++i];
     else if (a === "--quiet") o.quiet = true;
     else if (a === "--allow-shrink") o.allowShrink = true;
-    else if (a === "-h" || a === "--help") { console.log("usage: node scripts/gm-pack.mjs --vault <vault dir> [--out gm-private/b68-gm-pack.json] [--quiet] [--allow-shrink]"); process.exit(0); }
+    else if (a === "--assist-prep") o.assistPrep = argv[++i];
+    else if (a === "--assist-config") o.assistConfig = argv[++i];
+    else if (a === "-h" || a === "--help") { console.log("usage: node scripts/gm-pack.mjs --vault <vault dir> [--out gm-private/b68-gm-pack.json] [--quiet] [--allow-shrink]"); console.log("  [--assist-prep <vault-relative session note>] [--assist-config <file>]"); process.exit(0); }
     else { console.error("unknown argument: " + a); process.exit(2); }
   }
   if (!o.vault) { console.error("--vault <vault dir> is required (or set B68_VAULT)"); process.exit(2); }
@@ -779,7 +786,10 @@ function main() {
   const parts = {};
   const failures = [];
   // score comes after location: it lays the location part's dossiers and districts over its own tables
-  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart]];
+  // assist: the cached prefix for "Claude at the table" (rules reference, NPC cast, tonight's prep); GM only (lib/assist-export.mjs)
+  const assistConfig = readConfig(a.assistConfig ? path.resolve(a.assistConfig) : path.join(REPO, "gm-private", "assist-config.json"));
+  const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: a.assistPrep, config: assistConfig });
+  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart], ["assist", buildAssistPart]];
   let npcLeverage = 0;
   let locationExtraNames = [];
   for (const [name, fn] of builders) {
@@ -853,6 +863,8 @@ function main() {
     console.log("  screen: " + (sc ? sc.sections.length + " sections from " + path.basename(sc.rel) : "none (no note has gm_screen: true)"));
     const dp = parts.downtime;
     console.log("  downtime: " + (dp ? dp.T.benefit.length + " Benefits and " + dp.T.mishap.length + " Mishaps from " + path.basename(dp.rel) : "none (no note has gm_downtime: true)"));
+    const as = parts.assist;
+    console.log("  assist: " + (as ? "about " + as.src.tokens + " tokens (" + as.src.file.split(" + ").map(f => path.basename(f)).join(", ") + ")" : "none (no rules, cast or prep note found)"));
   }
   for (const [name, part] of Object.entries(parts)) {
     const n = Buffer.byteLength(JSON.stringify(part));

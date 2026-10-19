@@ -13,9 +13,8 @@
 // it is never logged and never returned. Errors reach the caller as a short status, never the provider's message or the key.
 //
 // The cached prefix (rules digest, campaign, prep) is the GM pack part `assist`: { prefix: string, extra?: { <seat>: string } }.
-// It quotes the campaign, so it is never in git; the GM builds it on their own PC and pushes it like any other part.
-// [TODO: scripts/gm-pack.mjs builds no `assist` part yet. Until it does, the prefix is empty and the answer carries
-//  warnings: ['no assist part in the GM pack'].]
+// It quotes the campaign, so it is never in git; the GM builds it on their own PC (scripts/gm-pack.mjs, lib/assist-export.mjs)
+// and pushes it like any other part. Without it the prefix is empty and the answer carries warnings: ['no assist part in the GM pack'].
 //
 // [TODO: the Fixer can take 15-30 s. Confirm against Cloudflare's current Workers limits how long a request may stay open
 //  (wall-clock versus CPU time, and any proxy idle timeout in front of it) before relying on this one non-streaming call.
