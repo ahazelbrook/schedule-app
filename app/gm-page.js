@@ -1,7 +1,8 @@
 /* gm-page.js — the GM's page (#gm, GM.md): the console (the four Situations; the nine single tables fold under the card), the location generator
    with its map, the cast as a list to push to the iPad, the state rail (crew, clocks, bargains owed, pins, who is on stage) and
    the capture bar. S opens the street scene roller beside the location generator (a side panel), and
-   D the downtime cards (personal business: a scene prompt per activity a PC takes, an overindulgence's cost).
+   D the downtime cards (personal business: a scene prompt per activity a PC takes, an overindulgence's cost), and
+   A the Claude box (gm/assist-panel.js: the table agent's cards, Ledger updates and the Fixer, bottom right; laptop only).
    Hosted build only (window.claude.gm); in the claude.ai artifact, or for a player, the page says so and does nothing.
 
    window.B68GmPage (boot.js):
@@ -516,6 +517,7 @@
       case 'x': return { type: 'capture', bucket: 'x' };
       case 'm': return { type: 'capture', bucket: 'm' };
       case 'l': return { type: 'last' };
+      case 'a': return { type: 'assist' };
       case 'i': return { type: 'panel', panel: 'ipad' };
       case 'r': return { type: 'panel', panel: 'prep' };
       case 'o': return { type: 'panel', panel: 'cards' };
@@ -1165,6 +1167,7 @@
     if (me.npcUnsub) { try { me.npcUnsub(); } catch (e) {} }
     if (me.prepTimer) { W.clearInterval(me.prepTimer); me.prepTimer = null; }
     if (me.sttTimer) { W.clearInterval(me.sttTimer); me.sttTimer = null; }
+    if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     S = null;
     setApp(false);
     if (me.root) { me.root.innerHTML = ''; }
@@ -1316,6 +1319,7 @@
     S.sc = null; S.scRoll = null; S.scSig = null; S.scCtxSig = ''; S.scErr = ''; S.scMem = clone(m.score || {});
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
+    mountAssist();
     layout(); redrawAll(); subscribeNpcs(); checkPack();
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
@@ -1324,6 +1328,15 @@
     loadStt();
   }
   /* the top bar: what the iPad shows, read once (GET /api/gm/display only: the heat sync waits for the iPad tab, as before) */
+  /* Claude at the table (app/gm/assist-panel.js): the chat box at the bottom right. It lives in <body> beside this page, made here and
+     destroyed in close(), so only the GM's ready page has it. Its Ledger updates have no state of their own to change: "Note it" files
+     the text in the capture bar as a Moment, nothing else is written. A phone gets no box (the CSS hides it, and it does not poll). */
+  function mountAssist() {
+    var g = gmApi(), A = W.B68GmAssist, me = S;
+    if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
+    if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
+    try { me.assist = A.create({ gm: g, onNote: function (text) { return S === me && !!addCapture('m', text, true); } }); } catch (e) { me.assist = null; }
+  }
   function loadShown() {
     var g = gmApi(), me = S; if (!g || typeof g.display !== 'function' || AM.displayRead) return;
     Promise.resolve().then(function () { return g.display(); }).then(function (r) {
@@ -3363,7 +3376,7 @@
     var ml = $q('.gm-menu-list'); if (ml && !ml.hasAttribute('hidden') && ev.key === 'Escape') { menuOpen(false); var mb = $q('[data-gm="menu"]'); if (mb) mb.focus(); ev.preventDefault(); return; }
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
     if (!a) return;
-    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } return; }
+    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } return; }
     if (a.type === 'reserved') return;
     ev.preventDefault();
     if (a.type === 'situation') rollSituation(a.n);
@@ -3375,6 +3388,7 @@
     else if (a.type === 'clear') blankIpad();
     else if (a.type === 'focus') toggleFocus();
     else if (a.type === 'find') findOpen();
+    else if (a.type === 'assist') { if (S.assist) S.assist.toggle(); else toast('Blade is not available on this page.', true); }
   }
   function toggleFocus() { S.prepWide = !S.prepWide; try { W.localStorage.setItem(PREP_WIDE, S.prepWide ? '1' : '0'); } catch (e) {} syncPanels(); }
   function onClick(ev) {
