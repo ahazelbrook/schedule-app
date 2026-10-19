@@ -36,10 +36,12 @@ export async function callSeat(client, { model, effort, prefix, instructions, us
   system.push({ type: 'text', text: instructions });
   const output_config = { effort };
   if (schema) output_config.format = { type: 'json_schema', schema };
-  const res = await client.messages.create({
+  const params = {
     model, max_tokens: maxTokens, system, output_config,
     messages: [{ role: 'user', content: user }],
-  });
+  };
+  // Long outputs (the Night Shift writer thinks at high effort) must stream: the SDK refuses a big non-streaming request.
+  const res = maxTokens > 16000 ? await client.messages.stream(params).finalMessage() : await client.messages.create(params);
   const text = res.content.filter(b => b.type === 'text').map(b => b.text).join('');
   let json = null;
   if (schema && text) { try { json = JSON.parse(text); } catch { json = null; } }
