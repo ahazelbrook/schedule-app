@@ -127,7 +127,7 @@ const spentSoFar = () => (exec.db.prepare('SELECT COALESCE(SUM(cents), 0) AS c F
 const logRows = () => exec.db.prepare('SELECT id, at, seat, model, effort, input_tokens, output_tokens, cache_read, cache_write, cents, flags, card FROM gm_assist_log ORDER BY id').all().map((r) => ({ ...r }));
 
 // ---- the run: add each minute's lines, then tick once at the end of that minute
-const cards = [], ticks = [];
+const cards = [], ticks = [], updates = [];
 let after = null, n = 0, stopped = '';
 const t0wall = Date.now();
 for (let t = first; t <= last; t++) {
@@ -143,6 +143,7 @@ for (let t = first; t <= last; t++) {
   const rows = logRows().slice(before);
   ticks.push({ t, flags: out.flags || [], tier: out.spend && out.spend.tier, spend: out.spend && out.spend.tonight, errors: out.errors || [], seats: rows.map((r) => r.seat) });
   for (const c of out.cards || []) cards.push({ t, seat: c.seat, text: c.text, detail: c.detail });
+  for (const u of out.updates || []) updates.push({ t, seat: u.seat, text: u.text });
   if ((out.errors || []).length) console.error(`${stamp(t)} errors: ${out.errors.map((e) => e.seat + ' ' + e.error).join(', ')}`);
   if (out.cards && out.cards.length) console.log(`${stamp(t)} CARD ${out.cards.map((c) => c.seat + ': ' + c.text).join(' | ')}`);
   else if (rows.length > 1) console.log(`${stamp(t)} flags ${(out.flags || []).join(',')} -> ${rows.map((r) => r.seat).join(',')} (no card)`);
@@ -172,6 +173,9 @@ p(`CARDS LET THROUGH BY THE EDITOR: ${cards.length}`);
 for (const c of cards) p(`  ${stamp(c.t)}  ${c.seat.toUpperCase().padEnd(6)} ${c.text}`);
 if (!cards.length) p('  (none)');
 p();
+p(`LEDGER UPDATES (one-tap state updates, outside the card gap): ${updates.length}`);
+for (const u of updates.slice(0, 40)) p(`  ${stamp(u.t)}  ${u.text}`);
+p();
 p('CARDS PER 5-MINUTE WINDOW (from ' + stamp(first) + ')');
 const wins = new Map();
 for (const c of cards) { const w = Math.floor((c.t - first) / 5); wins.set(w, (wins.get(w) || 0) + 1); }
@@ -200,8 +204,9 @@ const tiers = [...new Set(ticks.map((x) => x.tier))];
 p(`  budget tiers seen: ${tiers.join(', ')}${tiers.every((x) => x === 'all') ? '  (the ladder never moved: spend stayed under 60% of the cap)' : ''}`);
 const tierChange = ticks.find((x, i) => i && x.tier !== ticks[i - 1].tier);
 if (tierChange) p(`  first tier change at ${stamp(tierChange.t)} to ${tierChange.tier} ($${tierChange.spend})`);
-const notShown = rows.filter((r) => !['tripwire', 'fixer'].includes(r.seat) && (() => { try { return JSON.parse(r.card || '{}').shown === 0; } catch (_) { return false; } })());
-p(`  Tap-seat calls the Editor did not show (repeat, throttle, outranked or empty): ${notShown.length} of ${rows.filter((r) => !['tripwire', 'fixer'].includes(r.seat)).length}`);
+const tapRows = rows.filter((r) => !['tripwire', 'fixer', 'editor'].includes(r.seat));
+const notShown = tapRows.filter((r) => { try { return JSON.parse(r.card || '{}').shown === 0; } catch (_) { return false; } });
+p(`  Tap-seat calls with no card (repeat, held, dropped, update or empty): ${notShown.length} of ${tapRows.length}`);
 const errs = ticks.flatMap((x) => x.errors.map((e) => `${stamp(x.t)} ${e.seat} ${e.error}`));
 p(`  provider errors: ${errs.length}${errs.length ? '\n    ' + errs.slice(0, 20).join('\n    ') : ''}`);
 

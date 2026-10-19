@@ -80,10 +80,15 @@ export async function lastSeq(db, campaign) {
 }
 
 const COLS = 'seq, id, session, at, conn, speaker, kind, text';
-/** after: the lines with seq > after (oldest first, a page at most); tail: the newest n, oldest first. -> { lines, last } */
-export async function readLines(db, campaign, { after = 0, tail = 0 } = {}) {
+/** after: the lines with seq > after (oldest first, a page at most); tail: the newest n, oldest first; since: the newest page of
+ *  lines stamped at or after this ISO time (a line count is the wrong unit for "the last few minutes": a busy table says far
+ *  more than 50 lines in four). -> { lines, last } */
+export async function readLines(db, campaign, { after = 0, tail = 0, since = '' } = {}) {
   let rows;
-  if (tail > 0) {
+  if (since) {
+    const r = await db.prepare('SELECT ' + COLS + ' FROM (SELECT ' + COLS + ' FROM gm_transcript WHERE campaign = ?1 AND at >= ?2 ORDER BY seq DESC LIMIT ?3) ORDER BY seq').bind(campaign, since, STT_LIMITS.page).all();
+    rows = r.results || [];
+  } else if (tail > 0) {
     const r = await db.prepare('SELECT ' + COLS + ' FROM gm_transcript WHERE campaign = ?1 ORDER BY seq DESC LIMIT ?2').bind(campaign, Math.min(tail, STT_LIMITS.tail)).all();
     rows = (r.results || []).reverse();
   } else {

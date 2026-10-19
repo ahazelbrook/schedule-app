@@ -1,9 +1,13 @@
 // /api/gm/assist/{tick,fit} (GM only, see the "Claude at the table" build plan): Claude at the table, GM side. Players never
 // call it and nothing it returns reaches the iPad. A player (or the table display sign-in) gets 403 before the body is read.
-//   POST /api/gm/assist/tick { after? } -> { cards, flags, spend, last, errors? }
+//   POST /api/gm/assist/tick { after? } -> { cards, updates, flags, spend, last, errors? }
 //        The GM page calls it about once a minute while Listening is on. It reads the transcript lines newer than seq `after`
 //        (the last minute when omitted), runs the Tripwire on them, asks the Conductor which seats to wake, runs those, and
-//        lets the Editor pass at most one Tap card (Ref, Clerk, Ledger) per five minutes. `cards` is [] on most ticks.
+//        lets the Editor pass at most one card (Ref beats Clerk) per five minutes. `cards` is [] on most ticks. A Ref card held
+//        back by that gap stays pending (in the log) and shows at the next opportunity unless it is over four minutes old.
+//        `updates` are the Ledger's entries (stress, harm, Heat, xp...), one-tap state updates outside the card gap:
+//        [{ seat: 'ledger', at, key, text }].
+//        The Tap seats read the last four MINUTES of talk (not a fixed count of lines).
 //   POST /api/gm/assist/fit { position, effect? } -> { cards: [fixer card], flags: [], spend, last }
 //        The Fixer for a position the GM names: what could happen on a 1-3, 4-5, 6 and crit, and a Devil's Bargain.
 //   card: { seat, at (ISO), text }, plus the Fixer's { read, one_three, four_five, six, crit, bargain }
@@ -29,7 +33,7 @@ import { loadStt, readLines } from '../../_lib/stt.js';
 import { makeClient, callSeat } from '../../_lib/assist/claude.js';
 import { SEATS } from '../../_lib/assist/seats.js';
 import { DEFAULT_CAP, budgetTier, canRun, decide } from '../../_lib/assist/conductor.js';
-import { toCandidate, merge, CARD_GAP_MS } from '../../_lib/assist/editor.js';
+import { toCandidate, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 
 const BODY_MAX = 8 * 1024;
 const NIGHT_MS = 12 * 60 * 60 * 1000;      // "tonight" is the last 12 hours of the log
@@ -88,11 +92,18 @@ async function lastRuns(db, campaign, now) {
   return out;
 }
 
-/** The cards the GM was shown in the last 10 minutes: [{ at (ms), keys }]. */
+/** The cards and ledger updates the GM was shown in the last 10 minutes: [{ at (ms), keys }]. */
 async function shownCards(db, campaign, now) {
   const since = new Date(now - RECENT_CARD_MS).toISOString();
-  const { results } = await db.prepare("SELECT at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND json_extract(card, '$.shown') = 1").bind(campaign, since).all();
+  const { results } = await db.prepare("SELECT at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND (json_extract(card, '$.shown') = 1 OR json_extract(card, '$.update') = 1)").bind(campaign, since).all();
   return (results || []).map((r) => ({ at: Date.parse(r.at), keys: (parseJson(r.card, {}) || {}).keys || [] }));
+}
+
+/** Ref cards the Editor held back and that are not stale yet: [{ at (ms), card }]. */
+async function heldRefs(db, campaign, now) {
+  const since = new Date(now - STALE_MS).toISOString();
+  const { results } = await db.prepare("SELECT at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'ref' AND json_extract(card, '$.held') = 1 ORDER BY id").bind(campaign, since).all();
+  return (results || []).map((r) => ({ at: Date.parse(r.at), card: parseJson(r.card, null) }));
 }
 
 async function lastShown(db, campaign, now) {
@@ -151,7 +162,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       }
     }
     const spend = () => ({ tonight: dollars(spentBefore + thisTick), cap, tier: budgetTier(spentBefore + thisTick, cap), tick: dollars(thisTick) });
-    const done = (cards, flags, last) => json({ cards, flags, spend: spend(), last, ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
+    const done = (cards, flags, last, updates = []) => json({ cards, updates, flags, spend: spend(), last, ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
 
     if (action[1] === 'fit') {
       const position = typeof body.position === 'string' ? body.position.replace(/\s+/g, ' ').trim() : '';
@@ -159,8 +170,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       if (!position || position.length > 400 || effect.length > 200) throw new HttpError(400, 'position is required (at most 400 characters); effect at most 200');
       const gate = canRun('fixer', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight, tier });
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : 'the fixer is busy');
-      const { lines, last } = await readLines(db, campaign, { tail: 50 });
-      const recent = lines.filter((l) => t0 - Date.parse(l.at) <= FIT_WINDOW_MS);
+      const { lines: recent, last } = await readLines(db, campaign, { since: new Date(t0 - FIT_WINDOW_MS).toISOString() });
+      const lines = recent;
       const named = 'The GM names the position: ' + position + (effect ? '. Effect: ' + effect : '') + '.';
       const user = 'A roll is about to be made. ' + named + '\nLast five minutes, up to ' + hhmm(t0) + ':\n' + formatLines(recent, speakers);
       const { cfg, r } = await run('fixer', user);
@@ -174,10 +185,11 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     // ---- tick ----
     const after = body.after === undefined || body.after === null ? null : body.after;
     if (after !== null && !(Number.isInteger(after) && after >= 0)) throw new HttpError(400, 'after must be a whole number');
-    const { lines: tail, last } = await readLines(db, campaign, { tail: 50 });
+    // the Tap seats read the last four MINUTES (a busy table says well over 50 lines in four); the Tripwire reads what is new
+    const { lines: tail, last } = await readLines(db, campaign, { since: new Date(t0 - TAP_WINDOW_MS).toISOString() });
     const session = tail.length ? tail[tail.length - 1].session : '';
     if (tier === 'off') return done([], [], last);
-    const fresh = after !== null ? tail.filter((l) => l.seq > after) : tail.filter((l) => t0 - Date.parse(l.at) <= FIRST_SLICE_MS);
+    const fresh = after !== null ? (await readLines(db, campaign, { after })).lines : tail.filter((l) => t0 - Date.parse(l.at) <= FIRST_SLICE_MS);
     const freshText = formatLines(fresh, speakers);
     if (!freshText) return done([], [], last);
 
@@ -194,22 +206,30 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const verdict = decide({ flags, now: t0, lastRun, inFlight, spent: spentBefore + thisTick, cap });
     if (!verdict.seats.length) return done([], flags, last);
 
-    const recentText = formatLines(tail.filter((l) => t0 - Date.parse(l.at) <= TAP_WINDOW_MS), speakers);
+    const recentText = formatLines(tail, speakers);
     const user = 'Last four minutes, up to ' + hhmm(t0) + ':\n' + recentText;
     const results = await Promise.all(verdict.seats.map(async (name) => ({ name, ...(await run(name, user)) })));
 
     const recent = await shownCards(db, campaign, t0);
     const candidates = results.map((x) => (x.r ? toCandidate(x.name, x.r.json, { recent, now: t0 }) : null));
-    const edit = merge(candidates, { now: t0, lastShownAt: await lastShown(db, campaign, t0) });
+    // a Ref card held back earlier waits in the log; it competes with this tick's own until it goes stale
+    const pending = pendingRefs(await heldRefs(db, campaign, t0), { recent, now: t0 });
+    const edit = merge(candidates.concat(pending), { now: t0, lastShownAt: await lastShown(db, campaign, t0) });
     const at = new Date(now()).toISOString();
     const rows = results.map((x, i) => {
       const cand = candidates[i];
-      const shown = !!(edit.card && cand && edit.card.seat === x.name);
-      const card = x.r ? { out: x.r.json, text: cand ? cand.text : '', keys: cand ? cand.keys : [], shown: shown ? 1 : 0 } : { error: errors.find((e) => e.seat === x.name)?.error || 'no reply' };
+      const isShown = !!(cand && !cand.pending && edit.card && edit.card.seat === x.name && edit.card.text === cand.text);
+      const held = !!(cand && cand.seat === 'ref' && edit.held.includes(cand));
+      const isUpdate = !!(cand && cand.seat === 'ledger');
+      const card = x.r ? { out: x.r.json, text: cand ? cand.text : '', keys: cand ? cand.keys : [], shown: isShown ? 1 : 0, ...(held ? { held: 1, ...(cand.detail ? { detail: cand.detail } : {}) } : {}), ...(isUpdate ? { update: 1 } : {}) } : { error: errors.find((e) => e.seat === x.name)?.error || 'no reply' };
       return logRow(db, campaign, { at, session, seat: x.name, cfg: x.cfg, usage: x.r && x.r.usage, cost: x.r && x.r.cost, flags, card });
     });
+    // a pending Ref card shown now has no row of its own this tick: record the showing (no cost) so the gap and repeats see it
+    if (edit.card && edit.card.pending) rows.push(logRow(db, campaign, { at, session, seat: 'editor', cfg: { model: 'editor' }, flags, card: { text: edit.card.text, keys: edit.card.keys, shown: 1, from_pending: 1 } }));
     await db.batch(rows);
-    return done(edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}) }] : [], flags, last);
+    const cardOut = edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}) }] : [];
+    const updatesOut = edit.updates.flatMap((u) => (u.items || [{ key: (u.keys || [])[0] || '', text: u.text }]).map((it) => ({ seat: 'ledger', at, key: it.key, text: it.text })));
+    return done(cardOut, flags, last, updatesOut);
   };
 }
 

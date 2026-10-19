@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
 import { cleanLines, addLines } from '../../functions/_lib/stt.js';
 import { decide, budgetTier, canRun, isRepeatSlip, slipKeys, COOLDOWN_MS, DEFAULT_CAP } from '../../functions/_lib/assist/conductor.js';
-import { toCandidate, merge, CARD_GAP_MS } from '../../functions/_lib/assist/editor.js';
+import { toCandidate, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
 import { makeHandler, onRequest as realHandler } from '../../functions/api/gm/assist.js';
 import { matchApi } from '../../worker/app.js';
 import { gmNotFound } from '../../functions/_lib/gm.js';
@@ -74,7 +74,7 @@ await test('a Ref card that repeats the same slip within 10 minutes is suppresse
 
 // ---------- the Editor ----------
 await test('editor: silence is normal; one card per five minutes; a slip outranks a ledger entry outranks a canon note', () => {
-  assert.deepEqual(merge([], { now: T }), { card: null, dropped: [] });
+  assert.deepEqual(merge([], { now: T }), { card: null, updates: [], held: [], dropped: [] });
   assert.equal(toCandidate('ref', { slip: false, said_at: '', what_was_said: '', rule: '', card: '' }), null);
   assert.equal(toCandidate('clerk', { new_names: [], drift: [], clues_landed: [] }), null);
   assert.equal(toCandidate('ledger', { events: [], xp_totalled: false }), null);
@@ -83,13 +83,48 @@ await test('editor: silence is normal; one card per five minutes; a slip outrank
   const clerk = toCandidate('clerk', { new_names: ['Zarbo'], drift: [], clues_landed: [] }, { now: T });
   let m = merge([clerk, ledger, ref], { now: T });
   assert.equal(m.card.seat, 'ref');
-  assert.deepEqual(m.dropped.map((d) => d.seat), ['ledger', 'clerk']);
+  assert.deepEqual(m.updates.map((u) => u.seat), ['ledger'], 'the ledger is an update, not a card');
+  assert.deepEqual(m.dropped, [{ seat: 'clerk', why: 'ref-waiting' }], 'a Clerk card is dropped when a Ref card is waiting');
   m = merge([clerk, ledger], { now: T });
-  assert.equal(m.card.seat, 'ledger');
+  assert.equal(m.card.seat, 'clerk', 'with no slip the canon note takes the slot, never the ledger');
+  assert.equal(m.updates.length, 1);
   m = merge([ref], { now: T, lastShownAt: T - CARD_GAP_MS + 1000 });
   assert.equal(m.card, null);
   assert.deepEqual(m.dropped, [{ seat: 'ref', why: 'throttle' }]);
+  assert.deepEqual(m.held, [ref], 'a throttled slip is held, not lost');
   assert.equal(merge([ref], { now: T, lastShownAt: T - CARD_GAP_MS }).card.seat, 'ref');
+});
+
+await test('editor: Ledger updates ignore the card gap and never use the slot', () => {
+  const ledger = toCandidate('ledger', { events: [{ at: '22:13', who: 'Quill', kind: 'stress', note: '+2' }, { at: '22:14', who: 'Vex', kind: 'harm', note: 'level 1' }], xp_totalled: false }, { now: T });
+  assert.equal(ledger.items.length, 2);
+  const m = merge([ledger], { now: T, lastShownAt: T - 1000 });
+  assert.equal(m.card, null); assert.equal(m.updates.length, 1);
+  const clerk = toCandidate('clerk', { new_names: ['Zarbo'], drift: [], clues_landed: [] }, { now: T });
+  assert.equal(merge([clerk], { now: T, lastShownAt: T - 1000 }).card, null, 'a Clerk card is dropped by the gap, not queued');
+  assert.deepEqual(merge([clerk], { now: T, lastShownAt: T - 1000 }).held, []);
+});
+
+await test('editor: a held Ref card stays pending until stale, is not repeated, and loses to a newer slip', () => {
+  const slip = { slip: true, said_at: '22:14', what_was_said: 'x', rule: 'Harm penalty (p.152)', card: 'No penalty for harm' };
+  const row = { at: T, card: { text: slip.card, keys: slipKeys(slip) } };
+  const p1 = pendingRefs([row], { now: T + 3 * 60_000 });
+  assert.equal(p1.length, 1); assert.equal(p1[0].pending, true);
+  assert.deepEqual(pendingRefs([row], { now: T + STALE_MS + 1 }), [], 'stale after four minutes');
+  assert.deepEqual(pendingRefs([row], { now: T + 3 * 60_000, recent: [{ at: T + 60_000, keys: slipKeys(slip) }] }), [], 'already shown');
+  let m = merge(p1, { now: T + 3 * 60_000, lastShownAt: T - 60_000 });
+  assert.equal(m.card, null); assert.equal(m.held.length, 1);
+  m = merge(p1, { now: T + 3 * 60_000, lastShownAt: T - CARD_GAP_MS });
+  assert.equal(m.card.text, slip.card, 'shown at the next opportunity');
+  const clerk = toCandidate('clerk', { new_names: ['Zarbo'], drift: [], clues_landed: [] }, { now: T });
+  m = merge([clerk, ...p1], { now: T + 3 * 60_000 });
+  assert.equal(m.card.seat, 'ref'); assert.deepEqual(m.dropped, [{ seat: 'clerk', why: 'ref-waiting' }]);
+  const newer = toCandidate('ref', { slip: true, said_at: '22:20', what_was_said: 'y', rule: 'Position (p.9)', card: 'Position after the roll' }, { now: T + 3 * 60_000 });
+  m = merge([...p1, newer], { now: T + 3 * 60_000 });
+  assert.equal(m.card.text, 'Position after the roll'); assert.equal(m.held.length, 1);
+  const same = toCandidate('ref', slip, { now: T + 3 * 60_000 });
+  m = merge([...p1, same], { now: T + 3 * 60_000 });
+  assert.equal(m.held.length, 0, 'a pending copy of a slip that is seen fresh counts once');
 });
 
 await test('editor: Clerk and Ledger items shown in the last 10 minutes are not shown again', () => {
@@ -273,6 +308,60 @@ await test('tick: the same slip a minute later is a repeat (no card); a differen
   out = await body(await s.post('tick', {}));
   assert.equal(out.cards.length, 1);
   assert.equal(out.cards[0].text, 'Stress cost looks wrong');
+});
+
+await test('tick: the Tap seats read the last four minutes of talk, however many lines that is', async () => {
+  clock.t = Date.parse('2030-01-01T10:30:00.000Z');
+  const s = await setup();
+  await s.lines(40, { text: 'old batch' });
+  clock.t += 5 * 60_000;
+  for (const name of ['batch A', 'batch B', 'batch C']) { await s.lines(40, { text: name }); clock.t += 60_000; }
+  clock.t -= 20_000;
+  await s.post('tick', {});
+  const ref = s.calls.find((c) => c.seat === 'ref');
+  const count = (re) => (ref.user.match(re) || []).length;
+  assert.equal(count(/batch A/g), 40); assert.equal(count(/batch B/g), 40); assert.equal(count(/batch C/g), 40);
+  assert.equal(count(/old batch/g), 0, 'older than four minutes is left out');
+});
+
+await test('tick: a held Ref card shows at the next opportunity; ledger entries come as updates and never take the slot', async () => {
+  clock.t = Date.parse('2030-01-01T16:00:00.000Z');
+  const s = await setup();
+  await s.lines(2);
+  let out = await body(await s.post('tick', {}));
+  assert.equal(out.cards.length, 1); assert.deepEqual(out.updates, []);
+  const second = { slip: true, said_at: '16:02', what_was_said: 'y', rule: 'Stress costs (p.20)', card: 'Stress cost looks wrong' };
+  s.replies.ref = second;
+  s.replies.ledger = { events: [{ at: '16:02', who: 'Quill', kind: 'stress', note: '+2' }], xp_totalled: false };
+  clock.t += 120_000; await s.lines(2);
+  out = await body(await s.post('tick', {}));
+  assert.deepEqual(out.cards, [], 'inside the gap');
+  assert.equal(out.updates.length, 1); assert.equal(out.updates[0].seat, 'ledger'); assert.match(out.updates[0].text, /Quill/);
+  assert.equal(JSON.parse(s.rows().filter((r) => r.seat === 'ref').pop().card).held, 1);
+  s.replies.ref = { slip: false, said_at: '', what_was_said: '', rule: '', card: '' };
+  s.replies.ledger = { events: [], xp_totalled: false };
+  clock.t += 180_000; await s.lines(2);        // five minutes after the first card, three after the held one
+  out = await body(await s.post('tick', {}));
+  assert.equal(out.cards.length, 1); assert.equal(out.cards[0].text, second.card);
+  assert.ok(s.rows().some((r) => r.seat === 'editor' && JSON.parse(r.card).shown === 1));
+  clock.t += 120_000; await s.lines(2);
+  out = await body(await s.post('tick', {}));
+  assert.deepEqual(out.cards, [], 'shown once only');
+});
+
+await test('tick: a held Ref card that has gone stale is never shown', async () => {
+  clock.t = Date.parse('2030-01-01T17:00:00.000Z');
+  const s = await setup();
+  await s.lines(2);
+  await s.post('tick', {});
+  s.replies.ref = { slip: true, said_at: '17:02', what_was_said: 'y', rule: 'Stress costs (p.20)', card: 'Stress cost looks wrong' };
+  clock.t += 120_000; await s.lines(2);
+  await s.post('tick', {});                    // held
+  s.replies.ref = { slip: false, said_at: '', what_was_said: '', rule: '', card: '' };
+  clock.t += 6 * 60_000; await s.lines(2);     // four minutes on from the held one, and past the gap
+  clock.t += 60_000;
+  const out = await body(await s.post('tick', {}));
+  assert.deepEqual(out.cards, []);
 });
 
 await test('cooldowns come from the log: a second tick inside a seat\'s gap does not call it', async () => {
