@@ -4,7 +4,8 @@
 //
 // Prompt layout: there is NO system prompt. The shared prefix (rules digest, cast, prep) is a document block at the top of
 // the USER turn with the 1-hour cache breakpoint on it; then the seat's own instructions; then the fresh talk. Nothing
-// seat-specific comes before the breakpoint, so every seat on one model shares one cache entry. The Worker names the prefix
+// seat-specific comes before the breakpoint in OUR request, but the per-seat JSON schema (output_config.format) is placed ahead of the messages by
+// the API, so each seat keeps its own cache entry: about one extra prefix write per seat per hour. The Worker names the prefix
 // by Files API id (`prefixFileId`) so it never holds the text; PC scripts pass the same text inline (`prefix`).
 
 import Anthropic from '@anthropic-ai/sdk';

@@ -127,6 +127,19 @@ await test('assist.js reads the small part (file id) and names that file in ever
   assert.ok(!JSON.stringify(seen[0]).includes('Roll the dice'));
 });
 
+await test('POST /api/gm/pack refuses an assist part that carries prefix text (400), and stores the small form', async () => {
+  const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });
+  const db = asD1(exec);
+  const post = (b) => packHandler({ request: new Request('https://blades.example.test/api/gm/pack', { method: 'POST', body: JSON.stringify(b) }), env: { DB: db, CAMPAIGN: 'c' }, data: { me: GM } });
+  await assert.rejects(post({ part: 'assist', src: {}, body: { prefix: 'invented text' } }), (e) => e.status === 400 && /gm:sync/.test(e.message) && !e.message.includes('invented'));
+  assert.equal(exec.db.prepare("SELECT COUNT(*) AS n FROM gm_pack WHERE part = 'assist'").get().n, 0);
+  const ok = await post({ part: 'assist', src: {}, body: { file_id: 'file_011TESTinvented0000', hash: 'h' } });
+  assert.equal(ok.status, 200);
+  await post({ part: 'console', src: {}, body: { prefix: 'other parts may use any key' } });
+  await assert.rejects(post({ part: 'assist', src: {}, body: { prefix: 'again' } }), (e) => e.status === 400);
+  assert.equal(JSON.parse(exec.db.prepare("SELECT body FROM gm_pack WHERE part = 'assist'").get().body).file_id, 'file_011TESTinvented0000', 'the good part is untouched');
+});
+
 // ---------- GM only ----------
 await test('a player or the table display cannot read the assist part: /api/gm/pack is 403 before the database is touched', async () => {
   const touched = [];

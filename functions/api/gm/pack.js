@@ -53,6 +53,8 @@ export async function onRequest({ request, env, data }) {
 
   // POST
   const p = cleanPart(await readJsonObject(request, LIMITS.request));
+  // The assist part is a file id: its prefix text goes to Anthropic's Files API from the GM's PC, never into D1 (Workers Free CPU).
+  if (p.part === 'assist' && typeof parseJson(p.body, {}).prefix === 'string') throw new HttpError(400, 'push the assist part from the PC with gm:sync (it carries prefix text)');
   const version = await shortHash(p.body);
   const db = await getDb(env);
   const heads = await packHeads(db, campaign);

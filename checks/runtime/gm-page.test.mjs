@@ -1037,6 +1037,19 @@ await test('11b. clocksSvg: the players’ clocks only, wedges filled to the cou
   checkSvg(svg);
 });
 
+await test('11d. the in-app upload skips an assist part that carries prefix text, and that skip is not a loss', () => {
+  assert.deepEqual(P.skippedParts({ parts: { assist: { src: {}, prefix: 'invented text' }, prep: { x: 1 } } }), ['assist']);
+  assert.deepEqual(P.skippedParts({ parts: { assist: { src: {}, file_id: 'file_x', hash: 'h' } } }), []);
+  assert.deepEqual(P.skippedParts({ parts: { prep: {} } }), []);
+  const big = 'x'.repeat(60000);
+  const have = { parts: { assist: { body: { file_id: 'file_x', hash: 'h' } }, scenes: { body: { T: { a: 'y'.repeat(5000) } } } } };
+  const pk = { parts: { assist: { src: {}, prefix: big }, scenes: { src: {}, T: { a: 'y'.repeat(5000) } } } };
+  assert.deepEqual(P.importLosses(have, pk), []);
+  const small = { parts: { assist: { body: { prefix: big } }, scenes: have.parts.scenes } };   // an old text-form assist on the page
+  assert.deepEqual(P.importLosses(small, { parts: { assist: { src: {}, prefix: 'z' }, scenes: { src: {}, T: { a: 'y'.repeat(5000) } } } }), []);
+  assert.equal(P.importLosses(have, { parts: { assist: pk.parts.assist } }).length, 1, 'other parts still count (scenes gone)');
+});
+
 await test('11c. packLosses: a part gone, a prep note gone or much shorter; growth is fine', () => {
   const note = (rel, n) => ({ id: rel, rel, blocks: [{ src: 'x'.repeat(n) }] });
   const before = { prep: { notes: [note('S/b68g-s02.md', 44000)] }, scenes: { T: { a: 'y'.repeat(5000) } } };

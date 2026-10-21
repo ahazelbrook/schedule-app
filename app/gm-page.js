@@ -137,7 +137,10 @@
   function partBody(part) { var b = {}; Object.keys(part || {}).forEach(function (k) { if (k !== 'src') b[k] = part[k]; }); return b; }
   /* one POST /api/gm/pack per part */
   function partRequests(pk) { return Object.keys(pk.parts).map(function (n) { return { part: n, src: isObj(pk.parts[n].src) ? pk.parts[n].src : {}, body: partBody(pk.parts[n]) }; }); }
-  P.validatePack = validatePack; P.partBody = partBody; P.partRequests = partRequests;
+  /* the assist part is pushed from the PC (gm:sync uploads its prefix to Anthropic and pushes only a file id). A local pack keeps the text, so the
+     in-app upload leaves that part alone: the server refuses the text form, and the good small part there must not be replaced or removed. */
+  function skippedParts(pk) { var a = pk && isObj(pk.parts) ? pk.parts.assist : null; return isObj(a) && typeof a.prefix === 'string' ? ['assist'] : []; }
+  P.validatePack = validatePack; P.partBody = partBody; P.partRequests = partRequests; P.skippedParts = skippedParts;
 
   /* the bands the player layer reveals: public, plus what the GM ticked, and only while Layer is Player (on the GM layer
      the ticks are kept but nothing beyond public counts) */
@@ -655,6 +658,16 @@
     return out;
   }
   P.packLosses = packLosses;
+  /* what uploading pk would lose against the pack the page has; a part the upload skips (see skippedParts) is not a loss */
+  function importLosses(have, pk) {
+    if (!have || !isObj(have.parts)) return [];
+    var before = {}, after = {};
+    Object.keys(have.parts).forEach(function (n) { var x = have.parts[n]; if (x && isObj(x.body)) before[n] = x.body; });
+    Object.keys(pk.parts).forEach(function (n) { after[n] = partBody(pk.parts[n]); });
+    skippedParts(pk).forEach(function (n) { delete before[n]; delete after[n]; });
+    return packLosses(before, after);
+  }
+  P.importLosses = importLosses;
 
   /* The tables a pack lacks, by each module's own check(T) (console, location, npc, scenes, score, downtime), for the preview and the
      load to show as WARNINGS (never errors: the upload still works, and every roller falls back to a neutral word for a missing table;
@@ -1190,13 +1203,7 @@
     var v = validatePack(pk), box = $q('#gm-prev'); if (!box) return;
     S.importing = v.ok ? pk : null;
     /* the guard: what this file would lose against the pack the page has (16/10: an old note from Sync dropped the prep) */
-    var losses = [];
-    if (v.ok && S.pack && isObj(S.pack.parts)) {
-      var before = {}, after = {};
-      Object.keys(S.pack.parts).forEach(function (n) { var x = S.pack.parts[n]; if (x && isObj(x.body)) before[n] = x.body; });
-      Object.keys(pk.parts).forEach(function (n) { after[n] = partBody(pk.parts[n]); });
-      losses = packLosses(before, after);
-    }
+    var losses = v.ok ? importLosses(S.pack, pk) : [];
     S.importLosses = losses;
     /* the tables the file lacks, by each module's own check: a warning (the upload still works) */
     var warns = [];
@@ -1241,7 +1248,7 @@
   function upload() {
     var pk = S && S.importing, g = gmApi(); if (!pk || !g) return;
     if (S.importLosses && S.importLosses.length && !W.confirm('This pack would lose prep the app has now:\n- ' + S.importLosses.join('\n- ') + '\n\nUpload it anyway?')) return;
-    var reqs = partRequests(pk), prog = $q('#gm-prog'), msg = $q('#gm-upmsg'), btn = $q('[data-gm="upload"]'), me = S, done = {}, packVersion = null, i = 0;
+    var skipped = skippedParts(pk), reqs = partRequests(pk).filter(function (rq) { return skipped.indexOf(rq.part) < 0; }), prog = $q('#gm-prog'), msg = $q('#gm-upmsg'), btn = $q('[data-gm="upload"]'), me = S, done = {}, packVersion = null, i = 0;
     if (btn) btn.disabled = true; if (prog) prog.hidden = false;
     var chain = Promise.resolve();
     reqs.forEach(function (rq) {
@@ -1255,14 +1262,14 @@
     });
     /* parts on the server that the new file no longer has are removed, so the server holds exactly this pack */
     chain = chain.then(function () { return g.pack(); }).then(function (idx) {
-      var extra = Object.keys(isObj(idx && idx.parts) ? idx.parts : {}).filter(function (n) { return !done[n]; }), c2 = Promise.resolve();
+      var extra = Object.keys(isObj(idx && idx.parts) ? idx.parts : {}).filter(function (n) { return !done[n] && skipped.indexOf(n) < 0; }), c2 = Promise.resolve();
       extra.forEach(function (n) { c2 = c2.then(function () { return g.removePart(n); }).then(function (r) { packVersion = r && r.packVersion || packVersion; }); });
       return c2.then(function () { if (!extra.length && idx && idx.version) packVersion = idx.version; });
     });
     chain.then(function () {
       if (S !== me) return;
       me.pack = { version: packVersion, parts: done, savedAt: nowIso() };
-      return kvSet('pack:' + me.me, me.pack).catch(function () {}).then(function () { if (S !== me) return; toast('GM pack imported: ' + reqs.length + ' parts.'); me.importing = null; start(); });
+      return kvSet('pack:' + me.me, me.pack).catch(function () {}).then(function () { if (S !== me) return; toast('GM pack imported: ' + reqs.length + ' parts.' + (skipped.length ? ' ' + skipped.join(', ') + ' skipped: push it from the PC (gm:sync).' : '')); me.importing = null; start(); });
     }).catch(function (e) {
       if (S !== me) return;
       if (msg) msg.textContent = 'Stopped after ' + i + ' of ' + reqs.length + ': ' + errText(e);

@@ -445,7 +445,7 @@ await test('the prefix is a file id in the Worker: a document block first in the
   const ref = seen.find((r) => /rules referee/.test(r.messages[0].content[1].text));
   assert.match(ref.messages[0].content[1].text, /EXTRA FOR REF$/);
   const docs = new Set(seen.map((r) => JSON.stringify(r.messages[0].content[0])));
-  assert.equal(docs.size, 1, 'every seat sends the identical document block, so one cache entry serves them all');
+  assert.equal(docs.size, 1, 'every seat sends the identical document block, (each seat still caches separately, because its schema sits ahead of the messages)');
 });
 
 await test('a part that still carries prefix text: nothing is sent to the provider, the box stays quiet and says to re-push', async () => {
