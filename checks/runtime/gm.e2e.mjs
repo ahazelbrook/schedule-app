@@ -477,7 +477,7 @@ try {
     await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     await G.page.keyboard.press('d');
     check(await G.page.$eval('#gm-dt', (p) => !p.hidden && /Downtime · personal business/.test(p.querySelector('.gm-band').textContent)), 'D opens the Downtime panel');
-    check(await G.page.$eval('.gm-tabs', (t) => t.scrollWidth <= t.clientWidth + 1 && [...t.querySelectorAll('.gm-tab')].every((x) => x.getBoundingClientRect().right <= t.getBoundingClientRect().right + 1 && !!x.querySelector('kbd'))), 'the nine side tabs fit one row at 1280 px, each with its key');
+    check(await G.page.$eval('.gm-tabs', (t) => t.scrollWidth <= t.clientWidth + 1 && [...t.querySelectorAll('.gm-tab')].every((x) => x.getBoundingClientRect().right <= t.getBoundingClientRect().right + 1 && !!x.querySelector('kbd'))), 'the ten side tabs fit one row at 1280 px, each with its key');
     check(await G.page.waitForSelector('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]', { timeout: 15000 }).then(() => true, () => false), 'the PCs filed a moment ago appear as chips (the characters snapshot reaches the open panel)');
     await G.page.click('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]');
     check(await G.page.$eval('#gm-dt-vice', (s) => s.value) === 'Gambling' && await G.page.$eval('#gm-dt-purveyor', (i) => i.value) === 'Old Mo, Mo’s Bar', 'picking the PC prefills the vice and purveyor from their sheet');
@@ -567,7 +567,7 @@ try {
       const segs = await V.page.$$eval('.gm-segbar .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { seg: x.getAttribute('data-seg'), top: Math.round(r.top), right: Math.round(r.right) }; }));
       const segTop = await V.page.$eval('.gm-segbar', (s) => Math.round(s.getBoundingClientRect().top));
       const rowsOf = segs.reduce((m, s) => { m[s.top] = (m[s.top] || 0) + 1; return m; }, {});
-      check(segs.length === 11 && JSON.stringify(Object.values(rowsOf)) === '[6,5]' && segs.every((s) => s.right <= w) && segTop === 44, 'phone: eleven segments in two rows (six, then five) under the bar, none off screen ' + JSON.stringify([segTop, rowsOf, segs.map((s) => s.right)]));
+      check(segs.length === 12 && JSON.stringify(Object.values(rowsOf)) === '[6,6]' && segs.every((s) => s.right <= w) && segTop === 44, 'phone: twelve segments in two rows of six under the bar, none off screen ' + JSON.stringify([segTop, rowsOf, segs.map((s) => s.right)]));
       /* the label's own text box inside the segment's box (scrollWidth overstates on these inline-flex chips, and text-overflow does
          not reach the text inside them, so a cut label would show no ellipsis) */
       check(await V.page.$$eval('.gm-segbar .chip', (c) => c.every((x) => { const rg = document.createRange(); rg.selectNodeContents(x); const t = rg.getBoundingClientRect(), b = x.getBoundingClientRect(), s = getComputedStyle(x); return t.width > 0 && t.left >= b.left + parseFloat(s.borderLeftWidth) - 0.5 && t.right <= b.right - parseFloat(s.borderRightWidth) + 0.5 && b.height >= 40; })), 'phone: every segment label shows whole, each 40 px or taller');

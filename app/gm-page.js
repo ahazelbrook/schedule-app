@@ -201,6 +201,22 @@
     return { kind: 'svg', title: str(roll.name).slice(0, 200), caption: (roll.district ? roll.district + ' · ' : '') + 'surveyed: ' + reveal.join(', '), svg: r.svg, warnings: r.warnings || [], reveal: reveal };
   }
   P.playerDisplay = playerDisplay;
+  /* The only way a chase strip reaches the display (the Chase panel, GM.md "Chase"): the PLAYER layer at the iPad's size, drawn here
+     from the chase's player copy (B68GmChase.playerCopy: no roll line, no GM note, no hidden opposing clock), never with the roll lines,
+     then scanned for every secret of the whole chase (B68GmChase.secrets) and held to the server's 600 KiB. render: B68Map.chase;
+     G: B68GmChase. Throws (e.leak, e.big) rather than send anything doubtful. */
+  P.CHASE_LEAK_MSG = 'This strip would show the players a roll line, a GM note or a hidden clock, so it was not sent.';
+  function chaseDisplay(chase, render, G) {
+    if (!G || !isObj(chase)) throw new Error('Start a chase first.');
+    if (typeof render !== 'function') throw new Error('The map kit here has no chase strip (it needs map kit 0.6).');
+    var r = render(G.playerCopy(chase), { layer: 'player', layout: 'ipad', theme: 'rulebook' }), svg = str(r && r.svg);
+    var t = ' ' + svgText(svg) + ' ', hits = G.secrets(chase).filter(function (s) { return t.indexOf(s) >= 0; });
+    if (hits.length) { var e = new Error(P.CHASE_LEAK_MSG); e.leak = true; e.hits = hits; throw e; }
+    var b = bytesOf(svg);
+    if (b > G.SVG_MAX) { var e2 = new Error('The strip is too large for the iPad (' + Math.round(b / 1024) + ' KiB, at most ' + Math.round(G.SVG_MAX / 1024) + '). End this chase and carry on in a new one.'); e2.big = true; throw e2; }
+    return { kind: 'svg', title: G.title(chase), caption: G.caption(chase).slice(0, 2000), svg: svg, warnings: (r && r.warnings) || [] };
+  }
+  P.chaseDisplay = chaseDisplay;
   /* the street description for the iPad, as plain text (markdown markers out: the display shows text as it is) */
   function plainText(md) {
     return str(md).split('\n').map(function (l) {
@@ -539,6 +555,7 @@
       case 't': return { type: 'panel', panel: 'rules' };
       case 's': return { type: 'panel', panel: 'scenes' };
       case 'j': return { type: 'panel', panel: 'score' };
+      case 'c': return { type: 'panel', panel: 'chase' };
       case 'd': return { type: 'panel', panel: 'downtime' };
       case 'p': return { type: 'capture', bucket: 'n' };
       case 'x': return { type: 'capture', bucket: 'x' };
@@ -1393,7 +1410,7 @@
     }, function () {});
   }
   function layout() {
-    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['score', 'Score'], ['npc', 'NPC'], ['downtime', 'Downtime'], ['cards', 'Cards'], ['rules', 'GM screen'], ['ipad', 'iPad'], ['state', 'State']];
+    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['score', 'Score'], ['chase', 'Chase'], ['npc', 'NPC'], ['downtime', 'Downtime'], ['cards', 'Cards'], ['rules', 'GM screen'], ['ipad', 'iPad'], ['state', 'State']];
     S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' + barHtml() +
       '<div class="seg gm-segbar" role="tablist" aria-label="Show">' + segs.map(function (s) { return '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
       '<div class="gm-main">' +
@@ -1408,8 +1425,8 @@
       '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div><div class="gm-rack" id="gm-rack" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div>' +
       '<details class="gm-singles" id="gm-singles"></details></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score', 'J'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
-      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div><div class="gm-pane" data-pane="score" id="gm-score"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
+      [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score', 'J'], ['chase', 'Chase', 'C'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
+      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="score" id="gm-score"></div><div class="gm-pane" data-pane="chase" id="gm-chase"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
       '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button>' +
@@ -1525,6 +1542,7 @@
     (c.clocks || []).forEach(function (k) { if (isObj(k)) out.push({ kind: 'World clock', title: k.goal || k.name, sub: [k.faction, (+k.filled || 0) + '/' + (+k.segments || 0)].filter(Boolean).join(' · '), text: [k.name, k.district].join(' '), go: { t: 'rail' } }); });
     (c.callbacks || []).forEach(function (x) { if (isObj(x) && x.text) out.push({ kind: 'Callback', title: x.text, sub: x.src, go: null }); });
     (c.cast || []).forEach(function (x) { if (isObj(x) && x.text) out.push({ kind: 'Cast', title: x.text, sub: x.src, go: null }); });
+    var chc = chCur(), CG = W.B68GmChase; if (chc && CG) CG.findEntries(chc).forEach(function (x) { out.push({ kind: x.kind, title: x.title, sub: x.sub, text: x.text, go: { t: 'chase' } }); });
     newest(S.doc.capture).forEach(function (e) { var b = BUCKETS.filter(function (x) { return x.k === e.bucket; })[0]; if (str(e.text).trim()) out.push({ kind: (b ? b.label : 'Filed') + ' · filed', title: e.text, sub: hm(e.at), go: null }); });
     return out;
   }
@@ -1541,7 +1559,7 @@
   function findRender(q) {
     var list = $q('#gm-find-list'); if (!list) return;
     var hits = S.findHits = findHits(S.findIdx || [], q, 30).concat(rulesFindHits(q)); S.findSel = 0;
-    list.innerHTML = !str(q).trim() ? '<li class="gm-find-none">Prep, the screen, the rules, NPCs, PCs, factions, clocks, callbacks, and what you filed tonight.</li>'
+    list.innerHTML = !str(q).trim() ? '<li class="gm-find-none">Prep, the screen, the rules, NPCs, PCs, factions, clocks, callbacks, the chase, and what you filed tonight.</li>'
       : !hits.length ? '<li class="gm-find-none">Nothing matches “' + esc(q) + '”.</li>'
       : hits.map(function (h, i) {
         return '<li><button type="button" class="gm-find-hit" data-gm="find-go" data-i="' + i + '" aria-selected="' + (i === 0) + '"><span class="gm-find-kind">' + esc(h.kind) + '</span><b>' + esc(h.title) + '</b>' +
@@ -1570,6 +1588,7 @@
       setPanel('prep'); prepPeek(g.t, linkFor(g.t, g.name));
     }
     else if (g.t === 'npcapp') setPanel('npc');
+    else if (g.t === 'chase') { setPanel('chase'); if (isPhone()) { S.seg = 'side'; syncPanels(); } }
     else if (g.t === 'rule') { setPanel('rules'); if (isPhone()) { S.seg = 'side'; syncPanels(); } rulesSearch(g.q, g.id); }
     else if (g.t === 'rail') { if (isPhone()) { S.seg = 'state'; syncPanels(); } flash($q('#gm-rail .gm-clocks')); }
   }
@@ -1585,7 +1604,7 @@
 
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderNpcs(); renderScore(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
+    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderNpcs(); renderScore(); renderChase(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
   }
   /* the pack's export date: in the Menu in full, in the bar only when stale or an offline copy */
   function syncHead() {
@@ -2373,7 +2392,7 @@
   }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
 
-  var SIDE = ['prep', 'location', 'scenes', 'score', 'npc', 'downtime', 'cards', 'rules', 'ipad'];
+  var SIDE = ['prep', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'rules', 'ipad'];
   /* ---------- the street scene roller (S): a side panel ---------- */
   function genLinesHtml(lines) {
     return (lines || []).map(function (l) { return l.kind === 'chips' ? chipsHtml(l.chips) : linesHtml([l], md); }).join('');
@@ -3354,6 +3373,170 @@
     var d = { kind: 'cards', title: 'Opportunities', cards: cards, mode: mode === 'spread' ? 'spread' : 'carousel', interval: oneId ? 0 : Math.floor(+oppDoc().interval || 0), start: 0 };
     pushDisplay(d).then(function () { toast('On the iPad: ' + (oneId ? 'one card' : cards.length + ' cards' + (d.mode === 'spread' ? ', spread out' : '')) + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
   }
+  /* ---------- the Chase panel (C): a chase strip that grows on the iPad as the chase clock fills (GM.md "Chase") ----------
+     B68GmChase (gm/chase.js) builds what the map kit is given; the kit (0.6: B68Map.chaseNew, chaseTick, chase) keeps and draws the chase.
+     GM state `chase: { current, past: { <id>: chase }, ui: { level, time } }`. One roll is one panel as wide as the segments it filled;
+     drawn in play, never ahead. Only the player copy, drawn here at the iPad's size, goes to the iPad (chaseDisplay), and while it is
+     up every change sends it again, as the table clocks do. S.chForm holds the start form and S.chOn the chase on the iPad (this page). */
+  function chDoc() { return isObj(S.doc.chase) ? S.doc.chase : {}; }
+  function chCur() { var c = chDoc().current; return isObj(c) && Array.isArray(c.panels) && Array.isArray(c.clocks) ? c : null; }
+  function chUi() { var u = isObj(chDoc().ui) ? chDoc().ui : {}, G = W.B68GmChase, cur = chCur(); return { level: G && G.LEVELS.indexOf(u.level) >= 0 ? u.level : 'street', time: u.time === 'Night' || u.time === 'Bluetime' ? u.time : cur && cur.time === 'Night' ? 'Night' : 'Bluetime' }; }
+  function chKit() { var K = W.B68Map; return K && typeof K.chase === 'function' && typeof K.chaseNew === 'function' && typeof K.chaseTick === 'function' ? K : null; }
+  function chTokens() { var K = chKit(), o = null; try { o = K && typeof K.chaseOptions === 'function' ? K.chaseOptions() : null; } catch (e) { o = null; } return o && Array.isArray(o.tokens) && o.tokens.length ? o.tokens.map(str) : W.B68GmChase.TOKENS; }
+  function chForm() {
+    if (!S.chForm) S.chForm = { from: S.locRoll ? 'location' : S.scnRoll ? 'scene' : 'ground', ground: 'corridor', name: '', clockName: '', size: 6, opp: 'none', oppName: '', oppSize: 4, crewToken: 'autopod', themToken: 'watch-car', legName: '', legSize: 4 };
+    if (S.chForm.from === 'location' && !S.locRoll) S.chForm.from = S.scnRoll ? 'scene' : 'ground';
+    if (S.chForm.from === 'scene' && !S.scnRoll) S.chForm.from = S.locRoll ? 'location' : 'ground';
+    return S.chForm;
+  }
+  function chSeg(name, list, v, dis) {
+    return '<div class="seg" role="group" aria-label="' + esc(name) + '">' + list.map(function (o) { var val = Array.isArray(o) ? o[0] : o, lab = Array.isArray(o) ? o[1] : o; return '<button type="button" class="chip" data-gm="ch-set" data-k="' + esc(name) + '" data-v="' + esc(val) + '" aria-pressed="' + (str(val) === str(v)) + '"' + (dis && dis(val) ? ' disabled' : '') + '>' + esc(lab) + '</button>'; }).join('') + '</div>';
+  }
+  function chTokOpts(v, none) { return (none ? '<option value=""' + (v ? '' : ' selected') + '>nobody</option>' : '') + chTokens().map(function (t) { return '<option value="' + esc(t) + '"' + (t === v ? ' selected' : '') + '>' + esc(t.replace(/-/g, ' ')) + '</option>'; }).join(''); }
+  function chPastHtml() {
+    var past = newest(Object.keys(isObj(chDoc().past) ? chDoc().past : {}).reduce(function (m, k) { var x = chDoc().past[k]; if (isObj(x)) m[k] = Object.assign({}, x, { at: x.endedAt }); return m; }, {}));
+    if (!past.length) return '';
+    return '<details class="gm-more gm-ch-past"' + (foldOpen('chpast') ? ' open' : '') + ' data-fold="chpast"><summary>Past chases <span class="gm-dim">' + past.length + '</span></summary><ul class="gm-ch-pastl">' +
+      past.map(function (x) { return '<li><b>' + esc(x.name || 'Chase') + '</b> <span class="gm-dim">' + esc([x.district, (Array.isArray(x.panels) ? x.panels.length : 0) + ' panels', x.endedAt ? dmy(x.endedAt) + ' ' + hm(x.endedAt) : ''].filter(Boolean).join(' · ')) + '</span></li>'; }).join('') + '</ul></details>';
+  }
+  /* the controls are drawn again only on a forced redraw (a press here) or when nothing in the pane is being typed in */
+  function renderChase(force) {
+    var box = $q('#gm-chase'), G = W.B68GmChase; if (!box) return;
+    var act = document.activeElement;
+    if (!force && act && box.contains(act) && /^(input|textarea)$/i.test(act.tagName || '')) return;
+    if (!G) { box.innerHTML = '<p class="gm-note bad">The chase module is missing.</p>'; return; }
+    var K = chKit(), cur = chCur(), h = '';
+    if (!K) h += '<p class="gm-note warn">The chase strip needs map kit 0.6; this build has ' + esc(W.B68Map && W.B68Map.VERSION || 'none') + '. Update the app to draw chases.</p>';
+    if (!cur) {
+      var f = chForm(), loc = S.locRoll, scn = S.scnRoll && S.scnRoll.scene;
+      var froms = [['location', 'Location' + (loc ? ': ' + shortLabel(loc.namedStreet || loc.name, 26) : '')], ['scene', 'Street scene' + (scn ? ': ' + shortLabel(scn.street, 26) : '')], ['ground', 'A street type']];
+      h += '<section class="gm-ch-start" aria-label="Start a chase"><h3 class="gm-band">Start a chase</h3>' +
+        '<div class="gm-field wide"><span class="gm-lab">The street</span>' + chSeg('from', froms, f.from, function (v) { return v === 'location' ? !loc : v === 'scene' ? !scn : false; }) + '</div>' +
+        (f.from === 'ground' ? selectHtml('gm-ch-ground', 'data-chf', 'ground', 'Street type', G.GROUNDS, f.ground) : '') +
+        '<label class="gm-field wide" for="gm-ch-name"><span class="gm-lab">Name</span><input type="text" id="gm-ch-name" data-chf="name" maxlength="80" autocomplete="off" placeholder="The chase" value="' + esc(f.name) + '"></label>' +
+        '<div class="gm-ch-row"><label class="gm-field" for="gm-ch-clock"><span class="gm-lab">The crew’s clock</span>' + '<input type="text" id="gm-ch-clock" data-chf="clockName" maxlength="60" autocomplete="off" placeholder="Get away" value="' + esc(f.clockName) + '"></label>' + chSeg('size', G.SIZES, f.size) + '</div>' +
+        '<div class="gm-ch-row"><div class="gm-field"><span class="gm-lab">Opposing clock</span>' + chSeg('opp', [['none', 'None'], ['shown', 'Shown'], ['hidden', 'Hidden']], f.opp) + '</div>' +
+        (f.opp !== 'none' ? '<label class="gm-field" for="gm-ch-opp"><span class="gm-lab">Its name' + (f.opp === 'hidden' ? ' (GM only)' : '') + '</span><input type="text" id="gm-ch-opp" data-chf="oppName" maxlength="60" autocomplete="off" placeholder="They close in" value="' + esc(f.oppName) + '"></label>' + chSeg('oppSize', G.SIZES, f.oppSize) : '') + '</div>' +
+        '<div class="gm-ch-row">' + selectHtml('gm-ch-crewtok', 'data-chf', 'crewToken', 'The crew in', [], '', chTokOpts(f.crewToken)) + selectHtml('gm-ch-themtok', 'data-chf', 'themToken', 'After them', [], '', chTokOpts(f.themToken, true)) + '</div>' +
+        '<p><button type="button" class="btn primary gm-roll" data-gm="ch-start"' + (K ? '' : ' disabled') + '>Start the chase</button></p>' +
+        '<p class="gm-empty">Each roll that ticks the clock draws one panel, as wide as the segments it filled. Nothing is drawn ahead.</p></section>';
+    } else {
+      var ks = G.clocks(cur), lg = G.leg(cur), op = G.opposing(cur), u = chUi(), st = cur.street || {};
+      h += '<section class="gm-ch-play" aria-label="The chase"><header class="gm-card-h"><div><h3>' + esc(G.title(cur)) + '</h3><p class="gm-sub">' + esc([cur.district, st.named || st.type || (G.GROUNDS.filter(function (g) { return g.value === st.ground; })[0] || {}).label, cur.time].filter(Boolean).join(' · ')) + '</p></div></header>' +
+        '<ul class="gm-clocks gm-ch-clocks">' + ks.map(function (k) { return clockLi(k.name, k.filled, k.size, [k.side === 'crew' ? (lg && lg.id === k.id ? 'in play' : k.full ? 'done' : 'next') : 'against', k.hidden ? 'hidden from players' : ''].filter(Boolean).join(' · ')); }).join('') + '</ul>' +
+        (op ? '<p class="gm-ch-opp"><span class="gm-lab">' + esc(op.name) + (op.hidden ? ' (hidden)' : '') + '</span><button type="button" class="btn sm" data-gm="ch-opp" data-d="-1" aria-label="Opposing clock down one"' + (op.filled ? '' : ' disabled') + '>−1</button><b>' + op.filled + '/' + op.size + '</b><button type="button" class="btn sm" data-gm="ch-opp" data-d="1" aria-label="Opposing clock up one"' + (op.full ? ' disabled' : '') + '>+1</button></p>' : '') +
+        '<div class="gm-ch-tick">' +
+        '<label class="gm-field wide" for="gm-ch-cap"><span class="gm-lab">What happened</span><input type="text" id="gm-ch-cap" maxlength="160" autocomplete="off" placeholder="The caption under the panel"></label>' +
+        '<label class="gm-field wide" for="gm-ch-roll"><span class="gm-lab">Roll (GM only)</span><input type="text" id="gm-ch-roll" maxlength="160" autocomplete="off" placeholder="who · action · position/effect · dice"></label>' +
+        '<label class="gm-field wide" for="gm-ch-between"><span class="gm-lab">Between ticks (one per line)</span>' + '<textarea id="gm-ch-between" rows="2" maxlength="900" placeholder="A flashback, a fail before this roll…"></textarea></label>' +
+        '<div class="gm-ch-row"><div class="gm-field"><span class="gm-lab">Level</span>' + chSeg('level', G.LEVELS, u.level) + '</div><div class="gm-field"><span class="gm-lab">Time</span>' + chSeg('time', G.TIMES, u.time) + '</div></div>' +
+        (lg ? '<p class="gm-ch-leg"><span class="gm-lab">Ticks ' + esc(lg.name) + ' · ' + (lg.size - lg.filled) + ' to go</span></p>' : '<p class="gm-note warn">The crew’s clock is full. Add a leg, or end the chase.</p>') +
+        '<div class="gm-ch-ticks">' + [[1, 'Limited'], [2, 'Standard'], [3, 'Great']].map(function (t) { return '<button type="button" class="btn primary gm-ch-plus" data-gm="ch-tick" data-n="' + t[0] + '"' + (lg && K ? '' : ' disabled') + '><b>+' + t[0] + '</b><small>' + t[1] + '</small></button>'; }).join('') + '</div></div>' +
+        '<div class="gm-map-acts"><button type="button" class="btn sm primary" data-gm="ch-ipad"' + (K ? '' : ' disabled') + ' title="The player copy at the iPad’s size: no roll lines, no hidden clock. It follows the chase while it is up">Show on iPad</button>' +
+        '<button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button>' +
+        '<button type="button" class="btn sm" data-gm="ch-undo"' + (cur.panels.length ? '' : ' disabled') + '>Undo last panel</button>' +
+        '<button type="button" class="btn sm bad" data-gm="ch-end">End chase</button></div>' +
+        '<details class="gm-more gm-ch-legf"' + (lg ? '' : ' open') + '><summary>Add a leg</summary>' + '<div class="gm-ch-row"><label class="gm-field" for="gm-ch-legname"><span class="gm-lab">Name</span><input type="text" id="gm-ch-legname" maxlength="60" autocomplete="off" placeholder="Land the barge"></label>' +
+        chSeg('legSize', G.SIZES, chForm().legSize) + '<button type="button" class="btn sm" data-gm="ch-leg">Add the leg</button></div></details>' +
+        '<p class="gm-warn" id="gm-ch-warn" role="status"></p><div class="gm-ch-strip" id="gm-ch-strip" data-layer="gm"></div></section>';
+    }
+    box.innerHTML = h + chPastHtml();
+    if (cur && K) chDraw();
+  }
+  /* the GM copy in the panel: every clock, the roll lines */
+  function chDraw() {
+    var el = $q('#gm-ch-strip'), w = $q('#gm-ch-warn'), K = chKit(), cur = chCur(); if (!el || !K || !cur) return;
+    var r; try { r = K.chase(cur, { layer: 'gm', layout: isPhone() ? 'phone' : 'ipad', theme: 'rulebook', rolls: true }); } catch (e) { el.innerHTML = ''; if (w) { w.textContent = 'The strip could not be drawn: ' + errText(e); w.classList.add('bad'); } return; }
+    el.innerHTML = stripSize(r.svg);       /* the kit's own output from our chase; it escapes its text */
+    var warns = (r.warnings || []).map(function (x) { return typeof x === 'string' ? x : x && (x.message || x.msg) || ''; }).filter(Boolean);
+    if (w) { w.classList.remove('bad'); w.textContent = 'GM copy: every clock and the roll lines. ' + (cur.panels.length ? cur.panels.length + ' panel' + (cur.panels.length === 1 ? '' : 's') + '. ' : 'No panel yet: the first roll draws one. ') + (warns.length ? warns.length + ' kit note' + (warns.length === 1 ? '' : 's') + ': ' + warns.slice(0, 2).join(' · ') : ''); }
+  }
+  /* a changed chase: stored whole (replacePatch: a key the new one lacks goes), the panel redrawn, the iPad sent it again when it shows it */
+  function chSave(next, extra) {
+    var p = { chase: { current: replacePatch(chDoc().current, next) } };
+    if (extra) p.chase = Object.assign(p.chase, extra);
+    if (!patch(p, { force: true })) return false;
+    renderChase(true); chResend();
+    return true;
+  }
+  /* the kit's warnings, if it hands them back on the chase object, are said once and not stored */
+  function chClean(c) { var w = c && Array.isArray(c.warnings) ? c.warnings : null; if (w) { delete c.warnings; if (w.length) toast('Map kit: ' + w.slice(0, 2).map(function (x) { return typeof x === 'string' ? x : x && x.message || ''; }).join(' · '), true); } return c; }
+  function chStart() {
+    var G = W.B68GmChase, K = chKit(), f = chForm(); if (!G || !K) { toast('The chase strip needs map kit 0.6.', true); return; }
+    if (chCur()) { toast('A chase is running: end it first.', true); return; }
+    var src = f.from === 'location' && S.locRoll ? G.source('location', S.locRoll) : f.from === 'scene' && S.scnRoll ? G.source('scene', S.scnRoll.scene, S.scnRoll.meta && S.scnRoll.meta.title) : G.source('ground', f.ground, nowDistrict());
+    var args = G.startArgs(f, src, Math.floor(Math.random() * 4294967296)), ch;
+    try { ch = chClean(K.chaseNew(args)); } catch (e) { toast('The chase could not start: ' + errText(e), true); return; }
+    if (!isObj(ch)) { toast('The chase could not start.', true); return; }
+    if (!ch.id) ch.id = uid('ch');
+    if (!Array.isArray(ch.clocks) || !ch.clocks.length) ch.clocks = args.clocks;
+    if (!Array.isArray(ch.cast)) ch.cast = args.cast;
+    if (!Array.isArray(ch.panels)) ch.panels = [];
+    if (!patch({ chase: { current: ch, ui: { level: 'street', time: ch.time === 'Night' ? 'Night' : 'Bluetime' } } }, { force: true })) return;
+    S.chForm = null; S.last = { text: 'Chase: ' + G.title(ch) };
+    renderChase(true);
+    toast('Chase started: ' + G.title(ch) + '. Each tick draws a panel.');
+  }
+  function chTick(n) {
+    var G = W.B68GmChase, K = chKit(), cur = chCur(); if (!G || !K || !cur) return;
+    var val = function (id) { var el = $q(id); return el ? el.value : ''; }, u = chUi();
+    var a = G.tickArgs(cur, { ticks: n, caption: val('#gm-ch-cap'), roll: val('#gm-ch-roll'), between: val('#gm-ch-between'), level: u.level, time: u.time });
+    if (a.error) { toast(a.error, true); return; }
+    var asked = a.clamped; delete a.clamped;
+    var next; try { next = chClean(K.chaseTick(cur, a)); } catch (e) { toast('The tick failed: ' + errText(e), true); return; }
+    if (!isObj(next) || !Array.isArray(next.panels)) { toast('The tick failed.', true); return; }
+    if (!chSave(next)) return;
+    S.last = { text: 'Chase: ' + (a.caption || G.title(next)) + ' (+' + a.ticks + ')' };
+    toast(asked ? 'Only ' + a.ticks + ' left on that leg: ticked ' + a.ticks + ', not ' + asked + '.' : 'Panel ' + next.panels.length + ' drawn (+' + a.ticks + ').', !!asked);
+  }
+  function chUndo() {
+    var G = W.B68GmChase, cur = chCur(); if (!G || !cur || !cur.panels.length) return;
+    if (chSave(G.undo(cur))) toast('Took back panel ' + cur.panels.length + '.');
+  }
+  function chOppose(d) { var G = W.B68GmChase, cur = chCur(); if (G && cur) chSave(G.oppose(cur, d)); }
+  function chLeg() {
+    var G = W.B68GmChase, cur = chCur(), nm = $q('#gm-ch-legname'); if (!G || !cur) return;
+    var next = G.addLeg(cur, nm ? nm.value : '', chForm().legSize), k = next.clocks[next.clocks.length - 1];
+    if (chSave(next)) toast('Leg added: ' + k.name + ' (' + k.size + ').');
+  }
+  function chEnd() {
+    var G = W.B68GmChase, cur = chCur(); if (!G || !cur) return;
+    if (!W.confirm('End the chase “' + G.title(cur) + '”? It moves to Past chases.')) return;
+    var plan = G.endPlan(chDoc().past, cur, nowIso());
+    if (!patch({ chase: { current: null, past: plan.patch } }, { force: true })) return;
+    S.chOn = null; renderChase(true);
+    toast('Chase ended: ' + G.title(cur) + '.' + (plan.dropped.length ? ' Kept the last ' + G.PAST_MAX + ' chases: dropped ' + plan.dropped.length + ' older (' + plan.dropped.slice(0, 3).join(', ') + ').' : ''), !!plan.dropped.length);
+  }
+  function chSet(k, v) {
+    var f = chForm();
+    if (k === 'level' || k === 'time') { var u = {}; u[k] = v; patch({ chase: { ui: u } }); keepDrafts(function () { renderChase(true); }); return; }
+    f[k] = k === 'size' || k === 'oppSize' || k === 'legSize' ? +v : v;
+    keepDrafts(function () { renderChase(true); });
+  }
+  /* what is typed in the tick box survives a redraw from one of the switches */
+  function keepDrafts(fn) {
+    var ids = ['#gm-ch-cap', '#gm-ch-roll', '#gm-ch-between', '#gm-ch-legname'], kept = ids.map(function (i) { var el = $q(i); return el ? el.value : null; });
+    fn();
+    ids.forEach(function (i, n) { var el = $q(i); if (el && kept[n] !== null) el.value = kept[n]; });
+  }
+  function chShow(quiet) {
+    var G = W.B68GmChase, K = chKit(), cur = chCur(), d;
+    if (!cur) { if (!quiet) toast('Start a chase first.', true); return; }
+    try { d = chaseDisplay(cur, K && K.chase.bind(K), G); } catch (e) { S.chOn = null; toast(errText(e), true); return; }
+    gate.mark(d.svg);
+    var me = S, id = cur.id;
+    pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }).then(function () {
+      if (S !== me) return;
+      S.chOn = id; S.chTitle = d.title;
+      if (!quiet) toast('On the iPad: ' + d.title + '. It follows the chase while it is up.');
+    }, function (e) { toast('Could not send the chase: ' + errText(e), true); });
+  }
+  function chOnIpad() { var cur = chCur(); return !!(cur && S.chOn === cur.id && AM.shown && AM.shown.kind === 'svg' && AM.shown.title === S.chTitle); }
+  function chResend() {
+    if (!chOnIpad()) return;
+    var me = S; clearTimeout(S.chT);
+    S.chT = setTimeout(function () { if (S === me && chOnIpad()) chShow(true); }, 300);
+  }
   function B68slug(s) { return str(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 
   /* ---------- the Screen tab (T): the GM screen from the pack's `screen` part, then the full rules search ----------
@@ -3671,6 +3854,14 @@
       case 'beat-go': beatGo(); break;
       case 'beat-next': beatNext(); break;
       case 'clocks-ipad': clocksToIpad(false); break;
+      case 'ch-set': chSet(b.getAttribute('data-k'), b.getAttribute('data-v')); break;
+      case 'ch-start': chStart(); break;
+      case 'ch-tick': chTick(+b.getAttribute('data-n')); break;
+      case 'ch-undo': chUndo(); break;
+      case 'ch-opp': chOppose(+b.getAttribute('data-d')); break;
+      case 'ch-leg': chLeg(); break;
+      case 'ch-end': chEnd(); break;
+      case 'ch-ipad': chShow(false); break;
       case 'stt-name': { var spn = b.getAttribute('data-sp'); STT.fold = true; renderStt(true); var si = $q('#gm-stt-s' + spn); if (si) { si.focus(); try { si.select(); } catch (e) {} } break; }
       case 'retry': load(); break;
       case 'upload': upload(); break;
@@ -3796,6 +3987,7 @@
       return;
     }
     if (t.hasAttribute && t.hasAttribute('data-hotitle')) { S.hoTitle = !!t.checked; return; }      /* this page only: the next Show on iPad carries the title caption */
+    if (t.hasAttribute && t.hasAttribute('data-chf')) { chForm()[t.getAttribute('data-chf')] = str(t.value).slice(0, 80); if (t.tagName === 'SELECT') renderChase(true); return; }
     if (t.id === 'gm-opp-iv') { if (ev.type === 'change') patch({ opps: { interval: Math.floor(+t.value) || 0 } }); return; }
     if (t.id === 'gm-prep-note') { if (ev.type === 'change') { try { W.localStorage.setItem(PREP_NOTE, t.value); } catch (e) {} renderPrep(true); } return; }
     if (t.hasAttribute('data-ctl')) { if (ev.type === 'change' || t.tagName === 'SELECT') setLive(t.getAttribute('data-ctl'), t.value); return; }
@@ -3838,7 +4030,7 @@
     else if (k === 'rules') { var q = $q('#gm-rq'); if (q && q.value.trim()) rulesSearch(q.value); }
   }
   function wire(el) {
-    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'gm-find-q') { findRender(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-prep-q') { prepFilter(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-dt-purveyor') { clearTimeout(wire.dt); var pv = ev.target; wire.dt = setTimeout(function () { if (S) dtField('purveyor', pv.value); }, 500); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); el.addEventListener('scroll', onScroll, true); }
+    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'gm-find-q') { findRender(ev.target.value); return; } if (ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-chf')) { chForm()[ev.target.getAttribute('data-chf')] = str(ev.target.value).slice(0, 80); return; } if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-prep-q') { prepFilter(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-dt-purveyor') { clearTimeout(wire.dt); var pv = ev.target; wire.dt = setTimeout(function () { if (S) dtField('purveyor', pv.value); }, 500); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); el.addEventListener('scroll', onScroll, true); }
     if (!wire.global) {
       wire.global = true;
       document.addEventListener('keydown', onKey, true);

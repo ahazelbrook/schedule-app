@@ -13,6 +13,9 @@
 //       figure map's faction palette lives in the pack for exactly that reason);
 //   (h) the location glance's one-sentence plan (it names the target room and its locks) is GM only: it is in no player summary,
 //       and the page reads it in the glance card alone.
+//   (i) the chase strip (the Chase panel): a hidden opposing clock, the roll lines and GM notes never reach the svg sent to the iPad,
+//       over a fuzzed set of invented chases, and the page sends a chase only through chaseDisplay (map kit 0.6's B68Map.chase; until
+//       the vendored kit has it, checks/runtime/fixtures/chase-kit-stub.js stands in).
 // The pack: $B68_PACK if set (it must then load), else gm-private/b68-gm-pack.json (git-ignored) when present.
 // The vault readers (scripts/gm-pack.mjs, gm-parity.mjs, gm-sync.mjs, scripts/lib/**) get no exemption: they find
 // the vault's tables by page path, code-fence, heading and frontmatter key, never by a table's content, so they need
@@ -495,6 +498,46 @@ await test('(h) the location plan names the target and is GM only: never in the 
   const push = src.slice(src.indexOf('function pushText'), src.indexOf('function blankIpad'));
   if (/glance|\.plan|\.say\b/.test(push)) throw new Error('pushText reads the glance card');
   console.log('     ' + n + ' fixture rolls × 3 reveals');
+});
+
+/* ---------- (i) the chase strip: what the Chase panel sends to the iPad ---------- */
+await test('(i) a hidden opposing clock, roll lines and GM notes never reach the chase strip sent to the iPad (200 invented chases), and the page sends a chase only through chaseDisplay', async () => {
+  const req = createRequire(import.meta.url), CG = req(path.join(ROOT, 'app', 'gm', 'chase.js'));
+  const kit = req(path.join(ROOT, 'app', 'maps', 'map-kit.js'));
+  req(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'chase-kit-stub.js'))(kit);        // a no-op once the kit has its own chase strip
+  let s = 7; const rnd = () => { s = (s * 1103515245 + 12345) >>> 0; return s / 4294967296; };
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  const WORDS = ['tram', 'kiosk', 'smoke', 'canal', 'barrier', 'rooftop', 'lantern', 'gutter', 'siren', 'crate', 'arcade', 'ramp'];
+  const word = () => pick(WORDS) + Math.floor(rnd() * 900 + 100);
+  let n = 0;
+  for (let i = 0; i < 200; i++) {
+    const src = CG.source('ground', pick(CG.GROUNDS).value, 'Invented ' + word());
+    const hiddenName = 'Hidden ' + word() + ' ' + word();
+    let c = kit.chaseNew(CG.startArgs({ name: 'Chase ' + word(), clockName: 'Run ' + word(), size: pick([4, 6, 8]), opp: 'hidden', oppName: hiddenName, oppSize: pick([4, 6, 8]), themToken: 'suv' }, src, 1000 + i));
+    const rolls = [];
+    for (let t = 0; t < 6 && CG.leg(c); t++) {
+      const roll = 'Pc' + word() + ' · Prowl · ' + pick(['risky', 'desperate']) + '/standard · ' + Math.floor(rnd() * 6 + 1);
+      rolls.push(roll.toLowerCase());
+      c = kit.chaseTick(c, CG.tickArgs(c, { ticks: pick([1, 2, 3]), caption: 'Past the ' + word(), roll, between: rnd() < 0.3 ? 'A flashback to the ' + word() : '', level: pick(CG.LEVELS), time: pick(CG.TIMES) }));
+      if (rnd() < 0.4) c = CG.oppose(c, 1);
+    }
+    c.panels[0].gm = 'GM only ' + word(); c.gm = 'GM only ' + word();
+    const d = GP.chaseDisplay(c, kit.chase.bind(kit), CG), text = GP.svgText(d.svg);
+    for (const secret of [hiddenName.toLowerCase(), c.panels[0].gm.toLowerCase(), c.gm.toLowerCase()].concat(rolls)) if (text.includes(secret)) throw new Error('chase ' + i + ': the pushed strip holds "' + secret + '"');
+    if (/hidden|prowl/i.test(d.caption + ' ' + d.title)) throw new Error('chase ' + i + ': the title or caption names a secret: ' + d.title + ' / ' + d.caption);
+    checkSvg(d.svg);
+    const gm = GP.svgText(kit.chase(c, { layer: 'gm', layout: 'ipad', rolls: true }).svg);
+    if (!gm.includes(hiddenName.toLowerCase()) || !gm.includes(rolls[0])) throw new Error('chase ' + i + ': the GM copy should have the hidden clock and the roll lines (is the check still testing anything?)');
+    n++;
+  }
+  // the page: the chase push is built by chaseDisplay and marked at the gate in one function; nothing else in the panel sends an svg
+  const src = read(path.join(ROOT, 'app', 'gm-page.js'));
+  const from = src.indexOf('function chDoc()'), to = src.indexOf('function B68slug');
+  if (from < 0 || to < from) throw new Error('the Chase panel code was not found');
+  const panel = src.slice(from, to);
+  if ((panel.match(/pushDisplay\(/g) || []).length !== 1 || (panel.match(/chaseDisplay\(/g) || []).length !== 1 || !/chaseDisplay\([\s\S]*?gate\.mark\(d\.svg\)[\s\S]*?pushDisplay\(\{ kind: 'svg', title: d\.title, caption: d\.caption, svg: d\.svg \}\)/.test(panel)) throw new Error('the Chase panel sends something other than chaseDisplay\'s svg');
+  if (/rolls: true/.test(src.slice(src.indexOf('function chaseDisplay'), src.indexOf('P.chaseDisplay')))) throw new Error('chaseDisplay asks for the roll lines');
+  console.log('     ' + n + ' invented chases, map kit ' + kit.VERSION);
 });
 
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');

@@ -190,6 +190,9 @@ const FIXS = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fi
 const SC = require(path.join(ROOT, 'app', 'gm', 'scenes.js')), SCM = require(path.join(ROOT, 'app', 'gm', 'score.js'));
 const SCFIX = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'score-pack.json'), 'utf8')).parts;
 const DT = require(path.join(ROOT, 'app', 'gm', 'downtime.js'));
+const CH = require(path.join(ROOT, 'app', 'gm', 'chase.js'));
+/* the map kit with a chase strip: its own (0.6), or the checks' stand-in written from the kit's spec (it installs only on a kit without one) */
+const MCH = require(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'chase-kit-stub.js'))(Object.assign({}, require(path.join(ROOT, 'app', 'maps', 'map-kit.js'))));
 const DTT = require(path.join(ROOT, 'app', 'downtime-tables.js'));      /* the built-in tables (B68DowntimeTables), loaded before the module */
 const dtMk = (cfg) => DT.create(Object.assign({ T: DTT.T, places: DTT.PLACES }, cfg || {}));
 const CTBOX = {}; CTBOX.window = CTBOX; vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'app', 'content.js'), 'utf8'), CTBOX);
@@ -350,7 +353,7 @@ function fakeBrowser(over) {
   const ls = new Map(), toasts = [];
   const W = { document: doc, localStorage: { getItem: (k) => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => { ls.set(k, String(v)); }, removeItem: (k) => { ls.delete(k); } },
     matchMedia: () => ({ matches: false }), addEventListener() {}, confirm: () => true, open() {}, B68: { toast: (m, bad) => toasts.push([m, !!bad]) },
-    B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmScore: SCM, B68GmDowntime: DT, B68DowntimeTables: DTT, B68Content: CT, setTimeout, clearTimeout, console };
+    B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmScore: SCM, B68GmDowntime: DT, B68DowntimeTables: DTT, B68GmChase: CH, B68Content: CT, setTimeout, clearTimeout, console };
   W.self = W; Object.assign(W, over || {});
   return { W, doc, ls, toasts };
 }
@@ -618,7 +621,7 @@ await test('8a. keyAction: S opens the street scene panel; E opens nothing any m
 await test('8b. S opens the panel; Roll files the card (seed, controls, memory BEFORE the roll) and a history entry; the card has the read-aloud, ratings and grid', async () => {
   const fg = fakeGm(), h = await openPage({ fg });
   assert.ok(h.q('[data-pane="scenes"]') && h.q('#gm-scn') && h.q('[data-pane="score"]') && h.q('#gm-score') && !h.q('[data-pane="engagement"]') && !h.q('#gm-eng'));
-  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,score,npc,downtime,cards,ipad');
+  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,score,chase,npc,downtime,cards,ipad');
   h.press('s'); assert.equal(h.page._state().panel, 'scenes');
   assert.ok(!h.q('#gm-scn .gm-scncard'), 'nothing before the first roll');
   h.q('[data-gm="scnroll"]').click();
@@ -1896,9 +1899,9 @@ await test('17a. D opens the Downtime panel (a side tab after NPC, with its key;
   assert.deepEqual([P.keyAction({ key: 'd' }), P.keyAction({ key: 'D' })], [{ type: 'panel', panel: 'downtime' }, { type: 'panel', panel: 'downtime' }]);
   assert.deepEqual([P.keyAction({ key: 'd', typing: true }), P.keyAction({ key: 'd', ctrlKey: true }), P.keyAction({ key: 'd', metaKey: true })], [null, null, null]);
   const h = await dtPage();
-  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,score,npc,downtime,cards,ipad', 'Downtime sits after NPC in the generator group');
+  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,score,chase,npc,downtime,cards,ipad', 'Downtime sits after NPC in the generator group');
   assert.match(h.q('.gm-tab[data-panel="downtime"]').textContent, /^Downtime D$/);
-  assert.equal(h.qa('[data-gm="seg"]').map((b) => b.getAttribute('data-seg')).join(), 'console,prep,location,scenes,score,npc,downtime,cards,rules,ipad,state', 'and a phone segment after NPC');
+  assert.equal(h.qa('[data-gm="seg"]').map((b) => b.getAttribute('data-seg')).join(), 'console,prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,state', 'and a phone segment after NPC');
   h.press('b'); assert.equal(h.page._state().panel, 'location');
   h.press('d', { target: h.q('#gm-dt-purveyor') });
   assert.equal(h.page._state().panel, 'location', 'D typed into a box is a letter, not the panel');
@@ -2389,9 +2392,9 @@ await test('18a. J opens the Score panel (a side tab after Street with its key, 
   assert.deepEqual([P.keyAction({ key: 'j' }), P.keyAction({ key: 'J' })], [{ type: 'panel', panel: 'score' }, { type: 'panel', panel: 'score' }]);
   assert.deepEqual([P.keyAction({ key: 'j', typing: true }), P.keyAction({ key: 'j', ctrlKey: true }), P.keyAction({ key: 'j', metaKey: true }), P.keyAction({ key: 'e' })], [null, null, null, null]);
   const h = await scPage();
-  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,score,npc,downtime,cards,ipad', 'the tab sits in the slot Engage had, after Street');
+  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,score,chase,npc,downtime,cards,ipad', 'the tab sits in the slot Engage had, after Street');
   assert.match(h.q('.gm-tab[data-panel="score"]').textContent, /^Score J$/);
-  assert.equal(h.qa('[data-gm="seg"]').map((b) => b.getAttribute('data-seg')).join(), 'console,prep,location,scenes,score,npc,downtime,cards,rules,ipad,state');
+  assert.equal(h.qa('[data-gm="seg"]').map((b) => b.getAttribute('data-seg')).join(), 'console,prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,state');
   assert.equal(h.q('[data-gm="seg"][data-seg="score"]').textContent, 'Score');
   h.press('j'); assert.equal(h.page._state().panel, 'score');
   h.press('b'); h.press('j', { target: h.q('#gm-cap-in') }); assert.equal(h.page._state().panel, 'location', 'J typed into a box is a letter, not the panel');
@@ -2884,6 +2887,120 @@ await test('W8. the box\'s own "Fit it" form gets the console\'s draws for its P
   assert.equal(t.log.opts.draws('nonsense'), null);
   assert.equal(t.log.fits.length, 0, 'no automatic fit: the form makes its own call');
   await t.h.save();
+});
+
+/* =====================================================================================================================
+   19. The Chase panel (C): a chase strip that grows on the iPad as the chase clock fills (GM.md "Chase")
+   ===================================================================================================================== */
+const chCurOf = (h) => { const c = h.page._state().doc.chase; return c && c.current ? JSON.parse(JSON.stringify(c.current)) : null; };   /* a plain copy: the page runs in its own realm */
+async function chPage(opts = {}) { return openPage(Object.assign({ br: fakeBrowser({ B68Map: MCH }) }, opts)); }
+function chStartFrom(h, from, fields = {}) {
+  h.press('c');
+  if (from) h.q('#gm-chase [data-gm="ch-set"][data-k="from"][data-v="' + from + '"]').click();
+  for (const [k, v] of Object.entries(fields)) { const el = h.q('#gm-chase [data-chf="' + k + '"]'); el.value = v; dispatch(el, 'input'); }
+  h.q('#gm-chase [data-gm="ch-start"]').click();
+}
+function chTickIt(h, n, cap, roll, between) {
+  if (cap != null) h.q('#gm-ch-cap').value = cap; if (roll != null) h.q('#gm-ch-roll').value = roll; if (between != null) h.q('#gm-ch-between').value = between;
+  h.q('#gm-chase [data-gm="ch-tick"][data-n="' + n + '"]').click();
+}
+
+await test('19a. C opens the Chase panel, the tab after Score; without map kit 0.6 the panel says so and cannot start; without the module it says that', async () => {
+  const h = await openPage();
+  assert.match(h.q('.gm-tab[data-panel="chase"]').textContent, /^Chase C$/); assert.equal(h.q('[data-gm="seg"][data-seg="chase"]').textContent, 'Chase');
+  h.press('c'); assert.equal(h.page._state().panel, 'chase'); assert.ok(!h.q('#gm-chase').hidden);
+  assert.match(h.q('#gm-chase .gm-note').textContent, /needs map kit 0\.6; this build has none/); assert.ok(h.q('#gm-chase [data-gm="ch-start"]').disabled || h.q('#gm-chase [data-gm="ch-start"]').hasAttribute('disabled'));
+  assert.deepEqual(h.qa('#gm-chase [data-k="from"]').map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed'), b.hasAttribute('disabled')]), [['location', 'false', true], ['scene', 'false', true], ['ground', 'true', false]], 'no roll yet: a street type it is');
+  await h.save();
+  const h2 = await openPage({ br: fakeBrowser({ B68GmChase: undefined, B68Map: MCH }) }); h2.press('c');
+  assert.equal(h2.q('#gm-chase').textContent, 'The chase module is missing.'); h2.press('2'); assert.ok(cardTxt(h2).length > 20, 'the console still rolls'); await h2.save();
+});
+
+await test('19b. start from the Location roll\'s street; +1/+2/+3 each draw one panel (stored whole, replay-safe); level and time carry; undo, the opposing clock, a second leg', async () => {
+  const fg = fakeGm(), h = await chPage({ fg });
+  h.press('b'); h.q('[data-gm="locroll"]').click(); const roll = h.page._state().locRoll; assert.ok(roll && roll.namedStreet);
+  chStartFrom(h, 'location', { name: 'The tallow run', clockName: 'Shake them' });
+  assert.equal(h.q('#gm-chase .gm-note.warn'), null);
+  let cur = chCurOf(h);
+  assert.ok(cur && cur.schema === 'b68-chase/1' && cur.name === 'The tallow run' && cur.street.named === roll.namedStreet && cur.district === roll.district, JSON.stringify(cur && cur.street));
+  assert.deepEqual(cur.clocks.map((k) => [k.id, k.name, k.size, k.strip]), [['crew1', 'Shake them', 6, true]], 'no opposing clock unless asked');
+  assert.ok(!/watcher|targetRoom|rooms|vectors/.test(JSON.stringify(h.page._state().doc.chase || {})) && !JSON.stringify(h.page._state().doc.chase || {}).includes(roll.watcher || '§'), 'no secret of the site in the chase');
+  assert.equal(h.qa('#gm-ch-strip svg').length, 1, 'the GM copy is drawn at once (no panel yet)');
+  h.q('#gm-chase [data-gm="ch-set"][data-k="level"][data-v="below"]').click();
+  h.q('#gm-ch-cap').value = 'kept while a switch redraws'; h.q('#gm-chase [data-gm="ch-set"][data-k="time"][data-v="Night"]').click();
+  assert.equal(h.q('#gm-ch-cap').value, 'kept while a switch redraws', 'a switch keeps what is typed');
+  chTickIt(h, 2, 'Through the market', 'Ana · Finesse · risky/standard · 4', 'A flashback to the garage');
+  cur = chCurOf(h);
+  assert.deepEqual(cur.panels.map((p) => [p.clock, p.ticks, p.level, p.time, p.caption, p.roll, p.between]), [['crew1', 2, 'below', 'Night', 'Through the market', 'Ana · Finesse · risky/standard · 4', ['A flashback to the garage']]]);
+  assert.equal(h.q('#gm-ch-cap').value, '', 'the tick box is empty again'); assert.match(h.q('#gm-ch-strip').textContent, /Finesse/, 'the GM copy shows the roll line');
+  chTickIt(h, 3, 'Over the rails'); chTickIt(h, 3, 'Too far');
+  cur = chCurOf(h);
+  assert.deepEqual(cur.panels.map((p) => p.ticks), [2, 3, 1], 'the last is cut to what was left'); assert.ok(h.br.toasts.some((t) => /Only 1 left on that leg: ticked 1, not 3/.test(t[0])));
+  assert.ok(h.q('#gm-chase [data-gm="ch-tick"]').hasAttribute('disabled'), 'a full clock: no tick'); assert.match(h.q('#gm-chase').textContent, /clock is full\. Add a leg/);
+  h.q('#gm-ch-legname').value = 'Land the barge'; h.q('#gm-chase [data-gm="ch-set"][data-k="legSize"][data-v="4"]').click(); h.q('#gm-chase [data-gm="ch-leg"]').click();
+  cur = chCurOf(h); assert.deepEqual(cur.clocks.map((k) => [k.id, k.name, k.size]), [['crew1', 'Shake them', 6], ['crew2', 'Land the barge', 4]]);
+  chTickIt(h, 1, 'Onto the barge'); assert.equal(chCurOf(h).panels[3].clock, 'crew2', 'the next tick is on the new leg');
+  h.q('#gm-chase [data-gm="ch-undo"]').click(); assert.equal(chCurOf(h).panels.length, 3);
+  h.press('l'); const mine = JSON.stringify(h.page._state().doc.chase); await h.save();
+  assert.equal(JSON.stringify(fg.server.doc.chase), mine, 'the server holds the same chase');
+  assert.ok(Object.values(fg.server.doc.capture).some((e) => e.bucket === 'r' && /^Chase: Onto the barge \(\+1\)$/.test(e.text)), 'L files the last tick');
+  /* a reload draws the same chase */
+  const h2 = await chPage({ fg }); h2.press('c'); assert.equal(h2.qa('#gm-ch-strip svg').length, 1); assert.match(h2.q('#gm-chase').textContent, /Land the barge/);
+  /* the opposing clock: a hidden one, +1 / -1 within its size */
+  h2.q('#gm-chase [data-gm="ch-end"]').click(); assert.ok(!chCurOf(h2));
+  h2.q('#gm-chase [data-gm="ch-set"][data-k="opp"][data-v="hidden"]').click(); chStartFrom(h2, 'ground', { oppName: 'Reinforcements arrive' });
+  assert.deepEqual(chCurOf(h2).clocks[1], { id: 'opp', name: 'Reinforcements arrive', size: 4, side: 'against', strip: false, filled: 0, hidden: true });
+  h2.q('#gm-chase [data-gm="ch-opp"][data-d="1"]').click(); h2.q('#gm-chase [data-gm="ch-opp"][data-d="1"]').click(); h2.q('#gm-chase [data-gm="ch-opp"][data-d="-1"]').click();
+  assert.equal(chCurOf(h2).clocks[1].filled, 1); assert.match(h2.q('#gm-chase .gm-ch-opp').textContent, /\(hidden\)/);
+  await h2.save();
+});
+
+await test('19c. Show on iPad sends the player copy (no roll line, no hidden clock); while it is up every change sends it again; once something else is up, nothing goes', async () => {
+  const fg = fakeGm(), h = await chPage({ fg });
+  h.press('c'); h.q('#gm-chase [data-gm="ch-set"][data-k="opp"][data-v="hidden"]').click(); chStartFrom(h, null, { name: 'Night run', oppName: 'Reinforcements arrive' });
+  chTickIt(h, 2, 'Through the market', 'Ana · Finesse · risky/standard · 4');
+  h.q('#gm-chase [data-gm="ch-ipad"]').click(); assert.ok(await until(() => fg.server.displays.length === 1));
+  const d = fg.server.displays[0], t = P.svgText(d.svg);
+  assert.equal(d.kind, 'svg'); assert.equal(d.title, 'Night run'); assert.match(d.caption, /Get away 2\/6$/);
+  assert.ok(t.includes('through the market') && !t.includes('finesse') && !t.includes('reinforcements'), 'the player copy: the caption, not the roll or the hidden clock');
+  assert.ok(h.br.toasts.some((x) => /On the iPad: Night run\. It follows the chase/.test(x[0])));
+  chTickIt(h, 1, 'Over the rails', 'Bo · Skirmish · desperate/great · 6');
+  assert.ok(await until(() => fg.server.displays.length === 2), 'a tick sends it again'); const t2 = P.svgText(fg.server.displays[1].svg);
+  assert.ok(t2.includes('over the rails') && !t2.includes('skirmish'));
+  h.q('#gm-chase [data-gm="ch-opp"][data-d="1"]').click(); assert.ok(await until(() => fg.server.displays.length === 3), 'the opposing clock moving sends it again (hidden: it shows nothing of it)');
+  assert.ok(!P.svgText(fg.server.displays[2].svg).includes('reinforcements'));
+  h.q('#gm-chase [data-gm="ch-undo"]').click(); assert.ok(await until(() => fg.server.displays.length === 4), 'undo too');
+  h.q('#gm-chase [data-gm="blankipad"]').click(); assert.ok(await until(() => fg.server.displays.length === 5 && fg.server.displays[4].kind === 'blank'));
+  chTickIt(h, 1, 'After the clear'); await sleep(450);
+  assert.equal(fg.server.displays.length, 5, 'cleared: a tick sends nothing');
+  await h.save();
+});
+
+await test('19d. Find lists the current chase\'s panels by caption and jumps to the panel; ending a chase keeps it under Past chases, the last 10, and says what went', async () => {
+  const past = {}; for (let i = 0; i < 10; i++) past['old' + i] = { id: 'old' + i, name: 'Old run ' + i, endedAt: '2026-10-0' + (i % 9 + 1) + 'T1' + i + ':00:00.000Z', panels: [], clocks: [] };
+  const fg = fakeGm(); fg.server.doc = { chase: { past } };
+  const h = await chPage({ fg });
+  chStartFrom(h, null, { name: 'The canal run' }); chTickIt(h, 1, 'Under the footbridge'); chTickIt(h, 2, 'Into the lock gates');
+  h.press('o'); h.press('k', { ctrlKey: true }); const fq = h.q('#gm-find-q'); fq.value = 'lock gates'; dispatch(fq, 'input');
+  const hits = h.qa('.gm-find-hit'); assert.equal(hits.length, 1); assert.match(hits[0].textContent, /^ChaseInto the lock gates Panel 2 · Get away \+2/);
+  hits[0].click(); assert.equal(h.page._state().panel, 'chase', 'Find goes to the Chase panel');
+  h.q('#gm-chase [data-gm="ch-end"]').click();
+  const doc = JSON.parse(JSON.stringify(h.page._state().doc)); assert.ok(!doc.chase.current); assert.equal(Object.keys(doc.chase.past).length, 10);
+  const mine = Object.values(doc.chase.past).find((x) => x.name === 'The canal run'); assert.ok(mine && mine.endedAt && mine.panels.length === 2);
+  assert.ok(!doc.chase.past.old0, 'the oldest went'); assert.ok(h.br.toasts.some((x) => /Kept the last 10 chases: dropped 1 older \(Old run 0\)/.test(x[0]) && x[1]));
+  assert.match(h.q('#gm-chase .gm-ch-past summary').textContent, /Past chases 10/); assert.match(h.q('#gm-chase .gm-ch-pastl li').textContent, /^The canal run/);
+  h.press('k', { ctrlKey: true }); const fq2 = h.q('#gm-find-q'); fq2.value = 'lock gates'; dispatch(fq2, 'input'); assert.equal(h.qa('.gm-find-hit').length, 0, 'an ended chase is not in Find');
+  await h.save();
+});
+
+await test('19e. every button in the panel is a real control; nothing in it writes the campaign or the table clocks', async () => {
+  const fg = fakeGm(), rig = { added: [] }, h = await chPage({ fg, api: { addClock: async (c) => { rig.added.push(c); } } });
+  chStartFrom(h, null, {}); chTickIt(h, 1, 'One');
+  for (const b of h.qa('#gm-chase button')) assert.equal(b.getAttribute('type'), 'button', 'no stray submit buttons');
+  assert.equal(rig.added.length, 0);
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8'), sec = src.slice(src.indexOf('function chDoc()'), src.indexOf('function B68slug'));
+  assert.ok(sec.length > 3000 && !/addClock|saveScene|campaign\(/.test(sec), 'the Chase panel never touches the table');
+  await h.save();
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

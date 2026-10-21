@@ -281,11 +281,9 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 @media (max-width: 599px) {
   #gm-page .gm-head { padding: 8px 0; }
   #gm-page .gm-h { font-size: 34px; }
-  /* the eleven segments as two full rows, six then five (30 columns: a first-row segment spans 5, a second-row one 6): all of them
-     in reach, nothing to drag sideways */
+  /* the twelve segments as two full rows of six (30 columns, each segment spans 5): all of them in reach, nothing to drag sideways */
   #gm-page .gm-segbar { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); width: 100%; position: sticky; top: 0; z-index: 4; background: var(--paper); margin-bottom: 10px; }
   #gm-page .gm-segbar .chip { grid-column: span 5; min-width: 0; min-height: 44px; padding: 8px 2px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #gm-page .gm-segbar .chip:nth-child(n+7) { grid-column: span 6; }
   #gm-page .gm-segbar .chip:nth-child(6) { border-right: 0; }
   #gm-page .gm-segbar .chip:nth-child(-n+6) { border-bottom: 2px solid var(--rule); }
   #gm-page .gm-segbar .chip[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
@@ -320,6 +318,28 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 }
 @media print { #gm-page .gm-fab, #gm-page .gm-foot, .gm-blank { display: none !important; } }
 #gm-page .gm-map.gm-leak { outline: 3px solid var(--alarm); outline-offset: -3px; }
+
+/* ---- the Chase panel (C): the start form, the tick box with its three big buttons, the GM copy of the strip ---- */
+#gm-page .gm-ch-start, #gm-page .gm-ch-play { display: grid; gap: 10px; }
+#gm-page .gm-ch-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; }
+#gm-page .gm-ch-row > .gm-field { flex: 1 1 150px; }
+#gm-page .gm-ch-row > .seg { flex: none; }
+#gm-page .gm-ch-start .seg, #gm-page .gm-ch-tick .seg { flex-wrap: wrap; }
+#gm-page .gm-ch-tick textarea { font: 400 14px/1.35 var(--font-text); padding: 7px 8px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); border-radius: 0; width: 100%; resize: vertical; box-sizing: border-box; }
+#gm-page .gm-ch-tick { border: 2px solid var(--rule); background: var(--card); padding: 10px; display: grid; gap: 8px; }
+#gm-page .gm-ch-ticks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+#gm-page .gm-ch-plus { min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+#gm-page .gm-ch-plus b { font: 900 30px/1 var(--font-poster); letter-spacing: 0; }
+#gm-page .gm-ch-plus small { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; }
+#gm-page .gm-ch-leg { margin: 0; }
+#gm-page .gm-ch-clocks { margin: 0; }
+#gm-page .gm-ch-opp { display: flex; align-items: center; gap: 8px; margin: 0; flex-wrap: wrap; }
+#gm-page .gm-ch-opp .gm-lab { margin-right: auto; }
+#gm-page .gm-ch-opp b { font: 700 13px/1 var(--font-mono); min-width: 3em; text-align: center; }
+#gm-page .gm-ch-strip { background: var(--chart); border: 2px solid var(--chart-ink); outline: 3px solid var(--accent); outline-offset: -3px; overflow: hidden; }
+#gm-page .gm-ch-strip:empty { display: none; }
+#gm-page .gm-ch-strip svg { width: 100%; height: auto; display: block; }
+#gm-page .gm-ch-pastl { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
 #gm-page .gm-warn.bad { color: var(--alarm); }
 
 /* ---- the console: the Position switch, the four Situations ---- */
