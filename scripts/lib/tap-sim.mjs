@@ -18,9 +18,9 @@ export const DEFAULT_DAY = '2031-03-03';
 
 /** The note's own date: frontmatter `date: DD/MM/YYYY` (or YYYY-MM-DD) -> 'YYYY-MM-DD', else ''. */
 export function dayFromTranscript(text) {
-  const m = /^date:s*"?(dd)/(dd)/(d{4})"?s*$/m.exec(String(text || '')) || null;
+  const m = /^date:\s*"?(\d\d)\/(\d\d)\/(\d{4})"?\s*$/m.exec(String(text || ''));
   if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-  const n = /^date:s*"?(d{4}-dd-dd)"?s*$/m.exec(String(text || ''));
+  const n = /^date:\s*"?(\d{4}-\d\d-\d\d)"?\s*$/m.exec(String(text || ''));
   return n ? n[1] : '';
 }
 

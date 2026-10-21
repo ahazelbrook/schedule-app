@@ -67,12 +67,8 @@ await test('parseExpectRef and matchRef: within 2 minutes, ~ and the window', ()
 
 await test('the virtual day: an invented default, the notes own date when it has one', () => {
   assert.equal(DEFAULT_DAY, '2031-03-03');
-  assert.equal(dayFromTranscript('---
-date: 04/05/2032
----'), '2032-05-04');
-  assert.equal(dayFromTranscript('---
-date: 2032-05-04
----'), '2032-05-04');
+  assert.equal(dayFromTranscript('---\ndate: 04/05/2032\n---'), '2032-05-04');
+  assert.equal(dayFromTranscript('---\ndate: 2032-05-04\n---'), '2032-05-04');
   assert.equal(dayFromTranscript('no frontmatter'), '');
 });
 
