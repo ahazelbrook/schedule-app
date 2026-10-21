@@ -824,6 +824,33 @@
     return { spec: fb, warnings: w, notes: notes, tries: tries, fallback: true };
   }
 
+  /* cleanSpec(spec, { K, name, seed? }) -> { ok, spec, notes, warnings }: a figure spec written by someone else (the Screen's portrait seat)
+     made safe for the kit. Every name the kit does not know is dropped, the spec is stamped (id, name, plate, code), and the kit renders it
+     (full figure and portrait); on warnings the props, patterns, hat and eyewear go in turn, as figure() does. ok is false when the kit still
+     warns, or the spec is empty after the clean: the caller then shows no figure and offers no Add. */
+  function cleanSpec(spec, o) {
+    o = o || {};
+    var K = getKit(o), name = String(o.name || '').replace(/\s+/g, ' ').trim();
+    if (!K) throw new Error('B68GmNpc.cleanSpec: the figure kit is not loaded (pass { K })');
+    if (!isObj(spec)) return { ok: false, spec: {}, notes: ['no spec'], warnings: [] };
+    var sp = clone(spec), notes = dropUnknown(sp, K.options());
+    stamp(sp, { name: name || 'npc' }, o.seed != null ? o.seed >>> 0 : fnv(name || 'npc'));
+    if (!sp.halo) sp.halo = 'file-500';
+    var warnings = [];
+    var ladder = [
+      function () { return true; },
+      function () { var h = stripProps(sp); if (h) notes.push('stripped props'); return h; },
+      function () { var h = stripPattern(sp); if (h) notes.push('stripped patterns'); return h; },
+      function () { var a = stripHat(sp), b = stripEyewear(sp); if (a) notes.push('stripped hat'); if (b) notes.push('stripped eyewear'); return a || b; }
+    ];
+    for (var i = 0; i < ladder.length; i++) {
+      if (!ladder[i]()) continue;
+      try { warnings = checkSpec(K, sp); } catch (e) { warnings = ['render threw: ' + (e && e.message || e)]; }
+      if (!warnings.length) return { ok: true, spec: sp, notes: notes, warnings: [] };
+    }
+    return { ok: false, spec: sp, notes: notes, warnings: warnings };
+  }
+
   // =============================================================================================================
   // create()
   // =============================================================================================================
@@ -864,7 +891,7 @@
   return {
     create: create, check: check, seedRng: seedRng, safeName: safeName, plateOf: plateOf, facSlug: facSlug,
     noteBody: noteBody, dossierLine: dossierLine, dossier: dossier, castDoc: castDoc, stateEntry: stateEntry, npcRecord: npcRecord,
-    figure: figure, fromArchetype: fromArchetype, nearestArchetype: nearestArchetype,
+    figure: figure, cleanSpec: cleanSpec, fromArchetype: fromArchetype, nearestArchetype: nearestArchetype,
     applyLeverage: applyLeverage, describe: describe, play: play, rows: rows, role: role, identity: identity, plain: plain
   };
 });

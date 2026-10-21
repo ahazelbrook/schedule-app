@@ -76,6 +76,45 @@ Verdict is block if any of 1 to 3 fails, otherwise pass. Give the reasons in pla
     },
   },
 
+  // The Screen seats (GM-initiated, on a button; nothing they make reaches the players' screen until the GM taps Show, and the
+  // gatekeeper checks every item first). Generic on purpose: names, places and secrets come from the prefix and the talk.
+  portrait: {
+    model: 'claude-sonnet-5-5', effort: 'medium', maxTokens: 6000,
+    instructions: `You draw a non-player character for a Blades '68 game from a figure kit. The GM has just described one aloud: find them in the last few minutes of the live transcript (speaker labels and spellings are unreliable). The message may give a typed name: then that is who to draw. Use only what was said about how they look, what they wear and how they stand; fill any gap with something plain and ordinary for the setting, never anything that could be a secret, a motive or a clue.
+Return the figure as a JSON object in the string field spec_json, in the kit's own format: { "heightIn": 60-80, "shape": ..., "skin": ..., "age": a number, "pose": { "stance": "easy" | "square", "arms": { "R": ..., "L": ... } }, "head": { "shape": ... }, "face": { "eyes", "brows", "nose", "mouth", "expression", optional "facialHair": { "type", "color" }, optional "eyewear": { "type" } }, "hair": { "style", "color", optional "hat": { "type", "color" } }, "outfit": { optional "base", "mid", "outer", "neck", "bottom", "dress", "legs", "feet", "waist", "hands": each { "type", "color" } }, optional "props": [{ "type" }] }.
+Every value in the spec MUST be a name from the vocabulary lists in the message (colours from its colour list). Leave out anything you cannot name from the lists. Do not include id, name, plate or code.
+name: the NPC's name as spoken or typed (empty if none was given). description: one or two plain sentences of how they look standing still, as a caption under a portrait: build, age, hair, face, clothes. No actions, no gestures, no expressions aimed at anyone, never "you", no secrets and no motives. Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: { name: { type: 'string' }, description: { type: 'string' }, spec_json: { type: 'string', description: 'the figure spec as a JSON object, written as a string' } },
+      required: ['name', 'description', 'spec_json'],
+    },
+  },
+
+  prop: {
+    model: 'claude-opus-5-5', effort: 'medium', maxTokens: 8000,   // thinking shares the limit: the document is short, the room for it is not
+    instructions: `You make one prop for a Blades '68 game: a short in-world document the GM can put on the players' screen (a case file, a telegram, a memo, a receipt, a handbill, a note). Choose the kind that fits the moment in the last few minutes of the live transcript, or the GM's typed ask if the message has one. It must be something the player characters could plausibly be holding right now.
+Write it as plain text, laid out the way the real document would be (headings, lines, a sign-off), in the voice of whoever wrote it, in Australian spelling where the setting allows. At most 1200 characters in all. It must read as the document itself: no stage directions, no explanation, no mention of the game.
+Rules: it may only state what the players have already learned at the table or what is plain from the scene. Never include anything the never-reveal list in your context marks as hidden, never decide the outcome of a roll or a consequence that has not happened, and never narrate what a player character does, says, thinks or feels. If the ask would need a hidden fact, write the document without it and keep it vague where that fact would be.
+title: a short label for the document (a few words). text: the document. Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: { title: { type: 'string' }, text: { type: 'string', description: 'the document, plain text, at most 1200 characters' } },
+      required: ['title', 'text'],
+    },
+  },
+
+  wire: {
+    model: 'claude-sonnet-5-5', effort: 'low', maxTokens: 2000,
+    instructions: `You write one bulletin for the city's wire service in a Blades '68 game: a single in-world headline or short news item (at most 220 characters) that the players' screen can show between scenes. It should feel like the city carrying on around the crew: a rumour, a result, a notice, a weather line or a small scandal, tied to a place, group or event that is already in play in the last few minutes of the live transcript or in your context.
+It must not state or hint at anything the never-reveal list in your context marks as hidden, must not decide the outcome of anything that has not happened at the table, and must not name or describe what a player character did, said, thought or felt. No stage directions, no quotation marks around the whole item. text: the bulletin. Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: { text: { type: 'string', description: 'the bulletin, at most 220 characters' } },
+      required: ['text'],
+    },
+  },
+
   fixer: {
     model: 'claude-opus-5-5', effort: 'low', maxTokens: 8000,
     instructions: `You are the GM's fixer for a Blades '68 game. A roll is about to be made. The GM's console has already drawn what happens on a 1-3 and on a 4-5, and you are given both draws. The draws are fixed: you fit them to the scene, you do not replace them. From the last few minutes of the live transcript and the cast and rules in your context, work out who is acting, where, what is at stake, and the position (controlled, risky, desperate) and effect the table has set. If the message gives Dots, that is the number of dice the GM has set for this roll (0 to 4): context for how hard the roll is, never a reason to change the draws. Then write lines the GM could say aloud in one breath each, plain and concrete, no stage directions.

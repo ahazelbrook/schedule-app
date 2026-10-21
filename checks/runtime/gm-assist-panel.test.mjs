@@ -240,7 +240,7 @@ await test('the box is in the GM bundle only, before gm-page.js, and the avatar 
 
 await test('GM only and never player-visible: the box touches nothing but stt / assistTick / assistFit, stores nothing, no network of its own', () => {
   const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'assist-panel.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.deepEqual([...new Set([...src.matchAll(/\bgm\.(\w+)/g)].map((m) => m[1]))].sort(), ['assistAnother', 'assistCards', 'assistFit', 'assistMark', 'assistTick', 'stt']);
+  assert.deepEqual([...new Set([...src.matchAll(/\bgm\.(\w+)/g)].map((m) => m[1]))].sort(), ['assistAnother', 'assistCards', 'assistFit', 'assistGate', 'assistMark', 'assistTick', 'stt']);
   assert.ok(!/localStorage|sessionStorage|indexedDB|fetch\(|XMLHttpRequest|setDisplay|patchState|patchAmbient|patchStt|sendBeacon|eval\(|innerHTML\s*=\s*[^'"(\s]*\bc\.text/.test(src), 'no storage, no network, no display or state write');
   const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
   const m = /function mountAssist\(\) \{[\s\S]*?\n  \}\n/.exec(page);
@@ -568,6 +568,152 @@ await test('Dots: the Fit it form sends dots when the page has set them, and lea
   const r3 = rig(); r3.gm.fitReply = r.gm.fitReply;
   await r3.ctl.autoFit({ position: 'risky', dots: 2, draws: { low: 'a', mid: 'b' } });
   assert.equal(r3.calls.fit[0].dots, 2);
+});
+
+// ---------- the Screen: Draw them, Make the prop, Wire, Case board; the gatekeeper on each; the cite flag on a Ref card ----------
+await test('screenAllowed: the ladder as the box shows it (Wire stops at reduced, Portrait and Prop at core, the Board always)', () => {
+  const at = (t) => ['portrait', 'prop', 'wire', 'board'].map((k) => P.screenAllowed(k, t));
+  assert.deepEqual(at('all'), [true, true, true, true]); assert.deepEqual(at(''), [true, true, true, true]);
+  assert.deepEqual(at('reduced'), [true, true, false, true]); assert.deepEqual(at('core'), [false, false, false, true]); assert.deepEqual(at('off'), [false, false, false, true]);
+  assert.equal(P.screenAllowed('poster', 'all'), false);
+});
+
+await test('gateText, citesOf, gateOf, gateLine', () => {
+  assert.equal(P.gateText({ kind: 'portrait', name: 'A B', description: 'Tall.' }), 'Portrait of A B. Tall.');
+  assert.equal(P.gateText({ kind: 'prop', title: 'Memo', text: 'Body' }), 'Memo\nBody'); assert.equal(P.gateText({ kind: 'wire', text: 'Hi' }), 'Hi');
+  assert.equal(P.gateText({ kind: 'prop', title: '', text: 'x'.repeat(2000) }).length, 1500);
+  assert.deepEqual(P.citesOf('Rulebook p. 12 and pp.30-31, page 9, p. 12 again'), ['p. 12', 'pp.30-31', 'page 9']);
+  assert.deepEqual(P.citesOf('no cite here'), []);
+  assert.deepEqual(P.gateOf({ verdict: 'pass', unknown: false, reasons: [], revealed: [], rule: [], cites_bad: ['p.9'] }), { verdict: 'pass', unknown: false, checked: true, reasons: [], revealed: [], rule: [], cites_bad: ['p.9'] });
+  const closed = P.gateOf(null); assert.deepEqual([closed.verdict, closed.checked, closed.unknown], ['block', false, true]);
+  assert.deepEqual([P.gateOf({ verdict: 'maybe' }).verdict, P.gateOf({ verdict: 'block', unknown: true }).checked], ['block', false]);
+  assert.deepEqual([P.gateLine(null), P.gateLine(closed), P.gateLine(P.gateOf({ verdict: 'pass' })), P.gateLine(P.gateOf({ verdict: 'block', reasons: ['x'] }))], ['Checking…', 'Not checked', 'Checked: clear', 'Blocked']);
+});
+
+const PASS_GATE = { verdict: 'pass', unknown: false, reasons: [], revealed: [], rule: [], cites_bad: [], spend: { tonight: 2, cap: 20, tier: 'all', tick: 0.01 } };
+function screenRig(over = {}) {
+  const items = [];
+  const screen = { vocab: () => 'eyes: round', cleanSpec: (spec, name) => (spec && spec.bad ? { ok: false, spec: {}, notes: [], warnings: ['bad part'] } : { ok: true, spec: { ...spec, name }, notes: ['dropped x'], warnings: [] }) };
+  const r = rig({ screen, onScreen: (i) => items.push(i), ...over });
+  const made = { asked: [], gated: [] };
+  r.gm.assistProp = async (req) => { made.asked.push(['prop', req]); return { item: { kind: 'prop', title: 'Memo', text: 'Invented memo text.', at: '2030-01-01T00:00:00Z' }, spend: { tonight: 1, cap: 20, tier: 'all', tick: 0.1 } }; };
+  r.gm.assistWire = async (req) => { made.asked.push(['wire', req]); return { item: { kind: 'wire', text: 'Invented bulletin.', at: '2030-01-01T00:00:00Z' } }; };
+  r.gm.assistPortrait = async (req) => { made.asked.push(['portrait', req]); return { item: { kind: 'portrait', name: 'Test Person', description: 'Tall.', spec: { heightIn: 70 }, at: '2030-01-01T00:00:00Z' } }; };
+  r.gm.assistBoard = async (req) => { made.asked.push(['board', req]); return { item: { kind: 'board', title: 'Case board', text: 'WHAT WE KNOW\n- x', at: '2030-01-01T00:00:00Z' } }; };
+  r.gm.assistGate = async (req) => { made.gated.push(req); if (r.gm.gateErr) throw r.gm.gateErr; return r.gm.gateReply || PASS_GATE; };
+  return { ...r, items, made };
+}
+
+await test('Screen: press -> preview (checking) -> gate -> ready; the box writes nothing to the display, only hands the item to the page', async () => {
+  const r = screenRig();
+  const out = await r.ctl.screenMake('prop', { ask: '  a ferry   telegram ' });
+  assert.deepEqual(r.made.asked, [['prop', { ask: 'a ferry telegram' }]]);
+  assert.deepEqual(r.items.map((i) => [i.kind, i.status]), [['prop', 'checking'], ['prop', 'ready']]);
+  assert.equal(r.items[0].id, r.items[1].id, 'the same item, updated');
+  assert.deepEqual(r.made.gated, [{ kind: 'prop', text: 'Memo\nInvented memo text.', cites: [] }]);
+  assert.equal(r.items[1].gate.verdict, 'pass'); assert.equal(r.items[1].gate.checked, true); assert.equal(out.item.status, 'ready');
+  assert.equal(r.ctl.state().spend.tonight, 2, 'the gate\'s spend is folded in');
+  assert.equal(r.ctl.state().screen.error, '');
+});
+
+await test('Screen: a block keeps its reasons; a gate that errors, refuses or is busy twice is "not checked" (fails closed)', async () => {
+  let r = screenRig(); r.gm.gateReply = { verdict: 'block', unknown: false, reasons: ['too specific'], revealed: ['#2 The buyer'], rule: ['decides the roll'], cites_bad: [] };
+  await r.ctl.screenMake('wire');
+  let g = r.items.pop().gate; assert.deepEqual([g.verdict, g.checked, g.reasons, g.revealed, g.rule], ['block', true, ['too specific'], ['#2 The buyer'], ['decides the roll']]);
+  r = screenRig(); r.gm.gateErr = err(500, 'boom'); await r.ctl.screenMake('prop');
+  g = r.items.pop().gate; assert.deepEqual([g.verdict, g.checked, g.unknown], ['block', false, true]);
+  r = screenRig(); r.gm.gateReply = { verdict: 'block', unknown: true, reasons: ['no verdict'], revealed: [], rule: [], cites_bad: [] }; await r.ctl.screenMake('prop');
+  g = r.items.pop().gate; assert.equal(g.checked, false);
+  r = screenRig(); r.gm.gateErr = err(429, 'the gatekeeper is busy');
+  const done = r.ctl.screenMake('prop');
+  await tick(); await tick();
+  for (const t of r.timers) t.f();         // the one retry
+  await done;
+  assert.equal(r.made.gated.length, 2, 'busy is retried once, no more'); assert.equal(r.items.pop().gate.checked, false);
+  r = screenRig(); r.gm.gateErr = err(429, "tonight's cap is reached"); await r.ctl.screenMake('prop');
+  assert.equal(r.made.gated.length, 1, 'the cap is not retried'); assert.equal(r.items.pop().gate.checked, false);
+});
+
+await test('Screen: Draw them needs the figure kit\'s vocabulary, sends the typed name, and an item the kit rejects is never offered', async () => {
+  let r = screenRig({ screen: { vocab: () => '', cleanSpec: () => null } });
+  const none = await r.ctl.screenMake('portrait', { name: 'X' }); assert.deepEqual(none, { error: 'kit' }); assert.equal(r.made.asked.length, 0);
+  r = screenRig(); await r.ctl.screenMake('portrait', { name: ' Test   Person ' });
+  assert.deepEqual(r.made.asked, [['portrait', { vocab: 'eyes: round', name: 'Test Person' }]]);
+  assert.deepEqual(r.items.map((i) => i.status), ['checking', 'ready']); assert.equal(r.items[1].spec.name, 'Test Person'); assert.deepEqual(r.items[1].notes, ['dropped x']);
+  assert.equal(r.made.gated[0].text, 'Portrait of Test Person. Tall.'); assert.equal(r.made.gated[0].kind, 'portrait');
+  r = screenRig(); r.gm.assistPortrait = async () => ({ item: { kind: 'portrait', name: 'Bad', description: '', spec: { bad: 1 } } });
+  const bad = await r.ctl.screenMake('portrait', {}); assert.deepEqual(bad, { error: 'kit' });
+  assert.equal(r.items.length, 0); assert.equal(r.made.gated.length, 0); assert.match(r.ctl.state().screen.error, /did not pass the figure kit \(bad part\)/);
+});
+
+await test('Screen: no item (a refusal or a cut-off, logged server-side) shows nothing and says so plainly; the Board says why it is empty', async () => {
+  const r = screenRig(); r.gm.assistWire = async () => ({ item: null });
+  assert.deepEqual(await r.ctl.screenMake('wire'), { error: 'none' }); assert.equal(r.items.length, 0); assert.match(r.ctl.state().screen.error, /nothing usable/);
+  r.gm.assistBoard = async () => ({ item: null });
+  await r.ctl.screenMake('board'); assert.match(r.ctl.state().screen.error, /Mystery keeper/);
+});
+
+await test('Screen: the ladder in the box and at the cap; a 429 from the server is worded, not shown raw; one model call at a time', async () => {
+  let r = screenRig(); r.gm.reply = { ...GOOD, spend: { tonight: 13, cap: 20, tier: 'reduced' } }; await r.ctl.poll();
+  assert.deepEqual(['portrait', 'prop', 'wire', 'board'].map((k) => r.ctl.canScreen(k)), [true, true, false, true]);
+  assert.equal(await r.ctl.screenMake('wire'), null, 'no call when the ladder has dropped it'); assert.equal(r.made.asked.length, 0);
+  r = screenRig(); r.gm.reply = { ...GOOD, spend: { tonight: 18, cap: 20, tier: 'core' } }; await r.ctl.poll();
+  assert.deepEqual(['portrait', 'prop', 'wire', 'board'].map((k) => r.ctl.canScreen(k)), [false, false, false, true]);
+  r = screenRig(); r.gm.reply = { ...GOOD, spend: { tonight: 20, cap: 20, tier: 'off' } }; await r.ctl.poll();
+  assert.deepEqual(['portrait', 'prop', 'wire', 'board'].map((k) => r.ctl.canScreen(k)), [false, false, false, true], 'at the cap only the code-only Board');
+  r = screenRig(); r.gm.assistProp = async () => { throw err(429, 'the budget ladder has dropped this for tonight'); };
+  await r.ctl.screenMake('prop'); assert.match(r.ctl.state().screen.error, /budget has dropped/); assert.ok(!/ladder|\{/.test(r.ctl.state().screen.error)); assert.equal(r.ctl.state().paused, '', 'a ladder 429 does not pause the box');
+  r = screenRig(); r.gm.assistProp = async () => { throw err(429, "tonight's cap is reached"); };
+  await r.ctl.screenMake('prop'); assert.equal(r.ctl.state().paused, 'cap');
+  // one model call at a time
+  r = screenRig(); let release; r.gm.assistProp = () => new Promise((ok) => { release = () => ok({ item: { kind: 'prop', title: 't', text: 'x' } }); });
+  const first = r.ctl.screenMake('prop'); await tick();
+  assert.equal(await r.ctl.screenMake('wire'), null, 'a second model seat waits'); assert.equal(await r.ctl.screenMake('prop'), null);
+  release(); await first;
+  assert.ok(r.ctl.canScreen('wire'));
+});
+
+await test('Screen: a phone gets nothing (the box is hidden and makes no call)', async () => {
+  const r = screenRig({}); const p = rig({ screen: {}, onScreen() {} }, { phone: true });
+  p.gm.assistProp = async () => { throw new Error('called'); };
+  assert.equal(p.ctl.canScreen('prop'), false); assert.equal(await p.ctl.screenMake('prop'), null);
+  assert.ok(r.ctl.canScreen('prop'));
+});
+
+await test('Ref cite flag: a Ref card with a page cite is spot-checked; a bad cite gets a flag; no cite, no call; unknown or an error: no flag', async () => {
+  const ref = (text, rule) => ({ cards: [{ seat: 'ref', at: '2030-01-01T10:00:00Z', text, detail: { said_at: '22:14', rule } }], updates: [], flags: [], spend: GOOD.spend, last: 5 });
+  let r = screenRig(); r.gm.reply = ref('Position was set after the dice.', 'Rulebook p. 12'); r.gm.gateReply = { ...PASS_GATE, cites_bad: ['p. 12'] };
+  await r.ctl.poll(); await tick(); await tick();
+  assert.equal(r.made.gated.length, 1); assert.equal(r.made.gated[0].kind, 'card'); assert.deepEqual(r.made.gated[0].cites, ['p. 12']); assert.match(r.made.gated[0].text, /Rule: Rulebook p\. 12/);
+  assert.deepEqual(r.ctl.state().cards[0].citeBad, ['p. 12']);
+  assert.match(r.br.stub('#as-list').innerHTML, /as-citeflag/); assert.equal(r.ctl.state().cards[0].seat, 'ref');
+  r = screenRig(); r.gm.reply = ref('A plain card.', 'no page named'); await r.ctl.poll(); await tick();
+  assert.equal(r.made.gated.length, 0, 'no cite, no cost');
+  r = screenRig(); r.gm.reply = ref('Card.', 'p. 9'); r.gm.gateReply = { ...PASS_GATE, unknown: true, verdict: 'block', cites_bad: ['p. 9'] }; await r.ctl.poll(); await tick(); await tick();
+  assert.equal(r.ctl.state().cards[0].citeBad, undefined, 'an unchecked card is not flagged');
+  r = screenRig(); r.gm.reply = ref('Card.', 'p. 9'); r.gm.gateErr = err(500, 'x'); await r.ctl.poll(); await tick(); await tick();
+  assert.equal(r.ctl.state().cards.length, 1); assert.equal(r.ctl.state().cards[0].citeBad, undefined);
+  r = screenRig(); r.gm.reply = { ...ref('Card.', 'p. 9'), cards: [{ seat: 'clerk', at: '2030-01-01T10:00:00Z', text: 'See p. 9', detail: null }] }; await r.ctl.poll(); await tick();
+  assert.equal(r.made.gated.length, 0, 'only Ref cards');
+});
+
+await test('Screen wiring: the buttons are in the box, the page owns Show and Add, and the box never writes to the display, the cast or the ambient document', () => {
+  const panel = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'assist-panel.js'), 'utf8');
+  for (const id of ['as-sc-portrait', 'as-sc-prop', 'as-sc-wire', 'as-sc-board', 'as-sc-name', 'as-sc-ask']) assert.ok(panel.includes('id="' + id + '"'), id);
+  assert.ok(/Draw them/.test(panel) && /Make the prop/.test(panel) && /Case board/.test(panel));
+  const code = panel.replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(!/setDisplay|patchAmbient|assistPortraitAdd|pushDisplay|patchState/.test(code), 'the box only makes and checks');
+  const names = [...new Set([...code.matchAll(/'(assist\w+)'/g)].map((m) => m[1]))].sort();
+  assert.deepEqual(names, ['assistBoard', 'assistPortrait', 'assistProp', 'assistWire']);
+  const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  const m = /function mountAssist\(\) \{[\s\S]*?\n  \}\n/.exec(page);
+  assert.ok(m && /onScreen: function \(item\)/.test(m[0]) && !/pushDisplay|setDisplay|patchAmbient/.test(m[0]), 'mountAssist hands items to the page and writes nothing itself');
+  for (const fn of ['screenShow', 'screenWire', 'wireClear', 'screenAdd']) assert.ok(page.includes('function ' + fn), fn);
+  assert.ok(page.includes("(it.status === 'ready' ? '' : ' disabled')"), 'Show is disabled until the gatekeeper has answered');
+  const cf = fs.readFileSync(path.join(ROOT, 'app', 'runtime', 'cf.js'), 'utf8');
+  for (const [fn, p] of [['assistPortrait', 'portrait'], ['assistProp', 'prop'], ['assistWire', 'wire'], ['assistBoard', 'board'], ['assistGate', 'gatekeeper'], ['assistPortraitAdd', 'portrait-add']]) {
+    assert.ok(new RegExp(fn + ": function \\([^)]*\\) \\{ return api\\('POST', '/gm/assist/" + p + "'").test(cf), fn);
+  }
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

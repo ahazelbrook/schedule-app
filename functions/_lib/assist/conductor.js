@@ -21,7 +21,7 @@ import { WAKES } from './seats.js';
 
 export const DEFAULT_CAP = 20;                       // dollars a night (a Worker setting; the Console has its own monthly limit)
 export const LADDER = { reduced: 0.6, core: 0.85, off: 1 };
-export const DROPPED_WHEN_REDUCED = ['meanwhile', 'showrunner', 'mystery'];
+export const DROPPED_WHEN_REDUCED = ['meanwhile', 'showrunner', 'mystery', 'wire'];   // the Screen's Wire goes at 60%; Portrait and Prop are not Core seats, so they go at 85%; the Board is code and always runs
 export const CORE_SEATS = ['fixer', 'ref', 'ledger', 'voice_plus', 'gatekeeper'];   // the gatekeeper runs to the cap like Ref: nothing reaches the players' screen unchecked
 export const REPEAT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -36,6 +36,7 @@ export const COOLDOWN_MS = {
   stall: 5 * 60 * 1000,             // a stall flag that stays set must not offer a new idea every minute
   voice: 45 * 1000,                 // the tick comes about once a minute; the gap must be shorter than that
   voice_plus: 10 * 1000,
+  portrait: 0, prop: 0, wire: 0,    // the GM's own taps: the in-flight gate is the only pacing
   gatekeeper: 0,                    // the GM's own tap; one at a time (the in-flight gate), no cooldown
   showrunner: 10 * 60 * 1000,
   mystery: 15 * 60 * 1000,

@@ -39,7 +39,21 @@
      ctl.destroy()   timers, listeners and the element go
    Polling: about once a minute, only while Listening is on and the page is visible; the `after` cursor is the `last` of the answer
    before. A 429 (busy, or the night's cap) or a spend tier of "off" stops the polling and says so until the GM taps Check again.
-   _pure: errKind, errLine, fitLines, tierLabel, spendLine, absorb, restore, momentText, hhmm, clip. */
+   The Screen (GM-initiated; GM.md, "The Screen"): four buttons in the box make an item for the GM to preview in the page's Rack, and nothing
+   reaches the iPad until the GM taps Show there. Draw them (portrait seat; a typed name is optional), Make the prop (prop seat; a one-line
+   ask is optional), Wire (wire seat) and Case board (code only, from the Mystery keeper's latest known and theories). Every item goes through
+   the gatekeeper automatically; the page enables Show when the verdict is back, and asks the GM to confirm when it is a block or was not
+   checked (the gatekeeper fails closed). The box itself writes nothing to the display, the cast or the ambient document: it hands the item to
+   o.onScreen(item) and the page does the rest.
+         screen    { vocab: () -> text, cleanSpec: (spec, name) -> { ok, spec, notes, warnings } }: the figure kit's side, from the page
+         onScreen  (item): an item changed. item = { id, kind: portrait|prop|wire|board, status: checking|ready, at, ... , gate }; sent once
+                   when made (status checking) and again when the gatekeeper has answered (status ready, gate = { verdict, unknown,
+                   checked, reasons, revealed, rule, cites_bad })
+     ctl.screenMake(kind, { name?, ask? }) -> Promise<{ item } | { error }>    the pipeline for one button
+     ctl.canScreen(kind) -> bool     false on a phone, with the cap reached, or when the ladder has dropped that seat (Wire at 60% of the
+                                     cap, Portrait and Prop at 85%; the Case board always)
+   A Ref card with a page cite is spot-checked in the background through the gatekeeper; a bad cite gets a small "cite?" flag (it never blocks).
+   _pure: errKind, errLine, fitLines, tierLabel, spendLine, absorb, restore, momentText, hhmm, clip, gateText, citesOf, gateLine, screenAllowed. */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -159,13 +173,62 @@
     return 'Blade, ' + (SEAT[c.seat] || c.seat).toLowerCase() + ' (' + hhmm(c.at) + '): ' + str(c.text).trim() + (bits.length ? ' [' + bits.join('; ') + ']' : '');
   }
   P.momentText = momentText;
+
+  /* ---------- the Screen's plain helpers ---------- */
+  var SCREEN_KINDS = ['portrait', 'prop', 'wire', 'board'];
+  var SCREEN_LABEL = { portrait: 'Portrait', prop: 'Prop', wire: 'Wire', board: 'Case board' };
+  var ITEM_MAX = 1500, CITES_MAX = 8;
+  /* the ladder as the box knows it from the spend tier (the server enforces it anyway): Wire stops at 60% of the cap (tier reduced), Portrait
+     and Prop at 85% (tier core), nothing but the code-only Case board at the cap; the Board needs no model, so it always runs */
+  function screenAllowed(kind, tier) {
+    if (kind === 'board') return true;
+    if (tier === 'off') return false;
+    if (tier === 'core') return false;
+    if (tier === 'reduced') return kind !== 'wire';
+    return SCREEN_KINDS.indexOf(kind) >= 0;
+  }
+  P.screenAllowed = screenAllowed;
+  /* the text the gatekeeper reads for an item (at most ITEM_MAX characters) */
+  function gateText(item) {
+    var i = isObj(item) ? item : {}, t;
+    if (i.kind === 'portrait') t = 'Portrait of ' + str(i.name).trim() + '. ' + str(i.description).trim();
+    else if (i.kind === 'prop') t = (str(i.title).trim() ? str(i.title).trim() + '\n' : '') + str(i.text).trim();
+    else if (i.kind === 'board') t = (str(i.title).trim() ? str(i.title).trim() + '\n' : '') + str(i.text).trim();
+    else t = str(i.text).trim();
+    return t.length > ITEM_MAX ? t.slice(0, ITEM_MAX) : t;
+  }
+  P.gateText = gateText;
+  /* the page cites in a text ("p.274", "pp. 12-13", "page 9"), in order, without repeats (the server's extractCites, kept in step) */
+  function citesOf(text) {
+    var seen = {}, out = [], re = /\b(?:pp?\.|pages?)\s*\d{1,3}(?:\s*[-–]\s*\d{1,3})?/gi, m;
+    while ((m = re.exec(str(text)))) { var c = m[0].replace(/\s+/g, ' ').trim(), k = c.toLowerCase(); if (!seen[k]) { seen[k] = 1; out.push(c); } }
+    return out.slice(0, CITES_MAX);
+  }
+  P.citesOf = citesOf;
+  /* the gatekeeper's answer (or the lack of one) as the item's gate: fails closed, so anything but a clean pass is not a pass */
+  function gateOf(res) {
+    var r = isObj(res) ? res : null;
+    if (!r || (r.verdict !== 'pass' && r.verdict !== 'block')) return { verdict: 'block', unknown: true, checked: false, reasons: ['Not checked.'], revealed: [], rule: [], cites_bad: [] };
+    function list(v) { return Array.isArray(v) ? v.filter(function (x) { return typeof x === 'string' && x.trim(); }).slice(0, 10).map(function (x) { return clip(x, 300); }) : []; }
+    var unknown = !!r.unknown;
+    return { verdict: r.verdict, unknown: unknown, checked: !unknown, reasons: list(r.reasons), revealed: list(r.revealed), rule: list(r.rule), cites_bad: list(r.cites_bad) };
+  }
+  P.gateOf = gateOf;
+  /* one line for the badge */
+  function gateLine(g) {
+    if (!isObj(g)) return 'Checking…';
+    if (!g.checked) return 'Not checked';
+    return g.verdict === 'pass' ? 'Checked: clear' : 'Blocked';
+  }
+  P.gateLine = gateLine;
+
   function markOf(it) { var m = { at: it.at, text: it.text }; if (it.key !== undefined) m.key = it.key; return m; }
 
   function create(o) {
     o = o || {};
     var gm = o.gm, doc = o.doc || (W && W.document), win = o.win || W;
     var st = { open: false, cards: [], updates: [], after: null, spend: null, paused: '', error: '', setup: false, listening: null, checkedAt: '', busy: false,
-      fit: { busy: false, error: '', card: null } };
+      fit: { busy: false, error: '', card: null }, screen: { busy: {}, error: '' } };
     var host = null, timer = null, bannerT = null, gone = false, bannerCard = null;
     var avatar = o.avatar || 'gm/blade.svg';
     var bannerMs = o.bannerMs || BANNER_MS;
@@ -212,6 +275,13 @@
               '<input type="text" id="as-eff" maxlength="200" placeholder="Effect (optional)" autocomplete="off" aria-label="Effect (optional)">' +
               '<button type="submit" class="as-go" id="as-go">Fit it</button></form>' +
             '<div id="as-fitout" aria-live="polite"></div>' +
+            '<section class="as-screen" id="as-screen" aria-label="Screen"><p class="as-lab">Screen: nothing shows on the iPad until you tap Show in the Rack</p>' +
+              '<div class="as-sc-row"><input type="text" id="as-sc-name" maxlength="80" placeholder="NPC name (optional)" autocomplete="off" aria-label="NPC name (optional)">' +
+                '<button type="button" class="as-go" data-as="sc-portrait" id="as-sc-portrait">Draw them</button></div>' +
+              '<div class="as-sc-row"><input type="text" id="as-sc-ask" maxlength="200" placeholder="One-line ask (optional)" autocomplete="off" aria-label="Prop ask (optional)">' +
+                '<button type="button" class="as-go" data-as="sc-prop" id="as-sc-prop">Make the prop</button></div>' +
+              '<div class="as-sc-row"><button type="button" class="as-go" data-as="sc-wire" id="as-sc-wire">Wire</button><button type="button" class="as-go" data-as="sc-board" id="as-sc-board">Case board</button></div>' +
+              '<p class="as-status" id="as-sc-status" role="status" aria-live="polite"></p></section>' +
           '</div></section>' +
         '<button type="button" class="as-launch" id="as-launch" data-as="toggle" aria-expanded="false" aria-controls="as-panel" title="Blade (A)">' +
           '<img src="' + esc(avatar) + '" alt=""><span class="as-count" id="as-count" hidden></span></button>';
@@ -232,7 +302,7 @@
       var tl = st.spend ? tierLabel(st.spend.tier) : '';
       tier.hidden = !tl; tier.textContent = tl ? tl + (spendLine(st.spend) ? ' · ' + spendLine(st.spend) : '') : '';
       tier.setAttribute('data-tier', st.spend ? st.spend.tier : '');
-      renderStatus(); renderList(); renderUpdates(); renderFit();
+      renderStatus(); renderList(); renderUpdates(); renderFit(); renderScreen();
     }
     function renderStatus() {
       var el = q('#as-status'); if (!el) return;
@@ -253,8 +323,9 @@
         var d = c.detail, cite = d && (d.rule || d.said_at) ? '<p class="as-cite">' + (d.rule ? esc(d.rule) : '') + (d.rule && d.said_at ? ' · ' : '') + (d.said_at ? 'said ' + esc(d.said_at) : '') + '</p>' : '';
         var keep = c.kept ? '<span class="as-kept" title="Kept: filed as a Moment">★ Kept</span>'
           : typeof o.onNote === 'function' ? '<button type="button" class="as-star" data-as="keep" data-id="' + esc(c.id) + '" aria-label="Keep this card: file it as a Moment">☆ Keep</button>' : '';
+        var flag = c.citeBad && c.citeBad.length ? '<span class="as-citeflag" title="The gatekeeper could not match this page cite to the rule: ' + esc(c.citeBad.join('; ')) + '">cite?</span>' : '';
         var saved = c.important ? '<p class="as-saved">' + (c.filed ? 'Saved to campaign history' : 'In tonight’s log; gm:after files it to history') + '</p>' : '';
-        return '<li class="as-card" data-seat="' + esc(c.seat) + '"><div class="as-meta"><b>' + esc(SEAT[c.seat] || c.seat) + '</b><time>' + esc(hhmm(c.at)) + '</time>' + keep +
+        return '<li class="as-card" data-seat="' + esc(c.seat) + '"><div class="as-meta"><b>' + esc(SEAT[c.seat] || c.seat) + '</b><time>' + esc(hhmm(c.at)) + '</time>' + flag + keep +
           '<button type="button" class="as-ack" data-as="ack" data-id="' + esc(c.id) + '" aria-label="Dismiss this card">Got it</button></div><p class="as-text">' + esc(c.text) + '</p>' + cite + saved + '</li>';
       }).join('');
     }
@@ -281,6 +352,99 @@
           '<button type="button" class="as-link" data-as="fitclear">Clear</button></div>';
       }
       out.innerHTML = h;
+    }
+
+    /* ---------- the Screen ---------- */
+    var SC_TITLE = { portrait: 'Draw the NPC you just described', prop: 'Make a document for the moment', wire: 'One in-world bulletin for the iPad', board: 'What the players have said aloud, as a board' };
+    var SC_CALL = { portrait: 'assistPortrait', prop: 'assistProp', wire: 'assistWire', board: 'assistBoard' };
+    var SC_NAME = { portrait: 'Draw them', prop: 'Make the prop', wire: 'Wire', board: 'Case board' };
+    function tierNow() { return st.spend ? st.spend.tier : ''; }
+    function anyModelBusy() { return ['portrait', 'prop', 'wire'].some(function (k) { return st.screen.busy[k]; }); }
+    function canScreen(kind) {
+      if (gone || isPhone() || st.paused === 'setup' || !gm) return false;
+      if (st.paused === 'cap' && kind !== 'board') return false;       /* the Case board is code: it still builds at the cap (its check then says "not checked") */
+      if (!SC_CALL[kind] || typeof gm[SC_CALL[kind]] !== 'function') return false;
+      return screenAllowed(kind, tierNow());
+    }
+    function renderScreen() {
+      var box = q('#as-screen'); if (!box) return;
+      SCREEN_KINDS.forEach(function (k) {
+        var b = q('#as-sc-' + k); if (!b) return;
+        var can = canScreen(k), busy = !!st.screen.busy[k];
+        b.disabled = busy || !can || (k !== 'board' && anyModelBusy());
+        b.textContent = busy ? (k === 'board' ? 'Building…' : 'Making…') : SC_NAME[k];
+        b.title = !can ? (screenAllowed(k, tierNow()) ? 'Not available now' : 'Dropped by the budget for tonight') : SC_TITLE[k];
+      });
+      var m = q('#as-sc-status'); if (m) { m.textContent = st.screen.error; m.classList.toggle('bad', !!st.screen.error); }
+    }
+    function scErr(e) {
+      var s = e && e.status, m = str(e && e.message);
+      if (s === 429) return /cap/i.test(m) ? 'Cap reached for tonight: the Screen is off.' : /busy/i.test(m) ? 'Blade is busy: try again in a moment.' : 'The budget has dropped that for tonight.';
+      return errKind(e) === 'net' ? 'Could not reach the server.' : errKind(e) === 'setup' ? errLine('setup') : 'Blade could not make that just now. Try again.';
+    }
+    var scSeq = 0;
+    function emit(item) { if (typeof o.onScreen === 'function') { try { o.onScreen(JSON.parse(JSON.stringify(item))); } catch (e) {} } }
+    /* the gatekeeper on one item; one retry when it is busy (a Ref cite check may hold it). Never rejects: no answer is a gate that fails closed. */
+    function gateItem(item, tries) {
+      var req = { kind: item.kind, text: gateText(item), cites: [] };
+      return Promise.resolve().then(function () { return typeof gm.assistGate === 'function' ? gm.assistGate(req) : null; }).then(function (res) {
+        if (isObj(res) && isObj(res.spend)) { absorb(st, { spend: res.spend, warnings: [] }, ''); render(); }
+        return gateOf(res);
+      }, function (e) {
+        if (e && e.status === 429 && /busy/i.test(str(e.message)) && !(tries > 0) && setT) return new Promise(function (ok) { setT(function () { ok(gateItem(item, 1)); }, 1500); });
+        return gateOf(null);
+      });
+    }
+    function screenMake(kind, opts) {
+      opts = opts || {};
+      if (SCREEN_KINDS.indexOf(kind) < 0 || st.screen.busy[kind] || !canScreen(kind) || (kind !== 'board' && anyModelBusy())) return Promise.resolve(null);
+      st.screen.busy[kind] = true; st.screen.error = ''; render();
+      var req = {};
+      if (kind === 'portrait') {
+        var vocab = o.screen && typeof o.screen.vocab === 'function' ? str(o.screen.vocab()) : '';
+        if (!vocab) { st.screen.busy[kind] = false; st.screen.error = 'The figure kit is not loaded on this page.'; render(); return Promise.resolve({ error: 'kit' }); }
+        req.vocab = vocab;
+        var nm = str(opts.name).replace(/\s+/g, ' ').trim().slice(0, NPC_MAX); if (nm) req.name = nm;
+      } else if (kind === 'prop') {
+        var ask = str(opts.ask).replace(/\s+/g, ' ').trim().slice(0, 200); if (ask) req.ask = ask;
+      }
+      return Promise.resolve().then(function () { return gm[SC_CALL[kind]](req); }).then(function (res) {
+        if (gone) return null;
+        if (isObj(res) && isObj(res.spend)) absorb(st, { spend: res.spend, warnings: [] }, '');
+        var it = res && isObj(res.item) ? res.item : null;
+        if (!it) { st.screen.error = kind === 'board' ? 'Nothing on the board yet: the Mystery keeper has not reported anything the players know.' : 'Blade had nothing usable just now. Try again.'; return { error: 'none' }; }
+        var item = Object.assign({}, it, { id: 'sc' + (++scSeq) + '-' + Date.now().toString(36), kind: kind, status: 'checking', gate: null, at: str(it.at) || new Date().toISOString() });
+        if (kind === 'portrait') {
+          var cs = o.screen && typeof o.screen.cleanSpec === 'function' ? o.screen.cleanSpec(it.spec, str(it.name)) : null;
+          if (!cs || !cs.ok) { st.screen.error = 'The drawing did not pass the figure kit' + (cs && cs.warnings && cs.warnings.length ? ' (' + clip(cs.warnings[0], 80) + ')' : '') + '. Try again.'; return { error: 'kit' }; }
+          item.spec = cs.spec; item.notes = Array.isArray(cs.notes) ? cs.notes.slice(0, 6) : [];
+        }
+        emit(item);
+        return gateItem(item).then(function (g) {
+          if (gone) return null;
+          item.gate = g; item.status = 'ready'; emit(item);
+          return { item: item };
+        });
+      }, function (e) {
+        if (gone) return null;
+        if (e && e.status === 429 && /cap/i.test(str(e.message))) st.paused = 'cap';
+        st.screen.error = scErr(e);
+        return { error: errKind(e) };
+      }).then(function (r) { st.screen.busy[kind] = false; render(); return r; });
+    }
+    /* a Ref card with a page cite is spot-checked in the background; a cite the gatekeeper cannot match gets a small flag (never a block) */
+    function citeCheck(card) {
+      if (!card || card.seat !== 'ref' || !gm || typeof gm.assistGate !== 'function' || tierNow() === 'off' || gone) return;
+      var rule = card.detail && card.detail.rule ? str(card.detail.rule) : '', cites = citesOf(rule + ' ' + card.text);
+      if (!cites.length) return;
+      var text = clip(card.text + (rule ? '\nRule: ' + rule : ''), ITEM_MAX - 10);
+      Promise.resolve().then(function () { return gm.assistGate({ kind: 'card', text: text, cites: cites }); }).then(function (res) {
+        if (gone || !isObj(res)) return;
+        if (isObj(res.spend)) absorb(st, { spend: res.spend, warnings: [] }, '');
+        var bad = !res.unknown && Array.isArray(res.cites_bad) ? res.cites_bad.filter(function (x) { return typeof x === 'string' && x.trim(); }).slice(0, 4).map(function (x) { return clip(x, 60); }) : [];
+        if (bad.length) card.citeBad = bad;
+        render();
+      }, function () { /* no check, no flag: the card stands as it was */ });
     }
 
     /* ---------- the banner ---------- */
@@ -324,6 +488,7 @@
         if (isObj(res) && isObj(res.meanwhile) && str(res.meanwhile.cutaway).trim()) sendMeanwhile(res.meanwhile);
         if (isObj(res) && isObj(res.handout) && str(res.handout.id).trim() && typeof o.onHandout === 'function') { try { o.onHandout({ id: str(res.handout.id).trim(), why: str(res.handout.why), at: str(res.handout.at) }); } catch (e) {} }
         var fresh = absorb(st, res, new Date().toISOString());
+        fresh.forEach(citeCheck);
         st.error = ''; st.checkedAt = hhmm(new Date().toISOString());
         if (st.open) markSeen();
         else if (fresh.length) showBanner(fresh[fresh.length - 1]);
@@ -428,6 +593,7 @@
       else if (a === 'done') { var d = st.updates.filter(function (x) { return x.id === id; })[0]; if (d) mark('dismiss', [d]); remove(st.updates, id); render(); }
       else if (a === 'note') { var u = st.updates.filter(function (x) { return x.id === id; })[0]; if (u && typeof o.onNote === 'function' && o.onNote(u.text)) { mark('dismiss', [u]); remove(st.updates, id); render(); } }
       else if (a === 'resume') resume();
+      else if (a.indexOf('sc-') === 0) screenMake(a.slice(3), { name: (q('#as-sc-name') || {}).value, ask: (q('#as-sc-ask') || {}).value });
       else if (a === 'fitclear') { st.fit.card = null; st.fit.error = ''; renderFit(); }
     }
     function onSubmit(ev) {
@@ -451,8 +617,8 @@
     if (!o.noTimer) setTimeout(function () { poll(); }, 1500);
 
     return {
-      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, poll: poll, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another,
-      state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, banner: bannerCard ? bannerCard.text : '' })); },
+      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, poll: poll, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake,
+      state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, screen: st.screen, banner: bannerCard ? bannerCard.text : '' })); },
       el: function () { return host; },
       destroy: function () {
         gone = true;

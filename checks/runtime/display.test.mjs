@@ -847,9 +847,21 @@ await test('the theme line: every music state reads as one plain line for the ta
   assert.ok(!P.themeType('text/html; charset=utf-8') && !P.themeType('application/json'), 'a sign-in page or a fallback 200 is not the theme');
 });
 
+await test('wire: cleanWire keeps up to six one-line bulletins with distinct ids; ambientPlan carries them and ignores junk', () => {
+  assert.deepEqual(P.cleanWire([{ id: 'a', text: '  Ferries \n late. ' }, { id: 'a', text: 'dup id' }, { id: 'b', text: '   ' }, { id: 5, text: 'x' }, null, 'x', { id: 'c', text: 'y'.repeat(300) }]),
+    [{ id: 'a', text: 'Ferries late.' }, { id: 'c', text: 'y'.repeat(240) }]);
+  assert.equal(P.cleanWire(Array.from({ length: 9 }, (_, i) => ({ id: 'i' + i, text: 'x' }))).length, 6);
+  for (const bad of [undefined, null, 'x', 7, {}]) assert.deepEqual(P.cleanWire(bad), []);
+  assert.deepEqual(P.ambientPlan({ wire: [{ id: 'a', text: 'Hello' }] }).wire, [{ id: 'a', text: 'Hello' }]);
+  assert.deepEqual(P.ambientPlan({ wire: 'no' }).wire, []);
+  const p = P.ambientPlan({ wire: [{ id: 'a', text: 'Hello' }] });
+  assert.deepEqual(P.ambientPlan(p).wire, p.wire, 'the plan reads its own output');
+  assert.deepEqual(P.ambientRotation(p), P.ambientRotation(P.ambientPlan({})), 'a wire adds no scene: it lies over whichever scene plays');
+});
+
 const DEFAULT_LIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting'];
 await test('ambientPlan: defaults for nothing, null, {} and rubbish', () => {
-  const want = { mode: 'auto', scene: null, playlist: DEFAULT_LIST, intervalMin: 7, skip: 0, crew: null, score: null };
+  const want = { mode: 'auto', scene: null, playlist: DEFAULT_LIST, intervalMin: 7, skip: 0, crew: null, score: null, wire: [] };
   for (const d of [undefined, null, {}, 'x', 42, [], { mode: 'sideways', playlist: 'no', intervalMin: 'soon', skip: -3, crew: 'hot', score: 'none' }]) assert.deepEqual(P.ambientPlan(d), want);
   assert.notEqual(P.ambientPlan(null).playlist, P.AMBIENT_DEFAULT_PLAYLIST);                // a copy, not the shared array
 });

@@ -41,6 +41,16 @@
 //        anything else is a 400. It runs at the Core tier (to the cap, like Ref), one at a time: 429 at the cap or while busy. It
 //        fails closed: no assist part, a refusal, a cut-off reply or no JSON is { verdict: 'block', unknown: true }. A bad page cite
 //        is flagged in cites_bad and never blocks. The GM's tap is still needed either way. Logged like any seat (secs, stop, refusal).
+//   POST /api/gm/assist/{portrait|prop|wire} -> { item: { kind, ..., at } | null, spend }    the Screen (GM-initiated; nothing here reaches the iPad)
+//        portrait { name?, vocab } (vocab: the figure kit's names as text, at most 5000 characters) -> item { kind: 'portrait', name, description, spec };
+//        prop { ask? } (one line, at most 200 characters) -> item { kind: 'prop', title, text } (text at most 1200 characters, so the gatekeeper
+//        reads all of it); wire {} -> item { kind: 'wire', text } (at most 240 characters). Each reads the last 5 minutes of talk. The ladder:
+//        Wire stops at 60% of the night's cap, Portrait and Prop at 85%, all at the cap (429); one of each at a time (429 busy). item is null
+//        when the seat refused, was cut off or gave nothing usable (logged, never shown). The page runs the gatekeeper on every item.
+//   POST /api/gm/assist/board {} -> { item: { kind: 'board', title, text, at } | null }   the case board, from the Mystery keeper's latest
+//        known and theories (what the players said aloud). Code only: no model, no key, no spend, and it runs at any tier.
+//   POST /api/gm/assist/portrait-add { name, description?, spec } -> { id, doc }   saves a portrait as an app NPC through checkNpc/writeNpc,
+//        always HIDDEN (revealed: false, whatever is sent); showing it to the players is the normal reveal flow.
 //   GET  /api/gm/assist/cards?session=&since= -> { cards, updates }   tonight's shown cards and open Ledger updates (last 12 h unless
 //        `since`), so a reloaded GM page restores its chat. Dismissed cards and finished updates are left out. No model, no key.
 //   POST /api/gm/assist/cards { op: 'seen'|'dismiss'|'keep', items: [{ at, text, key? }] } -> { marked }   the box's marks, kept on the
@@ -84,6 +94,9 @@ import { loadStt, readLines } from '../../_lib/stt.js';
 import { makeClient, callSeat } from '../../_lib/assist/claude.js';
 import { SEATS, WAKES } from '../../_lib/assist/seats.js';
 import { cleanItem, verdictOf, unknownVerdict } from '../../_lib/assist/gatekeeper.js';
+import { checkNpc, newNpcId, writeNpc } from '../../_lib/npcs.js';
+import { toPortrait, toProp, toWire, buildBoard, boardSource, cleanName, cleanAsk, cleanVocab } from '../../_lib/assist/screen.js';
+import { portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN, SCREEN_NAME_MAX } from '../../_lib/assist/prompts.js';
 import { gatekeeperUser, ITEM_MAX, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX,
   STORY_SEATS, storyBlock, scribeUser, SCRIBE_SLICE_MAX, SCRIBE_FIRST_MIN, MEANWHILE_MIN, meanwhileUser, cleanClocks, silenceUser } from '../../_lib/assist/prompts.js';
 import { DEFAULT_CAP, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS, isListening, silenceFlag } from '../../_lib/assist/conductor.js';
@@ -91,6 +104,7 @@ import { toCandidate, toVoice, toAnother, toStall, toScribe, toMeanwhile, toHand
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
 
 const BODY_MAX = 8 * 1024;
+const PORTRAIT_BODY_MAX = 14 * 1024;       // a portrait request carries the figure kit's vocabulary (a few KB of names)
 const NIGHT_MS = 12 * 60 * 60 * 1000;      // "tonight" is the last 12 hours of the log
 const LAST_RUN_MS = 60 * 60 * 1000;        // cooldowns look back an hour at most
 const RECENT_CARD_MS = 10 * 60 * 1000;     // shown cards that can still make a new one a repeat
@@ -301,11 +315,53 @@ function errorOf(e) {
   return s ? 'provider status ' + s : 'call failed';
 }
 
+const SCREEN_ACTIONS = ['portrait', 'prop', 'wire', 'board', 'portrait-add'];
+
+/** The body of a Screen request, checked before the database or the key are touched. Throws HttpError(400). */
+export function cleanScreenBody(action, b) {
+  if (action === 'portrait') {
+    const name = cleanName(b.name), vocab = cleanVocab(b.vocab);
+    if (name === null) throw new HttpError(400, 'name is at most ' + SCREEN_NAME_MAX + ' characters');
+    if (!vocab) throw new HttpError(400, "vocab is required: the figure kit's names as text");
+    return { name, vocab };
+  }
+  if (action === 'prop') {
+    const ask = cleanAsk(b.ask);
+    if (ask === null) throw new HttpError(400, 'ask is a line of at most 200 characters');
+    return { ask };
+  }
+  if (action === 'portrait-add') {
+    const name = cleanName(b.name);
+    if (!name) throw new HttpError(400, 'name is required (at most ' + SCREEN_NAME_MAX + ' characters)');
+    if (!b.spec || typeof b.spec !== 'object' || Array.isArray(b.spec)) throw new HttpError(400, 'spec must be an object');
+    if (b.description !== undefined && typeof b.description !== 'string') throw new HttpError(400, 'description must be a string');
+    return { name, description: b.description || '', spec: b.spec };
+  }
+  return {};
+}
+
+/** The case board: the Mystery keeper's latest known and theories, as a text item. Code only: no model, no spend, always allowed. */
+async function boardOf(db, campaign, now) {
+  const since = new Date(now - NIGHT_MS).toISOString();
+  const r = await db.prepare("SELECT card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'mystery' AND card IS NOT NULL ORDER BY id DESC LIMIT 1").bind(campaign, since).first();
+  const c = r ? parseJson(r.card, null) : null;
+  const item = buildBoard(...Object.values(boardSource(c && c.out)));
+  return { item: item ? { ...item, at: new Date(now).toISOString() } : null };
+}
+
+/** Save a portrait as a HIDDEN app NPC: revealed is forced to false here, whatever the page sent. Showing it is the normal reveal flow. */
+async function addPortrait(db, campaign, inp) {
+  const body = { name: inp.name, description: inp.description.slice(0, 2000), spec: inp.spec, revealed: false, firstSeen: null, tags: ['screen'] };
+  const id = newNpcId();
+  const doc = await writeNpc(db, campaign, id, (_row, at) => ({ ...checkNpc(body), createdAt: at, updatedAt: at }));
+  return { id, doc };
+}
+
 export function makeHandler({ clientFor = defaultClient, now = () => Date.now(), call = callSeat, seats = SEATS, wakes = WAKES } = {}) {
   return async function onRequest({ request, env, data }) {
     requireGm(data);                                   // first: before the method, the body or the database
     const url = new URL(request.url);
-    const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards)\/?$/.exec(url.pathname);
+    const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board)\/?$/.exec(url.pathname);
     if (!action) throw new HttpError(404, 'not found');
     if (action[1] === 'cards') {                       // the box's memory: no key, no model
       if (request.method === 'GET') {
@@ -322,10 +378,14 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       return json({ marked: await markCards(await getDb(env), campaignOf(env), b.op, items) });
     }
     if (request.method !== 'POST') return methodNotAllowed(['POST']);
-    const body = await readJsonObject(request, BODY_MAX);
+    const body = await readJsonObject(request, action[1] === 'portrait' ? PORTRAIT_BODY_MAX : BODY_MAX);
     const gateItem = action[1] === 'gatekeeper' ? cleanItem(body) : null;      // checked before the database or the key are touched
     if (gateItem && !gateItem.ok) throw new HttpError(400, gateItem.why);
+    const screenIn = SCREEN_ACTIONS.includes(action[1]) ? cleanScreenBody(action[1], body) : null;      // a 400 comes before the database or the key
     const db = await getDb(env), campaign = campaignOf(env), t0 = now();
+    // the Screen's code-only actions need no model and no key
+    if (action[1] === 'board') return json(await boardOf(db, campaign, t0));
+    if (action[1] === 'portrait-add') return json(await addPortrait(db, campaign, screenIn));
     const client = clientFor(env);
     const cap = capOf(env);
     const spentBefore = await tonight(db, campaign, t0);
@@ -359,6 +419,26 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     }
     const spend = () => ({ tonight: dollars(spentBefore + thisTick), cap, tier: budgetTier(spentBefore + thisTick, cap), tick: dollars(thisTick) });
     const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.meanwhile ? { meanwhile: more.meanwhile } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
+
+    if (action[1] === 'portrait' || action[1] === 'prop' || action[1] === 'wire') {
+      const seat = action[1];
+      // the ladder: Wire stops at 60% of tonight's cap, Portrait and Prop at 85% (they are not Core seats); at the cap nothing runs
+      const gate = canRun(seat, { now: t0, lastRun: {}, inFlight, tier });
+      if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? (tier === 'off' ? "tonight's cap is reached" : 'the budget ladder has dropped this for tonight') : 'this is busy');
+      if (legacy || !fileId) return json({ item: null, spend: spend(), warnings: legacy ? [REPUSH] : ['no assist part in the GM pack'] });
+      const { lines: recent } = await readLines(db, campaign, { since: new Date(t0 - SCREEN_WINDOW_MIN * 60 * 1000).toISOString() });
+      const talk = formatLines(recent, speakers), stamp = hhmm(t0);
+      const user = seat === 'portrait' ? portraitUser({ name: screenIn.name, vocab: screenIn.vocab, stamp, talk }) : seat === 'prop' ? propUser({ ask: screenIn.ask, stamp, talk }) : wireUser({ stamp, talk });
+      const { cfg, r, timing } = await run(seat, user);
+      const at = new Date(now()).toISOString();
+      if (fileMissing) return json({ item: null, spend: spend(), warnings });                // nothing was billed or logged: the file is gone
+      const out = r && r.json ? r.json : null;
+      const item = out ? (seat === 'portrait' ? toPortrait(out, screenIn.name) : seat === 'prop' ? toProp(out) : toWire(out)) : null;
+      const session = recent.length ? recent[recent.length - 1].session : '';
+      await logRow(db, campaign, { at, session, seat, cfg, usage: r && r.usage, cost: r && r.cost, flags: [seat], timing,
+        card: out ? { out, shown: 0, made: item ? 1 : 0 } : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : 'no JSON', shown: 0 } }).run();
+      return json({ item: item ? { ...item, at } : null, spend: spend(), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
+    }
 
     if (action[1] === 'gatekeeper') {
       const item = gateItem.item;

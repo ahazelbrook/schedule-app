@@ -197,3 +197,11 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
   font: 700 clamp(14px, 2.2vmin, 22px)/1.25 var(--font-mono, "Space Mono", monospace); letter-spacing: .06em; text-transform: uppercase; }
 .dp-theme.dp-theme-bad { color: var(--dp-warn, #e8c33c); }
 .dp-theme[hidden] { display: none; }
+
+/* ---- the wire: one in-world bulletin at a time over the ambient scenes (display-page.js; under the stages, so a spotlight hides it) ---- */
+.dp-wire { position: absolute; left: max(4vmin, env(safe-area-inset-left)); right: max(4vmin, env(safe-area-inset-right)); bottom: max(4vmin, env(safe-area-inset-bottom)); margin: 0; z-index: 3;
+  padding: 1.4vmin 2.4vmin; border-left: .9vmin solid #e8c33c; background: rgba(12, 10, 8, .82); color: #f2ede1; pointer-events: none;
+  font: 700 clamp(18px, 3.2vmin, 38px)/1.25 var(--font-text, Georgia, serif); opacity: 0; transform: translateY(1.5vmin); transition: opacity .8s ease, transform .8s ease; }
+.dp-wire::before { content: "WIRE"; display: block; margin-bottom: .3em; font: 900 clamp(11px, 1.8vmin, 20px)/1 var(--font-cond, "Arial Narrow", sans-serif); letter-spacing: .24em; color: #e8c33c; }
+.dp-wire.dp-wire-on { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .dp-wire { transition: none; transform: none; } }

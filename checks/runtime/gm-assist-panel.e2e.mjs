@@ -95,6 +95,28 @@ try {
       seen.fit.push(JSON.parse(route.request().postData() || '{}'));
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [FIT], flags: [], spend: { tonight: 1.9, cap: 20, tier: 'all', tick: 0.5 }, last: 12 }) });
     });
+    // the Screen: invented items from the browser's own route; the display, the ambient document and the cast are the REAL server
+    seen.sc = { gate: 'pass', gateDelay: 0, cardBad: ['Rulebook p. 12'], reqs: { portrait: [], prop: [], wire: [], board: [], gate: [] }, dialogs: [], accept: false };
+    page.on('dialog', (d) => { seen.sc.dialogs.push(d.message()); return seen.sc.accept ? d.accept() : d.dismiss(); });
+    const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    const SPEND = { tonight: 2.1, cap: 20, tier: 'all', tick: 0.05 };
+    await page.route('**/api/gm/assist/prop', (route) => { seen.sc.reqs.prop.push(JSON.parse(route.request().postData() || '{}')); return json(route, { item: { kind: 'prop', title: 'Telegram', text: 'TELEGRAM\nINVENTED: MEET AT THE FERRY STOP\nNO NAMES', at: new Date().toISOString() }, spend: SPEND }); });
+    await page.route('**/api/gm/assist/wire', (route) => { seen.sc.reqs.wire.push(1); return json(route, { item: { kind: 'wire', text: 'Invented: ferry timetable cut for the long weekend.', at: new Date().toISOString() }, spend: SPEND }); });
+    await page.route('**/api/gm/assist/board', (route) => { seen.sc.reqs.board.push(1); return json(route, { item: { kind: 'board', title: 'Case board', text: 'WHAT WE KNOW\n- Invented: the ledger was torn.\n\nWHO AND WHAT WE SUSPECT\n- Invented: the clerk did it.', at: new Date().toISOString() } }); });
+    await page.route('**/api/gm/assist/portrait', (route) => {
+      seen.sc.reqs.portrait.push(JSON.parse(route.request().postData() || '{}'));
+      const spec = { heightIn: 70, shape: 'oval', skin: 'tan', age: 44, pose: { stance: 'easy', arms: { R: 'down', L: 'pocket' } }, head: { shape: 'oval' }, face: { eyes: 'hooded', brows: 'straight', nose: 'straight', mouth: 'neutral', expression: 'cool', eyewear: { type: 'not-a-kit-name' } },
+        hair: { style: 'crew', color: 'cloth-black' }, outfit: { base: { type: 'turtleneck', color: 'cloth-black' }, bottom: { type: 'trousers', color: 'cloth-charcoal' }, feet: { type: 'oxfords', color: 'cloth-black' } } };
+      return json(route, { item: { kind: 'portrait', name: 'Heard Name', description: 'Invented: a tall person in dark clothes.', spec, at: new Date().toISOString() }, spend: SPEND });
+    });
+    await page.route('**/api/gm/assist/gatekeeper', async (route) => {
+      const req = JSON.parse(route.request().postData() || '{}'); seen.sc.reqs.gate.push(req);
+      if (req.kind === 'card') return json(route, { verdict: 'pass', unknown: false, reasons: [], revealed: [], rule: [], cites_bad: seen.sc.cardBad, spend: SPEND });
+      if (seen.sc.gateDelay) await sleep(seen.sc.gateDelay);
+      if (seen.sc.gate === 'error') return json(route, { error: 'boom' }, 500);
+      if (seen.sc.gate === 'block') return json(route, { verdict: 'block', unknown: false, reasons: ['Invented: it names the buyer.'], revealed: ['#2 Invented entry'], rule: [], cites_bad: [], spend: SPEND });
+      return json(route, { verdict: 'pass', unknown: false, reasons: [], revealed: [], rule: [], cites_bad: [], spend: SPEND });
+    });
     await page.goto(BASE + '/' + hash);
     await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
     return { c, page, seen };
@@ -260,6 +282,109 @@ try {
   await until(async () => Hd.seen.tick.length >= n3 + 2, 15000); await sleep(800);
   check(await offers() === 0, 'and a reload does not bring it back');
   await Hd.c.close();
+
+  // ---- the Screen: press -> preview -> gate -> Show (a prop), a block and a "not checked" that ask for a confirm, the wire, a hidden NPC, the board, the cite flag ----
+  await api('PATCH', '/gm/stt', { want: 'on' });
+  await api('PUT', '/gm/display', { kind: 'blank' });
+  await api('PATCH', '/gm/ambient', { wire: null });
+  const display = async () => (await api('GET', '/gm/display')).json.display;
+  const Sc = await open('#gm', { mode: 'quiet' });
+  Sc.seen.mode = 'quiet';
+  const sp = Sc.page, sc = Sc.seen.sc;
+  await sp.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  await sp.waitForSelector('.gm-assist .as-launch', { timeout: 10000 });
+  await until(async () => Sc.seen.tick.length >= 1, 15000);
+  await sp.keyboard.press('a');
+  check(await sp.$eval('#as-panel', (e) => !e.hidden), 'Screen: the box is open');
+  check(await sp.$$eval('#as-screen button', (b) => b.map((x) => x.textContent.trim()).join('|')) === 'Draw them|Make the prop|Wire|Case board', 'Screen: the four buttons are in the box');
+  await shot(sp, 'screen-buttons');
+  // a prop: preview at once, Show disabled while the gatekeeper works, enabled with "Checked: clear"; nothing on the iPad until Show
+  sc.gateDelay = 900;
+  await sp.fill('#as-sc-ask', 'a ferry telegram');
+  await sp.click('#as-sc-prop');
+  check(await sp.waitForSelector('#gm-rack .gm-screenitem[data-screen]', { timeout: 10000 }).then(() => true, () => false), 'Screen prop: the preview lands in the Rack');
+  check(sc.reqs.prop[0] && sc.reqs.prop[0].ask === 'a ferry telegram', 'Screen prop: the ask went with the request');
+  let item = '#gm-rack .gm-screenitem[data-screen]';
+  check(/FERRY STOP/.test(await sp.textContent(item + ' .gm-screen-text')) && /Checking/.test(await sp.textContent(item + ' .gm-gate')), 'Screen prop: the document and "Checking…" show at once');
+  check(await sp.$eval(item + ' [data-gm="sc-show"]', (b) => b.disabled), 'Screen prop: Show is disabled while the check runs');
+  check((await display()).kind === 'blank', 'Screen prop: nothing reaches the iPad before Show');
+  check(await sp.waitForFunction(() => /Checked: clear/.test(document.querySelector('#gm-rack .gm-screenitem .gm-gate').textContent), null, { timeout: 10000 }).then(() => true, () => false), 'Screen prop: the gate answers "Checked: clear"');
+  check(sc.reqs.gate[sc.reqs.gate.length - 1].kind === 'prop' && /FERRY STOP/.test(sc.reqs.gate[sc.reqs.gate.length - 1].text), 'Screen prop: the gatekeeper was sent the item');
+  check(await sp.$eval(item + ' [data-gm="sc-show"]', (b) => !b.disabled), 'Screen prop: Show is enabled');
+  check((await display()).kind === 'blank', 'Screen prop: still nothing on the iPad');
+  await shot(sp, 'screen-prop-ready');
+  await sp.click(item + ' [data-gm="sc-show"]');
+  check(await until(async () => (await display()).kind === 'text', 8000), 'Screen prop: Show puts it on the iPad');
+  let d = await display();
+  check(d.title === 'Telegram' && /FERRY STOP/.test(d.text) && sc.dialogs.length === 0, 'Screen prop: as a text display, with no confirm for a clear item');
+  // a block: reasons shown; Show asks first; a refused confirm leaves the iPad alone; an accepted one shows it
+  await api('PUT', '/gm/display', { kind: 'blank' });
+  sc.gate = 'block'; sc.gateDelay = 0;
+  await sp.click('#gm-rack .gm-screenitem [data-gm="sc-dismiss"]');
+  await sp.click('#as-sc-prop');
+  check(await sp.waitForFunction(() => /Blocked/.test((document.querySelector('#gm-rack .gm-screenitem .gm-gate') || {}).textContent || ''), null, { timeout: 10000 }).then(() => true, () => false), 'Screen block: the badge says Blocked');
+  check(/names the buyer/.test(await sp.textContent(item)) && /#2 Invented entry/.test(await sp.textContent(item)), 'Screen block: the reasons and the entry it would reveal are shown');
+  await shot(sp, 'screen-blocked');
+  sc.accept = false;
+  await sp.click(item + ' [data-gm="sc-show"]');
+  await sleep(500);
+  check(sc.dialogs.length === 1 && /blocked/i.test(sc.dialogs[0]) && (await display()).kind === 'blank', 'Screen block: Show asks to confirm, and a No leaves the iPad alone');
+  sc.accept = true;
+  await sp.click(item + ' [data-gm="sc-show"]');
+  check(await until(async () => (await display()).kind === 'text', 8000) && sc.dialogs.length === 2, 'Screen block: after a Yes the tap decides and it shows');
+  // not checked (the gatekeeper errors): fails closed, a confirm is needed; a wire bulletin goes to the ambient document and Clear takes it off
+  sc.gate = 'error'; sc.accept = false;
+  await sp.click('#gm-rack .gm-screenitem [data-gm="sc-dismiss"]');
+  await sp.click('#as-sc-wire');
+  check(await sp.waitForFunction(() => /Not checked/.test((document.querySelector('#gm-rack .gm-screenitem .gm-gate') || {}).textContent || ''), null, { timeout: 10000 }).then(() => true, () => false), 'Screen wire: a gatekeeper that errors shows "Not checked"');
+  const nd = sc.dialogs.length;
+  await sp.click(item + ' [data-gm="sc-show"]');
+  await sleep(500);
+  check(sc.dialogs.length === nd + 1 && /did not check/.test(sc.dialogs[nd]) && !((await api('GET', '/gm/ambient')).json.doc.wire || []).length, 'Screen wire: not checked needs a confirm, and a No adds nothing');
+  sc.accept = true;
+  await sp.click(item + ' [data-gm="sc-show"]');
+  check(await until(async () => ((await api('GET', '/gm/ambient')).json.doc.wire || []).length === 1, 8000), 'Screen wire: after a Yes the bulletin joins the ambient wire');
+  const wire = (await api('GET', '/gm/ambient')).json.doc.wire;
+  check(/ferry timetable/.test(wire[0].text), 'Screen wire: it is the bulletin text');
+  check(await sp.waitForSelector('#gm-rack [data-gm="sc-wireclear"]', { timeout: 8000 }).then(() => true, () => false), 'Screen wire: a Clear button appears');
+  await sp.click('#gm-rack [data-gm="sc-wireclear"]');
+  check(await until(async () => !((await api('GET', '/gm/ambient')).json.doc.wire || []).length, 8000), 'Screen wire: Clear takes it off the ambient wire');
+  // a portrait: preview from the figure kit with the unknown name dropped; Add saves a HIDDEN NPC and shows nothing
+  sc.gate = 'pass'; sc.accept = false;
+  await api('PUT', '/gm/display', { kind: 'blank' });
+  await sp.click('#gm-rack .gm-screenitem [data-gm="sc-dismiss"]');
+  await sp.fill('#as-sc-name', 'Test Person');
+  await sp.click('#as-sc-portrait');
+  check(await sp.waitForSelector('#gm-rack .gm-screen-fig svg', { timeout: 20000 }).then(() => true, () => false), 'Screen portrait: the figure kit draws the preview in the Rack');
+  check(sc.reqs.portrait[0] && sc.reqs.portrait[0].name === 'Test Person' && /eyes: /.test(sc.reqs.portrait[0].vocab) && /cloth-black/.test(sc.reqs.portrait[0].vocab), 'Screen portrait: the typed name and the kit vocabulary went with the request');
+  check(/not-a-kit-name/.test(await sp.textContent(item)), 'Screen portrait: the dropped name is noted');
+  check(await sp.waitForFunction(() => /Checked: clear/.test(document.querySelector('#gm-rack .gm-screenitem .gm-gate').textContent), null, { timeout: 10000 }).then(() => true, () => false), 'Screen portrait: the gate runs on it too');
+  check(await sp.$('#gm-rack [data-gm="sc-show"]') === null, 'Screen portrait: there is no Show, only Add (showing is the normal reveal flow)');
+  await shot(sp, 'screen-portrait');
+  const before = (await api('GET', '/npcs')).json.docs.length;
+  await sp.click(item + ' [data-gm="sc-add"]');
+  check(await until(async () => (await api('GET', '/npcs')).json.docs.length === before + 1, 8000), 'Screen portrait: Add saves an NPC');
+  const made = (await api('GET', '/npcs')).json.docs.find((x) => x.doc.name === 'Heard Name');   // the mocked route answers with its own name; the real server puts the typed one first (unit-tested)
+  check(made && made.doc.revealed === false && made.doc.spec && made.doc.spec.hair && !(made.doc.spec.face || {}).eyewear, 'Screen portrait: it is hidden (revealed false) with the cleaned spec');
+  check((await display()).kind === 'blank', 'Screen portrait: nothing reached the iPad');
+  // the case board: code only, checked, then Show
+  await sp.click('#gm-rack .gm-screenitem [data-gm="sc-dismiss"]');
+  await sp.click('#as-sc-board');
+  check(await sp.waitForFunction(() => /Checked: clear/.test((document.querySelector('#gm-rack .gm-screenitem .gm-gate') || {}).textContent || ''), null, { timeout: 10000 }).then(() => true, () => false), 'Screen board: it passes the gatekeeper like the rest');
+  check(sc.reqs.gate[sc.reqs.gate.length - 1].kind === 'board', 'Screen board: gated as a board');
+  await sp.click(item + ' [data-gm="sc-show"]');
+  check(await until(async () => /WHAT WE KNOW/.test((await display()).text || ''), 8000), 'Screen board: Show puts the board on the iPad');
+  await api('PUT', '/gm/display', { kind: 'blank' });
+  await Sc.c.close();
+  // a Ref card with a bad page cite gets a small flag; it does not block anything
+  const Cf = await open('#gm', { mode: 'card' });
+  check(await Cf.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 }).then(() => true, () => false) && await until(async () => Cf.seen.sc.reqs.gate.some((r) => r.kind === 'card'), 15000), 'Cite flag: the Ref card with a page cite was spot-checked');
+  const cg = Cf.seen.sc.reqs.gate.find((r) => r.kind === 'card');
+  check(cg && cg.cites && cg.cites.join() === 'p. 12', 'Cite flag: the cite was sent for the check (' + JSON.stringify(cg && cg.cites) + ')');
+  await Cf.page.keyboard.press('a');
+  check(await Cf.page.waitForSelector('.gm-assist .as-card .as-citeflag', { timeout: 8000 }).then(() => true, () => false), 'Cite flag: the card carries a small "cite?" flag');
+  check(/Invented rule slip/.test(await Cf.page.textContent('.gm-assist .as-card .as-text')), 'Cite flag: and the card is shown as before');
+  await Cf.c.close();
 
   // ---- a phone: no box ----
   await api('PATCH', '/gm/stt', { want: 'on' });
