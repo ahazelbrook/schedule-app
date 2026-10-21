@@ -351,7 +351,13 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
 
     // 'tick' wakes the Showrunner, paced by its 10-minute cooldown; with nothing else woken a tick costs no model call
     const verdict = decide({ flags: flags.concat('tick'), now: t0, lastRun, inFlight, spent: spentBefore + thisTick, cap, wakes, onStage: !!npc });
-    if (!verdict.seats.length) return done([], flags, last);
+    // a quiet tick still releases a Ref card the gap held back (one cheap read, only when no seat woke): without it a slip held behind
+    // another seat's card would go stale before any flag woke a seat again
+    let held = null;
+    if (!verdict.seats.length) {
+      held = await heldRefs(db, campaign, t0);
+      if (!held.length) return done([], flags, last);
+    }
 
     const recentText = formatLines(tail, speakers);
     const user = 'Last four minutes, up to ' + hhmm(t0) + ':\n' + recentText;
@@ -373,7 +379,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const recent = await shownCards(db, campaign, t0);
     const candidates = results.map((x) => (x.r ? toCandidate(x.name, x.r.json, { recent, now: t0 }) : null));
     // a Ref card held back earlier waits in the log; it competes with this tick's own until it goes stale
-    const pending = pendingRefs(await heldRefs(db, campaign, t0), { recent, now: t0 });
+    const pending = pendingRefs(held || await heldRefs(db, campaign, t0), { recent, now: t0 });
     const edit = merge(candidates.concat(pending), { now: t0, lastShownAt: await lastShown(db, campaign, t0) });
     const at = new Date(now()).toISOString();
     const rows = results.map((x, i) => {
@@ -400,7 +406,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       rows.push(logRow(db, campaign, { at, session, seat: 'stall', cfg: sx.cfg, usage: sx.r && sx.r.usage, cost: sx.r && sx.r.cost, flags, timing: sx.timing,
         card: sx.r ? { out: sx.r.json, ...(st ? { stall: 1, text: st.offer, keys: st.keys } : {}) } : { error: errors.find((e) => e.seat === 'stall')?.error || 'no reply' } }));
     }
-    await db.batch(rows);
+    if (rows.length) await db.batch(rows);
     const cardOut = edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}) }] : [];
     const updatesOut = edit.updates.flatMap((u) => (u.items || [{ key: (u.keys || [])[0] || '', text: u.text }]).map((it) => ({ seat: 'ledger', at, key: it.key, text: it.text })));
     return done(cardOut, flags, last, updatesOut, { voice: voiceOut, stall: stallOut });

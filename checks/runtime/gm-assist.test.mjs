@@ -1239,6 +1239,27 @@ await test('tick: every new seat call logs its secs and stop reason, even a fail
   assert.equal(by.stall.error, 'call failed'); assert.deepEqual(out.errors, [{ seat: 'stall', error: 'call failed' }]);
 });
 
+await test('tick: a Ref slip the gap held back (behind another seat\'s card) is released by a later quiet tick, before it goes stale', async () => {
+  clock.t = Date.parse('2030-03-08T09:00:00.000Z');
+  const s = await setup(FULL);
+  await seed(s, 'showrunner', clock.t - 60_000);
+  await seed(s, 'showrunner', clock.t - 90_000, 0, JSON.stringify({ shown: 1, text: 'pacing note', keys: ['showrunner:x'] }));
+  await s.lines(2);
+  s.replies.tripwire = { ...NONE, roll_talk: true };
+  let out = await body(await s.post('tick', {}));
+  assert.deepEqual(out.cards, [], 'held behind the pacing note');
+  assert.equal(s.rows().filter((r) => r.seat === 'ref').length, 1);
+  clock.t += 3.6 * 60_000; await s.lines(2); s.calls.length = 0;
+  s.replies.tripwire = { ...NONE };
+  out = await body(await s.post('tick', {}));
+  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire'], 'no seat woke');
+  assert.equal(out.cards.length, 1); assert.equal(out.cards[0].seat, 'ref', 'the held slip shows now');
+  // and it shows once: the next quiet tick has nothing pending
+  clock.t += 60_000; await s.lines(2);
+  out = await body(await s.post('tick', {}));
+  assert.deepEqual(out.cards, []);
+});
+
 await test('WP4: the prompts name how far back Showrunner and Mystery read, and the replay script drives the real endpoint', () => {
   assert.equal(showrunnerUser({ stamp: '22:10', talk: 'T' }), 'Talk of the last 20 minutes, up to 22:10 (earlier talk is not shown):\nT');
   assert.equal(mysteryUser({ stamp: '22:10', talk: 'T' }), 'Talk of the last 15 minutes, up to 22:10 (earlier talk is not shown):\nT');
