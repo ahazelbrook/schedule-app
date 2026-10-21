@@ -32,7 +32,7 @@ export const PART_RE = /^[a-z0-9-]{1,32}$/;
 // payout), shown as a carousel or spread out
 // handout: one prop image served from the git-ignored static folder app/media/handouts/ (HOSTING.md); the display carries only the file name
 export const DISPLAY_KINDS = ['blank', 'dark', 'svg', 'npc', 'text', 'rule', 'cards', 'handout'];
-export const HANDOUT_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}.(?:png|jpe?g|webp|svg)$/i;
+export const HANDOUT_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}\.(?:png|jpe?g|gif|webp|svg)$/i;
 export const CARD_FIELDS = ['from', 'client', 'target', 'type', 'note', 'payout'];
 export const CARD_LIMITS = { cards: 8, field: 120, interval: 120 };
 

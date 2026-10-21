@@ -244,7 +244,7 @@
     return { kind: 'blank' };
   };
   Pure.HANDOUT_DIR = 'media/handouts/';
-  Pure.HANDOUT_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}.(?:png|jpe?g|webp|svg)$/i;
+  Pure.HANDOUT_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}\.(?:png|jpe?g|gif|webp|svg)$/i;
   /* the opportunity card's lines (the planning meeting): field and label, as the book's index card prints them */
   Pure.CARD_FIELDS = ['from', 'client', 'target', 'type', 'note', 'payout'];
   Pure.CARD_ROWS = [['from', 'From'], ['client', 'Client'], ['target', 'Target'], ['type', 'Type'], ['note', ''], ['payout', 'Payout']];

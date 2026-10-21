@@ -15,8 +15,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-export const WEB_EXT = ['.png', '.jpg', '.jpeg', '.webp', '.svg'];
-export const FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}\.(?:png|jpe?g|webp|svg)$/i;
+export const WEB_EXT = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
+export const FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}\.(?:png|jpe?g|gif|webp|svg)$/i;
 const NOT_IMAGES = new Set(['.md', '.json', '.txt', '.base', '.canvas']);
 export const SRC_CANDIDATES = [
   'Wiki/Games/Blades in the Dark/Campaigns/Group/handouts',
@@ -45,6 +45,12 @@ function walk(dir, out = []) {
   }
   return out;
 }
+
+/** The served name of an image: first 16 hex of the sha256 of its bytes, plus its extension in lower case. */
+export function hashName(bytes, name) {
+  return crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 16) + path.extname(name).toLowerCase().replace('.jpeg', '.jpg');
+}
+export const HASHED_RE = /^[0-9a-f]{16}\.(?:png|jpg|gif|webp|svg)$/;
 
 /** A name safe to serve and to send to the display: letters, digits, . _ - ; spaces become -; null when nothing is left. */
 export function safeName(name) {
@@ -97,14 +103,13 @@ export function scanHandouts(srcDir) {
     let text = ''; try { text = fs.readFileSync(n, 'utf8').replace(/^﻿/, ''); } catch (_) { continue; }
     for (const e of embedsOf(text)) if (!embeds.has(e.name)) embeds.set(e.name, e);
   }
-  const items = [], used = new Set(), ids = new Set();
+  const items = [], ids = new Set();
   for (const f of images) {
     const rel = posix(path.relative(srcDir, f)), base = path.basename(f);
-    let file = safeName(base);
-    if (!file) { skipped.push({ rel, why: 'name cannot be made safe' }); continue; }
-    if (used.has(file.toLowerCase())) { const ext = path.extname(file); let k = 2; while (used.has((file.slice(0, -ext.length) + '-' + k + ext).toLowerCase())) k++; file = file.slice(0, -ext.length) + '-' + k + ext; }
-    used.add(file.toLowerCase());
-    let id = slug(path.basename(file, path.extname(file))); while (ids.has(id)) id += '-x'; ids.add(id);
+    /* the served name is the content hash (16 hex of sha256) + the extension: never the vault's file name, so it cannot be guessed */
+    let bytes; try { bytes = fs.readFileSync(f); } catch (_) { skipped.push({ rel, why: 'unreadable' }); continue; }
+    const file = hashName(bytes, base);
+    let id = slug(path.basename(base, path.extname(base))); while (ids.has(id)) id += '-x'; ids.add(id);
     const em = embeds.get(base.toLowerCase());
     embeds.delete(base.toLowerCase());      /* a name used twice in the folder: the note's caption goes to the first only */
     const title = clip((em && (em.alias || em.heading)) || fromFile(base), 200);

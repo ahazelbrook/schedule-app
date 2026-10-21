@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
@@ -23,6 +24,8 @@ async function test(name, fn) { try { await fn(); passed++; console.log('PASS ' 
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4"/></svg>';
+const img = (tag) => Buffer.concat([PNG, Buffer.from(tag)]);       /* distinct bytes, so distinct hashes */
+const hn = (buf, ext) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16) + ext;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'b68-handouts-'));
 process.on('exit', () => { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) {} });
 
@@ -31,36 +34,43 @@ const GROUP = ['Wiki', 'Games', 'Blades in the Dark', 'Campaigns', 'Group', 'han
 const vault = path.join(tmp, 'vault');
 const src = path.join(vault, ...GROUP);
 fs.mkdirSync(path.join(src, 'sub'), { recursive: true });
-fs.writeFileSync(path.join(src, 'Brass Key Sketch.png'), PNG);
-fs.writeFileSync(path.join(src, 'harbour-ticket.JPG'), PNG);
-fs.writeFileSync(path.join(src, 'sub', 'harbour-ticket.jpg'), PNG);          // a name clash in another folder
+fs.writeFileSync(path.join(src, 'Brass Key Sketch.png'), img('key'));
+fs.writeFileSync(path.join(src, 'harbour-ticket.JPG'), img('ticket'));
+fs.writeFileSync(path.join(src, 'sub', 'harbour-ticket.jpg'), img('ticket2'));          // a name clash in another folder
 fs.writeFileSync(path.join(src, 'lantern_map.svg'), SVG);
-fs.writeFileSync(path.join(src, 'plain.webp'), PNG);
+fs.writeFileSync(path.join(src, 'spin.gif'), img('gif'));
+const H_KEY = hn(img('key'), '.png'), H_TICKET = hn(img('ticket'), '.jpg'), H_TICKET2 = hn(img('ticket2'), '.jpg'), H_PLAIN = hn(img('plain'), '.webp'), H_SVG = hn(Buffer.from(SVG), '.svg'), H_GIF = hn(img('gif'), '.gif');
+const H_ANIM = hn(Buffer.from('x'), '.gif');
+const HASHED = [H_KEY, H_TICKET, H_TICKET2, H_PLAIN, H_SVG, H_GIF, H_ANIM];
+fs.writeFileSync(path.join(src, 'plain.webp'), img('plain'));
 fs.writeFileSync(path.join(src, 'old-manifest.pdf'), 'x');
 fs.writeFileSync(path.join(src, 'scan.tiff'), 'x');
 fs.writeFileSync(path.join(src, 'anim.gif'), 'x');
+fs.writeFileSync(path.join(src, 'old.bmp'), 'x');
 fs.writeFileSync(path.join(src, 'notes.md'), [
   '# Invented props', '', '## The ticket stub', '![[harbour-ticket.JPG]]', 'When: after the dock clue', '',
   '## Heading for the key', '![[Brass Key Sketch.png|The brass key]]', '![[plain.webp|300]]', 'a line that is not a cue', ''].join('\n'));
-fs.writeFileSync(path.join(src, '_hidden.png'), PNG);
+fs.writeFileSync(path.join(src, '_hidden.png'), img('hidden'));
 const opts = { vault, exportedAt: '2026-10-22T00:00:00Z', repo: null };
 
 await test('scan: web images only; the rest named as skipped; hidden files ignored', () => {
   const r = X.scanHandouts(src);
-  assert.deepEqual(r.items.map((i) => i.file).sort(), ['Brass-Key-Sketch.png', 'harbour-ticket-2.jpg', 'harbour-ticket.jpg', 'lantern_map.svg', 'plain.webp'].sort());
-  assert.deepEqual(r.skipped.map((s) => s.rel).sort(), ['anim.gif', 'old-manifest.pdf', 'scan.tiff']);
+  assert.deepEqual(r.items.map((i) => i.file).sort(), HASHED.slice().sort(), 'every served name is a content hash');
+  assert.ok(r.items.every((i) => /^[0-9a-f]{16}\.[a-z]+$/.test(i.file)));
+  assert.ok(r.items.some((i) => i.file.endsWith('.gif')), 'GIF is allowed');
+  assert.deepEqual(r.skipped.map((s) => s.rel).sort(), ['old-manifest.pdf', 'old.bmp', 'scan.tiff']);
   assert.ok(r.skipped.every((s) => /not a web image/.test(s.why)));
 });
 
 await test('scan: titles from the vault (alias, then heading, then file name); cue only from a When:/Cue: line; ids unique', () => {
   const by = Object.fromEntries(X.scanHandouts(src).items.map((i) => [i.file, i]));
-  assert.equal(by['Brass-Key-Sketch.png'].title, 'The brass key');
-  assert.equal(by['harbour-ticket.jpg'].title, 'The ticket stub');
-  assert.equal(by['harbour-ticket.jpg'].when, 'after the dock clue');
-  assert.equal(by['plain.webp'].title, 'Heading for the key', 'a numeric alias is a size, not a caption');
-  assert.equal(by['plain.webp'].when, undefined, 'no cue unless the vault gives one');
-  assert.equal(by['lantern_map.svg'].title, 'lantern map');
-  assert.equal(by['harbour-ticket-2.jpg'].title, 'harbour ticket');
+  assert.equal(by[H_KEY].title, 'The brass key');
+  assert.equal(by[H_TICKET].title, 'The ticket stub');
+  assert.equal(by[H_TICKET].when, 'after the dock clue');
+  assert.equal(by[H_PLAIN].title, 'Heading for the key', 'a numeric alias is a size, not a caption');
+  assert.equal(by[H_PLAIN].when, undefined, 'no cue unless the vault gives one');
+  assert.equal(by[H_SVG].title, 'lantern map');
+  assert.equal(by[H_TICKET2].title, 'harbour ticket');
   const ids = X.scanHandouts(src).items.map((i) => i.id);
   assert.equal(new Set(ids).size, ids.length);
 });
@@ -68,7 +78,8 @@ await test('scan: titles from the vault (alias, then heading, then file name); c
 await test('buildHandouts: the part is { v, rel, items } with no source paths; no folder or no images: no part', () => {
   const part = X.buildHandouts(opts);
   assert.equal(part.v, 1); assert.equal(part.rel, GROUP.join('/'));
-  assert.equal(part.items.length, 5);
+  assert.equal(part.items.length, 7);
+  assert.ok(!JSON.stringify(part).match(/Brass|lantern_map|harbour-ticket|plain\.webp/i.source ? /Brass-Key|lantern_map\.svg|harbour-ticket\.|plain\.webp|Brass Key Sketch/ : 0), 'the vault file names are not in the pack');
   for (const i of part.items) { assert.deepEqual(Object.keys(i).filter((k) => !['id', 'title', 'file', 'when'].includes(k)), []); assert.ok(X.FILE_RE.test(i.file)); }
   assert.ok(!JSON.stringify(part).includes(tmp), 'no local path in the pack');
   assert.ok(part.src.blockSha && part.src.exportedAt);
@@ -81,28 +92,39 @@ await test('buildHandouts: the part is { v, rel, items } with no source paths; n
 
 await test('buildHandouts: warns when the images are not in app/media/handouts yet', () => {
   const repo = path.join(tmp, 'repo'); fs.mkdirSync(path.join(repo, 'app', 'media', 'handouts'), { recursive: true });
-  fs.writeFileSync(path.join(repo, 'app', 'media', 'handouts', 'plain.webp'), PNG);
+  fs.writeFileSync(path.join(repo, 'app', 'media', 'handouts', H_PLAIN), img('plain'));
   const warns = []; X.buildHandouts({ ...opts, repo, warn: (m) => warns.push(m) });
-  assert.ok(warns.some((w) => /4 of 5 image/.test(w)), warns.join('|'));
+  assert.ok(warns.some((w) => /6 of 7 image/.test(w)), warns.join('|'));
 });
 
 await test('safeName: spaces, odd characters and bad extensions', () => {
   assert.equal(X.safeName('A  b (c).PNG'), 'A-b-c.png');
   assert.equal(X.safeName('x y.png'), 'x-y.png');
   assert.equal(X.safeName('.png'), null); assert.equal(X.safeName('a.pdf'), null);
+  assert.equal(X.hashName(Buffer.from('abc'), 'Pic.JPEG'), 'ba7816bf8f01cfea.jpg');
 });
 
 await test('gm:handouts: copies, is idempotent, writes the private manifest, skips the rest, deletes nothing', () => {
   const dest = path.join(tmp, 'media'), manifest = path.join(tmp, 'gm-private', 'handouts-manifest.json');
-  fs.mkdirSync(dest, { recursive: true }); fs.writeFileSync(path.join(dest, 'older.png'), PNG);
+  const stale = 'deadbeefdeadbeef.png';
+  fs.mkdirSync(dest, { recursive: true }); fs.writeFileSync(path.join(dest, 'older.png'), PNG); fs.writeFileSync(path.join(dest, stale), PNG);
   const r1 = H.run({ vault, dest, manifest });
-  assert.equal(r1.copied, 5); assert.equal(r1.same, 0); assert.equal(r1.skipped.length, 3);
-  assert.deepEqual(fs.readdirSync(dest).sort(), ['Brass-Key-Sketch.png', 'harbour-ticket-2.jpg', 'harbour-ticket.jpg', 'lantern_map.svg', 'older.png', 'plain.webp'].sort());
-  assert.equal(JSON.parse(fs.readFileSync(manifest, 'utf8')).length, 5);
+  assert.equal(r1.copied, 7); assert.equal(r1.same, 0); assert.equal(r1.skipped.length, 3);
+  assert.deepEqual(r1.removed, [stale], 'a stale hashed file goes');
+  assert.deepEqual(fs.readdirSync(dest).sort(), HASHED.concat(['older.png']).sort(), 'only hashed names, plus a file that was not ours');
+  assert.ok(!fs.existsSync(path.join(dest, stale)));
+  assert.deepEqual(fs.readFileSync(path.join(dest, H_KEY)), img('key'), 'the bytes are the vault image');
+  assert.equal(JSON.parse(fs.readFileSync(manifest, 'utf8')).length, 7);
   const r2 = H.run({ vault, dest, manifest });
-  assert.equal(r2.copied, 0); assert.equal(r2.same, 5);
+  assert.equal(r2.copied, 0); assert.equal(r2.same, 7); assert.equal(r2.removed.length, 0);
+  /* an image changed in the vault: the new hash is copied, the old hashed file is removed */
+  fs.writeFileSync(path.join(src, 'plain.webp'), img('plain-v2'));
+  const r4 = H.run({ vault, dest, manifest });
+  assert.equal(r4.copied, 1); assert.deepEqual(r4.removed, [H_PLAIN]); assert.ok(fs.existsSync(path.join(dest, hn(img('plain-v2'), '.webp'))));
+  fs.writeFileSync(path.join(src, 'plain.webp'), img('plain'));
+  H.run({ vault, dest, manifest });
   const dry = path.join(tmp, 'dry'); const r3 = H.run({ vault, dest: dry, manifest: path.join(tmp, 'm.json'), dry: true });
-  assert.equal(r3.copied, 5); assert.ok(!fs.existsSync(dry));
+  assert.equal(r3.copied, 7); assert.ok(!fs.existsSync(dry));
   assert.match(H.run({ vault: path.join(tmp, 'nowhere'), dest }).error, /no handouts folder/);
   assert.match(H.run({ vault, src: 'Not/There', dest }).error, /Not\/There/);
 });
@@ -111,7 +133,7 @@ await test('gm:handouts CLI: prints counts and names, no titles', () => {
   const dest = path.join(tmp, 'cli-media');
   const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'gm-handouts.mjs'), '--vault', vault, '--dest', dest, '--dry'], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /images 5: copied 5, already there 0, skipped 3/); assert.match(r.stdout, /skipped old-manifest\.pdf/);
+  assert.match(r.stdout, /images 7: copied 7, already there 0, skipped 3, stale removed 0/); assert.match(r.stdout, /skipped old-manifest\.pdf/);
   assert.ok(!/ticket stub|brass key/i.test(r.stdout));
 });
 
@@ -119,7 +141,7 @@ await test('server: cleanDisplay accepts a handout, keeps only file/title/showTi
   assert.ok(DISPLAY_KINDS.includes('handout'));
   assert.deepEqual(cleanDisplay({ kind: 'handout', title: 'The key', file: 'Brass-Key.png', showTitle: true, extra: 'x', md: 'x' }), { kind: 'handout', title: 'The key', caption: '', file: 'Brass-Key.png', showTitle: true });
   assert.equal(cleanDisplay({ kind: 'handout', file: 'a.webp', showTitle: 'yes' }).showTitle, false);
-  for (const bad of ['', '../x.png', 'a/b.png', 'a\\b.png', 'x.pdf', '.png', 'a b.png', 'https://x/y.png', 'a..b/../c.png']) assert.throws(() => cleanDisplay({ kind: 'handout', file: bad }), (e) => e.status === 400, bad);
+  for (const bad of ['', '../x.png', 'a/b.png', 'a\\b.png', 'x.pdf', '.png', 'a b.png', 'x.bmp', 'https://x/y.png', 'a..b/../c.png']) assert.throws(() => cleanDisplay({ kind: 'handout', file: bad }), (e) => e.status === 400, bad);
   assert.throws(() => cleanDisplay({ kind: 'handout' }), (e) => e.status === 400);
 });
 

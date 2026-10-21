@@ -400,7 +400,7 @@
   P.displayLine = displayLine;
   /* Handouts (GM.md "Handouts"): the pack's `handouts` part is the list [{ id, title, file, when? }] (private; the images are static files in
      media/handouts/). The iPad is sent one item only: { kind: 'handout', title, file, showTitle }, never the list. */
-  var HANDOUT_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}.(?:png|jpe?g|webp|svg)$/i;
+  var HANDOUT_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}\.(?:png|jpe?g|gif|webp|svg)$/i;
   P.HANDOUT_DIR = 'media/handouts/';
   P.handoutList = function (body) {
     var seen = {};

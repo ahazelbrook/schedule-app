@@ -590,10 +590,12 @@ The display page's NPC view reads `npcs`, which this role cannot; it falls back 
 
 The prepared props (the images the vault holds for the table) as a list the GM can show directly, and that Claude can suggest.
 - **Images** are git-ignored static files in `app/media/handouts/` (like the calling cards: art that is not ours to publish; deployed from
-  disk, never committed). `npm run gm:handouts` copies the web images (png, jpg, webp, svg) from the vault's handouts folder
+  disk, never committed). `npm run gm:handouts` copies the web images (png, jpg, gif, webp, svg) from the vault's handouts folder
   (`Wiki/Games/Blades in the Dark/Campaigns/Group/handouts`, or `.../props`, or the same two under `Projects/`; `-- --src "<folder in the vault>"` for
-  another) and names anything else (pdf, tiff, gif) as skipped. File names are made safe (spaces become `-`); nothing in the destination
-  is deleted. Run it on the deploying PC before `npm run deploy`. It also writes a private copy of the list to `gm-private/handouts-manifest.json`.
+  another) and names anything else (pdf, tiff...) as skipped. Each image is copied under a **content-hash name** (the first 16 hex of the
+  sha256 of its bytes, plus its extension), never its vault file name, so a player cannot guess a URL; the manifest's `file` is that name and the
+  title stays in the manifest only. Hashed files no longer in the list are removed (a changed image leaves its old file behind otherwise); other
+  files in the folder are left alone. Run it on the deploying PC before `npm run deploy`. It also writes a private copy of the list to `gm-private/handouts-manifest.json`.
 - **Manifest** is the pack part `handouts` (`npm run gm:pack`, `lib/handouts-export.mjs`): `{ v: 1, rel, items: [{ id, title, file, when? }] }`.
   `title` is the caption of the embed in a note beside the images (`![[file.png|Caption]]`), else the heading above the embed, else the
   file name; `when` is a line straight after the embed that starts `When:` or `Cue:`. Nothing is invented. No images: no part. gm:pack warns when
