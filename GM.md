@@ -632,6 +632,16 @@ transcript lines still on the server, runs `gm:pull` for that session, sets the 
 first and last time, unnamed speakers), and reports the table's session counter against the vault (`--counter N` sets
 it). `--yes --prune` then clears the server's copy of the lines the vault has. Stop listening first: with listening
 still on it leaves the transcript alone.
+With `--yes`, `gm:after` also runs the **Night Shift** (step 3c): on the PC, Claude reads the session's transcript from the vault
+and the local pack's assist prefix and drafts the night's paperwork (a table of every roll with its acting character,
+position, effect, dots, whether it was pushed and the result; a session log; possible XP triggers; a feedback card; group-chat
+highlights; a "previously on"; a prep skeleton). Sorters read the transcript an hour at a time, then a writer drafts from their
+notes. It files the lot under one heading, `## Night Shift draft`, at the end of the session note. A note that already has the
+heading is skipped before anything is spent; `--nightshift-force` replaces only that block. XP is never marked: the draft lists
+candidates and says the GM marks them. It needs `B68_ANTHROPIC_KEY` (without it the step is skipped with a one-line note and the
+rest runs as usual); `--no-nightshift` skips it, `--nightshift-cap <$>` stops it cleanly at a spend (default $3; nothing is filed
+if it stops), and `--nightshift-mode single` tries one call over the whole transcript instead. The plan (no `--yes`) spends
+nothing. Check: `checks/runtime/gm-nightshift.test.mjs` (mocked client, no network).
 Endpoints are GM only. The table display sign-in (`DISPLAY_EMAILS`) may get a token, post lines and report its status,
 but not read the transcript; the display read it gets carries `want` and `session` and never a line, a name or a report
 (`checks/api/display-role.mjs` posts lines with a marker and looks for it in every shape of that read). The transcript is never in `/api/export`. Migration `0007_gm_stt.sql`. Checks:

@@ -13,6 +13,13 @@
 //   3b. Claude's notes: the night's shown Ref rule slips and Clerk notes, read from the assist log (gm_assist_log) through the same
 //      database access as the rest, appended under "## Claude's notes" in the session note (append only; a line already there,
 //      by its ^b68-a<row> id, is not added twice) and marked filed so the GM page can say "saved to history". Vault side only.
+//   3c. The Night Shift: Claude drafts the night's paperwork (a rolls table with position and dots, session log, XP candidates,
+//      feedback card, group-chat highlights, "previously on", prep skeleton) from the vault transcript and the local pack's assist
+//      prefix, and files it under ONE heading, "## Night Shift draft", at the end of the session note. Needs B68_ANTHROPIC_KEY
+//      (without it the step is skipped with a note). --no-nightshift skips it; --nightshift-cap <$> stops it cleanly at a spend
+//      (default 3); --nightshift-mode single|two-stage; a note that already has the heading is skipped, before anything is spent,
+//      unless --nightshift-force, which replaces only that block. XP is never marked: the draft lists candidates and says so.
+//      Without --yes it only says what it would do.
 //   4. The two transcripts side by side: the laptop's (Obsidian transcriber, b68g-sNN-transcript.md) and the iPad's
 //      (-transcript-ipad.md, or the iPad's own note when it is the only one): lines, first and last time, speakers named.
 //   5. --prune: delete the copied lines from the server (only lines the vault has; only with --yes).
@@ -31,6 +38,7 @@ import { loadLedger, campaignLedger, saveLedger } from './lib/ledger.mjs';
 import { pass, probe } from './gm-transcript.mjs';
 import { run as syncRun } from './gm-sync.mjs';
 import { loadCampaignRow, campaignDoc, writeCampaign } from '../functions/_lib/campaign.js';
+import { parseTranscript, runNightShift, renderDraft, applyDraft, hasDraft, loadPrefix, rollStats, HEADING as NIGHT_HEADING, DEFAULT_CAP } from './lib/nightshift.mjs';
 
 export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -44,6 +52,10 @@ export function parseArgs(argv) {
     else if (a === '--vault') o.vault = need(++i, a);
     else if (a === '--session') { const s = Number(need(++i, a)); if (!(s > 0)) throw new Error('--session needs a session number'); o.session = s; }
     else if (a === '--counter') { const s = Number(need(++i, a)); if (!(Number.isInteger(s) && s >= 0 && s <= 9999)) throw new Error('--counter takes a whole number'); o.counter = s; }
+    else if (a === '--no-nightshift') o.noNightshift = true;
+    else if (a === '--nightshift-force') o.nightshiftForce = true;
+    else if (a === '--nightshift-cap') { const s = Number(need(++i, a)); if (!(s > 0 && s <= 100)) throw new Error('--nightshift-cap takes a dollar amount, e.g. 3'); o.nightshiftCap = s; }
+    else if (a === '--nightshift-mode') { const s = need(++i, a); if (s !== 'single' && s !== 'two-stage') throw new Error('--nightshift-mode is single or two-stage'); o.nightshiftMode = s; }
     else if (a === '--help' || a === '-h') o.help = true;
     else throw new Error('unknown argument: ' + a);
   }
@@ -111,6 +123,57 @@ export function addClaudeNotes(vault, rel, items) {
     }
     return fromLines(lines);
   });
+}
+
+/** The session's transcript lines from the vault: the laptop's or the iPad's note, whichever has more. -> parseTranscript() lines. */
+export function sessionTranscript(vault, N) {
+  const pad = /^\d+$/.test(String(N)) ? String(N).padStart(2, '0') : String(N);
+  const rd = (name) => { try { const r = readNote(abs(vault, SESSIONS + '/' + name)); return r ? parseTranscript(r.text) : []; } catch (_) { return []; } };
+  const a = rd('b68g-s' + pad + '-transcript.md'), b = rd('b68g-s' + pad + '-transcript-ipad.md');
+  return b.length > a.length ? b : a;
+}
+
+/**
+ * Step 3c. Returns { code } (0 unless the draft could not be filed). Never throws; a skip is a note, not a failure.
+ * env/client/makeClient are for tests; the key is read from B68_ANTHROPIC_KEY only.
+ */
+export async function nightShiftStep(opts, { note, N, label, privateDir, say, now }) {
+  const H = '3c. Night Shift';
+  if (opts.noNightshift) { say(H, ['skipped (--no-nightshift)']); return { code: 0 }; }
+  const key = (opts.env || process.env).B68_ANTHROPIC_KEY;
+  if (!key && !opts.client) { say(H, ['skipped: B68_ANTHROPIC_KEY is not set (a user environment variable). Everything else ran as usual.']); return { code: 0 }; }
+  try {
+    const cur = readNote(abs(opts.vault, note.rel));
+    if (cur && hasDraft(cur.text) && !opts.nightshiftForce) { say(H, [label + ' already has "## ' + NIGHT_HEADING + '": skipped, nothing spent (--nightshift-force replaces that block)']); return { code: 0 }; }
+    const lines = sessionTranscript(opts.vault, N);
+    if (!lines.length) { say(H, ['skipped: no transcript lines for session ' + N + ' in the vault yet']); return { code: 0 }; }
+    const { prefix, from } = opts.prefix != null ? { prefix: opts.prefix, from: 'given' } : await loadPrefix({ privateDir, vault: opts.vault });
+    if (!prefix) { say(H, ['skipped: no assist prefix (the local pack has no assist part and the vault could not build one): run gm:pack first']); return { code: 0 }; }
+    const mode = opts.nightshiftMode || 'two-stage', cap = opts.nightshiftCap || DEFAULT_CAP;
+    if (!opts.yes) {
+      say(H, ['would draft ' + label + '\'s paperwork from ' + lines.length + ' transcript lines (' + mode + ', prefix ' + from + '), spend cap $' + cap.toFixed(2),
+        'and file it under "## ' + NIGHT_HEADING + '" at the end of the note' + (cur && hasDraft(cur.text) ? ' (replacing the block that is there: --nightshift-force)' : '')]);
+      return { code: 0 };
+    }
+    let client = opts.client;
+    if (!client) { const { makeClient } = await import('../functions/_lib/assist/claude.js'); client = makeClient(key); }
+    const r = await runNightShift({ client, prefix, lines, mode, maxSpend: cap });
+    if (!r.ok) {
+      if (r.sorted) { try { fs.mkdirSync(privateDir, { recursive: true }); fs.writeFileSync(path.join(privateDir, 'nightshift-s' + N + '-partial.json'), JSON.stringify(r.sorted)); } catch (_) {} }
+      say(H, ['stopped: ' + r.reason + '. Spent $' + r.spend.toFixed(3) + '. Nothing was filed.' + (r.sorted ? ' The sorters\' notes are in gm-private/nightshift-s' + N + '-partial.json.' : '')]);
+      return { code: 0 };
+    }
+    const block = renderDraft(r, { date: dmy(new Date(now)), session: N });
+    let action = '';
+    editNote(opts.vault, note.rel, (n) => { const a = applyDraft(n.text, block, { force: !!opts.nightshiftForce }); action = a.action; return a.action === 'present' ? null : a.text; });
+    const s = rollStats(r.rolls);
+    say(H, [(action === 'replaced' ? 'replaced' : action === 'present' ? 'left (already there)' : 'filed') + ' "## ' + NIGHT_HEADING + '" in ' + label + ': ' + s.total + ' rolls (' + s.complete + ' with position and dots), spent $' + r.spend.toFixed(2) + ' of $' + cap.toFixed(2),
+      'XP is not marked: the draft lists candidates only']);
+    return { code: 0 };
+  } catch (e) {
+    say(H, ['could not run it: ' + (e && e.message || e) + '. Nothing else was affected.']);
+    return { code: 1 };
+  }
 }
 
 /** One run. opts: parseArgs() output plus, for tests, { db, exec, now, print, privateDir, campaign, host }. Returns { code }. */
@@ -182,6 +245,9 @@ export async function run(opts) {
     code = 1;
   }
 
+  // 3c. the Night Shift: drafts the night's paperwork into the session note (skipped without B68_ANTHROPIC_KEY or with --no-nightshift)
+  if ((await nightShiftStep(opts, { note: w.note, N, label, privateDir, say, now })).code) code = 1;
+
   // 4. the two transcripts
   const dir = SESSIONS + '/', pad = /^\d+$/.test(String(N)) ? String(N).padStart(2, '0') : String(N);
   const rd = (rel) => { try { const r = readNote(abs(opts.vault, rel)); return r ? r.text : null; } catch (_) { return null; } };
@@ -217,6 +283,6 @@ export async function run(opts) {
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   let o;
   try { o = parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(2); }
-  if (o.help) { console.log('node scripts/gm-after.mjs [--session <N>] [--yes] [--prune] [--counter <N>] [--vault <path>]'); process.exit(0); }
+  if (o.help) { console.log('node scripts/gm-after.mjs [--session <N>] [--yes] [--prune] [--counter <N>] [--vault <path>] [--no-nightshift] [--nightshift-cap <$>] [--nightshift-mode single|two-stage] [--nightshift-force]'); process.exit(0); }
   run(o).then(({ code }) => process.exit(code), (e) => { console.error('gm-after failed: ' + (e && e.stack || e)); process.exit(2); });
 }

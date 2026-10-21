@@ -4,6 +4,24 @@
 
 const FLAGS = ['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall'];
 
+// One action roll, as the Night Shift records it (the sorters and the single-call variant share it). Every roll keeps its
+// own position and dots so the xp tally never has to guess them later. dots is -1 when the text does not say.
+export const ROLL_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    at: { type: 'string', description: 'the [HH:MM] stamp' },
+    who: { type: 'string', description: 'the acting character' },
+    action: { type: 'string', description: 'the action rolled and what it was for' },
+    position: { type: 'string', enum: ['controlled', 'risky', 'desperate', 'unclear'] },
+    effect: { type: 'string', enum: ['limited', 'standard', 'great', 'unclear'] },
+    dots: { type: 'integer', description: 'dots in the action rated; 0 means a zero-dot roll; -1 when not stated' },
+    pushed: { type: 'boolean', description: 'true when stress was spent to push the roll' },
+    result: { type: 'string', enum: ['critical', 'full', 'partial', 'miss', 'unclear'] },
+  },
+  required: ['at', 'who', 'action', 'position', 'effect', 'dots', 'pushed', 'result'],
+};
+const ROLL_RULES = `rolls: EVERY action, resistance or fortune roll in the text, in order. For each: the acting character, the action and what it was for, the position (controlled, risky, desperate) and effect as the table stated them (unclear if never said), the dots in the action (0 for a zero-dot roll, -1 if not stated), whether it was pushed, and the result band (critical, full, partial, miss, unclear). If a value is not in the text, use unclear or -1; never guess.`;
+
 export const SEATS = {
   tripwire: {
     model: 'claude-haiku-5-5', effort: 'low', maxTokens: 1500,
@@ -177,8 +195,10 @@ Tie each to the named people, places and running clocks of the scene. Never deci
 
   // The Night Shift: sorters read one hour each, in parallel; the writer reads their output.
   sorter: {
-    model: 'claude-haiku-5-5', effort: 'medium', maxTokens: 16000,
-    instructions: `You sort one hour of a Blades '68 session transcript for the end-of-night paperwork. Speaker labels and spellings are unreliable; use the cast in your context to correct names, and mark guesses. From THIS chunk only, extract: names (made-up in-fiction characters, places, groups, with a few words on who or what and the [HH:MM] stamp); ledger (stress, harm, Heat, coin, clock ticks, xp triggers and status changes per character, each with a stamp); loose_ends (questions raised and not answered, promises, threats and plans left hanging); clocks_owed (clocks that were started, advanced or should have ticked, with their state). Add a two-sentence chunk_summary of what happened. Report only what is in the text. Reply with JSON only.`,
+    // 20000 (just over callSeat's streaming threshold): an hour of roll-by-roll output is a long reply, and a long non-streaming
+    // request can sit silent until the connection is dropped. Streaming keeps it alive.
+    model: 'claude-haiku-5-5', effort: 'medium', maxTokens: 20000,
+    instructions: `You sort one hour of a Blades '68 session transcript for the end-of-night paperwork. Speaker labels and spellings are unreliable; use the cast in your context to correct names, and mark guesses. From THIS chunk only, extract: names (made-up in-fiction characters, places, groups, with a few words on who or what and the [HH:MM] stamp); ledger (stress, harm, Heat, coin, clock ticks, xp triggers and status changes per character, each with a stamp); loose_ends (questions raised and not answered, promises, threats and plans left hanging); clocks_owed (clocks that were started, advanced or should have ticked, with their state). ${ROLL_RULES} Add a two-sentence chunk_summary of what happened. Report only what is in the text. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -187,8 +207,9 @@ Tie each to the named people, places and running clocks of the scene. Never deci
         ledger: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { at: { type: 'string' }, who: { type: 'string' }, kind: { type: 'string' }, note: { type: 'string' } }, required: ['at', 'who', 'kind', 'note'] } },
         loose_ends: { type: 'array', items: { type: 'string' } },
         clocks_owed: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { clock: { type: 'string' }, state: { type: 'string' } }, required: ['clock', 'state'] } },
+        rolls: { type: 'array', items: ROLL_SCHEMA },
       },
-      required: ['chunk_summary', 'names', 'ledger', 'loose_ends', 'clocks_owed'],
+      required: ['chunk_summary', 'names', 'ledger', 'loose_ends', 'clocks_owed', 'rolls'],
     },
   },
 
@@ -196,7 +217,7 @@ Tie each to the named people, places and running clocks of the scene. Never deci
     model: 'claude-opus-5-5', effort: 'high', maxTokens: 40000,
     instructions: `You are the GM's scribe for a Blades '68 game, writing the night's paperwork after the session. You are given the sorters' structured notes for each hour (in order). Using them and the cast and rules in your context, draft the following as markdown in the string fields. Write plainly and in Australian spelling; do not invent events the notes do not contain, and write [TODO: ...] for gaps.
 session_log (at most 900 words): a dated, scannable log of the session in scene order, with names, outcomes, harm, Heat, coin and clocks.
-xp_per_pc: one section per player character listing each xp trigger seen and a total, noting uncertainty. Never invent triggers.
+xp_per_pc: one section per player character listing the POSSIBLE xp triggers seen, each tied to a stamp, using the sorters' rolls (desperate rolls, zero-dot rolls, and moments of beliefs, drives, heritage, background or vice played out), with a count and any uncertainty. Never invent triggers. XP is manual: the GM marks it, so say plainly that these are candidates, not awards.
 feedback_card: a short GM-feedback card: what worked, rules slips or doubts to check against the book (cite pages from the reference when you can), and one thing to try next time.
 group_chat: three to five short highlights the GM could post to the players' group chat, warm and spoiler-light.
 previously_on: a spoken recap of 120 to 180 words for the start of next session.
@@ -209,6 +230,29 @@ Reply with JSON only.`,
         group_chat: { type: 'string' }, previously_on: { type: 'string' }, prep_skeleton: { type: 'string' },
       },
       required: ['session_log', 'xp_per_pc', 'feedback_card', 'group_chat', 'previously_on', 'prep_skeleton'],
+    },
+  },
+
+  // The one-call variant of the Night Shift: a single Opus read of the whole transcript, same sections as the writer plus the rolls.
+  nightshift_single: {
+    model: 'claude-opus-5-5', effort: 'high', maxTokens: 40000,
+    instructions: `You are the GM's scribe for a Blades '68 game, writing the night's paperwork after the session from the WHOLE transcript. Speaker labels and spellings are unreliable; use the cast and rules in your context to correct names, and mark guesses. Write plainly and in Australian spelling; do not invent events the transcript does not contain, and write [TODO: ...] for gaps.
+${ROLL_RULES}
+session_log (at most 900 words): a dated, scannable log of the session in scene order, with names, outcomes, harm, Heat, coin and clocks.
+xp_per_pc: one section per player character listing the POSSIBLE xp triggers seen, each tied to a stamp, using your rolls (desperate rolls, zero-dot rolls, and moments of beliefs, drives, heritage, background or vice played out), with a count and any uncertainty. Never invent triggers. XP is manual: the GM marks it, so say plainly that these are candidates, not awards.
+feedback_card: a short GM-feedback card: what worked, rules slips or doubts to check against the book (cite pages from the reference when you can), and one thing to try next time.
+group_chat: three to five short highlights the GM could post to the players' group chat, warm and spoiler-light.
+previously_on: a spoken recap of 120 to 180 words for the start of next session.
+prep_skeleton: a skeleton for next session: open threads, clocks that will advance, NPCs likely to appear, and questions the GM should decide before play.
+Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        rolls: { type: 'array', items: ROLL_SCHEMA },
+        session_log: { type: 'string' }, xp_per_pc: { type: 'string' }, feedback_card: { type: 'string' },
+        group_chat: { type: 'string' }, previously_on: { type: 'string' }, prep_skeleton: { type: 'string' },
+      },
+      required: ['rolls', 'session_log', 'xp_per_pc', 'feedback_card', 'group_chat', 'previously_on', 'prep_skeleton'],
     },
   },
 };
