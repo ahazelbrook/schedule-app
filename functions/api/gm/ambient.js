@@ -10,6 +10,7 @@
 //   crew { heat 0-9, wanted 0-4 }    score null | { name, district, target (at most 200 characters each),
 //                                                   reveal [public|working|controlled|secure], view 'plan'|'rings',
 //                                                   board, iso (player-safe svgs, as for the display) } (`at` is set here)
+//   wire null | [{ id, text }]   up to 6 in-world bulletins (text at most 240 characters) the display lays over the playing scene, one at a time
 // The stored document is at most 1.4 MiB.
 
 import { getDb } from '../../_lib/db.js';
