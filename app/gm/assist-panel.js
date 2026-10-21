@@ -16,11 +16,15 @@
          gm        window.claude.gm (stt, assistTick, assistFit)
          draws     (position) -> { low, mid } | null: the console's own pre-rolled 1-3 and 4-5 draws for that position; the Fixer
                    fits them (the server refuses a fit without them)
+         onStage   () -> the name of the NPC on stage ('' when none): sent with each tick, and Voice only runs when it is there
+         onVoice   (voice | null): Voice's lines from a tick ({ who, want, lines, at }); null clears them (Listening off, the cap)
          onNote    the page's capture: "Note it" on a Ledger update and "Keep" on a card file their text as a Moment (the update
                    itself changes no state)
      ctl.open() / close() / toggle()      the box
      ctl.poll()      one polling decision now: Listening on, page visible, not paused -> one tick (resolves when done)
      ctl.fit(position, effect) -> Promise     the Fixer for a position (the "Fit it" form), with the draws from o.draws
+     ctl.another({ npc, shown }) -> Promise<{ voice } | { error } | null>   one more Voice line (POST /gm/assist/another); null when the box cannot
+     ctl.canAnother() as canFit(), and the runtime offers assistAnother
      ctl.canFit()    false on a phone, with the cap reached, or when the box is not set up: no fit call is made
      ctl.autoFit({ position, effect?, draws }, onStart?) -> Promise<{ card } | { error } | null>
                      the console's own fit, asked when the GM sets the Position. Makes NO call (resolves null) when the box cannot
@@ -41,7 +45,7 @@
   'use strict';
 
   var P = {};
-  var BANNER_MS = 12000, POLL_MS = 60000, MAX_CARDS = 40, MAX_UPDATES = 30;
+  var BANNER_MS = 12000, POLL_MS = 60000, MAX_CARDS = 40, MAX_UPDATES = 30, NPC_MAX = 80;
   var POSITIONS = ['controlled', 'risky', 'desperate'];
   var SEAT = { ref: 'Rule slip', clerk: 'Clerk', fixer: 'Fixer', ledger: 'Ledger' };
   var TIER = { all: 'Full', reduced: 'Reduced', core: 'Core only', off: 'Off: cap reached' };
@@ -308,17 +312,19 @@
     function tickOnce() {
       if (st.busy || gone) return Promise.resolve();
       st.busy = true;
-      return Promise.resolve().then(function () { return gm.assistTick(st.after); }).then(function (res) {
+      var npc = onStageName();
+      return Promise.resolve().then(function () { return npc ? gm.assistTick(st.after, npc) : gm.assistTick(st.after); }).then(function (res) {
         if (gone) return;
+        if (isObj(res) && isObj(res.voice)) sendVoice(res.voice); else if (!npc) sendVoice(null);   /* nobody on stage: nothing from Voice shows */
         var fresh = absorb(st, res, new Date().toISOString());
         st.error = ''; st.checkedAt = hhmm(new Date().toISOString());
         if (st.open) markSeen();
         else if (fresh.length) showBanner(fresh[fresh.length - 1]);
-        if (st.spend && st.spend.tier === 'off') st.paused = 'cap';
+        if (st.spend && st.spend.tier === 'off') { st.paused = 'cap'; sendVoice(null); }
       }, function (e) {
         if (gone) return;
         var k = errKind(e);
-        if (k === 'cap' || k === 'busy') st.paused = k;
+        if (k === 'cap' || k === 'busy') { st.paused = k; if (k === 'cap') sendVoice(null); }
         else if (k === 'setup') { st.paused = 'setup'; }
         else st.error = errLine(k);
       }).then(function () { st.busy = false; render(); });
@@ -329,11 +335,32 @@
       return Promise.resolve().then(function () { return gm.stt(); }).then(function (r) {
         var d = r && isObj(r.doc) ? r.doc : null, on = !!(d && d.want === 'on');
         st.listening = on;
-        if (!on) { render(); return; }
+        if (!on) { sendVoice(null); render(); return; }   /* Listening off: Voice shows nothing */
         return tickOnce();
       }, function () { /* Listening could not be read: say nothing, try next minute */ });
     }
     function resume() { st.paused = ''; st.error = ''; render(); return poll(); }
+
+    /* ---------- Voice (the NPC on stage; its lines go to the page's Rack, not to this box) ---------- */
+    function onStageName() { try { return typeof o.onStage === 'function' ? str(o.onStage()).replace(/\s+/g, ' ').trim().slice(0, NPC_MAX) : ''; } catch (e) { return ''; } }
+    function sendVoice(v) { if (typeof o.onVoice === 'function') { try { o.onVoice(v); } catch (e) {} } }
+    /* the Another button needs what the Fixer's does: a box that is set up, not capped, not a phone */
+    function canAnother() { return canFit() && !!gm && typeof gm.assistAnother === 'function'; }
+    function another(req) {
+      var npc = str(req && req.npc).replace(/\s+/g, ' ').trim(), shown = (req && Array.isArray(req.shown) ? req.shown : []).map(function (x) { return str(x).replace(/\s+/g, ' ').trim(); }).filter(Boolean).slice(-6);
+      if (!npc || !shown.length || !canAnother()) return Promise.resolve(null);
+      return Promise.resolve().then(function () { return gm.assistAnother({ npc: npc, shown: shown }); }).then(function (res) {
+        if (gone) return null;
+        if (isObj(res) && isObj(res.spend)) { absorb(st, { spend: res.spend, warnings: [] }, ''); render(); }
+        var v = res && isObj(res.voice) && Array.isArray(res.voice.lines) && res.voice.lines.length ? res.voice : null;
+        return v ? { voice: v } : { error: 'none' };
+      }, function (e) {
+        if (gone) return null;
+        var k = errKind(e);
+        if (k === 'cap') { st.paused = 'cap'; sendVoice(null); render(); }
+        return { error: k };
+      });
+    }
 
     /* ---------- the Fixer ---------- */
     function fit(position, effect) {
@@ -413,7 +440,7 @@
     if (!o.noTimer) setTimeout(function () { poll(); }, 1500);
 
     return {
-      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, poll: poll, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit,
+      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, poll: poll, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another,
       state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, banner: bannerCard ? bannerCard.text : '' })); },
       el: function () { return host; },
       destroy: function () {

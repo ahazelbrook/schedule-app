@@ -8,10 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
 import { cleanLines, addLines } from '../../functions/_lib/stt.js';
 import { decide, budgetTier, canRun, isRepeatSlip, slipKeys, COOLDOWN_MS, DEFAULT_CAP } from '../../functions/_lib/assist/conductor.js';
-import { toCandidate, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
+import { toCandidate, toVoice, toAnother, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
 import { callSeat, countTokens } from '../../functions/_lib/assist/claude.js';
 import { SEATS, WAKES } from '../../functions/_lib/assist/seats.js';
-import { makeHandler, cleanDraws, DRAW_MAX, onRequest as realHandler } from '../../functions/api/gm/assist.js';
+import { makeHandler, cleanDraws, cleanNpc, cleanShown, DRAW_MAX, onRequest as realHandler } from '../../functions/api/gm/assist.js';
 import { matchApi } from '../../worker/app.js';
 import { gmNotFound } from '../../functions/_lib/gm.js';
 
@@ -156,7 +156,7 @@ function fakeClient(replies, calls) {
         const texts = req.messages[0].content.filter((b) => b.type === 'text').map((b) => b.text);
         const ins = texts[0];
         const doc = req.messages[0].content.find((b) => b.type === 'document');
-        const seat = /listen to a live/.test(ins) ? 'tripwire' : /rules referee/.test(ins) ? 'ref' : /keep the canon/.test(ins) ? 'clerk' : /keep the ledger/.test(ins) ? 'ledger' : /fixer/.test(ins) ? 'fixer' : 'other';
+        const seat = /listen to a live/.test(ins) ? 'tripwire' : /rules referee/.test(ins) ? 'ref' : /keep the canon/.test(ins) ? 'clerk' : /keep the ledger/.test(ins) ? 'ledger' : /one more line/.test(ins) ? 'voice_plus' : /voice coach/.test(ins) ? 'voice' : /fixer/.test(ins) ? 'fixer' : 'other';
         calls.push({ seat, max: req.max_tokens, model: req.model, effort: req.output_config.effort, cached: !!doc, doc, ins, user: texts[texts.length - 1] });
         const r = replies[seat];
         if (replies.__ms) clock.t += replies.__ms[seat] || 0;          // a fake wall-clock for the call
@@ -173,6 +173,8 @@ const REPLIES = () => ({
   ref: REF_SLIP,
   ledger: { events: [], xp_totalled: false },
   clerk: { new_names: [], drift: [], clues_landed: [] },
+  voice: { who: 'Mrs Test', want: 'to be paid', line_a: 'Pay up, dear.', line_b: 'I could forget I saw you.' },
+  voice_plus: { who: 'Mrs Test', line: 'The door is open, if you are quick.' },
   fixer: { read: 'who, where, risky standard', one_three: 'a', four_five: 'b', six: 'c', crit: 'd', bargain: 'e' },
 });
 
@@ -191,8 +193,8 @@ const body = async (res) => JSON.parse(await res.text());
 const DRAWS = { low: 'Lost opportunity: the way in is shut.', mid: 'Complication: a second watcher arrives.' };
 
 await test('router: /api/gm/assist/tick and /fit reach the handler, other paths under it stay the GM-only 404', () => {
-  for (const p of ['/api/gm/assist/tick', '/api/gm/assist/tick/', '/api/gm/assist/fit']) assert.equal(matchApi(p).handler, realHandler, p);
-  for (const p of ['/api/gm/assist', '/api/gm/assist/', '/api/gm/assist/other', '/api/gm/assist/tick/x']) assert.equal(matchApi(p).handler, gmNotFound, p);
+  for (const p of ['/api/gm/assist/tick', '/api/gm/assist/tick/', '/api/gm/assist/fit', '/api/gm/assist/another']) assert.equal(matchApi(p).handler, realHandler, p);
+  for (const p of ['/api/gm/assist', '/api/gm/assist/', '/api/gm/assist/other', '/api/gm/assist/another/x', '/api/gm/assist/tick/x']) assert.equal(matchApi(p).handler, gmNotFound, p);
 });
 
 await test('a player, the table display and an unknown caller get 403 on every method, before the body, the method check or the database', async () => {
@@ -702,6 +704,273 @@ await test('replay draws: from a JSON file, or drawn from a pack\'s console part
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'gm-assist-replay.mjs'), 'utf8');
   assert.ok(/arg\('fixer-at'\)/.test(src) && /fixer-moments\.md/.test(src) && /--draws-file/.test(src), 'the script takes --fixer-at with draws and writes fixer-moments.md');
+});
+
+// ---------- Voice and Another (WP3) ----------
+await test('conductor: Voice wakes on npc_change and each minute, but only with an NPC on stage; Ref goes first', () => {
+  assert.deepEqual(WAKES.voice, ['npc_change']);
+  assert.deepEqual(decide({ flags: ['npc_change'], now: T }).seats, [], 'no NPC on stage: silence, even on npc_change');
+  assert.deepEqual(decide({ flags: [], now: T }).seats, []);
+  assert.deepEqual(decide({ flags: ['npc_change'], now: T, onStage: true }).seats, ['voice']);
+  assert.deepEqual(decide({ flags: [], now: T, onStage: true }).seats, ['voice'], 'the per-minute wake');
+  assert.deepEqual(decide({ flags: ['roll_talk', 'npc_change'], now: T, onStage: true }).seats, ['ref', 'ledger', 'voice'], 'Ref first, Voice last');
+  assert.deepEqual(decide({ flags: ['npc_change'], now: T, onStage: true }).skipped, []);
+});
+
+await test('conductor: Voice has a gap shorter than a tick, one in flight, drops at 85% of the cap; voice_plus stays until the cap', () => {
+  assert.ok(COOLDOWN_MS.voice < 60_000, 'a tick about each minute must find Voice ready again');
+  let d = decide({ flags: [], now: T, onStage: true, lastRun: { voice: T - COOLDOWN_MS.voice + 1 } });
+  assert.deepEqual(d.seats, []); assert.deepEqual(d.skipped, [{ seat: 'voice', why: 'cooldown' }]);
+  assert.deepEqual(decide({ flags: [], now: T, onStage: true, lastRun: { voice: T - COOLDOWN_MS.voice } }).seats, ['voice']);
+  d = decide({ flags: ['npc_change'], now: T, onStage: true, inFlight: ['voice'] });
+  assert.deepEqual(d.skipped, [{ seat: 'voice', why: 'in-flight' }]);
+  assert.deepEqual(decide({ flags: [], now: T, onStage: true, spent: 13, cap: 20 }).seats, ['voice'], 'reduced still has Voice');
+  assert.deepEqual(decide({ flags: [], now: T, onStage: true, spent: 18, cap: 20 }).seats, [], 'core: Voice is dropped');
+  assert.deepEqual(decide({ flags: [], now: T, onStage: true, spent: 20, cap: 20 }).seats, []);
+  assert.equal(canRun('voice_plus', { now: T, tier: 'core' }).ok, true);
+  assert.equal(canRun('voice_plus', { now: T, tier: 'off' }).why, 'budget');
+  assert.equal(canRun('voice_plus', { now: T, lastRun: { voice_plus: T - 1000 } }).why, 'cooldown');
+});
+
+await test('seats: voice_plus is Opus 5.5 at medium effort and its instructions stay generic', () => {
+  assert.equal(SEATS.voice_plus.model, 'claude-opus-5-5'); assert.equal(SEATS.voice_plus.effort, 'medium');
+  assert.deepEqual(SEATS.voice_plus.schema.required, ['who', 'line']);
+  assert.equal(SEATS.voice.model, 'claude-sonnet-5-5');
+});
+
+await test('editor: Voice lines already shown in the last 10 minutes are dropped; nobody on stage or no lines is nothing', () => {
+  const j = { who: 'Mrs Test', want: 'to be paid', line_a: 'Pay up, dear.', line_b: 'I could forget I saw you.' };
+  const v = toVoice(j, { now: T });
+  assert.deepEqual(v.lines, ['Pay up, dear.', 'I could forget I saw you.']); assert.equal(v.who, 'Mrs Test'); assert.equal(v.keys.length, 2);
+  const w = toVoice({ ...j, line_b: 'A new one.' }, { recent: [{ at: T, keys: v.keys }], now: T + 60_000 });
+  assert.deepEqual(w.lines, ['A new one.'], 'the repeated line is dropped, the new one stays');
+  assert.equal(toVoice(j, { recent: [{ at: T, keys: v.keys }], now: T + 60_000 }), null, 'both repeated: nothing');
+  assert.ok(toVoice(j, { recent: [{ at: T, keys: v.keys }], now: T + 11 * 60_000 }), 'back after 10 minutes');
+  assert.equal(toVoice({ ...j, who: '' }, { now: T }), null);
+  assert.equal(toVoice({ ...j, line_a: '', line_b: '  ' }, { now: T }), null);
+  assert.equal(toVoice(null), null);
+  assert.equal(toAnother({ who: 'Mrs Test', line: 'Pay up, dear!' }, ['Pay up, dear.']), null, 'a line equal to a shown one (bar punctuation) is nothing');
+  assert.equal(toAnother({ who: 'Mrs Test', line: '' }, ['x']), null);
+  assert.equal(toAnother({ who: 'Mrs Test', line: 'Fresh.' }, ['x']).line, 'Fresh.');
+});
+
+await test('voice: the on-stage name and the shown lines are cleaned and length-limited', () => {
+  assert.equal(cleanNpc(undefined), ''); assert.equal(cleanNpc(null), ''); assert.equal(cleanNpc('  Mrs   Test '), 'Mrs Test');
+  assert.equal(cleanNpc(5), null); assert.equal(cleanNpc({}), null); assert.equal(cleanNpc('x'.repeat(81)), null); assert.equal(cleanNpc('x'.repeat(80)).length, 80);
+  assert.deepEqual(cleanShown([' a  b ', 'c']), ['a b', 'c']);
+  for (const bad of [undefined, 'a', [], [''], [1], ['x'.repeat(401)], ['a', 'b', 'c', 'd', 'e', 'f', 'g']]) assert.equal(cleanShown(bad), null, JSON.stringify(bad));
+});
+
+await test('tick: an NPC on stage and npc_change wake Voice; its two lines come back as voice, not as a card; the row has secs and stop', async () => {
+  clock.t = Date.parse('2030-02-01T09:30:00.000Z');
+  const s = await setup();
+  await s.lines(3);
+  s.replies.tripwire = { ...NONE, npc_change: true };
+  s.replies.__ms = { voice: 3200 };
+  const out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.deepEqual(out.flags, ['npc_change']);
+  assert.deepEqual(out.cards, [], 'Voice lines never take the card slot');
+  assert.deepEqual(out.voice.lines, ['Pay up, dear.', 'I could forget I saw you.']);
+  assert.equal(out.voice.who, 'Mrs Test'); assert.equal(out.voice.want, 'to be paid'); assert.ok(out.voice.at);
+  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire', 'voice']);
+  const v = s.calls.find((c) => c.seat === 'voice');
+  assert.equal(v.model, 'claude-sonnet-5-5'); assert.equal(v.effort, 'medium');
+  assert.match(v.user, /^The GM has this NPC on stage: Mrs Test\./, 'the page names the NPC');
+  assert.match(v.user, /we roll the dice now/, 'and the last four minutes follow');
+  const row = s.rows().find((r) => r.seat === 'voice');
+  assert.equal(row.model, 'claude-sonnet-5-5'); assert.equal(row.effort, 'medium'); assert.equal(row.flags, 'npc_change');
+  assert.ok(row.cents > 0);
+  const card = JSON.parse(row.card);
+  assert.equal(card.secs, 3.2); assert.equal(card.stop, 'end_turn'); assert.equal(card.voice, 1); assert.equal(card.shown, undefined);
+  assert.deepEqual(card.keys.length, 2);
+  // the cards endpoint (the box's chat) does not list Voice rows
+  const cards = await body(await s.handler({ request: new Request('https://blades.example.test/api/gm/assist/cards'), env: s.env, data: { me: GM } }));
+  assert.deepEqual(cards.cards, []);
+});
+
+await test('tick: with an NPC on stage Voice also wakes each minute with no flag at all; without one it is silent', async () => {
+  clock.t = Date.parse('2030-02-01T10:00:00.000Z');
+  const s = await setup();
+  await s.lines(2);
+  s.replies.tripwire = { ...NONE };
+  let out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.deepEqual(out.flags, []);
+  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire', 'voice']);
+  assert.equal(out.voice.lines.length, 2);
+  // a minute on, a new pair of lines: the gap is shorter than a tick
+  s.calls.length = 0; clock.t += 60_000; await s.lines(2);
+  s.replies.voice = { who: 'Mrs Test', want: 'to be paid', line_a: 'Is that the time already.', line_b: 'Sit. Sit.' };
+  out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire', 'voice'], 'a minute later Voice runs again');
+  assert.equal(out.voice.lines[0], 'Is that the time already.');
+  // no NPC on stage: even npc_change and a quiet table call nobody but the Tripwire
+  s.calls.length = 0; clock.t += 120_000; await s.lines(2);
+  out = await body(await s.post('tick', {}));
+  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire']); assert.equal(out.voice, undefined);
+  s.calls.length = 0; clock.t += 120_000; await s.lines(2);
+  s.replies.tripwire = { ...NONE, npc_change: true };
+  out = await body(await s.post('tick', { npc: '   ' }));
+  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire'], 'a blank name is no name'); assert.equal(out.voice, undefined);
+  assert.equal(s.rows().filter((r) => r.seat === 'voice').length, 2);
+});
+
+await test('tick: Ref goes first and keeps the card slot; Voice runs beside it', async () => {
+  clock.t = Date.parse('2030-02-01T11:00:00.000Z');
+  const s = await setup();
+  await s.lines(2);
+  s.replies.tripwire = { ...NONE, roll_talk: true, npc_change: true };
+  const out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire', 'ref', 'ledger', 'voice']);
+  assert.equal(out.cards.length, 1); assert.equal(out.cards[0].seat, 'ref');
+  assert.equal(out.voice.lines.length, 2);
+  assert.deepEqual(s.rows().map((r) => r.seat), ['tripwire', 'ref', 'ledger', 'voice']);
+});
+
+await test('tick: a repeated Voice line is dropped by the Editor; a repeat of both is silence (still logged, cost counted)', async () => {
+  clock.t = Date.parse('2030-02-01T12:00:00.000Z');
+  const s = await setup();
+  await s.lines(2);
+  s.replies.tripwire = { ...NONE };
+  let out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.equal(out.voice.lines.length, 2);
+  clock.t += 60_000; await s.lines(2);
+  s.replies.voice = { who: 'Mrs Test', want: 'to be paid', line_a: 'Pay up, dear.', line_b: 'A fresh line.' };
+  out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.deepEqual(out.voice.lines, ['A fresh line.']);
+  clock.t += 60_000; await s.lines(2);
+  s.replies.voice = { who: 'Mrs Test', want: 'x', line_a: 'Pay up, dear.', line_b: 'A fresh line.' };
+  out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.equal(out.voice, undefined, 'both repeated: nothing shows');
+  const vrows = s.rows().filter((r) => r.seat === 'voice');
+  assert.equal(vrows.length, 3); assert.equal(JSON.parse(vrows[2].card).voice, undefined); assert.ok(vrows[2].cents > 0);
+  // an empty "who" (the seat found nobody on stage) shows nothing either
+  clock.t += 60_000; await s.lines(2);
+  s.replies.voice = { who: '', want: '', line_a: '', line_b: '' };
+  out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.equal(out.voice, undefined);
+});
+
+await test('tick: a refusal or a failed Voice call shows nothing and is logged; the ladder drops Voice at 85% and the cap stops it', async () => {
+  clock.t = Date.parse('2030-02-01T13:00:00.000Z');
+  const s = await setup();
+  await s.lines(2);
+  s.replies.tripwire = { ...NONE };
+  s.replies.__stop = { voice: 'refusal' };
+  let out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.equal(out.voice, undefined);
+  const rc = JSON.parse(s.rows().find((r) => r.seat === 'voice').card);
+  assert.equal(rc.refusal, 1); assert.equal(rc.stop, 'refusal');
+  s.replies.__stop = {};
+  clock.t += 60_000; await s.lines(2);
+  s.replies.voice = Object.assign(new Error('boom'), { status: 500 });
+  out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.equal(out.voice, undefined); assert.deepEqual(out.errors, [{ seat: 'voice', error: 'provider status 500' }]);
+  // the ladder
+  const seed = (cents) => s.exec.db.prepare("INSERT INTO gm_assist_log (campaign, at, seat, model, cents) VALUES ('c', ?, 'seed', 'm', ?)").run(iso(clock.t - 3 * 3600_000), cents);
+  s.replies.voice = REPLIES().voice; s.calls.length = 0;
+  clock.t += 60_000; await s.lines(2); seed(1300);
+  out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.equal(out.spend.tier, 'reduced'); assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire', 'voice']);
+  s.calls.length = 0; clock.t += 60_000; await s.lines(2); seed(500);
+  out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.equal(out.spend.tier, 'core'); assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire'], 'core: no Voice'); assert.equal(out.voice, undefined);
+  s.calls.length = 0; clock.t += 60_000; await s.lines(2); seed(500);
+  out = await body(await s.post('tick', { npc: 'Mrs Test' }));
+  assert.equal(out.spend.tier, 'off'); assert.equal(s.calls.length, 0, 'at the cap nothing runs'); assert.equal(out.voice, undefined);
+});
+
+await test('tick: a bad npc is a 400 before any call; the body stays small', async () => {
+  const s = await setup();
+  await s.lines(2);
+  await assert.rejects(s.post('tick', { npc: 5 }), (e) => e.status === 400);
+  await assert.rejects(s.post('tick', { npc: 'x'.repeat(81) }), (e) => e.status === 400);
+  assert.equal(s.calls.length, 0);
+});
+
+await test('another: validation is a 400 and calls nothing', async () => {
+  const s = await setup();
+  await s.lines(2);
+  for (const b of [{}, { npc: 'Mrs Test' }, { shown: ['a'] }, { npc: '', shown: ['a'] }, { npc: 'x'.repeat(81), shown: ['a'] }, { npc: 'Mrs Test', shown: [] },
+    { npc: 'Mrs Test', shown: 'a' }, { npc: 'Mrs Test', shown: [1] }, { npc: 'Mrs Test', shown: ['x'.repeat(401)] }, { npc: 'Mrs Test', shown: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }, { npc: 'Mrs Test', shown: [' '] }]) {
+    await assert.rejects(s.post('another', b), (e) => e.status === 400, JSON.stringify(b).slice(0, 80));
+  }
+  const get = await s.handler({ request: new Request('https://blades.example.test/api/gm/assist/another'), env: s.env, data: { me: GM } });
+  assert.equal(get.status, 405);
+  assert.equal(s.calls.length, 0);
+});
+
+await test('another: voice_plus (Opus 5.5, medium) writes one more line for the NPC, told what was already shown; logged with secs and stop', async () => {
+  clock.t = Date.parse('2030-02-01T14:00:00.000Z');
+  const s = await setup();
+  await s.lines(3);
+  s.replies.__ms = { voice_plus: 4100 };
+  const res = await s.post('another', { npc: ' Mrs  Test ', shown: ['Pay up, dear.', 'I could forget I saw you.'] });
+  assert.equal(res.status, 200);
+  const out = await body(res);
+  assert.deepEqual(out.voice.lines, ['The door is open, if you are quick.']); assert.equal(out.voice.who, 'Mrs Test'); assert.deepEqual(out.cards, []);
+  assert.equal(s.calls.length, 1);
+  const c = s.calls[0];
+  assert.equal(c.seat, 'voice_plus'); assert.equal(c.model, 'claude-opus-5-5'); assert.equal(c.effort, 'medium');
+  assert.match(c.user, /one more line for this NPC: Mrs Test\./); assert.match(c.user, /1\. Pay up, dear\.\n2\. I could forget I saw you\./); assert.match(c.user, /we roll the dice now/);
+  const row = s.rows()[0];
+  assert.equal(row.seat, 'voice_plus'); assert.equal(row.model, 'claude-opus-5-5'); assert.equal(row.effort, 'medium'); assert.equal(row.flags, 'another');
+  // opus: 1000*4 + 10000*0.2 + 200*20 = 10000 per million -> $0.01 = 1 cent
+  assert.ok(Math.abs(row.cents - 1) < 1e-9, 'cents ' + row.cents);
+  const card = JSON.parse(row.card);
+  assert.equal(card.secs, 4.1); assert.equal(card.stop, 'end_turn'); assert.equal(card.voice, 1);
+  assert.equal(out.spend.tick, 0.01);
+});
+
+await test('another: the line the GM was shown comes back as nothing; a refusal shows nothing; the busy gate and the cap answer 429', async () => {
+  clock.t = Date.parse('2030-02-01T15:00:00.000Z');
+  const s = await setup();
+  await s.lines(2);
+  s.replies.voice_plus = { who: 'Mrs Test', line: 'pay up dear' };
+  let out = await body(await s.post('another', { npc: 'Mrs Test', shown: ['Pay up, dear.'] }));
+  assert.equal(out.voice, undefined, 'the same line again is dropped');
+  assert.equal(JSON.parse(s.rows()[0].card).voice, undefined);
+  // busy: a second tap inside the gap (a call just ran) is refused without a call
+  s.calls.length = 0;
+  await assert.rejects(s.post('another', { npc: 'Mrs Test', shown: ['x'] }), (e) => e.status === 429 && /busy/.test(e.message) && !/cap/.test(e.message));
+  assert.equal(s.calls.length, 0);
+  clock.t += 20_000;
+  s.replies.__stop = { voice_plus: 'refusal' }; s.replies.voice_plus = { who: 'Mrs Test', line: 'Never shown.' };
+  out = await body(await s.post('another', { npc: 'Mrs Test', shown: ['x'] }));
+  assert.equal(out.voice, undefined);
+  assert.equal(JSON.parse(s.rows().filter((r) => r.seat === 'voice_plus').pop().card).refusal, 1);
+  // in flight in this isolate: refused as busy while the first is still out
+  s.replies.__stop = {}; clock.t += 20_000;
+  let release; const gate = new Promise((r) => { release = r; });
+  s.replies.voice_plus = () => { throw new Error('unused'); };
+  const slow = makeHandler({ clientFor: () => ({ messages: { async create() { await gate; return { content: [{ type: 'text', text: JSON.stringify({ who: 'Mrs Test', line: 'Late.' }) }], usage: { input_tokens: 1, output_tokens: 1 }, stop_reason: 'end_turn' }; } } }), now: () => clock.t });
+  const mk = () => slow({ request: new Request('https://blades.example.test/api/gm/assist/another', { method: 'POST', body: JSON.stringify({ npc: 'Mrs Test', shown: ['x'] }) }), env: s.env, data: { me: GM } });
+  const first = mk();
+  await new Promise((r) => setTimeout(r, 20));
+  await assert.rejects(mk(), (e) => e.status === 429 && /busy/.test(e.message));
+  release(); assert.equal((await first).status, 200);
+  // the cap
+  clock.t += 600_000;
+  s.exec.db.prepare("INSERT INTO gm_assist_log (campaign, at, seat, model, cents) VALUES ('c', ?, 'seed', 'm', 2500)").run(iso(clock.t - 3600_000));
+  s.calls.length = 0;
+  await assert.rejects(s.post('another', { npc: 'Mrs Test', shown: ['x'] }), (e) => e.status === 429 && /cap/.test(e.message));
+  assert.equal(s.calls.length, 0);
+});
+
+await test('another: a GM-only door (a player gets 403), an old-format assist part sends nothing', async () => {
+  const s = await setup();
+  await assert.rejects(s.post('another', { npc: 'Mrs Test', shown: ['x'] }, { me: { role: 'player', id: 'p@example.test' } }), (e) => e.status === 403);
+  s.exec.db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', '{}', 0, ?)").run(JSON.stringify({ prefix: 'old text' }));
+  await s.lines(2);
+  const out = await body(await s.post('another', { npc: 'Mrs Test', shown: ['x'] }));
+  assert.deepEqual(out.cards, []); assert.equal(out.voice, undefined); assert.equal(s.calls.length, 0);
+});
+
+await test('voice: the prompts name the NPC and the shown lines, and the replay script runs Voice through the Conductor', async () => {
+  const { voiceUser, anotherUser } = await import('../../functions/_lib/assist/prompts.js');
+  assert.equal(voiceUser({ npc: 'Mrs Test', stamp: '09:30', talk: '[09:29] A: hi' }), 'The GM has this NPC on stage: Mrs Test.\nLast four minutes, up to 09:30:\n[09:29] A: hi');
+  assert.match(anotherUser({ npc: 'Mrs Test', shown: ['a', 'b'], stamp: '09:30', talk: 't' }), /for this NPC: Mrs Test\.\nLines already shown .*:\n1\. a\n2\. b\nLast four minutes, up to 09:30:\nt$/);
+  const src = (await import('node:fs')).default.readFileSync(path.join(ROOT, 'scripts', 'gm-assist-replay.mjs'), 'utf8');
+  assert.ok(/arg\('voice-at'\)/.test(src) && /onStage: !!npc/.test(src) && /lines\.md/.test(src) && /voice_plus/.test(src), 'the script takes --voice-at, gates on the NPC name and writes lines.md');
 });
 
 console.log(failed ? `\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);

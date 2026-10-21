@@ -778,6 +778,10 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 #gm-page .gm-rack-lines li { display: grid; grid-template-columns: 58px 1fr; gap: 8px; padding: 4px 0; border-top: 1px solid var(--hair); }
 #gm-page .gm-rack-lines li.hit { background: var(--hair); }
 #gm-page .gm-rack-lines b { font: 900 11.5px/1.4 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
+#gm-page .gm-voice { display: grid; gap: 4px; }
+#gm-page .gm-rack > .gm-voice:not(:first-child) { border-top: 1.5px solid var(--rule); padding-top: 6px; }
+#gm-page .gm-voice-lines b { overflow-wrap: anywhere; }
+#gm-page .gm-another { justify-self: start; }
 @media (prefers-reduced-motion: no-preference) {
   .gm-assist .as-banner:not([hidden]) { animation: as-pop .22s ease-out; }
   .gm-assist .as-panel:not([hidden]) { animation: as-pop .18s ease-out; }

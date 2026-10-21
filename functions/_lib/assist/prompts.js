@@ -10,3 +10,18 @@ export function fitUser({ position, effect = '', draws, stamp, talk }) {
   return 'A roll is about to be made. ' + named + '\nThe console has drawn these. Fit them to the scene and keep what each one says happens.\n1-3 draw:\n' + draws.low +
     '\n4-5 draw:\n' + draws.mid + '\nLast five minutes, up to ' + stamp + ':\n' + talk;
 }
+
+export const NPC_MAX = 80;                  // characters in the on-stage NPC's name the page sends
+export const SHOWN_MAX = 6;                 // lines already shown that Another is told about
+export const SHOWN_LINE_MAX = 400;          // characters per shown line
+
+/** The Voice turn: who the GM's page says is on stage, then the last four minutes of talk. */
+export function voiceUser({ npc, stamp, talk }) {
+  return 'The GM has this NPC on stage: ' + npc + '.\nLast four minutes, up to ' + stamp + ':\n' + talk;
+}
+
+/** The Another turn: the NPC, the lines already shown (all to be avoided), then the last four minutes of talk. */
+export function anotherUser({ npc, shown, stamp, talk }) {
+  return 'The GM asks for one more line for this NPC: ' + npc + '.\nLines already shown (write something different from every one):\n' +
+    shown.map((s, i) => (i + 1) + '. ' + s).join('\n') + '\nLast four minutes, up to ' + stamp + ':\n' + talk;
+}

@@ -1,6 +1,15 @@
 // /api/gm/assist/{tick,fit} (GM only, see the "Claude at the table" build plan): Claude at the table, GM side. Players never
 // call it and nothing it returns reaches the iPad. A player (or the table display sign-in) gets 403 before the body is read.
-//   POST /api/gm/assist/tick { after? } -> { cards, updates, flags, spend, last, errors? }
+//   POST /api/gm/assist/tick { after?, npc? } -> { cards, updates, flags, spend, last, voice?, errors? }
+//        `npc` is the name of the NPC the GM's page has on stage (at most 80 characters; the Worker holds no scene, so the page
+//        says). With none, Voice never runs. With one, Voice wakes on the Tripwire's npc_change flag and on every tick (about each
+//        minute), after Ref in the list, and its lines come back as `voice: { who, want, lines: [two], at }` (they go to the
+//        page's Rack, not the card slot); the Editor drops a line already shown in the last 10 minutes. Voice is not in the
+//        Core set, so it stops at 85% of the cap. Its row is logged like any seat's, with `voice: 1` when lines were shown.
+//   POST /api/gm/assist/another { npc, shown: [..] } -> { cards: [], voice: { who, lines: [one], at }, spend, last }
+//        The Another tap on a Voice line: the voice_plus seat writes ONE more line for the same NPC, different from the 1-6 shown
+//        lines (each at most 400 characters). 400 on a bad body; 429 at the cap or while a voice_plus call is in flight or cooling
+//        down. Like /fit it runs at the Core tier, so it stays available until the cap.
 //        The GM page calls it about once a minute while Listening is on. It reads the transcript lines newer than seq `after`
 //        (the last minute when omitted), runs the Tripwire on them, asks the Conductor which seats to wake, runs those, and
 //        lets the Editor pass at most one card (Ref beats Clerk) per five minutes. `cards` is [] on most ticks. A Ref card held
@@ -44,9 +53,9 @@ import { requireGm, parseJson } from '../../_lib/gm.js';
 import { loadStt, readLines } from '../../_lib/stt.js';
 import { makeClient, callSeat } from '../../_lib/assist/claude.js';
 import { SEATS } from '../../_lib/assist/seats.js';
-import { fitUser } from '../../_lib/assist/prompts.js';
+import { fitUser, voiceUser, anotherUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX } from '../../_lib/assist/prompts.js';
 import { DEFAULT_CAP, budgetTier, canRun, decide } from '../../_lib/assist/conductor.js';
-import { toCandidate, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
+import { toCandidate, toVoice, toAnother, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
 
 const BODY_MAX = 8 * 1024;
@@ -98,6 +107,26 @@ export function cleanDraws(d) {
   return out;
 }
 
+/** The on-stage NPC's name the page sends: '' when none; null when it is not a short string. */
+export function cleanNpc(v) {
+  if (v === undefined || v === null) return '';
+  if (typeof v !== 'string') return null;
+  const t = v.replace(/\s+/g, ' ').trim();
+  return t.length > NPC_MAX ? null : t;
+}
+/** The lines Another must differ from: 1-6 trimmed strings of at most 400 characters, or null. */
+export function cleanShown(v) {
+  if (!Array.isArray(v) || !v.length || v.length > SHOWN_MAX) return null;
+  const out = [];
+  for (const x of v) {
+    if (typeof x !== 'string') return null;
+    const t = x.replace(/\s+/g, ' ').trim();
+    if (!t || t.length > SHOWN_LINE_MAX) return null;
+    out.push(t);
+  }
+  return out;
+}
+
 const REPUSH = 're-push the assist part';
 const FILE_ID = /^file_[A-Za-z0-9_-]{4,100}$/;
 
@@ -138,6 +167,13 @@ async function shownCards(db, campaign, now) {
   return (results || []).map((r) => ({ at: Date.parse(r.at), keys: (parseJson(r.card, {}) || {}).keys || [] }));
 }
 
+/** Voice lines shown in the last 10 minutes (Voice and Another rows): [{ at (ms), keys }]. */
+async function shownVoice(db, campaign, now) {
+  const since = new Date(now - RECENT_CARD_MS).toISOString();
+  const { results } = await db.prepare("SELECT at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND json_extract(card, '$.voice') = 1").bind(campaign, since).all();
+  return (results || []).map((r) => ({ at: Date.parse(r.at), keys: (parseJson(r.card, {}) || {}).keys || [] }));
+}
+
 /** Ref cards the Editor held back and that are not stale yet: [{ at (ms), card }]. */
 async function heldRefs(db, campaign, now) {
   const since = new Date(now - STALE_MS).toISOString();
@@ -174,7 +210,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
   return async function onRequest({ request, env, data }) {
     requireGm(data);                                   // first: before the method, the body or the database
     const url = new URL(request.url);
-    const action = /\/api\/gm\/assist\/(tick|fit|cards)\/?$/.exec(url.pathname);
+    const action = /\/api\/gm\/assist\/(tick|fit|another|cards)\/?$/.exec(url.pathname);
     if (!action) throw new HttpError(404, 'not found');
     if (action[1] === 'cards') {                       // the box's memory: no key, no model
       if (request.method === 'GET') {
@@ -225,7 +261,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       }
     }
     const spend = () => ({ tonight: dollars(spentBefore + thisTick), cap, tier: budgetTier(spentBefore + thisTick, cap), tick: dollars(thisTick) });
-    const done = (cards, flags, last, updates = []) => json({ cards, updates, flags, spend: spend(), last, ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
+    const done = (cards, flags, last, updates = [], voice = null) => json({ cards, updates, flags, spend: spend(), last, ...(voice ? { voice } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
 
     if (action[1] === 'fit') {
       const position = typeof body.position === 'string' ? body.position.replace(/\s+/g, ' ').trim() : '';
@@ -248,7 +284,28 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       return done(out ? [{ seat: 'fixer', at, text: out.read, ...out }] : [], [], last);
     }
 
+    if (action[1] === 'another') {
+      const npc = cleanNpc(body.npc), shown = cleanShown(body.shown);
+      if (!npc) throw new HttpError(400, 'npc is required (at most ' + NPC_MAX + ' characters)');
+      if (!shown) throw new HttpError(400, 'shown is required: 1-' + SHOWN_MAX + ' lines, each at most ' + SHOWN_LINE_MAX + ' characters');
+      if (legacy) return done([], [], null);
+      const gate = canRun('voice_plus', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight, tier });
+      if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : 'the voice coach is busy');
+      const { lines: recent, last } = await readLines(db, campaign, { since: new Date(t0 - TAP_WINDOW_MS).toISOString() });
+      const user = anotherUser({ npc, shown, stamp: hhmm(t0), talk: formatLines(recent, speakers) });
+      const { cfg, r, timing } = await run('voice_plus', user);
+      const at = new Date(now()).toISOString();
+      const session = recent.length ? recent[recent.length - 1].session : '';
+      const out = r && r.json ? r.json : null;
+      const one = toAnother(out, shown);
+      await logRow(db, campaign, { at, session, seat: 'voice_plus', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['another'], timing,
+        card: out ? { out, ...(one ? { voice: 1, text: one.line, keys: one.keys } : {}) } : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : 'no JSON' } }).run();
+      return done([], [], last, [], one ? { who: one.who || npc, lines: [one.line], at } : null);
+    }
+
     // ---- tick ----
+    const npc = cleanNpc(body.npc);
+    if (npc === null) throw new HttpError(400, 'npc must be a name of at most ' + NPC_MAX + ' characters');
     const after = body.after === undefined || body.after === null ? null : body.after;
     if (after !== null && !(Number.isInteger(after) && after >= 0)) throw new HttpError(400, 'after must be a whole number');
     // the Tap seats read the last four MINUTES (a busy table says well over 50 lines in four); the Tripwire reads what is new
@@ -268,14 +325,16 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const flags = tw.r && tw.r.json ? Object.keys(tw.r.json).filter((k) => tw.r.json[k] === true) : [];
     await logRow(db, campaign, { at: twAt, session, seat: 'tripwire', cfg: tw.cfg, usage: tw.r && tw.r.usage, cost: tw.r && tw.r.cost, flags, timing: tw.timing,
       card: tw.r ? { out: tw.r.json } : { error: errors.length ? errors[0].error : 'no reply' } }).run();
-    if (!flags.length) return done([], flags, last);
+    if (!flags.length && !npc) return done([], flags, last);
 
-    const verdict = decide({ flags, now: t0, lastRun, inFlight, spent: spentBefore + thisTick, cap });
+    const verdict = decide({ flags, now: t0, lastRun, inFlight, spent: spentBefore + thisTick, cap, onStage: !!npc });
     if (!verdict.seats.length) return done([], flags, last);
 
     const recentText = formatLines(tail, speakers);
     const user = 'Last four minutes, up to ' + hhmm(t0) + ':\n' + recentText;
-    const results = await Promise.all(verdict.seats.map(async (name) => ({ name, ...(await run(name, user)) })));
+    const voiceTurn = voiceUser({ npc, stamp: hhmm(t0), talk: recentText });
+    const all = await Promise.all(verdict.seats.map(async (name) => ({ name, ...(await run(name, name === 'voice' ? voiceTurn : user)) })));
+    const vx = all.find((x) => x.name === 'voice'), results = all.filter((x) => x.name !== 'voice');   // Voice goes to the Rack, not to the Editor's card slot
 
     const recent = await shownCards(db, campaign, t0);
     const candidates = results.map((x) => (x.r ? toCandidate(x.name, x.r.json, { recent, now: t0 }) : null));
@@ -293,10 +352,17 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     });
     // a pending Ref card shown now has no row of its own this tick: record the showing (no cost) so the gap and repeats see it
     if (edit.card && edit.card.pending) rows.push(logRow(db, campaign, { at, session, seat: 'editor', cfg: { model: 'editor' }, flags, card: { seat: 'ref', text: edit.card.text, keys: edit.card.keys, ...(edit.card.detail ? { detail: edit.card.detail } : {}), shown: 1, from_pending: 1 } }));
+    let voiceOut = null;
+    if (vx) {
+      const v = vx.r ? toVoice(vx.r.json, { recent: await shownVoice(db, campaign, t0), now: t0 }) : null;
+      if (v) voiceOut = { who: v.who, want: v.want, lines: v.lines, at };
+      rows.push(logRow(db, campaign, { at, session, seat: 'voice', cfg: vx.cfg, usage: vx.r && vx.r.usage, cost: vx.r && vx.r.cost, flags, timing: vx.timing,
+        card: vx.r ? { out: vx.r.json, ...(v ? { voice: 1, text: v.lines.join(' / '), keys: v.keys } : {}) } : { error: errors.find((e) => e.seat === 'voice')?.error || 'no reply' } }));
+    }
     await db.batch(rows);
     const cardOut = edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}) }] : [];
     const updatesOut = edit.updates.flatMap((u) => (u.items || [{ key: (u.keys || [])[0] || '', text: u.text }]).map((it) => ({ seat: 'ledger', at, key: it.key, text: it.text })));
-    return done(cardOut, flags, last, updatesOut);
+    return done(cardOut, flags, last, updatesOut, voiceOut);
   };
 }
 
