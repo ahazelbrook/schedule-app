@@ -328,3 +328,52 @@ await test('a Ref slip says it is in the log, and "saved to campaign history" on
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
+// ---------- WP2: the console's own fit (autoFit) and the form's draws ----------
+const DRAWS2 = { low: 'A 1-3: the way in is shut.', mid: 'A 4/5: a second watcher arrives.' };
+const FITOK = { cards: [{ seat: 'fixer', at: 'a', text: 'r', read: 'r', one_three: 'Slip.', four_five: 'A cost.', six: 'Clean.', crit: 'More.', bargain: 'Deal.' }], flags: [], spend: { tonight: 0.4, cap: 20, tier: 'all', tick: 0.4 } };
+
+await test('autoFit: asks Listening first, then makes the call with the draws; the card comes back and onStart fires just before the call', async () => {
+  const r = rig(); r.gm.fitReply = FITOK;
+  const order = [];
+  const p = r.ctl.autoFit({ position: 'risky', draws: DRAWS2 }, () => order.push('start'));
+  const out = await p;
+  assert.equal(r.calls.stt, 1);
+  assert.deepEqual(r.calls.fit, [{ position: 'risky', draws: DRAWS2 }]);
+  assert.deepEqual(order, ['start']);
+  assert.equal(out.card.one_three, 'Slip.');
+  assert.equal(r.ctl.state().spend.tonight, 0.4, 'the spend is folded in');
+});
+
+await test('autoFit: no call at all with Listening off, with the cap reached, on a phone, or without draws', async () => {
+  let r = rig(); r.gm.want = 'off'; r.gm.fitReply = FITOK;
+  assert.equal(await r.ctl.autoFit({ position: 'risky', draws: DRAWS2 }), null); assert.equal(r.calls.fit.length, 0);
+  r = rig({}, { phone: true }); r.gm.fitReply = FITOK;
+  assert.equal(r.ctl.canFit(), false); assert.equal(await r.ctl.autoFit({ position: 'risky', draws: DRAWS2 }), null); assert.equal(r.calls.fit.length, 0);
+  r = rig(); r.gm.fitReply = FITOK;
+  assert.equal(await r.ctl.autoFit({ position: 'risky' }), null, 'no draws, no call'); assert.equal(r.calls.fit.length, 0);
+  r = rig(); r.gm.fitReply = { ...FITOK, spend: { tonight: 20, cap: 20, tier: 'off', tick: 0 } };
+  await r.ctl.autoFit({ position: 'risky', draws: DRAWS2 });
+  assert.equal(r.ctl.canFit(), false, 'tier off: the cap is reached');
+  const n = r.calls.fit.length;
+  assert.equal(await r.ctl.autoFit({ position: 'risky', draws: DRAWS2 }), null); assert.equal(r.calls.fit.length, n, 'and no further call is made');
+  r = rig(); r.gm.fitErr = err(429, "tonight's cap is reached");
+  assert.deepEqual(await r.ctl.autoFit({ position: 'risky', draws: DRAWS2 }), { error: 'cap' });
+  assert.equal(r.ctl.canFit(), false); assert.equal(r.ctl.state().paused, 'cap');
+});
+
+await test('autoFit: a busy answer, a failure and an empty answer come back as errors, never as a card', async () => {
+  let r = rig(); r.gm.fitErr = err(429, 'the fixer is busy');
+  assert.deepEqual(await r.ctl.autoFit({ position: 'risky', draws: DRAWS2 }), { error: 'busy' });
+  assert.equal(r.ctl.canFit(), true, 'busy is a 10 s cooldown, not a pause');
+  r = rig(); r.gm.fitErr = err(500, 'x'); assert.deepEqual(await r.ctl.autoFit({ position: 'risky', draws: DRAWS2 }), { error: 'other' });
+  r = rig(); r.gm.fitReply = { cards: [], spend: { tonight: 0, cap: 20, tier: 'all', tick: 0 } }; assert.deepEqual(await r.ctl.autoFit({ position: 'risky', draws: DRAWS2 }), { error: 'none' });
+});
+
+await test('Fit it (the form) sends the console\'s draws when the page supplies them, and none when it does not', async () => {
+  let r = rig({ draws: (pos) => (pos === 'risky' ? DRAWS2 : null) }); r.gm.fitReply = FITOK;
+  await r.ctl.fit('risky', 'limited');
+  assert.deepEqual(r.calls.fit[0], { position: 'risky', effect: 'limited', draws: DRAWS2 });
+  await r.ctl.fit('desperate', '');
+  assert.deepEqual(r.calls.fit[1], { position: 'desperate' });
+});
+

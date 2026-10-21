@@ -390,7 +390,7 @@ await test('6a. the console is the four Situations: a big Position switch, the s
   assert.equal(h.qa('#gm-singles kbd').length, 0, 'no keys on the single tables');
   assert.equal(h.qa('[data-gm="view"]').length, 0, 'no Situations | Classic toggle anywhere'); assert.ok(!h.q('.gm-conhead') && !h.q('.gm-head'), 'no console header, no page heading');
   const col = [...h.q('.gm-console').kids].filter((k) => k.nodeType === 1).map((k) => k.id);
-  assert.deepEqual(col, ['gm-pos', 'gm-scenebox', 'gm-mini', 'gm-controls', 'gm-buttons', 'gm-card', 'gm-earlier', 'gm-singles'], 'the column: Position, Scene, the buttons, the card, Earlier, More tables');
+  assert.deepEqual(col, ['gm-pos', 'gm-scenebox', 'gm-mini', 'gm-controls', 'gm-buttons', 'gm-card', 'gm-rack', 'gm-earlier', 'gm-singles'], 'the column: Position, Scene, the buttons, the card, the Rack (empty), Earlier, More tables');
   assert.equal(h.q('#gm-scenebox > #gm-scene') || h.q('#gm-scenebox').querySelector('#gm-scene'), h.q('#gm-scene'), 'the Scene button sits in its box');
   assert.equal(h.q('#gm-singles').tagName, 'DETAILS', 'the single tables are folded');
   assert.match(h.q('#gm-scene-chips').textContent, /District: any/, 'the Scene line labels its chips');
@@ -2650,6 +2650,186 @@ await test('18n. the cloud stays as the GM left it (open or shut) through a ↻ 
   const h2 = await scPage({ fg, br }); h2.press('j'); assert.ok(h2.q('#gm-score details.gm-sc-cloud').hasAttribute('open'), 'and so does a reload (this device)');
   for (const b of h2.qa('#gm-score button')) assert.equal(b.getAttribute('type'), 'button', 'no stray submit buttons');
   await h2.save();
+});
+
+/* =====================================================================================================================
+   WP2. The console pre-rolls its 1-3 and 4/5 draws when the Position is set, sends them to the Fixer, and replays them
+   ===================================================================================================================== */
+/* a fake Claude box: records the fit asks; `hold` keeps an answer pending until released */
+const FITCARD = (tag) => ({ seat: 'fixer', at: '2030-01-01T00:00:00.000Z', text: 'r', read: 'read ' + tag, one_three: 'low ' + tag, four_five: 'mid ' + tag, six: 'six ' + tag, crit: 'crit ' + tag, bargain: 'bargain ' + tag });
+function fakeAssist(over) {
+  const log = Object.assign({ fits: [], starts: 0, canFit: true, listening: true, hold: false, held: [], created: 0, opts: null, err: null }, over || {});
+  const A = { create(o) {
+    log.created++; log.opts = o;
+    return { destroy() {}, toggle() {}, isOpen: () => false, close() {}, canFit: () => log.canFit,
+      autoFit(req, onStart) {
+        if (!log.canFit || !log.listening) return Promise.resolve(null);   /* what the real box does: no call at all */
+        if (typeof onStart === 'function') onStart(); log.starts++;
+        log.fits.push(req);
+        if (log.err) return Promise.resolve({ error: log.err });
+        if (log.hold) return new Promise((res) => log.held.push(() => res({ card: FITCARD(String(log.fits.length)) })));
+        return Promise.resolve({ card: FITCARD(String(log.fits.length)) });
+      } };
+  } };
+  return { A, log };
+}
+const PRE_WAIT = 700;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function openWithAssist(over) {
+  const fa = fakeAssist(over), fg = fakeGm();
+  fg.gm.assistTick = async () => ({ cards: [], updates: [], flags: [], spend: { tonight: 0, cap: 20, tier: 'all', tick: 0 }, last: 1 });
+  fg.gm.stt = async () => ({ doc: { want: 'on' } }); fg.gm.transcript = async () => ({ lines: [] });
+  const br = fakeBrowser({ B68GmAssist: fa.A });
+  /* the page's own Math.random reads from a queue first, so the pre-rolled seeds are known */
+  const queue = []; br.W.Math = Object.assign(Object.create(Math), { random: () => (queue.length ? queue.shift() : Math.random()) });
+  const h = await openPage({ br, fg });
+  const seedOf = (u) => (u * 4294967296) >>> 0;
+  const entry = () => { const st = h.page._state(); return st && st.doc.cards && st.doc.cards.situation; };
+  const entryText = () => { const e = entry(); const res = P.replaySituationEntry(C, FIXC.console.T, FIXC.campaign, e, {}); return P.drawTextOf(res); };
+  const setPos = async (v, wait = PRE_WAIT) => { h.qa('#gm-pos [data-v="' + v + '"]')[0].click(); await sleep(wait); };
+  return { h, fa, log: fa.log, queue, seedOf, entry, entryText, setPos };
+}
+const rackTxt = (h) => (h.q('#gm-rack').textContent || '').replace(/\s+/g, ' ').trim();
+
+await test('W1. setting Position pre-rolls the 1-3 and 4/5 draws once and sends them, with the position, to the Fixer; the Rack shows the answer', async () => {
+  const t = await openWithAssist();
+  assert.equal(t.log.created, 1);
+  assert.equal(t.log.fits.length, 0, 'nothing is asked until the Position is set');
+  await t.setPos('desperate');
+  assert.equal(t.log.fits.length, 1);
+  const req = t.log.fits[0];
+  assert.equal(req.position, 'desperate');
+  assert.ok(req.draws.low.startsWith('A 1–3 (') && req.draws.mid.startsWith('A 4/5 ('), req.draws.low.slice(0, 30) + ' | ' + req.draws.mid.slice(0, 30));
+  assert.ok(req.draws.low.length <= P.DRAW_CLIP && req.draws.mid.length <= P.DRAW_CLIP);
+  assert.match(rackTxt(t.h), /Rack/); assert.match(rackTxt(t.h), /low 1/); assert.match(rackTxt(t.h), /mid 1/); assert.match(rackTxt(t.h), /bargain 1/);
+  assert.equal(t.h.q('#gm-card .gm-lead'), null, 'the card area is untouched: nothing was rolled on screen');
+  assert.equal(t.h.fg.server.doc.cards, undefined, 'pre-rolling stores nothing: page state only');
+  await t.h.save();
+});
+
+await test('W2. the result uses the SAME draw (same seed, same text) and never re-rolls; no second fit call; a used draw is not served twice', async () => {
+  const t = await openWithAssist();
+  t.queue.push(0.25, 0.75);                     /* the two pre-rolled seeds: 1-3 first, then 4/5 */
+  await t.setPos('risky');
+  const req = t.log.fits[0];
+  t.h.press('3');                               /* tap 1-3 */
+  let e = t.entry(); assert.equal(e.situation, 'onetothree'); assert.equal(e.seed, t.seedOf(0.25), 'the pre-rolled seed, not a new one');
+  assert.equal(t.entryText(), req.draws.low, 'the card IS the fitted draw');
+  const t2 = await openWithAssist();
+  t2.queue.push(0.25, 0.75);
+  await t2.setPos('risky');
+  const req2 = t2.log.fits[0];
+  t2.h.press('2');                              /* tap 4/5 */
+  e = t2.entry(); assert.equal(e.situation, 'fourfive'); assert.equal(e.seed, t2.seedOf(0.75));
+  assert.equal(t2.entryText(), req2.draws.mid);
+  assert.equal(t2.log.fits.length, 1, 'rolling the result asks nothing more');
+  await t.h.save(); await t2.h.save();
+  /* the hit line is marked in the Rack, and a second tap is a fresh roll (the draw was used) */
+  const t3 = await openWithAssist();
+  t3.queue.push(0.25, 0.75);
+  await t3.setPos('risky');
+  t3.h.press('3');
+  assert.equal(t3.h.qa('#gm-rack li.hit').length, 1); assert.match(t3.h.qa('#gm-rack li.hit')[0].textContent, /1–3/);
+  const first = t3.entry().seed; assert.equal(first, t3.seedOf(0.25));
+  t3.h.press('3');
+  assert.notEqual(t3.entry().seed, first, 'a used draw is not served twice');
+  assert.equal(t3.log.fits.length, 1);
+  await t3.h.save();
+});
+
+await test('W3. changing Position re-rolls and re-fits; a late answer for the old Position never lands; the same Position again asks nothing new', async () => {
+  const t = await openWithAssist({ hold: true });
+  await t.setPos('controlled');
+  assert.equal(t.log.fits.length, 1);
+  assert.match(rackTxt(t.h), /Fitting/, 'pending shows only once the call is made');
+  await t.setPos('desperate');
+  assert.equal(t.log.fits.length, 2); assert.equal(t.log.fits[1].position, 'desperate');
+  t.log.held[0]();                              /* the answer for "controlled" arrives late */
+  await sleep(10);
+  assert.doesNotMatch(rackTxt(t.h), /low 1/, 'dropped: its draws are gone');
+  t.log.held[1]();
+  await sleep(10);
+  assert.match(rackTxt(t.h), /low 2/);
+  await t.setPos('desperate');                  /* tapped again: same Position, draws unused */
+  assert.equal(t.log.fits.length, 2);
+  await t.h.save();
+});
+
+await test('W4. dice that land before the Fixer answers show the raw draw; the late answer appears in the Rack and does not replace the card', async () => {
+  const t = await openWithAssist({ hold: true });
+  t.queue.push(0.25, 0.75);
+  await t.setPos('risky');
+  t.h.press('3');
+  const before = cardTxt(t.h);
+  assert.ok(before.includes('A 1–3'), before.slice(0, 60));
+  assert.match(rackTxt(t.h), /Fitting/);
+  t.log.held[0]();
+  await sleep(10);
+  assert.equal(cardTxt(t.h), before, 'the card is as it was');
+  assert.match(rackTxt(t.h), /low 1/);
+  assert.equal(t.h.qa('#gm-rack li.hit').length, 1, 'and the line for the result is marked');
+  await t.h.save();
+});
+
+await test('W5. no fit call, no pre-roll and no Rack when the box is off, Listening is off or the cap is reached; the console rolls exactly as today', async () => {
+  for (const over of [{ listening: false }, { canFit: false }]) {
+    const t = await openWithAssist(over);
+    await t.setPos('desperate');
+    assert.equal(t.log.fits.length, 0, JSON.stringify(over));
+    assert.equal(rackTxt(t.h), '');
+    t.queue.push(0.25, 0.75);                   /* nobody pre-rolled, so the queue is not read by a pre-roll */
+    t.h.press('3');
+    assert.ok(cardTxt(t.h).includes('A 1–3'));
+    assert.notEqual(t.entry().seed, t.seedOf(0.25), 'a plain roll: its own seed');
+    await t.h.save();
+  }
+  /* no box at all (no B68GmAssist on the page, as on a phone) */
+  const fg = fakeGm(); const h = await openPage({ fg });
+  h.qa('#gm-pos [data-v="desperate"]')[0].click(); await sleep(PRE_WAIT);
+  assert.equal(rackTxt(h), ''); h.press('3'); assert.ok(cardTxt(h).includes('A 1–3'));
+  await h.save();
+});
+
+await test('W6. Clear on the Rack discards the stored draws: the next roll is a plain one; an error from the Fixer shows nothing', async () => {
+  const t = await openWithAssist();
+  t.queue.push(0.25, 0.75);
+  await t.setPos('risky');
+  assert.match(rackTxt(t.h), /low 1/);
+  t.h.q('[data-gm="rackclear"]').click();
+  assert.equal(rackTxt(t.h), '');
+  t.h.press('3');
+  assert.notEqual(t.entry().seed, t.seedOf(0.25));
+  await t.h.save();
+  const e = await openWithAssist({ err: 'other' });
+  await e.setPos('risky');
+  assert.equal(rackTxt(e.h), ''); assert.equal(e.log.fits.length, 1);
+  await e.h.save();
+});
+
+await test('W7. changing a control the draw reads (not Position) re-rolls and re-fits once a Position has been set; before that nothing happens', async () => {
+  const t = await openWithAssist();
+  const sel = t.h.q('#gm-controls select[data-ctl="scene"]') || t.h.qa('#gm-controls select')[0];
+  const fire = async (el, v) => { el.value = v; dispatch(el, 'change'); await sleep(1700); };
+  const opt = (el) => { const kids = el.querySelectorAll('option'); return kids.length > 1 ? kids[1].getAttribute('value') : null; };
+  const v = opt(sel);
+  assert.ok(v !== null, 'the fixture has a scene to pick');
+  await fire(sel, v);
+  assert.equal(t.log.fits.length, 0, 'no Position set yet: nothing pre-rolled');
+  await t.setPos('risky');
+  assert.equal(t.log.fits.length, 1);
+  await fire(sel, '');
+  assert.equal(t.log.fits.length, 2, 'the scene changed under the draws: re-rolled and re-fitted');
+  await t.h.save();
+});
+
+await test('W8. the box\'s own "Fit it" form gets the console\'s draws for its Position (and the Position follows it)', async () => {
+  const t = await openWithAssist();
+  const d = t.log.opts.draws('desperate');
+  assert.ok(d && d.low.startsWith('A 1–3') && d.mid.startsWith('A 4/5'));
+  assert.equal(t.h.qa('#gm-pos [data-v="desperate"]')[0].getAttribute('aria-checked'), 'true');
+  assert.equal(t.log.opts.draws('nonsense'), null);
+  assert.equal(t.log.fits.length, 0, 'no automatic fit: the form makes its own call');
+  await t.h.save();
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

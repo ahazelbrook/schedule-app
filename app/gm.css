@@ -768,6 +768,16 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 .gm-assist .as-fitread { margin: 0 0 6px; font-weight: 700; }
 .gm-assist .as-lines li { display: grid; grid-template-columns: 58px 1fr; gap: 8px; padding: 5px 0; border-top: 1px solid var(--hair); }
 .gm-assist .as-lines b { font: 900 11.5px/1.4 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
+/* the Rack: the Fixer's fitted lines under the console card (empty = nothing drawn) */
+#gm-page .gm-rack:empty { display: none; }
+#gm-page .gm-rack { border: 1.5px solid var(--rule); border-left-width: 6px; background: var(--paper); padding: 6px 10px; display: grid; gap: 4px; }
+#gm-page .gm-rack-h { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+#gm-page .gm-rack-h .chip { margin-left: auto; }
+#gm-page .gm-rack-read, #gm-page .gm-rack-w { margin: 0; font-size: 12.5px; }
+#gm-page .gm-rack-lines { list-style: none; margin: 0; padding: 0; display: grid; }
+#gm-page .gm-rack-lines li { display: grid; grid-template-columns: 58px 1fr; gap: 8px; padding: 4px 0; border-top: 1px solid var(--hair); }
+#gm-page .gm-rack-lines li.hit { background: var(--hair); }
+#gm-page .gm-rack-lines b { font: 900 11.5px/1.4 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
 @media (prefers-reduced-motion: no-preference) {
   .gm-assist .as-banner:not([hidden]) { animation: as-pop .22s ease-out; }
   .gm-assist .as-panel:not([hidden]) { animation: as-pop .18s ease-out; }
