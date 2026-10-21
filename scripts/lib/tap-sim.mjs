@@ -13,6 +13,17 @@ export const LINE = /^- \*\*\[(\d\d):(\d\d)\] ([^:*]+):\*\* (.*)$/;
 export const stamp = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 export const toMin = (hhmm) => { const [h, m] = String(hhmm).replace(/^~/, '').split(':').map(Number); return h * 60 + m; };
 
+/** An invented date for the virtual clock when the caller gives none (the stamps only need a consistent day and a Melbourne summer offset). */
+export const DEFAULT_DAY = '2031-03-03';
+
+/** The note's own date: frontmatter `date: DD/MM/YYYY` (or YYYY-MM-DD) -> 'YYYY-MM-DD', else ''. */
+export function dayFromTranscript(text) {
+  const m = /^date:s*"?(dd)/(dd)/(d{4})"?s*$/m.exec(String(text || '')) || null;
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  const n = /^date:s*"?(d{4}-dd-dd)"?s*$/m.exec(String(text || ''));
+  return n ? n[1] : '';
+}
+
 /** Transcript text -> Map(minute -> [{ speaker, text }]). */
 export function parseMinutes(text) {
   const all = new Map();
@@ -49,10 +60,10 @@ export const SKIPPED = () => ({ json: null, text: '', usage: {}, cost: 0, stop: 
  *   cap          the endpoint's own nightly cap in dollars (its budget ladder drops seats as spend nears it)
  *   callHook     async (seat, args, atHHMM, client) -> callSeat-shaped result; called only for enabled seats
  *   shouldStop   () -> '' | reason, checked before every tick
- *   day, offset  the date and UTC offset the lines are stamped with (an AEDT Saturday by default)
+ *   day, offset  the date and UTC offset the lines are stamped with (an invented AEDT date by default; the CLIs pass the transcript's own)
  * -> { ticks, shown, stopped (reason or ''), stoppedAt (HH:MM or '') }
  */
-export async function runTapSim({ client, registry, allMinutes, fromT, toT, lead = 20, enabled, cap = 20, callHook, shouldStop = () => '', day = '2026-10-17', offset = '+11:00' }) {
+export async function runTapSim({ client, registry, allMinutes, fromT, toT, lead = 20, enabled, cap = 20, callHook, shouldStop = () => '', day = DEFAULT_DAY, offset = '+11:00' }) {
   const { memoryExec, asD1 } = await import('./d1.mjs');
   const { cleanLines, addLines } = await import('../../functions/_lib/stt.js');
   const { makeHandler } = await import('../../functions/api/gm/assist.js');

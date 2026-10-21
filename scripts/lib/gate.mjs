@@ -73,7 +73,7 @@ export function dryTripwire(user) {
  * Returns the gate object that gate.json holds (see report()).
  */
 export async function runGate(opts) {
-  const { client, prefix = '', allMinutes, fixerAt = [], drawsFor, voiceAt = [], expectRef = [], maxSpend = GATE.nightUsd, cap = 1000, dryRun = false, tokenCount, label = '' } = opts;
+  const { client, day, prefix = '', allMinutes, fixerAt = [], drawsFor, voiceAt = [], expectRef = [], maxSpend = GATE.nightUsd, cap = 1000, dryRun = false, tokenCount, label = '' } = opts;
   const registry = opts.registry || SEATS;
   const keys = [...allMinutes.keys()].sort((a, b) => a - b);
   if (!keys.length) throw new Error('no transcript lines');
@@ -145,7 +145,7 @@ export async function runGate(opts) {
     try { return await one('tap', seat, at, a); } catch (e) { const r = fail(e); calls.push({ phase: 'tap', seat, at, cost: 0, secs: 0, stop: r.stop, ok: false }); return r; }
   };
   const tapStart = total;
-  const sim = await runTapSim({ client, registry, allMinutes, fromT, toT, enabled: new Set(TAP_SEATS), cap, callHook, shouldStop: () => (overCap() ? 'cap' : '') });
+  const sim = await runTapSim({ client, registry, allMinutes, fromT, toT, enabled: new Set(TAP_SEATS), cap, ...(day ? { day } : {}), callHook, shouldStop: () => (overCap() ? 'cap' : '') });
   if (sim.stopped) { stopped = stopped || 'cap'; stoppedAt = stoppedAt || sim.stoppedAt; }
   const tapSpend = total - tapStart;
   const minutes = sim.ticks.length;

@@ -234,7 +234,8 @@ if (arg('turn-at')) {
 // --tap-sim: the table agent over a window, through the real endpoint (see the header). The Worker code is the code that runs; only the
 // clock is virtual (one tick per transcript minute) and the database is in memory.
 if (flag('tap-sim')) {
-  const { runTapSim } = await import('./lib/tap-sim.mjs');
+  const { runTapSim, dayFromTranscript } = await import('./lib/tap-sim.mjs');
+  const day = arg('day') || dayFromTranscript(fs.readFileSync(transcriptFile, 'utf8'));          // --day YYYY-MM-DD, else the note's own date: (else an invented default)
   const fromT = from < 0 ? order[0] : from, toT = to > 1e8 ? order[order.length - 1] : to;
   const enabled = new Set((arg('tap-seats', 'tripwire,ref,clerk,ledger,stall,showrunner,mystery')).split(',').map(x => x.trim()).filter(Boolean));
   const callHook = async (seat, a, at) => {
@@ -243,7 +244,7 @@ if (flag('tap-sim')) {
     log.write(JSON.stringify({ at, seat, model: a.model, effort: a.effort, usage: r.usage, cost: r.cost, stop: r.stop, secs: r.secs, json: r.json }) + '\n');
     return r;
   };
-  const sim = await runTapSim({ client, registry, allMinutes, fromT, toT, lead: Number(arg('lead', 20)), enabled, cap: Number(arg('cap', 20)), callHook, shouldStop: () => (total >= maxSpend ? 'spend cap' : '') });
+  const sim = await runTapSim({ client, registry, allMinutes, ...(day ? { day } : {}), fromT, toT, lead: Number(arg('lead', 20)), enabled, cap: Number(arg('cap', 20)), callHook, shouldStop: () => (total >= maxSpend ? 'spend cap' : '') });
   if (sim.stopped) console.error('stopped at ' + sim.stoppedAt + ': spend cap $' + maxSpend + ' reached');
   const shown = sim.shown;
   const ticks = sim.ticks.map(x => {

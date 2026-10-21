@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { SEATS } from '../../functions/_lib/assist/seats.js';
-import { parseMinutes } from '../../scripts/lib/tap-sim.mjs';
+import { parseMinutes, dayFromTranscript, DEFAULT_DAY } from '../../scripts/lib/tap-sim.mjs';
 import { runGate, report, parseExpectRef, matchRef, cardsPer30, median, blankFromSchema, GATE } from '../../scripts/lib/gate.mjs';
 import { main } from '../../scripts/gm-assist-gate.mjs';
 
@@ -63,6 +63,17 @@ await test('parseExpectRef and matchRef: within 2 minutes, ~ and the window', ()
   assert.equal(m[1].caught, false);                                       // +3 is outside
   assert.equal(m[2].caught, false);                                       // a clerk card is not Ref
   assert.equal(m[3].inWindow, false);
+});
+
+await test('the virtual day: an invented default, the notes own date when it has one', () => {
+  assert.equal(DEFAULT_DAY, '2031-03-03');
+  assert.equal(dayFromTranscript('---
+date: 04/05/2032
+---'), '2032-05-04');
+  assert.equal(dayFromTranscript('---
+date: 2032-05-04
+---'), '2032-05-04');
+  assert.equal(dayFromTranscript('no frontmatter'), '');
 });
 
 await test('cardsPer30 and median', () => {

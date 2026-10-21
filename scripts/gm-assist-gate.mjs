@@ -14,6 +14,7 @@
 //   --max-spend    one cap over everything (default 15); the run stops cleanly and the report covers what ran
 //   --dry-run      no API calls: counts the calls the Tap would make (Tripwire flags guessed by keyword) and estimates spend. The prefix
 //                  size is counted with the free countTokens when a key is set (--no-count skips it), else chars/4
+//   --day          YYYY-MM-DD for the virtual clock (default: the transcript note's own `date:`, else an invented date)
 //   --out          a folder under gm-private/ (default gm-private/gate-<label>): gate.md for the GM, gate.json, calls are in gate.json
 //
 // The key is read from B68_ANTHROPIC_KEY, never ANTHROPIC_API_KEY. s03 is a hold-out: replay it, never tune on it. Generic and safe to
@@ -24,7 +25,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { makeClient, countTokens } from '../functions/_lib/assist/claude.js';
 import { SEATS } from '../functions/_lib/assist/seats.js';
-import { parseMinutes, toMin } from './lib/tap-sim.mjs';
+import { parseMinutes, toMin, dayFromTranscript } from './lib/tap-sim.mjs';
 import { makeDrawsFor, parsePositionAt } from './lib/fixer-draws.mjs';
 import { runGate, report, parseExpectRef, GATE } from './lib/gate.mjs';
 
@@ -67,7 +68,10 @@ export async function main(argv, { client: injected, log = console.log, err = co
   const voiceAt = list('voice-at').map((x) => { const [at, ...n] = x.split('='); return { at, npc: n.join('=').trim() }; });
   for (const t of [...fixerAt, ...voiceAt.map((v) => v.at), arg('from'), arg('to')].filter(Boolean)) if (!/^\d{1,2}:\d\d$/.test(t)) return bad('bad time ' + t + ' (use HH:MM)');
 
-  const allMinutes = parseMinutes(fs.readFileSync(transcript, 'utf8'));
+  const tText = fs.readFileSync(transcript, 'utf8');
+  const allMinutes = parseMinutes(tText);
+  const day = arg('day') || dayFromTranscript(tText);
+  if (arg('day') && !/^d{4}-dd-dd$/.test(day)) return bad('--day is YYYY-MM-DD');
   if (!allMinutes.size) return bad('no transcript lines in ' + transcript);
 
   let pre;
@@ -85,7 +89,7 @@ export async function main(argv, { client: injected, log = console.log, err = co
   const tokenCount = dry && client && !flag('no-count') ? async (model, prefix) => countTokens(client, { model, prefix, user: 'x' }) : undefined;
 
   const g = await runGate({
-    client, prefix: pre.prefix, registry: structuredClone(SEATS), allMinutes,
+    client, day, prefix: pre.prefix, registry: structuredClone(SEATS), allMinutes,
     fromT: arg('from') ? toMin(arg('from')) : -1, toT: arg('to') ? toMin(arg('to')) : 1e9,
     fixerAt, drawsFor, voiceAt, expectRef, maxSpend, cap: Number(arg('cap', 1000)), dryRun: dry, tokenCount, label,
   });
