@@ -11,6 +11,13 @@
 //   --nightshift      hour-long chunks -> sorters in parallel -> writer; writes nightshift.md
 //   --seats a,b,c    which seats run (default tripwire,ref,clerk,ledger)
 //   --set seat.k=v    override a seat's model or effort for a sweep, e.g. --set ref.effort=high
+//   --fixer-at HH:MM,...   run the Fixer at those minutes as if the Position had just been set, and write fixer.md and
+//                     fixer-moments.md (each moment's two draws beside the fitted lines). The Fixer FITS the console's two draws, so
+//                     they must come from one of:
+//     --draws-file <json>    { "HH:MM": { "position", "low", "mid" }, "default": { ... } }  (small, under gm-private/)
+//     --draws-pack <json>    draw them from that GM pack's console part with the console's own function (default
+//                            gm-private/b68-gm-pack.json); seeds are fixed: --draws-seed N (default 1) + 2 per moment
+//     --position <p>         the Position for the drawn pair (default risky); --position-at 22:09=desperate,22:12=controlled
 //   --max-spend <$>   stop when the calls so far cost this much (default 3)
 //   --out <dir>       where calls.jsonl and summary.txt go (default gm-private/assist-replay/<timestamp>)
 //
@@ -22,6 +29,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { makeClient, callSeat, countTokens } from '../functions/_lib/assist/claude.js';
 import { SEATS, WAKES } from '../functions/_lib/assist/seats.js';
+import { fitUser } from '../functions/_lib/assist/prompts.js';
+import { makeDrawsFor, parsePositionAt } from './lib/fixer-draws.mjs';
 
 const argv = process.argv.slice(2);
 const flag = n => argv.includes(`--${n}`);
@@ -83,14 +92,15 @@ const outDir = arg('out', path.join('gm-private', 'assist-replay', new Date().to
 fs.mkdirSync(outDir, { recursive: true });
 const log = fs.createWriteStream(path.join(outDir, 'calls.jsonl'));
 const maxSpend = Number(arg('max-spend', 3));
-const spend = {}, calls = {}, cards = [];
+const spend = {}, calls = {}, cards = [], secsLog = [], stopLog = [];
 let total = 0;
 
 async function run(seat, at, user) {
   const cfg = registry[seat];
   const r = await callSeat(client, { ...cfg, prefix, user });
   total += r.cost; spend[seat] = (spend[seat] || 0) + r.cost; calls[seat] = (calls[seat] || 0) + 1;
-  log.write(JSON.stringify({ at, seat, model: cfg.model, effort: cfg.effort, usage: r.usage, cost: r.cost, stop: r.stop, json: r.json }) + '\n');
+  secsLog.push(r.secs); stopLog.push(r.stop);
+  log.write(JSON.stringify({ at, seat, model: cfg.model, effort: cfg.effort, usage: r.usage, cost: r.cost, stop: r.stop, secs: r.secs, json: r.json }) + '\n');
   if (r.json === null) {
     console.error(`${at} ${seat}: no JSON (stop=${r.stop}, ${r.usage?.output_tokens} output tokens)`);
     fs.writeFileSync(path.join(outDir, `failed-${seat}-${at.replace(':', '')}.txt`), r.text || '');
@@ -98,19 +108,37 @@ async function run(seat, at, user) {
   return r.json;
 }
 
-// --fixer 22:09,22:23: run the Fixer as if a position had just been set at each minute, and write fixer.md
-if (arg('fixer')) {
-  const out = [];
-  for (const hhmm of arg('fixer').split(',')) {
-    const t = toMin(hhmm);
-    const j = await run('fixer', hhmm, `A roll is about to be made. Last five minutes, up to ${hhmm}:\n${textFor(t - 4, t)}`);
+// --fixer-at 22:09,22:23 (alias --fixer): run the Fixer as if a Position had just been set at each minute, fitting the console's
+// two draws (from --draws-file, or drawn from the pack's console part with a fixed seed). Writes fixer.md, fixer-moments.md, draws.json.
+if (arg('fixer-at') || arg('fixer')) {
+  const moments = (arg('fixer-at') || arg('fixer')).split(',').map(x => x.trim()).filter(Boolean);
+  let drawsFor;
+  try {
+    drawsFor = makeDrawsFor({ moments, file: arg('draws-file'), packFile: arg('draws-pack', path.join('gm-private', 'b68-gm-pack.json')), seed: Number(arg('draws-seed', 1)), position: arg('position', 'risky'), positionAt: parsePositionAt(arg('position-at', '')) });
+  } catch (e) { console.error(e.message); process.exit(2); }
+  const out = [], mom = [], used = {};
+  for (const hhmm of moments) {
+    if (total >= maxSpend) { console.error(`spend cap $${maxSpend} reached before ${hhmm}`); break; }
+    const t = toMin(hhmm), d = drawsFor(hhmm);
+    used[hhmm] = d;
+    const before = total, n0 = secsLog.length;
+    const j = await run('fixer', hhmm, fitUser({ position: d.position, draws: d, stamp: hhmm, talk: textFor(t - 4, t) }));
     out.push(`## ${hhmm}\n` + (j ? Object.entries(j).map(([k, v]) => `- **${k}:** ${v}`).join('\n') : '(no JSON)'));
+    mom.push([`## ${hhmm}  (${d.position}; ${secsLog[n0]} s, stop ${stopLog[n0]}, $${(total - before).toFixed(3)})`, '',
+      '| | Console draw | Fitted line |', '|---|---|---|',
+      `| 1-3 | ${cell(d.low)} | ${cell(j && j.one_three)} |`, `| 4-5 | ${cell(d.mid)} | ${cell(j && j.four_five)} |`, '',
+      ...(j ? [`- **read:** ${j.read}`, `- **6:** ${j.six}`, `- **crit:** ${j.crit}`, `- **bargain:** ${j.bargain}`] : ['(no JSON)']), ''].join('\n'));
   }
   fs.writeFileSync(path.join(outDir, 'fixer.md'), out.join('\n\n') + '\n');
-  console.log(out.join('\n\n') + `\n\nfixer total: $${total.toFixed(3)}`);
+  fs.writeFileSync(path.join(outDir, 'fixer-moments.md'), '# The Fixer fitting the console draws\n\n' + mom.join('\n') + '\n');
+  fs.writeFileSync(path.join(outDir, 'draws.json'), JSON.stringify(used, null, 1) + '\n');
+  const sorted = [...secsLog].sort((x, y) => x - y), med = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)] : 0;
+  const stats = `fixer total: $${total.toFixed(3)}; calls ${secsLog.length}; seconds median ${med}, max ${sorted[sorted.length - 1] ?? 0}; stop reasons ${JSON.stringify(stopLog)}`;
+  fs.writeFileSync(path.join(outDir, 'summary.txt'), stats + '\n');
+  console.log(stats + `\nwritten to ${outDir}`);     // the text itself stays in the files
   process.exit(0);
 }
-
+function cell(x) { return String(x == null ? '' : x).replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>'); }
 
 // --once seat@HH:MM@since: run one seat once over the transcript from `since` to HH:MM (the close-out check), and write <seat>-once.json
 if (arg('once')) {

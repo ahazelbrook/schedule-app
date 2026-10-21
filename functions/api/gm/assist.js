@@ -44,6 +44,7 @@ import { requireGm, parseJson } from '../../_lib/gm.js';
 import { loadStt, readLines } from '../../_lib/stt.js';
 import { makeClient, callSeat } from '../../_lib/assist/claude.js';
 import { SEATS } from '../../_lib/assist/seats.js';
+import { fitUser } from '../../_lib/assist/prompts.js';
 import { DEFAULT_CAP, budgetTier, canRun, decide } from '../../_lib/assist/conductor.js';
 import { toCandidate, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
@@ -237,9 +238,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : 'the fixer is busy');
       const { lines: recent, last } = await readLines(db, campaign, { since: new Date(t0 - FIT_WINDOW_MS).toISOString() });
       const lines = recent;
-      const named = 'The GM names the position: ' + position + (effect ? '. Effect: ' + effect : '') + '.';
-      const user = 'A roll is about to be made. ' + named + '\nThe console has drawn these. Fit them to the scene and keep what each one says happens.\n1-3 draw:\n' + draws.low + '\n4-5 draw:\n' + draws.mid +
-        '\nLast five minutes, up to ' + hhmm(t0) + ':\n' + formatLines(recent, speakers);
+      const user = fitUser({ position, effect, draws, stamp: hhmm(t0), talk: formatLines(recent, speakers) });
       const { cfg, r, timing } = await run('fixer', user);
       const at = new Date(now()).toISOString();
       const session = lines.length ? lines[lines.length - 1].session : '';

@@ -669,5 +669,40 @@ await test('a refusal shows nothing and the row records it (fit and tick); there
   assert.deepEqual(back.cards, [], 'and nothing is restored after a reload');
 });
 
+// ---------- WP2: the replay script's way to supply draws ----------
+await test('replay draws: from a JSON file, or drawn from a pack\'s console part with fixed seeds (the same pair every time); the user turn is shared with the endpoint', async () => {
+  const fs = await import('node:fs'); const os = await import('node:os');
+  const { makeDrawsFor, parsePositionAt } = await import('../../scripts/lib/fixer-draws.mjs');
+  const { fitUser } = await import('../../functions/_lib/assist/prompts.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'b68-draws-'));
+  try {
+    const f = path.join(dir, 'draws.json');
+    fs.writeFileSync(f, JSON.stringify({ '22:09': { position: 'desperate', low: 'L1', mid: 'M1' }, default: { low: 'L0', mid: 'M0' } }));
+    const fromFile = makeDrawsFor({ file: f, position: 'risky', positionAt: parsePositionAt('22:12=controlled') });
+    assert.deepEqual(fromFile('22:09'), { position: 'desperate', low: 'L1', mid: 'M1' });
+    assert.deepEqual(fromFile('22:12'), { position: 'controlled', low: 'L0', mid: 'M0' });
+    fs.writeFileSync(f, JSON.stringify({ '22:09': { low: 'only low' } }));
+    assert.throws(() => makeDrawsFor({ file: f })('22:09'), /no draws for 22:09/);
+
+    const fixture = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'console-pack.json'), 'utf8')).parts;
+    const pk = path.join(dir, 'pack.json'); fs.writeFileSync(pk, JSON.stringify({ parts: { console: fixture.console, campaign: fixture.campaign } }));
+    const moments = ['22:09', '22:12', '22:23'];
+    const a = makeDrawsFor({ moments, packFile: pk, seed: 7, position: 'risky', positionAt: { '22:12': 'desperate' } });
+    const b = makeDrawsFor({ moments, packFile: pk, seed: 7, position: 'risky', positionAt: { '22:12': 'desperate' } });
+    for (const m of moments) {
+      const d = a(m);
+      assert.deepEqual(d, b(m), 'fixed seed: the same pair every time');
+      assert.ok(d.low.startsWith('A 1–3 (') && d.mid.startsWith('A 4/5 ('), 'the console\'s own situation cards, as the page sends them');
+      assert.ok(d.low.length <= 1200 && d.mid.length <= 1200);
+    }
+    assert.equal(a('22:12').position, 'desperate'); assert.equal(a('22:09').position, 'risky');
+    assert.throws(() => makeDrawsFor({ packFile: path.join(dir, 'missing.json') }), /no draws/);
+    const user = fitUser({ position: 'risky', effect: 'limited', draws: { low: 'L', mid: 'M' }, stamp: '22:09', talk: '[22:08] A: x' });
+    assert.equal(user, 'A roll is about to be made. The GM names the position: risky. Effect: limited.\nThe console has drawn these. Fit them to the scene and keep what each one says happens.\n1-3 draw:\nL\n4-5 draw:\nM\nLast five minutes, up to 22:09:\n[22:08] A: x');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'gm-assist-replay.mjs'), 'utf8');
+  assert.ok(/arg\('fixer-at'\)/.test(src) && /fixer-moments\.md/.test(src) && /--draws-file/.test(src), 'the script takes --fixer-at with draws and writes fixer-moments.md');
+});
+
 console.log(failed ? `\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);
 process.exit(failed ? 1 : 0);
