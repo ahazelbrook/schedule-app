@@ -397,7 +397,7 @@ await test('(g) a score scene is only ever built from a player-layer render made
   assertEq([s.score.name, s.score.district, s.score.target], ['Plain Hall', 'Elsewhere', ''], 'the place name and district; the target is never sent');
 });
 
-await test('(g) a leaking plan falls back to rings; a leaking iso is refused; the hidden name is on neither svg', async () => {
+await test('(g) a leaking plan falls back to rings; a leaking iso falls back to rings; leaking rings are refused; the hidden name is on neither svg', async () => {
   const leaky = SCORE_ROLLS.leaky, hidden = 'basement';
   const plan = mapRender(leaky, { view: 'plan', theme: 'board', layer: 'player', reveal: ['public'], width: 1600 });
   if (!GP.leaks(plan.svg, leaky, ['public']).includes(hidden)) throw new Error('self-test: the fixture plan should name the hidden level');
@@ -409,8 +409,11 @@ await test('(g) a leaking plan falls back to rings; a leaking iso is refused; th
     checkSvg(svg);
   }
   const isoLeak = (roll, o) => ({ svg: o.view === 'iso' ? '<svg><text>Basement</text></svg>' : mapRender(roll, o).svg });
-  let err = null; try { GP.scoreScene(leaky, { layer: 'player', reveal: { public: true } }, isoLeak); } catch (e) { err = e; }
-  if (!err || !err.leak || err.message !== GP.LEAK_MSG) throw new Error('a leaking iso was not refused: ' + (err && err.message));
+  const fb = GP.scoreScene(leaky, { layer: 'player', reveal: { public: true } }, isoLeak);
+  if (!fb.isoRings || GP.leaks(fb.score.iso, leaky, ['public']).length || fb.score.iso.toLowerCase().includes(hidden)) throw new Error('a leaking iso was not redrawn as clean rings');
+  const allLeak = () => ({ svg: '<svg><text>Basement</text></svg>' });
+  let err = null; try { GP.scoreScene(leaky, { layer: 'player', reveal: { public: true } }, allLeak); } catch (e) { err = e; }
+  if (!err || !err.leak || err.message !== GP.LEAK_MSG) throw new Error('rings that leak were not refused: ' + (err && err.message));
   const open = GP.scoreScene(leaky, { layer: 'player', reveal: { public: true, working: true, controlled: true, secure: true } }, mapRender);
   assertEq([open.view, open.rings], ['plan', false], 'revealed: the plan stands');
 });

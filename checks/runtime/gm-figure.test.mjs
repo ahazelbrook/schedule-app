@@ -177,11 +177,11 @@ await test('invalid part names and colours in F are dropped with notes, and the 
   bad.hair['short crop'] = { style: 'not-a-style', facialHair: 'not-a-beard' };
   bad.faction['Faction B'].palette = ['cloth-nonexistent', 'cloth-oxblood'];
   bad.faction['Faction B'].halo = 'nope-500';
-  bad.standout['round glasses'] = { eyewear: 'monocle', marks: ['warts'] };
+  bad.standout['round glasses'] = { eyewear: 'no-such-glasses', marks: ['warts'] };
   const npc = { name: 'Ward Plum', presentation: 'masculine', heritage: 'Lineage One', faction: 'Faction B', rank: 'lieutenant', build: 'Broad', featuresLook: 'stern', hairLook: 'a short crop', mannerLook: 'calm', standout: 'round glasses', register: 'Plain', wears: 'a heavy coat' };
   const m = FM.map(npc, bad, mulberry32(11), K);
   const n = m.notes.join('\n');
-  for (const x of ['not-a-coat', 'no-such-hat', 'laser-gun', 'not-a-style', 'monocle', 'warts', 'cloth-nonexistent', 'nope-500', 'hot-pink']) assert.ok(n.includes(x), 'note for ' + x + '\n' + n);
+  for (const x of ['not-a-coat', 'no-such-hat', 'laser-gun', 'not-a-style', 'no-such-glasses', 'warts', 'cloth-nonexistent', 'nope-500', 'hot-pink']) assert.ok(n.includes(x), 'note for ' + x + '\n' + n);
   assert.equal(FM.check(m.spec, K).length, 0);
   assert.equal(m.spec.halo, 'ink-500');
   assert.ok(!m.spec.props.some((p) => p.type === 'laser-gun'));

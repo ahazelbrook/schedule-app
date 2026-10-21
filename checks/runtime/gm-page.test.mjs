@@ -44,7 +44,13 @@ await test('1. invented roll: plan and section name the hidden "Basement" level 
   for (const view of ['rings', 'iso']) {
     const d = P.playerDisplay(LEAKY, { layer: 'player', view, reveal: { public: true } }, render);
     assert.equal(d.kind, 'svg'); assert.deepEqual(P.leaks(d.svg, LEAKY, ['public']), [], view);
+    assert.ok(!d.svg.toLowerCase().includes('basement'), view + ': the hidden level name is on the svg sent to the iPad');
   }
+  // a leaking iso is redrawn as rings; if the rings leak too it is refused
+  const seen = []; const isoLeaks = (roll, o) => { seen.push(o.view); return o.view === 'iso' ? { svg: '<svg><text>Basement</text></svg>' } : render(roll, o); };
+  const fb = P.playerDisplay(LEAKY, { layer: 'player', view: 'iso', reveal: { public: true } }, isoLeaks);
+  assert.deepEqual(seen, ['iso', 'rings']); assert.deepEqual(P.leaks(fb.svg, LEAKY, ['public']), []);
+  assert.throws(() => P.playerDisplay(LEAKY, { layer: 'player', view: 'iso', reveal: { public: true } }, () => ({ svg: '<svg><text>Basement</text></svg>' })), (e) => e.leak === true);
   // revealing the band makes the name fair game
   assert.equal(P.playerDisplay(LEAKY, { layer: 'player', view: 'plan', reveal: { public: true, working: true, controlled: true, secure: true } }, render).kind, 'svg');
 });
@@ -815,7 +821,8 @@ await test('9f. the score scene: player layer only; the board is the plan, or ri
   assert.throws(() => P.scoreScene(null, { layer: 'player' }, rend), /Roll a location/);
   const s = P.scoreScene(LEAKY, { layer: 'player', reveal: { public: true } }, rend);
   assert.equal(s.view, 'rings'); assert.equal(s.rings, true, 'the plan named the hidden Basement: rings instead');
-  assert.deepEqual(calls.map((c) => [c.view, c.theme, c.layer, c.legend, c.width]), [['plan', 'board', 'player', undefined, 1600], ['rings', 'board', 'player', undefined, 1600], ['iso', 'blueprint', 'player', false, 1600]]);
+  assert.deepEqual(calls.map((c) => [c.view, c.theme, c.layer, c.legend, c.width]), [['plan', 'board', 'player', undefined, 1600], ['rings', 'board', 'player', undefined, 1600], ['iso', 'blueprint', 'player', false, 1600], ['rings', 'blueprint', 'player', false, 1600]]);
+  assert.equal(s.isoRings, true, 'the iso named the hidden Basement: rings instead'); assert.ok(!s.iso.toLowerCase().includes('basement') && !s.board.toLowerCase().includes('basement'), 'the hidden name is on neither svg');
   assert.ok(calls.every((c) => c.reveal.join() === 'public'));
   assert.deepEqual(P.leaks(s.board, LEAKY, ['public']), []); assert.deepEqual(P.leaks(s.iso, LEAKY, ['public']), []);
   assert.deepEqual(s.score, { name: 'Invented Works', district: 'Nowhere', target: '', reveal: ['public'], view: 'rings', board: s.board, iso: s.iso });
@@ -826,8 +833,11 @@ await test('9f. the score scene: player layer only; the board is the plan, or ri
   let err = null; try { P.scoreScene(LEAKY, { layer: 'player', reveal: { public: true } }, bad); } catch (e) { err = e; }
   assert.ok(err && err.leak && err.message === P.LEAK_MSG, 'a plan that leaks AND rings that leak: refused'); assert.deepEqual(calls2, ['plan', 'rings']);
   const isoOnly = (roll, o) => ({ svg: o.view === 'iso' ? '<svg><text>Basement</text></svg>' : '<svg><text>Lobby</text></svg>' });
-  err = null; try { P.scoreScene(LEAKY, { layer: 'player', reveal: { public: true } }, isoOnly); } catch (e) { err = e; }
-  assert.ok(err && err.leak, 'a leaking iso is refused, not redrawn');
+  const fbk = P.scoreScene(LEAKY, { layer: 'player', reveal: { public: true } }, isoOnly);
+  assert.equal(fbk.isoRings, true, 'a leaking iso is redrawn as rings');
+  const isoAndRings = (roll, o) => ({ svg: o.view === 'iso' || (o.view === 'rings' && o.theme === 'blueprint') ? '<svg><text>Basement</text></svg>' : '<svg><text>Lobby</text></svg>' });
+  err = null; try { P.scoreScene(LEAKY, { layer: 'player', reveal: { public: true } }, isoAndRings); } catch (e) { err = e; }
+  assert.ok(err && err.leak, 'an iso and rings that both leak: refused');
 });
 await test('9g. the gate lets a score patch through only when both svgs were marked here; null and other keys pass', () => {
   const g = P.makeGate(); const sc = { board: '<svg id="b"/>', iso: '<svg id="i"/>' };
