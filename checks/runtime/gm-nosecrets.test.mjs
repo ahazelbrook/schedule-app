@@ -216,13 +216,18 @@ function packScan(texts, forms, MIN, exempt) {
       const cand = byPrefix.get(text.substr(i, MIN)); if (!cand) continue;
       for (const f of cand) if (text.startsWith(f, i)) {
         const s = forms.get(f);
-        if (!ALLOW.has(hashOf(s)) && !exempt.has(s)) hits.push(name + ':' + lineOf(text, i) + ' ' + mask(s) + ' #' + hashOf(s));
+        if (!ALLOW.has(hashOf(s)) && !(ALLOW_IN[hashOf(s)] || []).includes(name) && !exempt.has(s)) hits.push(name + ':' + lineOf(text, i) + ' ' + mask(s) + ' #' + hashOf(s));
         break;
       }
     }
   }
   return hits;
 }
+/* Allowed in named files only (by hash, then file): a generic building-circulation phrase (one of the location module's keys) that the
+   location module needs as a key to match the vault's table. Approved by the GM 22/10/2026; anywhere else it still fails. */
+const ALLOW_IN = {
+  'ad71d7c6ebf8a5f8': ['app/gm/location.js', 'checks/runtime/gm-location.test.mjs'],
+};
 const ALLOW = new Set([
   '5505f366fcfd2394', 'b32ed6feb419d144', '56978126c0c719f4',   // band labels (location.js fallback)
   'c94db93d10cfb1de',                                         // a target-type name (location.js)
