@@ -393,10 +393,23 @@
     if (d.kind === 'npc') return 'NPC' + (t ? ' · ' + t : '');
     if (d.kind === 'text') return 'Text' + (t ? ' · ' + t : '');
     if (d.kind === 'rule') return 'Rule' + (t ? ' · ' + t : '');
+    if (d.kind === 'handout') return 'Handout' + (t ? ' · ' + t : '');
     if (d.kind === 'cards') return 'Cards' + (Array.isArray(d.cards) ? ' · ' + d.cards.length : '') + (d.mode === 'spread' ? ', spread' : '');
     return 'Nothing spotlit: the ambient plays';
   }
   P.displayLine = displayLine;
+  /* Handouts (GM.md "Handouts"): the pack's `handouts` part is the list [{ id, title, file, when? }] (private; the images are static files in
+     media/handouts/). The iPad is sent one item only: { kind: 'handout', title, file, showTitle }, never the list. */
+  var HANDOUT_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}\.(?:png|jpe?g|gif|webp|svg)$/i;
+  P.HANDOUT_DIR = 'media/handouts/';
+  P.handoutList = function (body) {
+    var seen = {};
+    return (isObj(body) && Array.isArray(body.items) ? body.items : []).filter(function (x) {
+      if (!isObj(x) || typeof x.id !== 'string' || !x.id || seen[x.id] || typeof x.file !== 'string' || !HANDOUT_FILE.test(x.file) || x.file.indexOf('..') >= 0) return false;
+      seen[x.id] = 1; return true;
+    }).map(function (x) { return { id: x.id, title: str(x.title).trim().slice(0, 200) || x.file, file: x.file, when: str(x.when).trim().slice(0, 200) }; });
+  };
+  P.handoutDisplay = function (item, showTitle) { return { kind: 'handout', title: str(item.title).slice(0, 2000), file: item.file, showTitle: showTitle === true }; };
   function scoreLine(score) {
     if (!isObj(score)) return '';
     var at = Date.parse(str(score.at)), when = '';
@@ -1814,7 +1827,7 @@
   function renderRack() {
     var box = $q('#gm-rack'); if (!box) return;
     var r = S && S.rack, vo = S && S.voice;
-    var vh = (vo ? voiceHtml(vo) : '') + (S && S.stall ? stallHtml(S.stall) : '');
+    var vh = (vo ? voiceHtml(vo) : '') + (S && S.stall ? stallHtml(S.stall) : '') + (S && S.offers && S.offers.length ? S.offers.map(offerHtml).join('') : '');
     if (!r) { box.innerHTML = vh; return; }
     var pre = r.pre, used = { one_three: pre && pre.kinds.onetothree.used, four_five: pre && pre.kinds.fourfive.used };
     var h = '<div class="gm-rack-h"><span class="gm-lab">Rack</span><span class="gm-dim">Blade, fitted to the scene · ' + esc(pre.pos) + '</span>' +
@@ -2222,11 +2235,46 @@
       '<p class="gm-dim gm-ipad-theme" id="gm-ipad-theme" role="status">' + esc(P.themeLine(THEME.state, THEME.http)) + '</p></div></section>';
     h += '<section class="gm-box gm-ipad-score"><h3 class="gm-band">Score scene</h3><div class="gm-ipad-body"><p class="gm-ipad-line" id="gm-ipad-score">' + (v.hasScore ? esc(v.scoreLine) : '<span class="gm-dim">None set. Use Set as score scene in the Location panel.</span>') + '</p>' +
       '<button type="button" class="btn sm" data-gm="clearscore"' + (!v.hasScore || off || busy ? ' disabled' : '') + '>Clear score</button></div></section>';
-    box.innerHTML = '<div id="gm-stt"></div>' + h;
+    box.innerHTML = '<div id="gm-stt"></div>' + h + handoutsHtml();
     renderStt(true);
     renderBar();
     probeTheme();
   }
+  /* ---------- Handouts: the list in the iPad tab, and the Rack's "Show handout?" offer ---------- */
+  function handouts() { return P.handoutList(part('handouts')); }
+  function handoutById(id) { return handouts().filter(function (x) { return x.id === id; })[0] || null; }
+  function handoutsHtml() {
+    var list = handouts(), me = S, tt = !!(me && me.hoTitle);
+    var h = '<section class="gm-box gm-ipad-handouts"><h3 class="gm-band">Handouts' + (list.length ? ' <span class="gm-dim">' + list.length + '</span>' : '') + '</h3><div class="gm-ipad-body">';
+    if (!list.length) return h + '<p class="gm-dim">' + (part('handouts') ? 'The handouts part has nothing to show.' : 'No handouts in the pack. Put the prop images in the vault, run npm run gm:handouts and npm run gm:pack, then Update pack.') + '</p></div></section>';
+    h += '<div class="gm-ipad-acts"><label class="gm-check"><input type="checkbox" data-hotitle="1"' + (tt ? ' checked' : '') + '> Title on the iPad</label>' +
+      '<button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene">Clear iPad</button></div><ul class="gm-handouts">';
+    list.forEach(function (x) {
+      h += '<li class="gm-handout" data-ho="' + esc(x.id) + '"><img class="gm-handout-thumb" src="' + esc(P.HANDOUT_DIR + x.file) + '" alt="" loading="lazy" decoding="async" width="72" height="72">' +
+        '<div class="gm-handout-t"><b>' + esc(x.title) + '</b>' + (x.when ? '<span class="gm-dim">' + esc(x.when) + '</span>' : '') +
+        '<div class="gm-ipad-acts"><button type="button" class="btn sm primary" data-gm="ho-show" data-id="' + esc(x.id) + '">Show on iPad</button>' +
+        '<button type="button" class="btn sm" data-gm="blankipad">Clear iPad</button></div></div></li>';
+    });
+    return h + '</ul></div></section>';
+  }
+  function showHandout(id) {
+    var x = handoutById(id); if (!x) { toast('That handout is not in the pack any more.', true); return Promise.resolve(false); }
+    return pushDisplay(P.handoutDisplay(x, !!(S && S.hoTitle))).then(function () { toast('On the iPad: ' + x.title + '.'); return true; }, function (e) { toast('Could not send the handout: ' + errText(e), true); return false; });
+  }
+  /* Claude suggests: a "Show handout: <title>?" item in the Rack. Nothing calls this yet (the Mystery keeper will). One offer per handout; a repeat replaces it. */
+  function suggestHandout(id, why) {
+    var x = S && handoutById(String(id)); if (!x) return false;
+    var o = { id: x.id, title: x.title, why: str(why).trim().slice(0, 300) };
+    S.offers = (S.offers || []).filter(function (y) { return y.id !== x.id; }).concat([o]).slice(-3);
+    renderRack(); return true;
+  }
+  function offerHtml(o) {
+    return '<div class="gm-offer" data-offer="' + esc(o.id) + '"><div class="gm-rack-h"><span class="gm-lab">Handout</span><span class="gm-dim">Claude suggests</span></div>' +
+      '<p class="gm-rack-read">Show handout: ' + esc(o.title) + '?</p>' + (o.why ? '<p class="gm-dim gm-rack-w">' + esc(o.why) + '</p>' : '') +
+      '<div class="gm-ipad-acts"><button type="button" class="btn sm primary" data-gm="offer-show" data-id="' + esc(o.id) + '">Show</button>' +
+      '<button type="button" class="chip sm" data-gm="offer-dismiss" data-id="' + esc(o.id) + '">Dismiss</button></div></div>';
+  }
+  function dropOffer(id) { if (S && S.offers) { S.offers = S.offers.filter(function (y) { return y.id !== id; }); renderRack(); } }
   /* is app/media/theme.mp3 on the server? asked once a minute at most, on the hosted app only; the answer goes into the panel's line */
   function probeTheme() {
     if (THEME.busy || Date.now() - THEME.at < 60000 || typeof W.fetch !== 'function' || !gmApi()) return;
@@ -3619,6 +3667,9 @@
       case 'rackclear': rackClear(); break;
       case 'voiceclear': S.voice = null; renderRack(); break;
       case 'stallclear': S.stall = null; renderRack(); break;
+      case 'ho-show': showHandout(b.getAttribute('data-id')); break;
+      case 'offer-show': { var oid = b.getAttribute('data-id'); showHandout(oid).then(function (ok) { if (ok) dropOffer(oid); }); break; }
+      case 'offer-dismiss': dropOffer(b.getAttribute('data-id')); break;
       case 'another': voiceAnother(); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {
@@ -3722,6 +3773,7 @@
       if (ev.type === 'change') { var sp = {}; sp[t.getAttribute('data-sttspk')] = str(t.value).trim().slice(0, 60) || null; sttPatch({ speakers: sp }); }
       return;
     }
+    if (t.hasAttribute && t.hasAttribute('data-hotitle')) { S.hoTitle = !!t.checked; return; }      /* this page only: the next Show on iPad carries the title caption */
     if (t.id === 'gm-opp-iv') { if (ev.type === 'change') patch({ opps: { interval: Math.floor(+t.value) || 0 } }); return; }
     if (t.id === 'gm-prep-note') { if (ev.type === 'change') { try { W.localStorage.setItem(PREP_NOTE, t.value); } catch (e) {} renderPrep(true); } return; }
     if (t.hasAttribute('data-ctl')) { if (ev.type === 'change' || t.tagName === 'SELECT') setLive(t.getAttribute('data-ctl'), t.value); return; }
@@ -3804,6 +3856,8 @@
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */
     _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer }, panel: S.panel, seg: S.seg, doc: S.doc } : null; },
     _pushDisplay: function (d) { return pushDisplay(d); },
+    /* "Claude suggests" (a later step calls this): a Show handout? item in the Rack. Returns false for an id the pack does not hold. */
+    suggestHandout: function (id, why) { return suggestHandout(id, why); },
     _ambient: function () { return { doc: AM.doc, shown: AM.shown, loaded: AM.loaded, crew: crewSync.state().lastSent }; }
   };
 });

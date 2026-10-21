@@ -796,3 +796,12 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 @keyframes as-pop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (max-width: 599px) { .gm-assist { display: none !important; } }
 @media print { .gm-assist { display: none !important; } }
+
+/* Handouts (iPad tab) and the Rack's handout offer */
+.gm-handouts { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .5rem; }
+.gm-handout { display: flex; gap: .6rem; align-items: flex-start; }
+.gm-handout-thumb { flex: none; width: 72px; height: 72px; object-fit: cover; background: #000; border-radius: 4px; }
+.gm-handout-t { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.gm-handout-t b { overflow-wrap: anywhere; }
+.gm-offer { margin-top: .4rem; }
+.gm-check { display: inline-flex; gap: .35rem; align-items: center; }

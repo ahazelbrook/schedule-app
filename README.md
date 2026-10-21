@@ -31,7 +31,8 @@ From the repository root (on Windows, in Git Bash: SETUP.md):
 > **Before a deploy.** Two files are not in git and go up from this disk: `app/media/theme.mp3` (the
 > opening credits' theme) and `app/ambient/calling-cards.html` (the calling-cards scene, built by
 > `node tools/ambient/scenes/cards.js` from `tools/ambient/cards/*.jpg`). Without them `npm run deploy`
-> stops, because a deploy uploads `app/` as it is and the live site would lose them.
+> stops, because a deploy uploads `app/` as it is and the live site would lose them. The handout images
+> (`app/media/handouts/`, also git-ignored) go up the same way: run `npm run gm:handouts` on the deploying PC first (GM.md, "Handouts").
 > Two secrets are never set by the deploy script and stay as they are on Cloudflare: `DISPLAY_EMAILS`
 > (the table iPad's own sign-in) and `DEEPGRAM_API_KEY` (the iPad's transcriber). Set each once with
 > `npx wrangler secret put <NAME>` (GM.md). The deploy's receipt shows all four.

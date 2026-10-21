@@ -182,7 +182,9 @@ Never on a game day: deploy the day after, so a surprise has a week to be fixed.
    `app\media\theme.mp3` (the opening credits' song) and `app\ambient\calling-cards.html` (the cards scene). If one
    is missing (a new PC, a fresh clone), copy it in from the old folder or your backup. The cards scene can also be
    rebuilt with `node tools/ambient/scenes/cards.js` when the faction art is in `tools/ambient/cards/`. The script
-   refuses to deploy without them, because a deploy without them takes them off the live site.
+   refuses to deploy without them, because a deploy without them takes them off the live site. The handout images in
+   `app\media\handouts\` are the same kind of file (not on GitHub, uploaded from this disk): run `npm run gm:handouts` on this PC first,
+   or the Handouts list on the iPad tab shows pictures that are not on the server.
 4. **Find your two Access values** (once; write them down next to this file, not in it):
    - the **team name**: Cloudflare dashboard → **Zero Trust** → **Settings** → the team domain reads
      `<team>.cloudflareaccess.com`; the team name is the `<team>` part;

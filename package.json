@@ -8,6 +8,7 @@
     "db:local": "wrangler d1 migrations apply DB --local",
     "with-vault": "node -e \"const [script, ...rest] = process.argv.slice(1); const r = require('child_process').spawnSync(process.execPath, [script, '--vault', process.env.B68_VAULT || 'C:/Vault/Hazel Second Brain', ...rest], { stdio: 'inherit' }); process.exit(r.status === null ? 1 : r.status)\"",
     "gm:pack": "npm run -s with-vault -- scripts/gm-pack.mjs --out gm-private/b68-gm-pack.json",
+    "gm:handouts": "npm run -s with-vault -- scripts/gm-handouts.mjs",
     "gm:pull": "npm run -s with-vault -- scripts/gm-sync.mjs pull",
     "gm:push": "npm run -s with-vault -- scripts/gm-sync.mjs push",
     "gm:transcript": "npm run -s with-vault -- scripts/gm-transcript.mjs",
@@ -20,7 +21,7 @@
     "check:clocks": "node checks/api/clocks.mjs",
     "check:clocks-e2e": "node checks/runtime/clocks.e2e.mjs",
     "check:gm-api": "node checks/api/gm.mjs",
-    "check:runtime": "node checks/runtime/adapter.test.mjs && node checks/runtime/pwa.test.mjs && node checks/runtime/markdown.test.mjs && node checks/runtime/display.test.mjs && node checks/runtime/gm-nosecrets.test.mjs && node checks/runtime/gm-logic.test.mjs && node checks/runtime/gm-location.test.mjs && node checks/runtime/gm-page.test.mjs && node checks/runtime/gm-figure.test.mjs && node checks/runtime/gm-npc.test.mjs && node checks/runtime/gm-sync.test.mjs && node checks/runtime/gm-scenes.test.mjs && node checks/runtime/gm-score.test.mjs && node checks/runtime/gm-score-export.test.mjs && node checks/runtime/gm-downtime.test.mjs && node checks/runtime/gm-downtime-export.test.mjs && node checks/runtime/gm-prep.test.mjs && node checks/runtime/gm-sites.test.mjs && node checks/runtime/gm-screen.test.mjs && node checks/runtime/stt.test.mjs && node checks/runtime/ambient-assets.test.mjs && node checks/runtime/ambient-shells.test.mjs && node checks/runtime/ambient-frames.test.mjs && node checks/runtime/gm-after.test.mjs && node checks/runtime/gm-nightshift.test.mjs && node checks/runtime/gm-assist.test.mjs && node checks/runtime/gm-assist-pack.test.mjs && node checks/runtime/gm-assist-export.test.mjs && node checks/runtime/gm-assist-never.test.mjs && node checks/runtime/gm-gatekeeper.test.mjs && node checks/runtime/gm-assist-file.test.mjs && node checks/runtime/gm-assist-panel.test.mjs && node checks/runtime/gm-assist-gate.test.mjs",
+    "check:runtime": "node checks/runtime/adapter.test.mjs && node checks/runtime/pwa.test.mjs && node checks/runtime/markdown.test.mjs && node checks/runtime/display.test.mjs && node checks/runtime/gm-nosecrets.test.mjs && node checks/runtime/gm-logic.test.mjs && node checks/runtime/gm-location.test.mjs && node checks/runtime/gm-page.test.mjs && node checks/runtime/gm-figure.test.mjs && node checks/runtime/gm-npc.test.mjs && node checks/runtime/gm-sync.test.mjs && node checks/runtime/gm-scenes.test.mjs && node checks/runtime/gm-score.test.mjs && node checks/runtime/gm-score-export.test.mjs && node checks/runtime/gm-downtime.test.mjs && node checks/runtime/gm-downtime-export.test.mjs && node checks/runtime/gm-prep.test.mjs && node checks/runtime/gm-sites.test.mjs && node checks/runtime/gm-screen.test.mjs && node checks/runtime/stt.test.mjs && node checks/runtime/ambient-assets.test.mjs && node checks/runtime/ambient-shells.test.mjs && node checks/runtime/ambient-frames.test.mjs && node checks/runtime/gm-after.test.mjs && node checks/runtime/gm-nightshift.test.mjs && node checks/runtime/gm-assist.test.mjs && node checks/runtime/gm-assist-pack.test.mjs && node checks/runtime/gm-assist-export.test.mjs && node checks/runtime/gm-assist-never.test.mjs && node checks/runtime/gm-gatekeeper.test.mjs && node checks/runtime/gm-assist-file.test.mjs && node checks/runtime/gm-assist-panel.test.mjs && node checks/runtime/gm-assist-gate.test.mjs && node checks/runtime/gm-handouts.test.mjs",
     "check:e2e": "cd app/checks && node e2e.js",
     "check:e2e-all": "node checks/e2e-all.mjs",
     "check:sweep": "node checks/runtime/gm-figure.test.mjs --sweep=500 && node checks/runtime/gm-npc.test.mjs --sweep=500",
@@ -43,7 +44,8 @@
     "check:gm": "node checks/runtime/gm.e2e.mjs",
     "check:gm-scenes": "node checks/runtime/gm-scenes.e2e.mjs",
     "check:gm-page": "node checks/runtime/gm-page.test.mjs",
-    "check:gm-downtime": "node checks/runtime/gm-downtime.test.mjs && node checks/runtime/gm-downtime-export.test.mjs"
+    "check:gm-downtime": "node checks/runtime/gm-downtime.test.mjs && node checks/runtime/gm-downtime-export.test.mjs",
+    "check:handouts-e2e": "node checks/runtime/gm-handouts.e2e.mjs"
   },
   "keywords": [],
   "author": "",
