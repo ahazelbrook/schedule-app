@@ -1,4 +1,4 @@
-/* Blades '68 figure kit v2. Browser: window.B68Figure. Node: require(). Built from src/ by tools/bundle.js (no date, so rebuilds are byte-identical). */
+/* Blades '68 figure kit. Browser: window.B68Figure. Node: require(). Built from src/ by tools/bundle.js (no date, so rebuilds are byte-identical). */
 "use strict";
 var B68Figure = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
@@ -30,6 +30,7 @@ var B68Figure = (() => {
         facialHair: "Stubble, moustaches, beards.",
         makeup: "Eyeliner, eyeshadow, lipstick, blush.",
         eyewear: "Glasses, sunglasses, eyepatches.",
+        mask: "Face coverings (face.mask): balaclava, stocking, domino, bandana, gas mask. A mask declares `covers`, the face kinds it hides.",
         hair: "Hairstyles (back and front layers).",
         hat: "Hats and headwear.",
         top: "Base-layer tops (outfit.base).",
@@ -42,6 +43,7 @@ var B68Figure = (() => {
         neckwear: "Ties, scarves, neckerchiefs, chains (outfit.neck).",
         belt: "Belts (outfit.waist).",
         gloves: "Gloves (outfit.hands).",
+        jewellery: "Earrings, necklaces, bracelets, watches, rings (spec.jewellery[]).",
         prop: "Props (spec.props).",
         companion: "Animals that stand with the figure (spec.companion).",
         textile: "Fabric patterns for piece.pattern."
@@ -66,8 +68,20 @@ var B68Figure = (() => {
       var get = (kind, name) => (PARTS[kind] || {})[name] || null;
       var list = (kind) => Object.entries(PARTS[kind] || {}).filter(([n, p]) => p.name === n).map(([, p]) => p);
       var kinds = () => KINDS;
+      var DOCS = typeof __FIG_DOCS__ === "undefined" || __FIG_DOCS__;
       function catalog() {
         var _a;
+        if (!DOCS) {
+          const lines2 = ["# Figure kit catalogue (names only)", "", "This is figure-kit.min.js, built without the parts' catalogue text. What each part is and its params are in figure-kit.js (catalog()) and CATALOG.md.", ""];
+          for (const k of Object.keys(KINDS)) {
+            const ps = list(k);
+            if (ps.length) lines2.push(`## ${k}`, "", ps.map((p) => {
+              var _a2;
+              return `\`${p.name}\`${((_a2 = p.aliases) == null ? void 0 : _a2.length) ? ` (${p.aliases.map((a) => "`" + a + "`").join(", ")})` : ""}`;
+            }).join(", "), "");
+          }
+          return lines2.join("\n");
+        }
         const lines = ["# Figure kit catalogue", "", "Generated from the part registry: every option the spec can name.", ""];
         for (const k of Object.keys(KINDS)) {
           const ps = list(k);
@@ -95,7 +109,7 @@ var B68Figure = (() => {
       var clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       var lerp = (a, b, t) => a + (b - a) * t;
       var hpx = (ctx, n) => ctx.px(n) / ctx.R.head.k;
-      var bold = (ctx) => ctx.lod === "lo" ? 1.7 : ctx.lod === "mid" ? 1.3 : 1;
+      var bold = (ctx) => (ctx.lod === "lo" ? 1.7 : ctx.lod === "mid" ? 1.3 : 1) * 1.18;
       var atLeast = (ctx, v, n) => Math.max(v, hpx(ctx, n));
       function hsD(ctx, d, depth) {
         return ctx.G.mapPath(d, (p) => ctx.hp(p, { depth: typeof depth === "function" ? depth(p) : depth || 0 }));
@@ -268,8 +282,9 @@ var B68Figure = (() => {
         const rk = rough ? 1.5 : 1, rg = rough ? 1 : 0;
         const jit = (a) => rough ? (ctx.rng() - 0.5) * a : 0;
         const hs = (d) => U.hsD(ctx, d, 0.025);
-        const lineC = C.mix(skin.line, skin.deep, 0.35);
-        const ow = (base) => Math.max(base * b * rk, px(1.05));
+        const lineC = C.mix(skin.shade, skin.deep, 0.3);
+        const ow = (base) => Math.max(base * b * rk * 2.3, px(1.8));
+        const vo = (o) => o * 0.62;
         const out = [], over = [], under = [];
         const mb = U.mouthBox(ctx, ctx.S.face);
         const poly = U.outlinePoly(ctx);
@@ -280,22 +295,22 @@ var B68Figure = (() => {
           const xl = -fw * (0.92 - i * 0.2) + (i % 2 ? 0.03 : -0.01), xr = fw * (0.86 - i * 0.12) + (i % 2 ? -0.02 : 0.02), tilt = (i % 2 ? -1 : 1) * 5e-3;
           const sag = 8e-3 * (1 + rg), w = ow(85e-4 + (L - 1) * 1e-3);
           const pts = [[xl, y + 5e-3 - tilt + jit(4e-3)], [xl * 0.45, y - sag * 0.4 + jit(3e-3)], [0.01, y - sag + jit(3e-3)], [xr * 0.5, y - sag * 0.4 + tilt + jit(3e-3)], [xr, y + 5e-3 + tilt + jit(4e-3)]];
-          over.push({ d: hs(G.brush(pts, [1e-3, w, w * 1.15, w, 1e-3])), fill: lineC, o: hi ? 0.62 : 0.78 });
+          over.push({ d: hs(G.brush(pts, [1e-3, w, w * 1.15, w, 1e-3])), fill: lineC, o: vo(hi ? 0.62 : 0.78) });
         }
-        if (rough || L === 3) for (const s of [-1, 1]) over.push({ d: hs(G.brush([[s * 0.022, H.brow + 0.012], [s * 0.026, H.brow - 0.022], [s * 0.02, H.brow - 0.05]], [1e-3, ow(8e-3), 1e-3])), fill: lineC, o: 0.75 });
+        if (rough || L === 3) for (const s of [-1, 1]) over.push({ d: hs(G.brush([[s * 0.022, H.brow + 0.012], [s * 0.026, H.brow - 0.022], [s * 0.02, H.brow - 0.05]], [1e-3, ow(8e-3), 1e-3])), fill: lineC, o: vo(0.75) });
         for (const s of [-1, 1]) {
           const ex = s * H.eyeX, ey = H.eyeY + (H.eyeH || 0.05) * 0.55;
           if (L >= 2 || rough || hi) {
             const k = L >= 2 ? 1 : 0.6;
             under.push({ d: hs(G.smooth([[ex - s * 0.07, ey + 0.012], [ex - s * 0.02, ey + 0.024 * k + 8e-3], [ex + s * 0.05, ey + 0.02 * k + 8e-3], [ex + s * 0.075, ey + 0.012], [ex + s * 0.02, ey + 0.012], [ex - s * 0.03, ey + 0.012]], true, 0.5)), fill: skin.shade, o: s < 0 ? 0.4 : 0.6 });
-            over.push({ d: hs(G.brush([[ex - s * 0.06, ey + 0.026 + 6e-3 * k], [ex, ey + 0.036 + 8e-3 * k], [ex + s * 0.072, ey + 0.026 + 4e-3 * k]], [1e-3, ow(75e-4), 1e-3])), fill: lineC, o: rough ? 0.8 : 0.6 });
+            over.push({ d: hs(G.brush([[ex - s * 0.06, ey + 0.026 + 6e-3 * k], [ex, ey + 0.036 + 8e-3 * k], [ex + s * 0.072, ey + 0.026 + 4e-3 * k]], [1e-3, ow(75e-4), 1e-3])), fill: lineC, o: vo(rough ? 0.8 : 0.6) });
           }
-          const n = rough || L === 3 ? 3 : 2;
+          const n = !hi ? 0 : rough || L === 3 ? 3 : 2;
           const ox = ex + s * (H.eyeW / 2 + 0.014), oy = H.eyeY - 2e-3;
           for (let i = 0; i < n; i++) {
             const a = -0.45 + i * (0.9 / Math.max(1, n - 1)) + jit(0.15), len = 0.04 - Math.abs(i - (n - 1) / 2) * 6e-3 + jit(8e-3);
             const p0 = [ox + s * 4e-3, oy + (i - (n - 1) / 2) * 6e-3], p1 = [ox + s * Math.cos(a) * len, oy + Math.sin(a) * len + 4e-3];
-            over.push({ d: hs(G.brush([p0, [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2 + jit(3e-3)], p1], [ow(68e-4), ow(6e-3), 1e-3])), fill: lineC, o: 0.7 });
+            over.push({ d: hs(G.brush([p0, [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2 + jit(3e-3)], p1], [ow(68e-4), ow(6e-3), 1e-3])), fill: lineC, o: vo(0.7) });
           }
         }
         const nwx = H.noseW * 1.04, mc = mb.mw + 0.012;
@@ -303,18 +318,18 @@ var B68Figure = (() => {
           const w = ow(0.0105 + (L - 1) * 15e-4) * (s > 0 ? 1.1 : 1);
           const pts = [[s * nwx * 1.02, H.noseY - 0.012], [s * (nwx + 0.034), (H.noseY + mb.y) / 2 - 0.012], [s * (mb.mw + 0.034), mb.y + 4e-3], [s * (mb.mw + 0.026 + (L > 1 ? 6e-3 : 0)), mb.y + 0.045 + L * 8e-3]];
           const hl = L >= 2 || rough || hi;
-          if (hl || lod === "mid") over.push({ d: hs(G.brush(pts, [1e-3, w, w * 1.15, w * 0.8, 1e-3])), fill: lineC, o: L === 1 && !rough ? 0.5 : 0.78 });
+          if (hl || lod === "mid") over.push({ d: hs(G.brush(pts, [1e-3, w, w * 1.15, w * 0.8, 1e-3])), fill: lineC, o: vo(L === 1 && !rough ? 0.5 : 0.78) });
           if (hi && L >= 2) over.push({ d: hs(G.brush(pts.map((p) => [p[0] - s * 0.014, p[1] + 6e-3]), [1e-3, 5e-3, 5e-3, 1e-3])), fill: skin.light, o: s < 0 ? 0.45 : 0.15 });
           if (L >= 2 || rough) {
             const wm = ow(75e-4 + (L - 2) * 15e-4);
             const mp = [[s * (mb.mw * 0.99), (s < 0 ? mb.yl : mb.yr) + 0.014], [s * (mb.mw * 1 + 4e-3), mb.y + 0.055], [s * (mb.mw * 0.92), mb.y + 0.1 + L * 8e-3]];
-            over.push({ d: hs(G.brush(mp, [1e-3, wm, wm * 0.9, 1e-3])), fill: lineC, o: 0.65 });
+            over.push({ d: hs(G.brush(mp, [1e-3, wm, wm * 0.9, 1e-3])), fill: lineC, o: vo(0.65) });
           }
         }
         if (rough) for (const s of [-1, 1]) {
           const cw = ow(45e-4);
-          over.push({ d: hs(G.brush([[s * (H.cheekW - 0.06), 0.1], [s * (H.cheekW - 0.095), 0.15], [s * (H.cheekW - 0.12), 0.2]], [1e-3, cw, 1e-3])), fill: lineC, o: 0.5 });
-          if (hi) over.push({ d: hs(G.brush([[s * (H.cheekW - 0.045), 0.15], [s * (H.cheekW - 0.08), 0.2], [s * (H.cheekW - 0.1), 0.25]], [1e-3, cw * 0.8, 1e-3])), fill: lineC, o: 0.4 });
+          over.push({ d: hs(G.brush([[s * (H.cheekW - 0.06), 0.1], [s * (H.cheekW - 0.095), 0.15], [s * (H.cheekW - 0.12), 0.2]], [1e-3, cw, 1e-3])), fill: lineC, o: vo(0.5) });
+          if (hi) over.push({ d: hs(G.brush([[s * (H.cheekW - 0.045), 0.15], [s * (H.cheekW - 0.08), 0.2], [s * (H.cheekW - 0.1), 0.25]], [1e-3, cw * 0.8, 1e-3])), fill: lineC, o: vo(0.4) });
         }
         const pieces = [];
         if (L >= 3 || rough) {
@@ -463,15 +478,365 @@ var B68Figure = (() => {
     }
   });
 
+  // src/parts/tops/_shared.js
+  var require_shared = __commonJS({
+    "src/parts/tops/_shared.js"(exports, module) {
+      "use strict";
+      var clamp01 = (t) => Math.max(0, Math.min(1, t));
+      var sstep = (a, b, x) => {
+        const t = clamp01((x - a) / (b - a));
+        return t * t * (3 - 2 * t);
+      };
+      var NECK = {
+        crew: [0.02, 0.1, 2.2],
+        scoop: [0.1, 0.38, 2],
+        boat: [0.34, 0.06, 3],
+        square: [0.16, 0.28, 8],
+        v: [0.01, 0.7, 1],
+        high: [0, 0.02, 2],
+        turtle: [0, 0, 2]
+      };
+      function bodice(ctx, o = {}) {
+        var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+        const { R, G } = ctx;
+        const hh = R.hh, w = R.w, y = R.y;
+        const cap = ctx.underCaps ? ctx.underCaps() : null;
+        const e = Math.min((_a = o.ease) != null ? _a : 0.045, cap ? cap.ease : 9) * hh, eW = Math.min((_c = (_b = o.waistEase) != null ? _b : o.ease) != null ? _c : 0.045, cap ? cap.waist : 9) * hh;
+        const dr = Math.max(o.drop || 0, cap ? cap.drop : 0) * hh, slope = (_d = o.slope) != null ? _d : 1;
+        const nl = o.neckline || "crew";
+        const hem = (_e = o.hem) != null ? _e : y.hip + 0.12 * hh;
+        const flare = (o.flare || 0) * hh;
+        const cut = o.armhole === "cut";
+        const sp = NECK[nl] || NECK.crew;
+        const nbw = w.neckBase;
+        const nx = nbw + ((_f = o.neckX) != null ? _f : sp[0]) * hh;
+        const depth = ((_g = o.depth) != null ? _g : sp[1]) * hh, pw = sp[2];
+        const turtle = nl === "turtle";
+        const neckH = ((_h = o.neckH) != null ? _h : 0.3) * hh;
+        const neckY0 = y.neckBase - 0.03 * hh;
+        const sides = {};
+        let yC = neckY0;
+        for (const s of ["R", "L"]) {
+          const k = R.sx(s), A = R.arms[s];
+          const P = (x, Y) => R.torsoPt(k * x, Y);
+          const edgeX = w.shoulder + 0.08 * A.widths.top + e;
+          const xTip = edgeX - 0.12 * hh;
+          const yTip = neckY0 + (y.shoulder - 5e-3 * hh - neckY0) * slope;
+          const shY = (x) => {
+            const f = clamp01((x - nbw) / (xTip - nbw));
+            return neckY0 + (yTip - neckY0) * f - 0.02 * hh * Math.sin(Math.PI * f);
+          };
+          yC = shY(nx);
+          const pts = {};
+          if (turtle) pts.neckTop = P(w.neck * 1.2 + ((_i = o.neckFlare) != null ? _i : 0.03) * hh, y.neckBase - neckH);
+          pts.neck = turtle ? P(nbw + 0.025 * hh, shY(nbw + 0.025 * hh)) : [...P(nx, yC), true];
+          const xt = nx + (xTip - nx) * 0.55;
+          pts.trap = P(xt, shY(xt));
+          const xa = w.chest * 0.98 + e;
+          if (cut) {
+            const xs = nx + (xTip - nx) * ((_j = o.strap) != null ? _j : 0.5);
+            pts.strapTop = [...P(xs, shY(xs)), true];
+            const ci = (x, Y, lo) => o.armInner ? Math.max(lo, Math.min(x, o.armInner(s, Y))) : x;
+            const yB = y.chest - 0.36 * hh, yP = y.chest - 0.27 * hh, xA = xs + 0.03 * hh;
+            pts.armA = P(xA, y.shoulder + 0.22 * hh);
+            pts.armB = P(ci(xs + (xa - xs) * 0.45, yB, xA + 0.02 * hh), yB);
+            pts.armpit = P(ci(xa - 0.02 * hh, yP, xA + 0.05 * hh), yP);
+          } else {
+            pts.shTop = P(xTip, yTip);
+            pts.shPt = P(edgeX - 0.04 * hh, y.shoulder + 0.1 * hh + dr * 0.6);
+            pts.shOut = P(edgeX - 4e-3 * hh, y.shoulder + 0.3 * hh + dr * 0.4);
+            pts.armpit = P(xa, y.chest - 0.24 * hh);
+          }
+          pts.chest = P(w.chest + e, y.chest);
+          pts.waist = P(w.waist + eW, y.waist);
+          pts.hip = P(w.hip + e, y.hip);
+          const hl = Math.min(hem, y.crotch);
+          if (hem > y.hip + 0.05 * hh) pts.hipLow = P(R.widthAt(hl) + e + flare * Math.min(1, (hl - y.hip) / Math.max(1, hem - y.hip)), hl - (hem > y.crotch ? 0 : 0.02 * hh));
+          pts.hem = [...P(R.widthAt(Math.min(hem, y.crotch + 3 * hh)) + e + flare, hem), true];
+          if (hem < y.waist + 0.05 * hh) {
+            delete pts.hip;
+            delete pts.hipLow;
+            pts.hem = [...P(R.widthAt(hem) + e + flare, hem), true];
+          }
+          if (hem < y.chest + 0.05 * hh) delete pts.waist;
+          sides[s] = pts;
+        }
+        const order = ["neckTop", "neck", "trap", "strapTop", "armA", "armB", "shTop", "shPt", "shOut", "armpit", "chest", "waist", "hip", "hipLow", "hem"];
+        const Rp = order.filter((n) => sides.R[n]).map((n) => sides.R[n]);
+        const Lp = order.filter((n) => sides.L[n]).map((n) => sides.L[n]).reverse();
+        const hemDrop = ((_k = o.hemDrop) != null ? _k : 0.02) * hh;
+        const hm = R.torsoPt(0, hem + hemDrop);
+        const hemMid = o.hemPoint ? [hm[0], hm[1], true] : hm;
+        const across = [];
+        if (turtle) across.push(R.torsoPt(0, y.neckBase - neckH + 0.012 * hh));
+        else if (pw === 1) across.push([...R.torsoPt(0, yC + depth), true]);
+        else for (const t of [0.8, 0.5, 0.25, 0, -0.25, -0.5, -0.8]) across.push(R.torsoPt(t * nx, yC + depth * Math.pow(1 - Math.pow(Math.abs(t), pw), 1 / pw)));
+        const all = [...Rp, hemMid, ...Lp, ...across];
+        const neckPts = turtle ? [sides.L.neckTop, ...across, sides.R.neckTop] : [sides.L.neck, ...across, sides.R.neck];
+        return { d: G.smooth(all, true, (_l = o.tension) != null ? _l : 0.45), pts: sides, L: sides.L, R: sides.R, hem, hemMid, neckMid: turtle ? across[0] : across[Math.floor(across.length / 2)] || [0, yC + depth], neckPts, yC, nx, depth };
+      }
+      function sleeves(ctx, mat, o = {}) {
+        var _a, _b, _c;
+        const { R, G, hh } = ctx;
+        const out = [];
+        const to = (_a = o.to) != null ? _a : 0.32, ease = (_b = o.ease) != null ? _b : 0.05;
+        const capK = (_c = o.cap) != null ? _c : Math.max(0.55, 1 - ease / 0.22), flare = o.flare || 0;
+        const hwf = (u, base) => {
+          let b = o.hw ? o.hw(u, base) : base;
+          b *= capK + (1 - capK) * sstep(0, 0.13, u);
+          if (flare) b *= 1 + flare * sstep(Math.max(0, to - 0.2), to, u);
+          return b;
+        };
+        const pre = o.prefix || "top";
+        for (const s of ["R", "L"]) {
+          const A = R.arms[s];
+          const lb = ctx.body.limb("arm", s, { ease, to, capStart: "round", hw: hwf });
+          lb.pieces.forEach((pc) => {
+            var _a2, _b2, _c2, _d;
+            const lines = [];
+            const last = pc.seg === "lower" || pc.seg === "whole";
+            if (ctx.lodAtLeast("mid") && to > 0.6) {
+              const e = lb.at(lb.split), up = lb.at(lb.split - 0.08), dn = lb.at(lb.split + 0.06);
+              const n = G.perp(G.norm(G.sub(dn, up))), hw = lb.hw(lb.split);
+              lines.push({ d: G.brush([G.add(e, G.mul(n, -hw * 0.9)), G.add(G.lerp(e, dn, 0.5), G.mul(n, -hw * 0.1))], [4e-3 * hh, 0.022 * hh, 2e-3 * hh], { samples: 5 }), fill: "deep", o: 0.7 });
+              lines.push({ d: G.brush([G.add(up, G.mul(n, hw * 0.8)), G.add(G.lerp(up, e, 0.6), G.mul(n, hw * 0.05))], [3e-3 * hh, 0.016 * hh, 2e-3 * hh], { samples: 5 }), fill: "shade", o: 0.8 });
+            }
+            if (last && o.cuff !== false && ctx.lodAtLeast("mid")) {
+              const p = lb.at(to), q = lb.at(Math.max(0, to - 0.03)), dir = G.norm(G.sub(p, q)), n = G.perp(dir);
+              const hw = lb.hw(to) * 1.15, bw = ((_a2 = o.hemBand) != null ? _a2 : 0.034) * hh;
+              const c = G.sub(p, G.mul(dir, bw * 0.45));
+              lines.push({ d: G.brush([G.add(c, G.mul(n, -hw)), G.add(c, G.mul(n, hw))], bw, { samples: 5 }), fill: "shade", o: (_b2 = o.hemO) != null ? _b2 : 0.8 });
+            }
+            out.push({ id: `${pre}-sleeve-${s}-${pc.seg}`, z: A.z + ((_c2 = o.zAdd) != null ? _c2 : 0.2) + (pc.seg === "lower" ? A.foreFront ? 0.05 : -0.05 : 0), d: pc.d, mat, lines, pattern: o.pattern, light: { form: (_d = o.form) != null ? _d : 1 } });
+          });
+          if (o.shadow !== false && to < 0.92 && ctx.lodAtLeast("mid")) {
+            const sb = ctx.body.limb("arm", s, { from: to - 0.01, to: Math.min(1, to + 0.07), capStart: "flat" });
+            sb.pieces.forEach((pc, i) => out.push({ id: `${pre}-arm-${s}-hemshadow${i}`, z: A.z + 0.1 + (pc.seg === "lower" ? A.foreFront ? 0.05 : -0.05 : 0), d: pc.d, mat: ctx.skin, fill: "deep", light: false, opacity: 0.32 }));
+          }
+        }
+        return out;
+      }
+      function torsoFolds(ctx, t, o = {}) {
+        const { R, G, hh } = ctx;
+        const lines = [];
+        if (!ctx.lodAtLeast("mid")) return lines;
+        const W = (pts, ws, fill, op) => lines.push({ d: G.brush(pts, ws.map((v) => v * hh), { samples: 5 }), fill, o: op });
+        for (const s of ["R", "L"]) {
+          const k = R.sx(s), P = t.pts[s], ap = P.armpit, lit = s === "R";
+          const sh = lit ? "shade" : "deep";
+          W([[ap[0] - k * 0.02 * hh, ap[1] + 0.05 * hh], [ap[0] - k * 0.22 * hh, ap[1] + 0.2 * hh], [ap[0] - k * (lit ? 0.32 : 0.4) * hh, ap[1] + (lit ? 0.26 : 0.3) * hh]], [2e-3, lit ? 0.016 : 0.024, 2e-3], sh, lit ? 0.6 : 0.8);
+          if (!lit && o.strong !== false) W([[ap[0] - k * 0.03 * hh, ap[1] + 0.2 * hh], [ap[0] - k * 0.16 * hh, ap[1] + 0.38 * hh], [ap[0] - k * 0.22 * hh, ap[1] + 0.52 * hh]], [2e-3, 0.016, 2e-3], "shade", 0.7);
+          if (o.armShadow !== false) {
+            const lb = ctx.body.limb("arm", s, { ease: 0.04, to: 0.46 });
+            const pts = [];
+            for (const u of [0.07, 0.19, 0.31, 0.43]) {
+              const c = lb.at(u), c2 = lb.at(u + 0.02), c0 = lb.at(Math.max(0, u - 0.02));
+              let n = G.perp(G.norm(G.sub(c2, c0)));
+              if ((R.centerAt(c[1]) - c[0]) * n[0] < 0) n = [-n[0], -n[1]];
+              pts.push(G.add(c, G.mul(n, lb.hw(u) + 0.03 * hh)));
+            }
+            lines.push({ d: G.brush(pts, [2e-3 * hh, 0.06 * hh, 0.06 * hh, 2e-3 * hh], { samples: 7 }), fill: lit ? "deep" : "shade", o: lit ? 0.5 : 0.3 });
+          }
+          if (o.waist && P.waist) {
+            const wp = P.waist;
+            W([[wp[0] - k * 0.01 * hh, wp[1] - 0.05 * hh], [wp[0] - k * 0.16 * hh, wp[1] - 0.01 * hh], [wp[0] - k * 0.3 * hh, wp[1] + 0.04 * hh]], [2e-3, 0.016, 2e-3], "shade", lit ? 0.55 : 0.8);
+            W([[wp[0] - k * 0.01 * hh, wp[1] + 0.07 * hh], [wp[0] - k * 0.14 * hh, wp[1] + 0.11 * hh], [wp[0] - k * 0.24 * hh, wp[1] + 0.14 * hh]], [2e-3, 0.012, 2e-3], "shade", 0.5);
+          }
+          if (o.hemFolds !== false && P.hem) {
+            const hp = P.hem;
+            W([[hp[0] - k * 0.06 * hh, hp[1] - 0.02 * hh], [hp[0] - k * 0.2 * hh, hp[1] - 0.2 * hh], [hp[0] - k * 0.26 * hh, hp[1] - 0.3 * hh]], [0.018, 0.01, 2e-3], "shade", 0.8);
+          }
+        }
+        return lines;
+      }
+      function collarFlaps(ctx, mat, o = {}) {
+        var _a, _b, _c, _d, _e, _f;
+        const { R, G, hh } = ctx;
+        const nb = R.y.neckBase, nx0 = R.w.neckBase * 0.97;
+        const len = ((_a = o.len) != null ? _a : 0.28) * hh, spread = ((_b = o.spread) != null ? _b : 0.14) * hh, rise = ((_c = o.rise) != null ? _c : 0.13) * hh, gap = ((_d = o.gap) != null ? _d : 0.03) * hh, throat = ((_e = o.throat) != null ? _e : 0.06) * hh;
+        const pieces = [], shadow = [];
+        for (const s of ["R", "L"]) {
+          const k = R.sx(s), P = (x, Y) => R.torsoPt(k * x, Y);
+          const A = P(nx0 * 0.92, nb - rise), B = P(nx0 + 0.09 * hh, nb - rise * 0.6), M = P(nx0 + spread * 0.92, nb + len * 0.5);
+          const C = [...P(nx0 + spread, nb + len), true], D = [...P(gap, nb + throat), true];
+          const E = G.lerp(D, A, 0.55);
+          const Dm = G.lerp(C, D, 0.5);
+          Dm[1] -= 0.012 * hh;
+          const poly = [A, B, M, C, Dm, D, E];
+          const d = G.smooth(poly, true, 0.4);
+          const lines = [];
+          if (ctx.lodAtLeast("mid")) lines.push({ d: G.brush([G.lerp(A, E, 0.15), G.lerp(A, E, 0.6), G.lerp(D, E, 0.2)], [2e-3 * hh, 0.02 * hh, 2e-3 * hh], { samples: 5 }), fill: "shade", o: 0.55 });
+          pieces.push({ id: `${o.id || "collar"}-${s}`, z: (_f = o.z) != null ? _f : 31.8, d, mat, pattern: o.pattern, lines, light: { form: 0.55 } });
+          shadow.push({ d: G.translate(d, 0.012 * hh, 0.024 * hh), fill: "deep", o: 0.55 });
+        }
+        return { pieces, shadow };
+      }
+      function buttons(ctx, ys, o = {}) {
+        var _a, _b;
+        const { R, G, hh } = ctx;
+        if (!ctx.lodAtLeast("mid")) return [];
+        const r = ((_a = o.r) != null ? _a : 0.014) * hh, out = [];
+        for (const Y of ys) {
+          const c = R.torsoPt(((_b = o.dx) != null ? _b : 0) * hh, Y);
+          out.push({ d: G.ellipse(c[0], c[1], r, r), fill: o.fill || "deep", o: 0.9 });
+          if (ctx.lodAtLeast("hi")) out.push({ d: G.ellipse(c[0] - r * 0.3, c[1] - r * 0.3, r * 0.35, r * 0.35), fill: "light", o: 0.8 });
+        }
+        return out;
+      }
+      function centreLine(ctx, y0, y1, o = {}) {
+        var _a, _b, _c;
+        const { R, G, hh } = ctx;
+        const dx = ((_a = o.dx) != null ? _a : 0.02) * hh;
+        const pts = [0, 0.5, 1].map((f) => R.torsoPt(dx, y0 + (y1 - y0) * f));
+        return { d: G.brush(pts, [2e-3 * hh, ((_b = o.w) != null ? _b : 0.01) * hh, 4e-3 * hh]), fill: o.fill || "shade", o: (_c = o.o) != null ? _c : 0.7 };
+      }
+      function ribLines(ctx, a, b, o = {}) {
+        var _a, _b;
+        const { G, hh } = ctx;
+        const out = [];
+        const n = Math.min(a.length, b.length);
+        for (let i = 0; i < n; i++) out.push({ d: G.brush([a[i], G.lerp(a[i], b[i], 0.5), b[i]], ((_a = o.w) != null ? _a : 6e-3) * hh), fill: o.fill || "shade", o: (_b = o.o) != null ? _b : 0.4 });
+        return out;
+      }
+      function ribBody(ctx, halfW, y0, y1, o = {}) {
+        var _a, _b;
+        const { R, G, hh } = ctx;
+        const sp = ((_a = o.spacing) != null ? _a : 0.055) * hh, out = [];
+        for (let x = -halfW; x <= halfW; x += sp) {
+          const pts = [y0, (y0 + y1) / 2, y1].map((Y) => R.torsoPt(x, Y));
+          const lit = x < 0;
+          out.push({ d: G.brush(pts, ((_b = o.w) != null ? _b : 7e-3) * hh), fill: lit ? "light" : "shade", o: lit ? 0.32 : 0.4 });
+        }
+        return out;
+      }
+      function cuffs(ctx, mat, o = {}) {
+        var _a, _b, _c;
+        const { R, G, hh } = ctx;
+        const out = [], u0 = (_a = o.from) != null ? _a : 0.9, u1 = (_b = o.to) != null ? _b : 1, ease = (_c = o.ease) != null ? _c : 0.055;
+        for (const s of ["R", "L"]) {
+          const A = R.arms[s];
+          const lb = ctx.body.limb("arm", s, { ease, from: u0, to: u1, capStart: "flat", hw: o.hw });
+          lb.pieces.forEach((pc, i) => {
+            const lines = [];
+            if (ctx.lodAtLeast("mid")) {
+              const p = lb.at(u0), q = lb.at(u0 + 0.03), dir = G.norm(G.sub(q, p)), n = G.perp(dir), hw = lb.hw(u0);
+              lines.push({ d: G.brush([G.add(p, G.mul(n, -hw * 1.1)), G.add(p, G.mul(n, hw * 1.1))], 0.022 * hh, { samples: 3 }), fill: "deep", o: 0.55 });
+              if (o.button !== false) {
+                const bp = G.add(G.lerp(p, q, 1.6), G.mul(n, hw * 0.4 * (s === "R" ? 1 : -1)));
+                lines.push({ d: G.ellipse(bp[0], bp[1], 0.012 * hh), fill: "deep", o: 0.8 });
+              }
+            }
+            out.push({ id: `${o.prefix || "top"}-cuff-${s}${lb.pieces.length > 1 ? i : ""}`, z: A.z + 0.6 + (pc.seg === "lower" ? A.foreFront ? 0.05 : -0.05 : 0), d: pc.d, mat, lines, pattern: o.pattern, light: { form: 0.8 } });
+          });
+        }
+        return out;
+      }
+      function hemBand(ctx, b, h = 0.08, fill = "shade") {
+        const { G, hh } = ctx;
+        const a = [b.pts.R.hem, b.hemMid, b.pts.L.hem].map((p) => [p[0], p[1] - h * 0.5 * hh]);
+        const lines = [{ d: G.brush(a, [h * hh, h * hh, h * hh]), fill, o: 0.5 }];
+        if (ctx.lodAtLeast("mid")) {
+          const n = ctx.lodAtLeast("hi") ? 26 : 14;
+          const pts = G.resample([b.pts.R.hem, b.hemMid, b.pts.L.hem], n, 0.5);
+          for (const p of pts) lines.push({ d: G.brush([[p[0], p[1] - h * hh], [p[0], p[1]]], 7e-3 * hh), fill: "deep", o: 0.35 });
+        }
+        return lines;
+      }
+      function flatten(G, d) {
+        const pts = [];
+        let cur = null;
+        for (const sg of G.parse(d)) {
+          if (sg.c === "M" || sg.c === "L") {
+            cur = sg.p[0];
+            pts.push(cur);
+          } else if (sg.c === "C") {
+            const [a, b, p] = sg.p;
+            for (let i = 1; i <= 16; i++) {
+              const t = i / 16, u = 1 - t;
+              pts.push([u * u * u * cur[0] + 3 * u * u * t * a[0] + 3 * u * t * t * b[0] + t * t * t * p[0], u * u * u * cur[1] + 3 * u * u * t * a[1] + 3 * u * t * t * b[1] + t * t * t * p[1]]);
+            }
+            cur = p;
+          } else if (sg.c === "Q") {
+            const [a, p] = sg.p;
+            for (let i = 1; i <= 8; i++) {
+              const t = i / 8, u = 1 - t;
+              pts.push([u * u * cur[0] + 2 * u * t * a[0] + t * t * p[0], u * u * cur[1] + 2 * u * t * a[1] + t * t * p[1]]);
+            }
+            cur = p;
+          }
+        }
+        return pts;
+      }
+      function topAt(pts, x) {
+        let best = null;
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i], b = pts[(i + 1) % pts.length];
+          if ((a[0] - x) * (b[0] - x) <= 0 && a[0] !== b[0]) {
+            const y = a[1] + (b[1] - a[1]) * ((x - a[0]) / (b[0] - a[0]));
+            if (best === null || y < best) best = y;
+          }
+        }
+        return best;
+      }
+      function edgeAt(pts, y, side) {
+        let best = null;
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i], b = pts[(i + 1) % pts.length];
+          if ((a[1] - y) * (b[1] - y) <= 0 && a[1] !== b[1]) {
+            const x = a[0] + (b[0] - a[0]) * ((y - a[1]) / (b[1] - a[1]));
+            if (best === null || (side === "R" ? x < best : x > best)) best = x;
+          }
+        }
+        return best;
+      }
+      module.exports = { cuffs, hemBand, bodice, sleeves, torsoFolds, collarFlaps, buttons, centreLine, ribLines, ribBody, sstep, clamp01, NECK, flatten, topAt, edgeAt };
+    }
+  });
+
   // src/parts/body/standard.js
   var require_standard = __commonJS({
     "src/parts/body/standard.js"(exports, module) {
       "use strict";
       var { register } = require_registry();
+      var shared = null;
+      try {
+        shared = require_shared();
+      } catch (e) {
+      }
       var sstep = (a, b, x) => {
         const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
         return t * t * (3 - 2 * t);
       };
+      function chestSkin(ctx) {
+        var _a;
+        const { R, G, hh } = ctx;
+        const t = ctx.body.torso({ ease: 0, hem: R.y.waist, neckline: "high" });
+        if (!shared || !shared.bodice) return t.d;
+        const b = shared.bodice(ctx, { ease: 0, waistEase: 0, neckline: "high", neckX: 0, hem: R.y.waist });
+        const line = shared.flatten(G, b.d), margin = 8e-3 * hh;
+        const down = (p) => {
+          const y = shared.topAt(line, p[0]);
+          return y === null ? p : [p[0], Math.max(p[1], y + margin), ...p.slice(2)];
+        };
+        const own = shared.flatten(G, t.d), skinTop = (x) => shared.topAt(own, x);
+        const P = { R: { ...t.pts.R }, L: { ...t.pts.L } };
+        let moved = false;
+        for (const s of ["R", "L"]) {
+          const g = b.pts[s], p = P[s];
+          const n0 = p.neck, t0 = p.trap;
+          p.neck = down(p.neck);
+          p.trap = down(p.trap);
+          const x1 = p.neck[0] + (g.trap[0] - p.neck[0]) * 0.3;
+          const q0 = [x1, (_a = skinTop(x1)) != null ? _a : p.neck[1]];
+          p.q1 = down(q0);
+          if (p.neck[1] !== n0[1] || p.trap[1] !== t0[1] || p.q1[1] !== q0[1]) moved = true;
+        }
+        if (!moved) return t.d;
+        const order = ["neck", "q1", "trap", "shTop", "shPt", "armpit", "chest", "waist", "hip", "hipLow", "hem"];
+        const Rp = order.filter((n) => P.R[n]).map((n) => P.R[n]);
+        const Lp = order.filter((n) => P.L[n]).map((n) => P.L[n]).reverse();
+        return G.smooth([...Rp, t.hemMid, ...Lp, t.neckMid], true, 0.45);
+      }
       function build(ctx, V) {
         const { R, G, Z, skin, hh } = ctx;
         const fem = R.fem;
@@ -510,7 +875,7 @@ var B68Figure = (() => {
           if (hi && !fem) neckLines.push(B([[c1 - 0.015 * hh, R.y.chin + 0.3 * hh], [c1 + 0.01 * hh, R.y.chin + 0.36 * hh]], [0.012 * hh, 0.02 * hh, 4e-3 * hh], "light", 0.3));
         }
         out.push({ id: "neck", z: Z.neck, d: nk.d, mat: skin, shade: [jawShadow], deep: [jawCore], lines: neckLines, light: { form: 1.2 } });
-        const t = ctx.body.torso({ ease: 0, hem: R.y.waist, neckline: "high" });
+        const chestD = chestSkin(ctx);
         const cl = [];
         const nb = R.y.neckBase, c = R.centerAt(nb);
         if (mid) {
@@ -525,7 +890,7 @@ var B68Figure = (() => {
           }
           cl.push({ d: G.ellipse(c, nb + 0.075 * hh, R.w.neckBase * 0.28, 0.035 * hh), fill: "deep", o: 0.55 });
         }
-        out.push({ id: "chest-skin", noYoke: true, z: Z.torso, d: t.d, mat: skin, lines: cl, deep: [G.ellipse(c, nb - 0.02 * hh, R.w.neckBase * 1.1, 0.1 * hh)] });
+        out.push({ id: "chest-skin", noYoke: true, z: Z.torso, d: chestD, mat: skin, lines: cl, deep: [G.ellipse(c, nb - 0.02 * hh, R.w.neckBase * 1.1, 0.1 * hh)] });
         const femA = fem ? 0.95 : 1;
         const armTaper = (u) => V.arm * femA * (1 - 0.1 * sstep(0.8, 1, u)) * (1 - 0.04 * Math.exp(-Math.pow((u - 0.52) / 0.05, 2)));
         for (const s of ["R", "L"]) {
@@ -945,6 +1310,9 @@ var B68Figure = (() => {
         };
         return prof;
       }
+      function remember(ctx, d) {
+        if (ctx.slot === "bottom" || ctx.slot === "dress") ctx.lowerOutline = d;
+      }
       function lowerBody(ctx, o = {}) {
         var _a, _b, _c, _d, _e, _f, _g;
         const { R, hh } = ctx, y = R.y;
@@ -964,7 +1332,9 @@ var B68Figure = (() => {
           else if (hemSpec === "knee") hemU = F.split * 1.05;
           else if (hemSpec === "shorts") hemU = F.split * 0.56;
           else hemU = F.uAtY((_g = hemYs[hemSpec]) != null ? _g : hemYs.ankle);
-          const prof = legProfile(ctx, F, o.cut || "straight", e, { blouse: o.blouse, hemU });
+          const prof0 = legProfile(ctx, F, o.cut || "straight", e, { blouse: o.blouse, hemU });
+          const lk = o.legK && o.legK[s] || 1, prof1 = lk === 1 ? prof0 : (u) => prof0(u) * lk;
+          const prof = o.legStraight && o.legStraight[s] ? (u) => Math.max(prof1(u), prof1(0) + (prof1(hemU) - prof1(0)) * Math.min(1, u / hemU)) : prof1;
           const outer = [], inner = [], M = 18;
           for (let i = 0; i <= M; i++) {
             const u = hemU * i / M, p = F.at(u), n = F.nrm(u), w = prof(u);
@@ -1007,7 +1377,9 @@ var B68Figure = (() => {
           ...Rs.outer.slice(1, -1).reverse(),
           ...upR
         ];
-        return { d: G.smooth(pts, true, 0.42), legs, top, crotch: [cx, cy], topL, topR, hipL, hipR, e };
+        const d = G.smooth(pts, true, 0.42);
+        remember(ctx, d);
+        return { d, legs, top, crotch: [cx, cy], topL, topR, hipL, hipR, e };
       }
       function skirtShape(ctx, o = {}) {
         var _a, _b, _c, _d, _e, _f;
@@ -1037,7 +1409,9 @@ var B68Figure = (() => {
         const sag = ((_f = o.sag) != null ? _f : 0.012) * hh;
         const hemMid = [R.pelvisShift, hemY + sag];
         const pts = [...sR, hemMid, ...sL.slice().reverse()];
-        return { d: G.smooth(pts, true, 0.4), topY, hemY, topL: sR[0], topR: sL[0], hemL: sR[sR.length - 1], hemR: sL[sL.length - 1], hipW, hemW, wAt, P, hemMid };
+        const d = G.smooth(pts, true, 0.4);
+        remember(ctx, d);
+        return { d, topY, hemY, topL: sR[0], topR: sL[0], hemL: sR[sR.length - 1], hemR: sL[sL.length - 1], hipW, hemW, wAt, P, hemMid };
       }
       function hemYOf(ctx, o = {}) {
         var _a;
@@ -1886,7 +2260,7 @@ var B68Figure = (() => {
             shade: [{ d: hsm([[40, -24], [46, -23.2], [50.4, -24.4], [48.6, -22.2], [43, -22]], 0.5), o: 0.6 }]
           });
           out.push({ id: "dog-muzzle", z: headZ + 0.02, d: hsm(mask), mat: darkM, clip: "dog-head", light: { form: 0.4 } });
-          out.push({ id: "dog-collar", z: headZ - 0.05, d: K.ribbon(P(Pz.collar), K.inch(1.45) * sc), mat: ctx.mat("cloth-red", "leather"), light: { form: 0.8 }, clip: "dog-body" });
+          out.push({ id: "dog-collar", z: headZ - 0.05, d: K.ribbon(P(Pz.collar), K.inch(1.45) * sc), mat: ctx.mat("cloth-oxblood", "leather"), light: { form: 0.8 }, clip: "dog-body", spot: true });
           out.push({ id: "dog-tag", z: headZ - 0.04, d: G.circle(...F.P([Pz.collar[2][0] + 0.3, Pz.collar[2][1] + 0.4]), K.inch(0.7) * sc), mat: ctx.mat("metal-brass", "metal"), light: { form: 0.5 } });
           const earPts = br.earStyle === "prick" ? [[38.4, -30.2], [39.6, -36.6], [42.3, -30.4], [40.4, -28.4]] : br.earStyle === "fold" ? [[38.2, -30.4], [41.8, -31.4], [43, -27.2], [40.4, -26], [38.4, -27.6]] : [[38.2, -30.2], [41.6, -28.8], [42.3, -24], [41.4, -19], [39.4, -16.2], [37.2, -17.2], [36, -21.5], [36.2, -26.6]];
           out.push({
@@ -1922,39 +2296,75 @@ var B68Figure = (() => {
       "use strict";
       var G = require_geom();
       var { hemYOf, plane } = require_lower();
+      var SILHOUETTES = ["trapeze", "aline", "column"];
+      var UNDER_FLARE = 0.1;
       function dressBody(ctx, o = {}) {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c, _d, _e, _f, _g;
         const { R, hh } = ctx, y = R.y, w = R.w;
         const cap = ctx.underCaps ? ctx.underCaps() : null;
         const e = Math.min((_a = o.ease) != null ? _a : 0.03, cap ? cap.ease : 9) * hh;
         const t = ctx.body.torso({ ease: (_b = o.ease) != null ? _b : 0.03, neckline: o.neckline || "scoop", depth: o.depth, hem: y.hip + 0.1 * hh });
         const hemY = hemYOf(ctx, o);
+        const sil = SILHOUETTES.includes(o.silhouette) ? o.silhouette : null;
         const minWaist = ctx.S.outfit && ctx.S.outfit.base && ctx.S.outfit.base.type ? w.waist + 0.024 * hh : -Infinity;
-        const waistX = Math.max(minWaist, (o.fit === "fitted" ? w.waist + e : o.fit === "tent" ? w.hip + e : G.lerp(w.waist, w.hip, 0.6) + e) - (o.pinch || 0) * hh);
-        const hipW = w.hip + e, hemW = hipW + ((_c = o.flare) != null ? _c : 0.14) * hh;
-        const pw = (_d = o.pow) != null ? _d : 1;
+        const hipW = w.hip + e;
+        let chestX = w.chest + e, waistX, hipX = hipW, hemW, below, armpitIn = 0;
+        if (sil === "trapeze") {
+          armpitIn = !o.sleeves || o.sleeves === "none" ? 0.07 * hh : 0;
+          const apY = y.chest - 0.24 * hh, apW = w.chest * 0.98 + e - armpitIn;
+          const clear = (hipW + 0.015 * hh - apW) / Math.max(1, y.hip - apY);
+          const slope = Math.max(clear, o.flare != null ? o.flare * hh / Math.max(1, hemY - apY) : Math.tan(((_c = o.angle) != null ? _c : 10) * Math.PI / 180));
+          const line = (Y) => apW + slope * (Y - apY);
+          chestX = line(y.chest);
+          waistX = Math.max(minWaist, line(y.waist));
+          hipX = line(y.hip);
+          hemW = line(hemY);
+          below = (Y) => Math.max(hipW, line(Y));
+        } else if (sil === "aline" || sil === "column") {
+          const col = sil === "column";
+          waistX = Math.max(minWaist, (col ? G.lerp(w.waist, w.hip, 0.3) : w.waist) + e - (o.pinch || 0) * hh);
+          hemW = hipW + ((_d = o.flare) != null ? _d : col ? 0.05 : 0.34) * hh;
+          below = (Y) => hipW + (hemW - hipW) * Math.pow(Math.min(1, (Y - y.hip) / Math.max(1, hemY - y.hip)), col ? 3 : 1);
+        } else {
+          waistX = Math.max(minWaist, (o.fit === "fitted" ? w.waist + e : o.fit === "tent" ? w.hip + e : G.lerp(w.waist, w.hip, 0.6) + e) - (o.pinch || 0) * hh);
+          hemW = hipW + ((_e = o.flare) != null ? _e : 0.14) * hh;
+          const pw = (_f = o.pow) != null ? _f : 1;
+          below = (Y) => hipW + (hemW - hipW) * Math.pow(Math.min(1, (Y - y.hip) / Math.max(1, hemY - y.hip)), pw);
+        }
+        if (sil && cap) {
+          chestX = Math.min(chestX, w.chest + e);
+          waistX = Math.max(minWaist, Math.min(waistX, w.waist + ((cap.waist || 0) - (o.pinch || 0)) * hh));
+          hipX = hipW;
+          if (ctx.under && ctx.under.torso === "outer") hemW = Math.min(hemW, hipW + UNDER_FLARE * hh);
+          const hem0 = hemW, designed = below;
+          below = (Y) => Math.min(designed(Y), hipW + (hem0 - hipW) * Math.min(1, Math.max(0, (Y - y.hip) / Math.max(1, hemY - y.hip))));
+        }
         const sleeveless = !o.sleeves || o.sleeves === "none";
-        const lower = (Y) => hipW + (hemW - hipW) * Math.pow(Math.min(1, (Y - y.hip) / Math.max(1, hemY - y.hip)), pw);
         const P = (k, x, Y) => Y <= y.hip + 0.02 * hh ? R.torsoPt(k * x, Y) : [R.pelvisShift + k * x, Y];
         const side = (s) => {
           const k = R.sx(s), p = t.pts[s];
           const pts = [p.neck, p.trap, p.shTop];
           if (sleeveless) {
-            const ap = p.armpit;
+            const ap = armpitIn ? R.torsoPt(k * (w.chest * 0.98 + e - armpitIn), y.chest - 0.24 * hh) : p.armpit;
             pts.push([G.lerp(p.shTop[0], ap[0], 0.5) - k * 0.035 * hh, G.lerp(p.shTop[1], ap[1], 0.55)], [...ap, true]);
           } else pts.push(p.shPt, p.armpit);
-          pts.push(p.chest, P(k, waistX, y.waist), P(k, hipW, y.hip));
+          pts.push(sil === "trapeze" ? P(k, chestX, y.chest) : p.chest, P(k, waistX, y.waist), P(k, hipX, y.hip));
           for (const f of [0.35, 0.7]) {
             const Y = y.hip + (hemY - y.hip) * f;
-            pts.push(P(k, lower(Y), Y));
+            pts.push(P(k, below(Y), Y));
           }
           pts.push([...P(k, hemW, hemY), true]);
           return pts;
         };
         const sR = side("R"), sL = side("L");
-        const hemMid = [R.pelvisShift, hemY + ((_e = o.sag) != null ? _e : 0.012) * hh];
+        const hemMid = [R.pelvisShift, hemY + ((_g = o.sag) != null ? _g : 0.012) * hh];
         const d = G.smooth([...sR, hemMid, ...sL.slice().reverse(), t.neckMid], true, 0.42);
-        const ctl = [[y.shoulder, w.shoulder * 0.9], [y.chest, w.chest + e], [y.waist, waistX], [y.hip, hipW], [hemY, hemW]];
+        const ctl = [[y.shoulder, w.shoulder * 0.9], [y.chest, chestX], [y.waist, waistX], [y.hip, hipX]];
+        for (const f of [0.35, 0.7]) {
+          const Y = y.hip + (hemY - y.hip) * f;
+          ctl.push([Y, below(Y)]);
+        }
+        ctl.push([hemY, hemW]);
         const wAt = (Y) => {
           if (Y <= ctl[0][0]) return ctl[0][1];
           for (let i = 0; i < ctl.length - 1; i++) {
@@ -1962,7 +2372,7 @@ var B68Figure = (() => {
           }
           return hemW;
         };
-        return { d, t, hemY, hemW, hipW, wAt, sR, sL, hemMid, sleeveless, topY: y.shoulder };
+        return { d, t, hemY, hemW, hipW: hipX, wAt, sR, sL, hemMid, sleeveless, topY: y.shoulder, silhouette: sil };
       }
       function dressDetail(ctx, D, o = {}) {
         const { R, hh } = ctx, y = R.y;
@@ -2057,7 +2467,7 @@ var B68Figure = (() => {
         ] : [];
         return [{ id: `${id}-collar`, z: ctx.Z.top + 1.05, d, mat, pattern: extra.pattern, spot: extra.spot, lines, light: { form: 0.9 } }];
       }
-      module.exports = { dressBody, dressDetail, sleeves, blockShape, collarBand };
+      module.exports = { dressBody, dressDetail, sleeves, blockShape, collarBand, SILHOUETTES };
     }
   });
 
@@ -2133,16 +2543,21 @@ var B68Figure = (() => {
     "src/parts/dresses/dresses.js"() {
       "use strict";
       var { register } = require_registry();
-      var { dressBody, dressDetail, sleeves, blockShape, collarBand } = require_dress();
+      var { dressBody, dressDetail, sleeves, blockShape, collarBand, SILHOUETTES } = require_dress();
       var { pocketHands } = require_trousers();
       var BLOCK_SHAPES = ["arc", "stripe", "panel"];
       function dress(ctx, o, d) {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e, _f, _g, _h;
         const mat = ctx.mat(o.color || d.color, o.kind || d.kind || "wool");
         const sl = (_a = o.sleeves) != null ? _a : d.sleeves;
         const nl = o.neckline || d.neckline;
         const depth = (_b = o.depth) != null ? _b : o.neckline && o.neckline !== d.neckline ? void 0 : d.depth;
-        const D = dressBody(ctx, { ease: d.ease, fit: o.fit || d.fit, hem: o.hem || d.hem, flare: (_c = o.flare) != null ? _c : d.flare, neckline: nl, depth, sleeves: sl, pow: d.pow, pinch: (_d = o.pinch) != null ? _d : d.pinch });
+        let sil = (_c = o.silhouette) != null ? _c : o.fit ? null : d.silhouette;
+        if (sil != null && !SILHOUETTES.includes(sil)) {
+          ctx.warn(`${d.id}: silhouette "${sil}" is not ${SILHOUETTES.join("|")}; used ${d.silhouette}`);
+          sil = d.silhouette;
+        }
+        const D = dressBody(ctx, { ease: d.ease, silhouette: sil, fit: o.fit || d.fit, hem: o.hem || d.hem, flare: (_d = o.flare) != null ? _d : d.flare, angle: (_e = o.angle) != null ? _e : d.angle, neckline: nl, depth, sleeves: sl, pow: d.pow, pinch: (_f = o.pinch) != null ? _f : d.pinch, sag: d.sag });
         const lines = dressDetail(ctx, D, o);
         const id = d.id;
         const z = ctx.Z.top + 1;
@@ -2166,37 +2581,38 @@ var B68Figure = (() => {
             shape = "arc";
           }
           const bm = ctx.mat(b.color || "cloth-magenta", "cloth");
-          out.push({ id: `${id}-block`, z: z + 0.05, d: blockShape(ctx, D, shape), clip: id, mat: bm, spot: (_e = b.spot) != null ? _e : true, pattern: b.pattern, light: { form: 0.7 } });
+          out.push({ id: `${id}-block`, z: z + 0.05, d: blockShape(ctx, D, shape), clip: id, mat: bm, spot: (_g = b.spot) != null ? _g : true, pattern: b.pattern, light: { form: 0.7 } });
         }
         if (sl && sl !== "none") out.push(...sleeves(ctx, mat, { to: sl === "short" ? 0.32 : sl === "elbow" ? 0.55 : 1, prefix: id, pattern: o.pattern, spot: o.spot }));
         const pocketArm = ["R", "L"].some((sd) => ctx.R.arms[sd].pose === "pocket");
         if (pocketArm && o.pockets === false) ctx.warn(`${id}: pockets:false with a pocket arm pose leaves the hand lying over the dress front; drop pockets:false`);
-        if ((_f = o.pockets) != null ? _f : pocketArm) out.push(...pocketHands(ctx, { top: ctx.R.y.waist + 0.05 * ctx.hh }, mat));
+        if ((_h = o.pockets) != null ? _h : pocketArm) out.push(...pocketHands(ctx, { top: ctx.R.y.waist + 0.05 * ctx.hh }, mat));
         return out;
       }
+      var SIL_PARAM = "trapeze|aline|column: the cut (trapeze flares from the armpits in one straight line; aline is fitted to the waist and flares straight from the hip; column drops straight from the hip)";
       register({
         kind: "dress",
         name: "shift-dress",
-        describe: "Sleeveless sixties mod shift above the knee. block: { color, shape: arc|stripe|panel } adds the colour block (a spot accent that survives colour schemes). The Socialite/Swinger.",
-        params: { color: "fabric token", block: "colour token | { color: token, shape: 'arc'|'stripe'|'panel', spot: true } (an unknown shape warns and falls back to arc)", hem: "mini|short|aline|knee", neckline: "scoop|crew|v|boat|high (high adds a stand collar band)", sleeves: "none|short|elbow|long", pattern: "textile name" },
+        describe: "Sleeveless sixties mod shift above the knee, cut as a trapeze: narrow at the shoulders, one straight line from the armpit to a wide hem. block: { color, shape: arc|stripe|panel } adds the colour block (a spot accent that survives colour schemes). The Socialite/Swinger.",
+        params: { color: "fabric token", block: "colour token | { color: token, shape: 'arc'|'stripe'|'panel', spot: true } (an unknown shape warns and falls back to arc)", hem: "mini|short|aline|knee", neckline: "scoop|crew|v|boat|high (high adds a stand collar band)", sleeves: "none|short|elbow|long", silhouette: `${SIL_PARAM} (default trapeze; aline gives the belted mod A-line)`, angle: "trapeze side angle from the vertical, degrees (default 10; 5 is a near-straight shift, 16 a tent)", flare: "hem half-width beyond the bust (trapeze) or the hips (aline), head-heights", pattern: "textile name" },
         example: { outfit: { dress: { type: "shift-dress", color: "cloth-chocolate", block: { color: "cloth-magenta", shape: "arc" } } } },
-        draw: (ctx, o) => dress(ctx, o, { id: "shift-dress", color: "cloth-chocolate", hem: "short", fit: "shift", flare: 0.1, neckline: "crew", depth: 0.12, ease: 0.035 })
+        draw: (ctx, o) => dress(ctx, o, { id: "shift-dress", color: "cloth-chocolate", hem: "short", silhouette: "trapeze", angle: 10, neckline: "crew", depth: 0.12, ease: 0.035 })
       });
       register({
         kind: "dress",
         name: "a-line-dress",
-        describe: "Fitted-bodice A-line dress with a flared knee-length skirt, short sleeves optional.",
-        params: { color: "fabric token", sleeves: "none|short|elbow|long", neckline: "scoop|crew|v|boat|high", hem: "short|aline|knee|midi", pattern: "textile name", pinch: "0\u20130.05 head-heights: how far the waist is taken in (default 0.03)" },
+        describe: "A-line dress: a fitted bodice taken in at the waist, then a skirt flaring in straight lines from the hip to the knee; short sleeves optional.",
+        params: { color: "fabric token", sleeves: "none|short|elbow|long", neckline: "scoop|crew|v|boat|high", hem: "short|aline|knee|midi", silhouette: `${SIL_PARAM} (default aline)`, flare: "hem half-width beyond the hips, head-heights (default 0.34)", pattern: "textile name", pinch: "0\u20130.05 head-heights: how far the waist is taken in (default 0.03)" },
         example: { outfit: { dress: { type: "a-line-dress", color: "cloth-pink" } } },
-        draw: (ctx, o) => dress(ctx, o, { id: "a-line-dress", color: "cloth-pink", hem: "knee", fit: "fitted", flare: 0.3, neckline: "scoop", depth: 0.25, ease: 0.03, pow: 1.15, sleeves: "short", pinch: 0.03, seam: true })
+        draw: (ctx, o) => dress(ctx, o, { id: "a-line-dress", color: "cloth-pink", hem: "knee", silhouette: "aline", flare: 0.34, neckline: "scoop", depth: 0.25, ease: 0.03, sleeves: "short", pinch: 0.03, seam: true })
       });
       register({
         kind: "dress",
         name: "gown",
-        describe: "Floor-length column gown, high neck, long sleeves, a slit of floor shadow. The Red Window silhouette.",
-        params: { color: "fabric token", sleeves: "none|short|elbow|long", neckline: "high (default, with a stand collar band)|crew|v|boat" },
+        describe: "Floor-length column gown: fitted through the bust, a hint of waist, then straight down from the hip to a hem barely wider; high neck, long sleeves. The medium's gown, the Shadows and Red Window silhouette.",
+        params: { color: "fabric token", sleeves: "none|short|elbow|long", neckline: "high (default, with a stand collar band)|crew|v|boat", silhouette: `${SIL_PARAM} (default column)`, flare: "hem half-width beyond the hips, head-heights (default 0.05)" },
         example: { outfit: { dress: { type: "gown", color: "cloth-oxblood" } } },
-        draw: (ctx, o) => dress(ctx, o, { id: "gown", color: "cloth-oxblood", kind: "satin", hem: "maxi", fit: "fitted", flare: 0.2, neckline: "high", ease: 0.025, pow: 1.9, sleeves: "long", sag: 0.02, pinch: 0.025 })
+        draw: (ctx, o) => dress(ctx, o, { id: "gown", color: "cloth-oxblood", kind: "satin", hem: "maxi", silhouette: "column", flare: 0.05, neckline: "high", ease: 0.025, sleeves: "long", sag: 0.02, pinch: 0.02 })
       });
     }
   });
@@ -2221,16 +2637,25 @@ var B68Figure = (() => {
           const P = (x, Y) => R.torsoPt(x, Y);
           const bibTop = y.chest - 0.2 * hh, topY = y.waist - 0.04 * hh, bibHW = w.chest * 0.5;
           const hemSpec = o.hem || "cuffed";
+          const big = ctx.R.legs.R.big ? "R" : ctx.R.legs.L.big ? "L" : null;
           const lo = {
-            ease: 0.085,
+            ease: 0.04,
             waistEase: 0.05,
+            // round 3: the big leg's overall leg is unmistakably the bigger one (and the other one hangs close to its leg)
+            ...big ? { legK: { [big]: 1, [big === "R" ? "L" : "R"]: 0.9 }, legStraight: { [big]: true } } : {},
             cut: "straight",
             topY,
             crotchDrop: 0.12,
-            upper: (T0) => ({
-              L: [[...P(-bibHW, bibTop), true], [...P(-bibHW * 1.02, topY), true], [...P(-(R.widthAt(topY) + 0.05 * hh), topY), true], T0.hipL],
-              R: [T0.hipR, [...P(R.widthAt(topY) + 0.05 * hh, topY), true], [...P(bibHW * 1.02, topY), true], [...P(bibHW, bibTop), true]]
-            })
+            upper: (T0) => {
+              const side = (k, hip) => {
+                const w2 = P(k * (R.widthAt(topY) + 0.05 * hh), topY);
+                return big && Math.sign(hip[0] - R.pelvisShift) === k && big === "R" === k < 0 ? [G.lerp(w2[0], hip[0], 0.55), w2[1]] : [...w2, true];
+              };
+              return {
+                L: [[...P(-bibHW, bibTop), true], [...P(-bibHW * 1.02, topY), true], side(-1, T0.hipL), T0.hipL],
+                R: [T0.hipR, side(1, T0.hipR), [...P(bibHW * 1.02, topY), true], [...P(bibHW, bibTop), true]]
+              };
+            }
           };
           if (hemSpec === "cuffed") lo.hemY = y.knee + 0.32 * (y.ankle - y.knee);
           else lo.hem = hemSpec;
@@ -2281,33 +2706,6 @@ var B68Figure = (() => {
     }
   });
 
-  // src/parts/expressions/basic.js
-  var require_basic = __commonJS({
-    "src/parts/expressions/basic.js"(exports, module) {
-      "use strict";
-      var { register } = require_registry();
-      var PRESETS = {
-        neutral: { d: "Calm, unreadable. The line-up default.", e: {} },
-        stern: { d: "Hard stare: brows low and driven inward, lids weighted, mouth a flat line.", e: { brow: { angle: -0.6, knit: 0.5, raise: -0.012 }, lid: { upper: 0.2, lower: 0.12 }, mouth: { curve: -0.35, width: 0.95 } } },
-        smirk: { d: "One brow up, lids lazy, one corner of the mouth up. Knows something.", e: { brow: { angle: 0, raiseR: 0.016, raiseL: -4e-3 }, lid: { upper: 0.32, lower: 0.12 }, mouth: { curve: 0.15, smirk: 0.9 } } },
-        tired: { d: "Heavy lids, bags under the eyes, gaze dropped, slight frown. Seen too much.", e: { brow: { angle: 0.35, raise: -8e-3 }, lid: { upper: 0.5, lower: 0, bags: 0.9 }, mouth: { curve: -0.3, width: 0.95 }, gaze: [0, 0.1] } },
-        wary: { d: "Sidelong glance, narrowed eyes, brows tense and uneven.", e: { brow: { angle: -0.2, knit: 0.3, raiseL: -6e-3 }, lid: { upper: 0.15, lower: 0.2 }, gaze: [0.4, 0], mouth: { curve: -0.1, width: 0.9 } } },
-        smile: { d: "Closed-mouth smile, cheeks lifting the lower lids.", e: { brow: { angle: 0.15, raise: 8e-3 }, lid: { upper: 0.08, lower: 0.38 }, mouth: { curve: 0.9, width: 1.15 } } },
-        scowl: { d: "Angry: brows crushed down and in, eyes slanted and narrowed, mouth turned down hard.", e: { brow: { angle: -1.2, knit: 0.9, raise: -0.02 }, lid: { upper: 0.3, lower: 0.32 }, mouth: { curve: -0.9, width: 0.92 } } },
-        surprised: { d: "Brows up and arched, eyes wide with white showing, mouth a little open.", e: { brow: { raise: 0.045, angle: 0.3 }, lid: { upper: -0.5 }, mouth: { curve: 0, open: 0.7, width: 0.8 } } },
-        sneer: { d: "Contempt: one lip corner curled up, that brow dropped, the other lifted.", e: { brow: { angle: -0.4, knit: 0.3, raiseR: -0.014, raiseL: 4e-3 }, lid: { upper: 0.3, lower: 0.15 }, mouth: { curve: -0.2, smirk: -0.8 } } },
-        sad: { d: "Inner brows pulled up, lids drooping, eyes down, mouth turned down.", e: { brow: { angle: 1.2, knit: 0.25, raise: 4e-3 }, lid: { upper: 0.3 }, gaze: [0, 0.16], mouth: { curve: -0.85, width: 0.95 } } },
-        cool: { d: "Lids half down, brows easy, mouth relaxed with a trace of a smirk: nonchalant 60s cool.", e: { brow: { angle: 0.05, raise: 2e-3 }, lid: { upper: 0.45 }, mouth: { curve: -0.05, smirk: 0.2 }, gaze: [0.04, 0.04] } },
-        determined: { d: "Eyes focused, brows low and set, jaw-firm mouth: about to do something.", e: { brow: { angle: -0.3, knit: 0.4, raise: -0.01 }, lid: { upper: 0.1, lower: 0.15 }, mouth: { curve: -0.15, width: 0.88 } } },
-        amused: { d: "Eyes crinkled up, one brow cocked, a half smile: enjoying this.", e: { brow: { angle: 0.1, raiseR: 0.014, raiseL: 4e-3 }, lid: { upper: 0.12, lower: 0.32 }, mouth: { curve: 0.55, smirk: 0.3, width: 1.05 }, gaze: [-0.06, 0] } }
-      };
-      for (const [name, p] of Object.entries(PRESETS)) {
-        register({ kind: "expression", name, describe: p.d, example: { face: { expression: name } }, draw: () => ({ expr: p.e }) });
-      }
-      module.exports = { PRESETS };
-    }
-  });
-
   // src/parts/eyes/_hg.js
   var require_hg = __commonJS({
     "src/parts/eyes/_hg.js"(exports, module) {
@@ -2348,7 +2746,318 @@ var B68Figure = (() => {
         const t = clamp((x - a) / (b - a), 0, 1);
         return t * t * (3 - 2 * t);
       };
-      module.exports = { hg, noise, clamp, lerp, smoothstep };
+      function darkSkin(ctx) {
+        return clamp((0.36 - ctx.C.lum(ctx.skin.shade)) / 0.13, 0, 1);
+      }
+      module.exports = { hg, noise, clamp, lerp, smoothstep, darkSkin };
+    }
+  });
+
+  // src/parts/expressions/_fx.js
+  var require_fx = __commonJS({
+    "src/parts/expressions/_fx.js"(exports, module) {
+      "use strict";
+      var clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      var num = (v, d = 0) => typeof v === "number" && isFinite(v) ? v : d;
+      var KG = { angle: 1, raise: 1, knit: 1, lid: 1, lower: 1, bags: 1.2, curve: 1.5, smirk: 1.6, open: 1, width: 1, cue: 1 };
+      function fx(ctx) {
+        const E = ctx.expr || {};
+        const g = num(E.gain, 1) > 0 ? num(E.gain, 1) : 1;
+        const k = (n) => {
+          var _a;
+          return 1 + (g - 1) * ((_a = KG[n]) != null ? _a : 1);
+        };
+        const B = E.brow || {}, L = E.lid || {}, M = E.mouth || {}, C = E.cheek || {}, N = E.nose || {};
+        const side = (o, key, tag) => o[key + tag] != null ? num(o[key + tag]) : num(o[key]);
+        const brow = {
+          angle: clamp(num(B.angle) * k("angle"), -1.9, 1.9),
+          knit: clamp(num(B.knit) * k("knit"), 0, 1.25),
+          raise: clamp(num(B.raise) * k("raise"), -0.05, 0.09),
+          raiseR: clamp(num(B.raiseR) * k("raise"), -0.05, 0.07),
+          raiseL: clamp(num(B.raiseL) * k("raise"), -0.05, 0.07),
+          droop: clamp(num(B.droop) * k("angle"), 0, 1.6)
+          // the outer ends sag (tired) without the inner ends lifting (sad)
+        };
+        brow.ridge = clamp(Math.max(0, -brow.angle) * 0.42 + brow.knit * 0.3 + Math.max(0, -brow.raise) * 6, 0, 1);
+        const upperRaw = (tag) => num(L.upper) + num(L["upper" + tag]);
+        const lidK = k("lid");
+        const lid = {
+          // upper-lid closure (+ closes, - wide). The gain widens eyes and closes them further, but a lid never closes past
+          // max(0.62, what the preset itself asks for): no gain ever shuts an eye that the expression did not shut.
+          upperR: gainLid(upperRaw("R"), lidK),
+          upperL: gainLid(upperRaw("L"), lidK),
+          lower: clamp(num(L.lower) * k("lower"), 0, 0.8),
+          lowerR: clamp((num(L.lower) + num(L.lowerR)) * k("lower"), 0, 0.8),
+          lowerL: clamp((num(L.lower) + num(L.lowerL)) * k("lower"), 0, 0.8),
+          bags: clamp(num(L.bags) * k("bags"), 0, 1.4),
+          crinkle: clamp(num(L.crinkle) * k("cue"), 0, 1.2),
+          arc: clamp(num(L.arc) * k("cue"), 0, 1.2)
+        };
+        lid.upper = (lid.upperR + lid.upperL) / 2;
+        const mouth = {
+          curve: clamp(num(M.curve) * k("curve"), -2.2, 2.2),
+          smirk: clamp(num(M.smirk) * k("smirk"), -2.1, 2.1),
+          open: clamp(num(M.open) * k("open"), 0, 1.5),
+          width: clamp(1 + (num(M.width, 1) - 1) * k("width"), 0.7, 1.45),
+          teeth: clamp(num(M.teeth), 0, 1),
+          snarl: clamp(num(M.snarl) * k("cue"), -1.3, 1.3),
+          press: clamp(num(M.press) * k("cue"), 0, 1.3),
+          dimple: clamp(num(M.dimple) * k("cue"), 0, 1.3),
+          slack: clamp(num(M.slack), 0, 1)
+          // face v2: a slack mouth drops a hard mouth's set corners (tired)
+        };
+        const cheek = {};
+        for (const tag of ["R", "L"]) {
+          cheek["apple" + tag] = clamp(side(C, "apple", tag) * k("cue"), 0, 1.3);
+          cheek["wedge" + tag] = clamp(side(C, "wedge", tag) * k("cue"), 0, 1.3);
+          cheek["jaw" + tag] = clamp(side(C, "jaw", tag) * k("cue"), 0, 1.3);
+        }
+        cheek.apple = (cheek.appleR + cheek.appleL) / 2;
+        cheek.wedge = (cheek.wedgeR + cheek.wedgeL) / 2;
+        cheek.jaw = (cheek.jawR + cheek.jawL) / 2;
+        const nose = { wrinkle: clamp(num(N.wrinkle) * k("cue"), 0, 1.3) };
+        const gz = Array.isArray(E.gaze) ? E.gaze : [0, 0];
+        return { g, k, brow, lid, mouth, cheek, nose, gaze: [num(gz[0]) * Math.min(g, 1.6), num(gz[1]) * Math.min(g, 1.6)] };
+      }
+      function gainLid(raw, kk) {
+        if (raw <= 0) return clamp(raw * kk, -0.7, 0);
+        return clamp(raw * kk, 0, Math.min(0.82, raw + 0.2));
+      }
+      var opens = (e) => e.mouth.open > 0.05;
+      function work(ctx) {
+        const S = ctx.T.STYLE, hi = S.lod.hi, lo = ((S.exprGain || [])[1] || [76])[0], ph = ctx.R.hh * ctx.scale;
+        return clamp((hi - ph) / (hi - lo), 0, 1);
+      }
+      function lerpE(a, b, t) {
+        if (Array.isArray(a) || Array.isArray(b)) {
+          const n = Math.max((a || []).length, (b || []).length);
+          return Array.from({ length: n }, (_, i) => lerpE((a || [])[i], (b || [])[i], t));
+        }
+        if (a && typeof a === "object" || b && typeof b === "object") {
+          const o = {};
+          for (const k of /* @__PURE__ */ new Set([...Object.keys(a || {}), ...Object.keys(b || {})])) o[k] = lerpE((a || {})[k], (b || {})[k], t);
+          return o;
+        }
+        const x = num(a), y = num(b);
+        return x + (y - x) * t;
+      }
+      module.exports = { fx, opens, clamp, num, KG, work, lerpE };
+    }
+  });
+
+  // src/parts/expressions/_cues.js
+  var require_cues = __commonJS({
+    "src/parts/expressions/_cues.js"(exports, module) {
+      "use strict";
+      var REG = require_registry();
+      var { hg, clamp, darkSkin } = require_hg();
+      var { fx } = require_fx();
+      var U = require_util();
+      function merged(base, over) {
+        const out = { ...base };
+        for (const k of Object.keys(over || {})) out[k] = typeof over[k] !== "object" || Array.isArray(over[k]) ? over[k] : { ...base[k] || {}, ...over[k] };
+        return out;
+      }
+      function covered(ctx, kind) {
+        const F = ctx.S.face || {}, MK = F.mask && F.mask.type ? REG.get("mask", F.mask.type) : null;
+        if (!MK) return false;
+        return [].concat((typeof MK.covers === "function" ? MK.covers(F.mask, ctx.S) : MK.covers) || []).includes(kind);
+      }
+      function lens(cx, cy, rx, ry, rot, pts, s) {
+        const c = Math.cos(rot), sn = Math.sin(rot);
+        return pts.map(([u, v]) => {
+          const x = u * rx, y = v * ry;
+          return [cx + s * (x * c - y * sn), cy + x * sn + y * c];
+        });
+      }
+      var LIFT = [[-1, 0.1], [-0.6, -0.6], [0, -0.76], [0.64, -0.58], [1.1, -0.02], [0.62, 0.52], [-0.04, 0.86], [-0.66, 0.64]];
+      function cuePieces(ctx, preset) {
+        const saved = ctx.expr;
+        ctx.expr = merged(saved, preset);
+        try {
+          return build(ctx);
+        } finally {
+          ctx.expr = saved;
+        }
+      }
+      function build(ctx) {
+        const X = fx(ctx), Ck = X.cheek, N = X.nose;
+        const strong = (v) => v > 0.03;
+        const lowerFace = !covered(ctx, "mouth"), noseFree = !covered(ctx, "nose");
+        const wantApple = lowerFace && (strong(Ck.appleR) || strong(Ck.appleL)), wantWedge = lowerFace && (strong(Ck.wedgeR) || strong(Ck.wedgeL));
+        const wantWrinkle = noseFree && strong(N.wrinkle), wantJaw = lowerFace && strong(Ck.jaw);
+        if (!wantApple && !wantWedge && !wantWrinkle && !wantJaw) return [];
+        const { C, T, skin } = ctx, H = ctx.head, g = hg(ctx), lod = ctx.lod;
+        const mb = U.mouthBox(ctx, ctx.S.face || {});
+        const wid = H.widthAt || (() => H.w);
+        const kLod = lod === "hi" ? 0.55 : lod === "mid" ? 1 : 1.15;
+        const over = [];
+        const px = (n) => g.px(n), dk = darkSkin(ctx);
+        for (const s of [-1, 1]) {
+          const tag = s < 0 ? "R" : "L", lit = s < 0;
+          const ap = Ck["apple" + tag], wd = Ck["wedge" + tag];
+          if (lowerFace && strong(ap)) {
+            const e = Math.min(1.25, ap);
+            const cx = s * (H.eyeX + 0.056), cy = H.eyeY + 0.12 + 4e-3 * e;
+            const room = wid(cy) - Math.abs(cx) - 0.02;
+            const rx = Math.min(0.056 + 0.011 * e, room), ry = Math.max(0.026 + 7e-3 * e, px(lod === "lo" ? 4.2 : lod === "mid" ? 3 : 2) / 2);
+            const lo = lod === "lo" ? 1 - dk : 0;
+            const fill = lit ? C.mix(skin.light, T.PAPER, 0.12 + 0.58 * lo) : C.mix(C.mix(skin.base, skin.shade, 0.2), skin.light, Math.max(0.7 * dk, 0.85 * lo));
+            const fillV2 = dk > 0.1 ? C.mix(C.saturate(fill, 1 - 0.4 * dk), ctx.light.keyColor, 0.06 * dk) : fill;
+            over.push({ d: g.smoothD(lens(cx, cy, rx, ry, 0.3, LIFT, s), true, 0.5), fill: fillV2, o: clamp(ap * 0.8 * kLod, 0, 0.88) });
+          }
+          if (lowerFace && strong(wd)) {
+            const yc = s < 0 ? mb.yl : mb.yr, mw = mb.mw, nw = H.noseW, w = Math.min(1.2, wd);
+            const ax = s * (nw * 0.88 + 0.016), ay = H.noseY - 8e-3;
+            const bx = s * (mw + 0.018), by = yc - 0.012;
+            const W = Math.max(0.042 * w, px(lod === "lo" ? 3.2 : lod === "mid" ? 3 : 1.6));
+            const at = (t, k) => [ax + (bx - ax) * t + s * W * k, ay + (by - ay) * t];
+            const pts = [[ax, ay], at(0.3, 0.3), at(0.62, 0.78), at(0.94, 1), [bx + s * W * 0.15, by + 0.014], [bx, by + 4e-3], [ax + (bx - ax) * 0.5, ay + (by - ay) * 0.5]];
+            over.push({ d: g.smoothD(pts, true, 0.32), fill: lit ? C.mix(skin.base, skin.shade, 0.7) : C.mix(skin.shade, skin.deep, 0.75), o: clamp(wd * 0.8 * kLod * (lit && lod !== "lo" ? 0.6 : 1), 0, 0.9) });
+          }
+        }
+        if (wantJaw) {
+          for (const s of [-1, 1]) {
+            const j = Math.min(1.2, s < 0 ? Ck.jawR : Ck.jawL);
+            if (!strong(j)) continue;
+            const y0 = H.jawY - 0.15, y1 = H.jawY + 0.015, x = s * (wid(H.jawY - 0.07) - 0.07);
+            const w = Math.max(0.034 * j, px(lod === "lo" ? 2.6 : lod === "mid" ? 2.6 : 1.6));
+            over.push({ d: g.brushD([[x + s * 4e-3, y0], [x + s * 2e-3, (y0 + y1) / 2], [x - s * 0.014, y1]], [2e-3, w, 2e-3]), fill: s < 0 ? C.mix(skin.shade, skin.deep, 0.3) : skin.deep, o: clamp(j * 0.6 * kLod, 0, 0.75) });
+          }
+        }
+        if (wantWrinkle && lod !== "lo") {
+          const w = Math.min(1.2, N.wrinkle), ww = Math.max(0.011 * w, px(lod === "mid" ? 1.7 : 1.1)), col = (s) => s < 0 ? C.mix(skin.shade, skin.deep, 0.4) : skin.deep, o = clamp(0.85 * w * kLod, 0, 0.92);
+          for (const s of [-1, 1]) {
+            over.push({ d: g.brushD([[s * 0.084, H.noseY - 0.125], [s * 0.07, H.noseY - 0.085], [s * 0.056, H.noseY - 0.042]], [2e-3, ww, 2e-3]), fill: col(s), o });
+          }
+          over.push({ d: g.brushD([[-0.05, H.noseY - 0.138], [0, H.noseY - 0.128], [0.05, H.noseY - 0.138]], [2e-3, ww * 0.9, 2e-3]), fill: skin.deep, o: o * 0.8 });
+        }
+        return over.length ? [{ id: "expression-cues", z: ctx.Z.face + 0.02, over }] : [];
+      }
+      module.exports = { cuePieces, merged, covered };
+    }
+  });
+
+  // src/parts/expressions/basic.js
+  var require_basic = __commonJS({
+    "src/parts/expressions/basic.js"(exports, module) {
+      "use strict";
+      var { register } = require_registry();
+      var { cuePieces, merged } = require_cues();
+      var { work, lerpE } = require_fx();
+      var PRESETS = {
+        neutral: { d: "Calm, unreadable. The line-up default.", e: {} },
+        stern: {
+          d: "Hard stare: brows low and flat, lids weighted, lips pressed with the corners pulled down hard and a shade fold each side.",
+          sig: "mouth corners dragged down with a shade fold each side, under low flat brows",
+          e: { brow: { angle: 0.05, knit: 0.1, raise: -0.03 }, lid: { upper: 0.34, lower: 0.1 }, mouth: { curve: -0.85, width: 0.96, press: 0.4 }, cheek: { wedge: 0.9 } },
+          h: { brow: { angle: -0.5, knit: 0.45, raise: -0.016 }, lid: { upper: 0.24 }, mouth: { curve: -0.4, press: 0.12 }, cheek: { wedge: 0.3 } }
+        },
+        smirk: {
+          d: "One brow up, lids lazy, one corner of the mouth up and tucked in with the cheek lifted on that side only. Knows something.",
+          sig: "everything on one side: that brow up, that corner up and tucked, that cheek lifted, the other brow down; lids lazy not squeezed",
+          e: { brow: { angle: 0, raiseR: -0.028, raiseL: 0.04 }, lid: { upper: 0.3, lower: 0.05 }, mouth: { curve: -0.05, smirk: 1.5, dimple: 1 }, cheek: { appleL: 0.9, wedgeL: 1.1 }, gaze: [0.05, 0] },
+          h: { brow: { raiseR: -0.01, raiseL: 0.03 }, lid: { lower: 0.1 }, mouth: { curve: 0.1, smirk: 1.4, dimple: 0.5 }, cheek: { appleL: 0.5, wedgeL: 0.9 }, gaze: [0.03, 0] },
+          // face v2 (P2.1's open item: the cast's smirks read faintly): a higher, harder-tucked corner, a fuller lift on that side and the brows further apart
+          v2: { e: { brow: { raiseR: -0.034, raiseL: 0.05 }, mouth: { curve: 0, smirk: 1.9, dimple: 1.3 }, cheek: { appleL: 1.15, wedgeL: 1.35 } }, h: { brow: { raiseL: 0.036 }, mouth: { smirk: 1.6, dimple: 0.7 }, cheek: { appleL: 0.65, wedgeL: 1.05 } } }
+        },
+        tired: {
+          d: "Heavy lids with a wide gap of lid skin under the brows, dark bags under the eyes, the outer ends of the brows sagging, gaze dropped, mouth slack. Seen too much.",
+          sig: "heavy lids and dark bags under brows that sag at the outer ends (not sad's lifted inner ends)",
+          e: { brow: { angle: 0.1, raise: -4e-3, droop: 1.3 }, lid: { upper: 0.72, bags: 1.2 }, mouth: { curve: -0.3, width: 0.95 }, gaze: [0, 0.14] },
+          h: { brow: { angle: 0.1, raise: -4e-3, droop: 0.9 }, lid: { upper: 0.5, bags: 0.95 }, mouth: { curve: -0.3 }, gaze: [0, 0.12] },
+          // face v2 (the inspector's tired read grim): inner brow ends a touch up and the outer ends sagging more, a slack mouth (slightly
+          // parted, corners not set), so it reads weary and not hard
+          // (round 2: lifted inner ends read worried on Booker, so the brows stay level and only the outer ends sag; the lids do the work)
+          v2: { e: { brow: { angle: 0.04, knit: 0, raise: 0.024, droop: 1.5 }, lid: { upper: 0.72, bags: 1.4 }, mouth: { curve: -0.1, open: 0.05, slack: 0.9 }, gaze: [0, 0.12] }, h: { brow: { angle: 0, raise: -8e-3, droop: 0.9 }, lid: { upper: 0.6, bags: 1 }, mouth: { curve: -0.12, open: 0.04, slack: 0.9 } } }
+        },
+        wary: {
+          d: "Sidelong glance, narrowed eyes, brows tense and uneven, lips tight.",
+          sig: "iris in the corner, one brow low, one lifted",
+          e: { brow: { angle: -0.2, knit: 0.3, raiseR: 0.022, raiseL: -0.022 }, lid: { upper: 0.25, lower: 0.35 }, gaze: [0.5, 0], mouth: { curve: -0.1, width: 0.88, press: 0.3 } },
+          h: { brow: { raiseR: 4e-3, raiseL: -8e-3 }, lid: { lower: 0.2 }, gaze: [0.4, 0], mouth: { width: 0.9, press: 0 } }
+        },
+        smile: {
+          d: "Closed-mouth smile: a wide curve tucked at both corners, a lit cheek lens and a shade fold each side, the lower lids lifted.",
+          sig: "two lit cheek lenses and folds round a wide, even curve",
+          e: { brow: { angle: 0.15, raise: 0.012 }, lid: { upper: 0.04, lower: 0.45, crinkle: 0.3 }, mouth: { curve: 1, width: 1.2, dimple: 0.6 }, cheek: { apple: 1, wedge: 0.9 } },
+          h: { brow: { raise: 8e-3 }, lid: { upper: 0.08, lower: 0.38, crinkle: 0.1 }, mouth: { curve: 0.9, width: 1.15, dimple: 0 }, cheek: { apple: 0.4, wedge: 0.3 } }
+        },
+        scowl: {
+          d: "Angry: brows crushed down and in, eyes slanted and narrowed, the nose wrinkled, mouth turned down hard.",
+          sig: "V brows over a dark lid shade, nose wrinkle, deep frown",
+          e: { brow: { angle: -1.2, knit: 0.95, raise: -0.02 }, lid: { upper: 0.3, lower: 0.32 }, mouth: { curve: -0.95, width: 0.92 }, nose: { wrinkle: 0.6 }, cheek: { wedge: 0.7 } },
+          h: { brow: { knit: 0.9 }, mouth: { curve: -0.9 }, nose: { wrinkle: 0.35 }, cheek: { wedge: 0.3 } }
+        },
+        surprised: {
+          d: "Brows up and arched, eyes wide with white showing, mouth a little open.",
+          sig: "high brows, wide eyes, a small round mouth",
+          e: { brow: { raise: 0.05, angle: 0.3 }, lid: { upper: -0.55 }, mouth: { curve: 0, open: 0.7, width: 0.8 } },
+          h: { brow: { raise: 0.045 }, lid: { upper: -0.5 } }
+        },
+        sneer: {
+          d: "Contempt: the upper lip lifted on one side over a tooth, the nose wrinkled, that brow dropped and the other lifted.",
+          sig: "one lifted lip with a tooth, nose wrinkle, one deep fold",
+          e: { brow: { angle: -0.4, knit: 0.3, raiseR: -0.014, raiseL: 6e-3 }, lid: { upper: 0.3, lower: 0.15 }, mouth: { curve: -0.25, smirk: -0.5, snarl: -1.2 }, nose: { wrinkle: 1 }, cheek: { wedgeR: 1.2, wedgeL: 0.15 } },
+          h: { brow: { raiseL: 4e-3 }, mouth: { curve: -0.2, smirk: -0.7, snarl: -0.5 }, nose: { wrinkle: 0.4 }, cheek: { wedgeR: 0.45, wedgeL: 0.05 } }
+        },
+        sad: {
+          d: "Inner brows pulled up, lids drooping, eyes down, mouth turned down.",
+          sig: "inner brows high, mouth a deep downturn",
+          e: { brow: { angle: 1.2, knit: 0.25, raise: 4e-3 }, lid: { upper: 0.3 }, gaze: [0, 0.16], mouth: { curve: -0.85, width: 0.95 } }
+        },
+        cool: {
+          d: "Lids half down, brows lifted and easy, mouth relaxed with a trace of a smirk: nonchalant 60s cool.",
+          sig: "slit eyes under lifted brows, a faint one-sided tuck",
+          e: { brow: { angle: 0, raise: 0.038 }, lid: { upper: 0.5 }, mouth: { curve: -0.05, smirk: 0.4, dimple: 0.7 }, gaze: [0.04, 0.05] },
+          h: { brow: { angle: 0.05, raise: 6e-3 }, lid: { upper: 0.45 }, mouth: { smirk: 0.25, dimple: 0 }, gaze: [0.04, 0.04] }
+        },
+        determined: {
+          d: "Eyes wide and fixed, brows set low and slanting in, lips pressed straight, the jaw clenched: about to do something.",
+          sig: "clenched jaw and a straight pressed line under slanting brows",
+          e: { brow: { angle: -1.05, knit: 0.7, raise: 4e-3 }, lid: { upper: -0.22, lower: 0.18 }, mouth: { curve: 0, width: 0.88, press: 1 }, cheek: { jaw: 1.2 } },
+          h: { brow: { angle: -0.4, knit: 0.45, raise: -8e-3 }, lid: { upper: 0.08, lower: 0.16 }, mouth: { curve: -0.15, press: 0.3 }, cheek: { jaw: 0.35 } }
+        },
+        amused: {
+          d: "Eyes squeezed into smiling arcs, one brow cocked, a closed half smile with both cheeks up and one higher: enjoying this.",
+          sig: "smiling arcs for eyes under one cocked brow, a closed half smile that is higher on one side",
+          e: { brow: { angle: 0.08, raiseR: 0, raiseL: 0.04 }, lid: { upper: 0.55, lower: 0.5, arc: 0.6, crinkle: 1 }, mouth: { curve: 0.7, smirk: 0.5, width: 1.2, dimple: 0.9 }, cheek: { appleR: 0.95, appleL: 1.1, wedgeR: 0.6, wedgeL: 1 }, gaze: [-0.08, 0.02] },
+          h: { brow: { angle: 0.1, raiseR: 4e-3, raiseL: 0.03 }, lid: { upper: 0.2, lower: 0.36, arc: 0.2, crinkle: 0.3 }, mouth: { curve: 0.8, smirk: 0.5, width: 1.1, dimple: 0.3 }, cheek: { appleR: 0.3, appleL: 0.5, wedgeR: 0.25, wedgeL: 0.55 }, gaze: [-0.06, 0] },
+          // face v2 (the socialite's amused read faintly): a bigger, more lopsided half smile and the cocked brow higher
+          v2: { e: { brow: { raiseL: 0.055 }, mouth: { curve: 0.9, smirk: 0.8, dimple: 1.15 }, cheek: { appleL: 1.3, wedgeL: 1.25 } }, h: { brow: { raiseL: 0.038 }, mouth: { curve: 0.9, smirk: 0.65, dimple: 0.5 }, cheek: { appleL: 0.65, wedgeL: 0.7 } } }
+        },
+        grin: {
+          d: "A wide open grin: a band of teeth under the upper lip, cheeks pushed up into lit lenses, the lower lids lifted.",
+          sig: "open mouth with a band of teeth, two lit cheek lenses",
+          e: { brow: { angle: 0.1, raise: 0.018 }, lid: { upper: 0, lower: 0.3, crinkle: 0.35 }, mouth: { curve: 0.8, width: 1.3, open: 0.45, teeth: 0.9, dimple: 0.5 }, cheek: { apple: 1.1, wedge: 1 } },
+          h: { lid: { lower: 0.25, crinkle: 0.15 }, mouth: { curve: 0.7, width: 1.2, open: 0.4, dimple: 0 }, cheek: { apple: 0.4, wedge: 0.3 } }
+        },
+        laugh: {
+          d: "Laughing: a wide open mouth full of teeth, the eyes squeezed nearly shut into arcs by the cheeks, the brows lifted.",
+          sig: "eyes shut in arcs under lifted brows, a wide open mouth",
+          e: { brow: { angle: 0.35, raise: 0.035 }, lid: { upper: 0.74, lower: 0.55, arc: 1, crinkle: 1 }, mouth: { curve: 0.9, width: 1.36, open: 1.05, teeth: 0.9 }, cheek: { apple: 1.2, wedge: 1.1 } },
+          h: { brow: { raise: 0.02 }, lid: { upper: 0.7, arc: 0.7, crinkle: 0.5 }, mouth: { width: 1.25, open: 0.9 }, cheek: { apple: 0.45, wedge: 0.35 } }
+        },
+        shout: {
+          d: "Shouting: the mouth open wide and tall and dark with the top teeth showing, brows down and knit, eyes wide, the nose wrinkled.",
+          sig: "a tall dark open mouth under low knit brows",
+          e: { brow: { angle: -0.9, knit: 0.85, raise: -0.012 }, lid: { upper: -0.25 }, mouth: { curve: -0.25, width: 1, open: 1.3, teeth: 0.6 }, cheek: { wedge: 0.8, jaw: 0.8 }, nose: { wrinkle: 0.5 } },
+          h: { brow: { angle: -0.7, knit: 0.65 }, mouth: { open: 1.1 }, cheek: { wedge: 0.3, jaw: 0.3 }, nose: { wrinkle: 0.3 } }
+        }
+      };
+      function strength(ctx, p) {
+        if (p.v2) p = { ...p, e: merged(p.e, p.v2.e || {}), h: p.v2.h || p.h ? merged(p.h || {}, p.v2.h || {}) : void 0 };
+        if (!p.h) return p.e;
+        const w = work(ctx), hi = merged(p.e, p.h);
+        return w <= 0 ? hi : w >= 1 ? p.e : lerpE(hi, p.e, w);
+      }
+      for (const [name, p] of Object.entries(PRESETS)) {
+        register({ kind: "expression", name, describe: p.d, example: { face: { expression: name } }, draw: (ctx) => {
+          const e = strength(ctx, p);
+          return { expr: e, pieces: cuePieces(ctx, e) };
+        } });
+      }
+      module.exports = { PRESETS };
     }
   });
 
@@ -2357,26 +3066,29 @@ var B68Figure = (() => {
     "src/parts/eyes/almond.js"(exports, module) {
       "use strict";
       var { register } = require_registry();
-      var { hg, clamp, lerp } = require_hg();
+      var { hg, clamp, lerp, darkSkin } = require_hg();
+      var { fx } = require_fx();
       function eyeShape(ctx, s, o = {}) {
         var _a;
-        const H = ctx.head, E = ctx.expr;
+        const H = ctx.head, E = fx(ctx);
         const tag = s < 0 ? "R" : "L";
         const lodK = ctx.lod === "lo" || ctx.lod === "mid" ? 1.1 : 1;
-        const size = (o.size || 1) * lodK;
-        const w = H.eyeW * size, h = H.eyeH * size * (o.openK || 1);
+        const size = (o.size || 1) * lodK * 1.06;
+        const dv = ctx.lod !== "hi" ? darkSkin(ctx) : 0;
+        const w = H.eyeW * size, h = H.eyeH * size * (o.openK || 1) * (1 + 0.14 * dv);
         const cx = s * (H.eyeX + (o.spacing || 0)), cy = H.eyeY + (o.dy || 0);
         const xi = cx - s * w / 2, xo = cx + s * w / 2;
         const lidOff = (o.lids === "heavy" ? 0.3 : o.lids === "hooded" ? 0.4 : 0) + (o.lidAdd || 0);
-        const u = clamp((E.lid.upper || 0) + (E.lid["upper" + tag] || 0) + lidOff, -0.6, 0.82);
-        const l = clamp((E.lid.lower || 0) + (o.squint || 0), 0, 0.8);
+        const u = clamp((tag === "R" ? E.lid.upperR : E.lid.upperL) + lidOff, -0.6, 0.82);
+        const l = clamp((tag === "R" ? E.lid.lowerR : E.lid.lowerL) + (o.squint || 0) + 0.18 * Math.min(1, E.lid.crinkle), 0, 0.8);
         const tilt = (o.tilt || 0) - (E.brow.angle || 0) * 0.9;
         const ty = tilt * 0.02;
         const flat = clamp(o.flat || 0, 0, 1), pk = (_a = o.peak) != null ? _a : 0.4, open = 1 - u;
         const inner = (o.inner || 0) * 0.01;
         const X = (t) => xi + (xo - xi) * t;
         const bump = (t, p) => Math.sin(Math.PI / 2 * clamp(t < p ? t / p : (1 - t) / (1 - p), 0, 1));
-        const base = (t) => cy + lerp(5e-3 + inner, -4e-3, t) - ty * Math.pow(t, 1.4);
+        const arc = E.lid.arc * Math.min(1, Math.max(0, u) * 1.6);
+        const base = (t) => cy + lerp(5e-3 + inner, -4e-3, t) - ty * Math.pow(t, 1.4) - arc * 0.017 * Math.sin(Math.PI * t);
         const yU = (t) => base(t) - h * 0.66 * open * Math.pow(bump(t, pk), 1 - 0.65 * flat);
         const yL = (t) => base(t) + h * 0.42 * (1 - l) * (1 - 0.5 * clamp(u, 0, 1)) * (o.lowerK || 1) * Math.pow(bump(t, 0.45), 0.8);
         const TU = [0, 0.14, 0.28, pk, 0.64, 0.8, 0.92, 1], TL = [0.86, 0.66, 0.45, 0.26, 0.1];
@@ -2413,15 +3125,16 @@ var B68Figure = (() => {
       function drawEyes(ctx, opts = {}, cfg = {}) {
         var _a, _b, _c, _d;
         const { skin, C, T } = ctx;
-        const E = ctx.expr;
+        const E = fx(ctx);
         const g = hg(ctx);
         const ink = T.INK, lod = ctx.lod, out = [];
         const irisC = irisColour(ctx, opts);
-        const so = shapeOpts(cfg, opts);
+        const so = shapeOpts(cfg, opts), dk = darkSkin(ctx);
         for (const s of [-1, 1]) {
           const e = eyeShape(ctx, s, so);
           const shadow = s > 0, tag = e.tag, id = `eye-${tag}`;
-          const lw = g.atLeast(0.019 * (opts.lidWeight || 1) * (cfg.lidW || 1), lod === "lo" ? 2.6 : lod === "mid" ? 1.8 : 1.2);
+          const closing = lod === "hi" ? 0 : clamp(E.lid["upper" + tag], 0, 0.8);
+          const lw = g.atLeast(0.019 * (opts.lidWeight || 1) * (cfg.lidW || 1), lod === "lo" ? 2.6 : lod === "mid" ? 1.8 : 1.2) * (1 + 0.4 * closing) * 1.2;
           const fl = ((_a = cfg.flick) != null ? _a : 1) * 0.015;
           const prof = cfg.lidProfile || [0.35, 0.75, 1, 1.1, 1.1, 1, 0.8, 0.55, 0.1];
           const lidPts = [...e.TU.map((t) => [e.X(t), e.yU(t) - lw * 0.3]), [e.xo + s * fl, e.yU(1) - lw * 0.3 - fl * (0.35 + Math.max(0, e.tilt) * 0.25)]];
@@ -2432,13 +3145,15 @@ var B68Figure = (() => {
             const blob = [[e.xi - s * 0.03, cy - h * 0.2], [e.X(0.25), cy - h * 1.7], [e.X(0.75), cy - h * 1.65], [e.xo + s * 0.045, cy - h * 0.5], [e.xo + s * 0.04, cy + h * 1.1], [e.X(0.5), cy + h * 1.7], [e.xi - s * 0.015, cy + h * 1.2]];
             [[1, 0.1], [0.86, 0.11], [0.73, 0.12], [0.61, 0.13], [0.5, 0.14]].forEach(([sc, o], i) => out.push({ id: `${id}-socket${i}`, z: ctx.Z.face + 0.15 + i * 3e-3, d: g.smoothD(blob.map(([x, y]) => [lerp(e.cx, x, sc), lerp(cy, y, sc)]), true, 0.6), fill: skin.deep, opacity: Math.min(1, o * k * (shadow ? 1.35 : 0.95)), light: false, clip: "head" }));
           }
-          let whiteC = lod === "lo" ? C.mix(C.mix("paper-200", skin.shade, shadow ? 0.45 : 0.25), ink, shadow ? 0.25 : 0.18) : cfg.whites === "dark" ? C.mix("paper-200", skin.shade, shadow ? 0.55 : 0.4) : shadow ? C.mix("paper-200", skin.shade, 0.3) : C.mix("paper-100", skin.base, 0.14);
+          let whiteC = lod === "lo" ? C.mix(C.mix("paper-200", skin.shade, shadow ? 0.45 : 0.25), ink, shadow ? 0.25 : 0.18) : cfg.whites === "dark" ? C.mix("paper-200", skin.shade, shadow ? 0.55 : 0.4) : shadow ? C.mix("paper-200", skin.shade, 0.3 - 0.14 * dk) : C.mix("paper-100", skin.base, 0.14 - 0.08 * dk);
           if (lod === "lo") {
             const ir2 = e.h * 0.84 * (cfg.iris || 1), gz2 = E.gaze || [0, 0], icx2 = e.cx + clamp(gz2[0] * e.w - s * e.w * 0.02, -(e.w * 0.5 - ir2 * 0.5), e.w * 0.5 - ir2 * 0.5);
             out.push({ id, z: ctx.Z.face + 0.2, d: eyeD, fill: whiteC, light: false, lines: [{ d: g.ellipseD(icx2, e.cy + gz2[1] * e.h + e.h * ((_b = cfg.irisDy) != null ? _b : 0.1), ir2, ir2), fill: C.mix(irisColour(ctx, opts), ink, 0.75) }], over: [{ d: lid, fill: ink }] });
             continue;
           }
-          const ir = e.h * (lod === "hi" ? 0.86 : 0.84) * (cfg.iris || 1);
+          const dv = lod !== "hi" ? dk : 0;
+          if (dv) whiteC = C.mix("paper-100", skin.light, 0.12);
+          const ir = e.h * (lod === "hi" ? 0.86 : 0.84) * (cfg.iris || 1) * (1 - 0.22 * dv);
           const gz = E.gaze || [0, 0];
           let icx = e.cx + gz[0] * e.w - s * e.w * 0.02, icy = e.cy + gz[1] * e.h + e.h * ((_c = cfg.irisDy) != null ? _c : 0.1);
           const reach = e.w * 0.5 - ir * 0.5;
@@ -2458,7 +3173,7 @@ var B68Figure = (() => {
           const lsPts = [0, 0.3, 0.55, 0.8, 1].map((t) => [e.X(t), e.yU(t) + e.h * 0.16]);
           lines.push({ d: g.brushD(lsPts, [e.h * 0.55, e.h * 0.8, e.h * 0.8, e.h * 0.7, e.h * 0.4]), fill: ink, o: lod === "hi" ? shadow ? 0.4 : 0.28 : shadow ? 0.22 : 0.14 });
           out.push({ id, z: ctx.Z.face + 0.2, d: eyeD, fill: whiteC, light: false, lines });
-          const bagsK = opts.bags ? 1 : E.lid.bags || 0;
+          const bagsK = opts.bags ? 1 : E.lid.bags;
           if (cfg.fold) {
             const k = cfg.fold, h = e.h, cy = e.cy;
             const top = [[e.xi - s * 0.012, cy - h * 1], [e.X(0.25), cy - h * (1.5 + 0.35 * k)], [e.X(0.62), cy - h * (1.55 + 0.25 * k)], [e.X(0.92), cy - h * 0.75], [e.xo + s * 0.016, e.yU(1) - 2e-3]];
@@ -2467,9 +3182,10 @@ var B68Figure = (() => {
               id: `${id}-fold`,
               z: ctx.Z.face + 0.21,
               d: g.smoothD([...top, ...back.slice(1, -1), [e.xi, e.yU(0), true]], true, 0.45),
-              fill: C.mix(skin.shade, skin.deep, 0.35),
+              fill: dk > 0.3 ? C.mix(skin.base, skin.light, 0.3) : C.mix(skin.shade, skin.deep, 0.35),
               opacity: shadow ? 0.95 : 0.85,
               light: false,
+              // face v2 on dark skin: the fold catches the light, so brow, lid and eye stay apart
               over: [{ d: g.brushD(top, [3e-3, 0.011, 0.012, 7e-3, 2e-3].map((w) => w * (lod === "hi" ? 1 : 1.3))), fill: skin.deep, o: shadow ? 0.9 : 0.75 }]
             });
           }
@@ -2482,9 +3198,24 @@ var B68Figure = (() => {
           } else {
             over.push({ d: g.brushD(lowPts, [2e-3, g.atLeast(7e-3, 1.1), g.atLeast(7e-3, 1.1), g.atLeast(5e-3, 0.9), 2e-3]), fill: skin.shade, o: 0.9 });
           }
+          if (lod !== "lo" && E.lid["upper" + tag] > 0.3) {
+            const k = clamp((E.lid["upper" + tag] - 0.3) / 0.4, 0, 1), small = lod !== "hi" && 1 / g.px(1) < 60;
+            over.push({ d: g.brushD([0.05, 0.3, 0.6, 0.92].map((t) => [e.X(t), e.yU(t) - lw * 0.9 - 0.012 * k]), [2e-3, 0.034 * k, 0.034 * k, 2e-3]), fill: C.mix(shadow ? skin.deep : skin.shade, skin.base, 0.5 * dk), o: (lod === "hi" ? 0.35 : small ? 0.3 : 0.6) * k });
+          }
           if (opts.bags || bagsK > 0.2 || cfg.bags) {
             const k = opts.bags ? 1 : Math.max(bagsK, cfg.bags || 0);
-            over.push({ d: g.brushD([[e.xi + s * 0.02, e.cy + e.h * 1.2], [e.cx, e.cy + e.h * 1.65], [e.xo + s * 5e-3, e.cy + e.h * 1.1]], [2e-3, 0.012 * k + 3e-3, 2e-3]), fill: skin.shade, o: 0.75 });
+            if (lod === "hi" || bagsK <= 0.2) {
+              over.push({ d: g.brushD([[e.xi + s * 0.02, e.cy + e.h * 1.2], [e.cx, e.cy + e.h * 1.65], [e.xo + s * 5e-3, e.cy + e.h * 1.1]], [2e-3, 0.012 * k + 3e-3, 2e-3]), fill: skin.shade, o: 0.75 });
+              if (lod === "hi" && !opts.bags && E.lid.bags > 0.2) {
+                const th = 0.026 * Math.min(1.2, bagsK), ts = [0.08, 0.28, 0.52, 0.76, 0.94];
+                const top = ts.map((t) => [e.X(t), e.yL(t) + 0.012]), bot = ts.map((t) => [e.X(t), e.yL(t) + 0.012 + th * Math.pow(Math.sin(Math.PI * (0.08 + 0.84 * t)), 0.8)]);
+                over.push({ d: g.smoothD([...top, ...bot.reverse()], true, 0.4), fill: C.mix(skin.shade, skin.deep, 0.5), o: 0.32 + 0.1 * Math.min(1, bagsK) });
+              }
+            } else {
+              const th = Math.max(0.03 * Math.min(1.2, k), g.px(lod === "mid" ? 2.5 : 2)), ts = [0.06, 0.25, 0.5, 0.75, 0.94];
+              const top = ts.map((t) => [e.X(t), e.yL(t) + 8e-3]), bot = ts.map((t) => [e.X(t), e.yL(t) + 8e-3 + th * Math.pow(Math.sin(Math.PI * (0.08 + 0.84 * t)), 0.8)]);
+              over.push({ d: g.smoothD([...top, ...bot.reverse()], true, 0.4), fill: C.mix(skin.shade, skin.deep, 0.55), o: Math.min(0.9, 0.5 + 0.3 * k) });
+            }
             if (lod === "hi") over.push({ d: g.brushD([[e.xi + s * 0.03, e.cy + e.h * 1.55], [e.cx, e.cy + e.h * 2], [e.xo, e.cy + e.h * 1.5]], [1e-3, 5e-3, 1e-3]), fill: skin.line, o: 0.5 });
           }
           out.push({ id: `${id}-lids`, z: ctx.Z.face + 0.25, over });
@@ -2511,16 +3242,17 @@ var B68Figure = (() => {
     "src/parts/eyes/_brow.js"(exports, module) {
       "use strict";
       var G = require_geom();
-      var { hg, noise, clamp, lerp } = require_hg();
+      var { hg, noise, clamp, lerp, darkSkin } = require_hg();
+      var { fx } = require_fx();
       function browPath(ctx, s, o = {}) {
-        var _a, _b, _c, _d, _e, _f, _g;
-        const H = ctx.head, B = ctx.expr.brow, tag = s < 0 ? "R" : "L";
+        var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+        const H = ctx.head, B = fx(ctx).brow, tag = s < 0 ? "R" : "L";
         const knit = (B.knit || 0) * 0.026;
         const k = (B.angle || 0) * ((_a = o.angK) != null ? _a : 1);
-        const raise = (B.raise || 0) + (B["raise" + tag] || 0) + (o.raise || 0);
+        const raise = clamp((B.raise || 0) + (B["raise" + tag] || 0), -0.05, 0.1) + (o.raise || 0);
         const xi = s * Math.max((_b = o.minInner) != null ? _b : 0.026, ((_c = o.inner) != null ? _c : 0.042) - knit), xo = s * (H.eyeX + H.eyeW * ((_d = o.len) != null ? _d : 0.66));
         const y = H.brow - raise + (o.dy || 0);
-        const arch = (_e = o.arch) != null ? _e : 0.012, pT = (_f = o.peakT) != null ? _f : 0.6, slope = o.slope || 0, drop = (_g = o.drop) != null ? _g : 0.012;
+        const arch = (_e = o.arch) != null ? _e : 0.012, pT = (_f = o.peakT) != null ? _f : 0.6, slope = (o.slope || 0) - (B.droop || 0) * 0.03, drop = (_g = o.drop) != null ? _g : 0.012;
         const X = (t) => xi + (xo - xi) * t;
         const pts = [
           [xi, y + 6e-3 - k * 0.038 + (o.innerDrop || 0)],
@@ -2530,6 +3262,8 @@ var B68Figure = (() => {
         ];
         const yMax = H.eyeY - H.eyeH * 0.68 - 0.016, x0 = H.eyeX - H.eyeW * 0.5 - 0.012;
         for (const p of pts) if (Math.abs(p[0]) >= x0) p[1] = Math.min(p[1], yMax);
+        const yMin = Math.max((_h = H.hairline) != null ? _h : -0.28, (_i = H.hatLine) != null ? _i : -0.33) + 0.05;
+        for (const p of pts) p[1] = Math.max(p[1], yMin);
         return pts;
       }
       function browColour(ctx, opts, mixInk = 0.45) {
@@ -2557,25 +3291,36 @@ var B68Figure = (() => {
         }
         return out;
       }
+      function browBone(ctx, g, pts, ws, tag) {
+        const dk = darkSkin(ctx);
+        if (dk < 0.1 || ctx.lod === "hi") return null;
+        const { C, T, skin } = ctx;
+        const up = ws.map((w) => w * 0.5 + g.px(0.6)), th = ws.map((w) => Math.max(w * 0.4, g.px(1.5)));
+        const spine = pts.map(([x, y], i) => [x, y - up[i]]);
+        return { id: `brow-${tag}-bone`, z: ctx.Z.face + 0.16, d: g.brushD(spine, [th[0] * 0.5, th[1], th[2], th[3] * 0.4].map((w) => w * 1.4)), fill: C.mix(skin.light, T.PAPER, 0.22), opacity: 0.88 * dk, light: false, clip: "head" };
+      }
       function drawBrows(ctx, opts, st) {
-        var _a, _b, _c;
+        var _a, _b, _c, _d, _e;
         const { T, C } = ctx;
         const g = hg(ctx);
         const lod = ctx.lod;
-        const wgt = (opts.browWeight || 1) * (lod === "lo" ? 1.35 : lod === "mid" ? 1.12 : 1);
+        const wgt = (opts.browWeight || 1) * (lod === "lo" ? 1.35 : lod === "mid" ? 1.12 : 1) * 1.18;
         const col = browColour(ctx, opts, (_a = st.ink) != null ? _a : 0.45);
         const minW = g.px(lod === "lo" ? 2.8 : lod === "mid" ? 2.6 : 1.2);
         const inK = lod === "hi" ? 1 : 1.3;
         const W = (arr) => arr.map((w, i) => i === arr.length - 1 ? w * wgt : Math.max(w * wgt, Math.min(minW * (i === 0 ? inK : 1), w * wgt * 2.6 * (i === 0 ? inK : 1))));
         const out = [];
+        const ridgeK = Math.max(st.ridge || 0, fx(ctx).brow.ridge * (lod === "hi" ? 0.4 : 0.8));
         const gapOpt = (_b = opts.gap) != null ? _b : opts.browGap;
         const gapSides = gapOpt === "both" ? ["R", "L"] : gapOpt ? [gapOpt] : [];
-        const pathO = { ...st.path, raise: (((_c = st.path) == null ? void 0 : _c.raise) || 0) + (opts.raise || 0) };
+        const fxB = fx(ctx).brow, inW = W(st.w)[0];
+        const clearIn = st.uni ? 0 : 0.014 + inW * 0.4 * Math.min(1, Math.abs(fxB.angle) / 1.1);
+        const pathO = { ...st.path, raise: (((_c = st.path) == null ? void 0 : _c.raise) || 0) + (opts.raise || 0), minInner: Math.max((_e = (_d = st.path) == null ? void 0 : _d.minInner) != null ? _e : 0.026, clearIn) };
         if (st.uni) {
           const R = browPath(ctx, -1, pathO), L = browPath(ctx, 1, pathO);
           const cy = (R[0][1] + L[0][1]) / 2 + (st.centreDip || 2e-3);
           const pts = [R[3], R[2], R[1], R[0], [0, cy], L[0], L[1], L[2], L[3]];
-          const w = st.w.map((x) => x * wgt);
+          const w = st.w.map((x) => x * wgt * 1.22);
           const d = g.brushD(pts, [w[3], w[2], w[1], w[0], w[0] * 1.08, w[0], w[1], w[2], w[3]].map((x, i) => i === 0 || i === 8 ? x : Math.max(x, minW)));
           const over = [];
           if (lod === "hi") over.push({ d: g.brushD(pts.map(([x, y]) => [x - 2e-3, y - 0.011 * wgt]), [2e-3, 6e-3, 6e-3, 6e-3, 4e-3, 6e-3, 4e-3, 3e-3, 1e-3]), fill: C.mix(col, T.PAPER, 0.3), o: 0.3 });
@@ -2591,9 +3336,11 @@ var B68Figure = (() => {
           d = g.hs(d);
           const over = [];
           if (lod === "hi" && s < 0) over.push({ d: g.brushD(pts.map(([x, y]) => [x, y - st.w[1] * wgt * 0.3]), [2e-3, st.w[1] * 0.2 * wgt, st.w[2] * 0.18 * wgt, 1e-3]), fill: C.mix(col, T.PAPER, 0.3), o: 0.28 });
-          if (st.ridge && lod !== "lo") {
-            out.push({ id: `brow-${tag}-ridge`, z: ctx.Z.face + 0.14, d: g.brushD(pts.map(([x, y]) => [x, y + 0.026]), [0.01, 0.05, 0.05, 0.02].map((w) => w * st.ridge)), fill: ctx.skin.shade, opacity: s > 0 ? 0.75 : 0.5, light: false, clip: "head" });
+          if (ridgeK > 0.05 && lod !== "lo") {
+            out.push({ id: `brow-${tag}-ridge`, z: ctx.Z.face + 0.14, d: g.brushD(pts.map(([x, y]) => [x, y + 0.026]), [0.01, 0.05, 0.05, 0.02].map((w) => w * ridgeK)), fill: ctx.skin.shade, opacity: s > 0 ? 0.75 : 0.5, light: false, clip: "head" });
           }
+          const bone = browBone(ctx, g, pts, W(st.w), tag);
+          if (bone) out.push(bone);
           out.push({ id: `brow-${tag}`, z: ctx.Z.face + 0.4, d, fill: col, light: false, over });
           if (gapSides.includes(tag)) gapCut(ctx, g, pts, s, opts, `^brow-${tag}$`);
         }
@@ -2700,7 +3447,10 @@ var B68Figure = (() => {
         {
           name: "round",
           d: "Wide, open, innocent: tall round eyes with white showing, a small flick.",
-          cfg: { shape: { openK: 1.4, peak: 0.5, lowerK: 1.25, size: 0.98 }, iris: 0.82, irisDy: 0.02, lidW: 0.8, flick: 0.3 }
+          cfg: { shape: { openK: 1.4, peak: 0.5, lowerK: 1.25, size: 0.98 }, iris: 0.82, irisDy: 0.02, lidW: 0.8, flick: 0.3 },
+          // face v2 (P2.1's open item: the loader's stare): still round and open, but a bigger iris tucked up under a heavier lid, so the white shows
+          // below it and at the sides, not all round it
+          v2: { shape: { openK: 1, peak: 0.48, lowerK: 1.05, size: 1, lidAdd: 0.14, flat: 0.35 }, iris: 1, irisDy: 0.02, lidW: 1.15, flick: 0.4 }
         },
         {
           name: "upturned",
@@ -2714,17 +3464,294 @@ var B68Figure = (() => {
         }
       ];
       for (const v of V) {
+        const cf = (ctx) => v.v2 || v.cfg;
         register({
           kind: "eyes",
           name: v.name,
           describe: v.d,
           params: PARAMS,
           example: { face: { eyes: v.name } },
-          eyeShape: (ctx, s, o) => eyeShape(ctx, s, shapeOpts(v.cfg, o)),
-          shape: (ctx, s, o) => eyeShape(ctx, s, shapeOpts(v.cfg, o)),
-          draw: (ctx, opts) => drawEyes(ctx, opts, v.cfg)
+          eyeShape: (ctx, s, o) => eyeShape(ctx, s, shapeOpts(cf(ctx), o)),
+          shape: (ctx, s, o) => eyeShape(ctx, s, shapeOpts(cf(ctx), o)),
+          draw: (ctx, opts) => drawEyes(ctx, opts, cf(ctx))
         });
       }
+    }
+  });
+
+  // src/parts/eyewear/_lens.js
+  var require_lens = __commonJS({
+    "src/parts/eyewear/_lens.js"(exports, module) {
+      "use strict";
+      var REFLECTIONS = ["soft", "wide", "bands", "glint", "none"];
+      var KINDS = ["clear", "dark", "colour", "gradient", "mirror"];
+      var SCENES = ["sky", "city", "window"];
+      function parseLens(ctx, opts, cfg) {
+        const { T } = ctx;
+        const darkTok = T.tok("glass-dark");
+        let raw = opts.lens !== void 0 ? opts.lens : cfg.lens;
+        if (typeof opts.lensOpacity === "number") {
+          const lo = opts.lensOpacity;
+          const name = typeof opts.lens === "string" && !["clear", "dark", "mirror"].includes(opts.lens) ? opts.lens : cfg.v2Lens || "glass-dark";
+          const to = lo >= 0.6 ? T.tok(name) === darkTok ? "dark" : name : "clear";
+          ctx.warn(`eyewear lensOpacity ${lo}: see-through tints were retired in v3. Drew ${lo >= 0.6 ? to === "dark" ? 'an opaque "dark"' : `an opaque "${to}" colour` : 'a "clear"'} lens; set lens: "clear" | "dark" | a colour token instead`);
+          if (!(raw && typeof raw === "object")) raw = to;
+        }
+        if (raw == null) raw = "clear";
+        let sp;
+        if (typeof raw === "string") sp = KINDS.includes(raw) && raw !== "colour" && raw !== "gradient" ? { type: raw } : { type: "colour", color: raw };
+        else if (raw && typeof raw === "object") sp = { ...raw };
+        else sp = { type: "clear" };
+        if (sp.type === "color") sp.type = "colour";
+        if (!sp.type) sp.type = sp.color ? "colour" : "clear";
+        if (!KINDS.includes(sp.type)) {
+          ctx.warn(`eyewear lens type "${sp.type}" is not valid; choose from: ${KINDS.join(", ")}`);
+          sp.type = "clear";
+        }
+        const tok = (v) => v == null ? null : T.tok(v) || null;
+        const out = { kind: sp.type, color: tok(sp.color), color2: tok(sp.color2), scene: null, reflection: null };
+        if (out.kind === "colour" && !out.color) {
+          if (sp.color != null) ctx.warn(`eyewear lens colour "${sp.color}" is not a token; drew a dark lens`);
+          out.kind = "dark";
+        }
+        if (out.kind === "colour" && out.color === darkTok) out.kind = "dark";
+        if (out.kind === "gradient" && !out.color && !out.color2) {
+          out.color = T.tok("cloth-mustard");
+          out.color2 = T.tok("cloth-orange");
+        }
+        if (out.kind === "mirror") {
+          out.scene = sp.scene || "sky";
+          if (!SCENES.includes(out.scene)) {
+            ctx.warn(`eyewear mirror scene "${out.scene}" is not valid; choose from: ${SCENES.join(", ")}`);
+            out.scene = "sky";
+          }
+        }
+        const def = { clear: "glint", dark: "soft", colour: "wide", gradient: "wide", mirror: "glint" }[out.kind];
+        let refl = opts.reflection != null ? opts.reflection : cfg.reflection || def;
+        if (!REFLECTIONS.includes(refl)) {
+          ctx.warn(`eyewear reflection "${refl}" is not valid; choose from: ${REFLECTIONS.join(", ")}`);
+          refl = def;
+        }
+        out.reflection = refl;
+        out.opaque = out.kind !== "clear";
+        return out;
+      }
+      function lensColours(ctx, L, lod) {
+        const { C, T } = ctx;
+        let tok, mat;
+        if (L.kind === "dark") tok = L.color || T.tok("glass-dark");
+        else if (L.kind === "colour") tok = L.color;
+        else if (L.kind === "gradient") tok = L.color2 || L.color;
+        else tok = L.color || C.mix(T.tok("file-300"), T.tok("file-500"), 0.45);
+        mat = ctx.mat(tok, "glass");
+        let base = mat.base;
+        if (lod === "lo") {
+          if (L.kind === "gradient") base = C.mix(mat.base, mat.shade, 0.42);
+          else if (L.kind === "mirror") base = C.mix(mat.base, L.color2 || T.tok("file-900"), L.scene === "city" ? 0.6 : L.scene === "window" ? 0.5 : 0.38);
+        }
+        const white = T.tok("cloth-white");
+        const band = L.kind === "gradient" && L.color && L.color2 ? L.color : C.mix(mat.base, white, L.kind === "dark" ? 0.3 : 0.42);
+        const steps = [];
+        if (L.kind === "gradient") {
+          const n = lod === "hi" ? 3 : lod === "mid" ? 2 : 1;
+          const top = mat.shade, mid = C.mix(mat.shade, mat.base, 0.5);
+          if (n === 3) steps.push({ v0: -1.3, v1: -0.42, fill: top }, { v0: -0.42, v1: 0.1, fill: mid });
+          else if (n === 2) steps.push({ v0: -1.3, v1: -0.15, fill: mid });
+        }
+        return { mat, base, steps, band };
+      }
+      function stripe(u0, v0, w, slope) {
+        const hw = w / 2;
+        return [[u0 - hw + slope * 1.3, v0 - 1.3], [u0 + hw + slope * 1.3, v0 - 1.3], [u0 + hw - slope * 1.3, v0 + 1.3], [u0 - hw - slope * 1.3, v0 + 1.3]];
+      }
+      function opaqueLayers(ctx, L, S, env) {
+        const { C, T } = ctx;
+        const lod = env.lod, col = lensColours(ctx, L, lod);
+        const mat = col.mat;
+        const shade = [], lit = [], deep = [];
+        const hi = lod === "hi", mid = lod === "mid";
+        const wide = S.s < 0 ? 1 : 1;
+        for (const st of col.steps) shade.push({ d: S.poly([[-1.6, st.v0], [1.6, st.v0], [1.6, st.v1], [-1.6, st.v1]]), fill: st.fill });
+        if (L.kind === "mirror") mirrorScene(ctx, L, S, col, shade, lit, env);
+        const refl = L.reflection;
+        if (lod === "lo" || refl === "none") return { mat, base: col.base, shade, lit, deep };
+        if (refl === "soft") {
+          const warm = C.mix(mat.base, T.tok("cloth-tobacco"), 0.5);
+          const arc = [], N = 9;
+          for (let i = 0; i < N; i++) {
+            const a = (62 + 118 * i / (N - 1)) * Math.PI / 180;
+            arc.push([0.86 * Math.cos(a), 0.84 * Math.sin(a)]);
+          }
+          lit.push({ d: S.brush(arc, [0.012, 0.07, 0.13, 0.17, 0.18, 0.16, 0.12, 0.06, 0.012].map((w) => w * S.hh * 2.2)), fill: warm, o: 0.9 });
+          if (hi) lit.push({ d: S.brush([[-0.66, -0.52], [-0.34, -0.74]], [0.03 * S.hh, 0.09 * S.hh]), fill: C.mix(mat.base, T.tok("cloth-white"), 0.3), o: 0.4 });
+        } else if (refl === "wide") {
+          const c = col.band;
+          lit.push({ d: S.poly(stripe(-0.1, 0.12, 0.62, 0.8)), fill: c, o: L.kind === "gradient" ? 0.96 : 0.75 });
+          if (!mid || env.thick) lit.push({ d: S.poly(stripe(0.9, 0.12, 0.2, 0.8)), fill: c, o: L.kind === "gradient" ? 0.9 : 0.7 });
+        } else if (refl === "bands") {
+          const c = "light";
+          lit.push({ d: S.poly(stripe(-0.25, 0, 0.3, 0.9)), fill: c, o: 0.55 });
+          if (!mid) lit.push({ d: S.poly(stripe(0.3, 0, 0.12, 0.9)), fill: c, o: 0.4 });
+        } else if (refl === "glint") {
+          lit.push({ d: glintD(S), fill: L.kind === "mirror" ? C.mix(col.base, T.tok("cloth-white"), 0.7) : "light", o: 0.8 });
+        }
+        if (env.up) lit.push({ d: S.poly([[-1.6, -1.5], [1.6, -1.5], [1.6, -0.05], [-1.6, -0.45]]), fill: C.mix(col.base, T.tok("cloth-white"), 0.5), o: 0.5 });
+        return { mat, base: col.base, shade, lit, deep };
+      }
+      function glintD(S) {
+        return S.brush([[-0.68, -0.34], [-0.3, -0.7]], [0.05 * S.hh, 0.15 * S.hh, 0.03 * S.hh]);
+      }
+      function mirrorScene(ctx, L, S, col, shade, lit, env) {
+        const { C, T } = ctx;
+        const hi = env.lod === "hi";
+        const ground = L.color2 || T.tok("file-900");
+        const cloud = C.mix(col.base, T.tok("cloth-white"), 0.55);
+        const hor = (u) => 0.3 + 0.2 * u * u;
+        const gp = [];
+        for (let i = 0; i <= 8; i++) {
+          const u = -1.5 + 3 * i / 8;
+          gp.push([u, hor(u)]);
+        }
+        const groundD = () => S.poly([...gp, [1.5, 1.6], [-1.5, 1.6]]);
+        if (L.scene === "city") {
+          const bld = [[-1.5, -0.95, -0.05], [-0.95, -0.6, 0.12], [-0.6, -0.25, -0.4], [-0.25, 0.1, 0.02], [0.1, 0.45, -0.25], [0.45, 0.8, 0.14], [0.8, 1.5, -0.12]];
+          for (const [a, b, top] of bld) shade.push({ d: S.poly([[a, top], [b, top], [b, 1.6], [a, 1.6]]), fill: ground });
+          shade.push({ d: groundD(), fill: C.mix(ground, T.tok("glass-dark"), 0.4) });
+          if (hi) for (const [a, b, top] of bld) for (let k = 0; k < 3; k++) {
+            const x = a + (b - a) * (0.25 + 0.3 * (k % 2)), y = top + 0.18 + 0.2 * Math.floor(k / 2) + 0.12 * k;
+            if (y < hor(x) - 0.08) lit.push({ d: S.poly([[x, y], [x + 0.08, y], [x + 0.08, y + 0.09], [x, y + 0.09]]), fill: cloud, o: 0.75 });
+          }
+        } else if (L.scene === "window") {
+          shade.push({ d: S.poly([[-1.6, -1.6], [1.6, -1.6], [1.6, 1.6], [-1.6, 1.6]]), fill: ground });
+          lit.push({ d: S.poly([[-0.72, -0.72], [0.72, -0.72], [0.72, 0.5], [-0.72, 0.5]]), fill: C.mix(col.base, T.tok("cloth-white"), 0.35), o: 1 });
+          shade.push({ d: S.poly([[-0.05, -0.8], [0.05, -0.8], [0.05, 0.6], [-0.05, 0.6]]), fill: ground });
+          shade.push({ d: S.poly([[-0.8, -0.14], [0.8, -0.14], [0.8, -0.05], [-0.8, -0.05]]), fill: ground });
+        } else {
+          lit.push({ d: S.poly(blob(-0.42, -0.5, 0.52, 0.2)), fill: cloud, o: 0.85 });
+          lit.push({ d: S.poly(blob(0.42, -0.12, 0.42, 0.16)), fill: cloud, o: 0.7 });
+          shade.push({ d: groundD(), fill: ground });
+          if (hi) {
+            lit.push({ d: S.brush([[0.12, -0.9], [0.4, -0.5]], [0.02 * S.hh, 0.1 * S.hh, 0.01 * S.hh]), fill: T.tok("cloth-mustard"), o: 0.85 });
+          }
+        }
+      }
+      function blob(cu, cv, ru, rv) {
+        const pts = [];
+        for (let i = 0; i < 14; i++) {
+          const a = i / 14 * Math.PI * 2, b = 1 + 0.18 * Math.sin(a * 3 + 0.7) * (Math.sin(a) < 0 ? 1 : 0.3);
+          pts.push([cu + Math.cos(a) * ru * b, cv + Math.sin(a) * rv * b]);
+        }
+        return pts;
+      }
+      module.exports = { parseLens, lensColours, opaqueLayers, glintD, stripe, blob, REFLECTIONS, KINDS, SCENES };
+    }
+  });
+
+  // src/parts/eyewear/_wear.js
+  var require_wear = __commonJS({
+    "src/parts/eyewear/_wear.js"(exports, module) {
+      "use strict";
+      var G = require_geom();
+      var { handAnchor } = require_anchors();
+      var DEG = Math.PI / 180;
+      var rotP = (a) => {
+        const c = Math.cos(a), s = Math.sin(a);
+        return ([x, y]) => [x * c - y * s, x * s + y * c];
+      };
+      function drawCarried(ctx, opts, cfg, o, wear) {
+        var _a;
+        const { drawFrames } = require_frame();
+        const R = ctx.R, k = R.head.k, hh = R.hh;
+        if (cfg.single || cfg.band || cfg.name === "goggles") {
+          ctx.warn(`eyewear "${cfg.name}" cannot be carried as wear "${wear}"; worn on`);
+          return null;
+        }
+        const hwL = cfg.hw * o.size, hhL = cfg.hh * o.size, rimS = cfg.rim[1] * (cfg.rimIn || 1);
+        const sep = hwL + rimS + 0.026;
+        const outer = sep + hwL + rimS;
+        const armW = Math.max((_a = cfg.arm) != null ? _a : 0.02, 0.012);
+        const zc = ctx.Z.strap - 0.5;
+        let P, z = zc, clipY, extras;
+        if (wear === "hand") {
+          const want = opts.hand === "R" || opts.hand === "L" ? opts.hand : null;
+          const side = want || ["R", "L"].find((s) => R.arms[s].pose === "hold");
+          if (!side || R.arms[side].pose !== "hold") {
+            ctx.warn(`eyewear wear "hand" needs an arm in pose "hold"${want ? " on side " + want : ""}; set pose.arms.${want || "R"}: "hold" (worn on instead)`);
+            return null;
+          }
+          const a = handAnchor(ctx, side);
+          const rot = rotP((side === "R" ? -1 : 1) * 14 * DEG);
+          const c0 = [a.pt[0] + a.up[0] * 0.2 * k, a.pt[1] + a.up[1] * 0.2 * k];
+          P = (p) => {
+            const q = rot(p);
+            return [c0[0] + q[0] * k, c0[1] + q[1] * k];
+          };
+          z = a.zUnder;
+          extras = (env) => {
+            const w = Math.max(armW, env.min) * (env.lod === "lo" ? 1.2 : 1);
+            const s = side === "R" ? -1 : 1;
+            const pts = [[s * outer, -hhL * 0.5], [s * (outer + 0.16), -hhL * 0.38], [s * (outer + 0.32), -hhL * 0.1]];
+            return [{ id: "eyewear-held-arm", z: env.zFront + 0.05, d: G.brush(pts.map(P), w * k), mat: env.frameMat, light: false }];
+          };
+        } else if (wear === "chain") {
+          const nb = R.y.neckBase, c0 = R.torsoPt(0, R.y.chest - 0.2 * hh), rot = rotP(5 * DEG);
+          P = (p) => {
+            const q = rot(p);
+            return [c0[0] + q[0] * k, c0[1] + q[1] * k];
+          };
+          extras = (env) => {
+            const out = [], w = Math.max(armW * 0.9, env.min);
+            const want = typeof opts.chain === "string" ? opts.chain : null;
+            const tok = want && ctx.T.tok(want) || ctx.T.tok("metal-brass");
+            if (want && !ctx.T.tok(want)) ctx.warn(`eyewear chain "${want}" is not a colour token (try metal-brass, metal-chrome, metal-steel or metal-gun); drew a brass chain`);
+            const cm = ctx.mat(tok, "metal");
+            for (const s of [-1, 1]) {
+              const h0 = [s * outer, -hhL * 0.42], h1 = [s * (outer + 0.012), hhL * 0.2];
+              out.push({ id: `eyewear-hinge-${s < 0 ? "R" : "L"}`, z: env.zFront + 0.05, d: G.brush([h0, h1].map(P), [w * k, w * k * 0.9]), mat: env.frameMat, light: false });
+              const N = R.torsoPt(s * R.w.neckBase * 0.92, nb + 0.02 * hh), E = P(h0);
+              const m = [(N[0] + E[0]) / 2 + s * 0.012 * hh, (N[1] + E[1]) / 2 + 0.03 * hh];
+              const pts = [];
+              for (let i = 0; i <= 10; i++) {
+                const t = i / 10, u = 1 - t;
+                pts.push([u * u * N[0] + 2 * u * t * m[0] + t * t * E[0], u * u * N[1] + 2 * u * t * m[1] + t * t * E[1]]);
+              }
+              const cw = Math.max(6e-3 * hh, ctx.px(env.lod === "lo" ? 1.8 : env.lod === "mid" ? 1.3 : 1.1));
+              out.push({ id: `eyewear-chain-${s < 0 ? "R" : "L"}`, z: env.zFront - 0.05, d: G.brush(pts, cw), mat: cm, light: false });
+            }
+            return out;
+          };
+        } else {
+          const at = opts.at === "neckline" ? "neckline" : "breast";
+          if (opts.at != null && opts.at !== "breast" && opts.at !== "neckline") ctx.warn(`eyewear at "${opts.at}" is not valid; use "breast" (default) or "neckline"`);
+          const side = opts.side === "R" ? "R" : "L", kk = side === "R" ? -1 : 1;
+          if (at === "breast") {
+            const M = R.torsoPt(kk * R.w.chest * 0.5, R.y.chest - 0.16 * hh), rot = rotP(-kk * 7 * DEG);
+            clipY = hhL * 0.12;
+            P = (p) => {
+              const q = rot([p[0], p[1] - clipY]);
+              return [M[0] + q[0] * k * 0.92, M[1] + q[1] * k * 0.92];
+            };
+            extras = (env) => {
+              const w = Math.max(armW, env.min) * (env.lod === "lo" ? 1.2 : 1), s = -kk;
+              const pts = [[s * outer, -hhL * 0.55], [s * outer * 0.55, -hhL * 0.78], [0, clipY * 0.4]];
+              return [{ id: "eyewear-pocket-arm", z: env.zFront + 0.05, d: G.brush(pts.map(P), w * k), mat: env.frameMat, light: false }];
+            };
+          } else {
+            const nb = R.y.neckBase, M = R.torsoPt(kk * R.w.neckBase * 0.3, nb + 0.17 * hh), rot = rotP(kk * 8 * DEG);
+            P = (p) => {
+              const q = rot(p);
+              return [M[0] + q[0] * k * 0.92, M[1] + q[1] * k * 0.92];
+            };
+            extras = (env) => {
+              const w = Math.max(armW, env.min) * (env.lod === "lo" ? 1.2 : 1), s = kk;
+              const pts = [[s * outer, -hhL * 0.4], [s * (outer + 0.01), -hhL * 0.95], [s * (outer - 0.03), -hhL * 1.5]];
+              return [{ id: "eyewear-hook-arm", z: env.zFront + 0.05, d: G.brush(pts.map(P), w * k), mat: env.frameMat, light: false }];
+            };
+          }
+        }
+        return drawFrames(ctx, { ...opts, wear: "on" }, cfg, { P, z, sep, clipY, extras });
+      }
+      module.exports = { drawCarried };
     }
   });
 
@@ -2735,38 +3762,106 @@ var B68Figure = (() => {
       var G = require_geom();
       var { hg, clamp, lerp } = require_hg();
       var U = require_util();
+      var Lens = require_lens();
+      var DEG = Math.PI / 180;
+      var WEARS = ["on", "low", "up", "hand", "pocket", "chain"];
+      var MATERIALS = ["acetate", "metal", "wire"];
+      var LO_BAR_PX = 6;
+      var LO_DROP_PX = 4;
       function lensPts(s, cx, cy, hw, hh, o = {}) {
-        const N = 44, pts = [];
+        const N = o.N || 44, pts = [];
         const n = o.n || 2.6;
         for (let i = 0; i < N; i++) {
           const a = i / N * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
           const xl = Math.sign(c) * Math.pow(Math.abs(c), 2 / n);
-          let yl = Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n);
+          const yl = Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n);
           let X = xl * hw, Y = yl * hh;
           if (o.taper && yl > 0) X *= 1 - o.taper * yl;
           if (o.flatTop && yl < 0) Y *= 1 - o.flatTop * 0.35 * (1 - Math.abs(xl));
+          if (o.top != null && yl < 0) Y *= o.top;
           if (o.sweep && xl > 0 && yl < 0.3) Y -= o.sweep * Math.pow(xl, 1.6) * hh * (1 - yl) * 0.6;
           if (o.drop && xl > 0 && yl > -0.2) Y += o.drop * Math.pow(xl, 1.3) * hh * (0.3 + yl);
-          if (o.corner && xl > 0 && yl < 0.5) {
-            const cw = xl * xl * (0.5 - yl);
-            X += o.corner * cw * 0.7;
-            Y -= o.corner * cw * 0.6;
-          }
           pts.push([cx + s * X, cy + Y]);
         }
         return pts;
       }
-      function ringPaths(g, s, cx, cy, hw, hh, rim, o) {
-        const [rt, rs, rb] = rim;
-        const inner = lensPts(s, cx, cy, hw, hh, o);
-        const outer = lensPts(s, cx, cy + (rb - rt) / 2, hw + rs, hh + (rt + rb) / 2, { ...o, corner: o.sweep ? 0.016 : 0 });
-        return { lens: g.smooth(inner, true, 0.5), ring: g.smooth(outer, true, 0.5) + " " + g.smooth(inner.slice().reverse(), true, 0.5) };
+      function thickAt(nx, ny, s, rim, rimIn) {
+        const side = nx * s > 0 ? rim[1] : rim[1] * rimIn;
+        const vert = ny < 0 ? rim[0] : rim[2];
+        const P = 2.6;
+        return Math.pow(Math.pow(Math.abs(nx) * side, P) + Math.pow(Math.abs(ny) * vert, P), 1 / P);
       }
-      function hsArm(ctx, d, xFront, xEar, front) {
-        return G.mapPath(d, (p) => {
-          const x = Math.abs(p[0] / 1e3), t = clamp((x - xFront) / Math.max(1e-6, xEar - xFront), 0, 1);
-          return ctx.hp([p[0] / 1e3, p[1] / 1e3], { depth: front * (1 - t) });
-        });
+      function ringOf(inner, s, rim, rimIn, lug) {
+        const n = inner.length;
+        let mx = 0, my = 0;
+        for (const p of inner) {
+          mx += p[0];
+          my += p[1];
+        }
+        mx /= n;
+        my /= n;
+        const outer = [], nrm = [], thk = [];
+        for (let i = 0; i < n; i++) {
+          const a = inner[(i - 1 + n) % n], b = inner[(i + 1) % n], p = inner[i];
+          const tx = b[0] - a[0], ty = b[1] - a[1], l = Math.hypot(tx, ty) || 1;
+          let nx = ty / l, ny = -tx / l;
+          if (nx * (p[0] - mx) + ny * (p[1] - my) < 0) {
+            nx = -nx;
+            ny = -ny;
+          }
+          let t = thickAt(nx, ny, s, rim, rimIn);
+          if (lug) {
+            const w = s * nx * 0.74 - ny * 0.67;
+            t += lug * rim[0] * Math.pow(Math.max(0, (w - 0.86) / 0.14), 1.4);
+          }
+          outer.push([p[0] + nx * t, p[1] + ny * t]);
+          nrm.push([nx, ny]);
+          thk.push(t);
+        }
+        return { inner, outer, nrm, thk };
+      }
+      function crescent(g, ring, ctr, phiC, half, frac, minW, W) {
+        const n = ring.outer.length, idx = [];
+        const dist = (i) => {
+          const p = ring.outer[i];
+          let d = Math.atan2((p[1] - ctr.cy) / ctr.ry, (p[0] - ctr.cx) / ctr.rx) / DEG - phiC;
+          d = (d + 540) % 360 - 180;
+          return Math.abs(d);
+        };
+        let i0 = 0, best = -1;
+        for (let i = 0; i < n; i++) {
+          const d = dist(i);
+          if (d > best) {
+            best = d;
+            i0 = i;
+          }
+        }
+        for (let k = 1; k <= n; k++) {
+          const i = (i0 + k) % n;
+          if (dist(i) <= half) idx.push(i);
+        }
+        if (idx.length < 3) return null;
+        const m = idx.length, pts = [], ws = [];
+        for (let k = 0; k < m; k++) {
+          const i = idx[k], t = m > 1 ? k / (m - 1) : 0, tap = Math.pow(Math.sin(Math.PI * t), 0.75);
+          const w = Math.max(frac * ring.thk[i], minW) * tap + 1e-5;
+          const o = ring.outer[i], nn = ring.nrm[i];
+          pts.push(W([o[0] - nn[0] * w * 0.5, o[1] - nn[1] * w * 0.5]));
+          ws.push(w);
+        }
+        return g.brush(pts, ws);
+      }
+      function clipPoly(P, yMax) {
+        const out = [];
+        for (let i = 0; i < P.length; i++) {
+          const a = P[i], b = P[(i + 1) % P.length], ain = a[1] <= yMax, bin = b[1] <= yMax;
+          if (ain) out.push(a);
+          if (ain !== bin) {
+            const t = (yMax - a[1]) / (b[1] - a[1]);
+            out.push([a[0] + (b[0] - a[0]) * t, yMax]);
+          }
+        }
+        return out;
       }
       function yawSlide(ctx, x, y, depth = 0) {
         const H = ctx.R.head;
@@ -2774,74 +3869,332 @@ var B68Figure = (() => {
         const r = H.w * Math.sqrt(Math.max(0.15, 1 - Math.pow(Math.max(0, y - 0.05) / 0.62, 2)));
         return (Math.sqrt(Math.max(0, r * r - x * x)) + depth) * Math.sin(H.yaw);
       }
-      function drawFrames(ctx, opts, cfg) {
-        var _a, _b, _c, _d, _e;
+      function hsArm(ctx, d, xFront, xEar, front) {
+        return G.mapPath(d, (p) => {
+          const x = Math.abs(p[0] / 1e3), t = clamp((x - xFront) / Math.max(1e-6, xEar - xFront), 0, 1);
+          return ctx.hp([p[0] / 1e3, p[1] / 1e3], { depth: front * (1 - t) });
+        });
+      }
+      function resolve(ctx, opts, cfg) {
+        const { T } = ctx;
+        const o = {};
+        o.material = opts.material != null ? opts.material : cfg.material || "acetate";
+        if (!MATERIALS.includes(o.material)) {
+          ctx.warn(`eyewear material "${o.material}" is not valid; choose from: ${MATERIALS.join(", ")}`);
+          o.material = cfg.material || "acetate";
+        }
+        o.frameTok = T.tok(opts.frame) || T.tok(cfg.frame) || T.tok("cloth-black");
+        o.size = clamp(+opts.size || 1, 0.6, 1.6);
+        o.rimWeight = clamp(+opts.rimWeight || 1, 0.4, 3.5);
+        o.seatOff = +opts.seat || 0;
+        let wear = opts.wear != null ? opts.wear : cfg.wear || "on";
+        if (!WEARS.includes(wear)) {
+          ctx.warn(`eyewear wear "${wear}" is not valid; choose from: ${WEARS.join(", ")}`);
+          wear = "on";
+        }
+        o.wear = wear;
+        let spot = opts.spot;
+        if (spot != null && spot !== true && spot !== false && spot !== "lens" && spot !== "frame") {
+          ctx.warn(`eyewear spot "${spot}" is not valid; use true, "lens" or "frame"`);
+          spot = null;
+        }
+        o.spot = spot;
+        o.pattern = opts.pattern != null ? opts.pattern : cfg.pattern || null;
+        if (o.pattern === "none") o.pattern = null;
+        if (o.pattern && o.pattern !== "tortoise") {
+          ctx.warn(`eyewear pattern "${o.pattern}" is not valid; use "tortoise" (acetate frames) or "none"`);
+          o.pattern = null;
+        }
+        if (o.pattern && o.material !== "acetate") {
+          ctx.warn('eyewear pattern "tortoise" needs material "acetate"; ignored');
+          o.pattern = null;
+        }
+        o.lens = Lens.parseLens(ctx, opts, cfg);
+        return o;
+      }
+      function drawFrames(ctx, opts, cfg, carry) {
+        var _a;
         const { T, C } = ctx;
         const g = hg(ctx);
         const H = ctx.head;
         const lod = ctx.lod;
-        const frameTok = T.tok(opts.frame) || T.tok(cfg.frame), lensTok = T.tok(opts.lens) || T.tok(cfg.lens);
-        const frameMat = ctx.mat(frameTok, cfg.frameKind || "satin"), lensMat = ctx.mat(lensTok, "glass");
-        const out = [];
-        const k = lod === "lo" ? 1.25 : lod === "mid" ? 1.15 : 1;
-        const min = g.px(lod === "lo" ? 2 : lod === "mid" ? 1.7 : 1.1);
-        const rim = cfg.rim.map((r) => Math.max(r * k * (opts.rimWeight || 1), min));
-        const hw = cfg.hw * (opts.size || 1), hh = cfg.hh * (opts.size || 1), cy = H.eyeY + (cfg.dy || 0);
-        const shapeO = { n: cfg.n, taper: cfg.taper, sweep: cfg.sweep, drop: cfg.drop, flatTop: cfg.flatTop };
-        const sides = cfg.sides || ["R", "L"];
-        const lensO = (_b = (_a = opts.lensOpacity) != null ? _a : cfg.lensO) != null ? _b : 0.9;
-        const yaw = ctx.R.head.yaw || 0, cosY = Math.cos(yaw);
-        const zFront = ctx.Z.hair + 0.3;
+        const o = resolve(ctx, opts, cfg);
         const flat = { flat: true };
-        const poly = U.outlinePoly(ctx).map(([x, y]) => [x + yawSlide(ctx, x, y, 0), y]);
-        const edge = U.edgeAt(poly, cy);
-        const arms = [];
-        for (const tag of sides) {
+        const D = carry ? (d) => G.mapPath(d, (p) => carry.P([p[0] / 1e3, p[1] / 1e3])) : (d) => g.hs(d, flat);
+        const yaw = carry ? 0 : ctx.R.head.yaw || 0, cosY = Math.cos(yaw);
+        const ys = (x, y, d) => carry ? 0 : yawSlide(ctx, x, y, d);
+        const hasHat = !carry && !!(ctx.S.hair && ctx.S.hair.hat);
+        let wear = carry ? "on" : o.wear;
+        const wearOut = require_wear();
+        if (!carry && wear === "up" && hasHat && cfg.name !== "goggles") {
+          ctx.warn('eyewear wear "up" needs a bare head (the hair is the rest); with a hat the glasses were worn on');
+          wear = "on";
+        }
+        if (!carry && (wear === "hand" || wear === "pocket" || wear === "chain")) {
+          const w = wearOut.drawCarried(ctx, opts, cfg, o, wear);
+          if (w) return w;
+          wear = "on";
+        }
+        let lensT = o.lens;
+        const clipDown = !!cfg.clip && !carry && (opts.flip == null || opts.flip === "down");
+        if (clipDown && lod === "lo") lensT = Lens.parseLens(ctx, { lens: "dark" }, cfg);
+        const opaque = lensT.opaque;
+        const clearSeat = !opaque;
+        const k = lod === "lo" ? 1.25 : lod === "mid" ? 1.15 : 1;
+        const min = g.px(lod === "lo" ? o.material === "acetate" ? 2 : 1.5 : lod === "mid" ? 1.7 : 1.1);
+        const rim = cfg.rim.map((r) => Math.max(r * k * o.rimWeight, min));
+        const rimIn = cfg.rimIn || 1;
+        const hw = cfg.hw * o.size, hh = cfg.hh * o.size;
+        const lensPx = 2 * hw / g.px(1);
+        const topF = cfg.top != null ? cfg.top : 1;
+        const shapeO = { n: cfg.n, taper: cfg.taper, sweep: cfg.sweep, drop: cfg.drop, flatTop: cfg.flatTop, top: cfg.top };
+        const seatMode = cfg.seat || "eye";
+        let cy;
+        if (carry) cy = 0;
+        else if (seatMode === "brow") cy = H.brow - 0.034 + rim[0] + hh * topF;
+        else if (seatMode === "under") cy = H.brow + 0.016 + rim[0] + hh * topF;
+        else cy = H.eyeY + (cfg.dy || 0);
+        if (!carry) cy += o.seatOff;
+        const dxLens = cfg.dx || 0;
+        const minCx = clearSeat ? hw + rim[1] * rimIn + 0.012 : 0;
+        const yUp = cfg.name === "goggles" && hasHat ? H.hatLine - 0.07 : H.hairline - 0.06;
+        let W = (p) => p;
+        if (wear === "low") {
+          const top = cy - hh * topF - rim[0], sh = Math.max(0.03, H.eyeY + 0.042 - top);
+          W = (p) => p.length > 2 ? [p[0], p[1] + sh, p[2]] : [p[0], p[1] + sh];
+        }
+        if (wear === "up") {
+          const kY = 0.45;
+          W = (p) => p.length > 2 ? [p[0], yUp + (p[1] - cy) * kY, p[2]] : [p[0], yUp + (p[1] - cy) * kY];
+        }
+        const cyW = W([0, cy])[1];
+        const mk = {
+          poly: (pts, closed = true) => D(g.poly(pts.map(W), closed)),
+          smooth: (pts, closed = true, t = 0.5) => D(g.smooth(pts.map(W), closed, t)),
+          brush: (pts, w, opt) => D(g.brush(pts.map(W), w, opt))
+        };
+        const outlineP = carry ? null : U.outlinePoly(ctx).map(([x, y]) => [x + yawSlide(ctx, x, y, 0), y]);
+        const edge = carry ? null : U.edgeAt(outlineP, cyW);
+        const sideTags = cfg.single ? [opts.side === "L" ? "L" : "R"] : cfg.sides || ["R", "L"];
+        const sides = sideTags.map((tag) => {
+          var _a2;
           const s = tag === "R" ? -1 : 1;
-          const cx = s * (H.eyeX + (cfg.dx || 0));
-          let cs = cosY, cP = cx + yawSlide(ctx, cx, cy, 0.035);
+          const cx = s * (carry ? carry.sep : Math.max(H.eyeX + dxLens, minCx));
+          let cs = cosY, cP = cx + ys(cx, cy, 0.035);
           if (edge) {
-            const lim = s > 0 ? edge.r - (yaw ? 4e-3 : -0.02) : edge.l + (yaw ? 4e-3 : -0.02);
+            const prot = wear === "up" ? 0.06 : (_a2 = cfg.protrude) != null ? _a2 : 0.02;
+            const lim = s > 0 ? edge.r - (yaw ? 4e-3 : -prot) : edge.l + (yaw ? 4e-3 : -prot);
             const over = s * (cP + s * (hw + rim[1]) * cs - lim);
             if (over > 0) {
-              const W = 2 * (hw + rim[1]) * cs, W2 = Math.max(W - over, W * 0.45);
-              cP -= s * (W - W2) / 2;
-              cs *= W2 / W;
+              const Wd = 2 * (hw + rim[1]) * cs, W2 = Math.max(Wd - over, Wd * 0.45);
+              cP -= s * (Wd - W2) / 2;
+              cs *= W2 / Wd;
             }
           }
-          const hwE = hw * cs, rimE = [rim[0], rim[1] * cs, rim[2]];
-          const P = ringPaths(g, s, cP, cy, hwE, hh, rimE, shapeO);
-          const lensD = g.hs(P.lens, flat), ringD = g.hs(P.ring, flat);
-          const lit = [];
-          if (cfg.bands !== false) {
-            const bw = hwE * 0.3, sl = hh * 0.9, x0 = cP - s * hwE * 0.28;
-            const band = (off, w, o) => ({ d: g.hs(g.poly([[x0 + off, cy - hh * 1.1], [x0 + off + w, cy - hh * 1.1], [x0 + off + w - sl, cy + hh * 1.1], [x0 + off - sl, cy + hh * 1.1]]), flat), o });
-            lit.push(band(0, bw, 0.55), band(bw * 1.55, bw * 0.38, 0.4));
+          const hwE = hw * cs;
+          const rimE = [rim[0], rim[1] * cs, rim[2]];
+          const inner = lensPts(s, cP, cy, hwE, hh, shapeO);
+          const ring = ringOf(inner, s, rimE, rimIn, cfg.lug ? cfg.lug * (cfg.material === "acetate" || !cfg.material ? 1 : 0) : 0);
+          const S = { tag, s, cP, cy, hwE, hh, rimE, ring, ctr: { cx: cP, cy, rx: hwE + rimE[1], ry: hh + (rim[0] + rim[2]) / 2 }, far: yaw !== 0 && Math.sign(yaw) === s };
+          S.pt = (u, v) => [cP + u * hwE, cy + v * hh];
+          S.poly = (uv) => mk.poly(uv.map(([u, v]) => S.pt(u, v)));
+          S.smooth = (uv) => mk.smooth(uv.map(([u, v]) => S.pt(u, v)));
+          S.brush = (uv, w) => mk.brush(uv.map(([u, v]) => S.pt(u, v)), w);
+          S.hh = hh;
+          S.s = s;
+          return S;
+        });
+        const clipY = carry && carry.clipY != null ? carry.clipY : null;
+        const zFront = carry ? carry.z : (cfg.overHat && hasHat && wear === "up" ? ctx.Z.hat : ctx.Z.hair) + 0.3;
+        const isMetal = o.material !== "acetate";
+        const frameMat = ctx.mat(o.frameTok, isMetal ? "metal" : cfg.frameKind || "satin");
+        const out = [];
+        const role = (r, pc) => {
+          const sp = o.spot;
+          pc.spot = sp === true || sp === r;
+          if (!pc.spot) delete pc.spot;
+          return pc;
+        };
+        const env = { ctx, opts, g, W, mk, D, cyW, topF, sides, rim, rimIn, cy, hw, hh, zFront, lod, frameMat, o, cfg, wear, yaw, cosY, role, out, k, min, opaque, edge, lens: lensT, hasHat, ys, carry, lensPx, tiny: lod === "lo" && lensPx < LO_BAR_PX };
+        if (cfg.band) env.band = makeBand(env);
+        if (lod === "lo" && !cfg.noLoBar) {
+          if (opaque && lensPx < LO_BAR_PX) {
+            const lo = drawLo(env);
+            if (carry && carry.extras) lo.push(...carry.extras(env));
+            return lo;
           }
-          if (cfg.gradient) {
-            for (const [f, o] of [[0.15, 0.2], [0.35, 0.22], [0.55, 0.25]]) lit.push({ d: g.hs(g.poly([[cP - hwE * 1.3, cy + hh * (1 - 2 * f)], [cP + hwE * 1.3, cy + hh * (1 - 2 * f)], [cP + hwE * 1.3, cy + hh * 1.3], [cP - hwE * 1.3, cy + hh * 1.3]]), flat), o });
-          }
-          out.push({ id: `eyewear-lens-${tag}`, z: zFront, d: lensD, mat: lensMat, fill: "base", opacity: lensO, light: false, lit });
-          out.push({ id: `eyewear-frame-${tag}`, z: zFront + 0.1, d: ringD, mat: frameMat, light: false, over: cfg.frameSheen && lod === "hi" ? [{ d: g.hs(g.brush([[cP - s * hwE * 0.6, cy - hh - rim[0] * 0.5], [cP, cy - hh - rim[0] * 0.55], [cP + s * hwE * 0.5, cy - hh - rim[0] * 0.4]], [2e-3, rim[0] * 0.35, 2e-3]), flat), fill: "light", o: 0.6 }] : void 0 });
-          if (!cfg.noArms) {
-            const xf = cP + s * (hwE + rimE[1] * 0.6), ye = H.earTop + 0.045, xe0 = s * H.earX * 0.97, xe = xe0 + yawSlide(ctx, xe0, ye, 0);
-            const aw = Math.max(((_c = cfg.arm) != null ? _c : 0.02) * k, min);
-            const pts = [[xf, cy - hh * 0.35], [lerp(xf, xe, 0.5), lerp(cy - hh * 0.35, ye, 0.45)], [xe, ye]];
-            arms.push({ id: `eyewear-arm-${tag}`, z: ctx.Z.eyewear - 0.1, d: g.hs(g.brush(pts, [aw, aw * 0.9, aw * 0.8]), flat), clip: "head", mat: frameMat, light: false });
+          if (!opaque && !carry && !cfg.band && lensPx < LO_DROP_PX) return [];
+        }
+        for (const S of sides) {
+          if (opaque) {
+            const lay = Lens.opaqueLayers(ctx, lensT, S, { lod, up: wear === "up", thick: rim[0] > 0.03 });
+            out.push(role("lens", { id: `eyewear-lens-${S.tag}`, z: zFront, d: clipY != null ? mk.poly(clipPoly(S.ring.outer, clipY)) : mk.smooth(S.ring.outer, true, 0.5), mat: lay.mat, fill: lay.base, light: false, shade: lay.shade, lit: lay.lit, deep: lay.deep }));
+          } else if (lensT.reflection === "glint" && lod !== "lo") {
+            const chip = Lens.glintD(S);
+            out.push(role("lens", { id: `eyewear-glint-${S.tag}`, z: zFront + 0.05, d: chip, mat: ctx.mat("cloth-white", "flat"), fill: "base", opacity: 0.62, light: false }));
+            if (lod === "hi" && clipY == null && o.material === "acetate" && rim[0] >= g.px(3.4)) {
+              const c = S.ctr, w = g.px(1.3), fx = 1 - w / c.rx, fy = 1 - w / c.ry;
+              const inner = S.ring.inner, shrunk = inner.map(([x, y]) => [c.cx + (x - c.cx) * fx, c.cy + (y - c.cy) * fy]).reverse();
+              out.push(role("lens", { id: `eyewear-lensedge-${S.tag}`, z: zFront + 0.02, d: mk.smooth(inner, true, 0.5) + " " + mk.smooth(shrunk, true, 0.5), mat: ctx.mat("cloth-white", "flat"), fill: "base", opacity: 0.17, light: false }));
+            }
           }
         }
-        out.push(...arms);
-        if (sides.length === 2) {
-          const xi = H.eyeX - hw - rim[1] * 0.5;
-          for (const [i, b] of (cfg.bridge || [{ y: -0.35, w: 0.018 }]).entries()) {
-            const y = cy + hh * b.y, w = Math.max(b.w * k, min * (b.w > 0.01 ? 1 : 0.8)), a = (_d = b.arc) != null ? _d : -8e-3, sp = (_e = b.span) != null ? _e : xi, sl = yawSlide(ctx, 0, y, 0.035);
-            const X = (x) => sl + x * cosY;
-            out.push({ id: `eyewear-bridge-${i}`, z: zFront + 0.1, d: g.hs(g.brush([[X(-sp - 3e-3), y], [X(-sp * 0.4), y + a * 0.8], [X(0), y + a], [X(sp * 0.4), y + a * 0.8], [X(sp + 3e-3), y]], [w, w, w, w, w]), flat), mat: frameMat, light: false });
+        const pat = o.pattern ? { type: o.pattern } : null;
+        const px1 = g.px(1.05);
+        const frameBase = (lum) => o.material === "acetate" ? lum < 0.2 ? 0.26 : 0.8 : 0.75;
+        const thickRim = rim[0] >= g.px(3.4) && o.material === "acetate";
+        const band = env.band;
+        if (band) {
+          const br = band.ring;
+          const lit = [], shade = [];
+          if (lod === "hi" || lod === "mid") {
+            const cL = crescent(g, br, band.ctr, -118, 70, 0.34, px1, W);
+            if (cL) lit.push({ d: D(cL), o: frameBase(C.lum(frameMat.base)) });
+            if (lod === "hi") {
+              const cS = crescent(g, br, band.ctr, 52, 70, 0.4, px1, W);
+              if (cS) shade.push({ d: D(cS), o: 0.85 });
+            }
           }
+          const area = (P) => P.reduce((a, p, i) => {
+            const q = P[(i + 1) % P.length];
+            return a + p[0] * q[1] - q[0] * p[1];
+          }, 0);
+          const sgn = Math.sign(area(band.pts));
+          const holes = sides.map((S) => {
+            const h = S.ring.inner.slice();
+            if (Math.sign(area(h)) === sgn) h.reverse();
+            return mk.smooth(h, true, 0.5);
+          }).join(" ");
+          out.push(role("frame", { id: "eyewear-frame", z: zFront + 0.1, d: mk.smooth(band.pts, true, 0.5) + " " + holes, mat: frameMat, light: false, lit, shade }));
+        } else {
+          for (const S of sides) {
+            const lit = [], shade = [];
+            if (lod === "hi" || lod === "mid" && thickRim) {
+              const cL = crescent(g, S.ring, S.ctr, -135, 62, thickRim ? 0.36 : 0.5, px1, W);
+              if (cL) lit.push({ d: D(cL), o: frameBase(C.lum(frameMat.base)) });
+              if (thickRim && lod === "hi" && clipY == null) {
+                const cS = crescent(g, S.ring, S.ctr, 38, 66, 0.4, px1, W);
+                if (cS) shade.push({ d: D(cS), o: 0.85 });
+              }
+            }
+            const ringD = clipY != null ? mk.poly(clipPoly(S.ring.outer, clipY)) + " " + mk.poly(clipPoly(S.ring.inner.slice().reverse(), clipY)) : mk.smooth(S.ring.outer, true, 0.5) + " " + mk.smooth(S.ring.inner.slice().reverse(), true, 0.5);
+            out.push(role("frame", { id: `eyewear-frame-${S.tag}`, z: zFront + 0.1, d: ringD, mat: frameMat, light: false, lit, shade, ...pat ? { pattern: { type: pat.type }, patternOpacity: 0.92 } : {} }));
+          }
+        }
+        if (!band) for (const b of bridgePieces(env)) out.push(role("frame", b));
+        if (lod === "hi" && isMetal && cfg.pads !== false && sides.length === 2 && wear === "on" && !carry) {
+          for (const S of sides) {
+            const a = (S.s < 0 ? 28 : 152) * DEG, c = S.ctr;
+            const bx = c.cx + Math.cos(a) * c.rx * 0.98, by = c.cy + Math.sin(a) * c.ry * 0.98;
+            const px = bx - S.s * 0.016, py = by + 0.012;
+            out.push(role("frame", { id: `eyewear-pad-${S.tag}`, z: zFront + 0.12, d: D(g.smooth(ellipsePts(px, py, 75e-4, 0.014, S.s * 0.35), true, 0.5)), mat: frameMat, fill: "light", light: false, opacity: 0.85 }));
+            out.push(role("frame", { id: `eyewear-padarm-${S.tag}`, z: zFront + 0.11, d: D(g.brush([[bx, by], [lerp(bx, px, 0.55), lerp(by, py, 0.5)], [px, py]], [g.px(1), g.px(1), g.px(0.9)])), mat: frameMat, light: false }));
+          }
+        }
+        if (!cfg.noArms && !band && wear !== "up" && !carry) {
+          for (const S of sides) {
+            if (S.far && Math.abs(yaw) > 8 * DEG) continue;
+            const ya = cy - hh * 0.35, e = U.edgeAt(S.ring.outer, ya);
+            const xf = e ? (S.s > 0 ? e.r : e.l) - S.s * S.rimE[1] * 0.3 : S.cP + S.s * (S.hwE + S.rimE[1]);
+            const ye = H.earTop + 0.045, xe0 = S.s * H.earX * 0.97, xe = xe0 + yawSlide(ctx, xe0, ye, 0);
+            const aw = Math.max(((_a = cfg.arm) != null ? _a : 0.02) * k * Math.max(1, o.rimWeight * 0.5 + 0.5), min);
+            const a0 = W([xf, ya]), pts = [a0, [lerp(a0[0], xe, 0.5), lerp(a0[1], ye, 0.45)], [xe, ye]];
+            out.push(role("frame", { id: `eyewear-arm-${S.tag}`, z: ctx.Z.eyewear - 0.1, d: D(g.brush(pts, [aw, aw * 0.9, aw * 0.8])), clip: "head", mat: frameMat, light: false }));
+          }
+        }
+        if (carry && carry.extras) out.push(...carry.extras(env));
+        if (cfg.extras && !carry) for (const pc of cfg.extras(env) || []) out.push(pc);
+        return out;
+      }
+      function makeBand(env) {
+        var _a;
+        const { cfg, o, cy, edge, wear, yaw, cosY, ys } = env, bd = cfg.band, cB = ys(0, cy, 0.035);
+        const pr = yaw ? -4e-3 : wear === "up" ? 0.06 : (_a = cfg.protrude) != null ? _a : 0.02;
+        let left = cB - bd.hw * o.size * cosY, right = cB + bd.hw * o.size * cosY;
+        if (edge) {
+          left = Math.max(left, edge.l - pr);
+          right = Math.min(right, edge.r + pr);
+        }
+        const bcx = (left + right) / 2, bcy = cy + (bd.dy || 0), bhh = bd.hh * o.size;
+        const hwB = (right - left) / 2;
+        const pts = lensPts(1, bcx, bcy, hwB, bhh, { n: bd.n, flatTop: bd.flatTop, taper: bd.taper, top: bd.top }).map(([x, y]) => {
+          const dx = Math.abs(x - bcx) / hwB;
+          if (bd.wing && y < bcy) y -= bd.wing * bhh * Math.pow(dx, 2.2) * (1 - 0.4 * (bcy - y) / bhh);
+          if (bd.notch && y > bcy && dx < 0.3) y -= bd.notch * bhh * (1 - Math.pow(dx / 0.3, 2)) * 0.9;
+          return [x, y];
+        });
+        const ring = ringOf(pts, 1, [0, 0, 0], 1, 0);
+        ring.thk = ring.thk.map(() => bd.th || 0.045);
+        return { pts, ring, ctr: { cx: bcx, cy: bcy, rx: (right - left) / 2, ry: bhh } };
+      }
+      function ellipsePts(cx, cy, rx, ry, rot) {
+        const pts = [], c = Math.cos(rot), s = Math.sin(rot);
+        for (let i = 0; i < 12; i++) {
+          const a = i / 12 * Math.PI * 2, x = Math.cos(a) * rx, y = Math.sin(a) * ry;
+          pts.push([cx + x * c - y * s, cy + x * s + y * c]);
+        }
+        return pts;
+      }
+      function bridgePieces(env) {
+        var _a;
+        const { sides, cfg, cy, hh, g, mk, zFront, frameMat, lod, k, min, ctx } = env;
+        if (sides.length < 2) return [];
+        const b = cfg.bridge || { kind: "arch", y: -0.3, w: 0.016 };
+        if (b.kind === "none") return [];
+        const [R, L] = sides[0].s < 0 ? [sides[0], sides[1]] : [sides[1], sides[0]];
+        const out = [];
+        const xAt = (S, y, which) => {
+          const e = U.edgeAt(S.ring[which], y);
+          return e ? S.s < 0 ? e.r : e.l : S.s * 0.02;
+        };
+        if (b.kind === "solid") {
+          const yt = cy + b.y * hh, th = Math.max(b.th * k * env.o.rimWeight, min), thE = Math.max(((_a = b.thEnd) != null ? _a : b.th * 1.35) * k * env.o.rimWeight, th);
+          const ym = yt + thE * 0.5;
+          const xa = (xAt(R, ym, "inner") + xAt(R, ym, "outer")) / 2, xb = (xAt(L, ym, "inner") + xAt(L, ym, "outer")) / 2;
+          const xm = (xa + xb) / 2, half = Math.max((xb - xa) / 2, 0.01);
+          const pts = [[xa, yt, true], [lerp(xa, xb, 0.5), yt], [xb, yt, true]];
+          const N = 8;
+          for (let i = N; i >= 0; i--) {
+            const t = i / N, x = lerp(xa, xb, t), q = Math.abs(x - xm) / half;
+            pts.push([x, yt + th + (thE - th) * q * q, i === N || i === 0]);
+          }
+          out.push({ id: "eyewear-bridge", z: zFront + 0.05, d: mk.smooth(pts, true, 0.4), mat: frameMat, light: false });
+          return out;
+        }
+        const bars = b.kind === "double" ? b.bars : [b];
+        bars.forEach((bb, i) => {
+          var _a2;
+          const y = cy + bb.y * hh, w = Math.max(bb.w * k, min * (bb.w > 0.01 ? 1 : 0.8)), a = (_a2 = bb.arc) != null ? _a2 : -8e-3;
+          const xa = xAt(R, y, "outer") - 4e-3, xb = xAt(L, y, "outer") + 4e-3, xm = (xa + xb) / 2;
+          out.push({ id: `eyewear-bridge-${i}`, z: zFront + 0.05, d: mk.brush([[xa, y], [lerp(xa, xm, 0.6), y + a * 0.8], [xm, y + a], [lerp(xm, xb, 0.4), y + a * 0.8], [xb, y]], [w, w, w, w, w]), mat: frameMat, light: false });
+        });
+        return out;
+      }
+      function drawLo(env) {
+        const { sides, o, g, mk, zFront, frameMat, role, ctx, lens } = env;
+        const out = [];
+        const polys = env.band ? [env.band.pts] : sides.map((S) => S.ring.outer);
+        const x0 = Math.min(...polys.map((P) => Math.min(...P.map((p) => p[0])))), x1 = Math.max(...polys.map((P) => Math.max(...P.map((p) => p[0]))));
+        let yT = Math.min(...polys.map((P) => Math.min(...P.map((p) => p[1])))), yB = Math.max(...polys.map((P) => Math.max(...P.map((p) => p[1]))));
+        yT -= g.px(0.9);
+        yB += g.px(0.3);
+        const xc = (x0 + x1) / 2, yc = (yT + yB) / 2;
+        const bar = (cx, cyy, hw, hh2, n) => mk.smooth(lensPts(1, cx, cyy, hw, hh2, { n, N: 28 }), true, 0.5);
+        const inset = Math.max(g.px(0.95), 4e-3);
+        const lc = Lens.lensColours(ctx, lens, "lo");
+        out.push(role("frame", { id: "eyewear-bar-frame", z: zFront + 0.1, d: bar(xc, yc, (x1 - x0) / 2, (yB - yT) / 2, 5), mat: frameMat, light: false }));
+        if (env.band) {
+          const ins = sides.map((S) => S.ring.inner);
+          const lx0 = Math.min(...ins.map((P) => Math.min(...P.map((p) => p[0])))), lx1 = Math.max(...ins.map((P) => Math.max(...P.map((p) => p[0]))));
+          const ly0 = Math.min(...ins.map((P) => Math.min(...P.map((p) => p[1])))), ly1 = Math.max(...ins.map((P) => Math.max(...P.map((p) => p[1]))));
+          const lh = Math.max(ly1 - ly0, g.px(2.4));
+          out.push(role("lens", { id: "eyewear-bar-lens", z: zFront + 0.2, d: bar((lx0 + lx1) / 2, (ly0 + ly1) / 2, (lx1 - lx0) / 2, lh / 2, 4), mat: lc.mat, fill: lc.base, light: false }));
+        } else {
+          out.push(role("lens", { id: "eyewear-bar-lens", z: zFront + 0.2, d: bar(xc, yc, (x1 - x0) / 2 - inset, (yB - yT) / 2 - inset, 5), mat: lc.mat, fill: lc.base, light: false }));
         }
         return out;
       }
-      module.exports = { drawFrames, lensPts, ringPaths, hsArm, yawSlide };
+      module.exports = { drawFrames, lensPts, ringOf, crescent, hsArm, yawSlide, resolve, thickAt, ellipsePts, WEARS, MATERIALS };
     }
   });
 
@@ -2850,43 +4203,193 @@ var B68Figure = (() => {
     "src/parts/eyewear/eyepatch.js"() {
       "use strict";
       var { register } = require_registry();
-      var { hg, lerp } = require_hg();
-      var { lensPts, hsArm } = require_frame();
+      var { hg, lerp, clamp } = require_hg();
+      var { lensPts, hsArm, crescent, ringOf } = require_frame();
+      var DEG = Math.PI / 180;
       register({
         kind: "eyewear",
         name: "eyepatch",
-        describe: "A black leather eyepatch over one eye with a strap across the forehead and one to the ear (a Crews hard case).",
-        params: { side: '"R"|"L" which eye (default R, viewer-left)', frame: "patch/strap colour token", size: "0.85\u20131.2" },
-        example: { face: { eyewear: { type: "eyepatch", side: "R" } } },
+        describe: 'A solid black eyepatch over one eye with a strap running steeply up across the forehead into the hair (strap "diagonal", the Crews plate) or straight round the head (strap "band"), and a short strap to the ear.',
+        params: {
+          side: '"R" (the viewer-left eye, default) | "L" (the viewer-right eye, as in the Crews plate)',
+          strap: '"diagonal" (default) | "band"',
+          frame: "patch and strap colour token (default leather-black)",
+          size: "0.85\u20131.2",
+          wear: '"on" (the only mode; others warn)'
+        },
+        example: { face: { eyewear: { type: "eyepatch", side: "L", strap: "diagonal" } } },
         draw(ctx, opts) {
-          const { T } = ctx;
+          const { T, C } = ctx;
           const g = hg(ctx);
           const H = ctx.head;
           const lod = ctx.lod;
+          if (opts.wear != null && opts.wear !== "on") ctx.warn(`eyepatch wear "${opts.wear}" is not valid (the eyepatch is only worn on); drew it on`);
+          let strap = opts.strap == null ? "diagonal" : opts.strap;
+          if (strap !== "diagonal" && strap !== "band") {
+            ctx.warn(`eyepatch strap "${strap}" is not valid; use "diagonal" or "band"`);
+            strap = "diagonal";
+          }
           const tag = opts.side === "L" ? "L" : "R", s = tag === "R" ? -1 : 1;
           const col = T.tok(opts.frame) || T.tok("leather-black");
           const mat = ctx.mat(col, "leather");
-          const k = opts.size || 1, cx = s * H.eyeX, cy = H.eyeY + 6e-3;
-          const hw = 0.118 * k, hh = 0.095 * k;
-          const min = g.px(lod === "lo" ? 2.2 : 1.5);
-          const strapW = Math.max(0.016, min);
-          const patch = lensPts(s, cx, cy, hw, hh, { n: 2.1, taper: 0.3, sweep: 0 });
+          const k = clamp(+opts.size || 1, 0.6, 1.6), cx = s * H.eyeX, cy = H.eyeY + 0.01;
+          const hw = 0.112 * k, hh = 0.082 * k;
+          const px = (n) => g.px(n);
+          const sw = Math.max(lod === "lo" ? 0.03 : 0.02 * (lod === "mid" ? 1.1 : 1), px(lod === "lo" ? 2.4 : lod === "mid" ? 1.7 : 1.3));
+          const depth = 0.03;
+          const tip = -s * 7 * DEG, ct = Math.cos(tip), st = Math.sin(tip);
+          const base = lensPts(1, 0, 0, hw, hh, { n: 2.15, taper: 0.1, N: 36 });
+          const patch = base.map(([x, y]) => [cx + (x * ct - y * st), cy + (x * st + y * ct)]);
           const out = [];
-          const xf = Math.abs(cx) + hw * 0.7, xe = H.earX * 0.97, ye = H.earTop + 0.05;
-          out.push({ id: "eyewear-strap-ear", z: ctx.Z.eyewear - 0.1, d: hsArm(ctx, g.brush([[s * xf, cy - 0.03], [s * lerp(xf, xe, 0.5), lerp(cy - 0.03, ye, 0.5)], [s * xe, ye]], [strapW, strapW, strapW * 0.9]), xf, xe, 0.035), mat, light: false });
-          const fs = [[s * (Math.abs(cx) - hw * 0.45), cy - hh * 0.8], [s * 0.05, -0.17], [-s * 0.14, -0.27], [-s * 0.3, -0.31]];
-          out.push({ id: "eyewear-strap-head", z: ctx.Z.hair + 0.5, d: g.brushD(fs, [strapW, strapW, strapW, strapW * 0.9], void 0, { depth: 0.03 }), mat, light: false });
-          out.push({
-            id: "eyewear-patch",
-            z: ctx.Z.hair + 0.3,
-            d: g.hs(g.smooth(patch, true, 0.5), { depth: 0.035 }),
-            mat,
-            light: { form: 0.6 },
-            over: lod === "hi" ? [{ d: g.hs(g.brush([[cx - s * hw * 0.5, cy - hh * 0.5], [cx, cy - hh * 0.7], [cx + s * hw * 0.4, cy - hh * 0.45]], [2e-3, 8e-3, 2e-3]), { depth: 0.035 }), fill: "light", o: 0.5 }] : void 0
-          });
+          {
+            const xf = Math.abs(cx) + hw * 0.82, xe = H.earX * 0.97, ye = H.earTop + 0.05;
+            const y0 = cy - hh * 0.2;
+            out.push({ id: "eyewear-strap-ear", z: ctx.Z.eyewear - 0.1, d: hsArm(ctx, g.brush([[s * xf, y0], [s * lerp(xf, xe, 0.5), lerp(y0, ye, 0.5)], [s * xe, ye]], [sw, sw, sw * 0.9]), xf, xe, 0.035), mat, light: false, clip: "head" });
+          }
+          const a = [cx - s * hw * 0.62, cy - hh * 0.88];
+          let pts;
+          if (strap === "diagonal") {
+            const ang = 58 * DEG, run = 0.62;
+            const b = [a[0] - s * Math.cos(ang) * run * 0.5, a[1] - Math.sin(ang) * run * 0.5];
+            const c = [a[0] - s * Math.cos(ang * 0.86) * run, a[1] - Math.sin(ang * 0.86) * run];
+            const d = [c[0] - s * 0.1, c[1] - 0.17];
+            pts = [a, b, c, d];
+          } else {
+            const yb = H.brow - 0.045;
+            pts = [a, [a[0] - s * 0.1, lerp(a[1], yb, 0.8)], [-s * 0.17, yb - 8e-3], [-s * 0.3, yb - 4e-3], [-s * 0.4, yb + 0.01]];
+          }
+          const wS = strap === "band" ? sw * 1.25 : sw;
+          out.push({ id: "eyewear-strap-head", z: ctx.Z.eyewear - 0.05, d: g.brushD(pts, pts.map(() => wS), void 0, { depth }), mat, light: false, clip: "head" });
+          const over = [];
+          if (lod === "hi") {
+            const rr = ringOf(patch, s, [0.01, 0.01, 0.01], 1, 0);
+            const ring = { outer: patch, nrm: rr.nrm, thk: patch.map(() => 0.03) };
+            const c = { cx, cy, rx: hw, ry: hh };
+            const cr = crescent(g, ring, c, -128, 52, 0.9, px(1.2), (p) => p);
+            if (cr) over.push({ d: g.hs(cr, { depth }), fill: "light", o: 0.26 });
+          }
+          out.push({ id: "eyewear-patch", z: ctx.Z.hair + 0.3, d: g.hs(g.smooth(patch, true, 0.5), { depth }), mat, light: false, over: over.length ? over : void 0 });
           return out;
         }
       });
+    }
+  });
+
+  // src/parts/eyewear/_extras.js
+  var require_extras = __commonJS({
+    "src/parts/eyewear/_extras.js"(exports, module) {
+      "use strict";
+      var G = require_geom();
+      var { lerp } = require_hg();
+      var U = require_util();
+      var Lens = require_lens();
+      var DEG = Math.PI / 180;
+      function ringPt(S, phi, which = "outer") {
+        const c = S.ctr;
+        let best = null, bd = 1e9;
+        for (const p of S.ring[which]) {
+          let d = Math.atan2((p[1] - c.cy) / c.ry, (p[0] - c.cx) / c.rx) / DEG - phi;
+          d = (d + 540) % 360 - 180;
+          if (Math.abs(d) < bd) {
+            bd = Math.abs(d);
+            best = p;
+          }
+        }
+        return best;
+      }
+      function cord(env, id, aHead, torso, o = {}) {
+        var _a, _b, _c, _d;
+        const { ctx, W, lod } = env;
+        if (env.tiny && !o.always) return [];
+        const A = ctx.hp(W(aHead), { flat: true }), B = ctx.tp(torso), hh = ctx.R.head.k;
+        const dir = Math.sign(B[0] - A[0]) || (aHead[0] < 0 ? -1 : 1);
+        const C1 = [A[0] + dir * ((_a = o.out) != null ? _a : 0.02) * hh, A[1] + ((_b = o.drop) != null ? _b : 0.5) * hh];
+        const C2 = [B[0] - dir * ((_c = o.land) != null ? _c : 0) * hh, B[1] - 0.5 * hh];
+        const pts = [];
+        for (let i = 0; i <= 14; i++) {
+          const t = i / 14, u = 1 - t;
+          pts.push([u * u * u * A[0] + 3 * u * u * t * C1[0] + 3 * u * t * t * C2[0] + t * t * t * B[0], u * u * u * A[1] + 3 * u * u * t * C1[1] + 3 * u * t * t * C2[1] + t * t * t * B[1]]);
+        }
+        const w = Math.max(((_d = o.w) != null ? _d : 7e-3) * hh, ctx.px(lod === "mid" ? 1.5 : 1.15));
+        return [{ id, z: ctx.Z.eyewear + 0.1, d: G.brush(pts, w), mat: o.mat || env.frameMat, light: false }];
+      }
+      function ribbon(env) {
+        const { ctx, opts, sides, o } = env;
+        if (!opts.ribbon) return [];
+        const S = sides.find((q) => q.s < 0) || sides[0];
+        const a = ringPt(S, S.s < 0 ? 150 : 30);
+        return cord(env, "eyewear-ribbon", a, [S.s * 0.5, 0.1], { w: 0.016, mat: ctx.mat(ctx.T.tok("cloth-black"), "satin"), out: 0.06 });
+      }
+      function monocleCord(env) {
+        const { ctx, opts, sides } = env;
+        const where = opts.cord === void 0 ? "lapel" : opts.cord;
+        if (!where) return [];
+        if (where !== "lapel" && where !== "pocket") {
+          ctx.warn(`eyewear monocle cord "${where}" is not valid; use "lapel", "pocket" or false`);
+          return [];
+        }
+        const S = sides[0], a = ringPt(S, S.s < 0 ? 135 : 45);
+        return cord(env, "eyewear-cord", a, where === "pocket" ? [S.s * -0.5, 0.22] : [S.s * 0.5, 0.1], { w: 75e-4, mat: ctx.mat(ctx.T.tok("cloth-black"), "satin"), out: 0.03 });
+      }
+      function gogglesStrap(env) {
+        const { ctx, g, mk, sides, edge, lod, k, min, cy, hasHat, frameMat, role, wear } = env;
+        const out = [];
+        const w = Math.max(0.05 * k, min * 1.4);
+        for (const S of sides) {
+          const xo = S.cP + S.s * (S.hwE + S.rimE[1] * 0.6);
+          const lim = edge ? S.s > 0 ? edge.r : edge.l : S.s * 0.34;
+          const xe = lim + S.s * (hasHat ? 0.045 : 0.03);
+          const ya = cy, yb = cy + 0.012;
+          const d = mk.brush([[xo, ya], [lerp(xo, xe, 0.5), lerp(ya, yb, 0.5)], [xe, yb]], [w, w, w * 0.96]);
+          out.push(role("frame", { id: `eyewear-strap-${S.tag}`, z: env.zFront - 0.12, d, mat: frameMat, light: false, ...hasHat && wear === "up" ? {} : { clip: "head" } }));
+        }
+        return out;
+      }
+      function clipOn(env) {
+        const { ctx, opts, g, mk, sides, zFront, lod, cy, hh, topF, rim, min, k } = env;
+        const { C, T } = ctx;
+        let flip = opts.flip == null ? "down" : opts.flip;
+        if (flip !== "up" && flip !== "down") {
+          ctx.warn(`eyewear flip "${flip}" is not valid; use "up" or "down"`);
+          flip = "down";
+        }
+        if (lod === "lo" && flip === "down") return [];
+        const L = Lens.parseLens(ctx, { lens: "dark", reflection: flip === "up" ? "glint" : "soft" }, {});
+        const metal = ctx.mat(T.tok("metal-chrome") || T.tok("metal-steel"), "metal");
+        const out = [];
+        const yTop = cy - hh * topF - rim[0];
+        const kY = 0.5;
+        const place = (S, u, v) => {
+          const x = S.cP + u * S.hwE * 0.96, y = cy + v * hh * 0.94;
+          return flip === "down" ? [x, y] : [x, yTop - 0.012 - (hh * 0.94 - v * hh * 0.94) * kY];
+        };
+        const mkS = (S) => ({ ...S, pt: (u, v) => place(S, u, v), poly: (uv) => mk.poly(uv.map(([u, v]) => place(S, u, v))), brush: (uv, w) => mk.brush(uv.map(([u, v]) => place(S, u, v)), w.map((q) => q * (flip === "up" ? kY : 1))), smooth: (uv) => mk.smooth(uv.map(([u, v]) => place(S, u, v))) });
+        const shape = (S, sc) => {
+          const pts = [];
+          for (let i = 0; i < 32; i++) {
+            const a = i / 32 * Math.PI * 2, c = Math.cos(a), s2 = Math.sin(a), e = 3.2;
+            pts.push(place(S, sc * Math.sign(c) * Math.pow(Math.abs(c), 2 / e), sc * Math.sign(s2) * Math.pow(Math.abs(s2), 2 / e)));
+          }
+          return pts;
+        };
+        const rimW = Math.max(7e-3 * k, min * 0.8);
+        for (const S of sides) {
+          const S2 = mkS(S);
+          const lay = Lens.opaqueLayers(ctx, L, S2, { lod, up: false, thick: false });
+          const lensD = mk.smooth(shape(S, 1), true, 0.5);
+          out.push(env.role("lens", { id: `eyewear-clip-${S.tag}`, z: zFront + 0.2, d: lensD, mat: lay.mat, fill: lay.base, light: false, shade: lay.shade, lit: lay.lit, deep: lay.deep }));
+          const outer = shape(S, 1 + rimW / (S.hwE * 0.96) * 1.1), inner = shape(S, 1).slice().reverse();
+          out.push(env.role("frame", { id: `eyewear-clip-rim-${S.tag}`, z: zFront + 0.22, d: mk.smooth(outer, true, 0.5) + " " + mk.smooth(inner, true, 0.5), mat: metal, light: false }));
+        }
+        if (sides.length === 2) {
+          const [a, b] = sides[0].s < 0 ? [sides[0], sides[1]] : [sides[1], sides[0]];
+          const p0 = place(a, 1, -0.55), p1 = place(b, -1, -0.55);
+          const bw = Math.max(9e-3 * k, min * 0.9);
+          out.push(env.role("frame", { id: "eyewear-clip-bar", z: zFront + 0.23, d: mk.brush([p0, [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2 - 6e-3], p1], [bw, bw, bw]), mat: metal, light: false }));
+        }
+        return out;
+      }
+      module.exports = { ringPt, cord, ribbon, monocleCord, gogglesStrap, clipOn };
     }
   });
 
@@ -2896,24 +4399,73 @@ var B68Figure = (() => {
       "use strict";
       var { register } = require_registry();
       var { drawFrames } = require_frame();
-      var PARAMS = { frame: "frame colour token", lens: "lens colour token", size: "0.85\u20131.2", lensOpacity: "0.2\u20131 (how much of the eye shows through)", rimWeight: "0.7\u20131.6" };
+      var X = require_extras();
+      var LENS_DOC = '"clear" (no fill: the eye shows unchanged) | "dark" | "mirror" | a colour token (opaque) | { type: "gradient", color: <band colour>, color2: <lens body> } | { type: "mirror", scene: "sky"|"city"|"window", color, color2 }';
+      var PARAMS = {
+        frame: "frame colour token",
+        lens: LENS_DOC,
+        reflection: '"soft" (dark) | "wide" (colour, gradient) | "bands" (the v2 look) | "glint" (clear, mirror) | "none"; default follows the lens',
+        spot: 'true (frame and lens) | "lens" | "frame": keeps that colour in crews, hound, shadows and paranormal',
+        wear: '"on" (default) | "low" (down the nose) | "up" (pushed into the hair; bare head only, worn on under a hat) | "hand" (folded, in a holding hand: needs pose.arms.R or .L "hold") | "pocket" (hooked in the breast pocket or on the neckline) | "chain" (readers hanging mid-chest); goggles, monocle and the shield-type band cannot be carried',
+        at: '"breast" (default) | "neckline": where wear "pocket" puts the folded pair',
+        side: '"L" (default) | "R": the breast pocket for wear "pocket"',
+        hand: '"R" | "L": the holding hand for wear "hand" (default: the arm posed "hold")',
+        chain: 'chain colour token for wear "chain" (default metal-brass)',
+        material: '"acetate" | "metal" | "wire" (default set by the type)',
+        pattern: `"tortoise" (acetate frames only): the mottled amber of horn-rims; "none" turns a type's default pattern off`,
+        size: "0.85\u20131.2",
+        rimWeight: "0.7\u20131.6",
+        seat: "\u22120.03\u20260.03 head units (+ lower)",
+        lensOpacity: "RETIRED (v3): \u2265 0.6 upgrades to an opaque lens, < 0.6 to clear, with a warning"
+      };
       var V = [
         {
           name: "shades",
-          d: "Dark wayfarer-ish sunglasses: heavy top rim, near-opaque lenses with a hard reflection band (the fence, the militant).",
-          ex: {},
-          cfg: { hw: 0.128, hh: 0.082, n: 3.1, taper: 0.16, flatTop: 0.7, dy: -4e-3, rim: [0.03, 0.02, 0.018], frame: "cloth-black", lens: "glass-dark", lensO: 0.94, arm: 0.024, bridge: [{ y: -0.45, w: 0.026, span: 0.04 }] }
+          d: "Dark wayfarer sunglasses: a heavy top rim on the brow line, opaque dark lenses with one soft low reflection (the fence, the militant).",
+          ex: { type: "shades" },
+          cfg: {
+            hw: 0.138,
+            hh: 0.074,
+            n: 3,
+            taper: 0.2,
+            flatTop: 0.7,
+            rim: [0.044, 0.03, 0.026],
+            seat: "brow",
+            dx: 0.02,
+            material: "acetate",
+            frame: "cloth-black",
+            lens: "dark",
+            v2Lens: "glass-dark",
+            arm: 0.026,
+            lug: 0.35,
+            bridge: { kind: "solid", y: -0.92, th: 0.034, thEnd: 0.05 }
+          }
         },
         {
           name: "mod-oval",
-          d: "Big oval 60s sunglasses with coloured rims and a translucent tinted lens: the Swinger's pink shades.",
-          ex: { frame: "swing-500", lens: "cloth-pink" },
-          cfg: { hw: 0.138, hh: 0.104, n: 2.25, dy: 4e-3, rim: [0.022, 0.022, 0.022], frame: "swing-500", lens: "cloth-pink", lensO: 0.5, arm: 0.016, frameSheen: true, bridge: [{ y: -0.25, w: 0.016, span: 0.05 }] }
+          d: "Big oval 60s sunglasses in thick coloured acetate with opaque dark lenses and one soft warm reflection, wider than the face: the Swinger's pink shades.",
+          ex: { type: "mod-oval", frame: "cloth-magenta", lens: "dark", reflection: "soft" },
+          cfg: {
+            hw: 0.148,
+            hh: 0.098,
+            n: 2.2,
+            rim: [0.052, 0.044, 0.036],
+            rimIn: 1,
+            seat: "brow",
+            dx: 0.042,
+            protrude: 0.065,
+            material: "acetate",
+            frame: "cloth-magenta",
+            lens: "dark",
+            v2Lens: "cloth-pink",
+            arm: 0.022,
+            bridge: { kind: "solid", y: -0.62, th: 0.05, thEnd: 0.07 }
+          }
         },
         {
           name: "aviators",
-          d: "Teardrop aviators in thin metal, a double bridge and a tinted gradient lens (the intellectual).",
-          ex: { frame: "metal-brass", lens: "cloth-ochre" },
+          d: "Teardrop aviators in thin metal with a double bridge, nose pads and an opaque graded lens.",
+          ex: { type: "aviators", frame: "metal-brass", lens: { type: "gradient", color: "cloth-mustard", color2: "cloth-brown" }, reflection: "soft" },
           cfg: {
             hw: 0.138,
             hh: 0.1,
@@ -2921,43 +4473,275 @@ var B68Figure = (() => {
             taper: 0.28,
             drop: 0.12,
             dy: 0.012,
+            dx: 0.015,
+            reflection: "soft",
             rim: [0.01, 0.01, 0.01],
+            seat: "eye",
+            material: "metal",
             frame: "metal-brass",
-            frameKind: "metal",
-            lens: "cloth-ochre",
-            lensO: 0.76,
-            gradient: true,
+            lens: { type: "gradient", color: "cloth-mustard", color2: "cloth-brown" },
+            v2Lens: "cloth-ochre",
             arm: 0.011,
-            bridge: [{ y: -0.78, w: 0.011, span: 0.05, arc: -2e-3 }, { y: -0.2, w: 0.011, span: 0.04, arc: -0.012 }]
+            bridge: { kind: "double", bars: [{ y: -0.78, w: 0.011, arc: -2e-3 }, { y: -0.2, w: 0.011, arc: -0.012 }] }
           }
         },
         {
           name: "browline",
-          d: "60s clerk frames: a thick brow bar over a thin wire lens rim, lightly tinted.",
-          ex: {},
-          cfg: { hw: 0.128, hh: 0.075, n: 3.4, flatTop: 0.4, dy: -2e-3, rim: [0.034, 0.012, 5e-3], frame: "cloth-black", lens: "cloth-sky", lensO: 0.2, arm: 0.018, bands: true, bridge: [{ y: -0.6, w: 0.018, span: 0.04 }] }
+          d: "60s clerk frames: a thick brow bar over a thin lens rim, clear lenses.",
+          ex: { type: "browline" },
+          cfg: {
+            hw: 0.128,
+            hh: 0.075,
+            n: 3.4,
+            flatTop: 0.4,
+            rim: [0.046, 0.012, 6e-3],
+            seat: "under",
+            material: "acetate",
+            frame: "cloth-black",
+            lens: "clear",
+            v2Lens: "cloth-sky",
+            arm: 0.018,
+            bridge: { kind: "arch", y: -0.6, w: 0.018, arc: -0.01 }
+          }
         },
         {
           name: "cat-eye",
-          d: 'Swept-up cat-eye frames, outer corners lifted: 60s glamour. Clear lenses by default; lens: "glass-dark", lensOpacity: 0.9 makes sunglasses.',
-          ex: { frame: "cloth-red" },
-          cfg: { hw: 0.132, hh: 0.082, n: 2.5, sweep: 1.15, taper: 0.1, dy: -2e-3, rim: [0.028, 0.022, 0.018], frame: "cloth-red", lens: "cloth-sky", lensO: 0.18, arm: 0.018, frameSheen: true, bridge: [{ y: -0.4, w: 0.018, span: 0.04 }] }
+          d: 'Swept-up cat-eye frames, outer corners lifted: 60s glamour. Clear lenses by default; lens: "dark" makes sunglasses.',
+          ex: { type: "cat-eye", frame: "cloth-red" },
+          cfg: {
+            hw: 0.132,
+            hh: 0.082,
+            n: 2.5,
+            sweep: 1.15,
+            taper: 0.1,
+            rim: [0.032, 0.024, 0.02],
+            seat: "under",
+            material: "acetate",
+            frame: "cloth-red",
+            lens: "clear",
+            v2Lens: "cloth-sky",
+            arm: 0.018,
+            lug: 0.5,
+            bridge: { kind: "solid", y: -0.55, th: 0.024, thEnd: 0.034 }
+          }
         },
         {
           name: "round-wire",
-          d: "Thin round wire spectacles: scholar, hippie, clerk.",
-          ex: {},
-          cfg: { hw: 0.108, hh: 0.108, n: 2, dy: 4e-3, rim: [7e-3, 7e-3, 7e-3], frame: "metal-steel", frameKind: "metal", lens: "cloth-sky", lensO: 0.18, arm: 8e-3, bridge: [{ y: -0.3, w: 8e-3, span: 0.045, arc: -0.014 }] }
+          d: "Thin round wire spectacles with a clear lens: scholar, hippie, clerk (the Crews man in glasses).",
+          ex: { type: "round-wire", frame: "cloth-black" },
+          cfg: {
+            hw: 0.1,
+            hh: 0.1,
+            n: 2,
+            dy: 4e-3,
+            rim: [0.0105, 0.0105, 0.0105],
+            seat: "eye",
+            material: "wire",
+            frame: "metal-steel",
+            lens: "clear",
+            v2Lens: "cloth-sky",
+            arm: 95e-4,
+            bridge: { kind: "arch", y: -0.3, w: 95e-4, arc: -0.016 }
+          }
         },
         {
           name: "square-thick",
           d: "Thick square black frames, clear lens: the nerd, the engineer.",
-          ex: {},
-          cfg: { hw: 0.122, hh: 0.088, n: 4.6, dy: 0, rim: [0.028, 0.026, 0.026], frame: "cloth-black", lens: "cloth-sky", lensO: 0.16, arm: 0.022, bridge: [{ y: -0.4, w: 0.02, span: 0.045 }] }
+          ex: { type: "square-thick" },
+          cfg: {
+            hw: 0.122,
+            hh: 0.088,
+            n: 4.6,
+            rim: [0.032, 0.03, 0.028],
+            seat: "under",
+            material: "acetate",
+            frame: "cloth-black",
+            lens: "clear",
+            v2Lens: "cloth-sky",
+            arm: 0.024,
+            lug: 0.3,
+            bridge: { kind: "solid", y: -0.6, th: 0.026, thEnd: 0.036 }
+          }
+        },
+        {
+          name: "oversized-square",
+          d: "Thick black oversized square frames, opaque graded lenses crossed by wide light bands: the Intellectual playbook, the cover officer.",
+          ex: { type: "oversized-square", frame: "cloth-black", lens: { type: "gradient", color: "cloth-mustard", color2: "cloth-orange" }, reflection: "wide" },
+          cfg: {
+            hw: 0.145,
+            hh: 0.1,
+            n: 4,
+            taper: 0.1,
+            rim: [0.05, 0.034, 0.03],
+            rimIn: 1.1,
+            seat: "brow",
+            dx: 0.03,
+            material: "acetate",
+            frame: "cloth-black",
+            lens: { type: "gradient", color: "cloth-mustard", color2: "cloth-orange" },
+            arm: 0.032,
+            lug: 0.6,
+            bridge: { kind: "solid", y: -0.92, th: 0.04, thEnd: 0.058 }
+          }
+        },
+        {
+          name: "big-round",
+          d: "Big round frames covering eye to cheek: white frames with dark lenses (the park bench), or big yellow or mirror lenses (the cover).",
+          ex: { type: "big-round", frame: "cloth-white", lens: "dark" },
+          cfg: {
+            hw: 0.125,
+            hh: 0.125,
+            n: 2,
+            rim: [0.02, 0.02, 0.02],
+            seat: "brow",
+            dx: 0.015,
+            material: "acetate",
+            frame: "cloth-white",
+            lens: "dark",
+            v2Lens: "glass-dark",
+            arm: 0.02,
+            bridge: { kind: "arch", y: -0.35, w: 0.02, arc: -0.012 }
+          }
+        },
+        {
+          name: "shield",
+          d: `Courr\xE8ges shield: one band across both eyes, its outer ends swept up, with a bigger lens opening for each (the Crews plate's walking woman: white band, red lens). With spot: "lens" the lens keeps its colour in a spot-colour scheme.`,
+          ex: { type: "shield", frame: "cloth-white", lens: "cloth-red", spot: "lens" },
+          cfg: {
+            hw: 0.092,
+            hh: 0.056,
+            n: 2.1,
+            rim: [0.01, 0.01, 0.01],
+            seat: "eye",
+            dy: 0,
+            dx: 0,
+            material: "acetate",
+            frame: "cloth-white",
+            lens: "dark",
+            v2Lens: "glass-dark",
+            noArms: true,
+            band: { hw: 0.275, hh: 0.082, n: 3, taper: 0.1, flatTop: 0.4, th: 0.05, wing: 0.55, notch: 0.5 }
+          }
+        },
+        {
+          name: "half-moon",
+          d: "Half-moon reading glasses: flat-topped lenses in thin metal. Worn low on the nose by default, so the eyes look out over the top rim.",
+          ex: { type: "half-moon", frame: "metal-brass" },
+          cfg: {
+            hw: 0.098,
+            hh: 0.078,
+            n: 2.2,
+            top: 0.2,
+            taper: 0.08,
+            rim: [0.011, 0.011, 0.011],
+            seat: "under",
+            wear: "low",
+            material: "metal",
+            frame: "metal-steel",
+            lens: "clear",
+            v2Lens: "cloth-sky",
+            arm: 0.01,
+            bridge: { kind: "arch", y: -0.1, w: 0.011, arc: -0.012 }
+          }
+        },
+        {
+          name: "pince-nez",
+          d: "Pince-nez: two small round lenses clipped to the nose on a thin spring, no arms. ribbon: true adds a black ribbon from the right lens to the lapel.",
+          ex: { type: "pince-nez", ribbon: true },
+          params: { ribbon: "true: a black ribbon from the right lens down to the lapel" },
+          cfg: {
+            hw: 0.078,
+            hh: 0.07,
+            n: 2,
+            dy: 0.012,
+            rim: [85e-4, 85e-4, 85e-4],
+            seat: "eye",
+            material: "wire",
+            frame: "metal-gun",
+            lens: "clear",
+            v2Lens: "cloth-sky",
+            noArms: true,
+            bridge: { kind: "arch", y: -0.45, w: 85e-4, arc: -0.034 },
+            extras: X.ribbon
+          }
+        },
+        {
+          name: "monocle",
+          d: 'A single round monocle in a thin brass rim on a black cord to the lapel. side "R" (default) is the viewer-left eye.',
+          ex: { type: "monocle" },
+          params: { side: '"R" (viewer-left, default) | "L"', cord: '"lapel" (default) | "pocket" | false' },
+          cfg: { single: true, hw: 0.094, hh: 0.094, n: 2, rim: [0.0125, 0.0125, 0.0125], seat: "eye", material: "metal", frame: "metal-brass", lens: "clear", v2Lens: "cloth-sky", noArms: true, bridge: { kind: "none" }, extras: X.monocleCord }
+        },
+        {
+          name: "goggles",
+          d: 'Driving or flying goggles: two round leather cups with a nose piece and a strap round the head. wear: "up" pushes them onto the forehead, or onto the cap when the head wears one.',
+          ex: { type: "goggles", frame: "leather-brown", lens: "cloth-mustard", wear: "up" },
+          cfg: {
+            hw: 0.118,
+            hh: 0.108,
+            n: 2,
+            rim: [0.032, 0.032, 0.032],
+            rimIn: 0.9,
+            seat: "eye",
+            material: "acetate",
+            frameKind: "leather",
+            frame: "leather-brown",
+            lens: "clear",
+            v2Lens: "glass-dark",
+            noArms: true,
+            overHat: true,
+            bridge: { kind: "solid", y: -0.2, th: 0.05, thEnd: 0.06 },
+            extras: X.gogglesStrap
+          }
+        },
+        {
+          name: "horn-rim",
+          d: 'Heavy horn-rims: a thick top rim, thinner below and a keyhole nose piece. The default pattern is tortoiseshell; pattern: "none" gives plain acetate.',
+          ex: { type: "horn-rim", frame: "cloth-tan", pattern: "tortoise" },
+          cfg: {
+            hw: 0.124,
+            hh: 0.08,
+            n: 2.8,
+            taper: 0.12,
+            rim: [0.046, 0.028, 0.022],
+            rimIn: 1.05,
+            seat: "under",
+            material: "acetate",
+            frame: "cloth-tan",
+            pattern: "tortoise",
+            lens: "clear",
+            v2Lens: "cloth-sky",
+            arm: 0.026,
+            lug: 0.5,
+            bridge: { kind: "solid", y: -0.62, th: 0.03, thEnd: 0.044 }
+          }
+        },
+        {
+          name: "clip-on",
+          d: 'Clear metal specs with dark clip-on lenses. flip "down" (default) covers the lenses; flip "up" lifts them above the top rim, foreshortened.',
+          ex: { type: "clip-on", frame: "metal-gun", flip: "down" },
+          params: { flip: '"down" (default) | "up"' },
+          cfg: {
+            hw: 0.118,
+            hh: 0.086,
+            n: 3.2,
+            rim: [0.012, 0.011, 0.011],
+            seat: "eye",
+            dy: -4e-3,
+            material: "metal",
+            frame: "metal-gun",
+            lens: "clear",
+            v2Lens: "cloth-sky",
+            arm: 0.011,
+            clip: true,
+            bridge: { kind: "arch", y: -0.55, w: 0.011, arc: -0.012 },
+            extras: X.clipOn
+          }
         }
       ];
       for (const v of V) {
-        register({ kind: "eyewear", name: v.name, describe: v.d, params: PARAMS, example: { face: { eyewear: { type: v.name, ...v.ex } } }, draw: (ctx, opts) => drawFrames(ctx, opts, v.cfg) });
+        v.cfg.name = v.name;
+        register({ kind: "eyewear", name: v.name, describe: v.d, params: { ...PARAMS, ...v.params || {} }, example: { face: { eyewear: v.ex } }, draw: (ctx, opts) => drawFrames(ctx, opts, v.cfg) });
       }
     }
   });
@@ -3278,19 +5062,23 @@ var B68Figure = (() => {
       var G = require_geom();
       var { legFrame } = require_lower();
       var TOE_H = { round: 0.085, point: 0.055, square: 0.115 };
+      var ss = (t) => {
+        t = Math.max(0, Math.min(1, t));
+        return t * t * (3 - 2 * t);
+      };
       function shoeBuild(ctx, s, spec = {}) {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
         const { R, hh } = ctx;
         const L = R.legs[s], k = L.k, big = L.big;
-        const bk = big ? 1.4 : 1, ft = R.limbs.foot / (0.26 * hh);
+        const bk = big ? 1.4 : 1;
         const F = legFrame(ctx, s);
         const ax = L.ankle[0], ay = L.ankle[1];
         const X = (a) => ax + k * a;
         const toe = spec.toe || "round";
         const shaft = spec.shaft || 0;
-        const ease = (_a = spec.ease) != null ? _a : 0.13;
+        const ease = ((_a = spec.ease) != null ? _a : 0.13) * (big ? 1.6 : 1);
         const uTop = shaft ? 1 - shaft * (1 - F.split) : F.uAtY(ay - ((_b = spec.collar) != null ? _b : 0.05) * hh);
-        const flare = (spec.flare || 0) * hh * (big ? 1.4 : 1);
+        const flare = (spec.flare || 0) * hh * bk;
         const hwS = (v) => {
           const u = 1 + (uTop - 1) * v;
           return F.sk(u) * (1 + ease) + 8e-3 * hh + flare * v * v;
@@ -3300,22 +5088,39 @@ var B68Figure = (() => {
           return G.add(F.at(u), G.mul(F.nAbs(u), x * hwS(v)));
         };
         const aw = hwS(0);
-        const len = Math.max(aw * 1.7, ((_c = spec.len) != null ? _c : 0.3) * hh * bk * ft);
-        const toeH = ((_d = spec.toeH) != null ? _d : TOE_H[toe]) * hh * bk;
+        const len = Math.max(aw * 1.9, ((_c = L.reach) != null ? _c : 0.3 * hh * bk) * ((_d = spec.len) != null ? _d : 0.3) / 0.3);
+        const hb = Math.max(aw + 0.05 * hh * bk, (_e = L.heelReach) != null ? _e : 0);
+        const toeH = ((_f = spec.toeH) != null ? _f : TOE_H[toe]) * hh * bk;
         const y0 = -4e-3 * hh, hs = (spec.heel || 0) * hh * bk;
-        const curve = (_e = spec.curve) != null ? _e : 1.7, drop = Math.abs(ay);
+        const curve = (_g = spec.curve) != null ? _g : 1.7, drop = Math.abs(ay);
         const V = (t, off = 0) => [X(aw + t * (len - aw)), -(toeH + (drop - toeH) * Math.pow(1 - t, curve)) + off * hh];
+        const tipOut = toe === "square" ? [[X(len + 4e-3 * hh), -toeH * 0.9], [X(len + 4e-3 * hh), -toeH * 0.35], [X(len - 0.014 * hh), y0 * 1]] : toe === "point" ? [[X(len + 6e-3 * hh), -toeH * 0.55], [X(len - 0.03 * hh), y0 * 1]] : [[X(len + 6e-3 * hh), -toeH * 0.6], [X(len - 0.03 * hh), y0 * 1]];
+        const vampPts = [0.14, 0.32, 0.52, 0.72, 0.9].map((t) => V(t));
+        const heelLen = Math.max(0.09 * hh * bk, 0.22 * (len + hb));
+        const heelFront = -hb + heelLen;
+        const ball = Math.max(heelFront + 0.05 * hh, len * 0.22);
+        const archLift = ((_h = spec.archLift) != null ? _h : 0.034) * hh * bk;
+        const heelBlock = hs > 0 ? 0 : ((_i = spec.heelBlock) != null ? _i : 0.05) * hh * bk;
+        const bot = (a) => {
+          if (hs > 0) return a >= ball ? 0 : hs * ss((ball - a) / Math.max(1e-6, ball - (-hb + heelLen * 0.55)));
+          if (a >= ball || a <= heelFront) return 0;
+          return archLift * Math.pow((ball - a) / (ball - heelFront), 0.7);
+        };
         const Wall = (t, u) => {
           const p = V(t);
-          return [p[0], p[1] + (y0 - p[1]) * u];
+          const b = -bot(k * (p[0] - ax)) + y0;
+          return [p[0], p[1] + (b - p[1]) * u];
         };
-        const tipOut = toe === "square" ? [[X(len + 4e-3 * hh), -toeH * 0.9], [X(len + 4e-3 * hh), -toeH * 0.35], [X(len - 0.012 * hh), y0 * 1]] : toe === "point" ? [[X(len + 6e-3 * hh), -toeH * 0.55], [X(len - 0.03 * hh), y0 * 1]] : [[X(len + 8e-3 * hh), -toeH * 0.62], [X(len - 0.018 * hh), y0 * 1]];
-        const vampPts = [0.14, 0.32, 0.52, 0.72, 0.9].map((t) => V(t));
-        let soleBack, inner;
-        const hb = aw + 0.03 * hh;
+        const counter = ((_j = spec.counter) != null ? _j : 0.2) * hh * bk;
+        let soleBack;
         if (hs > 0) {
-          soleBack = [[X(len * 0.55), y0], [X(len * 0.2), -hs * 0.45], [X(-aw * 0.05), -hs * 0.92], [X(-aw * 0.28), -hs * 0.96], [X(-aw * 0.34), y0, true], [X(-aw * 0.34 - 0.032 * hh * bk), y0, true], [X(-hb), -hs * 0.8]];
-        } else soleBack = [[X(len * 0.6), y0], [X(len * 0.25), y0], [X(-aw * 0.35), y0, true], [X(-hb + 0.01 * hh), y0, true], [X(-hb), -0.1 * hh]];
+          const seat = -hb + heelLen * 0.55;
+          soleBack = [[X(len * 0.6), y0], [X(ball), y0], [X((ball + seat) / 2), -bot((ball + seat) / 2)], [X(seat), -hs * 0.98], [X(-hb + heelLen * 0.15), -hs], [X(-hb), -hs - 0.01 * hh, true]];
+        } else {
+          const am = (ball + heelFront) / 2;
+          soleBack = [[X(len * 0.6), y0], [X(ball), y0], [X(am), y0 - bot(am)], [X(heelFront + 4e-3 * hh), y0 - archLift * 0.96, true], [X(heelFront - 6e-3 * hh), y0, true], [X(-hb + 0.014 * hh), y0, true]];
+        }
+        const back = [[X(-hb), -Math.max(hs + 0.03 * hh, counter * 0.4)], [X(-hb + 0.012 * hh), -Math.max(hs + 0.06 * hh, counter * 0.86)], [X(-hb + 0.04 * hh), -Math.max(hs + 0.08 * hh, counter)]];
         const N = 5, lt = [], rt = [];
         for (let i = 0; i <= N; i++) {
           const v = 1 - i / N;
@@ -3323,23 +5128,50 @@ var B68Figure = (() => {
           rt.push(S(v, -1 * k));
         }
         const outerTop = lt[0], innerTop = rt[0];
-        const pts = [[...outerTop, true], ...lt.slice(1, -1), lt[lt.length - 1], ...vampPts, ...tipOut, ...soleBack, rt[rt.length - 1], ...rt.slice(1, -1).reverse(), [...innerTop, true]];
+        const backTop = back[back.length - 1][1];
+        const rtUp = [rt[rt.length - 1], ...rt.slice(1, -1).reverse()].filter((p) => p[1] < backTop - 0.02 * hh);
+        const pts = [[...outerTop, true], ...lt.slice(1, -1), lt[lt.length - 1], ...vampPts, ...tipOut, ...soleBack, ...back, ...rtUp, [...innerTop, true]];
         const d = G.smooth(pts, true, 0.4);
-        const footD = G.smooth([[...lt[lt.length - 1], true], ...vampPts, ...tipOut, ...soleBack, [...rt[rt.length - 1], true]], true, 0.4);
+        const footD = G.smooth([[...lt[lt.length - 1], true], ...vampPts, ...tipOut, ...soleBack, ...back, [...rt[rt.length - 1], true]], true, 0.4);
         let capD = null, pegD = null;
         if (spec.cap != null) {
-          const tc = spec.cap, tcX = X(aw + tc * (len - aw));
-          const top = V(tc), a = [top[0], top[1], true], base = [tcX - k * 0.01 * hh, y0 + 0, true];
-          const bow = [tcX - k * ((_f = spec.arch) != null ? _f : 0.04) * hh, (top[1] + y0) / 2];
-          const mid = [0.7, 0.88].map((t) => V(t));
-          capD = G.smooth([a, ...mid.map((p, i) => i ? p : p), ...tipOut, [X(len * 0.55), y0], base, bow], true, 0.4);
+          const tc = spec.cap, ac = aw + tc * (len - aw), top = V(tc);
+          const tl = (a) => {
+            var _a2;
+            return -(bot(Math.max(-hb, Math.min(len, a))) + ((_a2 = spec.topline) != null ? _a2 : 0.075) * hh * bk);
+          };
+          const cTop = back[back.length - 1];
+          const throat = [X(ac - 0.05 * hh), (top[1] + tl(ac - 0.05 * hh)) / 2];
+          capD = G.smooth([
+            [...top, true],
+            V(Math.min(0.9, tc + 0.3)),
+            ...tipOut,
+            ...soleBack,
+            ...back,
+            [X(k * (cTop[0] - ax) + 0.05 * hh), cTop[1] * 0.92],
+            [X(heelFront + 0.02 * hh), tl(heelFront + 0.02 * hh)],
+            [X((heelFront + ac) / 2), tl((heelFront + ac) / 2)],
+            throat
+          ], true, 0.4);
         }
         if (hs > 0) {
-          const tipW = 0.028 * hh * bk;
-          pegD = G.smooth([[X(-aw * 0.05), -hs, true], [X(-aw * 0.17), -hs * 0.55], [X(-aw * 0.34), y0, true], [X(-aw * 0.34) - k * tipW, y0, true], [X(-aw * 0.5) - k * tipW * 0.5, -hs * 0.5], [X(-aw * 0.6), -hs, true]], true, 0.3);
+          const tipW = 0.028 * hh * bk, t0 = -hb + heelLen * 0.62, t1 = -hb + 0.01 * hh, tip = -hb + heelLen * 0.3;
+          pegD = G.smooth([[X(t0), -hs, true], [X(G.lerp(t0, tip, 0.55)), -hs * 0.55], [X(tip), y0, true], [X(tip) - k * tipW, y0, true], [X(G.lerp(t1, tip - tipW / bk, 0.5)), -hs * 0.5], [X(t1), -hs, true]], true, 0.3);
         }
+        const soleBand = (h0, h1) => {
+          const A = [], B = [];
+          for (let i = 0; i <= 24; i++) {
+            const a = -hb - 0.06 * hh + (len + hb + 0.12 * hh) * i / 24;
+            const b = bot(Math.max(-hb, Math.min(len, a)));
+            A.push([X(a), y0 - b - h0]);
+            B.push([X(a), y0 - b - h1]);
+          }
+          return G.poly([...A, ...B.reverse()]);
+        };
+        const soleD = soleBand(-0.05 * hh, 0.045 * hh * bk);
+        const heelD = heelBlock > 0 ? G.poly([[X(-hb - 0.06 * hh), 0.05 * hh], [X(heelFront), 0.05 * hh], [X(heelFront + 2e-3 * hh), y0 - heelBlock], [X(-hb - 0.06 * hh), y0 - heelBlock]]) : null;
         const band = (yTop, yBot) => G.poly([[ax - 3 * hh, yTop], [ax + 3 * hh, yTop], [ax + 3 * hh, yBot], [ax - 3 * hh, yBot]]);
-        return { d, footD, capD, pegD, V, Wall, S, X, band, hwS, len, toeH, hs, y0, aw, ax, ay, k, big, F, uTop, shaft, tip: [X(len), -toeH * 0.5] };
+        return { d, footD, capD, pegD, soleD, heelD, soleBand, bot, V, Wall, S, X, band, hwS, len, hb, heelLen, heelFront, ball, toeH, hs, counter, y0, aw, ax, ay, k, big, F, uTop, shaft, turnout: L.turnout || 0, tip: [X(len), -toeH * 0.5] };
       }
       function shoePieces(ctx, o, spec) {
         var _a, _b, _c;
@@ -3349,18 +5181,22 @@ var B68Figure = (() => {
         for (const s of ["R", "L"]) {
           const sh = shoeBuild(ctx, s, spec);
           const det = spec.detail ? spec.detail(sh, s) : {};
-          if (spec.skin && bare) out.push({ id: `foot-${s}`, z: ctx.Z.feet - 0.2, d: sh.footD, mat: ctx.skin, light: { form: 1 } });
-          if (det.back) out.push(...det.back);
+          const mine = [];
+          if (spec.skin && bare) mine.push({ id: `foot-${s}`, z: ctx.Z.feet - 0.2, d: sh.footD, mat: ctx.skin, light: { form: 1 } });
+          if (det.back) mine.push(...det.back);
           const lines = [];
           if (spec.sole !== false) {
-            lines.push({ d: sh.band(-0.05 * hh, 0.05 * hh), fill: spec.soleFill || "deep" });
-            if (ctx.lodAtLeast("mid")) lines.push({ d: G.brush([[sh.X(0), -0.056 * hh], [sh.X(sh.len), -0.056 * hh]], 7e-3 * hh), fill: "light", o: 0.35 });
+            lines.push({ d: sh.soleD, fill: spec.soleFill || "deep" });
+            if (sh.heelD) lines.push({ d: sh.heelD, fill: spec.soleFill || "deep" });
+            if (ctx.lodAtLeast("mid")) lines.push({ d: sh.soleBand(0.045 * hh, 0.054 * hh), fill: "light", o: 0.35 });
           }
           lines.push(...det.lines || []);
           const d = spec.cap != null ? sh.capD : sh.d;
-          out.push({ id: `shoe-${s}`, z: (_a = spec.z) != null ? _a : ctx.Z.feet, d, mat: spec.mat, lines, over: det.over, spot: o.spot, pattern: spec.pattern, light: { form: (_b = spec.form) != null ? _b : 0.9 } });
-          if (sh.pegD) out.push({ id: `heel-${s}`, z: ((_c = spec.z) != null ? _c : ctx.Z.feet) + 0.01, d: sh.pegD, mat: spec.mat, lines: [], light: { form: 0.8 } });
-          if (det.extra) out.push(...det.extra);
+          mine.push({ id: `shoe-${s}`, z: (_a = spec.z) != null ? _a : ctx.Z.feet, d, mat: spec.mat, lines, over: det.over, spot: o.spot, pattern: spec.pattern, light: { form: (_b = spec.form) != null ? _b : 0.9 } });
+          if (sh.pegD) mine.push({ id: `heel-${s}`, z: ((_c = spec.z) != null ? _c : ctx.Z.feet) + 0.01, d: sh.pegD, mat: spec.mat, lines: [], light: { form: 0.8 } });
+          if (det.extra) mine.push(...det.extra);
+          if (ctx.R.legs[s].free) for (const p of mine) p.z += 0.3;
+          out.push(...mine);
         }
         return out;
       }
@@ -3377,7 +5213,12 @@ var B68Figure = (() => {
         if (f.type === "mary-janes") return { toe: "round", collar: 0 };
         return { toe: "round", collar: 0 };
       }
-      module.exports = { shoeBuild, shoePieces, legsCovered, footSpecFor };
+      var LOW_CUT = /* @__PURE__ */ new Set(["heels", "mary-janes"]);
+      function footShows(ctx) {
+        const f = ctx.S.outfit && ctx.S.outfit.feet || {};
+        return !f.type || LOW_CUT.has(f.type);
+      }
+      module.exports = { shoeBuild, shoePieces, legsCovered, footSpecFor, footShows };
     }
   });
 
@@ -3390,6 +5231,13 @@ var B68Figure = (() => {
       function shoeShape(ctx, s) {
         const sh = shoeBuild(ctx, s, { collar: 0.04 });
         return { d: sh.d, sole: null, ax: sh.ax, tx: sh.X(sh.len * 0.5), w: sh.len * 0.5, h: -sh.ay };
+      }
+      function heelCounter(ctx, sh, o = {}) {
+        var _a, _b;
+        const { G, hh } = ctx, X = sh.X, top = sh.counter * ((_a = o.top) != null ? _a : 0.86), a0 = -sh.hb - 0.03 * hh, a1 = sh.heelFront + sh.heelLen * 0.35;
+        const lines = [{ d: G.smooth([[X(a0), -0.04 * hh, true], [X(a0), -top, true], [X(G.lerp(a0, a1, 0.6)), -top * 0.92], [X(a1), -0.05 * hh, true]], true, 0.4), fill: "shade", o: (_b = o.o) != null ? _b : 0.5 }];
+        if (ctx.lodAtLeast("mid")) lines.push({ d: G.brush([[X(-sh.hb + 0.01 * hh), -top * 0.98], [X(G.lerp(a0, a1, 0.6)), -top * 0.9], [X(a1), -0.06 * hh]], [3e-3 * hh, 8e-3 * hh, 2e-3 * hh]), fill: "deep", o: 0.55 });
+        return lines;
       }
       function lacedVamp(ctx, sh, o = {}) {
         var _a;
@@ -3408,6 +5256,7 @@ var B68Figure = (() => {
         example: { outfit: { feet: { type: "oxfords", color: "cloth-black" } } },
         shoeShape,
         lacedVamp,
+        heelCounter,
         draw(ctx, o) {
           const { G, hh } = ctx;
           const mat = ctx.mat(o.color || "cloth-black", "leather");
@@ -3420,14 +5269,14 @@ var B68Figure = (() => {
               if (ctx.lodAtLeast("mid")) {
                 lines.push({ d: G.brush([sh.Wall(0.72, 0), sh.Wall(0.66, 0.5), sh.Wall(0.72, 1)], [2e-3 * hh, 9e-3 * hh, 2e-3 * hh]), fill: "deep", o: 0.85 });
                 lines.push({ d: G.brush([sh.Wall(0.08, 0.7), sh.Wall(0.5, 0.78), sh.Wall(0.92, 0.72)], [2e-3 * hh, 0.034 * hh, 3e-3 * hh]), fill: "shade", o: 0.6 });
-                lines.push({ d: G.poly([[sh.X(-0.2 * hh), -0.16 * hh], [sh.X(0.02 * hh), -0.16 * hh], [sh.X(0.02 * hh), -0.05 * hh], [sh.X(-0.2 * hh), -0.05 * hh]]), fill: "shade", o: 0.5 });
+                lines.push(...heelCounter(ctx, sh));
               }
               return { lines };
             }
           });
         }
       });
-      module.exports = { shoeShape, lacedVamp };
+      module.exports = { shoeShape, lacedVamp, heelCounter };
     }
   });
 
@@ -3458,11 +5307,14 @@ var B68Figure = (() => {
             toe: "round",
             toeH: 0.1,
             collar: 0.05,
+            counter: 0.26,
+            heelBlock: 0.06,
+            archLift: 0.026,
             z: tucked ? ctx.Z.feetOver : ctx.Z.feet,
             soleFill: "ink-900",
             detail(sh) {
               const lines = [], over = [], S = sh.S;
-              lines.push({ d: sh.band(-0.085 * hh, -0.05 * hh), fill: "line", o: 0.9 });
+              lines.push({ d: sh.soleBand(0.045 * hh, 0.08 * hh), fill: "line", o: 0.9 });
               if (ctx.lodAtLeast("mid")) {
                 lines.push(...lacedVamp(ctx, sh, { laces: [0.02, 0.09, 0.16, 0.23] }));
                 lines.push({ d: G.brush([sh.Wall(0.7, 0), sh.Wall(0.64, 0.5), sh.Wall(0.7, 1)], [2e-3 * hh, 0.01 * hh, 2e-3 * hh]), fill: "deep", o: 0.8 });
@@ -3502,10 +5354,13 @@ var B68Figure = (() => {
             toe: "point",
             len: 0.34,
             collar: 0.05,
+            counter: 0.3,
+            heelBlock: 0.1,
+            archLift: 0.07,
             soleFill: "ink-900",
             detail(sh) {
               const lines = [], over = [], S = sh.S;
-              lines.push({ d: G.poly([[sh.X(-0.3 * hh), -0.1 * hh], [sh.X(0.06 * hh), -0.1 * hh], [sh.X(0.06 * hh), -0.045 * hh], [sh.X(-0.3 * hh), -0.045 * hh]]), fill: "deep", o: 0.6 });
+              lines.push({ d: G.poly([[sh.X(sh.heelFront + 5e-3 * hh), -0.1 * hh], [sh.X(sh.heelFront - 0.03 * hh), -0.012 * hh], [sh.X(sh.heelFront - 0.05 * hh), -0.012 * hh], [sh.X(sh.heelFront - 0.02 * hh), -0.1 * hh]]), fill: "line", o: 0.5 });
               if (ctx.lodAtLeast("mid")) {
                 lines.push({ d: G.brush([sh.Wall(0.1, 0.7), sh.Wall(0.5, 0.78), sh.Wall(0.92, 0.7)], [2e-3 * hh, 0.034 * hh, 3e-3 * hh]), fill: "shade", o: 0.6 });
                 lines.push({ d: G.brush([sh.Wall(0.12, 0), sh.Wall(0.5, 0.05), sh.Wall(0.85, 0.2)], [4e-3 * hh, 7e-3 * hh, 3e-3 * hh]), fill: "light", o: 0.4 });
@@ -3576,6 +5431,8 @@ var B68Figure = (() => {
             toe: "point",
             len: 0.32,
             collar: 0.05,
+            counter: 0.24,
+            heelBlock: 0.055,
             soleFill: "ink-900",
             detail(sh) {
               const lines = [], S = sh.S;
@@ -3612,16 +5469,19 @@ var B68Figure = (() => {
             mat,
             toe: "point",
             cap: 0.38,
-            arch: 0.07,
             heel: 0.16,
+            counter: 0.26,
+            topline: 0.06,
             collar: 0,
             skin: true,
             soleFill: "deep",
-            detail(sh, s) {
-              const lines = [];
-              if (ctx.lodAtLeast("mid")) lines.push({ d: G.brush([sh.Wall(0.9, 0.1), sh.Wall(0.78, 0.5), sh.Wall(0.9, 0.9)], [2e-3 * hh, 7e-3 * hh, 2e-3 * hh]), fill: "deep", o: 0.45 });
-              const extra = [{ id: `counter-${s}`, z: ctx.Z.feet + 0.02, d: G.smooth([[sh.X(-sh.aw * 1.25), -sh.hs * 0.92], [sh.X(-sh.aw * 1.2), sh.ay * 0.6, true], [sh.X(sh.aw * 0.3), sh.ay * 0.45], [sh.X(sh.aw * 0.4), -sh.hs * 0.85]], true, 0.4), mat, light: { form: 0.8 } }];
-              return { lines, extra };
+            detail(sh) {
+              const lines = [], X = sh.X;
+              if (ctx.lodAtLeast("mid")) {
+                lines.push({ d: G.brush([sh.Wall(0.9, 0.1), sh.Wall(0.78, 0.5), sh.Wall(0.9, 0.9)], [2e-3 * hh, 7e-3 * hh, 2e-3 * hh]), fill: "deep", o: 0.45 });
+                lines.push({ d: G.brush([[X(-sh.hb + 0.02 * hh), -sh.counter * 0.8], [X(sh.heelFront), -sh.hs - 0.05 * hh], [X(sh.ball * 0.5), -sh.bot(sh.ball * 0.5) - 0.05 * hh]], [3e-3 * hh, 0.02 * hh, 3e-3 * hh]), fill: "shade", o: 0.6 });
+              }
+              return { lines };
             }
           });
         }
@@ -3668,19 +5528,16 @@ var B68Figure = (() => {
             mat,
             toe: "round",
             toeH: 0.09,
-            cap: 0.55,
-            arch: 0.05,
+            cap: 0.42,
+            counter: 0.18,
+            topline: 0.07,
             collar: 0,
             skin: true,
             detail(sh, s) {
               const V = sh.V, W = sh.Wall, lines = [], cn = (p) => [p[0], p[1], true];
               const strap = G.smooth([cn(V(0.25, -0.045)), cn(V(0.4, -0.045)), W(0.425, 0.3), cn(W(0.4, 0.66)), cn(W(0.27, 0.66)), W(0.275, 0.3)], true, 0.35);
               const bk = W(0.33, 0.28);
-              const extra = [
-                { id: `mj-strap-${s}`, z: ctx.Z.feet + 0.05, d: strap, mat, light: { form: 0.9 }, lines: ctx.lodAtLeast("mid") ? [{ d: G.brush([W(0.395, 0.04), W(0.415, 0.3), W(0.39, 0.66)], [3e-3 * hh, 8e-3 * hh, 3e-3 * hh]), fill: "deep", o: 0.5 }] : [], over: [{ d: G.circle(bk[0], bk[1], 0.014 * hh), fill: "metal-steel" }] },
-                // heel counter: a cup that is high at the heel and slopes down to the strap, rounded rather than boxy
-                { id: `mj-heel-${s}`, z: ctx.Z.feet + 0.02, d: G.smooth([[sh.X(-sh.aw * 1.25), -0.03 * hh, true], [sh.X(-sh.aw * 1.28), sh.ay * 0.45], [sh.X(-sh.aw * 1), sh.ay * 0.62], [sh.X(-sh.aw * 0.35), sh.ay * 0.5], [sh.X(sh.aw * 0.1), sh.ay * 0.26], [sh.X(sh.aw * 0.2), -0.04 * hh, true]], true, 0.4), mat, light: { form: 0.8 } }
-              ];
+              const extra = [{ id: `mj-strap-${s}`, z: ctx.Z.feet + 0.05, d: strap, mat, light: { form: 0.9 }, lines: ctx.lodAtLeast("mid") ? [{ d: G.brush([W(0.395, 0.04), W(0.415, 0.3), W(0.39, 0.66)], [3e-3 * hh, 8e-3 * hh, 3e-3 * hh]), fill: "deep", o: 0.5 }] : [], over: [{ d: G.circle(bk[0], bk[1], 0.014 * hh), fill: "metal-steel" }] }];
               if (ctx.lodAtLeast("mid")) lines.push({ d: G.brush([W(0.8, 0.05), W(0.74, 0.5), W(0.8, 0.95)], [2e-3 * hh, 6e-3 * hh, 2e-3 * hh]), fill: "shade", o: 0.6 });
               return { lines, extra };
             }
@@ -3701,12 +5558,15 @@ var B68Figure = (() => {
             toe: "round",
             toeH: 0.09,
             collar: 0.07,
+            counter: 0.22,
+            heelBlock: 0,
+            archLift: 0.012,
             soleFill: "cloth-white",
             detail(sh) {
               const lines = [], V = sh.V;
               const x0 = V(0.78)[0], x1 = sh.X(sh.len + 0.1 * hh);
               lines.push({ d: G.poly([[x0, -0.4 * hh], [x1, -0.4 * hh], [x1, 0.05 * hh], [x0, 0.05 * hh]]), fill: "cloth-white" });
-              lines.push({ d: sh.band(-0.078 * hh, -0.05 * hh), fill: "cloth-white" });
+              lines.push({ d: sh.soleBand(0.045 * hh, 0.075 * hh), fill: "cloth-white" });
               lines.push(...lacedVamp(ctx, sh, { lace: "cloth-white", laceO: 0.9, laces: [0.04, 0.12, 0.2, 0.28] }));
               if (ctx.lodAtLeast("mid")) lines.push({ d: G.brush([sh.Wall(0.1, 0.65), sh.Wall(0.45, 0.72), sh.Wall(0.75, 0.62)], [2e-3 * hh, 0.03 * hh, 3e-3 * hh]), fill: "shade", o: 0.5 });
               return { lines };
@@ -4549,9 +6409,10 @@ var B68Figure = (() => {
           const d = massD(L, outer, edge, 0.4);
           const poly = [...outer, ...edge.slice().reverse()];
           const hairlineBand = L.hi ? [{ d: L.hs(L.smooth([...edge.slice(1, -1).map(([x, y]) => [x, y - 0.016]), ...edge.slice(1, -1).slice().reverse().map(([x, y]) => [x, y + 2e-3])], 0.4)), fill: L.mat.base, o: 0.85 }] : [];
-          const piece = L.buzzPiece(d, poly, { scalp: 0.3, spacing: 0.03, rBase: 0.0125 });
+          const piece = L.buzzPiece(d, poly, { scalp: 0.06, fields: [] });
           piece.lines.push(...hairlineBand);
           piece.lit = cmp([L.sheen([[-0.3, -0.25], [-0.26, -0.38], [-0.15, -0.47], [-0.02, -0.505]], [0.01, 0.03, 0.03, 8e-3], 0.5)]);
+          piece.lit.push(...cmp([L.sheen([[-0.335, -0.1], [-0.33, -0.26], [-0.25, -0.43], [-0.1, -0.5]], [4e-3, 0.022, 0.024, 6e-3], 0.75)]));
           return [piece, ...L.grey({ clip: "hair" }), ...L.forehead(edge.slice(1, -1), 0.022, { single: true })];
         }
       });
@@ -4590,6 +6451,10 @@ var B68Figure = (() => {
             lines.push(L.strand([[x0, topY + 0.06], [x0 + 4e-3, (topY + hairY) / 2], [x0 + 0.01, hairY - 0.04]], [2e-3, 5e-3, 1e-3], 0.5));
           }
           const out = [fade, L.mass(d, { lit: lit.filter(Boolean), lines: lines.filter(Boolean), light: { form: 0.9, sheenO: 0.3 } })];
+          if (g && L.mid && !L.hi) {
+            out.push(...L.grey({ clip: "hair-fade", y: [-0.31, -0.03], x: 0.25, x1: 0.37, opacity: 0.95 }));
+            out.push(...L.grey({ clip: "hair", y: [topY + 0.07, -0.24], x: 0.215, x1: 0.37, opacity: 0.95 }).map((p) => ({ ...p, id: p.id + "-brush", fill: g })));
+          }
           if (L.mid && !L.hat) {
             const dr = (poly, r) => L.dots(poly, { spacing: 0.02, r, jitter: 0.3 });
             const under = dr([[-0.3, hairY + 0.01], [0.3, hairY + 0.01], [0.3, hairY + 0.05], [-0.3, hairY + 0.05]], (x, y) => 72e-4 * clamp(1 - (y - hairY - 0.01) / 0.036, 0, 1) * (1 - Math.abs(x) / 0.45));
@@ -4998,6 +6863,697 @@ var B68Figure = (() => {
     }
   });
 
+  // src/core/tokens.js
+  var require_tokens = __commonJS({
+    "src/core/tokens.js"(exports, module) {
+      "use strict";
+      var BRAND = {
+        "ink-150": "#c9c3b8",
+        "ink-300": "#8e8880",
+        "ink-500": "#55504a",
+        "ink-700": "#2a2521",
+        "ink-900": "#14110e",
+        "paper-000": "#fbf8f1",
+        "paper-100": "#f2ede1",
+        "paper-200": "#e8e2d4",
+        "paper-300": "#dcd4c2",
+        "signal-500": "#e0691e",
+        "signal-700": "#b8481a",
+        "signal-900": "#6b2a10",
+        "caution-500": "#e8c33c",
+        "caution-700": "#c39b18",
+        "caution-900": "#6e5408",
+        "file-300": "#8fa3dd",
+        "file-500": "#3f62c4",
+        "file-700": "#26418f",
+        "file-900": "#12224f",
+        "covert-500": "#6e8f6a",
+        "covert-700": "#41633e",
+        "covert-900": "#13513b",
+        "alarm-500": "#e03a20",
+        "alarm-700": "#a8210f",
+        "alarm-900": "#5c1208",
+        "swing-500": "#c9348c",
+        "swing-700": "#98206a",
+        "swing-900": "#4e0f36",
+        "slate-500": "#6e8a8c",
+        "slate-700": "#3e5356",
+        "slate-900": "#1a1a1c"
+      };
+      var CLOTH = {
+        "cloth-black": "#1f1b18",
+        "cloth-charcoal": "#33302d",
+        "cloth-graphite": "#4a4744",
+        "cloth-ash": "#8c8177",
+        "cloth-stone": "#b9ae9c",
+        "cloth-cream": "#efe4cc",
+        "cloth-white": "#f4efe4",
+        "cloth-navy": "#22283f",
+        "cloth-ink-blue": "#2a334b",
+        "cloth-cobalt": "#4862a6",
+        "cloth-sky": "#829fbf",
+        "cloth-teal": "#586766",
+        "cloth-sea": "#697c7b",
+        "cloth-petrol": "#28474a",
+        "cloth-forest": "#2e3d2a",
+        "cloth-sage": "#8fa37c",
+        "cloth-olive": "#5b5a2c",
+        "cloth-avocado": "#6f7230",
+        "cloth-khaki": "#8a7d5a",
+        "cloth-mustard": "#d9b13b",
+        "cloth-ochre": "#c39231",
+        "cloth-camel": "#c09a6b",
+        "cloth-tan": "#a8784a",
+        "cloth-tobacco": "#7e5634",
+        "cloth-brown": "#5c3a22",
+        "cloth-chocolate": "#371706",
+        "cloth-rust": "#a84427",
+        "cloth-orange": "#c56b30",
+        "cloth-brick": "#8d3a24",
+        "cloth-oxblood": "#5c1a14",
+        "cloth-red": "#b83a2a",
+        "cloth-salmon": "#c37270",
+        "cloth-pink": "#d68a9a",
+        "cloth-magenta": "#c44d8d",
+        "cloth-plum": "#4e1f3e",
+        "cloth-aubergine": "#280921",
+        "cloth-lilac": "#9a86b0",
+        "cloth-denim": "#3a4f6e",
+        "cloth-faded-denim": "#6f86a3",
+        "cloth-warm-grey": "#64564c"
+      };
+      var MATTER = {
+        "metal-steel": "#8e9496",
+        "metal-gun": "#3a3c3e",
+        "metal-brass": "#c39b18",
+        "metal-chrome": "#c9ccc8",
+        "wood-dark": "#4a2c18",
+        "wood-light": "#9a6a3a",
+        "leather-brown": "#6b3f22",
+        "leather-black": "#221d1a",
+        "glass-dark": "#1d2226",
+        "paper-news": "#e8e2d4",
+        "smoke": "#e8e2d4",
+        "flame": "#e8c33c"
+      };
+      var SKIN = {
+        porcelain: { light: "#f1d6c2", base: "#e6c0a8", shade: "#b48682", deep: "#653c40", line: "#8a5a52", blush: "#dc9a8e", lip: "#c06e68" },
+        fair: { light: "#eccdb0", base: "#dfb08c", shade: "#a87870", deep: "#58343a", line: "#86584a", blush: "#d08e78", lip: "#b06656" },
+        olive: { light: "#e0b384", base: "#c99460", shade: "#8e5e44", deep: "#46281e", line: "#704830", blush: "#bd7c5c", lip: "#94563e" },
+        tan: { light: "#d39a66", base: "#b97c4c", shade: "#7a4a2e", deep: "#3a2014", line: "#5e3820", blush: "#ac6444", lip: "#80442e" },
+        brown: { light: "#b8743e", base: "#935226", shade: "#552a16", deep: "#26100a", line: "#3e1e0e", blush: "#984a2a", lip: "#5e2816" },
+        deep: { light: "#b8662c", base: "#85401c", shade: "#3a170c", deep: "#180805", line: "#2a1008", blush: "#86381a", lip: "#45180c" },
+        ebony: { light: "#8a4e2a", base: "#5c2e16", shade: "#2c1209", deep: "#100604", line: "#200c06", blush: "#6a2c16", lip: "#30120a" },
+        flushed: { light: "#e8a690", base: "#d48270", shade: "#9a5052", deep: "#4e2428", line: "#7a3a36", blush: "#c45a50", lip: "#a0423c" },
+        pale: { light: "#f0dccb", base: "#e3c8b4", shade: "#ac9090", deep: "#62484c", line: "#8c706a", blush: "#dca69c", lip: "#bc7e7a" }
+      };
+      var SCHEMES = {
+        natural: { rim: null, key: "#fff4e0", shadow: "#2a1f1d", map: null },
+        "natural-rim": { rim: "#c37270", key: "#fff4e0", shadow: "#2a1f1d", map: null },
+        hound: { rim: "#c37270", key: "#e9efe8", shadow: "#191713", map: ["#191713", "#2f2925", "#586766", "#697c7b", "#b9bab5", "#f6f5ed"], spotKeep: true },
+        crews: { rim: "#7e98c3", key: "#efeef3", shadow: "#1f1e1e", map: ["#1a1d2a", "#2c3a6e", "#4862a6", "#7e98c3", "#c8c8d0", "#f4f4f7"], spotKeep: true },
+        shadows: { rim: "#b5c3a5", key: "#c0cbb1", shadow: "#20251c", map: ["#161a12", "#2c3626", "#455239", "#768666", "#a0b38d", "#d4dcc8"], spotKeep: true },
+        veteran: { rim: "#e4c83c", key: "#e4c83c", shadow: "#2a1e1a", map: ["#1e1612", "#2a1e1a", "#4b372b", "#8c8177", "#e4c83c", "#fbf3c8"], spotKeep: false },
+        intellectual: { rim: "#c56b30", key: "#f4ead0", shadow: "#17120b", map: ["#17120b", "#301504", "#5d3517", "#8e491a", "#cda472", "#f4ead0"], spotKeep: false },
+        characters: { rim: "#d9b13b", key: "#f0decd", shadow: "#3a1708", map: ["#2a1006", "#5c2510", "#a84427", "#c56b30", "#d9b13b", "#f0decd"], spotKeep: false },
+        swinger: { rim: "#ca5e98", key: "#f6f5ec", shadow: "#371706", map: null },
+        militants: { rim: "#edd23c", key: "#fcfaf1", shadow: "#221815", map: ["#160f0c", "#221815", "#402e26", "#7e7570", "#e7c639", "#fcfaf1"], spotKeep: false },
+        paranormal: { rim: "#c65d4b", key: "#e3ecf9", shadow: "#1f2650", map: ["#141a3a", "#3a4683", "#5870b0", "#749ed3", "#ccdff4", "#fcfbfa"], spotKeep: true },
+        balcony: { rim: "#ddbd5d", key: "#eddbcb", shadow: "#280921", map: null },
+        ink: { rim: null, key: "#ffffff", shadow: "#14110e", map: ["#14110e", "#14110e"], spotKeep: false }
+        // silhouette
+      };
+      var STYLE = {
+        formShadow: 0.3,
+        // crescent offset as a fraction of piece width
+        formShadowMaxHH: 0.34,
+        // cap, in head-heights
+        formDy: 0.35,
+        // vertical component of the shadow offset (light slightly above)
+        bands: [0.1, 0.06],
+        // stipple terminator bands as fractions of piece width (outer, inner)
+        bandAlpha: [0.28, 0.55],
+        lit: 0.04,
+        // key-light sheen on the lit edge
+        stipplePx: 0.75,
+        // stipple noise frequency in cycles per output px
+        grainPx: 1.1,
+        // grain frequency per output px
+        grainAlpha: 0.16,
+        lod: { hi: 110, mid: 34 },
+        // px per head thresholds (mid was 42: a 300 px figure is 35-44 px per head and a line-up under about 360 px high is 29-44, and they drew at lo)
+        // expression gain (P2.1) by px per head, piecewise linear between these [pxPerHead, gain] points: face parts multiply their
+        // expression geometry by ctx.expr.gain so faces still read small. 1 at portrait size (no caricature drift at hi LOD).
+        exprGain: [[110, 1], [76, 1.4], [40, 1.8], [16, 2.5]],
+        minLinePx: 0.6
+      };
+      var Z = {
+        backProp: 2,
+        backHair: 6,
+        cape: 8,
+        legs: 10,
+        tights: 11,
+        feet: 12,
+        torso: 20,
+        tucked: 25,
+        bottom: 26,
+        feetOver: 27,
+        neck: 28,
+        top: 30,
+        tie: 31.5,
+        mid: 33,
+        outer: 36,
+        collar: 38,
+        belt: 40,
+        strap: 42,
+        arm: 45,
+        armCross: 55,
+        head: 60,
+        ears: 61,
+        earring: 61.5,
+        face: 62,
+        facialHair: 64,
+        eyewear: 66,
+        mask: 67,
+        maskOver: 69.5,
+        hair: 70,
+        maskVeil: 70.6,
+        hat: 72,
+        necklace: 31.7,
+        frontProp: 80,
+        fx: 90
+      };
+      function tok(name) {
+        if (name == null) return null;
+        if (typeof name !== "string") return name;
+        if (name[0] === "#") return name;
+        return BRAND[name] || CLOTH[name] || MATTER[name] || null;
+      }
+      module.exports = { BRAND, CLOTH, MATTER, SKIN, SCHEMES, STYLE, Z, tok, INK: BRAND["ink-900"], PAPER: BRAND["paper-000"] };
+    }
+  });
+
+  // src/core/color.js
+  var require_color = __commonJS({
+    "src/core/color.js"(exports, module) {
+      "use strict";
+      var T = require_tokens();
+      function rgb(hex2) {
+        hex2 = T.tok(hex2) || hex2;
+        if (!/^#[0-9a-f]{6}$/i.test(hex2)) throw new Error(`Unknown colour "${hex2}". Use a token name (e.g. "cloth-olive", "file-500") or #rrggbb.`);
+        const n = parseInt(hex2.slice(1), 16);
+        return [n >> 16 & 255, n >> 8 & 255, n & 255];
+      }
+      var clamp = (v, a = 0, b = 255) => Math.max(a, Math.min(b, v));
+      function hex(c) {
+        return "#" + c.map((v) => clamp(Math.round(v)).toString(16).padStart(2, "0")).join("");
+      }
+      function mix(a, b, t) {
+        const A = rgb(a), B = rgb(b);
+        return hex(A.map((v, i) => v + (B[i] - v) * t));
+      }
+      function multiply(a, b) {
+        const A = rgb(a), B = rgb(b);
+        return hex(A.map((v, i) => v * B[i] / 255));
+      }
+      function screen(a, b) {
+        const A = rgb(a), B = rgb(b);
+        return hex(A.map((v, i) => 255 - (255 - v) * (255 - B[i]) / 255));
+      }
+      function lum(a) {
+        const [r, g, b] = rgb(a).map((v) => v / 255);
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      }
+      function toHsl(c) {
+        let [r, g, b] = rgb(c).map((v) => v / 255);
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        let h = 0, s = 0;
+        const l = (mx + mn) / 2;
+        if (mx !== mn) {
+          const d = mx - mn;
+          s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+          h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+          h /= 6;
+        }
+        return [h, s, l];
+      }
+      function fromHsl([h, s, l]) {
+        const f = (p2, q2, t) => {
+          if (t < 0) t += 1;
+          if (t > 1) t -= 1;
+          if (t < 1 / 6) return p2 + (q2 - p2) * 6 * t;
+          if (t < 1 / 2) return q2;
+          if (t < 2 / 3) return p2 + (q2 - p2) * (2 / 3 - t) * 6;
+          return p2;
+        };
+        if (s === 0) return hex([l * 255, l * 255, l * 255]);
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+        return hex([f(p, q, h + 1 / 3) * 255, f(p, q, h) * 255, f(p, q, h - 1 / 3) * 255]);
+      }
+      function saturate(c, k) {
+        const h = toHsl(c);
+        h[1] = Math.max(0, Math.min(1, h[1] * k));
+        return fromHsl(h);
+      }
+      function shadeOf(c, t, shadow = "#2a1f1d") {
+        const tint = mix("#ffffff", shadow, t);
+        return saturate(multiply(c, tint), 1.12);
+      }
+      var KIND = {
+        cloth: { s: 0.5, d: 0.78, l: 0.14, line: 0.62, form: 1, bands: true, rim: true, gloss: 0 },
+        wool: { s: 0.52, d: 0.8, l: 0.1, line: 0.62, form: 1, bands: true, rim: true, gloss: 0 },
+        knit: { s: 0.5, d: 0.78, l: 0.1, line: 0.6, form: 1, bands: true, rim: true, gloss: 0 },
+        denim: { s: 0.5, d: 0.78, l: 0.16, line: 0.66, form: 1, bands: true, rim: true, gloss: 0 },
+        canvas: { s: 0.48, d: 0.76, l: 0.14, line: 0.6, form: 1, bands: true, rim: true, gloss: 0 },
+        leather: { s: 0.6, d: 0.85, l: 0.38, line: 0.7, form: 1, bands: false, rim: true, gloss: 1 },
+        satin: { s: 0.45, d: 0.75, l: 0.42, line: 0.6, form: 1, bands: true, rim: true, gloss: 1 },
+        metal: { s: 0.62, d: 0.86, l: 0.6, line: 0.75, form: 0.8, bands: false, rim: true, gloss: 1 },
+        hair: { s: 0.55, d: 0.8, l: 0.22, line: 0.7, form: 0.9, bands: true, rim: true, gloss: 0.5 },
+        glass: { s: 0.4, d: 0.7, l: 0.5, line: 0.7, form: 0.6, bands: false, rim: false, gloss: 1 },
+        paper: { s: 0.3, d: 0.6, l: 0.08, line: 0.5, form: 0.6, bands: true, rim: false, gloss: 0 },
+        wood: { s: 0.5, d: 0.8, l: 0.18, line: 0.7, form: 0.9, bands: true, rim: true, gloss: 0 },
+        flat: { s: 0.5, d: 0.78, l: 0.14, line: 0.62, form: 0, bands: false, rim: false, gloss: 0 }
+      };
+      function material(colour, kind = "cloth", scheme = T.SCHEMES.natural, opts = {}) {
+        if (colour && typeof colour === "object" && colour.base) return colour;
+        if (kind === "skin") {
+          const sk = T.SKIN[colour] || T.SKIN.fair;
+          return { kind: "skin", ...sk, rim: scheme.rim || sk.light, form: 1, bands: true, rimOn: !!scheme.rim, gloss: 0 };
+        }
+        const k = KIND[kind] || KIND.cloth;
+        let base = T.tok(colour), bad = null;
+        if (!base) {
+          bad = colour;
+          base = T.tok("cloth-graphite");
+        }
+        const sh = scheme.shadow || "#2a1f1d";
+        const L = lum(base);
+        const s = k.s * (L > 0.75 ? 0.75 : 1), d = k.d;
+        const out = {
+          kind,
+          base,
+          light: mix(base, scheme.key || "#fff4e0", k.l + (L < 0.12 ? 0.12 : 0)),
+          shade: L < 0.1 ? mix(base, "#000000", 0.35) : shadeOf(base, s, sh),
+          deep: L < 0.1 ? mix(base, "#000000", 0.6) : shadeOf(base, d, sh),
+          line: L < 0.1 ? mix(base, "#ffffff", 0.12) : shadeOf(base, k.line, sh),
+          rim: scheme.rim || null,
+          form: opts.form != null ? opts.form : k.form,
+          bands: k.bands,
+          rimOn: k.rim,
+          gloss: k.gloss
+        };
+        if (bad) out._bad = bad;
+        return out;
+      }
+      function mapLum(a) {
+        const [r, g, b] = rgb(a).map((v) => v / 255);
+        return 0.3 * r + 0.58 * g + 0.12 * b;
+      }
+      function mapThrough(a, stops) {
+        if (!stops || !stops.length) return hex(rgb(a));
+        const L = Math.max(0, Math.min(1, mapLum(a))), n = stops.length - 1, t = L * n, i = Math.min(n - 1, Math.floor(t)), f = t - i;
+        if (n === 0) return hex(rgb(stops[0]));
+        const A = rgb(stops[i]), B = rgb(stops[i + 1]);
+        return hex(A.map((v, k) => v + (B[k] - v) * f));
+      }
+      function contrast(a, b) {
+        const la = lum(a) + 0.05, lb = lum(b) + 0.05;
+        return la > lb ? la / lb : lb / la;
+      }
+      module.exports = { rgb, hex, mix, multiply, screen, lum, saturate, shadeOf, material, toHsl, fromHsl, KIND, mapLum, mapThrough, contrast };
+    }
+  });
+
+  // src/core/light.js
+  var require_light = __commonJS({
+    "src/core/light.js"(exports, module) {
+      "use strict";
+      var G = require_geom();
+      var C = require_color();
+      var T = require_tokens();
+      var PRESETS = {
+        bluetime: {
+          time: "bluetime",
+          key: { az: 135, el: 40 },
+          keyColor: "#f3f1ea",
+          ambient: "#3a4256",
+          shadow: { color: "#1c2130", opacity: 0.4 },
+          rim: null,
+          under: null,
+          wrap: 0.48,
+          castShadow: true,
+          depth: 0.74
+        },
+        night: {
+          time: "night",
+          key: { az: 115, el: 22 },
+          keyColor: "#f0b25a",
+          ambient: "#1d2438",
+          shadow: { color: "#0d1220", opacity: 0.55 },
+          rim: { color: "#6f86b8", strength: 0.75 },
+          under: null,
+          wrap: 0.5,
+          castShadow: false,
+          depth: 0.8,
+          exposure: 0.88
+        }
+      };
+      var NIGHT_POOL = { key: { az: 205, el: 30 }, wrap: 0.42 };
+      var clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      var deg = Math.PI / 180;
+      function resolve(opt, warn = () => {
+      }) {
+        var _a, _b, _c;
+        if (opt === "v1" || opt === false) {
+          warn(`light ${opt === false ? "false" : '"v1"'}: light v1 retired in 3.0.0; drew bluetime`);
+          opt = null;
+        }
+        if (opt == null || opt === true || opt === "v2") opt = "bluetime";
+        if (typeof opt === "string") {
+          if (!PRESETS[opt]) warn(`light "${opt}" not found, drew bluetime (available: ${Object.keys(PRESETS).join(", ")}, or a light object)`);
+          opt = { time: PRESETS[opt] ? opt : "bluetime" };
+        }
+        if (typeof opt !== "object") {
+          warn("light: expected a preset name or a light object, drew bluetime");
+          opt = { time: "bluetime" };
+        }
+        const base = PRESETS[opt.time === "night" ? "night" : "bluetime"];
+        const pool = opt.time === "night" && opt.under && opt.pool !== false ? NIGHT_POOL : {};
+        const L = { ...base, ...pool, ...opt, key: { ...base.key, ...pool.key || {}, ...opt.key || {} } };
+        if (opt.elevation != null) L.key.el = opt.elevation;
+        if (typeof opt.key === "number") L.key = { ...base.key, az: opt.key };
+        L.shadow = { ...base.shadow, ...opt.shadow || {} };
+        if (opt.shadowUnify != null) L.shadow.opacity = opt.shadowUnify;
+        if (opt.rim === true) L.rim = { color: null, strength: 1 };
+        if (opt.under === true) L.under = { color: base.keyColor, strength: 0.8 };
+        if (L.under) {
+          L.under = { color: L.keyColor, strength: 0.8, at: 0, reach: 0.55, ...L.under };
+          const low = L.under.at <= 0.1;
+          L.under.el = (_a = L.under.el) != null ? _a : low ? 30 : 10;
+          L.under.wrap = (_b = L.under.wrap) != null ? _b : low ? 0.18 : 0.24;
+          L.under.az = (_c = L.under.az) != null ? _c : low ? 255 : 265;
+        }
+        for (const k of ["keyColor", "ambient"]) L[k] = T.tok(L[k]) || L[k];
+        const az = clamp(+L.key.az || 0, -360, 360) * deg, el = clamp(+L.key.el, 0, 89) * deg;
+        L.dir = [Math.cos(el) * Math.cos(az), -Math.cos(el) * Math.sin(az), Math.max(0.06, Math.sin(el))];
+        L.side = L.dir[0] <= 0 ? 1 : -1;
+        L.v2 = true;
+        return L;
+      }
+      var HEAD_KINDS = /* @__PURE__ */ new Set(["head", "ears", "eyes", "brows", "nose", "mouth", "expression", "age", "mark", "facialHair", "makeup", "eyewear", "mask", "hair", "hat"]);
+      var LOCAL_KINDS = /* @__PURE__ */ new Set(["prop", "jewellery"]);
+      function volumeOf(p) {
+        const id = p.id || "", k = p._kind || "";
+        if (p.light && p.light.local) return "local";
+        if (p.light && p.light.volume) return p.light.volume;
+        if (LOCAL_KINDS.has(k)) return "local";
+        if (k === "companion") return "companion";
+        if (k === "footwear") {
+          const sd = /(?:^|-)(R|L)(?:$|-)/.exec(id);
+          return sd ? `leg-${sd[1]}` : "legs";
+        }
+        if (HEAD_KINDS.has(k)) return "head";
+        const arm = /(?:^|-)(?:arm|sleeve|cuff|hand|glove)-(R|L)(?:$|[-\d])/.exec(id) || /^(?:hand|glove)-(R|L)/.exec(id);
+        if (arm) return `arm-${arm[1]}`;
+        const leg = /(?:^|-)leg-(R|L)(?:$|-)/.exec(id);
+        if (leg) return `leg-${leg[1]}`;
+        if (k === "legwear") return "legs";
+        if (k === "bottom") return /skirt|kilt/.test(`${p._name || ""} ${id}`) ? "torso" : "legs";
+        if (id === "neck" || /^neck(-|$)/.test(id)) return "neck";
+        return "torso";
+      }
+      function chord(m, lz, q, wrap) {
+        const A = m * m + lz * lz;
+        if (q <= 1e-6 || A * q * q <= wrap * wrap) return { a: q, b: q, full: true };
+        const r = lz * Math.sqrt(A * q * q - wrap * wrap);
+        let a = (wrap * m - r) / A, b = (wrap * m + r) / A;
+        a = clamp(a, -q, q);
+        if (!(b < q) || wrap - b * m < -1e-9) b = q;
+        return { a, b, full: false };
+      }
+      function cylSection(L, t, hw) {
+        let n = [-t[1], t[0]];
+        let m = n[0] * L.dir[0] + n[1] * L.dir[1];
+        if (m < 0) {
+          n = [-n[0], -n[1]];
+          m = -m;
+        }
+        const s = chord(m, L.dir[2], 1, L.wrap);
+        return { n, a: s.a * hw, b: s.b * hw, full: s.full };
+      }
+      function chainRegion(samples, far, band) {
+        const T1 = [], F = [], B1 = [];
+        for (const s of samples) {
+          const { P, n, a, hw } = s;
+          T1.push(G.add(P, G.mul(n, a)));
+          F.push(G.add(P, G.mul(n, -(hw + far))));
+          B1.push(G.add(P, G.mul(n, Math.min(a + band, hw * 1.05))));
+        }
+        const shadow = G.poly([...T1, ...F.slice().reverse()]);
+        const bandD = G.poly([...B1, ...T1.slice().reverse()]);
+        return { shadow, band: bandD };
+      }
+      function regions(L, R, pieces, scale, prefix) {
+        const hh = R.hh, y = R.y, wrap = L.wrap;
+        const BIG = 6 * hh;
+        const bandW = (hw) => Math.max(2.5 / scale, Math.min(0.15 * hw, 0.06 * hh));
+        const vol = {};
+        const add = (name, key, d) => {
+          if (!d) return;
+          (vol[name] = vol[name] || { sh: [], band: [], under: [], edge: [] })[key].push(d);
+        };
+        const U = L.under ? { ...L, dir: underDir(L), wrap: L.under.wrap } : null;
+        function cylinder(name, pts, hws, far, ext = 0) {
+          const doLight = (LL, keyS) => {
+            const samples = [];
+            for (let i = 0; i < pts.length; i++) {
+              const t = G.norm(G.sub(pts[Math.min(pts.length - 1, i + 1)], pts[Math.max(0, i - 1)]));
+              const s = cylSection(LL, t, hws[i]);
+              let P = pts[i];
+              if (ext && (i === 0 || i === pts.length - 1)) P = G.add(P, G.mul(t, i === 0 ? -ext : ext));
+              samples.push({ P, n: s.n, a: s.a, b: s.b, hw: hws[i] });
+            }
+            if (keyS === "under") {
+              const s2 = samples.map((s) => ({ ...s, n: G.mul(s.n, -1), a: -s.b }));
+              const T1 = samples.map((s) => G.add(s.P, G.mul(s.n, s.a))), N1 = samples.map((s) => G.add(s.P, G.mul(s.n, s.a >= s.hw * 0.98 ? s.a : s.b >= s.hw * 0.98 ? s.hw + far : s.b)));
+              if (samples.some((s) => s.a < s.hw * 0.98)) add(name, "under", G.poly([...T1, ...N1.reverse()]));
+              return void s2;
+            }
+            const r = chainRegion(samples, far, bandW(Math.max(...hws)));
+            add(name, keyS, r.shadow);
+            if (keyS === "sh") {
+              add(name, "band", r.band);
+              const ew = (hw) => Math.max(1.6 / scale, Math.min(0.16 * hw, 0.05 * hh));
+              const lit = samples.filter((s) => s.b >= s.hw * 0.98);
+              if (lit.length === samples.length) {
+                const A = samples.map((s) => G.add(s.P, G.mul(s.n, s.hw - ew(s.hw)))), Bp = samples.map((s) => G.add(s.P, G.mul(s.n, s.hw + Math.min(far, 0.3 * hh))));
+                add(name, "edge", G.poly([...A, ...Bp.reverse()]));
+              }
+            }
+            if (samples.some((s) => s.b < s.hw * 0.98)) {
+              const s2 = samples.map((s) => ({ ...s, n: G.mul(s.n, -1), a: -s.b }));
+              add(name, keyS, chainRegion(s2, far, 0).shadow);
+            }
+          };
+          doLight(L, "sh");
+          if (U) doLight(U, "under");
+        }
+        {
+          const ys = [];
+          for (let Y = y.neckBase - 0.1 * hh; Y <= 1e-3; Y += 0.2 * hh) ys.push(Y);
+          const pts = ys.map((Y) => R.torsoPt(0, Y)), hws = ys.map((Y) => R.widthAt(Y) * 1.05);
+          cylinder("torso", pts, hws, BIG);
+          const ps = ys.filter((Y) => Y >= y.waist - 0.2 * hh && Y <= y.crotch + 0.3 * hh);
+          cylinder("legs", ps.map((Y) => R.torsoPt(0, Y)), ps.map((Y) => R.widthAt(Y) * 1.05), 0.25 * hh);
+        }
+        cylinder("neck", [[R.head.cx, y.chin - 0.1 * hh], [R.centerAt(y.neckBase), y.neckBase + 0.25 * hh]], [R.w.neck * 1.05, R.w.neckBase * 1.1], 0.6 * hh, 0.1 * hh);
+        for (const s of ["R", "L"]) {
+          const A = R.arms[s], w = A.widths;
+          const hand = G.add(A.wrist, G.mul(A.handDir, R.limbs.hand));
+          cylinder(`arm-${s}`, [A.shoulder, A.elbow], [w.top * 1.25, w.elbow * 1.25], 0.35 * hh, 0.18 * hh);
+          cylinder(`arm-${s}`, [A.elbow, A.wrist], [w.elbow * 1.25, w.wrist * 1.3], 0.35 * hh, 0.12 * hh);
+          cylinder(`arm-${s}`, [A.wrist, hand], [w.wrist * 1.4, w.wrist * 1.3], 0.2 * hh, 0.08 * hh);
+          const Lg = R.legs[s], lw = Lg.widths;
+          const legPts = [Lg.hip, Lg.knee, Lg.ankle], legW = [lw.thigh * 1.15, lw.knee * 1.25, lw.ankle * 1.6];
+          for (const nm of [`leg-${s}`, "legs"]) {
+            cylinder(nm, [legPts[0], legPts[1]], [legW[0], legW[1]], 0.3 * hh, 0.15 * hh);
+            cylinder(nm, [legPts[1], legPts[2]], [legW[1], legW[2]], 0.3 * hh, 0.25 * hh);
+          }
+        }
+        {
+          const cp = pieces.filter((p) => p._kind === "companion" && p.d);
+          if (cp.length) {
+            let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+            for (const p of cp) {
+              const b = G.bbox(p.d);
+              x0 = Math.min(x0, b.x);
+              x1 = Math.max(x1, b.x1);
+              y0 = Math.min(y0, b.y);
+              y1 = Math.max(y1, b.y1);
+            }
+            const hw = (x1 - x0) / 2, cx = (x0 + x1) / 2;
+            cylinder("companion", [[cx, y0 - 0.2 * hh], [cx, y1 + 0.2 * hh]], [hw, hw], 0.5 * hh);
+          }
+        }
+        const headRegion = (LL) => {
+          const H = R.head, rx = H.w * H.k * 1.02, ry = 0.5 * H.k * 1, c = [H.cx, H.cy - 0.02 * H.k];
+          const lxy = [LL.dir[0], LL.dir[1]], m = Math.hypot(lxy[0], lxy[1]);
+          const eu = m > 1e-6 ? [lxy[0] / m, lxy[1] / m] : [-1, 0], ev = [-eu[1], eu[0]];
+          const toKit = (u, v) => {
+            const x = u * eu[0] + v * ev[0], yy = u * eu[1] + v * ev[1];
+            const p = [c[0] + x * rx, c[1] + yy * ry];
+            return H.tilt ? G.rot(p, H.tilt, H.pivot) : p;
+          };
+          const term = [], far = [], band = [], near = [];
+          const N = 28;
+          for (let i = -3; i <= N + 3; i++) {
+            const v = -1.25 + 2.5 * i / N, vv = clamp(v, -1, 1), q = Math.sqrt(Math.max(0, 1 - vv * vv));
+            const s = chord(m, LL.dir[2], q, LL.wrap);
+            const a = Math.abs(v) > 1 ? 0 : s.a;
+            term.push(toKit(a, v));
+            far.push(toKit(-3, v));
+            near.push(toKit(3, v));
+            band.push(toKit(Math.min(q, a + 0.16), v));
+          }
+          return { shadow: G.poly([...term, ...far.reverse()]), lit: G.poly([...term, ...near.reverse()]), band: G.poly([...band, ...term.slice().reverse()]) };
+        };
+        {
+          const r = headRegion({ ...L, wrap: wrap * 0.9 });
+          add("head", "sh", r.shadow);
+          add("head", "band", r.band);
+        }
+        if (U) add("head", "under", headRegion({ ...U, wrap: U.wrap }).lit);
+        const away = G.norm([-L.dir[0], -L.dir[1] + 0.35]);
+        const kz = 1 - L.dir[2] * 0.6;
+        const idOf = (p) => p._id;
+        const CAST = [
+          { name: "head-neck", casters: (p) => {
+            var _a;
+            return p._vol === "head" && /^(head|hair|hat-brim|hat-crown|facial-hair)/.test(p.id || "") && ((_a = p.z) != null ? _a : 50) >= 59;
+          }, to: (p) => {
+            var _a;
+            return p._vol === "neck" || p._vol === "torso" && ((_a = p.z) != null ? _a : 50) < 59;
+          }, d: 0.2 * hh },
+          { name: "brim-face", casters: (p) => p._kind === "hat" && /brim|peak|visor/.test(p.id || ""), to: (p) => {
+            var _a;
+            return p._vol === "head" && p._kind !== "hat" && ((_a = p.z) != null ? _a : 50) < 72;
+          }, d: 0.13 * hh },
+          { name: "fringe", casters: (p) => {
+            var _a;
+            return p._kind === "hair" && ((_a = p.z) != null ? _a : 50) >= 65;
+          }, to: (p) => p.id === "head", d: 0.045 * hh },
+          { name: "arm-torso", casters: (p) => {
+            var _a;
+            return /^arm-/.test(p._vol) && ((_a = p.z) != null ? _a : 50) >= 54;
+          }, to: (p) => {
+            var _a;
+            return p._vol === "torso" && ((_a = p.z) != null ? _a : 50) < 54;
+          }, d: 0.12 * hh },
+          { name: "hem-legs", casters: (p) => (p._kind === "outer" || p._kind === "dress") && p._vol === "torso" && !/collar|lapel|pocket|belt|button/.test(p.id || ""), to: (p) => p._vol === "legs" || /^leg-/.test(p._vol) || p._kind === "footwear", d: 0.16 * hh }
+        ];
+        for (const p of pieces) p._vol = volumeOf(p);
+        const castUse = {};
+        for (const r of CAST) {
+          const cs = pieces.filter((p) => p.d && p._id && p.light !== false && r.casters(p));
+          if (!cs.length) continue;
+          const dx = away[0] * r.d * kz, dy = away[1] * r.d * kz;
+          castUse[r.name] = cs.map((p) => `<use href="#${idOf(p)}-s" transform="translate(${G.f(dx)} ${G.f(dy)})"/>`).join("");
+        }
+        const defs = [], made = {};
+        const clip = (key, inner) => {
+          if (!made[key]) {
+            made[key] = `${prefix}-lv-${key}`;
+            defs.push(`<clipPath id="${made[key]}">${inner}</clipPath>`);
+          }
+          return made[key];
+        };
+        const paths = (ds) => ds.map((d) => `<path d="${d}"/>`).join("");
+        function of(p) {
+          const v = p._vol;
+          if (v === "local" || !vol[v]) return null;
+          const rules = CAST.filter((r) => castUse[r.name] && r.to(p) && !r.casters(p)).map((r) => r.name);
+          const face = !!(p.light && p.light.face);
+          const key = [face ? "face" : v, ...rules].join("_");
+          const sh = face && !rules.length ? null : clip(`${key}-sh`, (face ? "" : paths(vol[v].sh)) + rules.map((r) => castUse[r]).join(""));
+          const band = !face && vol[v].band.length ? clip(`${v}-bd`, paths(vol[v].band)) : null;
+          const under = U && vol[v].under.length ? clip(`${v}-un`, paths(vol[v].under)) : null;
+          const edge = !face && vol[v].edge.length ? clip(`${v}-ed`, paths(vol[v].edge)) : null;
+          return { sh, band, under, edge };
+        }
+        return { defs, of, vol };
+      }
+      function facePattern(L, face) {
+        const want = face && face.light || L.face;
+        if (["loop", "rembrandt", "split", "rim"].includes(want)) return want;
+        const el = Math.asin(clamp(L.dir[2], 0, 1)) / deg;
+        if (L.time === "night" && !L.under) return "rim";
+        return el < 16 ? "split" : el < 30 ? "rembrandt" : "loop";
+      }
+      function underDir(L) {
+        var _a, _b;
+        const az = ((_a = L.under.az) != null ? _a : 255) * deg, el = ((_b = L.under.el) != null ? _b : 35) * deg;
+        return [Math.cos(el) * Math.cos(az), -Math.cos(el) * Math.sin(az), Math.sin(el)];
+      }
+      function relight(mat, L, scheme) {
+        if (!mat || !mat.base) return mat;
+        const cache = relight._c = relight._c || /* @__PURE__ */ new Map();
+        const key = `${mat.base}|${mat.shade}|${mat.kind}|${L.keyColor}|${L.ambient}|${L.shadow.color}|${L.shadow.opacity}|${L.depth}|${scheme && scheme.shadow}|${L.exposure || 1}`;
+        if (cache.has(key)) return { ...mat, ...cache.get(key) };
+        const mapped = !!(scheme && scheme.map);
+        const amb = mapped ? scheme.shadow || L.ambient : L.ambient;
+        const keyMul = C.mix("#ffffff", L.keyColor, mapped ? 0.15 : L.time === "night" ? 0.55 : 0.12);
+        const ex = L.exposure || 1;
+        const lit = (c) => {
+          const m = C.multiply(c, keyMul);
+          return ex === 1 ? m : C.mix("#000000", m, ex);
+        };
+        const lumB = C.lum(mat.base);
+        const depth = L.depth * (lumB > 0.75 ? 0.92 : 1);
+        let shade = C.shadeOf(mat.base, depth, amb);
+        if (mat.kind === "skin" && !mapped) shade = C.mix(mat.shade, amb, 0.12);
+        if (lumB < 0.08) shade = C.mix(mat.base, C.mix(amb, "#000000", 0.55), 0.45);
+        const cloth = mat.kind !== "skin" && lumB >= 0.22;
+        shade = C.mix(shade, L.shadow.color, clamp(L.shadow.opacity, 0, 1) * (lumB < 0.08 ? 0.3 : mat.kind === "skin" ? 0.3 : cloth && !mapped ? 0.45 : 1));
+        if (cloth && !mapped) {
+          const floor = C.saturate(C.multiply(mat.base, "#8a8a8a"), 1.12);
+          if (C.lum(shade) < C.lum(floor)) shade = floor;
+        }
+        if (ex !== 1) shade = C.mix("#000000", shade, Math.min(1, ex + 0.08));
+        const darkLift = lumB < 0.06 ? 0.1 : lumB < 0.13 ? 0.08 : 0;
+        const litBase = darkLift ? C.mix(mat.base, C.mix(L.keyColor, L.ambient, 0.45), darkLift) : mat.base;
+        if (darkLift) shade = C.mix(shade, "#000000", 0.5);
+        else if (lumB < 0.22) shade = C.mix(shade, "#000000", 0.3);
+        const edgeC = lit(C.mix(litBase, L.keyColor, lumB < 0.22 ? 0.3 : 0.22));
+        const out = { edgeC, edgeO: lumB < 0.22 ? 0.75 : 0.5, base: lit(litBase), light: mat.light ? lit(mat.light) : mat.light, shade, deep: C.mix(shade, "#000000", 0.32), line: mat.line ? lit(mat.line) : mat.line, v2Shade: shade };
+        if (mat.blush) out.blush = lit(mat.blush);
+        if (mat.lip) out.lip = lit(mat.lip);
+        cache.set(key, out);
+        return { ...mat, ...out };
+      }
+      function underColour(mat, L) {
+        const c = L.under.color || L.keyColor;
+        return C.mix(C.screen(C.multiply(mat.base, C.mix("#ffffff", c, 0.6)), C.mix("#000000", c, 0.35)), c, 0.18);
+      }
+      function edgeFilter(prefix, L, o) {
+        var _a;
+        const { scale, hh, scheme } = o;
+        const away = G.norm([-L.dir[0], -L.dir[1]]);
+        const w = Math.max(1.3 / scale, Math.min(0.045 * hh, 3.2 / scale));
+        const parts = [];
+        const rimC = L.rim ? L.rim.color || scheme && scheme.rim || "#c37270" : scheme && scheme.rim;
+        const rimS = L.rim ? (_a = L.rim.strength) != null ? _a : 1 : 1;
+        if (rimC) {
+          parts.push(`<feOffset in="SourceAlpha" dx="${G.f(-away[0] * w * 1.15)}" dy="${G.f(-away[1] * w * 1.15)}" result="rmo"/><feComposite in="SourceAlpha" in2="rmo" operator="out" result="rme"/><feFlood flood-color="${T.tok(rimC) || rimC}" flood-opacity="${clamp(rimS, 0, 1)}"/><feComposite in2="rme" operator="in" result="rim"/>`);
+        }
+        const litO = L.time === "night" ? 0.24 : 0.3;
+        const lw = Math.max(1 / scale, w * 0.55);
+        parts.push(`<feOffset in="SourceAlpha" dx="${G.f(away[0] * lw)}" dy="${G.f(away[1] * lw)}" result="lto"/><feComposite in="SourceAlpha" in2="lto" operator="out" result="lte"/><feFlood flood-color="${L.keyColor}" flood-opacity="${litO}"/><feComposite in2="lte" operator="in" result="lit"/>`);
+        return { prims: parts.join(""), nodes: [rimC ? "rim" : null, "lit"].filter(Boolean) };
+      }
+      module.exports = { PRESETS, NIGHT_POOL, facePattern, resolve, volumeOf, regions, relight, underColour, edgeFilter, chord };
+    }
+  });
+
   // src/parts/head/_planes.js
   var require_planes = __commonJS({
     "src/parts/head/_planes.js"(exports, module) {
@@ -5075,77 +7631,69 @@ var B68Figure = (() => {
         if (P.chin === "square" && fem) P.chinW *= 0.92;
         return { P, w, fem, jk };
       }
-      function facePlanes(ctx, H, kIn = {}) {
+      function facePlanesV2(ctx, H, kIn = {}) {
+        var _a, _b, _c, _d, _e;
         const { G, skin } = ctx;
+        const LV = require_light();
         const out = { shade: [], deep: [], lit: [], lines: [] };
-        if (!ctx.lodAtLeast("mid")) return out;
-        const hi = ctx.lodAtLeast("hi");
+        const named = ctx.S.face && ctx.S.face.light || ctx.light.face;
+        let pat = LV.facePattern(ctx.light, ctx.S.face || {});
+        if (!named && pat === "rembrandt" && ctx.C.lum(skin.shade) < 0.28) pat = "loop";
+        const sd = ctx.light.side || 1;
+        const hi = ctx.lodAtLeast("hi"), mid = ctx.lodAtLeast("mid");
         const fem = !!ctx.R.fem;
-        const k = { socket: 1, hollow: 1, jaw: 1, temple: 1, lit: 1, brow: 1, chin: 1, jowl: 0, ...kIn };
-        if (fem) {
-          k.socket *= 0.82;
-          k.jaw *= 0.8;
-          k.chin *= 0.85;
-          k.hollow *= 0.92;
-          k.brow *= 0.8;
+        const k = { socket: 1, jaw: 1, chin: 1, jowl: 0, ...kIn };
+        const dk = Math.max(0, Math.min(1, (0.36 - ctx.C.lum(skin.shade)) / 0.13));
+        k.socket *= 1 - 0.85 * dk;
+        const X = (pts) => pts.map(([x, y, c]) => c ? [sd * x, y, c] : [sd * x, y]);
+        const S = (pts, t = 0.5) => ctx.hs(G.smooth(X(pts), true, t));
+        const B = (pts, ws) => ctx.hs(G.brush(X(pts), ws));
+        const wid = H.widthAt || (() => H.w);
+        const ex = H.eyeX, br = H.brow, hl = H.hairline, ny = (_a = H.noseY) != null ? _a : 0.205, my = (_b = H.mouthY) != null ? _b : 0.31, cy = (_c = H.chinY) != null ? _c : 0.5;
+        const FAR = 0.9;
+        const far = [[FAR, cy + 0.2], [FAR, -0.62], [0, -0.62]];
+        let main;
+        if (pat === "loop") {
+          const t = (y, f) => [wid(y) * f, y];
+          main = [[wid(-0.42) * 0.5, -0.62], t(-0.42, 0.56), t(-0.22, 0.56), t(br, 0.64), t(0.02, 0.68), t(0.1, 0.6), t(0.2, 0.5), t(my, 0.47), t(0.42, 0.36), [H.chinW * 0.4, cy + 0.02], [H.chinW * 0.4, cy + 0.2], ...far.slice(0, 2)];
+        } else if (pat === "rim") {
+          main = [[-FAR, -0.62], [-FAR, cy + 0.2], [FAR, cy + 0.2], [FAR, -0.62]];
+        } else {
+          const nb = (_d = H.noseW) != null ? _d : 0.075;
+          main = [[0.03, -0.62], [0.025, hl], [0.03, br - 0.02], [0.034, -0.02], [0.04, 0.08], [nb * 0.75, ny - 0.03], [nb * 0.9, ny + 5e-3], [0.02, ny + 0.02], [6e-3, my - 0.03], [0, my + 0.02], [-4e-3, 0.42], [0, cy + 0.04], [0, cy + 0.2], ...far.slice(0, 2)];
         }
-        const S = (pts, t = 0.5) => ctx.hs(G.smooth(pts, true, t));
-        const B = (pts, ws) => ctx.hs(G.brush(pts, ws));
-        const st = (a) => hexA(skin.shade, a);
-        const w = H.cheekW, ex = H.eyeX, br = H.brow, hl = H.hairline;
-        const wid = H.widthAt || (() => w);
-        const { shade, deep, lit, lines } = out;
-        {
-          const tw = (y) => wid(y) - 0.012;
-          shade.push({ d: S([[-tw(hl), hl], [-(tw(-0.1) - 0.065), -0.115], [-(tw(br) - 0.07), br + 0.01], [-(tw(0.02) - 0.03), 0.04], [-(tw(0.02) + 0.04), 0.04], [-(tw(hl) + 0.04), hl]]), o: 0.34 * k.temple });
-          deep.push({ d: S([[tw(-0.2), -0.2], [tw(-0.1) - 0.075, -0.1], [tw(br) - 0.085, br + 0.01], [tw(0.02) - 0.05, 0.05], [tw(0.02) + 0.04, 0.05], [tw(-0.2) + 0.04, -0.2]]), o: 0.3 * k.temple });
+        out.shade.push({ d: S(main, 0.35), o: 1 });
+        if (pat === "rembrandt")
+          out.lit.push({ d: S([[0.06, 0.06], [ex + 0.07, 0.055], [0.08, 0.19]], 0.15), fill: "base", o: 1 });
+        if (pat === "rim") {
+          const e = [-0.34, -0.2, -0.05, 0.1, 0.25, 0.38].map((y) => [-(wid(y) - 4e-3), y]);
+          out.lit.push({ d: B(e, [4e-3, 0.03, 0.036, 0.034, 0.026, 6e-3]), fill: "base", o: 1 });
         }
+        if (!mid) return out;
+        if (dk > 0.5 && pat !== "rim") {
+          out.lit.push({ d: B([[-wid(0.06) * 0.86, 0.05], [-wid(0.06) * 0.55, 0.115], [-wid(0.06) * 0.22, 0.16]], [8e-3, 0.055, 0.01]), fill: "light", o: 0.7 * dk });
+          out.lit.push({ d: B([[-ex - 0.1, br - 0.035], [-ex, br - 0.05], [-ex + 0.09, br - 0.035]], [6e-3, 0.026, 6e-3]), fill: "light", o: 0.6 * dk });
+        }
+        out.deep.push({ d: S([[0.04, br + 0.03], [ex, br + 8e-3], [ex + 0.11, br + 0.03], [ex + 0.1, 0.03], [ex, 0.05], [0.06, 0.035]]), o: (pat === "rim" ? 0.2 : 0.32) * k.socket * (fem ? 0.8 : 1) });
+        if (pat !== "rim") out.shade.push({ d: S([[-ex - 0.09, br + 0.03], [-ex, br + 0.012], [-ex + 0.09, br + 0.034], [-ex + 0.07, 0.03], [-ex - 0.07, 0.03]]), o: 0.18 * k.socket * (fem ? 0.8 : 1) });
+        if (pat === "loop") out.shade.push({ d: S([[0.012, ny - 4e-3], [0.07, ny + 6e-3], [0.1, ny + 0.045], [0.07, ny + 0.06], [0.02, ny + 0.03]], 0.45), o: 0.95 });
+        out.deep.push({ d: S([[-0.05, ny + 0.012], [0, ny + 6e-3], [0.06, ny + 0.014], [0.04, ny + 0.034], [-0.03, ny + 0.03]], 0.45), o: 0.4 });
         for (const s of [-1, 1]) {
-          const cx = s * ex;
-          if (s < 0) {
-            shade.push({ d: S([[cx - 0.095, br + 0.025], [cx - 0.01, br - 2e-3], [cx + 0.1, br + 0.032], [cx + 0.09, 0.045], [cx + 5e-3, 0.064], [cx - 0.07, 0.042]]), o: 0.46 * k.socket });
-            lines.push({ d: B([[cx - 0.09, br + 0.03], [cx, br + 0.012], [cx + 0.1, br + 0.036]], [4e-3, 0.02 * k.brow, 6e-3]), fill: "shade", o: 0.55 * k.brow });
-          } else {
-            shade.push({ d: S([[0.036, br + 0.022], [cx * 0.62, br - 8e-3], [w * 1.25, br - 0.03], [w * 1.25, 0.11], [cx + 0.07, 0.092], [cx - 0.02, 0.07], [0.056, 0.05]], 0.5), o: 0.92 });
-            deep.push({ d: S([[0.05, br + 0.024], [cx, br + 0], [cx + 0.12, br + 0.01], [cx + 0.1, 0.03], [cx, 0.052], [0.07, 0.036]]), o: 0.5 * k.socket });
-          }
+          const ys = [H.jawY - 0.06, H.jawY + 0.03, (H.jawY + cy) / 2 + 0.015, cy - 0.03];
+          const pts = ys.map((y) => [s * (wid(y) - 0.01), y]);
+          const ws = [0.01, 0.06, 0.06, 0.03].map((v) => v * k.jaw * (1 + (k.jowl || 0) * 0.6));
+          (s < 0 ? out.shade : out.deep).push({ d: B(pts, ws), o: s < 0 ? 0.75 : 0.55 });
         }
-        for (const s of [-1, 1]) {
-          const cw = H.cheekW;
-          const hollow = [[s * (cw - 4e-3), 0.1], [s * cw * 0.8, 0.14], [s * cw * 0.6, 0.21], [s * cw * 0.5, 0.275], [s * cw * 0.68, 0.255], [s * cw * 0.9, 0.2], [s * cw, 0.16]];
-          if (s < 0) {
-            shade.push({ d: S(hollow), o: 0.5 * k.hollow });
-            if (ctx.lodAtLeast("mid")) shade.push({ d: S([[-cw * 0.97, 0.085], [-cw * 0.7, 0.12], [-cw * 0.44, 0.2], [-cw * 0.36, 0.3], [-cw * 0.62, 0.3], [-cw * 0.85, 0.22]]), fill: st(0.4 * k.hollow), stip: true });
-            lit.push({ d: B([[-cw * 0.82, 0.03], [-cw * 0.5, 0.1], [-cw * 0.2, 0.15]], [6e-3, 0.05, 8e-3]), o: 0.55 * k.lit });
-          } else {
-            shade.push({ d: S([[cw * 0.1, 0.1], [cw * 0.45, 0.13], [cw * 0.52, 0.2], [cw * 0.44, 0.28], [cw * 0.25, 0.3], [cw * 0.12, 0.2]]), o: 0.9 * k.hollow });
-            deep.push({ d: S(hollow), o: 0.35 * k.hollow });
-          }
-        }
-        for (const s of [-1, 1]) {
-          const ys = [H.jawY - 0.14, H.jawY - 0.05, H.jawY + 0.03, (H.jawY + H.chinY) / 2 + 0.015, H.chinY - 0.04];
-          const pts = ys.map((y) => [s * (wid(y) - 8e-3), y]);
-          const ws = [0.012, 0.058, 0.07, 0.062, 0.03].map((v) => v * k.jaw * (1 + (k.jowl || 0) * (s < 0 ? 0.6 : 1)));
-          if (s < 0) {
-            shade.push({ d: B(pts, ws), o: 0.7 });
-            shade.push({ d: B(pts.map(([x, y]) => [x + 0.035, y - 0.012]), ws.map((v) => v * 1.2)), fill: st(0.45), stip: true });
-          } else deep.push({ d: B(pts, ws.map((v) => v * 1.15)), o: 0.5 });
-        }
-        {
-          const cy = H.chinY;
-          const cw = H.chinW;
-          deep.push({ d: B([[-cw * 1.05, cy - 0.042], [-cw * 0.3, cy - 0.022], [cw * 1.05, cy - 0.044]], [0.01, 0.034 * k.chin, 0.012]), o: 0.34 * k.chin });
-          lit.push({ d: S([[-cw * 0.7, cy - 0.09], [-cw * 0.1, cy - 0.095], [-cw * 0.15, cy - 0.06], [-cw * 0.65, cy - 0.065]]), o: 0.4 * k.lit });
-        }
-        lit.push({ d: S([[-w * 0.7, hl + 0.02], [-0.03, hl - 5e-3], [-0.04, br - 0.05], [-w * 0.64, br - 0.03]]), o: 0.4 * k.lit });
-        if (hi && k.jowl) {
-          for (const s of [-1, 1]) {
-            const my = H.mouthY;
-            const j = [[s * H.mouthW * 0.55, my + 0.05], [s * (H.jawW * 0.62), my + 0.1], [s * (H.jawW * 0.8), H.jawY + 0.06]];
-            (s < 0 ? shade : deep).push({ d: B(j, [4e-3, 0.022 * k.jowl, 6e-3]), o: s < 0 ? 0.3 : 0.4 });
-          }
+        out.deep.push({ d: B([[-H.chinW * 1.05, cy - 0.04], [0, cy - 0.022], [H.chinW * 1.05, cy - 0.044]], [0.01, 0.034 * k.chin, 0.012]), o: 0.4 * k.chin });
+        if (hi) {
+          out.lit.push({ d: B([[-wid(0.03) * 0.82, 0.03], [-wid(0.03) * 0.5, 0.1], [-wid(0.03) * 0.22, 0.15]], [6e-3, 0.05, 8e-3]), o: 0.45 });
+          out.lit.push({ d: S([[-H.w * 0.7, hl + 0.02], [-0.03, hl - 5e-3], [-0.04, br - 0.05], [-H.w * 0.64, br - 0.03]]), o: 0.32 });
+          if (k.jowl) for (const s of [-1, 1]) out[s < 0 ? "shade" : "deep"].push({ d: B([[s * ((_e = H.mouthW) != null ? _e : 0.135) * 0.55, my + 0.05], [s * (H.jawW * 0.62), my + 0.1], [s * (H.jawW * 0.8), H.jawY + 0.06]], [4e-3, 0.022 * k.jowl, 6e-3]), o: s < 0 ? 0.3 : 0.4 });
         }
         return out;
+      }
+      function facePlanes(ctx, H, kIn = {}) {
+        return facePlanesV2(ctx, H, kIn);
       }
       function makeHead(ctx, o, def) {
         var _a, _b, _c, _d;
@@ -5180,7 +7728,7 @@ var B68Figure = (() => {
         const mod = facePlanes(ctx, Hn, def.planes || {});
         return {
           head,
-          pieces: [{ id: "head", z: ctx.Z.head, d: ctx.hs(out.d), mat: ctx.skin, shade: mod.shade, deep: mod.deep, lit: mod.lit, lines: mod.lines, light: { form: (_d = def.form) != null ? _d : 1 } }]
+          pieces: [{ id: "head", z: ctx.Z.head, d: ctx.hs(out.d), mat: ctx.skin, shade: mod.shade, deep: mod.deep, lit: mod.lit, lines: mod.lines, light: { form: (_d = def.form) != null ? _d : 1, face: true } }]
         };
       }
       var PARAMS = { jaw: "0.8\u20131.3 jaw width multiplier (spec.head.jaw)", chin: "round|square|pointed|cleft (spec.head.chin)", width: "0.85\u20131.15 (spec.head.width)" };
@@ -5581,6 +8129,377 @@ var B68Figure = (() => {
     }
   });
 
+  // src/parts/masks/_mask.js
+  var require_mask = __commonJS({
+    "src/parts/masks/_mask.js"(exports, module) {
+      "use strict";
+      var U = require_util();
+      var { hexA } = require_planes();
+      var clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      var lerp = (a, b, t) => a + (b - a) * t;
+      var tokOr = (ctx, t, d) => typeof t === "string" && ctx.T.tok(t) ? t : d;
+      function K(ctx, pts, d0 = 0.03) {
+        return pts.map((p) => {
+          var _a;
+          const q = ctx.hp([p[0], p[1]], { depth: (_a = p[3]) != null ? _a : d0 });
+          return p[2] ? [q[0], q[1], true] : q;
+        });
+      }
+      var path = (ctx, pts, t = 0.45, d0) => ctx.G.smooth(K(ctx, pts, d0), true, t);
+      var stroke = (ctx, pts, widths, d0 = 0.03) => ctx.G.brush(K(ctx, pts, d0), widths.map((w) => w * ctx.R.head.k));
+      var area = (pts) => {
+        let a = 0;
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i], q = pts[(i + 1) % pts.length];
+          a += p[0] * q[1] - q[0] * p[1];
+        }
+        return a;
+      };
+      function holed(ctx, outer, holes, t = 0.45, d0 = 0.03) {
+        const o = K(ctx, outer, d0);
+        let d = ctx.G.smooth(o, true, t);
+        for (const h of holes) {
+          let hp = K(ctx, h, d0);
+          if (Math.sign(area(hp)) === Math.sign(area(o))) hp = hp.reverse();
+          d += " " + ctx.G.smooth(hp, true, t);
+        }
+        return d;
+      }
+      function samplePath(G, d, per = 5) {
+        const pts = [];
+        let cur = null;
+        for (const s of G.parse(d)) {
+          if (s.c === "M" || s.c === "L") {
+            cur = s.p[0];
+            pts.push(cur);
+          } else if (s.c === "C" && cur) {
+            const [a, b, p] = s.p;
+            for (let i = 1; i <= per; i++) {
+              const t = i / per, u = 1 - t;
+              pts.push([u * u * u * cur[0] + 3 * u * u * t * a[0] + 3 * u * t * t * b[0] + t * t * t * p[0], u * u * u * cur[1] + 3 * u * u * t * a[1] + 3 * u * t * t * b[1] + t * t * t * p[1]]);
+            }
+            cur = p;
+          }
+        }
+        return pts;
+      }
+      function skull(ctx) {
+        const H = ctx.head, poly = U.outlinePoly(ctx, 5);
+        const wid = H.widthAt || (() => H.w);
+        let kit = null;
+        try {
+          if (H.outline) kit = samplePath(ctx.G, ctx.hs(H.outline), 5);
+        } catch (e) {
+          kit = null;
+        }
+        if (!kit || kit.length !== poly.length) kit = poly.map((p) => ctx.hp(p, { depth: 0 }));
+        return { H, poly, kit, wid, edge: (y) => U.edgeAt(poly, y) || { l: -wid(y), r: wid(y) } };
+      }
+      function grow(poly, amt) {
+        const n = poly.length, sgn = area(poly) > 0 ? 1 : -1, out = [];
+        for (let i = 0; i < n; i++) {
+          const a = poly[(i - 2 + n) % n], b = poly[(i + 2) % n], p = poly[i];
+          let tx = b[0] - a[0], ty = b[1] - a[1];
+          const l = Math.hypot(tx, ty) || 1;
+          tx /= l;
+          ty /= l;
+          const k = typeof amt === "function" ? amt(p, i) : amt;
+          out.push([p[0] + sgn * ty * k, p[1] - sgn * tx * k]);
+        }
+        return out;
+      }
+      function relax(pts, passes = 2) {
+        let cur = pts;
+        for (let k = 0; k < passes; k++) {
+          const n = cur.length;
+          cur = cur.map((p, i) => {
+            const a = cur[(i - 1 + n) % n], b = cur[(i + 1) % n];
+            return [(a[0] + 2 * p[0] + b[0]) / 4, (a[1] + 2 * p[1] + b[1]) / 4];
+          });
+        }
+        return cur;
+      }
+      var thin = (pts, k = 2) => pts.filter((_, i) => i % k === 0);
+      function superellipse(cx, cy, hw, hh, o = {}) {
+        const N = o.N || 28, n = o.n || 2.4, out = [];
+        for (let i = 0; i < N; i++) {
+          const a = i / N * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+          const xl = Math.sign(c) * Math.pow(Math.abs(c), 2 / n), yl = Math.sign(s) * Math.pow(Math.abs(s), 2 / n);
+          let x = xl * hw, y = yl * hh;
+          if (o.taper && yl > 0) x *= 1 - o.taper * yl;
+          if (o.lift) y -= o.lift * hh * Math.max(0, xl * (o.side || 1)) * (1 - yl) * 0.5;
+          if (o.rot) {
+            const co = Math.cos(o.rot), si = Math.sin(o.rot);
+            [x, y] = [x * co - y * si, x * si + y * co];
+          }
+          out.push([cx + x, cy + y]);
+        }
+        return out;
+      }
+      function shell(ctx, sk, amt, yTop, top) {
+        const k = ctx.R.head.k, n = sk.poly.length;
+        const full = grow(sk.kit, (p, i) => amt(sk.poly[i][1], sk.poly[i][0]) * k);
+        if (yTop == null || !top) return relax(full, 2);
+        let iL = -1, iR = -1;
+        for (let i = 0; i < n; i++) if (sk.poly[i][1] >= yTop) {
+          if (iL < 0) iL = i;
+          iR = i;
+        }
+        if (iL < 0) return relax(full, 2);
+        const side = relax(full, 2).slice(iL, iR + 1).map((p) => [p[0], p[1]]);
+        side[0] = [...side[0], true];
+        side[side.length - 1] = [...side[side.length - 1], true];
+        const closing = K(ctx, top, 0.01).reverse().map((p, i, a) => i === 0 || i === a.length - 1 ? [p[0], p[1], true] : p);
+        return [...side, ...closing];
+      }
+      function sides(ctx, sk, amt, y0, y1) {
+        const k = ctx.R.head.k, n = sk.poly.length;
+        const full = relax(grow(sk.kit, (p, i) => amt(sk.poly[i][1], sk.poly[i][0]) * k), 2);
+        const L = [], R = [];
+        for (let i = 0; i < n; i++) {
+          const [x, y] = sk.poly[i];
+          if (y >= y0 && y <= y1) (x < 0 ? L : R).push([y, full[i]]);
+        }
+        L.sort((a, b) => a[0] - b[0]);
+        R.sort((a, b) => b[0] - a[0]);
+        return { L: L.map((q) => q[1]), R: R.map((q) => q[1]) };
+      }
+      function slide(ctx, x, y, depth = 0) {
+        const H = ctx.R.head;
+        if (!H.yaw) return 0;
+        const r = H.w * Math.sqrt(Math.max(0.15, 1 - Math.pow(Math.max(0, y - 0.05) / 0.62, 2)));
+        return (Math.sqrt(Math.max(0, r * r - x * x)) + depth) * Math.sin(H.yaw);
+      }
+      function plate(ctx, cx, cy, depth = 0.03, o = {}) {
+        var _a;
+        const yaw = ctx.R.head.yaw || 0, cosY = Math.cos(yaw), side = Math.sign(yaw);
+        const cs = cx + slide(ctx, cx, cy, depth);
+        let u0 = 0, us = 1;
+        const P = (u, v) => ctx.hp([cs + (u0 + u * us) * cosY, cy + v], { flat: true });
+        if (o.w && o.outline && side) {
+          const m = (_a = o.margin) != null ? _a : 0.012 * ctx.R.head.k;
+          for (let i = 0; i < 24; i++) {
+            const q = P(side * o.w, 0);
+            if (U.inside(o.outline, q[0] + side * m, q[1])) break;
+            us *= 0.94;
+            u0 = -side * o.w * (1 - us);
+          }
+        }
+        P.scale = us * cosY;
+        P.centre = () => P(0, 0);
+        return P;
+      }
+      var mapD = (d, P) => ctxless(d, P);
+      function ctxless(d, P) {
+        const G = require_geom();
+        return G.mapPath(d, (p) => P(p[0], p[1]));
+      }
+      var mirror = (pts) => pts.map(([x, y, s, d]) => [-x, y, s, d]);
+      var sym = (L) => [...L, ...mirror(L.slice(1, -1)).reverse()];
+      function fitInside(ctx, pts, outline, margin, d0 = 0.012) {
+        const yaw = ctx.R.head.yaw || 0;
+        if (!yaw || !outline || outline.length < 4) return pts;
+        const side = Math.sign(yaw);
+        const cx0 = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+        let cur = pts;
+        for (let it = 0; it < 18; it++) {
+          const kp = K(ctx, cur, d0);
+          const bad = kp.some((q, i) => (cur[i][0] - cx0) * side > 0 && !U.inside(outline, q[0] + side * margin, q[1]));
+          if (!bad) break;
+          cur = cur.map((p) => (p[0] - cx0) * side > 0 ? [cx0 + (p[0] - cx0) * 0.94, ...p.slice(1)] : p);
+        }
+        return cur;
+      }
+      function tuck(ctx, pts, outline, margin, d0 = 0.03) {
+        if (!outline || outline.length < 4) return pts;
+        return pts.map((p) => {
+          var _a;
+          let q = p;
+          for (let it = 0; it < 70; it++) {
+            const m = ctx.hp([q[0], q[1]], { depth: (_a = q[3]) != null ? _a : d0 });
+            if (U.inside(outline, m[0] + margin, m[1]) && U.inside(outline, m[0] - margin, m[1]) && U.inside(outline, m[0], m[1] + margin) && U.inside(outline, m[0], m[1] - margin)) break;
+            q = [q[0] * 0.97, -0.05 + (q[1] + 0.05) * 0.99, ...q.slice(2)];
+          }
+          return q;
+        });
+      }
+      function holeRim(ctx, ring, t = 0.013, d0 = 0.012) {
+        const cx = ring.reduce((a, p) => a + p[0], 0) / ring.length, cy = ring.reduce((a, p) => a + p[1], 0) / ring.length;
+        const big = ring.map(([x, y]) => {
+          const dx = x - cx, dy = y - cy, l = Math.hypot(dx, dy) || 1;
+          return [x + dx / l * t, y + dy / l * t, false, d0];
+        });
+        return holed(ctx, big, [ring], 0.5, d0);
+      }
+      function shadowBand(ctx, id, edge, depth, o = {}) {
+        var _a, _b, _c, _d, _e;
+        const { G, skin } = ctx;
+        if (!ctx.lodAtLeast("mid")) return [];
+        const sh = (_a = o.shift) != null ? _a : 0.015, hw = (_b = o.hw) != null ? _b : 0.4, dir = (_c = o.dir) != null ? _c : 1;
+        const low = (k) => edge.slice().reverse().map(([x, y]) => [x + sh * k, y + dir * depth * k * (1 - 0.45 * Math.min(1, Math.abs(x) / hw))]);
+        const lines = o.stip === false ? [] : [{ d: ctx.hs(G.smooth([...low(1), ...low(1.5).slice().reverse()], true, 0.5)), fill: hexA(skin.shade, 0.5), stip: true }];
+        const mk = (suffix, k, fill, op, ln) => ({ id: `${id}${suffix}`, z: ctx.Z.face + 1.2, d: ctx.hs(G.smooth([...edge, ...low(k)], true, 0.5)), fill, light: false, clip: "head", opacity: op, lines: ln });
+        return [mk("", 1, skin.shade, (_d = o.o) != null ? _d : 0.9, lines), mk("-core", 0.55, skin.deep, (_e = o.core) != null ? _e : 0.55)];
+      }
+      function tone(ctx, o = {}) {
+        const { G } = ctx, H = ctx.head, hi = ctx.lodAtLeast("hi"), mid = ctx.lodAtLeast("mid");
+        const out = { shade: [], deep: [], lit: [] };
+        if (!mid) return out;
+        const k = { nose: 1, cheek: 1, mouth: 1, jaw: 1, brow: 1, ...o };
+        const dN = 0.05;
+        const S = (pts, t = 0.5, d = 0.03) => G.smooth(K(ctx, pts, d), true, t);
+        const B = (pts, ws, d = 0.03) => stroke(ctx, pts, ws, d);
+        const ny = H.noseY, nty = H.noseTipY, nw = H.noseW;
+        if (k.nose) {
+          out.shade.push({ d: B([[0.026, 0.035, false, 0.04], [0.05, (ny + 0.035) / 2, false, 0.05], [nw * 0.95, ny - 0.012, false, dN]], [4e-3, 0.034 * k.nose, 0.05 * k.nose]), o: 0.62 });
+          out.deep.push({ d: B([[nw * 0.45, ny - 2e-3, false, dN], [nw * 0.75, ny + 8e-3, false, dN], [nw * 1.1, ny - 0.012, false, dN]], [0.012, 0.022 * k.nose, 6e-3]), o: 0.5 });
+          out.lit.push({ d: B([[-0.012, 0.03, false, 0.04], [-0.028, (nty + 0.04) / 2, false, 0.05], [-nw * 0.55, nty - 0.012, false, dN]], [4e-3, 0.026 * k.nose, 0.034 * k.nose]), o: 0.5 });
+          if (hi) out.lit.push({ d: ctx.hs(G.ellipse(-6e-3, nty - 3e-3, 0.02, 0.012), { depth: dN }), o: 0.4 });
+        }
+        if (k.cheek) for (const s of [-1, 1]) {
+          const cw = H.cheekW || H.w;
+          const hollow = [[s * cw * 0.9, 0.17], [s * cw * 0.7, 0.2], [s * cw * 0.5, 0.27], [s * cw * 0.45, 0.33], [s * cw * 0.66, 0.31], [s * cw * 0.88, 0.25]];
+          (s < 0 ? out.shade : out.deep).push({ d: S(hollow), o: (s < 0 ? 0.28 : 0.4) * k.cheek });
+          if (s < 0) out.lit.push({ d: B([[-cw * 0.85, 0.1], [-cw * 0.55, 0.14], [-cw * 0.28, 0.2]], [4e-3, 0.04, 6e-3]), o: 0.34 * k.cheek });
+        }
+        if (k.mouth) {
+          const my = H.mouthY;
+          out.shade.push({ d: B([[-H.mouthW * 0.55, my + 0.035], [0, my + 0.05], [H.mouthW * 0.55, my + 0.035]], [4e-3, 0.022 * k.mouth, 4e-3]), o: 0.4 });
+          if (hi) out.lit.push({ d: B([[-H.mouthW * 0.4, my - 0.04], [0, my - 0.05], [H.mouthW * 0.4, my - 0.04]], [4e-3, 0.016, 4e-3]), o: 0.3 });
+        }
+        return out;
+      }
+      function knitRibs(ctx, o = {}) {
+        var _a, _b, _c, _d, _e, _f, _g;
+        const sk = skull(ctx), H = sk.H, out = [];
+        const sp = (_a = o.sp) != null ? _a : 0.034, y0 = (_b = o.y0) != null ? _b : -0.52, y1 = (_c = o.y1) != null ? _c : H.chinY, ref = (_d = o.ref) != null ? _d : 0.06;
+        const wref = sk.wid(ref) || H.w, xmax = ((_e = o.xMax) != null ? _e : 0.94) * wref, w = (_f = o.w) != null ? _f : 0.011, N = Math.round(xmax / sp);
+        const ys = [];
+        for (let i = 0; i <= 10; i++) ys.push(lerp(y0, y1, i / 10));
+        for (let i = -N; i <= N; i++) {
+          if (o.skipCentre && i === 0) continue;
+          const u = i * sp / wref;
+          const pts = ys.map((y) => {
+            var _a2;
+            return [u * Math.max(0, sk.wid(Math.max(-0.5, y)) - ((_a2 = o.inset) != null ? _a2 : 4e-3)), y];
+          });
+          const fade = 1 - 0.55 * Math.pow(Math.abs(i) / (N || 1), 2);
+          out.push({ d: stroke(ctx, pts, [w * 0.35, w * fade, w * fade, w * fade * 0.9, w * 0.3], 0), fill: o.fill || "shade", o: ((_g = o.op) != null ? _g : 0.5) * (0.6 + 0.4 * fade) });
+        }
+        return out;
+      }
+      module.exports = { sides, holeRim, samplePath, relax, shell, slide, plate, mapD, K, path, stroke, holed, skull, grow, thin, superellipse, mirror, sym, area, fitInside, tuck, shadowBand, tone, knitRibs, tokOr, hexA, clamp, lerp, U };
+    }
+  });
+
+  // src/parts/hats/riot.js
+  var require_riot = __commonJS({
+    "src/parts/hats/riot.js"() {
+      "use strict";
+      var { register } = require_registry();
+      var { frame, sym, castShadow } = require_hat();
+      var M = require_mask();
+      var tokOr = (ctx, t, d) => ctx.T.tok(t) ? t : d;
+      register({
+        kind: "hat",
+        name: "riot-helmet",
+        aliases: ["riot", "visor-helmet", "riot-cop"],
+        describe: "Riot helmet: a round hard dome with ear flaps and a dark trim band, a chin strap and a pale plastic face shield that flips down over the face (a pale flat plate with a brighter lower band and one reflection streak, as on the cover) or up onto the dome (a pale crescent over its front). The cops on the cover, the stewards at the demo.",
+        params: { visor: '"down" (default: the shield over the face) | "up" (flipped up onto the dome)', color: "shell token (default cloth-stone)", band: "trim band token (default cloth-charcoal)", strap: "chin strap token (default leather-black)" },
+        example: { hair: { hat: { type: "riot-helmet", color: "cloth-stone", visor: "down" } } },
+        draw(ctx, o) {
+          const { G, C } = ctx, { cw, wid } = frame(ctx), k = ctx.R.head.k;
+          const mid = ctx.lodAtLeast("mid"), hi = ctx.lodAtLeast("hi"), lo = !mid;
+          const sm = (pts2, t = 0.5) => ctx.hs(G.smooth(pts2, true, t));
+          const B = (pts2, ws) => ctx.hs(G.brush(pts2, ws));
+          const shell = ctx.mat(tokOr(ctx, o.color, "cloth-stone"), "satin");
+          const bandTok = tokOr(ctx, o.band, "cloth-charcoal");
+          const strapM = ctx.mat(tokOr(ctx, o.strap, "leather-black"), "leather");
+          const up = o.visor === "up";
+          const mir = (L) => L.map(([x, y, s]) => [-x, y, s]);
+          const trim = C.mix(shell.base, ctx.tok(bandTok), 0.9);
+          const top = -0.69;
+          const outerL = [[0, top], [-cw * 0.55, top + 0.022], [-cw * 1, -0.575], [-cw * 1.13, -0.43], [-cw * 1.16, -0.3], [-(wid(-0.08) + 0.1), -0.12], [-(wid(0.1) + 0.09), 0.07], [-(wid(0.17) + 0.075), 0.215, true]];
+          const innerL = [[-(wid(0.17) - 0.01), 0.215, true], [-(wid(0.1) - 0.03), 0.08], [-(wid(-0.1) - 0.04), -0.09], [-(wid(-0.18) - 0.07), -0.17], [-0.2, -0.2], [0, -0.206]];
+          const pts = [...outerL, ...innerL, ...mir(innerL).reverse().slice(1), ...mir(outerL).reverse().slice(0, -1)];
+          const edgeL = innerL.map(([x, y]) => [x, y]);
+          const edge = [...edgeL, ...mir(edgeL).reverse().slice(1)];
+          const lines = [{ d: B(edge, edge.map((_, i) => 0.082 * (0.8 + 0.4 * Math.sin(i / (edge.length - 1) * Math.PI)))), fill: trim }];
+          if (mid) {
+            lines.push({ d: B([[0, -0.215], [0, -0.45], [0, top + 0.02]], [0.05, 0.042, 0.028]), fill: "light", o: 0.3 });
+            lines.push({ d: B([[0.036, -0.23], [0.04, -0.45], [0.026, top + 0.03]], [6e-3, 0.014, 4e-3]), fill: "shade", o: 0.5 });
+            for (const s of [-1, 1]) lines.push({ d: B([[s * (cw * 1.1), -0.3], [s * (wid(-0.06) + 0.085), -0.08], [s * (wid(0.06) + 0.06), 0.06]], [4e-3, 0.01, 4e-3]), fill: "shade", o: 0.5 });
+          }
+          if (hi) {
+            for (const s of [-1, 1]) lines.push({ d: ctx.hs(G.ellipse(s * (wid(0) + 0.065), -0.02, 0.014, 0.014)), fill: "deep", o: 0.7 });
+            lines.push({ d: B([[-cw * 1.02, -0.265], [-cw * 0.5, -0.285], [0, -0.29], [cw * 0.5, -0.285], [cw * 1.02, -0.265]], [4e-3, 0.011, 0.012, 0.011, 4e-3]), fill: "light", o: 0.4 });
+          }
+          const lit = [{ d: B([[-cw * 1, -0.4], [-cw * 0.76, -0.58], [-cw * 0.3, -0.665]], [4e-3, 0.06, 4e-3]), o: 0.7 }];
+          const pieces = [{ id: "hat-shell", z: ctx.Z.hat, d: sm(pts, 0.45), mat: shell, lines, lit, light: { form: 1.1, sheenO: 0.75 } }];
+          for (const s of [-1, 1]) {
+            const sp = [[s * (wid(0.2) - 0.01), 0.2], [s * (wid(0.33) - 0.03), 0.36], [s * 0.08, 0.5]];
+            pieces.push({ id: `hat-strap-${s < 0 ? "R" : "L"}`, z: ctx.Z.hat + 0.05, d: ctx.hs(G.brush(sp, [0.026, 0.022, 0.02])), mat: strapM, light: { form: 0.4 } });
+          }
+          pieces.push({ id: "hat-chincup", z: ctx.Z.hat + 0.06, d: sm([[-0.09, 0.5], [0, 0.47], [0.09, 0.5], [0.05, 0.545], [-0.05, 0.545]]), mat: strapM, light: { form: 0.4 } });
+          if (!up) pieces.push(...castShadow(ctx, [[-(wid(-0.1) - 0.04), -0.09], [-0.34, -0.14], [-0.2, -0.2], [0, -0.206], [0.2, -0.2], [0.34, -0.14], [wid(-0.1) - 0.04, -0.09]], 0.055, { shift: 0.02 }));
+          else pieces.push(...castShadow(ctx, [[-0.37, -0.12], [-0.2, -0.19], [0, -0.206], [0.2, -0.19], [0.37, -0.12]], 0.05, { shift: 0.02 }));
+          const paper = ctx.tok("paper-100"), cool = ctx.tok("slate-500");
+          const duo = !!(ctx.scheme && ctx.scheme.map && !ctx.scheme.spotKeep);
+          const vlines = [];
+          if (!up) {
+            const W0 = wid(0.05) + 0.078;
+            const v = (f, y, s = false, d = 0.08) => [-W0 * f, y, s, d];
+            const VL = [[0, -0.245, false, 0.15], [-W0 * 0.5, -0.248, false, 0.14], v(0.93, -0.215, true, 0.07), v(0.99, -0.1, false, 0.06), v(1, 0.1, false, 0.05), v(0.95, 0.3, false, 0.06), v(0.82, 0.45, false, 0.08), v(0.5, 0.545, false, 0.12), [0, 0.57, false, 0.14]];
+            const vd0 = M.path(ctx, M.sym(VL), 0.4);
+            const base = M.thin(M.samplePath(G, vd0, 4), 2);
+            vlines.push({ d: vd0, fill: paper, o: lo ? 0.3 : 0.2 });
+            const q0 = ctx.hp([0, 0.43], { flat: true }), q1 = ctx.hp([0, 1.43], { flat: true }), nl = Math.hypot(q1[0] - q0[0], q1[1] - q0[1]) || 1, nn = [(q1[0] - q0[0]) / nl, (q1[1] - q0[1]) / nl];
+            const fq = (p) => (p[0] - q0[0]) * nn[0] + (p[1] - q0[1]) * nn[1], band = [];
+            for (let i = 0; i < base.length; i++) {
+              const a = base[i], b = base[(i + 1) % base.length], fa = fq(a), fb = fq(b);
+              if (fa >= 0) band.push(a);
+              if (fa >= 0 !== fb >= 0) {
+                const t = fa / (fa - fb);
+                band.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+              }
+            }
+            if (band.length > 2) vlines.push({ d: G.poly(band), fill: paper, o: 0.2 });
+            const ringW = lo ? 0.036 : hi ? 0.028 : 0.035, bev = lo ? 0.014 : 9e-3;
+            const rim = M.relax(M.grow(base, bev * k), 1);
+            const inner = M.relax(M.grow(base, -ringW * k), 1);
+            const ringOf = (out, inn) => G.smooth(out, true, 0.5) + " " + G.smooth(M.area(out) * M.area(inn) > 0 ? inn.slice().reverse() : inn, true, 0.5);
+            vlines.push({ d: ringOf(rim, base), fill: cool, o: lo ? 0.5 : 0.4 });
+            vlines.push({ d: ringOf(base, inner), fill: duo ? ctx.accent("paper-100", 0.5) : paper, o: duo ? 0.3 : lo ? 0.5 : 0.35 });
+            if (mid) {
+              const bp = [[-0.3, -0.17], [-0.22, 0], [-0.12, 0.22], [-0.03, 0.43], [0.03, 0.57]].map(([x, y]) => [x, y, false, 0.1]);
+              const bw = [8e-3, 0.085, 0.105, 0.075, 8e-3];
+              vlines.push({ d: M.stroke(ctx, bp, bw.map((w) => w * 1.7), 0.1), fill: paper, o: 0.1 });
+              vlines.push({ d: M.stroke(ctx, bp, bw.map((w) => w * 1.2), 0.1), fill: paper, o: 0.16 });
+              vlines.push({ d: M.stroke(ctx, bp, bw.map((w) => w * 0.7), 0.1), fill: paper, o: 0.26 });
+            }
+          } else {
+            const UL = [[0, -0.62, false, 0.03], [-cw * 0.45, -0.605, false, 0.03], [-cw * 0.82, -0.52, false, 0.03], [-cw * 1.05, -0.4, false, 0.03], [-cw * 1.14, -0.28, true, 0.03], [-cw * 0.6, -0.262, false, 0.03], [0, -0.25, false, 0.03]];
+            vlines.push({ d: M.path(ctx, M.sym(UL), 0.4), fill: paper, o: 0.3 });
+            if (mid) {
+              const bp = [[-cw * 0.9, -0.33], [-cw * 0.6, -0.46], [-cw * 0.25, -0.56]].map(([x, y]) => [x, y, false, 0.03]);
+              const bw = [6e-3, 0.07, 6e-3];
+              vlines.push({ d: M.stroke(ctx, bp, bw.map((w) => w * 1.7), 0.03), fill: paper, o: 0.12 });
+              vlines.push({ d: M.stroke(ctx, bp, bw.map((w) => w * 1.2), 0.03), fill: paper, o: 0.2 });
+              vlines.push({ d: M.stroke(ctx, bp, bw.map((w) => w * 0.7), 0.03), fill: paper, o: 0.34 });
+            }
+          }
+          pieces.push({ id: "hat-visor", z: ctx.Z.hat + 0.3, over: vlines });
+          const W1 = wid(0.05) + 0.078;
+          if (hi) for (const s of [-1, 1]) {
+            const c = up ? [s * cw * 1.14, -0.25] : [s * W1 * 0.93, -0.215];
+            pieces.push({ id: `hat-hinge-${s < 0 ? "R" : "L"}`, z: ctx.Z.hat + 0.35, d: M.mapD(G.ellipse(0, 0, 0.026, 0.026), (u, w) => ctx.hp([c[0] + u, c[1] + w], { depth: up ? 0.02 : 0.07 })), mat: ctx.mat("metal-gun", "metal"), light: { form: 0.6 } });
+          }
+          return pieces;
+        }
+      });
+    }
+  });
+
   // src/parts/head/ears-normal.js
   var require_ears_normal = __commonJS({
     "src/parts/head/ears-normal.js"(exports, module) {
@@ -5730,12 +8649,1504 @@ var B68Figure = (() => {
     }
   });
 
+  // src/core/spaces.js
+  var require_spaces = __commonJS({
+    "src/core/spaces.js"(exports, module) {
+      "use strict";
+      var G = require_geom();
+      function headSpace(R) {
+        const H = R.head;
+        function hp(p, opts = {}) {
+          let [x, y] = p;
+          if (H.yaw && !opts.flat) {
+            const r = H.w * Math.sqrt(Math.max(0.15, 1 - Math.pow(Math.max(0, y - 0.05) / 0.62, 2)));
+            const z = Math.sqrt(Math.max(0, r * r - x * x));
+            x = x + (z + (opts.depth || 0)) * Math.sin(H.yaw);
+          }
+          const q = [H.cx + x * H.k, H.cy + y * H.k];
+          return H.tilt ? G.rot(q, H.tilt, H.pivot) : q;
+        }
+        const hs = (d, opts) => G.mapPath(d, (p) => hp(p, opts));
+        return { hp, hs };
+      }
+      function torsoSpace(R) {
+        const yAt = (t) => R.y.shoulder + (R.y.crotch - R.y.shoulder) * t;
+        function tp(p) {
+          const Y = yAt(p[1]);
+          return R.torsoPt(p[0] * R.widthAt(Y), Y);
+        }
+        const ts = (d) => G.mapPath(d, tp);
+        return { tp, ts, yAt };
+      }
+      function limbProfile(R, limb, side, seg) {
+        if (limb === "arm") {
+          const w2 = R.arms[side].widths;
+          if (seg === "upper") return (u) => G.lerp(w2.top, w2.elbow, u) + Math.sin(Math.PI * Math.min(1, u * 1.3)) * (w2.bicep - (w2.top + w2.elbow) / 2) * 0.8;
+          return (u) => G.lerp(w2.elbow, w2.wrist, u) + Math.sin(Math.PI * Math.min(1, u * 1.6)) * (w2.forearm - (w2.elbow + w2.wrist) / 2) * 0.9;
+        }
+        const w = R.legs[side].widths;
+        if (seg === "upper") return (u) => G.lerp(w.thigh, w.knee, Math.pow(u, 0.85));
+        return (u) => G.lerp(w.knee, w.ankle, u) + Math.sin(Math.PI * Math.min(1, u * 1.5)) * (w.calf - (w.knee + w.ankle) / 2);
+      }
+      function boneSpace(R) {
+        function joints(limb, side, seg) {
+          const L = limb === "arm" ? R.arms[side] : R.legs[side];
+          const a = limb === "arm" ? L.shoulder : L.hip, b = limb === "arm" ? L.elbow : L.knee, c = limb === "arm" ? L.wrist : L.ankle;
+          return seg === "upper" ? [a, b] : seg === "lower" ? [b, c] : [a, b, c];
+        }
+        function bone(limb, side, seg = "upper") {
+          const J = joints(limb, side, seg);
+          if (seg === "whole") {
+            const up = bone(limb, side, "upper"), lo = bone(limb, side, "lower");
+            const l1 = G.dist(J[0], J[1]), l2 = G.dist(J[1], J[2]), split = l1 / (l1 + l2);
+            const bp2 = (p) => p[0] <= split ? up.bp([p[0] / split, p[1]]) : lo.bp([(p[0] - split) / (1 - split), p[1]]);
+            return { bp: bp2, bs: (d) => G.mapPath(d, bp2), hw: (u) => u <= split ? up.hw(u / split) : lo.hw((u - split) / (1 - split)), a: J[0], b: J[2], split };
+          }
+          const [a, b] = J;
+          const dir = G.norm(G.sub(b, a));
+          const n = [dir[1], -dir[0]];
+          const hw = limbProfile(R, limb, side, seg);
+          const bp = (p) => G.add(G.lerp(a, b, p[0]), G.mul(n, p[1] * hw(Math.max(0, Math.min(1, p[0])))));
+          return { bp, bs: (d) => G.mapPath(d, bp), hw, a, b, dir, n, len: G.dist(a, b) };
+        }
+        return { bone, limbProfile: (limb, side, seg) => limbProfile(R, limb, side, seg) };
+      }
+      module.exports = { headSpace, torsoSpace, boneSpace, limbProfile };
+    }
+  });
+
+  // src/core/body.js
+  var require_body = __commonJS({
+    "src/core/body.js"(exports, module) {
+      "use strict";
+      var G = require_geom();
+      var { limbProfile } = require_spaces();
+      function torso(R, opts = {}) {
+        var _a, _b, _c;
+        const hh = R.hh, w = R.w, y = R.y;
+        const e = ((_a = opts.ease) != null ? _a : 0.03) * hh;
+        const hem = (_b = opts.hem) != null ? _b : y.hip + 0.15 * hh;
+        const flare = (opts.flare || 0) * hh;
+        const drop = (opts.shoulderDrop || 0) * hh;
+        const nl = opts.neckline || "high";
+        const sides = {};
+        for (const s of ["R", "L"]) {
+          const k = R.sx(s);
+          const P = (x, Y) => R.torsoPt(k * x, Y);
+          const pts = {
+            neck: P(w.neckBase + e * 0.4 + (nl === "boat" ? 0.22 * hh : nl === "scoop" ? 0.1 * hh : 0), y.neckBase - 0.03 * hh - (nl === "turtle" ? 0.3 * hh : 0)),
+            trap: P(w.neckBase + (w.shoulder - w.neckBase) * 0.5 + e * 0.7, y.neckBase + 0.075 * hh - e * 0.25 + drop * 0.5),
+            shTop: P(w.shoulder - 0.13 * hh + e, y.shoulder + 0.02 * hh - e * 0.3 + drop),
+            shPt: P(w.shoulder + e, y.shoulder + 0.24 * hh + drop),
+            armpit: P(w.chest * 0.98 + e, y.chest - 0.24 * hh),
+            chest: P(w.chest + e, y.chest),
+            waist: P(w.waist + e, y.waist),
+            hip: P(w.hip + e, y.hip)
+          };
+          if (hem > y.hip + 0.05 * hh) pts.hipLow = P(R.widthAt(Math.min(hem, y.crotch)) + e + flare * Math.min(1, (Math.min(hem, y.crotch) - y.hip) / Math.max(1, hem - y.hip)), Math.min(hem, y.crotch) - (hem > y.crotch ? 0 : 0.02 * hh));
+          pts.hem = [...P(R.widthAt(Math.min(hem, y.crotch + 3 * hh)) + e + flare, hem), true];
+          if (hem < y.waist + 0.05 * hh) {
+            delete pts.hip;
+            delete pts.hipLow;
+            pts.hem = [...P(R.widthAt(hem) + e + flare, hem), true];
+          }
+          if (hem < y.chest + 0.05 * hh) {
+            delete pts.waist;
+          }
+          sides[s] = pts;
+        }
+        const order = ["neck", "trap", "shTop", "shPt", "armpit", "chest", "waist", "hip", "hipLow", "hem"];
+        const Lpts = order.filter((n) => sides.R[n]).map((n) => sides.R[n]);
+        const Rpts = order.filter((n) => sides.L[n]).map((n) => sides.L[n]).reverse();
+        const c = R.centerAt(hem);
+        const hemMid = [c, hem + (opts.hemCurve || 0) * hh];
+        const nc = R.centerAt(y.neckBase);
+        const neckPts = [];
+        const depth = ((_c = opts.depth) != null ? _c : nl === "v" ? 0.7 : nl === "scoop" ? 0.35 : nl === "crew" ? 0.1 : nl === "boat" ? 0.05 : 0) * hh;
+        if (nl === "v") neckPts.push([nc, y.neckBase + depth, true]);
+        else if (depth > 0) neckPts.push([nc, y.neckBase - 0.03 * hh + depth]);
+        else if (nl === "turtle") neckPts.push([nc, y.neckBase - 0.36 * hh]);
+        else neckPts.push([nc, y.neckBase - 0.05 * hh]);
+        const all = [...Lpts, hemMid, ...Rpts, ...neckPts];
+        if (nl === "v") {
+          all[0] = [...all[0].slice(0, 2), true];
+          all[all.length - 2] = [...all[all.length - 2].slice(0, 2), true];
+        }
+        return { d: G.smooth(all, true, 0.45), pts: sides, L: sides.L, R: sides.R, hem, hemMid, neckMid: neckPts[0] };
+      }
+      function limb(R, limbName, side, opts = {}) {
+        var _a, _b;
+        const L = limbName === "arm" ? R.arms[side] : R.legs[side];
+        const a = limbName === "arm" ? L.shoulder : L.hip, b = limbName === "arm" ? L.elbow : L.knee, c = limbName === "arm" ? L.wrist : L.ankle;
+        const e = (opts.ease || 0) * R.hh;
+        const ws = opts.widthScale || 1;
+        const l1 = G.dist(a, b), l2 = G.dist(b, c), split = l1 / (l1 + l2);
+        const up = limbProfile(R, limbName, side, "upper"), lo = limbProfile(R, limbName, side, "lower");
+        const base = (u) => u <= split ? up(u / split) : lo((u - split) / (1 - split));
+        const hw = (u) => (opts.hw ? opts.hw(u, base(u)) : base(u) * ws) + e;
+        const u0 = (_a = opts.from) != null ? _a : 0, u1 = (_b = opts.to) != null ? _b : 1;
+        const at = (u) => u <= split ? G.lerp(a, b, u / split) : G.lerp(b, c, (u - split) / (1 - split));
+        const d1 = G.norm(G.sub(b, a)), d2 = G.norm(G.sub(c, b));
+        const bend = Math.acos(Math.max(-1, Math.min(1, d1[0] * d2[0] + d1[1] * d2[1])));
+        const capStart = opts.capStart || (limbName === "arm" && u0 === 0 ? "round" : "flat");
+        const capEnd = opts.capEnd || "flat";
+        const N = 10;
+        const mk = (s0, s1, cs, ce) => {
+          const pts = [];
+          for (let i = 0; i <= N; i++) pts.push(at(G.lerp(s0, s1, i / N)));
+          const prof = (t) => hw(G.lerp(s0, s1, t));
+          return G.tube(pts, prof, { capStart: cs, capEnd: ce, samples: 22, tension: 0.5 });
+        };
+        if (bend < 0.45 || u1 <= split + 0.02 || u0 >= split - 0.02) {
+          const span = Math.max(0.05, u1 - u0), M = Math.max(4, Math.ceil(16 * span));
+          const pts = [];
+          for (let i = 0; i <= M; i++) pts.push(at(G.lerp(u0, u1, i / M)));
+          const d = G.tube(pts, (t) => hw(G.lerp(u0, u1, t)), { capStart, capEnd, samples: Math.min(28, Math.max(10, Math.ceil(28 * span) + 6)), tension: 0.5 });
+          return { d, pieces: [{ d, seg: "whole" }], merged: true, split, hw, at };
+        }
+        const dUp = mk(u0, split + 0.015, capStart, "round");
+        const dLo = mk(split - 0.015, u1, "round", capEnd);
+        return { d: null, pieces: [{ d: dUp, seg: "upper" }, { d: dLo, seg: "lower" }], merged: false, split, hw, at };
+      }
+      function trousers(R, opts = {}) {
+        var _a, _b;
+        const hh = R.hh, y = R.y;
+        const e = ((_a = opts.ease) != null ? _a : 0.04) * hh;
+        const top = opts.rise === "high" ? y.waist - 0.12 * hh : opts.rise === "low" ? y.hip - 0.12 * hh : y.waist + 0.05 * hh;
+        const cut = opts.cut || "straight";
+        const hemU = (_b = { ankle: 1, floor: 1.04, crop: 0.9, knee: 0.52, shorts: 0.28 }[opts.hem || "ankle"]) != null ? _b : 1;
+        const legs = {};
+        for (const s of ["R", "L"]) {
+          const Lg = R.legs[s];
+          const lw = Lg.widths;
+          const k = R.sx(s);
+          const kneeW = lw.knee + e * 0.8, thighW = lw.thigh + e;
+          const prof = (u) => {
+            const knU = 0.5;
+            if (cut === "wide") return Math.max(thighW, G.lerp(thighW, thighW * 1.08, u));
+            if (u < knU) return G.lerp(thighW, kneeW * (cut === "skinny" ? 0.95 : 1.05), Math.pow(u / knU, 0.9));
+            const t = (u - knU) / (1 - knU);
+            if (cut === "flare") return G.lerp(kneeW * 1.05, kneeW * 1.75, Math.pow(t, 1.4));
+            if (cut === "slim" || cut === "skinny") return G.lerp(kneeW * (cut === "skinny" ? 0.95 : 1.05), (lw.ankle + e) * (cut === "skinny" ? 1.05 : 1.3), t);
+            return G.lerp(kneeW * 1.05, kneeW * 1.02, t);
+          };
+          const pts2 = [];
+          const M = 18;
+          const hemTo = Math.min(1.04, hemU);
+          const cl = [Lg.hip, Lg.knee, [Lg.ankle[0], Lg.ankle[1] + (opts.hem === "floor" ? 0.22 * hh : 0.06 * hh)]];
+          const dense = G.resample(cl, 40, 0.5);
+          const atU = (u) => {
+            const f = Math.max(0, Math.min(1, u)) * (dense.length - 1);
+            const i = Math.min(dense.length - 2, Math.floor(f));
+            return G.lerp(dense[i], dense[i + 1], f - i);
+          };
+          const outer = [], inner = [];
+          for (let i = 0; i <= M; i++) {
+            const u = i / M * hemTo;
+            const p = atU(u), p2 = atU(Math.min(1, u + 0.02)), p1 = atU(Math.max(0, u - 0.02));
+            const dir = G.norm(G.sub(p2, p1));
+            let n = [dir[1], -dir[0]];
+            if (n[0] * k < 0) n = [-n[0], -n[1]];
+            const w = prof(u);
+            outer.push(G.add(p, G.mul(n, w)));
+            inner.push(G.sub(p, G.mul(n, w)));
+          }
+          legs[s] = { outer, inner, prof, atU, hemTo };
+        }
+        const topL = R.torsoPt(-(R.widthAt(top) + e), top), topR = R.torsoPt(R.widthAt(top) + e, top);
+        const hipL = R.torsoPt(-(R.w.hip + e), y.hip), hipR = R.torsoPt(R.w.hip + e, y.hip);
+        const crotch = [R.pelvisShift + 0, y.crotch + 0.06 * hh, true];
+        const Ls = legs.R, Rs = legs.L;
+        const mark = (p) => [p[0], p[1], true];
+        const pts = [
+          mark(topL),
+          hipL,
+          ...Ls.outer.slice(1, -1),
+          mark(Ls.outer[Ls.outer.length - 1]),
+          mark(Ls.inner[Ls.inner.length - 1]),
+          ...Ls.inner.slice(2, -1).reverse(),
+          crotch,
+          ...Rs.inner.slice(2, -1),
+          mark(Rs.inner[Rs.inner.length - 1]),
+          mark(Rs.outer[Rs.outer.length - 1]),
+          ...Rs.outer.slice(1, -1).reverse(),
+          hipR,
+          mark(topR)
+        ];
+        return { d: G.smooth(pts, true, 0.42), legs, top, crotch, topL, topR };
+      }
+      function neck(R, opts = {}) {
+        const hh = R.hh, y = R.y, w = R.w;
+        const c0 = R.head.cx, c1 = R.centerAt(y.neckBase);
+        const wt = w.neck * (opts.width || 1), wb = w.neckBase * (opts.width || 1);
+        const top = y.neckTop;
+        const pts = [
+          [c0 - wt, top],
+          [c0 - wt * 1, y.chin + 0.05 * hh],
+          [c1 - wb * 0.98, y.neckBase - 0.02 * hh],
+          [c1 - wb * 1.25, y.neckBase + 0.1 * hh],
+          [c1 + wb * 1.25, y.neckBase + 0.1 * hh],
+          [c1 + wb * 0.98, y.neckBase - 0.02 * hh],
+          [c0 + wt * 1, y.chin + 0.05 * hh],
+          [c0 + wt, top]
+        ];
+        return { d: G.smooth(pts, true, 0.4), top, base: y.neckBase };
+      }
+      module.exports = { torso, limb, trousers, neck };
+    }
+  });
+
+  // src/core/context.js
+  var require_context = __commonJS({
+    "src/core/context.js"(exports, module) {
+      "use strict";
+      var G = require_geom();
+      var C = require_color();
+      var T = require_tokens();
+      var B = require_body();
+      var SP = require_spaces();
+      var REG = require_registry();
+      function mulberry(seed) {
+        let a = seed >>> 0;
+        return () => {
+          a |= 0;
+          a = a + 1831565813 | 0;
+          let t = Math.imul(a ^ a >>> 15, 1 | a);
+          t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+      }
+      function defaultHead(R) {
+        const w = R.head.w;
+        return {
+          w,
+          crown: -0.5,
+          hairline: -0.28,
+          temple: -0.2,
+          templeW: w * 0.93,
+          brow: -0.085,
+          eyeY: 0,
+          eyeX: 0.155,
+          eyeW: 0.125,
+          eyeH: 0.05,
+          cheekY: 0.1,
+          cheekW: w,
+          noseY: 0.205,
+          noseW: 0.075,
+          noseTipY: 0.17,
+          mouthY: 0.31,
+          mouthW: 0.135,
+          jawY: 0.33,
+          jawW: w * 0.8,
+          chinY: 0.5,
+          chinW: 0.12,
+          earTop: -0.05,
+          earBot: 0.19,
+          earX: w * 0.97,
+          hatLine: -0.33,
+          // head-space y where a hat's brow band sits
+          outline: null
+          // set by the head part: the skull/face outline path in head space
+        };
+      }
+      var UNDER = {
+        outer: { ease: 0.012, waist: 0, drop: 0.075, arm: 0.025, cuff: 0.04 },
+        // under a coat: hidden, so tight
+        inner: { ease: 0.02, waist: 0.01, drop: 0, arm: 0.03, cuff: 0.045 }
+        // under a waistcoat or dress: still partly seen
+      };
+      function underCaps(ctx) {
+        const u = ctx.under;
+        return u && u.torso ? UNDER[u.torso] : null;
+      }
+      function underArm(ctx, o) {
+        var _a;
+        const u = ctx.under;
+        if (!u || !u.arms || !o || o.ease == null) return o;
+        const c = UNDER[u.arms], cuff = ((_a = o.from) != null ? _a : 0) >= 0.8, hw0 = o.hw;
+        const head = (u0) => u.arms === "outer" && !cuff ? 0.7 + 0.3 * Math.min(1, Math.max(0, u0 / 0.16)) : 1;
+        return { ...o, ease: Math.min(o.ease, cuff ? c.cuff : c.arm), hw: (u0, b) => Math.min(hw0 ? hw0(u0, b) : b, b) * head(u0), widthScale: Math.min(o.widthScale || 1, 1) };
+      }
+      function underTorso(ctx, o = {}) {
+        var _a;
+        const c = underCaps(ctx);
+        if (!c) return o;
+        return { ...o, ease: Math.min((_a = o.ease) != null ? _a : 0.03, c.ease), shoulderDrop: Math.max(o.shoulderDrop || 0, c.drop) };
+      }
+      function exprGain(pxHead) {
+        const t = T.STYLE.exprGain || [];
+        if (!t.length || !(pxHead > 0)) return 1;
+        if (pxHead >= t[0][0]) return t[0][1];
+        for (let i = 1; i < t.length; i++) if (pxHead >= t[i][0]) {
+          const [p0, g0] = t[i - 1], [p1, g1] = t[i];
+          return g1 + (g0 - g1) * (pxHead - p1) / (p0 - p1);
+        }
+        return t[t.length - 1][1];
+      }
+      function makeCtx(S, R, o) {
+        const scheme = o.scheme;
+        const rng = mulberry(S.seed);
+        const hsp = SP.headSpace(R), tsp = SP.torsoSpace(R), bsp = SP.boneSpace(R);
+        let n = 0;
+        const ctx = {
+          S,
+          R,
+          G,
+          C,
+          T,
+          Z: T.Z,
+          scheme,
+          lod: o.lod,
+          scale: o.scale,
+          rng,
+          warnings: o.warnings,
+          pid: (name) => `${name}-${n++}`,
+          tok: (name) => {
+            const v = T.tok(name);
+            if (v) return v;
+            ctx.warn(`colour "${name}" is not a token; drew grey (use cloth-*, brand tokens or #rrggbb)`);
+            return T.tok("cloth-graphite");
+          },
+          mat: (colour, kind = "cloth", opts) => {
+            const m = C.material(colour, kind, scheme, opts);
+            if (m && m._bad && !o.warnings.some((w) => w.includes(`"${m._bad}"`))) ctx.warn(`colour "${m._bad}" is not a token; drew grey (use cloth-*, brand tokens or #rrggbb)`);
+            return m;
+          },
+          skin: C.material(S.skin, "skin", scheme),
+          hairMat: (colour) => C.material(colour || S.hair.color, "hair", scheme),
+          /* Scheme-aware accents (opt-in). Gradient-map schemes recolour by luminance, so in militants, veteran,
+             intellectual and characters a red band or an orange flame can land on the same brown as the jacket.
+             mapped(c): what colour c becomes under the scheme (c itself when the scheme has no map).
+             accent(c, role): the colour to draw so the result is the scheme's accent. Where the scheme maps and does not
+               keep spot colours, it returns the grey that lands on a stop: role "accent" (default) the most saturated
+               stop (militants' yellow), "light" the lightest, "dark" the darkest, or a number 0–1 for a map position.
+               Anywhere else it returns c unchanged (spot: true keeps colours in crews, hound, shadows, paranormal).
+             contrast(a, b): contrast ratio of two colours after mapping (≥ 3 reads as a shape against its neighbour). */
+          mapped: (c) => {
+            const h = ctx.tok(c);
+            return scheme && scheme.map ? C.mapThrough(h, scheme.map) : h;
+          },
+          accent: (c, role = "accent") => {
+            const h = ctx.tok(c);
+            if (!scheme || !scheme.map || scheme.spotKeep) return h;
+            const st = scheme.map, n2 = st.length - 1;
+            let t;
+            if (typeof role === "number") t = Math.max(0, Math.min(1, role));
+            else if (role === "light") t = 1;
+            else if (role === "dark") t = 0;
+            else {
+              let best = 0, bi = n2;
+              st.forEach((x, i) => {
+                const [r, g2, b] = C.rgb(x), ch = Math.max(r, g2, b) - Math.min(r, g2, b);
+                if (ch > best) {
+                  best = ch;
+                  bi = i;
+                }
+              });
+              t = n2 ? bi / n2 : 0;
+            }
+            const g = Math.round(t * 255);
+            return C.hex([g, g, g]);
+          },
+          contrast: (a, b) => C.contrast(ctx.mapped(a), ctx.mapped(b)),
+          px: (n2) => n2 / o.scale,
+          // output px → kit units
+          hh: R.hh,
+          sides: ["R", "L"],
+          sx: R.sx,
+          hp: hsp.hp,
+          hs: hsp.hs,
+          tp: tsp.tp,
+          ts: tsp.ts,
+          tyAt: tsp.yAt,
+          bone: bsp.bone,
+          body: {
+            torso: (opts) => B.torso(R, underTorso(ctx, opts)),
+            limb: (limb, side, opts) => B.limb(R, limb, side, limb === "arm" ? underArm(ctx, opts) : opts),
+            trousers: (opts) => B.trousers(R, opts),
+            neck: (opts) => B.neck(R, opts)
+          },
+          head: defaultHead(R),
+          // gain: how hard face parts push the expression at this LOD (T.STYLE.exprGain; 1 at hi, more when the face is small)
+          expr: { brow: { raise: 0, angle: 0, knit: 0 }, lid: { upper: 0, lower: 0, bags: 0, crinkle: 0, arc: 0 }, mouth: { curve: 0, width: 1, open: 0, smirk: 0, teeth: 0, snarl: 0, press: 0, dimple: 0 }, cheek: { apple: 0, wedge: 0, jaw: 0 }, nose: { wrinkle: 0 }, gaze: [0, 0], gain: exprGain(R.hh * o.scale) },
+          // true if a head-space x (or kit x when kit=true) sits on the shadow side (viewer-right with the default key light)
+          isShadowSide: (x, kit = false) => {
+            return o.light.side * (kit ? x - R.centerAt(R.y.chest) : x) > 0;
+          },
+          light: o.light,
+          // the resolved light (light.js): face parts read the key's side and pattern from it
+          lodAtLeast: (lvl) => ({ lo: 0, mid: 1, hi: 2 })[o.lod] >= { lo: 0, mid: 1, hi: 2 }[lvl],
+          part(kind, name, opts = {}) {
+            const p = REG.get(kind, name);
+            if (!p) {
+              ctx.warn(`${kind} "${name}" not found (available: ${REG.list(kind).map((x) => x.name).join(", ") || "none"})`);
+              return [];
+            }
+            const r = p.draw(ctx, opts);
+            return Array.isArray(r) ? r : r && r.pieces ? r.pieces : [];
+          },
+          cuts: o.cuts,
+          /* remove a region from every piece whose id matches the regex (e.g. arm and sleeve ends inside a pocket) */
+          cut: (match, d) => {
+            o.cuts.push({ match, d });
+          },
+          under: null,
+          underCaps: () => underCaps(ctx),
+          hems: {},
+          /* a garment that wraps the torso records its (side) hem so under-layers ending just below it get tucked in */
+          coverHem: (slot, y) => {
+            var _a;
+            ctx.hems[slot] = Math.min((_a = ctx.hems[slot]) != null ? _a : Infinity, y);
+          },
+          warn: (msg) => {
+            if (!o.warnings.includes(msg)) o.warnings.push(msg);
+          }
+        };
+        return ctx;
+      }
+      module.exports = { makeCtx, defaultHead, UNDER, mulberry, exprGain };
+    }
+  });
+
+  // src/core/spec.js
+  var require_spec = __commonJS({
+    "src/core/spec.js"(exports, module) {
+      "use strict";
+      var BUILD = { slight: 0.88, slim: 0.9, average: 1, athletic: 1.06, broad: 1.15, stocky: 1.18, heavy: 1.25, huge: 1.35 };
+      var V1_TOP = { turtleneck: "turtleneck", tee: "tee", suit: "suit-jacket", jacket: "field-jacket", coat: "overcoat", tactical: "tactical-jacket", dress: "shift-dress", overalls: "overalls" };
+      var V1_HAIR = { buzz: "buzz", flattop: "flattop", bob: "bowl-bob", sidepart: "side-part", short: "short", afro: "afro", long: "long", beanie: "short", bald: "bald" };
+      var V1_FACE = ["goatee", "moustache", "beard", "stubble", "glasses", "scar", "pimples", "unibrow"];
+      var V1_SHOES = { shoes: "oxfords", boots: "combat-boots", cowboy: "cowboy-boots", heels: "heels" };
+      function hash(s) {
+        let h = 2166136261;
+        for (const c of String(s)) {
+          h ^= c.charCodeAt(0);
+          h = Math.imul(h, 16777619);
+        }
+        return h >>> 0;
+      }
+      function isV1(s) {
+        const f = s.face || {};
+        return !!(s.top || s.bottom && !s.outfit || s.shoes || s.hands === "pockets" || V1_FACE.some((k) => f[k]) || s.hair && ["sidepart", "beanie"].includes(s.hair.style));
+      }
+      function upgradeV1(s) {
+        if (!isV1(s)) return s;
+        const o = { ...s };
+        const top = s.top || {}, bot = s.bottom || {}, sh = s.shoes || {};
+        if (!s.outfit && (s.top || s.bottom || s.shoes)) {
+          o.outfit = {};
+          if (top.type === "overalls") {
+            o.outfit.base = { type: "tee", color: top.color, sleeves: top.sleeves || "short" };
+            o.outfit.dress = { type: "overalls", color: top.overalls || bot.color };
+          } else if (top.type === "dress" || bot.type === "dress") {
+            o.outfit.dress = { type: "shift-dress", color: top.color || bot.color, length: bot.length, sleeves: top.sleeves };
+            if (bot.tights) o.outfit.legs = { type: "tights", color: bot.tights };
+          } else {
+            const t = V1_TOP[top.type] || "tee";
+            if (["suit-jacket", "field-jacket", "overcoat", "tactical-jacket"].includes(t)) {
+              o.outfit.base = top.turtle ? { type: "turtleneck", color: top.turtle } : { type: t === "suit-jacket" ? "shirt" : "tee", color: top.shirt || "cloth-cream" };
+              o.outfit.outer = { type: t, color: top.color, pattern: top.pattern, buttons: top.buttons, pockets: top.pockets, belt: top.belted };
+              if (top.tie) o.outfit.neck = { type: "tie", color: top.tie };
+            } else o.outfit.base = { type: t, color: top.color, pattern: top.pattern, sleeves: top.sleeves };
+            if (bot.type === "skirt") o.outfit.bottom = { type: bot.length === "mini" ? "mini-skirt" : bot.cut === "pencil" || bot.length === "knee" ? "pencil-skirt" : "a-line-skirt", color: bot.color };
+            else o.outfit.bottom = { type: bot.cargo ? "cargo-trousers" : "trousers", color: bot.color || top.color, pattern: bot.pattern, cut: bot.cut };
+          }
+          o.outfit.feet = { type: V1_SHOES[sh.type] || "oxfords", color: sh.color };
+        }
+        if (s.hair) {
+          o.hair = { ...s.hair, style: V1_HAIR[s.hair.style] || s.hair.style };
+          if (s.hair.style === "beanie" && !s.hair.hat) o.hair.hat = { type: "beanie", color: s.hair.hatColor || s.hair.color };
+        }
+        if (s.hands === "pockets") o.pose = { ...o.pose || {}, arms: { R: "pocket", L: "pocket" } };
+        if (s.bigLeg) o.body = { ...o.body || {}, bigLeg: s.bigLeg === "right" ? "R" : s.bigLeg === "left" ? "L" : s.bigLeg };
+        const f = s.face || {};
+        o.face = { ...f };
+        if (f.goatee || f.moustache || f.beard || f.stubble) o.face.facialHair = { type: f.goatee ? "goatee" : f.beard ? "beard-full" : f.moustache ? "moustache" : "stubble" };
+        if (f.glasses) o.face.eyewear = f.glasses === "shades" ? "shades" : "round-wire";
+        for (const k of V1_FACE) delete o.face[k];
+        const marks = [];
+        if (f.scar) marks.push({ type: "scar" });
+        if (f.pimples) marks.push({ type: "spots" });
+        if (marks.length) o.face.marks = marks;
+        if (f.unibrow) o.face.brows = "unibrow";
+        if (f.nose === "broken") o.face.nose = "broken";
+        if (typeof s.build === "string" && !s.shape) o.shape = { heavy: "rect", broad: "rect", athletic: "invtri", slight: "column", average: "lean" }[s.build] || "lean";
+        o.props = (s.props || []).map((p) => typeof p === "string" ? { type: p } : { ...p, side: p.side === "right" ? "R" : p.side === "left" ? "L" : p.side });
+        delete o.top;
+        delete o.bottom;
+        delete o.shoes;
+        delete o.hands;
+        return o;
+      }
+      var KEY_FIX = { colour: "color", colour2: "color2", grey: "grey", eye: "eyes", brow: "brows", lip: "lips", hairstyle: "style" };
+      function fixKeys(o, path, fixed) {
+        if (!o || typeof o !== "object" || Array.isArray(o)) return;
+        for (const k of Object.keys(o)) {
+          const to = KEY_FIX[k];
+          if (to && to !== k && o[to] === void 0) {
+            o[to] = o[k];
+            delete o[k];
+            fixed.push(`${path}${k} \u2192 ${to}`);
+          }
+          if (o[to || k] && typeof o[to || k] === "object" && !Array.isArray(o[to || k])) fixKeys(o[to || k], `${path}${to || k}.`, fixed);
+        }
+      }
+      function normalise(input) {
+        var _a, _b, _c, _d;
+        const raw = JSON.parse(JSON.stringify(input || {}));
+        const fixed = [];
+        fixKeys(raw, "", fixed);
+        let s = upgradeV1(raw);
+        s._fixed = fixed;
+        s.id = s.id || "figure";
+        s.heightIn = +s.heightIn || 68;
+        s.figure = s.figure || "masc";
+        s.shape = s.shape || (s.figure === "fem" ? "slim" : "lean");
+        s.build = typeof s.build === "number" ? s.build : BUILD[s.build] || 1;
+        if (s.face && typeof s.face.age === "number") {
+          if (s.face.age <= 3) s.face.ageLevel = (_a = s.face.ageLevel) != null ? _a : s.face.age;
+          else s.age = (_b = s.age) != null ? _b : s.face.age;
+          delete s.face.age;
+        }
+        s.age = (_c = s.age) != null ? _c : 35;
+        s.skin = s.skin || "fair";
+        s.seed = Number.isInteger(s.seed) ? s.seed >>> 0 : s.seed != null ? hash(String(s.seed)) : hash(s.id);
+        s.body = s.body || {};
+        if (s.bigLeg && !s.body.bigLeg) s.body.bigLeg = s.bigLeg === "right" ? "R" : s.bigLeg === "left" ? "L" : s.bigLeg;
+        if (typeof s.pose === "string") s.pose = { stance: s.pose };
+        const p = s.pose = s.pose && typeof s.pose === "object" ? s.pose : {};
+        p.stance = p.stance || "square";
+        if (typeof p.arms === "string") p.arms = { R: p.arms, L: p.arms };
+        if (Array.isArray(p.arms)) p.arms = { R: p.arms[0], L: (_d = p.arms[1]) != null ? _d : p.arms[0] };
+        if (typeof p.hands === "string") p.hands = { R: p.hands, L: p.hands };
+        p.arms = { R: "down", L: "down", ...p.arms || {} };
+        if (p.arms.R === "cross" || p.arms.L === "cross") p.arms.R = p.arms.L = "cross";
+        p.head = p.head || {};
+        s.head = { shape: "oval", ...s.head || {} };
+        if (typeof s.face === "string") {
+          s._fixed.push(`face "${s.face}" is not an object; ignored`);
+          s.face = {};
+        }
+        s.face = { eyes: "almond", brows: "straight", nose: "straight", mouth: "neutral", expression: "neutral", ...s.face || {} };
+        if (typeof s.face.facialHair === "string") s.face.facialHair = { type: s.face.facialHair };
+        if (typeof s.face.eyewear === "string") s.face.eyewear = { type: s.face.eyewear };
+        if (typeof s.face.makeup === "string") s.face.makeup = { type: s.face.makeup };
+        if (typeof s.face.mask === "string") s.face.mask = { type: s.face.mask };
+        if (s.jewelry && !s.jewellery) {
+          s.jewellery = s.jewelry;
+          s._fixed.push("jewelry \u2192 jewellery");
+        }
+        delete s.jewelry;
+        s.jewellery = [].concat(s.jewellery || []).map((j) => typeof j === "string" ? { type: j } : j);
+        s.face.marks = [].concat(s.face.marks || []).map((m) => typeof m === "string" ? { type: m } : m);
+        if (typeof s.hair === "string") s.hair = { style: s.hair };
+        s.hair = { style: "short", color: "cloth-chocolate", ...s.hair || {} };
+        if (typeof s.hair.hat === "string") s.hair.hat = { type: s.hair.hat, color: s.hair.hatColor };
+        s.outfit = s.outfit || { base: { type: "tee", color: "cloth-cream" }, bottom: { type: "trousers", color: "cloth-charcoal" }, feet: { type: "oxfords", color: "cloth-black" } };
+        for (const k of Object.keys(s.outfit)) if (typeof s.outfit[k] === "string") s.outfit[k] = { type: s.outfit[k] };
+        s.props = [].concat(s.props || []).map((x) => typeof x === "string" ? { type: x } : x);
+        if (typeof s.companion === "string") s.companion = { type: s.companion };
+        return s;
+      }
+      var TOP_KEYS = ["id", "name", "plate", "code", "halo", "heightIn", "figure", "shape", "build", "heads", "skin", "age", "seed", "body", "pose", "head", "face", "hair", "outfit", "jewellery", "props", "companion", "scheme", "notes", "archetype", "playbook", "bigLeg", "top", "bottom", "shoes", "hands", "$comment"];
+      var SLOTS = ["base", "mid", "outer", "neck", "bottom", "dress", "legs", "feet", "waist", "hands"];
+      var COLOUR_KEYS = ["color", "color2", "grey", "frame", "lens", "lips", "band", "shaftColor", "buttonColor", "cuff", "pocketSquare", "browColor", "eyeColor"];
+      var COLOUR_WORDS = { lens: ["clear", "dark", "mirror"] };
+      function validate(raw, S, warn, o, L) {
+        const near = (v, list) => {
+          const l = String(v).toLowerCase();
+          return list.find((x) => x.startsWith(l.slice(0, 3)));
+        };
+        const choose = (what, v, list) => {
+          if (v == null || list.includes(v)) return true;
+          const n = near(v, list);
+          warn(`${what} "${v}" is not valid${n ? ` (did you mean "${n}"?)` : ""}; choose from: ${list.join(", ")}`);
+          return false;
+        };
+        const clamp = (what, v, lo, hi, set) => {
+          if (v == null || typeof v !== "number") return;
+          if (!isFinite(v) || v < lo || v > hi) {
+            const c = Math.max(lo, Math.min(hi, isFinite(v) ? v : lo));
+            warn(`${what} ${v} is outside ${lo}\u2013${hi}; using ${c}`);
+            set(c);
+          }
+        };
+        for (const f of S._fixed || []) warn(`spec key ${f}`);
+        for (const k of Object.keys(raw || {})) if (!TOP_KEYS.includes(k)) warn(`spec field "${k}" is not used (fields: ${TOP_KEYS.filter((x) => !["top", "bottom", "shoes", "hands", "$comment"].includes(x)).join(", ")})`);
+        if (raw && raw.heightIn != null && isNaN(+raw.heightIn)) warn(`heightIn "${raw.heightIn}" is not a number of inches; using 68`);
+        clamp("heightIn", S.heightIn, 40, 96, (v) => S.heightIn = v);
+        clamp("heads", S.heads, 5, 10, (v) => S.heads = v);
+        if (raw && typeof raw.build === "string" && !(raw.build in BUILD)) warn(`build "${raw.build}" is not valid; choose a number 0.85\u20131.35 or: ${Object.keys(BUILD).join(", ")}`);
+        clamp("build", S.build, 0.6, 1.6, (v) => S.build = v);
+        choose("figure", S.figure, ["masc", "fem"]);
+        choose("shape", S.shape, L.shapes);
+        choose("skin", S.skin, L.skins);
+        for (const [k, v] of Object.entries(S.body || {})) {
+          if (k === "type") choose("body.type", v, L.parts("body"));
+          else if (k === "bigLeg") choose("body.bigLeg", v, ["R", "L"]);
+          else if (k === "belly") clamp("body.belly", v, 0, 1.5, (x) => S.body.belly = x);
+          else if (["shoulders", "chest", "waist", "hips", "neck", "arms", "legs", "hands", "feet"].includes(k)) clamp(`body.${k}`, v, 0.5, 2, (x) => S.body[k] = x);
+          else warn(`body.${k} is not used (body: type, shoulders, chest, waist, hips, neck, arms, legs, hands, feet, belly, bigLeg)`);
+        }
+        const P = S.pose || {};
+        choose("pose.stance", P.stance, ["square", "easy", "wide"]);
+        if (P.weight != null) choose("pose.weight", P.weight, ["R", "L"]);
+        for (const sd of ["R", "L"]) choose(`pose.arms.${sd}`, P.arms[sd], L.armPoses);
+        if (P.hands) {
+          for (const sd of ["R", "L"]) if (P.hands[sd]) choose(`pose.hands.${sd}`, P.hands[sd], L.parts("hands"));
+        }
+        clamp("pose.stoop", P.stoop, 0, 1, (v) => P.stoop = v);
+        if (P.head) {
+          clamp("pose.head.tilt", P.head.tilt, -10, 10, (v) => P.head.tilt = v);
+          clamp("pose.head.yaw", P.head.yaw, -25, 25, (v) => P.head.yaw = v);
+        }
+        const sc = o.scheme || S.scheme;
+        if (sc) choose("scheme", sc, L.schemes);
+        if (o.lod) choose("lod", o.lod, ["hi", "mid", "lo"]);
+        const colourCheck = (obj, path) => {
+          if (!obj || typeof obj !== "object") return;
+          for (const [k, v] of Object.entries(obj)) {
+            if (COLOUR_KEYS.includes(k) && typeof v === "string" && !L.isColour(v) && !(COLOUR_WORDS[k] || []).includes(v)) warn(`${path}${k} "${v}" is not a colour token (use cloth-*, brand tokens such as ink-900, or #rrggbb)`);
+            else if (v && typeof v === "object" && !Array.isArray(v) && k !== "block") colourCheck(v, `${path}${k}.`);
+          }
+        };
+        colourCheck(S.face, "face.");
+        colourCheck(S.hair, "hair.");
+        colourCheck(S.companion, "companion.");
+        (S.props || []).forEach((p, i) => colourCheck(p, `props[${i}].`));
+        (S.jewellery || []).forEach((j, i) => colourCheck(j, `jewellery[${i}].`));
+        if (S.halo && !L.isColour(S.halo)) warn(`halo "${S.halo}" is not a colour token`);
+        for (const [slot, g] of Object.entries(S.outfit || {})) {
+          if (!SLOTS.includes(slot)) {
+            warn(`outfit.${slot} is not a slot; slots: ${SLOTS.join(", ")}`);
+            continue;
+          }
+          if (!g) continue;
+          colourCheck(g, `outfit.${slot}.`);
+          const pat = g.pattern && (typeof g.pattern === "string" ? g.pattern : g.pattern.type);
+          if (pat) choose(`outfit.${slot}.pattern`, pat, L.parts("textile"));
+        }
+      }
+      module.exports = { normalise, upgradeV1, validate, BUILD, hash };
+    }
+  });
+
+  // src/parts/jewellery/_jewel.js
+  var require_jewel = __commonJS({
+    "src/parts/jewellery/_jewel.js"(exports, module) {
+      "use strict";
+      var G = require_geom();
+      var REG = require_registry();
+      var { mulberry } = require_context();
+      var { hash } = require_spec();
+      var KAPPA = 0.5523;
+      var clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      function ellipseCCW(cx, cy, rx, ry = rx, rot = 0) {
+        const P = (x, y) => G.rot([cx + x, cy + y], rot, [cx, cy]);
+        const k = KAPPA;
+        const seg = [
+          [P(rx, -ry * k), P(rx * k, -ry), P(0, -ry)],
+          [P(-rx * k, -ry), P(-rx, -ry * k), P(-rx, 0)],
+          [P(-rx, ry * k), P(-rx * k, ry), P(0, ry)],
+          [P(rx * k, ry), P(rx, ry * k), P(rx, 0)]
+        ];
+        const s0 = P(rx, 0);
+        let d = `M${G.f(s0[0])} ${G.f(s0[1])}`;
+        for (const s of seg) d += " C" + s.map((p) => G.f(p[0]) + " " + G.f(p[1])).join(" ");
+        return d + " Z";
+      }
+      function ring(cx, cy, rx, ry, t, rot = 0) {
+        return G.ellipse(cx, cy, rx, ry, rot) + ellipseCCW(cx, cy, Math.max(rx - t, rx * 0.2), Math.max(ry - t, ry * 0.2), rot);
+      }
+      function arcPts(cx, cy, rx, ry, a0, a1, n = 6) {
+        const out = [];
+        for (let i = 0; i <= n; i++) {
+          const a = a0 + (a1 - a0) * i / n;
+          out.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]);
+        }
+        return out;
+      }
+      var matKind = (tok) => /^metal-/.test(String(tok)) ? "metal" : "satin";
+      function jmat(ctx, token, dflt = "metal-brass") {
+        const t = token || dflt;
+        return ctx.mat(t, matKind(t));
+      }
+      var minPx = (ctx) => ctx.px(ctx.lod === "lo" ? 2.4 : ctx.lod === "mid" ? 1.7 : 1.1);
+      function earsCovered(ctx) {
+        const F = ctx.S.face || {};
+        const m = F.mask && F.mask.type ? REG.get("mask", F.mask.type) : null;
+        if (!m) return false;
+        const cv = [].concat((typeof m.covers === "function" ? m.covers(F.mask, ctx.S) : m.covers) || []);
+        return cv.includes("ears");
+      }
+      function earAnchors(ctx) {
+        const name = ctx.S.head && ctx.S.head.ears || "normal";
+        const part = REG.get("ears", name) || REG.get("ears", "normal");
+        if (!part) return null;
+        let pcs;
+        try {
+          const r = part.draw(ctx, ctx.S.head || {});
+          pcs = Array.isArray(r) ? r : r && r.pieces || [];
+        } catch (e) {
+          return null;
+        }
+        const cx = ctx.R.head.cx, out = {};
+        for (const side of ["R", "L"]) {
+          const pc = pcs.find((p) => p && p.id === `ear-${side}` && p.d);
+          if (!pc) continue;
+          let pts;
+          try {
+            pts = G.parse(pc.d).filter((s) => s.p.length).map((s) => s.p[s.p.length - 1]);
+          } catch (e) {
+            continue;
+          }
+          if (!pts.length) continue;
+          let bot = pts[0], top = pts[0], far = pts[0];
+          for (const p of pts) {
+            if (p[1] > bot[1]) bot = p;
+            if (p[1] < top[1]) top = p;
+            if (Math.abs(p[0] - cx) > Math.abs(far[0] - cx)) far = p;
+          }
+          out[side] = { bot, top, out: far, h: bot[1] - top[1], k: ctx.R.sx(side) };
+        }
+        return out;
+      }
+      function polysOf(d, per = 6) {
+        const polys = [];
+        let pts = null, cur = null;
+        const flush = () => {
+          if (pts && pts.length > 2) polys.push(pts);
+          pts = null;
+        };
+        for (const s of G.parse(d)) {
+          if (s.c === "M") {
+            flush();
+            cur = s.p[0];
+            pts = [cur];
+          } else if (!pts) continue;
+          else if (s.c === "L") {
+            cur = s.p[0];
+            pts.push(cur);
+          } else if (s.c === "C") {
+            const [a, b, p] = s.p;
+            for (let i = 1; i <= per; i++) {
+              const t = i / per, u = 1 - t;
+              pts.push([u * u * u * cur[0] + 3 * u * u * t * a[0] + 3 * u * t * t * b[0] + t * t * t * p[0], u * u * u * cur[1] + 3 * u * u * t * a[1] + 3 * u * t * t * b[1] + t * t * t * p[1]]);
+            }
+            cur = p;
+          } else if (s.c === "Q") {
+            const [a, p] = s.p;
+            for (let i = 1; i <= per; i++) {
+              const t = i / per, u = 1 - t;
+              pts.push([u * u * cur[0] + 2 * u * t * a[0] + t * t * p[0], u * u * cur[1] + 2 * u * t * a[1] + t * t * p[1]]);
+            }
+            cur = p;
+          }
+        }
+        flush();
+        return polys;
+      }
+      function inPolys(polys, x, y) {
+        let w = 0;
+        for (const P of polys) for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+          const a = P[j], b = P[i], cr = (b[0] - a[0]) * (y - a[1]) - (x - a[0]) * (b[1] - a[1]);
+          if (a[1] <= y) {
+            if (b[1] > y && cr > 0) w++;
+          } else if (b[1] <= y && cr < 0) w--;
+        }
+        return w !== 0;
+      }
+      function hairCover(ctx) {
+        var _a;
+        const Hh = ctx.S.hair;
+        if (!Hh || !Hh.style) return null;
+        const F = ctx.S.face || {}, mk = F.mask && F.mask.type ? REG.get("mask", F.mask.type) : null;
+        if (mk && [].concat((typeof mk.covers === "function" ? mk.covers(F.mask, ctx.S) : mk.covers) || []).includes("hair")) return null;
+        const part = REG.get("hair", Hh.style);
+        if (!part) return null;
+        const saved = ctx.rng;
+        let pcs = [];
+        try {
+          ctx.rng = mulberry(hash(`${ctx.S.seed}:hair:${part.name}:`));
+          const r = part.draw(ctx, Hh);
+          pcs = Array.isArray(r) ? r : r && r.pieces || [];
+        } catch (e) {
+          pcs = [];
+        } finally {
+          ctx.rng = saved;
+        }
+        const shapes = [];
+        for (const p of pcs) if (p && p.d && p.mat && ((_a = p.z) != null ? _a : 0) > ctx.Z.earring) {
+          try {
+            const q = polysOf(p.d);
+            if (q.length) shapes.push(q);
+          } catch (e) {
+          }
+        }
+        if (!shapes.length) return null;
+        const inside = (p) => shapes.some((q) => inPolys(q, p[0], p[1]));
+        const hides = (p, r) => {
+          if (inside(p)) return true;
+          let n = 1, c = 0;
+          for (const f of [0.3, 0.6, 0.85, 1]) for (let i = 0; i < 12; i++) {
+            const a = i / 12 * Math.PI * 2 + f;
+            n++;
+            if (inside([p[0] + Math.cos(a) * r * f, p[1] + Math.sin(a) * r * f])) c++;
+          }
+          return c / n >= 0.1;
+        };
+        return { inside, hides };
+      }
+      function yawAway(ctx, k) {
+        const y = ctx.R.head.yaw || 0;
+        return Math.sign(y) * k;
+      }
+      function neckAt(ctx, Y) {
+        const { R, hh } = ctx, y = R.y;
+        const y0 = y.chin + 0.05 * hh, y1 = y.neckBase - 0.02 * hh;
+        const t = clamp((Y - y0) / (y1 - y0), 0, 1.4);
+        const c0 = R.head.cx, c1 = R.centerAt(y.neckBase);
+        const wt = R.w.neck, wb = R.w.neckBase * 0.98;
+        return { c: c0 + (c1 - c0) * Math.min(t, 1), hw: wt + (wb - wt) * Math.min(t, 1) + (t > 1 ? (t - 1) * (R.w.neckBase * 0.27) : 0) };
+      }
+      function strandSamples(pts, n, tension = 0.5) {
+        const dense = G.resample(pts, 80, tension);
+        const cum = [0];
+        for (let i = 1; i < dense.length; i++) cum.push(cum[i - 1] + G.dist(dense[i], dense[i - 1]));
+        const L = cum[cum.length - 1], out = [];
+        for (let j = 0; j < n; j++) {
+          const s = L * (j + 0.5) / n;
+          let i = 1;
+          while (i < cum.length - 1 && cum[i] < s) i++;
+          const t = (s - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]);
+          out.push({ p: G.lerp(dense[i - 1], dense[i], t), t: (j + 0.5) / n, tan: G.norm(G.sub(dense[i], dense[i - 1])) });
+        }
+        return { samples: out, length: L, dense };
+      }
+      function bandPath(b, u0, u1, hwAbs, bow) {
+        const V = (u) => hwAbs / b.hw(u);
+        const vs = [-1, -0.66, -0.33, 0, 0.33, 0.66, 1];
+        const sag = (v) => bow * (1 - v * v);
+        const edge = (u, dir) => (dir > 0 ? vs : vs.slice().reverse()).map((v) => b.bp([u + sag(v), v * V(u)]));
+        const mark = (pts) => pts.map((p, i) => i === 0 || i === pts.length - 1 ? [p[0], p[1], true] : p);
+        return G.smooth([...mark(edge(u0, 1)), ...mark(edge(u1, -1))], true, 0.4);
+      }
+      module.exports = { bandPath, G, KAPPA, clamp, ellipseCCW, ring, arcPts, matKind, jmat, minPx, earsCovered, earAnchors, hairCover, yawAway, neckAt, strandSamples };
+    }
+  });
+
+  // src/parts/jewellery/earrings.js
+  var require_earrings = __commonJS({
+    "src/parts/jewellery/earrings.js"(exports, module) {
+      "use strict";
+      var { register } = require_registry();
+      var J = require_jewel();
+      var { G } = J;
+      var STYLES = ["hoop", "stud", "drop", "disc"];
+      var ALIAS = { hoops: "hoop", studs: "stud", pearl: "drop", pearls: "drop", teardrop: "drop", tear: "drop", button: "disc", clip: "disc", mod: "disc", disk: "disc" };
+      var glint = (cx, cy, rx, ry, a0, a1, w) => ({ d: G.brush(J.arcPts(cx, cy, rx, ry, a0, a1, 5), [w * 0.15, w, w * 0.15]), fill: "light", o: 0.95 });
+      function hoop(ctx, side, A, o, mat, z, cover) {
+        var _a;
+        const { hh } = ctx, k = A.k, size = o.size, mid = ctx.lod === "mid";
+        const rMin = ctx.px(ctx.lod === "lo" ? 4.2 : ctx.lod === "mid" ? 3.4 : 0);
+        let R = Math.max(0.088 * hh * size, rMin);
+        const t = Math.max(0.023 * hh * Math.pow(size, 0.6) * ((_a = o.thick) != null ? _a : 1), mid ? ctx.px(2.6) : J.minPx(ctx));
+        const away = J.yawAway(ctx, k), sq = away > 0 ? 1 - 0.55 * Math.abs(Math.sin(ctx.R.head.yaw || 0)) : 1;
+        if (away > 0 && Math.abs(ctx.R.head.yaw || 0) > 0.14) z = ctx.Z.head - 0.2;
+        const cx = A.bot[0] + k * 0.1 * R, cy = A.bot[1] + R - 0.012 * hh;
+        const rx = R * sq;
+        const out = [];
+        const lines = ctx.lodAtLeast("hi") ? [glint(cx, cy, rx - t * 0.5, R - t * 0.5, Math.PI * 1.08, Math.PI * 1.55, t * 0.42)] : [];
+        if (ctx.lodAtLeast("mid") && ctx.C.lum(mat.base) > 0.7) lines.push({ d: G.brush(J.arcPts(cx, cy, rx - t * 0.74, R - t * 0.74, Math.PI * 0.03, Math.PI * 0.62, 6), [t * 0.08, t * 0.56, t * 0.5, t * 0.45, t * 0.3, t * 0.2, t * 0.06]), fill: "shade", o: 0.85 });
+        out.push({ id: `earring-hoop-${side}`, z, d: J.ring(cx, cy, rx, R, t), mat, lines, light: { form: mid ? 0.9 : 0.45 } });
+        const pr = Math.max(0.017 * hh * Math.sqrt(size), J.minPx(ctx) * 0.8), pc = [A.bot[0] + k * 4e-3 * hh, A.bot[1] - 6e-3 * hh];
+        if (!(cover && cover.inside(pc))) out.push({ id: `earring-post-${side}`, z: z + 0.01, d: G.circle(pc[0], pc[1], pr), mat, light: { form: 0.3, sheen: false } });
+        return out;
+      }
+      function stud(ctx, side, A, o, mat, z, cover) {
+        const { hh } = ctx, k = A.k;
+        const r = Math.max(0.036 * hh * o.size, ctx.px(ctx.lod === "lo" ? 3.2 : ctx.lod === "mid" ? 2.4 : 1.6));
+        const c = [A.bot[0] - k * 2e-3 * hh, A.bot[1] - 0.03 * hh];
+        if (cover && (cover.hides(c, r) || cover.inside(A.bot))) return [];
+        const out = [{ id: `earring-stud-${side}`, z, d: G.circle(c[0], c[1], r), mat, light: { form: 0.5 }, over: ctx.lodAtLeast("hi") ? [{ d: G.circle(c[0] - r * 0.32, c[1] - r * 0.34, r * 0.2), fill: "light", o: 0.95 }] : [] }];
+        if (o.stone) {
+          const sm = J.jmat(ctx, o.stone, "file-500");
+          out.push({ id: `earring-stone-${side}`, z: z + 0.01, d: G.circle(c[0], c[1], r * 0.58), mat: sm, light: { form: 0.4 }, over: ctx.lodAtLeast("mid") ? [{ d: G.circle(c[0] - r * 0.18, c[1] - r * 0.2, r * 0.16), fill: "light", o: 0.95 }] : [] });
+        }
+        return out;
+      }
+      function drop(ctx, side, A, o, mat, z, cover) {
+        const { hh } = ctx, k = A.k, size = o.size;
+        const gem = o.gem === "tear" || o.gem === "teardrop" ? "tear" : "pearl";
+        const gemMat = J.jmat(ctx, o.gemColor, gem === "pearl" ? "cloth-cream" : "metal-brass");
+        const metal = mat;
+        const rp = Math.max(0.043 * hh * size, ctx.px(ctx.lod === "lo" ? 3.6 : ctx.lod === "mid" ? 2.8 : 1.8));
+        const capR = Math.max(0.017 * hh * Math.sqrt(size), J.minPx(ctx) * 0.8);
+        const cap = [A.bot[0], A.bot[1] - 8e-3 * hh];
+        const top = [cap[0] + k * 2e-3 * hh, cap[1] + 0.022 * hh + capR];
+        const out = [];
+        const stoneAt = [top[0], top[1] + rp * 0.92 + (gem === "pearl" ? 0 : rp * 0.9)];
+        if (cover && cover.hides(stoneAt, rp)) return [];
+        const capHidden = !!(cover && cover.inside(cap));
+        out.push({ id: `earring-link-${side}`, z, d: G.brush([cap, top], Math.max(J.minPx(ctx), 0.011 * hh)), mat: metal, light: { form: 0.3, sheen: false } });
+        if (gem === "pearl") {
+          const c = [top[0], top[1] + rp * 0.92];
+          out.push({ id: `earring-pearl-${side}`, z: z + 0.01, d: G.circle(c[0], c[1], rp), mat: gemMat, light: { form: 0.55 }, over: ctx.lodAtLeast("mid") ? [{ d: G.circle(c[0] - rp * 0.34, c[1] - rp * 0.36, rp * 0.2), fill: "light", o: 0.95 }] : [] });
+        } else {
+          const L = rp * 3.4, w = rp * 1.7;
+          const tip = top, bc = [top[0], top[1] + L - w / 2];
+          const pts = [tip, [tip[0] + w * 0.2, tip[1] + L * 0.2], [bc[0] + w * 0.5, bc[1] - w * 0.05], [bc[0], bc[1] + w * 0.5], [bc[0] - w * 0.5, bc[1] - w * 0.05], [tip[0] - w * 0.2, tip[1] + L * 0.2]];
+          pts[0] = [tip[0], tip[1], true];
+          out.push({ id: `earring-tear-${side}`, z: z + 0.01, d: G.smooth(pts, true, 0.45), mat: gemMat, light: { form: 0.6 }, over: ctx.lodAtLeast("mid") ? [{ d: G.brush([[bc[0] - w * 0.2, bc[1] - w * 0.1], [bc[0] - w * 0.24, bc[1] + w * 0.12]], [w * 0.03, w * 0.13, w * 0.03]), fill: "light", o: 0.95 }] : [] });
+        }
+        if (!capHidden) out.push({ id: `earring-cap-${side}`, z: z + 0.02, d: G.circle(cap[0], cap[1], capR), mat: metal, light: { form: 0.3, sheen: false } });
+        return out;
+      }
+      function disc(ctx, side, A, o, mat, z, cover) {
+        const { hh } = ctx, k = A.k;
+        const r = Math.max(0.09 * hh * o.size, ctx.px(ctx.lod === "lo" ? 4.6 : ctx.lod === "mid" ? 3.6 : 2));
+        const away = J.yawAway(ctx, k), sq = away > 0 ? 1 - 0.4 * Math.abs(Math.sin(ctx.R.head.yaw || 0)) : 1;
+        const c = [A.bot[0] + k * 6e-3 * hh, A.bot[1] - 0.012 * hh];
+        if (cover && (cover.hides(c, r) || cover.inside(A.bot))) return [];
+        const lines = [];
+        if (ctx.lodAtLeast("mid")) lines.push({ d: J.ring(c[0], c[1], r * 0.8 * sq, r * 0.8, r * 0.07), fill: "shade", o: 0.5 });
+        if (ctx.lodAtLeast("hi")) lines.push(glint(c[0], c[1], r * 0.62 * sq, r * 0.62, Math.PI * 1.1, Math.PI * 1.55, r * 0.12));
+        return [{ id: `earring-disc-${side}`, z, d: G.ellipse(c[0], c[1], r * sq, r), mat, lines, light: { form: 0.5 } }];
+      }
+      register({
+        kind: "jewellery",
+        name: "earrings",
+        aliases: ["earring"],
+        describe: "Earrings on the lobes: the big 60s hoop (hanging below the lobe), a stud, a pearl or teardrop drop, or a mod disc (the cover's white button). Under the hair: where hair covers the lobe a stud or disc is not drawn and a hoop shows only below the hem; follows head tilt and yaw (the far hoop hangs behind the jaw).",
+        params: {
+          style: "hoop (default) | stud | drop | disc",
+          side: "both (default) | R | L",
+          color: "metal-brass by default; any token (cloth-white for white hoops and discs); for drop it is the pearl or tear colour",
+          size: "0.5-2.2 (1)",
+          thick: "hoop wire thickness multiplier (1)",
+          gem: "drop only: pearl (default) | tear",
+          metal: "drop only: the cap and link metal token (metal-brass)",
+          stone: "stud only: a token for a centre stone"
+        },
+        example: { jewellery: [{ type: "earrings", style: "hoop" }] },
+        draw(ctx, o) {
+          let style = ALIAS[o.style] || o.style || "hoop";
+          const opt = { ...o };
+          if (o.style && ALIAS[o.style] && (o.style === "pearl" || o.style === "pearls")) opt.gem = o.gem || "pearl";
+          if (o.style === "teardrop" || o.style === "tear") opt.gem = "tear";
+          if (!STYLES.includes(style)) {
+            ctx.warn(`earrings style "${o.style}" is not valid; choose from: ${STYLES.join(", ")}`);
+            style = "hoop";
+          }
+          opt.style = style;
+          opt.size = J.clamp(+o.size || 1, 0.5, 2.2);
+          if (J.earsCovered(ctx)) return [];
+          const anchors = J.earAnchors(ctx);
+          if (!anchors) return [];
+          const sd = String(o.side || "both").toUpperCase(), sides = sd === "R" ? ["R"] : sd === "L" ? ["L"] : ["R", "L"];
+          if (o.side && !["BOTH", "R", "L"].includes(sd)) ctx.warn(`earrings side "${o.side}" is not valid; choose both, R or L`);
+          const z = ctx.Z.earring, out = [], cover = J.hairCover(ctx);
+          const mat = J.jmat(ctx, style === "drop" ? o.metal : o.color, "metal-brass");
+          for (const side of sides) {
+            const A = anchors[side];
+            if (!A) continue;
+            const fn = { hoop, stud, drop, disc }[style];
+            out.push(...fn(ctx, side, A, style === "drop" ? { ...opt, gemColor: o.color } : opt, mat, z, cover));
+          }
+          return out;
+        }
+      });
+      module.exports = { STYLES };
+    }
+  });
+
+  // src/parts/props/_insignia.js
+  var require_insignia = __commonJS({
+    "src/parts/props/_insignia.js"(exports, module) {
+      "use strict";
+      var G = require_geom();
+      var NAMES = ["fist", "torque", "star", "peace", "bolt", "eye", "key", "anchor", "cross", "crescent", "gear", "wings"];
+      var TAU = Math.PI * 2;
+      var K = 0.5523;
+      var area = (pts) => {
+        let a = 0;
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i], q = pts[(i + 1) % pts.length];
+          a += p[0] * q[1] - q[0] * p[1];
+        }
+        return a / 2;
+      };
+      var cw = (pts) => area(pts) >= 0 ? pts : pts.slice().reverse();
+      var ccw = (pts) => area(pts) <= 0 ? pts : pts.slice().reverse();
+      var solid = (pts) => G.poly(cw(pts));
+      var hole = (pts) => G.poly(ccw(pts));
+      var rect = (x0, y0, x1, y1) => solid([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
+      var circ = (cx, cy, r) => G.ellipse(cx, cy, r, r);
+      var holeCircle = (cx, cy, r) => {
+        const P = (x, y) => [cx + x, cy + y], k = K * r;
+        const seg = [[P(r, -k), P(k, -r), P(0, -r)], [P(-k, -r), P(-r, -k), P(-r, 0)], [P(-r, k), P(-k, r), P(0, r)], [P(k, r), P(r, k), P(r, 0)]];
+        let d = `M${G.f(cx + r)} ${G.f(cy)}`;
+        for (const s of seg) d += " C" + s.map((p) => G.f(p[0]) + " " + G.f(p[1])).join(" ");
+        return d + " Z";
+      };
+      var polar = (cx, cy, r, a) => [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
+      var ribbonPts = (pts, w) => {
+        const L = [], R = [];
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], n = G.perp(G.norm(G.sub(b, a)));
+          L.push(G.add(pts[i], G.mul(n, w / 2)));
+          R.push(G.sub(pts[i], G.mul(n, w / 2)));
+        }
+        return [...L, ...R.reverse()];
+      };
+      var arc = (cx, cy, r, a0, a1, n) => {
+        const o = [];
+        for (let i = 0; i <= n; i++) o.push(polar(cx, cy, r, a0 + (a1 - a0) * i / n));
+        return o;
+      };
+      var bar = (a, b, w) => {
+        const d = G.norm(G.sub(b, a)), n = G.perp(d), h = w / 2;
+        return solid([G.add(a, G.mul(n, h)), G.add(b, G.mul(n, h)), G.sub(b, G.mul(n, h)), G.sub(a, G.mul(n, h))]);
+      };
+      var GLYPH = {
+        /* raised fist, from the back: four knuckle bumps on a rounded block, finger gaps, a crease under the knuckles for the thumb, the wrist.
+           One outline (no overlapping solids), so the gaps and the crease can be true holes. */
+        fist() {
+          const r = 0.19, cy = -0.58, xs = [-0.5, -0.1667, 0.1667, 0.5], hw = 0.69, w = 0.4, yb = 0.52, rc = 0.2;
+          const o = [];
+          xs.forEach((x, i) => {
+            const jx = Math.atan2(-Math.sqrt(r * r - 0.1667 * 0.1667), 0.1667);
+            const a0 = i === 0 ? Math.PI : Math.PI - jx, a1 = i === 3 ? TAU : TAU + jx;
+            o.push(...arc(x, cy, r, a0, a1, i === 0 || i === 3 ? 9 : 7));
+          });
+          o.push(...arc(hw - rc, yb - rc, rc, 0, Math.PI / 2, 5));
+          o.push([w, yb], [w, 1], [-w, 1], [-w, yb]);
+          o.push(...arc(-hw + rc, yb - rc, rc, Math.PI / 2, Math.PI, 5));
+          let d = solid(o);
+          for (const x of [-0.3333, 0, 0.3333]) d += hole([[x - 0.03, -0.64], [x + 0.03, -0.64], [x + 0.03, -0.22], [x - 0.03, -0.22]]);
+          d += hole([[-0.56, -0.12], [0.5, -0.12], [0.5, -0.03], [-0.56, -0.03]]);
+          d += hole([[-0.2, 0.06], [-0.11, 0.06], [-0.11, 0.36], [-0.2, 0.36]]);
+          return d;
+        },
+        /* the Red Torque: an open neck ring with ball terminals */
+        torque() {
+          const a0 = -0.45, a1 = a0 + TAU - 0.95, ro = 0.98, ri = 0.6, rm = (ro + ri) / 2;
+          const o = arc(0, 0, ro, a0, a1, 22), i = arc(0, 0, ri, a1, a0, 22);
+          let d = solid([...o, ...i]);
+          d += circ(...polar(0, 0, rm, a0), 0.27) + circ(...polar(0, 0, rm, a1), 0.27);
+          return d;
+        },
+        star() {
+          const pts = [];
+          for (let i = 0; i < 10; i++) pts.push(polar(0, 0.06, i % 2 ? 0.44 : 1.02, -Math.PI / 2 + i * Math.PI / 5));
+          return solid(pts);
+        },
+        peace() {
+          let d = circ(0, 0, 1) + holeCircle(0, 0, 0.8);
+          d += bar([0, -0.95], [0, 0.95], 0.2);
+          d += bar([0, 0.05], polar(0, 0, 0.9, Math.PI * 0.75), 0.2) + bar([0, 0.05], polar(0, 0, 0.9, Math.PI * 0.25), 0.2);
+          return d;
+        },
+        bolt() {
+          return solid([[0.28, -1], [-0.58, 0.12], [-0.06, 0.12], [-0.32, 1], [0.62, -0.22], [0.06, -0.22]]);
+        },
+        eye() {
+          const lid = [[-1, 0, true], [-0.52, -0.5], [0, -0.64], [0.52, -0.5], [1, 0, true], [0.52, 0.42], [0, 0.52], [-0.52, 0.42]];
+          let d = G.smooth(cw(lid.map((p) => p.slice(0, 2))).map((p) => Math.abs(p[0]) === 1 ? [...p, true] : p), true, 0.5);
+          d += holeCircle(0, -0.04, 0.4) + circ(0, -0.04, 0.19);
+          for (const [x, y, a] of [[0, -0.66, -Math.PI / 2], [-0.52, -0.52, -Math.PI * 0.69], [0.52, -0.52, -Math.PI * 0.31]]) d += solid([polar(x, y, 0.1, a + Math.PI / 2), polar(x, y, 0.1, a - Math.PI / 2), polar(x, y, 0.4, a)]);
+          return d;
+        },
+        key() {
+          let d = circ(0, -0.62, 0.4) + holeCircle(0, -0.62, 0.18);
+          d += rect(-0.1, -0.28, 0.1, 1) + rect(0.1, 0.58, 0.4, 0.76) + rect(0.1, 0.84, 0.3, 1);
+          return G.rotate(G.mapPath(d, (p) => [p[0] * 0.95, p[1] * 0.95]), -Math.PI / 4);
+        },
+        anchor() {
+          let d = circ(0, -0.8, 0.2) + holeCircle(0, -0.8, 0.09);
+          d += rect(-0.42, -0.58, 0.42, -0.45);
+          d += rect(-0.09, -0.62, 0.09, 0.9);
+          const arm = arc(0, 0.1, 0.74, 0.18, Math.PI - 0.18, 14);
+          d += solid(ribbonPts(arm, 0.2));
+          for (const s of [-1, 1]) d += solid([[s * 0.5, 0], [s * 0.98, -0.08], [s * 0.92, 0.1], [s * 0.74, 0.42], [s * 0.66, 0.2]]);
+          return d;
+        },
+        cross() {
+          return solid([[-0.19, -1], [0.19, -1], [0.19, -0.6], [0.64, -0.6], [0.64, -0.24], [0.19, -0.24], [0.19, 1], [-0.19, 1], [-0.19, -0.24], [-0.64, -0.24], [-0.64, -0.6], [-0.19, -0.6]]);
+        },
+        crescent() {
+          const dx = 0.42, ri = 0.74, x = (1 + dx * dx - ri * ri) / (2 * dx), y = Math.sqrt(1 - x * x), a = Math.atan2(y, x);
+          const outer = arc(0, 0, 1, a, TAU - a, 24);
+          const ia = Math.atan2(y, x - dx), inner = arc(dx, 0, ri, TAU - ia, ia, 24);
+          return solid([...outer, ...inner]);
+        },
+        gear() {
+          const pts = [];
+          for (let i = 0; i < 8; i++) {
+            const t = i * TAU / 8, rr = 0.74;
+            pts.push(polar(0, 0, rr, t - 0.3), polar(0, 0, 1, t - 0.15), polar(0, 0, 1, t + 0.15), polar(0, 0, rr, t + 0.3), polar(0, 0, rr, t + TAU / 16));
+          }
+          return solid(pts) + holeCircle(0, 0, 0.34);
+        },
+        wings() {
+          const P0 = [0.12, -0.1], C = [0.5, -0.8], P2 = [1.04, -0.72], half = [P0];
+          for (const t of [0.25, 0.5, 0.75, 1]) half.push([(1 - t) * (1 - t) * P0[0] + 2 * (1 - t) * t * C[0] + t * t * P2[0], (1 - t) * (1 - t) * P0[1] + 2 * (1 - t) * t * C[1] + t * t * P2[1]]);
+          half.push([0.8, -0.5], [1, -0.34], [0.72, -0.22], [0.92, -0.04], [0.64, 0.04], [0.78, 0.24], [0.48, 0.2], [0.5, 0.42], [0.12, 0.22]);
+          const left = half.map((p) => [-p[0], p[1]]);
+          return solid(half) + solid(left) + circ(0, 0.06, 0.24);
+        }
+      };
+      function insignia(name, cx, cy, size) {
+        const fn = GLYPH[name];
+        if (!fn) return "";
+        return G.mapPath(fn(), (p) => [cx + p[0] * size, cy + p[1] * size]);
+      }
+      module.exports = { insignia, NAMES };
+    }
+  });
+
+  // src/parts/jewellery/necklace.js
+  var require_necklace = __commonJS({
+    "src/parts/jewellery/necklace.js"(exports, module) {
+      "use strict";
+      var { register } = require_registry();
+      var J = require_jewel();
+      var K = require_kit();
+      var { G } = J;
+      var STYLES = ["chain", "beads", "choker", "dog-tags", "pearls"];
+      var ALIAS = { chains: "chain", necklaces: "chain", "love-beads": "beads", bead: "beads", ribbon: "choker", velvet: "choker", dogtags: "dog-tags", "dog-tag": "dog-tags", tags: "dog-tags", pearl: "pearls" };
+      var DEFAULT = {
+        chain: { color: "metal-brass", drop: 0.62 },
+        beads: { color: "cloth-orange", drop: 0.98 },
+        choker: { color: "cloth-black", drop: 0 },
+        "dog-tags": { color: "metal-steel", drop: 0.82 },
+        pearls: { color: "cloth-cream", drop: 0.4 }
+      };
+      var V = [[0, 1], [0.14, 1.04], [0.44, 0.7], [0.78, 0.32], [1, 0]];
+      var U = [[0, 1], [0.26, 1.2], [0.6, 1], [0.86, 0.56], [1, 0]];
+      function strandPath(ctx, shape, drop, widen = 1) {
+        const { R, hh } = ctx, nb = R.y.neckBase;
+        const ya = nb - 0.1 * hh, yb = nb + drop * hh;
+        const nk = J.neckAt(ctx, ya);
+        const hw = nk.hw * 0.985;
+        const P = (x, Y) => Y < nb ? [J.neckAt(ctx, Y).c + x, Y] : R.torsoPt(x, Y);
+        const half = shape.map(([f, k]) => [ya + (yb - ya) * f, k * hw * (k > 1 ? widen : 1)]);
+        const left = half.map(([Y, x]) => P(-x, Y)), right = half.slice(0, -1).reverse().map(([Y, x]) => P(x, Y));
+        return [...left, ...right];
+      }
+      var castO = (ctx) => ({ x: 55e-4 * ctx.hh, y: 95e-4 * ctx.hh });
+      var shadowPiece = (ctx, id, d, z) => ({ id, z: z - 5e-3, d, fill: "ink-900", light: false, opacity: 0.26 });
+      var catch_ = (c, r) => ({ d: G.circle(c[0] - r * 0.34, c[1] - r * 0.36, r * 0.22), fill: "light", o: 0.95 });
+      function beadStrand(ctx, id, pts, radii, mats, z, o = {}) {
+        const out = [], so = castO(ctx);
+        out.push(shadowPiece(ctx, `${id}-shadow`, radii.map((b) => G.circle(b.p[0] + so.x, b.p[1] + so.y, b.r)).join(""), z));
+        mats.forEach((m, mi) => {
+          let d = "";
+          const over = [];
+          radii.forEach((b, i) => {
+            if (i % mats.length !== mi) return;
+            d += G.circle(b.p[0], b.p[1], b.r);
+            if (ctx.lodAtLeast("mid") && b.r * ctx.scale > 2.6) over.push(catch_(b.p, b.r));
+          });
+          if (!d) return;
+          const r0 = radii.reduce((a, b) => a + b.r, 0) / radii.length;
+          out.push({ id: `${id}-${mi}`, z: z + mi * 1e-3, d, mat: m, over, light: { dx: r0 * 0.42, dy: r0 * 0.22, bands: false, sheen: false, rim: false } });
+        });
+        return out;
+      }
+      function charm(ctx, kind, c, mat, z) {
+        const { hh } = ctx;
+        const out = [];
+        const r = Math.max(0.05 * hh, ctx.px(ctx.lod === "lo" ? 4.4 : 3));
+        if (kind === "cross") {
+          const w = r * 0.34, L = r * 1.25;
+          out.push({ id: "necklace-charm", z, d: G.poly([[c[0] - w, c[1]], [c[0] + w, c[1]], [c[0] + w, c[1] + L * 0.5], [c[0] + L * 0.65, c[1] + L * 0.5], [c[0] + L * 0.65, c[1] + L * 0.5 + w * 2], [c[0] + w, c[1] + L * 0.5 + w * 2], [c[0] + w, c[1] + L * 1.8], [c[0] - w, c[1] + L * 1.8], [c[0] - w, c[1] + L * 0.5 + w * 2], [c[0] - L * 0.65, c[1] + L * 0.5 + w * 2], [c[0] - L * 0.65, c[1] + L * 0.5], [c[0] - w, c[1] + L * 0.5]]), mat, light: { form: 0.6 } });
+        } else if (kind === "gem") {
+          const gm = J.jmat(ctx, "file-500");
+          const cy = c[1] + r * 0.9;
+          out.push({ id: "necklace-charm", z, d: G.poly([[c[0], cy - r * 0.95], [c[0] + r * 0.75, cy - r * 0.15], [c[0], cy + r * 0.95], [c[0] - r * 0.75, cy - r * 0.15]]), mat: gm, light: { form: 0.6 } });
+        } else {
+          const cy = c[1] + r * 0.95;
+          out.push({ id: "necklace-charm", z, d: G.circle(c[0], cy, r), mat, light: { form: 0.7 } });
+          if (kind !== "disc") {
+            let I;
+            try {
+              I = require_insignia();
+            } catch (e) {
+              I = null;
+            }
+            if (I && I.NAMES.includes(kind) && ctx.lodAtLeast("mid")) out.push({ id: "necklace-charm-glyph", z: z + 0.01, d: I.insignia(kind, c[0], cy, r * 0.62), mat, fill: "deep", light: false, opacity: 0.9 });
+          }
+        }
+        return out;
+      }
+      function tag(ctx, c, w, h, rot, mat, id, z) {
+        const r = Math.min(w, h) * 0.3;
+        const x0 = c[0] - w / 2, x1 = c[0] + w / 2, y0 = c[1], y1 = c[1] + h;
+        const d = G.smooth([[x0 + r, y0], [x1 - r, y0], [x1, y0 + r], [x1, y1 - r * 0.4], [x1 - r * 0.6, y1], [x0 + r * 0.6, y1], [x0, y1 - r * 0.4], [x0, y0 + r]], true, 0.28);
+        const over = [{ d: G.circle(c[0], y0 + h * 0.12, w * 0.085), fill: "deep", o: 0.9 }];
+        const lines = ctx.lodAtLeast("mid") ? [{ d: G.brush([[c[0] - w * 0.3, y0 + h * 0.42], [c[0] + w * 0.3, y0 + h * 0.42]], h * 0.06), fill: "deep", o: 0.65 }, { d: G.brush([[c[0] - w * 0.3, y0 + h * 0.62], [c[0] + w * 0.22, y0 + h * 0.62]], h * 0.06), fill: "deep", o: 0.65 }, { d: G.brush([[c[0] - w * 0.3, y0 + h * 0.8], [c[0] + w * 0.3, y0 + h * 0.8]], h * 0.05), fill: "deep", o: 0.5 }] : [];
+        return { id, z, d: rot ? G.rotate(d, rot, [c[0], y0]) : d, mat, lines: rot ? [] : lines, over: rot ? [] : over, light: { form: 0.8 } };
+      }
+      register({
+        kind: "jewellery",
+        name: "necklace",
+        aliases: ["necklaces"],
+        describe: "A necklace over the base layer: a thin chain (optional charm), chunky love beads, a velvet choker, the Veteran's ball chain with two dog tags, or a strand of pearls. Under jackets and collars, so it shows in open ones.",
+        params: {
+          style: "chain (default) | beads | choker | dog-tags | pearls",
+          color: "token: metal-brass (chain), cloth-orange (beads), cloth-black (choker), metal-steel (dog-tags), cloth-cream (pearls)",
+          color2: "beads only: a second colour, alternated bead by bead",
+          drop: "length below the neck base in head heights (chain 0.62, beads 0.98, dog-tags 0.82, pearls 0.4)",
+          charm: "chain and choker: disc | cross | gem | any insignia name (fist, torque, star, peace \u2026)",
+          rows: "pearls: 1-3 strands"
+        },
+        example: { jewellery: [{ type: "necklace", style: "chain" }] },
+        draw(ctx, o) {
+          var _a;
+          const { hh, Z } = ctx;
+          let style = ALIAS[o.style] || o.style || "chain";
+          if (!STYLES.includes(style)) {
+            ctx.warn(`necklace style "${o.style}" is not valid; choose from: ${STYLES.join(", ")}`);
+            style = "chain";
+          }
+          const D = DEFAULT[style];
+          const drop = J.clamp((_a = o.drop) != null ? _a : D.drop, 0.05, 1.6);
+          const z = Z.necklace, out = [];
+          const mat = J.jmat(ctx, o.color, D.color);
+          const min = J.minPx(ctx);
+          if (style === "choker") {
+            const y = ctx.R.y.chin + 0.108 * hh;
+            const nk = J.neckAt(ctx, y), hw = nk.hw * 1.025, w = Math.max(0.05 * hh, ctx.px(ctx.lod === "lo" ? 3.6 : 2.6));
+            const sag = 0.026 * hh;
+            const pts = [[nk.c - hw, y - sag * 0.2], [nk.c - hw * 0.55, y + sag * 0.55], [nk.c, y + sag], [nk.c + hw * 0.55, y + sag * 0.55], [nk.c + hw, y - sag * 0.2]];
+            out.push({ id: "necklace-choker", z, d: K.ribbon(pts, [w * 0.85, w, w * 0.85], { n: 28 }), mat: J.jmat(ctx, o.color, D.color), light: { form: 0.5 }, lines: ctx.lodAtLeast("mid") ? [{ d: K.ribbon([pts[0], pts[1], pts[2], pts[3], pts[4]].map((p) => [p[0], p[1] - w * 0.3]), [w * 0.04, w * 0.1, w * 0.04], { n: 20 }), fill: "light", o: 0.55 }] : [] });
+            if (o.charm !== false) out.push(...charm(ctx, o.charm || "disc", [nk.c, y + sag + w * 0.1], J.jmat(ctx, "metal-brass"), z + 0.02));
+            return out;
+          }
+          const shape = style === "pearls" || style === "chain" && drop < 0.5 ? U : V;
+          const path = strandPath(ctx, shape, drop, style === "pearls" ? 1 : 1);
+          const dense = G.resample(path, 40, 0.5);
+          if (style === "chain" || style === "dog-tags") {
+            const w = Math.max(style === "chain" ? 0.013 * hh : 0.011 * hh, min * 1.15);
+            const ballMat = mat;
+            const so = castO(ctx);
+            out.push(shadowPiece(ctx, "necklace-chain-shadow", G.brush(path.map((p) => [p[0] + so.x, p[1] + so.y]), w * 1.15, { samples: 40 }), z));
+            out.push({ id: "necklace-chain", z, d: G.brush(path, w, { samples: 40 }), mat: ballMat, light: { form: 0.25, sheen: false } });
+            if (style === "dog-tags") {
+              if (ctx.lodAtLeast("hi")) {
+                const n = 64, S = J.strandSamples(path, n), r = w * 0.55;
+                out.push({ id: "necklace-balls", z: z + 2e-3, d: S.samples.map((s) => G.circle(s.p[0], s.p[1], r)).join(""), mat: ballMat, fill: "light", light: false, opacity: 0.55 });
+              }
+              const low = path.reduce((a, b) => b[1] > a[1] ? b : a);
+              const tw = Math.max(0.125 * hh, ctx.px(ctx.lod === "lo" ? 8 : 6)), th = tw * 1.6;
+              const tmat = J.jmat(ctx, o.color, "metal-steel");
+              out.push(tag(ctx, [low[0] + 0.022 * hh, low[1] + 8e-3 * hh], tw, th, 0.1, tmat, "necklace-tag-b", z + 0.01));
+              out.push(tag(ctx, [low[0] - 0.012 * hh, low[1] - 4e-3 * hh], tw, th, 0, tmat, "necklace-tag-a", z + 0.02));
+            } else if (o.charm) {
+              const low = path.reduce((a, b) => b[1] > a[1] ? b : a);
+              out.push(...charm(ctx, o.charm === true ? "disc" : o.charm, [low[0], low[1] - 4e-3 * hh], J.jmat(ctx, o.charmColor, o.color || "metal-brass"), z + 0.02));
+            }
+            return out;
+          }
+          if (style === "beads") {
+            const r0 = Math.max(0.027 * hh, ctx.px(ctx.lod === "lo" ? 3.1 : 2.1));
+            const S = J.strandSamples(path, Math.max(8, Math.round(J.strandSamples(path, 10).length / (2 * r0 * 1.04))), 0.5);
+            const radii = S.samples.map((s) => ({ p: s.p, r: r0 * (0.92 + 0.16 * Math.sin(s.t * Math.PI)) }));
+            const mats = o.color2 ? [mat, J.jmat(ctx, o.color2, "cloth-cream")] : [mat];
+            out.push(...beadStrand(ctx, "necklace-beads", path, radii, mats, z));
+            return out;
+          }
+          const rows = J.clamp(Math.round(o.rows || 1), 1, 3);
+          for (let row = 0; row < rows; row++) {
+            const dr = drop + row * 0.09, p2 = row ? strandPath(ctx, shape, dr) : path;
+            const rMax = Math.max(0.034 * hh, ctx.px(ctx.lod === "lo" ? 2.9 : 2));
+            const S0 = J.strandSamples(p2, 10);
+            const n = Math.max(10, Math.round(S0.length / (2 * rMax * 0.97)));
+            const S = J.strandSamples(p2, n, 0.5);
+            const radii = S.samples.map((s) => ({ p: s.p, r: rMax * (0.62 + 0.38 * Math.sin(s.t * Math.PI)) }));
+            out.push(...beadStrand(ctx, `necklace-pearls${row ? "-" + row : ""}`, p2, radii, [mat], z + row * 3e-3));
+          }
+          return out;
+        }
+      });
+      module.exports = { STYLES, strandPath };
+    }
+  });
+
+  // src/parts/jewellery/wrist.js
+  var require_wrist = __commonJS({
+    "src/parts/jewellery/wrist.js"() {
+      "use strict";
+      var { register } = require_registry();
+      var J = require_jewel();
+      var { G } = J;
+      var HFP = null;
+      try {
+        HFP = require_anchors().HAND_FOR_POSE;
+      } catch (e) {
+        HFP = null;
+      }
+      var sidesOf = (ctx, o, dflt = "L") => {
+        const s = String(o.side || dflt).toUpperCase();
+        if (o.side && !["R", "L", "BOTH"].includes(s)) ctx.warn(`${o.type || "wrist piece"} side "${o.side}" is not valid; choose R, L or both`);
+        return s === "BOTH" ? ["R", "L"] : s === "R" ? ["R"] : ["L"];
+      };
+      function wristEase(ctx) {
+        const O = ctx.S.outfit || {}, t = (s) => O[s] && O[s].type || "";
+        if (O.outer) return 0.07;
+        if (/cardigan/.test(t("mid")) || O.dress && /boiler|gown/.test(t("dress"))) return 0.045;
+        if (/shirt|blouse|turtleneck|knit/.test(t("base"))) return 0.045;
+        return 8e-3;
+      }
+      var bandPath = J.bandPath;
+      register({
+        kind: "jewellery",
+        name: "bracelet",
+        aliases: ["bangle"],
+        describe: "A bracelet round the wrist, over the cuff: stacked bangles (default), a wide cuff, or a string of beads. A bold band with a highlight; it rides up with a folded forearm.",
+        params: { side: "L (default) | R | both", style: "bangle (default) | cuff | beads", color: "token (metal-brass)", count: "bangles: 1-3 stacked (2)", color2: "beads: second colour" },
+        example: { jewellery: [{ type: "bracelet", side: "L" }] },
+        draw(ctx, o) {
+          var _a;
+          const { hh, R } = ctx, out = [];
+          const style = ["bangle", "cuff", "beads"].includes(o.style) ? o.style : "bangle";
+          if (o.style && style !== o.style) ctx.warn(`bracelet style "${o.style}" is not valid; choose from: bangle, cuff, beads`);
+          const mat = J.jmat(ctx, o.color, style === "beads" ? "cloth-orange" : "metal-brass");
+          const min = J.minPx(ctx);
+          for (const side of sidesOf(ctx, { ...o, type: "bracelet" })) {
+            const b = ctx.bone("arm", side, "lower"), A = R.arms[side], len = b.len;
+            const hw = (u) => b.hw(u) + (wristEase(ctx) + 8e-3) * hh;
+            const z = A.z + 0.7;
+            if (style === "beads") {
+              const n = 7, r0 = Math.max(0.021 * hh, ctx.px(ctx.lod === "lo" ? 2.6 : 1.7)), mats = o.color2 ? [mat, J.jmat(ctx, o.color2, "cloth-cream")] : [mat];
+              const u0 = 0.9;
+              mats.forEach((m, mi) => {
+                let d = "";
+                for (let i = 0; i < n; i++) {
+                  if (i % mats.length !== mi) continue;
+                  const v = -1 + 2 * (i + 0.5) / n, c = b.bp([u0 + 0.02 * (1 - v * v), v * (hw(u0) / b.hw(u0)) * 0.92]);
+                  d += G.circle(c[0], c[1], r0);
+                }
+                if (d) out.push({ id: `bracelet-beads-cuff-${side}${mi || ""}`, z: z + mi * 1e-3, d, mat: m, light: { dx: r0 * 0.42, dy: r0 * 0.22, bands: false, sheen: false, rim: false } });
+              });
+              continue;
+            }
+            const count = style === "cuff" ? 1 : J.clamp(Math.round((_a = o.count) != null ? _a : 2), 1, 3);
+            const t = style === "cuff" ? Math.max(0.1 * hh, ctx.px(4)) : Math.max(0.036 * hh, min * 1.5);
+            const gap = style === "cuff" ? 0 : t * 0.55;
+            for (let i = 0; i < count; i++) {
+              const u1 = 0.965 - i * (t + gap) / len, u0 = u1 - t / len;
+              const hwA = hw(u1) * (1 + 4e-3 * i), bow = 0.012 + t / len * 0.35;
+              const d = bandPath(b, u0, u1, hwA, bow);
+              const lines = ctx.lodAtLeast("hi") ? [{ d: G.brush([b.bp([u0 + (u1 - u0) * 0.3, -0.62 * hwA / b.hw(u0)]), b.bp([u0 + (u1 - u0) * 0.3 + bow * 0.4, -0.1 * hwA / b.hw(u0)]), b.bp([u0 + (u1 - u0) * 0.3 + bow * 0.7, 0.28 * hwA / b.hw(u0)])], [t * 0.05, t * 0.22, t * 0.05]), fill: "light", o: 0.9 }] : [];
+              out.push({ id: `bracelet-${i}-cuff-${side}`, z: z + i * 1e-3, d, mat, lines, light: { form: 0.55 } });
+            }
+          }
+          return out;
+        }
+      });
+      register({
+        kind: "jewellery",
+        name: "watch",
+        aliases: ["wristwatch"],
+        describe: "A wristwatch on the forearm just above the hand: leather or metal strap, a round case with a cream or dark dial, hands and tick marks at hi detail. Rides over the cuff.",
+        params: { side: "L (default) | R | both", color: "case metal token (metal-chrome)", strap: "strap token (leather-brown); a metal-* token makes a bracelet strap", dial: "dial token (cloth-cream)" },
+        example: { jewellery: [{ type: "watch", side: "L" }] },
+        draw(ctx, o) {
+          const { hh, R } = ctx, out = [];
+          const caseMat = J.jmat(ctx, o.color, "metal-chrome"), strapTok = o.strap || "leather-brown";
+          const strapMat = /^metal-/.test(strapTok) ? ctx.mat(strapTok, "metal") : ctx.mat(strapTok, "leather");
+          for (const side of sidesOf(ctx, { ...o, type: "watch" })) {
+            const b = ctx.bone("arm", side, "lower"), A = R.arms[side], len = b.len, k = R.sx(side);
+            const ease = wristEase(ctx) + 6e-3;
+            const hw = (u) => b.hw(u) + ease * hh;
+            const z = A.z + 0.7;
+            const sw = Math.max(0.095 * hh, ctx.px(ctx.lod === "lo" ? 4.4 : 3.2));
+            const u1 = 0.97, u0 = u1 - sw / len, um = (u0 + u1) / 2;
+            out.push({
+              id: `watch-strap-cuff-${side}`,
+              z,
+              d: bandPath(b, u0, u1, hw(u1) * 1, 0.012),
+              mat: strapMat,
+              light: { form: 0.5 },
+              lines: ctx.lodAtLeast("mid") && !/^metal-/.test(strapTok) ? [{ d: G.brush([b.bp([u0 + 0.01, -0.9]), b.bp([u0 + 0.014, 0.9])], [sw * 0.02, sw * 0.07, sw * 0.02]), fill: "deep", o: 0.55 }] : []
+            });
+            const r = Math.max(0.073 * hh, ctx.px(ctx.lod === "lo" ? 3.6 : 2.6));
+            const cc = b.bp([um + 0.012, k * 0.1 * 1]);
+            out.push({ id: `watch-case-cuff-${side}`, z: z + 0.01, d: G.circle(cc[0], cc[1], r), mat: caseMat, light: { form: 0.55 } });
+            const dial = J.jmat(ctx, o.dial, "cloth-cream");
+            const rd = r * 0.74;
+            const over = [];
+            if (ctx.lodAtLeast("mid")) {
+              over.push({ d: G.brush([cc, [cc[0] + Math.cos(-2.62) * rd * 0.5, cc[1] + Math.sin(-2.62) * rd * 0.5]], [rd * 0.2, rd * 0.13]), fill: "ink-900", o: 0.9 });
+              over.push({ d: G.brush([cc, [cc[0] + Math.cos(-0.52) * rd * 0.76, cc[1] + Math.sin(-0.52) * rd * 0.76]], [rd * 0.15, rd * 0.08]), fill: "ink-900", o: 0.9 });
+            }
+            if (ctx.lodAtLeast("hi")) for (let i = 0; i < 4; i++) {
+              const a = i * Math.PI / 2;
+              over.push({ d: G.circle(cc[0] + Math.cos(a) * rd * 0.82, cc[1] + Math.sin(a) * rd * 0.82, rd * 0.07), fill: "ink-900", o: 0.8 });
+            }
+            out.push({ id: `watch-dial-cuff-${side}`, z: z + 0.02, d: G.circle(cc[0], cc[1], rd), mat: dial, over, light: { form: 0.3, sheen: false } });
+            if (ctx.lodAtLeast("hi")) out.push({ id: `watch-crown-cuff-${side}`, z: z + 5e-3, d: G.brush([[cc[0] + k * r * 0.95, cc[1] - r * 0.15], [cc[0] + k * r * 1.28, cc[1] - r * 0.15]], r * 0.3), mat: caseMat, light: { form: 0.4 } });
+          }
+          return out;
+        }
+      });
+      var FINGER = {
+        relaxed: [-0.056, 0.7, 0.027],
+        grip: [-0.069, 0.6, 0.034],
+        fist: [-0.069, 0.6, 0.034],
+        hip: [-0.048, 0.52, 0.026],
+        lapel: [-0.061, 0.64, 0.036],
+        tucked: [-0.05, 0.425, 0.034],
+        cigarette: [-0.1, 0.72, 0.03],
+        peace: [-0.108, 0.74, 0.042]
+      };
+      register({
+        kind: "jewellery",
+        name: "ring",
+        aliases: ["rings"],
+        describe: "A ring on the ring finger: a metal band with a small stone. Hi level of detail only (it would be a speck at line-up size); it sits over the hand and rises with a raised forearm.",
+        params: { side: "L (default) | R | both", color: "metal token (metal-brass)", stone: "token for the stone (none by default)" },
+        example: { jewellery: [{ type: "ring", side: "L", stone: "file-500" }] },
+        draw(ctx, o) {
+          if (!ctx.lodAtLeast("hi")) return [];
+          const { R } = ctx, out = [];
+          let H;
+          try {
+            H = require_relaxed().handSpace;
+          } catch (e) {
+            return [];
+          }
+          const mat = J.jmat(ctx, o.color, "metal-brass");
+          for (const side of sidesOf(ctx, { ...o, type: "ring" })) {
+            const A = R.arms[side];
+            const named = ctx.S.pose && ctx.S.pose.hands && ctx.S.pose.hands[side];
+            const hand = named || HFP && HFP[A.pose] || "relaxed";
+            const f = FINGER[hand];
+            if (!f) continue;
+            const hs = H(ctx, side), L = hs.len, [x, y, hw] = f;
+            const a = hs.hp([x - hw * 1.06, y]), b = hs.hp([x + hw * 1.06, y]);
+            const w = 0.026 * L;
+            const zr = hand === "tucked" ? A.z + (side === "R" ? -0.59 : -0.19) : A.z + 0.9;
+            out.push({ id: `ring-band-hand-${side}`, z: zr, d: G.brush([a, b], [w, w]), mat, light: { form: 0.5 } });
+            if (o.stone) {
+              const sm = J.jmat(ctx, o.stone, "file-500"), c = hs.hp([x, y - 0.012]);
+              out.push({ id: `ring-stone-hand-${side}`, z: zr + 0.01, d: G.circle(c[0], c[1], 0.024 * L), mat: sm, light: { form: 0.4 }, over: [{ d: G.circle(c[0] - 8e-3 * L, c[1] - 9e-3 * L, 6e-3 * L), fill: "light", o: 0.95 }] });
+            }
+          }
+          return out;
+        }
+      });
+    }
+  });
+
   // src/parts/legwear/legwear.js
   var require_legwear = __commonJS({
     "src/parts/legwear/legwear.js"() {
       "use strict";
       var { register } = require_registry();
-      var { shoeBuild, footSpecFor } = require_shoe();
+      var { shoeBuild, footSpecFor, footShows } = require_shoe();
       function legTube(ctx, s, from, mat, o) {
         var _a;
         const { G, hh } = ctx;
@@ -5752,7 +10163,7 @@ var B68Figure = (() => {
           }
           out.push({ id: `${id}-${pc.seg}`, z: ctx.Z.tights + (pc.seg === "lower" ? 0.01 : 0), d: pc.d, mat, pattern: o.pattern, opacity: o.opacity, spot: o.spot, lines, light: { form: (_b = o.form) != null ? _b : 0.9 } });
         });
-        out.push({ id: `${id}-foot`, z: ctx.Z.tights + 0.02, d: foot.footD, mat, pattern: o.pattern, opacity: o.opacity, spot: o.spot, light: { form: 0.8 } });
+        if (footShows(ctx)) out.push({ id: `${id}-foot`, z: ctx.Z.tights + 0.02, d: foot.footD, mat, pattern: o.pattern, opacity: o.opacity, spot: o.spot, light: { form: 0.8 } });
         return { out, lb, foot };
       }
       register({
@@ -5850,13 +10261,14 @@ var B68Figure = (() => {
         const m = mouthMetrics(ctx);
         const gap = 35e-4;
         const oAmt = Math.max(0, Math.min(1.2, (_b = (_a = m.open) != null ? _a : ctx.expr.mouth.open) != null ? _b : 0));
-        const inner = oAmt > 0.05 ? 3e-3 + 0.045 * oAmt : 0;
+        const inner = oAmt > 0.05 ? m.depth != null ? m.depth * 0.96 : 3e-3 + 0.045 * oAmt : 0;
         const botY = m.yBot - 0.03 + 0.034 * (1 - Math.min(1, oAmt * 2));
         const mw = m.mw * 1.02, yl = m.yl, yr = m.yr, y = m.y;
         const up = [[-mw, yl, true], [-mw * 0.5, m.yTop + 4e-3], [-0.012, m.yTop - 1e-3], [0, m.yTop + 4e-3], [0.012, m.yTop - 1e-3], [mw * 0.5, m.yTop + 4e-3], [mw, yr, true], [mw * 0.5, y - gap], [0, y - gap * 0.6], [-mw * 0.5, y - gap]];
         const lo = [[-mw * 0.92, yl + gap + inner * 0.15, true], [-mw * 0.4, y + gap * 1.2 + inner * 0.9], [0, y + gap + inner], [mw * 0.4, y + gap * 1.2 + inner * 0.9], [mw * 0.92, yr + gap + inner * 0.15, true], [mw * 0.55, botY - 2e-3], [0, botY + 4e-3 * (1 - Math.min(1, oAmt * 2))], [-mw * 0.55, botY - 2e-3]];
         const upD = g.smoothD(up, true, 0.4), loD = g.smoothD(lo, true, 0.45);
-        const upC = C.mix(colour, skin.deep, 0.3), loC = C.mix(colour, T.PAPER, (_c = o.gloss) != null ? _c : 0.06);
+        const v2 = ctx.lod !== "hi";
+        const upC = C.mix(colour, skin.deep, v2 ? 0.62 : 0.3), loC = C.mix(colour, T.PAPER, ((_c = o.gloss) != null ? _c : 0.06) + (v2 ? 0.26 : 0));
         const over = [{ d: upD, fill: upC }, { d: loD, fill: loC }];
         if (ctx.lod === "hi") over.push({ d: g.brushD([[-mw * 0.35, y + inner + gap * 2 + 8e-3], [0, y + inner + gap * 2 + 0.011], [mw * 0.3, y + inner + gap * 2 + 8e-3]], [2e-3, 6e-3, 2e-3]), fill: C.mix(colour, T.PAPER, 0.5), o: 0.55 });
         return { id: "makeup-lips", z: ctx.Z.face + 0.15, over };
@@ -6061,11 +10473,12 @@ var B68Figure = (() => {
           const at = opts.at || "cheek-R", k = opts.size || 1;
           const pts = M.scarPath(ctx, at);
           const b = U.bold(ctx), px = (n) => U.hpx(ctx, n);
-          const w = Math.max(0.011 * k * (at === "across" ? 1.15 : 1), px(ctx.lod === "lo" ? 2.2 : 1.9));
+          const v2 = ctx.lod === "mid";
+          const w = Math.max(0.011 * k * (at === "across" ? 1.15 : 1), px(ctx.lod === "lo" ? 2.2 : 1.9)) * (v2 ? 1.45 : 1);
           const hs = (d) => U.hsD(ctx, d, 0.02);
           const pale = C.mix(skin.light, ctx.tok("paper-000"), 0.62);
           const over = [];
-          over.push({ d: hs(G.brush(pts.map((p) => [p[0] + 6e-3, p[1] + 4e-3]), [1e-3, w * 0.8, w * 0.9, w * 0.8, 1e-3])), fill: skin.deep, o: 0.55 });
+          over.push({ d: hs(G.brush(pts.map((p) => [p[0] + 6e-3 * (v2 ? 1.6 : 1), p[1] + 4e-3 * (v2 ? 1.6 : 1)]), [1e-3, w * 0.8, w * 0.9, w * 0.8, 1e-3])), fill: skin.deep, o: v2 ? 0.85 : 0.55 });
           over.push({ d: hs(G.brush(pts, [w * 0.25, w, w * 1.1, w, w * 0.25])), fill: pale, o: 0.96 });
           const stitches = (_a = opts.stitches) != null ? _a : at === "across";
           if (stitches) {
@@ -6078,6 +10491,7 @@ var B68Figure = (() => {
               over.push({ d: hs(G.brush([a, c], [tw, tw])), fill: pale, o: 0.95 });
             }
           }
+          if (ctx.head.outline) return [{ id: "mark-scar", z: ctx.Z.face + 0.6, d: ctx.hs(ctx.head.outline), mat: skin, fill: "transparent", light: false, lines: over }];
           return [{ id: "mark-scar", z: ctx.Z.face + 0.6, over }];
         }
       });
@@ -6100,17 +10514,16 @@ var B68Figure = (() => {
         draw(ctx, opts) {
           const { G, C, skin } = ctx;
           const U = M.U;
-          const n = Math.min(SPOTS.length, opts.count || 6);
+          const n = Math.min(SPOTS.length, opts.count || 3);
           const over = [];
-          const red = C.mix(skin.blush, ctx.tok("cloth-brick"), 0.5);
+          const red = C.mix(skin.shade, skin.blush, 0.3);
           for (let i = 0; i < n; i++) {
             const [x, y, sz] = SPOTS[i];
             const jx = (ctx.rng() - 0.5) * 0.02, jy = (ctx.rng() - 0.5) * 0.02;
             const r = Math.max(0.016 * sz, U.hpx(ctx, ctx.lod === "lo" ? 1.8 : 1.3));
             const c = M.keepOnScreen(ctx, ctx.hp(M.keepInside(ctx, [x + jx, y + jy], r), { depth: 0.02 }), r);
             const k = ctx.R.head.k;
-            over.push({ d: G.ellipse(c[0], c[1], r * k, r * k), fill: red, o: 0.92 });
-            if (ctx.lod === "hi") over.push({ d: G.ellipse(c[0] - r * k * 0.2, c[1] - r * k * 0.25, r * k * 0.35, r * k * 0.35), fill: skin.light, o: 0.7 });
+            over.push({ d: G.ellipse(c[0], c[1], r * k * 0.8, r * k * 0.8), fill: red, o: 0.6 });
           }
           return [{ id: "mark-spots", z: ctx.Z.face + 0.5, over }];
         }
@@ -6156,6 +10569,771 @@ var B68Figure = (() => {
     }
   });
 
+  // src/parts/masks/balaclava.js
+  var require_balaclava = __commonJS({
+    "src/parts/masks/balaclava.js"(exports, module) {
+      "use strict";
+      var { register } = require_registry();
+      var M = require_mask();
+      var TALL = { bun: 0.17, beehive: 0.27, pompadour: 0.09, flip: 0.04 };
+      var HOOD_COVERS = ["hair", "ears", "brows", "nose", "facialHair", "makeup", "mark", "age"];
+      function holesFor(ctx, o, outline) {
+        const H = ctx.head, ex = H.eyeX, ey = H.eyeY, out = [], edges = [], rims = [];
+        const lod = ctx.lod, k = lod === "lo" ? 1.18 : lod === "mid" ? 1.08 : 1;
+        const m = Math.max(ctx.px(2), 0.012 * ctx.R.head.k), fit = (pts) => M.fitInside(ctx, pts, outline, m);
+        if (o.eyes === "two") {
+          for (const s of [-1, 1]) {
+            const hw = 0.1 * k, hh = 0.072 * k, cx = s * (ex + 2e-3), cy = ey + 4e-3;
+            const ring = fit(M.superellipse(cx, cy, hw, hh, { n: 2.7, N: 26 }));
+            out.push(ring);
+            edges.push(topEdgeOf(ring, hh));
+            rims.push(ring);
+          }
+        } else {
+          const hw = (ex + 0.118) * (lod === "lo" ? 1.04 : 1), hh = 0.07 * k, cy = ey + 3e-3;
+          const ring = fit(M.superellipse(0, cy, hw, hh, { n: 3.3, N: 36 }));
+          out.push(ring);
+          edges.push(topEdgeOf(ring, hh));
+          rims.push(ring);
+        }
+        if (o.mouth) {
+          const mb = M.U.mouthBox(ctx, ctx.S.face);
+          const cy = (mb.yTop + mb.yBot) / 2 + 4e-3, hh = Math.max(0.05, (mb.yBot - mb.yTop) / 2 + 0.032 * k);
+          const ring = fit(M.superellipse(0, cy, mb.mw + 0.05 * k, hh, { n: 2.5, N: 26 }));
+          out.push(ring);
+          edges.push(topEdgeOf(ring, hh));
+          rims.push(ring);
+        }
+        return { holes: out, edges, rims };
+      }
+      function topEdgeOf(ring, hh) {
+        const cy = ring.reduce((a, p) => a + p[1], 0) / ring.length;
+        const up = ring.filter((p) => p[1] < cy + hh * 0.05).sort((a, b) => a[0] - b[0]);
+        const out = [];
+        for (let i = 0; i < up.length; i += 2) out.push(up[i]);
+        return out.length >= 3 ? out : up;
+      }
+      function bib(ctx, knit, o) {
+        const { R, G } = ctx, y = R.y, hh = R.hh;
+        const c0 = R.head.cx, c1 = R.centerAt(y.neckBase);
+        const wt = R.w.neck * 1.16, wb = R.w.neckBase * 1.2, yb = y.neckBase + 0.085 * hh;
+        const pts = [
+          [c0 - wt, y.neckTop],
+          [c0 - wt * 1.02, y.chin + 0.02 * hh],
+          [c1 - wb, y.neckBase - 0.04 * hh],
+          [c1 - wb * 1.34, y.neckBase + 0.035 * hh],
+          [c1 - wb * 0.7, yb + 0.01 * hh],
+          [c1, yb + 0.03 * hh],
+          [c1 + wb * 0.7, yb + 0.01 * hh],
+          [c1 + wb * 1.34, y.neckBase + 0.035 * hh],
+          [c1 + wb, y.neckBase - 0.04 * hh],
+          [c0 + wt * 1.02, y.chin + 0.02 * hh],
+          [c0 + wt, y.neckTop]
+        ];
+        const d = G.smooth(pts, true, 0.4);
+        const out = { id: "mask-balaclava-bib", z: ctx.Z.outer - 1, d, mat: knit, light: { form: 0.85 } };
+        const sh = [{ d: ctx.hs(G.smooth([[-0.3, 0.42], [-0.12, 0.5], [0.12, 0.52], [0.3, 0.42], [0.26, 0.6], [0, 0.68], [-0.26, 0.6]], true, 0.5)), o: 0.55, fill: "deep" }];
+        out.shade = ctx.lodAtLeast("mid") ? sh : [];
+        if (ctx.lodAtLeast("hi")) {
+          const lines = [];
+          for (let i = -5; i <= 5; i++) {
+            const xt = c0 + i * wt * 0.3, xb = c1 + i * wb * 0.34;
+            lines.push({ d: G.brush([[xt, y.chin], [(xt + xb) / 2, (y.chin + y.neckBase) / 2], [xb, yb]], [hh * 2e-3, hh * 0.011, hh * 2e-3]), fill: "shade", o: 0.45 });
+          }
+          out.lines = lines;
+        }
+        return out;
+      }
+      function rolled(ctx, o, knit) {
+        const { G } = ctx, sk = M.skull(ctx), cw = (sk.H.skullW || sk.H.w) + 0.03;
+        const sm = (pts, t = 0.45) => ctx.hs(G.smooth(pts, true, t));
+        const sym = (L) => M.sym(L);
+        const lean = 0.05;
+        const slouch = ([x, y, s]) => {
+          const t = M.clamp((-0.3 - y) / 0.33, 0, 1);
+          return [x * (x > 0 ? 1 + 0.05 * t : 1 - 0.01 * t) + lean * t * t, y - 0.025 * t * t, s];
+        };
+        const ex = TALL[ctx.S.hair && ctx.S.hair.style || ""] || 0;
+        const dome = sym([[0, -0.625 - ex], [-cw * 0.6, -0.61 - ex], [-cw * (1.03 + ex * 0.25), -0.5 - ex * 0.7], [-cw * (1.1 + ex * 0.2), -0.36], [-cw * (1.1 + ex * 0.15), -0.27, true], [-cw * 0.55, -0.235], [0, -0.23]]).map(slouch);
+        const roll = sym([[0, -0.3], [-cw * 0.6, -0.3], [-cw * 1.12, -0.31, true], [-cw * 1.15, -0.1, true], [-cw * 0.62, -0.14], [0, -0.155]]);
+        const mid = ctx.lodAtLeast("mid"), hi = ctx.lodAtLeast("hi");
+        const domeLines = [];
+        if (mid) for (let i = -6; i <= 6; i++) {
+          const x = i * cw * 0.16;
+          domeLines.push({ d: ctx.hs(G.brush([[x * 1 + lean * 0.4, -0.6], [x * 1.02 + lean * 0.3, -0.45], [x * 1, -0.32]], [3e-3, 0.012, 4e-3])), fill: "shade", o: 0.4 });
+        }
+        const rollLines = [];
+        if (mid) for (const y of [-0.235, -0.17]) {
+          rollLines.push({ d: ctx.hs(G.brush([[-cw * 1.08, y + 0.02], [-cw * 0.5, y + 0.035], [0, y + 0.04], [cw * 0.5, y + 0.035], [cw * 1.08, y + 0.02]], [4e-3, 0.016, 0.018, 0.016, 4e-3])), fill: "deep", o: 0.55 });
+          if (hi) rollLines.push({ d: ctx.hs(G.brush([[-cw * 1, y - 6e-3], [-cw * 0.5, y + 8e-3], [0, y + 0.012]], [3e-3, 0.01, 6e-3])), fill: "light", o: 0.5 });
+        }
+        const pieces = [
+          { id: "mask-balaclava-cap", z: ctx.Z.hat, d: sm(dome, 0.45), mat: knit, lines: domeLines, lit: [{ d: ctx.hs(G.brush([[-cw * 0.95, -0.4], [-cw * 0.7, -0.53], [-cw * 0.25, -0.59]], [4e-3, 0.05, 4e-3])), o: 0.45 }], light: { form: 1.15 } },
+          { id: "mask-balaclava-roll", z: ctx.Z.hat + 0.1, d: sm(roll, 0.4), mat: knit, lines: rollLines, lit: [{ d: ctx.hs(G.brush([[-cw * 1.04, -0.285], [-cw * 0.5, -0.282], [0, -0.28]], [4e-3, 0.02, 6e-3])), o: 0.55 }], light: { form: 1 } }
+        ];
+        pieces.push(...M.shadowBand(ctx, "mask-balaclava-roll-shadow", [[-0.37, -0.1], [-0.2, -0.138], [0, -0.155], [0.2, -0.138], [0.37, -0.1]], 0.055, { shift: 0.02 }));
+        return pieces;
+      }
+      register({
+        kind: "mask",
+        name: "balaclava",
+        aliases: ["ski-mask"],
+        describe: "Knit balaclava: a wool hood over the whole head and neck with a slit or two eye holes (a mouth hole on request). The bank robber, the unknown suspect. rolled: true turns it into a watch cap.",
+        params: { eyes: '"slit" (one wide eye slot, default) | "two" (two holes)', mouth: "true cuts a mouth hole (the mouth part shows through)", color: "knit colour token (default cloth-charcoal)", rolled: "true rolls it up into a beanie on the crown; the face and hair are left alone" },
+        example: { face: { mask: { type: "balaclava", color: "cloth-charcoal", eyes: "slit" } } },
+        covers: (o) => o && o.rolled ? [] : o && o.mouth ? HOOD_COVERS : [...HOOD_COVERS, "mouth"],
+        draw(ctx, o) {
+          const { G } = ctx;
+          const knit = ctx.mat(M.tokOr(ctx, o.color, "cloth-charcoal"), "knit");
+          if (o.rolled) return rolled(ctx, o, knit);
+          const sk = M.skull(ctx), lod = ctx.lod, hi = ctx.lodAtLeast("hi"), mid = ctx.lodAtLeast("mid");
+          const kk = ctx.R.head.k, amt = (p, i) => (0.013 + 0.014 * M.clamp((-0.26 - sk.poly[i][1]) / 0.22, 0, 1)) * kk;
+          const outerKit = M.thin(M.relax(M.grow(sk.kit, amt), 3), 2);
+          const { holes, edges, rims } = holesFor(ctx, o, outerKit);
+          const d = G.smooth(outerKit, true, 0.5);
+          for (const h of holes) ctx.cut("^mask-balaclava$", M.path(ctx, h, 0.5, 0.012));
+          const tone = M.tone(ctx, { mouth: o.mouth ? 0 : 1, cheek: 1, nose: 1 });
+          const pale = ctx.C.mix(knit.base, ctx.tok("cloth-cream"), 0.2), dark = ctx.C.mix(knit.base, ctx.tok("ink-900"), 0.5);
+          const lines = [];
+          if (mid) lines.push(...M.knitRibs(ctx, { sp: hi ? 0.032 : 0.07, w: hi ? 0.0105 : 0.02, op: hi ? 0.5 : 0.3, y1: sk.H.chinY + 0.01 }));
+          if (mid) for (const ring of rims) lines.push({ d: M.holeRim(ctx, ring, 0.013), fill: dark, o: 0.55 });
+          const pieces = [{
+            id: "mask-balaclava",
+            z: ctx.Z.maskOver,
+            d,
+            mat: knit,
+            shade: tone.shade,
+            deep: tone.deep,
+            lit: tone.lit.map((s) => ({ ...s, fill: pale })),
+            lines,
+            light: { form: 1.05, sheenO: 0.5 }
+          }];
+          if (mid) for (const [i, e] of edges.entries()) pieces.push(...M.shadowBand(ctx, `mask-balaclava-hole-shadow${i}`, e, 0.034, { shift: 0.01, hw: 1, o: 0.8, core: 0.5 }));
+          pieces.push(bib(ctx, knit, o));
+          return pieces;
+        }
+      });
+      module.exports = { holesFor, bib };
+    }
+  });
+
+  // src/parts/masks/bandana.js
+  var require_bandana = __commonJS({
+    "src/parts/masks/bandana.js"(exports, module) {
+      "use strict";
+      var REG = require_registry();
+      var { register } = REG;
+      var M = require_mask();
+      function printOf(ctx, p, color2, base = 0.4) {
+        if (!p) return null;
+        const spec = typeof p === "string" ? { type: p } : { ...p };
+        if (!REG.get("textile", spec.type)) {
+          ctx.warn(`mask pattern "${spec.type}" is not a textile (available: ${REG.list("textile").map((x) => x.name).join(", ")})`);
+          return null;
+        }
+        if (spec.scale == null) spec.scale = base;
+        if (spec.color2 == null && color2 && ctx.T.tok(color2)) spec.color2 = color2;
+        return spec;
+      }
+      register({
+        kind: "mask",
+        name: "bandana",
+        aliases: ["kerchief", "outlaw"],
+        describe: "Outlaw bandana: a cloth triangle tied behind the head, over the nose and mouth, its point hanging below the chin. Plain or printed (polka, check, stripes). The stick-up artist, the demonstrator, the dusty rider.",
+        params: { color: "cloth token (default cloth-red)", pattern: "any textile name (polka, gingham, tartan, argyle, \u2026) or { type, color2, scale }", color2: "print colour token", size: "0.85\u20131.2: how far the point hangs" },
+        example: { face: { mask: { type: "bandana", color: "cloth-red", pattern: "polka" } } },
+        covers: ["nose", "mouth", "facialHair"],
+        draw(ctx, o) {
+          const { G } = ctx, H = ctx.head, k = ctx.R.head.k, hi = ctx.lodAtLeast("hi"), mid = ctx.lodAtLeast("mid");
+          const sk = M.skull(ctx), wid = sk.wid;
+          const cloth = ctx.mat(M.tokOr(ctx, o.color, "cloth-red"), "cloth");
+          const sz = M.clamp(o.size || 1, 0.8, 1.25);
+          const tip = H.chinY + 0.235 * sz;
+          const K = (pts, d0) => M.K(ctx, pts, d0);
+          const yTop = 0.125, yJaw = 0.43;
+          const { L, R } = M.sides(ctx, sk, (y) => 6e-3 + 0.02 * M.clamp((y - yTop) / 0.3, 0, 1), yTop, yJaw);
+          const sharp = (p) => [p[0], p[1], true];
+          const edge = K([[-0.25, 0.108, false, 0.015], [-0.17, 0.086, false, 0.03], [-0.085, 0.066, false, 0.042], [0, 0.058, false, 0.052], [0.085, 0.066, false, 0.042], [0.17, 0.086, false, 0.03], [0.25, 0.108, false, 0.015]], 0.03);
+          const jaw = sk.poly.reduce((m, q) => Math.abs(q[1] - yJaw) < Math.abs(m[1] - yJaw) ? q : m, sk.poly[0]);
+          const xj = Math.abs(jaw[0]) + 0.02;
+          const lowL = K([[-xj * 0.66, H.chinY + 0.03 * sz, false, 0.02], [-xj * 0.34, H.chinY + 0.12 * sz, false, 0.035], [-xj * 0.12, H.chinY + 0.195 * sz, false, 0.045]], 0.03);
+          const lowR = K([[xj * 0.12, H.chinY + 0.195 * sz, false, 0.045], [xj * 0.34, H.chinY + 0.12 * sz, false, 0.035], [xj * 0.66, H.chinY + 0.03 * sz, false, 0.02]], 0.03);
+          const tipP = K([[0, tip, true, 0.05]], 0.05);
+          const ring = [sharp(L[0]), ...M.thin(L.slice(1, -1), 2), L[L.length - 1], ...lowL, ...tipP, ...lowR, R[0], ...M.thin(R.slice(1, -1), 2), sharp(R[R.length - 1]), ...edge.slice().reverse()];
+          const d = G.smooth(ring, true, 0.45);
+          const tone = M.tone(ctx, { nose: 1, cheek: 0.5, mouth: 0.7 });
+          const shade = [...tone.shade], deep = [...tone.deep], lit = [...tone.lit];
+          const B = (pts, ws, d0 = 0.04) => M.stroke(ctx, pts, ws, d0);
+          const lines = [];
+          if (mid) {
+            deep.push({ d: M.path(ctx, [[-0.3, 0.44], [-0.1, 0.5], [0.1, 0.5], [0.3, 0.44], [0.2, 0.62], [0, 0.66], [-0.2, 0.62]], 0.5, 0.04), o: 0.5 });
+            shade.push({ d: B([[0.06, 0.52], [0.09, H.chinY + 0.12], [0.02, tip - 0.02]], [4e-3, 0.03, 4e-3]), o: 0.55 });
+            lit.push({ d: B([[-0.08, 0.53], [-0.1, H.chinY + 0.12], [-0.03, tip - 0.03]], [4e-3, 0.022, 4e-3]), o: 0.45 });
+            lines.push({ d: B([[-0.25, 0.108], [-0.17, 0.086], [-0.085, 0.066], [0, 0.058], [0.085, 0.066], [0.17, 0.086], [0.25, 0.108]], [4e-3, 0.014, 0.018, 0.02, 0.018, 0.014, 4e-3]), fill: "light", o: 0.55 });
+          }
+          if (hi) {
+            lines.push({ d: B([[-0.24, 0.13], [-0.16, 0.108], [-0.08, 0.09], [0, 0.083], [0.08, 0.09], [0.16, 0.108], [0.24, 0.13]], [4e-3, 0.01, 0.013, 0.014, 0.013, 0.01, 4e-3]), fill: "shade", o: 0.5 });
+          }
+          const pat = printOf(ctx, o.pattern, o.color2);
+          const pieces = [{ id: "mask-bandana", z: ctx.Z.mask, d, mat: cloth, ...pat ? { pattern: pat } : {}, shade, deep, lit, lines, light: { form: 1, sheenO: 0.4 } }];
+          return pieces;
+        }
+      });
+      module.exports = { printOf };
+    }
+  });
+
+  // src/parts/masks/blank.js
+  var require_blank = __commonJS({
+    "src/parts/masks/blank.js"() {
+      "use strict";
+      var { register } = require_registry();
+      var M = require_mask();
+      register({
+        kind: "mask",
+        name: "blank",
+        aliases: ["white-mask", "plain-mask", "egg-mask"],
+        describe: "Blank full-head mask, after the book's cover: a smooth cream egg over the whole head with two dark almond eye slits, a bare ridge of nose and the hint of a mouth. The man in the suit nobody can describe.",
+        params: { color: "mask colour token (default cloth-cream)", slits: "eye slit colour token (default ink-900)", chips: "false: no chips in the glaze (default: a few at hi)" },
+        example: { face: { mask: { type: "blank", color: "cloth-cream" } } },
+        covers: ["hair", "ears", "brows", "eyes", "nose", "mouth", "facialHair", "makeup", "mark", "age", "eyewear"],
+        draw(ctx, o) {
+          var _a;
+          const { G, C } = ctx, H = ctx.head, k = ctx.R.head.k, hi = ctx.lodAtLeast("hi"), mid = ctx.lodAtLeast("mid");
+          const sk = M.skull(ctx);
+          const col = M.tokOr(ctx, o.color, "cloth-cream");
+          const mat = ctx.mat(col, "satin");
+          const slit = ctx.tok(M.tokOr(ctx, o.slits, "ink-900"));
+          const hatted = !!(ctx.S.hair && ctx.S.hair.hat && ctx.S.hair.hat.type);
+          const amt = (p, i) => {
+            const [x, y] = sk.poly[i];
+            const crown = Math.pow(M.clamp((-0.2 - y) / 0.3, 0, 1), 1.15);
+            const mid2 = 1 - Math.pow(Math.min(1, Math.abs(x) / Math.max(0.08, sk.wid(y))), 2.4);
+            if (hatted) return 0.012 * k * M.clamp((y + 0.36) / 0.08, 0, 1);
+            return (0.012 + 0.07 * crown * (0.45 + 0.55 * mid2)) * k;
+          };
+          const yE = 0.06, yB = ((_a = H.chinY) != null ? _a : 0.5) + 0.03;
+          let wE = 0;
+          for (let y = -0.1; y <= 0.2; y += 0.02) wE = Math.max(wE, sk.wid(y));
+          const ellW = (y) => wE * Math.sqrt(Math.max(0, 1 - Math.pow((y - yE) / (yB - yE), 2)));
+          const fill = (y) => {
+            const t = M.clamp((y - 0.1) / 0.3, 0, 1);
+            return t * t * (3 - 2 * t);
+          };
+          const outer0 = M.grow(sk.kit, amt).map((q, i) => {
+            const [x, y] = sk.poly[i], e = fill(y) * Math.max(0, ellW(y) * 0.98 - sk.wid(y) - 0.012);
+            if (e <= 0 || Math.abs(x) < 0.02) return q;
+            const a = ctx.hp([x, y], { depth: 0 }), b = ctx.hp([x + Math.sign(x) * e, y], { depth: 0 });
+            return [q[0] + b[0] - a[0], q[1] + b[1] - a[1]];
+          });
+          const outer = M.thin(M.relax(outer0, 9), 3);
+          const d = G.smooth(outer, true, 0.5);
+          const B = (pts, ws, d0 = 0.05) => M.stroke(ctx, pts, ws, d0);
+          const ex = H.eyeX, ey = H.eyeY, ny = H.noseY, nty = H.noseTipY, my = H.mouthY;
+          const shade = [], deep = [], lit = [], lines = [], over = [];
+          if (mid) {
+            lit.push({ d: B([[-0.012, -0.03], [-0.026, ny * 0.5], [-0.04, nty - 0.01]], [6e-3, 0.03, 0.036], 0.07), o: 0.7 });
+            shade.push({ d: B([[0.024, -0.02], [0.05, ny * 0.5], [0.07, ny + 0.01]], [6e-3, 0.034, 0.05], 0.07), o: 0.75 });
+            shade.push({ d: B([[0.05, ny - 0.03], [0.1, ny + 0], [0.17, ny + 0.06]], [0.01, 0.04, 0.012], 0.05), o: 0.45 });
+            deep.push({ d: B([[0.03, ny - 0], [0.06, ny + 0.012], [0.02, ny + 0.03]], [0.01, 0.026, 6e-3], 0.07), o: 0.5 });
+            for (const s of [-1, 1]) shade.push({ d: B([[s * (ex + 0.1), ey - 0.045], [s * (ex + 0.14), ey + 0.02], [s * (ex + 0.12), ey + 0.1]], [6e-3, 0.04, 6e-3], 0.04), o: s > 0 ? 0.5 : 0.22 });
+            shade.push({ d: B([[-0.06, my + 0.03], [0, my + 0.045], [0.06, my + 0.03]], [4e-3, 0.02, 4e-3], 0.06), o: 0.45 });
+            lit.push({ d: B([[-0.05, my - 0.012], [0, my - 0.02], [0.05, my - 0.012]], [4e-3, 0.014, 4e-3], 0.06), o: 0.5 });
+          }
+          if (mid) {
+            const nw = H.noseW, tip = H.noseTipY, mw = H.mouthW;
+            const E = (x, y, d1 = 0.05, sharp = false) => sharp ? [x, y, true, d1] : [x, y, false, d1];
+            const edge = [
+              E(0.25, -0.7, 0, true),
+              E(0.16, -0.46, 0.02),
+              E(0.1, -0.3, 0.04),
+              E(0.082, -0.185, 0.06),
+              // down the forehead to the brow ridge
+              E(0.05, -0.08, 0.08),
+              E(0.036, 0.02, 0.09),
+              E(0.046, ny * 0.55, 0.09),
+              E(nw * 0.95, ny - 0.035, 0.1),
+              // the bridge, widening to the wing
+              E(nw * 1.18, ny + 2e-3, 0.1),
+              E(nw * 0.55, ny + 0.03, 0.08),
+              E(0.026, my - 0.05, 0.06),
+              // under the wing and back in under the nose
+              E(mw * 0.55, my - 0.012, 0.05),
+              E(mw * 0.5, my + 0.022, 0.05),
+              E(0.03, my + 0.052, 0.05),
+              // the lip line and the corner of the mouth
+              E(0.066, 0.43, 0.04),
+              E(0.15, 0.53, 0, true)
+              // the chin
+            ];
+            const out2 = [E(0.95, 0.75, 0, true), E(0.95, -0.75, 0, true)];
+            const shadeD = M.path(ctx, [...edge, ...out2], 0.4);
+            deep.push({ d: shadeD, o: 0.75 });
+          }
+          const slitD = (s) => ctx.hs(G.ellipse(s * (ex + 2e-3), ey + 4e-3, 0.085 * (mid ? 1 : 1.2), 0.04 * (mid ? 1 : 1.3), s * -0.12), { depth: 0.07 });
+          for (const s of [-1, 1]) over.push({ d: slitD(s), fill: slit, o: 0.96 });
+          if (hi && o.chips !== false) {
+            const chip = ctx.tok("paper-100");
+            for (const [x, y, a, b, r] of [[-0.19, -0.34, 0.03, 0.012, -0.5], [-0.12, 0.02, 0.012, 8e-3, 0.2], [-0.2, 0.23, 0.02, 0.01, 0.4]]) over.push({ d: ctx.hs(G.ellipse(x, y, a, b, r), { depth: 0.04 }), fill: chip, o: 0.85 });
+          }
+          return [{ id: "mask-blank", z: ctx.Z.maskOver, d, mat, shade, deep, lit, lines, over, light: { form: mid ? 0.5 : 0.95, sheenO: 0.75 } }];
+        }
+      });
+    }
+  });
+
+  // src/parts/masks/domino.js
+  var require_domino = __commonJS({
+    "src/parts/masks/domino.js"() {
+      "use strict";
+      var { register } = require_registry();
+      var M = require_mask();
+      register({
+        kind: "mask",
+        name: "domino",
+        aliases: ["eye-mask", "masquerade"],
+        describe: "Domino eye mask: a small glossy mask round the eyes with eye holes, a notch over the nose and flicked-up wings, tied with ribbons. The masked ball, the cat burglar, the anonymous tip-off.",
+        params: { color: "mask colour token (default cloth-black)", ribbon: "ribbon colour token (default: the mask colour)", wings: "0\u20131.5: how far the temple wings flick up (default 1)" },
+        example: { face: { mask: { type: "domino", color: "cloth-black" } } },
+        covers: [],
+        draw(ctx, o) {
+          var _a;
+          const { G, C } = ctx, H = ctx.head, k = ctx.R.head.k, hi = ctx.lodAtLeast("hi"), mid = ctx.lodAtLeast("mid");
+          const sk = M.skull(ctx), wid = sk.wid;
+          const col = M.tokOr(ctx, o.color, "cloth-black");
+          const mat = ctx.mat(col, "cloth"), ribM = ctx.mat(M.tokOr(ctx, o.ribbon, col), "cloth");
+          const wing = M.clamp((_a = o.wings) != null ? _a : 1, 0, 1.5);
+          const ex = H.eyeX, ey = H.eyeY;
+          const wt = Math.min(0.318, wid(-0.08) - 0.018);
+          const d0 = 0.028;
+          const lowW = Math.min(0.3, wid(0.05) - 0.012);
+          const lo = !mid, sy = lo ? 1.4 : 1, lift = lo ? 0.06 : 0.034;
+          const Y = (y) => ey + (y - ey) * sy;
+          const L = [
+            [0, Y(-0.1), false, 0.04],
+            [-0.085, Y(-0.117), false, d0],
+            [-0.17, Y(-0.13), false, d0],
+            [-wt * 0.8, Y(-0.138) - 0.01 * wing, false, d0],
+            [-wt, Y(-0.16) - lift * wing, true, 0.012],
+            [-wt * 0.98, Y(-0.095), false, 0.01],
+            [-lowW, Y(-0.02), false, 0.012],
+            [-lowW * 0.93, Y(0.055), false, d0],
+            [-0.2, Y(0.108), false, d0],
+            [-0.125, Y(0.112), false, d0],
+            [-0.07, Y(0.088), false, 0.04],
+            [0, Y(0.074), false, 0.05]
+          ];
+          let outline = M.sym(L);
+          const m = Math.max(ctx.px(1.5), 0.01 * k);
+          outline = M.fitInside(ctx, outline, sk.kit, m, d0);
+          const d = M.path(ctx, outline, 0.45);
+          const lod = ctx.lod, kk = lod === "lo" ? 1.2 : lod === "mid" ? 1.1 : 1;
+          const rims = [];
+          for (const s of [-1, 1]) {
+            let ring = M.superellipse(s * (ex + 2e-3), ey + 2e-3, 0.092 * kk, 0.056 * kk, { n: 2.5, N: 26, lift: 0.42, side: s });
+            ring = M.fitInside(ctx, ring, sk.kit, m, 0.012);
+            rims.push(ring);
+            ctx.cut("^mask-domino$", M.path(ctx, ring, 0.5, 0.012));
+          }
+          const dark = C.mix(mat.base, ctx.tok("ink-900"), 0.55);
+          const lines = [], lit = [];
+          if (mid) for (const r of rims) lines.push({ d: M.holeRim(ctx, r, 0.012), fill: dark, o: 0.6 });
+          const B = (pts, ws, d1 = 0.03) => M.stroke(ctx, pts, ws, d1);
+          lit.push({ d: B([[-wt * 0.72, Y(-0.134) - 8e-3 * wing], [-0.17, Y(-0.122)], [-0.08, Y(-0.108)]], [3e-3, 9e-3, 3e-3]), o: 0.5 });
+          if (lo) {
+            const e = M.U.hpx(ctx, 1.7), pa = ctx.tok("paper-100"), yy = (y) => Y(y) + e * 0.5;
+            const top = [[-wt * 0.9, yy(-0.14) - 0.012 * wing], [-0.17, yy(-0.13)], [-0.085, yy(-0.117)], [0, yy(-0.1)]];
+            const full = [...top, ...top.slice(0, -1).reverse().map(([x, y]) => [-x, y])];
+            lit.push({ d: B(full, [e * 0.3, e, e * 1.15, e * 1.2, e * 1.15, e, e * 0.3]), o: 0.8, fill: pa });
+          }
+          const pieces = [{ id: "mask-domino", z: ctx.Z.mask, d, mat, lit, lines, light: { form: 0.9, sheenO: 0.28 } }];
+          if (mid) for (const [i, r] of rims.entries()) {
+            const top = r.filter((p) => p[1] < ey + 0.01).sort((a, b) => a[0] - b[0]);
+            if (top.length > 3) pieces.push(...M.shadowBand(ctx, `mask-domino-hole-shadow${i}`, top.filter((_, j) => j % 2 === 0), 0.022, { shift: 8e-3, hw: 1, o: 0.7, core: 0.45 }));
+          }
+          const rw = Math.max(0.017, M.U.hpx(ctx, lod === "lo" ? 2.4 : 1.7));
+          for (const s of [-1, 1]) {
+            const tag = s < 0 ? "R" : "L";
+            const ex2 = wid(-0.19) - 0.012;
+            pieces.push({ id: `mask-domino-ribbon-${tag}`, z: ctx.Z.mask - 0.05, d: B(M.tuck(ctx, [[s * (wt - 0.02), -0.15 - 0.03 * wing], [s * Math.min(wt + 0.02, ex2 - 0.01), -0.172 - 0.03 * wing], [s * ex2, -0.19 - 0.03 * wing]], sk.kit, rw * k * 0.6 + ctx.px(1), 0), [rw, rw, rw * 0.9], 0), clip: "head", mat: ribM, light: false });
+          }
+          return pieces;
+        }
+      });
+    }
+  });
+
+  // src/parts/masks/gas-mask.js
+  var require_gas_mask = __commonJS({
+    "src/parts/masks/gas-mask.js"() {
+      "use strict";
+      var { register } = require_registry();
+      var M = require_mask();
+      var YT = -0.1;
+      register({
+        kind: "mask",
+        name: "gas-mask",
+        aliases: ["respirator"],
+        describe: "Rubber gas mask: a near-black face-piece, two big round eyepieces (clear them for a glow), a filter canister on the cheek and straps into the hair. The Militants' riot kit, the soldier, the gas attack.",
+        params: {
+          color: "rubber colour token (default cloth-black)",
+          lenses: "eyepiece colour token (default glass-dark; cloth-mustard when glow is on)",
+          glow: "true: emissive eyepieces with a soft stippled halo, kept in the spot colour in the dark schemes",
+          filter: '"side" (a canister on the viewer-right cheek, the book) | "front" (a round filter at the mouth)',
+          canister: "canister colour token (default metal-gun)",
+          strap: "strap colour token (default leather-black)",
+          side: '"L" puts the side canister on the viewer-left'
+        },
+        example: { face: { mask: { type: "gas-mask", color: "cloth-black", lenses: "cloth-mustard", glow: true } } },
+        covers: ["nose", "mouth", "facialHair", "eyes", "brows", "eyewear", "makeup"],
+        draw(ctx, o) {
+          const { G, C } = ctx, H = ctx.head, k = ctx.R.head.k, hi = ctx.lodAtLeast("hi"), mid = ctx.lodAtLeast("mid"), lo = !mid;
+          const sk = M.skull(ctx), wid = sk.wid;
+          const rubber = ctx.mat(M.tokOr(ctx, o.color, "cloth-black"), "cloth");
+          const strapM = ctx.mat(M.tokOr(ctx, o.strap, "leather-black"), "leather");
+          const metal = ctx.mat(M.tokOr(ctx, o.canister, "metal-gun"), "metal");
+          const glow = !!o.glow;
+          const duo = !!(ctx.scheme && ctx.scheme.map && !ctx.scheme.spotKeep);
+          const lensTok = M.tokOr(ctx, o.lenses, glow ? "cloth-mustard" : "glass-dark");
+          const pale = C.mix(rubber.base, ctx.tok("cloth-cream"), 0.22), pale2 = C.mix(rubber.base, ctx.tok("cloth-cream"), 0.4), dark = C.mix(rubber.base, ctx.tok("ink-900"), 0.55);
+          const out = [];
+          const wt = wid(YT) - 0.012;
+          const top = [[-wt, YT - 0.02], [-wt * 0.8, YT - 0.05], [-wt * 0.45, YT - 0.066], [0, YT - 0.07], [wt * 0.45, YT - 0.066], [wt * 0.8, YT - 0.05], [wt, YT - 0.02]];
+          const amt = (y) => -0.012 + 0.05 * M.clamp((y - 0.34) / 0.17, 0, 1);
+          const shellPts = M.shell(ctx, sk, amt, YT, top);
+          const face = G.smooth(shellPts, true, 0.5);
+          const S = (pts, t = 0.5, d = 0.03) => G.smooth(M.K(ctx, pts, d), true, t);
+          const B = (pts, ws, d = 0.03) => M.stroke(ctx, pts, ws, d);
+          const ex = H.eyeX, ey = H.eyeY, my = H.mouthY;
+          const shade = [], deep = [], lit = [], lines = [];
+          if (mid) {
+            shade.push({ d: B([[0.03, -0.06], [0.05, 0.05], [0.07, 0.2]], [0.01, 0.05, 0.03]), o: 0.7 });
+            lit.push({ d: B([[-0.01, -0.12], [-0.02, 0], [-0.035, 0.16]], [6e-3, 0.03, 0.02]), o: 0.55, fill: pale });
+            lit.push({ d: B([[-0.3, 0.12], [-0.25, 0.2], [-0.2, 0.3]], [6e-3, 0.06, 8e-3]), o: 0.5, fill: pale });
+            shade.push({ d: B([[ex * 0.5 - 0.02, 0.14], [0.075, 0.24], [0.1, 0.34]], [5e-3, 0.02, 6e-3]), o: 0.55 });
+            shade.push({ d: B([[-ex * 0.5 + 0.02, 0.14], [-0.075, 0.24], [-0.1, 0.34]], [5e-3, 0.016, 6e-3]), o: 0.4 });
+            deep.push({ d: B([[-0.2, 0.47], [0, 0.52], [0.2, 0.47]], [0.01, 0.05, 0.01]), o: 0.5 });
+          }
+          if (hi) {
+            lit.push({ d: B([[-wt * 0.85, YT - 0.045], [-wt * 0.4, YT - 0.066], [0, YT - 0.072]], [4e-3, 0.014, 0.012]), o: 0.55, fill: pale2 });
+          }
+          out.push({ id: "mask-gas", z: ctx.Z.mask, d: face, mat: rubber, shade, deep, lit, lines, light: { form: 1.05, sheenO: 0.5 } });
+          const strapW = Math.max(0.05, M.U.hpx(ctx, lo ? 3 : 2));
+          const zS = ctx.Z.mask - 0.3;
+          const tk = (pts) => M.tuck(ctx, pts, sk.kit, strapW * k * 0.6 + ctx.px(1), 0);
+          out.push({ id: "mask-gas-strap-top", z: zS, d: B(tk([[0, YT - 0.06], [0, -0.3], [0, -0.47]]), [strapW, strapW, strapW * 0.9], 0), clip: "head", mat: strapM, light: { form: 0.5 } });
+          for (const s of [-1, 1]) {
+            const tag = s < 0 ? "R" : "L";
+            out.push({ id: `mask-gas-strap-temple-${tag}`, z: zS, d: B(tk([[s * wt * 0.82, YT - 0.03], [s * (wid(YT - 0.05) - 0.035), YT - 0.052], [s * (wid(YT - 0.08) - 0.012), YT - 0.07]]), [strapW, strapW, strapW * 0.9], 0), clip: "head", mat: strapM, light: { form: 0.5 } });
+            out.push({ id: `mask-gas-strap-jaw-${tag}`, z: zS, d: B(tk([[s * (wid(0.31) - 0.045), 0.315], [s * (wid(0.28) - 0.012), 0.275]]), [strapW, strapW * 0.9], 0), clip: "head", mat: strapM, light: { form: 0.5 } });
+          }
+          const lx = ex + 4e-3, ly = ey - 0.012, rx = 0.091, ry = 0.118, rim = 0.016;
+          const ell = (P, u, v, a, b, rot = 0) => M.mapD(G.ellipse(u, v, a, b, rot), P);
+          const lensM = ctx.mat(lensTok, "flat");
+          const lensHex = ctx.tok(lensTok);
+          const rimM = ctx.mat(M.tokOr(ctx, o.rim, "metal-steel"), "metal");
+          for (const s of [-1, 1]) {
+            const tag = s < 0 ? "R" : "L";
+            const P = M.plate(ctx, s * lx, ly, 0.045, { w: rx + rim + 0.01, outline: sk.kit });
+            const spot = glow ? { spot: true } : {};
+            if (glow) {
+              out.push({ id: `mask-gas-haze-${tag}`, z: ctx.Z.mask + 0.04, d: ell(P, 0, 0, rx * 1.38, ry * 1.34), fill: lensHex, opacity: 0.07, light: false, ...spot });
+              if (mid) out.push({
+                id: `mask-gas-halo-${tag}`,
+                z: ctx.Z.mask + 0.05,
+                d: ell(P, 0, 0, rx * 1.62, ry * 1.55),
+                fill: "none",
+                mat: ctx.mat("cloth-black", "flat"),
+                light: false,
+                ...spot,
+                lines: [[1.62, 0.1], [1.4, 0.2], [1.22, 0.34]].map(([f, op]) => ({ d: ell(P, 0, 0, rx * f, ry * f * 0.96), fill: lensHex, stip: true, o: op }))
+              });
+            }
+            out.push({ id: `mask-gas-rim-${tag}`, z: ctx.Z.mask + 0.1, d: ell(P, 0, 0, rx + rim, ry + rim), mat: rimM, light: { form: 0.7 } });
+            const lensLit = [], lensShade = [], lensLines = [];
+            if (glow) {
+              let hot = C.mix(lensHex, ctx.tok("paper-100"), 0.62), core = C.mix(lensHex, ctx.tok("paper-100"), 0.28), limb = C.mix(lensHex, ctx.tok("signal-700"), 0.55), flame = C.mix(lensHex, ctx.tok("signal-500"), 0.7), body = lensHex;
+              if (duo) {
+                body = ctx.accent(lensHex, "accent");
+                core = ctx.accent(lensHex, 0.9);
+                hot = ctx.accent(lensHex, "light");
+                limb = ctx.accent(lensHex, 0.3);
+                flame = ctx.accent(lensHex, 0.5);
+              }
+              lensShade.push({ d: ell(P, 0, 0, rx, ry), fill: limb });
+              lensShade.push({ d: ell(P, 0, 0, rx * 0.86, ry * 0.86), fill: body });
+              if (mid) lensShade.push({ d: ell(P, -rx * 0.12, -ry * 0.1, rx * 0.56, ry * 0.52), fill: core });
+              if (mid) lensShade.push({ d: ell(P, -rx * 0.2, -ry * 0.18, rx * 0.26, ry * 0.24), fill: hot });
+              if (hi) for (const [u, v, w, h, r] of [[0.28, 0.36, 0.2, 0.34, 0.5], [0.46, 0.1, 0.12, 0.3, 0.7], [0.12, 0.5, 0.14, 0.22, 0.3]]) lensLines.push({ d: ell(P, rx * u, ry * v, rx * w, ry * h, r), fill: flame, o: 0.75 });
+            } else {
+              lensLit.push({ d: M.mapD(G.brush([[-rx * 0.62, ry * 0.15], [-rx * 0.5, -ry * 0.5], [-rx * 0.05, -ry * 0.8]], [4e-3, 0.026, 6e-3]), P), o: 0.5 });
+              if (hi) lensLit.push({ d: ell(P, rx * 0.4, ry * 0.45, rx * 0.12, ry * 0.07, -0.5), o: 0.3 });
+            }
+            out.push({ id: `mask-gas-lens-${tag}`, z: ctx.Z.mask + 0.2, d: ell(P, 0, 0, rx, ry), mat: lensM, fill: "base", light: false, shade: lensShade, lit: lensLit, lines: lensLines, ...spot });
+          }
+          if (o.filter !== "front" && mid) {
+            const Pv = M.plate(ctx, 0, my + 0.045, 0.1);
+            const rv = 0.085, ev = (a, b) => M.mapD(G.ellipse(0, 0, a, b), Pv);
+            out.push({
+              id: "mask-gas-voice",
+              z: ctx.Z.mask + 0.02,
+              d: ev(rv, rv * 0.96),
+              mat: rubber,
+              fill: pale,
+              light: { form: 0.5, sheenO: 0.3 },
+              lines: [{ d: ev(rv * 0.6, rv * 0.58), fill: dark, o: 0.95 }, ...hi ? [-1, 0, 1].map((i) => ({ d: M.mapD(G.brush([[-rv * 0.5, i * rv * 0.24], [0, i * rv * 0.24 + 3e-3], [rv * 0.5, i * rv * 0.24]], [3e-3, 8e-3, 3e-3]), Pv), fill: pale2, o: 0.5 })) : []]
+            });
+          }
+          const front = o.filter === "front";
+          if (front) {
+            const P = M.plate(ctx, 0, my + 0.04, 0.1);
+            const R0 = 0.12;
+            out.push({
+              id: "mask-gas-filter",
+              z: ctx.Z.mask + 0.3,
+              d: ell(P, 0, 0, R0, R0 * 1.02),
+              mat: metal,
+              light: { form: 0.9 },
+              lines: mid ? [{ d: ell(P, 0, 0, R0 * 0.72, R0 * 0.72), fill: "deep", o: 0.8 }, ...hi ? [-2, -1, 0, 1, 2].map((i) => ({ d: M.mapD(G.brush([[-R0 * 0.55, i * R0 * 0.2], [0, i * R0 * 0.2 + 6e-3], [R0 * 0.55, i * R0 * 0.2]], [4e-3, 0.012, 4e-3]), P), fill: "light", o: 0.5 })) : []] : []
+            });
+          } else {
+            const sd = o.side === "L" ? -1 : 1;
+            const P = M.plate(ctx, sd * 0.215, 0.335, 0.085);
+            const cap = 0.082;
+            const barrel = M.mapD(G.brush([[-sd * 0.14, -0.1], [-sd * 0.07, -0.05], [0, 0]], [0.1, 0.15, 0.17]), P);
+            out.push({
+              id: "mask-gas-canister",
+              z: ctx.Z.mask + 0.3,
+              d: barrel,
+              mat: metal,
+              light: { form: 0.9 },
+              lit: [{ d: M.mapD(G.brush([[-sd * 0.12, -0.12], [-sd * 0.05, -0.09], [0, -0.075]], [4e-3, 0.018, 6e-3]), P), o: 0.5 }],
+              lines: hi ? [-1, 0, 1].map((i) => ({ d: M.mapD(G.brush([[-sd * (0.1 - i * 0.012), -0.07 + i * 0.035], [-sd * (0.05 - i * 0.012), -0.025 + i * 0.03]], [6e-3, 6e-3]), P), fill: "deep", o: 0.45 })) : []
+            });
+            out.push({
+              id: "mask-gas-canister-cap",
+              z: ctx.Z.mask + 0.31,
+              d: ell(P, 0, 0, cap, cap * 1.05),
+              mat: metal,
+              light: { form: 0.8 },
+              lines: mid ? [{ d: ell(P, sd * 4e-3, 6e-3, cap * 0.62, cap * 0.64), fill: "deep", o: 0.35 }] : [],
+              over: mid ? [{ d: ell(P, sd * 0.01, 0.014, cap * 0.3, cap * 0.34), fill: ctx.tok("ink-900"), o: 0.95 }] : []
+            });
+          }
+          return out;
+        }
+      });
+    }
+  });
+
+  // src/parts/masks/stocking.js
+  var require_stocking = __commonJS({
+    "src/parts/masks/stocking.js"() {
+      "use strict";
+      var { register } = require_registry();
+      var M = require_mask();
+      var LONG = /* @__PURE__ */ new Set(["long-straight", "bob", "bowl-bob", "ponytail"]);
+      var keepHair = (o, S) => o && o.hair === "keep" || !(o && o.hair === "flat") && !!(S && S.hair && LONG.has(S.hair.style));
+      register({
+        kind: "mask",
+        name: "stocking",
+        aliases: ["nylon", "nylon-mask", "pantyhose"],
+        describe: "Nylon stocking over the head: a sheer tinted veil that flattens the face and the hair into an anonymous mask, with a knot on the crown and a tail flopping to one side. The bank job, the smash-and-grab, the man nobody can describe.",
+        params: {
+          color: "nylon tint token (default cloth-camel; cloth-salmon for a pink pair, cloth-charcoal for smoke)",
+          sheer: "0.3\u20130.75: how opaque the nylon is (default 0.52)",
+          tail: '"L" | "R" the side the tail flops to (default "L": viewer-right) | "none": a bald knot',
+          knot: "false: no knot at all, just the veil",
+          hair: '"flat" (the hair is pressed flat into a skull cap in its own colour) | "keep" (drawn as it is and veiled). Default: flat, except long hair (long-straight, bob, bowl-bob, ponytail), which keeps'
+        },
+        example: { face: { mask: { type: "stocking", color: "cloth-camel" } } },
+        covers: (o, S) => keepHair(o, S) ? [] : ["hair"],
+        draw(ctx, o) {
+          var _a, _b;
+          const { G, C } = ctx, H = ctx.head, k = ctx.R.head.k, hi = ctx.lodAtLeast("hi"), mid = ctx.lodAtLeast("mid"), lo = !mid;
+          const sk = M.skull(ctx), wid = sk.wid;
+          const tintTok = M.tokOr(ctx, o.color, "cloth-camel");
+          const nylon = ctx.mat(tintTok, "cloth");
+          const sheer0 = M.clamp(+o.sheer || 0.52, 0.3, 0.78);
+          const sheer = mid ? sheer0 : Math.max(sheer0, 0.85);
+          const keep = keepHair(o, ctx.S);
+          const bald = ctx.S.hair && ctx.S.hair.style === "bald";
+          const hatted = !!(ctx.S.hair && ctx.S.hair.hat && ctx.S.hair.hat.type);
+          const knotOn = o.knot !== false && !hatted;
+          const zCap = ctx.Z.maskOver - 0.1, zV = keep ? (_a = ctx.Z.maskVeil) != null ? _a : ctx.Z.hair + 0.1 : ctx.Z.maskOver + 0.2;
+          const out = [];
+          if (!keep && !bald && mid) {
+            const crownF = (y) => Math.pow(M.clamp((-0.2 - y) / 0.3, 0, 1), 1.3);
+            const { L, R } = M.sides(ctx, sk, (y) => 6e-3 + 0.016 * crownF(y), -0.7, -0.045);
+            const hl = (_b = H.hairline) != null ? _b : -0.28;
+            const line = M.K(ctx, [
+              [-(wid(-0.045) - 4e-3), -0.045, true, 0.01],
+              [-(wid(-0.1) - 0.026), -0.12, false, 0.02],
+              [-(wid(-0.18) - 0.05), -0.21, false, 0.03],
+              [-0.2, hl + 0.01, false, 0.035],
+              [-0.09, hl + 0.04, false, 0.04],
+              [0, hl + 0.046, false, 0.04],
+              [0.09, hl + 0.04, false, 0.04],
+              [0.2, hl + 0.01, false, 0.035],
+              [wid(-0.18) - 0.05, -0.21, false, 0.03],
+              [wid(-0.1) - 0.026, -0.12, false, 0.02],
+              [wid(-0.045) - 4e-3, -0.045, true, 0.01]
+            ], 0.03);
+            const ring = [[L[0][0], L[0][1], true], ...M.thin(L.slice(1, -1), 2), L[L.length - 1], ...line, R[0], ...M.thin(R.slice(1, -1), 2), R[R.length - 1]];
+            const hm = ctx.hairMat();
+            const capLit = mid ? [{ d: M.stroke(ctx, [[-0.28, -0.4], [-0.15, -0.5], [0.05, -0.54]], [4e-3, 0.05, 4e-3], 0.02), o: 0.45 }] : [];
+            out.push({ id: "mask-stocking-hair", z: zCap, d: G.smooth(ring, true, 0.5), mat: hm, lit: capLit, light: { form: 1, sheenO: 0.45 } });
+          }
+          const e0 = H.earTop - 0.03, e1 = H.earBot + 0.03;
+          const earBump = (y) => y > e0 && y < e1 ? 0.034 * Math.sin((y - e0) / (e1 - e0) * Math.PI) : 0;
+          const amt = (p, i) => {
+            const y = sk.poly[i][1];
+            const crown = Math.pow(M.clamp((-0.2 - y) / 0.3, 0, 1), 1.3);
+            return ((keep ? 9e-3 + 0.04 * crown : 0.011 + 0.014 * crown) + earBump(y)) * k;
+          };
+          const outer = M.thin(M.relax(M.grow(sk.kit, amt), 3), 2);
+          const d = G.smooth(outer, true, 0.5);
+          const tone = M.tone(ctx, { nose: 0.6, cheek: 0.55, mouth: 0.45 });
+          const B = (pts, ws, d0 = 0.03) => M.stroke(ctx, pts, ws, d0);
+          const lit = [...tone.lit], shade = [...tone.shade], deep = [...tone.deep], vlines = [];
+          if (mid) {
+            lit.push({ d: B([[-0.2, -0.36], [-0.12, -0.3], [0.02, -0.28]], [0.01, 0.07, 0.012]), o: 0.35 });
+            lit.push({ d: B([[-0.27, 0], [-0.24, 0.12], [-0.17, 0.25]], [8e-3, 0.05, 8e-3]), o: 0.3 });
+            if (knotOn) for (const [x1, y1, x2, y2] of [[-0.02, -0.52, -0.16, -0.44], [0, -0.52, -0.05, -0.4], [0.03, -0.52, 0.12, -0.44]]) vlines.push({ d: B([[x1, y1, false, 0.03], [(x1 + x2) / 2, (y1 + y2) / 2, false, 0.03], [x2, y2, false, 0.03]], [3e-3, 8e-3, 3e-3]), fill: "shade", o: 0.32 });
+          }
+          out.push({ id: "mask-stocking", z: zV, d, mat: nylon, opacity: sheer, shade, deep, lit, lines: vlines, light: { form: 0.3, sheenO: 0.4 } });
+          if (mid) {
+            const lighter = C.mix(ctx.skin.light || ctx.skin.base, tintTok, 0.55);
+            const ny = H.noseY, nw = H.noseW, my = H.mouthY, mw = H.mouthW;
+            const ell = (cx, cy, a, b, rot = 0, depth = 0.05) => ctx.hs(G.ellipse(cx, cy, a, b, rot), { depth });
+            const patch = (id, cx, cy, a, b, op, depth) => {
+              out.push({ id, z: zV + 0.01, d: ell(cx, cy, a, b, 0, depth), fill: lighter, opacity: op, light: false });
+              out.push({
+                id: `${id}-fringe`,
+                z: zV + 0.01,
+                d: ell(cx, cy, a * 1.35, b * 1.3, 0, depth),
+                fill: "none",
+                mat: ctx.mat(tintTok, "flat"),
+                light: false,
+                lines: [{ d: ell(cx, cy, a * 1.35, b * 1.3, 0, depth), fill: lighter, stip: true, o: op * 0.9 }]
+              });
+            };
+            patch("mask-stocking-press-nose", 4e-3, ny - 0.045, nw * 0.95, 0.11, 0.3, 0.05);
+            patch("mask-stocking-press-mouth", 0, my + 5e-3, mw * 0.92, 0.04, 0.34, 0.03);
+          }
+          if (knotOn) {
+            const side = o.tail === "R" ? -1 : 1;
+            const bare = o.tail === "none";
+            const kn = ctx.mat(tintTok, "cloth");
+            const cr = -0.5 - (keep ? 0.035 : 0.014);
+            const dens = Math.min(0.92, sheer + 0.36);
+            const wN = lo ? 1.2 : 1;
+            const zT = zV + 0.03;
+            const P = (x, y) => [side * x, y, false, 0.02];
+            const L2 = (pts) => pts.map(([x, y]) => [x, y, false, 0.02]);
+            if (bare) {
+              out.push({
+                id: "mask-stocking-knot",
+                z: zT,
+                d: ctx.hs(G.ellipse(0, cr + 5e-3, 0.06, 0.042, 0), { depth: 0.02 }),
+                mat: kn,
+                opacity: dens,
+                light: { form: 0.5, sheenO: 0.4 },
+                lines: mid ? [-1, 0, 1].map((i) => ({ d: M.stroke(ctx, [[i * 0.03, cr - 0.02, false, 0.02], [i * 0.017, cr + 5e-3, false, 0.02], [i * 0.02, cr + 0.03, false, 0.02]], [3e-3, 9e-3, 3e-3]), fill: "shade", o: 0.5 })) : []
+              });
+            } else {
+              let c = [P(0, cr + 0.016), P(0.012, cr - 0.068), P(0.075, cr - 0.128), P(0.17, cr - 0.122), P(0.265, cr - 0.062), P(0.33, cr + 0.05), P(0.365, cr + 0.19), P(0.37, cr + 0.33), P(0.35, cr + 0.45)];
+              let hwp = [0.056, 0.022, 0.026, 0.04, 0.05, 0.058, 0.064, 0.068, 0.07];
+              if (lo) {
+                c = c.slice(0, 5);
+                hwp = hwp.slice(0, 5);
+              }
+              const hw = (t) => {
+                const m = hwp.length - 1, x = t * m, i = Math.min(m - 1, Math.floor(x));
+                return (hwp[i] + (hwp[i + 1] - hwp[i]) * (x - i)) * k * wN;
+              };
+              const d2 = G.tube(M.K(ctx, c, 0.02), hw, { capStart: "round", capEnd: "round", samples: 28 });
+              const tailLit = mid ? [
+                { d: M.stroke(ctx, L2([P(0.07, cr - 0.148), P(0.17, cr - 0.142), P(0.25, cr - 0.09), P(0.3, cr - 0.01)]), [4e-3, 0.016, 0.014, 4e-3]), o: 0.55 },
+                { d: M.stroke(ctx, L2([P(0.325, cr + 0.1), P(0.335, cr + 0.22), P(0.33, cr + 0.34)]), [4e-3, 0.016, 4e-3]), o: 0.4 }
+              ] : [];
+              const tailShade = mid ? [{ d: M.stroke(ctx, L2([P(0.41, cr + 0.08), P(0.428, cr + 0.22), P(0.418, cr + 0.38)]), [4e-3, 0.026, 6e-3]), o: 0.55 }] : [];
+              const tailLines = mid ? [
+                // the twist at the neck of the knot, a crumple across the leg and the seam of the foot
+                ...[0, 1].map((i) => ({ d: M.stroke(ctx, L2([P(-0.025 + i * 0.03, cr - 0.045 + i * 0.012), P(0.04 + i * 0.012, cr - 0.08 + i * 0.012)]), [3e-3, 8e-3, 3e-3]), fill: "shade", o: 0.55 })),
+                { d: M.stroke(ctx, L2([P(0.306, cr + 0.215), P(0.37, cr + 0.235), P(0.43, cr + 0.215)]), [3e-3, 8e-3, 3e-3]), fill: "shade", o: 0.4 },
+                { d: M.stroke(ctx, L2([P(0.31, cr + 0.4), P(0.352, cr + 0.42), P(0.402, cr + 0.4)]), [3e-3, 7e-3, 3e-3]), fill: "shade", o: 0.5 }
+              ] : [];
+              out.push({ id: "mask-stocking-tail", z: zT, d: d2, mat: kn, opacity: dens, lit: tailLit, shade: tailShade, lines: tailLines, light: { form: 0.7, sheenO: 0.4 } });
+            }
+          }
+          return out;
+        }
+      });
+    }
+  });
+
+  // src/parts/masks/surgical.js
+  var require_surgical = __commonJS({
+    "src/parts/masks/surgical.js"() {
+      "use strict";
+      var { register } = require_registry();
+      var M = require_mask();
+      register({
+        kind: "mask",
+        name: "surgical",
+        aliases: ["medical-mask", "gauze-mask"],
+        describe: "Surgical mask: a pleated gauze mask over nose, mouth and chin with ties running to the ears. The orderly, the pharmacist, the burglar who watches the news.",
+        params: { color: "cloth token (default cloth-white; cloth-sky for the pale blue ward mask)", ties: "tie colour token (default the mask colour)", pleats: "2\u20134 (default 3)" },
+        example: { face: { mask: { type: "surgical", color: "cloth-sky" } } },
+        covers: ["nose", "mouth", "facialHair"],
+        draw(ctx, o) {
+          const { G, C } = ctx, H = ctx.head, k = ctx.R.head.k, hi = ctx.lodAtLeast("hi"), mid = ctx.lodAtLeast("mid"), lod = ctx.lod;
+          const sk = M.skull(ctx), wid = sk.wid;
+          const col = M.tokOr(ctx, o.color, "cloth-white");
+          const cloth = ctx.mat(col, "cloth"), tieM = ctx.mat(M.tokOr(ctx, o.ties, col), "cloth");
+          const half = (y) => Math.min(0.285, wid(y) + 8e-3);
+          const cy = H.chinY;
+          const L = [
+            [0, 0.046, false, 0.055],
+            [-0.1, 0.064, false, 0.04],
+            [-0.19, 0.092, false, 0.025],
+            [-half(0.125), 0.125, true, 0.012],
+            [-half(0.2), 0.2, false, 0.01],
+            [-half(0.3), 0.3, false, 0.01],
+            [-half(0.38), 0.38, false, 0.012],
+            [-half(0.45), 0.45, false, 0.015],
+            [-half(cy - 0.02) * 0.9, cy - 0.01, false, 0.03],
+            [-0.08, cy + 0.035, false, 0.04],
+            [0, cy + 0.045, false, 0.045]
+          ];
+          const d = M.path(ctx, M.sym(L), 0.45);
+          const tone = M.tone(ctx, { nose: 1.1, cheek: 0.4, mouth: 0.8 });
+          const shade = [...tone.shade], deep = [...tone.deep], lit = [...tone.lit], lines = [];
+          const B = (pts, ws, d1 = 0.035) => M.stroke(ctx, pts, ws, d1);
+          const np = Math.round(M.clamp(o.pleats || 3, 2, 4));
+          if (mid) for (let i = 0; i < np; i++) {
+            const y = 0.17 + (cy - 0.04 - 0.17) * (i + 0.25) / np;
+            const m = half(y) * 0.97;
+            const row = (dy, w, dd) => [-1, -0.5, 0, 0.5, 1].map((t) => [t * m, y + dy + 0.022 * (1 - t * t), false, dd]);
+            lines.push({ d: B(row(0, 0, 0.03), [4e-3, 0.016, 0.02, 0.016, 4e-3]), fill: "shade", o: 0.6 });
+            if (hi) lit.push({ d: B(row(0.016, 0, 0.03), [3e-3, 8e-3, 0.01, 8e-3, 3e-3]), o: 0.5 });
+          }
+          if (mid) deep.push({ d: B([[-half(0.44) * 0.8, cy - 0.02], [0, cy + 0.022], [half(0.44) * 0.8, cy - 0.02]], [4e-3, 0.018, 4e-3]), o: 0.35 });
+          const pieces = [{ id: "mask-surgical", z: ctx.Z.mask, d, mat: cloth, shade, deep, lit, lines, light: { form: 0.95, sheenO: 0.4 } }];
+          const tw = Math.max(0.014, M.U.hpx(ctx, lod === "lo" ? 2.2 : lod === "mid" ? 1.6 : 1.2));
+          const tk = (pts) => M.tuck(ctx, pts, sk.kit, tw * k * 0.6 + ctx.px(1), 0.01);
+          for (const s of [-1, 1]) {
+            const tag = s < 0 ? "R" : "L";
+            pieces.push({ id: `mask-surgical-tie-up-${tag}`, z: ctx.Z.mask - 0.05, d: B(tk([[s * (half(0.125) - 0.012), 0.128], [s * (wid(0.06) - 0.014), 0.07], [s * (wid(H.earTop) - 6e-3), H.earTop + 0.05]]), [tw, tw, tw * 0.9], 0.01), mat: tieM, light: false });
+            pieces.push({ id: `mask-surgical-tie-low-${tag}`, z: ctx.Z.mask - 0.05, d: B(tk([[s * (half(0.43) - 0.012), 0.43], [s * (wid(0.3) - 0.022), 0.31], [s * (wid(H.earBot) - 6e-3), H.earBot - 0.012]]), [tw, tw, tw * 0.9], 0.01), mat: tieM, light: false });
+          }
+          return pieces;
+        }
+      });
+    }
+  });
+
   // src/parts/mid/apron.js
   var require_apron = __commonJS({
     "src/parts/mid/apron.js"() {
@@ -6179,7 +11357,8 @@ var B68Figure = (() => {
           const P = (k, x, Y) => R.torsoPt(k * x, Y);
           const half = (Y) => Y <= y.waist ? 0 : 1;
           const pts = [];
-          const wW = w.waist + 0.05 * hh, hipW = Math.max(w.hip, w.waist) + 0.035 * hh, hemW = hipW + 0.02 * hh;
+          const cap = ctx.underCaps ? ctx.underCaps() : null;
+          const wW = w.waist + Math.min(0.05, cap ? cap.waist : 0.05) * hh, hipW = Math.max(w.hip, w.waist) + 0.035 * hh, hemW = hipW + 0.02 * hh;
           const side = (k) => {
             const out2 = [];
             if (!bistro) out2.push([...P(k, 0.3 * hh + wc * 0.1, topY), true], P(k, 0.4 * hh + wc * 0.18, y.chest - 0.1 * hh), P(k, wc * 0.68, y.chest + 0.3 * hh), P(k, wW * 0.97, y.waist - 0.06 * hh));
@@ -6220,274 +11399,6 @@ var B68Figure = (() => {
           return out;
         }
       });
-    }
-  });
-
-  // src/parts/tops/_shared.js
-  var require_shared = __commonJS({
-    "src/parts/tops/_shared.js"(exports, module) {
-      "use strict";
-      var clamp01 = (t) => Math.max(0, Math.min(1, t));
-      var sstep = (a, b, x) => {
-        const t = clamp01((x - a) / (b - a));
-        return t * t * (3 - 2 * t);
-      };
-      var NECK = {
-        crew: [0.02, 0.1, 2.2],
-        scoop: [0.1, 0.38, 2],
-        boat: [0.34, 0.06, 3],
-        square: [0.16, 0.28, 8],
-        v: [0.01, 0.7, 1],
-        high: [0, 0.02, 2],
-        turtle: [0, 0, 2]
-      };
-      function bodice(ctx, o = {}) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
-        const { R, G } = ctx;
-        const hh = R.hh, w = R.w, y = R.y;
-        const cap = ctx.underCaps ? ctx.underCaps() : null;
-        const e = Math.min((_a = o.ease) != null ? _a : 0.045, cap ? cap.ease : 9) * hh, eW = Math.min((_c = (_b = o.waistEase) != null ? _b : o.ease) != null ? _c : 0.045, cap ? cap.waist : 9) * hh;
-        const dr = Math.max(o.drop || 0, cap ? cap.drop : 0) * hh, slope = (_d = o.slope) != null ? _d : 1;
-        const nl = o.neckline || "crew";
-        const hem = (_e = o.hem) != null ? _e : y.hip + 0.12 * hh;
-        const flare = (o.flare || 0) * hh;
-        const cut = o.armhole === "cut";
-        const sp = NECK[nl] || NECK.crew;
-        const nbw = w.neckBase;
-        const nx = nbw + ((_f = o.neckX) != null ? _f : sp[0]) * hh;
-        const depth = ((_g = o.depth) != null ? _g : sp[1]) * hh, pw = sp[2];
-        const turtle = nl === "turtle";
-        const neckH = ((_h = o.neckH) != null ? _h : 0.3) * hh;
-        const neckY0 = y.neckBase - 0.03 * hh;
-        const sides = {};
-        let yC = neckY0;
-        for (const s of ["R", "L"]) {
-          const k = R.sx(s), A = R.arms[s];
-          const P = (x, Y) => R.torsoPt(k * x, Y);
-          const edgeX = w.shoulder + 0.08 * A.widths.top + e;
-          const xTip = edgeX - 0.12 * hh;
-          const yTip = neckY0 + (y.shoulder - 5e-3 * hh - neckY0) * slope;
-          const shY = (x) => {
-            const f = clamp01((x - nbw) / (xTip - nbw));
-            return neckY0 + (yTip - neckY0) * f - 0.02 * hh * Math.sin(Math.PI * f);
-          };
-          yC = shY(nx);
-          const pts = {};
-          if (turtle) pts.neckTop = P(w.neck * 1.2 + ((_i = o.neckFlare) != null ? _i : 0.03) * hh, y.neckBase - neckH);
-          pts.neck = turtle ? P(nbw + 0.025 * hh, shY(nbw + 0.025 * hh)) : [...P(nx, yC), true];
-          const xt = nx + (xTip - nx) * 0.55;
-          pts.trap = P(xt, shY(xt));
-          const xa = w.chest * 0.98 + e;
-          if (cut) {
-            const xs = nx + (xTip - nx) * ((_j = o.strap) != null ? _j : 0.5);
-            pts.strapTop = [...P(xs, shY(xs)), true];
-            const ci = (x, Y, lo) => o.armInner ? Math.max(lo, Math.min(x, o.armInner(s, Y))) : x;
-            const yB = y.chest - 0.36 * hh, yP = y.chest - 0.27 * hh, xA = xs + 0.03 * hh;
-            pts.armA = P(xA, y.shoulder + 0.22 * hh);
-            pts.armB = P(ci(xs + (xa - xs) * 0.45, yB, xA + 0.02 * hh), yB);
-            pts.armpit = P(ci(xa - 0.02 * hh, yP, xA + 0.05 * hh), yP);
-          } else {
-            pts.shTop = P(xTip, yTip);
-            pts.shPt = P(edgeX - 0.04 * hh, y.shoulder + 0.1 * hh + dr * 0.6);
-            pts.shOut = P(edgeX - 4e-3 * hh, y.shoulder + 0.3 * hh + dr * 0.4);
-            pts.armpit = P(xa, y.chest - 0.24 * hh);
-          }
-          pts.chest = P(w.chest + e, y.chest);
-          pts.waist = P(w.waist + eW, y.waist);
-          pts.hip = P(w.hip + e, y.hip);
-          const hl = Math.min(hem, y.crotch);
-          if (hem > y.hip + 0.05 * hh) pts.hipLow = P(R.widthAt(hl) + e + flare * Math.min(1, (hl - y.hip) / Math.max(1, hem - y.hip)), hl - (hem > y.crotch ? 0 : 0.02 * hh));
-          pts.hem = [...P(R.widthAt(Math.min(hem, y.crotch + 3 * hh)) + e + flare, hem), true];
-          if (hem < y.waist + 0.05 * hh) {
-            delete pts.hip;
-            delete pts.hipLow;
-            pts.hem = [...P(R.widthAt(hem) + e + flare, hem), true];
-          }
-          if (hem < y.chest + 0.05 * hh) delete pts.waist;
-          sides[s] = pts;
-        }
-        const order = ["neckTop", "neck", "trap", "strapTop", "armA", "armB", "shTop", "shPt", "shOut", "armpit", "chest", "waist", "hip", "hipLow", "hem"];
-        const Rp = order.filter((n) => sides.R[n]).map((n) => sides.R[n]);
-        const Lp = order.filter((n) => sides.L[n]).map((n) => sides.L[n]).reverse();
-        const hemDrop = ((_k = o.hemDrop) != null ? _k : 0.02) * hh;
-        const hm = R.torsoPt(0, hem + hemDrop);
-        const hemMid = o.hemPoint ? [hm[0], hm[1], true] : hm;
-        const across = [];
-        if (turtle) across.push(R.torsoPt(0, y.neckBase - neckH + 0.012 * hh));
-        else if (pw === 1) across.push([...R.torsoPt(0, yC + depth), true]);
-        else for (const t of [0.8, 0.5, 0.25, 0, -0.25, -0.5, -0.8]) across.push(R.torsoPt(t * nx, yC + depth * Math.pow(1 - Math.pow(Math.abs(t), pw), 1 / pw)));
-        const all = [...Rp, hemMid, ...Lp, ...across];
-        const neckPts = turtle ? [sides.L.neckTop, ...across, sides.R.neckTop] : [sides.L.neck, ...across, sides.R.neck];
-        return { d: G.smooth(all, true, (_l = o.tension) != null ? _l : 0.45), pts: sides, L: sides.L, R: sides.R, hem, hemMid, neckMid: turtle ? across[0] : across[Math.floor(across.length / 2)] || [0, yC + depth], neckPts, yC, nx, depth };
-      }
-      function sleeves(ctx, mat, o = {}) {
-        var _a, _b, _c;
-        const { R, G, hh } = ctx;
-        const out = [];
-        const to = (_a = o.to) != null ? _a : 0.32, ease = (_b = o.ease) != null ? _b : 0.05;
-        const capK = (_c = o.cap) != null ? _c : Math.max(0.55, 1 - ease / 0.22), flare = o.flare || 0;
-        const hwf = (u, base) => {
-          let b = o.hw ? o.hw(u, base) : base;
-          b *= capK + (1 - capK) * sstep(0, 0.13, u);
-          if (flare) b *= 1 + flare * sstep(Math.max(0, to - 0.2), to, u);
-          return b;
-        };
-        const pre = o.prefix || "top";
-        for (const s of ["R", "L"]) {
-          const A = R.arms[s];
-          const lb = ctx.body.limb("arm", s, { ease, to, capStart: "round", hw: hwf });
-          lb.pieces.forEach((pc) => {
-            var _a2, _b2, _c2, _d;
-            const lines = [];
-            const last = pc.seg === "lower" || pc.seg === "whole";
-            if (ctx.lodAtLeast("mid") && to > 0.6) {
-              const e = lb.at(lb.split), up = lb.at(lb.split - 0.08), dn = lb.at(lb.split + 0.06);
-              const n = G.perp(G.norm(G.sub(dn, up))), hw = lb.hw(lb.split);
-              lines.push({ d: G.brush([G.add(e, G.mul(n, -hw * 0.9)), G.add(G.lerp(e, dn, 0.5), G.mul(n, -hw * 0.1))], [4e-3 * hh, 0.022 * hh, 2e-3 * hh], { samples: 5 }), fill: "deep", o: 0.7 });
-              lines.push({ d: G.brush([G.add(up, G.mul(n, hw * 0.8)), G.add(G.lerp(up, e, 0.6), G.mul(n, hw * 0.05))], [3e-3 * hh, 0.016 * hh, 2e-3 * hh], { samples: 5 }), fill: "shade", o: 0.8 });
-            }
-            if (last && o.cuff !== false && ctx.lodAtLeast("mid")) {
-              const p = lb.at(to), q = lb.at(Math.max(0, to - 0.03)), dir = G.norm(G.sub(p, q)), n = G.perp(dir);
-              const hw = lb.hw(to) * 1.15, bw = ((_a2 = o.hemBand) != null ? _a2 : 0.034) * hh;
-              const c = G.sub(p, G.mul(dir, bw * 0.45));
-              lines.push({ d: G.brush([G.add(c, G.mul(n, -hw)), G.add(c, G.mul(n, hw))], bw, { samples: 5 }), fill: "shade", o: (_b2 = o.hemO) != null ? _b2 : 0.8 });
-            }
-            out.push({ id: `${pre}-sleeve-${s}-${pc.seg}`, z: A.z + ((_c2 = o.zAdd) != null ? _c2 : 0.2) + (pc.seg === "lower" ? A.foreFront ? 0.05 : -0.05 : 0), d: pc.d, mat, lines, pattern: o.pattern, light: { form: (_d = o.form) != null ? _d : 1 } });
-          });
-          if (o.shadow !== false && to < 0.92 && ctx.lodAtLeast("mid")) {
-            const sb = ctx.body.limb("arm", s, { from: to - 0.01, to: Math.min(1, to + 0.07), capStart: "flat" });
-            sb.pieces.forEach((pc, i) => out.push({ id: `${pre}-arm-${s}-hemshadow${i}`, z: A.z + 0.1 + (pc.seg === "lower" ? A.foreFront ? 0.05 : -0.05 : 0), d: pc.d, mat: ctx.skin, fill: "deep", light: false, opacity: 0.32 }));
-          }
-        }
-        return out;
-      }
-      function torsoFolds(ctx, t, o = {}) {
-        const { R, G, hh } = ctx;
-        const lines = [];
-        if (!ctx.lodAtLeast("mid")) return lines;
-        const W = (pts, ws, fill, op) => lines.push({ d: G.brush(pts, ws.map((v) => v * hh), { samples: 5 }), fill, o: op });
-        for (const s of ["R", "L"]) {
-          const k = R.sx(s), P = t.pts[s], ap = P.armpit, lit = s === "R";
-          const sh = lit ? "shade" : "deep";
-          W([[ap[0] - k * 0.02 * hh, ap[1] + 0.05 * hh], [ap[0] - k * 0.22 * hh, ap[1] + 0.2 * hh], [ap[0] - k * (lit ? 0.32 : 0.4) * hh, ap[1] + (lit ? 0.26 : 0.3) * hh]], [2e-3, lit ? 0.016 : 0.024, 2e-3], sh, lit ? 0.6 : 0.8);
-          if (!lit && o.strong !== false) W([[ap[0] - k * 0.03 * hh, ap[1] + 0.2 * hh], [ap[0] - k * 0.16 * hh, ap[1] + 0.38 * hh], [ap[0] - k * 0.22 * hh, ap[1] + 0.52 * hh]], [2e-3, 0.016, 2e-3], "shade", 0.7);
-          if (o.armShadow !== false) {
-            const lb = ctx.body.limb("arm", s, { ease: 0.04, to: 0.46 });
-            const pts = [];
-            for (const u of [0.07, 0.19, 0.31, 0.43]) {
-              const c = lb.at(u), c2 = lb.at(u + 0.02), c0 = lb.at(Math.max(0, u - 0.02));
-              let n = G.perp(G.norm(G.sub(c2, c0)));
-              if ((R.centerAt(c[1]) - c[0]) * n[0] < 0) n = [-n[0], -n[1]];
-              pts.push(G.add(c, G.mul(n, lb.hw(u) + 0.03 * hh)));
-            }
-            lines.push({ d: G.brush(pts, [2e-3 * hh, 0.06 * hh, 0.06 * hh, 2e-3 * hh], { samples: 7 }), fill: lit ? "deep" : "shade", o: lit ? 0.5 : 0.3 });
-          }
-          if (o.waist && P.waist) {
-            const wp = P.waist;
-            W([[wp[0] - k * 0.01 * hh, wp[1] - 0.05 * hh], [wp[0] - k * 0.16 * hh, wp[1] - 0.01 * hh], [wp[0] - k * 0.3 * hh, wp[1] + 0.04 * hh]], [2e-3, 0.016, 2e-3], "shade", lit ? 0.55 : 0.8);
-            W([[wp[0] - k * 0.01 * hh, wp[1] + 0.07 * hh], [wp[0] - k * 0.14 * hh, wp[1] + 0.11 * hh], [wp[0] - k * 0.24 * hh, wp[1] + 0.14 * hh]], [2e-3, 0.012, 2e-3], "shade", 0.5);
-          }
-          if (o.hemFolds !== false && P.hem) {
-            const hp = P.hem;
-            W([[hp[0] - k * 0.06 * hh, hp[1] - 0.02 * hh], [hp[0] - k * 0.2 * hh, hp[1] - 0.2 * hh], [hp[0] - k * 0.26 * hh, hp[1] - 0.3 * hh]], [0.018, 0.01, 2e-3], "shade", 0.8);
-          }
-        }
-        return lines;
-      }
-      function collarFlaps(ctx, mat, o = {}) {
-        var _a, _b, _c, _d, _e, _f;
-        const { R, G, hh } = ctx;
-        const nb = R.y.neckBase, nx0 = R.w.neckBase * 0.97;
-        const len = ((_a = o.len) != null ? _a : 0.28) * hh, spread = ((_b = o.spread) != null ? _b : 0.14) * hh, rise = ((_c = o.rise) != null ? _c : 0.13) * hh, gap = ((_d = o.gap) != null ? _d : 0.03) * hh, throat = ((_e = o.throat) != null ? _e : 0.06) * hh;
-        const pieces = [], shadow = [];
-        for (const s of ["R", "L"]) {
-          const k = R.sx(s), P = (x, Y) => R.torsoPt(k * x, Y);
-          const A = P(nx0 * 0.92, nb - rise), B = P(nx0 + 0.09 * hh, nb - rise * 0.6), M = P(nx0 + spread * 0.92, nb + len * 0.5);
-          const C = [...P(nx0 + spread, nb + len), true], D = [...P(gap, nb + throat), true];
-          const E = G.lerp(D, A, 0.55);
-          const Dm = G.lerp(C, D, 0.5);
-          Dm[1] -= 0.012 * hh;
-          const poly = [A, B, M, C, Dm, D, E];
-          const d = G.smooth(poly, true, 0.4);
-          const lines = [];
-          if (ctx.lodAtLeast("mid")) lines.push({ d: G.brush([G.lerp(A, E, 0.15), G.lerp(A, E, 0.6), G.lerp(D, E, 0.2)], [2e-3 * hh, 0.02 * hh, 2e-3 * hh], { samples: 5 }), fill: "shade", o: 0.55 });
-          pieces.push({ id: `${o.id || "collar"}-${s}`, z: (_f = o.z) != null ? _f : 31.8, d, mat, pattern: o.pattern, lines, light: { form: 0.55 } });
-          shadow.push({ d: G.translate(d, 0.012 * hh, 0.024 * hh), fill: "deep", o: 0.55 });
-        }
-        return { pieces, shadow };
-      }
-      function buttons(ctx, ys, o = {}) {
-        var _a, _b;
-        const { R, G, hh } = ctx;
-        if (!ctx.lodAtLeast("mid")) return [];
-        const r = ((_a = o.r) != null ? _a : 0.014) * hh, out = [];
-        for (const Y of ys) {
-          const c = R.torsoPt(((_b = o.dx) != null ? _b : 0) * hh, Y);
-          out.push({ d: G.ellipse(c[0], c[1], r, r), fill: o.fill || "deep", o: 0.9 });
-          if (ctx.lodAtLeast("hi")) out.push({ d: G.ellipse(c[0] - r * 0.3, c[1] - r * 0.3, r * 0.35, r * 0.35), fill: "light", o: 0.8 });
-        }
-        return out;
-      }
-      function centreLine(ctx, y0, y1, o = {}) {
-        var _a, _b, _c;
-        const { R, G, hh } = ctx;
-        const dx = ((_a = o.dx) != null ? _a : 0.02) * hh;
-        const pts = [0, 0.5, 1].map((f) => R.torsoPt(dx, y0 + (y1 - y0) * f));
-        return { d: G.brush(pts, [2e-3 * hh, ((_b = o.w) != null ? _b : 0.01) * hh, 4e-3 * hh]), fill: o.fill || "shade", o: (_c = o.o) != null ? _c : 0.7 };
-      }
-      function ribLines(ctx, a, b, o = {}) {
-        var _a, _b;
-        const { G, hh } = ctx;
-        const out = [];
-        const n = Math.min(a.length, b.length);
-        for (let i = 0; i < n; i++) out.push({ d: G.brush([a[i], G.lerp(a[i], b[i], 0.5), b[i]], ((_a = o.w) != null ? _a : 6e-3) * hh), fill: o.fill || "shade", o: (_b = o.o) != null ? _b : 0.4 });
-        return out;
-      }
-      function ribBody(ctx, halfW, y0, y1, o = {}) {
-        var _a, _b;
-        const { R, G, hh } = ctx;
-        const sp = ((_a = o.spacing) != null ? _a : 0.055) * hh, out = [];
-        for (let x = -halfW; x <= halfW; x += sp) {
-          const pts = [y0, (y0 + y1) / 2, y1].map((Y) => R.torsoPt(x, Y));
-          const lit = x < 0;
-          out.push({ d: G.brush(pts, ((_b = o.w) != null ? _b : 7e-3) * hh), fill: lit ? "light" : "shade", o: lit ? 0.32 : 0.4 });
-        }
-        return out;
-      }
-      function cuffs(ctx, mat, o = {}) {
-        var _a, _b, _c;
-        const { R, G, hh } = ctx;
-        const out = [], u0 = (_a = o.from) != null ? _a : 0.9, u1 = (_b = o.to) != null ? _b : 1, ease = (_c = o.ease) != null ? _c : 0.055;
-        for (const s of ["R", "L"]) {
-          const A = R.arms[s];
-          const lb = ctx.body.limb("arm", s, { ease, from: u0, to: u1, capStart: "flat", hw: o.hw });
-          lb.pieces.forEach((pc, i) => {
-            const lines = [];
-            if (ctx.lodAtLeast("mid")) {
-              const p = lb.at(u0), q = lb.at(u0 + 0.03), dir = G.norm(G.sub(q, p)), n = G.perp(dir), hw = lb.hw(u0);
-              lines.push({ d: G.brush([G.add(p, G.mul(n, -hw * 1.1)), G.add(p, G.mul(n, hw * 1.1))], 0.022 * hh, { samples: 3 }), fill: "deep", o: 0.55 });
-              if (o.button !== false) {
-                const bp = G.add(G.lerp(p, q, 1.6), G.mul(n, hw * 0.4 * (s === "R" ? 1 : -1)));
-                lines.push({ d: G.ellipse(bp[0], bp[1], 0.012 * hh), fill: "deep", o: 0.8 });
-              }
-            }
-            out.push({ id: `${o.prefix || "top"}-cuff-${s}${lb.pieces.length > 1 ? i : ""}`, z: A.z + 0.6 + (pc.seg === "lower" ? A.foreFront ? 0.05 : -0.05 : 0), d: pc.d, mat, lines, pattern: o.pattern, light: { form: 0.8 } });
-          });
-        }
-        return out;
-      }
-      function hemBand(ctx, b, h = 0.08, fill = "shade") {
-        const { G, hh } = ctx;
-        const a = [b.pts.R.hem, b.hemMid, b.pts.L.hem].map((p) => [p[0], p[1] - h * 0.5 * hh]);
-        const lines = [{ d: G.brush(a, [h * hh, h * hh, h * hh]), fill, o: 0.5 }];
-        if (ctx.lodAtLeast("mid")) {
-          const n = ctx.lodAtLeast("hi") ? 26 : 14;
-          const pts = G.resample([b.pts.R.hem, b.hemMid, b.pts.L.hem], n, 0.5);
-          for (const p of pts) lines.push({ d: G.brush([[p[0], p[1] - h * hh], [p[0], p[1]]], 7e-3 * hh), fill: "deep", o: 0.35 });
-        }
-        return lines;
-      }
-      module.exports = { cuffs, hemBand, bodice, sleeves, torsoFolds, collarFlaps, buttons, centreLine, ribLines, ribBody, sstep, clamp01, NECK };
     }
   });
 
@@ -6934,6 +11845,8 @@ var B68Figure = (() => {
     "src/parts/nose-mouth/_mouth.js"(exports, module) {
       "use strict";
       var U = require_util();
+      var { darkSkin } = require_hg();
+      var { fx } = require_fx();
       var DEF = {
         w: 1,
         up: 0.019,
@@ -6953,60 +11866,107 @@ var B68Figure = (() => {
         dropLo: 0,
         seam: 0
       };
+      var openDepth = (o) => o > 0.02 ? 0.048 * o * (1 + 0.45 * o) + 4e-3 : 0;
       function geom(ctx, opts, def) {
-        const H = ctx.head, M = ctx.expr.mouth;
+        const H = ctx.head, X = fx(ctx), M = X.mouth;
         const v = { ...DEF, ...def };
-        const mw = H.mouthW / 2 * 1.3 * v.w * (M.width || 1) * (opts.mouthWidth || 1);
+        const edge = H.widthAt ? H.widthAt(H.mouthY) : H.w * 0.8;
+        const mw = Math.min(H.mouthW / 2 * 1.3 * v.w * M.width * (opts.mouthWidth || 1), Math.max(0.05, edge - 0.09));
         const y = H.mouthY;
-        const c = (M.curve || 0) * 0.02 * v.curveK + v.base, sm = (M.smirk || 0) * 0.022;
+        const c = M.curve * 0.02 * v.curveK + v.base, sm = M.smirk * 0.022;
         const yl = y - c - Math.max(0, -sm), yr = y - c - Math.max(0, sm);
         const y0 = y + 3e-3;
-        const open = Math.max(M.open || 0, v.openMin);
+        const open = Math.max(M.open, v.openMin);
+        const D = open > 0.12 ? Math.max(openDepth(open), Math.min(U.hpx(ctx, ctx.lod === "lo" ? 3.8 : ctx.lod === "mid" ? M.teeth > 0.5 ? 4.4 : 3.6 : 0), 0.085 * open + 0.024)) : openDepth(open);
         const pts = [[-mw, yl, true], [-mw * 0.62, U.lerp(y0, yl, 0.3) + 15e-4], [-mw * 0.22, y0 + 8e-4], [0, y0], [mw * 0.22, y0 + 8e-4], [mw * 0.62, U.lerp(y0, yr, 0.3) + 15e-4], [mw, yr, true]];
-        return { v, mw, y, y0, yl, yr, c, open, line: pts, yTop: y0 - v.up - v.bow * 4e-3, yBot: y0 + v.lo + open * 0.05 };
+        return { v, X, M, mw, y, y0, yl, yr, c, open, D, line: pts, yTop: y0 - v.up - v.bow * 4e-3, yBot: y0 + v.lo + D };
+      }
+      function lineY(line, x) {
+        if (x <= line[0][0]) return line[0][1];
+        for (let i = 1; i < line.length; i++) if (x <= line[i][0]) return U.lerp(line[i - 1][1], line[i][1], (x - line[i - 1][0]) / (line[i][0] - line[i - 1][0] || 1));
+        return line[line.length - 1][1];
       }
       function build(ctx, opts, def) {
         const { G, C, T, skin } = ctx;
-        const g = geom(ctx, opts, def), v = g.v, { mw, y0, yl, yr, open } = g;
-        const b = U.bold(ctx), px = (n) => U.hpx(ctx, n);
+        const g = geom(ctx, opts, def), v = g.v, { mw, y0, yl, yr, open, D, M } = g;
+        const lod = ctx.lod, b = U.bold(ctx), px = (n) => U.hpx(ctx, n);
         const lipTok = T.tok(opts.lips) || (v.lipsDefault ? ctx.tok(v.lipsDefault) : null);
         const lip = lipTok ? C.mix(skin.lip, lipTok, 0.85) : skin.lip;
-        const lineC = C.mix(skin.deep, T.INK, 0.4);
+        const v2 = lod !== "hi";
+        const lineC = C.mix(skin.deep, T.INK, v2 ? 0.6 : 0.4);
         const over = [];
-        const lw = Math.max(v.lineW * b, px(ctx.lod === "lo" ? 2.2 : 1.7));
-        const lowShift = open * 0.045;
+        const emph = Math.min(1, Math.abs(M.curve) * 0.5 + Math.abs(M.smirk) * 0.5 + Math.min(1, open) + M.press * 0.5 + Math.abs(M.snarl) * 0.5);
+        const lw = Math.max(v.lineW * b, px(lod === "lo" ? 2.2 : 1.7)) * (lod === "hi" ? 1 : 1 + 0.32 * emph) * (1 + 0.18 * M.press);
+        const lwV2 = lw * (v2 ? 1 + 0.4 * darkSkin(ctx) : 1);
+        const lowShift = open > 0.02 ? D * 0.92 : 0;
         const hs = (d) => U.hsD(ctx, d, 0.03);
+        const teethC = C.mix(ctx.tok("paper-100"), skin.light, lod === "hi" ? 0.3 : 0.12);
+        const inside = C.mix(skin.deep, T.INK, 0.65);
+        const press = M.press;
         if (ctx.lodAtLeast("mid")) {
-          const lo = v.lo * (ctx.lod === "mid" ? 1.1 : 1) + v.dropLo, up = v.up;
+          const lo = v.lo * (lod === "mid" ? 1.1 : 1) * (1 - 0.28 * press) + v.dropLo, up = v.up * (1 - 0.15 * press);
           const tx = (f) => mw * f;
           const topY = (f) => U.lerp(y0, f < 0 ? yl : yr, Math.abs(f) * 0.85) - up * (1 - Math.abs(f) * 0.55);
           const upper = [[-mw, yl, true], [tx(-0.62), topY(-0.62) + 2e-3], [tx(-0.24), topY(-0.24) - v.bow * 45e-4], [tx(-0.07), topY(-0.07) + v.bow * 12e-4], [0, topY(0) + v.bow * 4e-3], [tx(0.07), topY(0.07) + v.bow * 12e-4], [tx(0.24), topY(0.24) - v.bow * 45e-4], [tx(0.62), topY(0.62) + 2e-3], [mw, yr, true], ...g.line.slice(1, -1).reverse()];
-          over.push({ d: hs(G.smooth(upper, true, 0.38)), fill: C.mix(lip, skin.deep, lipTok ? 0.22 : 0.5), o: 1 });
-          const lower = [[-mw * 0.92, U.lerp(y0, yl, 0.9) + 2e-3, true], [-mw * 0.5, y0 + lo * 0.78 + lowShift], [0, y0 + lo + lowShift], [mw * 0.5, y0 + lo * 0.78 + lowShift], [mw * 0.92, U.lerp(y0, yr, 0.9) + 2e-3, true], [0, y0 + 4e-3 + lowShift * 0.5]];
-          over.push({ d: hs(G.smooth(lower, true, 0.42)), fill: lipTok ? C.mix(skin.base, lip, 0.92) : C.mix(C.mix(skin.light, skin.base, 0.35), lip, v.lipK * 0.7) });
-          if (ctx.lod === "hi") over.push({ d: hs(G.brush([[-mw * 0.4, y0 + lo * 0.5 + lowShift], [-mw * 0.1, y0 + lo * 0.62 + lowShift], [mw * 0.18, y0 + lo * 0.56 + lowShift]], [1e-3, 45e-4, 1e-3])), fill: skin.light, o: lipTok ? 0.55 : 0.7 });
+          over.push({ d: hs(G.smooth(upper, true, 0.38)), fill: C.mix(lip, skin.deep, lipTok ? v2 ? 0.5 : 0.22 : v2 ? 0.78 : 0.5), o: 1 });
+          const lower = [[-mw * 0.92, U.lerp(y0, yl, 0.9) + 2e-3 + lowShift * 0.35, true], [-mw * 0.5, y0 + lo * 0.78 + lowShift], [0, y0 + lo + lowShift], [mw * 0.5, y0 + lo * 0.78 + lowShift], [mw * 0.92, U.lerp(y0, yr, 0.9) + 2e-3 + lowShift * 0.35, true], [0, y0 + 4e-3 + lowShift * 0.5]];
+          const dk = lod === "hi" ? 0 : darkSkin(ctx);
+          const lowerC = lipTok ? C.mix(skin.base, lip, 0.92) : C.mix(C.mix(C.mix(skin.light, skin.base, 0.35), lip, v.lipK * 0.7), skin.light, 0.6 * dk);
+          over.push({ d: hs(G.smooth(lower, true, 0.42)), fill: v2 && lipTok ? C.mix(lowerC, T.PAPER, 0.12 + 0.12 * dk) : v2 && dk > 0.1 ? C.mix(lowerC, T.PAPER, 0.48 * dk) : lowerC });
+          if (lod === "hi") over.push({ d: hs(G.brush([[-mw * 0.4, y0 + lo * 0.5 + lowShift], [-mw * 0.1, y0 + lo * 0.62 + lowShift], [mw * 0.18, y0 + lo * 0.56 + lowShift]], [1e-3, 45e-4, 1e-3])), fill: skin.light, o: lipTok ? 0.55 : 0.7 });
           const sy = y0 + lo + 0.012 + lowShift;
-          over.push({ d: hs(G.smooth([[-mw * 0.62, sy - 3e-3], [0, sy - 7e-3], [mw * 0.7, sy - 3e-3], [mw * 0.3, sy + 0.02 * v.shadeU], [-mw * 0.2, sy + 0.016 * v.shadeU]], true, 0.5)), fill: skin.shade, o: 0.8 });
+          over.push({ d: hs(G.smooth([[-mw * 0.62, sy - 3e-3], [0, sy - 7e-3], [mw * 0.7, sy - 3e-3], [mw * 0.3, sy + 0.02 * v.shadeU * (1 + 0.4 * press)], [-mw * 0.2, sy + 0.016 * v.shadeU * (1 + 0.4 * press)]], true, 0.5)), fill: skin.shade, o: 0.8 });
         }
         if (open > 0.02) {
-          const oy = open;
-          over.push({ d: hs(G.smooth([[-mw * 0.78, U.lerp(y0, yl, 0.8)], [-mw * 0.3, y0 - 6e-3], [mw * 0.3, y0 - 6e-3], [mw * 0.78, U.lerp(y0, yr, 0.8)], [mw * 0.55, y0 + 0.032 * oy + 4e-3], [0, y0 + 0.048 * oy + 4e-3], [-mw * 0.55, y0 + 0.032 * oy + 4e-3]], true, 0.4)), fill: C.mix(skin.deep, T.INK, 0.65) });
-          if (ctx.lodAtLeast("mid")) over.push({ d: hs(G.smooth([[-mw * 0.6, y0 - 4e-3], [0, y0 - 9e-3], [mw * 0.6, y0 - 4e-3], [mw * 0.5, y0 + 8e-3 + oy * 4e-3], [0, y0 + 6e-3 + oy * 6e-3], [-mw * 0.5, y0 + 8e-3 + oy * 4e-3]], true, 0.4)), fill: C.mix(ctx.tok("paper-200"), skin.light, 0.25), o: 0.92 });
+          const rb = 0.8 - 0.14 * Math.max(0, Math.min(1, -M.curve));
+          const bot = [[mw * 0.62, y0 + D * rb + 2e-3], [0, y0 + D + 2e-3], [-mw * 0.62, y0 + D * rb + 2e-3]];
+          const openD = hs(G.smooth([[-mw * 0.985, U.lerp(y0, yl, 1), true], [-mw * 0.62, lineY(g.line, -mw * 0.62) - 2e-3], [-mw * 0.22, y0 - 3e-3], [mw * 0.22, y0 - 3e-3], [mw * 0.62, lineY(g.line, mw * 0.62) - 2e-3], [mw * 0.985, yr, true], ...bot], true, 0.4));
+          over.push({ d: openD, fill: inside });
+          if (open >= 0.75 && lod !== "lo") {
+            const tt = Math.min(1, (open - 0.6) * 1.6);
+            over.push({ d: hs(G.smooth([[-mw * 0.46, y0 + D * 0.88], [-mw * 0.2, y0 + D * (1 - 0.34 * tt)], [mw * 0.22, y0 + D * (1 - 0.38 * tt)], [mw * 0.48, y0 + D * 0.86], [0, y0 + D * 0.99]], true, 0.5)), fill: C.mix(skin.lip, skin.deep, 0.55), o: 0.85 });
+          }
+          const tf = M.teeth;
+          if (tf > 0.02) {
+            const share = tf * (0.82 - 0.42 * Math.max(0, Math.min(1, (D - 0.045) / 0.075)));
+            const Th = Math.max(Math.min(D * share, lod === "hi" ? 0.05 : 0.07), lod === "hi" ? 0 : Math.min(px(2.2), D * 0.72)), ty = (x) => lineY(g.line, x) + 15e-4;
+            const xs = [-0.66, -0.33, 0, 0.33, 0.66];
+            const top = xs.map((f) => [mw * f, ty(mw * f)]);
+            const botT = xs.slice().reverse().map((f) => [mw * f, ty(mw * f) + Th * (1 - 0.18 * Math.abs(f))]);
+            over.push({ d: hs(G.smooth([[top[0][0] - mw * 0.06, top[0][1] + 4e-3], ...top, [top[4][0] + mw * 0.06, top[4][1] + 4e-3], ...botT], true, 0.3)), fill: teethC, o: 0.97 });
+            const sk = lod === "hi" ? 1 : 0.55;
+            if (lod !== "lo") over.push({ d: hs(G.brush(top.map(([x, yy]) => [x, yy + Math.min(Th * 0.2, 0.01)]), [1e-3, Math.min(Th * 0.55, 0.02) * sk, Math.min(Th * 0.6, 0.022) * sk, Math.min(Th * 0.55, 0.02) * sk, 1e-3])), fill: C.mix(skin.deep, T.INK, 0.45), o: lod === "hi" ? 0.5 : 0.4 });
+          }
         }
-        const lines = g.line.map((p) => [p[0], p[1] + (open > 0.02 ? 0 : 0)]);
-        const ws = v.hard ? [4e-3, lw * 0.9, lw * 1.15, lw * 1.2, lw * 1.15, lw * 0.9, 4e-3] : [2e-3, lw * 0.5, lw * 0.95, lw, lw * 0.95, lw * 0.5, 2e-3];
-        over.push({ d: hs(G.brush(lines, ws.map((w, i) => i === 0 || i === 6 ? Math.max(w, 3e-3) : w))), fill: lineC });
-        if (v.tick) for (const s of [-1, 1]) {
+        if (Math.abs(M.snarl) > 0.1) {
+          const s = Math.sign(M.snarl), a = Math.min(1.1, Math.abs(M.snarl)), rise = Math.max(0.026 * a, lod === "hi" ? 0 : U.hpx(ctx, lod === "lo" ? 2.8 : 2.4) * Math.min(1, a)), yc = s < 0 ? yl : yr;
+          const P = (f, dy) => [s * mw * f, lineY(g.line, s * mw * f) + dy];
+          over.push({ d: hs(G.smooth([[s * mw * 1, yc, true], P(0.76, -rise * 0.9), P(0.5, -rise * 0.62), P(0.22, -2e-3), P(0.44, 3e-3), P(0.76, 25e-4)], true, 0.4)), fill: inside });
+          if (lod !== "lo") over.push({ d: hs(G.poly([[s * mw * 0.66, lineY(g.line, s * mw * 0.66) - rise * 0.78], [s * mw * 0.38, lineY(g.line, s * mw * 0.38) - rise * 0.5], [s * mw * 0.5, lineY(g.line, s * mw * 0.5) + 5e-4]], true)), fill: teethC, o: 0.95 });
+        }
+        const lines = g.line.map((p) => [p[0], p[1]]);
+        const ws = v.hard || press > 0.3 ? [4e-3, lwV2 * 0.9, lwV2 * 1.15, lwV2 * 1.2, lwV2 * 1.15, lwV2 * 0.9, 4e-3] : [2e-3, lwV2 * 0.5, lwV2 * 0.95, lwV2, lwV2 * 0.95, lwV2 * 0.5, 2e-3];
+        const lineK = open > 0.3 ? 0.62 : 1;
+        over.push({ d: hs(G.brush(lines, ws.map((w, i) => i === 0 || i === 6 ? Math.max(w, 3e-3) : w * lineK))), fill: lineC });
+        const tick = Math.max(v.tick, lod === "hi" ? 0 : press * 0.55) * (1 - (M.slack || 0));
+        if (tick) for (const s of [-1, 1]) {
           const cy = s < 0 ? yl : yr;
-          over.push({ d: hs(G.brush([[s * mw * 0.9, cy - 1e-3], [s * mw * 1.05, cy + 8e-3 * v.tick], [s * mw * 1.13, cy + 0.024 * v.tick]], [lw * 1.2, lw * 1, 2e-3])), fill: lineC, o: 0.95 });
+          over.push({ d: hs(G.brush([[s * mw * 0.9, cy - 1e-3], [s * mw * 1.05, cy + 8e-3 * tick], [s * mw * 1.13, cy + 0.024 * tick]], [lw * 1.2, lw * 1, 2e-3])), fill: lineC, o: 0.95 });
+        }
+        if (M.dimple > 0.1) {
+          const sides = Math.abs(M.smirk) > 0.3 ? [Math.sign(M.smirk)] : [-1, 1];
+          for (const s of sides) {
+            const cy = s < 0 ? yl : yr, k = Math.min(1, M.dimple);
+            over.push({ d: hs(G.brush([[s * mw * 1.04, cy - 6e-3 * k], [s * mw * 1.12, cy + 2e-3], [s * mw * 1.1, cy + 0.016 * k]], [2e-3, Math.max(9e-3 * k, px(1.3)), 2e-3])), fill: lineC, o: lod === "hi" ? 0.6 : 0.85 });
+          }
         }
         return [{ id: "mouth", z: ctx.Z.face + 0.1, over }];
       }
       function metricsOf(ctx, opts, def) {
         const g = geom(ctx, opts, def);
-        return { mw: g.mw, yTop: g.yTop, y: g.y0, yl: g.yl, yr: g.yr, yBot: g.yBot + 0.03, open: g.open };
+        return { mw: g.mw, yTop: g.yTop, y: g.y0, yl: g.yl, yr: g.yr, yBot: g.yBot + 0.03, open: g.open, depth: g.D };
       }
-      module.exports = { build, metricsOf, geom, DEF };
+      module.exports = { build, metricsOf, geom, DEF, openDepth, lineY };
     }
   });
 
@@ -7334,8 +12294,59 @@ var B68Figure = (() => {
       }
       var sleevesFn = tee.sleeves || sleevesLocal;
       var foldsFn = tee.torsoFolds || (() => []);
+      function coverLower(ctx, t, rebuild) {
+        const low = ctx.lowerOutline;
+        if (!low || !shared || !shared.flatten) return;
+        const { R, hh } = ctx, margin = 8e-3 * hh, step = 4e-3 * hh, knot = 0.03 * hh, slope = 0.5;
+        const poly = shared.flatten(G, low), coat = shared.flatten(G, t.d);
+        const top = poly.reduce((m, q) => Math.min(m, q[1]), Infinity);
+        const extra = { R: [], L: [] };
+        let moved = false;
+        for (const sd of ["R", "L"]) {
+          const o = R.sx(sd), pts = t.pts[sd], yEnd = pts.hem ? pts.hem[1] : t.hem;
+          const ys = [], base = [], e = [];
+          for (let Y = top - 0.2 * hh; Y <= yEnd; Y += step) {
+            const xc = shared.edgeAt(coat, Y, sd), xb = shared.edgeAt(poly, Y, sd);
+            if (xc === null) continue;
+            ys.push(Y);
+            base.push(xc);
+            e.push(xb !== null && o * (xb + o * margin) > o * xc ? xb + o * margin : xc);
+          }
+          if (e.length < 2) continue;
+          for (let i = 1; i < e.length; i++) {
+            const lim = e[i - 1] - o * slope * step;
+            if (o * lim > o * e[i]) e[i] = lim;
+          }
+          for (let i = e.length - 2; i >= 0; i--) {
+            const lim = e[i + 1] - o * slope * step;
+            if (o * lim > o * e[i]) e[i] = lim;
+          }
+          const at = (Y) => {
+            const i = Math.max(0, Math.min(e.length - 2, Math.floor((Y - ys[0]) / step)));
+            const f = Math.max(0, Math.min(1, (Y - ys[i]) / (ys[i + 1] - ys[i])));
+            return e[i] + (e[i + 1] - e[i]) * f;
+          };
+          const changed = e.map((x, i) => o * x > o * base[i] + 5e-4 * hh);
+          const first = changed.indexOf(true), last = changed.lastIndexOf(true);
+          if (first < 0) continue;
+          moved = true;
+          for (const n of ["waist", "hip", "hipLow", "hem"]) {
+            const p = pts[n];
+            if (p && p[1] >= ys[0] && p[1] <= yEnd) {
+              const x = at(p[1]);
+              if (o * x > o * p[0]) p[0] = x;
+            }
+          }
+          for (let Y = ys[first] - knot; Y <= ys[last] + knot && Y < yEnd; Y += knot) {
+            if (["waist", "hip", "hipLow", "hem"].some((n) => pts[n] && Math.abs(pts[n][1] - Y) < 0.012 * hh)) continue;
+            if (Y < ys[0]) continue;
+            extra[sd].push([at(Y), Y]);
+          }
+        }
+        if (moved) rebuild(extra);
+      }
       function frame(ctx, o, S) {
-        var _a, _b, _c, _d, _e, _f, _g, _h;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _i;
         const { R, hh } = ctx, y = R.y;
         const open = (_b = (_a = o.open) != null ? _a : S.open) != null ? _b : false;
         const e = ((_c = o.ease) != null ? _c : S.ease) * hh;
@@ -7348,16 +12359,29 @@ var B68Figure = (() => {
         if (shared && shared.bodice) {
           t = shared.bodice(ctx, { ease, waistEase: ease - pinch, neckline: high ? "high" : "v", neckX: 0, depth: high ? void 0 : vd + 0.03, hem, flare: S.flare || 0, drop: S.shoulderDrop || 0, hemDrop: (_g = S.hemCurve) != null ? _g : 0.012, neckH: 0.3 });
         } else t = ctx.body.torso({ ease, hem, flare: S.flare || 0, neckline: high ? "high" : "v", depth: vd, shoulderDrop: S.shoulderDrop || 0, hemCurve: (_h = S.hemCurve) != null ? _h : 0.012 });
+        const ord = ["neckTop", "neck", "trap", "strapTop", "armA", "armB", "shTop", "shPt", "shOut", "armpit", "chest", "waist", "hip", "hipLow", "hem"];
+        const rebuild = (extra) => {
+          const side = (sd) => {
+            const L = ord.filter((n) => t.pts[sd][n]).map((n) => t.pts[sd][n]);
+            for (const q of extra && extra[sd] || []) {
+              let j = L.length;
+              while (j > 0 && L[j - 1][1] > q[1]) j--;
+              L.splice(j, 0, q);
+            }
+            return L;
+          };
+          const Rp = side("R"), Lp = side("L").reverse();
+          t.d = G.smooth([...Rp, t.hemMid, ...Lp, ...t.neckPts.slice(1, -1)], true, 0.45);
+        };
         if (t.neckPts && S.softShoulder !== false) {
           for (const sd of ["R", "L"]) {
             const P = t.pts[sd], k = R.sx(sd);
             if (P.shPt) P.shPt = [P.shPt[0] - k * 0.035 * hh, P.shPt[1] - 0.012 * hh];
             if (P.shOut) P.shOut = [P.shOut[0] - k * 0.03 * hh, P.shOut[1] + 0.02 * hh];
           }
-          const ord = ["neckTop", "neck", "trap", "strapTop", "armA", "armB", "shTop", "shPt", "shOut", "armpit", "chest", "waist", "hip", "hipLow", "hem"];
-          const Rp = ord.filter((n) => t.pts.R[n]).map((n) => t.pts.R[n]), Lp = ord.filter((n) => t.pts.L[n]).map((n) => t.pts.L[n]).reverse();
-          t.d = G.smooth([...Rp, t.hemMid, ...Lp, ...t.neckPts.slice(1, -1)], true, 0.45);
+          rebuild();
         }
+        if (t.neckPts && ((_i = o.coverLower) != null ? _i : S.coverLower)) coverLower(ctx, t, rebuild);
         const nb = y.neckBase;
         const F = { ctx, R, hh, S, t, e, hem, open, high, vd, nb, mat: null };
         F.X = (s, rx, Y) => R.torsoPt(R.sx(s) * rx * (R.widthAt(Y) + e), Y);
@@ -7561,7 +12585,7 @@ var B68Figure = (() => {
         const d = G.smooth([[...top[0], true], top[1], [...top[2], true], [...bot[0], true], bot[1], [...bot[2], true]], true, 0.4);
         const lines = [];
         if (ctx.lodAtLeast("mid")) lines.push({ d: brush([R.torsoPt(-xw, Y + th * 0.32), R.torsoPt(0, Y + th * 0.32 + 0.012 * hh), R.torsoPt(xw, Y + th * 0.32)], [4e-3 * hh, 4e-3 * hh, 4e-3 * hh]), fill: "deep", o: 0.5 });
-        out.push({ id: `${o.prefix}-belt`, z: Z.belt, d, mat: bm, lines, light: { form: 0.8 } });
+        out.push({ id: `${o.prefix}-belt`, z: Z.belt, d, mat: bm, lines, light: { form: 0.8 }, clip: F.open ? void 0 : `${o.prefix}-body` });
         const bw = 0.15 * hh, bh = th * 1.18;
         const bx = c[0] + ((_c = o.buckleDx) != null ? _c : 0) * hh;
         const frame2 = G.poly([[bx - bw / 2, c[1] - bh / 2], [bx + bw / 2, c[1] - bh / 2], [bx + bw / 2, c[1] + bh / 2], [bx - bw / 2, c[1] + bh / 2]]);
@@ -8145,6 +13169,7 @@ var B68Figure = (() => {
         ease: 0.055,
         hem: ["hip", 0.14],
         pinch: 0.05,
+        coverLower: true,
         shoulderDrop: 0.07,
         neck: "high",
         vDepth: 0.62,
@@ -8205,7 +13230,7 @@ var B68Figure = (() => {
         gapB: 0.03,
         gapH: 0.3,
         lapel: "none",
-        standCollar: { h: 0.19, gap: 0.015, drop: 0.07 },
+        standCollar: { h: 0.21, gap: -4e-3, drop: 0.07 },
         epaulettes: true,
         belt: true,
         beltColor: "leather-black",
@@ -8413,6 +13438,82 @@ var B68Figure = (() => {
     }
   });
 
+  // src/parts/props/armband.js
+  var require_armband = __commonJS({
+    "src/parts/props/armband.js"() {
+      "use strict";
+      var { register } = require_registry();
+      var K = require_kit();
+      var J = require_jewel();
+      var INS = null;
+      try {
+        INS = require_insignia();
+      } catch (e) {
+        INS = null;
+      }
+      function armEase(ctx) {
+        const O = ctx.S.outfit || {}, t = (s) => O[s] && O[s].type || "";
+        if (O.outer) return 0.085;
+        if (/cardigan|jumper|sweater|knit/.test(t("mid"))) return 0.06;
+        if (/shirt|blouse|turtleneck|knit|tee|polo|jersey/.test(t("base"))) return 0.04;
+        if (O.dress) return 0.03;
+        return 0.012;
+      }
+      register({
+        kind: "prop",
+        name: "armband",
+        aliases: ["arm-band"],
+        describe: "A band of cloth round the upper arm, over the sleeve, in a bold colour (red by default), with an optional insignia glyph printed on it in the second colour. Follows the arm in any pose; keeps its colour in the spot schemes; in the militants-type gradient maps it is the accent yellow with a dark glyph.",
+        params: {
+          side: "L (default) | R | both",
+          color: "cloth token for the band (alarm-500)",
+          insignia: "glyph on the band: fist|torque|star|peace|bolt|eye|key|anchor|cross|crescent|gear|wings",
+          color2: "glyph colour token (caution-500: yellow on red, the Militants palette; avoid a white emblem on red)",
+          width: "inches along the arm (3)",
+          at: "0-1 down the upper arm from the shoulder (0.42)"
+        },
+        example: { outfit: { outer: { type: "field-jacket", color: "cloth-olive" } }, props: [{ type: "armband", side: "L", insignia: "fist" }] },
+        draw(ctx, o) {
+          const { G, hh, R } = ctx, out = [];
+          const sd = String(o.side || "L").toUpperCase();
+          if (o.side && !["L", "R", "BOTH"].includes(sd)) ctx.warn(`armband side "${o.side}" is not valid; choose L, R or both`);
+          const sides = sd === "BOTH" ? ["L", "R"] : sd === "R" ? ["R"] : ["L"];
+          let glyph = null;
+          if (o.insignia != null && o.insignia !== "") {
+            const n = String(o.insignia).toLowerCase();
+            if (!INS) ctx.warn("armband: the insignia set is unavailable");
+            else if (!INS.NAMES.includes(n)) ctx.warn(`armband insignia "${o.insignia}" is not valid; choose from: ${INS.NAMES.join(", ")}`);
+            else glyph = (cx, cy, size, rot) => G.rotate(INS.insignia(n, cx, cy, size), rot, [cx, cy]);
+          }
+          const duo = !!(ctx.scheme && ctx.scheme.map && !ctx.scheme.spotKeep);
+          let bandC = duo ? ctx.accent(o.color || "alarm-500") : o.color || "alarm-500";
+          let ink = duo ? ctx.accent(o.color2 || "caution-500", "dark") : o.color2 || "caution-500";
+          if (duo) {
+            const O = ctx.S.outfit || {}, slot = ["outer", "mid", "base"].find((sl) => O[sl] && O[sl].color);
+            const sleeve = slot ? O[slot].color : ctx.accent("ink-900", "dark");
+            const cands = [ctx.accent(o.color || "alarm-500"), ctx.accent(o.color || "alarm-500", "light"), ctx.accent(o.color || "alarm-500", "dark")];
+            bandC = cands.find((c) => ctx.contrast(c, sleeve) >= 3.5) || cands.reduce((a, b) => ctx.contrast(b, sleeve) > ctx.contrast(a, sleeve) ? b : a);
+            const glyphs = [ctx.accent(o.color2 || "caution-500", "dark"), ctx.accent(o.color2 || "caution-500", "light")];
+            ink = glyphs.find((c) => ctx.contrast(c, bandC) >= 3.5) || glyphs.reduce((a, b) => ctx.contrast(b, bandC) > ctx.contrast(a, bandC) ? b : a);
+          }
+          const cloth = ctx.mat(bandC, "cloth");
+          for (const side of sides) {
+            const b = ctx.bone("arm", side, "upper"), A = R.arms[side];
+            const wIn = Math.min(Math.max(+o.width || 3, 1.5), 5), uw = Math.min(0.5, K.inch(wIn) / b.len);
+            const uc = Math.min(0.8, Math.max(0.2, o.at == null ? 0.42 : +o.at)), u0 = uc - uw / 2, u1 = uc + uw / 2;
+            const hwA = b.hw(uc) + armEase(ctx) * hh, bow = 0.016 + uw * 0.18, z = A.z + 0.6;
+            out.push({ id: `armband-${side}`, z, d: J.bandPath(b, u0, u1, hwA, bow), mat: cloth, light: { form: 0.55 }, spot: true });
+            if (glyph && ctx.lodAtLeast("mid")) {
+              const c = b.bp([uc + bow * 0.35, 0]), up = K.norm(K.sub(b.bp([0, 0]), b.bp([1, 0])));
+              out.push({ id: `armband-insignia-${side}`, z: z + 0.01, d: glyph(c[0], c[1], Math.min(K.inch(wIn) * 0.4, hwA * 0.62), Math.atan2(up[0], -up[1])), fill: ink, light: false, spot: true });
+            }
+          }
+          return out;
+        }
+      });
+    }
+  });
+
   // src/parts/props/badges.js
   var require_badges = __commonJS({
     "src/parts/props/badges.js"() {
@@ -8427,11 +13528,31 @@ var B68Figure = (() => {
         }
         return pts;
       }
+      var INSIGNIA;
+      function insigniaOf(ctx, name, label) {
+        if (INSIGNIA === void 0) {
+          try {
+            INSIGNIA = require_insignia();
+          } catch (e) {
+            INSIGNIA = null;
+          }
+        }
+        if (!INSIGNIA) {
+          ctx.warn(`${label}: the insignia set is unavailable`);
+          return null;
+        }
+        const n = String(name).toLowerCase();
+        if (!INSIGNIA.NAMES.includes(n)) {
+          ctx.warn(`${label} insignia "${name}" is not valid; choose from: ${INSIGNIA.NAMES.join(", ")}`);
+          return null;
+        }
+        return (cx, cy, size) => INSIGNIA.insignia(n, cx, cy, size);
+      }
       register({
         kind: "prop",
         name: "badge",
         describe: "Shield-shaped metal badge pinned to the chest (City Watch): chrome rim, dark inset, star, number bar.",
-        params: { at: "chest-L (default) | chest-R", shape: "shield|star|round", color: "metal token (metal-chrome)", size: "scale (1)" },
+        params: { at: "chest-L (default) | chest-R", shape: "shield|star|round", color: "metal token (metal-chrome)", size: "scale (1)", insignia: "optional glyph for the centre instead of the star: fist|torque|star|peace|bolt|eye|key|anchor|cross|crescent|gear|wings" },
         example: { outfit: { outer: { type: "watch-tunic", color: "cloth-ink-blue" } }, props: [{ type: "badge", at: "chest-L" }] },
         draw(ctx, o) {
           const { G, hh, Z } = ctx;
@@ -8453,7 +13574,9 @@ var B68Figure = (() => {
             inn = G.smooth([[cx - s * 0.74, cy - s * 0.95], [cx + s * 0.74, cy - s * 0.95], [cx + s * 0.74, cy + s * 0.05], [cx + s * 0.42, cy + s * 0.65], [cx, cy + s * 0.98], [cx - s * 0.42, cy + s * 0.65], [cx - s * 0.74, cy + s * 0.05]].map((p, i) => i < 2 ? [p[0], p[1], true] : p), true, 0.3);
           }
           const out = [{ id: "badge-rim", z, d: rim, mat: metal, light: { form: 0.7 } }, { id: "badge-inset", z: z + 0.01, d: inn, mat: inset, light: { form: 0.4 } }];
-          out.push({ id: "badge-star", z: z + 0.02, d: G.poly(star(cx, cy - s * 0.12, s * 0.62, 5, 0.42)), mat: metal, light: { form: 0.5 } });
+          const glyph = o.insignia ? insigniaOf(ctx, o.insignia, "badge") : null;
+          if (glyph) out.push({ id: "badge-insignia", z: z + 0.02, d: glyph(cx, shape === "shield" ? cy - s * 0.12 : cy, s * (shape === "star" ? 0.5 : shape === "round" ? 0.62 : 0.56)), mat: metal, light: { form: 0.5 } });
+          else out.push({ id: "badge-star", z: z + 0.02, d: G.poly(star(cx, cy - s * 0.12, s * 0.62, 5, 0.42)), mat: metal, light: { form: 0.5 } });
           if (shape === "shield" && ctx.lodAtLeast("mid")) {
             out.push({ id: "badge-bar", z: z + 0.02, d: K.rrect(cx - s * 0.5, cy + s * 0.5, cx + s * 0.5, cy + s * 0.72, 2), mat: metal, light: false });
             out.push({ id: "badge-dots", z: z + 0.03, d: [-0.55, 0.55].map((dx) => G.circle(cx + dx * s, cy - s * 0.85, s * 0.07)).join(""), fill: "ink-900", light: false });
@@ -8486,21 +13609,45 @@ var B68Figure = (() => {
         }
         return out;
       }
+      function glyphPin(ctx, name, glyph, i, cx, cy, r, z) {
+        const { G } = ctx, inv = i % 2 === 1, rim = inv ? "file-700" : "caution-500", field = inv ? "caution-500" : "file-700", id = `pin-${name}-g${i}`;
+        return [
+          { id: `${id}-rim`, z, d: G.circle(cx, cy, r), fill: rim, light: false, spot: true },
+          { id: `${id}-in`, z: z + 0.05, d: G.circle(cx, cy, r * 0.78), fill: field, light: false, spot: true },
+          { id: `${id}-glyph`, z: z + 0.1, d: glyph(cx, cy + r * 0.03, r * 0.5), fill: rim, light: false, spot: true }
+        ];
+      }
       register({
         kind: "prop",
         name: "pin-badges",
         describe: "A little cluster of enamel pin badges and a bomb patch on the jacket chest and shoulder (the Veteran): flower, peace sign, lightning bolt.",
-        params: { at: "chest-L (default) | chest-R", set: "array of flower|peace|bolt|round" },
+        params: { at: "chest-L (default) | chest-R", set: "array of flower|peace|bolt|round", insignia: "a name or array (up to 4) from fist|torque|star|peace|bolt|eye|key|anchor|cross|crescent|gear|wings: enamel pins carrying those glyphs; replaces the default set unless `set` is also given, then they follow it" },
         example: { outfit: { outer: { type: "field-jacket", color: "cloth-olive" } }, props: [{ type: "pin-badges" }] },
         draw(ctx, o) {
           const { G, hh, Z } = ctx;
           const a = K.bodyAnchor(ctx, o.at || "chest-L");
           const k = a.k || 1, r = K.inch(1.05), z = Z.collar + 1.5;
-          const set = o.set || ["flower", "peace", "bolt"];
-          const layout = [[0.5 * k, -0.2], [-0.55 * k, 0.5], [0.6 * k, 1.15], [-0.4 * k, 1.8]];
+          const ins = o.insignia ? [].concat(o.insignia).slice(0, 4).map((n) => ({ name: String(n).toLowerCase(), glyph: insigniaOf(ctx, n, "pin-badges") })).filter((e) => e.glyph) : [];
+          const set = o.set || (ins.length ? [] : ["flower", "peace", "bolt"]);
+          const layout = ins.length ? [[0.06 * k, -0.2], [-0.62 * k, 0.5], [0.02 * k, 1.15], [-0.5 * k, 1.8]] : [[0.5 * k, -0.2], [-0.55 * k, 0.5], [0.6 * k, 1.15], [-0.4 * k, 1.8]];
           let out = [];
           set.slice(0, 4).forEach((kind, i) => {
             out.push(...pinShapes(ctx, kind, a.pt[0] + layout[i][0] * K.inch(2.1), a.pt[1] + layout[i][1] * K.inch(2.1), r * (kind === "bolt" ? 0.75 : 1), z));
+          });
+          const nearArm = (x, y) => {
+            if (!ins.length) return x;
+            const b = ctx.bone("arm", k < 0 ? "R" : "L", "upper");
+            let best = null;
+            for (let s = 0; s <= 24; s++) {
+              const u = s / 24, c = b.bp([u, 0]), d = Math.abs(c[1] - y);
+              if (!best || d < best.d) best = { d, x: c[0] - k * (b.hw(u) + 0.075 * hh) };
+            }
+            const lim = best.x - k * (r + K.inch(0.1));
+            return k > 0 ? Math.max(Math.min(x, lim), x - K.inch(1), 0) : Math.min(Math.max(x, lim), x + K.inch(1), 0);
+          };
+          ins.forEach((e, j) => {
+            const i = Math.min(set.length, 4) + j, py = a.pt[1] + layout[i][1] * K.inch(2.1);
+            if (i < 4) out.push(...glyphPin(ctx, e.name, e.glyph, i, nearArm(a.pt[0] + layout[i][0] * K.inch(2.1), py), py, r, z));
           });
           const as = k < 0 ? "L" : "R";
           const pc = ctx.bone("arm", as, "upper").bp([0.34, 0]), tilt = 0.2 * -k;
@@ -8742,7 +13889,7 @@ var B68Figure = (() => {
   });
 
   // src/parts/props/fx.js
-  var require_fx = __commonJS({
+  var require_fx2 = __commonJS({
     "src/parts/props/fx.js"() {
       "use strict";
       var { register } = require_registry();
@@ -8826,8 +13973,12 @@ var B68Figure = (() => {
           const z = ctx.Z.bottom + 0.8;
           const steel = ctx.mat("metal-steel", "metal");
           const strap = ctx.mat(o.color || "cloth-black", "satin");
-          const brass = ctx.mat("metal-brass", "metal");
+          const brass = ctx.mat("metal-gun", "metal");
           const out = [];
+          {
+            const sleeve = G.smooth([U(0.74, -1.14), U(0.74, 1.14), L(0.26, 1.14), L(0.26, -1.14)].map((p) => [p[0], p[1], true]), true, 0.3);
+            out.push({ id: "kb-sleeve", z: z + 0.01, d: sleeve, mat: strap, light: { form: 1 } });
+          }
           const vOut = 1.06;
           for (const v of [-vOut, vOut]) {
             const pts = [U(0.5, v), U(0.92, v * 1.02), knee.map((x, i) => x + (v > 0 ? 1 : -1) * 0), L(0.1, v * 1.02), L(0.52, v)];
@@ -8845,18 +13996,289 @@ var B68Figure = (() => {
           };
           band(U, 0.4, 0.11, "kb-strap-thigh");
           band(L, 0.5, 0.11, "kb-strap-shin");
-          const cap = G.smooth([U(0.86, -0.5), U(0.86, 0.5), K.add(knee, [K.inch(1.25), 0]), L(0.2, 0.46), L(0.2, -0.46), K.add(knee, [-K.inch(1.25), 0])], true, 0.28);
-          out.push({ id: "kb-plate", z: z + 0.03, d: cap, mat: steel, light: { form: 0.8 }, lines: ctx.lodAtLeast("mid") ? [{ d: K.ribbon([U(0.96, -0.3), knee, L(0.08, 0.3)], K.inch(0.12)), fill: "deep", o: 0.35 }] : [] });
-          for (const v of [-vOut, vOut]) {
-            const c = K.add(up.bp([1, v]), K.mul(K.norm(K.sub(up.bp([1, v]), up.bp([1, 0]))), ease));
-            out.push({ id: `kb-disc-${v > 0 ? "a" : "b"}`, z: z + 0.04, d: G.circle(c[0], c[1], K.inch(0.78)), mat: steel, light: { form: 0.7 } });
-            out.push({ id: `kb-bolt-${v > 0 ? "a" : "b"}`, z: z + 0.05, d: G.circle(c[0], c[1], K.inch(0.3)), fill: "ink-700", light: false });
-            out.push({ id: `kb-link-${v > 0 ? "a" : "b"}`, z: z + 0.035, d: K.ribbon([c, K.along(c, knee, 0.8)], K.inch(0.3)), mat: steel });
+          return out;
+        }
+      });
+    }
+  });
+
+  // src/parts/props/militants.js
+  var require_militants = __commonJS({
+    "src/parts/props/militants.js"() {
+      "use strict";
+      var { register } = require_registry();
+      var K = require_kit();
+      var INS = null;
+      try {
+        INS = require_insignia();
+      } catch (e) {
+        INS = null;
+      }
+      var FONT = "'Archivo Compressed', 'Archivo Condensed', Impact, sans-serif";
+      var CAP_W = 0.5;
+      var clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      var esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      var lum = (hex) => {
+        const m = /^#?([0-9a-f]{6})/i.exec(hex || "");
+        if (!m) return 0.5;
+        const c = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255).map((v) => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+      };
+      var contrast = (a, b) => {
+        const x = lum(a), y = lum(b);
+        return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+      };
+      function glyphOf(ctx, name, label) {
+        if (name == null || name === "") return null;
+        if (!INS) {
+          ctx.warn(`${label}: the insignia set is unavailable`);
+          return null;
+        }
+        const n = String(name).toLowerCase();
+        if (!INS.NAMES.includes(n)) {
+          ctx.warn(`${label} insignia "${name}" is not valid; choose from: ${INS.NAMES.join(", ")}`);
+          return null;
+        }
+        return (cx, cy, size, rot) => {
+          const d = INS.insignia(n, cx, cy, size);
+          return rot ? ctx.G.rotate(d, rot, [cx, cy]) : d;
+        };
+      }
+      function textLines(ctx, t, label) {
+        if (t == null || t === "") return [];
+        let arr = Array.isArray(t) ? t.map(String) : String(t).split(/\s*(?:\/|\||\n)\s*/);
+        arr = arr.map((s) => s.trim().toUpperCase()).filter(Boolean);
+        if (arr.length > 3) {
+          ctx.warn(`${label}: text has ${arr.length} lines; only the first 3 are drawn`);
+          arr = arr.slice(0, 3);
+        }
+        return arr;
+      }
+      function legible(ctx, want, board, label) {
+        const cb = ctx.tok(board), ct = ctx.tok(want);
+        if (contrast(cb, ct) >= 3.2) return want;
+        const alt = contrast(cb, ctx.tok("ink-900")) >= contrast(cb, ctx.tok("paper-000")) ? "ink-900" : "paper-000";
+        ctx.warn(`${label}: ${want} is hard to read on a ${board} board; used ${alt}`);
+        return alt;
+      }
+      function reads(ctx, a, b, spot) {
+        const mapped = ctx.scheme && ctx.scheme.map && !(spot && ctx.scheme.spotKeep);
+        return mapped ? ctx.contrast(a, b) >= 3.5 : ctx.C.contrast(ctx.tok(a), ctx.tok(b)) >= 3;
+      }
+      function glowCloud(ctx, c, R, n, r0, r1) {
+        const pts = [];
+        let d = "";
+        for (let i = 0; i < n; i++) {
+          const a = ctx.rng() * Math.PI * 2, t = Math.pow(ctx.rng(), 0.75), r = (r0 + (r1 - r0) * t) * (0.6 + ctx.rng() * 0.8) * 1.1, q = ctx.rng() * (Math.PI / 3);
+          const x = c[0] + Math.cos(a) * R * t, y = c[1] + Math.sin(a) * R * t;
+          pts.length = 0;
+          for (let k = 0; k < 6; k++) pts.push([x + Math.cos(q + k * (Math.PI / 3)) * r, y + Math.sin(q + k * (Math.PI / 3)) * r]);
+          d += ctx.G.poly(pts);
+        }
+        return d;
+      }
+      function takeFist(ctx, hi, id) {
+        if (hi.hand === "fist" || hi.hand === "grip") return { hi, pieces: [] };
+        let H;
+        try {
+          H = require_relaxed().handSpace(ctx, hi.side);
+        } catch (e) {
+          H = null;
+        }
+        if (!H) {
+          ctx.warn(`${id}: it is gripped by pose.hands.${hi.side}: "fist" (this hand is "${hi.hand}")`);
+          return { hi, pieces: [] };
+        }
+        ctx.cut(`^hand-${hi.side}(-|$)`, ctx.G.poly([[-0.6, -0.06], [0.6, -0.06], [0.6, 1.4], [-0.6, 1.4]].map(H.hp)));
+        const pieces = ctx.part("hands", "fist", { side: hi.side }).map((pc) => ({ ...pc, id: String(pc.id).replace(/^hand-/, `${id}-fist-`) }));
+        return { hi: { ...hi, pt: H.hp([0, 0.43]), hand: "fist" }, pieces };
+      }
+      function boardLayout(lines, hasGlyph, S) {
+        const m = 0.9 * S, n = lines.length;
+        const maxChars = n ? Math.max(...lines.map((l) => l.length)) : 0;
+        let fs = 2.7 * S;
+        if (n) fs = Math.min(fs, (18 * S - 2 * m - 0.4 * S) / (maxChars * CAP_W));
+        const pitch = 1.12 * fs, textH = n * pitch;
+        const gs = hasGlyph ? (n ? 2.1 : 3.8) * S : 0, glyphH = hasGlyph ? 2 * gs + (n ? 0.5 * S : 0) : 0;
+        const W = Math.min(18 * S, Math.max(n ? maxChars * CAP_W * fs + 2 * m + 0.4 * S : 0, hasGlyph ? 2 * gs + 2 * m : 0, 6 * S));
+        return { W, H: 2 * m + textH + glyphH, m, fs, pitch, gs, glyphH, textH };
+      }
+      register({
+        kind: "prop",
+        name: "placard",
+        aliases: ["sign", "protest-sign"],
+        describe: "A protest placard: a board on a wooden pole, lettered in up to three short lines of the condensed bold capitals and/or carrying an insignia glyph. Held aloft in a raised fist (arm pose raise; the open hand is swapped for a fist) leaning out from the head, or carried at the side (carry pose; a down arm gets a fist). The lettering colour is swapped if it would be hard to read on the board.",
+        params: {
+          text: 'up to 3 short lines, split on / or | ("NO GODS / NO MASTERS"), or an array',
+          insignia: "glyph above the lettering: fist|torque|star|peace|bolt|eye|key|anchor|cross|crescent|gear|wings (a fist when there is neither text nor insignia)",
+          color: "lettering and glyph token (ink-900)",
+          board: "board colour token (paper-100)",
+          side: "R|L the arm that holds it (default: the raised arm, else the carrying arm)",
+          size: "scale (1)",
+          tilt: "radians the pole leans out from the body (0.3 raised, 0.2 carried)",
+          pole: "pole wood token (wood-light)"
+        },
+        example: { pose: { arms: { R: "raise", L: "down" }, hands: { R: "fist" } }, props: [{ type: "placard", side: "R", text: "NO GODS / NO MASTERS" }] },
+        draw(ctx, o) {
+          var _a;
+          const { G } = ctx;
+          const pick = K.pickArm(ctx, o, ["raise", "carry", "down"], "placard");
+          if (!pick) return [];
+          const raised = pick.pose === "raise", fist = raised ? takeFist(ctx, pick, "placard") : { hi: pick, pieces: [] }, hi = fist.hi;
+          const k = hi.k, S = clamp(+o.size || 1, 0.4, 2.2);
+          const lines = textLines(ctx, o.text, "placard");
+          let glyph = glyphOf(ctx, o.insignia, "placard");
+          if (!lines.length && !glyph && o.text == null && o.insignia == null) glyph = glyphOf(ctx, "fist", "placard");
+          let boardTok = o.board || "paper-100", ink = legible(ctx, o.color || "ink-900", boardTok, "placard");
+          const spot = !lines.length;
+          if (!reads(ctx, ink, boardTok, spot)) {
+            if (reads(ctx, "paper-000", boardTok, spot)) ink = "paper-000";
+            else {
+              boardTok = "paper-100";
+              if (!reads(ctx, ink, boardTok, spot)) ink = "ink-900";
+            }
           }
-          if (ctx.lodAtLeast("mid")) for (const [u, v] of [[0.96, -0.32], [0.96, 0.32]]) {
-            const p = U(u, v);
-            out.push({ id: `kb-rivet-${v}`, z: z + 0.06, d: G.circle(p[0], p[1] + K.inch(0.25), K.inch(0.16)), fill: "ink-700", light: false });
+          const L = boardLayout(lines, !!glyph, S);
+          const tilt = +((_a = o.tilt) != null ? _a : raised ? 0.3 : 0.2), ang = k * tilt;
+          const F = K.frame(hi.pt, ang, K.U, k);
+          const gap = (raised ? 4.6 : 22) * S, top = gap + L.H, z = hi.zUnder, out = [];
+          const outward = (p) => k * (p[0] - ctx.R.head.cx), o0 = outward(F.P([-L.W / 2, -gap])), slope = outward(F.P([-L.W / 2 + 1, -gap])) - o0;
+          const dx = slope > 0 ? clamp((0.56 * ctx.hh - o0) / slope, 0, L.W / 2 - 1.3 * S) : 0;
+          const pw = 0.85 * S;
+          out.push({ id: "placard-pole", z, d: K.ribbon([F.P([0, 3.8 * S]), F.P([0, -(top - 0.9 * S)])], [K.inch(pw * 0.86), K.inch(pw)]), mat: ctx.mat(o.pole || "wood-light", "wood"), light: { form: 0.9 } });
+          const rect = (ins, r) => F.D(K.rrect(dx - L.W / 2 + ins, -top + ins, dx + L.W / 2 - ins, -gap - ins, r));
+          const bm = ctx.mat(boardTok, "paper"), board = rect(0, 0.35 * S);
+          const back = G.translate(board, K.inch(0.3 * S), K.inch(0.34 * S));
+          out.push({ id: "placard-edge", z: z + 0.01, d: back, mat: bm, lines: [{ d: back, fill: "deep", o: 0.85 }], light: false, spot });
+          out.push({ id: "placard-board", z: z + 0.02, d: board, mat: bm, light: { form: 0.25 }, spot });
+          const inkFill = { fill: ink, light: false, spot };
+          if (ctx.lodAtLeast("mid") && L.W > 7 * S) {
+            const ins = 0.5 * S, th = 0.17 * S, rp = (i) => [[dx - L.W / 2 + i, -top + i], [dx + L.W / 2 - i, -top + i], [dx + L.W / 2 - i, -gap - i], [dx - L.W / 2 + i, -gap - i]].map(F.P);
+            out.push({ id: "placard-border", z: z + 0.03, d: G.poly(rp(ins)) + G.poly(rp(ins + th).reverse()), ...inkFill });
           }
+          if (glyph) {
+            const gc = F.P([dx, -top + L.m + L.gs]);
+            out.push({ id: "placard-insignia", z: z + 0.03, d: glyph(gc[0], gc[1], K.inch(L.gs), ang), ...inkFill });
+          }
+          if (lines.length) {
+            const y0 = -top + L.m + L.glyphH, fsU = K.inch(L.fs), deg = ang * 180 / Math.PI;
+            const capPx = 0.7 * fsU / ctx.px(1);
+            if (capPx >= 4) {
+              const txt = lines.map((s, i) => {
+                const c = F.P([dx, y0 + (i + 0.5) * L.pitch]), tl = s.length * CAP_W * fsU;
+                return `<text x="${K.f(c[0])}" y="${K.f(c[1] + 0.36 * fsU)}" transform="rotate(${K.f(deg)} ${K.f(c[0])} ${K.f(c[1])})" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="${K.f(fsU)}" textLength="${K.f(tl)}" lengthAdjust="spacingAndGlyphs" fill="${ctx.tok(ink)}">${esc(s)}</text>`;
+              }).join("");
+              out.push({ id: "placard-text", z: z + 0.03, raw: txt });
+            } else {
+              const bars = lines.map((s, i) => {
+                const yc = y0 + (i + 0.5) * L.pitch, w = s.length * CAP_W * L.fs;
+                return F.D(K.rrect(dx - w / 2, yc - 0.34 * L.fs, dx + w / 2, yc + 0.34 * L.fs, 0.1));
+              }).join("");
+              out.push({ id: "placard-text", z: z + 0.03, d: bars, ...inkFill });
+            }
+          }
+          if (hi.pose === "down") out.push(...K.gripFist(ctx, hi, "placard"));
+          out.push(...fist.pieces);
+          return out;
+        }
+      });
+      register({
+        kind: "prop",
+        name: "megaphone",
+        aliases: ["loud-hailer", "bullhorn"],
+        describe: "A loud-hailer at the mouth, gripped by its handle in a fist (arm pose smoke; the hand is swapped for a fist). The cone points out to the figure's side and a little up, not at the viewer, so the face stays clear. Cream cone with a coloured stripe, black mouthpiece and handle, chrome rim.",
+        params: {
+          side: "R|L the arm in the smoke pose",
+          color: "cone colour token (paper-100)",
+          color2: "stripe colour token (signal-500)",
+          size: "scale (1)",
+          tilt: "radians the cone points above horizontal (0.2)"
+        },
+        example: { pose: { arms: { R: "smoke", L: "down" }, hands: { R: "fist" } }, props: [{ type: "megaphone", side: "R" }] },
+        draw(ctx, o) {
+          var _a;
+          const { G, head: H } = ctx;
+          const pick = K.pickArm(ctx, o, ["smoke"], "megaphone");
+          if (!pick) return [];
+          const fist = takeFist(ctx, pick, "megaphone"), hi = fist.hi;
+          const k = hi.k, S = clamp(+o.size || 1, 0.5, 1.8), up = +((_a = o.tilt) != null ? _a : 0.2);
+          const m = ctx.hp([k * H.mouthW * 0.55, H.mouthY + 4e-3], { depth: 0.04 });
+          const e = K.norm([k * Math.cos(up), -Math.sin(up)]);
+          const F = K.frame(m, Math.atan2(e[1] * k, e[0] * k), K.U, k);
+          const P = (x, y) => F.P([x * S, y * S]);
+          const x0 = 0.5, x1 = 9.2, r0 = 0.8, r1 = 3.25, rAt = (x) => r0 + (r1 - r0) * Math.pow((x - x0) / (x1 - x0), 1.2);
+          const xs = (a, b, n) => Array.from({ length: n + 1 }, (_, i) => a + (b - a) * i / n);
+          const slab = (a, b, grow = 0) => G.poly([...xs(a, b, 4).map((x) => P(x, -(rAt(x) + grow))), ...xs(a, b, 4).reverse().map((x) => P(x, rAt(x) + grow))]);
+          const z = ctx.Z.frontProp - 1, body = ctx.mat(o.color || "paper-100", "satin"), out = [];
+          const att = P(2.9, rAt(2.9) * 0.85), dv = K.norm(K.sub(hi.pt, att)), end = K.add(hi.pt, K.mul(dv, K.inch(0.5)));
+          out.push({ id: "megaphone-handle", z: hi.zUnder, d: K.ribbon([att, K.add(att, K.mul(K.sub(end, att), 0.5)), end], [K.inch(0.9 * S), K.inch(1 * S), K.inch(1 * S)]), mat: ctx.mat("ink-700", "satin"), light: { form: 0.7 } });
+          out.push({ id: "megaphone-mouthpiece", z, d: F.D(K.rrect(-0.25 * S, -1 * S, 0.85 * S, 1 * S, 0.4 * S)), mat: ctx.mat("ink-900", "satin"), light: { form: 0.6 } });
+          const hl = ctx.lodAtLeast("hi") ? [{ d: G.brush([P(1.4, -rAt(1.4) * 0.72), P(5, -rAt(5) * 0.72), P(8.5, -rAt(8.5) * 0.72)], [K.inch(0.1 * S), K.inch(0.3 * S), K.inch(0.12 * S)]), fill: "light", o: 0.8 }] : [];
+          out.push({ id: "megaphone-cone", z: z + 0.01, d: slab(x0, x1), mat: body, lines: hl, light: { form: 0.8 } });
+          out.push({ id: "megaphone-stripe", z: z + 0.02, d: slab(4.2, 5.4), mat: ctx.mat(o.color2 || "signal-500", "satin"), light: { form: 0.8 } });
+          out.push({ id: "megaphone-rim", z: z + 0.03, d: G.poly([P(8.7, -(rAt(8.7) + 0.02)), P(9.5, -(r1 + 0.26)), P(9.5, r1 + 0.26), P(8.7, rAt(8.7) + 0.02)]), mat: ctx.mat("metal-chrome", "metal"), light: { form: 0.8 } });
+          out.push({ id: "megaphone-bell", z: z + 0.04, d: G.ellipse(...P(9.5, 0), K.inch(0.4 * S), K.inch((r1 + 0.1) * S), F.angle), fill: "ink-900", light: false });
+          out.push(...fist.pieces);
+          if (ctx.lodAtLeast("mid")) out.push({ id: "megaphone-switch", z: hi.zUnder + 0.01, d: G.circle(...K.add(att, K.mul(dv, K.inch(0.9 * S))), K.inch(0.2 * S)), fill: "alarm-500", light: false, spot: true });
+          return out;
+        }
+      });
+      register({
+        kind: "prop",
+        name: "molotov",
+        aliases: ["petrol-bomb", "bottle-bomb"],
+        describe: "A brown bottle with a white rag in its neck, alight, held up in a raised fist (arm pose raise; the open hand is swapped for a fist), leaning out from the head. The flame is yellow with an orange heart (in the militants-type gradient maps: the accent yellow with a lighter heart), stays in colour in the spot schemes, and has a fine stippled glow (none at small sizes, where the flame is drawn larger instead).",
+        params: {
+          side: "R|L the raised arm",
+          color: "bottle glass token (wood-dark)",
+          size: "scale (1)",
+          tilt: "radians the bottle leans out from the forearm (0.5)",
+          lit: "false for a cold bottle: rag only, no flame"
+        },
+        example: { pose: { arms: { R: "raise", L: "down" }, hands: { R: "fist" } }, props: [{ type: "molotov", side: "R" }] },
+        draw(ctx, o) {
+          var _a;
+          const { G } = ctx;
+          const pick = K.pickArm(ctx, o, ["raise"], "molotov");
+          if (!pick) return [];
+          const fist = takeFist(ctx, pick, "molotov"), hi = fist.hi;
+          const k = hi.k, S = clamp(+o.size || 1, 0.5, 1.8), tilt = +((_a = o.tilt) != null ? _a : 0.5);
+          const F = K.frame(hi.pt, k * tilt, K.U, k);
+          const P = (x, y) => F.P([x * S, y * S]), poly = (pts) => G.poly(pts.map((p) => P(p[0], p[1])));
+          const sm = (pts, t = 0.4) => G.smooth(pts.map((p) => {
+            const q = P(p[0], p[1]);
+            if (p[2]) q.push(true);
+            return q;
+          }), true, t);
+          const z = hi.zUnder, lit = o.lit !== false, out = [];
+          const glass = ctx.mat(o.color || "wood-dark", "glass");
+          const bottle = sm([[-1.3, 3], [-1.1, 3.55], [1.1, 3.55], [1.3, 3], [1.3, 0.6], [1.3, -1.4], [1.12, -2.6], [0.78, -3.7], [0.55, -4.5], [0.5, -6.1], [0.74, -6.25, true], [0.74, -6.85, true], [-0.74, -6.85, true], [-0.74, -6.25, true], [-0.5, -6.1], [-0.55, -4.5], [-0.78, -3.7], [-1.12, -2.6], [-1.3, -1.4], [-1.3, 0.6]], 0.3);
+          const lines = [{ d: G.brush([P(-0.88, 2.7), P(-0.95, 0.4), P(-0.9, -1.6)], [K.inch(0.05 * S), K.inch(0.3 * S), K.inch(0.08 * S)]), fill: "light", o: 0.5 }];
+          if (ctx.lodAtLeast("mid")) lines.push({ d: G.brush([P(-0.3, -3.9), P(-0.27, -5.2), P(-0.28, -6)], [K.inch(0.04 * S), K.inch(0.16 * S), K.inch(0.04 * S)]), fill: "light", o: 0.45 });
+          out.push({ id: "molotov-bottle", z, d: bottle, mat: glass, lines, light: { form: 0.7 } });
+          const rag = sm([[-0.5, -6.9, true], [0.5, -6.9, true], [1.3, -6.4], [1.95, -5.2], [2.1, -3.8], [1.85, -2.6, true], [1.5, -3.3], [1.15, -2.3, true], [0.85, -3.4], [0.72, -5], [0.45, -6]], 0.35);
+          const folds = ctx.lodAtLeast("mid") ? [{ d: G.brush([P(1, -6.1), P(1.4, -4.6), P(1.5, -3.5)], [K.inch(0.04 * S), K.inch(0.12 * S), K.inch(0.04 * S)]), fill: "deep", o: 0.5 }] : [];
+          out.push({ id: "molotov-rag", z: z + 0.02, d: rag, mat: ctx.mat("paper-000", "cloth"), lines: folds, light: { form: 0.5 } });
+          if (lit) {
+            const zf = ctx.Z.frontProp + 0.5, lo = !ctx.lodAtLeast("mid"), fine = ctx.lodAtLeast("hi");
+            const duo = !!(ctx.scheme && ctx.scheme.map && !ctx.scheme.spotKeep);
+            const flameC = duo ? ctx.accent("caution-500") : "caution-500", heartC = duo ? ctx.accent("signal-500", "light") : "signal-500";
+            const fs = lo ? 1.5 : 1, grow = (p) => [p[0] * fs, -6.8 + (p[1] + 6.8) * fs, p[2]];
+            const tongue = [[-0.8, -6.75], [-1.15, -7.9], [-0.95, -9.1], [-0.45, -10.4], [-0.25, -12.2, true], [0.3, -10.6], [0.55, -9.8], [1, -10.7, true], [1.3, -9.2], [1.1, -7.7], [0.85, -6.75]];
+            const heart = tongue.map((p) => [p[0] * 0.5 + 0.05, -6.8 + (p[1] + 6.75) * 0.58, p[2]]);
+            out.push({ id: "molotov-flame", z: zf, d: sm(tongue.map(grow), 0.4), fill: flameC, light: false, spot: true });
+            out.push({ id: "molotov-flame-heart", z: zf + 0.01, d: sm(heart.map(grow), 0.4), fill: heartC, light: false, spot: true });
+            if (!lo) out.push({ id: "molotov-flame-lick", z: zf + 5e-3, d: G.brush([P(1, -6.7), P(1.75, -5.6), P(2.1, -4.3), P(2.05, -3)], [K.inch(0.5 * S), K.inch(0.42 * S), K.inch(0.22 * S), K.inch(0.04 * S)]), fill: flameC, light: false, spot: true });
+            if (!lo) {
+              const gc = P(0.1, -9), fr = (f, o2) => ({ d: F.D(G.ellipse(0.1 * S, -9 * S, 3.3 * S * f, 5 * S * f)), fill: flameC, stip: true, o: o2 });
+              out.push({ id: "molotov-glow", z: zf - 0.2, over: [fr(1, 0.12), fr(0.78, 0.2), fr(0.56, 0.3), fr(0.36, 0.42)], spot: true });
+              out.push({ id: "molotov-glow-dots", z: zf - 0.1, spot: true, over: [
+                { d: glowCloud(ctx, gc, K.inch(2.9 * S), fine ? 520 : 240, K.inch(0.05 * S), K.inch(0.02 * S)), fill: flameC, o: 0.55 },
+                { d: glowCloud(ctx, gc, K.inch(5 * S), fine ? 300 : 130, K.inch(0.05 * S), K.inch(0.025 * S)), fill: flameC, o: 0.75 }
+              ] });
+            }
+          }
+          out.push(...fist.pieces);
           return out;
         }
       });
@@ -8873,7 +14295,7 @@ var B68Figure = (() => {
         const { G } = ctx;
         const P = (pts) => pts.map(F.P);
         const poly = (pts) => G.poly(P(pts));
-        const furn = ctx.mat(o.color || "cloth-black", "satin");
+        const furn = ctx.mat(o.color || "cloth-graphite", "satin");
         const steel = ctx.mat(o.metal || "metal-gun", "metal");
         const out = [];
         const piece = (id, d, mat, extra = {}) => out.push({ id: `rifle-${id}`, z: z + out.length * 0.01, d, mat, ...extra });
@@ -8911,8 +14333,9 @@ var B68Figure = (() => {
           const { R, hh, G, Z } = ctx;
           const side = o.side || "L", k = side === "L" ? 1 : -1;
           const c = R.centerAt(R.y.chest);
-          const butt = [c - k * (R.w.hip + 0.26 * hh), R.y.hip + 0.62 * hh];
-          const th = ((_a = o.angle) != null ? _a : 21) * Math.PI / 180;
+          const v2 = o.angle == null;
+          const butt = [c - k * (R.w.hip + (v2 ? 0.5 : 0.26) * hh), R.y.hip + (v2 ? 0.42 : 0.62) * hh];
+          const th = ((_a = o.angle) != null ? _a : v2 ? 34 : 21) * Math.PI / 180;
           const ang = Math.atan2(-Math.cos(th), k * Math.sin(th));
           const F = K.frame(butt, ang, K.U, 1);
           const r = rifleShapes(ctx, F, Z.backProp, o);
@@ -9056,11 +14479,6 @@ var B68Figure = (() => {
             const m = ctx.hp([hi.k * H.mouthW * 0.55, H.mouthY + 4e-3], { depth: 0.04 });
             let d = K.sub(hi.pt, m);
             const dl = Math.hypot(d[0], d[1]);
-            // a hand well away from the mouth (a blended arm, part-way up) holds the cigarette itself, pointing along the fingers
-            if (ctx.R.arms[hi.side] && typeof (ctx.S.pose && ctx.S.pose.arms && ctx.S.pose.arms[hi.side]) === "object" && dl > K.inch(2.2)) {
-              const fd = K.norm(K.add(hi.dir, K.mul(hi.up, -0.6)));
-              return { p0: hi.pt, dir: fd, k: hi.k, hand: hi, z: hi.zOver, held: true };
-            }
             d = dl > K.inch(0.8) ? K.mul(d, 1 / dl) : K.norm(K.add(K.mul([hi.k, 0], 0.9), [0, 0.38]));
             return { p0: m, dir: d, k: hi.k, hand: hi, z: Math.max(hi.zOver, ctx.Z.eyewear + 0.5) };
           }
@@ -9104,7 +14522,8 @@ var B68Figure = (() => {
           const { G, hh } = ctx;
           const org = smokeOrigin(ctx, { ...o, type: "cigarette" });
           const { p0, dir, k } = org;
-          const L = K.inch(3.4), w = K.inch(0.4);
+          const v2 = ctx.lod === "mid";
+          const L = K.inch(v2 ? 3.9 : 3.4), w = v2 ? Math.min(Math.max(K.inch(0.4), ctx.px(2.6)), 0.045 * ctx.hh) : K.inch(0.4);
           const pe = K.add(p0, K.mul(dir, L));
           const seg = (a, b) => K.along(p0, pe, a) && [K.along(p0, pe, a), K.along(p0, pe, b)];
           const z = org.z;
@@ -9231,307 +14650,6 @@ var B68Figure = (() => {
           return out;
         }
       });
-    }
-  });
-
-  // src/core/tokens.js
-  var require_tokens = __commonJS({
-    "src/core/tokens.js"(exports, module) {
-      "use strict";
-      var BRAND = {
-        "ink-150": "#c9c3b8",
-        "ink-300": "#8e8880",
-        "ink-500": "#55504a",
-        "ink-700": "#2a2521",
-        "ink-900": "#14110e",
-        "paper-000": "#fbf8f1",
-        "paper-100": "#f2ede1",
-        "paper-200": "#e8e2d4",
-        "paper-300": "#dcd4c2",
-        "signal-500": "#e0691e",
-        "signal-700": "#b8481a",
-        "signal-900": "#6b2a10",
-        "caution-500": "#e8c33c",
-        "caution-700": "#c39b18",
-        "caution-900": "#6e5408",
-        "file-300": "#8fa3dd",
-        "file-500": "#3f62c4",
-        "file-700": "#26418f",
-        "file-900": "#12224f",
-        "covert-500": "#6e8f6a",
-        "covert-700": "#41633e",
-        "covert-900": "#13513b",
-        "alarm-500": "#e03a20",
-        "alarm-700": "#a8210f",
-        "alarm-900": "#5c1208",
-        "swing-500": "#c9348c",
-        "swing-700": "#98206a",
-        "swing-900": "#4e0f36",
-        "slate-500": "#6e8a8c",
-        "slate-700": "#3e5356",
-        "slate-900": "#1a1a1c"
-      };
-      var CLOTH = {
-        "cloth-black": "#1f1b18",
-        "cloth-charcoal": "#33302d",
-        "cloth-graphite": "#4a4744",
-        "cloth-ash": "#8c8177",
-        "cloth-stone": "#b9ae9c",
-        "cloth-cream": "#efe4cc",
-        "cloth-white": "#f4efe4",
-        "cloth-navy": "#22283f",
-        "cloth-ink-blue": "#2a334b",
-        "cloth-cobalt": "#4862a6",
-        "cloth-sky": "#829fbf",
-        "cloth-teal": "#586766",
-        "cloth-sea": "#697c7b",
-        "cloth-petrol": "#28474a",
-        "cloth-forest": "#2e3d2a",
-        "cloth-sage": "#8fa37c",
-        "cloth-olive": "#5b5a2c",
-        "cloth-avocado": "#6f7230",
-        "cloth-khaki": "#8a7d5a",
-        "cloth-mustard": "#d9b13b",
-        "cloth-ochre": "#c39231",
-        "cloth-camel": "#c09a6b",
-        "cloth-tan": "#a8784a",
-        "cloth-tobacco": "#7e5634",
-        "cloth-brown": "#5c3a22",
-        "cloth-chocolate": "#371706",
-        "cloth-rust": "#a84427",
-        "cloth-orange": "#c56b30",
-        "cloth-brick": "#8d3a24",
-        "cloth-oxblood": "#5c1a14",
-        "cloth-red": "#b83a2a",
-        "cloth-salmon": "#c37270",
-        "cloth-pink": "#d68a9a",
-        "cloth-magenta": "#c44d8d",
-        "cloth-plum": "#4e1f3e",
-        "cloth-aubergine": "#280921",
-        "cloth-lilac": "#9a86b0",
-        "cloth-denim": "#3a4f6e",
-        "cloth-faded-denim": "#6f86a3",
-        "cloth-warm-grey": "#64564c"
-      };
-      var MATTER = {
-        "metal-steel": "#8e9496",
-        "metal-gun": "#3a3c3e",
-        "metal-brass": "#c39b18",
-        "metal-chrome": "#c9ccc8",
-        "wood-dark": "#4a2c18",
-        "wood-light": "#9a6a3a",
-        "leather-brown": "#6b3f22",
-        "leather-black": "#221d1a",
-        "glass-dark": "#1d2226",
-        "paper-news": "#e8e2d4",
-        "smoke": "#e8e2d4",
-        "flame": "#e8c33c"
-      };
-      var SKIN = {
-        porcelain: { light: "#f8e4d6", base: "#efcfbd", shade: "#c9998a", deep: "#7a4e44", line: "#9a6a5c", blush: "#e4a49a", lip: "#c97a74" },
-        fair: { light: "#f4dcc6", base: "#e8c4a6", shade: "#c0907a", deep: "#6e4434", line: "#94604c", blush: "#dc9a86", lip: "#b8705e" },
-        olive: { light: "#e8c49c", base: "#d4a67e", shade: "#a6764e", deep: "#5a3a22", line: "#7e5234", blush: "#c88466", lip: "#9e5e44" },
-        tan: { light: "#dca478", base: "#c48a5e", shade: "#94603a", deep: "#4e2e18", line: "#6e4224", blush: "#b86a4a", lip: "#8a4a32" },
-        brown: { light: "#b8784a", base: "#985c34", shade: "#6a3a1c", deep: "#341a0c", line: "#4e2a14", blush: "#a04a2c", lip: "#6a2e1a" },
-        deep: { light: "#9a5226", base: "#7e3e18", shade: "#4e2410", deep: "#24120a", line: "#3a1c0c", blush: "#8a3418", lip: "#4e1e10" },
-        ebony: { light: "#7a4428", base: "#5e301a", shade: "#3a1c0e", deep: "#1a0d06", line: "#2a1408", blush: "#6a2a16", lip: "#3a160a" },
-        flushed: { light: "#eaa49a", base: "#d9827a", shade: "#a85650", deep: "#5c2a26", line: "#86403a", blush: "#c85a54", lip: "#a8443e" },
-        pale: { light: "#fbf1e8", base: "#f2e0d2", shade: "#cbb0a4", deep: "#7e6458", line: "#a08478", blush: "#e8b4aa", lip: "#c88a84" }
-      };
-      var SCHEMES = {
-        natural: { rim: null, key: "#fff4e0", shadow: "#2a1f1d", map: null },
-        "natural-rim": { rim: "#c37270", key: "#fff4e0", shadow: "#2a1f1d", map: null },
-        hound: { rim: "#c37270", key: "#e9efe8", shadow: "#191713", map: ["#191713", "#2f2925", "#586766", "#697c7b", "#b9bab5", "#f6f5ed"], spotKeep: true },
-        crews: { rim: "#7e98c3", key: "#efeef3", shadow: "#1f1e1e", map: ["#1a1d2a", "#2c3a6e", "#4862a6", "#7e98c3", "#c8c8d0", "#f4f4f7"], spotKeep: true },
-        shadows: { rim: "#b5c3a5", key: "#c0cbb1", shadow: "#20251c", map: ["#161a12", "#2c3626", "#455239", "#768666", "#a0b38d", "#d4dcc8"], spotKeep: true },
-        veteran: { rim: "#e4c83c", key: "#e4c83c", shadow: "#2a1e1a", map: ["#1e1612", "#2a1e1a", "#4b372b", "#8c8177", "#e4c83c", "#fbf3c8"], spotKeep: false },
-        intellectual: { rim: "#c56b30", key: "#f4ead0", shadow: "#17120b", map: ["#17120b", "#301504", "#5d3517", "#8e491a", "#cda472", "#f4ead0"], spotKeep: false },
-        characters: { rim: "#d9b13b", key: "#f0decd", shadow: "#3a1708", map: ["#2a1006", "#5c2510", "#a84427", "#c56b30", "#d9b13b", "#f0decd"], spotKeep: false },
-        swinger: { rim: "#ca5e98", key: "#f6f5ec", shadow: "#371706", map: null },
-        militants: { rim: "#edd23c", key: "#fcfaf1", shadow: "#221815", map: ["#160f0c", "#221815", "#402e26", "#7e7570", "#e7c639", "#fcfaf1"], spotKeep: false },
-        paranormal: { rim: "#c65d4b", key: "#e3ecf9", shadow: "#1f2650", map: ["#141a3a", "#3a4683", "#5870b0", "#749ed3", "#ccdff4", "#fcfbfa"], spotKeep: true },
-        balcony: { rim: "#ddbd5d", key: "#eddbcb", shadow: "#280921", map: null },
-        ink: { rim: null, key: "#ffffff", shadow: "#14110e", map: ["#14110e", "#14110e"], spotKeep: false }
-        // silhouette
-      };
-      var STYLE = {
-        formShadow: 0.3,
-        // crescent offset as a fraction of piece width
-        formShadowMaxHH: 0.34,
-        // cap, in head-heights
-        formDy: 0.35,
-        // vertical component of the shadow offset (light slightly above)
-        bands: [0.1, 0.06],
-        // stipple terminator bands as fractions of piece width (outer, inner)
-        bandAlpha: [0.28, 0.55],
-        rim: 0.045,
-        // rim-light crescent as fraction of piece width
-        rimMaxHH: 0.05,
-        lit: 0.04,
-        // key-light sheen on the lit edge
-        stipplePx: 0.75,
-        // stipple noise frequency in cycles per output px
-        grainPx: 1.1,
-        // grain frequency per output px
-        grainAlpha: 0.16,
-        lod: { hi: 110, mid: 42 },
-        // px per head thresholds
-        minLinePx: 0.6
-      };
-      var Z = {
-        backProp: 2,
-        backHair: 6,
-        cape: 8,
-        legs: 10,
-        tights: 11,
-        feet: 12,
-        torso: 20,
-        tucked: 25,
-        bottom: 26,
-        feetOver: 27,
-        neck: 28,
-        top: 30,
-        tie: 31.5,
-        mid: 33,
-        outer: 36,
-        collar: 38,
-        belt: 40,
-        strap: 42,
-        arm: 45,
-        armCross: 55,
-        head: 60,
-        ears: 61,
-        face: 62,
-        facialHair: 64,
-        eyewear: 66,
-        hair: 70,
-        hat: 72,
-        frontProp: 80,
-        fx: 90
-      };
-      function tok(name) {
-        if (name == null) return null;
-        if (typeof name !== "string") return name;
-        if (name[0] === "#") return name;
-        return BRAND[name] || CLOTH[name] || MATTER[name] || null;
-      }
-      module.exports = { BRAND, CLOTH, MATTER, SKIN, SCHEMES, STYLE, Z, tok, INK: BRAND["ink-900"], PAPER: BRAND["paper-000"] };
-    }
-  });
-
-  // src/core/color.js
-  var require_color = __commonJS({
-    "src/core/color.js"(exports, module) {
-      "use strict";
-      var T = require_tokens();
-      function rgb(hex2) {
-        hex2 = T.tok(hex2) || hex2;
-        if (!/^#[0-9a-f]{6}$/i.test(hex2)) throw new Error(`Unknown colour "${hex2}". Use a token name (e.g. "cloth-olive", "file-500") or #rrggbb.`);
-        const n = parseInt(hex2.slice(1), 16);
-        return [n >> 16 & 255, n >> 8 & 255, n & 255];
-      }
-      var clamp = (v, a = 0, b = 255) => Math.max(a, Math.min(b, v));
-      function hex(c) {
-        return "#" + c.map((v) => clamp(Math.round(v)).toString(16).padStart(2, "0")).join("");
-      }
-      function mix(a, b, t) {
-        const A = rgb(a), B = rgb(b);
-        return hex(A.map((v, i) => v + (B[i] - v) * t));
-      }
-      function multiply(a, b) {
-        const A = rgb(a), B = rgb(b);
-        return hex(A.map((v, i) => v * B[i] / 255));
-      }
-      function screen(a, b) {
-        const A = rgb(a), B = rgb(b);
-        return hex(A.map((v, i) => 255 - (255 - v) * (255 - B[i]) / 255));
-      }
-      function lum(a) {
-        const [r, g, b] = rgb(a).map((v) => v / 255);
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      }
-      function toHsl(c) {
-        let [r, g, b] = rgb(c).map((v) => v / 255);
-        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-        let h = 0, s = 0;
-        const l = (mx + mn) / 2;
-        if (mx !== mn) {
-          const d = mx - mn;
-          s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
-          h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
-          h /= 6;
-        }
-        return [h, s, l];
-      }
-      function fromHsl([h, s, l]) {
-        const f = (p2, q2, t) => {
-          if (t < 0) t += 1;
-          if (t > 1) t -= 1;
-          if (t < 1 / 6) return p2 + (q2 - p2) * 6 * t;
-          if (t < 1 / 2) return q2;
-          if (t < 2 / 3) return p2 + (q2 - p2) * (2 / 3 - t) * 6;
-          return p2;
-        };
-        if (s === 0) return hex([l * 255, l * 255, l * 255]);
-        const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
-        return hex([f(p, q, h + 1 / 3) * 255, f(p, q, h) * 255, f(p, q, h - 1 / 3) * 255]);
-      }
-      function saturate(c, k) {
-        const h = toHsl(c);
-        h[1] = Math.max(0, Math.min(1, h[1] * k));
-        return fromHsl(h);
-      }
-      function shadeOf(c, t, shadow = "#2a1f1d") {
-        const tint = mix("#ffffff", shadow, t);
-        return saturate(multiply(c, tint), 1.12);
-      }
-      var KIND = {
-        cloth: { s: 0.5, d: 0.78, l: 0.14, line: 0.62, form: 1, bands: true, rim: true, gloss: 0 },
-        wool: { s: 0.52, d: 0.8, l: 0.1, line: 0.62, form: 1, bands: true, rim: true, gloss: 0 },
-        knit: { s: 0.5, d: 0.78, l: 0.1, line: 0.6, form: 1, bands: true, rim: true, gloss: 0 },
-        denim: { s: 0.5, d: 0.78, l: 0.16, line: 0.66, form: 1, bands: true, rim: true, gloss: 0 },
-        canvas: { s: 0.48, d: 0.76, l: 0.14, line: 0.6, form: 1, bands: true, rim: true, gloss: 0 },
-        leather: { s: 0.6, d: 0.85, l: 0.38, line: 0.7, form: 1, bands: false, rim: true, gloss: 1 },
-        satin: { s: 0.45, d: 0.75, l: 0.42, line: 0.6, form: 1, bands: true, rim: true, gloss: 1 },
-        metal: { s: 0.62, d: 0.86, l: 0.6, line: 0.75, form: 0.8, bands: false, rim: true, gloss: 1 },
-        hair: { s: 0.55, d: 0.8, l: 0.22, line: 0.7, form: 0.9, bands: true, rim: true, gloss: 0.5 },
-        glass: { s: 0.4, d: 0.7, l: 0.5, line: 0.7, form: 0.6, bands: false, rim: false, gloss: 1 },
-        paper: { s: 0.3, d: 0.6, l: 0.08, line: 0.5, form: 0.6, bands: true, rim: false, gloss: 0 },
-        wood: { s: 0.5, d: 0.8, l: 0.18, line: 0.7, form: 0.9, bands: true, rim: true, gloss: 0 },
-        flat: { s: 0.5, d: 0.78, l: 0.14, line: 0.62, form: 0, bands: false, rim: false, gloss: 0 }
-      };
-      function material(colour, kind = "cloth", scheme = T.SCHEMES.natural, opts = {}) {
-        if (colour && typeof colour === "object" && colour.base) return colour;
-        if (kind === "skin") {
-          const sk = T.SKIN[colour] || T.SKIN.fair;
-          return { kind: "skin", ...sk, rim: scheme.rim || sk.light, form: 1, bands: true, rimOn: !!scheme.rim, gloss: 0 };
-        }
-        const k = KIND[kind] || KIND.cloth;
-        let base = T.tok(colour), bad = null;
-        if (!base) {
-          bad = colour;
-          base = T.tok("cloth-graphite");
-        }
-        const sh = scheme.shadow || "#2a1f1d";
-        const L = lum(base);
-        const s = k.s * (L > 0.75 ? 0.75 : 1), d = k.d;
-        const out = {
-          kind,
-          base,
-          light: mix(base, scheme.key || "#fff4e0", k.l + (L < 0.12 ? 0.12 : 0)),
-          shade: L < 0.1 ? mix(base, "#000000", 0.35) : shadeOf(base, s, sh),
-          deep: L < 0.1 ? mix(base, "#000000", 0.6) : shadeOf(base, d, sh),
-          line: L < 0.1 ? mix(base, "#ffffff", 0.12) : shadeOf(base, k.line, sh),
-          rim: scheme.rim || null,
-          form: opts.form != null ? opts.form : k.form,
-          bands: k.bands,
-          rimOn: k.rim,
-          gloss: k.gloss
-        };
-        if (bad) out._bad = bad;
-        return out;
-      }
-      module.exports = { rgb, hex, mix, multiply, screen, lum, saturate, shadeOf, material, toHsl, fromHsl, KIND };
     }
   });
 
@@ -9786,6 +14904,39 @@ var B68Figure = (() => {
     }
   });
 
+  // src/parts/textiles/tortoise.js
+  var require_tortoise = __commonJS({
+    "src/parts/textiles/tortoise.js"() {
+      "use strict";
+      var { register } = require_registry();
+      var X = require_tex();
+      register({
+        kind: "textile",
+        name: "tortoise",
+        aliases: ["tortoiseshell"],
+        describe: "Tortoiseshell: faceted dark-brown blotches in two tones over an amber ground, the horn-rim spectacle acetate.",
+        params: { color2: "blotch colour (default: the cloth pulled toward chocolate)", scale: "repeat size multiplier", angle: "rotation in degrees" },
+        example: { face: { eyewear: { type: "horn-rim", frame: "cloth-tan", pattern: "tortoise" } } },
+        unitHH: 0.12,
+        pattern(a) {
+          const { id, size: s, scale, angle } = a, c2 = X.contrast(a, { onLight: "cloth-chocolate", onDark: "cloth-tan", k: 0.7 });
+          if (X.tiny(s, scale)) return X.tint(id, c2, s, angle);
+          const dark = [
+            [[0.04, 0.12], [0.3, 0.02], [0.46, 0.22], [0.31, 0.42], [0.07, 0.34]],
+            [[0.56, 0.06], [0.82, 0.1], [0.95, 0.3], [0.72, 0.44], [0.52, 0.3]],
+            [[0.12, 0.58], [0.4, 0.5], [0.52, 0.74], [0.34, 0.95], [0.08, 0.82]],
+            [[0.64, 0.6], [0.9, 0.54], [0.98, 0.8], [0.76, 0.98], [0.6, 0.82]]
+          ];
+          const mid = [[[0.34, 0.44], [0.5, 0.42], [0.54, 0.55], [0.4, 0.6]], [[0.86, 0.38], [0.97, 0.4], [0.96, 0.52], [0.86, 0.5]], [[0, 0.42], [0.1, 0.4], [0.12, 0.52], [0.02, 0.54]]];
+          let body = "";
+          for (const b of dark) body += `<path d="${X.poly(b, s)}" fill="${c2}" opacity="0.8"/>`;
+          for (const b of mid) body += `<path d="${X.poly(b, s)}" fill="${c2}" opacity="0.38"/>`;
+          return X.wrap(id, s, body, angle);
+        }
+      });
+    }
+  });
+
   // src/parts/textiles/weaves.js
   var require_weaves = __commonJS({
     "src/parts/textiles/weaves.js"() {
@@ -9899,7 +15050,7 @@ var B68Figure = (() => {
           const tucked = !!o.tucked;
           const hem = tucked ? R.y.waist + 0.25 * hh : R.y.hip + 0.1 * hh;
           const neckH = 0.3;
-          const b = S.bodice(ctx, { ease: tucked ? 0.015 : 0.022, waistEase: 0.012, neckline: "turtle", neckH, hem, hemDrop: 0.015 });
+          const b = S.bodice(ctx, { ease: tucked ? 0.015 : !ctx.under ? 0.045 : 0.022, waistEase: 0.012, neckline: "turtle", neckH, hem, hemDrop: 0.015 });
           const lines = torsoFolds(ctx, b, { hemFolds: !tucked, waist: tucked });
           const hasRib = !!REG.get("textile", "rib");
           const pattern = o.pattern || (hasRib && ctx.lodAtLeast("mid") ? "rib" : void 0);
@@ -10193,15 +15344,26 @@ var B68Figure = (() => {
       require_relaxed();
       require_hats_main();
       require_hats_more();
+      require_riot();
       require_ears_more();
       require_ears_normal();
       require_oval();
       require_shapes();
+      require_earrings();
+      require_necklace();
+      require_wrist();
       require_legwear();
       require_looks();
       require_plaster();
       require_scar();
       require_spots();
+      require_balaclava();
+      require_bandana();
+      require_blank();
+      require_domino();
+      require_gas_mask();
+      require_stocking();
+      require_surgical();
       require_apron();
       require_layers();
       require_waistcoat();
@@ -10216,10 +15378,12 @@ var B68Figure = (() => {
       require_longcoats();
       require_military();
       require_tailored();
+      require_armband();
       require_badges();
       require_carried();
-      require_fx();
+      require_fx2();
       require_leg();
+      require_militants();
       require_rifles();
       require_smoking();
       require_umbrella();
@@ -10227,233 +15391,12 @@ var B68Figure = (() => {
       require_houndstooth();
       require_spots2();
       require_stripes();
+      require_tortoise();
       require_weaves();
       require_knitwear();
       require_shirt();
       require_sleeveless();
       require_tee();
-    }
-  });
-
-  // src/core/spec.js
-  var require_spec = __commonJS({
-    "src/core/spec.js"(exports, module) {
-      "use strict";
-      var BUILD = { slight: 0.88, slim: 0.9, average: 1, athletic: 1.06, broad: 1.15, stocky: 1.18, heavy: 1.25, huge: 1.35 };
-      var V1_TOP = { turtleneck: "turtleneck", tee: "tee", suit: "suit-jacket", jacket: "field-jacket", coat: "overcoat", tactical: "tactical-jacket", dress: "shift-dress", overalls: "overalls" };
-      var V1_HAIR = { buzz: "buzz", flattop: "flattop", bob: "bowl-bob", sidepart: "side-part", short: "short", afro: "afro", long: "long", beanie: "short", bald: "bald" };
-      var V1_FACE = ["goatee", "moustache", "beard", "stubble", "glasses", "scar", "pimples", "unibrow"];
-      var V1_SHOES = { shoes: "oxfords", boots: "combat-boots", cowboy: "cowboy-boots", heels: "heels" };
-      function hash(s) {
-        let h = 2166136261;
-        for (const c of String(s)) {
-          h ^= c.charCodeAt(0);
-          h = Math.imul(h, 16777619);
-        }
-        return h >>> 0;
-      }
-      function isV1(s) {
-        const f = s.face || {};
-        return !!(s.top || s.bottom && !s.outfit || s.shoes || s.hands === "pockets" || V1_FACE.some((k) => f[k]) || s.hair && ["sidepart", "beanie"].includes(s.hair.style));
-      }
-      function upgradeV1(s) {
-        if (!isV1(s)) return s;
-        const o = { ...s };
-        const top = s.top || {}, bot = s.bottom || {}, sh = s.shoes || {};
-        if (!s.outfit && (s.top || s.bottom || s.shoes)) {
-          o.outfit = {};
-          if (top.type === "overalls") {
-            o.outfit.base = { type: "tee", color: top.color, sleeves: top.sleeves || "short" };
-            o.outfit.dress = { type: "overalls", color: top.overalls || bot.color };
-          } else if (top.type === "dress" || bot.type === "dress") {
-            o.outfit.dress = { type: "shift-dress", color: top.color || bot.color, length: bot.length, sleeves: top.sleeves };
-            if (bot.tights) o.outfit.legs = { type: "tights", color: bot.tights };
-          } else {
-            const t = V1_TOP[top.type] || "tee";
-            if (["suit-jacket", "field-jacket", "overcoat", "tactical-jacket"].includes(t)) {
-              o.outfit.base = top.turtle ? { type: "turtleneck", color: top.turtle } : { type: t === "suit-jacket" ? "shirt" : "tee", color: top.shirt || "cloth-cream" };
-              o.outfit.outer = { type: t, color: top.color, pattern: top.pattern, buttons: top.buttons, pockets: top.pockets, belt: top.belted };
-              if (top.tie) o.outfit.neck = { type: "tie", color: top.tie };
-            } else o.outfit.base = { type: t, color: top.color, pattern: top.pattern, sleeves: top.sleeves };
-            if (bot.type === "skirt") o.outfit.bottom = { type: bot.length === "mini" ? "mini-skirt" : bot.cut === "pencil" || bot.length === "knee" ? "pencil-skirt" : "a-line-skirt", color: bot.color };
-            else o.outfit.bottom = { type: bot.cargo ? "cargo-trousers" : "trousers", color: bot.color || top.color, pattern: bot.pattern, cut: bot.cut };
-          }
-          o.outfit.feet = { type: V1_SHOES[sh.type] || "oxfords", color: sh.color };
-        }
-        if (s.hair) {
-          o.hair = { ...s.hair, style: V1_HAIR[s.hair.style] || s.hair.style };
-          if (s.hair.style === "beanie" && !s.hair.hat) o.hair.hat = { type: "beanie", color: s.hair.hatColor || s.hair.color };
-        }
-        if (s.hands === "pockets") o.pose = { ...o.pose || {}, arms: { R: "pocket", L: "pocket" } };
-        if (s.bigLeg) o.body = { ...o.body || {}, bigLeg: s.bigLeg === "right" ? "R" : s.bigLeg === "left" ? "L" : s.bigLeg };
-        const f = s.face || {};
-        o.face = { ...f };
-        if (f.goatee || f.moustache || f.beard || f.stubble) o.face.facialHair = { type: f.goatee ? "goatee" : f.beard ? "beard-full" : f.moustache ? "moustache" : "stubble" };
-        if (f.glasses) o.face.eyewear = f.glasses === "shades" ? "shades" : "round-wire";
-        for (const k of V1_FACE) delete o.face[k];
-        const marks = [];
-        if (f.scar) marks.push({ type: "scar" });
-        if (f.pimples) marks.push({ type: "spots" });
-        if (marks.length) o.face.marks = marks;
-        if (f.unibrow) o.face.brows = "unibrow";
-        if (f.nose === "broken") o.face.nose = "broken";
-        if (typeof s.build === "string" && !s.shape) o.shape = { heavy: "rect", broad: "rect", athletic: "invtri", slight: "column", average: "lean" }[s.build] || "lean";
-        o.props = (s.props || []).map((p) => typeof p === "string" ? { type: p } : { ...p, side: p.side === "right" ? "R" : p.side === "left" ? "L" : p.side });
-        delete o.top;
-        delete o.bottom;
-        delete o.shoes;
-        delete o.hands;
-        return o;
-      }
-      var KEY_FIX = { colour: "color", colour2: "color2", grey: "grey", eye: "eyes", brow: "brows", lip: "lips", hairstyle: "style" };
-      function fixKeys(o, path, fixed) {
-        if (!o || typeof o !== "object" || Array.isArray(o)) return;
-        for (const k of Object.keys(o)) {
-          const to = KEY_FIX[k];
-          if (to && to !== k && o[to] === void 0) {
-            o[to] = o[k];
-            delete o[k];
-            fixed.push(`${path}${k} \u2192 ${to}`);
-          }
-          if (o[to || k] && typeof o[to || k] === "object" && !Array.isArray(o[to || k])) fixKeys(o[to || k], `${path}${to || k}.`, fixed);
-        }
-      }
-      function normalise(input) {
-        var _a, _b, _c, _d;
-        const raw = JSON.parse(JSON.stringify(input || {}));
-        const fixed = [];
-        fixKeys(raw, "", fixed);
-        let s = upgradeV1(raw);
-        s._fixed = fixed;
-        s.id = s.id || "figure";
-        s.heightIn = +s.heightIn || 68;
-        s.figure = s.figure || "masc";
-        s.shape = s.shape || (s.figure === "fem" ? "slim" : "lean");
-        s.build = typeof s.build === "number" ? s.build : BUILD[s.build] || 1;
-        if (s.face && typeof s.face.age === "number") {
-          if (s.face.age <= 3) s.face.ageLevel = (_a = s.face.ageLevel) != null ? _a : s.face.age;
-          else s.age = (_b = s.age) != null ? _b : s.face.age;
-          delete s.face.age;
-        }
-        s.age = (_c = s.age) != null ? _c : 35;
-        s.skin = s.skin || "fair";
-        s.seed = Number.isInteger(s.seed) ? s.seed >>> 0 : s.seed != null ? hash(String(s.seed)) : hash(s.id);
-        s.body = s.body || {};
-        if (s.bigLeg && !s.body.bigLeg) s.body.bigLeg = s.bigLeg === "right" ? "R" : s.bigLeg === "left" ? "L" : s.bigLeg;
-        if (typeof s.pose === "string") s.pose = { stance: s.pose };
-        const p = s.pose = s.pose && typeof s.pose === "object" ? s.pose : {};
-        p.stance = p.stance || "square";
-        if (typeof p.arms === "string") p.arms = { R: p.arms, L: p.arms };
-        if (Array.isArray(p.arms)) p.arms = { R: p.arms[0], L: (_d = p.arms[1]) != null ? _d : p.arms[0] };
-        if (typeof p.hands === "string") p.hands = { R: p.hands, L: p.hands };
-        p.arms = { R: "down", L: "down", ...p.arms || {} };
-        if (p.arms.R === "cross" || p.arms.L === "cross") p.arms.R = p.arms.L = "cross";
-        p.head = p.head || {};
-        s.head = { shape: "oval", ...s.head || {} };
-        if (typeof s.face === "string") {
-          s._fixed.push(`face "${s.face}" is not an object; ignored`);
-          s.face = {};
-        }
-        s.face = { eyes: "almond", brows: "straight", nose: "straight", mouth: "neutral", expression: "neutral", ...s.face || {} };
-        if (typeof s.face.facialHair === "string") s.face.facialHair = { type: s.face.facialHair };
-        if (typeof s.face.eyewear === "string") s.face.eyewear = { type: s.face.eyewear };
-        if (typeof s.face.makeup === "string") s.face.makeup = { type: s.face.makeup };
-        s.face.marks = [].concat(s.face.marks || []).map((m) => typeof m === "string" ? { type: m } : m);
-        if (typeof s.hair === "string") s.hair = { style: s.hair };
-        s.hair = { style: "short", color: "cloth-chocolate", ...s.hair || {} };
-        if (typeof s.hair.hat === "string") s.hair.hat = { type: s.hair.hat, color: s.hair.hatColor };
-        s.outfit = s.outfit || { base: { type: "tee", color: "cloth-cream" }, bottom: { type: "trousers", color: "cloth-charcoal" }, feet: { type: "oxfords", color: "cloth-black" } };
-        for (const k of Object.keys(s.outfit)) if (typeof s.outfit[k] === "string") s.outfit[k] = { type: s.outfit[k] };
-        s.props = [].concat(s.props || []).map((x) => typeof x === "string" ? { type: x } : x);
-        if (typeof s.companion === "string") s.companion = { type: s.companion };
-        return s;
-      }
-      var TOP_KEYS = ["id", "name", "plate", "code", "halo", "heightIn", "figure", "shape", "build", "heads", "skin", "age", "seed", "body", "pose", "head", "face", "hair", "outfit", "props", "companion", "scheme", "notes", "archetype", "playbook", "bigLeg", "top", "bottom", "shoes", "hands", "$comment"];
-      var SLOTS = ["base", "mid", "outer", "neck", "bottom", "dress", "legs", "feet", "waist", "hands"];
-      var COLOUR_KEYS = ["color", "color2", "grey", "frame", "lens", "lips", "band", "shaftColor", "buttonColor", "cuff", "pocketSquare", "browColor", "eyeColor"];
-      function validate(raw, S, warn, o, L) {
-        const near = (v, list) => {
-          const l = String(v).toLowerCase();
-          return list.find((x) => x.startsWith(l.slice(0, 3)));
-        };
-        const choose = (what, v, list) => {
-          if (v == null || list.includes(v)) return true;
-          const n = near(v, list);
-          warn(`${what} "${v}" is not valid${n ? ` (did you mean "${n}"?)` : ""}; choose from: ${list.join(", ")}`);
-          return false;
-        };
-        const clamp = (what, v, lo, hi, set) => {
-          if (v == null || typeof v !== "number") return;
-          if (!isFinite(v) || v < lo || v > hi) {
-            const c = Math.max(lo, Math.min(hi, isFinite(v) ? v : lo));
-            warn(`${what} ${v} is outside ${lo}\u2013${hi}; using ${c}`);
-            set(c);
-          }
-        };
-        for (const f of S._fixed || []) warn(`spec key ${f}`);
-        for (const k of Object.keys(raw || {})) if (!TOP_KEYS.includes(k)) warn(`spec field "${k}" is not used (fields: ${TOP_KEYS.filter((x) => !["top", "bottom", "shoes", "hands", "$comment"].includes(x)).join(", ")})`);
-        if (raw && raw.heightIn != null && isNaN(+raw.heightIn)) warn(`heightIn "${raw.heightIn}" is not a number of inches; using 68`);
-        clamp("heightIn", S.heightIn, 40, 96, (v) => S.heightIn = v);
-        clamp("heads", S.heads, 5, 10, (v) => S.heads = v);
-        if (raw && typeof raw.build === "string" && !(raw.build in BUILD)) warn(`build "${raw.build}" is not valid; choose a number 0.85\u20131.35 or: ${Object.keys(BUILD).join(", ")}`);
-        clamp("build", S.build, 0.6, 1.6, (v) => S.build = v);
-        choose("figure", S.figure, ["masc", "fem"]);
-        choose("shape", S.shape, L.shapes);
-        choose("skin", S.skin, L.skins);
-        for (const [k, v] of Object.entries(S.body || {})) {
-          if (k === "type") choose("body.type", v, L.parts("body"));
-          else if (k === "bigLeg") choose("body.bigLeg", v, ["R", "L"]);
-          else if (k === "belly") clamp("body.belly", v, 0, 1.5, (x) => S.body.belly = x);
-          else if (["shoulders", "chest", "waist", "hips", "neck", "arms", "legs", "hands", "feet"].includes(k)) clamp(`body.${k}`, v, 0.5, 2, (x) => S.body[k] = x);
-          else warn(`body.${k} is not used (body: type, shoulders, chest, waist, hips, neck, arms, legs, hands, feet, belly, bigLeg)`);
-        }
-        const P = S.pose || {};
-        choose("pose.stance", P.stance, ["square", "easy", "wide"]);
-        if (P.weight != null) choose("pose.weight", P.weight, ["R", "L"]);
-        for (const sd of ["R", "L"]) {
-          const av = P.arms[sd];
-          if (av && typeof av === "object") {
-            choose(`pose.arms.${sd}.a`, av.a, L.armPoses);
-            choose(`pose.arms.${sd}.b`, av.b, L.armPoses);
-            if (av.as != null) choose(`pose.arms.${sd}.as`, av.as, L.armPoses);
-            clamp(`pose.arms.${sd}.t`, av.t, 0, 1, (v) => av.t = v);
-          } else choose(`pose.arms.${sd}`, av, L.armPoses);
-        }
-        if (P.hands) {
-          for (const sd of ["R", "L"]) if (P.hands[sd]) choose(`pose.hands.${sd}`, P.hands[sd], L.parts("hands"));
-        }
-        clamp("pose.stoop", P.stoop, 0, 1, (v) => P.stoop = v);
-        if (P.head) {
-          clamp("pose.head.tilt", P.head.tilt, -10, 10, (v) => P.head.tilt = v);
-          clamp("pose.head.yaw", P.head.yaw, -25, 25, (v) => P.head.yaw = v);
-        }
-        const sc = o.scheme || S.scheme;
-        if (sc) choose("scheme", sc, L.schemes);
-        if (o.lod) choose("lod", o.lod, ["hi", "mid", "lo"]);
-        const colourCheck = (obj, path) => {
-          if (!obj || typeof obj !== "object") return;
-          for (const [k, v] of Object.entries(obj)) {
-            if (COLOUR_KEYS.includes(k) && typeof v === "string" && !L.isColour(v)) warn(`${path}${k} "${v}" is not a colour token (use cloth-*, brand tokens such as ink-900, or #rrggbb)`);
-            else if (v && typeof v === "object" && !Array.isArray(v) && k !== "block") colourCheck(v, `${path}${k}.`);
-          }
-        };
-        colourCheck(S.face, "face.");
-        colourCheck(S.hair, "hair.");
-        colourCheck(S.companion, "companion.");
-        (S.props || []).forEach((p, i) => colourCheck(p, `props[${i}].`));
-        if (S.halo && !L.isColour(S.halo)) warn(`halo "${S.halo}" is not a colour token`);
-        for (const [slot, g] of Object.entries(S.outfit || {})) {
-          if (!SLOTS.includes(slot)) {
-            warn(`outfit.${slot} is not a slot; slots: ${SLOTS.join(", ")}`);
-            continue;
-          }
-          if (!g) continue;
-          colourCheck(g, `outfit.${slot}.`);
-          const pat = g.pattern && (typeof g.pattern === "string" ? g.pattern : g.pattern.type);
-          if (pat) choose(`outfit.${slot}.pattern`, pat, L.parts("textile"));
-        }
-      }
-      module.exports = { normalise, upgradeV1, validate, BUILD, hash };
     }
   });
 
@@ -10483,8 +15426,7 @@ var B68Figure = (() => {
         const edge = (Y) => c(Y) + k * widthAt(Y);
         const out = (Y, d) => c(Y) + k * (widthAt(Y) + d * hh);
         const rel = (Y, x) => c(Y) + k * x * hh;
-        const sw = Math.sign(pelvisShift || 0);
-        const tilt = -sw * 0.055;
+        const tilt = env.pelvisTilt || 0;
         const hipPt = (x, Y) => tilt ? G.rot([pelvisShift + x, Y], tilt, [pelvisShift, y.hip]) : [pelvisShift + x, Y];
         const pullTo = (a, b, max) => {
           const d = G.dist(a, b);
@@ -10617,14 +15559,43 @@ var B68Figure = (() => {
       var sx = (side) => side === "R" ? -1 : 1;
       var SHAPES = {
         lean: { shoulder: 1, chest: 0.92, waist: 0.74, hip: 0.8, heads: 7.4, desc: "Average, slightly tapered. The neutral default." },
-        rect: { shoulder: 1.08, chest: 1.06, waist: 1, hip: 0.97, heads: 7.6, desc: "Boxy, straight-sided: solid, immovable, old soldier." },
-        invtri: { shoulder: 1.2, chest: 1.02, waist: 0.7, hip: 0.76, heads: 7.6, desc: "Wide shoulders, narrow hips: athletic, dangerous." },
-        column: { shoulder: 0.86, chest: 0.78, waist: 0.68, hip: 0.72, heads: 7.2, desc: "Narrow and straight: wiry, young, shifty." },
-        pear: { shoulder: 0.84, chest: 0.86, waist: 0.9, hip: 1.06, heads: 7, desc: "Narrow top, wide base: grounded, odd, comic." },
-        oval: { shoulder: 0.98, chest: 1.06, waist: 1.18, hip: 1.06, heads: 7, desc: "Round belly: comfortable, greedy, jolly." },
-        hourglass: { shoulder: 0.88, chest: 0.88, waist: 0.62, hip: 0.94, heads: 7.6, desc: "Balanced shoulders and hips, small waist: poised, glamorous." },
-        lanky: { shoulder: 0.92, chest: 0.8, waist: 0.66, hip: 0.72, heads: 8, desc: "Long limbs, small head: awkward, scholarly, elegant." },
-        slim: { shoulder: 0.84, chest: 0.8, waist: 0.62, hip: 0.84, heads: 7.8, desc: "Slender fashion-plate figure (fem default)." }
+        rect: { shoulder: 1.14, chest: 1.13, waist: 1.12, hip: 1.06, heads: 7.6, desc: "Boxy, straight-sided: solid, immovable, old soldier." },
+        // [1.08 1.06 1.00 0.97]
+        invtri: { shoulder: 1.32, chest: 1.08, waist: 0.68, hip: 0.74, heads: 7.6, desc: "Wide shoulders, narrow hips: athletic, dangerous." },
+        // [1.20 1.02 0.70 0.76]
+        column: { shoulder: 0.78, chest: 0.7, waist: 0.64, hip: 0.67, heads: 7.2, desc: "Narrow and straight: wiry, young, shifty." },
+        // [0.86 0.78 0.68 0.72]
+        pear: { shoulder: 0.74, chest: 0.82, waist: 1, hip: 1.22, heads: 6.7, desc: "Narrow top, wide base: grounded, odd, comic." },
+        // [0.84 0.86 0.90 1.06, 7.0 heads]
+        oval: { shoulder: 0.97, chest: 1.08, waist: 1.4, hip: 1.3, heads: 6.7, desc: "Round belly: comfortable, greedy, jolly." },
+        // [0.98 1.06 1.18 1.06, 7.0 heads]: the chest stays near the shoulder, or the coats' soft shoulder notches
+        hourglass: { shoulder: 0.82, chest: 0.86, waist: 0.56, hip: 1.01, heads: 7.6, desc: "Balanced shoulders and hips, small waist: poised, glamorous." },
+        // [0.88 0.88 0.62 0.94]
+        lanky: { shoulder: 0.88, chest: 0.74, waist: 0.62, hip: 0.68, heads: 8.4, desc: "Long limbs, small head: awkward, scholarly, elegant." },
+        // [0.92 0.80 0.66 0.72, 8.0 heads]
+        slim: { shoulder: 0.76, chest: 0.74, waist: 0.56, hip: 0.84, heads: 7.8, desc: "Slender fashion-plate figure (fem default)." }
+        // [0.84 0.80 0.62 0.84]: the hip stays, or slim drifts toward hourglass
+      };
+      var TURNOUT = { square: [17, 17], easy: [27, 33], wide: [30, 30] };
+      var TOE_SHARE = 0.76;
+      var FOOT_W = 0.38;
+      var EASY = {
+        pelvisShift: 0.12,
+        // hh: the pelvis moves over the weight leg
+        pelvisTilt: 0.07,
+        // rad: and rises on that side
+        shoulderTilt: 0.045,
+        // rad: the shoulders counter-tilt (the weight-side shoulder drops)
+        weightIn: 0.05,
+        // hh: the weight ankle sits this far toward the weight side of the neck pit
+        freeOut: 0.22,
+        // hh: the free ankle sits this far outside the free hip joint (on a lean pelvis; less on wider hips)
+        hipRef: 0.44,
+        // hh: the lean figure's hip-joint offset, where freeOut applies in full
+        kneeIn: 0.24,
+        // hh: the free knee comes in toward the centre line (scaled by the hip-joint offset: less on a narrow pelvis)
+        kneeDrop: 0.1
+        // hh: and drops (the free shin is foreshortened: that foot is forward)
       };
       function ik(a, c, L1, L2, bendSign) {
         const d = Math.min(G.dist(a, c), L1 + L2 - 1e-6);
@@ -10686,16 +15657,17 @@ var B68Figure = (() => {
           arm: { top: 0.165 * hh * armK, bicep: 0.175 * hh * armK, elbow: 0.135 * hh * armK, forearm: 0.155 * hh * armK, wrist: 0.095 * hh * armK },
           leg: { thigh: Math.min(0.36 * hh * legK, w.hip * 0.55), knee: 0.165 * hh * legK, calf: 0.195 * hh * legK, ankle: 0.1 * hh * legK },
           hand: 0.75 * hh * (bm.hands || 1) * (fem ? 0.88 : 1),
-          foot: 0.26 * hh * (bm.feet || 1) * (fem ? 0.85 : 1)
+          foot: 1 * hh * (bm.feet || 1) * (fem ? 0.86 : 1)
+          // heel-to-toe length (the shoe's own length rides on it)
         };
         const P = S.pose || {};
         const stance = P.stance || "square";
         const ws = P.weight === "R" ? "R" : "L";
         const sw = sx(ws);
-        const pelvisShift = stance === "easy" ? sw * 0.1 * hh : 0;
-        const pelvisTilt = stance === "easy" ? -sw * 0.055 : 0;
-        const shoulderTilt = stance === "easy" ? sw * 0.035 : 0;
-        const pelvisC = [pelvisShift, y.hip];
+        const easy = stance === "easy";
+        const pelvisShift = easy ? sw * EASY.pelvisShift * hh : 0;
+        const pelvisTilt = easy ? -sw * EASY.pelvisTilt : 0;
+        const shoulderTilt = easy ? sw * EASY.shoulderTilt : 0;
         const shoulderC = [pelvisShift * 0.35, y.shoulder];
         function centerAt(Y) {
           if (Y <= y.chest) return shoulderC[0];
@@ -10745,14 +15717,23 @@ var B68Figure = (() => {
         const legs = {};
         const bigLeg = bm.bigLeg || S.bigLeg || null;
         const L1 = y.knee - (y.hip + 0.1 * hh), L2 = y.ankle - y.knee;
+        const neckPit = centerAt(y.neckBase);
         for (const s of ["R", "L"]) {
           const k = sx(s);
-          let ankle;
-          if (stance === "easy") ankle = s === ws ? [k * 0.16 * hh + pelvisShift * 0.4, y.ankle] : [k * (w.hip * 0.98), y.ankle];
-          else if (stance === "wide") ankle = [k * (w.hip + 0.35 * hh), y.ankle];
-          else ankle = [k * (w.hip - limbs.leg.thigh) * 1.05, y.ankle];
           const hip = hipJ[s];
-          const knee = ik(hip, ankle, L1, L2, k * (stance === "easy" && s !== ws ? -1 : 0.25));
+          const weightLeg = easy && s === ws, free = easy && s !== ws;
+          let ankle, knee;
+          if (weightLeg) ankle = [neckPit + k * EASY.weightIn * hh, y.ankle];
+          else if (free) {
+            const spread = Math.max(0.3, Math.min(1, EASY.hipRef * hh / Math.max(1e-6, Math.abs(hip[0] - pelvisShift))));
+            ankle = [hip[0] + k * EASY.freeOut * spread * hh, y.ankle];
+          } else if (stance === "wide") ankle = [k * (w.hip + 0.35 * hh), y.ankle];
+          else ankle = [k * (w.hip - limbs.leg.thigh) * 1.05, y.ankle];
+          if (free) {
+            const kneeK = Math.max(0.55, Math.min(1.25, Math.abs(hip[0] - pelvisShift) / (EASY.hipRef * hh)));
+            const t = (y.knee - hip[1]) / (ankle[1] - hip[1]);
+            knee = [G.lerp(hip[0], ankle[0], t) - k * EASY.kneeIn * kneeK * hh, y.knee + EASY.kneeDrop * hh];
+          } else knee = ik(hip, ankle, L1, L2, k * 0.25);
           const big = bigLeg === s ? 2 : 1;
           const widths = {
             thigh: limbs.leg.thigh * (big > 1 ? 1.5 : 1),
@@ -10760,50 +15741,45 @@ var B68Figure = (() => {
             calf: limbs.leg.calf * big,
             ankle: limbs.leg.ankle * (big > 1 ? 1.6 : 1)
           };
-          const toe = [ankle[0] + k * 0.1 * hh, 0];
-          legs[s] = { side: s, k, hip, knee, ankle, toe, widths, big: big > 1, footLen: limbs.foot * (big > 1 ? 1.4 : 1) };
+          const turnout = (TURNOUT[stance] || TURNOUT.square)[free ? 1 : 0] * Math.PI / 180;
+          const footLen = limbs.foot * (big > 1 ? 1.4 : 1), footW = footLen * FOOT_W * (fem ? 0.94 : 1);
+          const sn = Math.sin(turnout), cs = Math.cos(turnout);
+          const reach = TOE_SHARE * footLen * sn + 0.5 * footW * cs, heelReach = (1 - TOE_SHARE) * footLen * sn + 0.5 * footW * cs;
+          const toe = [ankle[0] + k * reach, 0], heel = [ankle[0] - k * heelReach, 0];
+          legs[s] = {
+            side: s,
+            k,
+            hip,
+            knee,
+            ankle,
+            toe,
+            heel,
+            turnout,
+            toeDir: [k * sn, cs],
+            reach,
+            heelReach,
+            widths,
+            big: big > 1,
+            footLen,
+            footW,
+            weight: weightLeg,
+            free
+          };
         }
         const arms = {};
         const A = P.arms || {};
         for (const s of ["R", "L"]) {
           const k = sx(s);
-          const want = A[s] || (S.hands === "pockets" ? "pocket" : "down");
-          // a blend { a, b, t, as } puts the arm part-way from pose a to pose b (t 0..1), for animation frames; the parts and
-          // props read it as pose `as` (default b), so a cigarette stays in the hand all the way up
-          const blend = want && typeof want === "object" ? want : null;
-          const pose = blend ? blend.as || blend.b : want;
+          const pose = A[s] || (S.hands === "pockets" ? "pocket" : "down");
           const sh = shoulderJ[s];
-          const env = { k, sh, w, y, hh, limbs, widthAt, centerAt, pelvisShift, pelvisTilt, shoulderTilt, torsoPt, stance, weight: ws, side: s, ik };
-          let t = POSES.arm(blend ? blend.b : pose, env);
-          if (blend) {
-            // blend the joint angles, not the points, so the arm swings through a natural arc (shortest way round)
-            const ta = POSES.arm(blend.a, env), u = Math.max(0, Math.min(1, +blend.t || 0));
-            const ang = (v) => Math.atan2(v[1], v[0]);
-            const turn = (p, q) => { let d = q - p; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return p + d * u; };
-            const mix = (p, q) => p + (q - p) * u;
-            const ua = G.sub(ta.elbow, sh), ub = G.sub(t.elbow, sh);
-            const fa = G.sub(ta.wrist, ta.elbow), fb = G.sub(t.wrist, t.elbow);
-            const au = turn(ang(ua), ang(ub)), af = turn(ang(fa), ang(fb));
-            const lu = mix(Math.hypot(ua[0], ua[1]), Math.hypot(ub[0], ub[1])), lf = mix(Math.hypot(fa[0], fa[1]), Math.hypot(fb[0], fb[1]));
-            const el = [sh[0] + Math.cos(au) * lu, sh[1] + Math.sin(au) * lu];
-            const wr = [el[0] + Math.cos(af) * lf, el[1] + Math.sin(af) * lf];
-            const ha = ang(ta.handDir), hb = ang(t.handDir), ah = turn(ha, hb);
-            const late = u >= (blend.flip == null ? 0.2 : blend.flip);
-            t = {
-              elbow: el,
-              wrist: wr,
-              handDir: [Math.cos(ah), Math.sin(ah)],
-              z: late ? t.z == null ? 45 : t.z : ta.z == null ? 45 : ta.z,
-              foreFront: late ? !!t.foreFront : !!ta.foreFront
-            };
-          }
+          const t = POSES.arm(pose, { k, sh, w, y, hh, limbs, widthAt, centerAt, pelvisShift, pelvisTilt, shoulderTilt, torsoPt, stance, weight: ws, side: s, ik });
           const { elbow, wrist, handDir, z = 45, foreFront = false } = t;
           const hand = G.add(wrist, G.mul(G.norm(handDir), limbs.hand * 0.5));
           arms[s] = { side: s, k, pose, shoulder: sh, elbow, wrist, hand, handDir: G.norm(handDir), z, foreFront, widths: { ...limbs.arm } };
         }
         const tilt = Math.max(-10, Math.min(10, P.head && P.head.tilt || 0)) * Math.PI / 180;
         const head = {
-          cx: shoulderC[0] + (stance === "easy" ? sw * 0.03 * hh : 0),
+          cx: shoulderC[0] + (easy ? sw * 0.03 * hh : 0),
           cy: y.eye,
           k: hh * (((_b = S.head) == null ? void 0 : _b.size) || 1),
           tilt,
@@ -10831,6 +15807,7 @@ var B68Figure = (() => {
           tiltAt,
           widthAt,
           torsoPt,
+          neckPit,
           shoulderJ,
           hipJ,
           legs,
@@ -10839,416 +15816,7 @@ var B68Figure = (() => {
           sx
         };
       }
-      module.exports = { rig, SHAPES, ARM_POSES: POSES.ARM_POSES, U, sx, ik };
-    }
-  });
-
-  // src/core/spaces.js
-  var require_spaces = __commonJS({
-    "src/core/spaces.js"(exports, module) {
-      "use strict";
-      var G = require_geom();
-      function headSpace(R) {
-        const H = R.head;
-        function hp(p, opts = {}) {
-          let [x, y] = p;
-          if (H.yaw && !opts.flat) {
-            const r = H.w * Math.sqrt(Math.max(0.15, 1 - Math.pow(Math.max(0, y - 0.05) / 0.62, 2)));
-            const z = Math.sqrt(Math.max(0, r * r - x * x));
-            x = x + (z + (opts.depth || 0)) * Math.sin(H.yaw);
-          }
-          const q = [H.cx + x * H.k, H.cy + y * H.k];
-          return H.tilt ? G.rot(q, H.tilt, H.pivot) : q;
-        }
-        const hs = (d, opts) => G.mapPath(d, (p) => hp(p, opts));
-        return { hp, hs };
-      }
-      function torsoSpace(R) {
-        const yAt = (t) => R.y.shoulder + (R.y.crotch - R.y.shoulder) * t;
-        function tp(p) {
-          const Y = yAt(p[1]);
-          return R.torsoPt(p[0] * R.widthAt(Y), Y);
-        }
-        const ts = (d) => G.mapPath(d, tp);
-        return { tp, ts, yAt };
-      }
-      function limbProfile(R, limb, side, seg) {
-        if (limb === "arm") {
-          const w2 = R.arms[side].widths;
-          if (seg === "upper") return (u) => G.lerp(w2.top, w2.elbow, u) + Math.sin(Math.PI * Math.min(1, u * 1.3)) * (w2.bicep - (w2.top + w2.elbow) / 2) * 0.8;
-          return (u) => G.lerp(w2.elbow, w2.wrist, u) + Math.sin(Math.PI * Math.min(1, u * 1.6)) * (w2.forearm - (w2.elbow + w2.wrist) / 2) * 0.9;
-        }
-        const w = R.legs[side].widths;
-        if (seg === "upper") return (u) => G.lerp(w.thigh, w.knee, Math.pow(u, 0.85));
-        return (u) => G.lerp(w.knee, w.ankle, u) + Math.sin(Math.PI * Math.min(1, u * 1.5)) * (w.calf - (w.knee + w.ankle) / 2);
-      }
-      function boneSpace(R) {
-        function joints(limb, side, seg) {
-          const L = limb === "arm" ? R.arms[side] : R.legs[side];
-          const a = limb === "arm" ? L.shoulder : L.hip, b = limb === "arm" ? L.elbow : L.knee, c = limb === "arm" ? L.wrist : L.ankle;
-          return seg === "upper" ? [a, b] : seg === "lower" ? [b, c] : [a, b, c];
-        }
-        function bone(limb, side, seg = "upper") {
-          const J = joints(limb, side, seg);
-          if (seg === "whole") {
-            const up = bone(limb, side, "upper"), lo = bone(limb, side, "lower");
-            const l1 = G.dist(J[0], J[1]), l2 = G.dist(J[1], J[2]), split = l1 / (l1 + l2);
-            const bp2 = (p) => p[0] <= split ? up.bp([p[0] / split, p[1]]) : lo.bp([(p[0] - split) / (1 - split), p[1]]);
-            return { bp: bp2, bs: (d) => G.mapPath(d, bp2), hw: (u) => u <= split ? up.hw(u / split) : lo.hw((u - split) / (1 - split)), a: J[0], b: J[2], split };
-          }
-          const [a, b] = J;
-          const dir = G.norm(G.sub(b, a));
-          const n = [dir[1], -dir[0]];
-          const hw = limbProfile(R, limb, side, seg);
-          const bp = (p) => G.add(G.lerp(a, b, p[0]), G.mul(n, p[1] * hw(Math.max(0, Math.min(1, p[0])))));
-          return { bp, bs: (d) => G.mapPath(d, bp), hw, a, b, dir, n, len: G.dist(a, b) };
-        }
-        return { bone, limbProfile: (limb, side, seg) => limbProfile(R, limb, side, seg) };
-      }
-      module.exports = { headSpace, torsoSpace, boneSpace, limbProfile };
-    }
-  });
-
-  // src/core/body.js
-  var require_body = __commonJS({
-    "src/core/body.js"(exports, module) {
-      "use strict";
-      var G = require_geom();
-      var { limbProfile } = require_spaces();
-      function torso(R, opts = {}) {
-        var _a, _b, _c;
-        const hh = R.hh, w = R.w, y = R.y;
-        const e = ((_a = opts.ease) != null ? _a : 0.03) * hh;
-        const hem = (_b = opts.hem) != null ? _b : y.hip + 0.15 * hh;
-        const flare = (opts.flare || 0) * hh;
-        const drop = (opts.shoulderDrop || 0) * hh;
-        const nl = opts.neckline || "high";
-        const sides = {};
-        for (const s of ["R", "L"]) {
-          const k = R.sx(s);
-          const P = (x, Y) => R.torsoPt(k * x, Y);
-          const pts = {
-            neck: P(w.neckBase + e * 0.4 + (nl === "boat" ? 0.22 * hh : nl === "scoop" ? 0.1 * hh : 0), y.neckBase - 0.03 * hh - (nl === "turtle" ? 0.3 * hh : 0)),
-            trap: P(w.neckBase + (w.shoulder - w.neckBase) * 0.5 + e * 0.7, y.neckBase + 0.075 * hh - e * 0.25 + drop * 0.5),
-            shTop: P(w.shoulder - 0.13 * hh + e, y.shoulder + 0.02 * hh - e * 0.3 + drop),
-            shPt: P(w.shoulder + e, y.shoulder + 0.24 * hh + drop),
-            armpit: P(w.chest * 0.98 + e, y.chest - 0.24 * hh),
-            chest: P(w.chest + e, y.chest),
-            waist: P(w.waist + e, y.waist),
-            hip: P(w.hip + e, y.hip)
-          };
-          if (hem > y.hip + 0.05 * hh) pts.hipLow = P(R.widthAt(Math.min(hem, y.crotch)) + e + flare * Math.min(1, (Math.min(hem, y.crotch) - y.hip) / Math.max(1, hem - y.hip)), Math.min(hem, y.crotch) - (hem > y.crotch ? 0 : 0.02 * hh));
-          pts.hem = [...P(R.widthAt(Math.min(hem, y.crotch + 3 * hh)) + e + flare, hem), true];
-          if (hem < y.waist + 0.05 * hh) {
-            delete pts.hip;
-            delete pts.hipLow;
-            pts.hem = [...P(R.widthAt(hem) + e + flare, hem), true];
-          }
-          if (hem < y.chest + 0.05 * hh) {
-            delete pts.waist;
-          }
-          sides[s] = pts;
-        }
-        const order = ["neck", "trap", "shTop", "shPt", "armpit", "chest", "waist", "hip", "hipLow", "hem"];
-        const Lpts = order.filter((n) => sides.R[n]).map((n) => sides.R[n]);
-        const Rpts = order.filter((n) => sides.L[n]).map((n) => sides.L[n]).reverse();
-        const c = R.centerAt(hem);
-        const hemMid = [c, hem + (opts.hemCurve || 0) * hh];
-        const nc = R.centerAt(y.neckBase);
-        const neckPts = [];
-        const depth = ((_c = opts.depth) != null ? _c : nl === "v" ? 0.7 : nl === "scoop" ? 0.35 : nl === "crew" ? 0.1 : nl === "boat" ? 0.05 : 0) * hh;
-        if (nl === "v") neckPts.push([nc, y.neckBase + depth, true]);
-        else if (depth > 0) neckPts.push([nc, y.neckBase - 0.03 * hh + depth]);
-        else if (nl === "turtle") neckPts.push([nc, y.neckBase - 0.36 * hh]);
-        else neckPts.push([nc, y.neckBase - 0.05 * hh]);
-        const all = [...Lpts, hemMid, ...Rpts, ...neckPts];
-        if (nl === "v") {
-          all[0] = [...all[0].slice(0, 2), true];
-          all[all.length - 2] = [...all[all.length - 2].slice(0, 2), true];
-        }
-        return { d: G.smooth(all, true, 0.45), pts: sides, L: sides.L, R: sides.R, hem, hemMid, neckMid: neckPts[0] };
-      }
-      function limb(R, limbName, side, opts = {}) {
-        var _a, _b;
-        const L = limbName === "arm" ? R.arms[side] : R.legs[side];
-        const a = limbName === "arm" ? L.shoulder : L.hip, b = limbName === "arm" ? L.elbow : L.knee, c = limbName === "arm" ? L.wrist : L.ankle;
-        const e = (opts.ease || 0) * R.hh;
-        const ws = opts.widthScale || 1;
-        const l1 = G.dist(a, b), l2 = G.dist(b, c), split = l1 / (l1 + l2);
-        const up = limbProfile(R, limbName, side, "upper"), lo = limbProfile(R, limbName, side, "lower");
-        const base = (u) => u <= split ? up(u / split) : lo((u - split) / (1 - split));
-        const hw = (u) => (opts.hw ? opts.hw(u, base(u)) : base(u) * ws) + e;
-        const u0 = (_a = opts.from) != null ? _a : 0, u1 = (_b = opts.to) != null ? _b : 1;
-        const at = (u) => u <= split ? G.lerp(a, b, u / split) : G.lerp(b, c, (u - split) / (1 - split));
-        const d1 = G.norm(G.sub(b, a)), d2 = G.norm(G.sub(c, b));
-        const bend = Math.acos(Math.max(-1, Math.min(1, d1[0] * d2[0] + d1[1] * d2[1])));
-        const capStart = opts.capStart || (limbName === "arm" && u0 === 0 ? "round" : "flat");
-        const capEnd = opts.capEnd || "flat";
-        const N = 10;
-        const mk = (s0, s1, cs, ce) => {
-          const pts = [];
-          for (let i = 0; i <= N; i++) pts.push(at(G.lerp(s0, s1, i / N)));
-          const prof = (t) => hw(G.lerp(s0, s1, t));
-          return G.tube(pts, prof, { capStart: cs, capEnd: ce, samples: 22, tension: 0.5 });
-        };
-        if (bend < 0.45 || u1 <= split + 0.02 || u0 >= split - 0.02) {
-          const span = Math.max(0.05, u1 - u0), M = Math.max(4, Math.ceil(16 * span));
-          const pts = [];
-          for (let i = 0; i <= M; i++) pts.push(at(G.lerp(u0, u1, i / M)));
-          const d = G.tube(pts, (t) => hw(G.lerp(u0, u1, t)), { capStart, capEnd, samples: Math.min(28, Math.max(10, Math.ceil(28 * span) + 6)), tension: 0.5 });
-          return { d, pieces: [{ d, seg: "whole" }], merged: true, split, hw, at };
-        }
-        const dUp = mk(u0, split + 0.015, capStart, "round");
-        const dLo = mk(split - 0.015, u1, "round", capEnd);
-        return { d: null, pieces: [{ d: dUp, seg: "upper" }, { d: dLo, seg: "lower" }], merged: false, split, hw, at };
-      }
-      function trousers(R, opts = {}) {
-        var _a, _b;
-        const hh = R.hh, y = R.y;
-        const e = ((_a = opts.ease) != null ? _a : 0.04) * hh;
-        const top = opts.rise === "high" ? y.waist - 0.12 * hh : opts.rise === "low" ? y.hip - 0.12 * hh : y.waist + 0.05 * hh;
-        const cut = opts.cut || "straight";
-        const hemU = (_b = { ankle: 1, floor: 1.04, crop: 0.9, knee: 0.52, shorts: 0.28 }[opts.hem || "ankle"]) != null ? _b : 1;
-        const legs = {};
-        for (const s of ["R", "L"]) {
-          const Lg = R.legs[s];
-          const lw = Lg.widths;
-          const k = R.sx(s);
-          const kneeW = lw.knee + e * 0.8, thighW = lw.thigh + e;
-          const prof = (u) => {
-            const knU = 0.5;
-            if (cut === "wide") return Math.max(thighW, G.lerp(thighW, thighW * 1.08, u));
-            if (u < knU) return G.lerp(thighW, kneeW * (cut === "skinny" ? 0.95 : 1.05), Math.pow(u / knU, 0.9));
-            const t = (u - knU) / (1 - knU);
-            if (cut === "flare") return G.lerp(kneeW * 1.05, kneeW * 1.75, Math.pow(t, 1.4));
-            if (cut === "slim" || cut === "skinny") return G.lerp(kneeW * (cut === "skinny" ? 0.95 : 1.05), (lw.ankle + e) * (cut === "skinny" ? 1.05 : 1.3), t);
-            return G.lerp(kneeW * 1.05, kneeW * 1.02, t);
-          };
-          const pts2 = [];
-          const M = 18;
-          const hemTo = Math.min(1.04, hemU);
-          const cl = [Lg.hip, Lg.knee, [Lg.ankle[0], Lg.ankle[1] + (opts.hem === "floor" ? 0.22 * hh : 0.06 * hh)]];
-          const dense = G.resample(cl, 40, 0.5);
-          const atU = (u) => {
-            const f = Math.max(0, Math.min(1, u)) * (dense.length - 1);
-            const i = Math.min(dense.length - 2, Math.floor(f));
-            return G.lerp(dense[i], dense[i + 1], f - i);
-          };
-          const outer = [], inner = [];
-          for (let i = 0; i <= M; i++) {
-            const u = i / M * hemTo;
-            const p = atU(u), p2 = atU(Math.min(1, u + 0.02)), p1 = atU(Math.max(0, u - 0.02));
-            const dir = G.norm(G.sub(p2, p1));
-            let n = [dir[1], -dir[0]];
-            if (n[0] * k < 0) n = [-n[0], -n[1]];
-            const w = prof(u);
-            outer.push(G.add(p, G.mul(n, w)));
-            inner.push(G.sub(p, G.mul(n, w)));
-          }
-          legs[s] = { outer, inner, prof, atU, hemTo };
-        }
-        const topL = R.torsoPt(-(R.widthAt(top) + e), top), topR = R.torsoPt(R.widthAt(top) + e, top);
-        const hipL = R.torsoPt(-(R.w.hip + e), y.hip), hipR = R.torsoPt(R.w.hip + e, y.hip);
-        const crotch = [R.pelvisShift + 0, y.crotch + 0.06 * hh, true];
-        const Ls = legs.R, Rs = legs.L;
-        const mark = (p) => [p[0], p[1], true];
-        const pts = [
-          mark(topL),
-          hipL,
-          ...Ls.outer.slice(1, -1),
-          mark(Ls.outer[Ls.outer.length - 1]),
-          mark(Ls.inner[Ls.inner.length - 1]),
-          ...Ls.inner.slice(2, -1).reverse(),
-          crotch,
-          ...Rs.inner.slice(2, -1),
-          mark(Rs.inner[Rs.inner.length - 1]),
-          mark(Rs.outer[Rs.outer.length - 1]),
-          ...Rs.outer.slice(1, -1).reverse(),
-          hipR,
-          mark(topR)
-        ];
-        return { d: G.smooth(pts, true, 0.42), legs, top, crotch, topL, topR };
-      }
-      function neck(R, opts = {}) {
-        const hh = R.hh, y = R.y, w = R.w;
-        const c0 = R.head.cx, c1 = R.centerAt(y.neckBase);
-        const wt = w.neck * (opts.width || 1), wb = w.neckBase * (opts.width || 1);
-        const top = y.neckTop;
-        const pts = [
-          [c0 - wt, top],
-          [c0 - wt * 1, y.chin + 0.05 * hh],
-          [c1 - wb * 0.98, y.neckBase - 0.02 * hh],
-          [c1 - wb * 1.25, y.neckBase + 0.1 * hh],
-          [c1 + wb * 1.25, y.neckBase + 0.1 * hh],
-          [c1 + wb * 0.98, y.neckBase - 0.02 * hh],
-          [c0 + wt * 1, y.chin + 0.05 * hh],
-          [c0 + wt, top]
-        ];
-        return { d: G.smooth(pts, true, 0.4), top, base: y.neckBase };
-      }
-      module.exports = { torso, limb, trousers, neck };
-    }
-  });
-
-  // src/core/context.js
-  var require_context = __commonJS({
-    "src/core/context.js"(exports, module) {
-      "use strict";
-      var G = require_geom();
-      var C = require_color();
-      var T = require_tokens();
-      var B = require_body();
-      var SP = require_spaces();
-      var REG = require_registry();
-      function mulberry(seed) {
-        let a = seed >>> 0;
-        return () => {
-          a |= 0;
-          a = a + 1831565813 | 0;
-          let t = Math.imul(a ^ a >>> 15, 1 | a);
-          t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-          return ((t ^ t >>> 14) >>> 0) / 4294967296;
-        };
-      }
-      function defaultHead(R) {
-        const w = R.head.w;
-        return {
-          w,
-          crown: -0.5,
-          hairline: -0.28,
-          temple: -0.2,
-          templeW: w * 0.93,
-          brow: -0.085,
-          eyeY: 0,
-          eyeX: 0.155,
-          eyeW: 0.125,
-          eyeH: 0.05,
-          cheekY: 0.1,
-          cheekW: w,
-          noseY: 0.205,
-          noseW: 0.075,
-          noseTipY: 0.17,
-          mouthY: 0.31,
-          mouthW: 0.135,
-          jawY: 0.33,
-          jawW: w * 0.8,
-          chinY: 0.5,
-          chinW: 0.12,
-          earTop: -0.05,
-          earBot: 0.19,
-          earX: w * 0.97,
-          hatLine: -0.33,
-          // head-space y where a hat's brow band sits
-          outline: null
-          // set by the head part: the skull/face outline path in head space
-        };
-      }
-      var UNDER = {
-        outer: { ease: 0.012, waist: 0, drop: 0.075, arm: 0.025, cuff: 0.04 },
-        // under a coat: hidden, so tight
-        inner: { ease: 0.02, waist: 0.01, drop: 0, arm: 0.03, cuff: 0.045 }
-        // under a waistcoat or dress: still partly seen
-      };
-      function underCaps(ctx) {
-        const u = ctx.under;
-        return u && u.torso ? UNDER[u.torso] : null;
-      }
-      function underArm(ctx, o) {
-        var _a;
-        const u = ctx.under;
-        if (!u || !u.arms || !o || o.ease == null) return o;
-        const c = UNDER[u.arms], cuff = ((_a = o.from) != null ? _a : 0) >= 0.8, hw0 = o.hw;
-        const head = (u0) => u.arms === "outer" && !cuff ? 0.7 + 0.3 * Math.min(1, Math.max(0, u0 / 0.16)) : 1;
-        return { ...o, ease: Math.min(o.ease, cuff ? c.cuff : c.arm), hw: (u0, b) => Math.min(hw0 ? hw0(u0, b) : b, b) * head(u0), widthScale: Math.min(o.widthScale || 1, 1) };
-      }
-      function underTorso(ctx, o = {}) {
-        var _a;
-        const c = underCaps(ctx);
-        if (!c) return o;
-        return { ...o, ease: Math.min((_a = o.ease) != null ? _a : 0.03, c.ease), shoulderDrop: Math.max(o.shoulderDrop || 0, c.drop) };
-      }
-      function makeCtx(S, R, o) {
-        const scheme = o.scheme;
-        const rng = mulberry(S.seed);
-        const hsp = SP.headSpace(R), tsp = SP.torsoSpace(R), bsp = SP.boneSpace(R);
-        let n = 0;
-        const ctx = {
-          S,
-          R,
-          G,
-          C,
-          T,
-          Z: T.Z,
-          scheme,
-          lod: o.lod,
-          scale: o.scale,
-          rng,
-          warnings: o.warnings,
-          pid: (name) => `${name}-${n++}`,
-          tok: (name) => {
-            const v = T.tok(name);
-            if (v) return v;
-            ctx.warn(`colour "${name}" is not a token; drew grey (use cloth-*, brand tokens or #rrggbb)`);
-            return T.tok("cloth-graphite");
-          },
-          mat: (colour, kind = "cloth", opts) => {
-            const m = C.material(colour, kind, scheme, opts);
-            if (m && m._bad && !o.warnings.some((w) => w.includes(`"${m._bad}"`))) ctx.warn(`colour "${m._bad}" is not a token; drew grey (use cloth-*, brand tokens or #rrggbb)`);
-            return m;
-          },
-          skin: C.material(S.skin, "skin", scheme),
-          hairMat: (colour) => C.material(colour || S.hair.color, "hair", scheme),
-          px: (n2) => n2 / o.scale,
-          // output px → kit units
-          hh: R.hh,
-          sides: ["R", "L"],
-          sx: R.sx,
-          hp: hsp.hp,
-          hs: hsp.hs,
-          tp: tsp.tp,
-          ts: tsp.ts,
-          tyAt: tsp.yAt,
-          bone: bsp.bone,
-          body: {
-            torso: (opts) => B.torso(R, underTorso(ctx, opts)),
-            limb: (limb, side, opts) => B.limb(R, limb, side, limb === "arm" ? underArm(ctx, opts) : opts),
-            trousers: (opts) => B.trousers(R, opts),
-            neck: (opts) => B.neck(R, opts)
-          },
-          head: defaultHead(R),
-          expr: { brow: { raise: 0, angle: 0, knit: 0 }, lid: { upper: 0, lower: 0 }, mouth: { curve: 0, width: 1, open: 0, smirk: 0 }, gaze: [0, 0] },
-          // true if a head-space x (or kit x when kit=true) sits on the shadow side (viewer-right with the default key light)
-          isShadowSide: (x, kit = false) => kit ? x > R.centerAt(R.y.chest) : x > 0,
-          lodAtLeast: (lvl) => ({ lo: 0, mid: 1, hi: 2 })[o.lod] >= { lo: 0, mid: 1, hi: 2 }[lvl],
-          part(kind, name, opts = {}) {
-            const p = REG.get(kind, name);
-            if (!p) {
-              ctx.warn(`${kind} "${name}" not found (available: ${REG.list(kind).map((x) => x.name).join(", ") || "none"})`);
-              return [];
-            }
-            const r = p.draw(ctx, opts);
-            return Array.isArray(r) ? r : r && r.pieces ? r.pieces : [];
-          },
-          cuts: o.cuts,
-          /* remove a region from every piece whose id matches the regex (e.g. arm and sleeve ends inside a pocket) */
-          cut: (match, d) => {
-            o.cuts.push({ match, d });
-          },
-          under: null,
-          underCaps: () => underCaps(ctx),
-          hems: {},
-          /* a garment that wraps the torso records its (side) hem so under-layers ending just below it get tucked in */
-          coverHem: (slot, y) => {
-            var _a;
-            ctx.hems[slot] = Math.min((_a = ctx.hems[slot]) != null ? _a : Infinity, y);
-          },
-          warn: (msg) => {
-            if (!o.warnings.includes(msg)) o.warnings.push(msg);
-          }
-        };
-        return ctx;
-      }
-      module.exports = { makeCtx, defaultHead, UNDER, mulberry };
+      module.exports = { rig, SHAPES, TURNOUT, ARM_POSES: POSES.ARM_POSES, U, sx, ik };
     }
   });
 
@@ -11260,6 +15828,7 @@ var B68Figure = (() => {
       var C = require_color();
       var T = require_tokens();
       var REG = require_registry();
+      var LV = require_light();
       var esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
       var op = (v) => String(Math.round(+v * 1e3) / 1e3);
       function colourFor(c, mat, fallback) {
@@ -11270,7 +15839,8 @@ var B68Figure = (() => {
         return T.tok(c) || c;
       }
       function compose(pieces, o) {
-        var _a, _b, _c, _d, _e, _f, _g;
+        var _a, _b, _c, _d, _e, _f;
+        if (o.idBuffer) return composeIds(pieces, o);
         const { scale = 1, hh, scheme = T.SCHEMES.natural, prefix = "fig", silhouette = false } = o;
         const px = (n) => n / scale;
         const defs = [];
@@ -11297,6 +15867,14 @@ var B68Figure = (() => {
           p._id = uid(p.id || "piece");
           if (p.id) idOf[p.id] = p._id;
         }
+        const LT = !silhouette && o.light ? o.light : null;
+        const VR = LT ? LV.regions(LT, o.rig, sorted, scale, prefix) : null;
+        if (VR) {
+          if (LT.under) {
+            const H = o.rig.H, y0 = -LT.under.at * H, y1 = y0 - Math.max(0.05, LT.under.reach) * H, dn = y0 + 0.15 * H;
+            defs.push(`<linearGradient id="${F}ug" gradientUnits="userSpaceOnUse" x1="0" y1="${G.f(dn)}" x2="0" y2="${G.f(y1)}"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="${G.f(Math.min(0.9, (dn - y0) / (dn - y1)))}" stop-color="#fff"/><stop offset="${G.f(0.25 + 0.75 * Math.min(0.9, (dn - y0) / (dn - y1)) + 0)}" stop-color="#fff" stop-opacity="0.9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient><mask id="${F}uf" maskUnits="userSpaceOnUse" x="${G.f(-3 * H)}" y="${G.f(-2 * H)}" width="${G.f(6 * H)}" height="${G.f(3 * H)}"><rect x="${G.f(-3 * H)}" y="${G.f(-2 * H)}" width="${G.f(6 * H)}" height="${G.f(3 * H)}" fill="url(#${F}ug)"/></mask>`);
+          }
+        }
         const texDone = /* @__PURE__ */ new Set();
         function texture(p, mat) {
           const spec = typeof p.pattern === "string" ? { type: p.pattern } : p.pattern;
@@ -11318,6 +15896,10 @@ var B68Figure = (() => {
             body.push(p.d && !G.hasNaN(p.d) ? `<path d="${p.d}" fill="${T.INK}"/>` : "");
             continue;
           }
+          if (LT && LT.debug === "shadow" && (p.raw || !p.d || p.light === false || p.fill === "transparent" || p.fill === "none")) {
+            body.push("");
+            continue;
+          }
           if (p.raw) {
             body.push(p.raw);
             continue;
@@ -11332,6 +15914,8 @@ var B68Figure = (() => {
           }
           let mat = p.mat || (p.fill ? C.material(p.fill, "flat", scheme) : C.material("cloth-graphite", "cloth", scheme));
           if (typeof mat === "string") mat = C.material(mat, "cloth", scheme);
+          if (LT) mat = LV.relight(mat, LT, scheme);
+          const vr = VR && p.light !== false && mat.form > 0 ? VR.of(p) : null;
           const bb = G.bbox(p.d);
           const pad = Math.max(bb.w, bb.h) * 0.6 + 4;
           const region = `maskUnits="userSpaceOnUse" x="${G.f(bb.x - pad)}" y="${G.f(bb.y - pad)}" width="${G.f(bb.w + 2 * pad)}" height="${G.f(bb.h + 2 * pad)}"`;
@@ -11345,11 +15929,27 @@ var B68Figure = (() => {
             defs.push(`<mask id="${id}-cut" ${region}><rect x="${G.f(bb.x - pad)}" y="${G.f(bb.y - pad)}" width="${G.f(bb.w + 2 * pad)}" height="${G.f(bb.h + 2 * pad)}" fill="#fff"/>${myCuts.map((c) => `<path d="${c.d}" fill="#000"/>`).join("")}</mask>`);
             clipAttr += ` mask="url(#${id}-cut)"`;
           }
+          if (LT && LT.debug === "shadow") {
+            const sh = vr && vr.sh ? `<use href="#${id}-s" fill="#000" clip-path="url(#${vr.sh})"/>` : "";
+            const fp = p.light && p.light.face ? (p.shade || []).filter((s) => {
+              var _a2;
+              return typeof s !== "string" && ((_a2 = s.o) != null ? _a2 : 1) >= 0.9;
+            }).map((s) => `<path d="${s.d}" fill="#000"/>`).join("") : "";
+            body.push(`<g${clipAttr}><use href="#${id}-s" fill="#fff"/><g clip-path="url(#${id}-c)">${sh}${fp}</g></g>`);
+            continue;
+          }
           out.push(`<g id="${id}-g" data-part="${esc(p.id || "")}"${clipAttr}${p.opacity != null ? ` opacity="${op(p.opacity)}"` : ""}>`);
           out.push(`<use href="#${id}-s" fill="${p.fill ? colourFor(p.fill, mat, mat.base) : mat.base}"/>`);
           out.push(`<g clip-path="url(#${id}-c)">`);
           for (const s of p.shade || []) out.push(shape(s, mat.shade, mat));
-          if (lit) {
+          if (lit && vr) {
+            if (vr.sh) out.push(`<use href="#${id}-s" fill="${mat.shade}" clip-path="url(#${vr.sh})"/>`);
+            if (vr.band && mat.bands && L.bands !== false && bb.w * scale > 10) out.push(`<g filter="url(#${F}stip)"><use href="#${id}-s" fill="${mat.shade}" fill-opacity="0.4" clip-path="url(#${vr.band})"/></g>`);
+            for (const s of p.deep || []) out.push(shape(s, mat.deep, mat));
+            for (const s of p.lit || []) out.push(shape(s, mat.light, mat));
+            if (vr.edge && mat.edgeC && L.sheen !== false && bb.w * scale > 4) out.push(`<use href="#${id}-s" fill="${mat.edgeC}" opacity="${op(mat.edgeO)}" clip-path="url(#${vr.edge})"/>`);
+            if (vr.under) out.push(`<use href="#${id}-s" fill="${LV.underColour(mat, LT)}" opacity="${op(Math.min(1, LT.under.strength))}" clip-path="url(#${vr.under})" mask="url(#${F}uf)"/>`);
+          } else if (lit) {
             const form = ((_a = L.form) != null ? _a : 1) * mat.form;
             const dx = (_b = L.dx) != null ? _b : Math.min(T.STYLE.formShadow * bb.w, T.STYLE.formShadowMaxHH * hh) * form;
             const dy = (_d = L.dy) != null ? _d : dx * T.STYLE.formDy * ((_c = L.dyK) != null ? _c : 1);
@@ -11376,11 +15976,6 @@ var B68Figure = (() => {
               const l = Math.max(px(1.2), Math.min(T.STYLE.lit * bb.w, 0.05 * hh)) * (mat.gloss ? 1.6 : 1);
               out.push(`<use href="#${id}-s" fill="${mat.light}" opacity="${op((_e = L.sheenO) != null ? _e : mat.gloss ? 0.85 : 0.5)}" mask="${mk("lt", W(), shift(l, l * 0.8))}"/>`);
             }
-            const rimC = L.rimColor ? colourFor(L.rimColor, mat) : mat.rim;
-            if (rimC && mat.rimOn && L.rim !== false && p.rim !== false) {
-              const r = Math.max(px(1.4), Math.min(T.STYLE.rim * bb.w, T.STYLE.rimMaxHH * hh)) * ((_f = L.rimK) != null ? _f : 1);
-              out.push(`<use href="#${id}-s" fill="${rimC}" mask="${mk("rm", W(), shift(-r, -r * 0.25))}"/>`);
-            }
           } else {
             for (const s of p.deep || []) out.push(shape(s, mat.deep, mat));
             for (const s of p.lit || []) out.push(shape(s, mat.light, mat));
@@ -11388,13 +15983,14 @@ var B68Figure = (() => {
           const tx = p.pattern ? texture(p, mat) : null;
           if (tx) {
             out.push(`<use href="#${id}-s" fill="${tx}"${p.patternOpacity != null ? ` opacity="${op(p.patternOpacity)}"` : ""}/>`);
-            if (lit && defs.some((d) => d.includes(`id="${id}-sh"`))) out.push(`<use href="#${id}-s" fill="${mat.deep}" opacity="0.35" mask="url(#${id}-sh)"/>`);
+            if (lit && vr && vr.sh) out.push(`<use href="#${id}-s" fill="${mat.deep}" opacity="0.35" clip-path="url(#${vr.sh})"/>`);
+            else if (lit && defs.some((d) => d.includes(`id="${id}-sh"`))) out.push(`<use href="#${id}-s" fill="${mat.deep}" opacity="0.35" mask="url(#${id}-sh)"/>`);
           }
           for (const ln of p.lines || []) out.push(line(ln, mat));
           out.push(`</g>`);
           if (p.outline) {
             const ow = typeof p.outline === "object" ? p.outline : {};
-            out.push(`<use href="#${id}-s" fill="none" stroke="${colourFor(ow.c || "line", mat, mat.line)}" stroke-width="${G.f((_g = ow.w) != null ? _g : px(1))}" stroke-linejoin="round"/>`);
+            out.push(`<use href="#${id}-s" fill="none" stroke="${colourFor(ow.c || "line", mat, mat.line)}" stroke-width="${G.f((_f = ow.w) != null ? _f : px(1))}" stroke-linejoin="round"/>`);
           }
           if (p.over) out.push(renderOver(p.over, mat));
           out.push(`</g>`);
@@ -11422,13 +16018,15 @@ var B68Figure = (() => {
             return `<path d="${it.d}" fill="${colourFor(it.fill || "base", mat, T.INK)}"${it.o != null ? ` ${it.stip ? "fill-opacity" : "opacity"}="${op(it.o)}"` : ""}${it.stip ? ` filter="url(#${F}stip)"` : ""}/>`;
           }).join("");
         }
+        if (VR) defs.push(...VR.defs);
         const spots = [];
         if (scheme.map && scheme.spotKeep && !silhouette) {
           sorted.forEach((p, i) => {
-            if (!p.spot || !p.d) return;
+            if (!p.spot || !p.d && !p.over || p.raw) return;
             const above = sorted.slice(i + 1).filter((q) => q.d && !q.raw).map((q) => `<use href="#${q._id}-s" fill="#000"/>`).join("");
-            defs.push(`<mask id="${p._id}-spot" maskUnits="userSpaceOnUse" x="-100000" y="-100000" width="200000" height="200000"><use href="#${p._id}-s" fill="#fff"/>${above}</mask>`);
-            spots.push(`<g mask="url(#${p._id}-spot)">${body[i].replace(` id="${p._id}-g"`, "")}</g>`);
+            const own = p.d ? `<use href="#${p._id}-s" fill="#fff"/>` : `<rect x="-100000" y="-100000" width="200000" height="200000" fill="#fff"/>`;
+            defs.push(`<mask id="${p._id}-spot" maskUnits="userSpaceOnUse" x="-100000" y="-100000" width="200000" height="200000">${own}${above}</mask>`);
+            spots.push(`<g mask="url(#${p._id}-spot)">${p.d ? body[i].replace(` id="${p._id}-g"`, "") : body[i]}</g>`);
           });
         }
         const inYoke = (p) => {
@@ -11456,11 +16054,168 @@ var B68Figure = (() => {
         }
         return { defs: defs.join(""), body: bodyStr, spots: spots.join("") };
       }
+      function composeIds(pieces, o) {
+        const { scale = 1, prefix = "fig" } = o;
+        const minOp = o.idBuffer && o.idBuffer.minOpacity || 0;
+        const px = (n) => n / scale;
+        const defs = [], body = [], used = /* @__PURE__ */ new Set(), taken = /* @__PURE__ */ new Set(), legend = {};
+        const uid = (name) => {
+          const nm = String(name).replace(/[^a-zA-Z0-9_-]/g, "");
+          let id = `${prefix}-${nm}`;
+          let i = 2;
+          while (used.has(id)) id = `${prefix}-${nm}-${i++}`;
+          used.add(id);
+          return id;
+        };
+        const sorted = pieces.map((p, i) => ({ ...p, _i: i })).filter((p) => p && (p.d || p.over || p.raw)).sort((a, b) => {
+          var _a, _b;
+          return ((_a = a.z) != null ? _a : 50) - ((_b = b.z) != null ? _b : 50) || a._i - b._i;
+        });
+        const idOf = {};
+        for (const p of sorted) {
+          p._id = uid(p.id || "piece");
+          if (p.id) idOf[p.id] = p._id;
+        }
+        const fnv = (s) => {
+          let h = 2166136261;
+          for (let i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = Math.imul(h, 16777619);
+          }
+          return h >>> 0;
+        };
+        const colourOf = (p) => {
+          let h = fnv(`${p._kind || ""}/${p._id.slice(prefix.length + 1)}`);
+          for (; ; ) {
+            const c = "#" + [h % 32, (h >>> 5) % 32, (h >>> 10) % 32].map((v) => (4 + 8 * v).toString(16).padStart(2, "0")).join("");
+            if (!taken.has(c)) {
+              taken.add(c);
+              return c;
+            }
+            h = Math.imul(h ^ h >>> 15, 2246822519) + 3266489917 >>> 0;
+          }
+        };
+        const flatRaw = (s, col) => `<g fill="${col}">${String(s).replace(/\b(fill|stroke)="(?!none")[^"]*"/g, `$1="${col}"`).replace(/\s(?:fill-opacity|stroke-opacity|opacity|filter|mask)="[^"]*"/g, "")}</g>`;
+        const fillAlpha = (f) => {
+          if (typeof f !== "string") return 1;
+          if (f === "transparent" || f === "none") return 0;
+          const h = /^#[0-9a-f]{6}([0-9a-f]{2})$/i.exec(f);
+          if (h) return parseInt(h[1], 16) / 255;
+          const r = /^rgba\(.*,\s*([\d.]+)\s*\)$/i.exec(f);
+          return r ? +r[1] : 1;
+        };
+        const alphaOf = (it) => (it.o == null ? 1 : +it.o) * fillAlpha(it.fill);
+        const faint = (it) => {
+          const a = alphaOf(it);
+          return a <= 0 || a < minOp;
+        };
+        const strokeIds = (it, col) => {
+          var _a;
+          const w = it.px != null ? px(it.px) : (_a = it.w) != null ? _a : px(1.2);
+          const dash = it.dash ? ` stroke-dasharray="${it.dash.map(G.f).join(" ")}"` : "";
+          return `<path d="${it.d}" fill="none" stroke="${col}" stroke-width="${G.f(Math.max(w, px(T.STYLE.minLinePx)))}" stroke-linecap="${it.cap || "round"}" stroke-linejoin="round"${dash}/>`;
+        };
+        function overIds(items, col) {
+          return (Array.isArray(items) ? items : [items]).map((it) => {
+            if (typeof it === "string") return flatRaw(it, col);
+            if (it.raw) return flatRaw(it.raw, col);
+            if (!it.d || G.hasNaN(it.d) || faint(it)) return "";
+            return (it.stroke || it.c) && !it.fill ? strokeIds(it, col) : `<path d="${it.d}" fill="${col}"/>`;
+          }).join("");
+        }
+        function contentIds(p, col) {
+          const out = [];
+          for (const s of [...p.shade || [], ...p.deep || [], ...p.lit || []]) {
+            const d = typeof s === "string" ? s : s && s.d;
+            if (d && !G.hasNaN(d) && (typeof s === "string" || !faint(s))) out.push(`<path d="${d}" fill="${col}"/>`);
+          }
+          for (const ln of p.lines || []) {
+            const it = typeof ln === "string" ? { d: ln, fill: "line" } : ln;
+            if (!it || !it.d || G.hasNaN(it.d) || faint(it)) continue;
+            out.push(it.fill ? `<path d="${it.d}" fill="${col}"/>` : strokeIds(it, col));
+          }
+          return out.length ? `<g clip-path="url(#${p._id}-c)">${out.join("")}</g>` : "";
+        }
+        const painted = [];
+        const register = (p, col, extra) => {
+          var _a, _b, _c, _d;
+          legend[col] = { id: (_a = p.id) != null ? _a : null, kind: (_b = p._kind) != null ? _b : null, name: (_c = p._name) != null ? _c : null, z: (_d = p.z) != null ? _d : 50, uid: p._id, ...extra };
+        };
+        sorted.forEach((p, i) => {
+          var _a;
+          const id = p._id, baseA = p.d ? fillAlpha(p.fill) : 1, carrier = !!p.d && baseA === 0;
+          const opacity = (p.opacity == null ? 1 : +p.opacity) * (carrier ? 1 : baseA);
+          const extra = { ...opacity < 1 ? { opacity: Math.round(opacity * 1e3) / 1e3 } : {}, ...p.spot ? { spot: true } : {}, ...!p.d && !p.raw ? { overOnly: true } : {}, ...carrier ? { carrier: true } : {} };
+          painted[i] = false;
+          body.push("");
+          if (((_a = p.z) != null ? _a : 50) < 0 || opacity < minOp || p.opacity != null && +p.opacity <= 0) return;
+          if (p.raw) {
+            const col2 = colourOf(p);
+            body[i] = flatRaw(p.raw, col2);
+            painted[i] = true;
+            register(p, col2, extra);
+            return;
+          }
+          if (!p.d) {
+            const col2 = colourOf(p), s = overIds(p.over, col2);
+            if (s) {
+              body[i] = s;
+              painted[i] = true;
+              register(p, col2, extra);
+            }
+            return;
+          }
+          if (G.hasNaN(p.d)) return;
+          const bb = G.bbox(p.d);
+          const pad = Math.max(bb.w, bb.h) * 0.6 + 4;
+          const region = `maskUnits="userSpaceOnUse" x="${G.f(bb.x - pad)}" y="${G.f(bb.y - pad)}" width="${G.f(bb.w + 2 * pad)}" height="${G.f(bb.h + 2 * pad)}"`;
+          defs.push(`<path id="${id}-s" d="${p.d}"/><clipPath id="${id}-c"><use href="#${id}-s"/></clipPath>`);
+          let clipAttr = p.clip && idOf[p.clip] ? ` clip-path="url(#${idOf[p.clip]}-c)"` : "";
+          const myCuts = (o.cuts || []).filter((c) => p.id && new RegExp(c.match).test(p.id));
+          if (myCuts.length) {
+            defs.push(`<mask id="${id}-cut" ${region}><rect x="${G.f(bb.x - pad)}" y="${G.f(bb.y - pad)}" width="${G.f(bb.w + 2 * pad)}" height="${G.f(bb.h + 2 * pad)}" fill="#fff"/>${myCuts.map((c) => `<path d="${c.d}" fill="#000"/>`).join("")}</mask>`);
+            clipAttr += ` mask="url(#${id}-cut)"`;
+          }
+          const col = colourOf(p);
+          const inner = (carrier ? contentIds(p, col) : `<use href="#${id}-s" fill="${col}"/>`) + (p.over ? overIds(p.over, col) : "");
+          if (!inner) return;
+          body[i] = `<g id="${id}-g"${clipAttr}>${inner}</g>`;
+          painted[i] = true;
+          register(p, col, { ...extra, ...clipAttr.includes("clip-path") ? { clip: p.clip } : {}, ...myCuts.length ? { cut: true } : {} });
+        });
+        const inYoke = (p) => {
+          var _a, _b;
+          return !p.noYoke && (p.yoke || ((_a = p.z) != null ? _a : 50) >= 20 && ((_b = p.z) != null ? _b : 50) < 44.9);
+        };
+        let bodyStr = body.join("");
+        if (o.yokes && o.yokes.length) {
+          for (const y of o.yokes) {
+            defs.push(`<clipPath id="${prefix}-yoke-${y.side}"><path d="${y.d}"/></clipPath>`);
+            y.bb = G.bbox(y.d);
+          }
+          const entries = sorted.map((p, i) => {
+            var _a;
+            return { z: (_a = p.z) != null ? _a : 50, i, s: body[i] };
+          });
+          const hit = (a, b) => a.x < b.x1 && a.x1 > b.x && a.y < b.y1 && a.y1 > b.y;
+          sorted.forEach((p, i) => {
+            if (!painted[i] || !inYoke(p) || !p.d || p.raw) return;
+            const bb = G.bbox(p.d);
+            for (const y of o.yokes) if (hit(bb, y.bb)) entries.push({ z: y.z, i: i + 0.5, s: `<use href="#${p._id}-g" clip-path="url(#${prefix}-yoke-${y.side})"/>` });
+          });
+          entries.sort((a, b) => a.z - b.z || a.i - b.i);
+          bodyStr = entries.map((e) => e.s).join("");
+        }
+        return { defs: defs.join(""), body: bodyStr, spots: "", legend };
+      }
       function figureFilters(prefix, o) {
         const { scale = 1, scheme, outline, grain = true } = o;
         const out = [];
+        const E = o.light && o.light.debug !== "shadow" ? LV.edgeFilter(prefix, o.light, o) : null;
+        if (E && !grain) out.push(`<filter id="${prefix}-edge" x="-2%" y="-2%" width="104%" height="104%" color-interpolation-filters="sRGB">${E.prims}<feMerge><feMergeNode in="SourceGraphic"/>${E.nodes.map((n) => `<feMergeNode in="${n}"/>`).join("")}</feMerge></filter>`);
+        if (E && o.light.castShadow && o.ground !== false) out.push(`<filter id="${prefix}-flat" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB"><feFlood flood-color="${o.light.shadow.color}" flood-opacity="0.3"/><feComposite in2="SourceAlpha" operator="in"/></filter>`);
         if (grain) out.push(
-          `<filter id="${prefix}-grain" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="${(T.STYLE.grainPx * scale).toFixed(4)}" numOctaves="2" seed="3" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.07  0 0 0 0 0.05  0 0 0 ${T.STYLE.grainAlpha * 1.8} ${-T.STYLE.grainAlpha * 0.55}" result="g"/><feTurbulence type="fractalNoise" baseFrequency="${(T.STYLE.grainPx * 1.3 * scale).toFixed(4)}" numOctaves="1" seed="11" result="n2"/><feColorMatrix in="n2" type="matrix" values="0 0 0 0 0.98  0 0 0 0 0.96  0 0 0 0 0.9  0 0 0 ${T.STYLE.grainAlpha * 1.2} ${-T.STYLE.grainAlpha * 0.5}" result="g2"/><feMerge result="m"><feMergeNode in="g"/><feMergeNode in="g2"/></feMerge><feComposite in="m" in2="SourceAlpha" operator="in" result="gi"/><feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="gi"/></feMerge></filter>`
+          `<filter id="${prefix}-grain" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="${(T.STYLE.grainPx * scale).toFixed(4)}" numOctaves="2" seed="3" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.07  0 0 0 0 0.05  0 0 0 ${T.STYLE.grainAlpha * 1.8} ${-T.STYLE.grainAlpha * 0.55}" result="g"/><feTurbulence type="fractalNoise" baseFrequency="${(T.STYLE.grainPx * 1.3 * scale).toFixed(4)}" numOctaves="1" seed="11" result="n2"/><feColorMatrix in="n2" type="matrix" values="0 0 0 0 0.98  0 0 0 0 0.96  0 0 0 0 0.9  0 0 0 ${T.STYLE.grainAlpha * 1.2} ${-T.STYLE.grainAlpha * 0.5}" result="g2"/><feMerge result="m"><feMergeNode in="g"/><feMergeNode in="g2"/></feMerge><feComposite in="m" in2="SourceAlpha" operator="in" result="gi"/>` + (E ? E.prims : "") + `<feMerge><feMergeNode in="SourceGraphic"/>${E ? E.nodes.map((n) => `<feMergeNode in="${n}"/>`).join("") : ""}<feMergeNode in="gi"/></feMerge></filter>`
         );
         if (scheme && scheme.map) {
           const stops = scheme.map.map(C.rgb);
@@ -11473,7 +16228,20 @@ var B68Figure = (() => {
         }
         return out.join("");
       }
-      module.exports = { compose, figureFilters, colourFor };
+      function decimalsFor(scale) {
+        return Math.max(0, Math.ceil(Math.log10(8 * Math.max(1e-6, scale))));
+      }
+      function quantise(svg, dec) {
+        if (dec == null || dec === false) return svg;
+        const k = Math.pow(10, dec);
+        const q = (m) => {
+          const v = Math.round(parseFloat(m) * k) / k;
+          return v === 0 ? "0" : String(v);
+        };
+        const nums = (s) => s.replace(/-?(?:\d+\.\d*|\.\d+|\d+)/g, q);
+        return svg.replace(/ d="([^"]*)"/g, (m, d) => ` d="${nums(d)}"`).replace(/ transform="translate\(([^)]*)\)"/g, (m, t) => ` transform="translate(${nums(t)})"`);
+      }
+      module.exports = { compose, figureFilters, colourFor, quantise, decimalsFor };
     }
   });
 
@@ -11487,7 +16255,8 @@ var B68Figure = (() => {
       var { normalise, validate, hash } = require_spec();
       var { rig, SHAPES, ARM_POSES, U } = require_rig();
       var { makeCtx, mulberry } = require_context();
-      var { compose, figureFilters } = require_compose();
+      var { compose, figureFilters, quantise, decimalsFor } = require_compose();
+      var LV = require_light();
       var HAND_FOR_POSE = { down: "relaxed", pocket: "pocket", hip: "hip", cross: "tucked", smoke: "cigarette", hold: "hold", behind: "hidden", carry: "grip", raise: "peace", lapel: "lapel" };
       var SLOT_KIND = { legs: "legwear", bottom: "bottom", base: "top", dress: "dress", mid: "mid", outer: "outer", neck: "neckwear", waist: "belt", feet: "footwear", hands: "gloves" };
       var FALLBACK = { body: "standard", hands: "relaxed", head: "oval", ears: "normal", expression: "neutral", eyes: "almond", brows: "straight", nose: "straight", mouth: "neutral", hair: "short", top: "tee", bottom: "trousers", footwear: "oxfords" };
@@ -11530,7 +16299,10 @@ var B68Figure = (() => {
         const lod = ["hi", "mid", "lo"].includes(o.lod) ? o.lod : pxHead >= T.STYLE.lod.hi ? "hi" : pxHead >= T.STYLE.lod.mid ? "mid" : "lo";
         const schemeName = o.scheme || S.scheme || "natural";
         const scheme = T.SCHEMES[schemeName] || T.SCHEMES.natural;
-        const ctx = makeCtx(S, R, { scheme, lod, scale, warnings, cuts });
+        const light = LV.resolve(o.light, (m) => {
+          if (!warnings.includes(m)) warnings.push(m);
+        });
+        const ctx = makeCtx(S, R, { scheme, lod, scale, warnings, cuts, light });
         const pieces = [];
         const run = (kind, name, opts) => {
           if (!name) return;
@@ -11545,8 +16317,8 @@ var B68Figure = (() => {
           try {
             const r = p.draw(ctx, opts || {});
             if (r && r.head) Object.assign(ctx.head, r.head);
-            if (r && r.expr) for (const k of Object.keys(r.expr)) ctx.expr[k] = { ...ctx.expr[k] || {}, ...r.expr[k] };
-            const spot = opts && opts.spot;
+            if (r && r.expr) for (const k of Object.keys(r.expr)) ctx.expr[k] = typeof r.expr[k] !== "object" || Array.isArray(r.expr[k]) ? r.expr[k] : { ...ctx.expr[k] || {}, ...r.expr[k] };
+            const spot = opts && opts.spot === true;
             for (const pc of pieceList(r)) if (pc) pieces.push({ ...pc, ...spot && pc.spot !== false && (pc.d || pc.over) ? { spot: true } : {}, _kind: kind, _name: name });
           } catch (e) {
             ctx.warn(`${kind} "${name}" failed: ${e.message}`);
@@ -11565,21 +16337,28 @@ var B68Figure = (() => {
           }
           run("hands", hand, { ...ho && typeof ho === "object" && !ho.R && !ho.L ? ho : ho && ho[side] ? ho[side] : {}, side });
         }
+        const MK = F.mask && F.mask.type ? REG.get("mask", F.mask.type) : null;
+        if (F.mask && F.mask.type && !MK) ctx.warn(`mask "${F.mask.type}" not found (available: ${REG.list("mask").map((x) => x.name).join(", ") || "none yet"})`);
+        const covers = new Set(MK ? [].concat((typeof MK.covers === "function" ? MK.covers(F.mask, S) : MK.covers) || []) : []);
+        const face = (kind, name, opts) => {
+          if (!covers.has(kind)) run(kind, name, opts);
+        };
         run("head", S.head.shape, S.head);
-        run("ears", S.head.ears || "normal", S.head);
+        face("ears", S.head.ears || "normal", S.head);
         run("expression", F.expression || "neutral", {});
-        run("eyes", F.eyes, F);
-        run("brows", F.brows, F);
-        run("nose", F.nose, F);
-        run("mouth", F.mouth, F);
+        face("eyes", F.eyes, F);
+        face("brows", F.brows, F);
+        face("nose", F.nose, F);
+        face("mouth", F.mouth, F);
         const ageLevel = (_b = F.ageLevel) != null ? _b : S.age >= 40 ? Math.min(3, Math.floor((S.age - 30) / 10)) : 0;
-        if (ageLevel > 0) run("age", F.ageStyle || "lines", { level: ageLevel });
-        for (const m of F.marks || []) run("mark", m.type, m);
-        if (F.facialHair) run("facialHair", F.facialHair.type, F.facialHair);
-        if (F.makeup) run("makeup", F.makeup.type || "classic", F.makeup);
-        if (F.eyewear) run("eyewear", F.eyewear.type, F.eyewear);
-        run("hair", Hh.style, Hh);
-        if (Hh.hat) run("hat", Hh.hat.type, Hh.hat);
+        if (ageLevel > 0) face("age", F.ageStyle || "lines", { level: ageLevel });
+        for (const m of F.marks || []) face("mark", m.type, m);
+        if (F.facialHair) face("facialHair", F.facialHair.type, F.facialHair);
+        if (F.makeup) face("makeup", F.makeup.type || "classic", F.makeup);
+        if (F.eyewear) face("eyewear", F.eyewear.type, F.eyewear);
+        if (MK) run("mask", F.mask.type, F.mask);
+        face("hair", Hh.style, Hh);
+        if (Hh.hat) face("hat", Hh.hat.type, Hh.hat);
         const COVER = cover(O);
         for (const slot of SLOT_ORDER) if (O[slot]) {
           ctx.slot = slot;
@@ -11603,6 +16382,7 @@ var B68Figure = (() => {
           }
           if (ids.length) cuts.push({ match: `^(${ids.join("|")})$`, d: G.poly([[-4 * R.hh, hem - 4e-3 * R.hh], [4 * R.hh, hem - 4e-3 * R.hh], [4 * R.hh, 2 * R.hh], [-4 * R.hh, 2 * R.hh]]) });
         }
+        for (const j of S.jewellery || []) run("jewellery", j.type, j);
         for (const pr of S.props || []) run("prop", pr.type, pr);
         if (S.companion) run("companion", S.companion.type, S.companion);
         for (const sd of ["R", "L"]) {
@@ -11630,7 +16410,16 @@ var B68Figure = (() => {
         if (o.shadow !== false && !o.silhouette) {
           pieces.push({ id: "ground", z: -1, d: G.ellipse(R.pelvisShift * 0.5, -0.02 * R.hh, R.w.hip * 1.55 + 0.25 * R.hh, 0.1 * R.hh), fill: scheme.shadow || T.INK, light: false, opacity: 0.22 });
         }
-        return { S, R, ctx, pieces, scale, lod, scheme, schemeName, warnings, cuts };
+        if (light && light.under && light.time === "night" && o.shadow !== false && !o.silhouette) {
+          const gp = pieces.find((p) => p.id === "ground");
+          if (gp) {
+            gp.fill = light.under.color || light.keyColor;
+            gp.opacity = 0.55;
+            gp.pool = true;
+            gp.d = G.ellipse(R.pelvisShift * 0.5, -0.02 * R.hh, R.w.hip * 1.9 + 0.5 * R.hh, 0.16 * R.hh);
+          }
+        }
+        return { S, R, ctx, pieces, scale, lod, scheme, schemeName, warnings, cuts, light };
       }
       function yokeRegions(R) {
         const hh = R.hh, y = R.y, w = R.w;
@@ -11650,13 +16439,13 @@ var B68Figure = (() => {
         });
       }
       function render(spec, o = {}) {
-        var _a;
-        const B = build(spec, o);
+        var _a, _b;
+        const B = build(spec, o.idBuffer ? { ...o, shadow: false } : o);
         const { S, R, pieces, scale, lod, scheme, warnings, cuts } = B;
-        const key = JSON.stringify([spec, scale, B.lod, B.schemeName, !!o.silhouette, o.outline || 0, o.grain !== false, o.shadow !== false]);
+        const key = JSON.stringify([spec, scale, B.lod, B.schemeName, !!o.silhouette, o.outline || 0, o.grain !== false, o.shadow !== false, ...B.light ? [o.light] : []]);
         const prefix = o.prefix ? safeId(o.prefix) : `${safeId(S.id)}${o.suffix ? safeId(o.suffix) : ""}-${(hash(key) % 46656).toString(36).padStart(3, "0")}`;
         const ground = pieces.find((p) => p.id === "ground");
-        const C = compose(pieces.filter((p) => p !== ground), { scale, hh: R.hh, scheme, prefix, silhouette: o.silhouette, cuts, yokes: yokeRegions(R) });
+        const C = compose(pieces.filter((p) => p !== ground), { scale, hh: R.hh, scheme, prefix: o.idBuffer ? prefix + "-id" : prefix, silhouette: o.silhouette, cuts, yokes: yokeRegions(R), idBuffer: o.idBuffer, light: B.light, rig: R });
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
         for (const p of pieces) {
           if (!p.d || p.id === "ground") continue;
@@ -11678,17 +16467,54 @@ var B68Figure = (() => {
         x1 += pad;
         y0 -= pad;
         y1 = Math.max(y1, 0) + pad * 0.6;
-        const filt = figureFilters(prefix, { scale, scheme, outline: o.outline, grain: o.grain !== false && !o.silhouette });
+        if (ground && ground.pool) {
+          const gb = G.bbox(ground.d);
+          x0 = Math.min(x0, gb.x);
+          x1 = Math.max(x1, gb.x1);
+          y1 = Math.max(y1, gb.y1 + pad * 0.2);
+        }
+        const castFit = B.light && B.light.castShadow && o.shadow !== false && !o.silhouette && o.fitShadow !== false ? shadowShear(B.light) * (R.H * 0.92) : 0;
+        if (castFit > 0) x1 = Math.max(x1, castFit + R.w.hip);
+        else if (castFit < 0) x0 = Math.min(x0, castFit - R.w.hip);
+        if (o.idBuffer) {
+          const vb2 = [x0, y0, x1 - x0, y1 - y0];
+          const W2 = vb2[2] * scale, H2 = vb2[3] * scale;
+          const inner2 = `<g class="b68-figure b68-ids" data-id="${escA(S.id)}"><defs>${C.defs}</defs>${C.body}</g>`;
+          const svg2 = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb2.map(G.f).join(" ")}" width="${G.f(W2)}" height="${G.f(H2)}" shape-rendering="crispEdges"><title>${esc(S.name || S.id)} (piece ids)</title>${inner2}</svg>`;
+          return { svg: svg2, inner: inner2, width: W2, height: H2, viewBox: vb2, R, S, lod, scale, warnings, count: pieces.length, halfW: Math.max(-x0, x1), minY: y0, legend: C.legend };
+        }
+        const LT = o.silhouette ? null : B.light;
+        const filt = figureFilters(prefix, { scale, scheme, outline: o.outline, grain: o.grain !== false && !o.silhouette, light: LT, hh: R.hh, ground: o.shadow !== false });
+        const dec = o.precision === false ? null : (_b = o.precision) != null ? _b : decimalsFor(scale);
+        if (dec != null) {
+          C.body = quantise(C.body, dec);
+          C.defs = quantise(C.defs, dec);
+          C.spots = quantise(C.spots, dec);
+          if (ground) ground.d = quantise(` d="${ground.d}"`, dec).slice(4, -1);
+        }
         let g = C.body;
+        if (LT) g = `<g id="${prefix}-fb">${g}</g>`;
         if (scheme.map && !o.silhouette) g = `<g filter="url(#${prefix}-map)">${g}</g>${C.spots}`;
         if (o.grain !== false && !o.silhouette) g = `<g filter="url(#${prefix}-grain)">${g}</g>`;
+        else if (LT) g = `<g filter="url(#${prefix}-edge)">${g}</g>`;
+        if (LT && LT.castShadow && o.shadow !== false) {
+          const shear = shadowShear(LT), flat = 0.07;
+          g = `<use href="#${prefix}-fb" transform="matrix(1 0 ${G.f(-shear)} ${flat} 0 0)" filter="url(#${prefix}-flat)"/>` + g;
+        }
         if (o.outline) g = `<g filter="url(#${prefix}-ol)">${g}</g>`;
-        if (ground) g = `<path d="${ground.d}" fill="${ground.fill}" opacity="${ground.opacity}"/>` + g;
+        if (ground && ground.pool) {
+          const gb = G.bbox(ground.d), cx = (gb.x + gb.x1) / 2, cy = (gb.y + gb.y1) / 2;
+          g = `<defs><radialGradient id="${prefix}-pool" gradientUnits="userSpaceOnUse" cx="${G.f(cx)}" cy="${G.f(cy)}" r="${G.f(gb.w / 2)}" gradientTransform="translate(${G.f(cx)} ${G.f(cy)}) scale(1 ${G.f(gb.h / gb.w)}) translate(${G.f(-cx)} ${G.f(-cy)})"><stop offset="0" stop-color="${ground.fill}" stop-opacity="${ground.opacity}"/><stop offset="0.55" stop-color="${ground.fill}" stop-opacity="${G.f(ground.opacity * 0.6)}"/><stop offset="1" stop-color="${ground.fill}" stop-opacity="0"/></radialGradient></defs><path d="${ground.d}" fill="url(#${prefix}-pool)"/>` + g;
+        } else if (ground) g = `<path d="${ground.d}" fill="${ground.fill}" opacity="${ground.opacity}"/>` + g;
         const inner = `<g class="b68-figure" data-id="${escA(S.id)}"><defs>${filt}${C.defs}</defs>${g}</g>`;
         const vb = [x0, y0, x1 - x0, y1 - y0];
         const W = vb[2] * scale, H = vb[3] * scale;
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.map(G.f).join(" ")}" width="${G.f(W)}" height="${G.f(H)}"><title>${esc(S.name || S.id)}</title>${inner}</svg>`;
         return { svg, inner, width: W, height: H, viewBox: vb, R, S, lod, scale, warnings, count: pieces.length, halfW: Math.max(-x0, x1), minY: y0 };
+      }
+      function shadowShear(L) {
+        const up = Math.max(0.2, -L.dir[1] + 0.35);
+        return Math.max(-1.2, Math.min(1.2, -L.dir[0] / up * 0.6));
       }
       var esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
       var escA = (s) => esc(s).replace(/"/g, "&quot;");
@@ -11743,7 +16569,7 @@ var B68Figure = (() => {
         const topIn = opts.topIn || Math.max(82, Math.ceil((tallest + 6) / 2) * 2);
         const outH = opts.height || 640;
         const scale = opts.scale || outH / (topIn * U + 60);
-        const rendered = specs.map((s, i) => render(s, { ...opts, scale, suffix: (opts.suffix || "") + "-l" + i, pad: 0 }));
+        const rendered = specs.map((s, i) => render(s, { ...opts, scale, suffix: (opts.suffix || "") + "-l" + i, pad: 0, fitShadow: false }));
         const gap = (_a = opts.gap) != null ? _a : 5 * U;
         const side = opts.chart ? Math.max(5 * U, 52 / scale) : 1 * U;
         let x = side;
@@ -11787,6 +16613,69 @@ var B68Figure = (() => {
     }
   });
 
+  // src/core/raster.js
+  var require_raster = __commonJS({
+    "src/core/raster.js"(exports, module) {
+      "use strict";
+      var { hash } = require_spec();
+      var CACHE = /* @__PURE__ */ new Map();
+      function svgFor(api, spec, o) {
+        const { mode = "figure", pixelRatio, type, quality, fontCSS, cache, ...opts } = o;
+        if (mode === "portrait") return api.portrait(spec, opts);
+        if (mode === "lineup") return api.lineup([].concat(spec), opts);
+        return api.render(spec, opts);
+      }
+      function rasterize(api, spec, o = {}) {
+        if (typeof document === "undefined" || typeof Image === "undefined") return Promise.reject(new Error("rasterize() needs a browser canvas; in Node use tools/export.js"));
+        const ratio = Math.max(1, o.pixelRatio || typeof window !== "undefined" && window.devicePixelRatio || 1);
+        const key = hash(JSON.stringify([spec, { ...o, fontCSS: o.fontCSS ? hash(o.fontCSS) : 0 }, ratio]));
+        if (o.cache !== false && CACHE.has(key)) return CACHE.get(key);
+        const job = new Promise((resolve, reject) => {
+          const r = svgFor(api, spec, o);
+          let svg = r.svg;
+          if (o.fontCSS) svg = svg.replace(/(<svg\b[^>]*>)/, `$1<style>${o.fontCSS.replace(/</g, "\\3c ")}</style>`);
+          const w = Math.ceil(r.width), h = Math.ceil(r.height);
+          const src = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+          const img = new Image();
+          img.onload = () => {
+            var _a;
+            try {
+              const cv = document.createElement("canvas");
+              cv.width = Math.round(w * ratio);
+              cv.height = Math.round(h * ratio);
+              cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+              URL.revokeObjectURL(src);
+              const type = o.type || "image/webp";
+              cv.toBlob((blob) => {
+                if (!blob) return reject(new Error("rasterize(): the canvas could not be encoded"));
+                resolve({ url: URL.createObjectURL(blob), blob, width: w, height: h, pixelRatio: ratio, type: blob.type, warnings: r.warnings || [] });
+              }, type, (_a = o.quality) != null ? _a : 0.92);
+            } catch (e) {
+              URL.revokeObjectURL(src);
+              reject(e);
+            }
+          };
+          img.onerror = () => {
+            URL.revokeObjectURL(src);
+            reject(new Error("rasterize(): the SVG failed to load as an image"));
+          };
+          img.src = src;
+        });
+        if (o.cache !== false) {
+          CACHE.set(key, job);
+          job.catch(() => CACHE.delete(key));
+        }
+        return job;
+      }
+      function clearRasterCache() {
+        for (const p of CACHE.values()) p.then((r) => URL.revokeObjectURL(r.url)).catch(() => {
+        });
+        CACHE.clear();
+      }
+      module.exports = { rasterize, clearRasterCache };
+    }
+  });
+
   // src/index.js
   var require_index = __commonJS({
     "src/index.js"(exports, module) {
@@ -11796,7 +16685,20 @@ var B68Figure = (() => {
       var REG = require_registry();
       var G = require_geom();
       var C = require_color();
-      module.exports = { ...api, tokens: T, registry: REG, geom: G, color: C, U: 25, version: "2.0.0" };
+      var raster = require_raster();
+      module.exports = {
+        ...api,
+        tokens: T,
+        registry: REG,
+        geom: G,
+        color: C,
+        U: 25,
+        version: "3.0.0",
+        // light v2 + face v2 the default; light v1 retired (Wave 2, signed off 22/10/2026)
+        rasterize: (spec, o) => raster.rasterize(api, spec, o),
+        // browser only: render once to a bitmap (ROADMAP §4.1)
+        clearRasterCache: raster.clearRasterCache
+      };
     }
   });
   return require_index();

@@ -2,7 +2,7 @@
 
 The whole app as one static page with no build step: the character creator, the living
 sheets, the table page, the schedule and the prints. It started as the single-page creator
-prototype from `docs/history/PLAN.md` and is built on the Blades '68 Design System's figure kit v2. It
+prototype from `docs/history/PLAN.md` and is built on the Blades '68 Design System's figure kit 3. It
 runs as a claude.ai artifact or on the hosted build (a Cloudflare Worker, see `HOSTING.md`);
 storage, identity and downloads always go through `window.claude.use(...)`.
 
@@ -53,7 +53,7 @@ storage, identity and downloads always go through `window.claude.use(...)`.
 - `runtime/cf.js` is the hosted build's `window.claude` adapter. It does nothing inside the
   artifact or from `file://`. `sw.js`, `manifest.webmanifest` and `icons/` make the hosted
   build installable and usable offline.
-- `figures/` is the vendored figure kit and cast canon (kit v2.0.0). `fonts/` holds the
+- `figures/` is the vendored figure kit and cast canon (figure kit 3.0.0); `maps/` is the vendored map kit (0.7.0, 21/10 build). `fonts/` holds the
   vendored fonts.
 - `CONTRACT.md` documents the character document, the `play` shape and the module APIs.
 - `checks/` holds Playwright checks that stub the artifact runtime and open `../index.html`
