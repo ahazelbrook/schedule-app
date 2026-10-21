@@ -11,7 +11,7 @@ import { decide, budgetTier, canRun, isRepeatSlip, slipKeys, COOLDOWN_MS, DEFAUL
 import { toCandidate, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
 import { callSeat, countTokens } from '../../functions/_lib/assist/claude.js';
 import { SEATS, WAKES } from '../../functions/_lib/assist/seats.js';
-import { makeHandler, onRequest as realHandler } from '../../functions/api/gm/assist.js';
+import { makeHandler, cleanDraws, DRAW_MAX, onRequest as realHandler } from '../../functions/api/gm/assist.js';
 import { matchApi } from '../../worker/app.js';
 import { gmNotFound } from '../../functions/_lib/gm.js';
 
@@ -157,10 +157,11 @@ function fakeClient(replies, calls) {
         const ins = texts[0];
         const doc = req.messages[0].content.find((b) => b.type === 'document');
         const seat = /listen to a live/.test(ins) ? 'tripwire' : /rules referee/.test(ins) ? 'ref' : /keep the canon/.test(ins) ? 'clerk' : /keep the ledger/.test(ins) ? 'ledger' : /fixer/.test(ins) ? 'fixer' : 'other';
-        calls.push({ seat, model: req.model, effort: req.output_config.effort, cached: !!doc, doc, ins, user: texts[texts.length - 1] });
+        calls.push({ seat, max: req.max_tokens, model: req.model, effort: req.output_config.effort, cached: !!doc, doc, ins, user: texts[texts.length - 1] });
         const r = replies[seat];
+        if (replies.__ms) clock.t += replies.__ms[seat] || 0;          // a fake wall-clock for the call
         if (r instanceof Error) throw r;
-        return { content: [{ type: 'text', text: JSON.stringify(typeof r === 'function' ? r() : r) }], usage: { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 10000, cache_creation_input_tokens: 0 }, stop_reason: 'end_turn' };
+        return { content: [{ type: 'text', text: JSON.stringify(typeof r === 'function' ? r() : r) }], usage: { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 10000, cache_creation_input_tokens: 0 }, stop_reason: (replies.__stop && replies.__stop[seat]) || 'end_turn' };
       },
     },
   };
@@ -187,6 +188,7 @@ async function setup(opts = {}) {
   return { exec, db, calls, replies, env, handler, lines, post, rows };
 }
 const body = async (res) => JSON.parse(await res.text());
+const DRAWS = { low: 'Lost opportunity: the way in is shut.', mid: 'Complication: a second watcher arrives.' };
 
 await test('router: /api/gm/assist/tick and /fit reach the handler, other paths under it stay the GM-only 404', () => {
   for (const p of ['/api/gm/assist/tick', '/api/gm/assist/tick/', '/api/gm/assist/fit']) assert.equal(matchApi(p).handler, realHandler, p);
@@ -221,6 +223,7 @@ await test('GM: GET is 405, a bad body is 400, no key is 503, and nothing is cal
   await assert.rejects(s.handler({ request: new Request('https://blades.example.test/api/gm/assist/tick', { method: 'POST', body: '[1]' }), env: s.env, data: { me: GM } }), (e) => e.status === 400);
   await assert.rejects(s.post('tick', { after: -1 }), (e) => e.status === 400);
   await assert.rejects(s.post('fit', {}), (e) => e.status === 400);
+  await assert.rejects(s.post('fit', { position: 'risky' }), (e) => e.status === 400, 'no draws: a clear 400');
   const noKey = makeHandler({ now: () => clock.t });
   await assert.rejects(noKey({ request: new Request('https://blades.example.test/api/gm/assist/tick', { method: 'POST', body: '{}' }), env: { DB: s.db, CAMPAIGN: 'c' }, data: { me: GM } }), (e) => e.status === 503 && !/sk-/.test(e.message));
   assert.equal(s.calls.length, 0);
@@ -401,7 +404,7 @@ await test('budget ladder in the endpoint: 60% drops the optional seats, 85% lea
   assert.equal(s.calls.length, 0, 'at the cap no seat is called, not even the tripwire');
   assert.equal(out.spend.tier, 'off');
   assert.deepEqual(out.cards, []);
-  await assert.rejects(s.post('fit', { position: 'risky' }), (e) => e.status === 429 && /cap/.test(e.message));
+  await assert.rejects(s.post('fit', { position: 'risky', draws: DRAWS }), (e) => e.status === 429 && /cap/.test(e.message));
   assert.equal(s.calls.length, 0);
 });
 
@@ -454,7 +457,7 @@ await test('a part that still carries prefix text: nothing is sent to the provid
   assert.deepEqual(out.cards, []); assert.deepEqual(out.flags, []);
   assert.deepEqual(out.warnings, ['re-push the assist part']);
   assert.equal(s.rows().length, 0);
-  const fit = await body(await s.post('fit', { position: 'risky' }));
+  const fit = await body(await s.post('fit', { position: 'risky', draws: DRAWS }));
   assert.deepEqual(fit.cards, []); assert.deepEqual(fit.warnings, ['re-push the assist part']);
   assert.equal(s.calls.length, 0);
 });
@@ -505,7 +508,7 @@ await test('fit: the Fixer for a named position; logged; the position reaches th
   clock.t = Date.parse('2030-01-01T15:00:00.000Z');
   const s = await setup();
   await s.lines(2);
-  const res = await s.post('fit', { position: 'desperate', effect: 'limited' });
+  const res = await s.post('fit', { position: 'desperate', effect: 'limited', draws: DRAWS });
   assert.equal(res.status, 200);
   const out = await body(res);
   assert.equal(out.cards.length, 1);
@@ -518,10 +521,10 @@ await test('fit: the Fixer for a named position; logged; the position reaches th
   assert.equal(rows.length, 1); assert.equal(rows[0].seat, 'fixer'); assert.equal(rows[0].flags, 'fit');
   // opus: 1000*4 + 10000*0.2 + 200*20 = 10000 per million -> $0.01 = 1 cent
   assert.ok(Math.abs(rows[0].cents - 1) < 1e-9, 'cents ' + rows[0].cents);
-  await assert.rejects(s.post('fit', { position: 'risky' }), (e) => e.status === 429 && /busy/.test(e.message));
+  await assert.rejects(s.post('fit', { position: 'risky', draws: DRAWS }), (e) => e.status === 429 && /busy/.test(e.message));
   assert.equal(s.calls.length, 1);
   clock.t += COOLDOWN_MS.fixer + 1;
-  assert.equal((await s.post('fit', { position: 'risky' })).status, 200);
+  assert.equal((await s.post('fit', { position: 'risky', draws: DRAWS })).status, 200);
 });
 
 // ---------- the box's memory: GET/POST /api/gm/assist/cards ----------
@@ -592,6 +595,113 @@ await test('cards: seen, dismiss and keep are kept on the log; dismissed stay di
   }
   assert.equal((await cardsReq(s, 'PUT', '')).status, 405);
   const n = s.calls.length; await get(); assert.equal(s.calls.length, n, 'reading and marking cards never calls a model');
+});
+
+// ---------- WP2: the Fixer fits the console's own draws; timing, stop reasons, the 8k limit, refusals ----------
+await test('fit: the draws reach the prompt, the call is capped at 8k tokens, and the seat prompt keeps the draws\' kind of outcome', async () => {
+  clock.t = Date.parse('2030-01-01T18:00:00.000Z');
+  const s = await setup();
+  await s.lines(2);
+  assert.equal(SEATS.fixer.maxTokens, 8000);
+  const out = await body(await s.post('fit', { position: 'risky', effect: 'standard', draws: { low: '  Lost opportunity:\r\nthe way in is shut.  ', mid: DRAWS.mid } }));
+  assert.equal(out.cards.length, 1);
+  assert.equal(s.calls[0].max, 8000, 'the Fixer asks for 8k output tokens');
+  assert.match(s.calls[0].user, /1-3 draw:\nLost opportunity:\nthe way in is shut\.\n4-5 draw:\nComplication: a second watcher arrives\./);
+  assert.match(s.calls[0].ins, /draws are fixed/); assert.match(s.calls[0].ins, /never change the kind of outcome/);
+  assert.deepEqual(Object.keys(SEATS.fixer.schema.properties), ['read', 'one_three', 'four_five', 'six', 'crit', 'bargain']);
+});
+
+await test('fit: the endpoint rejects missing, malformed and over-long draws with 400 and never calls the model', async () => {
+  clock.t = Date.parse('2030-01-01T18:10:00.000Z');
+  const s = await setup();
+  await s.lines(2);
+  const long = 'x'.repeat(DRAW_MAX + 1);
+  const bad = [undefined, null, 'text', [], {}, { low: 'a' }, { mid: 'b' }, { low: 'a', mid: '' }, { low: '  ', mid: 'b' }, { low: 'a', mid: 7 }, { low: long, mid: 'b' }, { low: 'a', mid: long }];
+  for (const draws of bad) await assert.rejects(s.post('fit', { position: 'risky', ...(draws === undefined ? {} : { draws }) }), (e) => e.status === 400, String(JSON.stringify(draws)).slice(0, 50));
+  assert.equal(s.calls.length, 0); assert.equal(s.rows().length, 0);
+  assert.deepEqual(cleanDraws({ low: 'a'.repeat(DRAW_MAX), mid: 'b' }), { low: 'a'.repeat(DRAW_MAX), mid: 'b' }, 'exactly the limit is fine');
+  assert.equal((await s.post('fit', { position: 'risky', draws: { low: 'a'.repeat(DRAW_MAX), mid: 'b' } })).status, 200);
+});
+
+await test('every seat call logs its seconds and stop reason in the card JSON (tick rows and the fit row)', async () => {
+  clock.t = Date.parse('2030-01-01T18:20:00.000Z');
+  const s = await setup();
+  s.replies.__ms = { tripwire: 1200, ref: 4300, ledger: 0, fixer: 21500 };
+  s.replies.__stop = { ref: 'max_tokens' };
+  await s.lines(3);
+  await body(await s.post('tick', {}));
+  const rows = s.rows(); const card = (seat) => JSON.parse(rows.find((r) => r.seat === seat).card);
+  assert.equal(card('tripwire').secs, 1.2); assert.equal(card('tripwire').stop, 'end_turn');
+  assert.equal(card('ref').secs, 4.3); assert.equal(card('ref').stop, 'max_tokens');
+  assert.equal(typeof card('ledger').secs, 'number'); assert.equal(card('ledger').stop, 'end_turn');
+  clock.t += 60_000;
+  await body(await s.post('fit', { position: 'risky', draws: DRAWS }));
+  const fx = JSON.parse(s.rows().find((r) => r.seat === 'fixer').card);
+  assert.deepEqual(fx.draws, DRAWS, 'the two draws, as sent, are kept in the row'); assert.equal(fx.secs, 21.5); assert.equal(fx.stop, 'end_turn'); assert.equal(fx.shown, 0); assert.ok(fx.out && fx.out.one_three);
+});
+
+await test('a failed call still logs its seconds', async () => {
+  clock.t = Date.parse('2030-01-01T18:30:00.000Z');
+  const s = await setup();
+  s.replies.fixer = Object.assign(new Error('boom'), { status: 500 }); s.replies.__ms = { fixer: 3000 };
+  await s.lines(2);
+  const out = await body(await s.post('fit', { position: 'risky', draws: DRAWS }));
+  assert.deepEqual(out.cards, []); assert.deepEqual(out.errors, [{ seat: 'fixer', error: 'provider status 500' }]);
+  const c = JSON.parse(s.rows()[0].card);
+  assert.equal(c.secs, 3); assert.equal(c.error, 'provider status 500');
+});
+
+await test('a refusal shows nothing and the row records it (fit and tick); there is no fallback', async () => {
+  clock.t = Date.parse('2030-01-01T18:40:00.000Z');
+  const s = await setup();
+  s.replies.__stop = { fixer: 'refusal', ref: 'refusal' };
+  await s.lines(3);
+  const fit = await body(await s.post('fit', { position: 'risky', draws: DRAWS }));
+  assert.deepEqual(fit.cards, [], 'the card shows nothing');
+  const fx = JSON.parse(s.rows().find((r) => r.seat === 'fixer').card);
+  assert.equal(fx.refusal, 1); assert.equal(fx.stop, 'refusal'); assert.equal(fx.error, 'refusal'); assert.equal(fx.out, undefined);
+  assert.equal(s.calls.filter((c) => c.seat === 'fixer').length, 1, 'no second call, no server-side fallback');
+  const tick = await body(await s.post('tick', {}));
+  assert.deepEqual(tick.cards, [], 'a refused Ref call produces no card');
+  const rf = JSON.parse(s.rows().find((r) => r.seat === 'ref').card);
+  assert.equal(rf.refusal, 1); assert.equal(rf.shown, 0); assert.equal(rf.stop, 'refusal');
+  const back = await body(await cardsReq(s, 'GET', ''));
+  assert.deepEqual(back.cards, [], 'and nothing is restored after a reload');
+});
+
+// ---------- WP2: the replay script's way to supply draws ----------
+await test('replay draws: from a JSON file, or drawn from a pack\'s console part with fixed seeds (the same pair every time); the user turn is shared with the endpoint', async () => {
+  const fs = await import('node:fs'); const os = await import('node:os');
+  const { makeDrawsFor, parsePositionAt } = await import('../../scripts/lib/fixer-draws.mjs');
+  const { fitUser } = await import('../../functions/_lib/assist/prompts.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'b68-draws-'));
+  try {
+    const f = path.join(dir, 'draws.json');
+    fs.writeFileSync(f, JSON.stringify({ '22:09': { position: 'desperate', low: 'L1', mid: 'M1' }, default: { low: 'L0', mid: 'M0' } }));
+    const fromFile = makeDrawsFor({ file: f, position: 'risky', positionAt: parsePositionAt('22:12=controlled') });
+    assert.deepEqual(fromFile('22:09'), { position: 'desperate', low: 'L1', mid: 'M1' });
+    assert.deepEqual(fromFile('22:12'), { position: 'controlled', low: 'L0', mid: 'M0' });
+    fs.writeFileSync(f, JSON.stringify({ '22:09': { low: 'only low' } }));
+    assert.throws(() => makeDrawsFor({ file: f })('22:09'), /no draws for 22:09/);
+
+    const fixture = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'console-pack.json'), 'utf8')).parts;
+    const pk = path.join(dir, 'pack.json'); fs.writeFileSync(pk, JSON.stringify({ parts: { console: fixture.console, campaign: fixture.campaign } }));
+    const moments = ['22:09', '22:12', '22:23'];
+    const a = makeDrawsFor({ moments, packFile: pk, seed: 7, position: 'risky', positionAt: { '22:12': 'desperate' } });
+    const b = makeDrawsFor({ moments, packFile: pk, seed: 7, position: 'risky', positionAt: { '22:12': 'desperate' } });
+    for (const m of moments) {
+      const d = a(m);
+      assert.deepEqual(d, b(m), 'fixed seed: the same pair every time');
+      assert.ok(d.low.startsWith('A 1–3 (') && d.mid.startsWith('A 4/5 ('), 'the console\'s own situation cards, as the page sends them');
+      assert.ok(d.low.length <= 1200 && d.mid.length <= 1200);
+    }
+    assert.equal(a('22:12').position, 'desperate'); assert.equal(a('22:09').position, 'risky');
+    assert.throws(() => makeDrawsFor({ packFile: path.join(dir, 'missing.json') }), /no draws/);
+    const user = fitUser({ position: 'risky', effect: 'limited', draws: { low: 'L', mid: 'M' }, stamp: '22:09', talk: '[22:08] A: x' });
+    assert.equal(user, 'A roll is about to be made. The GM names the position: risky. Effect: limited.\nThe console has drawn these. Fit them to the scene and keep what each one says happens.\n1-3 draw:\nL\n4-5 draw:\nM\nLast five minutes, up to 22:09:\n[22:08] A: x');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'gm-assist-replay.mjs'), 'utf8');
+  assert.ok(/arg\('fixer-at'\)/.test(src) && /fixer-moments\.md/.test(src) && /--draws-file/.test(src), 'the script takes --fixer-at with draws and writes fixer-moments.md');
 });
 
 console.log(failed ? `\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);

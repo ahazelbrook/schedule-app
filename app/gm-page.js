@@ -778,6 +778,12 @@
     return !!l && l.kind !== 'grid' && plainMd(l.md) === plainMd(s.lead);
   }
   P.situationPlain = situationPlain; P.leadIsLine = leadIsLine;
+  /* the text of a pre-rolled draw as the Fixer reads it (the card as plain text, clipped under the server's 1500-character limit),
+     and the signature of the controls a draw depends on: a pre-rolled draw is only replayed under the controls it was drawn for */
+  var DRAW_CLIP = 1200;
+  function drawTextOf(res) { var t = situationPlain(res).replace(/\n{3,}/g, '\n\n').trim(); return t.length > DRAW_CLIP ? t.slice(0, DRAW_CLIP - 1) + '…' : t; }
+  function preSig(ui) { var u = isObj(ui) ? ui : {}; return JSON.stringify(Object.keys(u).sort().map(function (k) { return [k, u[k]]; })); }
+  P.drawTextOf = drawTextOf; P.preSig = preSig; P.DRAW_CLIP = DRAW_CLIP;
   /* a roll's one-line text for "L" (the title and the lead) */
   function lastText(res) {
     var m = res && res.meta || {};
@@ -1342,7 +1348,7 @@
     var g = gmApi(), A = W.B68GmAssist, me = S;
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
-    try { me.assist = A.create({ gm: g, onNote: function (text) { return S === me && !!addCapture('m', text, true); } }); } catch (e) { me.assist = null; }
+    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); } }); } catch (e) { me.assist = null; }
   }
   function loadShown() {
     var g = gmApi(), me = S; if (!g || typeof g.display !== 'function' || AM.displayRead) return;
@@ -1364,7 +1370,7 @@
          the column overflows (Chromium sizes the track from the button's min-height, not its wrapped content) */
       '<div class="gm-scenebox" id="gm-scenebox">' + '<label class="gm-nowline" for="gm-now-s"><span class="gm-lab">Now in</span><select data-now id="gm-now-s"></select></label>' +
       '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"' + ' title="Scene, district, who it aims at, the NPC, the threat on screen">' + '<span class="gm-lab">Scene</span><span class="gm-scene-chips" id="gm-scene-chips"></span></button></div>' +
-      '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div>' +
+      '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div><div class="gm-rack" id="gm-rack" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div>' +
       '<details class="gm-singles" id="gm-singles"></details></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
       [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score', 'J'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
@@ -1613,7 +1619,7 @@
     });
     chips.innerHTML = bits.join('') || '<span class="gm-dim">any</span>';
   }
-  function setLive(id, value) { var l = {}; l[id] = value; patch({ con: { live: l } }); renderChips(); }
+  function setLive(id, value) { var l = {}; l[id] = value; patch({ con: { live: l } }); renderChips(); if (id !== 'pos' && S && S.pre) schedulePre(1500); }
   /* the big three-way Position switch (always on screen, the phone too) */
   function renderPos() {
     var box = $q('#gm-pos'); if (!box) return;
@@ -1643,8 +1649,8 @@
     }).join('') + '</div>';
     if (open) box.open = true;
   }
-  function renderConsole() { renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); }
-  function setPos(v) { setLive('pos', v); renderPos(); }
+  function renderConsole() { renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); }
+  function setPos(v) { setLive('pos', v); renderPos(); schedulePre(); }
   /* a roll is never invisible: Focus (which hides the card) goes, said once per page load, and the card's header is scrolled
      into view in the console column */
   var focusLeftToasted = false;
@@ -1686,12 +1692,126 @@
      an unknown console id as a Devil's Bargain) */
   function rollSituation(n) {
     if (!S || !hasSit()) return;
-    var res; try { res = S.con.situation(n, uiNow()); } catch (e) { toast('The roll failed: ' + errText(e), true); return; }
+    var ui = uiNow(), use = takePre(n, ui);       /* a 1-3 or 4/5 the console already drew for this Position: replayed, never re-rolled */
+    var res; try { res = use ? S.con.situation(n, ui, preRoll(use)) : S.con.situation(n, ui); } catch (e) { toast('The roll failed: ' + errText(e), true); return; }
     var entry = situationEntry(res, S.doc.con);
     var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.situation) ? S.doc.hist.situation : {};
     var ok = patch({ cards: { situation: Object.assign({ hid: hid }, entry) }, mem: { console: clone(S.con.mem()) }, hist: { situation: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
     if (!ok) return;
+    if (use) preUsed(use, res);
     stamp('situation', res);
+  }
+
+  /* ---------- Claude at the table: the console's own 1-3 and 4/5 draws, pre-rolled for the Position ----------
+     When the GM sets Position (or a control the draw reads, once a Position has been set), the console rolls its 1-3 and 4/5 cards
+     ONCE with its own function (con.situation) and keeps each one's seed and the memory it was drawn from. It sends the two
+     cards' text to the Fixer (POST /api/gm/assist/fit). Tapping 1-3 or 4/5 later replays that very draw (same seed, same memory),
+     so the card and the fitted line cannot differ; changing Position re-rolls and re-fits; Clear on the Rack drops both.
+     The draws live in this page's state only (a reload forgets them and the next roll draws as it always did). Nothing is pre-rolled,
+     and no fit call is made, when the box cannot fit (a phone, no box, the cap reached) or Listening is off. The Fixer's answer
+     shows in the Rack under the card; it never replaces the card, and a late answer still lands there. */
+  var PRE_KINDS = [['low', 'onetothree'], ['mid', 'fourfive']];
+  var PRE_MS = 500, FIT_RETRY_MS = 11000;
+  var preTok = 0;
+  function newSeedNow() { return (Math.random() * 4294967296) >>> 0; }
+  function sitIdOf(n) { var x = S.con.situations().filter(function (b) { return b.id === n || b.key === Number(n); })[0]; return x ? x.id : ''; }
+  function preReset() {
+    if (!S) return;
+    if (S.preTimer) { W.clearTimeout(S.preTimer); S.preTimer = null; }
+    if (S.preRetry) { W.clearTimeout(S.preRetry); S.preRetry = null; }
+    S.pre = null; S.rack = null; S.fitTok = ++preTok;     /* a late answer for the old draws is dropped */
+  }
+  /* roll the pair for the controls as they are now; returns { pre, fresh } (the pair already held is kept while the controls and its draws are unchanged) */
+  function preroll() {
+    if (!S || !hasSit()) return null;
+    var ui = uiNow(), sig = preSig(ui), cur = S.pre;
+    if (cur && cur.sig === sig && PRE_KINDS.every(function (k) { return !cur.kinds[k[1]].used; })) return { pre: cur, fresh: false };
+    var memBefore = clone(S.con.mem()), pre = { tok: ++preTok, sig: sig, pos: str(ui.pos), mem: memBefore, kinds: {}, text: {}, stale: false };
+    try {
+      PRE_KINDS.forEach(function (k) {
+        var seed = newSeedNow();
+        pre.kinds[k[1]] = { seed: seed, used: false };
+        pre.text[k[0]] = drawTextOf(S.con.situation(k[1], ui, { seed: seed, mem: clone(memBefore) }));   /* a copy of the memory: the console's own stays as it was */
+      });
+    } catch (e) { return null; }
+    return { pre: pre, fresh: true };
+  }
+  /* Position (or a control) changed: after a short pause, re-roll the pair and ask the Fixer to fit it. A box that cannot fit leaves the console as it was. */
+  function schedulePre(ms) {
+    if (!S || !hasSit()) return;
+    var me = S;
+    if (me.preTimer) W.clearTimeout(me.preTimer);
+    me.preTimer = W.setTimeout(function () {
+      me.preTimer = null;
+      if (S !== me) return;
+      var a = me.assist;
+      if (!a || typeof a.canFit !== 'function' || typeof a.autoFit !== 'function' || !a.canFit()) { preReset(); renderRack(); return; }
+      var r = preroll(); if (!r) return;
+      if (!r.fresh && r.pre.fitted) return;                 /* the same Position again, draws unused and already fitted: nothing to do */
+      if (me.preRetry) { W.clearTimeout(me.preRetry); me.preRetry = null; }
+      me.pre = r.pre; me.fitTok = r.pre.tok; if (r.fresh) me.rack = null; renderRack();
+      r.pre.fitted = true;
+      fitPre(r.pre, 0);
+    }, ms == null ? PRE_MS : ms);
+  }
+  function fitPre(pre, tries) {
+    var me = S, tok = pre.tok;
+    me.assist.autoFit({ position: pre.pos, draws: { low: pre.text.low, mid: pre.text.mid } }, function () {
+      if (S === me && me.fitTok === tok) { me.rack = { tok: tok, pre: pre, status: 'pending', card: null }; renderRack(); }
+    }).then(function (r) {
+      if (S !== me || me.fitTok !== tok) return;             /* the Position moved on, or the Rack was cleared: this answer is for draws that are gone */
+      if (r && r.card) { me.rack = { tok: tok, pre: pre, status: 'ready', card: r.card }; renderRack(); return; }
+      if (r && r.error === 'busy' && !tries) { me.preRetry = W.setTimeout(function () { me.preRetry = null; if (S === me && me.fitTok === tok) fitPre(pre, 1); }, FIT_RETRY_MS); return; }
+      me.rack = null;                                       /* Listening off, the cap, a failure: nothing shows, and draws never fitted are dropped so the roll is a plain one */
+      if (me.pre === pre) me.pre = null;
+      renderRack();
+    }, function () { if (S === me && me.fitTok === tok) { me.rack = null; if (me.pre === pre) me.pre = null; renderRack(); } });
+  }
+  /* the pair held for these controls, if the button pressed has an unused draw in it (otherwise the roll is a plain one) */
+  function takePre(n, ui) {
+    var pre = S.pre; if (!pre) return null;
+    var kind = sitIdOf(n); if (!pre.kinds[kind]) return null;
+    if (pre.sig !== preSig(ui)) { preReset(); renderRack(); return null; }   /* the controls moved under the draws (the Now district, say): roll afresh */
+    return pre.kinds[kind].used ? null : { pre: pre, kind: kind };
+  }
+  /* the roll options that replay the draw: its seed, and the console's memory set back to what it was when the draw was made */
+  function preRoll(use) {
+    var live = S.con.mem(); Object.keys(live).forEach(function (k) { delete live[k]; }); Object.assign(live, clone(use.pre.mem));
+    return { seed: use.pre.kinds[use.kind].seed, mem: live };
+  }
+  function preUsed(use, res) {
+    var pre = use.pre, key = use.kind === 'onetothree' ? 'low' : 'mid';
+    pre.kinds[use.kind].used = true;
+    if (drawTextOf(res) !== pre.text[key]) pre.stale = true;     /* the console's state moved since the draw (a bargain collected, say): the Rack says so */
+    if (PRE_KINDS.every(function (k) { return pre.kinds[k[1]].used; }) && S.pre === pre) S.pre = null;
+    renderRack();
+  }
+  function rackClear() { preReset(); renderRack(); }
+  /* the box's own "Fit it" form asks for draws too: the console's pair for that Position (the Position follows the form, quietly) */
+  function drawsFor(position) {
+    if (!S || !hasSit() || S.con.positions.every(function (p) { return p.value !== position; })) return null;
+    if (str(uiNow().pos) !== position) { setLive('pos', position); renderPos(); }
+    var r = preroll(); if (!r) return null;
+    if (r.fresh) { S.pre = r.pre; S.rack = null; S.fitTok = r.pre.tok; renderRack(); }
+    return { low: r.pre.text.low, mid: r.pre.text.mid };
+  }
+  var RACK_ROWS = [['1–3', 'one_three'], ['4–5', 'four_five'], ['6', 'six'], ['Crit', 'crit'], ['Bargain', 'bargain']];
+  function renderRack() {
+    var box = $q('#gm-rack'); if (!box) return;
+    var r = S && S.rack;
+    if (!r) { box.innerHTML = ''; return; }
+    var pre = r.pre, used = { one_three: pre && pre.kinds.onetothree.used, four_five: pre && pre.kinds.fourfive.used };
+    var h = '<div class="gm-rack-h"><span class="gm-lab">Rack</span><span class="gm-dim">Blade, fitted to the scene · ' + esc(pre.pos) + '</span>' +
+      '<button type="button" class="chip sm" data-gm="rackclear" title="Drops the fitted lines and the draws held for this Position">Clear</button></div>';
+    if (r.status === 'pending') h += '<p class="gm-dim gm-rack-w">Fitting…</p>';
+    else {
+      var c = isObj(r.card) ? r.card : {};
+      if (str(c.read)) h += '<p class="gm-rack-read">' + esc(str(c.read)) + '</p>';
+      h += '<ol class="gm-rack-lines">' + RACK_ROWS.filter(function (x) { return str(c[x[1]]).trim(); }).map(function (x) {
+        return '<li' + (used[x[1]] ? ' class="hit"' : '') + '><b>' + esc(x[0]) + '</b><span>' + esc(str(c[x[1]]).trim()) + '</span></li>'; }).join('') + '</ol>';
+      if (pre && pre.stale) h += '<p class="gm-dim gm-rack-w">The card was drawn before something changed here; the lines above may not match it.</p>';
+    }
+    box.innerHTML = h;
   }
   function replayConsole(e) {
     var cp = part('console');
@@ -3431,6 +3551,7 @@
       case 'roll': rollConsole(+b.getAttribute('data-n')); break;
       case 'situation': rollSituation(+b.getAttribute('data-n')); break;
       case 'pos': setPos(b.getAttribute('data-v')); break;
+      case 'rackclear': rackClear(); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {
         var tool = b.getAttribute('data-tool'), e = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).filter(function (x) { return x._id === b.getAttribute('data-h'); })[0]; if (!e) break;

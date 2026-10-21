@@ -42,7 +42,7 @@ export function buildContent({ prefix, prefixFileId, instructions = '', user }) 
 }
 
 // One seat call. `prefixFileId` (Worker) or `prefix` (scripts) is the shared cached text; `instructions` is the seat's own;
-// `user` is the fresh tail. `schema` makes the reply JSON. Returns { json, text, usage, cost, stop }.
+// `user` is the fresh tail. `schema` makes the reply JSON. Returns { json, text, usage, cost, stop, secs }.
 export async function callSeat(client, { model, effort, prefix, prefixFileId, instructions, user, schema, maxTokens = 4000 }) {
   const output_config = { effort };
   if (schema) output_config.format = { type: 'json_schema', schema };
@@ -51,11 +51,13 @@ export async function callSeat(client, { model, effort, prefix, prefixFileId, in
     messages: [{ role: 'user', content: buildContent({ prefix, prefixFileId, instructions, user }) }],
   };
   // Long outputs (the Night Shift writer thinks at high effort) must stream: the SDK refuses a big non-streaming request.
+  const t0 = Date.now();
   const res = maxTokens > 16000 ? await client.messages.stream(params).finalMessage() : await client.messages.create(params);
+  const secs = Math.round((Date.now() - t0) / 100) / 10;      // wall-clock of the call, in seconds
   const text = res.content.filter(b => b.type === 'text').map(b => b.text).join('');
   let json = null;
   if (schema && text) { try { json = JSON.parse(text); } catch { json = null; } }
-  return { json, text, usage: res.usage, cost: costOf(model, res.usage), stop: res.stop_reason };
+  return { json, text, usage: res.usage, cost: costOf(model, res.usage), stop: res.stop_reason, secs };
 }
 
 // Free: how many tokens would this prompt be. Uses the same layout as callSeat.

@@ -14,11 +14,17 @@
    API
      B68GmAssist.create({ gm, doc?, win?, onNote?(text) -> bool, avatar?, interval?, bannerMs? })
          gm        window.claude.gm (stt, assistTick, assistFit)
+         draws     (position) -> { low, mid } | null: the console's own pre-rolled 1-3 and 4-5 draws for that position; the Fixer
+                   fits them (the server refuses a fit without them)
          onNote    the page's capture: "Note it" on a Ledger update and "Keep" on a card file their text as a Moment (the update
                    itself changes no state)
      ctl.open() / close() / toggle()      the box
      ctl.poll()      one polling decision now: Listening on, page visible, not paused -> one tick (resolves when done)
-     ctl.fit(position, effect) -> Promise     the Fixer for a position
+     ctl.fit(position, effect) -> Promise     the Fixer for a position (the "Fit it" form), with the draws from o.draws
+     ctl.canFit()    false on a phone, with the cap reached, or when the box is not set up: no fit call is made
+     ctl.autoFit({ position, effect?, draws }, onStart?) -> Promise<{ card } | { error } | null>
+                     the console's own fit, asked when the GM sets the Position. Makes NO call (resolves null) when the box cannot
+                     fit, or when Listening is off (asked of the server just before, so a stale page is not fooled)
      ctl.ready       a promise: tonight's cards have been restored (or could not be)
      ctl.resume()    clear a pause (cap reached / busy) and poll again
      ctl.state()     a copy of what the box holds (for checks)
@@ -335,6 +341,7 @@
       if (!position || st.fit.busy) return Promise.resolve();
       st.fit.busy = true; st.fit.error = ''; renderFit();
       var req = { position: position }; if (effect) req.effect = effect;
+      var dr = typeof o.draws === 'function' ? o.draws(position) : null; if (isObj(dr)) req.draws = dr;
       return Promise.resolve().then(function () { return gm.assistFit(req); }).then(function (res) {
         if (gone) return;
         var c = res && Array.isArray(res.cards) ? res.cards[0] : null;
@@ -346,6 +353,28 @@
         st.fit.error = k === 'cap' ? 'Cap reached for tonight: the Fixer is off.' : k === 'busy' ? 'The Fixer is busy: try again in a moment.' : errLine(k);
         if (k === 'cap') st.paused = 'cap';
       }).then(function () { st.fit.busy = false; render(); });
+    }
+
+    /* the console's own fit: no UI of its own here (the page draws the Rack); this only decides whether to call, and folds the spend in */
+    function canFit() { return !gone && !isPhone() && st.paused !== 'cap' && st.paused !== 'setup' && !(st.spend && st.spend.tier === 'off'); }
+    function autoFit(req, onStart) {
+      if (!canFit() || !gm || typeof gm.assistFit !== 'function' || typeof gm.stt !== 'function' || !isObj(req) || !isObj(req.draws)) return Promise.resolve(null);
+      return Promise.resolve().then(function () { return gm.stt(); }).then(function (r) {
+        var on = !!(r && isObj(r.doc) && r.doc.want === 'on');
+        st.listening = on;
+        if (!on || gone) { render(); return null; }
+        if (typeof onStart === 'function') onStart();
+        return Promise.resolve().then(function () { return gm.assistFit(req); }).then(function (res) {
+          if (gone) return null;
+          if (isObj(res) && isObj(res.spend)) { absorb(st, { spend: res.spend, warnings: [] }, ''); render(); }
+          var c = res && Array.isArray(res.cards) ? res.cards[0] : null;
+          return c && isObj(c) && fitLines(c).length ? { card: c } : { error: 'none' };
+        }, function (e) {
+          var k = errKind(e);
+          if (k === 'cap') { st.paused = 'cap'; render(); }
+          return { error: k };
+        });
+      }, function () { return null; });
     }
 
     /* ---------- events ---------- */
@@ -384,7 +413,7 @@
     if (!o.noTimer) setTimeout(function () { poll(); }, 1500);
 
     return {
-      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, poll: poll, resume: resume, fit: fit,
+      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, poll: poll, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit,
       state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, banner: bannerCard ? bannerCard.text : '' })); },
       el: function () { return host; },
       destroy: function () {
