@@ -80,10 +80,10 @@ await test('toScribe: needs a story, caps it, refuses a reply that would wipe th
   assert.ok(toScribe({ story: 'z'.repeat(900), corrections: [] }, prior));
 });
 
-await test('storyBlock rides with the instructions: empty means nothing, STORY_SEATS are the three that look back', () => {
+await test('storyBlock rides with the instructions: empty means nothing, STORY_SEATS are the four that look back', () => {
   assert.equal(storyBlock(''), ''); assert.equal(storyBlock('   '), '');
   assert.match(storyBlock('The crew did X.'), /Story so far[^\n]*:\nThe crew did X\.$/);
-  assert.deepEqual([...STORY_SEATS].sort(), ['meanwhile', 'mystery', 'showrunner']);
+  assert.deepEqual([...STORY_SEATS].sort(), ['ask', 'meanwhile', 'mystery', 'showrunner']);
   assert.match(scribeUser({ story: '', stamp: '21:05', talk: '[21:04] A: hi' }), /nothing yet/);
   assert.match(scribeUser({ story: 'S', stamp: '21:05', talk: 'T' }), /^Story so far:\nS\n/);
 });

@@ -47,14 +47,22 @@
 //        reads all of it); wire {} -> item { kind: 'wire', text } (at most 240 characters). Each reads the last 5 minutes of talk. The ladder:
 //        Wire stops at 60% of the night's cap, Portrait and Prop at 85%, all at the cap (429); one of each at a time (429 busy). item is null
 //        when the seat refused, was cut off or gave nothing usable (logged, never shown). The page runs the gatekeeper on every item.
+//   POST /api/gm/assist/ask { q } -> { answer: { q, text, at } | null, spend, warnings?, errors? }    Ask Blade: the GM's typed question in the box
+//        (q is whitespace-squashed, 1-600 characters, else 400 before the database or the key). Seat `ask` (Opus, plain text, no schema) reads
+//        tonight's story (the Scribe's, appended after the cache breakpoint), the last 10 minutes of talk and the last two exchanges of the
+//        last 45 minutes (not the dismissed ones) (read from the log with json_extract), and answers for the GM's eyes only; nothing here reaches the iPad. The answer
+//        is kept to 4000 characters. Like Portrait and Prop it stops at 85% of the night's cap (429 with the cap or the ladder as the reason)
+//        and runs one at a time (429 busy). answer is null when there is no assist part (with a warning), the seat refused, was cut off
+//        or said nothing. One row is logged (seat 'ask', card { ask: 1, q, text, shown: 0 }); GET /cards hands the last 10 back as `asks`.
 //   POST /api/gm/assist/board {} -> { item: { kind: 'board', title, text, at } | null }   the case board, from the Mystery keeper's latest
 //        known and theories (what the players said aloud). Code only: no model, no key, no spend, and it runs at any tier.
 //   POST /api/gm/assist/portrait-add { name, description?, spec } -> { id, doc }   saves a portrait as an app NPC through checkNpc/writeNpc,
 //        always HIDDEN (revealed: false, whatever is sent); showing it to the players is the normal reveal flow.
-//   GET  /api/gm/assist/cards?session=&since= -> { cards, updates }   tonight's shown cards and open Ledger updates (last 12 h unless
-//        `since`), so a reloaded GM page restores its chat. Dismissed cards and finished updates are left out. No model, no key.
+//   GET  /api/gm/assist/cards?session=&since= -> { cards, updates, asks }   tonight's shown cards, open Ledger updates and Ask Blade answers
+//        (last 12 h unless `since`; asks: [{ row, at, q, text, kept }], the last 10, oldest first), so a reloaded GM page restores its chat.
+//        Dismissed cards, finished updates and dismissed asks are left out. No model, no key.
 //   POST /api/gm/assist/cards { op: 'seen'|'dismiss'|'keep', items: [{ at, text, key? }] } -> { marked }   the box's marks, kept on the
-//        log row (functions/_lib/assist/cards.js). A card is shown once (`shown: 1` on its row); the log is also what gm:after files.
+//        log row (functions/_lib/assist/cards.js); an Ask Blade answer is named by its question (`text` is the q). A card is shown once (`shown: 1` on its row); the log is also what gm:after files.
 //   card: { seat, at (ISO), text }, plus the Fixer's { read, one_three, four_five, six, crit, bargain }
 //   spend: { tonight, cap, tier, tick } in dollars; tier is all | reduced | core | off (the badge says so when it is off)
 // Every call is logged to gm_assist_log (seat, model, effort, tokens, cents, flags, the card): that table IS the cost meter and
@@ -96,7 +104,7 @@ import { SEATS, WAKES } from '../../_lib/assist/seats.js';
 import { cleanItem, verdictOf, unknownVerdict } from '../../_lib/assist/gatekeeper.js';
 import { checkNpc, newNpcId, writeNpc } from '../../_lib/npcs.js';
 import { toPortrait, toProp, toWire, buildBoard, boardSource, cleanName, cleanAsk, cleanVocab } from '../../_lib/assist/screen.js';
-import { portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN, SCREEN_NAME_MAX } from '../../_lib/assist/prompts.js';
+import { portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN, SCREEN_NAME_MAX, askUser, clipAnswer, ASK_MAX, ASK_WINDOW_MIN, ASK_HISTORY, ASK_HISTORY_MIN, ASK_HISTORY_ANSWER_MAX } from '../../_lib/assist/prompts.js';
 import { gatekeeperUser, ITEM_MAX, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX,
   STORY_SEATS, storyBlock, scribeUser, SCRIBE_SLICE_MAX, SCRIBE_FIRST_MIN, MEANWHILE_MIN, meanwhileUser, cleanClocks, silenceUser } from '../../_lib/assist/prompts.js';
 import { DEFAULT_CAP, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS, isListening, silenceFlag } from '../../_lib/assist/conductor.js';
@@ -340,6 +348,20 @@ export function cleanScreenBody(action, b) {
   return {};
 }
 
+/** The question Ask Blade is asked: whitespace squashed to single spaces, 1-ASK_MAX characters; null when it is not a string or is empty or too long. */
+export function cleanAskQuestion(v) {
+  if (typeof v !== 'string') return null;
+  const t = v.replace(/\s+/g, ' ').trim();
+  return t && t.length <= ASK_MAX ? t : null;
+}
+
+/** The last ASK_HISTORY exchanges of the last ASK_HISTORY_MIN minutes, oldest first: [{ q, text }] (answers clipped in D1, so the Worker never parses them). A dismissed answer is left out, so a bad one does not steer the next. */
+async function askHistory(db, campaign, now) {
+  const since = new Date(now - ASK_HISTORY_MIN * 60 * 1000).toISOString();
+  const { results } = await db.prepare("SELECT json_extract(card, '$.q') AS q, substr(json_extract(card, '$.text'), 1, ?3) AS text FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'ask' AND json_extract(card, '$.ask') = 1 AND COALESCE(json_extract(card, '$.text'), '') != '' AND COALESCE(json_extract(card, '$.dismissed'), 0) != 1 ORDER BY id DESC LIMIT " + ASK_HISTORY).bind(campaign, since, ASK_HISTORY_ANSWER_MAX).all();
+  return (results || []).filter((r) => typeof r.q === 'string' && typeof r.text === 'string').map((r) => ({ q: r.q, text: r.text })).reverse();
+}
+
 /** The case board: the Mystery keeper's latest known and theories, as a text item. Code only: no model, no spend, always allowed. */
 async function boardOf(db, campaign, now) {
   const since = new Date(now - NIGHT_MS).toISOString();
@@ -361,7 +383,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
   return async function onRequest({ request, env, data }) {
     requireGm(data);                                   // first: before the method, the body or the database
     const url = new URL(request.url);
-    const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board)\/?$/.exec(url.pathname);
+    const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board|ask)\/?$/.exec(url.pathname);
     if (!action) throw new HttpError(404, 'not found');
     if (action[1] === 'cards') {                       // the box's memory: no key, no model
       if (request.method === 'GET') {
@@ -369,7 +391,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
         if (since !== null && (since.length > 40 || Number.isNaN(Date.parse(since)))) throw new HttpError(400, 'since must be a date');
         if (session !== null && session.length > 20) throw new HttpError(400, 'session is too long');
         const out = await nightCards(await getDb(env), campaignOf(env), { now: now(), ...(since !== null ? { since: new Date(since).toISOString() } : {}), ...(session ? { session } : {}) });
-        return json({ cards: out.cards, updates: out.updates });
+        return json({ cards: out.cards, updates: out.updates, asks: out.asks });
       }
       if (request.method !== 'POST') return methodNotAllowed(['GET', 'POST']);
       const b = await readJsonObject(request, BODY_MAX);
@@ -382,6 +404,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const gateItem = action[1] === 'gatekeeper' ? cleanItem(body) : null;      // checked before the database or the key are touched
     if (gateItem && !gateItem.ok) throw new HttpError(400, gateItem.why);
     const screenIn = SCREEN_ACTIONS.includes(action[1]) ? cleanScreenBody(action[1], body) : null;      // a 400 comes before the database or the key
+    const askQ = action[1] === 'ask' ? cleanAskQuestion(body.q) : null;
+    if (action[1] === 'ask' && askQ === null) throw new HttpError(400, 'q is the question: 1-' + ASK_MAX + ' characters');
     const db = await getDb(env), campaign = campaignOf(env), t0 = now();
     // the Screen's code-only actions need no model and no key
     if (action[1] === 'board') return json(await boardOf(db, campaign, t0));
@@ -438,6 +462,26 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       await logRow(db, campaign, { at, session, seat, cfg, usage: r && r.usage, cost: r && r.cost, flags: [seat], timing,
         card: out ? { out, shown: 0, made: item ? 1 : 0 } : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : 'no JSON', shown: 0 } }).run();
       return json({ item: item ? { ...item, at } : null, spend: spend(), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
+    }
+
+    if (action[1] === 'ask') {
+      // Ask Blade: the GM's own question, answered in plain text for the GM's eyes only. The ladder is the Screen's: stops at 85% of the cap, 429 at the cap or while busy
+      const gate = canRun('ask', { now: t0, lastRun: {}, inFlight, tier });
+      if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? (tier === 'off' ? "tonight's cap is reached" : 'the budget ladder has dropped this for tonight') : 'this is busy');
+      if (legacy || !fileId) return json({ answer: null, spend: spend(), warnings: legacy ? [REPUSH] : ['no assist part in the GM pack'] });
+      const sr = await lastStory(db, campaign, t0);          // any session will do: the GM is asking about the night
+      storyText = sr ? sr.story : '';
+      const history = await askHistory(db, campaign, t0);
+      const { lines: recent } = await readLines(db, campaign, { since: new Date(t0 - ASK_WINDOW_MIN * 60 * 1000).toISOString() });
+      const { cfg, r, timing } = await run('ask', askUser({ q: askQ, history, stamp: hhmm(t0), talk: formatLines(recent, speakers) }));
+      const at = new Date(now()).toISOString();
+      if (fileMissing) return json({ answer: null, spend: spend(), warnings });                // nothing was billed or logged: the file is gone
+      // run() nulls r.json only: a refusal or a reply cut off at the limit shows nothing, whatever text came with it
+      const text = r && r.stop !== 'refusal' && r.stop !== 'max_tokens' ? clipAnswer(r.text) : '';
+      const session = recent.length ? recent[recent.length - 1].session : sr ? sr.session : '';
+      await logRow(db, campaign, { at, session, seat: 'ask', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['ask'], timing,
+        card: { ask: 1, q: askQ, text, shown: 0, ...(text ? {} : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : r && r.stop === 'max_tokens' ? 'cut off' : 'no text' }) } }).run();
+      return json({ answer: text ? { q: askQ, text, at } : null, spend: spend(), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
     }
 
     if (action[1] === 'gatekeeper') {

@@ -4,7 +4,7 @@
    `characters` collection, the shared `campaign/main` document (CAMPAIGN.md) and the `npcs` collection (CAST.md).
    window.claude.rules (list, import, saveHouse, deleteHouse) is the rules wiki's corpus (RULES.md).
    window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay, ambient,
-   patchAmbient, stt, patchStt, sttToken, transcript, addTranscript, assistTick, assistFit, assistCards, assistMark) is the GM tools'
+   patchAmbient, stt, patchStt, sttToken, transcript, addTranscript, assistTick, assistFit, assistCards, assistMark, assistAsk) is the GM tools'
    API (GM.md): plain calls, never queued, cached or snapshotted here.
    window.claude.profile.setName(name) changes the signed-in person's own display name (PATCH /api/me); a plain call too.
    Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network
@@ -1198,7 +1198,9 @@
     assistWire: function () { return api('POST', '/gm/assist/wire', {}, 60000); },
     assistBoard: function () { return api('POST', '/gm/assist/board', {}); },
     assistGate: function (req) { return api('POST', '/gm/assist/gatekeeper', req || {}, 60000); },
-    assistPortraitAdd: function (req) { return api('POST', '/gm/assist/portrait-add', req || {}); }
+    assistPortraitAdd: function (req) { return api('POST', '/gm/assist/portrait-add', req || {}); },
+    /* Ask Blade (the box's question field; GM.md): POST /api/gm/assist/ask { q } -> { answer: { q, text, at } | null, spend }; Opus can take over a minute, so it waits 120 */
+    assistAsk: function (req) { return api('POST', '/gm/assist/ask', req || {}, 120000); }
   };
 
   /* ---------- profile: the signed-in person's own display name (PATCH /api/me). A plain call: never queued, so it

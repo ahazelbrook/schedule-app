@@ -240,7 +240,7 @@ await test('the box is in the GM bundle only, before gm-page.js, and the avatar 
 
 await test('GM only and never player-visible: the box touches nothing but stt / assistTick / assistFit, stores nothing, no network of its own', () => {
   const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'assist-panel.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.deepEqual([...new Set([...src.matchAll(/\bgm\.(\w+)/g)].map((m) => m[1]))].sort(), ['assistAnother', 'assistCards', 'assistFit', 'assistGate', 'assistMark', 'assistTick', 'stt']);
+  assert.deepEqual([...new Set([...src.matchAll(/\bgm\.(\w+)/g)].map((m) => m[1]))].sort(), ['assistAnother', 'assistAsk', 'assistCards', 'assistFit', 'assistGate', 'assistMark', 'assistTick', 'stt']);
   assert.ok(!/localStorage|sessionStorage|indexedDB|fetch\(|XMLHttpRequest|setDisplay|patchState|patchAmbient|patchStt|sendBeacon|eval\(|innerHTML\s*=\s*[^'"(\s]*\bc\.text/.test(src), 'no storage, no network, no display or state write');
   const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
   const m = /function mountAssist\(\) \{[\s\S]*?\n  \}\n/.exec(page);
@@ -256,6 +256,7 @@ await test('the gm adapter has assistTick (POST, cursor only when known) and ass
   assert.ok(/assistFit: function \(req\) \{ return api\('POST', '\/gm\/assist\/fit'/.test(src));
   assert.ok(/assistCards: function \(\) \{ return api\('GET', '\/gm\/assist\/cards'\)/.test(src));
   assert.ok(/assistMark: function \(req\) \{ return api\('POST', '\/gm\/assist\/cards'/.test(src));
+  assert.ok(/assistAsk: function \(req\) \{ return api\('POST', '\/gm\/assist\/ask', req \|\| \{\}, 120000\)/.test(src), 'Ask Blade waits up to 120 s for Opus');
 });
 
 // ---------- memory: a reload restores the chat; Keep files a Moment; high-importance cards say where they are saved ----------
@@ -714,6 +715,178 @@ await test('Screen wiring: the buttons are in the box, the page owns Show and Ad
   for (const [fn, p] of [['assistPortrait', 'portrait'], ['assistProp', 'prop'], ['assistWire', 'wire'], ['assistBoard', 'board'], ['assistGate', 'gatekeeper'], ['assistPortraitAdd', 'portrait-add']]) {
     assert.ok(new RegExp(fn + ": function \\([^)]*\\) \\{ return api\\('POST', '/gm/assist/" + p + "'").test(cf), fn);
   }
+});
+
+// ---------- Ask Blade: the question field at the top of the box ----------
+const ANS = { q: 'pitch three complications', text: 'One: a runner arrives early.\nTwo: the lamp goes out.', at: '2030-01-01T10:00:00.000Z' };
+function askRig(over = {}, brOpts) {
+  const r = rig(over, brOpts), asked = [];
+  r.gm.assistAsk = async (req) => { asked.push(req); if (r.gm.askErr) throw r.gm.askErr; return r.gm.askReply || { answer: ANS, spend: { tonight: 1.5, cap: 20, tier: 'all', tick: 0.5 } }; };
+  const ta = r.br.stub('#as-ask-q');
+  const submit = () => r.br.listeners.submit({ target: { getAttribute: (k) => (k === 'data-as-form' ? 'ask' : null) }, preventDefault() { r.prevented = (r.prevented || 0) + 1; } });
+  const key = (k, extra = {}) => { let pd = 0; r.br.listeners.keydown({ key: k, shiftKey: false, target: { tagName: 'TEXTAREA', id: 'as-ask-q' }, preventDefault() { pd++; }, ...extra }); return pd; };
+  return { ...r, asked, ta, submit, key };
+}
+
+await test('Ask Blade: the field is the first thing in the body, a 600-character textarea with the placeholder, and an Ask button; the page key ignores typing in it', () => {
+  const r = askRig(); const h = r.br.host.innerHTML;
+  assert.ok(h.indexOf('id="as-ask"') > h.indexOf('class="as-body"') && h.indexOf('id="as-ask"') < h.indexOf('id="as-list"') && h.indexOf('id="as-ask"') < h.indexOf('id="as-fit"'), 'above the cards and the Fixer');
+  assert.match(h, /<form class="as-ask" id="as-ask" data-as-form="ask"/);
+  assert.match(h, /<textarea id="as-ask-q" maxlength="600" rows="2" placeholder="Ask Blade: pitch three complications, write an epilogue for tonight…"/);
+  assert.match(h, /<button type="submit" class="as-go" id="as-ask-go">Ask<\/button>/);
+  assert.equal(GP.keyAction({ key: 'a', typing: true }), null, 'typing in the field does not open or close the box');
+  assert.deepEqual(GP.keyAction({ key: 'Escape', typing: true }), { type: 'esc' }, 'Escape in a field only blurs it (the page), the box stays');
+});
+
+await test('Ask Blade: submit sends { q } squashed, shows Thinking while it waits, then the answer under the field; the field is cleared; the spend is folded in', async () => {
+  const r = askRig(); let release;
+  r.gm.assistAsk = (req) => { r.asked.push(req); return new Promise((ok) => { release = () => ok({ answer: ANS, spend: { tonight: 1.5, cap: 20, tier: 'reduced', tick: 0.5 } }); }); };
+  r.ta.value = '  pitch   three\ncomplications ';
+  r.submit(); await tick();
+  assert.deepEqual(r.asked, [{ q: 'pitch three complications' }]);
+  assert.equal(r.br.stub('#as-ask-go').textContent, 'Thinking…'); assert.equal(r.br.stub('#as-ask-go').disabled, true); assert.equal(r.ctl.state().ask.busy, true);
+  assert.equal(await r.ctl.ask('a second one'), null, 'while it is thinking a second ask is ignored'); assert.equal(r.asked.length, 1);
+  release(); await tick(); await tick();
+  assert.equal(r.br.stub('#as-ask-go').textContent, 'Ask'); assert.equal(r.br.stub('#as-ask-go').disabled, false);
+  assert.equal(r.ta.value, '', 'cleared on success');
+  const s = r.ctl.state();
+  assert.deepEqual(s.asks, [{ id: 'a|' + ANS.at + '|' + ANS.q, at: ANS.at, q: ANS.q, text: ANS.text, kept: false }]);
+  const html = r.br.stub('#as-asks').innerHTML;
+  assert.match(html, /pitch three complications/); assert.match(html, /One: a runner arrives early\.\nTwo: the lamp goes out\./, 'line breaks are kept for white-space: pre-wrap');
+  assert.match(html, /Keep/); assert.match(html, /data-as="ask-x"/);
+  assert.equal(s.spend.tier, 'reduced'); assert.match(r.br.stub('#as-tier').textContent, /Reduced/);
+  assert.equal(r.calls.tick.length, 0, 'asking never ticks');
+});
+
+await test('Ask Blade: an answer is escaped; an empty field asks nothing; a long question is cut at 600; the newest answer is on top and ten are kept', async () => {
+  const r = askRig();
+  r.gm.askReply = { answer: { q: '<b>q</b>', text: '<img src=x onerror=1> & more', at: '2030-01-01T10:00:00.000Z' } };
+  assert.ok((await r.ctl.ask('<b>q</b>')).answer);
+  assert.ok(!/<img|<b>q/.test(r.br.stub('#as-asks').innerHTML) && /&lt;img/.test(r.br.stub('#as-asks').innerHTML));
+  assert.equal(await r.ctl.ask('   '), null); assert.equal(await r.ctl.ask(undefined), null);
+  assert.equal(r.asked.length, 1);
+  r.gm.askReply = undefined; await r.ctl.ask('x'.repeat(900));
+  assert.equal(r.asked[1].q.length, 600);
+  for (let i = 0; i < 12; i++) { r.gm.askReply = { answer: { q: 'q' + i, text: 'a' + i, at: '2030-01-01T11:' + String(i).padStart(2, '0') + ':00.000Z' } }; await r.ctl.ask('q' + i); }
+  const asks = r.ctl.state().asks;
+  assert.equal(asks.length, 10); assert.equal(asks[9].q, 'q11'); assert.equal(asks[0].q, 'q2');
+  const html = r.br.stub('#as-asks').innerHTML; assert.ok(html.indexOf('q11') < html.indexOf('q10'), 'newest first');
+});
+
+await test('Ask Blade: Enter asks, Shift+Enter is a new line, a composing Enter or an Enter elsewhere does nothing, and Escape in the field does not close the box', async () => {
+  const r = askRig(); r.ctl.open(); await tick();
+  r.ta.value = 'what next?';
+  assert.equal(r.key('Enter', { shiftKey: true }), 0, 'Shift+Enter: the browser adds the line break'); await tick(); assert.equal(r.asked.length, 0);
+  assert.equal(r.key('Enter', { isComposing: true }), 0); assert.equal(r.asked.length, 0);
+  assert.equal(r.key('Enter', { target: { tagName: 'INPUT', id: 'as-eff' } }), 0); assert.equal(r.asked.length, 0, 'not in the Effect field');
+  assert.equal(r.key('Enter'), 1, 'Enter is taken'); await tick(); await tick();
+  assert.deepEqual(r.asked, [{ q: 'what next?' }]);
+  assert.equal(r.key('Escape'), 0); assert.equal(r.ctl.isOpen(), true, 'Escape in the textarea leaves the box open');
+  r.br.listeners.keydown({ key: 'Escape', target: { tagName: 'DIV' }, preventDefault() {} }); assert.equal(r.ctl.isOpen(), false, 'Escape outside a field closes it');
+});
+
+await test('Ask Blade: a failure keeps the words in the field and says why in plain words; only a cap pauses the box', async () => {
+  const cases = [[err(500, '{"error":"boom"}'), /nothing to say to that just now/, ''], [err(undefined, 'offline', { network: true }), /Could not reach the server/, ''],
+    [err(429, 'this is busy'), /busy/, ''], [err(429, 'the budget ladder has dropped this for tonight'), /budget has dropped/, ''], [err(429, "tonight's cap is reached"), /Cap reached/, 'cap'],
+    [err(503, 'assist is not set up (no API key)'), /not set up on the server/, '']];
+  for (const [e, re, paused] of cases) {
+    const r = askRig(); r.gm.askErr = e; r.ta.value = 'keep these words';
+    const out = await r.ctl.ask('keep these words');
+    assert.ok(out && out.error, String(e.status)); assert.equal(r.ta.value, 'keep these words', 'the question stays');
+    const msg = r.br.stub('#as-ask-status').textContent;
+    assert.match(msg, re); assert.ok(!/ladder|\{|boom|offline/.test(msg), 'the server\'s own words are not shown');
+    assert.equal(r.br.stub('#as-ask-status').hidden, false); assert.equal(r.ctl.state().paused, paused); assert.equal(r.ctl.state().asks.length, 0);
+    assert.equal(r.br.stub('#as-ask-go').disabled, paused === 'cap' || paused === 'setup', 'the button is back unless the cap has stopped it');
+  }
+  // the next try clears the message
+  const r = askRig(); r.gm.askErr = err(500, 'x'); await r.ctl.ask('one'); r.gm.askErr = null; await r.ctl.ask('one');
+  assert.equal(r.br.stub('#as-ask-status').textContent, ''); assert.equal(r.ctl.state().asks.length, 1);
+});
+
+await test('Ask Blade: no answer (a refusal or a cut-off, logged on the server) says so and keeps the question; a missing briefing says that', async () => {
+  const r = askRig(); r.gm.askReply = { answer: null, spend: { tonight: 1, cap: 20, tier: 'all', tick: 0.1 } }; r.ta.value = 'my words';
+  assert.deepEqual(await r.ctl.ask('my words'), { error: 'none' });
+  assert.equal(r.br.stub('#as-ask-status').textContent, 'Blade had nothing to say to that just now. Try again.'); assert.equal(r.ta.value, 'my words'); assert.equal(r.ctl.state().asks.length, 0);
+  assert.equal(r.ctl.state().spend.tonight, 1, 'what the call cost still counts');
+  r.gm.askReply = { answer: null, spend: GOOD.spend, warnings: ['no assist part in the GM pack'] };
+  await r.ctl.ask('my words'); assert.match(r.br.stub('#as-ask-status').textContent, /no briefing loaded/);
+  r.gm.askReply = { answer: { q: 'x', text: '   ', at: 'a' } }; assert.deepEqual(await r.ctl.ask('x'), { error: 'none' }, 'a blank answer is none');
+});
+
+await test('Ask Blade: canAsk is false on a phone, with the cap or setup paused, from 85% (core) and at the cap, and when the runtime has no assistAsk; true up to 85%', async () => {
+  let r = askRig(); assert.equal(r.ctl.canAsk(), true);
+  for (const [tier, can] of [['all', true], ['reduced', true], ['core', false], ['off', false]]) {
+    r = askRig(); r.gm.reply = { ...GOOD, spend: { tonight: 1, cap: 20, tier } }; await r.ctl.poll();
+    assert.equal(r.ctl.canAsk(), can, tier);
+    await r.ctl.ask('hello');
+    assert.equal(r.asked.length, can ? 1 : 0, tier + (can ? ' asks' : ' makes no call'));
+    r.br.stub('#as-ask-q').value = ''; r.ctl.state();
+    assert.equal(r.br.stub('#as-ask-go').disabled, !can, tier + ' button');
+    if (!can) assert.match(r.br.stub('#as-ask-status').textContent, /budget/, 'and says why');
+  }
+  r = askRig(); r.gm.tickErr = err(503, 'x'); await r.ctl.poll(); assert.equal(r.ctl.state().paused, 'setup'); assert.equal(r.ctl.canAsk(), false);
+  r = askRig(); r.gm.tickErr = err(429, "tonight's cap is reached"); await r.ctl.poll(); assert.equal(r.ctl.state().paused, 'cap'); assert.equal(r.ctl.canAsk(), false);
+  r = askRig(); r.gm.tickErr = err(429, 'this is busy'); await r.ctl.poll(); assert.equal(r.ctl.state().paused, 'busy'); assert.equal(r.ctl.canAsk(), true, 'a busy tick does not stop a question');
+  const p = askRig({}, { phone: true }); assert.equal(p.ctl.canAsk(), false); assert.equal(await p.ctl.ask('hi'), null); assert.equal(p.asked.length, 0);
+  const brw = fakeBrowser();
+  const bare = A.create({ gm: { stt: async () => ({}), assistTick: async () => GOOD, assistFit: async () => ({}) }, doc: brw.doc, win: brw.win, noTimer: true });
+  assert.equal(bare.canAsk(), false); assert.equal(await bare.ask('hi'), null);
+  assert.equal(brw.stub('#as-ask').hidden, true, 'an older runtime without assistAsk is not offered the field');
+});
+
+await test('Ask Blade: the answers come back after a reload (deduped, newest first, kept marks), and a reload marks nothing', async () => {
+  const stored = { cards: [], updates: [], asks: [
+    { row: 1, at: '2030-01-01T10:00:00.000Z', q: 'first?', text: 'First answer.', kept: true },
+    { row: 2, at: '2030-01-01T10:05:00.000Z', q: 'second?', text: 'Second answer.', kept: false },
+    { row: 3, at: '2030-01-01T10:06:00.000Z', q: 'gone?', text: 'Dismissed one.', dismissed: true }, { at: 'x', q: '', text: 'no question' }, { at: 'y', q: 'blank?', text: '  ' }, null] };
+  const r = askRig({ stored }); await r.ctl.ready;
+  const s = r.ctl.state();
+  assert.deepEqual(s.asks.map((a) => [a.q, a.kept]), [['first?', true], ['second?', false]]);
+  const html = r.br.stub('#as-asks').innerHTML; assert.ok(html.indexOf('second?') < html.indexOf('first?'), 'newest on top'); assert.match(html, /★ Kept/);
+  assert.equal(r.calls.marks.length, 0);
+  // the same answer sent by the server twice is one answer
+  const again = { asks: stored.asks };
+  const st = { cards: [], updates: [], asks: [] }; assert.equal(P.restoreAsks(st, again), 2); assert.equal(P.restoreAsks(st, again), 0);
+  assert.equal(P.restore({ cards: [], updates: [] }, { asks: stored.asks }), 0, 'restore() tolerates a state with no asks list and returns the card count');
+  const many = { asks: Array.from({ length: 14 }, (_, i) => ({ at: '2030-01-01T10:' + String(i).padStart(2, '0') + ':00.000Z', q: 'q' + i, text: 'a' + i })) };
+  const st2 = { asks: [] }; P.restoreAsks(st2, many); assert.deepEqual([st2.asks.length, st2.asks[0].q, st2.asks[9].q], [10, 'q4', 'q13']);
+  // an old server with no `asks` is fine
+  const old = askRig({ stored: { cards: [], updates: [] } }); await old.ctl.ready; assert.deepEqual(old.ctl.state().asks, []);
+});
+
+await test('Ask Blade: Keep files "Blade, ask (HH:MM): question -> answer" through the page\'s capture (clipped to 500) and marks the server; × dismisses and marks', async () => {
+  const r = askRig(); await r.ctl.ask('pitch three complications');
+  const a = r.ctl.state().asks[0];
+  r.br.click('ask-keep', a.id); await tick();
+  assert.equal(r.notes.length, 1);
+  assert.equal(r.notes[0], 'Blade, ask (' + P.hhmm(ANS.at) + '): pitch three complications -> One: a runner arrives early. Two: the lamp goes out.');
+  assert.deepEqual(r.calls.marks, [{ op: 'keep', items: [{ at: ANS.at, text: ANS.q }] }]);
+  assert.equal(r.ctl.state().asks[0].kept, true); assert.match(r.br.stub('#as-asks').innerHTML, /★ Kept/); assert.ok(!/data-as="ask-keep"/.test(r.br.stub('#as-asks').innerHTML));
+  r.br.click('ask-keep', a.id); await tick(); assert.equal(r.notes.length, 1, 'kept once');
+  r.br.click('ask-x', a.id); await tick();
+  assert.deepEqual(r.calls.marks[1], { op: 'dismiss', items: [{ at: ANS.at, text: ANS.q }] });
+  assert.equal(r.ctl.state().asks.length, 0); assert.equal(r.br.stub('#as-asks').innerHTML, '');
+  // a long answer is clipped to what the capture bar takes
+  const long = askRig(); long.gm.askReply = { answer: { q: 'q', text: 'word '.repeat(400), at: ANS.at } }; await long.ctl.ask('q');
+  long.br.click('ask-keep', long.ctl.state().asks[0].id); await tick();
+  assert.ok(long.notes[0].length <= 500 && long.notes[0].endsWith('…') && long.notes[0].startsWith('Blade, ask ('), String(long.notes[0].length));
+  // the capture bar refusing it (full) leaves the answer unkept
+  const full = askRig({ onNote: () => false }); await full.ctl.ask('q');
+  full.br.click('ask-keep', full.ctl.state().asks[0].id); await tick(); assert.equal(full.ctl.state().asks[0].kept, false); assert.equal(full.calls.marks.length, 0);
+  // a failed server mark changes nothing on screen
+  const bad = askRig(); await bad.ctl.ask('q'); bad.gm.markErr = err(500, 'x');
+  bad.br.click('ask-x', bad.ctl.state().asks[0].id); await tick(); assert.equal(bad.ctl.state().asks.length, 0);
+  // no capture bar on the page: no Keep button
+  const nk = askRig({ onNote: undefined }); await nk.ctl.ask('q');
+  assert.ok(!/ask-keep/.test(nk.br.stub('#as-asks').innerHTML) && /ask-x/.test(nk.br.stub('#as-asks').innerHTML));
+});
+
+await test('Ask Blade: the helpers are plain, and the styles keep the answer to the box width and its line breaks', () => {
+  assert.equal(P.askAllowed('all'), true); assert.equal(P.askAllowed('reduced'), true); assert.equal(P.askAllowed('core'), false); assert.equal(P.askAllowed('off'), false);
+  for (const e of [err(500), err(400), err(undefined, 'x', { timeout: true }), err(429, 'busy'), err(429, 'cap'), err(429, 'ladder'), err(503)]) assert.ok(P.askErr(e) && !/[{}]/.test(P.askErr(e)));
+  assert.equal(P.askMoment({ at: ANS.at, q: ' q ', text: ' a \n b ' }), 'Blade, ask (' + P.hhmm(ANS.at) + '): q -> a b');
+  const css = fs.readFileSync(path.join(ROOT, 'app', 'gm.css'), 'utf8');
+  assert.match(css, /\.gm-assist \.as-answer \.as-text \{[^}]*white-space: pre-wrap/); assert.match(css, /\.gm-assist \.as-ask textarea \{[^}]*width: 100%[^}]*box-sizing: border-box/);
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
