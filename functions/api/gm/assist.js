@@ -62,7 +62,7 @@ import { loadStt, readLines } from '../../_lib/stt.js';
 import { makeClient, callSeat } from '../../_lib/assist/claude.js';
 import { SEATS, WAKES } from '../../_lib/assist/seats.js';
 import { fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX } from '../../_lib/assist/prompts.js';
-import { DEFAULT_CAP, budgetTier, canRun, decide } from '../../_lib/assist/conductor.js';
+import { DEFAULT_CAP, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS } from '../../_lib/assist/conductor.js';
 import { toCandidate, toVoice, toAnother, toStall, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
 
@@ -164,6 +164,13 @@ async function tonight(db, campaign, now) {
   const since = new Date(now - NIGHT_MS).toISOString();
   const r = await db.prepare('SELECT COALESCE(SUM(cents), 0) AS cents FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2').bind(campaign, since).first();
   return (r ? r.cents : 0) / 100;
+}
+
+// the previous tick's Tripwire row (its flags), for the Ref follow-through
+async function prevTripwire(db, campaign, now) {
+  const since = new Date(now - FOLLOW_WINDOW_MS).toISOString();
+  const r = await db.prepare("SELECT at, flags FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'tripwire' ORDER BY id DESC LIMIT 1").bind(campaign, since).first();
+  return r ? { at: Date.parse(r.at), flags: String(r.flags || '').split(',').filter(Boolean) } : null;
 }
 
 async function lastRuns(db, campaign, now) {
@@ -349,6 +356,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const lastRun = await lastRuns(db, campaign, t0);
     const gate = canRun('tripwire', { now: t0, lastRun, inFlight, tier });
     if (!gate.ok) return done([], [], last);
+    const prev = await prevTripwire(db, campaign, t0);            // read before this tick's own Tripwire row is written
     const tw = await run('tripwire', 'New talk, up to ' + hhmm(t0) + ':\n' + freshText);
     if (fileMissing) return done([], [], last);          // nothing was billed or logged: the file is gone
     const twAt = new Date(now()).toISOString();
@@ -357,7 +365,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       card: tw.r ? { out: tw.r.json } : { error: errors.length ? errors[0].error : 'no reply' } }).run();
 
     // 'tick' wakes the Showrunner, paced by its 10-minute cooldown; with nothing else woken a tick costs no model call
-    const verdict = decide({ flags: flags.concat('tick'), now: t0, lastRun, inFlight, spent: spentBefore + thisTick, cap, wakes, onStage: !!npc });
+    const verdict = decide({ flags: flags.concat('tick'), now: t0, lastRun, inFlight, spent: spentBefore + thisTick, cap, wakes, onStage: !!npc, follow: followsThrough(prev, t0) });
     // a quiet tick still releases a Ref card the gap held back (one cheap read, only when no seat woke): without it a slip held behind
     // another seat's card would go stale before any flag woke a seat again
     let held = null;

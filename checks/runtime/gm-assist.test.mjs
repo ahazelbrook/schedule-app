@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
 import { cleanLines, addLines } from '../../functions/_lib/stt.js';
-import { decide, budgetTier, canRun, isRepeatSlip, slipKeys, COOLDOWN_MS, DEFAULT_CAP, DROPPED_WHEN_REDUCED, CORE_SEATS } from '../../functions/_lib/assist/conductor.js';
+import { followsThrough, FOLLOW_WINDOW_MS, decide, budgetTier, canRun, isRepeatSlip, slipKeys, COOLDOWN_MS, DEFAULT_CAP, DROPPED_WHEN_REDUCED, CORE_SEATS } from '../../functions/_lib/assist/conductor.js';
 import { toCandidate, toVoice, toAnother, toStall, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
 import { callSeat, countTokens } from '../../functions/_lib/assist/claude.js';
 import { SEATS, WAKES } from '../../functions/_lib/assist/seats.js';
@@ -1264,7 +1264,7 @@ await test('tick: Ref has priority: a non-Ref card never holds a slip back, a Re
   clock.t += 3.1 * 60_000; await s.lines(2); s.calls.length = 0;
   s.replies.tripwire = { ...NONE };
   out = await body(await s.post('tick', {}));
-  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire'], 'no seat woke');
+  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire', 'ref'], 'only the Ref follow-through woke (the previous tick flagged roll_talk)');
   assert.equal(out.cards.length, 1); assert.equal(out.cards[0].text, 'A different slip');
   clock.t += 60_000; await s.lines(2);
   assert.deepEqual((await body(await s.post('tick', {}))).cards, []);
@@ -1314,6 +1314,52 @@ await test('tripwire: the stall flag is narrow (circling, silence, unanswered qu
   assert.equal(Object.keys(SEATS.tripwire.schema.properties).length, 8);
   assert.ok(/stopped or is going in circles/.test(SEATS.tripwire.schema.properties.stall.description));
   assert.equal(SEATS.tripwire.schema.properties.roll_talk.description, undefined, 'other flags keep their plain schema');
+});
+
+await test('follow-through (pure): Ref is woken once after a roll_talk tick, under the same gates, and never chains', () => {
+  const P = { at: T, flags: ['roll_talk', 'tick'] }, W = WAKES;
+  assert.equal(followsThrough(P, T + 60_000), true);
+  assert.equal(followsThrough({ at: T, flags: ['harm'] }, T + 60_000), false, 'only roll_talk follows');
+  assert.equal(followsThrough(null, T), false);
+  assert.equal(followsThrough(P, T + FOLLOW_WINDOW_MS + 1), false, 'a stale tick does not follow');
+  const base = { flags: ['tick'], now: T + 61_000, lastRun: { ref: T + 1 }, wakes: W };
+  assert.deepEqual(decide({ ...base, follow: true }).seats.slice(0, 1), ['ref'], 'woken with no flag');
+  assert.ok(!decide({ ...base }).seats.includes('ref'), 'no follow, no wake');
+  assert.deepEqual(decide({ ...base, flags: ['roll_talk', 'tick'], follow: true }).seats.filter((x) => x === 'ref'), ['ref'], 'a real roll_talk wake is not doubled');
+  // a follow-through tick has no roll_talk flag, so its Tripwire row cannot start another
+  assert.equal(followsThrough({ at: T + 61_000, flags: ['tick'] }, T + 122_000), false, 'no chain');
+  // gates
+  assert.ok(!decide({ ...base, follow: true, inFlight: ['ref'] }).seats.includes('ref'), 'in flight');
+  assert.ok(!decide({ ...base, follow: true, lastRun: { ref: T + 61_000 - 30_000 } }).seats.includes('ref'), 'cooldown');
+  assert.ok(!decide({ ...base, follow: true, spent: 20, cap: 20 }).seats.includes('ref'), 'cap reached');
+  assert.ok(decide({ ...base, follow: true, spent: 18, cap: 20 }).seats.includes('ref'), 'core tier still runs Ref');
+});
+
+await test('tick: Ref follows a roll_talk tick once on the next tick with new talk, not again, and the same slip never shows twice', async () => {
+  clock.t = Date.parse('2030-04-01T09:00:00.000Z');
+  const s = await setup(FULL);
+  await s.lines(3);
+  s.replies.tripwire = { ...NONE, roll_talk: true };
+  s.replies.showrunner = { ...s.replies.showrunner, speak: false };
+  const t1 = await body(await s.post('tick', {}));
+  assert.equal(t1.cards.filter((c) => c.seat === 'ref').length, 1, 'tick 1 shows the slip');
+  // tick 2: new talk, the Tripwire flags nothing; Ref still looks once, and finds the same slip: no second card
+  s.calls.length = 0; clock.t += 61_000; await s.lines(2);
+  s.replies.tripwire = { ...NONE };
+  const t2 = await body(await s.post('tick', {}));
+  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire', 'ref'], 'follow-through call');
+  assert.deepEqual(t2.cards.filter((c) => c.seat === 'ref'), [], 'the same slip is dropped by the repeat rule');
+  // tick 3: Ref does not chain
+  s.calls.length = 0; clock.t += 61_000; await s.lines(2);
+  const t3 = await body(await s.post('tick', {}));
+  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire'], 'no chain');
+  assert.deepEqual(t3.cards, []);
+  // a tick with no new talk costs nothing and does not use the follow-through up
+  s.calls.length = 0; clock.t += 61_000; s.replies.tripwire = { ...NONE, roll_talk: true }; await s.lines(2);
+  await s.post('tick', {});
+  s.calls.length = 0; clock.t += 61_000; s.replies.tripwire = { ...NONE };
+  const idle = await body(await s.post('tick', {}));
+  assert.deepEqual(s.calls.map((c) => c.seat), [], 'no new talk, no call'); assert.deepEqual(idle.cards, []);
 });
 
 console.log(failed ?`\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);
