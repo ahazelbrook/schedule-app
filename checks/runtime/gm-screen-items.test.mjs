@@ -31,7 +31,7 @@ await test('seats: portrait Sonnet 5.5 medium, prop Opus 5.5 medium with 8k, wir
   for (const s of ['portrait', 'prop', 'wire']) {
     assert.ok(SEATS[s].maxTokens >= 1500 && SEATS[s].schema.additionalProperties === false, s);
     assert.ok(!(s in WAKES) && !Object.values(WAKES).some((f) => f.includes(s)), s + ' is the GM\'s button only');
-    assert.ok(!/Doskvol|Duskwall|Tailor|Brackley|Karla/.test(SEATS[s].instructions), s + ' is generic');
+    assert.ok(!/[[|gm-private|[A-Z][a-z]+ [A-Z][a-z]+ (said|wore|is)/.test(SEATS[s].instructions), s + ' is generic: no names or wikilinks');
   }
   assert.deepEqual(SEATS.portrait.schema.required, ['name', 'description', 'spec_json']);
   assert.deepEqual(SEATS.prop.schema.required, ['title', 'text']);
