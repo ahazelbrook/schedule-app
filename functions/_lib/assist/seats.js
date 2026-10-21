@@ -18,7 +18,7 @@ Prefer false: most minutes have no flags at all. Reply with JSON only.`,
   },
 
   ref: {
-    model: 'claude-sonnet-5-5', effort: 'medium', maxTokens: 3000,
+    model: 'claude-sonnet-5-5', effort: 'low', maxTokens: 3000,
     instructions: `You are the rules referee for a Blades '68 game, watching the last few minutes of a live transcript. Using ONLY the rules reference in your context, decide whether the GM or players just made a rules slip that would change play: a wrong harm penalty, wrong resistance attribute, wrong complication dice, position or effect set after the dice, a missed free ability, a wrong stress or xp cost. Cite the rule and its page from the reference. Check ORDER: position and effect must be stated BEFORE the dice are rolled; if the transcript shows the roll first and the position or risk named afterwards (even casually, even if everyone agrees), that is a slip. Also check harm handling, who gets the dice, and costs. If you are not sure it is a slip, or it is only a style choice, say none. Silence is the normal answer; false alarms cost more than misses. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
@@ -43,19 +43,6 @@ Prefer false: most minutes have no flags at all. Reply with JSON only.`,
         one_three: { type: 'string' }, four_five: { type: 'string' }, six: { type: 'string' }, crit: { type: 'string' }, bargain: { type: 'string' },
       },
       required: ['read', 'one_three', 'four_five', 'six', 'crit', 'bargain'],
-    },
-  },
-
-  closer: {
-    model: 'claude-sonnet-5-5', effort: 'low', maxTokens: 4000,
-    instructions: `You are the GM's closing checklist for a Blades '68 game. Read the score's transcript (from the start of the score to now) and prepare what the close needs. xp: for each player character, list every xp trigger actually seen (desperate rolls, zero-dot rolls, the playbook and crew triggers, a key or deadlock) with its [HH:MM] stamp, and a total; do not invent triggers. checklist: for each close step (xp walked, heat, wanted level, harm complications, question cards, downtime unwind) say done, skipped or unclear, from the transcript only. Reply with JSON only.`,
-    schema: {
-      type: 'object', additionalProperties: false,
-      properties: {
-        xp: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { who: { type: 'string' }, triggers: { type: 'array', items: { type: 'string' } }, total: { type: 'number' } }, required: ['who', 'triggers', 'total'] } },
-        checklist: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { step: { type: 'string' }, state: { type: 'string', enum: ['done', 'skipped', 'unclear'] } }, required: ['step', 'state'] } },
-      },
-      required: ['xp', 'checklist'],
     },
   },
 

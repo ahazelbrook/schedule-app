@@ -104,11 +104,11 @@ await test('a prefix over ~90k tokens (characters / 3.5) warns; one under it doe
 const GM = { role: 'gm', id: 'gm@example.test' };
 const t0 = Date.parse('2030-02-01T09:30:00.000Z');
 
-await test('assist.js uses the built part as its cached prefix, and drops the "no assist part" warning', async () => {
+await test('assist.js reads the small part (file id) and names that file in every seat call, never the prefix text', async () => {
   const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });
   const db = asD1(exec);
   const { part } = build({ prep: PREP });
-  const c = cleanPart({ part: 'assist', src: part.src, body: { prefix: part.prefix } });
+  const c = cleanPart({ part: 'assist', src: part.src, body: { file_id: 'file_011TESTinvented0000', hash: 'h' } });
   exec.db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', ?, 0, ?)").run(c.src, c.body);
   const seen = [];
   const client = { messages: { async create(req) {
@@ -122,8 +122,9 @@ await test('assist.js uses the built part as its cached prefix, and drops the "n
   const out = JSON.parse(await res.text());
   assert.equal(out.warnings, undefined);
   assert.equal(seen.length, 1);
-  assert.equal(seen[0].system[0].text, part.prefix);
-  assert.deepEqual(seen[0].system[0].cache_control, { type: 'ephemeral', ttl: '1h' });
+  assert.deepEqual(seen[0].messages[0].content[0].source, { type: 'file', file_id: 'file_011TESTinvented0000' });
+  assert.deepEqual(seen[0].messages[0].content[0].cache_control, { type: 'ephemeral', ttl: '1h' });
+  assert.ok(!JSON.stringify(seen[0]).includes('Roll the dice'));
 });
 
 // ---------- GM only ----------

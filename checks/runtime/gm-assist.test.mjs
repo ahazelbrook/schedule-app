@@ -9,6 +9,8 @@ import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
 import { cleanLines, addLines } from '../../functions/_lib/stt.js';
 import { decide, budgetTier, canRun, isRepeatSlip, slipKeys, COOLDOWN_MS, DEFAULT_CAP } from '../../functions/_lib/assist/conductor.js';
 import { toCandidate, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
+import { callSeat, countTokens } from '../../functions/_lib/assist/claude.js';
+import { SEATS, WAKES } from '../../functions/_lib/assist/seats.js';
 import { makeHandler, onRequest as realHandler } from '../../functions/api/gm/assist.js';
 import { matchApi } from '../../worker/app.js';
 import { gmNotFound } from '../../functions/_lib/gm.js';
@@ -151,9 +153,11 @@ function fakeClient(replies, calls) {
   return {
     messages: {
       async create(req) {
-        const ins = req.system[req.system.length - 1].text;
+        const texts = req.messages[0].content.filter((b) => b.type === 'text').map((b) => b.text);
+        const ins = texts[0];
+        const doc = req.messages[0].content.find((b) => b.type === 'document');
         const seat = /listen to a live/.test(ins) ? 'tripwire' : /rules referee/.test(ins) ? 'ref' : /keep the canon/.test(ins) ? 'clerk' : /keep the ledger/.test(ins) ? 'ledger' : /fixer/.test(ins) ? 'fixer' : 'other';
-        calls.push({ seat, model: req.model, effort: req.output_config.effort, cached: req.system.length > 1, user: req.messages[0].content });
+        calls.push({ seat, model: req.model, effort: req.output_config.effort, cached: !!doc, doc, ins, user: texts[texts.length - 1] });
         const r = replies[seat];
         if (r instanceof Error) throw r;
         return { content: [{ type: 'text', text: JSON.stringify(typeof r === 'function' ? r() : r) }], usage: { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 10000, cache_creation_input_tokens: 0 }, stop_reason: 'end_turn' };
@@ -239,7 +243,7 @@ await test('tick: Tripwire flags wake Ref and Ledger; the Ref slip comes back as
   assert.deepEqual(rows.map((r) => r.seat), ['tripwire', 'ref', 'ledger']);
   const ref = rows.find((r) => r.seat === 'ref');
   assert.equal(ref.model, 'claude-sonnet-5-5');
-  assert.equal(ref.effort, 'medium');
+  assert.equal(ref.effort, 'low');
   assert.equal(ref.input_tokens, 1000); assert.equal(ref.output_tokens, 200); assert.equal(ref.cache_read, 10000); assert.equal(ref.cache_write, 0);
   // sonnet: 1000*2 + 10000*0.2 + 200*10 = 6000 per million tokens -> $0.006 = 0.6 cents
   assert.ok(Math.abs(ref.cents - 0.6) < 1e-9, 'cents ' + ref.cents);
@@ -415,21 +419,86 @@ await test('the cap is a Worker setting (ASSIST_CAP_USD) and spend older than 12
   assert.equal(out.spend.tier, 'off'); assert.equal(s.calls.length, 0);
 });
 
-await test('the cached prefix and per-seat extras come from the GM pack part `assist`', async () => {
-  clock.t = Date.parse('2030-01-01T14:00:00.000Z');
+const FID = 'file_011TESTinvented0000';
+async function tickWith(partBody, mkErr) {
+  clock.t += 3_600_000;
   const s = await setup();
-  const part = JSON.stringify({ prefix: 'RULES DIGEST PLACEHOLDER', extra: { ref: 'EXTRA FOR REF' } });
-  s.exec.db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', '{}', 0, ?)").run(part);
+  if (partBody) s.exec.db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', '{}', 0, ?)").run(JSON.stringify(partBody));
   const seen = [];
-  const handler = makeHandler({ now: () => clock.t, clientFor: () => ({ messages: { async create(req) { seen.push(req); return fakeClient(s.replies, s.calls).messages.create(req); } } }) });
+  const handler = makeHandler({ now: () => clock.t, clientFor: () => ({ messages: { async create(req) { seen.push(req); if (mkErr) throw mkErr; return fakeClient(s.replies, s.calls).messages.create(req); } } }) });
   await s.lines(2);
-  const res = await handler({ request: new Request('https://blades.example.test/api/gm/assist/tick', { method: 'POST', body: '{}' }), env: s.env, data: { me: GM } });
-  const out = await body(res);
+  const out = await body(await handler({ request: new Request('https://blades.example.test/api/gm/assist/tick', { method: 'POST', body: '{}' }), env: s.env, data: { me: GM } }));
+  return { s, seen, out };
+}
+
+await test('the prefix is a file id in the Worker: a document block first in the user turn, the 1-hour breakpoint on it, no system prompt, seat extras after it', async () => {
+  const { seen, out } = await tickWith({ file_id: FID, hash: 'h', extra: { ref: 'EXTRA FOR REF' } });
   assert.equal(out.warnings, undefined);
-  const ref = seen.find((r) => /rules referee/.test(r.system[r.system.length - 1].text));
-  assert.equal(ref.system[0].text, 'RULES DIGEST PLACEHOLDER');
-  assert.deepEqual(ref.system[0].cache_control, { type: 'ephemeral', ttl: '1h' });
-  assert.match(ref.system[ref.system.length - 1].text, /EXTRA FOR REF$/);
+  assert.ok(seen.length >= 2);
+  for (const r of seen) {
+    assert.equal(r.system, undefined, 'nothing seat-specific goes before the breakpoint: no system prompt at all');
+    const c = r.messages[0].content;
+    assert.deepEqual(c[0], { type: 'document', source: { type: 'file', file_id: FID }, title: 'context', cache_control: { type: 'ephemeral', ttl: '1h' } });
+    assert.ok(c.slice(1).every((b) => b.type === 'text' && !b.cache_control), 'only the document carries a breakpoint');
+    assert.equal(c.length, 3, 'document, seat instructions, the talk');
+  }
+  const ref = seen.find((r) => /rules referee/.test(r.messages[0].content[1].text));
+  assert.match(ref.messages[0].content[1].text, /EXTRA FOR REF$/);
+  const docs = new Set(seen.map((r) => JSON.stringify(r.messages[0].content[0])));
+  assert.equal(docs.size, 1, 'every seat sends the identical document block, so one cache entry serves them all');
+});
+
+await test('a part that still carries prefix text: nothing is sent to the provider, the box stays quiet and says to re-push', async () => {
+  const { seen, out, s } = await tickWith({ prefix: 'OLD FORMAT PREFIX TEXT', extra: { ref: 'x' } });
+  assert.equal(seen.length, 0);
+  assert.deepEqual(out.cards, []); assert.deepEqual(out.flags, []);
+  assert.deepEqual(out.warnings, ['re-push the assist part']);
+  assert.equal(s.rows().length, 0);
+  const fit = await body(await s.post('fit', { position: 'risky' }));
+  assert.deepEqual(fit.cards, []); assert.deepEqual(fit.warnings, ['re-push the assist part']);
+  assert.equal(s.calls.length, 0);
+});
+
+await test('a missing or deleted file: a re-push warning, never the provider message', async () => {
+  for (const err of [Object.assign(new Error('404 {"error":{"message":"File not found: file_011SECRETDETAIL"}}'), { status: 404 }), Object.assign(new Error('400 invalid file_id file_011SECRETDETAIL'), { status: 400 })]) {
+    const { out, seen } = await tickWith({ file_id: FID, hash: 'h' }, err);
+    assert.deepEqual(out.warnings, ['re-push the assist part']);
+    assert.equal(out.errors, undefined);
+    assert.deepEqual(out.cards, []);
+    assert.equal(seen.length, 1, 'the Tripwire found the file gone and nothing else was called');
+    assert.ok(!JSON.stringify(out).includes('SECRETDETAIL') && !JSON.stringify(out).includes('not found'));
+  }
+  const { out } = await tickWith({ file_id: FID, hash: 'h' }, Object.assign(new Error('overloaded'), { status: 529 }));
+  assert.deepEqual(out.errors, [{ seat: 'tripwire', error: 'provider status 529' }], 'other failures stay as before');
+  assert.equal(out.warnings, undefined);
+});
+
+await test('the Worker request carries a file id, not the prefix', async () => {
+  const { seen } = await tickWith({ file_id: FID, hash: 'h' });
+  assert.ok(JSON.stringify(seen[0]).length < 3000);
+});
+
+await test('callSeat/countTokens layout: file id form for the Worker, inline text form for scripts, same order, nothing before the breakpoint', async () => {
+  const sent = [];
+  const rec = { messages: { async create(req) { sent.push(req); return { content: [{ type: 'text', text: '{}' }], usage: {}, stop_reason: 'end_turn' }; }, async countTokens(req) { sent.push(req); return { input_tokens: 7 }; } } };
+  await callSeat(rec, { model: 'claude-haiku-5-5', effort: 'low', prefixFileId: FID, instructions: 'INS', user: 'TALK' });
+  await callSeat(rec, { model: 'claude-haiku-5-5', effort: 'low', prefix: 'INLINE TEXT', instructions: 'INS', user: 'TALK' });
+  await callSeat(rec, { model: 'claude-haiku-5-5', effort: 'low', instructions: 'INS', user: 'TALK' });
+  assert.equal(await countTokens(rec, { model: 'claude-haiku-5-5', prefix: 'INLINE TEXT', instructions: 'INS', user: 'TALK' }), 7);
+  assert.equal(await countTokens(rec, { model: 'claude-haiku-5-5', prefixFileId: FID, user: 'TALK' }), 7);
+  const bp = { type: 'ephemeral', ttl: '1h' };
+  assert.deepEqual(sent[0].messages[0].content, [{ type: 'document', source: { type: 'file', file_id: FID }, title: 'context', cache_control: bp }, { type: 'text', text: 'INS' }, { type: 'text', text: 'TALK' }]);
+  assert.deepEqual(sent[1].messages[0].content, [{ type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'INLINE TEXT' }, title: 'context', cache_control: bp }, { type: 'text', text: 'INS' }, { type: 'text', text: 'TALK' }]);
+  assert.deepEqual(sent[2].messages[0].content, [{ type: 'text', text: 'INS' }, { type: 'text', text: 'TALK' }], 'no prefix: no document block');
+  assert.deepEqual(sent[3].messages[0].content, sent[1].messages[0].content, 'countTokens counts the same layout');
+  assert.deepEqual(sent[4].messages[0].content, [sent[0].messages[0].content[0], { type: 'text', text: 'TALK' }]);
+  for (const r of sent) assert.equal(r.system, undefined);
+});
+
+await test('seats: Ref runs at low effort, the closer seat is retired, and nothing wakes it', async () => {
+  assert.equal(SEATS.ref.effort, 'low');
+  assert.equal(SEATS.closer, undefined);
+  assert.ok(!JSON.stringify(WAKES).includes('closer'));
 });
 
 await test('fit: the Fixer for a named position; logged; the position reaches the prompt; busy and cooldown are 429', async () => {

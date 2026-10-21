@@ -16,6 +16,7 @@ import crypto from 'node:crypto';
 import { cleanPart, shortHash, packHeads, LIMITS } from '../../functions/_lib/gm.js';
 import { bindSql, literal, charCost, MAX_COMMAND_COST } from './d1.mjs';
 import { packLosses } from './pack-guard.mjs';
+import { preparePart, finishPart, defaultClient, STATE_NAME } from './assist-file.mjs';
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 export const STAGE_DDL = 'CREATE TABLE IF NOT EXISTS gm_sync_stage (token TEXT NOT NULL, campaign TEXT NOT NULL, part TEXT NOT NULL, ' +
@@ -59,7 +60,22 @@ export async function pushPack(ctx) {
   const heads = await packHeads(db, campaign);
   const byName = new Map(heads.map((h) => [h.part, h]));
   const todo = [];
+  // The assist part is pushed as a small { file_id, hash, extra } and its prefix goes to Anthropic's Files API instead
+  // (lib/assist-file.mjs): an upload only when the text changed, never in a dry run, and the replaced file is deleted after
+  // the part is in D1. The local pack file keeps the text.
+  const planning = !!(ctx.dryRun || !ctx.yes);
+  const stateFile = path.join(ctx.privateDir || path.dirname(file), STATE_NAME);
+  const filesClient = () => (ctx.assistClient !== undefined ? ctx.assistClient : defaultClient());
+  let assistTouched = false, assistClient = null;
   for (const raw of pk.parts) {
+    if (raw.part === 'assist' && typeof raw.body.prefix === 'string') {
+      assistTouched = true;
+      assistClient = planning ? null : filesClient();
+      const prep = await preparePart(raw.body, { stateFile, client: assistClient, dryRun: planning });
+      if (prep.action === 'no-key') { report.refuse('pack:assist', prep.note, []); continue; }
+      report.note('assist: ' + prep.note);
+      raw.body = prep.body;
+    }
     let c;
     try { c = cleanPart(raw); } catch (e) { report.refuse('pack:' + raw.part, e.message, []); continue; }
     const version = await shortHash(c.body), h = byName.get(c.part);
@@ -67,11 +83,16 @@ export async function pushPack(ctx) {
     todo.push({ ...c, version });
   }
   for (const h of heads) if (!pk.parts.some((p) => p.part === h.part)) report.note('pack: the server has a part "' + h.part + '" the file lacks; left in place');
-  if (!todo.length) return;
+  const finishAssist = async () => {
+    if (!assistTouched || planning || !assistClient) return;
+    const f = await finishPart({ stateFile, client: assistClient });
+    if (f.note) report.note('assist: ' + f.note);
+  };
+  if (!todo.length) { await finishAssist(); return; }
   /* the guard: sizes from the index; the server's prep notes from its body */
   const before = {}, after = {};
   for (const t of todo) {
-    const h = byName.get(t.part); if (!h) continue;
+    const h = byName.get(t.part); if (!h || t.part === 'assist') continue;   // assist changed form (text -> file id): no size to compare
     before[t.part] = h.bytes || 0; after[t.part] = t.bytes;
     if (t.part === 'prep') {
       const row = await db.prepare('SELECT body FROM gm_pack WHERE campaign = ?1 AND part = ?2').bind(campaign, 'prep').first();
@@ -111,4 +132,5 @@ export async function pushPack(ctx) {
     ledger.pack[t.part] = { version: t.version };
     report.pushed.push({ id: t.part, what: 'pack part ' + t.part + ' v' + t.version + ' (' + list.length + ' pieces, read back and verified)' });
   }
+  await finishAssist();
 }

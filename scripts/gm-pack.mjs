@@ -37,7 +37,8 @@
 //             over the app's built-in downtime tables; it is the only place they live outside the vault. No such note: no part.
 //
 //   assist    { prefix }: the cached prefix for "Claude at the table" (functions/api/gm/assist.js): the rules reference, the NPC
-//             cast and tonight's prep as <context name="..."> blocks (lib/assist-export.mjs). GM only. Tonight's prep is
+//             cast and tonight's prep as <context name="..."> blocks (lib/assist-export.mjs). GM only. This file keeps the text;
+//             gm-sync push uploads it to Anthropic's Files API and pushes only { file_id, hash, extra } (lib/assist-file.mjs). Tonight's prep is
 //             --assist-prep <vault-relative note> or "prep" in gm-private/assist-config.json; warns past ~90k tokens.
 //
 // F (the figure map) comes from the vault page Tools/blades-68-npc-figure-map.md, read as JSON from fenced code blocks:

@@ -20,13 +20,17 @@
 // the Conductor's memory, because a Worker keeps nothing between requests. The key is the Worker secret ANTHROPIC_API_KEY;
 // it is never logged and never returned. Errors reach the caller as a short status, never the provider's message or the key.
 //
-// The cached prefix (rules digest, campaign, prep) is the GM pack part `assist`: { prefix: string, extra?: { <seat>: string } }.
-// It quotes the campaign, so it is never in git; the GM builds it on their own PC (scripts/gm-pack.mjs, lib/assist-export.mjs)
-// and pushes it like any other part. Without it the prefix is empty and the answer carries warnings: ['no assist part in the GM pack'].
+// The cached prefix (rules digest, campaign, prep) is NOT in the Worker. The GM pack part `assist` is small:
+// { file_id, hash, extra?: { <seat>: string } }, and file_id names the prefix as a text file in Anthropic's Files API, uploaded
+// by the GM's PC when it pushes the part (scripts/lib/assist-file.mjs, scripts/lib/sync-pack.mjs). Why a file: Workers Free
+// gives a request 10 ms of CPU, and reading, parsing and re-sending a ~90k-token prefix in every seat call (waiting on
+// Claude or D1 is free; parsing and stringifying are not) would spend it. Now a tick reads a few hundred bytes and every seat
+// call carries the file id. The prefix quotes the campaign, so it is never in git or in D1.
+// Warnings (in the answer, never the provider's own message): 'no assist part in the GM pack' (no part: the seats run without
+// a prefix); 're-push the assist part' when the part still carries prefix text (old format: nothing is sent and the box stays
+// quiet) or the provider says the file is gone.
 //
-// [TODO: the Fixer can take 15-30 s. Confirm against Cloudflare's current Workers limits how long a request may stay open
-//  (wall-clock versus CPU time, and any proxy idle timeout in front of it) before relying on this one non-streaming call.
-//  If it is a problem, switch callSeat to client.messages.stream and send the Fixer's lines as they arrive.]
+// A seat call can take 15-30 s (the Fixer). That is wall-clock waiting on the provider, which Workers do not bill as CPU.
 //
 // The Scribe's rolling "story so far" is Phase 2: the Tap seats read the last four minutes raw for now.
 
@@ -75,12 +79,23 @@ export function formatLines(lines, speakers = {}) {
   }).join('\n');
 }
 
+const REPUSH = 're-push the assist part';
+const FILE_ID = /^file_[A-Za-z0-9_-]{4,100}$/;
+
 async function loadPrefix(db, campaign) {
   const row = await db.prepare("SELECT body FROM gm_pack WHERE campaign = ?1 AND part = 'assist'").bind(campaign).first();
   const body = row ? parseJson(row.body, null) : null;
-  const prefix = body && typeof body.prefix === 'string' ? body.prefix : '';
+  const fileId = body && typeof body.file_id === 'string' && FILE_ID.test(body.file_id) ? body.file_id : '';
+  const legacy = !!(body && typeof body.prefix === 'string' && body.prefix);   // the old part carried the text: never sent
   const extra = body && body.extra && typeof body.extra === 'object' ? body.extra : {};
-  return { prefix, extra, found: !!row };
+  return { fileId, legacy, extra, found: !!row };
+}
+
+// the provider says the file named in the prompt is gone (404 / not found / invalid file id)
+function fileGone(e) {
+  const s = e && Number.isInteger(e.status) ? e.status : null;
+  if (s === 404) return true;
+  return s === 400 && /file/i.test(String((e && e.message) || ''));
 }
 
 async function tonight(db, campaign, now) {
@@ -158,12 +173,12 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const cap = capOf(env);
     const spentBefore = await tonight(db, campaign, t0);
     const tier = budgetTier(spentBefore, cap);
-    const { prefix, extra, found } = await loadPrefix(db, campaign);
-    const warnings = found && prefix ? [] : ['no assist part in the GM pack'];
+    const { fileId, legacy, extra, found } = await loadPrefix(db, campaign);
+    const warnings = legacy ? [REPUSH] : found && fileId ? [] : ['no assist part in the GM pack'];
     const stt = await loadStt(db, campaign);
     const speakers = stt.doc.speakers || {};
     const errors = [];
-    let thisTick = 0;
+    let thisTick = 0, fileMissing = false;
 
     // one seat call; logging is the caller's job (the Tap rows wait for the Editor's verdict)
     async function run(name, user) {
@@ -171,11 +186,12 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       inFlight.add(name);
       try {
         const instructions = extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions;
-        const r = await call(client, { ...cfg, instructions, prefix, user });
+        const r = await call(client, { ...cfg, instructions, prefixFileId: fileId, user });
         thisTick += r.cost || 0;
         return { cfg, r };
       } catch (e) {
-        errors.push({ seat: name, error: errorOf(e) });
+        if (fileId && fileGone(e)) { fileMissing = true; if (!warnings.includes(REPUSH)) warnings.push(REPUSH); }
+        else errors.push({ seat: name, error: errorOf(e) });
         return { cfg, r: null };
       } finally {
         inFlight.delete(name);
@@ -188,6 +204,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const position = typeof body.position === 'string' ? body.position.replace(/\s+/g, ' ').trim() : '';
       const effect = typeof body.effect === 'string' ? body.effect.replace(/\s+/g, ' ').trim() : '';
       if (!position || position.length > 400 || effect.length > 200) throw new HttpError(400, 'position is required (at most 400 characters); effect at most 200');
+      if (legacy) return done([], [], null);
       const gate = canRun('fixer', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight, tier });
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : 'the fixer is busy');
       const { lines: recent, last } = await readLines(db, campaign, { since: new Date(t0 - FIT_WINDOW_MS).toISOString() });
@@ -208,7 +225,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     // the Tap seats read the last four MINUTES (a busy table says well over 50 lines in four); the Tripwire reads what is new
     const { lines: tail, last } = await readLines(db, campaign, { since: new Date(t0 - TAP_WINDOW_MS).toISOString() });
     const session = tail.length ? tail[tail.length - 1].session : '';
-    if (tier === 'off') return done([], [], last);
+    if (tier === 'off' || legacy) return done([], [], last);
     const fresh = after !== null ? (await readLines(db, campaign, { after })).lines : tail.filter((l) => t0 - Date.parse(l.at) <= FIRST_SLICE_MS);
     const freshText = formatLines(fresh, speakers);
     if (!freshText) return done([], [], last);
@@ -217,6 +234,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const gate = canRun('tripwire', { now: t0, lastRun, inFlight, tier });
     if (!gate.ok) return done([], [], last);
     const tw = await run('tripwire', 'New talk, up to ' + hhmm(t0) + ':\n' + freshText);
+    if (fileMissing) return done([], [], last);          // nothing was billed or logged: the file is gone
     const twAt = new Date(now()).toISOString();
     const flags = tw.r && tw.r.json ? Object.keys(tw.r.json).filter((k) => tw.r.json[k] === true) : [];
     await logRow(db, campaign, { at: twAt, session, seat: 'tripwire', cfg: tw.cfg, usage: tw.r && tw.r.usage, cost: tw.r && tw.r.cost, flags,
