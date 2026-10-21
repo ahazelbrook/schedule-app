@@ -76,8 +76,9 @@ export function canRun(seat, { now, lastRun = {}, inFlight = [], tier = 'all', c
  * Which seats run for these flags. -> { tier, seats: [ids, in WAKES order], skipped: [{ seat, why }] }
  *   flags: the Tripwire's set flags (names); spent / cap: tonight's dollars and the cap; wakes: the table (default WAKES).
  *   onStage: whether the page named an NPC on stage. Voice runs only then: on npc_change, or on any tick (about each minute).
+ *   follow: the previous tick woke Ref on roll_talk (see followsThrough). Ref is woken once more on this tick, under the same gates.
  */
-export function decide({ flags = [], now, lastRun = {}, inFlight = [], spent = 0, cap = DEFAULT_CAP, wakes = WAKES, cooldowns = COOLDOWN_MS, onStage = false } = {}) {
+export function decide({ flags = [], now, lastRun = {}, inFlight = [], spent = 0, cap = DEFAULT_CAP, wakes = WAKES, cooldowns = COOLDOWN_MS, onStage = false, follow = false } = {}) {
   const tier = budgetTier(spent, cap);
   const set = new Set(flags);
   const seats = [], skipped = [];
@@ -87,11 +88,34 @@ export function decide({ flags = [], now, lastRun = {}, inFlight = [], spent = 0
     const r = canRun(seat, { now, lastRun, inFlight, tier, cooldowns });
     if (r.ok) seats.push(seat); else skipped.push({ seat, why: r.why });
   }
+  if (follow && !set.has('roll_talk') && wakes.ref && !seats.includes('ref') && !skipped.some((x) => x.seat === 'ref')) {   // the follow-through
+    const r = canRun('ref', { now, lastRun, inFlight, tier, cooldowns });
+    if (r.ok) seats.push('ref'); else skipped.push({ seat: 'ref', why: r.why });
+    const order = Object.keys(wakes);
+    seats.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  }
   if (onStage && !seats.includes('voice') && !skipped.some((x) => x.seat === 'voice')) {   // the per-minute wake
     const r = canRun('voice', { now, lastRun, inFlight, tier, cooldowns });
     if (r.ok) seats.push('voice'); else skipped.push({ seat: 'voice', why: r.why });
   }
   return { tier, seats, skipped };
+}
+
+// ---------- follow-through ----------
+
+export const FOLLOW_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * Does Ref get one more look on this tick? The slip often lands a minute after the Tripwire hears the roll, so a roll_talk wake
+ * is followed once by the next tick with new talk, even if the Tripwire does not flag again. prev: the previous tick's Tripwire
+ * row { at (ms), flags: [names] } or null. True when that tick flagged roll_talk, whether Ref ran on it or the cooldown held it
+ * (Ref's call ends a few seconds after the tick, so a flag on the very next minute is often held). A follow-through tick is not itself a roll_talk wake (decide() adds Ref only when roll_talk is not set), so
+ * its own Tripwire row flags no roll_talk and the next tick finds nothing to follow: it never chains.
+ */
+export function followsThrough(prev, now, windowMs = FOLLOW_WINDOW_MS) {
+  if (!prev || !Array.isArray(prev.flags) || !prev.flags.includes('roll_talk')) return false;
+  if (!Number.isFinite(prev.at)) return false;
+  return !Number.isFinite(now) || now - prev.at <= windowMs;
 }
 
 // ---------- repeats ----------
