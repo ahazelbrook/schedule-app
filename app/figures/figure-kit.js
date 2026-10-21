@@ -9298,6 +9298,7 @@ var B68Figure = (() => {
             choose(`pose.arms.${sd}.b`, av.b, L.armPoses);
             if (av.as != null) choose(`pose.arms.${sd}.as`, av.as, L.armPoses);
             clamp(`pose.arms.${sd}.t`, av.t, 0, 1, (v) => av.t = v);
+            if (av.flip != null) clamp(`pose.arms.${sd}.flip`, av.flip, 0, 1, (v) => av.flip = v);
           } else choose(`pose.arms.${sd}`, av, L.armPoses);
         }
         if (P.hands) {
@@ -14487,10 +14488,8 @@ var B68Figure = (() => {
             const m = ctx.hp([hi.k * H.mouthW * 0.55, H.mouthY + 4e-3], { depth: 0.04 });
             let d = K.sub(hi.pt, m);
             const dl = Math.hypot(d[0], d[1]);
-            // a hand well away from the mouth (a blended arm, part-way up) holds the cigarette itself, pointing along the fingers
-            if (ctx.R.arms[hi.side] && typeof (ctx.S.pose && ctx.S.pose.arms && ctx.S.pose.arms[hi.side]) === "object" && dl > K.inch(2.2)) {
-              const fd = K.norm(K.add(hi.dir, K.mul(hi.up, -0.6)));
-              return { p0: hi.pt, dir: fd, k: hi.k, hand: hi, z: hi.zOver, held: true };
+            if (typeof (ctx.S.pose && ctx.S.pose.arms && ctx.S.pose.arms[hi.side]) === "object" && dl > K.inch(2.2)) {
+              return { p0: hi.pt, dir: K.norm(K.add(hi.dir, K.mul(hi.up, -0.6))), k: hi.k, hand: hi, z: hi.zOver, held: true };
             }
             d = dl > K.inch(0.8) ? K.mul(d, 1 / dl) : K.norm(K.add(K.mul([hi.k, 0], 0.9), [0, 0.38]));
             return { p0: m, dir: d, k: hi.k, hand: hi, z: Math.max(hi.zOver, ctx.Z.eyewear + 0.5) };
@@ -15784,34 +15783,27 @@ var B68Figure = (() => {
         for (const s of ["R", "L"]) {
           const k = sx(s);
           const want = A[s] || (S.hands === "pockets" ? "pocket" : "down");
-          // a blend { a, b, t, as } puts the arm part-way from pose a to pose b (t 0..1), for animation frames; the parts and
-          // props read it as pose `as` (default b), so a cigarette stays in the hand all the way up
           const blend = want && typeof want === "object" ? want : null;
           const pose = blend ? blend.as || blend.b : want;
           const sh = shoulderJ[s];
           const env = { k, sh, w, y, hh, limbs, widthAt, centerAt, pelvisShift, pelvisTilt, shoulderTilt, torsoPt, stance, weight: ws, side: s, ik };
           let t = POSES.arm(blend ? blend.b : pose, env);
           if (blend) {
-            // blend the joint angles, not the points, so the arm swings through a natural arc (shortest way round)
             const ta = POSES.arm(blend.a, env), u = Math.max(0, Math.min(1, +blend.t || 0));
             const ang = (v) => Math.atan2(v[1], v[0]);
-            const turn = (p, q) => { let d = q - p; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return p + d * u; };
+            const turn = (p, q) => {
+              let d = q - p;
+              while (d > Math.PI) d -= 2 * Math.PI;
+              while (d < -Math.PI) d += 2 * Math.PI;
+              return p + d * u;
+            };
             const mix = (p, q) => p + (q - p) * u;
-            const ua = G.sub(ta.elbow, sh), ub = G.sub(t.elbow, sh);
-            const fa = G.sub(ta.wrist, ta.elbow), fb = G.sub(t.wrist, t.elbow);
+            const ua = G.sub(ta.elbow, sh), ub = G.sub(t.elbow, sh), fa = G.sub(ta.wrist, ta.elbow), fb = G.sub(t.wrist, t.elbow);
             const au = turn(ang(ua), ang(ub)), af = turn(ang(fa), ang(fb));
             const lu = mix(Math.hypot(ua[0], ua[1]), Math.hypot(ub[0], ub[1])), lf = mix(Math.hypot(fa[0], fa[1]), Math.hypot(fb[0], fb[1]));
-            const el = [sh[0] + Math.cos(au) * lu, sh[1] + Math.sin(au) * lu];
-            const wr = [el[0] + Math.cos(af) * lf, el[1] + Math.sin(af) * lf];
-            const ha = ang(ta.handDir), hb = ang(t.handDir), ah = turn(ha, hb);
-            const late = u >= (blend.flip == null ? 0.2 : blend.flip);
-            t = {
-              elbow: el,
-              wrist: wr,
-              handDir: [Math.cos(ah), Math.sin(ah)],
-              z: late ? t.z == null ? 45 : t.z : ta.z == null ? 45 : ta.z,
-              foreFront: late ? !!t.foreFront : !!ta.foreFront
-            };
+            const el = [sh[0] + Math.cos(au) * lu, sh[1] + Math.sin(au) * lu], wr = [el[0] + Math.cos(af) * lf, el[1] + Math.sin(af) * lf];
+            const ah = turn(ang(ta.handDir), ang(t.handDir)), late = u >= (blend.flip == null ? 0.2 : blend.flip);
+            t = { elbow: el, wrist: wr, handDir: [Math.cos(ah), Math.sin(ah)], z: late ? t.z == null ? 45 : t.z : ta.z == null ? 45 : ta.z, foreFront: late ? !!t.foreFront : !!ta.foreFront };
           }
           const { elbow, wrist, handDir, z = 45, foreFront = false } = t;
           const hand = G.add(wrist, G.mul(G.norm(handDir), limbs.hand * 0.5));
@@ -16733,7 +16725,7 @@ var B68Figure = (() => {
         geom: G,
         color: C,
         U: 25,
-        version: "3.0.0",
+        version: "3.0.1",
         // light v2 + face v2 the default; light v1 retired (Wave 2, signed off 22/10/2026)
         rasterize: (spec, o) => raster.rasterize(api, spec, o),
         // browser only: render once to a bitmap (ROADMAP §4.1)
