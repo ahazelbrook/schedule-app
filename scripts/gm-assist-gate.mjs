@@ -71,7 +71,7 @@ export async function main(argv, { client: injected, log = console.log, err = co
   const tText = fs.readFileSync(transcript, 'utf8');
   const allMinutes = parseMinutes(tText);
   const day = arg('day') || dayFromTranscript(tText);
-  if (arg('day') && !/^d{4}-dd-dd$/.test(day)) return bad('--day is YYYY-MM-DD');
+  if (arg('day') && !/^\d{4}-\d\d-\d\d$/.test(day)) return bad('--day is YYYY-MM-DD');
   if (!allMinutes.size) return bad('no transcript lines in ' + transcript);
 
   let pre;
