@@ -137,6 +137,13 @@ await test('a cap already spent by the Fixer skips the later moments and the Tap
   assert.equal(client.calls.length, 1);
 });
 
+await test('a window under 30 minutes gives no night projection', async () => {
+  const g = await runGate(base(mockClient(), { fromT: 21 * 60 + 5, toT: 21 * 60 + 15 }));
+  assert.equal(g.spend.projectedNight, null);
+  assert.equal(g.criteria.find((c) => c.id === 'cost').result, 'NEEDS-ALEX');
+  assert.match(report(g), /No projection for a window this short/);
+});
+
 await test('refusals and truncations are counted per seat', async () => {
   const client = mockClient({ stops: { fixer: 'refusal', ref: 'max_tokens' } });
   const g = await runGate(base(client, { fixerAt: ['21:12'] }));

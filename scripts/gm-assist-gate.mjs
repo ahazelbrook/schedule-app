@@ -95,7 +95,7 @@ export async function main(argv, { client: injected, log = console.log, err = co
   fs.writeFileSync(path.join(outDir, 'gate.md'), report(g));
   fs.writeFileSync(path.join(outDir, 'gate.json'), JSON.stringify(g, null, 1) + '\n');
   log(`gate ${label || ''}${dry ? ' (dry run)' : ''}: ${g.window.from}-${g.window.to}, ${g.window.minutes} min, prefix ${pre.from} (${pre.prefix.length} chars)`);
-  log(`spend $${g.spend.total.toFixed(3)} of $${maxSpend}${g.partial ? ' (STOPPED at the cap at ' + g.stoppedAt + ')' : ''}; projected per 4-hour night $${g.spend.projectedNight.toFixed(2)}; by seat ${JSON.stringify(Object.fromEntries(Object.entries(g.spend.bySeat).map(([k, v]) => [k, `${v.calls} calls $${v.cost.toFixed(3)}`])))}`);
+  log(`spend $${g.spend.total.toFixed(3)} of $${maxSpend}${g.partial ? ' (STOPPED at the cap at ' + g.stoppedAt + ')' : ''}; projected per 4-hour night ${g.spend.projectedNight == null ? 'n/a (window under 30 min)' : '$' + g.spend.projectedNight.toFixed(2)}; by seat ${JSON.stringify(Object.fromEntries(Object.entries(g.spend.bySeat).map(([k, v]) => [k, `${v.calls} calls $${v.cost.toFixed(3)}`])))}`);
   if (!dry) log(`cards ${g.cards.length} (${g.cardsPer30} per 30 min); Fixer median ${g.fixer.median} s, max ${g.fixer.max} s`);
   for (const c of g.criteria) log(`${c.result.padEnd(11)} ${c.name}: ${c.detail}`);
   log(`written to ${outDir}`);

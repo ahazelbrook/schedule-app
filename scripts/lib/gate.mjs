@@ -10,7 +10,7 @@ import { decide } from '../../functions/_lib/assist/conductor.js';
 import { toVoice } from '../../functions/_lib/assist/editor.js';
 import { runTapSim, stamp, toMin, talkFor, SKIPPED } from './tap-sim.mjs';
 
-export const GATE = { falsePer30: 1, fixerMedianSecs: 15, nightUsd: 15, nightMinutes: 240, refWithin: 2 };
+export const GATE = { falsePer30: 1, fixerMedianSecs: 15, nightUsd: 15, nightMinutes: 240, refWithin: 2, minProjectMinutes: 30 };
 export const TAP_SEATS = ['tripwire', 'ref', 'clerk', 'ledger', 'stall', 'showrunner', 'mystery'];
 // Dry run only: what a reply typically costs in output tokens (thinking included), per seat. An assumption, not a measurement.
 export const DRY_OUT_TOKENS = { tripwire: 150, ref: 500, clerk: 300, ledger: 500, stall: 300, showrunner: 700, mystery: 900, fixer: 1500, voice: 400, voice_plus: 200 };
@@ -162,7 +162,8 @@ export function buildGate({ label, dryRun, maxSpend, fromT, toT, calls, total, t
   const fixerRun = fixer.filter((f) => !f.skipped);
   const secs = fixerRun.map((f) => f.secs);
   const nonTap = total - tapSpend;
-  const projected = minutes > 0 ? (tapSpend / minutes) * GATE.nightMinutes + nonTap : 0;
+  // a window under 30 minutes is mostly cold-cache writes, so scaling it to a night would say nothing true: null then
+  const projected = minutes >= GATE.minProjectMinutes ? (tapSpend / minutes) * GATE.nightMinutes + nonTap : null;
   const per30 = cardsPer30(shown.length, minutes);
   const partial = !!stopped;
   const g = {
@@ -193,9 +194,8 @@ export function criteria(g, expectRef) {
   out.push({ id: 'keep', name: "Fixer's lines keep the console's draw", result: 'NEEDS-ALEX', detail: g.fixer.calls ? `Alex reads ${g.fixer.calls} moment${g.fixer.calls === 1 ? '' : 's'} (draws beside the fitted lines)` : 'no Fixer moment ran' });
   if (g.dryRun || !g.fixer.calls) out.push({ id: 'median', name: `Fixer median under ${GATE.fixerMedianSecs} s`, result: 'NEEDS-ALEX', detail: g.dryRun ? 'dry run: no timings' : 'no Fixer moment ran' });
   else out.push({ id: 'median', name: `Fixer median under ${GATE.fixerMedianSecs} s`, result: g.fixer.median < GATE.fixerMedianSecs ? 'PASS' : 'FAIL', detail: `median ${g.fixer.median} s, max ${g.fixer.max} s over ${g.fixer.calls} call${g.fixer.calls === 1 ? '' : 's'}` });
-  const shortWindow = g.window.minutes < 60;
-  out.push({ id: 'cost', name: `Replay under $${GATE.nightUsd} a night`, result: g.dryRun || g.partial || shortWindow ? (g.spend.projectedNight >= GATE.nightUsd ? 'FAIL' : 'NEEDS-ALEX') : (g.spend.projectedNight < GATE.nightUsd ? 'PASS' : 'FAIL'),
-    detail: `${usd(g.spend.total)} spent over ${g.window.minutes} min; projected ${usd(g.spend.projectedNight)} per ${GATE.nightMinutes / 60}-hour night` + (g.dryRun ? ' (estimate, no calls)' : '') + (g.partial ? ' (partial run: stopped at the spend cap)' : '') + (shortWindow && !g.dryRun ? ' (short window: scaled up linearly)' : '') });
+    out.push({ id: 'cost', name: `Replay under $${GATE.nightUsd} a night`, result: g.spend.projectedNight == null ? 'NEEDS-ALEX' : g.dryRun || g.partial ? (g.spend.projectedNight >= GATE.nightUsd ? 'FAIL' : 'NEEDS-ALEX') : (g.spend.projectedNight < GATE.nightUsd ? 'PASS' : 'FAIL'),
+    detail: `${usd(g.spend.total)} spent over ${g.window.minutes} min${g.spend.projectedNight == null ? '; no projection (window under ' + GATE.minProjectMinutes + ' min: mostly cache writes)' : '; projected ' + usd(g.spend.projectedNight) + ' per ' + GATE.nightMinutes / 60 + '-hour night'}` + (g.dryRun ? ' (estimate, no calls)' : '') + (g.partial ? ' (partial run: stopped at the spend cap)' : '') });
   out.push({ id: 'cpu', name: 'CPU fits Workers Free', result: 'NEEDS-ALEX', detail: 'read it from Cloudflare (Workers metrics), not from this script' });
   return out;
 }
@@ -208,7 +208,7 @@ export function report(g) {
   if (g.partial) L.push('', `> [!warning] Partial: stopped at ${g.stoppedAt} when spend reached the $${g.spend.maxSpend} cap. Everything below covers only what ran.`);
   if (/^s03$/i.test(g.label)) L.push('', '> [!note] s03 is the hold-out: replay it, read it, never tune on it.');
   L.push('', '## Criteria', '', '| | Criterion | Detail |', '|---|---|---|', ...g.criteria.map((c) => `| **${c.result}** | ${cell(c.name)} | ${cell(c.detail)} |`));
-  L.push('', '## Spend', '', `Total ${usd(g.spend.total)} of $${g.spend.maxSpend} cap. Projected ${usd(g.spend.projectedNight)} per ${g.spend.nightMinutes / 60}-hour night (the Tap scaled linearly from this window; Fixer and Voice counted as run).`, '',
+  L.push('', '## Spend', '', `Total ${usd(g.spend.total)} of $${g.spend.maxSpend} cap. ${g.spend.projectedNight == null ? 'No projection for a window this short (mostly cache writes); use a dry run of the whole night.' : 'Projected ' + usd(g.spend.projectedNight) + ' per ' + g.spend.nightMinutes / 60 + '-hour night (the Tap scaled linearly from this window; Fixer and Voice counted as run).'}`, '',
     '| Seat | Calls | Spend | Model |', '|---|---|---|---|', ...Object.entries(g.spend.bySeat).map(([s, v]) => `| ${s} | ${v.calls} | ${usd(v.cost)} | ${g.models[s] || ''} |`));
   L.push('', '## Cards', '', g.dryRun ? '_Dry run: none._' : `${g.cards.length} cards, ${g.cardsPer30} per 30 minutes. Tick a box if the card was REAL; leave it empty if false.`, '');
   for (const c of g.cards) L.push(`- [ ] ${c.n}. ${c.at} **${c.seat}**: ${String(c.text).replace(/\r?\n/g, ' / ')}`);
