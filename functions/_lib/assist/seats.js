@@ -26,11 +26,13 @@ export const SEATS = {
   tripwire: {
     model: 'claude-haiku-5-5', effort: 'low', maxTokens: 1500,
     instructions: `You listen to a live tabletop RPG game (Blades '68) as speech-to-text, one minute at a time. Speaker labels and spellings are unreliable. Set a flag only for what is plainly in THIS minute's text.
-Flags: roll_talk (ONLY when a roll is being set up or resolved right now: dice picked up or thrown, a result read out, or position/effect called for a specific roll. Talking about rules, past rolls or what a character might do is false), harm (harm is being given, marked, resisted or its effects ruled on right now. Mere mentions of injury in the story are false), npc_change (a different NPC starts speaking or is introduced), new_name (a made-up in-fiction character's name is spoken that is not in the cast list in your context. Real people, actors, film characters and the players' own names are false), clue_mention (a clue, secret or theory about the mystery is said), xp_trigger (xp, desperate or zero-dot rolls, the close of the score or session), scene_change (the scene or location changes), stall (the table is idle, off-topic or searching for what to do).
+Flags: roll_talk (ONLY when a roll is being set up or resolved right now: dice picked up or thrown, a result read out, or position/effect called for a specific roll. Talking about rules, past rolls or what a character might do is false), harm (harm is being given, marked, resisted or its effects ruled on right now. Mere mentions of injury in the story are false), npc_change (a different NPC starts speaking or is introduced), new_name (a made-up in-fiction character's name is spoken that is not in the cast list in your context. Real people, actors, film characters and the players' own names are false), clue_mention (a clue, secret or theory about the mystery is said), xp_trigger (xp, desperate or zero-dot rolls, the close of the score or session), scene_change (the scene or location changes), stall (the table has stopped or is going in circles, and ONLY then: the same proposal or options repeated with no decision, a long silence, an open "what do we do?" that nobody answers, or side-chatter replacing play. Normal planning, debate that is moving toward a choice, rules questions, a roll being worked out and banter during action are all false).
 Prefer false: most minutes have no flags at all. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
-      properties: Object.fromEntries(FLAGS.map(f => [f, { type: 'boolean' }])),
+      properties: Object.fromEntries(FLAGS.map(f => [f, f === 'stall'
+        ? { type: 'boolean', description: 'true only when play has stopped or is going in circles: repeated proposals with no decision, long silence, an unanswered "what do we do?", or side-chatter replacing play; false for planning that is moving, rules questions and banter during action' }
+        : { type: 'boolean' }])),
       required: FLAGS,
     },
   },

@@ -1304,5 +1304,17 @@ await test('WP4: the prompts name how far back Showrunner and Mystery read, and 
   assert.ok(/flag\('tap-sim'\)/.test(src) && /makeHandler\(/.test(src) && /arg\('turn-at'\)/.test(src) && /must_land_item/.test(src), 'the script takes --tap-sim (through makeHandler) and --turn-at, and checks the Must land entry');
 });
 
-console.log(failed ? `\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);
+await test('tripwire: the stall flag is narrow (circling, silence, unanswered question, side-chatter) and the schema says so', () => {
+  const ins = SEATS.tripwire.instructions;
+  const i = ins.indexOf('stall (');
+  assert.ok(i > 0, 'the stall flag has its own definition');
+  const def = ins.slice(i, ins.indexOf('Prefer false'));
+  for (const w of ['going in circles', 'no decision', 'long silence', 'side-chatter', 'ONLY then', 'Normal planning', 'banter during action']) assert.ok(def.includes(w), w);
+  assert.ok(!/idle|off-topic/.test(def), 'the old loose wording is gone');
+  assert.equal(Object.keys(SEATS.tripwire.schema.properties).length, 8);
+  assert.ok(/stopped or is going in circles/.test(SEATS.tripwire.schema.properties.stall.description));
+  assert.equal(SEATS.tripwire.schema.properties.roll_talk.description, undefined, 'other flags keep their plain schema');
+});
+
+console.log(failed ?`\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);
 process.exit(failed ? 1 : 0);
