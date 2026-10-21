@@ -1348,7 +1348,7 @@
     var g = gmApi(), A = W.B68GmAssist, me = S;
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
-    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onNote: function (text) { return S === me && !!addCapture('m', text, true); } }); } catch (e) { me.assist = null; }
+    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onNote: function (text) { return S === me && !!addCapture('m', text, true); } }); } catch (e) { me.assist = null; }
   }
   function loadShown() {
     var g = gmApi(), me = S; if (!g || typeof g.display !== 'function' || AM.displayRead) return;
@@ -1799,7 +1799,7 @@
   function renderRack() {
     var box = $q('#gm-rack'); if (!box) return;
     var r = S && S.rack, vo = S && S.voice;
-    var vh = vo ? voiceHtml(vo) : '';
+    var vh = (vo ? voiceHtml(vo) : '') + (S && S.stall ? stallHtml(S.stall) : '');
     if (!r) { box.innerHTML = vh; return; }
     var pre = r.pre, used = { one_three: pre && pre.kinds.onetothree.used, four_five: pre && pre.kinds.fourfive.used };
     var h = '<div class="gm-rack-h"><span class="gm-lab">Rack</span><span class="gm-dim">Blade, fitted to the scene · ' + esc(pre.pos) + '</span>' +
@@ -1826,6 +1826,19 @@
     var lines = v.lines.map(function (l) { return str(l).trim(); }).filter(Boolean); if (!lines.length) return;
     S.voice = { who: str(v.who).trim() || 'NPC', want: str(v.want).trim(), lines: lines, at: str(v.at), busy: false, error: '' };
     renderRack();
+  }
+  /* Stall: when the Tripwire hears the table idle or going round in circles, one offer (a complication or a clue) lands in the Rack under
+     Voice. Like Voice it needs Listening on and the cap not reached, and it stays until the GM clears it or the next offer replaces it. */
+  function setStall(v) {
+    if (!S) return;
+    if (!isObj(v) || !str(v.offer).trim()) { if (v === null && S.stall) { S.stall = null; renderRack(); } return; }
+    S.stall = { kind: str(v.kind) === 'clue' ? 'Clue' : 'Complication', offer: str(v.offer).trim(), why: str(v.why).trim(), at: str(v.at) };
+    renderRack();
+  }
+  function stallHtml(st) {
+    return '<div class="gm-stall"><div class="gm-rack-h"><span class="gm-lab">Stall</span><span class="gm-dim">' + esc(st.kind) + '</span>' +
+      '<button type="button" class="chip sm" data-gm="stallclear" title="Drops this offer">Clear</button></div>' +
+      '<p class="gm-rack-read">' + esc(st.offer) + '</p>' + (st.why ? '<p class="gm-dim gm-rack-w">' + esc(st.why) + '</p>' : '') + '</div>';
   }
   function voiceHtml(vo) {
     var a = S && S.assist, can = !!(a && typeof a.canAnother === 'function' && a.canAnother());
@@ -3589,6 +3602,7 @@
       case 'pos': setPos(b.getAttribute('data-v')); break;
       case 'rackclear': rackClear(); break;
       case 'voiceclear': S.voice = null; renderRack(); break;
+      case 'stallclear': S.stall = null; renderRack(); break;
       case 'another': voiceAnother(); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {

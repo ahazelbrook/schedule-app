@@ -18,6 +18,7 @@
                    fits them (the server refuses a fit without them)
          onStage   () -> the name of the NPC on stage ('' when none): sent with each tick, and Voice only runs when it is there
          onVoice   (voice | null): Voice's lines from a tick ({ who, want, lines, at }); null clears them (Listening off, the cap)
+         onStall   (stall | null): Stall's offer from a tick ({ kind, offer, why, at }); null clears it (Listening off, the cap)
          onNote    the page's capture: "Note it" on a Ledger update and "Keep" on a card file their text as a Moment (the update
                    itself changes no state)
      ctl.open() / close() / toggle()      the box
@@ -47,7 +48,7 @@
   var P = {};
   var BANNER_MS = 12000, POLL_MS = 60000, MAX_CARDS = 40, MAX_UPDATES = 30, NPC_MAX = 80;
   var POSITIONS = ['controlled', 'risky', 'desperate'];
-  var SEAT = { ref: 'Rule slip', clerk: 'Clerk', fixer: 'Fixer', ledger: 'Ledger' };
+  var SEAT = { ref: 'Rule slip', clerk: 'Clerk', fixer: 'Fixer', ledger: 'Ledger', mystery: 'Mystery', showrunner: 'Pacing' };
   var TIER = { all: 'Full', reduced: 'Reduced', core: 'Core only', off: 'Off: cap reached' };
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -316,15 +317,16 @@
       return Promise.resolve().then(function () { return npc ? gm.assistTick(st.after, npc) : gm.assistTick(st.after); }).then(function (res) {
         if (gone) return;
         if (isObj(res) && isObj(res.voice)) sendVoice(res.voice); else if (!npc) sendVoice(null);   /* nobody on stage: nothing from Voice shows */
+        if (isObj(res) && isObj(res.stall) && str(res.stall.offer).trim()) sendStall(res.stall);
         var fresh = absorb(st, res, new Date().toISOString());
         st.error = ''; st.checkedAt = hhmm(new Date().toISOString());
         if (st.open) markSeen();
         else if (fresh.length) showBanner(fresh[fresh.length - 1]);
-        if (st.spend && st.spend.tier === 'off') { st.paused = 'cap'; sendVoice(null); }
+        if (st.spend && st.spend.tier === 'off') { st.paused = 'cap'; sendNone(); }
       }, function (e) {
         if (gone) return;
         var k = errKind(e);
-        if (k === 'cap' || k === 'busy') { st.paused = k; if (k === 'cap') sendVoice(null); }
+        if (k === 'cap' || k === 'busy') { st.paused = k; if (k === 'cap') sendNone(); }
         else if (k === 'setup') { st.paused = 'setup'; }
         else st.error = errLine(k);
       }).then(function () { st.busy = false; render(); });
@@ -335,7 +337,7 @@
       return Promise.resolve().then(function () { return gm.stt(); }).then(function (r) {
         var d = r && isObj(r.doc) ? r.doc : null, on = !!(d && d.want === 'on');
         st.listening = on;
-        if (!on) { sendVoice(null); render(); return; }   /* Listening off: Voice shows nothing */
+        if (!on) { sendNone(); render(); return; }   /* Listening off: Voice shows nothing */
         return tickOnce();
       }, function () { /* Listening could not be read: say nothing, try next minute */ });
     }
@@ -344,6 +346,8 @@
     /* ---------- Voice (the NPC on stage; its lines go to the page's Rack, not to this box) ---------- */
     function onStageName() { try { return typeof o.onStage === 'function' ? str(o.onStage()).replace(/\s+/g, ' ').trim().slice(0, NPC_MAX) : ''; } catch (e) { return ''; } }
     function sendVoice(v) { if (typeof o.onVoice === 'function') { try { o.onVoice(v); } catch (e) {} } }
+    function sendNone() { sendVoice(null); sendStall(null); }   /* Listening off, the cap: nothing from Voice or Stall shows */
+    function sendStall(v) { if (typeof o.onStall === 'function') { try { o.onStall(v); } catch (e) {} } }
     /* the Another button needs what the Fixer's does: a box that is set up, not capped, not a phone */
     function canAnother() { return canFit() && !!gm && typeof gm.assistAnother === 'function'; }
     function another(req) {
@@ -357,7 +361,7 @@
       }, function (e) {
         if (gone) return null;
         var k = errKind(e);
-        if (k === 'cap') { st.paused = 'cap'; sendVoice(null); render(); }
+        if (k === 'cap') { st.paused = 'cap'; sendNone(); render(); }
         return { error: k };
       });
     }

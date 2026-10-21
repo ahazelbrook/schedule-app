@@ -25,3 +25,19 @@ export function anotherUser({ npc, shown, stamp, talk }) {
   return 'The GM asks for one more line for this NPC: ' + npc + '.\nLines already shown (write something different from every one):\n' +
     shown.map((s, i) => (i + 1) + '. ' + s).join('\n') + '\nLast four minutes, up to ' + stamp + ':\n' + talk;
 }
+
+export const SHOWRUNNER_MIN = 20;           // minutes of talk the Showrunner reads (it runs every ten; the Worker cannot afford the whole night)
+export const MYSTERY_MIN = 15;              // minutes of talk the Mystery keeper reads, plus what it reported known earlier
+export const KNOWN_MAX = 12;                // earlier "known" items handed back to the Mystery keeper
+export const KNOWN_ITEM_MAX = 160;          // characters per item
+
+/** The Showrunner turn: the talk of the last SHOWRUNNER_MIN minutes. */
+export function showrunnerUser({ stamp, talk }) {
+  return 'Talk of the last ' + SHOWRUNNER_MIN + ' minutes, up to ' + stamp + ' (earlier talk is not shown):\n' + talk;
+}
+
+/** The Mystery turn: what the seat reported known earlier (short list, may be empty), then the last MYSTERY_MIN minutes of talk. */
+export function mysteryUser({ stamp, talk, known = [] }) {
+  return (known.length ? 'You reported these as known earlier tonight (already learned):\n' + known.map((k) => '- ' + k).join('\n') + '\n' : '') +
+    'Talk of the last ' + MYSTERY_MIN + ' minutes, up to ' + stamp + ' (earlier talk is not shown):\n' + talk;
+}

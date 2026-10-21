@@ -2,13 +2,15 @@
 // on an in-memory D1 with a FAKE Anthropic client. No network and no key: nothing here can reach the API. Every name and
 // sentence is invented.
 //   node checks/runtime/gm-assist.test.mjs
+import fs from 'node:fs';
+import { showrunnerUser, mysteryUser } from '../../functions/_lib/assist/prompts.js';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
 import { cleanLines, addLines } from '../../functions/_lib/stt.js';
-import { decide, budgetTier, canRun, isRepeatSlip, slipKeys, COOLDOWN_MS, DEFAULT_CAP } from '../../functions/_lib/assist/conductor.js';
-import { toCandidate, toVoice, toAnother, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
+import { decide, budgetTier, canRun, isRepeatSlip, slipKeys, COOLDOWN_MS, DEFAULT_CAP, DROPPED_WHEN_REDUCED, CORE_SEATS } from '../../functions/_lib/assist/conductor.js';
+import { toCandidate, toVoice, toAnother, toStall, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
 import { callSeat, countTokens } from '../../functions/_lib/assist/claude.js';
 import { SEATS, WAKES } from '../../functions/_lib/assist/seats.js';
 import { makeHandler, cleanDraws, cleanNpc, cleanShown, DRAW_MAX, onRequest as realHandler } from '../../functions/api/gm/assist.js';
@@ -42,10 +44,10 @@ await test('ladder: reduced drops Meanwhile, Showrunner and Mystery; core keeps 
 
 await test('flags wake seats through WAKES; no flag, no call', () => {
   assert.deepEqual(decide({ flags: [], now: T }).seats, []);
-  assert.deepEqual(decide({ flags: ['scene_change', 'stall'], now: T }).seats, []);
+  assert.deepEqual(decide({ flags: ['scene_change'], now: T }).seats, []);
   assert.deepEqual(decide({ flags: ['roll_talk'], now: T }).seats, ['ref', 'ledger']);
   assert.deepEqual(decide({ flags: ['new_name'], now: T }).seats, ['clerk']);
-  assert.deepEqual(decide({ flags: ['harm', 'clue_mention'], now: T }).seats, ['ref', 'clerk', 'ledger']);
+  assert.deepEqual(decide({ flags: ['harm', 'clue_mention'], now: T }).seats, ['ref', 'clerk', 'ledger', 'mystery']);
 });
 
 await test('one of each in flight, and a per-seat cooldown', () => {
@@ -156,7 +158,7 @@ function fakeClient(replies, calls) {
         const texts = req.messages[0].content.filter((b) => b.type === 'text').map((b) => b.text);
         const ins = texts[0];
         const doc = req.messages[0].content.find((b) => b.type === 'document');
-        const seat = /listen to a live/.test(ins) ? 'tripwire' : /rules referee/.test(ins) ? 'ref' : /keep the canon/.test(ins) ? 'clerk' : /keep the ledger/.test(ins) ? 'ledger' : /one more line/.test(ins) ? 'voice_plus' : /voice coach/.test(ins) ? 'voice' : /fixer/.test(ins) ? 'fixer' : 'other';
+        const seat = Object.keys(SEATS).find((k) => ins.startsWith(SEATS[k].instructions)) || 'other';
         calls.push({ seat, max: req.max_tokens, model: req.model, effort: req.output_config.effort, cached: !!doc, doc, ins, user: texts[texts.length - 1] });
         const r = replies[seat];
         if (replies.__ms) clock.t += replies.__ms[seat] || 0;          // a fake wall-clock for the call
@@ -176,14 +178,20 @@ const REPLIES = () => ({
   voice: { who: 'Mrs Test', want: 'to be paid', line_a: 'Pay up, dear.', line_b: 'I could forget I saw you.' },
   voice_plus: { who: 'Mrs Test', line: 'The door is open, if you are quick.' },
   fixer: { read: 'who, where, risky standard', one_three: 'a', four_five: 'b', six: 'c', crit: 'd', bargain: 'e' },
+  stall: { stalled: false, kind: 'none', offer: '', why_now: '' },
+  showrunner: { spotlight: [], needs_spotlight: '', beat: 'rising', elapsed_minutes: 30, advice: '' },
+  mystery: { known: [], theories: [], push_next: '', must_land_item: '', how: 'no list' },
 });
 
+const LEGACY_WAKES = { ref: WAKES.ref, clerk: WAKES.clerk, ledger: WAKES.ledger, voice: WAKES.voice };
 async function setup(opts = {}) {
   const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });
   const db = asD1(exec);
   const calls = [], replies = REPLIES();
+  // WP1-3's tests predate Stall, Mystery and the Showrunner (which wakes on every tick): they run with the table those tests were written for;
+  // the WP4 tests pass opts.wakes = WAKES
   const env = { DB: db, CAMPAIGN: 'c', ANTHROPIC_API_KEY: 'sk-ant-test-0000', ...(opts.env || {}) };
-  const handler = makeHandler({ clientFor: () => fakeClient(replies, calls), now: () => clock.t });
+  const handler = makeHandler({ clientFor: () => fakeClient(replies, calls), now: () => clock.t, wakes: opts.wakes || LEGACY_WAKES });
   const lines = (n, extra = {}) => addLines(db, 'c', cleanLines({ lines: Array.from({ length: n }, (_, i) => ({ id: 'l' + Math.random().toString(36).slice(2, 10) + i, at: iso(clock.t - 20_000 + i), session: '3', conn: 'x', speaker: 0, text: 'we roll the dice now ' + i, ...extra })) }));
   const post = (action, body, data = { me: GM }) => handler({ request: new Request('https://blades.example.test/api/gm/assist/' + action, { method: 'POST', body: JSON.stringify(body || {}), headers: { 'Content-Type': 'application/json' } }), env, data });
   const rows = () => exec.db.prepare('SELECT * FROM gm_assist_log ORDER BY id').all().map((r) => ({ ...r }));
@@ -430,7 +438,7 @@ async function tickWith(partBody, mkErr) {
   const s = await setup();
   if (partBody) s.exec.db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', '{}', 0, ?)").run(JSON.stringify(partBody));
   const seen = [];
-  const handler = makeHandler({ now: () => clock.t, clientFor: () => ({ messages: { async create(req) { seen.push(req); if (mkErr) throw mkErr; return fakeClient(s.replies, s.calls).messages.create(req); } } }) });
+  const handler = makeHandler({ now: () => clock.t, wakes: LEGACY_WAKES, clientFor: () => ({ messages: { async create(req) { seen.push(req); if (mkErr) throw mkErr; return fakeClient(s.replies, s.calls).messages.create(req); } } }) });
   await s.lines(2);
   const out = await body(await handler({ request: new Request('https://blades.example.test/api/gm/assist/tick', { method: 'POST', body: '{}' }), env: s.env, data: { me: GM } }));
   return { s, seen, out };
@@ -971,6 +979,272 @@ await test('voice: the prompts name the NPC and the shown lines, and the replay 
   assert.match(anotherUser({ npc: 'Mrs Test', shown: ['a', 'b'], stamp: '09:30', talk: 't' }), /for this NPC: Mrs Test\.\nLines already shown .*:\n1\. a\n2\. b\nLast four minutes, up to 09:30:\nt$/);
   const src = (await import('node:fs')).default.readFileSync(path.join(ROOT, 'scripts', 'gm-assist-replay.mjs'), 'utf8');
   assert.ok(/arg\('voice-at'\)/.test(src) && /onStage: !!npc/.test(src) && /lines\.md/.test(src) && /voice_plus/.test(src), 'the script takes --voice-at, gates on the NPC name and writes lines.md');
+});
+
+// ---------- Stall, Showrunner and Mystery (WP4) ----------
+const FULL = { wakes: WAKES };
+const ALL_FLAGS = { ...NONE, roll_talk: true, harm: true, new_name: true, clue_mention: true, stall: true };
+const seed = (s, seat, atMs, cents = 0, card = '{}') => s.db.prepare("INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, cents, flags, card) VALUES ('c', ?1, '', ?2, 'seed', '', ?3, '', ?4)").bind(iso(atMs), seat, cents, card).run();
+const STALL_OFFER = { stalled: true, kind: 'complication', offer: 'A runner bursts in with bad news.', why_now: 'The table has gone quiet.' };
+const SHOW = (n = 1) => ({ spotlight: [{ who: 'Quill', minutes_since: 12, note: 'quiet' }], needs_spotlight: 'Quill', beat: 'rising', elapsed_minutes: 40, advice: 'Give the scene to Quill. ' + n });
+const MYS = (n = 1) => ({ known: ['The ledger is forged ' + n], theories: [], push_next: 'The ferryman mentions the second key ' + n, must_land_item: '#' + n + ' The second key', how: 'Let the ferryman drop it while he is paid.' });
+
+await test('conductor: Stall wakes on stall, Mystery on clue_mention, Showrunner on every tick; Ref stays first', () => {
+  assert.deepEqual(WAKES.stall, ['stall']); assert.deepEqual(WAKES.mystery, ['clue_mention']); assert.deepEqual(WAKES.showrunner, ['tick']);
+  assert.deepEqual(decide({ flags: ['stall'], now: T }).seats, ['stall']);
+  assert.deepEqual(decide({ flags: ['clue_mention'], now: T }).seats, ['clerk', 'mystery']);
+  assert.deepEqual(decide({ flags: ['tick'], now: T }).seats, ['showrunner']);
+  assert.deepEqual(decide({ flags: ['scene_change'], now: T }).seats, [], 'a Tripwire flag alone never wakes the Showrunner: only the endpoint adds tick');
+  assert.deepEqual(decide({ flags: ['stall', 'clue_mention', 'roll_talk', 'tick'], now: T }).seats, ['ref', 'clerk', 'ledger', 'stall', 'mystery', 'showrunner'], 'Ref is first in the list');
+});
+
+await test('conductor: Showrunner every 10 minutes, Mystery every 15, Stall every 5; one of each in flight', () => {
+  assert.equal(COOLDOWN_MS.showrunner, 10 * 60_000); assert.equal(COOLDOWN_MS.mystery, 15 * 60_000); assert.equal(COOLDOWN_MS.stall, 5 * 60_000);
+  const run = (flags, seat, ago, extra = {}) => decide({ flags, now: T, lastRun: { [seat]: T - ago }, ...extra }).seats.includes(seat);
+  assert.equal(run(['tick'], 'showrunner', 10 * 60_000 - 1), false); assert.equal(run(['tick'], 'showrunner', 10 * 60_000), true);
+  assert.equal(run(['clue_mention'], 'mystery', 15 * 60_000 - 1), false); assert.equal(run(['clue_mention'], 'mystery', 15 * 60_000), true);
+  assert.equal(run(['stall'], 'stall', 5 * 60_000 - 1), false); assert.equal(run(['stall'], 'stall', 5 * 60_000), true);
+  assert.equal(run(['tick'], 'showrunner', 99 * 60_000, { inFlight: ['showrunner'] }), false);
+  assert.deepEqual(decide({ flags: ['tick'], now: T, lastRun: { showrunner: T - 1000 } }).skipped, [{ seat: 'showrunner', why: 'cooldown' }]);
+});
+
+await test('conductor cap tiers: Showrunner and Mystery stop at 60%, Stall and Voice at 85%, Ref, Ledger and Another run to the cap', () => {
+  const flags = ['stall', 'clue_mention', 'roll_talk', 'tick'];
+  const seatsAt = (spent) => decide({ flags, now: T, spent, cap: 20, onStage: true }).seats;
+  assert.deepEqual(seatsAt(0), ['ref', 'clerk', 'ledger', 'stall', 'mystery', 'showrunner', 'voice']);
+  assert.deepEqual(seatsAt(11.9), ['ref', 'clerk', 'ledger', 'stall', 'mystery', 'showrunner', 'voice']);
+  assert.deepEqual(seatsAt(12), ['ref', 'clerk', 'ledger', 'stall', 'voice'], 'at 60% Showrunner and Mystery go, before Ref');
+  assert.deepEqual(seatsAt(16.9), ['ref', 'clerk', 'ledger', 'stall', 'voice']);
+  assert.deepEqual(seatsAt(17), ['ref', 'ledger'], 'at 85% Stall and Voice go; Ref and Ledger stay');
+  assert.deepEqual(seatsAt(19.99), ['ref', 'ledger']);
+  assert.deepEqual(seatsAt(20), [], 'at the cap nothing');
+  for (const seat of ['showrunner', 'mystery']) assert.ok(DROPPED_WHEN_REDUCED.includes(seat));
+  assert.ok(!CORE_SEATS.includes('stall') && !CORE_SEATS.includes('showrunner') && !CORE_SEATS.includes('mystery') && CORE_SEATS.includes('ref'));
+});
+
+await test('seats: Mystery names its Must land entry; the instructions say so and stay generic', () => {
+  const m = SEATS.mystery;
+  assert.ok(/Must land/.test(m.instructions) && /MUST come from/.test(m.instructions));
+  assert.ok(m.schema.required.includes('must_land_item') && m.schema.properties.must_land_item);
+  assert.equal(m.schema.additionalProperties, false);
+});
+
+await test('editor: a Mystery card needs a Must land entry; a Showrunner card needs something to say; repeats are dropped', () => {
+  assert.equal(toCandidate('mystery', MYS(1), { now: T }).seat, 'mystery');
+  assert.match(toCandidate('mystery', MYS(1), { now: T }).text, /^Push next: The ferryman mentions the second key 1 How: /);
+  assert.equal(toCandidate('mystery', { ...MYS(1), must_land_item: '' }, { now: T }), null, 'not grounded in the list: dropped');
+  assert.equal(toCandidate('mystery', { ...MYS(1), push_next: '  ' }, { now: T }), null, 'no push: dropped');
+  assert.equal(toCandidate('mystery', null, { now: T }), null);
+  const c = toCandidate('mystery', MYS(1), { now: T });
+  assert.equal(toCandidate('mystery', MYS(1), { recent: [{ at: T, keys: c.keys }], now: T + 9 * 60_000 }), null, 'same push or same entry within 10 minutes');
+  assert.ok(toCandidate('mystery', MYS(1), { recent: [{ at: T, keys: c.keys }], now: T + 11 * 60_000 }));
+  const s1 = toCandidate('showrunner', SHOW(1), { now: T });
+  assert.match(s1.text, /^Spotlight: Quill\. Give the scene to Quill/);
+  assert.equal(toCandidate('showrunner', { ...SHOW(1), advice: '', needs_spotlight: 'none' }, { now: T }), null);
+  assert.equal(toCandidate('showrunner', { ...SHOW(1), advice: '', needs_spotlight: '' }, { now: T }), null);
+  assert.equal(toCandidate('showrunner', SHOW(1), { recent: [{ at: T, keys: s1.keys }], now: T + 60_000 }), null);
+});
+
+await test('editor: Ref beats Clerk beats Mystery beats Showrunner for the one slot; the rest are dropped, not queued; the gap holds them all', () => {
+  const ref = toCandidate('ref', { slip: true, said_at: '22:14', what_was_said: 'x', rule: 'Rule (p.1)', card: 'Check the rule' }, { now: T });
+  const clerk = toCandidate('clerk', { new_names: ['Zarbo'], drift: [], clues_landed: [] }, { now: T });
+  const mys = toCandidate('mystery', MYS(2), { now: T }), show = toCandidate('showrunner', SHOW(2), { now: T });
+  let m = merge([show, mys, clerk, ref], { now: T });
+  assert.equal(m.card.seat, 'ref'); assert.deepEqual(m.dropped.map((d) => d.seat + ':' + d.why).sort(), ['clerk:ref-waiting', 'mystery:ref-waiting', 'showrunner:ref-waiting']);
+  assert.deepEqual(m.held, [], 'only Ref is ever held');
+  m = merge([show, mys, clerk], { now: T }); assert.equal(m.card.seat, 'clerk');
+  m = merge([show, mys], { now: T }); assert.equal(m.card.seat, 'mystery'); assert.deepEqual(m.dropped, [{ seat: 'showrunner', why: 'outranked' }]);
+  m = merge([show], { now: T }); assert.equal(m.card.seat, 'showrunner');
+  m = merge([show, mys], { now: T, lastShownAt: T - CARD_GAP_MS + 1000 });
+  assert.equal(m.card, null); assert.deepEqual(m.held, []); assert.deepEqual(m.dropped.map((d) => d.seat + ':' + d.why).sort(), ['mystery:throttle', 'showrunner:throttle']);
+  assert.equal(merge([show], { now: T, lastShownAt: T - CARD_GAP_MS }).card.seat, 'showrunner');
+});
+
+await test('editor: Stall is nothing unless the table is stalled and the offer is new', () => {
+  const v = toStall(STALL_OFFER, { now: T });
+  assert.equal(v.kind, 'complication'); assert.equal(v.offer, 'A runner bursts in with bad news.'); assert.equal(v.keys.length, 1);
+  assert.equal(toStall({ ...STALL_OFFER, stalled: false }, { now: T }), null);
+  assert.equal(toStall({ ...STALL_OFFER, offer: '  ' }, { now: T }), null);
+  assert.equal(toStall(null, { now: T }), null);
+  assert.equal(toStall(STALL_OFFER, { recent: [{ at: T, keys: v.keys }], now: T + 60_000 }), null);
+  assert.ok(toStall(STALL_OFFER, { recent: [{ at: T, keys: v.keys }], now: T + 11 * 60_000 }));
+  assert.equal(toStall({ ...STALL_OFFER, kind: 'bogus' }, { now: T }).kind, 'complication');
+});
+
+await test('tick: the stall flag wakes Stall; its offer goes to the Rack (stall), not the card stream; the row has secs and stop', async () => {
+  clock.t = Date.parse('2030-03-01T09:00:00.000Z');
+  const s = await setup(FULL);
+  s.replies.__ms = { stall: 3500, showrunner: 500 };
+  await s.lines(3);
+  s.replies.tripwire = { ...NONE, stall: true };
+  s.replies.stall = STALL_OFFER;
+  s.replies.showrunner = { ...s.replies.showrunner, advice: '', needs_spotlight: '' };
+  const out = await body(await s.post('tick', {}));
+  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire', 'stall', 'showrunner']);
+  const stallCall = s.calls.find((c) => c.seat === 'stall');
+  assert.equal(stallCall.model, 'claude-sonnet-5-5'); assert.equal(stallCall.effort, 'low');
+  assert.deepEqual(out.cards, [], 'not a card');
+  assert.equal(out.stall.offer, 'A runner bursts in with bad news.'); assert.equal(out.stall.kind, 'complication'); assert.ok(out.stall.at);
+  const row = s.rows().find((r) => r.seat === 'stall'), card = JSON.parse(row.card);
+  assert.equal(card.stall, 1); assert.ok(card.secs >= 3.5 && card.secs <= 4, 'the fake clock is shared with the Showrunner'); assert.equal(card.stop, 'end_turn'); assert.equal(card.shown, undefined, 'never in the card gap');
+  // a minute later the flag is still set: the 5-minute cooldown means no second call
+  s.calls.length = 0; clock.t += 60_000; await s.lines(2);
+  const again = await body(await s.post('tick', {}));
+  assert.deepEqual(s.calls.map((c) => c.seat), ['tripwire']); assert.equal(again.stall, undefined);
+  // 5 minutes on, the same offer is a repeat: logged, shows nothing; a new one shows
+  s.calls.length = 0; clock.t += 5 * 60_000; await s.lines(2);
+  assert.equal((await body(await s.post('tick', {}))).stall, undefined, 'the same offer inside 10 minutes');
+  s.calls.length = 0; clock.t += 6 * 60_000; await s.lines(2);
+  s.replies.stall = { ...STALL_OFFER, offer: 'The lamps go out.' };
+  assert.equal((await body(await s.post('tick', {}))).stall.offer, 'The lamps go out.');
+  // the table is not stalled: nothing shows
+  s.calls.length = 0; clock.t += 6 * 60_000; await s.lines(2);
+  s.replies.stall = { stalled: false, kind: 'none', offer: '', why_now: 'busy' };
+  const quiet = await body(await s.post('tick', {}));
+  assert.equal(quiet.stall, undefined); assert.deepEqual(quiet.cards, []);
+});
+
+await test('tick: Showrunner runs every ten minutes (not each tick), reads 20 minutes of talk, and its card obeys the five-minute gap', async () => {
+  clock.t = Date.parse('2030-03-02T09:00:00.000Z');
+  const s = await setup(FULL);
+  s.replies.tripwire = { ...NONE };
+  let n = 0; s.replies.showrunner = () => SHOW(++n);
+  const seen = [];
+  for (let min = 0; min <= 22; min++) {
+    s.calls.length = 0; await s.lines(2);
+    const out = await body(await s.post('tick', {}));
+    if (s.calls.some((c) => c.seat === 'showrunner')) seen.push({ min, user: s.calls.find((c) => c.seat === 'showrunner').user, card: out.cards[0] || null });
+    clock.t += 60_000;
+  }
+  assert.deepEqual(seen.map((x) => x.min), [0, 10, 20], 'every ten minutes');
+  assert.match(seen[0].user, /^Talk of the last 20 minutes, up to \d\d:\d\d/);
+  assert.ok(seen.every((x) => x.card && x.card.seat === 'showrunner' && /^Spotlight: Quill/.test(x.card.text)), 'each run is a card, ten minutes apart');
+  assert.equal(s.rows().filter((r) => r.seat === 'showrunner' && JSON.parse(r.card).shown === 1).length, 3);
+  // a card shown a minute ago: the Showrunner's is held back by the gap and dropped, not queued
+  clock.t += 10 * 60_000; await s.lines(2);
+  await seed(s, 'ref', clock.t - 60_000, 0, JSON.stringify({ shown: 1, text: 'a slip', keys: ['ref:x'] }));
+  s.calls.length = 0;
+  const held = await body(await s.post('tick', {}));
+  assert.ok(s.calls.some((c) => c.seat === 'showrunner')); assert.deepEqual(held.cards, [], 'the gap holds it');
+  assert.equal(JSON.parse(s.rows().filter((r) => r.seat === 'showrunner').pop().card).shown, 0);
+});
+
+await test('tick: Mystery runs on clue_mention at most every 15 minutes, is handed what it reported known, and needs a Must land entry', async () => {
+  clock.t = Date.parse('2030-03-03T09:00:00.000Z');
+  const s = await setup(FULL);
+  await seed(s, 'showrunner', clock.t - 60_000);        // keep the Showrunner out of this one
+  s.replies.tripwire = { ...NONE };
+  let n = 0; s.replies.mystery = () => MYS(++n);
+  await s.lines(3);
+  let out = await body(await s.post('tick', {}));
+  assert.ok(!s.calls.some((c) => c.seat === 'mystery'), 'no clue_mention, no Mystery');
+  s.replies.tripwire = { ...NONE, clue_mention: true };
+  s.calls.length = 0; clock.t += 60_000; await s.lines(3);
+  out = await body(await s.post('tick', {}));
+  const m1 = s.calls.find((c) => c.seat === 'mystery');
+  assert.ok(m1 && m1.model === 'claude-sonnet-5-5' && m1.effort === 'medium');
+  assert.match(m1.user, /^Talk of the last 15 minutes, up to /); assert.ok(!/reported these as known/.test(m1.user), 'first run: nothing known yet');
+  assert.equal(out.cards.length, 1); assert.equal(out.cards[0].seat, 'mystery'); assert.match(out.cards[0].text, /^Push next: The ferryman mentions the second key 1/);
+  // inside 15 minutes: no second call, though the flag is still set
+  s.calls.length = 0; clock.t += 14 * 60_000; await s.lines(3);
+  await body(await s.post('tick', {}));
+  assert.ok(!s.calls.some((c) => c.seat === 'mystery'));
+  // at 15 minutes it runs again, told what it reported known
+  s.calls.length = 0; clock.t += 60_000; await s.lines(3);
+  s.replies.mystery = { ...MYS(2), must_land_item: '' };
+  out = await body(await s.post('tick', {}));
+  const m2 = s.calls.find((c) => c.seat === 'mystery');
+  assert.ok(m2 && /reported these as known earlier tonight[^]*- The ledger is forged 1/.test(m2.user));
+  assert.ok(!out.cards.some((c) => c.seat === 'mystery'), 'a push that names no Must land entry is dropped');
+  const rows = s.rows().filter((r) => r.seat === 'mystery').map((r) => JSON.parse(r.card));
+  assert.equal(rows.length, 2); assert.equal(rows[0].shown, 1); assert.equal(rows[1].shown, 0); assert.ok(rows.every((c) => typeof c.secs === 'number' && c.stop === 'end_turn'));
+});
+
+await test('tick: with every seat on, Ref takes the slot and the others are dropped; across 30 minutes no two cards are closer than five', async () => {
+  clock.t = Date.parse('2030-03-04T09:00:00.000Z');
+  const s = await setup({ wakes: WAKES, env: { ASSIST_CAP_USD: '1000' } });
+  s.replies.tripwire = { ...ALL_FLAGS };
+  let n = 0;
+  s.replies.ref = () => ({ slip: true, said_at: '09:0' + (n % 10), what_was_said: 'x', rule: 'Rule number ' + n + ' (p.' + n + ')', card: 'Slip ' + n });
+  s.replies.clerk = () => ({ new_names: ['Name' + n], drift: [], clues_landed: [] });
+  s.replies.mystery = () => MYS(n + 1); s.replies.showrunner = () => SHOW(n + 1); s.replies.stall = () => ({ ...STALL_OFFER, offer: 'Offer ' + n });
+  const shown = [];
+  let first = null;
+  for (let min = 0; min < 31; min++) {
+    n++; s.calls.length = 0; await s.lines(2);
+    const out = await body(await s.post('tick', {}));
+    if (min === 0) first = { seats: s.calls.map((c) => c.seat), out };
+    assert.ok(out.cards.length <= 1, 'at most one card a tick');
+    if (out.cards.length) shown.push({ min, seat: out.cards[0].seat });
+    clock.t += 60_000;
+  }
+  assert.deepEqual(first.seats, ['tripwire', 'ref', 'clerk', 'ledger', 'stall', 'mystery', 'showrunner'], 'every seat woke, Ref first');
+  assert.equal(first.out.cards[0].seat, 'ref'); assert.ok(first.out.stall, 'Stall went to the Rack beside the card');
+  const gaps = shown.slice(1).map((c, i) => c.min - shown[i].min);
+  assert.ok(shown.length >= 5 && shown.length <= 7, 'a card about every five minutes: ' + JSON.stringify(shown));
+  assert.ok(gaps.every((g) => g >= 5), 'never closer than five minutes: ' + JSON.stringify(gaps));
+  const dropped = s.rows().filter((r) => ['mystery', 'showrunner', 'clerk'].includes(r.seat)).filter((r) => JSON.parse(r.card).shown === 0).length;
+  assert.ok(dropped > 0, 'cards the gap or Ref held back are logged, not shown');
+});
+
+await test('tick: the cap tiers on the endpoint: past 60% no Showrunner or Mystery, past 85% no Stall either, at the cap nothing', async () => {
+  clock.t = Date.parse('2030-03-05T09:00:00.000Z');
+  const calls = async (cents) => {
+    const s = await setup(FULL);
+    await seed(s, 'fixer', clock.t - 3 * 3600_000, cents);
+    await s.lines(3);
+    s.replies.tripwire = { ...ALL_FLAGS };
+    s.replies.stall = STALL_OFFER;
+    const out = await body(await s.post('tick', {}));
+    return { seats: s.calls.map((c) => c.seat), out };
+  };
+  assert.deepEqual((await calls(0)).seats, ['tripwire', 'ref', 'clerk', 'ledger', 'stall', 'mystery', 'showrunner']);
+  assert.deepEqual((await calls(1300)).seats, ['tripwire', 'ref', 'clerk', 'ledger', 'stall']);
+  const core = await calls(1800);
+  assert.deepEqual(core.seats, ['tripwire', 'ref', 'ledger']); assert.equal(core.out.stall, undefined); assert.equal(core.out.spend.tier, 'core');
+  const off = await calls(2000);
+  assert.deepEqual(off.seats, []); assert.deepEqual(off.out.cards, []); assert.equal(off.out.stall, undefined); assert.equal(off.out.spend.tier, 'off');
+});
+
+await test('tick: a cap of 0, or a refusal: Stall, Showrunner and Mystery show nothing and nothing breaks', async () => {
+  clock.t = Date.parse('2030-03-06T09:00:00.000Z');
+  let s = await setup({ ...FULL, env: { ASSIST_CAP_USD: '0' } });
+  await s.lines(3);
+  let out = await body(await s.post('tick', {}));
+  assert.equal(s.calls.length, 0); assert.deepEqual(out.cards, []); assert.equal(out.stall, undefined);
+  // a refusal on Stall, Showrunner and Mystery: logged as such, nothing shown
+  clock.t += 3600_000;
+  s = await setup(FULL);
+  await s.lines(3);
+  s.replies.tripwire = { ...ALL_FLAGS }; s.replies.stall = STALL_OFFER; s.replies.mystery = MYS(1); s.replies.showrunner = SHOW(1);
+  s.replies.__stop = { stall: 'refusal', mystery: 'refusal', showrunner: 'refusal' };
+  out = await body(await s.post('tick', {}));
+  assert.equal(out.stall, undefined); assert.deepEqual(out.cards.map((c) => c.seat), ['ref'], 'only Ref shows');
+  for (const seat of ['stall', 'mystery', 'showrunner']) {
+    const c = JSON.parse(s.rows().find((r) => r.seat === seat).card);
+    assert.equal(c.refusal, 1, seat); assert.equal(c.stop, 'refusal'); assert.ok(!c.shown && !c.stall);
+  }
+});
+
+await test('tick: every new seat call logs its secs and stop reason, even a failed one', async () => {
+  clock.t = Date.parse('2030-03-07T09:00:00.000Z');
+  const s = await setup(FULL);
+  await s.lines(3);
+  s.replies.tripwire = { ...NONE, stall: true, clue_mention: true };
+  s.replies.__ms = { stall: 2000, mystery: 4000, showrunner: 1000 };
+  s.replies.stall = new Error('boom');
+  const out = await body(await s.post('tick', {}));
+  const by = Object.fromEntries(s.rows().map((r) => [r.seat, JSON.parse(r.card)]));
+  assert.ok(by.mystery.secs >= 4 && by.showrunner.secs >= 1 && by.stall.secs >= 2, 'the fake clock is shared, so each is at least its own time');
+  assert.equal(by.stall.error, 'call failed'); assert.deepEqual(out.errors, [{ seat: 'stall', error: 'call failed' }]);
+});
+
+await test('WP4: the prompts name how far back Showrunner and Mystery read, and the replay script drives the real endpoint', () => {
+  assert.equal(showrunnerUser({ stamp: '22:10', talk: 'T' }), 'Talk of the last 20 minutes, up to 22:10 (earlier talk is not shown):\nT');
+  assert.equal(mysteryUser({ stamp: '22:10', talk: 'T' }), 'Talk of the last 15 minutes, up to 22:10 (earlier talk is not shown):\nT');
+  assert.match(mysteryUser({ stamp: '22:10', talk: 'T', known: ['a', 'b'] }), /^You reported these as known earlier tonight \(already learned\):\n- a\n- b\nTalk of/);
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'gm-assist-replay.mjs'), 'utf8');
+  assert.ok(/flag\('tap-sim'\)/.test(src) && /makeHandler\(/.test(src) && /arg\('turn-at'\)/.test(src) && /must_land_item/.test(src), 'the script takes --tap-sim (through makeHandler) and --turn-at, and checks the Must land entry');
 });
 
 console.log(failed ? `\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);

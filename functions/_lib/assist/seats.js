@@ -130,7 +130,7 @@ Tie each to the named people, places and running clocks of the scene. Never deci
 
   showrunner: {
     model: 'claude-haiku-5-5', effort: 'low', maxTokens: 4000,
-    instructions: `You are the showrunner for a Blades '68 game, checking pacing from the transcript so far. Player characters are listed in your context (and players are named in speaker labels, which are unreliable). Report: for each player character, minutes since they were last named or spoke for (estimate from the stamps; say unknown if unclear), and who most needs the spotlight; the beat over time (setup, rising, climax, aftermath) and how long the session has run; and one line of advice for the next ten minutes. Use only the text given. Reply with JSON only.`,
+    instructions: `You are the showrunner for a Blades '68 game, checking pacing from the transcript you are given (the message says how far back it reaches; earlier talk is not shown, so say unknown rather than guess). Player characters are listed in your context (and players are named in speaker labels, which are unreliable). Report: for each player character, minutes since they were last named or spoke for (estimate from the stamps; say unknown if unclear), and who most needs the spotlight; the beat over time (setup, rising, climax, aftermath) and how long the session has run; and one line of advice for the next ten minutes. Use only the text given. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -153,7 +153,7 @@ Tie each to the named people, places and running clocks of the scene. Never deci
 
   mystery: {
     model: 'claude-sonnet-5-5', effort: 'medium', maxTokens: 2500,
-    instructions: `You keep the mystery for a Blades '68 game. From the transcript so far and the cast and clue material in your context, list: known, what the players have actually learned (said aloud or shown in the fiction); theories, the theories players have voiced, with who said them and whether the evidence so far supports each; and push_next, the single clue the GM should work in next, with a concrete way to deliver it in the current scene. Use only what was said at the table or is in your context; never invent facts. If the context holds no clue list, say so in push_next rather than guessing. Reply with JSON only.`,
+    instructions: `You keep the mystery for a Blades '68 game. From the transcript so far and the cast and clue material in your context, list: known, what the players have actually learned (said aloud or shown in the fiction); theories, the theories players have voiced, with who said them and whether the evidence so far supports each; and push_next, the single clue the GM should work in next, with a concrete way to deliver it in the current scene. push_next MUST come from the "Must land" list in tonight's prep in your context: pick the entry the players have not yet learned that fits the scene best, copy its number and title into must_land_item, and do not invent a clue of your own or take one from anywhere else. If every entry has landed, or the context holds no Must land list, leave push_next and must_land_item empty and say why in how. The message may include what you reported as known earlier; treat that as already learned. Use only what was said at the table or is in your context; never invent facts. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -166,10 +166,11 @@ Tie each to the named people, places and running clocks of the scene. Never deci
             required: ['who', 'theory', 'supported'],
           },
         },
-        push_next: { type: 'string' },
+        push_next: { type: 'string', description: 'the clue to work in next, from the Must land list, or empty' },
+        must_land_item: { type: 'string', description: 'the Must land entry push_next comes from (its number and title, as written), or empty' },
         how: { type: 'string' },
       },
-      required: ['known', 'theories', 'push_next', 'how'],
+      required: ['known', 'theories', 'push_next', 'must_land_item', 'how'],
     },
   },
 
@@ -217,4 +218,7 @@ export const WAKES = {
   clerk: ['new_name', 'clue_mention'],
   ledger: ['harm', 'xp_trigger', 'roll_talk'],
   voice: ['npc_change'],            // also each minute while the page names an NPC on stage (the Conductor)
+  stall: ['stall'],                 // its offer goes to the Rack, like Voice
+  mystery: ['clue_mention'],
+  showrunner: ['tick'],             // not a Tripwire flag: the endpoint adds 'tick' to every tick's flags, and the 10-minute cooldown paces it
 };

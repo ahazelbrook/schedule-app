@@ -77,6 +77,7 @@ try {
       seen.tick.push(JSON.parse(route.request().postData() || '{}'));
       if (seen.mode === 'cap') return route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: "tonight's cap is reached" }) });
       if (seen.mode === 'voice') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], spend: reply.spend, last: 30, voice: VOICE }) });
+      if (seen.mode === 'stall') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [{ seat: 'mystery', at: new Date().toISOString(), text: 'Push next: invented second key.' }], updates: [], flags: ['stall'], spend: reply.spend, last: 32, stall: { kind: 'clue', offer: 'Invented: a runner bursts in with news.', why: 'Invented: the table went quiet.', at: new Date().toISOString() } }) });
       if (seen.mode === 'quiet') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], spend: reply.spend, last: 31 }) });
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(seen.mode === 'second' ? { ...reply, cards: [CLERK], updates: [], last: 20 } : reply) });
     });
@@ -205,6 +206,22 @@ try {
   await sleep(4000);
   check(V3.seen.tick.length === 0 && await V3.page.$('#gm-rack .gm-voice') === null, 'Listening off: no tick and no Voice');
   await V3.c.close();
+
+  // ---- Stall: the offer lands in the Rack (not the box), a Mystery card is an ordinary card, Clear drops the offer ----
+  await api('PATCH', '/gm/stt', { want: 'on' });
+  await setStage(false);
+  const S1 = await open('#gm', { mode: 'stall' });
+  S1.seen.mode = 'stall';
+  await S1.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  check(await S1.page.waitForSelector('#gm-rack .gm-stall', { timeout: 15000 }).then(() => true, () => false), 'Stall: the offer shows in the Rack');
+  check(/runner bursts/.test(await S1.page.textContent('#gm-rack .gm-stall')) && /Clue/.test(await S1.page.textContent('#gm-rack .gm-stall')), 'with its kind and the offer');
+  check(await S1.page.$('#gm-rack .gm-voice') === null, 'and no Voice without an NPC');
+  await shot(S1.page, 'stall-rack');
+  await S1.page.click('.gm-assist .as-launch, #as-launch');
+  check(await S1.page.waitForFunction(() => /Mystery/.test((document.querySelector('#as-list') || {}).textContent || '') && !/runner bursts/.test((document.querySelector('#as-list') || {}).textContent || ''), null, { timeout: 8000 }).then(() => true, () => false), 'a Mystery card is a card in the box, the Stall offer is not');
+  await S1.page.click('#gm-rack [data-gm="stallclear"]');
+  check(await S1.page.$('#gm-rack .gm-stall') === null, 'Clear drops the offer');
+  await S1.c.close();
 
   // ---- a phone: no box ----
   await api('PATCH', '/gm/stt', { want: 'on' });
