@@ -653,8 +653,8 @@ one card per five minutes. Quiet is the normal state. Tonight's spend is counted
 and at the cap nothing runs. The box says so when it is off. With the box off, no key, or the cap reached, the console
 works exactly as it does without it.
 
-**Why the prefix is a file.** Every seat reads the same long reference text (the rules digest, the cast and tonight's
-prep, up to ~90k tokens). The Worker runs on Workers Free, where a request gets 10 ms of CPU: waiting on Claude or D1 is
+**Why the prefix is a file.** Every seat reads the same long reference text (the rules digest, the cast, each NPC card's How to play block, the player-to-character table and tonight's
+prep, up to ~90k tokens; the table comes from `player:` on the PC notes or the git-ignored `gm-private/players.json`, which wins). The Worker runs on Workers Free, where a request gets 10 ms of CPU: waiting on Claude or D1 is
 free, but reading, parsing and re-sending that text on every tick is not. So the GM's PC uploads the text once to
 Anthropic's Files API as a plain-text file, the pushed `assist` part holds only `{ file_id, hash, extra }`, and each seat
 call names the file. Nothing campaign-specific is in git, in D1 or in the Worker.

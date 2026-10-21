@@ -37,7 +37,8 @@
 //             over the app's built-in downtime tables; it is the only place they live outside the vault. No such note: no part.
 //
 //   assist    { prefix }: the cached prefix for "Claude at the table" (functions/api/gm/assist.js): the rules reference, the NPC
-//             cast and tonight's prep as <context name="..."> blocks (lib/assist-export.mjs). GM only. This file keeps the text;
+//             cast, every NPC card's How to play block, the player-to-character table (player: on the PC notes, or the git-ignored
+//             gm-private/players.json, which wins) and tonight's prep (last) as <context name="..."> blocks (lib/assist-export.mjs). GM only. This file keeps the text;
 //             gm-sync push uploads it to Anthropic's Files API and pushes only { file_id, hash, extra } (lib/assist-file.mjs). Tonight's prep is
 //             --assist-prep <vault-relative note> or "prep" in gm-private/assist-config.json; warns past ~90k tokens.
 //
@@ -789,7 +790,7 @@ function main() {
   // score comes after location: it lays the location part's dossiers and districts over its own tables
   // assist: the cached prefix for "Claude at the table" (rules reference, NPC cast, tonight's prep); GM only (lib/assist-export.mjs)
   const assistConfig = readConfig(a.assistConfig ? path.resolve(a.assistConfig) : path.join(REPO, "gm-private", "assist-config.json"));
-  const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: a.assistPrep, config: assistConfig });
+  const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: a.assistPrep, config: assistConfig, playersFile: path.join(REPO, "gm-private", "players.json") });
   const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart], ["assist", buildAssistPart]];
   let npcLeverage = 0;
   let locationExtraNames = [];
@@ -865,7 +866,7 @@ function main() {
     const dp = parts.downtime;
     console.log("  downtime: " + (dp ? dp.T.benefit.length + " Benefits and " + dp.T.mishap.length + " Mishaps from " + path.basename(dp.rel) : "none (no note has gm_downtime: true)"));
     const as = parts.assist;
-    console.log("  assist: " + (as ? "about " + as.src.tokens + " tokens (" + as.src.file.split(" + ").map(f => path.basename(f)).join(", ") + ")" : "none (no rules, cast or prep note found)"));
+    console.log("  assist: " + (as ? "about " + as.src.tokens + " tokens, NPC cards " + (as.src.npcWith || 0) + " with How to play / " + (as.src.npcWithout || 0) + " without, players " + (as.src.players || "none") + " (" + as.src.file.split(" + ").map(f => path.basename(f)).join(", ") + ")" : "none (no rules, cast or prep note found)"));
   }
   for (const [name, part] of Object.entries(parts)) {
     const n = Buffer.byteLength(JSON.stringify(part));
