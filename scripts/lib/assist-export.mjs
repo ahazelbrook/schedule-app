@@ -23,6 +23,7 @@ export const DEFAULT_CAST = ROOT + '/Tools/blades-68-npc-cast.md';
 export const NPC_BLOCK_NAME = 'npc-how-to-play.md';
 export const PLAYERS_NAME = 'players.md';
 export const NEVER_NAME = 'never-reveal.md';
+export const HANDOUTS_NAME = 'handouts.md';
 export const CHARACTERS = GROUP + '/Characters';
 export const TOKEN_WARN = 90000;          // Haiku's price rises above 100k prompt tokens; warn well before it
 export const CHARS_PER_TOKEN = 3.5;
@@ -238,6 +239,17 @@ export function npcBlockText(entries) {
   return '# NPC cards: how to play\n\n' + entries.map((e) => '## ' + e.name + '\n' + e.body).join('\n\n') + '\n';
 }
 
+/**
+ * The handouts context text, or '' when there are none. Lists each handout's id, title and cue (`when`) only: never a file name.
+ * items: the `handouts` pack part's items ([{ id, title, file, when? }]).
+ */
+export function handoutsText(items) {
+  const rows = (Array.isArray(items) ? items : []).filter((x) => x && typeof x.id === 'string' && x.id && typeof x.title === 'string' && x.title)
+    .map((x) => '- id: ' + x.id + ' | title: ' + x.title + (typeof x.when === 'string' && x.when ? ' | cue: ' + x.when : ''));
+  if (!rows.length) return '';
+  return ['# Handouts', '', 'Props the GM can show the table. Each line is an id, a title and the cue for the moment it belongs to.', '', ...rows, ''].join('\n');
+}
+
 /** Character -> player from PC notes' `player:` property (the note's `character:` property, else its file name). */
 export function playersFromNotes(vault, dir = CHARACTERS) {
   const d = inside(vault, dir), out = {};
@@ -275,10 +287,10 @@ export function playersText(map) {
 /**
  * Build the assist part. opts: { vault, exportedAt, warn, prep (vault-relative), rules, cast, config (parsed) }.
  * After the rules and cast come the NPC cards' How to play blocks and the player table (from `player:` on PC notes, overridden by
- * `playersFile`, gm-private/players.json); tonight's prep stays last. Returns null when no note could be read. A missing note is a warning, not a failure, except a prep path the GM named
+ * `playersFile`, gm-private/players.json), then the handouts list (`handouts`: the pack's handouts part, if any); tonight's prep stays last. Returns null when no note could be read. A missing note is a warning, not a failure, except a prep path the GM named
  * explicitly (a typo there would quietly leave tonight's prep out), which throws.
  */
-export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, cast, config = {}, playersFile = '' }) {
+export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, cast, config = {}, playersFile = '', handouts = null }) {
   const want = [
     ['rules', rules || config.rules || DEFAULT_RULES, false],
     ['cast', cast || config.cast || DEFAULT_CAST, false],
@@ -297,6 +309,9 @@ export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, c
       const pl = mergePlayers(playersFromNotes(vault), readPlayersFile(playersFile));
       if (pl.source) { const t = playersText(pl.map); blocks.push(contextBlock(PLAYERS_NAME, t)); used.push({ rel: PLAYERS_NAME, sha: sha(t) }); stats.players = pl.source; }
       else warn('assist: no player table (no player: on the PC notes, no gm-private/players.json): the prefix does not say who plays whom');
+      // handouts: a stable block (it changes only when the handouts do), so it sits with the others, ahead of never-reveal and prep
+      const ht = handoutsText(handouts && handouts.items);
+      if (ht) { blocks.push(contextBlock(HANDOUTS_NAME, ht)); used.push({ rel: HANDOUTS_NAME, sha: sha(ht) }); stats.handouts = handouts.items.length; }
       // never-reveal: after the stable blocks, before tonight's prep. The NPC part is stable between nights; tonight's part follows it.
       const nv = collectNever(vault);
       let prepNever = null, noMust = false;

@@ -14,6 +14,9 @@
 //        Editor as card candidates behind Ref and Clerk, so the one-card-per-five-minutes gap holds for every seat together; a card the
 //        gap holds back is dropped, not queued. The Mystery card's push-next must name a Must land entry (must_land_item): the Worker
 //        does not hold the prefix, so the seat's instructions carry the rule and the Editor drops a card that names no entry.
+//        The Mystery keeper may also name a handout: the answer then carries `handout: { id, why, at }`, a separate field that never takes the
+//        card slot. The id must be in the live `handouts` pack part (read from D1 only when the seat named one, and only if the part is
+//        under 16 KB); anything else is dropped. The GM's page offers it in the Rack; the GM's tap is what shows it.
 //   POST /api/gm/assist/another { npc, shown: [..] } -> { cards: [], voice: { who, lines: [one], at }, spend, last }
 //        The Another tap on a Voice line: the voice_plus seat writes ONE more line for the same NPC, different from the 1-6 shown
 //        lines (each at most 400 characters). 400 on a bad body; 429 at the cap or while a voice_plus call is in flight or cooling
@@ -25,10 +28,11 @@
 //        `updates` are the Ledger's entries (stress, harm, Heat, xp...), one-tap state updates outside the card gap:
 //        [{ seat: 'ledger', at, key, text }].
 //        The Tap seats read the last four MINUTES of talk (not a fixed count of lines).
-//   POST /api/gm/assist/fit { position, effect?, draws: { low, mid } } -> { cards: [fixer card], flags: [], spend, last }
+//   POST /api/gm/assist/fit { position, effect?, dots?, draws: { low, mid } } -> { cards: [fixer card], flags: [], spend, last }
 //        The Fixer for a position the GM names. `draws` are the console's OWN pre-rolled 1-3 and 4-5 cards (plain text, at most
 //        1500 characters each); the Fixer fits them to the scene (it keeps the kind of outcome each names) and writes the 6, the
-//        crit and a Devil's Bargain. A request without draws (an old client) is a 400: there is no free-writing fallback.
+//        crit and a Devil's Bargain. `dots` (optional, a whole number 0-4) is the dice the GM has set for the roll; anything else is a 400, and
+//        a request without it behaves as before. A request without draws (an old client) is a 400: there is no free-writing fallback.
 //        Every seat call's row carries `secs` (wall-clock) and `stop` (the provider's stop reason) in its card JSON; a refusal
 //        is logged as `refusal: 1` and shows nothing.
 //   POST /api/gm/assist/gatekeeper { kind: portrait|prop|wire|board|card, text, cites? } -> { verdict, unknown, reasons, revealed, rule, cites_bad, spend }
@@ -70,7 +74,7 @@ import { SEATS, WAKES } from '../../_lib/assist/seats.js';
 import { cleanItem, verdictOf, unknownVerdict } from '../../_lib/assist/gatekeeper.js';
 import { gatekeeperUser, ITEM_MAX, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX } from '../../_lib/assist/prompts.js';
 import { DEFAULT_CAP, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS } from '../../_lib/assist/conductor.js';
-import { toCandidate, toVoice, toAnother, toStall, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
+import { toCandidate, toVoice, toAnother, toStall, toHandout, handoutIds, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
 
 const BODY_MAX = 8 * 1024;
@@ -114,6 +118,12 @@ export function formatLines(lines, speakers = {}) {
   }).join('\n');
 }
 
+/** The dots in a fit request: undefined when absent, a whole number 0-4, or null when it is anything else. */
+export function cleanDots(v) {
+  if (v === undefined) return undefined;
+  return Number.isInteger(v) && v >= 0 && v <= 4 ? v : null;
+}
+
 export const DRAW_MAX = 1500;                 // characters per draw
 /** The console's two draws from a fit request: { low, mid } as trimmed text, or null when they are missing or over-long. */
 export function cleanDraws(d) {
@@ -150,6 +160,14 @@ export function cleanShown(v) {
 
 const REPUSH = 're-push the assist part';
 const FILE_ID = /^file_[A-Za-z0-9_-]{4,100}$/;
+
+const HANDOUTS_MAX_BYTES = 16 * 1024;           // the handouts part is a short list; a bigger one is not read here
+
+/** The ids in the live handouts part (a Set; empty when there is none or it is too big to be the short list it should be). */
+async function liveHandoutIds(db, campaign) {
+  const row = await db.prepare("SELECT CASE WHEN LENGTH(CAST(body AS BLOB)) <= ?2 THEN body END AS body FROM gm_pack WHERE campaign = ?1 AND part = 'handouts'").bind(campaign, HANDOUTS_MAX_BYTES).first();
+  return handoutIds(row && row.body ? parseJson(row.body, null) : null);
+}
 
 async function loadPrefix(db, campaign) {
   const row = await db.prepare("SELECT body FROM gm_pack WHERE campaign = ?1 AND part = 'assist'").bind(campaign).first();
@@ -307,7 +325,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       }
     }
     const spend = () => ({ tonight: dollars(spentBefore + thisTick), cap, tier: budgetTier(spentBefore + thisTick, cap), tick: dollars(thisTick) });
-    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
+    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
 
     if (action[1] === 'gatekeeper') {
       const item = gateItem.item;
@@ -330,6 +348,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const position = typeof body.position === 'string' ? body.position.replace(/\s+/g, ' ').trim() : '';
       const effect = typeof body.effect === 'string' ? body.effect.replace(/\s+/g, ' ').trim() : '';
       if (!position || position.length > 400 || effect.length > 200) throw new HttpError(400, 'position is required (at most 400 characters); effect at most 200');
+      const dots = cleanDots(body.dots);
+      if (dots === null) throw new HttpError(400, 'dots must be a whole number from 0 to 4');
       const draws = cleanDraws(body.draws);                // no fallback: a client without the console's draws gets a 400
       if (!draws) throw new HttpError(400, 'draws is required: { low, mid }, each a text of at most ' + DRAW_MAX + ' characters');
       if (legacy) return done([], [], null);
@@ -337,7 +357,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : 'the fixer is busy');
       const { lines: recent, last } = await readLines(db, campaign, { since: new Date(t0 - FIT_WINDOW_MS).toISOString() });
       const lines = recent;
-      const user = fitUser({ position, effect, draws, stamp: hhmm(t0), talk: formatLines(recent, speakers) });
+      const user = fitUser({ position, effect, ...(dots !== undefined ? { dots } : {}), draws, stamp: hhmm(t0), talk: formatLines(recent, speakers) });
       const { cfg, r, timing } = await run('fixer', user);
       const at = new Date(now()).toISOString();
       const session = lines.length ? lines[lines.length - 1].session : '';
@@ -423,12 +443,20 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const pending = pendingRefs(held || await heldRefs(db, campaign, t0), { recent, now: t0 });
     const edit = merge(candidates.concat(pending), { now: t0, lastShownAt: await lastShown(db, campaign, t0), lastRefShownAt: await lastRefShown(db, campaign, t0) });
     const at = new Date(now()).toISOString();
+    // a handout suggestion from the Mystery keeper: checked against the live handouts part (one small read, only when the seat named one), and
+    // sent in its own field so it never takes the card slot
+    const mx = all.find((x) => x.name === 'mystery');
+    let handoutOut = null;
+    if (mx && mx.r && mx.r.json && typeof mx.r.json.handout_id === 'string' && mx.r.json.handout_id.trim()) {
+      const h = toHandout(mx.r.json, await liveHandoutIds(db, campaign));
+      if (h) handoutOut = { ...h, at };
+    }
     const rows = results.map((x, i) => {
       const cand = candidates[i];
       const isShown = !!(cand && !cand.pending && edit.card && edit.card.seat === x.name && edit.card.text === cand.text);
       const held = !!(cand && cand.seat === 'ref' && edit.held.includes(cand));
       const isUpdate = !!(cand && cand.seat === 'ledger');
-      const card = x.r ? { out: x.r.json, text: cand ? cand.text : '', keys: cand ? cand.keys : [], shown: isShown ? 1 : 0, ...(held ? { held: 1 } : {}), ...(cand && cand.detail ? { detail: cand.detail } : {}), ...(isUpdate ? { update: 1, items: cand.items } : {}) } : { error: errors.find((e) => e.seat === x.name)?.error || 'no reply' };
+      const card = x.r ? { out: x.r.json, text: cand ? cand.text : '', keys: cand ? cand.keys : [], shown: isShown ? 1 : 0, ...(held ? { held: 1 } : {}), ...(cand && cand.detail ? { detail: cand.detail } : {}), ...(isUpdate ? { update: 1, items: cand.items } : {}), ...(x.name === 'mystery' && handoutOut ? { handout: { id: handoutOut.id, why: handoutOut.why } } : {}) } : { error: errors.find((e) => e.seat === x.name)?.error || 'no reply' };
       return logRow(db, campaign, { at, session, seat: x.name, cfg: x.cfg, usage: x.r && x.r.usage, cost: x.r && x.r.cost, flags, card, timing: x.timing });
     });
     // a pending Ref card shown now has no row of its own this tick: record the showing (no cost) so the gap and repeats see it
@@ -450,7 +478,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (rows.length) await db.batch(rows);
     const cardOut = edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}) }] : [];
     const updatesOut = edit.updates.flatMap((u) => (u.items || [{ key: (u.keys || [])[0] || '', text: u.text }]).map((it) => ({ seat: 'ledger', at, key: it.key, text: it.text })));
-    return done(cardOut, flags, last, updatesOut, { voice: voiceOut, stall: stallOut });
+    return done(cardOut, flags, last, updatesOut, { voice: voiceOut, stall: stallOut, handout: handoutOut });
   };
 }
 

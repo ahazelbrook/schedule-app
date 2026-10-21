@@ -24,6 +24,10 @@ const con = fx('console-pack.json'), loc = fx('location-pack.json'), np = fx('np
 const PARTS = {
   console: con.parts.console, campaign: np.parts.campaign, npc: np.parts.npc,
   location: { src: { file: 'fixture/location', blockSha: '0', exportedAt: new Date().toISOString() }, T: loc.T, extra: loc.extra },
+  handouts: { src: { file: 'invented/handouts', blockSha: '1', exportedAt: new Date().toISOString() }, v: 1, rel: 'invented/handouts', items: [
+    { id: 'ho-a', title: 'Invented brass key', file: '0123456789abcdef.png', when: 'invented cue one' },
+    { id: 'ho-b', title: 'Invented torn map', file: 'fedcba9876543210.png' },
+  ] },
 };
 
 const stateDir = mkdtempSync(path.join(tmpdir(), 'b68-assist-e2e-'));
@@ -78,6 +82,7 @@ try {
       if (seen.mode === 'cap') return route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: "tonight's cap is reached" }) });
       if (seen.mode === 'voice') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], spend: reply.spend, last: 30, voice: VOICE }) });
       if (seen.mode === 'stall') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [{ seat: 'mystery', at: new Date().toISOString(), text: 'Push next: invented second key.' }], updates: [], flags: ['stall'], spend: reply.spend, last: 32, stall: { kind: 'clue', offer: 'Invented: a runner bursts in with news.', why: 'Invented: the table went quiet.', at: new Date().toISOString() } }) });
+      if (seen.mode === 'handout') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], spend: reply.spend, last: 40, handout: { id: seen.handoutId || 'ho-a', why: 'Invented: the table has just reached the cue.', at: new Date().toISOString() } }) });
       if (seen.mode === 'quiet') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], spend: reply.spend, last: 31 }) });
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(seen.mode === 'second' ? { ...reply, cards: [CLERK], updates: [], last: 20 } : reply) });
     });
@@ -113,6 +118,7 @@ try {
   check(await p.$eval('.gm-assist .as-banner', (b) => b.hidden), 'the banner goes when the box opens');
   check((await p.$$('.gm-assist .as-card')).length === 1 && /p\. 12/.test(await p.$eval('.gm-assist .as-card', (e) => e.textContent)), 'the bubble carries the page cite');
   check(await p.$$eval('.gm-assist .as-up', (l) => l.length) === 1, 'the Ledger update is listed');
+  await p.click('#gm-page .gm-dotb[data-v="2"]');
   await p.fill('#as-eff', 'standard');
   await p.click('.gm-assist .as-pos label:nth-child(3)');
   await p.click('#as-go');
@@ -120,7 +126,12 @@ try {
   check((await p.$$('.gm-assist .as-lines li')).length === 5, 'five lines: 1-3, 4-5, 6, crit, bargain');
   const fr = G.seen.fit[0] || {};
   check(fr.position === 'desperate' && fr.effect === 'standard' && fr.draws && /^A 1–3/.test(fr.draws.low) && /^A 4[/]5/.test(fr.draws.mid), 'the fit request carried the position, the effect and the console draws');
+  check(fr.dots === 2, 'the Dots chip is set to 2: the first fit request carried dots: 2 (' + JSON.stringify(fr) + ')');
   await shot(p, 'expanded');
+  await p.click('#gm-page .gm-dotb[data-v="2"]');      // tap again clears the chip
+  await p.click('#as-go');
+  check(await until(async () => G.seen.fit.length >= 2, 10000), 'a second fit was asked');
+  check(G.seen.fit[1] && !('dots' in G.seen.fit[1]) && G.seen.fit[1].position === 'desperate', 'with the chip cleared the request has no dots field');
   await p.keyboard.press('Escape');
   check(await p.$eval('#as-panel', (e) => e.hidden), 'Escape closes the box');
   await p.keyboard.press('a'); await p.keyboard.press('a');
@@ -222,6 +233,33 @@ try {
   await S1.page.click('#gm-rack [data-gm="stallclear"]');
   check(await S1.page.$('#gm-rack .gm-stall') === null, 'Clear drops the offer');
   await S1.c.close();
+
+  // ---- Handouts: the Mystery keeper's suggestion reaches the Rack once; not again after Dismiss or Show ----
+  await api('PATCH', '/gm/stt', { want: 'on' });
+  const Hd = await open('#gm', { mode: 'handout' });
+  Hd.seen.mode = 'handout';
+  const hp = Hd.page;
+  await hp.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  const offers = async () => (await hp.$$('#gm-rack .gm-offer')).length;
+  const tickAgain = async (n) => { await hp.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); return until(async () => Hd.seen.tick.length >= n, 8000); };
+  check(await hp.waitForSelector('#gm-rack .gm-offer[data-offer="ho-a"]', { timeout: 15000 }).then(() => true, () => false), 'Handout: the tick answer puts "Show handout?" in the Rack');
+  check(/Show handout: Invented brass key?/.test(await hp.textContent('#gm-rack .gm-offer')) && /just reached the cue/.test(await hp.textContent('#gm-rack .gm-offer')), 'with the title and the reason');
+  check(await tickAgain(2) && await offers() === 1, 'a second tick with the same handout leaves one offer');
+  await hp.click('#gm-rack [data-offer="ho-a"] [data-gm="offer-dismiss"]');
+  const n1 = Hd.seen.tick.length;
+  check(await tickAgain(n1 + 1) && await sleep(600) === undefined && await offers() === 0, 'after Dismiss the same handout is not offered again');
+  Hd.seen.handoutId = 'ho-b';
+  const n2 = Hd.seen.tick.length;
+  check(await tickAgain(n2 + 1) && await hp.waitForSelector('#gm-rack .gm-offer[data-offer="ho-b"]', { timeout: 8000 }).then(() => true, () => false), 'a different handout is offered');
+  await hp.click('#gm-rack [data-offer="ho-b"] [data-gm="offer-show"]');
+  check(await hp.waitForFunction(() => !document.querySelector('#gm-rack .gm-offer'), null, { timeout: 8000 }).then(() => true, () => false), 'Show takes the offer down');
+  const n3 = Hd.seen.tick.length;
+  check(await tickAgain(n3 + 1) && await sleep(600) === undefined && await offers() === 0, 'after Show the same handout is not offered again');
+  await hp.reload();
+  await hp.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  await until(async () => Hd.seen.tick.length >= n3 + 2, 15000); await sleep(800);
+  check(await offers() === 0, 'and a reload does not bring it back');
+  await Hd.c.close();
 
   // ---- a phone: no box ----
   await api('PATCH', '/gm/stt', { want: 'on' });

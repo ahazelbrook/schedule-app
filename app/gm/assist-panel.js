@@ -19,6 +19,8 @@
          onStage   () -> the name of the NPC on stage ('' when none): sent with each tick, and Voice only runs when it is there
          onVoice   (voice | null): Voice's lines from a tick ({ who, want, lines, at }); null clears them (Listening off, the cap)
          onStall   (stall | null): Stall's offer from a tick ({ kind, offer, why, at }); null clears it (Listening off, the cap)
+         onHandout (handout): a handout the Mystery keeper suggests, from a tick ({ id, why, at }); the page offers it in the Rack
+         dots      () -> 0-4 | null: the Dots chip's value; the "Fit it" form sends it as `dots` when set
          onNote    the page's capture: "Note it" on a Ledger update and "Keep" on a card file their text as a Moment (the update
                    itself changes no state)
      ctl.open() / close() / toggle()      the box
@@ -318,6 +320,7 @@
         if (gone) return;
         if (isObj(res) && isObj(res.voice)) sendVoice(res.voice); else if (!npc) sendVoice(null);   /* nobody on stage: nothing from Voice shows */
         if (isObj(res) && isObj(res.stall) && str(res.stall.offer).trim()) sendStall(res.stall);
+        if (isObj(res) && isObj(res.handout) && str(res.handout.id).trim() && typeof o.onHandout === 'function') { try { o.onHandout({ id: str(res.handout.id).trim(), why: str(res.handout.why), at: str(res.handout.at) }); } catch (e) {} }
         var fresh = absorb(st, res, new Date().toISOString());
         st.error = ''; st.checkedAt = hhmm(new Date().toISOString());
         if (st.open) markSeen();
@@ -373,6 +376,7 @@
       st.fit.busy = true; st.fit.error = ''; renderFit();
       var req = { position: position }; if (effect) req.effect = effect;
       var dr = typeof o.draws === 'function' ? o.draws(position) : null; if (isObj(dr)) req.draws = dr;
+      var dt = typeof o.dots === 'function' ? o.dots() : null; if (Number.isInteger(dt) && dt >= 0 && dt <= 4) req.dots = dt;
       return Promise.resolve().then(function () { return gm.assistFit(req); }).then(function (res) {
         if (gone) return;
         var c = res && Array.isArray(res.cards) ? res.cards[0] : null;

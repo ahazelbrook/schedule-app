@@ -117,6 +117,30 @@ export function merge(candidates, { now, lastShownAt = null, lastRefShownAt } = 
   return { card: { ...top, at: now }, updates, held: [], dropped: rest.map((c) => ({ seat: c.seat, why: 'outranked' })) };
 }
 
+// ---------- Handout ----------
+
+export const HANDOUT_ID_MAX = 80;
+
+/** The ids in the live `handouts` pack part ({ items: [{ id, ... }] }): a Set, empty when the part is missing or not that shape. */
+export function handoutIds(part) {
+  const out = new Set();
+  if (!part || typeof part !== 'object' || !Array.isArray(part.items)) return out;
+  for (const x of part.items) if (x && typeof x.id === 'string' && x.id && x.id.length <= HANDOUT_ID_MAX) out.add(x.id);
+  return out;
+}
+
+/**
+ * The Mystery seat's JSON -> { id, why } or null. An id that is empty, or not in the live handouts part (`ids`, from handoutIds), is
+ * dropped: the model may only name a handout the GM actually has. A handout never uses the card slot: it goes in its own field of the
+ * tick answer, so the Editor's merge() never sees it.
+ */
+export function toHandout(json, ids) {
+  if (!json || typeof json !== 'object' || typeof json.handout_id !== 'string') return null;
+  const id = json.handout_id.trim();
+  if (!id || !(ids instanceof Set) || !ids.has(id)) return null;
+  return { id, why: clip(json.handout_why, 200) };
+}
+
 // ---------- Voice ----------
 
 /**
