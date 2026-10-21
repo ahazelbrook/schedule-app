@@ -67,13 +67,13 @@ await test('a tick: +1/+2/+3 on the leg in play, one panel per roll, clamped to 
   assert.deepEqual(t, { clock: 'crew1', ticks: 2, caption: 'The autopod clips a cart', level: 'below', time: 'Night', roll: 'Ana · Finesse · risky/standard · 4', between: ['A flashback', 'to the garage'] });
   assert.deepEqual(G.tickArgs(c, { ticks: 9 }).ticks, 3, '+3 at most'); assert.equal(G.tickArgs(c, {}).level, 'street'); assert.equal(G.tickArgs(c, {}).time, 'Night', 'the chase\'s own time by default');
   c = play(c, [{ ticks: 2, caption: 'One' }, { ticks: 3, caption: 'Two' }]);
-  assert.equal(c.panels.length, 2); assert.deepEqual(G.clocks(c)[0], { id: 'crew1', name: 'Shake them', size: 6, side: 'crew', strip: true, hidden: false, filled: 5, full: false });
+  assert.equal(c.panels.length, 2); assert.deepEqual(G.clocks(c)[0], { id: 'crew1', name: 'Shake them', size: 6, side: 'crew', strip: true, hidden: false, filled: 5, full: false, fullAt: null });
   const last = G.tickArgs(c, { ticks: 3 });
   assert.equal(last.ticks, 1); assert.equal(last.clamped, 3, 'one left: +3 is cut to +1 and says so');
   c = play(c, [{ ticks: 1, caption: 'Three' }]);
   assert.equal(G.leg(c), null); assert.match(G.tickArgs(c, { ticks: 1 }).error, /Add a leg/);
   const c2 = G.addLeg(c, 'Land the barge', 4);
-  assert.deepEqual(G.leg(c2), { id: 'crew2', name: 'Land the barge', size: 4, side: 'crew', strip: true, hidden: false, filled: 0, full: false });
+  assert.deepEqual(G.leg(c2), { id: 'crew2', name: 'Land the barge', size: 4, side: 'crew', strip: true, hidden: false, filled: 0, full: false, fullAt: null });
   assert.equal(G.clocks(c).length, 2, 'addLeg does not touch the chase it was given');
   assert.equal(G.addLeg(c2, '', 7).clocks[3].name, 'Leg 3'); assert.equal(G.addLeg(c2, '', 7).clocks[3].size, 6);
 });
@@ -87,6 +87,32 @@ await test('undo, oppose: new objects; undo takes the last panel, oppose moves t
   assert.equal(G.opposing(o).filled, 4); assert.equal(G.opposing(o).full, true); assert.equal(G.opposing(c).filled, 0);
   const none = fresh({ ...FORM, opp: 'none' });
   assert.equal(G.opposing(none), null); assert.deepEqual(G.oppose(none, 1), none);
+});
+await test('the rules: the opposing clock ticks −1 or +1/+2/+3 by consequence (BitD p.16); racing clocks: escaped, caught, and the tie (both on the same tick)', () => {
+  const base = fresh({ ...FORM, opp: 'shown', size: 4, oppSize: 4 });
+  let c = G.oppose(base, 3); assert.equal(G.opposing(c).filled, 3); assert.equal(G.opposing(G.oppose(c, 9)).filled, 4, '+3 at most, clamped to the size');
+  assert.equal(G.opposing(G.oppose(c, -5)).filled, 2, 'any minus is one back'); assert.equal(G.opposing(base).filled, 0, 'never mutates');
+  assert.deepEqual(G.outcome(c), { crew: false, against: false, tie: false, suggest: '' });
+  // the tie: the tick that fills the crew's clock, and the consequence of the same roll
+  const t1 = G.oppose(play(c, [{ ticks: 2, caption: 'A' }, { ticks: 2, caption: 'B' }]), 1);
+  assert.deepEqual(G.outcome(t1), { crew: true, against: true, tie: true, suggest: 'tie' });
+  const t2 = play(G.oppose(play(c, [{ ticks: 2, caption: 'A' }]), 1), [{ ticks: 2, caption: 'B' }]);
+  assert.equal(G.outcome(t2).tie, true, 'the consequence pressed just before the tick that fills the crew\'s clock is the same roll');
+  // the opposing clock filled long before: caught; only the crew's: escaped; only theirs: caught
+  const early = play(G.oppose(play(c, [{ ticks: 1, caption: 'A' }]), 1), [{ ticks: 1, caption: 'B' }, { ticks: 2, caption: 'C' }]);
+  assert.deepEqual([G.outcome(early).tie, G.outcome(early).suggest], [false, 'caught']);
+  assert.equal(G.outcome(play(base, [{ ticks: 3, caption: 'A' }, { ticks: 1, caption: 'B' }])).suggest, 'escaped');
+  assert.equal(G.outcome(G.oppose(base, 3) && G.oppose(G.oppose(base, 3), 1)).suggest, 'caught');
+  assert.equal(G.oppose(G.oppose(t1, -1), 1).clocks[1].fullAt, 2, 'filled again: fullAt is the panel count then');
+  assert.equal(G.outcome(G.addLeg(t1, 'Land the barge', 4)).crew, false, 'a new leg: the crew\'s clock is not done');
+  assert.equal(G.OUTCOMES.tie, 'They escape, but the pursuers are outside the lair');
+});
+await test('the roll line starts at Finesse (BitD p.173): left at that, it is no roll line; endPlan keeps the outcome', () => {
+  const c = fresh();
+  assert.equal(G.ROLL_DEFAULT, 'Finesse · ');
+  assert.ok(!('roll' in G.tickArgs(c, { ticks: 1, roll: G.ROLL_DEFAULT })) && !('roll' in G.tickArgs(c, { ticks: 1, roll: ' finesse ' })));
+  assert.equal(G.tickArgs(c, { ticks: 1, roll: 'Finesse · risky/standard · 4' }).roll, 'Finesse · risky/standard · 4');
+  assert.equal(G.endPlan({}, c, 'x', 'tie').patch[c.id].outcome, 'tie'); assert.ok(!('outcome' in G.endPlan({}, c, 'x', 'bogus').patch[c.id]));
 });
 await test('endPlan: the ended chase goes into past, stamped; past keeps the last 10 and 64 KiB, the oldest go and are named', () => {
   const past = {};

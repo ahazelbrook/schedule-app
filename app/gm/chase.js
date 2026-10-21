@@ -18,8 +18,15 @@
      leg(chase)                  the crew strip clock being played (the first not full), or null
      tickArgs(chase, ui)         the B68Map.chaseTick argument for +n, or { error }: { clock, ticks (clamped to what is left), caption,
                                  roll?, level, time, between? }, plus `clamped` (the ticks asked for) when it cut them
-     undo(chase), oppose(chase, d), addLeg(chase, name, size)   NEW chase objects (never mutate)
-     endPlan(past, chase, at)    -> { patch (for chase.past), dropped: [names] }
+     undo(chase), oppose(chase, d), addLeg(chase, name, size)   NEW chase objects (never mutate). oppose moves the opposing clock
+                                 −1, or +1, +2, +3 by the consequence (a danger clock, BitD p.16), and keeps the panel count it
+                                 filled at (`fullAt`)
+     outcome(chase)              the racing clocks (BitD p.16): { crew, against (full?), tie, suggest: 'tie'|'escaped'|'caught'|'' }.
+                                 A tie is both clocks filling on the same tick: the panel that filled the crew's last leg, and the
+                                 opposing clock filling with it (just before it or after it)
+     OUTCOMES                    { escaped, caught, tie } in words; the tie: they escape, but the pursuers are outside the lair
+     ROLL_DEFAULT                'Finesse · ': the driver acts with Finesse (BitD p.173); a roll line left at that is no roll line
+     endPlan(past, chase, at, outcome)   -> { patch (for chase.past), dropped: [names] }; the ended chase keeps `outcome`
      title(chase), caption(chase), findEntries(chase)
      playerCopy(chase)           what the player copy is drawn from: no roll lines, no `gm` notes, no riders, no hidden clock that is
                                  not a strip, a hidden strip clock without its name
@@ -53,6 +60,8 @@
   /* the vehicles and the walker (map kit tokens); B68Map.chaseOptions().tokens wins when the kit has it */
   var TOKENS = ['autopod', 'autocycle', 'suv', 'garbage-truck', 'ambulance', 'watch-car', 'barge', 'canoe', 'walker'];
   var PAST_MAX = 10, PAST_BYTES = 64 * 1024, SVG_MAX = 600 * 1024;
+  var OUTCOMES = { escaped: 'They got away', caught: 'They were caught', tie: 'They escape, but the pursuers are outside the lair' };
+  var ROLL_DEFAULT = 'Finesse · ';
 
   function timeOf(t) { return /night/i.test(str(t)) ? 'Night' : 'Bluetime'; }
   function groundOk(g) { return GROUNDS.some(function (x) { return x.value === g; }); }
@@ -96,11 +105,11 @@
   function clocks(chase) {
     var c = isObj(chase) ? chase : {}, ps = arr(c.panels);
     return arr(c.clocks).filter(isObj).map(function (k) {
-      var size = Math.max(1, Math.min(12, Math.floor(+k.size) || 4)), filled;
-      if (k.strip) filled = ps.reduce(function (n, p) { return n + (isObj(p) && p.clock === k.id ? Math.max(0, Math.floor(+p.ticks) || 0) : 0); }, 0);
-      else filled = Math.floor(+k.filled) || 0;
+      var size = Math.max(1, Math.min(12, Math.floor(+k.size) || 4)), filled = 0, fullAt = null;
+      if (k.strip) ps.forEach(function (p, i) { if (isObj(p) && p.clock === k.id) { filled += Math.max(0, Math.floor(+p.ticks) || 0); if (fullAt === null && filled >= size) fullAt = i + 1; } });
+      else { filled = Math.floor(+k.filled) || 0; if (filled >= size && typeof k.fullAt === 'number') fullAt = k.fullAt; }
       filled = Math.max(0, Math.min(size, filled));
-      return { id: str(k.id), name: str(k.name), size: size, side: k.side === 'against' ? 'against' : 'crew', strip: !!k.strip, hidden: !!k.hidden, filled: filled, full: filled >= size };
+      return { id: str(k.id), name: str(k.name), size: size, side: k.side === 'against' ? 'against' : 'crew', strip: !!k.strip, hidden: !!k.hidden, filled: filled, full: filled >= size, fullAt: filled >= size ? fullAt : null };
     });
   }
   function leg(chase) { return clocks(chase).filter(function (k) { return k.strip && k.side === 'crew' && !k.full; })[0] || null; }
@@ -111,19 +120,31 @@
     if (!l) return { error: 'Every leg of the chase clock is full. Add a leg, or end the chase.' };
     var want = Math.max(1, Math.min(3, Math.floor(+u.ticks) || 1)), left = l.size - l.filled, n = Math.min(want, left);
     var out = { clock: l.id, ticks: n, caption: one(u.caption, 160), level: LEVELS.indexOf(u.level) >= 0 ? u.level : 'street', time: TIMES.indexOf(u.time) >= 0 ? u.time : timeOf(chase && chase.time) };
-    var roll = one(u.roll, 160); if (roll) out.roll = roll;
+    var roll = one(u.roll, 160); if (roll && !/^finesse\s*·?$/i.test(roll)) out.roll = roll;
     var between = str(u.between).split(/\n+/).map(function (x) { return one(x, 160); }).filter(Boolean).slice(0, 6); if (between.length) out.between = between;
     if (n < want) out.clamped = want;
     return out;
   }
   function undo(chase) { var c = clone(chase); if (c && Array.isArray(c.panels) && c.panels.length) c.panels.pop(); return c; }
-  /* the opposing clock (the first against clock that is not a strip) one up or down */
+  /* the opposing clock (the first against clock that is not a strip): −1 takes one back; +1, +2, +3 tick it by the consequence. The
+     panel count when it fills is kept (fullAt), so a tie can be told from a clock that filled first */
   function oppose(chase, d) {
     var c = clone(chase); if (!c) return c;
     var k = arr(c.clocks).filter(function (x) { return isObj(x) && x.side === 'against' && !x.strip; })[0]; if (!k) return c;
-    var size = Math.max(1, Math.floor(+k.size) || 4);
-    k.filled = Math.max(0, Math.min(size, (Math.floor(+k.filled) || 0) + (d < 0 ? -1 : 1)));
+    var size = Math.max(1, Math.floor(+k.size) || 4), was = Math.floor(+k.filled) || 0, n = Math.floor(+d) || 0;
+    n = n < 0 ? -1 : Math.max(1, Math.min(3, n));
+    k.filled = Math.max(0, Math.min(size, was + n));
+    if (k.filled >= size && was < size) k.fullAt = arr(c.panels).length;
+    else if (k.filled < size) delete k.fullAt;
     return c;
+  }
+  /* the racing clocks (BitD p.16): the crew's clock (its last leg) against the opposing clock */
+  function outcome(chase) {
+    var ks = clocks(chase), legs = ks.filter(function (k) { return k.strip && k.side === 'crew'; }), last = legs[legs.length - 1], op = ks.filter(function (k) { return k.side === 'against' && !k.strip; })[0];
+    var crew = !!last && legs.every(function (k) { return k.full; }), against = !!op && op.full;
+    /* the same tick: the opposing clock filled with the panel that filled the crew's clock (pressed just before it, or after it) */
+    var tie = crew && against && (op.fullAt === null || op.fullAt >= last.fullAt - 1);
+    return { crew: crew, against: against, tie: tie, suggest: tie ? 'tie' : crew && !against ? 'escaped' : against && !crew ? 'caught' : crew && against ? (op.fullAt < last.fullAt - 1 ? 'caught' : 'escaped') : '' };
   }
   function opposing(chase) { return clocks(chase).filter(function (k) { return k.side === 'against' && !k.strip; })[0] || null; }
   /* a second (third...) leg of the crew's clock: "Land the barge 4" */
@@ -137,8 +158,9 @@
 
   function bytesOf(s) { try { return new TextEncoder().encode(s).length; } catch (e) { return unescape(encodeURIComponent(s)).length; } }
   /* the ended chase goes into `past` (stamped `endedAt`); past PAST_MAX, or PAST_BYTES as JSON, the oldest go */
-  function endPlan(past, chase, at) {
+  function endPlan(past, chase, at, how) {
     var p = isObj(past) ? past : {}, id = str(chase && chase.id) || 'chase', entry = Object.assign(clone(chase) || {}, { endedAt: str(at) });
+    if (OUTCOMES[how]) entry.outcome = how;
     var all = Object.keys(p).filter(function (k) { return isObj(p[k]) && k !== id; }).map(function (k) { return { k: k, at: str(p[k].endedAt), v: p[k] }; });
     all.push({ k: id, at: entry.endedAt, v: entry });
     all.sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : a.k < b.k ? 1 : -1; });   /* newest first */
@@ -198,6 +220,7 @@
 
   return {
     GROUNDS: GROUNDS, SIZES: SIZES, LEVELS: LEVELS, TIMES: TIMES, TOKENS: TOKENS, PAST_MAX: PAST_MAX, PAST_BYTES: PAST_BYTES, SVG_MAX: SVG_MAX,
+    OUTCOMES: OUTCOMES, ROLL_DEFAULT: ROLL_DEFAULT, outcome: outcome,
     source: source, startArgs: startArgs, clocks: clocks, leg: leg, opposing: opposing, tickArgs: tickArgs, undo: undo, oppose: oppose, addLeg: addLeg,
     endPlan: endPlan, title: title, caption: caption, findEntries: findEntries, playerCopy: playerCopy, secrets: secrets, bytesOf: bytesOf
   };

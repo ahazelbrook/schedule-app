@@ -336,6 +336,10 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-ch-clocks { margin: 0; }
 #gm-page .gm-ch-oppb { display: flex; align-items: center; gap: 6px; }
 #gm-page .gm-ch-oppb .gm-clockn { min-width: 3em; text-align: center; }
+#gm-page .gm-ch-oppb { flex-wrap: wrap; }
+#gm-page .gm-ch-help { margin: 0; font-size: 12px; }
+#gm-page .gm-ch-race { margin: 0; }
+#gm-page .gm-ch-outf { flex: 0 1 260px; }
 #gm-page .gm-ch-strip { background: var(--chart); border: 2px solid var(--chart-ink); outline: 3px solid var(--accent); outline-offset: -3px; overflow: hidden; }
 #gm-page .gm-ch-strip:empty { display: none; }
 #gm-page .gm-ch-strip svg { width: 100%; height: auto; display: block; }

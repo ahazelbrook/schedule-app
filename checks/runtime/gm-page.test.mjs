@@ -2954,7 +2954,7 @@ await test('19b. start from the Location roll\'s street; +1/+2/+3 each draw one 
   h2.q('#gm-chase [data-gm="ch-set"][data-k="opp"][data-v="hidden"]').click(); chStartFrom(h2, 'ground', { oppName: 'Reinforcements arrive' });
   assert.deepEqual(chCurOf(h2).clocks[1], { id: 'opp', name: 'Reinforcements arrive', size: 4, side: 'against', strip: false, filled: 0, hidden: true });
   h2.q('#gm-chase [data-gm="ch-opp"][data-d="1"]').click(); h2.q('#gm-chase [data-gm="ch-opp"][data-d="1"]').click(); h2.q('#gm-chase [data-gm="ch-opp"][data-d="-1"]').click();
-  assert.equal(chCurOf(h2).clocks[1].filled, 1); assert.match(h2.q('#gm-chase .gm-ch-oppb').parentNode.textContent, /^Reinforcements arrive against · hidden from players.*−11\/4\+1$/, 'one row: the name, its bar, −1 1/4 +1'); assert.equal(h2.qa('#gm-chase .gm-ch-clocks li').length, 2, 'each clock once');
+  assert.equal(chCurOf(h2).clocks[1].filled, 1); assert.match(h2.q('#gm-chase .gm-ch-oppb').parentNode.textContent, /^Reinforcements arrive against · hidden from players.*−11\/4\+1\+2\+3$/, 'one row: the name, its bar, −1 1/4 +1 +2 +3'); assert.equal(h2.qa('#gm-chase .gm-ch-clocks li').length, 2, 'each clock once');
   await h2.save();
 });
 
@@ -3003,6 +3003,30 @@ await test('19e. every button in the panel is a real control; nothing in it writ
   assert.equal(rig.added.length, 0);
   const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8'), sec = src.slice(src.indexOf('function chDoc()'), src.indexOf('function B68slug'));
   assert.ok(sec.length > 3000 && !/addClock|saveScene|campaign\(/.test(sec), 'the Chase panel never touches the table');
+  await h.save();
+});
+
+await test('19f. the rules (BitD p.16, p.173, p.262–263): the opposing clock ticks +1/+2/+3 by consequence; both clocks full on the same tick is the tie, said and offered on End chase; the roll line starts at Finesse; a split crew shares one clock', async () => {
+  const fg = fakeGm(), h = await chPage({ fg });
+  h.press('c'); assert.match(h.q('#gm-chase .gm-ch-help').textContent, /^A split crew shares one clock: one Lose the Tail clock for everyone \(p\.262–263\)\.$/);
+  h.q('#gm-chase [data-gm="ch-set"][data-k="size"][data-v="4"]').click(); h.q('#gm-chase [data-gm="ch-set"][data-k="opp"][data-v="shown"]').click(); chStartFrom(h, null, { name: 'The lock run', oppName: 'The Bluecoats close in' });
+  assert.equal(h.q('#gm-ch-roll').value, 'Finesse · ', 'the roll line starts at Finesse'); assert.ok(h.q('#gm-chase .gm-ch-help'), 'the help line shows in play too');
+  chTickIt(h, 2, 'No roll typed'); assert.ok(!('roll' in chCurOf(h).panels[0]), 'a roll line left at the default is no roll line');
+  assert.equal(h.q('#gm-ch-roll').value, 'Finesse · ', 'and the next starts at Finesse again');
+  h.q('#gm-chase [data-gm="ch-opp"][data-d="3"]').click(); assert.equal(chCurOf(h).clocks[1].filled, 3, 'a serious consequence is one press');
+  assert.equal(h.q('#gm-ch-outcome option[selected]').getAttribute('value'), '', 'no clock full: no outcome yet'); assert.equal(h.q('#gm-chase .gm-ch-race'), null);
+  chTickIt(h, 2, 'Through the lock gates', 'Ana · Finesse · risky/standard · 6'); h.q('#gm-chase [data-gm="ch-opp"][data-d="1"]').click();
+  assert.match(h.q('#gm-chase .gm-ch-race').textContent, /^Both clocks filled on the same tick: they escape, but the pursuers are outside the lair \(BitD p\.16\)/);
+  assert.equal(h.q('#gm-ch-outcome option[selected]').getAttribute('value'), 'tie'); assert.match(h.q('#gm-ch-outcome option[value="tie"]').textContent, /\(the clocks\)$/);
+  h.q('#gm-chase [data-gm="ch-end"]').click();
+  const past = Object.values(JSON.parse(JSON.stringify(h.page._state().doc.chase.past)));
+  assert.equal(past.length, 1); assert.equal(past[0].outcome, 'tie'); assert.ok(h.br.toasts.some((x) => /Chase ended: The lock run: They escape, but the pursuers are outside the lair\./.test(x[0])));
+  assert.match(h.q('#gm-chase .gm-ch-pastl li').textContent, /outside the lair/);
+  /* the GM's own pick stands until the chase changes */
+  chStartFrom(h, null, {}); h.q('#gm-ch-outcome').value = 'caught'; dispatch(h.q('#gm-ch-outcome'), 'change');
+  h.q('#gm-chase [data-gm="ch-set"][data-k="level"][data-v="above"]').click(); assert.equal(h.q('#gm-ch-outcome option[selected]').getAttribute('value'), 'caught', 'a switch keeps the pick');
+  h.q('#gm-chase [data-gm="ch-end"]').click();
+  assert.ok(Object.values(JSON.parse(JSON.stringify(h.page._state().doc.chase.past))).some((x) => x.outcome === 'caught'));
   await h.save();
 });
 

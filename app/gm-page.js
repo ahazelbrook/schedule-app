@@ -3404,7 +3404,20 @@
     var past = newest(Object.keys(isObj(chDoc().past) ? chDoc().past : {}).reduce(function (m, k) { var x = chDoc().past[k]; if (isObj(x)) m[k] = Object.assign({}, x, { at: x.endedAt }); return m; }, {}));
     if (!past.length) return '';
     return '<details class="gm-more gm-ch-past"' + (foldOpen('chpast') ? ' open' : '') + ' data-fold="chpast"><summary>Past chases <span class="gm-dim">' + past.length + '</span></summary><ul class="gm-ch-pastl">' +
-      past.map(function (x) { return '<li><b>' + esc(x.name || 'Chase') + '</b> <span class="gm-dim">' + esc([x.district, (Array.isArray(x.panels) ? x.panels.length : 0) + ' panels', x.endedAt ? dmy(x.endedAt) + ' ' + hm(x.endedAt) : ''].filter(Boolean).join(' · ')) + '</span></li>'; }).join('') + '</ul></details>';
+      past.map(function (x) { return '<li><b>' + esc(x.name || 'Chase') + '</b> <span class="gm-dim">' + esc([x.district, (Array.isArray(x.panels) ? x.panels.length : 0) + ' panels', W.B68GmChase.OUTCOMES[x.outcome] || '', x.endedAt ? dmy(x.endedAt) + ' ' + hm(x.endedAt) : ''].filter(Boolean).join(' · ')) + '</span></li>'; }).join('') + '</ul></details>';
+  }
+  var CH_SPLIT = 'A split crew shares one clock: one Lose the Tail clock for everyone (p.262–263).';
+  /* the racing clocks (BitD p.16): what the full clocks mean, said once they are */
+  function chRaceHtml(cur) {
+    var o = W.B68GmChase.outcome(cur);
+    if (o.tie) return '<p class="gm-note warn gm-ch-race">Both clocks filled on the same tick: they escape, but the pursuers are outside the lair (BitD p.16). End chase offers it.</p>';
+    if (o.against && !o.crew) return '<p class="gm-note warn gm-ch-race">The opposing clock is full: they were caught, unless you say otherwise.</p>';
+    return '';
+  }
+  /* End chase's outcome: the racing clocks' suggestion, unless the GM picked one since the last change (S.chOutcome, this page) */
+  function chOutcomeOpts(cur) {
+    var G = W.B68GmChase, sug = G.outcome(cur).suggest, v = S.chOutcome !== undefined ? S.chOutcome : sug;
+    return [['', 'How it ended: not said']].concat(Object.keys(G.OUTCOMES).map(function (k) { return [k, G.OUTCOMES[k]]; })).map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + esc(o[1]) + (o[0] && o[0] === sug ? ' (the clocks)' : '') + '</option>'; }).join('');
   }
   /* the controls are drawn again only on a forced redraw (a press here) or when nothing in the pane is being typed in */
   function renderChase(force) {
@@ -3422,6 +3435,7 @@
         (f.from === 'ground' ? selectHtml('gm-ch-ground', 'data-chf', 'ground', 'Street type', G.GROUNDS, f.ground) : '') +
         '<label class="gm-field wide" for="gm-ch-name"><span class="gm-lab">Name</span><input type="text" id="gm-ch-name" data-chf="name" maxlength="80" autocomplete="off" placeholder="The chase" value="' + esc(f.name) + '"></label>' +
         '<div class="gm-ch-row"><label class="gm-field" for="gm-ch-clock"><span class="gm-lab">The crew’s clock</span>' + '<input type="text" id="gm-ch-clock" data-chf="clockName" maxlength="60" autocomplete="off" placeholder="Get away" value="' + esc(f.clockName) + '"></label>' + chSeg('size', G.SIZES, f.size) + '</div>' +
+        '<p class="gm-dim gm-ch-help">' + CH_SPLIT + '</p>' +
         '<div class="gm-ch-row"><div class="gm-field"><span class="gm-lab">Opposing clock</span>' + chSeg('opp', [['none', 'None'], ['shown', 'Shown'], ['hidden', 'Hidden']], f.opp) + '</div>' +
         (f.opp !== 'none' ? '<label class="gm-field" for="gm-ch-opp"><span class="gm-lab">Its name' + (f.opp === 'hidden' ? ' (GM only)' : '') + '</span><input type="text" id="gm-ch-opp" data-chf="oppName" maxlength="60" autocomplete="off" placeholder="They close in" value="' + esc(f.oppName) + '"></label>' + chSeg('oppSize', G.SIZES, f.oppSize) : '') + '</div>' +
         '<div class="gm-ch-row">' + selectHtml('gm-ch-crewtok', 'data-chf', 'crewToken', 'The crew in', [], '', chTokOpts(f.crewToken)) + selectHtml('gm-ch-themtok', 'data-chf', 'themToken', 'After them', [], '', chTokOpts(f.themToken, true)) + '</div>' +
@@ -3434,12 +3448,13 @@
           var sub = [k.side === 'crew' ? (lg && lg.id === k.id ? 'in play' : k.full ? 'done' : 'next') : 'against', k.hidden ? 'hidden from players' : ''].filter(Boolean).join(' · ');
           if (!op || k.id !== op.id) return clockLi(k.name, k.filled, k.size, sub);
           /* the opposing clock: its own −1 / +1 on its row */
-          return clockLi(k.name, k.filled, k.size, sub).replace(/<span class="gm-clockn">[^<]*<\/span><\/li>$/, '<span class="gm-ch-oppb"><button type="button" class="btn sm" data-gm="ch-opp" data-d="-1" aria-label="' + esc(k.name) + ': down one"' + (k.filled ? '' : ' disabled') + '>−1</button>' +
-            '<b class="gm-clockn">' + k.filled + '/' + k.size + '</b><button type="button" class="btn sm" data-gm="ch-opp" data-d="1" aria-label="' + esc(k.name) + ': up one"' + (k.full ? ' disabled' : '') + '>+1</button></span></li>');
-        }).join('') + '</ul>' +
+          /* the opposing clock: −1 takes one back; +1, +2, +3 tick it by the consequence (a danger clock, BitD p.16) */
+          return clockLi(k.name, k.filled, k.size, sub).replace(/<span class="gm-clockn">[^<]*<\/span><\/li>$/, '<span class="gm-ch-oppb"><button type="button" class="btn sm" data-gm="ch-opp" data-d="-1" aria-label="' + esc(k.name) + ': take one back"' + (k.filled ? '' : ' disabled') + '>−1</button>' +
+            '<b class="gm-clockn">' + k.filled + '/' + k.size + '</b>' + [1, 2, 3].map(function (n) { return '<button type="button" class="btn sm" data-gm="ch-opp" data-d="' + n + '" title="A consequence ticks it ' + n + '" aria-label="' + esc(k.name) + ': up ' + n + '"' + (k.full ? ' disabled' : '') + '>+' + n + '</button>'; }).join('') + '</span></li>');
+        }).join('') + '</ul>' + chRaceHtml(cur) + '<p class="gm-dim gm-ch-help">' + CH_SPLIT + '</p>' +
         '<div class="gm-ch-tick">' +
         '<label class="gm-field wide" for="gm-ch-cap"><span class="gm-lab">What happened</span><input type="text" id="gm-ch-cap" maxlength="160" autocomplete="off" placeholder="The caption under the panel"></label>' +
-        '<label class="gm-field wide" for="gm-ch-roll"><span class="gm-lab">Roll (GM only)</span><input type="text" id="gm-ch-roll" maxlength="160" autocomplete="off" placeholder="who · action · position/effect · dice"></label>' +
+        '<label class="gm-field wide" for="gm-ch-roll"><span class="gm-lab">Roll (GM only)</span>' + '<input type="text" id="gm-ch-roll" maxlength="160" autocomplete="off" placeholder="driver · Finesse · position/effect · dice" value="' + esc(G.ROLL_DEFAULT) + '"></label>' +
         '<label class="gm-field wide" for="gm-ch-between"><span class="gm-lab">Between ticks (one per line)</span>' + '<textarea id="gm-ch-between" rows="2" maxlength="900" placeholder="A flashback, a fail before this roll…"></textarea></label>' +
         '<div class="gm-ch-row"><div class="gm-field"><span class="gm-lab">Level</span>' + chSeg('level', G.LEVELS, u.level) + '</div><div class="gm-field"><span class="gm-lab">Time</span>' + chSeg('time', G.TIMES, u.time) + '</div></div>' +
         (lg ? '<p class="gm-ch-leg"><span class="gm-lab">Ticks ' + esc(lg.name) + ' · ' + (lg.size - lg.filled) + ' to go</span></p>' : '<p class="gm-note warn">The crew’s clock is full. Add a leg, or end the chase.</p>') +
@@ -3447,6 +3462,7 @@
         '<div class="gm-map-acts"><button type="button" class="btn sm primary" data-gm="ch-ipad"' + (K ? '' : ' disabled') + ' title="The player copy at the iPad’s size: no roll lines, no hidden clock. It follows the chase while it is up">Show on iPad</button>' +
         '<button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button>' +
         '<button type="button" class="btn sm" data-gm="ch-undo"' + (cur.panels.length ? '' : ' disabled') + '>Undo last panel</button>' +
+        '<label class="gm-field gm-ch-outf" for="gm-ch-outcome"><span class="sr">How it ended</span><select id="gm-ch-outcome" data-choutcome>' + chOutcomeOpts(cur) + '</select></label>' +
         '<button type="button" class="btn sm bad" data-gm="ch-end">End chase</button></div>' +
         '<details class="gm-more gm-ch-legf"' + (lg ? '' : ' open') + '><summary>Add a leg</summary>' + '<div class="gm-ch-row"><label class="gm-field" for="gm-ch-legname"><span class="gm-lab">Name</span><input type="text" id="gm-ch-legname" maxlength="60" autocomplete="off" placeholder="Land the barge"></label>' +
         chSeg('legSize', G.SIZES, chForm().legSize) + '<button type="button" class="btn sm" data-gm="ch-leg">Add the leg</button></div></details>' +
@@ -3468,7 +3484,7 @@
     var p = { chase: { current: replacePatch(chDoc().current, next) } };
     if (extra) p.chase = Object.assign(p.chase, extra);
     if (!patch(p, { force: true })) return false;
-    renderChase(true); chResend();
+    S.chOutcome = undefined; renderChase(true); chResend();
     return true;
   }
   /* the kit's warnings, if it hands them back on the chase object, are said once and not stored */
@@ -3513,11 +3529,12 @@
   }
   function chEnd() {
     var G = W.B68GmChase, cur = chCur(); if (!G || !cur) return;
-    if (!W.confirm('End the chase “' + G.title(cur) + '”? It moves to Past chases.')) return;
-    var plan = G.endPlan(chDoc().past, cur, nowIso());
+    var how = S.chOutcome !== undefined ? S.chOutcome : G.outcome(cur).suggest, said = G.OUTCOMES[how] || '';
+    if (!W.confirm('End the chase “' + G.title(cur) + '”' + (said ? ': ' + said : '') + '? It moves to Past chases.')) return;
+    var plan = G.endPlan(chDoc().past, cur, nowIso(), how);
     if (!patch({ chase: { current: null, past: plan.patch } }, { force: true })) return;
-    S.chOn = null; renderChase(true);
-    toast('Chase ended: ' + G.title(cur) + '.' + (plan.dropped.length ? ' Kept the last ' + G.PAST_MAX + ' chases: dropped ' + plan.dropped.length + ' older (' + plan.dropped.slice(0, 3).join(', ') + ').' : ''), !!plan.dropped.length);
+    S.chOn = null; S.chOutcome = undefined; renderChase(true);
+    toast('Chase ended: ' + G.title(cur) + (said ? ': ' + said : '') + '.' + (plan.dropped.length ? ' Kept the last ' + G.PAST_MAX + ' chases: dropped ' + plan.dropped.length + ' older (' + plan.dropped.slice(0, 3).join(', ') + ').' : ''), !!plan.dropped.length);
   }
   function chSet(k, v) {
     var f = chForm();
@@ -4000,6 +4017,7 @@
       return;
     }
     if (t.hasAttribute && t.hasAttribute('data-hotitle')) { S.hoTitle = !!t.checked; return; }      /* this page only: the next Show on iPad carries the title caption */
+    if (t.hasAttribute && t.hasAttribute('data-choutcome')) { S.chOutcome = str(t.value); return; }
     if (t.hasAttribute && t.hasAttribute('data-chf')) { chForm()[t.getAttribute('data-chf')] = str(t.value).slice(0, 80); if (t.tagName === 'SELECT') renderChase(true); return; }
     if (t.id === 'gm-opp-iv') { if (ev.type === 'change') patch({ opps: { interval: Math.floor(+t.value) || 0 } }); return; }
     if (t.id === 'gm-prep-note') { if (ev.type === 'change') { try { W.localStorage.setItem(PREP_NOTE, t.value); } catch (e) {} renderPrep(true); } return; }

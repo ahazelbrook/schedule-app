@@ -283,12 +283,18 @@ fails and nobody is known, nothing is purged.
     a lane, a raised walkway, a plaza, a roundabout, an arcade, a dead end, a canal path, a bridge). It follows what is on screen until
     the GM picks. Only the street's public fields go into the chase: never a room, the target, a threat, the watcher, a notable or a rumour.
     Then a name, the crew's clock (a name, and 4, 6 or 8), an opposing clock (none, shown or hidden; a name and a size), and what the
-    crew and their pursuers are in (map kit tokens).
+    crew and their pursuers are in (map kit tokens). A line under the crew's clock says a split crew shares one clock: one Lose the Tail
+    clock for everyone ('68 p.262–263). It shows in play too.
   - **Tick.** Three big buttons: **+1** (limited), **+2** (standard), **+3** (great). Each draws one panel on the leg in play. Above
-    them: what happened (the caption), the roll (GM only: who, action, position and effect, dice), between ticks (flashbacks and fails
+    them: what happened (the caption), the roll (GM only: who, action, position and effect, dice; it starts at "Finesse · ", the
+    driver's action, BitD p.173, and a roll line left at that is no roll line), between ticks (flashbacks and fails
     before this roll, one per line; the table heard them, so the players see them), the level (above, street, below) and the time
     (Bluetime or Night: it can snap mid-chase). Level and time carry to the next tick. A tick past the leg's size is cut to what is left,
-    and a toast says so. **Undo last panel** takes the last one back. The opposing clock has **−1** and **+1** on its row.
+    and a toast says so. **Undo last panel** takes the last one back. The opposing clock has **−1** (take one back) and **+1**, **+2**,
+    **+3** on its row: a consequence ticks it by its level, as a danger clock (BitD p.16), so a serious one is one press.
+  - **Racing clocks** (BitD p.16). When both clocks fill on the same tick (the opposing clock fills with the panel that fills the crew's
+    last leg, pressed just before it or after it), the panel says so: they escape, but the pursuers are outside the lair. When only the
+    opposing clock is full, it says they were caught, unless the GM says otherwise.
   - **A second leg.** When the crew's clock is full, **Add a leg** ("Land the barge", 4) gives the next ticks a clock of their own.
   - **Show on iPad** sends the player copy, drawn here at the iPad's size (`layer: "player", layout: "ipad"`): no roll line, no GM
     note, no hidden clock. The page draws it from a copy of the chase without them (`B68GmChase.playerCopy`), then scans the svg for
@@ -297,10 +303,12 @@ fails and nobody is known, nothing is purged.
     leg or move of the opposing clock sends it again, as **Clocks on the iPad** does. Once something else is up, nothing more goes.
   - **The panel** shows the GM copy under the controls: every clock, the roll lines. The clocks list above the tick box marks the leg in
     play and the hidden clock. `L` files the last tick ("Chase: <caption> (+n)").
-  - **End chase** (it asks) moves the chase to **Past chases**, a fold under the panel. Past keeps the last 10 and 64 KiB at most; the
-    oldest go, and a toast names them.
+  - **End chase** (it asks) moves the chase to **Past chases**, a fold under the panel, with how it ended: the select beside it offers
+    what the clocks say (they got away, they were caught, or the tie) and the GM may pick another or none. Past keeps the last 10 and
+    64 KiB at most; the oldest go, and a toast names them.
   - **State:** `chase: { current, past: { <id>: chase }, ui: { level, time } }`. `current` is the kit's chase object (`schema:
-    "b68-chase/1"`), stored whole on every change (a key the new one lacks is deleted). An ended chase gets `endedAt`. The start form
+    "b68-chase/1"`), stored whole on every change (a key the new one lacks is deleted). An ended chase gets `endedAt`, and `outcome` (`escaped`, `caught` or `tie`) when one was picked;
+    the opposing clock keeps `fullAt`, the panel count when it filled (the tie is told from it). The start form
     is this page's only, never stored. Nothing here touches the table, its clocks or the campaign log.
   - Checks: `gm-chase.test.mjs` (the module and the gate), `gm-page.test.mjs` (19a–19e), `gm-nosecrets.test.mjs` (i),
     `gm-chase.e2e.mjs` (port 8861). `checks/runtime/fixtures/chase-kit-stub.js` was the stand-in written from the kit's spec
