@@ -17,7 +17,7 @@ const M = {};
 // A THEME turns roles into paint. That is the whole trick that lets one plan
 // render as a rulebook plate, a blueprint, a case file or a heist board.
 
-M.VERSION = "0.7.0";
+M.VERSION = "0.7.1";
 
 // --- Random ----------------------------------------------------------------
 // Mulberry32 — the same PRNG the vault generator uses for sticky rolls, so a
@@ -6328,6 +6328,30 @@ M.pickFloors = function (lay, floor, W) {
   return new Set([lv]);
 };
 
+// A player copy never names a hidden room, not even in a floor's title: a hidden room called
+// "Basement" would be named by the "BASEMENT" floor title. Such a floor takes the first neutral title
+// that names no hidden room (whole words, any case: the table app's own leak check). The GM copy keeps
+// the book's titles.
+const LEVEL_ALT = { "-1": ["Below ground", "Lower level", "Level -1"], "0": ["Street level", "Level 0"], "1": ["First floor", "Level 1"], "2": ["Upper storey", "Level 2"] };
+M.hiddenNames = function (model, reveal) {
+  const R = new Set(reveal || ["public"]), low = (s) => String(s || "").toLowerCase();
+  const seen = model.rooms.filter(r => R.has(r.band)).map(r => low(r.name));
+  return model.rooms.filter(r => !R.has(r.band)).map(r => low(r.name)).filter(n => n && !seen.includes(n));
+};
+M.namesAny = function (text, names) {
+  const t = " " + String(text || "").toLowerCase() + " ";
+  return names.some(n => { let i = -1; while ((i = t.indexOf(n, i + 1)) >= 0) if (!/[a-z0-9]/.test(t.charAt(i - 1)) && !/[a-z0-9]/.test(t.charAt(i + n.length))) return true; return false; });
+};
+M.safeTitles = function (lay, model, reveal) {
+  const hidden = M.hiddenNames(model, reveal);
+  if (!hidden.length) return;
+  for (const lv of lay.levels) {
+    if (!lv.title || !M.namesAny(lv.title, hidden)) continue;
+    const alt = (LEVEL_ALT[String(lv.lvl)] || ["Level " + lv.lvl]).find(a => !M.namesAny(a, hidden));
+    lv.title = alt || null;
+  }
+};
+
 // Floor titles: on a sheet of several floors; on a one-floor sheet only when
 // there is no key to say which floor it is.
 M.showTitles = (lay, ctx) => lay.levels.length > 1 || ((lay.allLevels || lay.levels).length > 1 && ctx.opts.legend === false);
@@ -6371,6 +6395,7 @@ M.render = function (o, opts = {}) {
   const player = opts.layer === "player";
   const lay = M.layout.build(model, opts.view === "rings" ? "rings" : "plan", rng.fork("layout"), { player });
   if (player && opts.view !== "section") M.scene.seal(lay, new Set(opts.reveal || ["public"]));
+  if (player) M.safeTitles(lay, model, opts.reveal);
   const drawn = M.pickFloors(lay, opts.floor, W);
   lay.allLevels = lay.levels.slice();
   if (drawn) lay.levels = lay.levels.filter(l => drawn.has(l));
@@ -6537,6 +6562,7 @@ M.key = function (o, opts = {}) {
   let lay = null, drawn = null;
   if (model.rooms.length) {
     lay = M.layout.build(model, rings ? "rings" : "plan", M.rng(seed).fork("layout"), { player: opts.layer === "player" });
+    if (opts.layer === "player") M.safeTitles(lay, model, opts.reveal);
     drawn = M.pickFloors(lay, opts.floor, W);
   }
   const facts = M.keyFacts(model, Object.assign({}, opts, { _shortTags: true }), lay, drawn);

@@ -231,10 +231,12 @@ fails and nobody is known, nothing is purged.
   when it shows other bands than the ticks, the map box says so. Checks: `gm-page.test.mjs` (9m–9o), `gm-nosecrets.test.mjs` (j), `gm-maps.e2e.mjs` (`npm run check:gm-maps`: the GM page and the
   iPad at 1366 × 1024 against a local Worker; `GM_SHOTS=<dir>` keeps its screenshots).
 - **Hidden names.** Map kit 0.2 titled a `plan` or `section` level of the player layer after the room on it, even when that room was
-  hidden. From 0.5 (vendored: 0.7.0, 21/10/2026) every floor is titled generically ("Basement", "Ground floor", "Upper floor", "Top
+  hidden. From 0.5 (vendored: 0.7.1, 22/10/2026) every floor is titled generically ("Basement", "Ground floor", "Upper floor", "Top
   floor") and a hidden room's name is not in the player file at all. The page still scans every player render for the names of hidden
   rooms, both threats and a hidden target, and refuses to send one that holds a name ("This view would name a hidden room: use Rings
-  or Iso, or reveal more bands"); the in-page Player draw shows the same warning and the Player SVG download is refused. The kit's four
+  or Iso, or reveal more bands"); an iso that names one is redrawn as rings first (PR #53; the score scene's exploded site likewise,
+  `isoRings`), and refused only when the rings name one too. 0.7.1 never names a hidden room in a floor title, so both stay as defence
+  in depth. The in-page Player draw shows the same warning and the Player SVG download is refused. The kit's four
   floor titles are not counted (`P.LEVEL_TITLES`): a hidden room called "Basement" tells the crew no more than the title of that floor,
   which the kit prints for every building with a basement.
 - **Street (S).** A side panel, a port of the vault page `Tools/blades-68-district-scenes.md` (`app/gm/scenes.js`; tables from the
@@ -525,7 +527,7 @@ fails and nobody is known, nothing is purged.
 
 ## The kits (`app/kits.json`, `npm run kits`)
 
-The design system's two kits are vendored: the map kit in `app/maps/map-kit.js` (`B68Map`, 0.7.0) and the figure kit in
+The design system's two kits are vendored: the map kit in `app/maps/map-kit.js` (`B68Map`, 0.7.1) and the figure kit in
 `app/figures/figure-kit.js` (`B68Figure`, 3.0.1, which carries the arm blend `tools/ambient/motion.js` uses, so the app no longer patches it). `app/kits.json` records each one's file, version, size, sha256, where it came from
 and when; `npm run kits` prints it and says whether the files still match. To update one, download the kit from the design system
 (or build it) and run `node scripts/kits.mjs maps <map-kit.js> --source "<where it came from>"` (or `figures`): it checks the file
