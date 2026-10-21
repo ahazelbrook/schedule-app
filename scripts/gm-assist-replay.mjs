@@ -234,57 +234,24 @@ if (arg('turn-at')) {
 // --tap-sim: the table agent over a window, through the real endpoint (see the header). The Worker code is the code that runs; only the
 // clock is virtual (one tick per transcript minute) and the database is in memory.
 if (flag('tap-sim')) {
-  const { memoryExec, asD1 } = await import('./lib/d1.mjs');
-  const { cleanLines, addLines } = await import('../functions/_lib/stt.js');
-  const { makeHandler } = await import('../functions/api/gm/assist.js');
-  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
-  const exec = await memoryExec({ schemaFile: path.join(root, 'schema.sql') });
-  const db = asD1(exec);
-  const DAY = '2026-10-17', OFFSET = '+11:00';                 // an AEDT Saturday: the endpoint stamps lines in Melbourne time
-  const iso = (t, sec) => new Date(`${DAY}T${stamp(t)}:${String(sec).padStart(2, '0')}${OFFSET}`).toISOString();
-  const lead = Number(arg('lead', 20)), fromT = from < 0 ? order[0] : from, toT = to > 1e8 ? order[order.length - 1] : to;
+  const { runTapSim, dayFromTranscript } = await import('./lib/tap-sim.mjs');
+  const day = arg('day') || dayFromTranscript(fs.readFileSync(transcriptFile, 'utf8'));          // --day YYYY-MM-DD, else the note's own date: (else an invented default)
+  const fromT = from < 0 ? order[0] : from, toT = to > 1e8 ? order[order.length - 1] : to;
   const enabled = new Set((arg('tap-seats', 'tripwire,ref,clerk,ledger,stall,showrunner,mystery')).split(',').map(x => x.trim()).filter(Boolean));
-  const names = [...new Set([...allMinutes.values()].flat().map(l => l.speaker))].slice(0, 60);
-  const sp = Object.fromEntries(names.map((n, i) => [String(i), n]));
-  await db.prepare('INSERT INTO gm_stt (campaign, updated_at, doc) VALUES (?1, ?2, ?3)').bind('c', iso(fromT, 0), JSON.stringify({ want: 'on', session: '2', speakers: sp })).run();
-  await db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', '{}', 0, ?1)").bind(JSON.stringify({ file_id: 'file_sim000001' })).run();
-  let seq = 0;
-  const feed = async t => {
-    const ls = allMinutes.get(t) || [];
-    const batch = ls.map((l, i) => ({ id: 'sim' + (++seq), at: iso(t, Math.min(58, Math.floor(i * 58 / Math.max(1, ls.length)))), session: '2', conn: 'sim', speaker: Math.min(63, names.indexOf(l.speaker)), text: l.text }));
-    for (let i = 0; i < batch.length; i += 50) await addLines(db, 'c', cleanLines({ lines: batch.slice(i, i + 50) }));
-  };
-  const seatOf = ins => Object.keys(registry).find(k => ins && ins.startsWith(registry[k].instructions));
-  const virt = { t: 0, real0: 0, hhmm: '' };
-  const call = async (cl, a) => {
-    const seat = seatOf(a.instructions);
-    if (!enabled.has(seat)) return { json: null, text: '', usage: {}, cost: 0, stop: 'skipped', secs: 0 };
-    const r = await callSeat(cl, { ...a, prefix, prefixFileId: '' });
+  const callHook = async (seat, a, at) => {
+    const r = await callSeat(client, { ...a, prefix, prefixFileId: '' });
     total += r.cost; spend[seat] = (spend[seat] || 0) + r.cost; calls[seat] = (calls[seat] || 0) + 1; secsLog.push(r.secs); stopLog.push(r.stop);
-    log.write(JSON.stringify({ at: virt.hhmm, seat, model: a.model, effort: a.effort, usage: r.usage, cost: r.cost, stop: r.stop, secs: r.secs, json: r.json }) + '\n');
+    log.write(JSON.stringify({ at, seat, model: a.model, effort: a.effort, usage: r.usage, cost: r.cost, stop: r.stop, secs: r.secs, json: r.json }) + '\n');
     return r;
   };
-  const handler = makeHandler({ clientFor: () => client, now: () => virt.t + (Date.now() - virt.real0), call, seats: registry });
-  const env = { DB: db, CAMPAIGN: 'c', ANTHROPIC_API_KEY: 'sim', ASSIST_CAP_USD: String(arg('cap', 20)) };
-  for (let t = fromT - lead; t < fromT; t++) await feed(t);
-  const ticks = [], shown = [];
-  let after = null, lastId = 0;
-  for (let t = fromT; t <= toT; t++) {
-    if (total >= maxSpend) { console.error('stopped at ' + stamp(t) + ': spend cap $' + maxSpend + ' reached'); break; }
-    await feed(t);
-    virt.t = Date.parse(iso(t, 59)); virt.real0 = Date.now(); virt.hhmm = stamp(t);
-    const res = await handler({ request: new Request('https://sim.example.test/api/gm/assist/tick', { method: 'POST', body: JSON.stringify(after === null ? {} : { after }), headers: { 'Content-Type': 'application/json' } }), env, data: { me: { role: 'gm', id: 'gm@example.test' } } });
-    const b = JSON.parse(await res.text());
-    after = b.last;
-    const rows = exec.db.prepare('SELECT id, seat, card FROM gm_assist_log WHERE id > ? ORDER BY id').all(lastId).map(r => ({ ...r }));
-    if (rows.length) lastId = rows[rows.length - 1].id;
-    const called = rows.filter(r => r.seat !== 'editor' && !/"stop":"skipped"/.test(r.card || '')).map(r => r.seat);
-    const card = (b.cards || [])[0] || null;
-    if (card) shown.push({ t, seat: card.seat, text: card.text });
-    const mrow = rows.find(r => r.seat === 'mystery'); let g = null;
-    if (mrow) { try { const c = JSON.parse(mrow.card), o = c.out; g = o ? { item_given: !!(o.must_land_item || '').trim(), grounded: groundedItem(o.must_land_item), shown: c.shown === 1 } : null; } catch { g = null; } }
-    ticks.push({ at: stamp(t), flags: b.flags || [], called, card, stall: b.stall || null, mystery: g, errors: b.errors || [], spend: b.spend && b.spend.tonight });
-  }
+  const sim = await runTapSim({ client, registry, allMinutes, ...(day ? { day } : {}), fromT, toT, lead: Number(arg('lead', 20)), enabled, cap: Number(arg('cap', 20)), callHook, shouldStop: () => (total >= maxSpend ? 'spend cap' : '') });
+  if (sim.stopped) console.error('stopped at ' + sim.stoppedAt + ': spend cap $' + maxSpend + ' reached');
+  const shown = sim.shown;
+  const ticks = sim.ticks.map(x => {
+    const { mysteryRow, ...rest } = x; let g = null;
+    if (mysteryRow) { try { const c = JSON.parse(mysteryRow.card), o = c.out; g = o ? { item_given: !!(o.must_land_item || '').trim(), grounded: groundedItem(o.must_land_item), shown: c.shown === 1 } : null; } catch { g = null; } }
+    return { ...rest, mystery: g };
+  });
   const gaps = shown.slice(1).map((c, i) => c.t - shown[i].t);
   const mys = ticks.filter(x => x.mystery);
   const calledCount = {}; for (const x of ticks) for (const s of x.called) calledCount[s] = (calledCount[s] || 0) + 1;

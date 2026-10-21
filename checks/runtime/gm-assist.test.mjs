@@ -1300,7 +1300,7 @@ await test('WP4: the prompts name how far back Showrunner and Mystery read, and 
   assert.equal(showrunnerUser({ stamp: '22:10', talk: 'T' }), 'Talk of the last 20 minutes, up to 22:10 (earlier talk is not shown):\nT');
   assert.equal(mysteryUser({ stamp: '22:10', talk: 'T' }), 'Talk of the last 15 minutes, up to 22:10 (earlier talk is not shown):\nT');
   assert.match(mysteryUser({ stamp: '22:10', talk: 'T', known: ['a', 'b'] }), /^You reported these as known earlier tonight \(already learned\):\n- a\n- b\nTalk of/);
-  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'gm-assist-replay.mjs'), 'utf8');
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'gm-assist-replay.mjs'), 'utf8') + fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'tap-sim.mjs'), 'utf8');   // the Tap loop lives in lib/tap-sim.mjs, shared with the gate
   assert.ok(/flag\('tap-sim'\)/.test(src) && /makeHandler\(/.test(src) && /arg\('turn-at'\)/.test(src) && /must_land_item/.test(src), 'the script takes --tap-sim (through makeHandler) and --turn-at, and checks the Must land entry');
 });
 
