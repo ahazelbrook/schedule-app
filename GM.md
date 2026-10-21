@@ -215,7 +215,7 @@ fails and nobody is known, nothing is purged.
   Player (on the GM layer the street description and everything else use public only), and sending anything beyond public
   to the iPad asks first, naming the bands.
 - **Hidden names.** Map kit 0.2 titled a `plan` or `section` level of the player layer after the room on it, even when that room was
-  hidden. From 0.5 (vendored: 0.6.0, 21/10/2026) every floor is titled generically ("Basement", "Ground floor", "Upper floor", "Top
+  hidden. From 0.5 (vendored: 0.7.0, 21/10/2026) every floor is titled generically ("Basement", "Ground floor", "Upper floor", "Top
   floor") and a hidden room's name is not in the player file at all. The page still scans every player render for the names of hidden
   rooms, both threats and a hidden target, and refuses to send one that holds a name ("This view would name a hidden room: use Rings
   or Iso, or reveal more bands"); the in-page Player draw shows the same warning and the Player SVG download is refused. The kit's four
