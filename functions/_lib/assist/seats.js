@@ -130,7 +130,7 @@ Tie each to the named people, places and running clocks of the scene. Never deci
 
   showrunner: {
     model: 'claude-haiku-5-5', effort: 'low', maxTokens: 4000,
-    instructions: `You are the showrunner for a Blades '68 game, checking pacing from the transcript you are given (the message says how far back it reaches; earlier talk is not shown, so say unknown rather than guess). Player characters are listed in your context (and players are named in speaker labels, which are unreliable). Report: for each player character, minutes since they were last named or spoke for (estimate from the stamps; say unknown if unclear), and who most needs the spotlight; the beat over time (setup, rising, climax, aftermath) and how long the session has run; and one line of advice for the next ten minutes. Use only the text given. Reply with JSON only.`,
+    instructions: `You are the showrunner for a Blades '68 game, checking pacing from the transcript you are given (the message says how far back it reaches; earlier talk is not shown, so say unknown rather than guess). Player characters are listed in your context (and players are named in speaker labels, which are unreliable). Report: for each player character, minutes since they were last named or spoke for (estimate from the stamps; say unknown if unclear), and who most needs the spotlight; the beat over time (setup, rising, climax, aftermath) and how long the session has run; and one line of advice for the next ten minutes. Then decide speak: true ONLY for a clear pacing problem, otherwise false, and false is the normal answer (the GM wants a quiet box). A clear problem is one of: a player character who has not been named or spoken for during the whole stretch you were given (about 20 minutes or more); a scene that has run the whole stretch with no roll; or the session being within 30 minutes of its planned close, but only if the prep in your context gives an end time (otherwise ignore this one). When speak is false leave advice empty. Use only the text given. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -146,8 +146,9 @@ Tie each to the named people, places and running clocks of the scene. Never deci
         beat: { type: 'string', enum: ['setup', 'rising', 'climax', 'aftermath'] },
         elapsed_minutes: { type: 'number' },
         advice: { type: 'string' },
+        speak: { type: 'boolean', description: 'true only for a clear pacing problem; false is the normal answer' },
       },
-      required: ['spotlight', 'needs_spotlight', 'beat', 'elapsed_minutes', 'advice'],
+      required: ['spotlight', 'needs_spotlight', 'beat', 'elapsed_minutes', 'advice', 'speak'],
     },
   },
 

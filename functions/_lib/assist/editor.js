@@ -48,6 +48,7 @@ export function toCandidate(seat, json, { recent = [], now = 0 } = {}) {
     return { seat, text: clip('Push next: ' + push + (clip(json.how) ? ' How: ' + clip(json.how) : '')), keys };
   }
   if (seat === 'showrunner') {
+    if (json.speak !== true) return null;                   // the Showrunner speaks only for a clear pacing problem
     const advice = clip(json.advice, 240), who = clip(json.needs_spotlight, 80);
     const named = who && !/^(none|nobody|no one|unknown|n\/a)\b/i.test(who);
     if (!advice && !named) return null;
@@ -92,7 +93,7 @@ export function pendingRefs(rows, { recent = [], now = 0 } = {}) {
  * A pending Ref (from pendingRefs) and a fresh one for the same slip count once; the fresh one wins. Of several waiting Ref
  * cards the newest shows.
  */
-export function merge(candidates, { now, lastShownAt = null } = {}) {
+export function merge(candidates, { now, lastShownAt = null, lastRefShownAt } = {}) {
   const list = (candidates || []).filter(Boolean);
   const updates = list.filter((c) => c.seat === 'ledger').map((c) => ({ ...c, at: now }));
   const fresh = list.filter((c) => c.seat === 'ref' && !c.pending);
@@ -101,9 +102,12 @@ export function merge(candidates, { now, lastShownAt = null } = {}) {
   // the rest compete for the slot in PRIORITY order (Clerk, then Mystery, then Showrunner) and are dropped, never queued
   const clerks = list.filter((c) => c.seat === 'clerk' || c.seat === 'mystery' || c.seat === 'showrunner').sort((a, b) => (PRIORITY[b.seat] || 0) - (PRIORITY[a.seat] || 0));
   const throttled = Number.isFinite(lastShownAt) && now - lastShownAt < CARD_GAP_MS;
+  // Ref has priority: a slip is held back only by an earlier Ref card, never by a Clerk, Mystery or Showrunner card
+  const refAt = lastRefShownAt === undefined ? lastShownAt : lastRefShownAt;
+  const refThrottled = Number.isFinite(refAt) && now - refAt < CARD_GAP_MS;
   if (refs.length) {
     const dropped = clerks.map((c) => ({ seat: c.seat, why: 'ref-waiting' }));
-    if (throttled) return { card: null, updates, held: refs, dropped: dropped.concat(refs.map(() => ({ seat: 'ref', why: 'throttle' }))) };
+    if (refThrottled) return { card: null, updates, held: refs, dropped: dropped.concat(refs.map(() => ({ seat: 'ref', why: 'throttle' }))) };
     const [top, ...rest] = refs;
     return { card: { ...top, at: now }, updates, held: rest, dropped: dropped.concat(rest.map(() => ({ seat: 'ref', why: 'outranked' }))) };
   }

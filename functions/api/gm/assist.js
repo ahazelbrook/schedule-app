@@ -204,6 +204,13 @@ async function heldRefs(db, campaign, now) {
   return (results || []).map((r) => ({ at: Date.parse(r.at), card: parseJson(r.card, null) }));
 }
 
+/** The latest Ref card shown in the last five minutes (its own row, or the Editor's row for a held one released later). */
+async function lastRefShown(db, campaign, now) {
+  const since = new Date(now - CARD_GAP_MS).toISOString();
+  const r = await db.prepare("SELECT MAX(at) AS at FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND json_extract(card, '$.shown') = 1 AND (seat = 'ref' OR json_extract(card, '$.seat') = 'ref')").bind(campaign, since).first();
+  return r && r.at ? Date.parse(r.at) : null;
+}
+
 async function lastShown(db, campaign, now) {
   const since = new Date(now - CARD_GAP_MS).toISOString();
   const r = await db.prepare("SELECT MAX(at) AS at FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND json_extract(card, '$.shown') = 1").bind(campaign, since).first();
@@ -380,7 +387,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const candidates = results.map((x) => (x.r ? toCandidate(x.name, x.r.json, { recent, now: t0 }) : null));
     // a Ref card held back earlier waits in the log; it competes with this tick's own until it goes stale
     const pending = pendingRefs(held || await heldRefs(db, campaign, t0), { recent, now: t0 });
-    const edit = merge(candidates.concat(pending), { now: t0, lastShownAt: await lastShown(db, campaign, t0) });
+    const edit = merge(candidates.concat(pending), { now: t0, lastShownAt: await lastShown(db, campaign, t0), lastRefShownAt: await lastRefShown(db, campaign, t0) });
     const at = new Date(now()).toISOString();
     const rows = results.map((x, i) => {
       const cand = candidates[i];
