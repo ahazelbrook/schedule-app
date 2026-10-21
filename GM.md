@@ -214,13 +214,13 @@ fails and nobody is known, nothing is purged.
 - **Reveal.** Every new roll and every replay starts with the public band only. The ticks count only while Layer is
   Player (on the GM layer the street description and everything else use public only), and sending anything beyond public
   to the iPad asks first, naming the bands.
-- **Hidden names (a map kit bug, worked around here).** The vendored kit's player layer titles a `plan` or `section`
-  level after the room on it even when that room is hidden (a basement title on an UNSURVEYED plate; about a quarter of
-  rolls, sometimes the target). Until the design system fixes it upstream (kit-source `scene.js` / `section.js`: level
-  titles in the player layer should be generic), the page scans every player render for the names of hidden rooms, both
-  threats and a hidden target, and refuses to send it ("This view would name a hidden room: use Rings or Iso, or reveal
-  more bands"); the in-page Player draw shows the same warning and the Player SVG download is refused. `rings` and `iso`
-  are clean.
+- **Hidden names.** Map kit 0.2 titled a `plan` or `section` level of the player layer after the room on it, even when that room was
+  hidden. From 0.5 (vendored: 0.6.0, 21/10/2026) every floor is titled generically ("Basement", "Ground floor", "Upper floor", "Top
+  floor") and a hidden room's name is not in the player file at all. The page still scans every player render for the names of hidden
+  rooms, both threats and a hidden target, and refuses to send one that holds a name ("This view would name a hidden room: use Rings
+  or Iso, or reveal more bands"); the in-page Player draw shows the same warning and the Player SVG download is refused. The kit's four
+  floor titles are not counted (`P.LEVEL_TITLES`): a hidden room called "Basement" tells the crew no more than the title of that floor,
+  which the kit prints for every building with a basement.
 - **Street (S).** A side panel, a port of the vault page `Tools/blades-68-district-scenes.md` (`app/gm/scenes.js`; tables from the
   pack part `scenes`, optional: an older pack shows "The pack has no scenes part. Update the pack." in the panel). A district select
   (or anywhere) and **Roll a street scene**: three read-aloud paragraphs, the four ratings, and a GM grid (landmark, who is out, what
@@ -303,8 +303,8 @@ fails and nobody is known, nothing is purged.
     "b68-chase/1"`), stored whole on every change (a key the new one lacks is deleted). An ended chase gets `endedAt`. The start form
     is this page's only, never stored. Nothing here touches the table, its clocks or the campaign log.
   - Checks: `gm-chase.test.mjs` (the module and the gate), `gm-page.test.mjs` (19a–19e), `gm-nosecrets.test.mjs` (i),
-    `gm-chase.e2e.mjs` (port 8861). Until the vendored kit has the chase strip, `checks/runtime/fixtures/chase-kit-stub.js` stands in,
-    written from the kit's spec; it installs only on a kit without one.
+    `gm-chase.e2e.mjs` (port 8861). `checks/runtime/fixtures/chase-kit-stub.js` was the stand-in written from the kit's spec
+    before 0.6 was vendored; it installs only on a kit without a chase strip, so on 0.6 the checks run the real one.
 - **NPC (`N`).** At the top the generator: **Roll an NPC** draws a card (the vault generator's port, `app/gm/npc.js`, fed by the
   pack's `npc` part and the campaign part): a portrait, what the table could see, what they want, how to play them (cast,
   status, dial, mannerism, verb), the levers, and the faction's dossier folded away. Above the button three pickers, each on

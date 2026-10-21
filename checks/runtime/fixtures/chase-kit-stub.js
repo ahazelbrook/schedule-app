@@ -81,7 +81,7 @@
         x += sw * s.w;
       });
       out += '</svg>';
-      return { svg: out, width: W0, height: H0, warnings: [], slots: slots.length, drawn: chase.panels.length, viewBox: '0 0 ' + W0 + ' ' + H0 };
+      return { svg: out, width: W0, height: H0, warnings: [], slots: slots.reduce(function (n, s) { return n + s.w; }, 0), drawn: chase.panels.length, viewBox: '0 0 ' + W0 + ' ' + H0 };
     };
     return K;
   };

@@ -112,11 +112,12 @@ await test('playerCopy and secrets: no roll line, no GM note, no hidden opposing
   let c = play(fresh(), [{ ticks: 2, caption: 'They split up', roll: 'Ana · Finesse · risky/standard · 4' }, { ticks: 1, caption: 'Ana rolls a four' }]);
   c.gm = 'The ambush is a bluff'; c.panels[0].gm = 'Watch captain owes the crew';
   c.clocks.push({ id: 'crew9', name: 'Secret leg', size: 4, side: 'crew', strip: true, hidden: true });
+  c.cast[0].riders = ['Mole Quickfinger'];
   const pc = G.playerCopy(c);
-  assert.ok(!('gm' in pc) && pc.panels.every((p) => !('roll' in p) && !('gm' in p)));
+  assert.ok(!('gm' in pc) && pc.panels.every((p) => !('roll' in p) && !('gm' in p)) && pc.cast.every((x) => !('riders' in x)));
   assert.deepEqual(pc.clocks.map((k) => [k.id, k.name]), [['crew1', 'Shake them'], ['crew9', '']]);
   assert.ok(c.panels[0].roll && c.gm, 'the chase itself is untouched');
-  assert.deepEqual(G.secrets(c).sort(), ['ana · finesse · risky/standard · 4', 'reinforcements arrive', 'secret leg', 'the ambush is a bluff', 'watch captain owes the crew']);
+  assert.deepEqual(G.secrets(c).sort(), ['ana · finesse · risky/standard · 4', 'mole quickfinger', 'reinforcements arrive', 'secret leg', 'the ambush is a bluff', 'watch captain owes the crew']);
   c.panels[1].caption = 'Reinforcements arrive at the bridge';
   assert.ok(!G.secrets(c).includes('reinforcements arrive'), 'a hidden name the table has heard in a caption is not a secret');
 });
@@ -151,7 +152,7 @@ await test('the GM copy grows with the clock: one panel per roll, as many slots 
   assert.equal(r0.drawn, 0, 'no panel before the first tick');
   c = play(c, [{ ticks: 2, caption: 'A' }, { ticks: 3, caption: 'B' }]);
   const r = K.chase(c, { layer: 'player', layout: 'ipad' });
-  assert.equal(r.drawn, 2); assert.equal(r.slots, 3, 'two panels and one empty slot');
+  assert.equal(r.drawn, 2, 'two panels'); assert.equal(r.slots, 6, 'six slots: the leg\'s segments, five filled and one empty');
   assert.equal(K.chase(c, { layer: 'player', layout: 'ipad' }).svg, r.svg, 'deterministic');
 });
 await test('the key, the bundle: C opens the Chase panel; gm/chase.js loads before gm-page.js', () => {

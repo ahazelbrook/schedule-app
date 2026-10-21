@@ -21,9 +21,9 @@
      undo(chase), oppose(chase, d), addLeg(chase, name, size)   NEW chase objects (never mutate)
      endPlan(past, chase, at)    -> { patch (for chase.past), dropped: [names] }
      title(chase), caption(chase), findEntries(chase)
-     playerCopy(chase)           what the player copy is drawn from: no roll lines, no `gm` notes, no hidden clock that is not a
-                                 strip, a hidden strip clock without its name
-     secrets(chase)              the strings the player svg must never hold: roll lines, gm notes, hidden clocks' names (each only
+     playerCopy(chase)           what the player copy is drawn from: no roll lines, no `gm` notes, no riders, no hidden clock that is
+                                 not a strip, a hidden strip clock without its name
+     secrets(chase)              the strings the player svg must never hold: roll lines, gm notes, riders, hidden clocks' names (each only
                                  when no player-visible text holds it too) */
 (function (root, factory) {
   'use strict';
@@ -174,6 +174,7 @@
     delete c.gm;
     c.clocks = arr(c.clocks).filter(function (k) { return isObj(k) && !(k.hidden && !k.strip); }).map(function (k) { if (k.hidden) { k.name = ''; delete k.history; } return k; });
     c.panels = arr(c.panels).map(function (p) { if (isObj(p)) { delete p.roll; delete p.gm; } return p; });
+    c.cast = arr(c.cast).map(function (x) { if (isObj(x)) delete x.riders; return x; });
     return c;
   }
   /* the strings the player svg must never hold, lower case, whitespace collapsed (each only when nothing the players may see holds it) */
@@ -190,6 +191,7 @@
     function add(s) { s = norm(s); if (s.length >= 4 && visible.indexOf(s) < 0 && out.indexOf(s) < 0) out.push(s); }
     arr(c.clocks).forEach(function (k) { if (isObj(k) && k.hidden) add(k.name); });
     arr(c.panels).forEach(function (p) { if (isObj(p)) { add(p.roll); add(p.gm); } });
+    arr(c.cast).forEach(function (x) { if (isObj(x)) arr(x.riders).forEach(add); });
     add(c.gm);
     return out;
   }

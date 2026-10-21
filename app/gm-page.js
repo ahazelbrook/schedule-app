@@ -161,9 +161,14 @@
     }).replace(/\s+/g, ' ').toLowerCase();
   }
   /* What the players must not read on a map with these bands revealed: every room in a hidden band, both threats, and
-     the target room while its band is hidden. A name that is also a revealed room's name is not a secret. */
+     the target room while its band is hidden. A name that is also a revealed room's name is not a secret, and neither is one of
+     the map kit's own floor titles (P.LEVEL_TITLES): from kit 0.5 every floor of the player layer is titled generically
+     ("Basement", "Ground floor"...), never after a room, so a hidden room that happens to be called "Basement" adds nothing the
+     title of that floor does not already say. */
+  P.LEVEL_TITLES = ['basement', 'ground floor', 'upper floor', 'top floor'];
   function hiddenNames(roll, reveal) {
     var rooms = roll && Array.isArray(roll.rooms) ? roll.rooms : [], shown = {}, out = [];
+    P.LEVEL_TITLES.forEach(function (t) { shown[t] = 1; });
     rooms.forEach(function (r) { if (r && reveal.indexOf(r.band) >= 0) shown[str(r.name).trim().toLowerCase()] = 1; });
     function add(n) { n = str(n).trim().toLowerCase(); if (n.length >= 3 && !shown[n] && out.indexOf(n) < 0) out.push(n); }
     rooms.forEach(function (r) { if (r && reveal.indexOf(r.band) < 0) add(r.name); });

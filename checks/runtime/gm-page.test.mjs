@@ -35,24 +35,26 @@ const LEAKY = { name: 'Invented Works', district: 'Nowhere', target: 'Apartment 
   vectors: [], skips: [] };
 const render = M.render.bind(M);
 
-await test('1. invented roll: plan and section name the hidden "Basement" level and are refused; rings and iso go', () => {
-  for (const view of ['plan', 'section']) {
-    let err = null; try { P.playerDisplay(LEAKY, { layer: 'player', view, theme: 'casefile', reveal: { public: true } }, render); } catch (e) { err = e; }
-    assert.ok(err && err.leak === true && err.message === P.LEAK_MSG, view + ': not refused (' + (err && err.message) + ')');
-    assert.deepEqual(P.leaks(render(LEAKY, { view, layer: 'player', reveal: ['public'] }).svg, LEAKY, ['public']), ['basement'], view + ' leak list');
-  }
-  for (const view of ['rings', 'iso']) {
-    const d = P.playerDisplay(LEAKY, { layer: 'player', view, reveal: { public: true } }, render);
+await test('1. invented roll: every view of the kit (0.5+: floors titled generically) goes; a render that prints a hidden room\'s own name is refused; a hidden room called like a floor is not a secret', () => {
+  for (const view of ['plan', 'section', 'rings', 'iso']) {
+    const d = P.playerDisplay(LEAKY, { layer: 'player', view, theme: 'casefile', reveal: { public: true } }, render);
     assert.equal(d.kind, 'svg'); assert.deepEqual(P.leaks(d.svg, LEAKY, ['public']), [], view);
-    assert.ok(!d.svg.toLowerCase().includes('basement'), view + ': the hidden level name is on the svg sent to the iPad');
+    assert.ok(!d.svg.toLowerCase().includes('server room'), view + ': the hidden room name is on the svg sent to the iPad');
+  }
+  assert.deepEqual(P.hiddenNames(LEAKY, ['public']).sort(), ['break room', 'filing room', 'server room'], 'the kit\'s floor title "Basement" is not counted');
+  /* a kit that titled a level after the hidden room (0.2 did, on plan and section) is refused */
+  const named = (roll, o) => { const r = render(roll, o); return Object.assign({}, r, { svg: r.svg.replace('</svg>', '<text>SERVER ROOM</text></svg>') }); };
+  for (const view of ['plan', 'section']) {
+    let err = null; try { P.playerDisplay(LEAKY, { layer: 'player', view, reveal: { public: true } }, named); } catch (e) { err = e; }
+    assert.ok(err && err.leak === true && err.message === P.LEAK_MSG, view + ': not refused (' + (err && err.message) + ')');
   }
   // a leaking iso is redrawn as rings; if the rings leak too it is refused
-  const seen = []; const isoLeaks = (roll, o) => { seen.push(o.view); return o.view === 'iso' ? { svg: '<svg><text>Basement</text></svg>' } : render(roll, o); };
+  const seen = []; const isoLeaks = (roll, o) => { seen.push(o.view); return o.view === 'iso' ? { svg: '<svg><text>Server room</text></svg>' } : render(roll, o); };
   const fb = P.playerDisplay(LEAKY, { layer: 'player', view: 'iso', reveal: { public: true } }, isoLeaks);
   assert.deepEqual(seen, ['iso', 'rings']); assert.deepEqual(P.leaks(fb.svg, LEAKY, ['public']), []);
-  assert.throws(() => P.playerDisplay(LEAKY, { layer: 'player', view: 'iso', reveal: { public: true } }, () => ({ svg: '<svg><text>Basement</text></svg>' })), (e) => e.leak === true);
+  assert.throws(() => P.playerDisplay(LEAKY, { layer: 'player', view: 'iso', reveal: { public: true } }, () => ({ svg: '<svg><text>Server room</text></svg>' })), (e) => e.leak === true);
   // revealing the band makes the name fair game
-  assert.equal(P.playerDisplay(LEAKY, { layer: 'player', view: 'plan', reveal: { public: true, working: true, controlled: true, secure: true } }, render).kind, 'svg');
+  assert.equal(P.playerDisplay(LEAKY, { layer: 'player', view: 'plan', reveal: { public: true, working: true, controlled: true, secure: true } }, named).kind, 'svg');
 });
 
 await test('1. the leak scan: entities decoded, names split over tspans joined, whole words, case-insensitive; revealed names are not secrets', () => {
@@ -73,7 +75,7 @@ await test('1. real pack (skipped without it): 300 rolls × 4 views; every svg t
       passedGate++;
       // an independent check: the raw svg, entities decoded, lower case, must not hold any hidden room name as a word
       const raw = d.svg.replace(/&amp;/g, '&').replace(/&#39;|&apos;/g, "'").replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').toLowerCase();
-      for (const r of roll.rooms) if (r.band !== 'public' && !roll.rooms.some((x) => x.band === 'public' && x.name === r.name)) {
+      for (const r of roll.rooms) if (r.band !== 'public' && !roll.rooms.some((x) => x.band === 'public' && x.name === r.name) && !P.LEVEL_TITLES.includes(r.name.toLowerCase())) {   // a hidden room called like a floor is not a secret: the kit titles that floor itself
         const n = r.name.toLowerCase(), at = (' ' + raw + ' ').search(new RegExp('[^a-z0-9]' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^a-z0-9]'));
         assert.ok(at < 0, 'roll ' + i + ' ' + view + ': a hidden room name passed the gate');
       }
@@ -819,26 +821,27 @@ await test('9e. crew sync: one request in flight; a change meanwhile goes after;
 });
 
 await test('9f. the score scene: player layer only; the board is the plan, or rings when the plan would name a hidden room; a leaking iso is refused', () => {
-  const calls = []; const rend = (roll, o) => { calls.push(o); return render(roll, o); };
+  /* the kit (0.5+) never names a hidden room: this renderer does on the plan, as kit 0.2 did */
+  const calls = []; const rend = (roll, o) => { calls.push(o); const r = render(roll, o); return o.view === 'plan' || o.view === 'iso' ? Object.assign({}, r, { svg: r.svg.replace('</svg>', '<text>Server room</text></svg>') }) : r; };
   assert.throws(() => P.scoreScene(LEAKY, { layer: 'gm', view: 'plan' }, rend), /player layer/); assert.equal(calls.length, 0, 'a GM-layer request rendered nothing');
   assert.throws(() => P.scoreScene(null, { layer: 'player' }, rend), /Roll a location/);
   const s = P.scoreScene(LEAKY, { layer: 'player', reveal: { public: true } }, rend);
-  assert.equal(s.view, 'rings'); assert.equal(s.rings, true, 'the plan named the hidden Basement: rings instead');
+  assert.equal(s.view, 'rings'); assert.equal(s.rings, true, 'the plan named the hidden Server room: rings instead');
   assert.deepEqual(calls.map((c) => [c.view, c.theme, c.layer, c.legend, c.width]), [['plan', 'board', 'player', undefined, 1600], ['rings', 'board', 'player', undefined, 1600], ['iso', 'blueprint', 'player', false, 1600], ['rings', 'blueprint', 'player', false, 1600]]);
-  assert.equal(s.isoRings, true, 'the iso named the hidden Basement: rings instead'); assert.ok(!s.iso.toLowerCase().includes('basement') && !s.board.toLowerCase().includes('basement'), 'the hidden name is on neither svg');
+  assert.equal(s.isoRings, true, 'the iso named the hidden Server room: rings instead'); assert.ok(!s.iso.toLowerCase().includes('basement') && !s.board.toLowerCase().includes('basement'), 'the hidden name is on neither svg');
   assert.ok(calls.every((c) => c.reveal.join() === 'public'));
   assert.deepEqual(P.leaks(s.board, LEAKY, ['public']), []); assert.deepEqual(P.leaks(s.iso, LEAKY, ['public']), []);
   assert.deepEqual(s.score, { name: 'Invented Works', district: 'Nowhere', target: '', reveal: ['public'], view: 'rings', board: s.board, iso: s.iso });
   const clean = { name: 'Plain', district: 'D', rooms: [{ name: 'Lobby', band: 'public' }, { name: 'Hall', band: 'public' }], targetRoom: 'Lobby', targetBand: 'public' };
   const c = P.scoreScene(clean, { layer: 'player', reveal: { public: true, working: true } }, render);
   assert.deepEqual([c.view, c.rings, c.score.reveal], ['plan', false, ['public', 'working']]);
-  const calls2 = []; const bad = (roll, o) => { calls2.push(o.view); return { svg: '<svg><text>Basement</text></svg>' }; };
+  const calls2 = []; const bad = (roll, o) => { calls2.push(o.view); return { svg: '<svg><text>Server room</text></svg>' }; };
   let err = null; try { P.scoreScene(LEAKY, { layer: 'player', reveal: { public: true } }, bad); } catch (e) { err = e; }
   assert.ok(err && err.leak && err.message === P.LEAK_MSG, 'a plan that leaks AND rings that leak: refused'); assert.deepEqual(calls2, ['plan', 'rings']);
-  const isoOnly = (roll, o) => ({ svg: o.view === 'iso' ? '<svg><text>Basement</text></svg>' : '<svg><text>Lobby</text></svg>' });
+  const isoOnly = (roll, o) => ({ svg: o.view === 'iso' ? '<svg><text>Server room</text></svg>' : '<svg><text>Lobby</text></svg>' });
   const fbk = P.scoreScene(LEAKY, { layer: 'player', reveal: { public: true } }, isoOnly);
   assert.equal(fbk.isoRings, true, 'a leaking iso is redrawn as rings');
-  const isoAndRings = (roll, o) => ({ svg: o.view === 'iso' || (o.view === 'rings' && o.theme === 'blueprint') ? '<svg><text>Basement</text></svg>' : '<svg><text>Lobby</text></svg>' });
+  const isoAndRings = (roll, o) => ({ svg: o.view === 'iso' || (o.view === 'rings' && o.theme === 'blueprint') ? '<svg><text>Server room</text></svg>' : '<svg><text>Lobby</text></svg>' });
   err = null; try { P.scoreScene(LEAKY, { layer: 'player', reveal: { public: true } }, isoAndRings); } catch (e) { err = e; }
   assert.ok(err && err.leak, 'an iso and rings that both leak: refused');
 });
