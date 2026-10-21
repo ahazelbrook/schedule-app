@@ -210,7 +210,12 @@ export function report(g) {
   L.push('', '## Criteria', '', '| | Criterion | Detail |', '|---|---|---|', ...g.criteria.map((c) => `| **${c.result}** | ${cell(c.name)} | ${cell(c.detail)} |`));
   L.push('', '## Spend', '', `Total ${usd(g.spend.total)} of $${g.spend.maxSpend} cap. ${g.spend.projectedNight == null ? 'No projection for a window this short (mostly cache writes); use a dry run of the whole night.' : 'Projected ' + usd(g.spend.projectedNight) + ' per ' + g.spend.nightMinutes / 60 + '-hour night (the Tap scaled linearly from this window; Fixer and Voice counted as run).'}`, '',
     '| Seat | Calls | Spend | Model |', '|---|---|---|---|', ...Object.entries(g.spend.bySeat).map(([s, v]) => `| ${s} | ${v.calls} | ${usd(v.cost)} | ${g.models[s] || ''} |`));
-  L.push('', '## Cards', '', g.dryRun ? '_Dry run: none._' : `${g.cards.length} cards, ${g.cardsPer30} per 30 minutes. Tick a box if the card was REAL; leave it empty if false.`, '');
+  L.push('', '## Cards', '', g.dryRun ? '_Dry run: none._' : `${g.cards.length} cards, ${g.cardsPer30} per 30 minutes.`, '');
+  if (!g.dryRun) {
+    L.push('> [!note] How to mark: tick `[x]` if the card was REAL (a true slip or a useful card); leave `[ ]` if it was FALSE;',
+      '> set `[-]` to skip a card (counted neither way). Then run `node scripts/gm-assist-gate.mjs --marks <this file>`:',
+      '> it recomputes false cards per 30 min and the PASS/FAIL line, rewriting only the false-card row and the Marks section.', '');
+  }
   for (const c of g.cards) L.push(`- [ ] ${c.n}. ${c.at} **${c.seat}**: ${String(c.text).replace(/\r?\n/g, ' / ')}`);
   L.push('', '## Ref', '');
   if (!g.ref.length) L.push('_No expected slips given._');
@@ -242,3 +247,54 @@ export function report(g) {
 }
 
 export { SKIPPED };
+
+// ---- marks: Alex ticks the Cards checklist in gate.md, then --marks recomputes the false-card criterion from it.
+// Convention (written in the gate.md header): [x] = REAL (a true slip or a useful card), [ ] = FALSE, [-] = skip (not counted either way).
+const CARD_RE = /^- \[( |x|X|-)\] (\d+)\. /;
+const FALSE_ROW_RE = /^\| \*\*[A-Z-]+\*\* \| At most one false card per 30 min \|.*$/m;
+
+/** Count the marks in a gate.md. -> { total, real, falseN, skipped }. */
+export function readMarks(md) {
+  const m = { total: 0, real: 0, falseN: 0, skipped: 0 };
+  const at = md.indexOf('\n## Cards');
+  if (at < 0) return m;
+  const end = md.indexOf('\n## ', at + 4);
+  for (const line of md.slice(at, end < 0 ? md.length : end).split('\n')) {
+    const c = CARD_RE.exec(line);
+    if (!c) continue;
+    m.total++;
+    if (c[1] === '-') m.skipped++; else if (c[1] === ' ') m.falseN++; else m.real++;
+  }
+  return m;
+}
+
+/**
+ * Re-read a ticked gate.md and rewrite only its summary: the false-card row of the Criteria table and the Marks section.
+ * Marks and every other line are kept. Throws (plain reason) when there is nothing to recompute.
+ * -> { md, marks, per30, result, minutes }
+ */
+export function applyMarks(md, { allFalse = false } = {}) {
+  const w = /^Window \S+ to \S+ \((\d+) min\)\./m.exec(md);
+  if (!w) throw new Error('no "Window ... (N min)" line: is this a gate.md?');
+  const minutes = Number(w[1]);
+  if (!(minutes > 0)) throw new Error('the replayed window is 0 minutes');
+  if (!FALSE_ROW_RE.test(md)) throw new Error('no false-card row in the Criteria table: is this a gate.md?');
+  const marks = readMarks(md);
+  if (!marks.total) throw new Error('no cards in this gate.md (a dry run has none)');
+  if (marks.real === 0 && marks.skipped === 0 && !allFalse) throw new Error('no card is ticked [x] or skipped [-], so nothing has been marked yet (use --all-false if every card really is false)');
+  const per30 = Math.round((marks.falseN / (minutes / 30)) * 100) / 100;
+  const result = per30 <= GATE.falsePer30 ? 'PASS' : 'FAIL';
+  const detail = `${marks.falseN} false of ${marks.total} cards (${marks.real} real${marks.skipped ? ', ' + marks.skipped + ' skipped' : ''}) in ${minutes} min = ${per30} false per 30 min (limit ${GATE.falsePer30})`;
+  let out = md.replace(FALSE_ROW_RE, `| **${result}** | At most one false card per 30 min | ${cell(detail)} |`);
+  const section = ['## Marks', '', `Marked from the checklist: ${marks.real} real, ${marks.falseN} false, ${marks.skipped} skipped, of ${marks.total} cards.`, `False per 30 min = ${marks.falseN} / ${(minutes / 30).toFixed(2)} = ${per30}. Criterion (at most ${GATE.falsePer30}): **${result}**.`, ''].join('\n');
+  const at = out.indexOf('\n## Marks\n');
+  if (at >= 0) {
+    const end = out.indexOf('\n## ', at + 4);
+    out = out.slice(0, at + 1) + section + (end < 0 ? '' : out.slice(end));
+  } else {
+    const sp = out.indexOf('\n## Spend');
+    if (sp < 0) throw new Error('no Spend section to place the Marks before: is this a gate.md?');
+    out = out.slice(0, sp + 1) + section + out.slice(sp);
+  }
+  return { md: out, marks, per30, result, minutes };
+}

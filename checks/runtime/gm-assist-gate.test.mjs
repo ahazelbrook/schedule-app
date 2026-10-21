@@ -203,5 +203,74 @@ await test('the CLI: dry run writes gate.md and gate.json under gm-private, refu
   assert.equal(g2.dryRun, false); assert.equal(g2.ref[0].caught, true); assert.equal(g2.fixer.calls, 1);
 });
 
+// ---- --marks: an invented, hand-written gate.md (no table text), ticked on a phone
+const cardLines = (ticks) => ticks.map((t, i) => `- [${t}] ${i + 1}. 21:${String(i + 1).padStart(2, '0')} **ref**: invented card ${i + 1}`);
+const fakeGate = (ticks, { minutes = 60 } = {}) => ['# Gate replay s99', '', `Window 21:00 to 22:00 (${minutes} min).`, '', '## Criteria', '', '| | Criterion | Detail |', '|---|---|---|',
+  '| **PASS** | Ref flags the known slips | 1 of 1 caught |', '| **NEEDS-ALEX** | At most one false card per 30 min | old detail |', '', '## Spend', '', 'Total $1.000.', '', '## Cards', '', `${ticks.length} cards.`, '', ...cardLines(ticks), '', '## Ref', '', '_none_', ''].join('\n');
+
+await test('applyMarks: [x] real, [ ] false, [-] skipped; per 30 min and PASS/FAIL; only the false row and the Marks section change', async () => {
+  const { applyMarks, readMarks } = await import('../../scripts/lib/gate.mjs');
+  // 60 min window, 4 false = 2 per 30 -> FAIL; 2 false = 1 per 30 -> PASS (the limit is inclusive)
+  const md = fakeGate(['x', ' ', ' ', 'x', ' ', '-', ' ']);
+  assert.deepEqual(readMarks(md), { total: 7, real: 2, falseN: 4, skipped: 1 });
+  const r = applyMarks(md);
+  assert.equal(r.per30, 2); assert.equal(r.result, 'FAIL');
+  assert.match(r.md, /\| \*\*FAIL\*\* \| At most one false card per 30 min \| 4 false of 7 cards \(2 real, 1 skipped\) in 60 min = 2 false per 30 min/);
+  assert.match(r.md, /\n## Marks\n\nMarked from the checklist: 2 real, 4 false, 1 skipped, of 7 cards\./);
+  assert.ok(r.md.indexOf('## Marks') < r.md.indexOf('## Spend'), 'Marks sits before Spend');
+  // everything else is untouched, marks included
+  const strip = (s) => s.replace(/^\| \*\*[A-Z-]+\*\* \| At most one false.*$/m, '').replace(/\n## Marks\n[\s\S]*?(?=\n## )/, '');
+  assert.equal(strip(r.md).replace(/\n{3,}/g, '\n\n'), strip(md).replace(/\n{3,}/g, '\n\n'));
+  const p = applyMarks(fakeGate(['x', 'x', ' ', 'x', ' ']));
+  assert.equal(p.per30, 1); assert.equal(p.result, 'PASS');
+  // a short window scales: 2 false in 15 min = 4 per 30
+  assert.equal(applyMarks(fakeGate(['x', ' ', ' '], { minutes: 15 })).per30, 4);
+});
+
+await test('applyMarks: re-marking is idempotent and replaces the old Marks section; refuses an unmarked or non-gate file', async () => {
+  const { applyMarks } = await import('../../scripts/lib/gate.mjs');
+  const once = applyMarks(fakeGate(['x', ' ', 'x', 'x']));
+  assert.equal(once.result, 'PASS');
+  assert.equal(applyMarks(once.md).md, once.md, 'second run changes nothing');
+  const edited = once.md.replace('- [x] 3.', '- [ ] 3.').replace('- [x] 4.', '- [ ] 4.');
+  const again = applyMarks(edited);
+  assert.equal((again.md.match(/\n## Marks\n/g) || []).length, 1);
+  assert.equal(again.result, 'FAIL');
+  assert.throws(() => applyMarks(fakeGate([' ', ' ', ' '])), /nothing has been marked/);
+  assert.equal(applyMarks(fakeGate([' ', ' ', ' ']), { allFalse: true }).result, 'FAIL');
+  assert.throws(() => applyMarks(fakeGate([])), /no cards/);
+  assert.throws(() => applyMarks('# notes\n\nnothing\n'), /is this a gate\.md/);
+});
+
+await test('report() writes the marking convention in the header, and its own checklist round-trips through --marks', async () => {
+  const { applyMarks } = await import('../../scripts/lib/gate.mjs');
+  const g = await runGate(base(mockClient(), { expectRef: parseExpectRef('21:10,21:25') }));
+  const md = report(g);
+  assert.match(md.replace(/\n> /g, ' '), /How to mark: tick `\[x\]` if the card was REAL.*`\[ \]` if it was FALSE.*`\[-\]` to skip.*--marks/);
+  assert.ok(g.cards.length >= 2);
+  const r = applyMarks(md.replace('- [ ] 1.', '- [x] 1.'));
+  assert.equal(r.marks.total, g.cards.length); assert.equal(r.marks.real, 1);
+  assert.ok(r.md.includes('| **' + r.result + '** | At most one false card per 30 min |'));
+});
+
+await test('main --marks: rewrites the file in place with no API calls and no card text on stdout', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gatemarks-'));
+  const f = path.join(dir, 'gate.md');
+  fs.writeFileSync(f, fakeGate(['x', 'x', ' ', 'x']));
+  const client = mockClient(), out = [], errs = [];
+  assert.equal(await main(['--marks', f], { client, repo: dir, log: (x) => out.push(x), err: (x) => errs.push(x) }), 0, errs.join('\n'));
+  assert.equal(client.calls.length, 0);
+  assert.match(out.join('\n'), /marks: 3 real, 1 false, 0 skipped of 4 cards in 60 min = 0.5 false per 30 min: PASS/);
+  assert.ok(!out.join('\n').includes('invented card'));
+  const txt = fs.readFileSync(f, 'utf8');
+  assert.match(txt, /\| \*\*PASS\*\* \| At most one false card per 30 min/);
+  assert.ok(txt.includes('- [x] 1. 21:01 **ref**: invented card 1'), 'the marks are kept');
+  assert.equal(await main(['--marks'], { client, repo: dir, log() {}, err: (x) => errs.push(x) }), 2);
+  fs.writeFileSync(f, fakeGate([' ', ' ']));
+  assert.equal(await main(['--marks', f], { client, repo: dir, log() {}, err: (x) => errs.push(x) }), 2);
+  assert.equal(await main(['--marks', f, '--all-false'], { client, repo: dir, log() {}, err() {} }), 0);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
