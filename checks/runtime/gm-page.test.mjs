@@ -2951,7 +2951,7 @@ await test('19b. start from the Location roll\'s street; +1/+2/+3 each draw one 
   h2.q('#gm-chase [data-gm="ch-set"][data-k="opp"][data-v="hidden"]').click(); chStartFrom(h2, 'ground', { oppName: 'Reinforcements arrive' });
   assert.deepEqual(chCurOf(h2).clocks[1], { id: 'opp', name: 'Reinforcements arrive', size: 4, side: 'against', strip: false, filled: 0, hidden: true });
   h2.q('#gm-chase [data-gm="ch-opp"][data-d="1"]').click(); h2.q('#gm-chase [data-gm="ch-opp"][data-d="1"]').click(); h2.q('#gm-chase [data-gm="ch-opp"][data-d="-1"]').click();
-  assert.equal(chCurOf(h2).clocks[1].filled, 1); assert.match(h2.q('#gm-chase .gm-ch-opp').textContent, /\(hidden\)/);
+  assert.equal(chCurOf(h2).clocks[1].filled, 1); assert.match(h2.q('#gm-chase .gm-ch-oppb').parentNode.textContent, /^Reinforcements arrive against · hidden from players.*−11\/4\+1$/, 'one row: the name, its bar, −1 1/4 +1'); assert.equal(h2.qa('#gm-chase .gm-ch-clocks li').length, 2, 'each clock once');
   await h2.save();
 });
 

@@ -1633,6 +1633,7 @@
     try { W.localStorage.setItem('b68.gm.panel', p); } catch (e) {}
     syncPanels();
     if (p === 'ipad') { loadAmbient(); loadStt(); }
+    if (p === 'chase') renderChase();      /* the start form offers the Location roll or Street scene made since it was drawn */
     spy(p);
   }
 
@@ -3384,7 +3385,8 @@
   function chKit() { var K = W.B68Map; return K && typeof K.chase === 'function' && typeof K.chaseNew === 'function' && typeof K.chaseTick === 'function' ? K : null; }
   function chTokens() { var K = chKit(), o = null; try { o = K && typeof K.chaseOptions === 'function' ? K.chaseOptions() : null; } catch (e) { o = null; } return o && Array.isArray(o.tokens) && o.tokens.length ? o.tokens.map(str) : W.B68GmChase.TOKENS; }
   function chForm() {
-    if (!S.chForm) S.chForm = { from: S.locRoll ? 'location' : S.scnRoll ? 'scene' : 'ground', ground: 'corridor', name: '', clockName: '', size: 6, opp: 'none', oppName: '', oppSize: 4, crewToken: 'autopod', themToken: 'watch-car', legName: '', legSize: 4 };
+    if (!S.chForm) S.chForm = { from: '', ground: 'corridor', name: '', clockName: '', size: 6, opp: 'none', oppName: '', oppSize: 4, crewToken: 'autopod', themToken: 'watch-car', legName: '', legSize: 4 };
+    if (!S.chForm.picked) S.chForm.from = S.locRoll ? 'location' : S.scnRoll ? 'scene' : 'ground';     /* what is on screen, until the GM picks */
     if (S.chForm.from === 'location' && !S.locRoll) S.chForm.from = S.scnRoll ? 'scene' : 'ground';
     if (S.chForm.from === 'scene' && !S.scnRoll) S.chForm.from = S.locRoll ? 'location' : 'ground';
     return S.chForm;
@@ -3423,8 +3425,13 @@
     } else {
       var ks = G.clocks(cur), lg = G.leg(cur), op = G.opposing(cur), u = chUi(), st = cur.street || {};
       h += '<section class="gm-ch-play" aria-label="The chase"><header class="gm-card-h"><div><h3>' + esc(G.title(cur)) + '</h3><p class="gm-sub">' + esc([cur.district, st.named || st.type || (G.GROUNDS.filter(function (g) { return g.value === st.ground; })[0] || {}).label, cur.time].filter(Boolean).join(' · ')) + '</p></div></header>' +
-        '<ul class="gm-clocks gm-ch-clocks">' + ks.map(function (k) { return clockLi(k.name, k.filled, k.size, [k.side === 'crew' ? (lg && lg.id === k.id ? 'in play' : k.full ? 'done' : 'next') : 'against', k.hidden ? 'hidden from players' : ''].filter(Boolean).join(' · ')); }).join('') + '</ul>' +
-        (op ? '<p class="gm-ch-opp"><span class="gm-lab">' + esc(op.name) + (op.hidden ? ' (hidden)' : '') + '</span><button type="button" class="btn sm" data-gm="ch-opp" data-d="-1" aria-label="Opposing clock down one"' + (op.filled ? '' : ' disabled') + '>−1</button><b>' + op.filled + '/' + op.size + '</b><button type="button" class="btn sm" data-gm="ch-opp" data-d="1" aria-label="Opposing clock up one"' + (op.full ? ' disabled' : '') + '>+1</button></p>' : '') +
+        '<ul class="gm-clocks gm-ch-clocks">' + ks.map(function (k) {
+          var sub = [k.side === 'crew' ? (lg && lg.id === k.id ? 'in play' : k.full ? 'done' : 'next') : 'against', k.hidden ? 'hidden from players' : ''].filter(Boolean).join(' · ');
+          if (!op || k.id !== op.id) return clockLi(k.name, k.filled, k.size, sub);
+          /* the opposing clock: its own −1 / +1 on its row */
+          return clockLi(k.name, k.filled, k.size, sub).replace(/<span class="gm-clockn">[^<]*<\/span><\/li>$/, '<span class="gm-ch-oppb"><button type="button" class="btn sm" data-gm="ch-opp" data-d="-1" aria-label="' + esc(k.name) + ': down one"' + (k.filled ? '' : ' disabled') + '>−1</button>' +
+            '<b class="gm-clockn">' + k.filled + '/' + k.size + '</b><button type="button" class="btn sm" data-gm="ch-opp" data-d="1" aria-label="' + esc(k.name) + ': up one"' + (k.full ? ' disabled' : '') + '>+1</button></span></li>');
+        }).join('') + '</ul>' +
         '<div class="gm-ch-tick">' +
         '<label class="gm-field wide" for="gm-ch-cap"><span class="gm-lab">What happened</span><input type="text" id="gm-ch-cap" maxlength="160" autocomplete="off" placeholder="The caption under the panel"></label>' +
         '<label class="gm-field wide" for="gm-ch-roll"><span class="gm-lab">Roll (GM only)</span><input type="text" id="gm-ch-roll" maxlength="160" autocomplete="off" placeholder="who · action · position/effect · dice"></label>' +
@@ -3511,6 +3518,7 @@
     var f = chForm();
     if (k === 'level' || k === 'time') { var u = {}; u[k] = v; patch({ chase: { ui: u } }); keepDrafts(function () { renderChase(true); }); return; }
     f[k] = k === 'size' || k === 'oppSize' || k === 'legSize' ? +v : v;
+    if (k === 'from') f.picked = true;
     keepDrafts(function () { renderChase(true); });
   }
   /* what is typed in the tick box survives a redraw from one of the switches */
