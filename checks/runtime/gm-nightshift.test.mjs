@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
 import { run, parseArgs } from '../../scripts/gm-after.mjs';
 import { parseTranscript, chunkLines, runNightShift, renderDraft, applyDraft, findDraft, rollStats, rollsTable, HEADING, parseAppRolls, appRollsFrom, mergeRolls, xpCandidates, xpLines, applyApp, sourceStats } from '../../scripts/lib/nightshift.mjs';
+import { captureLine } from '../../scripts/lib/sync-notes.mjs';
 import { SEATS, ROLL_SCHEMA } from '../../functions/_lib/assist/seats.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -218,6 +219,17 @@ await test('app records: only the Rolled-at-the-table bullets that carry a resul
   assert.equal(appRollsFrom(APP_NOTE).others, 2, 'Before the roll and Downtime are not rolls');
   assert.deepEqual(parseAppRolls(NOTE), [], 'an empty section gives none');
   assert.deepEqual(parseAppRolls(APP_NOTE.replace(/\n/g, '\r\n')).length, 3, 'CRLF notes read the same');
+});
+
+await test('app records: the bracket the page writes ("A 4/5 (risky, standard, Name)") gives position, effect and PC; gm:pull files it unchanged', () => {
+  const page = 'A 1–3 (desperate, Invented Pip): A guard turns.', page2 = 'A 4/5 (risky, standard, Invented Pip): The latch gives.', plain = 'A 4/5 (risky): Noise.';
+  const note = '## Rolled at the table\n\n' + [page, page2, plain].map((t, i) => captureLine({ at: '2031-03-03T09:0' + i + ':00Z', text: t, bid: 'b68-x' + i })).join('\n') + '\n';
+  assert.match(note, /A 4\/5 \(risky, standard, Invented Pip\): The latch gives\. \^b68-x1/, 'the bracket survives the pull\'s own line builder');
+  const a = parseAppRolls(note);
+  assert.deepEqual(a.map((x) => [x.result, x.position, x.effect, x.who]), [['miss', 'desperate', '', 'Invented Pip'], ['partial', 'risky', 'standard', 'Invented Pip'], ['partial', 'risky', '', '']]);
+  const m = mergeRolls([sp({ at: '[00:00]', who: 'Invented Pip', result: 'unclear', position: 'unclear', effect: 'unclear' })], [{ ...a[0], at: '[00:01]', t: 1 }]);
+  assert.equal(m.length, 1); assert.deepEqual([m[0].src, m[0].position, m[0].who], ['app+speech', 'desperate', 'Invented Pip']);
+  assert.match(renderDraft({ mode: 'two-stage', spend: 0, rolls: m, sections: SECTIONS }), /Action rolls only: drop resistance and fortune rolls by hand/);
 });
 
 await test('merge: the app wins every field it states; the speech fills the rest and is never allowed to overwrite', () => {

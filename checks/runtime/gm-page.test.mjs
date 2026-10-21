@@ -260,7 +260,11 @@ await test('5f. situationPlain / lastText: plain text for Copy, Pin and L', () =
   const res = con.situation(3, con.situationDefaults(), { seed: 11 });
   const t = P.situationPlain(res);
   assert.ok(t.startsWith('A 1–3 (') && /\nOr Pay the price: /.test(t) && !/\*\*|\[\[/.test(t), t);
-  assert.equal(P.lastText(res), 'A 1–3: ' + res.sections[0].lead);
+  assert.equal(P.lastText(res), 'A 1–3 (risky): ' + res.sections[0].lead, 'the Position the card was drawn under, in brackets');
+  const withPc = con.situation(3, { ...con.situationDefaults(), pos: 'desperate', pc: 'Pip Wobble' }, { seed: 11 });
+  assert.equal(P.lastText(withPc), 'A 1–3 (desperate, Pip Wobble): ' + withPc.sections[0].lead, 'the selected PC follows the Position');
+  const before = con.situation(1, con.situationDefaults(), { seed: 11 });
+  assert.equal(P.lastText(before), 'Before the roll: ' + before.sections[0].lead, 'a Before card keeps the plain line');
   const cl = con.roll('face', con.defaults(), { seed: 3 });
   assert.equal(P.lastText(cl), cl.meta.title + ': ' + P.plainMd(cl.meta.text), 'a classic roll reads as before');
 });
@@ -474,6 +478,18 @@ await test('6h. an action on the merged row works as before: a Devil\'s Bargain 
   assert.ok(done, 'never saw an Accepted action');
 });
 
+await test('6h2. L files an outcome card with the Position set on the page in brackets; the default Position is risky; no effect is invented', async () => {
+  const h = await openPage({ camp: { session: { number: 5 }, crew: {}, log: [] } });
+  h.qa('#gm-pos [data-v="desperate"]')[0].click();
+  h.press('3'); h.press('l');
+  h.press('1'); h.press('l');
+  await h.save();
+  const lines = Object.values(h.fg.server.doc.capture).filter((e) => e.bucket === 'r').map((e) => e.text);
+  assert.ok(lines.some((t) => /^A 1–3 \(desperate\): /.test(t)), JSON.stringify(lines));
+  assert.ok(lines.every((t) => !/limited|standard|great/.test(t.split(':')[0])), 'no effect control, so none is written');
+  assert.ok(lines.some((t) => /^Before the roll: /.test(t)), 'a Before card keeps the plain line: ' + JSON.stringify(lines));
+});
+
 await test('6i. captures record their session (numbers only): typed lines and L-filed rolls; absent when the campaign has none; text never in the campaign', async () => {
   const h = await openPage({ camp: { session: { number: 5 }, crew: {}, log: [] } });
   const form = h.q('[data-gm-form="capture"]'), input = h.q('#gm-cap-in');
@@ -484,7 +500,7 @@ await test('6i. captures record their session (numbers only): typed lines and L-
   assert.equal(cap.length, 2);
   const n = cap.find((e) => e.bucket === 'n'), r = cap.find((e) => e.bucket === 'r');
   assert.deepEqual([n.s, r.s], [5, 5]); assert.equal(typeof n.s, 'number');
-  assert.ok(/^A 4\/5: /.test(r.text), r.text);
+  assert.ok(/^A 4\/5 \(risky\): /.test(r.text), r.text);
   for (const e of cap) assert.deepEqual(Object.keys(e).sort(), ['at', 'bucket', 'id', 's', 'text']);
   const h2 = await openPage({ camp: null });
   h2.q('#gm-cap-in').value = 'No session here'; dispatch(h2.q('[data-gm-form="capture"]'), 'submit'); await h2.save();

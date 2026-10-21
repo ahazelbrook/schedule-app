@@ -78,6 +78,7 @@ export function rollStats(rolls) {
 
 const MATCH_MIN = 2;                                  // an app record and a spoken roll are the same roll within +/- 2 minutes
 const POS_RE = /\((?:[^)]*?\b)?(controlled|risky|desperate)\b/i;
+const EFFECTS = ['limited', 'standard', 'great'];
 const unk = (v) => v == null || v === '' || v === 'unclear' || v === -1;
 const clock = (at) => { const m = /(\d\d):(\d\d)/.exec(String(at || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
 const apart = (a, b) => { const d = Math.abs(a - b) % 1440; return Math.min(d, 1440 - d); };
@@ -103,8 +104,13 @@ export function appRollsFrom(noteText) {
     const body = m[3], t = Number(m[1]) * 60 + Number(m[2]);
     const result = /^A 4\/5\b/.test(body) ? 'partial' : /^A 1[–-]3\b/.test(body) ? 'miss' : '';
     if (!result) { out.others++; continue; }
-    const p = POS_RE.exec(body);
-    out.rolls.push({ at: '[' + m[1] + ':' + m[2] + ']', t, who: '', position: p ? p[1].toLowerCase() : '', result, card: body.split(/[:(]/)[0].trim() });
+    // the bracket after the title: "(risky, standard, Name)" from the app today, or the older "(desperate -> 3 winds, harm 3)"
+    const p = POS_RE.exec(body), br = /^[^:(]*\(([^)]*)\)/.exec(body);
+    const parts = br ? br[1].split(/[,;]/).map((x) => x.trim()).filter(Boolean) : [];
+    const word = (x) => /^(controlled|risky|desperate|limited|standard|great)\b/i.test(x);
+    const effect = (parts.find((x) => EFFECTS.includes(x.toLowerCase())) || '').toLowerCase();
+    const who = parts.find((x) => !word(x) && !/[→·]/.test(x)) || '';
+    out.rolls.push({ at: '[' + m[1] + ':' + m[2] + ']', t, who, effect, position: p ? p[1].toLowerCase() : '', result, card: body.split(/[:(]/)[0].trim() });
   }
   return out;
 }
@@ -274,7 +280,7 @@ export function renderDraft(result, { date = '', session = '', from = '', to = '
     out.push('### ' + title, '');
     if (k === 'xp_per_pc') {
       out.push('*Candidates only. XP is the GM\'s to mark.*', '',
-        '**Computed from the rolls table (' + xp.length + '):** desperate rolls and zero-dot rolls. Drop any that were resistance or fortune rolls.', '', xpLines(xp), '',
+        '**Computed from the rolls table (' + xp.length + '):** desperate rolls and zero-dot rolls. Action rolls only: drop resistance and fortune rolls by hand.', '', xpLines(xp), '',
         '**From the transcript (judgement):**', '');
     }
     out.push(flat(sec[k]) || '[TODO: empty]', '');
