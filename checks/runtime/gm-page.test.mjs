@@ -952,6 +952,82 @@ await test('9l. Set as score scene: a player-layer plan and iso from the roll, n
   await h.save();
 });
 
+function pickSel(h, sel, v) { const s = h.q(sel); s.value = v; dispatch(s, 'change'); }
+await test('9m. map kit 0.7 in the Location panel: iso by default, the street and the plate, time and weather; the iPad copy at the iPad\'s size', async () => {
+  // pure: the kit's options from the controls
+  eqj(P.mapOpts({}, 'gm', ['public']), { view: 'iso', theme: 'rulebook', layer: 'gm', reveal: ['public'], width: 1400 }, 'the defaults');
+  eqj(P.mapOpts({ view: 'street', theme: 'plate', time: 'Night', weather: 'fog' }, 'player', ['public'], P.IPAD_MAP),
+    { view: 'street', theme: 'plate', layer: 'player', reveal: ['public'], time: 'Night', weather: 'fog', width: 1366, displayWidth: 1366, minLabelPx: 16 });
+  eqj([P.mapOpts({ weather: 'rolled' }, 'gm', []).weather, P.mapOpts({ weather: 'none' }, 'gm', []).weather, 'weather' in P.mapOpts({ weather: '' }, 'gm', []), 'time' in P.mapOpts({ time: 'Dawn' }, 'gm', [])], [true, false, false, false], 'rolled, none, unset, an unknown time');
+  eqj(P.mapOpts({ view: 'nope', theme: 'nope' }, 'gm', []).view + ' ' + P.mapOpts({ view: 'nope', theme: 'nope' }, 'gm', []).theme, 'iso rulebook');
+  assert.ok(P.VIEWS.includes('street') && P.THEMES.includes('plate'));
+  // the page
+  const fg = addAmbient(fakeGm()), br = fakeBrowser({ B68Map: M }); const h = await openPage({ fg, br, camp: CAMP3 });
+  h.press('b'); h.q('[data-gm="locroll"]').click(); const roll = h.page._state().locRoll; assert.ok(roll);
+  assert.equal(h.page._state().doc.loc.map.view, 'iso', 'a roll draws iso'); assert.ok(h.page._state().map && /<svg/.test(h.page._state().map.svg));
+  assert.ok(h.q('#gm-m-time') && h.q('#gm-m-weather'), 'Time and Weather under View & theme');
+  assert.deepEqual([...h.q('#gm-m-view').children].map((o) => o.getAttribute('value')), ['iso', 'rings', 'plan', 'section', 'street']);
+  pickSel(h, '#gm-m-view', 'street'); pickSel(h, '#gm-m-theme', 'plate'); pickSel(h, '#gm-m-time', 'Night'); pickSel(h, '#gm-m-weather', 'rain');
+  const mp = h.page._state().doc.loc.map; eqj([mp.view, mp.theme, mp.time, mp.weather], ['street', 'plate', 'Night', 'rain']);
+  const want = M.render(roll, { view: 'street', theme: 'plate', layer: 'gm', reveal: ['public'], time: 'Night', weather: 'rain', width: 1400 }).svg;
+  assert.equal(h.page._state().map.svg, want, 'the preview is the kit\'s own render of these controls');
+  assert.match(h.q('.gm-mapopts summary').textContent, /street · plate · at night · rain/);
+  h.q('[data-gm="layer"][data-v="player"]').click(); h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 1);
+  const d = fg.server.displays[0]; assert.equal(d.kind, 'svg');
+  assert.equal(d.svg, M.render(roll, Object.assign({ view: 'street', theme: 'plate', layer: 'player', reveal: ['public'], time: 'Night', weather: 'rain' }, P.IPAD_MAP)).svg, 'the iPad copy: the player layer at the iPad\'s size');
+  checkSvg(d.svg); assert.deepEqual(P.leaks(d.svg, roll, ['public']), []);
+  await h.save();
+});
+
+await test('9n. live reveal: while the map is on the iPad, opening a band asks and sends it again, closing one sends without asking; no to the ask keeps the band shut', async () => {
+  const fg = addAmbient(fakeGm()), br = fakeBrowser({ B68Map: M }); const h = await openPage({ fg, br, camp: CAMP3 });
+  h.press('b'); h.q('[data-gm="locroll"]').click(); const roll = h.page._state().locRoll;
+  const tickBand = async (b, on) => { const el = h.q('[data-reveal="' + b + '"]'); el.checked = on; dispatch(el, 'change'); await tick(); await tick(); };
+  // not on the iPad yet: ticking sends nothing
+  h.q('[data-gm="layer"][data-v="player"]').click(); await tickBand('working', true);
+  assert.equal(fg.server.displays.length, 0, 'not on the iPad: a band only redraws here'); await tickBand('working', false);
+  const asked = []; br.W.confirm = (m) => { asked.push(m); return true; };
+  h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 1);
+  assert.match(fg.server.displays[0].caption, /surveyed: public$/); assert.equal(asked.length, 0, 'public only: no ask');
+  await until(() => /Live on the iPad/.test(h.q('.gm-reveal legend').textContent)); assert.ok(h.q('.gm-live'), 'the legend says the bands are live');
+  await tickBand('working', true); await until(() => fg.server.displays.length === 2);
+  assert.equal(asked.length, 1); assert.match(asked[0], /opening the working band shows it to the players now/);
+  const d2 = fg.server.displays[1]; assert.match(d2.caption, /surveyed: public, working$/);
+  assert.equal(d2.svg, M.render(roll, Object.assign({ view: 'iso', theme: 'rulebook', layer: 'player', reveal: ['public', 'working'] }, P.IPAD_MAP)).svg);
+  checkSvg(d2.svg); assert.deepEqual(P.leaks(d2.svg, roll, ['public', 'working']), []);
+  await tickBand('working', false); await until(() => fg.server.displays.length === 3);
+  assert.equal(asked.length, 1, 'closing does not ask'); assert.match(fg.server.displays[2].caption, /surveyed: public$/);
+  br.W.confirm = (m) => { asked.push(m); return false; };
+  await tickBand('controlled', true); await tick();
+  assert.equal(fg.server.displays.length, 3, 'no: nothing sent'); assert.notEqual(h.page._state().doc.loc.map.reveal.controlled, true, 'no: the band stays shut');
+  assert.equal(h.q('[data-reveal="controlled"]').checked, false);
+  // the GM layer: the iPad keeps what it has
+  br.W.confirm = () => true; h.q('[data-gm="layer"][data-v="gm"]').click(); await tickBand('working', true);
+  assert.equal(fg.server.displays.length, 3, 'GM layer: nothing goes');
+  // something else on the iPad: the map is not live any more
+  h.q('[data-gm="layer"][data-v="player"]').click(); await tickBand('working', false);
+  await until(() => fg.server.displays.length === 4); h.q('[data-gm="pushtext"]').click(); await until(() => fg.server.displays.length === 5);
+  await tickBand('working', true); await tick(); await tick();
+  assert.equal(fg.server.displays.length, 5, 'the street description is up: a band sends nothing'); assert.ok(!h.q('.gm-live'));
+  // a new roll is a new map: not live either
+  h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 6);
+  h.q('[data-gm="locroll"]').click(); h.q('[data-gm="layer"][data-v="player"]').click(); await tickBand('working', true);
+  assert.equal(fg.server.displays.length, 6, 'another roll: nothing goes');
+  await h.save();
+});
+
+await test('9o. the score scene does not follow the bands (it never updates on its own); the map box says when it is behind', async () => {
+  const fg = addAmbient(fakeGm()), br = fakeBrowser({ B68Map: M }); const h = await openPage({ fg, br, camp: CAMP3 });
+  h.press('b'); h.q('[data-gm="locroll"]').click(); h.q('[data-gm="layer"][data-v="player"]').click();
+  h.q('[data-gm="scorescene"]').click(); await until(() => fg.server.ambPatches.length === 1);
+  await until(() => h.page._ambient().doc && h.page._ambient().doc.score); h.page._render && h.page._render();
+  assert.ok(!h.q('.gm-scene-behind'), 'up to date');
+  const el = h.q('[data-reveal="working"]'); el.checked = true; dispatch(el, 'change'); await tick(); await tick();
+  assert.equal(fg.server.ambPatches.length, 1, 'nothing sent');
+  assert.ok(h.q('.gm-scene-behind') && /The score scene shows public: press Set as score scene/.test(h.q('.gm-scene-behind').textContent));
+  await h.save();
+});
+
 await test('10a. the laptop layout: body.gm-app while open, the top bar (session, iPad, listening), the menu, F for Focus with the console as its keys, Classic layout on this device', async () => {
   const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
   assert.ok(br.doc.body.classList.contains('gm-app'), 'on while the tools are open');
@@ -2283,7 +2359,8 @@ await test('S1. score sites, pure: the card\'s hints to the Location pickers (un
   const e = P.siteEntry({ hid: 'h1', seed: 99, ui: { target: 'x' }, mem: '{"a":[1]}', label: 'L', at: 't' }, roll, 'F · Job', { view: 'iso', theme: 'board', layer: 'player' });
   assert.deepEqual(Object.keys(e), ['seed', 'ui', 'mem', 'name', 'district', 'label', 'map', 'at']);
   assert.deepEqual([e.seed, e.ui.target, e.mem, e.name, e.district, e.label, e.map.view, e.map.theme], [99, 'x', '{"a":[1]}', roll.name, roll.district, 'F · Job', 'iso', 'board']);
-  assert.deepEqual(P.siteEntry({ seed: 1 }, roll, '', { view: 'nope', theme: 'nope' }).map, { view: 'rings', theme: 'rulebook' });
+  assert.deepEqual(P.siteEntry({ seed: 1 }, roll, '', { view: 'nope', theme: 'nope' }).map, { view: 'iso', theme: 'rulebook' }, 'an unknown view or theme saves the defaults (iso since map kit 0.7 in the app)');
+  assert.deepEqual(P.siteEntry({ seed: 1 }, roll, '', { view: 'street', theme: 'plate' }).map, { view: 'street', theme: 'plate' }, 'the street and the plate are saved as they are');
   assert.equal(P.siteEntry(null, roll), null); assert.equal(P.siteEntry({ seed: 'x' }, roll), null); assert.equal(P.siteEntry({ seed: 1 }, null), null);
   assert.equal(P.hintLine({ approach: 'Quiet', target: 'Bank', faction: 'F', district: 'D' }), 'Bank · D · F · Quiet');
   const sites = P.sitesIn({ sites: { a: { seed: 3 }, b: { seed: 4 }, c: null, d: { name: 'no seed' } } });
@@ -2307,7 +2384,7 @@ await test('S2. score sites, page: Roll a site from a score card in Prep, save i
   btn.click();
   const s = stateDoc(h).sites['b68g-score-goose'];
   assert.equal(s.seed, stateDoc(h).cards.location.seed); assert.equal(s.name, h.page._state().locRoll.name); assert.equal(s.label, 'F · The goose job');
-  assert.deepEqual({ ...s.map }, { view: 'rings', theme: 'rulebook' });       /* a copy: the page's objects come from the vm's realm */
+  assert.deepEqual({ ...s.map }, { view: 'iso', theme: 'rulebook' });       /* a copy: the page's objects come from the vm's realm; a roll draws iso */
   assert.equal(h.q('[data-gm="sitesave"]').textContent, 'Saved as its site'); assert.ok(h.q('[data-gm="sitesave"]').hasAttribute('disabled'));
   assert.match(h.q('#gm-siterow').textContent, /This roll is the site for F · The goose job/);
   h.press('r');

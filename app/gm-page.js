@@ -48,8 +48,16 @@
     { k: 'm', label: 'Moment', head: 'Moments', key: 'M' },
     { k: 'r', label: 'Rolled', head: 'Rolled at the table', key: 'L' }
   ];
-  var VIEWS = ['rings', 'plan', 'iso', 'section'], THEMES = ['rulebook', 'blueprint', 'casefile', 'board'];
-  P.MAP0 = { view: 'rings', theme: 'rulebook', layer: 'gm', reveal: { public: true } };
+  /* the map's controls (GM.md, "Location"): iso first, the view the table plays with (map kit ROADMAP, decision 17/10); the street
+     outside (kit 0.5) and the lit plate (kit 0.7). Time and weather are the kit's: '' leaves them to the roll (the plate draws the
+     roll's weather, the other themes draw it on the street only when asked) */
+  var VIEWS = P.VIEWS = ['iso', 'rings', 'plan', 'section', 'street'], THEMES = P.THEMES = ['rulebook', 'blueprint', 'casefile', 'board', 'plate'];
+  P.TIMES = [['', 'As rolled'], ['Bluetime', 'At Bluetime'], ['Night', 'At Night']];
+  P.WEATHERS = [['', 'As the theme does'], ['rolled', "The roll's"], ['none', 'None'], ['rain', 'Rain'], ['fog', 'Fog'], ['snow', 'Snow']];
+  P.MAP0 = { view: 'iso', theme: 'rulebook', layer: 'gm', time: '', weather: '', reveal: { public: true } };
+  /* The iPad's copy of a map: the display page shows it at 1366 x 1024 (landscape), so the type floor is set for that width.
+     Map kit 0.8 adds layout: "ipad" (the same floor, the key beside the drawing): switch to { layout: 'ipad' } here when it lands. */
+  P.IPAD_MAP = { width: 1366, displayWidth: 1366, minLabelPx: 16 };
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
@@ -150,6 +158,15 @@
     return BANDS.filter(function (b) { return b === 'public' || r[b] === true; });
   }
   P.revealList = revealList;
+  /* the map kit's options for these controls: view and theme from the known lists (else the defaults), time and weather only when set */
+  function mapOpts(map, layer, reveal, size) {
+    var m = isObj(map) ? map : {}, o = { view: VIEWS.indexOf(m.view) >= 0 ? m.view : P.MAP0.view, theme: THEMES.indexOf(m.theme) >= 0 ? m.theme : P.MAP0.theme, layer: layer, reveal: reveal };
+    if (m.time === 'Bluetime' || m.time === 'Night') o.time = m.time;
+    var w = m.weather;
+    if (w === 'rolled') o.weather = true; else if (w === 'none') o.weather = false; else if (w === 'rain' || w === 'fog' || w === 'snow') o.weather = w;
+    return Object.assign(o, size || { width: 1400 });
+  }
+  P.mapOpts = mapOpts;
   P.REVEAL0 = { public: true, working: false, controlled: false, secure: false };   /* every new roll and replay starts here */
 
   /* An SVG's visible text: tags out (so a name split over <tspan>s joins up), XML entities decoded, whitespace collapsed,
@@ -194,13 +211,11 @@
     if (!isObj(map) || map.layer !== 'player') throw new Error('Only the player layer can go to the iPad. Switch Layer to Player first.');
     if (!roll || typeof render !== 'function') throw new Error('Roll a location first.');
     var reveal = revealList(map);
-    var r = render(roll, { view: VIEWS.indexOf(map.view) >= 0 ? map.view : 'rings', theme: THEMES.indexOf(map.theme) >= 0 ? map.theme : 'rulebook', layer: 'player', reveal: reveal, width: 1400 });
+    var o = mapOpts(map, 'player', reveal, P.IPAD_MAP), r = render(roll, o);
     if (leaks(r.svg, roll, reveal).length) {
-      /* the kit titles an iso level after a hidden room it holds (as it does a plan or section level): an iso is redrawn as rings; a plan or section stays refused */
-      if (r && map.view === 'iso') {
-        var r2 = render(roll, { view: 'rings', theme: THEMES.indexOf(map.theme) >= 0 ? map.theme : 'rulebook', layer: 'player', reveal: reveal, width: 1400 });
-        if (!leaks(r2.svg, roll, reveal).length) r = r2;
-      }
+      /* defence in depth (PR #53): an iso that names a hidden room is redrawn as rings in the same look; anything else, or rings
+         that leak too, is refused */
+      if (o.view === 'iso') { var r2 = render(roll, Object.assign({}, o, { view: 'rings' })); if (!leaks(r2.svg, roll, reveal).length) r = r2; }
       if (leaks(r.svg, roll, reveal).length) { var e = new Error(P.LEAK_MSG); e.leak = true; throw e; }
     }
     return { kind: 'svg', title: str(roll.name).slice(0, 200), caption: (roll.district ? roll.district + ' · ' : '') + 'surveyed: ' + reveal.join(', '), svg: r.svg, warnings: r.warnings || [], reveal: reveal };
@@ -513,7 +528,7 @@
     return {
       seed: card.seed, ui: clone(isObj(card.ui) ? card.ui : {}), mem: typeof card.mem === 'string' ? card.mem : JSON.stringify(isObj(card.mem) ? card.mem : {}),
       name: str(roll.name).slice(0, 120), district: str(roll.district).slice(0, 60), label: str(label).slice(0, 120),
-      map: { view: VIEWS.indexOf(m.view) >= 0 ? m.view : 'rings', theme: THEMES.indexOf(m.theme) >= 0 ? m.theme : 'rulebook' }, at: nowIso()
+      map: { view: VIEWS.indexOf(m.view) >= 0 ? m.view : P.MAP0.view, theme: THEMES.indexOf(m.theme) >= 0 ? m.theme : P.MAP0.theme }, at: nowIso()
     };
   }
   P.siteEntry = siteEntry;
@@ -2170,7 +2185,7 @@
     /* a new site starts from the public band only, on the GM layer, as rings: the map draws at once (Draw stays for another
        view, theme or layer; the theme is kept) */
     /* replaces the stored card: an authored card's `auth` must not survive a roll */
-    patch({ cards: { location: replacePatch(isObj(S.doc.cards) ? S.doc.cards.location : null, Object.assign({ hid: hid }, entry)) }, mem: { location: clone(S.locMem) }, hist: { location: addCapped(hist, hid, entry, LIMITS.hist) }, loc: { map: { reveal: clone(P.REVEAL0), view: 'rings', layer: 'gm' } } }, { force: true });
+    patch({ cards: { location: replacePatch(isObj(S.doc.cards) ? S.doc.cards.location : null, Object.assign({ hid: hid }, entry)) }, mem: { location: clone(S.locMem) }, hist: { location: addCapped(hist, hid, entry, LIMITS.hist) }, loc: { map: { reveal: clone(P.REVEAL0), view: P.MAP0.view, layer: 'gm' } } }, { force: true });
     S.locRoll = roll; S.map = null; S.last = { text: 'Location: ' + entry.label };
     renderLocation(true);
     if (W.B68Map && W.B68Map.render) drawMap(true);
@@ -2194,14 +2209,15 @@
          View and Theme (presentation) fold under the map */
       h += '<section class="gm-mapbox" aria-label="Map"><h4>Map</h4><div class="gm-map-ctl">' +
         '<div class="gm-field"><span class="gm-lab">Layer</span><div class="seg" role="group" aria-label="Layer">' + [['gm', 'GM'], ['player', 'Player']].map(function (o) { return '<button type="button" class="chip" data-gm="layer" data-v="' + o[0] + '" aria-pressed="' + (mu.layer === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
-        '<fieldset class="gm-reveal"><legend class="gm-lab">Reveal to the players: ' + esc(mu.layer === 'player' ? revealList(mu).join(', ') : 'public only while Layer is GM') + '</legend>' + BANDS.map(function (b) { return '<label class="gm-check"><input type="checkbox" data-reveal="' + b + '"' + (b === 'public' || mu.reveal[b] ? ' checked' : '') + (b === 'public' ? ' disabled' : '') + '> <span>' + b + '</span></label>'; }).join('') + '</fieldset>' +
+        '<fieldset class="gm-reveal"><legend class="gm-lab">Reveal to the players: ' + esc(mu.layer === 'player' ? revealList(mu).join(', ') : 'public only while Layer is GM') + (mapOnIpad() && mu.layer === 'player' ? ' <span class="gm-live">Live on the iPad</span>' : '') + '</legend>' + BANDS.map(function (b) { return '<label class="gm-check"><input type="checkbox" data-reveal="' + b + '"' + (b === 'public' || mu.reveal[b] ? ' checked' : '') + (b === 'public' ? ' disabled' : '') + '> <span>' + b + '</span></label>'; }).join('') + '</fieldset>' +
         '<button type="button" class="btn primary" data-gm="draw">Draw</button></div>' +
         '<p class="gm-warn" id="gm-mapwarn" role="status"></p>' +
         '<div class="gm-map-acts"><button type="button" class="btn sm primary" data-gm="ipad"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + '>Show on iPad</button>' +
         '<button type="button" class="btn sm" data-gm="scorescene"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + (mu.layer === 'player' ? ' title="The planning board and the exploded site on the iPad, from this roll at these bands"' : '') + '>Set as score scene</button>' +
         '<button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></div>' +
+        (sceneBehind(mu) ? '<p class="gm-dim gm-scene-behind">The score scene shows ' + esc(sceneBehind(mu).join(', ')) + ': press Set as score scene to bring it up to date.</p>' : '') +
         '<div class="gm-map" id="gm-map"></div>' +
-        '<details class="gm-more gm-mapopts"' + (foldOpen('mapopts') ? ' open' : '') + ' data-fold="mapopts"><summary>View &amp; theme <span class="gm-dim">' + esc(mu.view + ' · ' + mu.theme) + '</span></summary>' + '<div class="gm-map-ctl">' + sel('view', 'View', VIEWS, mu.view) + sel('theme', 'Theme', THEMES, mu.theme) + '</div></details>' +
+        '<details class="gm-more gm-mapopts"' + (foldOpen('mapopts') ? ' open' : '') + ' data-fold="mapopts"><summary>View &amp; theme <span class="gm-dim">' + esc(mapLine(mu)) + '</span></summary>' + '<div class="gm-map-ctl">' + sel('view', 'View', VIEWS, mu.view) + sel('theme', 'Theme', THEMES, mu.theme) + sel('time', 'Time', P.TIMES, mu.time) + sel('weather', 'Weather', P.WEATHERS, mu.weather) + '</div></details>' +
         '<details class="gm-more gm-dl"' + (foldOpen('dl') ? ' open' : '') + ' data-fold="dl"><summary>Downloads</summary><div class="gm-map-acts">' + '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button></div></details>' + '</section>';
     } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what the players can see.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></p>';
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
@@ -2249,13 +2265,15 @@
     if (d.open) a.push(id);
     try { W.localStorage.setItem(FOLD_KEY, JSON.stringify(a.slice(-20))); } catch (e) {}
   }
-  function sel(key, label, list, v) { return '<label class="gm-field" for="gm-m-' + key + '"><span class="gm-lab">' + label + '</span><select id="gm-m-' + key + '" data-map="' + key + '">' + list.map(function (o) { return '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select></label>'; }
+  function sel(key, label, list, v) { return '<label class="gm-field" for="gm-m-' + key + '"><span class="gm-lab">' + label + '</span><select id="gm-m-' + key + '" data-map="' + key + '">' + list.map(function (o) { var val = Array.isArray(o) ? o[0] : o, txt = Array.isArray(o) ? o[1] : o; return '<option value="' + esc(val) + '"' + (val === str(v) ? ' selected' : '') + '>' + esc(txt) + '</option>'; }).join('') + '</select></label>'; }
+  /* the fold's summary: view · theme, and the time and weather when they are set */
+  function mapLine(mu) { var a = [mu.view, mu.theme], tl = P.TIMES.filter(function (x) { return x[0] && x[0] === mu.time; })[0], wl = P.WEATHERS.filter(function (x) { return x[0] && x[0] === mu.weather; })[0]; if (tl) a.push(tl[1].toLowerCase()); if (wl) a.push(wl[0] === 'rolled' ? "the roll's weather" : wl[0] === 'none' ? 'no weather' : wl[1].toLowerCase()); return a.join(' · '); }
   function drawMap(quiet) {
     var K = W.B68Map; if (!S.locRoll) { if (!quiet) toast('Roll a location first.', true); return; }
     if (!K || !K.render) { if (!quiet) toast('The map kit is missing.', true); return; }
     var mu = mapUi(), r;
-    try { r = K.render(S.locRoll, { view: mu.view, theme: mu.theme, layer: mu.layer === 'player' ? 'player' : 'gm', reveal: revealList(mu), width: 1400 }); } catch (e) { if (!quiet) toast('The map could not be drawn: ' + errText(e), true); return; }
-    S.map = { svg: r.svg, warnings: r.warnings || [], layer: mu.layer === 'player' ? 'player' : 'gm', view: mu.view, theme: mu.theme };
+    try { r = K.render(S.locRoll, mapOpts(mu, mu.layer === 'player' ? 'player' : 'gm', revealList(mu))); } catch (e) { if (!quiet) toast('The map could not be drawn: ' + errText(e), true); return; }
+    S.map = { svg: r.svg, warnings: r.warnings || [], layer: mu.layer === 'player' ? 'player' : 'gm', view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather };
     S.map.leak = S.map.layer === 'player' && leaks(r.svg, S.locRoll, revealList(mu)).length > 0;
     showMap();
   }
@@ -2268,7 +2286,10 @@
     if (w) w.textContent = (S.map.leak ? 'Not for the iPad: ' + P.LEAK_MSG + ' ' : '') + (S.map.layer === 'gm' ? 'GM layer: everything shows. ' : 'Player layer. ') + (S.map.warnings.length ? S.map.warnings.length + ' map note' + (S.map.warnings.length === 1 ? '' : 's') + ': ' + S.map.warnings.slice(0, 2).map(function (x) { return typeof x === 'string' ? x : x && (x.message || x.msg || JSON.stringify(x)); }).join(' · ') + (S.map.warnings.length > 2 ? ' …' : '') : '');
   }
   /* a change to the map controls redraws a map already on screen, so what shows always matches the controls */
-  function setMap(k, v) { var p = { loc: { map: {} } }; p.loc.map[k] = v; patch(p); if (S.map) drawMap(); }
+  function setMap(k, v) {
+    var p = { loc: { map: {} } }; p.loc.map[k] = v; patch(p); if (S.map) drawMap();
+    var sum = $q('.gm-mapopts summary .gm-dim'); if (sum) sum.textContent = mapLine(mapUi());     /* the fold's line, without redrawing the panel */
+  }
   function pushDisplay(d) {
     var g = gmApi(); if (!g) return Promise.reject(new Error('The display needs the hosted app.'));
     if (!gate.allows(d)) return Promise.reject(new Error('Only a player-layer map made on this page can go to the iPad.'));
@@ -2288,8 +2309,35 @@
     try { d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render); } catch (e) { toast(errText(e), true); return; }
     if (!confirmReveal(d.reveal, 'This map')) return;
     gate.mark(d.svg);
-    var send = { kind: 'svg', title: d.title, caption: d.caption, svg: d.svg };
-    pushDisplay(send).then(function () { toast('On the iPad: ' + d.title + ' (' + d.caption + ').'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+    var send = { kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, me = S, seed = S.locRoll.seed;
+    pushDisplay(send).then(function () {
+      if (S === me) { S.mapOn = { seed: seed, title: d.title }; renderLocation(); }
+      toast('On the iPad: ' + d.title + ' (' + d.caption + '). Bands you open or close now go to the iPad at once.');
+    }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+  }
+  /* Live reveal (GM.md, "Location"; Alex, 22/10/2026: the GM opens bands and the iPad updates at once). While this roll's player map
+     is what the iPad shows (S.mapOn, and nothing else pushed since), opening a band asks first and closing one does not; either way
+     the player copy goes again, through the same render, scan and gate as Show on iPad. A refused copy (it would name a hidden
+     room) leaves the iPad as it was and says so. View, theme, time and weather only redraw here: Show on iPad sends those.
+     The score scene does not follow (Alex, 15/10/2026: it never updates on its own); the map box says when it is behind. */
+  function mapOnIpad() { return !!(S && S.mapOn && S.locRoll && S.mapOn.seed === S.locRoll.seed && AM.shown && AM.shown.kind === 'svg' && AM.shown.title === S.mapOn.title); }
+  function liveReveal(band, opened) {
+    if (!mapOnIpad() || mapUi().layer !== 'player') return true;
+    if (opened && !W.confirm('The map is on the iPad: opening the ' + band + ' band shows it to the players now. Go ahead?')) return false;
+    var d; try { d = playerDisplay(S.locRoll, mapUi(), W.B68Map && W.B68Map.render); } catch (e) { toast('Not sent: ' + errText(e) + ' The iPad still shows the map as it was.', true); return true; }
+    gate.mark(d.svg);
+    var me = S, seed = S.locRoll.seed;
+    pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }).then(function () {
+      if (S === me) S.mapOn = { seed: seed, title: d.title };
+      toast('On the iPad now: ' + d.caption + '.');
+    }, function (e) { toast('Could not update the iPad: ' + errText(e), true); });
+    return true;
+  }
+  /* the score scene's bands, when one is set from this roll's place and they are not the bands ticked now (it never follows on its own) */
+  function sceneBehind(mu) {
+    var sc = AM.doc && isObj(AM.doc.score) ? AM.doc.score : null; if (!sc || !S.locRoll || str(sc.name) !== str(S.locRoll.name).slice(0, 200)) return null;
+    var now = revealList(mu), was = Array.isArray(sc.reveal) ? sc.reveal : [];
+    return now.join(',') === was.join(',') ? null : was;
   }
   function pushText() {
     var L = W.B68GmLocation; if (!L || !S.locRoll) return;
@@ -2347,7 +2395,7 @@
     var x = sitesIn(S.doc)[key]; if (!x) return;
     var cur = { hid: uid('h'), seed: x.seed, ui: clone(isObj(x.ui) ? x.ui : {}), mem: typeof x.mem === 'string' ? x.mem : '{}', label: str(x.name) + (x.district ? ' · ' + x.district : ''), at: nowIso() };
     var m = isObj(x.map) ? x.map : {};
-    patch({ cards: { location: replacePatch(isObj(S.doc.cards) ? S.doc.cards.location : null, cur) }, loc: { map: { reveal: clone(P.REVEAL0), view: VIEWS.indexOf(m.view) >= 0 ? m.view : 'rings', theme: THEMES.indexOf(m.theme) >= 0 ? m.theme : 'rulebook', layer: 'gm' } } }, { force: true });
+    patch({ cards: { location: replacePatch(isObj(S.doc.cards) ? S.doc.cards.location : null, cur) }, loc: { map: { reveal: clone(P.REVEAL0), view: VIEWS.indexOf(m.view) >= 0 ? m.view : P.MAP0.view, theme: THEMES.indexOf(m.theme) >= 0 ? m.theme : P.MAP0.theme, layer: 'gm' } } }, { force: true });
     S.locRoll = null; S.map = null; S.siteFor = key; S.last = { text: 'Location: ' + cur.label };
     showPanel('location');
     renderLocation();
@@ -4236,7 +4284,11 @@
     else if (t.hasAttribute('data-scui')) scSetUi(t.getAttribute('data-scui'), t.value);
     else if (t.hasAttribute('data-npcui')) { var nu = {}; nu[t.getAttribute('data-npcui')] = t.value; patch({ npc: { ui: nu } }); }
     else if (t.hasAttribute('data-dtf')) dtField(t.getAttribute('data-dtf'), t.value);
-    else if (t.hasAttribute('data-reveal')) { var rv = {}; rv[t.getAttribute('data-reveal')] = t.checked; patch({ loc: { map: { reveal: rv } } }); if (S.map) drawMap(); renderLocation(); }
+    else if (t.hasAttribute('data-reveal')) {
+      var rb = t.getAttribute('data-reveal'), rv = {}; rv[rb] = t.checked; patch({ loc: { map: { reveal: rv } } });
+      if (!liveReveal(rb, t.checked)) { rv[rb] = !t.checked; patch({ loc: { map: { reveal: rv } } }); }   /* the GM said no: the band stays shut */
+      if (S.map) drawMap(); renderLocation();
+    }
   }
   /* the outline of a long tab (Prep, Screen): the section being read is marked in its list */
   var spyQueued = false;
@@ -4304,7 +4356,7 @@
     available: function () { return !!(W.claude && W.claude.gm); },
     _pure: P,
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */
-    _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer }, panel: S.panel, seg: S.seg, doc: S.doc } : null; },
+    _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer, svg: S.map.svg }, panel: S.panel, seg: S.seg, doc: S.doc } : null; },
     _pushDisplay: function (d) { return pushDisplay(d); },
     /* "Claude suggests" (a later step calls this): a Show handout? item in the Rack. Returns false for an id the pack does not hold. */
     suggestHandout: function (id, why) { return suggestHandout(id, why); },

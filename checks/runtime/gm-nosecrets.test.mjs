@@ -502,6 +502,41 @@ await test('(h) the location plan names the target and is GM only: never in the 
   console.log('     ' + n + ' fixture rolls × 3 reveals');
 });
 
+/* ---------- (j) map kit 0.7 on the iPad: every view (the street too), every theme (the plate too), time and weather ---------- */
+await test('(j) the iPad copy of a map, in every view, theme, time and weather the panel offers: the player layer at the iPad\'s size, no hidden room, threat, hidden target, watcher or back route, and the server takes it', async () => {
+  const req = createRequire(import.meta.url), LOC = req(path.join(ROOT, 'app', 'gm', 'location.js'));
+  const pk = JSON.parse(read(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'location-pack.json')));
+  const lower = (s) => String(s || '').trim().toLowerCase();
+  let n = 0;
+  for (const seed of [3, 29, 83]) {
+    const roll = LOC.generate(pk.body || pk, {}, { seed });
+    for (const reveal of [{ public: true }, { public: true, working: true }]) {
+      const shown = GP.revealList({ layer: 'player', reveal });
+      const open = new Set(roll.rooms.filter((r) => shown.includes(r.band)).map((r) => lower(r.name)));
+      const secrets = roll.rooms.filter((r) => !shown.includes(r.band)).map((r) => lower(r.name)).filter((x) => !open.has(x) && !GP.LEVEL_TITLES.includes(x))
+        .concat([lower(roll.physThreatName), lower(roll.socThreatName), lower(roll.watcher).replace(/,.*$/, ''), lower(roll.vectors[2] && roll.vectors[2].how).replace(/\s+—.*$|\..*$/, '')])
+        .concat(shown.includes(roll.targetBand) ? [] : [lower(roll.targetRoom)]).filter((x) => x.length >= 4);
+      const combos = [];
+      for (const view of GP.VIEWS) for (const theme of GP.THEMES) combos.push({ view, theme });
+      for (const theme of GP.THEMES) for (const [time, weather] of [['Night', 'rolled'], ['Bluetime', 'snow'], ['', 'fog']]) combos.push({ view: 'street', theme, time, weather });
+      for (const view of ['iso', 'plan', 'rings']) for (const [time, weather] of [['Night', ''], ['', 'none'], ['Night', 'rain']]) combos.push({ view, theme: 'plate', time, weather });
+      for (const c of combos) {
+        const calls = [], spy = (r, o) => { calls.push(o); return mapRender(r, o); };
+        const d = GP.playerDisplay(roll, Object.assign({ layer: 'player', reveal }, c), spy);
+        if (calls.length !== 1 || calls[0].layer !== 'player' || calls[0].width !== GP.IPAD_MAP.width || calls[0].minLabelPx !== GP.IPAD_MAP.minLabelPx) throw new Error('not one player render at the iPad\'s size: ' + JSON.stringify(calls));
+        const text = ' ' + GP.svgText(d.svg) + ' ';
+        for (const s of secrets) if (text.includes(s)) throw new Error('seed ' + seed + ' ' + JSON.stringify(c) + ' reveal ' + shown.join(',') + ': the iPad copy prints "' + s + '"');
+        checkSvg(d.svg);
+        n++;
+      }
+    }
+  }
+  if (n < 150) throw new Error('only ' + n + ' renders checked');
+  const gmCopy = GP.svgText(mapRender(LOC.generate(pk.body || pk, {}, { seed: 3 }), { view: 'iso', layer: 'gm', reveal: GP.BANDS }).svg);
+  const r3 = LOC.generate(pk.body || pk, {}, { seed: 3 });
+  if (!gmCopy.includes(lower(r3.rooms.filter((r) => r.band === 'secure')[0].name))) throw new Error('self-test: the GM copy should name the secure room (is the check still testing anything?)');
+});
+
 /* ---------- (i) the chase strip: what the Chase panel sends to the iPad ---------- */
 await test('(i) a hidden opposing clock, roll lines and GM notes never reach the chase strip sent to the iPad (200 invented chases), and the page sends a chase only through chaseDisplay', async () => {
   const req = createRequire(import.meta.url), CG = req(path.join(ROOT, 'app', 'gm', 'chase.js'));

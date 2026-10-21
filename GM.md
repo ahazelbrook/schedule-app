@@ -183,7 +183,8 @@ fails and nobody is known, nothing is purged.
   **Now in: <district>** is one of its choices (`sc.ui.district` is `''`, `'now'`, `'*'` or a name; a card stores the district it resolved to).
   Checks: `gm-page.test.mjs` (12a–12f, 18d), `gm.e2e.mjs`, `gm-scenes.e2e.mjs`, `gm-npc-panel.e2e.mjs`.
 - **Location.** The generator's controls and Roll, then the card (since 15/10/2026), then the map. A roll draws the GM-layer
-  **rings** map at once (the controls go to rings / GM, the theme stays; Draw is for another view, theme or layer).
+  **iso** map at once (the controls go to iso / GM, the theme stays; Draw is for another view, theme or layer). Iso is the view the table
+  plays with (the map kit's ROADMAP, decision 17/10); it was rings until map kit 0.7 came into the app (22/10/2026).
   - **The glance card** (`B68GmLocation.glance`): the name and place, **Say** (the first line of the street
     description, built only from fields `playerSummary` already shows) with the **Street description on iPad** button,
     the **Plan** (one sentence under Say, outside its box: the front door and its obstacle, the target room and band, the
@@ -206,7 +207,11 @@ fails and nobody is known, nothing is purged.
     **Save as the site for …**. See **Score sites** below.
   - **The map**: layer (GM / Player) and the bands revealed to the player layer, Draw; then the warning
     line, **Show on iPad**, **Set as score scene** and **Clear → ambient** together, never in a fold; then the map; under it
-    **View & theme** (a fold, presentation only) and Download SVG / note (.md) / canvas under Downloads. **Show on iPad** is enabled only on the player layer, and
+    **View & theme** (a fold, presentation only: View iso, rings, plan, section or **street**, the street outside the building; Theme
+    rulebook, blueprint, casefile, board or **plate**, the lit plate; **Time** as rolled, at Bluetime or at Night; **Weather** as the
+    theme does (the plate draws the roll's, the others only on the street when asked), the roll's, none, rain, fog or snow; the fold's
+    line names what is set) and Download SVG / note (.md) / canvas under Downloads. The page asks the kit through one function,
+    `P.mapOpts`, so the preview, the iPad and the downloads draw the same controls. **Show on iPad** is enabled only on the player layer, and
     the code renders the player layer itself and refuses any other svg (`gate` in `gm-page.js`; tested in
     `gm-nosecrets.test.mjs`, `gm-page.test.mjs` and `gm.e2e.mjs`). The street description goes to the iPad as plain
     text through the `playerSummary` whitelist only (the gate passes non-svg kinds), so `playerSummary` and `pushText`
@@ -214,6 +219,16 @@ fails and nobody is known, nothing is purged.
 - **Reveal.** Every new roll and every replay starts with the public band only. The ticks count only while Layer is
   Player (on the GM layer the street description and everything else use public only), and sending anything beyond public
   to the iPad asks first, naming the bands.
+- **The iPad's copy.** Show on iPad renders the player layer at the iPad's size (`P.IPAD_MAP`: 1366 px wide, a 16 px type floor;
+  map kit 0.8's `layout: "ipad"` replaces it in that one place), whatever the preview's width.
+- **Live reveal** (Alex, 22/10/2026: the iPad is the only player screen, and the GM opens bands and it updates at once). While this
+  roll's map is what the iPad shows (it went up from Show on iPad and nothing has been pushed since), the Reveal legend says **Live
+  on the iPad**, and ticking a band sends the player copy again at once: opening one asks first ("opening the working band shows it to
+  the players now"), closing one does not. A no leaves the band shut. The copy goes through the same render, hidden-name scan and
+  gate as Show on iPad; one that would name a hidden room is not sent, and the toast says the iPad still shows the map as it was.
+  View, theme, time and weather only redraw the preview: Show on iPad sends them. The GM layer sends nothing, another roll is not
+  live, and once something else is on the iPad the bands are only the preview's again. The score scene does not follow (below);
+  when it shows other bands than the ticks, the map box says so. Checks: `gm-page.test.mjs` (9m–9o), `gm-nosecrets.test.mjs` (j).
 - **Hidden names.** Map kit 0.2 titled a `plan` or `section` level of the player layer after the room on it, even when that room was
   hidden. From 0.5 (vendored: 0.7.0, 21/10/2026) every floor is titled generically ("Basement", "Ground floor", "Upper floor", "Top
   floor") and a hidden room's name is not in the player file at all. The page still scans every player render for the names of hidden
@@ -507,6 +522,17 @@ fails and nobody is known, nothing is purged.
   capture to file more. Rolls still work." A roll is never refused for this: it is not capture, and if the document is still past
   the hard line (256 KiB less a margin) the same oldest-first drop makes room for it. The page refetches the state on focus.
 
+## The kits (`app/kits.json`, `npm run kits`)
+
+The design system's two kits are vendored: the map kit in `app/maps/map-kit.js` (`B68Map`, 0.7.0) and the figure kit in
+`app/figures/figure-kit.js` (`B68Figure`, 2.0.0). `app/kits.json` records each one's file, version, size, sha256, where it came from
+and when; `npm run kits` prints it and says whether the files still match. To update one, download the kit from the design system
+(or build it) and run `node scripts/kits.mjs maps <map-kit.js> --source "<where it came from>"` (or `figures`): it checks the file
+loads and is that kit, refuses an older version unless `--older`, copies it in and rewrites the entry. `checks/runtime/kits.test.mjs`
+(in `check:runtime`) fails when a file does not match its entry, when a kit is missing from the `routes.js` bundles (the service
+worker precaches what they list, so that is what keeps a kit offline) and when the map kit lacks what the GM page asks of it. A new
+kit reaches the table only with a deploy, which stays Alex's call and never on a session day.
+
 ## The display (`#display`, `app/display-page.js`, `app/display.css`)
 
 Full screen (no header, nav or banner) for an iPad signed in as the GM. Boot mounts
@@ -605,7 +631,8 @@ and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools
 - **Score scenes.** **Set as score scene** (Location panel, player layer only) renders the board (`plan`, board theme) and the exploded
   site (`iso`, blueprint) from the current roll at the revealed bands, through the same gate and hidden-name scan as Show on iPad.
   A plan that names a hidden room is redrawn as `rings`; a leaking iso is refused. Bands beyond public ask first. Only the place name and
-  district go with it (`target` is always empty). It **never updates on its own**: press it again after revealing more. The shells
+  district go with it (`target` is always empty). It **never updates on its own**: press it again after revealing more (the
+  Location panel's map box says when its bands are not the ones ticked). The shells
   (`planning-board`, `score-exploded`) hold no data; they post `b68:ready` and the display answers with `b68:score` (both svgs
   re-sanitised, four crew polaroids drawn with the figure kit, `Pure.POLAROIDS`).
 - **Figures that move.** A figure's frames are versions of its moving parts; the one not shown is `visibility:hidden` (WebKit keeps

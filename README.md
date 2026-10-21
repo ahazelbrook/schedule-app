@@ -57,7 +57,8 @@ app/                 the page (the Worker's static assets; app/.assetsignore kee
   display-page.js, display.css   the iPad's full-screen display (#display, GM.md): the spotlight over an ambient scene
   ambient/, _headers  the ambient scenes the iPad plays when nothing is spotlit (GM.md, "Ambient scenes"), framed same-origin only
   figures/           the vendored figure kit (v2) and cast
-  maps/              the vendored map kit (B68Map, 0.7.0): a location roll drawn as a rings, plan, iso or section SVG, and the chase strip
+  maps/              the vendored map kit (B68Map, 0.7.0): a location roll drawn as an iso, rings, plan or section SVG or the street outside, in five looks (the lit plate too), and the chase strip
+  kits.json          the two kits' versions and checksums (scripts/kits.mjs; GM.md, "The kits")
   fonts/ icons/      vendored fonts; install icons
   runtime/cf.js      the hosted build's window.claude adapter
   routes.js          the build stamp (B68_BUILD) and the route bundles the page fetches on first use (table, print, gm, display)

@@ -54,8 +54,8 @@ storage, identity and downloads always go through `window.claude.use(...)`.
 - `runtime/cf.js` is the hosted build's `window.claude` adapter. It does nothing inside the
   artifact or from `file://`. `sw.js`, `manifest.webmanifest` and `icons/` make the hosted
   build installable and usable offline.
-- `figures/` is the vendored figure kit and cast canon (figure kit 3.0.1); `maps/` is the vendored map kit (0.7.0, 21/10 build). `fonts/` holds the
-  vendored fonts.
+- `figures/` is the vendored figure kit and cast canon (figure kit 3.0.1), `maps/` the vendored map kit (0.7.0);
+  `kits.json` records both (`npm run kits`; GM.md, "The kits"). `fonts/` holds the vendored fonts.
 - `CONTRACT.md` documents the character document, the `play` shape and the module APIs.
 - `checks/` holds Playwright checks that stub the artifact runtime and open `../index.html`
   from `file://`: `e2e.js` walks Home → file → sheet → Back → Home's files → sheet, then each

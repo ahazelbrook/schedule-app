@@ -26,7 +26,7 @@ import { hasSiteBlock } from './authored-export.mjs';
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const KEY_RE = /^[^\u0000-\u001f"<>\\/:*?|#^[\]]{1,120}$/;          // a score card's file name, as the exporter gives it
 const BANDS = ['public', 'working', 'controlled', 'secure'];
-const VIEWS = ['rings', 'plan', 'iso', 'section'], THEMES = ['rulebook', 'blueprint', 'casefile', 'board'];
+const VIEWS = ['iso', 'rings', 'plan', 'section', 'street'], THEMES = ['rulebook', 'blueprint', 'casefile', 'board', 'plate'];   // gm-page.js P.VIEWS / P.THEMES
 class Refusal extends Error {}
 
 /** app/gm/location.js, app/maps/map-kit.js and the local pack's location part: { L, K, pk } or { why }. */
@@ -181,7 +181,7 @@ export function pullSites(ctx, injected) {
     let svg = null;
     if (kit.K && typeof kit.K.render === 'function') {
       const m = isObj(x.map) ? x.map : {};
-      try { svg = kit.K.render(roll, { view: VIEWS.includes(m.view) ? m.view : 'rings', theme: THEMES.includes(m.theme) ? m.theme : 'rulebook', layer: 'gm', reveal: BANDS, width: 1400 }).svg; }
+      try { svg = kit.K.render(roll, { view: VIEWS.includes(m.view) ? m.view : 'iso', theme: THEMES.includes(m.theme) ? m.theme : 'rulebook', layer: 'gm', reveal: BANDS, width: 1400 }).svg; }
       catch (e) { svg = null; report.note('site ' + key + ': the map would not draw (' + String(e && e.message || e).slice(0, 80) + '); the note is filed without it'); }
       if (svg !== null && (typeof svg !== 'string' || !/^\s*<svg[\s>]/.test(svg))) { svg = null; report.note('site ' + key + ': the map kit gave no svg; the note is filed without it'); }
     } else report.note('the map kit is not in this build: site notes are filed without a map');
