@@ -2,8 +2,11 @@
 // @anthropic-ai/sdk that handles the cached prefix, the effort level, schema-checked JSON output and a cost figure
 // from the usage block. Plain ES module with no Cloudflare-specific imports, so node (the replay script) can import it.
 //
-// Prefix order matters: the rules digest and context go in `system` first with the cache breakpoint on the last
-// block; the seat's own instructions come after it, so every seat on one model shares one cache entry.
+// Prompt layout: there is NO system prompt. The shared prefix (rules digest, cast, prep) is a document block at the top of
+// the USER turn with the 1-hour cache breakpoint on it; then the seat's own instructions; then the fresh talk. Nothing
+// seat-specific comes before the breakpoint in OUR request, but the per-seat JSON schema (output_config.format) is placed ahead of the messages by
+// the API, so each seat keeps its own cache entry: about one extra prefix write per seat per hour. The Worker names the prefix
+// by Files API id (`prefixFileId`) so it never holds the text; PC scripts pass the same text inline (`prefix`).
 
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -28,17 +31,24 @@ export function costOf(model, usage) {
   return ((usage.input_tokens || 0) * p.in + write * p.in * WRITE_1H + read * p.read + (usage.output_tokens || 0) * p.out) / 1e6;
 }
 
-// One seat call. `prefix` is the shared cached text (rules digest, cast, prep); `instructions` is the seat's own;
+// The user-turn content blocks: [document (cached)], instructions, talk.
+export function buildContent({ prefix, prefixFileId, instructions = '', user }) {
+  const content = [];
+  if (prefixFileId) content.push({ type: 'document', source: { type: 'file', file_id: prefixFileId }, title: 'context', cache_control: { type: 'ephemeral', ttl: '1h' } });
+  else if (prefix) content.push({ type: 'document', source: { type: 'text', media_type: 'text/plain', data: prefix }, title: 'context', cache_control: { type: 'ephemeral', ttl: '1h' } });
+  if (instructions) content.push({ type: 'text', text: instructions });
+  content.push({ type: 'text', text: user });
+  return content;
+}
+
+// One seat call. `prefixFileId` (Worker) or `prefix` (scripts) is the shared cached text; `instructions` is the seat's own;
 // `user` is the fresh tail. `schema` makes the reply JSON. Returns { json, text, usage, cost, stop }.
-export async function callSeat(client, { model, effort, prefix, instructions, user, schema, maxTokens = 4000 }) {
-  const system = [];
-  if (prefix) system.push({ type: 'text', text: prefix, cache_control: { type: 'ephemeral', ttl: '1h' } });
-  system.push({ type: 'text', text: instructions });
+export async function callSeat(client, { model, effort, prefix, prefixFileId, instructions, user, schema, maxTokens = 4000 }) {
   const output_config = { effort };
   if (schema) output_config.format = { type: 'json_schema', schema };
   const params = {
-    model, max_tokens: maxTokens, system, output_config,
-    messages: [{ role: 'user', content: user }],
+    model, max_tokens: maxTokens, output_config,
+    messages: [{ role: 'user', content: buildContent({ prefix, prefixFileId, instructions, user }) }],
   };
   // Long outputs (the Night Shift writer thinks at high effort) must stream: the SDK refuses a big non-streaming request.
   const res = maxTokens > 16000 ? await client.messages.stream(params).finalMessage() : await client.messages.create(params);
@@ -48,11 +58,8 @@ export async function callSeat(client, { model, effort, prefix, instructions, us
   return { json, text, usage: res.usage, cost: costOf(model, res.usage), stop: res.stop_reason };
 }
 
-// Free: how many tokens would this prompt be. Uses the same shape as callSeat.
-export async function countTokens(client, { model, prefix, instructions = '', user }) {
-  const system = [];
-  if (prefix) system.push({ type: 'text', text: prefix });
-  if (instructions) system.push({ type: 'text', text: instructions });
-  const r = await client.messages.countTokens({ model, system, messages: [{ role: 'user', content: user }] });
+// Free: how many tokens would this prompt be. Uses the same layout as callSeat.
+export async function countTokens(client, { model, prefix, prefixFileId, instructions = '', user }) {
+  const r = await client.messages.countTokens({ model, messages: [{ role: 'user', content: buildContent({ prefix, prefixFileId, instructions, user }) }] });
   return r.input_tokens;
 }

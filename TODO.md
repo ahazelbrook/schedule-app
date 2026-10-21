@@ -27,6 +27,11 @@ zine-derived, so never in git). The vice scenes are original writing in `app/dow
 `npm run deploy` (scripts/deploy.sh, SETUP.md "Updating the app") is the route documented for Alex; it also re-uploads
 the Access secrets and can rewrite the Access policy.
 
+**Claude at the table (build in progress, branch `assist-files`, WP1 done).** The assist prefix now lives in Anthropic's
+Files API: `gm:push` uploads it (needs `B68_ANTHROPIC_KEY`), the Worker holds only a file id, Ref runs at low effort and the
+closer seat is retired. Resume with the next work package on the plan page; the `assist` part must be re-pushed after the
+code is deployed (see GM.md, "Claude at the table").
+
 **Then, in order:**
 1. After tonight's session (17 Oct): `npm run gm:after` (a plan by default; `--yes` files the night into the vault),
    and see how the Downtime card played at the table.

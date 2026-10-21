@@ -97,7 +97,8 @@ if (fake) {
   const NONE = Object.fromEntries(['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall'].map((f) => [f, false]));
   let n = 0;
   client = { messages: { async create(req) {
-    const ins = req.system[req.system.length - 1].text;
+    const ins = req.messages[0].content.filter((b) => b.type === 'text').map((b) => b.text).join('
+');
     const body = /listen to a live/.test(ins) ? { ...NONE, roll_talk: n++ % 2 === 0 } : /rules referee/.test(ins) ? { slip: true, said_at: '00:00', what_was_said: 'x', rule: 'Rule ' + n + ' (p.1)', card: 'Fake card ' + n }
       : /keep the ledger/.test(ins) ? { events: [], xp_totalled: false } : { new_names: [], drift: [], clues_landed: [] };
     return { content: [{ type: 'text', text: JSON.stringify(body) }], usage: { input_tokens: 500, output_tokens: 100, cache_read_input_tokens: 5000, cache_creation_input_tokens: 0 }, stop_reason: 'end_turn' };
@@ -108,12 +109,21 @@ if (fake) {
   client = makeClient(key);
 }
 
+// The Worker names the prefix by Files API id; here, on the PC, the same text goes inline in the same document block. The
+// handler stays the real one: this wrapper only swaps the block's source on the way to the API.
+const FILE_ID = 'file_e2e_local';
+function inlinePrefix(inner) {
+  const swap = (req) => ({ ...req, messages: req.messages.map((m) => (!Array.isArray(m.content) ? m : { ...m, content: m.content.map((b) => (b.type === 'document' && b.source && b.source.type === 'file' && b.source.file_id === FILE_ID ? { ...b, source: { type: 'text', media_type: 'text/plain', data: prefix } } : b)) })) });
+  return { messages: { create: (req) => inner.messages.create(swap(req)), stream: (req) => inner.messages.stream(swap(req)), countTokens: (req) => inner.messages.countTokens(swap(req)) } };
+}
+client = inlinePrefix(client);
+
 // ---- the stand-in D1, the control document and the cached prefix
 const exec = await memoryExec({ schemaFile: path.join(REPO, 'schema.sql') });
 const db = asD1(exec);
 const CAMPAIGN = 'e2e';
 await patchStt(db, CAMPAIGN, { speakers: Object.fromEntries(named.map(([name, id]) => [String(id), name])) });
-if (prefix) exec.db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES (?, 'assist', 'e2e', '{}', 0, ?)").run(CAMPAIGN, JSON.stringify({ prefix }));
+if (prefix) exec.db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES (?, 'assist', 'e2e', '{}', 0, ?)").run(CAMPAIGN, JSON.stringify({ file_id: FILE_ID, hash: 'e2e' }));
 
 let clock = melbMs(first, 0);
 const handler = makeHandler({ clientFor: () => client, now: () => clock });
@@ -193,7 +203,7 @@ const flagged = ticks.filter((x) => x.flags.length);
 let wokeWanted = 0, wokeCalled = 0, coolSuppressed = 0;
 const suppressedBy = {};
 for (const x of flagged) {
-  const wanted = Object.keys(WAKES).filter((s) => WAKES[s].some((f) => x.flags.includes(f)) && !['showrunner', 'mystery', 'meanwhile', 'fixer', 'closer'].includes(s));
+  const wanted = Object.keys(WAKES).filter((s) => WAKES[s].some((f) => x.flags.includes(f)) && !['showrunner', 'mystery', 'meanwhile', 'fixer'].includes(s));
   const called = wanted.filter((s) => x.seats.includes(s));
   wokeWanted += wanted.length; wokeCalled += called.length;
   for (const s of wanted) if (!called.includes(s)) { coolSuppressed++; suppressedBy[s] = (suppressedBy[s] || 0) + 1; }
