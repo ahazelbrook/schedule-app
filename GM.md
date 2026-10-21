@@ -525,7 +525,7 @@ fails and nobody is known, nothing is purged.
 ## The kits (`app/kits.json`, `npm run kits`)
 
 The design system's two kits are vendored: the map kit in `app/maps/map-kit.js` (`B68Map`, 0.7.0) and the figure kit in
-`app/figures/figure-kit.js` (`B68Figure`, 2.0.0). `app/kits.json` records each one's file, version, size, sha256, where it came from
+`app/figures/figure-kit.js` (`B68Figure`, 3.0.1, which carries the arm blend `tools/ambient/motion.js` uses, so the app no longer patches it). `app/kits.json` records each one's file, version, size, sha256, where it came from
 and when; `npm run kits` prints it and says whether the files still match. To update one, download the kit from the design system
 (or build it) and run `node scripts/kits.mjs maps <map-kit.js> --source "<where it came from>"` (or `figures`): it checks the file
 loads and is that kit, refuses an older version unless `--older`, copies it in and rewrites the entry. `checks/runtime/kits.test.mjs`

@@ -56,7 +56,7 @@ app/                 the page (the Worker's static assets; app/.assetsignore kee
   gm/, gm-page.js, gm.css  the GM's page (#gm): the console (the four situations, the nine single tables folded under the card), the location generator and map, street scenes, the score generator, the chase board, the NPC generator, capture (GM.md); gm/ also holds the NPC generator's logic and figure map, which the sync uses too
   display-page.js, display.css   the iPad's full-screen display (#display, GM.md): the spotlight over an ambient scene
   ambient/, _headers  the ambient scenes the iPad plays when nothing is spotlit (GM.md, "Ambient scenes"), framed same-origin only
-  figures/           the vendored figure kit (v2) and cast
+  figures/           the vendored figure kit (3.0.1) and cast
   maps/              the vendored map kit (B68Map, 0.7.0): a location roll drawn as an iso, rings, plan or section SVG or the street outside, in five looks (the lit plate too), and the chase strip
   kits.json          the two kits' versions and checksums (scripts/kits.mjs; GM.md, "The kits")
   fonts/ icons/      vendored fonts; install icons
