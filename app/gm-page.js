@@ -785,9 +785,19 @@
   function preSig(ui) { var u = isObj(ui) ? ui : {}; return JSON.stringify(Object.keys(u).sort().map(function (k) { return [k, u[k]]; })); }
   P.drawTextOf = drawTextOf; P.preSig = preSig; P.DRAW_CLIP = DRAW_CLIP;
   /* a roll's one-line text for "L" (the title and the lead) */
+  /* An outcome card (A 4/5, A 1–3) is filed with what the console had set when it was drawn, in brackets after the title:
+     "A 4/5 (risky, Bo): ...". Only fields the console holds: the Position, and the PC if one was selected (there is no effect
+     control, so none is written). The Night Shift reads the bracket back; every other card keeps the plain "Title: text". */
   function lastText(res) {
-    var m = res && res.meta || {};
-    return m.id === 'situation' && res.sections && res.sections[0] ? str(m.title) + ': ' + plainMd(res.sections[0].lead) : str(m.title) + ': ' + plainMd(m.text);
+    var m = res && res.meta || {}, sit = m.id === 'situation' && res.sections && res.sections[0];
+    var title = str(m.title), bits = [];
+    if (sit && (m.situation === 'fourfive' || m.situation === 'onetothree')) {
+      var ui = res.replay && res.replay.ui || {}, pos = m.position && m.position.pos;
+      if (pos) bits.push(str(pos));
+      if (ui.pc) bits.push(str(ui.pc).replace(/[(),:]/g, ' ').replace(/\s+/g, ' ').trim());
+    }
+    if (bits.length) title += ' (' + bits.join(', ') + ')';
+    return sit ? title + ': ' + plainMd(res.sections[0].lead) : title + ': ' + plainMd(m.text);
   }
   P.lastText = lastText;
   /* classic lines -> html (`mdf` renders markdown: the page passes B68Markdown) */

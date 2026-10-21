@@ -68,13 +68,136 @@ export function rollStats(rolls) {
   };
 }
 
+// ---- the app's own roll records, merged with the sorters' speech-derived rolls -------------------------------------------------
+//
+// What the GM app records is thinner than a roll sheet: gm:pull files each "L" capture of a console card as "- **HH:MM** Title:
+// lead ^b68-id" under "## Rolled at the table". The Situations cards carry the result band in their title ("A 4/5" = a partial,
+// "A 1-3" = a miss; "Before the roll" is only a Devil's Bargain offered ahead of a roll), and a title may carry a position in
+// brackets if the app ever writes one. There is no character, effect or dots. So the app is authoritative for the fields it
+// states (time, result band, position when bracketed) and the speech fills everything else; the speech never overwrites an app field.
+
+const MATCH_MIN = 2;                                  // an app record and a spoken roll are the same roll within +/- 2 minutes
+const POS_RE = /\((?:[^)]*?\b)?(controlled|risky|desperate)\b/i;
+const EFFECTS = ['limited', 'standard', 'great'];
+const unk = (v) => v == null || v === '' || v === 'unclear' || v === -1;
+const clock = (at) => { const m = /(\d\d):(\d\d)/.exec(String(at || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+const apart = (a, b) => { const d = Math.abs(a - b) % 1440; return Math.min(d, 1440 - d); };
+const sameWho = (a, b) => { const x = String(a || '').trim().toLowerCase(), y = String(b || '').trim().toLowerCase(); return !x || !y || x === '?' || y === '?' || x === y || x.split(/\s+/)[0] === y.split(/\s+/)[0]; };
+
 /**
- * Run the Night Shift. opts: { client, prefix, lines (parseTranscript), mode: 'two-stage' | 'single', maxSpend, seats, onStep }.
+ * The session note text -> the app-recorded rolls: [{ at '[HH:MM]', t, who '', position, result, card }]. Reads only the bullets
+ * under "## Rolled at the table" (the hand-written table under "From the transcript" is not the app's and is ignored). Cards
+ * that are not a roll outcome (Before the roll, Location, Downtime, ...) are not rolls and are skipped; their count is returned
+ * as `others` by appRollsFrom().
+ */
+export function appRollsFrom(noteText) {
+  const out = { rolls: [], others: 0 };
+  let inside = false, fence = false;
+  for (const raw of String(noteText || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (/^(```|~~~)/.test(line)) { fence = !fence; continue; }
+    if (fence) continue;
+    if (/^#{1,6}\s/.test(line)) { inside = /^##\s+Rolled at the table\s*$/.test(line); continue; }
+    if (!inside) continue;
+    const m = /^- \*\*(\d\d):(\d\d)\*\* (.*?)(?:\s+\^b68-[\w-]+)?$/.exec(line);
+    if (!m) continue;
+    const body = m[3], t = Number(m[1]) * 60 + Number(m[2]);
+    const result = /^A 4\/5\b/.test(body) ? 'partial' : /^A 1[–-]3\b/.test(body) ? 'miss' : '';
+    if (!result) { out.others++; continue; }
+    // the bracket after the title: "(risky, standard, Name)" from the app today, or the older "(desperate -> 3 winds, harm 3)"
+    const p = POS_RE.exec(body), br = /^[^:(]*\(([^)]*)\)/.exec(body);
+    const parts = br ? br[1].split(/[,;]/).map((x) => x.trim()).filter(Boolean) : [];
+    const word = (x) => /^(controlled|risky|desperate|limited|standard|great)\b/i.test(x);
+    const effect = (parts.find((x) => EFFECTS.includes(x.toLowerCase())) || '').toLowerCase();
+    const who = parts.find((x) => !word(x) && !/[→·]/.test(x)) || '';
+    out.rolls.push({ at: '[' + m[1] + ':' + m[2] + ']', t, who, effect, position: p ? p[1].toLowerCase() : '', result, card: body.split(/[:(]/)[0].trim() });
+  }
+  return out;
+}
+export const parseAppRolls = (noteText) => appRollsFrom(noteText).rolls;
+
+/**
+ * Merge the app's rolls (authoritative) with the speech rolls. Each app record claims the nearest unclaimed speech roll within
+ * +/- 2 minutes whose character agrees (when the app names one) and whose result does not contradict it; the merged roll keeps the
+ * speech's fields and the app's stated fields on top. An app record that claims nothing becomes a row of its own (source app);
+ * a speech roll nobody claimed stays (source speech). -> rolls in time order, each with src 'app' | 'speech' | 'app+speech'
+ * and `app` (the fields the app supplied).
+ */
+export function mergeRolls(speechRolls, appRolls) {
+  const speech = (Array.isArray(speechRolls) ? speechRolls : []).map((r) => ({ ...r, src: 'speech', _t: clock(r.at) }));
+  const taken = new Set(), out = [];
+  for (const a of (Array.isArray(appRolls) ? appRolls : []).slice().sort((x, y) => x.t - y.t)) {
+    let best = -1, bd = Infinity;
+    speech.forEach((s, i) => {
+      if (taken.has(i) || s._t == null) return;
+      const d = apart(s._t, a.t);
+      if (d > MATCH_MIN || d >= bd) return;
+      if (!sameWho(a.who, s.who)) return;
+      if (a.result && !unk(s.result) && s.result !== a.result) return;
+      best = i; bd = d;
+    });
+    const fields = {};
+    if (a.position) fields.position = a.position;
+    if (a.result) fields.result = a.result;
+    if (a.who) fields.who = a.who;
+    if (a.effect) fields.effect = a.effect;
+    if (Number.isInteger(a.dots) && a.dots >= 0) fields.dots = a.dots;
+    if (typeof a.pushed === 'boolean') fields.pushed = a.pushed;
+    if (best >= 0) {
+      taken.add(best);
+      const s = speech[best];
+      out.push({ ...s, ...fields, src: 'app+speech', app: Object.keys(fields), _t: s._t });
+    } else {
+      out.push({ at: a.at, who: a.who || '?', action: 'recorded by the app (' + (a.card || 'card') + '), not found in the speech', position: 'unclear', effect: 'unclear', dots: -1, pushed: false, result: 'unclear', ...fields, src: 'app', app: Object.keys(fields), _t: a.t });
+    }
+  }
+  speech.forEach((s, i) => { if (!taken.has(i)) out.push(s); });
+  out.sort((x, y) => (x._t == null ? 1e9 : x._t) - (y._t == null ? 1e9 : y._t));
+  return out.map(({ _t, ...r }) => r);
+}
+
+/**
+ * XP candidates that are mechanical, computed from the merged table: desperate rolls, and zero-dot rolls when dots are known.
+ * -> [{ who, at, action, kind: 'desperate' | 'zero-dot', src }] in time order. Candidates only; whether a roll counts (an action
+ * roll, not a resistance or fortune roll) is the GM's call.
+ */
+export function xpCandidates(rolls) {
+  const out = [];
+  for (const r of Array.isArray(rolls) ? rolls : []) {
+    if (!r) continue;
+    if (r.position === 'desperate') out.push({ who: r.who, at: r.at, action: r.action, kind: 'desperate', src: r.src || 'speech' });
+    if (r.dots === 0) out.push({ who: r.who, at: r.at, action: r.action, kind: 'zero-dot', src: r.src || 'speech' });
+  }
+  return out;
+}
+
+/** { app, speech, both } counts of a merged table by source. */
+export function sourceStats(rolls) {
+  const r = Array.isArray(rolls) ? rolls : [];
+  const n = (s) => r.filter((x) => x && (x.src || 'speech') === s).length;
+  return { app: n('app'), speech: n('speech'), both: n('app+speech') };
+}
+
+/** Merge into a stored result in place: result.rolls (speech) -> merged, result.xp computed. */
+export function applyApp(result, appRolls) {
+  result.speechRolls = result.speechRolls || result.rolls || [];
+  result.rolls = mergeRolls(result.speechRolls, appRolls);
+  result.xp = xpCandidates(result.rolls);
+  return result;
+}
+
+const XP_NOTE = ' XP: desperate rolls and zero-dot rolls are computed by code from the rolls table and filed separately: do not list them in xp_per_pc.'
+  + ' In xp_per_pc give only the judgement-based triggers from the transcript (beliefs, drives, heritage, background or vice played out; playbook and crew xp triggers), still as candidates.';
+const withMergedRolls = (notes, rolls) => ({ chunks: notes.map((n) => ({ from: n.from, to: n.to, notes: { ...n.notes, rolls: undefined } })), merged_rolls: rolls });
+
+/**
+ * Run the Night Shift. opts: { client, prefix, lines (parseTranscript), mode: 'two-stage' | 'single', maxSpend, seats, onStep, appRolls }.
+ * appRolls (parseAppRolls of the session note) are authoritative; the speech rolls fill the rest (see mergeRolls).
  * Returns { ok, stopped, spend, parts: {sorters, writer}, rolls, sections, calls, sorted }.
  * stopped is '' | 'cap' | 'nojson' | 'empty'; on any stop nothing is to be filed (sorted is kept so the spend is not lost).
  */
-export async function runNightShift({ client, prefix, lines, mode = 'two-stage', maxSpend = DEFAULT_CAP, seats = SEATS, onStep = () => {} }) {
-  const res = { ok: false, stopped: '', reason: '', spend: 0, parts: { sorters: 0, writer: 0 }, calls: 0, rolls: [], sections: null, sorted: null, mode };
+export async function runNightShift({ client, prefix, lines, mode = 'two-stage', maxSpend = DEFAULT_CAP, seats = SEATS, onStep = () => {}, appRolls = [] }) {
+  const res = { ok: false, stopped: '', reason: '', spend: 0, parts: { sorters: 0, writer: 0 }, calls: 0, rolls: [], xp: [], sections: null, sorted: null, mode };
   if (!lines.length) { res.stopped = 'empty'; res.reason = 'no transcript lines'; return res; }
   const call = async (name, user, bucket) => {
     const r = await callSeat(client, { ...seats[name], prefix, user });
@@ -86,12 +209,13 @@ export async function runNightShift({ client, prefix, lines, mode = 'two-stage',
   const first = lines[0].stamp, last = lines[lines.length - 1].stamp;
 
   if (mode === 'single') {
-    const user = 'Session transcript, ' + first + ' to ' + last + ':\n' + lines.map((l) => l.text).join('\n');
+    const user = 'Session transcript, ' + first + ' to ' + last + ':\n' + lines.map((l) => l.text).join('\n') + '\n\n' + XP_NOTE.trim();
     const need = estimateInput(seats.nightshift_single.model, (prefix || '').length + user.length);
     if (need >= maxSpend) return stop('cap', 'the one call would cost about $' + need.toFixed(2) + ' before any output: over the $' + maxSpend.toFixed(2) + ' cap');
     const r = await call('nightshift_single', user, 'writer');
     if (!r.json) return stop('nojson', 'the writer returned no JSON (stop=' + r.stop + ')');
-    res.rolls = r.json.rolls || [];
+    res.speechRolls = r.json.rolls || [];
+    res.rolls = mergeRolls(res.speechRolls, appRolls); res.xp = xpCandidates(res.rolls);
     res.sections = Object.fromEntries(SECTIONS.map(([k]) => [k, r.json[k] || '']));
     res.ok = true;
     return res;
@@ -104,10 +228,11 @@ export async function runNightShift({ client, prefix, lines, mode = 'two-stage',
   }));
   res.sorted = sorted;
   if (sorted.some((s) => !s.notes)) return stop('nojson', 'a sorter returned no JSON (' + sorted.filter((s) => !s.notes).map((s) => s.from + ' stop=' + s.stop).join(', ') + ')');
-  res.rolls = sorted.flatMap((s) => s.notes.rolls || []);
+  res.speechRolls = sorted.flatMap((s) => s.notes.rolls || []);
+  res.rolls = mergeRolls(res.speechRolls, appRolls); res.xp = xpCandidates(res.rolls);
   if (res.spend >= maxSpend) return stop('cap', 'the sorters used $' + res.spend.toFixed(3) + ' and the cap is $' + maxSpend.toFixed(2) + ': the writer did not run');
   const notes = sorted.map((s) => ({ from: s.from, to: s.to, notes: s.notes }));
-  const user = 'Session ran ' + first + ' to ' + last + ". Sorters' notes, one per hour chunk (each roll keeps its position and dots):\n" + JSON.stringify(notes);
+  const user = 'Session ran ' + first + ' to ' + last + ". Sorters' notes, one per hour chunk, and the merged rolls table (rolls the GM app recorded win over what was said; each roll keeps its position and dots):\n" + JSON.stringify(withMergedRolls(notes, res.rolls)) + '\n\n' + XP_NOTE.trim();
   const need = estimateInput(seats.writer.model, (prefix || '').length + user.length);
   if (res.spend + need >= maxSpend) return stop('cap', 'the writer would take the total past the $' + maxSpend.toFixed(2) + ' cap (spent $' + res.spend.toFixed(3) + ', input alone about $' + need.toFixed(2) + ')');
   const w = await call('writer', user, 'writer');
@@ -123,8 +248,16 @@ const dotsText = (d) => (d === 0 ? '0 (zero-dot)' : Number.isInteger(d) && d > 0
 /** The rolls as a markdown table (one row per roll). */
 export function rollsTable(rolls) {
   if (!rolls.length) return '(no rolls found)';
-  const head = '| At | Who | Action | Position | Effect | Dots | Pushed | Result |\n| --- | --- | --- | --- | --- | --- | --- | --- |';
-  return head + '\n' + rolls.map((r) => '| ' + [r.at, r.who, r.action, r.position, r.effect, dotsText(r.dots), r.pushed ? 'yes' : 'no', r.result].map(cell).join(' | ') + ' |').join('\n');
+  const head = '| At | Who | Action | Position | Effect | Dots | Pushed | Result | Source |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |';
+  return head + '\n' + rolls.map((r) => '| ' + [r.at, r.who, r.action, r.position, r.effect, dotsText(r.dots), r.pushed ? 'yes' : 'no', r.result, r.src || 'speech'].map(cell).join(' | ') + ' |').join('\n');
+}
+
+/** The code-computed XP candidates, grouped by character, one line per trigger with its stamp and source. */
+export function xpLines(xp) {
+  if (!xp || !xp.length) return '(none: no desperate or zero-dot rolls in the table)';
+  const by = new Map();
+  for (const x of xp) { const k = x.who || '?'; if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
+  return [...by].map(([who, list]) => '**' + cell(who) + '** (' + list.length + ')\n' + list.map((x) => '- ' + cell(x.at) + ' ' + x.kind + ' roll' + (x.action ? ': ' + cell(x.action) : '') + ' (' + x.src + ')').join('\n')).join('\n');
 }
 
 /** Model text must not open a second `##` heading (that would break the one-heading rule): demote any heading of level 1 to 3. */
@@ -132,17 +265,24 @@ const flat = (s) => String(s || '').replace(/\r\n?/g, '\n').split('\n').map((l) 
 
 /** The whole block, from the `## Night Shift draft` heading on, as a string without a trailing newline. */
 export function renderDraft(result, { date = '', session = '', from = '', to = '' } = {}) {
-  const s = rollStats(result.rolls), sec = result.sections || {};
+  const s = rollStats(result.rolls), src = sourceStats(result.rolls), sec = result.sections || {};
+  const xp = result.xp || xpCandidates(result.rolls);
   const out = [
     '## ' + HEADING, '',
     '> [!note] Drafted by Claude' + (date ? ' on ' + date : '') + (session ? ' for session ' + session : '') + ' (' + (result.mode === 'single' ? 'one call' : 'sorters then writer') + '; $' + result.spend.toFixed(2) + '). Check it against the transcript before relying on it.',
     '> [!warning] XP is manual',
     '> Nothing here is awarded. The XP section lists possible triggers only; you mark xp yourself.', '',
-    '### Rolls (' + s.total + '; ' + s.complete + ' with position and dots)', '', rollsTable(result.rolls), '',
+    '### Rolls (' + s.total + '; ' + s.complete + ' with position and dots)', '',
+    '*' + (src.app + src.both) + ' recorded by the app, ' + (src.speech + src.both) + ' heard in the speech. Source: app = the GM app\'s own record (it wins wherever it states a field); speech = heard in the transcript; app+speech = matched within 2 minutes, the app\'s fields kept.*', '',
+    rollsTable(result.rolls), '',
   ];
   for (const [k, title] of SECTIONS) {
     out.push('### ' + title, '');
-    if (k === 'xp_per_pc') out.push('*Candidates only. XP is the GM\'s to mark.*', '');
+    if (k === 'xp_per_pc') {
+      out.push('*Candidates only. XP is the GM\'s to mark.*', '',
+        '**Computed from the rolls table (' + xp.length + '):** desperate rolls and zero-dot rolls. Action rolls only: drop resistance and fortune rolls by hand.', '', xpLines(xp), '',
+        '**From the transcript (judgement):**', '');
+    }
     out.push(flat(sec[k]) || '[TODO: empty]', '');
   }
   while (out.length && out[out.length - 1] === '') out.pop();
