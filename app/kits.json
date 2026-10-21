@@ -1,0 +1,24 @@
+{
+  "$comment": "The design system's two kits as the app vendors them. Update with `node scripts/kits.mjs <maps|figures> <file> --source \"…\"`; `npm run check:runtime` (checks/runtime/kits.test.mjs) refuses a file that does not match. GM.md, \"The kits\".",
+  "kits": {
+    "maps": {
+      "file": "maps/map-kit.js",
+      "global": "B68Map",
+      "version": "0.7.0",
+      "bytes": 751685,
+      "sha256": "352b0e9c1c3753cff531d557fa1b7f694ef9f50369d3c37d06de156f34e220da",
+      "source": "Blades '68 Design System, project/maps/map-kit.js (published 22/10/2026)",
+      "at": "2026-10-22"
+    },
+    "figures": {
+      "file": "figures/figure-kit.js",
+      "global": "B68Figure",
+      "version": "3.0.1",
+      "bytes": 973538,
+      "sha256": "4b889296294dddafbab07e465fbd8ec1ededb415ada95b4b61bf76c2c6ba51e6",
+      "source": "Blades '68 Design System, project/figures/figure-kit.js (3.0.1, published 22/10/2026)",
+      "at": "2026-10-21",
+      "note": "3.0.1 carries the arm blend (pose.arms.R = { a, b, t, as }, used by tools/ambient/motion.js) in the kit, so the app's local patch (6474342, PR #53) is dropped; it draws the same as the patched 3.0.0"
+    }
+  }
+}
