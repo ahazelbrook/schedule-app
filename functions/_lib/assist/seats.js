@@ -92,6 +92,117 @@ Prefer false: most minutes have no flags at all. Reply with JSON only.`,
       required: ['events', 'xp_totalled'],
     },
   },
+
+  voice: {
+    model: 'claude-sonnet-5-5', effort: 'medium', maxTokens: 1500,
+    instructions: `You are the GM's voice coach for a Blades '68 game. From the last few minutes of the live transcript, work out which non-player character is on stage right now and what they want from the scene. Using ONLY their card in your context (how to play them, their voice, want and fear), write their next two lines in the first person, as the GM could say them aloud: short, concrete, in that character's register, each doing something different (push, deflect, offer, threaten, reveal a little). Never speak or act for a player character. Never reveal a secret the card says is hidden unless the scene has plainly earned it. If no NPC is on stage, or the card is not in your context, say so in who and leave the lines empty. Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        who: { type: 'string', description: 'the NPC on stage, or empty' },
+        want: { type: 'string', description: 'one line: what they want right now' },
+        line_a: { type: 'string' }, line_b: { type: 'string' },
+      },
+      required: ['who', 'want', 'line_a', 'line_b'],
+    },
+  },
+
+  stall: {
+    model: 'claude-sonnet-5-5', effort: 'low', maxTokens: 1200,
+    instructions: `You are the GM's stall breaker for a Blades '68 game. The table has gone quiet or is going in circles. From the last few minutes of the transcript and the cast, rules and clues in your context, offer ONE thing the GM could introduce now: a complication that raises the pressure, or a proactive clue that points the players toward something they have not yet found. Fit it to where the scene is and to people and places already in play. It must not decide what a player character does or feels, and must not hand over a clue the players already have. Say in one line why now. If the table is not actually stalled (they are mid-scene and busy), say so and leave the offer empty. Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        stalled: { type: 'boolean' },
+        kind: { type: 'string', enum: ['complication', 'clue', 'none'] },
+        offer: { type: 'string', description: 'what the GM says or introduces, in one or two sentences' },
+        why_now: { type: 'string' },
+      },
+      required: ['stalled', 'kind', 'offer', 'why_now'],
+    },
+  },
+
+  showrunner: {
+    model: 'claude-haiku-5-5', effort: 'low', maxTokens: 4000,
+    instructions: `You are the showrunner for a Blades '68 game, checking pacing from the transcript so far. Player characters are listed in your context (and players are named in speaker labels, which are unreliable). Report: for each player character, minutes since they were last named or spoke for (estimate from the stamps; say unknown if unclear), and who most needs the spotlight; the beat over time (setup, rising, climax, aftermath) and how long the session has run; and one line of advice for the next ten minutes. Use only the text given. Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        spotlight: {
+          type: 'array',
+          items: {
+            type: 'object', additionalProperties: false,
+            properties: { who: { type: 'string' }, minutes_since: { type: 'number' }, note: { type: 'string' } },
+            required: ['who', 'minutes_since', 'note'],
+          },
+        },
+        needs_spotlight: { type: 'string' },
+        beat: { type: 'string', enum: ['setup', 'rising', 'climax', 'aftermath'] },
+        elapsed_minutes: { type: 'number' },
+        advice: { type: 'string' },
+      },
+      required: ['spotlight', 'needs_spotlight', 'beat', 'elapsed_minutes', 'advice'],
+    },
+  },
+
+  mystery: {
+    model: 'claude-sonnet-5-5', effort: 'medium', maxTokens: 2500,
+    instructions: `You keep the mystery for a Blades '68 game. From the transcript so far and the cast and clue material in your context, list: known, what the players have actually learned (said aloud or shown in the fiction); theories, the theories players have voiced, with who said them and whether the evidence so far supports each; and push_next, the single clue the GM should work in next, with a concrete way to deliver it in the current scene. Use only what was said at the table or is in your context; never invent facts. If the context holds no clue list, say so in push_next rather than guessing. Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        known: { type: 'array', items: { type: 'string' } },
+        theories: {
+          type: 'array',
+          items: {
+            type: 'object', additionalProperties: false,
+            properties: { who: { type: 'string' }, theory: { type: 'string' }, supported: { type: 'string', enum: ['yes', 'partly', 'no', 'unclear'] } },
+            required: ['who', 'theory', 'supported'],
+          },
+        },
+        push_next: { type: 'string' },
+        how: { type: 'string' },
+      },
+      required: ['known', 'theories', 'push_next', 'how'],
+    },
+  },
+
+  // The Night Shift: sorters read one hour each, in parallel; the writer reads their output.
+  sorter: {
+    model: 'claude-haiku-5-5', effort: 'medium', maxTokens: 16000,
+    instructions: `You sort one hour of a Blades '68 session transcript for the end-of-night paperwork. Speaker labels and spellings are unreliable; use the cast in your context to correct names, and mark guesses. From THIS chunk only, extract: names (made-up in-fiction characters, places, groups, with a few words on who or what and the [HH:MM] stamp); ledger (stress, harm, Heat, coin, clock ticks, xp triggers and status changes per character, each with a stamp); loose_ends (questions raised and not answered, promises, threats and plans left hanging); clocks_owed (clocks that were started, advanced or should have ticked, with their state). Add a two-sentence chunk_summary of what happened. Report only what is in the text. Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        chunk_summary: { type: 'string' },
+        names: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { name: { type: 'string' }, what: { type: 'string' }, at: { type: 'string' } }, required: ['name', 'what', 'at'] } },
+        ledger: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { at: { type: 'string' }, who: { type: 'string' }, kind: { type: 'string' }, note: { type: 'string' } }, required: ['at', 'who', 'kind', 'note'] } },
+        loose_ends: { type: 'array', items: { type: 'string' } },
+        clocks_owed: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { clock: { type: 'string' }, state: { type: 'string' } }, required: ['clock', 'state'] } },
+      },
+      required: ['chunk_summary', 'names', 'ledger', 'loose_ends', 'clocks_owed'],
+    },
+  },
+
+  writer: {
+    model: 'claude-opus-5-5', effort: 'high', maxTokens: 40000,
+    instructions: `You are the GM's scribe for a Blades '68 game, writing the night's paperwork after the session. You are given the sorters' structured notes for each hour (in order). Using them and the cast and rules in your context, draft the following as markdown in the string fields. Write plainly and in Australian spelling; do not invent events the notes do not contain, and write [TODO: ...] for gaps.
+session_log (at most 900 words): a dated, scannable log of the session in scene order, with names, outcomes, harm, Heat, coin and clocks.
+xp_per_pc: one section per player character listing each xp trigger seen and a total, noting uncertainty. Never invent triggers.
+feedback_card: a short GM-feedback card: what worked, rules slips or doubts to check against the book (cite pages from the reference when you can), and one thing to try next time.
+group_chat: three to five short highlights the GM could post to the players' group chat, warm and spoiler-light.
+previously_on: a spoken recap of 120 to 180 words for the start of next session.
+prep_skeleton: a skeleton for next session: open threads, clocks that will advance, NPCs likely to appear, and questions the GM should decide before play.
+Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        session_log: { type: 'string' }, xp_per_pc: { type: 'string' }, feedback_card: { type: 'string' },
+        group_chat: { type: 'string' }, previously_on: { type: 'string' }, prep_skeleton: { type: 'string' },
+      },
+      required: ['session_log', 'xp_per_pc', 'feedback_card', 'group_chat', 'previously_on', 'prep_skeleton'],
+    },
+  },
 };
 
 // Which flags wake which seats (the Conductor's table).

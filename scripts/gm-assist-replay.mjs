@@ -7,7 +7,9 @@
 //
 //   --count           free: count the tokens in the context and the transcript (no model is run, nothing is billed)
 //   --from / --to     HH:MM window of the transcript to replay (default: all of it)
-//   --seats a,b,c     which seats run (default tripwire,ref,clerk,ledger)
+//   --seat-window s@HH:MM[@since],...   run voice/stall/showrunner/mystery at chosen minutes (writes seat-window.md)
+//   --nightshift      hour-long chunks -> sorters in parallel -> writer; writes nightshift.md
+//   --seats a,b,c    which seats run (default tripwire,ref,clerk,ledger)
 //   --set seat.k=v    override a seat's model or effort for a sweep, e.g. --set ref.effort=high
 //   --max-spend <$>   stop when the calls so far cost this much (default 3)
 //   --out <dir>       where calls.jsonl and summary.txt go (default gm-private/assist-replay/<timestamp>)
@@ -89,7 +91,10 @@ async function run(seat, at, user) {
   const r = await callSeat(client, { ...cfg, prefix, user });
   total += r.cost; spend[seat] = (spend[seat] || 0) + r.cost; calls[seat] = (calls[seat] || 0) + 1;
   log.write(JSON.stringify({ at, seat, model: cfg.model, effort: cfg.effort, usage: r.usage, cost: r.cost, stop: r.stop, json: r.json }) + '\n');
-  if (r.json === null) console.error(`${at} ${seat}: no JSON (stop=${r.stop})`);
+  if (r.json === null) {
+    console.error(`${at} ${seat}: no JSON (stop=${r.stop}, ${r.usage?.output_tokens} output tokens)`);
+    fs.writeFileSync(path.join(outDir, `failed-${seat}-${at.replace(':', '')}.txt`), r.text || '');
+  }
   return r.json;
 }
 
@@ -113,6 +118,55 @@ if (arg('once')) {
   const j = await run(seat, at, `Transcript from ${since} to ${at}:\n${textFor(toMin(since), toMin(at))}`);
   fs.writeFileSync(path.join(outDir, `${seat}-once.json`), JSON.stringify(j, null, 2) + '\n');
   console.log(JSON.stringify(j, null, 2) + `\n\n${seat} total: $${total.toFixed(3)}`);
+  process.exit(0);
+}
+
+// --seat-window seat@HH:MM[@since],...: run voice/stall/showrunner/mystery at chosen minutes and write seat-window.md.
+// Without @since, voice and stall read the last 5 minutes; showrunner and mystery read from the start of the replay.
+if (arg('seat-window')) {
+  const WINDOW_MIN = { voice: 5, stall: 5 };
+  const out = [];
+  for (const spec of arg('seat-window').split(',')) {
+    const [seat, at, since] = spec.trim().split('@');
+    if (!registry[seat]) { console.error(`unknown seat ${seat}`); process.exit(2); }
+    if (total >= maxSpend) { console.error(`spend cap $${maxSpend} reached before ${spec}`); break; }
+    const t = toMin(at);
+    const start = since ? toMin(since) : (WINDOW_MIN[seat] ? t - WINDOW_MIN[seat] + 1 : -1);
+    const before = total;
+    const j = await run(seat, at, `Transcript up to ${at}${since || WINDOW_MIN[seat] ? ` (from ${stamp(Math.max(start, 0))})` : ' (from the start)'}:\n${textFor(start, t)}`);
+    out.push(`## ${seat} @ ${at}  ($${(total - before).toFixed(4)}, ${registry[seat].model} ${registry[seat].effort})\n\n` +
+      (j ? '```json\n' + JSON.stringify(j, null, 2) + '\n```' : '(no JSON)'));
+  }
+  fs.writeFileSync(path.join(outDir, 'seat-window.md'), out.join('\n\n') + '\n');
+  console.log(out.join('\n\n') + `\n\nseat-window total: $${total.toFixed(3)}  ${JSON.stringify(spend)}`);
+  process.exit(0);
+}
+
+// --nightshift: cut the replay window into hour-long chunks, run a sorter on each in parallel, then the writer on their
+// output; write nightshift.md (and nightshift.json). Honours --from/--to; --max-spend is checked before the writer.
+if (flag('nightshift')) {
+  if (!order.length) { console.error('no transcript lines in range'); process.exit(2); }
+  const first = order[0];
+  const chunks = [];
+  for (let s = first; s <= order[order.length - 1]; s += 60) chunks.push([s, s + 59]);
+  const sorted = await Promise.all(chunks.map(async ([a, b]) => {
+    const j = await run('sorter', stamp(a), `Transcript chunk ${stamp(a)} to ${stamp(Math.min(b, order[order.length - 1]))}:\n${textFor(a, b)}`);
+    return { from: stamp(a), to: stamp(b), notes: j };
+  }));
+  const sorterCost = total;
+  if (sorted.some(s => !s.notes)) { console.error('a sorter returned no JSON; stopping before the writer'); process.exit(1); }
+  if (total >= maxSpend) { console.error(`spend cap $${maxSpend} reached before the writer`); process.exit(1); }
+  const w = await run('writer', 'night', `Session ran ${stamp(first)} to ${stamp(order[order.length - 1])}. Sorters' notes, one per hour chunk:\n${JSON.stringify(sorted, null, 1)}`);
+  const titles = { session_log: 'Session log', xp_per_pc: 'XP per PC', feedback_card: 'Feedback card', group_chat: 'Group chat highlights', previously_on: 'Previously on', prep_skeleton: 'Prep skeleton' };
+  const md = [
+    `# Night Shift draft`, '',
+    `Sorters: ${chunks.length} chunks, $${sorterCost.toFixed(3)}. Writer: $${(total - sorterCost).toFixed(3)}. Total $${total.toFixed(3)}.`, '',
+    ...(w ? Object.entries(titles).flatMap(([k, t]) => [`## ${t}`, '', w[k] || '(empty)', '']) : ['(writer returned no JSON)']),
+    '---', '## Sorter notes (raw)', '', '```json', JSON.stringify(sorted, null, 1), '```', '',
+  ].join('\n');
+  fs.writeFileSync(path.join(outDir, 'nightshift.md'), md);
+  fs.writeFileSync(path.join(outDir, 'nightshift.json'), JSON.stringify({ sorted, writer: w, spend }, null, 1) + '\n');
+  console.log(`nightshift: ${chunks.length} sorters $${sorterCost.toFixed(3)}, writer $${(total - sorterCost).toFixed(3)}, total $${total.toFixed(3)}\nwritten to ${outDir}`);
   process.exit(0);
 }
 
