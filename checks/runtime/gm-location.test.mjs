@@ -351,8 +351,10 @@ await test('B21: a Secure label that says "the target" stays true when the ★ s
 
 /* Byte-identity (the generator review, 16/10/2026): generate() is the vault's roll, so the fixes never change it. These
    digests were taken from location.js at 7fce4b9 over the fixture (every target x district x mix, 3 seeds each, then a
-   200-roll run sharing one memory); a change here changes a stored roll. Change them only with the fixture. */
+   200-roll run sharing one memory); a change here changes a stored roll. Change them only with the fixture.
+   Schema 2 (21/10/2026) added fields and no draws: the digest is taken with those fields off, so it still holds. */
 const LOC_DIGEST = '468 4cdf81bd0df501ed98ab409e986326e680b8a0a0f45f98f84cc1b94009c10476';
+const preSchema2 = o => { o = clone(o); delete o.schema; for (const v of o.vectors) { delete v.room; delete v.level; delete v.means; } return o; };
 await test('byte-identity: generate() over the fixture hashes to the digest taken before the review fixes', () => {
   const h = createHash('sha256');
   const T = FIX.T, targets = [''].concat(T.targetNames), districts = [''].concat(T.district.map(d => d[0]));
@@ -360,12 +362,38 @@ await test('byte-identity: generate() over the fixture hashes to the digest take
   let n = 0;
   for (const target of targets) for (const district of districts) for (const mix of [false, true]) for (let s = 0; s < 3; s++) {
     const opts = { target, district, mix, approach: approaches[(n + s) % approaches.length], faction: factions[(n * 7 + s) % factions.length] };
-    h.update(JSON.stringify(L.generate(FIX, opts, { seed: (s * 2654435761 + n * 97) >>> 0, mem: {} })) + '\n'); n++;
+    h.update(JSON.stringify(preSchema2(L.generate(FIX, opts, { seed: (s * 2654435761 + n * 97) >>> 0, mem: {} }))) + '\n'); n++;
   }
   const mem = {};
-  for (let i = 0; i < 200; i++) h.update(JSON.stringify(L.generate(FIX, { faction: factions[i % factions.length], mix: i % 3 === 0 }, { seed: i + 1, mem })) + '\n');
+  for (let i = 0; i < 200; i++) h.update(JSON.stringify(preSchema2(L.generate(FIX, { faction: factions[i % factions.length], mix: i % 3 === 0 }, { seed: i + 1, mem }))) + '\n');
   h.update(JSON.stringify(mem));
   assert.equal(n + ' ' + h.digest('hex'), LOC_DIGEST, 'the rolls changed');
+});
+
+/* Schema 2 (the map kit's INTEGRATION.md §3): the front carries no fields; the service side's room is the room its
+   words name and one of the roll's rooms, or null; the back route has no room, and its level and means come from
+   the circulation table beside each entry (the fixture's invented entries have none, so the vault's six are tried
+   through a copy of the fixture that uses them). */
+await test('schema 2: the ways in say where they land', () => {
+  const VAULT_CIRC = ['circular stairs and ladders', 'a secret door', 'catwalks', 'skylights', 'a balcony', 'a cellar'];
+  const LEVELS = ['roof', 'upper', 'street', 'below'];
+  const P = { T: Object.assign({}, FIX.T, { circulation: VAULT_CIRC }), extra: FIX.extra };
+  let rooms = 0, backs = 0;
+  for (let s = 1; s <= 300; s++) {
+    const o = L.generate(P, { mix: s % 3 === 0 }, { seed: s * 7919, mem: {} }), [f, sv, bk] = o.vectors;
+    assert.equal(o.schema, 2);
+    assert.ok(!('room' in f) && !('level' in f) && !('means' in f), 'the front needs nothing');
+    if (sv.room !== null) {
+      rooms++;
+      assert.ok(o.rooms.some(r => r.name === sv.room), 'the service room is one of the roll\'s rooms');
+      assert.equal('In through the ' + sv.room.toLowerCase() + '.', sv.how, 'and the one its words name');
+    }
+    assert.equal(bk.room, null);
+    assert.ok(LEVELS.includes(bk.level) && typeof bk.means === 'string', 'the back route says its floor and means');
+    assert.ok(VAULT_CIRC.some(c => bk.how.toLowerCase().startsWith(c)), bk.how);
+    backs++;
+  }
+  assert.ok(rooms > 20 && backs === 300, 'service rooms named: ' + rooms);
 });
 
 /* ---------- the player leak test ---------- */
