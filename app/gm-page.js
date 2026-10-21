@@ -1405,7 +1405,7 @@
     var g = gmApi(), A = W.B68GmAssist, me = S;
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
-    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); } }); } catch (e) { me.assist = null; }
+    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); } }); } catch (e) { me.assist = null; }
   }
   function loadShown() {
     var g = gmApi(), me = S; if (!g || typeof g.display !== 'function' || AM.displayRead) return;
@@ -1863,7 +1863,7 @@
   function renderRack() {
     var box = $q('#gm-rack'); if (!box) return;
     var r = S && S.rack, vo = S && S.voice;
-    var vh = (vo ? voiceHtml(vo) : '') + (S && S.stall ? stallHtml(S.stall) : '') + (S && S.offers && S.offers.length ? S.offers.map(offerHtml).join('') : '');
+    var vh = (vo ? voiceHtml(vo) : '') + (S && S.stall ? stallHtml(S.stall) : '') + (S && S.meanwhile ? meanwhileHtml(S.meanwhile) : '') + (S && S.offers && S.offers.length ? S.offers.map(offerHtml).join('') : '');
     if (!r) { box.innerHTML = vh; return; }
     var pre = r.pre, used = { one_three: pre && pre.kinds.onetothree.used, four_five: pre && pre.kinds.fourfive.used };
     var h = '<div class="gm-rack-h"><span class="gm-lab">Rack</span><span class="gm-dim">Blade, fitted to the scene · ' + esc(pre.pos) + '</span>' +
@@ -1898,6 +1898,22 @@
     if (!isObj(v) || !str(v.offer).trim()) { if (v === null && S.stall) { S.stall = null; renderRack(); } return; }
     S.stall = { kind: str(v.kind) === 'clue' ? 'Clue' : 'Complication', offer: str(v.offer).trim(), why: str(v.why).trim(), at: str(v.at) };
     renderRack();
+  }
+  /* Meanwhile: on a scene change, one faction cutaway the GM can narrate (what a faction is doing off-screen), with the clock it moves and a
+     suggested tick. It only suggests: nothing here ticks a clock. Like Stall it lands in the Rack, needs Listening on and the cap not reached,
+     and stays until Clear or the next cutaway. */
+  function setMeanwhile(v) {
+    if (!S) return;
+    if (!isObj(v) || !str(v.cutaway).trim()) { if (v === null && S.meanwhile) { S.meanwhile = null; renderRack(); } return; }
+    var t = +v.ticks;
+    S.meanwhile = { faction: str(v.faction).trim(), cutaway: str(v.cutaway).trim(), clock: str(v.clock).trim(), ticks: t === 1 || t === 2 ? t : 0, why: str(v.why).trim(), at: str(v.at) };
+    renderRack();
+  }
+  function meanwhileHtml(m) {
+    var tick = m.clock ? 'Clock: <b>' + esc(m.clock) + '</b> · suggest ' + (m.ticks ? '+' + m.ticks + ' (your call)' : 'no tick') + (m.why ? ' · ' + esc(m.why) : '') : '';
+    return '<div class="gm-meanwhile"><div class="gm-rack-h"><span class="gm-lab">Meanwhile</span><span class="gm-dim">' + esc(m.faction || 'a faction') + '</span>' +
+      '<button type="button" class="chip sm" data-gm="meanwhileclear" title="Drops this cutaway">Clear</button></div>' +
+      '<p class="gm-rack-read">' + esc(m.cutaway) + '</p>' + (tick ? '<p class="gm-dim gm-rack-w">' + tick + '</p>' : '') + '</div>';
   }
   function stallHtml(st) {
     return '<div class="gm-stall"><div class="gm-rack-h"><span class="gm-lab">Stall</span><span class="gm-dim">' + esc(st.kind) + '</span>' +
@@ -3910,6 +3926,7 @@
       case 'rackclear': rackClear(); break;
       case 'voiceclear': S.voice = null; renderRack(); break;
       case 'stallclear': S.stall = null; renderRack(); break;
+      case 'meanwhileclear': S.meanwhile = null; renderRack(); break;
       case 'ho-show': showHandout(b.getAttribute('data-id')); break;
       case 'offer-show': { var oid = b.getAttribute('data-id'); showHandout(oid).then(function (ok) { if (ok) dropOffer(oid); }); break; }
       case 'offer-dismiss': { var did = b.getAttribute('data-id'); hoDone(did); dropOffer(did); break; }

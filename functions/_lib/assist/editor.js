@@ -8,6 +8,7 @@
 // `recent` is the cards the GM was already shown: [{ at (ms), keys: [string] }], read from gm_assist_log by the caller.
 
 import { isRepeatSlip, slipKeys, REPEAT_WINDOW_MS } from './conductor.js';
+import { capStory } from './prompts.js';
 
 export const CARD_GAP_MS = 5 * 60 * 1000;     // at most one card in this long
 export const STALE_MS = 4 * 60 * 1000;        // a held-back Ref card older than this is no longer worth showing
@@ -182,4 +183,31 @@ export function toStall(json, { recent = [], now = 0 } = {}) {
   const offer = clip(json.offer, 400), k = 'stall:' + norm(offer).slice(0, 80);
   if (!offer || k === 'stall:' || seenKeys(recent, now, REPEAT_WINDOW_MS).has(k)) return null;
   return { kind: ['complication', 'clue'].includes(json.kind) ? json.kind : 'complication', offer, why: clip(json.why_now, 200), keys: [k] };
+}
+
+// ---------- Scribe and Meanwhile ----------
+
+/**
+ * The Scribe's JSON -> { story, corrections } or null (no story, or an empty one). The story is capped at STORY_MAX; a reply that
+ * would shrink an existing story to almost nothing is refused, so a bad run cannot wipe the night's memory. prior: the story it was given.
+ */
+export function toScribe(json, prior = '') {
+  if (!json || typeof json !== 'object' || typeof json.story !== 'string') return null;
+  const story = capStory(json.story);
+  if (!story) return null;
+  if (prior && story.length < Math.min(400, prior.length) / 4) return null;
+  const corrections = (Array.isArray(json.corrections) ? json.corrections : []).filter((c) => typeof c === 'string' && c.trim()).slice(0, 12).map((c) => clip(c, 120));
+  return { story, corrections };
+}
+
+/**
+ * The Meanwhile seat's JSON -> { faction, cutaway, clock, ticks, why } or null (nothing relevant, or no cutaway). The tick is only
+ * a suggestion: a whole number 0 to 2, anything else reads as 0. It goes to the Rack, never the card slot.
+ */
+export function toMeanwhile(json) {
+  if (!json || typeof json !== 'object') return null;
+  const cutaway = clip(json.cutaway, 600);
+  if (!cutaway) return null;
+  const t = json.suggest_ticks;
+  return { faction: clip(json.faction, 80), cutaway, clock: clip(json.clock, 100), ticks: Number.isInteger(t) && t >= 1 && t <= 2 ? t : 0, why: clip(json.why, 200) };
 }

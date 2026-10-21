@@ -10,7 +10,7 @@
 //
 // Which notes: the rules and the cast have fixed places in the vault; tonight's prep is the session note the GM names.
 // The name comes from --assist-prep <vault-relative path> on gm-pack.mjs, else from gm-private/assist-config.json
-// ({ "prep": "<vault-relative path>", "rules": "...", "cast": "..." }; every key optional), which the GM's PC supplies.
+// ({ "prep": "<vault-relative path>", "rules": "...", "cast": "...", "factions": "..." }; every key optional), which the GM's PC supplies.
 // With neither there is no prep in the prefix and the build says so.
 
 import fs from 'node:fs';
@@ -24,6 +24,7 @@ export const NPC_BLOCK_NAME = 'npc-how-to-play.md';
 export const PLAYERS_NAME = 'players.md';
 export const NEVER_NAME = 'never-reveal.md';
 export const HANDOUTS_NAME = 'handouts.md';
+export const FACTIONS_NAME = 'factions.md';
 export const CHARACTERS = GROUP + '/Characters';
 export const TOKEN_WARN = 90000;          // Haiku's price rises above 100k prompt tokens; warn well before it
 export const CHARS_PER_TOKEN = 3.5;
@@ -47,7 +48,7 @@ export function readConfig(file) {
   try { c = JSON.parse(readText(file)); } catch (e) { throw new Error('assist config ' + path.basename(file) + ' is not valid JSON: ' + e.message); }
   if (!c || typeof c !== 'object' || Array.isArray(c)) throw new Error('assist config ' + path.basename(file) + ' must be a JSON object');
   const out = {};
-  for (const k of ['prep', 'rules', 'cast']) {
+  for (const k of ['prep', 'rules', 'cast', 'factions']) {
     if (c[k] === undefined) continue;
     if (typeof c[k] !== 'string' || !c[k].trim()) throw new Error('assist config: ' + k + ' must be a vault-relative path');
     out[k] = c[k].trim();
@@ -250,6 +251,88 @@ export function handoutsText(items) {
   return ['# Handouts', '', 'Props the GM can show the table. Each line is an id, a title and the cue for the moment it belongs to.', '', ...rows, ''].join('\n');
 }
 
+// ---------- the factions block ----------
+// The Meanwhile seat needs the factions: each one's name, tier, standing with the crew and clocks, kept short. It is read from the
+// campaign's faction board in the vault: the note in the Group campaign folder with "faction" in its name (or "factions" in
+// gm-private/assist-config.json). Conventions (heading-free, by table header): a table with Faction, Tier and Status columns
+// (the board), and a table with Faction, Goal and Clock columns (the live clocks). Nothing is guessed: a cell that is not there is left out.
+const CELL_MAX = 70, TICKS_MAX = 90;
+const stripLinks = (s) => String(s).replace(/\[\[([^\]|]+\|)?([^\]]+)\]\]/g, '$2').replace(/\*\(GM only\)\*/gi, '').replace(/[*_`]/g, '').replace(/\s+/g, ' ').trim();
+const clipCell = (s, n) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s);
+// the status cell is "+1 *(confirmed 01/01/2030)*" or "0 → **−2**": keep the figure, drop the aside
+const statusOf = (s) => clipCell(stripLinks(String(s).replace(/\*\([^)]*\)\*/g, '').replace(/\([^)]*\)/g, '')), CELL_MAX);
+
+function tableRows(lines, i) {
+  const cells = (l) => l.trim().replace(/^\|/, '').replace(/\|\s*$/, '').split(/(?<!\\)\|/).map((c) => c.trim());
+  const head = cells(lines[i]).map((c) => stripLinks(c).toLowerCase());
+  const rows = [];
+  for (let j = i + 2; j < lines.length && /^\s*\|/.test(lines[j]); j++) rows.push(cells(lines[j]));
+  return { head, rows, end: i + 2 + rows.length };
+}
+
+/**
+ * The factions on a board note -> [{ name, tier, status, clocks: [{ goal, clock, ticks }] }], in the order the note gives them.
+ * A faction in the clocks table but not the board still gets an entry; names that start the same way (Acme and
+ * Acme Holdings) are one faction.
+ */
+export function extractFactions(text) {
+  const lines = String(text).split('\n'), byName = [];
+  const find = (name) => {
+    const bare = (n) => n.toLowerCase().replace(/^the\s+/, '');
+    const k = bare(name);
+    return byName.find((f) => { const g = bare(f.name); return g === k || g.startsWith(k + ' ') || k.startsWith(g + ' '); });
+  };
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (!/^\s*\|/.test(lines[i]) || !/^\s*\|[\s:|-]+\|?\s*$/.test(lines[i + 1])) continue;
+    const t = tableRows(lines, i);
+    const col = (n) => t.head.indexOf(n);
+    const fc = col('faction');
+    if (fc < 0) { i = t.end - 1; continue; }
+    if (col('tier') >= 0 && col('status') >= 0) {
+      for (const r of t.rows) {
+        const name = stripLinks(r[fc] || '');
+        if (!name || find(name)) continue;
+        byName.push({ name, tier: clipCell(stripLinks(r[col('tier')] || ''), 20), status: statusOf(r[col('status')] || ''), clocks: [] });
+      }
+    } else if (col('clock') >= 0 && (col('goal') >= 0 || col('ticks') >= 0)) {
+      for (const r of t.rows) {
+        const name = stripLinks(r[fc] || '');
+        if (!name) continue;
+        let f = find(name);
+        if (!f) { f = { name, tier: '', status: '', clocks: [] }; byName.push(f); }
+        f.clocks.push({
+          goal: clipCell(stripLinks(col('goal') >= 0 ? r[col('goal')] || '' : ''), CELL_MAX),
+          clock: clipCell(stripLinks(r[col('clock')] || ''), 30),
+          ticks: col('ticks') >= 0 ? clipCell(stripLinks(r[col('ticks')] || ''), TICKS_MAX) : '',
+        });
+      }
+    }
+    i = t.end - 1;
+  }
+  return byName;
+}
+
+/** The factions context text, or '' when there are none: one line a faction, its clocks beneath it. */
+export function factionsText(list) {
+  const fs_ = (Array.isArray(list) ? list : []).filter((f) => f && f.name);
+  if (!fs_.length) return '';
+  const out = ['# Factions', '', 'Each faction with its tier, its standing with the crew and the clocks it is running. For off-screen cutaways: suggest a tick, never decide one.', ''];
+  for (const f of fs_) {
+    out.push('- ' + f.name + (f.tier ? ' | tier ' + f.tier : '') + (f.status ? ' | standing ' + f.status : ''));
+    for (const c of f.clocks) out.push('  - clock: ' + [c.goal, c.clock, c.ticks ? 'ticks: ' + c.ticks : ''].filter(Boolean).join(' | '));
+  }
+  return out.join('\n') + '\n';
+}
+
+/** The faction board note in the Group campaign folder: a configured path, else the first top-level note with "faction" in its name. -> vault-relative path or ''. */
+export function findFactionNote(vault, configured = '') {
+  if (configured) return configured;
+  const d = inside(vault, GROUP);
+  if (!fs.existsSync(d)) return '';
+  const hit = fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith('.md') && /faction/i.test(e.name)).map((e) => e.name).sort((a, b) => a.localeCompare(b))[0];
+  return hit ? GROUP + '/' + hit : '';
+}
+
 /** Character -> player from PC notes' `player:` property (the note's `character:` property, else its file name). */
 export function playersFromNotes(vault, dir = CHARACTERS) {
   const d = inside(vault, dir), out = {};
@@ -287,10 +370,10 @@ export function playersText(map) {
 /**
  * Build the assist part. opts: { vault, exportedAt, warn, prep (vault-relative), rules, cast, config (parsed) }.
  * After the rules and cast come the NPC cards' How to play blocks and the player table (from `player:` on PC notes, overridden by
- * `playersFile`, gm-private/players.json), then the handouts list (`handouts`: the pack's handouts part, if any); tonight's prep stays last. Returns null when no note could be read. A missing note is a warning, not a failure, except a prep path the GM named
+ * `playersFile`, gm-private/players.json), then the handouts list (`handouts`: the pack's handouts part, if any), then the factions (name, tier, standing, clocks; from the Group campaign's faction board), then never-reveal; tonight's prep stays last. Returns null when no note could be read. A missing note is a warning, not a failure, except a prep path the GM named
  * explicitly (a typo there would quietly leave tonight's prep out), which throws.
  */
-export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, cast, config = {}, playersFile = '', handouts = null }) {
+export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, cast, config = {}, playersFile = '', handouts = null, factions }) {
   const want = [
     ['rules', rules || config.rules || DEFAULT_RULES, false],
     ['cast', cast || config.cast || DEFAULT_CAST, false],
@@ -312,6 +395,13 @@ export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, c
       // handouts: a stable block (it changes only when the handouts do), so it sits with the others, ahead of never-reveal and prep
       const ht = handoutsText(handouts && handouts.items);
       if (ht) { blocks.push(contextBlock(HANDOUTS_NAME, ht)); used.push({ rel: HANDOUTS_NAME, sha: sha(ht) }); stats.handouts = handouts.items.length; }
+      // factions: for Meanwhile. It changes between sessions, not within one, so it sits with the stable blocks, ahead of never-reveal and prep
+      const fRel = findFactionNote(vault, factions || config.factions || '');
+      if (fRel && fs.existsSync(inside(vault, fRel))) {
+        const list = extractFactions(readText(inside(vault, fRel))), ft = factionsText(list);
+        if (ft) { blocks.push(contextBlock(FACTIONS_NAME, ft)); used.push({ rel: FACTIONS_NAME, sha: sha(ft) }); stats.factions = list.length; stats.factionClocks = list.reduce((n, f) => n + f.clocks.length, 0); }
+        else warn('assist: the faction note ' + fRel + ' has no table with Faction, Tier and Status (or Faction, Goal and Clock) columns: Meanwhile has no factions to draw on');
+      } else if (factions || config.factions) warn('assist: the faction note ' + (factions || config.factions) + ' is not in the vault: Meanwhile has no factions to draw on');
       // never-reveal: after the stable blocks, before tonight's prep. The NPC part is stable between nights; tonight's part follows it.
       const nv = collectNever(vault);
       let prepNever = null, noMust = false;

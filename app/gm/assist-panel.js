@@ -19,6 +19,7 @@
          onStage   () -> the name of the NPC on stage ('' when none): sent with each tick, and Voice only runs when it is there
          onVoice   (voice | null): Voice's lines from a tick ({ who, want, lines, at }); null clears them (Listening off, the cap)
          onStall   (stall | null): Stall's offer from a tick ({ kind, offer, why, at }); null clears it (Listening off, the cap)
+         onMeanwhile (cutaway | null): Meanwhile's faction cutaway from a tick ({ faction, cutaway, clock, ticks, why, at }); null clears it (Listening off, the cap)
          onHandout (handout): a handout the Mystery keeper suggests, from a tick ({ id, why, at }); the page offers it in the Rack
          dots      () -> 0-4 | null: the Dots chip's value; the "Fit it" form sends it as `dots` when set
          onNote    the page's capture: "Note it" on a Ledger update and "Keep" on a card file their text as a Moment (the update
@@ -320,6 +321,7 @@
         if (gone) return;
         if (isObj(res) && isObj(res.voice)) sendVoice(res.voice); else if (!npc) sendVoice(null);   /* nobody on stage: nothing from Voice shows */
         if (isObj(res) && isObj(res.stall) && str(res.stall.offer).trim()) sendStall(res.stall);
+        if (isObj(res) && isObj(res.meanwhile) && str(res.meanwhile.cutaway).trim()) sendMeanwhile(res.meanwhile);
         if (isObj(res) && isObj(res.handout) && str(res.handout.id).trim() && typeof o.onHandout === 'function') { try { o.onHandout({ id: str(res.handout.id).trim(), why: str(res.handout.why), at: str(res.handout.at) }); } catch (e) {} }
         var fresh = absorb(st, res, new Date().toISOString());
         st.error = ''; st.checkedAt = hhmm(new Date().toISOString());
@@ -349,7 +351,8 @@
     /* ---------- Voice (the NPC on stage; its lines go to the page's Rack, not to this box) ---------- */
     function onStageName() { try { return typeof o.onStage === 'function' ? str(o.onStage()).replace(/\s+/g, ' ').trim().slice(0, NPC_MAX) : ''; } catch (e) { return ''; } }
     function sendVoice(v) { if (typeof o.onVoice === 'function') { try { o.onVoice(v); } catch (e) {} } }
-    function sendNone() { sendVoice(null); sendStall(null); }   /* Listening off, the cap: nothing from Voice or Stall shows */
+    function sendNone() { sendVoice(null); sendStall(null); sendMeanwhile(null); }   /* Listening off, the cap: nothing from Voice, Stall or Meanwhile shows */
+    function sendMeanwhile(v) { if (typeof o.onMeanwhile === 'function') { try { o.onMeanwhile(v); } catch (e) {} } }
     function sendStall(v) { if (typeof o.onStall === 'function') { try { o.onStall(v); } catch (e) {} } }
     /* the Another button needs what the Fixer's does: a box that is set up, not capped, not a phone */
     function canAnother() { return canFit() && !!gm && typeof gm.assistAnother === 'function'; }

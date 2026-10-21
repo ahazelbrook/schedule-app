@@ -13,7 +13,8 @@
 //   6. Stall wakes on the Tripwire's stall flag; Mystery on clue_mention; Showrunner on every tick ('tick' is added by the
 //      endpoint, not a Tripwire flag) and the 10-minute cooldown paces it. Stall's offer goes to the Rack like Voice's lines;
 //      Showrunner's and Mystery's go through the Editor, behind Ref and Clerk, under the same one-card-per-five-minutes gap.
-//   7. A Ref card that repeats the same slip within 10 minutes is suppressed (Phase 0: Ref repeats itself on adjacent
+//   7. Scribe (the story so far) wakes on every tick, every 5 minutes, until 85%; Meanwhile on scene_change, every 20 minutes, until
+//      60%. Silence (silenceFlag, above) raises `stall` in code. A Ref card that repeats the same slip within 10 minutes is suppressed (Phase 0: Ref repeats itself on adjacent
 //      minutes). isRepeatSlip() is that rule; the Editor uses it too.
 
 import { WAKES } from './seats.js';
@@ -39,7 +40,38 @@ export const COOLDOWN_MS = {
   showrunner: 10 * 60 * 1000,
   mystery: 15 * 60 * 1000,
   meanwhile: 20 * 60 * 1000,
+  scribe: 5 * 60 * 1000,            // the story so far is folded every five minutes of new talk
 };
+
+// ---------- the silence flag (code only, no model) ----------
+// The Tripwire reads new talk, so a table that has gone truly quiet gives it nothing to read and Stall never wakes. When Listening
+// is on and the iPad is hearing, and no line has arrived for SILENCE_MS, the endpoint raises `stall` itself. Stall's own 5-minute
+// cooldown (canRun) still applies, and it stops after SILENCE_GIVE_UP_MS: a table that has been silent that long has packed up.
+export const SILENCE_MS = 4 * 60 * 1000;
+export const SILENCE_GIVE_UP_MS = 30 * 60 * 1000;
+export const LISTENING_FRESH_MS = 2 * 60 * 1000;     // the iPad reports at least once a minute; an older report is not "hearing"
+
+/**
+ * Is the iPad listening right now? doc: the control document (functions/_lib/stt.js). The GM wants it on, the iPad says it is
+ * listening (not idle, stopped, reconnecting or errored: a dead mic is not a silent table) and said so recently.
+ */
+export function isListening(doc, now) {
+  if (!doc || doc.want !== 'on') return false;
+  const s = doc.status || {};
+  if (s.state !== 'listening') return false;
+  const at = Date.parse(s.at);
+  return Number.isFinite(at) && Number.isFinite(now) && now - at <= LISTENING_FRESH_MS;
+}
+
+/**
+ * Should the endpoint raise `stall` for silence? -> { silent: boolean, minutes } . lastLineAt: ms of the newest transcript line (null
+ * when none). Silent only when Listening is on, there has been talk, and the gap is between SILENCE_MS and SILENCE_GIVE_UP_MS.
+ */
+export function silenceFlag({ listening, lastLineAt, now }) {
+  if (!listening || !Number.isFinite(lastLineAt) || !Number.isFinite(now)) return { silent: false, minutes: 0 };
+  const gap = now - lastLineAt;
+  return { silent: gap >= SILENCE_MS && gap <= SILENCE_GIVE_UP_MS, minutes: Math.floor(gap / 60000) };
+}
 
 /** 'all' | 'reduced' | 'core' | 'off' for tonight's spend against the cap (dollars). A cap of 0 or less is 'off'. */
 export function budgetTier(spent, cap = DEFAULT_CAP) {

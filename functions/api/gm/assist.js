@@ -63,7 +63,19 @@
 //
 // A seat call can take 15-30 s (the Fixer). That is wall-clock waiting on the provider, which Workers do not bill as CPU.
 //
-// The Scribe's rolling "story so far" is Phase 2: the Tap seats read the last four minutes raw for now.
+//
+// The Scribe (seat `scribe`, Haiku, low) folds the talk since its last run into a rolling "story so far" about every five minutes of new
+// talk (cooldown 5 minutes on a tick that has new talk; it runs until 85% of the cap). The story is capped at 8000 characters (about 2k
+// tokens) and kept on the Scribe's own log row (card.story, card.through = the seq of the last line it read; json_extract reads it back,
+// so there is no migration and no parsing here). A new session starts a new story. The Showrunner, the Mystery keeper and Meanwhile get it
+// appended to their instructions, AFTER the prefix's cache breakpoint; it is never in the prefix. Nothing from the Scribe shows.
+// Meanwhile (seat `meanwhile`, Sonnet, low) wakes on the Tripwire's scene_change, at most every 20 minutes, until 60%. It reads the story,
+// the last 8 minutes of talk, the table's open clocks (campaigns.doc $.clocks, read by json_extract, at most 12 names) and the factions
+// block of the prefix, and answers as `meanwhile: { faction, cutaway, clock, ticks, why, at }`: one off-screen cutaway for the Rack with
+// a SUGGESTED tick (0-2) that nothing here applies.
+// The silence flag: a tick with no new talk, with Listening on (the control document says want on and the iPad reports listening within
+// the last two minutes), the newest line 4 to 30 minutes old and Stall past its 5-minute cooldown, runs Stall without the Tripwire (flags
+// `stall,silence`). Listening off, the iPad stopped or errored, or the cap reached: nothing runs.
 
 import { getDb } from '../../_lib/db.js';
 import { HttpError, json, methodNotAllowed, readJsonObject, campaignOf } from '../../_lib/http.js';
@@ -72,9 +84,10 @@ import { loadStt, readLines } from '../../_lib/stt.js';
 import { makeClient, callSeat } from '../../_lib/assist/claude.js';
 import { SEATS, WAKES } from '../../_lib/assist/seats.js';
 import { cleanItem, verdictOf, unknownVerdict } from '../../_lib/assist/gatekeeper.js';
-import { gatekeeperUser, ITEM_MAX, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX } from '../../_lib/assist/prompts.js';
-import { DEFAULT_CAP, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS } from '../../_lib/assist/conductor.js';
-import { toCandidate, toVoice, toAnother, toStall, toHandout, handoutIds, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
+import { gatekeeperUser, ITEM_MAX, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX,
+  STORY_SEATS, storyBlock, scribeUser, SCRIBE_SLICE_MAX, SCRIBE_FIRST_MIN, MEANWHILE_MIN, meanwhileUser, cleanClocks, silenceUser } from '../../_lib/assist/prompts.js';
+import { DEFAULT_CAP, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS, isListening, silenceFlag } from '../../_lib/assist/conductor.js';
+import { toCandidate, toVoice, toAnother, toStall, toScribe, toMeanwhile, toHandout, handoutIds, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
 
 const BODY_MAX = 8 * 1024;
@@ -229,6 +242,26 @@ async function lastKnown(db, campaign, now) {
   return known.filter((k) => typeof k === 'string' && k.trim()).slice(0, KNOWN_MAX).map((k) => k.replace(/\s+/g, ' ').trim().slice(0, KNOWN_ITEM_MAX));
 }
 
+/** The Scribe's last saved story tonight: { story, through (seq of the last line it read), session } or null. json_extract keeps the parsing in D1. */
+async function lastStory(db, campaign, now) {
+  const since = new Date(now - NIGHT_MS).toISOString();
+  const r = await db.prepare("SELECT json_extract(card, '$.story') AS story, json_extract(card, '$.through') AS through, session FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'scribe' AND json_extract(card, '$.story') IS NOT NULL ORDER BY id DESC LIMIT 1").bind(campaign, since).first();
+  if (!r || typeof r.story !== 'string' || !r.story.trim()) return null;
+  return { story: r.story, through: Number.isInteger(r.through) ? r.through : 0, session: r.session || '' };
+}
+
+/** The table's open clocks (names only, up to a dozen): the campaign document's, read with json_extract so D1 does the digging. */
+async function tableClocks(db, campaign) {
+  const r = await db.prepare("SELECT json_extract(doc, '$.clocks') AS c FROM campaigns WHERE id = ?1").bind(campaign).first();
+  return cleanClocks(r && typeof r.c === 'string' ? parseJson(r.c, []) : []);
+}
+
+/** The newest transcript line (not a mark): { at (ms), session } or null. */
+async function lastLine(db, campaign) {
+  const r = await db.prepare("SELECT at, session FROM gm_transcript WHERE campaign = ?1 AND kind = 'line' ORDER BY seq DESC LIMIT 1").bind(campaign).first();
+  return r ? { at: Date.parse(r.at), session: r.session || '' } : null;
+}
+
 /** Ref cards the Editor held back and that are not stale yet: [{ at (ms), card }]. */
 async function heldRefs(db, campaign, now) {
   const since = new Date(now - STALE_MS).toISOString();
@@ -302,7 +335,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const stt = await loadStt(db, campaign);
     const speakers = stt.doc.speakers || {};
     const errors = [];
-    let thisTick = 0, fileMissing = false;
+    let thisTick = 0, fileMissing = false, storyText = '';   // storyText: the Scribe's story, appended to the instructions of the seats in STORY_SEATS (after the cache breakpoint)
 
     // one seat call; logging is the caller's job (the Tap rows wait for the Editor's verdict)
     async function run(name, user) {
@@ -311,7 +344,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const started = now();
       const secs = () => Math.round(Math.max(0, now() - started) / 100) / 10;
       try {
-        const instructions = extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions;
+        const instructions = (extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions) + (STORY_SEATS.includes(name) ? storyBlock(storyText) : '');
         const r = await call(client, { ...cfg, instructions, prefixFileId: fileId, user });
         thisTick += r.cost || 0;
         if (r.stop === 'refusal' || r.stop === 'max_tokens') r.json = null;     // a refusal or a reply cut off at the limit shows nothing, never a half card; the row records it
@@ -325,7 +358,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       }
     }
     const spend = () => ({ tonight: dollars(spentBefore + thisTick), cap, tier: budgetTier(spentBefore + thisTick, cap), tick: dollars(thisTick) });
-    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
+    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.meanwhile ? { meanwhile: more.meanwhile } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
 
     if (action[1] === 'gatekeeper') {
       const item = gateItem.item;
@@ -397,7 +430,23 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (tier === 'off' || legacy) return done([], [], last);
     const fresh = after !== null ? (await readLines(db, campaign, { after })).lines : tail.filter((l) => t0 - Date.parse(l.at) <= FIRST_SLICE_MS);
     const freshText = formatLines(fresh, speakers);
-    if (!freshText) return done([], [], last);
+    if (!freshText) {
+      // Nothing new to read. A table gone truly quiet gives the Tripwire nothing to flag, so code raises `stall` itself: Listening on, the
+      // iPad hearing, no line for SILENCE_MS (conductor.js). Stall's own cooldown and the ladder still apply.
+      if (!isListening(stt.doc, t0)) return done([], [], last);
+      const ll = await lastLine(db, campaign);
+      const sil = silenceFlag({ listening: true, lastLineAt: ll ? ll.at : null, now: t0 });
+      if (!sil.silent) return done([], [], last);
+      if (!canRun('stall', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight, tier }).ok) return done([], [], last);
+      const before = (await readLines(db, campaign, { since: new Date(ll.at - TAP_WINDOW_MS).toISOString() })).lines;
+      const sx = await run('stall', silenceUser({ minutes: sil.minutes, since: hhmm(ll.at), stamp: hhmm(t0), talk: formatLines(before, speakers) }));
+      if (fileMissing) return done([], [], last);
+      const sat = new Date(now()).toISOString(), sflags = ['stall', 'silence'];
+      const st = sx.r ? toStall(sx.r.json, { recent: await shownVoice(db, campaign, t0), now: t0 }) : null;
+      await logRow(db, campaign, { at: sat, session: ll.session, seat: 'stall', cfg: sx.cfg, usage: sx.r && sx.r.usage, cost: sx.r && sx.r.cost, flags: sflags, timing: sx.timing,
+        card: sx.r ? { out: sx.r.json, silence: 1, ...(st ? { stall: 1, text: st.offer, keys: st.keys } : {}) } : { error: errors.find((e) => e.seat === 'stall')?.error || 'no reply', silence: 1 } }).run();
+      return done([], sflags, last, [], { stall: st ? { kind: st.kind, offer: st.offer, why: st.why, at: sat } : null });
+    }
 
     const lastRun = await lastRuns(db, campaign, t0);
     const gate = canRun('tripwire', { now: t0, lastRun, inFlight, tier });
@@ -414,8 +463,23 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const verdict = decide({ flags: flags.concat('tick'), now: t0, lastRun, inFlight, spent: spentBefore + thisTick, cap, wakes, onStage: !!npc, follow: followsThrough(prev, t0) });
     // a quiet tick still releases a Ref card the gap held back (one cheap read, only when no seat woke): without it a slip held behind
     // another seat's card would go stale before any flag woke a seat again
+    // the Scribe folds the talk since the story's last line into the story; with nothing new to fold it does not run
+    let wake = verdict.seats.slice(), prior = '', scribeThrough = 0, scribeTurn = '';
+    const storyRow = wake.some((n) => n === 'scribe' || STORY_SEATS.includes(n)) ? await lastStory(db, campaign, t0) : null;
+    const curSession = fresh.length ? fresh[fresh.length - 1].session : session;
+    if (storyRow && storyRow.session === curSession) prior = storyRow.story;
+    if (wake.includes('scribe')) {
+      const slice = prior && storyRow.through > 0
+        ? (await readLines(db, campaign, { after: storyRow.through })).lines
+        : (await readLines(db, campaign, { since: new Date(t0 - SCRIBE_FIRST_MIN * 60 * 1000).toISOString() })).lines;
+      let talk = formatLines(slice, speakers);
+      if (talk.length > SCRIBE_SLICE_MAX) { talk = talk.slice(talk.length - SCRIBE_SLICE_MAX); talk = talk.slice(talk.indexOf('\n') + 1); }
+      if (!talk) wake = wake.filter((n) => n !== 'scribe');
+      else { scribeTurn = scribeUser({ story: prior, stamp: hhmm(t0), talk }); scribeThrough = slice.length ? slice[slice.length - 1].seq : storyRow ? storyRow.through : 0; }
+    }
+    storyText = prior;
     let held = null;
-    if (!verdict.seats.length) {
+    if (!wake.length) {
       held = await heldRefs(db, campaign, t0);
       if (!held.length) return done([], flags, last);
     }
@@ -425,17 +489,19 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const voiceTurn = voiceUser({ npc, stamp: hhmm(t0), talk: recentText });
     // Showrunner and Mystery read a longer stretch than the Tap's four minutes (the Worker cannot afford the whole night): one read serves both
     const turns = {};
-    if (verdict.seats.includes('showrunner') || verdict.seats.includes('mystery')) {
+    if (wake.includes('showrunner') || wake.includes('mystery') || wake.includes('meanwhile')) {
       const wide = (await readLines(db, campaign, { since: new Date(t0 - SHOWRUNNER_MIN * 60 * 1000).toISOString() })).lines;
-      if (verdict.seats.includes('showrunner')) turns.showrunner = showrunnerUser({ stamp: hhmm(t0), talk: formatLines(wide, speakers) });
-      if (verdict.seats.includes('mystery')) {
+      if (wake.includes('showrunner')) turns.showrunner = showrunnerUser({ stamp: hhmm(t0), talk: formatLines(wide, speakers) });
+      if (wake.includes('meanwhile')) turns.meanwhile = meanwhileUser({ clocks: await tableClocks(db, campaign), stamp: hhmm(t0), talk: formatLines(wide.filter((l) => Date.parse(l.at) >= t0 - MEANWHILE_MIN * 60 * 1000), speakers) });
+      if (wake.includes('mystery')) {
         const from = t0 - MYSTERY_MIN * 60 * 1000;
         turns.mystery = mysteryUser({ stamp: hhmm(t0), talk: formatLines(wide.filter((l) => Date.parse(l.at) >= from), speakers), known: await lastKnown(db, campaign, t0) });
       }
     }
-    const all = await Promise.all(verdict.seats.map(async (name) => ({ name, ...(await run(name, name === 'voice' ? voiceTurn : turns[name] || user)) })));
+    if (scribeTurn) turns.scribe = scribeTurn;
+    const all = await Promise.all(wake.map(async (name) => ({ name, ...(await run(name, name === 'voice' ? voiceTurn : turns[name] || user)) })));
     // Voice and Stall go to the Rack, not to the Editor's card slot
-    const vx = all.find((x) => x.name === 'voice'), sx = all.find((x) => x.name === 'stall'), results = all.filter((x) => x.name !== 'voice' && x.name !== 'stall');
+    const vx = all.find((x) => x.name === 'voice'), sx = all.find((x) => x.name === 'stall'), results = all.filter((x) => !['voice', 'stall', 'scribe', 'meanwhile'].includes(x.name));
 
     const recent = await shownCards(db, campaign, t0);
     const candidates = results.map((x) => (x.r ? toCandidate(x.name, x.r.json, { recent, now: t0 }) : null));
@@ -475,10 +541,25 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       rows.push(logRow(db, campaign, { at, session, seat: 'stall', cfg: sx.cfg, usage: sx.r && sx.r.usage, cost: sx.r && sx.r.cost, flags, timing: sx.timing,
         card: sx.r ? { out: sx.r.json, ...(st ? { stall: 1, text: st.offer, keys: st.keys } : {}) } : { error: errors.find((e) => e.seat === 'stall')?.error || 'no reply' } }));
     }
+    // the Scribe's row IS the story store (no migration); Meanwhile's cutaway goes to the Rack beside Voice and Stall
+    const bx = all.find((x) => x.name === 'scribe');
+    if (bx) {
+      const sc = bx.r ? toScribe(bx.r.json, prior) : null;
+      rows.push(logRow(db, campaign, { at, session, seat: 'scribe', cfg: bx.cfg, usage: bx.r && bx.r.usage, cost: bx.r && bx.r.cost, flags, timing: bx.timing,
+        card: bx.r ? { out: bx.r.json, ...(sc ? { story: sc.story, through: scribeThrough, corrections: sc.corrections } : {}) } : { error: errors.find((e) => e.seat === 'scribe')?.error || 'no reply' } }));
+    }
+    let meanwhileOut = null;
+    const wx = all.find((x) => x.name === 'meanwhile');
+    if (wx) {
+      const mw = wx.r ? toMeanwhile(wx.r.json) : null;
+      if (mw) meanwhileOut = { ...mw, at };
+      rows.push(logRow(db, campaign, { at, session, seat: 'meanwhile', cfg: wx.cfg, usage: wx.r && wx.r.usage, cost: wx.r && wx.r.cost, flags, timing: wx.timing,
+        card: wx.r ? { out: wx.r.json, ...(mw ? { meanwhile: 1, text: mw.cutaway } : {}) } : { error: errors.find((e) => e.seat === 'meanwhile')?.error || 'no reply' } }));
+    }
     if (rows.length) await db.batch(rows);
     const cardOut = edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}) }] : [];
     const updatesOut = edit.updates.flatMap((u) => (u.items || [{ key: (u.keys || [])[0] || '', text: u.text }]).map((it) => ({ seat: 'ledger', at, key: it.key, text: it.text })));
-    return done(cardOut, flags, last, updatesOut, { voice: voiceOut, stall: stallOut, handout: handoutOut });
+    return done(cardOut, flags, last, updatesOut, { voice: voiceOut, stall: stallOut, handout: handoutOut, meanwhile: meanwhileOut });
   };
 }
 

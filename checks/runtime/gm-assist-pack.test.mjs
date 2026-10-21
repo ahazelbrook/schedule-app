@@ -121,7 +121,7 @@ await test('assist.js reads the small part (file id) and names that file in ever
   const res = await handler({ request: new Request('https://blades.example.test/api/gm/assist/tick', { method: 'POST', body: '{}' }), env: { DB: db, CAMPAIGN: 'c', ANTHROPIC_API_KEY: 'k' }, data: { me: GM } });
   const out = JSON.parse(await res.text());
   assert.equal(out.warnings, undefined);
-  assert.equal(seen.length, 2, 'the Tripwire, and the Showrunner (it wakes on every tick, once in ten minutes)');
+  assert.equal(seen.length, 3, 'the Tripwire, the Showrunner (it wakes on every tick, once in ten minutes) and the Scribe (every five minutes of new talk)');
   for (const req of seen) {
     assert.deepEqual(req.messages[0].content[0].source, { type: 'file', file_id: 'file_011TESTinvented0000' });
     assert.deepEqual(req.messages[0].content[0].cache_control, { type: 'ephemeral', ttl: '1h' });

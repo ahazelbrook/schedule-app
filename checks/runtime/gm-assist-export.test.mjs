@@ -5,8 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { buildAssist, extractHowToPlay, collectHowToPlay, playersFromNotes, readPlayersFile, mergePlayers, DEFAULT_RULES, DEFAULT_CAST, NPC_BLOCK_NAME, PLAYERS_NAME, CHARACTERS } from '../../scripts/lib/assist-export.mjs';
-import { NPCS } from '../../scripts/lib/vault.mjs';
+import { buildAssist, extractHowToPlay, collectHowToPlay, playersFromNotes, readPlayersFile, mergePlayers, DEFAULT_RULES, DEFAULT_CAST, NPC_BLOCK_NAME, PLAYERS_NAME, FACTIONS_NAME, CHARACTERS, extractFactions, factionsText, findFactionNote, readConfig, TOKEN_WARN, estimateTokens } from '../../scripts/lib/assist-export.mjs';
+import { NPCS, GROUP } from '../../scripts/lib/vault.mjs';
 
 let failed = 0, passed = 0;
 async function test(name, fn) { try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); } }
@@ -107,6 +107,80 @@ await test('no NPC folder: a warning and no NPC block; the build still works', (
   const w = []; const part = buildAssist({ vault: t2, exportedAt: 'x', warn: (m) => w.push(m), prep: PREP });
   assert.deepEqual(names(part), ['Tonight.md']);
   assert.ok(w.some((m) => /no NPC folder/.test(m)));
+});
+
+// ---------- the factions block (Meanwhile) ----------
+// An invented board: a status table with escaped-pipe wikilinks, a live clocks table, a faction only the clocks name, and long cells.
+const BOARD = [
+  '---', 'wiki: reference', '---', '# Invented faction board', '',
+  '## Status', '',
+  '| Faction | Tier | Status | Why |', '|---|---|---|---|',
+  '| [[inv-lamplighters\\|The Lamplighters]] | II W | **+1** *(confirmed by the GM 01/01/2030)* | ' + 'A very long reason that must not reach the prefix. '.repeat(10) + ' |',
+  '| [[inv-quay-guild\\|The Quay Guild]] | III | 0 → **−2** | Because. |',
+  '| [[inv-shadow\\|The Shadow Office]] *(GM only)* | ? | **hidden** | Secret. |',
+  '', '## Live faction clocks', '',
+  '| Faction | Goal | Clock | Ticks |', '|---|---|---|---|',
+  '| [[inv-quay-guild\\|Quay Guild]] | [[Seal the quay\\|Seal the quay]] | 8, **ambient** | **3** (01/01/2030, a long aside that goes on and on and on and on and on and on and on and on and on) |',
+  '| The Lamplighters | Light every lamp | 6 | 0 |',
+  '| The Salt Court | Buy the harbour | 4 | **Not tracked yet** |',
+  '', '## Elsewhere', '', '| Name | Note |', '|---|---|', '| not a faction | x |', '',
+].join('\n');
+
+await test('extractFactions: name, tier and standing from the board, clocks beneath; asides, long cells and links trimmed; a clocks-only faction kept', () => {
+  const l = extractFactions(BOARD);
+  assert.deepEqual(l.map((f) => f.name), ['The Lamplighters', 'The Quay Guild', 'The Shadow Office', 'The Salt Court']);
+  assert.deepEqual([l[0].tier, l[0].status], ['II W', '+1']);
+  assert.equal(l[1].status, '0 → −2');
+  assert.equal(l[2].status, 'hidden');
+  assert.deepEqual(l[1].clocks.map((c) => [c.goal, c.clock]), [['Seal the quay', '8, ambient']], 'Quay Guild joins The Quay Guild');
+  assert.ok(l[1].clocks[0].ticks.length <= 90 && l[1].clocks[0].ticks.startsWith('3 (01/01/2030'));
+  assert.deepEqual(l[3], { name: 'The Salt Court', tier: '', status: '', clocks: [{ goal: 'Buy the harbour', clock: '4', ticks: 'Not tracked yet' }] });
+  assert.deepEqual(extractFactions('# Nothing\n\n| A | B |\n|---|---|\n| 1 | 2 |\n'), []);
+});
+
+await test('factionsText is short: a line a faction, a line a clock, no Why column; empty gives nothing', () => {
+  const t = factionsText(extractFactions(BOARD));
+  assert.match(t, /^# Factions/);
+  assert.match(t, /- The Lamplighters \| tier II W \| standing \+1\n  - clock: Light every lamp \| 6 \| ticks: 0\n/);
+  assert.match(t, /- The Salt Court\n  - clock: Buy the harbour/);
+  assert.ok(!t.includes('very long reason') && !t.includes('Secret.'));
+  assert.ok(t.length < 1500, 'short: ' + t.length);
+  assert.equal(factionsText([]), ''); assert.equal(factionsText(null), '');
+});
+
+await test('the prefix carries factions.md after the handouts and players, before never-reveal, and prep stays last', () => {
+  put(GROUP + '/inv-factions.md', BOARD);
+  const { part } = build();
+  const n = names(part);
+  assert.deepEqual(n, [path.basename(DEFAULT_RULES), path.basename(DEFAULT_CAST), NPC_BLOCK_NAME, PLAYERS_NAME, FACTIONS_NAME, 'never-reveal.md', 'Tonight.md']);
+  assert.equal(part.src.factions, 4); assert.equal(part.src.factionClocks, 3);
+  assert.match(blockOf(part.prefix, FACTIONS_NAME), /- The Quay Guild \| tier III \| standing 0 → −2\n  - clock: Seal the quay \| 8, ambient/);
+  const withHandouts = build({ handouts: { items: [{ id: 'h1', title: 'A map', file: 'x.png' }] } }).part;
+  const nh = names(withHandouts);
+  assert.ok(nh.indexOf('handouts.md') < nh.indexOf(FACTIONS_NAME) && nh.indexOf(FACTIONS_NAME) < nh.indexOf('never-reveal.md') && nh[nh.length - 1] === 'Tonight.md');
+  assert.ok(estimateTokens(part.prefix) < TOKEN_WARN);
+});
+
+await test('the faction note: found by name in the Group folder, a config path wins, a bad or empty one warns, none is silent; the token guard still holds', () => {
+  assert.equal(findFactionNote(tmp), GROUP + '/inv-factions.md');
+  assert.equal(findFactionNote(tmp, 'Notes/Other.md'), 'Notes/Other.md');
+  const none = fs.mkdtempSync(path.join(os.tmpdir(), 'assist-fac-'));
+  assert.equal(findFactionNote(none), '');
+  assert.deepEqual(readConfig(put('cfg.json', JSON.stringify({ factions: 'Notes/F.md' }))), { factions: 'Notes/F.md' });
+  put('Notes/Bare.md', '# No tables here\n');
+  let r = build({ factions: 'Notes/Bare.md' });
+  assert.ok(r.w.some((m) => /faction note Notes\/Bare\.md has no table/.test(m)));
+  assert.ok(!names(r.part).includes(FACTIONS_NAME));
+  r = build({ factions: 'Notes/Missing.md' });
+  assert.ok(r.w.some((m) => /faction note Notes\/Missing\.md is not in the vault/.test(m)));
+  put('Notes/F2.md', BOARD);
+  r = build({ factions: 'Notes/F2.md' });
+  assert.ok(names(r.part).includes(FACTIONS_NAME));
+  // the 90k guard still fires with the block in place, and prep stays last
+  put('Notes/Huge.md', 'word '.repeat(80000));
+  r = build({ prep: 'Notes/Huge.md' });
+  assert.ok(r.w.some((m) => /prefix is about \d+k tokens \(over 90k/.test(m)), r.w.join(' | '));
+  assert.ok(names(r.part).includes(FACTIONS_NAME) && names(r.part).at(-1) === 'Huge.md');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

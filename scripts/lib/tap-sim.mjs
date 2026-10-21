@@ -60,10 +60,14 @@ export const SKIPPED = () => ({ json: null, text: '', usage: {}, cost: 0, stop: 
  *   cap          the endpoint's own nightly cap in dollars (its budget ladder drops seats as spend nears it)
  *   callHook     async (seat, args, atHHMM, client) -> callSeat-shaped result; called only for enabled seats
  *   shouldStop   () -> '' | reason, checked before every tick
+ *   clocks       [{ name, size, filled, kind }]: the table's live clocks, written into the in-memory campaign document (Meanwhile reads them)
+ *   listening    the iPad reports it is listening on every tick (default true), so a stretch of silence in the transcript can raise the
+ *                code-side silence flag for Stall; false leaves the control document without a status, as before
  *   day, offset  the date and UTC offset the lines are stamped with (an invented AEDT date by default; the CLIs pass the transcript's own)
- * -> { ticks, shown, stopped (reason or ''), stoppedAt (HH:MM or '') }
+ * -> { ticks, shown, stories, stopped (reason or ''), stoppedAt (HH:MM or '') }
+ *   ticks[i] also carries meanwhile (the Rack cutaway or null), silence (the code-side flag fired) and stall; stories is the Scribe's saved story at each run
  */
-export async function runTapSim({ client, registry, allMinutes, fromT, toT, lead = 20, enabled, cap = 20, callHook, shouldStop = () => '', day = DEFAULT_DAY, offset = '+11:00' }) {
+export async function runTapSim({ client, registry, allMinutes, fromT, toT, lead = 20, enabled, cap = 20, callHook, shouldStop = () => '', day = DEFAULT_DAY, offset = '+11:00', listening = true, clocks = null }) {
   const { memoryExec, asD1 } = await import('./d1.mjs');
   const { cleanLines, addLines } = await import('../../functions/_lib/stt.js');
   const { makeHandler } = await import('../../functions/api/gm/assist.js');
@@ -75,6 +79,7 @@ export async function runTapSim({ client, registry, allMinutes, fromT, toT, lead
   const sp = Object.fromEntries(names.map((n, i) => [String(i), n]));
   await db.prepare('INSERT INTO gm_stt (campaign, updated_at, doc) VALUES (?1, ?2, ?3)').bind('c', iso(fromT, 0), JSON.stringify({ want: 'on', session: '2', speakers: sp })).run();
   await db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', '{}', 0, ?1)").bind(JSON.stringify({ file_id: 'file_sim000001' })).run();
+  if (Array.isArray(clocks)) await db.prepare('INSERT INTO campaigns (id, updated_at, doc) VALUES (?1, ?2, ?3)').bind('c', iso(fromT, 0), JSON.stringify({ clocks })).run();
   let seq = 0;
   const feed = async (t) => {
     const ls = allMinutes.get(t) || [];
@@ -90,13 +95,14 @@ export async function runTapSim({ client, registry, allMinutes, fromT, toT, lead
   const handler = makeHandler({ clientFor: () => client, now: () => virt.t + (Date.now() - virt.real0), call, seats: registry });
   const env = { DB: db, CAMPAIGN: 'c', ANTHROPIC_API_KEY: 'sim', ASSIST_CAP_USD: String(cap) };
   for (let t = fromT - lead; t < fromT; t++) await feed(t);
-  const ticks = [], shown = [];
+  const ticks = [], shown = [], stories = [];
   let after = null, lastId = 0, stopped = '', stoppedAt = '';
   for (let t = fromT; t <= toT; t++) {
     const why = shouldStop();
     if (why) { stopped = why; stoppedAt = stamp(t); break; }
     await feed(t);
     virt.t = Date.parse(iso(t, 59)); virt.real0 = Date.now(); virt.hhmm = stamp(t);
+    if (listening) await db.prepare('UPDATE gm_stt SET doc = ?2 WHERE campaign = ?1').bind('c', JSON.stringify({ want: 'on', session: '2', speakers: sp, status: { state: 'listening', at: new Date(virt.t).toISOString(), lines: 0, error: '' } })).run();
     const res = await handler({ request: new Request('https://sim.example.test/api/gm/assist/tick', { method: 'POST', body: JSON.stringify(after === null ? {} : { after }), headers: { 'Content-Type': 'application/json' } }), env, data: { me: { role: 'gm', id: 'gm@example.test' } } });
     const b = JSON.parse(await res.text());
     after = b.last;
@@ -106,9 +112,11 @@ export async function runTapSim({ client, registry, allMinutes, fromT, toT, lead
     const card = (b.cards || [])[0] || null;
     if (card) shown.push({ t, seat: card.seat, text: card.text });
     const mrow = rows.find((r) => r.seat === 'mystery');
-    ticks.push({ at: stamp(t), flags: b.flags || [], called, card, stall: b.stall || null, mysteryRow: mrow || null, errors: b.errors || [], spend: b.spend && b.spend.tonight });
+    const srow = rows.find((r) => r.seat === 'scribe');
+    if (srow) { try { const c = JSON.parse(srow.card); if (c.story) stories.push({ at: stamp(t), story: c.story, corrections: c.corrections || [], through: c.through }); } catch (_) { /* a failed run has no story */ } }
+    ticks.push({ at: stamp(t), flags: b.flags || [], called, card, stall: b.stall || null, meanwhile: b.meanwhile || null, silence: (b.flags || []).includes('silence'), mysteryRow: mrow || null, errors: b.errors || [], spend: b.spend && b.spend.tonight });
   }
-  return { ticks, shown, stopped, stoppedAt };
+  return { ticks, shown, stories, stopped, stoppedAt };
 }
 
 export { callSeat };
