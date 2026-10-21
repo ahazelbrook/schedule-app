@@ -1,7 +1,7 @@
 # GM tools: the API and the secrecy contract
 
-The `#gm` page (the console with its four Situations, the location generator, street scenes, the score generator and the
-downtime cards) and the `#display` page (an iPad signed in as the GM) run on three GM-only endpoints. The generators' tables hold '68
+The `#gm` page (the console with its four Situations, the location generator, street scenes, the score generator, the chase
+board and the downtime cards) and the `#display` page (an iPad signed in as the GM) run on three GM-only endpoints. The generators' tables hold '68
 text and GM-only secrets, so they never enter git (the downtime cards' tables are original writing, so they are in git, in
 `app/downtime-tables.js`): the GM builds a **pack** from the vault on their own PC (`npm run gm:pack`, into the git-ignored
 `gm-private/`) and uploads it, from the browser or with `npm run gm:push -- --only pack --yes` (see `SYNC.md`, which also
@@ -99,11 +99,11 @@ fails and nobody is known, nothing is purged.
   the **Scene** line (one row of labelled chips, `Scene: any · District: any · Aim: anyone · NPC: … · Threat: 3`, that opens
   to the scene, district, PC, NPC and threat controls; closed by default at every width), the four Situation buttons, the
   card, "Earlier:" the last five rolls, and **More tables** (the nine single tables, folded) |
-  a side panel with **Prep (R)**, **GM screen (T)**, **Location (B)**, **Street (S)**, **Score (J)**, **NPC (N)**, **Downtime (D)**, **Cards (O)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
+  a side panel with **Prep (R)**, **GM screen (T)**, **Location (B)**, **Street (S)**, **Score (J)**, **Chase (C)**, **NPC (N)**, **Downtime (D)**, **Cards (O)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
   vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on
   stage) | the capture bar at the foot (buckets, the input, **File**, "N filed", **File last roll**). 600–1100 px: two columns, the rail below. Phone: the same bar as the laptop, 44 px
-  (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | Score | NPC / Downtime | Cards | GM screen | iPad | State
-  bar in two full rows, six then five (every segment in reach, nothing to drag sideways), both stuck to the top; the Position switch first,
+  (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | Score | Chase / NPC | Downtime | Cards | GM screen | iPad | State
+  bar in two full rows of six (every segment in reach, nothing to drag sideways), both stuck to the top; the Position switch first,
   **Now in** (its select moves into the Scene line here) and the Scene line, the situations a 2 × 2 grid, the other controls behind the
   Scene line, capture on a floating button. After a
   roll the card is scrolled into view by the least scroll that shows it (the whole card when it fits, else its lead box; the
@@ -121,7 +121,7 @@ fails and nobody is known, nothing is purged.
   scroll on their own and capture sits fixed at the foot, so a
   long Prep note or the GM screen never carries the console or the rail away; toasts sit above the capture bar, never over its
   input. The side tabs are one row with their keys showing at 1280 px (Prep, GM screen |
-  Location, Street, Score, NPC, Downtime | Cards, iPad). Prep and the GM screen show their sections as an outline beside the text, the one
+  Location, Street, Score, Chase, NPC, Downtime | Cards, iPad). Prep and the GM screen show their sections as an outline beside the text, the one
   being read marked. **Focus** (`F`, or the button by the tabs) shrinks the console to its keys on any tab (it replaces Prep's
   Wide, and shares its setting, `b68.gm.prepWide`); a roll made in Focus leaves Focus so the card shows (a toast says so, once
   per page load). Empty rail boxes are one line. Below 1100 px the page scrolls under the sticky bar. `body.gm-app` turns it
@@ -129,7 +129,7 @@ fails and nobody is known, nothing is purged.
 - **Table aids** (17/10/2026):
   - **Find** (`Ctrl+K`, `/`, or **Find** in the bar): one box over the open Prep note (its sections and transclusions),
     the GM screen, the pack's NPCs, PCs, factions and world clocks, the cast's NPCs made in the app, the table clocks,
-    callbacks, and tonight's capture lines, and a few entries of the rules (from the copy this device already holds: Find never
+    callbacks, the running chase's panels (by caption; one jumps to the Chase tab), and tonight's capture lines, and a few entries of the rules (from the copy this device already holds: Find never
     starts a download). Every word must match; title matches first. `↑` `↓` choose, `Enter` jumps
     (an NPC, PC or faction opens its peek card in the Prep tab; a rules entry opens in the GM screen pane; a capture or callback is
     copied), `Esc` shuts it.
@@ -144,8 +144,8 @@ fails and nobody is known, nothing is purged.
   - **Update pack asks first** when the file would lose prep the app has (a part gone, a prep note gone or much
     shorter): the button reads **Upload anyway** and confirms (the same guard as `gm:pack` and `gm:push`, SYNC.md). A part the app
     retired on purpose (`engagement`, Engage's) is not a loss, in either guard (`RETIRED_PARTS`).
-- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (`5`–`9` do nothing: the single tables have no keys), `R` `B` `N` `S` `J` `D` `O` `T` `I` switch the panel
-  (Prep, Location, NPC, Street scene, Score, Downtime, Cards, GM screen, iPad; `R` and `T` also put the cursor in that pane's find box, so typing
+- **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (`5`–`9` do nothing: the single tables have no keys), `R` `B` `N` `S` `J` `C` `D` `O` `T` `I` switch the panel
+  (Prep, Location, NPC, Street scene, Score, Chase, Downtime, Cards, GM screen, iPad; `R` and `T` also put the cursor in that pane's find box, so typing
   lands there and not on the shortcuts), `F` Focus, `/` or `Ctrl+K` Find, `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
   the last roll under "Rolled at the table", `Shift+H`, or `H` twice within a second, blanks the screen until any key or tap (one stray `H` does
   nothing; the first alone says how, once per page load), `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
@@ -274,6 +274,37 @@ fails and nobody is known, nothing is purged.
   - Checks: `gm-score.test.mjs` (the module; with `B68_SCORE_PACK` set to a pack file, or `gm-private/b68-gm-pack.json` present, it also runs
     on the real tables and prints counts only), `gm-score-export.test.mjs` (the exporter, on an invented vault), `gm-page.test.mjs`
     (18a–18n), `gm-score.e2e.mjs`, and the secrecy sweeps in `gm-nosecrets.test.mjs`.
+- **Chase (`C`; on a phone the Chase segment).** A chase strip that grows on the iPad as the chase clock fills (Alex, 21/10/2026). The
+  strip is a comic strip, left to right: one panel per segment of the crew's clock. A roll that fills two segments draws one panel two
+  slots wide, with one caption. A panel exists only once its segments tick: nothing is drawn ahead. The map kit draws it (0.6:
+  `B68Map.chaseNew`, `chaseTick`, `chase`); `app/gm/chase.js` (`B68GmChase`) builds what the kit is given and reads the clocks back.
+  With an older kit the panel says it needs 0.6, and nothing starts.
+  - **Start a chase.** The street comes from the Location roll, the Street scene or a plain street type (the kit's grounds: a wide road,
+    a lane, a raised walkway, a plaza, a roundabout, an arcade, a dead end, a canal path, a bridge). It follows what is on screen until
+    the GM picks. Only the street's public fields go into the chase: never a room, the target, a threat, the watcher, a notable or a rumour.
+    Then a name, the crew's clock (a name, and 4, 6 or 8), an opposing clock (none, shown or hidden; a name and a size), and what the
+    crew and their pursuers are in (map kit tokens).
+  - **Tick.** Three big buttons: **+1** (limited), **+2** (standard), **+3** (great). Each draws one panel on the leg in play. Above
+    them: what happened (the caption), the roll (GM only: who, action, position and effect, dice), between ticks (flashbacks and fails
+    before this roll, one per line; the table heard them, so the players see them), the level (above, street, below) and the time
+    (Bluetime or Night: it can snap mid-chase). Level and time carry to the next tick. A tick past the leg's size is cut to what is left,
+    and a toast says so. **Undo last panel** takes the last one back. The opposing clock has **−1** and **+1** on its row.
+  - **A second leg.** When the crew's clock is full, **Add a leg** ("Land the barge", 4) gives the next ticks a clock of their own.
+  - **Show on iPad** sends the player copy, drawn here at the iPad's size (`layer: "player", layout: "ipad"`): no roll line, no GM
+    note, no hidden clock. The page draws it from a copy of the chase without them (`B68GmChase.playerCopy`), then scans the svg for
+    every one of them and refuses to send it if one is there (`chaseDisplay` in `gm-page.js`). Over 600 KiB it refuses with a toast.
+    The server's `checkSvg` and the display's sanitiser check it as they check a map. While the chase is on the iPad, every tick, undo,
+    leg or move of the opposing clock sends it again, as **Clocks on the iPad** does. Once something else is up, nothing more goes.
+  - **The panel** shows the GM copy under the controls: every clock, the roll lines. The clocks list above the tick box marks the leg in
+    play and the hidden clock. `L` files the last tick ("Chase: <caption> (+n)").
+  - **End chase** (it asks) moves the chase to **Past chases**, a fold under the panel. Past keeps the last 10 and 64 KiB at most; the
+    oldest go, and a toast names them.
+  - **State:** `chase: { current, past: { <id>: chase }, ui: { level, time } }`. `current` is the kit's chase object (`schema:
+    "b68-chase/1"`), stored whole on every change (a key the new one lacks is deleted). An ended chase gets `endedAt`. The start form
+    is this page's only, never stored. Nothing here touches the table, its clocks or the campaign log.
+  - Checks: `gm-chase.test.mjs` (the module and the gate), `gm-page.test.mjs` (19a–19e), `gm-nosecrets.test.mjs` (i),
+    `gm-chase.e2e.mjs` (port 8861). Until the vendored kit has the chase strip, `checks/runtime/fixtures/chase-kit-stub.js` stands in,
+    written from the kit's spec; it installs only on a kit without one.
 - **NPC (`N`).** At the top the generator: **Roll an NPC** draws a card (the vault generator's port, `app/gm/npc.js`, fed by the
   pack's `npc` part and the campaign part): a portrait, what the table could see, what they want, how to play them (cast,
   status, dial, mannerism, verb), the levers, and the faction's dossier folded away. Above the button three pickers, each on
@@ -419,7 +450,8 @@ fails and nobody is known, nothing is purged.
   roll that made them, `ui` only when a picker was set), `sc` (`ui`: the Score panel's choices; its cards are `cards.score` /
   `hist.score` / `mem.score`, see Score (J)), `dt` (`ui`: the Downtime panel's choices; its cards are `cards.downtime` /
   `hist.downtime` / `mem.downtime`, see Downtime (D)), `pins` (50, text), `capture` (400, and 128 KiB: `{ id, bucket: n|x|m|r, text, at, s? }`),
-  `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab), `opps` (the Cards panel), `sites` (Score sites) and `now` (`{ district }`: Now in). Capture never touches
+  `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab), `opps` (the Cards panel), `sites` (Score sites), `chase` (the Chase panel:
+  `current`, `past`, `ui`) and `now` (`{ district }`: Now in). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
   `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
   there was none), on typed lines, on lines filed by a card's action (a bargain accepted) and on rolls filed with `L`, so the sync
