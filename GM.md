@@ -228,7 +228,8 @@ fails and nobody is known, nothing is purged.
   gate as Show on iPad; one that would name a hidden room is not sent, and the toast says the iPad still shows the map as it was.
   View, theme, time and weather only redraw the preview: Show on iPad sends them. The GM layer sends nothing, another roll is not
   live, and once something else is on the iPad the bands are only the preview's again. The score scene does not follow (below);
-  when it shows other bands than the ticks, the map box says so. Checks: `gm-page.test.mjs` (9m–9o), `gm-nosecrets.test.mjs` (j).
+  when it shows other bands than the ticks, the map box says so. Checks: `gm-page.test.mjs` (9m–9o), `gm-nosecrets.test.mjs` (j), `gm-maps.e2e.mjs` (`npm run check:gm-maps`: the GM page and the
+  iPad at 1366 × 1024 against a local Worker; `GM_SHOTS=<dir>` keeps its screenshots).
 - **Hidden names.** Map kit 0.2 titled a `plan` or `section` level of the player layer after the room on it, even when that room was
   hidden. From 0.5 (vendored: 0.7.0, 21/10/2026) every floor is titled generically ("Basement", "Ground floor", "Upper floor", "Top
   floor") and a hidden room's name is not in the player file at all. The page still scans every player render for the names of hidden

@@ -48,7 +48,8 @@
     "check:gm-downtime": "node checks/runtime/gm-downtime.test.mjs && node checks/runtime/gm-downtime-export.test.mjs",
     "check:handouts-e2e": "node checks/runtime/gm-handouts.e2e.mjs",
     "kits": "node scripts/kits.mjs",
-    "check:kits": "node checks/runtime/kits.test.mjs"
+    "check:kits": "node checks/runtime/kits.test.mjs",
+    "check:gm-maps": "node checks/runtime/gm-maps.e2e.mjs"
   },
   "keywords": [],
   "author": "",
