@@ -190,7 +190,14 @@
     if (!roll || typeof render !== 'function') throw new Error('Roll a location first.');
     var reveal = revealList(map);
     var r = render(roll, { view: VIEWS.indexOf(map.view) >= 0 ? map.view : 'rings', theme: THEMES.indexOf(map.theme) >= 0 ? map.theme : 'rulebook', layer: 'player', reveal: reveal, width: 1400 });
-    if (leaks(r.svg, roll, reveal).length) { var e = new Error(P.LEAK_MSG); e.leak = true; throw e; }
+    if (leaks(r.svg, roll, reveal).length) {
+      /* the kit titles an iso level after a hidden room it holds (as it does a plan or section level): an iso is redrawn as rings; a plan or section stays refused */
+      if (r && map.view === 'iso') {
+        var r2 = render(roll, { view: 'rings', theme: THEMES.indexOf(map.theme) >= 0 ? map.theme : 'rulebook', layer: 'player', reveal: reveal, width: 1400 });
+        if (!leaks(r2.svg, roll, reveal).length) r = r2;
+      }
+      if (leaks(r.svg, roll, reveal).length) { var e = new Error(P.LEAK_MSG); e.leak = true; throw e; }
+    }
     return { kind: 'svg', title: str(roll.name).slice(0, 200), caption: (roll.district ? roll.district + ' · ' : '') + 'surveyed: ' + reveal.join(', '), svg: r.svg, warnings: r.warnings || [], reveal: reveal };
   }
   P.playerDisplay = playerDisplay;
@@ -444,8 +451,8 @@
 
   /* The score scene (Location panel, "Set as score scene"): the board and the exploded site, rendered HERE from the roll on the
      PLAYER layer at the revealed bands, run through the same hidden-name scan as Show on iPad. The board is the plan on the board
-     theme; if that names a hidden room it is redrawn as rings (clean) and `rings` is true; the iso never falls back: if it leaks,
-     this throws (e.leak). Only player-safe fields go out: the place name and district. The target stays '' (the legend does not
+     theme; if that names a hidden room it is redrawn as rings (clean) and `rings` is true; a leaking iso is likewise redrawn as
+     rings (`isoRings` true); if the rings leak too, this throws (e.leak). Only player-safe fields go out: the place name and district. The target stays '' (the legend does not
      print it, and the target room is the secret). */
   function scoreScene(roll, map, render) {
     if (!isObj(map) || map.layer !== 'player') throw new Error('Only the player layer can be a score scene. Switch Layer to Player first.');
@@ -458,9 +465,13 @@
       if (leaks(board.svg, roll, reveal).length) throw leak();
     }
     var iso = render(roll, { view: 'iso', theme: 'blueprint', legend: false, layer: 'player', reveal: reveal, width: 1600 });
-    if (leaks(iso.svg, roll, reveal).length) throw leak();
+    var isoRings = false;
+    if (leaks(iso.svg, roll, reveal).length) {
+      iso = render(roll, { view: 'rings', theme: 'blueprint', legend: false, layer: 'player', reveal: reveal, width: 1600 }); isoRings = true;
+      if (leaks(iso.svg, roll, reveal).length) throw leak();
+    }
     return {
-      reveal: reveal, view: view, rings: view === 'rings', board: board.svg, iso: iso.svg,
+      reveal: reveal, view: view, rings: view === 'rings', isoRings: isoRings, board: board.svg, iso: iso.svg,
       score: { name: str(roll.name).slice(0, 200), district: str(roll.district).slice(0, 200), target: '', reveal: reveal, view: view, board: board.svg, iso: iso.svg }
     };
   }
