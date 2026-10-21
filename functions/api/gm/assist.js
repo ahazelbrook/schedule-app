@@ -8,8 +8,12 @@
 //        `updates` are the Ledger's entries (stress, harm, Heat, xp...), one-tap state updates outside the card gap:
 //        [{ seat: 'ledger', at, key, text }].
 //        The Tap seats read the last four MINUTES of talk (not a fixed count of lines).
-//   POST /api/gm/assist/fit { position, effect? } -> { cards: [fixer card], flags: [], spend, last }
-//        The Fixer for a position the GM names: what could happen on a 1-3, 4-5, 6 and crit, and a Devil's Bargain.
+//   POST /api/gm/assist/fit { position, effect?, draws: { low, mid } } -> { cards: [fixer card], flags: [], spend, last }
+//        The Fixer for a position the GM names. `draws` are the console's OWN pre-rolled 1-3 and 4-5 cards (plain text, at most
+//        1500 characters each); the Fixer fits them to the scene (it keeps the kind of outcome each names) and writes the 6, the
+//        crit and a Devil's Bargain. A request without draws (an old client) is a 400: there is no free-writing fallback.
+//        Every seat call's row carries `secs` (wall-clock) and `stop` (the provider's stop reason) in its card JSON; a refusal
+//        is logged as `refusal: 1` and shows nothing.
 //   GET  /api/gm/assist/cards?session=&since= -> { cards, updates }   tonight's shown cards and open Ledger updates (last 12 h unless
 //        `since`), so a reloaded GM page restores its chat. Dismissed cards and finished updates are left out. No model, no key.
 //   POST /api/gm/assist/cards { op: 'seen'|'dismiss'|'keep', items: [{ at, text, key? }] } -> { marked }   the box's marks, kept on the
@@ -79,6 +83,20 @@ export function formatLines(lines, speakers = {}) {
   }).join('\n');
 }
 
+export const DRAW_MAX = 1500;                 // characters per draw
+/** The console's two draws from a fit request: { low, mid } as trimmed text, or null when they are missing or over-long. */
+export function cleanDraws(d) {
+  if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
+  const out = {};
+  for (const k of ['low', 'mid']) {
+    if (typeof d[k] !== 'string') return null;
+    const t = d[k].replace(/\r\n?/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    if (!t || t.length > DRAW_MAX) return null;
+    out[k] = t;
+  }
+  return out;
+}
+
 const REPUSH = 're-push the assist part';
 const FILE_ID = /^file_[A-Za-z0-9_-]{4,100}$/;
 
@@ -132,8 +150,13 @@ async function lastShown(db, campaign, now) {
   return r && r.at ? Date.parse(r.at) : null;
 }
 
-function logRow(db, campaign, { at, session, seat, cfg, usage, cost, flags, card }) {
+// `timing` is { secs, stop }: the call's wall-clock seconds and the provider's stop reason. They go into the card JSON of every
+// seat call (no column, no migration). A refusal is recorded as `refusal: 1` and is never shown.
+function logRow(db, campaign, { at, session, seat, cfg, usage, cost, flags, card, timing }) {
   const u = usage || {};
+  if (card && typeof card === 'object' && timing) {
+    card = { ...card, secs: timing.secs, ...(timing.stop ? { stop: timing.stop } : {}), ...(timing.stop === 'refusal' ? { refusal: 1, shown: 0 } : {}) };
+  }
   return db.prepare(`INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, input_tokens, output_tokens, cache_read, cache_write, cents, flags, card)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`)
     .bind(campaign, at, session || '', seat, cfg.model, cfg.effort || '', u.input_tokens || 0, u.output_tokens || 0,
@@ -184,15 +207,18 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     async function run(name, user) {
       const cfg = seats[name];
       inFlight.add(name);
+      const started = now();
+      const secs = () => Math.round(Math.max(0, now() - started) / 100) / 10;
       try {
         const instructions = extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions;
         const r = await call(client, { ...cfg, instructions, prefixFileId: fileId, user });
         thisTick += r.cost || 0;
-        return { cfg, r };
+        if (r.stop === 'refusal') r.json = null;           // a refusal shows nothing; the row records it
+        return { cfg, r, timing: { secs: secs(), stop: typeof r.stop === 'string' ? r.stop : '' } };
       } catch (e) {
         if (fileId && fileGone(e)) { fileMissing = true; if (!warnings.includes(REPUSH)) warnings.push(REPUSH); }
         else errors.push({ seat: name, error: errorOf(e) });
-        return { cfg, r: null };
+        return { cfg, r: null, timing: { secs: secs(), stop: '' } };
       } finally {
         inFlight.delete(name);
       }
@@ -204,18 +230,22 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const position = typeof body.position === 'string' ? body.position.replace(/\s+/g, ' ').trim() : '';
       const effect = typeof body.effect === 'string' ? body.effect.replace(/\s+/g, ' ').trim() : '';
       if (!position || position.length > 400 || effect.length > 200) throw new HttpError(400, 'position is required (at most 400 characters); effect at most 200');
+      const draws = cleanDraws(body.draws);                // no fallback: a client without the console's draws gets a 400
+      if (!draws) throw new HttpError(400, 'draws is required: { low, mid }, each a text of at most ' + DRAW_MAX + ' characters');
       if (legacy) return done([], [], null);
       const gate = canRun('fixer', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight, tier });
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : 'the fixer is busy');
       const { lines: recent, last } = await readLines(db, campaign, { since: new Date(t0 - FIT_WINDOW_MS).toISOString() });
       const lines = recent;
       const named = 'The GM names the position: ' + position + (effect ? '. Effect: ' + effect : '') + '.';
-      const user = 'A roll is about to be made. ' + named + '\nLast five minutes, up to ' + hhmm(t0) + ':\n' + formatLines(recent, speakers);
-      const { cfg, r } = await run('fixer', user);
+      const user = 'A roll is about to be made. ' + named + '\nThe console has drawn these. Fit them to the scene and keep what each one says happens.\n1-3 draw:\n' + draws.low + '\n4-5 draw:\n' + draws.mid +
+        '\nLast five minutes, up to ' + hhmm(t0) + ':\n' + formatLines(recent, speakers);
+      const { cfg, r, timing } = await run('fixer', user);
       const at = new Date(now()).toISOString();
       const session = lines.length ? lines[lines.length - 1].session : '';
       const out = r && r.json ? r.json : null;
-      await logRow(db, campaign, { at, session, seat: 'fixer', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['fit'], card: out ? { out, shown: 0 } : { error: errors.length ? errors[0].error : 'no JSON' } }).run();
+      await logRow(db, campaign, { at, session, seat: 'fixer', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['fit'], timing,
+        card: out ? { out, shown: 0 } : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : 'no JSON' } }).run();
       return done(out ? [{ seat: 'fixer', at, text: out.read, ...out }] : [], [], last);
     }
 
@@ -237,7 +267,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (fileMissing) return done([], [], last);          // nothing was billed or logged: the file is gone
     const twAt = new Date(now()).toISOString();
     const flags = tw.r && tw.r.json ? Object.keys(tw.r.json).filter((k) => tw.r.json[k] === true) : [];
-    await logRow(db, campaign, { at: twAt, session, seat: 'tripwire', cfg: tw.cfg, usage: tw.r && tw.r.usage, cost: tw.r && tw.r.cost, flags,
+    await logRow(db, campaign, { at: twAt, session, seat: 'tripwire', cfg: tw.cfg, usage: tw.r && tw.r.usage, cost: tw.r && tw.r.cost, flags, timing: tw.timing,
       card: tw.r ? { out: tw.r.json } : { error: errors.length ? errors[0].error : 'no reply' } }).run();
     if (!flags.length) return done([], flags, last);
 
@@ -260,7 +290,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const held = !!(cand && cand.seat === 'ref' && edit.held.includes(cand));
       const isUpdate = !!(cand && cand.seat === 'ledger');
       const card = x.r ? { out: x.r.json, text: cand ? cand.text : '', keys: cand ? cand.keys : [], shown: isShown ? 1 : 0, ...(held ? { held: 1 } : {}), ...(cand && cand.detail ? { detail: cand.detail } : {}), ...(isUpdate ? { update: 1, items: cand.items } : {}) } : { error: errors.find((e) => e.seat === x.name)?.error || 'no reply' };
-      return logRow(db, campaign, { at, session, seat: x.name, cfg: x.cfg, usage: x.r && x.r.usage, cost: x.r && x.r.cost, flags, card });
+      return logRow(db, campaign, { at, session, seat: x.name, cfg: x.cfg, usage: x.r && x.r.usage, cost: x.r && x.r.cost, flags, card, timing: x.timing });
     });
     // a pending Ref card shown now has no row of its own this tick: record the showing (no cost) so the gap and repeats see it
     if (edit.card && edit.card.pending) rows.push(logRow(db, campaign, { at, session, seat: 'editor', cfg: { model: 'editor' }, flags, card: { seat: 'ref', text: edit.card.text, keys: edit.card.keys, ...(edit.card.detail ? { detail: edit.card.detail } : {}), shown: 1, from_pending: 1 } }));
