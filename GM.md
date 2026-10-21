@@ -773,5 +773,44 @@ refusal, a cut-off or an error) comes back as `block` with `unknown: true`. It r
 list is its own `never-reveal.md` block in the assist prefix, built by `gm:pack` from the vault: each NPC note's "Knows / doesn't know" section
 and any secret-style heading or callout, then tonight's prep note's "Must land" entries that are not yet ticked (a ticked box counts as landed)
 and its own secret-style sections. The pack warns when it finds none. A page cite the gatekeeper thinks is wrong is flagged in `cites_bad` and
-never blocks. Ref cards are not sent through it automatically; the Screen work picks which cards to check. Nothing on the console calls it yet.
+never blocks. The Screen (next section) sends every item through it; a Ref card is sent only when it carries a page cite (see "The cite flag").
 `node scripts/gm-assist-replay.mjs --context <block files> --gatekeeper-file <json list of { kind, text }>` runs it over sample items.
+
+## The Screen (the box's four buttons, `app/gm/assist-panel.js` and the Rack in `app/gm-page.js`)
+
+**GM-initiated, and nothing reaches the iPad until you tap Show.** Four buttons sit in the box under *Fit it*. Each makes one item that appears in the
+**Rack** (under the console card) with a **Checking…** badge; the gatekeeper checks it automatically, and **Show** is disabled until the verdict is back.
+A **Blocked** item shows its reasons (what it would reveal, which rule it breaks) and a **Not checked** one (the gatekeeper errored, refused, was
+cut off, was busy twice, or the cap is reached) says so: Show then asks you to confirm. Your tap decides either way, and a confirm you refuse changes
+nothing. Dismiss drops an item from the Rack. On a phone the box is hidden and none of this runs.
+- **Draw them** (`POST /api/gm/assist/portrait { name?, vocab }`; seat `portrait`, Sonnet 5.5, medium). Draws the NPC you just described from the last five
+  minutes of talk (type a name in the box to say who). The page sends the figure kit's own names (`vocab`, built from the loaded kit) and the seat
+  answers with a figure spec; the page runs it through `B68GmNpc.cleanSpec` (drops every name the kit does not know, stamps it, renders it, and
+  strips props, patterns, hat and eyewear in turn on warnings) and draws the preview in the Rack. A drawing the kit still warns about is never offered.
+  **Add (hidden NPC)** saves it through `POST /api/gm/assist/portrait-add`, which runs `checkNpc`/`writeNpc` with `revealed: false` forced on the
+  server; showing it to the players is the normal reveal flow (stage it from the cast). A portrait has no Show button.
+- **Make the prop** (`POST /api/gm/assist/prop { ask? }`; seat `prop`, Opus 5.5, medium, 8k output). A short in-world document (a case file, a telegram, a
+  memo) from the moment, or from your one-line ask. Plain text of at most 1200 characters (a longer one is refused, never cut, so the gatekeeper
+  reads all of it); **Show** sends it as an ordinary `text` display. The `svg` kind is not used: the gatekeeper reads text.
+- **Wire** (`POST /api/gm/assist/wire`; seat `wire`, Sonnet 5.5, low). One in-world headline or bulletin of at most 240 characters. **Show on the wire**
+  adds it to the ambient document's `wire` (at most six `{ id, text }`; `PATCH /api/gm/ambient { wire: [...] | null }`). The display lays the bulletins
+  over whichever ambient scene is playing, one at a time (14 s on, 36 s off, round the list), in a strip in the ambient layer: a spotlight hides it,
+  as does lights out, ambient off or a hidden page. The Rack lists the wire as it stands on the iPad, each with **Clear**.
+- **Case board** (`POST /api/gm/assist/board`; no seat, no model, no key, no spend, any tier). Built in code from the Mystery keeper's latest `known`
+  and `theories` in tonight's log (what the players said aloud): the theory text only, never the seat's own `supported` verdict, its who or its
+  `push_next`. It still goes through the gatekeeper before Show. Empty (no Mystery report yet) says so.
+
+**The ladder.** Wire stops at 60% of tonight's cap, Portrait and Prop at 85%, all three at the cap (a 429; the box words a ladder cut-off as "the budget
+has dropped that" and pauses nothing, and only the cap pauses the box). The Case board always builds. The gatekeeper runs to the cap like Ref, so at the
+cap an item's check is "not checked". One model call of these runs at a time (429 busy). Every call logs `secs` and `stop` like the other seats; a refusal or
+a cut-off is logged (`refusal: 1`, `truncated: 1`) and shows nothing. The Worker passes only the typed line, the kit's vocabulary (up to 5000 characters), the
+last five minutes of talk and the item itself; the prefix stays a file id. Portrait's instructions ask for a static caption (no actions, never "you"): the
+first live check let a narrated nod through, and the gatekeeper blocked it.
+
+**The cite flag.** When a tick brings a Ref card with a page cite ("p. 12", "pp. 30-31"), the box checks it in the background through the gatekeeper
+(`kind: card`, the card text and its rule, the cites). A cite the gatekeeper cannot match gets a small **cite?** flag on the card; it never blocks or
+hides anything, and a check that cannot run (cap, busy, error) leaves no flag. Cards with no page cite cost nothing.
+
+`node scripts/gm-assist-replay.mjs --transcript <note> --context <prefix file> --screen-at "portrait@20:17=Name,prop@21:23=ask,wire@22:10,board=a | b" --max-spend 2 --out gm-private/assist-replay/screen`
+runs the Screen seats at chosen minutes with the endpoint's own turns, gates every item, and writes `screen.md` (the items and verdicts: it quotes the table,
+so `--out` must sit under `gm-private/`), `screen.json`, `portrait-N.svg` and `summary.txt` (counts and money). `board=` takes the lines to build the board from.

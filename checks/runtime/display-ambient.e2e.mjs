@@ -290,6 +290,32 @@ try {
     expect(!m.playing && m.scene === null && m.state === 'off' && m.text === '', 'another scene stopped the theme and cleared the line: ' + JSON.stringify(m));
   });
 
+  await step('the wire: bulletins lie over the playing scene one at a time, round the list; a spotlight hides them; clearing the wire removes them', async () => {
+    await ambient({ mode: null, scene: null, wire: null });
+    await push(BLANK);
+    const Wr = await openDisplay(browser, { intervalMs: 600000, graceMs: 60000, wireOnMs: 1800, wireGapMs: 600, wireFirstMs: 300 });
+    await shows(Wr.page, 'harvest');
+    const strip = () => Wr.page.evaluate(() => { const e = document.querySelector('.dp-wire'); return e ? { on: e.classList.contains('dp-wire-on'), text: e.textContent, inAmbient: !!e.closest('.dp-ambient') } : null; });
+    expect((await strip()) && !(await strip()).on, 'the strip exists and is quiet while the wire is empty');
+    await ambient({ wire: [{ id: 'w1', text: 'Invented bulletin one.' }, { id: 'w2', text: 'Invented bulletin two.' }] });
+    await Wr.page.waitForFunction(() => { const e = document.querySelector('.dp-wire'); return !!e && e.classList.contains('dp-wire-on') && /Invented bulletin one/.test(e.textContent); }, null, { timeout: 15000 });
+    expect((await strip()).inAmbient, 'the strip lives in the ambient layer, under the stages');
+    await Wr.page.waitForFunction(() => { const e = document.querySelector('.dp-wire'); return !!e && e.classList.contains('dp-wire-on') && /Invented bulletin two/.test(e.textContent); }, null, { timeout: 15000 });
+    expect(await current(Wr.page) === 'harvest', 'the scene underneath carried on');
+    await push({ kind: 'text', title: 'Spot', text: 'A spotlit word' });
+    await textShown(Wr.page, 'A spotlit word');
+    await sleep(900);
+    expect(!(await strip()).on, 'a spotlight stops the wire');
+    await push(BLANK);
+    await Wr.page.waitForFunction(() => { const e = document.querySelector('.dp-wire'); return !!e && e.classList.contains('dp-wire-on'); }, null, { timeout: 20000 });
+    await ambient({ wire: null });
+    await Wr.page.waitForFunction(() => { const e = document.querySelector('.dp-wire'); return !!e && !e.classList.contains('dp-wire-on'); }, null, { timeout: 10000 });
+    await sleep(2500);
+    expect(!(await strip()).on, 'Clear (wire null) takes it off and it stays off');
+    expect(Wr.seen.errors.length === 0, 'page errors: ' + Wr.seen.errors.join(' | '));
+    await Wr.ctx.close();
+  });
+
   await step('the whole run: only same-origin requests, no scene called the API, no page errors, no CSP refusals', async () => {
     expect(outsiders(D.seen).length === 0, 'requests left the origin: ' + outsiders(D.seen).join(' | '));
     expect(!D.seen.fromScenes.some((u) => new URL(u).pathname.startsWith('/api/')), 'a scene called the API: ' + D.seen.fromScenes.join(' | '));

@@ -1405,7 +1405,8 @@
     var g = gmApi(), A = W.B68GmAssist, me = S;
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
-    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); } }); } catch (e) { me.assist = null; }
+    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); },
+      screen: { vocab: screenVocab, cleanSpec: screenCleanSpec }, onScreen: function (item) { if (S === me) setScreenItem(item); } }); } catch (e) { me.assist = null; }
   }
   function loadShown() {
     var g = gmApi(), me = S; if (!g || typeof g.display !== 'function' || AM.displayRead) return;
@@ -1863,7 +1864,7 @@
   function renderRack() {
     var box = $q('#gm-rack'); if (!box) return;
     var r = S && S.rack, vo = S && S.voice;
-    var vh = (vo ? voiceHtml(vo) : '') + (S && S.stall ? stallHtml(S.stall) : '') + (S && S.meanwhile ? meanwhileHtml(S.meanwhile) : '') + (S && S.offers && S.offers.length ? S.offers.map(offerHtml).join('') : '');
+    var vh = (vo ? voiceHtml(vo) : '') + (S && S.stall ? stallHtml(S.stall) : '') + (S && S.meanwhile ? meanwhileHtml(S.meanwhile) : '') + (S && S.offers && S.offers.length ? S.offers.map(offerHtml).join('') : '') + screenRackHtml();
     if (!r) { box.innerHTML = vh; return; }
     var pre = r.pre, used = { one_three: pre && pre.kinds.onetothree.used, four_five: pre && pre.kinds.fourfive.used };
     var h = '<div class="gm-rack-h"><span class="gm-lab">Rack</span><span class="gm-dim">Blade, fitted to the scene · ' + esc(pre.pos) + '</span>' +
@@ -1942,6 +1943,126 @@
       renderRack();
     }, function () { if (S === me && me.voice === vo) { vo.busy = false; vo.error = 'Nothing new just now.'; renderRack(); } });
   }
+  /* ---------- The Screen: what Blade made on a button, previewed in the Rack (GM.md, "The Screen") ----------
+     The box (gm/assist-panel.js) makes the item and the gatekeeper checks it; this page shows it and does the rest. Nothing reaches the iPad
+     until the GM taps Show here: a prop or the case board goes out as a text display, a wire bulletin joins the ambient document's `wire`
+     (the iPad lays it over the ambient scenes; Clear takes it off), and a portrait is only saved (Add: a HIDDEN app NPC, revealed false; showing
+     it is the normal reveal flow). A block, or an item that was not checked, asks for a confirm first: the tap decides either way. */
+  var SC_LABEL = { portrait: 'Portrait', prop: 'Prop', wire: 'Wire', board: 'Case board' };
+  var VOCAB_KEYS = [['shape', 'shapes'], ['skin', 'skins'], ['arms (pose)', 'armPoses'], ['head.shape', 'head'], ['eyes', 'eyes'], ['brows', 'brows'], ['nose', 'nose'], ['mouth', 'mouth'],
+    ['expression', 'expression'], ['ears', 'ears'], ['facialHair.type', 'facialHair'], ['eyewear.type', 'eyewear'], ['hair.style', 'hair'], ['hat.type', 'hat'], ['outfit.base', 'top'], ['outfit.mid', 'mid'],
+    ['outfit.outer', 'outer'], ['outfit.neck', 'neckwear'], ['outfit.bottom', 'bottom'], ['outfit.dress', 'dress'], ['outfit.legs', 'legwear'], ['outfit.feet', 'footwear'], ['outfit.waist', 'belt'],
+    ['outfit.hands', 'gloves'], ['props[].type', 'prop'], ['colour (any colour field)', 'cloth']];
+  /* the figure kit's names as plain text for the portrait seat (the kit's own vocabulary; nothing of the campaign) */
+  function screenVocab() {
+    var K = W.B68Figure; if (!K || typeof K.options !== 'function') return '';
+    var O = K.options(), names = function (v) { return Array.isArray(v) ? v : isObj(v) ? Object.keys(v) : []; };
+    return VOCAB_KEYS.map(function (r) { var n = names(O[r[1]]); return n.length ? r[0] + ': ' + n.join(', ') : ''; }).filter(Boolean).join('\n');
+  }
+  function screenCleanSpec(spec, name) {
+    var N = W.B68GmNpc, K = W.B68Figure;
+    if (!N || typeof N.cleanSpec !== 'function' || !K) return null;
+    try { return N.cleanSpec(spec, { K: K, name: name }); } catch (e) { return { ok: false, spec: {}, notes: [], warnings: [errText(e)] }; }
+  }
+  function screenItem(id) { return S && S.screenItems ? S.screenItems.filter(function (x) { return x.id === id; })[0] || null : null; }
+  /* an item from the box: new, or the same one again once the gatekeeper has answered */
+  function setScreenItem(item) {
+    if (!S || !isObj(item) || typeof item.id !== 'string') return;
+    S.screenItems = S.screenItems || [];
+    var cur = screenItem(item.id);
+    if (cur) Object.keys(item).forEach(function (k) { cur[k] = item[k]; });
+    else {
+      cur = Object.assign({ shown: false, added: null, svg: '' }, item);
+      S.screenItems.push(cur);
+      if (S.screenItems.length > 4) S.screenItems.shift();
+    }
+    if (cur.kind === 'portrait' && !cur.svg && isObj(cur.spec) && W.B68Figure && W.B68Figure.portrait) {
+      try { var sp = clone(cur.spec); sp.id = 'gm-screen'; cur.svg = stripSize(W.B68Figure.portrait(sp, { lod: 'lo' }).svg); } catch (e) { cur.svg = ''; }
+    }
+    renderRack();
+  }
+  function gateOk(it) { var g = isObj(it.gate) ? it.gate : {}; return !!g.checked && g.verdict === 'pass'; }
+  function gateBadge(it) {
+    if (it.status !== 'ready') return '<span class="gm-gate gm-gate-wait">Checking…</span>';
+    var g = isObj(it.gate) ? it.gate : {};
+    return '<span class="gm-gate ' + (gateOk(it) ? 'gm-gate-ok' : g.checked ? 'gm-gate-bad' : 'gm-gate-unk') + '">' + (gateOk(it) ? 'Checked: clear' : g.checked ? 'Blocked' : 'Not checked') + '</span>';
+  }
+  function gateWhy(it) {
+    if (it.status !== 'ready') return '';
+    var g = isObj(it.gate) ? it.gate : {}, h = '';
+    if (!gateOk(it)) {
+      var rs = (g.reasons || []).concat((g.revealed || []).map(function (x) { return 'Reveals: ' + x; })).concat((g.rule || []).map(function (x) { return 'Rule: ' + x; }));
+      h += '<ul class="gm-gate-why">' + (rs.length ? rs : ['Not checked.']).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul><p class="gm-dim gm-rack-w">Show asks you to confirm. Your tap decides.</p>';
+    }
+    if (g.cites_bad && g.cites_bad.length) h += '<p class="gm-dim gm-rack-w">Check these page cites: ' + esc(g.cites_bad.join('; ')) + '</p>';
+    return h;
+  }
+  function screenHtml(it) {
+    var h = '<div class="gm-screenitem" data-screen="' + esc(it.id) + '"><div class="gm-rack-h"><span class="gm-lab">' + esc(SC_LABEL[it.kind] || it.kind) + '</span>' + gateBadge(it) +
+      '<button type="button" class="chip sm" data-gm="sc-dismiss" data-id="' + esc(it.id) + '" title="Drops this from the Rack">Dismiss</button></div>';
+    if (it.kind === 'portrait') {
+      h += '<div class="gm-screen-port">' + (it.svg ? '<div class="gm-screen-fig">' + it.svg + '</div>' : '') + '<div><p class="gm-rack-read"><b>' + esc(it.name || 'Unnamed') + '</b></p><p class="gm-rack-read">' + esc(it.description) + '</p>' +
+        (it.notes && it.notes.length ? '<p class="gm-dim gm-rack-w">' + esc(it.notes.join('; ')) + '</p>' : '') + '</div></div>';
+    } else if (it.kind === 'wire') h += '<p class="gm-rack-read">' + esc(it.text) + '</p>';
+    else h += (it.title ? '<p class="gm-rack-read"><b>' + esc(it.title) + '</b></p>' : '') + '<pre class="gm-screen-text">' + esc(it.text) + '</pre>';
+    h += gateWhy(it);
+    var acts;
+    if (it.kind === 'portrait') acts = it.added ? '<span class="gm-dim">Saved as a hidden NPC. Reveal it from the cast when you want it shown.</span>'
+      : '<button type="button" class="btn sm primary" data-gm="sc-add" data-id="' + esc(it.id) + '" title="Saves a hidden NPC; nothing is shown">Add (hidden NPC)</button>';
+    else if (it.kind === 'wire' && it.shown) acts = '<button type="button" class="btn sm" data-gm="sc-wireclear" data-id="' + esc(it.id) + '">Clear from the iPad</button>';
+    else acts = '<button type="button" class="btn sm primary" data-gm="sc-show" data-id="' + esc(it.id) + '"' + (it.status === 'ready' ? '' : ' disabled') + '>Show' + (it.kind === 'wire' ? ' on the wire' : ' on iPad') + '</button>' +
+      (it.shown && it.kind !== 'wire' ? ' <span class="gm-dim">On the iPad.</span>' : '');
+    return h + '<div class="gm-ipad-acts">' + acts + '</div></div>';
+  }
+  function wireList() { return AM.doc && Array.isArray(AM.doc.wire) ? AM.doc.wire.filter(function (x) { return isObj(x) && typeof x.id === 'string' && typeof x.text === 'string'; }) : []; }
+  function wireOnIpadHtml() {
+    var w = wireList(); if (!w.length) return '';
+    return '<div class="gm-screenitem"><div class="gm-rack-h"><span class="gm-lab">Wire on the iPad</span><span class="gm-dim">' + w.length + ' of 6</span></div><ul class="gm-gate-why">' +
+      w.map(function (x) { return '<li>' + esc(x.text) + ' <button type="button" class="chip sm" data-gm="sc-wireclear" data-id="' + esc(x.id) + '">Clear</button></li>'; }).join('') + '</ul></div>';
+  }
+  function screenRackHtml() { return (S && S.screenItems ? S.screenItems.map(screenHtml).join('') : '') + wireOnIpadHtml(); }
+  function screenShow(id) {
+    var me = S, it = screenItem(id); if (!it || it.status !== 'ready' || it.kind === 'portrait') return;
+    var g = isObj(it.gate) ? it.gate : {};
+    if (!gateOk(it)) {
+      var why = g.checked ? 'The gatekeeper blocked this' + (g.reasons && g.reasons.length ? ': ' + g.reasons.join(' ') : '.') : 'The gatekeeper did not check this.';
+      if (!W.confirm(why + '\n\nShow it to the players anyway?')) return;
+    }
+    if (it.kind === 'wire') { screenWire(it); return; }
+    pushDisplay({ kind: 'text', title: str(it.title), text: str(it.text) }).then(function () {
+      if (S === me) { it.shown = true; renderRack(); }
+      toast('On the iPad: ' + (it.title || SC_LABEL[it.kind]) + '.');
+    }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+  }
+  function screenWire(it) {
+    var me = S;
+    (AM.loaded ? Promise.resolve() : loadAmbient()).then(function () {
+      var list = wireList().filter(function (x) { return x.id !== it.id; }).map(function (x) { return { id: x.id, text: x.text }; }).concat([{ id: it.id, text: it.text }]).slice(-6);
+      return patchAmbient({ wire: list });
+    }).then(function (r) {
+      if (r && S === me) { it.shown = true; toast('On the iPad wire.'); }
+      if (S === me) renderRack();
+    });
+  }
+  function wireClear(id) {
+    var me = S, list = wireList().filter(function (x) { return x.id !== id; }).map(function (x) { return { id: x.id, text: x.text }; });
+    patchAmbient({ wire: list.length ? list : null }).then(function (r) {
+      var it = screenItem(id); if (r && it) it.shown = false;
+      if (S === me) renderRack();
+    });
+  }
+  function screenAdd(id) {
+    var me = S, it = screenItem(id), g = gmApi();
+    if (!it || it.kind !== 'portrait' || it.added) return;
+    if (!g || typeof g.assistPortraitAdd !== 'function') { toast('Saving an NPC needs the hosted app.', true); return; }
+    var name = str(it.name).trim() || 'Unnamed NPC';
+    Promise.resolve().then(function () { return g.assistPortraitAdd({ name: name, description: str(it.description), spec: it.spec }); }).then(function (r) {
+      if (S === me) { it.added = r && r.id || true; renderRack(); }
+      toast('Saved ' + name + ' as a hidden NPC.');
+    }, function (e) { toast('Could not save the NPC: ' + errText(e), true); });
+  }
+  function screenDismiss(id) { if (S && S.screenItems) { S.screenItems = S.screenItems.filter(function (x) { return x.id !== id; }); renderRack(); } }
+
   function replayConsole(e) {
     var cp = part('console');
     if (!S.con || !cp || !isObj(e)) return null;
@@ -3931,6 +4052,10 @@
       case 'offer-show': { var oid = b.getAttribute('data-id'); showHandout(oid).then(function (ok) { if (ok) dropOffer(oid); }); break; }
       case 'offer-dismiss': { var did = b.getAttribute('data-id'); hoDone(did); dropOffer(did); break; }
       case 'another': voiceAnother(); break;
+      case 'sc-show': screenShow(b.getAttribute('data-id')); break;
+      case 'sc-add': screenAdd(b.getAttribute('data-id')); break;
+      case 'sc-dismiss': screenDismiss(b.getAttribute('data-id')); break;
+      case 'sc-wireclear': wireClear(b.getAttribute('data-id')); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {
         var tool = b.getAttribute('data-tool'), e = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).filter(function (x) { return x._id === b.getAttribute('data-h'); })[0]; if (!e) break;

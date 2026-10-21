@@ -1189,7 +1189,16 @@
     /* GET /api/gm/assist/cards -> { cards, updates }: tonight's shown cards (the box restores its chat after a reload);
        POST { op: 'seen' | 'dismiss' | 'keep', items: [{ at, text, key? }] } -> { marked } */
     assistCards: function () { return api('GET', '/gm/assist/cards'); },
-    assistMark: function (req) { return api('POST', '/gm/assist/cards', req || {}); }
+    assistMark: function (req) { return api('POST', '/gm/assist/cards', req || {}); },
+    /* The Screen (GM.md, "The Screen"): each makes one item for the GM to preview; nothing reaches the iPad until the GM taps Show.
+       POST /gm/assist/{portrait|prop|wire} -> { item | null, spend }; board (no model) -> { item | null }; gatekeeper { kind, text, cites? } -> { verdict, ... };
+       portrait-add { name, description?, spec } -> { id, doc } (a hidden NPC) */
+    assistPortrait: function (req) { return api('POST', '/gm/assist/portrait', req || {}, 60000); },
+    assistProp: function (req) { return api('POST', '/gm/assist/prop', req || {}, 90000); },
+    assistWire: function () { return api('POST', '/gm/assist/wire', {}, 60000); },
+    assistBoard: function () { return api('POST', '/gm/assist/board', {}); },
+    assistGate: function (req) { return api('POST', '/gm/assist/gatekeeper', req || {}, 60000); },
+    assistPortraitAdd: function (req) { return api('POST', '/gm/assist/portrait-add', req || {}); }
   };
 
   /* ---------- profile: the signed-in person's own display name (PATCH /api/me). A plain call: never queued, so it

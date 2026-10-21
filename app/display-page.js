@@ -576,6 +576,18 @@
       board: svg(v.board), iso: svg(v.iso), view: v.view === 'rings' ? 'rings' : 'plan', at: str(v.at, 40)
     };
   }
+  /* the wire (GM.md, "The Screen"): short in-world bulletins the GM chose to show; the display lays them over whatever ambient scene is
+     playing, one at a time, and never over a spotlight. cleanWire(v) -> [{ id, text }], at most 6, text at most 240 characters, one line. */
+  Pure.WIRE_MAX = 240; Pure.WIRE_ITEMS = 6;
+  Pure.cleanWire = function (v) {
+    var out = [], seen = {};
+    (Array.isArray(v) ? v : []).forEach(function (x) {
+      if (!isObj(x) || typeof x.id !== 'string' || typeof x.text !== 'string' || out.length >= Pure.WIRE_ITEMS) return;
+      var text = x.text.replace(/\s+/g, ' ').trim().slice(0, Pure.WIRE_MAX);
+      if (text && !seen[x.id]) { seen[x.id] = 1; out.push({ id: x.id.slice(0, 40), text: text }); }
+    });
+    return out;
+  };
   /* ambientPlan(doc) -> the normalised plan: { mode: auto | pin | off, scene, playlist: [ids], intervalMin: 3..30, skip: int,
      crew: { heat, wanted } | null, score: null | { name, district, target, reveal, board, iso, view, at } }.
      `doc` is the ambient document the server delivers (null, undefined or {} before there is one). Unknown ids go; the test card
@@ -598,7 +610,7 @@
       mode: mode, scene: typeof d.scene === 'string' && Pure.ambientScene(d.scene) ? d.scene : null,
       playlist: list.length ? list : Pure.AMBIENT_DEFAULT_PLAYLIST.slice(),
       intervalMin: clampInt(d.intervalMin, 3, 30, Pure.AMBIENT_DEFAULT_MIN), skip: isFinite(skip) && skip > 0 ? skip : 0,
-      crew: crew, score: cleanScore(d.score)
+      crew: crew, score: cleanScore(d.score), wire: Pure.cleanWire(d.wire)
     };
     if (plan.mode === 'pin' && !(plan.scene && Pure.ambientAvailable(plan, plan.scene))) { plan.mode = 'auto'; plan.scene = null; }
     return plan;
@@ -1171,6 +1183,32 @@
     /* the ambient floor stays covered (nothing loads) until the first push arrives, and always when there is no poller */
     var amb = s.amb = createAmbient(s, layer, later, clearLater);
 
+    /* The wire strip: one bulletin at a time over the ambient scenes (it lives in the ambient layer, under the stages, so a spotlight
+       hides it). Shown for wireOnMs, then a gap of wireGapMs, round the list; nothing while a spotlight is up, the page is hidden or the
+       ambient is off. ctx.ambientTiming = { wireOnMs, wireGapMs, wireFirstMs } overrides the pacing (tests). */
+    var WT = { on: 14000, gap: 36000, first: 2500 };
+    (function () {
+      var o = isObj(ctx.ambientTiming) ? ctx.ambientTiming : timingHook();
+      if (isObj(o)) { var a = Number(o.wireOnMs), b = Number(o.wireGapMs), c = Number(o.wireFirstMs); if (a > 0) WT.on = a; if (b > 0) WT.gap = b; if (c > 0) WT.first = c; }
+    })();
+    var wireEl = el('p', 'dp-wire'); wireEl.setAttribute('role', 'status'); layer.appendChild(wireEl);
+    s.wire = { items: [], key: '', i: 0, t: null };
+    function wireHide() { wireEl.classList.remove('dp-wire-on'); }
+    function wireActive() { var st = amb.state(); return s.wire.items.length > 0 && !st.covered && st.mode !== 'off' && !document.hidden; }
+    function wireCycle() {
+      s.wire.t = null;
+      if (!wireActive()) { wireHide(); return; }
+      var it = s.wire.items[s.wire.i % s.wire.items.length]; s.wire.i++;
+      wireEl.textContent = it.text; wireEl.classList.add('dp-wire-on');
+      s.wire.t = later(function () { wireHide(); s.wire.t = later(wireCycle, WT.gap); }, WT.on);
+    }
+    function wireSync() {
+      if (s.wire.t !== null) { clearLater(s.wire.t); s.wire.t = null; }
+      wireHide();
+      if (wireActive()) s.wire.t = later(wireCycle, WT.first);
+    }
+    s.offs.push(on(document, 'visibilitychange', wireSync));
+
     /* What the scenes are told. s.crew = the crew the plan last held (null: none yet); s.score = the ambient doc's score
        (normalised), the source of every b68:score. The watch feed learns the crew when it loads and again on each change; a score
        scene asks (b68:ready) and is answered, and is sent the new score when it changes. */
@@ -1203,6 +1241,9 @@
       amb.setPlan(p);
       if (Pure.crewChanged(s.crew, p.crew)) Pure.ambientCrewScenes().forEach(function (id) { amb.post(id, Pure.crewMessage(p)); });
       s.crew = p.crew;
+      var wk = JSON.stringify(p.wire);
+      if (wk !== s.wire.key) { s.wire.key = wk; s.wire.items = p.wire; s.wire.i = 0; wireSync(); }
+      else if (s.wire.items.length && s.wire.t === null && !wireEl.classList.contains('dp-wire-on')) wireSync();     /* the mode or the cover changed */
       var key = p.score ? [p.score.at, p.score.name, p.score.district, p.score.target, p.score.view, p.score.board.length, p.score.iso.length].join('|') : '';
       if (key !== s.scoreKey) {
         s.scoreKey = key; s.score = p.score; s.scoreMsg = null;
@@ -1405,6 +1446,7 @@
     function show(display, seq) {
       var my = ++s.token, vm = Pure.viewModel(display);
       if (vm.kind === 'blank') amb.uncover(); else amb.cover();                 /* a spotlight covers the ambient; blank lets it through */
+      wireSync();
       if (vm.kind === 'npc') {
         loadNpc(ctx, vm.npcId).then(function (doc) {
           if (s.dead || my !== s.token) return;                       /* a newer push arrived while the cast was loading */

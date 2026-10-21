@@ -39,6 +39,7 @@ export const CARD_LIMITS = { cards: 8, field: 120, interval: 120 };
 // The ambient scenes (GM.md, "Ambient scenes"; the plan: docs/history/AMBIENT-PLAN.md): the ids mirror Pure.AMBIENT_SCENES in app/display-page.js; the bands are the
 // four reveal layers of a score site, lowest first.
 export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting', 'credits', 'board', 'exploded', 'testcard'];
+export const WIRE_MAX = 240, WIRE_ITEMS_MAX = 6;       // a bulletin's characters, bulletins at once (mirrors functions/_lib/assist/prompts.js)
 export const AMBIENT_MODES = ['auto', 'pin', 'off'];
 export const BANDS = ['public', 'working', 'controlled', 'secure'];
 
@@ -347,6 +348,24 @@ export function cleanAmbientPatch(raw) {
       if (!isInt(v.heat, 0, 9)) throw new HttpError(400, 'crew.heat must be a whole number from 0 to 9');
       if (!isInt(v.wanted, 0, 4)) throw new HttpError(400, 'crew.wanted must be a whole number from 0 to 4');
       patch.crew = { heat: v.heat, wanted: v.wanted };
+    }
+  }
+  if ('wire' in raw) {
+    // the wire: short in-world bulletins the display shows over the ambient scenes, one at a time (a Screen item the GM tapped Show on)
+    const v = raw.wire;
+    if (v === null) patch.wire = null;
+    else {
+      if (!Array.isArray(v)) throw new HttpError(400, 'wire must be an array of { id, text } or null');
+      if (v.length > WIRE_ITEMS_MAX) throw new HttpError(413, 'wire is too long (at most ' + WIRE_ITEMS_MAX + ' bulletins)');
+      const seen = new Set();
+      patch.wire = v.map((x) => {
+        if (!isPlainObject(x)) throw new HttpError(400, 'each bulletin is an object { id, text }');
+        const id = str(x.id, 'wire.id', 40, true).trim(), text = str(x.text, 'wire.text', WIRE_MAX, true).replace(/\s+/g, ' ').trim();
+        if (seen.has(id)) throw new HttpError(400, 'wire ids must differ');
+        seen.add(id);
+        return { id, text };
+      });
+      if (!patch.wire.length) patch.wire = null;
     }
   }
   if ('score' in raw) {

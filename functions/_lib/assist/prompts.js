@@ -110,3 +110,31 @@ export function gatekeeperUser({ kind, text, cites = [] }) {
   return 'Item kind: ' + kind + '.\nItem text:\n' + text + (cites.length ? '\nPage cites to check against the rules reference:\n' + cites.map((c) => '- ' + c).join('\n') : '') +
     '\nCheck this item.';
 }
+
+// ---------- the Screen seats (portrait, prop, wire) and the case board ----------
+export const SCREEN_WINDOW_MIN = 5;         // minutes of talk the Screen seats read
+export const SCREEN_NAME_MAX = 80;          // the typed NPC name for a portrait
+export const SCREEN_ASK_MAX = 200;          // the typed one-line ask for a prop
+export const VOCAB_MAX = 5000;              // the figure kit's vocabulary text the page sends with a portrait request
+export const SPEC_JSON_MAX = 8 * 1024;      // the portrait seat's spec, as the Worker will parse it
+export const PROP_MAX = 1200;               // characters of a prop's text (it must fit in one gatekeeper check)
+export const PROP_TITLE_MAX = 80;
+export const WIRE_MAX = 240;                // characters of a bulletin
+export const WIRE_ITEMS_MAX = 6;            // bulletins on the iPad's wire at once
+export const BOARD_MAX = 1450;              // characters of the case board's text
+
+/** The Portrait turn: the typed name (maybe), the figure kit's vocabulary, then the last few minutes of talk. */
+export function portraitUser({ name = '', vocab, stamp, talk }) {
+  return (name ? 'Draw this NPC (typed by the GM): ' + name + '.\n' : 'Draw the NPC the GM has just described.\n') +
+    'Vocabulary (use only these names):\n' + vocab + '\nLast ' + SCREEN_WINDOW_MIN + ' minutes, up to ' + stamp + ':\n' + talk;
+}
+
+/** The Prop turn: the typed ask (maybe), then the last few minutes of talk. */
+export function propUser({ ask = '', stamp, talk }) {
+  return (ask ? 'The GM asks for: ' + ask + '\n' : 'Make the prop that fits this moment.\n') + 'Last ' + SCREEN_WINDOW_MIN + ' minutes, up to ' + stamp + ':\n' + talk;
+}
+
+/** The Wire turn: the last few minutes of talk. */
+export function wireUser({ stamp, talk }) {
+  return 'Write one bulletin. Last ' + SCREEN_WINDOW_MIN + ' minutes, up to ' + stamp + ':\n' + talk;
+}

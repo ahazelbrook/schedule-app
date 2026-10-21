@@ -831,3 +831,21 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 .gm-handout-t b { overflow-wrap: anywhere; }
 .gm-offer { margin-top: .4rem; }
 .gm-check { display: inline-flex; gap: .35rem; align-items: center; }
+
+/* The Screen (GM.md, "The Screen"): the box's four buttons, the Rack's preview of what Blade made, and the gatekeeper's badge */
+.gm-assist .as-screen { display: grid; gap: 8px; padding-top: 8px; border-top: 2px solid var(--rule); }
+.gm-assist .as-sc-row { display: flex; gap: 6px; }
+.gm-assist .as-sc-row input[type="text"] { flex: 1 1 auto; min-width: 0; font: 400 13.5px/1.4 var(--font-text); padding: 7px 9px; border: 2px solid var(--rule); background: var(--paper); color: var(--ink); border-radius: 0; box-sizing: border-box; }
+.gm-assist .as-sc-row .as-go { flex: 0 0 auto; }
+.gm-assist .as-citeflag { font: 900 10px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; background: var(--mustard); color: var(--on-mustard); padding: 2px 4px; cursor: help; }
+#gm-page .gm-screenitem { display: grid; gap: 4px; }
+#gm-page .gm-rack > .gm-screenitem:not(:first-child) { border-top: 1.5px solid var(--rule); padding-top: 6px; }
+#gm-page .gm-screen-port { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: start; }
+#gm-page .gm-screen-fig { width: 96px; max-height: 190px; overflow: hidden; border: 1.5px solid var(--rule); background: var(--paper); }
+#gm-page .gm-screen-fig svg { display: block; width: 100%; height: auto; }
+#gm-page .gm-screen-text { margin: 0; padding: 6px 8px; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1.5px solid var(--hair); background: var(--card); font: 400 12.5px/1.4 var(--font-text); }
+#gm-page .gm-gate { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 3px 5px; border: 1.5px solid currentColor; }
+#gm-page .gm-gate-ok { color: var(--ink); }
+#gm-page .gm-gate-bad, #gm-page .gm-gate-unk { background: var(--mustard); color: var(--on-mustard); border-color: var(--mustard); }
+#gm-page .gm-gate-wait { color: var(--ink-soft); border-style: dashed; }
+#gm-page .gm-gate-why { margin: 0; padding-left: 18px; font-size: 12.5px; }

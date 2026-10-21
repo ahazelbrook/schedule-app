@@ -25,6 +25,9 @@
 //                     wrapping each --context file
 //   --turn-at seat@HH:MM,...   run seats once at those minutes with the endpoint's own turn, no Tripwire, no Conductor; writes turns.md and
 //                     turns.json, and checks Mystery's must_land_item against the prefix's "## Must land" section (grounded or not).
+//   --screen-at portrait@HH:MM[=Name],prop@HH:MM[=ask],wire@HH:MM,board=a | b   the Screen seats with the endpoint's own turns, each item then gated
+//                     (the panel's own gate text); board is code (the lines you give). Writes screen.md (--out under gm-private/), screen.json,
+//                     portrait-N.svg and summary.txt.
 //   --nightshift      hour-long chunks -> sorters in parallel -> writer; writes nightshift.md
 //   --seats a,b,c    which seats run (default tripwire,ref,clerk,ledger)
 //   --set seat.k=v    override a seat's model or effort for a sweep, e.g. --set ref.effort=high
@@ -240,6 +243,69 @@ if (arg('voice-at')) {
 const normText = x => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const mustLand = (() => { const m = /\n## Must land\n([\s\S]*?)\n## /.exec(prefix); return m ? normText(m[1]) : ''; })();
 const groundedItem = item => { const n = normText(item).slice(0, 30); return !!(n && mustLand.includes(n)); };
+
+// --screen-at portrait@HH:MM[=Name],prop@HH:MM[=ask],wire@HH:MM,board[=known one | known two]: the Screen seats at chosen minutes, with the
+// endpoint's own turn (the last SCREEN_WINDOW_MIN minutes of talk), the same item rules and the gatekeeper on every item (the panel's own
+// gate text). `board` is code: it builds the board from the `|`-separated lines you give (invented ones for a check) and gates it. A portrait is
+// cleaned with the figure kit and its SVG written beside the report. Writes screen.md (the items and the verdicts: it quotes the table, so
+// --out must sit under gm-private/), screen.json, portrait-N.svg and summary.txt (counts and money only). Honours --max-spend.
+if (arg('screen-at')) {
+  const { createRequire } = await import('node:module');
+  const req = createRequire(import.meta.url), here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+  const K = req(path.join(here, '..', 'app', 'figures', 'figure-kit.js')), NPC = req(path.join(here, '..', 'app', 'gm', 'npc.js')), PANEL = req(path.join(here, '..', 'app', 'gm', 'assist-panel.js'))._pure;
+  const { toPortrait, toProp, toWire, buildBoard, vocabText, cleanName, cleanAsk } = await import('../functions/_lib/assist/screen.js');
+  const { portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN } = await import('../functions/_lib/assist/prompts.js');
+  if (!path.resolve(outDir).split(path.sep).includes('gm-private')) { console.error('--out must sit under gm-private/: the report quotes the table'); process.exit(2); }
+  const vocab = vocabText(K.options());
+  const md = ['# The Screen at chosen minutes', '', 'Every item below was made by one seat call with the endpoint\'s own turn, then checked by the gatekeeper. Nothing here reached a screen.', ''], dump = [];
+  let n = 0;
+  for (const spec of arg('screen-at').split(',').map(x => x.trim()).filter(Boolean)) {
+    const m = /^(portrait|prop|wire|board)(?:@(\d\d:\d\d))?(?:=(.*))?$/.exec(spec);
+    if (!m) { console.error('bad --screen-at item ' + spec + ' (portrait@HH:MM[=Name], prop@HH:MM[=ask], wire@HH:MM, board=a | b)'); process.exit(2); }
+    const [, kind, at, rest = ''] = m;
+    if (kind !== 'board' && !at) { console.error(kind + ' needs @HH:MM'); process.exit(2); }
+    if (total >= maxSpend) { console.error('spend cap $' + maxSpend + ' reached before ' + spec); break; }
+    const t = at ? toMin(at) : 0, talk = at ? textFor(t - SCREEN_WINDOW_MIN + 1, t) : '';
+    const before = total, n0 = secsLog.length;
+    let item = null, made = null, cleaned = null;
+    if (kind === 'board') item = buildBoard(rest.split('|').map(x => x.trim()).filter(Boolean), []);
+    else {
+      const user = kind === 'portrait' ? portraitUser({ name: cleanName(rest) || '', vocab, stamp: at, talk }) : kind === 'prop' ? propUser({ ask: cleanAsk(rest) || '', stamp: at, talk }) : wireUser({ stamp: at, talk });
+      made = await run(kind, at, user);
+      item = made ? (kind === 'portrait' ? toPortrait(made, cleanName(rest) || '') : kind === 'prop' ? toProp(made) : toWire(made)) : null;
+      if (item && kind === 'portrait') {
+        cleaned = NPC.cleanSpec(item.spec, { K, name: item.name });
+        if (cleaned.ok) { const sp = JSON.parse(JSON.stringify(cleaned.spec)); sp.id = 'screen-preview'; fs.writeFileSync(path.join(outDir, `portrait-${++n}.svg`), K.portrait(sp, { lod: 'lo' }).svg); }
+        else item = null;
+      }
+    }
+    const make = made ? { secs: secsLog[n0], stop: stopLog[n0], cost: total - before } : null;
+    let gate = null, gateCost = 0;
+    if (item && total < maxSpend) {
+      const gi = { kind: item.kind, text: PANEL.gateText(item), cites: [] }, g0 = total, ns = secsLog.length;
+      const r = await callSeat(client, { ...registry.gatekeeper, prefix, user: gatekeeperUser(gi) });
+      total += r.cost; spend.gatekeeper = (spend.gatekeeper || 0) + r.cost; calls.gatekeeper = (calls.gatekeeper || 0) + 1; secsLog.push(r.secs); stopLog.push(r.stop);
+      log.write(JSON.stringify({ at: at || 'board', seat: 'gatekeeper', model: registry.gatekeeper.model, effort: registry.gatekeeper.effort, usage: r.usage, cost: r.cost, stop: r.stop, secs: r.secs, json: r.json }) + '\n');
+      gate = { ...verdictOf(r.json, r.stop), secs: r.secs, stop: r.stop }; gateCost = total - g0;
+    }
+    md.push('## ' + kind + (at ? ' @ ' + at : '') + (make ? '  (made in ' + make.secs + ' s, stop ' + make.stop + ', $' + make.cost.toFixed(3) + ')' : ''), '');
+    if (!item) md.push('(no usable item' + (cleaned && !cleaned.ok ? ': the figure kit rejected the drawing: ' + cleaned.warnings.slice(0, 2).join('; ') : '') + ')', '');
+    else {
+      md.push(item.kind === 'portrait' ? '**' + item.name + '**: ' + item.description + (cleaned && cleaned.notes.length ? '\n\nkit notes: ' + cleaned.notes.join('; ') : '') + '\n\nportrait-' + n + '.svg'
+        : (item.title ? '**' + item.title + '**\n\n' : '') + '```\n' + item.text + '\n```');
+      md.push('', gate ? 'gatekeeper: **' + gate.verdict + '**' + (gate.unknown ? ' (unknown)' : '') + ' (' + gate.secs + ' s, stop ' + gate.stop + ', $' + gateCost.toFixed(3) + ')' +
+        '\n- reasons: ' + (gate.reasons.join(' | ') || '-') + '\n- revealed: ' + (gate.revealed.join(' | ') || '-') + '\n- rule: ' + (gate.rule.join(' | ') || '-') + '\n- cites_bad: ' + (gate.cites_bad.join(' | ') || '-') : 'gatekeeper: not run (spend cap)', '');
+    }
+    dump.push({ kind, at: at || null, make, item: item ? { ...item, ...(item.spec ? { spec: cleaned && cleaned.spec } : {}) } : null, gate, gateCost, total });
+    console.log(`${kind}${at ? '@' + at : ''}: ${item ? 'item made' : 'no item'}${make ? ' (' + make.secs + 's ' + make.stop + ')' : ''}${gate ? '; gate ' + gate.verdict + (gate.unknown ? ' (unknown)' : '') : ''}; running total $${total.toFixed(4)}`);
+  }
+  fs.writeFileSync(path.join(outDir, 'screen.md'), md.join('\n') + '\n');
+  fs.writeFileSync(path.join(outDir, 'screen.json'), JSON.stringify(dump, null, 1) + '\n');
+  const stats = 'screen-at total: $' + total.toFixed(4) + '; calls ' + secsLog.length + ' ' + JSON.stringify(calls) + '; stop reasons ' + JSON.stringify(stopLog) + '; items ' + dump.filter(d => d.item).length + ' of ' + dump.length + '; gates ' + JSON.stringify(dump.map(d => d.gate ? d.gate.verdict + (d.gate.unknown ? '?' : '') : '-'));
+  fs.writeFileSync(path.join(outDir, 'summary.txt'), stats + '\n');
+  console.log(stats + '\nwritten to ' + outDir);
+  process.exit(0);
+}
 
 // --turn-at seat@HH:MM,... : one call per spec with the endpoint's own turn (Stall and the Tap seats: the last four minutes;
 // Showrunner and Mystery: their longer windows). No Tripwire and no Conductor: this asks what the SEAT says, not whether it would wake.
