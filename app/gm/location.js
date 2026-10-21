@@ -37,7 +37,9 @@
  *            rng   alternative to seed: a () => [0,1) function (e.g. B68GmRng.seed(n)).
  *                  roll.seed is then null unless run.seed is also given.
  *   The roll is exactly the object the vault's generate() returns (the map kit reads
- *   it unchanged), plus one extra field, `seed`.
+ *   it unchanged), plus one extra field, `seed`. It is a schema 2 roll (roll.schema = 2):
+ *   the service side carries `room`, the back route `room`, `level` and `means` (the map
+ *   kit's INTEGRATION.md §3). The front carries none.
  *
  * controls(pack) -> { controls: [ { key, label, kind: "select"|"toggle", options? } ],
  *                     defaults: { target:"", district:"", approach:"", faction:"", mix:false } }
@@ -126,7 +128,27 @@
     ROMAN: ["0", "I", "II", "III", "IV", "V", "VI"],
     CANVAS_BAND: { public: "4", working: "3", controlled: "2", secure: "1" },
     RING_R: { public: 1180, working: 840, controlled: 520, secure: 220 },
-    NODE_W: 280, NODE_H: 140, VECTOR_R: 1560, RING_WIDEN: 1.45
+    NODE_W: 280, NODE_H: 140, VECTOR_R: 1560, RING_WIDEN: 1.45,
+    // The vault's T.circulationWay, for a pack exported before it existed: where each back-route
+    // entry comes in ([level, means], map kit schema 2). [interpretation], the kit's own reading of
+    // the same words. A pack whose T carries circulationWay uses that instead.
+    CIRCULATION_WAY: {
+      "circular stairs and ladders": ["upper", "spiral-stair"],
+      "a secret door": ["street", "secret-door"],
+      "catwalks": ["upper", "catwalk"],
+      "skylights": ["roof", "skylight"],
+      "a balcony": ["upper", "balcony"],
+      "a cellar": ["below", "cellar"]
+    },
+    // The vault's T.serviceWay: the four printed "also" rooms whose names are themselves a way in
+    // ([level, means]). The service side through one of them names no room; it says the floor and
+    // the means, as the kit has always read those words. [interpretation], like CIRCULATION_WAY.
+    SERVICE_WAY: {
+      "Rooftop": ["roof", "roof-hatch"],
+      "Roof terrace": ["roof", "roof-hatch"],
+      "Basement": ["below", "cellar"],
+      "Fire escape": ["upper", "fire-escape"]
+    }
   };
 
   function extraOf(pack) {
@@ -173,7 +195,8 @@
     arr(T.themeNames).forEach(addTheme);
     need("targetType", isObj(T.targetType));
     var districts = arr(T.district).map(function (d) { return Array.isArray(d) ? d[0] : null; });
-    arr(T.targetNames).forEach(function (n) {
+    // every row the table holds, seed-only ones (Market, Autodrome) too
+    arr(T.targetNames).concat(isObj(T.targetType) ? Object.keys(T.targetType).filter(function (k) { return arr(T.targetNames).indexOf(k) < 0; }) : []).forEach(function (n) {
       var tt = isObj(T.targetType) ? T.targetType[n] : null, at = "targetType." + n;
       if (!isObj(tt) || !filled(tt.theme)) { miss.push(at); return; }
       [tt.theme, tt.alt, tt.mix].forEach(addTheme);
@@ -471,6 +494,9 @@
     var svcAll = th.alsoRooms.filter(function (nb) { return nb[1] === "working" || nb[1] === "controlled"; });
     var svcPref = svcAll.filter(function (nb) { return X.SERVICE_RE.test(nb[0]); });
     var svc = svcPref.length ? pick(svcPref) : (svcAll.length ? pick(svcAll) : null);
+    // The back route's entry is drawn here rather than inside the list below: the same one
+    // draw, in the same place in the rng order, so a replayed roll is the same roll.
+    var back = pick(T.circulation);
     o.vectors = [
       { n: "The front", how: o.namedStreet + " — " + o.streetType + ".",
         cost: "Outside: " + o.streetObstacle.toLowerCase() + ".", know: "free" },
@@ -478,10 +504,26 @@
         how: svc ? "In through the " + svc[0].toLowerCase() + "."
                  : "[TODO: " + o.themeName + " prints no staff-side room on its \"also\" line.]",
         cost: "Staff use it, so someone is always near it.", know: "costs a question" },
-      { n: "The back route", how: cap(pick(T.circulation)) + " — there is always one.",
+      { n: "The back route", how: cap(back) + " — there is always one.",
         cost: "It costs something: noise, time, or a favour.", know: "can't be known from outside" }
     ];
     o.threshold = o.vectors[0].n;
+    // Schema 2 (the map kit's INTEGRATION.md §3): where each way in lands, in fields, so a map
+    // never has to read the words. Nothing here draws from the rng.
+    //   front         needs nothing
+    //   service side  room: the room its words are built from, when this roll has that room;
+    //                 null when it doesn't (the kit then lands it by its words' floor, as before).
+    //                 A room whose name is a way in (serviceWay: Rooftop, Basement...) is a level
+    //                 and a means instead, with room null.
+    //   back route    room: null; level and means from the circulation table, beside each entry
+    var svcWay = svc ? (T.serviceWay || X.SERVICE_WAY)[svc[0]] : null;
+    var svcRoom = svc && !svcWay ? (o.rooms.find(function (r) { return r.name === svc[0]; }) || null) : null;
+    o.vectors[1].room = svcRoom ? svcRoom.name : null;
+    if (svcWay) { o.vectors[1].level = svcWay[0]; o.vectors[1].means = svcWay[1]; }
+    var way = (T.circulationWay || X.CIRCULATION_WAY)[back];
+    o.vectors[2].room = null;
+    if (way) { o.vectors[2].level = way[0]; o.vectors[2].means = way[1]; }
+    o.schema = 2;
 
     // --- Ring 3: the block --------------------------------------------------------------------
     o.blockUse = fresh("blockUse", T.blockUse);
@@ -589,7 +631,7 @@
     };
     return {
       controls: [
-        sel("target", "Target", T.targetNames.slice().sort()),
+        sel("target", "Target", Object.keys(T.targetType).sort()),   // seed-only rows (Market, Autodrome) can be chosen
         sel("district", "District", T.district.map(function (d) { return d[0]; })),
         sel("approach", "Approach", T.approach.map(function (a) { return a.n; })),
         sel("faction", "Faction", T.faction.map(function (f) { return f[0]; }).slice().sort()),
