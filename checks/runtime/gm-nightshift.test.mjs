@@ -44,17 +44,17 @@ function mockClient({ sorterOut = 0, writerOut = 0, rolls = [ROLLS_A, ROLLS_B], 
   return { calls, messages: { create: async (p) => respond(p), stream: (p) => ({ finalMessage: async () => respond(p) }) } };
 }
 
-const NOTE = '---\nwiki: log\nsession: 2\ndate: 17/10/2026\n---\n# Session 2\n\n## Names\n\n## Moments\n\n## Rolled at the table\n\n## Tail\nlast words\n';
-const SUN = Date.parse('2026-10-17T23:30:00.000Z');
+const NOTE = '---\nwiki: log\nsession: 9\ndate: 03/03/2031\n---\n# Session 9\n\n## Names\n\n## Moments\n\n## Rolled at the table\n\n## Tail\nlast words\n';
+const SUN = Date.parse('2031-03-03T12:00:00.000Z');
 async function setup(note = NOTE) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'b68-ns-'));
   const vault = path.join(base, 'vault'), priv = path.join(base, 'priv'), dir = path.join(vault, ...S.split('/'));
   fs.mkdirSync(dir, { recursive: true }); fs.mkdirSync(priv);
-  fs.writeFileSync(path.join(dir, 'b68g-s02.md'), note);
-  fs.writeFileSync(path.join(dir, 'b68g-s02-transcript-ipad.md'), TRANSCRIPT);
+  fs.writeFileSync(path.join(dir, 'b68g-s09.md'), note);
+  fs.writeFileSync(path.join(dir, 'b68g-s09-transcript-ipad.md'), TRANSCRIPT);
   const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });
   exec.db.exec('DELETE FROM npcs');
-  return { base, vault, priv, dir, exec, db: asD1(exec), file: path.join(dir, 'b68g-s02.md') };
+  return { base, vault, priv, dir, exec, db: asD1(exec), file: path.join(dir, 'b68g-s09.md') };
 }
 async function after(env, args, extra = {}) {
   const out = [];
@@ -103,7 +103,7 @@ await test('two-stage: sorters keep each roll\'s position and dots, the writer i
 
 await test('the draft marks xp as manual and has one heading with no stray ## inside', () => {
   const r = { mode: 'two-stage', spend: 0.5, rolls: ROLLS_A, sections: { ...SECTIONS, session_log: '# Big title\n## Another\nbody' } };
-  const block = renderDraft(r, { date: '18/10/2026', session: 2 });
+  const block = renderDraft(r, { date: '04/03/2031', session: 9 });
   assert.equal(count(block, /^## /gm), 1);
   assert.match(block, /^## Night Shift draft/);
   assert.match(block, /XP is manual/);
@@ -159,7 +159,7 @@ await test('gm:after skips the step without a key, and with --no-nightshift, wri
   assert.equal(client.calls.length, 0);
   assert.doesNotMatch(read(env.file), /Night Shift draft/);
   assert.equal(read(env.file).includes(before.trimEnd()), true);
-  assert.match(nokey.out, /4\. Transcripts for session 2/, 'the rest of gm:after still ran');
+  assert.match(nokey.out, /4\. Transcripts for session 9/, 'the rest of gm:after still ran');
 });
 
 await test('gm:after: the plan spends nothing; --yes files one heading; a second run is skipped before any call; --nightshift-force replaces', async () => {
@@ -167,11 +167,11 @@ await test('gm:after: the plan spends nothing; --yes files one heading; a second
   const client = mockClient();
   const ex = { env: { B68_ANTHROPIC_KEY: 'k' }, client, prefix: 'PFX' };
   const plan = await after(env, [], ex);
-  assert.match(plan.out, /would draft b68g-s02's paperwork from 4 transcript lines/);
+  assert.match(plan.out, /would draft b68g-s09's paperwork from 4 transcript lines/);
   assert.equal(client.calls.length, 0); assert.doesNotMatch(read(env.file), /Night Shift/);
   const go = await after(env, ['--yes'], ex);
   assert.equal(go.code, 0, go.out);
-  assert.match(go.out, /filed "## Night Shift draft" in b68g-s02: 3 rolls \(2 with position and dots\)/);
+  assert.match(go.out, /filed "## Night Shift draft" in b68g-s09: 3 rolls \(2 with position and dots\)/);
   const t1 = read(env.file), calls1 = client.calls.length;
   assert.equal(count(t1, /^## Night Shift draft/gm), 1);
   assert.match(t1, /XP is manual/);
@@ -192,7 +192,7 @@ await test('gm:after with a cap too low stops cleanly: exit 0, nothing filed, th
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /stopped: the sorters used \$.* and the cap is \$1\.00/);
   assert.doesNotMatch(read(env.file), /Night Shift draft/);
-  assert.ok(fs.existsSync(path.join(env.priv, 'nightshift-s2-partial.json')));
+  assert.ok(fs.existsSync(path.join(env.priv, 'nightshift-s9-partial.json')));
   assert.throws(() => parseArgs(['--nightshift-cap', '0']), /dollar amount/);
 });
 
