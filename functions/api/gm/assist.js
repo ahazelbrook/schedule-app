@@ -244,7 +244,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const session = lines.length ? lines[lines.length - 1].session : '';
       const out = r && r.json ? r.json : null;
       await logRow(db, campaign, { at, session, seat: 'fixer', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['fit'], timing,
-        card: out ? { out, shown: 0 } : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : 'no JSON' } }).run();
+        card: out ? { out, shown: 0, draws } : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : 'no JSON', draws } }).run();
       return done(out ? [{ seat: 'fixer', at, text: out.read, ...out }] : [], [], last);
     }
 

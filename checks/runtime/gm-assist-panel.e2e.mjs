@@ -108,7 +108,8 @@ try {
   await p.click('#as-go');
   check(await p.waitForSelector('.gm-assist .as-lines li', { timeout: 10000 }).then(() => true, () => false), 'Fit it shows the lines');
   check((await p.$$('.gm-assist .as-lines li')).length === 5, 'five lines: 1-3, 4-5, 6, crit, bargain');
-  check(JSON.stringify(G.seen.fit[0]) === JSON.stringify({ position: 'desperate', effect: 'standard' }), 'the fit request carried the position and the effect');
+  const fr = G.seen.fit[0] || {};
+  check(fr.position === 'desperate' && fr.effect === 'standard' && fr.draws && /^A 1–3/.test(fr.draws.low) && /^A 4[/]5/.test(fr.draws.mid), 'the fit request carried the position, the effect and the console draws');
   await shot(p, 'expanded');
   await p.keyboard.press('Escape');
   check(await p.$eval('#as-panel', (e) => e.hidden), 'Escape closes the box');

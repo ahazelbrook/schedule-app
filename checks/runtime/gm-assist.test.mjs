@@ -637,7 +637,7 @@ await test('every seat call logs its seconds and stop reason in the card JSON (t
   clock.t += 60_000;
   await body(await s.post('fit', { position: 'risky', draws: DRAWS }));
   const fx = JSON.parse(s.rows().find((r) => r.seat === 'fixer').card);
-  assert.equal(fx.secs, 21.5); assert.equal(fx.stop, 'end_turn'); assert.equal(fx.shown, 0); assert.ok(fx.out && fx.out.one_three);
+  assert.deepEqual(fx.draws, DRAWS, 'the two draws, as sent, are kept in the row'); assert.equal(fx.secs, 21.5); assert.equal(fx.stop, 'end_turn'); assert.equal(fx.shown, 0); assert.ok(fx.out && fx.out.one_three);
 });
 
 await test('a failed call still logs its seconds', async () => {
