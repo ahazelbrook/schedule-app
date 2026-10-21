@@ -85,14 +85,14 @@ await test('with neither source there is no table and a warning', () => {
   assert.ok(w.some((m) => /no player table/.test(m)));
   assert.equal(part.src.players, undefined);
 });
-await test('block order is stable (rules, cast, NPC cards, players, prep last); same inputs give the same sha', () => {
+await test('block order is stable (rules, cast, NPC cards, players, never-reveal, prep last); same inputs give the same sha', () => {
   put(CHARACTERS + '/Ann Test.md', PC('Ann Test', 'Zed'));
   const a = build().part, b = build().part;
-  assert.deepEqual(names(a), [path.basename(DEFAULT_RULES), path.basename(DEFAULT_CAST), NPC_BLOCK_NAME, PLAYERS_NAME, 'Tonight.md']);
+  assert.deepEqual(names(a), [path.basename(DEFAULT_RULES), path.basename(DEFAULT_CAST), NPC_BLOCK_NAME, PLAYERS_NAME, 'never-reveal.md', 'Tonight.md']);
   assert.equal(a.src.blockSha, b.src.blockSha);
   const noPrep = build({ prep: '' }).part;
   assert.deepEqual(names(noPrep), names(a).slice(0, 4));
-  assert.ok(a.prefix.startsWith(noPrep.prefix), 'everything before the prep is identical, so a new prep only changes the tail');
+  assert.ok(a.prefix.startsWith(noPrep.prefix), 'everything before the never-reveal block is identical, so a new prep only changes the tail');
   put(NPCS + '/Pip.md', read('Pip').replace('Low', 'High'));
   assert.notEqual(build().part.src.blockSha, a.src.blockSha);
 });

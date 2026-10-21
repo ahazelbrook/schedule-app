@@ -21,6 +21,8 @@
 //   --nightshift      hour-long chunks -> sorters in parallel -> writer; writes nightshift.md
 //   --seats a,b,c    which seats run (default tripwire,ref,clerk,ledger)
 //   --set seat.k=v    override a seat's model or effort for a sweep, e.g. --set ref.effort=high
+//   --gatekeeper-file <json>   run the gatekeeper over sample items [{ kind, text, cites? }] (no transcript needed; --context carries the never-reveal block);
+//                     prints verdict and counts per item, never the text; writes gatekeeper.json and gatekeeper.md
 //   --fixer-at HH:MM,...   run the Fixer at those minutes as if the Position had just been set, and write fixer.md and
 //                     fixer-moments.md (each moment's two draws beside the fitted lines). The Fixer FITS the console's two draws, so
 //                     they must come from one of:
@@ -39,7 +41,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { makeClient, callSeat, countTokens } from '../functions/_lib/assist/claude.js';
 import { SEATS, WAKES } from '../functions/_lib/assist/seats.js';
-import { fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, SHOWRUNNER_MIN, MYSTERY_MIN } from '../functions/_lib/assist/prompts.js';
+import { cleanItem, verdictOf } from '../functions/_lib/assist/gatekeeper.js';
+import { gatekeeperUser, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, SHOWRUNNER_MIN, MYSTERY_MIN } from '../functions/_lib/assist/prompts.js';
 import { decide } from '../functions/_lib/assist/conductor.js';
 import { toVoice, toAnother } from '../functions/_lib/assist/editor.js';
 import { makeDrawsFor, parsePositionAt } from './lib/fixer-draws.mjs';
@@ -51,7 +54,7 @@ const args = n => argv.flatMap((a, i) => (a === `--${n}` ? [argv[i + 1]] : []));
 
 const transcriptFile = arg('transcript');
 const contextFiles = args('context');
-if (!transcriptFile) { console.error('--transcript <file> is required'); process.exit(2); }
+if (!transcriptFile && !arg('gatekeeper-file')) { console.error('--transcript <file> is required'); process.exit(2); }
 
 const seats = (arg('seats', 'tripwire,ref,clerk,ledger')).split(',').map(s => s.trim()).filter(Boolean);
 const registry = structuredClone(SEATS);
@@ -68,7 +71,7 @@ const to = arg('to') ? toMin(arg('to')) : 1e9;
 // Lines look like "- **[HH:MM] Name:** text". Anything else (reconnect markers, headings) is skipped.
 const LINE = /^- \*\*\[(\d\d):(\d\d)\] ([^:*]+):\*\* (.*)$/;
 const minutes = new Map(), allMinutes = new Map();     // allMinutes ignores --from/--to (--tap-sim loads talk before the window)
-for (const raw of fs.readFileSync(transcriptFile, 'utf8').split(/\r?\n/)) {
+for (const raw of (transcriptFile ? fs.readFileSync(transcriptFile, 'utf8') : '').split(/\r?\n/)) {
   const m = LINE.exec(raw);
   if (!m) continue;
   const t = Number(m[1]) * 60 + Number(m[2]);
@@ -120,6 +123,35 @@ async function run(seat, at, user) {
     fs.writeFileSync(path.join(outDir, `failed-${seat}-${at.replace(':', '')}.txt`), r.text || '');
   }
   return r.json;
+}
+
+// --gatekeeper-file <json>: run the gatekeeper over sample items, [{ "kind": "prop", "text": "...", "cites": ["p.12"] }, ...] (kind is portrait,
+// prop, wire, board or card). Needs --context for the prefix (the never-reveal block is in it). Needs no transcript. Prints one line per item
+// (number, verdict, counts; never the text) and writes gatekeeper.json and gatekeeper.md under --out. Honours --max-spend.
+if (arg('gatekeeper-file')) {
+  let items;
+  try { items = JSON.parse(fs.readFileSync(arg('gatekeeper-file'), 'utf8')); } catch (e) { console.error('--gatekeeper-file is not valid JSON: ' + e.message); process.exit(2); }
+  if (!Array.isArray(items) || !items.length) { console.error('--gatekeeper-file must be a JSON list of { kind, text, cites? }'); process.exit(2); }
+  const checked = items.map(b => cleanItem(b));
+  const badAt = checked.findIndex(c => !c.ok);
+  if (badAt >= 0) { console.error(`item ${badAt + 1}: ${checked[badAt].why}`); process.exit(2); }
+  const results = [];
+  for (let i = 0; i < checked.length; i++) {
+    if (total >= maxSpend) { console.error(`spend cap $${maxSpend} reached before item ${i + 1}`); break; }
+    const item = checked[i].item;
+    const cfg = registry.gatekeeper, before = total;
+    const r = await callSeat(client, { ...cfg, prefix, user: gatekeeperUser(item) });
+    total += r.cost; spend.gatekeeper = (spend.gatekeeper || 0) + r.cost; calls.gatekeeper = (calls.gatekeeper || 0) + 1; secsLog.push(r.secs); stopLog.push(r.stop);
+    const v = verdictOf(r.json, r.stop);
+    log.write(JSON.stringify({ at: String(i + 1), seat: 'gatekeeper', model: cfg.model, effort: cfg.effort, usage: r.usage, cost: r.cost, stop: r.stop, secs: r.secs, json: r.json }) + '\n');
+    results.push({ n: i + 1, kind: item.kind, ...v, cost: r.cost, secs: r.secs, stop: r.stop });
+    console.log(`item ${i + 1} (${item.kind}): ${v.verdict}${v.unknown ? ' (unknown)' : ''}; revealed ${v.revealed.length}, rule ${v.rule.length}, cites_bad ${v.cites_bad.length}; $${(total - before).toFixed(4)}, ${r.secs}s`);
+  }
+  fs.writeFileSync(path.join(outDir, 'gatekeeper.json'), JSON.stringify(results, null, 1) + '\n');
+  fs.writeFileSync(path.join(outDir, 'gatekeeper.md'), results.map(x => `## Item ${x.n} (${x.kind}): ${x.verdict}${x.unknown ? ' (unknown)' : ''}\n- reasons: ${x.reasons.join(' | ') || '-'}\n- revealed: ${x.revealed.join(' | ') || '-'}\n- rule: ${x.rule.join(' | ') || '-'}\n- cites_bad: ${x.cites_bad.join(' | ') || '-'}`).join('\n\n') + '\n');
+  const sorted = [...secsLog].sort((a, b) => a - b), median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)] : 0;
+  console.log(`gatekeeper total: $${total.toFixed(4)}; ${results.length} items; secs median ${median}; stop reasons ${JSON.stringify(stopLog)}`);
+  process.exit(0);
 }
 
 // --fixer-at 22:09,22:23 (alias --fixer): run the Fixer as if a Position had just been set at each minute, fitting the console's

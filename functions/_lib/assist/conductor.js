@@ -21,7 +21,7 @@ import { WAKES } from './seats.js';
 export const DEFAULT_CAP = 20;                       // dollars a night (a Worker setting; the Console has its own monthly limit)
 export const LADDER = { reduced: 0.6, core: 0.85, off: 1 };
 export const DROPPED_WHEN_REDUCED = ['meanwhile', 'showrunner', 'mystery'];
-export const CORE_SEATS = ['fixer', 'ref', 'ledger', 'voice_plus'];
+export const CORE_SEATS = ['fixer', 'ref', 'ledger', 'voice_plus', 'gatekeeper'];   // the gatekeeper runs to the cap like Ref: nothing reaches the players' screen unchecked
 export const REPEAT_WINDOW_MS = 10 * 60 * 1000;
 
 // Minimum gap between two runs of one seat. The Tap seats read the last few minutes raw, so a minute-by-minute re-run only
@@ -35,6 +35,7 @@ export const COOLDOWN_MS = {
   stall: 5 * 60 * 1000,             // a stall flag that stays set must not offer a new idea every minute
   voice: 45 * 1000,                 // the tick comes about once a minute; the gap must be shorter than that
   voice_plus: 10 * 1000,
+  gatekeeper: 0,                    // the GM's own tap; one at a time (the in-flight gate), no cooldown
   showrunner: 10 * 60 * 1000,
   mystery: 15 * 60 * 1000,
   meanwhile: 20 * 60 * 1000,

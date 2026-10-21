@@ -41,3 +41,14 @@ export function mysteryUser({ stamp, talk, known = [] }) {
   return (known.length ? 'You reported these as known earlier tonight (already learned):\n' + known.map((k) => '- ' + k).join('\n') + '\n' : '') +
     'Talk of the last ' + MYSTERY_MIN + ' minutes, up to ' + stamp + ' (earlier talk is not shown):\n' + talk;
 }
+
+export const ITEM_KINDS = ['portrait', 'prop', 'wire', 'board', 'card'];
+export const ITEM_MAX = 1500;               // characters in an item the gatekeeper checks
+export const CITES_MAX = 8;                 // page cites per item
+export const CITE_MAX = 60;                 // characters per cite
+
+/** The gatekeeper turn: the kind, the item's text, and any page cites to spot-check. */
+export function gatekeeperUser({ kind, text, cites = [] }) {
+  return 'Item kind: ' + kind + '.\nItem text:\n' + text + (cites.length ? '\nPage cites to check against the rules reference:\n' + cites.map((c) => '- ' + c).join('\n') : '') +
+    '\nCheck this item.';
+}

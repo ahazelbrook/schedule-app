@@ -22,6 +22,7 @@ export const DEFAULT_RULES = ROOT + '/Rules/blades-68-table-reference.md';
 export const DEFAULT_CAST = ROOT + '/Tools/blades-68-npc-cast.md';
 export const NPC_BLOCK_NAME = 'npc-how-to-play.md';
 export const PLAYERS_NAME = 'players.md';
+export const NEVER_NAME = 'never-reveal.md';
 export const CHARACTERS = GROUP + '/Characters';
 export const TOKEN_WARN = 90000;          // Haiku's price rises above 100k prompt tokens; warn well before it
 export const CHARS_PER_TOKEN = 3.5;
@@ -87,6 +88,123 @@ export function extractHowToPlay(text) {
     }
   }
   return '';
+}
+
+// ---------- the never-reveal list ----------
+// What the vault's notes say must not reach the players. Conventions it reads (heading or callout titles only; nothing is guessed):
+//   tonight's prep:  a "Must land" section (list items = clues to get out; a ticked box [x] has landed, so it is left out);
+//                    any heading or callout titled with secret / never reveal / GM only / hidden truth / the truth / reveal.
+//   NPC notes:       a "Knows / doesn't know" section (what the NPC holds, which the players must not be handed by a prop);
+//                    the same secret-style headings and callouts.
+const MUST_LAND = /^must[\s-]*land\b/i;
+const SECRET_HEAD = /\b(secrets?|never reveal(?:ed)?|do not reveal|don['’]t reveal|gm[\s-]*only|hidden truths?|the truth|reveal)\b/i;
+const KNOWS_HEAD = /^knows\s*\/\s*(?:doesn['’]t|does not|doesnt)\s+know\b/i;
+const plainTitle = (s) => String(s).replace(/\[\[([^\]|]+\|)?([^\]]+)\]\]/g, '$2').replace(/[*_`]/g, '').replace(/\s+/g, ' ').trim();
+
+/** The lines under a heading at lines[i], up to the next heading of the same or a shallower level. -> { body, end } (end = index after). */
+function headingSection(lines, i, level) {
+  let j = i + 1;
+  while (j < lines.length) {
+    const h = /^(#{1,6})\s/.exec(lines[j]);
+    if (h && h[1].length <= level) break;
+    j++;
+  }
+  return { body: lines.slice(i + 1, j).join('\n').trim(), end: j };
+}
+
+/**
+ * The never-reveal sections of one note. -> [{ title, body }]. `knows` also takes a "Knows / doesn't know" section (NPC notes).
+ * A section is a heading whose title matches, or a callout (any type) whose title matches; a heading section runs to the next
+ * heading of its level or above, a callout to its last quoted line.
+ */
+export function extractSecretSections(text, { knows = false } = {}) {
+  const lines = String(text).split('\n'), out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const h = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(lines[i]);
+    if (h) {
+      const title = plainTitle(h[2]);
+      if (SECRET_HEAD.test(title) || (knows && KNOWS_HEAD.test(title))) {
+        const s = headingSection(lines, i, h[1].length);
+        if (s.body) out.push({ title, body: s.body });
+        i = s.end - 1;
+      }
+      continue;
+    }
+    const c = /^>\s*\[![\w-]+\][+-]?\s*(.*)$/.exec(lines[i]);
+    if (c && SECRET_HEAD.test(plainTitle(c[1]))) {
+      const q = [];
+      let j = i + 1;
+      for (; j < lines.length && /^>/.test(lines[j]); j++) q.push(lines[j].replace(/^>\s?/, ''));
+      const body = q.join('\n').trim();
+      if (body) out.push({ title: plainTitle(c[1]), body });
+      i = j - 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * The "Must land" list of a prep note: -> { found, entries: [text], landed: n }. found is whether a Must land heading exists.
+ * An entry is a top-level list item and the lines indented under it; a ticked box ([x]) has landed and is counted, not listed.
+ * A Must land section with no list items yields its plain text as one entry rather than nothing.
+ */
+export function extractMustLand(text) {
+  const lines = String(text).split('\n');
+  const entries = [];
+  let found = false, landed = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const h = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(lines[i]);
+    if (!h || !MUST_LAND.test(plainTitle(h[2]))) continue;
+    found = true;
+    const s = headingSection(lines, i, h[1].length);
+    const body = s.body.split('\n');
+    const items = [];
+    for (const l of body) {
+      if (/^(?:[-*+]|\d+[.)])\s/.test(l)) items.push([l]);
+      else if (items.length && /^\s+\S/.test(l)) items[items.length - 1].push(l);
+    }
+    for (const it of items) {
+      const first = it[0].replace(/^(?:[-*+]|\d+[.)])\s+/, '');
+      const box = /^\[( |x|X)\]\s*/.exec(first);
+      if (box && box[1] !== ' ') { landed++; continue; }
+      entries.push([box ? first.slice(box[0].length) : first, ...it.slice(1).map((x) => x.trim())].join('\n').trim());
+    }
+    if (!items.length) {
+      const plain = body.filter((l) => !/^>/.test(l)).join('\n').trim();
+      if (plain) entries.push(plain);
+    }
+    i = s.end - 1;
+  }
+  return { found, entries, landed };
+}
+
+/** The never-reveal context text, or '' when there is nothing. npc: [{ name, sections }]; prep: { name, entries, sections }. */
+export function neverRevealText({ npc = [], prep = null } = {}) {
+  const parts = [];
+  if (npc.length) {
+    parts.push('## What the NPCs hold (stable between nights)\n\n' + npc.map((n) => '### ' + n.name + '\n\n' + n.sections.map((s) => '**' + s.title + '**\n' + s.body).join('\n\n')).join('\n\n'));
+  }
+  if (prep && (prep.entries.length || prep.sections.length)) {
+    const bits = [];
+    if (prep.entries.length) bits.push('### Clues not yet landed\n\n' + prep.entries.map((e) => '- ' + e).join('\n'));
+    for (const s of prep.sections) bits.push('### ' + s.title + '\n\n' + s.body);
+    parts.push('## Tonight (from ' + prep.name + ')\n\n' + bits.join('\n\n'));
+  }
+  if (!parts.length) return '';
+  return '# Never reveal\n\nThese are held back from the players. Nothing here may reach their screen unless the table has already got it.\n\n' + parts.join('\n\n') + '\n';
+}
+
+/** Every NPC note in `dir` with a never-reveal section -> { npc: [{ name, sections }], absent? }. */
+export function collectNever(vault, dir = NPCS) {
+  const d = inside(vault, dir);
+  if (!fs.existsSync(d)) return { npc: [], absent: true };
+  const files = fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith('.md')).map((e) => e.name).sort((a, b) => a.localeCompare(b));
+  const npc = [];
+  for (const f of files) {
+    const sections = extractSecretSections(readText(path.join(d, f)), { knows: true });
+    if (sections.length) npc.push({ name: f.replace(/\.md$/, ''), sections });
+  }
+  return { npc };
 }
 
 function frontmatter(text) {
@@ -179,6 +297,24 @@ export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, c
       const pl = mergePlayers(playersFromNotes(vault), readPlayersFile(playersFile));
       if (pl.source) { const t = playersText(pl.map); blocks.push(contextBlock(PLAYERS_NAME, t)); used.push({ rel: PLAYERS_NAME, sha: sha(t) }); stats.players = pl.source; }
       else warn('assist: no player table (no player: on the PC notes, no gm-private/players.json): the prefix does not say who plays whom');
+      // never-reveal: after the stable blocks, before tonight's prep. The NPC part is stable between nights; tonight's part follows it.
+      const nv = collectNever(vault);
+      let prepNever = null, noMust = false;
+      if (rel) {
+        const pf = inside(vault, rel);
+        if (fs.existsSync(pf)) {
+          const pt = readText(pf), ml = extractMustLand(pt);
+          prepNever = { name: path.basename(pf), entries: ml.entries, sections: extractSecretSections(pt) };
+          stats.mustLand = ml.entries.length; stats.mustLandLanded = ml.landed;
+          noMust = !ml.found;
+          if (ml.found && !ml.entries.length) warn('assist: the prep note\'s "Must land" section has no unlanded entries (' + ml.landed + ' ticked): no clues in the never-reveal list');
+        }
+      }
+      const nt = neverRevealText({ npc: nv.npc, prep: prepNever });
+      stats.neverNpc = nv.npc.length;
+      if (nt) { blocks.push(contextBlock(NEVER_NAME, nt)); used.push({ rel: NEVER_NAME, sha: sha(nt) }); }
+      if (nt && noMust) warn('assist: the prep note has no "Must land" section: no unlanded clues in the never-reveal list');
+      if (!nt) warn('assist: nothing found for the never-reveal list (no "Must land" section, no "Knows / doesn\'t know" on NPC notes, no secret-style headings): the gatekeeper has nothing to check against');
     }
     if (!rel) { warn('assist: no prep note named (--assist-prep <vault path>, or "prep" in gm-private/assist-config.json): the prefix has no prep'); continue; }
     const file = inside(vault, rel);
