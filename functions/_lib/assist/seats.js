@@ -53,6 +53,29 @@ Prefer false: most minutes have no flags at all. Reply with JSON only.`,
     },
   },
 
+  // The gatekeeper checks every item before it can reach the players' screen. It never decides anything: the GM's tap is still
+  // needed either way. Unknown (no JSON, refusal, cut-off) is treated as block by the endpoint, never as pass.
+  gatekeeper: {
+    model: 'claude-sonnet-5-5', effort: 'low', maxTokens: 2500,
+    instructions: `You are the gatekeeper for a Blades '68 game. The GM wants to put one item (a portrait caption, a prop, a message, a board entry or a card) on the players' screen. You are given its kind, its text, and any page cites. Check it against three things and decide pass or block.
+1. The never-reveal list in your context (the "never-reveal" block: clues not yet landed, what NPCs hold, tonight's secrets). Block if the item states, implies or lets the players work out any entry. List each entry it exposes in revealed (quote its number or title, not the whole text). A fact the players already have at the table is not a leak, but if you cannot tell, treat it as a leak.
+2. The GM's rule: the item must not decide the outcome of a roll or a consequence that has not happened at the table, and must not narrate what a player character does, says, thinks or feels. List each problem in rule.
+3. The shape: an item must be short, plain text the players could read; it must be what its kind says it is. Note a problem in reasons.
+Check any page cites against the rules reference in your context: list in cites_bad each cite that does not match the rule it is attached to or cannot be found. Cites alone never cause a block.
+Verdict is block if any of 1 to 3 fails, otherwise pass. Give the reasons in plain short sentences. When the item is fine, reasons, revealed, rule and cites_bad are empty. Use only your context and the item. Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        verdict: { type: 'string', enum: ['pass', 'block'] },
+        reasons: { type: 'array', items: { type: 'string' } },
+        revealed: { type: 'array', items: { type: 'string' }, description: 'the never-reveal entries the item would expose' },
+        rule: { type: 'array', items: { type: 'string' }, description: "problems with the GM's rule: decided outcomes, player characters' actions or feelings narrated" },
+        cites_bad: { type: 'array', items: { type: 'string' }, description: 'page cites that look wrong' },
+      },
+      required: ['verdict', 'reasons', 'revealed', 'rule', 'cites_bad'],
+    },
+  },
+
   fixer: {
     model: 'claude-opus-5-5', effort: 'low', maxTokens: 8000,
     instructions: `You are the GM's fixer for a Blades '68 game. A roll is about to be made. The GM's console has already drawn what happens on a 1-3 and on a 4-5, and you are given both draws. The draws are fixed: you fit them to the scene, you do not replace them. From the last few minutes of the live transcript and the cast and rules in your context, work out who is acting, where, what is at stake, and the position (controlled, risky, desperate) and effect the table has set. Then write lines the GM could say aloud in one breath each, plain and concrete, no stage directions.

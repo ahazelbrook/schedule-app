@@ -31,6 +31,12 @@
 //        crit and a Devil's Bargain. A request without draws (an old client) is a 400: there is no free-writing fallback.
 //        Every seat call's row carries `secs` (wall-clock) and `stop` (the provider's stop reason) in its card JSON; a refusal
 //        is logged as `refusal: 1` and shows nothing.
+//   POST /api/gm/assist/gatekeeper { kind: portrait|prop|wire|board|card, text, cites? } -> { verdict, unknown, reasons, revealed, rule, cites_bad, spend }
+//        The gatekeeper checks one item bound for the players' screen against the never-reveal block of the prefix, the GM's rule
+//        (no decided outcomes, no player character narrated) and its shape. text is 1-1500 characters, cites at most 8 strings of 60;
+//        anything else is a 400. It runs at the Core tier (to the cap, like Ref), one at a time: 429 at the cap or while busy. It
+//        fails closed: no assist part, a refusal, a cut-off reply or no JSON is { verdict: 'block', unknown: true }. A bad page cite
+//        is flagged in cites_bad and never blocks. The GM's tap is still needed either way. Logged like any seat (secs, stop, refusal).
 //   GET  /api/gm/assist/cards?session=&since= -> { cards, updates }   tonight's shown cards and open Ledger updates (last 12 h unless
 //        `since`), so a reloaded GM page restores its chat. Dismissed cards and finished updates are left out. No model, no key.
 //   POST /api/gm/assist/cards { op: 'seen'|'dismiss'|'keep', items: [{ at, text, key? }] } -> { marked }   the box's marks, kept on the
@@ -61,7 +67,8 @@ import { requireGm, parseJson } from '../../_lib/gm.js';
 import { loadStt, readLines } from '../../_lib/stt.js';
 import { makeClient, callSeat } from '../../_lib/assist/claude.js';
 import { SEATS, WAKES } from '../../_lib/assist/seats.js';
-import { fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX } from '../../_lib/assist/prompts.js';
+import { cleanItem, verdictOf, unknownVerdict } from '../../_lib/assist/gatekeeper.js';
+import { gatekeeperUser, ITEM_MAX, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX } from '../../_lib/assist/prompts.js';
 import { DEFAULT_CAP, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS } from '../../_lib/assist/conductor.js';
 import { toCandidate, toVoice, toAnother, toStall, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
@@ -247,7 +254,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
   return async function onRequest({ request, env, data }) {
     requireGm(data);                                   // first: before the method, the body or the database
     const url = new URL(request.url);
-    const action = /\/api\/gm\/assist\/(tick|fit|another|cards)\/?$/.exec(url.pathname);
+    const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards)\/?$/.exec(url.pathname);
     if (!action) throw new HttpError(404, 'not found');
     if (action[1] === 'cards') {                       // the box's memory: no key, no model
       if (request.method === 'GET') {
@@ -265,6 +272,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     }
     if (request.method !== 'POST') return methodNotAllowed(['POST']);
     const body = await readJsonObject(request, BODY_MAX);
+    const gateItem = action[1] === 'gatekeeper' ? cleanItem(body) : null;      // checked before the database or the key are touched
+    if (gateItem && !gateItem.ok) throw new HttpError(400, gateItem.why);
     const db = await getDb(env), campaign = campaignOf(env), t0 = now();
     const client = clientFor(env);
     const cap = capOf(env);
@@ -299,6 +308,23 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     }
     const spend = () => ({ tonight: dollars(spentBefore + thisTick), cap, tier: budgetTier(spentBefore + thisTick, cap), tick: dollars(thisTick) });
     const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
+
+    if (action[1] === 'gatekeeper') {
+      const item = gateItem.item;
+      const gate = canRun('gatekeeper', { now: t0, lastRun: {}, inFlight, tier });
+      if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : 'the gatekeeper is busy');
+      const bare = (v) => json({ ...v, spend: spend(), ...(warnings.length ? { warnings } : {}) });
+      // no prefix means no never-reveal list to check against: that is a block, never a pass
+      if (legacy || !fileId) return bare(unknownVerdict(legacy ? REPUSH : 'no assist part: nothing to check the item against'));
+      const { cfg, r, timing } = await run('gatekeeper', gatekeeperUser(item));
+      const at = new Date(now()).toISOString();
+      const v = r ? verdictOf(r.json, r.stop) : unknownVerdict(fileMissing ? REPUSH : 'the gatekeeper could not be reached');
+      if (fileMissing) return bare(v);                         // nothing was billed or logged: the file is gone
+      await logRow(db, campaign, { at, session: '', seat: 'gatekeeper', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['gatekeeper'], timing,
+        card: { out: r ? r.json : null, verdict: v.verdict, unknown: v.unknown ? 1 : 0, kind: item.kind, text: item.text.slice(0, ITEM_MAX), shown: 0,
+          ...(!r ? { error: errors.length ? errors[0].error : 'no reply' } : {}) } }).run();
+      return json({ ...v, spend: spend(), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
+    }
 
     if (action[1] === 'fit') {
       const position = typeof body.position === 'string' ? body.position.replace(/\s+/g, ' ').trim() : '';
