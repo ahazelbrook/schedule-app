@@ -263,7 +263,11 @@ await test('5f. situationPlain / lastText: plain text for Copy, Pin and L', () =
   assert.equal(P.lastText(res), 'A 1–3 (risky): ' + res.sections[0].lead, 'the Position the card was drawn under, in brackets');
   const withPc = con.situation(3, { ...con.situationDefaults(), pos: 'desperate', pc: 'Pip Wobble' }, { seed: 11 });
   assert.equal(P.lastText(withPc), 'A 1–3 (desperate, Pip Wobble): ' + withPc.sections[0].lead, 'the selected PC follows the Position');
+  assert.equal(P.lastText(withPc, 2), 'A 1–3 (desperate, 2d, Pip Wobble): ' + withPc.sections[0].lead, 'dots sit between the Position and the PC');
+  assert.equal(P.lastText(res, 0), 'A 1–3 (risky, 0d): ' + res.sections[0].lead, 'zero shows as 0d');
+  assert.equal(P.lastText(res, null), P.lastText(res), 'unset adds nothing');
   const before = con.situation(1, con.situationDefaults(), { seed: 11 });
+  assert.equal(P.lastText(before, 3), 'Before the roll: ' + before.sections[0].lead, 'dots never go on a Before card');
   assert.equal(P.lastText(before), 'Before the roll: ' + before.sections[0].lead, 'a Before card keeps the plain line');
   const cl = con.roll('face', con.defaults(), { seed: 3 });
   assert.equal(P.lastText(cl), cl.meta.title + ': ' + P.plainMd(cl.meta.text), 'a classic roll reads as before');
@@ -488,6 +492,30 @@ await test('6h2. L files an outcome card with the Position set on the page in br
   assert.ok(lines.some((t) => /^A 1–3 \(desperate\): /.test(t)), JSON.stringify(lines));
   assert.ok(lines.every((t) => !/limited|standard|great/.test(t.split(':')[0])), 'no effect control, so none is written');
   assert.ok(lines.some((t) => /^Before the roll: /.test(t)), 'a Before card keeps the plain line: ' + JSON.stringify(lines));
+});
+
+await test('6h3. Dots chip: one tap selects, tap again clears, default unset; L files "(risky, 2d)" only when set; resets once the roll is filed; no new key', async () => {
+  const h = await openPage({ camp: { session: { number: 5 }, crew: {}, log: [] } });
+  const dots = () => h.qa('#gm-pos [data-gm="dots"]');
+  assert.equal(dots().length, 5);
+  assert.ok(dots().every((b) => b.getAttribute('aria-checked') === 'false'), 'unset by default');
+  dots()[2].click();
+  assert.deepEqual(dots().map((b) => b.getAttribute('aria-checked')), ['false', 'false', 'true', 'false', 'false']);
+  dots()[2].click();
+  assert.ok(dots().every((b) => b.getAttribute('aria-checked') === 'false'), 'a second tap clears');
+  h.press('2'); h.press('l');                                    /* no dots set: the line is as before */
+  dots()[0].click(); h.press('3'); h.press('l');                  /* zero shows as 0d */
+  assert.ok(dots().every((b) => b.getAttribute('aria-checked') === 'false'), 'filing the roll resets the dots');
+  dots()[2].click(); h.press('Q');                                /* an unbound key does nothing to it */
+  assert.equal(dots()[2].getAttribute('aria-checked'), 'true');
+  h.press('2'); h.press('l');
+  dots()[1].click(); h.press('1'); h.press('l');                  /* a Before card is not an outcome: dots stay */
+  assert.equal(dots()[1].getAttribute('aria-checked'), 'true');
+  await h.save();
+  const lines = Object.values(h.fg.server.doc.capture).filter((e) => e.bucket === 'r').map((e) => e.text);
+  assert.ok(lines.some((t) => /^A 4\/5 \(risky\): /.test(t)), JSON.stringify(lines));
+  assert.ok(lines.some((t) => /^A 1–3 \(risky, 0d\): /.test(t)), JSON.stringify(lines));
+  assert.ok(lines.some((t) => /^A 4\/5 \(risky, 2d\): /.test(t)), JSON.stringify(lines));
 });
 
 await test('6i. captures record their session (numbers only): typed lines and L-filed rolls; absent when the campaign has none; text never in the campaign', async () => {

@@ -786,14 +786,15 @@
   P.drawTextOf = drawTextOf; P.preSig = preSig; P.DRAW_CLIP = DRAW_CLIP;
   /* a roll's one-line text for "L" (the title and the lead) */
   /* An outcome card (A 4/5, A 1–3) is filed with what the console had set when it was drawn, in brackets after the title:
-     "A 4/5 (risky, Bo): ...". Only fields the console holds: the Position, and the PC if one was selected (there is no effect
+     "A 4/5 (risky, 2d, Bo): ...". Only fields the console holds: the Position, the dots if the GM set them, and the PC if one was selected (there is no effect
      control, so none is written). The Night Shift reads the bracket back; every other card keeps the plain "Title: text". */
-  function lastText(res) {
+  function lastText(res, dots) {
     var m = res && res.meta || {}, sit = m.id === 'situation' && res.sections && res.sections[0];
     var title = str(m.title), bits = [];
     if (sit && (m.situation === 'fourfive' || m.situation === 'onetothree')) {
       var ui = res.replay && res.replay.ui || {}, pos = m.position && m.position.pos;
       if (pos) bits.push(str(pos));
+      if (Number.isInteger(dots) && dots >= 0 && dots <= 4) bits.push(dots + 'd');     /* the dots the GM set for this roll, only when set (zero is 0d) */
       if (ui.pc) bits.push(str(ui.pc).replace(/[(),:]/g, ' ').replace(/\s+/g, ' ').trim());
     }
     if (bits.length) title += ' (' + bits.join(', ') + ')';
@@ -1637,6 +1638,8 @@
     var cur = str(uiNow().pos);
     box.innerHTML = '<span class="gm-lab">Position</span><div class="gm-posb-row">' + S.con.positions.map(function (p) {
       return '<button type="button" class="gm-posb" role="radio" aria-checked="' + (p.value === cur) + '" data-gm="pos" data-v="' + esc(p.value) + '"><b>' + esc(p.label) + '</b><small>' + esc(p.severity + ' · ' + p.ticks) + '</small><small>harm ' + esc(p.harm) + '</small></button>';
+    }).join('') + '</div><div class="gm-dots" role="radiogroup" aria-label="Dots"><span class="gm-lab">Dots</span>' + [0, 1, 2, 3, 4].map(function (d) {
+      return '<button type="button" class="gm-dotb" role="radio" aria-checked="' + (S.dots === d) + '" data-gm="dots" data-v="' + d + '">' + d + '</button>';
     }).join('') + '</div>';
   }
   function renderButtons() {
@@ -1660,12 +1663,14 @@
     if (open) box.open = true;
   }
   function renderConsole() { renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); }
+  function setDots(v) { if (!S) return; var n = Number(v); S.dots = (Number.isInteger(n) && n >= 0 && n <= 4 && S.dots !== n) ? n : null; renderPos(); }     /* tap again clears */
   function setPos(v) { setLive('pos', v); renderPos(); schedulePre(); }
   /* a roll is never invisible: Focus (which hides the card) goes, said once per page load, and the card's header is scrolled
      into view in the console column */
   var focusLeftToasted = false;
   function stamp(kind, res) {
-    S.conRes = res; S.shown = kind; S.last = { text: lastText(res) }; drawConsoleCard(res);
+    S.conRes = res; S.shown = kind; S.last = { text: lastText(res, S.dots) }; drawConsoleCard(res);
+    if (res && res.meta && (res.meta.situation === 'fourfive' || res.meta.situation === 'onetothree') && S.dots != null) { S.dots = null; renderPos(); }     /* the roll is resolved: the dots reset, like the pre-rolled draws */
     if (S.prepWide) { toggleFocus(); if (!focusLeftToasted) { focusLeftToasted = true; toast('Focus off so the card shows. F brings it back.'); } }
     showCard();
   }
@@ -1796,7 +1801,7 @@
     if (PRE_KINDS.every(function (k) { return pre.kinds[k[1]].used; }) && S.pre === pre) S.pre = null;
     renderRack();
   }
-  function rackClear() { preReset(); renderRack(); }
+  function rackClear() { preReset(); if (S) { S.dots = null; renderPos(); } renderRack(); }
   /* the box's own "Fit it" form asks for draws too: the console's pair for that Position (the Position follows the form, quietly) */
   function drawsFor(position) {
     if (!S || !hasSit() || S.con.positions.every(function (p) { return p.value !== position; })) return null;
@@ -3610,6 +3615,7 @@
       case 'roll': rollConsole(+b.getAttribute('data-n')); break;
       case 'situation': rollSituation(+b.getAttribute('data-n')); break;
       case 'pos': setPos(b.getAttribute('data-v')); break;
+      case 'dots': setDots(b.getAttribute('data-v')); break;
       case 'rackclear': rackClear(); break;
       case 'voiceclear': S.voice = null; renderRack(); break;
       case 'stallclear': S.stall = null; renderRack(); break;

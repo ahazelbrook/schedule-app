@@ -329,6 +329,10 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-pos { display: grid; gap: 4px; border: 2px solid var(--rule); background: var(--card); padding: 8px 10px 10px; }
 #gm-page .gm-posb-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 #gm-page .gm-posb { display: grid; gap: 2px; align-content: center; justify-items: center; text-align: center; min-height: 72px; padding: 8px 4px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; }
+#gm-page .gm-dots { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+#gm-page .gm-dotb { min-width: 44px; min-height: 44px; padding: 4px 10px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); font: 900 15px/1 var(--font-mono); cursor: pointer; }
+#gm-page .gm-dotb[aria-checked="true"] { background: var(--rule); color: var(--on-ink); border-bottom: 5px solid var(--accent); }
+#gm-page .gm-dotb:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 #gm-page .gm-posb b { font: 900 clamp(12px, 3.5vw, 17px)/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .03em; max-width: 100%; }
 #gm-page .gm-posb small { font: 700 10.5px/1.25 var(--font-mono); color: var(--ink-soft); overflow-wrap: anywhere; }
 #gm-page .gm-posb[aria-checked="true"] { background: var(--rule); color: var(--on-ink); border-bottom: 6px solid var(--accent); box-shadow: 3px 3px 0 var(--shadow-ink); }

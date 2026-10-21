@@ -221,6 +221,25 @@ await test('app records: only the Rolled-at-the-table bullets that carry a resul
   assert.deepEqual(parseAppRolls(APP_NOTE.replace(/\n/g, '\r\n')).length, 3, 'CRLF notes read the same');
 });
 
+await test('app records: dots in the bracket ("A 4/5 (risky, 2d, Name)") are read; older lines still parse; the zero-dot candidate uses app dots', () => {
+  const note = '## Rolled at the table\n\n' + [
+    '- **09:00** A 4/5 (risky, 2d, Invented Pip): The latch gives. ^b68-d1',
+    '- **09:05** A 1–3 (desperate, 0d): A guard turns. ^b68-d2',
+    '- **09:10** A 4/5 (risky, standard, 0d, Invented Pip): Noise. ^b68-d3',
+    '- **09:15** A 4/5 (risky, Invented Pip): Older line. ^b68-d4',
+    '- **09:20** A 4/5: Plainest. ^b68-d5',
+  ].join('\n') + '\n';
+  const a = parseAppRolls(note);
+  assert.deepEqual(a.map((x) => [x.position, x.who, x.dots]), [['risky', 'Invented Pip', 2], ['desperate', '', 0], ['risky', 'Invented Pip', 0], ['risky', 'Invented Pip', undefined], ['', '', undefined]]);
+  assert.equal(a[2].effect, 'standard');
+  const m = mergeRolls([], a);
+  const xp = xpCandidates(m);
+  assert.deepEqual(xp.map((x) => [x.at, x.kind, x.src]), [['[09:05]', 'desperate', 'app'], ['[09:05]', 'zero-dot', 'app'], ['[09:10]', 'zero-dot', 'app']]);
+  const sp2 = mergeRolls([sp({ at: '[09:00]', who: 'Invented Pip', dots: 0, result: 'unclear' })], [a[0]]);
+  assert.equal(sp2[0].dots, 2, 'app dots win over the speech dots');
+  assert.deepEqual(xpCandidates(sp2), [], 'so no zero-dot candidate from the speech value');
+});
+
 await test('app records: the bracket the page writes ("A 4/5 (risky, standard, Name)") gives position, effect and PC; gm:pull files it unchanged', () => {
   const page = 'A 1–3 (desperate, Invented Pip): A guard turns.', page2 = 'A 4/5 (risky, standard, Invented Pip): The latch gives.', plain = 'A 4/5 (risky): Noise.';
   const note = '## Rolled at the table\n\n' + [page, page2, plain].map((t, i) => captureLine({ at: '2031-03-03T09:0' + i + ':00Z', text: t, bid: 'b68-x' + i })).join('\n') + '\n';
