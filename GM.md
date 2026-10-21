@@ -642,3 +642,26 @@ but not read the transcript; the display read it gets carries `want` and `sessio
 not the Deepgram key), `npm run gm:transcript -- --install` writes a hidden launcher
 (`b68-transcript.vbs`) into the Windows Startup folder and starts the copier; it starts at every sign-in after that.
 `-- --uninstall` stops it and removes the launcher. It runs the repo's checked-out copy of the script.
+
+## Claude at the table (the box, `app/gm/assist-panel.js`, `functions/api/gm/assist.js`)
+
+**The box** is the Claude panel at the bottom right of the GM page on a laptop; key **A** opens and closes it. It needs
+**Listening** on (the iPad transcriber above), because it reads that transcript. About once a minute it asks a cheap
+seat whether anything at the table needs a second look, wakes other seats only when the answer is yes, and shows at most
+one card per five minutes. Quiet is the normal state. Tonight's spend is counted from the log against a **cap**
+(`ASSIST_CAP_USD`, default $20): the budget ladder drops the optional seats at 60% and keeps only the core ones at 85%,
+and at the cap nothing runs. The box says so when it is off. With the box off, no key, or the cap reached, the console
+works exactly as it does without it.
+
+**Why the prefix is a file.** Every seat reads the same long reference text (the rules digest, the cast and tonight's
+prep, up to ~90k tokens). The Worker runs on Workers Free, where a request gets 10 ms of CPU: waiting on Claude or D1 is
+free, but reading, parsing and re-sending that text on every tick is not. So the GM's PC uploads the text once to
+Anthropic's Files API as a plain-text file, the pushed `assist` part holds only `{ file_id, hash, extra }`, and each seat
+call names the file. Nothing campaign-specific is in git, in D1 or in the Worker.
+
+**Pushing the `assist` part.** `npm run gm:pack` builds it (the pack file on the PC keeps the text); `gm:push` uploads the
+text when it changed since the last upload, remembers the file in `gm-private/assist-file.json`, swaps the small part into
+D1, then deletes the file it replaced. A dry run uploads and deletes nothing and says what it would do. **Pushing `assist`
+needs `B68_ANTHROPIC_KEY`** (a user environment variable, deliberately not `ANTHROPIC_API_KEY`); without it that part is
+refused and the others still go. If the box shows **re-push the assist part**, the stored part is still the old text form
+or the file was deleted: run the pack and push again.
