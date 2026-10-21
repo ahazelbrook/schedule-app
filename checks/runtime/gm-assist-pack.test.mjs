@@ -24,7 +24,7 @@ put(DEFAULT_RULES, '---\ntitle: Rules\n---\r\n# Rules\r\nRoll the dice.\r\n');
 put(DEFAULT_CAST, '# Cast\n- Pip: a baker\n');
 put(PREP, '# Prep\nA door that sticks.\n');
 const warnings = () => [];
-const build = (o = {}) => { const w = warnings(); const part = buildAssist({ vault: tmp, exportedAt: '2030-01-01T00:00:00.000Z', warn: (m) => w.push(m), ...o }); return { part, w }; };
+const build = (o = {}) => { const w = warnings(); const part = buildAssist({ vault: tmp, exportedAt: '2030-01-01T00:00:00.000Z', warn: (m) => w.push(m), ...o }); return { part, w: w.filter((m) => !/How to play|player table/.test(m)) }; };  // the v2 blocks have their own tests (gm-assist-export.test.mjs)
 
 await test('the prefix is the rules, the cast and the prep as <context name> blocks, in that order, line endings normalised', () => {
   const { part, w } = build({ prep: PREP });
