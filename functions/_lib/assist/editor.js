@@ -1,5 +1,5 @@
-// The Editor (build plan, "The Tap"): merges what the Tap seats (Ref, Clerk, Ledger) returned into at most one card per
-// five minutes (Ref beats Clerk), drops repeats, and lets silence be the normal answer. Ledger entries are state updates, not
+// The Editor (build plan, "The Tap"): merges what the Tap seats (Ref, Clerk, Mystery, Showrunner, Ledger) returned into at most
+// one card per five minutes (Ref beats Clerk beats Mystery beats Showrunner; a card held back by the gap is dropped, except Ref's), drops repeats, and lets silence be the normal answer. Ledger entries are state updates, not
 // cards: they never use the card slot and come back in a separate list. A Ref card held back by the gap stays pending until
 // it goes stale; a Clerk card held back is dropped. Pure code, no model call for now (the plan's Haiku
 // Editor can replace pick() later without touching the endpoint). Plain ES module, node-importable.
@@ -11,7 +11,7 @@ import { isRepeatSlip, slipKeys, REPEAT_WINDOW_MS } from './conductor.js';
 
 export const CARD_GAP_MS = 5 * 60 * 1000;     // at most one card in this long
 export const STALE_MS = 4 * 60 * 1000;        // a held-back Ref card older than this is no longer worth showing
-export const PRIORITY = { ref: 2, clerk: 1 };   // a slip beats a canon note; the ledger has no card to win
+export const PRIORITY = { ref: 4, clerk: 3, mystery: 2, showrunner: 1 };   // a slip beats a canon note beats a clue push beats pacing; the ledger has no card to win
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const clip = (s, n = 280) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -37,6 +37,24 @@ export function toCandidate(seat, json, { recent = [], now = 0 } = {}) {
     const fresh = items.filter((i) => i.key !== 'clerk:name:' && !seen.has(i.key));
     if (!fresh.length) return null;
     return { seat, text: clip(fresh.map((i) => i.text).join(' / ')), keys: fresh.map((i) => i.key) };
+  }
+  if (seat === 'mystery') {
+    // push_next must come from tonight's Must land list: the seat copies the entry into must_land_item. The Worker never holds
+    // the prefix, so it cannot compare the text with the list; it drops a card that names no entry, or says it has none.
+    const push = clip(json.push_next), item = clip(json.must_land_item, 200);
+    if (!push || !item) return null;
+    const keys = ['mystery:' + norm(push).slice(0, 80), 'mystery:item:' + norm(item).slice(0, 60)];
+    if (keys.some((k) => seenKeys(recent, now, REPEAT_WINDOW_MS).has(k))) return null;
+    return { seat, text: clip('Push next: ' + push + (clip(json.how) ? ' How: ' + clip(json.how) : '')), keys };
+  }
+  if (seat === 'showrunner') {
+    if (json.speak !== true) return null;                   // the Showrunner speaks only for a clear pacing problem
+    const advice = clip(json.advice, 240), who = clip(json.needs_spotlight, 80);
+    const named = who && !/^(none|nobody|no one|unknown|n\/a)\b/i.test(who);
+    if (!advice && !named) return null;
+    const key = 'showrunner:' + norm(advice || who).slice(0, 80);
+    if (seenKeys(recent, now, REPEAT_WINDOW_MS).has(key)) return null;
+    return { seat, text: clip((named ? 'Spotlight: ' + who + '. ' : '') + advice), keys: [key] };
   }
   if (seat === 'ledger') {
     const items = [];
@@ -75,24 +93,28 @@ export function pendingRefs(rows, { recent = [], now = 0 } = {}) {
  * A pending Ref (from pendingRefs) and a fresh one for the same slip count once; the fresh one wins. Of several waiting Ref
  * cards the newest shows.
  */
-export function merge(candidates, { now, lastShownAt = null } = {}) {
+export function merge(candidates, { now, lastShownAt = null, lastRefShownAt } = {}) {
   const list = (candidates || []).filter(Boolean);
   const updates = list.filter((c) => c.seat === 'ledger').map((c) => ({ ...c, at: now }));
   const fresh = list.filter((c) => c.seat === 'ref' && !c.pending);
   const refs = fresh.concat(list.filter((c) => c.seat === 'ref' && c.pending && !fresh.some((f) => (f.keys || []).some((k) => (c.keys || []).includes(k)))));
   refs.sort((a, b) => (b.born || now) - (a.born || now));
-  const clerks = list.filter((c) => c.seat === 'clerk');
+  // the rest compete for the slot in PRIORITY order (Clerk, then Mystery, then Showrunner) and are dropped, never queued
+  const clerks = list.filter((c) => c.seat === 'clerk' || c.seat === 'mystery' || c.seat === 'showrunner').sort((a, b) => (PRIORITY[b.seat] || 0) - (PRIORITY[a.seat] || 0));
   const throttled = Number.isFinite(lastShownAt) && now - lastShownAt < CARD_GAP_MS;
+  // Ref has priority: a slip is held back only by an earlier Ref card, never by a Clerk, Mystery or Showrunner card
+  const refAt = lastRefShownAt === undefined ? lastShownAt : lastRefShownAt;
+  const refThrottled = Number.isFinite(refAt) && now - refAt < CARD_GAP_MS;
   if (refs.length) {
-    const dropped = clerks.map(() => ({ seat: 'clerk', why: 'ref-waiting' }));
-    if (throttled) return { card: null, updates, held: refs, dropped: dropped.concat(refs.map(() => ({ seat: 'ref', why: 'throttle' }))) };
+    const dropped = clerks.map((c) => ({ seat: c.seat, why: 'ref-waiting' }));
+    if (refThrottled) return { card: null, updates, held: refs, dropped: dropped.concat(refs.map(() => ({ seat: 'ref', why: 'throttle' }))) };
     const [top, ...rest] = refs;
     return { card: { ...top, at: now }, updates, held: rest, dropped: dropped.concat(rest.map(() => ({ seat: 'ref', why: 'outranked' }))) };
   }
   if (!clerks.length) return { card: null, updates, held: [], dropped: [] };
-  if (throttled) return { card: null, updates, held: [], dropped: clerks.map(() => ({ seat: 'clerk', why: 'throttle' })) };
+  if (throttled) return { card: null, updates, held: [], dropped: clerks.map((c) => ({ seat: c.seat, why: 'throttle' })) };
   const [top, ...rest] = clerks;
-  return { card: { ...top, at: now }, updates, held: [], dropped: rest.map(() => ({ seat: 'clerk', why: 'outranked' })) };
+  return { card: { ...top, at: now }, updates, held: [], dropped: rest.map((c) => ({ seat: c.seat, why: 'outranked' })) };
 }
 
 // ---------- Voice ----------
@@ -123,4 +145,17 @@ export function toAnother(json, shown = []) {
   const line = clip(json.line, 400), k = 'voice:' + norm(line).slice(0, 80);
   if (!line || k === 'voice:' || shown.some((s) => 'voice:' + norm(s).slice(0, 80) === k)) return null;
   return { who: clip(json.who, 60), line, keys: [k] };
+}
+
+// ---------- Stall ----------
+
+/**
+ * The Stall seat's JSON -> { kind, offer, why, keys } or null (the table is not stalled, nothing offered, or this offer was
+ * already shown in the last 10 minutes). The offer goes to the Rack, never the card slot. `recent` is as for toCandidate.
+ */
+export function toStall(json, { recent = [], now = 0 } = {}) {
+  if (!json || typeof json !== 'object' || json.stalled !== true) return null;
+  const offer = clip(json.offer, 400), k = 'stall:' + norm(offer).slice(0, 80);
+  if (!offer || k === 'stall:' || seenKeys(recent, now, REPEAT_WINDOW_MS).has(k)) return null;
+  return { kind: ['complication', 'clue'].includes(json.kind) ? json.kind : 'complication', offer, why: clip(json.why_now, 200), keys: [k] };
 }

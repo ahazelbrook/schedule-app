@@ -459,5 +459,53 @@ await test('gm-page: Voice is wired into the Rack (name, Another, Clear), the ti
   assert.ok(/\.gm-voice \{/.test(css));
 });
 
+// ---------- WP4: Stall (the Rack), Mystery and Showrunner cards ----------
+const STALL = { kind: 'complication', offer: 'A runner bursts in with bad news.', why: 'The table has gone quiet.', at: '2030-01-01T09:30:00.000Z' };
+await test('Stall: the offer reaches the page (onStall), not the box; Listening off, a phone and the cap clear it; busy leaves it', async () => {
+  let got = [];
+  let r = rig({ onStall: (v) => got.push(v) }); r.gm.reply = { ...GOOD, stall: STALL };
+  await r.ctl.poll();
+  assert.deepEqual(got, [STALL]);
+  assert.ok(!/runner bursts/.test(r.br.stub('#as-list').innerHTML), 'a Stall offer is not a card in the box');
+  r.gm.reply = GOOD; await r.ctl.poll();
+  assert.deepEqual(got, [STALL], 'a tick with no stall leaves the offer where it is');
+  got = []; r = rig({ onStall: (v) => got.push(v) }); r.gm.want = 'off'; r.gm.reply = { ...GOOD, stall: STALL };
+  await r.ctl.poll(); assert.equal(r.calls.tick.length, 0); assert.deepEqual(got, [null], 'Listening off: no call, and the page clears Stall');
+  got = []; r = rig({ onStall: (v) => got.push(v) }, { phone: true }); r.gm.reply = { ...GOOD, stall: STALL };
+  await r.ctl.poll(); assert.equal(r.calls.tick.length, 0); assert.deepEqual(got, []);
+  got = []; r = rig({ onStall: (v) => got.push(v) }); r.gm.reply = { ...GOOD, spend: { tonight: 20, cap: 20, tier: 'off', tick: 0 }, stall: STALL };
+  await r.ctl.poll(); assert.equal(got[got.length - 1], null, 'the cap clears it');
+  got = []; r = rig({ onStall: (v) => got.push(v) }); r.gm.tickErr = err(429, "tonight's cap is reached");
+  await r.ctl.poll(); assert.deepEqual(got, [null]);
+  got = []; r = rig({ onStall: (v) => got.push(v) }); r.gm.tickErr = err(429, 'the fixer is busy');
+  await r.ctl.poll(); assert.deepEqual(got, []);
+  got = []; r = rig({ onStall: (v) => got.push(v) }); r.gm.reply = { ...GOOD, stall: { ...STALL, offer: '  ' } };
+  await r.ctl.poll(); assert.deepEqual(got, [], 'an empty offer is nothing');
+  r = rig(); r.gm.reply = { ...GOOD, stall: STALL }; await r.ctl.poll(); assert.equal(r.calls.tick.length, 1, 'a page without onStall is unchanged');
+});
+
+await test('Mystery and Showrunner cards arrive as ordinary cards with their own label', async () => {
+  const r = rig();
+  r.gm.reply = { ...GOOD, cards: [{ seat: 'mystery', at: '2030-01-01T09:30:00.000Z', text: 'Push next: the second key.' }] };
+  await r.ctl.poll();
+  r.ctl.open();
+  const html = r.br.stub('#as-list').innerHTML;
+  assert.ok(/second key/.test(html) && /Mystery/.test(html), 'labelled Mystery');
+  assert.equal(r.ctl.state().cards.length, 1); assert.equal(r.ctl.state().cards[0].important, false, 'only a Ref slip is important');
+});
+
+await test('gm-page: Stall is wired into the Rack (offer, kind, Clear) and cleared with the rest', () => {
+  const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  const m = /function mountAssist\(\) \{[\s\S]*?\n  \}\n/.exec(page);
+  assert.ok(m && /onStall: function \(v\) \{ if \(S === me\) setStall\(v\); \}/.test(m[0]));
+  assert.ok(/case 'stallclear': S\.stall = null; renderRack\(\); break;/.test(page));
+  const rack = /function renderRack\(\) \{[\s\S]*?\n  \}\n/.exec(page)[0];
+  assert.ok(/stallHtml\(S\.stall\)/.test(rack), 'the Rack draws Stall under Voice, with or without a Fixer card');
+  const sh = /function stallHtml\(st\) \{[\s\S]*?\n  \}\n/.exec(page)[0];
+  assert.ok(/data-gm="stallclear"/.test(sh) && /esc\(st\.offer\)/.test(sh) && /esc\(st\.kind\)/.test(sh));
+  assert.ok(/\.gm-stall \{/.test(fs.readFileSync(path.join(ROOT, 'app', 'gm.css'), 'utf8')));
+});
+
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

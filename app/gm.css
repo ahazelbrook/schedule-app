@@ -782,6 +782,9 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 #gm-page .gm-rack > .gm-voice:not(:first-child) { border-top: 1.5px solid var(--rule); padding-top: 6px; }
 #gm-page .gm-voice-lines b { overflow-wrap: anywhere; }
 #gm-page .gm-another { justify-self: start; }
+#gm-page .gm-stall { display: grid; gap: 4px; }
+#gm-page .gm-rack > .gm-stall:not(:first-child) { border-top: 1.5px solid var(--rule); padding-top: 6px; }
+.gm-assist .as-card[data-seat="mystery"], .gm-assist .as-card[data-seat="showrunner"] { border-left-color: var(--mustard); }
 @media (prefers-reduced-motion: no-preference) {
   .gm-assist .as-banner:not([hidden]) { animation: as-pop .22s ease-out; }
   .gm-assist .as-panel:not([hidden]) { animation: as-pop .18s ease-out; }

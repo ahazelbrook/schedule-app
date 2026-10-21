@@ -11,6 +11,13 @@
 //   --voice-at HH:MM[=NPC],...   Voice as the table agent runs it: wakes only for a moment that names the NPC on stage (the name the page
 //                     would send), silent otherwise with no call; --another N adds a voice_plus call after the first N moments with lines.
 //                     Writes lines.md and voice.json.
+//   --tap-sim         the whole table agent over --from/--to, one tick a minute, through the REAL endpoint (functions/api/gm/assist.js on an
+//                     in-memory D1, a virtual clock, the real API): Tripwire, Conductor, every seat that is on, the Editor's card gap.
+//                     --tap-seats a,b,c  which seats really call the API (default tripwire,ref,clerk,ledger,stall,showrunner,mystery); the
+//                     others are skipped for free. --lead N  minutes of talk loaded before --from (default 20, for the Showrunner).
+//                     Writes tap.md (per tick: flags, seats called, the card, Stall's offer), tap.json and summary.txt (counts, no text).
+//   --turn-at seat@HH:MM,...   run seats once at those minutes with the endpoint's own turn, no Tripwire, no Conductor; writes turns.md and
+//                     turns.json, and checks Mystery's must_land_item against the prefix's "## Must land" section (grounded or not).
 //   --nightshift      hour-long chunks -> sorters in parallel -> writer; writes nightshift.md
 //   --seats a,b,c    which seats run (default tripwire,ref,clerk,ledger)
 //   --set seat.k=v    override a seat's model or effort for a sweep, e.g. --set ref.effort=high
@@ -32,7 +39,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { makeClient, callSeat, countTokens } from '../functions/_lib/assist/claude.js';
 import { SEATS, WAKES } from '../functions/_lib/assist/seats.js';
-import { fitUser, voiceUser, anotherUser } from '../functions/_lib/assist/prompts.js';
+import { fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, SHOWRUNNER_MIN, MYSTERY_MIN } from '../functions/_lib/assist/prompts.js';
 import { decide } from '../functions/_lib/assist/conductor.js';
 import { toVoice, toAnother } from '../functions/_lib/assist/editor.js';
 import { makeDrawsFor, parsePositionAt } from './lib/fixer-draws.mjs';
@@ -60,11 +67,13 @@ const to = arg('to') ? toMin(arg('to')) : 1e9;
 
 // Lines look like "- **[HH:MM] Name:** text". Anything else (reconnect markers, headings) is skipped.
 const LINE = /^- \*\*\[(\d\d):(\d\d)\] ([^:*]+):\*\* (.*)$/;
-const minutes = new Map();
+const minutes = new Map(), allMinutes = new Map();     // allMinutes ignores --from/--to (--tap-sim loads talk before the window)
 for (const raw of fs.readFileSync(transcriptFile, 'utf8').split(/\r?\n/)) {
   const m = LINE.exec(raw);
   if (!m) continue;
   const t = Number(m[1]) * 60 + Number(m[2]);
+  if (!allMinutes.has(t)) allMinutes.set(t, []);
+  allMinutes.get(t).push({ speaker: m[3].trim(), text: m[4] });
   if (t < from || t > to) continue;
   if (!minutes.has(t)) minutes.set(t, []);
   minutes.get(t).push(`[${m[1]}:${m[2]}] ${m[3]}: ${m[4]}`);
@@ -185,6 +194,110 @@ if (arg('voice-at')) {
     `silent moments (no NPC, no call): ${silent.length}; moments with lines: ${dump.filter(d => d.voice).length}; another lines: ${dump.filter(d => d.another).length}`;
   fs.writeFileSync(path.join(outDir, 'summary.txt'), stats + '\n');
   console.log(stats + `\nwritten to ${outDir}`);
+  process.exit(0);
+}
+
+// The Must land section of the prep note inside the prefix (for the Mystery grounding check): from "## Must land" to the next "## ".
+const normText = x => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const mustLand = (() => { const m = /\n## Must land\n([\s\S]*?)\n## /.exec(prefix); return m ? normText(m[1]) : ''; })();
+const groundedItem = item => { const n = normText(item).slice(0, 30); return !!(n && mustLand.includes(n)); };
+
+// --turn-at seat@HH:MM,... : one call per spec with the endpoint's own turn (Stall and the Tap seats: the last four minutes;
+// Showrunner and Mystery: their longer windows). No Tripwire and no Conductor: this asks what the SEAT says, not whether it would wake.
+if (arg('turn-at')) {
+  const md = ['# Seats at chosen minutes', ''], dump = [];
+  for (const spec of arg('turn-at').split(',').map(x => x.trim()).filter(Boolean)) {
+    const [seat, at] = spec.split('@');
+    if (!registry[seat]) { console.error('unknown seat ' + seat); process.exit(2); }
+    if (total >= maxSpend) { console.error('spend cap $' + maxSpend + ' reached before ' + spec); break; }
+    const t = toMin(at);
+    const user = seat === 'showrunner' ? showrunnerUser({ stamp: at, talk: textFor(t - SHOWRUNNER_MIN + 1, t) })
+      : seat === 'mystery' ? mysteryUser({ stamp: at, talk: textFor(t - MYSTERY_MIN + 1, t), known: [] })
+        : 'Last four minutes, up to ' + at + ':\n' + textFor(t - 3, t);
+    const before = total, n0 = secsLog.length;
+    const j = await run(seat, at, user);
+    const g = seat === 'mystery' && j ? { push_next_given: !!(j.push_next || '').trim(), grounded: groundedItem(j.must_land_item) } : null;
+    md.push('## ' + seat + ' @ ' + at + '  (' + secsLog[n0] + ' s, stop ' + stopLog[n0] + ', $' + (total - before).toFixed(3) + ')', '',
+      j ? '```json\n' + JSON.stringify(j, null, 1) + '\n```' : '(no JSON)', ...(g ? ['', 'grounded in Must land: ' + g.grounded] : []), '');
+    dump.push({ seat, at, secs: secsLog[n0], stop: stopLog[n0], json: j, ...(g || {}) });
+  }
+  fs.writeFileSync(path.join(outDir, 'turns.md'), md.join('\n') + '\n');
+  fs.writeFileSync(path.join(outDir, 'turns.json'), JSON.stringify(dump, null, 1) + '\n');
+  const stats = 'turn-at total: $' + total.toFixed(3) + '; calls ' + secsLog.length + ' ' + JSON.stringify(calls) + '; stop reasons ' + JSON.stringify(stopLog) +
+    '; stall offered: ' + dump.filter(d => d.seat === 'stall' && d.json && d.json.stalled === true && (d.json.offer || '').trim()).length + ' of ' + dump.filter(d => d.seat === 'stall').length +
+    '; mystery grounded: ' + dump.filter(d => d.seat === 'mystery' && d.grounded).length + ' of ' + dump.filter(d => d.seat === 'mystery').length;
+  fs.writeFileSync(path.join(outDir, 'summary.txt'), stats + '\n');
+  console.log(stats + '\nwritten to ' + outDir);
+  process.exit(0);
+}
+
+// --tap-sim: the table agent over a window, through the real endpoint (see the header). The Worker code is the code that runs; only the
+// clock is virtual (one tick per transcript minute) and the database is in memory.
+if (flag('tap-sim')) {
+  const { memoryExec, asD1 } = await import('./lib/d1.mjs');
+  const { cleanLines, addLines } = await import('../functions/_lib/stt.js');
+  const { makeHandler } = await import('../functions/api/gm/assist.js');
+  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
+  const exec = await memoryExec({ schemaFile: path.join(root, 'schema.sql') });
+  const db = asD1(exec);
+  const DAY = '2026-10-17', OFFSET = '+11:00';                 // an AEDT Saturday: the endpoint stamps lines in Melbourne time
+  const iso = (t, sec) => new Date(`${DAY}T${stamp(t)}:${String(sec).padStart(2, '0')}${OFFSET}`).toISOString();
+  const lead = Number(arg('lead', 20)), fromT = from < 0 ? order[0] : from, toT = to > 1e8 ? order[order.length - 1] : to;
+  const enabled = new Set((arg('tap-seats', 'tripwire,ref,clerk,ledger,stall,showrunner,mystery')).split(',').map(x => x.trim()).filter(Boolean));
+  const names = [...new Set([...allMinutes.values()].flat().map(l => l.speaker))].slice(0, 60);
+  const sp = Object.fromEntries(names.map((n, i) => [String(i), n]));
+  await db.prepare('INSERT INTO gm_stt (campaign, updated_at, doc) VALUES (?1, ?2, ?3)').bind('c', iso(fromT, 0), JSON.stringify({ want: 'on', session: '2', speakers: sp })).run();
+  await db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', '{}', 0, ?1)").bind(JSON.stringify({ file_id: 'file_sim000001' })).run();
+  let seq = 0;
+  const feed = async t => {
+    const ls = allMinutes.get(t) || [];
+    const batch = ls.map((l, i) => ({ id: 'sim' + (++seq), at: iso(t, Math.min(58, Math.floor(i * 58 / Math.max(1, ls.length)))), session: '2', conn: 'sim', speaker: Math.min(63, names.indexOf(l.speaker)), text: l.text }));
+    for (let i = 0; i < batch.length; i += 50) await addLines(db, 'c', cleanLines({ lines: batch.slice(i, i + 50) }));
+  };
+  const seatOf = ins => Object.keys(registry).find(k => ins && ins.startsWith(registry[k].instructions));
+  const virt = { t: 0, real0: 0, hhmm: '' };
+  const call = async (cl, a) => {
+    const seat = seatOf(a.instructions);
+    if (!enabled.has(seat)) return { json: null, text: '', usage: {}, cost: 0, stop: 'skipped', secs: 0 };
+    const r = await callSeat(cl, { ...a, prefix, prefixFileId: '' });
+    total += r.cost; spend[seat] = (spend[seat] || 0) + r.cost; calls[seat] = (calls[seat] || 0) + 1; secsLog.push(r.secs); stopLog.push(r.stop);
+    log.write(JSON.stringify({ at: virt.hhmm, seat, model: a.model, effort: a.effort, usage: r.usage, cost: r.cost, stop: r.stop, secs: r.secs, json: r.json }) + '\n');
+    return r;
+  };
+  const handler = makeHandler({ clientFor: () => client, now: () => virt.t + (Date.now() - virt.real0), call, seats: registry });
+  const env = { DB: db, CAMPAIGN: 'c', ANTHROPIC_API_KEY: 'sim', ASSIST_CAP_USD: String(arg('cap', 20)) };
+  for (let t = fromT - lead; t < fromT; t++) await feed(t);
+  const ticks = [], shown = [];
+  let after = null, lastId = 0;
+  for (let t = fromT; t <= toT; t++) {
+    if (total >= maxSpend) { console.error('stopped at ' + stamp(t) + ': spend cap $' + maxSpend + ' reached'); break; }
+    await feed(t);
+    virt.t = Date.parse(iso(t, 59)); virt.real0 = Date.now(); virt.hhmm = stamp(t);
+    const res = await handler({ request: new Request('https://sim.example.test/api/gm/assist/tick', { method: 'POST', body: JSON.stringify(after === null ? {} : { after }), headers: { 'Content-Type': 'application/json' } }), env, data: { me: { role: 'gm', id: 'gm@example.test' } } });
+    const b = JSON.parse(await res.text());
+    after = b.last;
+    const rows = exec.db.prepare('SELECT id, seat, card FROM gm_assist_log WHERE id > ? ORDER BY id').all(lastId).map(r => ({ ...r }));
+    if (rows.length) lastId = rows[rows.length - 1].id;
+    const called = rows.filter(r => r.seat !== 'editor' && !/"stop":"skipped"/.test(r.card || '')).map(r => r.seat);
+    const card = (b.cards || [])[0] || null;
+    if (card) shown.push({ t, seat: card.seat, text: card.text });
+    const mrow = rows.find(r => r.seat === 'mystery'); let g = null;
+    if (mrow) { try { const c = JSON.parse(mrow.card), o = c.out; g = o ? { item_given: !!(o.must_land_item || '').trim(), grounded: groundedItem(o.must_land_item), shown: c.shown === 1 } : null; } catch { g = null; } }
+    ticks.push({ at: stamp(t), flags: b.flags || [], called, card, stall: b.stall || null, mystery: g, errors: b.errors || [], spend: b.spend && b.spend.tonight });
+  }
+  const gaps = shown.slice(1).map((c, i) => c.t - shown[i].t);
+  const mys = ticks.filter(x => x.mystery);
+  const calledCount = {}; for (const x of ticks) for (const s of x.called) calledCount[s] = (calledCount[s] || 0) + 1;
+  const bySeat = {}; for (const c of shown) bySeat[c.seat] = (bySeat[c.seat] || 0) + 1;
+  const md = ['# The Tap, simulated ' + stamp(fromT) + ' to ' + stamp(toT), '', '| minute | flags | seats called | card | Stall |', '|---|---|---|---|---|',
+    ...ticks.map(x => '| ' + x.at + ' | ' + x.flags.join(', ') + ' | ' + x.called.join(', ') + ' | ' + (x.card ? '**' + x.card.seat + '**: ' + cell(x.card.text) : '') + ' | ' + (x.stall ? cell(x.stall.offer) : '') + ' |')];
+  fs.writeFileSync(path.join(outDir, 'tap.md'), md.join('\n') + '\n');
+  fs.writeFileSync(path.join(outDir, 'tap.json'), JSON.stringify(ticks, null, 1) + '\n');
+  const stats = `tap-sim ${stamp(fromT)}-${stamp(toT)}: ticks ${ticks.length}; total $${total.toFixed(3)}; seats on ${[...enabled].join(',')}; calls ${JSON.stringify(calledCount)}; cards shown ${shown.length} by seat ${JSON.stringify(bySeat)}; ` +
+    `minutes between cards ${JSON.stringify(gaps)} (min ${gaps.length ? Math.min(...gaps) : 'n/a'}); stall offers ${ticks.filter(x => x.stall).length}; mystery runs ${mys.length}, with a Must land item ${mys.filter(x => x.mystery.item_given).length}, grounded ${mys.filter(x => x.mystery.grounded).length}, shown ${mys.filter(x => x.mystery.shown).length}; ` +
+    `ticks with errors ${ticks.filter(x => x.errors.length).length}; seconds max ${secsLog.length ? Math.max(...secsLog) : 0}; stop reasons ${JSON.stringify(stopLog.reduce((m, x) => ((m[x] = (m[x] || 0) + 1), m), {}))}`;
+  fs.writeFileSync(path.join(outDir, 'summary.txt'), stats + '\n');
+  console.log(stats + '\nwritten to ' + outDir);
   process.exit(0);
 }
 

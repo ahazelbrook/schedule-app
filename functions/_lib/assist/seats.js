@@ -69,7 +69,7 @@ Tie each to the named people, places and running clocks of the scene. Never deci
   },
 
   ledger: {
-    model: 'claude-haiku-5-5', effort: 'medium', maxTokens: 2500,
+    model: 'claude-haiku-5-5', effort: 'medium', maxTokens: 4000,   // 2500 was cut off twice in a live 30-minute replay: thinking shares the limit
     instructions: `You keep the ledger for a Blades '68 game from a live transcript: stress, harm, Heat, coin, clock ticks and xp triggers per character, as they happen in the last few minutes. Also say whether anyone totalled xp at the close. Report only events in the text, each with its [HH:MM] stamp. Empty is the normal answer. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
@@ -115,7 +115,7 @@ Tie each to the named people, places and running clocks of the scene. Never deci
 
   stall: {
     model: 'claude-sonnet-5-5', effort: 'low', maxTokens: 1200,
-    instructions: `You are the GM's stall breaker for a Blades '68 game. The table has gone quiet or is going in circles. From the last few minutes of the transcript and the cast, rules and clues in your context, offer ONE thing the GM could introduce now: a complication that raises the pressure, or a proactive clue that points the players toward something they have not yet found. Fit it to where the scene is and to people and places already in play. It must not decide what a player character does or feels, and must not hand over a clue the players already have. Say in one line why now. If the table is not actually stalled (they are mid-scene and busy), say so and leave the offer empty. Reply with JSON only.`,
+    instructions: `You are the GM's stall breaker for a Blades '68 game. The table has gone quiet or is going in circles. Stalled means nobody is acting or deciding: long silence, off-topic chat, or the same options repeated without anyone choosing. It does NOT mean a rules question, a roll being worked out, a player thinking aloud about a plan, narration, or a fast scene with everyone talking: those are busy. From the last few minutes of the transcript and the cast, rules and clues in your context, offer ONE thing the GM could introduce now: a complication that raises the pressure, or a proactive clue that points the players toward something they have not yet found. Fit it to where the scene is and to people and places already in play. It must not decide what a player character does or feels, and must not hand over a clue the players already have. Say in one line why now. If the table is not actually stalled (they are mid-scene and busy), say so and leave the offer empty. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -130,7 +130,7 @@ Tie each to the named people, places and running clocks of the scene. Never deci
 
   showrunner: {
     model: 'claude-haiku-5-5', effort: 'low', maxTokens: 4000,
-    instructions: `You are the showrunner for a Blades '68 game, checking pacing from the transcript so far. Player characters are listed in your context (and players are named in speaker labels, which are unreliable). Report: for each player character, minutes since they were last named or spoke for (estimate from the stamps; say unknown if unclear), and who most needs the spotlight; the beat over time (setup, rising, climax, aftermath) and how long the session has run; and one line of advice for the next ten minutes. Use only the text given. Reply with JSON only.`,
+    instructions: `You are the showrunner for a Blades '68 game, checking pacing from the transcript you are given (the message says how far back it reaches; earlier talk is not shown, so say unknown rather than guess). Player characters are listed in your context (and players are named in speaker labels, which are unreliable). Report: for each player character, minutes since they were last named or spoke for (estimate from the stamps; say unknown if unclear), and who most needs the spotlight; the beat over time (setup, rising, climax, aftermath) and how long the session has run; and one line of advice for the next ten minutes. Then decide speak: true ONLY for a clear pacing problem, otherwise false, and false is the normal answer (the GM wants a quiet box). A clear problem is one of: a player character who has not been named or spoken for during the whole stretch you were given (about 20 minutes or more); a scene that has run the whole stretch with no roll; or the session being within 30 minutes of its planned close, but only if the prep in your context gives an end time (otherwise ignore this one). When speak is false leave advice empty. Use only the text given. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -146,14 +146,15 @@ Tie each to the named people, places and running clocks of the scene. Never deci
         beat: { type: 'string', enum: ['setup', 'rising', 'climax', 'aftermath'] },
         elapsed_minutes: { type: 'number' },
         advice: { type: 'string' },
+        speak: { type: 'boolean', description: 'true only for a clear pacing problem; false is the normal answer' },
       },
-      required: ['spotlight', 'needs_spotlight', 'beat', 'elapsed_minutes', 'advice'],
+      required: ['spotlight', 'needs_spotlight', 'beat', 'elapsed_minutes', 'advice', 'speak'],
     },
   },
 
   mystery: {
     model: 'claude-sonnet-5-5', effort: 'medium', maxTokens: 2500,
-    instructions: `You keep the mystery for a Blades '68 game. From the transcript so far and the cast and clue material in your context, list: known, what the players have actually learned (said aloud or shown in the fiction); theories, the theories players have voiced, with who said them and whether the evidence so far supports each; and push_next, the single clue the GM should work in next, with a concrete way to deliver it in the current scene. Use only what was said at the table or is in your context; never invent facts. If the context holds no clue list, say so in push_next rather than guessing. Reply with JSON only.`,
+    instructions: `You keep the mystery for a Blades '68 game. From the transcript so far and the cast and clue material in your context, list: known, what the players have actually learned (said aloud or shown in the fiction); theories, the theories players have voiced, with who said them and whether the evidence so far supports each; and push_next, the single clue the GM should work in next, with a concrete way to deliver it in the current scene. push_next MUST come from the "Must land" list in tonight's prep in your context: pick the entry the players have not yet learned that fits the scene best, copy its number and title into must_land_item, and do not invent a clue of your own or take one from anywhere else. If every entry has landed, or the context holds no Must land list, leave push_next and must_land_item empty and say why in how. The message may include what you reported as known earlier; treat that as already learned. Use only what was said at the table or is in your context; never invent facts. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -166,10 +167,11 @@ Tie each to the named people, places and running clocks of the scene. Never deci
             required: ['who', 'theory', 'supported'],
           },
         },
-        push_next: { type: 'string' },
+        push_next: { type: 'string', description: 'the clue to work in next, from the Must land list, or empty' },
+        must_land_item: { type: 'string', description: 'the Must land entry push_next comes from (its number and title, as written), or empty' },
         how: { type: 'string' },
       },
-      required: ['known', 'theories', 'push_next', 'how'],
+      required: ['known', 'theories', 'push_next', 'must_land_item', 'how'],
     },
   },
 
@@ -217,4 +219,7 @@ export const WAKES = {
   clerk: ['new_name', 'clue_mention'],
   ledger: ['harm', 'xp_trigger', 'roll_talk'],
   voice: ['npc_change'],            // also each minute while the page names an NPC on stage (the Conductor)
+  stall: ['stall'],                 // its offer goes to the Rack, like Voice
+  mystery: ['clue_mention'],
+  showrunner: ['tick'],             // not a Tripwire flag: the endpoint adds 'tick' to every tick's flags, and the 10-minute cooldown paces it
 };

@@ -4,12 +4,16 @@
 //
 //   1. Flags wake seats (WAKES in seats.js). No flag, no call.
 //   2. One of each in flight: a seat whose last call has not returned is dropped.
-//   3. The budget ladder: under 60% of the cap everything; 60-85% drop Meanwhile, Showrunner and Mystery keeper;
-//      85-100% the Fixer, Ref and Ledger only; at the cap nothing.
+//   3. The budget ladder: under 60% of the cap everything; 60-85% drop Meanwhile, Showrunner and Mystery keeper (the
+//      nice-to-haves); 85-100% the Fixer, Ref, Ledger and Another only (so Voice and Stall, which the GM can live without, go
+//      at 85%, and Ref, the seat that earns its keep, runs to the cap); at the cap nothing.
 //   4. A per-seat cooldown, so a flag that stays set for several minutes does not call the seat every minute.
 //   5. Voice (the NPC on stage) wakes on npc_change, and every minute while the GM's page names an NPC on stage; with none named
 //      it never runs. It runs after Ref in the list, and the Editor drops a line already shown. voice_plus is the GM's Another tap.
-//   6. A Ref card that repeats the same slip within 10 minutes is suppressed (Phase 0: Ref repeats itself on adjacent
+//   6. Stall wakes on the Tripwire's stall flag; Mystery on clue_mention; Showrunner on every tick ('tick' is added by the
+//      endpoint, not a Tripwire flag) and the 10-minute cooldown paces it. Stall's offer goes to the Rack like Voice's lines;
+//      Showrunner's and Mystery's go through the Editor, behind Ref and Clerk, under the same one-card-per-five-minutes gap.
+//   7. A Ref card that repeats the same slip within 10 minutes is suppressed (Phase 0: Ref repeats itself on adjacent
 //      minutes). isRepeatSlip() is that rule; the Editor uses it too.
 
 import { WAKES } from './seats.js';
@@ -28,6 +32,7 @@ export const COOLDOWN_MS = {
   clerk: 120 * 1000,
   ledger: 120 * 1000,
   fixer: 10 * 1000,
+  stall: 5 * 60 * 1000,             // a stall flag that stays set must not offer a new idea every minute
   voice: 45 * 1000,                 // the tick comes about once a minute; the gap must be shorter than that
   voice_plus: 10 * 1000,
   showrunner: 10 * 60 * 1000,

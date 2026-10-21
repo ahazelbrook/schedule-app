@@ -6,6 +6,14 @@
 //        minute), after Ref in the list, and its lines come back as `voice: { who, want, lines: [two], at }` (they go to the
 //        page's Rack, not the card slot); the Editor drops a line already shown in the last 10 minutes. Voice is not in the
 //        Core set, so it stops at 85% of the cap. Its row is logged like any seat's, with `voice: 1` when lines were shown.
+//        Stall wakes on the Tripwire's stall flag (cooldown 5 minutes) and answers as `stall: { kind, offer, why, at }` when the table
+//        is stalled and the offer is new; it goes to the Rack beside Voice, never the card slot. Like Voice it stops at 85% of the cap.
+//        The Showrunner runs on every tick that has new talk, paced to one run per 10 minutes by its cooldown (it reads the last 20
+//        minutes of talk); the Mystery keeper runs on the clue_mention flag, at most every 15 minutes (it reads the last 15 minutes plus
+//        its own earlier "known" list from the log). Both are dropped at 60% of the cap, before Ref is. Their output goes through the
+//        Editor as card candidates behind Ref and Clerk, so the one-card-per-five-minutes gap holds for every seat together; a card the
+//        gap holds back is dropped, not queued. The Mystery card's push-next must name a Must land entry (must_land_item): the Worker
+//        does not hold the prefix, so the seat's instructions carry the rule and the Editor drops a card that names no entry.
 //   POST /api/gm/assist/another { npc, shown: [..] } -> { cards: [], voice: { who, lines: [one], at }, spend, last }
 //        The Another tap on a Voice line: the voice_plus seat writes ONE more line for the same NPC, different from the 1-6 shown
 //        lines (each at most 400 characters). 400 on a bad body; 429 at the cap or while a voice_plus call is in flight or cooling
@@ -52,10 +60,10 @@ import { HttpError, json, methodNotAllowed, readJsonObject, campaignOf } from '.
 import { requireGm, parseJson } from '../../_lib/gm.js';
 import { loadStt, readLines } from '../../_lib/stt.js';
 import { makeClient, callSeat } from '../../_lib/assist/claude.js';
-import { SEATS } from '../../_lib/assist/seats.js';
-import { fitUser, voiceUser, anotherUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX } from '../../_lib/assist/prompts.js';
+import { SEATS, WAKES } from '../../_lib/assist/seats.js';
+import { fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX } from '../../_lib/assist/prompts.js';
 import { DEFAULT_CAP, budgetTier, canRun, decide } from '../../_lib/assist/conductor.js';
-import { toCandidate, toVoice, toAnother, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
+import { toCandidate, toVoice, toAnother, toStall, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
 
 const BODY_MAX = 8 * 1024;
@@ -71,7 +79,13 @@ const TZ = 'Australia/Melbourne';
 const inFlight = new Set();
 
 const stampFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false });
-const hhmm = (ms) => stampFmt.format(new Date(ms)).replace(/^24:/, '00:');
+const stampMemo = new Map();        // one formatted stamp per minute: a long window of talk would otherwise format every line
+const hhmm = (ms) => {
+  const m = Math.floor(ms / 60000);
+  let v = stampMemo.get(m);
+  if (v === undefined) { v = stampFmt.format(new Date(m * 60000)).replace(/^24:/, '00:'); if (stampMemo.size > 200) stampMemo.clear(); stampMemo.set(m, v); }
+  return v;
+};
 const dollars = (n) => Math.round(n * 10000) / 10000;
 
 function defaultClient(env) {
@@ -167,11 +181,20 @@ async function shownCards(db, campaign, now) {
   return (results || []).map((r) => ({ at: Date.parse(r.at), keys: (parseJson(r.card, {}) || {}).keys || [] }));
 }
 
-/** Voice lines shown in the last 10 minutes (Voice and Another rows): [{ at (ms), keys }]. */
+/** Rack items shown in the last 10 minutes (Voice, Another and Stall rows): [{ at (ms), keys }]. */
 async function shownVoice(db, campaign, now) {
   const since = new Date(now - RECENT_CARD_MS).toISOString();
-  const { results } = await db.prepare("SELECT at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND json_extract(card, '$.voice') = 1").bind(campaign, since).all();
+  const { results } = await db.prepare("SELECT at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND (json_extract(card, '$.voice') = 1 OR json_extract(card, '$.stall') = 1)").bind(campaign, since).all();
   return (results || []).map((r) => ({ at: Date.parse(r.at), keys: (parseJson(r.card, {}) || {}).keys || [] }));
+}
+
+/** What the Mystery keeper last reported as known (within tonight): a short list of strings, so it need not re-read the whole night. */
+async function lastKnown(db, campaign, now) {
+  const since = new Date(now - NIGHT_MS).toISOString();
+  const r = await db.prepare("SELECT card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'mystery' AND card IS NOT NULL ORDER BY id DESC LIMIT 1").bind(campaign, since).first();
+  const out = r ? (parseJson(r.card, {}) || {}).out : null;
+  const known = out && Array.isArray(out.known) ? out.known : [];
+  return known.filter((k) => typeof k === 'string' && k.trim()).slice(0, KNOWN_MAX).map((k) => k.replace(/\s+/g, ' ').trim().slice(0, KNOWN_ITEM_MAX));
 }
 
 /** Ref cards the Editor held back and that are not stale yet: [{ at (ms), card }]. */
@@ -179,6 +202,13 @@ async function heldRefs(db, campaign, now) {
   const since = new Date(now - STALE_MS).toISOString();
   const { results } = await db.prepare("SELECT at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'ref' AND json_extract(card, '$.held') = 1 ORDER BY id").bind(campaign, since).all();
   return (results || []).map((r) => ({ at: Date.parse(r.at), card: parseJson(r.card, null) }));
+}
+
+/** The latest Ref card shown in the last five minutes (its own row, or the Editor's row for a held one released later). */
+async function lastRefShown(db, campaign, now) {
+  const since = new Date(now - CARD_GAP_MS).toISOString();
+  const r = await db.prepare("SELECT MAX(at) AS at FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND json_extract(card, '$.shown') = 1 AND (seat = 'ref' OR json_extract(card, '$.seat') = 'ref')").bind(campaign, since).first();
+  return r && r.at ? Date.parse(r.at) : null;
 }
 
 async function lastShown(db, campaign, now) {
@@ -192,7 +222,7 @@ async function lastShown(db, campaign, now) {
 function logRow(db, campaign, { at, session, seat, cfg, usage, cost, flags, card, timing }) {
   const u = usage || {};
   if (card && typeof card === 'object' && timing) {
-    card = { ...card, secs: timing.secs, ...(timing.stop ? { stop: timing.stop } : {}), ...(timing.stop === 'refusal' ? { refusal: 1, shown: 0 } : {}) };
+    card = { ...card, secs: timing.secs, ...(timing.stop ? { stop: timing.stop } : {}), ...(timing.stop === 'refusal' ? { refusal: 1, shown: 0 } : {}), ...(timing.stop === 'max_tokens' ? { truncated: 1, shown: 0 } : {}) };
   }
   return db.prepare(`INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, input_tokens, output_tokens, cache_read, cache_write, cents, flags, card)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`)
@@ -206,7 +236,7 @@ function errorOf(e) {
   return s ? 'provider status ' + s : 'call failed';
 }
 
-export function makeHandler({ clientFor = defaultClient, now = () => Date.now(), call = callSeat, seats = SEATS } = {}) {
+export function makeHandler({ clientFor = defaultClient, now = () => Date.now(), call = callSeat, seats = SEATS, wakes = WAKES } = {}) {
   return async function onRequest({ request, env, data }) {
     requireGm(data);                                   // first: before the method, the body or the database
     const url = new URL(request.url);
@@ -250,7 +280,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
         const instructions = extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions;
         const r = await call(client, { ...cfg, instructions, prefixFileId: fileId, user });
         thisTick += r.cost || 0;
-        if (r.stop === 'refusal') r.json = null;           // a refusal shows nothing; the row records it
+        if (r.stop === 'refusal' || r.stop === 'max_tokens') r.json = null;     // a refusal or a reply cut off at the limit shows nothing, never a half card; the row records it
         return { cfg, r, timing: { secs: secs(), stop: typeof r.stop === 'string' ? r.stop : '' } };
       } catch (e) {
         if (fileId && fileGone(e)) { fileMissing = true; if (!warnings.includes(REPUSH)) warnings.push(REPUSH); }
@@ -261,7 +291,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       }
     }
     const spend = () => ({ tonight: dollars(spentBefore + thisTick), cap, tier: budgetTier(spentBefore + thisTick, cap), tick: dollars(thisTick) });
-    const done = (cards, flags, last, updates = [], voice = null) => json({ cards, updates, flags, spend: spend(), last, ...(voice ? { voice } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
+    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
 
     if (action[1] === 'fit') {
       const position = typeof body.position === 'string' ? body.position.replace(/\s+/g, ' ').trim() : '';
@@ -300,7 +330,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const one = toAnother(out, shown);
       await logRow(db, campaign, { at, session, seat: 'voice_plus', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['another'], timing,
         card: out ? { out, ...(one ? { voice: 1, text: one.line, keys: one.keys } : {}) } : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : 'no JSON' } }).run();
-      return done([], [], last, [], one ? { who: one.who || npc, lines: [one.line], at } : null);
+      return done([], [], last, [], one ? { voice: { who: one.who || npc, lines: [one.line], at } } : {});
     }
 
     // ---- tick ----
@@ -325,22 +355,39 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const flags = tw.r && tw.r.json ? Object.keys(tw.r.json).filter((k) => tw.r.json[k] === true) : [];
     await logRow(db, campaign, { at: twAt, session, seat: 'tripwire', cfg: tw.cfg, usage: tw.r && tw.r.usage, cost: tw.r && tw.r.cost, flags, timing: tw.timing,
       card: tw.r ? { out: tw.r.json } : { error: errors.length ? errors[0].error : 'no reply' } }).run();
-    if (!flags.length && !npc) return done([], flags, last);
 
-    const verdict = decide({ flags, now: t0, lastRun, inFlight, spent: spentBefore + thisTick, cap, onStage: !!npc });
-    if (!verdict.seats.length) return done([], flags, last);
+    // 'tick' wakes the Showrunner, paced by its 10-minute cooldown; with nothing else woken a tick costs no model call
+    const verdict = decide({ flags: flags.concat('tick'), now: t0, lastRun, inFlight, spent: spentBefore + thisTick, cap, wakes, onStage: !!npc });
+    // a quiet tick still releases a Ref card the gap held back (one cheap read, only when no seat woke): without it a slip held behind
+    // another seat's card would go stale before any flag woke a seat again
+    let held = null;
+    if (!verdict.seats.length) {
+      held = await heldRefs(db, campaign, t0);
+      if (!held.length) return done([], flags, last);
+    }
 
     const recentText = formatLines(tail, speakers);
     const user = 'Last four minutes, up to ' + hhmm(t0) + ':\n' + recentText;
     const voiceTurn = voiceUser({ npc, stamp: hhmm(t0), talk: recentText });
-    const all = await Promise.all(verdict.seats.map(async (name) => ({ name, ...(await run(name, name === 'voice' ? voiceTurn : user)) })));
-    const vx = all.find((x) => x.name === 'voice'), results = all.filter((x) => x.name !== 'voice');   // Voice goes to the Rack, not to the Editor's card slot
+    // Showrunner and Mystery read a longer stretch than the Tap's four minutes (the Worker cannot afford the whole night): one read serves both
+    const turns = {};
+    if (verdict.seats.includes('showrunner') || verdict.seats.includes('mystery')) {
+      const wide = (await readLines(db, campaign, { since: new Date(t0 - SHOWRUNNER_MIN * 60 * 1000).toISOString() })).lines;
+      if (verdict.seats.includes('showrunner')) turns.showrunner = showrunnerUser({ stamp: hhmm(t0), talk: formatLines(wide, speakers) });
+      if (verdict.seats.includes('mystery')) {
+        const from = t0 - MYSTERY_MIN * 60 * 1000;
+        turns.mystery = mysteryUser({ stamp: hhmm(t0), talk: formatLines(wide.filter((l) => Date.parse(l.at) >= from), speakers), known: await lastKnown(db, campaign, t0) });
+      }
+    }
+    const all = await Promise.all(verdict.seats.map(async (name) => ({ name, ...(await run(name, name === 'voice' ? voiceTurn : turns[name] || user)) })));
+    // Voice and Stall go to the Rack, not to the Editor's card slot
+    const vx = all.find((x) => x.name === 'voice'), sx = all.find((x) => x.name === 'stall'), results = all.filter((x) => x.name !== 'voice' && x.name !== 'stall');
 
     const recent = await shownCards(db, campaign, t0);
     const candidates = results.map((x) => (x.r ? toCandidate(x.name, x.r.json, { recent, now: t0 }) : null));
     // a Ref card held back earlier waits in the log; it competes with this tick's own until it goes stale
-    const pending = pendingRefs(await heldRefs(db, campaign, t0), { recent, now: t0 });
-    const edit = merge(candidates.concat(pending), { now: t0, lastShownAt: await lastShown(db, campaign, t0) });
+    const pending = pendingRefs(held || await heldRefs(db, campaign, t0), { recent, now: t0 });
+    const edit = merge(candidates.concat(pending), { now: t0, lastShownAt: await lastShown(db, campaign, t0), lastRefShownAt: await lastRefShown(db, campaign, t0) });
     const at = new Date(now()).toISOString();
     const rows = results.map((x, i) => {
       const cand = candidates[i];
@@ -359,10 +406,17 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       rows.push(logRow(db, campaign, { at, session, seat: 'voice', cfg: vx.cfg, usage: vx.r && vx.r.usage, cost: vx.r && vx.r.cost, flags, timing: vx.timing,
         card: vx.r ? { out: vx.r.json, ...(v ? { voice: 1, text: v.lines.join(' / '), keys: v.keys } : {}) } : { error: errors.find((e) => e.seat === 'voice')?.error || 'no reply' } }));
     }
-    await db.batch(rows);
+    let stallOut = null;
+    if (sx) {
+      const st = sx.r ? toStall(sx.r.json, { recent: await shownVoice(db, campaign, t0), now: t0 }) : null;
+      if (st) stallOut = { kind: st.kind, offer: st.offer, why: st.why, at };
+      rows.push(logRow(db, campaign, { at, session, seat: 'stall', cfg: sx.cfg, usage: sx.r && sx.r.usage, cost: sx.r && sx.r.cost, flags, timing: sx.timing,
+        card: sx.r ? { out: sx.r.json, ...(st ? { stall: 1, text: st.offer, keys: st.keys } : {}) } : { error: errors.find((e) => e.seat === 'stall')?.error || 'no reply' } }));
+    }
+    if (rows.length) await db.batch(rows);
     const cardOut = edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}) }] : [];
     const updatesOut = edit.updates.flatMap((u) => (u.items || [{ key: (u.keys || [])[0] || '', text: u.text }]).map((it) => ({ seat: 'ledger', at, key: it.key, text: it.text })));
-    return done(cardOut, flags, last, updatesOut, voiceOut);
+    return done(cardOut, flags, last, updatesOut, { voice: voiceOut, stall: stallOut });
   };
 }
 
