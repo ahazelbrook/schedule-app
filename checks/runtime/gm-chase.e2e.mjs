@@ -100,7 +100,11 @@ try {
   const G = await open('#gm');
   const p = G.page;
   check((await p.$$eval('.gm-tab', (t) => t.map((x) => x.getAttribute('data-panel')).join())) === 'prep,rules,location,scenes,score,chase,npc,downtime,cards,ipad', 'the side tabs: Chase after Score');
-  check(await p.$eval('.gm-tabs', (t) => t.scrollWidth <= t.clientWidth + 1 && [...t.querySelectorAll('.gm-tab')].every((x) => x.getBoundingClientRect().right <= t.getBoundingClientRect().right + 1 && !!x.querySelector('kbd'))), 'the ten side tabs fit one row at 1440 px, each with its key');
+  for (const w of [1280, 1440]) {
+    await p.setViewportSize({ width: w, height: 900 }); await sleep(200);
+    const fit = await p.$eval('.gm-tabs', (t) => ({ over: t.scrollWidth - t.clientWidth, ok: t.scrollWidth <= t.clientWidth + 1 && [...t.querySelectorAll('.gm-tab')].every((x) => x.getBoundingClientRect().right <= t.getBoundingClientRect().right + 1 && !!x.querySelector('kbd')) }));
+    check(fit.ok, 'the ten side tabs fit one row at ' + w + ' px, each with its key (' + fit.over + ' px over)');
+  }
   await p.keyboard.press('b');
   await p.click('[data-gm="locroll"]');
   await p.waitForSelector('#gm-loc .gm-loccard', { timeout: 15000 });

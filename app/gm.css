@@ -521,8 +521,8 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-page .gm-side { padding: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 0; }
   body.gm-app #gm-page .gm-tabrow { display: flex; align-items: stretch; border-bottom: 2px solid var(--rule); background: var(--paper); }
   body.gm-app #gm-page .gm-tabs { flex: 1 1 auto; flex-wrap: nowrap; overflow-x: auto; gap: 0; border-bottom: 0; scrollbar-width: none; }
-  /* one row of tabs with their keys showing at 1280 px (nine of them since Downtime): tight padding, the key small */
-  body.gm-app #gm-page .gm-tab { flex: 0 0 auto; border: 0; border-right: 1.5px solid var(--hair); background: none; color: var(--ink); white-space: nowrap; padding: 10px 4px; font-size: 10px; letter-spacing: .04em; }
+  /* one row of tabs with their keys showing at 1280 px (ten of them since Chase): tight padding, the key small */
+  body.gm-app #gm-page .gm-tab { flex: 0 0 auto; border: 0; border-right: 1.5px solid var(--hair); background: none; color: var(--ink); white-space: nowrap; padding: 10px 3px; font-size: 10px; letter-spacing: .02em; }
   body.gm-app #gm-page .gm-tab kbd { font-size: 9px; padding: 1px 2px; }
   body.gm-app #gm-page .gm-tab[data-panel="location"], body.gm-app #gm-page .gm-tab[data-panel="cards"] { border-left: 2px solid var(--rule); margin-left: 4px; }
   body.gm-app #gm-page .gm-tab[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
