@@ -455,5 +455,75 @@ await test('fit: the Fixer for a named position; logged; the position reaches th
   assert.equal((await s.post('fit', { position: 'risky' })).status, 200);
 });
 
+// ---------- the box's memory: GET/POST /api/gm/assist/cards ----------
+const cardsReq = (s, method, qs = '', b, data = { me: GM }) => s.handler({ request: new Request('https://blades.example.test/api/gm/assist/cards' + qs, { method, ...(b !== undefined ? { body: JSON.stringify(b) } : {}) }), env: s.env, data });
+
+await test('cards: the route is wired, and a player, the display and an unknown caller get 403 on every method before anything is read', async () => {
+  assert.equal(matchApi('/api/gm/assist/cards').handler, realHandler); assert.equal(matchApi('/api/gm/assist/cards/').handler, realHandler);
+  const touched = [];
+  const env = { get DB() { touched.push('DB'); return undefined; }, CAMPAIGN: 'x' };
+  const request = (method) => ({ method, url: 'https://blades.example.test/api/gm/assist/cards', headers: new Headers(), json() { touched.push('json'); throw new Error('read'); }, text() { touched.push('text'); throw new Error('read'); }, arrayBuffer() { touched.push('ab'); throw new Error('read'); } });
+  for (const m of ['GET', 'POST', 'PUT', 'DELETE']) for (const me of [{ role: 'player', id: 'p@example.test' }, { role: 'display', id: 'd@example.test' }, undefined]) {
+    let err = null; try { await realHandler({ request: request(m), env, data: { me } }); } catch (e) { err = e; }
+    assert.ok(err && err.status === 403, m + ' expected 403');
+  }
+  assert.deepEqual(touched, []);
+});
+
+await test('cards: a tick\'s shown Ref card and Ledger update come back after a reload (no key needed); held ones do not', async () => {
+  clock.t = Date.parse('2030-01-01T17:00:00.000Z');
+  const s = await setup();
+  s.replies.ledger = { events: [{ at: '17:00', who: 'Quill', kind: 'stress', note: '+2' }], xp_totalled: false };
+  await s.lines(2);
+  const tick = await body(await s.post('tick', {}));
+  assert.equal(tick.cards.length, 1); assert.equal(tick.updates.length, 1);
+  const noKey = makeHandler({ now: () => clock.t, clientFor: () => { throw new Error('no key needed'); } });
+  const res = await noKey({ request: new Request('https://blades.example.test/api/gm/assist/cards'), env: { DB: s.db, CAMPAIGN: 'c' }, data: { me: GM } });
+  assert.equal(res.status, 200);
+  const out = await body(res);
+  assert.equal(out.cards.length, 1);
+  const c = out.cards[0];
+  assert.equal(c.seat, 'ref'); assert.equal(c.at, tick.cards[0].at); assert.equal(c.text, tick.cards[0].text, 'the same (at, text) the tick carried: one card');
+  assert.deepEqual(c.detail, { said_at: '09:29', rule: REF_SLIP.rule }); assert.equal(c.important, true);
+  assert.equal(c.seen, false); assert.equal(c.kept, false); assert.equal(c.filed, false);
+  assert.equal(out.updates.length, 1); assert.equal(out.updates[0].at, tick.updates[0].at); assert.equal(out.updates[0].text, tick.updates[0].text); assert.equal(out.updates[0].key, tick.updates[0].key);
+  // a second slip inside the gap is held (not shown): not restored
+  s.replies.ref = { slip: true, said_at: '17:03', what_was_said: 'y', rule: 'Stress costs (p.20)', card: 'Stress cost looks wrong' };
+  clock.t += 120_000; await s.lines(2); await s.post('tick', {});
+  assert.equal((await body(await cardsReq(s, 'GET'))).cards.length, 1);
+  assert.equal((await body(await cardsReq(s, 'GET', '?since=' + encodeURIComponent(iso(clock.t + 1000))))).cards.length, 0, '?since cuts it');
+  await assert.rejects(cardsReq(s, 'GET', '?since=nope'), (e) => e.status === 400);
+  clock.t += 13 * 3600_000;
+  assert.equal((await body(await cardsReq(s, 'GET'))).cards.length, 0, 'more than twelve hours ago is not tonight');
+  assert.equal((await body(await cardsReq(s, 'GET', '?since=' + encodeURIComponent('2030-01-01T00:00:00Z')))).cards.length, 1);
+});
+
+await test('cards: seen, dismiss and keep are kept on the log; dismissed stay dismissed; a Ledger item is dismissed one at a time; bad marks are 400', async () => {
+  clock.t = Date.parse('2030-01-01T18:00:00.000Z');
+  const s = await setup();
+  s.replies.ledger = { events: [{ at: '18:00', who: 'Quill', kind: 'stress', note: '+2' }, { at: '18:00', who: 'Vex', kind: 'harm', note: 'level 1' }], xp_totalled: false };
+  await s.lines(2); await s.post('tick', {});
+  const get = async () => body(await cardsReq(s, 'GET'));
+  let g = await get();
+  const card = { at: g.cards[0].at, text: g.cards[0].text };
+  assert.equal(g.updates.length, 2);
+  assert.deepEqual(await body(await cardsReq(s, 'POST', '', { op: 'seen', items: [card] })), { marked: 1 });
+  g = await get(); assert.equal(g.cards[0].seen, true);
+  await cardsReq(s, 'POST', '', { op: 'keep', items: [card] });
+  g = await get(); assert.equal(g.cards[0].kept, true);
+  const u0 = { at: g.updates[0].at, key: g.updates[0].key, text: g.updates[0].text };
+  await cardsReq(s, 'POST', '', { op: 'dismiss', items: [u0] });
+  g = await get(); assert.equal(g.updates.length, 1); assert.notEqual(g.updates[0].text, u0.text, 'the other item is still open');
+  assert.deepEqual(await body(await cardsReq(s, 'POST', '', { op: 'keep', items: [{ at: g.updates[0].at, key: g.updates[0].key, text: g.updates[0].text }] })), { marked: 0 }, 'a Ledger item is not starred');
+  await cardsReq(s, 'POST', '', { op: 'dismiss', items: [card] });
+  g = await get(); assert.equal(g.cards.length, 0, 'dismissed stays dismissed');
+  assert.deepEqual(await body(await cardsReq(s, 'POST', '', { op: 'dismiss', items: [{ at: card.at, text: 'not a card' }] })), { marked: 0 });
+  for (const bad of [{ op: 'nope', items: [card] }, { op: 'seen', items: [] }, { op: 'seen' }, { op: 'seen', items: [{ at: 1, text: 'x' }] }, { op: 'seen', items: Array.from({ length: 51 }, () => card) }, { op: 'seen', items: [{ at: card.at, text: 'x'.repeat(601) }] }]) {
+    await assert.rejects(cardsReq(s, 'POST', '', bad), (e) => e.status === 400, JSON.stringify(bad).slice(0, 60));
+  }
+  assert.equal((await cardsReq(s, 'PUT', '')).status, 405);
+  const n = s.calls.length; await get(); assert.equal(s.calls.length, n, 'reading and marking cards never calls a model');
+});
+
 console.log(failed ? `\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);
 process.exit(failed ? 1 : 0);

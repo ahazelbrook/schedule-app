@@ -4,7 +4,7 @@
    `characters` collection, the shared `campaign/main` document (CAMPAIGN.md) and the `npcs` collection (CAST.md).
    window.claude.rules (list, import, saveHouse, deleteHouse) is the rules wiki's corpus (RULES.md).
    window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay, ambient,
-   patchAmbient, stt, patchStt, sttToken, transcript, addTranscript) is the GM tools'
+   patchAmbient, stt, patchStt, sttToken, transcript, addTranscript, assistTick, assistFit, assistCards, assistMark) is the GM tools'
    API (GM.md): plain calls, never queued, cached or snapshotted here.
    window.claude.profile.setName(name) changes the signed-in person's own display name (PATCH /api/me); a plain call too.
    Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network
@@ -215,11 +215,11 @@
      the same way (plus `timeout: true`), so a stalled request never holds the poller or the write queue: the next tick,
      the `online` event and the retry timer carry on as after any other network failure. */
   var signedOutWhy = '';       /* why the last 401 said so (the server's reason, or that Access answered with its login page) */
-  function api(method, path, body) {
+  function api(method, path, body, ms) {
     if (signedOut) return Promise.reject(signedOutError());
     var opts = { method: method, credentials: 'same-origin', cache: 'no-store', redirect: 'manual', headers: { Accept: 'application/json' } };
     if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
-    var ctl = null, timer = null, timedOut = false, limit = timeoutMs(method);
+    var ctl = null, timer = null, timedOut = false, limit = ms || timeoutMs(method);
     if (typeof AbortController === 'function') { try { ctl = new AbortController(); opts.signal = ctl.signal; } catch (e) { ctl = null; } }
     function netFail(e) {
       setNet(false);
@@ -1179,7 +1179,15 @@
     /* GET /api/gm/transcript?after=N | ?tail=N -> { lines: [{ seq, id, session, at, conn, speaker, kind, text }], last };
        POST { lines } -> { added, last } (a line's id makes a resend harmless) */
     transcript: function (o) { return api('GET', '/gm/transcript?' + (o && o.tail ? qs('tail', o.tail) : qs('after', o && o.after || 0))); },
-    addTranscript: function (lines) { return api('POST', '/gm/transcript', { lines: lines || [] }); }
+    addTranscript: function (lines) { return api('POST', '/gm/transcript', { lines: lines || [] }); },
+    /* Claude at the table (app/gm/assist-panel.js). POST /api/gm/assist/tick { after? } -> { cards, updates, flags, spend, last }; 429: busy or
+       the night's cap reached. POST /api/gm/assist/fit { position, effect? } -> { cards: [fixer card], spend }; the Fixer may take 30 s, so it waits 60 */
+    assistTick: function (after) { return api('POST', '/gm/assist/tick', after === undefined || after === null ? {} : { after: after }, 45000); },
+    assistFit: function (req) { return api('POST', '/gm/assist/fit', req || {}, 60000); },
+    /* GET /api/gm/assist/cards -> { cards, updates }: tonight's shown cards (the box restores its chat after a reload);
+       POST { op: 'seen' | 'dismiss' | 'keep', items: [{ at, text, key? }] } -> { marked } */
+    assistCards: function () { return api('GET', '/gm/assist/cards'); },
+    assistMark: function (req) { return api('POST', '/gm/assist/cards', req || {}); }
   };
 
   /* ---------- profile: the signed-in person's own display name (PATCH /api/me). A plain call: never queued, so it
