@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { buildAssist, extractSecretSections, extractMustLand, neverRevealText, collectNever, DEFAULT_RULES, DEFAULT_CAST, NPC_BLOCK_NAME, PLAYERS_NAME, NEVER_NAME, CHARACTERS } from '../../scripts/lib/assist-export.mjs';
+import { buildAssist, extractSecretSections, extractMustLand, neverRevealText, collectNever, DEFAULT_RULES, DEFAULT_CAST, NPC_BLOCK_NAME, PLAYERS_NAME, NEVER_NAME, HANDOUTS_NAME, handoutsText, CHARACTERS } from '../../scripts/lib/assist-export.mjs';
 import { NPCS } from '../../scripts/lib/vault.mjs';
 
 let failed = 0, passed = 0;
@@ -94,6 +94,35 @@ await test('found: the block carries the NPC truth and the unlanded clues only, 
 await test('order: rules, cast, how-to-play, players, never-reveal, prep', () => {
   const { part } = build(vault(PREP_TEXT));
   assert.deepEqual(names(part), [path.basename(DEFAULT_RULES), path.basename(DEFAULT_CAST), NPC_BLOCK_NAME, PLAYERS_NAME, NEVER_NAME, 'Tonight.md']);
+});
+
+const HO = { v: 1, rel: 'x', items: [
+  { id: 'torn-map', title: 'Torn map', file: '0123456789abcdef.png', when: 'The table finds the old route' },
+  { id: 'receipt', title: 'Crumpled receipt', file: 'fedcba9876543210.jpg' },
+] };
+await test('handouts: the block lists id, title and cue only (no file names), and sits after players, before never-reveal and prep', () => {
+  const { part } = build(vault(PREP_TEXT), { handouts: HO });
+  assert.deepEqual(names(part), [path.basename(DEFAULT_RULES), path.basename(DEFAULT_CAST), NPC_BLOCK_NAME, PLAYERS_NAME, HANDOUTS_NAME, NEVER_NAME, 'Tonight.md']);
+  const b = blockOf(part.prefix, HANDOUTS_NAME);
+  assert.ok(b.includes('\n- id: torn-map | title: Torn map | cue: The table finds the old route\n'));
+  assert.ok(b.includes('\n- id: receipt | title: Crumpled receipt\n'));
+  assert.ok(!b.includes('.png') && !b.includes('.jpg') && !b.includes('0123456789abcdef'), 'no file names');
+  assert.equal(part.src.handouts, 2);
+});
+await test('handouts: no handouts part (or an empty one) means no block, and the prefix is unchanged', () => {
+  const v = vault(PREP_TEXT);
+  const base = build(v).part.prefix;
+  assert.ok(!names(build(v, { handouts: null }).part).includes(HANDOUTS_NAME));
+  assert.ok(!names(build(v, { handouts: { v: 1, rel: 'x', items: [] } }).part).includes(HANDOUTS_NAME));
+  assert.equal(build(v, { handouts: null }).part.prefix, base);
+  assert.equal(handoutsText([]), ''); assert.equal(handoutsText(undefined), '');
+});
+await test('handouts: everything before the block is the same with or without handouts, and the block is stable for the same list', () => {
+  const v = vault(PREP_TEXT);
+  const withH = build(v, { handouts: HO }).part.prefix, without = build(v).part.prefix;
+  const cut = (s, n) => s.slice(0, s.indexOf('<context name="' + n + '">'));
+  assert.equal(cut(withH, HANDOUTS_NAME), cut(without, NEVER_NAME));
+  assert.equal(build(v, { handouts: HO }).part.prefix, withH);
 });
 
 await test('cache order: everything before the never-reveal block is byte-identical with or without prep, and the NPC part of the block is a stable head', () => {

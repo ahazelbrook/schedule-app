@@ -1372,7 +1372,7 @@
     var g = gmApi(), A = W.B68GmAssist, me = S;
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
-    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onNote: function (text) { return S === me && !!addCapture('m', text, true); } }); } catch (e) { me.assist = null; }
+    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); } }); } catch (e) { me.assist = null; }
   }
   function loadShown() {
     var g = gmApi(), me = S; if (!g || typeof g.display !== 'function' || AM.displayRead) return;
@@ -1784,7 +1784,7 @@
   }
   function fitPre(pre, tries) {
     var me = S, tok = pre.tok;
-    me.assist.autoFit({ position: pre.pos, draws: { low: pre.text.low, mid: pre.text.mid } }, function () {
+    me.assist.autoFit(Object.assign({ position: pre.pos, draws: { low: pre.text.low, mid: pre.text.mid } }, me.dots != null ? { dots: me.dots } : {}), function () {
       if (S === me && me.fitTok === tok) { me.rack = { tok: tok, pre: pre, status: 'pending', card: null }; renderRack(); }
     }).then(function (r) {
       if (S !== me || me.fitTok !== tok) return;             /* the Position moved on, or the Rack was cleared: this answer is for draws that are gone */
@@ -2259,9 +2259,20 @@
   }
   function showHandout(id) {
     var x = handoutById(id); if (!x) { toast('That handout is not in the pack any more.', true); return Promise.resolve(false); }
-    return pushDisplay(P.handoutDisplay(x, !!(S && S.hoTitle))).then(function () { toast('On the iPad: ' + x.title + '.'); return true; }, function (e) { toast('Could not send the handout: ' + errText(e), true); return false; });
+    return pushDisplay(P.handoutDisplay(x, !!(S && S.hoTitle))).then(function () { hoDone(x.id); toast('On the iPad: ' + x.title + '.'); return true; }, function (e) { toast('Could not send the handout: ' + errText(e), true); return false; });
   }
-  /* Claude suggests: a "Show handout: <title>?" item in the Rack. Nothing calls this yet (the Mystery keeper will). One offer per handout; a repeat replaces it. */
+  /* handouts shown or dismissed tonight (kept 12 h in localStorage so a reload does not offer them again): the box's suggestions skip these */
+  var HO_KEY = 'b68.gm.hodone', HO_TTL = 12 * 3600 * 1000;
+  function hoRead() { try { var m = JSON.parse(W.localStorage.getItem(HO_KEY) || '{}'), out = {}, t = Date.now(); if (isObj(m)) Object.keys(m).forEach(function (k) { if (typeof m[k] === 'number' && t - m[k] < HO_TTL) out[k] = m[k]; }); return out; } catch (e) { return {}; } }
+  function hoDone(id) { if (!S) return; S.hoSeen = S.hoSeen || hoRead(); S.hoSeen[id] = Date.now(); try { W.localStorage.setItem(HO_KEY, JSON.stringify(S.hoSeen)); } catch (e) {} }
+  function hoIsDone(id) { if (!S) return false; S.hoSeen = S.hoSeen || hoRead(); return !!S.hoSeen[id]; }
+  /* a tick answer's handout ({ id, why }): offered in the Rack once; not again while the offer is up, or after it was shown or dismissed tonight */
+  function offerHandoutFromBox(h) {
+    if (!S || !isObj(h) || typeof h.id !== 'string') return false;
+    if (hoIsDone(h.id) || (S.offers || []).some(function (y) { return y.id === h.id; })) return false;
+    return suggestHandout(h.id, h.why);
+  }
+  /* Claude suggests: a "Show handout: <title>?" item in the Rack (the Mystery keeper's tick answer reaches it through offerHandoutFromBox). One offer per handout; a repeat replaces it. */
   function suggestHandout(id, why) {
     var x = S && handoutById(String(id)); if (!x) return false;
     var o = { id: x.id, title: x.title, why: str(why).trim().slice(0, 300) };
@@ -3669,7 +3680,7 @@
       case 'stallclear': S.stall = null; renderRack(); break;
       case 'ho-show': showHandout(b.getAttribute('data-id')); break;
       case 'offer-show': { var oid = b.getAttribute('data-id'); showHandout(oid).then(function (ok) { if (ok) dropOffer(oid); }); break; }
-      case 'offer-dismiss': dropOffer(b.getAttribute('data-id')); break;
+      case 'offer-dismiss': { var did = b.getAttribute('data-id'); hoDone(did); dropOffer(did); break; }
       case 'another': voiceAnother(); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {

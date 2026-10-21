@@ -507,5 +507,36 @@ await test('gm-page: Stall is wired into the Rack (offer, kind, Clear) and clear
 });
 
 
+// ---------- handout suggestions and dots ----------
+await test('Handout: a tick answer with a handout reaches onHandout; none, an empty id or a bad shape does not', async () => {
+  const H = { id: 'torn-map', why: 'The table is at the cue.', at: '2030-01-01T09:30:00.000Z' };
+  let got = [];
+  let r = rig({ onHandout: (h) => got.push(h) }); r.gm.reply = { ...GOOD, handout: H };
+  await r.ctl.poll();
+  assert.deepEqual(got, [H]);
+  assert.ok(!/torn-map|cue/.test(r.br.stub('#as-list').innerHTML), 'a handout is not a card in the box');
+  r.gm.reply = GOOD; await r.ctl.poll(); assert.equal(got.length, 1, 'a tick without one calls nothing');
+  for (const bad of [{ ...H, id: '  ' }, 'torn-map', null, { why: 'x' }]) { got = []; r = rig({ onHandout: (h) => got.push(h) }); r.gm.reply = { ...GOOD, handout: bad }; await r.ctl.poll(); assert.deepEqual(got, [], JSON.stringify(bad)); }
+  r = rig(); r.gm.reply = { ...GOOD, handout: H }; await r.ctl.poll();            // no callback: nothing breaks
+  assert.equal(r.calls.tick.length, 1);
+});
+
+await test('Dots: the Fit it form sends dots when the page has set them, and leaves the field out otherwise', async () => {
+  let dots = 3;
+  const r = rig({ dots: () => dots });
+  r.gm.fitReply = { cards: [{ seat: 'fixer', at: 'a', text: 't', read: 't', one_three: 'a', four_five: 'b', six: 'c', crit: 'd', bargain: 'e' }], spend: { tonight: 3, cap: 20, tier: 'all' } };
+  r.br.host.pos = 'risky';
+  await r.br.listeners.submit({ target: { getAttribute: () => 'fit' }, preventDefault() {} }); await tick();
+  assert.equal(r.calls.fit[0].dots, 3);
+  dots = 0; await r.ctl.fit('risky', ''); assert.equal(r.calls.fit[1].dots, 0, 'zero is sent');
+  dots = null; await r.ctl.fit('risky', ''); assert.ok(!('dots' in r.calls.fit[2]));
+  dots = 9; await r.ctl.fit('risky', ''); assert.ok(!('dots' in r.calls.fit[3]), 'out of range: not sent');
+  const r2 = rig(); r2.gm.fitReply = r.gm.fitReply; await r2.ctl.fit('risky', ''); assert.ok(!('dots' in r2.calls.fit[0]), 'no dots callback: as before');
+  // the console's own fit passes whatever the page puts in the request
+  const r3 = rig(); r3.gm.fitReply = r.gm.fitReply;
+  await r3.ctl.autoFit({ position: 'risky', dots: 2, draws: { low: 'a', mid: 'b' } });
+  assert.equal(r3.calls.fit[0].dots, 2);
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

@@ -10,10 +10,10 @@ import { fileURLToPath } from 'node:url';
 import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
 import { cleanLines, addLines } from '../../functions/_lib/stt.js';
 import { followsThrough, FOLLOW_WINDOW_MS, decide, budgetTier, canRun, isRepeatSlip, slipKeys, COOLDOWN_MS, DEFAULT_CAP, DROPPED_WHEN_REDUCED, CORE_SEATS } from '../../functions/_lib/assist/conductor.js';
-import { toCandidate, toVoice, toAnother, toStall, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
+import { toCandidate, toVoice, toAnother, toStall, toHandout, handoutIds, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
 import { callSeat, countTokens } from '../../functions/_lib/assist/claude.js';
 import { SEATS, WAKES } from '../../functions/_lib/assist/seats.js';
-import { makeHandler, cleanDraws, cleanNpc, cleanShown, DRAW_MAX, onRequest as realHandler } from '../../functions/api/gm/assist.js';
+import { makeHandler, cleanDots, cleanDraws, cleanNpc, cleanShown, DRAW_MAX, onRequest as realHandler } from '../../functions/api/gm/assist.js';
 import { matchApi } from '../../worker/app.js';
 import { gmNotFound } from '../../functions/_lib/gm.js';
 
@@ -1360,6 +1360,105 @@ await test('tick: Ref follows a roll_talk tick once on the next tick with new ta
   s.calls.length = 0; clock.t += 61_000; s.replies.tripwire = { ...NONE };
   const idle = await body(await s.post('tick', {}));
   assert.deepEqual(s.calls.map((c) => c.seat), [], 'no new talk, no call'); assert.deepEqual(idle.cards, []);
+});
+
+// ---------- handout suggestions and the Fixer's dots ----------
+const HO_PART = { v: 1, rel: 'x', items: [{ id: 'torn-map', title: 'Torn map', file: '0123456789abcdef.png', when: 'The table finds the old route' }, { id: 'receipt', title: 'Crumpled receipt', file: 'fedcba9876543210.jpg' }] };
+const putHandouts = (s, body) => s.exec.db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'handouts', 'v', '{}', 0, ?)").run(typeof body === 'string' ? body : JSON.stringify(body));
+const MYS_H = (n, id, push = true) => ({ ...MYS(n), ...(push ? {} : { push_next: '', must_land_item: '' }), handout_id: id, handout_why: 'They have just found the old route.' });
+
+await test('editor: toHandout keeps an id that is in the live handouts part and drops anything else', () => {
+  const ids = handoutIds(HO_PART);
+  assert.deepEqual([...ids].sort(), ['receipt', 'torn-map']);
+  assert.deepEqual(toHandout({ handout_id: ' torn-map ', handout_why: 'on cue' }, ids), { id: 'torn-map', why: 'on cue' });
+  assert.equal(toHandout({ handout_id: 'unknown-one', handout_why: 'x' }, ids), null, 'not in the pack: dropped');
+  assert.equal(toHandout({ handout_id: '', handout_why: 'x' }, ids), null);
+  assert.equal(toHandout({ handout_id: 7 }, ids), null);
+  assert.equal(toHandout({}, ids), null); assert.equal(toHandout(null, ids), null);
+  assert.equal(toHandout({ handout_id: 'torn-map' }, new Set()), null, 'no handouts part: nothing can be offered');
+  assert.equal(handoutIds(null).size, 0); assert.equal(handoutIds({ items: 'no' }).size, 0); assert.equal(handoutIds({ items: [null, { id: 3 }, { id: '' }] }).size, 0);
+  assert.equal(merge([], { now: T }).card, null, 'merge() never sees a handout');
+});
+
+await test('tick: a Mystery handout_id in the live handouts part passes through as its own field; an unknown one is dropped', async () => {
+  clock.t = Date.parse('2030-03-03T10:00:00.000Z');
+  const s = await setup(FULL);
+  putHandouts(s, HO_PART);
+  await seed(s, 'showrunner', clock.t - 60_000);
+  s.replies.tripwire = { ...NONE, clue_mention: true };
+  s.replies.mystery = () => MYS_H(1, 'torn-map');
+  await s.lines(3);
+  let out = await body(await s.post('tick', {}));
+  assert.deepEqual({ id: out.handout.id, why: out.handout.why }, { id: 'torn-map', why: 'They have just found the old route.' });
+  assert.equal(out.cards.length, 1); assert.equal(out.cards[0].seat, 'mystery'); assert.ok(!('handout' in out.cards[0]), 'the card is the push, not the handout');
+  assert.equal(JSON.parse(s.rows().filter((r) => r.seat === 'mystery').pop().card).handout.id, 'torn-map', 'logged on the Mystery row');
+  // an id the pack does not hold is dropped, and the card is untouched
+  clock.t += 16 * 60_000; await s.lines(3);
+  s.replies.mystery = () => MYS_H(2, 'made-up-id');
+  out = await body(await s.post('tick', {}));
+  assert.ok(!('handout' in out), 'unknown id dropped');
+  assert.equal(out.cards.length, 1);
+});
+
+await test('tick: a handout does not take the card slot (it comes with no card, and while the gap holds the cards back)', async () => {
+  clock.t = Date.parse('2030-03-03T11:00:00.000Z');
+  const s = await setup(FULL);
+  putHandouts(s, HO_PART);
+  await seed(s, 'showrunner', clock.t - 60_000);
+  await seed(s, 'ref', clock.t - 60_000, 0, JSON.stringify({ shown: 1, text: 'a slip', keys: ['ref:x'] }));    // a card shown a minute ago: the gap is closed
+  s.replies.tripwire = { ...NONE, clue_mention: true };
+  s.replies.mystery = () => MYS_H(1, 'receipt');
+  await s.lines(3);
+  const out = await body(await s.post('tick', {}));
+  assert.deepEqual(out.cards, [], 'the gap holds the push back');
+  assert.equal(out.handout.id, 'receipt', 'the handout still comes');
+  // and with no push at all the handout still comes, with no card
+  clock.t += 16 * 60_000; await s.lines(3);
+  s.replies.mystery = () => MYS_H(2, 'torn-map', false);
+  const out2 = await body(await s.post('tick', {}));
+  assert.deepEqual(out2.cards, []); assert.equal(out2.handout.id, 'torn-map');
+});
+
+await test('tick: no handouts part, an empty id, or a part over 16 KB means no handout', async () => {
+  clock.t = Date.parse('2030-03-03T12:00:00.000Z');
+  const s = await setup(FULL);
+  await seed(s, 'showrunner', clock.t - 60_000);
+  s.replies.tripwire = { ...NONE, clue_mention: true };
+  s.replies.mystery = () => MYS_H(1, 'torn-map');
+  await s.lines(3);
+  assert.ok(!('handout' in await body(await s.post('tick', {}))), 'no part');
+  putHandouts(s, { ...HO_PART, pad: 'z'.repeat(17 * 1024) });
+  clock.t += 16 * 60_000; await s.lines(3);
+  s.replies.mystery = () => MYS_H(2, 'torn-map');
+  assert.ok(!('handout' in await body(await s.post('tick', {}))), 'over 16 KB: not read');
+  s.exec.db.prepare("DELETE FROM gm_pack WHERE part = 'handouts'").run(); putHandouts(s, HO_PART);
+  clock.t += 16 * 60_000; await s.lines(3);
+  s.replies.mystery = () => MYS_H(3, '');
+  assert.ok(!('handout' in await body(await s.post('tick', {}))), 'empty id');
+});
+
+await test('the Mystery schema takes an optional handout_id and its instructions say to use the list only', () => {
+  const m = SEATS.mystery;
+  assert.equal(m.schema.properties.handout_id.type, 'string');
+  assert.ok(!m.schema.required.includes('handout_id'), 'optional');
+  assert.match(m.instructions, /handouts list[^]*only when the talk shows the table has just reached the moment its cue describes[^]*only from that list/);
+});
+
+await test('fit: dots reach the Fixer turn when set; without dots the turn is as before; bad dots are a 400', async () => {
+  clock.t = Date.parse('2030-01-01T16:00:00.000Z');
+  const s = await setup();
+  await s.lines(2);
+  await body(await s.post('fit', { position: 'risky', effect: 'standard', dots: 3, draws: DRAWS }));
+  assert.match(s.calls[0].user, /The GM names the position: risky\. Effect: standard\. Dots: 3\.\n/);
+  clock.t += 60 * 60_000; s.calls.length = 0;
+  await body(await s.post('fit', { position: 'risky', effect: 'standard', dots: 0, draws: DRAWS }));
+  assert.match(s.calls[0].user, /Dots: 0\./, 'zero is a real value');
+  clock.t += 60 * 60_000; s.calls.length = 0;
+  await body(await s.post('fit', { position: 'risky', effect: 'standard', draws: DRAWS }));
+  assert.ok(!/Dots/.test(s.calls[0].user), 'no dots, no mention');
+  assert.match(s.calls[0].user, /The GM names the position: risky\. Effect: standard\.\nThe console has drawn/);
+  for (const dots of [5, -1, 1.5, '2', null, true, [2]]) await assert.rejects(s.post('fit', { position: 'risky', dots, draws: DRAWS }), (e) => e.status === 400 && /dots/.test(e.message), JSON.stringify(dots));
+  assert.equal(cleanDots(undefined), undefined); assert.equal(cleanDots(4), 4); assert.equal(cleanDots(0), 0); assert.equal(cleanDots(5), null);
 });
 
 console.log(failed ?`\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);
