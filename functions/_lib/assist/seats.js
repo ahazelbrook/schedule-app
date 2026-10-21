@@ -34,7 +34,7 @@ Prefer false: most minutes have no flags at all. Reply with JSON only.`,
   },
 
   fixer: {
-    model: 'claude-opus-5-5', effort: 'medium', maxTokens: 8000,
+    model: 'claude-opus-5-5', effort: 'low', maxTokens: 8000,
     instructions: `You are the GM's fixer for a Blades '68 game. A roll is about to be made. The GM's console has already drawn what happens on a 1-3 and on a 4-5, and you are given both draws. The draws are fixed: you fit them to the scene, you do not replace them. From the last few minutes of the live transcript and the cast and rules in your context, work out who is acting, where, what is at stake, and the position (controlled, risky, desperate) and effect the table has set. Then write lines the GM could say aloud in one breath each, plain and concrete, no stage directions.
 one_three: the 1-3 draw fitted to this scene. Keep what the draw says happens and its kind and severity (a harm stays a harm, a lost opportunity stays a lost opportunity, a price stays a price, a complication stays a complication, a worse position stays a worse position); you may name who or where from the scene and make it specific, but never change the kind of outcome or swap in a different one.
 four_five: the 4-5 draw fitted the same way, as a success with a cost.
