@@ -152,7 +152,7 @@ fails and nobody is known, nothing is purged.
 - **Situations.** The console is the four Situations, one mode only (the Classic nine-button view, its toggle, the `b68.gm.view`
   preference and the `SITUATIONS_DEFAULT` switch went on 18/10/2026): four buttons, each a moment in the roll: `1` **Before** (a Devil's
   Bargain), `2` **4/5**, `3` **1–3**, `4` **Someone**. A large three-way **Position** switch (controlled / risky / desperate, with what
-  it means for severity, winds and harm) sits above them, always on screen; the other controls (scene, district, PC, NPC,
+  it means for severity, winds and harm) sits above them, always on screen, with a small **Dots** chip (0 1 2 3 4; tap to set, tap again to clear, unset by default, no key) under it that you set per roll: when set, the filed 4/5 or 1-3 line carries it ("A 4/5 (risky, 2d, Name): ..."), the Night Shift reads it back for the zero-dot XP candidate, and it resets once the roll is filed or the Rack is cleared; the other controls (scene, district, PC, NPC,
   threat) fold under the **Scene** line; there is no Result control (the button is the result). A card is a **lead box** (one big line,
   with the **spend sentence** under it when a threat is set, its chips, its own detail under *More*, which does not repeat the lead
   line), at most three one-line **Or** rows that each open to their full section, and **one** actions row merged

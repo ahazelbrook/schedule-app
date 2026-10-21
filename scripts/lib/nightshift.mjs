@@ -73,7 +73,7 @@ export function rollStats(rolls) {
 // What the GM app records is thinner than a roll sheet: gm:pull files each "L" capture of a console card as "- **HH:MM** Title:
 // lead ^b68-id" under "## Rolled at the table". The Situations cards carry the result band in their title ("A 4/5" = a partial,
 // "A 1-3" = a miss; "Before the roll" is only a Devil's Bargain offered ahead of a roll), and a title may carry a position in
-// brackets if the app ever writes one. There is no character, effect or dots. So the app is authoritative for the fields it
+// brackets if the app ever writes one, then the PC and the dots the GM set ("2d", zero is "0d"; only when set). There is no effect. So the app is authoritative for the fields it
 // states (time, result band, position when bracketed) and the speech fills everything else; the speech never overwrites an app field.
 
 const MATCH_MIN = 2;                                  // an app record and a spoken roll are the same roll within +/- 2 minutes
@@ -109,8 +109,9 @@ export function appRollsFrom(noteText) {
     const parts = br ? br[1].split(/[,;]/).map((x) => x.trim()).filter(Boolean) : [];
     const word = (x) => /^(controlled|risky|desperate|limited|standard|great)\b/i.test(x);
     const effect = (parts.find((x) => EFFECTS.includes(x.toLowerCase())) || '').toLowerCase();
-    const who = parts.find((x) => !word(x) && !/[→·]/.test(x)) || '';
-    out.rolls.push({ at: '[' + m[1] + ':' + m[2] + ']', t, who, effect, position: p ? p[1].toLowerCase() : '', result, card: body.split(/[:(]/)[0].trim() });
+    const dotsPart = parts.find((x) => /^[0-4]d$/i.test(x));      // "2d" or "0d": the dots the GM set on the console, only when set
+    const who = parts.find((x) => !word(x) && !/^[0-4]d$/i.test(x) && !/[→·]/.test(x)) || '';
+    out.rolls.push({ at: '[' + m[1] + ':' + m[2] + ']', t, who, effect, position: p ? p[1].toLowerCase() : '', result, card: body.split(/[:(]/)[0].trim(), ...(dotsPart ? { dots: Number(dotsPart[0]) } : {}) });
   }
   return out;
 }
