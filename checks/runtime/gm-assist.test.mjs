@@ -44,7 +44,7 @@ await test('ladder: reduced drops Meanwhile, Showrunner and Mystery; core keeps 
 
 await test('flags wake seats through WAKES; no flag, no call', () => {
   assert.deepEqual(decide({ flags: [], now: T }).seats, []);
-  assert.deepEqual(decide({ flags: ['scene_change'], now: T }).seats, []);
+  assert.deepEqual(decide({ flags: ['scene_change'], now: T }).seats, ['meanwhile'], 'a scene change wakes Meanwhile');
   assert.deepEqual(decide({ flags: ['roll_talk'], now: T }).seats, ['ref', 'ledger']);
   assert.deepEqual(decide({ flags: ['new_name'], now: T }).seats, ['clerk']);
   assert.deepEqual(decide({ flags: ['harm', 'clue_mention'], now: T }).seats, ['ref', 'clerk', 'ledger', 'mystery']);
@@ -183,6 +183,8 @@ const REPLIES = () => ({
   mystery: { known: [], theories: [], push_next: '', must_land_item: '', how: 'no list' },
 });
 
+// the Scribe and Meanwhile (gm-assist-scribe.test.mjs) came after these tests: P1_WAKES is the table they were written for
+const { scribe: _sc, meanwhile: _mw, ...P1_WAKES } = WAKES;
 const LEGACY_WAKES = { ref: WAKES.ref, clerk: WAKES.clerk, ledger: WAKES.ledger, voice: WAKES.voice };
 async function setup(opts = {}) {
   const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });
@@ -982,7 +984,7 @@ await test('voice: the prompts name the NPC and the shown lines, and the replay 
 });
 
 // ---------- Stall, Showrunner and Mystery (WP4) ----------
-const FULL = { wakes: WAKES };
+const FULL = { wakes: P1_WAKES };
 const ALL_FLAGS = { ...NONE, roll_talk: true, harm: true, new_name: true, clue_mention: true, stall: true };
 const seed = (s, seat, atMs, cents = 0, card = '{}') => s.db.prepare("INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, cents, flags, card) VALUES ('c', ?1, '', ?2, 'seed', '', ?3, '', ?4)").bind(iso(atMs), seat, cents, card).run();
 const STALL_OFFER = { stalled: true, kind: 'complication', offer: 'A runner bursts in with bad news.', why_now: 'The table has gone quiet.' };
@@ -993,9 +995,9 @@ await test('conductor: Stall wakes on stall, Mystery on clue_mention, Showrunner
   assert.deepEqual(WAKES.stall, ['stall']); assert.deepEqual(WAKES.mystery, ['clue_mention']); assert.deepEqual(WAKES.showrunner, ['tick']);
   assert.deepEqual(decide({ flags: ['stall'], now: T }).seats, ['stall']);
   assert.deepEqual(decide({ flags: ['clue_mention'], now: T }).seats, ['clerk', 'mystery']);
-  assert.deepEqual(decide({ flags: ['tick'], now: T }).seats, ['showrunner']);
-  assert.deepEqual(decide({ flags: ['scene_change'], now: T }).seats, [], 'a Tripwire flag alone never wakes the Showrunner: only the endpoint adds tick');
-  assert.deepEqual(decide({ flags: ['stall', 'clue_mention', 'roll_talk', 'tick'], now: T }).seats, ['ref', 'clerk', 'ledger', 'stall', 'mystery', 'showrunner'], 'Ref is first in the list');
+  assert.deepEqual(decide({ flags: ['tick'], now: T, wakes: P1_WAKES }).seats, ['showrunner']);
+  assert.deepEqual(decide({ flags: ['scene_change'], now: T, wakes: P1_WAKES }).seats, [], 'a Tripwire flag alone never wakes the Showrunner: only the endpoint adds tick');
+  assert.deepEqual(decide({ flags: ['stall', 'clue_mention', 'roll_talk', 'tick'], now: T, wakes: P1_WAKES }).seats, ['ref', 'clerk', 'ledger', 'stall', 'mystery', 'showrunner'], 'Ref is first in the list');
 });
 
 await test('conductor: Showrunner every 10 minutes, Mystery every 15, Stall every 5; one of each in flight', () => {
@@ -1010,7 +1012,7 @@ await test('conductor: Showrunner every 10 minutes, Mystery every 15, Stall ever
 
 await test('conductor cap tiers: Showrunner and Mystery stop at 60%, Stall and Voice at 85%, Ref, Ledger and Another run to the cap', () => {
   const flags = ['stall', 'clue_mention', 'roll_talk', 'tick'];
-  const seatsAt = (spent) => decide({ flags, now: T, spent, cap: 20, onStage: true }).seats;
+  const seatsAt = (spent) => decide({ flags, now: T, spent, cap: 20, onStage: true, wakes: P1_WAKES }).seats;
   assert.deepEqual(seatsAt(0), ['ref', 'clerk', 'ledger', 'stall', 'mystery', 'showrunner', 'voice']);
   assert.deepEqual(seatsAt(11.9), ['ref', 'clerk', 'ledger', 'stall', 'mystery', 'showrunner', 'voice']);
   assert.deepEqual(seatsAt(12), ['ref', 'clerk', 'ledger', 'stall', 'voice'], 'at 60% Showrunner and Mystery go, before Ref');
@@ -1165,7 +1167,7 @@ await test('tick: Mystery runs on clue_mention at most every 15 minutes, is hand
 
 await test('tick: with every seat on, Ref takes the slot and the others are dropped; across 30 minutes no two cards are closer than five', async () => {
   clock.t = Date.parse('2030-03-04T09:00:00.000Z');
-  const s = await setup({ wakes: WAKES, env: { ASSIST_CAP_USD: '1000' } });
+  const s = await setup({ wakes: P1_WAKES, env: { ASSIST_CAP_USD: '1000' } });
   s.replies.tripwire = { ...ALL_FLAGS };
   let n = 0;
   s.replies.ref = () => ({ slip: true, said_at: '09:0' + (n % 10), what_was_said: 'x', rule: 'Rule number ' + n + ' (p.' + n + ')', card: 'Slip ' + n });

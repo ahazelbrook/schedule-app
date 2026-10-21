@@ -220,6 +220,43 @@ Tie each to the named people, places and running clocks of the scene. Never deci
     },
   },
 
+  // The Scribe keeps the rolling "story so far" (about every five minutes of new talk). The Worker stores it in the seat's own log
+  // row and hands it to the seats that look past the last few minutes (Mystery, Showrunner, Meanwhile), after the cache breakpoint.
+  scribe: {
+    model: 'claude-haiku-5-5', effort: 'low', maxTokens: 6000,   // a replay ran at 3.2k tokens with a 7.5k-character story: thinking shares the limit, and a cut-off run saves nothing
+    instructions: `You are the scribe for a Blades '68 game. You keep the story so far. The message gives the story so far (it may be empty) and the newest stretch of the live transcript. Fold the new talk into the story and return the WHOLE updated story.
+Speaker labels and spellings in the transcript are unreliable. Using the cast, the player table and the NPC cards in your context, correct a speaker label or a misheard name only when it clearly matches an entry there; otherwise keep the heard spelling and mark it (heard as). List each fix you made this time in corrections as "heard -> name"; an empty list is normal.
+Write in the past tense, plainly, in scene order, in Australian spelling: who did what and where, what the crew learned, what was decided, what is unresolved, and any clock, harm, stress or Heat that was said aloud. Skip rules talk, banter and table logistics. Do not invent anything, do not decide an outcome that was not said, and never narrate a player character beyond what was said at the table.
+Keep the story under 1500 words (about 2000 tokens) in total: as it grows, merge and compress the older parts first, and keep names, decisions, open threads and promises. Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        story: { type: 'string', description: 'the whole story so far, updated with the new talk; under 1500 words' },
+        corrections: { type: 'array', items: { type: 'string' }, description: 'speaker or name fixes made this time, as "heard -> name"' },
+      },
+      required: ['story', 'corrections'],
+    },
+  },
+
+  // Meanwhile: one faction cutaway on a scene change. It suggests a tick on that faction's clock and never decides it.
+  meanwhile: {
+    model: 'claude-sonnet-5-5', effort: 'low', maxTokens: 1500,
+    instructions: `You are the off-screen eye for a Blades '68 game. The scene has just changed. From the story so far, the last minutes of talk, the live clocks in the message and the factions in your context (their tier, status and clocks), pick ONE faction whose reaction to what the crew just did would be felt next, and write one cutaway the GM can narrate aloud in two or three sentences: what that faction is doing off-screen right now, concrete and in the scene's world.
+Tie it to that faction's clock: name the clock (from the live clocks in the message, else from the faction's clocks in your context) and suggest how many segments it could tick (0, 1 or 2), with a short reason. You only suggest; the GM decides whether any clock ticks, and you never say that one has.
+Never narrate or decide what a player character does, thinks or feels, and never decide the outcome of a roll. Use only factions and clocks in your context or the message. If no faction fits, or nothing relevant happened, leave cutaway empty. Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        faction: { type: 'string', description: 'the faction, as named in the context, or empty' },
+        cutaway: { type: 'string', description: 'what they are doing off-screen, two or three sentences the GM can narrate, or empty' },
+        clock: { type: 'string', description: "the faction's clock the cutaway moves, by name, or empty" },
+        suggest_ticks: { type: 'integer', description: 'segments the GM could tick, 0 to 2; a suggestion only' },
+        why: { type: 'string', description: 'one short line: why that tick (or none)' },
+      },
+      required: ['faction', 'cutaway', 'clock', 'suggest_ticks', 'why'],
+    },
+  },
+
   // The Night Shift: sorters read one hour each, in parallel; the writer reads their output.
   sorter: {
     // 20000 (just over callSeat's streaming threshold): an hour of roll-by-roll output is a long reply, and a long non-streaming
@@ -293,4 +330,6 @@ export const WAKES = {
   stall: ['stall'],                 // its offer goes to the Rack, like Voice
   mystery: ['clue_mention'],
   showrunner: ['tick'],             // not a Tripwire flag: the endpoint adds 'tick' to every tick's flags, and the 10-minute cooldown paces it
+  scribe: ['tick'],                 // every tick that has new talk; the 5-minute cooldown makes it "every five minutes of new talk"
+  meanwhile: ['scene_change'],      // its offer goes to the Rack; the 20-minute cooldown paces it
 };

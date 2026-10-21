@@ -484,6 +484,38 @@ await test('Stall: the offer reaches the page (onStall), not the box; Listening 
   r = rig(); r.gm.reply = { ...GOOD, stall: STALL }; await r.ctl.poll(); assert.equal(r.calls.tick.length, 1, 'a page without onStall is unchanged');
 });
 
+const MEANWHILE = { faction: 'The Lamplighters', cutaway: 'Their runners post a watch at the quay.', clock: 'Seal the quay', ticks: 1, why: 'they now know', at: '2030-01-01T09:30:00.000Z' };
+await test('Meanwhile: the cutaway reaches the page (onMeanwhile), not the box; Listening off and the cap clear it; busy leaves it; an empty one is nothing', async () => {
+  let got = [];
+  let r = rig({ onMeanwhile: (v) => got.push(v) }); r.gm.reply = { ...GOOD, meanwhile: MEANWHILE };
+  await r.ctl.poll();
+  assert.deepEqual(got, [MEANWHILE]);
+  assert.ok(!/post a watch/.test(r.br.stub('#as-list').innerHTML), 'a cutaway is not a card in the box');
+  r.gm.reply = GOOD; await r.ctl.poll();
+  assert.deepEqual(got, [MEANWHILE], 'a tick without one leaves it where it is');
+  got = []; r = rig({ onMeanwhile: (v) => got.push(v) }); r.gm.want = 'off'; r.gm.reply = { ...GOOD, meanwhile: MEANWHILE };
+  await r.ctl.poll(); assert.equal(r.calls.tick.length, 0); assert.deepEqual(got, [null], 'Listening off clears it');
+  got = []; r = rig({ onMeanwhile: (v) => got.push(v) }); r.gm.reply = { ...GOOD, spend: { tonight: 20, cap: 20, tier: 'off', tick: 0 }, meanwhile: MEANWHILE };
+  await r.ctl.poll(); assert.equal(got[got.length - 1], null, 'the cap clears it');
+  got = []; r = rig({ onMeanwhile: (v) => got.push(v) }); r.gm.tickErr = err(429, 'the fixer is busy');
+  await r.ctl.poll(); assert.deepEqual(got, []);
+  got = []; r = rig({ onMeanwhile: (v) => got.push(v) }); r.gm.reply = { ...GOOD, meanwhile: { ...MEANWHILE, cutaway: '  ' } };
+  await r.ctl.poll(); assert.deepEqual(got, []);
+  r = rig(); r.gm.reply = { ...GOOD, meanwhile: MEANWHILE }; await r.ctl.poll(); assert.equal(r.calls.tick.length, 1, 'a page without onMeanwhile is unchanged');
+});
+
+await test('gm-page: Meanwhile is wired into the Rack (cutaway, faction, clock, suggested tick, Clear) and ticks nothing', () => {
+  const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  const m = /function mountAssist\(\) \{[\s\S]*?\n  \}\n/.exec(page);
+  assert.ok(m && /onMeanwhile: function \(v\) \{ if \(S === me\) setMeanwhile\(v\); \}/.test(m[0]));
+  assert.ok(/case 'meanwhileclear': S\.meanwhile = null; renderRack\(\); break;/.test(page));
+  assert.ok(/meanwhileHtml\(S\.meanwhile\)/.test(/function renderRack\(\) \{[\s\S]*?\n  \}\n/.exec(page)[0]));
+  const mh = /function meanwhileHtml\(m\) \{[\s\S]*?\n  \}\n/.exec(page)[0], ms = /function setMeanwhile\(v\) \{[\s\S]*?\n  \}\n/.exec(page)[0];
+  assert.ok(/data-gm="meanwhileclear"/.test(mh) && /esc\(m\.cutaway\)/.test(mh) && /esc\(m\.clock\)/.test(mh) && /your call/.test(mh));
+  assert.ok(!/addClock|clockOps|campaignSave|\.filled/.test(mh + ms), 'it suggests; it never touches a clock');
+  assert.ok(/\.gm-meanwhile \{/.test(fs.readFileSync(path.join(ROOT, 'app', 'gm.css'), 'utf8')));
+});
+
 await test('Mystery and Showrunner cards arrive as ordinary cards with their own label', async () => {
   const r = rig();
   r.gm.reply = { ...GOOD, cards: [{ seat: 'mystery', at: '2030-01-01T09:30:00.000Z', text: 'Push next: the second key.' }] };

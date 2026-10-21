@@ -16,6 +16,13 @@
 //                     --tap-seats a,b,c  which seats really call the API (default tripwire,ref,clerk,ledger,stall,showrunner,mystery); the
 //                     others are skipped for free. --lead N  minutes of talk loaded before --from (default 20, for the Showrunner).
 //                     Writes tap.md (per tick: flags, seats called, the card, Stall's offer), tap.json and summary.txt (counts, no text).
+//                     The Scribe (tap-seats ...,scribe) folds the talk into a story every 5 minutes and Meanwhile (...,meanwhile) answers a scene_change
+//                     (the Tripwire's, or one forced with --force-flag 21:10=scene_change,...); a silent stretch raises the code-side stall flag
+//                     (the sim has the iPad report "listening" every tick; --no-listening turns that off). Also writes story.md (the story after each
+//                     Scribe run, with its fixes) and meanwhile.md (each cutaway).
+//                     --clocks-file <json>  [{ name, size, filled, kind }]: the table's live clocks for Meanwhile (the real ones sit in D1)
+//   --prefix-file <f>   use this file's text as the prefix exactly as it is (already context-blocked: the gm:pack builder's output), instead of
+//                     wrapping each --context file
 //   --turn-at seat@HH:MM,...   run seats once at those minutes with the endpoint's own turn, no Tripwire, no Conductor; writes turns.md and
 //                     turns.json, and checks Mystery's must_land_item against the prefix's "## Must land" section (grounded or not).
 //   --nightshift      hour-long chunks -> sorters in parallel -> writer; writes nightshift.md
@@ -42,7 +49,7 @@ import path from 'node:path';
 import { makeClient, callSeat, countTokens } from '../functions/_lib/assist/claude.js';
 import { SEATS, WAKES } from '../functions/_lib/assist/seats.js';
 import { cleanItem, verdictOf } from '../functions/_lib/assist/gatekeeper.js';
-import { gatekeeperUser, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, SHOWRUNNER_MIN, MYSTERY_MIN } from '../functions/_lib/assist/prompts.js';
+import { gatekeeperUser, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, SHOWRUNNER_MIN, MYSTERY_MIN, scribeUser, meanwhileUser, MEANWHILE_MIN, SCRIBE_FIRST_MIN } from '../functions/_lib/assist/prompts.js';
 import { decide } from '../functions/_lib/assist/conductor.js';
 import { toVoice, toAnother } from '../functions/_lib/assist/editor.js';
 import { makeDrawsFor, parsePositionAt } from './lib/fixer-draws.mjs';
@@ -85,7 +92,7 @@ const order = [...minutes.keys()].sort((a, b) => a - b);
 const stamp = t => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 const textFor = (from_, to_) => order.filter(t => t >= from_ && t <= to_).flatMap(t => minutes.get(t)).join('\n');
 
-const prefix = contextFiles.length
+const prefix = arg('prefix-file') ? fs.readFileSync(arg('prefix-file'), 'utf8') : contextFiles.length
   ? contextFiles.map(f => `<context name="${path.basename(f)}">\n${fs.readFileSync(f, 'utf8')}\n</context>`).join('\n\n')
   : '';
 
@@ -245,6 +252,8 @@ if (arg('turn-at')) {
     const t = toMin(at);
     const user = seat === 'showrunner' ? showrunnerUser({ stamp: at, talk: textFor(t - SHOWRUNNER_MIN + 1, t) })
       : seat === 'mystery' ? mysteryUser({ stamp: at, talk: textFor(t - MYSTERY_MIN + 1, t), known: [] })
+        : seat === 'scribe' ? scribeUser({ story: '', stamp: at, talk: textFor(t - SCRIBE_FIRST_MIN + 1, t) })
+          : seat === 'meanwhile' ? meanwhileUser({ clocks: [], stamp: at, talk: textFor(t - MEANWHILE_MIN + 1, t) })
         : 'Last four minutes, up to ' + at + ':\n' + textFor(t - 3, t);
     const before = total, n0 = secsLog.length;
     const j = await run(seat, at, user);
@@ -270,13 +279,15 @@ if (flag('tap-sim')) {
   const day = arg('day') || dayFromTranscript(fs.readFileSync(transcriptFile, 'utf8'));          // --day YYYY-MM-DD, else the note's own date: (else an invented default)
   const fromT = from < 0 ? order[0] : from, toT = to > 1e8 ? order[order.length - 1] : to;
   const enabled = new Set((arg('tap-seats', 'tripwire,ref,clerk,ledger,stall,showrunner,mystery')).split(',').map(x => x.trim()).filter(Boolean));
+  const forced = Object.fromEntries(args('force-flag').flatMap(x => x.split(',')).map(x => x.trim()).filter(Boolean).map(x => x.split('=')));   // { 'HH:MM': flag }
   const callHook = async (seat, a, at) => {
     const r = await callSeat(client, { ...a, prefix, prefixFileId: '' });
+    if (seat === 'tripwire' && forced[at] && r.json) r.json = { ...r.json, [forced[at]]: true };            // a scene change the Tripwire missed, for the replay only
     total += r.cost; spend[seat] = (spend[seat] || 0) + r.cost; calls[seat] = (calls[seat] || 0) + 1; secsLog.push(r.secs); stopLog.push(r.stop);
     log.write(JSON.stringify({ at, seat, model: a.model, effort: a.effort, usage: r.usage, cost: r.cost, stop: r.stop, secs: r.secs, json: r.json }) + '\n');
     return r;
   };
-  const sim = await runTapSim({ client, registry, allMinutes, ...(day ? { day } : {}), fromT, toT, lead: Number(arg('lead', 20)), enabled, cap: Number(arg('cap', 20)), callHook, shouldStop: () => (total >= maxSpend ? 'spend cap' : '') });
+  const sim = await runTapSim({ client, registry, allMinutes, ...(day ? { day } : {}), fromT, toT, lead: Number(arg('lead', 20)), enabled, listening: !flag('no-listening'), ...(arg('clocks-file') ? { clocks: JSON.parse(fs.readFileSync(arg('clocks-file'), 'utf8')) } : {}), cap: Number(arg('cap', 20)), callHook, shouldStop: () => (total >= maxSpend ? 'spend cap' : '') });
   if (sim.stopped) console.error('stopped at ' + sim.stoppedAt + ': spend cap $' + maxSpend + ' reached');
   const shown = sim.shown;
   const ticks = sim.ticks.map(x => {
@@ -291,9 +302,13 @@ if (flag('tap-sim')) {
   const md = ['# The Tap, simulated ' + stamp(fromT) + ' to ' + stamp(toT), '', '| minute | flags | seats called | card | Stall |', '|---|---|---|---|---|',
     ...ticks.map(x => '| ' + x.at + ' | ' + x.flags.join(', ') + ' | ' + x.called.join(', ') + ' | ' + (x.card ? '**' + x.card.seat + '**: ' + cell(x.card.text) : '') + ' | ' + (x.stall ? cell(x.stall.offer) : '') + ' |')];
   fs.writeFileSync(path.join(outDir, 'tap.md'), md.join('\n') + '\n');
+  if (sim.stories.length) fs.writeFileSync(path.join(outDir, 'story.md'), ['# The Scribe: the story so far after each run', '',
+    ...sim.stories.flatMap((x, i) => ['## ' + x.at + ' (run ' + (i + 1) + ', ' + x.story.length + ' chars, ~' + Math.ceil(x.story.length / 3.5) + ' tokens)', '', 'Fixes this run: ' + (x.corrections.length ? x.corrections.join('; ') : '(none)'), '', x.story, ''])].join('\n'));
+  const mw = ticks.filter(x => x.meanwhile);
+  if (mw.length) fs.writeFileSync(path.join(outDir, 'meanwhile.md'), ['# Meanwhile: faction cutaways', '', ...mw.flatMap(x => ['## ' + x.at + ' (' + (x.meanwhile.faction || 'no faction') + ')', '', x.meanwhile.cutaway, '', 'Clock: ' + (x.meanwhile.clock || '(none named)') + ' | suggested tick: ' + x.meanwhile.ticks + ' | ' + x.meanwhile.why, ''])].join('\n'));
   fs.writeFileSync(path.join(outDir, 'tap.json'), JSON.stringify(ticks, null, 1) + '\n');
   const stats = `tap-sim ${stamp(fromT)}-${stamp(toT)}: ticks ${ticks.length}; total $${total.toFixed(3)}; seats on ${[...enabled].join(',')}; calls ${JSON.stringify(calledCount)}; cards shown ${shown.length} by seat ${JSON.stringify(bySeat)}; ` +
-    `minutes between cards ${JSON.stringify(gaps)} (min ${gaps.length ? Math.min(...gaps) : 'n/a'}); stall offers ${ticks.filter(x => x.stall).length}; mystery runs ${mys.length}, with a Must land item ${mys.filter(x => x.mystery.item_given).length}, grounded ${mys.filter(x => x.mystery.grounded).length}, shown ${mys.filter(x => x.mystery.shown).length}; ` +
+    `minutes between cards ${JSON.stringify(gaps)} (min ${gaps.length ? Math.min(...gaps) : 'n/a'}); stall offers ${ticks.filter(x => x.stall).length}; silence flags ${ticks.filter(x => x.silence).length}; scribe runs ${sim.stories.length} (story chars ${JSON.stringify(sim.stories.map(x => x.story.length))}); meanwhile cutaways ${mw.length}; mystery runs ${mys.length}, with a Must land item ${mys.filter(x => x.mystery.item_given).length}, grounded ${mys.filter(x => x.mystery.grounded).length}, shown ${mys.filter(x => x.mystery.shown).length}; ` +
     `ticks with errors ${ticks.filter(x => x.errors.length).length}; seconds max ${secsLog.length ? Math.max(...secsLog) : 0}; stop reasons ${JSON.stringify(stopLog.reduce((m, x) => ((m[x] = (m[x] || 0) + 1), m), {}))}`;
   fs.writeFileSync(path.join(outDir, 'summary.txt'), stats + '\n');
   console.log(stats + '\nwritten to ' + outDir);
