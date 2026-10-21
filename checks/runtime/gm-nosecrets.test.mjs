@@ -79,15 +79,27 @@ function packNames(pk) {
 }
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/* The GM approved this one ambient scene label on 22/10/2026 and it stays as it is. Allowlisted by the full label string
+   as it appears in the source, in exactly these two files: the same word anywhere else still fails. */
+const LABEL_ALLOW = {
+  'app/gm-page.js': ['label: "Grunt\'s"'],
+  'app/display-page.js': ['label: "Grunt\'s"'],
+};
+function allowedRanges(f, text) {
+  const out = [];
+  for (const s of LABEL_ALLOW[rel(f)] || []) { let i = -1; while ((i = text.indexOf(s, i + 1)) >= 0) out.push([i, i + s.length]); }
+  return out;
+}
+
 await test('(a) the GM files and public scripts name no campaign or setting proper noun' + (PACK ? ' (built-in list and the real pack)' : ' (built-in list; no real pack here)'), async () => {
   if (!NAME_FILES.length) throw new Error('no GM files found');
   const names = [...new Set(BUILT_IN.concat(PACK ? packNames(PACK) : []))];
   const hits = [];
   for (const f of NAME_FILES) {
-    const text = read(f);
+    const text = read(f), ok = allowedRanges(f, text);
     for (const n of names) {
       const re = new RegExp('(^|[^A-Za-z0-9_])' + reEsc(n) + '(?![A-Za-z0-9_])', 'g');
-      let m; while ((m = re.exec(text))) hits.push(rel(f) + ':' + lineOf(text, m.index + m[1].length) + ' ' + (BUILT_IN.includes(n) ? n : mask(n)));
+      let m; while ((m = re.exec(text))) if (!ok.some(([s, e]) => m.index >= s && m.index < e)) hits.push(rel(f) + ':' + lineOf(text, m.index + m[1].length) + ' ' + (BUILT_IN.includes(n) ? n : mask(n)));
     }
   }
   if (hits.length) throw new Error(hits.length + ' hit(s):\n  ' + hits.slice(0, 20).join('\n  '));
@@ -204,13 +216,18 @@ function packScan(texts, forms, MIN, exempt) {
       const cand = byPrefix.get(text.substr(i, MIN)); if (!cand) continue;
       for (const f of cand) if (text.startsWith(f, i)) {
         const s = forms.get(f);
-        if (!ALLOW.has(hashOf(s)) && !exempt.has(s)) hits.push(name + ':' + lineOf(text, i) + ' ' + mask(s) + ' #' + hashOf(s));
+        if (!ALLOW.has(hashOf(s)) && !(ALLOW_IN[hashOf(s)] || []).includes(name) && !exempt.has(s)) hits.push(name + ':' + lineOf(text, i) + ' ' + mask(s) + ' #' + hashOf(s));
         break;
       }
     }
   }
   return hits;
 }
+/* Allowed in named files only (by hash, then file): a generic building-circulation phrase (one of the location module's keys) that the
+   location module needs as a key to match the vault's table. Approved by the GM 22/10/2026; anywhere else it still fails. */
+const ALLOW_IN = {
+  'ad71d7c6ebf8a5f8': ['app/gm/location.js', 'checks/runtime/gm-location.test.mjs'],
+};
 const ALLOW = new Set([
   '5505f366fcfd2394', 'b32ed6feb419d144', '56978126c0c719f4',   // band labels (location.js fallback)
   'c94db93d10cfb1de',                                         // a target-type name (location.js)

@@ -17,6 +17,10 @@
 //   --day          YYYY-MM-DD for the virtual clock (default: the transcript note's own `date:`, else an invented date)
 //   --out          a folder under gm-private/ (default gm-private/gate-<label>): gate.md for the GM, gate.json, calls are in gate.json
 //
+//   --marks <gate.md>   no replay, no API calls: re-read a gate.md whose Cards checklist you have ticked ([x] real, [ ] false, [-] skip),
+//                  recompute false cards per 30 min and that criterion's PASS/FAIL, and rewrite only the false-card row and the Marks
+//                  section in place (the marks stay). --all-false accepts a checklist with nothing ticked.
+//
 // The key is read from B68_ANTHROPIC_KEY, never ANTHROPIC_API_KEY. s03 is a hold-out: replay it, never tune on it. Generic and safe to
 // commit: it prints counts and money, never table text.
 
@@ -27,7 +31,7 @@ import { makeClient, countTokens } from '../functions/_lib/assist/claude.js';
 import { SEATS } from '../functions/_lib/assist/seats.js';
 import { parseMinutes, toMin, dayFromTranscript } from './lib/tap-sim.mjs';
 import { makeDrawsFor, parsePositionAt } from './lib/fixer-draws.mjs';
-import { runGate, report, parseExpectRef, GATE } from './lib/gate.mjs';
+import { runGate, report, parseExpectRef, applyMarks, GATE } from './lib/gate.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -51,6 +55,15 @@ export async function main(argv, { client: injected, log = console.log, err = co
   const list = (n) => String(arg(n, '')).split(',').map((x) => x.trim()).filter(Boolean);
   const bad = (m) => { err(m); return 2; };
 
+  if (argv.includes('--marks')) {                       // no API calls: recompute the false-card criterion from a ticked gate.md
+    const file = arg('marks');
+    if (!file || file.startsWith('--')) return bad('--marks <gate.md> is required');
+    let r;
+    try { r = applyMarks(fs.readFileSync(path.resolve(repo, file), 'utf8'), { allFalse: flag('all-false') }); } catch (e) { return bad(e.message); }
+    fs.writeFileSync(path.resolve(repo, file), r.md);
+    log(`marks: ${r.marks.real} real, ${r.marks.falseN} false, ${r.marks.skipped} skipped of ${r.marks.total} cards in ${r.minutes} min = ${r.per30} false per 30 min: ${r.result}`);
+    return 0;
+  }
   const transcript = arg('transcript'), source = arg('prefix-from');
   if (!transcript) return bad('--transcript <file> is required');
   if (!source) return bad('--prefix-from <pack.json | vault> is required');
