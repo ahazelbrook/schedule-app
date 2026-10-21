@@ -222,7 +222,7 @@ async function lastShown(db, campaign, now) {
 function logRow(db, campaign, { at, session, seat, cfg, usage, cost, flags, card, timing }) {
   const u = usage || {};
   if (card && typeof card === 'object' && timing) {
-    card = { ...card, secs: timing.secs, ...(timing.stop ? { stop: timing.stop } : {}), ...(timing.stop === 'refusal' ? { refusal: 1, shown: 0 } : {}) };
+    card = { ...card, secs: timing.secs, ...(timing.stop ? { stop: timing.stop } : {}), ...(timing.stop === 'refusal' ? { refusal: 1, shown: 0 } : {}), ...(timing.stop === 'max_tokens' ? { truncated: 1, shown: 0 } : {}) };
   }
   return db.prepare(`INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, input_tokens, output_tokens, cache_read, cache_write, cents, flags, card)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`)
@@ -280,7 +280,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
         const instructions = extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions;
         const r = await call(client, { ...cfg, instructions, prefixFileId: fileId, user });
         thisTick += r.cost || 0;
-        if (r.stop === 'refusal') r.json = null;           // a refusal shows nothing; the row records it
+        if (r.stop === 'refusal' || r.stop === 'max_tokens') r.json = null;     // a refusal or a reply cut off at the limit shows nothing, never a half card; the row records it
         return { cfg, r, timing: { secs: secs(), stop: typeof r.stop === 'string' ? r.stop : '' } };
       } catch (e) {
         if (fileId && fileGone(e)) { fileMissing = true; if (!warnings.includes(REPUSH)) warnings.push(REPUSH); }

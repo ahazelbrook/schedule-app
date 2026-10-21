@@ -1281,6 +1281,21 @@ await test('editor: Ref outranks the gap of every non-Ref card; the gap still ho
   assert.equal(m.card, null, 'a non-Ref card waits five minutes after a Ref card');
 });
 
+await test('a reply cut off at the token limit shows nothing and is logged as truncated; the Ledger has headroom', async () => {
+  assert.equal(SEATS.ledger.maxTokens, 4000);
+  clock.t = Date.parse('2030-03-09T09:00:00.000Z');
+  const s = await setup();
+  await s.lines(3);
+  s.replies.tripwire = { ...NONE, roll_talk: true };
+  s.replies.ledger = { events: [{ at: '09:00', who: 'Quill', kind: 'stress', note: '+1' }], xp_totalled: false };   // parseable, but the provider says it was cut off
+  s.replies.ref = { ...REF_SLIP, slip: false, card: '' };
+  s.replies.__stop = { ledger: 'max_tokens' };
+  const out = await body(await s.post('tick', {}));
+  assert.deepEqual(out.updates, []); assert.deepEqual(out.cards, []);
+  const c = JSON.parse(s.rows().find((r) => r.seat === 'ledger').card);
+  assert.equal(c.stop, 'max_tokens'); assert.equal(c.truncated, 1); assert.ok(!c.update && !c.shown);
+});
+
 await test('WP4: the prompts name how far back Showrunner and Mystery read, and the replay script drives the real endpoint', () => {
   assert.equal(showrunnerUser({ stamp: '22:10', talk: 'T' }), 'Talk of the last 20 minutes, up to 22:10 (earlier talk is not shown):\nT');
   assert.equal(mysteryUser({ stamp: '22:10', talk: 'T' }), 'Talk of the last 15 minutes, up to 22:10 (earlier talk is not shown):\nT');

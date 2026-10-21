@@ -69,7 +69,7 @@ Tie each to the named people, places and running clocks of the scene. Never deci
   },
 
   ledger: {
-    model: 'claude-haiku-5-5', effort: 'medium', maxTokens: 2500,
+    model: 'claude-haiku-5-5', effort: 'medium', maxTokens: 4000,   // 2500 was cut off twice in a live 30-minute replay: thinking shares the limit
     instructions: `You keep the ledger for a Blades '68 game from a live transcript: stress, harm, Heat, coin, clock ticks and xp triggers per character, as they happen in the last few minutes. Also say whether anyone totalled xp at the close. Report only events in the text, each with its [HH:MM] stamp. Empty is the normal answer. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
