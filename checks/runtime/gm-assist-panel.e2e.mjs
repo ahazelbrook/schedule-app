@@ -52,6 +52,8 @@ const CLERK = { seat: 'clerk', at: new Date().toISOString(), text: 'Invented cle
 const FIT = { seat: 'fixer', at: new Date().toISOString(), text: 'Crew at the gate, risky, standard effect.', read: 'Crew at the gate, risky, standard effect.',
   one_three: 'A guard glances over.', four_five: 'In, but the lock is marked.', six: 'Clean through.', crit: 'The guard waves them in.', bargain: 'Leave a tool behind.' };
 
+const VOICE = { who: 'Mrs Test', want: 'to be paid', lines: ['Invented line one.', 'Invented line two.'], at: new Date().toISOString() };
+
 try {
   const up = await until(async () => { try { return (await fetch(BASE + '/index.html')).status > 0; } catch (_) { return false; } }, 90000, 500);
   if (!up) throw new Error('the server did not start');
@@ -63,18 +65,25 @@ try {
 
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const errors = [];
-  async function open(hash, { width = 1280, height = 800, mobile = false, tickReply } = {}) {
+  async function open(hash, { width = 1280, height = 800, mobile = false, tickReply, mode } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile });
     const page = await c.newPage();
-    const seen = { tick: [], fit: [] };
+    const seen = { tick: [], fit: [], another: [] };
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
     const reply = { cards: [CARD], updates: [{ seat: 'ledger', at: CARD.at, key: 'stress', text: 'Invented: two stress to the crew.' }], flags: ['harm'], spend: { tonight: 1.42, cap: 20, tier: 'all', tick: 0.02 }, last: 12 };
-    seen.mode = 'card';
+    seen.mode = mode || 'card';
     await page.route('**/api/gm/assist/tick', async (route) => {
       seen.tick.push(JSON.parse(route.request().postData() || '{}'));
       if (seen.mode === 'cap') return route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: "tonight's cap is reached" }) });
+      if (seen.mode === 'voice') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], spend: reply.spend, last: 30, voice: VOICE }) });
+      if (seen.mode === 'quiet') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], spend: reply.spend, last: 31 }) });
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(seen.mode === 'second' ? { ...reply, cards: [CLERK], updates: [], last: 20 } : reply) });
+    });
+    await page.route('**/api/gm/assist/another', async (route) => {
+      seen.another.push(JSON.parse(route.request().postData() || '{}'));
+      if (seen.anotherCap) return route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: "tonight's cap is reached" }) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], spend: { tonight: 1.5, cap: 20, tier: 'all', tick: 0.01 }, last: 30, voice: { who: 'Mrs Test', lines: ['Invented third line.'], at: new Date().toISOString() } }) });
     });
     await page.route('**/api/gm/assist/fit', async (route) => {
       seen.fit.push(JSON.parse(route.request().postData() || '{}'));
@@ -144,12 +153,67 @@ try {
   check(G.seen.tick.length === n, 'Listening off: Check again asks nothing of the model');
   await G.c.close();
 
+  // ---- Voice: an NPC on stage, lines in the Rack with their NPC's name, Another, and nothing without a name / Listening / the cap ----
+  await api('PATCH', '/gm/stt', { want: 'on' });
+  await api('PUT', '/npcs/npc_vtest', { name: 'Mrs Test', role: 'invented', revealed: true, firstSeen: new Date().toISOString() });
+  const setStage = (on) => api('PATCH', '/campaign', { scene: { npcs: { npc_vtest: on }, at: new Date().toISOString() } });
+  check((await setStage(true)).status === 200, 'an invented NPC is on stage');
+  const V = await open('#gm', { mode: 'voice' });
+  V.seen.mode = 'voice';
+  const vp = V.page;
+  await vp.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  check(await until(async () => V.seen.tick.length >= 1, 15000), 'Voice: the first tick ran');
+  check(V.seen.tick.some((t) => t.npc === 'Mrs Test'), 'the tick carries the on-stage NPC name');
+  check(await vp.waitForSelector('#gm-rack .gm-voice', { timeout: 15000 }).then(() => true, () => false), 'Voice lines show in the Rack under the console card');
+  check(/Mrs Test/.test(await vp.textContent('#gm-rack .gm-voice')) && (await vp.$$('#gm-rack .gm-voice-lines li')).length === 2, 'labelled with the NPC, two lines');
+  check(await vp.$('#gm-rack [data-gm="another"]') !== null, 'an Another button');
+  await shot(vp, 'voice-rack');
+  await vp.click('#gm-rack [data-gm="another"]');
+  check(await until(async () => V.seen.another.length === 1, 8000), 'Another asks the server');
+  const areq = V.seen.another[0] || {};
+  check(areq.npc === 'Mrs Test' && JSON.stringify(areq.shown) === JSON.stringify(['Invented line one.', 'Invented line two.']), 'with the NPC and the lines shown');
+  check(await vp.waitForFunction(() => document.querySelectorAll('#gm-rack .gm-voice-lines li').length === 3, null, { timeout: 8000 }).then(() => true, () => false), 'the new line joins the others');
+  await vp.click('#gm-rack [data-gm="voiceclear"]');
+  check(await vp.$('#gm-rack .gm-voice') === null, 'Clear drops the lines');
+  // the cap while Another is pressed: nothing shows
+  V.seen.mode = 'voice';
+  await vp.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  check(await vp.waitForSelector('#gm-rack .gm-voice', { timeout: 15000 }).then(() => true, () => false), 'the next tick brings Voice back');
+  V.seen.anotherCap = true;
+  await vp.click('#gm-rack [data-gm="another"]');
+  check(await vp.waitForFunction(() => !document.querySelector('#gm-rack .gm-voice'), null, { timeout: 8000 }).then(() => true, () => false), 'a cap answer to Another clears Voice');
+  // capped by a tick
+  V.seen.anotherCap = false; V.seen.mode = 'cap';
+  await vp.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await sleep(1500);
+  check(await vp.$('#gm-rack .gm-voice') === null, 'capped: nothing shows');
+  await V.c.close();
+  // nobody on stage: the tick carries no name and no lines show
+  await setStage(false);
+  const V2 = await open('#gm', { mode: 'quiet' });
+  V2.seen.mode = 'quiet';
+  await V2.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  check(await until(async () => V2.seen.tick.length >= 1, 15000) && V2.seen.tick.every((t) => t.npc === undefined), 'no NPC on stage: the tick has no name');
+  check(await V2.page.$('#gm-rack .gm-voice') === null, 'and Voice shows nothing');
+  await V2.c.close();
+  // Listening off with an NPC on stage: no tick, no lines
+  await setStage(true);
+  await api('PATCH', '/gm/stt', { want: 'off' });
+  const V3 = await open('#gm', { mode: 'voice' });
+  V3.seen.mode = 'voice';
+  await V3.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  await sleep(4000);
+  check(V3.seen.tick.length === 0 && await V3.page.$('#gm-rack .gm-voice') === null, 'Listening off: no tick and no Voice');
+  await V3.c.close();
+
   // ---- a phone: no box ----
   await api('PATCH', '/gm/stt', { want: 'on' });
-  const M = await open('#gm', { width: 390, height: 800, mobile: true });
+  const M = await open('#gm', { width: 390, height: 800, mobile: true, mode: 'voice' });
+  M.seen.mode = 'voice';
   await sleep(4000);
   check(await M.page.$eval('.gm-assist', (e) => getComputedStyle(e).display === 'none').catch(() => true), 'a phone has no Claude box');
-  check(M.seen.tick.length === 0, 'and it does not poll');
+  check(M.seen.tick.length === 0, 'and it does not poll, even with an NPC on stage');
+  check(await M.page.$('#gm-rack .gm-voice') === null, 'and Voice shows nothing on a phone');
   await M.c.close();
 
   // ---- not the GM page: no box ----

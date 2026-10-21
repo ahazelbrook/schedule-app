@@ -7,7 +7,9 @@
 //   3. The budget ladder: under 60% of the cap everything; 60-85% drop Meanwhile, Showrunner and Mystery keeper;
 //      85-100% the Fixer, Ref and Ledger only; at the cap nothing.
 //   4. A per-seat cooldown, so a flag that stays set for several minutes does not call the seat every minute.
-//   5. A Ref card that repeats the same slip within 10 minutes is suppressed (Phase 0: Ref repeats itself on adjacent
+//   5. Voice (the NPC on stage) wakes on npc_change, and every minute while the GM's page names an NPC on stage; with none named
+//      it never runs. It runs after Ref in the list, and the Editor drops a line already shown. voice_plus is the GM's Another tap.
+//   6. A Ref card that repeats the same slip within 10 minutes is suppressed (Phase 0: Ref repeats itself on adjacent
 //      minutes). isRepeatSlip() is that rule; the Editor uses it too.
 
 import { WAKES } from './seats.js';
@@ -15,7 +17,7 @@ import { WAKES } from './seats.js';
 export const DEFAULT_CAP = 20;                       // dollars a night (a Worker setting; the Console has its own monthly limit)
 export const LADDER = { reduced: 0.6, core: 0.85, off: 1 };
 export const DROPPED_WHEN_REDUCED = ['meanwhile', 'showrunner', 'mystery'];
-export const CORE_SEATS = ['fixer', 'ref', 'ledger'];
+export const CORE_SEATS = ['fixer', 'ref', 'ledger', 'voice_plus'];
 export const REPEAT_WINDOW_MS = 10 * 60 * 1000;
 
 // Minimum gap between two runs of one seat. The Tap seats read the last few minutes raw, so a minute-by-minute re-run only
@@ -26,6 +28,8 @@ export const COOLDOWN_MS = {
   clerk: 120 * 1000,
   ledger: 120 * 1000,
   fixer: 10 * 1000,
+  voice: 45 * 1000,                 // the tick comes about once a minute; the gap must be shorter than that
+  voice_plus: 10 * 1000,
   showrunner: 10 * 60 * 1000,
   mystery: 15 * 60 * 1000,
   meanwhile: 20 * 60 * 1000,
@@ -66,15 +70,21 @@ export function canRun(seat, { now, lastRun = {}, inFlight = [], tier = 'all', c
 /**
  * Which seats run for these flags. -> { tier, seats: [ids, in WAKES order], skipped: [{ seat, why }] }
  *   flags: the Tripwire's set flags (names); spent / cap: tonight's dollars and the cap; wakes: the table (default WAKES).
+ *   onStage: whether the page named an NPC on stage. Voice runs only then: on npc_change, or on any tick (about each minute).
  */
-export function decide({ flags = [], now, lastRun = {}, inFlight = [], spent = 0, cap = DEFAULT_CAP, wakes = WAKES, cooldowns = COOLDOWN_MS } = {}) {
+export function decide({ flags = [], now, lastRun = {}, inFlight = [], spent = 0, cap = DEFAULT_CAP, wakes = WAKES, cooldowns = COOLDOWN_MS, onStage = false } = {}) {
   const tier = budgetTier(spent, cap);
   const set = new Set(flags);
   const seats = [], skipped = [];
   for (const seat of Object.keys(wakes)) {
+    if (seat === 'voice' && !onStage) continue;                  // silence while nobody is on stage
     if (!wakes[seat].some((f) => set.has(f))) continue;
     const r = canRun(seat, { now, lastRun, inFlight, tier, cooldowns });
     if (r.ok) seats.push(seat); else skipped.push({ seat, why: r.why });
+  }
+  if (onStage && !seats.includes('voice') && !skipped.some((x) => x.seat === 'voice')) {   // the per-minute wake
+    const r = canRun('voice', { now, lastRun, inFlight, tier, cooldowns });
+    if (r.ok) seats.push('voice'); else skipped.push({ seat: 'voice', why: r.why });
   }
   return { tier, seats, skipped };
 }

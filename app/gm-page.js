@@ -1348,7 +1348,7 @@
     var g = gmApi(), A = W.B68GmAssist, me = S;
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
-    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); } }); } catch (e) { me.assist = null; }
+    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onNote: function (text) { return S === me && !!addCapture('m', text, true); } }); } catch (e) { me.assist = null; }
   }
   function loadShown() {
     var g = gmApi(), me = S; if (!g || typeof g.display !== 'function' || AM.displayRead) return;
@@ -1798,8 +1798,9 @@
   var RACK_ROWS = [['1–3', 'one_three'], ['4–5', 'four_five'], ['6', 'six'], ['Crit', 'crit'], ['Bargain', 'bargain']];
   function renderRack() {
     var box = $q('#gm-rack'); if (!box) return;
-    var r = S && S.rack;
-    if (!r) { box.innerHTML = ''; return; }
+    var r = S && S.rack, vo = S && S.voice;
+    var vh = vo ? voiceHtml(vo) : '';
+    if (!r) { box.innerHTML = vh; return; }
     var pre = r.pre, used = { one_three: pre && pre.kinds.onetothree.used, four_five: pre && pre.kinds.fourfive.used };
     var h = '<div class="gm-rack-h"><span class="gm-lab">Rack</span><span class="gm-dim">Blade, fitted to the scene · ' + esc(pre.pos) + '</span>' +
       '<button type="button" class="chip sm" data-gm="rackclear" title="Drops the fitted lines and the draws held for this Position">Clear</button></div>';
@@ -1811,7 +1812,42 @@
         return '<li' + (used[x[1]] ? ' class="hit"' : '') + '><b>' + esc(x[0]) + '</b><span>' + esc(str(c[x[1]]).trim()) + '</span></li>'; }).join('') + '</ol>';
       if (pre && pre.stale) h += '<p class="gm-dim gm-rack-w">The card was drawn before something changed here; the lines above may not match it.</p>';
     }
-    box.innerHTML = h;
+    box.innerHTML = h + vh;
+  }
+  /* ---------- Voice: the NPC on stage, in the Rack ----------
+     The page sends the on-stage NPC's name with each tick (the first NPC the campaign's scene has on stage; the server cannot tell
+     who is on stage, it holds no scene). Voice's two lines arrive in the tick answer; Another asks for one more (POST /gm/assist/another).
+     Nothing here exists with the box off, Listening off, the cap reached or on a phone: those never produce a tick answer. */
+  function stageNames() { return npcList().filter(function (x) { return staged(x.id); }).map(function (x) { return str(x.doc.name).replace(/\s+/g, ' ').trim(); }).filter(Boolean); }
+  function onStageName() { var n = stageNames(); return n.length ? n[0].slice(0, 80) : ''; }
+  function setVoice(v) {
+    if (!S) return;
+    if (!isObj(v) || !Array.isArray(v.lines) || !v.lines.length) { if (v === null && S.voice) { S.voice = null; renderRack(); } return; }
+    var lines = v.lines.map(function (l) { return str(l).trim(); }).filter(Boolean); if (!lines.length) return;
+    S.voice = { who: str(v.who).trim() || 'NPC', want: str(v.want).trim(), lines: lines, at: str(v.at), busy: false, error: '' };
+    renderRack();
+  }
+  function voiceHtml(vo) {
+    var a = S && S.assist, can = !!(a && typeof a.canAnother === 'function' && a.canAnother());
+    return '<div class="gm-voice"><div class="gm-rack-h"><span class="gm-lab">Voice</span><span class="gm-dim"><b>' + esc(vo.who) + '</b>' + (vo.want ? ' · ' + esc(vo.want) : '') + '</span>' +
+      '<button type="button" class="chip sm" data-gm="voiceclear" title="Drops these lines">Clear</button></div>' +
+      '<ol class="gm-rack-lines gm-voice-lines">' + vo.lines.map(function (l) { return '<li><b>' + esc(vo.who.split(' ')[0]) + '</b><span>' + esc(l) + '</span></li>'; }).join('') + '</ol>' +
+      (vo.error ? '<p class="gm-dim gm-rack-w" role="status">' + esc(vo.error) + '</p>' : '') +
+      (can ? '<button type="button" class="chip sm gm-another" data-gm="another"' + (vo.busy ? ' disabled' : '') + ' title="One more line for this NPC, different from these">' + (vo.busy ? 'Another…' : 'Another') + '</button>' : '') + '</div>';
+  }
+  function voiceAnother() {
+    var me = S, vo = me && me.voice, a = me && me.assist;
+    if (!vo || vo.busy || !a || typeof a.another !== 'function') return;
+    vo.busy = true; vo.error = ''; renderRack();
+    a.another({ npc: vo.who, shown: vo.lines.slice(-6) }).then(function (r) {
+      if (S !== me || me.voice !== vo) return;
+      vo.busy = false;
+      if (r && r.voice && Array.isArray(r.voice.lines)) r.voice.lines.forEach(function (l) { l = str(l).trim(); if (l && vo.lines.indexOf(l) < 0) vo.lines.push(l); });
+      else if (r && r.error === 'cap') me.voice = null;                       /* the cap: nothing shows */
+      else if (r && r.error === 'busy') vo.error = 'Busy: try Another again in a moment.';
+      else vo.error = 'Nothing new just now.';
+      renderRack();
+    }, function () { if (S === me && me.voice === vo) { vo.busy = false; vo.error = 'Nothing new just now.'; renderRack(); } });
   }
   function replayConsole(e) {
     var cp = part('console');
@@ -3552,6 +3588,8 @@
       case 'situation': rollSituation(+b.getAttribute('data-n')); break;
       case 'pos': setPos(b.getAttribute('data-v')); break;
       case 'rackclear': rackClear(); break;
+      case 'voiceclear': S.voice = null; renderRack(); break;
+      case 'another': voiceAnother(); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {
         var tool = b.getAttribute('data-tool'), e = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).filter(function (x) { return x._id === b.getAttribute('data-h'); })[0]; if (!e) break;

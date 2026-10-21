@@ -94,3 +94,33 @@ export function merge(candidates, { now, lastShownAt = null } = {}) {
   const [top, ...rest] = clerks;
   return { card: { ...top, at: now }, updates, held: [], dropped: rest.map(() => ({ seat: 'clerk', why: 'outranked' })) };
 }
+
+// ---------- Voice ----------
+
+/**
+ * The Voice seat's JSON -> { who, want, lines: [a, b], keys } or null (nobody on stage, no lines, or both lines already shown
+ * in the last 10 minutes). Voice lines never use the card slot (they go to the Rack), but the Editor still keeps them from
+ * repeating: a line already shown is dropped, and a repeat of both is nothing at all. `recent` is as for toCandidate.
+ */
+export function toVoice(json, { recent = [], now = 0 } = {}) {
+  if (!json || typeof json !== 'object') return null;
+  const who = clip(json.who, 60);
+  if (!who) return null;
+  const seen = seenKeys(recent, now, REPEAT_WINDOW_MS);
+  const lines = [], keys = [];
+  for (const l of [json.line_a, json.line_b]) {
+    const text = clip(l, 400), k = 'voice:' + norm(text).slice(0, 80);
+    if (!text || k === 'voice:' || seen.has(k) || keys.includes(k)) continue;
+    lines.push(text); keys.push(k);
+  }
+  if (!lines.length) return null;
+  return { who, want: clip(json.want, 200), lines, keys };
+}
+
+/** The Another seat's JSON -> { who, line, keys } or null (empty, or the same as a line already shown). */
+export function toAnother(json, shown = []) {
+  if (!json || typeof json !== 'object') return null;
+  const line = clip(json.line, 400), k = 'voice:' + norm(line).slice(0, 80);
+  if (!line || k === 'voice:' || shown.some((s) => 'voice:' + norm(s).slice(0, 80) === k)) return null;
+  return { who: clip(json.who, 60), line, keys: [k] };
+}

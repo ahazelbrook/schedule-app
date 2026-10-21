@@ -45,11 +45,12 @@ function fakeBrowser({ phone = false } = {}) {
 }
 const GOOD = { cards: [], updates: [], flags: [], spend: { tonight: 1.234, cap: 20, tier: 'all', tick: 0.01 }, last: 10 };
 function rig(over = {}, brOpts) {
-  const br = fakeBrowser(brOpts), calls = { stt: 0, tick: [], fit: [], cards: 0, marks: [] };
+  const br = fakeBrowser(brOpts), calls = { stt: 0, tick: [], tickArgs: [], another: [], fit: [], cards: 0, marks: [] };
   const timers = [];
   const gm = {
     stt: async () => { calls.stt++; return { doc: { want: gm.want } }; }, want: 'on',
-    assistTick: async (after) => { calls.tick.push(after); if (gm.tickErr) throw gm.tickErr; return gm.reply || GOOD; },
+    assistTick: async (after, npc) => { calls.tick.push(after); calls.tickArgs.push(npc === undefined ? [after] : [after, npc]); if (gm.tickErr) throw gm.tickErr; return gm.reply || GOOD; },
+    assistAnother: async (req) => { calls.another.push(req); if (gm.anotherErr) throw gm.anotherErr; return gm.anotherReply; },
     assistFit: async (req) => { calls.fit.push(req); if (gm.fitErr) throw gm.fitErr; return gm.fitReply; },
     assistCards: async () => { calls.cards++; if (gm.cardsErr) throw gm.cardsErr; return gm.stored || { cards: [], updates: [] }; },
     assistMark: async (req) => { calls.marks.push(req); if (gm.markErr) throw gm.markErr; return { marked: req.items.length }; },
@@ -239,7 +240,7 @@ await test('the box is in the GM bundle only, before gm-page.js, and the avatar 
 
 await test('GM only and never player-visible: the box touches nothing but stt / assistTick / assistFit, stores nothing, no network of its own', () => {
   const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'assist-panel.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.deepEqual([...new Set([...src.matchAll(/\bgm\.(\w+)/g)].map((m) => m[1]))].sort(), ['assistCards', 'assistFit', 'assistMark', 'assistTick', 'stt']);
+  assert.deepEqual([...new Set([...src.matchAll(/\bgm\.(\w+)/g)].map((m) => m[1]))].sort(), ['assistAnother', 'assistCards', 'assistFit', 'assistMark', 'assistTick', 'stt']);
   assert.ok(!/localStorage|sessionStorage|indexedDB|fetch\(|XMLHttpRequest|setDisplay|patchState|patchAmbient|patchStt|sendBeacon|eval\(|innerHTML\s*=\s*[^'"(\s]*\bc\.text/.test(src), 'no storage, no network, no display or state write');
   const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
   const m = /function mountAssist\(\) \{[\s\S]*?\n  \}\n/.exec(page);
@@ -250,7 +251,8 @@ await test('GM only and never player-visible: the box touches nothing but stt / 
 
 await test('the gm adapter has assistTick (POST, cursor only when known) and assistFit', async () => {
   const src = fs.readFileSync(path.join(ROOT, 'app', 'runtime', 'cf.js'), 'utf8');
-  assert.ok(/assistTick: function \(after\) \{ return api\('POST', '\/gm\/assist\/tick'/.test(src));
+  assert.ok(/assistTick: function \(after, npc\) \{ var b = \{\}; if \(after !== undefined && after !== null\) b\.after = after; if \(typeof npc === 'string' && npc\) b\.npc = npc; return api\('POST', '\/gm\/assist\/tick'/.test(src), 'the tick carries the cursor and the on-stage name only when there are some');
+  assert.ok(/assistAnother: function \(req\) \{ return api\('POST', '\/gm\/assist\/another'/.test(src));
   assert.ok(/assistFit: function \(req\) \{ return api\('POST', '\/gm\/assist\/fit'/.test(src));
   assert.ok(/assistCards: function \(\) \{ return api\('GET', '\/gm\/assist\/cards'\)/.test(src));
   assert.ok(/assistMark: function \(req\) \{ return api\('POST', '\/gm\/assist\/cards'/.test(src));
@@ -326,8 +328,6 @@ await test('a Ref slip says it is in the log, and "saved to campaign history" on
   assert.equal(P.momentText({ seat: 'clerk', at: 'bad', text: ' x ', detail: null }), 'Blade, clerk (): x');
 });
 
-console.log('\n' + passed + ' passed, ' + failed + ' failed');
-process.exit(failed ? 1 : 0);
 // ---------- WP2: the console's own fit (autoFit) and the form's draws ----------
 const DRAWS2 = { low: 'A 1-3: the way in is shut.', mid: 'A 4/5: a second watcher arrives.' };
 const FITOK = { cards: [{ seat: 'fixer', at: 'a', text: 'r', read: 'r', one_three: 'Slip.', four_five: 'A cost.', six: 'Clean.', crit: 'More.', bargain: 'Deal.' }], flags: [], spend: { tonight: 0.4, cap: 20, tier: 'all', tick: 0.4 } };
@@ -377,3 +377,87 @@ await test('Fit it (the form) sends the console\'s draws when the page supplies 
   assert.deepEqual(r.calls.fit[1], { position: 'desperate' });
 });
 
+
+// ---------- WP3: Voice (the NPC on stage) and Another ----------
+const VOICE = { who: 'Mrs Test', want: 'to be paid', lines: ['Pay up, dear.', 'I could forget I saw you.'], at: '2030-01-01T09:30:00.000Z' };
+await test('Voice: the tick carries the on-stage name only when there is one; the lines reach the page, not the box', async () => {
+  const got = [];
+  let name = 'Mrs Test';
+  const r = rig({ onStage: () => name, onVoice: (v) => got.push(v) }); r.gm.reply = { ...GOOD, voice: VOICE };
+  await r.ctl.poll();
+  assert.deepEqual(r.calls.tickArgs, [[null, 'Mrs Test']]);
+  assert.deepEqual(got, [VOICE]);
+  assert.ok(!/Pay up/.test(r.br.stub('#as-list').innerHTML), 'Voice lines are not cards in the box');
+  name = ''; r.gm.reply = GOOD;
+  await r.ctl.poll();
+  assert.deepEqual(r.calls.tickArgs[1], [GOOD.last], 'nobody on stage: the old call shape, no name');
+  assert.equal(got[1], null, 'and the page is told to clear the lines');
+  name = '  Mrs   Test '; r.gm.reply = GOOD;
+  await r.ctl.poll();
+  assert.deepEqual(r.calls.tickArgs[2], [GOOD.last, 'Mrs Test'], 'a name is cleaned');
+  assert.equal(got.length, 2, 'on stage but Voice silent this time: the lines already shown stay');
+});
+
+await test('Voice: nothing with Listening off, on a phone or at the cap, and the lines go when the cap is reached', async () => {
+  let got = [];
+  let r = rig({ onStage: () => 'Mrs Test', onVoice: (v) => got.push(v) }); r.gm.want = 'off'; r.gm.reply = { ...GOOD, voice: VOICE };
+  await r.ctl.poll();
+  assert.equal(r.calls.tick.length, 0); assert.deepEqual(got, [null], 'Listening off: no call, and the page clears Voice');
+  got = []; r = rig({ onStage: () => 'Mrs Test', onVoice: (v) => got.push(v) }, { phone: true }); r.gm.reply = { ...GOOD, voice: VOICE };
+  await r.ctl.poll();
+  assert.equal(r.calls.tick.length, 0); assert.equal(r.calls.stt, 0); assert.deepEqual(got, [], 'a phone: nothing runs, nothing is sent');
+  got = []; r = rig({ onStage: () => 'Mrs Test', onVoice: (v) => got.push(v) }); r.gm.reply = { ...GOOD, spend: { tonight: 20, cap: 20, tier: 'off', tick: 0 }, voice: VOICE };
+  await r.ctl.poll();
+  assert.equal(r.ctl.state().paused, 'cap'); assert.equal(got[got.length - 1], null, 'the cap: Voice is cleared');
+  got = []; r = rig({ onStage: () => 'Mrs Test', onVoice: (v) => got.push(v) }); r.gm.tickErr = err(429, "tonight's cap is reached");
+  await r.ctl.poll();
+  assert.deepEqual(got, [null], 'a 429 for the cap clears Voice too');
+  got = []; r = rig({ onStage: () => 'Mrs Test', onVoice: (v) => got.push(v) }); r.gm.tickErr = err(429, 'the fixer is busy');
+  await r.ctl.poll();
+  assert.deepEqual(got, [], 'busy is not the cap: lines stay');
+  r = rig(); r.gm.reply = { ...GOOD, voice: VOICE };
+  await r.ctl.poll(); assert.equal(r.calls.tick.length, 1, 'a page without onStage / onVoice is unchanged');
+  assert.deepEqual(r.calls.tickArgs, [[null]]);
+});
+
+await test('Another: asks for one more line with the NPC and what was shown; no call on a phone, at the cap or without lines', async () => {
+  let r = rig(); r.gm.anotherReply = { cards: [], voice: { who: 'Mrs Test', lines: ['A new line.'], at: 'x' }, spend: { tonight: 0.5, cap: 20, tier: 'all', tick: 0.01 } };
+  assert.equal(r.ctl.canAnother(), true);
+  const shown = ['one', 'two', 'three', 'four', 'five', 'six', 'seven'];
+  const out = await r.ctl.another({ npc: ' Mrs  Test ', shown });
+  assert.deepEqual(r.calls.another, [{ npc: 'Mrs Test', shown: shown.slice(-6) }], 'at most the last six lines, cleaned');
+  assert.deepEqual(out.voice.lines, ['A new line.']); assert.equal(r.ctl.state().spend.tonight, 0.5, 'the spend is folded in');
+  assert.equal(await r.ctl.another({ npc: '', shown: ['x'] }), null); assert.equal(await r.ctl.another({ npc: 'Mrs Test', shown: [] }), null);
+  assert.equal(r.calls.another.length, 1);
+  r = rig({}, { phone: true });
+  assert.equal(r.ctl.canAnother(), false); assert.equal(await r.ctl.another({ npc: 'Mrs Test', shown: ['x'] }), null); assert.equal(r.calls.another.length, 0);
+  r = rig(); r.gm.reply = { ...GOOD, spend: { tonight: 20, cap: 20, tier: 'off', tick: 0 } }; await r.ctl.poll();
+  assert.equal(r.ctl.canAnother(), false); assert.equal(await r.ctl.another({ npc: 'Mrs Test', shown: ['x'] }), null); assert.equal(r.calls.another.length, 0, 'capped: no call');
+});
+
+await test('Another: busy, the cap, a failure and an empty answer come back as errors; the cap clears Voice and pauses', async () => {
+  const got = [];
+  let r = rig({ onVoice: (v) => got.push(v) }); r.gm.anotherErr = err(429, 'the voice coach is busy');
+  assert.deepEqual(await r.ctl.another({ npc: 'Mrs Test', shown: ['x'] }), { error: 'busy' }); assert.equal(r.ctl.canAnother(), true, 'busy is not a pause');
+  r = rig({ onVoice: (v) => got.push(v) }); r.gm.anotherErr = err(429, "tonight's cap is reached");
+  assert.deepEqual(await r.ctl.another({ npc: 'Mrs Test', shown: ['x'] }), { error: 'cap' });
+  assert.equal(r.ctl.state().paused, 'cap'); assert.equal(r.ctl.canAnother(), false); assert.deepEqual(got, [null]);
+  r = rig(); r.gm.anotherErr = err(500, 'x'); assert.deepEqual(await r.ctl.another({ npc: 'Mrs Test', shown: ['x'] }), { error: 'other' });
+  r = rig(); r.gm.anotherReply = { cards: [], spend: { tonight: 0, cap: 20, tier: 'all', tick: 0 } }; assert.deepEqual(await r.ctl.another({ npc: 'Mrs Test', shown: ['x'] }), { error: 'none' });
+});
+
+await test('gm-page: Voice is wired into the Rack (name, Another, Clear), the tick carries the on-stage name, and the rest of the page is unchanged', () => {
+  const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  const m = /function mountAssist\(\) \{[\s\S]*?\n  \}\n/.exec(page);
+  assert.ok(m && /onStage: function \(\) \{ return S === me \? onStageName\(\) : ''; \}/.test(m[0]) && /onVoice: function \(v\) \{ if \(S === me\) setVoice\(v\); \}/.test(m[0]));
+  assert.ok(/case 'another': voiceAnother\(\); break;/.test(page) && /case 'voiceclear'/.test(page));
+  const rack = /function renderRack\(\) \{[\s\S]*?\n  \}\n/.exec(page)[0];
+  assert.ok(/voiceHtml\(vo\)/.test(rack), 'the Rack draws Voice beside the Fixer');
+  const vh = /function voiceHtml\(vo\) \{[\s\S]*?\n  \}\n/.exec(page)[0];
+  assert.ok(/esc\(vo\.who\)/.test(vh) && /data-gm="another"/.test(vh) && /canAnother\(\)/.test(vh), 'labelled with the NPC, an Another button only when the box can');
+  const css = fs.readFileSync(path.join(ROOT, 'app', 'gm.css'), 'utf8');
+  assert.ok(/\.gm-voice \{/.test(css));
+});
+
+console.log('\n' + passed + ' passed, ' + failed + ' failed');
+process.exit(failed ? 1 : 0);

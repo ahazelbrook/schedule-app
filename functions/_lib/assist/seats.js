@@ -90,7 +90,7 @@ Tie each to the named people, places and running clocks of the scene. Never deci
 
   voice: {
     model: 'claude-sonnet-5-5', effort: 'medium', maxTokens: 1500,
-    instructions: `You are the GM's voice coach for a Blades '68 game. From the last few minutes of the live transcript, work out which non-player character is on stage right now and what they want from the scene. Using ONLY their card in your context (how to play them, their voice, want and fear), write their next two lines in the first person, as the GM could say them aloud: short, concrete, in that character's register, each doing something different (push, deflect, offer, threaten, reveal a little). Never speak or act for a player character. Never reveal a secret the card says is hidden unless the scene has plainly earned it. If no NPC is on stage, or the card is not in your context, say so in who and leave the lines empty. Reply with JSON only.`,
+    instructions: `You are the GM's voice coach for a Blades '68 game. From the last few minutes of the live transcript, work out which non-player character is on stage right now and what they want from the scene. Using ONLY their card in your context (how to play them, their voice, want and fear), write their next two lines in the first person, as the GM could say them aloud: short, concrete, in that character's register, each doing something different (push, deflect, offer, threaten, reveal a little). Never speak or act for a player character. Never reveal a secret the card says is hidden unless the scene has plainly earned it. The message may name the NPC the GM has on stage: then that is who is speaking, so use their card. If no NPC is on stage, or the card is not in your context, say so in who and leave the lines empty. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -99,6 +99,17 @@ Tie each to the named people, places and running clocks of the scene. Never deci
         line_a: { type: 'string' }, line_b: { type: 'string' },
       },
       required: ['who', 'want', 'line_a', 'line_b'],
+    },
+  },
+
+  // The Another button on a Voice line: one more line for the same NPC and moment, on the GM's tap.
+  voice_plus: {
+    model: 'claude-opus-5-5', effort: 'medium', maxTokens: 1500,
+    instructions: `You are the GM's voice coach for a Blades '68 game. The GM wants one more line for the non-player character named in the message, for the moment in the last few minutes of the live transcript. Lines already shown to the GM are listed in the message: write ONE new line that is clearly different from all of them in what it does (push, deflect, offer, threaten, reveal a little) and in how it opens, not a rewording. Using ONLY that character's card in your context, write it in the first person as the GM could say it aloud: short, concrete, in their register. Never speak or act for a player character. Never reveal a secret the card says is hidden unless the scene has plainly earned it. If the card is not in your context, say so in who and leave the line empty. Reply with JSON only.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: { who: { type: 'string', description: 'the NPC, or empty' }, line: { type: 'string' } },
+      required: ['who', 'line'],
     },
   },
 
@@ -205,4 +216,5 @@ export const WAKES = {
   ref: ['roll_talk', 'harm'],
   clerk: ['new_name', 'clue_mention'],
   ledger: ['harm', 'xp_trigger', 'roll_talk'],
+  voice: ['npc_change'],            // also each minute while the page names an NPC on stage (the Conductor)
 };

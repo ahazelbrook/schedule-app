@@ -8,6 +8,9 @@
 //   --count           free: count the tokens in the context and the transcript (no model is run, nothing is billed)
 //   --from / --to     HH:MM window of the transcript to replay (default: all of it)
 //   --seat-window s@HH:MM[@since],...   run voice/stall/showrunner/mystery at chosen minutes (writes seat-window.md)
+//   --voice-at HH:MM[=NPC],...   Voice as the table agent runs it: wakes only for a moment that names the NPC on stage (the name the page
+//                     would send), silent otherwise with no call; --another N adds a voice_plus call after the first N moments with lines.
+//                     Writes lines.md and voice.json.
 //   --nightshift      hour-long chunks -> sorters in parallel -> writer; writes nightshift.md
 //   --seats a,b,c    which seats run (default tripwire,ref,clerk,ledger)
 //   --set seat.k=v    override a seat's model or effort for a sweep, e.g. --set ref.effort=high
@@ -29,7 +32,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { makeClient, callSeat, countTokens } from '../functions/_lib/assist/claude.js';
 import { SEATS, WAKES } from '../functions/_lib/assist/seats.js';
-import { fitUser } from '../functions/_lib/assist/prompts.js';
+import { fitUser, voiceUser, anotherUser } from '../functions/_lib/assist/prompts.js';
+import { decide } from '../functions/_lib/assist/conductor.js';
+import { toVoice, toAnother } from '../functions/_lib/assist/editor.js';
 import { makeDrawsFor, parsePositionAt } from './lib/fixer-draws.mjs';
 
 const argv = process.argv.slice(2);
@@ -139,6 +144,49 @@ if (arg('fixer-at') || arg('fixer')) {
   process.exit(0);
 }
 function cell(x) { return String(x == null ? '' : x).replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>'); }
+
+// --voice-at HH:MM[=NPC],... : Voice as the table agent runs it. At each moment the Conductor decides (as the tick does, with the
+// Tripwire's npc_change flag set) whether Voice wakes: it does only when an NPC name is given for that moment (the name the GM's page
+// would send), and with none it makes NO call and says so. The turn is the endpoint's own (voiceUser, the last four minutes). With
+// --another N, the first N moments that produced lines also get one voice_plus call (anotherUser, the lines shown so far). Writes
+// lines.md (for the GM) and voice.json; prints only counts, cost and timings.
+if (arg('voice-at')) {
+  const moments = arg('voice-at').split(',').map(x => x.trim()).filter(Boolean).map(x => { const [at, ...n] = x.split('='); return { at, npc: n.join('=').trim() }; });
+  let anotherLeft = Number(arg('another', 0)) || 0;
+  const md = ['# Voice, replayed', ''], dump = [], silent = [];
+  for (const { at, npc } of moments) {
+    const t = toMin(at);
+    const verdict = decide({ flags: ['npc_change'], now: 1e12, onStage: !!npc });
+    if (!verdict.seats.includes('voice')) { silent.push(at); md.push(`## ${at}`, '', '_Silent: no NPC on stage, so Voice was not woken and no call was made._', ''); dump.push({ at, npc: '', voice: null }); continue; }
+    if (total >= maxSpend) { console.error(`spend cap $${maxSpend} reached before ${at}`); break; }
+    const talk = textFor(t - 3, t);
+    const before = total, n0 = secsLog.length;
+    const j = await run('voice', at, voiceUser({ npc, stamp: at, talk }));
+    const v = toVoice(j);
+    md.push(`## ${at}  (${secsLog[n0]} s, stop ${stopLog[n0]}, $${(total - before).toFixed(3)})`, '', `**${v ? v.who : npc}**${v && v.want ? ' wants: ' + v.want : ''}`, '');
+    const shown = v ? [...v.lines] : [];
+    for (const l of shown) md.push(`- ${l}`);
+    if (!v) md.push('_No lines._');
+    let more = null;
+    if (v && anotherLeft > 0) {
+      anotherLeft--;
+      const b2 = total, m0 = secsLog.length;
+      const j2 = await run('voice_plus', at, anotherUser({ npc: v.who, shown, stamp: at, talk }));
+      more = toAnother(j2, shown);
+      md.push('', `Another (${secsLog[m0]} s, stop ${stopLog[m0]}, $${(total - b2).toFixed(3)}):`, '', more ? `- ${more.line}` : '_Nothing new._');
+    }
+    md.push('');
+    dump.push({ at, npc, voice: v, another: more });
+  }
+  fs.writeFileSync(path.join(outDir, 'lines.md'), md.join('\n') + '\n');
+  fs.writeFileSync(path.join(outDir, 'voice.json'), JSON.stringify(dump, null, 1) + '\n');
+  const sorted = [...secsLog].sort((x, y) => x - y), med = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)] : 0;
+  const stats = `voice total: $${total.toFixed(3)}; calls ${secsLog.length} ${JSON.stringify(calls)}; seconds median ${med}, max ${sorted[sorted.length - 1] ?? 0}; stop reasons ${JSON.stringify(stopLog)}; ` +
+    `silent moments (no NPC, no call): ${silent.length}; moments with lines: ${dump.filter(d => d.voice).length}; another lines: ${dump.filter(d => d.another).length}`;
+  fs.writeFileSync(path.join(outDir, 'summary.txt'), stats + '\n');
+  console.log(stats + `\nwritten to ${outDir}`);
+  process.exit(0);
+}
 
 // --once seat@HH:MM@since: run one seat once over the transcript from `since` to HH:MM (the close-out check), and write <seat>-once.json
 if (arg('once')) {
