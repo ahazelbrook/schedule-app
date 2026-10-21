@@ -44,8 +44,9 @@ storage, identity and downloads always go through `window.claude.use(...)`.
   (`#display`); both are hosted-build only (`GM.md`). `gm/` holds the pure logic behind them, one UMD module each, with no DOM,
   storage or table text (the tables arrive from the GM's pack): `console.js` (the console and its situations), `location.js`
   (the location generator and map data), `scenes.js` (street scenes), `score.js` (the score generator), `npc.js` with
-  `figure-map.js` (the NPC generator and its figure map: the NPC tab on `#gm`, and the sync), `prep.js` (the Prep tab), and
-  `downtime.js` (the Downtime tab's cards). `downtime-tables.js` holds those cards' tables (`B68DowntimeTables`): original writing
+  `figure-map.js` (the NPC generator and its figure map: the NPC tab on `#gm`, and the sync), `prep.js` (the Prep tab),
+  `downtime.js` (the Downtime tab's cards), and `chase.js` (the Chase tab: what the map kit's chase strip is given, the clocks read back,
+  and what the players may see of a chase). `downtime-tables.js` holds those cards' tables (`B68DowntimeTables`): original writing
   with no book text, public like `content.js`, and outside `gm/` because it names the setting; a pack part may be laid over them.
 - `ambient/` holds the scenes the display plays when nothing is spotlit: four designer pages as delivered and two data-free
   score shells (`planning-board`, `score-exploded`) that draw what the display sends them. `_headers` lets only this origin frame
@@ -53,7 +54,7 @@ storage, identity and downloads always go through `window.claude.use(...)`.
 - `runtime/cf.js` is the hosted build's `window.claude` adapter. It does nothing inside the
   artifact or from `file://`. `sw.js`, `manifest.webmanifest` and `icons/` make the hosted
   build installable and usable offline.
-- `figures/` is the vendored figure kit and cast canon (figure kit 3.0.0); `maps/` is the vendored map kit (0.7.0, 21/10 build). `fonts/` holds the
+- `figures/` is the vendored figure kit and cast canon (figure kit 3.0.1); `maps/` is the vendored map kit (0.7.0, 21/10 build). `fonts/` holds the
   vendored fonts.
 - `CONTRACT.md` documents the character document, the `play` shape and the module APIs.
 - `checks/` holds Playwright checks that stub the artifact runtime and open `../index.html`

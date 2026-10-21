@@ -281,11 +281,9 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 @media (max-width: 599px) {
   #gm-page .gm-head { padding: 8px 0; }
   #gm-page .gm-h { font-size: 34px; }
-  /* the eleven segments as two full rows, six then five (30 columns: a first-row segment spans 5, a second-row one 6): all of them
-     in reach, nothing to drag sideways */
+  /* the twelve segments as two full rows of six (30 columns, each segment spans 5): all of them in reach, nothing to drag sideways */
   #gm-page .gm-segbar { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); width: 100%; position: sticky; top: 0; z-index: 4; background: var(--paper); margin-bottom: 10px; }
   #gm-page .gm-segbar .chip { grid-column: span 5; min-width: 0; min-height: 44px; padding: 8px 2px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #gm-page .gm-segbar .chip:nth-child(n+7) { grid-column: span 6; }
   #gm-page .gm-segbar .chip:nth-child(6) { border-right: 0; }
   #gm-page .gm-segbar .chip:nth-child(-n+6) { border-bottom: 2px solid var(--rule); }
   #gm-page .gm-segbar .chip[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
@@ -297,6 +295,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-root[data-seg="state"] .gm-console, #gm-root[data-seg="state"] .gm-side { display: none; }
   #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead, #gm-page .gm-cardbox .gm-want, #gm-page .gm-cardbox .gm-card-h, #gm-page .gm-cardbox .gm-dt-morning, #gm-page .gm-cardbox .gm-dt-mh { scroll-margin-top: 140px; scroll-margin-bottom: 84px; }   /* under the sticky bar and the two-row segmented bar, above the capture button */
   #gm-page .gs-rules { scroll-margin-top: 140px; }
+  #gm-page .gm-ch-tick .gm-ch-row > .gm-field { flex-basis: 100%; }       /* Level and Time each on a row of their own: a switch never wraps */
   #gm-page #gm-prep .pp-sec, #gm-page #gm-prep .pp-doc h3, #gm-page #gm-prep .pp-doc h4, #gm-page #gm-prep .pp-doc h5, #gm-page #gm-prep .pp-doc h6, #gm-page #gm-prep .pp-embed { scroll-margin-top: 140px; }   /* a prep link lands under the two sticky bars, not beneath them */
   #gm-page .gm-btn { grid-template-columns: 1fr; grid-template-rows: auto auto; justify-items: center; text-align: center; min-height: 76px; padding: 8px 4px; }
   #gm-page .gm-btn kbd { grid-row: auto; }
@@ -320,6 +319,31 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 }
 @media print { #gm-page .gm-fab, #gm-page .gm-foot, .gm-blank { display: none !important; } }
 #gm-page .gm-map.gm-leak { outline: 3px solid var(--alarm); outline-offset: -3px; }
+
+/* ---- the Chase panel (C): the start form, the tick box with its three big buttons, the GM copy of the strip ---- */
+#gm-page .gm-ch-start, #gm-page .gm-ch-play { display: grid; gap: 10px; }
+#gm-page .gm-ch-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; }
+#gm-page .gm-ch-row > .gm-field { flex: 1 1 150px; }
+#gm-page .gm-ch-row > .seg { flex: none; }
+#gm-page .gm-ch-start .seg, #gm-page .gm-ch-tick .seg { flex-wrap: wrap; }
+#gm-page .gm-ch-tick textarea { font: 400 14px/1.35 var(--font-text); padding: 7px 8px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); border-radius: 0; width: 100%; resize: vertical; box-sizing: border-box; }
+#gm-page .gm-ch-tick { border: 2px solid var(--rule); background: var(--card); padding: 10px; display: grid; gap: 8px; }
+#gm-page .gm-ch-ticks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+#gm-page .gm-ch-plus { min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+#gm-page .gm-ch-plus b { font: 900 30px/1 var(--font-poster); letter-spacing: 0; }
+#gm-page .gm-ch-plus small { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; }
+#gm-page .gm-ch-leg { margin: 0; }
+#gm-page .gm-ch-clocks { margin: 0; }
+#gm-page .gm-ch-oppb { display: flex; align-items: center; gap: 6px; }
+#gm-page .gm-ch-oppb .gm-clockn { min-width: 3em; text-align: center; }
+#gm-page .gm-ch-oppb { flex-wrap: wrap; }
+#gm-page .gm-ch-help { margin: 0; font-size: 12px; }
+#gm-page .gm-ch-race { margin: 0; }
+#gm-page .gm-ch-outf { flex: 0 1 260px; }
+#gm-page .gm-ch-strip { background: var(--chart); border: 2px solid var(--chart-ink); outline: 3px solid var(--accent); outline-offset: -3px; overflow: hidden; }
+#gm-page .gm-ch-strip:empty { display: none; }
+#gm-page .gm-ch-strip svg { width: 100%; height: auto; display: block; }
+#gm-page .gm-ch-pastl { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
 #gm-page .gm-warn.bad { color: var(--alarm); }
 
 /* ---- the console: the Position switch, the four Situations ---- */
@@ -501,8 +525,8 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-page .gm-side { padding: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 0; }
   body.gm-app #gm-page .gm-tabrow { display: flex; align-items: stretch; border-bottom: 2px solid var(--rule); background: var(--paper); }
   body.gm-app #gm-page .gm-tabs { flex: 1 1 auto; flex-wrap: nowrap; overflow-x: auto; gap: 0; border-bottom: 0; scrollbar-width: none; }
-  /* one row of tabs with their keys showing at 1280 px (nine of them since Downtime): tight padding, the key small */
-  body.gm-app #gm-page .gm-tab { flex: 0 0 auto; border: 0; border-right: 1.5px solid var(--hair); background: none; color: var(--ink); white-space: nowrap; padding: 10px 4px; font-size: 10px; letter-spacing: .04em; }
+  /* one row of tabs with their keys showing at 1280 px (ten of them since Chase): tight padding, the key small */
+  body.gm-app #gm-page .gm-tab { flex: 0 0 auto; border: 0; border-right: 1.5px solid var(--hair); background: none; color: var(--ink); white-space: nowrap; padding: 10px 3px; font-size: 10px; letter-spacing: .02em; }
   body.gm-app #gm-page .gm-tab kbd { font-size: 9px; padding: 1px 2px; }
   body.gm-app #gm-page .gm-tab[data-panel="location"], body.gm-app #gm-page .gm-tab[data-panel="cards"] { border-left: 2px solid var(--rule); margin-left: 4px; }
   body.gm-app #gm-page .gm-tab[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }

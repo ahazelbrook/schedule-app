@@ -94,7 +94,7 @@ try {
      (The ambient part of that document is not compared: the page's heat and wanted sync writes it after any table save.) */
   const onIpad = async () => { const d = (await api('GET', '/gm/display')).json; return JSON.stringify([d.seq, d.display]); };
   const display0 = await onIpad();
-  check((await p.$$eval('.gm-tab', (t) => t.map((x) => x.getAttribute('data-panel')).join()))  === 'prep,rules,location,scenes,score,npc,downtime,cards,ipad', 'the side tabs: Prep, Screen, Location, Street, Score, NPC, Downtime, Cards, iPad');
+  check((await p.$$eval('.gm-tab', (t) => t.map((x) => x.getAttribute('data-panel')).join()))  === 'prep,rules,location,scenes,score,chase,npc,downtime,cards,ipad', 'the side tabs: Prep, Screen, Location, Street, Score, Chase, NPC, Downtime, Cards, iPad');
   check(await p.$eval('.gm-tab[data-panel="score"]', (t) => /^Score\s*J$/.test(t.textContent.trim()) && !!t.querySelector('kbd')), 'the Score tab shows its key, J');
   await p.keyboard.press('j');
   check(await panelOf(p) === 'score' && await p.$eval('#gm-score', (e) => !e.closest('[hidden]') && !e.hidden), 'key J opens the Score panel');
@@ -230,7 +230,7 @@ try {
   const mp = M.page;
   const segs = await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { seg: x.getAttribute('data-seg'), top: Math.round(r.top), right: Math.round(r.right) }; }));
   const perRow = segs.reduce((m, s) => { m[s.top] = (m[s.top] || 0) + 1; return m; }, {});
-  check(segs.map((s) => s.seg).join() === 'console,prep,location,scenes,score,npc,downtime,cards,rules,ipad,state' && JSON.stringify(Object.values(perRow)) === '[6,5]' && segs.every((s) => s.right <= 390), 'phone: eleven segments in two rows (six, then five), Score after Street ' + JSON.stringify(perRow));
+  check(segs.map((s) => s.seg).join() === 'console,prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,state' && JSON.stringify(Object.values(perRow)) === '[6,6]' && segs.every((s) => s.right <= 390), 'phone: twelve segments in two rows of six, Score after Street ' + JSON.stringify(perRow));
   await mp.click('.gm-segbar [data-seg="score"]');
   await mp.waitForSelector('#gm-score [data-gm="scoreroll"]', { state: 'visible', timeout: 5000 });
   await mp.click('[data-gm="scoreroll"]');
