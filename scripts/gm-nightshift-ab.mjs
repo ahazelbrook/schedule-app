@@ -12,7 +12,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseTranscript, runNightShift, renderDraft, applyDraft, loadPrefix, rollStats, estimateInput } from './lib/nightshift.mjs';
+import { parseTranscript, runNightShift, renderDraft, applyDraft, loadPrefix, rollStats, estimateInput, parseAppRolls, applyApp, sourceStats } from './lib/nightshift.mjs';
 import { makeClient } from '../functions/_lib/assist/claude.js';
 
 const argv = process.argv.slice(2);
@@ -30,6 +30,9 @@ if (arg('file-scratch')) {
   const f = path.resolve(arg('file-scratch'));
   if (!/scratch/i.test(path.basename(f))) { console.error('refusing: the target must be a scratch copy (its name has "scratch")'); process.exit(2); }
   const text = fs.readFileSync(f, 'utf8');
+  applyApp(res, parseAppRolls(text));      // the app's own roll records in the note win; the stored speech rolls fill the rest
+  const so = sourceStats(res.rolls), rs = rollStats(res.rolls);
+  console.log('rolls: ' + rs.total + ' (app only ' + so.app + ', app+speech ' + so.both + ', speech only ' + so.speech + '); with position and dots ' + rs.complete + '; xp candidates by code ' + res.xp.length);
   const a = applyDraft(text, renderDraft(res, { date: arg('date', ''), session: arg('session', '') }), { force: flag('force') });
   if (a.action !== 'present') fs.writeFileSync(f, a.text);
   console.log(a.action + ' in ' + f);

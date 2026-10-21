@@ -636,7 +636,14 @@ With `--yes`, `gm:after` also runs the **Night Shift** (step 3c): on the PC, Cla
 and the local pack's assist prefix and drafts the night's paperwork (a table of every roll with its acting character,
 position, effect, dots, whether it was pushed and the result; a session log; possible XP triggers; a feedback card; group-chat
 highlights; a "previously on"; a prep skeleton). Sorters read the transcript an hour at a time, then a writer drafts from their
-notes. It files the lot under one heading, `## Night Shift draft`, at the end of the session note. A note that already has the
+notes. The GM app's own roll records come first: after `gm:pull` (step 3) the Night Shift reads the cards filed under "Rolled at the
+table" in the session note and treats them as authoritative for whatever they state. The app only records what a card says (a
+"4/5" or "1-3" card gives the result band, and a position if the card text carries one), never the character or dots, so the speech
+rolls fill the rest: a spoken roll is matched to an app card within 2 minutes (and by character when the card names one), and the
+speech never overwrites a field the app stated. An app card with no spoken match, and a spoken roll with no card, each keep a row;
+every row says its source (app, speech or app+speech). The XP section is split: desperate and zero-dot rolls are computed by code
+from that merged table, and the writer adds only the judgement-based triggers from the transcript, both still candidates. It
+files the lot under one heading, `## Night Shift draft`, at the end of the session note. A note that already has the
 heading is skipped before anything is spent; `--nightshift-force` replaces only that block. XP is never marked: the draft lists
 candidates and says the GM marks them. It needs `B68_ANTHROPIC_KEY` (without it the step is skipped with a one-line note and the
 rest runs as usual); `--no-nightshift` skips it, `--nightshift-cap <$>` stops it cleanly at a spend (default $3; nothing is filed

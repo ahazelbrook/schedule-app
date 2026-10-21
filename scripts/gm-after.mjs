@@ -38,7 +38,7 @@ import { loadLedger, campaignLedger, saveLedger } from './lib/ledger.mjs';
 import { pass, probe } from './gm-transcript.mjs';
 import { run as syncRun } from './gm-sync.mjs';
 import { loadCampaignRow, campaignDoc, writeCampaign } from '../functions/_lib/campaign.js';
-import { parseTranscript, runNightShift, renderDraft, applyDraft, hasDraft, loadPrefix, rollStats, HEADING as NIGHT_HEADING, DEFAULT_CAP } from './lib/nightshift.mjs';
+import { parseTranscript, runNightShift, renderDraft, applyDraft, hasDraft, loadPrefix, rollStats, parseAppRolls, sourceStats, HEADING as NIGHT_HEADING, DEFAULT_CAP } from './lib/nightshift.mjs';
 
 export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -157,7 +157,9 @@ export async function nightShiftStep(opts, { note, N, label, privateDir, say, no
     }
     let client = opts.client;
     if (!client) { const { makeClient } = await import('../functions/_lib/assist/claude.js'); client = makeClient(key); }
-    const r = await runNightShift({ client, prefix, lines, mode, maxSpend: cap });
+    // the app's own roll records, read from the note as gm:pull (step 3) just filed them; the speech fills only what they lack
+    const appRolls = parseAppRolls(cur ? cur.text : '');
+    const r = await runNightShift({ client, prefix, lines, mode, maxSpend: cap, appRolls });
     if (!r.ok) {
       if (r.sorted) { try { fs.mkdirSync(privateDir, { recursive: true }); fs.writeFileSync(path.join(privateDir, 'nightshift-s' + N + '-partial.json'), JSON.stringify(r.sorted)); } catch (_) {} }
       say(H, ['stopped: ' + r.reason + '. Spent $' + r.spend.toFixed(3) + '. Nothing was filed.' + (r.sorted ? ' The sorters\' notes are in gm-private/nightshift-s' + N + '-partial.json.' : '')]);
@@ -166,8 +168,9 @@ export async function nightShiftStep(opts, { note, N, label, privateDir, say, no
     const block = renderDraft(r, { date: dmy(new Date(now)), session: N });
     let action = '';
     editNote(opts.vault, note.rel, (n) => { const a = applyDraft(n.text, block, { force: !!opts.nightshiftForce }); action = a.action; return a.action === 'present' ? null : a.text; });
-    const s = rollStats(r.rolls);
+    const s = rollStats(r.rolls), so = sourceStats(r.rolls);
     say(H, [(action === 'replaced' ? 'replaced' : action === 'present' ? 'left (already there)' : 'filed') + ' "## ' + NIGHT_HEADING + '" in ' + label + ': ' + s.total + ' rolls (' + s.complete + ' with position and dots), spent $' + r.spend.toFixed(2) + ' of $' + cap.toFixed(2),
+      'rolls by source: ' + so.app + ' app only, ' + so.both + ' app and speech, ' + so.speech + ' speech only; ' + r.xp.length + ' XP candidate' + (r.xp.length === 1 ? '' : 's') + ' computed by code',
       'XP is not marked: the draft lists candidates only']);
     return { code: 0 };
   } catch (e) {
