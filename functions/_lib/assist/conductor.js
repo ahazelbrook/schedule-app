@@ -14,14 +14,15 @@
 //      endpoint, not a Tripwire flag) and the 10-minute cooldown paces it. Stall's offer goes to the Rack like Voice's lines;
 //      Showrunner's and Mystery's go through the Editor, behind Ref and Clerk, under the same one-card-per-five-minutes gap.
 //   7. Scribe (the story so far) wakes on every tick, every 5 minutes, until 85%; Meanwhile on scene_change, every 20 minutes, until
-//      60%. Silence (silenceFlag, above) raises `stall` in code. A Ref card that repeats the same slip within 10 minutes is suppressed (Phase 0: Ref repeats itself on adjacent
+//      60%. Ask Blade (the GM's typed question) is a tap like Portrait and Prop: no cooldown, not a Core seat, so it stops at 85%.
+//      Silence (silenceFlag, above) raises `stall` in code. A Ref card that repeats the same slip within 10 minutes is suppressed (Phase 0: Ref repeats itself on adjacent
 //      minutes). isRepeatSlip() is that rule; the Editor uses it too.
 
 import { WAKES } from './seats.js';
 
 export const DEFAULT_CAP = 20;                       // dollars a night (a Worker setting; the Console has its own monthly limit)
 export const LADDER = { reduced: 0.6, core: 0.85, off: 1 };
-export const DROPPED_WHEN_REDUCED = ['meanwhile', 'showrunner', 'mystery', 'wire'];   // the Screen's Wire goes at 60%; Portrait and Prop are not Core seats, so they go at 85%; the Board is code and always runs
+export const DROPPED_WHEN_REDUCED = ['meanwhile', 'showrunner', 'mystery', 'wire'];   // the Screen's Wire goes at 60%; Portrait, Prop and Ask Blade are not Core seats, so they go at 85%; the Board is code and always runs
 export const CORE_SEATS = ['fixer', 'ref', 'ledger', 'voice_plus', 'gatekeeper'];   // the gatekeeper runs to the cap like Ref: nothing reaches the players' screen unchecked
 export const REPEAT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -37,6 +38,7 @@ export const COOLDOWN_MS = {
   voice: 45 * 1000,                 // the tick comes about once a minute; the gap must be shorter than that
   voice_plus: 10 * 1000,
   portrait: 0, prop: 0, wire: 0,    // the GM's own taps: the in-flight gate is the only pacing
+  ask: 0,                           // the GM's own question in the box: same
   gatekeeper: 0,                    // the GM's own tap; one at a time (the in-flight gate), no cooldown
   showrunner: 10 * 60 * 1000,
   mystery: 15 * 60 * 1000,

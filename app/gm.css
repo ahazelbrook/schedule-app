@@ -849,3 +849,18 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 #gm-page .gm-gate-bad, #gm-page .gm-gate-unk { background: var(--mustard); color: var(--on-mustard); border-color: var(--mustard); }
 #gm-page .gm-gate-wait { color: var(--ink-soft); border-style: dashed; }
 #gm-page .gm-gate-why { margin: 0; padding-left: 18px; font-size: 12.5px; }
+
+/* Ask Blade (GM.md, "Ask Blade"): the question box at the top of the Claude box and the answers under it. GM's eyes only. */
+.gm-assist button:focus-visible, .gm-assist textarea:focus-visible { outline: 3px solid var(--mustard); outline-offset: 2px; }
+.gm-assist .as-ask { display: grid; gap: 6px; padding-bottom: 8px; border-bottom: 2px solid var(--rule); }
+.gm-assist .as-ask textarea { display: block; width: 100%; box-sizing: border-box; min-height: 52px; max-height: 140px; resize: vertical; font: 400 13.5px/1.4 var(--font-text); padding: 7px 9px; border: 2px solid var(--rule); background: var(--paper); color: var(--ink); border-radius: 0; }
+.gm-assist .as-ask .as-go { justify-self: end; }
+.gm-assist .as-ask .as-status { padding: 4px 8px; border-bottom: 0; }
+.gm-assist .as-asks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.gm-assist .as-asks:empty { display: none; }
+.gm-assist .as-answer { padding: 8px 10px; border: 1.5px solid var(--rule); border-left-width: 6px; border-left-color: var(--ink); background: var(--paper); }
+.gm-assist .as-answer .as-meta { align-items: flex-start; margin-bottom: 4px; }
+.gm-assist .as-askq { flex: 1 1 auto; min-width: 0; margin: 0; font: 700 11px/1.4 var(--font-mono); color: var(--ink-soft); overflow-wrap: anywhere; }
+.gm-assist .as-answer .as-meta time { flex: 0 0 auto; }
+.gm-assist .as-answer .as-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.gm-assist .as-answer .as-acts { display: flex; gap: 6px; margin-top: 6px; }

@@ -6,6 +6,8 @@
 // update:1 (+ items) for a Ledger row, detail { said_at, rule } for a Ref slip, and the marks written here:
 //   seen:1 (read in the box)  dismissed:1 (Got it)  kept:1 (starred)  done:[i] (Ledger items applied or dismissed)
 //   filed:1 (gm:after put it in the session note)
+// Ask Blade's rows (seat 'ask', ask:1, q, text) are never `shown` cards: they ride beside cards and updates as `asks`, and the box marks one
+// by (at, question): a dismiss or keep matches c.ask === 1 and c.q === the item's text. gm:after never files them (it reads cards only).
 // A card is identified to the box by (at, text) and a Ledger item by (at, key, text): the same three values the tick answer
 // carries, so a card that arrives by tick and the same card restored after a reload are one card.
 
@@ -13,6 +15,7 @@ export const NIGHT_MS = 12 * 60 * 60 * 1000;
 const LIMIT = 300;
 export const OPS = ['seen', 'dismiss', 'keep'];
 export const MARK_MAX = 50;
+export const ASKS_MAX = 10;                  // Ask Blade answers handed back to the box
 
 function parse(s) { try { const v = JSON.parse(s); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; } catch (_) { return null; } }
 const str = (v) => (typeof v === 'string' ? v : '');
@@ -23,7 +26,8 @@ const str = (v) => (typeof v === 'string' ? v : '');
  *   opts.session  keep rows logged under this session or under none (the box passes nothing)
  *   opts.all      include dismissed cards and finished Ledger items (gm:after files everything shown)
  * -> { cards: [{ row, seat, at, text, detail?, important, seen, kept, filed, dismissed }],
- *      updates: [{ row, i, seat: 'ledger', at, key, text }] }
+ *      updates: [{ row, i, seat: 'ledger', at, key, text }],
+ *      asks: [{ row, at, q, text, kept }] }      Ask Blade's answers, oldest first, the last ASKS_MAX only
  */
 export async function nightCards(db, campaign, { since, now = Date.now(), session, all = false } = {}) {
   const from = since || new Date(now - NIGHT_MS).toISOString();
@@ -49,7 +53,19 @@ export async function nightCards(db, campaign, { since, now = Date.now(), sessio
     cards.push({ row: r.id, session: str(r.session), seat, at: r.at, text: str(c.text), ...(d ? { detail: { said_at: str(d.said_at), rule: str(d.rule) } } : {}),
       important: seat === 'ref', seen: c.seen === 1, kept: c.kept === 1, filed: c.filed === 1, dismissed: c.dismissed === 1 });
   }
-  return { cards, updates };
+  return { cards, updates, asks: await nightAsks(db, campaign, from, all) };
+}
+
+/** Ask Blade's answers since `from` (a separate small query: an ask row is never a shown card), oldest first, the last ASKS_MAX. */
+async function nightAsks(db, campaign, from, all) {
+  const { results } = await db.prepare("SELECT id, at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'ask' AND card IS NOT NULL AND json_extract(card, '$.ask') = 1 AND COALESCE(json_extract(card, '$.text'), '') != '' ORDER BY id DESC LIMIT " + LIMIT).bind(campaign, from).all();
+  const out = [];
+  for (const r of results || []) {
+    const c = parse(r.card); if (!c || !str(c.text).trim() || (!all && c.dismissed === 1)) continue;
+    out.push({ row: r.id, at: r.at, q: str(c.q), text: str(c.text), kept: c.kept === 1 });
+    if (out.length >= ASKS_MAX) break;
+  }
+  return out.reverse();
 }
 
 /** Clean a mark request's items: [{ at, text, key? }] with the bounds the route promises. Returns null when it is not valid. */
@@ -78,6 +94,9 @@ export async function markCards(db, campaign, op, items) {
         const i = list.findIndex((x) => str(x.text) === it.text && (it.key === undefined || str(x.key) === it.key));
         if (i < 0 || op === 'seen') continue;
         c.done = Array.from(new Set((Array.isArray(c.done) ? c.done : []).concat(i))).sort((a, b) => a - b);
+      } else if (c.ask === 1) {
+        if (op === 'seen' || c.q !== it.text) continue;        // an Ask Blade answer is matched by its question; it is dismissed or kept, not "seen"
+        c[op === 'dismiss' ? 'dismissed' : 'kept'] = 1;
       } else {
         if (c.shown !== 1 || c.text !== it.text) continue;
         c[op === 'dismiss' ? 'dismissed' : op === 'keep' ? 'kept' : 'seen'] = 1;

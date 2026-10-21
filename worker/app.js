@@ -58,8 +58,8 @@ export const ROUTES = [
   { re: /^\/api\/gm\/stt\/?$/, handler: gmStt, path: '/api/gm/stt' },
   { re: /^\/api\/gm\/stt\/token\/?$/, handler: gmSttToken, path: '/api/gm/stt/token' },
   { re: /^\/api\/gm\/transcript\/?$/, handler: gmTranscript, path: '/api/gm/transcript' },
-  // Claude at the table (the assist build plan): POST /api/gm/assist/tick, /fit, /another, /gatekeeper and the Screen's /portrait, /prop, /wire, /board and /portrait-add, GET and POST /cards, GM only
-  { re: /^\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board)\/?$/, handler: gmAssist, path: '/api/gm/assist/:action', params: ['action'] },
+  // Claude at the table (the assist build plan): POST /api/gm/assist/tick, /fit, /another, /gatekeeper and the Screen's /portrait, /prop, /wire, /board and /portrait-add, Ask Blade's /ask, GET and POST /cards, GM only
+  { re: /^\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board|ask)\/?$/, handler: gmAssist, path: '/api/gm/assist/:action', params: ['action'] },
   { re: /^\/api\/gm(?:\/.*)?$/, handler: gmNotFound, path: '/api/gm/[[path]]' },
 ];
 

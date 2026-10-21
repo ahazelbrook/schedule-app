@@ -4,8 +4,9 @@
    "Fit it" for the Fixer. Plain script, UMD: window.B68GmAssist in the browser, module.exports under Node.
 
    GM only, by construction: gm-page.js creates it once the GM's page is ready and destroys it on close, so the player and display
-   pages never see it. It calls exactly five things on window.claude.gm: stt() (is Listening on), assistTick(), assistFit(), and
-   assistCards() / assistMark() (tonight's cards back from the server's log, and the marks seen / dismissed / kept).
+   pages never see it. It calls exactly these on window.claude.gm: stt() (is Listening on), assistTick(), assistFit(), and
+   assistCards() / assistMark() (tonight's cards back from the server's log, and the marks seen / dismissed / kept), plus the Screen's
+   calls (below) and assistAsk() (Ask Blade).
    Nothing is stored in the browser (no state document, no display, no localStorage): the cards live in this object, and the server's
    assist log is the memory, so a reload restores the chat, the unread count and what was dismissed. The page's own capture bar is
    the only other thing it writes to: "Note it" on a Ledger update, and "Keep" (a star) on a card, each file a Moment there.
@@ -53,7 +54,15 @@
      ctl.canScreen(kind) -> bool     false on a phone, with the cap reached, or when the ladder has dropped that seat (Wire at 60% of the
                                      cap, Portrait and Prop at 85%; the Case board always)
    A Ref card with a page cite is spot-checked in the background through the gatekeeper; a bad cite gets a small "cite?" flag (it never blocks).
-   _pure: errKind, errLine, fitLines, tierLabel, spendLine, absorb, restore, momentText, hhmm, clip, gateText, citesOf, gateLine, screenAllowed. */
+   Ask Blade (GM.md, "Ask Blade"): a question field at the top of the box. The GM types a question or a request, presses Ask (Enter sends,
+   Shift+Enter is a new line) and the answer appears under the field: plain text for the GM's eyes only, so nothing is handed to the page
+   but "Keep", which files "Blade, ask (HH:MM): question -> answer" through o.onNote. One question at a time; a failed one keeps its words in
+   the field. The last ten answers come back from the server's log after a reload (assistCards().asks); "×" dismisses one for good.
+     ctl.ask(q) -> Promise<{ answer } | { error } | null>   POST /gm/assist/ask { q }; null when the box cannot ask or is already asking
+     ctl.canAsk() -> bool     false on a phone, with the cap reached or the box not set up, from 85% of the cap (tier core), or when the runtime
+                              has no assistAsk
+   _pure: errKind, errLine, fitLines, tierLabel, spendLine, absorb, restore, restoreAsks, momentText, askMoment, askAllowed, askErr, hhmm, clip,
+   gateText, citesOf, gateLine, screenAllowed. */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -161,6 +170,7 @@
     });
     if (st.cards.length > MAX_CARDS) st.cards = st.cards.slice(-MAX_CARDS);
     if (st.updates.length > MAX_UPDATES) st.updates = st.updates.slice(-MAX_UPDATES);
+    restoreAsks(st, r);
     return n;
   }
   P.restore = restore;
@@ -173,6 +183,39 @@
     return 'Blade, ' + (SEAT[c.seat] || c.seat).toLowerCase() + ' (' + hhmm(c.at) + '): ' + str(c.text).trim() + (bits.length ? ' [' + bits.join('; ') + ']' : '');
   }
   P.momentText = momentText;
+
+  /* ---------- Ask Blade's plain helpers ---------- */
+  var ASK_MAX = 600, MAX_ASKS = 10, NOTE_MAX = 500;      /* the question; answers kept in the box; what the capture bar takes (LIMITS.captureText) */
+  /* the ladder as the box knows it from the spend tier (the server enforces it anyway): Ask Blade stops at 85% of the cap (tier core), like Portrait and Prop */
+  function askAllowed(tier) { return tier !== 'core' && tier !== 'off'; }
+  P.askAllowed = askAllowed;
+  /* the line "Keep" files as a Moment for an answer: when, the question, the answer; clipped to what the capture bar takes */
+  function askMoment(a) { return clip('Blade, ask (' + hhmm(a.at) + '): ' + str(a.q).trim() + ' -> ' + str(a.text).trim(), NOTE_MAX); }
+  P.askMoment = askMoment;
+  /* a failed ask as the sentence under the field: the server's own message is never shown */
+  function askErr(e) {
+    var s = e && e.status, m = str(e && e.message);
+    if (s === 429) return /cap/i.test(m) ? 'Cap reached for tonight: Ask Blade is off.' : /busy/i.test(m) ? 'Blade is busy: try again in a moment.' : 'The budget has dropped Ask Blade for tonight.';
+    var k = errKind(e);
+    return k === 'net' ? 'Could not reach the server. Your question is still here.' : k === 'setup' ? errLine('setup') : 'Blade had nothing to say to that just now. Try again.';
+  }
+  P.askErr = askErr;
+  /* the answers the server holds for tonight (GET /gm/assist/cards -> asks) into the box: [{ id, at, q, text, kept }], oldest first, at most ten;
+     one already here (same at + question) is left alone. Returns how many were added. */
+  function restoreAsks(st, res) {
+    var r = isObj(res) ? res : {}, n = 0;
+    if (!Array.isArray(st.asks)) st.asks = [];
+    (Array.isArray(r.asks) ? r.asks : []).forEach(function (a) {
+      if (!isObj(a) || !str(a.text).trim() || !str(a.q).trim() || a.dismissed) return;
+      var id = 'a|' + str(a.at) + '|' + str(a.q);
+      if (st.asks.some(function (x) { return x.id === id; })) return;
+      st.asks.push({ id: id, at: str(a.at), q: str(a.q), text: str(a.text).trim(), kept: !!a.kept }); n++;
+    });
+    st.asks.sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
+    if (st.asks.length > MAX_ASKS) st.asks = st.asks.slice(-MAX_ASKS);
+    return n;
+  }
+  P.restoreAsks = restoreAsks;
 
   /* ---------- the Screen's plain helpers ---------- */
   var SCREEN_KINDS = ['portrait', 'prop', 'wire', 'board'];
@@ -227,8 +270,8 @@
   function create(o) {
     o = o || {};
     var gm = o.gm, doc = o.doc || (W && W.document), win = o.win || W;
-    var st = { open: false, cards: [], updates: [], after: null, spend: null, paused: '', error: '', setup: false, listening: null, checkedAt: '', busy: false,
-      fit: { busy: false, error: '', card: null }, screen: { busy: {}, error: '' } };
+    var st = { open: false, cards: [], updates: [], asks: [], after: null, spend: null, paused: '', error: '', setup: false, listening: null, checkedAt: '', busy: false,
+      fit: { busy: false, error: '', card: null }, screen: { busy: {}, error: '' }, ask: { busy: false, error: '' } };
     var host = null, timer = null, bannerT = null, gone = false, bannerCard = null;
     var avatar = o.avatar || 'gm/blade.svg';
     var bannerMs = o.bannerMs || BANNER_MS;
@@ -267,6 +310,11 @@
             '<button type="button" class="as-x" data-as="close" aria-label="Close Blade"><span aria-hidden="true">×</span></button></header>' +
           '<p class="as-status" id="as-status" role="status"></p>' +
           '<div class="as-body">' +
+            '<form class="as-ask" id="as-ask" data-as-form="ask" aria-label="Ask Blade"><p class="as-lab">Ask Blade: for your eyes only</p>' +
+              '<textarea id="as-ask-q" maxlength="' + ASK_MAX + '" rows="2" placeholder="Ask Blade: pitch three complications, write an epilogue for tonight…" autocomplete="off" aria-label="Ask Blade"></textarea>' +
+              '<button type="submit" class="as-go" id="as-ask-go">Ask</button>' +
+              '<p class="as-status" id="as-ask-status" role="status" aria-live="polite"></p></form>' +
+            '<ul class="as-asks" id="as-asks" aria-label="Answers from Blade" aria-live="polite"></ul>' +
             '<ol class="as-list" id="as-list" aria-label="Cards" aria-live="polite"></ol>' +
             '<div id="as-updates"></div>' +
             '<form class="as-fit" id="as-fit" data-as-form="fit"><p class="as-lab">Fit it: for the roll about to be made</p>' +
@@ -302,7 +350,7 @@
       var tl = st.spend ? tierLabel(st.spend.tier) : '';
       tier.hidden = !tl; tier.textContent = tl ? tl + (spendLine(st.spend) ? ' · ' + spendLine(st.spend) : '') : '';
       tier.setAttribute('data-tier', st.spend ? st.spend.tier : '');
-      renderStatus(); renderList(); renderUpdates(); renderFit(); renderScreen();
+      renderStatus(); renderAsk(); renderList(); renderUpdates(); renderFit(); renderScreen();
     }
     function renderStatus() {
       var el = q('#as-status'); if (!el) return;
@@ -353,6 +401,53 @@
       }
       out.innerHTML = h;
     }
+
+    /* ---------- Ask Blade ---------- */
+    function canAsk() {
+      if (gone || isPhone() || st.paused === 'setup' || st.paused === 'cap' || !gm || typeof gm.assistAsk !== 'function') return false;
+      return askAllowed(tierNow());
+    }
+    function renderAsk() {
+      var sec = q('#as-ask'), go = q('#as-ask-go'), list = q('#as-asks'); if (!sec || !go || !list) return;
+      sec.hidden = !gm || typeof gm.assistAsk !== 'function';      /* an older runtime without the call: the field is not offered */
+      var can = canAsk(), busy = st.ask.busy, hint = !can && !askAllowed(tierNow()) ? 'Dropped by the budget for tonight.' : '';
+      go.disabled = busy || !can; go.textContent = busy ? 'Thinking…' : 'Ask';
+      go.title = can ? 'Ask Blade (Enter)' : hint || 'Not available now';
+      var m = q('#as-ask-status'), msg = st.ask.error || hint; if (m) { m.textContent = msg; m.hidden = !msg; m.classList.toggle('bad', !!st.ask.error); }
+      list.innerHTML = st.asks.slice().reverse().map(function (a) {
+        var keep = a.kept ? '<span class="as-kept" title="Kept: filed as a Moment">★ Kept</span>'
+          : typeof o.onNote === 'function' ? '<button type="button" class="as-star" data-as="ask-keep" data-id="' + esc(a.id) + '" aria-label="Keep this answer: file it as a Moment">☆ Keep</button>' : '';
+        return '<li class="as-answer"><div class="as-meta"><p class="as-askq">' + esc(a.q) + '</p><time>' + esc(hhmm(a.at)) + '</time></div><p class="as-text">' + esc(a.text) + '</p>' +
+          '<div class="as-acts">' + keep + '<button type="button" class="as-ack" data-as="ask-x" data-id="' + esc(a.id) + '" aria-label="Dismiss this answer"><span aria-hidden="true">×</span></button></div></li>';
+      }).join('');
+    }
+    /* the GM's question -> Blade's answer, one at a time. Resolves { answer }, { error: kind } or null (cannot ask, nothing typed, already asking).
+       The words stay in the field when it fails, and are cleared when it works. */
+    function ask(text) {
+      var qq = str(text).replace(/\s+/g, ' ').trim().slice(0, ASK_MAX);
+      if (!qq || st.ask.busy || !canAsk()) return Promise.resolve(null);
+      st.ask.busy = true; st.ask.error = ''; render();
+      return Promise.resolve().then(function () { return gm.assistAsk({ q: qq }); }).then(function (res) {
+        if (gone) return null;
+        if (isObj(res) && isObj(res.spend)) absorb(st, { spend: res.spend, warnings: [] }, '');
+        var a = isObj(res) && isObj(res.answer) && str(res.answer.text).trim() ? res.answer : null;
+        if (!a) {
+          st.ask.error = isObj(res) && Array.isArray(res.warnings) && res.warnings.length ? 'Blade has no briefing loaded: push the GM pack with the assist part.' : 'Blade had nothing to say to that just now. Try again.';
+          return { error: 'none' };
+        }
+        var at = str(a.at) || new Date().toISOString(), item = { id: 'a|' + at + '|' + (str(a.q) || qq), at: at, q: str(a.q) || qq, text: str(a.text).trim(), kept: false };
+        if (!st.asks.some(function (x) { return x.id === item.id; })) st.asks.push(item);
+        if (st.asks.length > MAX_ASKS) st.asks = st.asks.slice(-MAX_ASKS);
+        var ta = q('#as-ask-q'); if (ta && str(ta.value).replace(/\s+/g, ' ').trim() === qq) ta.value = '';
+        return { answer: item };
+      }, function (e) {
+        if (gone) return null;
+        if (e && e.status === 429 && /cap/i.test(str(e.message))) st.paused = 'cap';
+        st.ask.error = askErr(e);
+        return { error: errKind(e) };
+      }).then(function (r) { st.ask.busy = false; render(); return r; });
+    }
+    function submitAsk() { var t = q('#as-ask-q'); if (t) ask(t.value); }
 
     /* ---------- the Screen ---------- */
     var SC_TITLE = { portrait: 'Draw the NPC you just described', prop: 'Make a document for the moment', wire: 'One in-world bulletin for the iPad', board: 'What the players have said aloud, as a board' };
@@ -592,19 +687,24 @@
       else if (a === 'keep') { var kc = st.cards.filter(function (x) { return x.id === id; })[0]; if (kc && !kc.kept && typeof o.onNote === 'function' && o.onNote(momentText(kc))) { kc.kept = true; mark('keep', [kc]); render(); } }
       else if (a === 'done') { var d = st.updates.filter(function (x) { return x.id === id; })[0]; if (d) mark('dismiss', [d]); remove(st.updates, id); render(); }
       else if (a === 'note') { var u = st.updates.filter(function (x) { return x.id === id; })[0]; if (u && typeof o.onNote === 'function' && o.onNote(u.text)) { mark('dismiss', [u]); remove(st.updates, id); render(); } }
+      else if (a === 'ask-keep') { var ak = st.asks.filter(function (x) { return x.id === id; })[0]; if (ak && !ak.kept && typeof o.onNote === 'function' && o.onNote(askMoment(ak))) { ak.kept = true; mark('keep', [{ at: ak.at, text: ak.q }]); render(); } }
+      else if (a === 'ask-x') { var ax = st.asks.filter(function (x) { return x.id === id; })[0]; if (ax) mark('dismiss', [{ at: ax.at, text: ax.q }]); remove(st.asks, id); render(); }
       else if (a === 'resume') resume();
       else if (a.indexOf('sc-') === 0) screenMake(a.slice(3), { name: (q('#as-sc-name') || {}).value, ask: (q('#as-sc-ask') || {}).value });
       else if (a === 'fitclear') { st.fit.card = null; st.fit.error = ''; renderFit(); }
     }
     function onSubmit(ev) {
-      if (!ev.target || ev.target.getAttribute('data-as-form') !== 'fit') return;
+      var form = ev.target && ev.target.getAttribute ? ev.target.getAttribute('data-as-form') : null;
+      if (form === 'ask') { ev.preventDefault(); submitAsk(); return; }
+      if (form !== 'fit') return;
       ev.preventDefault();
       var r = host.querySelector('input[name="as-pos"]:checked'), e = q('#as-eff');
       fit(r ? r.value : 'risky', e ? e.value : '');
     }
     function onKey(ev) {
-      if (ev.key !== 'Escape' || !st.open) return;
       var t = ev.target, n = t && t.tagName ? t.tagName.toLowerCase() : '';
+      if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing && n === 'textarea' && t.id === 'as-ask-q') { ev.preventDefault(); submitAsk(); return; }   /* Enter asks, Shift+Enter is a new line */
+      if (ev.key !== 'Escape' || !st.open) return;
       if (n === 'input' || n === 'textarea' || n === 'select') return;   /* the page blurs the field first; the next Escape closes the box */
       ev.preventDefault(); close();
     }
@@ -617,8 +717,8 @@
     if (!o.noTimer) setTimeout(function () { poll(); }, 1500);
 
     return {
-      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, poll: poll, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake,
-      state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, screen: st.screen, banner: bannerCard ? bannerCard.text : '' })); },
+      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, poll: poll, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
+      state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, asks: st.asks, ask: st.ask, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, screen: st.screen, banner: bannerCard ? bannerCard.text : '' })); },
       el: function () { return host; },
       destroy: function () {
         gone = true;
