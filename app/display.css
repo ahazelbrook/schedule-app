@@ -37,6 +37,10 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
 
 /* ---- lights out (kind dark): true black, opaque, over the ambient; nothing drawn ---- */
 .dp-dark { background: #000; }
+.dp-handout { background: #000; display: flex; align-items: center; justify-content: center; }
+.dp-handout-img { display: block; width: 100%; height: 100%; object-fit: contain; }   /* fitted both ways: a small prop is enlarged to the screen, a large one shrunk */
+.dp-handout-cap { position: absolute; left: 0; right: 0; bottom: 0; margin: 0; padding: 1.2vmin 3vmin; background: rgba(0, 0, 0, .72); color: #fff; text-align: center; font: 600 clamp(16px, 2.6vmin, 30px)/1.3 var(--font-text, Georgia, serif); }
+.dp-handout-cap[hidden] { display: none; }
 .dp-mark { width: 10px; height: 10px; border: 1px solid var(--dp-ink); opacity: .1; transform: rotate(45deg); }
 
 /* ---- text ---- */

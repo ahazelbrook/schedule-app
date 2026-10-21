@@ -227,6 +227,11 @@
       var iv = Math.floor(+d.interval); iv = iv >= 0 && iv <= 120 ? iv : 0;
       return { kind: 'cards', title: title, cards: cards, mode: d.mode === 'spread' ? 'spread' : 'carousel', interval: iv, start: Math.max(0, Math.min(cards.length - 1, Math.floor(+d.start) || 0)) };
     }
+    if (kind === 'handout') {
+      /* one prop image from the static folder media/handouts/: the display carries the file name only (never the manifest) */
+      if (!Pure.HANDOUT_FILE_RE.test(typeof d.file === 'string' ? d.file : '') || d.file.indexOf('..') >= 0) return { kind: 'blank' };
+      return { kind: 'handout', title: title, file: d.file, src: Pure.HANDOUT_DIR + d.file, showTitle: d.showTitle === true && !!title };
+    }
     if (kind === 'npc') {
       var n = Pure.playerNpc(npcDoc);
       var vm = { kind: 'npc', npcId: typeof d.npcId === 'string' ? d.npcId : '', title: title, found: !!n };
@@ -238,6 +243,8 @@
     }
     return { kind: 'blank' };
   };
+  Pure.HANDOUT_DIR = 'media/handouts/';
+  Pure.HANDOUT_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}.(?:png|jpe?g|webp|svg)$/i;
   /* the opportunity card's lines (the planning meeting): field and label, as the book's index card prints them */
   Pure.CARD_FIELDS = ['from', 'client', 'target', 'type', 'note', 'payout'];
   Pure.CARD_ROWS = [['from', 'From'], ['client', 'Client'], ['target', 'Target'], ['type', 'Type'], ['note', ''], ['payout', 'Payout']];
@@ -701,6 +708,17 @@
     box.appendChild(body); scroll.appendChild(box); e.appendChild(scroll);
     return { el: e, destroy: function () {} };
   }
+  /* a handout: the image fitted to the screen on black; a tap shows or hides the title caption; a missing file says so */
+  function handoutStage(vm) {
+    var e = el('div', 'dp-stage dp-handout'), img = el('img', 'dp-handout-img'), cap = el('p', 'dp-handout-cap', vm.title), off = null;
+    img.alt = vm.title || 'Handout'; img.decoding = 'async'; img.draggable = false;
+    cap.hidden = !vm.showTitle;
+    img.onerror = function () { img.hidden = true; cap.hidden = false; cap.textContent = (vm.title ? vm.title + ': ' : '') + 'this handout is not on the server (app/media/handouts/' + vm.file + ').'; };
+    img.src = vm.src;
+    e.appendChild(img); e.appendChild(cap);
+    off = on(e, 'click', function () { if (!img.hidden && vm.title) cap.hidden = !cap.hidden; });
+    return { el: e, destroy: function () { if (off) off(); } };
+  }
   /* the planning meeting's opportunity cards: one large at a time (tap the right side for the next, the left for the one
      before; it turns by itself when the GM set an interval), or all of them spread on the table */
   function oppCard(c, i) {
@@ -917,6 +935,7 @@
       if (vm.kind === 'dark') return darkStage(vm);
       if (vm.kind === 'rule') return ruleStage(vm);
       if (vm.kind === 'cards') return cardsStage(vm);
+      if (vm.kind === 'handout') return handoutStage(vm);
       if (vm.kind === 'npc') return npcStage(vm, seq, ctx);
     } catch (e) { return noteStage(vm.title, 'This could not be shown.'); }
     return blankStage();

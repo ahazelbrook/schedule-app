@@ -18,7 +18,8 @@
 //                     is the one given, else in full; all three current: { seq, unchanged: true, ambient, stt }, else the full
 //                     display along with them. A part whose number is not given counts as stale (`?aseq=M` alone, `?sseq=K` alone).
 //   PUT  display   -> { seq, display, updatedAt }: replaces the display and bumps seq
-// display: { kind: 'blank' | 'dark' | 'svg' | 'npc' | 'text' | 'rule', title?, caption? } plus `svg` (a player-safe
+// display: { kind: 'blank' | 'dark' | 'svg' | 'npc' | 'text' | 'rule' | 'cards' | 'handout', title?, caption? } plus `file` + `showTitle`
+// (handout: a plain image file name in the static folder media/handouts/), `svg` (a player-safe
 // render: starts with <svg, at most 600 KiB, no <script, <foreignObject, javascript:, on...= attributes, or href / src /
 // url() other than a #fragment or a data:image/ URI), `npcId` (an id), `text`, or `md` (a rules entry's Markdown, at most
 // 40000 characters; the display renders it escaped, with no links). blank: nothing spotlit, the ambient scene plays;

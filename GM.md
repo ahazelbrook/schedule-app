@@ -38,7 +38,7 @@ abilities (see Score (J) below). The `engagement` part went with Engage.
 | `GET /api/gm/state` | `{ doc, updatedAt }` (`{}` and `null` until written). |
 | `PATCH /api/gm/state` | deep merge (plain objects merge, arrays and scalars replace, `null` deletes) → `{ doc, updatedAt }`. Keep collections as maps, not arrays. |
 | `GET /api/gm/display` | `{ seq, display, updatedAt }` (`seq` 0, a blank display, until written). `?seq=N` → `{ seq, unchanged: true }` while N is current. |
-| `PUT /api/gm/display` | `{ kind, title?, caption?, svg \| npcId \| text \| md }` → `{ seq, display, updatedAt }`; `seq` goes up by one on every PUT. |
+| `PUT /api/gm/display` | `{ kind, title?, caption?, svg \| npcId \| text \| md \| file, showTitle? }` → `{ seq, display, updatedAt }`; `seq` goes up by one on every PUT. |
 | `GET /api/gm/display` (ambient) | also carries `ambient: { seq, doc, updatedAt }`. `?seq=N&aseq=M` → `{ seq, unchanged: true, ambient: { seq, unchanged: true } }` while both are current; otherwise the full display, with `ambient` `{ seq, unchanged: true }` when only M is current. `?seq=N` alone is the old answer. |
 | `GET /api/gm/display` (transcriber) | also carries `stt: { seq, want, session }`: whether the GM wants the iPad listening (`on` / `off`) and the session number to stamp on its lines, and **nothing else**: never a speaker name, the iPad's own report, the PC's heartbeat or a transcript line, whoever asks. Its `seq` is made from those two values alone, so the iPad's reports (which rewrite the control document every minute) never move it. `?seq=N&aseq=M&sseq=K` → `{ seq, unchanged: true, ambient: { seq, unchanged: true }, stt: { seq, unchanged: true } }` while all three are current; otherwise the full display, each part `{ seq, unchanged: true }` when its number is the one given and in full when not. Without `sseq` (a display page from before the transcriber rode along) there is no `stt` and the answers are the ones above. Why: one request where the display and the transcriber used to make two (see "The display", how it polls). |
 | `GET /api/gm/ambient` | `{ seq, doc, updatedAt }` (`0`, `{}`, `null` until written). GM only; the display sign-in is refused (it reads the doc through the display). |
@@ -50,7 +50,7 @@ abilities (see Score (J) below). The `engagement` part went with Engage.
   `gm_pack(campaign, part, version, src, updated_at /* ms */, body)`.
 - **State.** The `campaigns` row `<CAMPAIGN>#gm` (beside the campaign document; `/api/campaign` never reads it). Patch
   and stored document at most 256 KiB each; optimistic `updated_at` check with retries, 409 when it keeps colliding.
-- **Display.** `kind` is `blank`, `dark`, `svg`, `npc`, `text`, `rule` or `cards` (1 to 8 opportunity cards, see Cards below); other keys are dropped. `title`, `caption`,
+- **Display.** `kind` is `blank`, `dark`, `svg`, `npc`, `text`, `rule`, `cards` (1 to 8 opportunity cards, see Cards below) or `handout` (`file`: a plain image file name in `app/media/handouts/`, png/jpg/webp/svg; `showTitle` true shows the title caption; see Handouts below); other keys are dropped. `title`, `caption`,
   `text` at most 2000 characters (`text` required for `text`); `npcId` an id `[A-Za-z0-9_-]{1,80}`; `md` (required for
   `rule`) a rules entry's Markdown, at most 40000 characters. The rules page's **Show on iPad** (GM only, on every
   entry and on a house-rule twin) sends the entry without the compiler's `[TODO]` notes and `%%` comments; the display
@@ -556,7 +556,9 @@ and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools
 - **Deploy.** `npm run deploy` (SETUP.md, "Updating the app") applies the migrations and refuses to ship without
   `app/media/theme.mp3` and `app/ambient/calling-cards.html` on disk: both are gitignored, and the asset upload takes whatever
   is on disk. The cards are built on the deploying PC (`node tools/ambient/scenes/cards.js`, from `tools/ambient/cards/*.jpg`);
-  without the file the `cards` scene 404s and `check:ambient` prints SKIP.
+  without the file the `cards` scene 404s and `check:ambient` prints SKIP. **Handouts too:** the deploy uploads `app/media/handouts/`
+  as it is on disk (git-ignored, like the cards), so the deploying checkout (the clean worktree: copy it in from the GM's PC with the
+  other media) must hold it; `npm run gm:handouts` must have been run on that PC first (see Handouts).
 - **Decisions** (Alex, 15/10/2026; the plan as written is `docs/history/AMBIENT-PLAN.md`). Rotation is a playlist plus pin (auto
   every 7 minutes, cross-faded; pin one; skip). The score scenes are live from the current location roll, player layer only, and
   never update on their own. **Clear** goes back to the ambient; **Lights out** is true black. Heat and wanted come from the
@@ -583,6 +585,29 @@ With `DISPLAY_EMAILS` unset the role does not exist. Check: `npm run check:displ
 **To turn it on** (Alex's steps, not done by code): pick an email for the iPad, add it to the Cloudflare Access allow policy,
 then `npx wrangler secret put DISPLAY_EMAILS` and sign the iPad in with that email. `scripts/deploy.sh` does not manage this secret.
 The display page's NPC view reads `npcs`, which this role cannot; it falls back to the pushed title and caption.
+
+## Handouts (`npm run gm:handouts`, the iPad panel `I`)
+
+The prepared props (the images the vault holds for the table) as a list the GM can show directly, and that Claude can suggest.
+- **Images** are git-ignored static files in `app/media/handouts/` (like the calling cards: art that is not ours to publish; deployed from
+  disk, never committed). `npm run gm:handouts` copies the web images (png, jpg, webp, svg) from the vault's handouts folder
+  (`Wiki/Games/Blades in the Dark/Campaigns/Group/handouts`, or `.../props`, or the same two under `Projects/`; `-- --src "<folder in the vault>"` for
+  another) and names anything else (pdf, tiff, gif) as skipped. File names are made safe (spaces become `-`); nothing in the destination
+  is deleted. Run it on the deploying PC before `npm run deploy`. It also writes a private copy of the list to `gm-private/handouts-manifest.json`.
+- **Manifest** is the pack part `handouts` (`npm run gm:pack`, `lib/handouts-export.mjs`): `{ v: 1, rel, items: [{ id, title, file, when? }] }`.
+  `title` is the caption of the embed in a note beside the images (`![[file.png|Caption]]`), else the heading above the embed, else the
+  file name; `when` is a line straight after the embed that starts `When:` or `Cue:`. Nothing is invented. No images: no part. gm:pack warns when
+  images are in the vault but not yet in `app/media/handouts/`.
+- **GM page.** The iPad panel (`I`) has a Handouts box under the score scene: thumbnail, title, cue, **Show on iPad** and **Clear iPad** on each,
+  and a *Title on the iPad* tick (this page only). Show sends `{ kind: 'handout', title, file, showTitle }` and nothing else: the iPad never
+  receives the manifest, the cue or the other entries. The server checks `file` as a plain image file name.
+- **iPad.** `handout` draws the image fitted to the screen on black (a small prop is enlarged, a large one shrunk); a tap shows or hides the title
+  caption; a file that was not deployed says so on the screen instead of showing nothing.
+- **Claude suggests.** `B68GmPage.suggestHandout(id, why)` puts *Show handout: <title>?* in the Rack (with the reason, **Show** and **Dismiss**);
+  an id not in the pack is refused (returns false), a repeat replaces the offer, at most three are held. Nothing calls it yet: the Mystery
+  keeper will. Show posts the same display as the list and drops the offer.
+- **Checks.** `checks/runtime/gm-handouts.test.mjs` (in `check:runtime`) and `check:handouts-e2e` (`gm-handouts.e2e.mjs`, browser; writes two tiny
+  images into `app/media/handouts/` for the run and removes them).
 
 ## Listening: the table iPad's transcriber (`app/stt.js`, the iPad panel `I`)
 

@@ -36,6 +36,9 @@
 //             folder with `gm_downtime: true`: its "## Benefits" and "## Mishaps" entries (lib/downtime-export.mjs). Laid
 //             over the app's built-in downtime tables; it is the only place they live outside the vault. No such note: no part.
 //
+//   handouts  the manifest of the prop images the GM can show on the iPad: [{ id, title, file, when? }] (lib/handouts-export.mjs).
+//             Manifest only: the images are git-ignored static files in app/media/handouts/ (npm run gm:handouts). No images: no part.
+//
 //   assist    { prefix }: the cached prefix for "Claude at the table" (functions/api/gm/assist.js): the rules reference, the NPC
 //             cast, every NPC card's How to play block, the player-to-character table (player: on the PC notes, or the git-ignored
 //             gm-private/players.json, which wins) and tonight's prep (last) as <context name="..."> blocks (lib/assist-export.mjs). GM only. This file keeps the text;
@@ -66,6 +69,7 @@ import { packLosses, lossLines } from "./lib/pack-guard.mjs";
 import { buildScreen } from "./lib/screen-export.mjs";
 import { buildDowntime } from "./lib/downtime-export.mjs";
 import { buildAssist, readConfig } from "./lib/assist-export.mjs";
+import { buildHandouts } from "./lib/handouts-export.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..");
@@ -81,6 +85,7 @@ function args(argv) {
     else if (a === "--out") o.out = argv[++i];
     else if (a === "--quiet") o.quiet = true;
     else if (a === "--allow-shrink") o.allowShrink = true;
+    else if (a === "--handouts-src") o.handoutsSrc = argv[++i];
     else if (a === "--assist-prep") o.assistPrep = argv[++i];
     else if (a === "--assist-config") o.assistConfig = argv[++i];
     else if (a === "-h" || a === "--help") { console.log("usage: node scripts/gm-pack.mjs --vault <vault dir> [--out gm-private/b68-gm-pack.json] [--quiet] [--allow-shrink]"); console.log("  [--assist-prep <vault-relative session note>] [--assist-config <file>]"); process.exit(0); }
@@ -768,6 +773,13 @@ function buildScreenPart(vault, exportedAt) {
   return buildScreen({ vault, repo: REPO, exportedAt, warn });
 }
 
+// ---- part: handouts -----------------------------------------------------------------------------------
+// (the source folder: --handouts-src, else the first handouts/props folder under the Group campaign or Projects)
+let handoutsSrc = "";
+function buildHandoutsPart(vault, exportedAt) {
+  return buildHandouts({ vault, repo: REPO, exportedAt, warn, src: handoutsSrc });
+}
+
 // ---- part: downtime -----------------------------------------------------------------------------------
 function buildDowntimePart(vault, exportedAt) {
   return buildDowntime({ vault, exportedAt, warn });
@@ -778,6 +790,7 @@ function main() {
   const a = args(process.argv.slice(2));
   const vault = path.resolve(a.vault);
   if (!fs.existsSync(path.join(vault, "Wiki", "Games", "Blades in the Dark"))) { console.error("not a Blades '68 vault: " + vault); process.exit(2); }
+  handoutsSrc = a.handoutsSrc || "";
   const out = path.resolve(REPO, a.out);
   const now = new Date().toISOString();
 
@@ -791,7 +804,7 @@ function main() {
   // assist: the cached prefix for "Claude at the table" (rules reference, NPC cast, tonight's prep); GM only (lib/assist-export.mjs)
   const assistConfig = readConfig(a.assistConfig ? path.resolve(a.assistConfig) : path.join(REPO, "gm-private", "assist-config.json"));
   const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: a.assistPrep, config: assistConfig, playersFile: path.join(REPO, "gm-private", "players.json") });
-  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart], ["assist", buildAssistPart]];
+  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart], ["handouts", buildHandoutsPart], ["assist", buildAssistPart]];
   let npcLeverage = 0;
   let locationExtraNames = [];
   for (const [name, fn] of builders) {
@@ -863,6 +876,8 @@ function main() {
       new Set(pr.notes.flatMap((x) => x.blocks.filter((b) => b.score).map((b) => b.score.key))).size + " score cards (GM.md, Score sites)" : "none (no note has gm_prep: true)"));
     const sc = parts.screen;
     console.log("  screen: " + (sc ? sc.sections.length + " sections from " + path.basename(sc.rel) : "none (no note has gm_screen: true)"));
+    const ho = parts.handouts;
+    console.log("  handouts: " + (ho ? ho.items.length + " handout(s), " + ho.items.filter(i => i.when).length + " with a cue, from " + ho.rel : "none (no images in the vault's handouts folder)"));
     const dp = parts.downtime;
     console.log("  downtime: " + (dp ? dp.T.benefit.length + " Benefits and " + dp.T.mishap.length + " Mishaps from " + path.basename(dp.rel) : "none (no note has gm_downtime: true)"));
     const as = parts.assist;

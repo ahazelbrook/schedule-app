@@ -18,3 +18,7 @@ tools/ambient/cards/
 # The theme the opening credits play is someone's recording: kept on the GM's PC (app/media/theme.mp3), deployed from disk,
 # never committed.
 app/media/
+
+# The handout images (prop art, copied from the vault by `npm run gm:handouts`): inside app/media/ above, named here too so the
+# intent survives a change to that line. Deployed from disk, never committed (HOSTING.md, GM.md "Handouts").
+app/media/handouts/

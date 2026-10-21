@@ -30,7 +30,9 @@ export const PART_RE = /^[a-z0-9-]{1,32}$/;
 // rule: one rules entry, as Markdown (the display renders it with markdown.js, links as plain text)
 // cards: the planning meeting's opportunity cards, typed by the GM on the GM page (from, client, target, type, a free line,
 // payout), shown as a carousel or spread out
-export const DISPLAY_KINDS = ['blank', 'dark', 'svg', 'npc', 'text', 'rule', 'cards'];
+// handout: one prop image served from the git-ignored static folder app/media/handouts/ (HOSTING.md); the display carries only the file name
+export const DISPLAY_KINDS = ['blank', 'dark', 'svg', 'npc', 'text', 'rule', 'cards', 'handout'];
+export const HANDOUT_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}.(?:png|jpe?g|webp|svg)$/i;
 export const CARD_FIELDS = ['from', 'client', 'target', 'type', 'note', 'payout'];
 export const CARD_LIMITS = { cards: 8, field: 120, interval: 120 };
 
@@ -244,6 +246,11 @@ export function cleanDisplay(raw) {
   }
   if (kind === 'text') out.text = str(raw.text, 'text', LIMITS.text, true);
   if (kind === 'rule') out.md = str(raw.md, 'md', LIMITS.rule, true);
+  if (kind === 'handout') {
+    if (typeof raw.file !== 'string' || !HANDOUT_FILE_RE.test(raw.file) || raw.file.includes('..')) throw new HttpError(400, 'file must be a plain image file name (png, jpg, webp or svg)');
+    out.file = raw.file;
+    out.showTitle = raw.showTitle === true;
+  }
   if (kind === 'cards') {
     if (!Array.isArray(raw.cards) || raw.cards.length < 1 || raw.cards.length > CARD_LIMITS.cards) throw new HttpError(400, 'cards must be a list of 1 to ' + CARD_LIMITS.cards + ' cards');
     out.cards = raw.cards.map((c, i) => {
