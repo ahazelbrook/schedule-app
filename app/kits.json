@@ -19,7 +19,7 @@
       "sha256": "4b889296294dddafbab07e465fbd8ec1ededb415ada95b4b61bf76c2c6ba51e6",
       "source": "Blades '68 Design System, project/figures/figure-kit.js (3.0.1, published 22/10/2026)",
       "at": "2026-10-21",
-      "note": "3.0.1 carries the arm blend (pose.arms.R = { a, b, t, as }, used by tools/ambient/motion.js) in the kit, so the app's local patch (6474342, PR #53) is dropped; it draws the same as the patched 3.0.0"
+      "note": "3.0.1 carries the arm blend (pose.arms.R = { a, b, t, as }, used by tools/ambient/motion.js) in the kit, so the app's local patch (6474342, PR #53) is dropped; it draws the same as the patched 3.0.0. The pages load this full build, not figure-kit.min.js: the minified one draws the same but leaves out each part's params and describe, which the character creator reads (app/core.js, app/steps.js: the Parting, Volume, Length, hat Band and prop-side controls, and the part tooltips)"
     }
   }
 }

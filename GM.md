@@ -545,6 +545,14 @@ calls `unmount()` on leaving; anyone but the GM sees a message instead. The GM p
 The display offers **no way back** to the GM page (no link, hidden or not). Its sanitiser applies the same rules as the server's `checkSvg` (namespaced
 elements, `<a>`, `xml:base`, backslashes, `image-set()` / `src()`, raster `data:` images only on `<image>` / `<feImage>`).
 
+**Nothing is drawn over a map** (22/10/2026). An `svg` display that names itself (a `<title>` as the root's first element child:
+every map-kit map and chase strip, whose own key prints the place, the district and the surveyed bands) gets no caption; one that does
+not (the GM page's clocks picture) gets its title and caption in a bar under the drawing, and the drawing is fitted to the space above
+it. Every map frame also stops above the corner status line. The title and caption still reach a screen reader (`aria-label`). The
+Full screen button and the Add to Home Screen hint are controls, not captions: they come up on a touch and go after 7 s idle (the hint
+only until Got it). `gm-maps.e2e.mjs` checks, at 1366 × 1024 and 1024 × 1366, that no caption and no status line meets the drawn
+box of a map, a street, a chase strip or an untitled svg. A handout keeps its own caption rule (`showTitle`).
+
 ### How it polls (the request budget)
 
 Workers Free allows 100,000 requests a day for the whole site (counted in UTC; after that the Worker refuses until the next day), and the

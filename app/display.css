@@ -21,7 +21,7 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
 .dp-stage { position: absolute; inset: 0; opacity: 0; transition: opacity .6s ease; overflow: hidden; background: var(--dp-bg); }   /* a spotlight is opaque: the ambient is only seen through blank */
 .dp-stage.dp-in { opacity: 1; }
 .dp-stage.dp-out { opacity: 0; pointer-events: none; }
-@media (prefers-reduced-motion: reduce) { .dp-stage { transition: none; } .dp-strip { transition: none; } .dp-chrome, .dp-hint { transition: none; } .dp-amb-frame { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .dp-stage { transition: none; } .dp-chrome, .dp-hint { transition: none; } .dp-amb-frame { transition: none; } }
 
 .dp-kicker { margin: 0 0 .5em; font: 900 clamp(13px, 2.2vmin, 22px)/1.2 var(--font-cond, "Arial Narrow", sans-serif); text-transform: uppercase; letter-spacing: .18em; color: var(--dp-kick); }
 .dp-muted { margin: 0; color: var(--dp-dim); font-size: clamp(16px, 2.6vmin, 26px); }
@@ -111,13 +111,15 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
 }
 
 /* ---- map: the SVG fills the frame, the strip names it ---- */
-.dp-map-frame { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+/* the frame stops above the corner status line (.dp-status), so the status never sits on a drawing either */
+.dp-map-frame { position: absolute; inset: 0 0 max(30px, calc(env(safe-area-inset-bottom) + 22px)) 0; touch-action: none; cursor: grab; }
 .dp-map-frame.dp-zoomed { cursor: move; }
 .dp-map-frame svg { display: block; width: 100%; height: 100%; max-width: none; pointer-events: none; }
-/* a compact card in the bottom-left corner, clear of the map kit's legend (which runs down the right-hand side) */
-.dp-strip { position: absolute; left: max(12px, env(safe-area-inset-left)); bottom: max(46px, calc(env(safe-area-inset-bottom) + 38px)); max-width: min(46%, 760px); padding: 10px 16px 12px;
-  background: rgba(10, 9, 8, .86); border-radius: 6px; opacity: 0; transition: opacity .5s ease; pointer-events: none; }
-.dp-strip.dp-show { opacity: 1; }
+/* Nothing is drawn over a map. A map-kit map or chase strip names itself (its own key), so it has no caption; an svg that does not
+   (the clocks) gets its title and caption in a bar under the frame, and display-page.js ends the frame where the bar starts.
+   The bar leaves room at its foot for the corner status. */
+.dp-strip { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px max(16px, env(safe-area-inset-left)) max(34px, calc(env(safe-area-inset-bottom) + 28px));
+  background: #0a0908; pointer-events: none; }
 .dp-strip-title { margin: 0; font: 900 clamp(20px, 3.6vmin, 40px)/1.1 var(--font-poster, Impact, "Arial Narrow", sans-serif); letter-spacing: .01em; }
 .dp-strip-cap { margin: .25em 0 0; font-size: clamp(14px, 2.2vmin, 24px); color: var(--dp-soft); max-width: 60em; overflow-wrap: anywhere; }
 

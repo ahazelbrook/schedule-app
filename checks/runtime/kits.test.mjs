@@ -48,5 +48,14 @@ await test('the map kit the app vendors has what the GM page asks of it (render 
   ok(typeof M.chase === 'function' && typeof M.chaseNew === 'function' && typeof M.chaseTick === 'function', 'the chase strip');
 });
 
+await test('the figure kit the pages load keeps each part\'s params and describe (the creator reads them: not the minified build)', async () => {
+  const { createRequire } = await import('node:module');
+  const F = createRequire(import.meta.url)(path.join(ROOT, 'app', 'figures', 'figure-kit.js'));
+  for (const [kind, name, param] of [['hair', 'side-part', 'part'], ['hat', 'trilby', 'band'], ['prop', 'cigarette', 'side']]) {
+    const p = F.registry.get(kind, name);
+    ok(p && p.params && param in p.params && typeof p.describe === 'string' && p.describe, kind + ' ' + name + ': params.' + param + ' and describe');
+  }
+});
+
 console.log('\n' + (failed ? failed + ' FAILED' : 'ALL PASSED'));
 process.exit(failed ? 1 : 0);

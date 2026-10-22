@@ -114,7 +114,7 @@ try {
   check(asked.length === 1 && /opening the working band shows it to the players now/.test(asked[0]), 'opening a band asks first (' + asked.join(' | ') + ')');
   check(!!d2 && /surveyed: public, working$/.test(d2.display.caption), 'and the iPad gets the player copy again at once (' + (d2 && d2.display.caption) + ')');
   check(!!d2 && !secretsAt(['public', 'working']).some((n) => text(d2.display.svg).includes(n)), 'the new copy names nothing still hidden');
-  check(await D.page.waitForFunction(() => /working/.test((document.querySelector('#display-page .dp-strip-cap') || {}).textContent || ''), null, { timeout: 10000 }).then(() => true, () => false), '#display redraws by itself with the working band');
+  check(await D.page.waitForFunction(() => /working/.test((document.querySelector('#display-page .dp-map-frame svg') || { getAttribute: () => '' }).getAttribute('aria-label') || ''), null, { timeout: 10000 }).then(() => true, () => false), '#display redraws by itself with the working band');
   await sleep(1200); await shot(D.page, 'maps1-03-ipad-iso-working');
   await G.page.evaluate(() => { const m = document.querySelector('#gm-loc .gm-mapbox'); if (m) m.scrollIntoView({ block: 'start' }); }); await quiet(G.page); await shot(G.page, 'maps1-04-gm-live');
 
@@ -152,6 +152,45 @@ try {
   const d5 = await until(async () => { const d = await display(); return d.seq > d4.seq ? d : null; }, 8000);
   check(!!d5 && d5.display.kind === 'svg', 'Show on iPad: the iso on the plate at Bluetime');
   await sleep(2000); await shot(D.page, 'maps1-07-ipad-iso-plate-bluetime');
+
+  /* nothing is drawn over a map: the drawn content box of the svg (getBBox through getScreenCTM, clipped to the svg element)
+     against every overlay the display puts on top (the caption bar, the corner status), landscape and portrait */
+  const geometry = () => {
+    const all = document.querySelectorAll('#display-page .dp-map-frame svg'), s = all[all.length - 1]; if (!s) return null;   /* the newest stage (the old one fades out) */
+    const v = (s.getAttribute('data-vb') || '').split(' ').map(Number), b0 = s.getBBox();
+    const x0 = Math.max(b0.x, v[0]), y0 = Math.max(b0.y, v[1]), x1 = Math.min(b0.x + b0.width, v[0] + v[2]), y1 = Math.min(b0.y + b0.height, v[1] + v[3]);
+    const bb = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }, m = s.getScreenCTM(), el = s.getBoundingClientRect();
+    const pt = (x, y) => ({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f });
+    const p1 = pt(bb.x, bb.y), p2 = pt(bb.x + bb.width, bb.y + bb.height);
+    const content = { l: Math.max(el.left, Math.min(p1.x, p2.x)), t: Math.max(el.top, Math.min(p1.y, p2.y)), r: Math.min(el.right, Math.max(p1.x, p2.x)), b: Math.min(el.bottom, Math.max(p1.y, p2.y)) };
+    const box = (q) => { const x = document.querySelector(q); if (!x) return null; const st = getComputedStyle(x); if (st.display === 'none' || st.visibility === 'hidden' || +st.opacity === 0) return null; const r = x.getBoundingClientRect(); return r.width && r.height ? { l: r.left, t: r.top, r: r.right, b: r.bottom } : null; };
+    const over = (a, c) => !!a && a.l < c.r - 0.5 && a.r > c.l + 0.5 && a.t < c.b - 0.5 && a.b > c.t + 0.5;
+    const stage = s.closest('.dp-stage'), capEl = stage && stage.querySelector('.dp-strip');
+    const cap = capEl ? (() => { const r = capEl.getBoundingClientRect(); return r.width && r.height ? { l: r.left, t: r.top, r: r.right, b: r.bottom } : null; })() : null, status = box('.dp-status');
+    return { content, cap: !!cap, capOver: over(cap, content), statusOver: over(status, content), label: s.getAttribute('aria-label') };
+  };
+  const untitled = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900"><rect width="1600" height="900" fill="#15120e"/><circle cx="800" cy="450" r="300" fill="#c33"/></svg>';
+  for (const [w, h] of [[1366, 1024], [1024, 1366]]) {
+    await D.page.setViewportSize({ width: w, height: h });
+    for (const [what, put] of [['the map (iso)', null], ['the street on the plate', 'street'], ['an svg without its own title (the clocks)', 'untitled'], ['a chase strip', 'chase']]) {
+      const before = (await display()).seq;
+      if (put === 'street') { await G.page.selectOption('#gm-m-view', 'street'); await G.page.click('[data-gm="ipad"]'); }
+      else if (put === 'untitled') await api('PUT', '/gm/display', { kind: 'svg', title: 'Clocks', caption: 'Lose them 3 / 6', svg: untitled });
+      else if (put === 'chase') { const sv = await G.page.evaluate(() => { const K = window.B68Map; return K.chase(K.chaseTick(K.chaseNew({ street: 'a road bridge over a canal' }), { ticks: 2, caption: 'Two wheels through a fruit stand.' }), { layer: 'player' }).svg; }); await api('PUT', '/gm/display', { kind: 'svg', title: 'The chase', caption: 'Lose them', svg: sv }); }
+      else { await G.page.selectOption('#gm-m-view', 'iso'); await G.page.click('[data-gm="ipad"]'); }
+      const sent = await until(async () => { const d = await display(); return d.seq > before ? d.display : null; }, 8000);
+      const want = sent ? sent.title + (sent.caption ? ' · ' + sent.caption : '') : '';
+      await D.page.waitForFunction((l) => { const a = document.querySelectorAll('#display-page .dp-map-frame svg'), s = a[a.length - 1]; return !!s && s.getAttribute('aria-label') === l && document.querySelectorAll('#display-page .dp-stage').length === 1; }, want, { timeout: 15000 }).catch(() => {});
+      await sleep(800);
+      const g = await D.page.evaluate(geometry);
+      const tag = w + '×' + h + ' ' + what;
+      check(!!g && !g.capOver, tag + ': no caption over the drawing' + (g ? ' (caption bar: ' + g.cap + ')' : ''));
+      check(!!g && (put === 'untitled' ? g.cap : !g.cap), tag + (put === 'untitled' ? ': its title and caption sit in a bar under it' : ': it names itself, so no caption is added'));
+      check(!!g && !g.statusOver, tag + ': the corner status is clear of the drawing');
+      await shot(D.page, 'maps1-ipad-' + (w > h ? 'landscape' : 'portrait') + '-' + (put || 'iso'));
+    }
+  }
+  await D.page.setViewportSize({ width: 1366, height: 1024 });
 
   check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();
