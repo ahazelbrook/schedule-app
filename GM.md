@@ -450,6 +450,28 @@ fails and nobody is known, nothing is purged.
     gives another place. Show on iPad and Set as score scene then work as always: no push starts from Prep.
   - **The vault.** `npm run gm:pull` (and `gm:after`) files each site (SYNC.md, "Score sites"). Checks: `gm-page.test.mjs` (S1–S3),
     `gm-prep.test.mjs` (score sites), `gm-sites.test.mjs`, `gm-prep.e2e.mjs` (the score site block).
+- **Authored sites** (23/10/2026; the plan is the vault page `Projects/blades-68-authored-sites.md`). A hand-built location, assigned
+  to a score card from the vault instead of rolled, that reveals band by band like any roll.
+  - **The source.** A location note in the vault's `Locations/` holds one fenced block, ` ```json b68-site `: `{ base?: { seed, ui,
+    mem }, patch: { rooms: [{ name, band, detail?, isTarget? }], ...any other roll field }, map?: { view, theme } }`. A score card in
+    `Campaigns/Group/Scores/` binds to it with `site: "[[<note name>]]"`. **Each room's `detail` reaches the players** once its band is
+    revealed and the street description is sent (`playerSummary`): write what anyone in the room sees, never GM notes.
+  - **The pack.** `scripts/lib/authored-export.mjs`, called by the location part's builder: `location.authored = { v: 1, sites: { <note
+    name>: { name, rel, base?, patch, map? } }, bind: { <score key>: <note name> } }`, or no key. Inside the location part because the
+    server keeps at most 12 parts. A bad block is skipped with a warning; at most 24 sites, 60 KB a block, 40 rooms.
+  - **The roll.** `P.authoredRoll(L, pack, site)`: the base (the generator's roll from `base`, or from a seed made of the name) with
+    the patch laid over it, so the card, the folds, the map, Show on iPad and its hidden-name check and the score scene take it
+    unchanged. The base's skips go unless the patch has its own; the card's three ways in are each the patch's over the base's; a way
+    in or target naming a replaced room names none. The roll carries `auth: <name>`.
+  - **On the page.** A bound card's Prep strip shows the site, **authored**, and **Open map** (a roll saved for the same score stays
+    reachable: Open the roll, Clear the roll). Open map makes the Location card `{ hid, auth, label, at }` (no seed), in the view and
+    theme the block asks for (else iso, rulebook), GM layer, public band only. `P.locKey(card)` and `P.rollKey(roll)` (`a:<name>`,
+    else the seed) say whether the roll on screen is the card's. The save row says the vault binds it. A roll after it replaces the
+    card whole (`replacePatch`), so no `auth` survives. `gm:pull` never sees one: authored cards are not in `sites`.
+  - **The vault keeps the binding.** A score card whose `site:` names an authored site keeps it: `gm:pull` still files a roll saved
+    for that score, but does not move the link (`sync-sites.mjs`, a skip in the report).
+  - **Checks:** `gm-authored.test.mjs` (the exporter, the roll, the keys, a leak scan at every reveal), `gm-page.test.mjs` (S4),
+    `gm-sites.test.mjs` (the binding kept).
 - **State.** The GM state document holds `con` (the console state: `live` controls, `owed`, `struck`, `used`), `loc`
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,

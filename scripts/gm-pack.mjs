@@ -9,7 +9,9 @@
 //
 // Parts (independent):
 //   console   T from Tools/views/gm-console/view.js
-//   location  T (+ extra: the other top-level consts the generator reads) from the location generator
+//   location  T (+ extra: the other top-level consts the generator reads) from the location generator, and `authored`: the
+//             hand-built sites in Locations/ notes (a ```json b68-site block) and the score cards bound to them by `site:`
+//             (lib/authored-export.mjs). No authored site: no `authored` key.
 //   campaign  pcs, callbacks, cast, standing, owed, npcs, names, clocks (mirrors view.js readPCs/pipeList/readNPCs/readNames)
 //             (pcs[].file is each character sheet's file name: the NPC generator's initials rule uses file names)
 //             and crew: the crew sheet's { name, type, tier, hold, enemies[], abilities[] } (the note under Campaigns/Group/
@@ -70,6 +72,7 @@ import { buildScreen } from "./lib/screen-export.mjs";
 import { buildDowntime } from "./lib/downtime-export.mjs";
 import { buildAssist, readConfig } from "./lib/assist-export.mjs";
 import { buildHandouts } from "./lib/handouts-export.mjs";
+import { buildAuthored } from "./lib/authored-export.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..");
@@ -237,7 +240,11 @@ function buildLocation(vault, exportedAt) {
   }
   const extra = toJson(x, "extra", dropped);
   if (dropped.length) warn("location: dropped non-JSON values: " + dropped.join(", "));
-  return { src: { file: rel(vault, file), blockSha: sha(block), exportedAt }, T, extra, _extraNames: extraNames };
+  // authored sites: hand-built locations bound to score cards (lib/authored-export.mjs); here, not a part of their own (12 parts max)
+  const authored = buildAuthored({ vault, warn });
+  const out = { src: { file: rel(vault, file), blockSha: authored ? sha(block + "\u0000" + JSON.stringify(authored)) : sha(block), exportedAt }, T, extra, _extraNames: extraNames };
+  if (authored) out.authored = authored;
+  return out;
 }
 
 // ---- part: npc ----------------------------------------------------------------------------------------
@@ -860,6 +867,8 @@ function main() {
     console.log("  console.T   (" + Object.keys(parts.console.T).length + ")  " + summariseKeys(parts.console.T).join(" "));
     console.log("  location.T  (" + Object.keys(parts.location.T).length + ")  " + summariseKeys(parts.location.T).join(" "));
     console.log("  location.extra: " + locationExtraNames.join(", "));
+    const au = parts.location.authored;
+    console.log("  location.authored: " + (au ? Object.keys(au.sites).join(", ") + (Object.keys(au.bind).length ? " (bound: " + Object.keys(au.bind).map((k) => k + " -> " + au.bind[k]).join(", ") + ")" : " (no score card's site: names one)") : "none"));
     console.log("  npc.T       (" + Object.keys(parts.npc.T).length + ")  " + summariseKeys(parts.npc.T).join(" "));
     console.log("  npc: cast " + parts.npc.cast.length + ", leverage shapes " + npcLeverage + " (round-trip tested), F " + (parts.npc.F ? "present (" + Object.keys(parts.npc.F).join(", ") + ")" : "null"));
     console.log("  scenes.T     (" + Object.keys(parts.scenes.T).length + ")  " + summariseKeys(parts.scenes.T).join(" "));

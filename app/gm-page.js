@@ -542,6 +542,45 @@
   /* "Warehouse · Dockside · The Goose Guild · Stealth": a card's hints as one line */
   function hintLine(site) { var s = isObj(site) ? site : {}; return SITE_PICKS.map(function (k) { return str(s[k]).trim(); }).filter(Boolean).join(' · '); }
   P.sitesIn = sitesIn; P.siteKeysOf = siteKeysOf; P.hintLine = hintLine;
+  /* Authored sites (GM.md, "Authored sites"): a hand-built location from the vault, in the location part's `authored`
+     ({ v, sites: { <name>: { name, rel, base?, patch, map? } }, bind: { <score key>: <name> } }; scripts/lib/authored-export.mjs).
+     Its roll is the base (the generator's roll from base.seed, or from a seed made of the name) with the patch laid over it, so
+     every tool that takes a roll (the card, the map, Show on iPad and its hidden-name check, the score scene) takes it unchanged.
+     A location card names one as { auth: <name> } in place of a seed. */
+  function authoredOf(pk) {
+    var a = isObj(pk) && isObj(pk.authored) ? pk.authored : null;
+    return { sites: a && isObj(a.sites) ? a.sites : {}, bind: a && isObj(a.bind) ? a.bind : {} };
+  }
+  function nameSeed(s) { var h = 2166136261; s = str(s); for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) || 1; }
+  function authoredRoll(L, pk, site) {
+    if (!L || !isObj(site) || !isObj(site.patch) || !Array.isArray(site.patch.rooms) || !site.patch.rooms.length) return null;
+    var b = isObj(site.base) ? site.base : null, mem = {};
+    if (b) { try { mem = JSON.parse(b.mem || '{}'); } catch (x) { mem = {}; } }
+    var base; try { base = L.generate(pk, b && isObj(b.ui) ? b.ui : {}, { seed: b && typeof b.seed === 'number' ? b.seed : nameSeed(site.name), mem: isObj(mem) ? mem : {} }); } catch (x) { return null; }
+    var roll = Object.assign({}, base, clone(site.patch)), names = {};
+    roll.rooms.forEach(function (r) { if (isObj(r)) names[str(r.name)] = 1; });
+    if (!site.patch.name) roll.name = str(site.name);
+    if (!Array.isArray(site.patch.areas)) roll.areas = Object.keys(names);
+    /* the base's skips name the base's rooms, which the patch's replace: they go unless the patch has its own. The card reads three
+       ways in (front, service side, back route): each is the patch's laid over the base's, and one naming a replaced room names none */
+    if (!Array.isArray(site.patch.skips)) roll.skips = [];
+    var bv = Array.isArray(base.vectors) ? base.vectors : [], pv = Array.isArray(site.patch.vectors) ? site.patch.vectors : [];
+    roll.vectors = [0, 1, 2].map(function (i) {
+      var v = Object.assign({}, isObj(bv[i]) ? bv[i] : {}, isObj(pv[i]) ? clone(pv[i]) : {});
+      if (v.room && !names[str(v.room)]) v.room = null;
+      return v;
+    }).concat(pv.slice(3).map(function (v) { return clone(v); }));
+    if (!site.patch.targetRoom) {
+      var t = roll.rooms.filter(function (r) { return isObj(r) && r.isTarget; })[0];
+      if (t) { roll.targetRoom = str(t.name); roll.targetBand = t.band; } else if (!names[str(roll.targetRoom)]) { roll.targetRoom = ''; }
+    }
+    roll.auth = str(site.name);
+    return roll;
+  }
+  /* a location card's identity, and a roll's: an authored site's name, else its seed */
+  function locKey(c) { return isObj(c) ? (c.auth ? 'a:' + str(c.auth) : c.seed) : undefined; }
+  function rollKey(r) { return isObj(r) ? (r.auth ? 'a:' + str(r.auth) : r.seed) : undefined; }
+  P.authoredOf = authoredOf; P.authoredRoll = authoredRoll; P.locKey = locKey; P.rollKey = rollKey; P.nameSeed = nameSeed;
 
   /* a key press on #gm -> an action, or null. ev: { key, ctrlKey, altKey, metaKey, typing }
      1-4 roll a situation; 5-9 do nothing (the nine single tables have no keys: More tables, under the card). Blanking the
@@ -2118,6 +2157,7 @@
   function mapUi() { var l = isObj(S.doc.loc) && isObj(S.doc.loc.map) ? S.doc.loc.map : {}; var m = Object.assign(clone(P.MAP0), l); m.reveal = Object.assign({}, P.MAP0.reveal, isObj(l.reveal) ? l.reveal : {}); return m; }
   function replayLocation(e) {
     var L = W.B68GmLocation, pk = part('location'); if (!L || !pk || !isObj(e)) return null;
+    if (e.auth) return authoredRoll(L, pk, authoredOf(pk).sites[str(e.auth)]);
     var mem = {}; try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
     try { return L.generate(pk, e.ui || {}, { seed: e.seed, mem: mem }); } catch (x) { return null; }
   }
@@ -2129,7 +2169,8 @@
     var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.location) ? S.doc.hist.location : {};
     /* a new site starts from the public band only, on the GM layer, as rings: the map draws at once (Draw stays for another
        view, theme or layer; the theme is kept) */
-    patch({ cards: { location: Object.assign({ hid: hid }, entry) }, mem: { location: clone(S.locMem) }, hist: { location: addCapped(hist, hid, entry, LIMITS.hist) }, loc: { map: { reveal: clone(P.REVEAL0), view: 'rings', layer: 'gm' } } }, { force: true });
+    /* replaces the stored card: an authored card's `auth` must not survive a roll */
+    patch({ cards: { location: replacePatch(isObj(S.doc.cards) ? S.doc.cards.location : null, Object.assign({ hid: hid }, entry)) }, mem: { location: clone(S.locMem) }, hist: { location: addCapped(hist, hid, entry, LIMITS.hist) }, loc: { map: { reveal: clone(P.REVEAL0), view: 'rings', layer: 'gm' } } }, { force: true });
     S.locRoll = roll; S.map = null; S.last = { text: 'Location: ' + entry.label };
     renderLocation(true);
     if (W.B68Map && W.B68Map.render) drawMap(true);
@@ -2138,7 +2179,7 @@
     var box = $q('#gm-loc'), L = W.B68GmLocation, pk = part('location'); if (!box) return;
     if (S.locErr || !L || !pk) { box.innerHTML = '<p class="gm-note bad">' + esc(S.locErr || 'The location generator is not available.') + '</p>'; return; }
     var cur = isObj(S.doc.cards) ? S.doc.cards.location : null;
-    if (!fresh && cur && (!S.locRoll || S.locRoll.seed !== cur.seed)) { S.locRoll = replayLocation(cur); S.map = null; resetReveal(); }
+    if (!fresh && cur && (!S.locRoll || rollKey(S.locRoll) !== locKey(cur))) { S.locRoll = replayLocation(cur); S.map = null; resetReveal(); }
     var c = L.controls(pk), ui = locUi(), mu = mapUi(), roll = S.locRoll;
     var h = '<div class="gm-loc-ctl">' + c.controls.map(function (x) {
       var id = 'gm-l-' + esc(x.key);
@@ -2179,7 +2220,7 @@
     }).join('');
     return '<section class="gm-glance gm-secret" data-sec="glance"><div class="gm-glance-h"><h3 class="gm-locname">' + esc(g.title) + '</h3></div>' +
       '<p class="gm-glance-place">' + esc(g.place) + '</p>' +
-      '<div class="gm-say"><span class="gm-lab">Say' + (S.locSent === roll.seed ? ' ' + SEEN : '') + '</span><p>“' + esc(g.say) + '”</p><button type="button" class="btn sm" data-gm="pushtext">Street description on iPad</button></div>' +
+      '<div class="gm-say"><span class="gm-lab">Say' + (S.locSent === rollKey(roll) ? ' ' + SEEN : '') + '</span><p>“' + esc(g.say) + '”</p><button type="button" class="btn sm" data-gm="pushtext">Street description on iPad</button></div>' +
       /* the plan names the target room and its locks: GM only. It sits outside the Say box on purpose (that box is what the players
          see once the street description is sent), and no push (pushText, the score scene, Show on iPad) ever reads it */
       (g.plan ? '<p class="gm-plan"><span class="gm-lab">Plan</span> ' + esc(g.plan) + '</p>' : '') +
@@ -2255,10 +2296,10 @@
     var reveal = revealList(mapUi()), ps;      /* public only, unless Layer is Player and the GM ticked more */
     if (!confirmReveal(reveal, 'The street description')) return;
     try { ps = L.playerSummary(S.locRoll, reveal); } catch (e) { toast(errText(e), true); return; }
-    var me = S, seed = S.locRoll.seed;
+    var me = S, seed = rollKey(S.locRoll);
     pushDisplay({ kind: 'text', title: plainText(ps.title).slice(0, 2000), caption: str(S.locRoll.district || ''), text: plainText(ps.text).slice(0, 2000) }).then(function () {
       toast('On the iPad: the street description.');
-      if (S === me && S.locRoll && S.locRoll.seed === seed) { S.locSent = seed; renderLocation(); }   /* the Say box: Players see */
+      if (S === me && S.locRoll && rollKey(S.locRoll) === seed) { S.locSent = seed; renderLocation(); }   /* the Say box: Players see */
     }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
   }
   /* Clear -> ambient: nothing spotlit, the ambient scene plays. Lights out: true black. */
@@ -2272,6 +2313,7 @@
   function scoreOf(key) { return scoreList().filter(function (s) { return s.key === key; })[0] || null; }
   function siteLabel(key) { var s = scoreOf(key), x = sitesIn(S.doc)[key]; return s ? s.label : x && x.label ? x.label : key; }
   function siteRowHtml(cur) {
+    if (isObj(cur) && cur.auth) return '<section class="gm-siterow" id="gm-siterow" aria-label="Site for a score"><p class="gm-dim gm-site-is">Authored in the vault: <b>' + esc(cur.auth) + '</b>. A score card takes it with <code>site:</code> in Obsidian, not from here.</p></section>';
     var list = scoreList(); if (!list.length) return '';
     var sites = sitesIn(S.doc), mine = siteKeysOf(sites, cur), pick = S.siteFor && list.some(function (s) { return s.key === S.siteFor; }) ? S.siteFor : mine[0] || '';
     var sc = list.filter(function (s) { return s.key === pick; })[0], same = sc && mine.indexOf(sc.key) >= 0;
@@ -2313,6 +2355,20 @@
     if (!S.locRoll) toast('That site would not redraw: the location tables are missing.', true);
     else if (x.name && str(S.locRoll.name) !== str(x.name)) toast('The location tables have changed since this site was saved: this is its seed on the new tables (' + str(S.locRoll.name) + '), not ' + x.name + '.', true);
   }
+  /* Open map on an authored site (the card's site: in the vault): it becomes the Location card, { auth } in place of a seed, on the
+     GM layer, public band only, in the view and theme its note asks for (else iso, rulebook). Reveal the bands from there as ever */
+  function openAuthored(key) {
+    var A = authoredOf(part('location')), name = str(A.bind[key]), site = name ? A.sites[name] : null;
+    if (!isObj(site)) { toast('That authored site is not in the pack any more. Update the pack.', true); return; }
+    var dist = isObj(site.patch) ? str(site.patch.district) : '', m = isObj(site.map) ? site.map : {};
+    var cur = { hid: uid('h'), auth: name, label: name + (dist ? ' · ' + dist : ''), at: nowIso() };
+    patch({ cards: { location: replacePatch(isObj(S.doc.cards) ? S.doc.cards.location : null, cur) }, loc: { map: { reveal: clone(P.REVEAL0), view: VIEWS.indexOf(m.view) >= 0 ? m.view : 'iso', theme: THEMES.indexOf(m.theme) >= 0 ? m.theme : 'rulebook', layer: 'gm' } } }, { force: true });
+    S.locRoll = null; S.map = null; S.siteFor = key; S.last = { text: 'Location: ' + cur.label };
+    showPanel('location');
+    renderLocation();
+    if (S.locRoll && W.B68Map && W.B68Map.render) drawMap(true);
+    if (!S.locRoll) toast('That authored site would not draw: check its b68-site block in Obsidian.', true);
+  }
   /* Roll a site / Roll another: the Location pickers from the card's hints, then a roll; the save row points at the score */
   function rollSite(key) {
     var L = W.B68GmLocation, pk = part('location'), sc = scoreOf(key); if (!L || !pk || !sc) { if (!sc) toast('That score is not in the pack any more.', true); return; }
@@ -2335,13 +2391,19 @@
   function decorateSites(el) {
     if (!el || !el.querySelectorAll) return;
     var slots = el.querySelectorAll('.pp-site[data-score]'); if (!slots.length) return;
-    var sites = sitesIn(S.doc), byKey = {}; scoreList().forEach(function (s) { byKey[s.key] = s; });
+    var sites = sitesIn(S.doc), A = authoredOf(part('location')), byKey = {}; scoreList().forEach(function (s) { byKey[s.key] = s; });
     [].forEach.call(slots, function (slot) {
       var key = slot.getAttribute('data-score'), sc = byKey[key] || { key: key, label: key, site: {} }, x = sites[key], k = esc(key);
-      var sig = JSON.stringify([x ? [x.seed, x.name, x.district, x.at] : null, hintLine(sc.site)]);
+      var a = A.bind[key] && isObj(A.sites[A.bind[key]]) ? str(A.bind[key]) : '';
+      var sig = JSON.stringify([x ? [x.seed, x.name, x.district, x.at] : null, a, hintLine(sc.site)]);
       if (slot.getAttribute('data-sig') === sig) return;
-      slot.setAttribute('data-sig', sig); slot.classList.toggle('has', !!x);
-      slot.innerHTML = x
+      slot.setAttribute('data-sig', sig); slot.classList.toggle('has', !!x || !!a);
+      /* an authored site (the card's site: in the vault) comes first; a roll saved for the same score stays reachable */
+      slot.innerHTML = a
+        ? '<span class="gm-lab">Site</span><span class="pp-site-t"><b>' + esc(a) + '</b> <span class="gm-dim">· authored' + (x ? ' · a saved roll too: ' + esc(x.name || 'saved') : '') + '</span></span>' +
+          '<span class="pp-site-acts"><button type="button" class="btn sm primary" data-gm="siteauth" data-score="' + k + '">Open map</button>' +
+          (x ? '<button type="button" class="btn sm" data-gm="siteopen" data-score="' + k + '">Open the roll</button><button type="button" class="btn sm" data-gm="siteclear" data-score="' + k + '">Clear the roll</button>' : '') + '</span>'
+        : x
         ? '<span class="gm-lab">Site</span><span class="pp-site-t"><b>' + esc(x.name || 'saved') + '</b>' + (x.district ? ' <span class="gm-dim">· ' + esc(x.district) + '</span>' : '') + '</span>' +
           '<span class="pp-site-acts"><button type="button" class="btn sm primary" data-gm="siteopen" data-score="' + k + '">Open map</button><button type="button" class="btn sm" data-gm="siteroll" data-score="' + k + '">Roll another</button><button type="button" class="btn sm" data-gm="siteclear" data-score="' + k + '">Clear</button></span>'
         : '<span class="gm-lab">Site</span><span class="pp-site-t gm-dim">None yet' + (hintLine(sc.site) ? ' · ' + esc(hintLine(sc.site)) : '') + '</span>' +
@@ -3232,7 +3294,7 @@
   /* the current location card's roll, redrawn from its seed when this tab has not drawn it yet */
   function locationNow() {
     var cur = isObj(S.doc.cards) ? S.doc.cards.location : null;
-    if (S.locRoll && (!cur || S.locRoll.seed === cur.seed)) return S.locRoll;
+    if (S.locRoll && (!cur || rollKey(S.locRoll) === locKey(cur))) return S.locRoll;
     return cur ? replayLocation(cur) : null;
   }
   /* the location card's building, district and owner into the NPC choices, so the roll fits the scene */
@@ -4126,6 +4188,7 @@
       case 'scorescene': setScoreScene(); break;
       case 'sitesave': saveSite(); break;
       case 'siteopen': openSite(str(b.getAttribute('data-score'))); break;
+      case 'siteauth': openAuthored(str(b.getAttribute('data-score'))); break;
       case 'siteroll': rollSite(str(b.getAttribute('data-score'))); break;
       case 'siteclear': clearSite(str(b.getAttribute('data-score'))); break;
       case 'ambretry': loadAmbient(); break;

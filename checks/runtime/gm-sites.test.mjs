@@ -99,6 +99,20 @@ await test('linkSite: added before the closing ---; replaced with anything inden
   assert.equal(fmValue('---\nscore: x\n---\n', 'site_seed'), null);
 });
 
+await test('pull: a card whose site: names an authored site keeps it; the roll is still filed; a plain site: still moves', async () => {
+  const vault = makeVault();
+  write(vault, locRel('The Goose House'), '# The Goose House\n\n```json b68-site\n{"patch":{"rooms":[{"name":"Main floor","band":"public"}]}}\n```\n');
+  write(vault, CARD, CARD_TEXT.replace('status: draft', 'status: draft\r\nsite: "[[The Goose House]]"'));
+  const c = ctxFor(vault, { sites: { [KEY]: site(S1) } });
+  pullSites(c, KIT);
+  assert.ok(exists(vault, locRel(rollOf(S1).name)), 'the roll is filed');
+  assert.equal(fmValue(V.readNote(V.abs(vault, CARD)).text, 'site'), '[[The Goose House]]', 'the authored link stays');
+  assert.ok(c.report.skipped.some((s) => s.kind === 'sitelink' && /authored site The Goose House/.test(s.why)));
+  write(vault, locRel('The Goose House'), '# The Goose House\n\nNo block any more.\n');
+  pullSites(ctxFor(vault, { sites: { [KEY]: site(S1) } }), KIT);
+  assert.equal(fmValue(V.readNote(V.abs(vault, CARD)).text, 'site'), '[[' + rollOf(S1).name + ']]', 'a note with no block is a plain link: it moves');
+});
+
 await test('pull: a dry run writes nothing and says what it would do', async () => {
   const vault = makeVault(), before = snapshot(vault), c = ctxFor(vault, { sites: { [KEY]: site(S1) } }, { dry: true });
   pullSites(c, KIT);
