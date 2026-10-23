@@ -468,7 +468,10 @@ fails and nobody is known, nothing is purged.
     theme the block asks for (else iso, rulebook), GM layer, public band only. `P.locKey(card)` and `P.rollKey(roll)` (`a:<name>`,
     else the seed) say whether the roll on screen is the card's. The save row says the vault binds it. A roll after it replaces the
     card whole (`replacePatch`), so no `auth` survives. `gm:pull` never sees one: authored cards are not in `sites`.
-  - **Checks:** `gm-authored.test.mjs` (the exporter, the roll, the keys, a leak scan at every reveal), `gm-page.test.mjs` (S4).
+  - **The vault keeps the binding.** A score card whose `site:` names an authored site keeps it: `gm:pull` still files a roll saved
+    for that score, but does not move the link (`sync-sites.mjs`, a skip in the report).
+  - **Checks:** `gm-authored.test.mjs` (the exporter, the roll, the keys, a leak scan at every reveal), `gm-page.test.mjs` (S4),
+    `gm-sites.test.mjs` (the binding kept).
 - **State.** The GM state document holds `con` (the console state: `live` controls, `owed`, `struck`, `used`), `loc`
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,

@@ -8,6 +8,8 @@
 //   the score card        Campaigns/Group/Scores/<key>.md: site: "[[<Name>]]" in its frontmatter (added, or moved to a site
 //                         saved again). The only edit to the card; a card elsewhere, or with no frontmatter, is refused.
 // Nothing is deleted or replaced: a site saved again gets a new location note and the card's link moves; the old note stays.
+// A card whose site: names an AUTHORED site (a Locations/ note with a ```json b68-site block, lib/authored-export.mjs) keeps it:
+// the roll is still filed, but the link is not moved.
 // Idempotent without the ledger: a location note whose frontmatter names this score and this seed is that site, filed.
 // A replay that comes out as another place (the location tables changed since the save) is refused, not filed.
 // The name is checked across the whole vault first (any .md, and any file of the map's name): taken -> "<Name> (location)".
@@ -19,6 +21,7 @@ import {
   LOCATIONS, SCORES, LOG, abs, readNote, toLines, fromLines, bare, headings, insertBlock, editNote, createNote, safeName, dmy,
   assertSiteWritable,
 } from './vault.mjs';
+import { hasSiteBlock } from './authored-export.mjs';
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const KEY_RE = /^[^\u0000-\u001f"<>\\/:*?|#^[\]]{1,120}$/;          // a score card's file name, as the exporter gives it
@@ -117,9 +120,19 @@ function vaultNames(vault) {
 }
 
 // ---------- pull ----------
+/** The authored site (lib/authored-export.mjs) the card's site: names now, or ''. A card bound to one keeps it: the vault chose it. */
+function authoredOn(vault, card) {
+  let n = null; try { n = readNote(abs(vault, card)); } catch (_) { return ''; }
+  const target = n ? linkTarget(fmValue(n.text, 'site')) : '';
+  if (!target) return '';
+  let loc = null; try { loc = readNote(abs(vault, LOCATIONS + '/' + target + '.md')); } catch (_) { return ''; }
+  return loc && hasSiteBlock(loc.text) ? target : '';
+}
 function linkCard(ctx, card, fname, key) {
   const { vault, report } = ctx;
   try {
+    const au = authoredOn(vault, card);
+    if (au && au !== fname) { report.skip({ kind: 'sitelink', id: key }, 'the card\'s site: is the authored site ' + au + ', so it stays'); return; }
     assertSiteWritable(card);
     let changed;
     if (ctx.dryRun) { const n = readNote(abs(vault, card)); if (!n) throw Object.assign(new Error('note missing'), { code: 'MISSING' }); changed = linkSite(n.text, n.eol, fname) !== null; }

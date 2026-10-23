@@ -43,6 +43,9 @@ export function siteLink(text) {
   return v.replace(/^\[\[|\]\]$/g, '').split('|')[0].split('#')[0].trim();
 }
 
+/** Does the note hold a ```json b68-site block (valid or not)? */
+export function hasSiteBlock(text) { return FENCE_RE.test(String(text || '')); }
+
 /** One note's site from its ```json b68-site block: { site } or { why }, or null when the note has no such block. */
 export function parseSite(text, name, rel) {
   const m = FENCE_RE.exec(String(text || ''));
