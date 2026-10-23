@@ -2363,6 +2363,48 @@ await test('S3. score sites, page: the row lists the scores; replacing a site as
   await h3.save();
 });
 
+await test('S4. authored sites, page: the card\'s site: from the vault opens as the Location card, reveals band by band to the iPad, and a roll after it is a plain roll', async () => {
+  const site = { name: 'The Goose House', rel: 'x', map: { view: 'iso' }, patch: { district: 'Nowhere Ward', rooms: [
+    { name: 'The grand lobby', band: 'public', detail: 'Feathers.' }, { name: 'Kitchens', band: 'working', detail: 'Steam.' },
+    { name: 'Private card rooms', band: 'controlled', detail: 'Cards.' }, { name: 'Luxury penthouse', band: 'secure', isTarget: true, detail: 'The goose.' }] } };
+  const loc = { location: { version: 'l2', src: {}, body: { T: FIXL.T, extra: FIXL.extra, authored: { v: 1, sites: { 'The Goose House': site }, bind: { 'b68g-score-goose': 'The Goose House' } } } } };
+  const fg = fakeGm(undefined, Object.assign({}, prepPart, loc));
+  fg.server.doc = { sites: { 'b68g-score-goose': { seed: 5, ui: {}, mem: '{}', name: 'An Old Roll', district: 'X', label: 'F · The goose job', map: { view: 'rings', theme: 'rulebook' }, at: '2030-01-01T00:00:00Z' } } };
+  const h = await openPage({ fg, over: SITE_OVER });
+  h.press('r');
+  const slot = () => h.q('.pp-site[data-score="b68g-score-goose"]');
+  assert.match(slot().textContent, /The Goose House · authored · a saved roll too: An Old Roll/);
+  assert.ok(slot().querySelector('[data-gm="siteauth"]') && slot().querySelector('[data-gm="siteopen"]') && slot().querySelector('[data-gm="siteclear"]'), 'Open map, and the saved roll stays reachable');
+  assert.match(h.q('.pp-site[data-score="b68g-score-plain"]').textContent, /None yet/, 'an unbound card is as before');
+  slot().querySelector('[data-gm="siteauth"]').click();
+  assert.equal(h.page._state().panel, 'location');
+  const card = stateDoc(h).cards.location;
+  assert.equal(card.auth, 'The Goose House'); assert.equal(card.seed, undefined, 'an authored card has no seed of its own');
+  assert.equal(h.page._state().locRoll.name, 'The Goose House');
+  assert.deepEqual([...h.page._state().locRoll.rooms.map((r) => r.name)], site.patch.rooms.map((r) => r.name));
+  assert.equal(stateDoc(h).loc.map.view, 'iso', 'the view its note asks for');
+  assert.match(h.q('#gm-siterow').textContent, /Authored in the vault: The Goose House/);
+  assert.ok(!h.q('[data-gm="sitesave"]'), 'nothing to save: the vault binds it');
+  /* the reveal: Player layer, working ticked, Show on iPad sends a map that names the kitchens and not the card rooms */
+  h.br.W.confirm = () => true;
+  h.q('[data-gm="layer"][data-v="player"]').click();
+  const w = h.q('[data-reveal="working"]'); w.checked = true; dispatch(w, 'change');
+  h.q('[data-gm="ipad"]').click();
+  const shown = await until(() => fg.server.displays.filter((d) => d.kind === 'svg').pop());
+  assert.ok(shown, 'sent to the iPad');
+  assert.match(shown.svg, /Kitchens/i); assert.ok(!/Private card rooms|Luxury penthouse/i.test(shown.svg), 'the controlled and secure rooms stay hidden');
+  /* a render later (the replay check) does not reset the reveal: the card and its roll agree */
+  h.press('r'); h.press('b');
+  assert.equal(h.page._state().locRoll.name, 'The Goose House'); assert.equal(stateDoc(h).loc.map.reveal.working, true, 'still revealed');
+  /* a plain roll after it: no auth survives the merge */
+  h.q('[data-gm="locroll"]').click();
+  const after = stateDoc(h).cards.location;
+  assert.equal(after.auth, undefined, 'the authored card is replaced, not merged');
+  assert.equal(typeof after.seed, 'number'); assert.notEqual(h.page._state().locRoll.name, 'The Goose House');
+  await h.save();
+  assert.equal((h.fg.server.doc.cards.location || {}).auth, undefined, 'and on the server');
+});
+
 /* =====================================================================================================================
    18. Score (J): the outline of a heist, rolled for inspiration (app/gm/score.js; GM.md "Score (J)")
    ===================================================================================================================== */
