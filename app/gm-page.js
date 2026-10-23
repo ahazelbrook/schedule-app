@@ -1683,12 +1683,27 @@
   }
 
   /* the table clocks to the iPad (an svg made here; the server checks it like any map). While the iPad shows them, a change
-     to a clock on the table sends them again. */
+     to a clock on the table sends them again. As the chase strip: S.clOn = { seq } is the display seq the server answered when
+     Show on iPad put them up; a change sends them again with ifSeq, so it lands only while nothing else has gone to the display
+     since (another device's push in between is a 409: they stop following and the page says so). Anything else this page pushes
+     ends it (pushDisplay), whatever its title. resend: a follow-up. */
   function tableClocks() { return Array.isArray(camp && camp.clocks) ? camp.clocks.filter(isObj) : []; }
-  function clocksToIpad(quiet) {
+  function endClocks() { if (S && S.clOn) { S.clOn = null; clearTimeout(S.clocksT); } }
+  function clocksToIpad(quiet, resend) {
     var svg = clocksSvg(tableClocks()); if (!svg) { if (!quiet) toast('No clock the players can see.', true); return; }
-    gate.mark(svg); S.clocksSvg = svg;
-    pushDisplay({ kind: 'svg', title: 'Clocks', caption: 'The table clocks', svg: svg }).then(function () { if (!quiet) toast('On the iPad: the clocks. They follow the table while they are up.'); }, function (e) { toast('Could not send the clocks: ' + errText(e), true); });
+    gate.mark(svg);
+    var me = S;
+    if (!resend) endClocks();
+    pushDisplay({ kind: 'svg', title: 'Clocks', caption: 'The table clocks', svg: svg }, {
+      clocks: true,
+      prepare: resend ? function (body) { return S === me && S.clOn ? Object.assign({}, body, { ifSeq: S.clOn.seq }) : null; } : null,
+      done: function (r) { if (S === me && typeof r.seq === 'number' && (!resend || S.clOn)) S.clOn = { seq: r.seq, svg: svg }; },
+      fail: function () { if (S === me && resend) endClocks(); }
+    }).then(function () { if (!quiet) toast('On the iPad: the clocks. They follow the table while they are up.'); }, function (e) {
+      if (e.superseded) return;
+      if (resend && e.status === 409) toast('Something else is on the iPad now, so the clocks were not sent and no longer follow the table. Show on iPad sends them again.', true);
+      else toast('Could not send the clocks: ' + errText(e) + (resend ? '. They no longer follow the table: Show on iPad sends them again.' : ''), true);
+    });
   }
 
   function redrawAll() {
@@ -2332,6 +2347,7 @@
     opts = opts || {};
     if (!opts.map) endLive();
     if (!opts.chase) endChase();
+    if (!opts.clocks) endClocks();
     return new Promise(function (res, rej) {
       if (DQ.next) { var old = DQ.next; DQ.next = null; old.rej(superseded()); }
       DQ.next = { g: g, d: d, opts: opts, res: res, rej: rej };
@@ -4463,9 +4479,9 @@
       if ((isObj(camp) && isObj(camp.scene) ? JSON.stringify(camp.scene.npcs || {}) : '') !== before) {
         [].forEach.call(S.root.querySelectorAll('[data-gm="npcstage"]'), function (b) { var on = staged(b.getAttribute('data-id')); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Off stage' : 'Put on stage'; b.classList.toggle('primary', !on); });
       }
-      if (S.clocksSvg && AM.shown && AM.shown.kind === 'svg' && AM.shown.title === 'Clocks') {
+      if (S.clOn) {
         var me = S; clearTimeout(S.clocksT);
-        S.clocksT = setTimeout(function () { if (S !== me || !AM.shown || AM.shown.title !== 'Clocks') return; var svg = clocksSvg(tableClocks()); if (svg && svg !== S.clocksSvg) clocksToIpad(true); }, 700);
+        S.clocksT = setTimeout(function () { if (S !== me || !S.clOn) return; var svg = clocksSvg(tableClocks()); if (svg && svg !== S.clOn.svg) clocksToIpad(true, true); }, 700);
       }
     }
     var api = (S && S.api) || keptApi;
