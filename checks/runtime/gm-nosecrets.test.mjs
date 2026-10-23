@@ -622,7 +622,7 @@ await test('(i) a hidden opposing clock, roll lines and GM notes never reach the
   const from = src.indexOf('function chDoc()'), to = src.indexOf('function B68slug');
   if (from < 0 || to < from) throw new Error('the Chase panel code was not found');
   const panel = src.slice(from, to);
-  if ((panel.match(/pushDisplay\(/g) || []).length !== 1 || (panel.match(/chaseDisplay\(/g) || []).length !== 1 || !/chaseDisplay\([\s\S]*?gate\.mark\(d\.svg\)[\s\S]*?pushDisplay\(\{ kind: 'svg', title: d\.title, caption: d\.caption, svg: d\.svg \}\)/.test(panel)) throw new Error('the Chase panel sends something other than chaseDisplay\'s svg');
+  if ((panel.match(/pushDisplay\(/g) || []).length !== 1 || (panel.match(/chaseDisplay\(/g) || []).length !== 1 || !/chaseDisplay\([\s\S]*?gate\.mark\(d\.svg\)[\s\S]*?pushDisplay\(\{ kind: 'svg', title: d\.title, caption: d\.caption, svg: d\.svg \}(\)|, \{\s*chase: true)/.test(panel)) throw new Error('the Chase panel sends something other than chaseDisplay\'s svg');
   if (/rolls: true/.test(src.slice(src.indexOf('function chaseDisplay'), src.indexOf('P.chaseDisplay')))) throw new Error('chaseDisplay asks for the roll lines');
   console.log('     ' + n + ' invented chases, map kit ' + kit.VERSION);
 });

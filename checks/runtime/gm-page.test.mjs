@@ -3232,6 +3232,28 @@ await test('19c. Show on iPad sends the player copy (no roll line, no hidden clo
   await h.save();
 });
 
+await test('19g. the chase follows the display seq, not its title: a push from another device in between stops it (and it says so); anything else this page pushes ends it; re-sends never overwrite', async () => {
+  const fg = addAmbient(fakeGm()), h = await chPage({ fg });
+  h.press('c'); chStartFrom(h, null, { name: 'Night run' }); chTickIt(h, 1, 'Out of the yard');
+  h.q('#gm-chase [data-gm="ch-ipad"]').click(); assert.ok(await until(() => fg.server.displays.length === 1));
+  chTickIt(h, 1, 'Through the market'); assert.ok(await until(() => fg.server.displays.length === 2), 'a tick sends it again');
+  assert.equal(fg.server.conflicts || 0, 0);
+  // another laptop puts something up with the same title: the next tick must not overwrite it
+  fg.server.otherDevice({ kind: 'svg', title: 'Night run', caption: 'from the other laptop', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><title>x</title></svg>' });
+  h.br.toasts.length = 0;
+  chTickIt(h, 1, 'Over the rails'); await sleep(450); await tick(); await tick();
+  assert.equal(fg.server.displays.length, 2, 'nothing landed'); assert.equal(fg.server.shown.caption, 'from the other laptop', 'the other push stays');
+  assert.ok(h.br.toasts.some(([m, bad]) => bad && /something else is on the iPad/i.test(m)), 'the page says so');
+  chTickIt(h, 1, 'Down the steps'); await sleep(450); await tick();
+  assert.equal(fg.server.displays.length, 2, 'and the strip no longer follows the chase');
+  // Show on iPad starts it again; then anything else from this page ends it, whatever its title
+  h.q('#gm-chase [data-gm="ch-ipad"]').click(); assert.ok(await until(() => fg.server.displays.length === 3));
+  h.press('b'); h.q('[data-gm="locroll"]').click(); h.q('[data-gm="pushtext"]').click(); assert.ok(await until(() => fg.server.displays.length === 4));
+  h.press('c'); chTickIt(h, 1, 'Into the canal'); await sleep(450); await tick();
+  assert.equal(fg.server.displays.length, 4, 'the street description is up: a tick sends nothing');
+  await h.save();
+});
+
 await test('19d. Find lists the current chase\'s panels by caption and jumps to the panel; ending a chase keeps it under Past chases, the last 10, and says what went', async () => {
   const past = {}; for (let i = 0; i < 10; i++) past['old' + i] = { id: 'old' + i, name: 'Old run ' + i, endedAt: '2026-10-0' + (i % 9 + 1) + 'T1' + i + ':00:00.000Z', panels: [], clocks: [] };
   const fg = fakeGm(); fg.server.doc = { chase: { past } };

@@ -2322,7 +2322,8 @@
   /* Every push to the iPad from this page goes through one queue (the secrecy review of 23/10/2026, R2): one PUT in flight at a
      time, and a push made while one is in flight waits; a newer one replaces a push still waiting (it is refused with
      e.superseded and never sent), so the last thing the GM set is what ends on the iPad. Anything but the map ends live reveal the
-     moment it is asked for. opts: map (a Location map push: Show on iPad or live reveal), prepare(d) (called just before the PUT:
+     moment it is asked for, and anything but the chase strip stops the strip following the chase. opts: map (a Location map push:
+     Show on iPad or live reveal), chase (the Chase panel's strip), prepare(d) (called just before the PUT:
      the body to send, or null to drop it), done(r) and fail(e) (called before the next push starts, so the next one's prepare sees
      what this one changed). */
   function pushDisplay(d, opts) {
@@ -2330,6 +2331,7 @@
     if (!gate.allows(d)) return Promise.reject(new Error('Only a player-layer map made on this page can go to the iPad.'));
     opts = opts || {};
     if (!opts.map) endLive();
+    if (!opts.chase) endChase();
     return new Promise(function (res, rej) {
       if (DQ.next) { var old = DQ.next; DQ.next = null; old.rej(superseded()); }
       DQ.next = { g: g, d: d, opts: opts, res: res, rej: rej };
@@ -3886,7 +3888,7 @@
     if (!W.confirm('End the chase “' + G.title(cur) + '”' + (said ? ': ' + said : '') + '? It moves to Past chases.')) return;
     var plan = G.endPlan(chDoc().past, cur, nowIso(), how);
     if (!patch({ chase: { current: null, past: plan.patch } }, { force: true })) return;
-    S.chOn = null; S.chOutcome = undefined; renderChase(true);
+    endChase(); S.chOutcome = undefined; renderChase(true);
     toast('Chase ended: ' + G.title(cur) + (said ? ': ' + said : '') + '.' + (plan.dropped.length ? ' Kept the last ' + G.PAST_MAX + ' chases: dropped ' + plan.dropped.length + ' older (' + plan.dropped.slice(0, 3).join(', ') + ').' : ''), !!plan.dropped.length);
   }
   function chSet(k, v) {
@@ -3902,23 +3904,36 @@
     fn();
     ids.forEach(function (i, n) { var el = $q(i); if (el && kept[n] !== null) el.value = kept[n]; });
   }
-  function chShow(quiet) {
+  /* The strip on the iPad (the secrecy review of 23/10/2026, as live reveal): S.chOn = { id, seq } is the chase Show on iPad put up and
+     the display seq the server answered. Every change sends it again with ifSeq, so it lands only while nothing else has gone to the
+     display since: a push from another device in between is a 409, the strip stops following and the page says so. Anything else
+     this page pushes ends it at once (pushDisplay), whatever its title; ending the chase ends it too. resend: a follow-up. */
+  function endChase() { if (S && S.chOn) { S.chOn = null; clearTimeout(S.chT); } }
+  function chShow(quiet, resend) {
     var G = W.B68GmChase, K = chKit(), cur = chCur(), d;
     if (!cur) { if (!quiet) toast('Start a chase first.', true); return; }
-    try { d = chaseDisplay(cur, K && K.chase.bind(K), G); } catch (e) { S.chOn = null; toast(errText(e), true); return; }
+    try { d = chaseDisplay(cur, K && K.chase.bind(K), G); } catch (e) { endChase(); toast(errText(e), true); return; }
     gate.mark(d.svg);
     var me = S, id = cur.id;
-    pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }).then(function () {
-      if (S !== me) return;
-      S.chOn = id; S.chTitle = d.title;
+    if (!resend) endChase();          /* nothing follows until this strip has landed */
+    pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, {
+      chase: true,
+      prepare: resend ? function (body) { return S === me && S.chOn && S.chOn.id === id ? Object.assign({}, body, { ifSeq: S.chOn.seq }) : null; } : null,
+      done: function (r) { if (S === me && typeof r.seq === 'number' && (!resend || (S.chOn && S.chOn.id === id))) S.chOn = { id: id, seq: r.seq }; },
+      fail: function () { if (S === me && resend) endChase(); }
+    }).then(function () {
       if (!quiet) toast('On the iPad: ' + d.title + '. It follows the chase while it is up.');
-    }, function (e) { toast('Could not send the chase: ' + errText(e), true); });
+    }, function (e) {
+      if (e.superseded) return;
+      if (resend && e.status === 409) toast('Something else is on the iPad now, so the chase was not sent and the strip no longer follows it. Show on iPad sends it again.', true);
+      else toast('Could not send the chase: ' + errText(e) + (resend ? '. The strip no longer follows the chase: Show on iPad sends it again.' : ''), true);
+    });
   }
-  function chOnIpad() { var cur = chCur(); return !!(cur && S.chOn === cur.id && AM.shown && AM.shown.kind === 'svg' && AM.shown.title === S.chTitle); }
+  function chOnIpad() { var cur = chCur(); return !!(cur && S.chOn && S.chOn.id === cur.id); }
   function chResend() {
     if (!chOnIpad()) return;
     var me = S; clearTimeout(S.chT);
-    S.chT = setTimeout(function () { if (S === me && chOnIpad()) chShow(true); }, 300);
+    S.chT = setTimeout(function () { if (S === me && chOnIpad()) chShow(true, true); }, 300);
   }
   function B68slug(s) { return str(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 

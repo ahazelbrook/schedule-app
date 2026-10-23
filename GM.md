@@ -332,7 +332,10 @@ fails and nobody is known, nothing is purged.
     note, no hidden clock. The page draws it from a copy of the chase without them (`B68GmChase.playerCopy`), then scans the svg for
     every one of them and refuses to send it if one is there (`chaseDisplay` in `gm-page.js`). Over 600 KiB it refuses with a toast.
     The server's `checkSvg` and the display's sanitiser check it as they check a map. While the chase is on the iPad, every tick, undo,
-    leg or move of the opposing clock sends it again, as **Clocks on the iPad** does. Once something else is up, nothing more goes.
+    leg or move of the opposing clock sends it again, as **Clocks on the iPad** does. "On the iPad" is the display seq the server
+    answered when the strip went up, not its title: each re-send goes with `ifSeq`, so it lands only while nothing else has gone to
+    the display since. A push from another device in between is a 409: nothing is overwritten, the strip stops following and a toast
+    says so. Anything else this page pushes, or ending the chase, ends it at once; Show on iPad starts it again (`gm-page.test.mjs` 19g).
   - **The panel** shows the GM copy under the controls: every clock, the roll lines. The clocks list above the tick box marks the leg in
     play and the hidden clock. `L` files the last tick ("Chase: <caption> (+n)").
   - **End chase** (it asks) moves the chase to **Past chases**, a fold under the panel, with how it ended: the select beside it offers
