@@ -38,7 +38,7 @@ abilities (see Score (J) below). The `engagement` part went with Engage.
 | `GET /api/gm/state` | `{ doc, updatedAt }` (`{}` and `null` until written). |
 | `PATCH /api/gm/state` | deep merge (plain objects merge, arrays and scalars replace, `null` deletes) → `{ doc, updatedAt }`. Keep collections as maps, not arrays. |
 | `GET /api/gm/display` | `{ seq, display, updatedAt }` (`seq` 0, a blank display, until written). `?seq=N` → `{ seq, unchanged: true }` while N is current. |
-| `PUT /api/gm/display` | `{ kind, title?, caption?, svg \| npcId \| text \| md \| file, showTitle? }` → `{ seq, display, updatedAt }`; `seq` goes up by one on every PUT. |
+| `PUT /api/gm/display` | `{ kind, title?, caption?, svg \| npcId \| text \| md \| file, showTitle?, ifSeq? }` → `{ seq, display, updatedAt }`; `seq` goes up by one on every PUT. With `ifSeq` (a whole number) it lands only while the display is still at that `seq`, else 409 and nothing changes (live reveal, see Location). |
 | `GET /api/gm/display` (ambient) | also carries `ambient: { seq, doc, updatedAt }`. `?seq=N&aseq=M` → `{ seq, unchanged: true, ambient: { seq, unchanged: true } }` while both are current; otherwise the full display, with `ambient` `{ seq, unchanged: true }` when only M is current. `?seq=N` alone is the old answer. |
 | `GET /api/gm/display` (transcriber) | also carries `stt: { seq, want, session }`: whether the GM wants the iPad listening (`on` / `off`) and the session number to stamp on its lines, and **nothing else**: never a speaker name, the iPad's own report, the PC's heartbeat or a transcript line, whoever asks. Its `seq` is made from those two values alone, so the iPad's reports (which rewrite the control document every minute) never move it. `?seq=N&aseq=M&sseq=K` → `{ seq, unchanged: true, ambient: { seq, unchanged: true }, stt: { seq, unchanged: true } }` while all three are current; otherwise the full display, each part `{ seq, unchanged: true }` when its number is the one given and in full when not. Without `sseq` (a display page from before the transcriber rode along) there is no `stt` and the answers are the ones above. Why: one request where the display and the transcriber used to make two (see "The display", how it polls). |
 | `GET /api/gm/ambient` | `{ seq, doc, updatedAt }` (`0`, `{}`, `null` until written). GM only; the display sign-in is refused (it reads the doc through the display). |
@@ -221,19 +221,33 @@ fails and nobody is known, nothing is purged.
   to the iPad asks first, naming the bands.
 - **The iPad's copy.** Show on iPad renders the player layer at the iPad's size (`P.IPAD_MAP`: 1366 px wide, a 16 px type floor;
   map kit 0.8's `layout: "ipad"` replaces it in that one place), whatever the preview's width.
-- **Live reveal** (Alex, 22/10/2026: the iPad is the only player screen, and the GM opens bands and it updates at once). While this
-  roll's map is what the iPad shows (it went up from Show on iPad and nothing has been pushed since), the Reveal legend says **Live
-  on the iPad**, and ticking a band sends the player copy again at once: opening one asks first ("opening the working band shows it to
-  the players now"), closing one does not. A no leaves the band shut. The copy goes through the same render, hidden-name scan and
-  gate as Show on iPad; one that would name a hidden room is not sent, and the toast says the iPad still shows the map as it was.
-  View, theme, time and weather only redraw the preview: Show on iPad sends them. The GM layer sends nothing, another roll is not
-  live, and once something else is on the iPad the bands are only the preview's again. The score scene does not follow (below);
-  when it shows other bands than the ticks, the map box says so. Checks: `gm-page.test.mjs` (9m–9o), `gm-nosecrets.test.mjs` (j), `gm-maps.e2e.mjs` (`npm run check:gm-maps`: the GM page and the
-  iPad at 1366 × 1024 against a local Worker; `GM_SHOTS=<dir>` keeps its screenshots).
+- **Live reveal** (Alex, 22/10/2026: the iPad is the only player screen, and the GM opens bands and it updates at once; tightened
+  after the secrecy review of 23/10/2026). Show on iPad starts it: the page keeps what actually went up (`S.mapOn`: the roll, the
+  bands, the view, theme, time and weather, and the display `seq` the server answered). While that roll is the card, Layer is Player
+  and nothing else has been pushed, the Reveal legend says **Live on the iPad** (only while the iPad holds exactly the ticked bands;
+  **Sending to the iPad…** while a copy is on its way), and ticking a band sends the player copy again at once:
+  - **Asking.** A copy that would show any band the iPad does not have asks first, naming all of them, whichever box was ticked
+    ("opening the working band shows it to the players now"). Closing one does not ask. A no takes the new bands off the ticks.
+  - **What goes.** The copy is drawn in the view, theme, time and weather Show on iPad sent (changing them only redraws the preview),
+    through the same render, hidden-name scan and gate. It is sent with `ifSeq` (the `seq` of the last push): if anything has gone
+    to the display since, from this page or another device, the server answers 409, nothing changes there, and live reveal stops
+    with a toast.
+  - **A copy that cannot be made safely.** When it would open a band, nothing goes and the band stays shut. When it would close one,
+    the iPad is cleared (as Clear → ambient), since it must not keep showing that band, and the toast says so.
+  - **What ends it.** Layer to GM, another roll (or an Earlier, a saved site, an authored site), or any other push (Clear, Lights
+    out, an NPC, a handout, the clocks, the chase strip…) ends it at once; back on the player layer it is not live until Show on iPad.
+  - **One push at a time.** Every push from the GM page goes through one queue: one PUT in flight, a newer push replaces one still
+    waiting (it is never sent), so the last thing the GM set is what ends on the iPad, however fast the boxes are ticked.
+  The score scene does not follow (below); when it shows other bands than the ticks, the map box says so. Checks:
+  `gm-page.test.mjs` (9m–9t: 9p–9t are the review's repros R1–R4), `gm-nosecrets.test.mjs` (j, k), `checks/api/gm.mjs` (ifSeq),
+  `gm-maps.e2e.mjs` (`npm run check:gm-maps`: the GM page and the iPad at 1366 × 1024 against a local Worker; `GM_SHOTS=<dir>`
+  keeps its screenshots).
 - **Hidden names.** Map kit 0.2 titled a `plan` or `section` level of the player layer after the room on it, even when that room was
   hidden. From 0.5 (vendored: 0.7.1, 22/10/2026) every floor is titled generically ("Basement", "Ground floor", "Upper floor", "Top
   floor") and a hidden room's name is not in the player file at all. The page still scans every player render for the names of hidden
-  rooms, both threats and a hidden target, and refuses to send one that holds a name ("This view would name a hidden room: use Rings
+  rooms, both threats and a hidden target (and, since 23/10/2026, every loot, lock and obstacle phrase, the loot list, the watcher and
+  how the service side and the back route get in, whatever is revealed; the kit draws those as icons, never words), in the whole svg
+  source (attributes, ids, comments, `<title>`, `<desc>`, entities decoded, whole words), and refuses to send one that holds a name ("This view would name a hidden room: use Rings
   or Iso, or reveal more bands"); an iso that names one is redrawn as rings first (PR #53; the score scene's exploded site likewise,
   `isoRings`), and refused only when the rings name one too. 0.7.1 never names a hidden room in a floor title, so both stay as defence
   in depth. The in-page Player draw shows the same warning and the Player SVG download is refused. The kit's four

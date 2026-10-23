@@ -724,8 +724,17 @@ const clone = (v) => JSON.parse(JSON.stringify(v));
 function addAmbient(fg, init) {
   const s = fg.server; s.amb = { seq: (init && init.seq) || 0, doc: clone((init && init.doc) || {}) }; s.ambPatches = []; s.ambFail = false; s.ambGets = 0; s.shown = (init && init.shown) || { kind: 'text', title: 'Invented line' };
   fg.gm.ambient = async () => { s.ambGets++; return { seq: s.amb.seq, doc: clone(s.amb.doc), updatedAt: 'a' + s.amb.seq }; };
-  fg.gm.display = async () => ({ seq: 3, display: clone(s.shown), updatedAt: 'd', ambient: { seq: s.amb.seq, unchanged: true } });
-  fg.gm.setDisplay = async (d) => { s.displays.push(d); s.shown = clone(d); return { seq: s.displays.length, display: d }; };
+  /* the display as the server keeps it: a seq bumped by every PUT; a PUT with ifSeq lands only while the seq is still that one, else 409
+     and nothing changes (functions/_lib/gm.js putDisplay). What is stored never holds ifSeq (cleanDisplay drops it) */
+  s.dseq = 3;
+  fg.gm.display = async () => ({ seq: s.dseq, display: clone(s.shown), updatedAt: 'd', ambient: { seq: s.amb.seq, unchanged: true } });
+  fg.gm.setDisplay = async (d0) => {
+    const d = clone(d0); const cond = 'ifSeq' in d ? d.ifSeq : undefined; delete d.ifSeq;
+    if (cond !== undefined && cond !== s.dseq) { s.conflicts = (s.conflicts || 0) + 1; throw Object.assign(new Error('the display changed since seq ' + cond), { status: 409 }); }
+    s.displays.push(d); s.shown = clone(d); s.dseq++; return { seq: s.dseq, display: d };
+  };
+  /* another device puts something on the iPad (the page is not told) */
+  s.otherDevice = (d) => { s.shown = clone(d); s.dseq++; };
   fg.gm.patchAmbient = async (p) => {
     if (s.ambFail) throw Object.assign(new Error('the server said no'), { status: 500 });
     s.ambPatches.push(clone(p)); const d = clone(s.amb.doc);
@@ -1001,12 +1010,14 @@ await test('9n. live reveal: while the map is on the iPad, opening a band asks a
   await tickBand('controlled', true); await tick();
   assert.equal(fg.server.displays.length, 3, 'no: nothing sent'); assert.notEqual(h.page._state().doc.loc.map.reveal.controlled, true, 'no: the band stays shut');
   assert.equal(h.q('[data-reveal="controlled"]').checked, false);
-  // the GM layer: the iPad keeps what it has
+  // the GM layer: the iPad keeps what it has, and live reveal ends there (9p)
   br.W.confirm = () => true; h.q('[data-gm="layer"][data-v="gm"]').click(); await tickBand('working', true);
-  assert.equal(fg.server.displays.length, 3, 'GM layer: nothing goes');
-  // something else on the iPad: the map is not live any more
+  assert.equal(fg.server.displays.length, 3, 'GM layer: nothing goes'); assert.ok(!h.q('.gm-live'));
   h.q('[data-gm="layer"][data-v="player"]').click(); await tickBand('working', false);
-  await until(() => fg.server.displays.length === 4); h.q('[data-gm="pushtext"]').click(); await until(() => fg.server.displays.length === 5);
+  assert.equal(fg.server.displays.length, 3, 'back on the player layer it is not live until Show on iPad');
+  // something else on the iPad: the map is not live any more
+  h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 4); await until(() => h.q('.gm-live'));
+  h.q('[data-gm="pushtext"]').click(); await until(() => fg.server.displays.length === 5);
   await tickBand('working', true); await tick(); await tick();
   assert.equal(fg.server.displays.length, 5, 'the street description is up: a band sends nothing'); assert.ok(!h.q('.gm-live'));
   // a new roll is a new map: not live either
@@ -1025,6 +1036,129 @@ await test('9o. the score scene does not follow the bands (it never updates on i
   const el = h.q('[data-reveal="working"]'); el.checked = true; dispatch(el, 'change'); await tick(); await tick();
   assert.equal(fg.server.ambPatches.length, 1, 'nothing sent');
   assert.ok(h.q('.gm-scene-behind') && /The score scene shows public: press Set as score scene/.test(h.q('.gm-scene-behind').textContent));
+  await h.save();
+});
+
+/* ---------- live reveal, the secrecy review of 23/10/2026 (R1-R4): what reaches the iPad is what the GM confirmed ---------- */
+const tickBandOf = (h) => async (b, on) => { const el = h.q('[data-reveal="' + b + '"]'); el.checked = on; dispatch(el, 'change'); await tick(); await tick(); };
+/* a server whose PUTs land when the test says (two requests on two connections may land in either order) */
+function deferDisplay(fg) {
+  const pending = [], real = fg.realSetDisplay = fg.realSetDisplay || fg.gm.setDisplay;
+  fg.gm.setDisplay = (d) => new Promise((res, rej) => { pending.push(() => real(d).then(res, rej)); });
+  return pending;
+}
+async function liveSetup(over) {
+  const fg = addAmbient(fakeGm()), br = fakeBrowser({ B68Map: (over && over.kit) || M }); const h = await openPage({ fg, br, camp: CAMP3 });
+  const asked = []; br.W.confirm = (m) => { asked.push(m); return !(over && over.no && over.no(m)); };
+  h.press('b'); h.q('[data-gm="locroll"]').click(); h.q('[data-gm="layer"][data-v="player"]').click();
+  return { fg, br, h, asked, tickBand: tickBandOf(h), live: () => !!h.q('.gm-reveal .gm-live') };
+}
+
+await test('9p. (R1) the GM layer ends live reveal: bands ticked there never reach the iPad unconfirmed, and the legend stops saying Live', async () => {
+  const { fg, h, asked, tickBand, live } = await liveSetup();
+  h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 1);
+  await until(() => live()); assert.equal(asked.length, 0, 'public only: no ask');
+  h.q('[data-gm="layer"][data-v="gm"]').click(); await tick();
+  assert.ok(!live(), 'the GM layer: the legend no longer says Live on the iPad');
+  await tickBand('secure', true); await tickBand('working', true);
+  h.q('[data-gm="layer"][data-v="player"]').click(); await tick();
+  assert.ok(!live(), 'back on the player layer: not live again by itself');
+  await tickBand('working', false); await tick(); await tick();
+  assert.equal(fg.server.displays.length, 1, 'closing a band sends nothing: live reveal ended on the GM layer');
+  assert.equal(asked.length, 0);
+  // Show on iPad again asks for every band beyond public, by name
+  h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 2);
+  assert.equal(asked.length, 1); assert.match(asked[0], /secure/); assert.match(fg.server.displays[1].caption, /surveyed: public, secure$/);
+  await until(() => live());
+  // while live, a push that would send any band the iPad does not have asks for all of them by name, whichever box fired
+  const pending = deferDisplay(fg);
+  await tickBand('working', true);                 // asks for working; its PUT is still in flight
+  assert.equal(asked.length, 2); assert.match(asked[1], /working/); assert.doesNotMatch(asked[1], /secure/, 'secure is on the iPad already');
+  await tickBand('controlled', true);              // the iPad still has public, secure: working and controlled are both new
+  assert.equal(asked.length, 3); assert.match(asked[2], /working/); assert.match(asked[2], /controlled/);
+  while (pending.length) { pending.shift()(); await tick(); await tick(); }
+  await until(() => /surveyed: public, working, controlled, secure$/.test(fg.server.shown.caption || ''));
+  await until(() => live());
+  await h.save();
+});
+
+await test('9q. (R2) quick toggles: one PUT in flight at a time, a newer state replaces queued ones, and the last state the GM set is what ends on the iPad', async () => {
+  const { fg, h, tickBand, live } = await liveSetup();
+  h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 1); await until(() => live());
+  const pending = deferDisplay(fg);
+  await tickBand('controlled', true); await tickBand('controlled', false); await tickBand('working', true); await tickBand('working', false);
+  assert.equal(pending.length, 1, 'one request in flight; the others wait');
+  assert.ok(!live(), 'while a push is on its way the legend does not claim the iPad has these bands');
+  pending.shift()(); await tick(); await tick(); await tick();
+  assert.equal(pending.length, 1, 'then only the newest state goes: the two in between were replaced');
+  pending.shift()(); await tick(); await tick(); await tick();
+  assert.equal(pending.length, 0);
+  assert.equal(fg.server.displays.length, 3, 'Show on iPad, the first toggle, the last state');
+  assert.match(fg.server.shown.caption, /surveyed: public$/, 'the iPad ends on what the GM last set (both bands shut)');
+  await until(() => live());
+  // the same through the real ordering: a push never starts while another is in flight, whatever kind it is
+  const p2 = deferDisplay(fg);
+  await tickBand('working', true); h.q('[data-gm="blankipad"]').click(); await tick();
+  assert.equal(p2.length, 1, 'Clear waits for the map in flight'); p2.shift()(); await tick(); await tick();
+  assert.equal(p2.length, 1); p2.shift()(); await tick(); await tick();
+  assert.equal(fg.server.shown.kind, 'blank', 'Clear, pressed last, is what the iPad shows'); assert.ok(!live(), 'Clear ends live reveal');
+  await h.save();
+});
+
+await test('9r. (R3) a band that cannot be closed safely clears the iPad and says so; one that cannot be opened stays shut', async () => {
+  /* a kit stub that names a hidden room whenever "working" is shut and "controlled" is open (stands in for any fault the scan catches) */
+  const stub = Object.assign({}, M, { render: (roll, o) => {
+    const r = M.render(roll, o), rv = o.reveal || [];
+    if (o.layer === 'player' && ((!rv.includes('working') && rv.includes('controlled')) || rv.includes('secure'))) { const w = roll.rooms.find((x) => x.band === (rv.includes('secure') ? 'controlled' : 'working') && !rv.includes(x.band)) || roll.rooms.find((x) => !rv.includes(x.band)); return Object.assign({}, r, { svg: w ? r.svg.replace('</svg>', '<text>' + w.name + '</text></svg>') : r.svg }); }
+    return r;
+  } });
+  const { fg, br, h, tickBand, live } = await liveSetup({ kit: stub });
+  await tickBand('working', true); await tickBand('controlled', true);
+  h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 1); await until(() => live());
+  br.toasts.length = 0;
+  await tickBand('working', false); await until(() => fg.server.displays.length === 2);
+  assert.equal(fg.server.shown.kind, 'blank', 'the map without working would name a hidden room: the iPad is cleared, not left showing working');
+  assert.ok(!live(), 'live reveal ends'); assert.ok(br.toasts.some(([m, bad]) => bad && /cleared/i.test(m)), 'and the page says so');
+  // an open that cannot be sent: nothing goes and the band stays shut
+  await tickBand('working', true); await tickBand('controlled', false);     /* not live: these only change the ticks */
+  h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 3); await until(() => live());
+  br.toasts.length = 0;
+  await tickBand('secure', true); await tick(); await tick();
+  assert.equal(fg.server.displays.length, 3, 'nothing sent'); assert.equal(h.q('[data-reveal="secure"]').checked, false, 'the band stays shut');
+  assert.notEqual(h.page._state().doc.loc.map.reveal.secure, true); assert.ok(live(), 'the iPad still shows what it showed, and live reveal goes on');
+  assert.ok(br.toasts.some(([m, bad]) => bad && /not sent/i.test(m)));
+  await h.save();
+});
+
+await test('9s. (R4) live reveal sends the view, theme, time and weather Show on iPad sent, not what is on screen', async () => {
+  const { fg, h, tickBand, live } = await liveSetup();
+  pickSel(h, '#gm-m-view', 'street'); pickSel(h, '#gm-m-theme', 'plate'); pickSel(h, '#gm-m-time', 'Night'); pickSel(h, '#gm-m-weather', 'rain');
+  h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 1); await until(() => live());
+  pickSel(h, '#gm-m-view', 'section'); pickSel(h, '#gm-m-theme', 'board'); pickSel(h, '#gm-m-time', ''); pickSel(h, '#gm-m-weather', 'none');
+  await tickBand('working', true); await until(() => fg.server.displays.length === 2);
+  const roll = h.page._state().locRoll;
+  const want = M.render(roll, Object.assign({ view: 'street', theme: 'plate', layer: 'player', reveal: ['public', 'working'], time: 'Night', weather: 'rain' }, P.IPAD_MAP)).svg;
+  assert.equal(fg.server.displays[1].svg, want, 'the street on the plate at Night in the rain, with working');
+  await h.save();
+});
+
+await test('9t. (R4) live reveal follows the display seq, not a title: anything pushed since (another device, the chase panel, the same title) is never overwritten', async () => {
+  const { fg, br, h, tickBand, live } = await liveSetup();
+  h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 1); await until(() => live());
+  const mine = fg.server.displays[0];
+  fg.server.otherDevice({ kind: 'svg', title: mine.title, caption: 'from the other laptop', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><title>x</title></svg>' });
+  br.toasts.length = 0;
+  await tickBand('working', true); await tick(); await tick(); await tick();
+  assert.equal(fg.server.displays.length, 1, 'nothing landed'); assert.equal(fg.server.shown.caption, 'from the other laptop', 'the other push stays');
+  assert.ok(!live(), 'live reveal ends'); assert.ok(br.toasts.some(([m, bad]) => bad && /something else is on the iPad/i.test(m)));
+  // anything this page pushes ends live reveal at once, whatever its title
+  h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 2); await until(() => live());
+  h.q('[data-gm="pushtext"]').click(); await until(() => fg.server.displays.length === 3); assert.ok(!live());
+  await tickBand('working', false); await tick(); await tick(); assert.equal(fg.server.displays.length, 3);
+  // and a new roll is not live
+  h.q('[data-gm="ipad"]').click(); await until(() => fg.server.displays.length === 4); await until(() => live());
+  h.q('[data-gm="locroll"]').click(); h.q('[data-gm="layer"][data-v="player"]').click(); await tickBand('working', true);
+  assert.equal(fg.server.displays.length, 4); assert.ok(!live());
   await h.save();
 });
 

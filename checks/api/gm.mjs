@@ -291,6 +291,17 @@ async function main() {
     status(await gm('DELETE', '/api/gm/display'), 405);
   });
 
+  await step('display ifSeq: a PUT lands only while the display is still at that seq (409 and no change otherwise); a bad ifSeq is 400; ifSeq is never stored', async () => {
+    const s0 = (await gm('GET', '/api/gm/display')).json.seq;
+    let r = await gm('PUT', '/api/gm/display', { kind: 'text', title: 'Live', text: 'one', ifSeq: s0 }); status(r, 200);
+    expect(r.json.seq === s0 + 1 && !('ifSeq' in r.json.display), r.text);
+    r = await gm('PUT', '/api/gm/display', { kind: 'text', title: 'Stale', text: 'two', ifSeq: s0 }); status(r, 409);
+    r = await gm('GET', '/api/gm/display'); expect(r.json.seq === s0 + 1 && r.json.display.title === 'Live', 'a stale ifSeq changed nothing: ' + r.text);
+    for (const bad of [-1, 1.5, '3', null, true]) status(await gm('PUT', '/api/gm/display', { kind: 'blank', ifSeq: bad }), 400);
+    expect((await gm('GET', '/api/gm/display')).json.seq === s0 + 1, 'a bad ifSeq changed nothing');
+    r = await gm('PUT', '/api/gm/display', { kind: 'blank' }); status(r, 200); expect(r.json.seq === s0 + 2, 'without ifSeq a PUT always lands');
+  });
+
   await step('display validation: unsafe or malformed svg is 400, sizes over the caps are 413, and seq does not move', async () => {
     const seq0 = (await gm('GET', '/api/gm/display')).json.seq;
     const svg = (inner, attrs = '') => '<svg xmlns="http://www.w3.org/2000/svg"' + attrs + '>' + inner + '</svg>';

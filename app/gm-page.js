@@ -169,38 +169,65 @@
   P.mapOpts = mapOpts;
   P.REVEAL0 = { public: true, working: false, controlled: false, secure: false };   /* every new roll and replay starts here */
 
+  function decodeEntities(s) {
+    return str(s).replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos|nbsp);/gi, function (m, e) {
+      if (e.charAt(0) === '#') { var n = e.charAt(1).toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); try { return String.fromCodePoint(n); } catch (x) { return ' '; } }
+      return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }[e.toLowerCase()];
+    });
+  }
   /* An SVG's visible text: tags out (so a name split over <tspan>s joins up), XML entities decoded, whitespace collapsed,
      lower case. */
-  function svgText(svg) {
-    return str(svg).replace(/<[^>]*>/g, ' ').replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos);/gi, function (m, e) {
-      if (e.charAt(0) === '#') { var n = e.charAt(1).toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); try { return String.fromCodePoint(n); } catch (x) { return ' '; } }
-      return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[e.toLowerCase()];
-    }).replace(/\s+/g, ' ').toLowerCase();
+  function svgText(svg) { return decodeEntities(str(svg).replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').toLowerCase(); }
+  /* one way of writing a string for the scan: lower case, curly quotes straight, odd spaces plain, dashes one dash, spaces collapsed */
+  function fold(s) { return str(s).toLowerCase().replace(/[‘’ʼ]/g, "'").replace(/[“”]/g, '"').replace(/[    ]/g, ' ').replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim(); }
+  /* Where the scan looks (the secrecy review of 23/10/2026): the visible text, AND the whole source with entities decoded and tags
+     kept (attributes, ids, classes, comments, <title>, <desc>), AND that source with - and _ read as spaces (an id like
+     "b68m-server-room"). Each starts and ends with a space, for the whole-word test. */
+  function svgHays(svg) {
+    var src = fold(decodeEntities(svg));
+    return [' ' + fold(svgText(svg)) + ' ', ' ' + src + ' ', ' ' + src.replace(/[-_]+/g, ' ') + ' '];
+  }
+  function wholeWord(h, n) {
+    var i = -1;
+    while ((i = h.indexOf(n, i + 1)) >= 0) { if (!/[a-z0-9]/.test(h.charAt(i - 1)) && !/[a-z0-9]/.test(h.charAt(i + n.length))) return true; }
+    return false;
   }
   /* What the players must not read on a map with these bands revealed: every room in a hidden band, both threats, and
-     the target room while its band is hidden. A name that is also a revealed room's name is not a secret, and neither is one of
-     the map kit's own floor titles (P.LEVEL_TITLES): from kit 0.5 every floor of the player layer is titled generically
-     ("Basement", "Ground floor"...), never after a room, so a hidden room that happens to be called "Basement" adds nothing the
-     title of that floor does not already say. */
+     the target room while its band is hidden; and, whatever is revealed (the kit draws them as icons on the player layer, never as
+     words): every room's loot and lock or obstacle, the loot list, the roll's obstacle, the watcher (whole, and their name), and how
+     the service side and the back route get in (a way the crew has to ask about or cannot know from outside: its words, and the
+     place before the dash). Loot, locks and the obstacle count only as phrases (two words or more), so a one-word lock never meets
+     an icon's name. A name that is also a revealed room's name is not a secret, and neither is one of the map kit's own floor
+     titles (P.LEVEL_TITLES): from kit 0.5 every floor of the player layer is titled generically ("Basement", "Ground floor"...),
+     never after a room, so a hidden room that happens to be called "Basement" adds nothing the title of that floor does not
+     already say. */
   P.LEVEL_TITLES = ['basement', 'ground floor', 'upper floor', 'top floor'];
   function hiddenNames(roll, reveal) {
     var rooms = roll && Array.isArray(roll.rooms) ? roll.rooms : [], shown = {}, out = [];
     P.LEVEL_TITLES.forEach(function (t) { shown[t] = 1; });
-    rooms.forEach(function (r) { if (r && reveal.indexOf(r.band) >= 0) shown[str(r.name).trim().toLowerCase()] = 1; });
-    function add(n) { n = str(n).trim().toLowerCase(); if (n.length >= 3 && !shown[n] && out.indexOf(n) < 0) out.push(n); }
+    rooms.forEach(function (r) { if (r && reveal.indexOf(r.band) >= 0) shown[fold(r.name)] = 1; });
+    function add(n) { n = fold(n).replace(/[.,;:!]+$/, ''); if (n.length >= 3 && !shown[n] && out.indexOf(n) < 0) out.push(n); }
+    function phrase(n) { n = fold(n); if (/\s/.test(n) && n.length >= 5) add(n); }
     rooms.forEach(function (r) { if (r && reveal.indexOf(r.band) < 0) add(r.name); });
-    if (roll) { add(roll.physThreatName); add(roll.socThreatName); if (roll.targetRoom && reveal.indexOf(roll.targetBand) < 0) add(roll.targetRoom); }
+    if (!roll) return out;
+    add(roll.physThreatName); add(roll.socThreatName); if (roll.targetRoom && reveal.indexOf(roll.targetBand) < 0) add(roll.targetRoom);
+    rooms.forEach(function (r) { if (isObj(r)) { if (typeof r.loot === 'string') phrase(r.loot); if (typeof r.obstacle === 'string') phrase(r.obstacle); } });
+    (Array.isArray(roll.items) ? roll.items : []).forEach(function (x) { if (typeof x === 'string') phrase(x); });
+    if (typeof roll.obstacle === 'string') phrase(roll.obstacle);
+    if (roll.watcher) { add(roll.watcher); add(str(roll.watcher).split(/,|\s[—-]\s/)[0]); }
+    (Array.isArray(roll.vectors) ? roll.vectors : []).forEach(function (v, i) {
+      if (!isObj(v) || i === 0 || !/question|can't be known|cannot be known/i.test(str(v.know))) return;
+      if (v.how) { add(v.how); var head = str(v.how).split(/\s[—–-]\s/)[0]; if (head !== str(v.how)) add(head); }
+      if (v.room) add(v.room);
+    });
     return out;
   }
-  /* the hidden names the svg prints (whole words, any case), [] when it is clean */
+  /* the hidden names the svg holds anywhere (whole words, any case), [] when it is clean */
   function leaks(svg, roll, reveal) {
-    var t = ' ' + svgText(svg) + ' ';
-    return hiddenNames(roll, reveal).filter(function (n) {
-      var i = -1;
-      while ((i = t.indexOf(n, i + 1)) >= 0) { if (!/[a-z0-9]/.test(t.charAt(i - 1)) && !/[a-z0-9]/.test(t.charAt(i + n.length))) return true; }
-      return false;
-    });
+    var H = svgHays(svg);
+    return hiddenNames(roll, reveal).filter(function (n) { return H.some(function (h) { return wholeWord(h, n); }); });
   }
+  P.svgHays = svgHays; P.fold = fold;
   P.svgText = svgText; P.hiddenNames = hiddenNames; P.leaks = leaks;
   P.LEAK_MSG = 'This view would name a hidden room: use Rings or Iso, or reveal more bands.';
   /* The only way a map reaches the display: the PLAYER layer, rendered here from the roll, whatever the controls say.
@@ -230,7 +257,7 @@
     if (!G || !isObj(chase)) throw new Error('Start a chase first.');
     if (typeof render !== 'function') throw new Error('The map kit here has no chase strip (it needs map kit 0.6).');
     var r = render(G.playerCopy(chase), { layer: 'player', layout: 'ipad', theme: 'rulebook' }), svg = str(r && r.svg);
-    var t = ' ' + svgText(svg) + ' ', hits = G.secrets(chase).filter(function (s) { return t.indexOf(s) >= 0; });
+    var H = svgHays(svg), t = ' ' + svgText(svg) + ' ', hits = G.secrets(chase).filter(function (s) { var f = fold(s); return t.indexOf(s) >= 0 || (f && H.some(function (h) { return h.indexOf(f) >= 0; })); });
     if (hits.length) { var e = new Error(P.CHASE_LEAK_MSG); e.leak = true; e.hits = hits; throw e; }
     var b = bytesOf(svg);
     if (b > G.SVG_MAX) { var e2 = new Error('The strip is too large for the iPad (' + Math.round(b / 1024) + ' KiB, at most ' + Math.round(G.SVG_MAX / 1024) + '). End this chase and carry on in a new one.'); e2.big = true; throw e2; }
@@ -977,6 +1004,8 @@
   /* The ambient document as the server holds it (the truth), what the iPad was last told to spotlight, and the panel's state.
      Module-level, not in S: the heat / wanted sync keeps running while the page is closed. */
   var AM = { doc: null, seq: null, updatedAt: null, shown: null, loaded: false, busy: 0, error: '', displayRead: false };
+  /* the display queue (pushDisplay): the push in flight and the one waiting behind it */
+  var DQ = { busy: null, next: null };
   /* The theme the opening credits play, app/media/theme.mp3: gitignored, so it is on the server only when the deploying PC had it.
      The panel asks the server (HEAD, same origin) when it opens, and says so, because a silent iPad is otherwise a mystery. */
   var THEME = { state: 'unknown', http: 0, at: 0, busy: false };
@@ -2209,7 +2238,7 @@
          View and Theme (presentation) fold under the map */
       h += '<section class="gm-mapbox" aria-label="Map"><h4>Map</h4><div class="gm-map-ctl">' +
         '<div class="gm-field"><span class="gm-lab">Layer</span><div class="seg" role="group" aria-label="Layer">' + [['gm', 'GM'], ['player', 'Player']].map(function (o) { return '<button type="button" class="chip" data-gm="layer" data-v="' + o[0] + '" aria-pressed="' + (mu.layer === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
-        '<fieldset class="gm-reveal"><legend class="gm-lab">Reveal to the players: ' + esc(mu.layer === 'player' ? revealList(mu).join(', ') : 'public only while Layer is GM') + (mapOnIpad() && mu.layer === 'player' ? ' <span class="gm-live">Live on the iPad</span>' : '') + '</legend>' + BANDS.map(function (b) { return '<label class="gm-check"><input type="checkbox" data-reveal="' + b + '"' + (b === 'public' || mu.reveal[b] ? ' checked' : '') + (b === 'public' ? ' disabled' : '') + '> <span>' + b + '</span></label>'; }).join('') + '</fieldset>' +
+        '<fieldset class="gm-reveal"><legend class="gm-lab">Reveal to the players: ' + esc(mu.layer === 'player' ? revealList(mu).join(', ') : 'public only while Layer is GM') + liveChip(mu) + '</legend>' + BANDS.map(function (b) { return '<label class="gm-check"><input type="checkbox" data-reveal="' + b + '"' + (b === 'public' || mu.reveal[b] ? ' checked' : '') + (b === 'public' ? ' disabled' : '') + '> <span>' + b + '</span></label>'; }).join('') + '</fieldset>' +
         '<button type="button" class="btn primary" data-gm="draw">Draw</button></div>' +
         '<p class="gm-warn" id="gm-mapwarn" role="status"></p>' +
         '<div class="gm-map-acts"><button type="button" class="btn sm primary" data-gm="ipad"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + '>Show on iPad</button>' +
@@ -2290,10 +2319,39 @@
     var p = { loc: { map: {} } }; p.loc.map[k] = v; patch(p); if (S.map) drawMap();
     var sum = $q('.gm-mapopts summary .gm-dim'); if (sum) sum.textContent = mapLine(mapUi());     /* the fold's line, without redrawing the panel */
   }
-  function pushDisplay(d) {
+  /* Every push to the iPad from this page goes through one queue (the secrecy review of 23/10/2026, R2): one PUT in flight at a
+     time, and a push made while one is in flight waits; a newer one replaces a push still waiting (it is refused with
+     e.superseded and never sent), so the last thing the GM set is what ends on the iPad. Anything but the map ends live reveal the
+     moment it is asked for. opts: map (a Location map push: Show on iPad or live reveal), prepare(d) (called just before the PUT:
+     the body to send, or null to drop it), done(r) and fail(e) (called before the next push starts, so the next one's prepare sees
+     what this one changed). */
+  function pushDisplay(d, opts) {
     var g = gmApi(); if (!g) return Promise.reject(new Error('The display needs the hosted app.'));
     if (!gate.allows(d)) return Promise.reject(new Error('Only a player-layer map made on this page can go to the iPad.'));
-    return Promise.resolve().then(function () { return g.setDisplay(d); }).then(function (r) { noteShown(d); return r; });
+    opts = opts || {};
+    if (!opts.map) endLive();
+    return new Promise(function (res, rej) {
+      if (DQ.next) { var old = DQ.next; DQ.next = null; old.rej(superseded()); }
+      DQ.next = { g: g, d: d, opts: opts, res: res, rej: rej };
+      pumpDisplay();
+    });
+  }
+  function superseded() { var e = new Error('A newer push replaced this one before it was sent.'); e.superseded = true; return e; }
+  function pumpDisplay() {
+    if (DQ.busy || !DQ.next) return;
+    var job = DQ.next, body = job.d; DQ.next = null;
+    if (job.opts.prepare) { try { body = job.opts.prepare(job.d); } catch (e) { body = null; } }
+    if (!body) { job.rej(superseded()); pumpDisplay(); return; }
+    DQ.busy = job; paintLive();
+    Promise.resolve().then(function () { return job.g.setDisplay(body); }).then(function (r) {
+      DQ.busy = null;
+      try { if (job.opts.done) job.opts.done(r || {}); } catch (e) {}
+      noteShown(job.d); job.res(r); pumpDisplay(); paintLive();
+    }, function (e) {
+      DQ.busy = null;
+      try { if (job.opts.fail) job.opts.fail(e); } catch (x) {}
+      job.rej(e); pumpDisplay(); paintLive();
+    });
   }
   /* more than the public band is going to the players: say which, and ask */
   function confirmReveal(reveal, what) {
@@ -2309,29 +2367,77 @@
     try { d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render); } catch (e) { toast(errText(e), true); return; }
     if (!confirmReveal(d.reveal, 'This map')) return;
     gate.mark(d.svg);
-    var send = { kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, me = S, seed = S.locRoll.seed;
-    pushDisplay(send).then(function () {
-      if (S === me) { S.mapOn = { seed: seed, title: d.title }; renderLocation(); }
+    var me = S, key = rollKey(S.locRoll), on = { key: key, reveal: d.reveal.slice(), view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather, title: d.title };
+    endLive();            /* nothing is live until this map has landed */
+    pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, {
+      map: true,
+      done: function (r) { if (S === me && S.locRoll && rollKey(S.locRoll) === key && mapUi().layer === 'player' && typeof r.seq === 'number') S.mapOn = Object.assign(on, { seq: r.seq }); }
+    }).then(function () {
+      if (S === me) renderLocation();
       toast('On the iPad: ' + d.title + ' (' + d.caption + '). Bands you open or close now go to the iPad at once.');
-    }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+    }, function (e) { if (!e.superseded) toast('Could not send to the iPad: ' + errText(e), true); });
   }
-  /* Live reveal (GM.md, "Location"; Alex, 22/10/2026: the GM opens bands and the iPad updates at once). While this roll's player map
-     is what the iPad shows (S.mapOn, and nothing else pushed since), opening a band asks first and closing one does not; either way
-     the player copy goes again, through the same render, scan and gate as Show on iPad. A refused copy (it would name a hidden
-     room) leaves the iPad as it was and says so. View, theme, time and weather only redraw here: Show on iPad sends those.
+  /* Live reveal (GM.md, "Location"; Alex, 22/10/2026: the GM opens bands and the iPad updates at once; the secrecy review of
+     23/10/2026). S.mapOn is what Show on iPad (or the last live push) actually put on the iPad: the roll's key, the bands, the view,
+     theme, time and weather, and the display seq the server answered. It is live while that roll is the card, Layer is Player and
+     nothing else has been pushed: Layer to GM, another roll, or any other push ends it (endLive), and only Show on iPad starts it.
+     A tick that would send any band the iPad does not have asks for all of them by name, whichever box fired; a no puts the ticks
+     back to what the iPad shows. The copy goes in the view, theme, time and weather Show on iPad sent, through the same render, scan
+     and gate, and only if the display is still at S.mapOn.seq (PUT ifSeq: another device's push, the chase strip or anything else
+     since is never overwritten; a 409 ends live reveal). A copy that cannot be made safely: when it would open a band, nothing goes
+     and the band stays shut; when it would close one, the iPad is cleared (it must not keep showing that band) and the page says so.
      The score scene does not follow (Alex, 15/10/2026: it never updates on its own); the map box says when it is behind. */
-  function mapOnIpad() { return !!(S && S.mapOn && S.locRoll && S.mapOn.seed === S.locRoll.seed && AM.shown && AM.shown.kind === 'svg' && AM.shown.title === S.mapOn.title); }
-  function liveReveal(band, opened) {
-    if (!mapOnIpad() || mapUi().layer !== 'player') return true;
-    if (opened && !W.confirm('The map is on the iPad: opening the ' + band + ' band shows it to the players now. Go ahead?')) return false;
-    var d; try { d = playerDisplay(S.locRoll, mapUi(), W.B68Map && W.B68Map.render); } catch (e) { toast('Not sent: ' + errText(e) + ' The iPad still shows the map as it was.', true); return true; }
-    gate.mark(d.svg);
-    var me = S, seed = S.locRoll.seed;
-    pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }).then(function () {
-      if (S === me) S.mapOn = { seed: seed, title: d.title };
-      toast('On the iPad now: ' + d.caption + '.');
-    }, function (e) { toast('Could not update the iPad: ' + errText(e), true); });
+  function endLive() { if (S && S.mapOn) { S.mapOn = null; paintLive(); } }
+  function mapOnIpad() {
+    if (!S || !S.mapOn) return false;
+    if (!S.locRoll || rollKey(S.locRoll) !== S.mapOn.key || mapUi().layer !== 'player') { S.mapOn = null; return false; }
     return true;
+  }
+  function sameBands(a, b) { return a.length === b.length && a.every(function (x) { return b.indexOf(x) >= 0; }); }
+  function liveBusy() { return !!((DQ.busy && DQ.busy.opts.live) || (DQ.next && DQ.next.opts.live)); }
+  /* the chip in the Reveal legend: Live only while the iPad holds exactly the ticked bands and nothing is on its way */
+  function liveChip(mu) {
+    if (!mapOnIpad() || mu.layer !== 'player') return '';
+    if (liveBusy()) return ' <span class="gm-sending">Sending to the iPad…</span>';
+    return sameBands(revealList(mu), S.mapOn.reveal) ? ' <span class="gm-live">Live on the iPad</span>' : '';
+  }
+  function paintLive() {
+    var lg = $q('.gm-reveal legend'); if (!lg || !S || !S.doc) return;
+    var mu = mapUi();
+    lg.innerHTML = 'Reveal to the players: ' + esc(mu.layer === 'player' ? revealList(mu).join(', ') : 'public only while Layer is GM') + liveChip(mu);
+  }
+  /* the ticks back to what the iPad shows */
+  function ticksTo(bands) { var rv = {}; BANDS.forEach(function (b) { if (b !== 'public') rv[b] = bands.indexOf(b) >= 0; }); patch({ loc: { map: { reveal: rv } } }); }
+  /* a no (or a copy that cannot be made): the new bands come off the ticks; if a push is on its way with other bands, the state
+     left goes after it, so the iPad ends on what the ticks say */
+  function dropBands(want, more) { ticksTo(want.filter(function (b) { return more.indexOf(b) < 0; })); if (liveBusy()) liveReveal(); }
+  function bandWords(l) { return l.length === 1 ? 'the ' + l[0] + ' band' : 'the ' + l.slice(0, -1).join(', ') + ' and ' + l[l.length - 1] + ' bands'; }
+  function liveReveal() {
+    if (!mapOnIpad()) return;
+    var on = S.mapOn, mu = mapUi(), want = revealList(mu);
+    if (sameBands(want, on.reveal) && !liveBusy()) return;
+    var more = want.filter(function (b) { return on.reveal.indexOf(b) < 0; }), fewer = on.reveal.filter(function (b) { return want.indexOf(b) < 0; });
+    if (more.length && !W.confirm('The map is on the iPad: ' + (more.length === 1 ? 'opening ' + bandWords(more) + ' shows it' : 'this shows the players ' + bandWords(more)) + (more.length === 1 ? ' to the players now' : ' now') + '. Go ahead?')) { dropBands(want, more); return; }
+    var spec = { layer: 'player', reveal: mu.reveal, view: on.view, theme: on.theme, time: on.time, weather: on.weather }, d;
+    try { d = playerDisplay(S.locRoll, spec, W.B68Map && W.B68Map.render); } catch (e) {
+      if (!fewer.length) { toast('Not sent: ' + errText(e) + ' The iPad still shows ' + on.reveal.join(', ') + '.', true); dropBands(want, more); return; }
+      endLive();
+      pushDisplay({ kind: 'blank' }).then(function () { toast('The iPad was cleared: without ' + bandWords(fewer) + ' this map would name a hidden room, so it could not be sent. Show it again from another view.', true); },
+        function (e2) { if (!e2.superseded) toast('Could not clear the iPad: ' + errText(e2) + '. It may still show ' + bandWords(fewer) + ': press Clear → ambient.', true); });
+      return;
+    }
+    gate.mark(d.svg);
+    var me = S, key = on.key, sent = d.reveal.slice();
+    pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, {
+      map: true, live: true,
+      prepare: function (body) { return S === me && S.mapOn && S.mapOn.key === key ? Object.assign({}, body, { ifSeq: S.mapOn.seq }) : null; },
+      done: function (r) { if (S === me && S.mapOn && S.mapOn.key === key && typeof r.seq === 'number') { S.mapOn.seq = r.seq; S.mapOn.reveal = sent; } },
+      fail: function () { if (S === me) endLive(); }
+    }).then(function () { toast('On the iPad now: ' + d.caption + '.'); }, function (e) {
+      if (e.superseded) return;
+      if (e.status === 409) toast('Something else is on the iPad now, so the map was not sent and live reveal has stopped. Show on iPad starts it again.', true);
+      else toast('Could not update the iPad: ' + errText(e) + '. Live reveal has stopped: Show on iPad starts it again.', true);
+    });
   }
   /* the score scene's bands, when one is set from this roll's place and they are not the bands ticked now (it never follows on its own) */
   function sceneBehind(mu) {
@@ -4227,7 +4333,7 @@
       case 'dt-deal': dtDeal(); break;
       case 'dt-clock': dtClock(+b.getAttribute('data-i')); break;
       case 'dt-rule': dtRule(); break;
-      case 'layer': setMap('layer', b.getAttribute('data-v')); renderLocation(); break;
+      case 'layer': setMap('layer', b.getAttribute('data-v')); if (b.getAttribute('data-v') !== 'player') endLive(); renderLocation(); break;
       case 'draw': drawMap(); break;
       case 'ipad': showOnIpad(); break;
       case 'pushtext': pushText(); break;
@@ -4286,7 +4392,7 @@
     else if (t.hasAttribute('data-dtf')) dtField(t.getAttribute('data-dtf'), t.value);
     else if (t.hasAttribute('data-reveal')) {
       var rb = t.getAttribute('data-reveal'), rv = {}; rv[rb] = t.checked; patch({ loc: { map: { reveal: rv } } });
-      if (!liveReveal(rb, t.checked)) { rv[rb] = !t.checked; patch({ loc: { map: { reveal: rv } } }); }   /* the GM said no: the band stays shut */
+      liveReveal();       /* while the map is live on the iPad: asks for new bands, sends, or puts the ticks back */
       if (S.map) drawMap(); renderLocation();
     }
   }
