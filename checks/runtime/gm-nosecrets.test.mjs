@@ -502,6 +502,91 @@ await test('(h) the location plan names the target and is GM only: never in the 
   console.log('     ' + n + ' fixture rolls × 3 reveals');
 });
 
+/* ---------- (j) map kit 0.7 on the iPad: every view (the street too), every theme (the plate too), time and weather ---------- */
+await test('(j) the iPad copy of a map, in every view, theme, time and weather the panel offers: the player layer at the iPad\'s size, no hidden room, threat, hidden target, watcher or back route, and the server takes it', async () => {
+  const req = createRequire(import.meta.url), LOC = req(path.join(ROOT, 'app', 'gm', 'location.js'));
+  const pk = JSON.parse(read(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'location-pack.json')));
+  const lower = (s) => String(s || '').trim().toLowerCase();
+  let n = 0;
+  for (const seed of [3, 29, 83]) {
+    const roll = LOC.generate(pk.body || pk, {}, { seed });
+    for (const reveal of [{ public: true }, { public: true, working: true }]) {
+      const shown = GP.revealList({ layer: 'player', reveal });
+      const open = new Set(roll.rooms.filter((r) => shown.includes(r.band)).map((r) => lower(r.name)));
+      const secrets = roll.rooms.filter((r) => !shown.includes(r.band)).map((r) => lower(r.name)).filter((x) => !open.has(x) && !GP.LEVEL_TITLES.includes(x))
+        .concat([lower(roll.physThreatName), lower(roll.socThreatName), lower(roll.watcher).replace(/,.*$/, ''), lower(roll.vectors[2] && roll.vectors[2].how).replace(/\s+—.*$|\..*$/, '')])
+        .concat(shown.includes(roll.targetBand) ? [] : [lower(roll.targetRoom)]).filter((x) => x.length >= 4);
+      const combos = [];
+      for (const view of GP.VIEWS) for (const theme of GP.THEMES) combos.push({ view, theme });
+      for (const theme of GP.THEMES) for (const [time, weather] of [['Night', 'rolled'], ['Bluetime', 'snow'], ['', 'fog']]) combos.push({ view: 'street', theme, time, weather });
+      for (const view of ['iso', 'plan', 'rings']) for (const [time, weather] of [['Night', ''], ['', 'none'], ['Night', 'rain']]) combos.push({ view, theme: 'plate', time, weather });
+      for (const c of combos) {
+        const calls = [], spy = (r, o) => { calls.push(o); return mapRender(r, o); };
+        const d = GP.playerDisplay(roll, Object.assign({ layer: 'player', reveal }, c), spy);
+        if (calls.length !== 1 || calls[0].layer !== 'player' || calls[0].width !== GP.IPAD_MAP.width || calls[0].minLabelPx !== GP.IPAD_MAP.minLabelPx) throw new Error('not one player render at the iPad\'s size: ' + JSON.stringify(calls));
+        const text = ' ' + GP.svgText(d.svg) + ' ';
+        for (const s of secrets) if (text.includes(s)) throw new Error('seed ' + seed + ' ' + JSON.stringify(c) + ' reveal ' + shown.join(',') + ': the iPad copy prints "' + s + '"');
+        checkSvg(d.svg);
+        n++;
+      }
+    }
+  }
+  if (n < 150) throw new Error('only ' + n + ' renders checked');
+  const gmCopy = GP.svgText(mapRender(LOC.generate(pk.body || pk, {}, { seed: 3 }), { view: 'iso', layer: 'gm', reveal: GP.BANDS }).svg);
+  const r3 = LOC.generate(pk.body || pk, {}, { seed: 3 });
+  if (!gmCopy.includes(lower(r3.rooms.filter((r) => r.band === 'secure')[0].name))) throw new Error('self-test: the GM copy should name the secure room (is the check still testing anything?)');
+});
+
+/* ---------- (k) the leak scan reads the whole svg, and every GM-only string of a roll (the secrecy review of 23/10/2026) ---------- */
+await test('(k) the leak scan reads the whole svg source (attributes, ids, comments, title, desc; entities decoded) and looks for loot, locks, the hidden ways in and the watcher as well as names', () => {
+  const roll = { name: 'Invented Works', district: 'Nowhere', targetRoom: 'Vault', targetBand: 'secure', watcher: 'Mags Invented, a watcher',
+    physThreatName: 'Two bruisers', socThreatName: 'The night clerk', obstacle: 'A loose floor hazard',
+    rooms: [{ name: 'Lobby', band: 'public', loot: 'a jade figurine', obstacle: 'A wired alarm' }, { name: 'Server room', band: 'working' }, { name: 'Vault', band: 'secure', isTarget: true }],
+    items: ['a jade figurine', 'a ledger of debts'],
+    vectors: [{ n: 'The front', how: 'Pell Road — a wide lane.', know: 'free' }, { n: 'The service side', how: 'In through the coal cellar.', know: 'costs a question' }, { n: 'The back route', how: 'Gutter stairs — there is always one.', know: "can't be known from outside" }] };
+  const R = ['public'];
+  const wrap = (inner) => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">' + inner + '</svg>';
+  for (const [svg, want] of [
+    [wrap('<g aria-label="Server room"/>'), 'server room'], [wrap('<g id="b68m-server-room"/>'), 'server room'], [wrap('<!-- Server room -->'), 'server room'],
+    [wrap('<title>The vault</title>'), 'vault'], [wrap('<desc>Server&#32;room</desc>'), 'server room'], [wrap('<g data-x="Server&#x20;room"/>'), 'server room'],
+    [wrap('<text>Watching: Mags Invented.</text>'), 'mags invented'], [wrap('<text>a jade figurine</text>'), 'a jade figurine'], [wrap('<g aria-label="A wired alarm"/>'), 'a wired alarm'],
+    [wrap('<text>A loose floor hazard</text>'), 'a loose floor hazard'], [wrap('<text>Gutter stairs</text>'), 'gutter stairs'], [wrap('<text>In through the coal cellar</text>'), 'in through the coal cellar'],
+    [wrap('<text>a ledger of debts</text>'), 'a ledger of debts'], [wrap('<text>Two bruisers</text>'), 'two bruisers']]) {
+    const hit = GP.leaks(svg, roll, R);
+    if (!hit.includes(want)) throw new Error('missed "' + want + '" in ' + svg + ' (found ' + JSON.stringify(hit) + ')');
+  }
+  // whole words only, public things are not secrets, and a revealed room is fair game
+  for (const svg of [wrap('<text>Lobby</text><text>Pell Road — a wide lane.</text><text>Basement</text>'), wrap('<text>Server roomette</text><g id="xvault"/>'), wrap('<g id="b68m-ic-camera" class="ov-lock ov-loot"/>')]) {
+    const hit = GP.leaks(svg, roll, R); if (hit.length) throw new Error('false positive ' + JSON.stringify(hit) + ' in ' + svg);
+  }
+  if (GP.leaks(wrap('<text>Server room</text>'), roll, ['public', 'working']).length) throw new Error('a revealed room is not a secret');
+  // the chase scan reads the source too: a hidden clock in an attribute is caught
+  const CG = createRequire(import.meta.url)(path.join(ROOT, 'app', 'gm', 'chase.js'));
+  const fakeG = Object.assign({}, CG, { playerCopy: (c) => c, secrets: () => ['hidden quill clock'], title: () => 't', caption: () => 'c', SVG_MAX: 1e6 });
+  let err = null; try { GP.chaseDisplay({ id: 'c1' }, () => ({ svg: wrap('<g aria-label="Hidden Quill Clock"/>') }), fakeG); } catch (e) { err = e; }
+  if (!err || !err.leak) throw new Error('a chase secret in an attribute was not caught');
+});
+
+await test('(k) no false positives on today\'s kit: the panel\'s options over 30 invented rolls at four reveals (the reviewer\'s roll set: seeds 7919 × 1–30)', async () => {
+  const req = createRequire(import.meta.url), LOC = req(path.join(ROOT, 'app', 'gm', 'location.js'));
+  const pk = JSON.parse(read(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'location-pack.json')));
+  let n = 0, t = 0; const hits = [];
+  for (let s = 1; s <= 30; s++) {
+    const roll = LOC.generate(pk.body || pk, {}, { seed: s * 7919 });
+    for (const reveal of [{ public: true }, { public: true, working: true }, { public: true, controlled: true }, { public: true, working: true, controlled: true, secure: true }]) {
+      const R = GP.revealList({ layer: 'player', reveal });
+      for (const view of GP.VIEWS) {
+        const o = GP.mapOpts({ view, theme: GP.THEMES[(t++) % GP.THEMES.length] }, 'player', R, GP.IPAD_MAP);
+        const h = GP.leaks(mapRender(roll, o).svg, roll, R); n++;
+        if (h.length) hits.push(s + ' ' + view + '/' + o.theme + ' ' + R.join(',') + ': ' + h.join(' | '));
+      }
+      if (s % 5 === 0) { const sc = GP.scoreScene(roll, { layer: 'player', reveal }, mapRender); n += 2; if (sc.rings || sc.isoRings) hits.push(s + ' score scene fell back to rings at ' + R.join(',')); }
+    }
+  }
+  if (hits.length) throw new Error(hits.length + ' of ' + n + ' renders flagged: ' + hits.slice(0, 4).join(' ; '));
+  if (n < 600) throw new Error('only ' + n + ' renders');
+});
+
 /* ---------- (i) the chase strip: what the Chase panel sends to the iPad ---------- */
 await test('(i) a hidden opposing clock, roll lines and GM notes never reach the chase strip sent to the iPad (200 invented chases), and the page sends a chase only through chaseDisplay', async () => {
   const req = createRequire(import.meta.url), CG = req(path.join(ROOT, 'app', 'gm', 'chase.js'));
@@ -537,7 +622,7 @@ await test('(i) a hidden opposing clock, roll lines and GM notes never reach the
   const from = src.indexOf('function chDoc()'), to = src.indexOf('function B68slug');
   if (from < 0 || to < from) throw new Error('the Chase panel code was not found');
   const panel = src.slice(from, to);
-  if ((panel.match(/pushDisplay\(/g) || []).length !== 1 || (panel.match(/chaseDisplay\(/g) || []).length !== 1 || !/chaseDisplay\([\s\S]*?gate\.mark\(d\.svg\)[\s\S]*?pushDisplay\(\{ kind: 'svg', title: d\.title, caption: d\.caption, svg: d\.svg \}\)/.test(panel)) throw new Error('the Chase panel sends something other than chaseDisplay\'s svg');
+  if ((panel.match(/pushDisplay\(/g) || []).length !== 1 || (panel.match(/chaseDisplay\(/g) || []).length !== 1 || !/chaseDisplay\([\s\S]*?gate\.mark\(d\.svg\)[\s\S]*?pushDisplay\(\{ kind: 'svg', title: d\.title, caption: d\.caption, svg: d\.svg \}(\)|, \{\s*chase: true)/.test(panel)) throw new Error('the Chase panel sends something other than chaseDisplay\'s svg');
   if (/rolls: true/.test(src.slice(src.indexOf('function chaseDisplay'), src.indexOf('P.chaseDisplay')))) throw new Error('chaseDisplay asks for the roll lines');
   console.log('     ' + n + ' invented chases, map kit ' + kit.VERSION);
 });

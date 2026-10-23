@@ -169,6 +169,9 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-map svg { width: 100%; height: auto; display: block; }
 #gm-page .gm-map[data-layer="gm"] { outline: 3px solid var(--accent); outline-offset: -3px; }
 #gm-page .gm-map-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+#gm-page .gm-live { display: inline-block; margin-left: 6px; font: 900 9.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; background: var(--mustard); color: var(--on-mustard); padding: 3px 5px; vertical-align: 1px; white-space: nowrap; }
+#gm-page .gm-sending { display: inline-block; margin-left: 6px; font: 900 9.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; border: 1px dashed var(--mustard); color: inherit; padding: 2px 5px; vertical-align: 1px; white-space: nowrap; }
+#gm-page .gm-scene-behind { margin: 4px 0 0; }
 /* the Location card's "Site for a score" row (GM.md, "Score sites") */
 #gm-page .gm-siterow { border: 2px solid var(--rule); background: var(--card); padding: 8px 10px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: end; }
 #gm-page .gm-siterow .gm-field { flex: 1 1 200px; min-width: 0; }

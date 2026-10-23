@@ -278,8 +278,18 @@ export async function loadDisplay(db, campaign) {
 }
 
 /** Store a display and bump seq, in one statement (no read-modify-write: the seq increments in SQL). */
-export async function putDisplay(db, campaign, display) {
+export async function putDisplay(db, campaign, display, ifSeq) {
   const now = nowIso();
+  /* ifSeq (the GM page's live reveal): store only while the display is still at that seq, else 409 and nothing changes, so a
+     push made since (another device, another panel) is never overwritten by an older view of it */
+  if (ifSeq !== undefined) {
+    const hit = await db
+      .prepare('UPDATE gm_display SET seq = seq + 1, updated_at = ?2, doc = ?3 WHERE campaign = ?1 AND seq = ?4 RETURNING seq, updated_at')
+      .bind(campaign, now, JSON.stringify(display), ifSeq)
+      .first();
+    if (!hit) throw new HttpError(409, 'the display changed since seq ' + ifSeq);
+    return { seq: hit.seq, display, updatedAt: hit.updated_at };
+  }
   const row = await db
     .prepare(
       `INSERT INTO gm_display (campaign, seq, updated_at, doc) VALUES (?1, 1, ?2, ?3)

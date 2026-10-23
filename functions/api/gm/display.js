@@ -17,7 +17,8 @@
 //                  -> the same with the transcriber part named too: each part comes as { seq, unchanged: true } when its number
 //                     is the one given, else in full; all three current: { seq, unchanged: true, ambient, stt }, else the full
 //                     display along with them. A part whose number is not given counts as stale (`?aseq=M` alone, `?sseq=K` alone).
-//   PUT  display   -> { seq, display, updatedAt }: replaces the display and bumps seq
+//   PUT  display   -> { seq, display, updatedAt }: replaces the display and bumps seq. With ifSeq (a whole number) only while the
+//                     display is still at that seq, else 409 and nothing changes (the GM page's live reveal; GM.md "Location")
 // display: { kind: 'blank' | 'dark' | 'svg' | 'npc' | 'text' | 'rule' | 'cards' | 'handout', title?, caption? } plus `file` + `showTitle`
 // (handout: a plain image file name in the static folder media/handouts/), `svg` (a player-safe
 // render: starts with <svg, at most 600 KiB, no <script, <foreignObject, javascript:, on...= attributes, or href / src /
@@ -27,7 +28,7 @@
 // 400, a size over a cap 413.
 
 import { getDb } from '../../_lib/db.js';
-import { json, methodNotAllowed, readJsonObject, campaignOf } from '../../_lib/http.js';
+import { json, methodNotAllowed, readJsonObject, campaignOf, HttpError } from '../../_lib/http.js';
 import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay, loadAmbient } from '../../_lib/gm.js';
 import { loadSttPart } from '../../_lib/stt.js';
 
@@ -61,7 +62,13 @@ export async function onRequest({ request, env, data }) {
     if (same && ambSame && sttSame) return json({ seq: cur.seq, unchanged: true, ambient, stt });
     return json({ ...cur, ambient, stt });
   }
-  const display = cleanDisplay(await readJsonObject(request, LIMITS.displayRequest));
+  const raw = await readJsonObject(request, LIMITS.displayRequest);
+  let ifSeq;
+  if ('ifSeq' in raw) {
+    if (!Number.isInteger(raw.ifSeq) || raw.ifSeq < 0) throw new HttpError(400, 'ifSeq must be a whole number');
+    ifSeq = raw.ifSeq;
+  }
+  const display = cleanDisplay(raw);
   const db = await getDb(env);
-  return json(await putDisplay(db, campaign, display));
+  return json(await putDisplay(db, campaign, display, ifSeq));
 }

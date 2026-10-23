@@ -887,7 +887,7 @@
       if (!t || ev.type === 'pointercancel' || t.moved || t.multi || Date.now() - t.t > 450) return;
       var now = Date.now(), dbl = now - lastTap.t < 340 && Math.hypot(t.x - lastTap.x, t.y - lastTap.y) < 40;
       lastTap = dbl ? { t: 0, x: 0, y: 0 } : { t: now, x: t.x, y: t.y };
-      hooks.onTap();                            /* a double tap toggles twice, so the strip ends where it began */
+      if (hooks && hooks.onTap) hooks.onTap();   /* a double tap resets the zoom (a single tap has no job since nothing overlays a map) */
       if (dbl) reset();
     }
     offs.push(on(frame, 'pointerup', up), on(frame, 'pointercancel', up));
@@ -906,37 +906,51 @@
     return { reset: reset, refit: function () { measure(); apply(); }, destroy: function () { offs.forEach(function (f) { f(); }); if (ro) ro.disconnect(); } };
   }
 
+  /* Does the svg name itself? A map-kit map or chase strip carries a <title> as its first child (and prints the place, the district
+     and the surveyed bands in its own key), so the display adds no caption over it. Works on the sanitised root element. */
+  Pure.svgOwnTitle = function (root) {
+    if (!root || !root.childNodes) return '';
+    for (var i = 0; i < root.childNodes.length; i++) {
+      var c = root.childNodes[i];
+      if (c && c.nodeType === 1 && localName(c) === 'title') return String(c.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+    return '';
+  };
+
+  /* A map (or any svg): it fills the frame and nothing is drawn over it. When the svg names itself (Pure.svgOwnTitle) there is no
+     caption; when it does not (the GM page's clocks picture), the title and caption sit in a bar under the frame, which is fitted to
+     the space above the bar, so the drawing is never covered (GM.md, "The display"; checks/runtime/gm-maps.e2e.mjs). */
   function svgStage(vm) {
     var e = el('div', 'dp-stage dp-map'), frame = el('div', 'dp-map-frame');
     var res = Pure.sanitiseSvg(vm.svg, parserEnv());
     if (!res.ok) return noteStage(vm.title, 'This map could not be shown safely.');
     var svg = document.importNode(res.node, true);
+    var own = Pure.svgOwnTitle(svg);
+    svg.setAttribute('data-vb', [res.viewBox.x, res.viewBox.y, res.viewBox.w, res.viewBox.h].join(' '));   /* the drawing's own box (the zoom rewrites viewBox) */
     svg.setAttribute('focusable', 'false'); svg.setAttribute('role', 'img');
-    if (vm.title) svg.setAttribute('aria-label', vm.title);
+    if (vm.title) svg.setAttribute('aria-label', vm.title + (vm.caption ? ' · ' + vm.caption : ''));
     frame.appendChild(svg); e.appendChild(frame);
-    var strip = null, hideTimer = null, shown = false;
-    if (vm.title || vm.caption) {
-      strip = el('div', 'dp-strip');
+    var strip = null;
+    if (!own && (vm.title || vm.caption)) {
+      strip = el('div', 'dp-strip dp-capbar');
       if (vm.title) strip.appendChild(el('p', 'dp-strip-title', vm.title));
       if (vm.caption) strip.appendChild(el('p', 'dp-strip-cap', vm.caption));
       e.appendChild(strip);
+      e.classList.add('dp-map-capped');
     }
-    function show(on_) {
-      shown = on_;
-      if (strip) strip.classList.toggle('dp-show', on_);
-      clearTimeout(hideTimer);
-      if (on_) hideTimer = setTimeout(function () { shown = false; if (strip) strip.classList.remove('dp-show'); }, 6000);
-    }
-    var zoom = null;
-    /* the strip shows at first, then fades; attachZoom needs the stage laid out, so it starts once the stage is attached */
+    var zoom = null, ro = null;
+    /* the frame ends where the caption bar starts (its height depends on the text and the screen) */
+    function fitAboveBar() { if (strip) frame.style.bottom = Math.ceil(strip.getBoundingClientRect().height) + 'px'; }
+    /* attachZoom needs the stage laid out, so it starts once the stage is attached */
     function ready() {
       if (zoom) return;
-      zoom = attachZoom(frame, svg, res.viewBox, { onTap: function () { show(!shown); } });
-      show(true);
+      fitAboveBar();
+      if (strip && window.ResizeObserver) { ro = new ResizeObserver(function () { fitAboveBar(); }); ro.observe(strip); }
+      zoom = attachZoom(frame, svg, res.viewBox, {});
     }
     return {
       el: e, attached: ready,
-      destroy: function () { clearTimeout(hideTimer); if (zoom) zoom.destroy(); }
+      destroy: function () { if (ro) ro.disconnect(); if (zoom) zoom.destroy(); }
     };
   }
 

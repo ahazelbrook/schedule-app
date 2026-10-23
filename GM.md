@@ -38,7 +38,7 @@ abilities (see Score (J) below). The `engagement` part went with Engage.
 | `GET /api/gm/state` | `{ doc, updatedAt }` (`{}` and `null` until written). |
 | `PATCH /api/gm/state` | deep merge (plain objects merge, arrays and scalars replace, `null` deletes) → `{ doc, updatedAt }`. Keep collections as maps, not arrays. |
 | `GET /api/gm/display` | `{ seq, display, updatedAt }` (`seq` 0, a blank display, until written). `?seq=N` → `{ seq, unchanged: true }` while N is current. |
-| `PUT /api/gm/display` | `{ kind, title?, caption?, svg \| npcId \| text \| md \| file, showTitle? }` → `{ seq, display, updatedAt }`; `seq` goes up by one on every PUT. |
+| `PUT /api/gm/display` | `{ kind, title?, caption?, svg \| npcId \| text \| md \| file, showTitle?, ifSeq? }` → `{ seq, display, updatedAt }`; `seq` goes up by one on every PUT. With `ifSeq` (a whole number) it lands only while the display is still at that `seq`, else 409 and nothing changes (live reveal, see Location). |
 | `GET /api/gm/display` (ambient) | also carries `ambient: { seq, doc, updatedAt }`. `?seq=N&aseq=M` → `{ seq, unchanged: true, ambient: { seq, unchanged: true } }` while both are current; otherwise the full display, with `ambient` `{ seq, unchanged: true }` when only M is current. `?seq=N` alone is the old answer. |
 | `GET /api/gm/display` (transcriber) | also carries `stt: { seq, want, session }`: whether the GM wants the iPad listening (`on` / `off`) and the session number to stamp on its lines, and **nothing else**: never a speaker name, the iPad's own report, the PC's heartbeat or a transcript line, whoever asks. Its `seq` is made from those two values alone, so the iPad's reports (which rewrite the control document every minute) never move it. `?seq=N&aseq=M&sseq=K` → `{ seq, unchanged: true, ambient: { seq, unchanged: true }, stt: { seq, unchanged: true } }` while all three are current; otherwise the full display, each part `{ seq, unchanged: true }` when its number is the one given and in full when not. Without `sseq` (a display page from before the transcriber rode along) there is no `stt` and the answers are the ones above. Why: one request where the display and the transcriber used to make two (see "The display", how it polls). |
 | `GET /api/gm/ambient` | `{ seq, doc, updatedAt }` (`0`, `{}`, `null` until written). GM only; the display sign-in is refused (it reads the doc through the display). |
@@ -183,7 +183,8 @@ fails and nobody is known, nothing is purged.
   **Now in: <district>** is one of its choices (`sc.ui.district` is `''`, `'now'`, `'*'` or a name; a card stores the district it resolved to).
   Checks: `gm-page.test.mjs` (12a–12f, 18d), `gm.e2e.mjs`, `gm-scenes.e2e.mjs`, `gm-npc-panel.e2e.mjs`.
 - **Location.** The generator's controls and Roll, then the card (since 15/10/2026), then the map. A roll draws the GM-layer
-  **rings** map at once (the controls go to rings / GM, the theme stays; Draw is for another view, theme or layer).
+  **iso** map at once (the controls go to iso / GM, the theme stays; Draw is for another view, theme or layer). Iso is the view the table
+  plays with (the map kit's ROADMAP, decision 17/10); it was rings until map kit 0.7 came into the app (22/10/2026).
   - **The glance card** (`B68GmLocation.glance`): the name and place, **Say** (the first line of the street
     description, built only from fields `playerSummary` already shows) with the **Street description on iPad** button,
     the **Plan** (one sentence under Say, outside its box: the front door and its obstacle, the target room and band, the
@@ -206,7 +207,11 @@ fails and nobody is known, nothing is purged.
     **Save as the site for …**. See **Score sites** below.
   - **The map**: layer (GM / Player) and the bands revealed to the player layer, Draw; then the warning
     line, **Show on iPad**, **Set as score scene** and **Clear → ambient** together, never in a fold; then the map; under it
-    **View & theme** (a fold, presentation only) and Download SVG / note (.md) / canvas under Downloads. **Show on iPad** is enabled only on the player layer, and
+    **View & theme** (a fold, presentation only: View iso, rings, plan, section or **street**, the street outside the building; Theme
+    rulebook, blueprint, casefile, board or **plate**, the lit plate; **Time** as rolled, at Bluetime or at Night; **Weather** as the
+    theme does (the plate draws the roll's, the others only on the street when asked), the roll's, none, rain, fog or snow; the fold's
+    line names what is set) and Download SVG / note (.md) / canvas under Downloads. The page asks the kit through one function,
+    `P.mapOpts`, so the preview, the iPad and the downloads draw the same controls. **Show on iPad** is enabled only on the player layer, and
     the code renders the player layer itself and refuses any other svg (`gate` in `gm-page.js`; tested in
     `gm-nosecrets.test.mjs`, `gm-page.test.mjs` and `gm.e2e.mjs`). The street description goes to the iPad as plain
     text through the `playerSummary` whitelist only (the gate passes non-svg kinds), so `playerSummary` and `pushText`
@@ -214,11 +219,38 @@ fails and nobody is known, nothing is purged.
 - **Reveal.** Every new roll and every replay starts with the public band only. The ticks count only while Layer is
   Player (on the GM layer the street description and everything else use public only), and sending anything beyond public
   to the iPad asks first, naming the bands.
+- **The iPad's copy.** Show on iPad renders the player layer at the iPad's size (`P.IPAD_MAP`: 1366 px wide, a 16 px type floor;
+  map kit 0.8's `layout: "ipad"` replaces it in that one place), whatever the preview's width.
+- **Live reveal** (Alex, 22/10/2026: the iPad is the only player screen, and the GM opens bands and it updates at once; tightened
+  after the secrecy review of 23/10/2026). Show on iPad starts it: the page keeps what actually went up (`S.mapOn`: the roll, the
+  bands, the view, theme, time and weather, and the display `seq` the server answered). While that roll is the card, Layer is Player
+  and nothing else has been pushed, the Reveal legend says **Live on the iPad** (only while the iPad holds exactly the ticked bands;
+  **Sending to the iPad…** while a copy is on its way), and ticking a band sends the player copy again at once:
+  - **Asking.** A copy that would show any band the iPad does not have asks first, naming all of them, whichever box was ticked
+    ("opening the working band shows it to the players now"). Closing one does not ask. A no takes the new bands off the ticks.
+  - **What goes.** The copy is drawn in the view, theme, time and weather Show on iPad sent (changing them only redraws the preview),
+    through the same render, hidden-name scan and gate. It is sent with `ifSeq` (the `seq` of the last push): if anything has gone
+    to the display since, from this page or another device, the server answers 409, nothing changes there, and live reveal stops
+    with a toast.
+  - **A copy that cannot be made safely.** When it would open a band, nothing goes and the band stays shut. When it would close one,
+    the iPad is cleared (as Clear → ambient), since it must not keep showing that band, and the toast says so.
+  - **What ends it.** Layer to GM, another roll (or an Earlier, a saved site, an authored site), or any other push (Clear, Lights
+    out, an NPC, a handout, the clocks, the chase strip…) ends it at once; back on the player layer it is not live until Show on iPad.
+  - **One push at a time.** Every push from the GM page goes through one queue: one PUT in flight, a newer push replaces one still
+    waiting (it is never sent), so the last thing the GM set is what ends on the iPad, however fast the boxes are ticked.
+  The score scene does not follow (below); when it shows other bands than the ticks, the map box says so. Checks:
+  `gm-page.test.mjs` (9m–9t: 9p–9t are the review's repros R1–R4), `gm-nosecrets.test.mjs` (j, k), `checks/api/gm.mjs` (ifSeq),
+  `gm-maps.e2e.mjs` (`npm run check:gm-maps`: the GM page and the iPad at 1366 × 1024 against a local Worker; `GM_SHOTS=<dir>`
+  keeps its screenshots).
 - **Hidden names.** Map kit 0.2 titled a `plan` or `section` level of the player layer after the room on it, even when that room was
-  hidden. From 0.5 (vendored: 0.7.0, 21/10/2026) every floor is titled generically ("Basement", "Ground floor", "Upper floor", "Top
+  hidden. From 0.5 (vendored: 0.7.1, 22/10/2026) every floor is titled generically ("Basement", "Ground floor", "Upper floor", "Top
   floor") and a hidden room's name is not in the player file at all. The page still scans every player render for the names of hidden
-  rooms, both threats and a hidden target, and refuses to send one that holds a name ("This view would name a hidden room: use Rings
-  or Iso, or reveal more bands"); the in-page Player draw shows the same warning and the Player SVG download is refused. The kit's four
+  rooms, both threats and a hidden target (and, since 23/10/2026, every loot, lock and obstacle phrase, the loot list, the watcher and
+  how the service side and the back route get in, whatever is revealed; the kit draws those as icons, never words), in the whole svg
+  source (attributes, ids, comments, `<title>`, `<desc>`, entities decoded, whole words), and refuses to send one that holds a name ("This view would name a hidden room: use Rings
+  or Iso, or reveal more bands"); an iso that names one is redrawn as rings first (PR #53; the score scene's exploded site likewise,
+  `isoRings`), and refused only when the rings name one too. 0.7.1 never names a hidden room in a floor title, so both stay as defence
+  in depth. The in-page Player draw shows the same warning and the Player SVG download is refused. The kit's four
   floor titles are not counted (`P.LEVEL_TITLES`): a hidden room called "Basement" tells the crew no more than the title of that floor,
   which the kit prints for every building with a basement.
 - **Street (S).** A side panel, a port of the vault page `Tools/blades-68-district-scenes.md` (`app/gm/scenes.js`; tables from the
@@ -300,7 +332,10 @@ fails and nobody is known, nothing is purged.
     note, no hidden clock. The page draws it from a copy of the chase without them (`B68GmChase.playerCopy`), then scans the svg for
     every one of them and refuses to send it if one is there (`chaseDisplay` in `gm-page.js`). Over 600 KiB it refuses with a toast.
     The server's `checkSvg` and the display's sanitiser check it as they check a map. While the chase is on the iPad, every tick, undo,
-    leg or move of the opposing clock sends it again, as **Clocks on the iPad** does. Once something else is up, nothing more goes.
+    leg or move of the opposing clock sends it again, as **Clocks on the iPad** does. "On the iPad" is the display seq the server
+    answered when the strip went up, not its title: each re-send goes with `ifSeq`, so it lands only while nothing else has gone to
+    the display since. A push from another device in between is a 409: nothing is overwritten, the strip stops following and a toast
+    says so. Anything else this page pushes, or ending the chase, ends it at once; Show on iPad starts it again (`gm-page.test.mjs` 19g).
   - **The panel** shows the GM copy under the controls: every clock, the roll lines. The clocks list above the tick box marks the leg in
     play and the hidden clock. `L` files the last tick ("Chase: <caption> (+n)").
   - **End chase** (it asks) moves the chase to **Past chases**, a fold under the panel, with how it ended: the select beside it offers
@@ -507,6 +542,17 @@ fails and nobody is known, nothing is purged.
   capture to file more. Rolls still work." A roll is never refused for this: it is not capture, and if the document is still past
   the hard line (256 KiB less a margin) the same oldest-first drop makes room for it. The page refetches the state on focus.
 
+## The kits (`app/kits.json`, `npm run kits`)
+
+The design system's two kits are vendored: the map kit in `app/maps/map-kit.js` (`B68Map`, 0.7.1) and the figure kit in
+`app/figures/figure-kit.js` (`B68Figure`, 3.0.1, which carries the arm blend `tools/ambient/motion.js` uses, so the app no longer patches it). `app/kits.json` records each one's file, version, size, sha256, where it came from
+and when; `npm run kits` prints it and says whether the files still match. To update one, download the kit from the design system
+(or build it) and run `node scripts/kits.mjs maps <map-kit.js> --source "<where it came from>"` (or `figures`): it checks the file
+loads and is that kit, refuses an older version unless `--older`, copies it in and rewrites the entry. `checks/runtime/kits.test.mjs`
+(in `check:runtime`) fails when a file does not match its entry, when a kit is missing from the `routes.js` bundles (the service
+worker precaches what they list, so that is what keeps a kit offline) and when the map kit lacks what the GM page asks of it. A new
+kit reaches the table only with a deploy, which stays Alex's call and never on a session day.
+
 ## The display (`#display`, `app/display-page.js`, `app/display.css`)
 
 Full screen (no header, nav or banner) for an iPad signed in as the GM. Boot mounts
@@ -515,6 +561,14 @@ calls `unmount()` on leaving; anyone but the GM sees a message instead. The GM p
 
 The display offers **no way back** to the GM page (no link, hidden or not). Its sanitiser applies the same rules as the server's `checkSvg` (namespaced
 elements, `<a>`, `xml:base`, backslashes, `image-set()` / `src()`, raster `data:` images only on `<image>` / `<feImage>`).
+
+**Nothing is drawn over a map** (22/10/2026). An `svg` display that names itself (a `<title>` as the root's first element child:
+every map-kit map and chase strip, whose own key prints the place, the district and the surveyed bands) gets no caption; one that does
+not (the GM page's clocks picture) gets its title and caption in a bar under the drawing, and the drawing is fitted to the space above
+it. Every map frame also stops above the corner status line. The title and caption still reach a screen reader (`aria-label`). The
+Full screen button and the Add to Home Screen hint are controls, not captions: they come up on a touch and go after 7 s idle (the hint
+only until Got it). `gm-maps.e2e.mjs` checks, at 1366 × 1024 and 1024 × 1366, that no caption and no status line meets the drawn
+box of a map, a street, a chase strip or an untitled svg. A handout keeps its own caption rule (`showTitle`).
 
 ### How it polls (the request budget)
 
@@ -605,7 +659,8 @@ and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools
 - **Score scenes.** **Set as score scene** (Location panel, player layer only) renders the board (`plan`, board theme) and the exploded
   site (`iso`, blueprint) from the current roll at the revealed bands, through the same gate and hidden-name scan as Show on iPad.
   A plan that names a hidden room is redrawn as `rings`; a leaking iso is refused. Bands beyond public ask first. Only the place name and
-  district go with it (`target` is always empty). It **never updates on its own**: press it again after revealing more. The shells
+  district go with it (`target` is always empty). It **never updates on its own**: press it again after revealing more (the
+  Location panel's map box says when its bands are not the ones ticked). The shells
   (`planning-board`, `score-exploded`) hold no data; they post `b68:ready` and the display answers with `b68:score` (both svgs
   re-sanitised, four crew polaroids drawn with the figure kit, `Pure.POLAROIDS`).
 - **Figures that move.** A figure's frames are versions of its moving parts; the one not shown is `visibility:hidden` (WebKit keeps
