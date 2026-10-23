@@ -55,9 +55,9 @@
   P.TIMES = [['', 'As rolled'], ['Bluetime', 'At Bluetime'], ['Night', 'At Night']];
   P.WEATHERS = [['', 'As the theme does'], ['rolled', "The roll's"], ['none', 'None'], ['rain', 'Rain'], ['fog', 'Fog'], ['snow', 'Snow']];
   P.MAP0 = { view: 'iso', theme: 'rulebook', layer: 'gm', time: '', weather: '', reveal: { public: true } };
-  /* The iPad's copy of a map: the display page shows it at 1366 x 1024 (landscape), so the type floor is set for that width.
-     Map kit 0.8 adds layout: "ipad" (the same floor, the key beside the drawing): switch to { layout: 'ipad' } here when it lands. */
-  P.IPAD_MAP = { width: 1366, displayWidth: 1366, minLabelPx: 16 };
+  /* The iPad's copy of a map: the display page shows it at 1366 x 1024 (landscape). Map kit 0.8's layout "ipad" is drawn for that:
+     1366 px wide, the type floor 16 px, the key beside the drawing (the street, which has no layouts, takes its width from it). */
+  P.IPAD_MAP = { layout: 'ipad' };
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }

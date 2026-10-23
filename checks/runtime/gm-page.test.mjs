@@ -966,7 +966,7 @@ await test('9m. map kit 0.7 in the Location panel: iso by default, the street an
   // pure: the kit's options from the controls
   eqj(P.mapOpts({}, 'gm', ['public']), { view: 'iso', theme: 'rulebook', layer: 'gm', reveal: ['public'], width: 1400 }, 'the defaults');
   eqj(P.mapOpts({ view: 'street', theme: 'plate', time: 'Night', weather: 'fog' }, 'player', ['public'], P.IPAD_MAP),
-    { view: 'street', theme: 'plate', layer: 'player', reveal: ['public'], time: 'Night', weather: 'fog', width: 1366, displayWidth: 1366, minLabelPx: 16 });
+    { view: 'street', theme: 'plate', layer: 'player', reveal: ['public'], time: 'Night', weather: 'fog', layout: 'ipad' });
   eqj([P.mapOpts({ weather: 'rolled' }, 'gm', []).weather, P.mapOpts({ weather: 'none' }, 'gm', []).weather, 'weather' in P.mapOpts({ weather: '' }, 'gm', []), 'time' in P.mapOpts({ time: 'Dawn' }, 'gm', [])], [true, false, false, false], 'rolled, none, unset, an unknown time');
   eqj(P.mapOpts({ view: 'nope', theme: 'nope' }, 'gm', []).view + ' ' + P.mapOpts({ view: 'nope', theme: 'nope' }, 'gm', []).theme, 'iso rulebook');
   assert.ok(P.VIEWS.includes('street') && P.THEMES.includes('plate'));
