@@ -1399,6 +1399,28 @@ await test('11g. clocks to the iPad: Show on iPad sends the players’ clocks as
   await h.save();
 });
 
+await test('11i. the clocks follow the display seq, not the title "Clocks": a push from another device in between stops them (and it says so); anything else this page pushes ends them', async () => {
+  const camp = { session: { number: 3 }, crew: {}, clocks: [{ name: 'Bluecoats close in', filled: 2, size: 6 }] };
+  const fg = addAmbient(fakeGm()), h = await openPage({ fg, camp });
+  const set = (n) => h.page.campaign({ ...camp, clocks: [{ name: 'Bluecoats close in', filled: n, size: 6 }] });
+  h.q('#gm-rail [data-gm="clocks-ipad"]').click(); assert.ok(await until(() => fg.server.displays.length === 1));
+  set(3); assert.ok(await until(() => fg.server.displays.length === 2, 1500), 'a change sends them again');
+  // another laptop puts up something called Clocks: the next change must not overwrite it
+  fg.server.otherDevice({ kind: 'svg', title: 'Clocks', caption: 'from the other laptop', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"/>' });
+  h.br.toasts.length = 0;
+  set(4); await new Promise((r) => setTimeout(r, 1000)); await tick();
+  assert.equal(fg.server.displays.length, 2, 'nothing landed'); assert.equal(fg.server.shown.caption, 'from the other laptop', 'the other push stays');
+  assert.ok(h.br.toasts.some(([m, bad]) => bad && /something else is on the iPad/i.test(m)), 'the page says so');
+  set(5); await new Promise((r) => setTimeout(r, 1000)); await tick();
+  assert.equal(fg.server.displays.length, 2, 'and the clocks no longer follow the table');
+  // Show on iPad starts them again; anything else this page pushes ends them
+  h.q('#gm-rail [data-gm="clocks-ipad"]').click(); assert.ok(await until(() => fg.server.displays.length === 3));
+  h.q('#gm-ipad [data-gm="blankipad"], [data-gm="blankipad"]').click(); assert.ok(await until(() => fg.server.displays.length === 4));
+  set(6); await new Promise((r) => setTimeout(r, 1000)); await tick();
+  assert.equal(fg.server.displays.length, 4, 'cleared: a change sends nothing');
+  await h.save();
+});
+
 await test('11h. Update pack: a file that would lose a part says so, the button reads Upload anyway, and it asks before uploading', async () => {
   let asked = 0, uploads = 0;
   const br = fakeBrowser({ FileReader: class { readAsText(f) { this.result = f.text; this.onload(); } }, confirm: () => { asked++; return false; } });
