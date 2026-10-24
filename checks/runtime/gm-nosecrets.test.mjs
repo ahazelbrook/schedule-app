@@ -523,7 +523,7 @@ await test('(j) the iPad copy of a map, in every view, theme, time and weather t
       for (const c of combos) {
         const calls = [], spy = (r, o) => { calls.push(o); return mapRender(r, o); };
         const d = GP.playerDisplay(roll, Object.assign({ layer: 'player', reveal }, c), spy);
-        if (calls.length !== 1 || calls[0].layer !== 'player' || calls[0].width !== GP.IPAD_MAP.width || calls[0].minLabelPx !== GP.IPAD_MAP.minLabelPx) throw new Error('not one player render at the iPad\'s size: ' + JSON.stringify(calls));
+        if (calls.length !== 1 || calls[0].layer !== 'player' || calls[0].layout !== 'ipad') throw new Error('not one player render at the iPad\'s size: ' + JSON.stringify(calls));
         const text = ' ' + GP.svgText(d.svg) + ' ';
         for (const s of secrets) if (text.includes(s)) throw new Error('seed ' + seed + ' ' + JSON.stringify(c) + ' reveal ' + shown.join(',') + ': the iPad copy prints "' + s + '"');
         checkSvg(d.svg);

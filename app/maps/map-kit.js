@@ -1,4 +1,4 @@
-/*! Blades '68 map kit — B68Map. Built 2026-10-21 from src/. Rooms are the book's; geometry is [interpretation]. */
+/*! Blades '68 map kit — B68Map. Built 2026-10-23 from src/. Rooms are the book's; geometry is [interpretation]. */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
   else root.B68Map = factory();
@@ -17,7 +17,21 @@ const M = {};
 // A THEME turns roles into paint. That is the whole trick that lets one plan
 // render as a rulebook plate, a blueprint, a case file or a heist board.
 
-M.VERSION = "0.7.1";
+M.VERSION = "0.8.0";
+// A table looked up by a word from a roll or an option: its own entries only, so "__proto__",
+// "toString" or "constructor" find nothing (as any other unknown word does), never
+// Object.prototype's.
+const OWN = Object.prototype.hasOwnProperty;
+M.own = (table, key) => table != null && key != null && OWN.call(table, key) ? table[key] : undefined;
+// A roll's list, as a list: a word where a list of words goes (props, neighbours) is a list of
+// one; anything else that isn't a list is an empty one. Says so, unless it is simply missing.
+M.list = (x, W, what, words) => {
+  if (Array.isArray(x)) return x;
+  if (x == null || x === "") return [];
+  const one = words && typeof x === "string";
+  if (W) M.warn(W, `${what} should be a list — ${one ? "read as a list of one" : "left out"}`);
+  return one ? [x] : [];
+};
 
 // --- Random ----------------------------------------------------------------
 // Mulberry32 — the same PRNG the vault generator uses for sticky rolls, so a
@@ -91,10 +105,10 @@ M.ADVANCE = { condensed: 0.64, text: 0.6, textBold: 0.63, mono: 0.612, typewrite
 // Width of s at a font size, in the same units as the size. ls is the theme's
 // letter-spacing (absolute units per character, as SVG applies it).
 M.textW = (s, size, cls, ls) => {
-  const t = M.GLYPHS[cls], str = String(s), n = Array.from(str).length;
-  if (!t) return n * (M.ADVANCE[cls] || 0.6) * size + (ls || 0) * n;
+  const t = M.own(M.GLYPHS, cls), str = String(s), n = Array.from(str).length;
+  if (!t) return n * (M.own(M.ADVANCE, cls) || 0.6) * size + (ls || 0) * n;
   let w = 0;
-  for (const c of str) { const v = t[c] != null ? t[c] : t[c.toUpperCase()]; w += v != null ? v : M.ADVANCE[cls]; }
+  for (const c of str) { const v = t[c] != null ? t[c] : t[c.toUpperCase()]; w += v != null ? v : M.own(M.ADVANCE, cls); }
   return w * size + (ls || 0) * n;
 };
 // The size at which s fits maxW: never above size, never below min (default 45%).
@@ -500,7 +514,7 @@ LT.inPool = function (L, pool, strength) {
 // there), `pxPerFt` (viewBox units per foot, to size a figure there) and `pool`.
 M.lightAt = function (o, opts = {}, pt = {}) {
   const W = [], raw = Object.assign({}, opts, { view: "street" });
-  const ro = M.resolveOpts(raw, W), theme = M.THEMES[ro.theme] || M.THEMES.rulebook;
+  const ro = M.resolveOpts(raw, W), theme = M.own(M.THEMES, ro.theme) || M.THEMES.rulebook;
   const model = M.model(o, W);
   const seed = ro.seed != null ? ro.seed : (o.seed != null ? o.seed : M.hash(model.name + model.district));
   const B = M.street.build(o, ro, W, theme, model, seed, "b68l" + M.hash(model.name).toString(36));
@@ -759,7 +773,7 @@ M.ROOMS = {
 // warns, so a new generator table never crashes the kit.
 M.roomInfo = (name, theme, mix) => {
   const key = s => `${s}:${name}`;
-  return M.ROOMS[key(mix)] || M.ROOMS[key(theme)] || M.ROOMS[name] || null;
+  return M.own(M.ROOMS, key(mix)) || M.own(M.ROOMS, key(theme)) || M.own(M.ROOMS, name) || null;
 };
 // The same, for a name written in a sentence ("in through the kitchens"):
 // matched without regard to case.
@@ -768,7 +782,7 @@ M.roomInfoAny = (name, theme, mix) => {
   if (hit) return hit;
   const low = String(name).toLowerCase(), keys = Object.keys(M.ROOMS);
   const k = keys.find(q => q.toLowerCase() === low) || keys.find(q => q.toLowerCase().endsWith(":" + low));
-  return k ? M.ROOMS[k] : null;
+  return k ? M.own(M.ROOMS, k) : null;
 };
 
 // --- Dressing by target type — [interpretation] -----------------------------
@@ -806,7 +820,13 @@ M.DRESS = {
   "Pharmacy": { "Main lab": "dispensary", "Reception": "shop-pharmacy", "Testing area": "dispensary" },
   "School": { "Main lab": "classroom", "Testing area": "classroom", "Research offices": "staff-room",
     "Data processing": "classroom", "Conference room": "classroom" },
-  "Temple": { "Ballroom": "nave", "Grand foyer": "narthex", "Portrait gallery": "chapel" }
+  "Temple": { "Ballroom": "nave", "Grand foyer": "narthex", "Portrait gallery": "chapel" },
+  // The two open-air rows (seed-only, 21/10/2026): drawn without a roof (outdoors.js).
+  // Market is Casino × Industrial Facility, Autodrome Industrial Facility × Casino.
+  "Market": { "Main floor": "market-stalls", "Showroom": "market-stalls", "Dance club": "market-stalls", "The grand lobby": "market-gate",
+    "Cocktail lounge": "food-stalls", "Restaurant": "food-stalls", "Storage warehouse": "stockyard" },
+  "Autodrome": { "Assembly line": "track", "Main floor": "track", "Storage warehouse": "pits", "Packing area": "pits", "Showroom": "grandstand",
+    "Dance club": "grandstand", "Control room": "race-control", "Loading dock": "car-bays", "High-roller suites": "boxes", "Cocktail lounge": "food-stalls", "Restaurant": "food-stalls" }
 };
 
 // --- The twelve printed colour schemes (p.430) → paint ----------------------
@@ -1363,7 +1383,7 @@ function connect(rooms, edges, st, rng, roots) {
 // rooms is a fat ring.
 
 function ringRect(model, rng) {
-  const st = STYLE[model.rings] || STYLE.hard;
+  const st = M.own(STYLE, model.rings) || STYLE.hard;
   const bands = M.BANDS.filter(b => model.rooms.some(r => r.band === b));
   const inner = bands[bands.length - 1];
   const coreRooms = model.rooms.filter(r => r.band === inner);
@@ -1679,7 +1699,7 @@ function treemap(items, R, rng, jitter) {
 }
 
 function planLevel(model, rooms, lvl, rng, multi) {
-  const st = STYLE[model.rings] || STYLE.hard;
+  const st = M.own(STYLE, model.rings) || STYLE.hard;
   const walls = [], doors = [], extras = [];
   const items = rooms.slice().sort((a, b) => depthOf(a.band) - depthOf(b.band) || b.w - a.w)
     .map(r => ({ room: r, w: r.w, place: (x, y, w, h) => rectRoom(r, x, y, w, h) }));
@@ -1792,7 +1812,7 @@ function planView(model, rng) {
   const order = [0, 1, 2, -1].filter(k => byLvl[k] && byLvl[k].length);
   const multi = order.length > 1;
   const levels = order.map(k => model.rings === "radial" ? planRadial(model, byLvl[k], k, rng.fork("lvl" + k), multi) : planLevel(model, byLvl[k], k, rng.fork("lvl" + k), multi));
-  return { kind: "plan", levels, rng, st: STYLE[model.rings] || STYLE.hard };
+  return { kind: "plan", levels, rng, st: M.own(STYLE, model.rings) || STYLE.hard };
 }
 
 // --- Entry points, skips, circulation ---------------------------------------------
@@ -1902,8 +1922,11 @@ L.entries = function (lay, model, opts = {}) {
     if (prefer === "right") return { p: [O.x + O.w, O.y + O.h / 2], dir: [1, 0], ang: 90 };
     return { p: [0, O.y + O.h], dir: [0, 1], ang: 0 };
   };
+  // E3: a sheet for a floor a way in names that the building hasn't got (M.outdoors.levels)
+  M.outdoors.levels(lay, model, opts);
   // The floor a landing asks for, as this building has it.
-  const top = lay.levels.reduce((a, l) => (l.lvl >= 0 && (!a || l.lvl > a.lvl) ? l : a), null) || lv0;
+  // (the roof: the top floor, or E3's roof sheet; never a walkway, which the back route alone may make)
+  const top = lay.levels.reduce((a, l) => (l.lvl >= 0 && (!l.ground || l.ground === "roof") && (!a || l.lvl > a.lvl) ? l : a), null) || lv0;
   const floorFor = level => level === "roof" ? top : level === "upper" ? (lay.levels.filter(l => l.lvl >= 1).sort((a, b) => a.lvl - b.lvl)[0] || null)
     : level === "below" ? (lay.levels.find(l => l.lvl < 0) || null) : lv0;
   const levelOf = r => lay.levels.find(l => l.rooms.includes(r)) || null;
@@ -1929,6 +1952,30 @@ L.entries = function (lay, model, opts = {}) {
       let means = land.means;
       // a plain door on a floor off the street: a fire escape up, or area steps down
       if (kind !== "front" && means === "door" && level) means = level.lvl >= 1 ? "fire-escape" : level.lvl < 0 ? "area-steps" : "door";
+      // E3: a sheet with no rooms of its own (the roof, a walkway, what lies under the
+      // street). The way reaches a room of the floor the sheet serves: through a hatch
+      // from the tunnel below, a hatch or skylight in the roof, or across the walkway
+      // to a hatch down, its stair or balcony on the walkway's edge.
+      if (level && level.ground) {
+        const base = level.base, below = !!level.under;
+        if (below) means = "floor-hatch";
+        const vertical = !below && VERTICAL.has(means);
+        const deepFirst = kind === "back" || means === "skylight";
+        const depthKey = r => (deepFirst ? -depthOf(r.band) : (depthOf(r.band) === 0 ? 10 : 0) + depthOf(r.band)) + (usedRooms.has(r) ? 0.4 : 0);
+        const walk = !below && !vertical;
+        const used = usedSides.get(level) || new Set();
+        const faceCost = sd => (NEAR[sd.side] ? 0 : 10) + (used.has(sd.side) ? 4 : 0) + [near, "bottom", "top", far].indexOf(sd.side);
+        const pool = base.rooms.filter(r => r.frame && (!walk || exteriorSides(base, r).length));
+        const cost = r => depthKey(r) + (walk ? exteriorSides(base, r).reduce((m, sd) => Math.min(m, faceCost(sd)), Infinity) * 0.15 : 0);
+        room = pool.sort((a, b) => cost(a) - cost(b) || b.w - a.w)[0] || base.rooms[0] || null;
+        Object.assign(d, { level, means, vertical, room, ground: below ? "below" : level.ground });
+        if (walk && room) {
+          const sideObj = exteriorSides(base, room).sort((a, b) => faceCost(a) - faceCost(b))[0];
+          if (sideObj) { d.sideObj = sideObj; d.hidden = !NEAR[sideObj.side]; used.add(sideObj.side); usedSides.set(level, used); }
+        }
+        if (room) usedRooms.add(room);
+        return d;
+      }
       if (!level) {
         // the building has no such floor: a cellar becomes a hatch from below
         // into the ground floor; anything above comes in at street level
@@ -1984,7 +2031,11 @@ L.entries = function (lay, model, opts = {}) {
   // --- 2. Build: doors, what stands outside them, hatches, arrows ---------------
   plan.forEach(d => {
     const { v, kind, land } = d;
+    // A back route the crew can't know adds nothing to the player copy: no door, hatch,
+    // stair, branch off a tunnel, gap in a wall, sheet or arrow (OD.levels makes no sheet
+    // for it either). Every reader of lay.entries skips it there too.
     const sealed = !!opts.player && kind === "back" && M.vecHidden(v);
+    if (sealed) return;
     if (lay.kind === "rings") {
       let room = null;
       if (kind === "front") room = model.rooms.filter(r => r.ring === 0 && r.ringSide === "bottom").sort((a, b) => b.w - a.w)[0] || model.rooms.find(r => r.ring === 0);
@@ -2003,6 +2054,25 @@ L.entries = function (lay, model, opts = {}) {
     }
     const { level, means, room } = d;
     const fixture = (part, x, y, rot, o) => { if (!sealed) (level.fixtures ||= []).push(Object.assign({ part, x, y, rot, way: kind }, o || {})); };
+    // E3: onto a sheet of its own (M.outdoors.levels)
+    if (d.ground && room) {
+      if (d.ground === "below") {
+        if (!sealed) room.hatch = true;
+        const [hx, hy] = spot(room, "hatch"), t = M.outdoors.below(level, hx, hy, { kind, fixture: !sealed });
+        pushEnt(v, room, level, t.tip, t.dir, kind, { means, from: "below", via: level.under, want: land });
+        return;
+      }
+      if (d.vertical) {
+        if (!sealed) { if (means === "skylight") room.skylight = true; else room.roofHatch = true; }
+        const p = spot(room, means);
+        fixture(means === "skylight" ? "skylight" : "roof-hatch", p[0], p[1], 0);
+        pushEnt(v, room, level, p, [0, 0], kind, { means, from: "above", want: land });
+        return;
+      }
+      // across the walkway, and down a hatch into the room
+      if (!sealed) room.roofHatch = true;
+      if (d.sideObj && !sealed) { const p = M.outdoors.walkway(level, d.sideObj); fixture("roof-hatch", p[0], p[1], 0); }
+    }
     // a secret door is drawn as one only where it is known: the player copy's service side
     // (which costs a question) gets the plain exterior door
     const secret = means === "secret-door" && !(opts.player && kind === "service");
@@ -2088,7 +2158,7 @@ L.entries = function (lay, model, opts = {}) {
       const pts = [[door.x - out[1] * w / 2, door.y + out[0] * w / 2], [door.x + out[1] * w / 2, door.y - out[0] * w / 2], tip];
       for (const f of (level.fixtures || []).filter(f => f.way === kind)) {
         const a = (f.rot || 0) * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
-        for (const pc of M.PARTS[f.part].draw(f)) {
+        for (const pc of M.own(M.PARTS, f.part).draw(f)) {
           const box = pc.t === "rect" ? [pc.x, pc.y, pc.x + pc.w, pc.y + pc.h] : pc.t === "circle" ? [pc.cx - pc.rad, pc.cy - pc.rad, pc.cx + pc.rad, pc.cy + pc.rad] : null;
           if (box) for (const [u, q] of [[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]]]) pts.push([f.x + u * c - q * sn, f.y + u * sn + q * c]);
         }
@@ -2097,6 +2167,7 @@ L.entries = function (lay, model, opts = {}) {
     }
     pushEnt(v, room, level, tip, out, kind, { means, side, want: land });
   });
+  M.outdoors.finish(lay);
   return ents;
 };
 
@@ -2140,9 +2211,13 @@ L.build = function (model, view, rng, opts = {}) {
     const hb = lv.hull.bbox;
     lv.siteBox = { x: Math.min(lv.bbox.x, hb.x), y: Math.min(lv.bbox.y, hb.y), w: Math.max(lv.bbox.x + lv.bbox.w, hb.x + hb.w) - Math.min(lv.bbox.x, hb.x), h: Math.max(lv.bbox.y + lv.bbox.h, hb.y + hb.h) - Math.min(lv.bbox.y, hb.y) };
   }
+  // E2: is it drawn out of doors? (decided before the ways in land: a roof route on an
+  // open-air site comes down onto its top deck, not onto a roof it hasn't got)
+  if (lay.kind === "plan") lay.open = M.outdoors.formFor(model, lay);
   lay.entries = L.entries(lay, model, opts);
   lay.links = L.links(lay, model);
   for (const lv of lay.levels) lv.walls = L.finishWalls(lv.walls, lv.doors);
+  M.outdoors.apply(lay, model);
   return lay;
 };
 
@@ -2157,13 +2232,19 @@ L.build = function (model, view, rng, opts = {}) {
 
 M.model = function (o, W) {
   if (!o || typeof o !== "object") throw new Error("B68Map: expected the generator's location object");
-  const rooms = (o.rooms || []).map((r, i) => {
+  const rooms = M.list(o.rooms, W, "rooms").map((r, i) => {
     if (typeof r === "string") r = { name: r, band: "public" };
+    if (!r || typeof r !== "object") r = { name: r == null ? "" : String(r), band: "public" };
+    if (typeof r.name !== "string" || !r.name) {
+      const name = r.name != null && r.name !== "" ? String(r.name) : "Room " + (i + 1);
+      M.warn(W, `room ${i + 1}: ${r.name != null && r.name !== "" ? "its name isn't text" : "it has no name"} — called "${name}"`);
+      r = Object.assign({}, r, { name });
+    }
     let band = r.band;
     if (!M.BANDS.includes(band)) { M.warn(W, `room "${r.name}": band "${band}" is not one of ${M.BANDS.join(", ")} — drawn as public`); band = "public"; }
     const info = M.roomInfo(r.name, o.themeName, r.mix);
     if (!info) M.warn(W, `room "${r.name}" is not in the catalogue — drawn empty. Add it to M.ROOMS in catalogue.js`);
-    const dress = (M.DRESS[o.target] || {})[r.name];
+    const dress = M.own(M.own(M.DRESS, o.target), r.name);
     const arch = dress || (info ? info.arch : "empty");
     return {
       id: "r" + i, n: 0, name: r.name, band, arch, dressed: !!dress,
@@ -2179,7 +2260,7 @@ M.model = function (o, W) {
   rooms.forEach((r, i) => { r.n = i + 1; });
 
   // schema 2 ways in: where each lands, if the generator says (L.wayLanding)
-  (o.vectors || []).slice(0, 3).forEach((v, i) => {
+  M.list(o.vectors, W, "vectors").slice(0, 3).forEach((v, i) => {
     if (!v || typeof v !== "object") return;
     const which = ["front", "service side", "back route"][i];
     if (v.room && !rooms.some(r => r.name.toLowerCase() === String(v.room).toLowerCase())) M.warn(W, `the ${which}'s room "${v.room}" is not one of this roll's rooms — it lands by its level instead`);
@@ -2188,10 +2269,11 @@ M.model = function (o, W) {
   });
 
   const styleName = o.styleName || (o.style ? String(o.style).split(".")[0] : null);
-  let rings = (o.geometry && o.geometry.rings) || M.GEOMETRY[styleName] || "hard";
-  if (!M.layout.STYLE[rings]) { M.warn(W, `geometry.rings "${rings}" is unknown — one of ${Object.keys(M.layout.STYLE).join(", ")}; drawn as hard`); rings = "hard"; }
-  const colour = M.COLOURS[o.colour] ? o.colour : null;
+  let rings = (o.geometry && o.geometry.rings) || M.own(M.GEOMETRY, styleName) || "hard";
+  if (!M.own(M.layout.STYLE, rings)) { M.warn(W, `geometry.rings "${rings}" is unknown — one of ${Object.keys(M.layout.STYLE).join(", ")}; drawn as hard`); rings = "hard"; }
+  const colour = M.own(M.COLOURS, o.colour) ? o.colour : null;
   if (o.colour && !colour) M.warn(W, `colour "${o.colour}" is not one of the twelve printed schemes — using grey and charcoal`);
+  if (o.open != null && o.open !== true && o.open !== false && !M.own(M.outdoors.FORMS, o.open)) M.warn(W, `open "${o.open}" is not one of true, false, ${Object.keys(M.outdoors.FORMS).join(", ")} — drawn as its target type says`);
 
   return {
     name: o.name || "Unnamed location", target: o.target || "", district: o.district || "",
@@ -2201,11 +2283,22 @@ M.model = function (o, W) {
     faction: o.faction || "", factionTier: o.factionTier || 0,
     phys: o.physThreatName ? { name: o.physThreatName, text: o.physThreatText || "" } : null,
     soc: o.socThreatName ? { name: o.socThreatName, text: o.socThreatText || "" } : null,
-    vectors: (o.vectors || []).slice(0, 3), skips: o.skips || [], circulation: o.circulation || [],
+    vectors: M.list(o.vectors).slice(0, 3).map((v, i) => {
+      // a way in that isn't one (a word, a number, nothing) is its words or none; one missing
+      // its name or what is known of it gets the book's
+      if (!v || typeof v !== "object") v = { how: typeof v === "string" ? v : "" };
+      return v.n == null || v.know == null || v.how == null || v.cost == null
+        ? Object.assign({}, v, { n: v.n == null ? ["Front", "Service side", "Back route"][i] : v.n, know: v.know == null ? "" : v.know, how: v.how == null ? "" : v.how, cost: v.cost == null ? "" : v.cost }) : v;
+    }),
+    skips: M.list(o.skips, W, "skips").filter(k => k && typeof k === "object"), circulation: M.list(o.circulation, W, "circulation").filter(c => c && typeof c === "object"),
     pairs: rooms.filter(r => r.pairedWith).map(r => ({ lock: r.name, answer: r.pairedWith })),
     time: o.timeOfDay || "", weather: o.weather || "", street: o.namedStreet || "",
     security: o.security || "", geometryNote: o.geometry && o.geometry.note || "",
-    seed: o.seed, rooms
+    seed: o.seed, rooms,
+    // out of doors (outdoors.js): o.open false draws the building, a form name that form;
+    // the street type and props say what lies under the street (E3)
+    openWant: o.open === undefined || o.open === null ? null : o.open, open: null,
+    streetType: o.streetType || "", props: M.list(o.props, null, "props", true).slice()
   };
 };
 
@@ -2227,7 +2320,7 @@ const UNIQUE = new Set(["vault-door", "stage", "screen", "bed-round", "piano", "
 M.furnish = function (room, rng, W, extraParts) {
   const frames = (room.frames && room.frames.length ? room.frames : [room.frame]).filter(Boolean);
   if (!frames.length) return null;
-  const recipe = M.ARCH[room.arch];
+  const recipe = M.own(M.ARCH, room.arch);
   if (!recipe) M.warn(W, `archetype "${room.arch}" has no recipe in parts.js`);
   const groups = [];
   frames.forEach((f, fi) => {
@@ -2239,7 +2332,7 @@ M.furnish = function (room, rng, W, extraParts) {
     if (extraParts && fi === 0) pls = pls.concat(extraParts(R));
     const kids = [];
     for (const pl of pls) {
-      const part = M.PARTS[pl.part];
+      const part = M.own(M.PARTS, pl.part);
       if (!part) { M.warn(W, `part "${pl.part}" is not registered`); continue; }
       let s = 1;
       const fit = fits(pl, part, R);
@@ -2273,7 +2366,7 @@ M.WAY_SPOT = { "roof-hatch": R => [R.x + 2.4, R.y + 3.2], hatch: R => [R.x + 2.5
 M.wayPoint = (room, part) => {
   const f = ((room.frames && room.frames.length ? room.frames : [room.frame]).filter(Boolean))[0];
   if (!f) return null;
-  const F = M.furnishFrame(f), [x, y] = M.WAY_SPOT[part](F.R);
+  const F = M.furnishFrame(f), [x, y] = M.own(M.WAY_SPOT, part)(F.R);
   return F.toWorld(x, y);
 };
 
@@ -2282,8 +2375,8 @@ M.wayPoint = (room, part) => {
 M.circulationParts = room => R => {
   const out = [];
   const add = name => out.push({ part: name, x: R.x + R.w - 3.2, y: R.y + 3.2, rot: 0 });
-  if (room.connects && CIRC_PART[room.connects]) {
-    const p = CIRC_PART[room.connects];
+  if (room.connects && M.own(CIRC_PART, room.connects)) {
+    const p = M.own(CIRC_PART, room.connects);
     if (p === "catwalk") out.push({ part: "catwalk", x: 0, y: 0, rot: R.w >= R.h ? 0 : 90, w: Math.max(R.w, R.h) * 0.9 });
     else if (p === "skylight") out.push({ part: "skylight", x: 0, y: 0, rot: 0 });
     // a cellar's hatch that a way in comes up through sits where that way's arrow lands
@@ -2294,6 +2387,615 @@ M.circulationParts = room => R => {
   if (room.hatch && room.connects !== "a cellar") { const [x, y] = M.WAY_SPOT.hatch(R); out.push({ part: "hatch", x, y }); }
   if (room.roofHatch) { const [x, y] = M.WAY_SPOT["roof-hatch"](R); out.push({ part: "roof-hatch", x, y }); }
   return out;
+};
+
+// ---- src/outdoors.js ----
+// =============================================================================
+// outdoors — open-air sites (E2) and the floors above and below (E3)
+// =============================================================================
+// E2. An open-air site is a printed building theme drawn without a roof
+// (decision 18/10). Its rooms, locks and ways in are the roll's, exactly: the
+// plan lays it out as it would a building, and this file then redraws what
+// stands between the rooms. A Garage is a car park (when it has decks above the
+// street) or a yard, a Warehouse a yard, a Boathouse a quay; Market and
+// Autodrome, the two seed-only target rows, are a market and an autodrome. A
+// roll can say otherwise: o.open = false draws the building, o.open = "yard"
+// (or any form below) draws that form.
+//
+// E3. The floors become above, street and below: the roofs (2), walkways and
+// balconies (1), the street (0), the sewer, culvert, canal or underpass (−1).
+// A way in that names a floor the building hasn't got lands on that floor all
+// the same: L.entries asks OD.levels for the missing sheet, drawn as what lies
+// under the street there (the same reading as the chase strip's, M.belowKind)
+// or as the roof or walkway over the top of the building.
+//
+// Everything here is [interpretation], one table each.
+
+const OD = M.outdoors = {};
+
+// --- Exposure out of doors: the four bands read in the open ---------------------
+// [interpretation] Indoors a band says how deep a room sits. Out of doors there is
+// no depth to speak of, so a band says how exposed the ground is: who can see
+// it, and what you must cross to stand on it. Written down here (and in
+// CATALOG.md) before it is drawn. The floor keeps its band's tint; what changes
+// is the barrier between two rooms, which is the barrier of the deeper band:
+//   public      In the open   seen from the street and the gate; painted lines, no barrier
+//   working     In sight      staff ground behind a kerb and a low rail; seen, crossed in a step
+//   controlled  Fenced        behind mesh and a gate; seen through, not walked into
+//   secure      Under cover   the one thing on the site with walls and a roof: a lock-up,
+//                             a cage, a strongroom; the building style's own walls
+// Two rooms of one band are one piece of ground: a painted line between them.
+OD.EXPOSURE = {
+  public: { reading: "In the open", barrier: "line", text: "Seen from the street and the gate. Painted lines, no barrier." },
+  working: { reading: "In sight", barrier: "rail", text: "Staff ground behind a kerb and a low rail. Seen from the public ground, crossed in a step." },
+  controlled: { reading: "Fenced", barrier: "fence", text: "Behind mesh and a gate. Seen through, not walked into." },
+  secure: { reading: "Under cover", barrier: null, text: "The one thing on the site with walls and a roof: a lock-up, a cage, a strongroom. Unseen." }
+};
+
+// --- What stands between: the open-air wall kinds ---------------------------------
+// h: its height in the iso (ft); th: its thickness; sw: its stroke in the plan;
+// dash: dashed in the plan (it stops nobody); see: drawn see-through in the iso.
+OD.WALL = {
+  line: { h: 0, th: 0.3, sw: 0.22, dash: true, say: "a painted line" },
+  rail: { h: 3.2, th: 0.3, sw: 0.32, dash: true, see: true, say: "a kerb and a low rail" },
+  fence: { h: 6.5, th: 0.3, sw: 0.4, see: true, say: "mesh on posts" },
+  parapet: { h: 3.4, th: 0.9, sw: 0.9, say: "a parapet" },
+  quay: { h: 0.7, th: 1.4, sw: 0.9, say: "the quay's edge" }
+};
+OD.isWall = t => !!OD.WALL[t];
+
+// --- The forms ----------------------------------------------------------------------
+// perim: what stands round the street floor; deck: round a floor above it;
+// water: the side the water is on; say: one line for the key.
+OD.FORMS = {
+  "car park": { perim: "parapet", deck: "parapet", ramp: true, park: true, say: "A car park: open decks behind parapets, painted bays, a ramp between the decks." },
+  yard: { perim: "fence", deck: "rail", say: "A yard: a fenced lot, open to the sky; anything upstairs is a gantry." },
+  quay: { perim: "fence", deck: "rail", water: "top", say: "A quay: a fenced lot open to the sky, its back edge on the water." },
+  market: { perim: "rail", deck: "rail", say: "A market: open ground behind a low rail, stalls in the open." },
+  autodrome: { perim: "fence", deck: "rail", say: "An autodrome: the track, the pits and the stands, fenced, open to the sky." }
+};
+// Which target types are drawn open-air, and as what. A Garage with floors above
+// the street is a car park (its decks); without, a yard.
+OD.TARGETS = { Garage: ["car park", "yard"], Warehouse: ["yard"], Boathouse: ["quay"], Market: ["market"], Autodrome: ["autodrome"] };
+
+// The form a site is drawn as, or null for a building.
+OD.formFor = function (model, lay) {
+  const want = model.openWant;
+  if (want === false || model.target === "Ship") return null;
+  if (typeof want === "string") return M.own(OD.FORMS, want) ? want : null;
+  const forms = M.own(OD.TARGETS, model.target);
+  if (!forms && want !== true) return null;
+  if (!forms) return "yard";
+  if (forms.length > 1) return lay.levels.some(l => l.lvl >= 1 && !l.ground) ? forms[0] : forms[1];
+  return forms[0];
+};
+
+// Open-air dressing [interpretation]: what a room is drawn as once it is out of
+// doors, where the target type's own dressing (M.DRESS) says nothing. The car
+// park's public ground is its parking; a yard keeps its stock in containers.
+OD.DRESS = {
+  "car park": r => r.band === "public" ? "parking" : null,
+  yard: r => r.name === "Storage warehouse" ? "stockyard" : null
+};
+
+// --- The pass: a building's plan, redrawn out of doors --------------------------------
+// After the plan is laid out and the walls are finished (L.build), every wall on
+// a floor at or above the street takes the kind its two sides' bands give it
+// (EXPOSURE), the perimeter the form's; a door through a line or a rail is an
+// opening. Floors below the street stay as they are: they are under the yard.
+const odBand = n => n ? (n.band || "public") : null;
+const odDepth = b => b === "core" ? 9 : M.BANDS.indexOf(b);
+OD.apply = function (lay, model) {
+  const form = lay.kind === "plan" ? lay.open || null : null;
+  model.open = form;
+  if (!form) return;
+  const FM = M.own(OD.FORMS, form);
+  lay.open = form; model.open = form;
+  // the key says so, under its notes: the form, and how the bands read out of doors
+  model.geometryNote = `Out of doors [interpretation]: ${FM.say} Its bands read as exposure: public in the open, working in sight, controlled fenced, secure under cover.` + (model.geometryNote ? " " + model.geometryNote : "");
+  for (const r of model.rooms) if (!r.dressed && M.own(OD.DRESS, form)) { const a = M.own(OD.DRESS, form)(r); if (a) r.arch = a; }
+  // an autodrome has its track and a market its stalls, whichever rooms the roll gave it:
+  // the biggest room on the street that isn't secure, if no room is drawn as one
+  const must = { autodrome: "track", market: "market-stalls" }[form];
+  if (must && !model.rooms.some(r => r.arch === must)) {
+    const lv0 = lay.levels.find(l => l.lvl === 0 && !l.ground), pick = lv0 ? lv0.rooms.filter(r => r.band !== "secure").sort((a, b) => b.w - a.w || M.BANDS.indexOf(a.band) - M.BANDS.indexOf(b.band))[0] : null;
+    if (pick) pick.arch = must;
+  }
+  for (const lv of lay.levels) {
+    if (lv.lvl < 0 || lv.ground) continue;
+    lv.open = form;
+    const nodes = lv.rooms.filter(r => r.shape).map(r => ({ s: r.shape, band: r.band }))
+      .concat(lv.extras.filter(e => e.shape).map(e => ({ s: e.shape, band: e.kind === "core" ? "core" : "public" })));
+    const at = (x, y) => { for (const q of nodes) if (M.scene.inside(q.s, x, y)) return q; return null; };
+    const B = lv.bbox;
+    const edge = (x, y) => Math.abs(y - B.y) < 0.3 ? "top" : Math.abs(y - B.y - B.h) < 0.3 ? "bottom" : Math.abs(x - B.x) < 0.3 ? "left" : Math.abs(x - B.x - B.w) < 0.3 ? "right" : null;
+    // the kind of wall at a point on it, n its normal
+    const kindAt = (w, x, y, nx, ny) => {
+      const A = at(x + nx, y + ny), C = at(x - nx, y - ny);
+      if (!A && !C) return { t: w.t };
+      if (!A || !C) {
+        const inn = A || C;
+        if (inn.band === "secure" || inn.band === "core") return { t: w.t };
+        let t = lv.lvl > 0 ? FM.deck : FM.perim;
+        if (FM.water && lv.lvl === 0 && edge(x, y) === FM.water) t = "quay";
+        return { t, perim: true };
+      }
+      const a = odBand(A), c = odBand(C);
+      if (a === "secure" || c === "secure" || a === "core" || c === "core") return { t: w.t };
+      const d = Math.max(odDepth(a), odDepth(c));
+      return { t: odDepth(a) === odDepth(c) ? "line" : OD.EXPOSURE[M.BANDS[d]].barrier };
+    };
+    const out = [];
+    for (const w of lv.walls) {
+      // walk the wall, and cut it where the kind changes (a long shell wall runs past many rooms)
+      if (w.arc) {
+        const len = (w.a1 - w.a0) * w.r, n = Math.max(2, Math.ceil(len / 0.5));
+        const ptAt = i => { const a = w.a0 + (w.a1 - w.a0) * i / n; return [w.cx + Math.cos(a) * w.r, w.cy + Math.sin(a) * w.r, Math.cos(a), Math.sin(a), a]; };
+        let run = null;
+        for (let i = 0; i < n; i++) {
+          const p = ptAt(i + 0.5), k = kindAt(w, p[0], p[1], p[2], p[3]), a0 = ptAt(i)[4], a1 = ptAt(i + 1)[4];
+          if (run && run.k.t === k.t && !!run.k.perim === !!k.perim) run.a1 = a1;
+          else { if (run) out.push(Object.assign({}, w, { a0: run.a0, a1: run.a1, t: run.k.t }, run.k.perim ? { perim: true } : {})); run = { k, a0, a1 }; }
+        }
+        if (run) out.push(Object.assign({}, w, { a0: run.a0, a1: run.a1, t: run.k.t }, run.k.perim ? { perim: true } : {}));
+        continue;
+      }
+      const dx = w.b[0] - w.a[0], dy = w.b[1] - w.a[1], len = Math.hypot(dx, dy);
+      if (len < 0.05) continue;
+      const nx = -dy / len, ny = dx / len, n = Math.max(1, Math.ceil(len / 0.5));
+      let run = null;
+      const flush = () => { if (run) out.push(Object.assign({ a: [w.a[0] + dx * run.s0, w.a[1] + dy * run.s0], b: [w.a[0] + dx * run.s1, w.a[1] + dy * run.s1], t: run.k.t }, run.k.perim ? { perim: true } : {})); };
+      for (let i = 0; i < n; i++) {
+        const s = (i + 0.5) / n, k = kindAt(w, w.a[0] + dx * s, w.a[1] + dy * s, nx, ny);
+        if (run && run.k.t === k.t && !!run.k.perim === !!k.perim) run.s1 = (i + 1) / n;
+        else { flush(); run = { k, s0: i / n, s1: (i + 1) / n }; }
+      }
+      flush();
+    }
+    lv.walls = out;
+    // a door through a painted line or a rail is a gap: there is nothing to swing
+    for (const d of lv.doors) {
+      const a = d.ang * Math.PI / 180, nx = -Math.sin(a), ny = Math.cos(a);
+      const k = kindAt({ t: "int" }, d.x, d.y, nx * 1.2, ny * 1.2);
+      if (k.t === "line" || k.t === "rail") { d.kind = "opening"; d.openAir = true; }
+    }
+    // what the form adds: the water and the quay's edge, a car park's ramp
+    const fx = (part, x, y, rot, o) => (lv.fixtures ||= []).push(Object.assign({ part, x, y, rot, openAir: true }, o || {}));
+    if (FM.water === "top" && lv.lvl === 0) {
+      fx("water", B.x + B.w / 2, B.y - 8, 0, { w: B.w + 18, h: 14 });
+      fx("quay-edge", B.x + B.w / 2, B.y + 1.1, 0, { w: B.w - 1 });
+      // [interpretation] a chain boom across the water at the far end: the quay's water side is shut
+      fx("chain-boom", B.x + B.w + 3, B.y - 8, 90, { w: 14 });
+    }
+    if (FM.ramp && lv.exterior.kind === "rect" && lay.levels.filter(l => l.lvl >= 0 && !l.ground).length > 1) {
+      const rw = Math.min(42, B.w * 0.55);
+      fx("ramp", B.x + B.w - rw / 2 - 3, B.y - 6.5, 90, { w: 10, h: rw });
+    }
+  }
+};
+
+// --- The iso: an open-air wall, drawn as what it is -----------------------------------
+// Called by M.iso for every wall of a kind in OD.WALL (s: the wall's segment, P0:
+// plan point and height → screen). Returns { key, pieces } in the iso's painter's
+// order, or null for a wall that isn't one of these. A fence and a rail are seen
+// through: posts and a top rail over a faint mesh. A line lies on the ground.
+OD.isoWall = function (s, P0, vx) {
+  const spec = OD.WALL[s.t];
+  if (!spec) return null;
+  const dx = s.b[0] - s.a[0], dy = s.b[1] - s.a[1], len = Math.hypot(dx, dy);
+  let nx = -dy / len, ny = dx / len;
+  if (vx * nx + ny < 0) { nx = -nx; ny = -ny; }
+  const mx = (s.a[0] + s.b[0]) / 2, my = (s.a[1] + s.b[1]) / 2, key = vx * mx + my;
+  const h = s.cutH != null ? Math.min(spec.h, s.cutH) : spec.h, o = spec.th / 2;
+  const A = [s.a[0] + nx * o, s.a[1] + ny * o], B = [s.b[0] + nx * o, s.b[1] + ny * o], A2 = [s.a[0] - nx * o, s.a[1] - ny * o], B2 = [s.b[0] - nx * o, s.b[1] - ny * o];
+  const pcs = [];
+  const box = (z0, z1, role, op) => {
+    const xo = op != null ? { opacity: op } : undefined;
+    pcs.push(P.poly("wallf-" + role, [P0(A, z0), P0(B, z0), P0(B, z1), P0(A, z1)], xo));
+    const endB = vx * dx + dy > 0, E1 = endB ? B : A, E2 = endB ? B2 : A2;
+    pcs.push(P.poly("walle-" + role, [P0(E1, z0), P0(E2, z0), P0(E2, z1), P0(E1, z1)], xo));
+    pcs.push(P.poly("wallt-" + role, [P0(A, z1), P0(B, z1), P0(B2, z1), P0(A2, z1)], xo));
+  };
+  if (s.t === "line" || h <= 0.05) {
+    const p = P0(s.a, 0.02), q = P0(s.b, 0.02);
+    pcs.push(P.line("wall-" + s.t, p[0], p[1], q[0], q[1], { sw: spec.sw, dash: true }));
+    return { key, pieces: pcs };
+  }
+  if (spec.see) {
+    // the mesh, faint; posts at a steady pitch and at both ends; the top rail
+    if (s.t === "fence") pcs.push(P.poly("wallf-" + s.t, [P0(s.a, 0), P0(s.b, 0), P0(s.b, h), P0(s.a, h)], { opacity: 0.16 }));
+    const pitch = s.t === "fence" ? 8 : 4, np = Math.max(1, Math.round(len / pitch));
+    for (let i = 0; i <= np; i++) {
+      const t = i / np, p = [s.a[0] + dx * t, s.a[1] + dy * t], q0 = P0(p, 0), q1 = P0(p, h);
+      pcs.push(P.line("wall-" + s.t, q0[0], q0[1], q1[0], q1[1], { sw: s.t === "fence" ? 0.3 : 0.24 }));
+    }
+    const r0 = P0(s.a, h), r1 = P0(s.b, h);
+    pcs.push(P.line("wall-" + s.t, r0[0], r0[1], r1[0], r1[1], { sw: 0.28 }));
+    if (s.t === "rail") { const k0 = P0(s.a, 0.4), k1 = P0(s.b, 0.4); pcs.push(P.line("wall-" + s.t, k0[0], k0[1], k1[0], k1[1], { sw: 0.5 })); }
+    return { key, pieces: pcs };
+  }
+  box(0, h, s.t);
+  return { key, pieces: pcs };
+};
+// …and its stroke in the plan (M.scene.wallPiece)
+OD.planStroke = t => OD.WALL[t] ? OD.WALL[t].sw : null;
+
+// --- What lies under the street (shared with the chase strip) --------------------------
+// [interpretation] One reading for the building views (E3's floor −1) and the chase
+// strip's below level: a canal beside a towpath or under a bridge, an underpass under
+// an open plaza or a roundabout, a service tunnel under a covered arcade, a culvert
+// where the street has water, and a sewer everywhere else.
+M.belowKind = (ground, water) => ground === "bridge" || ground === "waterside" || ground === "quay" ? "canal" : ground === "open" || ground === "hub" || ground === "carpark" ? "underpass" : ground === "covered" ? "service" : water ? "culvert" : "sewer";
+OD.BELOW = {
+  sewer: { title: "Sewer", wet: true, w: 10, say: "The sewer under the street, a branch under the site, a ladder up to the hatch." },
+  culvert: { title: "Culvert", wet: true, w: 9, say: "The culvert under the street (its water props), a branch under the site, a ladder up." },
+  canal: { title: "Canal", wet: true, w: 16, say: "The canal under the street's edge, a cut under the site, a ladder up." },
+  underpass: { title: "Underpass", wet: false, w: 12, say: "The underpass under the plaza, a service passage under the site, a ladder up." },
+  service: { title: "Service tunnel", wet: false, w: 10, say: "The service tunnel under the arcade, a branch under the site, a ladder up." }
+};
+// The kind under this roll's street: its printed street type's ground, and whether its props put water there.
+OD.belowFor = function (model) {
+  const st = M.street && M.street.GROUND ? Object.keys(M.street.GROUND).find(k => k.toLowerCase() === String(model.streetType || "").toLowerCase()) : null;
+  const ground = st ? M.street.GROUND[st].g : null;
+  const water = (model.props || []).some(p => M.street && M.street.PROP && M.street.PROP[p] && M.street.PROP[p].z === "water");
+  const sewerGrate = (model.props || []).includes("a sewer grate");
+  const kind = M.belowKind(ground, water);
+  return sewerGrate && (kind === "culvert") ? "sewer" : kind;
+};
+
+// --- E3: the sheets a building hasn't got -----------------------------------------------
+// A way in that lands on a floor the building has no sheet for: below the street
+// (no basement), up a level (no floor above the street) or on the roof (no floor
+// two). The sheet shares the floor's footprint (so the iso stacks it true over
+// the room the way reaches) and has no rooms. In the player copy, a back route
+// the crew can't know never makes one: the file would show it is there.
+OD.levels = function (lay, model, opts) {
+  if (lay.kind !== "plan" || model.target === "Ship") return;
+  const real = lay.levels.filter(l => !l.ground);
+  const lv0 = real.find(l => l.lvl === 0) || real[0];
+  const want = new Set();
+  model.vectors.forEach((v, i) => {
+    if (i === 0) return;
+    const kind = i === 1 ? "service" : "back";
+    if (opts.player && kind === "back" && M.vecHidden(v)) return;
+    const land = M.layout.wayLanding(v, kind, model);
+    if (land.room && model.rooms.some(r => r.name.toLowerCase() === String(land.room).toLowerCase())) return;
+    if (land.level === "below" && !real.some(l => l.lvl < 0)) want.add("below");
+    if (land.level === "upper" && !real.some(l => l.lvl >= 1)) want.add("upper");
+    if (land.level === "roof" && !lay.open && !real.some(l => l.lvl >= 2)) want.add("roof");
+  });
+  if (!want.size) return;
+  const top = real.filter(l => l.lvl >= 0).sort((a, b) => b.lvl - a.lvl)[0] || lv0;
+  const sheet = (lvl, ground, base, title) => {
+    const B = Object.assign({}, base.bbox);
+    // a roof keeps its floor's outline (a hub's roof is the hub's); a walkway or a tunnel has
+    // none of its own (no dark ground, no slab under the whole footprint): a point exterior
+    const ext = ground === "roof" ? (base.exterior.kind === "hub" ? Object.assign({}, base.exterior) : { kind: "rect", r: B }) : { kind: "circle", cx: B.x + B.w / 2, cy: B.y + B.h / 2, r: 0 };
+    const lv = { lvl, title, rooms: [], extras: [], walls: [], doors: [], fixtures: [], bbox: B, exterior: ext, ground, base, ways: [] };
+    lay.levels.push(lv);
+    return lv;
+  };
+  if (want.has("below")) {
+    const kind = OD.belowFor(model), lv = sheet(-1, kind, lv0, M.own(OD.BELOW, kind).title);
+    lv.under = kind;
+    const B = lv.bbox, W = M.own(OD.BELOW, kind).w, y0 = B.y + B.h + 4;
+    lv.tunnel = { x0: B.x - 8, x1: B.x + B.w + 8, y0, y1: y0 + W };
+    // the sheet grows to hold the tunnel, the same each way, so its centre (and the iso's
+    // stack) stays the floor's above, and its title clears the tunnel's end
+    const g = W + 8;
+    lv.bbox = { x: B.x - 12, y: B.y - g, w: B.w + 24, h: B.h + 2 * g };
+    lv.exterior = { kind: "circle", cx: B.x + B.w / 2, cy: B.y + B.h / 2, r: 0 };
+  }
+  // a walkway is a strip along the wall the way comes in on (OD.walkway), so the sheet
+  // has no footprint of its own: no dark ground under it, no slab
+  if (want.has("upper")) sheet(1, "walkway", lv0, "Walkway");
+  if (want.has("roof")) { const lv = sheet(2, "roof", top, "Roof"); OD.deck(lv, "parapet"); }
+  // the plan's order: the street, up, then down
+  const ord = l => l.lvl < 0 ? 10 - l.lvl : l.lvl;
+  lay.levels.sort((a, b) => ord(a) - ord(b));
+};
+// A roof or a walkway: the floor below's footprint as one deck (a Futurist hub and
+// pods as theirs), with a parapet or a rail round it.
+OD.deck = function (lv, wallT) {
+  const base = lv.base, B = lv.bbox;
+  if (base.exterior.kind === "hub") {
+    for (const r of base.rooms.concat(base.extras.filter(e => e.kind === "hub" || e.kind === "core"))) if (r.shape && r.shape.kind === "circle") {
+      lv.extras.push({ kind: "corridor", band: "public", shape: r.shape, frame: { cx: r.shape.cx, cy: r.shape.cy, w: r.shape.r * 1.3, h: r.shape.r * 1.3, rot: 0 } });
+      lv.walls.push(Object.assign(M.layout.arc(r.shape.cx, r.shape.cy, r.shape.r, 0, 2 * Math.PI, wallT), { perim: true }));
+    }
+    for (const e of base.extras) if (e.kind === "bridge" && !e.front && e.shape) lv.extras.push({ kind: "bridge", band: "public", shape: e.shape });
+    return;
+  }
+  lv.extras.push({ kind: "corridor", band: "public", shape: { kind: "poly", pts: G.rectPts(B) }, rect: Object.assign({}, B), frame: { cx: B.x + B.w / 2, cy: B.y + B.h / 2, w: B.w, h: B.h, rot: 0 } });
+  G.rectPts(B).forEach((p, i, a) => lv.walls.push(Object.assign(M.layout.seg(p, a[(i + 1) % 4], wallT), { perim: true })));
+};
+// A walkway: a 6 ft strip inside the edge a way comes in on (sideObj, as L.entries
+// gives it), the length of the room's stretch of that edge and a little more, railed
+// on its three inner sides. Returns where its hatch down into the room goes.
+OD.walkway = function (lv, sideObj) {
+  const B = lv.bbox, e = sideObj.e, D = 6, lo = Math.max(e.o === "h" ? B.x : B.y, e.lo - 3), hi = Math.min(e.o === "h" ? B.x + B.w : B.y + B.h, e.hi + 3);
+  const inward = { bottom: [0, -1], top: [0, 1], left: [1, 0], right: [-1, 0] }[sideObj.side];
+  const pt = (u, d) => e.o === "h" ? [u, e.c + inward[1] * d] : [e.c + inward[0] * d, u];
+  const pts = [pt(lo, 0), pt(hi, 0), pt(hi, D), pt(lo, D)];
+  lv.extras.push({ kind: "corridor", band: "public", shape: { kind: "poly", pts } });
+  const rail = (a, b) => lv.walls.push(M.layout.seg(a, b, "rail"));
+  rail(pts[0], pts[1]); rail(pts[1], pts[2]); rail(pts[2], pts[3]); rail(pts[3], pts[0]);
+  return pt(Math.min(hi - 3, Math.max(lo + 3, (e.lo + e.hi) / 2 + (hi - lo > 14 ? (hi - lo) * 0.25 : 0))), D / 2);
+};
+// The tunnel under the street and a branch from it to the foot of the ladder at
+// (x, y), under the hatch in the room above. Returns the arrow's tip and its way.
+OD.below = function (lv, x, y, way) {
+  const T = lv.tunnel, spec = M.own(OD.BELOW, lv.under);
+  if (!lv.ways.length) {
+    lv.extras.push({ kind: "corridor", band: "public", shape: { kind: "poly", pts: G.rectPts({ x: T.x0, y: T.y0, w: T.x1 - T.x0, h: T.y1 - T.y0 }) } });
+    lv.fixtures.push({ part: spec.wet ? "sewer-run" : "underpass-run", x: (T.x0 + T.x1) / 2, y: (T.y0 + T.y1) / 2, rot: 0, w: T.x1 - T.x0, h: T.y1 - T.y0, ground: true });
+  }
+  const bw = 5, bx0 = Math.max(T.x0 + 1, Math.min(T.x1 - 1 - bw, x - bw / 2)), by0 = y - 3;
+  lv.extras.push({ kind: "corridor", band: "public", shape: { kind: "poly", pts: G.rectPts({ x: bx0, y: by0, w: bw, h: T.y0 - by0 }) } });
+  lv.ways.push({ way, x0: bx0, x1: bx0 + bw, y0: by0 });
+  if (way.fixture !== false) lv.fixtures.push({ part: "ladder", x: bx0 + bw / 2, y: y, rot: 0, way: way.kind });
+  return { tip: [bx0 + bw / 2, y + 2.2], dir: [0, 1] };
+};
+// Once every way is in: the tunnel's walls (low, so the reader sees in), cut where
+// the branches leave it; and on a roof, its plant, clear of the ways' hatches.
+OD.finish = function (lay) {
+  for (const lv of lay.levels) {
+    if (!lv.ground) continue;
+    if (lv.tunnel) {
+      const T = lv.tunnel, gaps = lv.ways.map(w => [w.x0, w.x1]).sort((a, b) => a[0] - b[0]);
+      const wall = (a, b) => lv.walls.push(Object.assign(M.layout.seg(a, b, "parapet"), { perim: true }));
+      wall([T.x0, T.y1], [T.x1, T.y1]);
+      let x = T.x0;
+      for (const [g0, g1] of gaps) { if (g0 > x + 0.1) wall([x, T.y0], [g0, T.y0]); x = Math.max(x, g1); }
+      if (x < T.x1 - 0.1) wall([x, T.y0], [T.x1, T.y0]);
+      for (const w of lv.ways) { wall([w.x0, w.y0], [w.x0, T.y0]); wall([w.x1, w.y0], [w.x1, T.y0]); wall([w.x0, w.y0], [w.x1, w.y0]); }
+    }
+    if (lv.ground === "roof" && lv.base.exterior.kind !== "hub") {
+      const B = lv.bbox, busy = (lv.fixtures || []).map(f => [f.x, f.y]);
+      const free = (x, y, r) => busy.every(([a, b]) => Math.hypot(a - x, b - y) > r + 4);
+      const spots = [[B.x + 6, B.y + 6, "tank", 5], [B.x + B.w - 7, B.y + 6, "machine", 6], [B.x + 7, B.y + B.h - 7, "machine", 6], [B.x + B.w - 6, B.y + B.h - 6, "tank", 5]];
+      let n = 0;
+      for (const [x, y, part, r] of spots) if (n < 2 && B.w > 26 && B.h > 22 && free(x, y, r)) { lv.fixtures.push({ part, x, y, rot: 0, plant: true }); n++; }
+    }
+  }
+};
+
+// --- Parts the open air adds --------------------------------------------------------------
+// Drawn like every part (parts.js): top-down, in feet, back toward −y, fixture roles only.
+const odR = (r, x, y, w, h, o) => P.rect(r, x - w / 2, y - h / 2, w, h, o);
+const odReg = (name, describe, size, draw) => { M.PARTS[name] = { name, describe, size, draw }; };
+odReg("bay", "A painted parking bay, an autopod in it or not.", [9, 14], o => {
+  const k = [odR("fxline", -4.4, 0.4, 0.22, 13.2), odR("fxline", 4.4, 0.4, 0.22, 13.2), odR("fxline", 0, -6.2, 9, 0.22)];
+  if (o.car) k.push(P.g(M.PARTS.autopod.draw({}), { tf: { x: 0, y: 0.4, s: 0.95 } }));
+  return k;
+});
+odReg("lane-arrow", "An arrow painted on a lane.", [3, 6], () => [P.poly("fxline", [[0, -3], [1.5, -0.8], [0.5, -0.8], [0.5, 3], [-0.5, 3], [-0.5, -0.8], [-1.5, -0.8]])]);
+odReg("bollard", "A bollard.", [1.4, 1.4], () => [P.circle("fx3", 0, 0, 0.65), P.circle("fxm", 0, 0, 0.3)]);
+odReg("quay-edge", "A quay's coping, bollards along it.", [20, 2.4], o => {
+  const L = o.w || 20, k = [odR("fxm", 0, 0, L, 1.6), odR("fx3", 0, -0.9, L, 0.3)];
+  for (let x = -L / 2 + 4; x < L / 2 - 2; x += 12) k.push(P.circle("fx3", x, 0.1, 0.62), P.circle("fxm", x, 0.1, 0.28));
+  return k;
+});
+odReg("ramp", "A car park's ramp between decks, chevrons up it.", [10, 30], o => {
+  const W = o.w || 10, H = o.h || 30, k = [odR("fxm", 0, 0, W, H), odR("fx3", -W / 2 + 0.25, 0, 0.5, H), odR("fx3", W / 2 - 0.25, 0, 0.5, H)];
+  for (let y = -H / 2 + 3; y < H / 2 - 2; y += 4.5) k.push(P.poly("fxline", [[-2.2, y + 1.4], [0, y], [2.2, y + 1.4], [2.2, y + 2.1], [0, y + 0.7], [-2.2, y + 2.1]]));
+  return k;
+});
+odReg("chain-boom", "A chain boom across water: floats on a chain.", [14, 1.6], o => {
+  const L = o.w || 14, k = [odR("fx3", 0, 0, L, 0.25)];
+  for (let x = -L / 2 + 1; x < L / 2; x += 2.2) k.push(odR("fx2", x, 0, 1.4, 1.1, { rx: 0.4 }));
+  return k;
+});
+odReg("stall", "A market stall: a striped awning over a counter.", [7, 6], () => {
+  const k = [odR("fx2", 0, -0.6, 7, 4.2)];
+  for (let x = -3; x < 3.4; x += 1.4) k.push(odR("fxl", x + 0.35, -0.6, 0.7, 4.2));
+  k.push(odR("fx", 0, 2.2, 6.4, 1.4), odR("fxl", -1.6, 2.2, 1.2, 0.8), odR("fx2", 1.4, 2.2, 1.4, 0.8));
+  return k;
+});
+odReg("track", "A racing oval: asphalt round an infield, a dashed line, the start.", [40, 24], o => {
+  const W = o.w || 40, H = o.h || 24, t = Math.min(9, Math.min(W, H) * 0.28), rx = W / 2, ry = H / 2, ix = rx - t, iy = ry - t;
+  const ell = (a, b) => `M${-a} 0 A${a} ${b} 0 1 1 ${a} 0 A${a} ${b} 0 1 1 ${-a} 0 Z`;
+  const k = [P.path("fx3", ell(rx, ry) + " " + ell(ix, iy), { evenodd: true }), P.ellipse("fxg", 0, 0, ix - 0.6, iy - 0.6)];
+  const mx = rx - t / 2, my = ry - t / 2;
+  for (let i = 0; i < 28; i++) {
+    const a = i / 28 * Math.PI * 2, x = Math.cos(a) * mx, y = Math.sin(a) * my, rot = Math.atan2(Math.cos(a) * my, -Math.sin(a) * mx) * 180 / Math.PI;
+    k.push(P.g([odR("fxl", 0, 0, 1.4, 0.22)], { tf: { x, y, rot } }));
+  }
+  for (let j = 0; j < Math.floor(t / 1.2); j++) k.push(odR(j % 2 ? "fxl" : "fx3", 0.6 * (j % 2 ? 1 : -1), ry - t + 0.6 + j * 1.2, 1.2, 1.2));
+  k.push(odR("fxl", 0, ry - t / 2, 0.3, t));
+  k.push(P.g(M.PARTS.autopod.draw({}), { tf: { x: -mx * 0.55, y: my * 0.83, rot: 90, s: 0.55 } }), P.g(M.PARTS.autopod.draw({}), { tf: { x: mx * 0.9, y: -my * 0.3, rot: 0, s: 0.55 } }));
+  return k;
+});
+odReg("grandstand", "A grandstand: stepped tiers under a canopy.", [20, 8], o => {
+  const L = o.w || 20, k = [odR("fx3", 0, -3.6, L, 1)];
+  for (let i = 0; i < 4; i++) k.push(odR(i % 2 ? "fx" : "fx2", 0, -2.4 + i * 1.6, L - 0.6, 1.4));
+  for (let x = -L / 2 + 3; x < L / 2 - 1; x += 6) k.push(odR("fxl", x, 0, 0.4, 6.4));
+  return k;
+});
+odReg("tyres", "A stack of tyres.", [3, 3], () => [P.circle("fx3", 0, 0, 1.4), P.circle("fxm", 0, 0, 0.6)]);
+odReg("container", "A cargo container.", [8, 20], o => {
+  const L = o.h || 20, k = [odR(o.alt ? "fx" : "fx2", 0, 0, 8, L)];
+  for (let y = -L / 2 + 1.2; y < L / 2 - 0.6; y += 1.2) k.push(odR("fx3", 0, y, 8, 0.1));
+  k.push(odR("fxline", 0, L / 2 - 0.3, 7, 0.25));
+  return k;
+});
+odReg("barrier-arm", "A gate's barrier arm.", [10, 1.4], o => {
+  const L = o.w || 10, k = [odR("fx3", -L / 2 + 0.6, 0, 1.2, 1.4)];
+  for (let x = -L / 2 + 1.4, i = 0; x < L / 2; x += 1, i++) k.push(odR(i % 2 ? "fxl" : "fx2", x + 0.5, 0, 1, 0.45));
+  return k;
+});
+odReg("sewer-run", "A sewer: a channel of water between two ledges.", [30, 10], o => {
+  const W = o.w || 30, H = o.h || 10, ch = Math.max(2, H - 4.4), k = [odR("fxm", 0, 0, W, H), odR("fxw", 0, 0, W, ch)];
+  for (let x = -W / 2 + 4; x < W / 2 - 2; x += 9) k.push(odR("fxl", x + ((x * 7) % 3), ((x * 13) % 5) / 5 * (ch - 1) - (ch - 1) / 2, 2.6, 0.2, { opacity: 0.6 }));
+  for (let x = -W / 2 + 6; x < W / 2 - 3; x += 16) k.push(odR("fx3", x, -H / 2 + 0.3, 2.4, 0.5));
+  return k;
+});
+odReg("underpass-run", "An underpass: a tiled passage, lamps along it.", [30, 12], o => {
+  const W = o.w || 30, H = o.h || 12, k = [odR("fxl", 0, 0, W, H)];
+  for (let x = -W / 2 + 3; x < W / 2; x += 3) k.push(odR("fxline", x, 0, 0.1, H));
+  for (let x = -W / 2 + 7; x < W / 2 - 3; x += 14) k.push(P.circle("fxglow", x, -H / 2 + 1.2, 0.6));
+  return k;
+});
+
+// --- Rooms out of doors ----------------------------------------------------------------------
+// [interpretation] The book's room, drawn as it stands in the open (M.DRESS for the
+// Market and the Autodrome; OD.DRESS for a car park's and a yard's).
+const odBays = (R, side, n0) => {
+  const horiz = side === "top" || side === "bottom", len = horiz ? R.w : R.h, n = Math.max(1, Math.floor((len - 1) / 9)), out = [];
+  const start = (len - n * 9) / 2 + 4.5;
+  for (let i = 0; i < n; i++) {
+    const t = start + i * 9, car = ((i + n0) * 7 + 3) % 5 > 1;
+    const pos = { top: [R.x + t, R.y + 7, 0], bottom: [R.x + t, R.y + R.h - 7, 180], left: [R.x + 7, R.y + t, 270], right: [R.x + R.w - 7, R.y + t, 90] }[side];
+    out.push({ part: "bay", x: pos[0], y: pos[1], rot: pos[2], car });
+  }
+  return out;
+};
+Object.assign(M.ARCH, {
+  "parking": R => {
+    const horiz = R.w >= R.h, a = horiz ? "top" : "left", b = horiz ? "bottom" : "right", span = horiz ? R.h : R.w;
+    const out = odBays(R, a, 0);
+    if (span >= 34) out.push(...odBays(R, b, 2));
+    const mid = span >= 34 ? 0.5 : Math.min(0.85, 16 / span + 0.12);
+    out.push(M.F.at(R, "lane-arrow", horiz ? 0.3 : mid, horiz ? mid : 0.3, { rot: horiz ? 90 : 180 }), M.F.at(R, "lane-arrow", horiz ? 0.7 : mid, horiz ? mid : 0.7, { rot: horiz ? 90 : 180 }));
+    return out;
+  },
+  "stockyard": R => [...M.F.grid(R, "container", 10.5, 22, { skip: (i, j) => (i + j * 2) % 4 === 3, opt: i => ({ alt: i % 2 === 1 }) }), M.F.at(R, "forklift", 0.9, 0.85, { rot: 180 })],
+  "market-stalls": R => M.F.grid(R, "stall", 10, 9, { skip: (i, j) => j % 3 === 2 }),
+  "food-stalls": R => [...M.F.along(R, "top", "stall", 9, 6), ...M.F.grid({ x: R.x, y: R.y + 8, w: R.w, h: R.h - 8 }, "table-round", 6.5, 6.5)],
+  "market-gate": R => [M.F.at(R, "barrier-arm", 0.35, 0.75, { w: Math.min(10, R.w * 0.45) }), M.F.at(R, "counter", 0.7, 0.3, { w: Math.min(8, R.w * 0.4) }), M.F.at(R, "queue-rope", 0.4, 0.45, { w: R.w * 0.4 })],
+  "track": R => [M.F.at(R, "track", 0.5, 0.5, { w: R.w * 0.96, h: R.h * 0.92 })],
+  "grandstand": R => M.F.rows(R, "grandstand", 9, { frac: 0.9 }),
+  "pits": R => [...M.F.along(R, "top", "car-lift", 11, 14), ...M.F.along(R, "bottom", "tyres", 4, 3)],
+  "race-control": R => [M.F.wall(R, "top", "monitor-wall", 2, { frac: 0.9 }), M.F.at(R, "console", 0.5, 0.5, { w: Math.max(6, R.w * 0.6) }), M.F.at(R, "chair", 0.4, 0.75), M.F.at(R, "chair", 0.6, 0.75)]
+});
+
+// --- The street: an open-air site, seen from the street ---------------------------------------
+// [interpretation] The lot the plan lays out, without a roof: each room's ground in its
+// exposure (the public ground paved, the working ground a yard, the fenced ground darker),
+// every wall the open-air pass gave a kind drawn as that kind (painted lines on the
+// ground, rails, mesh fences, parapets, the quay's edge), the secure rooms as lock-ups,
+// the stair core as a tower, and each floor above the street as a deck on columns. What
+// the rooms are drawn as indoors (bays, stalls, the track, containers) stands in the open.
+// Returns the site's item: flat on the lot (on the top deck for a car park), so the key's
+// label and the ways in's gates sit on it.
+OD.STREET_GROUND = { public: "plaza", working: "yard", controlled: "lot" };
+OD.street = function (S, site, model, F, zs) {
+  const lay = site.lay, V = S.V, P0 = S.P0, form = lay.open;
+  // The player copy: what anyone sees from the gate. The public ground is drawn as it is; the
+  // rest of the lot is plain ground with nothing on it (no lock-up, fence or line that would
+  // say where an unsurveyed room is), inside the perimeter, which everyone can see.
+  const player = S.ctx.opts.layer === "player", shown = r => !player || r.band === "public";
+  const real = lay.levels.filter(l => !l.ground && l.lvl >= 0).sort((a, b) => a.lvl - b.lvl);
+  const x0 = F.site.x0, x1 = F.site.x1, y0 = -site.D, y1 = 0;
+  const poly = s => s.kind === "circle" ? Array.from({ length: 24 }, (_, i) => [s.cx + Math.cos(i * Math.PI / 12) * s.r, s.cy + Math.sin(i * Math.PI / 12) * s.r]) : s.pts;
+  const bboxOf = pts => { const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+  let topZ = zs;
+  for (const lv of real) {
+    const z = zs + site.levelZ(lv), W = (x, y) => site.toWorld(lv, x, y);
+    topZ = Math.max(topZ, z);
+    let deck = null;
+    if (lv.lvl > 0) {
+      // the deck, on columns
+      const B = lv.bbox, [a0, b0] = W(B.x, B.y), [a1, b1] = W(B.x + B.w, B.y + B.h);
+      if (form === "car park") deck = S.box(a0, b0, z - 1.2, a1, b1, z, "concrete", null, {});
+      else {
+        // a gantry: a steel grating on beams, the ground seen through it
+        deck = S.add({ b: [a0, b0, z - 0.6, a1, b1, z], pcs: [P.poly("st-t:iron", [P0(a0, b0, z), P0(a1, b0, z), P0(a1, b1, z), P0(a0, b1, z)], { opacity: 0.22 })], ground: z, shadow: false, grating: true });
+        for (const [p, q, r2, s2] of [[a0, b0, a1, b0 + 0.8], [a0, b1 - 0.8, a1, b1], [a0, b0, a0 + 0.8, b1], [a1 - 0.8, b0, a1, b1]]) S.box(p, q, z - 0.8, r2, s2, z, "iron", null, { shadow: false });
+      }
+      const cw = form === "car park" ? 0.7 : 0.35, cm = form === "car park" ? "concrete" : "iron";
+      for (let x = a0 + 3; x < a1 - 1; x += Math.max(12, (a1 - a0 - 6) / Math.max(1, Math.round((a1 - a0 - 6) / 22)))) for (const y of [b0 + 3, b1 - 3]) S.box(x - cw, y - cw, zs, x + cw, y + cw, z - (form === "car park" ? 1.2 : 0.8), cm, null, { shadow: false });
+    }
+    // on the ground (decals) or on the deck's top (its own pieces, so the deck never hides them)
+    const surf = (pts, role, o) => deck ? deck.pcs.push(P.poly("st-g:" + role, pts.map(p => P0(p[0], p[1], z + 0.02)), deck.grating && role !== "mark" ? Object.assign({ opacity: 0.35 }, o) : o)) : S.decal(P.poly("st-g:" + role, pts, o), z);
+    const parkRole = form === "car park" ? "road" : null;
+    for (const r of lv.rooms) {
+      if (!r.shape) continue;
+      const pts = poly(r.shape).map(p => W(p[0], p[1])), [rx0, ry0, rx1, ry1] = bboxOf(pts), cx = (rx0 + rx1) / 2, cy = (ry0 + ry1) / 2;
+      if (!shown(r)) { surf(pts, "lot"); continue; }
+      if (r.band === "secure") {
+        // the lock-up: walls and a roof, a roller door on the side the street sees
+        const h = lv.lvl > 0 ? 9 : 10;
+        if (r.shape.kind === "circle") S.cyl(cx, cy, (rx1 - rx0) / 2 - 0.6, z, z + h, "site");
+        else S.box(rx0 + 0.3, ry0 + 0.3, z, rx1 - 0.3, ry1 - 0.3, z + h, "site", f => { f.front(cx - 3, cx + 3, z, z + 7, "st-d:roller"); }, {});
+        continue;
+      }
+      surf(pts, r.band === "public" && parkRole ? parkRole : OD.STREET_GROUND[r.band] || "yard");
+      const w = rx1 - rx0, d = ry1 - ry0;
+      if (r.arch === "parking") {
+        // bays along the long side, a car in some
+        const along = w >= d, L = along ? w : d, n = Math.max(1, Math.floor((L - 2) / 9));
+        for (let i = 0; i <= n; i++) { const u = (along ? rx0 : ry0) + 1 + i * (L - 2) / n; surf(along ? [[u - 0.15, ry0 + 1], [u + 0.15, ry0 + 1], [u + 0.15, ry0 + 13], [u - 0.15, ry0 + 13]] : [[rx0 + 1, u - 0.15], [rx0 + 13, u - 0.15], [rx0 + 13, u + 0.15], [rx0 + 1, u + 0.15]], "mark"); }
+        for (let i = 0; i < n; i++) if ((i * 7 + 3) % 5 > 1) { const u = (along ? rx0 : ry0) + 1 + (i + 0.5) * (L - 2) / n; ST_autopod(S, along ? u : rx0 + 7, along ? ry0 + 7 : u, z, !along, ["pod1", "pod2", "pod3"][i % 3]); }
+      } else if (r.arch === "market-stalls" || r.arch === "food-stalls") {
+        for (let x = rx0 + 5; x < rx1 - 4; x += 10) for (let y = ry0 + 5; y < ry1 - 4; y += 11) M.street.stall(S, x, y, z, ((x + y) | 0) % 2 ? "awning" : "canvas");
+      } else if (r.arch === "track") {
+        const ell = (rx, ry) => Array.from({ length: 32 }, (_, i) => [cx + Math.cos(i * Math.PI / 16) * rx, cy + Math.sin(i * Math.PI / 16) * ry]);
+        const t = Math.min(9, Math.min(w, d) * 0.28);
+        surf(ell(w / 2 - 1, d / 2 - 1), "road"); surf(ell(w / 2 - 1 - t, d / 2 - 1 - t), "grass");
+        ST_autopod(S, cx - w * 0.25, cy + d / 2 - 1 - t / 2, z, true, "pod1"); ST_autopod(S, cx + w / 2 - 1 - t / 2, cy - d * 0.1, z, false, "pod2");
+      } else if (r.arch === "grandstand") {
+        for (let i = 0; i < 3; i++) S.box(rx0 + 2, ry0 + 2 + i * 3, z, rx1 - 2, ry0 + 5 + i * 3, z + 7 - i * 2, i % 2 ? "concrete" : "site2", null, { shadow: i === 0 });
+      } else if (r.arch === "stockyard") {
+        for (let x = rx0 + 2; x < rx1 - 9; x += 11) for (let y = ry0 + 2; y < ry1 - 20; y += 23) S.box(x, y, z, x + 8, y + 20, z + 8.5, (x | 0) % 2 ? "site2" : "metal");
+      } else if (r.arch === "car-bays" || r.arch === "pits") {
+        for (let x = rx0 + 6; x < rx1 - 5; x += 12) ST_autopod(S, x, ry0 + 8, z, false, "pod2");
+      }
+    }
+    // the stair core: a tower to the deck above it
+    for (const e of lv.extras) if (e.kind === "core" && e.shape) {
+      const pts = poly(e.shape).map(p => W(p[0], p[1])), [a, b, c, dd] = bboxOf(pts), up = real.find(l => l.lvl > lv.lvl);
+      S.box(a, b, z, c, dd, up ? zs + site.levelZ(up) + 3 : z + 10, "concrete", null, {});
+    }
+    // what stands between: each wall of an open-air kind, drawn as that kind
+    for (const wl of lv.walls) {
+      if (!OD.WALL[wl.t]) continue;
+      if (player && !wl.perim && !OD.publicWall(lv, wl)) continue;
+      const na = wl.arc ? Math.max(2, Math.ceil((wl.a1 - wl.a0) * wl.r / 4)) : 0;
+      const pieces = wl.arc ? Array.from({ length: na }, (_, i) => { const t0 = wl.a0 + (wl.a1 - wl.a0) * i / na, t1 = wl.a0 + (wl.a1 - wl.a0) * (i + 1) / na; return [[wl.cx + Math.cos(t0) * wl.r, wl.cy + Math.sin(t0) * wl.r], [wl.cx + Math.cos(t1) * wl.r, wl.cy + Math.sin(t1) * wl.r]]; }) : [[wl.a, wl.b]];
+      for (const [pa, pb] of pieces) OD.streetWall(S, wl.t, W(pa[0], pa[1]), W(pb[0], pb[1]), z, surf);
+    }
+  }
+  // the quay's water, behind the lot
+  if (M.own(OD.FORMS, form) && M.own(OD.FORMS, form).water === "top") {
+    S.decal(P.rect("st-g:water", x0 - 6, y0 - 9, x1 - x0 + 12, 9), -4.5);
+    S.box(x0 - 6, y0 - 0.6, -4.5, x1 + 6, y0, zs, "edge", null, { noTop: true, shadow: false });
+    // the chain boom across its far end, floats on the water
+    const bx = V.flip ? x0 - 3 : x1 + 3;
+    for (let y = y0 - 8.5; y < y0 - 0.8; y += 2.2) S.box(bx - 0.6, y, -4.5, bx + 0.6, y + 1.4, -3.7, "post", null, { shadow: false });
+  }
+  const it = { b: [x0, y0, zs, x1, y1, topZ + 0.05], pcs: [], ground: zs, shadow: false };
+  S.items.push(it);
+  return it;
+};
+// Does a wall stand between two public places (a room or the open ground and a corridor)?
+OD.publicWall = function (lv, w) {
+  const at = (x, y) => { for (const r of lv.rooms) if (r.shape && M.scene.inside(r.shape, x, y)) return r.band; for (const e of lv.extras) if (e.shape && M.scene.inside(e.shape, x, y)) return "public"; return null; };
+  if (w.arc) return false;
+  const dx = w.b[0] - w.a[0], dy = w.b[1] - w.a[1], l = Math.hypot(dx, dy) || 1, mx = (w.a[0] + w.b[0]) / 2, my = (w.a[1] + w.b[1]) / 2;
+  const a = at(mx - dy / l, my + dx / l), b = at(mx + dy / l, my - dx / l);
+  return (a === "public" || a === null) && (b === "public" || b === null);
+};
+const ST_autopod = (S, x, y, z, along, mat) => M.street.autopod(S, x, y, z, along, mat, { L: 10, W: 5 });
+// One stretch of an open-air wall on the street, from a to b (world feet) on a surface at z.
+OD.streetWall = function (S, t, a, b, z, surf) {
+  const P0 = S.P0, dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+  if (len < 0.2) return;
+  const nx = -dy / len, ny = dx / len, spec = OD.WALL[t];
+  if (t === "line") { const o = 0.18; surf([[a[0] + nx * o, a[1] + ny * o], [b[0] + nx * o, b[1] + ny * o], [b[0] - nx * o, b[1] - ny * o], [a[0] - nx * o, a[1] - ny * o]], "mark"); return; }
+  const box = [Math.min(a[0], b[0]) - 0.2, Math.min(a[1], b[1]) - 0.2, z, Math.max(a[0], b[0]) + 0.2, Math.max(a[1], b[1]) + 0.2, z + spec.h];
+  if (t === "parapet" || t === "quay") {
+    const o = spec.th / 2;
+    S.prism([[a[0] + nx * o, a[1] + ny * o], [b[0] + nx * o, b[1] + ny * o], [b[0] - nx * o, b[1] - ny * o], [a[0] - nx * o, a[1] - ny * o]], z, z + spec.h, t === "quay" ? "edge" : "concrete", { shadow: false });
+    if (t === "quay") for (let u = 4; u < len - 2; u += 12) S.cyl(a[0] + dx * u / len, a[1] + dy * u / len, 0.7, z + spec.h, z + spec.h + 1.6, "dark", { shadow: false });
+    return;
+  }
+  const h = spec.h, pcs = [];
+  if (t === "fence") pcs.push(P.poly("st-x:fence", [P0(a[0], a[1], z), P0(b[0], b[1], z), P0(b[0], b[1], z + h), P0(a[0], a[1], z + h)]));
+  const pitch = t === "fence" ? 8 : 2.4, n = Math.max(1, Math.round(len / pitch));
+  for (let i = 0; i <= n; i++) { const p = [a[0] + dx * i / n, a[1] + dy * i / n]; pcs.push(P.line("st-x:rail", ...P0(p[0], p[1], z), ...P0(p[0], p[1], z + h), { sw: t === "fence" ? 0.3 : 0.16 })); }
+  pcs.push(P.line("st-x:rail", ...P0(a[0], a[1], z + h), ...P0(b[0], b[1], z + h), { sw: 0.28 }));
+  S.add({ b: box, pcs, ground: z, shadow: false });
 };
 
 // ---- src/overlay.js ----
@@ -2362,7 +3064,7 @@ M.icon = (name, x, y, size, role, o) => {
 const S = M.scene = {};
 
 S.wallPiece = (w, k) => {
-  const sw = { ext: 1.6, ring: 1.15, int: 0.6, glass: 0.45, soft: 0.35 }[w.t] * (k || 1);
+  const sw = ({ ext: 1.6, ring: 1.15, int: 0.6, glass: 0.45, soft: 0.35 }[w.t] || M.outdoors.planStroke(w.t) || 0.6) * (k || 1);
   if (w.arc) {
     const span = w.a1 - w.a0;
     if (span >= 2 * Math.PI - 0.001) {
@@ -2373,7 +3075,7 @@ S.wallPiece = (w, k) => {
     const [x0, y0] = [w.cx + Math.cos(w.a0) * w.r, w.cy + Math.sin(w.a0) * w.r], [x1, y1] = [w.cx + Math.cos(w.a1) * w.r, w.cy + Math.sin(w.a1) * w.r];
     return P.path("wall-" + w.t, `M${x0} ${y0} A${w.r} ${w.r} 0 ${span > Math.PI ? 1 : 0} 1 ${x1} ${y1}`, { sw });
   }
-  return P.line("wall-" + w.t, w.a[0], w.a[1], w.b[0], w.b[1], { sw });
+  return P.line("wall-" + w.t, w.a[0], w.a[1], w.b[0], w.b[1], M.outdoors.isWall(w.t) && M.outdoors.WALL[w.t].dash ? { sw, dash: true } : { sw });
 };
 
 // A door is drawn from its kind. `inward` is a point the door should swing
@@ -2450,7 +3152,7 @@ S.seal = function (lay, reveal) {
     const seen = ([x, y, nx, ny]) => side(x + nx * 0.8, y + ny * 0.8) || side(x - nx * 0.8, y - ny * 0.8);
     const walls = [];
     for (const w of lv.walls) {
-      if (w.t === "ext") { walls.push(w); continue; }           // the shell is seen from the street
+      if (w.t === "ext" || w.perim) { walls.push(w); continue; }           // the shell (an open-air site's fence) is seen from the street
       if (w.arc) {
         const len = (w.a1 - w.a0) * w.r, at = t => { const a = w.a0 + t / w.r; return [w.cx + Math.cos(a) * w.r, w.cy + Math.sin(a) * w.r, Math.cos(a), Math.sin(a)]; };
         for (const [t0, t1] of visibleSpans(len, at, seen)) walls.push(Object.assign({}, w, { a0: w.a0 + t0 / w.r, a1: w.a0 + t1 / w.r }));
@@ -2649,7 +3351,7 @@ S.level = function (lv, model, ctx) {
   }
   // what gets you in from outside: fire escapes, area steps, balconies, catwalks
   for (const f of lv.fixtures || []) {
-    const part = M.PARTS[f.part]; if (!part) continue;
+    const part = M.own(M.PARTS, f.part); if (!part) continue;
     L.furn.push(P.g(part.draw(f), { tf: { x: f.x, y: f.y, rot: f.rot || 0 }, cls: "furniture fixture fx-" + f.part }));
   }
   for (const e of lv.extras) {
@@ -3190,6 +3892,8 @@ function wallBoxes(lv, P0, hiddenAt, vx = 1, rec) {
   for (const s of segs) {
     const dx = s.b[0] - s.a[0], dy = s.b[1] - s.a[1], len = Math.hypot(dx, dy);
     if (len < 0.05) continue;
+    // an open-air site's line, rail, fence, parapet or quay edge (outdoors.js)
+    const od = M.outdoors.isoWall(s, P0, vx); if (od) { boxes.push(od); continue; }
     let nx = -dy / len, ny = dx / len;
     const th = { ext: 1.6, ring: 1.15, int: 0.6, glass: 0.45, soft: 0.35 }[s.t] || 0.6;
     const mx = (s.a[0] + s.b[0]) / 2, my = (s.a[1] + s.b[1]) / 2;
@@ -3258,6 +3962,20 @@ ISO.build = function (lay, model, ctx) {
   });
   const lift = { room: 8, floor: 0, label: 8 };
   const vx = ISO.vx(lay), proj = ISO.projFor(vx);
+  // Floor titles sit off each floor's left corner at the type floor's size. When the page draws the
+  // building small (a long key on the iPad), two titles can outgrow the gap between their floors:
+  // open the gap just enough that they clear each other. A sheet whose titles clear already is unchanged.
+  if (M.showTitles(lay, ctx)) {
+    const ts = Math.max(3.4 * k, ctx.floorU || 0), ty = M.scene.type(ctx);
+    const cornerOf = (lv) => { const [sx, sy] = shift.get(lv), p = vx > 0 ? [lv.bbox.x, lv.bbox.y + lv.bbox.h] : [lv.bbox.x, lv.bbox.y]; return proj(p[0] + sx, p[1] + sy, zOf.get(lv)); };
+    for (let i = 1; i < order.length; i++) {
+      const a = order[i - 1], b = order[i];
+      if (!a.title || !b.title) continue;
+      const ca = cornerOf(a), cb = cornerOf(b), x = (c, lv) => [c[0] - 4 * k - M.textW(lv.title.toUpperCase(), ts, ty.title, ty.titleLS || 0), c[0] - 4 * k];
+      const xa = x(ca, a), xb = x(cb, b), need = ts * 1.3 - (ca[1] - cb[1]);
+      if (xa[0] < xb[1] && xb[0] < xa[1] && need > 0) for (let j = i; j < order.length; j++) zOf.set(order[j], zOf.get(order[j]) + need);
+    }
+  }
   const toScreen = (lv, x, y, kind) => {
     const [sx, sy] = shift.get(lv) || [0, 0];
     return proj(x + sx, y + sy, (zOf.get(lv) || 0) + (typeof kind === "number" ? kind : (lift[kind] || 0)));
@@ -3366,6 +4084,13 @@ const sv = {
   person: (r = "fx3") => [P.circle(r, 0, -5.4, 0.55), P.rect(r, -0.6, -4.8, 1.2, 2.6, { rx: 0.4 }), P.rect(r, -0.5, -2.3, 0.4, 2.3), P.rect(r, 0.1, -2.3, 0.4, 2.3)]
 };
 const SIDE = {
+  // Out of doors (0.8): the upright pieces an open-air site is dressed with
+  "container": w => { const W = Math.min(w, 20), k = [P.rect("fxm", -W / 2, -8.4, W, 8.4)]; for (let x = -W / 2 + 0.9; x < W / 2 - 0.5; x += 1.3) k.push(P.rect("fx3", x, -8.1, 0.12, 7.8)); return k; },
+  "stall": w => { const W = Math.min(w, 7); return [P.rect("fx", -W / 2, -3.2, W, 0.4), P.rect("fx2", -W / 2 + 0.3, -2.8, W - 0.6, 2.8), P.rect("fx3", -W / 2, -7, 0.2, 7), P.rect("fx3", W / 2 - 0.2, -7, 0.2, 7), P.poly("fxl", [[-W / 2 - 0.6, -6.4], [W / 2 + 0.6, -6.4], [W / 2, -7.6], [-W / 2, -7.6]])]; },
+  "tyres": () => [0, 1, 2].map(i => P.rect("fx3", -1.4, -0.9 * (i + 1), 2.8, 0.85, { rx: 0.4 })),
+  "grandstand": w => sv.stairs(Math.min(w, 18), 7).concat([P.rect("fx3", -Math.min(w, 18) / 2, -FLOOR_H + 0.8, Math.min(w, 18), 0.6)]),
+  "bollard": () => [P.rect("fx3", -0.4, -2.6, 0.8, 2.6, { rx: 0.3 })],
+  "barrier-arm": w => [P.rect("fx3", -Math.min(w, 10) / 2, -3.4, 0.8, 3.4), P.rect("fxl", -Math.min(w, 10) / 2, -3.2, Math.min(w, 10), 0.4)],
   "chair": w => sv.seat(1.6), "stool": () => [P.circle("fx3", 0, -2.6, 0.6), P.rect("fx3", -0.1, -2.4, 0.2, 2.4)],
   "armchair": () => sv.sofa(2.6), "bubble-chair": () => [P.circle("fxl", 0, -2.2, 1.6), P.circle("fx2", 0.2, -2.1, 1.1), P.rect("fx3", -0.1, -0.6, 0.2, 0.6)],
   "sofa": w => sv.sofa(Math.min(w, 6.5)), "sofa-curve": w => sv.sofa(Math.min(w, 8)), "booth": w => sv.sofa(Math.min(w, 5.2)).concat(sv.table(3, 2.6)), "lounger": () => [P.poly("fxl", [[-3, -1.2], [1.6, -1.2], [3, -2.8], [3, -2.4], [1.8, -0.9], [-3, -0.9]]), P.rect("fx3", -2.6, -0.9, 0.2, 0.9), P.rect("fx3", 1.4, -0.9, 0.2, 0.9)],
@@ -3421,7 +4146,7 @@ SEC.build = function (lay, model, ctx) {
   // Type in a section is sized to the floor height, not the footprint.
   const k = ctx.k = Math.min(ctx.k, 1.15), { rng } = ctx, st = model.rings;
   const reveal = ctx.reveal, known = r => !reveal || reveal.has(r.band);
-  const levels = lay.levels.slice().sort((a, b) => b.lvl - a.lvl);           // top first
+  const levels = lay.levels.filter(l => !l.ground).sort((a, b) => b.lvl - a.lvl);           // top first (E3's sheets aren't storeys)
   const above = levels.filter(l => l.lvl >= 0).sort((a, b) => a.lvl - b.lvl), below = levels.filter(l => l.lvl < 0).sort((a, b) => b.lvl - a.lvl);
   const rowY = new Map();
   above.forEach((lv, i) => rowY.set(lv, [-(i + 1) * FLOOR_H, -i * FLOOR_H]));
@@ -3527,16 +4252,16 @@ SEC.build = function (lay, model, ctx) {
       if (!b.r || !known(b.r) || !b.r.frame) continue;
       const f = b.r.frame, fw = Math.max(f.w, f.h), fh = Math.min(f.w, f.h);
       const R = { x: -fw / 2 + 1.2, y: -fh / 2 + 1.2, w: fw - 2.4, h: fh - 2.4 };
-      const recipe = M.ARCH[b.r.arch];
+      const recipe = M.own(M.ARCH, b.r.arch);
       let pls = recipe ? recipe(R, rng.fork(b.r.name)).flat().filter(p => p && !p.skip) : [];
       pls = pls.concat(M.circulationParts(b.r)(R));
       pls.sort((p, q) => p.y - q.y);                                           // back of the room first
       const kids = [], used = [];
       for (const pl of pls) {
-        const fn = SIDE[pl.part];
+        const fn = M.own(SIDE, pl.part);
         if (!fn) continue;
         const fx = b.x + 1.2 + (pl.x - R.x) / (R.w || 1) * (b.w - 2.4);
-        const w = Math.min((pl.w || (M.PARTS[pl.part] ? M.PARTS[pl.part].size[0] : 3)), b.w - 2.4);
+        const w = Math.min((pl.w || (M.own(M.PARTS, pl.part) ? M.own(M.PARTS, pl.part).size[0] : 3)), b.w - 2.4);
         // skip near-duplicates in the same spot (a grid of tables reads as a row)
         if (used.some(u => u.part === pl.part && Math.abs(u.x - fx) < w * 0.7)) continue;
         used.push({ part: pl.part, x: fx });
@@ -4063,8 +4788,8 @@ ST.read = function (o, W) {
     desc: known(ST.DESC, o.streetDesc, "street description"), descRaw: o.streetDesc || "",
     sound: o.streetSound || "", smell: o.streetSmell || "",
     obstacle: known(ST.OBSTACLE, o.streetObstacle, "street obstacle"), obstacleRaw: o.streetObstacle || "",
-    props: (o.props || []).map(p => known(ST.PROP, p, "street prop")).filter(Boolean),
-    neighbours: (o.neighbours || []).slice(0, 2).map(n => known(ST.NEIGHBOUR, n, "nearby building") || n),
+    props: M.list(o.props, W, "props", true).map(p => known(ST.PROP, p, "street prop")).filter(Boolean),
+    neighbours: M.list(o.neighbours, W, "neighbours", true).slice(0, 2).map(n => known(ST.NEIGHBOUR, n, "nearby building") || n),
     use: known(ST.USE, o.blockUse, "block use"), useRaw: o.blockUse || "",
     landmark: o.landmark || "", watcher: o.watcher || "", weather: o.weather || "", timeOfDay: o.timeOfDay || "",
     style: o.style || ""
@@ -4089,7 +4814,7 @@ ST.build = function (o, opts, W, theme, model, seed, sid) {
   if (opts.floor != null && opts.floor !== "all") M.warn(W, "floor: the street view draws the street, not one floor — every floor is in the building views");
   // the site's building is the plan view's (same seed, same walls)
   const lay = model.rooms.length ? M.layout.build(model, "plan", rng.fork("layout"), { player }) : null;
-  const typeTheme = opts.theme === "board" ? (M.THEMES[opts.sheet] && opts.sheet !== "board" ? M.THEMES[opts.sheet] : M.THEMES.blueprint) : theme;
+  const typeTheme = opts.theme === "board" ? (M.own(M.THEMES, opts.sheet) && opts.sheet !== "board" ? M.own(M.THEMES, opts.sheet) : M.THEMES.blueprint) : theme;
   const street = ST.read(o, W);
   let fu = 0, fk = 0, out = null, keyAt = null, scene = null;
   for (let pass = 0; pass < 6; pass++) {
@@ -4313,9 +5038,9 @@ ST.facts = function (o, model, street, built, opts, T) {
   const ways = model.vectors.map((v, i) => ({ kind: ["front", "service", "back"][i], n: v.n, how: v.how, cost: v.cost, know: v.know }))
     .filter(v => !player || !/can't be known/.test(v.know))
     .map(v => player && /question/.test(v.know) ? Object.assign(v, { how: "There is a way in here. Ask how to learn what it is.", cost: "" }) : v);
-  const G = ST.GROUND[street.type] || ST.GROUND["a commercial high street"];
+  const G = M.own(ST.GROUND, street.type) || ST.GROUND["a commercial high street"];
   const timeLine = T.asPlayed ? `${T.time}, as played (rolled: ${[street.timeOfDay, street.weather].filter(Boolean).join(", ")})` : [street.timeOfDay || T.time, street.weather].filter(Boolean).join(", ");
-  const ob = street.obstacle ? ST.OBSTACLE[street.obstacle] : null;
+  const ob = street.obstacle ? M.own(ST.OBSTACLE, street.obstacle) : null;
   return {
     kind: "street", player,
     name: street.named || model.name, site: model.name, district: model.district, target: model.target,
@@ -4323,7 +5048,7 @@ ST.facts = function (o, model, street, built, opts, T) {
     time: timeLine,
     street: [street.descRaw && `${ST.cap(street.descRaw)}.`, (street.sound || street.smell) && `${ST.cap(street.sound)}${street.sound && street.smell ? "; " : ""}${street.smell}.`, street.useRaw && `The block is ${street.useRaw.toLowerCase()}.`].filter(Boolean),
     features: feats,
-    obstacle: ob ? { name: street.obstacle, icon: ob.icon, text: `Outside: ${street.obstacle.toLowerCase()}.` } : null,
+    obstacle: ob ? { name: street.obstacle, icon: ob.icon, text: `Outside: ${street.obstacle.toLowerCase()}. The stretch of street it holds is marked.` } : null,
     ways, landmark: street.landmark, watcher: player ? "" : street.watcher,
     note: player ? "" : G.note + (built.waterNote ? " " + built.waterNote : "")
   };
@@ -4431,7 +5156,7 @@ ST.key = function (o, opts, W, theme, model, seed) {
   const ctx = { rng: rng.fork("street"), W, opts, k: 2, reveal: player ? new Set(opts.reveal || ["public"]) : null, floorU: 0, type: theme.type, drawn: null };
   const built = ST.compose(o, model, lay, street, ctx, T);
   const facts = ST.facts(o, model, street, built, opts, T);
-  const paintTheme = opts.theme === "board" ? (M.THEMES[opts.sheet] && opts.sheet !== "board" ? M.THEMES[opts.sheet] : M.THEMES.blueprint) : theme;
+  const paintTheme = opts.theme === "board" ? (M.own(M.THEMES, opts.sheet) && opts.sheet !== "board" ? M.own(M.THEMES, opts.sheet) : M.THEMES.blueprint) : theme;
   const th = paintTheme.painter ? paintTheme.painter({ model, opts, _id: "b68k" + M.hash(model.name).toString(36), lay: { levels: [] }, street: { night: T.time === "Night", facts } }) : null;
   return { facts, html: ST.keyHTML(facts, th), css: M.KEY_CSS, warnings: W };
 };
@@ -4582,7 +5307,7 @@ ST.PROP = {
   "piled rubble": { d: "rubble", z: "pave" }, "a canal lock": { d: "lock", z: "water" }, "a food stall": { d: "stall", z: "pave" },
   "a vendor stall": { d: "stall", z: "pave" }, "barrels and casks": { d: "barrels", z: "pave" }, "a news stand": { d: "news", z: "pave" }
 };
-const WATER_PROP = p => ST.PROP[p] && ST.PROP[p].z === "water";
+const WATER_PROP = p => M.own(ST.PROP, p) && M.own(ST.PROP, p).z === "water";
 
 // --- Street obstacles (p.420) as set pieces --------------------------------------------------------
 ST.OBSTACLE = {
@@ -4590,6 +5315,53 @@ ST.OBSTACLE = {
   "Street performers": { d: "performers", icon: "people" }, Protest: { d: "protest", icon: "people" }, "Street evangelist": { d: "evangelist", icon: "people" },
   "Traffic jam": { d: "jam", icon: "hazard" }, "Construction/demolition": { d: "construction", icon: "hazard" }, "Gang warfare": { d: "gangs", icon: "guard" },
   "Paranormal incident": { d: "paranormal", icon: "entity" }, "Bluecoat checkpoint": { d: "checkpoint", icon: "guard" }, "Street closed by flooding": { d: "flood", icon: "hazard" }
+};
+
+// --- The site's condition and volume (the base location tables) as seen from the street ------------
+// [interpretation] Only what can be seen from outside, on the site itself: its windows, its walls,
+// its frontage, and how busy the street is. They never add a room, a guard, a lock or loot, never
+// move a way in, and never change the building's size: "far bigger than it looks" is a fact about
+// the plan, so the street shows nothing for it. The words are in the GM copy's key only.
+ST.CONDITION = {
+  "half-abandoned": { board: 0.3, litP: 0.1, litter: true, says: "boarded windows, litter at the door" },
+  "standing empty": { board: 0.45, litP: 0, litter: true, people: 0.6, says: "boarded windows, no light inside, litter, few people" },
+  forgotten: { board: 0.35, litP: 0, litter: true, people: 0.6, says: "boarded windows, no light inside, litter, few people" },
+  broken: { board: 0.4, litP: 0.15, litter: true, says: "boarded windows, litter at the door" },
+  defended: { grille: true, says: "bars on the ground-floor windows" },
+  protected: { grille: true, says: "bars on the ground-floor windows" },
+  "hard to get into": { grille: true, says: "bars on the ground-floor windows" },
+  "blocked off": { grille: true, boardGround: true, says: "the ground floor boarded and barred" },
+  occupied: { litP: 0.55, people: 1.3, says: "most windows lit at Night, more people" },
+  "densely packed": { litP: 0.6, people: 1.6, says: "most windows lit at Night, a busy street" },
+  contested: { graffiti: true, people: 1.2, says: "rival tags on the ground floor" },
+  remote: { people: 0.5, traffic: 0.5, says: "a quiet street" },
+  isolated: { people: 0.4, traffic: 0.4, says: "a quiet street" },
+  hidden: { people: 0.7, says: "fewer people about" },
+  rich: { litP: 0.5, says: "warm light in the windows at Night" },
+  strange: { strange: true, says: "a shimmer at its foot" },
+  "long settled": { says: "" }, exposed: { says: "" }, "far bigger than it looks": { says: "" }, "smaller than it looks": { says: "" }
+};
+ST.VOLUME = {
+  "drafty and cold": { board: 0.12, says: "a few windows patched over" },
+  "stout and quiet": { says: "" },
+  "cosy and warm": { litP: 0.55, says: "warm light in the windows at Night" },
+  "vaulted and spacious": { tall: 1.3, says: "tall windows" },
+  "low and cramped": { tall: 0.72, says: "low windows" },
+  "rickety and ramshackle": { patch: true, board: 0.1, says: "patched walls" }
+};
+// The roll's condition and volume, merged into one set of instructions for the street (unknown words: nothing).
+ST.looks = function (o, W) {
+  const c = String(o.condition || "").trim().toLowerCase(), v = String(o.volume || "").trim().toLowerCase();
+  const C = c ? M.own(ST.CONDITION, c) : null, Vv = v ? M.own(ST.VOLUME, v) : null;
+  if (c && !C && W) M.warn(W, `condition "${o.condition}" is not one the location tables print — the street shows nothing for it`);
+  if (v && !Vv && W) M.warn(W, `volume "${o.volume}" is not one the location tables print — the street shows nothing for it`);
+  const L = Object.assign({}, Vv || {}, C || {});
+  L.board = Math.max((C && C.board) || 0, (Vv && Vv.board) || 0);
+  L.litP = C && C.litP != null ? C.litP : Vv && Vv.litP != null ? Vv.litP : null;
+  L.words = [c && C ? c : "", v && Vv ? v : ""].filter(Boolean).join(", ");
+  L.says = [C && C.says, Vv && Vv.says].filter(Boolean).join("; ");
+  L.any = !!(C || Vv);
+  return L;
 };
 
 // --- The site's look from the street, by printed building style (p.430–431) -----------------------
@@ -4622,9 +5394,10 @@ ST.compose = function (o, model, lay, street, ctx, T) {
   // GM-only drawing (the back route) never rolls a die: the player copy and the
   // GM copy draw the same street, whatever the GM-only facts are
   const rng = ctx.rng, S = ST.stage(V, rng.fork("stage"), night, ctx);
-  const G = ST.GROUND[street.type] || ST.GROUND["a commercial high street"];
+  const G = M.own(ST.GROUND, street.type) || ST.GROUND["a commercial high street"];
   const waterProps = street.props.filter(WATER_PROP);
   const site = ST.siteSpec(model, lay, W);
+  S.looks = ST.looks(o, W); S.looksRng = rng.fork("looks");
 
   // --- the frontage, west to east -----------------------------------------------------------
   // the face a way in lands on: the plan's wall (bottom is the street front),
@@ -4640,10 +5413,10 @@ ST.compose = function (o, model, lay, street, ctx, T) {
   const svcDepth = svc && svc.level && lay ? -site.toWorld(svc.level, svc.x, svc.y)[1] : 0;
   const gapW = svcSide === "west" ? 16 : flip ? 10 : 5, gapE = svcSide === "east" ? 16 : flip ? 5 : 10;
   const cutW = svcSide === "west" && svcDepth > gapW - 2, cutE = svcSide === "east" && svcDepth > gapE - 2;
-  const nbSpec = n => ST.NEIGHBOUR[n] || ST.NEIGHBOUR["a house"];
+  const nbSpec = n => M.own(ST.NEIGHBOUR, n) || ST.NEIGHBOUR["a house"];
   const n1 = street.neighbours[0] || null, n2 = street.neighbours[1] || null;
   const N1 = n1 ? nbSpec(n1) : null, N2 = n2 ? nbSpec(n2) : null;
-  const desc = street.desc ? ST.DESC[street.desc] : null, use = street.use ? ST.USE[street.use] : null;
+  const desc = street.desc ? M.own(ST.DESC, street.desc) : null, use = street.use ? M.own(ST.USE, street.use) : null;
   const lots = [];
   const siteLot = { kind: "site", x0: -site.W / 2, x1: site.W / 2, d: site.D, y0: 0 };
   let xl = siteLot.x0 - gapW, xr = siteLot.x1 + gapE;
@@ -4659,7 +5432,7 @@ ST.compose = function (o, model, lay, street, ctx, T) {
   const F = { X0: xl - 18, X1: xr + 18, lots, site: siteLot, nb1, nb2, descLot, useLot, maxD: Math.max(...lots.map(l => l.d - l.y0)) };
 
   // --- the ground ---------------------------------------------------------------------------------
-  const ground = ST.GROUNDS[G.g](S, F, G.v, { water: waterProps.length > 0, street, rng: S.rng });
+  const ground = M.own(ST.GROUNDS, G.g)(S, F, G.v, { water: waterProps.length > 0, street, rng: S.rng });
   F.ground = ground;
   const zs = ground.zSite || 0;                     // the level the frontage stands on
   // the side passages between the lots, under whatever stands in them
@@ -4671,6 +5444,8 @@ ST.compose = function (o, model, lay, street, ctx, T) {
   // --- the site ---------------------------------------------------------------------------------------
   const siteOut = ST.siteMass(S, site, model, F, zs, { gm, ent, sideOf, street, o });
 
+  // --- what the site's condition puts at its foot
+  ST.siteFoot(S, F, zs, site);
   // --- next door, the end lots ------------------------------------------------------------------------------
   const nbOut = [nb1, nb2].map(L => L ? ST.neighbour(S, L, zs, F) : null);
   const descOut = descLot.kind === "desc" ? ST.descLot(S, descLot, desc, zs, F) : ST.plainLot(S, descLot, zs, "block");
@@ -4686,8 +5461,10 @@ ST.compose = function (o, model, lay, street, ctx, T) {
   const propOut = street.props.map((p, i) => ST.prop(S, F, p, ground, slots, zs, spots[i % spots.length]));
   // the obstacle and the people keep the front door and the service side in sight
   const keep = ST.keep(siteOut), loose0 = S.items.length;
-  const obOut = street.obstacle ? ST.stageObstacle(S, F, ST.OBSTACLE[street.obstacle].d, ground, zs, keep) : null;
-  ST.streetLife(S, F, ground, { obstacle: street.obstacle, props: street.props });
+  const obOut = street.obstacle ? ST.stageObstacle(S, F, M.own(ST.OBSTACLE, street.obstacle).d, ground, zs, keep) : null;
+  if (obOut) ST.obstacleGround(S, F, ground, zs);
+  const LKs = S.looks || {};
+  ST.streetLife(S, F, LKs.people || LKs.traffic ? Object.assign({}, ground, { people: Math.max(1, Math.round((ground.people || 4) * (LKs.people || 1))), traffic: Math.round((ground.traffic || 0) * (LKs.traffic || 1)) }) : ground, { obstacle: street.obstacle, props: street.props });
   ST.sightlines(S, keep, loose0);
   if (S.deckTop) S.deckTop.closed = true;
 
@@ -4707,13 +5484,13 @@ ST.compose = function (o, model, lay, street, ctx, T) {
     const region = [[-s, -s * 0.6], [s, -s * 0.6], [s, s * 0.6], [-s, s * 0.6]];
     feats.push(Object.assign({ name, kind, what, icons: icons || [], anchor: c, region }, extra || {}));
   };
-  faceFeature(siteOut.item, model.name, "site", "The site. Its rooms are in the building views.", gm && model.rooms.some(r => r.isTarget) ? [["star", "ov-target"]] : [], {});
+  faceFeature(siteOut.item, model.name, "site", gm && S.looks && S.looks.words ? `The site: ${S.looks.words}${S.looks.says ? ` (drawn: ${S.looks.says})` : ""}. Its rooms are in the building views.` : "The site. Its rooms are in the building views.", gm && model.rooms.some(r => r.isTarget) ? [["star", "ov-target"]] : [], {});
   nbOut.forEach((n, i) => { if (n) faceFeature(n.item, ST.cap(i ? n2 : n1), "nb", "Next door (p.430)."); });
   if (descOut && descOut.item && desc) faceFeature(descOut.item, desc.label, "desc", `${ST.cap(street.descRaw)} (p.419).`);
   if (descStreet && desc) pointFeature(descStreet.pt, desc.label, "desc", `${ST.cap(street.descRaw)} (p.419).`, [], descStreet.size);
   propOut.forEach((p, i) => { if (p) pointFeature(p.pt, ST.cap(street.props[i]), "prop", "On the street (base Blades props).", [], p.size); });
   if (useOut && useOut.item && use) faceFeature(useOut.item, street.use, "use", "What the block is for (base Blades).");
-  if (obOut) pointFeature(obOut.pt, street.obstacle, "obstacle", "In the way (p.420): the front's cost, free to know.", [[ST.OBSTACLE[street.obstacle].icon, "ov-lock"]], obOut.size);
+  if (obOut) pointFeature(obOut.pt, street.obstacle, "obstacle", "In the way (p.420): the front's cost, free to know.", [[M.own(ST.OBSTACLE, street.obstacle).icon, "ov-lock"]], obOut.size);
   S.features = feats;
 
   // --- the ways in, where the plan put the doors --------------------------------------------------------------------
@@ -4731,7 +5508,7 @@ ST.siteSpec = function (model, lay, W) {
   const Wd = ship ? SB.w : B.w, beam = ship ? Math.max(24, Math.min(44, (SB.w - 4) * 0.3)) : 0, Dd = ship ? beam + 17 : B.h;
   let top = 0, roofDeck = false;
   for (const lv of lay.levels) {
-    if (lv.lvl <= 0) continue;
+    if (lv.lvl <= 0 || lv.ground) continue;          // E3's sheets (a roof, a walkway) are not storeys
     if (lv.lvl === 2 && lv.rooms.length && lv.rooms.every(r => ROOF_ROOMS.test(r.name))) { roofDeck = true; top = Math.max(top, 1); continue; }
     top = Math.max(top, lv.lvl);
   }
@@ -4740,7 +5517,9 @@ ST.siteSpec = function (model, lay, W) {
   const C = lv => { const b = lv === lv0 && ship ? SB : lv.bbox; return [b.x + b.w / 2, b.y + b.h / 2]; };
   const toWorld = (lv, x, y) => { const [cx, cy] = C(lv); return [x - cx, y - cy - Dd / 2]; };
   const levelZ = lv => lv.lvl < 0 ? -STOREY : lv.lvl === 0 ? 0 : GF + STOREY * (lv.lvl - 1);
-  return { W: Wd, D: Dd, storeys, H, roofDeck, shape: ship ? "ship" : hub ? "hub" : "rect", toWorld, levelZ, lv0, lay, hull: ship ? lv0.hull : null, hullBox: SB, beam };
+  // an open-air site (outdoors.js): its "roof" is its top deck, or the lot
+  const open = lay.open || null, deckZ = open ? Math.max(0, ...lay.levels.filter(l => l.lvl >= 0 && !l.ground).map(levelZ)) : 0;
+  return { W: Wd, D: Dd, storeys, H, roofDeck, shape: ship ? "ship" : hub ? "hub" : "rect", toWorld, levelZ, lv0, lay, hull: ship ? lv0.hull : null, hullBox: SB, beam, open, deckZ };
 };
 
 // What must stay in sight, as points: a grid over a rect on a face (p0: where u = 0
@@ -4758,14 +5537,15 @@ const gridGround = (xa, ya, xb, yb, z, n = 3) => { const out = []; for (let i = 
 // stretch of that face and its height) and where its arrow lands, so a later way keeps
 // clear of an earlier one (ST.wayIn) and the obstacle keeps clear of both (ST.sightlines).
 ST.siteMass = function (S, site, model, F, zs, X) {
-  const { V } = S, look = STYLE_LOOK[model.styleName] || STYLE_LOOK.Brutalist, night = S.night;
+  const { V } = S, look = M.own(STYLE_LOOK, model.styleName) || STYLE_LOOK.Brutalist, night = S.night;
   const x0 = F.site.x0, x1 = F.site.x1, y0 = -site.D, y1 = 0, H = site.H;
   const out = { item: null, entries: [], taken: [], blocks: [] };
   let main, shipOut = null, stad = null;
-  if (site.shape === "ship") { shipOut = ST.ship(S, site, F, zs); main = shipOut.item; }
+  if (site.open) main = M.outdoors.street(S, site, model, F, zs);           // drawn without a roof
+  else if (site.shape === "ship") { shipOut = ST.ship(S, site, F, zs); main = shipOut.item; }
   else if (site.shape === "hub" || look.rounded) { stad = ST.stadium(x0, y0, x1, y1); main = ST.rounded(S, stad, zs, H, site); }
   else {
-    main = S.box(x0, y0, zs, x1, y1, zs + H, "site", f => ST.windows(S, f, look, site.storeys, { site: true, night }));
+    main = S.box(x0, y0, zs, x1, y1, zs + H, "site", f => ST.windows(S, f, look, site.storeys, { site: true, night, looks: S.looks }));
     if (look.mural) ST.mural(S, main, x0, x1, y1, zs, H);
     if (look.cornice) S.box(x0 - 0.6, y1 - 1.4, zs + H - 1.6, x1 + 0.6, y1 + 0.6, zs + H, "site2");
     ST.roof(S, look, x0, y0, x1, y1, zs + H, site);
@@ -4783,7 +5563,7 @@ ST.siteMass = function (S, site, model, F, zs, X) {
     S.box(fx - 2, shipOut.gang.yS, zs, fx + 2, 0.6, zs + 0.7, "wood", f => f.top(fx - 1.6, shipOut.gang.yS, fx + 1.6, 0.6, "st-d:stripe"), { shadow: false });
     out.taken.push({ kind: "front", face: "front", u0: fx - 2, u1: fx + 2, z0: zs - 2, z1: zs + 4, tip: [fx, 0.2, zs], marks: gridGround(fx - 1.6, shipOut.gang.yS, fx + 1.6, 0.6, zs + 0.7) });
   } else {
-    const f = S.faces(main), canopy = look.win === "slit" || look.win === "grid";
+    const f = S.faces(main), canopy = !site.open && (look.win === "slit" || look.win === "grid");
     f.front(fx - 2.8, fx + 2.8, zs, zs + 8.6, "st-d:door-site");
     f.front(fx - 0.12, fx + 0.12, zs, zs + 8.6, "st-d:frame");
     if (canopy) S.box(fx - 5, 0, zs + 9.2, fx + 5, 4.5, zs + 10.2, "site2");      // a canopy
@@ -4874,7 +5654,13 @@ ST.wayIn = function (S, site, F, zs, siteOut, e, X, occ, blocks) {
     let u = u0;
     for (let s = 1; s <= SLIDE && gapTo(at(u)) < TIP_GAP; s++) { const c = [u0 + s, u0 - s].find(v => v >= lo && v <= hi && gapTo(at(v)) >= TIP_GAP); if (c != null) u = c; }
     const [hx, hy] = at(u);
-    S.decal(P.rect("st-g:hatch", hx - 1.6, hy - 1.6, 3.2, 3.2), zs);
+    // E3: a way from what lies under the street (outdoors.js) comes up where that is reached
+    // from: a manhole for a sewer, a grating for a culvert, steps for a canal or an underpass
+    if (e.via === "sewer") { S.decal(P.circle("st-g:hatch", hx, hy, 1.7), zs); for (const d of [-0.8, 0, 0.8]) S.decal(P.rect("st-g:grate-bar", hx - 1.2, hy + d - 0.08, 2.4, 0.16), zs); }
+    else if (e.via === "culvert") { S.decal(P.rect("st-g:hatch", hx - 1.6, hy - 1.6, 3.2, 3.2), zs); for (let d = -1.2; d <= 1.25; d += 0.6) S.decal(P.rect("st-g:grate-bar", hx + d - 0.08, hy - 1.5, 0.16, 3), zs); }
+    else if (e.via === "canal" || e.via === "underpass") { S.decal(P.rect("st-g:hatch", hx - 1.6, hy - 1.6, 3.2, 3.2), zs); for (let d = -1.2; d <= 1.25; d += 0.8) S.decal(P.rect("st-g:step", hx - 1.5, hy + d - 0.15, 3, 0.3), zs); }
+    else S.decal(P.rect("st-g:hatch", hx - 1.6, hy - 1.6, 3.2, 3.2), zs);
+    if (e.via && M.own(M.outdoors.BELOW, e.via)) way.note = "FROM THE " + M.own(M.outdoors.BELOW, e.via).title.toUpperCase();
     block(hx, hy, 3);
     const d = gapTo(at(u)) < TIP_GAP ? fanned(toSide ? [sg, 0] : [0, 1], toSide ? [0, 1] : [1, 0], at(u)) : toSide ? [sg, 0] : [0, 1];
     // its arrow stops at the hatch's edge, so the hatch shows whole
@@ -5080,9 +5866,9 @@ ST.roofSpot = function (S, site, F, zs, wx, wy, look, shipOut, occ, stad, tips) 
     for (let x = b[0] + 2.5; x <= b[3] - 2.5; x += 2) for (let y = b[1] + 2.5; y <= b[4] - 2.5; y += 2) { const dd = Math.hypot(x - at[0], y - at[1]); if ((!best || dd < best[2]) && far(x, y, b[5])) best = [x, y, dd]; }
     return best ? [best[0], best[1], b[5]] : at;
   }
-  const z = zs + site.H, y0 = -site.D, y1 = 0, x0 = F.site.x0, x1 = F.site.x1;
+  const z = zs + (site.open ? site.deckZ : site.H), y0 = -site.D, y1 = 0, x0 = F.site.x0, x1 = F.site.x1;
   const round = !!stad, dr = round ? Math.min(stad.r * 0.8, 18) + 3 : 0;
-  const pitch = look.roof === "pitch" && !site.roofDeck, d = y1 - y0, cy = (y0 + y1) / 2, rise = Math.min(16, d * 0.32);
+  const pitch = look.roof === "pitch" && !site.roofDeck && !site.open, d = y1 - y0, cy = (y0 + y1) / 2, rise = Math.min(16, d * 0.32);
   const zAt = (x, y) => pitch ? z + rise * Math.max(0, 1 - Math.abs(y - cy) / (d / 2)) : z;
   // a Futurist dome: just outside it, on the stadium's roof
   if (round && Math.hypot(wx - stad.cx, wy - stad.cy) < dr) { const a = Math.hypot(wx - stad.cx, wy - stad.cy) > 0.1 ? Math.atan2(wy - stad.cy, wx - stad.cx) : 0; wx = stad.cx + Math.cos(a) * dr; wy = stad.cy + Math.sin(a) * dr; }
@@ -5107,7 +5893,9 @@ ST.nbTop = function (L) {
 // Windows, storey by storey, on the front and the side that shows.
 ST.windows = function (S, f, look, storeys, o = {}) {
   const night = S.night, rng = S.rng, x0 = f.x0, x1 = f.x1, y0 = f.y0, y1 = f.y1, z0 = f.z0;
-  const lit = () => night && rng() < (o.litP != null ? o.litP : 0.34);
+  const LK = o.looks && o.looks.any ? o.looks : null, lr = S.looksRng || rng;
+  const litP = LK && LK.litP != null ? LK.litP : o.litP != null ? o.litP : 0.34;
+  const lit = () => night && rng() < litP;
   for (let s = 0; s < storeys; s++) {
     const zb = z0 + (s === 0 ? 0 : GF + STOREY * (s - 1)), zh = s === 0 ? GF : STOREY;
     if (s === 0 && o.groundFloor === false) continue;
@@ -5123,10 +5911,19 @@ ST.windows = function (S, f, look, storeys, o = {}) {
         let wa = ww, za = winA, zb2 = winB;
         if (look.win === "odd") { wa = 2.6 + rng() * 3.2; za = winA + rng() * 1.4; zb2 = winB - rng() * 1.6; }
         if (look.win === "tall") zb2 = Math.min(zb + zh - 1.2, winB + 1.2);
-        put(c - wa / 2, c + wa / 2, za, zb2, lit() ? "st-d:winlit" : "st-d:win");
+        if (LK && LK.tall) { const mid = (za + zb2) / 2, hh = Math.min((zb2 - za) * LK.tall, zh - 1.6) / 2; za = Math.max(zb + 0.8, mid - hh); zb2 = Math.min(zb + zh - 0.8, mid + hh); }
+        const role = lit() ? "st-d:winlit" : "st-d:win";
+        // boarded or barred: wide enough to read at map scale, even over a slit window
+        if (LK && ((LK.boardGround && s === 0) || (LK.board && lr() < LK.board))) { const bw = Math.max(wa, 2.8) / 2 + 0.3; put(c - bw, c + bw, za - 0.3, zb2 + 0.3, "st-d:boards"); for (let zz = za + 0.7; zz < zb2 - 0.2; zz += 1.2) put(c - bw, c + bw, zz, zz + 0.28, "st-d:boardline"); continue; }
+        put(c - wa / 2, c + wa / 2, za, zb2, role);
+        if (LK && LK.grille && s === 0) { const gw = Math.max(wa, 2.8) / 2 + 0.25; put(c - gw, c + gw, za - 0.25, za + 0.15, "st-d:grille"); put(c - gw, c + gw, zb2 - 0.15, zb2 + 0.25, "st-d:grille"); for (let u = c - gw + 0.35; u < c + gw - 0.1; u += 0.75) put(u - 0.15, u + 0.15, za, zb2, "st-d:grille"); }
       }
     };
     if (!(s === 0 && o.shopfront)) across(x0, x1, (a, b, za, zb2, role) => f.front(a, b, za, zb2, role));
+    // the site's walls: rival tags on the ground floor, patches anywhere (condition and volume)
+    if (LK && LK.graffiti && s === 0) for (let u = x0 + 1.5 + lr() * 3; u < x1 - 7; u += 8 + lr() * 6) { const gz = zb + 0.4 + lr() * 1.2; f.front(u, u + 4.5 + lr() * 3.5, gz, gz + 2.4 + lr() * 1.8, lr() < 0.5 ? "st-d:tag1" : "st-d:tag2"); }
+    if (LK && LK.strange && s === 0) f.front(x0, x1, zb, zb + zh * 0.7, "st-d:shimmer");
+    if (LK && LK.patch) for (let u = x0 + 3 + lr() * 6; u < x1 - 5; u += 11 + lr() * 10) { const pz = zb + 1 + lr() * Math.max(0.5, zh - 4); f.front(u, u + 2.4 + lr() * 2, pz, pz + 1.6 + lr(), "st-d:patch"); }
     if (o.sideWindows !== false) across(y0, y1, (a, b, za, zb2, role) => f.side(a, b, za, zb2, role));
   }
 };
@@ -5198,6 +5995,14 @@ ST.stadium = function (x0, y0, x1, y1) {
 
 // Futurist: a stadium of glass and white, portholes, a dome. The portholes go round
 // the face the street sees, each on the wall where it stands.
+// A round window on the site (a Futurist mass, a ship's decks) under its condition and volume:
+// lit as often as they say, boarded where they board (one storey = s).
+ST.litOf = (S, p) => S.looks && S.looks.any && S.looks.litP != null ? S.looks.litP : p;
+ST.porthole = function (S, lit, s) {
+  const L = S.looks && S.looks.any ? S.looks : null;
+  if (L && ((L.boardGround && s === 0) || (L.board && S.looksRng() < L.board))) return "st-d:boards";
+  return lit ? "st-d:winlit" : "st-d:glass";
+};
 ST.rounded = function (S, st, zs, H, site) {
   const { cx, cy, r, L } = st, pts = [];
   for (let i = 0; i <= 12; i++) { const a = -Math.PI / 2 + i * Math.PI / 12; pts.push([cx + L + Math.cos(a) * r, cy + Math.sin(a) * r]); }
@@ -5217,7 +6022,7 @@ ST.rounded = function (S, st, zs, H, site) {
       if ((n[0] * E[0] + n[1] * E[1]) / el < 0.3) continue;
       const t = [-n[1], n[0]], pp = [];
       for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) pp.push(S.P0(p[0] + n[0] * 0.05 + t[0] * Math.cos(a) * 2.1, p[1] + n[1] * 0.05 + t[1] * Math.cos(a) * 2.1, zc + Math.sin(a) * 2.1));
-      it.pcs.push(P.poly(night && S.rng() < 0.4 ? "st-d:winlit" : "st-d:glass", pp));
+      it.pcs.push(P.poly(ST.porthole(S, night && S.rng() < ST.litOf(S, 0.4), s), pp));
     }
   }
   // the dome
@@ -5256,7 +6061,7 @@ ST.ship = function (S, site, F, zs) {
   for (let i = 0; i < decks; i++) {
     const zz = z;
     top = S.box(dx0, dy0, z, dx1, dy1, z + 8, i ? "site" : "site", f => {
-      for (let u = dx0 + 3; u < dx1 - 2; u += 5) { const pp = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) pp.push(S.P0(u + Math.cos(a) * 1.1, dy1 + 0.05, zz + 4.4 + Math.sin(a) * 1.1)); f.push(P.poly(S.night && S.rng() < 0.45 ? "st-d:winlit" : "st-d:glass", pp)); }
+      for (let u = dx0 + 3; u < dx1 - 2; u += 5) { const pp = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) pp.push(S.P0(u + Math.cos(a) * 1.1, dy1 + 0.05, zz + 4.4 + Math.sin(a) * 1.1)); f.push(P.poly(ST.porthole(S, S.night && S.rng() < ST.litOf(S, 0.45), i), pp)); }
       f.front(dx0, dx1, zz + 7.2, zz + 8, "st-d:stripe");
     });
     deckBoxes.push({ dx0, dx1, dy0, dy1, z0: zz, z1: zz + 8 });
@@ -5923,13 +6728,13 @@ ST.slots = function (S, F, g, siteOut) {
 };
 
 ST.prop = function (S, F, name, g, slots, zs, prefer) {
-  const spec = ST.PROP[name]; if (!spec) return null;
+  const spec = M.own(ST.PROP, name); if (!spec) return null;
   let zone = spec.z;
   if (zone === "water" && !g.water) zone = "pave";
   if (zone === "road" && !g.road) zone = "pave";
   const at = slots.take(zone, spec.d === "barge" || spec.d === "boats" ? 10 : 4, prefer);
   if (!at) return null;
-  const [x, y, z] = at, D = ST.PROPS[spec.d];
+  const [x, y, z] = at, D = M.own(ST.PROPS, spec.d);
   const r = D ? D(S, x, y, z, g, F) : null;
   return { pt: r && r.pt ? r.pt : [x, y, z + 3], size: (r && r.size) || 2.4 };
 };
@@ -6098,6 +6903,35 @@ ST.sightlines = function (S, keep, from) {
   if (lights.size) for (let i = S.marks.length - 1; i >= 0; i--) if (lights.has(S.marks[i])) S.marks.splice(i, 1);
 };
 
+// Litter at the site's door when it is run down, a shimmer at its foot when it is strange.
+ST.siteFoot = function (S, F, zs, site) {
+  const L = S.looks; if (!L || !(L.litter || L.strange)) return;
+  const r = S.looksRng, x0 = F.site.x0, x1 = F.site.x1, z = zs;
+  if (L.litter) for (let i = 0; i < 26; i++) {
+    const x = x0 + 1 + r() * (x1 - x0 - 2), y = 0.3 + r() * 3.4;
+    S.decal(P.rect(i % 3 ? "st-g:debris" : (i % 2 ? "st-g:tuft1" : "st-g:rot"), x, y, 0.9 + r() * 1.4, 0.6 + r() * 0.8), z);
+  }
+  if (L.strange) {
+    S.decal(P.poly("st-g:anomaly1", [[x0 - 2, -0.5], [x1 + 2, -0.5], [x1 + 2, 4.5], [x0 - 2, 4.5]]), z);
+    S.decal(P.poly("st-g:anomaly2", [[x0 + 2, 0], [x1 - 2, 0], [x1 - 2, 2.2], [x0 + 2, 2.2]]), z);
+  }
+};
+// [interpretation] The obstacle's ground: the stretch of street it holds, washed in the
+// lock colour from building line to building line, with a dashed edge where it begins and
+// ends. It is the front's cost (p.420), so it is drawn in every copy: it is free to know.
+// The set piece still stands on it; this only says how much of the street it takes.
+ST.obstacleGround = function (S, F, g, zs) {
+  const st = g.stage, z = st.z || zs;
+  const half = Math.min(st.w || 40, F.X1 - F.X0 - 8) / 2 + 4;
+  const x0 = Math.max(F.X0 + 2, st.x - half), x1 = Math.min(F.X1 - 2, st.x + half);
+  // across the whole street where it has pavements; on a deck, a plaza or a towpath, the stage's own depth
+  const ys = [st.y - st.h / 2, st.y + st.h / 2];
+  for (const span of [g.pave, g.road, g.farPave]) if (span && span.length === 2 && span[0] != null && span[1] != null) { ys[0] = Math.min(ys[0], span[0]); ys[1] = Math.max(ys[1], span[1]); }
+  if (g.far != null && g.farPave) ys[1] = Math.min(ys[1], g.far);
+  if (!(x1 - x0 > 4 && ys[1] - ys[0] > 2)) return null;
+  S.decal(P.poly("st-g:obzone", [[x0, ys[0]], [x1, ys[0]], [x1, ys[1]], [x0, ys[1]]]), z);
+  return { x0, x1, y0: ys[0], y1: ys[1] };
+};
 // The obstacle (p.420), set on the street's stage. pt is where its label points.
 ST.obstacle = function (S, F, d, g, zs) {
   const st = g.stage, rng = S.rng, x = st.x, y = st.y, z = st.z || zs;
@@ -6259,7 +7093,7 @@ ST.streetLife1 = function (S, F, g, o) {
 //          layer   "gm" (default) | "player"
 //          reveal  bands the player layer shows, default ["public"]. Pass the
 //                  bands the crew has opened, as the card's band headers open.
-//          layout  where it will be seen: "sheet" (default) | "phone" | "screen"
+//          layout  where it will be seen: "sheet" (default) | "phone" | "screen" | "ipad"
 //                  | "print" | "drawing" (see M.PRESETS)
 //          displayWidth  the width it is shown at, in CSS px (defaults to the
 //                  preset's, or width); type is sized for this width
@@ -6294,17 +7128,24 @@ M.PRESETS = {
   sheet: { width: 1400, minLabelPx: 10, key: "auto" },
   phone: { width: 1170, displayWidth: 390, minLabelPx: 10, key: "below", margin: 1.2 },
   screen: { width: 1920, displayWidth: 1920, minLabelPx: 16, key: "side", aspect: 16 / 9, margin: 1.4 },
+  ipad: { width: 1366, displayWidth: 1366, minLabelPx: 16, key: "best", aspect: 1366 / 1024, margin: 1.4 },
   print: { width: 2480, displayWidth: 2480, minLabelPx: 29, key: "best", aspect: 210 / 297, margin: 2.6, valign: "top", paper: "A4" },
   drawing: { width: 1400, minLabelPx: 10, key: "none" }
 };
 M.PAPER = { A4: { w: 210, h: 297 }, letter: { w: 215.9, h: 279.4 } };
 M.resolveOpts = function (opts, W) {
   const o = Object.assign({ view: "iso", theme: "rulebook", layer: "gm", legend: true }, opts);
+  if (o.view == null) o.view = "iso";
+  if (o.theme == null) o.theme = "rulebook";
+  // an unknown layer draws the player copy, never the GM's: a typo must not put secrets on the table's screen (as chase() does)
+  if (o.layer == null) o.layer = "gm";
+  if (o.layer !== "gm" && o.layer !== "player") { M.warn(W, `layer "${o.layer}" is not gm or player — drawing the player copy`); o.layer = "player"; }
+  if (o.paper != null && !/^(a4|letter)$/i.test(String(o.paper))) M.warn(W, `paper "${o.paper}" is not A4 or letter — using A4`);
   let name = o.layout || "sheet";
-  if (!M.PRESETS[name]) { M.warn(W, `layout "${name}" is not one of ${Object.keys(M.PRESETS).join(", ")} — using sheet`); name = "sheet"; }
-  const pr = Object.assign({}, M.PRESETS[name]);
+  if (!M.own(M.PRESETS, name)) { M.warn(W, `layout "${name}" is not one of ${Object.keys(M.PRESETS).join(", ")} — using sheet`); name = "sheet"; }
+  const pr = Object.assign({}, M.own(M.PRESETS, name));
   if (name === "print") {
-    const paper = String(o.paper || pr.paper).toLowerCase() === "letter" ? "letter" : "A4", pp = M.PAPER[paper];
+    const paper = String(o.paper || pr.paper).toLowerCase() === "letter" ? "letter" : "A4", pp = M.own(M.PAPER, paper);
     pr.paper = paper; pr.aspect = pp.w / pp.h; pr.width = Math.round(pp.w / 25.4 * 300); pr.displayWidth = pr.width;
   }
   o.layout = name; o.preset = pr;
@@ -6320,11 +7161,13 @@ M.resolveOpts = function (opts, W) {
 // One floor per sheet: floor: 0 (the street), -1, 1, 2, or "basement",
 // "ground", "upper", "top". Returns the set of floors drawn, or null for all.
 const FLOOR_ALIAS = { basement: -1, cellar: -1, ground: 0, street: 0, upper: 1, first: 1, top: 2, roof: 2 };
-M.pickFloors = function (lay, floor, W) {
+M.pickFloors = function (lay, floor, W, view) {
   if (floor == null || floor === "all") return null;
-  const want = typeof floor === "number" ? floor : (FLOOR_ALIAS[String(floor).toLowerCase().replace(/ floor$/, "")] ?? +floor);
+  const want = typeof floor === "number" ? floor : (M.own(FLOOR_ALIAS, String(floor).toLowerCase().replace(/ floor$/, "")) ?? +floor);
   const lv = lay.levels.find(l => l.lvl === want) || (lay.levels.length === 1 && want === 0 ? lay.levels[0] : null);
   if (!lv) { M.warn(W, `floor ${JSON.stringify(floor)} is not on this map (floors: ${lay.levels.map(l => l.lvl).join(", ")}) — drawing them all`); return null; }
+  // the section draws storeys: E3's sheets (a roof, a walkway, what lies under the street) aren't
+  if (view === "section" && lv.ground) { M.warn(W, `floor ${JSON.stringify(floor)} is the ${String(lv.title || lv.ground).toLowerCase()}, which the section doesn't draw as a storey — drawing them all`); return null; }
   return new Set([lv]);
 };
 
@@ -6377,8 +7220,8 @@ M.render = function (o, opts = {}) {
   const W = [], raw = opts;
   opts = M.resolveOpts(opts, W);
   if (!M.VIEWS.includes(opts.view)) { M.warn(W, `view "${opts.view}" is not one of ${M.VIEWS.join(", ")} — drawing iso`); opts.view = "iso"; }
-  const theme = M.THEMES[opts.theme];
-  if (!theme) throw new Error(`B68Map: theme "${opts.theme}" is not one of ${Object.keys(M.THEMES).join(", ")}`);
+  if (!M.own(M.THEMES, opts.theme)) { M.warn(W, `theme "${opts.theme}" is not one of ${Object.keys(M.THEMES).join(", ")} — drawing rulebook`); opts.theme = "rulebook"; }
+  const theme = M.own(M.THEMES, opts.theme);
   const model = M.model(o, W);
   const seed = opts.seed != null ? opts.seed : (o.seed != null ? o.seed : M.hash(model.name + model.district));
   // Ids come from the render's own inputs, so the same roll drawn the same way
@@ -6396,7 +7239,7 @@ M.render = function (o, opts = {}) {
   const lay = M.layout.build(model, opts.view === "rings" ? "rings" : "plan", rng.fork("layout"), { player });
   if (player && opts.view !== "section") M.scene.seal(lay, new Set(opts.reveal || ["public"]));
   if (player) M.safeTitles(lay, model, opts.reveal);
-  const drawn = M.pickFloors(lay, opts.floor, W);
+  const drawn = M.pickFloors(lay, opts.floor, W, opts.view);
   lay.allLevels = lay.levels.slice();
   if (drawn) lay.levels = lay.levels.filter(l => drawn.has(l));
 
@@ -6408,7 +7251,7 @@ M.render = function (o, opts = {}) {
   const dim = Math.max(...lay.levels.map(l => { const B = l.siteBox || l.bbox; return Math.max(B.w, B.h); }));
   const k0 = Math.min(2.4, Math.max(1, dim / 92));
   const reveal = player ? new Set(opts.reveal || ["public"]) : null;
-  const typeTheme = opts.theme === "board" ? (M.THEMES[opts.sheet] && opts.sheet !== "board" ? M.THEMES[opts.sheet] : M.THEMES.blueprint) : theme;
+  const typeTheme = opts.theme === "board" ? (M.own(M.THEMES, opts.sheet) && opts.sheet !== "board" ? M.own(M.THEMES, opts.sheet) : M.THEMES.blueprint) : theme;
   let fu = 0, fk = 0, out = null, keyAt = null;
   for (let pass = 0; pass < 6; pass++) {
     const ctx = { rng: rng.fork("dress"), W, opts, k: k0, reveal, wallK: 1, floorU: fu, type: typeTheme.type, drawn };
@@ -6521,9 +7364,12 @@ M.keyFacts = function (model, opts, lay, drawn) {
   const reveal = player ? new Set(opts.reveal || ["public"]) : null;
   const onSheet = drawn ? new Set([...drawn].flatMap(l => l.rooms)) : null;
   const rooms = model.rooms.filter(r => !onSheet || onSheet.has(r));
+  // The player copy's facts carry exactly what its key shows: a band not yet surveyed is
+  // its label alone (no rooms, names, numbers or icons), a surveyed one its rooms' numbers
+  // and names, and no obstacle, its icon, loot, answer or target anywhere.
   const bands = M.BANDS.filter(b => rooms.some(r => r.band === b)).map(b => ({
     band: b, label: M.BAND_LABEL[b], known: !reveal || reveal.has(b),
-    rooms: rooms.filter(r => r.band === b).map(r => ({ n: r.n, name: r.name, target: !player && r.isTarget, obstacle: !player && r.obstacle, icon: r.obstacle && M.obstacleIcon(r.obstacle), loot: !player && r.featured && r.loot, answers: !player && r.holdsAnswerTo, mix: r.mix }))
+    rooms: reveal && !reveal.has(b) ? [] : rooms.filter(r => r.band === b).map(r => ({ n: r.n, name: r.name, target: !player && r.isTarget, obstacle: !player && r.obstacle, icon: !player && r.obstacle ? M.obstacleIcon(r.obstacle) : null, loot: !player && r.featured && r.loot, answers: !player && r.holdsAnswerTo, mix: r.mix }))
   }));
   // In the player copy a way in that costs a question says only that it is
   // there: its text names rooms the crew hasn't surveyed.
@@ -6542,7 +7388,7 @@ M.keyFacts = function (model, opts, lay, drawn) {
     targetLine: player ? "" : (model.targetRoom ? `${model.targetRoom}: ${model.targetWhat}` : ""),
     bands, ways, player, between, skips: player ? [] : (opts._dropped || []),
     threats: player ? [] : [model.soc && { icon: "social", role: "ov-soc", name: model.soc.name, text: model.soc.text, kind: "Social" }, model.phys && { icon: "guard", role: "ov-phys", name: model.phys.name, text: model.phys.text, kind: "Physical" }].filter(Boolean),
-    note: model.geometryNote, time: [model.time, model.weather].filter(Boolean).join(", ")
+    note: player ? "" : model.geometryNote, time: [model.time, model.weather].filter(Boolean).join(", ")
   };
 };
 
@@ -6555,7 +7401,9 @@ M.keyFacts = function (model, opts, lay, drawn) {
 M.key = function (o, opts = {}) {
   const W = [], rings = opts.view === "rings";        // the key follows the floor plan unless rings is asked for
   opts = M.resolveOpts(Object.assign({}, opts), W);
-  const theme = M.THEMES[opts.theme] || M.THEMES.rulebook;
+  if (!M.VIEWS.includes(opts.view)) M.warn(W, `view "${opts.view}" is not one of ${M.VIEWS.join(", ")} — the key of the floor plan`);
+  if (!M.own(M.THEMES, opts.theme)) M.warn(W, `theme "${opts.theme}" is not one of ${Object.keys(M.THEMES).join(", ")} — rulebook icons`);
+  const theme = M.own(M.THEMES, opts.theme) || M.THEMES.rulebook;
   const model = M.model(o, W);
   const seed = opts.seed != null ? opts.seed : (o.seed != null ? o.seed : M.hash(model.name + model.district));
   if (opts.view === "street") return M.street.key(o, opts, W, theme, model, seed);
@@ -6563,10 +7411,10 @@ M.key = function (o, opts = {}) {
   if (model.rooms.length) {
     lay = M.layout.build(model, rings ? "rings" : "plan", M.rng(seed).fork("layout"), { player: opts.layer === "player" });
     if (opts.layer === "player") M.safeTitles(lay, model, opts.reveal);
-    drawn = M.pickFloors(lay, opts.floor, W);
+    drawn = M.pickFloors(lay, opts.floor, W, opts.view);
   }
   const facts = M.keyFacts(model, Object.assign({}, opts, { _shortTags: true }), lay, drawn);
-  const paintTheme = opts.theme === "board" ? (M.THEMES[opts.sheet] && opts.sheet !== "board" ? M.THEMES[opts.sheet] : M.THEMES.blueprint) : theme;
+  const paintTheme = opts.theme === "board" ? (M.own(M.THEMES, opts.sheet) && opts.sheet !== "board" ? M.own(M.THEMES, opts.sheet) : M.THEMES.blueprint) : theme;
   const html = M.keyHTML(facts, paintTheme.painter ? paintTheme.painter({ model, opts, _id: "b68k" + M.hash(model.name).toString(36), lay: { levels: [] } }) : null);
   return { facts, html, css: M.KEY_CSS, warnings: W };
 };
@@ -6658,7 +7506,7 @@ M.floors = function (o, opts = {}) {
 // system's fonts) when the page that prints it doesn't load them already.
 M.printPage = function (o, opts = {}) {
   const r = M.render(o, Object.assign({}, opts, { layout: "print" }));
-  const paper = String(opts.paper || "A4").toLowerCase() === "letter" ? "letter" : "A4", pp = M.PAPER[paper];
+  const paper = String(opts.paper || "A4").toLowerCase() === "letter" ? "letter" : "A4", pp = M.own(M.PAPER, paper);
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${M.esc(r.model.name)}</title><style>${opts.fontCSS || ""}@page{size:${paper === "letter" ? "letter" : "A4"} portrait;margin:0}html,body{margin:0;padding:0;background:#fff}svg{display:block;width:${pp.w}mm;height:${(pp.w * r.height / r.width).toFixed(2)}mm}</style></head><body>${r.svg}</body></html>`;
   return { html, svg: r.svg, width: r.width, height: r.height, paper, warnings: r.warnings };
 };
@@ -6668,8 +7516,10 @@ M.printPage = function (o, opts = {}) {
 // Draws the kit's own vocabulary in any theme, for the design system's
 // catalogue pages and for checking a new part by eye.
 M.sheet = function (o = {}) {
-  const W = [], kind = o.kind || "parts", themeName = o.theme && o.theme !== "board" ? o.theme : "rulebook";
-  const theme = M.THEMES[themeName], rng = M.rng(o.seed || 7);
+  const W = [], kind = ["parts", "icons", "rooms"].includes(o.kind) ? o.kind : (o.kind == null ? "parts" : "rooms"), themeName = o.theme && o.theme !== "board" && M.own(M.THEMES, o.theme) ? o.theme : "rulebook";
+  if (o.kind != null && kind !== o.kind) M.warn(W, `kind "${o.kind}" is not parts, icons or rooms — drawing rooms`);
+  if (o.theme != null && o.theme !== "board" && !M.own(M.THEMES, o.theme)) M.warn(W, `theme "${o.theme}" is not one of ${Object.keys(M.THEMES).join(", ")} — drawing rulebook`);
+  const theme = M.own(M.THEMES, themeName), rng = M.rng(o.seed || 7);
   const kids = [], labels = [], floors = [], walls = [];
   let cell, cols, names;
   if (kind === "parts") { names = o.names || Object.keys(M.PARTS); cell = [16, 16]; cols = o.cols || 8; }
@@ -6680,7 +7530,7 @@ M.sheet = function (o = {}) {
     const x = (i % cols) * cell[0], y = Math.floor(i / cols) * (cell[1] + 4);
     floors.push(P.rect(kind === "rooms" ? "floor-working" : "floor-public", x + 0.5, y + 0.5, cell[0] - 1, cell[1] - 1));
     if (kind === "parts") {
-      const p = M.PARTS[name]; if (!p) { M.warn(W, `part "${name}" is not registered`); return; }
+      const p = M.own(M.PARTS, name); if (!p) { M.warn(W, `part "${name}" is not registered`); return; }
       const s = Math.min(o.fit ? 2.6 : 1, (cell[0] - 4) / p.size[0], (cell[1] - 5) / p.size[1]);
       kids.push(P.g(p.draw({}), { tf: { x: x + cell[0] / 2, y: y + cell[1] / 2 - 1, s }, cls: "furniture" }));
     } else if (kind === "icons") {
@@ -6696,7 +7546,7 @@ M.sheet = function (o = {}) {
   const rows = Math.ceil(names.length / cols), box = { x: -4, y: -4, w: cols * cell[0] + 8, h: rows * (cell[1] + 4) + 6 };
   const layers = { site: [], floors, furn: kids.filter(k => kind !== "icons"), walls, doors: [], game: [], cover: [], labels: kind === "icons" ? kids.concat(labels) : labels, entries: [] };
   const scene = { _id: "b68s" + M.hash(JSON.stringify([kind, themeName, o.colour || null, names, o.width || 1400, !!o.fit, o.cols || null])).toString(36),
-    model: { name: `${kind} sheet`, target: "", district: "", colour: M.COLOURS[o.colour] ? o.colour : "teal and ochre", rooms: [], seed: 1 },
+    model: { name: `${kind} sheet`, target: "", district: "", colour: M.own(M.COLOURS, o.colour) ? o.colour : "teal and ochre", rooms: [], seed: 1 },
     lay: { levels: [] }, parts: [{ lv: {}, layers, tf: { x: 0, y: 0 } }], links: [], entries: [], box, k: 1, kl: 1, tokens: [],
     opts: { legend: false, width: o.width || 1400, view: "sheet", layer: "gm", grain: o.grain }, offsets: new Map(), W };
   const out = theme.compose(scene);
@@ -6708,7 +7558,7 @@ M.emptyRender = function (model, opts, theme, W, seed, sid) {
   const w = opts.width || 1400, h = Math.round(w * 0.25), page = theme.page || "#f2ede1";
   const dark = parseInt(page.slice(1, 3), 16) + parseInt(page.slice(3, 5), 16) + parseInt(page.slice(5, 7), 16) < 384;
   const ink = dark ? "#f4f6fb" : "#14110e";
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100" width="${w}" height="${h}" font-family='${M.FONTS.condensed}' role="img" aria-label="${M.esc(model.name)}: no rooms to draw" data-map="${sid}">` +
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" font-weight="400" font-style="normal" viewBox="0 0 400 100" width="${w}" height="${h}" font-family='${M.FONTS.condensed}' role="img" aria-label="${M.esc(model.name)}: no rooms to draw" data-map="${sid}">` +
     `<title>${M.esc(model.name)}</title><rect width="100%" height="100%" fill="${page}"/>` +
     `<text x="200" y="46" font-size="14" font-weight="900" text-anchor="middle" fill="${ink}">${M.esc(model.name.toUpperCase())}</text>` +
     `<text x="200" y="66" font-size="8" text-anchor="middle" fill="${ink}" opacity="0.7">No rooms to draw: the roll's rooms list is empty.</text></svg>`;
@@ -6960,7 +7810,7 @@ function composePage(scene, th, o = {}) {
   // Grain sits on the drawing, not the type: the rulebook's text pages are clean.
   if (opts.grain !== false && th.grain) body += `<rect x="${(cx + box.x * cs).toFixed(2)}" y="${(cy + box.y * cs).toFixed(2)}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" filter="url(#${id}-grain)" style="mix-blend-mode:${th.grainBlend || "multiply"}" opacity="${th.grain}" pointer-events="none"/>`;
   const lab = M.svgLabel(scene, id);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PW.toFixed(2)} ${PH.toFixed(2)}" width="${width}" height="${height}" font-family='${FONT.condensed}'${lab.attrs}>${lab.inner}<defs>${th.defs(id, scene)}</defs><rect width="100%" height="100%" fill="${th.page}"/>${body}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" font-weight="400" font-style="normal" viewBox="0 0 ${PW.toFixed(2)} ${PH.toFixed(2)}" width="${width}" height="${height}" font-family='${FONT.condensed}'${lab.attrs}>${lab.inner}<defs>${th.defs(id, scene)}</defs><rect width="100%" height="100%" fill="${th.page}"/>${body}</svg>`;
   return { svg, width, height, PW, PH, content: { cx, cy, cs } };
 }
 M.composePage = composePage;
@@ -6970,7 +7820,7 @@ M.composePage = composePage;
 M.svgLabel = function (scene, id) {
   const m = scene.model || {}, o = scene.opts || {}, player = o.layer === "player";
   const VIEW = { iso: "isometric map", plan: "floor plan", rings: "rings diagram", section: "section", street: "the street outside" };
-  const title = `${m.name || "Map kit sheet"}: ${player ? "player handout" : VIEW[o.view] || "map"}`;
+  const title = `${m.name || "Map kit sheet"}: ${player ? "player handout" : M.own(VIEW, o.view) || "map"}`;
   let desc = "";
   if (scene.street) {
     // the street: what stands on it, the ways in (a player copy's, only those the crew could know)
@@ -7151,7 +8001,7 @@ T.rulebook = {
   // the theme with its paint and page hooks for a scene (compose draws with it;
   // B68Map.key() borrows its icon and swatch colours)
   painter(scene) {
-    const [a, b] = M.COLOURS[scene.model.colour] || M.COLOURS["grey and charcoal"];
+    const [a, b] = M.own(M.COLOURS, scene.model.colour) || M.COLOURS["grey and charcoal"];
     const BR = M.PALETTE.bands, bandC = (r, n) => palColour(r[n], a, b);
     const C = {
       floor: { public: bandC(BR, "public"), working: bandC(BR, "working"), controlled: bandC(BR, "controlled"), secure: bandC(BR, "secure") },
@@ -7545,7 +8395,7 @@ T.board = {
     // The pinned sheet keeps its own type: its labels inherit the root font.
     const sheetSvg = inner.svg.replace(/^<svg[^>]*>/, `<svg x="${sheetX}" y="${sheetY}" width="${sw}" height="${sh}" viewBox="0 0 ${sw} ${sh}" font-family='${FONT.condensed}'>`).replace(/<title id="[^"]*">[^<]*<\/title>(<desc id="[^"]*">[^<]*<\/desc>)?/, "");
     const lab = M.svgLabel(scene, id);
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Wd.toFixed(2)} ${H.toFixed(2)}" width="${opts.width}" height="${Math.round(opts.width * H / Wd)}"${lab.attrs}>${lab.inner}<defs><filter id="${id}-cork" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="3" seed="11"/><feColorMatrix values="0 0 0 0 0.22  0 0 0 0 0.12  0 0 0 0 0.05  0 0 0 -2.2 1.25"/></filter></defs>` +
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" font-weight="400" font-style="normal" viewBox="0 0 ${Wd.toFixed(2)} ${H.toFixed(2)}" width="${opts.width}" height="${Math.round(opts.width * H / Wd)}"${lab.attrs}>${lab.inner}<defs><filter id="${id}-cork" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="3" seed="11"/><feColorMatrix values="0 0 0 0 0.22  0 0 0 0 0.12  0 0 0 0 0.05  0 0 0 -2.2 1.25"/></filter></defs>` +
       `<rect width="100%" height="100%" fill="#b8874f"/><rect width="100%" height="100%" filter="url(#${id}-cork)" opacity="0.9"/>${head}` +
       `<g transform="rotate(${rot} ${scx} ${scy})"><rect x="${sheetX + 0.8}" y="${sheetY + 1.2}" width="${sw}" height="${sh}" fill="#000" opacity="0.3"/>${sheetSvg}</g>${sheetPins}${placed.join("")}${strings}${pins}</svg>`;
     return { svg, width: opts.width, height: Math.round(opts.width * H / Wd), PW: Wd, PH: H, content: { cs: inner.content.cs || 1 } };
@@ -7607,7 +8457,7 @@ PL.lightOf = function (scene) {
 
 // The palette for a scheme and a time.
 PL.colours = function (scheme, night) {
-  const [a1, b] = M.COLOURS[scheme] || M.COLOURS["grey and charcoal"];
+  const [a1, b] = M.own(M.COLOURS, scheme) || M.COLOURS["grey and charcoal"];
   // a near-black field ("black and white") would vanish into the night: lift it toward its accent [interpretation]
   const a = night && lumOf(a1) < 0.18 ? mix(a1, b, 0.4) : a1;
   const deepTok = (M.PALETTE.plate && M.PALETTE.plate.deep[scheme]) || "ink-900", deep = M.PALETTE.inks[deepTok] || TOK.ink900;
@@ -7656,7 +8506,7 @@ PL.streetPalette = function (scene) {
     if (!night && name === "shadow-tail") return { fill: `url(#${id}-stipple)`, opacity: 0.4 };
     if (night && (name === "shadow" || name === "shadow-tail")) return null;
     const g = base.g(name, p);
-    if (night && g && g.fill && !/^url/.test(g.fill) && !/^(pool|spill|anomaly)/.test(name)) return Object.assign({}, g, { fill: mix(g.fill, TOK.slate900, 0.35) });
+    if (night && g && g.fill && !/^url/.test(g.fill) && !/^(pool|spill|anomaly|obzone)/.test(name)) return Object.assign({}, g, { fill: mix(g.fill, TOK.slate900, 0.35) });
     return g;
   };
   if (night) { out.tag = () => ({ fill: TOK.paper000 }); out.tagText = () => ({ fill: TOK.ink900, "font-weight": 900, "letter-spacing": 0.15 }); }
@@ -7977,7 +8827,7 @@ const NIGHT = "#1c1d2b";
 
 SP.flat = function (scene) {
   const mix = M.mix, ink = TK.ink900, pap = TK.paper000;
-  const [a, b] = M.COLOURS[scene.model.colour] || M.COLOURS["grey and charcoal"];
+  const [a, b] = M.own(M.COLOURS, scene.model.colour) || M.COLOURS["grey and charcoal"];
   const night = !!(scene.street && scene.street.night);
   const water = mix(TK.slate500, TK.file500, 0.35);
   // materials: the front face's colour; the side is darker, the top lighter
@@ -8026,6 +8876,7 @@ SP.flat = function (scene) {
         case "pool2": return night ? { fill: "#f0c55a", opacity: 0.09 } : null;
         case "pool3": return night ? { fill: "#f0c55a", opacity: 0.13 } : null;
         case "spill": return night ? { fill: "#f0b34a", opacity: 0.17 } : null;
+        case "obzone": return { fill: TK.caution500, "fill-opacity": night ? 0.2 : 0.17, stroke: night ? TK.caution500 : TK.caution700, "stroke-width": 0.4, "stroke-dasharray": "1.6 1", "stroke-opacity": 0.85 };
         case "anomaly1": return { fill: TK.swing500, opacity: 0.14 };
         case "anomaly2": return { fill: TK.swing500, opacity: 0.22 };
         case "anomaly3": return { fill: pap, opacity: night ? 0.5 : 0.35 };
@@ -8051,6 +8902,12 @@ SP.flat = function (scene) {
         case "mural1": return { fill: dim(b, 0.5) };
         case "mural2": return { fill: dim(mix(b, pap, 0.35), 0.5) };
         case "graffiti": return { fill: dim(TK.swing500, 0.4), opacity: 0.85 };
+        case "tag1": return { fill: dim(TK.swing500, 0.3), opacity: 0.92 };
+        case "tag2": return { fill: dim(TK.covert500, 0.3), opacity: 0.92 };
+        case "boards": return { fill: dim("#d8c49a", 0.6) };
+        case "boardline": return { fill: dim("#8a6c45", 0.55) };
+        case "shimmer": return { fill: TK.swing500, opacity: night ? 0.3 : 0.22 };
+        case "patch": return { fill: dim(mix("#9c8f78", a, 0.25), 0.55) };
         case "poster": return { fill: dim(TK.signal500, 0.4) };
         case "poster2": return { fill: dim(TK.file500, 0.4) };
         case "screen": return { fill: night ? "#7fd6ff" : TK.file300 };
@@ -8134,6 +8991,7 @@ SP.blue = function (scene, BG, W, RED, YEL) {
         case "water": case "flood": case "waterhigh": return { fill: `url(#${id}-hatch)`, opacity: 0.55 };
         case "ripple": return { fill: W, opacity: 0.35 };
         case "road": return { fill: W, "fill-opacity": 0.05, stroke: W, "stroke-opacity": 0.35, "stroke-width": 0.12 };
+        case "obzone": return { fill: YEL, "fill-opacity": 0.1, stroke: YEL, "stroke-width": 0.2, "stroke-dasharray": "1.2 0.7", "stroke-opacity": 0.9 };
         case "anomaly1": case "anomaly2": case "anomaly3": return { fill: RED, opacity: 0.12, stroke: RED, "stroke-width": 0.15, "stroke-dasharray": "1 0.6" };
         case "grass": case "crop": case "tuft1": case "tuft2": return { fill: W, opacity: 0.1 };
         case "area": case "under": case "hatch": case "grate": return { fill: `url(#${id}-hatch)`, opacity: 0.8 };
@@ -8148,7 +9006,10 @@ SP.blue = function (scene, BG, W, RED, YEL) {
         case "neon": case "screen": case "screen2": case "bluelamp": case "cross": return { fill: name === "neon" || name === "screen2" ? RED : YEL, "fill-opacity": night ? 0.6 : 0.35 };
         case "secret": return { fill: "none", stroke: RED, "stroke-width": 0.35, "stroke-dasharray": "0.6 0.45" };
         case "door": case "door-site": return line({ fill: W, "fill-opacity": 0.22 });
-        case "hazard": case "graffiti": case "poster": case "poster2": case "pattern1": case "pattern2": case "mural1": case "mural2": case "flower1": case "flower2": case "flower3": return line({ fill: W, "fill-opacity": 0.14, "stroke-width": 0.08 });
+        case "boards": case "patch": return line({ fill: W, "fill-opacity": 0.12, "stroke-width": 0.08 });
+        case "shimmer": return { fill: RED, opacity: 0.18 };
+        case "boardline": return { fill: W, opacity: 0.35 };
+        case "hazard": case "graffiti": case "tag1": case "tag2": case "poster": case "poster2": case "pattern1": case "pattern2": case "mural1": case "mural2": case "flower1": case "flower2": case "flower3": return line({ fill: W, "fill-opacity": 0.14, "stroke-width": 0.08 });
         case "grille": case "frame": case "stripe": case "stem": case "placard-stick": return { fill: W, opacity: 0.55 };
         case "lamphead": return { fill: night ? YEL : W, opacity: 0.85 };
       }
@@ -8393,10 +9254,14 @@ CH.GROUNDS = {
   covered: { above: "the arcade's glass roof", street: "the arcade between its shopfronts", below: "a service tunnel" },
   deadend: { above: "rooftops", street: "a lane that ends in a wall", below: "a sewer" },
   waterside: { above: "warehouse roofs", street: "the towpath", below: "the canal" },
-  bridge: { above: "the bridge's girders", street: "the bridge deck", below: "the canal under it" }
+  bridge: { above: "the bridge's girders", street: "the bridge deck", below: "the canal under it" },
+  // [interpretation] two grounds from Out of Doors (E2): a car park's decks and a quay's edge
+  carpark: { above: "the car park's upper decks", street: "its ground floor, between the bays", below: "the lower deck" },
+  quay: { above: "cranes and the warehouse roofs", street: "the quay's edge", below: "the dock water" }
 };
 // What a street description that isn't a printed type means: the first word that matches.
-CH.GROUND_WORDS = [[/bridge|viaduct/i, "bridge"], [/flyover|overpass|elevated|walkway|deck/i, "deck"], [/canal|tow ?path|quay|wharf|river/i, "waterside"],
+CH.GROUND_WORDS = [[/bridge|viaduct/i, "bridge"], [/car ?park|parking (?:deck|garage|structure)|multi-?stor(?:e)?y/i, "carpark"], [/flyover|overpass|elevated|walkway|deck/i, "deck"],
+  [/quay|wharf|\bdocks?\b|jetty/i, "quay"], [/canal|tow ?path|river/i, "waterside"],
   [/alley|lane|backstreet|back street|cobble/i, "lane"], [/arcade|glass-roofed|covered/i, "covered"], [/roundabout|circus|junction/i, "hub"],
   [/plaza|square|open/i, "open"], [/dead[- ]end|cul-de-sac/i, "deadend"], [/boulevard|high street|avenue|road|street/i, "corridor"]];
 
@@ -8633,9 +9498,9 @@ CH.readStreet = function (st, W) {
   st = st || {};
   const typeKey = Object.keys(ST.GROUND).find(k => chLC(k) === chLC(st.type)) || null;
   let ground = st.ground ? chLC(st.ground).replace(/[\s_-]+/g, "") : null;
-  if (ground && !CH.GROUNDS[ground]) { M.warn(W, `street ground "${st.ground}" is not one of ${Object.keys(CH.GROUNDS).join(", ")} — reading the street type`); ground = null; }
-  const variant = typeKey ? ST.GROUND[typeKey].v : "";
-  if (!ground && typeKey) ground = ST.GROUND[typeKey].g;
+  if (ground && !M.own(CH.GROUNDS, ground)) { M.warn(W, `street ground "${st.ground}" is not one of ${Object.keys(CH.GROUNDS).join(", ")} — reading the street type`); ground = null; }
+  const variant = typeKey ? M.own(ST.GROUND, typeKey).v : "";
+  if (!ground && typeKey) ground = M.own(ST.GROUND, typeKey).g;
   if (!ground) {
     const words = [st.type, st.desc, st.named].filter(Boolean).join(" ");
     const hit = CH.GROUND_WORDS.find(([re]) => re.test(words));
@@ -8644,7 +9509,7 @@ CH.readStreet = function (st, W) {
   }
   const prop = text => {
     const k = Object.keys(ST.PROP).find(p => chLC(p) === chLC(text));
-    if (k) return { kind: "prop", text: k, d: ST.PROP[k].d };
+    if (k) return { kind: "prop", text: k, d: M.own(ST.PROP, k).d };
     const w = CH.PROP_WORDS.find(([re]) => re.test(text));
     if (w) return { kind: "prop", text: String(text), d: w[1] };
     M.warn(W, `street prop "${text}" is not in the printed table and names nothing the kit draws — left off the street`);
@@ -8653,14 +9518,14 @@ CH.readStreet = function (st, W) {
   const near = text => {
     const k = Object.keys(ST.NEIGHBOUR).find(p => chLC(p) === chLC(text));
     if (!k) M.warn(W, `nearby building "${text}" is not in the printed table — drawn as a plain frontage with its name`);
-    return { kind: "nearby", text: String(text), nb: k ? ST.NEIGHBOUR[k] : null, name: ST.cap(text).toUpperCase() };
+    return { kind: "nearby", text: String(text), nb: k ? M.own(ST.NEIGHBOUR, k) : null, name: ST.cap(text).toUpperCase() };
   };
   const OBW = [[/quarantine|lockdown/i, "quarantine"], [/parade/i, "parade"], [/riot/i, "riot"], [/perform/i, "performers"], [/protest/i, "protest"], [/evangel|preach/i, "evangelist"],
     [/traffic|jam/i, "jam"], [/construct|demolition|roadworks/i, "construction"], [/gang/i, "gangs"], [/paranormal|anomal|ghost/i, "paranormal"], [/checkpoint|bluecoat/i, "checkpoint"], [/flood/i, "flood"]];
   let obstacle = null;
   if (st.obstacle) {
     const k = Object.keys(ST.OBSTACLE).find(p => chLC(p) === chLC(st.obstacle)), w = OBW.find(([re]) => re.test(st.obstacle));
-    if (k) obstacle = { kind: "obstacle", text: k, d: ST.OBSTACLE[k].d };
+    if (k) obstacle = { kind: "obstacle", text: k, d: M.own(ST.OBSTACLE, k).d };
     else if (w) obstacle = { kind: "obstacle", text: String(st.obstacle), d: w[1] };
     else M.warn(W, `street obstacle "${st.obstacle}" is not in the printed table — left off the street`);
   }
@@ -8668,24 +9533,24 @@ CH.readStreet = function (st, W) {
   let desc = null;
   if (st.desc) {
     const k = Object.keys(ST.DESC).find(p => chLC(p) === chLC(st.desc)), w = DW.find(([re]) => re.test(st.desc));
-    const d = k ? ST.DESC[k].k : w ? w[1] : null;
-    if (d && CH.DESCS[d]) desc = { kind: "desc", text: String(st.desc), d };
+    const d = k ? M.own(ST.DESC, k).k : w ? w[1] : null;
+    if (d && M.own(CH.DESCS, d)) desc = { kind: "desc", text: String(st.desc), d };
   }
-  const props = (st.props || []).map(prop).filter(Boolean), nearby = (st.nearby || []).slice(0, 2).map(near);
+  const props = M.list(st.props, W, "street props", true).map(prop).filter(Boolean), nearby = M.list(st.nearby, W, "street nearby", true).slice(0, 2).map(near);
   // the street's handholds, in the order panels take them: a prop, next door, the obstacle, …
   const holds = [props[0], nearby[0], obstacle, props[1], desc, nearby[1], ...props.slice(2)].filter(Boolean);
-  const water = ground === "bridge" || ground === "waterside" || props.some(p => ["boats", "barge", "gondolas", "lock"].includes(p.d)) || /canal|river|water/i.test(st.over || "");
-  return { named: st.named || "", type: st.type || "", typeKey, variant, ground, over: st.over || (ground === "bridge" ? "canal" : ""), landmark: st.landmark || "", holds, water };
+  const water = ground === "bridge" || ground === "waterside" || ground === "quay" || props.some(p => ["boats", "barge", "gondolas", "lock"].includes(p.d)) || /canal|river|water/i.test(st.over || "");
+  return { named: st.named || "", said: st.desc || "", type: st.type || "", typeKey, variant, ground, over: st.over || (ground === "bridge" ? "canal" : ""), landmark: st.landmark || "", holds, water };
 };
 
 // --- Normalising ---------------------------------------------------------------------------------
 CH.normCast = function (c, i, W) {
   c = Object.assign({}, c);
-  if (!c.token || !CH.TOKENS[c.token]) { M.warn(W, `cast "${c.label || c.id || i}": token "${c.token}" is not one of ${Object.keys(CH.TOKENS).join(", ")} — drawn as an autopod`); c.token = "autopod"; }
+  if (!c.token || !M.own(CH.TOKENS, c.token)) { M.warn(W, `cast "${c.label || c.id || i}": token "${c.token}" is not one of ${Object.keys(CH.TOKENS).join(", ")} — drawn as an autopod`); c.token = "autopod"; }
   c.label = c.label || c.token;
   c.id = c.id != null && c.id !== "" ? String(c.id) : chSlug(c.label) + (i ? "-" + i : "");
   if (!CH.SIDES.includes(c.side)) { if (c.side != null) M.warn(W, `cast "${c.label}": side "${c.side}" is not one of crew, against, neutral — neutral`); c.side = c.side == null ? "crew" : "neutral"; }
-  if (c.colour != null && !CH.COLOURS[chLC(c.colour)] && !/^#[0-9a-f]{6}$/i.test(c.colour)) { M.warn(W, `cast "${c.label}": colour "${c.colour}" is not one of ${Object.keys(CH.COLOURS).join(", ")} — the token's own`); delete c.colour; }
+  if (c.colour != null && !M.own(CH.COLOURS, chLC(c.colour)) && !/^#[0-9a-f]{6}$/i.test(c.colour)) { M.warn(W, `cast "${c.label}": colour "${c.colour}" is not one of ${Object.keys(CH.COLOURS).join(", ")} — the token's own`); delete c.colour; }
   if (c.level != null && !CH.LEVELS.includes(c.level)) { M.warn(W, `cast "${c.label}": level "${c.level}" is not one of ${CH.LEVELS.join(", ")}`); delete c.level; }
   return c;
 };
@@ -8710,14 +9575,14 @@ M.chaseNew = function (o = {}) {
   const roll = o.roll && typeof o.roll === "object" ? o.roll : null, scene = o.scene && typeof o.scene === "object" ? o.scene : null;
   let street = {};
   // a location roll: its printed street fields and nothing else (no watcher, no ways in, no target)
-  if (roll) street = { named: roll.namedStreet || "", type: roll.streetType || "", desc: roll.streetDesc || "", props: (roll.props || []).slice(), nearby: (roll.neighbours || []).slice(0, 2), obstacle: roll.streetObstacle || null, landmark: roll.landmark || null };
+  if (roll) street = { named: roll.namedStreet || "", type: roll.streetType || "", desc: roll.streetDesc || "", props: M.list(roll.props, null, "props", true).slice(), nearby: M.list(roll.neighbours, null, "neighbours", true).slice(0, 2), obstacle: roll.streetObstacle || null, landmark: roll.landmark || null };
   else if (scene) street = { named: scene.street || "", type: scene.streetType || "", props: [], nearby: scene.neighbour ? [scene.neighbour] : [], obstacle: scene.obstacle || null, landmark: scene.landmark || null };
   if (typeof o.street === "string") street.desc = o.street;
   else if (o.street && typeof o.street === "object") street = Object.assign(street, chClone(o.street));
   const read = CH.readStreet(street, W);
   street.ground = read.ground;
   if (read.ground === "bridge" && !street.over) street.over = "canal";
-  street.props = street.props || []; street.nearby = street.nearby || [];
+  street.props = M.list(street.props, null, "", true); street.nearby = M.list(street.nearby, null, "", true);
   const district = o.district || (roll && roll.district) || (scene && scene.d && scene.d.n) || "";
   const time = chTime(o.time, W, "time") || chRolledTime((roll && roll.timeOfDay) || (scene && scene.timeOfDay)) || "Bluetime";
   const weather = o.weather || (roll && roll.weather) || (scene && scene.weather) || "";
@@ -8803,6 +9668,14 @@ M.chaseTick = function (chase, t = {}) {
   if (!CH.LEVELS.includes(level)) { M.warn(W, `level "${level}" is not one of ${CH.LEVELS.join(", ")} — street`); level = "street"; }
   const panel = { clock: clock.id, ticks, level };
   const time = chTime(t.time, W, "time"); if (time) panel.time = time;
+  // the chase turns into another street from this panel on (a sentence, or a street object)
+  if (t.street) {
+    const st = typeof t.street === "string" ? { desc: t.street } : chClone(t.street);
+    const read = CH.readStreet(st, W);
+    st.ground = read.ground; if (read.ground === "bridge" && !st.over) st.over = "canal";
+    st.props = M.list(st.props, null, "", true); st.nearby = M.list(st.nearby, null, "", true);
+    panel.street = st;
+  }
   panel.caption = t.caption != null ? String(t.caption) : "";
   if (t.roll) panel.roll = String(t.roll);
   if (pend.length) panel.between = pend;
@@ -8845,7 +9718,8 @@ CH.read = function (chase, W, player) {
   const clocks = (chase.clocks || []).map((k, i) => CH.normClock(k, i, W));
   const clockOf = new Map(clocks.map(k => [k.id, k]));
   const used = new Map(clocks.map(k => [k.id, 0]));
-  let slot = 0, prevTime = time;
+  let slot = 0, prevTime = time, cur = street, curSlot0 = 0;
+  const streets = [street];
   const panels = (chase.panels || []).map((p, i) => {
     p = p || {};
     let clock = clockOf.get(p.clock);
@@ -8857,19 +9731,22 @@ CH.read = function (chase, W, player) {
     let level = p.level || "street";
     if (!CH.LEVELS.includes(level)) { M.warn(W, `panel ${i + 1}: level "${level}" is not one of ${CH.LEVELS.join(", ")} — street`); level = "street"; }
     const ptime = chTime(p.time, W, `panel ${i + 1}: time`) || time;
+    // a panel's own street: the chase is on it from here on, its handholds dealt from its first
+    let turned = false;
+    if (p.street && typeof p.street === "object") { const PW = []; cur = CH.readStreet(p.street, PW); PW.forEach(m => M.warn(W, `panel ${i + 1}: ${m}`)); curSlot0 = slot; turned = true; streets.push(cur); }
     const show = (Array.isArray(p.show) ? p.show : []).map(s => {
       const c = castOf.get(s && s.id);
       if (!c) { M.warn(W, `panel ${i + 1}: "${s && s.id}" is not in the cast — left out`); return null; }
       const o = { cast: c, x: Math.max(-0.2, Math.min(1.2, isFinite(+s.x) ? +s.x : 0.5)), level: s.level || c.level || level, state: s.state || null, on: s.on || null, face: s.face === "left" ? -1 : 1 };
       if (!CH.LEVELS.includes(o.level) && o.level !== "air") { M.warn(W, `panel ${i + 1}: "${c.label}" level "${o.level}" is not one of ${CH.LEVELS.join(", ")}, air — ${level}`); o.level = level; }
-      if (o.state && !CH.STATES[o.state]) { M.warn(W, `panel ${i + 1}: state "${o.state}" is not one of ${Object.keys(CH.STATES).join(", ")} — drawn plain`); o.state = null; }
+      if (o.state && !M.own(CH.STATES, o.state)) { M.warn(W, `panel ${i + 1}: state "${o.state}" is not one of ${Object.keys(CH.STATES).join(", ")} — drawn plain`); o.state = null; }
       if (o.state === "half" && c.token !== "autopod") { M.warn(W, `panel ${i + 1}: "half" is for the autopod — "${c.label}" drawn whole`); o.state = null; }
       return o;
     }).filter(Boolean);
     const fx = [];
     for (const f of Array.isArray(p.fx) ? p.fx : []) {
       const name = f && typeof f === "object" ? f.name : f;
-      if (!CH.FX[name]) { M.warn(W, `panel ${i + 1}: fx "${name}" is not one of ${Object.keys(CH.FX).join(", ")} — left out`); continue; }
+      if (!M.own(CH.FX, name)) { M.warn(W, `panel ${i + 1}: fx "${name}" is not one of ${Object.keys(CH.FX).join(", ")} — left out`); continue; }
       fx.push(f && typeof f === "object" ? Object.assign({}, f) : { name });
     }
     let oppose = null;
@@ -8879,7 +9756,8 @@ CH.read = function (chase, W, player) {
       else { oppose = { clock: ok, ticks: n }; if (ok.strip) used.set(ok.id, used.get(ok.id) + n); }
     }
     const out = { i, clock, k, from, to: from + k - 1, oppose, level, time: ptime, snap: ptime !== prevTime, caption: p.caption ? String(p.caption) : "", roll: p.roll ? String(p.roll) : "",
-      between: (Array.isArray(p.between) ? p.between : p.between ? [p.between] : []).map(String), gm: p.gm ? String(p.gm) : "", show, fx, slot0: slot };
+      between: (Array.isArray(p.between) ? p.between : p.between ? [p.between] : []).map(String), gm: p.gm ? String(p.gm) : "", show, fx, slot0: slot,
+      street: cur, hold0: slot - curSlot0, turned };
     out.ends = !!clock && out.to >= clock.size;
     // racing clocks that fill together: the crew escape, but the pursuers are outside the lair (BitD p.16)
     out.tie = out.ends && clock.side === "crew" && !!oppose && oppose.clock.side === "against" && (oppose.clock.strip ? used.get(oppose.clock.id) >= oppose.clock.size : oppose.clock.filled >= oppose.clock.size);
@@ -8889,7 +9767,7 @@ CH.read = function (chase, W, player) {
   // who is drawn: only cast members a panel shows (a player copy names no one else)
   const shown = cast.filter(c => panels.some(p => p.show.some(s => s.cast === c)));
   return { name: chase.name || "The chase", id: chase.id || "", session: chase.session || "", district: chase.district || "", time, weather: chase.weather || "", site: chase.site || "",
-    street, cast, shown, clocks, used, panels, prelude: (chase.prelude || []).map(String), pending: (chase.pending || []).map(String), seed: (+chase.seed || M.hash(chase.name || "")) >>> 0 };
+    street, streets, cast, shown, clocks, used, panels, prelude: (chase.prelude || []).map(String), pending: (chase.pending || []).map(String), seed: (+chase.seed || M.hash(chase.name || "")) >>> 0 };
 };
 
 // --- Paint -------------------------------------------------------------------------------------------
@@ -8902,7 +9780,7 @@ CH.painter = function (theme, id, night) {
   const SPAL = blue ? M.streetPalette.blue(fake, BG, WH, RED, YEL) : M.streetPalette.flat(fake);
   const ink = TOK.ink900, pap = TOK.paper000;
   const dimN = (c, t) => night ? mix(c, NIGHT, t) : c;
-  const colour = name => CH.COLOURS[name] || (/^#[0-9a-f]{6}$/i.test(name) ? name : "#8e9497");
+  const colour = name => M.own(CH.COLOURS, name) || (/^#[0-9a-f]{6}$/i.test(name) ? name : "#8e9497");
   const flat = (role, p) => {
     if (role.startsWith("ch-v:")) {
       const [, nm, f] = role.split(":"), c = colour(nm);
@@ -9148,12 +10026,12 @@ CH.art = function (A) {
   const signs = [];                   // the words on the frontage, for the badges to keep off
   // the sky and the far city
   L.sky.push(P.rect("ch-sky", 0, 0, Wd, Y.street));
-  const farTop = g === "bridge" || g === "waterside" || g === "open" ? [7, 13] : [2, 7];
+  const farTop = g === "bridge" || g === "waterside" || g === "quay" || g === "open" ? [7, 13] : [2, 7];
   for (let x = -4 - rng() * 6; x < Wd + 4;) { const w = 6 + rng() * 10, t = farTop[0] + rng() * (farTop[1] - farTop[0]); L.far.push(P.rect(rng() < 0.5 ? "ch-far" : "ch-far2", N(x), N(t), N(w), N(Y.street - t)));
     if (night) for (let i = 0; i < 3; i++) if (rng() < 0.6) L.far.push(P.rect("ch-far-lit", N(x + 1 + rng() * (w - 2)), N(t + 1.5 + rng() * 6), 0.6, 0.8));
     x += w + rng() * 2; }
   // the frontage behind the street: generic buildings, a nearby building in its slot
-  const roofY = g === "covered" ? Y.above + 3.4 : g === "waterside" ? Y.above - 2 : g === "deck" ? 1 : g === "open" || g === "bridge" ? null : Y.above;
+  const roofY = g === "covered" ? Y.above + 3.4 : g === "waterside" || g === "quay" ? Y.above - 2 : g === "deck" ? 1 : g === "open" || g === "bridge" ? null : Y.above;
   const frontage = (x0, x1, mats, o = {}) => {
     let x = x0;
     while (x < x1 - 2) {
@@ -9180,6 +10058,23 @@ CH.art = function (A) {
     deck: () => { frontage(-2, Wd + 2, ["concrete", "concrete", "glassblock", "brick"], { kind: "office", storeys: 5, roofs: false }); },
     waterside: () => { frontage(-2, Wd + 2, ["brick", "brick", "wood"], { kind: "warehouse", storeys: 2 }); },
     open: () => { for (let x = -4 + rng() * 8; x < Wd + 4; x += 26 + rng() * 14) L.back.push(P.rect("st-f:concrete", N(x), 3, N(14 + rng() * 6), base - 3), P.rect("st-s:concrete", N(x), 3, 1.2, base - 3)); },
+    quay: () => { frontage(-2, Wd + 2, ["brick", "rust", "wood", "concrete"], { kind: "warehouse", storeys: 2, pipes: true }); },
+    carpark: () => {
+      // [interpretation] the car park's open decks behind the street: slabs on columns, parked autopods in the bays, a ramp
+      const lv = 3, sh = (base - Y.above + 2) / lv;
+      for (let i = 0; i < lv; i++) {
+        const top = base - (i + 1) * sh, sl = 1.1;
+        L.back.push(P.rect("ch-shade", 0, N(top + sl), Wd, N(sh - sl)), P.rect("st-f:concrete", 0, N(top), Wd, sl), P.rect("st-s:concrete", 0, N(top + sl - 0.3), Wd, 0.3));
+        for (let x = 1 + rng() * 3; x < Wd - 3; x += 5.4) if (rng() < 0.62) {
+          const cy = top + sh - 0.1, cw = 3.6, ch = Math.min(1.9, sh - sl - 0.6);
+          L.back.push(P.rect(rng.pick(["st-f:pod1", "st-f:pod2", "st-f:pod3", "st-f:metal"]), N(x), N(cy - ch), cw, N(ch), { rx: 0.5 }), P.rect(night && rng() < 0.2 ? "st-d:winlit" : "st-d:glass", N(x + 0.6), N(cy - ch + 0.3), 2.4, N(ch * 0.38), { rx: 0.25 }));
+        }
+        for (let x = 4 + rng() * 2; x < Wd; x += 11) L.back.push(P.rect("st-f:concrete", N(x), N(top + sl), 1.1, N(sh - sl)), P.rect("st-s:concrete", N(x + 0.8), N(top + sl), 0.3, N(sh - sl)));
+      }
+      const rx = Wd * (0.55 + rng() * 0.3);
+      L.back.push(P.poly("st-f:deck", [[N(rx), N(base - sh + 0.4)], [N(rx + 14), N(base - 2 * sh + 1.5)], [N(rx + 14), N(base - 2 * sh + 2.6)], [N(rx), N(base - sh + 1.5)]]));
+      L.back.push(P.rect("st-f:concrete", 0, N(Y.above - 1.6), Wd, 0.9), P.rect("st-t:concrete", 0, N(Y.above - 1.9), Wd, 0.35));
+    },
     bridge: () => { for (let x = -4 + rng() * 6; x < Wd + 4; x += 9 + rng() * 6) { const t = 11 + rng() * 4; L.back.push(P.rect(rng() < 0.5 ? "st-f:render" : "st-f:brick", N(x), N(t), N(8 + rng() * 4), N(Y.street + 2 - t))); } }
   };
   (ground[g] || ground.lane)();
@@ -9226,15 +10121,24 @@ CH.art = function (A) {
     L.surf.push(P.rect("st-f:iron", 0, Y.street - 3.6, Wd, 0.35), P.rect("st-f:iron", 0, Y.street - 1.9, Wd, 0.2));
     for (let x = 0; x < Wd; x += 1.4) L.surf.push(P.rect("st-f:iron", N(x), Y.street - 3.6, 0.22, 3.6));
   }
-  L.surf.push(P.rect(g === "open" ? "st-g:plaza" : g === "waterside" ? "st-g:cobble" : g === "covered" ? "st-g:tile" : "st-g:pave", 0, Y.street - 1.6, Wd, 0.7),
-    P.rect("st-g:kerb", 0, Y.street - 1.0, Wd, 0.22), P.rect(g === "waterside" || g === "open" || g === "covered" ? "st-g:plaza" : "st-g:road", 0, Y.street - 0.8, Wd, 0.8));
-  if (g !== "waterside" && g !== "open" && g !== "covered" && g !== "lane" && g !== "deadend") for (let x = rng() * 6; x < Wd; x += 10) L.surf.push(P.rect("st-g:mark", N(x), Y.street - 0.45, 4.4, 0.18));
+  L.surf.push(P.rect(g === "open" ? "st-g:plaza" : g === "waterside" || g === "quay" ? "st-g:cobble" : g === "covered" ? "st-g:tile" : g === "carpark" ? "st-g:lot" : "st-g:pave", 0, Y.street - 1.6, Wd, 0.7),
+    P.rect("st-g:kerb", 0, Y.street - 1.0, Wd, 0.22), P.rect(g === "waterside" || g === "open" || g === "covered" ? "st-g:plaza" : g === "quay" ? "st-g:cobble" : g === "carpark" ? "st-g:lot" : "st-g:road", 0, Y.street - 0.8, Wd, 0.8));
+  // a car park's painted bays; a quay's bollards along its edge, a crane against the sky
+  if (g === "carpark") for (let x = rng() * 3; x < Wd; x += 3.6) L.surf.push(P.rect("st-g:mark", N(x), Y.street - 1.55, 0.16, 1.4));
+  if (g === "quay") {
+    for (let x = 3 + rng() * 4; x < Wd; x += 9 + rng() * 3) L.surf.push(P.rect("st-f:iron", N(x - 0.45), Y.street - 1.9, 0.9, 1.2, { rx: 0.35 }), P.rect("st-t:iron", N(x - 0.6), Y.street - 2.05, 1.2, 0.3, { rx: 0.15 }));
+    const cx = Wd * (0.2 + rng() * 0.5), top = Y.above - 3;
+    L.struct.push(P.rect("st-f:rust", N(cx - 1.2), N(top), 2.4, N(base - top)), P.rect("st-s:rust", N(cx + 0.6), N(top), 0.6, N(base - top)));
+    L.struct.push(P.poly("st-f:rust", [[N(cx - 1.2), N(top)], [N(cx + 22), N(top - 4)], [N(cx + 22), N(top - 3.2)], [N(cx - 1.2), N(top + 1.2)]]), P.line("st-x:rail", N(cx), N(top - 6), N(cx + 20), N(top - 4), { sw: 0.18 }), P.line("st-x:rail", N(cx), N(top - 6), N(cx), N(top), { sw: 0.25 }));
+    L.struct.push(P.line("st-x:rail", N(cx + 18), N(top - 3.6), N(cx + 18), N(top + 6), { sw: 0.12 }), P.rect("st-f:wood", N(cx + 16.6), N(top + 6), 2.8, 1.8));
+  }
+  if (g !== "waterside" && g !== "quay" && g !== "carpark" && g !== "open" && g !== "covered" && g !== "lane" && g !== "deadend") for (let x = rng() * 6; x < Wd; x += 10) L.surf.push(P.rect("st-g:mark", N(x), Y.street - 0.45, 4.4, 0.18));
   if (!night && roofY != null && g !== "deck") L.surf.push(P.rect("ch-shade", 0, Y.street - 1.6, Wd, 0.6));
   if (g === "hub") { const x = Wd * (0.35 + rng() * 0.3); L.surf.push(P.rect("st-g:kerb", N(x - 9), Y.street - 1.6, 18, 1.6), P.path("st-g:grass", `M${N(x - 8)} ${Y.street - 1.6} Q${N(x)} ${Y.street - 4} ${N(x + 8)} ${Y.street - 1.6} Z`), ...PRS.monument(c).map(p => Object.assign(p, { tf: { x: N(x), y: Y.street - 1.6, s: 0.6 } }))); }
   // the cut: the slab under the street, and the level below
   const slabB = g === "bridge" ? Y.street + 1.8 : Y.street + 1.2;
   L.surf.push(P.rect(g === "bridge" ? "st-f:iron" : "ch-slab", 0, Y.street, Wd, slabB - Y.street));
-  const below = g === "bridge" || g === "waterside" ? "canal" : g === "open" || g === "hub" ? "underpass" : g === "covered" ? "service" : A.water ? "culvert" : "sewer";
+  const below = M.belowKind(g, A.water);          // the same reading as the building views' floor −1 (outdoors.js)
   const B = { kind: below, water: below === "canal" || below === "culvert" || below === "sewer", floor: Y.below };
   if (below === "canal") {
     if (g === "bridge") {
@@ -9272,9 +10176,9 @@ CH.art = function (A) {
   holds.forEach((h, j) => {
     if (!h || h.kind === "nearby") return;
     const x = j * slotW + slotW * (0.3 + rng() * 0.4);
-    if (h.kind === "obstacle") { const fn = OBS[h.d]; if (fn) L.props.push(at(fn(c), x, Y.street - 0.9)); return; }
-    if (h.kind === "prop" && CH.PROP_TOKEN[h.d] && A.tokens.has(CH.PROP_TOKEN[h.d])) return;
-    const fn = h.kind === "desc" ? CH.DESCS[h.d] : PRS[h.d];
+    if (h.kind === "obstacle") { const fn = M.own(OBS, h.d); if (fn) L.props.push(at(fn(c), x, Y.street - 0.9)); return; }
+    if (h.kind === "prop" && M.own(CH.PROP_TOKEN, h.d) && A.tokens.has(M.own(CH.PROP_TOKEN, h.d))) return;
+    const fn = h.kind === "desc" ? M.own(CH.DESCS, h.d) : M.own(PRS, h.d);
     if (!fn) return;
     let r = fn(c), zone = "pave";
     if (r && !Array.isArray(r)) { zone = r.zone; r = r.k; }
@@ -9300,7 +10204,7 @@ CH.actors = function (A, art) {
   // where each stands, in show order, those standing on another after it
   const order = A.show.slice().sort((a, b) => (a.on ? 1 : 0) - (b.on ? 1 : 0));
   for (const o of order) {
-    const def = CH.TOKENS[o.cast.token], sc = def.scale, H = def.H * sc, Lh = def.L * sc / 2;
+    const def = M.own(CH.TOKENS, o.cast.token), sc = def.scale, H = def.H * sc, Lh = def.L * sc / 2;
     let x = o.x * Wd, y;
     const host = o.on ? byId.get(o.on) : null;
     if (o.on && !host) M.warn(A.W_, `panel ${A.n}: "${o.cast.label}" is on "${o.on}", which isn't in the panel — standing on its level`);
@@ -9311,7 +10215,7 @@ CH.actors = function (A, art) {
     const t = { o, def, sc, H, Lh, x, y, ground: y, deck: (def.deck != null ? def.deck : def.H) * sc, side: o.cast.side, id: o.cast.id, level: o.level, state: o.state, lift: 0, top: y - H };
     toks.push(t); byId.set(t.id, t);
   }
-  const colourOf = t => CH.COLOURS[chLC(t.o.cast.colour)] ? chLC(t.o.cast.colour) : /^#[0-9a-f]{6}$/i.test(t.o.cast.colour || "") ? t.o.cast.colour : t.def.colour;
+  const colourOf = t => M.own(CH.COLOURS, chLC(t.o.cast.colour)) ? chLC(t.o.cast.colour) : /^#[0-9a-f]{6}$/i.test(t.o.cast.colour || "") ? t.o.cast.colour : t.def.colour;
   for (const t of toks) {
     const { def, sc, H, Lh, o } = t, st = t.state, cast = o.cast;
     const riders = Array.isArray(cast.riders) ? cast.riders.length : undefined;
@@ -9526,10 +10430,10 @@ M.chaseRender = function (chase, opts = {}) {
   }
   const player = opts.layer != null && opts.layer !== "gm";
   let layoutName = opts.layout || "ipad";
-  if (!CH.LAYOUTS[layoutName]) { M.warn(W, `layout "${layoutName}" is not one of ${Object.keys(CH.LAYOUTS).join(", ")} — ipad`); layoutName = "ipad"; }
+  if (!M.own(CH.LAYOUTS, layoutName)) { M.warn(W, `layout "${layoutName}" is not one of ${Object.keys(CH.LAYOUTS).join(", ")} — ipad`); layoutName = "ipad"; }
   let theme = opts.theme || "rulebook";
   if (!CH.THEMES.includes(theme)) { M.warn(W, `theme "${theme}" is not one of ${CH.THEMES.join(", ")} — rulebook`); theme = "rulebook"; }
-  const pr = CH.LAYOUTS[layoutName], stack = !!pr.stack;
+  const pr = M.own(CH.LAYOUTS, layoutName), stack = !!pr.stack;
   const PW = +opts.displayWidth > 0 ? +opts.displayWidth : pr.displayWidth;
   const width = +opts.width > 0 ? Math.round(+opts.width) : Math.round(PW * pr.width / pr.displayWidth);
   const U = +opts.minLabelPx > 0 ? +opts.minLabelPx : pr.floor;
@@ -9537,7 +10441,7 @@ M.chaseRender = function (chase, opts = {}) {
   const R = CH.read(chase, W, player);
   const rolls = !player || opts.rolls === true;
   const id = "b68c" + M.hash(JSON.stringify(chase) + "|" + JSON.stringify([player, layoutName, theme, rolls, width, PW, U, opts.grain !== false])).toString(36);
-  const F = CH.FACES[theme], N = CH.n;
+  const F = M.own(CH.FACES, theme), N = CH.n;
   const pp = CH.pagePaint(theme, id, U);
   const ser = pcs => M.toSVG(pcs, { paint: pp, shadowColour: TOK.ink900 });
   const tw = (s, size, face, ls) => M.textW(s, size, face, ls || 0);
@@ -9550,8 +10454,9 @@ M.chaseRender = function (chase, opts = {}) {
   // --- the header: its size first ---
   const sKick = U, sTitle = (stack ? 2.0 : 2.5) * U, sSub = 1.05 * U, sCap = (stack ? 1.1 : 1.15) * U;
   const kicker = ["The chase", R.district, R.session].filter(Boolean).join(" · ").toUpperCase() + (player ? "" : " · GM COPY");
-  const typeLine = R.street.typeKey ? R.street.typeKey : R.street.type || CH.GROUNDS[R.street.ground].street;
-  const subText = [[R.street.named, typeLine].filter(Boolean).join(", "), R.site ? `outside ${R.site}` : "", R.street.landmark ? `toward ${R.street.landmark}` : "", [R.time, R.weather].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
+  const typeLine = R.street.typeKey ? R.street.typeKey : R.street.type || M.own(CH.GROUNDS, R.street.ground).street;
+  const names = R.streets.map(s => s.named || s.said || s.typeKey || s.type || M.own(CH.GROUNDS, s.ground).street).filter((n, i, a) => n && a.indexOf(n) === i);
+  const subText = [R.streets.length > 1 ? names.join(", then ") : [R.street.named, typeLine].filter(Boolean).join(", "), R.site ? `outside ${R.site}` : "", R.street.landmark ? `toward ${R.street.landmark}` : "", [R.time, R.weather].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
   const rD = 1.35 * U;
   const dialItems = dials.map(k => {
     const filled = k.strip ? Math.min(k.size, R.used.get(k.id) || 0) : k.filled || 0;
@@ -9739,8 +10644,8 @@ M.chaseRender = function (chase, opts = {}) {
     for (const row of K_.rows) {
       let x = x0;
       for (const it of row) {
-        const c = it.c, def = CH.TOKENS[c.token], k = Math.min(3.2 * U / (def.L * 1), 1.7 * U / def.H);
-        const col = CH.COLOURS[chLC(c.colour)] ? chLC(c.colour) : /^#[0-9a-f]{6}$/i.test(c.colour || "") ? c.colour : def.colour;
+        const c = it.c, def = M.own(CH.TOKENS, c.token), k = Math.min(3.2 * U / (def.L * 1), 1.7 * U / def.H);
+        const col = M.own(CH.COLOURS, chLC(c.colour)) ? chLC(c.colour) : /^#[0-9a-f]{6}$/i.test(c.colour || "") ? c.colour : def.colour;
         icons.push(P.g(def.draw({ colour: col, riders: Array.isArray(c.riders) ? Math.max(1, c.riders.length) : undefined }), { tf: { x: N(x + 1.7 * U), y: N(yy + 1.85 * U), s: N(k) } }));
         pcs.push(...CH.badge(c.side, letters.get(c.id) || "?", x + 4.3 * U, yy + 1.1 * U, 0.78 * U, U));
         it.lab.forEach((l, i) => pcs.push(P.text("ch-key", N(x + 5.6 * U), N(yy + 1.45 * U + i * U * 1.25), l, { size: U, anchor: "start" })));
@@ -9784,8 +10689,9 @@ M.chaseRender = function (chase, opts = {}) {
         slotsDrawn += 1;
       } else {
         const p = cell.p, s = h / chY.bottom, Wft = w / s, night = p.time === "Night";
-        const holds = Array.from({ length: p.k }, (_, j) => R.street.holds.length ? R.street.holds[(p.slot0 + j) % R.street.holds.length] : null);
-        const A = { W: Wft, k: p.k, n: p.i + 1, ground: R.street.ground, night, rng: M.rng(((R.seed >>> 0) ^ M.hash("panel" + p.i)) >>> 0), holds, water: R.street.water, U, s, ends: p.ends,
+        const PS = p.street || R.street;
+        const holds = Array.from({ length: p.k }, (_, j) => PS.holds.length ? PS.holds[(p.hold0 + j) % PS.holds.length] : null);
+        const A = { W: Wft, k: p.k, n: p.i + 1, ground: PS.ground, night, rng: M.rng(((R.seed >>> 0) ^ M.hash("panel" + p.i)) >>> 0), holds, water: PS.water, U, s, ends: p.ends,
           tokens: new Set(p.show.map(o => o.cast.token)), darkWater: p.fx.some(f => f.name === "dark-water"), show: p.show, fx: p.fx, level: p.level, W_: W,
           rain: /rain|storm|drizzle|shower/i.test(R.weather), fog: /fog|mist|smog|haze/i.test(R.weather) && (night || !/after|snap|night/i.test(R.weather)),
           snow: /snow|sleet|blizzard/i.test(R.weather) && (night || !/after|snap/i.test(R.weather)) };
@@ -9803,6 +10709,13 @@ M.chaseRender = function (chase, opts = {}) {
           const cw = tw(t, U, F.key, 0.06 * U) + 0.9 * U;
           chips.push({ role: p.clock.side === "crew" ? "ch-tag-crew" : "ch-tag-against", text: t, textRole: "ch-tag-text", x: tx, y: tagY, w: cw });
           tx += cw + 0.4 * U;
+        }
+        if (p.turned) {
+          let t = ("Into " + (PS.named || PS.said || PS.typeKey || PS.type || M.own(CH.GROUNDS, PS.ground).street)).toUpperCase();
+          while (tw(t, U, F.key, 0.06 * U) + 0.9 * U > w - 0.7 * U && t.length > 8) t = t.slice(0, -2).replace(/\s*…?$/, "") + "…";
+          const cw = tw(t, U, F.key, 0.06 * U) + 0.9 * U, down = tx + cw > w - 0.3 * U;
+          chips.push({ role: "ch-chip", text: t, textRole: "ch-chip-text", x: down ? 0.35 * U : tx, y: down ? tagY + (p.level === "below" ? 1 : -1) * (tagH + 0.3 * U) : tagY, w: cw });
+          if (!down) tx += cw + 0.4 * U;
         }
         if (p.snap) {
           const t = p.time.toUpperCase(), cw = tw(t, U, F.key, 0.06 * U) + 0.9 * U;
@@ -9862,9 +10775,9 @@ M.chaseRender = function (chase, opts = {}) {
   const page = theme === "blueprint" ? "#1e4d8f" : theme === "casefile" ? "#f3efe4" : TOK.paper100;
   const toGo = empties.length;
   const title = `${R.name}: chase strip${player ? ", player copy" : ""}`;
-  const desc = `${drawn} panel${drawn === 1 ? "" : "s"} drawn${toGo ? `, ${toGo} segment${toGo === 1 ? "" : "s"} still to fill` : ""}, on ${[R.street.named, R.district].filter(Boolean).join(", ") || "the street"}.`;
+  const desc = `${drawn} panel${drawn === 1 ? "" : "s"} drawn${toGo ? `, ${toGo} segment${toGo === 1 ? "" : "s"} still to fill` : ""}, on ${[R.streets.length > 1 ? names.join(", then ") : R.street.named, R.district].filter(Boolean).join(", ") || "the street"}.`;
   const vb = `0 0 ${N(PW)} ${N(PH)}`, height = Math.round(width * PH / PW);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" width="${width}" height="${height}" font-family='${FONT.condensed}' role="img" aria-labelledby="${id}-t ${id}-d"><title id="${id}-t">${M.esc(title)}</title><desc id="${id}-d">${M.esc(desc)}</desc>` +
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" font-weight="400" font-style="normal" viewBox="${vb}" width="${width}" height="${height}" font-family='${FONT.condensed}' role="img" aria-labelledby="${id}-t ${id}-d"><title id="${id}-t">${M.esc(title)}</title><desc id="${id}-d">${M.esc(desc)}</desc>` +
     `<defs>${defsS.join("")}</defs><rect width="100%" height="100%" fill="${page}"/>${out.join("")}${marks}</svg>`;
   return { svg, width, height, warnings: W, slots: slotsDrawn, drawn, viewBox: vb };
 };

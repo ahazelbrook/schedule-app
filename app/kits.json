@@ -4,12 +4,12 @@
     "maps": {
       "file": "maps/map-kit.js",
       "global": "B68Map",
-      "version": "0.7.1",
-      "bytes": 753273,
-      "sha256": "2fe2b07d4628655a54f0cbaadcadb9b3ba7893757664a64927f0727d94d82ac0",
-      "source": "Blades '68 Design System, project/maps/map-kit.js (0.7.1, published 22/10/2026)",
-      "at": "2026-10-21",
-      "note": "0.7.1 never names a hidden room in a floor title; the page's hidden-name scan and the iso-to-rings fallback (PR #53) stay as defence in depth"
+      "version": "0.8.0",
+      "bytes": 823801,
+      "sha256": "ccdc86973c79e336634ff90e29990ec47b5209ca8deaaf6eb9d603fa50b5f16b",
+      "source": "Blades '68 Design System, project/maps/map-kit.js (0.8.0, published 24/10/2026)",
+      "at": "2026-10-24",
+      "note": "0.8.0: out of doors (E2, E3), layout \"ipad\" (the iPad's copy uses it), the street obstacle's band, condition and volume, two new chase grounds; a back route the crew can't know draws nothing in a player copy. The page's hidden-name scan and the iso-to-rings fallback (PR #53) stay as defence in depth"
     },
     "figures": {
       "file": "figures/figure-kit.js",
