@@ -82,6 +82,23 @@
 #gm-page .pp-doc .rl-callout.pp-say > .rl-callout-title::before { content: "\25B6\FE0E  "; }
 #gm-page .pp-doc .rl-callout.pp-say .rl-callout-body { font-size: 19px; line-height: 1.38; padding: 12px 14px 4px; }
 
+/* ---- the prep notes' visual language (GM.md, "Prep"): one mark per kind of line, so a glance says what a line is for ----
+   SAY  read aloud (above) · SEE  what the table is shown · {rule}  a mechanical consequence, as a chip · ==clue==  what must
+   land (the mustard highlight) · [!warning]  don't · [!gm]  a secret · [!rule]  mechanics in a box · a bullet led by a bold
+   word  a GM action, the word set as a label */
+#gm-page .pp-doc .rl-callout.pp-see > .rl-callout-title::before { content: "\25C9\FE0E  "; }
+#gm-page .pp-doc .rl-callout.pp-see .rl-callout-body { font-size: 16.5px; line-height: 1.42; font-style: italic; }
+#gm-page .pp-doc .rl-callout.pp-see .rl-callout-body strong, #gm-page .pp-doc .rl-callout.pp-see .rl-callout-body em { font-style: normal; }
+#gm-page .pp-doc code.pp-rule { font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .06em; background: var(--pp-file); color: var(--pp-on-file); border-radius: 3px; padding: 3px 6px 2px; white-space: nowrap; vertical-align: 1px; }
+#gm-page .pp-doc .rl-callout[data-callout="rule"] { border-color: var(--pp-file); }
+#gm-page .pp-doc .rl-callout[data-callout="rule"] > .rl-callout-title { background: var(--pp-file); color: var(--pp-on-file); }
+#gm-page .pp-doc .rl-callout[data-callout="rule"] > .rl-callout-title::before { content: "\2699\FE0E  "; }
+#gm-page .pp-doc .rl-callout[data-callout="gm"] { border-style: dashed; }
+#gm-page .pp-doc .rl-callout[data-callout="gm"] > .rl-callout-title { background: var(--ink-soft); color: var(--on-ink); }
+#gm-page .pp-doc .rl-callout[data-callout="gm"] > .rl-callout-title::before { content: "GM ONLY \00B7  "; }
+#gm-page .pp-doc li > strong:first-child { font-family: var(--font-cond); font-weight: 900; text-transform: uppercase; letter-spacing: .04em; font-size: .92em; }
+#gm-page .pp-doc .rl-callout.pp-say li > strong:first-child { font-family: inherit; text-transform: none; letter-spacing: 0; font-size: 1em; }
+
 /* ---- transcluded sections ---- */
 #gm-page .pp-embed { border: 2px solid var(--rule); background: var(--card); margin: 0 0 1.2em; padding: 0 12px 4px; }
 #gm-page .pp-embed-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--inset); margin: 0 -12px 8px; padding: 5px 6px 5px 12px; border-bottom: 2px solid var(--rule); }

@@ -182,10 +182,16 @@
     });
     /* provenance: a code span that is all one [bracket] */
     [].forEach.call(el.querySelectorAll('code'), function (c) { if (/^\[[^\[\]]{2,80}\]$/.test(text(c))) c.classList.add('pp-prov'); });
-    /* SAY: a quote callout titled Say */
+    /* rule chip: a code span that is all one {brace}, the mechanical consequence ("{+1d}", "{Heat +2}"), shown without the braces */
+    [].forEach.call(el.querySelectorAll('code'), function (c) {
+      var m = /^\{([^{}]{1,60})\}$/.exec(text(c));
+      if (m && !c.classList.contains('pp-rule')) { c.classList.add('pp-rule'); c.textContent = m[1]; }
+    });
+    /* SAY: a quote callout titled Say. SEE: an example callout titled See (what the table is shown, never the rules) */
     [].forEach.call(el.querySelectorAll('.rl-callout'), function (c) {
-      var t = c.querySelector('.rl-callout-title');
-      if (c.getAttribute('data-callout') === 'quote' && /^say\b/i.test(text(t))) c.classList.add('pp-say');
+      var t = c.querySelector('.rl-callout-title'), type = c.getAttribute('data-callout');
+      if (type === 'quote' && /^say\b/i.test(text(t))) c.classList.add('pp-say');
+      if (type === 'example' && /^see\b/i.test(text(t))) c.classList.add('pp-see');
     });
     /* tables: a tick column, a run order */
     [].forEach.call(el.querySelectorAll('table'), function (tb, ti) {

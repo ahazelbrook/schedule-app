@@ -447,6 +447,12 @@ fails and nobody is known, nothing is purged.
   - a run-order table (first column `#`, a column headed About, Time, Budget or Length): a start button per beat
     (`prep.beats`) and the running beat's time against its budget, amber at the budget and red at half as much again;
   - `> [!quote] SAY` as a read-aloud card; a code span that is one `[bracket]` (`` `[Blade's pitch]` ``) as a provenance chip;
+  - **the prep notes' visual language** (27/10/2026, so a glance says what a line is for): `> [!example] SEE` as a picture
+    card (italic, an eye mark): what the table is shown, never the rules; a code span that is one `{brace}` (`` `{+1d}` ``,
+    `` `{Heat +2}` ``) as a blue rule chip, shown without its braces: the mechanical consequence; `==clue==` (the mustard
+    highlight): what must land; `> [!warning]`: don't; `> [!gm]` as a dashed GM ONLY box: a secret; `> [!rule]` as a blue
+    box: mechanics that need more than a chip; and a bullet that opens with a bold word sets the word as a label (the GM's
+    action: **Hand**, **Ask**, **Wait**), except inside SAY;
   - links: `[[#Heading]]` scrolls; an NPC, PC or faction opens a peek card from the pack's campaign part (an NPC in the app's
     cast gets Show on iPad and Put on stage); another prep note opens it, at the heading the link names; a note carried in as a
     transclusion scrolls to the heading the link names inside it (`[[pockets#B. The swan job]]` lands on B, not on the note's
