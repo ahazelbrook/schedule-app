@@ -2819,8 +2819,10 @@
   function liveTokens() {
     if (!S || !mapOnIpad()) return;
     var on = S.mapOn, want = revealEntries(mapUi()), ask = playerTokenSet(want).sig;
-    /* the markers asked for, and the reveal asked for (a room opened or closed here or on another device, M4 step 5) */
-    if (ask === (on.tokQ === undefined ? on.tok || '' : on.tokQ) && sameBands(want, on.revQ === undefined ? on.reveal : on.revQ)) return;
+    /* the markers asked for, and the ROOMS asked for (a room opened or closed here or on another device, M4 step 5). Bands are not compared
+       here: a band ticked on another device never re-sent before and does not now (the ticks send through the box that was ticked) */
+    var haveRooms = entryRooms(on.revQ === undefined ? on.reveal : on.revQ);
+    if (ask === (on.tokQ === undefined ? on.tok || '' : on.tokQ) && sameBands(entryRooms(want), haveRooms)) return;
     liveReveal();
   }
   function mapOnIpad() {

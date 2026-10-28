@@ -244,7 +244,8 @@ fails and nobody is known, nothing is purged.
   keeps its screenshots).
 - **Open one room** (M4 step 5; map kit 0.9). Under the band ticks, **Open one room** lists each room of a run whose band is not ticked, with
   **Open for the players** (and **Close** once it is open). It is there for a **run** only (an authored site with a `play` block): the open
-  rooms live in that site's `ball.open`, a list of room names, so another site's list is never this one's and a new site starts with none.
+  rooms live in that site's `ball.open`, a list of room names, so another site's list is never this one's (a different site starts with none). The list is run state like the crew and the pins: reopening the
+  same site resets the bands to public but keeps the rooms opened, which is safe because a reopen ends live reveal and Show on iPad asks by room name.
   Absent or malformed means no rooms, so old rows load as they were. Like the bands it counts only while Layer is Player. It goes through
   the same path as a band: the map kit gets `room:<name>` beside the bands, the page's own scan and token screen use the kit's rule (a room is
   shown when its band is revealed **or** it has its own entry; `roomShown`), and while the map is live on the iPad the change is sent by
