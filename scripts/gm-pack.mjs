@@ -95,7 +95,7 @@ function args(argv) {
     else if (a === "--assist-prep") o.assistPrep = argv[++i];
     else if (a === "--assist-config") o.assistConfig = argv[++i];
     else if (a === "--today") { o.today = argv[++i]; if (dateKey(o.today) === null) { console.error("--today takes DD/MM/YYYY"); process.exit(2); } }
-    else if (a === "-h" || a === "--help") { console.log("usage: node scripts/gm-pack.mjs --vault <vault dir> [--out gm-private/b68-gm-pack.json] [--quiet] [--allow-shrink]"); console.log("  [--assist-prep <vault-relative session note>] [--assist-config <file>]"); process.exit(0); }
+    else if (a === "-h" || a === "--help") { console.log("usage: node scripts/gm-pack.mjs --vault <vault dir> [--out gm-private/b68-gm-pack.json] [--quiet] [--allow-shrink]"); console.log("  [--assist-prep <vault-relative session note>] [--assist-config <file>] [--today DD/MM/YYYY]"); process.exit(0); }
     else { console.error("unknown argument: " + a); process.exit(2); }
   }
   if (!o.vault) { console.error("--vault <vault dir> is required (or set B68_VAULT)"); process.exit(2); }
@@ -817,7 +817,7 @@ function main() {
   // no --assist-prep and no "prep" in the config: pick the gm_prep: true session note by date (lib/assist-prep.mjs), and say which
   const picked = resolvePrep({ vault, assistPrep: a.assistPrep, config: assistConfig, today: a.today ? dateKey(a.today) : undefined });
   const assistPrep = picked ? picked.rel : a.assistPrep;
-  if (picked && picked.how !== "named" && !a.quiet) console.log("assist prep: " + picked.rel + " (picked by date" + (picked.how === "past" ? "; every prep note is dated before today, so this is the newest" : "") + ")");
+  if (picked && picked.how !== "named") console.log("assist prep: " + picked.rel + " (picked by date" + (picked.how === "past" ? "; every prep note is dated before today, so this is the newest" : "") + ")");
   const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: assistPrep, config: assistConfig, playersFile: path.join(REPO, "gm-private", "players.json"), handouts: parts.handouts || null });
   const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart], ["handouts", buildHandoutsPart], ["assist", buildAssistPart]];
   let npcLeverage = 0;

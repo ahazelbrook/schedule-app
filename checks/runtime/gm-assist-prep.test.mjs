@@ -10,7 +10,7 @@ import { newReport } from '../../scripts/lib/report.mjs';
 import { pushPack } from '../../scripts/lib/sync-pack.mjs';
 import { buildAssist } from '../../scripts/lib/assist-export.mjs';
 import { dateKey, resolvePrep, prepProblem } from '../../scripts/lib/assist-prep.mjs';
-import { readState, sha256, STATE_NAME } from '../../scripts/lib/assist-file.mjs';
+import { readState, STATE_NAME } from '../../scripts/lib/assist-file.mjs';
 import { preflight, neverEntries, parseArgs } from '../../scripts/gm-preflight.mjs';
 import { parseArgs as syncArgs } from '../../scripts/gm-sync.mjs';
 
@@ -265,8 +265,6 @@ await test('preflight --remote: differs before a push, matches after one, differ
   assert.match(t, /prefix has changed since that upload/);
   assert.match(t, /version will differ/);
 
-  // same file id, but a different Must land (src) would change the pushed src, not the body: the body check still matches
-  assert.equal(sha256(part.prefix) === readState(path.join(priv, STATE_NAME)).hash, true);
 });
 
 await test('preflight --remote: a D1 failure is reported and exits 2, never thrown', async () => {

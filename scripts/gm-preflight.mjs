@@ -97,7 +97,7 @@ export async function preflight(opts = {}) {
   }
   // never-reveal
   const nv = neverEntries(prefix);
-  say('never-reveal: ' + (nv.found ? nv.npc.length + ' NPC note(s), ' + (Number.isInteger(src.mustLand) ? src.mustLand : nv.clues.length) + ' unlanded clue(s), ' + nv.sections.length + ' secret section(s) from the prep note' : 'NONE in the prefix'));
+  say('never-reveal: ' + (nv.found ? (Number.isInteger(src.neverNpc) ? src.neverNpc : nv.npc.length) + ' NPC note(s), ' + (Number.isInteger(src.mustLand) ? src.mustLand : nv.clues.length) + ' unlanded clue(s), ' + nv.sections.length + ' secret section(s) from the prep note' : 'NONE in the prefix'));
   for (const n of nv.npc) say('  npc   ' + n);
   for (const c of nv.clues) say('  clue  ' + clip(c, 90));   // a clue that runs over several lines lists each line
   for (const s of nv.sections) say('  prep  ' + s);
