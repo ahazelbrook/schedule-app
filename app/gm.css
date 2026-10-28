@@ -898,7 +898,6 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 /* Now: the newest unread card, open, a step larger; quiet when there is none */
 .gm-assist .as-now { flex: 0 0 auto; max-height: 38%; overflow: auto; padding: 8px 12px 10px; background: var(--paper); border-bottom: 2px solid var(--rule); }
 .gm-assist .as-quiet { margin: 0; color: var(--ink-soft); font-size: 14px; }
-.gm-assist .as-now-card .as-text { font-size: 17px; line-height: 1.3; font-weight: 700; }
 
 /* the body: the Ask bar, the feed (the only scroller), the Tools drawer at the foot */
 .gm-assist .as-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
@@ -914,14 +913,6 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 @keyframes as-run { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 .gm-assist .as-ask .as-status { padding: 2px 0; border-bottom: 0; }
 .gm-assist .as-feed { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; }
-.gm-assist .as-asks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.gm-assist .as-asks:empty { display: none; }
-.gm-assist .as-answer { padding: 8px 10px; border: 1.5px solid var(--rule); border-left-width: 6px; border-left-color: var(--ink); background: var(--paper); }
-.gm-assist .as-answer .as-meta { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 4px; }
-.gm-assist .as-answer .as-meta time { flex: 0 0 auto; font: 700 12px/1 var(--font-mono); color: var(--ink-soft); }
-.gm-assist .as-askq { flex: 1 1 auto; min-width: 0; margin: 0; font: 700 12px/1.4 var(--font-mono); color: var(--ink-soft); overflow-wrap: anywhere; }
-.gm-assist .as-answer .as-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.gm-assist .as-answer .as-acts { display: flex; gap: 6px; margin-top: 6px; }
 .gm-assist .as-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 0 0 auto; }
 .gm-assist .as-chip { min-height: 32px; padding: 0 10px; border: 1.5px solid var(--rule); background: var(--card); font: 700 13px/1 var(--font-cond); letter-spacing: .04em; text-transform: uppercase; }
 .gm-assist .as-chip[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
@@ -930,32 +921,58 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 .gm-assist .as-empty { color: var(--ink-soft); font-size: 14px; padding: 6px 2px; }
 .gm-assist .as-earlier { font: 900 12px/1 var(--font-cond); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); padding: 8px 0 2px; border-top: 1.5px dashed var(--hair); }
 
-/* the card: folded to a 44 px line (colour bar, glyph, word, headline, time), or open; never taller than the panel */
-.gm-assist .as-card { --k: var(--k-note); --k-on: var(--k-on-note); border: 1.5px solid var(--rule); border-left: 8px solid var(--k); background: var(--card); min-width: 0; }
+/* the card (P3): folded to a 44 px line (colour bar, glyph, word, headline, time), or open (headline, bullets, SAY, GM ONLY, chips, actions).
+   Never taller than the panel: the head stays, the body scrolls, and More scrolls inside the card at 40% of the panel's height. */
+.gm-assist { --as-h: calc(100vh - var(--as-top, 46px) - var(--as-bot, 0px)); }
+.gm-assist .as-card { --k: var(--k-note); --k-on: var(--k-on-note); border: 1.5px solid var(--rule); border-left: 8px solid var(--k); background: var(--card); min-width: 0; display: flex; flex-direction: column; max-height: calc(var(--as-h) - 24px); }
 .gm-assist .as-card[data-kind="rule"] { --k: var(--k-rule); --k-on: var(--k-on-rule); }
 .gm-assist .as-card[data-kind="say"] { --k: var(--k-say); --k-on: var(--k-on-say); }
 .gm-assist .as-card[data-kind="idea"] { --k: var(--k-idea); --k-on: var(--k-on-idea); }
 .gm-assist .as-card[data-kind="done"] { --k: var(--k-done); --k-on: var(--k-on-done); }
 .gm-assist .as-card[data-kind="warn"] { --k: var(--k-warn); --k-on: var(--k-on-warn); }
-.gm-assist .as-fold { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; box-sizing: border-box; padding: 6px 10px; border: 0; background: none; text-align: left; }
-.gm-assist .as-card[data-open="1"] .as-fold { align-items: flex-start; }
+.gm-assist .as-now-card { max-height: none; }
+.gm-assist .as-fold { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; box-sizing: border-box; padding: 6px 10px; border: 0; background: none; text-align: left; }
+.gm-assist .as-card[data-open="1"] .as-fold { align-items: flex-start; padding-bottom: 2px; }
 .gm-assist .as-kind { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; background: var(--k); color: var(--k-on); padding: 3px 7px; }
 .gm-assist .as-kind b { font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }
 .gm-assist .as-glyph { font-size: 12px; line-height: 1; }
-.gm-assist .as-text { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 14px; line-height: 1.4; }
+.gm-assist .as-text { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
 .gm-assist .as-card[data-open="0"] .as-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gm-assist .as-card[data-open="1"] .as-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; max-height: 40vh; overflow-y: auto; }
+.gm-assist .as-card[data-open="1"] .as-text { font-size: 17px; line-height: 1.3; font-weight: 700; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.gm-assist .as-card.as-now-card[data-open] .as-text { font-size: 19px; line-height: 1.3; font-weight: 700; }
+.gm-assist .as-now-card .as-bullets { font-size: 16px; }
 .gm-assist .as-fold time, .gm-assist .as-eg { flex: 0 0 auto; font: 700 12px/1 var(--font-mono); color: var(--ink-soft); }
-.gm-assist .as-more { padding: 0 10px 8px; display: grid; gap: 4px; }
+.gm-assist .as-more { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px 8px; display: grid; gap: 6px; align-content: start; }
 .gm-assist .as-card[data-open="0"] .as-more { display: none; }
-.gm-assist .as-seatname { margin: 0; font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft); }
-.gm-assist .as-cite { margin: 0; font: 700 12px/1.4 var(--font-mono); color: var(--k-rule); }
+.gm-assist .as-askq { margin: 0; font: 700 12px/1.4 var(--font-mono); color: var(--ink-soft); overflow-wrap: anywhere; }
+.gm-assist .as-bullets { list-style: disc; margin: 0; padding-left: 20px; display: grid; gap: 3px; font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
+.gm-assist .as-say, .gm-assist .as-secret { display: grid; gap: 2px; padding: 6px 8px; overflow-wrap: anywhere; }
+.gm-assist .as-say { background: var(--k-say); color: var(--k-on-say); }
+.gm-assist .as-secret { border: 2px dashed var(--rule); background: var(--hair); color: var(--ink); }
+.gm-assist .as-band { font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; }
+.gm-assist .as-secret .as-band::before { content: "\1F512  "; }
+.gm-assist .as-band-text { margin: 0; font-size: 17px; line-height: 1.35; white-space: pre-wrap; }
+.gm-assist .as-chiprow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.gm-assist .as-cite { font: 700 12px/1 var(--font-mono); background: var(--k-rule); color: var(--k-on-rule); padding: 4px 7px; }
+.gm-assist .as-check { font: 900 12px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; border: 1.5px solid var(--k-rule); color: var(--ink); padding: 3px 6px; }
+.gm-assist .as-seatname { font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft); }
 .gm-assist .as-saved { margin: 0; font: 700 12px/1.3 var(--font-mono); color: var(--ink-soft); }
+.gm-assist .as-detail { max-height: calc(var(--as-h) * .4); overflow-y: auto; overscroll-behavior: contain; border-top: 1.5px solid var(--hair); padding: 6px 2px 2px; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.gm-assist .as-detail-plain { white-space: pre-wrap; }
+.gm-assist .as-detail p { margin: 0 0 6px; }
+.gm-assist .as-detail ul, .gm-assist .as-detail ol { margin: 0 0 6px; padding-left: 20px; }
+.gm-assist .as-detail a { color: var(--k-rule); }
 .gm-assist .as-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 2px; }
 .gm-assist .as-kept { font: 900 12px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
-.gm-assist .as-star, .gm-assist .as-ack, .gm-assist .as-upbtns button { min-height: 36px; font-size: 14px; padding: 0 12px; border: 1.5px solid var(--rule); background: var(--card); }
+.gm-assist .as-star, .gm-assist .as-ack, .gm-assist .as-moreb, .gm-assist .as-undo, .gm-assist .as-upbtns button { min-height: 36px; font-size: 14px; padding: 0 12px; border: 1.5px solid var(--rule); background: var(--card); }
+.gm-assist .as-undo { border-color: var(--k-done); }
 .gm-assist .as-ack { background: var(--rule); color: var(--on-ink); }
 .gm-assist .as-citeflag { font: 900 12px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; background: var(--mustard); color: var(--on-mustard); padding: 3px 5px; cursor: help; }
+.gm-assist .as-banner-b[data-kind="warn"] { border-left: 8px solid var(--k-warn); }
+.gm-assist .as-banner-b[data-kind="rule"] { border-left: 8px solid var(--k-rule); }
+.gm-assist .as-banner-b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gm-assist .as-banner-b .as-banner-k { background: var(--k-rule); color: var(--k-on-rule); }
+.gm-assist .as-banner-b[data-kind="warn"] .as-banner-k { background: var(--k-warn); color: var(--k-on-warn); }
 
 /* Tools: a folded drawer at the foot (Fit it, the Screen, the Ledger); open it scrolls inside the panel */
 .gm-assist .as-tools { flex: 0 0 auto; border-top: 2px solid var(--rule); background: var(--paper); }
