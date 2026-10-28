@@ -214,3 +214,11 @@ export function askText(f) {
   if (f.more) parts.push(f.more);
   return clipAnswer(parts.join('\n\n'));
 }
+
+/**
+ * The hands turn (the co-GM, POST /assist/act): the table's state as the page sent it (already checked by hands.js cleanState), then the window of talk
+ * the Worker read from D1. The state is compact JSON: the seat needs the ids exactly as they are. stamp: "HH:MM" now. talk: "[HH:MM] Name: text" lines.
+ */
+export function handsUser({ state, stamp, talk }) {
+  return 'The table\'s state, as the GM\'s page holds it (JSON):\n' + JSON.stringify(state) + '\nThe window of talk, up to ' + stamp + ':\n' + talk;
+}

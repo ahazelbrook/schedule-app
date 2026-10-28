@@ -23,7 +23,7 @@ import { WAKES } from './seats.js';
 export const DEFAULT_CAP = 30;                       // dollars a night (a Worker setting; the Console has its own monthly limit)
 export const LADDER = { reduced: 0.6, core: 0.85, off: 1 };
 export const DROPPED_WHEN_REDUCED = ['meanwhile', 'showrunner', 'mystery', 'wire'];   // the Screen's Wire goes at 60%; Portrait, Prop and Ask Blade are not Core seats, so they go at 85%; the Board is code and always runs
-export const CORE_SEATS = ['fixer', 'ref', 'ledger', 'voice_plus', 'gatekeeper'];   // the gatekeeper runs to the cap like Ref: nothing reaches the players' screen unchecked
+export const CORE_SEATS = ['fixer', 'ref', 'ledger', 'voice_plus', 'gatekeeper', 'hands'];   // the gatekeeper runs to the cap like Ref: nothing reaches the players' screen unchecked
 export const REPEAT_WINDOW_MS = 10 * 60 * 1000;
 
 // Minimum gap between two runs of one seat. The Tap seats read the last few minutes raw, so a minute-by-minute re-run only
@@ -40,6 +40,7 @@ export const COOLDOWN_MS = {
   portrait: 0, prop: 0, wire: 0,    // the GM's own taps: the in-flight gate is the only pacing
   ask: 0,                           // the GM's own question in the box: same
   gatekeeper: 0,                    // the GM's own tap; one at a time (the in-flight gate), no cooldown
+  hands: 8 * 1000,                  // the co-GM (POST /assist/act): the page calls at most every 8 s and the Worker holds it to that from the log. Not woken by a flag: WAKES has no hands
   showrunner: 10 * 60 * 1000,
   mystery: 15 * 60 * 1000,
   meanwhile: 20 * 60 * 1000,

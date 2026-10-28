@@ -24,6 +24,7 @@ export const LEASE_TTL_MS = {
   // the GM's taps
   fixer: 60 * S, voice_plus: 60 * S, gatekeeper: 60 * S, portrait: 60 * S, wire: 60 * S,
   prop: 90 * S, ask: 90 * S,
+  hands: 30 * S,
 };
 export const DEFAULT_TTL_MS = 60 * S;
 
@@ -33,6 +34,7 @@ export const DEADLINE_MS = {
   ref: 30 * S, clerk: 30 * S, ledger: 30 * S, voice: 30 * S, stall: 30 * S, showrunner: 30 * S, mystery: 30 * S, scribe: 30 * S, meanwhile: 30 * S,
   fixer: 45 * S, voice_plus: 45 * S, gatekeeper: 45 * S, portrait: 45 * S, wire: 45 * S,
   prop: 75 * S, ask: 75 * S,
+  hands: 15 * S,
 };
 export const DEFAULT_DEADLINE_MS = 45 * S;
 
