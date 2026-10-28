@@ -140,8 +140,22 @@ export async function joinOverlayNpc(db, campaign, amb) {
   const next = { ...amb.doc };
   if (!doc || doc.revealed !== true) { delete next.overlay; return { amb: { ...amb, doc: next }, dropped: true }; }
   const text = (v) => (typeof v === 'string' ? v : '');
-  next.overlay = { ...o, npc: { name: text(doc.name), alias: text(doc.alias), role: text(doc.role), faction: text(doc.faction), spec: isPlainObject(doc.spec) ? doc.spec : null } };
+  next.overlay = { ...o, npc: { name: text(doc.name), alias: text(doc.alias), role: text(doc.role), faction: text(doc.faction), spec: drawingSpec(doc.spec) } };
   return { amb: { ...amb, doc: next }, dropped: false };
+}
+
+/**
+ * The top-level keys of a figure spec that draw the figure (the figure kit's normalise() and rig read exactly these). The join below
+ * copies only them, so a label (name, plate, code, halo, id) or any key someone added to a spec never reaches the display. The
+ * unit test checks every key the kit's normalise() produces is here or is one of the labels left out.
+ */
+export const FIGURE_SPEC_KEYS = ['v', 'figure', 'shape', 'build', 'heightIn', 'skin', 'age', 'seed', 'body', 'bigLeg', 'pose', 'head', 'heads', 'face', 'hair', 'jewelry', 'jewellery', 'outfit', 'props', 'companion'];
+export const FIGURE_SPEC_LABELS = ['id', 'name', 'plate', 'code', 'halo'];
+export function drawingSpec(spec) {
+  if (!isPlainObject(spec)) return null;
+  const out = {};
+  for (const k of FIGURE_SPEC_KEYS) if (k in spec) out[k] = spec[k];
+  return out;
 }
 
 /** The newest updated_at over every row of the campaign, tombstones included (the adapter's cheap change stamp). */

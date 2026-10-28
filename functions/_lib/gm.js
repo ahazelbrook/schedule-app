@@ -330,8 +330,8 @@ function sceneId(v, name) {
 /**
  * The overlay (GM.md, "Overlays"): something laid over the iPad without replacing what is up. Pure shape checks; the one check that
  * needs the database is run by the handler: an npc overlay's NPC must be revealed (assertRevealedNpc, functions/_lib/npcs.js) and a
- * clock overlay's clock must be one the players can see (resolveOverlayClock, functions/_lib/campaign.js, which also fills in the
- * name, size and fill: the caller never sends them).
+ * clock overlay's clock must be one the players can see (assertOverlayClock, functions/_lib/campaign.js). Neither is copied into the
+ * overlay: the display GET joins them to their rows when it is read (joinOverlayNpc, joinOverlayClock).
  * null removes it. Otherwise { id (at most 40), kind clock|npc|fx|text, ms 1000-180000, auto? } plus, per kind, clock { clockId },
  * npc { npcId }, fx { fx: 'dawn' }, text { text (at most 120) }. `auto: true` marks an overlay the autopilot sent (it never lights a
  * blacked-out screen). A fresh object is built, so any other key (a clock's name, size or fill included) is dropped; `at` is the

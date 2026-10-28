@@ -340,19 +340,48 @@ export function campaignDoc(row) {
 
 export const OVERLAY_CLOCK_REFUSED = 'overlay.clockId must be a clock the players can see';
 
-/**
- * The clock an overlay names, as the players see it: { name (at most 60), size, filled }, read from the stored campaign document by
- * the clock's id (one read of the campaign row). 400 unless the clock exists and is not hidden; a missing clock, a hidden one and a
- * clock with no name read exactly alike, so the answer says nothing about a hidden clock. The caller never supplies the name: it is
- * only ever copied from the document, here.
- */
-export async function resolveOverlayClock(db, campaign, clockId) {
-  const doc = campaignDoc(await loadCampaignRow(db, campaign));
-  const c = withClockIds(Array.isArray(doc.clocks) ? doc.clocks : []).find((x) => isPlainObject(x) && x.id === clockId);
+/** The table's clocks (with ids) from the campaign row: one read by primary key, the array cut out in SQL so only it is parsed here. */
+async function loadClocks(db, campaign) {
+  const row = await db.prepare("SELECT json_extract(doc, '$.clocks') AS clocks FROM campaigns WHERE id = ?1").bind(campaign).first();
+  let list = [];
+  try { const v = row && typeof row.clocks === 'string' ? JSON.parse(row.clocks) : []; if (Array.isArray(v)) list = v; } catch (_) { /* none */ }
+  return withClockIds(list);
+}
+
+/** The clock as the players see it, { name (at most 60), size, filled }, or null when it is missing, hidden or nameless. */
+function visibleClock(list, clockId) {
+  const c = list.find((x) => isPlainObject(x) && x.id === clockId);
   const name = c ? str(c.name).replace(/\s+/g, ' ').trim().slice(0, 60) : '';
-  if (!c || c.hidden || !name) throw new HttpError(400, OVERLAY_CLOCK_REFUSED);
+  if (!c || c.hidden || !name) return null;
   const size = clockSize(c);
   return { name, size, filled: clampFill(c.filled, size) };
+}
+
+/**
+ * 400 unless the clock an overlay names exists, is not hidden and has a name; a missing clock, a hidden one and a nameless one read
+ * exactly alike, so the answer says nothing about a hidden clock. Run when the overlay is SET. Nothing of the clock is stored: the
+ * overlay keeps its id, and joinOverlayClock() reads the clock again on every display GET.
+ */
+export async function assertOverlayClock(db, campaign, clockId) {
+  if (!visibleClock(await loadClocks(db, campaign), clockId)) throw new HttpError(400, OVERLAY_CLOCK_REFUSED);
+}
+
+/**
+ * The ambient part as the display is served it, with a clock overlay joined to its clock at READ time (GET /api/gm/display, after
+ * liveAmbient): while that clock is present and not hidden, a copy of the overlay in the answer carries its name, size and LIVE fill
+ * (whatever a stored overlay holds of those is overwritten); otherwise the overlay is left out of the answer, which also drops a clock
+ * overlay of the old shape (no clockId). One read by primary key, only when the overlay is a clock one. Returns { amb, dropped, follows }:
+ * `dropped` says the overlay was left out, `follows` that it is up and follows the clock, so the caller sends the ambient part in full
+ * (a display whose ambient seq is current would otherwise never see the fill move or the clock go).
+ */
+export async function joinOverlayClock(db, campaign, amb) {
+  const o = amb && amb.doc && amb.doc.overlay;
+  if (!o || typeof o !== 'object' || o.kind !== 'clock') return { amb, dropped: false, follows: false };
+  const vis = typeof o.clockId === 'string' && ID_RE.test(o.clockId) ? visibleClock(await loadClocks(db, campaign), o.clockId) : null;
+  const next = { ...amb.doc };
+  if (!vis) { delete next.overlay; return { amb: { ...amb, doc: next }, dropped: true, follows: false }; }
+  next.overlay = { ...o, name: vis.name, size: vis.size, filled: vis.filled };
+  return { amb: { ...amb, doc: next }, dropped: false, follows: true };
 }
 
 /**

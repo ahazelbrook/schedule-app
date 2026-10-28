@@ -5,7 +5,9 @@
 //                     (The ambient overlay is served live: left out once the server's clock passes its at + ms, else with `age`, the whole
 //                     ms since the server set `at`; response only, nothing is written. An overlay the autopilot sent (`auto: true`) is left out
 //                     while the display is in lights out. An npc overlay is joined to its row now: it gains `npc` (name, alias, role, faction,
-//                     spec: nothing else) while that NPC is revealed, and is left out otherwise. GM.md, "Overlays".
+//                     spec: only the figure's drawing keys) while that NPC is revealed, and is left out otherwise. A clock overlay is joined to
+//                     its clock now: it gains the clock's name, size and LIVE fill while the clock is present and not hidden, and is left out
+//                     otherwise (so is a clock overlay of the old shape, with no clockId). GM.md, "Overlays".
 //                     seq 0 and a blank display while none is stored. The ambient document, GM.md "Ambient scenes" and
 //                     functions/api/gm/ambient.js, rides along because the display sign-in may not call /api/gm/ambient.
 //                     So does what the iPad needs of the transcriber, so that one poll does the work of two (GM.md "Listening"):
@@ -35,6 +37,7 @@ import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf, HttpError } from '../../_lib/http.js';
 import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay, loadAmbient, liveAmbient } from '../../_lib/gm.js';
 import { joinOverlayNpc } from '../../_lib/npcs.js';
+import { joinOverlayClock } from '../../_lib/campaign.js';
 import { loadSttPart } from '../../_lib/stt.js';
 
 const METHODS = ['GET', 'PUT'];
@@ -52,15 +55,21 @@ export async function onRequest({ request, env, data }) {
     const cur = await loadDisplay(db, campaign);
     const same = seq !== null && seq === String(cur.seq);
     // the ambient part as served: the overlay left out once the server's clock passes its end, or while the display is in lights out and
-    // the autopilot sent it; an npc overlay joined to its row now (one read by primary key) or left out when that NPC is not revealed
-    const liveAmb = async () => joinOverlayNpc(db, campaign, liveAmbient(await loadAmbient(db, campaign), Date.now(), cur.display && cur.display.kind));
+    // the autopilot sent it; an npc overlay joined to its row now and a clock overlay to its clock (one read by primary key each, only while
+    // such an overlay is up), or left out when that NPC is not revealed / that clock is hidden, gone or the old shape
+    const liveAmb = async () => {
+      const a = await joinOverlayNpc(db, campaign, liveAmbient(await loadAmbient(db, campaign), Date.now(), cur.display && cur.display.kind));
+      const b = await joinOverlayClock(db, campaign, a.amb);
+      return { amb: b.amb, dropped: a.dropped || b.dropped, follows: b.follows };
+    };
     if (aseq === null && sseq === null) {
       if (same) return json({ seq: cur.seq, unchanged: true });   // the oldest call: neither the ambient nor the transcriber is even read
       return json({ ...cur, ambient: (await liveAmb()).amb, stt: await loadSttPart(db, campaign) });
     }
-    const { amb, dropped } = await liveAmb();
-    // an overlay left out because its NPC is hidden is news even when the ambient seq is the one the display holds: send it in full
-    const ambSame = aseq === String(amb.seq) && !dropped;
+    const { amb, dropped, follows } = await liveAmb();
+    // an overlay left out (its NPC hidden, its clock hidden or gone) is news even when the ambient seq is the one the display holds, and so
+    // is a clock overlay's fill, which follows the clock: the ambient part goes in full on every poll while one is up or was just dropped
+    const ambSame = aseq === String(amb.seq) && !dropped && !follows;
     const ambient = ambSame ? { seq: amb.seq, unchanged: true } : amb;
     if (sseq === null) {   // a display page from before the transcriber rode along: what it always got, so it never pulls the full display each time
       return json(same && ambSame ? { seq: cur.seq, unchanged: true, ambient } : { ...cur, ambient });

@@ -155,6 +155,40 @@ try {
     await noOverlay(G.page, 15000);
   });
 
+  await step('a clock card follows its clock: the fill moves live on the same card, a clock hidden afterwards takes the card down at the next poll (no page needed), shown again it returns, removed it is gone', async () => {
+    const D = await openDisplay(browser, { user: IPAD });
+    const mk = await gmCall('PATCH', '/api/campaign', { clockOps: [{ add: { id: 'c_follow', name: 'Invented Follower', size: 8, filled: 1, kind: 'danger', hidden: false } }], updatedAt: new Date().toISOString() });
+    expect(mk.status === 200, 'the clock is added');
+    const id = uid('f');
+    await ambient({ overlay: { id, kind: 'clock', ms: 120000, clockId: 'c_follow' } });
+    await cardIn(D.page, 'clock', id);
+    const read = () => D.page.evaluate(() => { const c = document.querySelector('.dp-ov-clock'); return c ? { text: c.textContent, on: c.querySelectorAll('.dp-ov-seg-on').length, id: c.getAttribute('data-ov-id') } : null; });
+    let c = await read();
+    expect(c && /Invented Follower/.test(c.text) && /1 \/ 8/.test(c.text) && c.on === 1, 'drawn with the name and the fill: ' + JSON.stringify(c));
+    expect((await gmCall('PATCH', '/api/campaign', { clockOps: [{ id: 'c_follow', filled: 5 }], updatedAt: new Date().toISOString() })).status === 200, 'ticked');
+    await D.page.waitForFunction(() => { const c = document.querySelector('.dp-ov-clock'); return !!c && /5 \/ 8/.test(c.textContent) && c.querySelectorAll('.dp-ov-seg-on').length === 5; }, null, { timeout: 15000 });
+    c = await read(); expect(c.id === id, 'the same card (the same overlay id) now shows the live fill: ' + JSON.stringify(c));
+    expect((await gmCall('PATCH', '/api/campaign', { clockOps: [{ id: 'c_follow', hidden: true }], updatedAt: new Date().toISOString() })).status === 200, 'the clock is hidden from the players');
+    const t0 = Date.now();
+    await noOverlay(D.page, 15000);
+    expect(Date.now() - t0 < 12000, 'the card went at the next poll or two, not at its 120 s (' + (Date.now() - t0) + ' ms)');
+    const stored = (await (await gmCall('GET', '/api/gm/ambient')).json()).doc.overlay;
+    expect(stored && stored.id === id && stored.clockId === 'c_follow' && !('name' in stored), 'the document still holds the overlay, by id alone: ' + JSON.stringify(stored));
+    const body = await D.page.evaluate(() => document.getElementById('display-page').innerText);
+    expect(!/Invented Follower/.test(body), 'nothing of the hidden clock on the display');
+    const F = await openDisplay(browser, { user: IPAD });   // a display that loads afterwards
+    await sleep(5500);
+    expect((await cards(F.page)).length === 0, 'a display that loads afterwards draws nothing');
+    await F.ctx.close();
+    expect((await gmCall('PATCH', '/api/campaign', { clockOps: [{ id: 'c_follow', hidden: false }], updatedAt: new Date().toISOString() })).status === 200, 'shown again');
+    await cardIn(D.page, 'clock', id);
+    expect((await gmCall('PATCH', '/api/campaign', { clockOps: [{ remove: 'c_follow' }], updatedAt: new Date().toISOString() })).status === 200, 'removed');
+    await noOverlay(D.page, 15000);
+    expect(D.seen.errors.length === 0, 'page errors: ' + D.seen.errors.join(' | '));
+    await D.ctx.close();
+    await ambient({ overlay: null });
+  });
+
   await step('an NPC card draws a revealed NPC by the same path as the npc spotlight: portrait, name, alias, role and faction, and nothing hidden', async () => {
     const spec = await G.page.evaluate(() => window.B68 && window.B68.BASE_FIGURE);
     expect(spec && typeof spec === 'object', 'the figure kit gives a base spec');

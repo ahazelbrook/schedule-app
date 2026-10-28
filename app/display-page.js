@@ -1389,11 +1389,22 @@
       function put(card) {
         if (!card || s.dead || my !== s.ov.token) return;
         var node = ovCardNode(card, o);
-        ovLayer.appendChild(node); s.ov.node = node;
+        ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o);
         later(function () { node.classList.add('dp-ov-in'); }, reduced() ? 0 : 30);
       }
       /* an npc card is drawn from what the server joined to the overlay (o.npc); the page reads nothing of the cast for it */
       put(Pure.overlayCard(o));
+    }
+    /* A clock card follows its clock: the server joins the clock's name, size and LIVE fill to the overlay on every answer, so when the same id
+       arrives with another fill the card is redrawn in place (no new slide-in, the timers untouched). */
+    function ovSig(o) { return o.kind === 'clock' ? [o.name, o.size, o.filled].join('|') : ''; }
+    function ovRefresh(o) {
+      if (o.kind !== 'clock' || !s.ov.node || s.ov.sig === ovSig(o)) return;
+      var card = Pure.overlayCard(o); if (!card) return;
+      var old = s.ov.node, node = ovCardNode(card, o);
+      node.classList.add('dp-ov-in');
+      if (old.parentNode) old.parentNode.replaceChild(node, old);
+      s.ov.node = node; s.ov.sig = ovSig(o);
     }
     /* Lights out (a spotlight of kind dark): nothing the autopilot sent is drawn over it, and neither is the AUTO chip. One that is up when the
        lights go out is taken off at once and its id stays seen, so it does not come back when the lights do (the server leaves it out of the answer
@@ -1421,6 +1432,7 @@
         s.ov.seen = step.action === 'hide' && s.dark ? before : step.seen;
         if (step.action === 'show') { ovShow(step.overlay); s.ov.auto = !!step.overlay.auto; }
         else if (step.action === 'hide') ovRemove(false);
+        else ovRefresh(step.overlay);
       }
       s.ov.applied = true;   /* the first look is the page's reload: an overlay found then carries on; one that arrives later plays whole */
     }

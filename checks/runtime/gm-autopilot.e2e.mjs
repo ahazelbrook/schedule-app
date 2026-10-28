@@ -110,8 +110,9 @@ try {
   check((await bump('c_x1k')).status === 200, 'a visible clock is ticked');
   const o1 = await until(ovOf, 15000);
   check(!!o1 && o1.kind === 'clock' && o1.clockId === 'c_x1k' && o1.auto === true && o1.ms === 8000, 'the overlay is a clock overlay for that id, from the autopilot, 8 s (' + JSON.stringify(o1) + ')');
-  check(!!o1 && Object.keys(o1).sort().join() === 'at,auto,clockId,filled,id,kind,ms,name,size', 'stored with the server-resolved name, size and fill, nothing else: ' + JSON.stringify(o1 && Object.keys(o1).sort()));
-  check(!!o1 && o1.name === 'Invented Fuse' && o1.size === 12 && o1.filled === 2, 'the name and fill are the campaign document\'s');
+  check(!!o1 && Object.keys(o1).sort().join() === 'at,auto,clockId,id,kind,ms', 'stored by id alone, no name, size or fill: ' + JSON.stringify(o1 && Object.keys(o1).sort()));
+  const j1 = (await ipadDisplay()).ambient.doc.overlay;
+  check(!!j1 && j1.name === 'Invented Fuse' && j1.size === 12 && j1.filled === 2, 'and the display-only sign-in\'s GET joins the name and the live fill from the campaign (' + JSON.stringify(j1 && { n: j1.name, f: j1.filled }) + ')');
   check(!!o1 && ID_RE.test(o1.id) && !/x1k|c_/i.test(o1.id), 'the overlay id is opaque (a prefix and a counter): ' + (o1 && o1.id));
   check((await amb()).doc.auto === true, 'the ambient document says auto: true with the first overlay');
   check(await dp.waitForSelector('.dp-overlay .dp-ov-clock', { timeout: 15000 }).then(() => true, () => false), 'the display-only sign-in draws the clock card');
@@ -131,13 +132,13 @@ try {
   await sleep(4000);
   check(!(await ovOf()) && !!(await ap()).pending.clock, 'inside the cooldown it waits (nothing shown, one waiting)');
   const o2 = await until(ovOf, 25000);
-  check(!!o2 && o2.clockId === 'c_x1k' && o2.filled === 3 && Date.now() - tCool > 8000, 'and it shows once the cooldown is over (after ' + (Date.now() - tCool) + ' ms)');
+  check(!!o2 && o2.clockId === 'c_x1k' && (await ipadDisplay()).ambient.doc.overlay.filled === 3 && Date.now() - tCool > 8000, 'and it shows once the cooldown is over (after ' + (Date.now() - tCool) + ' ms)');
   ids.push(o2 && o2.id);
 
   /* ---------- another change while it is up extends it: a new overlay id ---------- */
   check((await bump('c_x1k')).status === 200, 'a tick while the card is up');
   const o3 = await until(async () => { const o = await ovOf(); return o && o.id !== o2.id ? o : null; }, 15000);
-  check(!!o3 && o3.filled === 4 && o3.ms <= 8000 && o3.clockId === 'c_x1k', 'it extends as a new overlay with the new fill (' + JSON.stringify(o3 && { id: o3.id, ms: o3.ms, filled: o3.filled }) + ')');
+  check(!!o3 && o3.ms <= 8000 && o3.clockId === 'c_x1k' && (await ipadDisplay()).ambient.doc.overlay.filled === 4, 'it extends as a new overlay with the new fill (' + JSON.stringify(o3 && { id: o3.id, ms: o3.ms }) + ')');
   ids.push(o3 && o3.id);
   check(!!o3 && await until(async () => { const c = await card('clock'); return c && c.id === o3.id && /4 \/ 12/.test(c.text); }, 15000), 'and the card shows the new fill');
   check(await until(async () => !(await ovOf()), 25000), 'then it goes');

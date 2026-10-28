@@ -468,9 +468,12 @@
   }
   P.overlayOk = overlayOk;
   /* a short line for the iPad panel: what the document holds (the display takes it away by itself after its ms) */
-  function overlayLine(o) {
+  /* a clock overlay holds its id only (the server joins the clock when the display reads it): the line takes the clock from the table's own
+     clocks, clockOf(id) -> { name, size, filled } | null (the GM page's copy; the GM may see every clock) */
+  function overlayLine(o, clockOf) {
     if (!isObj(o) || !Object.prototype.hasOwnProperty.call(OV_FIELDS, o.kind)) return '';
-    var what = o.kind === 'fx' ? 'dawn' : o.kind === 'clock' ? 'clock ' + str(o.name) + ' ' + o.filled + '/' + o.size : o.kind === 'npc' ? 'an NPC card' : 'a line of text';
+    var ck = o.kind === 'clock' && typeof clockOf === 'function' ? clockOf(o.clockId) : null;
+    var what = o.kind === 'fx' ? 'dawn' : o.kind === 'clock' ? (ck ? 'clock ' + str(ck.name) + ' ' + ck.filled + '/' + ck.size : 'a table clock') : o.kind === 'npc' ? 'an NPC card' : 'a line of text';
     return what + ' · ' + Math.round((Number(o.ms) || 0) / 1000) + ' s';
   }
   P.overlayLine = overlayLine;
@@ -572,14 +575,14 @@
   }
   P.scoreLine = scoreLine;
   /* ipadView(doc) -> what the panel draws from the server's ambient document (null or {} before there is one) */
-  function ipadView(doc) {
+  function ipadView(doc, clockOf) {
     var d = isObj(doc) ? doc : {}, score = isObj(d.score) ? d.score : null;
     var mode = d.mode === 'pin' || d.mode === 'off' ? d.mode : 'auto';
     var scene = typeof d.scene === 'string' ? d.scene : null;
     var iv = Math.round(Number(d.intervalMin)); if (!(iv >= 3 && iv <= 30)) iv = P.IPAD_INTERVAL_DEFAULT;
     var intervals = P.IPAD_INTERVALS.slice(); if (intervals.indexOf(iv) < 0) { intervals.push(iv); intervals.sort(function (a, b) { return a - b; }); }
     return {
-      overlayLine: overlayLine(d.overlay), auto: d.auto === true,
+      overlayLine: overlayLine(d.overlay, clockOf), auto: d.auto === true,
       mode: mode, scene: scene, intervalMin: iv, intervals: intervals, hasScore: !!score, scoreLine: scoreLine(score),
       tiles: P.IPAD_SCENES.map(function (s) {
         var noScore = s.needs === 'score' && !score;
@@ -3409,13 +3412,13 @@
     if (document.hidden) core.event({ type: 'visible', visible: false });
     if (AM.shown && (AM.shown.kind === 'dark' || AM.shown.kind === 'rule')) core.event({ type: 'push', kind: AM.shown.kind });
     ap.cat = apCat();
-    ap.timer = W.setInterval(function () { if (S === me) apTick(); }, 1000);
+    ap.timer = typeof W.setInterval === 'function' ? W.setInterval(function () { if (S === me) apTick(); }, 1000) : null;
     apPaint();      /* nothing is written to the document on open: the AUTO chip comes with the first overlay (auto: true rides in the same patch) */
   }
   /* closing the page: the autopilot stops, the AUTO chip goes, and an overlay it put up is taken off */
   function apUnmount(me) {
     var ap = me && me.ap; if (!ap) return;
-    if (ap.timer) { W.clearInterval(ap.timer); ap.timer = null; }
+    if (ap.timer && typeof W.clearInterval === 'function') { W.clearInterval(ap.timer); ap.timer = null; }
     Object.keys(ap.settle).forEach(function (k) { clearTimeout(ap.settle[k]); });
     var g = (keptApi && keptApi.gm && keptApi.gm()) || (W.claude && W.claude.gm), st = ap.core.state(), p = {};
     if (AM.doc && AM.doc.auto === true) p.auto = null;
@@ -3609,7 +3612,7 @@
   });
   function renderIpad() {
     var box = $q('#gm-ipad'); if (!box) return;
-    var v = ipadView(AM.doc), busy = AM.busy > 0, off = !AM.loaded;
+    var v = ipadView(AM.doc, function (id) { var c = tableClocks().filter(function (x) { return str(x.id) === id; })[0]; return c ? { name: c.name, size: c.size, filled: c.filled } : null; }), busy = AM.busy > 0, off = !AM.loaded;
     function seg(k, label) { return '<button type="button" class="chip" data-gm="ambmode" data-v="' + k + '" aria-pressed="' + (v.mode === k) + '"' + (off || busy ? ' disabled' : '') + '>' + label + '</button>'; }
     var h = '<section class="gm-box gm-ipad-now"><h3 class="gm-band">On the iPad now</h3><p class="gm-ipad-line" id="gm-ipad-now">' + (AM.shown ? esc(displayLine(AM.shown)) : '<span class="gm-dim">Not known yet: push something, or clear it.</span>') + '</p>' +
       (v.overlayLine ? '<p class="gm-ipad-line" id="gm-ipad-overlay">Overlay sent: ' + esc(v.overlayLine) + (v.auto ? ' · AUTO' : '') + '</p>' : '') +
