@@ -55,6 +55,7 @@ import { cleanItem, verdictOf } from '../functions/_lib/assist/gatekeeper.js';
 import { gatekeeperUser, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, SHOWRUNNER_MIN, MYSTERY_MIN, scribeUser, meanwhileUser, MEANWHILE_MIN, SCRIBE_FIRST_MIN } from '../functions/_lib/assist/prompts.js';
 import { decide } from '../functions/_lib/assist/conductor.js';
 import { toVoice, toAnother } from '../functions/_lib/assist/editor.js';
+import { clerkTurn, takeFreshNames } from './lib/replay-clerk.mjs';
 import { makeDrawsFor, parsePositionAt } from './lib/fixer-draws.mjs';
 
 const argv = process.argv.slice(2);
@@ -320,6 +321,7 @@ if (arg('turn-at')) {
       : seat === 'mystery' ? mysteryUser({ stamp: at, talk: textFor(t - MYSTERY_MIN + 1, t), known: [] })
         : seat === 'scribe' ? scribeUser({ story: '', stamp: at, talk: textFor(t - SCRIBE_FIRST_MIN + 1, t) })
           : seat === 'meanwhile' ? meanwhileUser({ clocks: [], stamp: at, talk: textFor(t - MEANWHILE_MIN + 1, t) })
+        : seat === 'clerk' ? clerkTurn([], at, textFor(t - 3, t))
         : 'Last four minutes, up to ' + at + ':\n' + textFor(t - 3, t);
     const before = total, n0 = secsLog.length;
     const j = await run(seat, at, user);
@@ -439,6 +441,7 @@ if (flag('nightshift')) {
   process.exit(0);
 }
 
+const shownNames = [];          // names the Clerk has raised so far this replay: what the Worker's clerkKnown() would hand back
 for (const t of order) {
   if (total >= maxSpend) { console.error(`stopped at ${stamp(t)}: spend cap $${maxSpend} reached`); break; }
   const at = stamp(t);
@@ -446,10 +449,10 @@ for (const t of order) {
   const flags = tw ? Object.keys(tw).filter(k => tw[k]) : Object.values(WAKES).flat();
   const recent = `Last four minutes, up to ${at}:\n${textFor(t - 3, t)}`;
   const woken = Object.keys(WAKES).filter(s => seats.includes(s) && WAKES[s].some(f => flags.includes(f)));
-  const results = await Promise.all(woken.map(async s => [s, await run(s, at, recent)]));
+  const results = await Promise.all(woken.map(async s => [s, await run(s, at, s === 'clerk' ? clerkTurn(shownNames, at, textFor(t - 3, t)) : recent)]));
   for (const [s, j] of results) {
     if (s === 'ref' && j?.slip) cards.push(`${at} REF  said ${j.said_at}: ${j.card}`);
-    if (s === 'clerk' && j && (j.new_names.length || j.drift.length)) cards.push(`${at} CLERK names=${j.new_names.join('|')} drift=${j.drift.join('|')}`);
+    if (s === 'clerk' && j) { const fresh = takeFreshNames(j, shownNames); if (fresh.length || j.drift.length) cards.push(`${at} CLERK names=${fresh.join('|')} drift=${j.drift.join('|')}`); }
     if (s === 'ledger' && j?.xp_totalled) cards.push(`${at} LEDGER xp totalled`);
   }
   if (flags.length) console.log(`${at} flags: ${flags.join(',')}${woken.length ? '  woke: ' + woken.join(',') : ''}`);

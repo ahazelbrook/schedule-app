@@ -10,6 +10,7 @@ import { cleanLines, addLines } from '../../functions/_lib/stt.js';
 import { SEATS } from '../../functions/_lib/assist/seats.js';
 import { clerkUser } from '../../functions/_lib/assist/prompts.js';
 import { toCandidate, merge, isKnownName, foldName } from '../../functions/_lib/assist/editor.js';
+import { clerkTurn, takeFreshNames } from '../../scripts/lib/replay-clerk.mjs';
 import { makeHandler } from '../../functions/api/gm/assist.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -91,6 +92,7 @@ await test('tick: the Clerk is told the names it raised tonight and the NPCs upd
   await s.seed('showrunner', 60_000); await s.seed('scribe', 60_000);
   await s.seed('clerk', 40 * 60_000, JSON.stringify({ out: { new_names: ['Barnek', 'Mott'], drift: [], clues_landed: [] }, shown: 1 }));
   await s.seed('clerk', 14 * 3_600_000, JSON.stringify({ out: { new_names: ['Yesterday Person'], drift: [], clues_landed: [] }, shown: 0 }));
+  await s.seed('clerk', 20 * 60_000, JSON.stringify({ out: { new_names: ['Held Back'], drift: [], clues_landed: [] }, shown: 0 }));   // dropped by the gap: the GM never saw it
   await s.seed('ledger', 30 * 60_000, JSON.stringify({ out: { new_names: ['Wrong Seat'] } }));
   await s.npc('n1', 'Pell Anders', 'the Ferryman', 2 * 3_600_000);
   await s.npc('n2', 'Old Cast Member', '', 20 * 3_600_000);
@@ -100,6 +102,7 @@ await test('tick: the Clerk is told the names it raised tonight and the NPCs upd
   const turn = CLERK_TURN(s).user;
   const m = /^Already noted tonight \(don't raise again\): (.*)\nLast four minutes, up to \d\d:\d\d:\n/.exec(turn);
   assert.ok(m, 'the known line leads the Clerk turn: ' + turn.slice(0, 120));
+  assert.ok(!m[1].includes('Held Back'), 'a name from an unshown Clerk row stays raisable');
   assert.deepEqual(m[1].split(', ').sort(), ['Barnek', 'Mott', 'Pell Anders', 'the Ferryman']);
   assert.ok(turn.includes('the fence mentions Varnek again'), 'the talk follows');
 });
@@ -122,6 +125,15 @@ await test('tick: a Clerk card whose only new name is a known one (Varnek for Ba
   await s.seed('clerk', 40 * 60_000, JSON.stringify({ out: { new_names: ['Barnek'], drift: [], clues_landed: [] }, shown: 1 }));
   out = await s.tick();
   assert.equal(out.cards.length, 1); assert.equal(out.cards[0].text, 'New name: Zarbo');
+});
+
+await test('replay: the Clerk turn carries the names shown so far (the Worker helpers), and a repeat is not shown again', () => {
+  const shown = [];
+  assert.match(clerkTurn(shown, '21:00', 'T'), /^Last four minutes/);
+  assert.deepEqual(takeFreshNames({ new_names: ['Varnek'] }, shown), ['Varnek']);
+  assert.equal(clerkTurn(shown, '21:01', 'T'), "Already noted tonight (don't raise again): Varnek\nLast four minutes, up to 21:01:\nT");
+  assert.deepEqual(takeFreshNames({ new_names: ['BARNEK', 'Barnek', 'Zarbo'] }, shown), ['Zarbo'], 'Barnek is one edit from Varnek');
+  assert.deepEqual(shown, ['Varnek', 'Zarbo']);
 });
 
 await test('tick: with nothing known the Clerk turn is the plain one (no "Already noted" line)', async () => {

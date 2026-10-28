@@ -275,13 +275,13 @@ async function lastKnown(db, campaign, now) {
 const NPC_RECENT_MS = 12 * 60 * 60 * 1000;   // an NPC row touched this recently counts as already in the cast
 
 /**
- * Names the Clerk should not raise again: the new_names it reported tonight, plus the names (and aliases) of NPC rows updated in the last
+ * Names the Clerk should not raise again: the new_names on Clerk cards the GM was shown tonight (a held-back card's names stay raisable), plus the names (and aliases) of NPC rows updated in the last
  * 12 hours. json_each / json_extract keep the parsing in D1; the Worker only trims and dedupes a short list.
  */
 async function clerkKnown(db, campaign, now) {
   const since = new Date(now - NIGHT_MS).toISOString(), npcSince = new Date(now - NPC_RECENT_MS).toISOString();
   const { results } = await db.prepare(
-    "SELECT j.value AS n FROM gm_assist_log l, json_each(json_extract(l.card, '$.out.new_names')) j WHERE l.campaign = ?1 AND l.at >= ?2 AND l.seat = 'clerk' AND l.card IS NOT NULL AND json_type(l.card, '$.out.new_names') = 'array' " +
+    "SELECT j.value AS n FROM gm_assist_log l, json_each(json_extract(l.card, '$.out.new_names')) j WHERE l.campaign = ?1 AND l.at >= ?2 AND l.seat = 'clerk' AND l.card IS NOT NULL AND json_extract(l.card, '$.shown') = 1 AND json_type(l.card, '$.out.new_names') = 'array' " +
     "UNION SELECT json_extract(doc, '$.name') FROM npcs WHERE campaign = ?1 AND deleted = 0 AND updated_at >= ?3 " +
     "UNION SELECT json_extract(doc, '$.alias') FROM npcs WHERE campaign = ?1 AND deleted = 0 AND updated_at >= ?3 LIMIT 60").bind(campaign, since, npcSince).all();
   const seen = new Set(), out = [];
