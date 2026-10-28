@@ -344,4 +344,4 @@ Everything is on GitHub, nothing lives only in a container.
 - S1 · A stuck seat in the assist tick (branch sb-s1-leases). Cause: a tick cancelled mid-call when the page's timeout lapsed left two
   seats in the isolate's in-flight Set for the rest of the night, because `run()`'s `finally` never ran; the SDK client had no timeout, so
   a slow call could outlast the page. Fixed by leases (a token and an expiry per seat; a lapsed lease is reaped) and per-call deadlines
-  (an AbortSignal, one retry), with the handler's work kept alive by `waitUntil`. The tick answer now carries `health: { skipped, reaped }`.
+  (an AbortSignal, one retry), with the handler's work kept alive by `waitUntil`. The tick answer now carries `health: { skipped, reaped, ran }`.

@@ -1,7 +1,7 @@
 // P5: the Claude box's header on the real GM page, in a real browser, against a local wrangler dev. The tick answer is the browser's own route (invented
 // health, cards and spend): no key, no model, no spend. Checks the seat-health dots (state, shape, text), the reaped note, the spend meter's steps, the live regions,
 // focus back on the tab, the grown Ask field not covering the chips, and the contrast of every header token pair in the light theme, the dark theme and the OS dark preference.
-//   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=8870] node checks/runtime/gm-assist-health.e2e.mjs
+//   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=8872] node checks/runtime/gm-assist-health.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PORT = Number(process.env.PORT || 8870);
+const PORT = Number(process.env.PORT || 8872);
 const BASE = 'http://127.0.0.1:' + PORT;
 const GM = 'gm@example.test';
 const SHOTS = process.env.GM_SHOTS || '';
@@ -214,10 +214,23 @@ try {
       const tier = document.querySelector('#as-tier'); tier.hidden = false; tier.textContent = 'Full · $1 of $20';
       ['all', 'reduced', 'core', 'off'].forEach((k) => { tier.setAttribute('data-tier', k); text('tier line ' + k, tier); });
       const nt = document.querySelector('#as-reaped'); nt.hidden = false; nt.textContent = 'Blade freed a stuck seat (Ref). It is working again.'; text('reaped note', nt);
+      // the card kinds (outside the header, measured here so the pairs are on record): the kind badge's text on its colour is a 4.5:1 pair and is held to it;
+      // the card's left bar and the closed tab's pips are redundant (the card has a --rule outline and the badge says the kind; a pip has a --rule edge), so their
+      // 3:1 is reported and not held
+      const list = document.querySelector('#as-list'), info = [];
+      ['rule', 'say', 'idea', 'done', 'warn', 'note'].forEach((k) => {
+        const li = document.createElement('li'); li.className = 'as-card'; li.setAttribute('data-kind', k); li.innerHTML = '<span class="as-kind"><b>x</b></span>'; list.appendChild(li);
+        const b = li.querySelector('.as-kind'), bs = getComputedStyle(b), bg = effBg(li), bar = parse(getComputedStyle(li).borderLeftColor);
+        res.push(['kind badge text ' + k, ratio(parse(bs.color), parse(bs.backgroundColor)), 4.5]);
+        info.push(k + ' bar ' + (Math.round(ratio(bar, bg) * 100) / 100));
+        list.removeChild(li);
+      });
+      window.__barInfo = info.join(', ');
       return res.map(([n, r, need]) => ({ n, r: Math.round(r * 100) / 100, need }));
     });
     const bad = out.filter((x) => x.r < x.need);
-    check(bad.length === 0 && out.length >= 20, label + ': ' + out.length + ' pairs, all at or over their ratio' + (bad.length ? ' (FAIL: ' + bad.map((x) => x.n + ' ' + x.r + '<' + x.need).join('; ') + ')' : ' (lowest ' + Math.min(...out.map((x) => x.r)) + ')'));
+    console.log('INFO ' + label + ' card bars vs card (3:1 not held): ' + await page.evaluate(() => window.__barInfo));
+    check(bad.length === 0 && out.length >= 26, label + ': ' + out.length + ' pairs, all at or over their ratio' + (bad.length ? ' (FAIL: ' + bad.map((x) => x.n + ' ' + x.r + '<' + x.need).join('; ') + ')' : ' (lowest ' + Math.min(...out.map((x) => x.r)) + ')'));
   }
   await p.keyboard.press('a');
   await p.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));

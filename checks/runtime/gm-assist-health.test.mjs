@@ -169,5 +169,16 @@ await test('the box: a warn is spoken through the assertive region, only when it
   assert.match(al.textContent, /clock is nearly full/);
 });
 
+await test('the box: a warn made on the page (addCard, the way the co-GM and the page report one) is spoken too; a note is not', async () => {
+  const r = rig({ ...BASE }, { t: Date.now() });
+  await r.ctl.poll();
+  const al = r.stub('#as-alert');
+  r.ctl.addCard({ kind: 'note', headline: 'Invented quiet note.' });
+  assert.equal(al.textContent || '', '');
+  const id = r.ctl.addCard({ kind: 'warn', headline: 'Invented page warning: the display is off.' });
+  assert.ok(id, 'the card was made');
+  assert.match(al.textContent, /^Warning: Invented page warning: the display is off./);
+});
+
 console.log((failed ? failed + ' FAILED, ' : '') + passed + ' passed');
 process.exit(failed ? 1 : 0);
