@@ -499,6 +499,18 @@
   #dossier .ds-burst.on { width: auto; height: auto; }
 }
 
+/* ---- phones: a type floor, 12px for labels and meta and 14px for text (screen only; desktop and print sizes stay) ---- */
+@media screen and (max-width: 760px) {
+  #dossier :is(.btn.sm, .chip.sm, .ds-lab, .ds-bt, .ds-count, .ds-dlhead, .ds-hl, .ds-dim, .ds-band .ds-dim, .ds-xpmini, .ds-cdot, .ds-x, .ds-resist, .ds-burst.on, .ds-perm, .ds-chev) { font-size: 12px; }
+  #dossier :is(.ds-ab, .ds-feat, .ds-rtog, .ds-stric) b { font-size: 12px; }
+  #dossier .ds-plus1 span { font-size: 12px; }   /* "+1" over the stress name */
+  #dossier.ds-live .ds-status { font-size: 12px; }
+  #dossier.ds-live .ds-vit { font-size: 12px; letter-spacing: .04em; }
+  #dossier.ds-live .ds-about-t { font-size: 12px; }
+  #dossier .ds-desc { font-size: 14px; }
+  #dossier .ds-mark-cons .btn { font-size: 12px; }
+}
+
 /* ---- print: the dossier alone, on white, letter or A4 portrait ---- */
 @media print {
   @page { size: auto; margin: 10mm 11mm; }

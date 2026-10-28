@@ -247,6 +247,15 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
 /* ---- read only ---- */
 #table-page.tp-ro .tp-in, #table-page.tp-ro .tp-ta { opacity: .85; }
 
+/* ---- phones: a type floor, 12px for labels and meta and 14px for text; 16px fields so iOS does not zoom on focus
+   (screen only, after the touch block above so it outranks its chip sizes; desktop and print sizes stay) ---- */
+@media screen and (max-width: 760px) {
+  #table-page :is(.btn.sm, .chip.sm, .tp-lab, .tp-kick, .tp-subtitle, .tp-role, .tp-status, .tp-dim, .tp-band .tp-dim, .tp-trackv > .tp-dim, .tp-logd, .tp-logby, .tp-cn small, .tp-cs small, .tp-cst small, .tp-k, .tp-csgo, .tp-csh, .tp-schedsum, .tp-band, .tp-kind, .tp-hidtag, .tp-fulltag) { font-size: 12px; }
+  #table-page .tp-clocktools .chip, #table-page .tp-addclock .chip { font-size: 12px; }
+  #table-page .tp-log li { font-size: 14px; }
+  #table-page :is(input, textarea, select, .tp-in, .tp-ta, .sc-sel) { font-size: 16px; }
+}
+
 /* ---- print: the table page alone, on white, no buttons ---- */
 @media print {
   #table-page { --paper: #fff; --card: #fff; --inset: #eee; --hair: #999; --ink: #000; --ink-soft: #333; --ink-faint: #666; --rule: #000; --on-ink: #fff;
