@@ -1,6 +1,6 @@
 {
 "meta":{"source":"invented phrasings written by hand for this file; every name is invented","note":"e: a = actions (no quote, no key; a tick names its clock), m = missing, r = refused, c = candidates, p = pending","generated":"29/10/2026"},
-"live":{"clocks":[{"id":"k1","name":"Gull Market Raid","size":6,"filled":2,"hidden":true},{"id":"k2","name":"Ferry Deal","size":4,"filled":1,"hidden":true},{"id":"k3","name":"Ferry Tolls","size":4,"filled":0,"hidden":true},{"id":"k4","name":"Escape","size":6,"filled":1,"hidden":true},{"id":"k5","name":"The Broken Lantern","size":8,"filled":3,"hidden":true},{"id":"k6","name":"Salt Fog","size":8,"filled":0,"hidden":true},{"id":"k7","name":"Customs Squeeze","size":6,"filled":6,"hidden":true}]},
+"live":{"clocks":[{"id":"k1","name":"Gull Market Raid","size":6,"filled":2,"hidden":true},{"id":"k2","name":"Ferry Deal","size":4,"filled":1,"hidden":true},{"id":"k3","name":"Ferry Tolls","size":4,"filled":0,"hidden":true},{"id":"k4","name":"Escape","size":6,"filled":1,"hidden":true},{"id":"k5","name":"The Broken Lantern","size":8,"filled":3,"hidden":true},{"id":"k6","name":"Salt Fog","size":8,"filled":0,"hidden":true},{"id":"k7","name":"Customs Squeeze","size":6,"filled":6,"hidden":true},{"id":"k8","name":"Coin Toss","size":4,"filled":0,"hidden":true}]},
 "plain":[
 {"t":"Blade, make a four clock called Harbour Patrol","e":{"a":[{"type":"clock_add","name":"Harbour Patrol","size":4,"hidden":true}]}},
 {"t":"blade make a four segment clock named harbour patrol","e":{"a":[{"type":"clock_add","name":"Harbour Patrol","size":4,"hidden":true}]}},
@@ -95,8 +95,8 @@
 {"t":"Blade, tick it","last":"Escape","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":1}]}},
 {"t":"Blade, tick that two","last":"Salt Fog","e":{"a":[{"type":"clock_tick","clock_name":"Salt Fog","by":2}]}},
 {"t":"Blade, tick it twice","last":"Escape","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":2}]}},
-{"t":"Blade, tick that","e":{"a":[],"m":"which","c":["Gull Market Raid","Ferry Deal","Ferry Tolls","Escape","The Broken Lantern","Salt Fog","Customs Squeeze"]}},
-{"t":"Blade, tick","e":{"a":[],"m":"which","c":["Gull Market Raid","Ferry Deal","Ferry Tolls","Escape","The Broken Lantern","Salt Fog","Customs Squeeze"]}},
+{"t":"Blade, tick that","e":{"a":[],"m":"which","c":["Gull Market Raid","Ferry Deal","Ferry Tolls","Escape","The Broken Lantern","Salt Fog","Customs Squeeze","Coin Toss"]}},
+{"t":"Blade, tick","e":{"a":[],"m":"which","c":["Gull Market Raid","Ferry Deal","Ferry Tolls","Escape","The Broken Lantern","Salt Fog","Customs Squeeze","Coin Toss"]}},
 {"t":"Blade, fill that","last":"Salt Fog","e":{"a":[{"type":"clock_tick","clock_name":"Salt Fog","by":8}]}},
 {"t":"Blade, new NPC called Ruddock","e":{"a":[{"type":"npc_add","name":"Ruddock","look":"","role":"","needsName":false}]}},
 {"t":"Blade, new NPC called Ruddock, who looks like a tall man","e":{"a":[{"type":"npc_add","name":"Ruddock","look":"a tall man","role":"","needsName":false}]}},
@@ -171,7 +171,7 @@
 {"t":"Right, Blade, make a six clock called Tide Watch","e":{"a":[{"type":"clock_add","name":"Tide Watch","size":6,"hidden":true}]}},
 {"t":"um Blade note the guard turns at midnight","e":{"a":[{"type":"capture","bucket":"moment","text":"the guard turns at midnight"}]}},
 {"t":"The guard looks nervous. Blade, tick Escape","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":1}]}},
-{"t":"They run for the docks! Blade, mark two on Escape","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":2}]}},
+{"t":"They run for the alley! Blade, mark two on Escape","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":2}]}},
 {"t":"Fine; Blade, undo that","e":{"a":[{"type":"undo"}]}},
 {"t":"Alright. Hey. Blade, tick Salt Fog","e":{"a":[{"type":"clock_tick","clock_name":"Salt Fog","by":1}]}},
 {"t":"uh blade create an NPC called Pip Tansy","e":{"a":[{"type":"npc_add","name":"Pip Tansy","look":"","role":"","needsName":false}]}},
@@ -200,7 +200,19 @@
 {"t":"okay Blade","e":{"a":[],"p":true}},
 {"t":"so, blade,","e":{"a":[],"p":true}},
 {"t":"That was close. Blade,","e":{"a":[],"p":true}},
-{"t":"Blade, please","e":{"a":[],"p":true}}
+{"t":"Blade, please","e":{"a":[],"p":true}},
+{"t":"Blade, tick Coin Toss","e":{"a":[{"type":"clock_tick","clock_name":"Coin Toss","by":1}]}},
+{"t":"Blade, tick coin toss two","e":{"a":[{"type":"clock_tick","clock_name":"Coin Toss","by":2}]}},
+{"t":"Blade, make a four clock called Stress Test","e":{"a":[{"type":"clock_add","name":"Stress Test","size":4,"hidden":true}]}},
+{"t":"Blade, make a six clock called Reveal the Truth","e":{"a":[{"type":"clock_add","name":"Reveal the Truth","size":6,"hidden":true}]}},
+{"t":"Blade, make a six clock for Harm Reduction","e":{"a":[{"type":"clock_add","name":"Harm Reduction","size":6,"hidden":true}]}},
+{"t":"Blade, tick escape and add stress","e":{"a":[],"r":"sheet"}},
+{"t":"Blade, show them the escape clock","e":{"a":[],"r":"show"}},
+{"t":"Blade, make a six clock called Escape and show it","e":{"a":[],"r":"show"}},
+{"t":"Blades, can you tick escape","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":1}]}},
+{"t":"Played, please tick Salt Fog two","e":{"a":[{"type":"clock_tick","clock_name":"Salt Fog","by":2}]}},
+{"t":"Blake, could you make a six clock called Tide Watch","e":{"a":[{"type":"clock_add","name":"Tide Watch","size":6,"hidden":true}]}},
+{"t":"I said, blade fill the bucket","e":{"a":[],"m":"clock"}}
 ],
 "noisy":[
 {"base":2,"t":"blade, start a six clock called kiln oil run.","e":{"a":[{"type":"clock_add","name":"Kiln Oil Run","size":6,"hidden":true}]}},
@@ -244,7 +256,7 @@
 {"base":88,"t":"blade, mark two on smugglers cove","e":{"a":[],"m":"clock"}},
 {"base":89,"t":"blade, tic that. um","last":"Salt Fog","e":{"a":[{"type":"clock_tick","clock_name":"Salt Fog","by":1}]}},
 {"base":90,"t":"blade, tick it","last":"Escape","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":1}]}},
-{"base":93,"t":"blade um tick that","e":{"a":[],"m":"which","c":["Gull Market Raid","Ferry Deal","Ferry Tolls","Escape","The Broken Lantern","Salt Fog","Customs Squeeze"]}},
+{"base":93,"t":"blade um tick that","e":{"a":[],"m":"which","c":["Gull Market Raid","Ferry Deal","Ferry Tolls","Escape","The Broken Lantern","Salt Fog","Customs Squeeze","Coin Toss"]}},
 {"base":96,"t":"blade. new npc called ruddock.","e":{"a":[{"type":"npc_add","name":"Ruddock","look":"","role":"","needsName":false}]}},
 {"base":98,"t":"blade, new npc called ruddock who looks like a tall man, a bouncer um, okay so...","e":{"a":[{"type":"npc_add","name":"Ruddock","look":"a tall man","role":"bouncer","needsName":false}]}},
 {"base":101,"t":"blade, CREATE A NEW NPC CALLED OLD HETTIE WHO LOOKS LIKE A RETIRED BOXER.","e":{"a":[{"type":"npc_add","name":"Old Hettie","look":"a retired boxer","role":"","needsName":false}]}},
@@ -277,7 +289,7 @@
 {"base":163,"t":"OKAY. BLADE... TIK ESCAPE...","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":1}]}},
 {"base":164,"t":"okay, so blade, tick escape","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":1}]}},
 {"base":165,"t":"so blade tick escape two","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":2}]}},
-{"base":169,"t":"they RUN for the DOCKS! BlADE, MarK TWO ON EsCAPE.","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":2}]}},
+{"base":169,"t":"they RUN for the ALLEY! BlADE, MarK TWO ON EsCAPE.","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":2}]}},
 {"base":171,"t":"alright hey blade, tick salt fog um","e":{"a":[{"type":"clock_tick","clock_name":"Salt Fog","by":1}]}},
 {"base":173,"t":"blades, tick ESCAPE um","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":1}]}},
 {"base":174,"t":"Blaid, tick escape.","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":1}]}},
@@ -286,5 +298,5 @@
 {"base":181,"t":"blade, tick escape","e":{"a":[{"type":"clock_tick","clock_name":"Escape","by":1}]}},
 {"base":182,"t":"blades... scraTCH... THAT...","e":{"a":[{"type":"undo"}]}}
 ],
-"decoys":["the blade, make sure the door is shut","blades in the dark","Blades in the Dark is the game we are playing","I played it safe","she played, tick tock","he has a blade, make no mistake","my blade, tick the box","a blade new and sharp","that blade create a mess","this blade, note the edge","their blade, mark my words","his blade, undo the strap","your blade, call him over","Blade Runner is a good film, make a note of it","Blade in the dark, tick tock","we played a clock game","he played tick tack","Blake is the name of the ferryman","the Blaine family make good rope","Blade's name is on the door, make a note","a drawn blade tick tick tick","sharpening the blade, clear the table","the blade was a gift. So make sure it is kept sharp","they played mark and tick all night","I think the blade create trouble","it was a blade, and a six segment clock hung on the wall","the blade runner scratch that","okay so that clock called escape is six segments","tick the box and make a note","Mark said to undo that","he cancelled the clock and moved on","blades are sharp","blade play","her blade, tick","play it again","Played it, make sure","a blades note","my blades, fill the tub","the Blade, loose end"]
+"decoys":["Blake, tick tock goes the clock","played, fill your glass","Blake, start the car","Blaine, add some salt","Blake, make some tea","played, clear your plate","Blaine, start the washing","Blake, new shoes are in the hall","Played, mark my words","Blades, cancel my lunch","Blake, call me later","Blaine, put the kettle on","Blades, make dinner","Blake, scratch your head","played, tick the box on that form","the blade, make sure the door is shut","blades in the dark","Blades in the Dark is the game we are playing","I played it safe","she played, tick tock","he has a blade, make no mistake","my blade, tick the box","a blade new and sharp","that blade create a mess","this blade, note the edge","their blade, mark my words","his blade, undo the strap","your blade, call him over","Blade Runner is a good film, make a note of it","Blade in the dark, tick tock","we played a clock game","he played tick tack","Blake is the name of the ferryman","the Blaine family make good rope","Blade's name is on the door, make a note","a drawn blade tick tick tick","sharpening the blade, clear the table","the blade was a gift. So make sure it is kept sharp","they played mark and tick all night","I think the blade create trouble","it was a blade, and a six segment clock hung on the wall","the blade runner scratch that","okay so that clock called escape is six segments","tick the box and make a note","Mark said to undo that","he cancelled the clock and moved on","blades are sharp","blade play","her blade, tick","play it again","Played it, make sure","a blades note","my blades, fill the tub","the Blade, loose end"]
 }

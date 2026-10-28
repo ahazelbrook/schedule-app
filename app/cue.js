@@ -70,7 +70,7 @@
   var UM = { um: 1, umm: 1, uh: 1, uhh: 1, okay: 1, ok: 1 };
   var TRAIL_UM = /(?:[\s,.]+(?:um+|uh+|okay|ok|so))+[\s.?!]*$/i;      /* "...Night Ferry um" */
   var CLOCK_STOP = { 'with': 1, that: 1, which: 1, has: 1, where: 1, please: 1, thanks: 1, um: 1, umm: 1, uh: 1, uhh: 1, okay: 1, ok: 1 };
-  var AND_STOP = { mark: 1, tick: 1, fill: 1, marked: 1, set: 1, start: 1, 'with': 1, put: 1, have: 1 };
+  var AND_STOP = { show: 1, reveal: 1, display: 1, add: 1, mark: 1, tick: 1, fill: 1, marked: 1, set: 1, start: 1, 'with': 1, put: 1, have: 1 };
   var SHOW_W = { show: 1, reveal: 1, display: 1 };
   var SHEET_W = { stress: 1, harm: 1, xp: 1, coin: 1, coins: 1, trauma: 1 };
   var MINOR = { of: 1, 'the': 1, a: 1, an: 1, and: 1, 'in': 1, on: 1, to: 1, at: 1, 'for': 1 };
@@ -160,7 +160,7 @@
     }
     return true;
   }
-  function locate(text) {
+  function locate(text, live) {
     var toks = tokenize(text), pending = null;
     for (var i = 0; i < toks.length; i++) {
       var t = toks[i];
@@ -169,7 +169,21 @@
       if (!real && !mis) continue;
       if (!clauseStart(toks, text, i)) continue;
       var hit = null;
-      if (mis) { var v = cmdAt(toks, i + 1); if (v) hit = { k: i + 1, verb: v }; }
+      if (mis) {
+        /* a mishearing is quieter than the word: it counts only when the cue parses to an action (no missing, no refused). "can you" and "please" are skipped after it. */
+        var k0 = i + 1;
+        for (;;) {
+          if (toks[k0] && SKIP[toks[k0].w]) k0++;
+          else if (toks[k0] && MODAL[toks[k0].w] && toks[k0 + 1] && toks[k0 + 1].w === 'you') k0 += 2;
+          else break;
+        }
+        var v = cmdAt(toks, k0);
+        if (v) {
+          var cand = { toks: toks, wi: i, vi: k0, verb: v }, got = run(text, isObj(live) ? live : {}, cand, !isObj(live));
+          if (got.actions.length && !got.missing && !got.refused) hit = { k: k0, verb: v };
+        }
+        if (!hit) continue;
+      }
       else hit = findVerb(toks, i);
       if (hit) return { toks: toks, wi: i, vi: hit.k, verb: hit.verb };
       if (real && !pending && onlyPoliteAfter(toks, i)) pending = { toks: toks, wi: i, vi: -1, verb: null, pending: true };
@@ -177,9 +191,9 @@
     return pending;
   }
   function wakeWord(text, toks, i) { return text.slice(toks[i].s, toks[i].e).replace(/[^\p{L}\p{N}'’]+$/gu, ''); }
-  function find(text) {
+  function find(text, live) {
     text = str(text);
-    var loc = locate(text); if (!loc) return null;
+    var loc = locate(text, live); if (!loc) return null;
     var out = { index: loc.toks[loc.wi].s, word: wakeWord(text, loc.toks, loc.wi), verb: loc.verb };
     if (loc.pending) out.pending = true;
     return out;
@@ -322,7 +336,7 @@
     return out;
   }
 
-  function resolveTick(args, live, mode, quote) {
+  function resolveTick(args, live, mode, assume) {
     var clocks = Array.isArray(live.clocks) ? live.clocks : [];
     var hits, spoken = args.spoken, amount = args.amount;
     if (args.pron) {
@@ -330,6 +344,10 @@
       hits = lc ? clocks.filter(function (c) { return str(c.id) === lc; }) : [];
       if (!hits.length) return { missing: 'which', candidates: cands(clocks), draft: { type: 'clock_tick', by: amount } };
       spoken = hits[0].name;
+    } else if (assume) {
+      /* no table to read (find without live): a short name that is not a possessive or 'some' counts as a clock */
+      if (!spoken || spoken.split(/\s+/).length > 3 || /^(?:your|my|his|her|their|our|some|any|this|these|those)\b/i.test(spoken)) return { missing: 'clock', name: spoken };
+      hits = [{ id: '?', name: spoken, size: 12, filled: 0 }];
     } else {
       hits = matchClock(spoken, clocks);
       if (!hits.length && args.alt) {
@@ -349,9 +367,13 @@
   }
 
   function parse(text, live) {
-    text = str(text); live = isObj(live) ? live : {};
+    text = str(text);
+    var loc = locate(text, live);
+    return run(text, isObj(live) ? live : {}, loc, false);
+  }
+  function run(text, live, loc, assume) {
     var res = { actions: [], missing: null, candidates: [], refused: null, name: '', quote: '', cue: null };
-    var loc = locate(text); if (!loc) return res;
+    if (!loc) return res;
     var toks = loc.toks, wi = loc.wi;
     res.cue = { index: toks[wi].s, word: wakeWord(text, toks, wi), verb: loc.verb };
     res.quote = text.slice(toks[wi].s).replace(/\s+$/, '');
@@ -360,7 +382,27 @@
     var words = function (a, b) { var l = []; for (var i = a; i <= b; i++) l.push(toks[i].w); return l; };
     var capture = verb === 'note' || verb === 'loose' || verb === 'name';
     if (!capture && verb !== 'undo' && verb !== 'rename' && verb !== 'call') {
-      var any = words(wi + 1, e);
+      /* show and sheet words refuse only OUTSIDE a clock's name: "a clock called Stress Test", "tick Coin Toss" */
+      var inName = {}, mk, ix, cw, j2, okc;
+      if (verb === 'make') {
+        for (mk = vi + 1; mk <= e; mk++) if (NAME_MARK[toks[mk].w]) {
+          for (ix = mk + 1; ix <= e; ix++) {
+            if (ix > mk + 1 && /[,;]/.test(toks[ix - 1].p)) break;
+            if (CLOCK_STOP[toks[ix].w] || (toks[ix].w === 'and' && toks[ix + 1] && AND_STOP[toks[ix + 1].w])) break;
+            inName[ix] = 1;
+          }
+          break;
+        }
+      } else {
+        (Array.isArray(live.clocks) ? live.clocks : []).forEach(function (c) {
+          cw = norm(c.name).split(' ');
+          for (ix = vi + 1; ix + cw.length - 1 <= e; ix++) {
+            okc = true; for (j2 = 0; j2 < cw.length; j2++) if (toks[ix + j2].w !== cw[j2]) { okc = false; break; }
+            if (okc) for (j2 = 0; j2 < cw.length; j2++) inName[ix + j2] = 1;
+          }
+        });
+      }
+      var any = []; for (ix = wi + 1; ix <= e; ix++) any.push(inName[ix] ? '' : toks[ix].w);
       if (verb === 'show' || any.some(function (w) { return SHOW_W[w]; }) || (any.indexOf('put') >= 0 && any.indexOf('up') >= 0)) { res.refused = 'show'; return res; }
       if (verb === 'sheet' || any.some(function (w) { return SHEET_W[w]; })) { res.refused = 'sheet'; return res; }
     }
@@ -401,10 +443,10 @@
       while (sa <= sb && (SKIP[toks[sa].w] || UM[toks[sa].w])) sa++;
       var amt = 1, q = vi + 1; if (q <= e && numOf(toks[q].w) !== null) amt = numOf(toks[q].w); else if (q <= e && ONCE[toks[q].w]) amt = ONCE[toks[q].w];
       var spoken = sa <= sb ? span(toks, text, sa, sb) : '';
-      out = resolveTick({ pron: !spoken || (sb - sa === 0 && PRON[toks[sa].w]), spoken: spoken, amount: amt, alt: null }, live, 'tick');
+      out = resolveTick({ pron: !spoken || (sb - sa === 0 && PRON[toks[sa].w]), spoken: spoken, amount: amt, alt: null }, live, 'tick', assume);
     } else if (verb === 'tick' || verb === 'mark' || verb === 'fill' || verb === 'clear') {
       var te = e; while (te > vi && UM[toks[te].w]) te--;
-      out = resolveTick(tickArgs(toks, text, vi + 1, te), live, verb === 'fill' ? 'fill' : verb === 'clear' ? 'clear' : 'tick');
+      out = resolveTick(tickArgs(toks, text, vi + 1, te), live, verb === 'fill' ? 'fill' : verb === 'clear' ? 'clear' : 'tick', assume);
     } else out = { refused: 'unparsed' };
 
     if (out.action) { out.action.quote = res.quote; res.actions.push(out.action); }
