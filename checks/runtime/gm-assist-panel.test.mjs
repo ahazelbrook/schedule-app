@@ -1305,5 +1305,22 @@ await test('the fallback: without B68Markdown `more` is plain text in the card, 
   const det = byClass(r.br.stub('#as-list'), 'as-detail')[0]; assert.equal(det.textContent, '<b>bold</b> line'); assert.equal(htmlWrites.filter((w) => /bold/.test(w.html)).length, 0);
 });
 
+await test('the autopilot button in the header: the page sets its label, a tap calls onAutopilot, null hides it; the panel sends and decides nothing', () => {
+  let taps = 0;
+  const r = rig({ onAutopilot: () => { taps++; } });
+  assert.equal(typeof r.ctl.setAutopilot, 'function');
+  const b = r.br.stub('#as-ap');
+  r.ctl.setAutopilot({ label: 'Auto · Take over', title: 'Take over: Blade is laying clocks over the iPad.' });
+  assert.equal(b.hidden, false); assert.equal(b.textContent, 'Auto · Take over', 'the label is text, never markup');
+  assert.equal(b.getAttribute('title'), 'Take over: Blade is laying clocks over the iPad.');
+  r.br.click('ap'); r.br.click('ap'); assert.equal(taps, 2, 'a tap calls the page');
+  r.ctl.setAutopilot({ label: '<img src=x onerror=alert(1)>', title: '' }); assert.equal(b.textContent, '<img src=x onerror=alert(1)>', 'a label with markup stays text');
+  r.ctl.setAutopilot(null); assert.equal(b.hidden, true, 'null hides it');
+  r.ctl.setAutopilot({ label: '   ' }); assert.equal(b.hidden, true, 'an empty label hides it');
+  const r2 = rig(); r2.br.click('ap'); assert.equal(r2.calls.stt, 0, 'with no onAutopilot a tap does nothing, and nothing is called on the server');
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'assist-panel.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(!/gm\.(patchAmbient|setDisplay)/.test(src), 'the panel still writes nothing to the iPad');
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

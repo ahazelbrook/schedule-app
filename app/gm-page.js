@@ -411,7 +411,7 @@
   }
   P.makeSaver = makeSaver;
   /* the display gate: an svg goes out only if playerDisplay made it; every other kind passes */
-  function makeGate() {
+  function makeGate(hiddenNames) {
     var ok = [];
     return {
       mark: function (svg) { ok.push(svg); if (ok.length > 8) ok.shift(); return svg; },
@@ -421,6 +421,12 @@
         if (!isObj(p)) return false;
         /* an overlay goes out only in the shape overlayOk() knows (no stray fields, no svg, no markup); auto is a boolean */
         if ('overlay' in p && p.overlay !== null && !overlayOk(p.overlay)) return false;
+        /* a text overlay is free text that nothing else scans: refused when it names a hidden clock or a hidden NPC (whole word, any case). A clock
+           overlay carries an id, never a name, and an npc one an id: the server resolves both and refuses a hidden one. */
+        if (isObj(p.overlay) && p.overlay.kind === 'text' && typeof hiddenNames === 'function') {
+          var hn = []; try { hn = hiddenNames() || []; } catch (e) { return false; }
+          if (namesHit(p.overlay.text, hn)) return false;
+        }
         if ('auto' in p && p.auto !== null && typeof p.auto !== 'boolean') return false;
         if (!('score' in p) || p.score === null) return true;
         return isObj(p.score) && typeof p.score.board === 'string' && typeof p.score.iso === 'string' && ok.indexOf(p.score.board) >= 0 && ok.indexOf(p.score.iso) >= 0;
@@ -428,28 +434,46 @@
     };
   }
   P.makeGate = makeGate;
+  /* namesHit(text, names) -> true when the text holds any of the names as a whole word, any case ("Vex" is hit by "vex said" and not by "Vexing").
+     Whole word is Unicode-aware (letters, digits and _ are word characters), spaces in a name match any run of spaces, and a name's own regex
+     characters are escaped. Names under two characters are not scanned. */
+  function namesHit(text, names) {
+    var t = typeof text === 'string' ? text : '';
+    return (Array.isArray(names) ? names : []).some(function (n) {
+      n = typeof n === 'string' ? n.replace(/\s+/g, ' ').trim() : '';
+      if (n.length < 2) return false;
+      var src = n.split(' ').map(function (w) { return w.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); }).join('\\s+');
+      try { return new RegExp('(?:^|[^\\p{L}\\p{N}_])' + src + '(?![\\p{L}\\p{N}_])', 'iu').test(t); } catch (e) { return true; }
+    });
+  }
+  P.namesHit = namesHit;
 
   /* ---------- overlays (GM.md, "Overlays"): something laid over the iPad without replacing what is up ----------
-     overlayOk(o): true for exactly the shapes /api/gm/ambient takes: { id (at most 40), kind clock|npc|fx|text, ms 1000-180000 } plus
-     clock { name (at most 60), size 4|6|8|10|12, filled 0..size }, npc { npcId }, fx { fx: 'dawn' }, text { text (at most 120) }, and no
-     other field. What goes in the text is the caller's: only what the GM chose, never model text or prep text. */
-  var OV_FIELDS = { clock: ['name', 'size', 'filled'], npc: ['npcId'], fx: ['fx'], text: ['text'] };
+     overlayOk(o): true for exactly the shapes /api/gm/ambient takes: { id (at most 40), kind clock|npc|fx|text, ms 1000-180000, auto? } plus
+     clock { clockId }, npc { npcId }, fx { fx: 'dawn' }, text { text (at most 120) }, and no other field. A clock is named by its id: the SERVER
+     resolves the name, size and fill, and refuses a hidden or missing clock. What goes in the text is the caller's: only what the GM chose,
+     never model text or prep text. */
+  var OV_FIELDS = { clock: ['clockId'], npc: ['npcId'], fx: ['fx'], text: ['text'] };
   function wholeBetween(v, lo, hi) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= lo && v <= hi; }
   function overlayOk(o) {
     if (!isObj(o) || !Object.prototype.hasOwnProperty.call(OV_FIELDS, o.kind)) return false;
-    var allowed = ['id', 'kind', 'ms'].concat(OV_FIELDS[o.kind]);
+    var allowed = ['id', 'kind', 'ms', 'auto'].concat(OV_FIELDS[o.kind]);
     if (Object.keys(o).some(function (k) { return allowed.indexOf(k) < 0; })) return false;
+    if ('auto' in o && typeof o.auto !== 'boolean') return false;
     if (typeof o.id !== 'string' || !o.id.trim() || o.id.length > 40 || !wholeBetween(o.ms, 1000, 180000)) return false;
-    if (o.kind === 'clock') return typeof o.name === 'string' && !!o.name.trim() && o.name.length <= 60 && [4, 6, 8, 10, 12].indexOf(o.size) >= 0 && wholeBetween(o.filled, 0, o.size);
+    if (o.kind === 'clock') return typeof o.clockId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(o.clockId);
     if (o.kind === 'npc') return typeof o.npcId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(o.npcId);
     if (o.kind === 'fx') return o.fx === 'dawn';
     return typeof o.text === 'string' && !!o.text.trim() && o.text.length <= 120;
   }
   P.overlayOk = overlayOk;
   /* a short line for the iPad panel: what the document holds (the display takes it away by itself after its ms) */
-  function overlayLine(o) {
+  /* a clock overlay holds its id only (the server joins the clock when the display reads it): the line takes the clock from the table's own
+     clocks, clockOf(id) -> { name, size, filled } | null (the GM page's copy; the GM may see every clock) */
+  function overlayLine(o, clockOf) {
     if (!isObj(o) || !Object.prototype.hasOwnProperty.call(OV_FIELDS, o.kind)) return '';
-    var what = o.kind === 'fx' ? 'dawn' : o.kind === 'clock' ? 'clock ' + str(o.name) + ' ' + o.filled + '/' + o.size : o.kind === 'npc' ? 'an NPC card' : 'a line of text';
+    var ck = o.kind === 'clock' && typeof clockOf === 'function' ? clockOf(o.clockId) : null;
+    var what = o.kind === 'fx' ? 'dawn' : o.kind === 'clock' ? (ck ? 'clock ' + str(ck.name) + ' ' + ck.filled + '/' + ck.size : 'a table clock') : o.kind === 'npc' ? 'an NPC card' : 'a line of text';
     return what + ' · ' + Math.round((Number(o.ms) || 0) / 1000) + ' s';
   }
   P.overlayLine = overlayLine;
@@ -551,14 +575,14 @@
   }
   P.scoreLine = scoreLine;
   /* ipadView(doc) -> what the panel draws from the server's ambient document (null or {} before there is one) */
-  function ipadView(doc) {
+  function ipadView(doc, clockOf) {
     var d = isObj(doc) ? doc : {}, score = isObj(d.score) ? d.score : null;
     var mode = d.mode === 'pin' || d.mode === 'off' ? d.mode : 'auto';
     var scene = typeof d.scene === 'string' ? d.scene : null;
     var iv = Math.round(Number(d.intervalMin)); if (!(iv >= 3 && iv <= 30)) iv = P.IPAD_INTERVAL_DEFAULT;
     var intervals = P.IPAD_INTERVALS.slice(); if (intervals.indexOf(iv) < 0) { intervals.push(iv); intervals.sort(function (a, b) { return a - b; }); }
     return {
-      overlayLine: overlayLine(d.overlay), auto: d.auto === true,
+      overlayLine: overlayLine(d.overlay, clockOf), auto: d.auto === true,
       mode: mode, scene: scene, intervalMin: iv, intervals: intervals, hasScore: !!score, scoreLine: scoreLine(score),
       tiles: P.IPAD_SCENES.map(function (s) {
         var noScore = s.needs === 'score' && !score;
@@ -1152,7 +1176,7 @@
   function setApp(on) { if (document.body) document.body.classList.toggle('gm-app', !!on); }
   var S = null;                  /* the open page; null when closed */
   var camp = null;               /* the latest campaign document from boot */
-  var gate = makeGate();
+  var gate = makeGate(hiddenSecretNames);
   var lastSaver = null;          /* the newest session's saver: pagehide sends what it still holds */
   var keptApi = null;            /* the page api of the last open() that found the GM: the heat sync outlives the page (campaign() keeps arriving) */
   /* The ambient document as the server holds it (the truth), what the iPad was last told to spotlight, and the panel's state.
@@ -1483,6 +1507,7 @@
     if (me.sttTimer) { W.clearInterval(me.sttTimer); me.sttTimer = null; }
     if (me.cogm) { cogmStop(me); me.cogm = null; }
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
+    apUnmount(me);
     S = null;
     setApp(false);
     if (me.root) { me.root.innerHTML = ''; }
@@ -1629,7 +1654,7 @@
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
     mountAssist();
-    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack();
+    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount();
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -1644,7 +1669,7 @@
     var g = gmApi(), A = W.B68GmAssist, me = S;
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
-    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); },
+    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onAutopilot: function () { if (S === me) apToggle(); }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); },
       screen: { vocab: screenVocab, cleanSpec: screenCleanSpec }, onScreen: function (item) { if (S === me) setScreenItem(item); } }); } catch (e) { me.assist = null; }
   }
 
@@ -1899,7 +1924,7 @@
   function loadShown() {
     var g = gmApi(), me = S; if (!g || typeof g.display !== 'function' || AM.displayRead) return;
     Promise.resolve().then(function () { return g.display(); }).then(function (r) {
-      if (r && isObj(r.display)) { AM.displayRead = true; AM.shown = AM.shown || { kind: str(r.display.kind), title: str(r.display.title) }; }
+      if (r && isObj(r.display)) { AM.displayRead = true; apSeed(!AM.shown, r.display.kind); AM.shown = AM.shown || { kind: str(r.display.kind), title: str(r.display.title) }; }
       if (S === me) renderBar();
     }, function () {});
   }
@@ -1943,6 +1968,7 @@
       '<button type="button" class="gm-bb" data-gm="beat-next" title="Start the next beat in the run order">Next beat</button></span><span class="gm-grow"></span>' +
       '<button type="button" class="gm-bb" data-gm="find-open" title="Find anything: prep, the screen, NPCs, clocks, what you filed (Ctrl+K or /)">Find <kbd>Ctrl K</kbd></button>' +
       '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-ipad" title="What the players see (the iPad tab)"></button>' +
+      '<button type="button" class="gm-pill gm-ap" data-gm="aptoggle" id="gm-bar-ap" data-ap="auto" hidden></button>' +
       '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-stt" title="The transcriber (the iPad tab)" hidden></button>' +
       '<button type="button" class="gm-bb" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' + '<button type="button" class="gm-bb" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
       '<span class="gm-menu"><button type="button" class="gm-bb" data-gm="menu" aria-expanded="false" aria-haspopup="true">Menu</button><span class="gm-menu-list" hidden>' +
@@ -1969,6 +1995,7 @@
       ip.innerHTML = '<span class="gm-dot' + (AM.shown && AM.shown.kind && AM.shown.kind !== 'blank' ? ' on' : '') + '"></span>iPad: ' + esc(shown);
       ip.title = 'What the players see: ' + (AM.shown ? displayLine(AM.shown) : 'not known yet') + '. Opens the iPad tab.';
     }
+    apPaint();
     var sp = $q('#gm-bar-stt'); if (!sp) return;
     var d = STT.doc, on = !!(d && d.want === 'on'), st = d && isObj(d.status) ? d.status : {}, age = st.at ? (Date.now() - Date.parse(st.at)) / 1000 : null;
     var pc = d && isObj(d.copier) && d.copier.at ? (Date.now() - Date.parse(d.copier.at)) / 1000 : null;
@@ -2397,6 +2424,7 @@
     var lines = v.lines.map(function (l) { return str(l).trim(); }).filter(Boolean); if (!lines.length) return;
     S.voice = { who: str(v.who).trim() || 'NPC', want: str(v.want).trim(), lines: lines, at: str(v.at), busy: false, error: '' };
     renderRack();
+    apNpcSpoke();
   }
   /* Stall: when the Tripwire hears the table idle or going round in circles, one offer (a complication or a clue) lands as an idea card in the box. Like Voice it needs Listening on and the cap not reached, and it stays until the GM clears it or the next offer replaces it. */
   function setStall(v) {
@@ -2943,6 +2971,7 @@
   function runDawn() {
     var rs = runSite(); if (!rs) return Promise.resolve(null);
     if (!W.confirm('The iPad goes white for 30 seconds. Go ahead?')) return Promise.resolve(null);
+    apEvent({ type: 'dawn', ms: 30000 });       /* the dawn is the GM's own and takes the slot: the autopilot lays nothing over it and clears nothing of it */
     return showOverlay({ kind: 'fx', fx: 'dawn', ms: 30000 }).then(function (r) {
       if (r && runSite()) ballSet(rs.name, { dawn: { at: new Date().toISOString() } });
       return r;
@@ -3016,7 +3045,7 @@
     Promise.resolve().then(function () { return job.g.setDisplay(body); }).then(function (r) {
       DQ.busy = null;
       try { if (job.opts.done) job.opts.done(r || {}); } catch (e) {}
-      noteShown(job.d); job.res(r); pumpDisplay(); paintLive();
+      noteShown(job.d, job.opts); job.res(r); pumpDisplay(); paintLive();
     }, function (e) {
       DQ.busy = null;
       try { if (job.opts.fail) job.opts.fail(e); } catch (x) {}
@@ -3308,11 +3337,12 @@
   }
 
   /* ---------- the iPad panel (I): the ambient scenes. The server's document is the truth ---------- */
-  function noteShown(d) { if (isObj(d)) { AM.shown = { kind: str(d.kind), title: str(d.title) }; renderIpad(); } }
+  function noteShown(d, opts) { if (isObj(d)) { AM.shown = { kind: str(d.kind), title: str(d.title) }; renderIpad(); apPush(d, opts); } }
   function adoptAmbient(r) {
     if (!isObj(r) || !isObj(r.doc)) return false;
     if (typeof r.seq === 'number' && typeof AM.seq === 'number' && r.seq < AM.seq) return false;     /* an older answer landing late */
     AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null; AM.loaded = true; AM.error = '';
+    apSync();
     return true;
   }
   /* GET the ambient document (and, the first time, what the iPad shows). Also corrects a stale crew once the truth is known. */
@@ -3322,7 +3352,7 @@
     return Promise.resolve().then(function () { return Promise.all([g.ambient(), first && typeof g.display === 'function' ? g.display().then(function (r) { return r; }, function () { return null; }) : null]); }).then(function (res) {
       if (adoptAmbient(res[0])) { crewSync.note(camp); crewSync.adopt(AM.doc.crew, true); }
       var dr = res[1];
-      if (dr && isObj(dr.display)) { AM.displayRead = true; AM.shown = AM.shown || { kind: str(dr.display.kind), title: str(dr.display.title) }; }
+      if (dr && isObj(dr.display)) { AM.displayRead = true; apSeed(!AM.shown, dr.display.kind); AM.shown = AM.shown || { kind: str(dr.display.kind), title: str(dr.display.title) }; }
       if (S === me) renderIpad();
     }, function (e) {
       AM.error = errText(e);
@@ -3342,7 +3372,10 @@
   }
   /* Lay something over the iPad without replacing what is up (the false dawn; the autopilot). The patch goes through patchAmbient, so the
      gate runs; a hidden NPC is refused by the server too. An id is made when none is given: a new id is what shows it afresh. */
-  function newOverlayId() { return 'ov-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  /* An overlay id is opaque: a random prefix drawn once per page load and a counter, never built from a clock's or an NPC's id or name. The prefix
+     is why a reloaded page's first id is not one the display has already seen (the display shows each id once). */
+  var OV_PREFIX = 'o' + Math.random().toString(36).slice(2, 7) + '-', ovCount = 0;
+  function newOverlayId() { return OV_PREFIX + (++ovCount); }
   function showOverlay(o) {
     if (!isObj(o)) return Promise.resolve(null);
     var ov = Object.assign({}, o); if (ov.id === undefined) ov.id = newOverlayId();
@@ -3350,6 +3383,225 @@
     return patchAmbient({ overlay: ov });
   }
   function clearOverlay() { return patchAmbient({ overlay: null }); }
+
+  /* ---------- the iPad autopilot (design 6; GM.md "Autopilot") ----------
+     B68GmAutopilot (gm/autopilot.js) is the pure controller; this block is its driver, and the only place it touches the page. It feeds the
+     controller what happened (a visible table clock changed, a revealed NPC with a portrait spoke, the GM pushed something, lights out, the page
+     hid or showed, Take over / Hand back), and carries out the one action it answers with: the overlay to set or the one to clear. Output goes
+     through the ambient document as a QUIET patch (no toast on a refusal; the controller's log, S.doc.ap.log, keeps the last 20 lines for
+     gm:after). Every overlay it sends carries `auto: true`: the server refuses it while the display is in lights out, and the display never draws it
+     over black. A clock goes by its id and an NPC by its id: the server names them (and refuses a hidden clock or NPC), so no name leaves this page. */
+  var AP_KEY = 'b68.gm.autopilot', AP_TTL = 12 * 3600 * 1000, AP_SETTLE_MS = 1000, AP_PROBE_MS = 15000;
+  var apToasted = false;                    /* the first-time toast: once per page load */
+  function apSavedMode() { try { var m = JSON.parse(W.localStorage.getItem(AP_KEY) || 'null'); if (isObj(m) && (m.mode === 'hold' || m.mode === 'off') && Date.now() - m.at < AP_TTL) return m.mode; } catch (e) {} return ''; }
+  function apSaveMode(mode) { try { if (mode === 'hold' || mode === 'off') W.localStorage.setItem(AP_KEY, JSON.stringify({ mode: mode, at: Date.now() })); else W.localStorage.removeItem(AP_KEY); } catch (e) {} }
+  function apClockMap() {
+    var out = {};
+    tableClocks().forEach(function (c) { var id = str(c.id); if (id) out[id] = { filled: +c.filled || 0, hidden: !!c.hidden }; });
+    return out;
+  }
+  function apMount() {
+    var me = S, A = W.B68GmAutopilot;
+    if (me.ap) { apPaint(); return; }          /* start() runs again after a pack import on the same page: the running controller (and what it is showing) stays */
+    if (!A) return;
+    var core = A.create({ now: function () { return Date.now(); }, idPrefix: 'a' + Math.random().toString(36).slice(2, 7) + '-' });
+    var prev = isObj(me.doc.ap) && Array.isArray(me.doc.ap.log) ? me.doc.ap.log.filter(isObj).slice(-A.DURATIONS.logMax) : [];
+    var ap = me.ap = { core: core, q: Promise.resolve(), sets: 0, clocks: apClockMap(), settle: {}, probeAt: 0, logKey: '', prev: prev, cat: '' };
+    var saved = apSavedMode();
+    if (saved === 'hold') core.event({ type: 'takeover' }); else if (saved === 'off') core.event({ type: 'off' });
+    if (document.hidden) core.event({ type: 'visible', visible: false });
+    if (AM.shown && (AM.shown.kind === 'dark' || AM.shown.kind === 'rule')) core.event({ type: 'push', kind: AM.shown.kind });
+    ap.cat = apCat();
+    ap.timer = typeof W.setInterval === 'function' ? W.setInterval(function () { if (S === me) apTick(); }, 1000) : null;
+    apPaint();      /* nothing is written to the document on open: the AUTO chip comes with the first overlay (auto: true rides in the same patch) */
+  }
+  /* closing the page: the autopilot stops, the AUTO chip goes, and an overlay it put up is taken off */
+  function apUnmount(me) {
+    var ap = me && me.ap; if (!ap) return;
+    if (ap.timer && typeof W.clearInterval === 'function') { W.clearInterval(ap.timer); ap.timer = null; }
+    Object.keys(ap.settle).forEach(function (k) { clearTimeout(ap.settle[k]); });
+    var g = (keptApi && keptApi.gm && keptApi.gm()) || (W.claude && W.claude.gm), st = ap.core.state(), p = {};
+    if (AM.doc && AM.doc.auto === true) p.auto = null;
+    if (st.showing && AM.doc && isObj(AM.doc.overlay) && AM.doc.overlay.id === st.showing.id) p.overlay = null;
+    me.ap = null;
+    if (AM.doc) { if ('auto' in p) delete AM.doc.auto; if ('overlay' in p) delete AM.doc.overlay; }
+    if (Object.keys(p).length && g && typeof g.patchAmbient === 'function') { try { Promise.resolve(g.patchAmbient(p)).then(null, function () {}); } catch (e) {} }
+  }
+  function apCat() { var m = S && S.ap ? S.ap.core.state().mode : ''; return m === 'hold' || m === 'off' ? m : 'on'; }
+  function apEvent(e) {
+    var ap = S && S.ap; if (!ap) return;
+    var a = ap.core.event(e);
+    if (a) apRun(a);
+    var cat = apCat();
+    if (cat !== ap.cat) { ap.cat = cat; apSaveMode(cat); apAuto(); }
+    apPaint(); apLog();
+  }
+  function apTick() {
+    var ap = S && S.ap; if (!ap) return;
+    var a = ap.core.tick(Date.now());
+    if (a) apRun(a);
+    apProbe(); apPaint(); apLog();
+  }
+  /* held back by lights out or a rules entry with something waiting: look at what the iPad really shows now and then (another device may have changed it) */
+  function apProbe() {
+    var ap = S && S.ap, g = gmApi(); if (!ap || !g || typeof g.display !== 'function') return;
+    var st = ap.core.state(), t = Date.now();
+    if (!(st.guards.lights || st.guards.rule) || !Object.keys(st.pending).length || t - ap.probeAt < AP_PROBE_MS) return;
+    ap.probeAt = t;
+    var me = S;
+    Promise.resolve().then(function () { return g.display(); }).then(function (r) {
+      if (S !== me || !r || !isObj(r.display)) return;
+      var k = str(r.display.kind);
+      apEvent({ type: 'push', kind: k === 'dark' || k === 'rule' ? k : 'blank' });
+    }, function () {});
+  }
+  function apWhy(e) { return e && e.status ? 'HTTP ' + e.status : 'no answer'; }
+  /* a quiet ambient patch (no busy state, no toast): the autopilot's own writes */
+  function apPatch(p) {
+    var g = gmApi();
+    if (!g || typeof g.patchAmbient !== 'function') return Promise.reject(new Error('the GM tools are not available'));
+    if (!gate.allowsAmbient(p)) return Promise.reject(new Error('the gate refused that overlay'));
+    return Promise.resolve().then(function () { return g.patchAmbient(p); }).then(function (r) {
+      if (adoptAmbient(r)) crewSync.adopt(AM.doc.crew, false);
+      renderIpad(); return r;
+    });
+  }
+  function apRun(a) {
+    var me = S, ap = me && me.ap; if (!ap || !a) return;
+    if (a.do === 'set') ap.sets++;
+    ap.q = ap.q.then(function () {
+      if (S !== me || me.ap !== ap) { if (a.do === 'set') ap.sets--; return; }
+      if (a.do === 'clear') {
+        /* only what is ours: the GM's dawn (perhaps pressed on another device), or an overlay already cleared, is left alone. The document is read
+           again first rather than trusting this page's copy; the write that follows is not atomic with that read (a few tens of ms). */
+        var g = gmApi();
+        return Promise.resolve().then(function () { return g && typeof g.ambient === 'function' ? g.ambient() : null; }).then(function (r) {
+          if (r) adoptAmbient(r);
+          var cur = r && isObj(r.doc) && isObj(r.doc.overlay) ? r.doc.overlay : (r ? null : (AM.doc && isObj(AM.doc.overlay) ? AM.doc.overlay : null));
+          if (!cur || cur.id !== a.id) return;
+          return apPatch({ overlay: null });
+        }).then(null, function (e) { ap.core.note({ do: 'refused', kind: 'clear', why: apWhy(e) }); apLog(); });
+      }
+      var ov = a.overlay;
+      return apPatch({ overlay: ov, auto: true }).then(function () {
+        ap.sets--;
+        if (!apToasted) { apToasted = true; toast('Blade is directing the iPad’s overlays (Auto). Take over any time from the top bar.'); }
+        apSync();
+      }, function (e) {
+        ap.sets--;
+        ap.core.note({ do: 'refused', kind: ov.kind, key: ov.clockId || ov.npcId || '', why: apWhy(e) });
+        if (e && e.status === 409) apEvent({ type: 'push', kind: 'dark' });      /* the server says lights out: hold back until it lifts */
+        apEvent({ type: 'replaced' });
+      });
+    });
+  }
+  /* the document's overlay is no longer the one the controller is showing (the GM cleared it, a dawn replaced it): it lets go */
+  function apSync() {
+    var ap = S && S.ap; if (!ap || ap.sets > 0 || !AM.loaded) return;
+    var st = ap.core.state(); if (st.mode !== 'showing' || !st.showing) return;
+    var o = AM.doc && isObj(AM.doc.overlay) ? AM.doc.overlay : null;
+    if (!o || o.id !== st.showing.id) apEvent({ type: 'replaced' });
+  }
+  function apAuto() {
+    var ap = S && S.ap; if (!ap) return;
+    var want = apCat() === 'on';
+    if (AM.loaded && AM.doc && (want ? AM.doc.auto === true : AM.doc.auto !== true)) return;
+    ap.q = ap.q.then(function () { return apPatch({ auto: want }).then(null, function () {}); });
+  }
+  function apLog() {
+    var ap = S && S.ap; if (!ap) return;
+    var cl = ap.core.state().log, last = cl[cl.length - 1], key = cl.length + ':' + (last ? last.at + last.do + last.why : '');
+    if (key === ap.logKey) return;
+    ap.logKey = key;
+    patch({ ap: { log: ap.prev.concat(cl).slice(-20) } });
+  }
+  function apView() {
+    var ap = S && S.ap; if (!ap) return null;
+    var m = ap.core.state().mode;
+    /* the top bar is crowded, so its pill is the badge alone (Auto, GM, Off); the action is its tooltip and accessible name, and the Blade panel's header and the iPad tab spell it out */
+    if (m === 'hold') return { mode: 'hold', badge: 'GM', action: 'Hand back', bar: 'GM', title: 'Hand back: you are directing the iPad. Hand it back to Blade to bring the overlays back.' };
+    if (m === 'off') return { mode: 'off', badge: 'Off', action: 'Switch on', bar: 'Auto off', title: 'Switch on: the autopilot is off. Switch it on to let Blade lay clocks and NPCs over the iPad.' };
+    return { mode: 'auto', badge: 'Auto', action: 'Take over', bar: 'Auto', title: 'Take over: Blade is laying clocks and NPCs over the iPad. Take over stops it and takes down what it put up.' };
+  }
+  function apPaint() {
+    var v = apView(), b = $q('#gm-bar-ap');
+    if (b) { b.hidden = !v; if (v) { b.textContent = v.bar; b.title = v.title; b.setAttribute('aria-label', v.title); b.setAttribute('data-ap', v.mode); } }
+    if (S && S.assist && typeof S.assist.setAutopilot === 'function') S.assist.setAutopilot(v ? { label: v.badge + ' · ' + v.action, title: v.title } : null);
+    var ln = $q('#gm-ipad-ap');
+    if (ln) { ln.hidden = !v; if (v) { var m = ln.querySelector('[data-ap-badge]'), t = ln.querySelector('[data-gm="aptoggle"]'); if (m) m.textContent = v.badge; if (t) t.textContent = v.action; var o = ln.querySelector('[data-gm="apoff"]'); if (o) o.hidden = v.mode === 'off'; } }
+  }
+  /* Take over (or Hand back, or Switch on): the top bar's pill, the Blade panel's header and the iPad tab all call this */
+  function apToggle() {
+    var ap = S && S.ap; if (!ap) return;
+    var m = ap.core.state().mode;
+    apEvent({ type: m === 'hold' ? 'handback' : m === 'off' ? 'on' : 'takeover' });
+    toast(m === 'hold' ? 'Handed back: Blade is directing the iPad again.' : m === 'off' ? 'The autopilot is on.' : 'You have the iPad. Blade will not lay anything over it until you hand it back.');
+  }
+  function apSwitchOff() { var ap = S && S.ap; if (ap) { apEvent({ type: 'off' }); toast('The autopilot is off.'); } }
+  /* the table's clocks changed (campaign(doc)): the first look is the baseline; after that, a clock made visible or a visible one whose fill moved is an
+     event (settled for a second first, so the save has landed when the server reads it), one that turned hidden or went is a "gone". A reveal
+     is the GM's own act and not a trigger. More than three moving at once is a resync, not a play. */
+  function apClocksFeed() {
+    var ap = S && S.ap; if (!ap) return;
+    if (!isObj(camp) || !Array.isArray(camp.clocks)) { ap.clocks = null; return; }
+    var now = apClockMap(), prev = ap.clocks; ap.clocks = now;
+    if (!prev) return;
+    var changed = [], gone = [];
+    Object.keys(now).forEach(function (id) {
+      var n = now[id], p = prev[id];
+      if (n.hidden) { if (p && !p.hidden) gone.push(id); return; }
+      if (!p) changed.push(id); else if (!p.hidden && n.filled !== p.filled) changed.push(id);
+    });
+    Object.keys(prev).forEach(function (id) { if (!now[id] && !prev[id].hidden) gone.push(id); });
+    if (changed.length + gone.length > 3) return;
+    gone.forEach(function (id) { clearTimeout(ap.settle[id]); delete ap.settle[id]; apEvent({ type: 'gone', kind: 'clock', key: id }); });
+    changed.forEach(function (id) {
+      clearTimeout(ap.settle[id]);
+      var me = S;
+      ap.settle[id] = setTimeout(function () {
+        if (S !== me || !me.ap) return;
+        delete ap.settle[id];
+        var c = tableClocks().filter(function (x) { return str(x.id) === id; })[0];
+        apEvent({ type: 'clock', clockId: id, visible: !!c && !c.hidden });
+      }, AP_SETTLE_MS);
+    });
+  }
+  /* a subject the controller shows or holds is no longer one the players may see: a hidden clock, an NPC no longer revealed */
+  function apSubjects() {
+    var ap = S && S.ap; if (!ap) return;
+    var st = ap.core.state(), items = [];
+    if (st.showing) items.push({ kind: st.showing.kind, key: st.showing.key, showing: true });
+    Object.keys(st.pending).forEach(function (k) { items.push({ kind: k, key: st.pending[k].key }); });
+    items.forEach(function (x) {
+      var ok = true;
+      if (x.kind === 'npc') { var d = isObj(S.npcs) ? S.npcs[x.key] : null; ok = isObj(d) && d.revealed === true && (x.showing || staged(x.key)); }
+      else if (x.kind === 'clock') { var c = tableClocks().filter(function (y) { return str(y.id) === x.key; })[0]; ok = !!c && !c.hidden; }
+      if (!ok) apEvent({ type: 'gone', kind: x.kind, key: x.key });
+    });
+  }
+  /* Voice's lines arrived for the NPC on stage: the page's own stage decides who (Voice's `who` is model text and is never looked up) */
+  function apNpcSpoke() {
+    var ap = S && S.ap; if (!ap) return;
+    var who = npcList().filter(function (x) { return staged(x.id) && str(x.doc.name).replace(/\s+/g, ' ').trim(); })[0];
+    if (!who) return;
+    apEvent({ type: 'npc', npcId: who.id, staged: true, revealed: who.doc.revealed === true, portrait: isObj(who.doc.spec) && Object.keys(who.doc.spec).length > 0 });
+  }
+  /* the GM put something on the iPad (pushDisplay's success, or another page's b68:display): the controller's manualPush(kind) */
+  function apPush(d, opts) {
+    if (!S || !S.ap || !isObj(d)) return;
+    var k = str(d.kind);
+    if (k === 'svg') k = opts && opts.map ? 'live' : 'map';       /* a map on the iPad opens a live reveal: the 15 s guard */
+    apEvent({ type: 'push', kind: k });
+  }
+  /* what the iPad showed when this page first read it: lights out and a rules entry are guards from the start (nothing else is news) */
+  function apSeed(first, kind) { if (first && (kind === 'dark' || kind === 'rule')) apEvent({ type: 'push', kind: kind }); }
+  /* names the players must not meet: hidden NPCs (name and alias) and hidden clocks. A text overlay naming one is refused (makeGate). */
+  function hiddenSecretNames() {
+    var out = [];
+    if (S && isObj(S.npcs)) Object.keys(S.npcs).forEach(function (id) { var d = S.npcs[id]; if (isObj(d) && d.revealed !== true) { if (str(d.name).trim()) out.push(d.name); if (str(d.alias).trim()) out.push(d.alias); } });
+    tableClocks().forEach(function (c) { if (c.hidden && str(c.name).trim()) out.push(c.name); });
+    return out;
+  }
   /* the heat / wanted sync: campaign(doc) feeds it (see makeCrewSync) */
   var crewSync = makeCrewSync({
     send: function (crew) { var g = (keptApi && keptApi.gm && keptApi.gm()) || (W.claude && W.claude.gm); if (!g || typeof g.patchAmbient !== 'function') return Promise.reject(new Error('the GM tools are not available')); return g.patchAmbient({ crew: crew }); },
@@ -3360,10 +3612,12 @@
   });
   function renderIpad() {
     var box = $q('#gm-ipad'); if (!box) return;
-    var v = ipadView(AM.doc), busy = AM.busy > 0, off = !AM.loaded;
+    var v = ipadView(AM.doc, function (id) { var c = tableClocks().filter(function (x) { return str(x.id) === id; })[0]; return c ? { name: c.name, size: c.size, filled: c.filled } : null; }), busy = AM.busy > 0, off = !AM.loaded;
     function seg(k, label) { return '<button type="button" class="chip" data-gm="ambmode" data-v="' + k + '" aria-pressed="' + (v.mode === k) + '"' + (off || busy ? ' disabled' : '') + '>' + label + '</button>'; }
     var h = '<section class="gm-box gm-ipad-now"><h3 class="gm-band">On the iPad now</h3><p class="gm-ipad-line" id="gm-ipad-now">' + (AM.shown ? esc(displayLine(AM.shown)) : '<span class="gm-dim">Not known yet: push something, or clear it.</span>') + '</p>' +
       (v.overlayLine ? '<p class="gm-ipad-line" id="gm-ipad-overlay">Overlay sent: ' + esc(v.overlayLine) + (v.auto ? ' · AUTO' : '') + '</p>' : '') +
+      '<p class="gm-ipad-line" id="gm-ipad-ap" hidden>Autopilot: <b data-ap-badge></b> <button type="button" class="btn sm" data-gm="aptoggle"></button> ' +
+      '<button type="button" class="btn sm" data-gm="apoff" title="Blade stops laying anything over the iPad until you switch it on">Switch off</button></p>' +
       '<div class="gm-ipad-acts"><button type="button" class="btn primary" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' +
       '<button type="button" class="btn" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
       '<button type="button" class="btn" data-gm="clearoverlay"' + (busy ? ' disabled' : '') + ' title="Take the overlay (a clock, an NPC, a line or the dawn) off the iPad; what is under it stays">Clear overlay</button></div></section>';
@@ -4182,7 +4436,7 @@
       S.npcUnsub = db.collection('npcs').onSnapshot(function (snap) {
         if (S !== me) return;
         var m = {}; (snap && snap.docs || []).forEach(function (d) { var x = d && typeof d.data === 'function' ? d.data() : null; if (isObj(x)) m[d.id] = x; });
-        me.npcs = m; renderNpcs(); renderRail();
+        me.npcs = m; renderNpcs(); renderRail(); apSubjects();
       }, function () {});
     } catch (e) { S.npcUnsub = null; }
   }
@@ -5194,6 +5448,8 @@
       case 'ambscene': patchAmbient({ mode: 'pin', scene: b.getAttribute('data-id') }); break;
       case 'ambskip': patchAmbient({ skip: true }); break;
       case 'clearoverlay': clearOverlay(); break;
+      case 'aptoggle': apToggle(); break;
+      case 'apoff': apSwitchOff(); break;
       case 'clearscore': patchAmbient({ score: null }); break;
       case 'dlsvg': if (!S.map) toast('Draw the map first.', true); else if (S.map.layer === 'player' && S.map.leak) toast(P.LEAK_MSG, true); else save(slug(S.locRoll && S.locRoll.name) + '-' + S.map.view + '-' + S.map.theme + '-' + S.map.layer + '.svg', S.map.svg); break;
       case 'dlnote': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.md', W.B68GmLocation.noteBody(S.locRoll, { date: dmy(new Date()) })); break;
@@ -5279,7 +5535,7 @@
       document.addEventListener('keydown', onKey, true);
       W.addEventListener('focus', function () { refetch(); if (S && S.status === 'ready' && S.panel === 'ipad') loadAmbient(); });
       /* leaving or hiding the tab: what is pending goes now, as a keepalive request (also from a session already closed) */
-      document.addEventListener('visibilitychange', function () { if (document.hidden) { if (lastSaver) lastSaver.beacon(); } else if (S) { refetch(); if (S.status === 'ready' && S.panel === 'ipad') loadAmbient(); } });
+      document.addEventListener('visibilitychange', function () { apEvent({ type: 'visible', visible: !document.hidden }); if (document.hidden) { if (lastSaver) lastSaver.beacon(); } else if (S) { refetch(); if (S.status === 'ready' && S.panel === 'ipad') loadAmbient(); } });
       W.addEventListener('pagehide', function () { if (lastSaver) lastSaver.beacon(); });
       /* a push from another page (the rules page's Show on iPad) keeps "On the iPad now" true */
       W.addEventListener('b68:display', function (ev) { if (ev && isObj(ev.detail)) noteShown(ev.detail); });
@@ -5293,6 +5549,7 @@
     camp = isObj(doc) ? doc : null;
     if (S && S.status === 'ready') {
       renderRail(); renderBar(); scMaybeRedraw(); runStale();
+      apClocksFeed(); apSubjects();
       /* the stage changed: the NPC tab's buttons follow */
       if ((isObj(camp) && isObj(camp.scene) ? JSON.stringify(camp.scene.npcs || {}) : '') !== before) {
         [].forEach.call(S.root.querySelectorAll('[data-gm="npcstage"]'), function (b) { var on = staged(b.getAttribute('data-id')); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Off stage' : 'Put on stage'; b.classList.toggle('primary', !on); });
@@ -5317,6 +5574,9 @@
     suggestHandout: function (id, why) { return suggestHandout(id, why); },
     /* overlays on the iPad (the false dawn, the autopilot): showOverlay({ kind, ms, ... }) and clearOverlay(), through the ambient document */
     showOverlay: showOverlay, clearOverlay: clearOverlay,
-    _ambient: function () { return { doc: AM.doc, shown: AM.shown, loaded: AM.loaded, crew: crewSync.state().lastSent }; }
+    _ambient: function () { return { doc: AM.doc, shown: AM.shown, loaded: AM.loaded, crew: crewSync.state().lastSent }; },
+    /* the autopilot's controller state, for checks (the page's own log is S.doc.ap.log), and Voice's lines as the box would hand them over */
+    _autopilot: function () { return S && S.ap ? S.ap.core.state() : null; },
+    _voice: function (v) { if (S) setVoice(v); }
   };
 });

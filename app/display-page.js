@@ -333,7 +333,7 @@
      display, updatedAt, ambient: { seq, unchanged: true } | { seq, doc, updatedAt }, stt: { seq, unchanged: true } | { seq, want,
      session } }. The display redraws only when its seq moved (an ambient-only change carries the display along, and it must not
      cross-fade the same spotlight again); the ambient part, when it holds a doc, goes to onAmbient first (so the first draw already
-     has its plan), then the transcriber part to onStt. A malformed ambient or transcriber part is ignored: it never stops the
+     has its plan), then the transcriber part to onStt, then (after onData) the answer's top-level `overlay` to onOverlay. A malformed ambient or transcriber part is ignored: it never stops the
      spotlight. onStt(part) gets { seq, want, session } when the part changed, and null once when an answer has no usable part
      (an older server: app/stt.js then asks for itself). */
   Pure.POLL = { intervalMs: 4000, idleMs: 15000, idleAfterMs: 2 * 3600 * 1000, slowMs: 10000, hiddenMs: 60000 };
@@ -414,6 +414,9 @@
             seq = r.seq;
             if (o.onData) { try { o.onData(r.display, r.seq, r.updatedAt || null); } catch (e) { /* ditto */ } }
           }
+          /* the overlay rides on its own, small, on every answer (null when none), after the display part so the page already knows whether it is
+             dark: onOverlay(overlay | null). An answer without the key (an older server) leaves the ambient doc's overlay to onAmbient. */
+          if (o.onOverlay && Object.prototype.hasOwnProperty.call(r, 'overlay') && (r.overlay === null || isObj(r.overlay))) { try { o.onOverlay(r.overlay); } catch (e) { /* ditto */ } }
           if (moved) movedAt = clock();
           setState('live');
         }
@@ -682,6 +685,8 @@
     var out = { id: id, kind: v.kind, ms: v.ms };
     /* `age`: the SERVER's whole ms since it set the overlay (GET /api/gm/display adds it); absent or bad is left off (0), never the iPad's clock */
     if (wholeIn(v.age, 1, O.msMax)) out.age = v.age;
+    /* `auto`: the autopilot sent it, so it is never drawn over lights out (a GM-pressed overlay, the dawn, carries no such mark) */
+    if (v.auto === true) out.auto = true;
     if (v.kind === 'clock') {
       var name = oneLine(v.name);
       if (!name || name.length > O.name || O.sizes.indexOf(v.size) < 0 || !wholeIn(v.filled, 0, v.size)) return null;
@@ -689,6 +694,8 @@
     } else if (v.kind === 'npc') {
       if (typeof v.npcId !== 'string' || !O.npcId.test(v.npcId)) return null;
       out.npcId = v.npcId;
+      /* `npc`: what the SERVER joined at read time while that NPC is revealed (GET /api/gm/display); only the fields a player may see */
+      if (isObj(v.npc)) { var pn = Pure.playerNpc(v.npc); out.npc = { name: pn.name, alias: pn.alias, role: pn.role, faction: pn.faction, spec: pn.spec }; }
     } else if (v.kind === 'fx') {
       if (O.fx.indexOf(v.fx) < 0) return null;
       out.fx = v.fx;
@@ -747,19 +754,18 @@
     if (e < holdEnd) return { init: 'hold', ramp: 0, fade: ph.fade, steps: [{ at: holdEnd - e, phase: 'fade' }], end: left };
     return { init: 'fade', ramp: 0, fade: left, steps: [], end: left };
   };
-  /* overlayCard(overlay, npcDoc) -> what a card draws, or null when there is nothing to draw (an npc the page may not read draws
-     nothing at all). An npc card takes the same player-safe fields as the npc spotlight (Pure.playerNpc): name, alias, role and faction
-     and the figure's spec; never the description, gmNotes or anything else. And only for an NPC whose doc says `revealed: true`. */
-  Pure.overlayCard = function (o, npcDoc) {
+  /* overlayCard(overlay) -> what a card draws, or null when there is nothing to draw. An npc card draws only what the SERVER joined to the
+     overlay at read time (`o.npc`, present only while that NPC is revealed): name, alias, role and faction and the figure's spec, never the
+     description, gmNotes or anything else. The page does not read the cast for it, so the table's display-only sign-in (which cannot) draws
+     it too, and an overlay with no `npc` draws nothing at all. */
+  Pure.overlayCard = function (o) {
     if (!o) return null;
     if (o.kind === 'clock') return { kind: 'clock', name: o.name, size: o.size, filled: o.filled, count: o.filled + ' / ' + o.size, wedges: Pure.clockWedges(o.size, o.filled) };
     if (o.kind === 'text') return { kind: 'text', text: o.text, size: Pure.textSize(o.text) };
     if (o.kind === 'fx') return { kind: 'fx', fx: o.fx };
     if (o.kind === 'npc') {
-      /* defence in depth: the server checked `revealed` when the overlay was stored, but the cast may have changed since, and a GM sign-in
-         reads hidden rows in full. A hidden (or unmarked) NPC draws nothing. */
-      if (!npcDoc || npcDoc.revealed !== true) return null;
-      var n = Pure.playerNpc(npcDoc);
+      if (!o.npc) return null;
+      var n = Pure.playerNpc(o.npc);
       if (!n || !n.name) return null;
       return { kind: 'npc', name: n.name, alias: n.alias, sub: [n.role, n.faction].filter(Boolean).join(' · '), spec: n.spec };
     }
@@ -1386,19 +1392,57 @@
       function put(card) {
         if (!card || s.dead || my !== s.ov.token) return;
         var node = ovCardNode(card, o);
-        ovLayer.appendChild(node); s.ov.node = node;
+        ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o);
         later(function () { node.classList.add('dp-ov-in'); }, reduced() ? 0 : 30);
       }
-      if (o.kind === 'npc') loadNpc(ctx, o.npcId).then(function (doc) { put(Pure.overlayCard(o, doc)); });
-      else put(Pure.overlayCard(o, null));
+      /* an npc card is drawn from what the server joined to the overlay (o.npc); the page reads nothing of the cast for it */
+      put(Pure.overlayCard(o));
     }
+    /* A clock card follows its clock: the server joins the clock's name, size and LIVE fill to the overlay on every answer, so when the same id
+       arrives with another fill the card is redrawn in place (no new slide-in, the timers untouched). */
+    function ovSig(o) { return o.kind === 'clock' ? [o.name, o.size, o.filled].join('|') : ''; }
+    function ovRefresh(o) {
+      if (o.kind !== 'clock' || !s.ov.node || s.ov.sig === ovSig(o)) return;
+      var card = Pure.overlayCard(o); if (!card) return;
+      var old = s.ov.node, node = ovCardNode(card, o);
+      node.classList.add('dp-ov-in');
+      if (old.parentNode) old.parentNode.replaceChild(node, old);
+      s.ov.node = node; s.ov.sig = ovSig(o);
+    }
+    /* Lights out (a spotlight of kind dark): nothing the autopilot sent is drawn over it, and neither is the AUTO chip. One that is up when the
+       lights go out is taken off at once and its id stays seen, so it does not come back when the lights do (the server leaves it out of the answer
+       while it is dark, and puts it back after). The ambient part of an answer is applied BEFORE its display part, so an autopilot overlay that
+       arrives while this page still thinks it is dark is held until the display part says: drawn if the lights are back (this very answer),
+       dropped if not. A GM-pressed overlay (the dawn) carries no `auto` mark and may be drawn over black. */
+    s.dark = false; s.ov.auto = false; s.ov.chip = false; s.ov.held = null;
+    function ovPaintChip() { autoChip.hidden = !(s.ov.chip && !s.dark); }
+    function ovLightsOut(dark) {
+      s.dark = !!dark;
+      if (s.dark && s.ov.node && s.ov.auto) ovRemove(true);
+      var h = s.ov.held; s.ov.held = null;
+      if (h) { s.ov.seen = h.o.id; if (!s.dark && Date.now() - h.at < 8000) { ovShow(h.o); s.ov.auto = true; } }
+      ovPaintChip();
+    }
+    /* The ambient part brings the AUTO flag (and, from an older server, the overlay); the overlay itself comes on every answer as its own small
+       top-level field (onOverlay), applied after the display part. Once the field has been seen the ambient doc's copy is ignored. */
     function ovApply(doc) {
       var d = isObj(doc) ? doc : {};
-      autoChip.hidden = d.auto !== true;
-      var step = Pure.overlayStep(s.ov.seen, d.overlay);
-      s.ov.seen = step.seen;
-      if (step.action === 'show') ovShow(step.overlay);
-      else if (step.action === 'hide') ovRemove(false);
+      s.ov.chip = d.auto === true; ovPaintChip();
+      if (!s.ov.field) ovStep(d.overlay);
+    }
+    function ovApplyField(overlay) { s.ov.field = true; ovStep(overlay); }
+    function ovStep(raw) {
+      var before = s.ov.seen, step = Pure.overlayStep(before, raw);
+      s.ov.held = null;
+      if (step.action === 'show' && step.overlay.auto && s.dark) {
+        s.ov.held = { o: step.overlay, at: Date.now() };
+        ovRemove(true); s.ov.auto = false;
+      } else {
+        s.ov.seen = step.action === 'hide' && s.dark ? before : step.seen;
+        if (step.action === 'show') { ovShow(step.overlay); s.ov.auto = !!step.overlay.auto; }
+        else if (step.action === 'hide') ovRemove(false);
+        else ovRefresh(step.overlay);
+      }
       s.ov.applied = true;   /* the first look is the page's reload: an overlay found then carries on; one that arrives later plays whole */
     }
 
@@ -1640,6 +1684,7 @@
     function show(display, seq) {
       var my = ++s.token, vm = Pure.viewModel(display);
       if (vm.kind === 'blank') amb.uncover(); else amb.cover();                 /* a spotlight covers the ambient; blank lets it through */
+      ovLightsOut(vm.kind === 'dark');                                          /* lights out: no autopilot overlay, no AUTO chip */
       wireSync();
       if (vm.kind === 'npc') {
         loadNpc(ctx, vm.npcId).then(function (doc) {
@@ -1679,6 +1724,7 @@
         /* the transcriber's part of the answer goes to app/stt.js, which then makes no request of its own for it */
         onStt: function (part) { if (s.stt && typeof s.stt.feed === 'function') { try { s.stt.feed(part); } catch (e) { /* the page goes on */ } } },
         onData: function (display, seq, at) { s.seq = seq; s.updatedAt = at; paintStatus(); show(display, seq); },
+        onOverlay: function (overlay) { ovApplyField(overlay); },
         onStatus: function (p) { s.poll = p; paintStatus(); s.reloader.state(p.state); }
       });
       s.poller.start();

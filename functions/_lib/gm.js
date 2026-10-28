@@ -282,6 +282,51 @@ export async function loadDisplay(db, campaign) {
   return { seq: row.seq, display: isPlainObject(d) ? d : { ...BLANK_DISPLAY }, updatedAt: row.updated_at };
 }
 
+/**
+ * namesHit(text, names) -> true when the text holds any of the names as a whole word, any case ("Vex" is hit by "vex said", not by "Vexing").
+ * Whole word is Unicode-aware (letters, digits and _ are word characters), spaces in a name match any run of spaces, a name's own regex
+ * characters are escaped, names under two characters are not scanned, and a name that cannot be turned into a pattern counts as a hit
+ * (fail closed). The same rule as the GM page's namesHit (app/gm-page.js), which a test holds to this one on a shared list of cases.
+ */
+export function namesHit(text, names) {
+  const t = typeof text === 'string' ? text : '';
+  return (Array.isArray(names) ? names : []).some((n) => {
+    n = typeof n === 'string' ? n.replace(/\s+/g, ' ').trim() : '';
+    if (n.length < 2) return false;
+    const src = n.split(' ').map((w) => w.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('\\s+');
+    try { return new RegExp('(?:^|[^\\p{L}\\p{N}_])' + src + '(?![\\p{L}\\p{N}_])', 'iu').test(t); } catch (_) { return true; }
+  });
+}
+
+/**
+ * The names the players must not meet: every hidden clock's name and every hidden NPC's name and alias, read in ONE batch of two statements
+ * (the clocks cut out of the campaign row with json_extract, the NPCs that are not revealed). Run only when an overlay with free text is
+ * being SET; never on the display's poll.
+ */
+export async function loadHiddenNames(db, campaign) {
+  const [c, n] = await db.batch([
+    db.prepare("SELECT json_extract(doc, '$.clocks') AS clocks FROM campaigns WHERE id = ?1").bind(campaign),
+    db.prepare("SELECT json_extract(doc, '$.name') AS name, json_extract(doc, '$.alias') AS alias FROM npcs WHERE campaign = ?1 AND deleted = 0 AND COALESCE(json_extract(doc, '$.revealed'), 0) != 1").bind(campaign),
+  ]);
+  const out = [];
+  const row = c && c.results && c.results[0];
+  try {
+    const list = row && typeof row.clocks === 'string' ? JSON.parse(row.clocks) : [];
+    for (const k of Array.isArray(list) ? list : []) if (isPlainObject(k) && k.hidden && typeof k.name === 'string') out.push(k.name);
+  } catch (_) { /* no clocks */ }
+  for (const r of (n && n.results) || []) { if (typeof r.name === 'string') out.push(r.name); if (typeof r.alias === 'string') out.push(r.alias); }
+  return out;
+}
+
+/**
+ * Only the `kind` of the display now ('blank' while none is stored), read with json_extract in SQL: no JS parse of a document that can hold a
+ * 600 KiB map. For the one question the ambient handler asks (is the display in lights out?).
+ */
+export async function loadDisplayKind(db, campaign) {
+  const row = await db.prepare("SELECT json_extract(doc, '$.kind') AS kind FROM gm_display WHERE campaign = ?1").bind(campaign).first();
+  return row && typeof row.kind === 'string' ? row.kind : 'blank';
+}
+
 /** Store a display and bump seq, in one statement (no read-modify-write: the seq increments in SQL). */
 export async function putDisplay(db, campaign, display, ifSeq) {
   const now = nowIso();
@@ -320,10 +365,13 @@ function sceneId(v, name) {
 
 /**
  * The overlay (GM.md, "Overlays"): something laid over the iPad without replacing what is up. Pure shape checks; the one check that
- * needs the database (an npc overlay's NPC must be revealed) is assertOverlayNpc() in functions/_lib/npcs.js, run by the handler.
- * null removes it. Otherwise { id (at most 40), kind clock|npc|fx|text, ms 1000-180000 } plus, per kind, clock { name (at most 60),
- * size 4|6|8|10|12, filled 0..size }, npc { npcId }, fx { fx: 'dawn' }, text { text (at most 120) }. A fresh object is built, so any
- * other key is dropped; `at` is the server's time. No model text or prep text belongs in one: the GM page sends only what the GM chose.
+ * needs the database is run by the handler: an npc overlay's NPC must be revealed (assertRevealedNpc, functions/_lib/npcs.js) and a
+ * clock overlay's clock must be one the players can see (assertOverlayClock, functions/_lib/campaign.js). Neither is copied into the
+ * overlay: the display GET joins them to their rows when it is read (joinOverlayNpc, joinOverlayClock).
+ * null removes it. Otherwise { id (at most 40), kind clock|npc|fx|text, ms 1000-180000, auto? } plus, per kind, clock { clockId },
+ * npc { npcId }, fx { fx: 'dawn' }, text { text (at most 120) }. `auto: true` marks an overlay the autopilot sent (it never lights a
+ * blacked-out screen). A fresh object is built, so any other key (a clock's name, size or fill included) is dropped; `at` is the
+ * server's time. No model text or prep text belongs in one: the GM page sends only what the GM chose.
  */
 export function cleanOverlay(v) {
   if (v === null) return null;
@@ -331,13 +379,13 @@ export function cleanOverlay(v) {
   const id = str(v.id, 'overlay.id', OVERLAY.id, true).trim();
   if (typeof v.kind !== 'string' || !OVERLAY_KINDS.includes(v.kind)) throw new HttpError(400, 'overlay.kind must be one of ' + OVERLAY_KINDS.join(', '));
   if (!isInt(v.ms, OVERLAY.msMin, OVERLAY.msMax)) throw new HttpError(400, 'overlay.ms must be a whole number from ' + OVERLAY.msMin + ' to ' + OVERLAY.msMax);
+  if (v.auto !== undefined && v.auto !== null && typeof v.auto !== 'boolean') throw new HttpError(400, 'overlay.auto must be true or false');
   const out = { id, kind: v.kind, ms: v.ms };
+  if (v.auto === true) out.auto = true;
   if (v.kind === 'clock') {
-    if (!OVERLAY_CLOCK_SIZES.includes(v.size)) throw new HttpError(400, 'overlay.size must be one of ' + OVERLAY_CLOCK_SIZES.join(', '));
-    if (!isInt(v.filled, 0, v.size)) throw new HttpError(400, 'overlay.filled must be a whole number from 0 to the size');
-    out.name = str(v.name, 'overlay.name', OVERLAY.name, true).trim();
-    out.size = v.size;
-    out.filled = v.filled;
+    // the clock is named by its id; the handler looks it up (and refuses a hidden or missing one) and fills in the name, size and fill
+    if (typeof v.clockId !== 'string' || !ID_RE.test(v.clockId)) throw new HttpError(400, 'overlay.clockId is a bad id');
+    out.clockId = v.clockId;
   } else if (v.kind === 'npc') {
     if (typeof v.npcId !== 'string' || !ID_RE.test(v.npcId)) throw new HttpError(400, 'overlay.npcId is a bad id');
     out.npcId = v.npcId;
@@ -461,16 +509,29 @@ const ambientOf = (row) => {
  * left out (a reload of the display then replays nothing), and while it runs it carries `age`, the whole ms since the server set
  * `at`, so a reloaded display carries on from the right moment. Nothing is written and seq does not move. One comparison per poll;
  * an overlay with no readable `at` (stored before the server set one) is served as it is. `nowMs` is the server's own clock.
+ * `displayKind`, when given, is the kind the display is showing: an overlay the autopilot sent (`auto: true`) is left out while that is
+ * 'dark' (lights out), so nothing autopilot-driven lights a blacked-out screen. A GM-pressed overlay (the dawn) carries no such mark.
  */
-export function liveAmbient(amb, nowMs) {
+export function liveAmbient(amb, nowMs, displayKind) {
   const o = amb && amb.doc && amb.doc.overlay;
   if (!o || typeof o !== 'object') return amb;
+  if (o.auto === true && displayKind === 'dark') { const d = { ...amb.doc }; delete d.overlay; return { ...amb, doc: d }; }
   const at = typeof o.at === 'string' ? Date.parse(o.at) : NaN;
   if (!Number.isFinite(at) || !Number.isInteger(o.ms)) return amb;
   const age = Math.max(0, nowMs - at);
   const doc = { ...amb.doc };
   if (age >= o.ms) delete doc.overlay; else doc.overlay = { ...o, age: Math.floor(age) };
   return { ...amb, doc };
+}
+
+/**
+ * { seq, updatedAt, overlay }: the ambient row's seq and its stored overlay (or null), with the overlay cut out in SQL by json_extract, so the
+ * rest of the document (a score scene can be a megabyte) is neither read into JS nor parsed. What the display GET asks every poll.
+ */
+export async function loadAmbientLite(db, campaign) {
+  const row = await db.prepare("SELECT seq, updated_at, json_extract(doc, '$.overlay') AS overlay FROM gm_ambient WHERE campaign = ?1").bind(campaign).first();
+  const ov = row && typeof row.overlay === 'string' ? parseJson(row.overlay, null) : null;
+  return { seq: row ? row.seq : 0, updatedAt: row ? row.updated_at : null, overlay: isPlainObject(ov) ? ov : null };
 }
 
 /** { seq, doc, updatedAt }: `{ seq: 0, doc: {}, updatedAt: null }` while none is stored. */

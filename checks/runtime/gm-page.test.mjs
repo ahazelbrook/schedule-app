@@ -924,8 +924,9 @@ await test('9j. Off / Auto / Pin, a scene, the interval, Next scene and Clear sc
 
 await test('9j2. overlays: overlayOk takes exactly the server\'s shapes and no stray field; the gate lets an overlay or auto through only in that shape', () => {
   const ok = [
-    { id: 'a', kind: 'clock', ms: 8000, name: 'Invented Fuse', size: 6, filled: 2 }, { id: 'a', kind: 'clock', ms: 1000, name: 'n'.repeat(60), size: 12, filled: 12 },
+    { id: 'a', kind: 'clock', ms: 8000, clockId: 'c_fuse' }, { id: 'a', kind: 'clock', ms: 1000, clockId: 'c'.repeat(80), auto: true },
     { id: 'i'.repeat(40), kind: 'npc', ms: 180000, npcId: 'npc_x' }, { id: 'a', kind: 'fx', ms: 30000, fx: 'dawn' }, { id: 'a', kind: 'text', ms: 5000, text: 't'.repeat(120) },
+    { id: 'a', kind: 'npc', ms: 5000, npcId: 'npc_x', auto: true }, { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn', auto: false },
   ];
   ok.forEach((o) => assert.equal(P.overlayOk(o), true, JSON.stringify(o)));
   const bad = [
@@ -933,20 +934,40 @@ await test('9j2. overlays: overlayOk takes exactly the server\'s shapes and no s
     { id: '', kind: 'fx', ms: 5000, fx: 'dawn' }, { id: 'i'.repeat(41), kind: 'fx', ms: 5000, fx: 'dawn' }, { kind: 'fx', ms: 5000, fx: 'dawn' }, { id: 'a', kind: 'fx', ms: 5000, fx: 'dusk' },
     { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn', text: 'smuggled' }, { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn', svg: '<svg/>' }, { id: 'a', kind: 'text', ms: 5000, text: 'x', at: 'now' },
     { id: 'a', kind: 'text', ms: 5000, text: 'x'.repeat(121) }, { id: 'a', kind: 'text', ms: 5000, text: '  ' }, { id: 'a', kind: 'npc', ms: 5000, npcId: 'has space' }, { id: 'a', kind: 'npc', ms: 5000, npcId: 'npc_x', name: 'Name' },
-    { id: 'a', kind: 'clock', ms: 8000, name: '', size: 6, filled: 2 }, { id: 'a', kind: 'clock', ms: 8000, name: 'n'.repeat(61), size: 6, filled: 2 }, { id: 'a', kind: 'clock', ms: 8000, name: 'x', size: 5, filled: 2 },
-    { id: 'a', kind: 'clock', ms: 8000, name: 'x', size: 4, filled: 5 }, { id: 'a', kind: 'clock', ms: 8000, name: 'x', size: 4, filled: -1 }, { id: 'a', kind: 'clock', ms: 8000, name: 'x', size: 4, filled: 1.5 },
+    /* a clock is named by its id: no clockId, a bad one, or a name / size / fill smuggled beside it (the server resolves those) is not sent */
+    { id: 'a', kind: 'clock', ms: 8000 }, { id: 'a', kind: 'clock', ms: 8000, clockId: '' }, { id: 'a', kind: 'clock', ms: 8000, clockId: 'has space' }, { id: 'a', kind: 'clock', ms: 8000, clockId: 7 },
+    { id: 'a', kind: 'clock', ms: 8000, clockId: 'c'.repeat(81) }, { id: 'a', kind: 'clock', ms: 8000, clockId: 'c_fuse', name: 'Invented Fuse' }, { id: 'a', kind: 'clock', ms: 8000, clockId: 'c_fuse', size: 6, filled: 2 },
+    { id: 'a', kind: 'clock', ms: 8000, name: 'Invented Fuse', size: 6, filled: 2 }, { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn', auto: 'yes' }, { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn', auto: 1 },
   ];
   bad.forEach((o) => assert.equal(P.overlayOk(o), false, JSON.stringify(o)));
   const g = P.makeGate();
   assert.equal(g.allowsAmbient({ overlay: ok[3] }), true); assert.equal(g.allowsAmbient({ overlay: null }), true); assert.equal(g.allowsAmbient({ auto: true }), true); assert.equal(g.allowsAmbient({ auto: null }), true);
   assert.equal(g.allowsAmbient({ overlay: bad[12] }), false, 'a stray field'); assert.equal(g.allowsAmbient({ overlay: 'dawn' }), false); assert.equal(g.allowsAmbient({ auto: 1 }), false); assert.equal(g.allowsAmbient({ auto: 'yes' }), false);
   assert.equal(g.allowsAmbient({ mode: 'off', overlay: bad[5] }), false, 'a good key does not carry a bad overlay');
-  assert.equal(P.overlayLine(ok[3]), 'dawn · 30 s'); assert.equal(P.overlayLine(ok[0]), 'clock Invented Fuse 2/6 · 8 s'); assert.equal(P.overlayLine(null), ''); assert.equal(P.overlayLine({ kind: 'x' }), '');
+  /* a text overlay is free text: refused when it names a hidden clock or a hidden NPC as a whole word, in any case (positive controls beside each) */
+  const gh = P.makeGate(() => ['Vex', 'The Brass Fox', 'Mr. O\'Neil (Jr)', 'Zoë']);
+  const txt = (t) => ({ overlay: { id: 'a', kind: 'text', ms: 5000, text: t } });
+  assert.equal(gh.allowsAmbient(txt('A quiet evening by the invented pier.')), true, 'positive control: a line naming nobody hidden');
+  assert.equal(gh.allowsAmbient(txt('Vex was seen by the invented pier')), false, 'a hidden name');
+  assert.equal(gh.allowsAmbient(txt('the dock saw vex again')), false, 'any case');
+  assert.equal(gh.allowsAmbient(txt('the brass   fox is out')), false, 'a two-word name, any run of spaces');
+  assert.equal(gh.allowsAmbient(txt('"Vex," she said.')), false, 'punctuation is a boundary');
+  assert.equal(gh.allowsAmbient(txt('Mr. O\'Neil (Jr) arrived')), false, 'a name with regex characters is matched literally');
+  assert.equal(gh.allowsAmbient(txt('Zoë waits')), false, 'a name with a non-ASCII letter');
+  assert.equal(gh.allowsAmbient(txt('Vexing weather tonight')), true, 'but not inside a longer word (Vexing)');
+  assert.equal(gh.allowsAmbient(txt('Convex lenses')), true, 'nor at the end of one');
+  assert.equal(gh.allowsAmbient(txt('Zoëtrope')), true, 'nor a non-ASCII word that merely starts with one');
+  assert.equal(gh.allowsAmbient({ overlay: { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn' } }), true, 'the scan is for text; a dawn passes');
+  assert.equal(gh.allowsAmbient({ overlay: ok[0], auto: true }), true, 'an id-only clock overlay passes (the server names it)');
+  assert.equal(P.makeGate(() => { throw new Error('x'); }).allowsAmbient(txt('hello')), false, 'a failing name source fails closed');
+  assert.deepEqual([P.namesHit('Vex!', ['Vex']), P.namesHit('Vexed', ['Vex']), P.namesHit('x', ['x']), P.namesHit('', ['Vex']), P.namesHit('Vex', [])], [true, false, false, false, false], 'one-letter names are not scanned');
+  assert.equal(P.overlayLine(ok[3]), 'dawn · 30 s'); assert.equal(P.overlayLine({ id: 'a', kind: 'clock', ms: 8000, clockId: 'c_fuse' }, (id) => (id === 'c_fuse' ? { name: 'Invented Fuse', size: 6, filled: 2 } : null)), 'clock Invented Fuse 2/6 · 8 s', 'a clock overlay holds its id only: the line takes the clock from the table\'s own clocks');
+  assert.equal(P.overlayLine({ id: 'a', kind: 'clock', ms: 8000, clockId: 'c_gone' }, () => null), 'a table clock · 8 s', 'a clock the table no longer has is not named'); assert.equal(P.overlayLine({ id: 'a', kind: 'clock', ms: 8000, clockId: 'c_fuse' }), 'a table clock · 8 s'); assert.equal(P.overlayLine(null), ''); assert.equal(P.overlayLine({ kind: 'x' }), '');
   assert.equal(P.ipadView({ overlay: ok[3], auto: true }).overlayLine, 'dawn · 30 s'); assert.equal(P.ipadView({ overlay: ok[3], auto: true }).auto, true); assert.equal(P.ipadView({}).overlayLine, '');
 });
 
 await test('9j3. showOverlay and clearOverlay go through the ambient PATCH (so the gate runs); the iPad panel names the overlay and has Clear overlay; a bad overlay is refused before it is sent', async () => {
-  const fg = addAmbient(fakeGm()), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
+  const fg = addAmbient(fakeGm()), br = fakeBrowser(); const h = await openPage({ fg, br, camp: { ...CAMP3, clocks: [{ id: 'c_fuse', name: 'Invented Fuse', size: 8, filled: 3, kind: 'danger', hidden: false }] } });
   await openIpad(h);
   const n0 = fg.server.ambPatches.length;
   assert.equal(typeof h.page.showOverlay, 'function'); assert.equal(typeof h.page.clearOverlay, 'function');
@@ -955,10 +976,17 @@ await test('9j3. showOverlay and clearOverlay go through the ambient PATCH (so t
   assert.equal(fg.server.ambPatches.length, n0 + 1);
   const sent = fg.server.ambPatches[n0];
   assert.deepEqual(Object.keys(sent), ['overlay']); assert.deepEqual(Object.keys(sent.overlay).sort(), ['fx', 'id', 'kind', 'ms']);
-  assert.match(sent.overlay.id, /^ov-[a-z0-9]+$/); assert.ok(sent.overlay.id.length <= 40); assert.equal(sent.overlay.kind, 'fx');
+  assert.match(sent.overlay.id, /^o[a-z0-9]+-\d+$/, 'an opaque id: a per-load prefix and a counter'); assert.ok(sent.overlay.id.length <= 40); assert.equal(sent.overlay.kind, 'fx');
   assert.match(h.q('#gm-ipad-overlay').textContent, /^Overlay sent: dawn · 30 s$/, 'drawn from the answer');
-  await h.page.showOverlay({ id: 'my-own', kind: 'clock', ms: 8000, name: 'Invented Fuse', size: 8, filled: 3 });
+  const idA = sent.overlay.id;
+  await h.page.showOverlay({ id: 'my-own', kind: 'clock', ms: 8000, clockId: 'c_fuse' });
   assert.equal(fg.server.ambPatches[n0 + 1].overlay.id, 'my-own', 'a given id is kept');
+  assert.deepEqual(Object.keys(fg.server.ambPatches[n0 + 1].overlay).sort(), ['clockId', 'id', 'kind', 'ms'], 'a clock goes by its id: no name leaves the page');
+  await h.page.showOverlay({ kind: 'npc', ms: 5000, npcId: 'npc_x' });
+  const idB = fg.server.ambPatches[n0 + 2].overlay.id;
+  assert.notEqual(idA, idB); assert.equal(idB.split('-')[0], idA.split('-')[0], 'one prefix per page load'); assert.equal(Number(idB.split('-')[1]), Number(idA.split('-')[1]) + 1, 'and a counter');
+  assert.ok(!/npc|x$/.test(idB), 'never built from the NPC id');
+  await h.page.showOverlay({ id: 'my-own', kind: 'clock', ms: 8000, clockId: 'c_fuse' });
   assert.match(h.q('#gm-ipad-overlay').textContent, /clock Invented Fuse 3\/8 · 8 s/);
   /* refused before any request: a bad kind, a stray field, an svg, a too-long text, junk */
   br.toasts.length = 0;
@@ -966,11 +994,11 @@ await test('9j3. showOverlay and clearOverlay go through the ambient PATCH (so t
     const r = await h.page.showOverlay(bad); assert.equal(r, null, JSON.stringify(bad));
   }
   assert.equal(await h.page.showOverlay(null), null); assert.equal(await h.page.showOverlay('dawn'), null);
-  assert.equal(fg.server.ambPatches.length, n0 + 2, 'nothing was sent for them'); assert.equal(br.toasts.length, 5);
+  assert.equal(fg.server.ambPatches.length, n0 + 4, 'nothing was sent for them'); assert.equal(br.toasts.length, 5);
   /* the Clear overlay control */
   const btn = h.q('#gm-ipad [data-gm="clearoverlay"]'); assert.ok(btn && /Clear overlay/.test(btn.textContent), 'the iPad panel has Clear overlay');
-  btn.click(); await until(() => fg.server.ambPatches.length === n0 + 3);
-  assert.deepEqual(fg.server.ambPatches[n0 + 2], { overlay: null }); await until(() => !h.q('#gm-ipad-overlay'));
+  btn.click(); await until(() => fg.server.ambPatches.length === n0 + 5);
+  assert.deepEqual(fg.server.ambPatches[n0 + 4], { overlay: null }); await until(() => !h.q('#gm-ipad-overlay'));
   assert.equal(fg.server.amb.doc.overlay, undefined);
   await h.page.showOverlay({ kind: 'text', ms: 5000, text: 'Invented line.' }); await h.page.clearOverlay();
   assert.deepEqual(fg.server.ambPatches[fg.server.ambPatches.length - 1], { overlay: null }, 'clearOverlay() sends null');
@@ -3899,6 +3927,142 @@ await test('19f. the rules (BitD p.16, p.173, p.262–263): the opposing clock t
   h.q('#gm-chase [data-gm="ch-set"][data-k="level"][data-v="above"]').click(); assert.equal(h.q('#gm-ch-outcome option[selected]').getAttribute('value'), 'caught', 'a switch keeps the pick');
   h.q('#gm-chase [data-gm="ch-end"]').click();
   assert.ok(Object.values(JSON.parse(JSON.stringify(h.page._state().doc.chase.past))).some((x) => x.outcome === 'caught'));
+  await h.save();
+});
+
+/* =====================================================================================================================
+   A2. The autopilot's driver (A2): the page feeding B68GmAutopilot, with a fake window that holds the page's 1 s timer
+   ===================================================================================================================== */
+const AP = require(path.join(ROOT, 'app', 'gm', 'autopilot.js'));
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+function apRig() {
+  /* the page has other intervals (listening, prep): only the autopilot's own, every 1000 ms, is counted */
+  const timers = new Map(), calls = { set: 0, clear: 0 }; let n = 0;
+  const W = { B68GmAutopilot: AP, setInterval: (fn, ms) => { const id = ++n; timers.set(id, ms); if (ms === 1000) calls.set++; return id; }, clearInterval: (id) => { if (timers.get(id) === 1000) calls.clear++; timers.delete(id); } };
+  return { W, timers, calls, live: () => [...timers.values()].filter((ms) => ms === 1000).length };
+}
+const CLK = (id, name, filled, hidden) => ({ id, name, size: 8, filled, kind: 'danger', hidden: !!hidden });
+const apCamp = (clocks, scene) => ({ session: { number: 3 }, crew: { heat: 3, wanted: 1 }, clocks: clocks.map(cl), ...(scene ? { scene } : {}) });
+const setPatches = (fg) => fg.server.ambPatches.filter((p) => p.overlay && p.overlay.kind);
+const clearPatches = (fg) => fg.server.ambPatches.filter((p) => 'overlay' in p && p.overlay === null);
+/* a cast the page reads through db().collection('npcs'): rig.cast is edited and rig.push() sends the page a new snapshot */
+function castRig(cast) {
+  const rig = { cast: cl(cast), cbs: [] };
+  const snap = () => ({ docs: Object.keys(rig.cast).map((id) => ({ id, data: () => cl(rig.cast[id]) })) });
+  rig.api = { db: () => ({ collection: () => ({ onSnapshot: (cb) => { rig.cbs.push(cb); cb(snap()); return () => {}; } }) }) };
+  rig.push = () => rig.cbs.forEach((cb) => cb(snap()));
+  return rig;
+}
+
+await test('A2a. a hidden NPC\'s ALIAS is refused in a text overlay like its name (positive controls beside each), and follows the cast when it is revealed', async () => {
+  const rig = castRig({ npc_h: { name: 'Hidden Invented Person', alias: 'Shade', revealed: false, spec: {} }, npc_s: { name: 'Seen Invented', alias: 'Beacon', revealed: true, spec: {} } });
+  const fg = addAmbient(fakeGm()); const h = await openPage({ fg, camp: CAMP3, api: rig.api });
+  const n0 = fg.server.ambPatches.length;
+  const send = (text) => h.page.showOverlay({ kind: 'text', ms: 5000, text });
+  assert.equal(await send('Shade waits by the door'), null, 'the hidden NPC\'s alias');
+  assert.equal(await send('a word with shade in it? no: SHADE, the courier'), null, 'any case');
+  assert.equal(await send('Hidden Invented Person waits by the door'), null, 'and its name');
+  assert.equal(fg.server.ambPatches.length, n0, 'nothing was sent for them');
+  assert.ok(await send('Beacon waits by the door'), 'positive control: a REVEALED NPC\'s alias is only a word');
+  assert.ok(await send('Shading light by the door'), 'and a longer word that merely starts with it passes');
+  rig.cast.npc_h.revealed = true; rig.push();
+  assert.ok(await send('Shade waits by the door'), 'once revealed, the alias is allowed');
+  await h.save();
+});
+
+await test('A2b. a clock overlay goes by id; hiding or removing the clock clears the autopilot\'s overlay at once (positive control: another clock is left alone); a clock hidden inside the settle never shows', async () => {
+  const r = apRig(), fg = addAmbient(fakeGm());
+  const C0 = [CLK('c_a1', 'Invented Fuse', 0), CLK('c_b2', 'Invented Wick', 0), CLK('c_h3', 'Invented Hush', 0, true)];
+  const h = await openPage({ fg, camp: apCamp(C0), over: r.W });
+  const upd = (list) => h.page.campaign(apCamp(list));
+  upd([CLK('c_a1', 'Invented Fuse', 0), CLK('c_b2', 'Invented Wick', 0), CLK('c_h3', 'Invented Hush', 2, true)]); await sleepMs(1400);
+  assert.equal(setPatches(fg).length, 0, 'a hidden clock ticking sends nothing');
+  upd([CLK('c_a1', 'Invented Fuse', 1), CLK('c_b2', 'Invented Wick', 0), CLK('c_h3', 'Invented Hush', 2, true)]);
+  assert.ok(await until(() => setPatches(fg).length === 1, 800), 'a visible tick sets one overlay (after the settle)');
+  const sent = setPatches(fg)[0];
+  assert.deepEqual(Object.keys(sent).sort(), ['auto', 'overlay']); assert.equal(sent.auto, true);
+  assert.deepEqual(Object.keys(sent.overlay).sort(), ['auto', 'clockId', 'id', 'kind', 'ms'], 'an id and nothing of the clock'); assert.equal(sent.overlay.clockId, 'c_a1');
+  assert.ok(!JSON.stringify(fg.server.ambPatches).includes('Invented'), 'no clock name left the page');
+  assert.equal(fg.server.amb.doc.overlay.id, sent.overlay.id);
+  /* another clock ticking hidden does not clear it (positive control), then the shown clock is hidden: cleared */
+  upd([CLK('c_a1', 'Invented Fuse', 1), CLK('c_b2', 'Invented Wick', 0), CLK('c_h3', 'Invented Hush', 3, true)]); await sleepMs(300);
+  assert.equal(clearPatches(fg).length, 0, 'an unrelated change clears nothing');
+  upd([CLK('c_a1', 'Invented Fuse', 1, true), CLK('c_b2', 'Invented Wick', 0), CLK('c_h3', 'Invented Hush', 3, true)]);
+  assert.ok(await until(() => clearPatches(fg).length === 1 && !fg.server.amb.doc.overlay, 800), 'hiding the shown clock takes its overlay down at once');
+  assert.equal(h.page._autopilot().mode, 'ready'); assert.equal(h.page._autopilot().showing, null);
+  /* a second clock: shown, then REMOVED from the table */
+  upd([CLK('c_a1', 'Invented Fuse', 1, true), CLK('c_b2', 'Invented Wick', 1), CLK('c_h3', 'Invented Hush', 3, true)]);
+  assert.ok(await until(() => setPatches(fg).length === 2 && fg.server.amb.doc.overlay, 800), 'the other clock shows at once (taking it down was the GM winning: no cooldown)');
+  upd([CLK('c_a1', 'Invented Fuse', 1, true), CLK('c_h3', 'Invented Hush', 3, true)]);
+  assert.ok(await until(() => clearPatches(fg).length === 2 && !fg.server.amb.doc.overlay, 800), 'removing the shown clock takes its overlay down');
+  /* made and hidden inside the settle: never shown. A made one that stays visible is (positive control). */
+  const n = setPatches(fg).length;
+  upd([CLK('c_a1', 'Invented Fuse', 1, true), CLK('c_h3', 'Invented Hush', 3, true), CLK('c_n4', 'Invented New', 0)]);
+  upd([CLK('c_a1', 'Invented Fuse', 1, true), CLK('c_h3', 'Invented Hush', 3, true), CLK('c_n4', 'Invented New', 0, true)]);
+  await sleepMs(1500); assert.equal(setPatches(fg).length, n, 'made visible then hidden inside the settle: nothing shown');
+  upd([CLK('c_a1', 'Invented Fuse', 1, true), CLK('c_h3', 'Invented Hush', 3, true), CLK('c_n4', 'Invented New', 0, true), CLK('c_n5', 'Invented Other', 0)]);
+  assert.ok(await until(() => setPatches(fg).length === n + 1, 800), 'a new visible clock is shown');
+  await h.save();
+});
+
+await test('A2c. Switch off then on: off writes auto false, shows nothing while off (and remembers it for a reload); on writes auto true and shows again', async () => {
+  const r = apRig(), fg = addAmbient(fakeGm()), br = fakeBrowser(r.W);
+  const h = await openPage({ fg, br, camp: apCamp([CLK('c_a1', 'Invented Fuse', 0)]), over: r.W });
+  await openIpad(h);
+  assert.equal(h.page._autopilot().mode, 'ready');
+  h.page.campaign(apCamp([CLK('c_a1', 'Invented Fuse', 1)]));
+  assert.ok(await until(() => setPatches(fg).length === 1 && fg.server.amb.doc.auto === true, 800), 'a tick shows (and the AUTO flag goes up with it)');
+  const sw = h.q('[data-gm="apoff"]'); assert.ok(sw && /Switch off/.test(sw.textContent));
+  sw.click();
+  assert.equal(h.page._autopilot().mode, 'off');
+  assert.ok(await until(() => fg.server.ambPatches.some((p) => p.auto === false && !p.overlay), 400), 'auto false is written');
+  assert.ok(await until(() => !fg.server.amb.doc.overlay, 400), 'and what it had put up is taken down');
+  assert.deepEqual(Object.keys(JSON.parse(h.br.ls.get('b68.gm.autopilot'))).sort(), ['at', 'mode']); assert.equal(JSON.parse(h.br.ls.get('b68.gm.autopilot')).mode, 'off', 'remembered for a reload');
+  const n0 = setPatches(fg).length;
+  h.page.campaign(apCamp([CLK('c_a1', 'Invented Fuse', 2)])); await sleepMs(1500);
+  assert.equal(setPatches(fg).length, n0, 'nothing is shown while off'); assert.deepEqual(h.page._autopilot().pending, {}, 'and nothing queues');
+  assert.equal(h.q('#gm-bar-ap').textContent, 'Auto off');
+  h.q('[data-gm="aptoggle"]').click();
+  assert.equal(h.page._autopilot().mode, 'ready'); assert.equal(h.br.ls.has('b68.gm.autopilot'), false, 'the memory is cleared');
+  assert.ok(await until(() => fg.server.ambPatches.some((p) => p.auto === true && !p.overlay), 400), 'auto true is written');
+  assert.equal(h.q('#gm-bar-ap').textContent, 'Auto');
+  h.page.campaign(apCamp([CLK('c_a1', 'Invented Fuse', 3)]));
+  assert.ok(await until(() => setPatches(fg).length === n0 + 1, 800), 'and it shows again');
+  await h.save();
+});
+
+await test('A2d. closing the page: the timer stops, its own overlay and the AUTO flag are taken down; with nothing sent, closing writes nothing', async () => {
+  const r = apRig(), fg = addAmbient(fakeGm());
+  const h = await openPage({ fg, camp: apCamp([CLK('c_a1', 'Invented Fuse', 0)]), over: r.W });
+  assert.equal(r.live(), 1, 'one timer');
+  h.page.campaign(apCamp([CLK('c_a1', 'Invented Fuse', 1)]));
+  assert.ok(await until(() => setPatches(fg).length === 1 && fg.server.amb.doc.overlay, 800));
+  assert.equal(fg.server.amb.doc.auto, true);
+  const before = fg.server.ambPatches.length;
+  await h.page.close(); await sleepMs(30);
+  assert.equal(r.live(), 0, 'the timer is cleared'); assert.equal(r.calls.clear, 1);
+  assert.equal(fg.server.ambPatches.length, before + 1, 'one patch on the way out');
+  assert.deepEqual(fg.server.ambPatches[before], { auto: null, overlay: null });
+  assert.ok(!('overlay' in fg.server.amb.doc) && !('auto' in fg.server.amb.doc), 'overlay and flag are gone from the document');
+  /* nothing sent: nothing written on close */
+  const r2 = apRig(), fg2 = addAmbient(fakeGm()); const h2 = await openPage({ fg: fg2, camp: apCamp([CLK('c_a1', 'Invented Fuse', 0)]), over: r2.W });
+  await h2.page.close(); await sleepMs(30);
+  assert.equal(fg2.server.ambPatches.length, 0, 'closing an idle page writes nothing'); assert.equal(r2.live(), 0);
+});
+
+await test('A2e. start() running again on the same page (Update pack, then Cancel) keeps the controller: one timer, and what is showing is not forgotten', async () => {
+  const r = apRig(), fg = addAmbient(fakeGm());
+  const h = await openPage({ fg, camp: apCamp([CLK('c_a1', 'Invented Fuse', 0)]), over: r.W });
+  h.page.campaign(apCamp([CLK('c_a1', 'Invented Fuse', 1)]));
+  assert.ok(await until(() => setPatches(fg).length === 1 && fg.server.amb.doc.overlay, 800));
+  const id = h.page._autopilot().showing.id; assert.equal(r.calls.set, 1);
+  h.q('[data-gm="update"]').click();
+  assert.ok(await until(() => h.q('[data-gm="cancel-import"]')), 'the import screen is up');
+  h.q('[data-gm="cancel-import"]').click();
+  assert.ok(await until(() => h.page._state().status === 'ready' && h.q('#gm-root') && h.q('#gm-bar-ap')), 'and the page is ready again');
+  assert.equal(r.calls.set, 1, 'no second timer'); assert.equal(r.live(), 1);
+  assert.equal(h.page._autopilot().showing && h.page._autopilot().showing.id, id, 'the overlay it is showing is still its own');
+  assert.equal(h.q('#gm-bar-ap').textContent, 'Auto', 'and the bar is painted again');
   await h.save();
 });
 

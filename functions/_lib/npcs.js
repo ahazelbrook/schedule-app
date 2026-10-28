@@ -122,6 +122,42 @@ export async function assertRevealedNpc(db, campaign, id) {
   if (!isLiveNpc(row, campaign) || parseNpc(row).revealed !== true) throw new HttpError(400, 'overlay.npcId must be a revealed NPC');
 }
 
+/**
+ * The ambient part as the display is served it, with an npc overlay joined to its row at READ time (GET /api/gm/display, after
+ * liveAmbient). The stored overlay holds only the NPC's id; here, while that NPC is live, in this campaign and `revealed: true`, a
+ * copy of the overlay in the answer gains `npc`: exactly name, alias, role, faction and the figure's spec (never description, gmNotes,
+ * tags, revealed, or anything else; each field is copied by name, the row is never spread). Otherwise the overlay is left out of the
+ * answer, so a display, including the table's display-only sign-in (which cannot read the cast), draws the card from this or not at
+ * all. One read by primary key, and only when the overlay is an npc one. Returns { amb, dropped }: `dropped` says an overlay was
+ * left out because its NPC is no longer revealed (the caller then sends the ambient part in full, so a display that holds the card
+ * sees it go).
+ */
+export async function joinOverlayNpc(db, campaign, amb) {
+  const o = amb && amb.doc && amb.doc.overlay;
+  if (!o || typeof o !== 'object' || o.kind !== 'npc') return { amb, dropped: false };
+  const row = typeof o.npcId === 'string' && ID_RE.test(o.npcId) ? await loadNpcRow(db, o.npcId) : null;
+  const doc = row && isLiveNpc(row, campaign) ? parseNpc(row) : null;
+  const next = { ...amb.doc };
+  if (!doc || doc.revealed !== true) { delete next.overlay; return { amb: { ...amb, doc: next }, dropped: true }; }
+  const text = (v) => (typeof v === 'string' ? v : '');
+  next.overlay = { ...o, npc: { name: text(doc.name), alias: text(doc.alias), role: text(doc.role), faction: text(doc.faction), spec: drawingSpec(doc.spec) } };
+  return { amb: { ...amb, doc: next }, dropped: false };
+}
+
+/**
+ * The top-level keys of a figure spec that draw the figure (the figure kit's normalise() and rig read exactly these). The join below
+ * copies only them, so a label (name, plate, code, halo, id) or any key someone added to a spec never reaches the display. The
+ * unit test checks every key the kit's normalise() produces is here or is one of the labels left out.
+ */
+export const FIGURE_SPEC_KEYS = ['v', 'figure', 'shape', 'build', 'heightIn', 'skin', 'age', 'seed', 'body', 'bigLeg', 'pose', 'head', 'heads', 'face', 'hair', 'jewelry', 'jewellery', 'outfit', 'props', 'companion'];
+export const FIGURE_SPEC_LABELS = ['id', 'name', 'plate', 'code', 'halo'];
+export function drawingSpec(spec) {
+  if (!isPlainObject(spec)) return null;
+  const out = {};
+  for (const k of FIGURE_SPEC_KEYS) if (k in spec) out[k] = spec[k];
+  return out;
+}
+
 /** The newest updated_at over every row of the campaign, tombstones included (the adapter's cheap change stamp). */
 export async function npcsUpdatedAt(db, campaign) {
   const row = await db.prepare('SELECT MAX(updated_at) AS at FROM npcs WHERE campaign = ?1').bind(campaign).first();
