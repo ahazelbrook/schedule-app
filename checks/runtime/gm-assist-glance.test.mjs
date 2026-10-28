@@ -207,6 +207,21 @@ await test('tick -> GET /cards round trip: the Ref card, the Ledger update and t
   assert.deepEqual([back.updates[0].kind, back.updates[0].headline, back.updates[0].bullets], ['note', tick.updates[0].text, []]);
 });
 
+await test('a Ledger line over 90 characters keeps its whole text as the headline, on the tick and after a reload (it is a one-tap update, not a clipped card)', async () => {
+  clock.t = Date.parse('2030-05-05T11:30:00.000Z');
+  const s = await setup(LEGACY);
+  const note = 'paid the harbour clerk twice over for a berth that the crew never actually used before the watch changed';
+  assert.ok(('21:14 Quill coin ' + note).length > 90);
+  s.replies.ledger = { events: [{ at: '21:14', who: 'Quill', kind: 'coin', note }], xp_totalled: false };
+  await s.lines(3);
+  const tick = await body(await s.req('tick', 'POST', {}));
+  const u = tick.updates[0];
+  assert.ok(u.text.length > 90);
+  assert.deepEqual([u.kind, u.headline, u.bullets], ['note', u.text, []]);
+  const back = (await body(await s.req('cards', 'GET'))).updates[0];
+  assert.deepEqual([back.kind, back.headline, back.bullets], ['note', u.text, []]);
+});
+
 await test('tick: a Ref card with a check from the seat carries it into the answer and the reload', async () => {
   clock.t = Date.parse('2030-05-05T12:00:00.000Z');
   const s = await setup(LEGACY);
