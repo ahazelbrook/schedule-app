@@ -18,11 +18,36 @@ const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').tr
 const clip = (s, n = 280) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, n);
 const seenKeys = (recent, now, windowMs) => new Set(recent.filter((r) => Number.isFinite(r.at) && now - r.at < windowMs).flatMap((r) => r.keys || []));
 
+/** A name folded for comparison: accents stripped, lower case, anything but letters and digits collapsed to single spaces. */
+export function foldName(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/** True when the edit distance between a and b is 0 or 1 (insert, delete or substitute one character). */
+function withinOne(a, b) {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
+  const [s, l] = a.length < b.length ? [a, b] : [b, a];
+  return s.slice(i) === l.slice(i + 1);
+}
+
+/** Is `name` one already noted? Same name once folded; or, for names of 5 letters or more, one edit apart (Varnek / Barnek / BARNEK). */
+export function isKnownName(name, known = []) {
+  const n = foldName(name);
+  if (!n) return false;
+  const long = n.replace(/ /g, '').length >= 5;
+  return known.some((k) => { const f = foldName(k); return f && (f === n || (long && f.replace(/ /g, '').length >= 5 && withinOne(f, n))); });
+}
+
 /**
  * One Tap seat's JSON -> { seat, text, keys } or null when it has nothing worth a card (the usual case).
  * Clerk and Ledger items already shown in the last 10 minutes are left out first, so an overlapping window does not repeat them.
+ * `known` (Clerk only): names already noted tonight or already in the cast; a new name that matches one is dropped, and a card left with nothing is null.
  */
-export function toCandidate(seat, json, { recent = [], now = 0 } = {}) {
+export function toCandidate(seat, json, { recent = [], now = 0, known = [] } = {}) {
   if (!json || typeof json !== 'object') return null;
   if (seat === 'ref') {
     if (!json.slip || !clip(json.card)) return null;
@@ -32,7 +57,7 @@ export function toCandidate(seat, json, { recent = [], now = 0 } = {}) {
   const seen = seenKeys(recent, now, REPEAT_WINDOW_MS);
   if (seat === 'clerk') {
     const items = [];
-    for (const n of json.new_names || []) items.push({ key: 'clerk:name:' + norm(n), text: 'New name: ' + clip(n, 60) });
+    for (const n of json.new_names || []) if (!isKnownName(n, known)) items.push({ key: 'clerk:name:' + norm(n), text: 'New name: ' + clip(n, 60) });
     for (const d of json.drift || []) items.push({ key: 'clerk:drift:' + norm(d).slice(0, 80), text: 'Canon: ' + clip(d, 160) });
     for (const c of json.clues_landed || []) items.push({ key: 'clerk:clue:' + norm(c).slice(0, 80), text: 'Clue: ' + clip(c, 160) });
     const fresh = items.filter((i) => i.key !== 'clerk:name:' && !seen.has(i.key));

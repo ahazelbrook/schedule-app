@@ -104,13 +104,31 @@ title: a short label for the document (a few words). text: the document. Reply w
     },
   },
 
-  // Ask Blade (the GM's own question in the box, mid-session): a plain-text answer for the GM's eyes only, so it has no schema and
-  // nothing here reaches the players' screen. The GM reads it, so it may draw on hidden prep; it marks what is secret.
+  // Ask Blade (the GM's own question in the box, mid-session): a structured answer for the GM's eyes only; nothing here reaches the players'
+  // screen. The GM reads it, so it may draw on hidden prep; GM-only lines go in `secret`. The Worker clips every field in code.
   ask: {
     model: 'claude-opus-5-5', effort: 'medium', maxTokens: 8000,   // thinking shares the limit: the answer is short, the room for it is not
-    instructions: `You are Blade, the GM's assistant at the table for a Blades '68 game. The GM has typed a question or a request mid-session (ideas to pitch, a scene to write, what an NPC or faction would do, a complication, a ruling, a recap). Answer the GM directly from the rules, cast, factions and prep in your context, the story so far and the recent talk. Lead with the answer, no preamble; short paragraphs or a short list. When asked for ideas or options give three distinct ones unless a number is given. Narration meant to be read aloud should be readable aloud.
-This is for the GM's eyes only, so you may draw on hidden prep, but mark anything from the never-reveal list with "(secret)" so it is not read out by accident.
-A scene for the table frames the moment and ends on an open question or choice for the players; never decide what a player character does, thinks or feels. Use only what is in your context or the talk; never invent established facts (new colour is fine when asked for ideas, but say it is new). Australian spelling. Under 350 words unless asked for more. Plain text, no markdown headings.`,
+    instructions: `You are Blade, the GM's assistant at the table for a Blades '68 game. The GM has typed a question or a request mid-session (ideas to pitch, a scene to write, what an NPC or faction would do, a complication, a ruling, a recap). Answer the GM directly from the rules, cast, factions and prep in your context, the story so far and the recent talk. Lead with the answer, no preamble. When asked for ideas or options give three distinct ones unless a number is given.
+The GM reads this on a small panel, so it is split into fields. Reply with JSON only.
+kind: what sort of answer it is: rule (a ruling), say (narration to read aloud), idea (options or a twist), npc (what a person or faction does), recap, or other.
+headline: the answer in one line, under 12 words.
+bullets: the answer itself as at most 5 short points, each under 15 words, the most useful first. An empty list when the headline is enough.
+say: a read-aloud block, only when narration or a spoken line is asked for, readable aloud as written; otherwise an empty string.
+secret: anything from the never-reveal list or other GM-only prep that the answer leans on, so it is not read out by accident; otherwise an empty string.
+more: whatever else is worth having, as plain short paragraphs; otherwise an empty string.
+A scene for the table frames the moment and ends on an open question or choice for the players; never decide what a player character does, thinks or feels. Use only what is in your context or the talk; never invent established facts (new colour is fine when asked for ideas, but say it is new). Australian spelling.`,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        kind: { type: 'string', enum: ['rule', 'say', 'idea', 'npc', 'recap', 'other'] },
+        headline: { type: 'string', description: 'the answer in one line, under 12 words' },
+        bullets: { type: 'array', items: { type: 'string', description: 'under 15 words' }, description: 'at most 5 short points' },
+        say: { type: 'string', description: 'a read-aloud block, only when narration is asked for; otherwise empty' },
+        secret: { type: 'string', description: 'GM-only lines; otherwise empty' },
+        more: { type: 'string', description: 'the rest, plain short paragraphs; otherwise empty' },
+      },
+      required: ['kind', 'headline', 'bullets', 'say', 'secret', 'more'],
+    },
   },
 
   wire: {

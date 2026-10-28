@@ -20,7 +20,7 @@
 
 import { WAKES } from './seats.js';
 
-export const DEFAULT_CAP = 20;                       // dollars a night (a Worker setting; the Console has its own monthly limit)
+export const DEFAULT_CAP = 30;                       // dollars a night (a Worker setting; the Console has its own monthly limit)
 export const LADDER = { reduced: 0.6, core: 0.85, off: 1 };
 export const DROPPED_WHEN_REDUCED = ['meanwhile', 'showrunner', 'mystery', 'wire'];   // the Screen's Wire goes at 60%; Portrait, Prop and Ask Blade are not Core seats, so they go at 85%; the Board is code and always runs
 export const CORE_SEATS = ['fixer', 'ref', 'ledger', 'voice_plus', 'gatekeeper'];   // the gatekeeper runs to the cap like Ref: nothing reaches the players' screen unchecked

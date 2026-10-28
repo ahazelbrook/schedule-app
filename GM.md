@@ -830,7 +830,7 @@ not the Deepgram key), `npm run gm:transcript -- --install` writes a hidden laun
 **Listening** on (the iPad transcriber above), because it reads that transcript. About once a minute it asks a cheap
 seat whether anything at the table needs a second look, wakes other seats only when the answer is yes, and shows at most
 one card per five minutes. Quiet is the normal state. Tonight's spend is counted from the log against a **cap**
-(`ASSIST_CAP_USD`, default $20): the budget ladder drops the optional seats at 60% and keeps only the core ones at 85%,
+(`ASSIST_CAP_USD`, default $30): the budget ladder drops the optional seats at 60% and keeps only the core ones at 85%,
 and at the cap nothing runs. The box says so when it is off. With the box off, no key, or the cap reached, the console
 works exactly as it does without it.
 
@@ -916,12 +916,12 @@ the page's `A` key ignores typing in it, and Escape in it only leaves the field)
 me an epilogue for the night", "pitch me three complications for this heist", "what would the faction boss do now?". **Keep** (a star) files
 `Blade, ask (HH:MM): question -> answer` in the capture bar as a Moment (cut to the bar's 500 characters); **×** drops the answer. The last ten answers come
 back after a reload. **GM's eyes only:** nothing here is sent to the iPad or the display, and nothing is gated, because nothing goes to the players. Because
-you are the only reader, Blade may draw on hidden prep, and its instructions ask it to mark anything from the never-reveal list with **(secret)** so it is
+you are the only reader, Blade may draw on hidden prep, and its instructions ask it to put anything from the never-reveal list in the **secret** field (shown as "(secret)" in the plain text) so it is
 not read out by accident. A scene it writes frames the moment and ends on a question or choice for the players, and never decides what a player character
 does, thinks or feels. New colour offered for ideas is labelled as new.
 
-`POST /api/gm/assist/ask { q }` -> `{ answer: { q, text, at } | null, spend }` (GM only; `q` is one line of at most 600 characters, else a 400 before the
-database or the key are touched). Seat `ask`: Opus 5.5, medium effort, 8k output, a plain-text reply (no schema), at most 4000 characters kept. It reads, after
+`POST /api/gm/assist/ask { q }` -> `{ answer: { q, at, kind, headline, bullets, say, secret, more, text } | null, spend }` (GM only; `q` is one line of at most 600 characters, else a 400 before the
+database or the key are touched). Seat `ask`: Opus 5.5, medium effort, 8k output, a JSON schema (`kind` rule/say/idea/npc/recap/other, `headline`, `bullets`, `say`, `secret`, `more`) so a panel can fold it. The Worker clips each field in code (headline 90 characters, 5 bullets of 120, say 600, secret 300, more 900); `text` is their plain rendering (the secret marked "(secret)"), at most 4000 characters, and is what the history, `gm:after` and the restore path read. An old row without the fields comes back as `{ headline: text }`. It reads, after
 the cached prefix: tonight's **story so far** (the Scribe's, so an epilogue knows the whole night), the **last 10 minutes** of talk, and the **last two
 exchanges** of the last 45 minutes, leaving out any you dismissed (so "make it darker" works). The Worker passes only those; the prefix stays a file id. It runs to **85% of the night's cap**
 like Portrait and Prop (the box greys the button; a 429 says the cap is reached or the ladder has dropped it), one at a time, with no cooldown. A refusal, a

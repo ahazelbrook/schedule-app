@@ -25,12 +25,12 @@ async function test(name, fn) { try { await fn(); passed++; console.log('PASS ' 
 const T = 1_000_000_000_000;
 
 await test('budget ladder: all under 60%, reduced to 85%, core to 100%, off at the cap (and with no cap)', () => {
-  assert.equal(DEFAULT_CAP, 20);
+  assert.equal(DEFAULT_CAP, 30);
   const tiers = [0, 11.99, 12, 16.99, 17, 19.99, 20, 25].map((s) => budgetTier(s, 20));
   assert.deepEqual(tiers, ['all', 'all', 'reduced', 'reduced', 'core', 'core', 'off', 'off']);
   assert.equal(budgetTier(0, 0), 'off');
-  assert.equal(budgetTier(5), 'all', 'the default cap is $20');
-  assert.equal(budgetTier(12), 'reduced');
+  assert.equal(budgetTier(5), 'all', 'the default cap is $30');
+  assert.equal(budgetTier(12), 'all'); assert.equal(budgetTier(18), 'reduced'); assert.equal(budgetTier(25.5), 'core'); assert.equal(budgetTier(30), 'off');
 });
 
 await test('ladder: reduced drops Meanwhile, Showrunner and Mystery; core keeps the Fixer, Ref and Ledger only; off keeps nothing', () => {
@@ -192,7 +192,7 @@ async function setup(opts = {}) {
   const calls = [], replies = REPLIES();
   // WP1-3's tests predate Stall, Mystery and the Showrunner (which wakes on every tick): they run with the table those tests were written for;
   // the WP4 tests pass opts.wakes = WAKES
-  const env = { DB: db, CAMPAIGN: 'c', ANTHROPIC_API_KEY: 'sk-ant-test-0000', ...(opts.env || {}) };
+  const env = { DB: db, CAMPAIGN: 'c', ANTHROPIC_API_KEY: 'sk-ant-test-0000', ASSIST_CAP_USD: '20', ...(opts.env || {}) };   // these scenarios are written against $20; the default (30) is tested in gm-assist-ask
   const handler = makeHandler({ clientFor: () => fakeClient(replies, calls), now: () => clock.t, wakes: opts.wakes || LEGACY_WAKES });
   const lines = (n, extra = {}) => addLines(db, 'c', cleanLines({ lines: Array.from({ length: n }, (_, i) => ({ id: 'l' + Math.random().toString(36).slice(2, 10) + i, at: iso(clock.t - 20_000 + i), session: '3', conn: 'x', speaker: 0, text: 'we roll the dice now ' + i, ...extra })) }));
   const post = (action, body, data = { me: GM }) => handler({ request: new Request('https://blades.example.test/api/gm/assist/' + action, { method: 'POST', body: JSON.stringify(body || {}), headers: { 'Content-Type': 'application/json' } }), env, data });

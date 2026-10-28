@@ -6,9 +6,9 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
 import { cleanLines, addLines } from '../../functions/_lib/stt.js';
-import { canRun, budgetTier, COOLDOWN_MS, CORE_SEATS, DROPPED_WHEN_REDUCED } from '../../functions/_lib/assist/conductor.js';
+import { canRun, budgetTier, DEFAULT_CAP, COOLDOWN_MS, CORE_SEATS, DROPPED_WHEN_REDUCED } from '../../functions/_lib/assist/conductor.js';
 import { SEATS, WAKES } from '../../functions/_lib/assist/seats.js';
-import { askUser, clipAnswer, storyBlock, STORY_SEATS, ASK_MAX, ASK_WINDOW_MIN, ANSWER_MAX, ASK_HISTORY } from '../../functions/_lib/assist/prompts.js';
+import { askUser, clipAnswer, cleanAskFields, askText, storyBlock, STORY_SEATS, ASK_MAX, ASK_WINDOW_MIN, ANSWER_MAX, ASK_HISTORY } from '../../functions/_lib/assist/prompts.js';
 import { makeHandler, cleanAskQuestion } from '../../functions/api/gm/assist.js';
 import { matchApi } from '../../worker/app.js';
 import { nightCards } from '../../functions/_lib/assist/cards.js';
@@ -21,7 +21,9 @@ const GM = { role: 'gm', id: 'gm@example.test' };
 const clock = { t: Date.parse('2030-06-01T09:00:00.000Z') };
 const iso = (ms) => new Date(ms).toISOString();
 const STORY = 'The crew met a fence and learned of a missing ledger.';
-const ANSWER = 'One: a runner arrives early.\nTwo: the lamp goes out.\nThree: a stranger knocks.';
+// the fake model's reply is the seat's JSON; ANSWER is the plain text the Worker renders from it
+const ASK_OUT = { kind: 'idea', headline: 'A runner arrives early', bullets: ['The lamp goes out.', 'A stranger knocks.'], say: '', secret: '', more: '' };
+const ANSWER = 'A runner arrives early\n\n- The lamp goes out.\n- A stranger knocks.';
 
 // the fake: the ask seat answers with plain text (no JSON), the others never run here
 function fakeClient(state, calls) {
@@ -38,7 +40,7 @@ async function setup({ env = {}, pack = true } = {}) {
   const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });
   const db = asD1(exec);
   if (pack) await db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', '{}', 0, ?1)").bind(JSON.stringify({ file_id: 'file_test000001' })).run();
-  const calls = [], state = { text: ANSWER };
+  const calls = [], state = { text: JSON.stringify(ASK_OUT) };
   const handler = makeHandler({ clientFor: () => fakeClient(state, calls), now: () => clock.t });
   const e = { DB: db, CAMPAIGN: 'c', ANTHROPIC_API_KEY: 'sk-ant-test-0000', ...env };
   let n = 0;
@@ -58,11 +60,16 @@ const body = async (res) => JSON.parse(await res.text());
 await test('seat: Opus 5.5 at medium with 8000 tokens, no schema, generic; no flag wakes it; no cooldown; story rides after the breakpoint', () => {
   const a = SEATS.ask;
   assert.deepEqual([a.model, a.effort, a.maxTokens], ['claude-opus-5-5', 'medium', 8000]);
-  assert.equal(a.schema, undefined, 'a plain-text reply');
+  assert.equal(a.schema.type, 'object'); assert.equal(a.schema.additionalProperties, false);
+  assert.deepEqual(Object.keys(a.schema.properties), ['kind', 'headline', 'bullets', 'say', 'secret', 'more']);
+  assert.deepEqual(a.schema.required, Object.keys(a.schema.properties));
+  assert.deepEqual(a.schema.properties.kind.enum, ['rule', 'say', 'idea', 'npc', 'recap', 'other']);
+  assert.equal(a.schema.properties.bullets.type, 'array'); assert.equal(a.schema.properties.bullets.items.type, 'string');
   assert.ok(!(('ask') in WAKES) && !Object.values(WAKES).some((f) => f.includes('ask')), 'the GM\'s own question only');
   assert.ok(!a.instructions.includes('gm-private') && !a.instructions.includes('[['), 'generic: no vault paths or wikilinks');
-  assert.match(a.instructions, /\(secret\)/); assert.match(a.instructions, /never decide what a player character does, thinks or feels/);
-  assert.match(a.instructions, /Under 350 words/); assert.match(a.instructions, /Australian spelling/);
+  assert.match(a.instructions, /never decide what a player character does, thinks or feels/); assert.match(a.instructions, /Australian spelling/); assert.match(a.instructions, /say (that it is|it is) new/);
+  assert.match(a.instructions, /under 12 words/); assert.match(a.instructions, /at most 5/); assert.match(a.instructions, /under 15 words/); assert.match(a.instructions, /read-aloud block, only when/); assert.match(a.instructions, /never-reveal list/);
+  assert.ok(!/Under 350 words/.test(a.instructions) && !/no markdown headings/i.test(a.instructions), 'the word cap and the heading ban are gone');
   assert.equal(COOLDOWN_MS.ask, 0);
   assert.ok(STORY_SEATS.includes('ask'));
 });
@@ -140,8 +147,8 @@ await test('ask: the answer comes back with the question and the time; the row i
   const res = await s.ask('  give me   an epilogue\nfor the night ');
   assert.equal(res.status, 200);
   const out = await body(res);
-  assert.deepEqual(out.answer, { q: 'give me an epilogue for the night', text: ANSWER, at: iso(clock.t) });
-  assert.ok(out.spend && out.spend.tonight > 0 && out.spend.cap === 20 && out.spend.tier === 'all');
+  assert.deepEqual(out.answer, { q: 'give me an epilogue for the night', at: iso(clock.t), ...ASK_OUT, text: ANSWER });
+  assert.ok(out.spend && out.spend.tonight > 0 && out.spend.cap === DEFAULT_CAP && out.spend.tier === 'all');
   assert.equal(out.warnings, undefined); assert.equal(out.errors, undefined);
   assert.equal(s.calls.length, 1); assert.equal(s.calls[0].seat, 'ask');
   const c = s.calls[0];
@@ -151,20 +158,25 @@ await test('ask: the answer comes back with the question and the time; the row i
   assert.match(c.user, /^Talk of the last 10 minutes, up to \d\d:\d\d:\n\[\d\d:\d\d\] S0: near the quay 1\n/);
   assert.ok(!c.user.includes('long ago talk'), 'only the last 10 minutes of talk'); assert.ok(!c.user.includes('Earlier this session'));
   assert.ok(c.user.endsWith('The GM asks: give me an epilogue for the night'));
-  assert.equal(c.req.model, 'claude-opus-5-5'); assert.deepEqual(c.req.output_config, { effort: 'medium' }); assert.equal(c.req.max_tokens, 8000);
+  assert.equal(c.req.model, 'claude-opus-5-5'); assert.equal(c.req.output_config.effort, 'medium'); assert.deepEqual(c.req.output_config.format, { type: 'json_schema', schema: SEATS.ask.schema }, 'the schema is sent'); assert.equal(c.req.max_tokens, 8000);
   const row = s.rows().find((r) => r.seat === 'ask'), card = JSON.parse(row.card);
   assert.equal(row.model, 'claude-opus-5-5'); assert.equal(row.effort, 'medium'); assert.equal(row.flags, 'ask'); assert.equal(row.at, out.answer.at);
   assert.ok(row.cents > 0 && row.input_tokens === 1000 && row.output_tokens === 300);
   assert.equal(card.ask, 1); assert.equal(card.q, 'give me an epilogue for the night'); assert.equal(card.text, ANSWER); assert.equal(card.shown, 0);
+  assert.deepEqual([card.kind, card.headline, card.bullets, card.say, card.secret, card.more], ['idea', ASK_OUT.headline, ASK_OUT.bullets, '', '', ''], 'the row keeps the fields beside text');
   assert.equal(card.stop, 'end_turn'); assert.ok(card.secs >= 0 && card.error === undefined);
 });
 
-await test('ask: with no story yet the instructions carry none; a long answer is cut at the last line break to 4000', async () => {
+await test('ask: with no story yet the instructions carry none; every field is clipped in code and the row keeps what was shown', async () => {
   const s = await setup();
-  s.state.text = Array.from({ length: 300 }, (_, i) => 'Beat ' + i + ': the crew moves on.').join('\n');
+  s.state.text = JSON.stringify({ kind: 'bogus', headline: 'H'.repeat(300), bullets: Array.from({ length: 9 }, (_, i) => 'b' + i + ' ' + 'x'.repeat(400)).concat(['  ']), say: 'S'.repeat(2000), secret: 'K'.repeat(2000), more: 'M'.repeat(5000) });
   const out = await body(await s.ask('what next?'));
   assert.equal(s.calls[0].ins, SEATS.ask.instructions);
-  assert.ok(out.answer.text.length <= ANSWER_MAX + 1 && out.answer.text.endsWith('moves on.…'));
+  const a = out.answer;
+  assert.equal(a.kind, 'other', 'an unknown kind reads as other');
+  assert.equal(a.headline.length, 90); assert.equal(a.bullets.length, 5); assert.ok(a.bullets.every((b) => b.length === 120));
+  assert.equal(a.say.length, 600); assert.equal(a.secret.length, 300); assert.equal(a.more.length, 900);
+  assert.ok(a.text.length <= ANSWER_MAX + 1 && a.text.includes('(secret) K'));
   assert.equal(JSON.parse(s.rows()[0].card).text, out.answer.text, 'the row keeps what was shown');
 });
 
@@ -197,13 +209,18 @@ await test('ask: a refusal, a reply cut off at the limit, an empty reply and a f
   out = await body(await s.ask('two')); assert.equal(out.answer, null);
   assert.deepEqual([last().text, last().error, last().truncated], ['', 'cut off', 1]);
   s.state.stop = 'end_turn'; s.state.text = '   \n ';
-  out = await body(await s.ask('three')); assert.equal(out.answer, null); assert.equal(last().error, 'no text'); assert.equal(last().text, '');
-  s.state.text = 'fine'; s.state.error = Object.assign(new Error('provider said something private'), { status: 500 });
+  out = await body(await s.ask('three')); assert.equal(out.answer, null); assert.equal(last().error, 'no JSON'); assert.equal(last().text, '');
+  s.state.text = 'A perfectly good plain-text answer, but not JSON.';
+  out = await body(await s.ask('three-b')); assert.equal(out.answer, null, 'no plain-text fallback: the schema is the contract'); assert.equal(last().error, 'no JSON');
+  s.state.text = JSON.stringify({ kind: 'rule', headline: '  ', bullets: [' '], say: '', secret: '', more: '' });
+  out = await body(await s.ask('three-c')); assert.equal(out.answer, null, 'every field empty'); assert.equal(last().text, '');
+  s.state.text = JSON.stringify(ASK_OUT);
+  s.state.error = Object.assign(new Error('provider said something private'), { status: 500 });
   out = await body(await s.ask('four'));
   assert.equal(out.answer, null); assert.deepEqual(out.errors, [{ seat: 'ask', error: 'provider status 500' }]);
   assert.ok(!JSON.stringify(out).includes('private'));
   assert.equal(last().error, 'provider status 500');
-  assert.equal(s.rows().filter((r) => r.seat === 'ask').length, 4, 'every attempt is logged');
+  assert.equal(s.rows().filter((r) => r.seat === 'ask').length, 6, 'every attempt is logged');
   // none of it comes back after a reload
   assert.deepEqual((await body(await s.cards())).asks, []);
 });
@@ -228,13 +245,13 @@ await test('ask: a file the provider no longer has gives answer null and the re-
 await test('ask: 429 at the cap and from 85% (the ladder); the wording matches the Screen; at 60% it still runs', async () => {
   clock.t = Date.parse('2030-06-01T11:00:00.000Z');
   let s = await setup();
-  await s.seed('fixer', clock.t - 60 * MIN, 17 * 100);            // $17 of a $20 cap = 85%
+  await s.seed('fixer', clock.t - 60 * MIN, Math.ceil(DEFAULT_CAP * 85));            // 85% of the default cap
   await assert.rejects(s.ask('hi'), (e) => e.status === 429 && /budget ladder has dropped this for tonight/.test(e.message));
   s = await setup();
-  await s.seed('fixer', clock.t - 60 * MIN, 20 * 100);
+  await s.seed('fixer', clock.t - 60 * MIN, DEFAULT_CAP * 100);
   await assert.rejects(s.ask('hi'), (e) => e.status === 429 && /tonight's cap is reached/.test(e.message));
   s = await setup();
-  await s.seed('fixer', clock.t - 60 * MIN, 12 * 100);            // 60%: Wire has gone, Ask has not
+  await s.seed('fixer', clock.t - 60 * MIN, Math.ceil(DEFAULT_CAP * 60));            // 60%: Wire has gone, Ask has not
   const out = await body(await s.ask('hi'));
   assert.ok(out.answer && out.spend.tier === 'reduced');
   assert.equal(s.calls.length, 1);
@@ -264,7 +281,8 @@ await test('cards: GET returns asks (oldest first, the last 10, with the questio
   assert.equal(g.asks.length, 10);
   assert.deepEqual(g.asks.map((a) => a.q), Array.from({ length: 10 }, (_, i) => 'question ' + (i + 3)), 'the last ten, oldest first');
   const a = g.asks[9];
-  assert.deepEqual(Object.keys(a).sort(), ['at', 'kept', 'q', 'row', 'text']); assert.equal(a.text, ANSWER); assert.equal(a.kept, false);
+  assert.deepEqual(Object.keys(a).sort(), ['at', 'bullets', 'headline', 'kept', 'kind', 'more', 'q', 'row', 'say', 'secret', 'text']); assert.equal(a.text, ANSWER); assert.equal(a.kept, false);
+  assert.deepEqual([a.kind, a.headline, a.bullets], ['idea', ASK_OUT.headline, ASK_OUT.bullets], 'GET /cards hands the fields back');
   assert.deepEqual(await body(await s.mark('keep', [{ at: a.at, text: a.q }])), { marked: 1 });
   assert.equal((await body(await s.cards())).asks[9].kept, true);
   assert.deepEqual(await body(await s.mark('seen', [{ at: a.at, text: a.q }])), { marked: 0 }, 'an ask is dismissed or kept, not seen');
@@ -290,6 +308,36 @@ await test('cards: asks older than twelve hours are not tonight\'s; ?since cuts 
   assert.equal((await body(await s.req('cards', 'GET', undefined, '?since=' + encodeURIComponent(iso(clock.t + 1000))))).asks.length, 0);
   clock.t += 13 * 60 * MIN;
   assert.equal((await body(await s.cards())).asks.length, 0);
+});
+
+await test('cap: DEFAULT_CAP is 30 and is the cap a Worker with no ASSIST_CAP_USD reports', async () => {
+  assert.equal(DEFAULT_CAP, 30);
+  assert.equal(canRun('ask', { now: 1, tier: budgetTier(25.4, DEFAULT_CAP) }).ok, true);
+  assert.equal(canRun('ask', { now: 1, tier: budgetTier(25.5, DEFAULT_CAP) }).ok, false);
+  const s = await setup(); const out = await body(await s.ask('hi')); assert.equal(out.spend.cap, 30);
+  const o = await setup({ env: { ASSIST_CAP_USD: '12' } }); assert.equal((await body(await o.ask('hi'))).spend.cap, 12, 'the setting still wins');
+});
+
+await test('fields: cleanAskFields clips, squashes and renders; askText marks the secret; an all-empty reply is null', () => {
+  const f = cleanAskFields({ kind: 'say', headline: '  Read   this\nout  ', bullets: ['a', '', 'b  c', 3, null], say: 'Line one.\n\n\n\nLine two.', secret: 'The ledger is hidden.', more: 'Extra.' });
+  assert.deepEqual([f.kind, f.headline, f.bullets, f.say, f.secret, f.more], ['say', 'Read this out', ['a', 'b c'], 'Line one.\n\nLine two.', 'The ledger is hidden.', 'Extra.']);
+  assert.equal(f.text, 'Read this out\n\n- a\n- b c\n\nSay: Line one.\n\nLine two.\n\n(secret) The ledger is hidden.\n\nExtra.');
+  assert.equal(askText({ headline: 'Only a headline', bullets: [] }), 'Only a headline');
+  for (const bad of [null, undefined, 'x', 5, [], {}, { headline: '', bullets: [] }, { bullets: 'nope' }]) assert.equal(cleanAskFields(bad), null, JSON.stringify(bad));
+  assert.equal(cleanAskFields({ headline: 'x', kind: 'rule' }).bullets.length, 0, 'a missing bullets list is empty');
+});
+
+await test('restore: an old ask row (text only) comes back as { headline: text } with empty fields; a new row keeps its fields; both feed askHistory by text', async () => {
+  clock.t = Date.parse('2030-06-01T14:00:00.000Z');
+  const s = await setup();
+  await s.seedAsk(clock.t - 20 * MIN, 'old one?', 'An old plain answer.\nWith two lines.');
+  await s.seed('ask', clock.t - 10 * MIN, 0, JSON.stringify({ ask: 1, q: 'new one?', ...cleanAskFields({ ...ASK_OUT, secret: 'Hidden thing.' }), shown: 0 }));
+  const g = await body(await s.cards());
+  assert.equal(g.asks.length, 2);
+  assert.deepEqual(g.asks[0], { row: g.asks[0].row, at: g.asks[0].at, q: 'old one?', text: 'An old plain answer.\nWith two lines.', kind: 'other', headline: 'An old plain answer.\nWith two lines.', bullets: [], say: '', secret: '', more: '', kept: false });
+  assert.deepEqual([g.asks[1].kind, g.asks[1].headline, g.asks[1].bullets, g.asks[1].secret], ['idea', ASK_OUT.headline, ASK_OUT.bullets, 'Hidden thing.']);
+  await s.ask('and now?');
+  assert.match(s.calls[0].user, /GM: old one\?\nYou: An old plain answer\.\nWith two lines\.\n\nGM: new one\?\nYou: A runner arrives early[^]*\(secret\) Hidden thing\./, 'history reads text, secret still marked');
 });
 
 console.log('\n' + (failed ? failed + ' FAILED, ' + passed + ' passed' : 'ALL PASSED (' + passed + ')'));
