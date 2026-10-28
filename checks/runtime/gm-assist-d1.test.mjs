@@ -33,13 +33,15 @@ const REPLY = {
   scribe: { story: 'They met at the gate.', corrections: [] },
   meanwhile: { faction: 'Test Faction', cutaway: 'Elsewhere, a lamp is lit.', clock: 'Test clock', ticks: 1, why: 'time passes' },
 };
-function fakeClient(tripwire) {
+// onCall(seat) runs as each seat call starts (the world records how many D1 scripts had run by then)
+function fakeClient(tripwire, replies = REPLY, onCall = () => {}) {
   return {
     messages: {
       async create(req) {
         const ins = req.messages[0].content.filter((b) => b.type === 'text').map((b) => b.text)[0];
         const seat = Object.keys(SEATS).find((k) => ins.startsWith(SEATS[k].instructions));
-        const out = seat === 'tripwire' ? tripwire : REPLY[seat] || {};
+        onCall(seat);
+        const out = seat === 'tripwire' ? tripwire : replies[seat] || {};
         return { content: [{ type: 'text', text: JSON.stringify(out) }], usage: { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 10000, cache_creation_input_tokens: 0 }, stop_reason: 'end_turn' };
       },
     },
@@ -47,7 +49,8 @@ function fakeClient(tripwire) {
 }
 
 // an in-memory D1 with a counting facade: `trips` is round trips (exec.batch runs once per first/all/run/batch), `statements` is every prepare
-async function world({ tripwire = quiet, lines = 90, logRows = 150, wakes = WAKES } = {}) {
+// calm: the Showrunner ran a minute ago, so its 10-minute cooldown keeps it (and the wide transcript read it brings) out of the tick
+async function world({ tripwire = quiet, lines = 90, logRows = 150, wakes = WAKES, replies = REPLY, calm = false } = {}) {
   const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });
   const inner = asD1(exec);
   let statements = 0;
@@ -60,14 +63,18 @@ async function world({ tripwire = quiet, lines = 90, logRows = 150, wakes = WAKE
   if (rows.length) await addLines(inner, 'c', cleanLines({ lines: rows.slice(0, 50) })), await addLines(inner, 'c', cleanLines({ lines: rows.slice(50) }));
   const ins = exec.db.prepare("INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, cents, flags, card) VALUES ('c', ?, '3', ?, 'm', 'low', 0.5, '', ?)");
   for (let i = 0; i < logRows; i++) ins.run(iso(T - (i + 2) * 120000), i % 4 === 0 ? 'ask' : i % 4 === 1 ? 'tripwire' : i % 4 === 2 ? 'ref' : 'voice', JSON.stringify(i % 4 === 0 ? { ask: 1, q: 'Earlier question', text: 'Earlier answer', shown: 1 } : { out: { a: 1 }, shown: 1 }));
-  const handler = makeHandler({ clientFor: () => fakeClient(tripwire), now: () => clock.t, wakes });
+  if (calm) ins.run(iso(T - 60000), 'showrunner', JSON.stringify({ out: { a: 1 }, shown: 0 }));
+  const callStarts = [];          // exec.log.length when each seat call began
+  const handler = makeHandler({ clientFor: () => fakeClient(tripwire, replies, () => callStarts.push(exec.log.length)), now: () => clock.t, wakes });
   const post = (action, body) => handler({ request: new Request('https://blades.example.test/api/gm/assist/' + action, { method: 'POST', body: JSON.stringify(body || {}), headers: { 'Content-Type': 'application/json' } }), env, data: { me: GM } });
   // the first request pays the once-per-isolate schema batch: it is not the tick's, so the counts are taken around the one under test
   await handler({ request: new Request('https://blades.example.test/api/gm/assist/cards'), env, data: { me: GM } });
   const measure = async (action, body) => {
-    const t0 = exec.calls, s0 = statements;
+    const t0 = exec.calls, s0 = statements, l0 = exec.log.length;
+    callStarts.length = 0;
     const res = await post(action, body);
-    return { res, json: await res.json(), trips: exec.calls - t0, statements: statements - s0 };
+    const seats = exec.db.prepare('SELECT seat FROM gm_assist_log WHERE id > ?').all(logRows + (calm ? 1 : 0)).map((r) => r.seat);
+    return { res, json: await res.json(), trips: exec.calls - t0, statements: statements - s0, scripts: exec.log.slice(l0), callStarts: callStarts.slice(), l0, seats };
   };
   return { exec, measure, post, clock, last: () => exec.db.prepare('SELECT MAX(seq) AS m FROM gm_transcript').get().m };
 }
@@ -81,7 +88,8 @@ await test('a tick that wakes the usual seats makes 7 D1 round trips, with or wi
   const b = await w2.measure('tick', { npc: 'Mrs Test', after: 40 });
   assert.equal(b.res.status, 200);
   assert.equal(b.trips, 7, 'a good cursor adds a statement to the opening batch, not a round trip');
-  assert.ok(a.statements <= 24 && b.statements <= 26, 'statements ' + a.statements + ' / ' + b.statements);
+  assert.equal(a.statements, 21, 'statements: 5 opening + 2 cooldowns + 1 Tripwire row + 2 pre-seat + 1 slice + 5 post-seat + 5 rows');
+  assert.equal(b.statements, 22, 'the cursor adds exactly one statement');
 });
 
 await test('worst case, every flag set and every seat woken (Mystery names a handout): still 7 round trips', async () => {
@@ -111,6 +119,46 @@ await test('the cooldown map and the previous Tripwire row are read together, be
   assert.ok(iRow > iCool, 'the Tripwire row is its own write, after them');
   assert.ok(!/INSERT/.test(sqls[iCool]), 'no write rides in a read batch');
 });
+
+// ---- which reads happen, and when ----
+// Every statement a tick sends is in exec.log (one script per round trip). The conditional reads are told apart by their SQL.
+const READS = {
+  clerk: /json_each\(json_extract\(l\.card/,
+  known: /seat = 'mystery' AND card IS NOT NULL/,
+  clocks: /json_extract\(doc, '\$\.clocks'\)/,
+  handouts: /part = 'handouts'/,
+  story: /seat = 'scribe' AND json_extract\(card, '\$\.story'\)/,
+  shown: /json_extract\(card, '\$\.update'\) = 1\)/,                       // the Editor's "cards the GM was shown": the post-seat batch
+  voice: /json_extract\(card, '\$\.voice'\) = 1 OR json_extract\(card, '\$\.stall'\) = 1/,
+};
+const TRANSCRIPT_SINCE = /FROM gm_transcript WHERE campaign = '[^']*' AND at >= /g;     // the tail, the Scribe's first slice, the wide read
+const countOf = (m, re) => (m.scripts.join('\n').match(re) || []).length;
+const SCENARIOS = [
+  // name, tripwire flags, options, the seats that must have a row afterwards, the conditional reads that appear (each once), transcript-since reads, exact statements
+  { name: 'no Clerk, no Mystery, no Meanwhile, Showrunner cooling down', trip: { roll_talk: true }, calm: true, seats: ['tripwire', 'ref', 'ledger', 'scribe', 'voice'], reads: ['story', 'voice'], since: 2, statements: 19 },
+  { name: 'the Showrunner awake brings the wide transcript read and nothing else', trip: { roll_talk: true }, calm: false, seats: ['tripwire', 'ref', 'ledger', 'showrunner', 'scribe', 'voice'], reads: ['story', 'voice'], since: 3, statements: 21 },
+  { name: 'Clerk wakes: its names are read, nothing else is', trip: { new_name: true }, calm: true, seats: ['tripwire', 'clerk', 'scribe', 'voice'], reads: ['clerk', 'story', 'voice'], since: 2, statements: 19 },
+  // a clue mention wakes Clerk as well as Mystery (WAKES), so these two carry the Clerk's read and row too
+  { name: 'Mystery wakes and names a handout: what it knew, the wide read and the handouts part', trip: { clue_mention: true }, calm: true, seats: ['tripwire', 'mystery', 'clerk', 'scribe', 'voice'], reads: ['known', 'clerk', 'handouts', 'story', 'voice'], since: 3, statements: 23 },
+  { name: 'Mystery wakes and names none: no handouts read', trip: { clue_mention: true }, calm: true, replies: { mystery: { ...REPLY.mystery, handout_id: '' } }, seats: ['tripwire', 'mystery', 'clerk', 'scribe', 'voice'], reads: ['known', 'clerk', 'story', 'voice'], since: 3, statements: 22 },
+  { name: 'Meanwhile wakes: the clocks and the wide read', trip: { scene_change: true }, calm: true, seats: ['tripwire', 'meanwhile', 'scribe', 'voice'], reads: ['clocks', 'story', 'voice'], since: 3, statements: 20 },
+];
+for (const sc of SCENARIOS) {
+  await test('reads: ' + sc.name, async () => {
+    const w = await world({ tripwire: { ...quiet, ...sc.trip }, calm: sc.calm, ...(sc.replies ? { replies: { ...REPLY, ...sc.replies } } : {}) });
+    const m = await w.measure('tick', { npc: 'Mrs Test' });
+    assert.equal(m.res.status, 200);
+    assert.deepEqual([...new Set(m.seats)].sort(), sc.seats.slice().sort(), 'the seats that ran');
+    for (const k of Object.keys(READS)) if (k !== 'shown') assert.equal(countOf(m, new RegExp(READS[k].source, 'g')), sc.reads.includes(k) ? 1 : 0, k + ' read');
+    assert.equal(countOf(m, TRANSCRIPT_SINCE), sc.since, 'transcript reads by time');
+    assert.equal(m.statements, sc.statements, 'statements');
+    assert.equal(m.trips, 7, 'round trips');
+    // the post-seat batch is read after every seat call has started, never hoisted above them
+    const iShown = m.scripts.findIndex((s) => READS.shown.test(s));
+    assert.ok(iShown >= 0 && m.callStarts.length >= 3, 'the post-seat batch ran, after ' + m.callStarts.length + ' seat calls');
+    assert.ok(m.l0 + iShown >= Math.max(...m.callStarts), 'post-seat batch at script ' + (m.l0 + iShown) + ', last seat call started at ' + Math.max(...m.callStarts));
+  });
+}
 
 await test('a bad cursor or a bad rolled is still a 400', async () => {
   const w = await world();
