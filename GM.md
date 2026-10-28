@@ -1024,7 +1024,7 @@ it was (no polling, no `/act`). The cap or Listening going off switches Co-GM of
 |---|---|
 | "Blade, make a six clock called Escape" (and mark two) | a **hidden** clock, with two marked if you said so |
 | "Blade, tick Escape (two)", "fill Escape", "clear two on Escape" | moves it; "tick that" means the clock Blade last made or ticked in the last 10 minutes |
-| "Blade, new NPC called Corso, a bouncer" | a **hidden** NPC. With no name it rolls one with the NPC generator and the card says *name rolled* (Rename is on the card) |
+| "Blade, new NPC called Wexley, a bouncer" | a **hidden** NPC. With no name it rolls one with the NPC generator and the card says *name rolled* (Rename is on the card) |
 | "Blade, note ...", "loose end ...", "name ..." | files a moment, a loose end or a name in the capture bar |
 | "Blade, call him Big Sal", "rename that to ..." | renames the last NPC or clock Blade made tonight |
 | "Blade, undo", "scratch that" | undoes Blade's newest action that is still done |

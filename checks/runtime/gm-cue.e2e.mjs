@@ -270,11 +270,11 @@ try {
   check((await clockNamed('Escape Invented')).filled === 2, 'tick that: after a tick, "tick that" means the clock Blade last ticked');
 
   // ============ an NPC, a rolled name, a rename ============
-  const t3 = await cue('Blade, new NPC called Corso Invented, a bouncer', /^New NPC \(hidden\): Corso Invented/);
-  const corso = (await npcsNow()).find((n) => n.doc.name === 'Corso Invented');
-  check(corso && corso.doc.revealed === false && corso.doc.tags.includes('cogm') && corso.doc.role === 'bouncer' && corso.doc.firstSeen === null, 'a named NPC is made hidden (revealed: false), tagged cogm ' + JSON.stringify(corso && corso.doc));
+  const t3 = await cue('Blade, new NPC called Wexley Invented, a bouncer', /^New NPC \(hidden\): Wexley Invented/);
+  const wexley = (await npcsNow()).find((n) => n.doc.name === 'Wexley Invented');
+  check(wexley && wexley.doc.revealed === false && wexley.doc.tags.includes('cogm') && wexley.doc.role === 'bouncer' && wexley.doc.firstSeen === null, 'a named NPC is made hidden (revealed: false), tagged cogm ' + JSON.stringify(wexley && wexley.doc));
   const t4 = await cue('Blade, call him Big Sal Invented', /Renamed: Big Sal Invented/);
-  check(await until(async () => (await npcsNow()).some((n) => n.id === corso.id && n.doc.name === 'Big Sal Invented'), 6000), '"call him Big Sal": the last NPC Blade made is renamed on the real cast');
+  check(await until(async () => (await npcsNow()).some((n) => n.id === wexley.id && n.doc.name === 'Big Sal Invented'), 6000), '"call him Big Sal": the last NPC Blade made is renamed on the real cast');
   check(await until(async () => (await cardLike(/^New NPC \(hidden\): Big Sal Invented/)), 4000), 'and its card follows the rename');
   const nBefore = (await npcsNow()).length;
   const t5 = await cue('Blade, new NPC who looks like a tired ferryman', /^New NPC \(hidden\): .+ \(name rolled\)/);
@@ -392,7 +392,7 @@ try {
   const plAllText = await pp.evaluate(() => document.body.innerText + ' ' + [...document.querySelectorAll('input,textarea')].map((i) => i.value).join(' '));
   check(plIds.join() === 'c_seed' && !cueClocks.some((n) => plAllText.includes(n)), 'a player\'s table page shows the GM\'s own clock only (' + plIds.join() + '), none of the cue\'s clocks, in text or fields');
   const plNpcs = JSON.stringify(await npcsNow(PLAYER));
-  check(plNpcs.includes('Marta Quillfeather') && !/Big Sal|Corso|Tired Ferryman|ferryman|bouncer/.test(plNpcs), 'the player\'s read of the cast carries the revealed NPC and none of the cue\'s');
+  check(plNpcs.includes('Marta Quillfeather') && !/Big Sal|Wexley|Tired Ferryman|ferryman|bouncer/.test(plNpcs), 'the player\'s read of the cast carries the revealed NPC and none of the cue\'s');
   check(!(await npcsNow()).some((n) => /cogm/.test(JSON.stringify(n.doc.tags)) && n.doc.revealed === true), 'every NPC a cue made is still revealed: false');
   check((await api('GET', '/gm/display')).json.display.kind === display0, 'the iPad display is as it was (' + display0 + ')');
   await pc.close();

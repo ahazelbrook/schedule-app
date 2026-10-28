@@ -482,7 +482,7 @@ await test('9. "tick that" uses lastClock, which the page gives only inside ten 
 
 await test('9. catchUp: what was said while the uncued switch was off is not sent', () => {
   const st = C.newState(); C.start(st, 0);
-  C.ingest(st, [crow(1, 'a six segment clock for the docks')], 1, CT0, CLIVE);
+  C.ingest(st, [crow(1, 'a six segment clock for the cannery')], 1, CT0, CLIVE);
   assert.equal(st.pending.length, 1);
   C.catchUp(st);
   assert.equal(st.pending.length, 0); assert.equal(C.nextWindow(st, CT0 + 60_000), null);
