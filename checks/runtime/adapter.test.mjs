@@ -1482,10 +1482,13 @@ await test('status.newBuild: null while the server runs this page\'s build; the 
 
 /* ---------- live sync (design 2.5): the poke socket, with a fake WebSocket ---------- */
 /* A WebSocket stand-in the test drives by hand: nothing opens, answers or closes until the test says so. */
-function fakeSockets({ autoPong = true } = {}) {
+function fakeSockets({ autoPong = true, flap = false } = {}) {
   const made = [];
   class FakeWS {
-    constructor(url) { this.url = url; this.sent = []; this.closed = null; made.push(this); }
+    constructor(url) {
+      this.url = url; this.sent = []; this.closed = null; this.at = Date.now(); made.push(this);
+      if (flap) setTimeout(() => { this.open(); setTimeout(() => this.drop(1006), 1); }, 1);   // opens, says hello and drops at once
+    }
     send(d) { this.sent.push(d); if (d === 'ping' && autoPong && !this.mute) setTimeout(() => this.onmessage && this.onmessage({ data: 'pong' }), 1); }
     close(code) { this.closed = code === undefined ? 1005 : code; }
     // test side
@@ -1693,6 +1696,63 @@ await test('live: a burst of 10 pokes in 300 ms makes 1 or 2 polls, and the last
   const made = polls() - n;
   ok(made >= 1 && made <= 2, 'polls made by the burst: ' + made);
   ok(snaps.some((s) => s.docs.some((d) => d.id === 'b9')), 'the last write was seen');
+  un();
+});
+
+/* ---------- live sync: one connect gate (review fix) ---------- */
+await test('live gate: a socket that opens, gets hello and drops with 1006 at once, again and again, connects only on the 1, 2, 5, 10, 30 s steps (scaled), never per poll', async () => {
+  const api = fakeApi();
+  const steps = [50, 100, 250, 500, 1000];
+  const { ws, polls, un } = await liveUp(api, { backoff: steps, stableMs: 100000 }, { flap: true });
+  await sleep(3200);
+  const at = ws.made.map((w) => w.at), gaps = at.slice(1).map((t, i) => t - at[i]);
+  console.log('flap connect gaps (ms), scaled steps ' + steps.join('/') + ': ' + gaps.join(', ') + ' with ' + polls() + ' polls');
+  ok(polls() > 30, 'the poll went on (' + polls() + ')');
+  ok(gaps.length >= 5 && gaps.length <= 7, 'connects: ' + ws.made.length);
+  gaps.forEach((g, i) => { const want = steps[Math.min(i, steps.length - 1)]; ok(g >= want - 5 && g <= want + 120, 'gap ' + i + ' is the ' + want + ' ms step, got ' + g); });
+  un();
+});
+
+await test('live gate: the breaker stops connecting after the limit and live sync stays off on that page, the poll going on', async () => {
+  const api = fakeApi();
+  const { b, ws, polls, un } = await liveUp(api, { backoff: [20], maxConnects: 4, stableMs: 100000 }, { flap: true });
+  await sleep(900);
+  eq(ws.made.length, 4, 'connects stop at the limit');
+  ok(b.win.B68Live.state().broken, 'the breaker says so');
+  const n = polls(); await sleep(300);
+  ok(polls() - n >= 3, 'the poll goes on');
+  eq(ws.made.length, 4, 'and nothing reconnects');
+  un();
+});
+
+await test('live gate: a socket that stayed open past the stable time and then drops starts again at the first step', async () => {
+  const api = fakeApi();
+  const { ws, un } = await liveUp(api, { backoff: [60, 300, 600], stableMs: 150, echoMs: 100000, graceMs: 100000 });
+  ws.last().open(); ws.made[0].drop(1006);                              // a flap: the step moves on
+  await until(() => ws.made.length > 1, 500);
+  const t1 = ws.made[1].at; ws.made[1].open();
+  await sleep(300);                                                     // longer than stableMs: the backoff starts over
+  ws.made[1].drop(1006);
+  await until(() => ws.made.length > 2, 800);
+  const gap = ws.made[2].at - Date.now();
+  const lag = ws.made[2].at - (t1 + 300);
+  ok(lag >= 0 && lag < 200, 'the next connect came one first step (60 ms) after the drop, not the second (300 ms): ' + lag);
+  un();
+});
+
+await test('live gate: coming back visible after a 1000 close connects nothing until a poll says live: true', async () => {
+  const api = fakeApi();
+  const { b, ws, un } = await liveUp(api, { backoff: [40], echoMs: 100000, graceMs: 100000 });
+  ws.last().open(); await sleep(POLL * 2);
+  const vis = () => (b.listeners.visibilitychange || []).forEach((fn) => fn());
+  ws.made[0].drop(1000);                                                // the server closed it: off
+  b.document.hidden = true; vis(); b.document.hidden = false; vis();    // same tick: the last poll answer has not been read since
+  eq(ws.made.length, 1, 'no connect from visibility while blocked by a 1000 close');
+  api.live = false; await sleep(POLL * 4);
+  b.document.hidden = true; vis(); b.document.hidden = false; vis();
+  eq(ws.made.length, 1, 'none while the switch is off');
+  api.live = true; await until(() => ws.made.length > 1, 600);
+  eq(ws.made.length, 2, 'a poll that said live: true opened it');
   un();
 });
 

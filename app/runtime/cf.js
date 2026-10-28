@@ -283,7 +283,8 @@
   var HEAR = { characters: ['player', 'gm'], campaign: ['player', 'gm'], npcs: ['player', 'gm'], screen: ['player'], display: ['display', 'gm'], ambient: ['display', 'gm'], stt: ['display', 'gm'], cue: ['gm'] };
   var live = (function () {
     var subs = [], ws = null, opened = false, wantFlag = null, blocked = false, blockedAt = 0, nextTryAt = 0, retry = 0, openedAt = 0;
-    var timers = { ping: null, pong: null, retry: null, hello: null }, lastSignal = 0, badUntil = 0, grace = false, connects = 0;
+    var timers = { ping: null, pong: null, retry: null, hello: null, stable: null }, lastSignal = 0, badUntil = 0, grace = false, connects = 0;
+    var connectLog = [], broken = false;   /* the circuit breaker: connect times in the last hour; past the limit live sync stays off until a reload */
     var pokeAt = {}, pend = {};
     var BACKOFF = Array.isArray(LV.backoff) ? LV.backoff : [1000, 2000, 5000, 10000, 30000];
     function now() { return Date.now(); }
@@ -301,12 +302,19 @@
     function trip() { badUntil = now() + lvn('badMs', 60000); repoll(); }
     function shut(code) {
       var w = ws; ws = null; opened = false;
-      clearT('ping'); clearT('pong'); clearT('hello');
+      clearT('ping'); clearT('pong'); clearT('hello'); clearT('stable');
       if (w) { w.onopen = w.onmessage = w.onclose = w.onerror = null; try { w.close(code || 1000); } catch (e) {} }
       repoll();
     }
+    /* THE connect gate: every path that can open a socket (a poll answer, the retry timer, a page coming back, a new listener) ends here.
+       It refuses before nextTryAt (every close that was not our own advances the backoff) and past 20 connects an hour. */
     function connect() {
-      if (ws || !able() || wantFlag !== true || blocked) return;
+      if (ws || !able() || wantFlag !== true || blocked || broken) return;
+      var t = now();
+      if (t < nextTryAt) return;
+      connectLog = connectLog.filter(function (x) { return t - x < 3600000; });
+      if (connectLog.length >= lvn('maxConnects', 20)) { broken = true; return; }
+      connectLog.push(t);
       var w;
       connects++;
       try { w = new window.WebSocket(url()); } catch (e) { failedConnect(); return; }
@@ -324,6 +332,7 @@
         if (!j || typeof j !== 'object') return;
         if (j.hello) {
           clearT('hello');
+          clearT('stable'); timers.stable = setTimeout(function () { timers.stable = null; retry = 0; }, lvn('stableMs', 60000));   /* the backoff starts over only after a minute open */
           opened = true; openedAt = now(); grace = true; pokeAt = {}; pend = {};
           armPing();
           fire('hello');
@@ -335,19 +344,19 @@
       w.onerror = function () {};
       w.onclose = function (ev) {
         if (ws !== mine) return;
-        var code = ev && ev.code, was = opened, lived = now() - openedAt;
-        ws = null; opened = false; clearT('ping'); clearT('pong'); clearT('hello');
-        if (sawOpen && code === 1000) { blocked = true; blockedAt = now(); retry = 0; nextTryAt = 0; repoll(); return; }   /* the switch went off: a poll must say on again */
+        var code = ev && ev.code, was = opened;
+        ws = null; opened = false; clearT('ping'); clearT('pong'); clearT('hello'); clearT('stable');
+        if (sawOpen && code === 1000) { advance(); blocked = true; blockedAt = now(); repoll(); return; }   /* the switch went off: a poll must say on again */
         if (!was) { failedConnect(); repoll(); return; }                      /* never opened: a 503, an Access refusal, no network */
-        if (lived >= 10000) retry = 0;
         reconnectSoon(); repoll();
       };
     }
-    function failedConnect() { blocked = true; blockedAt = now(); nextTryAt = now() + backoffMs(); retry++; }
+    function advance() { nextTryAt = now() + backoffMs(); retry++; }
+    function failedConnect() { blocked = true; blockedAt = now(); advance(); }
     function reconnectSoon() {
       clearT('retry');
-      var ms = backoffMs(); retry++;
-      timers.retry = setTimeout(function () { timers.retry = null; connect(); }, ms);
+      advance();
+      timers.retry = setTimeout(function () { timers.retry = null; connect(); }, Math.max(0, nextTryAt - now()));
     }
     function armPing() {
       clearT('ping');
@@ -382,7 +391,7 @@
     function flag(v, at) {
       if (typeof v !== 'boolean') return;
       wantFlag = v;
-      if (!v) { if (ws) shut(1000); clearT('retry'); blocked = false; retry = 0; return; }
+      if (!v) { if (ws) shut(1000); clearT('retry'); blocked = false; retry = 0; nextTryAt = 0; return; }   /* off on purpose: nothing to back off from */
       if (blocked) {
         if ((at || 0) < blockedAt || now() < nextTryAt) return;               /* only a poll that began after the close, and past the backoff */
         blocked = false;
@@ -391,7 +400,7 @@
     }
     function visibility() {
       if (document.hidden) { if (ws) shut(1000); clearT('retry'); return; }
-      if (wantFlag === true && !ws) { retry = 0; if (blocked && now() >= nextTryAt) blocked = false; connect(); }
+      if (wantFlag === true && !ws && !blocked) connect();   /* only through the gate; otherwise the poll the page makes now lets the answer decide */
     }
     /* the data poll's report: when it started and which kinds came back changed (first: a full load, whose changes are no news) */
     function polled(startedAt, moved, first) {
@@ -420,7 +429,7 @@
         return function () { if (s.timer) { clearTimeout(s.timer); s.timer = null; } var i = subs.indexOf(s); if (i >= 0) subs.splice(i, 1); if (!subs.length) stopAll(); };
       },
       flag: flag, visibility: visibility, polled: polled, wrote: wrote, healthy: healthy, stop: stopAll,
-      state: function () { return { open: opened, healthy: healthy(), flag: wantFlag, blocked: blocked, connects: connects, retry: retry, grace: grace, pend: Object.keys(pend), pokes: Object.keys(pokeAt) }; }
+      state: function () { return { open: opened, healthy: healthy(), flag: wantFlag, blocked: blocked, connects: connects, retry: retry, broken: broken, nextTryAt: nextTryAt, grace: grace, pend: Object.keys(pend), pokes: Object.keys(pokeAt) }; }
     };
   })();
   window.B68Live = { on: live.on, state: live.state };
