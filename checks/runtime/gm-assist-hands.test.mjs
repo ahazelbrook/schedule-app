@@ -116,6 +116,12 @@ await test('rule: a new clock\'s size must be 4, 6, 8, 10 or 12', () => {
   assert.equal(check([act({ name: '   ' })]).dropped[0].why, 'no name');
 });
 
+await test('rule: a new clock is hidden only when hidden is exactly true; undefined, null, false and truthy non-booleans are not hidden', () => {
+  const h = (hidden) => check([act({ hidden })]).actions[0].hidden;
+  assert.equal(h(true), true);
+  for (const v of [undefined, null, false, 'true', 1, 'yes', {}]) assert.equal(h(v), false, String(v));
+});
+
 await test('rule: ticks are clamped, to -3..+6 and then to the clock; a tick with nothing left to do is dropped, not sent as zero', () => {
   const t = (clock_id, by) => check([act({ type: 'clock_tick', quote: 'Tick that once', clock_id, by })]);
   assert.equal(t('ck3', 99).actions[0].by, 6, 'ck3 is 0/8: +6 is the most one action does');
@@ -155,7 +161,7 @@ await test('rule: the quote must appear in the lines after normalising (case, pu
   assert.equal(q('call').dropped[0].why, 'quote not in the talk', 'a quote too short to prove anything');
   assert.equal(q('ock call it Drains').actions.length, 0, 'a quote starts and ends on whole words: "ock" is not "clock"');
   assert.equal(q(undefined).actions.length, 0); assert.equal(q(42).actions.length, 0);
-  // only the lines the Worker read count: the state\'s own names and the stamps are not talk
+  // only the lines the Worker read count: the state's own names and the stamps are not talk
   assert.equal(check([act({ quote: 'Odo Vance' })]).actions.length, 0);
   assert.equal(check([act({ quote: '09:00' })]).actions.length, 0);
   assert.equal(check([act()], { lines: [row(9, 'a mark', 'mark'), row(10, "that's going to be a six-segment clock", 'mark')] }).actions.length, 0, 'a mark is not talk');
@@ -180,12 +186,13 @@ await test('rule: each action has a stable key (type, normalised target, hash of
   assert.equal(actionKey('npc_add', 'Wren  Alder!', 'x'), actionKey('npc_add', 'wren alder', 'x'));
   assert.notEqual(actionKey('npc_add', 'Wren', 'x'), actionKey('npc_add', 'Wren', 'y'));
   assert.notEqual(actionKey('npc_add', 'Wren', 'x'), actionKey('clock_add', 'Wren', 'x'));
-  // the live replay\'s pair: one line, quoted short in one window and long in the next. The same decision keeps one key.
+  // the live replay's pair: one line, quoted short in one window and long in the next. The same decision keeps one key.
   const short = t('Tick that once'), long = t('Tick that once, the lamp oil is going.'), mid = t('the lamp oil is going');
   assert.equal(short.key, long.key, 'a short quote and the whole line'); assert.equal(short.key, mid.key, 'a quote that starts mid-line');
   assert.equal(t('Tick that once, the lamp oil is going').key, long.key, 'whatever the punctuation');
   // a different line is a different key, and a quote across two lines takes the first
   const cap = (quote) => check([act({ type: 'capture', quote, bucket: 'moment', text: 'x' })]).actions[0];
+  assert.match(cap('Mirelle looks at you flat').key, /^capture:moment:[0-9a-f]{8}$/);
   assert.notEqual(cap("His name's Wren Alder").key, cap('Mirelle looks at you flat').key, 'two lines, one type and target');
   assert.equal(cap('green coat').key, cap('The fence there').key, 'two spans of line 3');
   const nameOf = (quote) => check([act({ quote })]).actions[0].key;
@@ -367,7 +374,7 @@ await test('lines: at most 40, the latest 40 of the range; marks are not read; a
   const before = s.calls.length, rowsBefore = s.rows().length;
   const out = await body(await s.post({ from: 500, to: 520, state: STATE }));
   assert.deepEqual([out.actions, out.dropped, s.calls.length - before, s.rows().length - rowsBefore], [[], [], 0, 0]);
-  assert.deepEqual(out.health, { skipped: [], reaped: [], ran: [] });
+  assert.ok(!('health' in out), 'no health on an act answer');
 });
 
 await test('route: it applies nothing: the campaign\'s clocks, the NPC table and the pack are byte-identical after an act that returns clock_add, clock_tick and npc_add', async () => {
@@ -426,8 +433,8 @@ await test('route: a provider error is a short status, a deadline is a timeout r
   const out = await body(await s.post(REQ));
   assert.deepEqual(out.actions, []); assert.deepEqual(out.errors, [{ seat: 'hands', error: 'provider status 529' }]);
   assert.ok(!JSON.stringify(out).includes('sk-ant'));
-  assert.deepEqual(out.health.ran, [], 'a call that failed did not run');
-  // a model that never answers: the seat\'s own deadline ends it
+  assert.ok(!('health' in out), 'no health on an act answer');
+  // a model that never answers: the seat's own deadline ends it
   const s2 = await setup({ handlerOpts: { deadlines: { hands: 30 } } });
   await s2.lines(TALK); s2.st.hold = new Promise(() => {});
   const out2 = await body(await s2.post(REQ));
@@ -468,7 +475,7 @@ await test('route: it leaves the tick\'s reaped report alone, and a hung hands l
   s.st.reply = { actions: [good()] };
   leases.acquire('ref', clock.t - 100_000);                         // a Ref lease from a cancelled tick, long past its ttl
   const out = await body(await s.post(REQ));
-  assert.deepEqual(out.health, { skipped: [], reaped: [], ran: ['hands'] });
+  assert.ok(!('health' in out), 'no health on an act answer: an empty skipped would reset the other seats\' stuck streaks in healthStep');
   assert.deepEqual(leases.takeReaped(), ['ref'], 'the lapse is still there for the tick to report');
   // a stuck hands lease (its request was killed) lapses at 30 s
   const L2 = makeLeases(); const s2 = await setup({ handlerOpts: { leases: L2 } });

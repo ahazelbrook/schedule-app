@@ -63,7 +63,7 @@
 //        known and theories (what the players said aloud). Code only: no model, no key, no spend, and it runs at any tier.
 //   POST /api/gm/assist/portrait-add { name, description?, spec } -> { id, doc }   saves a portrait as an app NPC through checkNpc/writeNpc,
 //        always HIDDEN (revealed: false, whatever is sent); showing it to the players is the normal reveal flow.
-//   POST /api/gm/assist/act { from, to, state } -> { actions, dropped, spend, health }    the co-GM's hands (seat `hands`, Haiku, low; design 5.3 and 5.4; functions/_lib/assist/hands.js).
+//   POST /api/gm/assist/act { from, to, state } -> { actions, dropped, spend }    the co-GM's hands (seat `hands`, Haiku, low; design 5.3 and 5.4; functions/_lib/assist/hands.js).
 //        from and to are transcript seqs (whole numbers, from <= to, at most 200 apart); the Worker reads those lines from D1 ITSELF (the latest 40 at most, one query) and
 //        ignores any `lines` in the body, so a page cannot give the seat, or the quote check, talk that was never said. state is { clocks: [{ id, name, size, filled, hidden }],
 //        npcs: [{ id, name }], pcs: [{ id, name }], onStage } of at most 8 KB of JSON, else 400. Every 400 comes before the database or the key. The seat is given the window and
@@ -71,8 +71,8 @@
 //        an action is kept only if its quote is in the lines, its clock id is in the state, its size is legal, its tick is clamped to the clock and a name already known is not
 //        added again; a confidence under 0.7 is mode 'offer' (a yellow card), else 'act'. Each action has a stable `key`. `dropped` is [{ type, why, name? }] (an npc_add of a
 //        known name says 'already known'). An empty range of lines answers { actions: [] } with no model call and no row. Core tier (to the cap), one at a time and at most
-//        every 8 s: 429 otherwise. One row is logged (seat `hands`, flags `act`, `shown: 0`, so it never holds back a card). `health` is { skipped: [], reaped: [], ran: ['hands'] | [] }
-//        (reaped is always empty here: only the tick takes the lapsed leases).
+//        every 8 s: 429 otherwise. One row is logged (seat `hands`, flags `act`, `shown: 0`, so it never holds back a card). The answer carries no `health`: the page feeds health to healthStep, and an
+//        empty `skipped` would reset the other seats' stuck streaks. It does not take the lapsed leases either (only the tick reports `reaped`).
 //   GET  /api/gm/assist/cards?session=&since= -> { cards, updates, asks }   tonight's shown cards, open Ledger updates and Ask Blade answers
 //        (last 12 h unless `since`; asks: [{ row, at, q, text, kind, headline, bullets, say, secret, more, kept }], the last 10, oldest first), so a reloaded GM page restores its chat.
 //        Dismissed cards, finished updates and dismissed asks are left out. No model, no key.
@@ -559,8 +559,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const gate = canRun('hands', { now: t0, lastRun: handsLog.last === null ? {} : { hands: handsLog.last }, inFlight: live(), tier });
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : gate.why === 'cooldown' ? 'the co-GM is cooling down' : 'this is busy');
       const lines = await actLines(db, campaign, actIn.from, actIn.to);                        // the one transcript read
-      const health = (didRun) => ({ skipped: [], reaped: [], ran: didRun ? ['hands'] : [] });
-      if (!lines.length) return json({ actions: [], dropped: [], spend: spend(), health: health(false) });         // nothing to read: no call, no row
+      // No `health` in this answer: the page feeds health to healthStep, and an empty `skipped` there would reset the other seats' stuck streaks.
+      if (!lines.length) return json({ actions: [], dropped: [], spend: spend() });       // nothing to read: no call, no row
       const { cfg, r, timing } = await run('hands', handsUser({ state: actIn.state, stamp: hhmm(t0), talk: formatLines(lines, speakers) }));
       const at = new Date(now()).toISOString();
       // run() nulls r.json for a refusal or a reply cut off at the limit: those show nothing
@@ -569,7 +569,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       await logRow(db, campaign, { at, session: lines[lines.length - 1].session || '', seat: 'hands', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['act'], timing,
         card: { act: 1, from: actIn.from, to: actIn.to, n: lines.length, ...(out ? { out } : {}), actions: v.actions.map((a) => ({ type: a.type, mode: a.mode, key: a.key, at: a.at, confidence: a.confidence })), dropped: v.dropped, shown: 0,
           ...(out ? {} : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : r && r.stop === 'max_tokens' ? 'cut off' : 'no JSON' }) } }).run();
-      return json({ actions: v.actions, dropped: v.dropped, spend: spend(), health: health(!!r), ...(errors.length ? { errors } : {}) });
+      return json({ actions: v.actions, dropped: v.dropped, spend: spend(), ...(errors.length ? { errors } : {}) });
     }
 
     if (action[1] === 'portrait' || action[1] === 'prop' || action[1] === 'wire') {
