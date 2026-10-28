@@ -102,6 +102,7 @@
     (Array.isArray(rows) ? rows : []).forEach(function (r) {
       if (!isObj(r) || !Number.isInteger(r.seq)) return;
       if (r.seq > top) top = r.seq;
+      if (r.conn === 'typed') return;      /* a line the GM typed (C4f): the typing page runs it itself, so no poll runs it twice or joins it to the next spoken line */
       if (r.kind !== 'line' || r.seq <= st.readAfter || !str(r.text).trim()) return;
       if (st.buf.length && st.buf[st.buf.length - 1].seq >= r.seq) return;
       st.buf.push({ seq: r.seq, id: str(r.id), at: str(r.at), text: str(r.text), speaker: typeof r.speaker === 'number' ? r.speaker : null });

@@ -1669,7 +1669,7 @@
     var g = gmApi(), A = W.B68GmAssist, me = S;
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
-    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onAutopilot: function () { if (S === me) apToggle(); }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); },
+    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onTyped: function (text) { return S === me ? cogmTyped(me, text) : null; }, onAutopilot: function () { if (S === me) apToggle(); }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); },
       screen: { vocab: screenVocab, cleanSpec: screenCleanSpec }, onScreen: function (item) { if (S === me) setScreenItem(item); } }); } catch (e) { me.assist = null; }
   }
 
@@ -1748,12 +1748,41 @@
   /* ---------- the cue lane (C4d; design 1.3 to 1.5) ---------- */
   function cogmCues(me, epoch) {
     var cm = me.cogm, C = cm.C, job, guard = 0;
-    while (guard++ < 8 && (job = C.cueNext(cm.st, Date.now(), cogmLive(me)))) {
-      if (job.kind === 'card') cogmCueCard(me, job);
-      else if (job.kind === 'stale') cogmCueStale(me, job);
-      else if (!cogmHasTarget(me, job)) cogmNoTarget(me, job);
-      else cogmCuePost(me, job, epoch);
+    while (guard++ < 8 && (job = C.cueNext(cm.st, Date.now(), cogmLive(me)))) cogmRunJob(me, job, epoch);
+  }
+  function cogmRunJob(me, job, epoch) {
+    if (job.kind === 'card') cogmCueCard(me, job);
+    else if (job.kind === 'stale') cogmCueStale(me, job);
+    else if (!cogmHasTarget(me, job)) cogmNoTarget(me, job);
+    else return cogmCuePost(me, job, epoch);
+  }
+  /* ---------- typed commands (C4f): "Blade, ..." or "/tick ..." in the Ask bar ----------
+     The same trust boundary as a spoken cue: the mapped sentence is POSTed to the transcript as a line tagged conn 'typed' (speaker null; the iPad's lines carry its own conn and a
+     speaker number), read back by its id for its seq, then run through cueNext/cogmCuePost: POST /act in cue mode, whose quote check reads that row. The poll never runs a typed row
+     (cogm.js ingest skips conn 'typed'), so it works with co-GM on or off, and a parsed one acts at the cap ($0). -> Promise<{ ok }> */
+  function cogmTyped(me, text) {
+    var cm = me.cogm, g = gmApi(), Q = W.B68Cue, ctl = me.assist;
+    if (!cm || !g || !Q || typeof Q.fromTyped !== 'function' || typeof g.addTranscript !== 'function') return Promise.resolve({ ok: false });
+    var t = Q.fromTyped(text); if (!t) return Promise.resolve({ ok: false });
+    if (t.unknown) {
+      if (ctl) ctl.addCard({ id: 'cogm|typed|' + Date.now().toString(36), seat: 'cogm', kind: 'note', headline: 'I don’t know the command ' + cm.C.plain(t.unknown, 30) + '.', bullets: ['Try /tick, /clock, /npc, /note or /undo, or start with “Blade,”.'], ackLabel: 'Got it ×' });
+      return Promise.resolve({ ok: true });
     }
+    var id = 'typed-' + Date.now().toString(36) + Math.floor(Math.random() * 1679616).toString(36), at = new Date().toISOString();
+    return Promise.resolve().then(function () { return g.addTranscript([{ id: id, at: at, session: '', conn: 'typed', speaker: null, kind: 'line', text: t.text, cue: true }]); })
+      .then(function () { return g.transcript({ tail: 20 }); })
+      .then(function (r) {
+        var row = ((r && r.lines) || []).filter(function (l) { return l && l.id === id; })[0];
+        if (!row || !Number.isInteger(row.seq)) throw new Error('the typed line was not stored');
+        if (S !== me || me.cogm !== cm) return { ok: false };
+        var st = cm.C.newState(), box = cm.sw && cm.sw.box ? cm.sw.box() : null;
+        cm.capped = !!box && box.key === 'off';
+        st.cues.push({ seq: row.seq, id: id, at: at, text: t.text, seenAt: 0, late: false });
+        var job = cm.C.cueNext(st, Date.now(), cogmLive(me));
+        if (!job) return { ok: false };
+        cogmRunJob(me, job, cm.epoch);
+        return { ok: true };
+      }).then(null, function (e) { toast('Could not send that command: ' + errText(e), true); return { ok: false }; });
   }
   /* Undo and rename act on what THIS page made, so a page with nothing to act on posts nothing: the Worker's claim would go to a page that applies it zero times. */
   function cogmUndoTarget(cm) { for (var i = cm.order.length - 1; i >= 0; i--) if (!cm.undone[cm.order[i]] && cm.recs[cm.order[i]] && cm.acts[cm.order[i]]) return cm.order[i]; return ''; }

@@ -610,6 +610,7 @@
       host.addEventListener('click', onClick);
       host.addEventListener('submit', onSubmit);
       host.addEventListener('keydown', onKey);
+      host.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'as-ask-q') renderAsk(); });
       if (win && typeof win.addEventListener === 'function') { win.addEventListener('resize', onResize); win.addEventListener('scroll', onScroll, { passive: true }); }
       paintAutopilot(); render(); relayout();
     }
@@ -889,7 +890,7 @@
     function renderAsk() {
       var sec = q('#as-ask'), go = q('#as-ask-go'); if (!sec || !go) return;
       sec.hidden = !gm || typeof gm.assistAsk !== 'function';      /* an older runtime without the call: the field is not offered */
-      var can = canAsk(), busy = st.ask.busy, hint = !can && !askAllowed(tierNow()) ? 'Dropped by the budget for tonight.' : '';
+      var ta1 = q('#as-ask-q'), can = canAsk() || (isTyped(ta1 ? ta1.value : '') && typedOk()), busy = st.ask.busy, hint = !can && !askAllowed(tierNow()) ? 'Dropped by the budget for tonight.' : '';
       go.disabled = busy || !can; go.textContent = busy ? 'Thinking…' : 'Ask';
       var pr = q('#as-prog'); if (pr) pr.hidden = !busy;
       go.title = can ? 'Ask Blade (Enter)' : hint || 'Not available now';
@@ -897,8 +898,23 @@
     }
     /* the GM's question -> Blade's answer, one at a time. Resolves { answer }, { error: kind } or null (cannot ask, nothing typed, already asking).
        The words stay in the field when it fails, and are cleared when it works. */
+    /* C4f: text starting "Blade," or "/" is a typed command for the cue lane (o.onTyped), not a question: no Ask call, and it works at the cap too ($0) */
+    var typedBusy = false;
+    function isTyped(t) { return /^\s*(?:blade\s*,|\/)/i.test(str(t)); }
+    function typedOk() { return !gone && !isPhone() && typeof o.onTyped === 'function'; }
     function ask(text) {
       var qq = str(text).replace(/\s+/g, ' ').trim().slice(0, ASK_MAX);
+      if (qq && isTyped(qq) && typedOk()) {
+        if (typedBusy) return Promise.resolve(null);            /* a second Enter or a click while the first is on its way would post the command twice */
+        typedBusy = true;
+        var ta0 = q('#as-ask-q'), fin = function () { typedBusy = false; };
+        return Promise.resolve().then(function () { return o.onTyped(qq); }).then(function (r) {
+          fin();
+          if (!gone && r && r.ok && ta0 && str(ta0.value).replace(/\s+/g, ' ').trim() === qq) ta0.value = '';
+          if (!gone) render();
+          return r || null;
+        }, function () { fin(); return null; });
+      }
       if (!qq || st.ask.busy || !canAsk()) return Promise.resolve(null);
       st.ask.busy = true; st.ask.error = ''; render();
       return Promise.resolve().then(function () { return gm.assistAsk({ q: qq }); }).then(function (res) {
