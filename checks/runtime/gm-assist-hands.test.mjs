@@ -170,16 +170,27 @@ await test('rule: a confidence under 0.7 comes back as an offer; 0.7 and over is
   assert.equal(check([act({ confidence: 7 })]).actions[0].confidence, 1); assert.equal(check([act({ confidence: 0.123456 })]).actions[0].confidence, 0.12);
 });
 
-await test('rule: each action has a stable key (type, normalised target, hash of the quote); at, confidence and the amount are not in it', () => {
-  const a = check([act()]).actions[0], b = check([act({ at: '10:11', confidence: 0.71 })]).actions[0], c = check([act({ quote: 'call it Drains Below' })]).actions[0];
+await test('rule: each action has a stable key (type, normalised target, hash of the line the quote starts on); at, confidence and the amount are not in it', () => {
+  const a = check([act()]).actions[0], b = check([act({ at: '10:11', confidence: 0.71 })]).actions[0];
   assert.match(a.key, /^clock_add:drains-below:[0-9a-f]{8}$/);
   assert.equal(a.key, b.key, 'stable across calls');
-  assert.notEqual(a.key, c.key, 'a different quote is a different key');
-  assert.equal(check([act({ quote: "THAT'S going to be a six segment clock" })]).actions[0].key, a.key, 'the quote is hashed after normalising');
-  const t1 = check([act({ type: 'clock_tick', quote: 'Tick that once', clock_id: 'ck1', by: 1 })]).actions[0], t2 = check([act({ type: 'clock_tick', quote: 'Tick that once', clock_id: 'ck1', by: 3 })]).actions[0];
-  assert.equal(t1.key, t2.key); assert.match(t1.key, /^clock_tick:ck1:/);
-  assert.match(check([act({ type: 'capture', quote: 'Mirelle looks at you flat', bucket: 'moment', text: 'Mirelle looks flat' })]).actions[0].key, /^capture:moment:/);
+  assert.equal(check([act({ quote: "THAT'S going to be a six segment clock" })]).actions[0].key, a.key, 'normalised first');
+  const t = (quote, by = 1) => check([act({ type: 'clock_tick', quote, clock_id: 'ck1', by })]).actions[0];
+  assert.equal(t('Tick that once').key, t('Tick that once', 3).key); assert.match(t('Tick that once').key, /^clock_tick:ck1:/);
   assert.equal(actionKey('npc_add', 'Wren  Alder!', 'x'), actionKey('npc_add', 'wren alder', 'x'));
+  assert.notEqual(actionKey('npc_add', 'Wren', 'x'), actionKey('npc_add', 'Wren', 'y'));
+  assert.notEqual(actionKey('npc_add', 'Wren', 'x'), actionKey('clock_add', 'Wren', 'x'));
+  // the live replay\'s pair: one line, quoted short in one window and long in the next. The same decision keeps one key.
+  const short = t('Tick that once'), long = t('Tick that once, the lamp oil is going.'), mid = t('the lamp oil is going');
+  assert.equal(short.key, long.key, 'a short quote and the whole line'); assert.equal(short.key, mid.key, 'a quote that starts mid-line');
+  assert.equal(t('Tick that once, the lamp oil is going').key, long.key, 'whatever the punctuation');
+  // a different line is a different key, and a quote across two lines takes the first
+  const cap = (quote) => check([act({ type: 'capture', quote, bucket: 'moment', text: 'x' })]).actions[0];
+  assert.notEqual(cap("His name's Wren Alder").key, cap('Mirelle looks at you flat').key, 'two lines, one type and target');
+  assert.equal(cap('green coat').key, cap('The fence there').key, 'two spans of line 3');
+  const nameOf = (quote) => check([act({ quote })]).actions[0].key;
+  assert.equal(nameOf('Below. Tick that once'), nameOf('call it Drains Below'), 'across lines 1 and 2: anchored on line 1');
+  assert.notEqual(nameOf('Below. Tick that once'), nameOf('Tick that once, the lamp oil'), 'not on line 2');
   // two identical actions in one reply: one survives
   const d = check([act(), act({ at: '09:01' })]);
   assert.equal(d.actions.length, 1); assert.equal(d.dropped[0].why, 'duplicate');
@@ -477,6 +488,15 @@ await test('route: the same window sent twice gives the same keys, so the page c
   const b = await body(await s.post(REQ));
   assert.deepEqual(a.actions.map((x) => x.key), b.actions.map((x) => x.key));
   assert.equal(new Set(a.actions.map((x) => x.key)).size, 2);
+  // a model that copies a different span of the same lines the second time (the live replay saw this) still gives the same keys, even in a narrower window
+  clock.t += 9_000;
+  s.st.reply = { actions: [good({ quote: "Right, that's going to be a six-segment clock, call it Drains Below." }), good({ type: 'clock_tick', quote: 'the lamp oil is going', clock_id: 'ck1', by: 2 })] };
+  const c = await body(await s.post({ ...REQ, from: 2, to: 3 }));
+  assert.deepEqual(c.actions.map((x) => x.type), ['clock_tick'], 'line 1 is outside the narrower window: its quote is not in the talk');
+  assert.equal(c.actions[0].key, a.actions[1].key);
+  clock.t += 9_000;
+  const d = await body(await s.post(REQ));
+  assert.deepEqual(d.actions.map((x) => x.key), a.actions.map((x) => x.key));
 });
 
 // ---------- the replay script's helpers and guards ----------

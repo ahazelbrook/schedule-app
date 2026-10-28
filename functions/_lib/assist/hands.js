@@ -33,16 +33,19 @@ export function normalise(s) {
 
 const clip = (s, n) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim().slice(0, n) : '');
 
-// a small string hash (FNV-1a, 32 bit) in hex: the key only has to be stable, and the same on the page and here
+// a small string hash (FNV-1a, 32 bit) in hex: the key only has to be stable. The page uses the key as the Worker gives it and never recomputes one.
 function hash(s) {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-/** The key of an action: its type, the normalised target and a hash of the normalised quote. At, confidence and the amount are not in it, so a re-sent window gives the same key. */
-export function actionKey(type, target, normQuote) {
-  return type + ':' + normalise(target).replace(/ /g, '-').slice(0, 40) + ':' + hash(normQuote);
+/**
+ * The key of an action: its type, the normalised target and a hash of its ANCHOR, the normalised text of the line the quote starts on (design 5.4 hashes the quote; see
+ * validateActions for why the line). At, confidence and the amount are not in it, so the same decision gives the same key in any window that holds that line.
+ */
+export function actionKey(type, target, anchor) {
+  return type + ':' + normalise(target).replace(/ /g, '-').slice(0, 40) + ':' + hash(anchor);
 }
 
 /** The seq range of a request: { from, to } or null. Whole numbers, from <= to, at most RANGE_MAX apart. */
@@ -101,7 +104,14 @@ const clamp = (n, lo, hi) => (n < lo ? lo : n > hi ? hi : n);
 export function validateActions(raw, { state, lines }) {
   const actions = [], dropped = [];
   if (!Array.isArray(raw)) return { actions, dropped };
-  const hay = ' ' + (lines || []).filter((l) => l && l.kind === 'line').map((l) => normalise(l.text)).filter(Boolean).join(' ') + ' ';
+  // The talk as one normalised string, each line a word-bounded stretch of it; starts[i] is where line i begins in `hay` (so a quote's position names its line).
+  const norm = (lines || []).filter((l) => l && l.kind === 'line').map((l) => normalise(l.text)).filter(Boolean);
+  const hay = ' ' + norm.join(' ') + ' ';
+  const starts = []; let at0 = 1;
+  for (const t of norm) { starts.push(at0); at0 += t.length + 1; }
+  // The line a quote starts on (the first, if it is said twice). The key hashes THAT LINE, not the quote: the model may copy "Tick that once" in one window and
+  // "Tick that once, the night crew is stirring." in the next (the C1 replay did exactly that), and the same decision must keep one key. A quote running across lines takes its first.
+  const lineAt = (pos) => { let i = starts.length - 1; while (i > 0 && starts[i] > pos) i--; return norm[i]; };
   const clocks = new Map(state.clocks.map((c) => [c.id, c]));
   const known = new Set(state.npcs.concat(state.pcs).map((n) => normalise(n.name)).filter(Boolean));
   const seen = new Set();
@@ -110,7 +120,9 @@ export function validateActions(raw, { state, lines }) {
   for (const a of raw.slice(0, ACTIONS_MAX)) {
     if (!isObj(a) || !TYPES.includes(a.type)) { drop(isObj(a) ? a.type : '', 'unknown type'); continue; }
     const nq = normalise(a.quote);
-    if (nq.length < QUOTE_MIN || !hay.includes(' ' + nq + ' ')) { drop(a.type, 'quote not in the talk'); continue; }
+    const hit = nq.length < QUOTE_MIN ? -1 : hay.indexOf(' ' + nq + ' ');
+    if (hit < 0) { drop(a.type, 'quote not in the talk'); continue; }
+    const anchor = lineAt(hit + 1);
     const conf = typeof a.confidence === 'number' && Number.isFinite(a.confidence) ? clamp(a.confidence, 0, 1) : 0;
     const base = { type: a.type, mode: conf >= CONFIDENCE_MIN ? 'act' : 'offer', quote: clip(a.quote, QUOTE_KEEP), at: typeof a.at === 'string' && /^\d{2}:\d{2}$/.test(a.at.trim()) ? a.at.trim() : '', confidence: Math.round(conf * 100) / 100 };
     let out;
@@ -118,7 +130,7 @@ export function validateActions(raw, { state, lines }) {
       const name = clip(a.name, NAME_MAX);
       if (!name) { drop(a.type, 'no name'); continue; }
       if (!CLOCK_SIZES.includes(a.size)) { drop(a.type, 'illegal size'); continue; }
-      out = { ...base, key: actionKey(a.type, name, nq), name, size: a.size, hidden: a.hidden === true };
+      out = { ...base, key: actionKey(a.type, name, anchor), name, size: a.size, hidden: a.hidden === true };
     } else if (a.type === 'clock_tick') {
       const c = typeof a.clock_id === 'string' ? clocks.get(a.clock_id) : undefined;
       if (!c) { drop(a.type, 'unknown clock'); continue; }
@@ -126,22 +138,22 @@ export function validateActions(raw, { state, lines }) {
       // the amount is clamped twice: to what one action may do, then to what the clock can take. Nothing left to do is dropped, not sent as a zero.
       const by = clamp(clamp(Math.trunc(a.by), TICK_MIN, TICK_MAX), -c.filled, c.size - c.filled);
       if (by === 0) { drop(a.type, 'no change'); continue; }
-      out = { ...base, key: actionKey(a.type, c.id, nq), clock_id: c.id, clock_name: c.name, by, from_filled: c.filled, to_filled: c.filled + by, size: c.size };
+      out = { ...base, key: actionKey(a.type, c.id, anchor), clock_id: c.id, clock_name: c.name, by, from_filled: c.filled, to_filled: c.filled + by, size: c.size };
     } else if (a.type === 'npc_add') {
       const name = clip(a.name, NAME_MAX);
       if (!name) { drop(a.type, 'no name'); continue; }
       if (known.has(normalise(name))) { drop(a.type, 'already known', name); continue; }
-      out = { ...base, key: actionKey(a.type, name, nq), name, look: clip(a.look, LOOK_MAX), role: clip(a.role, ROLE_MAX) };
+      out = { ...base, key: actionKey(a.type, name, anchor), name, look: clip(a.look, LOOK_MAX), role: clip(a.role, ROLE_MAX) };
     } else if (a.type === 'capture') {
       const text = clip(a.text, TEXT_MAX);
       if (!BUCKETS.includes(a.bucket)) { drop(a.type, 'unknown bucket'); continue; }
       if (!text) { drop(a.type, 'no text'); continue; }
-      out = { ...base, key: actionKey(a.type, a.bucket, nq), bucket: a.bucket, text };
+      out = { ...base, key: actionKey(a.type, a.bucket, anchor), bucket: a.bucket, text };
     } else {
       // roll_log (P3): the page has no apply path for it yet (design 5.5), so it is only ever an offer
       const who = clip(a.who, FIELD_MAX), what = clip(a.action, FIELD_MAX);
       if (!who || !what) { drop(a.type, 'no roll'); continue; }
-      out = { ...base, mode: 'offer', key: actionKey(a.type, who, nq), who, action: what,
+      out = { ...base, mode: 'offer', key: actionKey(a.type, who, anchor), who, action: what,
         position: POSITIONS.includes(a.position) ? a.position : 'unclear', effect: EFFECTS.includes(a.effect) ? a.effect : 'unclear', result: RESULTS.includes(a.result) ? a.result : 'unclear' };
     }
     if (seen.has(out.key)) { drop(a.type, 'duplicate'); continue; }
