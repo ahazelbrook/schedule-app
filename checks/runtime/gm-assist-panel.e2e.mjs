@@ -58,6 +58,19 @@ const FIT = { seat: 'fixer', at: new Date().toISOString(), text: 'Crew at the ga
 
 const VOICE = { who: 'Mrs Test', want: 'to be paid', lines: ['Invented line one.', 'Invented line two.'], at: new Date().toISOString() };
 
+// The GM page's own heat/wanted sync (makeCrewSync in app/gm-page.js) PATCHes the ambient document with { crew: { heat, wanted } } about two
+// seconds after the campaign loads, whatever the GM does (a 2000 ms debounce, so it can land inside a listener window). It is the page's own
+// timer, not a suggestion, and it carries two small numbers and no text. A listener that watches for suggestion writes ignores exactly that
+// shape and nothing else: any other ambient write, and every display, campaign or clock write, still counts. The positive controls (what Show
+// sends) are unaffected.
+function crewSyncOnly(rq) {
+  if (rq.method() !== 'PATCH' || !/\/api\/gm\/ambient$/.test(rq.url())) return false;
+  let b = null; try { b = JSON.parse(rq.postData() || 'null'); } catch (_) { return false; }
+  if (!b || typeof b !== 'object' || Object.keys(b).join() !== 'crew') return false;
+  const c = b.crew;
+  return !!c && typeof c === 'object' && Object.keys(c).every((k) => (k === 'heat' || k === 'wanted') && typeof c[k] === 'number');
+}
+
 try {
   const up = await until(async () => { try { return (await fetch(BASE + '/index.html')).status > 0; } catch (_) { return false; } }, 90000, 500);
   if (!up) throw new Error('the server did not start');
@@ -269,7 +282,7 @@ try {
   const Mw = await open('#gm', { mode: 'meanwhile' });
   Mw.seen.mode = 'meanwhile';
   const mp = Mw.page, mwSent = [];
-  mp.on('request', (rq) => { if (rq.method() !== 'GET' && /\/api\//.test(rq.url()) && !/\/gm\/assist\//.test(rq.url())) mwSent.push(rq.method() + ' ' + rq.url()); });
+  mp.on('request', (rq) => { if (rq.method() !== 'GET' && /\/api\//.test(rq.url()) && !/\/gm\/assist\//.test(rq.url()) && !crewSyncOnly(rq)) mwSent.push(rq.method() + ' ' + rq.url()); });
   await mp.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
   await mp.click('.gm-assist .as-launch, #as-launch');
   const mwCard = '#as-list .as-card[data-seat="meanwhile"]';
@@ -297,7 +310,7 @@ try {
   const offerCard = (id) => '#as-list .as-card[data-seat="handout"]' + (id ? '[data-id="' + id + '"]' : '');
   const offers = async () => (await hp.$$('#as-list .as-card[data-seat="handout"]')).length;
   const sent = [];
-  hp.on('request', (rq) => { if (rq.method() !== 'GET' && /\/api\/gm\/(display|ambient)/.test(rq.url())) sent.push(rq.method() + ' ' + rq.url()); });
+  hp.on('request', (rq) => { if (rq.method() !== 'GET' && /\/api\/gm\/(display|ambient)/.test(rq.url()) && !crewSyncOnly(rq)) sent.push(rq.method() + ' ' + rq.url()); });
   const tickAgain = async (n) => { await hp.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); return until(async () => Hd.seen.tick.length >= n, 8000); };
   await hp.click('.gm-assist .as-launch, #as-launch');
   check(await hp.waitForSelector(offerCard(), { timeout: 15000 }).then(() => true, () => false), 'Handout: the tick answer puts "Show handout?" in the box as an idea card');
@@ -335,7 +348,7 @@ try {
   Sc.seen.mode = 'quiet';
   const sp = Sc.page, sc = Sc.seen.sc;
   const sentSc = [];
-  sp.on('request', (rq) => { if (rq.method() !== 'GET' && /\/api\/gm\/(display|ambient)/.test(rq.url())) sentSc.push(rq.method() + ' ' + rq.url()); });
+  sp.on('request', (rq) => { if (rq.method() !== 'GET' && /\/api\/gm\/(display|ambient)/.test(rq.url()) && !crewSyncOnly(rq)) sentSc.push(rq.method() + ' ' + rq.url()); });
   await sp.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
   await sp.waitForSelector('.gm-assist .as-launch', { timeout: 10000 });
   await until(async () => Sc.seen.tick.length >= 1, 15000);
