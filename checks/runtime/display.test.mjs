@@ -946,6 +946,96 @@ await test('status: waiting, updated, trouble and denied', () => {
   assert.equal(P.statusView({ state: 'denied' }, 0, null).dot, 'bad');
 });
 
+/* ---------- overlays (Pure.cleanOverlay, overlayStep, clockWedges, dawnPhases, overlayCard) ---------- */
+const OVC = { id: 'ov-1', kind: 'clock', ms: 8000, name: 'Invented Fuse', size: 6, filled: 2 };
+await test('overlay: cleanOverlay keeps each kind with only its own fields', () => {
+  assert.deepEqual(P.cleanOverlay(OVC), OVC);
+  assert.deepEqual(P.cleanOverlay({ id: 'n', kind: 'npc', ms: 20000, npcId: 'npc_x' }), { id: 'n', kind: 'npc', ms: 20000, npcId: 'npc_x' });
+  assert.deepEqual(P.cleanOverlay({ id: 'd', kind: 'fx', ms: 30000, fx: 'dawn' }), { id: 'd', kind: 'fx', ms: 30000, fx: 'dawn' });
+  assert.deepEqual(P.cleanOverlay({ id: 't', kind: 'text', ms: 5000, text: '  a  b\n c ' }), { id: 't', kind: 'text', ms: 5000, text: 'a b c' });
+  /* the server's `at`, and anything smuggled in beside the fields, does not survive */
+  const smug = P.cleanOverlay({ ...OVC, at: '2026-10-28T00:00:00Z', text: 'smuggled', npcId: 'npc_x', svg: '<svg/>', description: 'secret' });
+  assert.deepEqual(Object.keys(smug).sort(), ['filled', 'id', 'kind', 'ms', 'name', 'size']);
+  assert.deepEqual(Object.keys(P.cleanOverlay({ id: 'd', kind: 'fx', ms: 30000, fx: 'dawn', text: 'x', name: 'y' })).sort(), ['fx', 'id', 'kind', 'ms']);
+});
+await test('overlay: cleanOverlay refuses (null) anything outside the bounds, rather than repairing it', () => {
+  const bad = [
+    undefined, null, 'x', 5, [], {}, { ...OVC, id: '' }, { ...OVC, id: '  ' }, { ...OVC, id: 'i'.repeat(41) }, { ...OVC, id: 5 }, { ...OVC, id: undefined },
+    { ...OVC, kind: 'wire' }, { ...OVC, kind: undefined }, { ...OVC, kind: 'Clock' },
+    { ...OVC, ms: 999 }, { ...OVC, ms: 180001 }, { ...OVC, ms: 5000.5 }, { ...OVC, ms: '5000' }, { ...OVC, ms: NaN }, { ...OVC, ms: Infinity }, { ...OVC, ms: undefined },
+    { ...OVC, name: '' }, { ...OVC, name: 'n'.repeat(61) }, { ...OVC, name: 5 }, { ...OVC, size: 5 }, { ...OVC, size: '6' }, { ...OVC, size: 14 },
+    { ...OVC, filled: 7 }, { ...OVC, filled: -1 }, { ...OVC, filled: 1.5 }, { ...OVC, filled: '2' }, { ...OVC, size: 4, filled: 5 },
+    { id: 'n', kind: 'npc', ms: 5000 }, { id: 'n', kind: 'npc', ms: 5000, npcId: 'has space' }, { id: 'n', kind: 'npc', ms: 5000, npcId: '' }, { id: 'n', kind: 'npc', ms: 5000, npcId: 'a/b' },
+    { id: 'n', kind: 'npc', ms: 5000, npcId: 'x'.repeat(81) }, { id: 'd', kind: 'fx', ms: 30000 }, { id: 'd', kind: 'fx', ms: 30000, fx: 'dusk' },
+    { id: 't', kind: 'text', ms: 5000 }, { id: 't', kind: 'text', ms: 5000, text: '   ' }, { id: 't', kind: 'text', ms: 5000, text: 'x'.repeat(121) }, { id: 't', kind: 'text', ms: 5000, text: 5 },
+  ];
+  bad.forEach((b, i) => assert.equal(P.cleanOverlay(b), null, 'case ' + i + ': ' + JSON.stringify(b)));
+  /* and the bounds that are allowed */
+  assert.ok(P.cleanOverlay({ ...OVC, id: 'i'.repeat(40), ms: 1000, name: 'n'.repeat(60) }));
+  assert.ok(P.cleanOverlay({ ...OVC, ms: 180000 }));
+  [4, 6, 8, 10, 12].forEach((size) => { assert.ok(P.cleanOverlay({ ...OVC, size, filled: 0 })); assert.ok(P.cleanOverlay({ ...OVC, size, filled: size })); });
+  assert.ok(P.cleanOverlay({ id: 't', kind: 'text', ms: 5000, text: 't'.repeat(120) }));
+});
+await test('overlay: overlayStep shows a new id once, keeps the same id, hides on null, and a cleared id can be shown afresh', () => {
+  let r = P.overlayStep('', OVC);
+  assert.equal(r.action, 'show'); assert.equal(r.seen, 'ov-1'); assert.deepEqual(r.overlay, OVC);
+  r = P.overlayStep(r.seen, OVC); assert.equal(r.action, 'keep'); assert.equal(r.seen, 'ov-1');
+  r = P.overlayStep(r.seen, { ...OVC, filled: 3 }); assert.equal(r.action, 'keep', 'the same id with other numbers is still the same overlay: it does not restart');
+  r = P.overlayStep(r.seen, { ...OVC, id: 'ov-2' }); assert.equal(r.action, 'show', 'a new id replaces it'); assert.equal(r.seen, 'ov-2');
+  r = P.overlayStep(r.seen, null); assert.equal(r.action, 'hide'); assert.equal(r.seen, ''); assert.equal(r.overlay, null);
+  r = P.overlayStep(r.seen, undefined); assert.equal(r.action, 'keep', 'nothing to hide');
+  r = P.overlayStep('', { ...OVC, id: 'ov-2' }); assert.equal(r.action, 'show', 'after a clear the same id shows again');
+  r = P.overlayStep('ov-2', { ...OVC, ms: 5 }); assert.equal(r.action, 'hide', 'a malformed overlay is a null: it hides what was there');
+  assert.equal(r.seen, '');
+});
+await test('overlay: clockWedges draws one wedge per segment from 12 o\'clock, the first `filled` on', () => {
+  for (const size of [4, 6, 8, 10, 12]) {
+    for (const filled of [0, 1, size - 1, size]) {
+      const w = P.clockWedges(size, filled);
+      assert.equal(w.length, size); assert.equal(w.filter((x) => x.on).length, filled);
+      assert.deepEqual(w.map((x) => x.on), w.map((x, i) => i < filled), 'filled from the first segment');
+      assert.equal(new Set(w.map((x) => x.d)).size, size, 'every wedge is its own path');
+      w.forEach((x) => assert.match(x.d, /^M50 50L[-\d. ]+A46 46 0 0 1 [-\d. ]+Z$/));
+    }
+  }
+  assert.match(P.clockWedges(4, 0)[0].d, /^M50 50L50 4A46 46 0 0 1 96 50Z$/, 'the first quarter runs from 12 to 3 o\'clock');
+});
+await test('overlay: dawnPhases is a 2 s ramp, a hold, a 2 s fade in 30 s; reduced motion is white at once and straight back', () => {
+  assert.deepEqual(P.dawnPhases(30000, false), { ramp: 2000, hold: 26000, fade: 2000 });
+  assert.deepEqual(P.dawnPhases(30000, true), { ramp: 0, hold: 30000, fade: 0 });
+  for (const ms of [1000, 1500, 3999, 4000, 8000, 30000, 180000]) {
+    const a = P.dawnPhases(ms, false), b = P.dawnPhases(ms, true);
+    assert.equal(a.ramp + a.hold + a.fade, ms); assert.equal(b.ramp + b.hold + b.fade, ms);
+    assert.ok(a.ramp <= 2000 && a.hold > 0 && a.fade === a.ramp, 'ms ' + ms);
+  }
+});
+await test('overlay: overlayCard builds the card from the validated fields; an NPC card takes the player-safe fields only', () => {
+  const clk = P.overlayCard(P.cleanOverlay(OVC), null);
+  assert.equal(clk.kind, 'clock'); assert.equal(clk.name, 'Invented Fuse'); assert.equal(clk.count, '2 / 6'); assert.equal(clk.wedges.length, 6);
+  assert.deepEqual(P.overlayCard(P.cleanOverlay({ id: 't', kind: 'text', ms: 5000, text: 'Invented line.' }), null), { kind: 'text', text: 'Invented line.', size: 'xl' });
+  assert.deepEqual(P.overlayCard(P.cleanOverlay({ id: 'd', kind: 'fx', ms: 30000, fx: 'dawn' }), null), { kind: 'fx', fx: 'dawn' });
+  assert.equal(P.overlayCard(null, null), null);
+  const o = P.cleanOverlay({ id: 'n', kind: 'npc', ms: 20000, npcId: 'npc_x' });
+  const doc = { name: 'Invented Person', alias: 'Inky', role: 'Clerk', faction: 'The Invented Guild', description: 'A long description.', gmNotes: 'SECRET-NOTE', tags: ['secret-tag'], revealed: true, spec: { heightIn: 60 } };
+  const c = P.overlayCard(o, doc);
+  assert.deepEqual(c, { kind: 'npc', name: 'Invented Person', alias: 'Inky', sub: 'Clerk · The Invented Guild', spec: { heightIn: 60 } });
+  assert.ok(!/SECRET|secret|description|tags|revealed/.test(JSON.stringify(c)), 'no gmNotes, tags, description or revealed flag on the card');
+  assert.equal(P.overlayCard(o, null), null, 'an NPC the page could not read draws nothing');
+  assert.equal(P.overlayCard(o, undefined), null);
+  assert.equal(P.overlayCard(o, { name: '', alias: 'x' }), null, 'a nameless NPC draws nothing');
+});
+await test('overlay: the ambient plan is unchanged by overlay and auto, and no model text can reach a card (the page draws text, never markup)', () => {
+  const want = P.ambientPlan({});
+  assert.deepEqual(P.ambientPlan({ overlay: OVC, auto: true }), want);
+  assert.ok(!('overlay' in want) && !('auto' in want));
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'display-page.js'), 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const sinks = code.match(/\.(innerHTML|outerHTML)\s*=[^;]*|insertAdjacentHTML|document\.write|createContextualFragment/g) || [];
+  assert.deepEqual(sinks.map((x) => x.trim()).filter((x) => x !== ".innerHTML = ''"), ['.innerHTML = html'], 'the only markup sink is the rules entry, rendered by B68Markdown: ' + JSON.stringify(sinks));
+  const ov = code.slice(code.indexOf('s.ov = {'), code.indexOf('s.crew = null;'));
+  assert.ok(ov.length > 500 && !/innerHTML|insertAdjacentHTML|\.href|setAttribute\(\s*['"]href/.test(ov), 'the overlay controller draws with textContent and nodes only');
+});
+
 await test('no way to the GM routes from the display: no link, no #gm, no href set anywhere in display-page.js', () => {
   const src = fs.readFileSync(path.join(ROOT, 'app', 'display-page.js'), 'utf8');
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');

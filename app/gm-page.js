@@ -384,12 +384,40 @@
       /* an ambient patch: a score (the only thing in it that carries a map) goes only if BOTH its svgs were marked; null clears */
       allowsAmbient: function (p) {
         if (!isObj(p)) return false;
+        /* an overlay goes out only in the shape overlayOk() knows (no stray fields, no svg, no markup); auto is a boolean */
+        if ('overlay' in p && p.overlay !== null && !overlayOk(p.overlay)) return false;
+        if ('auto' in p && p.auto !== null && typeof p.auto !== 'boolean') return false;
         if (!('score' in p) || p.score === null) return true;
         return isObj(p.score) && typeof p.score.board === 'string' && typeof p.score.iso === 'string' && ok.indexOf(p.score.board) >= 0 && ok.indexOf(p.score.iso) >= 0;
       }
     };
   }
   P.makeGate = makeGate;
+
+  /* ---------- overlays (GM.md, "Overlays"): something laid over the iPad without replacing what is up ----------
+     overlayOk(o): true for exactly the shapes /api/gm/ambient takes: { id (at most 40), kind clock|npc|fx|text, ms 1000-180000 } plus
+     clock { name (at most 60), size 4|6|8|10|12, filled 0..size }, npc { npcId }, fx { fx: 'dawn' }, text { text (at most 120) }, and no
+     other field. What goes in the text is the caller's: only what the GM chose, never model text or prep text. */
+  var OV_FIELDS = { clock: ['name', 'size', 'filled'], npc: ['npcId'], fx: ['fx'], text: ['text'] };
+  function wholeBetween(v, lo, hi) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= lo && v <= hi; }
+  function overlayOk(o) {
+    if (!isObj(o) || !Object.prototype.hasOwnProperty.call(OV_FIELDS, o.kind)) return false;
+    var allowed = ['id', 'kind', 'ms'].concat(OV_FIELDS[o.kind]);
+    if (Object.keys(o).some(function (k) { return allowed.indexOf(k) < 0; })) return false;
+    if (typeof o.id !== 'string' || !o.id.trim() || o.id.length > 40 || !wholeBetween(o.ms, 1000, 180000)) return false;
+    if (o.kind === 'clock') return typeof o.name === 'string' && !!o.name.trim() && o.name.length <= 60 && [4, 6, 8, 10, 12].indexOf(o.size) >= 0 && wholeBetween(o.filled, 0, o.size);
+    if (o.kind === 'npc') return typeof o.npcId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(o.npcId);
+    if (o.kind === 'fx') return o.fx === 'dawn';
+    return typeof o.text === 'string' && !!o.text.trim() && o.text.length <= 120;
+  }
+  P.overlayOk = overlayOk;
+  /* a short line for the iPad panel: what the document holds (the display takes it away by itself after its ms) */
+  function overlayLine(o) {
+    if (!isObj(o) || !Object.prototype.hasOwnProperty.call(OV_FIELDS, o.kind)) return '';
+    var what = o.kind === 'fx' ? 'dawn' : o.kind === 'clock' ? 'clock ' + str(o.name) + ' ' + o.filled + '/' + o.size : o.kind === 'npc' ? 'an NPC card' : 'a line of text';
+    return what + ' · ' + Math.round((Number(o.ms) || 0) / 1000) + ' s';
+  }
+  P.overlayLine = overlayLine;
 
   /* ---------- the iPad panel: the ambient scenes, the crew sync, the score scene (GM.md, "Ambient scenes") ---------- */
   /* The scenes the picker offers (ids mirror Pure.AMBIENT_SCENES in display-page.js and AMBIENT_SCENES in functions/_lib/gm.js). */
@@ -495,6 +523,7 @@
     var iv = Math.round(Number(d.intervalMin)); if (!(iv >= 3 && iv <= 30)) iv = P.IPAD_INTERVAL_DEFAULT;
     var intervals = P.IPAD_INTERVALS.slice(); if (intervals.indexOf(iv) < 0) { intervals.push(iv); intervals.sort(function (a, b) { return a - b; }); }
     return {
+      overlayLine: overlayLine(d.overlay), auto: d.auto === true,
       mode: mode, scene: scene, intervalMin: iv, intervals: intervals, hasScore: !!score, scoreLine: scoreLine(score),
       tiles: P.IPAD_SCENES.map(function (s) {
         var noScore = s.needs === 'score' && !score;
@@ -2616,6 +2645,16 @@
       AM.busy--; renderIpad(); toast('Could not change the iPad: ' + errText(e), true); return null;
     });
   }
+  /* Lay something over the iPad without replacing what is up (the false dawn; the autopilot). The patch goes through patchAmbient, so the
+     gate runs; a hidden NPC is refused by the server too. An id is made when none is given: a new id is what shows it afresh. */
+  function newOverlayId() { return 'ov-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function showOverlay(o) {
+    if (!isObj(o)) return Promise.resolve(null);
+    var ov = Object.assign({}, o); if (ov.id === undefined) ov.id = newOverlayId();
+    if (!overlayOk(ov)) { toast('That overlay is not one the iPad can show.', true); return Promise.resolve(null); }
+    return patchAmbient({ overlay: ov });
+  }
+  function clearOverlay() { return patchAmbient({ overlay: null }); }
   /* the heat / wanted sync: campaign(doc) feeds it (see makeCrewSync) */
   var crewSync = makeCrewSync({
     send: function (crew) { var g = (keptApi && keptApi.gm && keptApi.gm()) || (W.claude && W.claude.gm); if (!g || typeof g.patchAmbient !== 'function') return Promise.reject(new Error('the GM tools are not available')); return g.patchAmbient({ crew: crew }); },
@@ -2629,8 +2668,10 @@
     var v = ipadView(AM.doc), busy = AM.busy > 0, off = !AM.loaded;
     function seg(k, label) { return '<button type="button" class="chip" data-gm="ambmode" data-v="' + k + '" aria-pressed="' + (v.mode === k) + '"' + (off || busy ? ' disabled' : '') + '>' + label + '</button>'; }
     var h = '<section class="gm-box gm-ipad-now"><h3 class="gm-band">On the iPad now</h3><p class="gm-ipad-line" id="gm-ipad-now">' + (AM.shown ? esc(displayLine(AM.shown)) : '<span class="gm-dim">Not known yet: push something, or clear it.</span>') + '</p>' +
+      (v.overlayLine ? '<p class="gm-ipad-line" id="gm-ipad-overlay">Overlay sent: ' + esc(v.overlayLine) + (v.auto ? ' · AUTO' : '') + '</p>' : '') +
       '<div class="gm-ipad-acts"><button type="button" class="btn primary" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' +
-      '<button type="button" class="btn" data-gm="darkipad" title="True black until you push something">Lights out</button></div></section>';
+      '<button type="button" class="btn" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
+      '<button type="button" class="btn" data-gm="clearoverlay"' + (busy ? ' disabled' : '') + ' title="Take the overlay (a clock, an NPC, a line or the dawn) off the iPad; what is under it stays">Clear overlay</button></div></section>';
     h += '<section class="gm-box gm-ipad-amb"><h3 class="gm-band">Ambient scenes</h3><div class="gm-ipad-body">';
     if (!AM.loaded) h += '<p class="gm-dim" role="status">' + (AM.error ? 'Could not read the settings: ' + esc(AM.error) : 'Loading the iPad settings…') + '</p>' + (AM.error ? '<p><button type="button" class="btn sm" data-gm="ambretry">Try again</button></p>' : '');
     h += '<div class="gm-field"><span class="gm-lab">When nothing is spotlit</span><div class="seg" role="group" aria-label="Ambient mode">' + seg('off', 'Off') + seg('auto', 'Auto') + seg('pin', 'Pin') + '</div></div>' +
@@ -4380,6 +4421,7 @@
       case 'ambmode': { var am = b.getAttribute('data-v'); if (am === 'pin') patchAmbient({ mode: 'pin', scene: AM.doc && ipadView(AM.doc).scene || 'harvest' }); else patchAmbient({ mode: am }); break; }
       case 'ambscene': patchAmbient({ mode: 'pin', scene: b.getAttribute('data-id') }); break;
       case 'ambskip': patchAmbient({ skip: true }); break;
+      case 'clearoverlay': clearOverlay(); break;
       case 'clearscore': patchAmbient({ score: null }); break;
       case 'dlsvg': if (!S.map) toast('Draw the map first.', true); else if (S.map.layer === 'player' && S.map.leak) toast(P.LEAK_MSG, true); else save(slug(S.locRoll && S.locRoll.name) + '-' + S.map.view + '-' + S.map.theme + '-' + S.map.layer + '.svg', S.map.svg); break;
       case 'dlnote': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.md', W.B68GmLocation.noteBody(S.locRoll, { date: dmy(new Date()) })); break;
@@ -4497,6 +4539,8 @@
     _pushDisplay: function (d) { return pushDisplay(d); },
     /* "Claude suggests" (a later step calls this): a Show handout? item in the Rack. Returns false for an id the pack does not hold. */
     suggestHandout: function (id, why) { return suggestHandout(id, why); },
+    /* overlays on the iPad (the false dawn, the autopilot): showOverlay({ kind, ms, ... }) and clearOverlay(), through the ambient document */
+    showOverlay: showOverlay, clearOverlay: clearOverlay,
     _ambient: function () { return { doc: AM.doc, shown: AM.shown, loaded: AM.loaded, crew: crewSync.state().lastSent }; }
   };
 });

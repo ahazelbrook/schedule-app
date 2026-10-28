@@ -11,11 +11,16 @@
 //                                                   reveal [public|working|controlled|secure], view 'plan'|'rings',
 //                                                   board, iso (player-safe svgs, as for the display) } (`at` is set here)
 //   wire null | [{ id, text }]   up to 6 in-world bulletins (text at most 240 characters) the display lays over the playing scene, one at a time
+//   overlay null | { id (at most 40), kind clock|npc|fx|text, ms 1000-180000, ... }  something laid over the iPad without replacing it:
+//             clock { name (at most 60), size 4|6|8|10|12, filled 0..size }, npc { npcId } (400 unless that NPC is revealed),
+//             fx { fx: 'dawn' }, text { text (at most 120) }; replaces, null removes, `at` is set here
+//   auto true | false | null   the iPad's AUTO chip
 // The stored document is at most 1.4 MiB.
 
 import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf } from '../../_lib/http.js';
 import { LIMITS, requireGm, cleanAmbientPatch, loadAmbient, patchAmbient } from '../../_lib/gm.js';
+import { assertRevealedNpc } from '../../_lib/npcs.js';
 
 const METHODS = ['GET', 'PATCH'];
 
@@ -30,5 +35,7 @@ export async function onRequest({ request, env, data }) {
   }
   const patch = cleanAmbientPatch(await readJsonObject(request, LIMITS.ambientRequest));
   const db = await getDb(env);
+  // an npc overlay only for a revealed NPC: checked before anything is stored, so a refusal changes nothing
+  if (patch.overlay && patch.overlay.kind === 'npc') await assertRevealedNpc(db, campaign, patch.overlay.npcId);
   return json(await patchAmbient(db, campaign, patch));
 }

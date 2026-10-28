@@ -922,6 +922,66 @@ await test('9j. Off / Auto / Pin, a scene, the interval, Next scene and Clear sc
   await h.save();
 });
 
+await test('9j2. overlays: overlayOk takes exactly the server\'s shapes and no stray field; the gate lets an overlay or auto through only in that shape', () => {
+  const ok = [
+    { id: 'a', kind: 'clock', ms: 8000, name: 'Invented Fuse', size: 6, filled: 2 }, { id: 'a', kind: 'clock', ms: 1000, name: 'n'.repeat(60), size: 12, filled: 12 },
+    { id: 'i'.repeat(40), kind: 'npc', ms: 180000, npcId: 'npc_x' }, { id: 'a', kind: 'fx', ms: 30000, fx: 'dawn' }, { id: 'a', kind: 'text', ms: 5000, text: 't'.repeat(120) },
+  ];
+  ok.forEach((o) => assert.equal(P.overlayOk(o), true, JSON.stringify(o)));
+  const bad = [
+    null, 'x', [], {}, { id: 'a', kind: 'wire', ms: 8000 }, { id: 'a', kind: 'fx', ms: 999, fx: 'dawn' }, { id: 'a', kind: 'fx', ms: 180001, fx: 'dawn' }, { id: 'a', kind: 'fx', ms: 5000.5, fx: 'dawn' },
+    { id: '', kind: 'fx', ms: 5000, fx: 'dawn' }, { id: 'i'.repeat(41), kind: 'fx', ms: 5000, fx: 'dawn' }, { kind: 'fx', ms: 5000, fx: 'dawn' }, { id: 'a', kind: 'fx', ms: 5000, fx: 'dusk' },
+    { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn', text: 'smuggled' }, { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn', svg: '<svg/>' }, { id: 'a', kind: 'text', ms: 5000, text: 'x', at: 'now' },
+    { id: 'a', kind: 'text', ms: 5000, text: 'x'.repeat(121) }, { id: 'a', kind: 'text', ms: 5000, text: '  ' }, { id: 'a', kind: 'npc', ms: 5000, npcId: 'has space' }, { id: 'a', kind: 'npc', ms: 5000, npcId: 'npc_x', name: 'Name' },
+    { id: 'a', kind: 'clock', ms: 8000, name: '', size: 6, filled: 2 }, { id: 'a', kind: 'clock', ms: 8000, name: 'n'.repeat(61), size: 6, filled: 2 }, { id: 'a', kind: 'clock', ms: 8000, name: 'x', size: 5, filled: 2 },
+    { id: 'a', kind: 'clock', ms: 8000, name: 'x', size: 4, filled: 5 }, { id: 'a', kind: 'clock', ms: 8000, name: 'x', size: 4, filled: -1 }, { id: 'a', kind: 'clock', ms: 8000, name: 'x', size: 4, filled: 1.5 },
+  ];
+  bad.forEach((o) => assert.equal(P.overlayOk(o), false, JSON.stringify(o)));
+  const g = P.makeGate();
+  assert.equal(g.allowsAmbient({ overlay: ok[3] }), true); assert.equal(g.allowsAmbient({ overlay: null }), true); assert.equal(g.allowsAmbient({ auto: true }), true); assert.equal(g.allowsAmbient({ auto: null }), true);
+  assert.equal(g.allowsAmbient({ overlay: bad[12] }), false, 'a stray field'); assert.equal(g.allowsAmbient({ overlay: 'dawn' }), false); assert.equal(g.allowsAmbient({ auto: 1 }), false); assert.equal(g.allowsAmbient({ auto: 'yes' }), false);
+  assert.equal(g.allowsAmbient({ mode: 'off', overlay: bad[5] }), false, 'a good key does not carry a bad overlay');
+  assert.equal(P.overlayLine(ok[3]), 'dawn · 30 s'); assert.equal(P.overlayLine(ok[0]), 'clock Invented Fuse 2/6 · 8 s'); assert.equal(P.overlayLine(null), ''); assert.equal(P.overlayLine({ kind: 'x' }), '');
+  assert.equal(P.ipadView({ overlay: ok[3], auto: true }).overlayLine, 'dawn · 30 s'); assert.equal(P.ipadView({ overlay: ok[3], auto: true }).auto, true); assert.equal(P.ipadView({}).overlayLine, '');
+});
+
+await test('9j3. showOverlay and clearOverlay go through the ambient PATCH (so the gate runs); the iPad panel names the overlay and has Clear overlay; a bad overlay is refused before it is sent', async () => {
+  const fg = addAmbient(fakeGm()), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
+  await openIpad(h);
+  const n0 = fg.server.ambPatches.length;
+  assert.equal(typeof h.page.showOverlay, 'function'); assert.equal(typeof h.page.clearOverlay, 'function');
+  assert.equal(h.q('#gm-ipad-overlay'), null, 'no overlay line while none is sent');
+  await h.page.showOverlay({ kind: 'fx', fx: 'dawn', ms: 30000 });
+  assert.equal(fg.server.ambPatches.length, n0 + 1);
+  const sent = fg.server.ambPatches[n0];
+  assert.deepEqual(Object.keys(sent), ['overlay']); assert.deepEqual(Object.keys(sent.overlay).sort(), ['fx', 'id', 'kind', 'ms']);
+  assert.match(sent.overlay.id, /^ov-[a-z0-9]+$/); assert.ok(sent.overlay.id.length <= 40); assert.equal(sent.overlay.kind, 'fx');
+  assert.match(h.q('#gm-ipad-overlay').textContent, /^Overlay sent: dawn · 30 s$/, 'drawn from the answer');
+  await h.page.showOverlay({ id: 'my-own', kind: 'clock', ms: 8000, name: 'Invented Fuse', size: 8, filled: 3 });
+  assert.equal(fg.server.ambPatches[n0 + 1].overlay.id, 'my-own', 'a given id is kept');
+  assert.match(h.q('#gm-ipad-overlay').textContent, /clock Invented Fuse 3\/8 · 8 s/);
+  /* refused before any request: a bad kind, a stray field, an svg, a too-long text, junk */
+  br.toasts.length = 0;
+  for (const bad of [{ kind: 'wire', ms: 5000 }, { kind: 'text', ms: 5000, text: 'x', svg: '<svg/>' }, { kind: 'text', ms: 5000, text: 'x'.repeat(121) }, { kind: 'fx', fx: 'dawn', ms: 10 }, { kind: 'npc', ms: 5000, npcId: 'no good' }]) {
+    const r = await h.page.showOverlay(bad); assert.equal(r, null, JSON.stringify(bad));
+  }
+  assert.equal(await h.page.showOverlay(null), null); assert.equal(await h.page.showOverlay('dawn'), null);
+  assert.equal(fg.server.ambPatches.length, n0 + 2, 'nothing was sent for them'); assert.equal(br.toasts.length, 5);
+  /* the Clear overlay control */
+  const btn = h.q('#gm-ipad [data-gm="clearoverlay"]'); assert.ok(btn && /Clear overlay/.test(btn.textContent), 'the iPad panel has Clear overlay');
+  btn.click(); await until(() => fg.server.ambPatches.length === n0 + 3);
+  assert.deepEqual(fg.server.ambPatches[n0 + 2], { overlay: null }); await until(() => !h.q('#gm-ipad-overlay'));
+  assert.equal(fg.server.amb.doc.overlay, undefined);
+  await h.page.showOverlay({ kind: 'text', ms: 5000, text: 'Invented line.' }); await h.page.clearOverlay();
+  assert.deepEqual(fg.server.ambPatches[fg.server.ambPatches.length - 1], { overlay: null }, 'clearOverlay() sends null');
+  /* a server refusal (a hidden NPC) is a toast and the panel keeps the server's value */
+  br.toasts.length = 0; fg.server.ambFail = true;
+  await h.page.showOverlay({ kind: 'npc', ms: 5000, npcId: 'npc_x' });
+  assert.deepEqual(br.toasts[0], ['Could not change the iPad: the server said no', true]);
+  assert.equal(h.q('#gm-ipad-overlay'), null);
+  await h.save();
+});
+
 await test('9k. heat and wanted: the panel load sends a missing crew once; a changed campaign sends after the wait; off sends nothing', async () => {
   const fg = addAmbient(fakeGm()), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
   assert.equal(fg.server.ambPatches.length, 0, 'the page alone sends nothing');

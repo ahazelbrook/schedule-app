@@ -33,6 +33,7 @@
     "check:display": "node checks/runtime/display.test.mjs",
     "check:ambient": "node checks/runtime/ambient-assets.test.mjs && node checks/runtime/ambient-shells.test.mjs && node checks/runtime/ambient-frames.test.mjs",
     "check:display-ambient": "node checks/runtime/display-ambient.e2e.mjs",
+    "check:display-overlay": "node checks/runtime/display-overlay.e2e.mjs",
     "check:gm-location": "node checks/runtime/gm-location.test.mjs",
     "check:gm-logic": "node checks/runtime/gm-logic.test.mjs",
     "check:rules": "node checks/runtime/rules.e2e.mjs",

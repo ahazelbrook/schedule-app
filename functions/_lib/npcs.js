@@ -112,6 +112,16 @@ export function isLiveNpc(row, campaign) {
   return !!row && row.campaign === campaign && !row.deleted;
 }
 
+/**
+ * 400 unless the NPC is live, in this campaign and `revealed: true`. The ambient handler runs it on an npc overlay before the
+ * overlay is stored (defence in depth: the GM page offers revealed NPCs only). Missing, deleted, another campaign's and hidden all
+ * read the same, so the answer says nothing about a hidden row.
+ */
+export async function assertRevealedNpc(db, campaign, id) {
+  const row = await loadNpcRow(db, id);
+  if (!isLiveNpc(row, campaign) || parseNpc(row).revealed !== true) throw new HttpError(400, 'overlay.npcId must be a revealed NPC');
+}
+
 /** The newest updated_at over every row of the campaign, tombstones included (the adapter's cheap change stamp). */
 export async function npcsUpdatedAt(db, campaign) {
   const row = await db.prepare('SELECT MAX(updated_at) AS at FROM npcs WHERE campaign = ?1').bind(campaign).first();
