@@ -74,7 +74,7 @@
 //        every 8 s: 429 otherwise. One row is logged (seat `hands`, flags `act`, `shown: 0`, so it never holds back a card). The answer carries no `health`: the page feeds health to healthStep, and an
 //        empty `skipped` would reset the other seats' stuck streaks. It does not take the lapsed leases either (only the tick reports `reaped`).
 //        mode 'cue' (C4c; the GM said "Blade, ..."): the body also carries cueLineId (the transcript row id of the line holding the wake word; it must be one of the lines read, else 400) and,
-//        when the page could parse the command,  (1-8 actions: clock_add (with filled), clock_tick, npc_add, capture, undo, rename; undo and rename ONLY ever come this way). With parsed
+//        when the page could parse the command, parsed (1-8 actions: clock_add (with filled), clock_tick, npc_add, capture, undo, rename; undo and rename ONLY ever come this way). With parsed
 //        there is no model, no key and no gate: the actions go through validateActions (the quote must start on the cue line and may run on over the lines after it), every survivor is mode
 //        'act', keys are made here from cueLineId and the action's index alone, and ONE hands row (card.out.cue = true, flags act,cue, 0 cents) is written by a single INSERT ... WHERE NOT
 //        EXISTS over tonight's keys, so two pages posting the same cue cannot both win: the loser's actions come back mode 'seen'. Without parsed the hands seat runs with the cue instruction
