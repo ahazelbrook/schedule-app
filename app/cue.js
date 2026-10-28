@@ -142,7 +142,7 @@
     var k = i + 1, count = 0;
     while (k < toks.length && count < 3) {
       var w = toks[k].w;
-      if (SKIP[w]) { k++; continue; }
+      if (SKIP[w] || UM[w]) { k++; continue; }
       if (MODAL[w] && toks[k + 1] && toks[k + 1].w === 'you') { k += 2; continue; }
       var v = cmdAt(toks, k);
       if (v) return { k: k, verb: v };
@@ -153,7 +153,7 @@
   function onlyPoliteAfter(toks, i) {
     for (var k = i + 1; k < toks.length; k++) {
       var w = toks[k].w;
-      if (SKIP[w]) continue;
+      if (SKIP[w] || UM[w]) continue;
       if (MODAL[w] && toks[k + 1] && toks[k + 1].w === 'you') { k++; continue; }
       if (w === 'you') continue;
       return false;
@@ -398,7 +398,7 @@
       }
     } else if (verb === 'plus') {
       var sa = wi + 1, sb = vi - 1;
-      while (sa <= sb && (SKIP[toks[sa].w])) sa++;
+      while (sa <= sb && (SKIP[toks[sa].w] || UM[toks[sa].w])) sa++;
       var amt = 1, q = vi + 1; if (q <= e && numOf(toks[q].w) !== null) amt = numOf(toks[q].w); else if (q <= e && ONCE[toks[q].w]) amt = ONCE[toks[q].w];
       var spoken = sa <= sb ? span(toks, text, sa, sb) : '';
       out = resolveTick({ pron: !spoken || (sb - sa === 0 && PRON[toks[sa].w]), spoken: spoken, amount: amt, alt: null }, live, 'tick');

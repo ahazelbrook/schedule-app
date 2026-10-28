@@ -174,7 +174,7 @@ await test('5a. splits are parsed on the joined text (joinLines: one space), and
   assert.equal(Cue.find('Blade, make a six').verb, 'make');
 });
 await test('5b. a bare "Blade," is pending (and only a wake word at a clause start, with no command word yet)', () => {
-  for (const s of ['Blade,', 'Blade', 'blade.', 'okay Blade', 'so, blade,', 'That was close. Blade,', 'Blade, please']) { const f = Cue.find(s); assert.ok(f && f.pending === true, s); assert.equal(f.verb, null); }
+  for (const s of ['Blade,', 'Blade', 'blade.', 'okay Blade', 'so, blade,', 'That was close. Blade,', 'Blade, please', 'Blade, um', 'Blade, uh...', 'okay Blade, um, okay']) { const f = Cue.find(s); assert.ok(f && f.pending === true, s); assert.equal(f.verb, null); }
   assert.equal(Cue.find('Blade,').index, 0);
   assert.equal(Cue.find('Blade, tick').pending, undefined, 'a command word means a cue, not pending');
   assert.equal(Cue.find('the blade,'), null, 'after an article it is nothing');
@@ -204,6 +204,23 @@ await test('6. every action carries quote (wake word to end of the text, as give
   }
   assert.equal(P('nothing to see here').cue, null);
   assert.deepEqual(P('nothing to see here').actions, []);
+});
+await test('6a. the quote survives the real validator: validateActions (hands.js) drops none of them as "quote not in the talk"', async () => {
+  const { validateActions } = await import(new URL('../../functions/_lib/assist/hands.js', import.meta.url));
+  const state = { clocks: LIVE.clocks, npcs: [], pcs: [] };
+  const cases = [
+    ['Blade, make a six clock called Tide Watch and mark two', 'clock_add'], ['Blade, tick Escape two', 'clock_tick'], ['Blade, new NPC called Ruddock, a bouncer', 'npc_add'],
+    ['Blade, note the guard turns at midnight', 'capture'], ['Blade, loose end: who paid the porter', 'capture'], ['okay. So Blade, mark two on Salt Fog. Then the guards turn.', 'clock_tick']];
+  for (const [text, type] of cases) {
+    const r = P(text); assert.equal(r.actions.length, 1, text);
+    const v = validateActions(r.actions.map((a) => Object.assign({ confidence: 1 }, a)), { state, lines: [{ kind: 'line', text: 'earlier talk about the ferry' }, { kind: 'line', text }] });
+    assert.deepEqual(v.dropped, [], text); assert.equal(v.actions.length, 1, text); assert.equal(v.actions[0].type, type);
+    assert.ok(/^[a-z_]+:/.test(v.actions[0].key), 'the Worker makes the key');
+  }
+  /* a split command: two rows, the quote spans the join, and the validator reads the rows as one stretch of talk */
+  const joined = Cue.joinLines('Blade, make a six', 'clock called escape'), r = P(joined);
+  const v = validateActions(r.actions.map((a) => Object.assign({ confidence: 1 }, a)), { state, lines: [{ kind: 'line', text: 'Blade, make a six' }, { kind: 'line', text: 'clock called escape' }] });
+  assert.deepEqual(v.dropped, []); assert.equal(v.actions[0].name, 'Escape');
 });
 await test('6b. UMD and pure: no DOM, no network, no storage; on the global in a browser', () => {
   const src = fs.readFileSync(path.join(ROOT, 'app', 'cue.js'), 'utf8');
