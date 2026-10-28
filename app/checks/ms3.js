@@ -96,6 +96,17 @@ const URL = 'file://' + path.join(APP, 'index.html').replace(/\\/g, '/');
     assert(Math.abs(fs.sy - fs.sy0) <= 1, label + ': scroll survived the poll: ' + fs.sy0 + ' -> ' + fs.sy);
     assert(fs.rec.every(s => ['stressbox', 'vitals', 'status'].indexOf(s) >= 0) && fs.rec.length > 0, label + ': the poll touched only the changed box: ' + JSON.stringify(Array.from(new Set(fs.rec))));
 
+    /* 3b. a keystroke builds one box, not the sheet (a full build stringifies the figure's spec; one box does not), and the
+       remembered markup still matches: the redraw after typing makes no mutations */
+    await p.evaluate(() => { window.__sp = 0; const o = JSON.stringify; window.__js = o; JSON.stringify = function (v) { if (v === window.doc.spec) window.__sp++; return o.apply(this, arguments); }; });
+    await p.click('#dossier textarea[data-path="notes"]'); await p.keyboard.type('abcdefghij0123456789');
+    const sp = await p.evaluate(() => { JSON.stringify = window.__js; return window.__sp; });
+    assert(sp === 0, label + ': 20 keystrokes built only the typed box (sheet-wide builds seen: ' + sp + ')');
+    await p.waitForTimeout(1500); await p.evaluate(() => { window.takeRec(); });
+    await p.evaluate(() => { B68Tracker.refresh(); }); await settle(p);
+    const typedRec = await p.evaluate(() => window.takeRec());
+    assert(typedRec.length === 0, label + ': after typing, the next redraw makes ' + typedRec.length + ' mutations: ' + JSON.stringify(typedRec.slice(0, 3)));
+
     /* 4. harm typed into a line: the vitals follow, and clearing it brings them back (the cached markup is not stale) */
     const hv = async () => p.evaluate(() => { const v = document.querySelector('#dossier .ds-vitals'); return v ? v.textContent : null; });
     const before = await hv();

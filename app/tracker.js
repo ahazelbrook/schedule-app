@@ -980,24 +980,31 @@
   if (MQ) { var onMq = function () { if (cur && !cur.ui.static && !printing) render(); }; try { if (MQ.addEventListener) MQ.addEventListener('change', onMq); else if (MQ.addListener) MQ.addListener(onMq); } catch (e) {} }
   /* the sheet as [slot name, markup] pairs, in the order they are drawn (head first: it holds the vitals' slot) */
   var COLS = { c1: ['figure', 'stress', 'keys', 'strictures', 'harm', 'cohort', 'vice'], c2: ['abilities', 'contacts', 'triggers', 'session', 'downtime', 'mission', 'memories'], c3: ['stacks', 'actions', 'items'], c4: ['clocks', 'notes', 'log'] };
-  function buildParts() {
+  var ORDER = ['head', 'vitals', 'bar', 'figure', 'stress', 'keys', 'strictures', 'harm', 'cohort', 'vice', 'abilities', 'contacts', 'triggers', 'session', 'downtime', 'mission', 'memories', 'stacks', 'actions', 'items', 'clocks', 'notes', 'log'];
+  /* one slot's markup (null for a slot this sheet has none of) */
+  function buildPart(name) {
     var doc = cur.doc, play = cur.play, pb = cur.pb, sheet = doc.sheet || {};
-    return [
-      ['head', header(doc, play, pb, sheet)], ['vitals', cur.ui.static ? null : vitals(play, pb)], ['bar', tableBar(play)],
-      ['figure', figure(doc, pb)], ['stress', stress(play, pb)], ['keys', keys(play, pb)], ['strictures', strictures(play, pb)], ['harm', harm(play, pb)], ['cohort', cohort(play, pb)], ['vice', vice(play, pb)],
-      ['abilities', abilities(play, pb, sheet)], ['contacts', contacts(play, pb)], ['triggers', triggers(play, pb)], ['session', session(play, pb)], ['downtime', downtime(play, pb)], ['mission', mission(play, pb)], ['memories', memories(play, pb)],
-      ['stacks', stacks(play, pb)], ['actions', actions(play, pb)], ['items', items(play, pb)],
-      ['clocks', clocks(play, pb)], ['notes', notes(play)], ['log', log(play)]
-    ];
+    switch (name) {
+      case 'head': return header(doc, play, pb, sheet);
+      case 'vitals': return cur.ui.static ? null : vitals(play, pb);
+      case 'bar': return tableBar(play);
+      case 'figure': return figure(doc, pb);
+      case 'stress': return stress(play, pb); case 'keys': return keys(play, pb); case 'strictures': return strictures(play, pb); case 'harm': return harm(play, pb);
+      case 'cohort': return cohort(play, pb); case 'vice': return vice(play, pb); case 'abilities': return abilities(play, pb, sheet); case 'contacts': return contacts(play, pb);
+      case 'triggers': return triggers(play, pb); case 'session': return session(play, pb); case 'downtime': return downtime(play, pb); case 'mission': return mission(play, pb);
+      case 'memories': return memories(play, pb); case 'stacks': return stacks(play, pb); case 'actions': return actions(play, pb); case 'items': return items(play, pb);
+      case 'clocks': return clocks(play, pb); case 'notes': return notes(play); case 'log': return log(play);
+    }
+    return null;
   }
+  function buildParts() { return ORDER.map(function (n) { return [n, buildPart(n)]; }); }
   /* a field was typed in: the DOM already shows the text, so its slot's remembered markup is brought up to date without touching the DOM */
   function syncTyped(t) {
     var name = null; if (!cur.slots) return;
     Object.keys(cur.slots).forEach(function (k) { if (!name && cur.slots[k].nodes.some(function (n) { return n === t || (n.contains && n.contains(t)); })) name = k; });
     if (!name) return;
-    var p = buildParts().filter(function (x) { return x[0] === name; })[0]; if (p && p[1] != null) cur.slots[name].last = (readOnly() ? '1' : '0') + p[1];
+    var str = buildPart(name); if (str != null) cur.slots[name].last = (readOnly() ? '1' : '0') + str;   /* one box, not the sheet */
   }
-  /* put markup in a slot: the old nodes go, the new ones (the cached figure and thumbnail moved in, a read-only sheet's controls disabled) take their place */
   function fillSlot(sl, str, ro) {
     var tpl = document.createElement('template'); tpl.innerHTML = str; var frag = tpl.content;
     fillMarkers(frag);
@@ -1013,7 +1020,7 @@
   function render() {
     if (!cur) return; var play = cur.play, pb = cur.pb;
     var focus = captureFocus(), a0 = document.activeElement;
-    /* each box is a keyed slot (display: contents, so the layout never sees it). The sheet is built as strings, as it always
+    /* each box is a keyed slot (a comment anchor and its nodes, no wrapper element). The sheet is built as strings, as it always
        was; only a slot whose string differs from the last one drawn is replaced, so a tap redraws its box (and the vitals)
        and nothing else, and a poll that brings back what the sheet already shows changes nothing */
     var parts = buildParts();
