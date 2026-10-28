@@ -410,7 +410,7 @@ export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, c
         if (fs.existsSync(pf)) {
           const pt = readText(pf), ml = extractMustLand(pt);
           prepNever = { name: path.basename(pf), entries: ml.entries, sections: extractSecretSections(pt) };
-          stats.mustLand = ml.entries.length; stats.mustLandLanded = ml.landed;
+          stats.prep = posix(rel); stats.mustLand = ml.entries.length; stats.mustLandLanded = ml.landed;
           noMust = !ml.found;
           if (ml.found && !ml.entries.length) warn('assist: the prep note\'s "Must land" section has no unlanded entries (' + ml.landed + ' ticked): no clues in the never-reveal list');
         }
