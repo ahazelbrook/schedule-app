@@ -1589,5 +1589,23 @@ await test('S2 downtime: a Tripwire downtime flag wakes Ref on that tick', async
   assert.deepEqual(REFTICK(s), ['tripwire', 'ref']);
 });
 
+await test('S2 end to end: a Ref slip on a rolled tick shows with glance.check from the schema value, and an invalid check is dropped', async () => {
+  clock.t = Date.parse('2030-05-06T09:00:00.000Z');
+  let s = await setup(FULL); quiet(s);
+  s.replies.ref = { ...REF_SLIP, check: 'resist' };
+  await s.lines(3);
+  const out = await body(await s.post('tick', { rolled: true }));
+  const card = out.cards.find((c) => c.seat === 'ref');
+  assert.ok(card, 'the card shows');
+  assert.equal(card.check, 'resist');
+  assert.ok(SEATS.ref.schema.properties.check.enum.includes(card.check));
+  clock.t = Date.parse('2030-05-07T09:00:00.000Z');
+  s = await setup(FULL); quiet(s);
+  s.replies.ref = { ...REF_SLIP, check: 'nonsense' };
+  await s.lines(3);
+  const bad = (await body(await s.post('tick', { rolled: true }))).cards.find((c) => c.seat === 'ref');
+  assert.ok(bad && !bad.check, 'an unknown check is not passed on');
+});
+
 console.log(failed ?`\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);
 process.exit(failed ? 1 : 0);
