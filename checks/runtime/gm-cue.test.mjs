@@ -260,6 +260,15 @@ await test('7c. every command row is in the plain fixtures, and every refusal ki
   assert.ok(FX.noisy.every((f) => f.base !== undefined && f.e), 'every noisy line names its plain base and inherits its parse');
 });
 
+await test('typed commands (C4f): fromTyped maps the slash forms in one place, and each mapped sentence parses to an action', () => {
+  const ok = { '/tick escape 2': 'Blade, tick escape 2', '/clock 6 escape': 'Blade, make a 6 clock called escape', '/npc Stan, a tired bus driver': 'Blade, new NPC called Stan, a tired bus driver', '/note a loose thing': 'Blade, note a loose thing', '/undo': 'Blade, undo', 'Blade, tick escape': 'Blade, tick escape', ' /TICK  escape ': 'Blade, tick escape' };
+  for (const [k, v] of Object.entries(ok)) assert.equal(Cue.fromTyped(k).text, v, k);
+  assert.equal(Cue.fromTyped('What does a clock do?'), null);
+  for (const k of ['/zap now', '/tick', '/undo please']) assert.ok(Cue.fromTyped(k).unknown && !Cue.fromTyped(k).text, k);
+  const live = { clocks: [{ id: 'c1', name: 'escape', size: 6, filled: 0, hidden: true }], npcs: [], pcs: [], lastClock: '' };
+  for (const k of ['/tick escape 2', '/clock 6 flood', '/npc Stan, a tired bus driver']) { const r = Cue.parse(Cue.fromTyped(k).text, live); assert.ok(r.actions.length === 1 && !r.missing && !r.refused, k + ' ' + JSON.stringify(r)); }
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
 console.log('ALL PASSED');

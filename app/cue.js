@@ -456,6 +456,22 @@
   }
   P.parse = parse;
 
-  var M = { find: find, parse: parse, joinLines: joinLines, matchClock: matchClock, numOf: numOf, norm: norm, SIZES: SIZES.slice(), _pure: P };
+  /* C4f: a typed command in the Ask bar -> the cue sentence it stands for (the ONE place the slash forms are mapped). "Blade, ..." goes as typed.
+     -> null (not a typed command: it is a question) | { text } (post this as the cue line) | { unknown: '/word' } (a grey card, nothing posted) */
+  function fromTyped(input) {
+    var s = str(input).replace(/\s+/g, ' ').trim(), m;
+    if (/^blade\s*,/i.test(s)) return { text: s };
+    if (s.charAt(0) !== '/') return null;
+    m = /^\/([A-Za-z]+)\s*(.*)$/.exec(s);
+    var cmd = m ? m[1].toLowerCase() : '', rest = m ? m[2].trim() : '', c;
+    if (cmd === 'tick' && rest) return { text: 'Blade, tick ' + rest };
+    if (cmd === 'clock' && rest) { c = /^(\d{1,2})\s+(.+)$/.exec(rest); return { text: c ? 'Blade, make a ' + c[1] + ' clock called ' + c[2] : 'Blade, make a clock called ' + rest }; }
+    if (cmd === 'npc') return { text: rest ? 'Blade, new NPC called ' + rest : 'Blade, new NPC' };
+    if (cmd === 'note' && rest) return { text: 'Blade, note ' + rest };
+    if (cmd === 'undo' && !rest) return { text: 'Blade, undo' };
+    return { unknown: m ? '/' + m[1] : s.slice(0, 40) };
+  }
+
+  var M = { find: find, parse: parse, fromTyped: fromTyped, joinLines: joinLines, matchClock: matchClock, numOf: numOf, norm: norm, SIZES: SIZES.slice(), _pure: P };
   return M;
 });

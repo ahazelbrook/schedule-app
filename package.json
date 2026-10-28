@@ -50,6 +50,7 @@
     "check:cue": "node checks/runtime/gm-cue.test.mjs",
     "check:cogm-e2e": "node checks/runtime/gm-cogm.e2e.mjs",
     "check:cue-e2e": "node checks/runtime/gm-cue.e2e.mjs",
+    "check:typed-e2e": "node checks/runtime/gm-typed.e2e.mjs",
     "check:gm-scenes": "node checks/runtime/gm-scenes.e2e.mjs",
     "check:gm-page": "node checks/runtime/gm-page.test.mjs",
     "check:gm-chase": "node checks/runtime/gm-chase.test.mjs",
