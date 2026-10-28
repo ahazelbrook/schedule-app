@@ -296,6 +296,13 @@
 
   /* ---------- small renderers ---------- */
   function box(title, body, right, cls, after) { return '<section class="ds-box' + (cls ? ' ' + cls : '') + '"><div class="ds-band"><h3 class="ds-bt">' + title + '</h3>' + (right ? '<span class="ds-band-r">' + right + '</span>' : '') + '</div><div class="ds-body">' + body + '</div>' + (after || '') + '</section>'; }
+  /* a keyed slot is a comment anchor and the nodes after it (no wrapper element, so the layout and every selector stay as they were).
+     render() replaces a slot's nodes only when its markup changed */
+  function slotMark(name) { return '<!--s:' + name + '-->'; }
+  function syncStatus() {
+    var s = cur.ui.static ? null : cur.root.querySelector('#ds-status'); if (!s) return;
+    var st = statusNow(), c = 'ds-status' + (st.bad ? ' bad' : ''); if (s.textContent !== st.msg) s.textContent = st.msg; if (s.className !== c) s.className = c;
+  }
   function pipRow(n, filled, act, extra, cls) { var h = '<span class="ds-pips">'; for (var i = 1; i <= n; i++) h += '<button type="button" class="' + (cls || 'ds-pip') + (i <= filled ? ' on' : '') + '" data-act="' + act + '" data-n="' + i + '"' + (extra || '') + ' aria-label="' + act + ' ' + i + '"></button>'; return h + '</span>'; }
   function clockSvg(size, filled, r, act, extra) {
     var cx = r, cy = r, R = r - 2, h = '', n = clamp(size, 2, 12);
@@ -339,9 +346,9 @@
           '<button type="button" class="btn sm ds-wide" data-act="edit"' + (ro ? ' disabled' : '') + '>Edit figure</button>' +
           '<button type="button" class="btn sm" data-act="print" data-always="1">Print</button>' +
           (live ? moreMenu(name) : '') +
-          '<span class="ds-status' + (st.bad ? ' bad' : '') + '" id="ds-status">' + esc(st.msg) + '</span>' +
+          (live ? '<span class="ds-status" id="ds-status"></span>' : '<span class="ds-status' + (st.bad ? ' bad' : '') + '" id="ds-status">' + esc(st.msg) + '</span>') +   /* a live sheet's status text is written by syncStatus, never part of the compared markup */
         '</div>' +
-        (live ? vitals(play, pb) : '') +
+        (live ? slotMark('vitals') : '') +   /* its own slot (see render) */
       '</div>' +
       (live ? '<button type="button" class="ds-about-t" data-act="about" data-always="1" aria-expanded="' + !!cur.ui.about + '" aria-controls="ds-about"><span>About ' + esc(name) + '</span><span class="ds-chev" aria-hidden="true">' + (cur.ui.about ? '▴' : '▾') + '</span></button>' : '') +
       '<div class="ds-about' + (cur.ui.about ? ' open' : '') + '"' + (live ? ' id="ds-about"' : '') + '>' + (live && desc ? '<p class="ds-desc">' + desc + '</p>' : '') +
@@ -400,17 +407,36 @@
     return cur.ui.thumb;
   }
   function thumbTag(doc, pb) {
-    var src = thumb(doc), old = cur.keep && cur.keep.thumb; if (!src) return '';
-    if (old && old.__k === cur.ui.thumbKey) return '<i data-keep="thumb"></i>';
-    return '<img class="ds-thumb' + (isGhost(pb) ? ' ghostly' : '') + '" data-k="thumb" src="' + src + '" alt="" aria-hidden="true">';
+    var src = thumb(doc), u = cur.ui; if (!src) return '';
+    /* the markup holds only a marker; fillMarkers puts the one cached <img> in (so the markup is the same on every render) */
+    var cls = 'ds-thumb' + (isGhost(pb) ? ' ghostly' : ''), sig = u.thumbKey + '|' + cls;
+    if (u.thumbSig !== sig) { u.thumbSig = sig; u.thumbVer = (u.thumbVer || 0) + 1; u.thumbNode = null; u.thumbCls = cls; }
+    return '<i data-tslot="' + u.thumbVer + '"></i>';
+  }
+  /* the cached big nodes (the figure, the thumbnail) go where their markers are: moved, never rebuilt, while the figure is the same */
+  function fillMarkers(scope) {
+    var u = cur.ui, ms = scope.querySelectorAll('i[data-fslot], i[data-tslot]');
+    for (var i = 0; i < ms.length; i++) {
+      var m = ms[i], n;
+      if (m.hasAttribute('data-fslot')) {
+        if (!u.figNode) { u.figNode = el('div', u.figCls, u.svg || '<div class="ds-dim">' + esc(u.svgWarn || 'No figure yet.') + '</div>'); u.figNode.setAttribute('data-k', 'fig'); }
+        n = u.figNode;
+      } else {
+        if (!u.thumbNode) { u.thumbNode = document.createElement('img'); u.thumbNode.className = u.thumbCls; u.thumbNode.setAttribute('data-k', 'thumb'); u.thumbNode.src = u.thumb; u.thumbNode.alt = ''; u.thumbNode.setAttribute('aria-hidden', 'true'); }
+        n = u.thumbNode;
+      }
+      m.parentNode.replaceChild(n, m);
+    }
   }
   function figure(doc, pb) {
     var cls = 'ds-art' + (cur.ui.mug ? ' mug' : '') + (isGhost(pb) ? ' ghostly' : ''), art;
     if (narrow() && !cur.ui.static) art = '<div class="' + cls + '"></div>';   /* a phone shows the thumbnail instead (tracker.css) */
+    else if (cur.ui.static) { figureSvg(doc); art = '<div class="' + cls + '" data-k="fig">' + (cur.ui.svg || '<div class="ds-dim">' + esc(cur.ui.svgWarn || 'No figure yet.') + '</div>') + '</div>'; }
     else {
-      var key = figKey(doc), old = cur.keep && cur.keep.fig;
-      if (old && old.__k === key) art = '<i data-keep="fig"></i>';
-      else { figureSvg(doc); art = '<div class="' + cls + '" data-k="fig">' + (cur.ui.svg || '<div class="ds-dim">' + esc(cur.ui.svgWarn || 'No figure yet.') + '</div>') + '</div>'; }
+      /* a live desk: a marker, and the cached node (360 KB of SVG) for the figure as drawn; a new node only when the figure or its look changes */
+      figureSvg(doc); var u = cur.ui, sig = figKey(doc) + '|' + cls;
+      if (u.figSig !== sig) { u.figSig = sig; u.figVer = (u.figVer || 0) + 1; u.figNode = null; u.figCls = cls; }
+      art = '<i data-fslot="' + u.figVer + '"></i>';
     }
     return box('Figure', art,
       '<span class="seg"><button type="button" class="chip sm" data-act="view" data-v="fig" data-always="1" aria-pressed="' + (!cur.ui.mug) + '">Figure</button><button type="button" class="chip sm" data-act="view" data-v="mug" data-always="1" aria-pressed="' + (!!cur.ui.mug) + '">Mugshot</button></span>', 'ds-figbox');
@@ -952,32 +978,71 @@
   function narrow() { return !!(MQ && MQ.matches); }
   var printing = false;
   if (MQ) { var onMq = function () { if (cur && !cur.ui.static && !printing) render(); }; try { if (MQ.addEventListener) MQ.addEventListener('change', onMq); else if (MQ.addListener) MQ.addListener(onMq); } catch (e) {} }
+  /* the sheet as [slot name, markup] pairs, in the order they are drawn (head first: it holds the vitals' slot) */
+  var COLS = { c1: ['figure', 'stress', 'keys', 'strictures', 'harm', 'cohort', 'vice'], c2: ['abilities', 'contacts', 'triggers', 'session', 'downtime', 'mission', 'memories'], c3: ['stacks', 'actions', 'items'], c4: ['clocks', 'notes', 'log'] };
+  var ORDER = ['head', 'vitals', 'bar', 'figure', 'stress', 'keys', 'strictures', 'harm', 'cohort', 'vice', 'abilities', 'contacts', 'triggers', 'session', 'downtime', 'mission', 'memories', 'stacks', 'actions', 'items', 'clocks', 'notes', 'log'];
+  /* one slot's markup (null for a slot this sheet has none of) */
+  function buildPart(name) {
+    var doc = cur.doc, play = cur.play, pb = cur.pb, sheet = doc.sheet || {};
+    switch (name) {
+      case 'head': return header(doc, play, pb, sheet);
+      case 'vitals': return cur.ui.static ? null : vitals(play, pb);
+      case 'bar': return tableBar(play);
+      case 'figure': return figure(doc, pb);
+      case 'stress': return stress(play, pb); case 'keys': return keys(play, pb); case 'strictures': return strictures(play, pb); case 'harm': return harm(play, pb);
+      case 'cohort': return cohort(play, pb); case 'vice': return vice(play, pb); case 'abilities': return abilities(play, pb, sheet); case 'contacts': return contacts(play, pb);
+      case 'triggers': return triggers(play, pb); case 'session': return session(play, pb); case 'downtime': return downtime(play, pb); case 'mission': return mission(play, pb);
+      case 'memories': return memories(play, pb); case 'stacks': return stacks(play, pb); case 'actions': return actions(play, pb); case 'items': return items(play, pb);
+      case 'clocks': return clocks(play, pb); case 'notes': return notes(play); case 'log': return log(play);
+    }
+    return null;
+  }
+  function buildParts() { return ORDER.map(function (n) { return [n, buildPart(n)]; }); }
+  /* a field was typed in: the DOM already shows the text, so its slot's remembered markup is brought up to date without touching the DOM */
+  function syncTyped(t) {
+    var name = null; if (!cur.slots) return;
+    Object.keys(cur.slots).forEach(function (k) { if (!name && cur.slots[k].nodes.some(function (n) { return n === t || (n.contains && n.contains(t)); })) name = k; });
+    if (!name) return;
+    var str = buildPart(name); if (str != null) cur.slots[name].last = (readOnly() ? '1' : '0') + str;   /* one box, not the sheet */
+  }
+  function fillSlot(sl, str, ro) {
+    var tpl = document.createElement('template'); tpl.innerHTML = str; var frag = tpl.content;
+    fillMarkers(frag);
+    if (ro === '1') frag.querySelectorAll('button, input, textarea, select').forEach(function (n) { if (!n.dataset.always) n.disabled = true; });
+    var nodes = Array.prototype.slice.call(frag.childNodes), p = sl.anchor.parentNode;
+    sl.nodes.forEach(function (n) { if (n.parentNode === p) p.removeChild(n); });
+    p.insertBefore(frag, sl.anchor.nextSibling); sl.nodes = nodes;
+  }
+  function anchorsIn(scope, into) {
+    var w = document.createTreeWalker(scope, 128), n;
+    while ((n = w.nextNode())) { if (n.data.slice(0, 2) === 's:') into[n.data.slice(2)] = { anchor: n, nodes: [], last: null }; }
+  }
   function render() {
-    if (!cur) return; var doc = cur.doc, play = cur.play, pb = cur.pb, sheet = doc.sheet || {};
-    var focus = captureFocus();
-    /* the big pictures (the figure, 360 KB of SVG, and the thumbnail's data URI) are not rebuilt on every tap: the nodes
-       drawn last time move into the new markup when their figure is the same */
-    var keep = {}, fa = cur.root.querySelector('.ds-figbox [data-k="fig"]'), ti = cur.root.querySelector('img[data-k="thumb"]');
-    if (fa && fa.__k) keep.fig = fa; if (ti && ti.__k) keep.thumb = ti;
-    cur.keep = keep;
-    var html = header(doc, play, pb, sheet) + tableBar(play) +
-      '<div class="ds-grid">' +
-        '<div class="ds-col ds-c1">' + figure(doc, pb) + stress(play, pb) + keys(play, pb) + strictures(play, pb) + harm(play, pb) + cohort(play, pb) + vice(play, pb) + '</div>' +
-        '<div class="ds-col ds-c2">' + abilities(play, pb, sheet) + contacts(play, pb) + triggers(play, pb) + session(play, pb) + downtime(play, pb) + mission(play, pb) + memories(play, pb) + '</div>' +
-        '<div class="ds-col ds-c3">' + stacks(play, pb) + actions(play, pb) + items(play, pb) + '</div>' +
-        '<div class="ds-col ds-c4">' + clocks(play, pb) + notes(play) + log(play) + '</div>' +
-      '</div>';
-    cur.root.innerHTML = html;
-    cur.keep = null;
-    [['fig', keep.fig], ['thumb', keep.thumb]].forEach(function (x) { var ph = cur.root.querySelector('[data-keep="' + x[0] + '"]'); if (ph && x[1]) ph.parentNode.replaceChild(x[1], ph); });
-    var nf = cur.root.querySelector('.ds-figbox [data-k="fig"]'); if (nf && !nf.__k) nf.__k = cur.ui.svgKey;
-    var nt = cur.root.querySelector('img[data-k="thumb"]'); if (nt && !nt.__k) nt.__k = cur.ui.thumbKey;
+    if (!cur) return; var play = cur.play, pb = cur.pb;
+    var focus = captureFocus(), a0 = document.activeElement;
+    /* each box is a keyed slot (a comment anchor and its nodes, no wrapper element). The sheet is built as strings, as it always
+       was; only a slot whose string differs from the last one drawn is replaced, so a tap redraws its box (and the vitals)
+       and nothing else, and a poll that brings back what the sheet already shows changes nothing */
+    var parts = buildParts();
+    if (!cur.slots || !cur.slots.head || cur.root.firstChild !== cur.slots.head.anchor || !cur.slots.head.anchor.parentNode) {
+      cur.root.innerHTML = slotMark('head') + slotMark('bar') + '<div class="ds-grid">' + Object.keys(COLS).map(function (c) { return '<div class="ds-col ds-' + c + '">' + COLS[c].map(slotMark).join('') + '</div>'; }).join('') + '</div>';
+      cur.slots = {}; anchorsIn(cur.root, cur.slots);
+    }
+    var ro = readOnly() ? '1' : '0';
+    parts.forEach(function (p) {
+      var name = p[0], str = p[1], sl = cur.slots[name]; if (!sl || str == null) return;
+      var key = ro + str; if (sl.last === key) return;
+      fillSlot(sl, str, ro); sl.last = key;
+      /* the vitals slot lives inside the head's markup: a new head has a new, empty one */
+      if (name === 'head') { delete cur.slots.vitals; var vs = {}; sl.nodes.forEach(function (n) { if (n.nodeType === 1) anchorsIn(n, vs); }); if (vs.vitals) cur.slots.vitals = vs.vitals; }
+    });
+    syncStatus();
     if (printing) printFigure(true);
     var open = anyPanel();
-    cur.root.className = 'dossier ds' + (cur.ui.static ? ' ds-static' : ' ds-live') + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '') + (open ? ' ds-panel-open' : '');
+    var rcls = 'dossier ds' + (cur.ui.static ? ' ds-static' : ' ds-live') + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '') + (open ? ' ds-panel-open' : '');
+    if (cur.root.className !== rcls) cur.root.className = rcls;
     askOwner();
-    if (readOnly()) cur.root.querySelectorAll('button, input, textarea, select').forEach(function (n) { if (!n.dataset.always) n.disabled = true; });
-    restoreFocus(focus);
+    if (focus && !(a0 && a0.isConnected)) restoreFocus(focus);
     /* the roll panel: bring it (or, after a roll, its verdict) into view, and keep keyboard focus inside the sheet so Esc closes it.
        On a phone the panel is a fixed bottom sheet (tracker.css): it is in view by itself, only its verdict may need a scroll inside it */
     var panel = open ? cur.root.querySelector('.ds-roll') : null;
@@ -1403,9 +1468,9 @@
     if (!cur) return; var t = e.target;
     if (t && t.dataset && t.dataset.ui === 'dtname' && cur.ui.dt) { cur.ui.dt.newName = t.value; return; } /* the downtime panel's new-clock name: panel state, never saved by itself */
     if (readOnly()) return; if (!t || !t.dataset || !t.dataset.path || !cur.root.contains(t)) return;
-    setPath(cur.play, t.dataset.path, t.value); scheduleSave();
+    setPath(cur.play, t.dataset.path, t.value); scheduleSave(); syncTyped(t);
     /* a harm line is typed, not tapped: the vitals' Harm count follows it without redrawing the sheet around the field */
-    if (t.dataset.path.indexOf('harm.') === 0) { var v = cur.root.querySelector('.ds-vitals'); if (v) v.outerHTML = vitals(cur.play, cur.pb); }
+    if (t.dataset.path.indexOf('harm.') === 0) { var vs = cur.slots && cur.slots.vitals; if (vs) { var vh = vitals(cur.play, cur.pb), ro = readOnly() ? '1' : '0'; fillSlot(vs, vh, ro); vs.last = ro + vh; } }
   }
   function onChange(e) {
     if (!cur) return; var t = e.target; if (!t || !cur.root.contains(t)) return;
