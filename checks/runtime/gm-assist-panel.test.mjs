@@ -5,9 +5,11 @@
 //   node checks/runtime/gm-assist-panel.test.mjs
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { MiniEl, MiniText, writes as htmlWrites } from './minidom.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
@@ -21,26 +23,26 @@ const tick = () => new Promise((r) => setImmediate(r));
 // ---------- a small fake DOM: elements are looked up by selector and remember what the box wrote to them ----------
 function fakeBrowser({ phone = false } = {}) {
   const els = {};
-  const stub = (sel) => els[sel] || (els[sel] = {
-    sel, hidden: false, textContent: '', innerHTML: '', disabled: false, attrs: {}, cls: {}, focused: 0, value: '',
-    setAttribute(k, v) { this.attrs[k] = String(v); }, getAttribute(k) { return this.attrs[k] === undefined ? null : this.attrs[k]; },
-    classList: { toggle(c, on) { els[sel].cls[c] = !!on; } }, focus() { this.focused++; },
-  });
+  let made = 0;
+  const stub = (sel) => els[sel] || (els[sel] = Object.assign(new MiniEl('div', (e) => { doc.activeElement = e; }), { sel }));
   const listeners = {}, docListeners = {};
   const host = {
     className: '', innerHTML: '', parentNode: null, listeners,
     setAttribute() {}, addEventListener(t, f) { listeners[t] = f; }, contains() { return true; },
     querySelector(sel) { return sel === 'input[name="as-pos"]:checked' ? (host.pos === undefined ? null : { value: host.pos }) : stub(sel); },
+    // '#as-list [data-as="fold"]': look inside the stub the box draws the list in
+    querySelectorAll(sel) { const m = /^(#[w-]+)s+(.*)$/.exec(sel); return m ? stub(m[1]).querySelectorAll(m[2]) : []; },
   };
   host.pos = 'risky';
   const doc = {
     hidden: false, activeElement: null,
-    createElement() { return host; },
+    // the first element made is the panel's own host; everything after it is a real (mini) node the renderer builds
+    createElement(tag) { return made++ === 0 ? host : new MiniEl(tag, (e) => { doc.activeElement = e; }); }, createTextNode(t) { return new MiniText(t); },
     body: { appendChild(e) { e.parentNode = doc.body; doc.appended = e; }, removeChild(e) { e.parentNode = null; doc.removed = e; } },
     addEventListener(t, f) { docListeners[t] = f; }, removeEventListener(t) { delete docListeners[t]; },
   };
   const win = { matchMedia: () => ({ matches: phone }) };
-  const click = (a, id) => listeners.click({ target: { closest: () => ({ getAttribute: (k) => (k === 'data-as' ? a : k === 'data-id' ? id : null) }) } });
+  const click = (a, id, dk) => listeners.click({ target: { closest: () => ({ getAttribute: (k) => (k === 'data-as' ? a : k === 'data-id' ? id : k === 'data-k' && dk !== undefined ? dk : null) }) } });
   return { doc, win, host, stub, click, listeners, docListeners };
 }
 const GOOD = { cards: [], updates: [], flags: [], spend: { tonight: 1.234, cap: 20, tier: 'all', tick: 0.01 }, last: 10 };
@@ -118,31 +120,40 @@ await test('polling: not while the page is hidden, and not on a phone', async ()
   r.br.docListeners.visibilitychange && await r.br.docListeners.visibilitychange();   // coming back to the tab polls at once
 });
 
-await test('a card: the count, the banner (12 s, click opens), the bubble with its cite, then Got it removes it', async () => {
+await test('a card: the count, the strip (8 s, click opens) for a rule, its cite, then Got it removes it', async () => {
   const r = rig();
-  r.gm.reply = { ...GOOD, cards: [{ seat: 'ref', at: '2026-01-01T00:10:00Z', text: 'No harm penalty inside a score <b>', detail: { said_at: '22:14', rule: 'p. 152' } }] };
+  r.gm.reply = { ...GOOD, cards: [{ seat: 'ref', kind: 'rule', at: '2026-01-01T00:10:00Z', text: 'No harm penalty inside a score <b>', headline: 'Headline, not text: resist the harm', bullets: ['Said at 22:14 <b>'], cite: 'p. 152', detail: { said_at: '22:14', rule: 'p. 152' } }] };
   await r.ctl.poll();
   assert.equal(r.ctl.state().unread, 1);
   assert.equal(r.br.stub('#as-count').textContent, '1'); assert.equal(r.br.stub('#as-count').hidden, false);
   assert.equal(r.br.stub('#as-banner').hidden, false, 'the banner is up');
-  assert.match(r.br.stub('.as-banner-b').innerHTML, /Rule slip/);
-  assert.ok(r.timers.some((t) => t.ms === 12000), 'it dismisses itself after 12 s');
+  assert.match(r.br.stub('.as-banner-b').textContent, /Rule.*Headline, not text: resist the harm/, 'the strip says the kind and the headline');
+  assert.ok(!/No harm penalty/.test(r.br.stub('.as-banner-b').textContent), 'not the card text');
+  assert.ok(r.timers.some((t) => t.ms === 8000), 'it dismisses itself after 8 s');
+  assert.match(r.br.stub('#as-list').innerHTML, /Headline, not text/, 'the renderer reads the headline');
   assert.match(r.br.stub('#as-list').innerHTML, /p\. 152/, 'the page cite shows');
   assert.ok(!/<b>/.test(r.br.stub('#as-list').innerHTML.replace(/<b>[^<]*<\/b>/g, '')), 'card text is escaped');
   assert.match(r.br.stub('#as-list').innerHTML, /&lt;b&gt;/);
-  r.timers.find((t) => t.ms === 12000).f(); assert.equal(r.br.stub('#as-banner').hidden, true);
+  r.timers.find((t) => t.ms === 8000).f(); assert.equal(r.br.stub('#as-banner').hidden, true);
   r.gm.reply = { ...GOOD, cards: [{ seat: 'clerk', at: '2026-01-01T00:20:00Z', text: 'A new name came up.' }] }; await r.ctl.poll();
-  r.br.click('banner'); assert.equal(r.ctl.state().open, true, 'a click on the banner opens the box');
+  assert.equal(r.br.stub('#as-banner').hidden, true, 'a note is a pip, never a strip'); assert.equal(r.ctl.state().unread, 2);
+  r.br.click('toggle'); assert.equal(r.ctl.state().open, true, 'a click on the tab opens the box');
+  assert.equal(r.ctl.state().unread, 1, 'the older card is read at once; the newest is Now and is read after 1.5 s'); r.timers.filter((x) => x.ms === 1500).pop().f();
   assert.equal(r.ctl.state().unread, 0); assert.equal(r.br.stub('#as-count').hidden, true);
   assert.equal(r.br.stub('#as-banner').hidden, true);
   const id = r.ctl.state().cards[0].id; r.br.click('ack', id);
   assert.equal(r.ctl.state().cards.length, 1, 'Got it dismisses that card only');
+  assert.ok(!/Headline, not text/.test(r.br.stub('#as-list').innerHTML), 'and its node leaves the list');
 });
 
-await test('no banner while the box is open; a card that arrives then is already read', async () => {
+await test('no strip while the box is open; a card that arrives then is Now, and is read after 1.5 s, not before', async () => {
   const r = rig(); r.ctl.open();
   r.gm.reply = { ...GOOD, cards: [{ seat: 'ref', at: 'a', text: 'Slip.' }] }; await r.ctl.poll();
-  assert.equal(r.br.stub('#as-banner').hidden !== false, true); assert.equal(r.ctl.state().unread, 0);
+  assert.equal(r.br.stub('#as-banner').hidden !== false, true);
+  assert.equal(r.ctl.state().nowId, r.ctl.state().cards[0].id, 'it is Now');
+  assert.equal(r.ctl.state().unread, 1); assert.equal(r.calls.marks.length, 0, 'no seen mark has gone out before the timer');
+  r.timers.filter((x) => x.ms === 1500).pop().f(); await tick();
+  assert.equal(r.ctl.state().unread, 0); assert.equal(r.calls.marks.length, 1); assert.equal(r.calls.marks[0].op, 'seen');
 });
 
 await test('the spend tier badge shows the tier and the dollars; tier off stops the polling', async () => {
@@ -275,7 +286,9 @@ await test('reload: tonight\'s cards come back with their read marks; unread cou
   assert.equal(r.ctl.state().cards.length, 2, 'not doubled');
   assert.equal(r.calls.marks.length, 0, 'restoring marks nothing');
   r.ctl.open(); await tick();
-  assert.deepEqual(r.calls.marks, [{ op: 'seen', items: [{ at: REF.at, text: REF.text }] }], 'opening marks the unread ones read, on the server');
+  assert.deepEqual(r.calls.marks, [], 'opening marks nothing yet: the card is Now');
+  r.timers.filter((x) => x.ms === 1500).pop().f(); await tick();
+  assert.deepEqual(r.calls.marks, [{ op: 'seen', items: [{ at: REF.at, text: REF.text }] }], 'after 1.5 s in view it is read, on the server');
   assert.equal(r.ctl.state().unread, 0);
 });
 
@@ -519,11 +532,12 @@ await test('gm-page: Meanwhile is wired into the Rack (cutaway, faction, clock, 
 
 await test('Mystery and Showrunner cards arrive as ordinary cards with their own label', async () => {
   const r = rig();
-  r.gm.reply = { ...GOOD, cards: [{ seat: 'mystery', at: '2030-01-01T09:30:00.000Z', text: 'Push next: the second key.' }] };
+  r.gm.reply = { ...GOOD, cards: [{ seat: 'mystery', kind: 'idea', at: '2030-01-01T09:30:00.000Z', text: 'Push next: the second key.', headline: 'Bring in the second key', bullets: ['How: through the cook'] }] };
   await r.ctl.poll();
   r.ctl.open();
   const html = r.br.stub('#as-list').innerHTML;
   assert.ok(/second key/.test(html) && /Mystery/.test(html), 'labelled Mystery');
+  assert.match(html, /data-kind="idea"/); assert.match(html, /How: through the cook/);
   assert.equal(r.ctl.state().cards.length, 1); assert.equal(r.ctl.state().cards[0].important, false, 'only a Ref slip is important');
 });
 
@@ -718,7 +732,7 @@ await test('Screen wiring: the buttons are in the box, the page owns Show and Ad
 });
 
 // ---------- Ask Blade: the question field at the top of the box ----------
-const ANS = { q: 'pitch three complications', text: 'One: a runner arrives early.\nTwo: the lamp goes out.', at: '2030-01-01T10:00:00.000Z' };
+const ANS = { q: 'pitch three complications', kind: 'idea', headline: 'Three complications, headline', bullets: ['A runner arrives early', 'The lamp goes out'], say: 'Read this: **the lamp** goes out.', secret: 'The runner is *the rival\'s* man.', more: '', text: 'One: a runner arrives early.\nTwo: the lamp goes out.', at: '2030-01-01T10:00:00.000Z' };
 function askRig(over = {}, brOpts) {
   const r = rig(over, brOpts), asked = [];
   r.gm.assistAsk = async (req) => { asked.push(req); if (r.gm.askErr) throw r.gm.askErr; return r.gm.askReply || { answer: ANS, spend: { tonight: 1.5, cap: 20, tier: 'all', tick: 0.5 } }; };
@@ -750,27 +764,31 @@ await test('Ask Blade: submit sends { q } squashed, shows Thinking while it wait
   assert.equal(r.br.stub('#as-ask-go').textContent, 'Ask'); assert.equal(r.br.stub('#as-ask-go').disabled, false);
   assert.equal(r.ta.value, '', 'cleared on success');
   const s = r.ctl.state();
-  assert.deepEqual(s.asks, [{ id: 'a|' + ANS.at + '|' + ANS.q, at: ANS.at, q: ANS.q, text: ANS.text, kept: false }]);
-  const html = r.br.stub('#as-asks').innerHTML;
-  assert.match(html, /pitch three complications/); assert.match(html, /One: a runner arrives early\.\nTwo: the lamp goes out\./, 'line breaks are kept for white-space: pre-wrap');
-  assert.match(html, /Keep/); assert.match(html, /data-as="ask-x"/);
+  assert.equal(s.asks.length, 1); const a0 = s.asks[0];
+  assert.deepEqual([a0.id, a0.src, a0.kind, a0.at, a0.q, a0.text, a0.kept, a0.seen], ['a|' + ANS.at + '|' + ANS.q, 'ask', 'idea', ANS.at, ANS.q, ANS.text, false, true], 'the answer is a card; its text is the server\'s, unchanged');
+  assert.equal(a0.headline, ANS.headline); assert.deepEqual(a0.bullets, ANS.bullets); assert.equal(a0.say, ANS.say); assert.equal(a0.secret, ANS.secret);
+  assert.equal(s.unread, 0, 'an answer that was asked for is not unread');
+  const html = r.br.stub('#as-list').innerHTML;
+  assert.match(html, /You asked: pitch three complications/); assert.match(html, /Three complications, headline/); assert.match(html, /A runner arrives early/);
+  assert.match(html, /data-open="1"/, 'it lands open'); assert.match(html, /<strong>the lamp<\/strong>/, 'bold is a node, not asterisks'); assert.match(html, /GM ONLY/);
+  assert.match(html, /Keep/); assert.match(html, /data-as="ack"/);
   assert.equal(s.spend.tier, 'reduced'); assert.match(r.br.stub('#as-tier').textContent, /Reduced/);
   assert.equal(r.calls.tick.length, 0, 'asking never ticks');
 });
 
 await test('Ask Blade: an answer is escaped; an empty field asks nothing; a long question is cut at 600; the newest answer is on top and ten are kept', async () => {
   const r = askRig();
-  r.gm.askReply = { answer: { q: '<b>q</b>', text: '<img src=x onerror=1> & more', at: '2030-01-01T10:00:00.000Z' } };
+  r.gm.askReply = { answer: { q: '<b>q</b>', kind: 'say', headline: '<img src=x onerror=1> & more', secret: '<script>x</script>', text: '<img src=x onerror=1> & more', at: '2030-01-01T10:00:00.000Z' } };
   assert.ok((await r.ctl.ask('<b>q</b>')).answer);
-  assert.ok(!/<img|<b>q/.test(r.br.stub('#as-asks').innerHTML) && /&lt;img/.test(r.br.stub('#as-asks').innerHTML));
+  assert.ok(!/<img|<b>q|<script/.test(r.br.stub('#as-list').innerHTML) && /&lt;img/.test(r.br.stub('#as-list').innerHTML));
   assert.equal(await r.ctl.ask('   '), null); assert.equal(await r.ctl.ask(undefined), null);
   assert.equal(r.asked.length, 1);
   r.gm.askReply = undefined; await r.ctl.ask('x'.repeat(900));
   assert.equal(r.asked[1].q.length, 600);
-  for (let i = 0; i < 12; i++) { r.gm.askReply = { answer: { q: 'q' + i, text: 'a' + i, at: '2030-01-01T11:' + String(i).padStart(2, '0') + ':00.000Z' } }; await r.ctl.ask('q' + i); }
+  for (let i = 0; i < 12; i++) { r.gm.askReply = { answer: { q: 'q' + i, headline: 'a' + i, text: 'a' + i, at: '2030-01-01T11:' + String(i).padStart(2, '0') + ':00.000Z' } }; await r.ctl.ask('q' + i); }
   const asks = r.ctl.state().asks;
   assert.equal(asks.length, 10); assert.equal(asks[9].q, 'q11'); assert.equal(asks[0].q, 'q2');
-  const html = r.br.stub('#as-asks').innerHTML; assert.ok(html.indexOf('q11') < html.indexOf('q10'), 'newest first');
+  const html = r.br.stub('#as-list').innerHTML; assert.ok(html.indexOf('>a11<') < html.indexOf('>a10<'), 'newest first');
 });
 
 await test('Ask Blade: Enter asks, Shift+Enter is a new line, a composing Enter or an Enter elsewhere does nothing, and Escape in the field does not close the box', async () => {
@@ -842,14 +860,15 @@ await test('Ask Blade: the answers come back after a reload (deduped, newest fir
   const r = askRig({ stored }); await r.ctl.ready;
   const s = r.ctl.state();
   assert.deepEqual(s.asks.map((a) => [a.q, a.kept]), [['first?', true], ['second?', false]]);
-  const html = r.br.stub('#as-asks').innerHTML; assert.ok(html.indexOf('second?') < html.indexOf('first?'), 'newest on top'); assert.match(html, /★ Kept/);
+  const html = r.br.stub('#as-list').innerHTML; assert.ok(html.indexOf('Second answer') < html.indexOf('First answer'), 'newest on top'); assert.match(html, /★ Kept/);
+  assert.equal(s.unread, 0, 'a restored answer is not unread (the server never records a read for one)');
   assert.equal(r.calls.marks.length, 0);
   // the same answer sent by the server twice is one answer
   const again = { asks: stored.asks };
-  const st = { cards: [], updates: [], asks: [] }; assert.equal(P.restoreAsks(st, again), 2); assert.equal(P.restoreAsks(st, again), 0);
+  const st = { cards: [], updates: [] }; assert.equal(P.restoreAsks(st, again), 2); assert.equal(P.restoreAsks(st, again), 0);
   assert.equal(P.restore({ cards: [], updates: [] }, { asks: stored.asks }), 0, 'restore() tolerates a state with no asks list and returns the card count');
   const many = { asks: Array.from({ length: 14 }, (_, i) => ({ at: '2030-01-01T10:' + String(i).padStart(2, '0') + ':00.000Z', q: 'q' + i, text: 'a' + i })) };
-  const st2 = { asks: [] }; P.restoreAsks(st2, many); assert.deepEqual([st2.asks.length, st2.asks[0].q, st2.asks[9].q], [10, 'q4', 'q13']);
+  const st2 = { cards: [] }; P.restoreAsks(st2, many); assert.deepEqual([st2.cards.length, st2.cards[0].q, st2.cards[9].q], [10, 'q4', 'q13']);
   // an old server with no `asks` is fine
   const old = askRig({ stored: { cards: [], updates: [] } }); await old.ctl.ready; assert.deepEqual(old.ctl.state().asks, []);
 });
@@ -857,28 +876,28 @@ await test('Ask Blade: the answers come back after a reload (deduped, newest fir
 await test('Ask Blade: Keep files "Blade, ask (HH:MM): question -> answer" through the page\'s capture (clipped to 500) and marks the server; × dismisses and marks', async () => {
   const r = askRig(); await r.ctl.ask('pitch three complications');
   const a = r.ctl.state().asks[0];
-  r.br.click('ask-keep', a.id); await tick();
+  r.br.click('keep', a.id); await tick();
   assert.equal(r.notes.length, 1);
   assert.equal(r.notes[0], 'Blade, ask (' + P.hhmm(ANS.at) + '): pitch three complications -> One: a runner arrives early. Two: the lamp goes out.');
   assert.deepEqual(r.calls.marks, [{ op: 'keep', items: [{ at: ANS.at, text: ANS.q }] }]);
-  assert.equal(r.ctl.state().asks[0].kept, true); assert.match(r.br.stub('#as-asks').innerHTML, /★ Kept/); assert.ok(!/data-as="ask-keep"/.test(r.br.stub('#as-asks').innerHTML));
-  r.br.click('ask-keep', a.id); await tick(); assert.equal(r.notes.length, 1, 'kept once');
-  r.br.click('ask-x', a.id); await tick();
+  assert.equal(r.ctl.state().asks[0].kept, true); assert.match(r.br.stub('#as-list').innerHTML, /★ Kept/); assert.ok(!/data-as="keep"/.test(r.br.stub('#as-list').innerHTML));
+  r.br.click('keep', a.id); await tick(); assert.equal(r.notes.length, 1, 'kept once');
+  r.br.click('ack', a.id); await tick();
   assert.deepEqual(r.calls.marks[1], { op: 'dismiss', items: [{ at: ANS.at, text: ANS.q }] });
-  assert.equal(r.ctl.state().asks.length, 0); assert.equal(r.br.stub('#as-asks').innerHTML, '');
+  assert.equal(r.ctl.state().asks.length, 0); assert.ok(!/pitch three/.test(r.br.stub('#as-list').innerHTML));
   // a long answer is clipped to what the capture bar takes
   const long = askRig(); long.gm.askReply = { answer: { q: 'q', text: 'word '.repeat(400), at: ANS.at } }; await long.ctl.ask('q');
-  long.br.click('ask-keep', long.ctl.state().asks[0].id); await tick();
+  long.br.click('keep', long.ctl.state().asks[0].id); await tick();
   assert.ok(long.notes[0].length <= 500 && long.notes[0].endsWith('…') && long.notes[0].startsWith('Blade, ask ('), String(long.notes[0].length));
   // the capture bar refusing it (full) leaves the answer unkept
   const full = askRig({ onNote: () => false }); await full.ctl.ask('q');
-  full.br.click('ask-keep', full.ctl.state().asks[0].id); await tick(); assert.equal(full.ctl.state().asks[0].kept, false); assert.equal(full.calls.marks.length, 0);
+  full.br.click('keep', full.ctl.state().asks[0].id); await tick(); assert.equal(full.ctl.state().asks[0].kept, false); assert.equal(full.calls.marks.length, 0);
   // a failed server mark changes nothing on screen
   const bad = askRig(); await bad.ctl.ask('q'); bad.gm.markErr = err(500, 'x');
-  bad.br.click('ask-x', bad.ctl.state().asks[0].id); await tick(); assert.equal(bad.ctl.state().asks.length, 0);
+  bad.br.click('ack', bad.ctl.state().asks[0].id); await tick(); assert.equal(bad.ctl.state().asks.length, 0);
   // no capture bar on the page: no Keep button
   const nk = askRig({ onNote: undefined }); await nk.ctl.ask('q');
-  assert.ok(!/ask-keep/.test(nk.br.stub('#as-asks').innerHTML) && /ask-x/.test(nk.br.stub('#as-asks').innerHTML));
+  assert.ok(!/data-as="keep"/.test(nk.br.stub('#as-list').innerHTML) && /data-as="ack"/.test(nk.br.stub('#as-list').innerHTML));
 });
 
 await test('Ask Blade: the helpers are plain, and the styles keep the answer to the box width and its line breaks', () => {
@@ -886,7 +905,7 @@ await test('Ask Blade: the helpers are plain, and the styles keep the answer to 
   for (const e of [err(500), err(400), err(undefined, 'x', { timeout: true }), err(429, 'busy'), err(429, 'cap'), err(429, 'ladder'), err(503)]) assert.ok(P.askErr(e) && !/[{}]/.test(P.askErr(e)));
   assert.equal(P.askMoment({ at: ANS.at, q: ' q ', text: ' a \n b ' }), 'Blade, ask (' + P.hhmm(ANS.at) + '): q -> a b');
   const css = fs.readFileSync(path.join(ROOT, 'app', 'gm.css'), 'utf8');
-  assert.match(css, /\.gm-assist \.as-answer \.as-text \{[^}]*white-space: pre-wrap/); assert.match(css, /\.gm-assist \.as-ask textarea \{[^}]*width: 100%[^}]*box-sizing: border-box/);
+  assert.match(css, /\.gm-assist \.as-band-text \{[^}]*white-space: pre-wrap/); assert.match(css, /\.gm-assist \.as-detail \{[^}]*overflow-y: auto/); assert.match(css, /\.gm-assist \.as-ask textarea \{[^}]*width: 100%[^}]*box-sizing: border-box/);
 });
 
 // ---------- the side panel's shell (P2): the glance grammar, the feed's chips, the header, the tab, U, Pin ----------
@@ -1043,6 +1062,214 @@ await test('rolled: the page asks for it on a tapped situation and on a filed ro
   assert.ok(!/stamp\('console', res\);\s*assistRolled/.test(src), 'not a single table');
   assert.ok(/if \(addCapture\('r', S\.last\.text\)\) assistRolled\(\);/.test(src), 'L files, then asks');
   assert.ok(/function assistRolled\(\) \{ if \(S && S\.assist && typeof S\.assist\.rolled === 'function'\)/.test(src), 'guarded');
+});
+
+// ---------- P3: the card (one renderer for every kind), Now, the strip, keyed rendering, page-made cards ----------
+const vmCtx = {}; vmCtx.window = vmCtx; vm.createContext(vmCtx);
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'app', 'markdown.js'), 'utf8'), vmCtx, { filename: 'markdown.js' });
+const MD = vmCtx.B68Markdown;
+const XSS = '<img src=x onerror=1>';
+const textOf = (el) => el.textContent;
+const find = (el, pred) => { const out = []; (function w(n) { for (const c of n.children || []) { if (c.nodeType === 1) { if (pred(c)) out.push(c); w(c); } } })(el); return out; };
+const byClass = (el, cls) => find(el, (n) => n.classList.contains(cls));
+
+await test('inline marks: **bold** and *italic* are strong and em nodes; an unmatched * stays; a tag in the text is literal text', () => {
+  const doc = fakeBrowser().doc; doc.createElement('host'); const wrap = new MiniEl('p');      // the first element a fake document makes is the panel's host
+  P.appendInline(doc, wrap, 'a **bold** and *ital* and 2 * 3 and ' + XSS + ' end');
+  assert.equal(wrap.textContent, 'a bold and ital and 2 * 3 and ' + XSS + ' end');
+  assert.deepEqual(wrap.children.filter((c) => c.nodeType === 1).map((c) => [c.tagName, c.textContent]), [['STRONG', 'bold'], ['EM', 'ital']]);
+  assert.match(wrap.innerHTML, /&lt;img src=x onerror=1&gt;/); assert.ok(!/<img/.test(wrap.innerHTML), 'serialised, the tag is escaped');
+  const w2 = new MiniEl('p'); P.appendInline(doc, w2, '**<b>x</b>** *<i>*'); assert.deepEqual(w2.children.filter((c) => c.nodeType === 1).map((c) => [c.tagName, c.textContent]), [['STRONG', '<b>x</b>'], ['EM', '<i>']], 'a tag inside a mark is still text');
+  assert.ok(!/<b>|<i>/.test(w2.innerHTML.replace(/<\/?(strong|em)>/g, '')));
+  for (const s of ['', '*', '**', '****', '* *', '**a', 'a**']) { const w = new MiniEl('p'); P.appendInline(doc, w, s); assert.equal(w.textContent.replace(/\*/g, ''), s.replace(/\*/g, '')); }
+});
+
+await test('stripHeadings: a heading line becomes a bold line, outside a code fence only', () => {
+  assert.equal(P.stripHeadings('# One\ntext\n### Two ###\n```\n# kept\n```\n~~~\n## also kept\n~~~\n#nospace'), '**One**\ntext\n**Two**\n```\n# kept\n```\n~~~\n## also kept\n~~~\n#nospace');
+  assert.equal(P.stripHeadings('## has *stars*'), 'has *stars*');
+});
+
+await test('the card: folded one line (kind, headline, time); open shows bullets (5 at most), SAY, GM ONLY, the cite string and the check chip, and the actions', async () => {
+  const r = rig({ markdown: MD });
+  r.gm.reply = { ...GOOD, cards: [{ seat: 'ref', kind: 'rule', at: '2030-01-01T09:30:00.000Z', text: 'Server text, not the headline.', headline: 'Resist the **harm**', bullets: ['one', 'two', 'three', 'four', 'five', 'six'],
+    cite: 'p.32, p.40', check: 'resist', say: 'Read: *softly*', secret: 'The cook did it', more: 'More **detail**' }] };
+  await r.ctl.poll();
+  const li = r.br.stub('#as-list').children[0], id = r.ctl.state().cards[0].id;
+  assert.equal(li.getAttribute('data-open'), '0'); assert.equal(li.tagName, 'LI');
+  const fold = byClass(li, 'as-fold')[0]; assert.equal(fold.tagName, 'BUTTON'); assert.equal(fold.getAttribute('aria-expanded'), 'false');
+  assert.deepEqual([textOf(byClass(li, 'as-kind')[0]), textOf(byClass(li, 'as-text')[0])], ['⚙Rule', 'Resist the harm'], 'colour bar is the card\'s data-kind; glyph, word, headline');
+  assert.equal(li.getAttribute('data-kind'), 'rule');
+  r.br.click('fold', id);
+  const open = r.br.stub('#as-list').children[0];
+  assert.equal(open.getAttribute('data-open'), '1');
+  assert.equal(byClass(open, 'as-bullets')[0].children.length, 5, 'five bullets at most');
+  assert.equal(textOf(byClass(open, 'as-say')[0]), 'SAYRead: softly'); assert.equal(textOf(byClass(open, 'as-secret')[0]), 'GM ONLYThe cook did it');
+  assert.equal(textOf(byClass(open, 'as-cite')[0]), 'p.32, p.40', 'the cite is a string chip'); assert.equal(textOf(byClass(open, 'as-check')[0]), 'Resist');
+  const acts = byClass(open, 'as-acts')[0].children.map((c) => c.textContent);
+  assert.deepEqual(acts, ['More ▾', '☆ Keep', 'Got it ×'], 'Undo is for done cards only');
+  assert.equal(byClass(open, 'as-detail').length, 0, 'More is closed');
+  r.br.click('more', id);
+  assert.match(byClass(r.br.stub('#as-list').children[0], 'as-detail')[0].innerHTML, /More <strong>detail<\/strong>/);
+  r.br.click('more', id); assert.equal(byClass(r.br.stub('#as-list').children[0], 'as-detail').length, 0);
+  r.br.click('fold', id); assert.equal(r.br.stub('#as-list').children[0].getAttribute('data-open'), '0');
+});
+
+await test('safety: model text is only ever text. A tag in a headline, bullet, say, secret or the cite is literal; the only HTML written is B68Markdown\'s output', async () => {
+  htmlWrites.length = 0;
+  const r = rig({ markdown: MD });
+  r.ctl.open();
+  r.gm.reply = { ...GOOD, cards: [{ seat: 'ref', kind: 'rule', at: '2030-01-01T09:30:00.000Z', text: XSS + ' text', headline: XSS + ' head', bullets: [XSS + ' b'], say: XSS + ' say', secret: XSS + ' sec', cite: XSS, more: '# H\n' + XSS + '\n\n[x](javascript:alert(1))' }] };
+  await r.ctl.poll();
+  const id = r.ctl.state().cards[0].id; r.br.click('fold', id); r.br.click('more', id);
+  const whole = r.br.stub('#as-now').innerHTML + r.br.stub('#as-list').innerHTML;
+  assert.ok(!/<img|<script|onerror=1>/.test(whole.replace(/&lt;img[^&]*&gt;/g, '')), 'no live tag from model text: ' + whole.slice(0, 300));
+  assert.ok(find(r.br.stub('#as-list'), (n) => n.tagName === 'IMG').length === 0 && find(r.br.stub('#as-now'), (n) => n.tagName === 'IMG').length === 0, 'no img node');
+  assert.match(textOf(byClass(r.br.stub('#as-list').children[0], 'as-text')[0]), /^<img src=x onerror=1> head$/);
+  assert.match(textOf(byClass(r.br.stub('#as-now'), 'as-text')[0]), /^<img src=x onerror=1> head$/, 'Now too');
+  assert.match(textOf(byClass(r.br.stub('#as-list').children[0], 'as-secret')[0]), /<img src=x onerror=1> sec/);
+  const modelWrites = htmlWrites.filter((w) => /img|onerror|sec|head/.test(w.html));
+  assert.ok(modelWrites.length >= 1 && modelWrites.length <= 2, 'only `more` is written as HTML (in the feed card, and in Now): ' + JSON.stringify(modelWrites.map((w) => w.el)));
+  assert.equal(r.ctl.state().renders.more, 1, 'and it was rendered once');
+  assert.ok(modelWrites.every((w) => w.html === modelWrites[0].html));
+  assert.equal(modelWrites[0].html, MD.render('**H**\n' + XSS + '\n\n[x](javascript:alert(1))', { headingOffset: 1 }), 'and it is exactly what B68Markdown.render returned for `more` (headings stripped)');
+  assert.ok(!/javascript:/.test(modelWrites[0].html.replace(/&[a-z]+;/g, '')) || !/href="javascript/.test(modelWrites[0].html), 'no javascript: link');
+  assert.ok(!/<h\d/.test(modelWrites[0].html), 'headings are stripped');
+  // the strip (closed panel) shows the headline as text and never the secret
+  const c = rig({ markdown: MD });
+  c.gm.reply = { ...GOOD, cards: [{ seat: 'ref', kind: 'rule', at: '2030-01-01T09:30:00.000Z', text: 't', headline: XSS + ' head', secret: 'SECRET-WORDS', bullets: ['BULLET-WORDS'], say: 'SAY-WORDS' }] };
+  await c.ctl.poll();
+  const strip = c.br.stub('.as-banner-b'); assert.equal(strip.textContent, '⚙ Rule ' + XSS + ' head'); assert.ok(!/SECRET|BULLET|SAY-WORDS|<img/.test(strip.innerHTML.replace(/&lt;img[^&]*&gt;/, '')), 'the strip is text: ' + strip.innerHTML);
+});
+
+await test('the strip: rule and warn pop it for 8 s; every other kind only adds a pip; a restored card never pops; a warn with a secret keeps the secret out of it', async () => {
+  const r = rig(); const stripText = () => r.br.stub('.as-banner-b').textContent;
+  r.gm.reply = { ...GOOD, cards: [{ seat: 'clerk', at: '2030-01-01T09:00:00.000Z', text: 'n', headline: 'A note', kind: 'note' }, { seat: 'mystery', at: '2030-01-01T09:01:00.000Z', text: 'i', headline: 'An idea', kind: 'idea' }, { seat: 'fixer', at: '2030-01-01T09:02:00.000Z', text: 's', headline: 'A say', kind: 'say' }] };
+  await r.ctl.poll(); assert.equal(stripText(), '', 'note, idea and say: no strip'); assert.equal(r.ctl.state().banner, '');
+  assert.equal(r.ctl.state().unread, 3); assert.equal(r.br.stub('#as-pips').children.length, 3, 'a pip each');
+  const id = r.ctl.addCard({ kind: 'warn', headline: 'Spend at 85%', secret: 'DO-NOT-SHOW', bullets: ['also not'] });
+  assert.ok(id); assert.equal(r.br.stub('#as-banner').hidden, false, 'a warn pops'); assert.equal(r.br.stub('.as-banner-b').getAttribute('data-kind'), 'warn');
+  assert.equal(r.br.stub('.as-banner-b').textContent, '⚠ Stop Spend at 85%'); assert.ok(!/DO-NOT-SHOW|also not/.test(r.br.stub('.as-banner-b').innerHTML));
+  assert.ok(r.timers.some((t) => t.ms === 8000), '8 s');
+  assert.equal(r.ctl.state().banner, 'Spend at 85%');
+  const kinds = r.br.stub('#as-pips').children.map((p) => p.getAttribute('data-kind')); assert.deepEqual(kinds, ['warn', 'say', 'idea', 'note'], 'newest first');
+  // restored cards: no strip
+  const q = rig({ stored: { cards: [{ seat: 'ref', kind: 'rule', headline: 'Old slip', at: '2030-01-01T09:00:00.000Z', text: 'Old slip', seen: false }], updates: [] } }); await q.ctl.ready;
+  assert.equal(q.ctl.state().banner, ''); assert.equal(q.br.stub('.as-banner-b').textContent, ''); assert.equal(q.ctl.state().unread, 1);
+  // an open panel has no strip
+  const o = rig(); o.ctl.open(); o.ctl.addCard({ kind: 'rule', headline: 'Open' }); assert.equal(o.ctl.state().banner, ''); assert.equal(o.br.stub('.as-banner-b').textContent, '');
+});
+
+await test('glance fields come through the tick, the restore and the marks: headline over text, kind (a stall kind is not one), cite, check; an old row is built from text and detail', async () => {
+  const r = rig({ stored: { cards: [
+    { seat: 'ref', kind: 'rule', at: '2030-01-01T09:00:00.000Z', text: 'T1', headline: 'H1', bullets: ['b1'], cite: 'p.9', check: 'harm', seen: true },
+    { seat: 'ref', at: '2030-01-01T09:01:00.000Z', text: 'Old row full text that is long '.repeat(8), headline: 'Old row full text that is long Old row full text that is long Old row full text that is long Old row full te…', bullets: [], detail: { said_at: '22:14', rule: 'Rulebook p. 12' }, seen: true },
+    { seat: 'mystery', kind: 'complication', at: '2030-01-01T09:02:00.000Z', text: 'T3', headline: 'H3', seen: true }], updates: [] } });
+  await r.ctl.ready;
+  const cs = r.ctl.state().cards;
+  assert.deepEqual(cs.map((c) => [c.kind, c.headline.slice(0, 3), c.check, c.cite]), [['rule', 'H1', 'harm', 'p.9'], ['rule', 'Old', '', ''], ['idea', 'H3', '', '']], 'a complication/clue kind falls back to the seat\'s kind');
+  assert.deepEqual(cs[1].bullets, ['Said at 22:14', 'Rulebook p. 12']); assert.ok(cs[1].more.startsWith('Old row full text'), 'a cut headline keeps the whole text under More');
+  assert.equal(cs[0].text, 'T1', 'text is untouched: the marks match on it');
+  r.br.click('fold', cs[0].id); assert.equal(textOf(byClass(r.br.stub('#as-list'), 'as-check')[0]), 'Harm');
+  r.br.click('ack', cs[0].id); await tick(); assert.deepEqual(r.calls.marks, [{ op: 'dismiss', items: [{ at: cs[0].at, text: 'T1' }] }], 'marks use the server\'s text, not the headline');
+});
+
+await test('keyed rendering: a new card builds one node; the others are the same nodes; Markdown is rendered once per card however often the list is drawn', async () => {
+  const r = rig({ markdown: MD });
+  const mk = (n) => ({ seat: 'clerk', kind: 'note', at: '2030-01-01T09:0' + n + ':00.000Z', text: 'c' + n, headline: 'Card ' + n, more: 'more ' + n });
+  r.gm.reply = { ...GOOD, cards: [mk(1), mk(2), mk(3)] }; await r.ctl.poll();
+  const builds = () => r.ctl.state().renders.cards, nodes = () => r.br.stub('#as-list').children.slice();
+  const before = nodes(), b0 = builds(); assert.equal(b0, 3);
+  for (let i = 0; i < 5; i++) r.ctl.state(), r.ctl.relayout();
+  r.gm.reply = { ...GOOD, cards: [mk(4)] }; await r.ctl.poll();
+  assert.equal(builds(), b0 + 1, 'one new card, one build');
+  const after = nodes(); assert.equal(after.length, 4); assert.deepEqual(after.slice(1), before, 'the three old nodes are the very same objects, in order');
+  // open More on one card, redraw many times: one Markdown render
+  const id = r.ctl.state().cards[1].id; r.br.click('fold', id); r.br.click('more', id);
+  const m0 = r.ctl.state().renders.more; assert.equal(m0, 1);
+  for (let i = 0; i < 4; i++) { r.gm.reply = { ...GOOD, cards: [] }; await r.ctl.poll(); }
+  r.br.click('fold', id); r.br.click('fold', id); assert.equal(r.ctl.state().renders.more, 1, 'one render for the card\'s `more`');
+  const untouched = nodes().filter((n) => n.getAttribute('data-id') !== id);
+  r.br.click('fold', id); assert.deepEqual(nodes().filter((n) => n.getAttribute('data-id') !== id), untouched, 'folding one card leaves the others as they were');
+  // a filter swaps the nodes shown but rebuilds none
+  const b1 = builds(), keptNodes = nodes().slice();
+  r.br.click('chip', '', 'clerk'); assert.equal(nodes().length, 4, 'all four are clerk cards: nothing filtered out'); r.br.click('chip', '', 'rule');
+  assert.deepEqual(nodes().map((n) => n.className), ['as-empty'], 'Rule shows none of them (there are no rule cards): the filter really ran');
+  assert.equal(r.br.stub('#as-chips').children.find((c) => c.getAttribute('data-k') === 'rule').getAttribute('aria-pressed'), 'true');
+  r.br.click('chip', '', 'all'); assert.deepEqual(nodes(), keptNodes, 'back on All the very same nodes return'); assert.equal(builds(), b1, 'and no card was rebuilt by any of it');
+});
+
+await test('the divider: "Earlier tonight" once, after 30 minutes; filters show counts and keep the node set', async () => {
+  const old = new Date(Date.now() - 50 * 60000).toISOString(), fresh = new Date().toISOString();
+  const r = rig({ stored: { cards: [{ seat: 'clerk', at: old, text: 'old', headline: 'Old one', seen: true }, { seat: 'ref', kind: 'rule', at: fresh, text: 'new', headline: 'New one', seen: true }], updates: [] } });
+  await r.ctl.ready;
+  const kids = r.br.stub('#as-list').children; assert.deepEqual(kids.map((k) => k.className), ['as-card', 'as-earlier', 'as-card']);
+  assert.equal(kids[1].textContent, 'Earlier tonight'); assert.equal(kids[1].getAttribute('role'), 'separator');
+  assert.match(r.br.stub('#as-chips').innerHTML, /data-k="rule"[^>]*aria-pressed="false">Rule <span class="as-chip-n">1<\/span>/);
+  r.br.click('chip', '', 'rule'); assert.deepEqual(r.br.stub('#as-list').children.map((k) => k.className), ['as-card'], 'Rule: the one rule card, no divider (it is not older)');
+  assert.equal(r.br.stub('#as-list').children[0].getAttribute('data-kind'), 'rule');
+  r.br.click('chip', '', 'all'); assert.equal(r.br.stub('#as-list').children.length, 3);
+});
+
+await test('Now: the card is one type step larger (CSS), shows the same fields, and leaves after 1.5 s (marked) or when a newer card arrives (the older is marked then)', async () => {
+  const r = rig(); r.ctl.open();
+  r.gm.reply = { ...GOOD, cards: [{ seat: 'ref', kind: 'rule', at: 'a1', text: 'one', headline: 'First', bullets: ['x'] }] }; await r.ctl.poll();
+  const now = () => r.br.stub('#as-now').children[0];
+  assert.equal(now().className, 'as-card as-now-card'); assert.equal(now().tagName, 'DIV'); assert.equal(now().getAttribute('data-open'), '1'); assert.match(now().innerHTML, /First/); assert.match(now().innerHTML, /<li>x<\/li>/);
+  assert.equal(r.calls.marks.length, 0);
+  r.gm.reply = { ...GOOD, cards: [{ seat: 'clerk', kind: 'note', at: 'a2', text: 'two', headline: 'Second' }] }; await r.ctl.poll(); await tick();
+  assert.match(now().innerHTML, /Second/); assert.ok(!/First/.test(r.br.stub('#as-now').innerHTML));
+  assert.deepEqual(r.calls.marks, [{ op: 'seen', items: [{ at: 'a1', text: 'one' }] }], 'the newer card took Now, so the first was marked then');
+  r.ctl.close(); await tick(); assert.equal(r.ctl.state().unread, 1, 'closed before 1.5 s: the second card was not in view long enough, still unread');
+  r.ctl.open(); assert.match(now().innerHTML, /Second/, 'and it is Now again');
+  const css = fs.readFileSync(path.join(ROOT, 'app', 'gm.css'), 'utf8');
+  assert.match(css, /\.as-card\.as-now-card\[data-open\] \.as-text \{[^}]*font-size: 19px/); assert.match(css, /\.as-card\[data-open="1"\] \.as-text \{[^}]*font-size: 17px/);
+  assert.match(css, /\.as-detail \{[^}]*max-height: calc\(var\(--as-h\) \* \.4\)/); assert.match(css, /\.as-card \{[^}]*max-height: calc\(var\(--as-h\) - 24px\)/);
+});
+
+await test('page-made cards: addCard / updateCard / undoNewest; no server mark is ever sent for one; Undo needs a handler', async () => {
+  const r = rig(); r.ctl.open();
+  let undone = 0;
+  const id = r.ctl.addCard({ kind: 'done', headline: 'Clock made: Alarm', bullets: ['heard at 22:14'], undo: () => { undone++; } });
+  assert.ok(id); assert.equal(r.ctl.state().cards.length, 1);
+  assert.equal(r.ctl.addCard({ headline: '' }), ''); assert.equal(r.ctl.addCard(null), ''); assert.equal(r.ctl.addCard({ kind: 'bogus', headline: 'x' }) !== '', true);
+  assert.equal(r.ctl.state().cards[1].kind, 'note', 'an unknown kind is a note');
+  const open = (c) => { r.br.click('fold', c); return byClass(r.br.stub('#as-list'), 'as-card').filter((n) => n.getAttribute('data-id') === c)[0]; };
+  const li = open(id); assert.deepEqual(byClass(li, 'as-acts')[0].children.map((c) => c.textContent), ['☆ Keep', 'Undo', 'Got it ×']);
+  assert.ok(r.ctl.updateCard(id, { headline: 'Clock made: Alarm (6)', bullets: ['a', 'b'] })); assert.match(r.br.stub('#as-list').innerHTML, /Alarm \(6\)/);
+  assert.equal(r.ctl.updateCard('nope', {}), false);
+  assert.deepEqual(await r.ctl.undoNewest(), { id }); assert.equal(undone, 1);
+  assert.equal(await r.ctl.undoNewest(), null, 'done once'); assert.match(r.br.stub('#as-list').innerHTML, /Undone/); assert.ok(!/data-as="undo"/.test(r.br.stub('#as-list').innerHTML));
+  const id2 = r.ctl.addCard({ kind: 'done', headline: 'No handler' }); r.br.click('fold', id2); assert.ok(!/data-as="undo"/.test(byClass(r.br.stub('#as-list'), 'as-card').filter((n) => n.getAttribute('data-id') === id2)[0].innerHTML));
+  r.br.click('keep', id); r.br.click('ack', id); await tick(); await tick();
+  assert.equal(r.calls.marks.length, 0, 'a page card is not in the server\'s log: no mark');
+  assert.equal(r.notes.length, 1, 'but Keep still files a Moment');
+  const f = rig(); let n = 0; const fid = f.ctl.addCard({ kind: 'done', headline: 'Fails', undo: async () => { n++; throw new Error('x'); } });
+  assert.deepEqual(await f.ctl.undoNewest(), { error: 'undo' }); assert.match(f.br.stub('#as-list').innerHTML, /Fails/);
+  assert.ok(typeof r.ctl.addCard === 'function' && typeof r.ctl.updateCard === 'function' && typeof r.ctl.undoNewest === 'function');
+});
+
+await test('seen marks go out as one batch: opening with 3 unread sends one request of 2; two cards arriving while open send the older at once, and Now\'s card is read after 1.5 s', async () => {
+  const mk = (n) => ({ seat: 'clerk', kind: 'note', at: '2030-01-01T09:0' + n + ':00.000Z', text: 't' + n, headline: 'H' + n, seen: false });
+  const r = rig({ stored: { cards: [mk(1), mk(2), mk(3)], updates: [] } }); await r.ctl.ready;
+  r.ctl.open(); await tick();
+  assert.equal(r.calls.marks.length, 1, 'one POST, not one per card'); assert.equal(r.calls.marks[0].op, 'seen'); assert.deepEqual(r.calls.marks[0].items.map((i) => i.text), ['t1', 't2']);
+  r.timers.filter((x) => x.ms === 1500).pop().f(); await tick();
+  assert.equal(r.calls.marks.length, 2); assert.deepEqual(r.calls.marks[1].items.map((i) => i.text), ['t3']); assert.equal(r.ctl.state().unread, 0);
+  // two arrive together while the panel is open: the newest is Now, the older is in the feed and is read at once; Now's previous card goes in the same request
+  r.gm.reply = { ...GOOD, cards: [{ ...mk(4), text: 't4' }, { ...mk(5), text: 't5' }] }; await r.ctl.poll(); await tick();
+  assert.equal(r.calls.marks.length, 3); assert.deepEqual(r.calls.marks[2].items.map((i) => i.text), ['t4']); assert.equal(r.ctl.state().unread, 1, 'only Now\'s card is unread');
+  r.ctl.close(); assert.equal(r.ctl.state().unread, 1, 'closed before 1.5 s: still unread');
+});
+
+await test('every method the panel returned before P3 is still returned', () => {
+  const r = rig(); for (const m of ['ready', 'open', 'close', 'toggle', 'isOpen', 'pin', 'isPinned', 'undoNewest', 'relayout', 'poll', 'resume', 'fit', 'canFit', 'autoFit', 'canAnother', 'another', 'canScreen', 'screenMake', 'ask', 'canAsk', 'state', 'el', 'destroy', 'addCard', 'updateCard']) assert.ok(m in r.ctl, m);
+});
+
+await test('the fallback: without B68Markdown `more` is plain text in the card, never HTML', async () => {
+  const r = rig({ markdown: null }); const W0 = A.create; htmlWrites.length = 0;
+  r.gm.reply = { ...GOOD, cards: [{ seat: 'clerk', at: 'z', text: 't', headline: 'h', more: '<b>bold</b> line' }] }; await r.ctl.poll();
+  const id = r.ctl.state().cards[0].id; r.br.click('fold', id); r.br.click('more', id);
+  const det = byClass(r.br.stub('#as-list'), 'as-detail')[0]; assert.equal(det.textContent, '<b>bold</b> line'); assert.equal(htmlWrites.filter((w) => /bold/.test(w.html)).length, 0);
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

@@ -44,6 +44,7 @@
     "check:deploy": "node checks/api/deploy.mjs",
     "check:gm-secrets": "node checks/runtime/gm-nosecrets.test.mjs",
     "check:gm": "node checks/runtime/gm.e2e.mjs",
+    "check:assist-cards": "node checks/runtime/gm-assist-cards.e2e.mjs",
     "check:gm-scenes": "node checks/runtime/gm-scenes.e2e.mjs",
     "check:gm-page": "node checks/runtime/gm-page.test.mjs",
     "check:gm-chase": "node checks/runtime/gm-chase.test.mjs",

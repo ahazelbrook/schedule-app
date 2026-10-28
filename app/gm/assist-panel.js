@@ -1,6 +1,6 @@
 /* B68GmAssist — "Claude at the table", the GM page's Blade side panel (build plan Phase 1; functions/api/gm/assist.js is the server side).
    Closed, it is a 44 px tab on the right edge between the top bar and the capture bar: the table agent's portrait, the count of unread
-   cards and up to five coloured pips (one per unread card, by kind, newest on top); a card that arrives pops a banner beside it for 12 s.
+   cards and up to five coloured pips (one per unread card, by kind, newest on top); a rule or warn card that arrives slides a one-line strip out of the tab for 8 s (every other kind only adds a pip).
    Open, it is a panel 400 px wide (at least 360, at most 33vw) that slides in over the page (a transform, 180 ms; none under
    prefers-reduced-motion). At >= 1600 px Pin docks it as a fourth .gm-main column (body.as-dock). Under 600 px it is not drawn.
    Top to bottom: the header (the state as a dot and a word, the spend with a five-cell meter, the three seats' health dots, Pin, close),
@@ -8,7 +8,12 @@
    newest first, each folded to one 44 px line; an "Earlier tonight" divider after 30 minutes) and the Tools drawer at the foot (Fit it,
    the Screen, the Ledger's updates). A card has a kind (rule, say, idea, done, warn, note) with a colour, a glyph and a word.
    Keys: A toggles (the page), Esc closes (not while typing), J / K move between the feed's cards, Enter folds or unfolds the focused
-   card, U undoes the newest done card (ctl.undoNewest(), a no-op until C2). J, K and U count only with the focus inside the panel.
+   card, U undoes the newest done card that has an undo (ctl.undoNewest()). J, K and U count only with the focus inside the panel.
+   The card (P3, design 3.5-3.8): one renderer for every kind. Folded it is one 44 px line (colour bar, glyph, word, headline, time); unfolded it is the
+   headline, up to 5 bullets, SAY, GM ONLY, the cite and check chips and the actions (Keep, Got it, Undo on a done card, More). Headline, bullets, SAY and
+   GM ONLY are text with **bold** and *italic* as the only marks, built as DOM nodes (textContent); `more` goes through B68Markdown.render with headings
+   stripped, the one place HTML is set. A card is never taller than the panel; More scrolls inside it. Rendering is keyed: only a card that changed is
+   rebuilt, and the Markdown is rendered once per text. Ask Blade's answers are cards too (src ask). Cards made on the page come from ctl.addCard.
    Plain script, UMD: window.B68GmAssist in the browser, module.exports under Node.
 
    GM only, by construction: gm-page.js creates it once the GM's page is ready and destroys it on close, so the player and display
@@ -31,11 +36,15 @@
          onMeanwhile (cutaway | null): Meanwhile's faction cutaway from a tick ({ faction, cutaway, clock, ticks, why, at }); null clears it (Listening off, the cap)
          onHandout (handout): a handout the Mystery keeper suggests, from a tick ({ id, why, at }); the page offers it in the Rack
          dots      () -> 0-4 | null: the Dots chip's value; the "Fit it" form sends it as `dots` when set
+         markdown  { render(src, opts) -> html }: default window.B68Markdown (app/markdown.js); without it `more` shows as plain text
          onNote    the page's capture: "Note it" on a Ledger update and "Keep" on a card file their text as a Moment (the update
                    itself changes no state)
      ctl.open() / close() / toggle()      the panel
      ctl.pin() / isPinned()               dock it as a column (>= 1600 px only; a no-op below) / is it docked now
-     ctl.undoNewest() -> Promise<null>    U: undo the newest done card (nothing to undo until C2)
+     ctl.undoNewest() -> Promise<{ id } | { error } | null>   U: undo the newest done card that has an undo function (null when none)
+     ctl.addCard({ id?, kind, headline, bullets?, say?, secret?, more?, cite?, check?, seat?, undo? }) -> id    a card made on this page (co-GM, autopilot, warnings);
+                                         never sent to the server, gone on reload; undo is a function the card's Undo button calls
+     ctl.updateCard(id, patch) -> bool    change a card's kind, headline, bullets, say, secret, more, cite or check (and undone / undo)
      ctl.relayout()                       measure the top bar and the capture bar again (the page calls it after it redraws its layout)
          mock      true shows a few clearly labelled example cards (no Keep, no Got it) while there are no real ones: for looking at the shell only
      ctl.poll()      one polling decision now: Listening on, page visible, not paused -> one tick (resolves when done)
@@ -68,13 +77,14 @@
                                      cap, Portrait and Prop at 85%; the Case board always)
    A Ref card with a page cite is spot-checked in the background through the gatekeeper; a bad cite gets a small "cite?" flag (it never blocks).
    Ask Blade (GM.md, "Ask Blade"): a question field at the top of the box. The GM types a question or a request, presses Ask (Enter sends,
-   Shift+Enter is a new line) and the answer appears under the field: plain text for the GM's eyes only, so nothing is handed to the page
-   but "Keep", which files "Blade, ask (HH:MM): question -> answer" through o.onNote. One question at a time; a failed one keeps its words in
-   the field. The last ten answers come back from the server's log after a reload (assistCards().asks); "×" dismisses one for good.
+   Shift+Enter is a new line) and the answer lands in the feed as a card (open, at the top; not in Now, which would drop it after 1.5 s) for the GM's
+   eyes only, so nothing is handed to the page but "Keep", which files "Blade, ask (HH:MM): question -> answer" through o.onNote. One question at a
+   time; a failed one keeps its words in the field. The last ten answers come back from the server's log after a reload (assistCards().asks);
+   "Got it" dismisses one for good.
      ctl.ask(q) -> Promise<{ answer } | { error } | null>   POST /gm/assist/ask { q }; null when the box cannot ask or is already asking
      ctl.canAsk() -> bool     false on a phone, with the cap reached or the box not set up, from 85% of the cap (tier core), or when the runtime
                               has no assistAsk
-   _pure: errKind, errLine, fitLines, tierLabel, spendLine, absorb, restore, restoreAsks, momentText, askMoment, askAllowed, askErr, hhmm, clip,
+   _pure: errKind, errLine, mkCard, inlineNodes, appendInline, stripHeadings, cardKind, fitLines, tierLabel, spendLine, absorb, restore, restoreAsks, momentText, askMoment, askAllowed, askErr, hhmm, clip,
    gateText, citesOf, gateLine, screenAllowed. */
 (function (root, factory) {
   'use strict';
@@ -85,7 +95,7 @@
   'use strict';
 
   var P = {};
-  var BANNER_MS = 12000, POLL_MS = 60000, ROLLED_MS = 40000, ROLLED_RETRY_MS = 3000, ROLLED_TRIES = 20, MAX_CARDS = 40, MAX_UPDATES = 30, NPC_MAX = 80;
+  var BANNER_MS = 8000, POLL_MS = 60000, ROLLED_MS = 40000, ROLLED_RETRY_MS = 3000, ROLLED_TRIES = 20, MAX_CARDS = 60, MAX_UPDATES = 30, NPC_MAX = 80;
   var POSITIONS = ['controlled', 'risky', 'desperate'];
   var SEAT = { ref: 'Rule slip', clerk: 'Clerk', fixer: 'Fixer', ledger: 'Ledger', mystery: 'Mystery', showrunner: 'Pacing' };
   var TIER = { all: 'Full', reduced: 'Reduced', core: 'Core only', off: 'Off: cap reached' };
@@ -95,6 +105,10 @@
   var SEAT_KIND = { ref: 'rule', fixer: 'say', mystery: 'idea', showrunner: 'idea', clerk: 'note', ledger: 'note' };
   var FILTERS = ['all'].concat(KINDS.filter(function (k) { return k !== 'warn'; }));   /* All, Rule, Say, Idea, Done, Note: a warn is rare and always shows under All */
   var PIPS_MAX = 5, EARLIER_MS = 30 * 60 * 1000, FOLD_CHARS = 140, NOW_MS = 1500;
+  var BULLETS_MAX = 5, BULLET_CHARS = 160, SAY_MAX = 1500, SECRET_MAX = 1000, MORE_MAX = 4000, CITE_MAX = 40;
+  var STRIP_KINDS = ['rule', 'warn'];      /* the only kinds that slide a strip out of the closed tab; every other kind is a pip */
+  var ASK_KIND = { rule: 'rule', say: 'say', idea: 'idea', npc: 'say', recap: 'note', other: 'note' };      /* Ask Blade's own kinds -> the six */
+  var CHECK_WORD = { order: 'Order', resist: 'Resist', harm: 'Harm', cost: 'Cost', house: 'House rule', other: 'Check' };
   var PIN_MIN = 1600;
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -138,22 +152,24 @@
 
   /* a seat's card -> its kind (anything unknown is a note) */
   function kindOf(seat) { return SEAT_KIND[str(seat)] || 'note'; }
-  P.kindOf = kindOf; P.KIND = KIND; P.FILTERS = FILTERS;
+  /* a card's kind: its own when it is one of the six (a Stall card's complication / clue is not), else its seat's */
+  function cardKind(c) { return c && KINDS.indexOf(c.kind) >= 0 ? c.kind : kindOf(c && c.seat); }
+  P.kindOf = kindOf; P.cardKind = cardKind; P.KIND = KIND; P.FILTERS = FILTERS;
   /* the feed's chip counts: { all, rule, say, idea, done, warn, note } */
   function countsOf(cards) {
     var n = { all: 0 }; KINDS.forEach(function (k) { n[k] = 0; });
-    (Array.isArray(cards) ? cards : []).forEach(function (c) { n.all++; n[kindOf(c && c.seat)]++; });
+    (Array.isArray(cards) ? cards : []).forEach(function (c) { n.all++; n[cardKind(c)]++; });
     return n;
   }
   P.countsOf = countsOf;
   /* the cards a filter shows, newest first (All shows every kind, a warn among them) */
   function feedOf(cards, filter) {
-    return (Array.isArray(cards) ? cards : []).filter(function (c) { return !filter || filter === 'all' || kindOf(c && c.seat) === filter; }).slice().reverse();
+    return (Array.isArray(cards) ? cards : []).filter(function (c) { return !filter || filter === 'all' || cardKind(c) === filter; }).slice().reverse();
   }
   P.feedOf = feedOf;
   /* the tab's pips: the kinds of the unread cards, newest first, at most five */
   function pipsOf(cards) {
-    return (Array.isArray(cards) ? cards : []).filter(function (c) { return !c.seen; }).reverse().slice(0, PIPS_MAX).map(function (c) { return kindOf(c.seat); });
+    return (Array.isArray(cards) ? cards : []).filter(function (c) { return !c.seen; }).reverse().slice(0, PIPS_MAX).map(function (c) { return cardKind(c); });
   }
   P.pipsOf = pipsOf;
   /* the header's state, as a word: Listening, Paused (not listening, or busy), Off (the cap), Not set up */
@@ -184,15 +200,73 @@
   }
   P.fitLines = fitLines;
 
+  /* ---------- a card, as the panel holds it (design 3.6) ----------
+     { id, src, seat, kind, at, text, headline, bullets[], say, secret, more, cite, check, detail, seen, kept, filed, important }
+     src: 'tick' (a card the server logged: it also marks seen / dismissed / kept), 'ask' (an Ask Blade answer: marked by its question) or
+     'page' (made on this page by addCard: the server knows nothing of it). `text` is the server's own text and is never overwritten: the marks
+     match on it. Everything the renderer shows comes from the glance fields; a card from before them is built from text and detail. */
+  function lines(v, max, n) {
+    return (Array.isArray(v) ? v : []).map(function (b) { return clip(b, max); }).filter(Boolean).slice(0, n);
+  }
+  function block(v, max) { var s = str(v).replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(); return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s; }
+  function mkCard(raw, src, o2) {
+    o2 = o2 || {};
+    var text = str(raw.text).trim(), detail = isObj(raw.detail) ? { said_at: str(raw.detail.said_at), rule: clip(raw.detail.rule, 220) } : null;
+    var headline = clip(raw.headline, FOLD_CHARS) || clip(text, FOLD_CHARS), bullets = lines(raw.bullets, BULLET_CHARS, BULLETS_MAX), more = block(raw.more, MORE_MAX);
+    if (!bullets.length && detail && (detail.said_at || detail.rule)) bullets = lines([detail.said_at ? 'Said at ' + detail.said_at : '', detail.rule], BULLET_CHARS, BULLETS_MAX);   /* a card from before the glance fields */
+    /* the headline was cut: the whole text is not lost, it goes under More */
+    if (!more && text && !bullets.length && text.replace(/\s+/g, ' ') !== headline) more = block(text, MORE_MAX);
+    else if (!more && text && /…$/.test(headline) && text.length > headline.length) more = block(text, MORE_MAX);
+    var kind = src === 'ask' ? (ASK_KIND[raw.kind] || 'note') : KINDS.indexOf(raw.kind) >= 0 ? raw.kind : kindOf(raw.seat);
+    var seat = str(raw.seat) || (src === 'ask' ? 'ask' : 'page');
+    var card = { id: o2.id, src: src, seat: seat, kind: kind, at: str(raw.at) || o2.nowIso || '', text: text || headline, headline: headline, bullets: bullets,
+      say: block(raw.say, SAY_MAX), secret: block(raw.secret, SECRET_MAX), more: more, cite: clip(raw.cite, CITE_MAX), check: CHECK_WORD[raw.check] ? str(raw.check) : '',
+      detail: detail, seen: !!o2.seen, kept: !!o2.kept, filed: !!o2.filed, important: seat === 'ref' };
+    if (src === 'ask') card.q = str(raw.q);
+    return card;
+  }
+  function cardId(c) { return str(c.seat) + '|' + str(c.at) + '|' + str(c.text); }
+  P.mkCard = mkCard;
+
+  /* the headline, bullets, SAY and GM ONLY are text with **bold** and *italic* as the only marks. They are built as nodes (strong, em, text
+     nodes): nothing here is ever parsed as HTML. An unmatched * stays a *. */
+  var INLINE_RE = /\*\*([^*\n](?:[^\n]*?[^*\n])?)\*\*|\*([^*\s](?:[^*\n]*?[^*\s])?)\*/g;
+  function inlineNodes(doc, text) {
+    var s = str(text), out = [], last = 0, m;
+    INLINE_RE.lastIndex = 0;
+    while ((m = INLINE_RE.exec(s))) {
+      if (m.index > last) out.push(doc.createTextNode(s.slice(last, m.index)));
+      var e = doc.createElement(m[1] !== undefined ? 'strong' : 'em'); e.textContent = m[1] !== undefined ? m[1] : m[2]; out.push(e);
+      last = m.index + m[0].length;
+    }
+    if (last < s.length) out.push(doc.createTextNode(s.slice(last)));
+    return out;
+  }
+  function appendInline(doc, parent, text) { inlineNodes(doc, text).forEach(function (n) { parent.appendChild(n); }); return parent; }
+  P.inlineNodes = inlineNodes; P.appendInline = appendInline;
+
+  /* `more` is Markdown without headings: a heading line becomes a bold line (outside a code fence), then B68Markdown.render does the rest */
+  function stripHeadings(src) {
+    var fence = '';
+    return str(src).replace(/\r\n?/g, '\n').split('\n').map(function (l) {
+      var f = /^\s{0,3}(```|~~~)/.exec(l);
+      if (f) { fence = !fence ? f[1] : fence === f[1] ? '' : fence; return l; }
+      if (fence) return l;
+      var h = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/.exec(l);
+      return h ? (h[1] && h[1].indexOf('*') < 0 ? '**' + h[1] + '**' : h[1]) : l;
+    }).join('\n');
+  }
+  P.stripHeadings = stripHeadings;
+
   /* fold a tick answer into the box's state (mutates `st`); returns the cards that are new */
   function absorb(st, res, nowIso) {
     var r = isObj(res) ? res : {}, fresh = [];
     if (typeof r.last === 'number' && r.last >= 0) st.after = r.last;
     (Array.isArray(r.cards) ? r.cards : []).forEach(function (c) {
       if (!isObj(c) || !str(c.text).trim()) return;
-      var id = str(c.seat) + '|' + str(c.at) + '|' + str(c.text);
+      var id = cardId({ seat: c.seat, at: str(c.at) || nowIso, text: str(c.text).trim() });
       if (st.cards.some(function (x) { return x.id === id; })) return;
-      var card = { id: id, seat: str(c.seat), at: str(c.at) || nowIso, text: str(c.text).trim(), detail: isObj(c.detail) ? { said_at: str(c.detail.said_at), rule: clip(c.detail.rule, 220) } : null, seen: false, kept: false, filed: false, important: str(c.seat) === 'ref' };
+      var card = mkCard(c, 'tick', { id: id, nowIso: nowIso });
       st.cards.push(card); fresh.push(card);
     });
     (Array.isArray(r.updates) ? r.updates : []).forEach(function (u) {
@@ -211,17 +285,17 @@
 
   /* tonight's cards and updates from the server's log (GET /gm/assist/cards) into the box, after a reload. Cards already here are
      left alone (the id is the same three values the tick answer carries). Restored cards keep the server's read / kept / filed
-     marks, so the unread count survives a reload; none of them pops a banner. Returns how many cards were added. */
+     marks, so the unread count survives a reload; none of them pops a strip. Ask Blade's answers come back as cards too. Returns how many cards were added. */
   function restore(st, res) {
     var r = isObj(res) ? res : {}, n = 0;
     (Array.isArray(r.cards) ? r.cards : []).forEach(function (c) {
       if (!isObj(c) || !str(c.text).trim() || c.dismissed) return;
-      var id = str(c.seat) + '|' + str(c.at) + '|' + str(c.text);
+      var id = cardId({ seat: c.seat, at: str(c.at), text: str(c.text).trim() });
       if (st.cards.some(function (x) { return x.id === id; })) return;
-      st.cards.push({ id: id, seat: str(c.seat), at: str(c.at), text: str(c.text).trim(), detail: isObj(c.detail) ? { said_at: str(c.detail.said_at), rule: clip(c.detail.rule, 220) } : null,
-        seen: !!c.seen, kept: !!c.kept, filed: !!c.filed, important: str(c.seat) === 'ref' });
+      st.cards.push(mkCard(c, 'tick', { id: id, seen: !!c.seen, kept: !!c.kept, filed: !!c.filed }));
       n++;
     });
+    restoreAsks(st, r);
     st.cards.sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
     (Array.isArray(r.updates) ? r.updates : []).forEach(function (u) {
       if (!isObj(u) || !str(u.text).trim()) return;
@@ -231,7 +305,6 @@
     });
     if (st.cards.length > MAX_CARDS) st.cards = st.cards.slice(-MAX_CARDS);
     if (st.updates.length > MAX_UPDATES) st.updates = st.updates.slice(-MAX_UPDATES);
-    restoreAsks(st, r);
     return n;
   }
   P.restore = restore;
@@ -261,19 +334,23 @@
     return k === 'net' ? 'Could not reach the server. Your question is still here.' : k === 'setup' ? errLine('setup') : 'Blade had nothing to say to that just now. Try again.';
   }
   P.askErr = askErr;
-  /* the answers the server holds for tonight (GET /gm/assist/cards -> asks) into the box: [{ id, at, q, text, kept }], oldest first, at most ten;
-     one already here (same at + question) is left alone. Returns how many were added. */
+  /* the answers the server holds for tonight (GET /gm/assist/cards -> asks) into the box as cards (src 'ask', id a|at|question, seen: the GM
+     asked for them, and the server never records a read for one), oldest first, at most ten; one already here is left alone. Returns how many were added. */
+  function askCardId(at, q) { return 'a|' + str(at) + '|' + str(q); }
+  function trimAsks(st) {
+    var asks = st.cards.filter(function (c) { return c.src === 'ask'; });
+    if (asks.length > MAX_ASKS) { var drop = asks.slice(0, asks.length - MAX_ASKS); st.cards = st.cards.filter(function (c) { return drop.indexOf(c) < 0; }); }
+  }
   function restoreAsks(st, res) {
     var r = isObj(res) ? res : {}, n = 0;
-    if (!Array.isArray(st.asks)) st.asks = [];
     (Array.isArray(r.asks) ? r.asks : []).forEach(function (a) {
       if (!isObj(a) || !str(a.text).trim() || !str(a.q).trim() || a.dismissed) return;
-      var id = 'a|' + str(a.at) + '|' + str(a.q);
-      if (st.asks.some(function (x) { return x.id === id; })) return;
-      st.asks.push({ id: id, at: str(a.at), q: str(a.q), text: str(a.text).trim(), kept: !!a.kept }); n++;
+      var id = askCardId(a.at, a.q);
+      if (st.cards.some(function (x) { return x.id === id; })) return;
+      st.cards.push(mkCard(a, 'ask', { id: id, seen: true, kept: !!a.kept })); n++;
     });
-    st.asks.sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
-    if (st.asks.length > MAX_ASKS) st.asks = st.asks.slice(-MAX_ASKS);
+    st.cards.sort(function (x, y) { return x.at < y.at ? -1 : x.at > y.at ? 1 : 0; });
+    trimAsks(st);
     return n;
   }
   P.restoreAsks = restoreAsks;
@@ -326,15 +403,16 @@
   }
   P.gateLine = gateLine;
 
-  function markOf(it) { var m = { at: it.at, text: it.text }; if (it.key !== undefined) m.key = it.key; return m; }
+  /* a mark names the log row by (at, text), as the server logged it; an Ask Blade answer is matched by its question; a card made on this page is not in the log */
+  function markOf(it) { var m = { at: it.at, text: it.src === 'ask' ? it.q : it.text }; if (it.key !== undefined) m.key = it.key; return m; }
 
   function create(o) {
     o = o || {};
     var gm = o.gm, doc = o.doc || (W && W.document), win = o.win || W;
-    var st = { open: false, cards: [], updates: [], asks: [], after: null, spend: null, paused: '', error: '', setup: false, listening: null, checkedAt: '', busy: false,
+    var st = { open: false, cards: [], updates: [], after: null, spend: null, paused: '', error: '', setup: false, listening: null, checkedAt: '', busy: false,
       fit: { busy: false, error: '', card: null }, screen: { busy: {}, error: '' }, ask: { busy: false, error: '' },
-      pinned: false, filter: 'all', unfolded: {}, nowId: '', since: '', chipSig: '' };
-    var host = null, timer = null, bannerT = null, nowT = null, rolledT = null, gone = false, bannerCard = null;
+      pinned: false, filter: 'all', unfolded: {}, moreOpen: {}, nowId: '', since: '', chipSig: '' };
+    var scrollFeedTop = false, host = null, timer = null, bannerT = null, nowT = null, rolledT = null, gone = false, bannerCard = null;
     var avatar = o.avatar || 'gm/blade.svg';
     var bannerMs = o.bannerMs || BANNER_MS;
     var setI = o.setInterval || (win && win.setInterval && win.setInterval.bind(win)), clrI = o.clearInterval || (win && win.clearInterval && win.clearInterval.bind(win));
@@ -346,10 +424,13 @@
     function q(sel) { return host ? host.querySelector(sel) : null; }
     /* a mark goes to the server's log in the background; a failure is silent (the box still works, it just forgets on reload) */
     function mark(op, items) {
+      items = items.filter(function (it) { return it.src !== 'page' && !(it.src === 'ask' && op === 'seen'); });
       if (!items.length || !gm || typeof gm.assistMark !== 'function') return;
       Promise.resolve().then(function () { return gm.assistMark({ op: op, items: items.map(markOf) }); }).then(null, function () {});
     }
-    function markSeen() { var u = st.cards.filter(function (c) { return !c.seen; }); u.forEach(function (c) { c.seen = true; }); mark('seen', u); }
+    /* one request for any number of cards: a seen mark is a batch, as it was before cards had a Now */
+    function markSeenMany(list) { var u = list.filter(function (c, i) { return c && !c.seen && list.indexOf(c) === i; }); u.forEach(function (c) { c.seen = true; }); if (u.length) mark('seen', u); }
+    function markSeenOne(c) { markSeenMany([c]); }
     function load() {
       if (!gm || typeof gm.assistCards !== 'function') return Promise.resolve();
       return Promise.resolve().then(function () { return gm.assistCards(); }).then(function (res) {
@@ -417,7 +498,6 @@
               '<div class="as-prog" id="as-prog" hidden></div>' +
               '<p class="as-status" id="as-ask-status" role="status" aria-live="polite"></p></form>' +
             '<div class="as-feed" id="as-feed">' +
-              '<ul class="as-asks" id="as-asks" aria-label="Answers from Blade" aria-live="polite"></ul>' +
               '<div class="as-chips" id="as-chips" role="group" aria-label="Show cards of one kind"></div>' +
               '<ol class="as-list" id="as-list" aria-label="Cards" aria-live="polite"></ol></div>' +
             '<details class="as-tools" id="as-tools"><summary><span class="as-zlab">Tools</span><small>Fit it · Screen · Ledger</small><span class="as-tools-n" id="as-tools-n" hidden></span></summary><div class="as-tools-body">' +
@@ -454,7 +534,11 @@
       cnt.textContent = n > 9 ? '9+' : String(n); cnt.hidden = n === 0;
       lb.setAttribute('aria-label', 'Blade' + (n ? ', ' + n + ' new' : '') + ' (A)');
       lb.setAttribute('aria-expanded', String(st.open));
-      var pp = q('#as-pips'); if (pp) pp.innerHTML = pipsOf(st.cards).map(function (k) { return '<i class="as-pip" data-kind="' + k + '" title="' + esc(KIND[k].word) + '"></i>'; }).join('');
+      var pp = q('#as-pips'), pk = pipsOf(st.cards), psig = pk.join(',');
+      if (pp && cache.pipSig !== psig) {
+        cache.pipSig = psig; while (pp.firstChild) pp.removeChild(pp.firstChild);
+        pk.forEach(function (k) { var i = doc.createElement('i'); i.className = 'as-pip'; i.setAttribute('data-kind', k); i.setAttribute('title', KIND[k].word); pp.appendChild(i); });
+      }
       q('#as-panel').hidden = !st.open;
       applyState();
       var tier = q('#as-tier');
@@ -462,6 +546,7 @@
       tier.hidden = !tl; tier.textContent = tl ? tl + (spendLine(st.spend) ? ' · ' + spendLine(st.spend) : '') : '';
       tier.setAttribute('data-tier', st.spend ? st.spend.tier : '');
       renderHead(); renderStatus(); renderNow(); renderAsk(); renderChips(); renderList(); renderUpdates(); renderFit(); renderScreen();
+      if (scrollFeedTop) { scrollFeedTop = false; var fe = q('#as-feed'); if (fe) fe.scrollTop = 0; }
     }
     function renderHead() {
       var s = stateOf({ paused: st.paused, setup: st.setup, spend: st.spend, listening: st.listening }), el = q('#as-state'), w = q('#as-state-word');
@@ -486,36 +571,106 @@
       el.innerHTML = esc(t) + (again ? ' <button type="button" class="as-link" data-as="resume">Check again</button>' : '');
       el.classList.toggle('bad', !!(st.paused || st.error));
     }
-    /* ---- the card: one component (folded to a line, or open); the Now zone shows the same card, open ---- */
+    /* ---- the card: one component for every kind (design 3.5). Built as DOM nodes with textContent; the only HTML is B68Markdown.render for
+       `more`. Folded it is one 44 px line; unfolded it is the headline, up to five bullets, SAY, GM ONLY, the cite and check chips and the actions.
+       Rendering is keyed: a card's node is rebuilt only when what it shows has changed, and `more` is rendered to HTML once per text. ---- */
     var MOCKS = [
-      { id: 'mock-rule', seat: 'ref', text: 'Example rule slip: a placeholder that shows how a rule card looks.', cite: 'p.0' },
-      { id: 'mock-idea', seat: 'mystery', text: 'Example idea: a placeholder suggestion in the idea colour.' },
-      { id: 'mock-done', seat: 'ledger', kind: 'done', text: 'Example done: a placeholder for something Blade did, with Undo.' }
+      { id: 'mock-rule', seat: 'ref', headline: 'Example rule slip: a placeholder that shows how a rule card looks.', bullets: ['A placeholder bullet.', 'Another, to show the list.'], cite: 'p.0' },
+      { id: 'mock-idea', seat: 'mystery', headline: 'Example idea: a placeholder suggestion in the idea colour.', say: 'A placeholder line to read aloud.' },
+      { id: 'mock-done', seat: 'ledger', kind: 'done', headline: 'Example done: a placeholder for something Blade did, with Undo.' }
     ];
-    function cardKind(c) { return c.kind || kindOf(c.seat); }
-    function cardHtml(c, now) {
-      var k = cardKind(c), kd = KIND[k], open = now || !!st.unfolded[c.id], d = c.detail;
-      var cite = d && (d.rule || d.said_at) ? '<p class="as-cite">' + (d.rule ? esc(d.rule) : '') + (d.rule && d.said_at ? ' · ' : '') + (d.said_at ? 'said ' + esc(d.said_at) : '') + '</p>' : c.cite ? '<p class="as-cite">' + esc(c.cite) + '</p>' : '';
-      var keep = c.mock ? '' : c.kept ? '<span class="as-kept" title="Kept: filed as a Moment">★ Kept</span>'
-        : typeof o.onNote === 'function' ? '<button type="button" class="as-star" data-as="keep" data-id="' + esc(c.id) + '" aria-label="Keep this card: file it as a Moment">☆ Keep</button>' : '';
-      var flag = c.citeBad && c.citeBad.length ? '<span class="as-citeflag" title="The gatekeeper could not match this page cite to the rule: ' + esc(c.citeBad.join('; ')) + '">cite?</span>' : '';
-      var saved = c.important ? '<p class="as-saved">' + (c.filed ? 'Saved to campaign history' : 'In tonight’s log; gm:after files it to history') + '</p>' : '';
-      var ack = c.mock ? '' : '<button type="button" class="as-ack" data-as="ack" data-id="' + esc(c.id) + '" aria-label="Dismiss this card">Got it</button>';
-      var inner = '<span class="as-kind"><span class="as-glyph" aria-hidden="true">' + kd.glyph + '</span><b>' + esc(kd.word) + '</b></span><span class="as-text">' + esc(c.text) + '</span>' + (c.mock ? '<span class="as-eg">example</span>' : '<time>' + esc(hhmm(c.at)) + '</time>');
-      var head = now ? '<div class="as-fold">' + inner + '</div>'
-        : '<button type="button" class="as-fold" data-as="fold" data-id="' + esc(c.id) + '" aria-expanded="' + open + '">' + inner + '</button>';
-      var tag = now ? 'div' : 'li';
-      return '<' + tag + ' class="as-card' + (now ? ' as-now-card' : '') + '" data-seat="' + esc(c.seat) + '" data-kind="' + k + '" data-open="' + (open ? 1 : 0) + '"' + (c.mock ? ' data-mock' : '') + '>' + head +
-        '<div class="as-more"><p class="as-seatname">' + esc(SEAT[c.seat] || c.seat) + '</p>' + cite + saved + '<div class="as-acts">' + flag + keep + ack + '</div></div></' + tag + '>';
+    var cache = { nodes: {}, more: {}, nowKey: '', nowEl: null, pipSig: null, builds: 0, moreRenders: 0 };      /* render caches live here, never on the cards (state() copies the cards) */
+    var undoFns = {};
+    function mockCards() { return MOCKS.map(function (m) { var c = mkCard(Object.assign({ at: '' }, m), 'page', { id: m.id, seen: true }); c.mock = true; return c; }); }
+    function cardKind2(c) { return cardKind(c); }
+    function E(tag, cls, text) { var e = doc.createElement(tag); if (cls) e.className = cls; if (text !== undefined && text !== null) e.textContent = text; return e; }
+    function B(cls, label, attrs) {
+      var b = E('button', cls, label); b.setAttribute('type', 'button');
+      Object.keys(attrs || {}).forEach(function (k) { b.setAttribute(k, attrs[k]); });
+      return b;
+    }
+    function clear(e) { while (e.firstChild) e.removeChild(e.firstChild); }
+    function canUndo(c) { return cardKind2(c) === 'done' && !c.undone && typeof undoFns[c.id] === 'function'; }
+    function canKeep(c) { return !c.mock && typeof o.onNote === 'function'; }
+    function isOpen(c, now) { return now || !!st.unfolded[c.id]; }
+    /* what a card shows, as one string: when it changes, its node is rebuilt, and only then */
+    function sigOf(c, now) {
+      return JSON.stringify([cardKind2(c), c.headline, c.bullets, c.say, c.secret, c.more, c.cite, c.check, c.kept, c.filed, c.important, c.citeBad || null, !!c.undone,
+        canUndo(c), canKeep(c), isOpen(c, now), !!st.moreOpen[c.id], c.at, !!c.mock, c.src, c.q || '', SEAT[c.seat] || c.seat]);
+    }
+    function moreHtml(c) {
+      var ent = cache.more[c.id];
+      if (ent && ent.src === c.more) return ent.html;
+      var md = o.markdown || (W && W.B68Markdown), html = null;
+      if (md && typeof md.render === 'function') { try { html = md.render(stripHeadings(c.more), { headingOffset: 1 }); } catch (e) { html = null; } }
+      cache.moreRenders++;
+      cache.more[c.id] = { src: c.more, html: html };
+      return html;
+    }
+    function buildCard(c, now) {
+      cache.builds++;
+      var k = cardKind2(c), kd = KIND[k], open = isOpen(c, now);
+      var root = E(now ? 'div' : 'li', 'as-card' + (now ? ' as-now-card' : ''));
+      root.setAttribute('data-id', c.id); root.setAttribute('data-seat', c.seat); root.setAttribute('data-kind', k); root.setAttribute('data-open', open ? '1' : '0');
+      if (c.mock) root.setAttribute('data-mock', '');
+      var head = now ? E('div', 'as-fold') : B('as-fold', null, { 'data-as': 'fold', 'data-id': c.id, 'aria-expanded': String(open) });
+      var kind = E('span', 'as-kind'), gl = E('span', 'as-glyph', kd.glyph); gl.setAttribute('aria-hidden', 'true');
+      kind.appendChild(gl); kind.appendChild(E('b', null, kd.word));
+      var tx = E('span', 'as-text'); appendInline(doc, tx, c.headline);
+      head.appendChild(kind); head.appendChild(tx);
+      head.appendChild(c.mock ? E('span', 'as-eg', 'example') : E('time', null, hhmm(c.at)));
+      root.appendChild(head);
+
+      var more = E('div', 'as-more');
+      if (c.src === 'ask' && c.q) more.appendChild(E('p', 'as-askq', 'You asked: ' + c.q));
+      if (c.bullets.length) {
+        var ul = E('ul', 'as-bullets');
+        c.bullets.forEach(function (b) { appendInline(doc, ul.appendChild(E('li')), b); });
+        more.appendChild(ul);
+      }
+      if (c.say) {
+        var say = E('div', 'as-say'); say.appendChild(E('b', 'as-band', 'SAY')); appendInline(doc, say.appendChild(E('p', 'as-band-text')), c.say);
+        more.appendChild(say);
+      }
+      if (c.secret) {
+        var sec = E('div', 'as-secret'); sec.appendChild(E('b', 'as-band', 'GM ONLY')); appendInline(doc, sec.appendChild(E('p', 'as-band-text')), c.secret);
+        more.appendChild(sec);
+      }
+      var chips = E('div', 'as-chiprow');
+      if (SEAT[c.seat]) chips.appendChild(E('span', 'as-seatname', SEAT[c.seat]));
+      if (c.cite) chips.appendChild(E('span', 'as-cite', c.cite));
+      if (c.check) chips.appendChild(E('span', 'as-check', CHECK_WORD[c.check] || 'Check'));
+      if (c.citeBad && c.citeBad.length) {
+        var fl = E('span', 'as-citeflag', 'cite?'); fl.setAttribute('title', 'The gatekeeper could not match this page cite to the rule: ' + c.citeBad.join('; ')); chips.appendChild(fl);
+      }
+      if (chips.firstChild) more.appendChild(chips);
+      if (c.important) more.appendChild(E('p', 'as-saved', c.filed ? 'Saved to campaign history' : 'In tonight’s log; gm:after files it to history'));
+      if (c.more && st.moreOpen[c.id]) {
+        var det = E('div', 'as-detail'), html = moreHtml(c);
+        if (html !== null) det.innerHTML = html;      /* the one place HTML is set: B68Markdown.render escapes all raw HTML, links are http(s) or relative only */
+        else { det.textContent = c.more; det.className = 'as-detail as-detail-plain'; }
+        more.appendChild(det);
+      }
+      var acts = E('div', 'as-acts');
+      if (c.more) acts.appendChild(B('as-moreb', st.moreOpen[c.id] ? 'Less ▴' : 'More ▾', { 'data-as': 'more', 'data-id': c.id, 'aria-expanded': String(!!st.moreOpen[c.id]), 'aria-label': st.moreOpen[c.id] ? 'Hide the detail' : 'Show the detail' }));
+      if (canKeep(c)) acts.appendChild(c.kept ? E('span', 'as-kept', '★ Kept') : B('as-star', '☆ Keep', { 'data-as': 'keep', 'data-id': c.id, 'aria-label': 'Keep this card: file it as a Moment' }));
+      if (k === 'done' && c.undone) acts.appendChild(E('span', 'as-kept', 'Undone'));
+      else if (canUndo(c)) acts.appendChild(B('as-undo', 'Undo', { 'data-as': 'undo', 'data-id': c.id, 'aria-label': 'Undo this (U)' }));
+      if (!c.mock) acts.appendChild(B('as-ack', 'Got it ×', { 'data-as': 'ack', 'data-id': c.id, 'aria-label': 'Dismiss this card' }));
+      more.appendChild(acts);
+      root.appendChild(more);
+      return root;
     }
     function cardById(id) { for (var i = 0; i < st.cards.length; i++) if (st.cards[i].id === id) return st.cards[i]; return null; }
     function quietLine() { return st.listening === true && st.since ? 'Quiet. Listening since ' + st.since + '.' : 'Quiet.'; }
     function renderNow() {
       var el = q('#as-now'); if (!el) return;
-      var c = st.nowId ? cardById(st.nowId) : null;
-      if (c) el.innerHTML = cardHtml(c, true);
-      else if (o.mock) el.innerHTML = cardHtml(Object.assign({ at: '' }, MOCKS[0], { mock: true }), true);
-      else el.innerHTML = '<p class="as-quiet">' + esc(quietLine()) + '</p>';
+      var c = st.nowId ? cardById(st.nowId) : null, key, make;
+      if (c) { key = 'c|' + c.id + '|' + sigOf(c, true); make = function () { return buildCard(c, true); }; }
+      else if (o.mock) { var m = mockCards()[0]; key = 'm|' + sigOf(m, true); make = function () { return buildCard(m, true); }; }
+      else { key = 'q|' + quietLine(); make = function () { return E('p', 'as-quiet', quietLine()); }; }
+      if (cache.nowKey === key && cache.nowEl && cache.nowEl.parentNode === el) return;
+      clear(el); cache.nowEl = make(); cache.nowKey = key; el.appendChild(cache.nowEl);
     }
     function foldedFocusId() {
       var ae = doc && doc.activeElement;
@@ -532,51 +687,87 @@
       var n = countsOf(st.cards), sig = st.filter + '|' + FILTERS.map(function (f) { return n[f]; }).join(',');
       if (st.chipSig === sig) return;
       st.chipSig = sig;
-      el.innerHTML = FILTERS.map(function (f) {
-        return '<button type="button" class="as-chip" data-as="chip" data-k="' + f + '" data-kind="' + f + '" aria-pressed="' + (st.filter === f) + '">' + (f === 'all' ? 'All' : KIND[f].word) + ' <span class="as-chip-n">' + n[f] + '</span></button>';
-      }).join('');
+      clear(el);
+      FILTERS.forEach(function (f) {
+        var b = B('as-chip', f === 'all' ? 'All ' : KIND[f].word + ' ', { 'data-as': 'chip', 'data-k': f, 'data-kind': f, 'aria-pressed': String(st.filter === f) });
+        b.appendChild(E('span', 'as-chip-n', String(n[f]))); el.appendChild(b);
+      });
     }
+    function fixed(key, make) { return (cache.nodes[key] || (cache.nodes[key] = { el: make() })).el; }      /* a node that never changes (the empty line, the divider) is made once */
     function renderList() {
       var el = q('#as-list'); if (!el) return;
       var fid = foldedFocusId();                  /* focus goes back only if it was on a card line when the list was rewritten: a tick never takes it from a field */
-      var items = feedOf(st.cards, st.filter), h = '';
-      if (!st.cards.length) h = o.mock ? MOCKS.map(function (m) { return cardHtml(Object.assign({ at: '' }, m, { mock: true }), false); }).join('') : '<li class="as-empty">Nothing yet. Blade speaks up only when there is something worth the table’s time.</li>';
-      else if (!items.length) h = '<li class="as-empty">No ' + esc(KIND[st.filter] ? KIND[st.filter].word.toLowerCase() : '') + ' cards tonight.</li>';
-      else {
-        var cut = Date.now() - EARLIER_MS, shown = false;
-        items.forEach(function (c, i) {
-          var t = Date.parse(c.at);
-          if (!shown && i > 0 && t && t < cut) { shown = true; h += '<li class="as-earlier" role="separator">Earlier tonight</li>'; }
-          h += cardHtml(c, false);
-        });
+      var desired = [];
+      if (!st.cards.length) {
+        if (o.mock) mockCards().forEach(function (c) { var key = 'mock|' + c.id; if (!cache.nodes[key]) cache.nodes[key] = { el: buildCard(c, false), sig: '' }; desired.push(cache.nodes[key].el); });
+        else desired.push(fixed('~empty', function () { return E('li', 'as-empty', 'Nothing yet. Blade speaks up only when there is something worth the table’s time.'); }));
+      } else {
+        var items = feedOf(st.cards, st.filter);
+        if (!items.length) {
+          var word = KIND[st.filter] ? KIND[st.filter].word.toLowerCase() : '';
+          desired.push(E('li', 'as-empty', 'No ' + word + ' cards tonight.'));
+        } else {
+          var cut = Date.now() - EARLIER_MS, shown = false;
+          items.forEach(function (c, i) {
+            var t = Date.parse(c.at);
+            if (!shown && i > 0 && t && t < cut) {
+              shown = true;
+              desired.push(fixed('~earlier', function () { var d = E('li', 'as-earlier', 'Earlier tonight'); d.setAttribute('role', 'separator'); return d; }));
+            }
+            var sig = sigOf(c, false), ent = cache.nodes[c.id];
+            if (!ent || ent.sig !== sig) {
+              var fresh = buildCard(c, false);
+              if (ent && ent.el.parentNode === el) el.replaceChild(fresh, ent.el);
+              ent = cache.nodes[c.id] = { el: fresh, sig: sig };
+            }
+            desired.push(ent.el);
+          });
+        }
       }
-      el.innerHTML = h;
+      /* settle the list on the wanted nodes in order, moving or removing only what differs */
+      var cur = el.firstChild;
+      desired.forEach(function (n) { if (n === cur) cur = cur.nextSibling; else el.insertBefore(n, cur); });
+      while (cur) { var nx = cur.nextSibling; el.removeChild(cur); cur = nx; }
+      /* forget the nodes and the rendered Markdown of cards that are gone */
+      var live = {}; st.cards.forEach(function (c) { live[c.id] = 1; });
+      Object.keys(cache.nodes).forEach(function (k) { if (k.charAt(0) !== '~' && k.indexOf('mock|') !== 0 && !live[k]) delete cache.nodes[k]; });
+      Object.keys(cache.more).forEach(function (k) { if (!live[k]) delete cache.more[k]; });
+      Object.keys(undoFns).forEach(function (k) { if (!live[k]) delete undoFns[k]; });
       if (fid) refocus(fid);
     }
     function renderUpdates() {
       var el = q('#as-updates'), tn = q('#as-tools-n'); if (!el) return;
       if (tn) { tn.hidden = !st.updates.length; tn.textContent = st.updates.length ? st.updates.length + ' ledger' : ''; }
-      if (!st.updates.length) { el.innerHTML = ''; return; }
+      clear(el);
+      if (!st.updates.length) return;
       /* no stress / harm / xp state exists to write to on this page, so an update is read-only: Done dismisses it, and Note it files
          its text in the capture bar (when the page gave us one) */
-      el.innerHTML = '<p class="as-lab">Ledger: for you to apply</p><ul class="as-ups">' + st.updates.slice().reverse().map(function (u) {
-        return '<li class="as-up"><span class="as-uptext">' + (u.key ? '<small>' + esc(u.key) + '</small> ' : '') + esc(u.text) + '</span><span class="as-upbtns">' +
-          (typeof o.onNote === 'function' ? '<button type="button" data-as="note" data-id="' + esc(u.id) + '">Note it</button>' : '') +
-          '<button type="button" data-as="done" data-id="' + esc(u.id) + '">Done</button></span></li>';
-      }).join('') + '</ul>';
+      el.appendChild(E('p', 'as-lab', 'Ledger: for you to apply'));
+      var ul = E('ul', 'as-ups');
+      st.updates.slice().reverse().forEach(function (u) {
+        var li = E('li', 'as-up'), tx = E('span', 'as-uptext');
+        if (u.key) { tx.appendChild(E('small', null, u.key)); tx.appendChild(doc.createTextNode(' ')); }
+        tx.appendChild(doc.createTextNode(u.text));
+        var bt = E('span', 'as-upbtns');
+        if (typeof o.onNote === 'function') bt.appendChild(B(null, 'Note it', { 'data-as': 'note', 'data-id': u.id }));
+        bt.appendChild(B(null, 'Done', { 'data-as': 'done', 'data-id': u.id }));
+        li.appendChild(tx); li.appendChild(bt); ul.appendChild(li);
+      });
+      el.appendChild(ul);
     }
     function renderFit() {
       var go = q('#as-go'), out = q('#as-fitout'); if (!go || !out) return;
       go.disabled = st.fit.busy; go.textContent = st.fit.busy ? 'Fitting…' : 'Fit it';
-      var h = '';
-      if (st.fit.error) h += '<p class="as-status bad" role="alert">' + esc(st.fit.error) + '</p>';
+      clear(out);
+      if (st.fit.error) { var er = E('p', 'as-status bad', st.fit.error); er.setAttribute('role', 'alert'); out.appendChild(er); }
       var c = st.fit.card;
       if (c) {
-        h += '<div class="as-fitcard"><p class="as-fitread">' + esc(c.read) + '</p><ol class="as-lines">' + fitLines(c).map(function (l) {
-          return '<li><b>' + esc(l.label) + '</b><span>' + esc(l.text) + '</span></li>'; }).join('') + '</ol>' +
-          '<button type="button" class="as-link" data-as="fitclear">Clear</button></div>';
+        var box = E('div', 'as-fitcard'); box.appendChild(E('p', 'as-fitread', str(c.read)));
+        var ol = E('ol', 'as-lines');
+        fitLines(c).forEach(function (l) { var li = E('li'); li.appendChild(E('b', null, l.label)); li.appendChild(E('span', null, l.text)); ol.appendChild(li); });
+        box.appendChild(ol); box.appendChild(B('as-link', 'Clear', { 'data-as': 'fitclear' }));
+        out.appendChild(box);
       }
-      out.innerHTML = h;
     }
 
     /* ---------- Ask Blade ---------- */
@@ -585,19 +776,13 @@
       return askAllowed(tierNow());
     }
     function renderAsk() {
-      var sec = q('#as-ask'), go = q('#as-ask-go'), list = q('#as-asks'); if (!sec || !go || !list) return;
+      var sec = q('#as-ask'), go = q('#as-ask-go'); if (!sec || !go) return;
       sec.hidden = !gm || typeof gm.assistAsk !== 'function';      /* an older runtime without the call: the field is not offered */
       var can = canAsk(), busy = st.ask.busy, hint = !can && !askAllowed(tierNow()) ? 'Dropped by the budget for tonight.' : '';
       go.disabled = busy || !can; go.textContent = busy ? 'Thinking…' : 'Ask';
       var pr = q('#as-prog'); if (pr) pr.hidden = !busy;
       go.title = can ? 'Ask Blade (Enter)' : hint || 'Not available now';
       var m = q('#as-ask-status'), msg = st.ask.error || hint; if (m) { m.textContent = msg; m.hidden = !msg; m.classList.toggle('bad', !!st.ask.error); }
-      list.innerHTML = st.asks.slice().reverse().map(function (a) {
-        var keep = a.kept ? '<span class="as-kept" title="Kept: filed as a Moment">★ Kept</span>'
-          : typeof o.onNote === 'function' ? '<button type="button" class="as-star" data-as="ask-keep" data-id="' + esc(a.id) + '" aria-label="Keep this answer: file it as a Moment">☆ Keep</button>' : '';
-        return '<li class="as-answer"><div class="as-meta"><p class="as-askq">' + esc(a.q) + '</p><time>' + esc(hhmm(a.at)) + '</time></div><p class="as-text">' + esc(a.text) + '</p>' +
-          '<div class="as-acts">' + keep + '<button type="button" class="as-ack" data-as="ask-x" data-id="' + esc(a.id) + '" aria-label="Dismiss this answer"><span aria-hidden="true">×</span></button></div></li>';
-      }).join('');
     }
     /* the GM's question -> Blade's answer, one at a time. Resolves { answer }, { error: kind } or null (cannot ask, nothing typed, already asking).
        The words stay in the field when it fails, and are cleared when it works. */
@@ -613,9 +798,9 @@
           st.ask.error = isObj(res) && Array.isArray(res.warnings) && res.warnings.length ? 'Blade has no briefing loaded: push the GM pack with the assist part.' : 'Blade had nothing to say to that just now. Try again.';
           return { error: 'none' };
         }
-        var at = str(a.at) || new Date().toISOString(), item = { id: 'a|' + at + '|' + (str(a.q) || qq), at: at, q: str(a.q) || qq, text: str(a.text).trim(), kept: false };
-        if (!st.asks.some(function (x) { return x.id === item.id; })) st.asks.push(item);
-        if (st.asks.length > MAX_ASKS) st.asks = st.asks.slice(-MAX_ASKS);
+        /* the answer is a card in the feed, open (it was asked for, so it is not gated and not unread); it is not put in Now, which would drop it after 1.5 s */
+        var at = str(a.at) || new Date().toISOString(), item = mkCard(Object.assign({}, a, { at: at, q: str(a.q) || qq }), 'ask', { id: askCardId(at, str(a.q) || qq), seen: true });
+        if (!cardById(item.id)) { st.cards.push(item); st.unfolded[item.id] = true; trimAsks(st); if (st.filter !== 'all' && st.filter !== item.kind) st.filter = 'all'; scrollFeedTop = true; }
         var ta = q('#as-ask-q'); if (ta && str(ta.value).replace(/\s+/g, ' ').trim() === qq) ta.value = '';
         return { answer: item };
       }, function (e) {
@@ -721,11 +906,16 @@
     }
 
     /* ---------- the banner ---------- */
+    /* the strip: only a rule or a warn card slides a one-line strip out of the closed tab (8 s). It shows the kind's word and the headline, as text:
+       never the bullets, SAY or GM ONLY. Every other kind only adds a pip. */
     function showBanner(card) {
-      if (!host || st.open || isPhone()) return;
-      var b = q('#as-banner'), bb = q('.as-banner-b'); if (!b) return;
+      if (!host || st.open || isPhone() || STRIP_KINDS.indexOf(cardKind2(card)) < 0) return;
+      var b = q('#as-banner'), bb = q('.as-banner-b'); if (!b || !bb) return;
       bannerCard = card;
-      bb.innerHTML = '<b>' + esc(SEAT[card.seat] || card.seat) + '</b> ' + esc(clip(card.text, 140));
+      var k = cardKind2(card);
+      clear(bb); bb.setAttribute('data-kind', k);
+      bb.appendChild(E('b', 'as-banner-k', KIND[k].glyph + ' ' + KIND[k].word));
+      bb.appendChild(doc.createTextNode(' ' + clip(card.headline, 120)));
       b.hidden = false;
       if (bannerT && clrT) clrT(bannerT);
       if (setT) bannerT = setT(hideBanner, bannerMs);
@@ -733,27 +923,83 @@
     function hideBanner() { var b = q('#as-banner'); if (b) b.hidden = true; bannerT = null; bannerCard = null; }
 
     /* ---------- the box ---------- */
-    /* Now: the newest unread card, shown open for 1.5 s once the panel is open (or until a newer one arrives), then it is only in the feed */
-    function setNow(id) {
+    /* Now: the newest unread card, shown open. It leaves Now (and is marked seen) after 1.5 s with the panel open, or at once when a newer card
+       takes its place. Closing the panel first leaves it unread, so it is Now again next time. */
+    function setNow(id, alsoSeen) {
       if (nowT && clrT) clrT(nowT);
       nowT = null;
+      var prev = st.nowId && st.nowId !== id ? cardById(st.nowId) : null;
+      markSeenMany((alsoSeen || []).concat(prev ? [prev] : []));      /* the cards that are in the feed, and the one Now has just given up */
       st.nowId = id || '';
-      if (id && setT) nowT = setT(function () { nowT = null; st.nowId = ''; if (host) renderNow(); }, NOW_MS);
+      if (id && setT) nowT = setT(function () {
+        nowT = null; var c = cardById(st.nowId); st.nowId = ''; markSeenOne(c); if (host) render();
+      }, NOW_MS);
     }
+    function dropNow() { if (nowT && clrT) clrT(nowT); nowT = null; st.nowId = ''; }
     function open() {
       if (gone) return;
       st.open = true; hideBanner();
       var un = st.cards.filter(function (c) { return !c.seen; });
-      setNow(un.length ? un[un.length - 1].id : '');
-      markSeen();
+      /* the older unread cards are in the feed, in view (one mark); the newest one is Now and is marked when it has been there 1.5 s */
+      setNow(un.length ? un[un.length - 1].id : '', un.slice(0, -1));
       render(); relayout();
       var nm = q('#as-name'); if (nm) { try { nm.focus(); } catch (e) {} }
     }
     function close() {
       if (!st.open) return;
       var had = host && doc && host.contains(doc.activeElement);
-      st.open = false; setNow(''); render(); relayout();
+      st.open = false; dropNow(); render(); relayout();
       if (had) { var lb = q('#as-launch'); if (lb) { try { lb.focus(); } catch (e) {} } }
+    }
+    /* cards that have just arrived (a tick, or the page): open, the newest takes Now; closed, a rule or warn pops the strip and the rest are pips */
+    function arrived(fresh) {
+      if (!fresh.length) return;
+      if (st.open) setNow(fresh[fresh.length - 1].id, fresh.slice(0, -1));
+      else {
+        var strip = fresh.filter(function (c) { return STRIP_KINDS.indexOf(cardKind2(c)) >= 0; });
+        if (strip.length) showBanner(strip[strip.length - 1]);
+      }
+    }
+    /* U: undo the newest done card that can be undone. Resolves { id } when it was, { error } when the undo failed, null when there is nothing to undo. */
+    function undoCard(c) {
+      if (!c || !canUndo(c)) return Promise.resolve(null);
+      var fn = undoFns[c.id];
+      return Promise.resolve().then(fn).then(function () { c.undone = true; if (host) render(); return { id: c.id }; }, function () { return { error: 'undo' }; });
+    }
+    function undoNewest() {
+      for (var i = st.cards.length - 1; i >= 0; i--) if (canUndo(st.cards[i])) return undoCard(st.cards[i]);
+      return Promise.resolve(null);
+    }
+    /* cards made on this page (the co-GM, autopilot, warnings): addCard({ id?, kind, headline, bullets?, say?, secret?, more?, cite?, check?, seat?, at?, undo? }) -> id | ''.
+       They are not in the server's log: no mark is sent, and a reload forgets them. undo is a function the Undo button calls. */
+    var pageSeq = 0;
+    function addCard(raw) {
+      if (gone || !isObj(raw)) return '';
+      var id = str(raw.id).replace(/\s+/g, ' ').trim().slice(0, 80);
+      if (!str(raw.headline).trim() && !str(raw.text).trim()) return '';
+      var nowIso = new Date().toISOString();
+      var card = mkCard(Object.assign({}, raw, { text: str(raw.headline).trim() || str(raw.text) }), 'page', { id: id || 'p|' + (++pageSeq) + '|' + Date.now(), nowIso: nowIso });
+      var old = cardById(card.id);
+      if (old) { card.seen = old.seen; card.kept = old.kept; st.cards[st.cards.indexOf(old)] = card; }
+      else st.cards.push(card);
+      if (typeof raw.undo === 'function') undoFns[card.id] = raw.undo;
+      if (st.cards.length > MAX_CARDS) st.cards = st.cards.slice(-MAX_CARDS);
+      if (!old) arrived([card]);
+      if (host) render();
+      return card.id;
+    }
+    var PATCH_KEYS = ['kind', 'headline', 'bullets', 'say', 'secret', 'more', 'cite', 'check'];
+    function updateCard(id, patch) {
+      var c = cardById(id); if (!c || !isObj(patch)) return false;
+      var raw = {}; PATCH_KEYS.forEach(function (k) { raw[k] = patch[k] !== undefined ? patch[k] : c[k]; });
+      raw.text = c.src === 'page' ? raw.headline : c.text; raw.seat = c.seat; raw.at = c.at; raw.q = c.q; raw.detail = c.detail;
+      var n = mkCard(raw, c.src, { id: c.id });
+      PATCH_KEYS.forEach(function (k) { c[k] = n[k]; });
+      if (c.src === 'page') c.text = n.text;
+      if (patch.undone !== undefined) c.undone = !!patch.undone;
+      if (typeof patch.undo === 'function') undoFns[c.id] = patch.undo;
+      if (host) render();
+      return true;
     }
     function togglePin() {
       if (!dockable() || isPhone()) return;
@@ -761,8 +1007,6 @@
       if (st.pinned && !st.open) { open(); return; }
       render(); relayout();
     }
-    /* U: undo the newest green (done) card. The co-GM's done cards arrive with C2; until then there is nothing to undo, and this does nothing. */
-    function undoNewest() { return Promise.resolve(null); }
     function toggle() { if (st.open) close(); else open(); }
 
     /* ---------- polling ---------- */
@@ -780,8 +1024,7 @@
         var fresh = absorb(st, res, new Date().toISOString());
         fresh.forEach(citeCheck);
         st.error = ''; st.checkedAt = hhmm(new Date().toISOString());
-        if (st.open) { if (fresh.length) setNow(fresh[fresh.length - 1].id); markSeen(); }
-        else if (fresh.length) showBanner(fresh[fresh.length - 1]);
+        arrived(fresh);
         if (st.spend && st.spend.tier === 'off') { st.paused = 'cap'; sendNone(); }
       }, function (e) {
         if (gone) return;
@@ -899,13 +1142,13 @@
       else if (a === 'banner') open();
       else if (a === 'pin') togglePin();
       else if (a === 'fold') { st.unfolded[id] = !st.unfolded[id]; renderList(); refocus(id); }
+      else if (a === 'more') { st.moreOpen[id] = !st.moreOpen[id]; render(); }
+      else if (a === 'undo') { undoCard(cardById(id)); }
       else if (a === 'chip') { st.filter = FILTERS.indexOf(b.getAttribute('data-k')) >= 0 ? b.getAttribute('data-k') : 'all'; render(); var cb = q('.as-chip[data-k="' + st.filter + '"]'); if (cb && cb.focus) { try { cb.focus(); } catch (e) {} } }
-      else if (a === 'ack') { var k = st.cards.filter(function (x) { return x.id === id; })[0]; if (k) mark('dismiss', [k]); remove(st.cards, id); delete st.unfolded[id]; if (st.nowId === id) setNow(''); render(); }
-      else if (a === 'keep') { var kc = st.cards.filter(function (x) { return x.id === id; })[0]; if (kc && !kc.kept && typeof o.onNote === 'function' && o.onNote(momentText(kc))) { kc.kept = true; mark('keep', [kc]); render(); } }
+      else if (a === 'ack') { var k = cardById(id); if (k) mark('dismiss', [k]); remove(st.cards, id); delete st.unfolded[id]; delete st.moreOpen[id]; if (st.nowId === id) setNow(''); render(); }
+      else if (a === 'keep') { var kc = cardById(id); if (kc && !kc.kept && typeof o.onNote === 'function' && o.onNote(kc.src === 'ask' ? askMoment(kc) : momentText(kc))) { kc.kept = true; mark('keep', [kc]); render(); } }
       else if (a === 'done') { var d = st.updates.filter(function (x) { return x.id === id; })[0]; if (d) mark('dismiss', [d]); remove(st.updates, id); render(); }
       else if (a === 'note') { var u = st.updates.filter(function (x) { return x.id === id; })[0]; if (u && typeof o.onNote === 'function' && o.onNote(u.text)) { mark('dismiss', [u]); remove(st.updates, id); render(); } }
-      else if (a === 'ask-keep') { var ak = st.asks.filter(function (x) { return x.id === id; })[0]; if (ak && !ak.kept && typeof o.onNote === 'function' && o.onNote(askMoment(ak))) { ak.kept = true; mark('keep', [{ at: ak.at, text: ak.q }]); render(); } }
-      else if (a === 'ask-x') { var ax = st.asks.filter(function (x) { return x.id === id; })[0]; if (ax) mark('dismiss', [{ at: ax.at, text: ax.q }]); remove(st.asks, id); render(); }
       else if (a === 'resume') resume();
       else if (a.indexOf('sc-') === 0) screenMake(a.slice(3), { name: (q('#as-sc-name') || {}).value, ask: (q('#as-sc-ask') || {}).value });
       else if (a === 'fitclear') { st.fit.card = null; st.fit.error = ''; renderFit(); }
@@ -947,8 +1190,8 @@
     if (!o.noTimer) setTimeout(function () { poll(); }, 1500);
 
     return {
-      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, pin: togglePin, isPinned: function () { return docked(); }, undoNewest: undoNewest, relayout: relayout, poll: poll, rolled: rolled, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
-      state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, asks: st.asks, ask: st.ask, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, screen: st.screen, banner: bannerCard ? bannerCard.text : '' })); },
+      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, pin: togglePin, isPinned: function () { return docked(); }, undoNewest: undoNewest, addCard: addCard, updateCard: updateCard, relayout: relayout, poll: poll, rolled: rolled, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
+      state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, asks: st.cards.filter(function (c) { return c.src === 'ask'; }), ask: st.ask, nowId: st.nowId, renders: { cards: cache.builds, more: cache.moreRenders }, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, screen: st.screen, banner: bannerCard ? bannerCard.headline : '' })); },
       el: function () { return host; },
       destroy: function () {
         gone = true;

@@ -863,6 +863,18 @@ Screen and the Ledger). Inside the panel, **J**/**K** move between cards, **Ente
 undoes the newest action (a no-op until the co-GM lands). Outside the panel, J and the other keys do what they always
 did. It's hidden on phones.
 
+**The card.** Every card is one component. Folded it is a single 44 px line: the colour bar, a glyph, the kind's word, the
+headline and the time. Tap it and it opens to the headline, up to five bullets, **SAY** (a rust band), **GM ONLY** (dashed),
+the page cite and, on a Ref slip, what it checked, then the actions: Keep, Got it, Undo (a done card) and More. More shows
+the detail inside the card, at most 40% of the panel's height, and scrolls there; a card is never taller than the panel.
+*Now* holds the newest unread card, open and one type step larger, until it has been in view for 1.5 s (it is then marked
+read) or a newer card arrives. With the panel closed, only a **rule** or **warn** card slides a one-line strip out of the
+tab for 8 s (the kind and the headline, never the bullets, SAY or GM ONLY); every other kind only adds a pip. An Ask Blade
+answer is a card too, open at the top of the feed. The page can add its own cards with `ctl.addCard` (the co-GM, autopilot,
+warnings); those are not in the server's log, so a reload forgets them. Model text is always shown as text (bold and
+italic only); only *More* is rendered as Markdown, through `B68Markdown`, with headings stripped. `gm-assist-cards.e2e.mjs`
+checks all of this in a real browser.
+
 **The box** (the panel's engine, still called that below) needs
 **Listening** on (the iPad transcriber above), because it reads that transcript. About once a minute it asks a cheap
 seat whether anything at the table needs a second look, wakes other seats only when the answer is yes, and shows at most
