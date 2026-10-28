@@ -80,6 +80,11 @@
 // quiet) or the provider says the file is gone.
 //
 // A seat call can take 15-30 s (the Fixer). That is wall-clock waiting on the provider, which Workers do not bill as CPU.
+// Leases and deadlines (functions/_lib/assist/leases.js): a seat in flight holds a lease (token + ttl) that its call releases in `finally` and that
+// lapses on its own if the request is cancelled first; the next tick sweeps it and reports it in `health.reaped`. Every call has a deadline (an
+// AbortSignal plus a race, so a fake that ignores the signal is bounded too): Tripwire 12 s, tick seats 30 s, the taps 45 s, Prop and Ask 75 s. A call
+// that hits it is a failed call with `timeout: 1, shown: 0` in its row. The work of each request is one promise, given to `waitUntil` and awaited.
+// The tick answer adds `health: { skipped: [{ seat, why }], reaped: [seat] }` (the Tripwire row's card carries the same `skipped`).
 //
 //
 // The Scribe (seat `scribe`, Haiku, low) folds the talk since its last run into a rolling "story so far" about every five minutes of new
@@ -100,6 +105,7 @@ import { HttpError, json, methodNotAllowed, readJsonObject, campaignOf } from '.
 import { requireGm, parseJson } from '../../_lib/gm.js';
 import { loadStt, readLines } from '../../_lib/stt.js';
 import { makeClient, callSeat } from '../../_lib/assist/claude.js';
+import { makeLeases, DEADLINE_MS, DEFAULT_DEADLINE_MS } from '../../_lib/assist/leases.js';
 import { SEATS, WAKES } from '../../_lib/assist/seats.js';
 import { cleanItem, verdictOf, unknownVerdict } from '../../_lib/assist/gatekeeper.js';
 import { checkNpc, newNpcId, writeNpc } from '../../_lib/npcs.js';
@@ -121,8 +127,10 @@ const FIT_WINDOW_MS = 5 * 60 * 1000;
 const FIRST_SLICE_MS = 60 * 1000;          // no `after`: the Tripwire reads the last minute
 const TZ = 'Australia/Melbourne';
 
-// Seats in flight in THIS isolate. Best effort: another isolate does not see it, so the cooldowns (from the log) back it up.
-const inFlight = new Set();
+// Seats in flight in THIS isolate, as leases (functions/_lib/assist/leases.js): a token and an expiry per seat, so a request cancelled
+// mid-call (its `finally` never runs) frees the seat when the lease lapses instead of holding it for the night. Best effort: another
+// isolate does not see it, so the cooldowns (from the log) back it up.
+const sharedLeases = makeLeases();
 
 const stampFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false });
 const stampMemo = new Map();        // one formatted stamp per minute: a long window of talk would otherwise format every line
@@ -304,12 +312,12 @@ async function lastShown(db, campaign, now) {
   return r && r.at ? Date.parse(r.at) : null;
 }
 
-// `timing` is { secs, stop }: the call's wall-clock seconds and the provider's stop reason. They go into the card JSON of every
-// seat call (no column, no migration). A refusal is recorded as `refusal: 1` and is never shown.
+// `timing` is { secs, stop, timeout? }: the call's wall-clock seconds and the provider's stop reason. They go into the card JSON of every
+// seat call (no column, no migration). A refusal is recorded as `refusal: 1` and is never shown; a call that hit its deadline as `timeout: 1`.
 function logRow(db, campaign, { at, session, seat, cfg, usage, cost, flags, card, timing }) {
   const u = usage || {};
   if (card && typeof card === 'object' && timing) {
-    card = { ...card, secs: timing.secs, ...(timing.stop ? { stop: timing.stop } : {}), ...(timing.stop === 'refusal' ? { refusal: 1, shown: 0 } : {}), ...(timing.stop === 'max_tokens' ? { truncated: 1, shown: 0 } : {}) };
+    card = { ...card, secs: timing.secs, ...(timing.stop ? { stop: timing.stop } : {}), ...(timing.stop === 'refusal' ? { refusal: 1, shown: 0 } : {}), ...(timing.stop === 'max_tokens' ? { truncated: 1, shown: 0 } : {}), ...(timing.timeout ? { timeout: 1, shown: 0 } : {}) };
   }
   return db.prepare(`INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, input_tokens, output_tokens, cache_read, cache_write, cents, flags, card)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`)
@@ -379,8 +387,21 @@ async function addPortrait(db, campaign, inp) {
   return { id, doc };
 }
 
-export function makeHandler({ clientFor = defaultClient, now = () => Date.now(), call = callSeat, seats = SEATS, wakes = WAKES } = {}) {
-  return async function onRequest({ request, env, data }) {
+// the SDK's own timeout error (its class has no stable `name`)
+const sdkTimeout = (e) => !!e && (e.name === 'APIConnectionTimeoutError' || (e.constructor && e.constructor.name === 'APIConnectionTimeoutError'));
+
+/**
+ * `leases` and `deadlines` are for tests (a private registry, a short deadline); the defaults are the isolate's registry and DEADLINE_MS.
+ * The handler's work runs as ONE promise: it is handed to `waitUntil` when the platform gives one and awaited for the response, so a page that
+ * gives up (its own timeout) does not cancel the seat calls, the log rows or the lease releases. Nothing ties the request's own signal to a call.
+ */
+export function makeHandler({ clientFor = defaultClient, now = () => Date.now(), call = callSeat, seats = SEATS, wakes = WAKES, leases = sharedLeases, deadlines = DEADLINE_MS } = {}) {
+  return function onRequest(context) {
+    const work = handle(context);
+    if (context && typeof context.waitUntil === 'function') context.waitUntil(work.catch(() => {}));
+    return work;
+  };
+  async function handle({ request, env, data }) {
     requireGm(data);                                   // first: before the method, the body or the database
     const url = new URL(request.url);
     const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board|ask)\/?$/.exec(url.pathname);
@@ -419,35 +440,56 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const stt = await loadStt(db, campaign);
     const speakers = stt.doc.speakers || {};
     const errors = [];
+    // Every read of "who is in flight" sweeps the lapsed leases first and hands the Conductor a plain Set, so its signatures are unchanged.
+    const live = () => { leases.sweep(now()); return leases.seats(); };
+    let reaped = [];               // the leases that lapsed since the last tick looked (taken at the start of THIS tick, so an abandoned tick that finishes later cannot swallow them)
+    const skipped = [];            // the tick's health: { seat, why } for every seat that did not run
+    let isTick = false;
     let thisTick = 0, fileMissing = false, storyText = '';   // storyText: the Scribe's story, appended to the instructions of the seats in STORY_SEATS (after the cache breakpoint)
 
     // one seat call; logging is the caller's job (the Tap rows wait for the Editor's verdict)
+    // The call has a deadline: an AbortSignal that ends the SDK's request and its retry, and a race here, because `call` is injected and a
+    // fake may ignore the signal. A call that hits it returns like a failed call, with timing.timeout set. The lease is released in `finally`;
+    // if even that never runs (the isolate's request was killed), the lease lapses on its own ttl. Throws a busy 429 when the seat is leased.
     async function run(name, user) {
       const cfg = seats[name];
-      inFlight.add(name);
+      const token = leases.acquire(name, now());
+      if (!token) { const busy = new HttpError(429, 'this is busy'); busy.busy = true; throw busy; }
       const started = now();
       const secs = () => Math.round(Math.max(0, now() - started) / 100) / 10;
+      const deadlineMs = deadlines[name] || DEFAULT_DEADLINE_MS;
+      const ctl = new AbortController();
+      let timer, timedOut = false;
       try {
         const instructions = (extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions) + (STORY_SEATS.includes(name) ? storyBlock(storyText) : '');
-        const r = await call(client, { ...cfg, instructions, prefixFileId: fileId, user });
+        const deadline = new Promise((_, reject) => { timer = setTimeout(() => { timedOut = true; reject(new Error('deadline')); ctl.abort(); }, deadlineMs); });
+        const pending = (async () => call(client, { ...cfg, instructions, prefixFileId: fileId, user, deadlineMs, signal: ctl.signal }))();
+        pending.catch(() => {});                    // if the deadline wins, this settles later (the abort): nobody is listening, and that is fine
+        const r = await Promise.race([pending, deadline]);
         thisTick += r.cost || 0;
         if (r.stop === 'refusal' || r.stop === 'max_tokens') r.json = null;     // a refusal or a reply cut off at the limit shows nothing, never a half card; the row records it
         return { cfg, r, timing: { secs: secs(), stop: typeof r.stop === 'string' ? r.stop : '' } };
       } catch (e) {
+        if (timedOut || sdkTimeout(e)) { errors.push({ seat: name, error: 'timed out' }); return { cfg, r: null, timing: { secs: secs(), stop: '', timeout: 1 } }; }
         if (fileId && fileGone(e)) { fileMissing = true; if (!warnings.includes(REPUSH)) warnings.push(REPUSH); }
         else errors.push({ seat: name, error: errorOf(e) });
         return { cfg, r: null, timing: { secs: secs(), stop: '' } };
       } finally {
-        inFlight.delete(name);
+        clearTimeout(timer);
+        leases.release(name, token);
       }
     }
+    // run() for the tick's own seats: a seat leased by another request in the meantime is skipped (and said so), not an error
+    async function runOrSkip(name, user) {
+      try { return await run(name, user); } catch (e) { if (e && e.busy) { skipped.push({ seat: name, why: 'in-flight' }); return null; } throw e; }
+    }
     const spend = () => ({ tonight: dollars(spentBefore + thisTick), cap, tier: budgetTier(spentBefore + thisTick, cap), tick: dollars(thisTick) });
-    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.meanwhile ? { meanwhile: more.meanwhile } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
+    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.meanwhile ? { meanwhile: more.meanwhile } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}), ...(isTick ? { health: { skipped, reaped } } : {}) });
 
     if (action[1] === 'portrait' || action[1] === 'prop' || action[1] === 'wire') {
       const seat = action[1];
       // the ladder: Wire stops at 60% of tonight's cap, Portrait and Prop at 85% (they are not Core seats); at the cap nothing runs
-      const gate = canRun(seat, { now: t0, lastRun: {}, inFlight, tier });
+      const gate = canRun(seat, { now: t0, lastRun: {}, inFlight: live(), tier });
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? (tier === 'off' ? "tonight's cap is reached" : 'the budget ladder has dropped this for tonight') : 'this is busy');
       if (legacy || !fileId) return json({ item: null, spend: spend(), warnings: legacy ? [REPUSH] : ['no assist part in the GM pack'] });
       const { lines: recent } = await readLines(db, campaign, { since: new Date(t0 - SCREEN_WINDOW_MIN * 60 * 1000).toISOString() });
@@ -466,7 +508,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
 
     if (action[1] === 'ask') {
       // Ask Blade: the GM's own question, answered in plain text for the GM's eyes only. The ladder is the Screen's: stops at 85% of the cap, 429 at the cap or while busy
-      const gate = canRun('ask', { now: t0, lastRun: {}, inFlight, tier });
+      const gate = canRun('ask', { now: t0, lastRun: {}, inFlight: live(), tier });
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? (tier === 'off' ? "tonight's cap is reached" : 'the budget ladder has dropped this for tonight') : 'this is busy');
       if (legacy || !fileId) return json({ answer: null, spend: spend(), warnings: legacy ? [REPUSH] : ['no assist part in the GM pack'] });
       const sr = await lastStory(db, campaign, t0);          // any session will do: the GM is asking about the night
@@ -486,7 +528,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
 
     if (action[1] === 'gatekeeper') {
       const item = gateItem.item;
-      const gate = canRun('gatekeeper', { now: t0, lastRun: {}, inFlight, tier });
+      const gate = canRun('gatekeeper', { now: t0, lastRun: {}, inFlight: live(), tier });
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : 'the gatekeeper is busy');
       const bare = (v) => json({ ...v, spend: spend(), ...(warnings.length ? { warnings } : {}) });
       // no prefix means no never-reveal list to check against: that is a block, never a pass
@@ -510,7 +552,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const draws = cleanDraws(body.draws);                // no fallback: a client without the console's draws gets a 400
       if (!draws) throw new HttpError(400, 'draws is required: { low, mid }, each a text of at most ' + DRAW_MAX + ' characters');
       if (legacy) return done([], [], null);
-      const gate = canRun('fixer', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight, tier });
+      const gate = canRun('fixer', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight: live(), tier });
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : 'the fixer is busy');
       const { lines: recent, last } = await readLines(db, campaign, { since: new Date(t0 - FIT_WINDOW_MS).toISOString() });
       const lines = recent;
@@ -529,7 +571,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       if (!npc) throw new HttpError(400, 'npc is required (at most ' + NPC_MAX + ' characters)');
       if (!shown) throw new HttpError(400, 'shown is required: 1-' + SHOWN_MAX + ' lines, each at most ' + SHOWN_LINE_MAX + ' characters');
       if (legacy) return done([], [], null);
-      const gate = canRun('voice_plus', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight, tier });
+      const gate = canRun('voice_plus', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight: live(), tier });
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : 'the voice coach is busy');
       const { lines: recent, last } = await readLines(db, campaign, { since: new Date(t0 - TAP_WINDOW_MS).toISOString() });
       const user = anotherUser({ npc, shown, stamp: hhmm(t0), talk: formatLines(recent, speakers) });
@@ -544,6 +586,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     }
 
     // ---- tick ----
+    isTick = true;                                       // from here every answer carries health: { skipped, reaped }
+    live(); reaped = leases.takeReaped();
     const npc = cleanNpc(body.npc);
     if (npc === null) throw new HttpError(400, 'npc must be a name of at most ' + NPC_MAX + ' characters');
     const after = body.after === undefined || body.after === null ? null : body.after;
@@ -561,10 +605,11 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const ll = await lastLine(db, campaign);
       const sil = silenceFlag({ listening: true, lastLineAt: ll ? ll.at : null, now: t0 });
       if (!sil.silent) return done([], [], last);
-      if (!canRun('stall', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight, tier }).ok) return done([], [], last);
+      const sg = canRun('stall', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight: live(), tier });
+      if (!sg.ok) { skipped.push({ seat: 'stall', why: sg.why }); return done([], [], last); }
       const before = (await readLines(db, campaign, { since: new Date(ll.at - TAP_WINDOW_MS).toISOString() })).lines;
-      const sx = await run('stall', silenceUser({ minutes: sil.minutes, since: hhmm(ll.at), stamp: hhmm(t0), talk: formatLines(before, speakers) }));
-      if (fileMissing) return done([], [], last);
+      const sx = await runOrSkip('stall', silenceUser({ minutes: sil.minutes, since: hhmm(ll.at), stamp: hhmm(t0), talk: formatLines(before, speakers) }));
+      if (!sx || fileMissing) return done([], [], last);
       const sat = new Date(now()).toISOString(), sflags = ['stall', 'silence'];
       const st = sx.r ? toStall(sx.r.json, { recent: await shownVoice(db, campaign, t0), now: t0 }) : null;
       await logRow(db, campaign, { at: sat, session: ll.session, seat: 'stall', cfg: sx.cfg, usage: sx.r && sx.r.usage, cost: sx.r && sx.r.cost, flags: sflags, timing: sx.timing,
@@ -573,18 +618,20 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     }
 
     const lastRun = await lastRuns(db, campaign, t0);
-    const gate = canRun('tripwire', { now: t0, lastRun, inFlight, tier });
-    if (!gate.ok) return done([], [], last);
+    const gate = canRun('tripwire', { now: t0, lastRun, inFlight: live(), tier });
+    if (!gate.ok) { skipped.push({ seat: 'tripwire', why: gate.why }); return done([], [], last); }     // a Tripwire stuck in flight is exactly what health must show
     const prev = await prevTripwire(db, campaign, t0);            // read before this tick's own Tripwire row is written
-    const tw = await run('tripwire', 'New talk, up to ' + hhmm(t0) + ':\n' + freshText);
-    if (fileMissing) return done([], [], last);          // nothing was billed or logged: the file is gone
+    const tw = await runOrSkip('tripwire', 'New talk, up to ' + hhmm(t0) + ':\n' + freshText);
+    if (!tw || fileMissing) return done([], [], last);          // nothing was billed or logged: the file is gone (or another request holds the Tripwire)
     const twAt = new Date(now()).toISOString();
     const flags = tw.r && tw.r.json ? Object.keys(tw.r.json).filter((k) => tw.r.json[k] === true) : [];
-    await logRow(db, campaign, { at: twAt, session, seat: 'tripwire', cfg: tw.cfg, usage: tw.r && tw.r.usage, cost: tw.r && tw.r.cost, flags, timing: tw.timing,
-      card: tw.r ? { out: tw.r.json } : { error: errors.length ? errors[0].error : 'no reply' } }).run();
 
     // 'tick' wakes the Showrunner, paced by its 10-minute cooldown; with nothing else woken a tick costs no model call
-    const verdict = decide({ flags: flags.concat('tick'), now: t0, lastRun, inFlight, spent: spentBefore + thisTick, cap, wakes, onStage: !!npc, follow: followsThrough(prev, t0) });
+    const verdict = decide({ flags: flags.concat('tick'), now: t0, lastRun, inFlight: live(), spent: spentBefore + thisTick, cap, wakes, onStage: !!npc, follow: followsThrough(prev, t0) });
+    skipped.push(...verdict.skipped);
+    // the Tripwire's row is written once, after the Conductor has spoken, so its card can say which seats were skipped and why
+    await logRow(db, campaign, { at: twAt, session, seat: 'tripwire', cfg: tw.cfg, usage: tw.r && tw.r.usage, cost: tw.r && tw.r.cost, flags, timing: tw.timing,
+      card: { ...(tw.r ? { out: tw.r.json } : { error: errors.length ? errors[0].error : 'no reply' }), skipped: skipped.map((x) => ({ ...x })) } }).run();
     // a quiet tick still releases a Ref card the gap held back (one cheap read, only when no seat woke): without it a slip held behind
     // another seat's card would go stale before any flag woke a seat again
     // the Scribe folds the talk since the story's last line into the story; with nothing new to fold it does not run
@@ -623,7 +670,15 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       }
     }
     if (scribeTurn) turns.scribe = scribeTurn;
-    const all = await Promise.all(wake.map(async (name) => ({ name, ...(await run(name, name === 'voice' ? voiceTurn : turns[name] || user)) })));
+    // each woken seat is on its own deadline: a slow one cannot hold the others' cards. A seat another request took meanwhile is skipped, not an error.
+    const settled = await Promise.allSettled(wake.map((name) => run(name, name === 'voice' ? voiceTurn : turns[name] || user)));
+    const all = [];
+    settled.forEach((x, i) => {
+      const name = wake[i];
+      if (x.status === 'fulfilled') all.push({ name, ...x.value });
+      else if (x.reason && x.reason.busy) skipped.push({ seat: name, why: 'in-flight' });
+      else all.push({ name, cfg: seats[name], r: null, timing: { secs: 0, stop: '' } });      // run() catches its own errors, so this is a bug's safety net
+    });
     // Voice and Stall go to the Rack, not to the Editor's card slot
     const vx = all.find((x) => x.name === 'voice'), sx = all.find((x) => x.name === 'stall'), results = all.filter((x) => !['voice', 'stall', 'scribe', 'meanwhile'].includes(x.name));
 

@@ -43,7 +43,14 @@ export function buildContent({ prefix, prefixFileId, instructions = '', user }) 
 
 // One seat call. `prefixFileId` (Worker) or `prefix` (scripts) is the shared cached text; `instructions` is the seat's own;
 // `user` is the fresh tail. `schema` makes the reply JSON. Returns { json, text, usage, cost, stop, secs }.
-export async function callSeat(client, { model, effort, prefix, prefixFileId, instructions, user, schema, maxTokens = 4000 }) {
+// `deadlineMs` (the Worker passes it, with the `signal` that fires at the same moment) puts the SDK's per-request options on the call:
+// a timeout, ONE retry, and the signal, which also ends any retry. Without it (the PC scripts) the SDK's own defaults stand.
+export function requestOptions(deadlineMs, signal) {
+  if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) return undefined;
+  return { timeout: deadlineMs, maxRetries: 1, ...(signal ? { signal } : {}) };
+}
+
+export async function callSeat(client, { model, effort, prefix, prefixFileId, instructions, user, schema, maxTokens = 4000, deadlineMs, signal }) {
   const output_config = { effort };
   if (schema) output_config.format = { type: 'json_schema', schema };
   const params = {
@@ -52,7 +59,8 @@ export async function callSeat(client, { model, effort, prefix, prefixFileId, in
   };
   // Long outputs (the Night Shift writer thinks at high effort) must stream: the SDK refuses a big non-streaming request.
   const t0 = Date.now();
-  const res = maxTokens > 16000 ? await client.messages.stream(params).finalMessage() : await client.messages.create(params);
+  const opts = requestOptions(deadlineMs, signal);
+  const res = maxTokens > 16000 ? await client.messages.stream(params, opts).finalMessage() : await client.messages.create(params, opts);
   const secs = Math.round((Date.now() - t0) / 100) / 10;      // wall-clock of the call, in seconds
   const text = res.content.filter(b => b.type === 'text').map(b => b.text).join('');
   let json = null;
