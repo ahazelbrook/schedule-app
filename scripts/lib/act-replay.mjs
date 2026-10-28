@@ -1,10 +1,11 @@
 // Pure helpers for scripts/gm-assist-act-replay.mjs (C1): cut a transcript into windows, keep a stand-in copy of the table's state between windows,
 // and a fake model for --fake. No I/O, no network, no key, so checks/runtime/gm-assist-hands.test.mjs can run them.
 //
-// The real page (C2, app/gm/cogm.js) picks its windows with a pre-filter and applies the actions through the GM's own write paths. Until that module exists the
-// replay cuts the transcript into plain windows and applies accepted actions to its OWN copy of the state, only so that a later window sees an NPC that an
-// earlier one added (as the page's state would show it) and the keys can be deduped as the page will. Nothing real is written.
+// The real page (app/gm/cogm.js) picks its windows with a pre-filter; cogmWindows below runs that module itself, and windowsOf is the plain time-cut kept for --no-prefilter.
+// Accepted actions are applied to the replay's OWN copy of the state, only so that a later window sees an NPC that an earlier one added (as the page's state would
+// show it) and the keys can be deduped as the page will. Nothing real is written.
 
+import { createRequire } from 'node:module';
 import { parseMinutes } from './tap-sim.mjs';
 import { LINES_MAX } from '../../functions/_lib/assist/hands.js';
 
@@ -93,4 +94,49 @@ export function describe(a) {
     : a.type === 'npc_add' ? `${a.name}${a.role ? ', ' + a.role : ''}${a.look ? ': ' + a.look : ''}`
     : a.type === 'capture' ? `${a.bucket}: ${a.text}` : `${a.who}: ${a.action} (${a.position}/${a.effect}/${a.result})`;
   return `${a.mode.toUpperCase()} ${a.type} ${what} [${a.confidence}] key ${a.key}`;
+}
+
+// ---------- the page's own pre-filter (C3) ----------
+const cogm = createRequire(import.meta.url)('../../app/gm/cogm.js');
+
+/**
+ * The windows the PAGE would send, by running app/gm/cogm.js itself over the rows: every line is ingested as the page's poll would hand it over, a line the pre-filter matches
+ * is noted, and nextWindow/windowSent pick and retire windows with the page's own settle rule, gap and cursors. The transcript is stamped to the minute, so each line gets a
+ * time spread evenly through its minute (the page's 30-second widening and its settle/gap timers then behave as they would at that talking speed). A window holds the lines
+ * from its `from` to `to` seq, the matching line plus its context, so a line that matched is never left out and a quiet stretch is never sent.
+ * -> { windows: [{ from, to, t, rows, matched: [seq], intents: [..] }], matchedLines (lines that matched), lines }
+ */
+export function cogmWindows(rows, { api = cogm } = {}) {
+  const byMinute = new Map();
+  for (const r of rows) byMinute.set(r.t, (byMinute.get(r.t) || 0) + 1);
+  const seen = new Map(), ms = (r) => { const k = seen.get(r.t) || 0; seen.set(r.t, k + 1); return r.t * 60000 + Math.floor(((k + 0.5) / byMinute.get(r.t)) * 60000); };
+  const st = api.newState();
+  api.start(st, 0);
+  const windows = [], bySeq = new Map(rows.map((r) => [r.seq, r]));
+  let now = 0, matchedLines = 0;
+  const take = () => {
+    const w = api.nextWindow(st, now);
+    if (!w) return false;
+    const wrows = []; for (let s = w.from; s <= w.to; s++) if (bySeq.has(s)) wrows.push(bySeq.get(s));
+    windows.push({ from: w.from, to: w.to, t: wrows[0].t, rows: wrows, matched: w.seqs, intents: [...new Set(w.seqs.flatMap((s) => api.match(bySeq.get(s).text)))] });
+    api.windowSent(st, w, now);
+    return true;
+  };
+  for (const r of rows) {
+    now = ms(r);
+    if (api.match(r.text).length) matchedLines++;
+    api.ingest(st, [{ seq: r.seq, kind: 'line', at: new Date(Date.UTC(2000, 0, 1) + now).toISOString(), text: r.text, speaker: null }], undefined, now);
+    take();
+  }
+  for (let i = 0; i < 100000 && st.pending.length; i++) { now += 1000; take(); }       // the talk has stopped: let what is left settle
+  return { windows, matchedLines, lines: rows.length };
+}
+
+/** The seq of the row a quote starts on (its first words, compared as letters and digits only), or 0. */
+export function lineOf(rows, quote) {
+  const n = (s) => String(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const q = n(quote).split(' ').slice(0, 5).join(' ');
+  if (!q) return 0;
+  const hit = rows.find((r) => (' ' + n(r.text) + ' ').includes(' ' + q + ' '));
+  return hit ? hit.seq : 0;
 }
