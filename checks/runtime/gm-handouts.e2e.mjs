@@ -2,7 +2,7 @@
 // generated images written into the git-ignored app/media/handouts/ for the run (and removed after), an invented manifest posted as the
 // pack's `handouts` part. Checks: the list in the iPad tab (titles, cues, thumbnails), Show on iPad posts exactly one item, Clear iPad,
 // the title toggle, the display draws the image fitted on black (and says so when the file is missing), the iPad is never sent the
-// manifest, suggestHandout puts a "Show handout?" item in the Rack (Show posts it and drops it; Dismiss just drops it).
+// manifest, suggestHandout puts a "Show handout?" idea card in the Blade box (Show posts it and drops it; Dismiss just drops it).
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] node checks/runtime/gm-handouts.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
@@ -147,22 +147,27 @@ try {
   await p.click('#gm-ipad [data-ho="gone"] [data-gm="blankipad"]');
   await dp.waitForFunction(() => !document.querySelector('.dp-handout'), null, { timeout: 15000 });
 
-  // ---- Claude suggests: the Rack ----
+  // ---- Claude suggests: idea cards in the Blade box (P4), not the Rack ----
+  const OFF = '#as-list .as-card[data-seat="handout"]';
+  const offerOf = (title) => OFF + ':has(.as-text:text-is("Show handout: ' + title + '?"))';
   check(await p.evaluate(() => window.B68GmPage.suggestHandout('nope', 'x')) === false, 'suggestHandout refuses an id the pack does not hold');
   check(await p.evaluate(() => window.B68GmPage.suggestHandout('key', 'They asked who owned the dock key.')) === true, 'suggestHandout accepts a pack id');
-  await p.waitForSelector('#gm-rack .gm-offer', { timeout: 5000 });
-  check(/Show handout: Invented brass key\?/.test(await p.textContent('#gm-rack .gm-offer')) && /who owned the dock key/.test(await p.textContent('#gm-rack .gm-offer')), 'the Rack shows "Show handout: <title>?" with the reason');
-  check(await p.$('#gm-rack .gm-offer [data-gm="offer-show"]') !== null && await p.$('#gm-rack .gm-offer [data-gm="offer-dismiss"]') !== null, 'with Show and Dismiss');
-  check(await p.$eval('#gm-rack .gm-offer', (e) => e.getBoundingClientRect().height > 0), 'it is visible under the console card');
+  await p.waitForSelector('.gm-assist .as-launch', { timeout: 10000 });
+  await p.click('.gm-assist .as-launch');
+  await p.waitForSelector(OFF, { timeout: 5000 });
+  check(/Show handout: Invented brass key\?/.test(await p.textContent(OFF)) && /who owned the dock key/.test(await p.textContent(OFF)), 'the box shows "Show handout: <title>?" with the reason');
+  check(await p.$('#gm-rack .gm-offer') === null, 'and the Rack holds no offer');
+  check(await p.$(OFF + ' [data-act="show"]') !== null && await p.$eval(OFF + ' [data-as="ack"]', (b) => /Dismiss/.test(b.textContent)), 'with Show and Dismiss');
+  check(await p.$eval(OFF + ' [data-act="show"]', (e) => e.getBoundingClientRect().height > 0), 'Show is visible without unfolding the card');
   await p.evaluate(() => window.B68GmPage.suggestHandout('key', 'second reason'));
-  check((await p.$$('#gm-rack .gm-offer')).length === 1 && /second reason/.test(await p.textContent('#gm-rack .gm-offer')), 'a repeat replaces the offer');
+  check((await p.$$(OFF)).length === 1 && /second reason/.test(await p.textContent(OFF)), 'a repeat replaces the offer');
   await p.evaluate(() => window.B68GmPage.suggestHandout('wide', ''));
-  check((await p.$$('#gm-rack .gm-offer')).length === 2, 'a second handout adds a second offer');
-  await p.click('#gm-rack [data-offer="wide"] [data-gm="offer-dismiss"]');
-  check((await p.$$('#gm-rack .gm-offer')).length === 1 && (await shownDisplay()).kind === 'blank', 'Dismiss drops it and shows nothing');
-  await p.click('#gm-rack [data-offer="key"] [data-gm="offer-show"]');
+  check((await p.$$(OFF)).length === 2, 'a second handout adds a second offer');
+  await p.click(offerOf('Invented wide banner') + ' [data-as="ack"]');
+  check((await p.$$(OFF)).length === 1 && (await shownDisplay()).kind === 'blank', 'Dismiss drops it and shows nothing');
+  await p.click(offerOf('Invented brass key') + ' [data-act="show"]');
   check(await until(async () => (await shownDisplay()).file === MINE[0], 8000), 'Show posts the handout');
-  check(await p.waitForFunction(() => !document.querySelector('#gm-rack .gm-offer'), null, { timeout: 5000 }).then(() => true, () => false), 'and drops the offer');
+  check(await p.waitForFunction(() => !document.querySelector('#as-list .as-card[data-seat="handout"]'), null, { timeout: 5000 }).then(() => true, () => false), 'and drops the offer');
   const post = await shownDisplay();
   check(post.kind === 'handout' && post.showTitle === false && !('when' in post) && !('id' in post), 'only the display fields went out');
 
