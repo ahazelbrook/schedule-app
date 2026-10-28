@@ -185,6 +185,7 @@
     live = isObj(live) ? live : {}; ctx = ctx || {}; opts = opts || {};
     var confirmed = opts.confirmed === true, plan, why = '';
     if (!isObj(action)) return { op: 'drop', why: 'not an action' };
+    if (action.mode === 'seen') return { op: 'drop', why: 'seen' };      // the server has handed this key to another page or an earlier window (C4c): never write it twice
     if (action.type === 'clock_add') {
       var name = clipName(action.name);
       if (!name || !ctx.id) return { op: 'drop', why: 'no name' };

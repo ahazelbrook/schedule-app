@@ -16,6 +16,11 @@ let failed = 0, passed = 0;
 async function test(name, fn) { try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); } }
 
 /* ---------- 1. the pre-filter ---------- */
+await test('planApply: an action the server marked seen (another page or an earlier window has its key) is dropped, never written', () => {
+  const p = C.planApply({ type: 'clock_add', mode: 'seen', key: 'k1', name: 'Harbour Bell', size: 6, quote: 'x' }, { clocks: [], npcs: [], pcs: [] }, { id: 'c_new' }, { confirmed: true });
+  assert.deepEqual(p, { op: 'drop', why: 'seen' });
+});
+
 await test('1. match: the five intents, in the words of design 5.2', () => {
   const m = (s) => C.match(s).join();
   assert.equal(m("right, that's going to be a six-segment clock"), 'clock');

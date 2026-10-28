@@ -9,6 +9,7 @@
 //
 //   --transcript   a transcript in the vault's form, `- **[HH:MM] Name:** text` per line (an invented one for tests: gm-private/ or a fixture; never commit a real one)
 //   --state        the table's state as the page would send it: { clocks: [{ id, name, size, filled, hidden }], npcs: [{ id, name }], pcs: [{ id, name }], onStage }
+//   --cue          instead of a transcript: the ten invented cue windows through the cue model path (C4c); real model only, default --max-spend 0.10
 //   --fake         no network and no key: a stand-in model (scripts/lib/act-replay.mjs) so the plumbing can be checked for free
 //   --no-prefilter  window by time (--window/--step) instead of by cogm.js's pre-filter
 //   --max-spend    stop when the calls so far cost this much (default 0.25; refused above --budget)
@@ -26,6 +27,7 @@ import { SEATS } from '../functions/_lib/assist/seats.js';
 import { DEADLINE_MS } from '../functions/_lib/assist/leases.js';
 import { handsUser } from '../functions/_lib/assist/prompts.js';
 import { cleanState, validateActions } from '../functions/_lib/assist/hands.js';
+import { CUE_WINDOWS, runCueWindows } from './lib/cue-replay.mjs';
 import { rowsOf, windowsOf, cogmWindows, lineOf, talkOf, applyToState, fakeHandsCall, describe } from './lib/act-replay.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -38,7 +40,9 @@ const BUDGET = Number(arg('budget', '0.5'));
 if (!(BUDGET > 0) || BUDGET > 1) die('--budget must be above 0 and at most 1');
 
 const transcriptFile = arg('transcript'), stateFile = arg('state', path.join(ROOT, 'gm-private', 'hands-state.json'));
-if (!transcriptFile) die('--transcript <file> is required');
+const cue = flag('cue');
+if (cue && flag('fake')) die('--cue replays the model path: it needs the real model (B68_ANTHROPIC_KEY), not --fake');
+if (!transcriptFile && !cue) die('--transcript <file> is required (or --cue)');
 const fake = flag('fake');
 const maxSpend = Number(arg('max-spend', '0.25'));
 if (!(maxSpend > 0) || maxSpend > BUDGET) die(`--max-spend must be above 0 and at most ${BUDGET} (--budget)`);
@@ -51,6 +55,22 @@ let key = '';
 if (!fake) {
   key = process.env.B68_ANTHROPIC_KEY || '';
   if (!key) die('Set B68_ANTHROPIC_KEY first (a user environment variable), or use --fake.');
+}
+if (cue) {
+  // C4c: the ten invented cue windows (scripts/lib/cue-replay.mjs) through the model path of /act. The default ceiling here is $0.10; the guards above still apply.
+  const cueMax = Number(arg('max-spend', '0.10'));
+  if (!(cueMax > 0) || cueMax > BUDGET) die('--max-spend must be above 0 and at most ' + BUDGET + ' (--budget)');
+  const client = makeClient(key);
+  const run = await runCueWindows({ call: (req) => callSeat(client, req), maxSpend: cueMax, deadlineMs: DEADLINE_MS.hands });
+  fs.mkdirSync(outDir, { recursive: true });
+  const okN = run.results.filter((r) => r.ok).length;
+  const lines = run.results.map((r, i) => (r.ok ? 'PASS ' : 'FAIL ') + CUE_WINDOWS[i].name + ' (stop ' + r.stop + ', $' + r.cost.toFixed(4) + ', kept ' + r.kept.length + ', dropped ' + r.dropped.length + (r.error ? ', ' + r.error : '') + ')');
+  const summary = lines.join('\n') + '\n' + okN + ' of ' + run.results.length + ' windows did what the command said' + (run.stopped ? ' (stopped: ' + run.stopped + ')' : '') + '\nspend $' + run.spend.toFixed(4) + '; limit $' + cueMax;
+  fs.writeFileSync(path.join(outDir, 'cue-results.json'), JSON.stringify(run, null, 1) + '\n');
+  fs.writeFileSync(path.join(outDir, 'summary.txt'), summary + '\n');
+  console.log(summary);
+  console.log('written to ' + path.relative(ROOT, outDir));
+  process.exit(okN === run.results.length ? 0 : 1);
 }
 const rows = rowsOf(fs.readFileSync(transcriptFile, 'utf8'));
 if (!rows.length) die('no transcript lines found (expected `- **[HH:MM] Name:** text`)');

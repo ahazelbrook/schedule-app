@@ -73,6 +73,13 @@
 //        known name says 'already known'). An empty range of lines answers { actions: [] } with no model call and no row. Core tier (to the cap), one at a time and at most
 //        every 8 s: 429 otherwise. One row is logged (seat `hands`, flags `act`, `shown: 0`, so it never holds back a card). The answer carries no `health`: the page feeds health to healthStep, and an
 //        empty `skipped` would reset the other seats' stuck streaks. It does not take the lapsed leases either (only the tick reports `reaped`).
+//        mode 'cue' (C4c; the GM said "Blade, ..."): the body also carries cueLineId (the transcript row id of the line holding the wake word; it must be one of the lines read, else 400) and,
+//        when the page could parse the command,  (1-8 actions: clock_add (with filled), clock_tick, npc_add, capture, undo, rename; undo and rename ONLY ever come this way). With parsed
+//        there is no model, no key and no gate: the actions go through validateActions (the quote must start on the cue line and may run on over the lines after it), every survivor is mode
+//        'act', keys are made here from cueLineId and the action's index alone, and ONE hands row (card.out.cue = true, flags act,cue, 0 cents) is written by a single INSERT ... WHERE NOT
+//        EXISTS over tonight's keys, so two pages posting the same cue cannot both win: the loser's actions come back mode 'seen'. Without parsed the hands seat runs with the cue instruction
+//        after its base instructions and the cue line in the user turn (no 8 s cooldown; lease and cap still apply), same schema and validation, survivors all 'act', no undo/rename/roll_log.
+//        In every mode an action whose key is already in tonight's hands rows (last 12 h; found with json_each in D1) comes back mode 'seen' and must not be applied again. No new table.
 //   GET  /api/gm/assist/cards?session=&since= -> { cards, updates, asks }   tonight's shown cards, open Ledger updates and Ask Blade answers
 //        (last 12 h unless `since`; asks: [{ row, at, q, text, kind, headline, bullets, say, secret, more, kept }], the last 10, oldest first), so a reloaded GM page restores its chat.
 //        Dismissed cards, finished updates and dismissed asks are left out. No model, no key.
@@ -123,7 +130,7 @@ import { loadStt, readLines, sttStmt, sttOf, linesStmt, lastSeqStmt, lastSeqOf }
 import { cachedClient, callSeat } from '../../_lib/assist/claude.js';
 import { melbourneHHMM } from '../../_lib/assist/clock.js';
 import { makeLeases, DEADLINE_MS, DEFAULT_DEADLINE_MS } from '../../_lib/assist/leases.js';
-import { SEATS, WAKES } from '../../_lib/assist/seats.js';
+import { SEATS, WAKES, CUE_INSTRUCTION } from '../../_lib/assist/seats.js';
 import { cleanItem, verdictOf, unknownVerdict } from '../../_lib/assist/gatekeeper.js';
 import { checkNpc, newNpcId, writeNpc } from '../../_lib/npcs.js';
 import { toPortrait, toProp, toWire, buildBoard, boardSource, cleanName, cleanAsk, cleanVocab } from '../../_lib/assist/screen.js';
@@ -134,7 +141,7 @@ import { DEFAULT_CAP, COOLDOWN_MS, budgetTier, canRun, decide, followsThrough, F
 import { ledgerGlance, fixerGlance, restoreGlance } from '../../_lib/assist/glance.js';
 import { toCandidate, toVoice, toAnother, toStall, toScribe, toMeanwhile, toHandout, handoutIds, handoutTitles, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
-import { cleanActBody, validateActions, LINES_MAX } from '../../_lib/assist/hands.js';
+import { cleanActBody, validateActions, markSeen, LINES_MAX } from '../../_lib/assist/hands.js';
 
 const BODY_MAX = 8 * 1024;
 const ACT_BODY_MAX = 32 * 1024;            // an act request holds a state of at most 8 KB; a bigger one must reach the state check (a 400), not the generic 413 at 8 KB
@@ -290,15 +297,64 @@ const tonight = (db, campaign, now) => runRead(tonightRd(db, campaign, now));
 /** /act's one read of the log: tonight's spend and the newest `hands` row ({ spent (dollars), last (ms | null) }). The cooldown and the ladder both come from it. */
 async function spendAndLastHands(db, campaign, now) {
   const since = new Date(now - NIGHT_MS).toISOString();
-  const r = await db.prepare("SELECT COALESCE(SUM(cents), 0) AS cents, MAX(CASE WHEN seat = 'hands' THEN at END) AS hands FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2").bind(campaign, since).first();
+  const r = await db.prepare("SELECT COALESCE(SUM(cents), 0) AS cents, MAX(CASE WHEN seat = 'hands' AND flags NOT LIKE '%cue%' THEN at END) AS hands FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2").bind(campaign, since).first();
   return { spent: (r ? r.cents : 0) / 100, last: r && r.hands ? Date.parse(r.hands) : null };
 }
 
 /** The transcript lines from seq `from` to `to` (the latest LINES_MAX if more): the ONE read of the transcript an /act call makes. Marks are left out in SQL. */
 async function actLines(db, campaign, from, to) {
-  const r = await db.prepare("SELECT seq, session, at, speaker, kind, text FROM (SELECT seq, session, at, speaker, kind, text FROM gm_transcript WHERE campaign = ?1 AND seq BETWEEN ?2 AND ?3 AND kind = 'line' ORDER BY seq DESC LIMIT ?4) ORDER BY seq").bind(campaign, from, to, LINES_MAX).all();
+  const r = await db.prepare("SELECT seq, id, session, at, speaker, kind, text FROM (SELECT seq, id, session, at, speaker, kind, text FROM gm_transcript WHERE campaign = ?1 AND seq BETWEEN ?2 AND ?3 AND kind = 'line' ORDER BY seq DESC LIMIT ?4) ORDER BY seq").bind(campaign, from, to, LINES_MAX).all();
   return r.results || [];
 }
+
+/**
+ * Tonight's keys (C4c). A key is "seen" when a `hands` row from the last night already holds it in card.actions. json_each / json_extract keep the parsing in D1: the Worker
+ * parses nothing and gets back at most ACTIONS_MAX key strings. The CASEs guard a malformed card, or an actions that is not a list of objects, which would otherwise fail every cue for the night.
+ */
+const SEEN_FROM = "FROM gm_assist_log l, json_each(CASE WHEN json_valid(l.card) AND json_type(l.card, '$.actions') = 'array' THEN l.card ELSE '[]' END, '$.actions') j WHERE l.campaign = ?1 AND l.seat = 'hands' AND l.at >= ?2 AND CASE WHEN j.type = 'object' THEN json_extract(j.value, '$.key') END IN (";
+const marks = (from, n) => Array.from({ length: n }, (_, i) => '?' + (from + i)).join(', ');
+/** Which of `keys` are in tonight's hands rows: a Set. With `beforeLast`, only rows older than the row this batch just inserted (the earliest row holding a key owns it). */
+const seenStmt = (db, campaign, now, keys, beforeLast) => db.prepare('SELECT DISTINCT json_extract(j.value, \'$.key\') AS k ' + SEEN_FROM + marks(3, keys.length) + ')' + (beforeLast ? ' AND l.id < last_insert_rowid()' : ''))
+  .bind(campaign, new Date(now - NIGHT_MS).toISOString(), ...keys);
+
+/**
+ * A cue's hands row, written ONLY IF none of its keys is in tonight's hands rows: one INSERT ... SELECT ... WHERE NOT EXISTS, so two pages posting at once cannot both win
+ * (D1 runs one statement atomically). -> true when this call wrote the row. No new table: the keys live in the row's card.actions, as every hands row's do.
+ */
+async function claimRow(db, campaign, now, row, keys) {
+  const v = logValues(campaign, row);
+  const sql = 'INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, input_tokens, output_tokens, cache_read, cache_write, cents, flags, card) SELECT ' + marks(1, 13) +
+    ' WHERE NOT EXISTS (SELECT 1 ' + SEEN_FROM.replace('?2', '?14') + marks(15, keys.length) + '))';
+  const r = await db.prepare(sql).bind(...v, new Date(now - NIGHT_MS).toISOString(), ...keys).run();
+  return !!(r && r.meta && r.meta.changes > 0);
+}
+
+/**
+ * A parsed cue (C4c): the page parsed "Blade, ..." itself, so there is no model, no key and no gate (it costs nothing and must work at the cap). The actions are validated with
+ * validateActions (the quote must start on the cue line), then claimed: the keys come from cueLineId and the index, so a second page posting the same cue gets 'seen'.
+ * One hands row (card.out.cue = true, spend 0) is written for the actions this call won. -> the answer body.
+ */
+async function cueParsed({ db, campaign, t0, now, env, actIn }) {
+  const lines = await actLines(db, campaign, actIn.from, actIn.to);
+  if (!lines.some((l) => l.id === actIn.cueLineId)) throw new HttpError(400, 'cueLineId is not one of the lines read for from..to');
+  const v = validateActions(actIn.parsed, { state: actIn.state, lines, cue: { parsed: true, cueLineId: actIn.cueLineId } });
+  const log = await spendAndLastHands(db, campaign, t0), cap = capOf(env);
+  const at = new Date(now()).toISOString(), session = lines[lines.length - 1].session || '';
+  const rowOf = (acts) => ({ at, session, seat: 'hands', cfg: { model: 'cue', effort: '' }, usage: null, cost: 0, flags: ['act', 'cue'],
+    card: { act: 1, cue: 1, from: actIn.from, to: actIn.to, n: lines.length, cue_line: actIn.cueLineId, out: { cue: true }, actions: acts.map(slimAction), dropped: v.dropped, shown: 0 } });
+  const seen = new Set();
+  let todo = v.actions;
+  if (!todo.length) await logRow(db, campaign, rowOf([])).run();
+  for (let attempt = 0; todo.length && attempt < 2; attempt++) {
+    if (await claimRow(db, campaign, t0, rowOf(todo), todo.map((a) => a.key))) { todo = []; break; }
+    const r = await seenStmt(db, campaign, t0, todo.map((a) => a.key)).all();
+    for (const x of r.results || []) seen.add(x.k);
+    todo = todo.filter((a) => !seen.has(a.key));
+  }
+  for (const a of todo) seen.add(a.key);                          // lost the race twice over: someone else has it
+  return { actions: markSeen(v.actions, seen), dropped: v.dropped, spend: { tonight: dollars(log.spent), cap, tier: budgetTier(log.spent, cap), tick: 0 } };
+}
+const slimAction = (a) => ({ type: a.type, mode: a.mode, key: a.key, at: a.at, confidence: a.confidence });
 
 // the previous tick's Tripwire row (its flags), for the Ref follow-through
 const prevTripwireRd = (db, campaign, now) => rd(db.prepare("SELECT at, flags FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'tripwire' ORDER BY id DESC LIMIT 1").bind(campaign, new Date(now - FOLLOW_WINDOW_MS).toISOString()),
@@ -381,15 +437,17 @@ const lastShownRd = (db, campaign, now) => rd(db.prepare("SELECT MAX(at) AS at F
 
 // `timing` is { secs, stop, timeout? }: the call's wall-clock seconds and the provider's stop reason. They go into the card JSON of every
 // seat call (no column, no migration). A refusal is recorded as `refusal: 1` and is never shown; a call that hit its deadline as `timeout: 1`.
-function logRow(db, campaign, { at, session, seat, cfg, usage, cost, flags, card, timing }) {
+function logValues(campaign, { at, session, seat, cfg, usage, cost, flags, card, timing }) {
   const u = usage || {};
   if (card && typeof card === 'object' && timing) {
     card = { ...card, secs: timing.secs, ...(timing.stop ? { stop: timing.stop } : {}), ...(timing.stop === 'refusal' ? { refusal: 1, shown: 0 } : {}), ...(timing.stop === 'max_tokens' ? { truncated: 1, shown: 0 } : {}), ...(timing.timeout ? { timeout: 1, shown: 0 } : {}) };
   }
+  return [campaign, at, session || '', seat, cfg.model, cfg.effort || '', u.input_tokens || 0, u.output_tokens || 0,
+    u.cache_read_input_tokens || 0, u.cache_creation_input_tokens || 0, (cost || 0) * 100, (flags || []).join(','), card === undefined ? null : JSON.stringify(card)];
+}
+function logRow(db, campaign, row) {
   return db.prepare(`INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, input_tokens, output_tokens, cache_read, cache_write, cents, flags, card)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`)
-    .bind(campaign, at, session || '', seat, cfg.model, cfg.effort || '', u.input_tokens || 0, u.output_tokens || 0,
-      u.cache_read_input_tokens || 0, u.cache_creation_input_tokens || 0, (cost || 0) * 100, (flags || []).join(','), card === undefined ? null : JSON.stringify(card));
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`).bind(...logValues(campaign, row));
 }
 
 // a short, key-free description of a failed call: the HTTP status when there is one
@@ -499,6 +557,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     // the Screen's code-only actions need no model and no key
     if (action[1] === 'board') return json(await boardOf(db, campaign, t0));
     if (action[1] === 'portrait-add') return json(await addPortrait(db, campaign, screenIn));
+    if (actIn && actIn.parsed) return json(await cueParsed({ db, campaign, t0, now, env, actIn }));      // the page's own parse of a cue: no key, no model, no gate
     const client = clientFor(env);
     const cap = capOf(env);
     const start = action[1] === 'tick' ? await tickStart(db, campaign, t0, body) : null;      // the tick's opening reads, in one D1 round trip
@@ -523,7 +582,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     // The call has a deadline: an AbortSignal that ends the SDK's request and its retry, and a race here, because `call` is injected and a
     // fake may ignore the signal. A call that hits it returns like a failed call, with timing.timeout set. The lease is released in `finally`;
     // if even that never runs (the isolate's request was killed), the lease lapses on its own ttl. Throws a busy 429 when the seat is leased.
-    async function run(name, user) {
+    async function run(name, user, suffix = '') {
       const cfg = seats[name];
       const token = leases.acquire(name, now());
       if (!token) { const busy = new HttpError(429, 'this is busy'); busy.busy = true; throw busy; }
@@ -534,7 +593,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       let timer, timedOut = false;
       try {
         // a seat marked noPrefix (hands) gets neither the cached prefix nor the vault-built extra: its instructions and the user turn are all it reads
-        const instructions = (!cfg.noPrefix && extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions) + (STORY_SEATS.includes(name) ? storyBlock(storyText) : '');
+        const instructions = (!cfg.noPrefix && extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions) + (suffix ? '\n' + suffix : '') + (STORY_SEATS.includes(name) ? storyBlock(storyText) : '');
         const deadline = new Promise((_, reject) => { timer = setTimeout(() => { timedOut = true; reject(new Error('deadline')); ctl.abort(); }, deadlineMs); });
         const pending = (async () => call(client, { ...cfg, instructions, prefixFileId: cfg.noPrefix ? '' : fileId, user, deadlineMs, signal: ctl.signal }))();
         pending.catch(() => {});                    // if the deadline wins, this settles later (the abort): nobody is listening, and that is fine
@@ -563,20 +622,31 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       // The co-GM's hands (design 5.3/5.4). Core tier: it runs to the cap like Ref. One at a time, and not more often than every 8 s (from the log).
       // This route takes nothing from the page but the range and the state; it reads the lines itself, validates what the seat says, and applies nothing.
       // It does not call leases.takeReaped(): that belongs to the tick, whose health.reaped it would otherwise swallow.
-      const gate = canRun('hands', { now: t0, lastRun: handsLog.last === null ? {} : { hands: handsLog.last }, inFlight: live(), tier });
+      // A cue (the GM said "Blade, ..." and the page could not parse it) is the GM's own command: it skips the 8 s cooldown, and keeps the lease and the cap.
+      const cueMode = actIn.mode === 'cue';
+      const gate = canRun('hands', { now: t0, lastRun: cueMode || handsLog.last === null ? {} : { hands: handsLog.last }, inFlight: live(), tier });
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : gate.why === 'cooldown' ? 'the co-GM is cooling down' : 'this is busy');
       const lines = await actLines(db, campaign, actIn.from, actIn.to);                        // the one transcript read
       // No `health` in this answer: the page feeds health to healthStep, and an empty `skipped` there would reset the other seats' stuck streaks.
       if (!lines.length) return json({ actions: [], dropped: [], spend: spend() });       // nothing to read: no call, no row
-      const { cfg, r, timing } = await run('hands', handsUser({ state: actIn.state, stamp: hhmm(t0), talk: formatLines(lines, speakers) }));
+      const cueLine = cueMode && actIn.cueLineId ? lines.find((l) => l.id === actIn.cueLineId) : null;
+      if (cueMode && actIn.cueLineId && !cueLine) throw new HttpError(400, 'cueLineId is not one of the lines read for from..to');
+      const { cfg, r, timing } = await run('hands', handsUser({ state: actIn.state, stamp: hhmm(t0), talk: formatLines(lines, speakers), ...(cueLine ? { cue: formatLines([cueLine], speakers) } : {}) }), cueMode ? CUE_INSTRUCTION : '');
       const at = new Date(now()).toISOString();
       // run() nulls r.json for a refusal or a reply cut off at the limit: those show nothing
       const out = r && r.json && Array.isArray(r.json.actions) ? r.json : null;
-      const v = out ? validateActions(out.actions, { state: actIn.state, lines }) : { actions: [], dropped: [] };
-      await logRow(db, campaign, { at, session: lines[lines.length - 1].session || '', seat: 'hands', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['act'], timing,
-        card: { act: 1, from: actIn.from, to: actIn.to, n: lines.length, ...(out ? { out } : {}), actions: v.actions.map((a) => ({ type: a.type, mode: a.mode, key: a.key, at: a.at, confidence: a.confidence })), dropped: v.dropped, shown: 0,
-          ...(out ? {} : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : r && r.stop === 'max_tokens' ? 'cut off' : 'no JSON' }) } }).run();
-      return json({ actions: v.actions, dropped: v.dropped, spend: spend(), ...(errors.length ? { errors } : {}) });
+      const v = out ? validateActions(out.actions, { state: actIn.state, lines, cue: cueMode ? { parsed: false, cueLineId: actIn.cueLineId } : undefined }) : { actions: [], dropped: [] };
+      // The row is always written (the call cost money). In the SAME batch, right after it, the keys older rows already hold are read back (the earliest row holding a key owns it),
+      // so two pages whose calls overlap cannot both act on one key: the later row's actions come back 'seen'.
+      const row = { at, session: lines[lines.length - 1].session || '', seat: 'hands', cfg, usage: r && r.usage, cost: r && r.cost, flags: cueMode ? ['act', 'cue'] : ['act'], timing,
+        card: { act: 1, ...(cueMode ? { cue: 1, ...(actIn.cueLineId ? { cue_line: actIn.cueLineId } : {}) } : {}), from: actIn.from, to: actIn.to, n: lines.length, ...(out ? { out } : {}), actions: v.actions.map(slimAction), dropped: v.dropped, shown: 0,
+          ...(out ? {} : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : r && r.stop === 'max_tokens' ? 'cut off' : 'no JSON' }) } };
+      let seenKeys = new Set();
+      if (v.actions.length) {
+        const res = await db.batch([logRow(db, campaign, row), seenStmt(db, campaign, t0, v.actions.map((a) => a.key), true)]);
+        seenKeys = new Set(((res[1] && res[1].results) || []).map((x) => x.k));
+      } else await logRow(db, campaign, row).run();
+      return json({ actions: markSeen(v.actions, seenKeys), dropped: v.dropped, spend: spend(), ...(errors.length ? { errors } : {}) });
     }
 
     if (action[1] === 'portrait' || action[1] === 'prop' || action[1] === 'wire') {
