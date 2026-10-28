@@ -9,15 +9,46 @@
 
 import { isRepeatSlip, slipKeys, REPEAT_WINDOW_MS } from './conductor.js';
 import { capStory } from './prompts.js';
-import { refGlance, clerkGlance, mysteryGlance, showrunnerGlance, stallGlance, meanwhileGlance, handoutGlance } from './glance.js';
+import { REF_CHECKS, refGlance, clerkGlance, mysteryGlance, showrunnerGlance, stallGlance, meanwhileGlance, handoutGlance } from './glance.js';
 
 export const CARD_GAP_MS = 5 * 60 * 1000;     // at most one card in this long
 export const STALE_MS = 4 * 60 * 1000;        // a held-back Ref card older than this is no longer worth showing
+export const REF_SAME_SAID_MS = 3 * 60 * 1000;     // two Ref cards for the same check whose said-at times are this close are one slip
+export const REF_SAME_CHECK_MS = 4 * 60 * 1000;    // with a said-at missing from either, the same check this soon after the last card is a repeat
 export const PRIORITY = { ref: 4, clerk: 3, mystery: 2, showrunner: 1 };   // a slip beats a canon note beats a clue push beats pacing; the ledger has no card to win
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const clip = (s, n = 280) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, n);
 const seenKeys = (recent, now, windowMs) => new Set(recent.filter((r) => Number.isFinite(r.at) && now - r.at < windowMs).flatMap((r) => r.keys || []));
+
+/** "22:14" (or "22.14", "10:14 pm") -> minutes past midnight, or null when there is no time in it. */
+export function sayMinutes(s) {
+  const m = /(\d{1,2})\s*[:.h]\s*(\d{2})\b\s*([ap]\.?m\.?)?/i.exec(String(s || ''));
+  if (!m) return null;
+  let h = Number(m[1]); const mi = Number(m[2]);
+  if (m[3]) { const pm = /^p/i.test(m[3]); h = (h % 12) + (pm ? 12 : 0); }
+  return h > 23 || mi > 59 ? null : h * 60 + mi;
+}
+
+/** Minutes apart on the clock, either way round midnight. */
+const clockGap = (a, b) => { const d = Math.abs(a - b) % 1440; return Math.min(d, 1440 - d); };
+
+/**
+ * The second repeat rule for Ref (the first is isRepeatSlip's keys): the same check twice in a row, said close together, is one
+ * slip however the rule text is worded. recent: [{ at (ms), ref, check, said_at }] (shownCards). A Ref card shown in the last 10
+ * minutes with the same, valid check is a repeat when both said-at times are within 3 minutes of each other; when either has no
+ * said-at, when the checks match and that card was shown less than 4 minutes ago. No check, and the catch-all 'other', never match.
+ */
+export function isRepeatRef(json, recent = [], now = 0) {
+  const check = json && REF_CHECKS.includes(json.check) ? json.check : '';
+  if (!check || check === 'other') return false;   // 'other' is the catch-all: two different slips under it must both survive (the key rule still applies)
+  const mine = sayMinutes(json.said_at);
+  return recent.some((r) => {
+    if (!r || !r.ref || r.check !== check || !Number.isFinite(r.at) || now - r.at >= REPEAT_WINDOW_MS) return false;
+    const theirs = sayMinutes(r.said_at);
+    return mine !== null && theirs !== null ? clockGap(mine, theirs) <= REF_SAME_SAID_MS / 60000 : now - r.at < REF_SAME_CHECK_MS;
+  });
+}
 
 /** A name folded for comparison: accents stripped, lower case, anything but letters and digits collapsed to single spaces. */
 export function foldName(s) {
@@ -52,7 +83,7 @@ export function toCandidate(seat, json, { recent = [], now = 0, known = [] } = {
   if (!json || typeof json !== 'object') return null;
   if (seat === 'ref') {
     if (!json.slip || !clip(json.card)) return null;
-    if (isRepeatSlip(json, recent, now)) return null;
+    if (isRepeatSlip(json, recent, now) || isRepeatRef(json, recent, now)) return null;
     return { seat, text: clip(json.card), keys: slipKeys(json), detail: { said_at: json.said_at || '', rule: clip(json.rule, 200) },
       glance: refGlance({ card: clip(json.card), said_at: json.said_at, what_was_said: json.what_was_said, rule: clip(json.rule, 200), check: json.check }) };
   }
@@ -106,6 +137,7 @@ export function pendingRefs(rows, { recent = [], now = 0 } = {}) {
     if (!c || !c.text || !Number.isFinite(r.at) || now - r.at > STALE_MS) continue;
     const keys = c.keys || [];
     if (!keys.length || recent.some((x) => Number.isFinite(x.at) && now - x.at < REPEAT_WINDOW_MS && (x.keys || []).some((k) => keys.includes(k)))) continue;
+    if (isRepeatRef({ check: c.glance && c.glance.check, said_at: c.detail && c.detail.said_at }, recent, now)) continue;
     out.push({ seat: 'ref', text: c.text, keys, ...(c.detail ? { detail: c.detail } : {}), ...(c.glance ? { glance: c.glance } : {}), pending: true, born: r.at });
   }
   return out;

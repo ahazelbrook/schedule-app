@@ -917,7 +917,7 @@ never blocks. The Screen (next section) sends every item through it; a Ref card 
 a resistance roll offered after any consequence (harm, a complication, a worse position, a lost opportunity). A missing position or a missing resistance
 offer is a slip, not a style choice; silence stays the normal answer otherwise. Its answer carries `check` (order, resist, harm, cost, house or other),
 which the card keeps when it is one of those and drops otherwise; the card line is under 12 words. House rules are not in the repo: they reach Ref through
-the assist part's `extra.ref`, appended to its instructions. The card seats' one-line fields (Clerk, Stall's offer, Showrunner's advice, Mystery's
+the assist part's `extra.ref`, appended to its instructions. The Editor also drops a Ref card that repeats an earlier one: the same `check` as a Ref card shown in the last 10 minutes with the said-at times within 3 minutes of each other (or, when either has no said-at, the same check within 4 minutes), whatever the rule text; `other` is excluded, so two different catch-all slips both show. The card seats' one-line fields (Clerk, Stall's offer, Showrunner's advice, Mystery's
 `push_next`, Meanwhile's cutaway) ask for one sentence, under 12 words, the point first.
 
 - **The tick body takes `rolled: true`** (anything that is not a boolean is a 400). It adds the flag `rolled`, which wakes Ref (`WAKES.ref`); `rolled` is not a

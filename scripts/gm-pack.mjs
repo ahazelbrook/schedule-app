@@ -47,6 +47,9 @@
 //             gm-sync push uploads it to Anthropic's Files API and pushes only { file_id, hash, extra } (lib/assist-file.mjs). Tonight's prep is
 //             --assist-prep <vault-relative note> or "prep" in gm-private/assist-config.json; with neither, the gm_prep: true session note with the
 //             soonest date on or after today (else the newest) is picked and printed (lib/assist-prep.mjs; --today DD/MM/YYYY overrides today); warns past ~90k tokens.
+//             The part also carries extra.<seat> (text appended to that seat's instructions, e.g. a house-rule checklist for Ref): the body of a vault note, frontmatter
+//             stripped, at most 4,000 characters. "extra": { "<seat>": "<note>" } in assist-config.json, or --assist-extra <seat>=<note> (repeatable, wins per seat).
+//             src.extra.<seat> records { rel, chars, sha }, never the text.
 //
 // F (the figure map) comes from the vault page Tools/blades-68-npc-figure-map.md, read as JSON from fenced code blocks:
 //   ```json F          the whole F object (use this form for a small map), or
@@ -71,7 +74,7 @@ import { buildPrep } from "./lib/prep-export.mjs";
 import { packLosses, lossLines } from "./lib/pack-guard.mjs";
 import { buildScreen } from "./lib/screen-export.mjs";
 import { buildDowntime } from "./lib/downtime-export.mjs";
-import { buildAssist, readConfig } from "./lib/assist-export.mjs";
+import { buildAssist, readConfig, parseExtraSpec } from "./lib/assist-export.mjs";
 import { resolvePrep, dateKey } from "./lib/assist-prep.mjs";
 import { buildHandouts } from "./lib/handouts-export.mjs";
 import { buildAuthored } from "./lib/authored-export.mjs";
@@ -94,8 +97,9 @@ function args(argv) {
     else if (a === "--handouts-src") o.handoutsSrc = argv[++i];
     else if (a === "--assist-prep") o.assistPrep = argv[++i];
     else if (a === "--assist-config") o.assistConfig = argv[++i];
+    else if (a === "--assist-extra") { try { const [seat, rel] = parseExtraSpec(argv[++i] || ""); (o.assistExtra = o.assistExtra || {})[seat] = rel; } catch (e) { console.error(e.message); process.exit(2); } }
     else if (a === "--today") { o.today = argv[++i]; if (dateKey(o.today) === null) { console.error("--today takes DD/MM/YYYY"); process.exit(2); } }
-    else if (a === "-h" || a === "--help") { console.log("usage: node scripts/gm-pack.mjs --vault <vault dir> [--out gm-private/b68-gm-pack.json] [--quiet] [--allow-shrink]"); console.log("  [--assist-prep <vault-relative session note>] [--assist-config <file>] [--today DD/MM/YYYY]"); process.exit(0); }
+    else if (a === "-h" || a === "--help") { console.log("usage: node scripts/gm-pack.mjs --vault <vault dir> [--out gm-private/b68-gm-pack.json] [--quiet] [--allow-shrink]"); console.log("  [--assist-prep <vault-relative session note>] [--assist-config <file>] [--assist-extra <seat>=<vault-relative note>]... [--today DD/MM/YYYY]"); process.exit(0); }
     else { console.error("unknown argument: " + a); process.exit(2); }
   }
   if (!o.vault) { console.error("--vault <vault dir> is required (or set B68_VAULT)"); process.exit(2); }
@@ -817,8 +821,8 @@ function main() {
   // no --assist-prep and no "prep" in the config: pick the gm_prep: true session note by date (lib/assist-prep.mjs), and say which
   const picked = resolvePrep({ vault, assistPrep: a.assistPrep, config: assistConfig, today: a.today ? dateKey(a.today) : undefined });
   const assistPrep = picked ? picked.rel : a.assistPrep;
-  if (picked && picked.how !== "named") console.log("assist prep: " + picked.rel + " (picked by date" + (picked.how === "past" ? "; every prep note is dated before today, so this is the newest" : "") + ")");
-  const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: assistPrep, prepBy: picked ? picked.how : "named", prepDate: picked ? dateKey(picked.date) : null, config: assistConfig, playersFile: path.join(REPO, "gm-private", "players.json"), handouts: parts.handouts || null });
+  if (picked && (picked.how === "date" || picked.how === "past")) console.log("assist prep: " + picked.rel + " (picked by date" + (picked.how === "past" ? "; every prep note is dated before today, so this is the newest" : "") + ")");
+  const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: assistPrep, prepBy: picked ? picked.how : "cli", prepDate: picked ? dateKey(picked.date) : null, config: assistConfig, extra: a.assistExtra, playersFile: path.join(REPO, "gm-private", "players.json"), handouts: parts.handouts || null });
   const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart], ["handouts", buildHandoutsPart], ["assist", buildAssistPart]];
   let npcLeverage = 0;
   let locationExtraNames = [];
@@ -899,6 +903,7 @@ function main() {
     console.log("  downtime: " + (dp ? dp.T.benefit.length + " Benefits and " + dp.T.mishap.length + " Mishaps from " + path.basename(dp.rel) : "none (no note has gm_downtime: true)"));
     const as = parts.assist;
     console.log("  assist: " + (as ? "about " + as.src.tokens + " tokens, NPC cards " + (as.src.npcWith || 0) + " with How to play / " + (as.src.npcWithout || 0) + " without, players " + (as.src.players || "none") + " (" + as.src.file.split(" + ").map(f => path.basename(f)).join(", ") + ")" : "none (no rules, cast or prep note found)"));
+    if (as && as.src.extra) for (const [seat, e] of Object.entries(as.src.extra)) console.log("  assist extra: " + seat + " (" + e.chars + " chars, " + e.rel + ")");
   }
   for (const [name, part] of Object.entries(parts)) {
     const n = Buffer.byteLength(JSON.stringify(part));

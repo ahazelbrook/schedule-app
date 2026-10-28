@@ -12,6 +12,7 @@ import { SEATS, WAKES } from '../../functions/_lib/assist/seats.js';
 import { toCandidate, toVoice, toStall, toMeanwhile, toHandout, handoutIds, handoutTitles, pendingRefs, merge } from '../../functions/_lib/assist/editor.js';
 import { citeOf, splitSentence, restoreGlance, glance, bulletsOf, GLANCE_KIND, REF_CHECKS } from '../../functions/_lib/assist/glance.js';
 import { nightCards } from '../../functions/_lib/assist/cards.js';
+import { isRepeatSlip, slipKeys } from '../../functions/_lib/assist/conductor.js';
 import { makeHandler } from '../../functions/api/gm/assist.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -254,6 +255,45 @@ await test('a held Ref card shown on a later tick keeps its glance, in the answe
   assert.deepEqual([c.kind, c.headline, c.bullets, c.cite], ['rule', 'Stress was paid twice', ['[21:16] stress paid twice', 'Stress is paid once (p.20)'], 'p.20']);
   const back = (await body(await s.req('cards', 'GET'))).cards.find((x) => x.text === 'Stress was paid twice');
   assert.deepEqual([back.kind, back.headline, back.bullets, back.cite], [c.kind, c.headline, c.bullets, c.cite], 'the Editor\'s own row carries it too');
+});
+
+// ---------- Ref's second repeat rule, through the handler (S2b): the log rows must carry the check and said-at ----------
+const OTHER_WORDS = { what_was_said: 'the harbour toll went unpaid', rule: 'Costs are named up front (p.41)', card: 'Cost was never named' };
+await test('tick: a Ref card for the same check, said two minutes after one already shown and under other words, is dropped; a different check shows (the control)', async () => {
+  clock.t = Date.parse('2030-05-05T15:00:00.000Z');
+  const s = await setup(LEGACY);
+  s.replies.ref = { ...SLIP, check: 'order' };
+  await s.lines(3);
+  const first = await body(await s.req('tick', 'POST', {}));
+  assert.equal(first.cards.length, 1);
+  // the five-minute gap has opened; the old key rule cannot catch this one (other rule text, other stamp)
+  clock.t += 5.5 * MIN; await s.lines(3);
+  s.replies.ref = { slip: true, said_at: '21:16', ...OTHER_WORDS, check: 'order' };
+  assert.equal(isRepeatSlip(s.replies.ref, [{ at: T, keys: slipKeys(SLIP) }], T + MIN), false, 'precondition: the key rule alone lets it through');
+  const again = await body(await s.req('tick', 'POST', {}));
+  assert.deepEqual(again.cards, [], 'the same check two minutes of talk apart is one slip');
+  assert.ok(s.calls.filter((c) => c === 'ref').length >= 2, 'the Ref really ran on the second tick');
+  // control: the same words under a different check do show
+  clock.t += 5.5 * MIN; await s.lines(3);
+  s.replies.ref = { slip: true, said_at: '21:18', ...OTHER_WORDS, check: 'cost' };
+  const diff = await body(await s.req('tick', 'POST', {}));
+  assert.equal(diff.cards.length, 1); assert.equal(diff.cards[0].check, 'cost');
+});
+
+await test('tick: the Editor\'s own row for a held Ref card shown later counts as a shown Ref card for the rule; a row with no recorded check never matches', async () => {
+  clock.t = Date.parse('2030-05-05T16:00:00.000Z');
+  const s = await setup(LEGACY);
+  await s.db.prepare("INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, cents, flags, card) VALUES ('c', ?1, '3', 'editor', 'editor', '', 0, '', ?2)")
+    .bind(iso(clock.t - 6 * MIN), JSON.stringify({ seat: 'ref', text: 'Earlier card', keys: ['ref:at:21 10', 'ref:rule:earlier'], shown: 1, from_pending: 1, detail: { said_at: '21:10', rule: 'Earlier' }, glance: { kind: 'rule', headline: 'Earlier card', bullets: [], check: 'harm' } })).run();
+  s.replies.ref = { slip: true, said_at: '21:12', ...OTHER_WORDS, check: 'harm' };
+  await s.lines(3);
+  assert.deepEqual((await body(await s.req('tick', 'POST', {}))).cards, []);
+  const s2 = await setup(LEGACY);
+  await s2.db.prepare("INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, cents, flags, card) VALUES ('c', ?1, '3', 'ref', 'm', 'low', 0, '', ?2)")
+    .bind(iso(clock.t - 6 * MIN), JSON.stringify({ text: 'Older card', keys: ['ref:at:21 10', 'ref:rule:earlier'], shown: 1, detail: { said_at: '21:10', rule: 'Earlier' } })).run();
+  s2.replies.ref = { slip: true, said_at: '21:12', ...OTHER_WORDS, check: 'harm' };
+  await s2.lines(3);
+  assert.equal((await body(await s2.req('tick', 'POST', {}))).cards.length, 1, 'no recorded check, no second-rule match');
 });
 
 await test('GET /cards: log rows from before the glance (a ref row, a clerk row, an Editor row, a ledger row) restore as { kind by seat, headline: text, bullets: [] }', async () => {

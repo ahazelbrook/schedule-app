@@ -83,8 +83,13 @@ await test('pick: --assist-prep or "prep" in the config wins and is not a pick; 
   const v = mkvault();
   assert.equal(resolvePrep({ vault: v, today: TODAY }), null);
   sess(v, 'Group', 'g1', 'date: 01/11/2026\ngm_prep: true');
-  assert.deepEqual(resolvePrep({ vault: v, assistPrep: 'X/named.md', today: TODAY }), { rel: 'X/named.md', how: 'named', date: '', skipped: [] });
+  assert.deepEqual(resolvePrep({ vault: v, assistPrep: 'X/named.md', today: TODAY }), { rel: 'X/named.md', how: 'cli', date: '', skipped: [] });
   assert.equal(resolvePrep({ vault: v, config: { prep: 'X/cfg.md' }, today: TODAY }).rel, 'X/cfg.md');
+  assert.equal(resolvePrep({ vault: v, config: { prep: 'X/cfg.md' }, today: TODAY }).how, 'config');
+  // a config prep that is a known prep note carries its date, so the push guard can check it
+  const known = resolvePrep({ vault: v, config: { prep: rel('Group', 'g1') }, today: TODAY });
+  assert.deepEqual([known.how, known.date], ['config', '01/11/2026']);
+  assert.equal(resolvePrep({ vault: v, assistPrep: rel('Group', 'g1'), config: { prep: 'X/cfg.md' }, today: TODAY }).how, 'cli', 'the command line beats the config');
 });
 
 // ---------- the build records what the guard reads ----------
@@ -175,6 +180,25 @@ await test('push: a part with prep and Must land entries goes through without th
   assert.equal(rep.refused.length, 0);
   assert.equal(s.client.uploads.length, 1);
   assert.ok(inD1(s.exec, 'assist'));
+});
+
+await test('push: a prep named in the config and dated before today is refused; from the command line it is allowed; today or later is allowed; --allow-no-prep overrides', async () => {
+  const today = dateKey('08/11/2026');
+  const base = { prep: 'a/b.md', mustLand: 3, prepDate: dateKey('07/11/2026') };
+  const s = await pushSetup({ ...base, prepBy: 'config' });
+  const rep = await s.go({ today });
+  assert.match(rep.refused[0].why, /named in assist-config\.json and is dated before today/);
+  assert.match(rep.refused[0].why, /remove the key to pick by date/); assert.match(rep.refused[0].why, /--assist-prep/); assert.match(rep.refused[0].why, /--allow-no-prep/);
+  assert.equal(s.client.uploads.length, 0); assert.equal(inD1(s.exec, 'assist'), undefined);
+  const cli = await pushSetup({ ...base, prepBy: 'cli' });
+  assert.equal((await cli.go({ today })).refused.length, 0, 'a prep passed on the command line is exempt');
+  const onTheDay = await pushSetup({ ...base, prepBy: 'config' });
+  assert.equal((await onTheDay.go({ today: dateKey('07/11/2026') })).refused.length, 0, 'dated today');
+  const future = await pushSetup({ ...base, prepBy: 'config', prepDate: dateKey('09/11/2026') });
+  assert.equal((await future.go({ today })).refused.length, 0, 'dated later');
+  const over = await pushSetup({ ...base, prepBy: 'config' });
+  assert.equal((await over.go({ today, allowNoPrep: true })).refused.length, 0);
+  assert.equal(prepProblem({ ...base, prepBy: 'config' }, today).includes('assist-config.json'), true);
 });
 
 await test('push: a prep picked BY DATE that is dated before today is refused; the same note named explicitly is allowed; --allow-no-prep overrides', async () => {
@@ -290,7 +314,7 @@ await test('preflight --remote: differs before a push, matches after one, differ
   assert.match(t, /reuses the file/);
   assert.match(t, /has no timestamp: its modified time is used/);
   assert.equal(seen.length, 1);
-  assert.match(seen[0], /^SELECT part, version FROM gm_pack WHERE campaign = 'c'$/);
+  assert.equal(seen[0], "SELECT part, version, CASE WHEN part = 'assist' THEN json_extract(body, '$.extra') END AS extra FROM gm_pack WHERE campaign = 'c'");
 
   // the prefix changes: the next push would upload, so the versions differ
   const f = path.join(priv, 'b68-gm-pack.json'), pk = JSON.parse(fs.readFileSync(f, 'utf8'));
@@ -300,6 +324,59 @@ await test('preflight --remote: differs before a push, matches after one, differ
   assert.match(t, /prefix has changed since that upload/);
   assert.match(t, /version will differ/);
 
+});
+
+await test('preflight: the extra seats are listed by chars and note, never by text; none is said plainly', async () => {
+  const v = fixtureVault();
+  put(v, 'Notes/Checklist.md', '---\ntitle: t\n---\nInvented rule one.\nInvented rule two.\n');
+  const part = buildAssist({ vault: v, exportedAt: '2030-01-01T00:00:00.000Z', warn: () => {}, prep: rel('Group', 'night-x'), extra: { ref: 'Notes/Checklist.md' } });
+  const priv = fs.mkdtempSync(path.join(os.tmpdir(), 'assist-prep-pfx-'));
+  fs.writeFileSync(path.join(priv, 'b68-gm-pack.json'), JSON.stringify({ format: 1, parts: { assist: part } }));
+  const t = text(await preflight({ vault: v, privateDir: priv, root: priv, today: '28/10/2026' }));
+  assert.match(t, /assist extra: ref \(\d+ chars, Notes\/Checklist\.md\)/);
+  assert.ok(!t.includes('Invented rule'), 'the text is not printed');
+  assert.match(t, new RegExp('ref \\(' + part.extra.ref.length + ' chars'));
+  const { priv: priv2 } = await packFor(v, { prep: rel('Group', 'night-x') });
+  const pk = JSON.parse(fs.readFileSync(path.join(priv2, 'b68-gm-pack.json'), 'utf8')); delete pk.parts.assist.extra;
+  fs.writeFileSync(path.join(priv2, 'b68-gm-pack.json'), JSON.stringify(pk));
+  assert.match(text(await preflight({ vault: v, privateDir: priv2, root: priv2, today: '28/10/2026' })), /assist extra: none/);
+});
+
+await test('preflight --remote: the live extra seats match, differ, or are missing against the pack\'s', async () => {
+  const v = fixtureVault();
+  // vault note -> buildAssist -> pack file -> pushPack -> D1: the whole path the ticket is about, with an invented note
+  put(v, 'Notes/Checklist.md', '---\ntitle: t\n---\nInvented rule one.\nInvented rule two.\n');
+  const built = buildAssist({ vault: v, exportedAt: '2030-01-01T00:00:00.000Z', warn: () => {}, prep: rel('Group', 'night-x'), extra: { ref: 'Notes/Checklist.md' } });
+  const priv = fs.mkdtempSync(path.join(os.tmpdir(), 'assist-prep-pfr-'));
+  fs.writeFileSync(path.join(priv, 'b68-gm-pack.json'), JSON.stringify({ format: 1, parts: { assist: built } }));
+  const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });
+  const pf = () => preflight({ vault: v, privateDir: priv, root: priv, remote: true, campaign: 'c', exec, today: '28/10/2026' }).then(text);
+  assert.match(await pf(), /live extra ref: no live assist part/);
+  const client = mockClient();
+  const rep = newReport();
+  await pushPack({ exec, db: asD1(exec), campaign: 'c', report: rep, ledger: { pack: {} }, privateDir: priv, now: Date.now(), yes: true, assistClient: client });
+  assert.equal(rep.refused.length, 0, 'a part with src.extra is accepted by the push');
+  const live = JSON.parse(exec.db.prepare("SELECT body FROM gm_pack WHERE campaign='c' AND part='assist'").get().body);
+  assert.equal(live.extra.ref, 'Invented rule one.\nInvented rule two.', 'D1 holds the note body');
+  assert.ok(!('prefix' in live), 'and the prefix went to the Files API, not to D1');
+  assert.match(await pf(), /live extra ref: MATCHES the pack/);
+  const f = path.join(priv, 'b68-gm-pack.json'), pk = JSON.parse(fs.readFileSync(f, 'utf8'));
+  pk.parts.assist.extra.ref = 'changed';
+  fs.writeFileSync(f, JSON.stringify(pk));
+  assert.match(await pf(), /live extra ref: DIFFERS from the pack/);
+  pk.parts.assist.extra = { checker: 'x' }; pk.parts.assist.src.extra = {}; fs.writeFileSync(f, JSON.stringify(pk));
+  const t = await pf();
+  assert.match(t, /live extra ref: in the live part but not in the pack/);
+  assert.match(t, /live extra checker: NOT in the live part/);
+  delete pk.parts.assist.extra; fs.writeFileSync(f, JSON.stringify(pk));
+  assert.match(await pf(), /live extra ref: in the live part but not in the pack/);
+});
+
+await test('preflight: a config with an unknown extra seat is reported, not swallowed', async () => {
+  const v = fixtureVault();
+  const { priv } = await packFor(v, { prep: rel('Group', 'night-x') });
+  fs.writeFileSync(path.join(priv, 'assist-config.json'), JSON.stringify({ extra: { nobody: 'Notes/x.md' } }));
+  assert.match(text(await preflight({ vault: v, privateDir: priv, root: priv, today: '28/10/2026' })), /CONFIG: assist config: extra\.nobody is not a seat/);
 });
 
 await test('preflight --remote: a D1 failure is reported and exits 2, never thrown', async () => {

@@ -10,13 +10,14 @@
 //
 // Which notes: the rules and the cast have fixed places in the vault; tonight's prep is the session note the GM names.
 // The name comes from --assist-prep <vault-relative path> on gm-pack.mjs, else from gm-private/assist-config.json
-// ({ "prep": "<vault-relative path>", "rules": "...", "cast": "...", "factions": "..." }; every key optional), which the GM's PC supplies.
+// ({ "prep": "<vault-relative path>", "rules": "...", "cast": "...", "factions": "...", "extra": { "<seat>": "<vault-relative note>" } }; every key optional), which the GM's PC supplies.
 // With neither there is no prep in the prefix and the build says so.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { ROOT, NPCS, GROUP } from './vault.mjs';
+import { SEATS } from '../../functions/_lib/assist/seats.js';
 
 export const DEFAULT_RULES = ROOT + '/Rules/blades-68-table-reference.md';
 export const DEFAULT_CAST = ROOT + '/Tools/blades-68-npc-cast.md';
@@ -41,7 +42,7 @@ export function contextBlock(file, text) {
   return '<context name="' + path.basename(file) + '">\n' + text + '\n</context>';
 }
 
-/** gm-private/assist-config.json -> { prep?, rules?, cast? }; a missing file is {}, a broken one throws. */
+/** gm-private/assist-config.json -> { prep?, rules?, cast?, factions?, extra? }; a missing file is {}, a broken one throws. */
 export function readConfig(file) {
   if (!file || !fs.existsSync(file)) return {};
   let c;
@@ -53,7 +54,62 @@ export function readConfig(file) {
     if (typeof c[k] !== 'string' || !c[k].trim()) throw new Error('assist config: ' + k + ' must be a vault-relative path');
     out[k] = c[k].trim();
   }
+  if (c.extra !== undefined) {
+    if (!c.extra || typeof c.extra !== 'object' || Array.isArray(c.extra)) throw new Error('assist config: extra must be an object of { "<seat>": "<vault-relative note>" }');
+    out.extra = {};
+    for (const [seat, rel] of Object.entries(c.extra)) {
+      if (!Object.prototype.hasOwnProperty.call(SEATS, seat)) throw new Error('assist config: extra.' + seat + ' is not a seat (' + Object.keys(SEATS).join(', ') + ')');
+      if (typeof rel !== 'string' || !rel.trim()) throw new Error('assist config: extra.' + seat + ' must be a vault-relative path');
+      out.extra[seat] = rel.trim();
+    }
+  }
   return out;
+}
+
+// ---------- seat extras ----------
+// The assist part's `extra.<seat>`: text the Worker appends to that seat's instructions (functions/api/gm/assist.js). It is read from a
+// vault note (assist-config.json "extra": { "<seat>": "<vault-relative note>" }, or --assist-extra <seat>=<note> on gm-pack, which wins per
+// seat), with the note's YAML frontmatter stripped. The part carries the text; `src.extra.<seat>` records only { rel, chars, sha }.
+export const EXTRA_MAX = 4000;
+
+/** A note's body: the leading YAML frontmatter block (--- ... ---) removed, trimmed. */
+export function stripFrontmatter(text) {
+  const t = String(text).replace(/^﻿/, '');
+  const m = /^---[ \t]*\n[\s\S]*?\n---[ \t]*(?:\n|$)/.exec(t);
+  return (m ? t.slice(m[0].length) : t).trim();
+}
+
+/** "ref=Notes/Checks.md" -> ['ref', 'Notes/Checks.md']; the seat must be one of SEATS. */
+export function parseExtraSpec(spec) {
+  const i = String(spec).indexOf('=');
+  const seat = i > 0 ? spec.slice(0, i).trim() : '', rel = i > 0 ? spec.slice(i + 1).trim() : '';
+  if (!seat || !rel) throw new Error('assist extra: ' + spec + ' is not <seat>=<vault-relative note>');
+  if (!Object.prototype.hasOwnProperty.call(SEATS, seat)) throw new Error('assist extra: ' + seat + ' is not a seat (' + Object.keys(SEATS).join(', ') + ')');
+  return [seat, rel];
+}
+
+/**
+ * Read the extra notes. map: { seat: vault-relative note } -> { extra: { seat: text }, src: { seat: { rel, chars, sha } } }, or null for no map.
+ * A missing note, or one with no body once the frontmatter is gone, is an error (a silent gap would run the seat without its checklist).
+ * Text over EXTRA_MAX characters is clipped, with a warning; sha is of the text as sent.
+ */
+export function buildExtra(vault, map, warn = () => {}) {
+  const seats = Object.keys(map || {});
+  if (!seats.length) return null;
+  const extra = {}, src = {};
+  for (const seat of seats.sort()) {
+    if (!Object.prototype.hasOwnProperty.call(SEATS, seat)) throw new Error('assist extra: ' + seat + ' is not a seat (' + Object.keys(SEATS).join(', ') + ')');
+    const rel = map[seat], file = inside(vault, rel);
+    if (!fs.existsSync(file)) throw new Error('assist extra: the ' + seat + ' note ' + rel + ' does not exist in the vault');
+    let body = stripFrontmatter(readText(file));
+    if (!body) throw new Error('assist extra: the ' + seat + ' note ' + rel + ' has no body once its frontmatter is stripped');
+    if (body.length > EXTRA_MAX) {
+      warn('assist extra: the ' + seat + ' note ' + rel + ' is ' + body.length + ' characters; clipped to ' + EXTRA_MAX + ' (' + (body.length - EXTRA_MAX) + ' left out)');
+      body = body.slice(0, EXTRA_MAX).trimEnd();
+    }
+    extra[seat] = body; src[seat] = { rel: posix(rel), chars: body.length, sha: sha(body) };
+  }
+  return { extra, src };
 }
 
 function inside(vault, rel) {
@@ -368,12 +424,12 @@ export function playersText(map) {
 }
 
 /**
- * Build the assist part. opts: { vault, exportedAt, warn, prep (vault-relative), rules, cast, config (parsed) }.
+ * Build the assist part. opts: { vault, exportedAt, warn, prep (vault-relative), rules, cast, config (parsed), extra ({ seat: note }, over config.extra) }.
  * After the rules and cast come the NPC cards' How to play blocks and the player table (from `player:` on PC notes, overridden by
  * `playersFile`, gm-private/players.json), then the handouts list (`handouts`: the pack's handouts part, if any), then the factions (name, tier, standing, clocks; from the Group campaign's faction board), then never-reveal; tonight's prep stays last. Returns null when no note could be read. A missing note is a warning, not a failure, except a prep path the GM named
  * explicitly (a typo there would quietly leave tonight's prep out), which throws.
  */
-export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, cast, config = {}, playersFile = '', handouts = null, factions, prepBy = '', prepDate = null }) {
+export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, cast, config = {}, playersFile = '', handouts = null, factions, prepBy = '', prepDate = null, extra: extraArg }) {
   const want = [
     ['rules', rules || config.rules || DEFAULT_RULES, false],
     ['cast', cast || config.cast || DEFAULT_CAST, false],
@@ -432,11 +488,15 @@ export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, c
     blocks.push(contextBlock(file, text)); used.push({ rel: posix(rel), sha: sha(text) });
   }
   if (!blocks.length) return null;
+  // seat extras: the config's, with --assist-extra (extraArg) winning per seat. Errors here stop the build; the prefix is unaffected.
+  const ex = buildExtra(vault, { ...(config.extra || {}), ...(extraArg || {}) }, warn);
+  if (ex) stats.extra = ex.src;
   const prefix = blocks.join('\n\n');
   const tokens = estimateTokens(prefix);
   if (tokens > TOKEN_WARN) warn('assist: the prefix is about ' + Math.round(tokens / 1000) + 'k tokens (over ' + TOKEN_WARN / 1000 + 'k; Haiku\'s price rises above 100k): trim the prep or the cast');
   return {
     src: { file: used.map((u) => u.rel).join(' + ').slice(0, 1200), blockSha: sha(used.map((u) => u.sha).join('\n')), exportedAt, tokens, ...stats },
     prefix,
+    ...(ex ? { extra: ex.extra } : {}),
   };
 }

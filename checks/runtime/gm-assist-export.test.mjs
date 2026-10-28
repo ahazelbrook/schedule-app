@@ -7,6 +7,11 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { buildAssist, extractHowToPlay, collectHowToPlay, playersFromNotes, readPlayersFile, mergePlayers, DEFAULT_RULES, DEFAULT_CAST, NPC_BLOCK_NAME, PLAYERS_NAME, FACTIONS_NAME, CHARACTERS, extractFactions, factionsText, findFactionNote, readConfig, TOKEN_WARN, estimateTokens } from '../../scripts/lib/assist-export.mjs';
 import { NPCS, GROUP } from '../../scripts/lib/vault.mjs';
+import { EXTRA_MAX, parseExtraSpec } from '../../scripts/lib/assist-export.mjs';
+import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 let failed = 0, passed = 0;
 async function test(name, fn) { try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); } }
@@ -181,6 +186,70 @@ await test('the faction note: found by name in the Group folder, a config path w
   r = build({ prep: 'Notes/Huge.md' });
   assert.ok(r.w.some((m) => /prefix is about \d+k tokens \(over 90k/.test(m)), r.w.join(' | '));
   assert.ok(names(r.part).includes(FACTIONS_NAME) && names(r.part).at(-1) === 'Huge.md');
+});
+
+// ---------- seat extras (S2b): invented two-line notes ----------
+const CHECKLIST = '---\ntitle: Invented checks\ntags:\n  - x\n---\n\nInvented check one: say the thing.\nInvented check two: do the other thing.\n\n';
+await test('extra: the config note becomes extra.<seat>, frontmatter stripped and trimmed; src records rel, chars and sha, never the text', () => {
+  put('Notes/Checks.md', CHECKLIST);
+  const config = readConfig(put('cfg-extra.json', JSON.stringify({ prep: PREP, extra: { ref: 'Notes/Checks.md' } })));
+  assert.deepEqual(config.extra, { ref: 'Notes/Checks.md' });
+  const { part, w } = build({ config });
+  const want = 'Invented check one: say the thing.\nInvented check two: do the other thing.';
+  assert.deepEqual(part.extra, { ref: want });
+  assert.deepEqual(part.src.extra, { ref: { rel: 'Notes/Checks.md', chars: want.length, sha: crypto.createHash('sha256').update(want).digest('hex') } });
+  assert.ok(!JSON.stringify(part.src).includes('Invented check'), 'the text is not in src');
+  assert.ok(!part.prefix.includes('Invented check'), 'nor in the prefix');
+  assert.ok(!w.some((m) => /extra/.test(m)), 'no warning');
+  assert.ok(!('extra' in build().part), 'no extra configured, no extra key');
+  assert.ok(!('extra' in build().part.src));
+});
+
+await test('extra: a note over the cap is clipped with a warning that says how much; a note under it is not', () => {
+  put('Notes/Long.md', '---\na: b\n---\n' + 'x'.repeat(EXTRA_MAX + 250) + '\n');
+  const { part, w } = build({ extra: { ref: 'Notes/Long.md' } });
+  assert.equal(part.extra.ref.length, EXTRA_MAX);
+  assert.equal(part.src.extra.ref.chars, EXTRA_MAX);
+  assert.equal(w.filter((m) => /clipped to 4000 \(250 left out\)/.test(m)).length, 1, w.join(' | '));
+  put('Notes/Exact.md', 'y'.repeat(EXTRA_MAX));
+  const r = build({ extra: { ref: 'Notes/Exact.md' } });
+  assert.equal(r.part.extra.ref.length, EXTRA_MAX); assert.ok(!r.w.some((m) => /clipped/.test(m)));
+});
+
+await test('extra: an empty body (frontmatter only, or blank), a missing note and an unknown seat are errors', () => {
+  put('Notes/FmOnly.md', '---\ntitle: t\n---\n\n   \n');
+  put('Notes/Blank.md', '  \n');
+  assert.throws(() => build({ extra: { ref: 'Notes/FmOnly.md' } }), /ref note Notes\/FmOnly\.md has no body/);
+  assert.throws(() => build({ extra: { ref: 'Notes/Blank.md' } }), /has no body/);
+  assert.throws(() => build({ extra: { ref: 'Notes/Nope.md' } }), /ref note Notes\/Nope\.md does not exist/);
+  assert.throws(() => build({ extra: { nobody: 'Notes/Checks.md' } }), /nobody is not a seat/);
+  assert.throws(() => build({ extra: { ref: '../outside.md' } }), /outside the vault/);
+  assert.throws(() => readConfig(put('bad1.json', JSON.stringify({ extra: { nobody: 'Notes/Checks.md' } }))), /extra\.nobody is not a seat/);
+  assert.throws(() => readConfig(put('bad2.json', JSON.stringify({ extra: { ref: '' } }))), /extra\.ref must be a vault-relative path/);
+  assert.throws(() => readConfig(put('bad3.json', JSON.stringify({ extra: ['ref'] }))), /extra must be an object/);
+  assert.throws(() => readConfig(put('bad4.json', JSON.stringify({ extra: { toString: 'x' } }))), /not a seat/);
+});
+
+await test('extra: the CLI map wins per seat over the config, and adds seats the config lacks', () => {
+  put('Notes/Checks.md', CHECKLIST);
+  put('Notes/Other.md', 'A different invented note.');
+  put('Notes/Third.md', 'Third invented note.');
+  const config = { extra: { ref: 'Notes/Checks.md', clerk: 'Notes/Third.md' } };
+  const { part } = build({ config, extra: { ref: 'Notes/Other.md' } });
+  assert.deepEqual(part.extra, { clerk: 'Third invented note.', ref: 'A different invented note.' });
+  assert.deepEqual(Object.keys(part.src.extra), ['clerk', 'ref']);
+  assert.equal(part.src.extra.ref.rel, 'Notes/Other.md');
+});
+
+await test('extra: --assist-extra is parsed (seat=note, the seat checked); gm-pack refuses a bad one before it reads anything', () => {
+  assert.deepEqual(parseExtraSpec('ref=Notes/Checks.md'), ['ref', 'Notes/Checks.md']);
+  assert.deepEqual(parseExtraSpec(' ref = Notes/My Checks.md '), ['ref', 'Notes/My Checks.md']);
+  assert.throws(() => parseExtraSpec('Notes/Checks.md'), /not <seat>=<vault-relative note>/);
+  assert.throws(() => parseExtraSpec('ref='), /not <seat>=/);
+  assert.throws(() => parseExtraSpec('nobody=Notes/x.md'), /nobody is not a seat/);
+  const run = (...a) => spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'gm-pack.mjs'), ...a], { encoding: 'utf8' });
+  const bad = run('--assist-extra', 'nobody=Notes/x.md');
+  assert.equal(bad.status, 2); assert.match(bad.stderr, /nobody is not a seat/);
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

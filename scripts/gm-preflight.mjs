@@ -7,7 +7,7 @@
 // that have cues, the prefix's token count, the Files API file's age (assist-file.json has no timestamp, so its mtime is used and
 // the output says so), and whether the next push would upload a new file. With --remote it also reads the live part versions from
 // D1 (one read-only SELECT of part, version) and says whether the live assist part is the one a push of the local pack would
-// leave. It never writes: not to D1, not to Anthropic, not to the vault. Exit 0 fine, 1 the part would be refused, 2 stopped.
+// leave, and whether its extra.<seat> texts match the pack's (by sha). It never writes: not to D1, not to Anthropic, not to the vault. Exit 0 fine, 1 the part would be refused, 2 stopped.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -91,9 +91,18 @@ export async function preflight(opts = {}) {
   // would the vault pick something else now?
   if (opts.vault) {
     let cfg = {};
-    try { cfg = readConfig(path.join(privateDir, 'assist-config.json')); } catch (_) { cfg = {}; }
+    try { cfg = readConfig(path.join(privateDir, 'assist-config.json')); } catch (e) { say('  CONFIG: ' + e.message + ' (gm:pack stops on this too)'); cfg = {}; }
     const pick = resolvePrep({ vault: opts.vault, config: cfg, today });
     if (pick && pick.rel !== prepKey) say('  NOTE: the vault now picks ' + pick.rel + ' (' + pick.how + '); the pack was built with ' + (prepKey || 'no prep') + ': run npm run gm:pack');
+  }
+  // seat extras: text the Worker appends to a seat's instructions (never printed; chars and the note only)
+  const exSrc = isObj(src.extra) ? src.extra : {}, exBody = isObj(part.extra) ? part.extra : {};
+  const exSeats = [...new Set([...Object.keys(exSrc), ...Object.keys(exBody)])].sort();
+  const exText = (seat) => (typeof exBody[seat] === 'string' ? exBody[seat] : null);
+  if (!exSeats.length) say('assist extra: none (no "extra" in assist-config.json or --assist-extra: no seat has a checklist beyond its prompt)');
+  for (const seat of exSeats) {
+    const e = isObj(exSrc[seat]) ? exSrc[seat] : {}, t = exText(seat);
+    say('assist extra: ' + seat + ' (' + (t !== null ? t.length : Number.isInteger(e.chars) ? e.chars : '?') + ' chars, ' + (e.rel || 'note not recorded') + ')' + (t === null ? '   NOT IN THE PART BODY: rebuild the pack' : ''));
   }
   // never-reveal
   const nv = neverEntries(prefix);
@@ -127,10 +136,21 @@ export async function preflight(opts = {}) {
     const campaign = opts.campaign || toml.campaign;
     try {
       const exec = opts.exec || wranglerExec({ root, database: toml.database });
-      const [r] = await exec.batch(bindSql('SELECT part, version FROM gm_pack WHERE campaign = ?1', [campaign]));
+      const [r] = await exec.batch(bindSql("SELECT part, version, CASE WHEN part = 'assist' THEN json_extract(body, '$.extra') END AS extra FROM gm_pack WHERE campaign = ?1", [campaign]));
       const live = new Map(((r && r.results) || []).map((x) => [x.part, x.version]));
       const liveV = live.get('assist');
+      let liveExtra = {};
+      const row = ((r && r.results) || []).find((x) => x.part === 'assist');
+      if (row && row.extra) { try { const j = typeof row.extra === 'string' ? JSON.parse(row.extra) : row.extra; if (isObj(j)) liveExtra = j; } catch (_) { liveExtra = {}; } }
       say('live (D1):    ' + live.size + ' part(s); assist ' + (liveV ? 'v' + liveV : 'not there'));
+      // the live part's extra seats against the pack's: by seat, by the sha of the text as sent (the text itself is never printed)
+      const liveSeats = Object.keys(liveExtra).sort();
+      if (!exSeats.length && !liveSeats.length) say('               live extra: none, as in the pack');
+      for (const seat of exSeats) {
+        const lv = typeof liveExtra[seat] === 'string' ? liveExtra[seat] : null;
+        say('               live extra ' + seat + ': ' + (!liveV ? 'no live assist part' : lv === null ? 'NOT in the live part' : exText(seat) !== null && sha256(lv) === sha256(exText(seat)) ? 'MATCHES the pack' : 'DIFFERS from the pack'));
+      }
+      for (const seat of liveSeats) if (!exSeats.includes(seat)) say('               live extra ' + seat + ': in the live part but not in the pack (a push removes it)');
       if (state && hash && state.hash === hash) {
         const body = { file_id: state.file_id, hash, ...(isObj(part.extra) ? { extra: part.extra } : {}) };
         const c = cleanPart({ part: 'assist', src, body });
