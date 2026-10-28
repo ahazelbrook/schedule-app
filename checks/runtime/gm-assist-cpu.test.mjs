@@ -38,7 +38,7 @@ await test('clock: equals Intl on 40,000 pseudo-random instants 2008-2060, and m
 
 await test('client cache: one client per key, a different key gets its own, and the size stays bounded', () => {
   let built = 0;
-  const make = (k) => { built++; return { k }; };
+  const make = (k) => { built++; return { apiKey: k }; };
   const a = cachedClient('sk-test-aaaa', make), a2 = cachedClient('sk-test-aaaa', make);
   assert.equal(a, a2); assert.equal(built, 1);
   const b = cachedClient('sk-test-bbbb', make);
@@ -46,6 +46,16 @@ await test('client cache: one client per key, a different key gets its own, and 
   assert.equal(cachedClient('sk-test-aaaa', make), a, 'the first key is still cached');
   for (let i = 0; i < 20; i++) cachedClient('sk-test-fill-' + i, make);
   assert.ok(clientCacheSize() <= 4, 'size ' + clientCacheSize());
+});
+
+await test('client cache: a hit whose client holds a different key is rebuilt, never reused', () => {
+  let built = 0;
+  const make = (k) => { built++; return { apiKey: k }; };
+  const a = cachedClient('sk-test-cas-0001', make);
+  a.apiKey = 'sk-test-someone-else';                 // what a hash collision would look like: the entry under this key holds another key
+  const b = cachedClient('sk-test-cas-0001', make);
+  assert.notEqual(a, b); assert.equal(built, 2); assert.equal(b.apiKey, 'sk-test-cas-0001');
+  assert.equal(cachedClient('sk-test-cas-0001', make), b, 'and the rebuilt client is the one cached now');
 });
 
 await test('client cache: the default is a real SDK client, shared, built from the key given', () => {

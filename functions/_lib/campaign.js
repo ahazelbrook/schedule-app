@@ -380,7 +380,9 @@ export async function joinOverlayClock(db, campaign, amb) {
   const vis = typeof o.clockId === 'string' && ID_RE.test(o.clockId) ? visibleClock(await loadClocks(db, campaign), o.clockId) : null;
   const next = { ...amb.doc };
   if (!vis) { delete next.overlay; return { amb: { ...amb, doc: next }, dropped: true, follows: false }; }
-  next.overlay = { ...o, name: vis.name, size: vis.size, filled: vis.filled };
+  // built from named keys, never by spreading the stored overlay: whatever else a stored row holds (an old shape, a stray key) is not served
+  next.overlay = { id: o.id, kind: o.kind, ms: o.ms, at: o.at, age: o.age, auto: o.auto, clockId: o.clockId, name: vis.name, size: vis.size, filled: vis.filled };
+  for (const k of Object.keys(next.overlay)) if (next.overlay[k] === undefined) delete next.overlay[k];       // absent stays absent (no `age: null`)
   return { amb: { ...amb, doc: next }, dropped: false, follows: true };
 }
 

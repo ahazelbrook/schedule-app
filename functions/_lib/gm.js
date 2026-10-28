@@ -288,15 +288,23 @@ export async function loadDisplay(db, campaign) {
  * namesHit(text, names) -> true when the text holds any of the names as a whole word, any case ("Vex" is hit by "vex said", not by "Vexing").
  * Whole word is Unicode-aware (letters, digits and _ are word characters), spaces in a name match any run of spaces, a name's own regex
  * characters are escaped, names under two characters are not scanned, and a name that cannot be turned into a pattern counts as a hit
- * (fail closed). The same rule as the GM page's namesHit (app/gm-page.js), which a test holds to this one on a shared list of cases.
+ * (fail closed). Both sides are folded with NFKC first (full-width letters, ligatures and the like read as the plain letters), and only when
+ * they hold a non-ASCII character, so an ASCII line costs no ICU work. The same rule as the GM page's namesHit (app/gm-page.js), which a
+ * test holds to this one on a shared list of cases.
  */
+const nfkc = (s) => (/[^\x00-\x7f]/.test(s) ? s.normalize('NFKC') : s);
 export function namesHit(text, names) {
-  const t = typeof text === 'string' ? text : '';
-  return (Array.isArray(names) ? names : []).some((n) => {
-    n = typeof n === 'string' ? n.replace(/\s+/g, ' ').trim() : '';
-    if (n.length < 2) return false;
-    const src = n.split(' ').map((w) => w.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('\\s+');
-    try { return new RegExp('(?:^|[^\\p{L}\\p{N}_])' + src + '(?![\\p{L}\\p{N}_])', 'iu').test(t); } catch (_) { return true; }
+  const raw = typeof text === 'string' ? text : '';
+  const texts = [raw]; const folded = nfkc(raw); if (folded !== raw) texts.push(folded);      // the raw text always counts: folding can only add hits, never remove one
+  return (Array.isArray(names) ? names : []).some((n0) => {
+    if (typeof n0 !== 'string') return false;
+    const forms = [n0]; const fn = nfkc(n0); if (fn !== n0) forms.push(fn);
+    return forms.some((n1) => {
+      const n = n1.replace(/\s+/g, ' ').trim();
+      if (n.length < 2) return false;
+      const src = n.split(' ').map((w) => w.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('\\s+');
+      try { const re = new RegExp('(?:^|[^\\p{L}\\p{N}_])' + src + '(?![\\p{L}\\p{N}_])', 'iu'); return texts.some((t) => re.test(t)); } catch (_) { return true; }
+    });
   });
 }
 
@@ -497,6 +505,18 @@ export function cleanAmbientPatch(raw) {
   return patch;
 }
 
+/**
+ * The optional `ifOverlay` of a PATCH /api/gm/ambient body: an overlay id, valid only beside `overlay: null` (it makes that clear a
+ * compare-and-swap, see patchAmbient). Returns the id, or null when the body has none. 400 for anything else (not a string, empty,
+ * longer than an overlay id, or beside a patch that does not clear the overlay), so a stray key never turns into a silent no-op.
+ */
+export function cleanIfOverlay(raw, patch) {
+  if (!raw || raw.ifOverlay === undefined || raw.ifOverlay === null) return null;
+  if (typeof raw.ifOverlay !== 'string' || !raw.ifOverlay.trim() || raw.ifOverlay.length > OVERLAY.id) throw new HttpError(400, 'ifOverlay must be an overlay id');
+  if (!patch || !('overlay' in patch) || patch.overlay !== null) throw new HttpError(400, 'ifOverlay goes only with overlay: null');
+  return raw.ifOverlay;
+}
+
 async function ambientRow(db, campaign) {
   return db.prepare('SELECT seq, updated_at, doc FROM gm_ambient WHERE campaign = ?1').bind(campaign).first();
 }
@@ -547,11 +567,19 @@ export async function loadAmbient(db, campaign) {
  * updated_at check as patchState (409 when it keeps colliding); the stored document is at most LIMITS.ambient bytes (413).
  * An empty patch changes nothing and does not move seq. Returns { seq, doc, updatedAt }.
  */
-export async function patchAmbient(db, campaign, patch) {
+export async function patchAmbient(db, campaign, patch, opts) {
+  const ifOverlay = opts && typeof opts.ifOverlay === 'string' ? opts.ifOverlay : null;
   for (let attempt = 0; attempt < AMBIENT_ATTEMPTS; attempt++) {
     const row = await ambientRow(db, campaign);
     const cur = ambientOf(row);
     if (!Object.keys(patch).length) return cur;
+    /* compare-and-swap: with `ifOverlay` the patch lands only while the stored overlay still has that id. The check runs on the row read for
+       THIS attempt, and the write below is guarded by that row's updated_at, so a change in between makes the write miss and the loop re-reads:
+       an overlay set after the caller looked is never cleared by it. A mismatch returns the stored document unchanged (unchanged: true). */
+    if (ifOverlay !== null) {
+      const o = cur.doc.overlay;
+      if (!isPlainObject(o) || o.id !== ifOverlay) return { ...cur, unchanged: true };
+    }
     const doc = { ...cur.doc };
     for (const [k, v] of Object.entries(patch)) {
       if (k === 'skip') doc.skip = (doc.skip | 0) + 1;

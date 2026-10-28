@@ -85,18 +85,28 @@ try {
   const crewSyncOnly = (rq) => {
     if (rq.method() !== 'PATCH' || !/\/api\/gm\/ambient$/.test(rq.url())) return false;
     let b = null; try { b = JSON.parse(rq.postData() || 'null'); } catch (_) { return false; }
-    if (b && typeof b === 'object' && Object.keys(b).join() === 'crew' && !!b.crew && Object.keys(b.crew).every((k) => (k === 'heat' || k === 'wanted') && typeof b.crew[k] === 'number')) return true;
-    return autopilotOnly(b);
+    if (b && typeof b === 'object' && Object.keys(b).join() === 'crew' && !!b.crew && Object.keys(b.crew).every((k) => (k === 'heat' || k === 'wanted') && typeof b.crew[k] === 'number')) { exempt.crew++; return true; }
+    if (autopilotOnly(b)) { exempt.autopilot++; return true; }
+    return false;
   };
+  const exempt = { crew: 0, autopilot: 0 };         // how many ambient bodies the ledger let through, so a ledger that exempts nothing (or everything) shows
   // The iPad autopilot (A2) is on by default: a clock the co-GM adds is a visible clock appearing on the table, so it lays a clock overlay over the iPad (an ambient PATCH of
-  // exactly { overlay: { auto: true, ... }, auto: true }), clears it ({ overlay: null }) and flips its AUTO flag ({ auto: true | false }). That is the autopilot, not the co-GM,
-  // and it carries an id only; any other ambient write still counts.
+  // exactly { overlay: { auto: true, ... }, auto: true }), clears it ({ overlay: null, ifOverlay: <its id> }, a compare-and-swap) and flips its AUTO flag ({ auto: true | false }).
+  // That is the autopilot, not the co-GM, and it carries an id only. Every shape is a STRICT key list (the keys listed and no others, with their types), so a co-GM write that
+  // happens to share a key with one of them is still counted; any other ambient write counts.
+  const sameKeys = (o, list) => !!o && typeof o === 'object' && Object.keys(o).sort().join() === list.slice().sort().join();
   const autopilotOnly = (b) => {
     if (!b || typeof b !== 'object') return false;
     const keys = Object.keys(b).sort().join();
     if (keys === 'auto') return typeof b.auto === 'boolean' || b.auto === null;
-    if (keys === 'overlay') return b.overlay === null;
-    if (keys === 'auto,overlay') return !!b.overlay && b.overlay.auto === true && b.auto === true && (b.overlay.kind === 'clock' || b.overlay.kind === 'npc') && !('name' in b.overlay);
+    if (keys === 'ifOverlay,overlay') return b.overlay === null && typeof b.ifOverlay === 'string' && b.ifOverlay.length > 0;
+    if (keys === 'auto,overlay') {
+      const o = b.overlay;
+      if (b.auto !== true || !o || o.auto !== true || typeof o.id !== 'string' || !Number.isInteger(o.ms)) return false;
+      if (o.kind === 'clock') return sameKeys(o, ['auto', 'clockId', 'id', 'kind', 'ms']) && typeof o.clockId === 'string';
+      if (o.kind === 'npc') return sameKeys(o, ['auto', 'id', 'kind', 'ms', 'npcId']) && typeof o.npcId === 'string';
+      return false;
+    }
     return false;
   };
   page.on('request', (r) => { if (r.url().startsWith(BASE + '/api/') && !crewSyncOnly(r)) seen.requests.push(r.method() + ' ' + r.url().slice(BASE.length)); });
@@ -431,6 +441,12 @@ try {
   const writes = seen.requests.filter((r) => /^(PUT|POST|PATCH|DELETE) /.test(r));
   check(!writes.some((r) => /\/api\/characters/.test(r)), 'no request wrote a player\'s sheet (/api/characters): ' + writes.filter((r) => /characters/.test(r)).length);
   check(!writes.some((r) => /\/api\/gm\/ambient/.test(r)), 'no request wrote the ambient document');
+  check(exempt.autopilot >= 1 && exempt.crew >= 1, 'the ledger is not vacuous: it let the autopilot\'s own ambient writes (' + exempt.autopilot + ') and the heat/wanted sync (' + exempt.crew + ') through, and nothing else');
+  const OVK = { auto: true, id: 'ap-1', kind: 'clock', ms: 9000, clockId: 'c_x' };
+  check(autopilotOnly({ overlay: OVK, auto: true }) && autopilotOnly({ overlay: null, ifOverlay: 'ap-1' }) && autopilotOnly({ auto: false })
+    && !autopilotOnly({ overlay: { ...OVK, name: 'x' }, auto: true }) && !autopilotOnly({ overlay: { ...OVK, text: 'x' }, auto: true }) && !autopilotOnly({ overlay: { ...OVK, kind: 'text', text: 'x', clockId: undefined }, auto: true })
+    && !autopilotOnly({ overlay: null }) && !autopilotOnly({ overlay: null, ifOverlay: 'ap-1', mode: 'off' }) && !autopilotOnly({ overlay: OVK, auto: true, wire: null }) && !autopilotOnly({ auto: true, wire: [] })
+    && !autopilotOnly({ overlay: { ...OVK, auto: false }, auto: true }), 'the autopilot exemptions are strict: each known shape passes and every near-miss (one extra key, a name or text on the overlay, a bare clear, a wrong kind) is still counted');
   check(writes.filter((r) => /\/api\/gm\/display/.test(r)).length >= 1, 'the display was written, by the GM\'s own taps (Show clocks on the iPad, Do it while it follows, Reveal and show): the sections above show it was never written between them');
   check(errors.length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));
   await c.close();

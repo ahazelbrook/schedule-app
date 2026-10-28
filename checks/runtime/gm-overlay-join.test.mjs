@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { joinOverlayClock, assertOverlayClock } from '../../functions/_lib/campaign.js';
-import { namesHit as serverNamesHit, loadHiddenNames } from '../../functions/_lib/gm.js';
+import { namesHit as serverNamesHit, loadHiddenNames, patchAmbient, loadAmbient, cleanIfOverlay } from '../../functions/_lib/gm.js';
+import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
 import { joinOverlayNpc, drawingSpec, FIGURE_SPEC_KEYS, FIGURE_SPEC_LABELS } from '../../functions/_lib/npcs.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -97,6 +98,74 @@ await test('the NPC join copies only the figure\'s drawing keys of a spec: an un
   assert.equal((await joinOverlayNpc(fakeDb(npcRow({ ...BASE_DOC, spec: 'junk' })), 'camp', amb(NPCO))).amb.doc.overlay.npc.spec, null, 'a junk spec is null');
 });
 
+await test('both joins are built from named keys: a stray key on the stored overlay (and its secret) is not served, the named ones are, an absent age/auto stays absent', async () => {
+  const stray = { secretStray: 'STRAY-MARKER', text: 'TEXT-MARKER', npc: { name: 'STORED-NPC-MARKER' } };
+  const c = await joinOverlayClock(fakeDb(clocksRow([clk('c_a1', 'Invented Fuse', 6, 3)])), 'camp', amb({ ...CK, auto: true, ...stray }));
+  assert.deepEqual(Object.keys(c.amb.doc.overlay).sort(), ['age', 'at', 'auto', 'clockId', 'filled', 'id', 'kind', 'ms', 'name', 'size'], 'the named keys of a clock overlay and nothing more');
+  assert.ok(!/STRAY-MARKER|TEXT-MARKER|STORED-NPC-MARKER/.test(JSON.stringify(c.amb)));
+  const bare = await joinOverlayClock(fakeDb(clocksRow([clk('c_a1', 'Invented Fuse', 6, 3)])), 'camp', amb({ id: 'o1', kind: 'clock', ms: 20000, clockId: 'c_a1' }));
+  assert.deepEqual(Object.keys(bare.amb.doc.overlay).sort(), ['clockId', 'filled', 'id', 'kind', 'ms', 'name', 'size'], 'no age, at or auto keys when the stored overlay has none');
+  const n = await joinOverlayNpc(fakeDb(npcRow(BASE_DOC)), 'camp', amb({ ...NPCO, at: '2026-10-28T00:00:00.000Z', age: 9, auto: true, ...stray, name: 'STALE-NAME-MARKER' }));
+  assert.deepEqual(Object.keys(n.amb.doc.overlay).sort(), ['age', 'at', 'auto', 'id', 'kind', 'ms', 'npc', 'npcId'], 'the named keys of an npc overlay and nothing more');
+  assert.ok(!/STRAY-MARKER|TEXT-MARKER|STORED-NPC-MARKER|STALE-NAME-MARKER/.test(JSON.stringify(n.amb)));
+  assert.equal(n.amb.doc.overlay.npc.name, 'Inspector Invented', 'the joined card is the row\'s, not the stored one');
+  const nb = await joinOverlayNpc(fakeDb(npcRow(BASE_DOC)), 'camp', amb(NPCO));
+  assert.deepEqual(Object.keys(nb.amb.doc.overlay).sort(), ['id', 'kind', 'ms', 'npc', 'npcId']);
+});
+
+/* ---------- the compare-and-swap on the overlay-id clear (A2): the autopilot's clear must not take off an overlay it did not show ---------- */
+const ovFx = (id) => ({ id, kind: 'fx', ms: 20000, fx: 'dawn', at: '2026-10-28T00:00:00.000Z' });
+const freshAmbient = async () => asD1(await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') }));
+
+await test('patchAmbient ifOverlay: clears while the stored overlay has that id; another id, or none, writes nothing and does not move seq', async () => {
+  const db = await freshAmbient();
+  const a = await patchAmbient(db, 'c', { overlay: ovFx('mine') });
+  const hit = await patchAmbient(db, 'c', { overlay: null }, { ifOverlay: 'mine' });
+  assert.ok(!hit.unchanged && !('overlay' in hit.doc) && hit.seq === a.seq + 1, 'the matching id clears it (positive control)');
+  await patchAmbient(db, 'c', { overlay: ovFx('theirs') });
+  const before = await loadAmbient(db, 'c');
+  const miss = await patchAmbient(db, 'c', { overlay: null }, { ifOverlay: 'mine' });
+  assert.equal(miss.unchanged, true); assert.equal(miss.doc.overlay.id, 'theirs'); assert.equal(miss.seq, before.seq, 'seq did not move');
+  assert.deepEqual(await loadAmbient(db, 'c'), before, 'the stored document is exactly as it was');
+  await patchAmbient(db, 'c', { overlay: null });
+  const none = await patchAmbient(db, 'c', { overlay: null }, { ifOverlay: 'mine' });
+  assert.equal(none.unchanged, true, 'no overlay at all: nothing to clear');
+  const plain = await patchAmbient(db, 'c', { overlay: ovFx('x2') });
+  assert.ok(!plain.unchanged && plain.doc.overlay.id === 'x2', 'with no ifOverlay the patch is unconditional, as before');
+});
+
+await test('patchAmbient ifOverlay: an overlay set between the read and the write is NOT cleared (the race the swap closes)', async () => {
+  const real = await freshAmbient();
+  await patchAmbient(real, 'c', { overlay: ovFx('mine') });
+  let fired = 0;
+  const racing = { prepare(sql) {          // just before the guarded UPDATE of the first attempt, another writer lands a different overlay
+    const st = real.prepare(sql);
+    if (!/^UPDATE gm_ambient/.test(sql)) return st;
+    const wrap = { bind(...p) { st.bind(...p); return wrap; }, async run() { if (!fired++) await patchAmbient(real, 'c', { overlay: ovFx('dawn-now') }); return st.run(); } };
+    return wrap;
+  } };
+  const r = await patchAmbient(racing, 'c', { overlay: null }, { ifOverlay: 'mine' });
+  assert.ok(fired >= 1, 'the interleaved write happened');
+  assert.equal(r.unchanged, true);
+  assert.equal((await loadAmbient(real, 'c')).doc.overlay.id, 'dawn-now', 'the later overlay is still up');
+  // the same race with no swap, to show the test would see it: the later overlay is cleared
+  const real2 = await freshAmbient(); await patchAmbient(real2, 'c', { overlay: ovFx('mine') });
+  let f2 = 0;
+  const racing2 = { prepare(sql) { const st = real2.prepare(sql); if (!/^UPDATE gm_ambient/.test(sql)) return st;
+    const wrap = { bind(...p) { st.bind(...p); return wrap; }, async run() { if (!f2++) await patchAmbient(real2, 'c', { overlay: ovFx('dawn-now') }); return st.run(); } }; return wrap; } };
+  await patchAmbient(racing2, 'c', { overlay: null });
+  assert.ok(!('overlay' in (await loadAmbient(real2, 'c')).doc), 'without ifOverlay the same race clears the later overlay (the control)');
+});
+
+await test('cleanIfOverlay: an id beside overlay: null; anything else is a 400, never a silent no-op', () => {
+  assert.equal(cleanIfOverlay({ overlay: null, ifOverlay: 'o1' }, { overlay: null }), 'o1');
+  assert.equal(cleanIfOverlay({ overlay: null }, { overlay: null }), null); assert.equal(cleanIfOverlay({}, {}), null);
+  for (const [raw, patch] of [[{ ifOverlay: 'o1' }, {}], [{ ifOverlay: 'o1', overlay: ovFx('z') }, { overlay: ovFx('z') }], [{ ifOverlay: 5, overlay: null }, { overlay: null }],
+    [{ ifOverlay: '  ', overlay: null }, { overlay: null }], [{ ifOverlay: 'x'.repeat(41), overlay: null }, { overlay: null }]]) {
+    assert.throws(() => cleanIfOverlay(raw, patch), (e) => e.status === 400, JSON.stringify(raw).slice(0, 60));
+  }
+});
+
 await test('drawingSpec: only the listed keys, a non-object is null, the input is not mutated', () => {
   const s = { figure: 'fem', zzz: 1, name: 'x' }; const copy = JSON.stringify(s);
   assert.deepEqual(drawingSpec(s), { figure: 'fem' }); assert.equal(JSON.stringify(s), copy);
@@ -126,6 +195,22 @@ await test('the server\'s namesHit and the page\'s agree on a shared list of cas
   ];
   for (const [text, names] of cases) assert.equal(serverNamesHit(text, names), page(text, names), JSON.stringify([text, names]));
   assert.equal(serverNamesHit(5, ['Vex']), false); assert.equal(serverNamesHit('Vex', 'Vex'), false); assert.equal(serverNamesHit('Vex', [null, 5, {}]), false);
+});
+
+await test('namesHit folds with NFKC on both sides, in the server and the page alike: full-width letters, ligatures and a decomposed accent are hits; a longer word is still not', () => {
+  const page = require(path.join(ROOT, 'app', 'gm-page.js'))._pure.namesHit;
+  const FW = 'Ｖｅｘ';                       // full-width "Vex"
+  const cases = [
+    [FW + ' was here', ['Vex'], true], ['Vex was here', [FW], true], [FW + 'ing weather', ['Vex'], false], ['the ﬁsher waits', ['fisher'], true],
+    ['Zoë waits', ['Zoë'], true], ['Zoë waits', ['Zoë'], true], ['The　Brass Fox', ['The Brass Fox'], true],
+    ['Vex was here', ['Vex'], true], ['nothing here', [FW], false],         // ASCII-only paths, and a folded name that is absent
+    ['José said', ['Jose'], true],                                      // folding must never remove a hit: raw "Jose" + combining acute was a hit before NFKC and stays one
+    ['José said', ['José'], true], ['Josephine said', ['Jose'], false], ['Jose said', ['José'], false],      // and ASCII negative controls: a longer word, a different name
+  ];
+  for (const [text, names, want] of cases) {
+    assert.equal(serverNamesHit(text, names), want, 'server ' + JSON.stringify([text, names]));
+    assert.equal(page(text, names), want, 'page ' + JSON.stringify([text, names]));
+  }
 });
 
 await test('loadHiddenNames: hidden clocks, and NPCs that are not revealed (name and alias), in one batch of two statements; revealed ones are not in it', async () => {

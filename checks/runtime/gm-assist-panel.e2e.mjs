@@ -422,6 +422,18 @@ try {
   check(await sp.waitForFunction(() => /Checked: clear/.test(document.querySelector('#as-list .as-card[data-seat="screen"] .as-chip2').textContent), null, { timeout: 10000 }).then(() => true, () => false), 'Screen portrait: the gate runs on it too');
   check(await sp.$('#as-list [data-act="show"]') === null, 'Screen portrait: there is no Show, only Add (showing is the normal reveal flow)');
   await shot(sp, 'screen-portrait');
+  // R5a (P4): with Tools open (it is, above), the Now card and its action row must be reachable and must not sit under the Ask box. The check is by paint order: the topmost
+  // element at the centre of each action button is that button (after the Now zone is scrolled to its end, as a thumb would), and the same for the Ask field and its button.
+  const reach = await sp.evaluate(() => {
+    const now = document.querySelector('#as-nowz'); now.scrollTop = now.scrollHeight;
+    const top = (el) => { const b = el.getBoundingClientRect(), t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !!t && (t === el || el.contains(t)); };
+    const acts = [...document.querySelectorAll('#as-now .as-acts button')], ask = [document.querySelector('#as-ask-q'), document.querySelector('#as-ask-go')];
+    const nz = now.getBoundingClientRect(), ak = document.querySelector('#as-ask').getBoundingClientRect(), tl = document.querySelector('#as-tools').getBoundingClientRect(), pn = document.querySelector('#as-panel').getBoundingClientRect();
+    return { n: acts.length, actsTop: acts.map(top), askTop: ask.map(top), nowBottom: nz.bottom, askTop0: ak.top, toolsBottom: tl.bottom, panelBottom: pn.bottom, open: document.querySelector('#as-tools').open };
+  });
+  check(reach.open && reach.n >= 1, 'Screen portrait: Tools is open and the Now card has its action buttons (' + reach.n + ')');
+  check(reach.actsTop.every(Boolean) && reach.askTop.every(Boolean), 'Screen portrait: every Now action button and the Ask field and button are the topmost element at their centre (' + reach.actsTop.join() + ' | ' + reach.askTop.join() + ')');
+  check(reach.nowBottom <= reach.askTop0 + 0.5 && reach.toolsBottom <= reach.panelBottom + 0.5, 'Screen portrait: Now ends above Ask (' + Math.round(reach.nowBottom) + ' vs ' + Math.round(reach.askTop0) + ') and Tools ends inside the panel (' + Math.round(reach.toolsBottom) + ' of ' + Math.round(reach.panelBottom) + ')');
   const before = (await api('GET', '/npcs')).json.docs.length;
   await sp.click(item + ' [data-act="add"]');
   check(await until(async () => (await api('GET', '/npcs')).json.docs.length === before + 1, 8000), 'Screen portrait: Add saves an NPC');

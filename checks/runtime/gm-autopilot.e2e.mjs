@@ -187,6 +187,17 @@ try {
   check(await noCard(12000), 'and the page that was up when it ended draws nothing either');
   await api('PATCH', '/gm/ambient', { overlay: null });
 
+  /* ---------- the compare-and-swap on the overlay-id clear (the real route and database) ---------- */
+  await api('PATCH', '/gm/ambient', { overlay: { id: 'cas-1', kind: 'text', ms: 60000, text: 'An invented swap line.' } });
+  const seq0 = (await amb()).seq;
+  const miss = await api('PATCH', '/gm/ambient', { overlay: null, ifOverlay: 'cas-other' });
+  check(miss.status === 200 && miss.json.unchanged === true && miss.json.doc.overlay.id === 'cas-1', 'a clear naming another overlay id changes nothing and says so');
+  check((await amb()).seq === seq0 && !!(await ovOf()) && (await ovOf()).id === 'cas-1', 'the stored overlay and seq are as they were');
+  check((await api('PATCH', '/gm/ambient', { ifOverlay: 'cas-1' })).status === 400 && (await api('PATCH', '/gm/ambient', { overlay: { id: 'z', kind: 'fx', fx: 'dawn', ms: 5000 }, ifOverlay: 'z' })).status === 400, 'ifOverlay without overlay: null is a 400');
+  const hit = await api('PATCH', '/gm/ambient', { overlay: null, ifOverlay: 'cas-1' });
+  check(hit.status === 200 && !hit.json.unchanged && !(await ovOf()), 'a clear naming the overlay\'s own id clears it (positive control)');
+  check((await amb()).doc.ifOverlay === undefined, 'and the key is never stored in the document');
+
   /* ---------- Hand back resumes ---------- */
   await gp.click('#gm-bar-ap');
   check(await barText() === 'Auto' && (await ap()).mode === 'ready', 'Hand back (the top bar): Auto again');

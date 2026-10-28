@@ -39,6 +39,8 @@ function hash53(s) {         // cyrb53: sync and cheap, so clientFor stays sync
 export function cachedClient(apiKey, make = makeClient) {
   const id = hash53(String(apiKey)) + ':' + String(apiKey).length;
   let c = clients.get(id);
+  /* a hit must hold the very key asked for: a 53-bit hash plus the length can in theory collide, and a client holding another key would be used silently */
+  if (c && c.apiKey !== apiKey) c = undefined;
   if (!c) {
     c = make(apiKey);
     if (clients.size >= KEEP) clients.delete(clients.keys().next().value);

@@ -4,7 +4,7 @@
 //
 // Rule (Victoria, in force since 2008): daylight time (UTC+11) runs from 2:00 standard time on the first Sunday of October to 3:00
 // daylight time on the first Sunday of April; the rest of the year is UTC+10. Both changes happen at 16:00 UTC on the Saturday before.
-// checks/runtime/gm-assist-clock.test.mjs compares it with Intl over every minute-boundary that matters, 2008-2060.
+// checks/runtime/gm-assist-cpu.test.mjs compares it with Intl around every daylight-saving change and on 40,000 random instants, 2008-2060.
 
 const H = 3600000, DAY = 86400000;
 

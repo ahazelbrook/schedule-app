@@ -738,7 +738,9 @@ function addAmbient(fg, init) {
   fg.gm.patchAmbient = async (p) => {
     if (s.ambFail) throw Object.assign(new Error('the server said no'), { status: 500 });
     s.ambPatches.push(clone(p)); const d = clone(s.amb.doc);
-    for (const k of Object.keys(p)) { if (k === 'skip') d.skip = (d.skip || 0) + 1; else if (p[k] === null) delete d[k]; else d[k] = clone(p[k]); }
+    /* the server's compare-and-swap: ifOverlay clears only while the stored overlay has that id, else nothing is written */
+    if (typeof p.ifOverlay === 'string' && !(d.overlay && d.overlay.id === p.ifOverlay)) return { seq: s.amb.seq, doc: clone(d), updatedAt: 'a' + s.amb.seq, unchanged: true };
+    for (const k of Object.keys(p)) { if (k === 'ifOverlay') continue; if (k === 'skip') d.skip = (d.skip || 0) + 1; else if (p[k] === null) delete d[k]; else d[k] = clone(p[k]); }
     if (p.score) d.score.at = '2026-10-17T01:02:03.000Z';
     s.amb.seq++; s.amb.doc = d; return { seq: s.amb.seq, doc: clone(d), updatedAt: 'a' + s.amb.seq };
   };
@@ -3161,11 +3163,42 @@ await test('S6b. a rolled site and a site with no play block have no room list a
   h3.br.W.confirm = () => true; h3.q('[data-gm="ipad"]').click(); await until(() => ipadSvgs(h3).length === 1);
   const txt = ipadSvgs(h3)[0].svg.toLowerCase();
   for (const s of SHUT.concat(['private card rooms'])) assert.ok(!txt.includes(s), 'a stale name opened ' + s);
+  assert.ok(!ipadSvgs(h3)[0].caption.includes('No such room'), 'and the iPad caption does not list it: ' + ipadSvgs(h3)[0].caption);
+  assert.match(ipadSvgs(h3)[0].caption, /surveyed: public$/, 'the caption holds the bands alone');
   /* another site's open list is not this one's */
   const h4 = await m3Open({ ball: { site: 'Some Other Site', t: 0, open: ['Private card rooms'] } });
   assert.deepEqual(h4.page._state().doc.loc.map.reveal && P.revealEntries(Object.assign({}, h4.page._state().doc.loc.map, { layer: 'player' })), ['public']);
   h4.br.W.confirm = () => true; h4.q('[data-gm="ipad"]').click(); await until(() => ipadSvgs(h4).length === 1);
   assert.ok(!ipadSvgs(h4)[0].svg.toLowerCase().includes('private card rooms'), 'another site\'s open rooms never reach this one');
+});
+
+await test('S6b2. the caption names a real opened room (positive control), and not a stale one beside it; rollRoomsOf keeps only the roll\'s rooms, in order', async () => {
+  const h = await m3Open({ ball: { site: 'The Pelican Rooms', t: 0, open: ['No such room', 'Private card rooms'] } });
+  h.br.W.confirm = () => true; h.q('[data-gm="ipad"]').click(); await until(() => ipadSvgs(h).length === 1);
+  assert.match(ipadSvgs(h)[0].caption, /surveyed: public \+ Private card rooms$/, ipadSvgs(h)[0].caption);
+  const roll = { rooms: [{ name: 'A room', band: 'public' }, { name: 'B room', band: 'secure' }, 7, { band: 'x' }] };
+  assert.deepEqual(plain(P.rollRoomsOf(roll, ['B room', 'gone', 'A room'])), ['B room', 'A room']);
+  assert.deepEqual(plain(P.rollRoomsOf(null, ['A room'])), []);
+});
+
+await test('S6h. the last room of a band: once every room of a shut band is open on its own the list says to tick the band; not before, not for a ticked band', async () => {
+  const h = await m3Open({ ball: { site: 'The Pelican Rooms', t: 0 } });
+  asker(h, true);
+  const rooms = h.page._state().locRoll.rooms, band = (n) => rooms.find((r) => r.name === n).band;
+  const names = rooms.map((r) => r.name).filter((n) => band(n) !== 'public');
+  const bands = [...new Set(names.map(band))];
+  assert.ok(bands.length >= 2, 'the invented site has shut rooms in at least two bands: ' + bands.join());
+  assert.ok(!h.q('.gm-roomhint'), 'nothing is open: no hint');
+  const target = bands[0], inBand = names.filter((n) => band(n) === target);
+  inBand.slice(0, -1).forEach((n) => roomBtn(h, 'open', n).click());
+  if (inBand.length > 1) assert.ok(!h.q('.gm-roomhint'), 'one room of the band still shut: no hint yet');
+  roomBtn(h, 'open', inBand[inBand.length - 1]).click();
+  const hint = h.q('.gm-roomhint');
+  assert.ok(hint, 'every room of the ' + target + ' band is open: the hint shows');
+  assert.match(hint.textContent, new RegExp('All the ' + target + ' rooms are open: tick the band'));
+  const w = h.q('[data-reveal="' + target + '"]'); w.checked = true; dispatch(w, 'change');
+  assert.ok(!h.q('.gm-roomhint'), 'the band ticked: the hint goes');
+  await h.save();
 });
 
 await test('S6c. Show on iPad with a room opened alone: asks first, names the room; the copy has it and its markers and no shut room; ids below k; a no sends nothing', async () => {
@@ -4013,6 +4046,7 @@ await test('A2b. a clock overlay goes by id; hiding or removing the clock clears
   upd([CLK('c_a1', 'Invented Fuse', 1, true), CLK('c_b2', 'Invented Wick', 0), CLK('c_h3', 'Invented Hush', 3, true)]);
   assert.ok(await until(() => clearPatches(fg).length === 1 && !fg.server.amb.doc.overlay, 800), 'hiding the shown clock takes its overlay down at once');
   assert.equal(h.page._autopilot().mode, 'ready'); assert.equal(h.page._autopilot().showing, null);
+  assert.deepEqual(clearPatches(fg)[0], { overlay: null, ifOverlay: sent.overlay.id }, 'the clear is a compare-and-swap on the overlay\'s own id');
   /* a second clock: shown, then REMOVED from the table */
   upd([CLK('c_a1', 'Invented Fuse', 1, true), CLK('c_b2', 'Invented Wick', 1), CLK('c_h3', 'Invented Hush', 3, true)]);
   assert.ok(await until(() => setPatches(fg).length === 2 && fg.server.amb.doc.overlay, 800), 'the other clock shows at once (taking it down was the GM winning: no cooldown)');
@@ -4025,6 +4059,26 @@ await test('A2b. a clock overlay goes by id; hiding or removing the clock clears
   await sleepMs(1500); assert.equal(setPatches(fg).length, n, 'made visible then hidden inside the settle: nothing shown');
   upd([CLK('c_a1', 'Invented Fuse', 1, true), CLK('c_h3', 'Invented Hush', 3, true), CLK('c_n4', 'Invented New', 0, true), CLK('c_n5', 'Invented Other', 0)]);
   assert.ok(await until(() => setPatches(fg).length === n + 1, 800), 'a new visible clock is shown');
+  await h.save();
+});
+
+await test('A2b2. the clear cannot take off an overlay it did not show: one set between the page\'s read and its write survives (positive control: with nothing in between it is cleared)', async () => {
+  const r = apRig(), fg = addAmbient(fakeGm());
+  const C0 = [CLK('c_a1', 'Invented Fuse', 0), CLK('c_b2', 'Invented Wick', 0)];
+  const h = await openPage({ fg, camp: apCamp(C0), over: r.W });
+  const upd = (list) => h.page.campaign(apCamp(list));
+  upd([CLK('c_a1', 'Invented Fuse', 1), CLK('c_b2', 'Invented Wick', 0)]);
+  assert.ok(await until(() => setPatches(fg).length === 1 && fg.server.amb.doc.overlay, 1800), 'the autopilot shows the clock');
+  const mine = fg.server.amb.doc.overlay.id;
+  /* the GM presses the dawn on another device just after the page has read the document and just before it writes */
+  const read = fg.gm.ambient;
+  fg.gm.ambient = async () => { const out = await read(); fg.server.amb.doc.overlay = { id: 'dawn-other-device', kind: 'fx', ms: 20000, fx: 'dawn' }; return out; };
+  upd([CLK('c_a1', 'Invented Fuse', 1, true), CLK('c_b2', 'Invented Wick', 0)]);
+  assert.ok(await until(() => clearPatches(fg).length === 1, 1000), 'the page tried to clear its own overlay');
+  assert.deepEqual(clearPatches(fg)[0], { overlay: null, ifOverlay: mine });
+  await sleepMs(200);
+  assert.equal(fg.server.amb.doc.overlay && fg.server.amb.doc.overlay.id, 'dawn-other-device', 'the dawn is still up: the swap found another id and wrote nothing');
+  fg.gm.ambient = read;
   await h.save();
 });
 
