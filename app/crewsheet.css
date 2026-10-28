@@ -322,6 +322,18 @@
 #table-page.tp-ro .cs-cell:hover { box-shadow: none; }
 #table-page.tp-ro .cs-cell.held:hover { box-shadow: 0 0 0 2.5px var(--accent); }
 
+/* ---- phones: the type floor on the crew sheet, 12px for labels and meta, 16px fields (screen only) ---- */
+@media screen and (max-width: 760px) {
+  #table-page :is(.cs-fl, .cs-tag, .cs-xpl, .cs-cn, .cs-costh, .cs-turfhint, .cs-cdot, .cs-kick, .cs-cword small, .cs-cfoot, .cs-cfoot :is(span, small, .lt), .cs-oo, .cs-abgh) { font-size: 12px; }
+  #table-page .cs-cb { font-size: 12px; }
+  /* text: abilities, rules, contacts, upgrades */
+  #table-page :is(.cs-ops, .cs-rule, .cs-thr, .cs-truths, .cs-word, .cs-ab, .cs-contact, .cs-xpi, .cs-trig, .cs-payees, .cs-up, .cs-cost, .cs-adv p, .cs-develop p, .cs-foot, .cs-uph) { font-size: 14px; }
+  #table-page :is(.cs-up, .cs-cost, .cs-uph, .cs-word) :is(b, span, i) { font-size: inherit; }
+  #table-page .cs-panel .hint, #table-page .cs-opt { font-size: 14px; }
+  #table-page .cs-circ, #table-page .cs-circ :is(span, b, i) { font-size: 12px; }
+  #table-page .cs-sheet :is(input, textarea, select, .tp-in, .tp-ta) { font-size: 16px; }
+}
+
 /* ---- print: the sheet without buttons, one column (two squeeze the claims map to slivers) ---- */
 @media print {
   /* one column, in plain blocks: grid rows do not grow when a box inside is pushed to the next page, so what follows
