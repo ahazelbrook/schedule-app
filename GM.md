@@ -1053,9 +1053,9 @@ two pages open only a page that has something to undo or rename posts the cue (a
 | "Blade, call him Big Sal", "rename that to ..." | renames the last NPC or clock Blade made tonight |
 | "Blade, undo", "scratch that" | undoes Blade's newest action that is still done |
 
-**Typed.** In the Ask bar (on the iPad-side laptop page, not a phone), text starting **"Blade,"** or **"/"** is a command, not a question: it never goes to Ask. Slash forms:
-`/tick escape 2` = "Blade, tick escape 2"; `/clock 6 escape` = "Blade, make a 6 clock called escape"; `/npc Stan, a tired bus driver` = "Blade, new NPC called Stan, a tired bus
-driver" (`/npc` alone rolls a name); `/note ...`; `/undo`. Any other slash shows a grey card and sends nothing. The mapping lives in one place (`fromTyped` in `app/cue.js`). A typed
+**Typed.** In the Ask bar (laptop only: the box is hidden on a phone), text starting **"Blade,"** or **"/"** is a command, not a question: it never goes to Ask. Slash forms:
+`/tick Quillmoth 2` = "Blade, tick Quillmoth 2"; `/clock 6 Quillmoth` = "Blade, make a 6 clock called Quillmoth"; `/npc Pembrake, a nervous lamp salesman` = "Blade, new NPC called Pembrake, a nervous lamp
+salesman" (`/npc` alone rolls a name); `/note ...`; `/undo`. Any other slash shows a grey card and sends nothing. The mapping lives in one place (`fromTyped` in `app/cue.js`). A typed
 command works with Co-GM on **or off** (you typed it on purpose) and at the night's cap (a parsed command costs $0). It is posted to the transcript as a line tagged `conn: 'typed'`
 (speaker empty), so the quote check in `/act` reads it exactly as it reads a heard line, then it goes through the cue lane (a card, Undo, all as for speech). The poll skips typed
 lines, so a command never runs twice and is never joined to the next spoken line.

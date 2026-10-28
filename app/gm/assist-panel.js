@@ -899,17 +899,21 @@
     /* the GM's question -> Blade's answer, one at a time. Resolves { answer }, { error: kind } or null (cannot ask, nothing typed, already asking).
        The words stay in the field when it fails, and are cleared when it works. */
     /* C4f: text starting "Blade," or "/" is a typed command for the cue lane (o.onTyped), not a question: no Ask call, and it works at the cap too ($0) */
+    var typedBusy = false;
     function isTyped(t) { return /^\s*(?:blade\s*,|\/)/i.test(str(t)); }
     function typedOk() { return !gone && !isPhone() && typeof o.onTyped === 'function'; }
     function ask(text) {
       var qq = str(text).replace(/\s+/g, ' ').trim().slice(0, ASK_MAX);
       if (qq && isTyped(qq) && typedOk()) {
-        var ta0 = q('#as-ask-q');
+        if (typedBusy) return Promise.resolve(null);            /* a second Enter or a click while the first is on its way would post the command twice */
+        typedBusy = true;
+        var ta0 = q('#as-ask-q'), fin = function () { typedBusy = false; };
         return Promise.resolve().then(function () { return o.onTyped(qq); }).then(function (r) {
+          fin();
           if (!gone && r && r.ok && ta0 && str(ta0.value).replace(/\s+/g, ' ').trim() === qq) ta0.value = '';
           if (!gone) render();
           return r || null;
-        }, function () { return null; });
+        }, function () { fin(); return null; });
       }
       if (!qq || st.ask.busy || !canAsk()) return Promise.resolve(null);
       st.ask.busy = true; st.ask.error = ''; render();

@@ -140,49 +140,50 @@ try {
   const SW = '#as-cogm';
   const coOn = () => page.$eval(SW, (b) => b.getAttribute('aria-pressed') === 'true');
 
-  // ============ 1. "/clock 6 escape" with co-GM OFF: typed commands still work ============
+  // ============ 1. "/clock 6 Quillmoth" with co-GM OFF: typed commands still work ============
   check(!(await coOn()), 'start: co-GM is off');
-  await type('/clock 6 escape');
-  const k1 = await until(() => clockNamed('escape').then((x) => x || clocksNow().then((l) => l.find((k) => /^escape$/i.test(k.name)))), 8000, 100);
+  await type('/clock 6 Quillmoth');
+  const k1 = await until(() => clockNamed('Quillmoth').then((x) => x || clocksNow().then((l) => l.find((k) => /^Quillmoth$/i.test(k.name)))), 8000, 100);
   const tr1 = await typedRows();
-  check(!!k1 && k1.size === 6 && k1.hidden === true && k1.filled === 0, 'co-GM off: "/clock 6 escape" makes a hidden 6 clock called escape: ' + JSON.stringify(k1 && { n: k1.name, s: k1.size, h: k1.hidden }));
-  check(tr1.length === 1 && tr1[0].text === 'Blade, make a 6 clock called escape' && tr1[0].speaker === null && tr1[0].kind === 'line', 'the typed command is a transcript line tagged conn typed, speaker null, text the mapped cue sentence: ' + JSON.stringify(tr1.map((l) => l.text)));
+  check(!!k1 && k1.size === 6 && k1.hidden === true && k1.filled === 0, 'co-GM off: "/clock 6 Quillmoth" makes a hidden 6 clock called Quillmoth: ' + JSON.stringify(k1 && { n: k1.name, s: k1.size, h: k1.hidden }));
+  check(tr1.length === 1 && tr1[0].text === 'Blade, make a 6 clock called Quillmoth' && tr1[0].speaker === null && tr1[0].kind === 'line', 'the typed command is a transcript line tagged conn typed, speaker null, text the mapped cue sentence: ' + JSON.stringify(tr1.map((l) => l.text)));
   check(seen.act.length === 1 && seen.act[0].body.mode === 'cue' && seen.act[0].body.cueLineId === tr1[0].id && seen.act[0].body.from === tr1[0].seq && seen.act[0].body.to === tr1[0].seq && Array.isArray(seen.act[0].body.parsed),
     '/act was called once in cue mode, parsed, cueLineId = the typed line\'s id, range = its seq');
   check(seen.ask === 0 && !seen.requests.some((r) => /assist\/ask/.test(r)), 'no Ask call for a typed command');
   check(!seen.requests.some((r) => /\/api\/gm\/transcript\?after=/.test(r)), 'co-GM off: the page still does not poll the transcript');
   check((await page.inputValue('#as-ask-q')) === '', 'the field is cleared once it was sent');
 
-  // ============ 2. "/tick escape 2" with co-GM ON ============
+  // ============ 2. "/tick Quillmoth 2" with co-GM ON ============
   check(await switchOn(), 'co-GM switches on');
   await sleep(2300);
   const before2 = seen.act.length;
-  await type('/tick escape 2');
-  const k2 = await until(async () => { const k = (await clocksNow()).find((x) => /^escape$/i.test(x.name)); return k && k.filled === 2 ? k : null; }, 8000, 100);
+  await type('/tick Quillmoth 2');
+  const k2 = await until(async () => { const k = (await clocksNow()).find((x) => /^Quillmoth$/i.test(x.name)); return k && k.filled === 2 ? k : null; }, 8000, 100);
   await sleep(2500);
-  const tr2 = (await typedRows()).filter((l) => l.text === 'Blade, tick escape 2');
+  const tr2 = (await typedRows()).filter((l) => l.text === 'Blade, tick Quillmoth 2');
   const acts2 = seen.act.slice(before2);
-  check(!!k2, 'co-GM on: "/tick escape 2" fills 2 on escape');
+  check(!!k2, 'co-GM on: "/tick Quillmoth 2" fills 2 on Quillmoth');
   check(tr2.length === 1 && acts2.length === 1 && acts2[0].body.cueLineId === tr2[0].id && acts2[0].body.mode === 'cue', 'one typed line, ONE /act call (the poll did not run it again), cueLineId = its id');
   check(seen.ask === 0, 'no Ask call for /tick');
 
-  // ============ 3. "/npc Stan, a tired bus driver" ============
+  // ============ 3. "/npc Pembrake, a nervous lamp salesman" ============
   await sleep(2300);
   const before3 = seen.act.length;
-  await type('/npc Stan, a tired bus driver');
-  const n3 = await until(async () => (await npcsNow()).find((n) => /^Stan$/i.test(n.doc.name)), 8000, 100);
+  await type('/npc Pembrake, a nervous lamp salesman');
+  const n3 = await until(async () => (await npcsNow()).find((n) => /^Pembrake$/i.test(n.doc.name)), 8000, 100);
   await sleep(2500);
-  const tr3 = (await typedRows()).filter((l) => l.text === 'Blade, new NPC called Stan, a tired bus driver');
+  const tr3 = (await typedRows()).filter((l) => l.text === 'Blade, new NPC called Pembrake, a nervous lamp salesman');
   const acts3 = seen.act.slice(before3);
-  check(!!n3 && n3.doc.revealed === false, 'co-GM on: "/npc Stan, a tired bus driver" makes a hidden NPC called Stan: ' + JSON.stringify(n3 && { name: n3.doc.name, revealed: n3.doc.revealed, role: n3.doc.role }));
+  check(!!n3 && n3.doc.revealed === false, 'co-GM on: "/npc Pembrake, a nervous lamp salesman" makes a hidden NPC called Pembrake: ' + JSON.stringify(n3 && { name: n3.doc.name, revealed: n3.doc.revealed, role: n3.doc.role }));
   check(tr3.length === 1 && acts3.length === 1 && acts3[0].body.cueLineId === tr3[0].id, 'one typed line and one /act call for /npc, cueLineId = its id');
 
   // ============ 4. "Blade, ..." typed, a cap, an unknown slash, and a plain question ============
   await sleep(2300);
   const before4 = seen.act.length;
-  await type('Blade, tick escape');
-  const k4 = await until(async () => { const k = (await clocksNow()).find((x) => /^escape$/i.test(x.name)); return k && k.filled === 3 ? k : null; }, 8000, 100);
-  check(!!k4 && seen.act.length === before4 + 1, '"Blade, tick escape" typed: ticks one and calls /act once');
+  await page.fill('#as-ask-q', 'Blade, tick Quillmoth'); await Promise.all([page.press('#as-ask-q', 'Enter'), page.press('#as-ask-q', 'Enter')]);
+  const k4 = await until(async () => { const k = (await clocksNow()).find((x) => /^Quillmoth$/i.test(x.name)); return k && k.filled === 3 ? k : null; }, 8000, 100);
+  await sleep(2500);
+  check(!!k4 && (await clocksNow()).find((x) => /^Quillmoth$/i.test(x.name)).filled === 3 && seen.act.length === before4 + 1 && (await typedRows()).filter((l) => l.text === 'Blade, tick Quillmoth').length === 1, '"Blade, tick Quillmoth" typed, Enter pressed twice at once: one line, one /act, one tick');
   const typedBefore = (await typedRows()).length, actBefore = seen.act.length;
   await type('/frobnicate now');
   const grey = await cardLike(/don.t know the command/i, 4000);
@@ -197,8 +198,8 @@ try {
   check(await until(() => page.$eval('#as-state', (e) => e.getAttribute('data-state') === 'off'), 6000), 'cap: the panel header says Off');
   await sleep(2300);
   const before5 = seen.act.length;
-  check(await page.$eval('#as-ask-go', (b) => b.disabled) === true, 'cap: Ask itself is disabled for a question'); await page.fill('#as-ask-q', '/tick escape'); check(await page.$eval('#as-ask-go', (b) => !b.disabled), 'cap: the button is enabled for a typed command'); await page.press('#as-ask-q', 'Enter');
-  const k5 = await until(async () => { const k = (await clocksNow()).find((x) => /^escape$/i.test(x.name)); return k && k.filled === 4 ? k : null; }, 8000, 100);
+  check(await page.$eval('#as-ask-go', (b) => b.disabled) === true, 'cap: Ask itself is disabled for a question'); await page.fill('#as-ask-q', '/tick Quillmoth'); check(await page.$eval('#as-ask-go', (b) => !b.disabled), 'cap: the button is enabled for a typed command'); await page.press('#as-ask-q', 'Enter');
+  const k5 = await until(async () => { const k = (await clocksNow()).find((x) => /^Quillmoth$/i.test(x.name)); return k && k.filled === 4 ? k : null; }, 8000, 100);
   check(!!k5 && seen.act.length === before5 + 1, 'typed and parsed, it still acts when the panel is capped (seen.capped=' + seen.capped + ')');
   check(errors.filter((e) => !/status of 500/.test(e)).length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));
   await c.close();
