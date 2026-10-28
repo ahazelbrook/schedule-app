@@ -145,7 +145,8 @@ function worker(opts = {}) {
     }
     throw new Error('drain: the worker never went quiet');
   }
-  const get = (p, mode = 'no-cors', during) => dispatch('fetch', { request: new W.Request(p.startsWith('http') ? p : ORIGIN + p, { mode }) }, during);
+  /* ids: { resultingClientId } on a navigation, { clientId } on a file: the page the request belongs to */
+  const get = (p, mode = 'no-cors', during, ids = {}) => dispatch('fetch', { request: new W.Request(p.startsWith('http') ? p : ORIGIN + p, { mode }), ...ids }, during);
   const read = (name) => (W.store[name || self.CACHE] || new Map());
   const out = { self, W, caches: W.caches, net: W.net, res: W.res, dispatch, get, timers, tick, drain, pendingTimers, handlers,
     SHELL: vm.runInContext('SHELL', ctx), INSTALL: vm.runInContext('INSTALL', ctx), CACHE: vm.runInContext('CACHE', ctx),
@@ -514,6 +515,29 @@ await test('sw: an update from build A to B: A\'s page keeps A\'s files, a page 
   const C = worker({ build: 'C', world: W });
   await C.dispatch('install'); await C.dispatch('activate');
   eq(Object.keys(W.store).sort(), ['b68-shell-B', 'b68-shell-C'], 'only the newest older cache is kept');
+});
+
+await test('sw: a moved worker on a slow link: a navigation the cache answered (4 s) loads its core from the cache, zero scripts from the network; a page of the new build, or one the worker does not know, still gets the network', async () => {
+  const W = world(), w = await up('A', W);
+  // the worker learns the server is on B from a fast page
+  W.net.build = 'B';
+  eq((await w.get('/', 'navigate', null, { resultingClientId: 'new-page' })).r.res.body, 'page:B');
+  eq(w.pendingTimers(4000).length, 0, 'the fast answer cleared its timer');
+  // the venue's wifi: the next page takes longer than 4 s
+  W.net.slow[ORIGIN + '/'] = true;
+  const r = await w.get('/', 'navigate', async () => { await sleep(10); eq(w.pendingTimers().map((t) => t.ms), [4000], 'the 4 s limit applies to a moved worker too'); w.tick(4000); }, { resultingClientId: 'slow-page' });
+  eq(r.r.res.body, 'page:A', 'the cached page answered');
+  W.net.log.length = 0;
+  for (const f of CORE_JS) eq((await w.get('/' + f, 'no-cors', null, { clientId: 'slow-page' })).r.res.body, 'A:/' + f, f + ' from the cache for the cached page');
+  eq(W.net.log.filter((x) => x.endsWith('.js')), [], 'not one script from the network');
+  // the page of build B, and a client the worker never heard of, go to the network
+  eq((await w.get('/boot.js', 'no-cors', null, { clientId: 'new-page' })).r.res.body, 'B:/boot.js', 'a page of the new build: the network');
+  eq((await w.get('/boot.js', 'no-cors', null, { clientId: 'who' })).r.res.body, 'B:/boot.js', 'an unknown page: the network');
+  eq((await w.get('/boot.js')).r.res.body, 'B:/boot.js', 'no client id: the network');
+  // the slow page finally answers (build B): not filed either
+  W.net.pending[ORIGIN + '/'].resolve(new FakeResponse('page:B', { headers: { 'X-B68-Build': 'B' } }));
+  await w.drain();
+  eq([...w.cache().values()].filter((x) => String(x.body).startsWith('B:')).length, 0, 'no B file in the A cache');
 });
 
 await test('sw: a slow answer that arrives after the server switched builds is dropped, never filed into the older build\'s cache (no mixed cache); one that is still this build\'s is filed; a probe that fails files nothing', async () => {

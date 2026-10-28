@@ -435,8 +435,9 @@ that skips the stamp, a plain `npx wrangler deploy`, keeps `b68-shell-dev`, whic
   and stored only when that is this build. With a cached page and no answer in 4 s the cached page serves, and the late
   answer still refreshes it when it is this build's. When fetch itself fails the cached page answers at once. A redirect
   (Cloudflare Access asking to sign in) is the network answering: it goes to the page as it is and is never cached.
-- A worker that sees the server on a newer build is 'moved': it asks the browser to update, goes network first for
-  everything, files nothing, and answers from its cache only when the network fails or for `?v=<its own build>`.
+- A worker that sees the server on a newer build is 'moved': it asks the browser to update, files nothing, and goes
+  network first, except for a page it answered from its own cache (the 4 s fallback still applies when moved), which keeps
+  getting this build's files from the cache, and for `?v=<its own build>`. Offline the cache answers as always.
 - A request with `?v=<another build>` is answered from that build's cache when it exists (a page left open on build A
   keeps A's files after B's worker took over: activate keeps the newest older cache, marked `__b68-activated`), else from
   the network. Never written.

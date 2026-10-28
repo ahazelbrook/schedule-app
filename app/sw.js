@@ -13,8 +13,9 @@
      in) is the network answering and goes to the page as it is, never cached;
    - a file asked for with ?v=<build> comes from that build's cache when it exists (a page left open on build A keeps A's
      files after build B's worker has taken over), else from the network;
-   - once this worker has seen the server on a newer build it is 'moved': it asks the browser to update, goes network first
-     for everything, writes nothing, and answers from its cache only when the network fails (offline) or for ?v=<its build>.
+   - once this worker has seen the server on a newer build it is 'moved': it asks the browser to update, writes nothing, and
+     goes network first, except for pages it answered from its own cache (a slow link: the 4 s fallback still applies), which
+     keep getting this build's files from the cache, and for ?v=<its build>. Offline the cache answers as always.
    Install precaches the page, the fonts and the core and table bundles only; the page asks for the gm and display bundles
    by message ({ precache: ['gm', 'display'] }) when /api/me says GM. /api/*, /cdn-cgi/*, /media/* and other origins are not
    touched at all: the data layer (cf.js) keeps its own offline copy. */
@@ -214,25 +215,36 @@ self.addEventListener('message', function (event) {
 });
 
 /* ---------- fetch ---------- */
+/* The pages (clients) that were answered from this build's cache. Their files come from it too, even once the worker has seen
+   a newer build on the server: a slow link serves the cached page, and a cached page must get the cached core, never the new
+   build's scripts. In memory only; a client id this worker does not know is treated as a page of the newer build. */
+var cachedClients = [];
+function markClient(id) {
+  if (!id || cachedClients.indexOf(id) >= 0) return;
+  cachedClients.push(id);
+  if (cachedClients.length > 64) cachedClients.shift();
+}
+
 /* the page. Network first; the answer names the server's build */
 function navigate(event, req, key) {
   return caches.open(CACHE).then(function (cache) {
     return cache.match(key).then(function (hit) {
+      var fromCache = function (page) { markClient(event.resultingClientId); return page; };
       var fromNet = fetch(req).then(function (res) {
         if (!cacheable(res)) return res;               /* a redirect (Access asking to sign in), an error: to the page as it is */
         var b = res.headers && typeof res.headers.get === 'function' ? res.headers.get('X-B68-Build') : null;
         noteServer(b);
         if (b === BUILD) { event.waitUntil(cache.put(key, res.clone()).catch(noop)); return res; }
         if (b) return res;                             /* a newer build's page: served, never filed in this build's cache */
-        return hit || res;                             /* no build named, so no way to tell: the cached page if there is one */
+        return hit ? fromCache(hit) : res;             /* no build named, so no way to tell: the cached page if there is one */
       });
-      var fallback = function (err) { return hit || cache.match(INDEX).then(function (page) { if (page) return page; throw err; }); };
-      if (!hit || moved()) return fromNet.catch(fallback);
+      var fallback = function (err) { return hit ? fromCache(hit) : cache.match(INDEX).then(function (page) { if (page) return fromCache(page); throw err; }); };
+      if (!hit) return fromNet.catch(fallback);
       /* a cached page: the network answers unless it fails (then the cache does, at once) or is slow (then the cache answers
          at the limit and the late answer, when it is this build's, still refreshes the cache for next time) */
       var timer = null;
-      var late = new Promise(function (resolve) { timer = setTimeout(function () { resolve(hit); }, NAV_MS); });
-      var net = fromNet.then(function (res) { clearTimeout(timer); return res; }, function () { clearTimeout(timer); return hit; });
+      var late = new Promise(function (resolve) { timer = setTimeout(function () { resolve(fromCache(hit)); }, NAV_MS); });
+      var net = fromNet.then(function (res) { clearTimeout(timer); return res; }, function () { clearTimeout(timer); return fromCache(hit); });
       event.waitUntil(net);
       return Promise.race([net, late]);
     });
@@ -254,7 +266,7 @@ function asset(event, req, url, key) {
     return cache.match(key).then(function (hit) {
       var shell = !!SHELL_KEYS[key];
       /* the app's own files: the cache answers at once, a later round makes sure it is current */
-      if (shell && hit && (!moved() || v === BUILD)) {
+      if (shell && hit && (!moved() || v === BUILD || cachedClients.indexOf(event.clientId) >= 0)) {
         if (!moved()) refreshLater(event, key, req.url);
         return hit;
       }
