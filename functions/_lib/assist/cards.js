@@ -4,12 +4,15 @@
 //
 // What a row's card JSON carries (functions/api/gm/assist.js writes it): text, keys, shown:1 for a card the Editor let through,
 // update:1 (+ items) for a Ledger row, detail { said_at, rule } for a Ref slip, and the marks written here:
+//   glance { kind, headline, bullets, cite?, check? } (design 3.6; a row from before it restores as { kind by seat, headline: text, bullets: [] })
 //   seen:1 (read in the box)  dismissed:1 (Got it)  kept:1 (starred)  done:[i] (Ledger items applied or dismissed)
 //   filed:1 (gm:after put it in the session note)
 // Ask Blade's rows (seat 'ask', ask:1, q, text) are never `shown` cards: they ride beside cards and updates as `asks`, and the box marks one
 // by (at, question): a dismiss or keep matches c.ask === 1 and c.q === the item's text. gm:after never files them (it reads cards only).
 // A card is identified to the box by (at, text) and a Ledger item by (at, key, text): the same three values the tick answer
 // carries, so a card that arrives by tick and the same card restored after a reload are one card.
+
+import { restoreGlance, ledgerGlance } from './glance.js';
 
 export const NIGHT_MS = 12 * 60 * 60 * 1000;
 const LIMIT = 300;
@@ -43,14 +46,14 @@ export async function nightCards(db, campaign, { since, now = Date.now(), sessio
       const done = Array.isArray(c.done) ? c.done : [];
       items.forEach((it, i) => {
         if (!str(it.text).trim() || (!all && done.includes(i))) return;
-        updates.push({ row: r.id, i, seat: 'ledger', at: r.at, key: str(it.key), text: str(it.text) });
+        updates.push({ row: r.id, i, seat: 'ledger', at: r.at, key: str(it.key), text: str(it.text), ...ledgerGlance(str(it.text)) });
       });
       continue;
     }
     if (!str(c.text).trim() || (!all && c.dismissed === 1)) continue;
     const seat = str(c.seat) || (r.seat === 'editor' ? 'ref' : r.seat);
     const d = c.detail && typeof c.detail === 'object' ? c.detail : null;
-    cards.push({ row: r.id, session: str(r.session), seat, at: r.at, text: str(c.text), ...(d ? { detail: { said_at: str(d.said_at), rule: str(d.rule) } } : {}),
+    cards.push({ row: r.id, session: str(r.session), seat, at: r.at, text: str(c.text), ...restoreGlance(c, seat), ...(d ? { detail: { said_at: str(d.said_at), rule: str(d.rule) } } : {}),
       important: seat === 'ref', seen: c.seen === 1, kept: c.kept === 1, filed: c.filed === 1, dismissed: c.dismissed === 1 });
   }
   return { cards, updates, asks: await nightAsks(db, campaign, from, all) };
