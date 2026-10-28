@@ -110,7 +110,8 @@ import { getDb } from '../../_lib/db.js';
 import { HttpError, json, methodNotAllowed, readJsonObject, campaignOf } from '../../_lib/http.js';
 import { requireGm, parseJson } from '../../_lib/gm.js';
 import { loadStt, readLines } from '../../_lib/stt.js';
-import { makeClient, callSeat } from '../../_lib/assist/claude.js';
+import { cachedClient, callSeat } from '../../_lib/assist/claude.js';
+import { melbourneHHMM } from '../../_lib/assist/clock.js';
 import { makeLeases, DEADLINE_MS, DEFAULT_DEADLINE_MS } from '../../_lib/assist/leases.js';
 import { SEATS, WAKES } from '../../_lib/assist/seats.js';
 import { cleanItem, verdictOf, unknownVerdict } from '../../_lib/assist/gatekeeper.js';
@@ -132,19 +133,18 @@ const RECENT_CARD_MS = 10 * 60 * 1000;     // shown cards that can still make a 
 const TAP_WINDOW_MS = 4 * 60 * 1000;       // the Tap seats read this much raw talk
 const FIT_WINDOW_MS = 5 * 60 * 1000;
 const FIRST_SLICE_MS = 60 * 1000;          // no `after`: the Tripwire reads the last minute
-const TZ = 'Australia/Melbourne';
 
 // Seats in flight in THIS isolate, as leases (functions/_lib/assist/leases.js): a token and an expiry per seat, so a request cancelled
 // mid-call (its `finally` never runs) frees the seat when the lease lapses instead of holding it for the night. Best effort: another
 // isolate does not see it, so the cooldowns (from the log) back it up.
 const sharedLeases = makeLeases();
 
-const stampFmt = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+// Melbourne's HH:MM, by arithmetic (assist/clock.js): no Intl formatter at module scope, whose ICU zone load cost ~12 ms of CPU per isolate start.
 const stampMemo = new Map();        // one formatted stamp per minute: a long window of talk would otherwise format every line
 const hhmm = (ms) => {
   const m = Math.floor(ms / 60000);
   let v = stampMemo.get(m);
-  if (v === undefined) { v = stampFmt.format(new Date(m * 60000)).replace(/^24:/, '00:'); if (stampMemo.size > 200) stampMemo.clear(); stampMemo.set(m, v); }
+  if (v === undefined) { v = melbourneHHMM(m * 60000); if (stampMemo.size > 200) stampMemo.clear(); stampMemo.set(m, v); }
   return v;
 };
 const dollars = (n) => Math.round(n * 10000) / 10000;
@@ -152,7 +152,7 @@ const dollars = (n) => Math.round(n * 10000) / 10000;
 function defaultClient(env) {
   const key = env && env.ANTHROPIC_API_KEY;
   if (typeof key !== 'string' || !key) throw new HttpError(503, 'assist is not set up (no API key)');
-  return makeClient(key);
+  return cachedClient(key);          // one per isolate, keyed by a hash of the key; the deadline and signal go on each call
 }
 
 function capOf(env) {
