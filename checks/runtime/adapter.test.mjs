@@ -1495,17 +1495,17 @@ function fakeSockets({ autoPong = true } = {}) {
   }
   return { FakeWS, made, last: () => made[made.length - 1] };
 }
-const LIVE_KNOBS = { pingMs: 100000, pongMs: 100000, silentMs: 100000, echoMs: 80, graceMs: 80, badMs: 700, backoff: [60, 120, 300] };
+const LIVE_KNOBS = { pingMs: 100000, pongMs: 100000, silentMs: 100000, echoMs: 80, graceMs: 80, badMs: 700, backoff: [60, 120, 300], pokeGapMs: 0 };
 const HEALTHY_MS = 400;
-function liveBrowser(api, knobs = {}, sockOpts) {
+function liveBrowser(api, knobs = {}, sockOpts, healthyMs = HEALTHY_MS) {
   const ws = fakeSockets(sockOpts);
-  const b = browser(api, { email: 'gm@x.test' }, { extra: { WebSocket: ws.FakeWS, __B68_LIVE: { ...LIVE_KNOBS, ...knobs }, __B68_HEALTHY_POLL_MS: HEALTHY_MS } });
+  const b = browser(api, { email: 'gm@x.test' }, { extra: { WebSocket: ws.FakeWS, __B68_LIVE: { ...LIVE_KNOBS, ...knobs }, __B68_HEALTHY_POLL_MS: healthyMs } });
   const polls = () => b.fetchLog.filter((c) => /^\/api\/characters(\?|$)/.test(c.url)).length;
   return { b, ws, polls };
 }
-async function liveUp(api, knobs, sockOpts) {
+async function liveUp(api, knobs, sockOpts, healthyMs) {
   api.live = true;
-  const L = liveBrowser(api, knobs, sockOpts);
+  const L = liveBrowser(api, knobs, sockOpts, healthyMs);
   const db = await L.b.win.claude.use('db');
   const snaps = []; const un = db.collection('characters').onSnapshot((s) => snaps.push(s));
   await until(() => snaps.length);
@@ -1678,6 +1678,21 @@ await test('live: the switch going off closes the socket within one poll and the
   ok(!b.win.B68Live.state().open && !b.win.B68Live.state().healthy, 'not open, not healthy');
   const n = polls(); await sleep(POLL * 6); ok(polls() - n >= 3, 'fast beat again');
   eq(ws.made.length, 1, 'and no reconnect');
+  un();
+});
+
+await test('live: a burst of 10 pokes in 300 ms makes 1 or 2 polls, and the last write of the burst is seen', async () => {
+  const api = fakeApi();
+  const { ws, polls, snaps, un } = await liveUp(api, { pokeGapMs: 500, echoMs: 100000, graceMs: 100000 }, undefined, 100000);
+  ws.last().open(); await sleep(POLL * 3);
+  await sleep(600);                                                     // past the hello poll gap
+  const n = polls();
+  for (let i = 0; i < 10; i++) { api.put('b' + i, char('b' + i)); ws.last().poke('characters'); await sleep(30); }
+  await until(() => snaps.some((s) => s.docs.some((d) => d.id === 'b9')), 1000);
+  await sleep(300);
+  const made = polls() - n;
+  ok(made >= 1 && made <= 2, 'polls made by the burst: ' + made);
+  ok(snaps.some((s) => s.docs.some((d) => d.id === 'b9')), 'the last write was seen');
   un();
 });
 

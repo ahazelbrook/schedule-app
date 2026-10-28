@@ -364,9 +364,17 @@
         armPing();
       }, lvn('pingMs', 30000));
     }
+    /* at most one call per listener every 500 ms: pokes inside the gap coalesce into one call at its end (the last poke of a burst is never dropped) */
     function fire(k) {
       subs.slice().forEach(function (s) {
         if (k !== 'hello' && s.kinds.indexOf(k) < 0) return;
+        var gap = lvn('pokeGapMs', 500), wait = (s.last || 0) + gap - now();
+        if (wait > 0) {
+          s.pendingK = k;
+          if (!s.timer) s.timer = setTimeout(function () { s.timer = null; s.last = now(); try { s.fn(s.pendingK); } catch (e) { setTimeout(function () { throw e; }, 0); } }, wait);
+          return;
+        }
+        s.last = now();
         try { s.fn(k); } catch (e) { setTimeout(function () { throw e; }, 0); }
       });
     }
@@ -409,7 +417,7 @@
       on: function (kinds, fn) {
         var s = { kinds: kinds || [], fn: fn }; subs.push(s);
         if (wantFlag === true) connect();
-        return function () { var i = subs.indexOf(s); if (i >= 0) subs.splice(i, 1); if (!subs.length) stopAll(); };
+        return function () { if (s.timer) { clearTimeout(s.timer); s.timer = null; } var i = subs.indexOf(s); if (i >= 0) subs.splice(i, 1); if (!subs.length) stopAll(); };
       },
       flag: flag, visibility: visibility, polled: polled, wrote: wrote, healthy: healthy, stop: stopAll,
       state: function () { return { open: opened, healthy: healthy(), flag: wantFlag, blocked: blocked, connects: connects, retry: retry, grace: grace, pend: Object.keys(pend), pokes: Object.keys(pokeAt) }; }
