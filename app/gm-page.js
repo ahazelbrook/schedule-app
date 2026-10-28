@@ -3097,7 +3097,7 @@
      card's Clear / Dismiss and runs the page's own work (hoDone for a handout, dropping the state). The Rack keeps the Fixer and Voice only. */
   function sentences(t) { var m = str(t).replace(/\s+/g, ' ').trim().match(/[^.!?]+(?:[.!?]+["')\]]*|$)\s*/g) || []; return m.map(function (x) { return x.trim(); }).filter(Boolean); }
   function stallSpec(st) {
-    var sp = { kind: 'idea', seat: 'stall', headline: st.offer, bullets: st.why ? [st.why] : [], chips: [{ text: st.kind }], ackLabel: 'Clear' };
+    var sp = { kind: 'idea', seat: 'stall', headline: st.offer, bullets: st.why ? [st.why] : [], chips: [{ text: st.kind }], ackLabel: 'Clear', onAck: function () { if (S) S.stall = null; } };
     if (st.offer.length > 140) sp.more = st.offer;
     return sp;
   }
@@ -3105,7 +3105,7 @@
     var ss = sentences(m.cutaway), first = ss[0] || m.cutaway, rest = ss.slice(1);
     var tick = m.clock ? 'Clock: ' + m.clock + ' · suggest ' + (m.ticks ? '+' + m.ticks + ' (your call)' : 'no tick') + (m.why ? ' · ' + m.why : '') : '';
     var room = tick ? 3 : 4, bl = rest.slice(0, room); if (tick) bl.push(tick);
-    var sp = { kind: 'idea', seat: 'meanwhile', headline: first, bullets: bl, chips: [{ text: m.faction || 'a faction' }], ackLabel: 'Clear' };
+    var sp = { kind: 'idea', seat: 'meanwhile', headline: first, bullets: bl, chips: [{ text: m.faction || 'a faction' }], ackLabel: 'Clear', onAck: function () { if (S) S.meanwhile = null; } };
     if (first.length > 140 || rest.length > room) sp.more = m.cutaway;
     return sp;
   }

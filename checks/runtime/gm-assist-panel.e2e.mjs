@@ -259,6 +259,9 @@ try {
   await S1.page.click(stallCard + ' [data-as="fold"]');
   await S1.page.click(stallCard + ' [data-as="ack"]');
   check(await S1.page.$(stallCard) === null, 'Clear drops the offer');
+  await S1.page.click('#gm-pos [data-gm="pos"]:not([aria-checked="true"])');      /* a position tap re-renders the Rack, which re-runs syncCards */
+  await S1.page.waitForTimeout(1500);
+  check(await S1.page.$(stallCard) === null, 'and the cleared offer does not come back on the next renderRack (its state is cleared too)');
   await S1.c.close();
 
   // ---- Meanwhile: the faction cutaway is an idea card; it suggests a tick and never makes one ----
@@ -280,6 +283,9 @@ try {
   await mp.click(mwCard + ' [data-as="ack"]');
   check(await mp.$(mwCard) === null, 'Clear drops the card');
   check(!mwSent.some((x) => /clock|campaign|display|ambient/i.test(x)), 'it suggested only: no clock, campaign, iPad or ambient write was made' + (mwSent.length ? ' (saw ' + mwSent.slice(0, 3).join(', ') + ')' : ''));
+  await mp.click('#gm-pos [data-gm="pos"]:not([aria-checked="true"])');      /* a position tap re-renders the Rack (and writes its own state, so this comes after the check above) */
+  await mp.waitForTimeout(1500);
+  check(await mp.$(mwCard) === null, 'and the cleared cutaway does not come back on the next renderRack');
   await Mw.c.close();
 
   // ---- Handouts: the Mystery keeper's suggestion reaches the Rack once; not again after Dismiss or Show ----
