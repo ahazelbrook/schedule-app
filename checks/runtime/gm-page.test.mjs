@@ -3050,7 +3050,12 @@ await test('S5j. the preview on the player layer shows what the iPad would carry
   assert.equal(h.page._state().map.layer, 'gm'); assert.ok(tokN(gmSvg) >= 3 && gmSvg.includes('>OM<'), 'the GM layer has the people too');
   h.q('[data-gm="layer"][data-v="player"]').click();
   assert.ok(!lastPlayerCall(h).tokens.some((t) => /OM<|WT<|PQ<|IS<|#d11/.test(t.svg)), 'back on the player layer: no person');
-  const n2 = h.page._state().runCacheN; h.q('[data-gm="layer"][data-v="player"]').click(); h.q('[data-gm="layer"][data-v="player"]').click();
+  /* a real redraw on the player layer (the pinned visible clock ticks, the map is drawn again 200 ms later): the GM cache does not grow */
+  const n2 = h.page._state().runCacheN, drawn0 = h.spy.calls.length, svg0 = h.page._state().map.svg;
+  h.cd.current.clocks[0].filled = 5; h.page.campaign(h.cd.current);
+  await rsleep(400);
+  assert.ok(h.spy.calls.length > drawn0 && lastPlayerCall(h) === h.spy.calls[h.spy.calls.length - 1], 'the player map was drawn again');
+  assert.notEqual(h.page._state().map.svg, svg0, 'and the pie moved on it');
   assert.equal(h.page._state().runCacheN, n2, 'player draws add nothing to the GM cache');
   await h.save();
 });
