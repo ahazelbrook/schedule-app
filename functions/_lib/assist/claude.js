@@ -22,6 +22,36 @@ export function makeClient(apiKey) {
   return new Anthropic({ apiKey });
 }
 
+// The Worker's client, one per isolate. Building an SDK client is the dearest thing on the Ask and Tick routes (S6 profile: 13-19 ms in the
+// first request of an isolate, almost all of it the SDK's first read of process.env; a client built again on a warm isolate is cheap but
+// pointless). The client holds no per-request state: the deadline, retry count and AbortSignal go on each call (requestOptions), so one is
+// safe to share between requests. The cache is keyed by a 53-bit hash of the key, never the key, so a rotated secret gets a new client and
+// the key text appears in no map key, log or global name. At most KEEP clients stay (a rotation leaves the old one to fall out).
+const clients = new Map();
+const KEEP = 4;
+function hash53(s) {         // cyrb53: sync and cheap, so clientFor stays sync
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+export function cachedClient(apiKey, make = makeClient) {
+  const id = hash53(String(apiKey)) + ':' + String(apiKey).length;
+  let c = clients.get(id);
+  if (!c) {
+    c = make(apiKey);
+    if (clients.size >= KEEP) clients.delete(clients.keys().next().value);
+    clients.set(id, c);
+  }
+  return c;
+}
+export const clientCacheSize = () => clients.size;
+
+// Pay the SDK's one-off setup at module load (isolate start) instead of inside the first request. The placeholder is not a key and makes no call.
+// Whether the platform bills the global scope to the first request is NOT measurable locally (see the S6 report); if it does, this costs nothing extra.
+try { new Anthropic({ apiKey: 'warm-up' }); } catch { /* best effort */ }
+
 // cents-free dollars for one response's usage.
 export function costOf(model, usage) {
   const p = PRICES[model];
