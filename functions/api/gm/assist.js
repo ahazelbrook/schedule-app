@@ -63,6 +63,16 @@
 //        known and theories (what the players said aloud). Code only: no model, no key, no spend, and it runs at any tier.
 //   POST /api/gm/assist/portrait-add { name, description?, spec } -> { id, doc }   saves a portrait as an app NPC through checkNpc/writeNpc,
 //        always HIDDEN (revealed: false, whatever is sent); showing it to the players is the normal reveal flow.
+//   POST /api/gm/assist/act { from, to, state } -> { actions, dropped, spend }    the co-GM's hands (seat `hands`, Haiku, low; design 5.3 and 5.4; functions/_lib/assist/hands.js).
+//        from and to are transcript seqs (whole numbers, from <= to, at most 200 apart); the Worker reads those lines from D1 ITSELF (the latest 40 at most, one query) and
+//        ignores any `lines` in the body, so a page cannot give the seat, or the quote check, talk that was never said. state is { clocks: [{ id, name, size, filled, hidden }],
+//        npcs: [{ id, name }], pcs: [{ id, name }], onStage } of at most 8 KB of JSON, else 400. Every 400 comes before the database or the key. The seat is given the window and
+//        the state and NEVER the cached prefix (no assist part is needed, none is read). The Worker validates what comes back and applies NOTHING; the page does that (C2):
+//        an action is kept only if its quote is in the lines, its clock id is in the state, its size is legal, its tick is clamped to the clock and a name already known is not
+//        added again; a confidence under 0.7 is mode 'offer' (a yellow card), else 'act'. Each action has a stable `key`. `dropped` is [{ type, why, name? }] (an npc_add of a
+//        known name says 'already known'). An empty range of lines answers { actions: [] } with no model call and no row. Core tier (to the cap), one at a time and at most
+//        every 8 s: 429 otherwise. One row is logged (seat `hands`, flags `act`, `shown: 0`, so it never holds back a card). The answer carries no `health`: the page feeds health to healthStep, and an
+//        empty `skipped` would reset the other seats' stuck streaks. It does not take the lapsed leases either (only the tick reports `reaped`).
 //   GET  /api/gm/assist/cards?session=&since= -> { cards, updates, asks }   tonight's shown cards, open Ledger updates and Ask Blade answers
 //        (last 12 h unless `since`; asks: [{ row, at, q, text, kind, headline, bullets, say, secret, more, kept }], the last 10, oldest first), so a reloaded GM page restores its chat.
 //        Dismissed cards, finished updates and dismissed asks are left out. No model, no key.
@@ -117,15 +127,17 @@ import { SEATS, WAKES } from '../../_lib/assist/seats.js';
 import { cleanItem, verdictOf, unknownVerdict } from '../../_lib/assist/gatekeeper.js';
 import { checkNpc, newNpcId, writeNpc } from '../../_lib/npcs.js';
 import { toPortrait, toProp, toWire, buildBoard, boardSource, cleanName, cleanAsk, cleanVocab } from '../../_lib/assist/screen.js';
-import { portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN, SCREEN_NAME_MAX, askUser, cleanAskFields, clerkUser, CLERK_KNOWN_MAX, CLERK_NAME_MAX, ASK_MAX, ASK_WINDOW_MIN, ASK_HISTORY, ASK_HISTORY_MIN, ASK_HISTORY_ANSWER_MAX } from '../../_lib/assist/prompts.js';
+import { handsUser, portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN, SCREEN_NAME_MAX, askUser, cleanAskFields, clerkUser, CLERK_KNOWN_MAX, CLERK_NAME_MAX, ASK_MAX, ASK_WINDOW_MIN, ASK_HISTORY, ASK_HISTORY_MIN, ASK_HISTORY_ANSWER_MAX } from '../../_lib/assist/prompts.js';
 import { gatekeeperUser, ITEM_MAX, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX,
   STORY_SEATS, storyBlock, scribeUser, SCRIBE_SLICE_MAX, SCRIBE_FIRST_MIN, MEANWHILE_MIN, meanwhileUser, cleanClocks, silenceUser } from '../../_lib/assist/prompts.js';
 import { DEFAULT_CAP, COOLDOWN_MS, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS, isListening, silenceFlag } from '../../_lib/assist/conductor.js';
 import { ledgerGlance, fixerGlance, restoreGlance } from '../../_lib/assist/glance.js';
 import { toCandidate, toVoice, toAnother, toStall, toScribe, toMeanwhile, toHandout, handoutIds, handoutTitles, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
+import { cleanActBody, validateActions, LINES_MAX } from '../../_lib/assist/hands.js';
 
 const BODY_MAX = 8 * 1024;
+const ACT_BODY_MAX = 32 * 1024;            // an act request holds a state of at most 8 KB; a bigger one must reach the state check (a 400), not the generic 413 at 8 KB
 const PORTRAIT_BODY_MAX = 14 * 1024;       // a portrait request carries the figure kit's vocabulary (a few KB of names)
 const NIGHT_MS = 12 * 60 * 60 * 1000;      // "tonight" is the last 12 hours of the log
 const LAST_RUN_MS = 60 * 60 * 1000;        // cooldowns look back an hour at most
@@ -208,6 +220,8 @@ export function cleanShown(v) {
   return out;
 }
 
+const NO_PREFIX = { fileId: '', legacy: false, extra: {}, found: true };   // the hands seat never reads the assist part, so /act does not even look for it
+
 const REPUSH = 're-push the assist part';
 const FILE_ID = /^file_[A-Za-z0-9_-]{4,100}$/;
 
@@ -240,6 +254,19 @@ async function tonight(db, campaign, now) {
   const since = new Date(now - NIGHT_MS).toISOString();
   const r = await db.prepare('SELECT COALESCE(SUM(cents), 0) AS cents FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2').bind(campaign, since).first();
   return (r ? r.cents : 0) / 100;
+}
+
+/** /act's one read of the log: tonight's spend and the newest `hands` row ({ spent (dollars), last (ms | null) }). The cooldown and the ladder both come from it. */
+async function spendAndLastHands(db, campaign, now) {
+  const since = new Date(now - NIGHT_MS).toISOString();
+  const r = await db.prepare("SELECT COALESCE(SUM(cents), 0) AS cents, MAX(CASE WHEN seat = 'hands' THEN at END) AS hands FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2").bind(campaign, since).first();
+  return { spent: (r ? r.cents : 0) / 100, last: r && r.hands ? Date.parse(r.hands) : null };
+}
+
+/** The transcript lines from seq `from` to `to` (the latest LINES_MAX if more): the ONE read of the transcript an /act call makes. Marks are left out in SQL. */
+async function actLines(db, campaign, from, to) {
+  const r = await db.prepare("SELECT seq, session, at, speaker, kind, text FROM (SELECT seq, session, at, speaker, kind, text FROM gm_transcript WHERE campaign = ?1 AND seq BETWEEN ?2 AND ?3 AND kind = 'line' ORDER BY seq DESC LIMIT ?4) ORDER BY seq").bind(campaign, from, to, LINES_MAX).all();
+  return r.results || [];
 }
 
 // the previous tick's Tripwire row (its flags), for the Ref follow-through
@@ -438,7 +465,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
   async function handle({ request, env, data }) {
     requireGm(data);                                   // first: before the method, the body or the database
     const url = new URL(request.url);
-    const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board|ask)\/?$/.exec(url.pathname);
+    const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board|ask|act)\/?$/.exec(url.pathname);
     if (!action) throw new HttpError(404, 'not found');
     if (action[1] === 'cards') {                       // the box's memory: no key, no model
       if (request.method === 'GET') {
@@ -455,7 +482,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       return json({ marked: await markCards(await getDb(env), campaignOf(env), b.op, items) });
     }
     if (request.method !== 'POST') return methodNotAllowed(['POST']);
-    const body = await readJsonObject(request, action[1] === 'portrait' ? PORTRAIT_BODY_MAX : BODY_MAX);
+    const body = await readJsonObject(request, action[1] === 'portrait' ? PORTRAIT_BODY_MAX : action[1] === 'act' ? ACT_BODY_MAX : BODY_MAX);
+    const actIn = action[1] === 'act' ? cleanActBody(body) : null;                // a 400 (range, state) comes before the database or the key
     const gateItem = action[1] === 'gatekeeper' ? cleanItem(body) : null;      // checked before the database or the key are touched
     if (gateItem && !gateItem.ok) throw new HttpError(400, gateItem.why);
     const screenIn = SCREEN_ACTIONS.includes(action[1]) ? cleanScreenBody(action[1], body) : null;      // a 400 comes before the database or the key
@@ -467,10 +495,12 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (action[1] === 'portrait-add') return json(await addPortrait(db, campaign, screenIn));
     const client = clientFor(env);
     const cap = capOf(env);
-    const spentBefore = await tonight(db, campaign, t0);
+    // /act reads the log once for spend and its own last run, and never reads the assist part (its seat is given no prefix)
+    const handsLog = actIn ? await spendAndLastHands(db, campaign, t0) : null;
+    const spentBefore = handsLog ? handsLog.spent : await tonight(db, campaign, t0);
     const tier = budgetTier(spentBefore, cap);
-    const { fileId, legacy, extra, found } = await loadPrefix(db, campaign);
-    const warnings = legacy ? [REPUSH] : found && fileId ? [] : ['no assist part in the GM pack'];
+    const { fileId, legacy, extra, found } = actIn ? NO_PREFIX : await loadPrefix(db, campaign);
+    const warnings = actIn ? [] : legacy ? [REPUSH] : found && fileId ? [] : ['no assist part in the GM pack'];
     const stt = await loadStt(db, campaign);
     const speakers = stt.doc.speakers || {};
     const errors = [];
@@ -496,9 +526,10 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const ctl = new AbortController();
       let timer, timedOut = false;
       try {
-        const instructions = (extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions) + (STORY_SEATS.includes(name) ? storyBlock(storyText) : '');
+        // a seat marked noPrefix (hands) gets neither the cached prefix nor the vault-built extra: its instructions and the user turn are all it reads
+        const instructions = (!cfg.noPrefix && extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions) + (STORY_SEATS.includes(name) ? storyBlock(storyText) : '');
         const deadline = new Promise((_, reject) => { timer = setTimeout(() => { timedOut = true; reject(new Error('deadline')); ctl.abort(); }, deadlineMs); });
-        const pending = (async () => call(client, { ...cfg, instructions, prefixFileId: fileId, user, deadlineMs, signal: ctl.signal }))();
+        const pending = (async () => call(client, { ...cfg, instructions, prefixFileId: cfg.noPrefix ? '' : fileId, user, deadlineMs, signal: ctl.signal }))();
         pending.catch(() => {});                    // if the deadline wins, this settles later (the abort): nobody is listening, and that is fine
         const r = await Promise.race([pending, deadline]);
         thisTick += r.cost || 0;
@@ -520,6 +551,26 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     }
     const spend = () => ({ tonight: dollars(spentBefore + thisTick), cap, tier: budgetTier(spentBefore + thisTick, cap), tick: dollars(thisTick) });
     const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.meanwhile ? { meanwhile: more.meanwhile } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}), ...(isTick ? { health: { skipped, reaped, ran } } : {}) });
+
+    if (action[1] === 'act') {
+      // The co-GM's hands (design 5.3/5.4). Core tier: it runs to the cap like Ref. One at a time, and not more often than every 8 s (from the log).
+      // This route takes nothing from the page but the range and the state; it reads the lines itself, validates what the seat says, and applies nothing.
+      // It does not call leases.takeReaped(): that belongs to the tick, whose health.reaped it would otherwise swallow.
+      const gate = canRun('hands', { now: t0, lastRun: handsLog.last === null ? {} : { hands: handsLog.last }, inFlight: live(), tier });
+      if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : gate.why === 'cooldown' ? 'the co-GM is cooling down' : 'this is busy');
+      const lines = await actLines(db, campaign, actIn.from, actIn.to);                        // the one transcript read
+      // No `health` in this answer: the page feeds health to healthStep, and an empty `skipped` there would reset the other seats' stuck streaks.
+      if (!lines.length) return json({ actions: [], dropped: [], spend: spend() });       // nothing to read: no call, no row
+      const { cfg, r, timing } = await run('hands', handsUser({ state: actIn.state, stamp: hhmm(t0), talk: formatLines(lines, speakers) }));
+      const at = new Date(now()).toISOString();
+      // run() nulls r.json for a refusal or a reply cut off at the limit: those show nothing
+      const out = r && r.json && Array.isArray(r.json.actions) ? r.json : null;
+      const v = out ? validateActions(out.actions, { state: actIn.state, lines }) : { actions: [], dropped: [] };
+      await logRow(db, campaign, { at, session: lines[lines.length - 1].session || '', seat: 'hands', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['act'], timing,
+        card: { act: 1, from: actIn.from, to: actIn.to, n: lines.length, ...(out ? { out } : {}), actions: v.actions.map((a) => ({ type: a.type, mode: a.mode, key: a.key, at: a.at, confidence: a.confidence })), dropped: v.dropped, shown: 0,
+          ...(out ? {} : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : r && r.stop === 'max_tokens' ? 'cut off' : 'no JSON' }) } }).run();
+      return json({ actions: v.actions, dropped: v.dropped, spend: spend(), ...(errors.length ? { errors } : {}) });
+    }
 
     if (action[1] === 'portrait' || action[1] === 'prop' || action[1] === 'wire') {
       const seat = action[1];
