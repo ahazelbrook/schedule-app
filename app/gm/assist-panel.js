@@ -194,6 +194,53 @@
     return { cells: f > 0 ? Math.max(1, Math.round(f * 5)) : 0, tone: f >= 0.85 ? 'warn' : f >= 0.6 ? 'mid' : 'ok', frac: f };
   }
   P.meterOf = meterOf;
+
+  /* ---------- seat health (design 2.1 and 3.4): the dots for the Tripwire, Ref and Voice ----------
+     Fed by the tick answer's `health: { skipped: [{ seat, why }], reaped: [seat], ran: [seat] }`. Three states, each with its own shape and word as well as a colour:
+       ok     ran within the last 10 minutes (`ran` names the seats whose call came back with an answer)
+       stuck  skipped as in-flight on 2 health-bearing answers in a row (any answer without that resets it; a reaped lease clears it)
+       asleep anything else: not woken, on cooldown, held by the budget ladder. A seat that was not woken is not a fault.
+       unknown  no tick has answered yet.
+     healthStep is pure (a new state out, the old one untouched); healthView is evaluated at render time with the clock handed in. */
+  var HEALTH_SEATS = ['tripwire', 'ref', 'voice'], HEALTH_FRESH_MS = 10 * 60 * 1000, HEALTH_STUCK_TICKS = 2;
+  var HEALTH_NAME = { tripwire: 'Tripwire', ref: 'Ref', voice: 'Voice' };
+  var HEALTH_WORD = { ok: 'ran in the last 10 minutes', asleep: 'asleep: not woken lately', stuck: 'stuck: skipped as still running on two ticks', unknown: 'no reading yet' };
+  function healthNew() {
+    var seats = {}; HEALTH_SEATS.forEach(function (k) { seats[k] = { at: 0, streak: 0 }; });
+    return { seen: false, seats: seats, reaped: [] };
+  }
+  function healthStep(prev, health, nowMs) {
+    var p = isObj(prev) && isObj(prev.seats) ? prev : healthNew();
+    if (!isObj(health)) return p;                                  /* an answer without health (ask, fit, an error) says nothing about the seats */
+    var skipped = Array.isArray(health.skipped) ? health.skipped : [], ran = Array.isArray(health.ran) ? health.ran : [], reaped = Array.isArray(health.reaped) ? health.reaped : [];
+    var seats = {};
+    HEALTH_SEATS.forEach(function (k) {
+      var was = isObj(p.seats[k]) ? p.seats[k] : { at: 0, streak: 0 }, at = was.at, streak = 0;
+      if (ran.indexOf(k) >= 0 && isFinite(nowMs)) at = nowMs;
+      if (skipped.some(function (x) { return isObj(x) && x.seat === k && x.why === 'in-flight'; })) streak = was.streak + 1;
+      if (reaped.indexOf(k) >= 0) streak = 0;                      /* the lease lapsed and was swept: the seat is free again */
+      seats[k] = { at: at, streak: streak };
+    });
+    return { seen: true, seats: seats, reaped: reaped.filter(function (x) { return typeof x === 'string' && x; }).slice(0, 6) };
+  }
+  function healthView(h, nowMs) {
+    var p = isObj(h) && isObj(h.seats) ? h : healthNew();
+    return HEALTH_SEATS.map(function (k) {
+      var e = isObj(p.seats[k]) ? p.seats[k] : { at: 0, streak: 0 }, state;
+      if (!p.seen) state = 'unknown';
+      else if (e.streak >= HEALTH_STUCK_TICKS) state = 'stuck';
+      else if (e.at && isFinite(nowMs) && nowMs - e.at <= HEALTH_FRESH_MS) state = 'ok';
+      else state = 'asleep';
+      return { seat: k, state: state, word: HEALTH_WORD[state] };
+    });
+  }
+  /* the one quiet line for a lease the server had to reap: '' when nothing was */
+  function reapedLine(h) {
+    var r = isObj(h) && Array.isArray(h.reaped) ? h.reaped : [];
+    if (!r.length) return '';
+    return 'Blade freed a stuck seat (' + r.map(function (k) { return str(HEALTH_NAME[k] || k); }).join(', ') + '). It is working again.';
+  }
+  P.healthNew = healthNew; P.healthStep = healthStep; P.healthView = healthView; P.reapedLine = reapedLine; P.HEALTH_FRESH_MS = HEALTH_FRESH_MS;
   /* a card's folded line: one line of its text, cut with an ellipsis */
   function headline(text) { return clip(text, FOLD_CHARS); }
   P.headline = headline;
@@ -295,6 +342,7 @@
     if (st.updates.length > MAX_UPDATES) st.updates = st.updates.slice(-MAX_UPDATES);
     if (isObj(r.spend)) st.spend = { tonight: +r.spend.tonight || 0, cap: typeof r.spend.cap === 'number' ? r.spend.cap : null, tier: str(r.spend.tier) };
     st.setup = Array.isArray(r.warnings) && r.warnings.length > 0;
+    if (isObj(r.health)) { var tms = Date.parse(nowIso); st.health = healthStep(st.health, r.health, isFinite(tms) ? tms : Date.now()); }
     return fresh;
   }
   P.absorb = absorb;
@@ -497,14 +545,16 @@
       var HEALTH = [['T', 'Tripwire'], ['R', 'Ref'], ['V', 'Voice']];
       host.innerHTML =
         '<div class="as-banner" id="as-banner" hidden><button type="button" class="as-banner-b" data-as="banner"></button></div>' +
+        '<div class="as-sr" id="as-alert" aria-live="assertive" aria-atomic="true"></div>' +
         '<aside class="as-panel" id="as-panel" aria-label="Blade, the table agent" hidden>' +
           '<header class="as-head"><div class="as-head-1"><img class="as-av" src="' + esc(avatar) + '" alt="" width="32" height="32">' +
             '<div class="as-who"><b tabindex="-1" id="as-name">Blade</b><span class="as-state" id="as-state" data-state="wait"><i class="as-dot" aria-hidden="true"></i><span id="as-state-word">Waiting</span></span></div>' +
             '<button type="button" class="as-pin" id="as-pin" data-as="pin" aria-pressed="false" hidden>Pin</button>' +
             '<button type="button" class="as-x" data-as="close" aria-label="Close Blade (A)"><span aria-hidden="true">×</span></button></div>' +
-            '<div class="as-head-2"><span class="as-tier" id="as-tier" hidden></span><span class="as-meter" id="as-meter" aria-hidden="true"></span>' +
+            '<div class="as-head-2"><span class="as-tier" id="as-tier" hidden></span><span class="as-meter" id="as-meter" role="img" aria-label="Spend: no reading yet" data-tone="ok"></span>' +
               '<span class="as-health" id="as-health" role="group" aria-label="Seat health">' + HEALTH.map(function (h) {
-                return '<span class="as-hd" data-seat="' + h[1].toLowerCase() + '" data-health="unknown" title="' + h[1] + ': no reading yet"><b>' + h[0] + '</b><i aria-hidden="true"></i></span>'; }).join('') + '</span></div></header>' +
+                return '<span class="as-hd" id="as-hd-' + h[1].toLowerCase() + '" data-seat="' + h[1].toLowerCase() + '" data-health="unknown" title="' + h[1] + ': ' + HEALTH_WORD.unknown + '"><b aria-hidden="true">' + h[0] + '</b><i aria-hidden="true"></i><span class="as-sr">' + h[1] + ': ' + HEALTH_WORD.unknown + '</span></span>'; }).join('') + '</span></div>' +
+            '<p class="as-note" id="as-reaped" role="status" hidden></p></header>' +
           '<p class="as-status" id="as-status" role="status"></p>' +
           '<section class="as-now" id="as-nowz" aria-label="Now"><p class="as-zlab">Now</p><div id="as-now" aria-live="polite"></div></section>' +
           '<div class="as-body">' +
@@ -515,7 +565,7 @@
               '<p class="as-status" id="as-ask-status" role="status" aria-live="polite"></p></form>' +
             '<div class="as-feed" id="as-feed">' +
               '<div class="as-chips" id="as-chips" role="group" aria-label="Show cards of one kind"></div>' +
-              '<ol class="as-list" id="as-list" aria-label="Cards" aria-live="polite"></ol></div>' +
+              '<ol class="as-list" id="as-list" aria-label="Cards" aria-live="polite" aria-relevant="additions"></ol></div>' +
             '<details class="as-tools" id="as-tools"><summary><span class="as-zlab">Tools</span><small>Fit it · Screen · Ledger</small><span class="as-tools-n" id="as-tools-n" hidden></span></summary><div class="as-tools-body">' +
               '<div id="as-updates"></div>' +
               '<form class="as-fit" id="as-fit" data-as-form="fit"><p class="as-lab">Fit it: for the roll about to be made</p>' +
@@ -564,6 +614,7 @@
       renderHead(); renderStatus(); renderNow(); renderAsk(); renderChips(); renderList(); renderUpdates(); renderFit(); renderScreen();
       if (scrollFeedTop) { scrollFeedTop = false; var fe = q('#as-feed'); if (fe) fe.scrollTop = 0; }
     }
+    function nowMs() { return typeof o.nowMs === 'function' ? +o.nowMs() : Date.now(); }
     function renderHead() {
       var s = stateOf({ paused: st.paused, setup: st.setup, spend: st.spend, listening: st.listening }), el = q('#as-state'), w = q('#as-state-word');
       if (el) el.setAttribute('data-state', s.key);
@@ -573,7 +624,17 @@
         var mo = meterOf(st.spend);
         m.setAttribute('data-tone', mo.tone);
         m.innerHTML = [0, 1, 2, 3, 4].map(function (i) { return '<i' + (i < mo.cells ? ' class="on"' : '') + '></i>'; }).join('');
+        m.setAttribute('data-cells', String(mo.cells));
+        m.setAttribute('aria-label', st.spend && st.spend.cap > 0 ? 'Spend: ' + Math.round(mo.frac * 100) + '% of tonight’s cap' + (mo.tone === 'warn' ? ', nearly used up' : mo.tone === 'mid' ? ', past 60%' : '') : 'Spend: no reading yet');
       }
+      healthView(st.health, nowMs()).forEach(function (d) {
+        var hd = q('#as-hd-' + d.seat); if (!hd) return;
+        var label = (HEALTH_NAME[d.seat] || d.seat) + ': ' + d.word;
+        hd.setAttribute('data-health', d.state); hd.setAttribute('title', label);
+        var sr = hd.querySelector ? hd.querySelector('.as-sr') : null; if (sr && sr.textContent !== label) sr.textContent = label;
+      });
+      var rl = q('#as-reaped'), rt = reapedLine(st.health);
+      if (rl) { rl.hidden = !rt; rl.textContent = rt; }
     }
     function renderStatus() {
       var el = q('#as-status'); if (!el) return;
@@ -982,9 +1043,19 @@
       st.open = false; dropNow(); render(); relayout();
       if (had) { var lb = q('#as-launch'); if (lb) { try { lb.focus(); } catch (e) {} } }
     }
+    /* a warn that has just arrived is spoken at once (an assertive live region outside the panel: a closed panel is visibility:hidden, and that is when a warn matters) */
+    function alertWarn(fresh) {
+      var al = q('#as-alert'); if (!al) return;
+      var w = fresh.filter(function (c) { return cardKind2(c) === 'warn'; });
+      if (!w.length) return;
+      if (st.open && active()) return;       /* the open, visible panel shows it in Now and the feed: speaking it a third time is noise */
+      al.textContent = '';
+      al.textContent = 'Warning: ' + w.map(function (c) { return c.headline; }).join('. ');
+    }
     /* cards that have just arrived (a tick, or the page): open, the newest takes Now; closed, a rule or warn pops the strip and the rest are pips */
     function arrived(fresh) {
       if (!fresh.length) return;
+      alertWarn(fresh);
       if (st.open) setNow(fresh[fresh.length - 1].id, fresh.slice(0, -1));
       else {
         var strip = fresh.filter(function (c) { return STRIP_KINDS.indexOf(cardKind2(c)) >= 0; });
@@ -1083,6 +1154,7 @@
     }
     /* one decision: not while paused, hidden or on a phone; only while Listening is on (asked of the server, so a stale page is not fooled) */
     function poll() {
+      if (active() && st.paused && host) render();           /* paused (the cap, busy, setup) makes no call, but the header's clock still moves: a green dot greys at 10 minutes */
       if (!active() || st.paused || st.busy) return Promise.resolve();
       return Promise.resolve().then(function () { return gm.stt(); }).then(function (r) {
         var d = r && isObj(r.doc) ? r.doc : null, on = !!(d && d.want === 'on');

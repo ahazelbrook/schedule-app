@@ -89,7 +89,8 @@
 // lapses on its own if the request is cancelled first; the next tick sweeps it and reports it in `health.reaped`. Every call has a deadline (an
 // AbortSignal plus a race, so a fake that ignores the signal is bounded too): Tripwire 12 s, tick seats 30 s, the taps 45 s, Prop and Ask 75 s. A call
 // that hits it is a failed call with `timeout: 1, shown: 0` in its row. The work of each request is one promise, given to `waitUntil` and awaited.
-// The tick answer adds `health: { skipped: [{ seat, why }], reaped: [seat] }` (the Tripwire row's card carries the same `skipped`).
+// The tick answer adds `health: { skipped: [{ seat, why }], reaped: [seat], ran: [seat] }` (the Tripwire row's card carries the same `skipped`). `ran` is the seats
+// whose call came back with an answer this tick (not a timeout, not busy-skipped): the panel's dots need it, because a seat that was not woken is in neither list.
 //
 //
 // The Scribe (seat `scribe`, Haiku, low) folds the talk since its last run into a rolling "story so far" about every five minutes of new
@@ -477,6 +478,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const live = () => { leases.sweep(now()); return leases.seats(); };
     let reaped = [];               // the leases that lapsed since the last tick looked (taken at the start of THIS tick, so an abandoned tick that finishes later cannot swallow them)
     const skipped = [];            // the tick's health: { seat, why } for every seat that did not run
+    const ran = [];                // and the seats whose call came back with an answer
     let isTick = false;
     let thisTick = 0, fileMissing = false, storyText = '';   // storyText: the Scribe's story, appended to the instructions of the seats in STORY_SEATS (after the cache breakpoint)
 
@@ -517,7 +519,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       try { return await run(name, user); } catch (e) { if (e && e.busy) { skipped.push({ seat: name, why: 'in-flight' }); return null; } throw e; }
     }
     const spend = () => ({ tonight: dollars(spentBefore + thisTick), cap, tier: budgetTier(spentBefore + thisTick, cap), tick: dollars(thisTick) });
-    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.meanwhile ? { meanwhile: more.meanwhile } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}), ...(isTick ? { health: { skipped, reaped } } : {}) });
+    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.meanwhile ? { meanwhile: more.meanwhile } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}), ...(isTick ? { health: { skipped, reaped, ran } } : {}) });
 
     if (action[1] === 'portrait' || action[1] === 'prop' || action[1] === 'wire') {
       const seat = action[1];
@@ -646,6 +648,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       if (!sg.ok) { skipped.push({ seat: 'stall', why: sg.why }); return done([], [], last); }
       const before = (await readLines(db, campaign, { since: new Date(ll.at - TAP_WINDOW_MS).toISOString() })).lines;
       const sx = await runOrSkip('stall', silenceUser({ minutes: sil.minutes, since: hhmm(ll.at), stamp: hhmm(t0), talk: formatLines(before, speakers) }));
+      if (sx && sx.r) ran.push('stall');
       if (!sx || fileMissing) return done([], [], last);
       const sat = new Date(now()).toISOString(), sflags = ['stall', 'silence'];
       const st = sx.r ? toStall(sx.r.json, { recent: await shownVoice(db, campaign, t0), now: t0 }) : null;
@@ -664,6 +667,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (!rolledOnly && !gate.ok) { skipped.push({ seat: 'tripwire', why: gate.why }); return done([], [], last); }     // a Tripwire stuck in flight is exactly what health must show
     const prev = await prevTripwire(db, campaign, t0);            // read before this tick's own Tripwire row is written
     const tw = rolledOnly ? null : await runOrSkip('tripwire', 'New talk, up to ' + hhmm(t0) + ':\n' + freshText);
+    if (tw && tw.r) ran.push('tripwire');
     if (!rolledOnly && (!tw || fileMissing)) return done([], [], last);          // nothing was billed or logged: the file is gone (or another request holds the Tripwire)
     const twAt = new Date(now()).toISOString();
     const flags = tw && tw.r && tw.r.json ? Object.keys(tw.r.json).filter((k) => tw.r.json[k] === true) : [];
@@ -721,7 +725,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const all = [];
     settled.forEach((x, i) => {
       const name = wake[i];
-      if (x.status === 'fulfilled') all.push({ name, ...x.value });
+      if (x.status === 'fulfilled') { all.push({ name, ...x.value }); if (x.value && x.value.r) ran.push(name); }
       else if (x.reason && x.reason.busy) skipped.push({ seat: name, why: 'in-flight' });
       else all.push({ name, cfg: seats[name], r: null, timing: { secs: 0, stop: '' } });      // run() catches its own errors, so this is a bug's safety net
     });

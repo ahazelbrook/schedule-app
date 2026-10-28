@@ -863,17 +863,22 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 .gm-assist .as-tier { font: 700 12px/1.2 var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
 .gm-assist .as-tier[data-tier="reduced"], .gm-assist .as-tier[data-tier="core"] { background: var(--mustard); color: var(--on-mustard); padding: 2px 5px; }
 .gm-assist .as-tier[data-tier="off"] { background: var(--alarm); color: var(--k-on-warn); padding: 2px 5px; }
+/* the spend meter: five cells. An empty cell is an outline (--ink-faint on the card is >= 3:1 in both themes; --hair is not), a filled one has
+   its colour AND an outline, so mustard on the light card (1.6:1) is still found by its edge. The step is also in the label and the count of cells. */
 .gm-assist .as-meter { display: inline-flex; gap: 2px; }
-.gm-assist .as-meter i { display: block; width: 12px; height: 6px; background: var(--hair); }
-.gm-assist .as-meter i.on { background: var(--ok); }
-.gm-assist .as-meter[data-tone="mid"] i.on { background: var(--mustard); }
-.gm-assist .as-meter[data-tone="warn"] i.on { background: var(--alarm); }
+.gm-assist .as-meter i { display: block; width: 12px; height: 8px; box-sizing: border-box; background: transparent; border: 1.5px solid var(--ink-faint); }
+.gm-assist .as-meter i.on { background: var(--ok); border-color: var(--ok); }
+.gm-assist .as-meter[data-tone="mid"] i.on { background: var(--mustard); border-color: var(--rule); }
+.gm-assist .as-meter[data-tone="warn"] i.on { background: var(--alarm); border-color: var(--alarm); }
+/* seat health: a shape as well as a colour. ok = filled disc; asleep = empty ring; stuck = filled tilted square with a dark edge; unknown = dashed ring */
 .gm-assist .as-health { display: inline-flex; gap: 8px; margin-left: auto; }
-.gm-assist .as-hd { display: inline-flex; align-items: center; gap: 3px; cursor: help; }
+.gm-assist .as-hd { display: inline-flex; align-items: center; gap: 3px; cursor: help; position: relative; }
 .gm-assist .as-hd b { font: 700 12px/1 var(--font-mono); color: var(--ink-soft); }
-.gm-assist .as-hd i { width: 9px; height: 9px; border-radius: 50%; background: var(--hair); border: 1.5px solid var(--ink-faint); display: block; box-sizing: border-box; }
+.gm-assist .as-hd i { width: 10px; height: 10px; border-radius: 50%; background: transparent; border: 1.5px solid var(--ink-faint); display: block; box-sizing: border-box; }
+.gm-assist .as-hd[data-health="unknown"] i { border-style: dashed; }
 .gm-assist .as-hd[data-health="ok"] i { background: var(--ok); border-color: var(--ok); }
-.gm-assist .as-hd[data-health="stuck"] i { background: var(--mustard); border-color: var(--mustard); }
+.gm-assist .as-hd[data-health="stuck"] i { background: var(--mustard); border-color: var(--rule); border-radius: 0; transform: rotate(45deg) scale(.9); }
+.gm-assist .as-note { margin: 0; padding: 2px 0 0; font: 400 12px/1.4 var(--font-text); color: var(--ink-soft); }
 .gm-assist .as-status { margin: 0; padding: 6px 12px; font: 700 12px/1.4 var(--font-mono); color: var(--ink-soft); border-bottom: 1.5px solid var(--hair); flex: 0 0 auto; }
 .gm-assist .as-status:empty { display: none; }
 .gm-assist .as-status.bad { color: var(--ink); border-left: 5px solid var(--alarm); }
@@ -887,7 +892,8 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 .gm-assist .as-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .gm-assist .as-ask { flex: 0 0 auto; display: grid; gap: 4px; padding: 8px 12px; border-bottom: 1.5px solid var(--hair); }
 .gm-assist .as-ask-row { display: flex; gap: 8px; align-items: flex-start; }
-.gm-assist .as-ask-in { position: relative; flex: 1 1 auto; min-width: 0; height: 44px; }   /* the field grows over what is under it, so nothing moves while the pointer is down */
+.gm-assist .as-ask-in { position: relative; flex: 1 1 auto; min-width: 0; height: 44px; transition: height 0s linear .35s; }   /* the box makes room for the grown field (so it never covers the chips), and gives the room back .35 s after the focus leaves: a tap on a chip lands before the row moves up */
+.gm-assist .as-ask-in:focus-within { height: 86px; transition-delay: 0s; }
 .gm-assist .as-ask textarea { position: absolute; left: 0; top: 0; z-index: 2; display: block; width: 100%; box-sizing: border-box; height: 44px; min-height: 44px; max-height: 140px; resize: none; font: 400 14px/1.4 var(--font-text); padding: 10px 10px; border: 2px solid var(--rule); background: var(--paper); color: var(--ink); border-radius: 0; }
 .gm-assist .as-ask textarea:focus { height: 86px; }
 .gm-assist .as-go { min-height: 44px; padding: 0 14px; border: 2px solid var(--rule); background: var(--accent); color: var(--on-accent); font: 900 14px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }
@@ -950,7 +956,7 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 .gm-assist .as-kept { font: 900 12px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
 .gm-assist .as-star, .gm-assist .as-ack, .gm-assist .as-moreb, .gm-assist .as-undo, .gm-assist .as-upbtns button { min-height: 36px; font-size: 14px; padding: 0 12px; border: 1.5px solid var(--rule); background: var(--card); }
 .gm-assist .as-undo { border-color: var(--k-done); }
-.gm-assist .as-body { display: grid; gap: 2px; padding: 6px 8px; border: 1.5px solid var(--rule); background: var(--paper); }
+.gm-assist .as-card .as-body { display: grid; gap: 2px; padding: 6px 8px; border: 1.5px solid var(--rule); background: var(--paper); }
 .gm-assist .as-body-text { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 15px; line-height: 1.4; }
 .gm-assist .gm-screen-fig { width: 96px; max-height: 190px; overflow: hidden; border: 1.5px solid var(--rule); background: var(--paper); }
 .gm-assist .gm-screen-fig svg { display: block; width: 100%; height: auto; }
