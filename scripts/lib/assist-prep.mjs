@@ -92,7 +92,8 @@ export function prepProblem(src, today = todayKey()) {
   if (s.prepBy && s.prepBy !== 'cli' && s.prepBy !== 'named' && Number.isInteger(s.prepDate) && s.prepDate < today) {
     const how = s.prepBy === 'config' ? 'named in assist-config.json' : 'picked by date';
     return 'the prep note ' + path.basename(s.prep) + ' was ' + how + ' and is dated before today, so it is not tonight\'s note. ' +
-      'Point "prep" in gm-private/assist-config.json at the next session note, remove the key to pick by date, or pass --assist-prep <vault path> on purpose; run npm run gm:pack, then push again. To push anyway: --allow-no-prep.';
+      'Point "prep" in gm-private/assist-config.json at the next session note, remove the key to pick by date, ' +
+      'or pass --assist-prep <vault path> on purpose; run npm run gm:pack, then push again. To push anyway: --allow-no-prep.';
   }
   return '';
 }
