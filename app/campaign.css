@@ -252,7 +252,7 @@ body[data-mode="table"] #table-page.tp:not([hidden]) { display: grid; gap: 14px;
 @media screen and (max-width: 760px) {
   #table-page :is(.btn.sm, .chip.sm, .tp-lab, .tp-kick, .tp-subtitle, .tp-role, .tp-status, .tp-dim, .tp-band .tp-dim, .tp-trackv > .tp-dim, .tp-logd, .tp-logby, .tp-cn small, .tp-cs small, .tp-cst small, .tp-k, .tp-csgo, .tp-csh, .tp-schedsum, .tp-band, .tp-kind, .tp-hidtag, .tp-fulltag) { font-size: 12px; }
   #table-page .tp-clocktools .chip, #table-page .tp-addclock .chip { font-size: 12px; }
-  #table-page .tp-log li { font-size: 14px; }
+  #table-page .tp-log li, #table-page .hint { font-size: 14px; }
   #table-page :is(input, textarea, select, .tp-in, .tp-ta, .sc-sel) { font-size: 16px; }
 }
 

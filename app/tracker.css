@@ -505,10 +505,16 @@
   #dossier :is(.ds-ab, .ds-feat, .ds-rtog, .ds-stric) b { font-size: 12px; }
   #dossier .ds-plus1 span { font-size: 12px; }   /* "+1" over the stress name */
   #dossier.ds-live .ds-status { font-size: 12px; }
-  #dossier.ds-live .ds-vit { font-size: 12px; letter-spacing: .04em; }
+  #dossier.ds-live .ds-vit { font-size: 12px; letter-spacing: 0; padding-inline: 2px; }
+  #dossier.ds-live .ds-vitals { grid-template-columns: repeat(var(--n, 4), minmax(min-content, 1fr)); gap: 4px; }   /* a long vital's name (Instability) sets its column's width */
+  #dossier .ds-mark-cons { grid-template-columns: repeat(3, minmax(0, 1fr)); }   /* 3 + 2: the "+1 Instability" button spans two columns so the word fits at 12px */
+  #dossier .ds-mark-cons .ds-plus1 { grid-column: span 2; }
   #dossier.ds-live .ds-about-t { font-size: 12px; }
-  #dossier .ds-desc { font-size: 14px; }
   #dossier .ds-mark-cons .btn { font-size: 12px; }
+  #dossier :is(.ds-roll-t, .ds-roll-sub, .ds-roll small) { font-size: 12px; }
+  /* text: abilities, descriptions, hints, item and action names */
+  #dossier :is(.ds-resrow, .ds-mem-h, .ds-key-word, .ds-roll-why, .ds-ab, .ds-feat, .ds-trig, .ds-stric) { font-size: 14px; }
+  #dossier :is(.ds-desc, .hint, .ds-check, .ds-cname, .ds-item-n, .ds-actbtn, .ds-trig-h, .ds-ab div, .ds-feat div, .ds-ab li, .ds-feat li, .ds-trig li, .ds-sessnote, span.ds-dim:not(.ds-band .ds-dim)), #dossier div.ds-dim { font-size: 14px; }
 }
 
 /* ---- print: the dossier alone, on white, letter or A4 portrait ---- */

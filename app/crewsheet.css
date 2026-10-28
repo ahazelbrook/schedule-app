@@ -326,7 +326,11 @@
 @media screen and (max-width: 760px) {
   #table-page :is(.cs-fl, .cs-tag, .cs-xpl, .cs-cn, .cs-costh, .cs-turfhint, .cs-cdot, .cs-kick, .cs-cword small, .cs-cfoot, .cs-cfoot :is(span, small, .lt), .cs-oo, .cs-abgh) { font-size: 12px; }
   #table-page .cs-cb { font-size: 12px; }
-  #table-page .cs-ab span, #table-page .cs-ab b { font-size: 12px; }
+  /* text: abilities, rules, contacts, upgrades */
+  #table-page :is(.cs-ops, .cs-rule, .cs-thr, .cs-truths, .cs-word, .cs-ab, .cs-contact, .cs-xpi, .cs-trig, .cs-payees, .cs-up, .cs-cost, .cs-adv p, .cs-develop p, .cs-foot, .cs-uph) { font-size: 14px; }
+  #table-page :is(.cs-up, .cs-cost, .cs-uph, .cs-word) :is(b, span, i) { font-size: inherit; }
+  #table-page .cs-panel .hint, #table-page .cs-opt { font-size: 14px; }
+  #table-page .cs-circ, #table-page .cs-circ :is(span, b, i) { font-size: 12px; }
   #table-page .cs-sheet :is(input, textarea, select, .tp-in, .tp-ta) { font-size: 16px; }
 }
 
