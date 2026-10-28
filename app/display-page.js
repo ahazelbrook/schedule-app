@@ -680,6 +680,8 @@
     var id = typeof v.id === 'string' ? v.id.trim() : '';
     if (!id || id.length > O.id || O.kinds.indexOf(v.kind) < 0 || !wholeIn(v.ms, O.msMin, O.msMax)) return null;
     var out = { id: id, kind: v.kind, ms: v.ms };
+    /* `age`: the SERVER's whole ms since it set the overlay (GET /api/gm/display adds it); absent or bad is left off (0), never the iPad's clock */
+    if (wholeIn(v.age, 1, O.msMax)) out.age = v.age;
     if (v.kind === 'clock') {
       var name = oneLine(v.name);
       if (!name || name.length > O.name || O.sizes.indexOf(v.size) < 0 || !wholeIn(v.filled, 0, v.size)) return null;
@@ -721,6 +723,21 @@
     if (reduce) return { ramp: 0, hold: ms, fade: 0 };
     var edge = Math.min(2000, Math.floor(ms / 4));
     return { ramp: edge, hold: ms - 2 * edge, fade: edge };
+  };
+  /* dawnPlan(ms, age, reduce) -> how a dawn that is `age` ms old (by the server's clock) carries on: { init: the data-phase to start in,
+     ramp, fade: the ms for the css transitions, steps: [{ at: ms from now, phase }], end: ms from now }. Age 0 is the whole dawn. Later
+     it starts in the phase it has reached and runs on to the SAME end (ms - age), never from the warm start again; at or past ms there is
+     nothing to show (null). */
+  Pure.dawnPlan = function (ms, age, reduce) {
+    var ph = Pure.dawnPhases(ms, reduce), e = Math.max(0, age || 0), holdEnd = ph.ramp + ph.hold;
+    if (e >= ms) return null;
+    if (e === 0) {
+      var steps0 = ph.ramp ? [{ at: 30, phase: 'ramp' }, { at: ph.ramp, phase: 'hold' }, { at: holdEnd, phase: 'fade' }] : [];
+      return { init: ph.ramp ? 'pre' : 'hold', ramp: ph.ramp, fade: ph.fade, steps: steps0, end: ms };
+    }
+    if (e < ph.ramp) return { init: 'ramp', ramp: ph.ramp - e, fade: ph.fade, steps: [{ at: ph.ramp - e, phase: 'hold' }, { at: holdEnd - e, phase: 'fade' }], end: ms - e };
+    if (e < holdEnd) return { init: 'hold', ramp: 0, fade: ph.fade, steps: ph.fade ? [{ at: holdEnd - e, phase: 'fade' }] : [], end: ms - e };
+    return { init: 'fade', ramp: 0, fade: ms - e, steps: [], end: ms - e };
   };
   /* overlayCard(overlay, npcDoc) -> what a card draws, or null when there is nothing to draw (an npc the page may not read draws
      nothing at all). An npc card takes the same player-safe fields as the npc spotlight (Pure.playerNpc): name, alias, role and faction
@@ -1340,25 +1357,24 @@
       return e;
     }
     function ovDawn(o) {
-      var ph = Pure.dawnPhases(o.ms, reduced());
+      var pl = Pure.dawnPlan(o.ms, o.age, reduced());
+      if (!pl) return;
       var e = el('div', 'dp-ov-dawn'); e.setAttribute('data-ov-id', o.id);
-      e.style.setProperty('--dp-dawn-ramp', ph.ramp + 'ms'); e.style.setProperty('--dp-dawn-fade', ph.fade + 'ms');
+      e.style.setProperty('--dp-dawn-ramp', pl.ramp + 'ms'); e.style.setProperty('--dp-dawn-fade', pl.fade + 'ms');
       e.appendChild(el('div', 'dp-ov-warm')); e.appendChild(el('div', 'dp-ov-glow'));
-      e.setAttribute('data-phase', ph.ramp ? 'pre' : 'hold');
+      e.setAttribute('data-phase', pl.init);
       ovLayer.appendChild(e); s.ov.node = e;
-      if (ph.ramp) {
-        ovTimer(function () { e.setAttribute('data-phase', 'ramp'); }, 30);
-        ovTimer(function () { e.setAttribute('data-phase', 'hold'); }, ph.ramp);
-        ovTimer(function () { e.setAttribute('data-phase', 'fade'); }, ph.ramp + ph.hold);
-      }
-      ovTimer(function () { ovRemove(true); }, o.ms);
+      pl.steps.forEach(function (st) { ovTimer(function () { e.setAttribute('data-phase', st.phase); }, st.at); });
+      ovTimer(function () { ovRemove(true); }, pl.end);
     }
     function ovShow(o) {
       ovRemove(true);
       var my = s.ov.token;
       if (o.kind === 'fx') { ovDawn(o); return; }
-      /* the clock runs out ms after FIRST SIGHT, however long an NPC takes to load */
-      ovTimer(function () { ovRemove(false); }, o.ms);
+      /* the card runs out at the server's end (ms less the age the server reports; a first sight is age 0), however long an NPC takes to load */
+      var left = o.ms - (o.age || 0);
+      if (left <= 0) return;
+      ovTimer(function () { ovRemove(false); }, left);
       function put(card) {
         if (!card || s.dead || my !== s.ov.token) return;
         var node = ovCardNode(card, o);

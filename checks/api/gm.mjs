@@ -550,6 +550,33 @@ async function main() {
     status(await call('PATCH', '/api/gm/ambient', { user: PLAYER, body: { overlay: { id: 'f', kind: 'fx', ms: 30000, fx: 'dawn' } } }), 403);
   });
 
+  await step('ambient overlay: the display GET drops an overlay once the server clock passes at + ms (response only), and reports its age while it runs', async () => {
+    const A = (patch) => gm('PATCH', '/api/gm/ambient', patch);
+    const displays = async () => {   // every shape of the display call: the oldest, with aseq, and with aseq + sseq (stale numbers, so the ambient part is in full)
+      const base = (await gm('GET', '/api/gm/display')).json;
+      return [base, (await gm('GET', '/api/gm/display?seq=-1&aseq=-1')).json, (await gm('GET', '/api/gm/display?seq=-1&aseq=-1&sseq=-1')).json];
+    };
+    status(await A({ overlay: { id: 'short', kind: 'fx', ms: 1000, fx: 'dawn' } }), 200);
+    status(await A({ auto: null }), 200);
+    const seqWith = await ambSeq();
+    const live = await displays();
+    live.forEach((d, i) => expect(d.ambient.doc.overlay && d.ambient.doc.overlay.id === 'short' && Number.isInteger(d.ambient.doc.overlay.age) && d.ambient.doc.overlay.age >= 0 && d.ambient.doc.overlay.age < 1000, 'call ' + i + ' carries the running overlay with its age: ' + JSON.stringify(d.ambient.doc.overlay)));
+    await sleep(1300);
+    const gone = await displays();
+    gone.forEach((d, i) => expect(d.ambient && d.ambient.doc && !('overlay' in d.ambient.doc), 'call ' + i + ' no longer carries it: ' + JSON.stringify(d.ambient.doc)));
+    const held = (await gm('GET', '/api/gm/ambient')).json;
+    expect(held.doc.overlay && held.doc.overlay.id === 'short' && !('age' in held.doc.overlay) && held.seq === seqWith, 'the stored document still holds it, unchanged, and seq did not move (the drop is response only): ' + JSON.stringify(held.doc.overlay));
+    // a non-dawn kind expires the same way
+    status(await A({ overlay: { id: 'line', kind: 'text', ms: 1000, text: 'An invented line.' } }), 200);
+    expect((await displays()).every((d) => d.ambient.doc.overlay && d.ambient.doc.overlay.id === 'line'), 'the text overlay is served while it runs');
+    await sleep(1300);
+    expect((await displays()).every((d) => !('overlay' in d.ambient.doc)), 'and dropped once it has run out');
+    // a fresh long one is served again (a new overlay, a new at)
+    status(await A({ overlay: { id: 'long', kind: 'fx', ms: 60000, fx: 'dawn' } }), 200);
+    expect((await displays()).every((d) => d.ambient.doc.overlay && d.ambient.doc.overlay.id === 'long' && d.ambient.doc.overlay.age < 60000), 'a long overlay is served');
+    status(await A({ overlay: null }), 200);
+  });
+
   await step('ambient overlay: an npc overlay is refused (400, nothing stored) unless that NPC is live and revealed', async () => {
     const OV = (npcId) => ({ overlay: { id: 'npc-ov', kind: 'npc', ms: 20000, npcId } });
     const put = (id, doc) => gm('PUT', '/api/npcs/' + id, doc);

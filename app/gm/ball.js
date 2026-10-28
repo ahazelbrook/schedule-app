@@ -365,7 +365,7 @@
 
     var cand = [];
     (Array.isArray(play.events) ? play.events : []).forEach(function (e) {
-      if (isObj(e)) cand.push({ m: minuteOf(e.at, start), rank: 0, key: nameOf(e.id), out: { at: e.at, label: nameOf(e.label), room: e.room || null } });
+      if (isObj(e)) cand.push({ m: minuteOf(e.at, start), rank: 0, key: nameOf(e.id), out: e.fx ? { at: e.at, label: nameOf(e.label), room: e.room || null, fx: e.fx } : { at: e.at, label: nameOf(e.label), room: e.room || null } });
     });
     all.forEach(function (p) {
       if (p.kind !== "target") return;

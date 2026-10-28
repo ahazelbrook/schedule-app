@@ -437,6 +437,14 @@ test('ballView: next is the next three events and target windows, strictly after
   assert.deepEqual(view({ t: B.minuteOf('23:59', START) }).next[0], { at: '00:00', label: 'Fireworks', room: 'Roof garden' });
 });
 
+test('ballView: an event with fx carries it into next (the False dawn button reads it); others carry no fx key', () => {
+  const p = VIEWPLAY(); p.events.forEach((e) => { if (e.id === 'fw') e.fx = 'dawn'; });
+  const nx = view({ t: B.minuteOf('23:59', START) }, p).next;
+  assert.deepEqual(nx[0], { at: '00:00', label: 'Fireworks', room: 'Roof garden', fx: 'dawn' });
+  assert.ok(view({ t: B.minuteOf('19:00', START) }, p).next.every((x) => x.label === 'Speeches' || !('fx' in x) || x.fx === 'dawn'));
+  assert.ok(!('fx' in view({ t: B.minuteOf('19:00', START) }, p).next[0]), 'Speeches has none');
+});
+
 test('ballView: a window and an event at the same minute are both kept, the event first', () => {
   const p = VIEWPLAY(); p.events.push({ at: '22:00', id: 'zz', label: 'Bell', room: 'Foyer' }, { at: '22:00', id: 'aa', label: 'Gong' });
   const nx = view({ t: B.minuteOf('21:00', START) }, p).next;

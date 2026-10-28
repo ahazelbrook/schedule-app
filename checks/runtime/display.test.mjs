@@ -1009,6 +1009,28 @@ await test('overlay: dawnPhases is a 2 s ramp, a hold, a 2 s fade in 30 s; reduc
     assert.ok(a.ramp <= 2000 && a.hold > 0 && a.fade === a.ramp, 'ms ' + ms);
   }
 });
+await test('overlay: cleanOverlay keeps the age the server reports (whole ms) and leaves a bad one off', () => {
+  assert.equal(P.cleanOverlay({ ...OVC, age: 4200 }).age, 4200);
+  assert.ok(!('age' in P.cleanOverlay(OVC)) && !('age' in P.cleanOverlay({ ...OVC, age: 0 })));
+  for (const age of [-1, 1.5, '3000', null, 180001, NaN]) assert.ok(!('age' in P.cleanOverlay({ ...OVC, age })), String(age));
+  assert.equal(P.overlayStep('', { ...OVC, age: 900 }).overlay.age, 900);
+});
+await test('overlay: dawnPlan carries a dawn on from the age the server reports: never from the start again, to the same end', () => {
+  const MS = 30000;
+  let p = P.dawnPlan(MS, 0, false);
+  assert.equal(p.init, 'pre'); assert.deepEqual(p.steps.map((x) => x.phase), ['ramp', 'hold', 'fade']); assert.equal(p.end, MS);
+  assert.deepEqual(p.steps.map((x) => x.at), [30, 2000, 28000]);
+  p = P.dawnPlan(MS, 500, false);   /* mid-ramp: the rest of the ramp, then on */
+  assert.equal(p.init, 'ramp'); assert.equal(p.ramp, 1500); assert.deepEqual(p.steps, [{ at: 1500, phase: 'hold' }, { at: 27500, phase: 'fade' }]); assert.equal(p.end, 29500);
+  p = P.dawnPlan(MS, 10000, false); /* mid-hold: straight into the hold, no ramp */
+  assert.equal(p.init, 'hold'); assert.equal(p.ramp, 0); assert.deepEqual(p.steps, [{ at: 18000, phase: 'fade' }]); assert.equal(p.end, 20000);
+  p = P.dawnPlan(MS, 29000, false); /* mid-fade: the fade's remainder only */
+  assert.equal(p.init, 'fade'); assert.equal(p.fade, 1000); assert.deepEqual(p.steps, []); assert.equal(p.end, 1000);
+  assert.equal(P.dawnPlan(MS, MS, false), null); assert.equal(P.dawnPlan(MS, MS + 5, false), null);
+  p = P.dawnPlan(MS, 12000, true);  /* reduced motion: white to the end, no phases */
+  assert.equal(p.init, 'hold'); assert.deepEqual(p.steps, []); assert.equal(p.end, 18000);
+  for (const age of [1, 1999, 2000, 2001, 27999, 28000, 28001, 29999]) { const q = P.dawnPlan(MS, age, false); assert.equal(q.end, MS - age, 'age ' + age); assert.notEqual(q.init, 'pre', 'age ' + age); }
+});
 await test('overlay: overlayCard builds the card from the validated fields; an NPC card takes the player-safe fields only', () => {
   const clk = P.overlayCard(P.cleanOverlay(OVC), null);
   assert.equal(clk.kind, 'clock'); assert.equal(clk.name, 'Invented Fuse'); assert.equal(clk.count, '2 / 6'); assert.equal(clk.wedges.length, 6);
