@@ -140,7 +140,8 @@
     if (m === 'gm' && was !== 'gm') startGm();
     if (m !== 'display' && was === 'display') closeDisplay();
     if (m === 'display' && was !== 'display') startDisplay();
-    if (m === 'home' && was !== 'home') renderHome();
+    if (rosterStale && m !== 'sheet') renderRoster(roster);
+    else if (m === 'home' && was !== 'home') renderHome();
     if (!quiet) syncHash(m);
     syncNav(); syncEditBar();
     if (was && was !== m) focusView();
@@ -787,10 +788,15 @@
     });
   }
   var rosterSeen = false;   /* the first collection snapshot arrived */
+  var rosterStale = false;  /* the cards were not redrawn because the sheet is open; setMode draws them when it closes */
   function renderRoster(docs) {
     roster = docs || []; syncFilter(); syncView(); syncBackups();
     if (tableOn) { var Cm = campaignMod(); if (Cm && Cm.rosterChanged) { try { Cm.rosterChanged(); } catch (e) {} } }
     var Sm = schedMod(); if (Sm && campRef) { try { Sm.card.refresh(); } catch (e) {} }
+    /* every save of an open sheet comes back as a snapshot: with the sheet showing, the cards (a figure drawn for each one) and the
+       line-up are hidden, so they wait. This was most of a tap's cost on a phone */
+    if (document.body.dataset.mode === 'sheet') { rosterStale = true; syncNav(); return; }
+    rosterStale = false;
     var list = visibleDocs();
     if (view === 'table') renderTable(list); else renderCards(list);
     A.drawLineup(); syncNav(); renderHome();

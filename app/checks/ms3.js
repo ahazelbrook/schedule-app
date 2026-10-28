@@ -18,7 +18,7 @@ const URL = 'file://' + path.join(APP, 'index.html').replace(/\\/g, '/');
     const r = await p.evaluate((canWrite) => {
       try {
         const pb = 'hound'; B68.choosePlaybook(pb);
-        const sh = B68.S.sheet; sh.name = 'Slot Sam'; sh.alias = 'Tock'; sh.heritage = 'Akoros'; sh.background = 'Underworld'; sh.look = 'Lean, weathered.'; sh.wearing = ['Trench coat'];
+        const sh = B68.S.sheet; sh.name = 'Slot Sam'; sh.alias = 'Tock'; sh.heritage = 'Hillfolk'; sh.background = 'Quarry hand'; sh.look = 'Lean, weathered.'; sh.wearing = ['Trench coat'];
         const P = B68Content.byId[pb]; sh.ability = P.abilities[0][0]; sh.keys = P.keys.slice(0, 3); sh.customKey = 'Hopeful (▼ Cynical ▲ Content)';
         if (P.contacts[0]) sh.contacts[P.contacts[0][0]] = 'friend'; sh.vice = 'Gambling'; sh.purveyor = 'A card game'; sh.items = [P.items[0][0], 'A Blade or Two'];
         sh.cohortName = 'Biscuit'; sh.cohortType = 'hound dog'; sh.cohortEdges = 'Loyal'; sh.cohortFlaws = 'Greedy';
@@ -130,6 +130,24 @@ const URL = 'file://' + path.join(APP, 'index.html').replace(/\\/g, '/');
     await p.evaluate(() => window.dispatchEvent(new Event('afterprint'))); await settle(p);
     assert(await p.evaluate(() => !document.querySelector('#dossier .ds-printfig svg')), label + ': after print the slot is empty again');
     await p.emulateMedia({ media: 'screen' });
+    await p.close();
+  }
+
+  /* 8. every save of an open sheet comes back as a roster snapshot: with the sheet showing, the hidden cards are not redrawn
+     (a figure per card was most of a phone's tap), and they are drawn when the sheet closes */
+  {
+    const p = await b.newPage({ viewport: { width: 390, height: 900 } });
+    p.on('pageerror', e => errs.push('roster pageerror: ' + e.message));
+    await p.goto(URL); await p.waitForTimeout(700);
+    const r = await p.evaluate(() => {
+      const mk = (id, name) => ({ id, name, alias: '', playbook: 'hound', playbookName: 'Hound', code: 'H-1', spec: JSON.parse(JSON.stringify(B68.S.spec)), sheet: { name }, play: null, owner: null });
+      const n = () => document.querySelectorAll('#cards .card').length;
+      B68.setMode('home', true); B68._renderRoster([mk('a', 'Alpha')]); const home = n();
+      B68.setMode('sheet', true); B68._renderRoster([mk('a', 'Alpha'), mk('b', 'Bravo')]); const during = n(); const rosterDuring = B68.roster.length;
+      B68.setMode('home', true); const after = n();
+      return { home, during, rosterDuring, after };
+    });
+    assert(r.home === 1 && r.during === 1 && r.rosterDuring === 2 && r.after === 2, 'roster: cards wait while the sheet is open and are drawn on leaving it: ' + JSON.stringify(r));
     await p.close();
   }
 
