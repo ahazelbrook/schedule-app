@@ -274,6 +274,7 @@
       return { id: clip(x.id, 24), label: clip(x.label, 40), title: clip(x.title, 120), primary: !!x.primary, disabled: !!x.disabled };
     }).filter(function (x) { return x.id && x.label; }).slice(0, ACTIONS_MAX);
     card.ackLabel = clip(raw.ackLabel, 24); card.figKey = clip(raw.figKey, 120); card.open = !!raw.open;
+    card.strip = raw.strip === true;      /* a cue's card (C4d): it slides the strip out of the closed tab whatever its kind */
   }
   function mkCard(raw, src, o2) {
     o2 = o2 || {};
@@ -1019,7 +1020,7 @@
     /* the strip: only a rule or a warn card slides a one-line strip out of the closed tab (8 s). It shows the kind's word and the headline, as text:
        never the bullets, SAY or GM ONLY. Every other kind only adds a pip. */
     function showBanner(card) {
-      if (!host || st.open || isPhone() || STRIP_KINDS.indexOf(cardKind2(card)) < 0) return;
+      if (!host || st.open || isPhone() || (STRIP_KINDS.indexOf(cardKind2(card)) < 0 && card.strip !== true)) return;
       var b = q('#as-banner'), bb = q('.as-banner-b'); if (!b || !bb) return;
       bannerCard = card;
       var k = cardKind2(card);
@@ -1076,7 +1077,7 @@
       alertWarn(fresh);
       if (st.open) setNow(fresh[fresh.length - 1].id, fresh.slice(0, -1));
       else {
-        var strip = fresh.filter(function (c) { return STRIP_KINDS.indexOf(cardKind2(c)) >= 0; });
+        var strip = fresh.filter(function (c) { return STRIP_KINDS.indexOf(cardKind2(c)) >= 0 || c.strip === true; });
         if (strip.length) showBanner(strip[strip.length - 1]);
       }
     }
@@ -1134,6 +1135,7 @@
       if (patch.undone !== undefined) c.undone = !!patch.undone;
       if (typeof patch.undo === 'function') undoFns[c.id] = patch.undo;
       setFns(c.id, patch);
+      if (patch.strip === true) { c.strip = true; showBanner(c); }      /* the page says this change is news (a cue that did not land) */
       if (host) render();
       return true;
     }
@@ -1339,11 +1341,24 @@
       }
       btn.addEventListener('click', function () { opts.onChange(!on); });
       row.insertBefore(btn, pin); paint();
+      /* The second switch (C4d): "on" means cue only. This one, shown only while Co-GM is on and OFF whenever it is made, lets Blade also read uncued talk, as offers only. */
+      var also = null, alsoBox = null, alsoOn = false;
+      if (typeof opts.onAlso === 'function' && row.parentNode) {
+        also = doc.createElement('label'); also.className = 'as-cogm-also'; also.id = 'as-cogm-also-row'; also.hidden = true;
+        alsoBox = doc.createElement('input'); alsoBox.type = 'checkbox'; alsoBox.id = 'as-cogm-also'; alsoBox.checked = false;
+        also.appendChild(alsoBox); also.appendChild(doc.createTextNode(' Also listen for uncued decisions (offers only)'));
+        alsoBox.addEventListener('change', function () { alsoOn = !!alsoBox.checked; opts.onAlso(alsoOn); });
+        row.parentNode.insertBefore(also, row.nextSibling);
+      }
+      function alsoPaint() { if (also) { also.hidden = !on; if (!on) { alsoOn = false; alsoBox.checked = false; } } }
+      var basePaint = paint;
+      paint = function (note) { basePaint(note); alsoPaint(); };
       cogmSw = {
         set: function (v, note) { on = !!v; paint(note); },
         isOn: function () { return on; },
+        alsoOn: function () { return alsoOn; },
         box: function () { var s = stateOf({ paused: st.paused, setup: st.setup, spend: st.spend, listening: st.listening }); return { key: s.key, listening: st.listening, tier: st.spend ? st.spend.tier : '' }; },
-        destroy: function () { if (btn.parentNode) btn.parentNode.removeChild(btn); cogmSw = null; }
+        destroy: function () { if (btn.parentNode) btn.parentNode.removeChild(btn); if (also && also.parentNode) also.parentNode.removeChild(also); cogmSw = null; }
       };
       return cogmSw;
     }

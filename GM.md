@@ -1013,6 +1013,37 @@ the assist part's `extra.ref`, appended to its instructions. The Editor also dro
   the same checklist the live part carries. The file's text is never printed. The replay does not send `rolled`.
 - **`/act` cue mode** (C4c): `mode: 'cue'` with `cueLineId` (the transcript row id of the line holding the wake word, which must be among the lines read) means the GM said "Blade, ...". With `parsed` (the page's own parse, 1-8 actions: `clock_add` with `filled`, `clock_tick`, `npc_add` (an empty name only with `needsName`), `capture`, `undo`, `rename`) there is no model call, no key and no gate and it costs nothing: the Worker validates the actions (the quote must start on the cue line), keys them from `cueLineId` and the action's index, and writes one hands row (`card.out.cue`). Without `parsed` the `hands` seat reads the cue. Every survivor is mode `act`. A key already in tonight's hands rows comes back mode `seen` (a second GM page posting the same cue loses a single atomic claim); a window request gets `seen` only if it sends `seenOk: true`, so a page from before the deploy never re-applies one.
 
+## Co-GM by cue (`app/cue.js`, `app/gm/cogm.js` cueNext, the cue lane in `app/gm-page.js`)
+
+Say **"Blade, ..."** at the start of a sentence, followed by a command, and Blade does it. The **Co-GM switch** in the box's header means **cue only**: it reads the
+transcript every 2 s and acts on nothing else. A second switch, **Also listen for uncued decisions (offers only)**, appears under it, is OFF whenever Co-GM is turned
+on, and when on lets the old windows of talk run, but what they find is only ever a yellow card with Do it. With Co-GM off the lane does nothing and the console is as
+it was (no polling, no `/act`). The cap or Listening going off switches Co-GM off, as before.
+
+| Say | Blade does |
+|---|---|
+| "Blade, make a six clock called Escape" (and mark two) | a **hidden** clock, with two marked if you said so |
+| "Blade, tick Escape (two)", "fill Escape", "clear two on Escape" | moves it; "tick that" means the clock Blade last made or ticked in the last 10 minutes |
+| "Blade, new NPC called Corso, a bouncer" | a **hidden** NPC. With no name it rolls one with the NPC generator and the card says *name rolled* (Rename is on the card) |
+| "Blade, note ...", "loose end ...", "name ..." | files a moment, a loose end or a name in the capture bar |
+| "Blade, call him Big Sal", "rename that to ..." | renames the last NPC or clock Blade made tonight |
+| "Blade, undo", "scratch that" | undoes Blade's newest action that is still done |
+
+**What happens.** A cue is parsed on the page at once, against the live table, and posted with `POST /act` mode `cue` (the page sends no key; the Worker makes it from the
+cue line's row id, so two GM pages that hear the same cue act once and the other gets `seen`). A cut-off command ("Blade, make a six") waits for one more line, up to 6 s,
+and joins it whatever its speaker label. Still cut off, it goes to the Worker without `parsed` and the hands seat reads it. At most one cue call every 2 s. A **Working...**
+card shows at once; if there is no answer in 10 s it says **Didn't land: say it again** (the cue is never retried, because a retry would come back `seen`; a late answer is
+still used). The result pops the 8 s strip, even with the panel closed.
+
+**The cards.** Green: done, with Undo (a compare-and-swap: a clock or NPC that changed since is refused, and **Undo anyway** is offered), and Rename, Show players or Reveal
+and show (each asks first). Yellow: the cue needs something, with a button for each answer (which clock, 4/6/8 segments, "No clock called X: make one?"), or a cue more than
+60 s old when a hidden page comes back, with Do it. Grey: *Heard "Blade, ...": I can't do that yet.* (anything that would show the players something, or touch a sheet).
+A yellow or grey card is never posted until you tap a button.
+
+**Secrecy.** Everything a cue makes starts hidden (clocks `hidden: true`, NPCs `revealed: false`). A cue never shows the players anything and never writes the iPad or a
+sheet: the only ways out are the Show players and Reveal and show buttons on a card, which ask first. Anyone at the table can say "Blade", so tell them: Blade only takes
+orders from the GM, and a stray cue costs one tap of Undo.
+
 ## The Screen (the box's four buttons, `app/gm/assist-panel.js` and the cards `syncCards` makes in `app/gm-page.js`)
 
 **GM-initiated, and nothing reaches the iPad until you tap Show.** Four buttons sit in the box under *Fit it*. Each makes one item that appears as an

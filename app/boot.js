@@ -626,6 +626,7 @@
     if (!isObj(clock) || !clock.id) return Promise.reject(new Error('That is not a clock.'));
     var c = { id: String(clock.id), name: String(clock.name || '').slice(0, 80), size: [4, 6, 8, 10, 12].indexOf(+clock.size) >= 0 ? +clock.size : 4, filled: 0,
       kind: ['danger', 'project', 'faction', 'other'].indexOf(clock.kind) >= 0 ? clock.kind : 'danger', hidden: clock.hidden !== false };
+    c.filled = Math.max(0, Math.min(c.size, Math.floor(+clock.filled) || 0));      /* a cue can make a clock "and mark two" (C4d); the downtime card's clock has none */
     if (campRef.clockOps === true) return campaignSave({ clockOps: [{ add: c }] });
     if (!campLoaded) return Promise.reject(new Error('The table has not loaded yet: try again in a moment.'));
     var cur = isObj(tableLatest) && Array.isArray(tableLatest.clocks) ? tableLatest.clocks : [];

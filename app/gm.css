@@ -874,6 +874,9 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 .gm-assist .as-pin[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
 .gm-assist .as-cogm { min-width: 44px; height: 44px; padding: 0 10px; border: 1.5px solid var(--rule); background: var(--card); font: 900 13px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
 .gm-assist .as-cogm[aria-pressed="true"] { background: var(--k-done); color: var(--k-on-done); border-color: var(--k-done); }
+.gm-assist .as-cogm-also { display: flex; align-items: center; gap: 6px; min-height: 36px; font: 700 12px/1.25 var(--font-cond); letter-spacing: .04em; }
+.gm-assist .as-cogm-also[hidden] { display: none; }
+.gm-assist .as-cogm-also input { width: 20px; height: 20px; flex: 0 0 auto; }
 .gm-assist .as-head-2 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px; }
 .gm-assist .as-tier { font: 700 12px/1.2 var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
 .gm-assist .as-tier[data-tier="reduced"], .gm-assist .as-tier[data-tier="core"] { background: var(--mustard); color: var(--on-mustard); padding: 2px 5px; }
