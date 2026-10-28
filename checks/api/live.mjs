@@ -28,7 +28,7 @@ const DB = asD1(exec);
 
 // A LIVE namespace stand-in. mode: 'ok' | 'getThrows' | 'idThrows' | 'rejects' | 'hangs'
 function fakeHub(mode = 'ok') {
-  const hub = { mode, pokes: [], attempts: 0, forwarded: [], names: [] };
+  const hub = { mode, pokes: [], closes: 0, attempts: 0, forwarded: [], names: [] };
   hub.LIVE = {
     idFromName(n) { hub.names.push(n); if (hub.mode === 'idThrows') throw new Error('id: down'); return { id: n }; },
     get(id) {
@@ -38,6 +38,12 @@ function fakeHub(mode = 'ok') {
         poke(...args) {
           hub.pokes.push(args);
           if (hub.mode === 'rejects') return Promise.reject(new Error('poke: down'));
+          if (hub.mode === 'hangs') return new Promise(() => {});
+          return Promise.resolve(1);
+        },
+        closeAll() {
+          hub.closes++;
+          if (hub.mode === 'rejects') return Promise.reject(new Error('closeAll: down'));
           if (hub.mode === 'hangs') return new Promise(() => {});
           return Promise.resolve(1);
         },
@@ -205,6 +211,41 @@ await step('the object down: the write answers 200 with its body, the poke WAS a
   const env = { DEV_USER: GM, GM_EMAILS: GM, DB, CAMPAIGN: 'livecheck', LIVE: fakeHub('rejects').LIVE };
   const bare = await worker.fetch(new Request('http://127.0.0.1:8788/api/gm/display', { method: 'PUT', headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'blank' }) }), env, {});
   expect(bare.status === 200, 'no waitUntil: ' + bare.status);
+});
+
+await step('the switch going off closes the sockets server-side: only on the flip from on or absent to false, never on other GM state writes', async () => {
+  const hub = fakeHub();
+  const state = async (body) => { const r = await call(hub, 'PATCH', '/api/gm/state', { user: GM, body }); expect(r.status === 200, 'state PATCH ' + r.status + ' ' + r.text.slice(0, 100)); await settle(r); return r; };
+  await state({ live: true });               // make the start explicit: on
+  const c0 = hub.closes;
+  await state({ ui: { tab: 'A' } });         expect(hub.closes === c0, 'an unrelated state write closes nothing');
+  await state({ live: true });               expect(hub.closes === c0, 'on to on closes nothing');
+  const off = await state({ live: false });  expect(hub.closes === c0 + 1 && off.pending.length === 1, 'on to off closes once, through waitUntil: ' + (hub.closes - c0));
+  await state({ live: false });              expect(hub.closes === c0 + 1, 'off to off closes nothing');
+  await state({ ui: { tab: 'B' } });         expect(hub.closes === c0 + 1, 'a write that leaves the switch off closes nothing');
+  await state({ live: true });               expect(hub.closes === c0 + 1, 'off to on closes nothing');
+  await state({ live: false });              expect(hub.closes === c0 + 2, 'and off again closes again');
+  await state({ live: null });               expect(hub.closes === c0 + 2, 'deleting the key (back to on) closes nothing');
+  await state({ live: false });              expect(hub.closes === c0 + 3, 'absent to false (after the key was deleted) is a flip');
+  await state({ live: true });
+  // not a flip when the patch is refused
+  const bad = await call(hub, 'PATCH', '/api/gm/state', { user: ALEX, body: { live: false } });
+  expect(bad.status === 403 && hub.closes === c0 + 3, 'a player cannot flip it: ' + bad.status);
+  // the object down: the write still answers, the call WAS attempted, nothing rejects
+  for (const mode of ['getThrows', 'idThrows', 'rejects', 'hangs']) {
+    const down = fakeHub(mode);
+    await call(down, 'PATCH', '/api/gm/state', { user: GM, body: { live: true } });
+    const r = await call(down, 'PATCH', '/api/gm/state', { user: GM, body: { live: false } });
+    expect(r.status === 200 && r.json.doc.live === false && r.answeredMs < 1000, mode + ': answers ' + r.status);
+    expect(r.pending.length === 1, mode + ': handed to waitUntil');
+    if (mode === 'rejects' || mode === 'hangs') expect(down.closes === 1, mode + ': closeAll was called');
+    if (mode === 'getThrows') expect(down.attempts === 1, 'get() was tried');
+    if (mode !== 'hangs') expect((await Promise.allSettled(r.pending)).every((o) => o.status === 'fulfilled'), mode + ': the dropped call does not reject');
+  }
+  const unbound = await call(null, 'PATCH', '/api/gm/state', { user: GM, body: { live: true } });
+  const u2 = await call(null, 'PATCH', '/api/gm/state', { user: GM, body: { live: false } });
+  expect(unbound.status === 200 && u2.status === 200 && u2.pending.length === 0, 'no binding: the flip answers and queues nothing');
+  await call(null, 'PATCH', '/api/gm/state', { user: GM, body: { live: null } });   // leave the switch absent (on) for the steps after this one
 });
 
 // ---------- the route ----------

@@ -232,7 +232,8 @@ async function main() {
           let len = b[1] & 0x7f, off = 2;
           if (len === 126) { if (b.length < 4) return; len = b.readUInt16BE(2); off = 4; }
           if (b.length < off + len) return;
-          c.frames.push({ opcode: b[0] & 0x0f, text: b.subarray(off, off + len).toString('utf8') });
+          const opcode = b[0] & 0x0f;
+          c.frames.push({ opcode, text: b.subarray(off, off + len).toString('utf8'), code: opcode === 8 && len >= 2 ? b.readUInt16BE(off) : null });
           c.buf = b.subarray(off + len);
         }
       };
@@ -243,7 +244,8 @@ async function main() {
         if (!check()) c.waiters.push(check);
       });
       c.send = (text) => socket.write(Buffer.concat([Buffer.from([0x81, 0x80 | text.length, 0, 0, 0, 0]), Buffer.from(text)])); // masked with four zero bytes: the payload is plain
-      c.messages = () => c.frames.map((f) => JSON.parse(f.text));
+      c.messages = () => c.frames.filter((f) => f.opcode === 1).map((f) => JSON.parse(f.text));
+      c.closeFrame = () => c.frames.find((f) => f.opcode === 8) || null;
       socket.on('data', feed);
       feed(Buffer.from(head));
       c.until(1, 10000).then(() => resolveP(c), rejectP);
@@ -312,9 +314,26 @@ async function main() {
           expect(Object.keys(m).sort().join() === 'k,t', 'a poke carries only k and t: ' + JSON.stringify(m));
           expect(typeof m.k === 'string' && Number.isInteger(m.t) && Math.abs(Date.now() - m.t) < 120000, 'k is a kind and t a time: ' + JSON.stringify(m));
         }
-        expect(s.frames.every((f) => f.opcode === 1), 'text frames only');
+        expect(s.frames.every((f) => f.opcode === 1), 'text frames only (no close frame while the switch is on)');
       }
     } finally { all.forEach((s) => s.socket && s.socket.destroy()); }
+  });
+
+  await step('live switch (real): a GM state write that leaves live alone closes nothing; the flip to off closes every open socket with 1000; a second write of false closes nothing new', async () => {
+    status(await call('PATCH', '/api/gm/state', { user: GM, body: { live: true } }), 200);
+    const gm = await openLive(GM), player = await openLive(PLAYER), display = await openLive(IPAD);
+    const all = [gm, player, display];
+    try {
+      status(await call('PATCH', '/api/gm/state', { user: GM, body: { ui: { tab: 'C' } } }), 200);
+      status(await call('PATCH', '/api/gm/state', { user: GM, body: { live: true } }), 200);
+      await sleepMs(500);
+      expect(all.every((s) => !s.closeFrame() && !s.socket.destroyed && s.frames.length === 1), 'still open, only hello heard, after writes that do not flip it');
+      status(await call('PATCH', '/api/gm/state', { user: GM, body: { live: false } }), 200);
+      for (const s of all) {
+        for (let i = 0; i < 100 && !s.closeFrame(); i++) await sleepMs(100);
+        expect(s.closeFrame() && s.closeFrame().code === 1000, 'closed with 1000: ' + JSON.stringify(s.closeFrame()));
+      }
+    } finally { all.forEach((s) => s.socket && s.socket.destroy()); status(await call('PATCH', '/api/gm/state', { user: GM, body: { live: true } }), 200); }
   });
 
   await step('live switch (real): GM state { live: false } reaches the phone poll and the display answers, closes the door to new sockets, and { live: true } reopens it', async () => {

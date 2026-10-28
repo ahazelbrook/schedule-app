@@ -52,6 +52,25 @@ export function pokeLive(context, kinds) {
   }
 }
 
+/**
+ * The switch has just gone off: ask the object to close every socket (code 1000), through waitUntil like a poke. Called only on
+ * that flip (GM state going from on or absent to an explicit false), after the write. A failure is logged and dropped; the pages
+ * close client-side too, so this is belt and braces.
+ */
+export function closeLive(context) {
+  try {
+    const env = context && context.env;
+    if (!env || !env.LIVE) return;
+    const work = (async () => {
+      const stub = env.LIVE.get(env.LIVE.idFromName(campaignOf(env)));
+      await stub.closeAll();
+    })().catch((e) => { console.warn('live: closeAll dropped:', e && e.message || e); });
+    if (context && typeof context.waitUntil === 'function') context.waitUntil(work);
+  } catch (e) {
+    console.warn('live: closeAll dropped:', e && e.message || e);
+  }
+}
+
 /** The SQL that reads the switch from a document column as its JSON type ('false', 'true', 'integer'..., NULL when missing): json_type tells false from 0, and NULL comes back for a document that is not valid JSON (json_type would raise and break the poll). */
 export const LIVE_SQL = "CASE WHEN json_valid(doc) THEN json_type(doc, '$.live') END";
 

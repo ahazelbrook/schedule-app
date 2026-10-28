@@ -32,6 +32,15 @@ export class LiveHub extends DurableObject {
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  // The switch went off (RPC): close every socket with 1000. Returns how many it closed.
+  closeAll() {
+    let n = 0;
+    for (const ws of this.ctx.getWebSockets()) {
+      try { ws.close(1000, 'live sync is off'); n++; } catch (_) {}
+    }
+    return n;
+  }
+
   // A poke (RPC): { k, t } to every socket whose role hears this kind. A send that throws (a socket closing) never stops the rest.
   // Returns how many sockets it went to (the checks read it; the Worker ignores it).
   poke(kind) {

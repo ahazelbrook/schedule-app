@@ -9,10 +9,11 @@
 import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf } from '../../_lib/http.js';
 import { LIMITS, requireGm, loadState, patchState } from '../../_lib/gm.js';
+import { closeLive } from '../../_lib/live.js';
 
 const METHODS = ['GET', 'PATCH'];
 
-export async function onRequest({ request, env, data }) {
+export async function onRequest({ request, env, data, waitUntil }) {
   requireGm(data);
   const method = request.method;
   if (!METHODS.includes(method)) return methodNotAllowed(METHODS);
@@ -24,5 +25,8 @@ export async function onRequest({ request, env, data }) {
   }
   const patch = await readJsonObject(request, LIMITS.state);
   const db = await getDb(env);
-  return json(await patchState(db, campaign, patch));
+  const meta = {};
+  const out = await patchState(db, campaign, patch, meta);
+  if (meta.liveOff) closeLive({ env, waitUntil });   // only on the flip to off (design 2.5): the sockets close server-side too
+  return json(out);
 }

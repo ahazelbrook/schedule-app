@@ -906,6 +906,28 @@ not the Deepgram key), `npm run gm:transcript -- --install` writes a hidden laun
 (`b68-transcript.vbs`) into the Windows Startup folder and starts the copier; it starts at every sign-in after that.
 `-- --uninstall` stops it and removes the launcher. It runs the repo's checked-out copy of the script.
 
+## Live sync (`functions/_lib/live.js`, `worker/live.js`, `functions/api/live.js`)
+
+A page hears of a change at once, instead of on its next poll. **The poll stays the source of truth**: a page with no socket behaves exactly as it did before, and a poke that never arrives costs only time.
+
+- **A poke is a nudge, never data.** It is exactly `{ "k": <kind>, "t": <ms> }`: a kind and a time. A page that hears it runs its existing poll at once. Nothing a player must not see can ride in it.
+- **The socket.** `GET /api/live` upgrades to a WebSocket behind the same Access and role checks as every API call (no sign-in is 401; no upgrade header is 426; the table display may open it too). One Durable Object per campaign, `LiveHub`, holds the sockets with no storage and no timers. The route sets the socket's role from the signed-in caller, never from anything the client sends. `ping` is answered with `pong` without waking the object.
+- **Who hears which kinds.**
+
+| Kind | Sent when | Heard by |
+|---|---|---|
+| `characters`, `campaign`, `npcs` | one of those writes succeeds (including the Screen's portrait-add) | phones and GM pages |
+| `display`, `ambient` | one of those writes succeeds | the iPad and GM pages |
+| `stt` | the transcriber's control document actually changes (a heartbeat that says the same thing pokes nothing) | the iPad and GM pages |
+| `cue` | a transcript post holds a line with `cue: true` | GM pages |
+| `screen` | reserved for the phones' table screen; nothing sends it yet | phones |
+
+- **After the write, never in the way.** A poke goes out through `waitUntil` once the write has succeeded, so a refused write (403, 409) pokes nothing, and a failed or silent object is logged and dropped: the answer is never delayed.
+- **The switch: Menu → Live sync.** On by default. It is the key `live` in the GM state (`PATCH /api/gm/state { live: false }`), so there is no migration and **no deploy is needed**, which matters on game day. Only an explicit `false` is off. It rides in answers every client already gets: `live` in the data poll (`GET /api/characters`) and in `GET /api/gm/display` (the seq-only call is unchanged).
+- **What off does.** The server closes every open socket with code 1000 when the switch flips to off (and only then, never on other GM state writes); `/api/live` answers 503 while it is off, so a page that reconnects stays on its poll; every page sees `live: false` in its next poll and goes back to the fast poll. Turned on again, pages reopen their sockets. With the switch off, or the object down, the console works exactly as it does without live sync.
+
+Checks: `checks/api/live.mjs` (every write path, the role header, the object down, the switch) and `checks/api/display-role.mjs` (real sockets under `wrangler dev`: each role hears only its kinds, the switch closes them).
+
 ## Claude at the table (the box, `app/gm/assist-panel.js`, `functions/api/gm/assist.js`)
 
 **The panel.** On a laptop, Blade lives in a side panel. A 44 px tab sits on the right edge, between the top bar and
