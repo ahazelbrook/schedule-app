@@ -1726,7 +1726,8 @@
   }
   /* one poll: read, note matches, send at most one window. The box going off (Listening off, the cap, not set up) switches co-GM off and says so. */
   function cogmStep(me) {
-    var cm = me.cogm; if (!cm || !cm.on || S !== me || cm.busy || document.hidden) return;
+    var cm = me.cogm; if (!cm || !cm.on || S !== me || cm.busy) return;
+    if (document.hidden) { if (!cm.st.away) cm.st.away = Date.now(); return; }          /* a cue heard while this page was away may be stale when it comes back */
     var box = cm.sw.box();
     /* the box is off when its night's cap is reached (the header says Off). Listening is asked of the server here every 6th poll, not read from the panel's last tick, which can be a minute old. "Not set up" does not matter: the hands need no briefing. */
     if (box.key === 'off') { cogmOff(me, 'Off: the night’s cap is reached'); toast('Co-GM switched itself off: Blade is off (the night’s cap).', true); return; }
@@ -1736,6 +1737,7 @@
       if (S !== me || cm.epoch !== epoch) return;
       if (r[1] && isObj(r[1].doc) && r[1].doc.want !== 'on') { cogmOff(me, 'Off: Listening is off'); toast('Co-GM switched itself off: Listening is off.', true); return; }
       C.ingest(cm.st, r[0] && r[0].lines, r[0] && r[0].last, Date.now(), cogmLive(me));
+      cm.st.away = 0;
       cogmCues(me, epoch);
       /* uncued windows only with the second switch on, and never while one is in flight: a slow window must not hold a cue back */
       var w = cm.uncued && !cm.winBusy ? C.nextWindow(cm.st, Date.now()) : null;

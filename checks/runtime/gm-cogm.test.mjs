@@ -462,10 +462,12 @@ await test('9. a cue is joined only with a line that is not a cue itself', () =>
 });
 
 await test('9. a cue older than cueStale (a hidden page coming back) is "stale": a card that acts only when tapped', () => {
-  const st = clane([crow(1, 'Blade, tick Escape Invented', { at: CT0 - 90_000 })], CLIVE, CT0);
+  const st = C.newState(); C.start(st, 0); st.away = CT0 - 70_000; C.ingest(st, [crow(1, 'Blade, tick Escape Invented', { at: CT0 - 90_000 })], 1, CT0, CLIVE);
   const j = C.cueNext(st, CT0, CLIVE);
   assert.equal(j.kind, 'stale'); assert.ok(j.parsed && j.parsed.length === 1);
   assert.equal(st.cueNotBefore, 0, 'a stale cue does not use the call gap');
+  const drift = clane([crow(1, 'Blade, tick Escape Invented', { at: CT0 - 90_000 })], CLIVE, CT0);
+  assert.equal(C.cueNext(drift, CT0, CLIVE).kind, 'post', 'an old time with the page never away (a drifting iPad clock) is not stale');
   const fresh = clane([crow(1, 'Blade, tick Escape Invented', { at: CT0 - 5_000 })], CLIVE, CT0);
   assert.equal(C.cueNext(fresh, CT0, CLIVE).kind, 'post');
 });

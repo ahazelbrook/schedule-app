@@ -86,7 +86,7 @@
   P.match = match;
 
   /* ---------- 2. the window, the cursors, the keys ---------- */
-  function newState() { return { buf: [], pending: [], readAfter: 0, handled: 0, notBefore: 0, keys: {}, tries: {}, cues: [], cueNotBefore: 0 }; }
+  function newState() { return { buf: [], pending: [], readAfter: 0, handled: 0, notBefore: 0, keys: {}, tries: {}, cues: [], cueNotBefore: 0, away: 0 }; }
   P.newState = newState;
   /* start at the newest seq: the talk before co-GM was switched on is not replayed */
   function start(st, last) { var n = Math.max(0, Math.floor(+last) || 0); st.readAfter = n; st.handled = n; st.buf = []; st.pending = []; st.cues = []; st.cueNotBefore = 0; return st; }
@@ -105,7 +105,7 @@
       if (r.kind !== 'line' || r.seq <= st.readAfter || !str(r.text).trim()) return;
       if (st.buf.length && st.buf[st.buf.length - 1].seq >= r.seq) return;
       st.buf.push({ seq: r.seq, id: str(r.id), at: str(r.at), text: str(r.text), speaker: typeof r.speaker === 'number' ? r.speaker : null });
-      if (Cue && Cue.find(str(r.text), live)) { st.cues.push({ seq: r.seq, id: str(r.id), at: str(r.at), text: str(r.text), seenAt: now }); return; }      /* a cue is the cue lane's, never an uncued window's */
+      if (Cue && Cue.find(str(r.text), live)) { st.cues.push({ seq: r.seq, id: str(r.id), at: str(r.at), text: str(r.text), seenAt: now, late: !!st.away }); return; }      /* a cue is the cue lane's, never an uncued window's */
       if (r.seq > st.handled) { var m = match(r.text); if (m.length) st.pending.push({ seq: r.seq, intents: m, seenAt: now }); }
     });
     /* `last` is the newest seq the server holds. It is used only when this read came back empty: a full page (the server gives at most 500) must be read on, not skipped past */
@@ -181,7 +181,7 @@
     if (res.missing && res.missing !== 'more') { st.cues.shift(); return job; }
     if (!res.missing && !res.actions.length) { st.cues.shift(); job.res = Object.assign({}, res, { refused: 'unparsed' }); return job; }
     if (res.missing === 'more') job.parsed = null; else job.parsed = res.actions;
-    job.kind = cueAge(c, now) > TIMING.cueStale ? 'stale' : 'post';
+    job.kind = c.late && cueAge(c, now) > TIMING.cueStale ? 'stale' : 'post';       /* stale only when this page was away (st.away): the iPad's clock and the laptop's can differ */
     if (job.kind === 'post') { if (now < st.cueNotBefore) return null; st.cueNotBefore = now + TIMING.cueGap; }
     st.cues.shift();
     return job;
