@@ -254,7 +254,8 @@
    *  1. Own stops: the latest stop at or before `minute` is active, and the person stays there until the next one (the
    *     last stop holds to the end of the night). A stop exactly at `minute` is active, not "moving".
    *  2. Otherwise (no own stops, or none has begun yet) the person follows `with`, taking the leader's room, note and
-   *     moving. CHOICE TO CONFIRM: a person with both own stops and `with` follows `with` before their first own stop,
+   *     moving, but with the person's own `note` (never the leader's), and moving towards the person's own coming stop
+   *     when that is the nearer news. CHOICE TO CONFIRM: a person with both own stops and `with` follows `with` before their first own stop,
    *     then obeys their own stops from the first one on, and does NOT go back to following after their last own stop.
    *  3. Moving: 1 to 5 minutes before the next own stop, in a different room from the current one, the person is shown
    *     in their current room, moving { to: next room, inMin: minutes until it }. */
@@ -265,11 +266,16 @@
     if (cur) {
       var mv = null;
       if (next && next.t - minute <= MOVING_WITHIN && next.room !== cur.room) mv = { to: next.room, inMin: next.t - minute };
-      return { room: cur.room, note: cur.note, moving: mv };
+      return { room: cur.room, note: cur.note || nameOf(person.note), moving: mv };
     }
     if (typeof person.with === "string" && isObj(byId) && isObj(byId[person.with]) && (depth || 0) < 20) {
       var lead = whereAt(byId[person.with], minute, byId, start, (depth || 0) + 1);
-      if (lead) return lead;
+      if (lead) {
+        /* the follower's own note, never the leader's; their own coming stop beats the leader's moving */
+        var own = next || (stops.length ? stops[0] : null), fm = lead.moving;
+        if (own && own.t > minute && own.t - minute <= MOVING_WITHIN && own.room !== lead.room) fm = { to: own.room, inMin: own.t - minute };
+        return { room: lead.room, note: nameOf(person.note), moving: fm };
+      }
     }
     return null;
   }
@@ -292,11 +298,11 @@
   /* seesMatches(sees, person) -> bool. A disguise's `sees` is free text ("a role or a name"). It matches a person when,
    * after lower-casing, stripping accents and punctuation, collapsing spaces and dropping a leading "the ", it equals the
    * person's id or their label, or the person's label contains it as a whole word (or run of whole words). "nobody" and
-   * "" match no one. "port" does not match "Reporter" or "Porter". */
+   * "" match no one. "orter" does not match "Reporters". Letters that do not decompose (o with a stroke) stay letters. */
   function norm(s) {
     var t = String(s == null ? "" : s).toLowerCase();
     if (t.normalize) t = t.normalize("NFD").replace(/[̀-ͯ]/g, "");
-    return t.replace(/[^a-z0-9]+/g, " ").trim().replace(/^the( |$)/, "").trim();
+    return t.replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/^the( |$)/, "").trim();
   }
   function seesMatches(sees, person) {
     var s = norm(sees);

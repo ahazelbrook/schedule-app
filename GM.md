@@ -521,7 +521,7 @@ fails and nobody is known, nothing is purged.
   - **The view.** `ballView(play, state, floorOf)` is pure. `state` is the `ball` object of the GM state doc (`t` minutes from
     `clock.start`, `lens` a disguise id, `crew`, `open`, `pins`); `floorOf` is room name -> level from `B68Map.floors(roll)`. It returns
     `{ minute, label, people: [{ id, label, kind, room, note, moving }], rooms: { <name>: { lvl, people, crew, pinned, lens: { pos, danger } | null,
-    open } }, next: [{ at, label, room }], routes }`. A person follows their own stops, or their `with` person; `moving` shows in the 5
+    open } }, next: [{ at, label, room }], routes }`. A person follows their own stops, or their `with` person; the note shown is the person's own, never the leader's; `moving` shows in the 5
     minutes before a stop. `lens.pos` is controlled, risky, desperate or unknown (a room on no floor); `danger` is true when the person a
     disguise `sees` stands in the room (free text, matched by id, label or a whole word of the label). `next` is the next three events
     and target stops after `t`.

@@ -309,6 +309,27 @@ test('whereAt: own stop wins when active; before it they follow with; after thei
   assert.equal(at(ps[0], '00:30', ps).room, 'Ledger room');
 });
 
+test('whereAt: a follower with own stops shows moving towards their own next stop, which beats the leader moving', () => {
+  const ps = PEOPLE(), m = ps[3];
+  assert.deepEqual(at(m, '23:47', ps), { room: 'Roof garden', note: '', moving: { to: 'Boathouse', inMin: 3 } });
+  assert.equal(at(m, '23:44', ps).moving, null);
+  assert.deepEqual(at(m, '23:45', ps).moving, { to: 'Boathouse', inMin: 5 });
+  const lead = at(ps[0], '23:27', ps).moving;
+  assert.deepEqual(lead, { to: 'Roof garden', inMin: 3 });
+  assert.deepEqual(at(m, '23:27', ps).moving, lead, 'no own stop near: the leader moving shows');
+});
+
+test('whereAt: a follower shows their own note (or none), never the leader\'s; an own stop falls back to the person note', () => {
+  const ps = PEOPLE();
+  assert.equal(at(ps[0], '23:30', ps).note, 'alone');
+  assert.equal(at(ps[1], '23:30', ps).note, '', 'a follower with no note of their own');
+  const withNote = [ps[0], { id: 'shadow', label: 'Wren', kind: 'guard', with: 'lead', note: 'Drinks' }];
+  assert.equal(at(withNote[1], '23:30', withNote).note, 'Drinks');
+  const own = [{ id: 'q', label: 'Q', kind: 'staff', note: 'Serving', stops: [{ at: '19:00', room: 'Pantry' }, { at: '20:00', room: 'Foyer', note: 'Clearing' }] }];
+  assert.equal(at(own[0], '19:30', own).note, 'Serving', 'stop has no note: the person note');
+  assert.equal(at(own[0], '20:00', own).note, 'Clearing', 'the stop note wins');
+});
+
 test('whereAt: a with loop cannot hang', () => {
   const a = { id: 'a', label: 'A', kind: 'staff', with: 'b' }, b = { id: 'b', label: 'B', kind: 'staff', with: 'a' };
   assert.equal(B.whereAt(a, 10, { a, b }, START), null);
@@ -323,7 +344,11 @@ test('seesMatches: id, label, whole-word, accents, "the", punctuation; near-miss
   assert.ok(B.seesMatches('the reporter', p), 'leading the dropped, whole word in label');
   assert.ok(B.seesMatches('fairweather bell', p), 'a run of whole words');
   assert.ok(!B.seesMatches('port', p), 'substring of Reporter');
-  assert.ok(!B.seesMatches('porter', p), 'near-miss of Reporter');
+  assert.ok(!B.seesMatches('orter', p), 'a tail of Reporter');
+  assert.ok(!B.seesMatches('reporters', p), 'a longer word than Reporter');
+  assert.ok(!B.seesMatches('ren', { id: 'x', label: 'Søren Vale' }), 'a letter that does not decompose is not a word break');
+  assert.ok(B.seesMatches('soren', { id: 'x', label: 'Søren Vale' }) === false, 'and is not folded to a plain o either');
+  assert.ok(B.seesMatches('søren', { id: 'x', label: 'Søren Vale' }));
   assert.ok(!B.seesMatches('fair', p), 'prefix of a word');
   assert.ok(!B.seesMatches('nobody', { id: 'nobody', label: 'Nobody' }));
   assert.ok(!B.seesMatches('', { id: '', label: '' }));
@@ -371,6 +396,7 @@ test('ballView: the shape, people in rooms, a follower with the leader, rooms ke
   const v = view({ t: B.minuteOf('23:30', START), crew: { pc1: 'Pantry' }, open: ['Foyer'], pins: { clk1: 'Ledger room' } });
   assert.equal(v.minute, 330); assert.equal(v.label, '23:30');
   assert.deepEqual(v.people.find((p) => p.id === 'lead'), { id: 'lead', label: 'Odette', kind: 'target', room: 'Roof garden', note: 'alone', moving: null });
+  assert.equal(v.people.find((p) => p.id === 'shadow').note, '', 'a guard does not read the target\'s note');
   assert.deepEqual(v.rooms['Roof garden'].people, ['lead', 'shadow', 'mixed']);
   assert.deepEqual(v.rooms.Pantry.people, ['post']); assert.deepEqual(v.rooms.Pantry.crew, ['pc1']);
   assert.equal(v.rooms.Foyer.open, true); assert.equal(v.rooms.Cellar.open, false);
@@ -446,17 +472,22 @@ test('ballView with the real map kit: floorOf built from B68Map.floors on an aut
   assert.ok(floors.length >= 1);
   const floorOf = {};
   floors.forEach((f) => f.rooms.forEach((r) => { floorOf[r.name] = f.lvl; }));
-  assert.ok(Object.keys(floorOf).length >= ROOMS.length - 1, 'the rooms are on floors: ' + JSON.stringify(floorOf));
+  ROOMS.forEach((n) => assert.ok(n in floorOf, 'the kit placed "' + n + '" on a floor: ' + JSON.stringify(floorOf)));
   assert.ok(Object.values(floorOf).every((n) => typeof n === 'number'));
-  const home = floorOf[ROOMS.find((m) => m in floorOf)];
-  ROOMS.filter((n) => n in floorOf).forEach((n) => {
-    assert.equal(B.lensRating(n, { floors: [home] }, floorOf), Math.abs(floorOf[n] - home) === 0 ? 'controlled' : Math.abs(floorOf[n] - home) === 1 ? 'risky' : 'desperate');
+  const home = floorOf[ROOMS[0]];
+  ROOMS.forEach((n) => {
+    const d = Math.abs(floorOf[n] - home);
+    assert.equal(B.lensRating(n, { floors: [home] }, floorOf), d === 0 ? 'controlled' : d === 1 ? 'risky' : 'desperate');
   });
   const checked = B.checkPlay(PLAY(), ROOMS).play;
   const bv = B.ballView(checked, { t: 100, lens: 'cook' }, floorOf);
   assert.equal(bv.label, '19:40');
-  Object.keys(floorOf).forEach((n) => assert.equal(bv.rooms[n].lvl, floorOf[n]));
-  assert.ok(Object.values(bv.rooms).every((r) => r.lens === null || ['controlled', 'risky', 'desperate', 'unknown'].includes(r.lens.pos)));
+  ROOMS.forEach((n) => assert.equal(bv.rooms[n].lvl, floorOf[n]));
+  /* the 'cook' disguise names rooms: ['Foyer'] and never: ['Roof garden']; every other room is rated from its floor */
+  const rated = ROOMS.filter((n) => n !== 'Foyer' && n !== 'Roof garden');
+  assert.ok(rated.length >= 1);
+  rated.forEach((n) => assert.ok(['controlled', 'risky', 'desperate'].includes(bv.rooms[n].lens.pos), n + ' is rated, not unknown: ' + bv.rooms[n].lens.pos));
+  assert.equal(bv.rooms.Foyer.lens.pos, 'controlled'); assert.equal(bv.rooms['Roof garden'].lens.pos, 'desperate');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
