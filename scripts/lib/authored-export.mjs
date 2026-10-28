@@ -3,7 +3,10 @@
 // The source is a location note in the vault's Locations/ folder holding one fenced block, ```json b68-site:
 //   { "base":  { "seed": <integer>, "ui": { target, district, faction, approach }, "mem": "<json>" | { ... } },   (optional)
 //     "patch": { "rooms": [{ "name", "band" }, ...], ...any other field of a location roll },                       (required)
-//     "map":   { "view", "theme" } }                                                                                 (optional)
+//     "map":   { "view", "theme" },                                                                                  (optional)
+//     "play":  { v, clock, floors, routes, people, disguises, events, clocks } }                                      (optional)
+// `play` (app/gm/ball.js) is a site's timeline, routes and disguises, GM-only. It is checked against the patch's room names:
+// what fails is dropped with a warning, keys it does not know are carried through. It rides here, not in a part of its own.
 // The app rolls the base on the location generator (the street, the threats, the texture the card reads) and lays the patch
 // over it (gm-page.js authoredRoll), so every tool that takes a roll (the card, the folds, the map, Show on iPad and its
 // hidden-name check, the score scene) takes an authored site unchanged. Without a base, the base is a roll from a seed made
@@ -16,6 +19,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+
+const { checkPlay } = createRequire(import.meta.url)('../../app/gm/ball.js');
 
 export const LOCATIONS_REL = 'Wiki/Games/Blades in the Dark/Locations';
 export const SCORES_REL = 'Wiki/Games/Blades in the Dark/Campaigns/Group/Scores';
@@ -71,6 +77,11 @@ export function parseSite(text, name, rel) {
     if (THEMES.indexOf(j.map.theme) >= 0) map.theme = j.map.theme;
     if (Object.keys(map).length) site.map = map;
   }
+  if (j.play !== undefined) {
+    const r = checkPlay(j.play, rooms.map((x) => x.name));
+    if (r.play) site.play = r.play;
+    return { site, warnings: r.warnings };
+  }
   return { site };
 }
 
@@ -82,6 +93,7 @@ export function buildAuthored({ vault, warn = () => {} }) {
     if (!r) continue;
     if (r.why) { warn('location: authored site ' + name + ' skipped: ' + r.why); continue; }
     if (Object.keys(sites).length >= LIMITS.sites) { warn('location: more than ' + LIMITS.sites + ' authored sites; ' + name + ' and later skipped'); break; }
+    (r.warnings || []).forEach((w) => warn('location: authored site ' + name + ' ' + w));
     sites[name] = r.site;
   }
   if (!Object.keys(sites).length) return null;
