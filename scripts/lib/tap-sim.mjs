@@ -43,6 +43,25 @@ export function talkFor(allMinutes, from, to) {
     .flatMap((t) => allMinutes.get(t).map((l) => `[${stamp(t)}] ${l.speaker}: ${l.text}`)).join('\n');
 }
 
+/**
+ * --extra-file <seat>=<path> (repeatable): the text the live assist part carries as extra.<seat>, read from a file under gm-private/.
+ * -> { seat: text }. Throws a plain message for a bad spec, an unknown seat or an empty file. The text is never printed.
+ */
+export function loadExtraFiles(specs, registry, read) {
+  const out = {};
+  for (const spec of specs || []) {
+    const i = String(spec).indexOf('=');
+    const seat = i > 0 ? spec.slice(0, i).trim() : '', file = i > 0 ? spec.slice(i + 1).trim() : '';
+    if (!seat || !file) throw new Error('bad --extra-file ' + spec + ' (use <seat>=<path>)');
+    if (!registry[seat]) throw new Error('--extra-file: no seat called ' + seat);
+    let text;
+    try { text = read(file); } catch (e) { throw new Error('--extra-file ' + seat + ': cannot read ' + file); }
+    if (!String(text).trim()) throw new Error('--extra-file ' + seat + ': ' + file + ' is empty');
+    out[seat] = String(text).trim();
+  }
+  return out;
+}
+
 /** Which seat an instruction text belongs to. */
 export const seatOf = (registry, ins) => Object.keys(registry).find((k) => ins && ins.startsWith(registry[k].instructions));
 
@@ -60,6 +79,7 @@ export const SKIPPED = () => ({ json: null, text: '', usage: {}, cost: 0, stop: 
  *   cap          the endpoint's own nightly cap in dollars (its budget ladder drops seats as spend nears it)
  *   callHook     async (seat, args, atHHMM, client) -> callSeat-shaped result; called only for enabled seats
  *   shouldStop   () -> '' | reason, checked before every tick
+ *   extra        { seat: text }: the assist part's extra.<seat>, appended to that seat's instructions by the endpoint (as the live pack does)
  *   clocks       [{ name, size, filled, kind }]: the table's live clocks, written into the in-memory campaign document (Meanwhile reads them)
  *   listening    the iPad reports it is listening on every tick (default true), so a stretch of silence in the transcript can raise the
  *                code-side silence flag for Stall; false leaves the control document without a status, as before
@@ -67,7 +87,7 @@ export const SKIPPED = () => ({ json: null, text: '', usage: {}, cost: 0, stop: 
  * -> { ticks, shown, stories, stopped (reason or ''), stoppedAt (HH:MM or '') }
  *   ticks[i] also carries meanwhile (the Rack cutaway or null), silence (the code-side flag fired) and stall; stories is the Scribe's saved story at each run
  */
-export async function runTapSim({ client, registry, allMinutes, fromT, toT, lead = 20, enabled, cap = 20, callHook, shouldStop = () => '', day = DEFAULT_DAY, offset = '+11:00', listening = true, clocks = null }) {
+export async function runTapSim({ client, registry, allMinutes, fromT, toT, lead = 20, enabled, cap = 20, callHook, shouldStop = () => '', day = DEFAULT_DAY, offset = '+11:00', listening = true, clocks = null, extra = null }) {
   const { memoryExec, asD1 } = await import('./d1.mjs');
   const { cleanLines, addLines } = await import('../../functions/_lib/stt.js');
   const { makeHandler } = await import('../../functions/api/gm/assist.js');
@@ -78,7 +98,7 @@ export async function runTapSim({ client, registry, allMinutes, fromT, toT, lead
   const names = [...new Set([...allMinutes.values()].flat().map((l) => l.speaker))].slice(0, 60);
   const sp = Object.fromEntries(names.map((n, i) => [String(i), n]));
   await db.prepare('INSERT INTO gm_stt (campaign, updated_at, doc) VALUES (?1, ?2, ?3)').bind('c', iso(fromT, 0), JSON.stringify({ want: 'on', session: '2', speakers: sp })).run();
-  await db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', '{}', 0, ?1)").bind(JSON.stringify({ file_id: 'file_sim000001' })).run();
+  await db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', '{}', 0, ?1)").bind(JSON.stringify({ file_id: 'file_sim000001', ...(extra && Object.keys(extra).length ? { extra } : {}) })).run();
   if (Array.isArray(clocks)) await db.prepare('INSERT INTO campaigns (id, updated_at, doc) VALUES (?1, ?2, ?3)').bind('c', iso(fromT, 0), JSON.stringify({ clocks })).run();
   let seq = 0;
   const feed = async (t) => {

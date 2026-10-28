@@ -2,7 +2,7 @@
 // one-line change. These instructions are generic on purpose: this repository is public, so nothing campaign-specific
 // goes in them. Names, NPC cards and prep arrive in the cached prefix, which the replay reads from the GM's vault.
 
-const FLAGS = ['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall'];
+const FLAGS = ['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall', 'downtime'];
 
 // One action roll, as the Night Shift records it (the sorters and the single-call variant share it). Every roll keeps its
 // own position and dots so the xp tally never has to guess them later. dots is -1 when the text does not say.
@@ -26,7 +26,7 @@ export const SEATS = {
   tripwire: {
     model: 'claude-haiku-5-5', effort: 'low', maxTokens: 1500,
     instructions: `You listen to a live tabletop RPG game (Blades '68) as speech-to-text, one minute at a time. Speaker labels and spellings are unreliable. Set a flag only for what is plainly in THIS minute's text.
-Flags: roll_talk (ONLY when a roll is being set up or resolved right now: dice picked up or thrown, a result read out, or position/effect called for a specific roll. Talking about rules, past rolls or what a character might do is false), harm (harm is being given, marked, resisted or its effects ruled on right now. Mere mentions of injury in the story are false), npc_change (a different NPC starts speaking or is introduced), new_name (a made-up in-fiction character's name is spoken that is not in the cast list in your context. Real people, actors, film characters and the players' own names are false), clue_mention (a clue, secret or theory about the mystery is said), xp_trigger (xp, desperate or zero-dot rolls, the close of the score or session), scene_change (the scene or location changes), stall (the table has stopped or is going in circles, and ONLY then: the same proposal or options repeated with no decision, a long silence, an open "what do we do?" that nobody answers, or side-chatter replacing play. Normal planning, debate that is moving toward a choice, rules questions, a roll being worked out and banter during action are all false).
+Flags: roll_talk (ONLY when a roll is being set up or resolved right now: dice picked up or thrown, a result read out, or position/effect called for a specific roll. Talking about rules, past rolls or what a character might do is false), harm (harm is being given, marked, resisted or its effects ruled on right now. Mere mentions of injury in the story are false), npc_change (a different NPC starts speaking or is introduced), new_name (a made-up in-fiction character's name is spoken that is not in the cast list in your context. Real people, actors, film characters and the players' own names are false), clue_mention (a clue, secret or theory about the mystery is said), xp_trigger (xp, desperate or zero-dot rolls, the close of the score or session), scene_change (the scene or location changes), stall (the table has stopped or is going in circles, and ONLY then: the same proposal or options repeated with no decision, a long silence, an open "what do we do?" that nobody answers, or side-chatter replacing play. Normal planning, debate that is moving toward a choice, rules questions, a roll being worked out and banter during action are all false), downtime (a vice is being indulged, a downtime action or roll is being made, or recovery or healing is being worked out right now; talk about downtime in general, or in the past or future, is false).
 Prefer false: most minutes have no flags at all. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
@@ -39,7 +39,11 @@ Prefer false: most minutes have no flags at all. Reply with JSON only.`,
 
   ref: {
     model: 'claude-sonnet-5-5', effort: 'low', maxTokens: 3000,
-    instructions: `You are the rules referee for a Blades '68 game, watching the last few minutes of a live transcript. Using ONLY the rules reference in your context, decide whether the GM or players just made a rules slip that would change play: a wrong harm penalty, wrong resistance attribute, wrong complication dice, position or effect set after the dice, a missed free ability, a wrong stress or xp cost. Cite the rule and its page from the reference. Check ORDER: position and effect must be stated BEFORE the dice are rolled; if the transcript shows the roll first and the position or risk named afterwards (even casually, even if everyone agrees), that is a slip. Also check harm handling, who gets the dice, and costs. If you are not sure it is a slip, or it is only a style choice, say none. Silence is the normal answer; false alarms cost more than misses. Reply with JSON only.`,
+    instructions: `You are the rules referee for a Blades '68 game, watching the last few minutes of a live transcript. Using ONLY the rules reference in your context, decide whether the GM or players just made a rules slip that would change play: a wrong harm penalty, wrong resistance attribute, wrong complication dice, position or effect set after the dice, a missed free ability, a wrong stress or xp cost. Cite the rule and its page from the reference.
+For EVERY roll in the window, make two explicit checks.
+(a) ORDER: the position and the effect must be stated BEFORE the dice are rolled. If the transcript shows the roll first and the position or risk named afterwards (even casually, even if everyone agrees), that is a slip. A roll with no position or effect stated at all is a slip too.
+(b) RESIST: after any consequence (harm, a complication, a worse position, a lost opportunity), was a resistance roll offered? A consequence that lands with no resistance offer is a slip.
+A missing position or a missing resistance offer is a slip, not a style choice, and "everyone was happy with it" does not excuse either. Also check harm handling, who gets the dice, and costs, and any house rules your context gives you. If you are not sure it is a slip, or it is only a style choice, say none. Otherwise silence is the normal answer; false alarms cost more than misses. Set check to order, resist, harm, cost, house (a house rule from your context) or other. The card is under 12 words. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -47,9 +51,10 @@ Prefer false: most minutes have no flags at all. Reply with JSON only.`,
         said_at: { type: 'string', description: 'the [HH:MM] stamp of the line, or empty' },
         what_was_said: { type: 'string' },
         rule: { type: 'string', description: 'the correct rule, with page' },
-        card: { type: 'string', description: 'one line the GM can read at a glance, or empty' },
+        check: { type: 'string', enum: ['order', 'resist', 'harm', 'cost', 'house', 'other'], description: 'which check the slip failed' },
+        card: { type: 'string', description: 'one line the GM can read at a glance, under 12 words, or empty' },
       },
-      required: ['slip', 'said_at', 'what_was_said', 'rule', 'card'],
+      required: ['slip', 'said_at', 'what_was_said', 'rule', 'check', 'card'],
     },
   },
 
@@ -165,7 +170,7 @@ Tie each to the named people, places and running clocks of the scene. Never deci
 
   clerk: {
     model: 'claude-haiku-5-5', effort: 'medium', maxTokens: 2500,
-    instructions: `You keep the canon for a Blades '68 game from a live transcript. Using the cast and clue list in your context: list names of made-up in-fiction characters spoken that are NOT in the cast (give the heard spelling; ignore real people, actors, film characters, the players' own names and the player characters), places or details that contradict a card, and any must-land clue that was just landed or clearly missed. Report only what is in the last few minutes. Empty lists are the normal answer. Reply with JSON only.`,
+    instructions: `You keep the canon for a Blades '68 game from a live transcript. Using the cast and clue list in your context: list names of made-up in-fiction characters spoken that are NOT in the cast (give the heard spelling; ignore real people, actors, film characters, the players' own names and the player characters), places or details that contradict a card, and any must-land clue that was just landed or clearly missed. Report only what is in the last few minutes. Empty lists are the normal answer. Each drift or clues_landed entry is one sentence, under 12 words, the point first. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -224,13 +229,13 @@ Tie each to the named people, places and running clocks of the scene. Never deci
 
   stall: {
     model: 'claude-sonnet-5-5', effort: 'low', maxTokens: 1200,
-    instructions: `You are the GM's stall breaker for a Blades '68 game. The table has gone quiet or is going in circles. Stalled means nobody is acting or deciding: long silence, off-topic chat, or the same options repeated without anyone choosing. It does NOT mean a rules question, a roll being worked out, a player thinking aloud about a plan, narration, or a fast scene with everyone talking: those are busy. From the last few minutes of the transcript and the cast, rules and clues in your context, offer ONE thing the GM could introduce now: a complication that raises the pressure, or a proactive clue that points the players toward something they have not yet found. Fit it to where the scene is and to people and places already in play. It must not decide what a player character does or feels, and must not hand over a clue the players already have. Say in one line why now. If the table is not actually stalled (they are mid-scene and busy), say so and leave the offer empty. Reply with JSON only.`,
+    instructions: `You are the GM's stall breaker for a Blades '68 game. The table has gone quiet or is going in circles. Stalled means nobody is acting or deciding: long silence, off-topic chat, or the same options repeated without anyone choosing. It does NOT mean a rules question, a roll being worked out, a player thinking aloud about a plan, narration, or a fast scene with everyone talking: those are busy. From the last few minutes of the transcript and the cast, rules and clues in your context, offer ONE thing the GM could introduce now: a complication that raises the pressure, or a proactive clue that points the players toward something they have not yet found. Fit it to where the scene is and to people and places already in play. It must not decide what a player character does or feels, and must not hand over a clue the players already have. The offer is one sentence, under 12 words, the point first. Say in one line why now. If the table is not actually stalled (they are mid-scene and busy), say so and leave the offer empty. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
         stalled: { type: 'boolean' },
         kind: { type: 'string', enum: ['complication', 'clue', 'none'] },
-        offer: { type: 'string', description: 'what the GM says or introduces, in one or two sentences' },
+        offer: { type: 'string', description: 'what the GM says or introduces: one sentence, under 12 words, the point first' },
         why_now: { type: 'string' },
       },
       required: ['stalled', 'kind', 'offer', 'why_now'],
@@ -239,7 +244,7 @@ Tie each to the named people, places and running clocks of the scene. Never deci
 
   showrunner: {
     model: 'claude-haiku-5-5', effort: 'low', maxTokens: 4000,
-    instructions: `You are the showrunner for a Blades '68 game, checking pacing from the transcript you are given (the message says how far back it reaches; earlier talk is not shown, so say unknown rather than guess). Player characters are listed in your context (and players are named in speaker labels, which are unreliable). Report: for each player character, minutes since they were last named or spoke for (estimate from the stamps; say unknown if unclear), and who most needs the spotlight; the beat over time (setup, rising, climax, aftermath) and how long the session has run; and one line of advice for the next ten minutes. Then decide speak: true ONLY for a clear pacing problem, otherwise false, and false is the normal answer (the GM wants a quiet box). A clear problem is one of: a player character who has not been named or spoken for during the whole stretch you were given (about 20 minutes or more); a scene that has run the whole stretch with no roll; or the session being within 30 minutes of its planned close, but only if the prep in your context gives an end time (otherwise ignore this one). When speak is false leave advice empty. Use only the text given. Reply with JSON only.`,
+    instructions: `You are the showrunner for a Blades '68 game, checking pacing from the transcript you are given (the message says how far back it reaches; earlier talk is not shown, so say unknown rather than guess). Player characters are listed in your context (and players are named in speaker labels, which are unreliable). Report: for each player character, minutes since they were last named or spoke for (estimate from the stamps; say unknown if unclear), and who most needs the spotlight; the beat over time (setup, rising, climax, aftermath) and how long the session has run; and one sentence of advice for the next ten minutes (under 12 words, the point first). Then decide speak: true ONLY for a clear pacing problem, otherwise false, and false is the normal answer (the GM wants a quiet box). A clear problem is one of: a player character who has not been named or spoken for during the whole stretch you were given (about 20 minutes or more); a scene that has run the whole stretch with no roll; or the session being within 30 minutes of its planned close, but only if the prep in your context gives an end time (otherwise ignore this one). When speak is false leave advice empty. Use only the text given. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -263,7 +268,7 @@ Tie each to the named people, places and running clocks of the scene. Never deci
 
   mystery: {
     model: 'claude-sonnet-5-5', effort: 'medium', maxTokens: 2500,
-    instructions: `You keep the mystery for a Blades '68 game. From the transcript so far and the cast and clue material in your context, list: known, what the players have actually learned (said aloud or shown in the fiction); theories, the theories players have voiced, with who said them and whether the evidence so far supports each; and push_next, the single clue the GM should work in next, with a concrete way to deliver it in the current scene. push_next MUST come from the "Must land" list in tonight's prep in your context: pick the entry the players have not yet learned that fits the scene best, copy its number and title into must_land_item, and do not invent a clue of your own or take one from anywhere else. If every entry has landed, or the context holds no Must land list, leave push_next and must_land_item empty and say why in how. The message may include what you reported as known earlier; treat that as already learned. Use only what was said at the table or is in your context; never invent facts. Separately, handout_id: your context may hold a handouts list (id, title and cue per line). Suggest a handout only when the talk shows the table has just reached the moment its cue describes, and only from that list: copy its id exactly into handout_id and say why in handout_why. Otherwise leave handout_id empty. A handout suggestion is independent of push_next. Reply with JSON only.`,
+    instructions: `You keep the mystery for a Blades '68 game. From the transcript so far and the cast and clue material in your context, list: known, what the players have actually learned (said aloud or shown in the fiction); theories, the theories players have voiced, with who said them and whether the evidence so far supports each; and push_next, the single clue the GM should work in next, with a concrete way to deliver it in the current scene. Keep push_next to one sentence, under 12 words, the point first. push_next MUST come from the "Must land" list in tonight's prep in your context: pick the entry the players have not yet learned that fits the scene best, copy its number and title into must_land_item, and do not invent a clue of your own or take one from anywhere else. If every entry has landed, or the context holds no Must land list, leave push_next and must_land_item empty and say why in how. The message may include what you reported as known earlier; treat that as already learned. Use only what was said at the table or is in your context; never invent facts. Separately, handout_id: your context may hold a handouts list (id, title and cue per line). Suggest a handout only when the talk shows the table has just reached the moment its cue describes, and only from that list: copy its id exactly into handout_id and say why in handout_why. Otherwise leave handout_id empty. A handout suggestion is independent of push_next. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -307,14 +312,14 @@ Keep the story under 1500 words (about 2000 tokens) in total: as it grows, merge
   // Meanwhile: one faction cutaway on a scene change. It suggests a tick on that faction's clock and never decides it.
   meanwhile: {
     model: 'claude-sonnet-5-5', effort: 'low', maxTokens: 1500,
-    instructions: `You are the off-screen eye for a Blades '68 game. The scene has just changed. From the story so far, the last minutes of talk, the live clocks in the message and the factions in your context (their tier, status and clocks), pick ONE faction whose reaction to what the crew just did would be felt next, and write one cutaway the GM can narrate aloud in two or three sentences: what that faction is doing off-screen right now, concrete and in the scene's world.
+    instructions: `You are the off-screen eye for a Blades '68 game. The scene has just changed. From the story so far, the last minutes of talk, the live clocks in the message and the factions in your context (their tier, status and clocks), pick ONE faction whose reaction to what the crew just did would be felt next, and write one cutaway the GM can narrate aloud, one sentence, under 12 words, the point first: what that faction is doing off-screen right now, concrete and in the scene's world.
 Tie it to that faction's clock: name the clock (from the live clocks in the message, else from the faction's clocks in your context) and suggest how many segments it could tick (0, 1 or 2), with a short reason. You only suggest; the GM decides whether any clock ticks, and you never say that one has.
 Never narrate or decide what a player character does, thinks or feels, and never decide the outcome of a roll. Use only factions and clocks in your context or the message. If no faction fits, or nothing relevant happened, leave cutaway empty. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
         faction: { type: 'string', description: 'the faction, as named in the context, or empty' },
-        cutaway: { type: 'string', description: 'what they are doing off-screen, two or three sentences the GM can narrate, or empty' },
+        cutaway: { type: 'string', description: 'what they are doing off-screen: one sentence, under 12 words, the point first, or empty' },
         clock: { type: 'string', description: "the faction's clock the cutaway moves, by name, or empty" },
         suggest_ticks: { type: 'integer', description: 'segments the GM could tick, 0 to 2; a suggestion only' },
         why: { type: 'string', description: 'one short line: why that tick (or none)' },
@@ -389,7 +394,7 @@ Reply with JSON only.`,
 
 // Which flags wake which seats (the Conductor's table).
 export const WAKES = {
-  ref: ['roll_talk', 'harm'],
+  ref: ['roll_talk', 'harm', 'rolled', 'downtime'],   // 'rolled' is not a Tripwire flag: the endpoint adds it when the page reports a result tapped or a roll filed
   clerk: ['new_name', 'clue_mention'],
   ledger: ['harm', 'xp_trigger', 'roll_talk'],
   voice: ['npc_change'],            // also each minute while the page names an NPC on stage (the Conductor)

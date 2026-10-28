@@ -40,6 +40,8 @@
 //     --draws-pack <json>    draw them from that GM pack's console part with the console's own function (default
 //                            gm-private/b68-gm-pack.json); seeds are fixed: --draws-seed N (default 1) + 2 per moment
 //     --position <p>         the Position for the drawn pair (default risky); --position-at 22:09=desperate,22:12=controlled
+//   --extra-file <seat>=<path>   (repeatable, with --tap-sim) text the live assist part carries as extra.<seat>, appended to that seat's instructions by
+//                     the endpoint, e.g. ref=gm-private/ref-checks.md. Never printed.
 //   --max-spend <$>   stop when the calls so far cost this much (default 3)
 //   --out <dir>       where calls.jsonl and summary.txt go (default gm-private/assist-replay/<timestamp>)
 //
@@ -355,7 +357,9 @@ if (flag('tap-sim')) {
     log.write(JSON.stringify({ at, seat, model: a.model, effort: a.effort, usage: r.usage, cost: r.cost, stop: r.stop, secs: r.secs, json: r.json }) + '\n');
     return r;
   };
-  const sim = await runTapSim({ client, registry, allMinutes, ...(day ? { day } : {}), fromT, toT, lead: Number(arg('lead', 20)), enabled, listening: !flag('no-listening'), ...(arg('clocks-file') ? { clocks: JSON.parse(fs.readFileSync(arg('clocks-file'), 'utf8')) } : {}), cap: Number(arg('cap', 20)), callHook, shouldStop: () => (total >= maxSpend ? 'spend cap' : '') });
+  let extra = null;
+  try { const sp = args('extra-file'); if (sp.length) { const { loadExtraFiles } = await import('./lib/tap-sim.mjs'); extra = loadExtraFiles(sp, registry, (f) => fs.readFileSync(f, 'utf8')); } } catch (e) { console.error(e.message); process.exit(2); }
+  const sim = await runTapSim({ client, registry, allMinutes, ...(extra ? { extra } : {}), ...(day ? { day } : {}), fromT, toT, lead: Number(arg('lead', 20)), enabled, listening: !flag('no-listening'), ...(arg('clocks-file') ? { clocks: JSON.parse(fs.readFileSync(arg('clocks-file'), 'utf8')) } : {}), cap: Number(arg('cap', 20)), callHook, shouldStop: () => (total >= maxSpend ? 'spend cap' : '') });
   if (sim.stopped) console.error('stopped at ' + sim.stoppedAt + ': spend cap $' + maxSpend + ' reached');
   const shown = sim.shown;
   const ticks = sim.ticks.map(x => {

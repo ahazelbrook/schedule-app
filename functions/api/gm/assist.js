@@ -1,9 +1,11 @@
 // /api/gm/assist/{tick,fit} (GM only, see the "Claude at the table" build plan): Claude at the table, GM side. Players never
 // call it and nothing it returns reaches the iPad. A player (or the table display sign-in) gets 403 before the body is read.
-//   POST /api/gm/assist/tick { after?, npc? } -> { cards, updates, flags, spend, last, voice?, errors? }
+//   POST /api/gm/assist/tick { after?, npc?, rolled? } -> { cards, updates, flags, spend, last, voice?, errors? }
 //        Glance fields (functions/_lib/assist/glance.js; design 3.6): every card, Ledger update, voice, handout and meanwhile answer carries kind, and cards, updates, handout, stall and
 //        meanwhile also headline + bullets (a Ref card also cite and, when the seat set it, check), beside text/detail and every older field. Stall's own `kind` stays complication|clue
 //        (the Rack reads it). `secret` is Ask Blade's alone. GET /cards restores them; a row from before restores as { kind by seat, headline: text, bullets: [] }.
+//        `rolled: true` (the page sends one 40 s after the GM taps a console result or files a roll) adds the flag 'rolled', which wakes Ref; the Tripwire's
+//        45 s gap does not apply to it, and with nothing new to read it skips the Tripwire and returns the cursor it was given.
 //        `npc` is the name of the NPC the GM's page has on stage (at most 80 characters; the Worker holds no scene, so the page
 //        says). With none, Voice never runs. With one, Voice wakes on the Tripwire's npc_change flag and on every tick (about each
 //        minute), after Ref in the list, and its lines come back as `voice: { who, want, lines: [two], at }` (they go to the
@@ -116,7 +118,7 @@ import { toPortrait, toProp, toWire, buildBoard, boardSource, cleanName, cleanAs
 import { portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN, SCREEN_NAME_MAX, askUser, cleanAskFields, clerkUser, CLERK_KNOWN_MAX, CLERK_NAME_MAX, ASK_MAX, ASK_WINDOW_MIN, ASK_HISTORY, ASK_HISTORY_MIN, ASK_HISTORY_ANSWER_MAX } from '../../_lib/assist/prompts.js';
 import { gatekeeperUser, ITEM_MAX, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX,
   STORY_SEATS, storyBlock, scribeUser, SCRIBE_SLICE_MAX, SCRIBE_FIRST_MIN, MEANWHILE_MIN, meanwhileUser, cleanClocks, silenceUser } from '../../_lib/assist/prompts.js';
-import { DEFAULT_CAP, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS, isListening, silenceFlag } from '../../_lib/assist/conductor.js';
+import { DEFAULT_CAP, COOLDOWN_MS, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS, isListening, silenceFlag } from '../../_lib/assist/conductor.js';
 import { ledgerGlance, fixerGlance, restoreGlance } from '../../_lib/assist/glance.js';
 import { toCandidate, toVoice, toAnother, toStall, toScribe, toMeanwhile, toHandout, handoutIds, handoutTitles, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
@@ -620,13 +622,16 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (npc === null) throw new HttpError(400, 'npc must be a name of at most ' + NPC_MAX + ' characters');
     const after = body.after === undefined || body.after === null ? null : body.after;
     if (after !== null && !(Number.isInteger(after) && after >= 0)) throw new HttpError(400, 'after must be a whole number');
+    if (body.rolled !== undefined && typeof body.rolled !== 'boolean') throw new HttpError(400, 'rolled must be true or false');
+    const rolled = body.rolled === true;                 // the GM tapped a result or filed a roll about 40 s ago: Ref looks at the last minutes
     // the Tap seats read the last four MINUTES (a busy table says well over 50 lines in four); the Tripwire reads what is new
     const { lines: tail, last } = await readLines(db, campaign, { since: new Date(t0 - TAP_WINDOW_MS).toISOString() });
     const session = tail.length ? tail[tail.length - 1].session : '';
     if (tier === 'off' || legacy) return done([], [], last);
     const fresh = after !== null ? (await readLines(db, campaign, { after })).lines : tail.filter((l) => t0 - Date.parse(l.at) <= FIRST_SLICE_MS);
     const freshText = formatLines(fresh, speakers);
-    if (!freshText) {
+    if (rolled && !freshText && !tail.length) return done([], [], last);    // a roll was reported but there is no talk to referee
+    if (!freshText && !rolled) {
       // Nothing new to read. A table gone truly quiet gives the Tripwire nothing to flag, so code raises `stall` itself: Listening on, the
       // iPad hearing, no line for SILENCE_MS (conductor.js). Stall's own cooldown and the ladder still apply.
       if (!isListening(stt.doc, t0)) return done([], [], last);
@@ -646,19 +651,25 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     }
 
     const lastRun = await lastRuns(db, campaign, t0);
-    const gate = canRun('tripwire', { now: t0, lastRun, inFlight: live(), tier });
-    if (!gate.ok) { skipped.push({ seat: 'tripwire', why: gate.why }); return done([], [], last); }     // a Tripwire stuck in flight is exactly what health must show
+    // a rolled tick lands 40 s after a tap, usually inside the Tripwire's own 45 s gap: the gap does not apply to it (one at a time still does)
+    const gate = canRun('tripwire', { now: t0, lastRun, inFlight: live(), tier, ...(rolled ? { cooldowns: { ...COOLDOWN_MS, tripwire: 0 } } : {}) });
+    // With nothing new to read, or the Tripwire busy, a rolled tick skips the Tripwire and wakes Ref alone on 'rolled'. It hands back the cursor it was
+    // given, so the talk the Tripwire has not read is still read by the next ordinary tick.
+    const rolledOnly = rolled && (!freshText || !gate.ok);
+    const cursor = rolledOnly ? (after !== null ? after : null) : last;
+    if (!rolledOnly && !gate.ok) { skipped.push({ seat: 'tripwire', why: gate.why }); return done([], [], last); }     // a Tripwire stuck in flight is exactly what health must show
     const prev = await prevTripwire(db, campaign, t0);            // read before this tick's own Tripwire row is written
-    const tw = await runOrSkip('tripwire', 'New talk, up to ' + hhmm(t0) + ':\n' + freshText);
-    if (!tw || fileMissing) return done([], [], last);          // nothing was billed or logged: the file is gone (or another request holds the Tripwire)
+    const tw = rolledOnly ? null : await runOrSkip('tripwire', 'New talk, up to ' + hhmm(t0) + ':\n' + freshText);
+    if (!rolledOnly && (!tw || fileMissing)) return done([], [], last);          // nothing was billed or logged: the file is gone (or another request holds the Tripwire)
     const twAt = new Date(now()).toISOString();
-    const flags = tw.r && tw.r.json ? Object.keys(tw.r.json).filter((k) => tw.r.json[k] === true) : [];
+    const flags = tw && tw.r && tw.r.json ? Object.keys(tw.r.json).filter((k) => tw.r.json[k] === true) : [];
+    if (rolled) flags.push('rolled');       // not a Tripwire flag: it wakes Ref (WAKES) and is logged, so the next tick follows through
 
     // 'tick' wakes the Showrunner, paced by its 10-minute cooldown; with nothing else woken a tick costs no model call
     const verdict = decide({ flags: flags.concat('tick'), now: t0, lastRun, inFlight: live(), spent: spentBefore + thisTick, cap, wakes, onStage: !!npc, follow: followsThrough(prev, t0) });
     skipped.push(...verdict.skipped);
     // the Tripwire's row is written once, after the Conductor has spoken, so its card can say which seats were skipped and why
-    await logRow(db, campaign, { at: twAt, session, seat: 'tripwire', cfg: tw.cfg, usage: tw.r && tw.r.usage, cost: tw.r && tw.r.cost, flags, timing: tw.timing,
+    if (!rolledOnly) await logRow(db, campaign, { at: twAt, session, seat: 'tripwire', cfg: tw.cfg, usage: tw.r && tw.r.usage, cost: tw.r && tw.r.cost, flags, timing: tw.timing,
       card: { ...(tw.r ? { out: tw.r.json } : { error: errors.length ? errors[0].error : 'no reply' }), skipped: skipped.map((x) => ({ ...x })) } }).run();
     // a quiet tick still releases a Ref card the gap held back (one cheap read, only when no seat woke): without it a slip held behind
     // another seat's card would go stale before any flag woke a seat again
@@ -680,7 +691,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     let held = null;
     if (!wake.length) {
       held = await heldRefs(db, campaign, t0);
-      if (!held.length) return done([], flags, last);
+      if (!held.length) return done([], flags, cursor);
     }
 
     const recentText = formatLines(tail, speakers);
@@ -769,7 +780,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (rows.length) await db.batch(rows);
     const cardOut = edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}), ...restoreGlance(edit.card, edit.card.seat) }] : [];
     const updatesOut = edit.updates.flatMap((u) => (u.items || [{ key: (u.keys || [])[0] || '', text: u.text }]).map((it) => ({ seat: 'ledger', at, key: it.key, text: it.text, ...ledgerGlance(it.text) })));
-    return done(cardOut, flags, last, updatesOut, { voice: voiceOut, stall: stallOut, handout: handoutOut, meanwhile: meanwhileOut });
+    return done(cardOut, flags, cursor, updatesOut, { voice: voiceOut, stall: stallOut, handout: handoutOut, meanwhile: meanwhileOut });
   };
 }
 

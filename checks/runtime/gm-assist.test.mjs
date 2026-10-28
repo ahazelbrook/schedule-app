@@ -168,8 +168,8 @@ function fakeClient(replies, calls) {
     },
   };
 }
-const NONE = Object.fromEntries(['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall'].map((f) => [f, false]));
-const REF_SLIP = { slip: true, said_at: '09:29', what_was_said: 'rolled first', rule: 'Position comes before the roll (p.9)', card: 'Position was named after the roll' };
+const NONE = Object.fromEntries(['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall', 'downtime'].map((f) => [f, false]));
+const REF_SLIP = { slip: true, said_at: '09:29', what_was_said: 'rolled first', rule: 'Position comes before the roll (p.9)', check: 'order', card: 'Position was named after the roll' };
 const REPLIES = () => ({
   tripwire: { ...NONE, roll_talk: true },
   ref: REF_SLIP,
@@ -1313,7 +1313,7 @@ await test('tripwire: the stall flag is narrow (circling, silence, unanswered qu
   const def = ins.slice(i, ins.indexOf('Prefer false'));
   for (const w of ['going in circles', 'no decision', 'long silence', 'side-chatter', 'ONLY then', 'Normal planning', 'banter during action']) assert.ok(def.includes(w), w);
   assert.ok(!/idle|off-topic/.test(def), 'the old loose wording is gone');
-  assert.equal(Object.keys(SEATS.tripwire.schema.properties).length, 8);
+  assert.equal(Object.keys(SEATS.tripwire.schema.properties).length, 9);
   assert.ok(/stopped or is going in circles/.test(SEATS.tripwire.schema.properties.stall.description));
   assert.equal(SEATS.tripwire.schema.properties.roll_talk.description, undefined, 'other flags keep their plain schema');
 });
@@ -1461,6 +1461,132 @@ await test('fit: dots reach the Fixer turn when set; without dots the turn is as
   assert.match(s.calls[0].user, /The GM names the position: risky\. Effect: standard\.\nThe console has drawn/);
   for (const dots of [5, -1, 1.5, '2', null, true, [2]]) await assert.rejects(s.post('fit', { position: 'risky', dots, draws: DRAWS }), (e) => e.status === 400 && /dots/.test(e.message), JSON.stringify(dots));
   assert.equal(cleanDots(undefined), undefined); assert.equal(cleanDots(4), 4); assert.equal(cleanDots(0), 0); assert.equal(cleanDots(5), null);
+});
+
+// ---------- S2: Ref's two checks, the rolled flag, downtime ----------
+await test('S2 seats: Ref checks order and resistance on every roll, says a missing one is a slip, and the schema takes check', () => {
+  const ins = SEATS.ref.instructions;
+  for (const w of ['EVERY roll', 'ORDER', 'RESIST', 'BEFORE the dice', 'resistance roll offered', 'not a style choice', 'under 12 words', 'silence is the normal answer']) assert.ok(ins.toLowerCase().includes(w.toLowerCase()), w);
+  const p = SEATS.ref.schema.properties;
+  assert.deepEqual(p.check.enum, ['order', 'resist', 'harm', 'cost', 'house', 'other']);
+  assert.ok(SEATS.ref.schema.required.includes('check'));
+  assert.ok(/under 12 words/.test(p.card.description));
+  assert.equal(SEATS.ref.model, 'claude-sonnet-5-5'); assert.equal(SEATS.ref.effort, 'low');
+});
+
+await test('S2 seats: the card seats one-liners are one sentence, under 12 words, the point first; their schemas keep their keys', () => {
+  for (const seat of ['clerk', 'stall', 'showrunner', 'mystery', 'meanwhile']) assert.ok(/under 12 words, the point first/.test(SEATS[seat].instructions), seat);
+  assert.deepEqual(Object.keys(SEATS.clerk.schema.properties), ['new_names', 'drift', 'clues_landed']);
+  assert.deepEqual(Object.keys(SEATS.stall.schema.properties), ['stalled', 'kind', 'offer', 'why_now']);
+  assert.ok(Object.keys(SEATS.mystery.schema.properties).includes('push_next') && Object.keys(SEATS.showrunner.schema.properties).includes('advice') && Object.keys(SEATS.meanwhile.schema.properties).includes('cutaway'));
+});
+
+await test('S2 downtime: a Tripwire flag, described generically, that wakes Ref; rolled is a Ref wake but never a Tripwire flag', () => {
+  assert.ok(Object.keys(SEATS.tripwire.schema.properties).includes('downtime'));
+  assert.ok(SEATS.tripwire.schema.required.includes('downtime'));
+  assert.ok(SEATS.tripwire.instructions.includes('downtime (a vice is being indulged, a downtime action or roll is being made, or recovery or healing is being worked out right now'));
+  assert.ok(WAKES.ref.includes('rolled') && WAKES.ref.includes('downtime'));
+  assert.ok(!Object.keys(SEATS.tripwire.schema.properties).includes('rolled'));
+  assert.deepEqual(decide({ flags: ['downtime'], now: T, wakes: WAKES }).seats, ['ref']);
+  assert.deepEqual(decide({ flags: ['rolled'], now: T, wakes: WAKES }).seats, ['ref']);
+  assert.deepEqual(decide({ flags: ['rolled', 'roll_talk'], now: T, wakes: WAKES }).seats.filter((x) => x === 'ref'), ['ref'], 'not doubled');
+  assert.ok(!decide({ flags: ['rolled'], now: T, wakes: WAKES, lastRun: { ref: T - 30_000 } }).seats.includes('ref'), 'Ref own 60 s gap still holds');
+});
+
+await test('S2 follow-through (pure): a rolled tick is followed once by the next, and never chains', () => {
+  const P = { at: T, flags: ['rolled'] };
+  assert.equal(followsThrough(P, T + 60_000), true);
+  assert.equal(followsThrough({ at: T, flags: ['downtime'] }, T + 60_000), false, 'downtime is a wake, not a follow');
+  assert.equal(followsThrough(P, T + FOLLOW_WINDOW_MS + 1), false);
+  const base = { flags: ['tick'], now: T + 61_000, lastRun: { ref: T + 1 }, wakes: WAKES };
+  assert.deepEqual(decide({ ...base, follow: true }).seats.slice(0, 1), ['ref']);
+  assert.equal(decide({ ...base, flags: ['rolled', 'tick'], follow: true }).seats.filter((x) => x === 'ref').length, 1);
+  assert.equal(followsThrough({ at: T + 61_000, flags: ['tick'] }, T + 122_000), false, 'the follow tick itself flags nothing to follow');
+});
+
+const REFTICK = (s) => s.calls.map((c) => c.seat).filter((x) => x === 'tripwire' || x === 'ref');
+function quiet(s) { s.replies.tripwire = { ...NONE }; s.replies.showrunner = { ...s.replies.showrunner, speak: false }; }
+
+await test('S2 tick: rolled wakes Ref even when the Tripwire flags nothing, and the answer and the log carry the flag; an ordinary tick does not', async () => {
+  clock.t = Date.parse('2030-05-01T09:00:00.000Z');
+  const s = await setup(FULL); quiet(s);
+  await s.lines(3);
+  const plain = await body(await s.post('tick', {}));
+  assert.deepEqual(REFTICK(s), ['tripwire'], 'no Ref without a flag');
+  assert.ok(!plain.flags.includes('rolled'));
+  s.calls.length = 0; clock.t += 61_000; await s.lines(2);
+  const out = await body(await s.post('tick', { rolled: true }));
+  assert.deepEqual(REFTICK(s), ['tripwire', 'ref'], 'Ref ran');
+  assert.ok(out.flags.includes('rolled'));
+  const tw = s.rows().filter((r) => r.seat === 'tripwire').pop();
+  assert.ok(tw.flags.split(',').includes('rolled'), 'the Tripwire row carries it');
+  await assert.rejects(s.post('tick', { rolled: 'yes' }), (e) => e.status === 400);
+  await assert.rejects(s.post('tick', { rolled: 1 }), (e) => e.status === 400);
+});
+
+await test('S2 tick: a rolled tick 40 s after an ordinary one is not held by the Tripwire 45 s gap; an ordinary one is', async () => {
+  clock.t = Date.parse('2030-05-02T09:00:00.000Z');
+  const s = await setup(FULL); quiet(s);
+  await s.lines(3); await s.post('tick', {});
+  s.calls.length = 0; clock.t += 40_000; await s.lines(2);
+  const held = await body(await s.post('tick', {}));
+  assert.deepEqual(REFTICK(s), [], 'ordinary: the gap holds');
+  assert.ok(held.health.skipped.some((x) => x.seat === 'tripwire' && x.why === 'cooldown'));
+  const out = await body(await s.post('tick', { rolled: true }));
+  assert.deepEqual(REFTICK(s), ['tripwire', 'ref'], 'rolled: the Tripwire reads the new talk and Ref looks');
+  assert.ok(out.flags.includes('rolled'));
+  assert.equal(typeof out.last, 'number', 'it read the talk, so the cursor moves');
+});
+
+await test('S2 tick: a rolled tick with nothing new to read skips the Tripwire, wakes Ref alone and hands back the cursor it was given', async () => {
+  clock.t = Date.parse('2030-05-03T09:00:00.000Z');
+  const s = await setup(FULL); quiet(s);
+  await s.lines(3);
+  const first = await body(await s.post('tick', {}));
+  s.calls.length = 0; clock.t += 40_000;                              // no new talk since first.last
+  const out = await body(await s.post('tick', { after: first.last, rolled: true }));
+  assert.deepEqual(REFTICK(s), ['ref'], 'Ref looked at the last minutes, no Tripwire call');
+  assert.equal(out.last, first.last, 'the cursor is unchanged');
+  assert.deepEqual(out.flags, ['rolled']);
+  assert.ok(/Last four minutes/.test(s.calls.find((c) => c.seat === 'ref').user));
+  // no talk at all in the window: nothing to referee, no call
+  s.calls.length = 0; clock.t += 20 * 60_000;
+  const none = await body(await s.post('tick', { after: first.last, rolled: true }));
+  assert.deepEqual(s.calls.map((c) => c.seat), []); assert.deepEqual(none.flags, []);
+});
+
+await test('S2 tick: after a rolled tick Ref looks once more on the next tick with new talk, not on the one after; a Ref held by its gap goes on the next', async () => {
+  clock.t = Date.parse('2030-05-04T09:00:00.000Z');
+  const s = await setup(FULL); quiet(s);
+  await s.lines(3);
+  await s.post('tick', { rolled: true });                              // tick 1: rolled, Ref runs
+  assert.ok(s.rows().some((r) => r.seat === 'ref'));
+  s.calls.length = 0; clock.t += 61_000; await s.lines(2);
+  await s.post('tick', {});
+  assert.deepEqual(REFTICK(s), ['tripwire', 'ref'], 'the follow-through');
+  s.calls.length = 0; clock.t += 61_000; await s.lines(2);
+  await s.post('tick', {});
+  assert.deepEqual(REFTICK(s), ['tripwire'], 'no chain');
+  // a rolled tick inside Ref own 60 s gap: skipped and said so; the next tick picks it up
+  s.replies.tripwire = { ...NONE, roll_talk: true }; clock.t += 61_000; await s.lines(2); await s.post('tick', {});
+  s.replies.tripwire = { ...NONE };
+  s.calls.length = 0; clock.t += 30_000; await s.lines(2);
+  const gap = await body(await s.post('tick', { rolled: true }));
+  assert.deepEqual(REFTICK(s), ['tripwire'], 'Ref is inside its gap');
+  assert.ok(gap.health.skipped.some((x) => x.seat === 'ref' && x.why === 'cooldown'));
+  s.calls.length = 0; clock.t += 61_000; await s.lines(2);
+  await s.post('tick', {});
+  assert.deepEqual(REFTICK(s), ['tripwire', 'ref'], 'the next tick follows through');
+});
+
+await test('S2 downtime: a Tripwire downtime flag wakes Ref on that tick', async () => {
+  clock.t = Date.parse('2030-05-05T09:00:00.000Z');
+  const s = await setup(FULL); quiet(s);
+  s.replies.tripwire = { ...NONE, downtime: true };
+  await s.lines(3);
+  const out = await body(await s.post('tick', {}));
+  assert.ok(out.flags.includes('downtime'));
+  assert.deepEqual(REFTICK(s), ['tripwire', 'ref']);
 });
 
 console.log(failed ?`\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);

@@ -47,6 +47,7 @@
                      the console's own fit, asked when the GM sets the Position. Makes NO call (resolves null) when the box cannot
                      fit, or when Listening is off (asked of the server just before, so a stale page is not fooled)
      ctl.ready       a promise: tonight's cards have been restored (or could not be)
+     ctl.rolled()    the GM tapped a console result or filed a roll: one tick with rolled: true in 40 s (one pending; a newer call restarts the 40 s)
      ctl.resume()    clear a pause (cap reached / busy) and poll again
      ctl.state()     a copy of what the box holds (for checks)
      ctl.destroy()   timers, listeners and the element go
@@ -84,7 +85,7 @@
   'use strict';
 
   var P = {};
-  var BANNER_MS = 12000, POLL_MS = 60000, MAX_CARDS = 40, MAX_UPDATES = 30, NPC_MAX = 80;
+  var BANNER_MS = 12000, POLL_MS = 60000, ROLLED_MS = 40000, ROLLED_RETRY_MS = 3000, ROLLED_TRIES = 20, MAX_CARDS = 40, MAX_UPDATES = 30, NPC_MAX = 80;
   var POSITIONS = ['controlled', 'risky', 'desperate'];
   var SEAT = { ref: 'Rule slip', clerk: 'Clerk', fixer: 'Fixer', ledger: 'Ledger', mystery: 'Mystery', showrunner: 'Pacing' };
   var TIER = { all: 'Full', reduced: 'Reduced', core: 'Core only', off: 'Off: cap reached' };
@@ -333,7 +334,7 @@
     var st = { open: false, cards: [], updates: [], asks: [], after: null, spend: null, paused: '', error: '', setup: false, listening: null, checkedAt: '', busy: false,
       fit: { busy: false, error: '', card: null }, screen: { busy: {}, error: '' }, ask: { busy: false, error: '' },
       pinned: false, filter: 'all', unfolded: {}, nowId: '', since: '', chipSig: '' };
-    var host = null, timer = null, bannerT = null, nowT = null, gone = false, bannerCard = null;
+    var host = null, timer = null, bannerT = null, nowT = null, rolledT = null, gone = false, bannerCard = null;
     var avatar = o.avatar || 'gm/blade.svg';
     var bannerMs = o.bannerMs || BANNER_MS;
     var setI = o.setInterval || (win && win.setInterval && win.setInterval.bind(win)), clrI = o.clearInterval || (win && win.clearInterval && win.clearInterval.bind(win));
@@ -766,11 +767,11 @@
 
     /* ---------- polling ---------- */
     function active() { return !gone && !isPhone() && !hidden(); }
-    function tickOnce() {
+    function tickOnce(rolledTick) {
       if (st.busy || gone) return Promise.resolve();
       st.busy = true;
       var npc = onStageName();
-      return Promise.resolve().then(function () { return npc ? gm.assistTick(st.after, npc) : gm.assistTick(st.after); }).then(function (res) {
+      return Promise.resolve().then(function () { return rolledTick === true ? gm.assistTick(st.after, npc, true) : npc ? gm.assistTick(st.after, npc) : gm.assistTick(st.after); }).then(function (res) {
         if (gone) return;
         if (isObj(res) && isObj(res.voice)) sendVoice(res.voice); else if (!npc) sendVoice(null);   /* nobody on stage: nothing from Voice shows */
         if (isObj(res) && isObj(res.stall) && str(res.stall.offer).trim()) sendStall(res.stall);
@@ -802,6 +803,24 @@
       }, function () { /* Listening could not be read: say nothing, try next minute */ });
     }
     function resume() { st.paused = ''; st.error = ''; render(); return poll(); }
+    /* A result tapped or a roll filed on the page: 40 s later, one tick marked rolled, so Ref looks at the roll just made. One is pending at a time; a newer
+       result restarts the 40 s. It goes through poll's gates (visible, not a phone, not paused, Listening on); a tick still in flight when it falls due
+       makes it wait a few seconds, never drop. The regular minute is restarted afterwards, so the next ordinary tick is not squeezed up against it. */
+    function rolled() {
+      if (gone || !setT) return;
+      if (rolledT && clrT) clrT(rolledT);
+      rolledT = setT(function () { fireRolled(0); }, o.rolledMs || ROLLED_MS);
+    }
+    function fireRolled(tries) {
+      rolledT = null;
+      if (gone || !active() || st.paused) return Promise.resolve();
+      if (st.busy) { if (tries < ROLLED_TRIES) rolledT = setT(function () { fireRolled(tries + 1); }, ROLLED_RETRY_MS); return Promise.resolve(); }
+      return Promise.resolve().then(function () { return gm.stt(); }).then(function (r) {
+        var d = r && isObj(r.doc) ? r.doc : null;
+        if (!(d && d.want === 'on')) return;
+        return tickOnce(true).then(function () { if (!gone && timer && clrI && setI && !o.noTimer) { clrI(timer); timer = setI(poll, o.interval || POLL_MS); } });
+      }, function () { /* Listening could not be read: the next ordinary minute carries on */ });
+    }
 
     /* ---------- Voice (the NPC on stage; its lines go to the page's Rack, not to this box) ---------- */
     function onStageName() { try { return typeof o.onStage === 'function' ? str(o.onStage()).replace(/\s+/g, ' ').trim().slice(0, NPC_MAX) : ''; } catch (e) { return ''; } }
@@ -928,7 +947,7 @@
     if (!o.noTimer) setTimeout(function () { poll(); }, 1500);
 
     return {
-      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, pin: togglePin, isPinned: function () { return docked(); }, undoNewest: undoNewest, relayout: relayout, poll: poll, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
+      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, pin: togglePin, isPinned: function () { return docked(); }, undoNewest: undoNewest, relayout: relayout, poll: poll, rolled: rolled, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
       state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, asks: st.asks, ask: st.ask, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, screen: st.screen, banner: bannerCard ? bannerCard.text : '' })); },
       el: function () { return host; },
       destroy: function () {
@@ -936,6 +955,7 @@
         if (timer && clrI) clrI(timer);
         if (bannerT && clrT) clrT(bannerT);
         if (nowT && clrT) clrT(nowT);
+        if (rolledT && clrT) clrT(rolledT);
         if (lay.ro) { try { lay.ro.disconnect(); } catch (e) {} }
         if (win && typeof win.removeEventListener === 'function') { win.removeEventListener('resize', onResize); win.removeEventListener('scroll', onScroll); }
         bodyClass('as-tab', false); bodyClass('as-dock', false);

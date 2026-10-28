@@ -69,11 +69,11 @@ export function dryTripwire(user) {
  *   client, prefix, registry (default SEATS), allMinutes (parseMinutes), fromT, toT (default: the transcript's span)
  *   fixerAt [HH:MM], drawsFor (makeDrawsFor result: hhmm -> { position, low, mid }), voiceAt [{ at, npc }]
  *   expectRef (parseExpectRef), maxSpend (default 15), cap (the endpoint's own ladder cap; default 1000 so nothing is dropped)
- *   dryRun, tokenCount (optional async (model, prefix) -> tokens for the dry run; chars/4 without it), label
+ *   extra ({ seat: text }, from --extra-file: handed to the endpoint as the assist part's extra), dryRun, tokenCount (optional async (model, prefix) -> tokens for the dry run; chars/4 without it), label
  * Returns the gate object that gate.json holds (see report()).
  */
 export async function runGate(opts) {
-  const { client, day, prefix = '', allMinutes, fixerAt = [], drawsFor, voiceAt = [], expectRef = [], maxSpend = GATE.nightUsd, cap = 1000, dryRun = false, tokenCount, label = '' } = opts;
+  const { client, day, prefix = '', allMinutes, fixerAt = [], drawsFor, voiceAt = [], expectRef = [], maxSpend = GATE.nightUsd, cap = 1000, dryRun = false, tokenCount, label = '', extra = null } = opts;
   const registry = opts.registry || SEATS;
   const keys = [...allMinutes.keys()].sort((a, b) => a - b);
   if (!keys.length) throw new Error('no transcript lines');
@@ -145,7 +145,7 @@ export async function runGate(opts) {
     try { return await one('tap', seat, at, a); } catch (e) { const r = fail(e); calls.push({ phase: 'tap', seat, at, cost: 0, secs: 0, stop: r.stop, ok: false }); return r; }
   };
   const tapStart = total;
-  const sim = await runTapSim({ client, registry, allMinutes, fromT, toT, enabled: new Set(TAP_SEATS), cap, ...(day ? { day } : {}), callHook, shouldStop: () => (overCap() ? 'cap' : '') });
+  const sim = await runTapSim({ client, registry, allMinutes, fromT, toT, enabled: new Set(TAP_SEATS), cap, ...(extra ? { extra } : {}), ...(day ? { day } : {}), callHook, shouldStop: () => (overCap() ? 'cap' : '') });
   if (sim.stopped) { stopped = stopped || 'cap'; stoppedAt = stoppedAt || sim.stoppedAt; }
   const tapSpend = total - tapStart;
   const minutes = sim.ticks.length;
