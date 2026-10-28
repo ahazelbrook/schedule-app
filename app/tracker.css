@@ -507,8 +507,7 @@
   #dossier.ds-live .ds-status { font-size: 12px; }
   #dossier.ds-live .ds-vit { font-size: 12px; letter-spacing: 0; padding-inline: 2px; }
   #dossier.ds-live .ds-vitals { grid-template-columns: repeat(var(--n, 4), minmax(min-content, 1fr)); gap: 4px; }   /* a long vital's name (Instability) sets its column's width */
-  #dossier .ds-mark-cons { grid-template-columns: repeat(3, minmax(0, 1fr)); }   /* 3 + 2: the "+1 Instability" button spans two columns so the word fits at 12px */
-  #dossier .ds-mark-cons .ds-plus1 { grid-column: span 2; }
+  #dossier .ds-mark-cons { grid-template-columns: repeat(4, minmax(0, 1fr)) max-content; }   /* still one row of five; the "+1" column is as wide as the stress name (Instability) at 12px */
   #dossier.ds-live .ds-about-t { font-size: 12px; }
   #dossier .ds-mark-cons .btn { font-size: 12px; }
   #dossier :is(.ds-roll-t, .ds-roll-sub, .ds-roll small) { font-size: 12px; }
