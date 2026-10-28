@@ -1018,7 +1018,9 @@ the assist part's `extra.ref`, appended to its instructions. The Editor also dro
 Say **"Blade, ..."** at the start of a sentence, followed by a command, and Blade does it. The **Co-GM switch** in the box's header means **cue only**: it reads the
 transcript every 2 s and acts on nothing else. A second switch, **Also listen for uncued decisions (offers only)**, appears under it, is OFF whenever Co-GM is turned
 on, and when on lets the old windows of talk run, but what they find is only ever a yellow card with Do it. With Co-GM off the lane does nothing and the console is as
-it was (no polling, no `/act`). The cap or Listening going off switches Co-GM off, as before.
+it was (no polling, no `/act`). Listening going off switches Co-GM off. The night's cap does not: parsed cues cost nothing and still land; only the uncued windows
+stop, and a cue that needs the model (a cut-off command) gets a grey card, "I couldn't finish that one tonight". Undo and rename act on what *this page* made, so with
+two pages open only a page that has something to undo or rename posts the cue (a page with nothing says so quietly).
 
 | Say | Blade does |
 |---|---|
@@ -1040,8 +1042,9 @@ and show (each asks first). Yellow: the cue needs something, with a button for e
 60 s old when a hidden page comes back, with Do it. Grey: *Heard "Blade, ...": I can't do that yet.* (anything that would show the players something, or touch a sheet).
 A yellow or grey card is never posted until you tap a button.
 
-**Secrecy.** Everything a cue makes starts hidden (clocks `hidden: true`, NPCs `revealed: false`). A cue never shows the players anything and never writes the iPad or a
-sheet: the only ways out are the Show players and Reveal and show buttons on a card, which ask first. Anyone at the table can say "Blade", so tell them: Blade only takes
+**Secrecy.** Everything a cue makes starts hidden (clocks `hidden: true`, NPCs `revealed: false`). A cue never reveals anything, never pushes to the iPad and never touches a
+sheet: the only ways out are the Show players and Reveal and show buttons on a card, which ask first. Ticking a clock the players can already see moves it for them, as a
+tap would (Undo covers it). Anyone at the table can say "Blade", so tell them: Blade only takes
 orders from the GM, and a stray cue costs one tap of Undo.
 
 ## The Screen (the box's four buttons, `app/gm/assist-panel.js` and the cards `syncCards` makes in `app/gm-page.js`)

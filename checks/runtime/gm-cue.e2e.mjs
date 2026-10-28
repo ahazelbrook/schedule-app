@@ -88,7 +88,7 @@ try {
   const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' });
   const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   // the panel's own tick and cards have no model here; /act is the REAL Worker for a parsed cue, and a fake only for the model path (a cue the page could not parse)
-  await c.route('**/api/gm/assist/tick', (route) => json(route, { cards: [], updates: [], flags: [], spend: SPEND, last: 9 }));
+  await c.route('**/api/gm/assist/tick', (route) => json(route, { cards: [], updates: [], flags: [], spend: seen.capped ? Object.assign({}, SPEND, { tonight: 20, tier: 'off' }) : SPEND, last: 9 }));
   await c.route('**/api/gm/assist/cards', (route) => route.request().method() === 'POST' ? json(route, { marked: 1 }) : json(route, { cards: [], updates: [], asks: [] }));
   await c.route('**/api/gm/assist/act', async (route) => {
     const body = JSON.parse(route.request().postData() || '{}');
@@ -368,19 +368,55 @@ try {
   const actedPage = seen.responses.slice(n2).find((r) => r.body.actions[0].mode === 'act').page;
   const otherPg = actedPage === 1 ? page2 : page, actPg = actedPage === 1 ? page : page2;
   check(!!(await cardLike(/^Clock made \(hidden\): Twice Heard Invented/, 4000, actPg)) && !(await cards(otherPg)).some((x) => /Twice Heard Invented/.test(x.text) && x.kind === 'done'), 'two pages: only the page that acted shows the green card');
-  // "Blade, undo" with two pages undoes once: another clock is made first so a double undo would take two
-  await cue('Blade, make a four segment clock called Twice Two Invented', /^Clock made \(hidden\): Twice Two Invented/, { page: page, measure: false });
-  const n3 = seen.responses.length;
-  await say('Blade, undo');
-  await until(() => seen.responses.slice(n3).filter((r) => r.body.actions && r.body.actions.length).length >= 2, 10000, 50);
-  await sleep(2500);
-  const um = seen.responses.slice(n3).filter((r) => r.body.actions && r.body.actions.length).map((r) => r.body.actions[0].mode).sort();
-  check(um.join() === 'act,seen', 'two pages: "Blade, undo" comes back act on one page and seen on the other (' + um.join(', ') + ')');
-  check(!(await clockNamed('Twice Two Invented')) && !!(await clockNamed('Twice Heard Invented')), 'two pages: it undid ONE thing (the newest); the earlier clock stands');
   await page2.close();
 
+  // ============ undo and rename act on what THIS page made: a page with nothing to act on posts nothing ============
+  const solo = async (name) => { await cue('Blade, make a four segment clock called ' + name, new RegExp('^Clock made \(hidden\): ' + name), { measure: false }); };
+  await solo('Solo Made Invented');
+  const pageB = await open(3);
+  check(await switchOn(pageB), 'target: page B (made nothing) has Co-GM on');
+  const nU = seen.act.length, rU = seen.responses.length;
+  await say('Blade, undo');
+  check(await until(async () => !(await clockNamed('Solo Made Invented')), 8000), 'target: page A made a clock; both pages hear "Blade, undo"; A undoes it');
+  await sleep(2500);
+  const undoCalls = seen.act.slice(nU);
+  check(undoCalls.length === 1 && undoCalls[0].page === 1 && undoCalls[0].body.parsed[0].type === 'undo' && seen.responses.slice(rU).length === 1 && seen.responses[rU].body.actions[0].mode === 'act', 'target: ONE /act call, from page A, and it came back act (page B posted nothing)');
+  check(!!(await cardLike(/^Nothing of mine to undo here/, 4000, pageB)), 'target: page B says so quietly (a grey note on that page only)');
+  await pageB.close();
+  await solo('Solo Rename Invented');
+  const pageC = await open(4);
+  check(await switchOn(pageC), 'target: page C (made nothing) has Co-GM on');
+  const nR = seen.act.length;
+  await say('Blade, rename that to Solo Renamed Invented');
+  check(await until(async () => !!(await clockNamed('Solo Renamed Invented')), 8000), 'target: both pages hear a rename; A renames its clock');
+  await sleep(2500);
+  const rc = seen.act.slice(nR);
+  check(rc.length === 1 && rc[0].page === 1 && rc[0].body.parsed[0].type === 'rename' && !(await clockNamed('Solo Rename Invented')) && (await clocksNow()).filter((k) => k.name === 'Solo Renamed Invented').length === 1, 'target: ONE /act call from page A; the clock is renamed once');
+  check(!!(await cardLike(/^Nothing of mine to rename here/, 4000, pageC)), 'target: page C says so quietly');
+  await pageC.close();
+
+  // ============ the night's cap: a parsed cue still lands; a cue that needs the model gets a grey card ============
+  seen.capped = true;
+  await page.evaluate(() => window.__ctl.poll());
+  check(await until(() => page.$eval('#as-state', (e) => e.getAttribute('data-state') === 'off'), 6000), 'cap: the panel header says Off');
+  await sleep(2500);
+  check(await page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'true'), 'cap: the Co-GM switch stays on');
+  const capCue = await cue('Blade, make a four segment clock called Capped Cue Invented', /^Clock made \(hidden\): Capped Cue Invented/, { measure: false });
+  check(!!capCue.card && !!(await clockNamed('Capped Cue Invented')), 'cap: a parsed cue still lands (no model, $0)');
+  await T({ cueWait: 1500 });
+  const nCap = seen.act.length;
+  await sleep(2200);
+  await say('Blade, make a six');
+  const capGrey = await cardLike(/couldn.t finish that one tonight/, 9000);
+  await sleep(1500);
+  check(!!capGrey && capGrey.kind === 'note' && seen.act.length === nCap, 'cap: a cut-off cue (the model path) gives a grey card "I couldn\'t finish that one tonight" and makes no /act call');
+  await T({ cueWait: 6000 });
+  seen.capped = false;
+  await page.evaluate(() => window.__ctl.poll());
+
+
   // ============ nothing a cue makes is visible to players, or reaches the iPad ============
-  const cueClocks = ['Escape Invented', 'Ferry Late Invented', 'Night Boat Invented', 'Sizeless Invented', 'Late Answer Invented', 'Stale Invented', 'Twice Heard Invented', 'Model Path Invented'];
+  const cueClocks = ['Escape Invented', 'Ferry Late Invented', 'Night Boat Invented', 'Sizeless Invented', 'Late Answer Invented', 'Stale Invented', 'Twice Heard Invented', 'Model Path Invented', 'Capped Cue Invented'];
   const gmClocks = await clocksNow(), plClocks = await clocksNow(PLAYER);
   check(cueClocks.every((n) => gmClocks.some((k) => k.name === n && k.hidden === true)), 'every clock a cue made is hidden: true on the table');
   // A player's table page (the player data poll, drawn). `hidden` is presentation only in the campaign document by design (CAMPAIGN.md), so the page is what is checked.

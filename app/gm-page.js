@@ -1717,7 +1717,7 @@
       if (S !== me || me.cogm !== cm) return;
       var listening = !!(r[0] && isObj(r[0].doc) && r[0].doc.want === 'on'), box = cm.sw.box();
       if (!listening) { cm.sw.set(false, 'Off: Listening is off'); toast('Turn Listening on first: Co-GM acts on what the table says.', true); return; }
-      if (box.key === 'off') { cm.sw.set(false, 'Off: the night’s cap is reached'); toast('Blade is off (the night’s cap), so Co-GM stays off.', true); return; }
+      if (box.key === 'off') toast('Blade is off tonight (the cap): cues still work, but one that needs the model will not land.', true);
       cm.C.start(cm.st, r[1] && Number.isInteger(r[1].last) ? r[1].last : 0);
       cm.on = true; cm.n = 0; cm.sw.set(true);
       cm.timer = W.setInterval(function () { cogmStep(me); }, cm.C.TIMING.poll);
@@ -1730,7 +1730,8 @@
     if (document.hidden) { if (!cm.st.away) cm.st.away = Date.now(); return; }          /* a cue heard while this page was away may be stale when it comes back */
     var box = cm.sw.box();
     /* the box is off when its night's cap is reached (the header says Off). Listening is asked of the server here every 6th poll, not read from the panel's last tick, which can be a minute old. "Not set up" does not matter: the hands need no briefing. */
-    if (box.key === 'off') { cogmOff(me, 'Off: the night’s cap is reached'); toast('Co-GM switched itself off: Blade is off (the night’s cap).', true); return; }
+    /* At the cap the cue lane keeps going: a parsed cue costs $0 and needs no gate. Only the uncued windows stop, and a cue that needs the model gets a grey card (cogmCuePost). */
+    cm.capped = box.key === 'off';
     var g = gmApi(), C = cm.C, epoch = cm.epoch, check = (cm.n++ % Math.max(1, C.TIMING.sttEvery)) === Math.max(1, C.TIMING.sttEvery) - 1;
     cm.busy = true;
     Promise.all([Promise.resolve().then(function () { return g.transcript({ after: cm.st.readAfter }); }), check ? Promise.resolve().then(function () { return g.stt(); }).then(null, function () { return null; }) : null]).then(function (r) {
@@ -1740,7 +1741,7 @@
       cm.st.away = 0;
       cogmCues(me, epoch);
       /* uncued windows only with the second switch on, and never while one is in flight: a slow window must not hold a cue back */
-      var w = cm.uncued && !cm.winBusy ? C.nextWindow(cm.st, Date.now()) : null;
+      var w = cm.uncued && !cm.capped && !cm.winBusy ? C.nextWindow(cm.st, Date.now()) : null;
       if (w) { cm.winBusy = true; return cogmSend(me, w, epoch).then(function () { cm.winBusy = false; }, function () { cm.winBusy = false; }); }
     }).then(null, function () {}).then(function () { cm.busy = false; });
   }
@@ -1750,8 +1751,22 @@
     while (guard++ < 8 && (job = C.cueNext(cm.st, Date.now(), cogmLive(me)))) {
       if (job.kind === 'card') cogmCueCard(me, job);
       else if (job.kind === 'stale') cogmCueStale(me, job);
+      else if (!cogmHasTarget(me, job)) cogmNoTarget(me, job);
       else cogmCuePost(me, job, epoch);
     }
+  }
+  /* Undo and rename act on what THIS page made, so a page with nothing to act on posts nothing: the Worker's claim would go to a page that applies it zero times. */
+  function cogmUndoTarget(cm) { for (var i = cm.order.length - 1; i >= 0; i--) if (!cm.undone[cm.order[i]] && cm.recs[cm.order[i]] && cm.acts[cm.order[i]]) return cm.order[i]; return ''; }
+  function cogmRenameTarget(cm) { var k = cm.lastMade; return k && cm.recs[k] && !cm.undone[k] ? k : ''; }
+  function cogmHasTarget(me, job) {
+    var cm = me.cogm, p = Array.isArray(job.parsed) ? job.parsed : [];
+    if (p.some(function (a) { return a && a.type === 'undo'; })) return !!cogmUndoTarget(cm);
+    if (p.some(function (a) { return a && a.type === 'rename'; })) return !!cogmRenameTarget(cm);
+    return true;
+  }
+  function cogmNoTarget(me, job) {
+    var ctl = me.assist, undo = (job.parsed || []).some(function (a) { return a && a.type === 'undo'; }); if (!ctl) return;
+    ctl.addCard({ id: cogmCueId(job, 't'), seat: 'cogm', kind: 'note', headline: undo ? 'Nothing of mine to undo here.' : 'Nothing of mine to rename here.', bodyLabel: 'Heard', body: cogmQuoteBody(job), ackLabel: 'Got it ×' });
   }
   function cogmHhmm(iso) { var d = new Date(iso); if (isNaN(d.getTime())) d = new Date(); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
   function cogmQuoteBody(job) { return 'Heard ' + cogmHhmm(job.cue.at) + ': “' + str(job.quote).replace(/\s+/g, ' ').trim() + '”'; }
@@ -1790,6 +1805,10 @@
   /* post the cue and show "working…" at once. NEVER retried: if the Worker logged it but the answer is lost, a retry comes back 'seen'. A late answer is still used. */
   function cogmCuePost(me, job, epoch) {
     var cm = me.cogm, C = cm.C, g = gmApi(), ctl = me.assist, wid = cogmCueId(job, 'w'); if (!cm || !g) return Promise.resolve();
+    if (!job.parsed && cm.capped) {          /* at the night's cap the model is off: only a parsed cue can land */
+      if (ctl) ctl.addCard({ id: cogmCueId(job, 'n'), seat: 'cogm', kind: 'note', strip: true, headline: 'Heard “' + C.plain(job.quote, 90) + '”: I couldn’t finish that one tonight.', bodyLabel: 'Heard', body: cogmQuoteBody(job), ackLabel: 'Got it ×' });
+      return Promise.resolve();
+    }
     if (ctl) ctl.addCard({ id: wid, seat: 'cogm', kind: 'note', strip: true, headline: 'Working…', bodyLabel: 'Heard', body: cogmQuoteBody(job), open: true });
     cm.working[wid] = W.setTimeout(function () {
       delete cm.working[wid];

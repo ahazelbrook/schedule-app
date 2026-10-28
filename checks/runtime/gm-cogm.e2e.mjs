@@ -389,27 +389,25 @@ try {
   check(seen.act.length === nOff && !(await clocksNow()).some((k) => k.name === 'Never Made Invented'), 'and nothing is sent or applied while it is off');
   await api('PATCH', '/gm/stt', { want: 'on' });
 
-  // ============ the cap switches it off and stops the polling (the box reaches 'off') ============
+  // ============ the cap: the uncued windows stop, the switch and the cue lane stay on (C4d: a parsed cue costs $0 and needs no gate) ============
   seen.replies.length = 0;
   const polls = () => seen.requests.filter((r) => /^GET \/api\/gm\/transcript\?after=/.test(r)).length;
   await page.click(sw);
   check(await until(() => page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'true'), 6000), 'cap: it is switched on again (Listening is on)');
+  await page.check('#as-cogm-also');
   const pl0 = polls(); await sleep(1200);
   check(polls() > pl0 + 2, 'cap: while it is on it polls the transcript (' + (polls() - pl0) + ' reads in 1.2 s)');
   seen.capped = true;
-  await page.evaluate(() => window.__ctl.poll());          // the panel's own tick: the answer says the night\'s cap is reached
+  await page.evaluate(() => window.__ctl.poll());          // the panel's own tick: the answer says the night's cap is reached
   check(await until(() => page.$eval('#as-state', (e) => e.getAttribute('data-state') === 'off'), 6000), 'cap: the panel header says Off');
-  check(await until(() => page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'false'), 6000), 'cap: the co-GM switch goes off by itself');
-  await sleep(700);
+  await sleep(2500);
+  check(await page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'true'), 'cap: the co-GM switch stays on (the cue lane keeps going)');
   const pl1 = polls(), ac1 = seen.act.length;
   reply([act({ type: 'clock_add', key: 'clock_add:capped:aa000020', name: 'Capped Clock Invented', size: 4, quote: 'a four part clock after the cap' })]);
   say('a four part clock after the cap', 'x', 'y');
-  await sleep(2000);
-  check(polls() === pl1, 'cap: it has stopped polling (' + (polls() - pl1) + ' reads in 2 s)');
-  check(seen.act.length === ac1 && !(await clocksNow()).some((k) => k.name === 'Capped Clock Invented'), 'cap: nothing is sent or applied');
-  await page.click(sw);
-  await sleep(800);
-  check(await page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'false') && /stays off/.test(await toastText()), 'cap: a tap cannot turn it back on while the box is off, and says why ("stays off")');
+  await sleep(2500);
+  check(polls() > pl1 + 2, 'cap: it still polls (' + (polls() - pl1) + ' reads)');
+  check(seen.act.length === ac1 && !(await clocksNow()).some((k) => k.name === 'Capped Clock Invented'), 'cap: the uncued window is not sent and nothing is applied');
   seen.capped = false;
 
   // ============ the header: the autopilot's button and the co-GM switch both fit, at the panel's narrowest (360 px, a window under 1091 px) ============
