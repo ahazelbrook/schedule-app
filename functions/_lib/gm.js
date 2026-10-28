@@ -282,6 +282,15 @@ export async function loadDisplay(db, campaign) {
   return { seq: row.seq, display: isPlainObject(d) ? d : { ...BLANK_DISPLAY }, updatedAt: row.updated_at };
 }
 
+/**
+ * Only the `kind` of the display now ('blank' while none is stored), read with json_extract in SQL: no JS parse of a document that can hold a
+ * 600 KiB map. For the one question the ambient handler asks (is the display in lights out?).
+ */
+export async function loadDisplayKind(db, campaign) {
+  const row = await db.prepare("SELECT json_extract(doc, '$.kind') AS kind FROM gm_display WHERE campaign = ?1").bind(campaign).first();
+  return row && typeof row.kind === 'string' ? row.kind : 'blank';
+}
+
 /** Store a display and bump seq, in one statement (no read-modify-write: the seq increments in SQL). */
 export async function putDisplay(db, campaign, display, ifSeq) {
   const now = nowIso();

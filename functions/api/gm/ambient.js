@@ -21,7 +21,7 @@
 
 import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf, HttpError } from '../../_lib/http.js';
-import { LIMITS, requireGm, cleanAmbientPatch, loadAmbient, patchAmbient, loadDisplay } from '../../_lib/gm.js';
+import { LIMITS, requireGm, cleanAmbientPatch, loadAmbient, patchAmbient, loadDisplayKind } from '../../_lib/gm.js';
 import { assertRevealedNpc } from '../../_lib/npcs.js';
 import { resolveOverlayClock } from '../../_lib/campaign.js';
 
@@ -43,7 +43,7 @@ export async function onRequest({ request, env, data }) {
     // an overlay sent with `auto: true` is the autopilot's: it is marked on the overlay itself (the display keeps it off a blacked-out screen too)
     if (patch.auto === true) ov.auto = true;
     // nothing the autopilot sends lights a blacked-out screen: refused while the display is in lights out (a GM-pressed overlay, the dawn, is not)
-    if (ov.auto === true && (await loadDisplay(db, campaign)).display.kind === 'dark') throw new HttpError(409, 'the iPad is in lights out');
+    if (ov.auto === true && (await loadDisplayKind(db, campaign)) === 'dark') throw new HttpError(409, 'the iPad is in lights out');
     // an npc overlay only for a revealed NPC, a clock overlay only for a clock the players can see (and it is named from the document,
     // never by the caller): checked before anything is stored, so a refusal changes nothing
     if (ov.kind === 'npc') await assertRevealedNpc(db, campaign, ov.npcId);

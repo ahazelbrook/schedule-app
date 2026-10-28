@@ -3398,7 +3398,8 @@
     return out;
   }
   function apMount() {
-    var me = S, A = W.B68GmAutopilot; me.ap = null;
+    var me = S, A = W.B68GmAutopilot;
+    if (me.ap) { apPaint(); return; }          /* start() runs again after a pack import on the same page: the running controller (and what it is showing) stays */
     if (!A) return;
     var core = A.create({ now: function () { return Date.now(); }, idPrefix: 'a' + Math.random().toString(36).slice(2, 7) + '-' });
     var prev = isObj(me.doc.ap) && Array.isArray(me.doc.ap.log) ? me.doc.ap.log.filter(isObj).slice(-A.DURATIONS.logMax) : [];
