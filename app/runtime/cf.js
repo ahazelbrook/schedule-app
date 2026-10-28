@@ -1182,7 +1182,7 @@
     addTranscript: function (lines) { return api('POST', '/gm/transcript', { lines: lines || [] }); },
     /* Claude at the table (app/gm/assist-panel.js). POST /api/gm/assist/tick { after? } -> { cards, updates, flags, spend, last, health: { skipped, reaped } }; it waits 55 s (the Worker gives the Tripwire 12 s and each seat 30 s); 429: busy or
        the night's cap reached. POST /api/gm/assist/fit { position, effect? } -> { cards: [fixer card], spend }; the Fixer may take 30 s, so it waits 60 */
-    assistTick: function (after, npc) { var b = {}; if (after !== undefined && after !== null) b.after = after; if (typeof npc === 'string' && npc) b.npc = npc; return api('POST', '/gm/assist/tick', b, 55000); },
+    assistTick: function (after, npc, rolled) { var b = {}; if (after !== undefined && after !== null) b.after = after; if (typeof npc === 'string' && npc) b.npc = npc; if (rolled === true) b.rolled = true; return api('POST', '/gm/assist/tick', b, 55000); },
     assistFit: function (req) { return api('POST', '/gm/assist/fit', req || {}, 60000); },
     /* POST /api/gm/assist/another { npc, shown: [..] } -> { voice: { who, lines: [one line], at }, spend }; the tick also takes npc (the NPC on stage) */
     assistAnother: function (req) { return api('POST', '/gm/assist/another', req || {}, 60000); },

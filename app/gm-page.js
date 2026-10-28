@@ -1894,6 +1894,7 @@
     if (!ok) return;
     if (use) preUsed(use, res);
     stamp('situation', res);
+    if (res && res.meta && (res.meta.situation === 'fourfive' || res.meta.situation === 'onetothree')) assistRolled();     /* a 4/5 or a 1-3 result; Before (a Devil's Bargain) and Someone are not rolls */
   }
 
   /* ---------- Claude at the table: the console's own 1-3 and 4/5 draws, pre-rolled for the Position ----------
@@ -4188,7 +4189,9 @@
     if (!quiet && !said) { var b = BUCKETS.filter(function (x) { return x.k === bucket; })[0]; toast('Filed under ' + (b ? b.head : bucket) + '.'); }
     return said ? 'said' : true;     /* 'said': filed, and the toast already up must stand */
   }
-  function fileLast() { if (!S.last) { toast('Nothing rolled yet.', true); return; } addCapture('r', S.last.text); }
+  function fileLast() { if (!S.last) { toast('Nothing rolled yet.', true); return; } if (addCapture('r', S.last.text)) assistRolled(); }
+  /* a console result tapped or a roll filed (L): the Blade panel sends one tick 40 s later so Ref looks at that roll (assist-panel.js, rolled) */
+  function assistRolled() { if (S && S.assist && typeof S.assist.rolled === 'function') { try { S.assist.rolled(); } catch (e) {} } }
   /* in the Menu (and the old header): the capture bar keeps only File and File last roll */
   function clearCapture() {
     var all = newest(S.doc.capture); if (!all.length) { toast('Nothing filed tonight.'); return; }

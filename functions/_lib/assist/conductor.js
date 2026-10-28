@@ -124,7 +124,7 @@ export function decide({ flags = [], now, lastRun = {}, inFlight = [], spent = 0
     const r = canRun(seat, { now, lastRun, inFlight, tier, cooldowns });
     if (r.ok) seats.push(seat); else skipped.push({ seat, why: r.why });
   }
-  if (follow && !set.has('roll_talk') && wakes.ref && !seats.includes('ref') && !skipped.some((x) => x.seat === 'ref')) {   // the follow-through
+  if (follow && !set.has('roll_talk') && !set.has('rolled') && wakes.ref && !seats.includes('ref') && !skipped.some((x) => x.seat === 'ref')) {   // the follow-through
     const r = canRun('ref', { now, lastRun, inFlight, tier, cooldowns });
     if (r.ok) seats.push('ref'); else skipped.push({ seat: 'ref', why: r.why });
     const order = Object.keys(wakes);
@@ -143,13 +143,13 @@ export const FOLLOW_WINDOW_MS = 10 * 60 * 1000;
 
 /**
  * Does Ref get one more look on this tick? The slip often lands a minute after the Tripwire hears the roll, so a roll_talk wake
- * is followed once by the next tick with new talk, even if the Tripwire does not flag again. prev: the previous tick's Tripwire
+ * is followed once by the next tick with new talk, even if the Tripwire does not flag again. A tick the page marked `rolled` (the GM tapped a result or filed a roll) is followed the same way. prev: the previous tick's Tripwire
  * row { at (ms), flags: [names] } or null. True when that tick flagged roll_talk, whether Ref ran on it or the cooldown held it
  * (Ref's call ends a few seconds after the tick, so a flag on the very next minute is often held). A follow-through tick is not itself a roll_talk wake (decide() adds Ref only when roll_talk is not set), so
  * its own Tripwire row flags no roll_talk and the next tick finds nothing to follow: it never chains.
  */
 export function followsThrough(prev, now, windowMs = FOLLOW_WINDOW_MS) {
-  if (!prev || !Array.isArray(prev.flags) || !prev.flags.includes('roll_talk')) return false;
+  if (!prev || !Array.isArray(prev.flags) || !(prev.flags.includes('roll_talk') || prev.flags.includes('rolled'))) return false;
   if (!Number.isFinite(prev.at)) return false;
   return !Number.isFinite(now) || now - prev.at <= windowMs;
 }

@@ -45,11 +45,11 @@ function fakeBrowser({ phone = false } = {}) {
 }
 const GOOD = { cards: [], updates: [], flags: [], spend: { tonight: 1.234, cap: 20, tier: 'all', tick: 0.01 }, last: 10 };
 function rig(over = {}, brOpts) {
-  const br = fakeBrowser(brOpts), calls = { stt: 0, tick: [], tickArgs: [], another: [], fit: [], cards: 0, marks: [] };
+  const br = fakeBrowser(brOpts), calls = { stt: 0, rolled: [], tick: [], tickArgs: [], another: [], fit: [], cards: 0, marks: [] };
   const timers = [];
   const gm = {
     stt: async () => { calls.stt++; return { doc: { want: gm.want } }; }, want: 'on',
-    assistTick: async (after, npc) => { calls.tick.push(after); calls.tickArgs.push(npc === undefined ? [after] : [after, npc]); if (gm.tickErr) throw gm.tickErr; return gm.reply || GOOD; },
+    assistTick: async (after, npc, rolled) => { calls.rolled.push(rolled === true); calls.tick.push(after); calls.tickArgs.push(npc === undefined ? [after] : [after, npc]); if (gm.tickErr) throw gm.tickErr; return gm.reply || GOOD; },
     assistAnother: async (req) => { calls.another.push(req); if (gm.anotherErr) throw gm.anotherErr; return gm.anotherReply; },
     assistFit: async (req) => { calls.fit.push(req); if (gm.fitErr) throw gm.fitErr; return gm.fitReply; },
     assistCards: async () => { calls.cards++; if (gm.cardsErr) throw gm.cardsErr; return gm.stored || { cards: [], updates: [] }; },
@@ -251,7 +251,7 @@ await test('GM only and never player-visible: the box touches nothing but stt / 
 
 await test('the gm adapter has assistTick (POST, cursor only when known) and assistFit', async () => {
   const src = fs.readFileSync(path.join(ROOT, 'app', 'runtime', 'cf.js'), 'utf8');
-  assert.ok(/assistTick: function \(after, npc\) \{ var b = \{\}; if \(after !== undefined && after !== null\) b\.after = after; if \(typeof npc === 'string' && npc\) b\.npc = npc; return api\('POST', '\/gm\/assist\/tick'/.test(src), 'the tick carries the cursor and the on-stage name only when there are some');
+  assert.ok(/assistTick: function \(after, npc, rolled\) \{ var b = \{\}; if \(after !== undefined && after !== null\) b\.after = after; if \(typeof npc === 'string' && npc\) b\.npc = npc; if \(rolled === true\) b\.rolled = true; return api\('POST', '\/gm\/assist\/tick'/.test(src), 'the tick carries the cursor and the on-stage name only when there are some, and rolled only when it is exactly true');
   assert.ok(/assistAnother: function \(req\) \{ return api\('POST', '\/gm\/assist\/another'/.test(src));
   assert.ok(/assistFit: function \(req\) \{ return api\('POST', '\/gm\/assist\/fit'/.test(src));
   assert.ok(/assistCards: function \(\) \{ return api\('GET', '\/gm\/assist\/cards'\)/.test(src));
@@ -958,6 +958,91 @@ await test('the shell\'s CSS: tokens for the six kinds on #gm-page and on the pa
   assert.match(css, /transition: transform \.18s ease-out/); assert.match(css, /prefers-reduced-motion: reduce\) \{ \.gm-assist \.as-panel, \.gm-assist \.as-panel\[hidden\] \{ transition: none/);
   assert.match(css, /body\.as-dock\.gm-app #gm-page \.gm-main \{[^}]*var\(--as-w\)/);
   assert.ok(!/\.gm-assist [^{]*\{[^}]*font(-size)?: [^;}]*\b(9|10|10\.5|11|11\.5)(px|\/)/.test(css.slice(css.indexOf('Blade, the side panel'))), 'nothing in the panel is under 12 px');
+});
+
+// ---------- rolled: one tick 40 s after a result is tapped or a roll is filed ----------
+function clockRig(over = {}) {
+  const fake = { list: [], next: 1, ints: [] };
+  const r = rig({
+    setTimeout: (f, ms) => { const id = fake.next++; fake.list.push({ id, f: () => { fake.list = fake.list.filter((x) => x.id !== id); return f(); }, ms }); return id; },
+    clearTimeout: (id) => { fake.list = fake.list.filter((x) => x.id !== id); },
+    setInterval: (f, ms) => { const id = 'i' + fake.next++; fake.ints.push({ id, f, ms }); return id; },
+    clearInterval: (id) => { fake.ints = fake.ints.filter((x) => x.id !== id); },
+    ...over,
+  });
+  return { ...r, fake };
+}
+const settle = () => new Promise((ok) => setImmediate(ok));
+
+await test('rolled: one tick with rolled: true falls due 40 s after the tap; a regular poll sends no rolled', async () => {
+  const r = clockRig(); await r.ctl.ready;
+  r.ctl.rolled();
+  assert.equal(r.fake.list.length, 1); assert.equal(r.fake.list[0].ms, 40000, '40 s');
+  assert.deepEqual(r.calls.tick, [], 'nothing is sent at the tap');
+  r.fake.list[0].f(); await settle(); await settle();
+  assert.deepEqual(r.calls.rolled, [true], 'the tick says rolled');
+  await r.ctl.poll();
+  assert.deepEqual(r.calls.rolled, [true, false], 'an ordinary poll sends no rolled');
+  r.ctl.destroy();
+});
+
+await test('rolled: one pending at a time, and a newer result restarts the 40 s', async () => {
+  const r = clockRig(); await r.ctl.ready;
+  r.ctl.rolled(); const first = r.fake.list[0].id;
+  r.ctl.rolled();
+  assert.equal(r.fake.list.length, 1, 'the first timer was cleared');
+  assert.notEqual(r.fake.list[0].id, first);
+  r.ctl.rolled(); r.ctl.rolled();
+  assert.equal(r.fake.list.length, 1);
+  r.fake.list[0].f(); await settle(); await settle();
+  assert.deepEqual(r.calls.rolled, [true], 'one tick for three taps');
+  r.ctl.destroy();
+});
+
+await test('rolled: not while Listening is off, paused or hidden; a tick in flight makes it wait, not drop; destroy clears it', async () => {
+  let r = clockRig(); await r.ctl.ready;
+  r.gm.want = 'off'; r.ctl.rolled(); r.fake.list[0].f(); await settle(); await settle();
+  assert.deepEqual(r.calls.tick, [], 'Listening off: no tick');
+  r.gm.want = 'on'; r.gm.tickErr = err(429, "tonight's cap is reached"); await r.ctl.poll();
+  assert.equal(r.ctl.state().paused, 'cap');
+  const before = r.calls.tick.length; r.ctl.rolled(); r.fake.list[0].f(); await settle(); await settle();
+  assert.equal(r.calls.tick.length, before, 'paused: no tick');
+  r.ctl.destroy();
+  r = clockRig(); await r.ctl.ready;
+  r.br.doc.hidden = true; r.ctl.rolled(); r.fake.list[0].f(); await settle(); await settle();
+  assert.deepEqual(r.calls.tick, [], 'hidden page: no tick');
+  r.ctl.destroy();
+  // in flight: a slow poll holds st.busy; the rolled timer re-arms a short retry instead of dropping
+  r = clockRig(); await r.ctl.ready;
+  let release; r.gm.assistTick = async (after, npc, rolled) => { r.calls.rolled.push(rolled === true); await new Promise((ok) => { release = ok; }); return GOOD; };
+  const slow = r.ctl.poll(); await settle(); await settle();
+  r.ctl.rolled(); r.fake.list[0].f(); await settle();
+  assert.equal(r.fake.list.length, 1, 'a retry is waiting'); assert.ok(r.fake.list[0].ms < 10000, 'a short retry');
+  release(); await slow; await settle();
+  r.fake.list[0].f(); await settle(); await settle();
+  assert.deepEqual(r.calls.rolled, [false, true], 'the rolled tick went once the first was done');
+  release(); await settle();
+  r.ctl.rolled(); assert.equal(r.fake.list.length, 1); r.ctl.destroy();
+  assert.equal(r.fake.list.length, 0, 'destroy clears the pending timer');
+  const n = r.calls.rolled.length; r.ctl.rolled(); assert.equal(r.fake.list.length, 0, 'a destroyed box schedules nothing'); assert.equal(r.calls.rolled.length, n);
+});
+
+await test('rolled: after its tick the regular minute starts again, so the next ordinary tick is not squeezed up against it', async () => {
+  const r = clockRig({ noTimer: false }); await r.ctl.ready;
+  assert.equal(r.fake.ints.length, 1); const firstInt = r.fake.ints[0].id;
+  r.ctl.rolled(); r.fake.list.find((x) => x.ms === 40000).f(); await settle(); await settle(); await settle();
+  assert.deepEqual(r.calls.rolled, [true]);
+  assert.equal(r.fake.ints.length, 1, 'still one interval'); assert.notEqual(r.fake.ints[0].id, firstInt, 'a fresh one');
+  assert.equal(r.fake.ints[0].ms, 60000);
+  r.ctl.destroy();
+});
+
+await test('rolled: the page asks for it on a tapped situation and on a filed roll (L), not on a single table or an empty L', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  assert.ok(src.includes("stamp('situation', res);\n    if (res && res.meta && (res.meta.situation === 'fourfive' || res.meta.situation === 'onetothree')) assistRolled();"), 'a 4/5 or 1-3 result only');
+  assert.ok(!/stamp\('console', res\);\s*assistRolled/.test(src), 'not a single table');
+  assert.ok(/if \(addCapture\('r', S\.last\.text\)\) assistRolled\(\);/.test(src), 'L files, then asks');
+  assert.ok(/function assistRolled\(\) \{ if \(S && S\.assist && typeof S\.assist\.rolled === 'function'\)/.test(src), 'guarded');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

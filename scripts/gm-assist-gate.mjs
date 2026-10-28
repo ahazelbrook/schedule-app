@@ -11,6 +11,8 @@
 //                  console part (--draws-pack, default gm-private/b68-gm-pack.json) with --draws-seed N (default 1); --position / --position-at
 //   --voice-at     HH:MM=NPC: Voice wakes only when an NPC is named for the moment
 //   --expect-ref   the known slips; a Ref card within 2 minutes counts as caught (~ marks an approximate time, matched the same way)
+//   --extra-file   <seat>=<path> (repeatable): text the live assist part carries as extra.<seat>, appended to that seat's instructions
+//                  by the endpoint (e.g. ref=gm-private/ref-checks.md, the house-rule checklist). Never printed or copied into the report
 //   --max-spend    one cap over everything (default 15); the run stops cleanly and the report covers what ran
 //   --dry-run      no API calls: counts the calls the Tap would make (Tripwire flags guessed by keyword) and estimates spend. The prefix
 //                  size is counted with the free countTokens when a key is set (--no-count skips it), else chars/4
@@ -31,6 +33,7 @@ import { makeClient, countTokens } from '../functions/_lib/assist/claude.js';
 import { SEATS } from '../functions/_lib/assist/seats.js';
 import { parseMinutes, toMin, dayFromTranscript } from './lib/tap-sim.mjs';
 import { makeDrawsFor, parsePositionAt } from './lib/fixer-draws.mjs';
+import { loadExtraFiles } from './lib/tap-sim.mjs';
 import { runGate, report, parseExpectRef, applyMarks, GATE } from './lib/gate.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -95,6 +98,9 @@ export async function main(argv, { client: injected, log = console.log, err = co
     try { drawsFor = makeDrawsFor({ moments: fixerAt, file: arg('draws-file'), packFile: path.resolve(repo, arg('draws-pack', path.join('gm-private', 'b68-gm-pack.json'))), seed: Number(arg('draws-seed', 1)), position: arg('position', 'risky'), positionAt: parsePositionAt(arg('position-at', '')) }); } catch (e) { return bad(e.message); }
   }
 
+  let extra = null;
+  try { const specs = argv.flatMap((a, i) => (a === '--extra-file' ? [argv[i + 1]] : [])); if (specs.length) extra = loadExtraFiles(specs, SEATS, (f) => fs.readFileSync(path.resolve(repo, f), 'utf8')); } catch (e) { return bad(e.message); }
+
   const key = process.env.B68_ANTHROPIC_KEY;
   let client = injected || null;
   if (!client && key) client = makeClient(key);
@@ -104,7 +110,7 @@ export async function main(argv, { client: injected, log = console.log, err = co
   const g = await runGate({
     client, day, prefix: pre.prefix, registry: structuredClone(SEATS), allMinutes,
     fromT: arg('from') ? toMin(arg('from')) : -1, toT: arg('to') ? toMin(arg('to')) : 1e9,
-    fixerAt, drawsFor, voiceAt, expectRef, maxSpend, cap: Number(arg('cap', 1000)), dryRun: dry, tokenCount, label,
+    fixerAt, drawsFor, voiceAt, expectRef, maxSpend, ...(extra ? { extra } : {}), cap: Number(arg('cap', 1000)), dryRun: dry, tokenCount, label,
   });
   g.prefix = { from: pre.from, chars: pre.prefix.length };
 

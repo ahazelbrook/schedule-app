@@ -22,7 +22,7 @@ for (let m = 0; m <= 40; m++) {
 const TRANSCRIPT = ['---', 'status: done', '---', '## Transcript', ...lines].join('\n');
 const PREFIX = '<context name="invented.md">\nRules: position first. Zed the fixer is a cast member.\n</context>';
 
-const NONE = Object.fromEntries(['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall'].map((f) => [f, false]));
+const NONE = Object.fromEntries(['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall', 'downtime'].map((f) => [f, false]));
 const seatOf = (ins) => Object.keys(SEATS).find((k) => ins.startsWith(SEATS[k].instructions)) || 'other';
 
 function mockClient({ usage = { input_tokens: 1000, output_tokens: 200 }, stops = {}, ms = {}, slips = true } = {}) {
@@ -270,6 +270,26 @@ await test('main --marks: rewrites the file in place with no API calls and no ca
   assert.equal(await main(['--marks', f], { client, repo: dir, log() {}, err: (x) => errs.push(x) }), 2);
   assert.equal(await main(['--marks', f, '--all-false'], { client, repo: dir, log() {}, err() {} }), 0);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+await test('--extra-file: loadExtraFiles reads seat=path, refuses unknown seats and empty files; the gate hands it to Ref only, through the endpoint', async () => {
+  const { loadExtraFiles } = await import('../../scripts/lib/tap-sim.mjs');
+  const files = { 'a.md': '  A check list line.\nSecond line.  ', 'empty.md': '   ' };
+  const read = (f) => { if (!(f in files)) throw new Error('nope'); return files[f]; };
+  assert.deepEqual(loadExtraFiles(['ref=a.md'], SEATS, read), { ref: 'A check list line.\nSecond line.' });
+  assert.deepEqual(loadExtraFiles([], SEATS, read), {});
+  assert.throws(() => loadExtraFiles(['nobody=a.md'], SEATS, read), /no seat called nobody/);
+  assert.throws(() => loadExtraFiles(['ref=missing.md'], SEATS, read), /cannot read/);
+  assert.throws(() => loadExtraFiles(['ref=empty.md'], SEATS, read), /is empty/);
+  assert.throws(() => loadExtraFiles(['ref'], SEATS, read), /bad --extra-file/);
+  const client = mockClient();
+  const seen = []; const orig = client.messages.create.bind(client.messages);
+  client.messages.create = async (req) => { const t = req.messages[0].content.filter((b) => b.type === 'text').map((b) => b.text); seen.push({ seat: seatOf(t[0]), ins: t[0] }); return orig(req); };
+  await runGate({ ...base(client), extra: { ref: 'HOUSE CHECKLIST: invented line one.' }, fromT: 21 * 60 + 8, toT: 21 * 60 + 14, maxSpend: 5 });
+  const ref = seen.filter((x) => x.seat === 'ref'), others = seen.filter((x) => x.seat !== 'ref');
+  assert.ok(ref.length >= 1, 'Ref ran');
+  assert.ok(ref.every((x) => x.ins === SEATS.ref.instructions + '\nHOUSE CHECKLIST: invented line one.'), 'Ref carries the file after its own instructions');
+  assert.ok(others.length >= 1 && others.every((x) => !x.ins.includes('HOUSE CHECKLIST')), 'no other seat carries it');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
