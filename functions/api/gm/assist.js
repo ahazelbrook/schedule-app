@@ -666,7 +666,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (rolled) flags.push('rolled');       // not a Tripwire flag: it wakes Ref (WAKES) and is logged, so the next tick follows through
 
     // 'tick' wakes the Showrunner, paced by its 10-minute cooldown; with nothing else woken a tick costs no model call
-    const verdict = decide({ flags: flags.concat('tick'), now: t0, lastRun, inFlight: live(), spent: spentBefore + thisTick, cap, wakes, onStage: !!npc, follow: followsThrough(prev, t0) });
+    // a rolled-only tick re-reads talk the seats have already read: only Ref looks (no 'tick' seats, no Voice minute)
+    const verdict = decide({ flags: rolledOnly ? flags : flags.concat('tick'), now: t0, lastRun, inFlight: live(), spent: spentBefore + thisTick, cap, wakes, onStage: rolledOnly ? false : !!npc, follow: followsThrough(prev, t0) });
     skipped.push(...verdict.skipped);
     // the Tripwire's row is written once, after the Conductor has spoken, so its card can say which seats were skipped and why
     if (!rolledOnly) await logRow(db, campaign, { at: twAt, session, seat: 'tripwire', cfg: tw.cfg, usage: tw.r && tw.r.usage, cost: tw.r && tw.r.cost, flags, timing: tw.timing,

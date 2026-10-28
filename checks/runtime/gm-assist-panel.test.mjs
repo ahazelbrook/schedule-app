@@ -1039,7 +1039,7 @@ await test('rolled: after its tick the regular minute starts again, so the next 
 
 await test('rolled: the page asks for it on a tapped situation and on a filed roll (L), not on a single table or an empty L', () => {
   const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
-  assert.ok(/stamp\('situation', res\);\s*assistRolled\(\);/.test(src), 'a situation result');
+  assert.ok(src.includes("stamp('situation', res);\n    if (res && res.meta && (res.meta.situation === 'fourfive' || res.meta.situation === 'onetothree')) assistRolled();"), 'a 4/5 or 1-3 result only');
   assert.ok(!/stamp\('console', res\);\s*assistRolled/.test(src), 'not a single table');
   assert.ok(/if \(addCapture\('r', S\.last\.text\)\) assistRolled\(\);/.test(src), 'L files, then asks');
   assert.ok(/function assistRolled\(\) \{ if \(S && S\.assist && typeof S\.assist\.rolled === 'function'\)/.test(src), 'guarded');

@@ -1544,8 +1544,8 @@ await test('S2 tick: a rolled tick with nothing new to read skips the Tripwire, 
   await s.lines(3);
   const first = await body(await s.post('tick', {}));
   s.calls.length = 0; clock.t += 40_000;                              // no new talk since first.last
-  const out = await body(await s.post('tick', { after: first.last, rolled: true }));
-  assert.deepEqual(REFTICK(s), ['ref'], 'Ref looked at the last minutes, no Tripwire call');
+  const out = await body(await s.post('tick', { after: first.last, rolled: true, npc: 'Mrs Test' }));
+  assert.deepEqual(s.calls.map((c) => c.seat), ['ref'], 'Ref alone: no Tripwire, no Showrunner on the tick, no Voice for the NPC on stage');
   assert.equal(out.last, first.last, 'the cursor is unchanged');
   assert.deepEqual(out.flags, ['rolled']);
   assert.ok(/Last four minutes/.test(s.calls.find((c) => c.seat === 'ref').user));

@@ -1894,7 +1894,7 @@
     if (!ok) return;
     if (use) preUsed(use, res);
     stamp('situation', res);
-    assistRolled();
+    if (res && res.meta && (res.meta.situation === 'fourfive' || res.meta.situation === 'onetothree')) assistRolled();     /* a 4/5 or a 1-3 result; Before (a Devil's Bargain) and Someone are not rolls */
   }
 
   /* ---------- Claude at the table: the console's own 1-3 and 4/5 draws, pre-rolled for the Position ----------
