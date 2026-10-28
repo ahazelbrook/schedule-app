@@ -754,10 +754,6 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 #gm-page .gm-rack > .gm-voice:not(:first-child) { border-top: 1.5px solid var(--rule); padding-top: 6px; }
 #gm-page .gm-voice-lines b { overflow-wrap: anywhere; }
 #gm-page .gm-another { justify-self: start; }
-#gm-page .gm-stall { display: grid; gap: 4px; }
-#gm-page .gm-rack > .gm-stall:not(:first-child) { border-top: 1.5px solid var(--rule); padding-top: 6px; }
-#gm-page .gm-meanwhile { display: grid; gap: 4px; }
-#gm-page .gm-rack > .gm-meanwhile:not(:first-child) { border-top: 1.5px solid var(--rule); padding-top: 6px; }
 
 /* Handouts (iPad tab) and the Rack's handout offer */
 .gm-handouts { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .5rem; }
@@ -765,21 +761,9 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 .gm-handout-thumb { flex: none; width: 72px; height: 72px; object-fit: cover; background: #000; border-radius: 4px; }
 .gm-handout-t { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
 .gm-handout-t b { overflow-wrap: anywhere; }
-.gm-offer { margin-top: .4rem; }
 .gm-check { display: inline-flex; gap: .35rem; align-items: center; }
 
-/* The Screen (GM.md, "The Screen"): the box's four buttons, the Rack's preview of what Blade made, and the gatekeeper's badge */
-#gm-page .gm-screenitem { display: grid; gap: 4px; }
-#gm-page .gm-rack > .gm-screenitem:not(:first-child) { border-top: 1.5px solid var(--rule); padding-top: 6px; }
-#gm-page .gm-screen-port { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: start; }
-#gm-page .gm-screen-fig { width: 96px; max-height: 190px; overflow: hidden; border: 1.5px solid var(--rule); background: var(--paper); }
-#gm-page .gm-screen-fig svg { display: block; width: 100%; height: auto; }
-#gm-page .gm-screen-text { margin: 0; padding: 6px 8px; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1.5px solid var(--hair); background: var(--card); font: 400 12.5px/1.4 var(--font-text); }
-#gm-page .gm-gate { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 3px 5px; border: 1.5px solid currentColor; }
-#gm-page .gm-gate-ok { color: var(--ink); }
-#gm-page .gm-gate-bad, #gm-page .gm-gate-unk { background: var(--mustard); color: var(--on-mustard); border-color: var(--mustard); }
-#gm-page .gm-gate-wait { color: var(--ink-soft); border-style: dashed; }
-#gm-page .gm-gate-why { margin: 0; padding-left: 18px; font-size: 12.5px; }
+/* The Screen (GM.md, "The Screen"): the box's four buttons; what Blade made is a card in the box (P4), see .as-body and .as-tone-* below */
 
 /* Ask Blade (GM.md, "Ask Blade"): the question box at the top of the Claude box and the answers under it. GM's eyes only. */
 
@@ -966,6 +950,17 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 .gm-assist .as-kept { font: 900 12px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
 .gm-assist .as-star, .gm-assist .as-ack, .gm-assist .as-moreb, .gm-assist .as-undo, .gm-assist .as-upbtns button { min-height: 36px; font-size: 14px; padding: 0 12px; border: 1.5px solid var(--rule); background: var(--card); }
 .gm-assist .as-undo { border-color: var(--k-done); }
+.gm-assist .as-body { display: grid; gap: 2px; padding: 6px 8px; border: 1.5px solid var(--rule); background: var(--paper); }
+.gm-assist .as-body-text { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 15px; line-height: 1.4; }
+.gm-assist .gm-screen-fig { width: 96px; max-height: 190px; overflow: hidden; border: 1.5px solid var(--rule); background: var(--paper); }
+.gm-assist .gm-screen-fig svg { display: block; width: 100%; height: auto; }
+.gm-assist .as-chip2 { font: 900 12px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; padding: 3px 6px; border: 1.5px solid currentColor; }
+.gm-assist .as-tone-ok { color: var(--ink); }
+.gm-assist .as-tone-bad, .gm-assist .as-tone-unk { background: var(--mustard); color: var(--on-mustard); border-color: var(--mustard); }
+.gm-assist .as-tone-wait { color: var(--ink-soft); border-style: dashed; }
+.gm-assist .as-act { min-height: 36px; font-size: 14px; padding: 0 12px; border: 1.5px solid var(--rule); background: var(--card); color: var(--ink); }
+.gm-assist .as-act-primary { background: var(--ink); color: var(--on-ink); }
+.gm-assist .as-act:disabled { opacity: .5; }
 .gm-assist .as-ack { background: var(--rule); color: var(--on-ink); }
 .gm-assist .as-citeflag { font: 900 12px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; background: var(--mustard); color: var(--on-mustard); padding: 3px 5px; cursor: help; }
 .gm-assist .as-banner-b[data-kind="warn"] { border-left: 8px solid var(--k-warn); }

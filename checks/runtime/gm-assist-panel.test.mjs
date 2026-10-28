@@ -42,7 +42,7 @@ function fakeBrowser({ phone = false } = {}) {
     addEventListener(t, f) { docListeners[t] = f; }, removeEventListener(t) { delete docListeners[t]; },
   };
   const win = { matchMedia: () => ({ matches: phone }) };
-  const click = (a, id, dk) => listeners.click({ target: { closest: () => ({ getAttribute: (k) => (k === 'data-as' ? a : k === 'data-id' ? id : k === 'data-k' && dk !== undefined ? dk : null) }) } });
+  const click = (a, id, dk, act) => listeners.click({ target: { closest: () => ({ getAttribute: (k) => (k === 'data-as' ? a : k === 'data-id' ? id : k === 'data-act' ? (act === undefined ? null : act) : k === 'data-k' && dk !== undefined ? dk : null) }) } });
   return { doc, win, host, stub, click, listeners, docListeners };
 }
 const GOOD = { cards: [], updates: [], flags: [], spend: { tonight: 1.234, cap: 20, tier: 'all', tick: 0.01 }, last: 10 };
@@ -518,16 +518,15 @@ await test('Meanwhile: the cutaway reaches the page (onMeanwhile), not the box; 
   r = rig(); r.gm.reply = { ...GOOD, meanwhile: MEANWHILE }; await r.ctl.poll(); assert.equal(r.calls.tick.length, 1, 'a page without onMeanwhile is unchanged');
 });
 
-await test('gm-page: Meanwhile is wired into the Rack (cutaway, faction, clock, suggested tick, Clear) and ticks nothing', () => {
+await test('gm-page: Meanwhile is wired into the box as an idea card (cutaway, faction, clock, suggested tick, Clear) and ticks nothing', () => {
   const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
   const m = /function mountAssist\(\) \{[\s\S]*?\n  \}\n/.exec(page);
   assert.ok(m && /onMeanwhile: function \(v\) \{ if \(S === me\) setMeanwhile\(v\); \}/.test(m[0]));
-  assert.ok(/case 'meanwhileclear': S\.meanwhile = null; renderRack\(\); break;/.test(page));
-  assert.ok(/meanwhileHtml\(S\.meanwhile\)/.test(/function renderRack\(\) \{[\s\S]*?\n  \}\n/.exec(page)[0]));
-  const mh = /function meanwhileHtml\(m\) \{[\s\S]*?\n  \}\n/.exec(page)[0], ms = /function setMeanwhile\(v\) \{[\s\S]*?\n  \}\n/.exec(page)[0];
-  assert.ok(/data-gm="meanwhileclear"/.test(mh) && /esc\(m\.cutaway\)/.test(mh) && /esc\(m\.clock\)/.test(mh) && /your call/.test(mh));
-  assert.ok(!/addClock|clockOps|campaignSave|\.filled/.test(mh + ms), 'it suggests; it never touches a clock');
-  assert.ok(/\.gm-meanwhile \{/.test(fs.readFileSync(path.join(ROOT, 'app', 'gm.css'), 'utf8')));
+  assert.ok(!/meanwhileclear|meanwhileHtml/.test(page), 'no Rack markup or Rack button is left');
+  assert.ok(/want\.meanwhile = /.test(/function syncCards\(\) \{[\s\S]*?\n  \}\n/.exec(page)[0]), 'syncCards makes the card from S.meanwhile');
+  const ms = /function meanwhileSpec\(m\) \{[\s\S]*?\n  \}\n/.exec(page)[0], st = /function setMeanwhile\(v\) \{[\s\S]*?\n  \}\n/.exec(page)[0];
+  assert.ok(/seat: 'meanwhile'/.test(ms) && /m\.faction/.test(ms) && /m\.clock/.test(ms) && /your call/.test(ms) && /ackLabel: 'Clear'/.test(ms));
+  assert.ok(!/addClock|clockOps|campaignSave|\.filled/.test(ms + st), 'it suggests; it never touches a clock');
 });
 
 await test('Mystery and Showrunner cards arrive as ordinary cards with their own label', async () => {
@@ -541,16 +540,15 @@ await test('Mystery and Showrunner cards arrive as ordinary cards with their own
   assert.equal(r.ctl.state().cards.length, 1); assert.equal(r.ctl.state().cards[0].important, false, 'only a Ref slip is important');
 });
 
-await test('gm-page: Stall is wired into the Rack (offer, kind, Clear) and cleared with the rest', () => {
+await test('gm-page: Stall is wired into the box as an idea card (offer, kind chip, Clear) and cleared with the rest', () => {
   const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
   const m = /function mountAssist\(\) \{[\s\S]*?\n  \}\n/.exec(page);
   assert.ok(m && /onStall: function \(v\) \{ if \(S === me\) setStall\(v\); \}/.test(m[0]));
-  assert.ok(/case 'stallclear': S\.stall = null; renderRack\(\); break;/.test(page));
+  assert.ok(!/stallclear|stallHtml/.test(page), 'no Rack markup or Rack button is left');
   const rack = /function renderRack\(\) \{[\s\S]*?\n  \}\n/.exec(page)[0];
-  assert.ok(/stallHtml\(S\.stall\)/.test(rack), 'the Rack draws Stall under Voice, with or without a Fixer card');
-  const sh = /function stallHtml\(st\) \{[\s\S]*?\n  \}\n/.exec(page)[0];
-  assert.ok(/data-gm="stallclear"/.test(sh) && /esc\(st\.offer\)/.test(sh) && /esc\(st\.kind\)/.test(sh));
-  assert.ok(/\.gm-stall \{/.test(fs.readFileSync(path.join(ROOT, 'app', 'gm.css'), 'utf8')));
+  assert.ok(/syncCards\(\)/.test(rack) && !/gm-stall|gm-offer|gm-screenitem|S\.stall|S\.offers|S\.screenItems/.test(rack), 'the Rack draws Voice and the Fixer only; the cards come from syncCards');
+  const ss = /function stallSpec\(st\) \{[\s\S]*?\n  \}\n/.exec(page)[0];
+  assert.ok(/headline: st\.offer/.test(ss) && /text: st\.kind/.test(ss) && /ackLabel: 'Clear'/.test(ss) && /seat: 'stall'/.test(ss));
 });
 
 
@@ -724,11 +722,46 @@ await test('Screen wiring: the buttons are in the box, the page owns Show and Ad
   const m = /function mountAssist\(\) \{[\s\S]*?\n  \}\n/.exec(page);
   assert.ok(m && /onScreen: function \(item\)/.test(m[0]) && !/pushDisplay|setDisplay|patchAmbient/.test(m[0]), 'mountAssist hands items to the page and writes nothing itself');
   for (const fn of ['screenShow', 'screenWire', 'wireClear', 'screenAdd']) assert.ok(page.includes('function ' + fn), fn);
-  assert.ok(page.includes("(it.status === 'ready' ? '' : ' disabled')"), 'Show is disabled until the gatekeeper has answered');
+  assert.ok(/disabled: it\.status !== 'ready'/.test(/function screenSpec\(it\) \{[\s\S]*?\n  \}\n/.exec(page)[0]), 'Show is disabled until the gatekeeper has answered');
+  assert.ok(/run: function \(\) \{ return screenShow\(id\); \}/.test(page) && /run: function \(\) \{ return showHandout\(o\.id\)/.test(page), "a card button runs the page's own screenShow / showHandout (one path to the iPad)");
   const cf = fs.readFileSync(path.join(ROOT, 'app', 'runtime', 'cf.js'), 'utf8');
   for (const [fn, p] of [['assistPortrait', 'portrait'], ['assistProp', 'prop'], ['assistWire', 'wire'], ['assistBoard', 'board'], ['assistGate', 'gatekeeper'], ['assistPortraitAdd', 'portrait-add']]) {
     assert.ok(new RegExp(fn + ": function \\([^)]*\\) \\{ return api\\('POST', '/gm/assist/" + p + "'").test(cf), fn);
   }
+});
+
+await test('page cards (P4): actions run the page function, Got it runs onAck once, removeCard sends nothing, state() holds no functions, the body is text', async () => {
+  const r = rig(); r.ctl.open();
+  const ran = []; let acked = 0;
+  const id = r.ctl.addCard({ kind: 'idea', seat: 'handout', headline: 'Show handout: Invented key?', body: '<b>raw</b> text', bodyLabel: 'Will show', open: true, ackLabel: 'Dismiss',
+    chips: [{ text: 'Blocked', tone: 'bad' }, { text: 'x', tone: 'nonsense' }],
+    actions: [{ id: 'show', label: 'Show', primary: true, run: () => { ran.push('show'); } }, { id: 'off', label: 'Off', disabled: true, run: () => { ran.push('off'); } }],
+    onAck: () => { acked++; } });
+  assert.ok(id);
+  const st = r.ctl.state().cards.find((c) => c.id === id);
+  assert.equal(st.kind, 'idea'); assert.equal(st.actions.length, 2); assert.equal(st.chips[1].tone, ''); assert.equal(st.ackLabel, 'Dismiss');
+  assert.ok(!JSON.stringify(st).includes('function'), 'no function on the copied card');
+  const html = r.br.stub('#as-list').innerHTML;
+  assert.ok(/data-act="show"/.test(html) && /Dismiss/.test(html) && /as-tone-bad/.test(html) && /Handout/.test(html), 'buttons, label, tone and seat chip are drawn');
+  assert.ok(!/<b>raw<\/b>/.test(html), 'the body is text, never markup');
+  assert.equal(r.ctl.state().cards.find((c) => c.id === id).seen, false);
+  const lines = Array.from({ length: 50 }, (_, n) => 'line ' + n + ' of a long document').join('\n'), lid = r.ctl.addCard({ kind: 'idea', headline: 'Long', body: lines });
+  assert.equal(r.ctl.state().cards.find((c) => c.id === lid).body, lines, 'a body of the Worker\'s longest length (1450) is kept whole: what the GM reads is what Show sends'); assert.ok(lines.length > 1200 && lines.length <= 1450);
+  r.ctl.removeCard(lid);
+  r.br.click('act', id, undefined, 'show'); await tick();
+  assert.deepEqual(ran, ['show'], 'the page function ran');
+  r.br.click('act', id, undefined, 'nonesuch'); r.br.click('act', 'nope', undefined, 'show'); await tick();
+  assert.deepEqual(ran, ['show'], 'an unknown action or card does nothing');
+  assert.equal(r.calls.marks.length, 0, 'no server mark for a page card');
+  assert.equal(r.ctl.updateCard(id, { actions: [{ id: 'show', label: 'Show again', primary: true, run: () => { ran.push('again'); } }], chips: [{ text: 'Checked: clear', tone: 'ok' }] }), true);
+  r.br.click('act', id, undefined, 'show'); await tick();
+  assert.deepEqual(ran, ['show', 'again'], 'updateCard replaces the action functions');
+  assert.ok(/Show again/.test(r.br.stub('#as-list').innerHTML) && /Checked: clear/.test(r.br.stub('#as-list').innerHTML), 'and the node is rebuilt');
+  r.br.click('ack', id); await tick();
+  assert.equal(acked, 1, 'Got it ran onAck once'); assert.equal(r.ctl.state().cards.length, 0); assert.equal(r.calls.marks.length, 0);
+  const id2 = r.ctl.addCard({ kind: 'idea', headline: 'Second', onAck: () => { acked++; } });
+  assert.equal(r.ctl.removeCard(id2), true); assert.equal(r.ctl.removeCard(id2), false); assert.equal(acked, 1, 'removeCard does not run onAck');
+  assert.equal(r.ctl.state().cards.length, 0); assert.equal(r.calls.marks.length, 0);
 });
 
 // ---------- Ask Blade: the question field at the top of the box ----------

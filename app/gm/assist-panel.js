@@ -44,6 +44,10 @@
      ctl.undoNewest() -> Promise<{ id } | { error } | null>   U: undo the newest done card that has an undo function (null when none)
      ctl.addCard({ id?, kind, headline, bullets?, say?, secret?, more?, cite?, check?, seat?, undo? }) -> id    a card made on this page (co-GM, autopilot, warnings);
                                          never sent to the server, gone on reload; undo is a function the card's Undo button calls
+     ctl.removeCard(id) -> bool           take a page card down (no mark, onAck not called)
+     A page card may also carry (P4): body (plain text, pre-wrapped), bodyLabel, chips [{ text, tone: ok|bad|unk|wait }], actions [{ id, label, primary?, disabled?, title?, run }]
+                                         (run is the page's own function; the panel sends nothing anywhere), ackLabel + onAck (the Got-it button's label and the page's work after it),
+                                         figure (a factory returning a node, with figKey to say when it changed) and open (start unfolded)
      ctl.updateCard(id, patch) -> bool    change a card's kind, headline, bullets, say, secret, more, cite or check (and undone / undo)
      ctl.relayout()                       measure the top bar and the capture bar again (the page calls it after it redraws its layout)
          mock      true shows a few clearly labelled example cards (no Keep, no Got it) while there are no real ones: for looking at the shell only
@@ -97,7 +101,7 @@
   var P = {};
   var BANNER_MS = 8000, POLL_MS = 60000, ROLLED_MS = 40000, ROLLED_RETRY_MS = 3000, ROLLED_TRIES = 20, MAX_CARDS = 60, MAX_UPDATES = 30, NPC_MAX = 80;
   var POSITIONS = ['controlled', 'risky', 'desperate'];
-  var SEAT = { ref: 'Rule slip', clerk: 'Clerk', fixer: 'Fixer', ledger: 'Ledger', mystery: 'Mystery', showrunner: 'Pacing' };
+  var SEAT = { ref: 'Rule slip', clerk: 'Clerk', fixer: 'Fixer', ledger: 'Ledger', mystery: 'Mystery', showrunner: 'Pacing', stall: 'Stall', meanwhile: 'Meanwhile', handout: 'Handout', screen: 'Screen' };
   var TIER = { all: 'Full', reduced: 'Reduced', core: 'Core only', off: 'Off: cap reached' };
   /* the glance grammar (design 3.2): every card has a kind, and a kind has a colour (CSS: --k-*), a glyph and a word, so colour is never alone */
   var KINDS = ['rule', 'say', 'idea', 'done', 'warn', 'note'];
@@ -105,7 +109,8 @@
   var SEAT_KIND = { ref: 'rule', fixer: 'say', mystery: 'idea', showrunner: 'idea', clerk: 'note', ledger: 'note' };
   var FILTERS = ['all'].concat(KINDS.filter(function (k) { return k !== 'warn'; }));   /* All, Rule, Say, Idea, Done, Note: a warn is rare and always shows under All */
   var PIPS_MAX = 5, EARLIER_MS = 30 * 60 * 1000, FOLD_CHARS = 140, NOW_MS = 1500;
-  var BULLETS_MAX = 5, BULLET_CHARS = 160, SAY_MAX = 1500, SECRET_MAX = 1000, MORE_MAX = 4000, CITE_MAX = 40;
+  var BULLETS_MAX = 5, BULLET_CHARS = 160, SAY_MAX = 1500, SECRET_MAX = 1000, MORE_MAX = 4000, CITE_MAX = 40, BODY_MAX = 2400, ACTIONS_MAX = 8, CHIPS_MAX = 4;
+  var TONES = ['ok', 'bad', 'unk', 'wait'];
   var STRIP_KINDS = ['rule', 'warn'];      /* the only kinds that slide a strip out of the closed tab; every other kind is a pip */
   var ASK_KIND = { rule: 'rule', say: 'say', idea: 'idea', npc: 'say', recap: 'note', other: 'note' };      /* Ask Blade's own kinds -> the six */
   var CHECK_WORD = { order: 'Order', resist: 'Resist', harm: 'Harm', cost: 'Cost', house: 'House rule', other: 'Check' };
@@ -209,6 +214,16 @@
     return (Array.isArray(v) ? v : []).map(function (b) { return clip(b, max); }).filter(Boolean).slice(0, n);
   }
   function block(v, max) { var s = str(v).replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(); return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s; }
+  /* what only a card made on this page can carry (P4): a plain-text body, chips, action buttons, a label for the Got-it button and a figure key. Data only:
+     the functions behind the actions, the Got-it button and the figure live in maps inside the panel, never on the card (state() copies cards). */
+  function pageFields(card, raw) {
+    card.body = block(raw.body, BODY_MAX); card.bodyLabel = clip(raw.bodyLabel, 24);
+    card.chips = (Array.isArray(raw.chips) ? raw.chips : []).filter(isObj).map(function (x) { return { text: clip(x.text, 40), tone: TONES.indexOf(x.tone) >= 0 ? x.tone : '' }; }).filter(function (x) { return x.text; }).slice(0, CHIPS_MAX);
+    card.actions = (Array.isArray(raw.actions) ? raw.actions : []).filter(isObj).map(function (x) {
+      return { id: clip(x.id, 24), label: clip(x.label, 40), title: clip(x.title, 120), primary: !!x.primary, disabled: !!x.disabled };
+    }).filter(function (x) { return x.id && x.label; }).slice(0, ACTIONS_MAX);
+    card.ackLabel = clip(raw.ackLabel, 24); card.figKey = clip(raw.figKey, 120); card.open = !!raw.open;
+  }
   function mkCard(raw, src, o2) {
     o2 = o2 || {};
     var text = str(raw.text).trim(), detail = isObj(raw.detail) ? { said_at: str(raw.detail.said_at), rule: clip(raw.detail.rule, 220) } : null;
@@ -223,6 +238,7 @@
       say: block(raw.say, SAY_MAX), secret: block(raw.secret, SECRET_MAX), more: more, cite: clip(raw.cite, CITE_MAX), check: CHECK_WORD[raw.check] ? str(raw.check) : '',
       detail: detail, seen: !!o2.seen, kept: !!o2.kept, filed: !!o2.filed, important: seat === 'ref' };
     if (src === 'ask') card.q = str(raw.q);
+    if (src === 'page') pageFields(card, raw);
     return card;
   }
   function cardId(c) { return str(c.seat) + '|' + str(c.at) + '|' + str(c.text); }
@@ -580,7 +596,7 @@
       { id: 'mock-done', seat: 'ledger', kind: 'done', headline: 'Example done: a placeholder for something Blade did, with Undo.' }
     ];
     var cache = { nodes: {}, more: {}, nowKey: '', nowEl: null, pipSig: null, builds: 0, moreRenders: 0 };      /* render caches live here, never on the cards (state() copies the cards) */
-    var undoFns = {};
+    var undoFns = {}, actFns = {}, ackFns = {}, figFns = {};      /* page-made cards: the functions behind Undo, the action buttons, Got it and the figure */
     function mockCards() { return MOCKS.map(function (m) { var c = mkCard(Object.assign({ at: '' }, m), 'page', { id: m.id, seen: true }); c.mock = true; return c; }); }
     function cardKind2(c) { return cardKind(c); }
     function E(tag, cls, text) { var e = doc.createElement(tag); if (cls) e.className = cls; if (text !== undefined && text !== null) e.textContent = text; return e; }
@@ -596,7 +612,7 @@
     /* what a card shows, as one string: when it changes, its node is rebuilt, and only then */
     function sigOf(c, now) {
       return JSON.stringify([cardKind2(c), c.headline, c.bullets, c.say, c.secret, c.more, c.cite, c.check, c.kept, c.filed, c.important, c.citeBad || null, !!c.undone,
-        canUndo(c), canKeep(c), isOpen(c, now), !!st.moreOpen[c.id], c.at, !!c.mock, c.src, c.q || '', SEAT[c.seat] || c.seat]);
+        canUndo(c), c.body || '', c.bodyLabel || '', c.chips || null, c.actions || null, c.ackLabel || '', c.figKey || '', canKeep(c), isOpen(c, now), !!st.moreOpen[c.id], c.at, !!c.mock, c.src, c.q || '', SEAT[c.seat] || c.seat]);
     }
     function moreHtml(c) {
       var ent = cache.more[c.id];
@@ -628,6 +644,14 @@
         c.bullets.forEach(function (b) { appendInline(doc, ul.appendChild(E('li')), b); });
         more.appendChild(ul);
       }
+      if (typeof figFns[c.id] === 'function' && c.figKey) {
+        var fig = null; try { fig = figFns[c.id](); } catch (e) { fig = null; }
+        if (fig && fig.nodeType === 1) more.appendChild(fig);      /* the page builds it (the figure kit's own drawing); the panel only places it */
+      }
+      if (c.body) {
+        var bd = E('div', 'as-body'); if (c.bodyLabel) bd.appendChild(E('b', 'as-band', c.bodyLabel)); bd.appendChild(E('pre', 'as-body-text', c.body));
+        more.appendChild(bd);
+      }
       if (c.say) {
         var say = E('div', 'as-say'); say.appendChild(E('b', 'as-band', 'SAY')); appendInline(doc, say.appendChild(E('p', 'as-band-text')), c.say);
         more.appendChild(say);
@@ -638,6 +662,7 @@
       }
       var chips = E('div', 'as-chiprow');
       if (SEAT[c.seat]) chips.appendChild(E('span', 'as-seatname', SEAT[c.seat]));
+      (c.chips || []).forEach(function (x) { chips.appendChild(E('span', 'as-chip2' + (x.tone ? ' as-tone-' + x.tone : ''), x.text)); });
       if (c.cite) chips.appendChild(E('span', 'as-cite', c.cite));
       if (c.check) chips.appendChild(E('span', 'as-check', CHECK_WORD[c.check] || 'Check'));
       if (c.citeBad && c.citeBad.length) {
@@ -652,11 +677,17 @@
         more.appendChild(det);
       }
       var acts = E('div', 'as-acts');
+      (c.actions || []).forEach(function (a) {
+        var ab = B('as-act' + (a.primary ? ' as-act-primary' : ''), a.label, { 'data-as': 'act', 'data-id': c.id, 'data-act': a.id });
+        if (a.title) ab.setAttribute('title', a.title);
+        if (a.disabled) ab.disabled = true;
+        acts.appendChild(ab);
+      });
       if (c.more) acts.appendChild(B('as-moreb', st.moreOpen[c.id] ? 'Less ▴' : 'More ▾', { 'data-as': 'more', 'data-id': c.id, 'aria-expanded': String(!!st.moreOpen[c.id]), 'aria-label': st.moreOpen[c.id] ? 'Hide the detail' : 'Show the detail' }));
       if (canKeep(c)) acts.appendChild(c.kept ? E('span', 'as-kept', '★ Kept') : B('as-star', '☆ Keep', { 'data-as': 'keep', 'data-id': c.id, 'aria-label': 'Keep this card: file it as a Moment' }));
       if (k === 'done' && c.undone) acts.appendChild(E('span', 'as-kept', 'Undone'));
       else if (canUndo(c)) acts.appendChild(B('as-undo', 'Undo', { 'data-as': 'undo', 'data-id': c.id, 'aria-label': 'Undo this (U)' }));
-      if (!c.mock) acts.appendChild(B('as-ack', 'Got it ×', { 'data-as': 'ack', 'data-id': c.id, 'aria-label': 'Dismiss this card' }));
+      if (!c.mock) acts.appendChild(B('as-ack', c.ackLabel || 'Got it ×', { 'data-as': 'ack', 'data-id': c.id, 'aria-label': 'Dismiss this card' }));
       more.appendChild(acts);
       root.appendChild(more);
       return root;
@@ -732,7 +763,7 @@
       var live = {}; st.cards.forEach(function (c) { live[c.id] = 1; });
       Object.keys(cache.nodes).forEach(function (k) { if (k.charAt(0) !== '~' && k.indexOf('mock|') !== 0 && !live[k]) delete cache.nodes[k]; });
       Object.keys(cache.more).forEach(function (k) { if (!live[k]) delete cache.more[k]; });
-      Object.keys(undoFns).forEach(function (k) { if (!live[k]) delete undoFns[k]; });
+      [undoFns, actFns, ackFns, figFns].forEach(function (m) { Object.keys(m).forEach(function (k) { if (!live[k]) delete m[k]; }); });
       if (fid) refocus(fid);
     }
     function renderUpdates() {
@@ -973,6 +1004,19 @@
     /* cards made on this page (the co-GM, autopilot, warnings): addCard({ id?, kind, headline, bullets?, say?, secret?, more?, cite?, check?, seat?, at?, undo? }) -> id | ''.
        They are not in the server's log: no mark is sent, and a reload forgets them. undo is a function the Undo button calls. */
     var pageSeq = 0;
+    /* the functions behind a page card's buttons: actions[i].run, onAck (the Got-it button's own work, run after the card is gone) and figure (a factory for a node) */
+    function setFns(id, raw) {
+      if (Array.isArray(raw.actions)) { var m = {}; raw.actions.forEach(function (a) { if (isObj(a) && typeof a.run === 'function') m[clip(a.id, 24)] = a.run; }); actFns[id] = m; }
+      if (raw.onAck !== undefined) { if (typeof raw.onAck === 'function') ackFns[id] = raw.onAck; else delete ackFns[id]; }
+      if (raw.figure !== undefined) { if (typeof raw.figure === 'function') figFns[id] = raw.figure; else delete figFns[id]; }
+    }
+    /* a card made on this page, gone: no mark is sent and onAck is not called (the page took it down itself) */
+    function removeCard(id) {
+      var c = cardById(id); if (!c) return false;
+      remove(st.cards, id); delete st.unfolded[id]; delete st.moreOpen[id]; if (st.nowId === id) setNow('');
+      if (host) render();
+      return true;
+    }
     function addCard(raw) {
       if (gone || !isObj(raw)) return '';
       var id = str(raw.id).replace(/\s+/g, ' ').trim().slice(0, 80);
@@ -983,12 +1027,14 @@
       if (old) { card.seen = old.seen; card.kept = old.kept; st.cards[st.cards.indexOf(old)] = card; }
       else st.cards.push(card);
       if (typeof raw.undo === 'function') undoFns[card.id] = raw.undo;
+      setFns(card.id, raw);
+      if (card.open) st.unfolded[card.id] = true;
       if (st.cards.length > MAX_CARDS) st.cards = st.cards.slice(-MAX_CARDS);
       if (!old) arrived([card]);
       if (host) render();
       return card.id;
     }
-    var PATCH_KEYS = ['kind', 'headline', 'bullets', 'say', 'secret', 'more', 'cite', 'check'];
+    var PATCH_KEYS = ['kind', 'headline', 'bullets', 'say', 'secret', 'more', 'cite', 'check', 'body', 'bodyLabel', 'chips', 'actions', 'ackLabel', 'figKey'];
     function updateCard(id, patch) {
       var c = cardById(id); if (!c || !isObj(patch)) return false;
       var raw = {}; PATCH_KEYS.forEach(function (k) { raw[k] = patch[k] !== undefined ? patch[k] : c[k]; });
@@ -998,6 +1044,7 @@
       if (c.src === 'page') c.text = n.text;
       if (patch.undone !== undefined) c.undone = !!patch.undone;
       if (typeof patch.undo === 'function') undoFns[c.id] = patch.undo;
+      setFns(c.id, patch);
       if (host) render();
       return true;
     }
@@ -1144,8 +1191,9 @@
       else if (a === 'fold') { st.unfolded[id] = !st.unfolded[id]; renderList(); refocus(id); }
       else if (a === 'more') { st.moreOpen[id] = !st.moreOpen[id]; render(); }
       else if (a === 'undo') { undoCard(cardById(id)); }
+      else if (a === 'act') { var af = (actFns[id] || {})[b.getAttribute('data-act')]; if (typeof af === 'function') { try { Promise.resolve(af()).then(null, function () {}); } catch (e) {} } }
       else if (a === 'chip') { st.filter = FILTERS.indexOf(b.getAttribute('data-k')) >= 0 ? b.getAttribute('data-k') : 'all'; render(); var cb = q('.as-chip[data-k="' + st.filter + '"]'); if (cb && cb.focus) { try { cb.focus(); } catch (e) {} } }
-      else if (a === 'ack') { var k = cardById(id); if (k) mark('dismiss', [k]); remove(st.cards, id); delete st.unfolded[id]; delete st.moreOpen[id]; if (st.nowId === id) setNow(''); render(); }
+      else if (a === 'ack') { var k = cardById(id), ackFn = ackFns[id]; if (k) mark('dismiss', [k]); remove(st.cards, id); delete st.unfolded[id]; delete st.moreOpen[id]; if (st.nowId === id) setNow(''); render(); if (k && k.src === 'page' && typeof ackFn === 'function') { try { ackFn(); } catch (e) {} } }
       else if (a === 'keep') { var kc = cardById(id); if (kc && !kc.kept && typeof o.onNote === 'function' && o.onNote(kc.src === 'ask' ? askMoment(kc) : momentText(kc))) { kc.kept = true; mark('keep', [kc]); render(); } }
       else if (a === 'done') { var d = st.updates.filter(function (x) { return x.id === id; })[0]; if (d) mark('dismiss', [d]); remove(st.updates, id); render(); }
       else if (a === 'note') { var u = st.updates.filter(function (x) { return x.id === id; })[0]; if (u && typeof o.onNote === 'function' && o.onNote(u.text)) { mark('dismiss', [u]); remove(st.updates, id); render(); } }
@@ -1190,7 +1238,7 @@
     if (!o.noTimer) setTimeout(function () { poll(); }, 1500);
 
     return {
-      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, pin: togglePin, isPinned: function () { return docked(); }, undoNewest: undoNewest, addCard: addCard, updateCard: updateCard, relayout: relayout, poll: poll, rolled: rolled, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
+      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, pin: togglePin, isPinned: function () { return docked(); }, undoNewest: undoNewest, addCard: addCard, updateCard: updateCard, removeCard: removeCard, relayout: relayout, poll: poll, rolled: rolled, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
       state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, asks: st.cards.filter(function (c) { return c.src === 'ask'; }), ask: st.ask, nowId: st.nowId, renders: { cards: cache.builds, more: cache.moreRenders }, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, screen: st.screen, banner: bannerCard ? bannerCard.headline : '' })); },
       el: function () { return host; },
       destroy: function () {

@@ -2092,7 +2092,8 @@
   function renderRack() {
     var box = $q('#gm-rack'); if (!box) return;
     var r = S && S.rack, vo = S && S.voice;
-    var vh = (vo ? voiceHtml(vo) : '') + (S && S.stall ? stallHtml(S.stall) : '') + (S && S.meanwhile ? meanwhileHtml(S.meanwhile) : '') + (S && S.offers && S.offers.length ? S.offers.map(offerHtml).join('') : '') + screenRackHtml();
+    var vh = vo ? voiceHtml(vo) : '';      /* the Rack keeps the roll's own: the Fixer and Voice. What else Blade suggests is a card in the box (P4) */
+    syncCards();
     if (!r) { box.innerHTML = vh; return; }
     var pre = r.pre, used = { one_three: pre && pre.kinds.onetothree.used, four_five: pre && pre.kinds.fourfive.used };
     var h = '<div class="gm-rack-h"><span class="gm-lab">Rack</span><span class="gm-dim">Blade, fitted to the scene · ' + esc(pre.pos) + '</span>' +
@@ -2120,8 +2121,7 @@
     S.voice = { who: str(v.who).trim() || 'NPC', want: str(v.want).trim(), lines: lines, at: str(v.at), busy: false, error: '' };
     renderRack();
   }
-  /* Stall: when the Tripwire hears the table idle or going round in circles, one offer (a complication or a clue) lands in the Rack under
-     Voice. Like Voice it needs Listening on and the cap not reached, and it stays until the GM clears it or the next offer replaces it. */
+  /* Stall: when the Tripwire hears the table idle or going round in circles, one offer (a complication or a clue) lands as an idea card in the box. Like Voice it needs Listening on and the cap not reached, and it stays until the GM clears it or the next offer replaces it. */
   function setStall(v) {
     if (!S) return;
     if (!isObj(v) || !str(v.offer).trim()) { if (v === null && S.stall) { S.stall = null; renderRack(); } return; }
@@ -2129,7 +2129,7 @@
     renderRack();
   }
   /* Meanwhile: on a scene change, one faction cutaway the GM can narrate (what a faction is doing off-screen), with the clock it moves and a
-     suggested tick. It only suggests: nothing here ticks a clock. Like Stall it lands in the Rack, needs Listening on and the cap not reached,
+     suggested tick. It only suggests: nothing here ticks a clock. Like Stall it lands as an idea card in the box, needs Listening on and the cap not reached,
      and stays until Clear or the next cutaway. */
   function setMeanwhile(v) {
     if (!S) return;
@@ -2137,17 +2137,6 @@
     var t = +v.ticks;
     S.meanwhile = { faction: str(v.faction).trim(), cutaway: str(v.cutaway).trim(), clock: str(v.clock).trim(), ticks: t === 1 || t === 2 ? t : 0, why: str(v.why).trim(), at: str(v.at) };
     renderRack();
-  }
-  function meanwhileHtml(m) {
-    var tick = m.clock ? 'Clock: <b>' + esc(m.clock) + '</b> · suggest ' + (m.ticks ? '+' + m.ticks + ' (your call)' : 'no tick') + (m.why ? ' · ' + esc(m.why) : '') : '';
-    return '<div class="gm-meanwhile"><div class="gm-rack-h"><span class="gm-lab">Meanwhile</span><span class="gm-dim">' + esc(m.faction || 'a faction') + '</span>' +
-      '<button type="button" class="chip sm" data-gm="meanwhileclear" title="Drops this cutaway">Clear</button></div>' +
-      '<p class="gm-rack-read">' + esc(m.cutaway) + '</p>' + (tick ? '<p class="gm-dim gm-rack-w">' + tick + '</p>' : '') + '</div>';
-  }
-  function stallHtml(st) {
-    return '<div class="gm-stall"><div class="gm-rack-h"><span class="gm-lab">Stall</span><span class="gm-dim">' + esc(st.kind) + '</span>' +
-      '<button type="button" class="chip sm" data-gm="stallclear" title="Drops this offer">Clear</button></div>' +
-      '<p class="gm-rack-read">' + esc(st.offer) + '</p>' + (st.why ? '<p class="gm-dim gm-rack-w">' + esc(st.why) + '</p>' : '') + '</div>';
   }
   function voiceHtml(vo) {
     var a = S && S.assist, can = !!(a && typeof a.canAnother === 'function' && a.canAnother());
@@ -2171,9 +2160,9 @@
       renderRack();
     }, function () { if (S === me && me.voice === vo) { vo.busy = false; vo.error = 'Nothing new just now.'; renderRack(); } });
   }
-  /* ---------- The Screen: what Blade made on a button, previewed in the Rack (GM.md, "The Screen") ----------
+  /* ---------- The Screen: what Blade made on a button, previewed as a card in the box (GM.md, "The Screen"; P4) ----------
      The box (gm/assist-panel.js) makes the item and the gatekeeper checks it; this page shows it and does the rest. Nothing reaches the iPad
-     until the GM taps Show here: a prop or the case board goes out as a text display, a wire bulletin joins the ambient document's `wire`
+     until the GM taps Show on its card: a prop or the case board goes out as a text display, a wire bulletin joins the ambient document's `wire`
      (the iPad lays it over the ambient scenes; Clear takes it off), and a portrait is only saved (Add: a HIDDEN app NPC, revealed false; showing
      it is the normal reveal flow). A block, or an item that was not checked, asks for a confirm first: the tap decides either way. */
   var SC_LABEL = { portrait: 'Portrait', prop: 'Prop', wire: 'Wire', board: 'Case board' };
@@ -2210,45 +2199,24 @@
     renderRack();
   }
   function gateOk(it) { var g = isObj(it.gate) ? it.gate : {}; return !!g.checked && g.verdict === 'pass'; }
-  function gateBadge(it) {
-    if (it.status !== 'ready') return '<span class="gm-gate gm-gate-wait">Checking…</span>';
-    var g = isObj(it.gate) ? it.gate : {};
-    return '<span class="gm-gate ' + (gateOk(it) ? 'gm-gate-ok' : g.checked ? 'gm-gate-bad' : 'gm-gate-unk') + '">' + (gateOk(it) ? 'Checked: clear' : g.checked ? 'Blocked' : 'Not checked') + '</span>';
-  }
-  function gateWhy(it) {
-    if (it.status !== 'ready') return '';
-    var g = isObj(it.gate) ? it.gate : {}, h = '';
-    if (!gateOk(it)) {
-      var rs = (g.reasons || []).concat((g.revealed || []).map(function (x) { return 'Reveals: ' + x; })).concat((g.rule || []).map(function (x) { return 'Rule: ' + x; }));
-      h += '<ul class="gm-gate-why">' + (rs.length ? rs : ['Not checked.']).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul><p class="gm-dim gm-rack-w">Show asks you to confirm. Your tap decides.</p>';
-    }
-    if (g.cites_bad && g.cites_bad.length) h += '<p class="gm-dim gm-rack-w">Check these page cites: ' + esc(g.cites_bad.join('; ')) + '</p>';
-    return h;
-  }
-  function screenHtml(it) {
-    var h = '<div class="gm-screenitem" data-screen="' + esc(it.id) + '"><div class="gm-rack-h"><span class="gm-lab">' + esc(SC_LABEL[it.kind] || it.kind) + '</span>' + gateBadge(it) +
-      '<button type="button" class="chip sm" data-gm="sc-dismiss" data-id="' + esc(it.id) + '" title="Drops this from the Rack">Dismiss</button></div>';
-    if (it.kind === 'portrait') {
-      h += '<div class="gm-screen-port">' + (it.svg ? '<div class="gm-screen-fig">' + it.svg + '</div>' : '') + '<div><p class="gm-rack-read"><b>' + esc(it.name || 'Unnamed') + '</b></p><p class="gm-rack-read">' + esc(it.description) + '</p>' +
-        (it.notes && it.notes.length ? '<p class="gm-dim gm-rack-w">' + esc(it.notes.join('; ')) + '</p>' : '') + '</div></div>';
-    } else if (it.kind === 'wire') h += '<p class="gm-rack-read">' + esc(it.text) + '</p>';
-    else h += (it.title ? '<p class="gm-rack-read"><b>' + esc(it.title) + '</b></p>' : '') + '<pre class="gm-screen-text">' + esc(it.text) + '</pre>';
-    h += gateWhy(it);
-    var acts;
-    if (it.kind === 'portrait') acts = it.added ? '<span class="gm-dim">Saved as a hidden NPC. Reveal it from the cast when you want it shown.</span>'
-      : '<button type="button" class="btn sm primary" data-gm="sc-add" data-id="' + esc(it.id) + '" title="Saves a hidden NPC; nothing is shown">Add (hidden NPC)</button>';
-    else if (it.kind === 'wire' && it.shown) acts = '<button type="button" class="btn sm" data-gm="sc-wireclear" data-id="' + esc(it.id) + '">Clear from the iPad</button>';
-    else acts = '<button type="button" class="btn sm primary" data-gm="sc-show" data-id="' + esc(it.id) + '"' + (it.status === 'ready' ? '' : ' disabled') + '>Show' + (it.kind === 'wire' ? ' on the wire' : ' on iPad') + '</button>' +
-      (it.shown && it.kind !== 'wire' ? ' <span class="gm-dim">On the iPad.</span>' : '');
-    return h + '<div class="gm-ipad-acts">' + acts + '</div></div>';
-  }
   function wireList() { return AM.doc && Array.isArray(AM.doc.wire) ? AM.doc.wire.filter(function (x) { return isObj(x) && typeof x.id === 'string' && typeof x.text === 'string'; }) : []; }
-  function wireOnIpadHtml() {
-    var w = wireList(); if (!w.length) return '';
-    return '<div class="gm-screenitem"><div class="gm-rack-h"><span class="gm-lab">Wire on the iPad</span><span class="gm-dim">' + w.length + ' of 6</span></div><ul class="gm-gate-why">' +
-      w.map(function (x) { return '<li>' + esc(x.text) + ' <button type="button" class="chip sm" data-gm="sc-wireclear" data-id="' + esc(x.id) + '">Clear</button></li>'; }).join('') + '</ul></div>';
+  /* the gatekeeper's verdict as a chip (text and tone) and as the bullets that explain it; the card shows them, the tap still decides */
+  function gateChip(it) {
+    if (it.status !== 'ready') return { text: 'Checking…', tone: 'wait' };
+    var g = isObj(it.gate) ? it.gate : {};
+    return gateOk(it) ? { text: 'Checked: clear', tone: 'ok' } : g.checked ? { text: 'Blocked', tone: 'bad' } : { text: 'Not checked', tone: 'unk' };
   }
-  function screenRackHtml() { return (S && S.screenItems ? S.screenItems.map(screenHtml).join('') : '') + wireOnIpadHtml(); }
+  function gateBullets(it, full) {
+    if (it.status !== 'ready') return [];
+    var g = isObj(it.gate) ? it.gate : {}, why = [], tail = [];
+    if (!gateOk(it)) {
+      why = (g.reasons || []).concat((g.revealed || []).map(function (x) { return 'Reveals: ' + x; })).concat((g.rule || []).map(function (x) { return 'Rule: ' + x; }));
+      if (!why.length) why = ['Not checked.'];
+      tail.push('Show asks you to confirm. Your tap decides.');
+    }
+    if (g.cites_bad && g.cites_bad.length) tail.push('Check these page cites: ' + g.cites_bad.join('; '));
+    return full ? why.concat(tail) : why.slice(0, 5 - tail.length).concat(tail);
+  }
   function screenShow(id) {
     var me = S, it = screenItem(id); if (!it || it.status !== 'ready' || it.kind === 'portrait') return;
     var g = isObj(it.gate) ? it.gate : {};
@@ -2289,7 +2257,6 @@
       toast('Saved ' + name + ' as a hidden NPC.');
     }, function (e) { toast('Could not save the NPC: ' + errText(e), true); });
   }
-  function screenDismiss(id) { if (S && S.screenItems) { S.screenItems = S.screenItems.filter(function (x) { return x.id !== id; }); renderRack(); } }
 
   function replayConsole(e) {
     var cp = part('console');
@@ -3121,13 +3088,79 @@
     S.offers = (S.offers || []).filter(function (y) { return y.id !== x.id; }).concat([o]).slice(-3);
     renderRack(); return true;
   }
-  function offerHtml(o) {
-    return '<div class="gm-offer" data-offer="' + esc(o.id) + '"><div class="gm-rack-h"><span class="gm-lab">Handout</span><span class="gm-dim">Claude suggests</span></div>' +
-      '<p class="gm-rack-read">Show handout: ' + esc(o.title) + '?</p>' + (o.why ? '<p class="gm-dim gm-rack-w">' + esc(o.why) + '</p>' : '') +
-      '<div class="gm-ipad-acts"><button type="button" class="btn sm primary" data-gm="offer-show" data-id="' + esc(o.id) + '">Show</button>' +
-      '<button type="button" class="chip sm" data-gm="offer-dismiss" data-id="' + esc(o.id) + '">Dismiss</button></div></div>';
-  }
   function dropOffer(id) { if (S && S.offers) { S.offers = S.offers.filter(function (y) { return y.id !== id; }); renderRack(); } }
+  /* ---------- Blade suggests: Stall, Meanwhile, handout offers and Screen items are cards in the box (P4; design 3.6 and D6) ----------
+     The page keeps the state it always kept (S.stall, S.meanwhile, S.offers, S.screenItems, the ambient wire) and the handlers that act on it.
+     syncCards() shows that state as idea cards in the box (ctl.addCard / updateCard / removeCard), and runs from renderRack, so every place that
+     changed the state and called renderRack still works. A card's buttons call the SAME functions the Rack's did (showHandout, screenShow with its
+     gatekeeper verdict and confirm, screenAdd, wireClear): there is no second path to the iPad, and the panel sends nothing itself. Got it is the
+     card's Clear / Dismiss and runs the page's own work (hoDone for a handout, dropping the state). The Rack keeps the Fixer and Voice only. */
+  function sentences(t) { var m = str(t).replace(/\s+/g, ' ').trim().match(/[^.!?]+(?:[.!?]+["')\]]*|$)\s*/g) || []; return m.map(function (x) { return x.trim(); }).filter(Boolean); }
+  function stallSpec(st) {
+    var sp = { kind: 'idea', seat: 'stall', headline: st.offer, bullets: st.why ? [st.why] : [], chips: [{ text: st.kind }], ackLabel: 'Clear', onAck: function () { if (S) S.stall = null; } };
+    if (st.offer.length > 140) sp.more = st.offer;
+    return sp;
+  }
+  function meanwhileSpec(m) {
+    var ss = sentences(m.cutaway), first = ss[0] || m.cutaway, rest = ss.slice(1);
+    var tick = m.clock ? 'Clock: ' + m.clock + ' · suggest ' + (m.ticks ? '+' + m.ticks + ' (your call)' : 'no tick') + (m.why ? ' · ' + m.why : '') : '';
+    var room = tick ? 3 : 4, bl = rest.slice(0, room); if (tick) bl.push(tick);
+    var sp = { kind: 'idea', seat: 'meanwhile', headline: first, bullets: bl, chips: [{ text: m.faction || 'a faction' }], ackLabel: 'Clear', onAck: function () { if (S) S.meanwhile = null; } };
+    if (first.length > 140 || rest.length > room) sp.more = m.cutaway;
+    return sp;
+  }
+  function offerSpec(o) {
+    return { kind: 'idea', seat: 'handout', headline: 'Show handout: ' + o.title + '?', bullets: o.why ? [o.why] : [], open: true, ackLabel: 'Dismiss',
+      actions: [{ id: 'show', label: 'Show', primary: true, title: 'Puts it on the iPad', run: function () { return showHandout(o.id).then(function (ok) { if (ok) dropOffer(o.id); }); } }],
+      onAck: function () { hoDone(o.id); if (S && S.offers) S.offers = S.offers.filter(function (y) { return y.id !== o.id; }); } };
+  }
+  function screenSpec(it) {
+    var id = it.id, port = it.kind === 'portrait', wire = it.kind === 'wire';
+    var head = port ? 'Portrait: ' + (it.name || 'Unnamed') : wire ? 'Wire: ' + str(it.text).replace(/\s+/g, ' ').trim() : (SC_LABEL[it.kind] || it.kind) + (it.title ? ': ' + it.title : '');
+    var chips = [gateChip(it)], bullets = [], actions = [];
+    if (port && it.notes && it.notes.length) bullets.push(it.notes.join('; '));
+    var notes = bullets.slice(), all = notes.concat(gateBullets(it, true));
+    bullets = bullets.concat(gateBullets(it));
+    if (port) {
+      if (it.added) { chips.push({ text: 'Saved (hidden)', tone: 'ok' }); bullets.push('Saved as a hidden NPC. Reveal it from the cast when you want it shown.'); }
+      else actions.push({ id: 'add', label: 'Add (hidden NPC)', primary: true, title: 'Saves a hidden NPC; nothing is shown', run: function () { return screenAdd(id); } });
+    } else if (wire && it.shown) actions.push({ id: 'wireclear', label: 'Clear from the iPad', run: function () { return wireClear(id); } });
+    else {
+      actions.push({ id: 'show', label: 'Show' + (wire ? ' on the wire' : ' on iPad'), primary: true, disabled: it.status !== 'ready', run: function () { return screenShow(id); } });
+      if (it.shown && !wire) chips.push({ text: 'On the iPad', tone: 'ok' });
+    }
+    var sp = { kind: 'idea', seat: 'screen', headline: head, chips: chips, bullets: bullets.slice(0, 5), actions: actions, open: true, ackLabel: 'Dismiss',
+      body: port ? str(it.description) : str(it.text), bodyLabel: port ? 'Description' : wire ? 'Wire bulletin' : 'Will show on the iPad',
+      onAck: function () { if (S && S.screenItems) S.screenItems = S.screenItems.filter(function (x) { return x.id !== id; }); } };
+    if (all.length > 5 || all.some(function (x) { return x.length > 160; })) sp.more = all.map(function (x) { return '- ' + x; }).join('\n');      /* the card cuts a long verdict: the whole of it is under More, the GM's decision needs every line */
+    if (port && it.svg) { sp.figKey = id + '|' + it.svg.length; sp.figure = function () { var d = W.document.createElement('div'); d.className = 'gm-screen-fig'; d.innerHTML = it.svg; return d; }; }   /* the figure kit's own drawing of the cleaned spec; it escapes its text */
+    else { sp.figKey = ''; sp.figure = null; }
+    return sp;
+  }
+  /* what is on the iPad's wire now: one card (Clear per bulletin), so a bulletin from an earlier load can still be taken off */
+  function wireSig(w) { return JSON.stringify(w.map(function (x) { return [x.id, x.text]; })); }
+  function wireSpec(w) {
+    return { kind: 'note', seat: 'screen', headline: 'Wire on the iPad: ' + w.length + ' of 6', body: w.map(function (x, i) { return (i + 1) + '. ' + x.text; }).join('\n'), bodyLabel: 'On the wire', open: true, ackLabel: 'Hide',
+      actions: w.map(function (x, i) { return { id: 'wc' + i, label: 'Clear ' + (i + 1), title: x.text.slice(0, 100), run: function () { return wireClear(x.id); } }; }),
+      onAck: function () { if (S) S.wireAck = wireSig(w); } };
+  }
+  function syncCards() {
+    var ctl = S && S.assist; if (!S || !ctl || typeof ctl.addCard !== 'function') return;
+    if (S.pcCtl !== ctl) { S.pc = {}; S.pcCtl = ctl; }
+    var pc = S.pc, want = {};
+    if (S.stall) want.stall = { idn: S.stall.at + '|' + S.stall.offer, spec: stallSpec(S.stall) };
+    if (S.meanwhile) want.meanwhile = { idn: S.meanwhile.at + '|' + S.meanwhile.cutaway, spec: meanwhileSpec(S.meanwhile) };
+    (S.offers || []).forEach(function (o) { want['offer|' + o.id] = { idn: o.id + '|' + o.why, spec: offerSpec(o) }; });
+    (S.screenItems || []).forEach(function (it) { want['sc|' + it.id] = { idn: it.id, spec: screenSpec(it) }; });
+    var wl = wireList(); if (wl.length && S.wireAck !== wireSig(wl)) want.wire = { idn: 'wire', spec: wireSpec(wl) };
+    Object.keys(pc).forEach(function (k) { if (!want[k]) { ctl.removeCard(pc[k].id); delete pc[k]; } });
+    Object.keys(want).forEach(function (k) {
+      var x = want[k], sig = JSON.stringify(x.spec), cur = pc[k];
+      if (cur && cur.idn !== x.idn) { ctl.removeCard(cur.id); cur = null; delete pc[k]; }      /* a new offer in place of the last one is a new arrival, not an edit */
+      if (cur && cur.sig !== sig) { if (ctl.updateCard(cur.id, x.spec)) cur.sig = sig; else { cur = null; delete pc[k]; } }
+      if (!cur) { var id = ctl.addCard(x.spec); if (id) pc[k] = { id: id, idn: x.idn, sig: sig }; }
+    });
+  }
   /* is app/media/theme.mp3 on the server? asked once a minute at most, on the hosted app only; the answer goes into the panel's line */
   function probeTheme() {
     if (THEME.busy || Date.now() - THEME.at < 60000 || typeof W.fetch !== 'function' || !gmApi()) return;
@@ -4736,16 +4769,8 @@
       case 'dots': setDots(b.getAttribute('data-v')); break;
       case 'rackclear': rackClear(); break;
       case 'voiceclear': S.voice = null; renderRack(); break;
-      case 'stallclear': S.stall = null; renderRack(); break;
-      case 'meanwhileclear': S.meanwhile = null; renderRack(); break;
       case 'ho-show': showHandout(b.getAttribute('data-id')); break;
-      case 'offer-show': { var oid = b.getAttribute('data-id'); showHandout(oid).then(function (ok) { if (ok) dropOffer(oid); }); break; }
-      case 'offer-dismiss': { var did = b.getAttribute('data-id'); hoDone(did); dropOffer(did); break; }
       case 'another': voiceAnother(); break;
-      case 'sc-show': screenShow(b.getAttribute('data-id')); break;
-      case 'sc-add': screenAdd(b.getAttribute('data-id')); break;
-      case 'sc-dismiss': screenDismiss(b.getAttribute('data-id')); break;
-      case 'sc-wireclear': wireClear(b.getAttribute('data-id')); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {
         var tool = b.getAttribute('data-tool'), e = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).filter(function (x) { return x._id === b.getAttribute('data-h'); })[0]; if (!e) break;
