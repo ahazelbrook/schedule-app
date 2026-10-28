@@ -10,6 +10,8 @@ import { identify, displayMayCall, DISPLAY_ONLY } from '../_lib/auth.js';
 import { HttpError, error, json } from '../_lib/http.js';
 
 function noStore(res) {
+  // a WebSocket upgrade (101) carries the socket on the response: never touch it, never copy it
+  if (res.status === 101) return res;
   try {
     res.headers.set('Cache-Control', 'no-store');
     return res;

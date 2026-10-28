@@ -22,6 +22,16 @@ routes = [
   { pattern = "blades.fieldguide.help", custom_domain = true },
 ]
 
+# Live sync (MD1a): one LiveHub Durable Object per campaign (worker/live.js). These are Durable Object
+# migrations, not D1's migrations_dir below: never mix the two up.
+[[durable_objects.bindings]]
+name = "LIVE"
+class_name = "LiveHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["LiveHub"]
+
 [assets]
 directory = "./app"
 binding = "ASSETS"
