@@ -14,7 +14,7 @@
 // Prints PASS/FAIL per step, exits non-zero on any failure, always stops the server.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,8 +67,10 @@ async function startServer() {
   const busy = await fetch('http://127.0.0.1:' + PORT + '/api/me', { signal: AbortSignal.timeout(1500) }).then(() => true, () => false);
   if (busy) throw new Error('port ' + PORT + ' is already in use: stop what is on it, or set PORT');
   wrangler(['d1', 'migrations', 'apply', 'DB', '--local', '--persist-to', stateDir]);
-  wrangler(['d1', 'execute', 'DB', '--local', '--persist-to', stateDir, '--command',
-    "INSERT INTO campaigns (id, updated_at, doc) VALUES ('clocks', '2026-10-01T19:00:00.000Z', '" + JSON.stringify(idlessDoc()) + "')"]);
+  // --file, not --command: the Windows shell (shell:true) would split a SQL/JSON argument at its spaces
+  const seed = join(stateDir, 'seed.sql');
+  writeFileSync(seed, "INSERT INTO campaigns (id, updated_at, doc) VALUES ('clocks', '2026-10-01T19:00:00.000Z', '" + JSON.stringify(idlessDoc()).replace(/'/g, "''") + "')");
+  wrangler(['d1', 'execute', 'DB', '--local', '--persist-to', stateDir, '--file', seed]);
   let log = '';
   server = spawn(WRANGLER, ['dev', '--port', String(PORT), '--ip', '127.0.0.1',
     '--inspector-port', String(PORT + 20000), '--show-interactive-dev-session', 'false', '--persist-to', stateDir, '--log-level', 'warn',
