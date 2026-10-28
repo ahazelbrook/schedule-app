@@ -178,8 +178,13 @@
   }
   /* the room names and the bands in a reveal list (the "room:" entries, and the rest) */
   function entryRooms(reveal) { return (Array.isArray(reveal) ? reveal : []).filter(function (e) { return typeof e === 'string' && e.indexOf('room:') === 0; }).map(function (e) { return e.slice(5); }); }
+  /* the names in `names` that are rooms of this roll, in their order */
+  function rollRoomsOf(roll, names) {
+    var have = {}; (roll && Array.isArray(roll.rooms) ? roll.rooms : []).forEach(function (r) { if (isObj(r) && typeof r.name === 'string') have[r.name] = 1; });
+    return (Array.isArray(names) ? names : []).filter(function (n) { return have[n] === 1; });
+  }
   function entryBands(reveal) { return (Array.isArray(reveal) ? reveal : []).filter(function (e) { return typeof e === 'string' && e.indexOf('room:') !== 0; }); }
-  P.cleanRooms = cleanRooms; P.revealEntries = revealEntries; P.roomShown = roomShown; P.entryRooms = entryRooms; P.entryBands = entryBands;
+  P.rollRoomsOf = rollRoomsOf; P.cleanRooms = cleanRooms; P.revealEntries = revealEntries; P.roomShown = roomShown; P.entryRooms = entryRooms; P.entryBands = entryBands;
   /* the map kit's options for these controls: view and theme from the known lists (else the defaults), time and weather only when set.
      On the player layer the rooms the GM opened on their own (map.open) go to the kit as "room:<name>" beside the bands. */
   function mapOpts(map, layer, reveal, size) {
@@ -279,7 +284,8 @@
     var used = scr.tokens, r = used.length ? clean(Object.assign({}, o, { tokens: used })) : null, dropped = false;
     if (!r) { if (used.length) { dropped = true; used = []; } r = clean(o); }      /* a map that only leaks WITH its markers goes without them */
     if (!r) { var e = new Error(P.LEAK_MSG); e.leak = true; throw e; }
-    return { kind: 'svg', title: str(roll.name).slice(0, 200), caption: (roll.district ? roll.district + ' · ' : '') + 'surveyed: ' + entryBands(reveal).join(', ') + (entryRooms(reveal).length ? ' + ' + entryRooms(reveal).join(', ') : ''), svg: r.svg, warnings: r.warnings || [], reveal: reveal,
+    var capRooms = rollRoomsOf(roll, entryRooms(reveal));       /* only rooms this roll has: a name left over from a site edit opens nothing and is not captioned */
+    return { kind: 'svg', title: str(roll.name).slice(0, 200), caption: (roll.district ? roll.district + ' · ' : '') + 'surveyed: ' + entryBands(reveal).join(', ') + (capRooms.length ? ' + ' + capRooms.join(', ') : ''), svg: r.svg, warnings: r.warnings || [], reveal: reveal,
       tokens: used.length, tokensRefused: scr.refused.length > 0 || dropped };
   }
   P.playerDisplay = playerDisplay;
@@ -3146,8 +3152,15 @@
           : '<button type="button" class="btn sm" data-gm="room-open" data-room="' + esc(r.name) + '" title="Shows the players this room only: not its band, not the rooms beside it">Open for the players</button>') + '</li>';
     });
     if (!rows) return '';
+    /* a band whose every room is now open on its own, with the band itself still shut: the rooms are all there, but its passages are not */
+    var allOpen = BANDS.filter(function (b) {
+      if (b === 'public' || mu.reveal[b] === true) return false;
+      var names = []; roll.rooms.forEach(function (r) { if (isObj(r) && r.band === b && typeof r.name === 'string' && names.indexOf(r.name) < 0) names.push(r.name); });
+      return names.length > 0 && names.every(function (n) { return open.indexOf(n) >= 0; });
+    });
+    var hint = allOpen.length ? '<p class="gm-dim gm-roomhint" data-roomhint="' + esc(allOpen.join(' ')) + '">All the ' + esc(allOpen.join(' and ')) + ' rooms are open: tick the band to show its passages too.</p>' : '';
     return '<details class="gm-more gm-rooms"' + (foldOpen('rooms') ? ' open' : '') + ' data-fold="rooms"><summary>Open one room' + (open.length ? ' <span class="gm-dim">' + open.length + ' open</span>' : '') + '</summary>' +
-      '<ul class="gm-roomlist">' + rows + '</ul><p class="gm-dim">Only that room, with its crew markers: not its band, not the rooms beside it, not how many are shut. ' +
+      '<ul class="gm-roomlist">' + rows + '</ul>' + hint + '<p class="gm-dim">Only that room, with its crew markers: not its band, not the rooms beside it, not how many are shut. ' +
       'Goes out with the map (at once while it is live on the iPad), and only while Layer is Player.</p></details>';
   }
   /* open or close one room for the players: the run's ball.open. The change goes out through liveReveal (ballSet -> liveTokens), which asks
