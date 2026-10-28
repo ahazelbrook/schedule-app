@@ -42,7 +42,7 @@ function fakeBrowser({ phone = false } = {}) {
     addEventListener(t, f) { docListeners[t] = f; }, removeEventListener(t) { delete docListeners[t]; },
   };
   const win = { matchMedia: () => ({ matches: phone }) };
-  const click = (a, id) => listeners.click({ target: { closest: () => ({ getAttribute: (k) => (k === 'data-as' ? a : k === 'data-id' ? id : null) }) } });
+  const click = (a, id, dk) => listeners.click({ target: { closest: () => ({ getAttribute: (k) => (k === 'data-as' ? a : k === 'data-id' ? id : k === 'data-k' && dk !== undefined ? dk : null) }) } });
   return { doc, win, host, stub, click, listeners, docListeners };
 }
 const GOOD = { cards: [], updates: [], flags: [], spend: { tonight: 1.234, cap: 20, tier: 'all', tick: 0.01 }, last: 10 };
@@ -769,7 +769,7 @@ await test('Ask Blade: submit sends { q } squashed, shows Thinking while it wait
   assert.equal(a0.headline, ANS.headline); assert.deepEqual(a0.bullets, ANS.bullets); assert.equal(a0.say, ANS.say); assert.equal(a0.secret, ANS.secret);
   assert.equal(s.unread, 0, 'an answer that was asked for is not unread');
   const html = r.br.stub('#as-list').innerHTML;
-  assert.match(html, /Asked: pitch three complications/); assert.match(html, /Three complications, headline/); assert.match(html, /A runner arrives early/);
+  assert.match(html, /You asked: pitch three complications/); assert.match(html, /Three complications, headline/); assert.match(html, /A runner arrives early/);
   assert.match(html, /data-open="1"/, 'it lands open'); assert.match(html, /<strong>the lamp<\/strong>/, 'bold is a node, not asterisks'); assert.match(html, /GM ONLY/);
   assert.match(html, /Keep/); assert.match(html, /data-as="ack"/);
   assert.equal(s.spend.tier, 'reduced'); assert.match(r.br.stub('#as-tier').textContent, /Reduced/);
@@ -1186,12 +1186,16 @@ await test('keyed rendering: a new card builds one node; the others are the same
   // open More on one card, redraw many times: one Markdown render
   const id = r.ctl.state().cards[1].id; r.br.click('fold', id); r.br.click('more', id);
   const m0 = r.ctl.state().renders.more; assert.equal(m0, 1);
-  r.br.click('chip', 'x'); for (let i = 0; i < 4; i++) { r.gm.reply = { ...GOOD, cards: [] }; await r.ctl.poll(); }
+  for (let i = 0; i < 4; i++) { r.gm.reply = { ...GOOD, cards: [] }; await r.ctl.poll(); }
   r.br.click('fold', id); r.br.click('fold', id); assert.equal(r.ctl.state().renders.more, 1, 'one render for the card\'s `more`');
   const untouched = nodes().filter((n) => n.getAttribute('data-id') !== id);
   r.br.click('fold', id); assert.deepEqual(nodes().filter((n) => n.getAttribute('data-id') !== id), untouched, 'folding one card leaves the others as they were');
   // a filter swaps the nodes shown but rebuilds none
-  const b1 = builds(); r.br.click('chip', 'x'); assert.equal(builds(), b1);
+  const b1 = builds(), keptNodes = nodes().slice();
+  r.br.click('chip', '', 'clerk'); assert.equal(nodes().length, 4, 'all four are clerk cards: nothing filtered out'); r.br.click('chip', '', 'rule');
+  assert.deepEqual(nodes().map((n) => n.className), ['as-empty'], 'Rule shows none of them (there are no rule cards): the filter really ran');
+  assert.equal(r.br.stub('#as-chips').children.find((c) => c.getAttribute('data-k') === 'rule').getAttribute('aria-pressed'), 'true');
+  r.br.click('chip', '', 'all'); assert.deepEqual(nodes(), keptNodes, 'back on All the very same nodes return'); assert.equal(builds(), b1, 'and no card was rebuilt by any of it');
 });
 
 await test('the divider: "Earlier tonight" once, after 30 minutes; filters show counts and keep the node set', async () => {
@@ -1201,7 +1205,9 @@ await test('the divider: "Earlier tonight" once, after 30 minutes; filters show 
   const kids = r.br.stub('#as-list').children; assert.deepEqual(kids.map((k) => k.className), ['as-card', 'as-earlier', 'as-card']);
   assert.equal(kids[1].textContent, 'Earlier tonight'); assert.equal(kids[1].getAttribute('role'), 'separator');
   assert.match(r.br.stub('#as-chips').innerHTML, /data-k="rule"[^>]*aria-pressed="false">Rule <span class="as-chip-n">1<\/span>/);
-  r.br.click('chip', ''); // no data-k: the stub returns null -> falls back to All
+  r.br.click('chip', '', 'rule'); assert.deepEqual(r.br.stub('#as-list').children.map((k) => k.className), ['as-card'], 'Rule: the one rule card, no divider (it is not older)');
+  assert.equal(r.br.stub('#as-list').children[0].getAttribute('data-kind'), 'rule');
+  r.br.click('chip', '', 'all'); assert.equal(r.br.stub('#as-list').children.length, 3);
 });
 
 await test('Now: the card is one type step larger (CSS), shows the same fields, and leaves after 1.5 s (marked) or when a newer card arrives (the older is marked then)', async () => {
@@ -1240,6 +1246,19 @@ await test('page-made cards: addCard / updateCard / undoNewest; no server mark i
   const f = rig(); let n = 0; const fid = f.ctl.addCard({ kind: 'done', headline: 'Fails', undo: async () => { n++; throw new Error('x'); } });
   assert.deepEqual(await f.ctl.undoNewest(), { error: 'undo' }); assert.match(f.br.stub('#as-list').innerHTML, /Fails/);
   assert.ok(typeof r.ctl.addCard === 'function' && typeof r.ctl.updateCard === 'function' && typeof r.ctl.undoNewest === 'function');
+});
+
+await test('seen marks go out as one batch: opening with 3 unread sends one request of 2; two cards arriving while open send the older at once, and Now\'s card is read after 1.5 s', async () => {
+  const mk = (n) => ({ seat: 'clerk', kind: 'note', at: '2030-01-01T09:0' + n + ':00.000Z', text: 't' + n, headline: 'H' + n, seen: false });
+  const r = rig({ stored: { cards: [mk(1), mk(2), mk(3)], updates: [] } }); await r.ctl.ready;
+  r.ctl.open(); await tick();
+  assert.equal(r.calls.marks.length, 1, 'one POST, not one per card'); assert.equal(r.calls.marks[0].op, 'seen'); assert.deepEqual(r.calls.marks[0].items.map((i) => i.text), ['t1', 't2']);
+  r.timers.filter((x) => x.ms === 1500).pop().f(); await tick();
+  assert.equal(r.calls.marks.length, 2); assert.deepEqual(r.calls.marks[1].items.map((i) => i.text), ['t3']); assert.equal(r.ctl.state().unread, 0);
+  // two arrive together while the panel is open: the newest is Now, the older is in the feed and is read at once; Now's previous card goes in the same request
+  r.gm.reply = { ...GOOD, cards: [{ ...mk(4), text: 't4' }, { ...mk(5), text: 't5' }] }; await r.ctl.poll(); await tick();
+  assert.equal(r.calls.marks.length, 3); assert.deepEqual(r.calls.marks[2].items.map((i) => i.text), ['t4']); assert.equal(r.ctl.state().unread, 1, 'only Now\'s card is unread');
+  r.ctl.close(); assert.equal(r.ctl.state().unread, 1, 'closed before 1.5 s: still unread');
 });
 
 await test('every method the panel returned before P3 is still returned', () => {

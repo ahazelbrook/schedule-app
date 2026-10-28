@@ -77,9 +77,10 @@
                                      cap, Portrait and Prop at 85%; the Case board always)
    A Ref card with a page cite is spot-checked in the background through the gatekeeper; a bad cite gets a small "cite?" flag (it never blocks).
    Ask Blade (GM.md, "Ask Blade"): a question field at the top of the box. The GM types a question or a request, presses Ask (Enter sends,
-   Shift+Enter is a new line) and the answer appears under the field: plain text for the GM's eyes only, so nothing is handed to the page
-   but "Keep", which files "Blade, ask (HH:MM): question -> answer" through o.onNote. One question at a time; a failed one keeps its words in
-   the field. The last ten answers come back from the server's log after a reload (assistCards().asks); "×" dismisses one for good.
+   Shift+Enter is a new line) and the answer lands in the feed as a card (open, at the top; not in Now, which would drop it after 1.5 s) for the GM's
+   eyes only, so nothing is handed to the page but "Keep", which files "Blade, ask (HH:MM): question -> answer" through o.onNote. One question at a
+   time; a failed one keeps its words in the field. The last ten answers come back from the server's log after a reload (assistCards().asks);
+   "Got it" dismisses one for good.
      ctl.ask(q) -> Promise<{ answer } | { error } | null>   POST /gm/assist/ask { q }; null when the box cannot ask or is already asking
      ctl.canAsk() -> bool     false on a phone, with the cap reached or the box not set up, from 85% of the cap (tier core), or when the runtime
                               has no assistAsk
@@ -427,7 +428,9 @@
       if (!items.length || !gm || typeof gm.assistMark !== 'function') return;
       Promise.resolve().then(function () { return gm.assistMark({ op: op, items: items.map(markOf) }); }).then(null, function () {});
     }
-    function markSeenOne(c) { if (c && !c.seen) { c.seen = true; mark('seen', [c]); } }
+    /* one request for any number of cards: a seen mark is a batch, as it was before cards had a Now */
+    function markSeenMany(list) { var u = list.filter(function (c, i) { return c && !c.seen && list.indexOf(c) === i; }); u.forEach(function (c) { c.seen = true; }); if (u.length) mark('seen', u); }
+    function markSeenOne(c) { markSeenMany([c]); }
     function load() {
       if (!gm || typeof gm.assistCards !== 'function') return Promise.resolve();
       return Promise.resolve().then(function () { return gm.assistCards(); }).then(function (res) {
@@ -619,7 +622,7 @@
       root.appendChild(head);
 
       var more = E('div', 'as-more');
-      if (c.src === 'ask' && c.q) more.appendChild(E('p', 'as-askq', 'Asked: ' + c.q));
+      if (c.src === 'ask' && c.q) more.appendChild(E('p', 'as-askq', 'You asked: ' + c.q));
       if (c.bullets.length) {
         var ul = E('ul', 'as-bullets');
         c.bullets.forEach(function (b) { appendInline(doc, ul.appendChild(E('li')), b); });
@@ -922,11 +925,11 @@
     /* ---------- the box ---------- */
     /* Now: the newest unread card, shown open. It leaves Now (and is marked seen) after 1.5 s with the panel open, or at once when a newer card
        takes its place. Closing the panel first leaves it unread, so it is Now again next time. */
-    function setNow(id) {
+    function setNow(id, alsoSeen) {
       if (nowT && clrT) clrT(nowT);
       nowT = null;
       var prev = st.nowId && st.nowId !== id ? cardById(st.nowId) : null;
-      if (prev) markSeenOne(prev);
+      markSeenMany((alsoSeen || []).concat(prev ? [prev] : []));      /* the cards that are in the feed, and the one Now has just given up */
       st.nowId = id || '';
       if (id && setT) nowT = setT(function () {
         nowT = null; var c = cardById(st.nowId); st.nowId = ''; markSeenOne(c); if (host) render();
@@ -937,8 +940,8 @@
       if (gone) return;
       st.open = true; hideBanner();
       var un = st.cards.filter(function (c) { return !c.seen; });
-      un.slice(0, -1).forEach(markSeenOne);        /* the older unread cards are in the feed, in view; the newest one is Now and is marked when it has been there 1.5 s */
-      setNow(un.length ? un[un.length - 1].id : '');
+      /* the older unread cards are in the feed, in view (one mark); the newest one is Now and is marked when it has been there 1.5 s */
+      setNow(un.length ? un[un.length - 1].id : '', un.slice(0, -1));
       render(); relayout();
       var nm = q('#as-name'); if (nm) { try { nm.focus(); } catch (e) {} }
     }
@@ -951,7 +954,7 @@
     /* cards that have just arrived (a tick, or the page): open, the newest takes Now; closed, a rule or warn pops the strip and the rest are pips */
     function arrived(fresh) {
       if (!fresh.length) return;
-      if (st.open) setNow(fresh[fresh.length - 1].id);
+      if (st.open) setNow(fresh[fresh.length - 1].id, fresh.slice(0, -1));
       else {
         var strip = fresh.filter(function (c) { return STRIP_KINDS.indexOf(cardKind2(c)) >= 0; });
         if (strip.length) showBanner(strip[strip.length - 1]);
