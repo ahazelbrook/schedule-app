@@ -318,6 +318,31 @@ try {
     await c.close();
   }
 
+  // ============ R5a (P4): with Tools open, the Now card's action row must not run into the Ask box ============
+  for (const [w, h] of [[1440, 900], [1440, 720], [1440, 600]]) {
+    const TALL = [{ seat: 'ref', kind: 'rule', at: iso(1000), text: 'Invented tall slip.', headline: 'A tall Now card with a long headline that wraps onto more than one line of the panel',
+      bullets: ['First invented bullet that is long enough to wrap onto a second line in the panel', 'Second invented bullet', 'Third invented bullet', 'Fourth invented bullet'], cite: 'p.14', check: 'cost',
+      say: 'An invented line to say aloud, long enough that it wraps across two or three lines of the narrow panel.', secret: 'An invented GM-only note.' }];
+    const { c, page: p } = await open(w, h, { first: TALL });
+    await openPanel(p);
+    await p.waitForSelector('#as-now .as-acts', { timeout: 4000 });
+    await p.click('#as-tools > summary');
+    const m = await p.evaluate(() => {
+      const r = (s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { t: b.top, b: b.bottom, l: b.left, r: b.right, h: b.height }; };
+      const now = document.querySelector('#as-nowz');
+      now.scrollTop = now.scrollHeight;                                        // the Now zone scrolls when its card is tall: look at the row from the end of it
+      return { acts: r('#as-now .as-acts'), nowz: r('#as-nowz'), ask: r('#as-ask'), feed: r('#as-feed'), chips: r('#as-chips'), tools: r('#as-tools'), panel: r('#as-panel'),
+        nowScroll: now.scrollHeight - now.clientHeight, open: document.querySelector('#as-tools').open };
+    });
+    check(m.open && !!m.acts && !!m.ask && !!m.feed, w + 'x' + h + ': the Now card has its action row, Tools is open, the Ask box and the feed are there');
+    check(m.acts.t >= m.nowz.t - 0.5 && m.acts.b <= m.nowz.b + 0.5, w + 'x' + h + ': scrolled to its end the Now zone shows the whole action row (' + Math.round(m.acts.t) + '-' + Math.round(m.acts.b) + ' in ' + Math.round(m.nowz.t) + '-' + Math.round(m.nowz.b) + ', scrolls ' + m.nowScroll + ' px)');
+    check(m.nowz.b <= m.ask.t + 0.5 && m.ask.b <= m.feed.t + 0.5 && m.feed.b <= m.tools.t + 0.5, w + 'x' + h + ': the zones stack without overlap: Now ' + Math.round(m.nowz.b) + ', Ask ' + Math.round(m.ask.t) + '-' + Math.round(m.ask.b) + ', feed ' + Math.round(m.feed.t) + '-' + Math.round(m.feed.b) + ', Tools from ' + Math.round(m.tools.t));
+    if (h >= 720) check(m.feed.h >= m.chips.h - 0.5, w + 'x' + h + ': the feed keeps room for its filter chips (' + Math.round(m.feed.h) + ' px, chips ' + Math.round(m.chips.h) + ')');   // a 600 px panel is too short for all four zones: it only has to stay inside itself
+    check(m.tools.b <= m.panel.b + 0.5, w + 'x' + h + ': Tools ends inside the panel (' + Math.round(m.tools.b) + ' of ' + Math.round(m.panel.b) + ')');
+    await p.screenshot({ path: path.join(SHOT_DIR, 'r5a-p4-tools-open-' + w + 'x' + h + '.png') });
+    await c.close();
+  }
+
   check(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
   await browser.close();
 } catch (e) {
