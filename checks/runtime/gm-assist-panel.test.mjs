@@ -732,7 +732,7 @@ await test('Ask Blade: the field is the first thing in the body, a 600-character
   const r = askRig(); const h = r.br.host.innerHTML;
   assert.ok(h.indexOf('id="as-ask"') > h.indexOf('class="as-body"') && h.indexOf('id="as-ask"') < h.indexOf('id="as-list"') && h.indexOf('id="as-ask"') < h.indexOf('id="as-fit"'), 'above the cards and the Fixer');
   assert.match(h, /<form class="as-ask" id="as-ask" data-as-form="ask"/);
-  assert.match(h, /<textarea id="as-ask-q" maxlength="600" rows="2" placeholder="Ask Blade: pitch three complications, write an epilogue for tonight…"/);
+  assert.match(h, /<textarea id="as-ask-q" maxlength="600" rows="2" placeholder="Ask Blade: a ruling, three ideas, a read-aloud…"/);
   assert.match(h, /<button type="submit" class="as-go" id="as-ask-go">Ask<\/button>/);
   assert.equal(GP.keyAction({ key: 'a', typing: true }), null, 'typing in the field does not open or close the box');
   assert.deepEqual(GP.keyAction({ key: 'Escape', typing: true }), { type: 'esc' }, 'Escape in a field only blurs it (the page), the box stays');

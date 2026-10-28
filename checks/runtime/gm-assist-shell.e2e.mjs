@@ -179,11 +179,6 @@ try {
     check(await p.evaluate(() => document.activeElement.getAttribute('aria-expanded')) === 'false', tag + 'Enter folds it again');
     await p.keyboard.press('u');
     check(await p.$eval('.gm-assist', (h) => h.getAttribute('data-state')) === 'open', tag + 'U (undo) is wired and, with nothing to undo, does nothing');
-    // chips
-    check((await p.$$eval('#as-chips .as-chip', (l) => l.map((x) => x.textContent.trim().replace(/\s+/g, ' ')).join('|'))) === 'All 4|Rule 2|Say 0|Idea 1|Done 0|Note 1', tag + 'filter chips carry counts');
-    await p.click('#as-chips [data-k="rule"]');
-    check(await p.$$eval('#as-list .as-card', (l) => l.length) === 2 && await p.$eval('#as-chips [data-k="rule"]', (b) => b.getAttribute('aria-pressed')) === 'true', tag + 'the Rule chip shows only rule cards');
-    await p.click('#as-chips [data-k="all"]');
     // Ask: moved, same behaviour
     await p.click('#as-ask-q');
     const ta = await rectOf(p, '#as-ask-q');
@@ -194,11 +189,22 @@ try {
     await p.keyboard.press('Enter');
     check(await until(async () => seen.ask.length === 1, 6000) && /^ask about the lock and the dock$/.test(seen.ask[0].q), tag + 'Enter asks (the question went as one line)');
     check(await p.waitForFunction(() => /Invented answer/.test(document.querySelector('#as-asks').textContent) && document.querySelector('#as-ask-q').value === '', null, { timeout: 6000 }).then(() => true, () => false), tag + 'the answer lands in the feed and the field clears');
+    // a re-render (the Ask answer came back) must not pull the focus off the field to a card that was folded earlier
+    check(await p.evaluate(() => document.activeElement && document.activeElement.id) === 'as-ask-q', tag + 'a re-render leaves the focus in the Ask field (it does not go back to a card)');
+    // chips
+    check((await p.$$eval('#as-chips .as-chip', (l) => l.map((x) => x.textContent.trim().replace(/\s+/g, ' ')).join('|'))) === 'All 4|Rule 2|Say 0|Idea 1|Done 0|Note 1', tag + 'filter chips carry counts');
+    await p.click('#as-chips [data-k="rule"]');
+    const rc = await p.evaluate(() => ({ n: document.querySelectorAll('#as-list .as-card').length, pr: document.querySelector('#as-chips [data-k="rule"]').getAttribute('aria-pressed'), kinds: [...document.querySelectorAll('#as-list .as-card')].map((x) => x.dataset.kind).join() })); check(rc.n === 2 && rc.pr === 'true', tag + 'the Rule chip shows only rule cards, even with the Ask field focused when it was pressed ' + JSON.stringify(rc));
+    await p.click('#as-chips [data-k="all"]');
     // Esc: first blurs the field, second closes
+    await p.click('#as-ask-q');
     await p.keyboard.press('Escape');
     check(await p.$eval('.gm-assist', (h) => h.getAttribute('data-state')) === 'open', tag + 'Esc while typing only leaves the field');
     await p.keyboard.press('Escape'); await settle(p);
     check(await p.$eval('.gm-assist', (h) => h.getAttribute('data-state')) === 'closed' && await p.$eval('#as-panel', (el) => getComputedStyle(el).visibility) === 'hidden', tag + 'Esc closes the panel');
+    await p.keyboard.press('a'); await settle(p);
+    await p.click('#as-panel [data-as="close"]'); await settle(p);
+    check(await p.$eval('.gm-assist', (h) => h.getAttribute('data-state')) === 'closed', tag + 'the close button closes it');
     // capture armed (P): the capture bar grows; the tab and the panel still clear it
     await p.keyboard.press('p'); await p.waitForTimeout(200);
     e = await edges(p); tab = await rectOf(p, '#as-launch');

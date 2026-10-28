@@ -786,7 +786,7 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 /* ---------- Blade, the side panel (app/gm/assist-panel.js; design: "Phase 1B, the Blade side panel", 3.2-3.4) ----------
    A 44 px tab on the right edge between the top bar and the capture bar (the portrait, the unread count, up to five pips), and a
    panel that slides in over the page. At >= 1600 px Pin docks it as a fourth .gm-main column (body.as-dock). The host is a child of
-   <body> made by the GM page only; it is fixed, takes no clicks itself, and sits above the columns and below the top bar's Menu
+   the site's .wrap (so the top bar's Menu and Find, in the same stacking context, stay above it) made by the GM page only; it is fixed, takes no clicks itself, and sits above the columns and below the top bar's Menu
    and Find. The top and bottom edges are --as-top / --as-bot, measured by the script (the bar's bottom, the capture bar's height).
    Type floor: 14 px for anything read, 12 px for meta, --font-cond for labels. Not drawn under 600 px. */
 
@@ -904,7 +904,8 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 .gm-assist .as-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .gm-assist .as-ask { flex: 0 0 auto; display: grid; gap: 4px; padding: 8px 12px; border-bottom: 1.5px solid var(--hair); }
 .gm-assist .as-ask-row { display: flex; gap: 8px; align-items: flex-start; }
-.gm-assist .as-ask textarea { display: block; flex: 1 1 auto; width: 100%; box-sizing: border-box; height: 44px; min-height: 44px; max-height: 140px; resize: none; font: 400 14px/1.4 var(--font-text); padding: 10px 10px; border: 2px solid var(--rule); background: var(--paper); color: var(--ink); border-radius: 0; }
+.gm-assist .as-ask-in { position: relative; flex: 1 1 auto; min-width: 0; height: 44px; }   /* the field grows over what is under it, so nothing moves while the pointer is down */
+.gm-assist .as-ask textarea { position: absolute; left: 0; top: 0; z-index: 2; display: block; width: 100%; box-sizing: border-box; height: 44px; min-height: 44px; max-height: 140px; resize: none; font: 400 14px/1.4 var(--font-text); padding: 10px 10px; border: 2px solid var(--rule); background: var(--paper); color: var(--ink); border-radius: 0; }
 .gm-assist .as-ask textarea:focus { height: 86px; }
 .gm-assist .as-go { min-height: 44px; padding: 0 14px; border: 2px solid var(--rule); background: var(--accent); color: var(--on-accent); font: 900 14px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }
 .gm-assist .as-go:disabled { opacity: .6; cursor: progress; }

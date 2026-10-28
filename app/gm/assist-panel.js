@@ -332,7 +332,7 @@
     var gm = o.gm, doc = o.doc || (W && W.document), win = o.win || W;
     var st = { open: false, cards: [], updates: [], asks: [], after: null, spend: null, paused: '', error: '', setup: false, listening: null, checkedAt: '', busy: false,
       fit: { busy: false, error: '', card: null }, screen: { busy: {}, error: '' }, ask: { busy: false, error: '' },
-      pinned: false, filter: 'all', unfolded: {}, nowId: '', focusId: '', since: '', chipSig: '' };
+      pinned: false, filter: 'all', unfolded: {}, nowId: '', since: '', chipSig: '' };
     var host = null, timer = null, bannerT = null, nowT = null, gone = false, bannerCard = null;
     var avatar = o.avatar || 'gm/blade.svg';
     var bannerMs = o.bannerMs || BANNER_MS;
@@ -411,7 +411,7 @@
           '<section class="as-now" id="as-nowz" aria-label="Now"><p class="as-zlab">Now</p><div id="as-now" aria-live="polite"></div></section>' +
           '<div class="as-body">' +
             '<form class="as-ask" id="as-ask" data-as-form="ask" aria-label="Ask Blade"><p class="as-lab as-sr">Ask Blade: for your eyes only</p>' +
-              '<div class="as-ask-row"><textarea id="as-ask-q" maxlength="' + ASK_MAX + '" rows="2" placeholder="Ask Blade: pitch three complications, write an epilogue for tonight…" autocomplete="off" aria-label="Ask Blade"></textarea>' +
+              '<div class="as-ask-row"><div class="as-ask-in"><textarea id="as-ask-q" maxlength="' + ASK_MAX + '" rows="2" placeholder="Ask Blade: a ruling, three ideas, a read-aloud…" autocomplete="off" aria-label="Ask Blade"></textarea></div>' +
               '<button type="submit" class="as-go" id="as-ask-go">Ask</button></div>' +
               '<div class="as-prog" id="as-prog" hidden></div>' +
               '<p class="as-status" id="as-ask-status" role="status" aria-live="polite"></p></form>' +
@@ -524,7 +524,7 @@
     function refocus(id) {
       if (!id) return;
       var b = foldBtns().filter(function (x) { return x.getAttribute('data-id') === id; })[0];
-      if (b) { try { b.focus(); } catch (e) {} }
+      if (b) { try { b.focus({ preventScroll: true }); } catch (e) {} }
     }
     function renderChips() {
       var el = q('#as-chips'); if (!el) return;
@@ -537,7 +537,7 @@
     }
     function renderList() {
       var el = q('#as-list'); if (!el) return;
-      var fid = foldedFocusId() || st.focusId;
+      var fid = foldedFocusId();                  /* focus goes back only if it was on a card line when the list was rewritten: a tick never takes it from a field */
       var items = feedOf(st.cards, st.filter), h = '';
       if (!st.cards.length) h = o.mock ? MOCKS.map(function (m) { return cardHtml(Object.assign({ at: '' }, m, { mock: true }), false); }).join('') : '<li class="as-empty">Nothing yet. Blade speaks up only when there is something worth the table’s time.</li>';
       else if (!items.length) h = '<li class="as-empty">No ' + esc(KIND[st.filter] ? KIND[st.filter].word.toLowerCase() : '') + ' cards tonight.</li>';
@@ -550,7 +550,7 @@
         });
       }
       el.innerHTML = h;
-      if (fid && st.open) refocus(fid);
+      if (fid) refocus(fid);
     }
     function renderUpdates() {
       var el = q('#as-updates'), tn = q('#as-tools-n'); if (!el) return;
@@ -751,7 +751,7 @@
     function close() {
       if (!st.open) return;
       var had = host && doc && host.contains(doc.activeElement);
-      st.open = false; setNow(''); st.focusId = ''; render(); relayout();
+      st.open = false; setNow(''); render(); relayout();
       if (had) { var lb = q('#as-launch'); if (lb) { try { lb.focus(); } catch (e) {} } }
     }
     function togglePin() {
@@ -879,9 +879,9 @@
       else if (a === 'close') close();
       else if (a === 'banner') open();
       else if (a === 'pin') togglePin();
-      else if (a === 'fold') { st.unfolded[id] = !st.unfolded[id]; st.focusId = id; renderList(); }
-      else if (a === 'chip') { st.filter = FILTERS.indexOf(b.getAttribute('data-k')) >= 0 ? b.getAttribute('data-k') : 'all'; st.focusId = ''; render(); var cb = q('.as-chip[data-k="' + st.filter + '"]'); if (cb && cb.focus) { try { cb.focus(); } catch (e) {} } }
-      else if (a === 'ack') { var k = st.cards.filter(function (x) { return x.id === id; })[0]; if (k) mark('dismiss', [k]); remove(st.cards, id); delete st.unfolded[id]; if (st.nowId === id) setNow(''); if (st.focusId === id) st.focusId = ''; render(); }
+      else if (a === 'fold') { st.unfolded[id] = !st.unfolded[id]; renderList(); refocus(id); }
+      else if (a === 'chip') { st.filter = FILTERS.indexOf(b.getAttribute('data-k')) >= 0 ? b.getAttribute('data-k') : 'all'; render(); var cb = q('.as-chip[data-k="' + st.filter + '"]'); if (cb && cb.focus) { try { cb.focus(); } catch (e) {} } }
+      else if (a === 'ack') { var k = st.cards.filter(function (x) { return x.id === id; })[0]; if (k) mark('dismiss', [k]); remove(st.cards, id); delete st.unfolded[id]; if (st.nowId === id) setNow(''); render(); }
       else if (a === 'keep') { var kc = st.cards.filter(function (x) { return x.id === id; })[0]; if (kc && !kc.kept && typeof o.onNote === 'function' && o.onNote(momentText(kc))) { kc.kept = true; mark('keep', [kc]); render(); } }
       else if (a === 'done') { var d = st.updates.filter(function (x) { return x.id === id; })[0]; if (d) mark('dismiss', [d]); remove(st.updates, id); render(); }
       else if (a === 'note') { var u = st.updates.filter(function (x) { return x.id === id; })[0]; if (u && typeof o.onNote === 'function' && o.onNote(u.text)) { mark('dismiss', [u]); remove(st.updates, id); render(); } }
@@ -916,7 +916,6 @@
     function moveFocus(d) {
       var b = foldBtns(); if (!b.length) return;
       var i = b.indexOf(doc && doc.activeElement), ni = i < 0 ? (d > 0 ? 0 : b.length - 1) : Math.max(0, Math.min(b.length - 1, i + d));
-      st.focusId = b[ni].getAttribute('data-id');
       try { b[ni].focus(); } catch (e) {}
       try { if (b[ni].scrollIntoView) b[ni].scrollIntoView({ block: 'nearest' }); } catch (e) {}
     }

@@ -1511,7 +1511,7 @@
     loadStt();
   }
   /* the top bar: what the iPad shows, read once (GET /api/gm/display only: the heat sync waits for the iPad tab, as before) */
-  /* Claude at the table (app/gm/assist-panel.js): the Blade side panel (a tab on the right edge). It lives in <body> beside this page, made here and
+  /* Claude at the table (app/gm/assist-panel.js): the Blade side panel (a tab on the right edge). It lives in the site's .wrap beside this page, made here and
      destroyed in close(), so only the GM's ready page has it. Its Ledger updates have no state of their own to change: "Note it" files
      the text in the capture bar as a Moment, nothing else is written. A phone gets no box (the CSS hides it, and it does not poll). */
   function mountAssist() {
