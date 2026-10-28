@@ -119,7 +119,7 @@ try {
   d = await dots(p);
   check(d.voice === 'stuck' && d.ref === 'ok' && d.tripwire === 'ok', 'two in-flight skips in a row: Voice amber, the others unchanged: ' + JSON.stringify(d));
   const sStuck = await shape('voice');
-  check(sStuck.tf !== 'none' && sStuck.radius === '0px' && sOk.radius !== '0px', 'amber is a diamond, green a round disc');
+  check(sStuck.tf !== 'none' && sStuck.radius === '0px' && sOk.radius !== '0px', 'amber is a tilted square, green a round disc');
   check(/Voice: stuck/.test(await p.$eval('.as-hd[data-seat="voice"]', (e) => e.textContent)) && /stuck/.test(await attr(p, '.as-hd[data-seat="voice"]', 'title')), 'and its text and tooltip say stuck');
   check(await p.$eval('#as-reaped', (e) => e.hidden), 'no reaped note yet');
 

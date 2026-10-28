@@ -885,7 +885,7 @@ did. It's hidden on phones.
 **The header's dots and meter.** Three dots, T R V, show the Tripwire, Ref and Voice. Each has its own shape, a letter and a
 spoken text, so colour is never the only signal: a **filled green disc** means the seat ran in the last 10 minutes; an **empty
 grey ring** means it is asleep (it was not woken, is on its cooldown or is held by the spend ladder, which is normal, not a
-fault); an **amber diamond** means it was skipped as still running on two ticks in a row, so a call is stuck. A dashed ring means
+fault); an **amber tilted square** means it was skipped as still running on two ticks in a row, so a call is stuck. A dashed ring means
 no tick has answered yet. There is no reset button: the stuck call's lease lapses by itself and the next tick frees the seat. When
 that happens one quiet line appears under the header (*Blade freed a stuck seat (Ref). It is working again.*) until the next tick.
 The five-cell meter beside the spend fills in fifths of tonight's cap and turns mustard from 60% and red from 85% (its spoken

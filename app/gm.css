@@ -870,7 +870,7 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 .gm-assist .as-meter i.on { background: var(--ok); border-color: var(--ok); }
 .gm-assist .as-meter[data-tone="mid"] i.on { background: var(--mustard); border-color: var(--rule); }
 .gm-assist .as-meter[data-tone="warn"] i.on { background: var(--alarm); border-color: var(--alarm); }
-/* seat health: a shape as well as a colour. ok = filled disc; asleep = empty ring; stuck = filled diamond with a dark edge; unknown = dashed ring */
+/* seat health: a shape as well as a colour. ok = filled disc; asleep = empty ring; stuck = filled tilted square with a dark edge; unknown = dashed ring */
 .gm-assist .as-health { display: inline-flex; gap: 8px; margin-left: auto; }
 .gm-assist .as-hd { display: inline-flex; align-items: center; gap: 3px; cursor: help; position: relative; }
 .gm-assist .as-hd b { font: 700 12px/1 var(--font-mono); color: var(--ink-soft); }
