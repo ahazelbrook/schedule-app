@@ -83,8 +83,13 @@ await test('pick: --assist-prep or "prep" in the config wins and is not a pick; 
   const v = mkvault();
   assert.equal(resolvePrep({ vault: v, today: TODAY }), null);
   sess(v, 'Group', 'g1', 'date: 01/11/2026\ngm_prep: true');
-  assert.deepEqual(resolvePrep({ vault: v, assistPrep: 'X/named.md', today: TODAY }), { rel: 'X/named.md', how: 'named', date: '', skipped: [] });
+  assert.deepEqual(resolvePrep({ vault: v, assistPrep: 'X/named.md', today: TODAY }), { rel: 'X/named.md', how: 'cli', date: '', skipped: [] });
   assert.equal(resolvePrep({ vault: v, config: { prep: 'X/cfg.md' }, today: TODAY }).rel, 'X/cfg.md');
+  assert.equal(resolvePrep({ vault: v, config: { prep: 'X/cfg.md' }, today: TODAY }).how, 'config');
+  // a config prep that is a known prep note carries its date, so the push guard can check it
+  const known = resolvePrep({ vault: v, config: { prep: rel('Group', 'g1') }, today: TODAY });
+  assert.deepEqual([known.how, known.date], ['config', '01/11/2026']);
+  assert.equal(resolvePrep({ vault: v, assistPrep: rel('Group', 'g1'), config: { prep: 'X/cfg.md' }, today: TODAY }).how, 'cli', 'the command line beats the config');
 });
 
 // ---------- the build records what the guard reads ----------
@@ -175,6 +180,25 @@ await test('push: a part with prep and Must land entries goes through without th
   assert.equal(rep.refused.length, 0);
   assert.equal(s.client.uploads.length, 1);
   assert.ok(inD1(s.exec, 'assist'));
+});
+
+await test('push: a prep named in the config and dated before today is refused; from the command line it is allowed; today or later is allowed; --allow-no-prep overrides', async () => {
+  const today = dateKey('08/11/2026');
+  const base = { prep: 'a/b.md', mustLand: 3, prepDate: dateKey('07/11/2026') };
+  const s = await pushSetup({ ...base, prepBy: 'config' });
+  const rep = await s.go({ today });
+  assert.match(rep.refused[0].why, /named in assist-config\.json and is dated before today/);
+  assert.match(rep.refused[0].why, /remove the key to pick by date/); assert.match(rep.refused[0].why, /--assist-prep/); assert.match(rep.refused[0].why, /--allow-no-prep/);
+  assert.equal(s.client.uploads.length, 0); assert.equal(inD1(s.exec, 'assist'), undefined);
+  const cli = await pushSetup({ ...base, prepBy: 'cli' });
+  assert.equal((await cli.go({ today })).refused.length, 0, 'a prep passed on the command line is exempt');
+  const onTheDay = await pushSetup({ ...base, prepBy: 'config' });
+  assert.equal((await onTheDay.go({ today: dateKey('07/11/2026') })).refused.length, 0, 'dated today');
+  const future = await pushSetup({ ...base, prepBy: 'config', prepDate: dateKey('09/11/2026') });
+  assert.equal((await future.go({ today })).refused.length, 0, 'dated later');
+  const over = await pushSetup({ ...base, prepBy: 'config' });
+  assert.equal((await over.go({ today, allowNoPrep: true })).refused.length, 0);
+  assert.equal(prepProblem({ ...base, prepBy: 'config' }, today).includes('assist-config.json'), true);
 });
 
 await test('push: a prep picked BY DATE that is dated before today is refused; the same note named explicitly is allowed; --allow-no-prep overrides', async () => {

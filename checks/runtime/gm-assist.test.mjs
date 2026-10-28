@@ -101,6 +101,10 @@ await test('Ref repeat rule: a different check is never a repeat; neither is a m
   assert.equal(isRepeatRef(refJson({ check: '' }), [refRow({ check: '' })], now), false, 'no check on either side');
   assert.equal(isRepeatRef({ slip: true, said_at: '21:10' }, [refRow({ check: undefined })], now), false, 'no check at all');
   assert.equal(isRepeatRef(refJson({ said_at: '21:10', check: 'bogus' }), [refRow({ check: 'bogus' })], now), false, 'a check outside the list');
+  assert.equal(isRepeatRef(refJson({ said_at: '21:11', check: 'other' }), [refRow({ said_at: '21:10', check: 'other' })], now), false, "'other' is a catch-all: two different slips under it both survive");
+  assert.equal(isRepeatRef(refJson({ said_at: '', check: 'other' }), [refRow({ said_at: '', check: 'other' })], now), false, "'other' with no said-at either");
+  assert.ok(toCandidate('ref', refJson({ said_at: '21:11', check: 'other' }), { recent: [refRow({ said_at: '21:10', check: 'other' })], now }), "so the card shows");
+  assert.equal(toCandidate('ref', refJson({ said_at: '21:10', check: 'other', rule: 'First rule (p.1)' }), { recent: [{ at: T, keys: slipKeys({ slip: true, said_at: '21:10', rule: 'First rule (p.1)' }), ref: true, check: 'other', said_at: '21:10' }], now }), null, "while the key rule still catches the same slip");
   assert.equal(isRepeatRef(refJson({ said_at: '21:10' }), [{ at: T, check: 'order', said_at: '21:10' }], now), false, 'a row that is not a Ref card');
   assert.equal(isRepeatRef(refJson({ said_at: '21:10' }), [refRow()], T + 10 * 60_000), false, 'older than ten minutes');
 });

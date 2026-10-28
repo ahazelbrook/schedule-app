@@ -821,8 +821,8 @@ function main() {
   // no --assist-prep and no "prep" in the config: pick the gm_prep: true session note by date (lib/assist-prep.mjs), and say which
   const picked = resolvePrep({ vault, assistPrep: a.assistPrep, config: assistConfig, today: a.today ? dateKey(a.today) : undefined });
   const assistPrep = picked ? picked.rel : a.assistPrep;
-  if (picked && picked.how !== "named") console.log("assist prep: " + picked.rel + " (picked by date" + (picked.how === "past" ? "; every prep note is dated before today, so this is the newest" : "") + ")");
-  const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: assistPrep, prepBy: picked ? picked.how : "named", prepDate: picked ? dateKey(picked.date) : null, config: assistConfig, extra: a.assistExtra, playersFile: path.join(REPO, "gm-private", "players.json"), handouts: parts.handouts || null });
+  if (picked && (picked.how === "date" || picked.how === "past")) console.log("assist prep: " + picked.rel + " (picked by date" + (picked.how === "past" ? "; every prep note is dated before today, so this is the newest" : "") + ")");
+  const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: assistPrep, prepBy: picked ? picked.how : "cli", prepDate: picked ? dateKey(picked.date) : null, config: assistConfig, extra: a.assistExtra, playersFile: path.join(REPO, "gm-private", "players.json"), handouts: parts.handouts || null });
   const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart], ["handouts", buildHandoutsPart], ["assist", buildAssistPart]];
   let npcLeverage = 0;
   let locationExtraNames = [];

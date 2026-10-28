@@ -37,11 +37,11 @@ const clockGap = (a, b) => { const d = Math.abs(a - b) % 1440; return Math.min(d
  * The second repeat rule for Ref (the first is isRepeatSlip's keys): the same check twice in a row, said close together, is one
  * slip however the rule text is worded. recent: [{ at (ms), ref, check, said_at }] (shownCards). A Ref card shown in the last 10
  * minutes with the same, valid check is a repeat when both said-at times are within 3 minutes of each other; when either has no
- * said-at, when the checks match and that card was shown less than 4 minutes ago. No check never matches.
+ * said-at, when the checks match and that card was shown less than 4 minutes ago. No check, and the catch-all 'other', never match.
  */
 export function isRepeatRef(json, recent = [], now = 0) {
   const check = json && REF_CHECKS.includes(json.check) ? json.check : '';
-  if (!check) return false;
+  if (!check || check === 'other') return false;   // 'other' is the catch-all: two different slips under it must both survive (the key rule still applies)
   const mine = sayMinutes(json.said_at);
   return recent.some((r) => {
     if (!r || !r.ref || r.check !== check || !Number.isFinite(r.at) || now - r.at >= REPEAT_WINDOW_MS) return false;

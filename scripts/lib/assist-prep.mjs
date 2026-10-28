@@ -1,7 +1,7 @@
 // Which prep note the assist part carries, and whether a built assist part is fit to push (design 2.5).
 //
 //   resolvePrep({ vault, assistPrep, config, today }) -> { rel, how, date, skipped } | null
-//     how: 'named' (--assist-prep or "prep" in assist-config.json), 'date' (the gm_prep: true session note with the soonest
+//     how: 'cli' (--assist-prep), 'config' ("prep" in assist-config.json; packs built earlier say 'named', read as 'cli'), 'date' (the gm_prep: true session note with the soonest
 //     date on or after today), or 'past' (every dated one is behind us: the newest). Null when there is nothing to pick.
 //   prepProblem(src) -> '' when the assist part has prep with Must land entries, else why it must not be pushed.
 //
@@ -60,7 +60,11 @@ export function prepCandidates(vault) {
 
 export function resolvePrep({ vault, assistPrep = '', config = {}, today = todayKey() } = {}) {
   const named = assistPrep || (config && config.prep) || '';
-  if (named) return { rel: named, how: 'named', date: '', skipped: [] };
+  if (named) {
+    // a named note's date, when the vault knows it as a prep note: a prep from the config (not the command line) is checked against it at push time
+    const known = prepCandidates(vault).find((c) => c.rel === named);
+    return { rel: named, how: assistPrep ? 'cli' : 'config', date: known ? known.date : '', skipped: [] };
+  }
   const all = prepCandidates(vault);
   const dated = all.filter((c) => c.key !== null), skipped = all.filter((c) => c.key === null).map((c) => c.rel);
   if (!dated.length) return null;
@@ -84,10 +88,11 @@ export function prepProblem(src, today = todayKey()) {
   if (!Number.isInteger(s.mustLand) || s.mustLand < 1) {
     return 'the prep note ' + path.basename(s.prep) + ' has no unlanded "Must land" entries' + (s.mustLandLanded ? ' (' + s.mustLandLanded + ' already ticked)' : '') + ', so the never-reveal list holds none of tonight\'s clues. ' + fix;
   }
-  // picked by date and now dated before today: a played night's note, not tonight's. A prep named on purpose is never refused on date.
-  if (s.prepBy && s.prepBy !== 'named' && Number.isInteger(s.prepDate) && s.prepDate < today) {
-    return 'the prep note ' + path.basename(s.prep) + ' was picked by date and is dated before today, so it is not tonight\'s note. ' +
-      'Prep the next night\'s note (gm_prep: true, a date on or after today), or name this one on purpose with --assist-prep <vault path>; run npm run gm:pack, then push again. To push anyway: --allow-no-prep.';
+  // dated before today: a played night's note, not tonight's. Only a prep passed on the command line (--assist-prep: 'cli', or 'named' in packs built earlier) is exempt.
+  if (s.prepBy && s.prepBy !== 'cli' && s.prepBy !== 'named' && Number.isInteger(s.prepDate) && s.prepDate < today) {
+    const how = s.prepBy === 'config' ? 'named in assist-config.json' : 'picked by date';
+    return 'the prep note ' + path.basename(s.prep) + ' was ' + how + ' and is dated before today, so it is not tonight\'s note. ' +
+      'Point "prep" in gm-private/assist-config.json at the next session note, remove the key to pick by date, or pass --assist-prep <vault path> on purpose; run npm run gm:pack, then push again. To push anyway: --allow-no-prep.';
   }
   return '';
 }
