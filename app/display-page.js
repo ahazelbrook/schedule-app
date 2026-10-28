@@ -666,6 +666,81 @@
   /* a score scene's id (board, exploded) -> true: the scenes that wait for a score */
   Pure.isScoreScene = function (id) { var sc = Pure.ambientScene(id); return !!(sc && sc.needs === 'score'); };
 
+  /* ---------- overlays (GM.md, "Overlays"): something laid over whatever is up, without replacing it ----------
+     The ambient document's `overlay` ({ id, kind clock|npc|fx|text, ms, ... }) and `auto` (the AUTO chip). They are not part of the
+     ambient plan: the page reads them from the document itself. The checks mirror the server's cleanOverlay (functions/_lib/gm.js),
+     but an overlay that does not pass is simply not shown (nothing is clamped or repaired). It never carries model text or prep text. */
+  Pure.OVERLAY = { id: 40, name: 60, text: 120, msMin: 1000, msMax: 180000, kinds: ['clock', 'npc', 'fx', 'text'], sizes: [4, 6, 8, 10, 12], fx: ['dawn'], npcId: /^[A-Za-z0-9_-]{1,80}$/ };
+  function wholeIn(v, lo, hi) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= lo && v <= hi; }
+  function oneLine(v) { return typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : ''; }
+  /* cleanOverlay(raw) -> the overlay with only its own fields, or null (absent, malformed, or out of bounds) */
+  Pure.cleanOverlay = function (v) {
+    var O = Pure.OVERLAY;
+    if (!isObj(v)) return null;
+    var id = typeof v.id === 'string' ? v.id.trim() : '';
+    if (!id || id.length > O.id || O.kinds.indexOf(v.kind) < 0 || !wholeIn(v.ms, O.msMin, O.msMax)) return null;
+    var out = { id: id, kind: v.kind, ms: v.ms };
+    if (v.kind === 'clock') {
+      var name = oneLine(v.name);
+      if (!name || name.length > O.name || O.sizes.indexOf(v.size) < 0 || !wholeIn(v.filled, 0, v.size)) return null;
+      out.name = name; out.size = v.size; out.filled = v.filled;
+    } else if (v.kind === 'npc') {
+      if (typeof v.npcId !== 'string' || !O.npcId.test(v.npcId)) return null;
+      out.npcId = v.npcId;
+    } else if (v.kind === 'fx') {
+      if (O.fx.indexOf(v.fx) < 0) return null;
+      out.fx = v.fx;
+    } else {
+      var t = oneLine(v.text);
+      if (!t || t.length > O.text) return null;
+      out.text = t;
+    }
+    return out;
+  };
+  /* overlayStep(seenId, raw) -> { seen, action: 'show' | 'keep' | 'hide', overlay }. Each id shows once: the same id again keeps what is
+     there (or nothing, once it has run out); a new id shows; null (or junk) hides and forgets the id, so the GM can show it afresh. */
+  Pure.overlayStep = function (seenId, raw) {
+    var o = Pure.cleanOverlay(raw);
+    if (!o) return { seen: '', action: seenId ? 'hide' : 'keep', overlay: null };
+    if (o.id === seenId) return { seen: seenId, action: 'keep', overlay: o };
+    return { seen: o.id, action: 'show', overlay: o };
+  };
+  /* the clock face: one wedge per segment from 12 o'clock, clockwise, in a 100 x 100 box; the first `filled` are on */
+  Pure.clockWedges = function (size, filled) {
+    var out = [], r = 46, cx = 50, cy = 50;
+    function pt(deg) { var a = (deg - 90) * Math.PI / 180; return (Math.round((cx + r * Math.cos(a)) * 100) / 100) + ' ' + (Math.round((cy + r * Math.sin(a)) * 100) / 100); }
+    for (var i = 0; i < size; i++) {
+      var a0 = 360 * i / size, a1 = 360 * (i + 1) / size;
+      out.push({ i: i, on: i < filled, d: 'M' + cx + ' ' + cy + 'L' + pt(a0) + 'A' + r + ' ' + r + ' 0 0 1 ' + pt(a1) + 'Z' });
+    }
+    return out;
+  };
+  /* the dawn's three phases in ms, summing to the overlay's ms: a 2 s warm-to-white ramp, a white hold, a 2 s fade (a quarter of a very
+     short run each). Under reduced motion it is white at once and straight back: no ramp, no fade. */
+  Pure.dawnPhases = function (ms, reduce) {
+    if (reduce) return { ramp: 0, hold: ms, fade: 0 };
+    var edge = Math.min(2000, Math.floor(ms / 4));
+    return { ramp: edge, hold: ms - 2 * edge, fade: edge };
+  };
+  /* overlayCard(overlay, npcDoc) -> what a card draws, or null when there is nothing to draw (an npc the page may not read draws
+     nothing at all). An npc card takes the same player-safe fields as the npc spotlight (Pure.playerNpc): name, alias, role and faction
+     and the figure's spec; never the description, gmNotes or anything else. And only for an NPC whose doc says `revealed: true`. */
+  Pure.overlayCard = function (o, npcDoc) {
+    if (!o) return null;
+    if (o.kind === 'clock') return { kind: 'clock', name: o.name, size: o.size, filled: o.filled, count: o.filled + ' / ' + o.size, wedges: Pure.clockWedges(o.size, o.filled) };
+    if (o.kind === 'text') return { kind: 'text', text: o.text, size: Pure.textSize(o.text) };
+    if (o.kind === 'fx') return { kind: 'fx', fx: o.fx };
+    if (o.kind === 'npc') {
+      /* defence in depth: the server checked `revealed` when the overlay was stored, but the cast may have changed since, and a GM sign-in
+         reads hidden rows in full. A hidden (or unmarked) NPC draws nothing. */
+      if (!npcDoc || npcDoc.revealed !== true) return null;
+      var n = Pure.playerNpc(npcDoc);
+      if (!n || !n.name) return null;
+      return { kind: 'npc', name: n.name, alias: n.alias, sub: [n.role, n.faction].filter(Boolean).join(' · '), spec: n.spec };
+    }
+    return null;
+  };
+
   /* =====================================================================================================================
      Browser part
      ===================================================================================================================== */
@@ -1190,7 +1265,10 @@
     /* No way back to the GM page from here, hidden or not: the iPad lies in front of the players, signed in as the GM.
        The GM leaves the display from the GM's own device (or closes the Home Screen app). */
     var layer = el('div', 'dp-ambient'); layer.setAttribute('aria-hidden', 'true');           /* the ambient floor, under the stages */
-    container.appendChild(layer); container.appendChild(stages); container.appendChild(status); container.appendChild(chrome); container.appendChild(hint);
+    /* the overlay layer sits over the stages (a spotlight included) and under the status and the buttons; the AUTO chip is its corner mark */
+    var ovLayer = el('div', 'dp-overlay'); ovLayer.setAttribute('aria-hidden', 'true');
+    var autoChip = el('div', 'dp-auto', 'AUTO'); autoChip.hidden = true; autoChip.setAttribute('aria-hidden', 'true');
+    container.appendChild(layer); container.appendChild(stages); container.appendChild(ovLayer); container.appendChild(autoChip); container.appendChild(status); container.appendChild(chrome); container.appendChild(hint);
 
     function later(fn, ms) { var id = setTimeout(function () { var i = s.timers.indexOf(id); if (i >= 0) s.timers.splice(i, 1); if (!s.dead) fn(); }, ms); s.timers.push(id); return id; }
     function clearLater(id) { clearTimeout(id); var i = s.timers.indexOf(id); if (i >= 0) s.timers.splice(i, 1); }
@@ -1223,6 +1301,82 @@
     }
     s.offs.push(on(document, 'visibilitychange', wireSync));
 
+    /* The overlay (Pure.OVERLAY, GM.md "Overlays"): a clock, an NPC, a line of text or the dawn laid over whatever is up. Each id shows
+       once, for its ms from the moment this page first sees it; null or a new id takes it away. Cards take the right-hand 34% of the
+       frame and the dawn the whole of it. Everything is drawn from the validated fields as text or as an svg built node by node. */
+    s.ov = { seen: '', node: null, token: 0, timers: [] };
+    function ovTimer(fn, ms) { var id = later(fn, ms); s.ov.timers.push(id); return id; }
+    function ovRemove(now) {
+      var node = s.ov.node; s.ov.token++; s.ov.node = null;
+      s.ov.timers.forEach(clearLater); s.ov.timers = [];
+      if (!node) return;
+      if (now || reduced()) { if (node.parentNode) node.parentNode.removeChild(node); return; }
+      node.classList.remove('dp-ov-in'); node.classList.add('dp-ov-out');
+      later(function () { if (node.parentNode) node.parentNode.removeChild(node); }, 450);
+    }
+    function svgEl(tag, attrs) {
+      var e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+      return e;
+    }
+    function ovCardNode(card, o) {
+      var e = el('div', 'dp-ov-card dp-ov-' + card.kind); e.setAttribute('data-ov-id', o.id);
+      if (card.kind === 'clock') {
+        var svg = svgEl('svg', { viewBox: '0 0 100 100', class: 'dp-ov-face' });
+        card.wedges.forEach(function (w) { svg.appendChild(svgEl('path', { d: w.d, class: 'dp-ov-seg' + (w.on ? ' dp-ov-seg-on' : '') })); });
+        e.appendChild(svg);
+        e.appendChild(el('p', 'dp-ov-name', card.name));
+        e.appendChild(el('p', 'dp-ov-count', card.count));
+      } else if (card.kind === 'npc') {
+        var pr = drawPortrait(card.spec, 'dp-ov-npc-' + o.id.replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures);
+        if (pr) { var holder = el('div', 'dp-ov-portrait'); holder.appendChild(document.importNode(pr.node, true)); e.appendChild(holder); }
+        if (card.sub) e.appendChild(el('p', 'dp-kicker', card.sub));
+        e.appendChild(el('p', 'dp-ov-name', card.name));
+        if (card.alias) e.appendChild(el('p', 'dp-ov-alias', '“' + card.alias + '”'));
+      } else {
+        e.className += ' dp-t-' + card.size;
+        e.appendChild(el('p', 'dp-ov-text', card.text));
+      }
+      return e;
+    }
+    function ovDawn(o) {
+      var ph = Pure.dawnPhases(o.ms, reduced());
+      var e = el('div', 'dp-ov-dawn'); e.setAttribute('data-ov-id', o.id);
+      e.style.setProperty('--dp-dawn-ramp', ph.ramp + 'ms'); e.style.setProperty('--dp-dawn-fade', ph.fade + 'ms');
+      e.appendChild(el('div', 'dp-ov-warm')); e.appendChild(el('div', 'dp-ov-glow'));
+      e.setAttribute('data-phase', ph.ramp ? 'pre' : 'hold');
+      ovLayer.appendChild(e); s.ov.node = e;
+      if (ph.ramp) {
+        ovTimer(function () { e.setAttribute('data-phase', 'ramp'); }, 30);
+        ovTimer(function () { e.setAttribute('data-phase', 'hold'); }, ph.ramp);
+        ovTimer(function () { e.setAttribute('data-phase', 'fade'); }, ph.ramp + ph.hold);
+      }
+      ovTimer(function () { ovRemove(true); }, o.ms);
+    }
+    function ovShow(o) {
+      ovRemove(true);
+      var my = s.ov.token;
+      if (o.kind === 'fx') { ovDawn(o); return; }
+      /* the clock runs out ms after FIRST SIGHT, however long an NPC takes to load */
+      ovTimer(function () { ovRemove(false); }, o.ms);
+      function put(card) {
+        if (!card || s.dead || my !== s.ov.token) return;
+        var node = ovCardNode(card, o);
+        ovLayer.appendChild(node); s.ov.node = node;
+        later(function () { node.classList.add('dp-ov-in'); }, reduced() ? 0 : 30);
+      }
+      if (o.kind === 'npc') loadNpc(ctx, o.npcId).then(function (doc) { put(Pure.overlayCard(o, doc)); });
+      else put(Pure.overlayCard(o, null));
+    }
+    function ovApply(doc) {
+      var d = isObj(doc) ? doc : {};
+      autoChip.hidden = d.auto !== true;
+      var step = Pure.overlayStep(s.ov.seen, d.overlay);
+      s.ov.seen = step.seen;
+      if (step.action === 'show') ovShow(step.overlay);
+      else if (step.action === 'hide') ovRemove(false);
+    }
+
     /* What the scenes are told. s.crew = the crew the plan last held (null: none yet); s.score = the ambient doc's score
        (normalised), the source of every b68:score. The watch feed learns the crew when it loads and again on each change; a score
        scene asks (b68:ready) and is answered, and is sent the new score when it changes. */
@@ -1252,6 +1406,7 @@
     /* the ambient doc arrived (or changed): re-plan, tell the watch feed a changed crew, hand a changed score to the live score scenes */
     function applyAmbient(doc) {
       var p = s.plan = Pure.ambientPlan(doc);
+      ovApply(doc);
       amb.setPlan(p);
       if (Pure.crewChanged(s.crew, p.crew)) Pure.ambientCrewScenes().forEach(function (id) { amb.post(id, Pure.crewMessage(p)); });
       s.crew = p.crew;

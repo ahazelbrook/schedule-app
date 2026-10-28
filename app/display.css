@@ -207,3 +207,44 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
 .dp-wire::before { content: "WIRE"; display: block; margin-bottom: .3em; font: 900 clamp(11px, 1.8vmin, 20px)/1 var(--font-cond, "Arial Narrow", sans-serif); letter-spacing: .24em; color: #e8c33c; }
 .dp-wire.dp-wire-on { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) { .dp-wire { transition: none; transform: none; } }
+
+/* ---- overlays: a card (clock, NPC, text) over the right-hand 34% of the frame, or the dawn over all of it (display-page.js; over the
+   stages, a spotlight included; under the status and the buttons). Cards leave the map's centre alone: the left edge is never left of 66%. ---- */
+.dp-overlay { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
+.dp-ov-card { position: absolute; top: 50%; right: max(1.5vmin, env(safe-area-inset-right)); width: calc(34% - 3vmin); max-height: 92%; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; gap: 1.2vmin; padding: 2.4vmin 2vmin; text-align: center;
+  background: rgba(12, 10, 8, .88); border: .5vmin solid #e8c33c; border-radius: 1.2vmin; color: var(--dp-ink, #f2ede1);
+  opacity: 0; transform: translateY(-50%) translateX(3vmin); transition: opacity .5s ease, transform .5s ease; }
+.dp-ov-card.dp-ov-in { opacity: 1; transform: translateY(-50%); }
+.dp-ov-card.dp-ov-out { opacity: 0; transform: translateY(-50%) translateX(3vmin); }
+.dp-ov-face { display: block; width: min(100%, 30vmin); height: auto; }
+.dp-ov-seg { fill: rgba(242, 237, 225, .08); stroke: #f2ede1; stroke-width: 1.6; stroke-linejoin: round; }
+.dp-ov-seg-on { fill: #e8c33c; }
+.dp-ov-name { margin: 0; font: 900 clamp(20px, 4vmin, 44px)/1.15 var(--font-poster, Impact, "Arial Narrow", sans-serif); text-transform: uppercase; letter-spacing: .04em; overflow-wrap: anywhere; }
+.dp-ov-count { margin: 0; font: 700 clamp(18px, 3.2vmin, 36px)/1 var(--font-mono, "Space Mono", monospace); color: #e8c33c; }
+.dp-ov-alias { margin: 0; color: var(--dp-soft, #b9b2a5); font: italic 400 clamp(16px, 2.8vmin, 30px)/1.25 var(--font-text, Georgia, serif); }
+.dp-ov-portrait { width: min(100%, 36vmin); aspect-ratio: 1; display: grid; place-items: center; }
+.dp-ov-portrait svg { display: block; max-width: 100%; max-height: 100%; }
+.dp-ov-text { margin: 0; font: 700 clamp(20px, 3.6vmin, 40px)/1.25 var(--font-text, Georgia, serif); overflow-wrap: anywhere; }
+.dp-ov-card.dp-t-xl .dp-ov-text { font-size: clamp(26px, 5vmin, 56px); }
+
+/* the dawn: warm to white over the ramp, a white hold with a faint lamp glow, a fade (data-phase: pre, ramp, hold, fade) */
+.dp-ov-dawn { position: absolute; inset: 0; background: #fff; opacity: 0; }
+.dp-ov-dawn[data-phase="ramp"] { opacity: 1; transition: opacity var(--dp-dawn-ramp, 2s) ease-in; }
+.dp-ov-dawn[data-phase="hold"] { opacity: 1; }
+.dp-ov-dawn[data-phase="fade"] { opacity: 0; transition: opacity var(--dp-dawn-fade, 2s) ease-out; }
+.dp-ov-warm { position: absolute; inset: 0; background: linear-gradient(180deg, #ff9d3f 0%, #ffd9a2 100%); opacity: 1; }
+.dp-ov-dawn[data-phase="ramp"] .dp-ov-warm { opacity: 0; transition: opacity var(--dp-dawn-ramp, 2s) ease-in; }
+.dp-ov-dawn[data-phase="hold"] .dp-ov-warm, .dp-ov-dawn[data-phase="fade"] .dp-ov-warm { opacity: 0; }
+.dp-ov-glow { position: absolute; inset: 0; background: radial-gradient(ellipse 60% 45% at 50% 8%, rgba(255, 214, 150, .55), rgba(255, 214, 150, 0) 70%); opacity: 0; }
+.dp-ov-dawn[data-phase="hold"] .dp-ov-glow { opacity: 1; transition: opacity 3s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .dp-ov-card, .dp-ov-card.dp-ov-in, .dp-ov-card.dp-ov-out { transition: none; transform: translateY(-50%); }
+  .dp-ov-dawn, .dp-ov-dawn *, .dp-ov-glow { transition: none !important; }
+}
+
+/* the AUTO chip: a small mark in the top-left corner while the autopilot is driving the iPad */
+.dp-auto { position: absolute; top: max(10px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); z-index: 3; padding: .5vmin 1.2vmin; border-radius: .8vmin; pointer-events: none;
+  background: rgba(12, 10, 8, .7); border: 1px solid rgba(232, 195, 60, .6); color: #e8c33c;
+  font: 900 clamp(11px, 1.7vmin, 18px)/1 var(--font-cond, "Arial Narrow", sans-serif); letter-spacing: .22em; }
+.dp-auto[hidden] { display: none; }

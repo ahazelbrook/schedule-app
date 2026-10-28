@@ -42,6 +42,7 @@ const CHECKS = [
   ['checks/runtime/gm-score.e2e.mjs', 'the Score panel (8859)'],
   ['checks/runtime/gm-chase.e2e.mjs', 'the Chase panel and the iPad drawing its strip (8861)'],
   ['checks/runtime/display-ambient.e2e.mjs', 'the ambient floor on the display (8871)'],
+  ['checks/runtime/display-overlay.e2e.mjs', 'overlays on the display: a clock, an NPC, a line, the dawn (8874)'],
 ];
 
 const want = process.argv.slice(2);

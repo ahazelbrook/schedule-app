@@ -41,6 +41,11 @@ export const CARD_LIMITS = { cards: 8, field: 120, interval: 120 };
 export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting', 'credits', 'board', 'exploded', 'testcard'];
 export const WIRE_MAX = 240, WIRE_ITEMS_MAX = 6;       // a bulletin's characters, bulletins at once (mirrors functions/_lib/assist/prompts.js)
 export const AMBIENT_MODES = ['auto', 'pin', 'off'];
+// the overlay (cleanOverlay): the kinds, the clock sizes, the effects, and the caps; mirrored by Pure.OVERLAY in app/display-page.js
+export const OVERLAY_KINDS = ['clock', 'npc', 'fx', 'text'];
+export const OVERLAY_CLOCK_SIZES = [4, 6, 8, 10, 12];
+export const OVERLAY_FX = ['dawn'];
+export const OVERLAY = { id: 40, name: 60, text: 120, msMin: 1000, msMax: 180000 };
 export const BANDS = ['public', 'working', 'controlled', 'secure'];
 
 /** 403 unless the caller is the GM. Call it first, before the method check and before the body is read. */
@@ -314,10 +319,44 @@ function sceneId(v, name) {
 }
 
 /**
+ * The overlay (GM.md, "Overlays"): something laid over the iPad without replacing what is up. Pure shape checks; the one check that
+ * needs the database (an npc overlay's NPC must be revealed) is assertOverlayNpc() in functions/_lib/npcs.js, run by the handler.
+ * null removes it. Otherwise { id (at most 40), kind clock|npc|fx|text, ms 1000-180000 } plus, per kind, clock { name (at most 60),
+ * size 4|6|8|10|12, filled 0..size }, npc { npcId }, fx { fx: 'dawn' }, text { text (at most 120) }. A fresh object is built, so any
+ * other key is dropped; `at` is the server's time. No model text or prep text belongs in one: the GM page sends only what the GM chose.
+ */
+export function cleanOverlay(v) {
+  if (v === null) return null;
+  if (!isPlainObject(v)) throw new HttpError(400, 'overlay must be an object or null');
+  const id = str(v.id, 'overlay.id', OVERLAY.id, true).trim();
+  if (typeof v.kind !== 'string' || !OVERLAY_KINDS.includes(v.kind)) throw new HttpError(400, 'overlay.kind must be one of ' + OVERLAY_KINDS.join(', '));
+  if (!isInt(v.ms, OVERLAY.msMin, OVERLAY.msMax)) throw new HttpError(400, 'overlay.ms must be a whole number from ' + OVERLAY.msMin + ' to ' + OVERLAY.msMax);
+  const out = { id, kind: v.kind, ms: v.ms };
+  if (v.kind === 'clock') {
+    if (!OVERLAY_CLOCK_SIZES.includes(v.size)) throw new HttpError(400, 'overlay.size must be one of ' + OVERLAY_CLOCK_SIZES.join(', '));
+    if (!isInt(v.filled, 0, v.size)) throw new HttpError(400, 'overlay.filled must be a whole number from 0 to the size');
+    out.name = str(v.name, 'overlay.name', OVERLAY.name, true).trim();
+    out.size = v.size;
+    out.filled = v.filled;
+  } else if (v.kind === 'npc') {
+    if (typeof v.npcId !== 'string' || !ID_RE.test(v.npcId)) throw new HttpError(400, 'overlay.npcId is a bad id');
+    out.npcId = v.npcId;
+  } else if (v.kind === 'fx') {
+    if (!OVERLAY_FX.includes(v.fx)) throw new HttpError(400, 'overlay.fx must be one of ' + OVERLAY_FX.join(', '));
+    out.fx = v.fx;
+  } else {
+    out.text = str(v.text, 'overlay.text', OVERLAY.text, true).replace(/\s+/g, ' ').trim();
+  }
+  out.at = nowIso();
+  return out;
+}
+
+/**
  * Validate one PATCH /api/gm/ambient body into a patch. Only these keys are kept (others are dropped); `null` on any
  * but `skip` means "delete this key":
  *   mode 'auto'|'pin'|'off', scene (a scene id), playlist (1 to 16 distinct scene ids, replaces), intervalMin (integer 3-30),
  *   skip (only `true`: the server adds one to its counter), crew ({ heat 0-9, wanted 0-4 }, replaces),
+ *   overlay (null, or { id, kind, ms, ... } see cleanOverlay; replaces; `at` is set here), auto (true|false: the iPad's AUTO chip),
  *   score ({ name, district, target (each at most 200 characters), reveal (distinct bands), view 'plan'|'rings',
  *            board and iso (player-safe svgs, each through checkSvg) }, replaces; `at` is set here, to the server's time).
  * Malformed is 400, too long or too large 413.
@@ -377,6 +416,12 @@ export function cleanAmbientPatch(raw) {
       });
       if (!patch.wire.length) patch.wire = null;
     }
+  }
+  if ('overlay' in raw) patch.overlay = cleanOverlay(raw.overlay);
+  if ('auto' in raw) {
+    // the AUTO chip: the autopilot is driving the iPad (a boolean, for the badge only)
+    if (raw.auto !== null && typeof raw.auto !== 'boolean') throw new HttpError(400, 'auto must be true or false');
+    patch.auto = raw.auto;
   }
   if ('score' in raw) {
     const v = raw.score;

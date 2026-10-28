@@ -481,6 +481,111 @@ async function main() {
     expect(g.seq === seq0 + 2 && !('scene' in g.doc), 'only the two good writes moved seq, and no scene was applied from a refused patch: ' + JSON.stringify(g).slice(0, 200));
   });
 
+  await step('ambient overlay: every field, at its bounds; a refusal beside a good key changes nothing; the server sets at; null removes; other keys drop', async () => {
+    const seq0 = await ambSeq();
+    const clock = (x) => ({ id: 'ov1', kind: 'clock', ms: 8000, name: 'Invented Fuse', size: 6, filled: 2, ...x });
+    const bad = [
+      [{ overlay: 'a clock' }, 400, /overlay must be/], [{ overlay: [] }, 400, /overlay must be/], [{ overlay: 7 }, 400, /overlay must be/],
+      [{ overlay: clock({ id: undefined }) }, 400, /overlay\.id is required/], [{ overlay: clock({ id: '' }) }, 400, /overlay\.id is required/],
+      [{ overlay: clock({ id: '   ' }) }, 400, /overlay\.id is required/], [{ overlay: clock({ id: 5 }) }, 400, /overlay\.id must be a string/],
+      [{ overlay: clock({ id: 'i'.repeat(41) }) }, 413, /overlay\.id is too long/],
+      [{ overlay: clock({ kind: undefined }) }, 400, /overlay\.kind must be/], [{ overlay: clock({ kind: 'wire' }) }, 400, /overlay\.kind must be/],
+      [{ overlay: clock({ kind: 'Clock' }) }, 400, /overlay\.kind must be/], [{ overlay: clock({ kind: 5 }) }, 400, /overlay\.kind must be/],
+      [{ overlay: clock({ ms: 999 }) }, 400, /overlay\.ms must be/], [{ overlay: clock({ ms: 180001 }) }, 400, /overlay\.ms must be/],
+      [{ overlay: clock({ ms: 0 }) }, 400, /overlay\.ms must be/], [{ overlay: clock({ ms: -5000 }) }, 400, /overlay\.ms must be/],
+      [{ overlay: clock({ ms: 5000.5 }) }, 400, /overlay\.ms must be/], [{ overlay: clock({ ms: '5000' }) }, 400, /overlay\.ms must be/],
+      [{ overlay: clock({ ms: undefined }) }, 400, /overlay\.ms must be/], [{ overlay: clock({ ms: null }) }, 400, /overlay\.ms must be/],
+      [{ overlay: clock({ name: undefined }) }, 400, /overlay\.name is required/], [{ overlay: clock({ name: '' }) }, 400, /overlay\.name is required/],
+      [{ overlay: clock({ name: 5 }) }, 400, /overlay\.name must be a string/], [{ overlay: clock({ name: 'n'.repeat(61) }) }, 413, /overlay\.name is too long/],
+      [{ overlay: clock({ size: 5 }) }, 400, /overlay\.size must be/], [{ overlay: clock({ size: 14 }) }, 400, /overlay\.size must be/],
+      [{ overlay: clock({ size: 0 }) }, 400, /overlay\.size must be/], [{ overlay: clock({ size: '6' }) }, 400, /overlay\.size must be/],
+      [{ overlay: clock({ size: undefined }) }, 400, /overlay\.size must be/],
+      [{ overlay: clock({ filled: 7 }) }, 400, /overlay\.filled must be/], [{ overlay: clock({ filled: -1 }) }, 400, /overlay\.filled must be/],
+      [{ overlay: clock({ filled: 1.5 }) }, 400, /overlay\.filled must be/], [{ overlay: clock({ filled: '2' }) }, 400, /overlay\.filled must be/],
+      [{ overlay: clock({ filled: undefined }) }, 400, /overlay\.filled must be/], [{ overlay: clock({ size: 4, filled: 5 }) }, 400, /overlay\.filled must be/],
+      [{ overlay: { id: 'f', kind: 'fx', ms: 30000 } }, 400, /overlay\.fx must be/], [{ overlay: { id: 'f', kind: 'fx', ms: 30000, fx: 'dusk' } }, 400, /overlay\.fx must be/],
+      [{ overlay: { id: 'f', kind: 'fx', ms: 30000, fx: 5 } }, 400, /overlay\.fx must be/],
+      [{ overlay: { id: 't', kind: 'text', ms: 5000 } }, 400, /overlay\.text is required/], [{ overlay: { id: 't', kind: 'text', ms: 5000, text: '  ' } }, 400, /overlay\.text is required/],
+      [{ overlay: { id: 't', kind: 'text', ms: 5000, text: 5 } }, 400, /overlay\.text must be a string/], [{ overlay: { id: 't', kind: 'text', ms: 5000, text: 'x'.repeat(121) } }, 413, /overlay\.text is too long/],
+      [{ overlay: { id: 'n', kind: 'npc', ms: 5000 } }, 400, /bad id/], [{ overlay: { id: 'n', kind: 'npc', ms: 5000, npcId: 'has space' } }, 400, /bad id/],
+      [{ overlay: { id: 'n', kind: 'npc', ms: 5000, npcId: 5 } }, 400, /bad id/], [{ overlay: { id: 'n', kind: 'npc', ms: 5000, npcId: '' } }, 400, /bad id/],
+      [{ auto: 'yes' }, 400, /auto must be/], [{ auto: 1 }, 400, /auto must be/], [{ auto: 0 }, 400, /auto must be/], [{ auto: {} }, 400, /auto must be/],
+    ];
+    for (const [body, code, re] of bad) {
+      const r = await A({ scene: 'harvest', ...body });   // a good key beside the bad one must not be applied
+      expect(r.status === code && re.test(r.json && r.json.error), JSON.stringify(body).slice(0, 100) + ' -> ' + r.status + ' ' + r.text.slice(0, 160));
+    }
+    expect(await ambSeq() === seq0 && !('scene' in (await gm('GET', '/api/gm/ambient')).json.doc), 'a refused overlay stored nothing and applied no beside-key');
+    // every bound that is allowed
+    const edge = [
+      clock({ id: 'i'.repeat(40), ms: 1000, name: 'n'.repeat(60), size: 4, filled: 0 }), clock({ ms: 180000, size: 12, filled: 12 }),
+      clock({ size: 8, filled: 8 }), clock({ size: 10, filled: 3 }), clock({ size: 6, filled: 6 }),
+      { id: 'f', kind: 'fx', ms: 30000, fx: 'dawn' }, { id: 't', kind: 'text', ms: 1000, text: 't'.repeat(120) },
+    ];
+    for (const o of edge) {
+      const r = await A({ overlay: o }); status(r, 200);
+      const got = r.json.doc.overlay;
+      expect(typeof got.at === 'string' && Math.abs(Date.parse(got.at) - Date.now()) < 60000, 'at is the server time: ' + got.at);
+      const { at, ...rest } = got;
+      expect(JSON.stringify(rest) === JSON.stringify(o), 'stored as sent: ' + JSON.stringify(rest) + ' vs ' + JSON.stringify(o));
+    }
+    // the server sets at, whatever the caller says; other keys (a smuggled text on a clock, a note on a dawn) are dropped; text is one line
+    let r = await A({ overlay: { ...clock({}), at: '1999-01-01T00:00:00.000Z', text: 'smuggled', npcId: 'npc_x', svg: '<svg/>', note: 'n' } }); status(r, 200);
+    expect(r.json.doc.overlay.at !== '1999-01-01T00:00:00.000Z' && Object.keys(r.json.doc.overlay).sort().join() === 'at,filled,id,kind,ms,name,size', 'at is the server one and other keys dropped: ' + JSON.stringify(r.json.doc.overlay));
+    r = await A({ overlay: { id: 't', kind: 'text', ms: 5000, text: '  one\n two\t three  ', fx: 'dawn' } }); status(r, 200);
+    expect(r.json.doc.overlay.text === 'one two three' && Object.keys(r.json.doc.overlay).sort().join() === 'at,id,kind,ms,text', 'text is one trimmed line: ' + JSON.stringify(r.json.doc.overlay));
+    // auto
+    r = await A({ auto: true }); status(r, 200); expect(r.json.doc.auto === true && r.json.doc.overlay.kind === 'text', 'auto on, the overlay untouched');
+    r = await A({ auto: false }); status(r, 200); expect(r.json.doc.auto === false, 'auto false is kept');
+    r = await A({ auto: null }); status(r, 200); expect(!('auto' in r.json.doc), 'auto null removes it');
+    // null removes
+    r = await A({ overlay: null }); status(r, 200); expect(!('overlay' in r.json.doc), 'overlay null removes it');
+    r = await A({ overlay: null }); status(r, 200);
+    // it rides along on the display call, which the table display sign-in reads
+    r = await A({ overlay: { id: 'f', kind: 'fx', ms: 30000, fx: 'dawn' } }); status(r, 200);
+    const d = (await gm('GET', '/api/gm/display')).json;
+    expect(d.ambient.doc.overlay && d.ambient.doc.overlay.fx === 'dawn', 'the display GET carries the overlay: ' + JSON.stringify(d.ambient.doc));
+    status(await A({ overlay: null }), 200);
+    // a player cannot set one
+    status(await call('PATCH', '/api/gm/ambient', { user: PLAYER, body: { overlay: { id: 'f', kind: 'fx', ms: 30000, fx: 'dawn' } } }), 403);
+  });
+
+  await step('ambient overlay: an npc overlay is refused (400, nothing stored) unless that NPC is live and revealed', async () => {
+    const OV = (npcId) => ({ overlay: { id: 'npc-ov', kind: 'npc', ms: 20000, npcId } });
+    const put = (id, doc) => gm('PUT', '/api/npcs/' + id, doc);
+    status(await put('npc_ov_hidden', { name: 'Invented Hidden Person', revealed: false }), 200);
+    status(await put('npc_ov_shown', { name: 'Invented Shown Person', revealed: true }), 200);
+    status(await put('npc_ov_gone', { name: 'Invented Gone Person', revealed: true }), 200);
+    const seq0 = await ambSeq();
+    const refuse = async (npcId, why) => {
+      const r = await A({ scene: 'harvest', ...OV(npcId) });
+      expect(r.status === 400 && /revealed NPC/.test(r.json && r.json.error), why + ' -> ' + r.status + ' ' + r.text.slice(0, 160));
+    };
+    await refuse('npc_ov_hidden', 'hidden');
+    await refuse('npc_ov_missing', 'no such row');
+    const doc0 = (await gm('GET', '/api/gm/ambient')).json.doc;
+    expect(await ambSeq() === seq0 && !('scene' in doc0) && !('overlay' in doc0), 'the refusals stored nothing, not even the key beside them');
+    const hiddenMsg = (await A(OV('npc_ov_hidden'))).json.error, missingMsg = (await A(OV('npc_ov_missing'))).json.error;
+    expect(hiddenMsg === missingMsg, 'a hidden NPC reads exactly like a missing one: ' + hiddenMsg + ' / ' + missingMsg);
+    // revealed: accepted, and only the NPC id is stored (no name, no description)
+    let r = await A(OV('npc_ov_shown')); status(r, 200);
+    expect(r.json.doc.overlay.npcId === 'npc_ov_shown' && Object.keys(r.json.doc.overlay).sort().join() === 'at,id,kind,ms,npcId', 'stored: ' + JSON.stringify(r.json.doc.overlay));
+    expect(!JSON.stringify(r.json.doc).includes('Invented Shown Person'), 'no NPC text in the ambient document');
+    // hidden, then revealed: refused, then accepted
+    status(await A({ overlay: null }), 200);
+    await refuse('npc_ov_hidden', 'still hidden');
+    status(await gm('PATCH', '/api/npcs/npc_ov_hidden', { revealed: true }), 200);
+    status(await A(OV('npc_ov_hidden')), 200);
+    // a deleted row is refused
+    status(await gm('DELETE', '/api/npcs/npc_ov_gone'), 200);
+    await refuse('npc_ov_gone', 'deleted');
+    // hidden again afterwards: refused again
+    status(await A({ overlay: null }), 200);
+    status(await gm('PATCH', '/api/npcs/npc_ov_hidden', { revealed: false }), 200);
+    await refuse('npc_ov_hidden', 'revealed, then hidden again');
+    status(await A({ overlay: null }), 200);
+  });
+
   await step('ambient: every display svg refusal is replayed against score.board and score.iso', async () => {
     expect(SVG_CASES.length >= 30, 'the display step collected its svg cases: ' + SVG_CASES.length);
     const seq0 = await ambSeq();
