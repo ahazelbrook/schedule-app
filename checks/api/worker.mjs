@@ -110,8 +110,10 @@ await step('page: doctype, charset and viewport in front of index.html, security
   expect(withPageHead('<!DOCTYPE html><p>x') === '<!DOCTYPE html><p>x', 'no second doctype');
   const redirect = await worker.fetch(new Request('https://blades.example.test/index.html'), env, {});
   expect(redirect.status === 307 && redirect.headers.get('Location') === '/', '/index.html redirect passes through');
-  const notModified = await handlePage(new Response(null, { status: 304, headers: { 'Content-Type': 'text/html' } }));
-  expect(notModified.status === 304, '304 passes through');
+  expect(r.headers.get('X-B68-Build') === 'dev', 'the page names the build (the service worker reads it): ' + r.headers.get('X-B68-Build'));
+  const notModified = await handlePage(new Response(null, { status: 304, headers: { 'Content-Type': 'text/html', ETag: '"abc"' } }));
+  expect(notModified.status === 304 && notModified.headers.get('ETag') === '"abc"', '304 passes through');
+  expect(notModified.headers.get('X-B68-Build') === 'dev', 'a 304 names the build too: it refreshes the stored headers');
   const sw = await worker.fetch(new Request('https://blades.example.test/sw.js'), env, {});
   expect(sw.status === 200 && (await sw.text()) === 'sw', 'other assets untouched');
   const missing = await worker.fetch(new Request('https://blades.example.test/nope'), env, {});

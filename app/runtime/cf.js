@@ -257,6 +257,22 @@
     }, netFail).then(function (v) { clearTimeout(timer); return v; }, function (e) { clearTimeout(timer); throw e; });
   }
 
+  /* ---------- the service worker's precache by role ---------- */
+  /* Install (sw.js) precaches the page, the fonts and the core and table bundles on every device. The GM's laptop also runs
+     the GM page and the table iPad's sign-in (role 'display') the display, so once /api/me says which this is, the page asks
+     the worker to add those bundles: it fetches only what its cache does not hold yet. A player's phone never asks. */
+  function askPrecache(m) {
+    try {
+      var sw = window.navigator && window.navigator.serviceWorker;
+      var want = m.role === 'gm' ? ['gm', 'display'] : m.role === 'display' ? ['display'] : null;
+      if (!want || !sw || !sw.ready || typeof sw.ready.then !== 'function') return;
+      sw.ready.then(function (reg) {
+        var w = (reg && reg.active) || sw.controller;
+        if (w && typeof w.postMessage === 'function') w.postMessage({ precache: want });
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
   /* ---------- user ---------- */
   var meP = null;
   /* /api/me once; null when not signed in or unreachable. When it is unreachable (fetch itself failed: not a 401,
@@ -280,6 +296,7 @@
     }).then(function (m) {
       window.B68Runtime = { kind: 'cloudflare', me: m, status: status(), exportAll: exportAll, signedOutWhy: m ? '' : signedOutWhy };   /* me carries role, for the header */
       emitStatus();
+      if (m && mode === 'online') askPrecache(m);
       if (m && queue.length) flush();
       return m;
     });

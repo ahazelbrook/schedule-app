@@ -15,7 +15,8 @@
    parallel), and a stylesheet goes in at its place in CSS_ORDER, so the cascade is the one index.html always had,
    whichever routes have opened and in what order. need() resolves with the bundle's name when every file has loaded
    and rejects on the first that fails; that file is forgotten, so the next need() tries it again. sw.js precaches
-   every file of every bundle, so each route still works offline. */
+   the core and table at install and the gm and display bundles when the page says the viewer is the GM (or the iPad), so
+   each route still works offline on the devices that use it. */
 (function (root) {
   'use strict';
   var BUILD = 'dev';   /* B68_BUILD: stamped by scripts/deploy.sh, never committed stamped (checks/api/worker.mjs) */

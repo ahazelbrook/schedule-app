@@ -36,9 +36,41 @@ await test('manifest: valid JSON with the install fields, and every icon exists 
 const SW = fs.readFileSync(path.join(APP, 'sw.js'), 'utf8');
 const ORIGIN = 'https://b68.test';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-function worker(opts = {}) {
-  /* net.slow[url]: that fetch answers only when the test resolves net.pending[url] (a stalled connection) */
-  const handlers = {}, store = {}, net = { down: false, answers: {}, log: [], slow: {}, pending: {} };
+const ROUTES = fs.readFileSync(path.join(APP, 'routes.js'), 'utf8');
+const STAMP = '2026-10-16-abc1234';
+const stamped = (src = ROUTES, build = STAMP) => src.replace(/^(\s*var BUILD = )'dev';/m, "$1'" + build + "';");
+
+class FakeHeaders {
+  constructor(init) { this.m = new Map(); if (init instanceof FakeHeaders) init.m.forEach((v, k) => this.m.set(k, v)); else for (const [k, v] of Object.entries(init || {})) this.m.set(k.toLowerCase(), v); }
+  get(k) { return this.m.has(k.toLowerCase()) ? this.m.get(k.toLowerCase()) : null; }
+}
+/* a Response: body is whatever the test wants to read back ('A:/boot.js'); arrayBuffer() hands it over untouched */
+class FakeResponse {
+  constructor(body, init = {}) {
+    this.body = body; this.status = init.status === undefined ? 200 : init.status; this.statusText = init.statusText || '';
+    this.headers = new FakeHeaders(init.headers); this.type = init.type || 'basic'; this.redirected = !!init.redirected;
+    this.ok = this.status >= 200 && this.status < 300;
+  }
+  clone() { return new FakeResponse(this.body, { status: this.status, headers: this.headers, type: this.type, redirected: this.redirected }); }
+  async text() { return String(this.body); }
+  async arrayBuffer() { return this.body; }
+}
+const isPage = (url) => url === ORIGIN + '/' || url === ORIGIN + '/index.html' || url.startsWith(ORIGIN + '/?');
+
+/* world(): one browser's storage and one server, shared by every worker made from it (a worker per build) */
+function world() {
+  const store = {};                                    // cache name -> Map(url -> Response)
+  const net = {
+    build: 'dev', noHeader: false, down: false, answers: {}, seq: {}, fail: {}, slow: {}, pending: {}, log: [], reqs: [],
+    /* what the server answers for a URL at this moment: the page names its build (X-B68-Build, as worker/app.js does), routes.js
+       carries it (the probe reads it), every other file is stamped with the build it came from */
+    serve(url) {
+      const p = url.slice(ORIGIN.length).split('?')[0];
+      if (isPage(url)) return new FakeResponse('page:' + net.build, { headers: net.noHeader ? {} : { 'X-B68-Build': net.build } });   // noHeader: a Worker from before X-B68-Build was on the page
+      if (p === '/routes.js') return new FakeResponse(stamped(ROUTES, net.build).replace("var BUILD = 'dev';", "var BUILD = '" + net.build + "';"));
+      return new FakeResponse(net.build + ':' + p);
+    },
+  };
   const caches = {
     _stores: store,
     open: async (name) => {
@@ -46,59 +78,89 @@ function worker(opts = {}) {
       const k = (r) => (typeof r === 'string' ? r : r.url);
       return { put: async (r, res) => { c.set(k(r), res); }, match: async (r) => c.get(k(r)), keys: async () => [...c.keys()] };
     },
+    has: async (name) => Object.prototype.hasOwnProperty.call(store, name),
     keys: async () => Object.keys(store),
     delete: async (n) => delete store[n],
   };
-  const res = (status, extra = {}) => ({ status, type: 'basic', redirected: false, ok: status >= 200 && status < 300, ...extra, clone() { return this; } });
   async function fetch(req) {
     const url = typeof req === 'string' ? req : req.url;
-    net.log.push(url);
-    if (net.down) throw new TypeError('Failed to fetch');
+    net.log.push(url); net.reqs.push(req);
+    if (net.down || net.fail[url]) throw new TypeError('Failed to fetch');
+    if (net.seq[url] && net.seq[url].length) { const a = net.seq[url].shift(); if (a instanceof Error) throw a; return a; }   // seq: this URL's next answers, in order
     if (net.slow[url]) return new Promise((resolve, reject) => { net.pending[url] = { resolve, reject }; });
-    return net.answers[url] || res(200, { body: 'net:' + url });
+    return net.answers[url] || net.serve(url);
   }
   class Request { constructor(url, init = {}) { this.url = url; this.method = 'GET'; this.mode = 'cors'; Object.assign(this, init); } }
+  const res = (status, extra = {}) => { const { body, headers, ...rest } = extra; return new FakeResponse(body === undefined ? 'net' : body, { status, headers, ...rest }); };
+  return { store, net, caches, fetch, Request, res };
+}
+
+/* worker({ build, world, routes }): sw.js as the browser would run it for that build. build: the stamp (null: the repository's 'dev') */
+function worker(opts = {}) {
+  const W = opts.world || world();
+  const handlers = {}, bg = [];
   const self = {
     location: { href: ORIGIN + '/sw.js', origin: ORIGIN },
-    registration: { scope: ORIGIN + '/' },
+    registration: { scope: ORIGIN + '/', updates: 0, update: async () => { self.registration.updates++; } },
     addEventListener: (t, fn) => { handlers[t] = fn; },
     skipWaiting: async () => { self.skipped = true; },
     clients: { claim: async () => { self.claimed = true; } },
   };
-  /* the worker's clock: its setTimeout calls are recorded and fired by the test (tick), never by time passing */
+  /* the worker's clock: its setTimeout calls are recorded and fired by the test (tick, drain), never by time passing */
   const timers = [];
-  const ctx = { self, caches, fetch, Request, URL, Promise, console,
+  const ctx = { self, caches: W.caches, fetch: W.fetch, Request: W.Request, Response: FakeResponse, URL, Promise, console,
     setTimeout: (fn, ms) => { const t = { fn, ms, done: false }; timers.push(t); return t; },
     clearTimeout: (t) => { if (t) t.done = true; },
-    /* importScripts('routes.js'): the real file (or opts.routes, the source to use instead; null: the import fails), run in
-       this scope (self.B68_BUILD, self.B68Load) */
+    /* importScripts('routes.js'): the real file stamped with opts.build (opts.routes: the source to use instead; null: the import fails) */
     importScripts: (...names) => {
       for (const n of names) {
         if (n === 'routes.js' && opts.routes === null) throw new Error('NetworkError: routes.js could not be fetched');
-        vm.runInContext(n === 'routes.js' && opts.routes ? opts.routes : fs.readFileSync(path.join(APP, n), 'utf8'), ctx, { filename: n });
+        const src = n === 'routes.js' ? (opts.routes || (opts.build ? stamped(ROUTES, opts.build) : ROUTES)) : fs.readFileSync(path.join(APP, n), 'utf8');
+        vm.runInContext(src, ctx, { filename: n });
       }
     } };
-  const tick = () => { timers.forEach((t) => { if (!t.done) { t.done = true; t.fn(); } }); };
+  const pendingTimers = (...ms) => timers.filter((t) => !t.done && (!ms.length || ms.includes(t.ms)));
+  const tick = (...ms) => pendingTimers(...ms).forEach((t) => { t.done = true; t.fn(); });
   vm.createContext(ctx);
-  vm.runInContext(SW, ctx, { filename: 'sw.js' });
-  /* during(): the test's hand on the clock and the network while the event is in flight */
-  async function dispatch(type, extra = {}, during) {
-    let waits = [], responded = null;
-    const ev = { ...extra, waitUntil: (p) => waits.push(p), respondWith: (p) => { responded = p; } };
+  vm.runInContext(opts.sw ? fs.readFileSync(opts.sw, 'utf8') : SW, ctx, { filename: 'sw.js' });
+  /* dispatch(): the test's hand on the clock and the network while the event is in flight (during). Background work the
+     worker asked to keep alive (waitUntil) is awaited here for install, activate and message; for a fetch it is left to drain() */
+  async function dispatch(type, extra = {}, during, keep = type !== 'fetch') {
+    const waits = []; let responded = null;
+    const ev = { ...extra, waitUntil: (p) => { waits.push(p); bg.push(p); }, respondWith: (p) => { responded = p; } };
     handlers[type](ev);
     if (during) await during();
     const r = responded ? await responded.then((x) => ({ ok: true, res: x }), (e) => ({ ok: false, err: e })) : null;
-    await Promise.all(waits.map((p) => Promise.resolve(p).catch(() => {})));
-    return { responded: !!responded, r };
+    let rejected = null;
+    if (keep) await Promise.all(waits.map((p) => Promise.resolve(p).catch((e) => { rejected = rejected || e; })));
+    return { responded: !!responded, r, rejected };
   }
-  const get = (p, mode = 'no-cors', during) => dispatch('fetch', { request: new Request(p.startsWith('http') ? p : ORIGIN + p, { mode }) }, during);
-  return { self, caches, net, res, dispatch, get, timers, tick, SHELL: ctx.SHELL || vm.runInContext('SHELL', ctx), CACHE: vm.runInContext('CACHE', ctx) };
+  /* drain(): fire the worker's refresh and filing timers and wait for everything it kept alive, until it is quiet */
+  async function drain() {
+    for (let i = 0; i < 12; i++) {
+      await sleep(5);
+      const due = pendingTimers(1500, 5000);
+      due.forEach((t) => { t.done = true; t.fn(); });
+      await Promise.all(bg.splice(0).map((p) => Promise.resolve(p).catch(() => {})));
+      if (!due.length && !pendingTimers(1500, 5000).length) { await sleep(5); if (!pendingTimers(1500, 5000).length && !bg.length) return; }
+    }
+    throw new Error('drain: the worker never went quiet');
+  }
+  /* ids: { resultingClientId } on a navigation, { clientId } on a file: the page the request belongs to */
+  const get = (p, mode = 'no-cors', during, ids = {}) => dispatch('fetch', { request: new W.Request(p.startsWith('http') ? p : ORIGIN + p, { mode }), ...ids }, during);
+  const read = (name) => (W.store[name || self.CACHE] || new Map());
+  const out = { self, W, caches: W.caches, net: W.net, res: W.res, dispatch, get, timers, tick, drain, pendingTimers, handlers,
+    SHELL: vm.runInContext('SHELL', ctx), INSTALL: opts.sw ? null : vm.runInContext('INSTALL', ctx), CACHE: vm.runInContext('CACHE', ctx),
+    cache: () => W.store[out.CACHE] || new Map(),
+    /* the cached body at a path, or undefined */
+    at: (p, name) => { const e = (name ? W.store[name] : out.cache()); const r = e && e.get(p === '/' ? ORIGIN + '/' : ORIGIN + p); return r && r.body; },
+    message: (data) => dispatch('message', { data }),
+  };
+  self.CACHE = out.CACHE;
+  return out;
 }
 
 /* ---------- routes.js (B68_BUILD, B68Load) ---------- */
-const ROUTES = fs.readFileSync(path.join(APP, 'routes.js'), 'utf8');
-const STAMP = '2026-10-16-abc1234';
-const stamped = (src = ROUTES) => src.replace(/^(\s*var BUILD = )'dev';/m, "$1'" + STAMP + "';");
 /* a <head> holding index.html's stylesheet links and its inline <style>; elements added later record their order */
 function fakeDoc(links) {
   const head = { children: [] };
@@ -204,7 +266,24 @@ await test('routes.js: an unstamped build (the repository, the artifact, file://
   eq(doc.order(), ['tracker.css', 'display.css?v=' + STAMP, '<style>', 'cue.js?v=' + STAMP, 'stt.js?v=' + STAMP, 'display-page.js?v=' + STAMP], 'a stamped build versions every bundle URL');
 });
 
-await test('sw: the precache list is the page, the fonts and install files, and every bundle file (the core first); all exist; the cache is named after the build', async () => {
+/* the files that only the GM's laptop and the table iPad load: in the gm or display bundle and not in core or table */
+const ROLE_ONLY = (() => {
+  const L = routes().B68Load, keep = new Set([...L.BUNDLES.core, ...L.BUNDLES.table]);
+  return [...new Set([...L.BUNDLES.gm, ...L.BUNDLES.display])].filter((f) => !keep.has(f));
+})();
+const GM_ONLY = ROLE_ONLY.filter((f) => !routes().B68Load.BUNDLES.display.includes(f));
+const u = (p) => ORIGIN + '/' + p;                       // a shell path as a URL
+const CORE_JS = ['boot.js', 'core.js', 'tracker.js', 'runtime/cf.js'];
+
+/* a worker for build `build`, installed and activated against the world's server (which must be on that build) */
+async function up(build, W = world(), opts = {}) {
+  W.net.build = build;
+  const w = worker({ build, world: W, ...opts });
+  await w.dispatch('install'); await w.dispatch('activate');
+  return w;
+}
+
+await test('sw: SHELL is the page, the fonts and install files and every bundle file (the core first); INSTALL is the same without the gm and display bundles; all exist; the cache is named after the build', async () => {
   const w = worker(), L = routes().B68Load;
   const refs = new Set();
   for (const m of HTML.matchAll(/(?:src|href)="([^"#:]+)"/g)) refs.add(m[1]);
@@ -215,111 +294,493 @@ await test('sw: the precache list is the page, the fonts and install files, and 
   eq(new Set(w.SHELL).size, w.SHELL.length, 'no file twice');
   for (const f of w.SHELL) if (f !== './') ok(fs.existsSync(path.join(APP, f)), 'SHELL names a missing file: ' + f);
   ok(w.SHELL[0] === './' && w.SHELL.includes('routes.js'), 'the page itself, and routes.js');
+  // INSTALL: static files + core + table, nothing else
+  eq(new Set(w.INSTALL).size, w.INSTALL.length, 'no file twice in INSTALL');
+  eq(w.INSTALL.filter((f) => !w.SHELL.includes(f)), [], 'INSTALL is part of SHELL');
+  eq(w.INSTALL.filter((f) => f.endsWith('.js') || f.endsWith('.css')), [...new Set([...L.BUNDLES.core, ...L.BUNDLES.table])], 'INSTALL scripts and stylesheets are exactly the core and table bundles');
+  eq(w.INSTALL.filter((f) => ROLE_ONLY.includes(f)), [], 'no gm or display file is installed on every device');
+  ok(ROLE_ONLY.includes('gm-page.js') && ROLE_ONLY.includes('maps/map-kit.js') && ROLE_ONLY.includes('display-page.js'), 'the role-only list names the GM page, the map kit and the display page: ' + ROLE_ONLY.length + ' files');
+  ok(w.INSTALL.includes('./') && w.INSTALL.includes('routes.js') && w.INSTALL.includes('campaign.js') && w.INSTALL.includes('fonts/SpaceMono-Bold.woff2'), 'the page, routes.js, the table and the fonts are installed');
   eq(w.CACHE, 'b68-shell-dev', "the cache is named after routes.js B68_BUILD ('dev' in the repository)");
   eq(worker({ routes: stamped() }).CACHE, 'b68-shell-' + STAMP, 'a stamped build is a new cache (the next activation drops the old one)');
   let threw = null; try { worker({ routes: null }); } catch (e) { threw = e.message; }
   ok(/routes\.js could not be fetched/.test(threw || ''), 'a worker that cannot import routes.js fails to install (the previous one keeps serving): ' + threw);
 });
 
-await test('sw: install precaches the shell (page under the scope URL), skips waiting; activate drops old caches and claims', async () => {
-  const w = worker();
-  w.net.answers[ORIGIN + '/boot.js'] = w.res(200, { redirected: true });       // e.g. Access: never cached
-  w.net.answers[ORIGIN + '/core.js'] = w.res(404);
-  await w.dispatch('install');
-  const c = w.caches._stores[w.CACHE];
-  ok(c.has(ORIGIN + '/'), 'page cached under /');
-  ok(c.has(ORIGIN + '/fonts/SpaceMono-Bold.woff2') && c.has(ORIGIN + '/runtime/cf.js'), 'shell cached');
-  ok(!c.has(ORIGIN + '/boot.js') && !c.has(ORIGIN + '/core.js'), 'a redirected or failed answer was cached');
+await test('sw: a player\'s install fetches the page, the fonts, the core and the table, and not one gm or display file; the page goes under the scope URL; an optional file that failed or was redirected is not filed; it skips waiting', async () => {
+  const W = world(), w = worker({ world: W });
+  W.net.answers[u('icons/icon-192.png')] = w.res(200, { redirected: true });      // optional files: e.g. Access
+  W.net.answers[u('fonts/Yellowtail-Regular.woff2')] = w.res(404);
+  const out = await w.dispatch('install');
+  eq(out.rejected, null, 'the install succeeded');
+  const fetched = new Set(W.net.log);
+  eq([...fetched].filter((x) => ROLE_ONLY.some((f) => x === u(f))), [], 'a gm or display file was fetched by the install');
+  eq(w.INSTALL.filter((f) => f !== './' && !fetched.has(u(f))), [], 'every INSTALL file was fetched');
+  ok(fetched.has(ORIGIN + '/'), 'the page was fetched');
+  for (const r of W.net.reqs) eq(r.url.endsWith('/routes.js') ? ['no-cache', 'no-store'].includes(r.cache) : r.cache, r.url.endsWith('/routes.js') ? true : 'no-cache', 'install revalidates (the probe of routes.js is no-store): ' + r.url);
+  ok(w.cache().has(ORIGIN + '/'), 'page cached under /');
+  ok(w.cache().has(u('fonts/SpaceMono-Bold.woff2')) && w.cache().has(u('runtime/cf.js')) && w.cache().has(u('campaign.js')), 'shell cached');
+  ok(!w.cache().has(u('icons/icon-192.png')) && !w.cache().has(u('fonts/Yellowtail-Regular.woff2')), 'a redirected or failed optional answer was cached');
+  eq(w.cache().size, w.INSTALL.length - 2, 'exactly the install files that answered');
   ok(w.self.skipped, 'skipWaiting');
-  w.caches._stores['b68-shell-v0'] = new Map(); w.caches._stores['other-app'] = new Map();
+});
+
+await test('sw: install needs the required set (the page, boot.js, the core, the table): without any one of them it fails, files nothing and does not take over; fonts and icons are optional', async () => {
+  const required = ['./', 'boot.js', 'core.js', 'tracker.js', 'campaign.js', 'crewsheet.js', 'runtime/cf.js', 'routes.js'];
+  const core = routes().B68Load.BUNDLES, need = new Set(['./', ...core.core, ...core.table]);
+  for (const r of required) ok(need.has(r), r + ' is in the required set');
+  for (const [what, make] of [
+    ['a failure', (w) => new TypeError('Failed to fetch')], ['a 404', (w) => w.res(404)], ['an Access redirect', (w) => w.res(200, { redirected: true })], ['a server error', (w) => w.res(500)]]) {
+    for (const f of required) {
+      const W = world(), w = worker({ world: W });
+      const url = f === './' ? ORIGIN + '/' : u(f), ans = make(w);
+      if (ans instanceof Error) W.net.fail[url] = true; else W.net.answers[url] = ans;
+      const out = await w.dispatch('install');
+      ok(out.rejected && /required file|could not tell which build/.test(out.rejected.message), what + ' on ' + f + ' fails the install: ' + (out.rejected && out.rejected.message));
+      ok(!w.self.skipped, what + ' on ' + f + ': no skipWaiting');
+      eq(W.store[w.CACHE], undefined, what + ' on ' + f + ': nothing filed');
+    }
+  }
+  // the server moved on while this worker (build A) was installing: its files are build B's. The install fails, nothing is filed
+  const Wm = world(); Wm.net.build = 'B';
+  const stale = worker({ build: 'A', world: Wm });
+  const failed = (await stale.dispatch('install')).rejected;
+  ok(failed && /server runs build B, this worker is A/.test(failed.message), 'the install of a worker whose build the server has left fails: ' + (failed && failed.message));
+  eq(Wm.store[stale.CACHE], undefined, 'no cache was made for the older build');
+  ok(!stale.self.skipped, 'and it does not take over');
+  // every file arrives but the probe cannot say which build the server runs (routes.js answers once, then the link drops): not vouched for, so it fails
+  const Wu = world(), wu = worker({ world: Wu });
+  Wu.net.seq[u('routes.js')] = [Wu.net.serve(u('routes.js')), new TypeError('Failed to fetch'), new TypeError('Failed to fetch')];
+  const un = await wu.dispatch('install');
+  ok(un.rejected && /could not tell which build/.test(un.rejected.message) && !wu.self.skipped && Wu.store[wu.CACHE] === undefined, 'an install that cannot be vouched for fails and files nothing: ' + (un.rejected && un.rejected.message));
+  // offline: the install fails too (an empty cache must not take over from a complete one)
+  const off = worker(); off.net.down = true;
+  const o = await off.dispatch('install');
+  ok(o.rejected && !off.self.skipped && off.cache().size === 0, 'offline install fails, files nothing');
+  // the link dies half-way through an install, and the build that is running keeps serving; the next good load installs
+  const W3 = world(), A = await up('A', W3);
+  await A.get('/', 'navigate'); await A.get('/boot.js');
+  W3.net.build = 'B';
+  const B1 = worker({ build: 'B', world: W3 });
+  W3.net.fail[u('tracker.js')] = true; W3.net.fail[u('campaign.js')] = true;      // the link drops: these never arrive
+  const r1 = await B1.dispatch('install');
+  ok(r1.rejected && !B1.self.skipped, 'a link that dies mid-install: the new worker does not install');
+  eq(W3.store[B1.CACHE], undefined, 'and filed nothing');
+  eq(Object.keys(W3.store), [A.CACHE], 'the old worker\'s cache is the only one');
+  eq((await A.get('/boot.js')).r.res.body !== undefined, true, 'the old worker still serves');
+  eq(A.at('/boot.js'), 'A:/boot.js', 'from its complete cache');
+  eq(A.at('/gm-page.js') === undefined, true, 'no GM page here, a player');
+  W3.net.fail = {};                                                  // the next good load: the browser tries again
+  const B2 = worker({ build: 'B', world: W3 });
+  const r2 = await B2.dispatch('install'); await B2.dispatch('activate');
+  ok(!r2.rejected && B2.self.skipped && B2.cache().has(u('tracker.js')) && B2.cache().has(u('campaign.js')), 'the next install succeeds and takes over');
+});
+
+await test('sw: activate keeps the newest older cache (a page open on the previous build asks for its files), drops the rest, keeps other apps\' caches and claims', async () => {
+  const w = worker();
+  w.caches._stores['b68-shell-v0'] = new Map([[ORIGIN + '/old', new FakeResponse('0')]]);
+  w.caches._stores['b68-shell-v1'] = new Map([[ORIGIN + '/__b68-activated', new FakeResponse('2000')]]);
+  w.caches._stores['b68-shell-v2'] = new Map([[ORIGIN + '/__b68-activated', new FakeResponse('3000')]]);
+  w.caches._stores['other-app'] = new Map();
   await w.dispatch('activate');
-  eq(Object.keys(w.caches._stores).sort(), [w.CACHE, 'other-app'].sort(), 'old b68 caches deleted, others kept');
+  eq(Object.keys(w.caches._stores).sort(), [w.CACHE, 'b68-shell-v2', 'other-app'].sort(), 'this build, the newest older one, other apps');
+  ok(w.cache().has(ORIGIN + '/__b68-activated'), 'this cache is marked with when it took over');
   ok(w.self.claimed, 'clients.claim');
-  // an install with no network still installs
-  const off = worker(); off.net.down = true; await off.dispatch('install'); ok(off.self.skipped, 'offline install');
+  // only one older cache, with no mark (a worker from before this one): kept
+  const x = worker(); x.caches._stores['b68-shell-legacy'] = new Map();
+  await x.dispatch('activate');
+  eq(Object.keys(x.caches._stores).sort(), [x.CACHE, 'b68-shell-legacy'].sort());
 });
 
 await test('sw: /api/, /cdn-cgi/, other origins and non-GET are not intercepted', async () => {
   const w = worker();
-  for (const p of ['/api/me', '/api/characters?since=x', '/cdn-cgi/access/logout', 'https://cdn.example/x.js']) eq((await w.get(p)).responded, false, p);
+  for (const p of ['/api/me', '/api/characters?since=x', '/cdn-cgi/access/logout', '/media/theme.mp3', 'https://cdn.example/x.js']) eq((await w.get(p)).responded, false, p);
   eq((await w.dispatch('fetch', { request: { url: ORIGIN + '/boot.js', method: 'POST', mode: 'cors' } })).responded, false, 'POST');
   eq(Object.keys(w.caches._stores), [], 'nothing cached');
+  eq(w.net.log, [], 'nothing fetched');
 });
 
-await test('sw: network first (fresh answers win and refresh the cache); offline falls back; a redirect passes through', async () => {
-  const w = worker();
-  let { r } = await w.get('/boot.js');
-  eq([r.ok, r.res.body], [true, 'net:' + ORIGIN + '/boot.js'], 'from the network');
-  w.net.answers[ORIGIN + '/boot.js'] = w.res(200, { body: 'v2' });
-  r = (await w.get('/boot.js')).r; eq(r.res.body, 'v2', 'online: always the network');
-  // navigations: /, /index.html and /?q all store and read the page under /
-  w.net.answers[ORIGIN + '/?x=1'] = w.res(200, { body: 'page' });
-  await w.get('/?x=1', 'navigate');
-  w.net.down = true;
-  eq((await w.get('/boot.js')).r.res.body, 'v2', 'offline: the cached copy');
-  eq((await w.get('/', 'navigate')).r.res.body, 'page', 'offline navigation: the cached page');
-  eq((await w.get('/some/where', 'navigate')).r.res.body, 'page', 'an uncached navigation falls back to the page');
-  const miss = (await w.get('/never.js')).r; eq([miss.ok, miss.err && miss.err.name], [false, 'TypeError'], 'uncached file offline: the network error');
-  // back online, Access redirects: the redirect goes to the page, never the cached copy, and is not stored
-  w.net.down = false;
-  const redirect = w.res(0, { type: 'opaqueredirect', ok: false });
-  w.net.answers[ORIGIN + '/'] = redirect;
-  eq((await w.get('/', 'navigate')).r.res === redirect, true, 'redirect passed through');
-  w.net.answers[ORIGIN + '/boot.js'] = w.res(200, { redirected: true, body: 'login' });
-  eq((await w.get('/boot.js')).r.res.body, 'login', 'followed redirect passed through');
-  w.net.down = true;
-  eq((await w.get('/', 'navigate')).r.res.body, 'page', 'the redirect did not replace the cached page');
-  eq((await w.get('/boot.js')).r.res.body, 'v2', 'nor the cached file');
-  // errors are not cached either
-  w.net.down = false; w.net.answers[ORIGIN + '/core.js'] = w.res(500);
-  await w.get('/core.js'); w.net.down = true;
-  eq((await w.get('/core.js')).r.ok, false, 'a 500 was cached');
-  // a versioned request (boot.js?v=<build>) finds the copy stored under the path alone
-  eq((await w.get('/boot.js?v=2026-10-16-1')).r.res.body, 'v2', 'the query string is not part of the cache key');
-  w.net.down = false; w.net.answers[ORIGIN + '/boot.js?v=2026-10-16-1'] = w.res(200, { body: 'v4' });
-  await w.get('/boot.js?v=2026-10-16-1'); w.net.down = true;
-  eq((await w.get('/boot.js')).r.res.body, 'v4', 'and a versioned answer is stored under the path alone');
+await test('sw: a warm open fetches no script, stylesheet or font from the network; the files are revalidated after first paint, one probe of routes.js follows, and a bad cached copy mends itself', async () => {
+  const W = world(), w = await up('A', W);
+  const cached = w.INSTALL.filter((f) => f !== './'), core = routes().B68Load.BUNDLES.core;
+  W.net.log.length = 0;
+  // the page (network first) and every installed file, as a warm open asks for them: the core as index.html's own tags (no ?v=), the rest through need() (?v=)
+  eq((await w.get('/', 'navigate')).r.res.body, 'page:A', 'the page comes from the network');
+  const before = W.net.log.filter((x) => x !== ORIGIN + '/').length;
+  for (const f of cached) {
+    const lazy = (f.endsWith('.js') || f.endsWith('.css')) && !core.includes(f);
+    const got = (await w.get('/' + f + (lazy ? '?v=A' : ''))).r.res.body;
+    eq(f === 'routes.js' ? got.includes("var BUILD = 'A';") : got, f === 'routes.js' ? true : 'A:/' + f, 'served from the cache: ' + f);
+  }
+  eq(W.net.log.filter((x) => x !== ORIGIN + '/').length, before, 'not one file was fetched from the network while the page loaded');
+  eq(w.pendingTimers(5000).length, 1, 'one refresh round is waiting for after first paint');
+  // a bad copy in the cache: it answers this load, the round replaces it, the next load has the good one
+  w.cache().set(u('boot.js'), new FakeResponse('BAD:/boot.js'));
+  eq((await w.get('/boot.js')).r.res.body, 'BAD:/boot.js', 'the cached copy answers at once, bad as it is');
+  W.net.log.length = 0; W.net.reqs.length = 0;
+  await w.drain();
+  ok(W.net.log.includes(u('boot.js')) && W.net.log.includes(u('tracker.js')), 'the round revalidated what was served');
+  ok(!W.net.log.includes(u('gm-page.js')) && !W.net.log.includes(u('display-page.js')), 'a gm or display file nobody asked for is not fetched');
+  eq(W.net.log.filter((x) => x === u('routes.js')).length, 2, 'routes.js: the page asked for it (revalidated) and one probe checked the build before filing');
+  for (const r of W.net.reqs) eq(r.cache === 'no-cache' || r.cache === 'no-store', true, 'revalidated, not the browser\'s stale copy: ' + r.url);
+  eq(w.at('/boot.js'), 'A:/boot.js', 'the cache now holds the good copy');
+  eq((await w.get('/boot.js')).r.res.body, 'A:/boot.js', 'and the next load gets it');
 });
 
-await test('sw: a slow network (up but dead) with a cached copy: the cache answers at the limit (4 s page, 8 s files) and the late answer still refreshes the cache; a fast network wins; without a cached copy the network is waited for', async () => {
-  const w = worker();
-  const BOOT = ORIGIN + '/boot.js', PAGE = ORIGIN + '/';
-  await w.get('/boot.js');                                                   // cached as net:…/boot.js
-  w.net.answers[PAGE] = w.res(200, { body: 'page' }); await w.get('/', 'navigate');
-  const pending = async () => { await sleep(10); return w.timers.filter((t) => !t.done).map((t) => t.ms); };
-  // a file: the 8 s limit passes, the cached copy answers, the network's late answer refreshes the cache
-  w.net.slow[BOOT] = true;
-  let r = await w.get('/boot.js', 'no-cors', async () => {
-    eq(await pending(), [8000], 'an 8 s limit for a file the cache holds');
-    w.tick(); await sleep(10);
-    w.net.pending[BOOT].resolve(w.res(200, { body: 'late' }));
+await test('sw: the page is network first (the answer is served and, when it is this build\'s, filed); a slow network gets the cached page after 4 s and the late answer still refreshes it; offline gets the cached page', async () => {
+  const W = world(), w = await up('A', W);
+  const PAGE = ORIGIN + '/';
+  eq(w.at('/'), 'page:A', 'installed');
+  W.net.answers[PAGE] = new FakeResponse('page:A2', { headers: { 'X-B68-Build': 'A' } });
+  eq((await w.get('/', 'navigate')).r.res.body, 'page:A2', 'online: the network answers');
+  eq(w.at('/'), 'page:A2', 'and is filed');
+  // /index.html and /?x are the same page
+  W.net.answers[ORIGIN + '/?x=1'] = new FakeResponse('page:A3', { headers: { 'X-B68-Build': 'A' } });
+  await w.get('/?x=1', 'navigate'); eq(w.at('/'), 'page:A3', 'a query string is not part of the key');
+  // slow: the cache answers at the limit, the late answer (this build) refreshes the cache
+  W.net.slow[PAGE] = true;
+  let r = await w.get('/', 'navigate', async () => {
+    await sleep(10);
+    eq(w.pendingTimers().map((t) => t.ms), [4000], 'a 4 s limit for a navigation the cache holds');
+    w.tick(4000); await sleep(10);
+    W.net.pending[PAGE].resolve(new FakeResponse('page:late', { headers: { 'X-B68-Build': 'A' } }));
   });
-  eq(r.r.res.body, 'net:' + BOOT, 'the cached copy answered when the network was slow');
-  eq(w.caches._stores[w.CACHE].get(BOOT).body, 'late', 'the late answer refreshed the cache');
-  eq((await w.get('/boot.js', 'no-cors', async () => { await sleep(10); w.net.pending[BOOT].resolve(w.res(200, { body: 'later' })); })).r.res.body, 'later', 'a network answer before the limit wins');
-  // the page: 4 s
-  w.net.slow[PAGE] = true;
-  r = await w.get('/', 'navigate', async () => {
-    eq(await pending(), [4000], 'a 4 s limit for a navigation the cache holds');
-    w.tick(); await sleep(10);
-    w.net.pending[PAGE].reject(new TypeError('Failed to fetch'));                // and then it fails: the cached page already answered
-  });
-  eq(r.r.res.body, 'page', 'the cached page answered the slow navigation');
-  // a fast network: the timer is cleared, the network answer is served
-  delete w.net.slow[BOOT]; w.net.answers[BOOT] = w.res(200, { body: 'v3' });
-  const before = w.timers.length;
-  r = await w.get('/boot.js');
-  eq([r.r.res.body, w.timers.slice(before).every((t) => t.done)], ['v3', true], 'fast network: served, the timer cleared');
-  // a failing network with a cached copy: the cache answers at once, no waiting for the limit
-  w.net.down = true;
-  eq((await w.get('/boot.js')).r.res.body, 'v3', 'offline: the cached copy at once');
-  w.net.down = false;
-  // nothing cached: no limit, the network is waited for however long it takes
-  const NEW = ORIGIN + '/new.js'; w.net.slow[NEW] = true;
+  eq(r.r.res.body, 'page:A3', 'the cached page answered the slow navigation');
+  await w.drain();
+  eq(w.at('/'), 'page:late', 'the late answer refreshed the cache');
+  // a fast network: the timer is cleared
+  delete W.net.slow[PAGE]; delete W.net.answers[PAGE];
   const t0 = w.timers.length;
-  r = await w.get('/new.js', 'no-cors', async () => { await sleep(10); eq(w.timers.length, t0, 'no timer without a cached copy'); w.net.pending[NEW].resolve(w.res(200, { body: 'eventually' })); });
-  eq(r.r.res.body, 'eventually', 'uncached: the network answer, late as it was');
+  r = await w.get('/', 'navigate');
+  eq([r.r.res.body, w.timers.slice(t0).every((t) => t.done)], ['page:A', true], 'fast network: served, the timer cleared');
+  // the network fails with a cached page: the cache answers at once
+  W.net.down = true;
+  eq((await w.get('/', 'navigate')).r.res.body, 'page:A', 'offline: the cached page');
+  eq((await w.get('/some/where', 'navigate')).r.res.body, 'page:A', 'an uncached navigation falls back to the page');
+  // nothing cached: no limit, the network is waited for
+  W.net.down = false;
+  const fresh = worker({ build: 'A', world: world() }); fresh.net.build = 'A'; fresh.net.slow[PAGE] = true;
+  const t1 = fresh.timers.length;
+  r = await fresh.get('/', 'navigate', async () => { await sleep(10); eq(fresh.timers.length, t1, 'no timer without a cached page'); fresh.net.pending[PAGE].resolve(new FakeResponse('page:eventually', { headers: { 'X-B68-Build': 'A' } })); });
+  eq(r.r.res.body, 'page:eventually', 'uncached: the network answer, late as it was');
+  // a page that names no build (not the Worker's) cannot be told apart: the cached page answers, else the network's
+  W.net.answers[PAGE] = new FakeResponse('page:nameless');
+  eq((await w.get('/', 'navigate')).r.res.body, 'page:A', 'no build named: the cached page');
+  eq(w.at('/'), 'page:A', 'and nothing is filed');
 });
+
+await test('sw: a redirect (Access asking to sign in) is never cached and always reaches the page: the page, a file, a revalidation and the probe', async () => {
+  const W = world(), w = await up('A', W);
+  const PAGE = ORIGIN + '/';
+  const redirect = new FakeResponse(null, { status: 0, type: 'opaqueredirect' });
+  W.net.answers[PAGE] = redirect;
+  W.net.log.length = 0;
+  eq((await w.get('/', 'navigate')).r.res === redirect, true, 'the page: the redirect is handed to the browser as it is');
+  eq(W.net.log, [PAGE], 'and nothing else was fetched for it (no probe)');
+  eq(w.at('/'), 'page:A', 'the cached page was not replaced');
+  // a file the cache does not hold, answered by a followed redirect (a login page): passed on, not filed
+  W.net.answers[u('never.js')] = new FakeResponse('login', { redirected: true });
+  eq((await w.get('/never.js')).r.res.body, 'login', 'followed redirect passed through');
+  await w.drain();
+  eq(w.cache().has(u('never.js')), false, 'a followed redirect is not filed');
+  // a revalidation that comes back redirected leaves the cached copy alone
+  await w.get('/boot.js');
+  W.net.answers[u('boot.js')] = new FakeResponse('login', { redirected: true });
+  await w.drain();
+  eq(w.at('/boot.js'), 'A:/boot.js', 'the redirected revalidation did not replace the file');
+  // errors are not cached either
+  W.net.answers[u('core.js')] = new FakeResponse('oops', { status: 500 });
+  await w.get('/core.js'); await w.drain();
+  eq(w.at('/core.js'), 'A:/core.js', 'a 500 revalidation did not replace the file');
+  // the probe hitting the login page: build unknown, nothing is filed
+  W.net.answers[u('routes.js')] = new FakeResponse('<html>Sign in</html>', { redirected: true });
+  W.net.answers[u('tracker.js')] = new FakeResponse('A:/tracker.js (new)');
+  await w.get('/tracker.js'); await w.drain();
+  eq(w.at('/tracker.js'), 'A:/tracker.js', 'a probe that could not tell the build files nothing');
+});
+
+await test('sw: starting offline: the page and every installed file come from the cache, no error, nothing is waited for; a file the cache lacks fails as the network does', async () => {
+  const W = world(), w = await up('A', W);
+  W.net.down = true; W.net.log.length = 0;
+  const t0 = w.timers.length;
+  eq((await w.get('/', 'navigate')).r.res.body, 'page:A', 'the page');
+  eq(w.timers.slice(t0).filter((t) => t.ms === 4000 && !t.done).length, 0, 'no timer left waiting on the network');
+  for (const f of ['boot.js', 'core.js', 'campaign.js', 'fonts/SpaceMono-Bold.woff2', 'manifest.webmanifest']) eq((await w.get('/' + f)).r.res.body, 'A:/' + f, f);
+  await w.drain();
+  eq(W.net.log.filter((x) => x === u('routes.js')).length, 0, 'no probe when no answer arrived to file');
+  eq(w.at('/boot.js'), 'A:/boot.js', 'the cache is as it was');
+  // a player has no GM page cached: offline it fails like the network
+  const miss = (await w.get('/gm-page.js?v=A')).r; eq([miss.ok, miss.err && miss.err.name], [false, 'TypeError'], 'uncached file offline: the network error');
+  // back online: the first visits fill what was missing, once the probe agrees
+  W.net.down = false;
+  eq((await w.get('/gm-page.js?v=A')).r.res.body, 'A:/gm-page.js', 'online: the network');
+  await w.drain();
+  eq(w.at('/gm-page.js'), 'A:/gm-page.js', 'and it is filed for next time');
+});
+
+await test('sw: an update from build A to B: A\'s page keeps A\'s files, a page of B gets B\'s, no cache ever holds two builds, and a reload after B takes over is all B', async () => {
+  const W = world(), A = await up('A', W);
+  // an A page is open: it has its files from A's cache
+  await A.get('/', 'navigate');
+  for (const f of ['boot.js', 'tracker.js']) await A.get('/' + f);
+  // the GM's laptop has the GM page cached under A
+  await A.message({ precache: ['gm'] });
+  eq(A.at('/gm-page.js'), 'A:/gm-page.js', 'A cached the GM page');
+  // deploy B
+  W.net.build = 'B';
+  // 1. A reload before B has installed: A's worker sees B's page. The page is B's, so are its files; nothing goes into A's cache
+  const marks = () => [...A.cache().entries()].filter(([k]) => !k.endsWith('__b68-activated')).map(([k, r]) => r.body);
+  const aBefore = JSON.stringify(marks());
+  eq((await A.get('/', 'navigate')).r.res.body, 'page:B', 'the new page comes from the network');
+  ok(A.self.registration.updates >= 1, 'A asked the browser to look for the new worker');
+  for (const f of ['boot.js', 'tracker.js', 'core.js']) eq((await A.get('/' + f)).r.res.body, 'B:/' + f, f + ' comes from the network, not the older build\'s cache');
+  eq((await A.get('/gm-page.js?v=B')).r.res.body, 'B:/gm-page.js', 'a lazy file of B: the network');
+  await A.drain();
+  eq(JSON.stringify(marks()), aBefore, 'A\'s cache holds the same files as before: nothing of B went into it');
+  // the A page still open lazy-loads its own build: A's cache
+  eq((await A.get('/gm-page.js?v=A')).r.res.body, 'A:/gm-page.js', 'an A page keeps A\'s files');
+  // 2. B's worker installs and takes over: B's own cache, filled with B only
+  const B = worker({ build: 'B', world: W });
+  await B.dispatch('install'); await B.dispatch('activate');
+  ok(B.self.skipped && B.self.claimed, 'B takes over');
+  eq([...B.cache().values()].filter((r) => r.body !== 'page:B' && !String(r.body).startsWith('B:') && !String(r.body).includes("var BUILD = 'B'") && !/^\d+$/.test(r.body)).map((r) => r.body), [], 'B\'s cache holds B files only');
+  eq(Object.keys(W.store).sort(), ['b68-shell-A', 'b68-shell-B'], 'A\'s cache is kept for the A page still open');
+  // the A page asks its lazy bundle after B took over: A's cache, by its ?v=
+  eq((await B.get('/gm-page.js?v=A')).r.res.body, 'A:/gm-page.js', 'B\'s worker answers an A page from A\'s cache');
+  eq((await B.get('/campaign.js?v=A')).r.res.body, 'A:/campaign.js', 'including a file A cached at install');
+  // a reload: all B, from B's cache, no file from the network
+  W.net.log.length = 0;
+  eq((await B.get('/', 'navigate')).r.res.body, 'page:B', 'the reload gets B\'s page');
+  for (const f of ['boot.js', 'tracker.js', 'campaign.js']) eq((await B.get('/' + f + '?v=B')).r.res.body, 'B:/' + f, f);
+  eq(W.net.log.filter((x) => x !== ORIGIN + '/').length, 0, 'and no file from the network');
+  // 3. then C: A's cache goes, B's stays for the B page open
+  W.net.build = 'C';
+  const C = worker({ build: 'C', world: W });
+  await C.dispatch('install'); await C.dispatch('activate');
+  eq(Object.keys(W.store).sort(), ['b68-shell-B', 'b68-shell-C'], 'only the newest older cache is kept');
+});
+
+/* main's sw.js as it was live at Deploy 13, run as the older or the newer worker of a transition */
+const PREV = path.join(ROOT, 'checks', 'runtime', 'fixtures', 'sw-previous.js');
+const bodies = (w, name) => [...(name ? w.W.store[name] : w.cache()).entries()].filter(([k]) => !k.endsWith('__b68-activated')).map(([, r]) => String(r.body));
+
+await test('transition at the deploy: the live sw.js (build A) to this one (build B): the open A page keeps A\'s files, the player\'s install fetches no gm or display file, nothing is stranded, a reload lands on B, and the caches end up as the rules say', async () => {
+  const W = world(); W.net.build = 'A';
+  const A = worker({ build: 'A', world: W, sw: PREV });
+  await A.dispatch('install'); await A.dispatch('activate');
+  ok(A.self.skipped && A.self.claimed, 'the live worker installs and takes over');
+  ok(A.cache().has(u('gm-page.js')) && A.cache().has(u('display-page.js')), 'the live worker cached everything, gm and display too');
+  // an A page is open; the live worker (network first) is serving it
+  eq((await A.get('/', 'navigate')).r.res.body, 'page:A');
+  for (const f of ['boot.js', 'tracker.js']) eq((await A.get('/' + f)).r.res.body, 'A:/' + f, f);
+  // deploy B: the browser installs this worker next to the running one
+  W.net.build = 'B'; W.net.log.length = 0;
+  const B = worker({ build: 'B', world: W });
+  const inst = await B.dispatch('install');
+  eq(inst.rejected, null, 'B installs');
+  eq([...new Set(W.net.log)].filter((x) => ROLE_ONLY.some((f) => x === u(f))), [], 'a player\'s install under B fetched no gm or display file');
+  ok(W.net.log.length > 0, 'it did fetch its own files');
+  ok(B.self.skipped, 'B takes over at once');
+  eq(bodies(B).filter((b) => b !== 'page:B' && !b.startsWith('B:') && !b.includes("var BUILD = 'B'")), [], 'B\'s cache holds B files only');
+  await B.dispatch('activate');
+  eq(Object.keys(W.store).sort(), [A.CACHE, B.CACHE].sort(), 'the live build\'s cache is kept (no mark: the newest older one) for the A page still open');
+  // the A page asks for its lazy files: B's worker answers them from A's cache by ?v=, a consistent build
+  for (const f of ['gm-page.js', 'campaign.js', 'display-page.js']) eq((await B.get('/' + f + '?v=A')).r.res.body, 'A:/' + f, 'the A page\'s ' + f);
+  // nothing stranded: a reload lands fully on B, from B's cache, no script from the network
+  W.net.log.length = 0;
+  eq((await B.get('/', 'navigate')).r.res.body, 'page:B', 'the reload gets B\'s page');
+  for (const f of ['boot.js', 'core.js', 'tracker.js', 'runtime/cf.js', 'routes.js']) {
+    const body = (await B.get('/' + f)).r.res.body;
+    ok(f === 'routes.js' ? String(body).includes("var BUILD = 'B'") : body === 'B:/' + f, f + ' is B: ' + body);
+  }
+  eq(W.net.log.filter((x) => x.endsWith('.js')), [], 'and no script from the network');
+  // a GM on B asks for the rest
+  await B.message({ precache: ['gm', 'display'] });
+  ok(B.at('/gm-page.js') === 'B:/gm-page.js', 'the GM\'s message fills B\'s cache with B files');
+  // the next deploy: the live build's cache goes, B's stays for the B page still open
+  W.net.build = 'C';
+  const C = worker({ build: 'C', world: W });
+  await C.dispatch('install'); await C.dispatch('activate');
+  eq(Object.keys(W.store).sort(), [B.CACHE, C.CACHE].sort(), 'after the next activation only the newest older cache remains');
+});
+
+await test('rollback: this sw.js (build N) to the one that was live (build R): the old worker installs, takes over, deletes this worker\'s caches and serves one complete, consistent build', async () => {
+  const W = world(); W.net.build = 'N';
+  const N = await up('N', W);
+  await N.message({ precache: ['gm', 'display'] });
+  await N.get('/', 'navigate'); await N.get('/boot.js');
+  ok(N.cache().has(u('gm-page.js')) && [...N.cache().keys()].some((k) => k.endsWith('__b68-activated')), 'N has its cache, marked');
+  // the rollback: the server is on R, whose Worker predates X-B68-Build on the page
+  W.net.build = 'R'; W.net.noHeader = true;
+  eq((await N.get('/', 'navigate')).r.res.body, 'page:N', 'meanwhile N serves its own consistent page');
+  eq((await N.get('/boot.js')).r.res.body, 'N:/boot.js', 'and its own files');
+  await N.drain();
+  eq(N.at('/'), 'page:N', 'nothing of R was filed in N\'s cache');
+  const R = worker({ build: 'R', world: W, sw: PREV });
+  const inst = await R.dispatch('install');
+  eq(inst.rejected, null, 'the old worker installs over this one\'s caches');
+  ok(R.self.skipped, 'and skips waiting');
+  await R.dispatch('activate');
+  ok(R.self.claimed, 'and activates');
+  eq(Object.keys(W.store), [R.CACHE], 'N\'s caches (and its mark) are deleted');
+  eq(bodies(R).filter((b) => b !== 'page:R' && !b.startsWith('R:') && !b.includes("var BUILD = 'R'")), [], 'R\'s cache holds R files only');
+  // a reload under the old worker: a complete R
+  eq((await R.get('/', 'navigate')).r.res.body, 'page:R', 'the page');
+  for (const f of ['boot.js', 'tracker.js', 'campaign.js', 'gm-page.js', 'display-page.js']) eq((await R.get('/' + f)).r.res.body, 'R:/' + f, f + ' is R');
+  W.net.down = true;
+  eq((await R.get('/boot.js')).r.res.body, 'R:/boot.js', 'offline: R from its cache');
+  eq((await R.get('/', 'navigate')).r.res.body, 'page:R', 'offline page: R');
+  eq(Object.keys(W.store), [R.CACHE], 'no other cache appeared');
+});
+
+await test('sw: a moved worker on a slow link: a navigation the cache answered (4 s) loads its core from the cache, zero scripts from the network; a page of the new build, or one the worker does not know, still gets the network', async () => {
+  const W = world(), w = await up('A', W);
+  // the worker learns the server is on B from a fast page
+  W.net.build = 'B';
+  eq((await w.get('/', 'navigate', null, { resultingClientId: 'new-page' })).r.res.body, 'page:B');
+  eq(w.pendingTimers(4000).length, 0, 'the fast answer cleared its timer');
+  // the venue's wifi: the next page takes longer than 4 s
+  W.net.slow[ORIGIN + '/'] = true;
+  const r = await w.get('/', 'navigate', async () => { await sleep(10); eq(w.pendingTimers().map((t) => t.ms), [4000], 'the 4 s limit applies to a moved worker too'); w.tick(4000); }, { resultingClientId: 'slow-page' });
+  eq(r.r.res.body, 'page:A', 'the cached page answered');
+  W.net.log.length = 0;
+  for (const f of CORE_JS) eq((await w.get('/' + f, 'no-cors', null, { clientId: 'slow-page' })).r.res.body, 'A:/' + f, f + ' from the cache for the cached page');
+  eq(W.net.log.filter((x) => x.endsWith('.js')), [], 'not one script from the network');
+  // the page of build B, and a client the worker never heard of, go to the network
+  eq((await w.get('/boot.js', 'no-cors', null, { clientId: 'new-page' })).r.res.body, 'B:/boot.js', 'a page of the new build: the network');
+  eq((await w.get('/boot.js', 'no-cors', null, { clientId: 'who' })).r.res.body, 'B:/boot.js', 'an unknown page: the network');
+  eq((await w.get('/boot.js')).r.res.body, 'B:/boot.js', 'no client id: the network');
+  // the slow page finally answers (build B): not filed either
+  W.net.pending[ORIGIN + '/'].resolve(new FakeResponse('page:B', { headers: { 'X-B68-Build': 'B' } }));
+  await w.drain();
+  eq([...w.cache().values()].filter((x) => String(x.body).startsWith('B:')).length, 0, 'no B file in the A cache');
+});
+
+await test('sw: a slow answer that arrives after the server switched builds is dropped, never filed into the older build\'s cache (no mixed cache); one that is still this build\'s is filed; a probe that fails files nothing', async () => {
+  const W = world(), w = await up('A', W);
+  const BOOT = u('boot.js');
+  await w.get('/boot.js');                                           // from the cache; a round is waiting
+  W.net.slow[BOOT] = true;
+  w.tick(5000);                                                      // after first paint: the round starts, boot.js is slow
+  await sleep(20);
+  ok(W.net.pending[BOOT], 'the revalidation of boot.js is in flight');
+  W.net.build = 'B';                                                 // the server switches while it is
+  delete W.net.slow[BOOT];
+  W.net.pending[BOOT].resolve(new FakeResponse('B:/boot.js (late)'));
+  await w.drain();
+  eq(w.at('/boot.js'), 'A:/boot.js', 'the late build-B answer was not filed into the A cache');
+  eq([...w.cache().values()].filter((r) => String(r.body).startsWith('B:')).length, 0, 'the A cache holds no B file');
+  ok(w.self.registration.updates >= 1, 'and the worker asked for the update');
+  // the next request: A is told the server moved on, so a file comes from the network (B), consistent with a B page
+  eq((await w.get('/core.js')).r.res.body, 'B:/core.js', 'once moved, files come from the network');
+  // the same slow answer, but the server is still on A: filed
+  const W2 = world(), w2 = await up('A', W2);
+  await w2.get('/boot.js'); W2.net.slow[u('boot.js')] = true; w2.tick(5000); await sleep(20);
+  delete W2.net.slow[u('boot.js')];
+  W2.net.pending[u('boot.js')].resolve(new FakeResponse('A:/boot.js (late, newer)'));
+  await w2.drain();
+  eq(w2.at('/boot.js'), 'A:/boot.js (late, newer)', 'a late answer of the same build is filed');
+  // the probe fails (the link died after the file arrived): nothing is filed
+  const W3 = world(), w3 = await up('A', W3);
+  await w3.get('/boot.js'); W3.net.answers[u('boot.js')] = new FakeResponse('A:/boot.js (unverified)');
+  W3.net.fail[u('routes.js')] = true;                                // the probe cannot get through
+  w3.tick(5000);
+  await w3.drain();
+  eq(w3.at('/boot.js'), 'A:/boot.js', 'no probe, no filing');
+  // a late PAGE of another build is not filed either
+  const W4 = world(), w4 = await up('A', W4);
+  W4.net.slow[ORIGIN + '/'] = true;
+  const r = await w4.get('/', 'navigate', async () => { await sleep(10); w4.tick(4000); await sleep(10); W4.net.build = 'B'; W4.net.pending[ORIGIN + '/'].resolve(new FakeResponse('page:B', { headers: { 'X-B68-Build': 'B' } })); });
+  eq(r.r.res.body, 'page:A', 'the cached page answered');
+  await w4.drain();
+  eq(w4.at('/'), 'page:A', 'the late page of build B was not filed');
+});
+
+await test('sw: the GM\'s message { precache: [\'gm\', \'display\'] } caches those bundles (only what is missing, once), and nothing else; unknown names, other shapes and a moved worker do nothing', async () => {
+  const W = world(), w = await up('A', W);
+  const roleFiles = ROLE_ONLY;
+  eq(roleFiles.filter((f) => w.cache().has(u(f))), [], 'a player\'s cache holds none of them');
+  W.net.log.length = 0;
+  await w.message({ precache: ['gm', 'display'] });
+  eq(roleFiles.filter((f) => !w.cache().has(u(f))), [], 'the GM page and the display are cached');
+  eq([...new Set(W.net.log.filter((x) => x !== u('routes.js')))].sort(), roleFiles.map(u).sort(), 'exactly the files of those two bundles were fetched');
+  eq(W.net.log.filter((x) => x === u('routes.js')).length, 1, 'one probe vouched for the batch');
+  eq(w.at('/gm-page.js'), 'A:/gm-page.js');
+  // a second message (the next page load): nothing to fetch
+  W.net.log.length = 0;
+  await w.message({ precache: ['gm', 'display'] });
+  eq(W.net.log, [], 'already cached: no request at all');
+  // the iPad asks for the display alone
+  const W2 = world(), w2 = await up('A', W2);
+  await w2.message({ precache: ['display'] });
+  eq(GM_ONLY.filter((f) => w2.cache().has(u(f))), [], 'the display alone brings no GM-only file');
+  ok(w2.cache().has(u('display-page.js')), 'and brings the display page');
+  // junk
+  const W3 = world(), w3 = await up('A', W3); W3.net.log.length = 0;
+  for (const d of [null, 'gm', {}, { precache: 'gm' }, { precache: ['nope', 7, null] }, { precache: [] }]) await w3.message(d);
+  eq(W3.net.log, [], 'unknown names and other shapes fetch nothing');
+  // a moved worker (the server is on B) does not cache A's files for the GM
+  const W4 = world(), w4 = await up('A', W4); W4.net.build = 'B'; await w4.get('/', 'navigate'); W4.net.log.length = 0;
+  await w4.message({ precache: ['gm'] });
+  eq(W4.net.log, [], 'moved: nothing fetched');
+  // the files are fetched but the server moved on in between: nothing is filed
+  const W5 = world(), w5 = await up('A', W5);
+  W5.net.slow[u('gm-page.js')] = true;
+  const p = w5.message({ precache: ['gm'] });
+  await sleep(20); W5.net.build = 'B'; delete W5.net.slow[u('gm-page.js')]; W5.net.pending[u('gm-page.js')].resolve(new FakeResponse('B:/gm-page.js'));
+  await p;
+  eq(GM_ONLY.filter((f) => w5.cache().has(u(f))), [], 'a batch the probe did not vouch for is not filed');
+});
+
+await test('sw: a file outside the shell (an ambient scene) is network first with an 8 s fallback to its cached copy, filed after a probe; a file of another build comes from that build\'s cache or the network and is never written', async () => {
+  const W = world(), w = await up('A', W);
+  const SCENE = u('ambient/night-tram.html');
+  eq((await w.get('/ambient/night-tram.html')).r.res.body, 'A:/ambient/night-tram.html', 'first visit: the network');
+  await w.drain(); ok(w.cache().has(SCENE), 'filed');
+  W.net.answers[SCENE] = new FakeResponse('A:scene v2');
+  eq((await w.get('/ambient/night-tram.html')).r.res.body, 'A:scene v2', 'online: the network answers first (not the shell\'s cache-first rule)');
+  await w.drain(); eq(w.at('/ambient/night-tram.html'), 'A:scene v2', 'and the newer copy is filed');
+  W.net.slow[SCENE] = true; delete W.net.answers[SCENE];
+  const r = await w.get('/ambient/night-tram.html', 'no-cors', async () => { await sleep(10); eq(w.pendingTimers().map((t) => t.ms).filter((m) => m === 8000), [8000], 'an 8 s limit'); w.tick(8000); });
+  eq(r.r.res.body, 'A:scene v2', 'slow: the cached copy answered at the limit');
+  W.net.pending[SCENE].resolve(new FakeResponse('A:scene v3')); await w.drain();
+  // another build's file
+  const W2 = world(), w2 = await up('A', W2);
+  W2.net.log.length = 0;
+  eq((await w2.get('/gm-page.js?v=B')).r.res.body, 'A:/gm-page.js', 'no cache for build B: the network');
+  await w2.drain();
+  eq(w2.cache().has(u('gm-page.js')), false, 'and nothing is written for it');
+});
+
+/* ---------- cf.js asks the worker for the GM's and the iPad's bundles ---------- */
+await test('cf.js: once /api/me says GM it asks the worker to precache gm and display; the iPad (display) asks for display; a player, a signed-out visit and a browser with no worker ask for nothing', async () => {
+  const SRC = fs.readFileSync(path.join(APP, 'runtime', 'cf.js'), 'utf8');
+  async function visit(role, { down = false, withSw = true, preset } = {}) {
+    const posts = [];
+    const reg = { active: { postMessage: (m) => posts.push(m) } };
+    const stored = {};
+    const win = { document: { readyState: 'complete', addEventListener() {}, createElement: () => ({ setAttribute() {} }), head: { appendChild() {}, querySelector: () => null } }, setTimeout, clearTimeout, console, AbortController,
+      location: { protocol: 'https:', pathname: '/' }, addEventListener() {}, dispatchEvent() { return true; }, CustomEvent: class { constructor(t, i) { this.type = t; this.detail = i && i.detail; } },
+      localStorage: { getItem: (k) => (k in stored ? stored[k] : null), setItem: (k, v) => { stored[k] = String(v); }, removeItem: (k) => { delete stored[k]; } },
+      navigator: withSw ? { serviceWorker: { register: () => Promise.resolve(), ready: Promise.resolve(reg), controller: null } } : {},
+      fetch: async (url) => {
+        if (down) throw new TypeError('Failed to fetch');
+        const body = role ? { id: 'x@x.test', email: 'x@x.test', name: 'X', role, campaign: 'default', build: 'dev' } : null;
+        const mk = (status, text) => ({ status, ok: status >= 200 && status < 300, redirected: false, type: 'basic', headers: { get: (h) => (h.toLowerCase() === 'content-type' ? 'application/json' : null) }, text: async () => text, json: async () => JSON.parse(text) });
+        return role ? mk(200, JSON.stringify(body)) : mk(401, '{"error":"not signed in"}');
+      } };
+    win.window = win;
+    vm.createContext(win); vm.runInContext(SRC, win, { filename: 'cf.js' });
+    await win.claude.use('user'); await sleep(20);
+    return posts;
+  }
+  eq(await visit('gm'), [{ precache: ['gm', 'display'] }], 'the GM');
+  eq(await visit('display'), [{ precache: ['display'] }], 'the iPad');
+  eq(await visit('player'), [], 'a player');
+  eq(await visit(null), [], 'signed out');
+  eq(await visit('gm', { withSw: false }), [], 'no service worker in this browser');
+});
+
 
 /* ---------- cf.js wires the install bits only on the hosted build ---------- */
 await test('cf.js: injects the manifest (with credentials), theme colour, icons, home-screen metas and registers sw.js; nothing when inert', async () => {
