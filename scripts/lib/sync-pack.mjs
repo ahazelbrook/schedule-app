@@ -73,7 +73,7 @@ export async function pushPack(ctx) {
   for (const raw of pk.parts) {
     if (raw.part === 'assist' && typeof raw.body.prefix === 'string') {
       // the prep guard, before anything is uploaded: an assist part with no prep, or prep with no Must land, runs the seats blind
-      const why = ctx.allowNoPrep ? '' : prepProblem(raw.src);
+      const why = ctx.allowNoPrep ? '' : prepProblem(raw.src, ctx.today);
       if (why) { report.refuse('pack:assist', why, []); continue; }
       assistTouched = true;
       assistClient = planning ? null : filesClient();

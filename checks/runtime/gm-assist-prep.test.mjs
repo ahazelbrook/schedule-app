@@ -45,18 +45,18 @@ await test('dateKey reads DD/MM/YYYY (never as a US date) and ISO; rubbish is nu
   assert.equal(dateKey(''), null);
 });
 
-await test('pick: the latest gm_prep note dated on or after today, not the soonest, and not a past one', () => {
+await test('pick: the SOONEST gm_prep note dated on or after today (tonight), not a later one and not a past one', () => {
   const v = mkvault();
   sess(v, 'Group', 'night-a', 'date: 17/10/2026\ngm_prep: true');
   sess(v, 'Group', 'night-b', 'date: 28/10/2026\ngm_prep: true');
   sess(v, 'Group', 'night-c', 'date: 07/11/2026\ngm_prep: true');
   const r = resolvePrep({ vault: v, today: TODAY });
-  assert.equal(r.rel, rel('Group', 'night-c'), 'the ticket says latest on or after today');
+  assert.equal(r.rel, rel('Group', 'night-b'), 'the soonest on or after today, today included');
   assert.equal(r.how, 'date');
   assert.equal(r.ahead, 2);
   assert.equal(resolvePrep({ vault: v, today: dateKey('08/11/2026') }).rel, rel('Group', 'night-c'), 'all past: the newest');
   assert.equal(resolvePrep({ vault: v, today: dateKey('08/11/2026') }).how, 'past');
-  assert.equal(resolvePrep({ vault: v, today: dateKey('28/10/2026') }).rel, rel('Group', 'night-c'));
+  assert.equal(resolvePrep({ vault: v, today: dateKey('29/10/2026') }).rel, rel('Group', 'night-c'));
 });
 
 await test('pick: today counts as on or after; notes without gm_prep, without a date or off the Sessions folders are ignored', () => {
@@ -74,8 +74,8 @@ await test('pick: today counts as on or after; notes without gm_prep, without a 
 
 await test('pick: looks in every campaign folder, and the first of equal dates is stable', () => {
   const v = mkvault();
-  sess(v, 'Group', 'g1', 'date: 01/11/2026\ngm_prep: true');
-  sess(v, 'Solo', 's1', 'date: 02/11/2026\ngm_prep: true');
+  sess(v, 'Group', 'g1', 'date: 02/11/2026\ngm_prep: true');
+  sess(v, 'Solo', 's1', 'date: 01/11/2026\ngm_prep: true');
   assert.equal(resolvePrep({ vault: v, today: TODAY }).rel, rel('Solo', 's1'));
 });
 
@@ -175,6 +175,41 @@ await test('push: a part with prep and Must land entries goes through without th
   assert.equal(rep.refused.length, 0);
   assert.equal(s.client.uploads.length, 1);
   assert.ok(inD1(s.exec, 'assist'));
+});
+
+await test('push: a prep picked BY DATE that is dated before today is refused; the same note named explicitly is allowed; --allow-no-prep overrides', async () => {
+  const today = dateKey('08/11/2026');
+  const stale = { prep: 'a/b.md', mustLand: 3, prepBy: 'past', prepDate: dateKey('07/11/2026') };
+  const s = await pushSetup(stale);
+  const rep = await s.go({ today });
+  assert.match(rep.refused[0].why, /picked by date and is dated before today/);
+  assert.match(rep.refused[0].why, /--assist-prep/); assert.match(rep.refused[0].why, /--allow-no-prep/);
+  assert.equal(s.client.uploads.length, 0); assert.equal(inD1(s.exec, 'assist'), undefined);
+  // a pack built when it was still ahead goes stale on the day after, even though it says "date"
+  const s1 = await pushSetup({ ...stale, prepBy: 'date' });
+  assert.equal((await s1.go({ today })).refused.length, 1);
+  assert.equal((await s1.go({ today: dateKey('07/11/2026') })).refused.length, 0, 'on the night itself it is fine');
+  // named on purpose: never refused on date
+  const s2 = await pushSetup({ ...stale, prepBy: 'named' });
+  assert.equal((await s2.go({ today })).refused.length, 0);
+  assert.ok(inD1(s2.exec, 'assist'));
+  // the override
+  const s3 = await pushSetup(stale);
+  assert.equal((await s3.go({ today, allowNoPrep: true })).refused.length, 0);
+  assert.ok(inD1(s3.exec, 'assist'));
+});
+
+await test('preflight shows the same verdict for a stale pick-by-date, and none for a named prep', async () => {
+  const v = fixtureVault();
+  const mk = async (prepBy) => { const { priv } = await packFor(v, { prep: rel('Group', 'night-x') }); const f = path.join(priv, 'b68-gm-pack.json'), pk = JSON.parse(fs.readFileSync(f, 'utf8')); pk.parts.assist.src.prepBy = prepBy; pk.parts.assist.src.prepDate = dateKey('07/11/2026'); fs.writeFileSync(f, JSON.stringify(pk)); return priv; };
+  let priv = await mk('date');
+  let r = await preflight({ vault: v, privateDir: priv, root: priv, today: '08/11/2026' });
+  assert.match(r.lines.join('\n'), /PUSH GUARD:\s+a push would be REFUSED: the prep note night-x\.md was picked by date/); assert.equal(r.code, 1);
+  r = await preflight({ vault: v, privateDir: priv, root: priv, today: '07/11/2026' });
+  assert.equal(r.code, 0);
+  priv = await mk('named');
+  r = await preflight({ vault: v, privateDir: priv, root: priv, today: '08/11/2026' });
+  assert.equal(r.code, 0);
 });
 
 await test('gm-sync: --allow-no-prep is parsed, off by default', () => {

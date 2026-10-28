@@ -118,8 +118,8 @@ export async function preflight(opts = {}) {
     say('               ' + (hash && state.hash === hash ? 'the prefix is unchanged since that upload: a push reuses the file' : 'the prefix has changed since that upload: the next push uploads a new file'));
   }
   // would a push be accepted?
-  const why = prepProblem(src);
-  if (why) { say('PUSH GUARD:   a push would be REFUSED: ' + why); code = 1; } else say('push guard:   ok (prep note and Must land present)');
+  const why = prepProblem(src, today);
+  if (why) { say('PUSH GUARD:   a push would be REFUSED: ' + why); code = 1; } else say('push guard:   ok (prep note, its date and Must land are fine)');
 
   // live versions
   if (opts.remote) {

@@ -1,7 +1,7 @@
 // Which prep note the assist part carries, and whether a built assist part is fit to push (design 2.5).
 //
 //   resolvePrep({ vault, assistPrep, config, today }) -> { rel, how, date, skipped } | null
-//     how: 'named' (--assist-prep or "prep" in assist-config.json), 'date' (the gm_prep: true session note with the latest
+//     how: 'named' (--assist-prep or "prep" in assist-config.json), 'date' (the gm_prep: true session note with the soonest
 //     date on or after today), or 'past' (every dated one is behind us: the newest). Null when there is nothing to pick.
 //   prepProblem(src) -> '' when the assist part has prep with Must land entries, else why it must not be pushed.
 //
@@ -66,8 +66,8 @@ export function resolvePrep({ vault, assistPrep = '', config = {}, today = today
   if (!dated.length) return null;
   const by = (a, b) => a.key - b.key || a.rel.localeCompare(b.rel);
   const ahead = dated.filter((c) => c.key >= today).sort(by);
-  // the ticket's rule: the LATEST date on or after today (not the soonest), else the newest past one
-  const pick = ahead.length ? ahead[ahead.length - 1] : dated.sort(by)[dated.length - 1];
+  // tonight's prep: the SOONEST note dated on or after today, else the newest past one
+  const pick = ahead.length ? ahead[0] : dated.sort(by)[dated.length - 1];
   return { rel: pick.rel, how: ahead.length ? 'date' : 'past', date: pick.date, skipped, ahead: ahead.length };
 }
 
@@ -75,7 +75,7 @@ export function resolvePrep({ vault, assistPrep = '', config = {}, today = today
  * Why an assist part (its `src`) must not be pushed, or ''. It needs a prep note and at least one unlanded Must land entry.
  * A pack built before the stats existed has neither: it is treated as having no prep.
  */
-export function prepProblem(src) {
+export function prepProblem(src, today = todayKey()) {
   const s = src && typeof src === 'object' ? src : {};
   const fix = 'Name tonight\'s note with --assist-prep <vault path> (or "prep" in gm-private/assist-config.json), give it a "## Must land" list, run npm run gm:pack, then push again. To push without prep on purpose: --allow-no-prep.';
   if (typeof s.prep !== 'string' || !s.prep) {
@@ -83,6 +83,11 @@ export function prepProblem(src) {
   }
   if (!Number.isInteger(s.mustLand) || s.mustLand < 1) {
     return 'the prep note ' + path.basename(s.prep) + ' has no unlanded "Must land" entries' + (s.mustLandLanded ? ' (' + s.mustLandLanded + ' already ticked)' : '') + ', so the never-reveal list holds none of tonight\'s clues. ' + fix;
+  }
+  // picked by date and now dated before today: a played night's note, not tonight's. A prep named on purpose is never refused on date.
+  if (s.prepBy && s.prepBy !== 'named' && Number.isInteger(s.prepDate) && s.prepDate < today) {
+    return 'the prep note ' + path.basename(s.prep) + ' was picked by date and is dated before today, so it is not tonight\'s note. ' +
+      'Prep the next night\'s note (gm_prep: true, a date on or after today), or name this one on purpose with --assist-prep <vault path>; run npm run gm:pack, then push again. To push anyway: --allow-no-prep.';
   }
   return '';
 }

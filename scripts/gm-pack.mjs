@@ -46,7 +46,7 @@
 //             gm-private/players.json, which wins) and tonight's prep (last) as <context name="..."> blocks (lib/assist-export.mjs). GM only. This file keeps the text;
 //             gm-sync push uploads it to Anthropic's Files API and pushes only { file_id, hash, extra } (lib/assist-file.mjs). Tonight's prep is
 //             --assist-prep <vault-relative note> or "prep" in gm-private/assist-config.json; with neither, the gm_prep: true session note with the
-//             latest date on or after today (else the newest) is picked and printed (lib/assist-prep.mjs; --today DD/MM/YYYY overrides today); warns past ~90k tokens.
+//             soonest date on or after today (else the newest) is picked and printed (lib/assist-prep.mjs; --today DD/MM/YYYY overrides today); warns past ~90k tokens.
 //
 // F (the figure map) comes from the vault page Tools/blades-68-npc-figure-map.md, read as JSON from fenced code blocks:
 //   ```json F          the whole F object (use this form for a small map), or
@@ -818,7 +818,7 @@ function main() {
   const picked = resolvePrep({ vault, assistPrep: a.assistPrep, config: assistConfig, today: a.today ? dateKey(a.today) : undefined });
   const assistPrep = picked ? picked.rel : a.assistPrep;
   if (picked && picked.how !== "named") console.log("assist prep: " + picked.rel + " (picked by date" + (picked.how === "past" ? "; every prep note is dated before today, so this is the newest" : "") + ")");
-  const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: assistPrep, config: assistConfig, playersFile: path.join(REPO, "gm-private", "players.json"), handouts: parts.handouts || null });
+  const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: assistPrep, prepBy: picked ? picked.how : "named", prepDate: picked ? dateKey(picked.date) : null, config: assistConfig, playersFile: path.join(REPO, "gm-private", "players.json"), handouts: parts.handouts || null });
   const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart], ["handouts", buildHandoutsPart], ["assist", buildAssistPart]];
   let npcLeverage = 0;
   let locationExtraNames = [];
