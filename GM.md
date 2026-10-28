@@ -898,6 +898,26 @@ and its own secret-style sections. The pack warns when it finds none. A page cit
 never blocks. The Screen (next section) sends every item through it; a Ref card is sent only when it carries a page cite (see "The cite flag").
 `node scripts/gm-assist-replay.mjs --context <block files> --gatekeeper-file <json list of { kind, text }>` runs it over sample items.
 
+**Ref's two checks and the `rolled` tick.** Ref checks every roll in its window twice: (a) order, position and effect stated before the dice, and (b) resist,
+a resistance roll offered after any consequence (harm, a complication, a worse position, a lost opportunity). A missing position or a missing resistance
+offer is a slip, not a style choice; silence stays the normal answer otherwise. Its answer carries `check` (order, resist, harm, cost, house or other),
+which the card keeps when it is one of those and drops otherwise; the card line is under 12 words. House rules are not in the repo: they reach Ref through
+the assist part's `extra.ref`, appended to its instructions. The card seats' one-line fields (Clerk, Stall's offer, Showrunner's advice, Mystery's
+`push_next`, Meanwhile's cutaway) ask for one sentence, under 12 words, the point first.
+
+- **The tick body takes `rolled: true`** (anything that is not a boolean is a 400). It adds the flag `rolled`, which wakes Ref (`WAKES.ref`); `rolled` is not a
+  Tripwire flag. The Tripwire's own 45 s gap does not apply to a rolled tick (one at a time still does), so it reads any new talk and Ref looks.
+- **A rolled-only tick** (nothing new to read, or the Tripwire busy) skips the Tripwire and wakes Ref alone: no Showrunner, Scribe or Voice. It still obeys
+  the cap, the ladder, Ref's 60 s gap and the leases (a held Ref is reported in `health.skipped`). It returns the cursor it was given, so the talk the
+  Tripwire has not read is read by the next ordinary tick, and with no talk in the window it makes no call. It logs no Tripwire row, so no follow-through
+  comes after it. A rolled tick that did run the Tripwire logs `rolled` on that row and is followed through once, like `roll_talk`.
+- **The page sends it** 40 s after the GM taps a 4/5 or 1-3 result in the console, or files a roll with L. One is pending at a time and a newer result
+  restarts the 40 s. If a tick is in flight when it falls due it retries every 3 s rather than dropping. It does nothing when the page is hidden, on a
+  phone, paused, capped or with Listening off, and the regular minute restarts after it.
+- **`downtime`** is a Tripwire flag (a vice indulged, a downtime action or roll, recovery or healing being worked out right now) that wakes Ref.
+- **Replay and gate** take `--extra-file <seat>=<path>` (repeatable), handed to the endpoint as the assist part's `extra.<seat>`, so a replay can give Ref
+  the same checklist the live part carries. The file's text is never printed. The replay does not send `rolled`.
+
 ## The Screen (the box's four buttons, `app/gm/assist-panel.js` and the Rack in `app/gm-page.js`)
 
 **GM-initiated, and nothing reaches the iPad until you tap Show.** Four buttons sit in the box under *Fit it*. Each makes one item that appears in the
