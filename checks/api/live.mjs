@@ -248,6 +248,68 @@ await step('the switch going off closes the sockets server-side: only on the fli
   await call(null, 'PATCH', '/api/gm/state', { user: GM, body: { live: null } });   // leave the switch absent (on) for the steps after this one
 });
 
+await step('gate d.1: the player stamp does not depend on the #gm row: GM state writes that leave live alone keep campaignUpdatedAt, npcsUpdatedAt and live; only a flip changes the answer', async () => {
+  const hub = fakeHub();
+  await call(hub, 'PUT', '/api/campaign', { user: GM, body: { crew: { name: 'Invented Stamp Crew' } } });
+  await call(hub, 'POST', '/api/npcs', { user: GM, body: { name: 'Invented Stamp Fence', revealed: true } });
+  const first = (await call(hub, 'GET', '/api/characters', { user: ALEX })).json;
+  expect(first.campaignUpdatedAt && first.npcsUpdatedAt && first.live === true, 'a stamp to poll with: ' + JSON.stringify(first).slice(0, 160));
+  const before = (await call(hub, 'GET', '/api/characters?since=' + encodeURIComponent(first.now), { user: ALEX })).json;   // the 2 s overlap may redeliver a recent row: compare like with like
+  const stateAt = [];
+  for (let i = 0; i < 3; i++) {
+    const w = await call(hub, 'PATCH', '/api/gm/state', { user: GM, body: { ui: { tab: 'stamp' + i }, capture: { ['k' + i]: 'x' } } });
+    expect(w.status === 200, 'state write ' + w.status);
+    stateAt.push(w.json.updatedAt);
+  }
+  const next = (await call(hub, 'GET', '/api/characters?since=' + encodeURIComponent(first.now), { user: ALEX })).json;
+  expect(next.campaignUpdatedAt === first.campaignUpdatedAt && next.npcsUpdatedAt === first.npcsUpdatedAt, 'the stamps did not move: ' + first.campaignUpdatedAt + ' / ' + next.campaignUpdatedAt);
+  expect(next.live === true && JSON.stringify(next.docs) === JSON.stringify(before.docs), 'nothing else moved: ' + JSON.stringify(next).slice(0, 200));
+  expect(stateAt.every((a) => !JSON.stringify(next).includes(a)), 'the #gm row updatedAt appears nowhere in the answer a player gets');
+  const flip = await call(hub, 'PATCH', '/api/gm/state', { user: GM, body: { live: false } });
+  const after = (await call(hub, 'GET', '/api/characters?since=' + encodeURIComponent(first.now), { user: ALEX })).json;
+  expect(after.live === false && after.campaignUpdatedAt === first.campaignUpdatedAt && !JSON.stringify(after).includes(flip.json.updatedAt), 'a flip changes live and nothing else: ' + JSON.stringify(after).slice(0, 200));
+  await call(hub, 'PATCH', '/api/gm/state', { user: GM, body: { live: null } });
+});
+
+await step('gate d.2: live:false survives every writer of the GM state: no path replaces the document, so an older-shaped whole-state write cannot bring back "absent = on"', async () => {
+  // the only writers of a campaigns row are writeCampaign (id = CAMPAIGN, never the #gm row) and patchState (deepMerge)
+  const writers = [];
+  const walk = (dir) => { for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, f.name);
+    if (f.isDirectory()) { if (f.name !== 'node_modules') walk(p); }
+    else if (/\.(js|mjs|cjs|sh)$/.test(f.name) && /INSERT INTO campaigns|UPDATE campaigns|REPLACE INTO campaigns|DELETE FROM campaigns/i.test(fs.readFileSync(p, 'utf8'))) writers.push(path.relative(ROOT, p).split(path.sep).join('/'));
+  } };
+  for (const d of ['functions', 'worker', 'scripts', 'tools', 'app']) if (fs.existsSync(path.join(ROOT, d))) walk(path.join(ROOT, d));
+  expect(same(writers.sort(), ['functions/_lib/campaign.js', 'functions/_lib/gm.js', 'scripts/lib/tap-sim.mjs']), 'writers of campaigns rows: ' + JSON.stringify(writers));
+  const hub = fakeHub();
+  const off = await call(hub, 'PATCH', '/api/gm/state', { user: GM, body: { live: false } });
+  expect(off.status === 200 && off.json.doc.live === false, 'page A turns it off');
+  const closesAfterFlip = hub.closes;
+  const stored = (await call(hub, 'GET', '/api/gm/state', { user: GM })).json.doc;
+  const seen = async (label) => {
+    const st = (await call(hub, 'GET', '/api/gm/state', { user: GM })).json.doc;
+    const ch = (await call(hub, 'GET', '/api/characters', { user: ALEX })).json;
+    const d = (await call(hub, 'GET', '/api/gm/display', { user: IPAD })).json;
+    expect(st.live === false && ch.live === false && d.live === false, label + ': live is still false (state ' + st.live + ', phones ' + ch.live + ', display ' + d.live + ')');
+  };
+  // an older client: its whole copy of the state, with no live key, sent back as one patch (what a stale page, a page left open
+  // across the deploy, the offline resend or a script holding the document would send)
+  const whole = JSON.parse(JSON.stringify(stored)); delete whole.live;
+  whole.ui = { tab: 'old' }; whole.con = { live: { a: 1 } }; whole.cards = { location: { hid: 'h1' } }; whole.mem = { console: {} };
+  let w = await call(hub, 'PATCH', '/api/gm/state', { user: GM, body: whole });
+  expect(w.status === 200, 'whole copy: ' + w.status); await seen('a whole-state patch with no live key');
+  // the page's own replacing patches (replacePatch: nulls for the keys only the old copy had) are nested; none reaches the top level
+  w = await call(hub, 'PATCH', '/api/gm/state', { user: GM, body: { cards: { location: { hid: null, extra: 1 } }, ball: { a: null }, sites: { s1: { x: 1 } }, hist: { location: null } } });
+  expect(w.status === 200, 'nested replace: ' + w.status); await seen('nested replacing patches');
+  w = await call(hub, 'PATCH', '/api/gm/state', { user: GM, body: {} });
+  expect(w.status === 200, 'empty patch'); await seen('an empty patch');
+  // a second flip request that says false again, and the unrelated writes: no further close
+  expect(hub.closes === closesAfterFlip, 'none of those closed anything');
+  // the only ways to change it are a patch that names it: true turns it on, null deletes it
+  await call(hub, 'PATCH', '/api/gm/state', { user: GM, body: { live: true } });
+  expect((await call(hub, 'GET', '/api/characters', { user: ALEX })).json.live === true, 'a patch that names it can turn it on');
+});
+
 // ---------- the route ----------
 const upgrade = (user, extra) => ({ user, headers: { Upgrade: 'websocket', Connection: 'Upgrade', ...(extra || {}) } });
 await step('/api/live: every role reaches the object with ITS role in the header; a client-sent role header is overwritten; the 101 is untouched', async () => {
