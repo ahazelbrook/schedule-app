@@ -177,13 +177,21 @@ export function cleanSttPatch(raw, role) {
   return out;
 }
 
+/** What a page shows of the control document, as one string: want, session, the speaker names and the iPad's state, line count and error.
+ *  The status `at` is left out: it is a new time on every heartbeat, so a heartbeat that says the same thing compares equal (MD1b: no poke). */
+export function sttSignal(doc) {
+  const s = doc && doc.status || {};
+  return JSON.stringify([doc && doc.want, doc && doc.session, doc && doc.speakers, s.state, s.lines, s.error]);
+}
+
 const STT_ATTEMPTS = 5;
 /**
  * Merge a cleanSttPatch() result into the stored document. The write lands only while the stored text is still what was
  * read (the iPad reports its status every few seconds, the GM turns listening on and off, and the PC's heartbeat sets
  * `copier` in place without moving updated_at), so none of them can undo another's change; 409 when it keeps colliding.
+ * `meta`, when given, gets `changed`: whether what the pages show moved (sttSignal), from the read this already makes.
  */
-export async function patchStt(db, campaign, patch) {
+export async function patchStt(db, campaign, patch, meta) {
   for (let attempt = 0; attempt < STT_ATTEMPTS; attempt++) {
     const cur = await loadStt(db, campaign);
     const doc = deepMerge(cur.doc, patch);
@@ -191,6 +199,7 @@ export async function patchStt(db, campaign, patch) {
       for (const k of Object.keys(doc.speakers)) if (doc.speakers[k] === null) delete doc.speakers[k];
       if (Object.keys(doc.speakers).length > STT_LIMITS.speakers) throw new HttpError(400, 'at most ' + STT_LIMITS.speakers + ' named speakers');
     }
+    if (meta) meta.changed = sttSignal(cur.doc) !== sttSignal(doc);
     const text = JSON.stringify(doc);
     if (new TextEncoder().encode(text).byteLength > STT_LIMITS.doc) throw new HttpError(413, 'the listening document is too large');
     const now = nowIso(cur.updatedAt);

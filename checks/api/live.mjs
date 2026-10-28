@@ -117,7 +117,7 @@ await step('every write path pokes its kind once, after the write: characters (P
   await run('npcs DELETE', ['npcs'], 'DELETE', '/api/npcs/' + nid, { user: GM });
 });
 
-await step('every write path pokes its kind: display PUT, ambient PATCH, stt PATCH (GM and display), transcript POST (cue only), portrait-add', async () => {
+await step('every write path pokes its kind: display PUT, ambient PATCH, stt PATCH (a change pokes; a heartbeat with the same content does not), transcript POST (cue only), portrait-add', async () => {
   const hub = fakeHub();
   const run = async (label, kinds, ...args) => {
     hub.pokes.length = 0;
@@ -131,6 +131,16 @@ await step('every write path pokes its kind: display PUT, ambient PATCH, stt PAT
   await run('ambient PATCH', ['ambient'], 'PATCH', '/api/gm/ambient', { user: GM, body: { mode: 'pin', scene: 'testcard' } });
   await run('stt PATCH (GM)', ['stt'], 'PATCH', '/api/gm/stt', { user: GM, body: { want: 'on' } });
   await run('stt PATCH (the iPad reports status)', ['stt'], 'PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'listening', lines: 1 } } });
+  // only a change pokes: the iPad's heartbeat (same state, a new `at`) and a PATCH that sets what is already stored say nothing
+  await run('stt heartbeat, same status', [], 'PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'listening', lines: 1 } } });
+  await run('stt heartbeat again', [], 'PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'listening', lines: 1 } } });
+  await run('stt want set to what it already is', [], 'PATCH', '/api/gm/stt', { user: GM, body: { want: 'on' } });
+  await run('stt removing a speaker that was never named', [], 'PATCH', '/api/gm/stt', { user: GM, body: { speakers: { 3: null } } });
+  await run('stt status with one more line', ['stt'], 'PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'listening', lines: 2 } } });
+  await run('stt status with a new state', ['stt'], 'PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'error', lines: 2, error: 'invented' } } });
+  await run('stt want changes', ['stt'], 'PATCH', '/api/gm/stt', { user: GM, body: { want: 'off' } });
+  await run('stt a speaker is named', ['stt'], 'PATCH', '/api/gm/stt', { user: GM, body: { speakers: { 1: 'Invented Voice' } } });
+  await run('stt the same name again', [], 'PATCH', '/api/gm/stt', { user: GM, body: { speakers: { 1: 'Invented Voice' } } });
   const line = (id, extra) => ({ id, at: '2030-01-01T09:30:00.000Z', session: '1', conn: 'c1', speaker: 0, kind: 'line', text: 'An invented line.', ...extra });
   await run('transcript POST, no cue', [], 'POST', '/api/gm/transcript', { user: IPAD, body: { lines: [line('t1'), line('t2', { cue: false })] } });
   await run('transcript POST with a cued line (the iPad)', ['cue'], 'POST', '/api/gm/transcript', { user: IPAD, body: { lines: [line('t3'), line('t4', { cue: true })] } });

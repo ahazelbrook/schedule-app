@@ -289,7 +289,10 @@ async function main() {
       await write('player character', call('PUT', '/api/characters/char_live_sock', { user: PLAYER, body: { name: 'Invented Socket Scoundrel' } }));
       await write('ambient', call('PATCH', '/api/gm/ambient', { user: GM, body: { mode: 'pin', scene: 'testcard' } }));
       await write('display', call('PUT', '/api/gm/display', { user: GM, body: { kind: 'text', text: 'invented' } }));
-      await write('stt', call('PATCH', '/api/gm/stt', { user: GM, body: { want: 'on' } }));
+      const wantNow = (await call('GET', '/api/gm/stt', { user: GM })).json.doc.want;   // earlier steps may have set it: flip it, since only a change pokes
+      await write('stt', call('PATCH', '/api/gm/stt', { user: GM, body: { want: wantNow === 'on' ? 'off' : 'on' } }));
+      await write('stt status changes', call('PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'listening', lines: 7 } } }));
+      for (let i = 0; i < 2; i++) status(await call('PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'listening', lines: 7 } } }), 200);   // heartbeats: same content, a new `at`: no poke
       await write('uncued transcript line: no poke', call('POST', '/api/gm/transcript', { user: IPAD, body: { lines: [{ id: 'sock1', at: '2030-01-01T09:30:00.000Z', text: 'An invented line.' }] } }).then((r) => { heard--; return r; }));
       await write('cued transcript line', call('POST', '/api/gm/transcript', { user: IPAD, body: { lines: [{ id: 'sock2', at: '2030-01-01T09:30:01.000Z', text: 'An invented cued line.', cue: true }] } }));
       await write('campaign', call('PATCH', '/api/campaign', { user: GM, body: { crew: { heat: 1 } } }));
@@ -299,10 +302,10 @@ async function main() {
       await write('character again', call('PATCH', '/api/characters/char_live_sock', { user: PLAYER, body: { stress: 1 } }));
       await sleepMs(300); // a late poke to the wrong socket would land inside this
       const kinds = (s) => s.messages().slice(1).map((m) => m.k);
-      expect(JSON.stringify(kinds(gm)) === JSON.stringify(['characters', 'ambient', 'display', 'stt', 'cue', 'campaign', 'npcs', 'ambient', 'characters']), 'GM heard ' + JSON.stringify(kinds(gm)));
+      expect(JSON.stringify(kinds(gm)) === JSON.stringify(['characters', 'ambient', 'display', 'stt', 'stt', 'cue', 'campaign', 'npcs', 'ambient', 'characters']), 'GM heard ' + JSON.stringify(kinds(gm)));
       expect(JSON.stringify(kinds(player)) === JSON.stringify(['characters', 'campaign', 'npcs', 'characters']), 'player heard ' + JSON.stringify(kinds(player)));
       expect(JSON.stringify(kinds(spoof)) === JSON.stringify(kinds(player)), 'the spoofing player heard what a player hears: ' + JSON.stringify(kinds(spoof)));
-      expect(JSON.stringify(kinds(display)) === JSON.stringify(['ambient', 'display', 'stt', 'ambient']), 'display heard ' + JSON.stringify(kinds(display)));
+      expect(JSON.stringify(kinds(display)) === JSON.stringify(['ambient', 'display', 'stt', 'stt', 'ambient']), 'display heard ' + JSON.stringify(kinds(display)));
       for (const s of all) {
         expect(s.messages()[0].hello === 1, 'hello first');
         for (const m of s.messages().slice(1)) {

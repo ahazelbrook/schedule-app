@@ -16,7 +16,9 @@ export async function onRequest({ request, env, data, waitUntil }) {
   const db = await getDb(env), campaign = campaignOf(env);
   if (request.method === 'GET') { const { doc, updatedAt } = await loadStt(db, campaign); return json({ doc, updatedAt }); }
   const patch = cleanSttPatch(await readJsonObject(request, 16 * 1024), role);
-  const out = await patchStt(db, campaign, patch);
-  pokeLive({ env, waitUntil }, ['stt']);
+  const meta = {};
+  const out = await patchStt(db, campaign, patch, meta);
+  // a poke only when what the pages show moved: the iPad's heartbeat (a new `at`, the same state) pokes nothing
+  if (meta.changed) pokeLive({ env, waitUntil }, ['stt']);
   return json(out);
 }
