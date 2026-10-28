@@ -16,7 +16,8 @@
    - once this worker has seen the server on a newer build it is 'moved': it asks the browser to update, writes nothing, and
      goes network first, except for pages it answered from its own cache (a slow link: the 4 s fallback still applies), which
      keep getting this build's files from the cache, and for ?v=<its build>. Offline the cache answers as always.
-   Install precaches the page, the fonts and the core and table bundles only; the page asks for the gm and display bundles
+   Install precaches the page, the fonts and the core and table bundles only, and fails (the running worker stays in charge)
+   unless the page, boot.js, the core and the table are all filed; the page asks for the gm and display bundles
    by message ({ precache: ['gm', 'display'] }) when /api/me says GM. /api/*, /cdn-cgi/*, /media/* and other origins are not
    touched at all: the data layer (cf.js) keeps its own offline copy. */
 'use strict';
@@ -60,6 +61,7 @@ function bundleFiles(names) {
    being used once (checks/runtime/pwa.test.mjs: index.html's references and every bundle are in it, and every file exists) */
 var INSTALL = STATIC.concat(bundleFiles(['core', 'table']));
 var SHELL = STATIC.concat(self.B68Load.files());
+var REQUIRED = ['./'].concat(bundleFiles(['core', 'table']));   /* an install without all of these fails (boot.js is in the core) */
 
 var scopeUrl = new URL(self.registration ? self.registration.scope : './', self.location.href);
 var INDEX = new URL('./', scopeUrl).href;
@@ -172,9 +174,16 @@ self.addEventListener('install', function (event) {
         /* the server moved on while this worker was installing: its files are not this build's. Fail the install: the
            worker that is running keeps serving, and the next update check finds the newer worker */
         if (build && build !== BUILD) throw new Error('the server runs build ' + build + ', this worker is ' + BUILD);
-        if (build !== BUILD) return;                   /* not known (offline, signed out): install with what is cached, none */
+        if (build !== BUILD) throw new Error('could not tell which build the server runs (offline, signed out)');
+        /* the required set: the page, boot.js, the core and the table. Without all of it this worker is not ready to take over,
+           so the install fails (no skipWaiting): the running worker and its complete cache stay in charge, and the next update
+           check tries again. Fonts, the manifest and the icons are optional */
+        var have = {};
+        got.forEach(function (e) { have[e.key] = true; });
+        var missing = REQUIRED.filter(function (p) { return !have[pathKey(p)]; });
+        if (missing.length) throw new Error('install is missing ' + missing.length + ' required file(s), first: ' + missing[0]);
         return caches.open(CACHE).then(function (cache) {
-          return Promise.all(got.map(function (e) { return cache.put(e.key, e.res).catch(noop); }));
+          return Promise.all(got.map(function (e) { return cache.put(e.key, e.res); }));
         });
       });
     }).then(function () { return self.skipWaiting(); }));
