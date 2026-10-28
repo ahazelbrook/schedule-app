@@ -160,6 +160,8 @@ export const DISPLAY_ONLY = 'this is the table display sign-in: it can only show
 export const DISPLAY_ALLOWED = [
   { method: 'GET', re: /^\/api\/me\/?$/ },
   { method: 'GET', re: /^\/api\/gm\/display\/?$/ },
+  // the live-sync socket (design 2.5): it hears only the kinds the display role may (functions/_lib/live.js)
+  { method: 'GET', re: /^\/api\/live\/?$/ },
   // the transcriber (GM.md "Listening"): get a token, read and report its status, post lines; never read the transcript
   { method: 'POST', re: /^\/api\/gm\/stt\/token\/?$/ },
   { method: 'GET', re: /^\/api\/gm\/stt\/?$/ },

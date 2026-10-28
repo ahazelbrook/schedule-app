@@ -8,8 +8,9 @@
 import { getDb } from '../../_lib/db.js';
 import { HttpError, json, methodNotAllowed, readJsonObject, campaignOf } from '../../_lib/http.js';
 import { GM_ONLY_NPC, checkNpc, isGm, listNpcs, newNpcId, npcsUpdatedAt, writeNpc } from '../../_lib/npcs.js';
+import { pokeLive } from '../../_lib/live.js';
 
-export async function onRequest({ request, env, data }) {
+export async function onRequest({ request, env, data, waitUntil }) {
   const method = request.method;
   if (method !== 'GET' && method !== 'POST') return methodNotAllowed(['GET', 'POST']);
   const me = data.me;
@@ -21,6 +22,7 @@ export async function onRequest({ request, env, data }) {
     const db = await getDb(env);
     const id = newNpcId();
     const doc = await writeNpc(db, campaign, id, (_row, now) => ({ ...checkNpc(body), createdAt: now, updatedAt: now }));
+    pokeLive({ env, waitUntil }, ['npcs']);
     return json({ id, doc });
   }
 

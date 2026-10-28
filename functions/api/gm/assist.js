@@ -126,6 +126,7 @@
 import { getDb } from '../../_lib/db.js';
 import { HttpError, json, methodNotAllowed, readJsonObject, campaignOf } from '../../_lib/http.js';
 import { requireGm, parseJson } from '../../_lib/gm.js';
+import { pokeLive } from '../../_lib/live.js';
 import { loadStt, readLines, sttStmt, sttOf, linesStmt, lastSeqStmt, lastSeqOf } from '../../_lib/stt.js';
 import { cachedClient, callSeat } from '../../_lib/assist/claude.js';
 import { melbourneHHMM } from '../../_lib/assist/clock.js';
@@ -526,7 +527,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (context && typeof context.waitUntil === 'function') context.waitUntil(work.catch(() => {}));
     return work;
   };
-  async function handle({ request, env, data }) {
+  async function handle({ request, env, data, waitUntil }) {
     requireGm(data);                                   // first: before the method, the body or the database
     const url = new URL(request.url);
     const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board|ask|act)\/?$/.exec(url.pathname);
@@ -556,7 +557,11 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const db = await getDb(env), campaign = campaignOf(env), t0 = now();
     // the Screen's code-only actions need no model and no key
     if (action[1] === 'board') return json(await boardOf(db, campaign, t0));
-    if (action[1] === 'portrait-add') return json(await addPortrait(db, campaign, screenIn));
+    if (action[1] === 'portrait-add') {
+      const added = await addPortrait(db, campaign, screenIn);
+      pokeLive({ env, waitUntil }, ['npcs']);   // a new (hidden) NPC row: the GM pages re-read the cast; a poke carries no data
+      return json(added);
+    }
     if (actIn && actIn.parsed) return json(await cueParsed({ db, campaign, t0, now, env, actIn }));      // the page's own parse of a cue: no key, no model, no gate
     const client = clientFor(env);
     const cap = capOf(env);

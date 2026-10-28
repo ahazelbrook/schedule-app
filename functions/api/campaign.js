@@ -18,8 +18,9 @@ import {
   GM_ONLY, STALE_CLOCKS, loadCampaignRow, campaignDoc, writeCampaign, playerMayWrite, mergeLog, checkShape,
   withClockIds, applyClockOps, changedFills,
 } from '../_lib/campaign.js';
+import { pokeLive } from '../_lib/live.js';
 
-export async function onRequest({ request, env, data }) {
+export async function onRequest({ request, env, data, waitUntil }) {
   const method = request.method;
   if (!['GET', 'PUT', 'PATCH'].includes(method)) return methodNotAllowed(['GET', 'PUT', 'PATCH']);
   const me = data.me;
@@ -50,5 +51,6 @@ export async function onRequest({ request, env, data }) {
     if ('log' in body) next.log = mergeLog(current.log, log, gm);
     return next;
   });
+  pokeLive({ env, waitUntil }, ['campaign']);
   return json({ doc, updatedAt: doc.updatedAt });
 }

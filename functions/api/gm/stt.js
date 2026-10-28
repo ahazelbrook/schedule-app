@@ -6,14 +6,17 @@
 import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf } from '../../_lib/http.js';
 import { requireListener, loadStt, cleanSttPatch, patchStt } from '../../_lib/stt.js';
+import { pokeLive } from '../../_lib/live.js';
 
 const METHODS = ['GET', 'PATCH'];
 
-export async function onRequest({ request, env, data }) {
+export async function onRequest({ request, env, data, waitUntil }) {
   const role = requireListener(data, true);
   if (!METHODS.includes(request.method)) return methodNotAllowed(METHODS);
   const db = await getDb(env), campaign = campaignOf(env);
   if (request.method === 'GET') { const { doc, updatedAt } = await loadStt(db, campaign); return json({ doc, updatedAt }); }
   const patch = cleanSttPatch(await readJsonObject(request, 16 * 1024), role);
-  return json(await patchStt(db, campaign, patch));
+  const out = await patchStt(db, campaign, patch);
+  pokeLive({ env, waitUntil }, ['stt']);
+  return json(out);
 }

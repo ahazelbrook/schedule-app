@@ -17,7 +17,9 @@
 //                     `want` ('on' | 'off': the GM wants it listening) and `session` (the number to stamp on its lines), and
 //                     nothing else: never a speaker name, the iPad's own status, the PC's heartbeat or a transcript line. Its
 //                     `seq` is made from those two values alone, see sttPartOf in functions/_lib/stt.js.)
-//   GET ?seq=N     -> { seq, unchanged: true } while N is still the current seq (the oldest call: neither part is even read)
+//                     Every answer but the two older calls below also carries `live`: the live-sync switch (the GM state's `live`, true unless the
+//                     GM turned it off; design 2.5), read in SQL as one small row, so a flip lands even when everything else is unchanged.
+//   GET ?seq=N     -> { seq, unchanged: true } while N is still the current seq (the oldest call: neither part is even read; no `live`)
 //   GET ?seq=N&aseq=M
 //                  -> the call of a display page from before the transcriber rode along, answered as it always was and without
 //                     `stt`: both current: { seq, unchanged: true, ambient: { seq, unchanged: true } }, else the full display
@@ -42,10 +44,11 @@ import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay, loadAmbient, 
 import { joinOverlayNpc } from '../../_lib/npcs.js';
 import { joinOverlayClock } from '../../_lib/campaign.js';
 import { loadSttPart } from '../../_lib/stt.js';
+import { liveFlag, pokeLive } from '../../_lib/live.js';
 
 const METHODS = ['GET', 'PUT'];
 
-export async function onRequest({ request, env, data }) {
+export async function onRequest({ request, env, data, waitUntil }) {
   const method = request.method;
   // the table display sign-in (role 'display') may read what the GM pushed, nothing more; everyone else but the GM is refused first
   if (!(data && data.me && data.me.role === 'display' && method === 'GET')) requireGm(data);
@@ -78,10 +81,12 @@ export async function onRequest({ request, env, data }) {
     };
     if (aseq === null && sseq === null) {
       if (same) return json({ seq: cur.seq, unchanged: true });   // the oldest call: neither the ambient nor the transcriber is even read
-      const o = await liveOverlay();
-      return json({ ...cur, ambient: await fullAmbient(o.overlay), overlay: o.overlay, stt: await loadSttPart(db, campaign) });
+      const [o, live] = await Promise.all([liveOverlay(), liveFlag(db, campaign)]);
+      return json({ ...cur, ambient: await fullAmbient(o.overlay), overlay: o.overlay, stt: await loadSttPart(db, campaign), live });
     }
-    const { seq: aseqNow, overlay } = await liveOverlay();
+    // the live-sync switch (design 2.5): one small read beside the overlay's, on every answer a page that knows the switch can send
+    // (the ones with a transcriber seq, and the first full one); the seq-only call and the older ?aseq-only one stay as they were
+    const [{ seq: aseqNow, overlay }, live] = await Promise.all([liveOverlay(), sseq === null ? true : liveFlag(db, campaign)]);
     const ambSame = aseq === String(aseqNow);
     const ambient = ambSame ? { seq: aseqNow, unchanged: true } : await fullAmbient(overlay);
     if (sseq === null) {   // a display page from before the transcriber rode along: what it always got, so it never pulls the full display each time
@@ -90,8 +95,8 @@ export async function onRequest({ request, env, data }) {
     const st = await loadSttPart(db, campaign);
     const sttSame = sseq === String(st.seq);
     const stt = sttSame ? { seq: st.seq, unchanged: true } : st;
-    if (same && ambSame && sttSame) return json({ seq: cur.seq, unchanged: true, ambient, stt, overlay });
-    return json({ ...cur, ambient, stt, overlay });
+    if (same && ambSame && sttSame) return json({ seq: cur.seq, unchanged: true, ambient, stt, overlay, live });
+    return json({ ...cur, ambient, stt, overlay, live });
   }
   const raw = await readJsonObject(request, LIMITS.displayRequest);
   let ifSeq;
@@ -101,5 +106,7 @@ export async function onRequest({ request, env, data }) {
   }
   const display = cleanDisplay(raw);
   const db = await getDb(env);
-  return json(await putDisplay(db, campaign, display, ifSeq));
+  const out = await putDisplay(db, campaign, display, ifSeq);
+  pokeLive({ env, waitUntil }, ['display']);
+  return json(out);
 }

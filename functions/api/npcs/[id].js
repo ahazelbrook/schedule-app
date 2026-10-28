@@ -9,8 +9,9 @@
 import { getDb } from '../../_lib/db.js';
 import { HttpError, json, methodNotAllowed, readJsonObject, deepMerge, campaignOf } from '../../_lib/http.js';
 import { GM_ONLY_NPC, checkNpc, checkNpcId, isGm, isLiveNpc, loadNpcRow, parseNpc, tombstoneNpc, viewFor, writeNpc } from '../../_lib/npcs.js';
+import { pokeLive } from '../../_lib/live.js';
 
-export async function onRequest({ request, env, params, data }) {
+export async function onRequest({ request, env, params, data, waitUntil }) {
   const method = request.method;
   if (!['GET', 'PUT', 'PATCH', 'DELETE'].includes(method)) return methodNotAllowed(['GET', 'PUT', 'PATCH', 'DELETE']);
   const id = checkNpcId(params.id);
@@ -30,6 +31,7 @@ export async function onRequest({ request, env, params, data }) {
 
   if (method === 'DELETE') {
     await tombstoneNpc(db, campaign, id);
+    pokeLive({ env, waitUntil }, ['npcs']);
     return json({ ok: true });
   }
 
@@ -41,6 +43,7 @@ export async function onRequest({ request, env, params, data }) {
       createdAt: row && !row.deleted ? row.created_at : now,
       updatedAt: now,
     }));
+    pokeLive({ env, waitUntil }, ['npcs']);
     return json({ id, doc });
   }
 
@@ -49,5 +52,6 @@ export async function onRequest({ request, env, params, data }) {
     if (!isLiveNpc(row, campaign)) throw new HttpError(404, 'not found');
     return { ...checkNpc(deepMerge(parseNpc(row), body)), createdAt: row.created_at, updatedAt: now };
   });
+  pokeLive({ env, waitUntil }, ['npcs']);
   return json({ id, doc });
 }

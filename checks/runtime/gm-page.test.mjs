@@ -1283,7 +1283,30 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   await h.save();
   assert.ok(!br.doc.body.classList.contains('gm-app'), 'off once the page closes');
 });
-await test('10c. the full rules, searched in the GM screen pane: the hits are listed with a snippet, one opens in place with Show on iPad and its twins, the rules page stays a link; Find lists rules; a module that cannot search opens the rules page', async () => {
+await test('10b2. Live sync is a menu item (MD1b): on until the GM turns it off; one press sends { live: false } to the GM state, the next sends { live: true }; the label follows', async () => {
+  const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
+  const item = () => h.q('.gm-menu-list [data-gm="livesync"]');
+  h.q('[data-gm="menu"]').click();
+  assert.ok(item() && /^Live sync: on/.test(item().textContent), 'on by default: ' + (item() && item().textContent));
+  item().click();
+  assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'the menu shuts after the item');
+  h.q('[data-gm="menu"]').click();
+  assert.ok(/^Live sync: off/.test(item().textContent), 'the label follows: ' + item().textContent);
+  item().click(); h.q('[data-gm="menu"]').click();
+  assert.ok(/^Live sync: on/.test(item().textContent), 'and back: ' + item().textContent);
+  await h.save();
+  const sent = fg.server.patches.filter((p) => 'live' in p);
+  assert.ok(sent.length >= 1 && sent[sent.length - 1].live === true, 'the last patch sent says live: true: ' + JSON.stringify(sent));
+  assert.strictEqual(fg.server.doc.live, true, 'the state ends on');
+  assert.ok(sent.every((p) => typeof p.live === 'boolean'), 'only booleans are sent');
+});
+await test('10b3. Live sync off reaches the server: the state holds an explicit false until it is turned on again', async () => {
+  const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
+  h.q('[data-gm="menu"]').click(); h.q('.gm-menu-list [data-gm="livesync"]').click();
+  await h.save();
+  assert.strictEqual(fg.server.doc.live, false, 'an explicit false (the server treats anything else as on)');
+});
+await test('10c.the full rules, searched in the GM screen pane: the hits are listed with a snippet, one opens in place with Show on iPad and its twins, the rules page stays a link; Find lists rules; a module that cannot search opens the rules page', async () => {
   const loads = [], opened = [];
   const ROWS = [
     { id: 'b68/harm', book: 'b68', slug: 'harm', title: 'Harm', caption: 'Blades ’68 · Consequences', snip: 'Level 1 is <mark>lesser</mark> harm.<script>alert(1)</script>', href: '#rules/b68/harm' },
