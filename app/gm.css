@@ -164,6 +164,10 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-reveal { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0 10px; align-items: center; }
 #gm-page .gm-reveal legend { padding: 0; width: 100%; }
 #gm-page .gm-reveal[disabled] { opacity: .5; }
+#gm-page .gm-reveal .gm-rooms { width: 100%; margin-top: 4px; }
+#gm-page .gm-roomlist { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 4px; }
+#gm-page .gm-roomrow { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+#gm-page .gm-roomrow .gm-roomname { font-weight: 700; }
 #gm-page .gm-map { background: var(--chart); border: 2px solid var(--chart-ink); min-height: 0; overflow: hidden; }
 #gm-page .gm-map:empty { display: none; }
 #gm-page .gm-map svg { width: 100%; height: auto; display: block; }

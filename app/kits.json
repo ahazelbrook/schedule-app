@@ -4,12 +4,11 @@
     "maps": {
       "file": "maps/map-kit.js",
       "global": "B68Map",
-      "version": "0.8.0",
-      "bytes": 823801,
-      "sha256": "ccdc86973c79e336634ff90e29990ec47b5209ca8deaaf6eb9d603fa50b5f16b",
-      "source": "Blades '68 Design System, project/maps/map-kit.js (0.8.0, published 24/10/2026)",
-      "at": "2026-10-24",
-      "note": "0.8.0: out of doors (E2, E3), layout \"ipad\" (the iPad's copy uses it), the street obstacle's band, condition and volume, two new chase grounds; a back route the crew can't know draws nothing in a player copy. The page's hidden-name scan and the iso-to-rings fallback (PR #53) stay as defence in depth"
+      "version": "0.9.0",
+      "bytes": 827132,
+      "sha256": "2232bdaa50e050c9c0c08ea9a5c2edbd799eceac8c23afe2f3a7ea1036d4b359",
+      "source": "Blades '68 Design System, map kit 0.9.0",
+      "at": "2026-10-28"
     },
     "figures": {
       "file": "figures/figure-kit.js",

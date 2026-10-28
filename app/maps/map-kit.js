@@ -1,4 +1,4 @@
-/*! Blades '68 map kit — B68Map. Built 2026-10-23 from src/. Rooms are the book's; geometry is [interpretation]. */
+/*! Blades '68 map kit — B68Map. Built 2026-10-28 from src/. Rooms are the book's; geometry is [interpretation]. */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
   else root.B68Map = factory();
@@ -17,12 +17,39 @@ const M = {};
 // A THEME turns roles into paint. That is the whole trick that lets one plan
 // render as a rulebook plate, a blueprint, a case file or a heist board.
 
-M.VERSION = "0.8.0";
+M.VERSION = "0.9.0";
 // A table looked up by a word from a roll or an option: its own entries only, so "__proto__",
 // "toString" or "constructor" find nothing (as any other unknown word does), never
 // Object.prototype's.
 const OWN = Object.prototype.hasOwnProperty;
 M.own = (table, key) => table != null && key != null && OWN.call(table, key) ? table[key] : undefined;
+// --- What the player copy shows (0.9) -------------------------------------------------
+// opts.reveal lists the bands the crew has opened, and since 0.9 single rooms too, as
+// "room:<name>" (the room's name exactly as the roll gives it, as a token's room is named).
+// A room is known when its band OR its own entry is revealed. THIS is the one predicate: every
+// place the player copy reads reveal (the seal, the cover, the labels, the titles, the tokens,
+// the key) asks it, so a room is either everywhere in the file or nowhere. `reveal` is the Set
+// of entries. A passage, a corridor or a stair core has no name: it follows its band, as before.
+M.roomRevealed = (reveal, r) => reveal.has(r.band) || (typeof r.name === "string" && r.name !== "" && reveal.has("room:" + r.name));
+const ROOM_ENTRY = /^room:/;
+M.roomEntries = reveal => (Array.isArray(reveal) ? reveal : []).filter(e => typeof e === "string" && ROOM_ENTRY.test(e));
+// Only for a copy that opens rooms singly, and only on the player copy: the model's room numbers are
+// the book's order, so a room opened on its own would show a gap that counts the rooms before it.
+// The rooms the crew knows are renumbered 1…k in the order they had; the others come after, drawn nowhere.
+// A reveal of bands alone leaves every number as it was.
+M.revealRooms = function (model, opts, W) {
+  if (opts.layer !== "player") return;
+  const entries = M.roomEntries(opts.reveal);
+  if (!entries.length) return;
+  const R = new Set(opts.reveal);
+  for (const e of entries) if (!model.rooms.some(r => r.name === e.slice(5))) M.warn(W, `reveal "${e}" is not one of this roll's rooms — nothing opened by it`);
+  let n = 0;
+  for (const r of model.rooms) if (M.roomRevealed(R, r)) r.n = ++n;
+  for (const r of model.rooms) if (!M.roomRevealed(R, r)) r.n = ++n;
+  // the id a floor or a piece of furniture carries in the file (data-room="r4") is the room's index in the roll: the same count
+  // by another name. It follows the number, so the file holds r0…r(k-1) for the k rooms the crew knows (nothing reads it by index).
+  for (const r of model.rooms) r.id = "r" + (r.n - 1);
+};
 // A roll's list, as a list: a word where a list of words goes (props, neighbours) is a list of
 // one; anything else that isn't a list is an empty one. Says so, unless it is simply missing.
 M.list = (x, W, what, words) => {
@@ -3126,8 +3153,8 @@ S.nodeKnown = (n, reveal) => {
   if (!n) return false;
   if (n === "hub") return true;
   if (n.kind && OPEN.has(n.kind)) return true;
-  if (n.band) return reveal.has(n.band);
-  if ("room" in n) return n.room ? reveal.has(n.room.band) : false;
+  if (n.band) return M.roomRevealed(reveal, n);                       // a room: its band or its own entry; a passage (no name): its band
+  if ("room" in n) return n.room ? M.roomRevealed(reveal, n.room) : false;
   return false;
 };
 // Spans of a parametric run [0, len] where vis(at(t)) holds; edges found by bisection.
@@ -3146,7 +3173,7 @@ function visibleSpans(len, at, vis) {
 }
 S.seal = function (lay, reveal) {
   for (const lv of lay.levels) {
-    const nodes = lv.rooms.filter(r => r.shape).map(r => ({ s: r.shape, known: reveal.has(r.band) }))
+    const nodes = lv.rooms.filter(r => r.shape).map(r => ({ s: r.shape, known: M.roomRevealed(reveal, r) }))
       .concat(lv.extras.filter(e => e.shape).map(e => ({ s: e.shape, known: S.nodeKnown(e, reveal) })));
     const side = (x, y) => { for (const q of nodes) if (S.inside(q.s, x, y)) return q.known; return false; };
     const seen = ([x, y, nx, ny]) => side(x + nx * 0.8, y + ny * 0.8) || side(x - nx * 0.8, y - ny * 0.8);
@@ -3176,12 +3203,12 @@ const pathOf = s => s.kind === "circle"
 // (even-odd), so the file never holds a hidden room's outline. Futurist pods
 // stand apart, so there the cover is the hidden pods themselves.
 S.coverPiece = function (lv, reveal) {
-  const hidden = lv.rooms.filter(r => r.shape && !reveal.has(r.band));
+  const hidden = lv.rooms.filter(r => r.shape && !M.roomRevealed(reveal, r));
   if (!hidden.length) return null;
   let d;
   if (lv.exterior.kind === "hub") d = hidden.map(r => pathOf(r.shape)).join(" ");
   else {
-    const known = lv.rooms.filter(r => r.shape && reveal.has(r.band)).map(r => r.shape)
+    const known = lv.rooms.filter(r => r.shape && M.roomRevealed(reveal, r)).map(r => r.shape)
       .concat(lv.extras.filter(e => e.shape && S.nodeKnown(e, reveal)).map(e => e.shape));
     const X = lv.exterior;
     const outer = X.kind === "circle" ? pathOf({ kind: "circle", cx: X.cx, cy: X.cy, r: X.r }) : pathOf({ kind: "poly", pts: G.rectPts(X.r) });
@@ -3316,7 +3343,7 @@ S.labelBlock = function (r, x, y, icons, ctx, region, o = {}) {
 S.level = function (lv, model, ctx) {
   const { rng, W, opts, k } = ctx;
   const reveal = ctx.reveal;
-  const known = r => !reveal || reveal.has(r.band);
+  const known = r => !reveal || M.roomRevealed(reveal, r);
   const L = { site: [], floors: [], furn: [], walls: [], doors: [], game: [], cover: [], labels: [], entries: [] };
 
   // --- site and street ---
@@ -4145,7 +4172,7 @@ SEC.SIDE = SIDE;
 SEC.build = function (lay, model, ctx) {
   // Type in a section is sized to the floor height, not the footprint.
   const k = ctx.k = Math.min(ctx.k, 1.15), { rng } = ctx, st = model.rings;
-  const reveal = ctx.reveal, known = r => !reveal || reveal.has(r.band);
+  const reveal = ctx.reveal, known = r => !reveal || M.roomRevealed(reveal, r);
   const levels = lay.levels.filter(l => !l.ground).sort((a, b) => b.lvl - a.lvl);           // top first (E3's sheets aren't storeys)
   const above = levels.filter(l => l.lvl >= 0).sort((a, b) => a.lvl - b.lvl), below = levels.filter(l => l.lvl < 0).sort((a, b) => b.lvl - a.lvl);
   const rowY = new Map();
@@ -7178,8 +7205,8 @@ M.pickFloors = function (lay, floor, W, view) {
 const LEVEL_ALT = { "-1": ["Below ground", "Lower level", "Level -1"], "0": ["Street level", "Level 0"], "1": ["First floor", "Level 1"], "2": ["Upper storey", "Level 2"] };
 M.hiddenNames = function (model, reveal) {
   const R = new Set(reveal || ["public"]), low = (s) => String(s || "").toLowerCase();
-  const seen = model.rooms.filter(r => R.has(r.band)).map(r => low(r.name));
-  return model.rooms.filter(r => !R.has(r.band)).map(r => low(r.name)).filter(n => n && !seen.includes(n));
+  const seen = model.rooms.filter(r => M.roomRevealed(R, r)).map(r => low(r.name));
+  return model.rooms.filter(r => !M.roomRevealed(R, r)).map(r => low(r.name)).filter(n => n && !seen.includes(n));
 };
 M.namesAny = function (text, names) {
   const t = " " + String(text || "").toLowerCase() + " ";
@@ -7223,6 +7250,7 @@ M.render = function (o, opts = {}) {
   if (!M.own(M.THEMES, opts.theme)) { M.warn(W, `theme "${opts.theme}" is not one of ${Object.keys(M.THEMES).join(", ")} — drawing rulebook`); opts.theme = "rulebook"; }
   const theme = M.own(M.THEMES, opts.theme);
   const model = M.model(o, W);
+  M.revealRooms(model, opts, W);
   const seed = opts.seed != null ? opts.seed : (o.seed != null ? o.seed : M.hash(model.name + model.district));
   // Ids come from the render's own inputs, so the same roll drawn the same way
   // is the same file, byte for byte (saved maps diff cleanly, caches hit).
@@ -7301,7 +7329,7 @@ M.buildScene = function (lay, model, ctx, X) {
   tokens = tokens.map(t => {
     const rm = model.rooms.find(x => x.name === t.room);
     if (!rm || !rm.frame) { M.warn(W, `token room "${t.room}" is not on this map`); return null; }
-    if (reveal && !reveal.has(rm.band)) return null;
+    if (reveal && !M.roomRevealed(reveal, rm)) return null;
     const lv = lvOf(rm); if (!lv) return null;
     const [px, py] = ctx.toScreen(lv, rm.frame.cx, rm.frame.cy, "room");
     return Object.assign({}, t, { x: px, y: py, roomObj: rm });
@@ -7367,10 +7395,17 @@ M.keyFacts = function (model, opts, lay, drawn) {
   // The player copy's facts carry exactly what its key shows: a band not yet surveyed is
   // its label alone (no rooms, names, numbers or icons), a surveyed one its rooms' numbers
   // and names, and no obstacle, its icon, loot, answer or target anywhere.
-  const bands = M.BANDS.filter(b => rooms.some(r => r.band === b)).map(b => ({
-    band: b, label: M.BAND_LABEL[b], known: !reveal || reveal.has(b),
-    rooms: reveal && !reveal.has(b) ? [] : rooms.filter(r => r.band === b).map(r => ({ n: r.n, name: r.name, target: !player && r.isTarget, obstacle: !player && r.obstacle, icon: !player && r.obstacle ? M.obstacleIcon(r.obstacle) : null, loot: !player && r.featured && r.loot, answers: !player && r.holdsAnswerTo, mix: r.mix }))
-  }));
+  // Since 0.9 a band is known when it is revealed or any of its rooms is (revealed singly); a band with some of its
+  // rooms known lists just those, and says so ("partly surveyed").
+  const bands = M.BANDS.filter(b => rooms.some(r => r.band === b)).map(b => {
+    const inBand = rooms.filter(r => r.band === b), shown = reveal ? inBand.filter(r => M.roomRevealed(reveal, r)) : inBand;
+    const band = {
+      band: b, label: M.BAND_LABEL[b], known: !reveal || shown.length > 0,
+      rooms: shown.map(r => ({ n: r.n, name: r.name, target: !player && r.isTarget, obstacle: !player && r.obstacle, icon: !player && r.obstacle ? M.obstacleIcon(r.obstacle) : null, loot: !player && r.featured && r.loot, answers: !player && r.holdsAnswerTo, mix: r.mix }))
+    };
+    if (reveal && shown.length && shown.length < inBand.length) band.partial = true;
+    return band;
+  });
   // In the player copy a way in that costs a question says only that it is
   // there: its text names rooms the crew hasn't surveyed.
   const lands = kind => !drawn || !lay || !lay.entries || !lay.entries.some(e => e.kind === kind) || lay.entries.some(e => e.kind === kind && drawn.has(e.level));
@@ -7405,6 +7440,7 @@ M.key = function (o, opts = {}) {
   if (!M.own(M.THEMES, opts.theme)) M.warn(W, `theme "${opts.theme}" is not one of ${Object.keys(M.THEMES).join(", ")} — rulebook icons`);
   const theme = M.own(M.THEMES, opts.theme) || M.THEMES.rulebook;
   const model = M.model(o, W);
+  M.revealRooms(model, opts, W);
   const seed = opts.seed != null ? opts.seed : (o.seed != null ? o.seed : M.hash(model.name + model.district));
   if (opts.view === "street") return M.street.key(o, opts, W, theme, model, seed);
   let lay = null, drawn = null;
@@ -7443,7 +7479,7 @@ M.keyHTML = function (F, th) {
   if (F.approach) h += `<section class="b68-key__approach"><h3>Approach</h3><p>${e(F.approach)}</p>${F.targetLine ? `<p class="b68-key__target">${icon("star", "ov-target")} ${e(F.targetLine)}</p>` : ""}</section>`;
   h += `<section class="b68-key__rooms"><h3>${F.player ? "What you know from outside" : "Rooms, by how deep"}</h3>`;
   for (const b of F.bands) {
-    h += `<div class="b68-key__band" data-band="${b.band}" data-known="${b.known}"><h4>${swatch(b.band)}${e(b.label)}${b.known ? "" : " — not yet surveyed"}</h4>`;
+    h += `<div class="b68-key__band" data-band="${b.band}" data-known="${b.known}"><h4>${swatch(b.band)}${e(b.label)}${b.known ? (b.partial ? " — partly surveyed" : "") : " — not yet surveyed"}</h4>`;
     if (b.known) {
       h += `<ol>`;
       for (const r of b.rooms) {
@@ -7668,7 +7704,7 @@ function legendBlocks(F, w, k, opt, ty, fk) {
   for (const band of F.bands) {
     b.pieces.push(P.rect("lg-swatch-" + band.band, 0, b.h + 0.2 * s, 2.4 * s, 2.4 * s));
     if (!band.known) b.pieces.push(P.rect("unknown", 0, b.h + 0.2 * s, 2.4 * s, 2.4 * s));
-    text(b, "lg-band", band.label.toUpperCase() + (band.known ? "" : " — not yet surveyed"), 2 * s, { x: 3.4 * s, nowrap: true });
+    text(b, "lg-band", band.label.toUpperCase() + (band.known ? (band.partial ? " — partly surveyed" : "") : " — not yet surveyed"), 2 * s, { x: 3.4 * s, nowrap: true });
     b.h += 0.2 * s;
     if (!band.known) { b.h += 0.6 * s; continue; }
     for (const r of band.rooms) {
@@ -7831,7 +7867,10 @@ M.svgLabel = function (scene, id) {
     const where = [m.target, m.district].filter(Boolean).join(", "), lead = where ? where + ". " : "";
     if (player) {
       const bands = o.reveal && o.reveal.length ? o.reveal : ["public"];
-      desc = `${lead}What the crew knows from outside: the ${bands.join(" and ")} band${bands.length > 1 ? "s" : ""} and the ways in they could know. Rooms not yet surveyed are left out.`;
+      const rooms = bands.some(b => typeof b === "string" && /^room:/.test(b)), whole = bands.filter(b => !(typeof b === "string" && /^room:/.test(b)));
+      // (a room opened singly is never named here: the reveal list's own words stay out of the file)
+      desc = rooms ? `${lead}What the crew knows from outside: ${whole.length ? `the ${whole.join(" and ")} band${whole.length > 1 ? "s" : ""}, ` : ""}the rooms they have opened and the ways in they could know. Rooms not yet surveyed are left out.`
+        : `${lead}What the crew knows from outside: the ${bands.join(" and ")} band${bands.length > 1 ? "s" : ""} and the ways in they could know. Rooms not yet surveyed are left out.`;
     } else {
       const t = m.rooms.find(r => r.isTarget);
       desc = `${lead}${m.rooms.length} rooms in four security bands, the ways in marked.${t ? ` Target room: ${t.name}.` : ""}`;
