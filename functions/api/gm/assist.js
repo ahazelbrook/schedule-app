@@ -119,7 +119,7 @@
 import { getDb } from '../../_lib/db.js';
 import { HttpError, json, methodNotAllowed, readJsonObject, campaignOf } from '../../_lib/http.js';
 import { requireGm, parseJson } from '../../_lib/gm.js';
-import { loadStt, readLines } from '../../_lib/stt.js';
+import { loadStt, readLines, sttStmt, sttOf, linesStmt, lastSeqStmt, lastSeqOf } from '../../_lib/stt.js';
 import { cachedClient, callSeat } from '../../_lib/assist/claude.js';
 import { melbourneHHMM } from '../../_lib/assist/clock.js';
 import { makeLeases, DEADLINE_MS, DEFAULT_DEADLINE_MS } from '../../_lib/assist/leases.js';
@@ -227,21 +227,55 @@ const FILE_ID = /^file_[A-Za-z0-9_-]{4,100}$/;
 
 const HANDOUTS_MAX_BYTES = 16 * 1024;           // the handouts part is a short list; a bigger one is not read here
 
-/** The ids in the live handouts part (a Set; empty when there is none or it is too big to be the short list it should be). */
-async function liveHandouts(db, campaign) {
-  const row = await db.prepare("SELECT CASE WHEN LENGTH(CAST(body AS BLOB)) <= ?2 THEN body END AS body FROM gm_pack WHERE campaign = ?1 AND part = 'handouts'").bind(campaign, HANDOUTS_MAX_BYTES).first();
-  const part = row && row.body ? parseJson(row.body, null) : null;
-  return { ids: handoutIds(part), titles: handoutTitles(part) };
+// A read is a D1 statement plus how its rows become the answer (`one`: the first row or null, as .first() gives; otherwise the array of rows).
+// runRead sends one; readAll sends several in ONE db.batch, which is one D1 round trip: the tick's reads that do not depend on each other go
+// together this way (every D1 call costs the Worker about 0.2 ms of CPU, and a tick used to make twenty). A batch is all-or-nothing, so
+// nothing that must persist on its own (a log row, a lease) travels in a read batch.
+const rd = (stmt, of, one = false) => ({ stmt, of, one });
+const runRead = async (r) => (r.one ? r.of(await r.stmt.first()) : r.of((await r.stmt.all()).results || []));
+async function readAll(db, reads) {
+  if (!reads.length) return [];
+  const out = await db.batch(reads.map((r) => r.stmt));
+  return reads.map((r, i) => { const rows = (out[i] && out[i].results) || []; return r.of(r.one ? rows[0] || null : rows); });
 }
 
-async function loadPrefix(db, campaign) {
-  const row = await db.prepare("SELECT body FROM gm_pack WHERE campaign = ?1 AND part = 'assist'").bind(campaign).first();
+// readAll for named reads: a falsy entry is skipped (its key then reads undefined)
+async function readNamed(db, named) {
+  const keys = Object.keys(named).filter((k) => named[k]);
+  const got = await readAll(db, keys.map((k) => named[k]));
+  return Object.fromEntries(keys.map((k, i) => [k, got[i]]));
+}
+const linesRd = (db, campaign, opts) => rd(linesStmt(db, campaign, opts), (rows) => rows);
+
+/**
+ * What a tick reads before it decides anything, in one round trip: tonight's spend, the assist part, the control document, the last four
+ * minutes of talk with the newest seq, and the lines after the cursor when the body carries a good one (a bad `after` is left to the
+ * validation further down, which answers 400 where it always did).
+ */
+async function tickStart(db, campaign, t0, body) {
+  const goodAfter = Number.isInteger(body.after) && body.after >= 0;
+  const [spent, prefix, stt, lines, last, fresh] = await readAll(db, [
+    tonightRd(db, campaign, t0), loadPrefixRd(db, campaign), rd(sttStmt(db, campaign), sttOf, true),
+    linesRd(db, campaign, { since: new Date(t0 - TAP_WINDOW_MS).toISOString() }), rd(lastSeqStmt(db, campaign), lastSeqOf, true),
+    ...(goodAfter ? [linesRd(db, campaign, { after: body.after })] : []),
+  ]);
+  return { spent, prefix, stt, tail: { lines, last }, fresh: goodAfter ? fresh : null };
+}
+
+/** The ids in the live handouts part (a Set; empty when there is none or it is too big to be the short list it should be). */
+const liveHandoutsRd = (db, campaign) => rd(db.prepare("SELECT CASE WHEN LENGTH(CAST(body AS BLOB)) <= ?2 THEN body END AS body FROM gm_pack WHERE campaign = ?1 AND part = 'handouts'").bind(campaign, HANDOUTS_MAX_BYTES), (row) => {
+  const part = row && row.body ? parseJson(row.body, null) : null;
+  return { ids: handoutIds(part), titles: handoutTitles(part) };
+}, true);
+
+const loadPrefixRd = (db, campaign) => rd(db.prepare("SELECT body FROM gm_pack WHERE campaign = ?1 AND part = 'assist'").bind(campaign), (row) => {
   const body = row ? parseJson(row.body, null) : null;
   const fileId = body && typeof body.file_id === 'string' && FILE_ID.test(body.file_id) ? body.file_id : '';
   const legacy = !!(body && typeof body.prefix === 'string' && body.prefix);   // the old part carried the text: never sent
   const extra = body && body.extra && typeof body.extra === 'object' ? body.extra : {};
   return { fileId, legacy, extra, found: !!row };
-}
+}, true);
+const loadPrefix = (db, campaign) => runRead(loadPrefixRd(db, campaign));
 
 // the provider says the file named in the prompt is gone (404 / not found / invalid file id)
 function fileGone(e) {
@@ -250,11 +284,8 @@ function fileGone(e) {
   return s === 400 && /file/i.test(String((e && e.message) || ''));
 }
 
-async function tonight(db, campaign, now) {
-  const since = new Date(now - NIGHT_MS).toISOString();
-  const r = await db.prepare('SELECT COALESCE(SUM(cents), 0) AS cents FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2').bind(campaign, since).first();
-  return (r ? r.cents : 0) / 100;
-}
+const tonightRd = (db, campaign, now) => rd(db.prepare('SELECT COALESCE(SUM(cents), 0) AS cents FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2').bind(campaign, new Date(now - NIGHT_MS).toISOString()), (r) => (r ? r.cents : 0) / 100, true);
+const tonight = (db, campaign, now) => runRead(tonightRd(db, campaign, now));
 
 /** /act's one read of the log: tonight's spend and the newest `hands` row ({ spent (dollars), last (ms | null) }). The cooldown and the ladder both come from it. */
 async function spendAndLastHands(db, campaign, now) {
@@ -270,46 +301,35 @@ async function actLines(db, campaign, from, to) {
 }
 
 // the previous tick's Tripwire row (its flags), for the Ref follow-through
-async function prevTripwire(db, campaign, now) {
-  const since = new Date(now - FOLLOW_WINDOW_MS).toISOString();
-  const r = await db.prepare("SELECT at, flags FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'tripwire' ORDER BY id DESC LIMIT 1").bind(campaign, since).first();
-  return r ? { at: Date.parse(r.at), flags: String(r.flags || '').split(',').filter(Boolean) } : null;
-}
+const prevTripwireRd = (db, campaign, now) => rd(db.prepare("SELECT at, flags FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'tripwire' ORDER BY id DESC LIMIT 1").bind(campaign, new Date(now - FOLLOW_WINDOW_MS).toISOString()),
+  (r) => (r ? { at: Date.parse(r.at), flags: String(r.flags || '').split(',').filter(Boolean) } : null), true);
 
-async function lastRuns(db, campaign, now) {
-  const since = new Date(now - LAST_RUN_MS).toISOString();
-  const { results } = await db.prepare('SELECT seat, MAX(at) AS at FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 GROUP BY seat').bind(campaign, since).all();
+const lastRunsRd = (db, campaign, now) => rd(db.prepare('SELECT seat, MAX(at) AS at FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 GROUP BY seat').bind(campaign, new Date(now - LAST_RUN_MS).toISOString()), (results) => {
   const out = {};
-  for (const r of results || []) out[r.seat] = Date.parse(r.at);
+  for (const r of results) out[r.seat] = Date.parse(r.at);
   return out;
-}
+});
+const lastRuns = (db, campaign, now) => runRead(lastRunsRd(db, campaign, now));
 
 /** The cards and ledger updates the GM was shown in the last 10 minutes: [{ at (ms), keys, ref, check, said_at }]. A Ref card (its own row, or the Editor's row for a held one released later) also carries its check and said-at, for the Editor's second repeat rule. */
-async function shownCards(db, campaign, now) {
-  const since = new Date(now - RECENT_CARD_MS).toISOString();
-  const { results } = await db.prepare("SELECT at, seat, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND (json_extract(card, '$.shown') = 1 OR json_extract(card, '$.update') = 1)").bind(campaign, since).all();
-  return (results || []).map((r) => {
+const shownCardsRd = (db, campaign, now) => rd(db.prepare("SELECT at, seat, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND (json_extract(card, '$.shown') = 1 OR json_extract(card, '$.update') = 1)").bind(campaign, new Date(now - RECENT_CARD_MS).toISOString()),
+  (results) => results.map((r) => {
     const c = parseJson(r.card, {}) || {};
     const ref = r.seat === 'ref' || c.seat === 'ref';
     return { at: Date.parse(r.at), keys: c.keys || [], ...(ref ? { ref: true, check: (c.glance && c.glance.check) || '', said_at: (c.detail && c.detail.said_at) || '' } : {}) };
-  });
-}
+  }));
 
 /** Rack items shown in the last 10 minutes (Voice, Another and Stall rows): [{ at (ms), keys }]. */
-async function shownVoice(db, campaign, now) {
-  const since = new Date(now - RECENT_CARD_MS).toISOString();
-  const { results } = await db.prepare("SELECT at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND (json_extract(card, '$.voice') = 1 OR json_extract(card, '$.stall') = 1)").bind(campaign, since).all();
-  return (results || []).map((r) => ({ at: Date.parse(r.at), keys: (parseJson(r.card, {}) || {}).keys || [] }));
-}
+const shownVoiceRd = (db, campaign, now) => rd(db.prepare("SELECT at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND (json_extract(card, '$.voice') = 1 OR json_extract(card, '$.stall') = 1)").bind(campaign, new Date(now - RECENT_CARD_MS).toISOString()),
+  (results) => results.map((r) => ({ at: Date.parse(r.at), keys: (parseJson(r.card, {}) || {}).keys || [] })));
+const shownVoice = (db, campaign, now) => runRead(shownVoiceRd(db, campaign, now));
 
 /** What the Mystery keeper last reported as known (within tonight): a short list of strings, so it need not re-read the whole night. */
-async function lastKnown(db, campaign, now) {
-  const since = new Date(now - NIGHT_MS).toISOString();
-  const r = await db.prepare("SELECT card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'mystery' AND card IS NOT NULL ORDER BY id DESC LIMIT 1").bind(campaign, since).first();
+const lastKnownRd = (db, campaign, now) => rd(db.prepare("SELECT card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'mystery' AND card IS NOT NULL ORDER BY id DESC LIMIT 1").bind(campaign, new Date(now - NIGHT_MS).toISOString()), (r) => {
   const out = r ? (parseJson(r.card, {}) || {}).out : null;
   const known = out && Array.isArray(out.known) ? out.known : [];
   return known.filter((k) => typeof k === 'string' && k.trim()).slice(0, KNOWN_MAX).map((k) => k.replace(/\s+/g, ' ').trim().slice(0, KNOWN_ITEM_MAX));
-}
+}, true);
 
 const NPC_RECENT_MS = 12 * 60 * 60 * 1000;   // an NPC row touched this recently counts as already in the cast
 
@@ -317,35 +337,29 @@ const NPC_RECENT_MS = 12 * 60 * 60 * 1000;   // an NPC row touched this recently
  * Names the Clerk should not raise again: the new_names on Clerk cards the GM was shown tonight (a held-back card's names stay raisable), plus the names (and aliases) of NPC rows updated in the last
  * 12 hours. json_each / json_extract keep the parsing in D1; the Worker only trims and dedupes a short list.
  */
-async function clerkKnown(db, campaign, now) {
-  const since = new Date(now - NIGHT_MS).toISOString(), npcSince = new Date(now - NPC_RECENT_MS).toISOString();
-  const { results } = await db.prepare(
-    "SELECT j.value AS n FROM gm_assist_log l, json_each(json_extract(l.card, '$.out.new_names')) j WHERE l.campaign = ?1 AND l.at >= ?2 AND l.seat = 'clerk' AND l.card IS NOT NULL AND json_extract(l.card, '$.shown') = 1 AND json_type(l.card, '$.out.new_names') = 'array' " +
-    "UNION SELECT json_extract(doc, '$.name') FROM npcs WHERE campaign = ?1 AND deleted = 0 AND updated_at >= ?3 " +
-    "UNION SELECT json_extract(doc, '$.alias') FROM npcs WHERE campaign = ?1 AND deleted = 0 AND updated_at >= ?3 LIMIT 60").bind(campaign, since, npcSince).all();
+const clerkKnownRd = (db, campaign, now) => rd(db.prepare(
+  "SELECT j.value AS n FROM gm_assist_log l, json_each(json_extract(l.card, '$.out.new_names')) j WHERE l.campaign = ?1 AND l.at >= ?2 AND l.seat = 'clerk' AND l.card IS NOT NULL AND json_extract(l.card, '$.shown') = 1 AND json_type(l.card, '$.out.new_names') = 'array' " +
+  "UNION SELECT json_extract(doc, '$.name') FROM npcs WHERE campaign = ?1 AND deleted = 0 AND updated_at >= ?3 " +
+  "UNION SELECT json_extract(doc, '$.alias') FROM npcs WHERE campaign = ?1 AND deleted = 0 AND updated_at >= ?3 LIMIT 60").bind(campaign, new Date(now - NIGHT_MS).toISOString(), new Date(now - NPC_RECENT_MS).toISOString()), (results) => {
   const seen = new Set(), out = [];
-  for (const r of results || []) {
+  for (const r of results) {
     const n = typeof r.n === 'string' ? r.n.replace(/\s+/g, ' ').trim().slice(0, CLERK_NAME_MAX) : '';
     if (!n || seen.has(n.toLowerCase())) continue;
     seen.add(n.toLowerCase()); out.push(n);
     if (out.length >= CLERK_KNOWN_MAX) break;
   }
   return out;
-}
+});
 
 /** The Scribe's last saved story tonight: { story, through (seq of the last line it read), session } or null. json_extract keeps the parsing in D1. */
-async function lastStory(db, campaign, now) {
-  const since = new Date(now - NIGHT_MS).toISOString();
-  const r = await db.prepare("SELECT json_extract(card, '$.story') AS story, json_extract(card, '$.through') AS through, session FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'scribe' AND json_extract(card, '$.story') IS NOT NULL ORDER BY id DESC LIMIT 1").bind(campaign, since).first();
+const lastStoryRd = (db, campaign, now) => rd(db.prepare("SELECT json_extract(card, '$.story') AS story, json_extract(card, '$.through') AS through, session FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'scribe' AND json_extract(card, '$.story') IS NOT NULL ORDER BY id DESC LIMIT 1").bind(campaign, new Date(now - NIGHT_MS).toISOString()), (r) => {
   if (!r || typeof r.story !== 'string' || !r.story.trim()) return null;
   return { story: r.story, through: Number.isInteger(r.through) ? r.through : 0, session: r.session || '' };
-}
+}, true);
+const lastStory = (db, campaign, now) => runRead(lastStoryRd(db, campaign, now));
 
 /** The table's open clocks (names only, up to a dozen): the campaign document's, read with json_extract so D1 does the digging. */
-async function tableClocks(db, campaign) {
-  const r = await db.prepare("SELECT json_extract(doc, '$.clocks') AS c FROM campaigns WHERE id = ?1").bind(campaign).first();
-  return cleanClocks(r && typeof r.c === 'string' ? parseJson(r.c, []) : []);
-}
+const tableClocksRd = (db, campaign) => rd(db.prepare("SELECT json_extract(doc, '$.clocks') AS c FROM campaigns WHERE id = ?1").bind(campaign), (r) => cleanClocks(r && typeof r.c === 'string' ? parseJson(r.c, []) : []), true);
 
 /** The newest transcript line (not a mark): { at (ms), session } or null. */
 async function lastLine(db, campaign) {
@@ -354,24 +368,16 @@ async function lastLine(db, campaign) {
 }
 
 /** Ref cards the Editor held back and that are not stale yet: [{ at (ms), card }]. */
-async function heldRefs(db, campaign, now) {
-  const since = new Date(now - STALE_MS).toISOString();
-  const { results } = await db.prepare("SELECT at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'ref' AND json_extract(card, '$.held') = 1 ORDER BY id").bind(campaign, since).all();
-  return (results || []).map((r) => ({ at: Date.parse(r.at), card: parseJson(r.card, null) }));
-}
+const heldRefsRd = (db, campaign, now) => rd(db.prepare("SELECT at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'ref' AND json_extract(card, '$.held') = 1 ORDER BY id").bind(campaign, new Date(now - STALE_MS).toISOString()),
+  (results) => results.map((r) => ({ at: Date.parse(r.at), card: parseJson(r.card, null) })));
+const heldRefs = (db, campaign, now) => runRead(heldRefsRd(db, campaign, now));
 
 /** The latest Ref card shown in the last five minutes (its own row, or the Editor's row for a held one released later). */
-async function lastRefShown(db, campaign, now) {
-  const since = new Date(now - CARD_GAP_MS).toISOString();
-  const r = await db.prepare("SELECT MAX(at) AS at FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND json_extract(card, '$.shown') = 1 AND (seat = 'ref' OR json_extract(card, '$.seat') = 'ref')").bind(campaign, since).first();
-  return r && r.at ? Date.parse(r.at) : null;
-}
+const lastRefShownRd = (db, campaign, now) => rd(db.prepare("SELECT MAX(at) AS at FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND json_extract(card, '$.shown') = 1 AND (seat = 'ref' OR json_extract(card, '$.seat') = 'ref')").bind(campaign, new Date(now - CARD_GAP_MS).toISOString()),
+  (r) => (r && r.at ? Date.parse(r.at) : null), true);
 
-async function lastShown(db, campaign, now) {
-  const since = new Date(now - CARD_GAP_MS).toISOString();
-  const r = await db.prepare("SELECT MAX(at) AS at FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND json_extract(card, '$.shown') = 1").bind(campaign, since).first();
-  return r && r.at ? Date.parse(r.at) : null;
-}
+const lastShownRd = (db, campaign, now) => rd(db.prepare("SELECT MAX(at) AS at FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND json_extract(card, '$.shown') = 1").bind(campaign, new Date(now - CARD_GAP_MS).toISOString()),
+  (r) => (r && r.at ? Date.parse(r.at) : null), true);
 
 // `timing` is { secs, stop, timeout? }: the call's wall-clock seconds and the provider's stop reason. They go into the card JSON of every
 // seat call (no column, no migration). A refusal is recorded as `refusal: 1` and is never shown; a call that hit its deadline as `timeout: 1`.
@@ -495,13 +501,14 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (action[1] === 'portrait-add') return json(await addPortrait(db, campaign, screenIn));
     const client = clientFor(env);
     const cap = capOf(env);
+    const start = action[1] === 'tick' ? await tickStart(db, campaign, t0, body) : null;      // the tick's opening reads, in one D1 round trip
     // /act reads the log once for spend and its own last run, and never reads the assist part (its seat is given no prefix)
     const handsLog = actIn ? await spendAndLastHands(db, campaign, t0) : null;
-    const spentBefore = handsLog ? handsLog.spent : await tonight(db, campaign, t0);
+    const spentBefore = start ? start.spent : handsLog ? handsLog.spent : await tonight(db, campaign, t0);
     const tier = budgetTier(spentBefore, cap);
-    const { fileId, legacy, extra, found } = actIn ? NO_PREFIX : await loadPrefix(db, campaign);
+    const { fileId, legacy, extra, found } = start ? start.prefix : actIn ? NO_PREFIX : await loadPrefix(db, campaign);
     const warnings = actIn ? [] : legacy ? [REPUSH] : found && fileId ? [] : ['no assist part in the GM pack'];
-    const stt = await loadStt(db, campaign);
+    const stt = start ? start.stt : await loadStt(db, campaign);
     const speakers = stt.doc.speakers || {};
     const errors = [];
     // Every read of "who is in flight" sweeps the lapsed leases first and hands the Conductor a plain Set, so its signatures are unchanged.
@@ -682,10 +689,10 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (body.rolled !== undefined && typeof body.rolled !== 'boolean') throw new HttpError(400, 'rolled must be true or false');
     const rolled = body.rolled === true;                 // the GM tapped a result or filed a roll about 40 s ago: Ref looks at the last minutes
     // the Tap seats read the last four MINUTES (a busy table says well over 50 lines in four); the Tripwire reads what is new
-    const { lines: tail, last } = await readLines(db, campaign, { since: new Date(t0 - TAP_WINDOW_MS).toISOString() });
+    const { lines: tail, last } = start.tail;            // both read in the tick's opening batch
     const session = tail.length ? tail[tail.length - 1].session : '';
     if (tier === 'off' || legacy) return done([], [], last);
-    const fresh = after !== null ? (await readLines(db, campaign, { after })).lines : tail.filter((l) => t0 - Date.parse(l.at) <= FIRST_SLICE_MS);
+    const fresh = after !== null ? start.fresh : tail.filter((l) => t0 - Date.parse(l.at) <= FIRST_SLICE_MS);
     const freshText = formatLines(fresh, speakers);
     if (rolled && !freshText && !tail.length) return done([], [], last);    // a roll was reported but there is no talk to referee
     if (!freshText && !rolled) {
@@ -708,7 +715,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       return done([], sflags, last, [], { stall: st ? { kind: st.kind, offer: st.offer, why: st.why, headline: st.headline, bullets: st.bullets, at: sat } : null });
     }
 
-    const lastRun = await lastRuns(db, campaign, t0);
+    // the cooldown map and the previous Tripwire row do not depend on each other: one round trip (both are read before this tick's own Tripwire row is written)
+    const [lastRun, prev] = await readAll(db, [lastRunsRd(db, campaign, t0), prevTripwireRd(db, campaign, t0)]);
     // a rolled tick lands 40 s after a tap, usually inside the Tripwire's own 45 s gap: the gap does not apply to it (one at a time still does)
     const gate = canRun('tripwire', { now: t0, lastRun, inFlight: live(), tier, ...(rolled ? { cooldowns: { ...COOLDOWN_MS, tripwire: 0 } } : {}) });
     // With nothing new to read, or the Tripwire busy, a rolled tick skips the Tripwire and wakes Ref alone on 'rolled'. It hands back the cursor it was
@@ -716,7 +724,6 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const rolledOnly = rolled && (!freshText || !gate.ok);
     const cursor = rolledOnly ? (after !== null ? after : null) : last;
     if (!rolledOnly && !gate.ok) { skipped.push({ seat: 'tripwire', why: gate.why }); return done([], [], last); }     // a Tripwire stuck in flight is exactly what health must show
-    const prev = await prevTripwire(db, campaign, t0);            // read before this tick's own Tripwire row is written
     const tw = rolledOnly ? null : await runOrSkip('tripwire', 'New talk, up to ' + hhmm(t0) + ':\n' + freshText);
     if (tw && tw.r) ran.push('tripwire');
     if (!rolledOnly && (!tw || fileMissing)) return done([], [], last);          // nothing was billed or logged: the file is gone (or another request holds the Tripwire)
@@ -735,13 +742,23 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     // another seat's card would go stale before any flag woke a seat again
     // the Scribe folds the talk since the story's last line into the story; with nothing new to fold it does not run
     let wake = verdict.seats.slice(), prior = '', scribeThrough = 0, scribeTurn = '';
-    const storyRow = wake.some((n) => n === 'scribe' || STORY_SEATS.includes(n)) ? await lastStory(db, campaign, t0) : null;
+    // What the woken seats read before they run does not depend on one another, so it goes in one round trip (the story row, the wide stretch of
+    // talk, the clocks, what Mystery knew, the names Clerk has seen). The Scribe's slice depends on the story row and follows it.
+    const wantWide = wake.includes('showrunner') || wake.includes('mystery') || wake.includes('meanwhile');
+    const pre = await readNamed(db, {
+      story: wake.some((n) => n === 'scribe' || STORY_SEATS.includes(n)) && lastStoryRd(db, campaign, t0),
+      wide: wantWide && linesRd(db, campaign, { since: new Date(t0 - SHOWRUNNER_MIN * 60 * 1000).toISOString() }),
+      clocks: wake.includes('meanwhile') && tableClocksRd(db, campaign),
+      known: wake.includes('mystery') && lastKnownRd(db, campaign, t0),
+      clerk: wake.includes('clerk') && clerkKnownRd(db, campaign, t0),
+    });
+    const storyRow = pre.story || null;
     const curSession = fresh.length ? fresh[fresh.length - 1].session : session;
     if (storyRow && storyRow.session === curSession) prior = storyRow.story;
     if (wake.includes('scribe')) {
       const slice = prior && storyRow.through > 0
-        ? (await readLines(db, campaign, { after: storyRow.through })).lines
-        : (await readLines(db, campaign, { since: new Date(t0 - SCRIBE_FIRST_MIN * 60 * 1000).toISOString() })).lines;
+        ? await runRead(linesRd(db, campaign, { after: storyRow.through }))
+        : await runRead(linesRd(db, campaign, { since: new Date(t0 - SCRIBE_FIRST_MIN * 60 * 1000).toISOString() }));
       let talk = formatLines(slice, speakers);
       if (talk.length > SCRIBE_SLICE_MAX) { talk = talk.slice(talk.length - SCRIBE_SLICE_MAX); talk = talk.slice(talk.indexOf('\n') + 1); }
       if (!talk) wake = wake.filter((n) => n !== 'scribe');
@@ -759,17 +776,17 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const voiceTurn = voiceUser({ npc, stamp: hhmm(t0), talk: recentText });
     // Showrunner and Mystery read a longer stretch than the Tap's four minutes (the Worker cannot afford the whole night): one read serves both
     const turns = {};
-    if (wake.includes('showrunner') || wake.includes('mystery') || wake.includes('meanwhile')) {
-      const wide = (await readLines(db, campaign, { since: new Date(t0 - SHOWRUNNER_MIN * 60 * 1000).toISOString() })).lines;
-      if (wake.includes('showrunner')) turns.showrunner = showrunnerUser({ stamp: hhmm(t0), talk: formatLines(wide, speakers) });
-      if (wake.includes('meanwhile')) turns.meanwhile = meanwhileUser({ clocks: await tableClocks(db, campaign), stamp: hhmm(t0), talk: formatLines(wide.filter((l) => Date.parse(l.at) >= t0 - MEANWHILE_MIN * 60 * 1000), speakers) });
+    if (wantWide) {
+      const talkWide = pre.wide;
+      if (wake.includes('showrunner')) turns.showrunner = showrunnerUser({ stamp: hhmm(t0), talk: formatLines(talkWide, speakers) });
+      if (wake.includes('meanwhile')) turns.meanwhile = meanwhileUser({ clocks: pre.clocks, stamp: hhmm(t0), talk: formatLines(talkWide.filter((l) => Date.parse(l.at) >= t0 - MEANWHILE_MIN * 60 * 1000), speakers) });
       if (wake.includes('mystery')) {
         const from = t0 - MYSTERY_MIN * 60 * 1000;
-        turns.mystery = mysteryUser({ stamp: hhmm(t0), talk: formatLines(wide.filter((l) => Date.parse(l.at) >= from), speakers), known: await lastKnown(db, campaign, t0) });
+        turns.mystery = mysteryUser({ stamp: hhmm(t0), talk: formatLines(talkWide.filter((l) => Date.parse(l.at) >= from), speakers), known: pre.known });
       }
     }
     let clerkNames = [];
-    if (wake.includes('clerk')) { clerkNames = await clerkKnown(db, campaign, t0); turns.clerk = clerkUser({ known: clerkNames, stamp: hhmm(t0), talk: recentText }); }
+    if (wake.includes('clerk')) { clerkNames = pre.clerk; turns.clerk = clerkUser({ known: clerkNames, stamp: hhmm(t0), talk: recentText }); }
     if (scribeTurn) turns.scribe = scribeTurn;
     // each woken seat is on its own deadline: a slow one cannot hold the others' cards. A seat another request took meanwhile is skipped, not an error.
     const settled = await Promise.allSettled(wake.map((name) => run(name, name === 'voice' ? voiceTurn : turns[name] || user)));
@@ -783,19 +800,29 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     // Voice and Stall go to the Rack, not to the Editor's card slot
     const vx = all.find((x) => x.name === 'voice'), sx = all.find((x) => x.name === 'stall'), results = all.filter((x) => !['voice', 'stall', 'scribe', 'meanwhile'].includes(x.name));
 
-    const recent = await shownCards(db, campaign, t0);
+    // What the Editor weighs the new cards against is read once the seats have answered (a card another request showed meanwhile counts), all
+    // in one round trip: the shown cards, the held Ref cards (unless already read), the gap clocks, the Rack's recent items (when Voice or Stall
+    // answered) and the live handouts (only when Mystery named one).
+    const mx = all.find((x) => x.name === 'mystery');
+    const namesHandout = !!(mx && mx.r && mx.r.json && typeof mx.r.json.handout_id === 'string' && mx.r.json.handout_id.trim());
+    const post = await readNamed(db, {
+      recent: shownCardsRd(db, campaign, t0),
+      held: !held && heldRefsRd(db, campaign, t0),
+      lastShown: lastShownRd(db, campaign, t0),
+      lastRefShown: lastRefShownRd(db, campaign, t0),
+      voice: !!((vx && vx.r) || (sx && sx.r)) && shownVoiceRd(db, campaign, t0),
+      handouts: namesHandout && liveHandoutsRd(db, campaign),
+    });
+    const recent = post.recent;
     const candidates = results.map((x) => (x.r ? toCandidate(x.name, x.r.json, { recent, now: t0, known: clerkNames }) : null));
     // a Ref card held back earlier waits in the log; it competes with this tick's own until it goes stale
-    const pending = pendingRefs(held || await heldRefs(db, campaign, t0), { recent, now: t0 });
-    const edit = merge(candidates.concat(pending), { now: t0, lastShownAt: await lastShown(db, campaign, t0), lastRefShownAt: await lastRefShown(db, campaign, t0) });
+    const pending = pendingRefs(held || post.held, { recent, now: t0 });
+    const edit = merge(candidates.concat(pending), { now: t0, lastShownAt: post.lastShown, lastRefShownAt: post.lastRefShown });
     const at = new Date(now()).toISOString();
-    // a handout suggestion from the Mystery keeper: checked against the live handouts part (one small read, only when the seat named one), and
-    // sent in its own field so it never takes the card slot
-    const mx = all.find((x) => x.name === 'mystery');
+    // a handout suggestion from the Mystery keeper: checked against the live handouts part and sent in its own field so it never takes the card slot
     let handoutOut = null;
-    if (mx && mx.r && mx.r.json && typeof mx.r.json.handout_id === 'string' && mx.r.json.handout_id.trim()) {
-      const live = await liveHandouts(db, campaign);
-      const h = toHandout(mx.r.json, live.ids, live.titles);
+    if (namesHandout) {
+      const h = toHandout(mx.r.json, post.handouts.ids, post.handouts.titles);
       if (h) handoutOut = { ...h, at };
     }
     const rows = results.map((x, i) => {
@@ -810,14 +837,14 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (edit.card && edit.card.pending) rows.push(logRow(db, campaign, { at, session, seat: 'editor', cfg: { model: 'editor' }, flags, card: { seat: 'ref', text: edit.card.text, keys: edit.card.keys, ...(edit.card.detail ? { detail: edit.card.detail } : {}), ...(edit.card.glance ? { glance: edit.card.glance } : {}), shown: 1, from_pending: 1 } }));
     let voiceOut = null;
     if (vx) {
-      const v = vx.r ? toVoice(vx.r.json, { recent: await shownVoice(db, campaign, t0), now: t0 }) : null;
+      const v = vx.r ? toVoice(vx.r.json, { recent: post.voice, now: t0 }) : null;
       if (v) voiceOut = { kind: 'say', who: v.who, want: v.want, lines: v.lines, at };
       rows.push(logRow(db, campaign, { at, session, seat: 'voice', cfg: vx.cfg, usage: vx.r && vx.r.usage, cost: vx.r && vx.r.cost, flags, timing: vx.timing,
         card: vx.r ? { out: vx.r.json, ...(v ? { voice: 1, text: v.lines.join(' / '), keys: v.keys } : {}) } : { error: errors.find((e) => e.seat === 'voice')?.error || 'no reply' } }));
     }
     let stallOut = null;
     if (sx) {
-      const st = sx.r ? toStall(sx.r.json, { recent: await shownVoice(db, campaign, t0), now: t0 }) : null;
+      const st = sx.r ? toStall(sx.r.json, { recent: post.voice, now: t0 }) : null;
       if (st) stallOut = { kind: st.kind, offer: st.offer, why: st.why, headline: st.headline, bullets: st.bullets, at };
       rows.push(logRow(db, campaign, { at, session, seat: 'stall', cfg: sx.cfg, usage: sx.r && sx.r.usage, cost: sx.r && sx.r.cost, flags, timing: sx.timing,
         card: sx.r ? { out: sx.r.json, ...(st ? { stall: 1, text: st.offer, keys: st.keys } : {}) } : { error: errors.find((e) => e.seat === 'stall')?.error || 'no reply' } }));

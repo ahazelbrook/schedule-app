@@ -74,25 +74,30 @@ export async function addLines(db, campaign, lines) {
   return { added, last: await lastSeq(db, campaign) };
 }
 
+// The statements are built apart from their running so a caller (the assist tick) can send several reads in one db.batch.
+export const lastSeqStmt = (db, campaign) => db.prepare('SELECT COALESCE(MAX(seq), 0) AS last FROM gm_transcript WHERE campaign = ?1').bind(campaign);
+export const lastSeqOf = (row) => (row ? row.last : 0);
 export async function lastSeq(db, campaign) {
-  const r = await db.prepare('SELECT COALESCE(MAX(seq), 0) AS last FROM gm_transcript WHERE campaign = ?1').bind(campaign).first();
-  return r ? r.last : 0;
+  return lastSeqOf(await lastSeqStmt(db, campaign).first());
 }
 
 const COLS = 'seq, id, session, at, conn, speaker, kind, text';
+/** The statement behind readLines' `since` (when given) and `after` modes: its rows are the lines, oldest first. */
+export function linesStmt(db, campaign, { after = 0, since = '' } = {}) {
+  return since
+    ? db.prepare('SELECT ' + COLS + ' FROM (SELECT ' + COLS + ' FROM gm_transcript WHERE campaign = ?1 AND at >= ?2 ORDER BY seq DESC LIMIT ?3) ORDER BY seq').bind(campaign, since, STT_LIMITS.page)
+    : db.prepare('SELECT ' + COLS + ' FROM gm_transcript WHERE campaign = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3').bind(campaign, Math.max(0, after), STT_LIMITS.page);
+}
 /** after: the lines with seq > after (oldest first, a page at most); tail: the newest n, oldest first; since: the newest page of
  *  lines stamped at or after this ISO time (a line count is the wrong unit for "the last few minutes": a busy table says far
  *  more than 50 lines in four). -> { lines, last } */
 export async function readLines(db, campaign, { after = 0, tail = 0, since = '' } = {}) {
   let rows;
-  if (since) {
-    const r = await db.prepare('SELECT ' + COLS + ' FROM (SELECT ' + COLS + ' FROM gm_transcript WHERE campaign = ?1 AND at >= ?2 ORDER BY seq DESC LIMIT ?3) ORDER BY seq').bind(campaign, since, STT_LIMITS.page).all();
-    rows = r.results || [];
-  } else if (tail > 0) {
+  if (tail > 0 && !since) {
     const r = await db.prepare('SELECT ' + COLS + ' FROM gm_transcript WHERE campaign = ?1 ORDER BY seq DESC LIMIT ?2').bind(campaign, Math.min(tail, STT_LIMITS.tail)).all();
     rows = (r.results || []).reverse();
   } else {
-    const r = await db.prepare('SELECT ' + COLS + ' FROM gm_transcript WHERE campaign = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3').bind(campaign, Math.max(0, after), STT_LIMITS.page).all();
+    const r = await linesStmt(db, campaign, { after, since }).all();
     rows = r.results || [];
   }
   return { lines: rows, last: await lastSeq(db, campaign) };
@@ -109,8 +114,10 @@ export async function pruneLines(db, campaign, through) {
 // copier: the PC's heartbeat (scripts/gm-transcript.mjs --watch writes it in place; no client may PATCH it).
 export const BLANK_STT = { want: 'off', session: '', speakers: {}, status: { state: 'idle', at: '', lines: 0, error: '' }, copier: { at: '', last: 0 } };
 
-export async function loadStt(db, campaign) {
-  const row = await db.prepare('SELECT updated_at, doc FROM gm_stt WHERE campaign = ?1').bind(campaign).first();
+export const sttStmt = (db, campaign) => db.prepare('SELECT updated_at, doc FROM gm_stt WHERE campaign = ?1').bind(campaign);
+export async function loadStt(db, campaign) { return sttOf(await sttStmt(db, campaign).first()); }
+/** loadStt's answer from the statement's row (or null): { doc, updatedAt, raw } */
+export function sttOf(row) {
   let doc = null;
   try { doc = row ? JSON.parse(row.doc) : null; } catch (_) { doc = null; }
   return { doc: deepMerge(structuredClone(BLANK_STT), isPlainObject(doc) ? doc : {}), updatedAt: row ? row.updated_at : null, raw: row ? row.doc : null };
