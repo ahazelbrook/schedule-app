@@ -57,7 +57,7 @@ async function openDisplay(browser, { user = GM, reduced = false } = {}) {
   const page = await ctx.newPage();
   await page.addInitScript(() => { try { if (window === window.top) localStorage.setItem('b68.display.ambientTiming', JSON.stringify({ intervalMs: 600000, graceMs: 60000 })); } catch (e) { /* no storage */ } });
   const seen = { requests: [], errors: [], console: [], responses: [] };
-  page.on('request', (r) => seen.requests.push(r.method() + ' ' + new URL(r.url()).pathname));
+  page.on('request', (r) => seen.requests.push(r.url()));
   page.on('response', (r) => seen.responses.push({ path: new URL(r.url()).pathname, status: r.status() }));
   page.on('pageerror', (e) => seen.errors.push(String(e && e.message || e)));
   page.on('console', (m) => { if (m.type() === 'error') seen.console.push(m.text()); });
@@ -167,6 +167,26 @@ try {
     await noOverlay(G.page, 15000);
   });
 
+  await step('an NPC hidden after the overlay was stored: a display that sees it afterwards draws nothing, while the server still holds it', async () => {
+    const spec = await G.page.evaluate(() => window.B68 && window.B68.BASE_FIGURE);
+    expect((await gmCall('PUT', '/api/npcs/npc_ov_later', { name: 'Later Hidden Invented', alias: 'Shade', role: 'Courier', faction: 'The Invented Guild', gmNotes: 'LATER-MARKER', revealed: true, spec })).status === 200, 'created revealed');
+    const id = uid('n');
+    await ambient({ overlay: { id, kind: 'npc', ms: 120000, npcId: 'npc_ov_later' } });
+    await cardIn(G.page, 'npc', id);                                // revealed: it draws (the intended path)
+    expect((await gmCall('PATCH', '/api/npcs/npc_ov_later', { revealed: false })).status === 200, 'hidden afterwards');
+    const stored = (await (await gmCall('GET', '/api/gm/ambient')).json()).doc.overlay;
+    expect(stored && stored.id === id && stored.npcId === 'npc_ov_later', 'the server still holds the overlay: ' + JSON.stringify(stored));
+    const F = await openDisplay(browser);                           // a fresh display (a reload) sees it for the first time
+    await sleep(6500);                                              // more than one poll
+    const body = await F.page.evaluate(() => document.getElementById('display-page').innerText);
+    expect((await cards(F.page)).length === 0 && !/Later Hidden Invented|Shade|Courier|LATER-MARKER/.test(body), 'nothing of the hidden NPC on the display: ' + body.slice(0, 120));
+    expect(F.seen.responses.some((x) => x.path === '/api/npcs/npc_ov_later' && x.status === 200), 'the GM sign-in did read the row (so the draw was refused by the page, not by a failed read)');
+    expect(F.seen.errors.length === 0, 'page errors: ' + F.seen.errors.join(' | '));
+    await F.ctx.close();
+    await ambient({ overlay: null });
+    await noOverlay(G.page, 15000);
+  });
+
   await step('the dawn: warm, a white hold, a fade, over the whole frame and over a spotlight; the display underneath is untouched; it lasts its ms', async () => {
     await watchPhases(G.page);
     const t0 = await stageText(G.page);
@@ -247,8 +267,9 @@ try {
   });
 
   await step('only same-origin requests; no page errors; the GM display made no unexpected calls', async () => {
-    const out = G.seen.requests.filter((r) => !/^(GET|PUT|PATCH|POST) \//.test(r));
-    expect(out.length === 0, 'odd requests: ' + out.join(' | '));
+    expect(G.seen.requests.length > 20, 'the requests were recorded: ' + G.seen.requests.length);
+    const out = G.seen.requests.filter((u) => /^https?:/i.test(u) && new URL(u).origin !== BASE);
+    expect(out.length === 0, 'requests left the origin: ' + out.join(' | '));
     expect(G.seen.errors.length === 0, 'page errors: ' + G.seen.errors.join(' | '));
     const csp = G.seen.console.filter((m) => /content security policy|refused to/i.test(m));
     expect(csp.length === 0, 'CSP refusals: ' + csp.join(' | '));

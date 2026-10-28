@@ -724,13 +724,16 @@
   };
   /* overlayCard(overlay, npcDoc) -> what a card draws, or null when there is nothing to draw (an npc the page may not read draws
      nothing at all). An npc card takes the same player-safe fields as the npc spotlight (Pure.playerNpc): name, alias, role and faction
-     and the figure's spec; never the description, gmNotes or anything else. */
+     and the figure's spec; never the description, gmNotes or anything else. And only for an NPC whose doc says `revealed: true`. */
   Pure.overlayCard = function (o, npcDoc) {
     if (!o) return null;
     if (o.kind === 'clock') return { kind: 'clock', name: o.name, size: o.size, filled: o.filled, count: o.filled + ' / ' + o.size, wedges: Pure.clockWedges(o.size, o.filled) };
     if (o.kind === 'text') return { kind: 'text', text: o.text, size: Pure.textSize(o.text) };
     if (o.kind === 'fx') return { kind: 'fx', fx: o.fx };
     if (o.kind === 'npc') {
+      /* defence in depth: the server checked `revealed` when the overlay was stored, but the cast may have changed since, and a GM sign-in
+         reads hidden rows in full. A hidden (or unmarked) NPC draws nothing. */
+      if (!npcDoc || npcDoc.revealed !== true) return null;
       var n = Pure.playerNpc(npcDoc);
       if (!n || !n.name) return null;
       return { kind: 'npc', name: n.name, alias: n.alias, sub: [n.role, n.faction].filter(Boolean).join(' · '), spec: n.spec };

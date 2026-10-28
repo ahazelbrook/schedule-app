@@ -1020,9 +1020,13 @@ await test('overlay: overlayCard builds the card from the validated fields; an N
   const c = P.overlayCard(o, doc);
   assert.deepEqual(c, { kind: 'npc', name: 'Invented Person', alias: 'Inky', sub: 'Clerk · The Invented Guild', spec: { heightIn: 60 } });
   assert.ok(!/SECRET|secret|description|tags|revealed/.test(JSON.stringify(c)), 'no gmNotes, tags, description or revealed flag on the card');
+  assert.equal(P.overlayCard(o, { ...doc, revealed: false }), null, 'a hidden NPC draws nothing, whatever the server checked earlier');
+  const noFlag = { ...doc }; delete noFlag.revealed;
+  assert.equal(P.overlayCard(o, noFlag), null, 'an NPC with no revealed flag draws nothing');
+  assert.equal(P.overlayCard(o, { ...doc, revealed: 'true' }), null, 'only the boolean true counts');
   assert.equal(P.overlayCard(o, null), null, 'an NPC the page could not read draws nothing');
   assert.equal(P.overlayCard(o, undefined), null);
-  assert.equal(P.overlayCard(o, { name: '', alias: 'x' }), null, 'a nameless NPC draws nothing');
+  assert.equal(P.overlayCard(o, { name: '', alias: 'x', revealed: true }), null, 'a nameless NPC draws nothing');
 });
 await test('overlay: the ambient plan is unchanged by overlay and auto, and no model text can reach a card (the page draws text, never markup)', () => {
   const want = P.ambientPlan({});
