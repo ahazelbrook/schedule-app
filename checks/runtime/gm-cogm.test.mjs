@@ -510,7 +510,7 @@ await test('9. gm-page.js cue lane: no key made, answers applied confirmed, seen
   assert.ok(/\{ confirmed: true \}/.test(sec) && /a\.mode !== 'seen'/.test(sec), 'a cue is applied confirmed, and a seen action is skipped');
   assert.ok(/g\.roll\(\{ mem: clone\(S\.npcMem/.test(sec) && /nameRolled: true/.test(sec), 'a missing NPC name is rolled by the NPC generator\'s own draw');
   assert.ok((sec.match(/g\.assistAct\(/g) || []).length === 2, 'assistAct is called from exactly two places (the window and the cue post); the cue post is not retried');
-  assert.ok(/cm\.uncued && !cm\.winBusy/.test(sec), 'uncued windows run only behind the second switch');
+  assert.ok(/cm\.uncued && !cm\.capped && !cm\.winBusy/.test(sec), 'uncued windows run only behind the second switch');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
