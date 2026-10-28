@@ -7,6 +7,7 @@
 // Applies migrations/ to a throwaway local D1, then starts the Worker on PORT (default 8855).
 
 import { spawn, spawnSync } from 'node:child_process';
+import { request as httpRequest } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
@@ -208,6 +209,59 @@ async function main() {
   await step('the display never appears in /api/members or /api/export for the GM', async () => {
     const e = await call('GET', '/api/export', { user: GM }); status(e, 200);
     expect(!e.text.includes(IPAD), 'export has no display sign-in');
+  });
+
+  // ---------- /api/live (MD1a): the GM socket, real LiveHub Durable Object under wrangler dev ----------
+  // node's fetch refuses an Upgrade header, so these speak raw HTTP.
+  const upgrade = (user) => new Promise((resolveP, rejectP) => {
+    const headers = { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': Buffer.from('b68-live-check-key').toString('base64') };
+    if (user) headers['X-Dev-User'] = user;
+    const req = httpRequest({ host: '127.0.0.1', port: PORT, path: '/api/live', method: 'GET', headers });
+    const timer = setTimeout(() => { req.destroy(); rejectP(new Error('no answer to the upgrade')); }, 15000);
+    req.on('response', (res) => { // anything but 101: a plain answer
+      let text = ''; res.on('data', (c) => { text += c; }); res.on('end', () => { clearTimeout(timer); resolveP({ status: res.statusCode, text, headers: res.headers }); });
+    });
+    req.on('upgrade', (res, socket, head) => {
+      clearTimeout(timer);
+      let buf = Buffer.from(head);
+      const finish = () => { // one unmasked server text frame: 0x81, length (< 126), payload
+        if (buf.length < 2 || buf.length < 2 + (buf[1] & 0x7f)) return false;
+        resolveP({ status: res.statusCode, headers: res.headers, socket, first: buf.subarray(2, 2 + (buf[1] & 0x7f)).toString('utf8'), opcode: buf[0] & 0x0f });
+        return true;
+      };
+      if (finish()) return;
+      socket.on('data', (c) => { buf = Buffer.concat([buf, c]); finish(); });
+      setTimeout(() => rejectP(new Error('upgraded, but no first frame')), 10000);
+    });
+    req.on('error', rejectP);
+    req.end();
+  });
+
+  await step('GET /api/live as the GM with an upgrade: 101, the first frame is {"hello":1}, and a ping is answered with pong', async () => {
+    const r = await upgrade(GM);
+    try {
+      expect(r.status === 101, 'expected 101, got ' + r.status + ' ' + (r.text || ''));
+      expect(r.opcode === 1 && r.first === '{"hello":1}', 'first frame: ' + r.opcode + ' ' + r.first);
+      // client frames are masked: text "ping" (opcode 1, FIN), the mask is four zero bytes so the payload is plain
+      const frame = Buffer.concat([Buffer.from([0x81, 0x84, 0, 0, 0, 0]), Buffer.from('ping')]);
+      const got = await new Promise((res, rej) => {
+        const t = setTimeout(() => rej(new Error('no pong')), 8000);
+        r.socket.once('data', (c) => { clearTimeout(t); res(c); });
+        r.socket.write(frame);
+      });
+      expect(got[0] === 0x81 && got.subarray(2, 2 + (got[1] & 0x7f)).toString('utf8') === 'pong', 'ping -> pong, got ' + got.toString('hex'));
+    } finally { if (r.socket) r.socket.destroy(); }
+  });
+
+  await step('GET /api/live: a player and the display are 403 on an upgrade (no socket), and the GM without an upgrade is 426', async () => {
+    for (const [who, user] of [['player', PLAYER], ['display', IPAD]]) {
+      const r = await upgrade(user);
+      expect(r.status === 403 && !r.socket, who + ': expected 403, got ' + r.status + ' ' + (r.text || ''));
+      expect(!/hello/.test(r.text || ''), who + ': no hello');
+    }
+    status(await call('GET', '/api/live', { user: PLAYER }), 403);
+    status(await call('GET', '/api/live', { user: IPAD }), 403);
+    const plain = await call('GET', '/api/live', { user: GM }); status(plain, 426);
   });
 }
 

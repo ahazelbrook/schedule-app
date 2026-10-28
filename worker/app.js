@@ -33,6 +33,7 @@ import { onRequest as gmStt } from '../functions/api/gm/stt.js';
 import { onRequest as gmSttToken } from '../functions/api/gm/stt-token.js';
 import { onRequest as gmTranscript } from '../functions/api/gm/transcript.js';
 import { onRequest as gmAssist } from '../functions/api/gm/assist.js';
+import { onRequest as live } from '../functions/api/live.js';
 import { gmNotFound } from '../functions/_lib/gm.js';
 import { onRequest as notFound } from '../functions/api/[[path]].js';
 
@@ -60,6 +61,8 @@ export const ROUTES = [
   { re: /^\/api\/gm\/transcript\/?$/, handler: gmTranscript, path: '/api/gm/transcript' },
   // Claude at the table (the assist build plan): POST /api/gm/assist/tick, /fit, /another, /gatekeeper and the Screen's /portrait, /prop, /wire, /board and /portrait-add, Ask Blade's /ask, the co-GM's /act, GET and POST /cards, GM only
   { re: /^\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board|ask|act)\/?$/, handler: gmAssist, path: '/api/gm/assist/:action', params: ['action'] },
+  // the live-sync socket (MD1a), GM only; the display role is refused by the middleware (not in its allow-list)
+  { re: /^\/api\/live\/?$/, handler: live, path: '/api/live' },
   { re: /^\/api\/gm(?:\/.*)?$/, handler: gmNotFound, path: '/api/gm/[[path]]' },
 ];
 
@@ -166,6 +169,8 @@ export async function handlePage(res) {
 }
 
 function withHeaders(res, extra) {
+  // a WebSocket upgrade (101) carries the socket on the response: never touch it, never copy it
+  if (res.status === 101) return res;
   let out = res;
   try {
     for (const [k, v] of Object.entries(extra)) out.headers.set(k, v);

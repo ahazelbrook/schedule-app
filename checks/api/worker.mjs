@@ -19,6 +19,7 @@ import { onRequest as character } from '../../functions/api/characters/[id].js';
 import { onRequest as npcs } from '../../functions/api/npcs/index.js';
 import { onRequest as npc } from '../../functions/api/npcs/[id].js';
 import { onRequest as notFound } from '../../functions/api/[[path]].js';
+import { onRequest as liveRoute } from '../../functions/api/live.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 let passes = 0;
@@ -54,6 +55,7 @@ await step('router: every Pages Functions route maps to its handler, with params
     ['/api/characters/abc_1-2', character], ['/api/characters/x/', character],
     ['/api/npcs', npcs], ['/api/npcs/', npcs], ['/api/npcs/npc_grunt', npc], ['/api/npcs/x/', npc], ['/api/npcs/a/b', notFound],
     ['/api', notFound], ['/api/', notFound], ['/api/nope', notFound], ['/api/characters/a/b', notFound], ['/api/me/x', notFound],
+    ['/api/live', liveRoute], ['/api/live/', liveRoute], ['/api/live/x', notFound], ['/api/livex', notFound],
   ];
   for (const [p, h] of cases) expect(matchApi(p).handler === h, p + ' -> wrong handler');
   expect(matchApi('/api/characters/abc_1-2').params.id === 'abc_1-2', 'id param');
@@ -189,6 +191,71 @@ await step('D1: migrations hold exactly the statements of schema.sql', async () 
   const fromMigrations = files.flatMap((f) => stmts(readFileSync(join(ROOT, 'migrations', f), 'utf8')));
   const fromSchema = stmts(readFileSync(join(ROOT, 'schema.sql'), 'utf8'));
   expect(JSON.stringify(fromMigrations) === JSON.stringify(fromSchema), 'schema.sql and migrations/ differ');
+});
+
+await step('wrangler.toml: the LIVE Durable Object binding and its v1 migration (not D1 migrations_dir), both before [assets]', () => {
+  expect(/^\[\[durable_objects\.bindings\]\]\s*\nname = "LIVE"\s*\nclass_name = "LiveHub"/m.test(live), 'binding LIVE -> LiveHub');
+  expect(/^\[\[migrations\]\]\s*\ntag = "v1"\s*\nnew_sqlite_classes = \["LiveHub"\]/m.test(live), 'migration v1 new_sqlite_classes');
+  expect(live.indexOf('[[durable_objects.bindings]]') < live.indexOf('[assets]') && live.indexOf('[[migrations]]') < live.indexOf('[assets]'), 'both before [assets]');
+  expect(live.split('[[migrations]]').length === 2 && live.split('[[durable_objects.bindings]]').length === 2, 'one of each');
+  expect(!/^\s*new_classes\s*=/m.test(live), 'sqlite classes only');
+  expect(/^\s*migrations_dir\s*=\s*"migrations"/m.test(live), 'D1 migrations_dir untouched');
+  const index = readFileSync(join(ROOT, 'worker', 'index.js'), 'utf8');
+  expect(/^export \{ LiveHub \} from '\.\/live\.js';/m.test(index), 'index.js exports LiveHub');
+  expect((readFileSync(join(ROOT, 'worker', 'app.js'), 'utf8').match(/LiveHub/g) || []).length === 0, 'app.js never names the class (node must import it)');
+});
+
+// A LIVE namespace stand-in. Node cannot build a real 101 Response, so the stub answers a plain object with status 101
+// and headers whose set() throws: the guards must return it untouched (a copy would drop the socket).
+function fakeLive(calls) {
+  const upgraded = { status: 101, webSocket: { marker: 'socket' }, body: null, headers: { set() { throw new Error('headers touched on a 101'); }, get() { return null; } } };
+  return {
+    upgraded,
+    idFromName(name) { calls.names.push(name); return { id: name }; },
+    get(id) { calls.gets.push(id); return { async fetch(req) { calls.fetches.push(req); return upgraded; } }; },
+  };
+}
+const liveCalls = () => ({ names: [], gets: [], fetches: [] });
+const upgradeReq = (user) => new Request('http://127.0.0.1:8788/api/live', { headers: Object.assign({ Upgrade: 'websocket', Connection: 'Upgrade' }, user ? { 'X-Dev-User': user } : {}) });
+const liveEnv = (extra) => Object.assign({ DEV_USER: 'gm@example.test', GM_EMAILS: 'gm@example.test', DISPLAY_EMAILS: 'ipad@example.test', DB: fakeDb(), CAMPAIGN: 'tablecheck' }, extra || {});
+
+await step('/api/live: the GM upgrade reaches idFromName(campaign) and the 101 comes back as the very same object (no header copy)', async () => {
+  const calls = liveCalls();
+  const LIVE = fakeLive(calls);
+  const r = await worker.fetch(upgradeReq(), liveEnv({ LIVE }), {});
+  expect(r === LIVE.upgraded, 'the 101 must pass through untouched: got status ' + r.status);
+  expect(calls.names.length === 1 && calls.names[0] === 'tablecheck', 'idFromName(campaign): ' + calls.names);
+  expect(calls.gets.length === 1 && calls.gets[0].id === 'tablecheck', 'get() got that id');
+  expect(calls.fetches.length === 1 && calls.fetches[0].headers.get('Upgrade') === 'websocket', 'the stub saw the upgrade request');
+  const unset = liveCalls();
+  const e2 = liveEnv({ LIVE: fakeLive(unset) }); delete e2.CAMPAIGN;
+  await worker.fetch(upgradeReq(), e2, {});
+  expect(unset.names[0] === 'default', 'no CAMPAIGN var: the app default: ' + unset.names);
+});
+
+await step('/api/live: a player and the display are 403 before any upgrade (the object is never reached); no token is 401', async () => {
+  for (const [who, user] of [['player', 'player@example.test'], ['display', 'ipad@example.test']]) {
+    for (const withUpgrade of [true, false]) {
+      const calls = liveCalls();
+      const req = withUpgrade ? upgradeReq(user) : new Request('http://127.0.0.1:8788/api/live', { headers: { 'X-Dev-User': user } });
+      const r = await worker.fetch(req, liveEnv({ LIVE: fakeLive(calls) }), {});
+      expect(r.status === 403, who + (withUpgrade ? ' upgrade' : ' plain') + ': expected 403, got ' + r.status);
+      expect(r.headers.get('Cache-Control') === 'no-store', who + ': no-store');
+      expect(calls.names.length === 0 && calls.gets.length === 0 && calls.fetches.length === 0, who + ': the Durable Object was reached');
+    }
+  }
+  const calls = liveCalls();
+  const anon = await worker.fetch(upgradeReq(), { LIVE: fakeLive(calls), CAMPAIGN: 'tablecheck', GM_EMAILS: 'gm@example.test', DB: fakeDb() }, {});
+  expect(anon.status === 401 && calls.fetches.length === 0, 'no token: ' + anon.status);
+});
+
+await step('/api/live: the GM without an upgrade header is 426, still not the object; the GM with LIVE unbound is a plain 503', async () => {
+  const calls = liveCalls();
+  const plain = await worker.fetch(new Request('http://127.0.0.1:8788/api/live'), liveEnv({ LIVE: fakeLive(calls) }), {});
+  expect(plain.status === 426 && calls.fetches.length === 0, 'plain GET: ' + plain.status);
+  expect(plain.headers.get('Cache-Control') === 'no-store', 'no-store on the 426');
+  const unbound = await worker.fetch(upgradeReq(), liveEnv(), {});
+  expect(unbound.status === 503, 'no binding: ' + unbound.status);
 });
 
 console.log('\n' + passes + ' passed, ' + failures + ' failed');
