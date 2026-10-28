@@ -533,9 +533,27 @@ fails and nobody is known, nothing is purged.
     **At** the time, **Next** and **Routes** (arrows for both ways, up and down; an eye for watched, a key for needs). `t` is only what the
     GM set: the wall clock is never read. The map's tokens go through the kit's `tokens` option, **one per room** (initials pills by kind,
     the lens chip C, R, D or ?, a red ring when the person the disguise sees through is there, a pie per pinned clock), on the **GM layer
-    only**: Show on iPad, live reveal and the score scene never see them. A floor tab passes the kit's `floor` (iso, plan and section;
+    only** (the people, the lens and the timeline never leave it; the players' copy has its own, smaller tokens: see below). A floor tab passes the kit's `floor` (iso, plan and section;
     rings draws every floor). While the slider moves, the clock and the side update at once and the state and map follow after 200 ms of
     quiet; each drawn (view, theme, floor, tokens) is kept (24), so going back costs nothing. A run draws itself when the panel opens.
+  - **The players' copy of a run** (M3; design 4.7 and 4.10). Show on iPad and live reveal gain two things from the run, in rooms the player copy
+    shows (a revealed band) and nowhere else: a marker for each PC placed in `ball.crew` and a pie for each pinned table clock the players can
+    see (`hidden` is not set; a hidden clock is dropped whole, not drawn blank). One token per room; its label is the PCs' names only (three, then
+    `+N`); a pie carries no words. Never: a person, the lens or a danger ring, the timeline, NPC positions, a clock's name. One small pure builder,
+    `playerTokens(placed, shown, clocks, pcs)` (`placed` is `{ crew, pins }` only; it never receives `play`, the lens or the people), separate
+    from the GM token builder. `playerDisplay(roll, map, render, { tokens, hide })` is the one door: `tokenScreen` checks the shape
+    (`{ room, label, svg }`), drops a token in a room that is not shown (the kit drops it too), and scans every label and svg with the hidden-name
+    scan, whose deny list is the map's own hidden names plus the play's people and disguise labels and the names of hidden clocks (`hide`, built
+    from `play` by the page and used for nothing else). Any hit **fails closed**: no marker goes out, the map still does, and the GM gets one red
+    toast per set (the preview says so too). A map that only leaks with its markers is redrawn without them before it is refused. With nothing to
+    show (empty `crew` and `pins`, markers only in hidden rooms, only hidden clocks, another site's `ball`), the render options carry no `tokens`
+    key and the copy is byte-identical to a run with no ball. The score scene never carries markers. **Live:** `S.mapOn` gains `tok` (the
+    request that landed) and `tokQ` (the latest queued), both the signature of the requested markers before the screen; a change to `ball`
+    (here, or from another device on refetch), to the table's clocks (a tick, a clock hidden or shown) or to a filed character's name re-sends
+    through `liveReveal` (same render, scan, gate and queue, `ifSeq`; a 409 ends live reveal as for bands). A time scrub, a hidden pin or a poll
+    with nothing new sends nothing. The Layer switch still ends live reveal (so a marker moves live only while Layer is Player). The player
+    preview in the map box shows the same markers and never reads or writes the GM layer's drawn-map cache. Checks: `gm-nosecrets.test.mjs` (m),
+    `gm-page.test.mjs` (S5e, S5g-S5j) and `gm-maps.e2e.mjs` (a marker moved reaching the iPad).
   - **`ball` in the GM state** (GM-only, never on the display): `{ site, t, floor: <level> | "all", lens, crew: { <pc id>: room }, pins: { <table clock id>: room }, open?, dawn? }`.
     It belongs to the site named in `site`: another site's `ball` reads as empty and the first write replaces it whole. `crew` and `pins`
     are written with a replace patch, so a removed key goes (`open` is M3's and is kept as it is; `dawn` is written by the False dawn button as `{ at }`, set by a replace of the whole `ball` like the rest, and kept by every other write). Checks:

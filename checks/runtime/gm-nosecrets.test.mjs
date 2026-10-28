@@ -13,6 +13,7 @@
 //       figure map's faction palette lives in the pack for exactly that reason);
 //   (h) the location glance's one-sentence plan (it names the target room and its locks) is GM only: it is in no player summary,
 //       and the page reads it in the glance card alone.
+//   (m) the players' tokens (M3): crew markers and visible pinned clocks on the player copy, in shown rooms only, behind one gate that fails closed.
 //   (i) the chase strip (the Chase panel): a hidden opposing clock, the roll lines and GM notes never reach the svg sent to the iPad,
 //       over a fuzzed set of invented chases, and the page sends a chase only through chaseDisplay (map kit 0.6's B68Map.chase; until
 //       the vendored kit has it, checks/runtime/fixtures/chase-kit-stub.js stands in).
@@ -625,6 +626,171 @@ await test('(i) a hidden opposing clock, roll lines and GM notes never reach the
   if ((panel.match(/pushDisplay\(/g) || []).length !== 1 || (panel.match(/chaseDisplay\(/g) || []).length !== 1 || !/chaseDisplay\([\s\S]*?gate\.mark\(d\.svg\)[\s\S]*?pushDisplay\(\{ kind: 'svg', title: d\.title, caption: d\.caption, svg: d\.svg \}(\)|, \{\s*chase: true)/.test(panel)) throw new Error('the Chase panel sends something other than chaseDisplay\'s svg');
   if (/rolls: true/.test(src.slice(src.indexOf('function chaseDisplay'), src.indexOf('P.chaseDisplay')))) throw new Error('chaseDisplay asks for the roll lines');
   console.log('     ' + n + ' invented chases, map kit ' + kit.VERSION);
+});
+
+/* ---------- (m) the players' tokens (M3): crew markers and visible pinned clocks on the player copy, nothing else ---------- */
+// The player copy of an authored site gains PC markers and the pinned clocks the players may see, in rooms the player copy shows.
+// One pure builder (playerTokens) takes only the crew/pin maps, the revealed rooms, the clocks with their visibility and the PCs'
+// names; one gate (tokenScreen, inside playerDisplay) refuses the whole set when any label or svg holds a hidden name. Every
+// negative case below runs next to a positive control in the same setup, so a pipeline that never drew a token cannot pass.
+const TK_ROLL = { name: 'Invented Works', district: 'Nowhere', target: 'Apartment building', targetRoom: 'Basement', targetBand: 'secure',
+  physThreatName: 'Old Mags', socThreatName: 'Mr Vane', watcher: 'Tilly Frost, night porter',
+  rooms: [{ name: 'Lobby', band: 'public' }, { name: 'Reception', band: 'public' }, { name: 'Break room', band: 'working' }, { name: 'Filing room', band: 'working' }, { name: 'Server room', band: 'controlled' }, { name: 'Basement', band: 'secure', isTarget: true }],
+  vectors: [], skips: [] };
+const TK_MAP = (extra) => ({ layer: 'player', view: 'rings', theme: 'rulebook', reveal: { public: true }, ...(extra || {}) });
+const TK_CLOCKS = [{ id: 'c1', size: 6, filled: 2, hidden: false }, { id: 'c2', size: 4, filled: 1, hidden: true }];
+const TK_PCS = [{ id: 'pc1', name: 'Cass Fenn' }, { id: 'pc2', name: 'Dov Ketch' }];
+const tokCount = (svg) => (String(svg).match(/#fffdf6/g) || []).length;       // a token's own background: one per token
+const stripIds = (s) => String(s).replace(/b68m\d+-/g, 'b68m-');
+
+await test('(m) the builder: PC markers and visible pinned clocks in shown rooms only; a hidden clock is dropped whole; one token per room; labels are PC names only', async () => {
+  const shown = ['Lobby', 'Reception'];
+  const t = GP.playerTokens({ crew: { pc1: 'Lobby', pc2: 'Server room' }, pins: { c1: 'Lobby', c2: 'Reception' } }, shown, TK_CLOCKS, TK_PCS);
+  assertEq(t.map((x) => [x.room, x.label]), [['Lobby', 'Cass Fenn']], 'the PC and the visible clock share Lobby; Dov is in a room the players cannot see; the hidden clock is dropped');
+  if (!/<path d="M/.test(t[0].svg) || !t[0].svg.includes('>CF<')) throw new Error('positive control: the pill and the pie are drawn: ' + t[0].svg);
+  const visible = GP.playerTokens({ crew: {}, pins: { c2: 'Reception' } }, shown, [{ ...TK_CLOCKS[1], hidden: false }], TK_PCS);
+  assertEq(visible.map((x) => x.room), ['Reception'], 'positive control: the same pin with the clock visible draws one token');
+  assertEq(GP.playerTokens({ crew: {}, pins: { c2: 'Reception' } }, shown, TK_CLOCKS, TK_PCS), [], 'the hidden clock alone draws nothing, not a blank token');
+  assertEq(GP.playerTokens({ crew: { pc1: 'Lobby' } }, shown, TK_CLOCKS, [{ id: 'pc9', name: 'Nobody' }]), [], 'a crew id the table does not have draws nothing');
+  const five = GP.playerTokens({ crew: { a: 'Lobby', b: 'Lobby', c: 'Lobby', d: 'Lobby', e: 'Lobby' }, pins: {} }, shown, [], 'abcde'.split('').map((id) => ({ id, name: 'Pc ' + id.toUpperCase() })));
+  assertEq([five.length, five[0].label], [1, 'Pc A, Pc B, Pc C +2'], 'five PCs in a room: one token, three names and a count');
+  if (!five[0].svg.includes('>+2<')) throw new Error('the +N pill');
+  const esc = GP.playerTokens({ crew: { x: 'Lobby' } }, shown, [], [{ id: 'x', name: '<b>"&' }]);
+  if (/<b>/.test(esc[0].svg) || !esc[0].svg.includes('&lt;')) throw new Error('a name is escaped in the svg');
+  assertEq(GP.playerTokens({ crew: { pc1: 'Lobby', pc2: 'Lobby' }, pins: { c1: 'Lobby' } }, shown, TK_CLOCKS, TK_PCS), GP.playerTokens({ pins: { c1: 'Lobby' }, crew: { pc2: 'Lobby', pc1: 'Lobby' } }, shown, TK_CLOCKS.slice().reverse(), TK_PCS), 'the same markers whatever the order of keys');
+});
+
+await test('(m) the builder is blind: lens, people, play, danger and timeline passed with the placement never appear; and the call site picks { crew, pins } only', async () => {
+  const poison = { crew: { pc1: 'Lobby' }, pins: { c1: 'Lobby' }, lens: 'POISONLENS', people: [{ label: 'POISONPERSON' }], play: { people: [{ label: 'POISONPLAY' }] }, danger: true, t: 99, open: ['POISONOPEN'], dawn: { at: 'POISONDAWN' } };
+  const t = GP.playerTokens(poison, ['Lobby'], [{ ...TK_CLOCKS[0], lens: 'POISONLENS', people: 'POISONPERSON', name: 'POISONCLOCKNAME' }], [{ ...TK_PCS[0], play: 'POISONPLAY', notes: 'POISONNOTES' }]);
+  if (t.length !== 1) throw new Error('positive control: one token');
+  const all = JSON.stringify(t);
+  if (/POISON|#d11/.test(all)) throw new Error('a field that is not a crew or pin map, a PC name or a clock\'s size/filled reached a token: ' + all);
+  const src = read(path.join(ROOT, 'app', 'gm-page.js'));
+  const sig = src.match(/function playerTokens\(([^)]*)\)/);
+  if (!sig || sig[1].replace(/\s/g, '') !== 'placed,shown,clocks,pcs') throw new Error('playerTokens\' parameters changed: ' + (sig && sig[1]));
+  const body = src.slice(src.indexOf('function playerTokens('), src.indexOf('function tokenHidden('));
+  if (/\.lens|\.people|\bplay\b|\.stops|\.events|\.disguises/.test(body.replace(/\/\*[\s\S]*?\*\//g, ''))) throw new Error('playerTokens reads something it must never see');
+  const set = src.slice(src.indexOf('function playerTokenSet('), src.indexOf('/* ---- the strip ---- */'));
+  if (!/placed = \{ crew: isObj\(st\.crew\) \? st\.crew : \{\}, pins: isObj\(st\.pins\) \? st\.pins : \{\} \}/.test(set) || !/ballDoc\(rs\.name\)/.test(set)) throw new Error('the call site no longer picks { crew, pins } from ballDoc');
+  if (/S\.doc\.ball|runCache|runTokens|runApply|runModel/.test(set)) throw new Error('the player set reads the raw ball, the GM cache or the GM token builder');
+  const display = src.slice(src.indexOf('function playerDisplay('), src.indexOf('P.playerDisplay'));
+  if (/runCache|runTokens|runApply/.test(display)) throw new Error('playerDisplay touches the GM drawing path');
+});
+
+await test('(m) an NPC name, a hidden room, a threat or the watcher in a label refuses every marker (the map still goes), each next to a clean control', async () => {
+  const rooms = ['Lobby', 'Reception'], hide = ['Odette Marsh', 'Cook'];
+  const tokensFor = (name) => GP.playerTokens({ crew: { x: 'Lobby', y: 'Reception' }, pins: {} }, rooms, [], [{ id: 'x', name }, { id: 'y', name: 'Dov Ketch' }]);
+  const draw = (name, extra) => GP.playerDisplay(TK_ROLL, TK_MAP(extra), mapRender, { tokens: tokensFor(name), hide });
+  const control = draw('Cass Fenn');
+  if (control.tokens !== 2 || control.tokensRefused || tokCount(control.svg) !== 2) throw new Error('positive control: two markers drawn (' + control.tokens + ', ' + tokCount(control.svg) + ')');
+  const bare = GP.playerDisplay(TK_ROLL, TK_MAP(), mapRender);
+  for (const [what, name] of [['an NPC (play.people label)', 'Odette Marsh'], ['an NPC in other case and spacing', ' ODETTE   marsh '], ['a disguise label', 'Cook'], ['a hidden room', 'Server room'], ['a hidden room in a name', 'Ada of the Filing Room'], ['the physical threat', 'Old Mags'], ['the social threat', 'Mr Vane'], ['the watcher', 'Tilly Frost'], ['the watcher, whole', 'Tilly Frost, night porter']]) {
+    const d = draw(name);
+    if (d.tokens !== 0 || !d.tokensRefused) throw new Error(what + ': the markers were not refused (' + d.tokens + ')');
+    if (tokCount(d.svg) !== 0) throw new Error(what + ': a token is on the map');
+    if (GP.svgText(d.svg).includes(name.trim().toLowerCase().replace(/\s+/g, ' '))) throw new Error(what + ': the name is on the map');
+    assertEq(stripIds(d.svg), stripIds(bare.svg), what + ': the map goes without markers, exactly as it would have with none');
+    checkSvg(d.svg);
+  }
+  // one bad marker refuses the whole set, the clean one included
+  const two = GP.playerTokens({ crew: { x: 'Lobby', y: 'Reception' }, pins: {} }, rooms, [], [{ id: 'x', name: 'Cass Fenn' }, { id: 'y', name: 'Odette Marsh' }]);
+  const d2 = GP.playerDisplay(TK_ROLL, TK_MAP(), mapRender, { tokens: two, hide });
+  if (d2.tokens !== 0 || tokCount(d2.svg) !== 0 || !d2.tokensRefused) throw new Error('the clean marker went out beside a bad one');
+  // a hidden name in the token svg itself (not the label), or a token that is not exactly { room, label, svg }
+  const sneaky = [{ room: 'Lobby', label: 'Cass Fenn', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 600"><title>Server room</title><rect width="540" height="600" fill="#fffdf6"/></svg>' }];
+  if (GP.playerDisplay(TK_ROLL, TK_MAP(), mapRender, { tokens: sneaky, hide }).tokens !== 0) throw new Error('a hidden name in the token svg went out');
+  if (GP.playerDisplay(TK_ROLL, TK_MAP(), mapRender, { tokens: [{ ...two[0], extra: 'x' }], hide }).tokens !== 0) throw new Error('a token with an extra field went out');
+  if (GP.playerDisplay(TK_ROLL, TK_MAP(), mapRender, { tokens: [{ room: 'Lobby', label: 1, svg: sneaky[0].svg }], hide }).tokens !== 0) throw new Error('a token with a non-string label went out');
+  // the names that are revealed are not secrets: a PC called like a shown room is fine
+  if (draw('Reception').tokens !== 2) throw new Error('a shown room\'s name is not a secret');
+  const open = GP.playerDisplay(TK_ROLL, TK_MAP({ reveal: { public: true, controlled: true } }), mapRender, { tokens: tokensFor('Server room'), hide: [] });
+  if (open.tokens !== 2) throw new Error('once the band is revealed the name is fair game');
+  if (GP.scoreScene.length !== 3) throw new Error('scoreScene takes a new argument: it must never carry tokens');
+});
+
+await test('(m) a hidden clock is never drawn, and a marker in a room the players cannot see is never drawn (a positive control beside each)', async () => {
+  const scene = (tk, extra) => GP.playerDisplay(TK_ROLL, TK_MAP(extra), mapRender, tk);
+  const hiddenOnly = GP.playerTokens({ crew: {}, pins: { c1: 'Lobby', c2: 'Reception' } }, ['Lobby', 'Reception'], TK_CLOCKS, TK_PCS);
+  assertEq(hiddenOnly.map((t) => t.room), ['Lobby'], 'the visible pin draws, the hidden one does not');
+  const d = scene({ tokens: hiddenOnly, hide: [] });
+  if (d.tokens !== 1 || tokCount(d.svg) !== 1) throw new Error('positive control: the visible clock\'s pie is on the map');
+  // the same markers placed in rooms that are not revealed: the builder drops them, and so does the screen and the kit even when handed them
+  const unseen = GP.playerTokens({ crew: { pc1: 'Server room', pc2: 'Break room' }, pins: { c1: 'Basement' } }, ['Lobby', 'Reception'], TK_CLOCKS, TK_PCS);
+  assertEq(unseen, [], 'the builder draws nothing in rooms the players cannot see');
+  const forced = [{ room: 'Server room', label: 'Cass Fenn', svg: GP.runTokenSvg({ pills: [{ t: 'CF', c: '#111111' }] }) }, { room: 'Lobby', label: 'Dov Ketch', svg: GP.runTokenSvg({ pills: [{ t: 'DK', c: '#111111' }] }) }];
+  const f = scene({ tokens: forced, hide: [] });
+  if (f.tokens !== 1 || tokCount(f.svg) !== 1 || /Cass Fenn/i.test(GP.svgText(f.svg)) || !/dov ketch/i.test(GP.svgText(f.svg))) throw new Error('the screen did not drop the token in the unrevealed room, or lost the one in Lobby: ' + f.tokens + ' ' + tokCount(f.svg));
+  const o = GP.mapOpts({ view: 'rings', theme: 'rulebook' }, 'player', ['public'], GP.IPAD_MAP);
+  if (tokCount(mapRender(TK_ROLL, { ...o, tokens: forced }).svg) !== 1 || tokCount(mapRender(TK_ROLL, o).svg) !== 0) throw new Error('the kit itself drops a token in an unrevealed room (kit ' + MAPKIT.VERSION + ')');
+  const all = scene({ tokens: forced, hide: [] }, { reveal: { public: true, controlled: true } });
+  if (all.tokens !== 2 || tokCount(all.svg) !== 2) throw new Error('positive control: reveal the band and the token in Server room draws');
+});
+
+await test('(m) with nothing to show, the player copy is byte-identical to today\'s: no tokens key, the same render calls', async () => {
+  const calls = [];
+  const spy = (roll, o) => { calls.push(o); return mapRender(roll, o); };
+  const base = GP.playerDisplay(TK_ROLL, TK_MAP(), spy), baseCalls = calls.length;
+  const hidden = GP.playerTokens({ crew: { pc1: 'Server room' }, pins: { c2: 'Lobby' } }, ['Lobby', 'Reception'], TK_CLOCKS, TK_PCS);
+  for (const tk of [undefined, { tokens: [], hide: ['Odette Marsh'] }, { tokens: hidden, hide: [] }, { tokens: [{ room: 'Server room', label: 'Cass Fenn', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 600"/>' }], hide: [] }]) {
+    calls.length = 0;
+    const d = GP.playerDisplay(TK_ROLL, TK_MAP(), spy, tk);
+    assertEq(stripIds(d.svg), stripIds(base.svg), 'the same bytes');
+    assertEq([d.title, d.caption, d.reveal, d.tokens], [base.title, base.caption, base.reveal, 0], 'the same fields');
+    if (calls.length !== baseCalls || calls.some((x) => 'tokens' in x)) throw new Error('the render options changed: ' + JSON.stringify(calls.map((x) => Object.keys(x))));
+  }
+  // and the failure paths are the old ones: a leaking iso is redrawn as rings, rings that leak are refused
+  const seen = [];
+  const isoLeaks = (roll, o) => { seen.push(o.view); return o.view === 'iso' ? { svg: '<svg><text>Server room</text></svg>' } : mapRender(roll, o); };
+  GP.playerDisplay(TK_ROLL, TK_MAP({ view: 'iso' }), isoLeaks, { tokens: [], hide: [] });
+  assertEq(seen, ['iso', 'rings'], 'the old fallback');
+  let err = null;
+  try { GP.playerDisplay(TK_ROLL, TK_MAP(), () => ({ svg: '<svg><text>Server room</text></svg>' }), { tokens: hidden, hide: [] }); } catch (e) { err = e; }
+  if (!err || !err.leak) throw new Error('a map that leaks by itself is still refused');
+});
+
+await test('(m) a map that only leaks WITH its markers goes without them; a clean pair draws both', async () => {
+  const mk = GP.playerTokens({ crew: { pc1: 'Lobby' }, pins: {} }, ['Lobby'], [], TK_PCS);
+  const calls = [];
+  const leakWithTokens = (roll, o) => { calls.push(!!o.tokens); const r = mapRender(roll, o); return o.tokens ? { ...r, svg: r.svg.replace('</svg>', '<text>Server room</text></svg>') } : r; };
+  const d = GP.playerDisplay(TK_ROLL, TK_MAP(), leakWithTokens, { tokens: mk, hide: [] });
+  assertEq(calls, [true, false], 'first with the markers, then without');
+  if (d.tokens !== 0 || !d.tokensRefused || tokCount(d.svg) !== 0 || GP.leaks(d.svg, TK_ROLL, ['public']).length) throw new Error('not dropped cleanly');
+  const ok = GP.playerDisplay(TK_ROLL, TK_MAP(), mapRender, { tokens: mk, hide: [] });
+  if (ok.tokens !== 1 || ok.tokensRefused) throw new Error('positive control');
+});
+
+await test('(m) the real kit, 30 invented rolls at four reveals: markers appear in shown rooms only, hidden clocks never, every copy clean and accepted by the server\'s svg check', async () => {
+  const req = createRequire(import.meta.url), LOC = req(path.join(ROOT, 'app', 'gm', 'location.js'));
+  const pk = JSON.parse(read(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'location-pack.json')));
+  let n = 0, drawn = 0;
+  const bad = [];
+  for (let s = 1; s <= 30; s++) {
+    const roll = LOC.generate(pk.body || pk, {}, { seed: s * 7919 });
+    for (const reveal of [{ public: true }, { public: true, working: true }, { public: true, controlled: true }, { public: true, working: true, controlled: true, secure: true }]) {
+      const map = { layer: 'player', view: ['iso', 'rings', 'plan', 'section'][s % 4], theme: 'rulebook', reveal }, R = GP.revealList(map);
+      const names = roll.rooms.map((r) => r.name), seenRooms = roll.rooms.filter((r) => R.includes(r.band)).map((r) => r.name);
+      const lab = (i) => 'Zq' + String.fromCharCode(97 + i) + 'pc';
+      const crew = {}, pcs = names.map((nm, i) => { crew['z' + i] = nm; return { id: 'z' + i, name: lab(i) }; });
+      const pins = { c1: names[0], c2: names[names.length - 1] };
+      const clocks = [{ id: 'c1', size: 6, filled: 3, hidden: false }, { id: 'c2', size: 4, filled: 1, hidden: true }];
+      const tokens = GP.playerTokens({ crew, pins }, seenRooms, clocks, pcs);
+      if (tokens.some((t) => !seenRooms.includes(t.room))) bad.push(s + ': a token in a room that is not shown');
+      let d;
+      try { d = GP.playerDisplay(roll, map, mapRender, { tokens, hide: ['Odette Marsh'] }); } catch (e) { bad.push(s + ' ' + map.view + ': ' + e.message); continue; }
+      n++;
+      if (d.tokensRefused) bad.push(s + ' ' + R.join(',') + ': refused');
+      const text = GP.svgText(d.svg);
+      names.forEach((nm, i) => { if (!seenRooms.includes(nm) && text.includes(lab(i).toLowerCase())) bad.push(s + ': the marker of a hidden room is on the copy'); });
+      if (GP.leaks(d.svg, roll, R).length) bad.push(s + ': leaks');
+      try { checkSvg(d.svg); } catch (e) { bad.push(s + ': checkSvg ' + e.message); }
+      drawn += tokCount(d.svg);
+      if (d.tokens && !tokCount(d.svg)) bad.push(s + ' ' + map.view + ': none drawn although ' + d.tokens + ' were handed over');
+    }
+  }
+  if (bad.length) throw new Error(bad.length + ' problems: ' + bad.slice(0, 4).join(' ; '));
+  if (n < 100 || drawn < 100) throw new Error('only ' + n + ' copies and ' + drawn + ' markers: the check is not testing anything');
+  console.log('     ' + n + ' player copies, ' + drawn + ' markers drawn');
 });
 
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');

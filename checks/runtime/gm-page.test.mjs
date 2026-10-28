@@ -2837,10 +2837,13 @@ await test('S5c. scrub across midnight, floors, the disguise and its danger ring
   h.qa('#gm-run-rooms [data-gm="run-room"]').find((b) => b.getAttribute('data-room') === 'Cocktail lounge').click();
   assert.deepEqual(cl(stateDoc(h).ball.pins), { c1: 'Cocktail lounge' });
   const lounge = lastTokens(h).find((t) => t.room === 'Cocktail lounge'); assert.ok(lounge && /<path d="M100 480/.test(lounge.svg), 'a pie for the clock, 2 of 6');
-  /* the player layer never gets tokens or a floor, and the strip says so */
+  /* the player layer (M3): no floor, no lens ring, no person; only the crew's marker (Showroom) and the visible clock's pie (lounge), both in public rooms */
   h.q('[data-gm="layer"][data-v="player"]').click();
-  assert.equal(h.calls[h.calls.length - 1].layer, 'player'); assert.equal(h.calls[h.calls.length - 1].tokens, undefined); assert.equal(h.calls[h.calls.length - 1].floor, undefined);
-  assert.match(h.q('#gm-run-note').textContent, /GM layer/); assert.ok(!h.page._state().map.svg.includes('#fffdf6'), 'no token on the player layer map');
+  const pl = h.calls[h.calls.length - 1];
+  assert.equal(pl.layer, 'player'); assert.equal(pl.floor, undefined);
+  assert.deepEqual(pl.tokens.map((t) => [t.room, t.label]), [['Cocktail lounge', ''], ['Showroom', 'Cass Fenn']], 'the player copy carries the crew and the visible pinned clock, nothing else');
+  assert.ok(pl.tokens.every((t) => !t.svg.includes('#d11') && !t.svg.includes('>OM<') && !t.svg.includes('>WT<') && !t.svg.includes('>PQ<') && !t.svg.includes('>IS<')), 'no person, no lens ring');
+  assert.match(h.q('#gm-run-note').textContent, /GM layer/); assert.equal((h.page._state().map.svg.match(/#fffdf6/g) || []).length, 2, 'two tokens on the player layer map');
   h.q('[data-gm="layer"][data-v="gm"]').click();
   assert.ok(h.page._state().map.svg.includes('#fffdf6'), 'and the GM layer has them again');
   const svgBefore = h.page._state().map.svg;
@@ -2891,22 +2894,169 @@ await test('S5f. the table moves under the run: a pinned clock ticks and a new P
   await h.save();
 });
 
-await test('S5e. SECRECY: nothing of the run reaches the iPad: no ball, no people, no disguise, no event, no token', async () => {
-  const fg = fakeGm(undefined, Object.assign({}, prepPart, runPack(RUN_SITE(RUN_PLAY))));
-  const h = await openRun({ fg });
-  h.q('[data-gm="run-next"]').click();
-  const lens = h.q('#gm-run-lens'); lens.value = 'cook'; dispatch(lens, 'change');
-  h.qa('#gm-run-place [data-gm="run-pc"]')[0].click(); h.qa('#gm-run-rooms [data-gm="run-room"]')[0].click();
+/* ---- M3: the run's crew and pinned clocks on the player copy ---- */
+const M3_BALL = { site: 'The Pelican Rooms', t: 0, crew: { pc1: 'Showroom', pc2: 'Luxury penthouse' }, pins: { c1: 'Cocktail lounge', c2: 'Showroom' } };
+const M3_CAMP = () => ({ session: { number: 3 }, crew: {}, clocks: [{ id: 'c1', name: 'Fuse', size: 6, filled: 2, kind: 'danger' }, { id: 'c2', name: 'Vault alarm', size: 4, filled: 1, kind: 'danger', hidden: true }] });
+const tokN = (svg) => (String(svg).match(/#fffdf6/g) || []).length;
+const plainIds = (s) => String(s).replace(/b68m\d+-/g, 'b68m-');
+/* a page on the invented site with a display that keeps ifSeq (the server's seq rule), a ball already on the server, and the player layer up */
+async function m3Open({ ball, camp, pcs } = {}) {
+  const fg = addAmbient(fakeGm(undefined, Object.assign({}, prepPart, runPack(RUN_SITE(RUN_PLAY)))));
+  const sent = []; fg.server.sent = sent;
+  const set0 = fg.gm.setDisplay;
+  fg.gm.setDisplay = async (d) => { sent.push({ ifSeq: d.ifSeq, seqBefore: fg.server.dseq, caption: d.caption, svg: d.svg }); return set0(d); };
+  if (ball !== undefined) fg.server.doc = { ball };
+  const spy = spyKit();
+  const h = await openRun({ fg, spy, camp: camp || M3_CAMP() });
   h.br.W.confirm = () => true;
   h.q('[data-gm="layer"][data-v="player"]').click();
+  h.sent = sent; h.spy = spy;
+  return h;
+}
+const lastPlayerCall = (h) => { const c = h.spy.calls.filter((o) => o.layer === 'player'); return c[c.length - 1]; };
+const ipadSvgs = (h) => h.fg.server.displays.filter((d) => d.kind === 'svg');
+const room = (h, name) => h.qa('#gm-run-rooms [data-gm="run-room"]').find((b) => b.getAttribute('data-room') === name);
+
+await test('S5e. SECRECY: of the run only the crew and the clocks the players can see reach the iPad, in shown rooms: no ball, no people, no disguise, no event, no hidden clock, no marker in a hidden room', async () => {
+  const h = await m3Open({ ball: M3_BALL });
+  h.q('[data-gm="run-next"]').click();
+  const lens = h.q('#gm-run-lens'); lens.value = 'cook'; dispatch(lens, 'change');
   const w = h.q('[data-reveal="working"]'); w.checked = true; dispatch(w, 'change');
   h.q('[data-gm="ipad"]').click();
-  const shown = await until(() => fg.server.displays.filter((d) => d.kind === 'svg').pop());
+  const shown = await until(() => ipadSvgs(h).pop());
   assert.ok(shown, 'a map went to the iPad');
-  const all = JSON.stringify(fg.server.displays);
-  for (const word of ['"ball"', 'Odette', 'Wren', 'Pip Quill', 'Ivo', 'Cook', 'Speeches', 'Fireworks', 'Cass Fenn', 'Gala night', 'tok-frame', '#d11']) assert.ok(!all.includes(word), 'the iPad payload carries ' + word);
+  const all = JSON.stringify(h.fg.server.displays);
+  /* the positive controls: Cass is in the showroom (public), the visible Fuse is pinned in the lounge (public): two tokens, her name once, her pill, the pie */
+  assert.equal(tokN(shown.svg), 2, 'two tokens: the crew marker and the visible clock\'s pie');
+  assert.match(shown.svg, /CASS FENN/, 'her name is the label (the kit draws it in capitals)'); assert.ok(shown.svg.includes('>CF<'), 'her initials');
+  const call = lastPlayerCall(h);
+  assert.deepEqual(call.tokens.map((t) => [t.room, t.label]), [['Cocktail lounge', ''], ['Showroom', 'Cass Fenn']]);
+  assert.ok(/<path d="M100 480/.test(call.tokens[0].svg) && !call.tokens[0].svg.includes('<text'), 'the lounge token is the pie, with no words');
+  assert.ok(!call.tokens[1].svg.includes('<circle') && !call.tokens[1].svg.includes('<path'), 'the hidden clock pinned in the showroom is not drawn there');
+  /* the negatives */
+  for (const word of ['"ball"', 'Odette', 'Wren', 'Pip Quill', 'Ivo', 'Cook', 'Speeches', 'Fireworks', 'Gala night', '#d11', 'Vault alarm', 'Fuse', '>OM<', '>WT<', '>PQ<', '>IS<', 'Dov', '>DK<']) assert.ok(!all.includes(word), 'the iPad payload carries ' + word);
+  assert.ok(!/dov ketch|vault alarm|odette|ivo stark/i.test(all), 'no hidden name in any case');
   assert.ok(!/ball/.test(Object.keys(shown).join()), 'no ball key on the payload');
   assert.match(shown.svg, /Showroom/, 'the map itself is the player layer');
+  checkSvg(shown.svg);
+  /* Dov stands in the penthouse (secure): revealing the band is what puts him on the map */
+  await tick();
+  const sc = h.q('[data-reveal="secure"]'); sc.checked = true; dispatch(sc, 'change');
+  await until(() => ipadSvgs(h).length === 2);
+  const last = ipadSvgs(h)[1];
+  assert.equal(tokN(last.svg), 3, 'the secure band is open: the penthouse marker joins'); assert.match(last.svg, /DOV KETCH/);
+  await h.save();
+});
+
+await test('S5g. byte-identical to today\'s when nothing is left to show: empty ball, crew only in hidden rooms, only hidden clocks, another site\'s ball', async () => {
+  const bare = await m3Open();
+  bare.q('[data-gm="ipad"]').click(); await until(() => ipadSvgs(bare).length === 1);
+  const base = ipadSvgs(bare)[0].svg, baseCalls = bare.spy.calls.filter((o) => o.layer === 'player');
+  assert.ok(baseCalls.length >= 1 && baseCalls.every((o) => !('tokens' in o)), 'no tokens key on any player render');
+  assert.equal(tokN(base), 0);
+  const empties = [
+    ['crew only in rooms the players cannot see', { site: 'The Pelican Rooms', t: 0, crew: { pc1: 'Luxury penthouse', pc2: 'Private card rooms' } }],
+    ['only a hidden clock', { site: 'The Pelican Rooms', t: 0, pins: { c2: 'Showroom' } }],
+    ['a crew id the table does not have', { site: 'The Pelican Rooms', t: 0, crew: { nobody: 'Showroom' } }],
+    ['another site\'s ball (S5d, player side)', { site: 'Some Other Place', t: 0, crew: { pc1: 'Showroom' }, pins: { c1: 'Showroom' } }],
+  ];
+  for (const [what, ball] of empties) {
+    const h = await m3Open({ ball });
+    h.q('[data-gm="ipad"]').click(); await until(() => ipadSvgs(h).length === 1);
+    const svg = ipadSvgs(h)[0].svg, calls = h.spy.calls.filter((o) => o.layer === 'player');
+    assert.equal(plainIds(svg), plainIds(base), what + ': the same bytes as a run with no ball'); assert.ok(calls.every((o) => !('tokens' in o)), what + ': no tokens key');
+    assert.equal(calls.length, baseCalls.length, what + ': the same number of renders');
+    assert.ok(!/CASS FENN|DOV/i.test(svg), what);
+    await h.save();
+  }
+  /* the control: the same page with Cass in the showroom has her */
+  const on = await m3Open({ ball: { site: 'The Pelican Rooms', t: 0, crew: { pc1: 'Showroom' } } });
+  on.q('[data-gm="ipad"]').click(); await until(() => ipadSvgs(on).length === 1);
+  assert.equal(tokN(ipadSvgs(on)[0].svg), 1); assert.match(ipadSvgs(on)[0].svg, /CASS FENN/);
+  await on.save(); await bare.save();
+});
+
+await test('S5h. live: a marker moved, a pin moved, a clock ticked or hidden, a name changed, or the ball changed on another device re-sends with ifSeq; a time scrub or a hidden pin sends nothing', async () => {
+  const h = await m3Open({ ball: { site: 'The Pelican Rooms', t: 0, crew: { pc1: 'Showroom' } } });
+  const cache0 = h.page._state().runCacheN;
+  h.q('[data-gm="ipad"]').click(); await until(() => h.sent.length === 1); await until(() => h.q('.gm-reveal .gm-live'));
+  assert.equal(h.sent[0].ifSeq, undefined, 'Show on iPad has no ifSeq'); const shown = (i) => ipadSvgs(h)[i].svg;
+  const seq1 = h.fg.server.dseq;
+  /* a marker moved: Cass to the lounge */
+  h.qa('#gm-run-place [data-gm="run-pc"]')[0].click(); room(h, 'Cocktail lounge').click();
+  await until(() => h.sent.length === 2);
+  assert.equal(h.sent[1].ifSeq, seq1, 'with the seq the last push answered'); assert.deepEqual(lastPlayerCall(h).tokens.map((t) => [t.room, t.label]), [['Cocktail lounge', 'Cass Fenn']]);
+  assert.match(shown(1), /CASS FENN/); assert.equal(tokN(shown(1)), 1);
+  /* the time moves: the markers do not, so nothing goes */
+  h.q('[data-gm="run-step"][data-d="15"]').click(); h.q('[data-gm="run-next"]').click(); await rsleep(300);
+  assert.equal(h.sent.length, 2, 'a time scrub sends nothing');
+  /* a hidden clock pinned: the players see nothing of it, so nothing goes */
+  h.qa('#gm-run-place [data-gm="run-clock"]').find((b) => b.getAttribute('data-id') === 'c2').click(); room(h, 'Showroom').click();
+  await rsleep(300); assert.equal(stateDoc(h).ball.pins.c2, 'Showroom', 'it is pinned'); assert.equal(h.sent.length, 2, 'a hidden clock pinned sends nothing');
+  /* the visible clock pinned, ticked, then hidden */
+  h.qa('#gm-run-place [data-gm="run-clock"]').find((b) => b.getAttribute('data-id') === 'c1').click(); room(h, 'Showroom').click();
+  await until(() => h.sent.length === 3); assert.equal(tokN(shown(2)), 2, 'the pie joins'); assert.equal(h.sent[2].ifSeq, h.sent[1].seqBefore + 1);
+  const cd = h.cd.current; cd.clocks[0].filled = 5; h.page.campaign(cd);
+  await until(() => h.sent.length === 4); assert.notEqual(shown(3), shown(2), 'the pie moved'); assert.equal(h.sent[3].ifSeq, h.sent[2].seqBefore + 1);
+  h.page.campaign(cd); h.page.campaign(cd); await rsleep(300); assert.equal(h.sent.length, 4, 'a poll with nothing new sends nothing');
+  cd.clocks[0].hidden = true; h.page.campaign(cd);
+  await until(() => h.sent.length === 5); assert.equal(tokN(shown(4)), 1, 'hidden: the pie is gone, the marker stays');
+  /* the filed character is renamed */
+  RUN_PCS[0].name = 'Cass Fenn-Ryder';
+  try { h.page.characters(); await until(() => h.sent.length === 6); } finally { RUN_PCS[0].name = 'Cass Fenn'; }
+  assert.match(shown(5), /CASS FENN-RYDER/);
+  /* the ball changed on another device (the page takes it when the tab comes back) */
+  await rsleep(900);                  /* the page's own changes have reached the server (the saver's debounce) */
+  h.fg.server.doc = Object.assign({}, h.fg.server.doc, { ball: { site: 'The Pelican Rooms', t: 0, crew: { pc2: 'Showroom' } } }); h.fg.server.at += 5;
+  for (const fn of h.br.doc.listeners.visibilitychange || []) fn();
+  await until(() => h.sent.length === 7, 400);
+  assert.equal(h.sent.length, 7, 'a ball that arrives from the server re-sends'); assert.match(shown(6), /DOV KETCH/); assert.ok(!/CASS FENN/.test(shown(6)));
+  /* all of it went through the live queue: every re-send carries ifSeq, and none touched the GM layer's cache */
+  assert.ok(h.sent.slice(1).every((s) => typeof s.ifSeq === 'number'), 'every re-send carries ifSeq');
+  assert.equal(h.page._state().runCacheN, cache0, 'the player copy never touched the GM layer drawn-map cache');
+  await h.save();
+});
+
+await test('S5i. a refused set of markers goes without them, says so once, and does not ask again on every poll; a 409 ends live as it does for bands', async () => {
+  const camp = M3_CAMP(); camp.clocks.push({ id: 'c3', name: 'Cass Fenn', size: 4, filled: 0, kind: 'danger', hidden: true });
+  const h = await m3Open({ ball: { site: 'The Pelican Rooms', t: 0, crew: { pc1: 'Showroom', pc2: 'Cocktail lounge' } }, camp });
+  h.q('[data-gm="ipad"]').click(); await until(() => h.sent.length === 1);
+  /* the hidden clock is called like a PC: that marker would name it, so none go (fail closed), and the GM is told */
+  assert.equal(tokN(h.sent[0].svg), 0); assert.ok(!/CASS FENN|DOV KETCH/.test(h.sent[0].svg));
+  await rsleep(300);
+  const told = () => h.br.toasts.filter(([m, bad]) => bad && m === P.TOKEN_LEAK_MSG).length;
+  assert.equal(told(), 1, 'the GM is told, once');
+  assert.match(h.q('#gm-map').innerHTML + h.q('#gm-mapwarn').textContent, /crew markers/, 'and the preview says so');
+  for (let i = 0; i < 4; i++) h.page.campaign(h.cd.current);
+  await rsleep(300); assert.equal(h.sent.length, 1, 'polls do not re-send the refused set'); assert.equal(told(), 1, 'nor tell again');
+  /* the control: the clock is renamed and the same markers go */
+  h.cd.current.clocks[2].name = 'Alarm bell'; h.page.campaign(h.cd.current);
+  await until(() => h.sent.length === 2); assert.equal(tokN(h.sent[1].svg), 2); assert.match(h.sent[1].svg, /CASS FENN/); assert.equal(told(), 1);
+  /* something else takes the iPad: the next change is a 409 and live reveal stops */
+  h.fg.server.otherDevice({ kind: 'svg', title: 'x', caption: 'from the other laptop', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><title>x</title></svg>' });
+  h.qa('#gm-run-place [data-gm="run-pc"]')[0].click(); room(h, 'Cocktail lounge').click();
+  await until(() => h.fg.server.conflicts === 1); await rsleep(50);
+  assert.equal(h.fg.server.shown.caption, 'from the other laptop'); assert.ok(!h.q('.gm-reveal .gm-live'), 'live reveal ended');
+  assert.ok(h.br.toasts.some(([m, bad]) => bad && /something else is on the iPad/i.test(m)));
+  await h.save();
+});
+
+await test('S5j. the preview on the player layer shows what the iPad would carry, from the same gate, and never the GM cache; the GM layer is unchanged', async () => {
+  const h = await m3Open({ ball: M3_BALL });
+  assert.equal(tokN(h.page._state().map.svg), 2, 'the player preview has the crew marker and the visible pie');
+  assert.ok(lastPlayerCall(h).tokens.every((t) => !t.svg.includes('#d11')));
+  h.q('[data-gm="layer"][data-v="gm"]').click();
+  const gmSvg = h.page._state().map.svg;          /* the GM layer, from its own cache */
+  assert.equal(h.page._state().map.layer, 'gm'); assert.ok(tokN(gmSvg) >= 3 && gmSvg.includes('>OM<'), 'the GM layer has the people too');
+  h.q('[data-gm="layer"][data-v="player"]').click();
+  assert.ok(!lastPlayerCall(h).tokens.some((t) => /OM<|WT<|PQ<|IS<|#d11/.test(t.svg)), 'back on the player layer: no person');
+  /* a real redraw on the player layer (the pinned visible clock ticks, the map is drawn again 200 ms later): the GM cache does not grow */
+  const n2 = h.page._state().runCacheN, drawn0 = h.spy.calls.length, svg0 = h.page._state().map.svg;
+  h.cd.current.clocks[0].filled = 5; h.page.campaign(h.cd.current);
+  await rsleep(400);
+  assert.ok(h.spy.calls.length > drawn0 && lastPlayerCall(h) === h.spy.calls[h.spy.calls.length - 1], 'the player map was drawn again');
+  assert.notEqual(h.page._state().map.svg, svg0, 'and the pie moved on it');
+  assert.equal(h.page._state().runCacheN, n2, 'player draws add nothing to the GM cache');
   await h.save();
 });
 
