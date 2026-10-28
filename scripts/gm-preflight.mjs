@@ -99,10 +99,10 @@ export async function preflight(opts = {}) {
   const exSrc = isObj(src.extra) ? src.extra : {}, exBody = isObj(part.extra) ? part.extra : {};
   const exSeats = [...new Set([...Object.keys(exSrc), ...Object.keys(exBody)])].sort();
   const exText = (seat) => (typeof exBody[seat] === 'string' ? exBody[seat] : null);
-  if (!exSeats.length) say('extra:        none (no "extra" in assist-config.json or --assist-extra: no seat has a checklist beyond its prompt)');
+  if (!exSeats.length) say('assist extra: none (no "extra" in assist-config.json or --assist-extra: no seat has a checklist beyond its prompt)');
   for (const seat of exSeats) {
     const e = isObj(exSrc[seat]) ? exSrc[seat] : {}, t = exText(seat);
-    say('extra:        ' + seat + ' (' + (t !== null ? t.length : Number.isInteger(e.chars) ? e.chars : '?') + ' chars, ' + (e.rel || 'note not recorded') + ')' + (t === null ? '   NOT IN THE PART BODY: rebuild the pack' : ''));
+    say('assist extra: ' + seat + ' (' + (t !== null ? t.length : Number.isInteger(e.chars) ? e.chars : '?') + ' chars, ' + (e.rel || 'note not recorded') + ')' + (t === null ? '   NOT IN THE PART BODY: rebuild the pack' : ''));
   }
   // never-reveal
   const nv = neverEntries(prefix);

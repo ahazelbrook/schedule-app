@@ -309,29 +309,38 @@ await test('preflight: the extra seats are listed by chars and note, never by te
   const priv = fs.mkdtempSync(path.join(os.tmpdir(), 'assist-prep-pfx-'));
   fs.writeFileSync(path.join(priv, 'b68-gm-pack.json'), JSON.stringify({ format: 1, parts: { assist: part } }));
   const t = text(await preflight({ vault: v, privateDir: priv, root: priv, today: '28/10/2026' }));
-  assert.match(t, /extra:\s+ref \(\d+ chars, Notes\/Checklist\.md\)/);
+  assert.match(t, /assist extra: ref \(\d+ chars, Notes\/Checklist\.md\)/);
   assert.ok(!t.includes('Invented rule'), 'the text is not printed');
   assert.match(t, new RegExp('ref \\(' + part.extra.ref.length + ' chars'));
   const { priv: priv2 } = await packFor(v, { prep: rel('Group', 'night-x') });
   const pk = JSON.parse(fs.readFileSync(path.join(priv2, 'b68-gm-pack.json'), 'utf8')); delete pk.parts.assist.extra;
   fs.writeFileSync(path.join(priv2, 'b68-gm-pack.json'), JSON.stringify(pk));
-  assert.match(text(await preflight({ vault: v, privateDir: priv2, root: priv2, today: '28/10/2026' })), /extra:\s+none/);
+  assert.match(text(await preflight({ vault: v, privateDir: priv2, root: priv2, today: '28/10/2026' })), /assist extra: none/);
 });
 
 await test('preflight --remote: the live extra seats match, differ, or are missing against the pack\'s', async () => {
   const v = fixtureVault();
-  const { priv } = await packFor(v, { prep: rel('Group', 'night-x') });   // the part carries extra.ref = 'e'
+  // vault note -> buildAssist -> pack file -> pushPack -> D1: the whole path the ticket is about, with an invented note
+  put(v, 'Notes/Checklist.md', '---\ntitle: t\n---\nInvented rule one.\nInvented rule two.\n');
+  const built = buildAssist({ vault: v, exportedAt: '2030-01-01T00:00:00.000Z', warn: () => {}, prep: rel('Group', 'night-x'), extra: { ref: 'Notes/Checklist.md' } });
+  const priv = fs.mkdtempSync(path.join(os.tmpdir(), 'assist-prep-pfr-'));
+  fs.writeFileSync(path.join(priv, 'b68-gm-pack.json'), JSON.stringify({ format: 1, parts: { assist: built } }));
   const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });
   const pf = () => preflight({ vault: v, privateDir: priv, root: priv, remote: true, campaign: 'c', exec, today: '28/10/2026' }).then(text);
   assert.match(await pf(), /live extra ref: no live assist part/);
   const client = mockClient();
-  await pushPack({ exec, db: asD1(exec), campaign: 'c', report: newReport(), ledger: { pack: {} }, privateDir: priv, now: Date.now(), yes: true, assistClient: client });
+  const rep = newReport();
+  await pushPack({ exec, db: asD1(exec), campaign: 'c', report: rep, ledger: { pack: {} }, privateDir: priv, now: Date.now(), yes: true, assistClient: client });
+  assert.equal(rep.refused.length, 0, 'a part with src.extra is accepted by the push');
+  const live = JSON.parse(exec.db.prepare("SELECT body FROM gm_pack WHERE campaign='c' AND part='assist'").get().body);
+  assert.equal(live.extra.ref, 'Invented rule one.\nInvented rule two.', 'D1 holds the note body');
+  assert.ok(!('prefix' in live), 'and the prefix went to the Files API, not to D1');
   assert.match(await pf(), /live extra ref: MATCHES the pack/);
   const f = path.join(priv, 'b68-gm-pack.json'), pk = JSON.parse(fs.readFileSync(f, 'utf8'));
   pk.parts.assist.extra.ref = 'changed';
   fs.writeFileSync(f, JSON.stringify(pk));
   assert.match(await pf(), /live extra ref: DIFFERS from the pack/);
-  pk.parts.assist.extra = { checker: 'x' }; fs.writeFileSync(f, JSON.stringify(pk));
+  pk.parts.assist.extra = { checker: 'x' }; pk.parts.assist.src.extra = {}; fs.writeFileSync(f, JSON.stringify(pk));
   const t = await pf();
   assert.match(t, /live extra ref: in the live part but not in the pack/);
   assert.match(t, /live extra checker: NOT in the live part/);
@@ -339,7 +348,7 @@ await test('preflight --remote: the live extra seats match, differ, or are missi
   assert.match(await pf(), /live extra ref: in the live part but not in the pack/);
 });
 
-await test('preflight --remote: a config with an unknown extra seat is reported, not swallowed', async () => {
+await test('preflight: a config with an unknown extra seat is reported, not swallowed', async () => {
   const v = fixtureVault();
   const { priv } = await packFor(v, { prep: rel('Group', 'night-x') });
   fs.writeFileSync(path.join(priv, 'assist-config.json'), JSON.stringify({ extra: { nobody: 'Notes/x.md' } }));
