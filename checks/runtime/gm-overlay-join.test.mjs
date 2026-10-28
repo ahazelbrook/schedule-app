@@ -128,6 +128,20 @@ await test('the server\'s namesHit and the page\'s agree on a shared list of cas
   assert.equal(serverNamesHit(5, ['Vex']), false); assert.equal(serverNamesHit('Vex', 'Vex'), false); assert.equal(serverNamesHit('Vex', [null, 5, {}]), false);
 });
 
+await test('namesHit folds with NFKC on both sides, in the server and the page alike: full-width letters, ligatures and a decomposed accent are hits; a longer word is still not', () => {
+  const page = require(path.join(ROOT, 'app', 'gm-page.js'))._pure.namesHit;
+  const FW = 'Ｖｅｘ';                       // full-width "Vex"
+  const cases = [
+    [FW + ' was here', ['Vex'], true], ['Vex was here', [FW], true], [FW + 'ing weather', ['Vex'], false], ['the ﬁsher waits', ['fisher'], true],
+    ['Zoë waits', ['Zoë'], true], ['Zoë waits', ['Zoë'], true], ['The　Brass Fox', ['The Brass Fox'], true],
+    ['Vex was here', ['Vex'], true], ['nothing here', [FW], false],         // ASCII-only paths, and a folded name that is absent
+  ];
+  for (const [text, names, want] of cases) {
+    assert.equal(serverNamesHit(text, names), want, 'server ' + JSON.stringify([text, names]));
+    assert.equal(page(text, names), want, 'page ' + JSON.stringify([text, names]));
+  }
+});
+
 await test('loadHiddenNames: hidden clocks, and NPCs that are not revealed (name and alias), in one batch of two statements; revealed ones are not in it', async () => {
   const calls = { batch: 0, stmts: 0 };
   const db = {

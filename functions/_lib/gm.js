@@ -288,12 +288,15 @@ export async function loadDisplay(db, campaign) {
  * namesHit(text, names) -> true when the text holds any of the names as a whole word, any case ("Vex" is hit by "vex said", not by "Vexing").
  * Whole word is Unicode-aware (letters, digits and _ are word characters), spaces in a name match any run of spaces, a name's own regex
  * characters are escaped, names under two characters are not scanned, and a name that cannot be turned into a pattern counts as a hit
- * (fail closed). The same rule as the GM page's namesHit (app/gm-page.js), which a test holds to this one on a shared list of cases.
+ * (fail closed). Both sides are folded with NFKC first (full-width letters, ligatures and the like read as the plain letters), and only when
+ * they hold a non-ASCII character, so an ASCII line costs no ICU work. The same rule as the GM page's namesHit (app/gm-page.js), which a
+ * test holds to this one on a shared list of cases.
  */
+const nfkc = (s) => (/[^\x00-\x7f]/.test(s) ? s.normalize('NFKC') : s);
 export function namesHit(text, names) {
-  const t = typeof text === 'string' ? text : '';
+  const t = nfkc(typeof text === 'string' ? text : '');
   return (Array.isArray(names) ? names : []).some((n) => {
-    n = typeof n === 'string' ? n.replace(/\s+/g, ' ').trim() : '';
+    n = typeof n === 'string' ? nfkc(n).replace(/\s+/g, ' ').trim() : '';
     if (n.length < 2) return false;
     const src = n.split(' ').map((w) => w.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('\\s+');
     try { return new RegExp('(?:^|[^\\p{L}\\p{N}_])' + src + '(?![\\p{L}\\p{N}_])', 'iu').test(t); } catch (_) { return true; }

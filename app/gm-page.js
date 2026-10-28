@@ -442,11 +442,13 @@
   P.makeGate = makeGate;
   /* namesHit(text, names) -> true when the text holds any of the names as a whole word, any case ("Vex" is hit by "vex said" and not by "Vexing").
      Whole word is Unicode-aware (letters, digits and _ are word characters), spaces in a name match any run of spaces, and a name's own regex
-     characters are escaped. Names under two characters are not scanned. */
+     characters are escaped. Names under two characters are not scanned. Both sides are folded with NFKC first (full-width letters, ligatures
+     and the like read as the plain letters), as the server's namesHit does. */
+  function nfkc(s) { return /[^\x00-\x7f]/.test(s) ? s.normalize('NFKC') : s; }
   function namesHit(text, names) {
-    var t = typeof text === 'string' ? text : '';
+    var t = nfkc(typeof text === 'string' ? text : '');
     return (Array.isArray(names) ? names : []).some(function (n) {
-      n = typeof n === 'string' ? n.replace(/\s+/g, ' ').trim() : '';
+      n = typeof n === 'string' ? nfkc(n).replace(/\s+/g, ' ').trim() : '';
       if (n.length < 2) return false;
       var src = n.split(' ').map(function (w) { return w.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); }).join('\\s+');
       try { return new RegExp('(?:^|[^\\p{L}\\p{N}_])' + src + '(?![\\p{L}\\p{N}_])', 'iu').test(t); } catch (e) { return true; }
