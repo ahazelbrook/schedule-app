@@ -826,7 +826,17 @@ not the Deepgram key), `npm run gm:transcript -- --install` writes a hidden laun
 
 ## Claude at the table (the box, `app/gm/assist-panel.js`, `functions/api/gm/assist.js`)
 
-**The box** is the Claude panel at the bottom right of the GM page on a laptop; key **A** opens and closes it. It needs
+**The panel.** On a laptop, Blade lives in a side panel. A 44 px tab sits on the right edge, between the top bar and
+the capture bar, and shows the portrait, the unread count and up to five coloured pips (one per card kind). Click it,
+or press **A**, and a 400 px panel slides in over the page (min 360 px, max a third of the width; no slide under
+reduced motion). **Esc** closes it, though not while you're typing in it. At 1600 px or wider, **Pin** docks it as a
+fourth column beside the console instead. The pin isn't remembered across a reload. Top to bottom: the header (state,
+spend, seat health, pin, close), *Now*, the Ask bar, the feed with its filter chips, and the Tools drawer (Fit it, the
+Screen and the Ledger). Inside the panel, **J**/**K** move between cards, **Enter** folds or unfolds one and **U**
+undoes the newest action (a no-op until the co-GM lands). Outside the panel, J and the other keys do what they always
+did. It's hidden on phones.
+
+**The box** (the panel's engine, still called that below) needs
 **Listening** on (the iPad transcriber above), because it reads that transcript. About once a minute it asks a cheap
 seat whether anything at the table needs a second look, wakes other seats only when the answer is yes, and shows at most
 one card per five minutes. Quiet is the normal state. Tonight's spend is counted from the log against a **cap**
