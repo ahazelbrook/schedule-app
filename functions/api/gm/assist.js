@@ -256,11 +256,15 @@ async function lastRuns(db, campaign, now) {
   return out;
 }
 
-/** The cards and ledger updates the GM was shown in the last 10 minutes: [{ at (ms), keys }]. */
+/** The cards and ledger updates the GM was shown in the last 10 minutes: [{ at (ms), keys, ref, check, said_at }]. A Ref card (its own row, or the Editor's row for a held one released later) also carries its check and said-at, for the Editor's second repeat rule. */
 async function shownCards(db, campaign, now) {
   const since = new Date(now - RECENT_CARD_MS).toISOString();
-  const { results } = await db.prepare("SELECT at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND (json_extract(card, '$.shown') = 1 OR json_extract(card, '$.update') = 1)").bind(campaign, since).all();
-  return (results || []).map((r) => ({ at: Date.parse(r.at), keys: (parseJson(r.card, {}) || {}).keys || [] }));
+  const { results } = await db.prepare("SELECT at, seat, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND (json_extract(card, '$.shown') = 1 OR json_extract(card, '$.update') = 1)").bind(campaign, since).all();
+  return (results || []).map((r) => {
+    const c = parseJson(r.card, {}) || {};
+    const ref = r.seat === 'ref' || c.seat === 'ref';
+    return { at: Date.parse(r.at), keys: c.keys || [], ...(ref ? { ref: true, check: (c.glance && c.glance.check) || '', said_at: (c.detail && c.detail.said_at) || '' } : {}) };
+  });
 }
 
 /** Rack items shown in the last 10 minutes (Voice, Another and Stall rows): [{ at (ms), keys }]. */

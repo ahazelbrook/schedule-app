@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
 import { cleanLines, addLines } from '../../functions/_lib/stt.js';
 import { followsThrough, FOLLOW_WINDOW_MS, decide, budgetTier, canRun, isRepeatSlip, slipKeys, COOLDOWN_MS, DEFAULT_CAP, DROPPED_WHEN_REDUCED, CORE_SEATS } from '../../functions/_lib/assist/conductor.js';
-import { toCandidate, toVoice, toAnother, toStall, toHandout, handoutIds, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
+import { toCandidate, toVoice, toAnother, toStall, toHandout, handoutIds, merge, pendingRefs, isRepeatRef, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
 import { callSeat, countTokens } from '../../functions/_lib/assist/claude.js';
 import { SEATS, WAKES } from '../../functions/_lib/assist/seats.js';
 import { makeHandler, cleanDots, cleanDraws, cleanNpc, cleanShown, DRAW_MAX, onRequest as realHandler } from '../../functions/api/gm/assist.js';
@@ -74,6 +74,46 @@ await test('a Ref card that repeats the same slip within 10 minutes is suppresse
   assert.equal(isRepeatSlip({ ...slip, said_at: '22:20', rule: 'Position before the roll (p.9)' }, shown, T + 60_000), false, 'a different slip');
   assert.equal(isRepeatSlip(slip, shown, T + 10 * 60_000), false, 'after 10 minutes it can show again');
   assert.equal(isRepeatSlip({ slip: false, said_at: '', rule: '', card: '' }, [], T), true, 'no slip means nothing to show');
+});
+
+// The second Ref repeat rule (S2b). Every pair below differs in rule text and in said_at string, so the key rule (isRepeatSlip) never fires
+// and only isRepeatRef can decide. Shapes only; the text is invented.
+const refRow = (o = {}) => ({ at: T, ref: true, check: 'order', said_at: '21:10', ...o });
+const refJson = (o = {}) => ({ slip: true, said_at: '21:16', what_was_said: 'x', rule: 'Another rule (p.2)', card: 'Another card', check: 'order', ...o });
+await test('Ref repeat rule: the same check six minutes apart (said-at six minutes apart) is not a repeat', () => {
+  const recent = [refRow({ said_at: '21:10' })], j = refJson({ said_at: '21:16' });
+  assert.equal(isRepeatSlip(j, recent.map((r) => ({ at: r.at, keys: slipKeys({ slip: true, said_at: r.said_at, rule: 'First rule (p.1)' }) })), T + 6 * 60_000), false, 'precondition: not a key repeat');
+  assert.equal(isRepeatRef(j, recent, T + 6 * 60_000), false);
+  assert.ok(toCandidate('ref', j, { recent, now: T + 6 * 60_000 }), 'so the card shows');
+});
+await test('Ref repeat rule: the same check with said-at two minutes apart is a repeat, and the key rule did not catch it', () => {
+  const recent = [refRow({ said_at: '21:14' })], j = refJson({ said_at: '21:16' }), now = T + 5.5 * 60_000;
+  assert.equal(isRepeatSlip(j, [{ at: T, keys: slipKeys({ slip: true, said_at: '21:14', rule: 'First rule (p.1)' }) }], now), false);
+  assert.equal(isRepeatRef(j, recent, now), true);
+  assert.equal(toCandidate('ref', j, { recent, now }), null);
+  assert.equal(isRepeatRef(refJson({ said_at: '21:17' }), recent, now), true, 'three minutes is still one slip');
+  assert.equal(isRepeatRef(refJson({ said_at: '21:18' }), recent, now), false, 'four is not');
+  assert.equal(isRepeatRef(refJson({ said_at: '00:01' }), [refRow({ said_at: '23:59' })], now), true, 'round midnight');
+});
+await test('Ref repeat rule: a different check is never a repeat; neither is a missing or invented one, or a card that was not Ref', () => {
+  const now = T + 60_000;
+  assert.equal(isRepeatRef(refJson({ said_at: '21:11', check: 'resist' }), [refRow({ said_at: '21:10' })], now), false);
+  assert.equal(isRepeatRef(refJson({ check: '' }), [refRow({ check: '' })], now), false, 'no check on either side');
+  assert.equal(isRepeatRef({ slip: true, said_at: '21:10' }, [refRow({ check: undefined })], now), false, 'no check at all');
+  assert.equal(isRepeatRef(refJson({ said_at: '21:10', check: 'bogus' }), [refRow({ check: 'bogus' })], now), false, 'a check outside the list');
+  assert.equal(isRepeatRef(refJson({ said_at: '21:10' }), [{ at: T, check: 'order', said_at: '21:10' }], now), false, 'a row that is not a Ref card');
+  assert.equal(isRepeatRef(refJson({ said_at: '21:10' }), [refRow()], T + 10 * 60_000), false, 'older than ten minutes');
+});
+await test('Ref repeat rule: with a said-at missing the same check within four minutes of the shown card is a repeat', () => {
+  assert.equal(isRepeatRef(refJson({ said_at: '' }), [refRow()], T + 3.9 * 60_000), true);
+  assert.equal(isRepeatRef(refJson({ said_at: '' }), [refRow()], T + 4 * 60_000), false);
+  assert.equal(isRepeatRef(refJson({ said_at: '21:20' }), [refRow({ said_at: '' })], T + 2 * 60_000), true);
+  assert.equal(isRepeatRef(refJson({ said_at: 'a bit ago' }), [refRow({ said_at: '' })], T + 5 * 60_000), false);
+});
+await test('Ref repeat rule: a held card waiting in the log is dropped when the same check has been shown since', () => {
+  const held = [{ at: T, card: { text: 'Held', keys: ['ref:at:21 16', 'ref:rule:held'], detail: { said_at: '21:16' }, glance: { check: 'order' }, held: 1 } }];
+  assert.equal(pendingRefs(held, { recent: [refRow({ at: T + 60_000, said_at: '21:14' })], now: T + 2 * 60_000 }).length, 0);
+  assert.equal(pendingRefs(held, { recent: [refRow({ at: T + 60_000, said_at: '21:14', check: 'cost' })], now: T + 2 * 60_000 }).length, 1);
 });
 
 // ---------- the Editor ----------
