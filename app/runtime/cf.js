@@ -4,7 +4,7 @@
    `characters` collection, the shared `campaign/main` document (CAMPAIGN.md) and the `npcs` collection (CAST.md).
    window.claude.rules (list, import, saveHouse, deleteHouse) is the rules wiki's corpus (RULES.md).
    window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay, ambient,
-   patchAmbient, stt, patchStt, sttToken, transcript, addTranscript, assistTick, assistFit, assistCards, assistMark, assistAsk) is the GM tools'
+   patchAmbient, stt, patchStt, sttToken, transcript, addTranscript, assistTick, assistFit, assistCards, assistMark, assistAsk, assistAct) is the GM tools'
    API (GM.md): plain calls, never queued, cached or snapshotted here.
    window.claude.profile.setName(name) changes the signed-in person's own display name (PATCH /api/me); a plain call too.
    Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network
@@ -1200,7 +1200,11 @@
     assistGate: function (req) { return api('POST', '/gm/assist/gatekeeper', req || {}, 60000); },
     assistPortraitAdd: function (req) { return api('POST', '/gm/assist/portrait-add', req || {}); },
     /* Ask Blade (the box's question field; GM.md): POST /api/gm/assist/ask { q } -> { answer: { q, text, at } | null, spend }; Opus can take over a minute, so it waits 120 */
-    assistAsk: function (req) { return api('POST', '/gm/assist/ask', req || {}, 120000); }
+    assistAsk: function (req) { return api('POST', '/gm/assist/ask', req || {}, 120000); },
+    /* The co-GM's hands (app/gm/cogm.js, gm-page.js mountCogm): POST /api/gm/assist/act { from, to, state } -> { actions, dropped, spend } and NO health. from and to are
+       transcript seqs (the Worker reads the lines itself); state is { clocks, npcs, pcs, onStage } (cogm.buildState). A 429 (an 8 s cooldown, or a call in flight) rejects with err.status 429.
+       Haiku answers in a second or two; it waits 30 s. */
+    assistAct: function (req) { return api('POST', '/gm/assist/act', req || {}, 30000); }
   };
 
   /* ---------- profile: the signed-in person's own display name (PATCH /api/me). A plain call: never queued, so it

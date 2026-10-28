@@ -586,6 +586,11 @@
       saveScene: function (scene) { return campaignSave({ scene: scene }); },   /* Put on stage from the GM page: { npcs: { id: true | false }, at }, as the cast page saves it */
       characters: gmCharacters,      /* the PCs for the Downtime panel (D): slim copies, read on every call */
       addClock: addTableClock,       /* a clock a downtime card suggests, onto the table's clocks */
+      clockOps: function (ops) {     /* the co-GM's per-clock changes (a tick, a rename, a hide, taking its own clock back): only where the store applies clockOps, never a whole array written over the table's */
+        if (!campRef || campRef.clockOps !== true) return Promise.reject(new Error('The table cannot change one clock here.'));
+        if (!Array.isArray(ops) || !ops.length) return Promise.resolve(false);
+        return campaignSave({ clockOps: ops });
+      },
       saveFile: function (name, data) { saveFile(name, data); },
       copy: function (text, ok) { copyText(text, ok); }
     };

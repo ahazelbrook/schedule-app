@@ -50,6 +50,8 @@
                                          figure (a factory returning a node, with figKey to say when it changed) and open (start unfolded)
      ctl.updateCard(id, patch) -> bool    change a card's kind, headline, bullets, say, secret, more, cite or check (and undone / undo)
      ctl.relayout()                       measure the top bar and the capture bar again (the page calls it after it redraws its layout)
+     ctl.cogmSwitch({ onChange(on) }) -> { set(on, note), isOn(), box() -> { key, listening, tier }, destroy() } | null    the co-GM switch in the header (C2): off when made, no memory;
+                                         the page decides what a tap means and calls set(); box() says whether the box is on (key 'on' = Listening)
          mock      true shows a few clearly labelled example cards (no Keep, no Got it) while there are no real ones: for looking at the shell only
      ctl.poll()      one polling decision now: Listening on, page visible, not paused -> one tick (resolves when done)
      ctl.fit(position, effect) -> Promise     the Fixer for a position (the "Fit it" form), with the draws from o.draws
@@ -101,7 +103,7 @@
   var P = {};
   var BANNER_MS = 8000, POLL_MS = 60000, ROLLED_MS = 40000, ROLLED_RETRY_MS = 3000, ROLLED_TRIES = 20, MAX_CARDS = 60, MAX_UPDATES = 30, NPC_MAX = 80;
   var POSITIONS = ['controlled', 'risky', 'desperate'];
-  var SEAT = { ref: 'Rule slip', clerk: 'Clerk', fixer: 'Fixer', ledger: 'Ledger', mystery: 'Mystery', showrunner: 'Pacing', stall: 'Stall', meanwhile: 'Meanwhile', handout: 'Handout', screen: 'Screen' };
+  var SEAT = { ref: 'Rule slip', clerk: 'Clerk', fixer: 'Fixer', ledger: 'Ledger', mystery: 'Mystery', showrunner: 'Pacing', stall: 'Stall', meanwhile: 'Meanwhile', handout: 'Handout', screen: 'Screen', cogm: 'Co-GM' };
   var TIER = { all: 'Full', reduced: 'Reduced', core: 'Core only', off: 'Off: cap reached' };
   /* the glance grammar (design 3.2): every card has a kind, and a kind has a colour (CSS: --k-*), a glyph and a word, so colour is never alone */
   var KINDS = ['rule', 'say', 'idea', 'done', 'warn', 'note'];
@@ -1303,6 +1305,32 @@
     }
     function onVis() { if (doc && !doc.hidden) poll(); }
 
+    /* The co-GM switch (C2; app/gm/cogm.js and gm-page.js mountCogm do the work). A button in the header, between the name and Pin, made when the page asks for it: a page
+       without a co-GM has no switch. It is OFF when it is made and the panel keeps no memory of it (nothing is stored in the browser), so every load starts off. The page
+       decides what a tap means (it checks that Listening is on before it says yes) and calls set() with the answer. box() tells the page whether the box is on: the
+       header state (Listening, Paused, Off, Not set up, Waiting) and the last Listening answer, so the page can switch itself off when the box goes off. */
+    var cogmSw = null;
+    function cogmSwitch(opts) {
+      if (gone || !host || !isObj(opts) || typeof opts.onChange !== 'function') return null;
+      if (cogmSw) cogmSw.destroy();
+      var pin = q('#as-pin'), row = pin && pin.parentNode; if (!row) return null;
+      var btn = B('as-cogm', null, { id: 'as-cogm', 'aria-pressed': 'false' }), on = false;
+      function paint(note) {
+        btn.textContent = 'Co-GM ' + (on ? 'on' : 'off');
+        btn.setAttribute('aria-pressed', String(on));
+        btn.setAttribute('title', note || (on ? 'Blade acts on what you say aloud: it makes clocks, ticks them and files names, each with Undo' : 'Off. Turn it on to let Blade act on what you say aloud (Listening must be on)'));
+      }
+      btn.addEventListener('click', function () { opts.onChange(!on); });
+      row.insertBefore(btn, pin); paint();
+      cogmSw = {
+        set: function (v, note) { on = !!v; paint(note); },
+        isOn: function () { return on; },
+        box: function () { var s = stateOf({ paused: st.paused, setup: st.setup, spend: st.spend, listening: st.listening }); return { key: s.key, listening: st.listening, tier: st.spend ? st.spend.tier : '' }; },
+        destroy: function () { if (btn.parentNode) btn.parentNode.removeChild(btn); cogmSw = null; }
+      };
+      return cogmSw;
+    }
+
     build();
     var ready = load();
     if (doc && doc.addEventListener) doc.addEventListener('visibilitychange', onVis);
@@ -1313,6 +1341,7 @@
       ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, pin: togglePin, isPinned: function () { return docked(); }, undoNewest: undoNewest, addCard: addCard, updateCard: updateCard, removeCard: removeCard, relayout: relayout, poll: poll, rolled: rolled, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
       state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, asks: st.cards.filter(function (c) { return c.src === 'ask'; }), ask: st.ask, nowId: st.nowId, renders: { cards: cache.builds, more: cache.moreRenders }, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, screen: st.screen, banner: bannerCard ? bannerCard.headline : '' })); },
       el: function () { return host; },
+      cogmSwitch: cogmSwitch,
       destroy: function () {
         gone = true;
         if (timer && clrI) clrI(timer);
