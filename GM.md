@@ -513,6 +513,18 @@ fails and nobody is known, nothing is purged.
     for that score, but does not move the link (`sync-sites.mjs`, a skip in the report).
   - **Checks:** `gm-authored.test.mjs` (the exporter, the roll, the keys, a leak scan at every reveal), `gm-page.test.mjs` (S4),
     `gm-sites.test.mjs` (the binding kept).
+  - **The play block** (`play`, optional, GM-only; never in the roll, so never on the iPad). Inside the same `b68-site` JSON:
+    `{ v: 1, clock: { start, end, step?, label? }, floors?, routes?, people?, disguises?, events?, clocks? }`. `app/gm/ball.js`
+    `checkPlay` runs at gm:pack and drops what fails with a warning (an unknown room, a bad time, a `with` loop). Times are `HH:MM`
+    and one earlier than `clock.start` is the next morning (00:15 follows 23:30). `floors` only names levels; the map kit decides which
+    floor a room sits on.
+  - **The view.** `ballView(play, state, floorOf)` is pure. `state` is the `ball` object of the GM state doc (`t` minutes from
+    `clock.start`, `lens` a disguise id, `crew`, `open`, `pins`); `floorOf` is room name -> level from `B68Map.floors(roll)`. It returns
+    `{ minute, label, people: [{ id, label, kind, room, note, moving }], rooms: { <name>: { lvl, people, crew, pinned, lens: { pos, danger } | null,
+    open } }, next: [{ at, label, room }], routes }`. A person follows their own stops, or their `with` person; the note shown is the person's own, never the leader's; `moving` shows in the 5
+    minutes before a stop. `lens.pos` is controlled, risky, desperate or unknown (a room on no floor); `danger` is true when the person a
+    disguise `sees` stands in the room (free text, matched by id, label or a whole word of the label). `next` is the next three events
+    and target stops after `t`.
 - **State.** The GM state document holds `con` (the console state: `live` controls, `owed`, `struck`, `used`), `loc`
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,

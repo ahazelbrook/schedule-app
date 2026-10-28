@@ -26,6 +26,9 @@
  *
  * minuteOf(hhmm, start) -> whole minutes after `start`, wrapping past midnight (a time before `start` is the next
  *   morning); NaN when either is not HH:MM.
+ *
+ * The live view (pure, read by the GM page only): whereAt(person, minute, byId, start), lensRating(room, disguise, floorOf),
+ * seesMatches(sees, person) and ballView(play, state, floorOf). Each is documented where it is defined.
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -229,5 +232,159 @@
     return { people: n("people"), stops: stops, routes: n("routes"), disguises: n("disguises"), events: n("events"), clocks: n("clocks") };
   }
 
-  return { checkPlay: checkPlay, countPlay: countPlay, minuteOf: minuteOf, KINDS: KINDS, DIRS: DIRS, LIMITS: LIMITS };
+  /* ---- live view: the pure helpers behind "Run the site" ---------------------------------------------------- */
+
+  var MOVING_WITHIN = 5;   /* minutes before a stop that a person shows as moving towards it */
+
+  /* A person's stops as [{ t, room, note }] with t in minutes from `start`, sorted. */
+  function stopsOf(person, start) {
+    var out = [];
+    (isObj(person) && Array.isArray(person.stops) ? person.stops : []).forEach(function (s) {
+      var t = isObj(s) ? minuteOf(s.at, start) : NaN;
+      if (!isNaN(t) && typeof s.room === "string") out.push({ t: t, room: s.room, note: typeof s.note === "string" ? s.note : "" });
+    });
+    return out.sort(function (a, b) { return a.t - b.t; });
+  }
+
+  /* whereAt(person, minute, byId, start) -> { room, note, moving: { to, inMin } | null }, or null when the person is
+   * nowhere yet. `minute` is minutes from `start` (clock.start, "HH:MM"). `start` is a fourth argument because a stop's
+   * `at` is a clock time and cannot become a minute without it. byId maps person id -> person (for `with`).
+   *
+   * Rules, in order:
+   *  1. Own stops: the latest stop at or before `minute` is active, and the person stays there until the next one (the
+   *     last stop holds to the end of the night). A stop exactly at `minute` is active, not "moving".
+   *  2. Otherwise (no own stops, or none has begun yet) the person follows `with`, taking the leader's room, note and
+   *     moving, but with the person's own `note` (never the leader's), and moving towards the person's own coming stop
+   *     when that is the nearer news. CHOICE TO CONFIRM: a person with both own stops and `with` follows `with` before their first own stop,
+   *     then obeys their own stops from the first one on, and does NOT go back to following after their last own stop.
+   *  3. Moving: 1 to 5 minutes before the next own stop, in a different room from the current one, the person is shown
+   *     in their current room, moving { to: next room, inMin: minutes until it }. */
+  function whereAt(person, minute, byId, start, depth) {
+    if (!isObj(person) || typeof minute !== "number" || isNaN(minute)) return null;
+    var stops = stopsOf(person, start), cur = null, next = null;
+    for (var i = 0; i < stops.length; i++) { if (stops[i].t <= minute) cur = stops[i]; else { next = stops[i]; break; } }
+    if (cur) {
+      var mv = null;
+      if (next && next.t - minute <= MOVING_WITHIN && next.room !== cur.room) mv = { to: next.room, inMin: next.t - minute };
+      return { room: cur.room, note: cur.note || nameOf(person.note), moving: mv };
+    }
+    if (typeof person.with === "string" && isObj(byId) && isObj(byId[person.with]) && (depth || 0) < 20) {
+      var lead = whereAt(byId[person.with], minute, byId, start, (depth || 0) + 1);
+      if (lead) {
+        /* the follower's own note, never the leader's; their own coming stop beats the leader's moving */
+        var own = next || (stops.length ? stops[0] : null), fm = lead.moving;
+        if (own && own.t > minute && own.t - minute <= MOVING_WITHIN && own.room !== lead.room) fm = { to: own.room, inMin: own.t - minute };
+        return { room: lead.room, note: nameOf(person.note), moving: fm };
+      }
+    }
+    return null;
+  }
+
+  /* lensRating(room, disguise, floorOf) -> "controlled" | "risky" | "desperate" | "unknown"
+   * The Hitman rule: a room on one of the disguise's home floors is controlled, one floor off is risky, further is
+   * desperate. `never` (desperate) and `rooms` (controlled) override the floors by name, `never` first. A room with no
+   * entry in floorOf, and no override, is "unknown": never a guess. Levels are compared as numbers. */
+  function lensRating(room, disguise, floorOf) {
+    if (!isObj(disguise)) return "unknown";
+    if (Array.isArray(disguise.never) && disguise.never.indexOf(room) >= 0) return "desperate";
+    if (Array.isArray(disguise.rooms) && disguise.rooms.indexOf(room) >= 0) return "controlled";
+    var lvl = isObj(floorOf) && Object.prototype.hasOwnProperty.call(floorOf, room) ? Number(floorOf[room]) : NaN;
+    var homes = (Array.isArray(disguise.floors) ? disguise.floors : []).map(Number).filter(function (n) { return !isNaN(n); });
+    if (isNaN(lvl) || !homes.length) return "unknown";
+    var d = Math.min.apply(null, homes.map(function (h) { return Math.abs(h - lvl); }));
+    return d === 0 ? "controlled" : d === 1 ? "risky" : "desperate";
+  }
+
+  /* seesMatches(sees, person) -> bool. A disguise's `sees` is free text ("a role or a name"). It matches a person when,
+   * after lower-casing, stripping accents and punctuation, collapsing spaces and dropping a leading "the ", it equals the
+   * person's id or their label, or the person's label contains it as a whole word (or run of whole words). "nobody" and
+   * "" match no one. "orter" does not match "Reporters". Letters that do not decompose (o with a stroke) stay letters. */
+  function norm(s) {
+    var t = String(s == null ? "" : s).toLowerCase();
+    if (t.normalize) t = t.normalize("NFD").replace(/[̀-ͯ]/g, "");
+    return t.replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/^the( |$)/, "").trim();
+  }
+  function seesMatches(sees, person) {
+    var s = norm(sees);
+    if (!s || s === "nobody" || !isObj(person)) return false;
+    var id = norm(person.id), label = norm(person.label);
+    if (s === id || s === label) return true;
+    return label !== "" && (" " + label + " ").indexOf(" " + s + " ") >= 0;
+  }
+
+  function nameOf(o) { return typeof o === "string" ? o : ""; }
+
+  /* ballView(play, state, floorOf) -> the view model (design 4.5), or null when there is no usable play.
+   *   play     a checked block (checkPlay's .play)
+   *   state    the `ball` object of the GM state doc; any part may be missing: { t, lens, crew, open, pins }
+   *   floorOf  room name -> level number, from B68Map.floors(roll)
+   * rooms has an entry for every room in floorOf plus every room the play, crew, open and pins name; lvl is null for
+   * one with no floor. `pinned` lists the keys of state.pins only (the page owns clock ids). `lens` is null when no
+   * disguise is chosen (or the id is unknown). `next` is the next three things after t, events and the target's stops
+   * (its "windows"), across midnight; at the same minute an event comes before a window, then by id. Pure: nothing in
+   * the arguments is changed. */
+  function ballView(play, state, floorOf) {
+    if (!isObj(play) || !isObj(play.clock)) return null;
+    var st = isObj(state) ? state : {}, fl = isObj(floorOf) ? floorOf : {}, start = play.clock.start;
+    var t = typeof st.t === "number" && isFinite(st.t) ? Math.max(0, Math.round(st.t)) : 0;
+    var all = (Array.isArray(play.people) ? play.people : []).filter(isObj), byId = {};
+    all.forEach(function (p) { byId[p.id] = p; });
+    var s0 = mins(start);
+    var clockLabel = function (m) { var x = (s0 + m) % 1440; return pad(Math.floor(x / 60)) + ":" + pad(x % 60); };
+    var disguise = null;
+    (Array.isArray(play.disguises) ? play.disguises : []).forEach(function (d) { if (isObj(d) && d.id === st.lens) disguise = d; });
+
+    var rooms = {};
+    function room(n) {
+      if (typeof n !== "string" || n === "") return null;
+      if (!rooms[n]) rooms[n] = { lvl: Object.prototype.hasOwnProperty.call(fl, n) && !isNaN(Number(fl[n])) ? Number(fl[n]) : null, people: [], crew: [], pinned: [], lens: null, open: false };
+      return rooms[n];
+    }
+    Object.keys(fl).forEach(room);
+    var views = all.map(function (p) {
+      var w = whereAt(p, t, byId, start), r = w ? room(w.room) : null;
+      if (r) r.people.push(p.id);
+      return { id: p.id, label: nameOf(p.label), kind: p.kind, room: w ? w.room : null, note: w ? w.note : "", moving: w ? w.moving : null };
+    });
+    var crew = isObj(st.crew) ? st.crew : {};
+    Object.keys(crew).forEach(function (id) { var r = room(crew[id]); if (r) r.crew.push(id); });
+    (Array.isArray(st.open) ? st.open : []).forEach(function (n) { var r = room(n); if (r) r.open = true; });
+    var pins = isObj(st.pins) ? st.pins : {};
+    Object.keys(pins).forEach(function (id) { var r = room(pins[id]); if (r) r.pinned.push(id); });
+    (Array.isArray(play.routes) ? play.routes : []).forEach(function (r) { if (isObj(r)) { room(r.from); room(r.to); } });
+    (Array.isArray(play.events) ? play.events : []).forEach(function (e) { if (isObj(e)) room(e.room); });
+    if (disguise) {
+      Object.keys(rooms).forEach(function (n) {
+        var here = views.filter(function (v) { return v.room === n; });
+        rooms[n].lens = {
+          pos: lensRating(n, disguise, fl),
+          danger: here.some(function (v) { return seesMatches(disguise.sees, byId[v.id]); })
+        };
+      });
+    }
+
+    var cand = [];
+    (Array.isArray(play.events) ? play.events : []).forEach(function (e) {
+      if (isObj(e)) cand.push({ m: minuteOf(e.at, start), rank: 0, key: nameOf(e.id), out: { at: e.at, label: nameOf(e.label), room: e.room || null } });
+    });
+    all.forEach(function (p) {
+      if (p.kind !== "target") return;
+      stopsOf(p, start).forEach(function (s, i) {
+        cand.push({ m: s.t, rank: 1, key: nameOf(p.id) + ":" + (i < 10 ? "0" : "") + i, out: { at: clockLabel(s.t), label: s.note || nameOf(p.label), room: s.room } });
+      });
+    });
+    var next = cand.filter(function (c) { return !isNaN(c.m) && c.m > t; })
+      .sort(function (a, b) { return a.m - b.m || a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0); })
+      .slice(0, 3).map(function (c) { return c.out; });
+
+    var routes = (Array.isArray(play.routes) ? play.routes : []).filter(isObj).map(function (r) {
+      var o = { id: r.id, from: r.from, to: r.to, via: r.via, dir: r.dir || "both" };
+      if (r.watched !== undefined) o.watched = r.watched;
+      if (r.needs !== undefined) o.needs = r.needs;
+      return o;
+    });
+    return { minute: t, label: clockLabel(t), people: views, rooms: rooms, next: next, routes: routes };
+  }
+
+  return { checkPlay: checkPlay, countPlay: countPlay, minuteOf: minuteOf, whereAt: whereAt, lensRating: lensRating, seesMatches: seesMatches, ballView: ballView, KINDS: KINDS, DIRS: DIRS, LIMITS: LIMITS };
 });
