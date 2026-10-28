@@ -158,9 +158,36 @@
     return BANDS.filter(function (b) { return b === 'public' || r[b] === true; });
   }
   P.revealList = revealList;
-  /* the map kit's options for these controls: view and theme from the known lists (else the defaults), time and weather only when set */
+  /* Single rooms (M4 step 5; map kit 0.9, "room:<name>" entries). `open` is the run's ball.open: a list of room NAMES the GM opened for
+     the players on their own. mapUi() carries it in the map controls; like the bands it counts only while Layer is Player, and an absent
+     or malformed list means no rooms. Names are kept exactly as the roll gives them (the kit and the token path both match on the NAME,
+     never on a data-room id: from 0.9 the player copy renumbers its rooms). A name that is no room of the roll opens nothing. */
+  function cleanRooms(v) {
+    var out = [];
+    (Array.isArray(v) ? v : []).forEach(function (n) { if (typeof n === 'string' && n && out.indexOf(n) < 0 && out.length < 80) out.push(n); });
+    return out;
+  }
+  function openRooms(map) { return isObj(map) && map.layer === 'player' ? cleanRooms(map.open) : []; }
+  /* what the player copy is drawn at: the revealed bands, then one "room:<name>" for each room opened on its own */
+  function revealEntries(map) { return revealList(map).concat(openRooms(map).map(function (n) { return 'room:' + n; })); }
+  /* THE rule, the kit's: a room is shown when its band is revealed OR it has its own room entry. Every place that decides what the
+     players can see from a reveal list (the hidden-name scan, the token screen, the markers' rooms) uses this one function. */
+  function roomShown(room, reveal) {
+    if (!isObj(room) || !Array.isArray(reveal)) return false;
+    return reveal.indexOf(room.band) >= 0 || (typeof room.name === 'string' && reveal.indexOf('room:' + room.name) >= 0);
+  }
+  /* the room names and the bands in a reveal list (the "room:" entries, and the rest) */
+  function entryRooms(reveal) { return (Array.isArray(reveal) ? reveal : []).filter(function (e) { return typeof e === 'string' && e.indexOf('room:') === 0; }).map(function (e) { return e.slice(5); }); }
+  function entryBands(reveal) { return (Array.isArray(reveal) ? reveal : []).filter(function (e) { return typeof e === 'string' && e.indexOf('room:') !== 0; }); }
+  P.cleanRooms = cleanRooms; P.revealEntries = revealEntries; P.roomShown = roomShown; P.entryRooms = entryRooms; P.entryBands = entryBands;
+  /* the map kit's options for these controls: view and theme from the known lists (else the defaults), time and weather only when set.
+     On the player layer the rooms the GM opened on their own (map.open) go to the kit as "room:<name>" beside the bands. */
   function mapOpts(map, layer, reveal, size) {
     var m = isObj(map) ? map : {}, o = { view: VIEWS.indexOf(m.view) >= 0 ? m.view : P.MAP0.view, theme: THEMES.indexOf(m.theme) >= 0 ? m.theme : P.MAP0.theme, layer: layer, reveal: reveal };
+    if (layer === 'player' && Array.isArray(reveal)) {
+      var more = cleanRooms(m.open).map(function (n) { return 'room:' + n; }).filter(function (e) { return reveal.indexOf(e) < 0; });
+      if (more.length) o.reveal = reveal.concat(more);
+    }
     if (m.time === 'Bluetime' || m.time === 'Night') o.time = m.time;
     var w = m.weather;
     if (w === 'rolled') o.weather = true; else if (w === 'none') o.weather = false; else if (w === 'rain' || w === 'fog' || w === 'snow') o.weather = w;
@@ -205,12 +232,12 @@
   function hiddenNames(roll, reveal) {
     var rooms = roll && Array.isArray(roll.rooms) ? roll.rooms : [], shown = {}, out = [];
     P.LEVEL_TITLES.forEach(function (t) { shown[t] = 1; });
-    rooms.forEach(function (r) { if (r && reveal.indexOf(r.band) >= 0) shown[fold(r.name)] = 1; });
+    rooms.forEach(function (r) { if (r && roomShown(r, reveal)) shown[fold(r.name)] = 1; });
     function add(n) { n = fold(n).replace(/[.,;:!]+$/, ''); if (n.length >= 3 && !shown[n] && out.indexOf(n) < 0) out.push(n); }
     function phrase(n) { n = fold(n); if (/\s/.test(n) && n.length >= 5) add(n); }
-    rooms.forEach(function (r) { if (r && reveal.indexOf(r.band) < 0) add(r.name); });
+    rooms.forEach(function (r) { if (r && !roomShown(r, reveal)) add(r.name); });
     if (!roll) return out;
-    add(roll.physThreatName); add(roll.socThreatName); if (roll.targetRoom && reveal.indexOf(roll.targetBand) < 0) add(roll.targetRoom);
+    add(roll.physThreatName); add(roll.socThreatName); if (roll.targetRoom && reveal.indexOf(roll.targetBand) < 0 && reveal.indexOf('room:' + roll.targetRoom) < 0) add(roll.targetRoom);
     rooms.forEach(function (r) { if (isObj(r)) { if (typeof r.loot === 'string') phrase(r.loot); if (typeof r.obstacle === 'string') phrase(r.obstacle); } });
     (Array.isArray(roll.items) ? roll.items : []).forEach(function (x) { if (typeof x === 'string') phrase(x); });
     if (typeof roll.obstacle === 'string') phrase(roll.obstacle);
@@ -237,7 +264,7 @@
   function playerDisplay(roll, map, render, tk) {
     if (!isObj(map) || map.layer !== 'player') throw new Error('Only the player layer can go to the iPad. Switch Layer to Player first.');
     if (!roll || typeof render !== 'function') throw new Error('Roll a location first.');
-    var reveal = revealList(map);
+    var reveal = revealEntries(map);       /* the bands, and "room:<name>" for each room opened on its own (the kit's 0.9 reveal) */
     var o = mapOpts(map, 'player', reveal, P.IPAD_MAP);
     /* M3: the crew markers and visible pinned clocks of the run (tk = { tokens, hide }, from playerTokens) go through tokenScreen here,
        the one door; with none left, `o` is exactly what it was before tokens existed (no `tokens` key at all) */
@@ -252,7 +279,7 @@
     var used = scr.tokens, r = used.length ? clean(Object.assign({}, o, { tokens: used })) : null, dropped = false;
     if (!r) { if (used.length) { dropped = true; used = []; } r = clean(o); }      /* a map that only leaks WITH its markers goes without them */
     if (!r) { var e = new Error(P.LEAK_MSG); e.leak = true; throw e; }
-    return { kind: 'svg', title: str(roll.name).slice(0, 200), caption: (roll.district ? roll.district + ' · ' : '') + 'surveyed: ' + reveal.join(', '), svg: r.svg, warnings: r.warnings || [], reveal: reveal,
+    return { kind: 'svg', title: str(roll.name).slice(0, 200), caption: (roll.district ? roll.district + ' · ' : '') + 'surveyed: ' + entryBands(reveal).join(', ') + (entryRooms(reveal).length ? ' + ' + entryRooms(reveal).join(', ') : ''), svg: r.svg, warnings: r.warnings || [], reveal: reveal,
       tokens: used.length, tokensRefused: scr.refused.length > 0 || dropped };
   }
   P.playerDisplay = playerDisplay;
@@ -725,7 +752,7 @@
   function tokenHidden(roll, reveal, hide) {
     var out = hiddenNames(roll, reveal), rooms = roll && Array.isArray(roll.rooms) ? roll.rooms : [], shown = {};
     P.LEVEL_TITLES.forEach(function (t) { shown[t] = 1; });
-    rooms.forEach(function (r) { if (r && reveal.indexOf(r.band) >= 0) shown[fold(r.name)] = 1; });
+    rooms.forEach(function (r) { if (r && roomShown(r, reveal)) shown[fold(r.name)] = 1; });
     (Array.isArray(hide) ? hide : []).forEach(function (n) { n = fold(n).replace(/[.,;:!]+$/, ''); if (n.length >= 3 && !shown[n] && out.indexOf(n) < 0) out.push(n); });
     return out;
   }
@@ -737,7 +764,7 @@
     if (!list.length) return { tokens: [], refused: [] };
     if (list.some(function (t) { return !isObj(t) || Object.keys(t).sort().join() !== 'label,room,svg' || typeof t.room !== 'string' || typeof t.label !== 'string' || typeof t.svg !== 'string'; })) return { tokens: [], refused: ['(shape)'] };
     var rooms = roll && Array.isArray(roll.rooms) ? roll.rooms : [];
-    var kept = list.filter(function (t) { return rooms.some(function (r) { return isObj(r) && r.name === t.room && reveal.indexOf(r.band) >= 0; }); });
+    var kept = list.filter(function (t) { return rooms.some(function (r) { return isObj(r) && r.name === t.room && roomShown(r, reveal); }); });
     var names = tokenHidden(roll, reveal, hide), hits = [];
     kept.forEach(function (t) {
       var H = svgHays(t.svg).concat(svgHays('<text>' + esc(t.label) + '</text>'));
@@ -2310,7 +2337,10 @@
 
   /* ---------- the location generator ---------- */
   function locUi() { var u = Object.assign(W.B68GmLocation ? W.B68GmLocation.defaults() : {}, uiOf('loc')); u.district = distFor('loc'); return u; }
-  function mapUi() { var l = isObj(S.doc.loc) && isObj(S.doc.loc.map) ? S.doc.loc.map : {}; var m = Object.assign(clone(P.MAP0), l); m.reveal = Object.assign({}, P.MAP0.reveal, isObj(l.reveal) ? l.reveal : {}); return m; }
+  function mapUi() { var l = isObj(S.doc.loc) && isObj(S.doc.loc.map) ? S.doc.loc.map : {}; var m = Object.assign(clone(P.MAP0), l); m.reveal = Object.assign({}, P.MAP0.reveal, isObj(l.reveal) ? l.reveal : {}); m.open = openNow(); return m; }
+  /* the rooms the GM opened on their own for this card: the run's ball.open (M4 step 5). Only an authored site with a play block has a
+     ball (runSite), and the ball is scoped to the site, so another site's rooms are never this one's. [] without one. */
+  function openNow() { var rs = runSite(); return rs ? cleanRooms(ballDoc(rs.name).open) : []; }
   function replayLocation(e) {
     var L = W.B68GmLocation, pk = part('location'); if (!L || !pk || !isObj(e)) return null;
     if (e.auth) return authoredRoll(L, pk, authoredOf(pk).sites[str(e.auth)]);
@@ -2350,7 +2380,7 @@
          View and Theme (presentation) fold under the map */
       h += '<section class="gm-mapbox" aria-label="Map"><h4>Map</h4><div class="gm-map-ctl">' +
         '<div class="gm-field"><span class="gm-lab">Layer</span><div class="seg" role="group" aria-label="Layer">' + [['gm', 'GM'], ['player', 'Player']].map(function (o) { return '<button type="button" class="chip" data-gm="layer" data-v="' + o[0] + '" aria-pressed="' + (mu.layer === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
-        '<fieldset class="gm-reveal"><legend class="gm-lab">Reveal to the players: ' + esc(mu.layer === 'player' ? revealList(mu).join(', ') : 'public only while Layer is GM') + liveChip(mu) + '</legend>' + BANDS.map(function (b) { return '<label class="gm-check"><input type="checkbox" data-reveal="' + b + '"' + (b === 'public' || mu.reveal[b] ? ' checked' : '') + (b === 'public' ? ' disabled' : '') + '> <span>' + b + '</span></label>'; }).join('') + '</fieldset>' +
+        '<fieldset class="gm-reveal"><legend class="gm-lab">Reveal to the players: ' + esc(revealText(mu)) + liveChip(mu) + '</legend>' + BANDS.map(function (b) { return '<label class="gm-check"><input type="checkbox" data-reveal="' + b + '"' + (b === 'public' || mu.reveal[b] ? ' checked' : '') + (b === 'public' ? ' disabled' : '') + '> <span>' + b + '</span></label>'; }).join('') + roomsHtml(mu, roll) + '</fieldset>' +
         '<button type="button" class="btn primary" data-gm="draw">Draw</button></div>' +
         '<p class="gm-warn" id="gm-mapwarn" role="status"></p>' +
         '<div class="gm-map-acts"><button type="button" class="btn sm primary" data-gm="ipad"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + '>Show on iPad</button>' +
@@ -2414,12 +2444,12 @@
   function drawMap(quiet) {
     var K = W.B68Map; if (!S.locRoll) { if (!quiet) toast('Roll a location first.', true); return; }
     if (!K || !K.render) { if (!quiet) toast('The map kit is missing.', true); return; }
-    var mu = mapUi(), r, o = mapOpts(mu, mu.layer === 'player' ? 'player' : 'gm', revealList(mu)), sig = runApply(o);     /* a run: the GM layer only, with its tokens */
+    var mu = mapUi(), r, o = mapOpts(mu, mu.layer === 'player' ? 'player' : 'gm', revealEntries(mu)), sig = runApply(o);     /* a run: the GM layer only, with its tokens */
     /* the player layer's preview shows the markers the iPad copy would carry (the same builder and gate; never the GM cache above) */
     var held = false;
     if (mu.layer === 'player') {
-      var pts = playerTokenSet(revealList(mu));
-      if (pts.tokens.length) { var scr = P.tokenScreen(pts.tokens, S.locRoll, revealList(mu), pts.hide); held = scr.refused.length > 0; if (scr.tokens.length) o.tokens = scr.tokens; }
+      var pts = playerTokenSet(revealEntries(mu));
+      if (pts.tokens.length) { var scr = P.tokenScreen(pts.tokens, S.locRoll, revealEntries(mu), pts.hide); held = scr.refused.length > 0; if (scr.tokens.length) o.tokens = scr.tokens; }
     }
     if (sig && S.map && S.map.sig === sig) return;                  /* nobody moved: the map on screen is this one */
     if (sig && S.runCache && S.runCache.map[sig]) r = S.runCache.map[sig];
@@ -2428,7 +2458,7 @@
       if (sig) { var rc = S.runCache = S.runCache || { map: {}, keys: [] }; rc.map[sig] = r; rc.keys.push(sig); while (rc.keys.length > RUN_CACHE_MAX) delete rc.map[rc.keys.shift()]; }
     }
     S.map = { svg: r.svg, warnings: r.warnings || [], layer: mu.layer === 'player' ? 'player' : 'gm', view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather, sig: sig, held: held };
-    S.map.leak = S.map.layer === 'player' && leaks(r.svg, S.locRoll, revealList(mu)).length > 0;
+    S.map.leak = S.map.layer === 'player' && leaks(r.svg, S.locRoll, revealEntries(mu)).length > 0;
     showMap();
   }
   function showMap() {
@@ -2462,12 +2492,12 @@
   }
   function ballDoc(name) { return isObj(S.doc.ball) && S.doc.ball.site === name ? S.doc.ball : {}; }
   /* write the changes to `ball` as a replace patch (a key set to null goes). Another site's state is replaced whole */
-  function ballSet(name, change) {
+  function ballSet(name, change, quiet) {
     var old = isObj(S.doc.ball) ? S.doc.ball : null, base = old && old.site === name ? clone(old) : {};
     base.site = name;
     Object.keys(change).forEach(function (k) { if (change[k] === null || change[k] === undefined) delete base[k]; else base[k] = change[k]; });
     var ok = patch({ ball: replacePatch(old, base) });
-    if (ok) liveTokens();         /* a marker or a pin moved: while the map is live on the iPad, it follows (M3) */
+    if (ok && !quiet) liveTokens();         /* a marker or a pin moved, or a room opened or closed: while the map is live on the iPad, it follows (M3, M4 step 5) */
     return ok;
   }
   /* the levels of the roll, by number, with the names the play gives them; and room name -> level */
@@ -2550,7 +2580,7 @@
     var none = { tokens: [], hide: [], sig: '' }, rs = runSite(); if (!rs || !S.locRoll) return none;
     var st = ballDoc(rs.name), placed = { crew: isObj(st.crew) ? st.crew : {}, pins: isObj(st.pins) ? st.pins : {} };
     if (!Object.keys(placed.crew).length && !Object.keys(placed.pins).length) return none;
-    var shown = (Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return isObj(r) && reveal.indexOf(r.band) >= 0; }).map(function (r) { return str(r.name); });
+    var shown = (Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return roomShown(r, reveal); }).map(function (r) { return str(r.name); });
     var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; });
     var clocks = tableClocks().filter(function (c) { return str(c.id); }).map(function (c) { return { id: str(c.id), size: c.size, filled: c.filled, hidden: !!c.hidden }; });
     var tokens = P.playerTokens(placed, shown, clocks, pcs), hide = tokenDeny(rs.play);
@@ -2745,15 +2775,17 @@
   }
   /* more than the public band is going to the players: say which, and ask */
   function confirmReveal(reveal, what) {
-    var more = reveal.filter(function (b) { return b !== 'public'; });
-    return !more.length || W.confirm(what + ' will show the players the ' + more.join(', ') + ' band' + (more.length === 1 ? '' : 's') + ' as well as public. Go ahead?');
+    var more = entryBands(reveal).filter(function (b) { return b !== 'public'; }), rooms = entryRooms(reveal), say = [];
+    if (more.length) say.push('the ' + more.join(', ') + ' band' + (more.length === 1 ? '' : 's') + ' as well as public');
+    if (rooms.length) say.push((rooms.length === 1 ? 'the room ' : 'the rooms ') + rooms.join(', ') + ', opened on ' + (rooms.length === 1 ? 'its' : 'their') + ' own');
+    return !say.length || W.confirm(what + ' will show the players ' + say.join(' and ') + '. Go ahead?');
   }
   function resetReveal() {
     var r = mapUi().reveal;
     if (BANDS.some(function (b) { return !!r[b] !== !!P.REVEAL0[b]; })) patch({ loc: { map: { reveal: clone(P.REVEAL0) } } });
   }
   function showOnIpad() {
-    var mu = mapUi(), d, tk = playerTokenSet(revealList(mu));
+    var mu = mapUi(), d, tk = playerTokenSet(revealEntries(mu));
     try { d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render, tk); } catch (e) { toast(errText(e), true); return; }
     if (!confirmReveal(d.reveal, 'This map')) return;
     gate.mark(d.svg);
@@ -2786,8 +2818,9 @@
      hence the same render, scan, gate and queue, with ifSeq. */
   function liveTokens() {
     if (!S || !mapOnIpad()) return;
-    var on = S.mapOn, ask = playerTokenSet(revealList(mapUi())).sig;
-    if (ask === (on.tokQ === undefined ? on.tok || '' : on.tokQ)) return;
+    var on = S.mapOn, want = revealEntries(mapUi()), ask = playerTokenSet(want).sig;
+    /* the markers asked for, and the reveal asked for (a room opened or closed here or on another device, M4 step 5) */
+    if (ask === (on.tokQ === undefined ? on.tok || '' : on.tokQ) && sameBands(want, on.revQ === undefined ? on.reveal : on.revQ)) return;
     liveReveal();
   }
   function mapOnIpad() {
@@ -2801,29 +2834,77 @@
   function liveChip(mu) {
     if (!mapOnIpad() || mu.layer !== 'player') return '';
     if (liveBusy()) return ' <span class="gm-sending">Sending to the iPad…</span>';
-    return sameBands(revealList(mu), S.mapOn.reveal) ? ' <span class="gm-live">Live on the iPad</span>' : '';
+    return sameBands(revealEntries(mu), S.mapOn.reveal) ? ' <span class="gm-live">Live on the iPad</span>' : '';
+  }
+  /* "Open one room" (M4 step 5), under the band ticks, for a run (an authored site with a play block: that is where ball.open lives).
+     Each room whose band is not ticked gets Open for the players; a room already opened on its own gets Close. Room names go in
+     through esc() and are read back from the roll by name, never by position. */
+  function roomsHtml(mu, roll) {
+    var rs = runSite(); if (!rs || !roll || !Array.isArray(roll.rooms)) return '';
+    var open = cleanRooms(ballDoc(rs.name).open), seen = {}, rows = '';
+    roll.rooms.forEach(function (r) {
+      if (!isObj(r) || typeof r.name !== 'string' || !r.name || seen[r.name]) return; seen[r.name] = 1;
+      var bandOpen = r.band === 'public' || mu.reveal[r.band] === true, on = open.indexOf(r.name) >= 0;
+      if (bandOpen && !on) return;           /* its band already shows it */
+      rows += '<li class="gm-roomrow"><span class="gm-roomname">' + esc(r.name) + '</span> <small class="gm-dim">' + esc(str(r.band)) + (on && bandOpen ? ', its band is open too' : on ? ', open' : '') + '</small> ' +
+        (on ? '<button type="button" class="btn sm" data-gm="room-close" data-room="' + esc(r.name) + '">Close</button>'
+          : '<button type="button" class="btn sm" data-gm="room-open" data-room="' + esc(r.name) + '" title="Shows the players this room only: not its band, not the rooms beside it">Open for the players</button>') + '</li>';
+    });
+    if (!rows) return '';
+    return '<details class="gm-more gm-rooms"' + (foldOpen('rooms') ? ' open' : '') + ' data-fold="rooms"><summary>Open one room' + (open.length ? ' <span class="gm-dim">' + open.length + ' open</span>' : '') + '</summary>' +
+      '<ul class="gm-roomlist">' + rows + '</ul><p class="gm-dim">Only that room, with its crew markers: not its band, not the rooms beside it, not how many are shut. ' +
+      'Goes out with the map (at once while it is live on the iPad), and only while Layer is Player.</p></details>';
+  }
+  /* open or close one room for the players: the run's ball.open. The change goes out through liveReveal (ballSet -> liveTokens), which asks
+     first, exactly as for a band; a no puts the room back. */
+  function roomOpen(name, on) {
+    var rs = runSite(); if (!rs || !S.locRoll || !Array.isArray(S.locRoll.rooms)) return;
+    if (!S.locRoll.rooms.some(function (r) { return isObj(r) && r.name === name; })) return;
+    var cur = cleanRooms(ballDoc(rs.name).open), has = cur.indexOf(name) >= 0;
+    if (on === has) return;
+    var next = on ? cur.concat([name]) : cur.filter(function (n) { return n !== name; });
+    ballSet(rs.name, { open: next.length ? next : null });
+    if (S.map) drawMap(); renderLocation();
+  }
+  /* the Reveal legend's words: the bands, then the rooms opened on their own */
+  function revealText(mu) {
+    if (mu.layer !== 'player') return 'public only while Layer is GM';
+    var e = revealEntries(mu), rooms = entryRooms(e);
+    return entryBands(e).join(', ') + (rooms.length ? ' + ' + rooms.join(', ') : '');
   }
   function paintLive() {
     var lg = $q('.gm-reveal legend'); if (!lg || !S || !S.doc) return;
     var mu = mapUi();
-    lg.innerHTML = 'Reveal to the players: ' + esc(mu.layer === 'player' ? revealList(mu).join(', ') : 'public only while Layer is GM') + liveChip(mu);
+    lg.innerHTML = 'Reveal to the players: ' + esc(revealText(mu)) + liveChip(mu);
   }
   /* the ticks back to what the iPad shows */
   function ticksTo(bands) { var rv = {}; BANDS.forEach(function (b) { if (b !== 'public') rv[b] = bands.indexOf(b) >= 0; }); patch({ loc: { map: { reveal: rv } } }); }
   /* a no (or a copy that cannot be made): the new bands come off the ticks; if a push is on its way with other bands, the state
      left goes after it, so the iPad ends on what the ticks say */
-  function dropBands(want, more) { ticksTo(want.filter(function (b) { return more.indexOf(b) < 0; })); if (liveBusy()) liveReveal(); }
-  function bandWords(l) { return l.length === 1 ? 'the ' + l[0] + ' band' : 'the ' + l.slice(0, -1).join(', ') + ' and ' + l[l.length - 1] + ' bands'; }
+  function dropBands(want, more) {
+    var moreRooms = entryRooms(more), rs = moreRooms.length ? runSite() : null;
+    ticksTo(entryBands(want).filter(function (b) { return entryBands(more).indexOf(b) < 0; }));
+    /* a room that was asked for and refused comes back off the ball's open list (quietly: this is the answer, not a new request) */
+    if (rs) { var keep = cleanRooms(ballDoc(rs.name).open).filter(function (n) { return moreRooms.indexOf(n) < 0; }); ballSet(rs.name, { open: keep.length ? keep : null }, true); }
+    if (liveBusy()) liveReveal();
+  }
+  /* bands and rooms of a reveal list, in words: "the working band", "the working and secure bands", "the room Kitchens" */
+  function bandWords(l) {
+    var b = entryBands(l), r = entryRooms(l), out = [];
+    if (b.length) out.push(b.length === 1 ? 'the ' + b[0] + ' band' : 'the ' + b.slice(0, -1).join(', ') + ' and ' + b[b.length - 1] + ' bands');
+    if (r.length) out.push(r.length === 1 ? 'the room ' + r[0] : 'the rooms ' + r.slice(0, -1).join(', ') + ' and ' + r[r.length - 1]);
+    return out.join(' and ');
+  }
   function liveReveal() {
     if (!mapOnIpad()) return;
-    var on = S.mapOn, mu = mapUi(), want = revealList(mu), tk = playerTokenSet(want);
+    var on = S.mapOn, mu = mapUi(), want = revealEntries(mu), tk = playerTokenSet(want);
     if (sameBands(want, on.reveal) && tk.sig === (on.tok || '') && !liveBusy()) return;
     var more = want.filter(function (b) { return on.reveal.indexOf(b) < 0; }), fewer = on.reveal.filter(function (b) { return want.indexOf(b) < 0; });
     if (more.length && !W.confirm('The map is on the iPad: ' + (more.length === 1 ? 'opening ' + bandWords(more) + ' shows it' : 'this shows the players ' + bandWords(more)) + (more.length === 1 ? ' to the players now' : ' now') + '. Go ahead?')) { dropBands(want, more); return; }
-    var spec = { layer: 'player', reveal: mu.reveal, view: on.view, theme: on.theme, time: on.time, weather: on.weather }, d;
+    var spec = { layer: 'player', reveal: mu.reveal, open: mu.open, view: on.view, theme: on.theme, time: on.time, weather: on.weather }, d;
     try { d = playerDisplay(S.locRoll, spec, W.B68Map && W.B68Map.render, tk); } catch (e) {
       on.tokQ = tk.sig;       /* not asked again until something changes */
-      if (!fewer.length) { toast('Not sent: ' + errText(e) + ' The iPad still shows ' + on.reveal.join(', ') + '.', true); dropBands(want, more); return; }
+      if (!fewer.length) { toast('Not sent: ' + errText(e) + ' The iPad still shows ' + entryBands(on.reveal).join(', ') + (entryRooms(on.reveal).length ? ' + ' + entryRooms(on.reveal).join(', ') : '') + '.', true); dropBands(want, more); return; }
       endLive();
       pushDisplay({ kind: 'blank' }).then(function () { toast('The iPad was cleared: without ' + bandWords(fewer) + ' this map would name a hidden room, so it could not be sent. Show it again from another view.', true); },
         function (e2) { if (!e2.superseded) toast('Could not clear the iPad: ' + errText(e2) + '. It may still show ' + bandWords(fewer) + ': press Clear → ambient.', true); });
@@ -2832,6 +2913,7 @@
     gate.mark(d.svg);
     var me = S, key = on.key, sent = d.reveal.slice(), sig = tk.sig;
     on.tokQ = sig;        /* the markers asked for, so a poll with nothing new asks for nothing */
+    on.revQ = sent;       /* and the reveal asked for (bands and rooms), likewise */
     pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, {
       map: true, live: true,
       prepare: function (body) { return S === me && S.mapOn && S.mapOn.key === key ? Object.assign({}, body, { ifSeq: S.mapOn.seq }) : null; },
@@ -4834,6 +4916,8 @@
       case 'dt-rule': dtRule(); break;
       case 'layer': setMap('layer', b.getAttribute('data-v')); if (b.getAttribute('data-v') !== 'player') endLive(); renderLocation(); break;
       case 'draw': drawMap(); break;
+      case 'room-open': roomOpen(str(b.getAttribute('data-room')), true); break;
+      case 'room-close': roomOpen(str(b.getAttribute('data-room')), false); break;
       case 'run-floor': runSetFloor(str(b.getAttribute('data-v'))); break;
       case 'run-step': runStep(+b.getAttribute('data-d') || 0); break;
       case 'run-next': runNext(); break;

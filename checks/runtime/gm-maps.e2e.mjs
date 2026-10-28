@@ -279,8 +279,24 @@ try {
   const m5 = await sendAndWait(() => R.page.check('[data-reveal="secure"]'));
   check(asked.length === 1 && !!m5 && nameIn(m5.display.svg, 'Cass Fenn') && (m5.display.svg.match(/#fffdf6/g) || []).length === 2, 'opening the secure band asks, and then her marker is there');
 
+  /* one room on its own (M4 step 5, kit 0.9): the secure band shut again, then only the penthouse opened: it asks, Cass's marker is back
+     (her room is open, its band is not), the rest of its band and the other bands stay off the iPad, and #display draws it */
+  const m6 = await sendAndWait(() => R.page.uncheck('[data-reveal="secure"]'));
+  check(!!m6 && !nameIn(m6.display.svg, 'Cass Fenn') && !nameIn(m6.display.svg, 'penthouse'), 'closing the band takes her marker off again');
+  await R.page.click('.gm-rooms summary'); asked.length = 0;
+  const m7 = await sendAndWait(() => R.page.click('.gm-rooms [data-gm="room-open"][data-room="Luxury penthouse"]'));
+  check(asked.length === 1 && /opening the room Luxury penthouse shows it to the players now/.test(asked[0]), 'opening one room asks first, and names it (' + asked.join(' | ') + ')');
+  check(!!m7 && nameIn(m7.display.svg, 'Luxury penthouse') && nameIn(m7.display.svg, 'Cass Fenn') && (m7.display.svg.match(/#fffdf6/g) || []).length === 2, 'the opened room and the marker in it are on the iPad');
+  check(!!m7 && ['Private card rooms', 'Security control room', 'Underground counting room'].every((n) => !nameIn(m7.display.svg, n)), 'and no other shut room is, in its band or any other');
+  check(!!m7 && (m7.display.svg.match(/data-room="r(\d+)"/g) || []).every((x) => +x.slice(12, -1) < 3), 'the player copy is numbered 1 to k: no id above 2');
+  await D.page.waitForFunction(() => /CASS FENN/.test((document.querySelector('#display-page .dp-map-frame svg') || { outerHTML: '' }).outerHTML) && /LUXURY PENTHOUSE/i.test((document.querySelector('#display-page .dp-map-frame svg') || { outerHTML: '' }).outerHTML), null, { timeout: 15000 }).then(() => check(true, '#display draws the opened room and its marker'), () => check(false, '#display draws the opened room and its marker'));
+  await sleep(1500); await shot(D.page, 'maps3-03-ipad-one-room'); await shot(R.page, 'maps3-04-gm-one-room');
+  asked.length = 0;
+  const m8 = await sendAndWait(() => R.page.click('.gm-rooms [data-gm="room-close"][data-room="Luxury penthouse"]'));
+  check(asked.length === 0 && !!m8 && !nameIn(m8.display.svg, 'Luxury penthouse') && !nameIn(m8.display.svg, 'Cass Fenn'), 'closing the room takes it and her marker off, with no question');
+
   /* the whole payload: nothing of the people, the disguise, the lens or the timeline, and no hidden clock */
-  const stuff = JSON.stringify([m0, m1, m2, m3, m4, m5].map((x) => x && x.display));
+  const stuff = JSON.stringify([m0, m1, m2, m3, m4, m5, m6, m7, m8].map((x) => x && x.display));
   check(['"ball"', 'Odette', 'Wren', 'Ivo', 'Cook', 'Speeches', 'Gala night', '#d11', 'Vault alarm', 'VAULT', '>OM<', '>WT<', '>IS<'].every((w) => !stuff.includes(w)), 'no person, disguise, event, ring or hidden clock was ever on the iPad');
   check(roll3 && roll3.auth === NAME, 'the card was the authored site throughout');
   await R.ctx.close();

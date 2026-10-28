@@ -192,6 +192,34 @@ try {
   check(!!d && d.display.kind === 'svg', 'Show on iPad sent the player map');
   check(!!d && ['"ball"', 'Odette', 'Wren', 'Pip Quill', 'Ivo', 'Cook', 'Speeches', 'Fireworks', 'Gala night', '#d11', 'Fuse', 'FUSE', '>OM<', '>WT<', '>PQ<', '>IS<'].every((w) => !all.includes(w)), 'the iPad payload carries no ball, no people, no disguise, no event, no ring and no hidden clock');
   check(!!d && (d.display.svg.match(/#fffdf6/g) || []).length === 1 && d.display.svg.includes('CASS FENN') && d.display.svg.includes('>CF<'), 'and it carries the crew marker, once, in the lounge');
+  /* one room opened on its own (M4 step 5): the map is live on the iPad, so opening asks first, then the room and the marker in it go out and
+     nothing else in its band does; closing takes them away */
+  const lowSvg = async () => String(((await api('GET', '/gm/display')).json.display || {}).svg || '').toLowerCase();
+  const seqNow = async () => (await api('GET', '/gm/display')).json.seq;
+  asked.length = 0; let sq = await seqNow();
+  await R.page.click('.gm-rooms summary');
+  check(await R.page.$$eval('.gm-rooms [data-gm="room-open"]', (b) => b.length) === 4, 'Open one room lists the four rooms the players do not see yet');
+  await R.page.click('.gm-rooms [data-gm="room-open"][data-room="Private card rooms"]');
+  let dd = await until(async () => (await seqNow()) > sq ? await lowSvg() : null, 8000);
+  check(asked.length === 1 && /opening the room Private card rooms shows it to the players now/.test(asked[0]), 'opening a room asks first, by name (' + asked.join(' | ') + ')');
+  check(!!dd && dd.includes('private card rooms'), 'the opened room is on the iPad');
+  check(!!dd && ['luxury penthouse', 'security control room', 'underground counting room'].every((n) => !dd.includes(n)), 'and none of the shut rooms, in its band or any other');
+  const ids = ((dd || '').match(/data-room="r(\d+)"/g) || []).map((x) => +x.slice(12, -1));
+  check(ids.length >= 3 && ids.every((i) => i < 3), 'the rooms are numbered 1 to k: no id above 2 (' + [...new Set(ids)].sort().join() + ')');
+  check(await until(async () => JSON.stringify(((await gmState()).ball || {}).open) === '["Private card rooms"]', 8000), 'ball.open is saved on the server');
+  sq = await seqNow();
+  await R.page.click('#gm-run-place [data-gm="run-pc"]');
+  await R.page.click('#gm-run-rooms [data-room="Private card rooms"]');
+  dd = await until(async () => (await seqNow()) > sq ? await lowSvg() : null, 8000);
+  check(!!dd && dd.includes('cass fenn') && (dd.match(/#fffdf6/g) || []).length === 1, 'a PC moved into the opened room is drawn there, though its band is shut');
+  sq = await seqNow(); asked.length = 0;
+  await R.page.click('.gm-rooms [data-gm="room-close"][data-room="Private card rooms"]');
+  dd = await until(async () => (await seqNow()) > sq ? await lowSvg() : null, 8000);
+  check(asked.length === 0 && !!dd && !dd.includes('private card rooms') && !dd.includes('cass fenn'), 'closing the room sends the copy without it or its marker, and does not ask');
+  check(await until(async () => !('open' in ((await gmState()).ball || {})), 8000), 'and ball.open is gone from the server');
+  await R.page.click('#gm-run-place [data-gm="run-pc"]');
+  await R.page.click('#gm-run-rooms [data-room="Cocktail lounge"]');
+  await until(async () => (await gmState()).ball.crew['run-pc1'] === 'Cocktail lounge', 8000);
   await R.page.click('[data-gm="layer"][data-v="gm"]');
   check(await R.page.$eval('#gm-map', (m) => m.innerHTML.includes('#fffdf6')), 'the GM layer has them again');
 

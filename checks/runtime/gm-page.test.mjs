@@ -3060,6 +3060,159 @@ await test('S5j. the preview on the player layer shows what the iPad would carry
   await h.save();
 });
 
+/* ---- M4 step 5: single rooms (map kit 0.9 "room:<name>"; the run's ball.open) ---- */
+const plain = (v) => JSON.parse(JSON.stringify(v));
+const roomBtn = (h, kind, name) => h.qa('[data-gm="room-' + kind + '"]').find((b) => b.getAttribute('data-room') === name);
+const roomRows = (h) => h.qa('.gm-roomrow .gm-roomname').map((e) => e.textContent);
+const idsOf = (svg) => [...new Set((String(svg).match(/data-room="r(\d+)"/g) || []).map((s) => +s.slice(12, -1)))].sort((a, b) => a - b);
+const asker = (h, answer) => { const asked = []; h.br.W.confirm = (m) => { asked.push(m); return typeof answer === 'function' ? answer(m) : answer; }; return asked; };
+const SHUT = ['security control room', 'underground counting room', 'luxury penthouse'];     /* the invented site's rooms that stay shut in these tests */
+
+await test('S6a. Open one room: every room whose band is not ticked gets Open for the players; opening saves ball.open and the legend says so; Close takes it away; a ticked band drops its rooms from the list', async () => {
+  const h = await m3Open({ ball: { site: 'The Pelican Rooms', t: 0 } });
+  asker(h, true);
+  assert.deepEqual(roomRows(h).sort(), ['Luxury penthouse', 'Private card rooms', 'Security control room', 'Underground counting room'], 'the public rooms are already shown: no button for them');
+  assert.ok(h.qa('[data-gm="room-open"]').every((b) => b.textContent === 'Open for the players'));
+  assert.ok(!h.qa('[data-gm="room-close"]').length, 'nothing is open yet');
+  roomBtn(h, 'open', 'Private card rooms').click();
+  assert.deepEqual(plain(h.page._state().doc.ball.open), ['Private card rooms'], 'saved in the run\'s ball');
+  assert.equal(h.page._state().doc.ball.site, 'The Pelican Rooms');
+  assert.match(h.q('.gm-reveal legend').textContent, /public \+ Private card rooms/);
+  assert.ok(roomBtn(h, 'close', 'Private card rooms') && !roomBtn(h, 'open', 'Private card rooms'), 'the row now offers Close');
+  assert.match(h.q('.gm-rooms summary').textContent, /1 open/);
+  /* a second room, then the first one closed */
+  roomBtn(h, 'open', 'Luxury penthouse').click();
+  assert.deepEqual(plain(h.page._state().doc.ball.open), ['Private card rooms', 'Luxury penthouse']);
+  roomBtn(h, 'close', 'Private card rooms').click();
+  assert.deepEqual(plain(h.page._state().doc.ball.open), ['Luxury penthouse']);
+  roomBtn(h, 'close', 'Luxury penthouse').click();
+  assert.ok(!('open' in h.page._state().doc.ball), 'the last close takes the key away: absent means no rooms');
+  assert.match(h.q('.gm-reveal legend').textContent, /Reveal to the players: public\s*$/);
+  /* a band ticked: its rooms leave the list (the band already shows them) */
+  const w = h.q('[data-reveal="working"]'); w.checked = true; dispatch(w, 'change');
+  assert.deepEqual(roomRows(h).sort(), ['Luxury penthouse', 'Private card rooms']);
+  /* the crew's own data is untouched */
+  assert.deepEqual(Object.keys(h.page._state().doc.ball).sort(), ['site', 't']);
+  await h.save();
+});
+
+await test('S6b. a rolled site and a site with no play block have no room list and no ball.open; a name that is no room opens nothing; old rows without the field load', async () => {
+  const h = await openRun({ site: RUN_SITE(null) });
+  assert.ok(!h.q('.gm-rooms') && !h.qa('[data-gm="room-open"]').length, 'no play block, no run, no list');
+  const h2 = await m3Open({ ball: { site: 'The Pelican Rooms', t: 0, open: 'junk' } });
+  assert.deepEqual(P.revealEntries(Object.assign({}, h2.page._state().doc.loc.map, { layer: 'player' })), ['public'], 'a malformed field is no rooms');
+  assert.equal(roomRows(h2).length, 4, 'the list is whole');
+  h2.br.W.confirm = () => true;
+  h2.q('[data-gm="ipad"]').click(); await until(() => ipadSvgs(h2).length === 1);
+  assert.deepEqual(lastPlayerCall(h2).reveal, ['public'], 'the kit gets the bands as before');
+  /* a stale name in an old row: opens nothing, nothing leaks, nothing is refused */
+  const h3 = await m3Open({ ball: { site: 'The Pelican Rooms', t: 0, open: ['No such room'] } });
+  h3.br.W.confirm = () => true; h3.q('[data-gm="ipad"]').click(); await until(() => ipadSvgs(h3).length === 1);
+  const txt = ipadSvgs(h3)[0].svg.toLowerCase();
+  for (const s of SHUT.concat(['private card rooms'])) assert.ok(!txt.includes(s), 'a stale name opened ' + s);
+  /* another site's open list is not this one's */
+  const h4 = await m3Open({ ball: { site: 'Some Other Site', t: 0, open: ['Private card rooms'] } });
+  assert.deepEqual(h4.page._state().doc.loc.map.reveal && P.revealEntries(Object.assign({}, h4.page._state().doc.loc.map, { layer: 'player' })), ['public']);
+  h4.br.W.confirm = () => true; h4.q('[data-gm="ipad"]').click(); await until(() => ipadSvgs(h4).length === 1);
+  assert.ok(!ipadSvgs(h4)[0].svg.toLowerCase().includes('private card rooms'), 'another site\'s open rooms never reach this one');
+});
+
+await test('S6c. Show on iPad with a room opened alone: asks first, names the room; the copy has it and its markers and no shut room; ids below k; a no sends nothing', async () => {
+  const ball = { site: 'The Pelican Rooms', t: 0, crew: { pc1: 'Private card rooms', pc2: 'Security control room' }, pins: { c1: 'Private card rooms' }, open: ['Private card rooms'] };
+  const h = await m3Open({ ball });
+  const asked = asker(h, false);
+  h.q('[data-gm="ipad"]').click(); await rsleep(200);
+  assert.equal(asked.length, 1); assert.match(asked[0], /the room Private card rooms, opened on its own/); assert.ok(!/band/.test(asked[0]), 'it does not say a band is going');
+  assert.equal(ipadSvgs(h).length, 0, 'a no sends nothing');
+  h.br.W.confirm = () => true;
+  h.q('[data-gm="ipad"]').click(); const shown = await until(() => ipadSvgs(h).pop());
+  const call = lastPlayerCall(h);
+  assert.deepEqual(call.reveal, ['public', 'room:Private card rooms'], 'the kit gets the room entry beside the bands');
+  const low = shown.svg.toLowerCase();
+  assert.ok(low.includes('private card rooms'), 'positive control: the opened room is on the iPad');
+  for (const s of SHUT) assert.ok(!low.includes(s), 'the copy names ' + s);
+  assert.deepEqual(call.tokens.map((t) => [t.room, t.label]), [['Private card rooms', 'Cass Fenn']], 'only the marker in the opened room (the pie is in it too); Dov\'s room is not open');
+  assert.equal(tokN(shown.svg), 1, 'one token in the opened room: her marker and the pie share it');
+  assert.match(shown.svg, /CASS FENN/); assert.ok(!/DOV KETCH/i.test(shown.svg), 'Dov is in Security control room, which is not open');
+  assert.ok(idsOf(shown.svg).every((i) => i < 3), 'ids 0..2 only: two public rooms and the opened one (' + idsOf(shown.svg).join() + ')');
+  assert.match(ipadSvgs(h)[0].caption, /surveyed: public \+ Private card rooms/);
+  assert.ok(!/ball|"open"|Dov|Security control/.test(JSON.stringify(h.fg.server.displays).replace(/CASS FENN/g, '')), 'no ball, no crew list, no shut room in the payload');
+  checkSvg(shown.svg);
+  await h.save();
+});
+
+await test('S6d. live: opening a room on the iPad asks once, sends with ifSeq and shows it; closing sends without asking; a no puts the room back; the legend follows', async () => {
+  const ball = { site: 'The Pelican Rooms', t: 0, crew: { pc1: 'Private card rooms', pc2: 'Security control room' } };
+  const h = await m3Open({ ball });
+  const asked = asker(h, true);
+  h.q('[data-gm="ipad"]').click(); await until(() => h.sent.length === 1); await until(() => h.q('.gm-reveal .gm-live'));
+  assert.equal(asked.length, 0, 'public only: nothing to ask');
+  const shown0 = ipadSvgs(h)[0].svg; assert.equal(tokN(shown0), 0, 'Cass is in a shut room'); assert.ok(!/private card rooms/i.test(shown0));
+  const seq1 = h.fg.server.dseq;
+  /* open: asked once, one push, the room and her marker */
+  roomBtn(h, 'open', 'Private card rooms').click();
+  await until(() => h.sent.length === 2);
+  assert.equal(asked.length, 1, 'asked exactly once'); assert.match(asked[0], /opening the room Private card rooms shows it to the players now/);
+  assert.equal(h.sent[1].ifSeq, seq1, 'with the seq the last push answered');
+  const s1 = ipadSvgs(h)[1].svg; assert.ok(/private card rooms/i.test(s1), 'the room is on the iPad'); assert.equal(tokN(s1), 1); assert.match(s1, /CASS FENN/); assert.ok(!/DOV KETCH|security control/i.test(s1));
+  assert.match(h.sent[1].caption, /public \+ Private card rooms/);
+  await until(() => h.q('.gm-reveal .gm-live'));
+  await rsleep(250); assert.equal(h.sent.length, 2, 'nothing further went');
+  /* close: no question, one push, gone again */
+  roomBtn(h, 'close', 'Private card rooms').click();
+  await until(() => h.sent.length === 3);
+  assert.equal(asked.length, 1, 'closing does not ask');
+  const s2 = ipadSvgs(h)[2].svg; assert.ok(!/private card rooms/i.test(s2) && tokN(s2) === 0 && !/CASS/i.test(s2), 'closed: the room and her marker are gone');
+  assert.ok(!('open' in (h.page._state().doc.ball || {})));
+  /* a no: the room goes back off the ball and nothing is sent */
+  asked.length = 0; h.br.W.confirm = (m) => { asked.push(m); return false; };
+  roomBtn(h, 'open', 'Luxury penthouse').click(); await rsleep(300);
+  assert.equal(asked.length, 1); assert.equal(h.sent.length, 3, 'a no sends nothing');
+  assert.ok(!('open' in (h.page._state().doc.ball || {})), 'the room was taken back off ball.open');
+  assert.ok(roomBtn(h, 'open', 'Luxury penthouse') && !roomBtn(h, 'close', 'Luxury penthouse'), 'and the list offers Open again');
+  assert.ok(h.q('.gm-reveal .gm-live'), 'the iPad still shows exactly what the page says');
+  /* a room opened on top of a band, then the band ticked: one question each, the band's rooms and the room together */
+  h.br.W.confirm = (m) => { asked.push(m); return true; }; asked.length = 0;
+  const w = h.q('[data-reveal="working"]'); w.checked = true; dispatch(w, 'change'); await until(() => h.sent.length === 4);
+  roomBtn(h, 'open', 'Luxury penthouse').click(); await until(() => h.sent.length === 5);
+  const s5 = ipadSvgs(h)[4].svg.toLowerCase();
+  assert.ok(s5.includes('luxury penthouse') && s5.includes('security control room') && s5.includes('underground counting room') && !s5.includes('private card rooms'), 'band + one room');
+  assert.ok(idsOf(s5).every((i) => i < 5), 'k = 5: ids ' + idsOf(s5).join());
+  assert.ok(h.sent.slice(1).every((s) => typeof s.ifSeq === 'number'), 'every re-send carries ifSeq');
+  await h.save();
+});
+
+await test('S6e. live: the ball changed on another device (a room opened there) re-sends with the room, and closed there re-sends without it', async () => {
+  const h = await m3Open({ ball: { site: 'The Pelican Rooms', t: 0 } });
+  const asked = asker(h, true);
+  h.q('[data-gm="ipad"]').click(); await until(() => h.sent.length === 1); await until(() => h.q('.gm-reveal .gm-live'));
+  await rsleep(900);
+  h.fg.server.doc = Object.assign({}, h.fg.server.doc, { ball: { site: 'The Pelican Rooms', t: 0, open: ['Private card rooms'] } }); h.fg.server.at += 5;
+  for (const fn of h.br.doc.listeners.visibilitychange || []) fn();
+  await until(() => h.sent.length === 2, 400);
+  assert.equal(h.sent.length, 2, 'a room opened on another device re-sends'); assert.ok(/private card rooms/i.test(ipadSvgs(h)[1].svg));
+  assert.equal(asked.length, 1, 'and the page asked, as for a band');
+  await rsleep(900);
+  h.fg.server.doc = Object.assign({}, h.fg.server.doc, { ball: { site: 'The Pelican Rooms', t: 0 } }); h.fg.server.at += 5;
+  for (const fn of h.br.doc.listeners.visibilitychange || []) fn();
+  await until(() => h.sent.length === 3, 400);
+  assert.equal(h.sent.length, 3); assert.ok(!/private card rooms/i.test(ipadSvgs(h)[2].svg), 'closed there: gone here');
+  await h.save();
+});
+
+await test('S6f. the GM layer and the other roads are untouched: the GM copy draws every room; the street text and the score scene stay band-only; a new roll starts with nothing open', async () => {
+  const h = await m3Open({ ball: { site: 'The Pelican Rooms', t: 0, open: ['Private card rooms'] } });
+  assert.match(h.q('.gm-reveal legend').textContent, /public \+ Private card rooms/);
+  h.q('[data-gm="layer"][data-v="gm"]').click();
+  assert.match(h.q('.gm-reveal legend').textContent, /public only while Layer is GM/, 'on the GM layer nothing beyond public counts, rooms included');
+  assert.ok(/private card rooms/i.test(h.page._state().map.svg) && /luxury penthouse/i.test(h.page._state().map.svg), 'the GM copy shows every room');
+  assert.deepEqual(P.revealList({ layer: 'player', reveal: { public: true }, open: ['Private card rooms'] }), ['public'], 'revealList is bands: the street text and the score scene never see a room entry');
+  const sc = P.scoreScene(RUN_SITE_ROLL(h), { layer: 'player', reveal: { public: true }, open: ['Private card rooms'] }, M.render);
+  assert.deepEqual(sc.score.reveal, ['public'], 'the score scene takes bands only (the server would refuse a room entry)');
+  assert.ok(!/private card rooms/i.test(sc.board + sc.iso), 'and does not show an opened room');
+});
+function RUN_SITE_ROLL(h) { return h.page._state().locRoll; }
+
 /* =====================================================================================================================
    18. Score (J): the outline of a heist, rolled for inspiration (app/gm/score.js; GM.md "Score (J)")
    ===================================================================================================================== */

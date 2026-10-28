@@ -242,6 +242,26 @@ fails and nobody is known, nothing is purged.
   `gm-page.test.mjs` (9m–9t: 9p–9t are the review's repros R1–R4), `gm-nosecrets.test.mjs` (j, k), `checks/api/gm.mjs` (ifSeq),
   `gm-maps.e2e.mjs` (`npm run check:gm-maps`: the GM page and the iPad at 1366 × 1024 against a local Worker; `GM_SHOTS=<dir>`
   keeps its screenshots).
+- **Open one room** (M4 step 5; map kit 0.9). Under the band ticks, **Open one room** lists each room of a run whose band is not ticked, with
+  **Open for the players** (and **Close** once it is open). It is there for a **run** only (an authored site with a `play` block): the open
+  rooms live in that site's `ball.open`, a list of room names, so another site's list is never this one's and a new site starts with none.
+  Absent or malformed means no rooms, so old rows load as they were. Like the bands it counts only while Layer is Player. It goes through
+  the same path as a band: the map kit gets `room:<name>` beside the bands, the page's own scan and token screen use the kit's rule (a room is
+  shown when its band is revealed **or** it has its own entry; `roomShown`), and while the map is live on the iPad the change is sent by
+  `liveReveal` with `ifSeq`. **Opening asks first** ("opening the room X shows it to the players now"; Show on iPad says "the room X,
+  opened on its own"), a no takes the room back off `ball.open`, and **closing does not ask**. A change to `ball.open` on another device
+  re-sends on refetch, as a moved marker does.
+  - **What it shows.** That room only: its name, floor tint, walls, doors and fixtures, and any PC marker or visible clock pinned in it
+    (markers are keyed on the room's name, so a marker in a room opened alone inside a shut band is drawn, and one in its unopened sibling is
+    not). The player copy numbers the rooms the crew knows 1 to k (in the drawing, the key and the `data-room` ids), so the numbers never say
+    how many rooms are shut; its band shows as "partly surveyed" with only the known rooms. The caption names the opened room.
+  - **What it does not show.** Not its band, not the rooms beside it, not the passages or corridors (they follow their band: a room opened
+    alone stands in the cover with no passage drawn to it), not any shut room's name, and not how many there are. The street view stays the
+    public street. It does not reach the **street text** (Say box and Push text), the **score scene** (its `reveal` is bands only: the server
+    refuses anything else) or the **glance and fold hints** ("players see it"): those stay band-only, so a room opened alone is not marked
+    there. A name that is no room of the roll opens nothing. Opening the **target** room on its own is the GM's call and is allowed.
+  - Checks: `gm-nosecrets.test.mjs` (n: a room alone in a closed band, a room on top of a band, the no-id-above-k count, the marker rule),
+    `gm-page.test.mjs` (S6a-S6f), `gm-run.e2e.mjs` and `gm-maps.e2e.mjs` (opening, the marker, closing, on the iPad).
 - **Hidden names.** Map kit 0.2 titled a `plan` or `section` level of the player layer after the room on it, even when that room was
   hidden. From 0.5 (vendored: 0.7.1, 22/10/2026) every floor is titled generically ("Basement", "Ground floor", "Upper floor", "Top
   floor") and a hidden room's name is not in the player file at all. The page still scans every player render for the names of hidden
@@ -556,7 +576,7 @@ fails and nobody is known, nothing is purged.
     `gm-page.test.mjs` (S5e, S5g-S5j) and `gm-maps.e2e.mjs` (a marker moved reaching the iPad).
   - **`ball` in the GM state** (GM-only, never on the display): `{ site, t, floor: <level> | "all", lens, crew: { <pc id>: room }, pins: { <table clock id>: room }, open?, dawn? }`.
     It belongs to the site named in `site`: another site's `ball` reads as empty and the first write replaces it whole. `crew` and `pins`
-    are written with a replace patch, so a removed key goes (`open` is M3's and is kept as it is; `dawn` is written by the False dawn button as `{ at }`, set by a replace of the whole `ball` like the rest, and kept by every other write). Checks:
+    are written with a replace patch, so a removed key goes (`open` is the list of rooms opened alone for the players (M4 step 5, "Open one room" above), written only by that action and kept as it is by every other write; `dawn` is written by the False dawn button as `{ at }`, set by a replace of the whole `ball` like the rest, and kept by every other write). Checks:
     `gm-page.test.mjs` (S5) and `gm-run.e2e.mjs` (a real Worker and browser: floors, midnight, disguise, PC, pin, reload, and the iPad payload).
 - **State.** The GM state document holds `con` (the console state: `live` controls, `owed`, `struck`, `used`), `loc`
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON
@@ -595,7 +615,7 @@ fails and nobody is known, nothing is purged.
 
 ## The kits (`app/kits.json`, `npm run kits`)
 
-The design system's two kits are vendored: the map kit in `app/maps/map-kit.js` (`B68Map`, 0.7.1) and the figure kit in
+The design system's two kits are vendored: the map kit in `app/maps/map-kit.js` (`B68Map`, 0.9.0: single-room reveal, `room:<name>`) and the figure kit in
 `app/figures/figure-kit.js` (`B68Figure`, 3.0.1, which carries the arm blend `tools/ambient/motion.js` uses, so the app no longer patches it). `app/kits.json` records each one's file, version, size, sha256, where it came from
 and when; `npm run kits` prints it and says whether the files still match. To update one, download the kit from the design system
 (or build it) and run `node scripts/kits.mjs maps <map-kit.js> --source "<where it came from>"` (or `figures`): it checks the file

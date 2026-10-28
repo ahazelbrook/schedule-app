@@ -14,6 +14,9 @@
 //   (h) the location glance's one-sentence plan (it names the target room and its locks) is GM only: it is in no player summary,
 //       and the page reads it in the glance card alone.
 //   (m) the players' tokens (M3): crew markers and visible pinned clocks on the player copy, in shown rooms only, behind one gate that fails closed.
+//   (n) single rooms (M4 step 5, map kit 0.9): a room opened on its own, alone in a closed band or on top of a band, shows that room and no
+//       hidden room's name, tint, wall, door or fixture; the player copy is renumbered 1..k so it never says how many rooms are shut; the
+//       markers follow the same rule as the kit (band OR own entry), keyed on the room's name.
 //   (i) the chase strip (the Chase panel): a hidden opposing clock, the roll lines and GM notes never reach the svg sent to the iPad,
 //       over a fuzzed set of invented chases, and the page sends a chase only through chaseDisplay (map kit 0.6's B68Map.chase; until
 //       the vendored kit has it, checks/runtime/fixtures/chase-kit-stub.js stands in).
@@ -791,6 +794,154 @@ await test('(m) the real kit, 30 invented rolls at four reveals: markers appear 
   if (bad.length) throw new Error(bad.length + ' problems: ' + bad.slice(0, 4).join(' ; '));
   if (n < 100 || drawn < 100) throw new Error('only ' + n + ' copies and ' + drawn + ' markers: the check is not testing anything');
   console.log('     ' + n + ' player copies, ' + drawn + ' markers drawn');
+});
+
+/* ---------- (n) single rooms (M4 step 5; map kit 0.9 "room:<name>" reveal entries) ---------- */
+// An invented site made of the kit's own catalogue room names, so the kit really draws every room (floor tint, walls, doors, fixtures).
+// Each negative case runs next to a positive control in the same setup: the opened room IS on the copy.
+const RM_ROLL = { name: 'Invented Pelican', district: 'Nowhere', target: 'Casino', targetRoom: 'Luxury penthouse', targetBand: 'secure',
+  physThreatName: 'Old Mags', socThreatName: 'Mr Vane', watcher: 'Tilly Frost, night porter',
+  rooms: [{ name: 'Showroom', band: 'public' }, { name: 'Cocktail lounge', band: 'public' }, { name: 'Security control room', band: 'working' },
+    { name: 'Underground counting room', band: 'working' }, { name: 'Private card rooms', band: 'controlled' }, { name: 'Luxury penthouse', band: 'secure', isTarget: true }],
+  vectors: [], skips: [] };
+const RM_NAMES = RM_ROLL.rooms.map((r) => r.name.toLowerCase());
+const RM_MAP = (extra) => ({ layer: 'player', view: 'iso', theme: 'rulebook', reveal: { public: true }, ...(extra || {}) });
+const roomIds = (svg) => [...new Set((String(svg).match(/data-room="r(\d+)"/g) || []).map((s) => +s.slice(12, -1)))].sort((a, b) => a - b);
+const namesIn = (svg) => { const t = GP.svgText(svg), src = String(svg).toLowerCase(); return { text: RM_NAMES.filter((n) => t.includes(n)), source: RM_NAMES.filter((n) => src.includes(n)) }; };
+const knownCount = (map) => { const e = GP.revealEntries(map); return RM_ROLL.rooms.filter((r) => GP.roomShown(r, e)).length; };
+
+await test('(n) the one rule: a room is shown when its band is revealed OR it has its own room entry; open names count only on the player layer; junk means no rooms', () => {
+  const room = { name: 'Private card rooms', band: 'controlled' };
+  assertEq([GP.roomShown(room, ['public']), GP.roomShown(room, ['public', 'controlled']), GP.roomShown(room, ['public', 'room:Private card rooms'])], [false, true, true], 'band, entry, neither');
+  assertEq([GP.roomShown(room, ['public', 'room:private card rooms']), GP.roomShown(room, ['public', 'room:Private card']), GP.roomShown(room, ['room:Private card rooms2'])], [false, false, false], 'the entry is the exact name');
+  assertEq([GP.roomShown(null, ['public']), GP.roomShown(room, null), GP.roomShown({ name: 'X' }, ['public'])], [false, false, false], 'not a room, not a list');
+  assertEq(GP.revealEntries({ layer: 'player', reveal: { public: true, working: true }, open: ['Showroom', 'Showroom', 7, '', null, 'Private card rooms'] }), ['public', 'working', 'room:Showroom', 'room:Private card rooms'], 'bands then rooms; duplicates and junk dropped');
+  assertEq(GP.revealEntries({ layer: 'gm', reveal: { public: true, working: true }, open: ['Private card rooms'] }), ['public'], 'the GM layer reveals nothing beyond public, rooms included');
+  assertEq([GP.revealEntries({ layer: 'player', reveal: { public: true } }), GP.revealEntries({ layer: 'player', reveal: { public: true }, open: 'Showroom' }), GP.revealEntries({ layer: 'player', reveal: { public: true }, open: { 0: 'Showroom' } })], [['public'], ['public'], ['public']], 'an absent or malformed field is no rooms');
+  assertEq([GP.revealList({ layer: 'player', reveal: { public: true }, open: ['Private card rooms'] }), GP.entryRooms(['public', 'room:A', 'room:B c']), GP.entryBands(['public', 'room:A', 'working'])], [['public'], ['A', 'B c'], ['public', 'working']], 'revealList stays bands only (the street text and the score scene use it)');
+  const o = GP.mapOpts({ view: 'iso', theme: 'rulebook', open: ['Private card rooms'] }, 'player', ['public'], GP.IPAD_MAP);
+  assertEq(o.reveal, ['public', 'room:Private card rooms'], 'mapOpts hands the kit the room entries beside the bands');
+  assertEq(GP.mapOpts({ view: 'iso', theme: 'rulebook', open: ['Private card rooms'] }, 'gm', ['public'], GP.IPAD_MAP).reveal, ['public'], 'not on the GM layer');
+  assertEq(GP.mapOpts({ view: 'iso', theme: 'rulebook' }, 'player', ['public'], GP.IPAD_MAP).reveal, ['public'], 'no field, the same list as ever');
+});
+
+await test('(n) a room opened alone in a closed band: that room is on the copy (positive control), no hidden room\'s name, tint, wall, door or fixture is, and the rooms are numbered 1..k', async () => {
+  let n = 0;
+  for (const view of GP.VIEWS.filter((v) => v !== 'street')) for (const theme of ['rulebook', 'blueprint', 'plate']) for (const open of [['Private card rooms'], ['Luxury penthouse'], ['Underground counting room']]) {
+    const map = RM_MAP({ view, theme, open }), want = open[0].toLowerCase();
+    const calls = [], spy = (r, o) => { calls.push(o); return mapRender(r, o); };
+    const d = GP.playerDisplay(RM_ROLL, map, spy);
+    if (calls.length !== 1 || calls[0].layout !== 'ipad' || JSON.stringify(calls[0].reveal) !== JSON.stringify(['public', 'room:' + open[0]])) throw new Error('the kit was not handed the room entry: ' + JSON.stringify(calls.map((c) => c.reveal)));
+    assertEq(d.reveal, ['public', 'room:' + open[0]], 'the display\'s reveal');
+    const seen = namesIn(d.svg), where = view + '/' + theme + '/' + open[0];
+    if (!seen.text.includes(want)) throw new Error(where + ': positive control: the opened room is not on the copy');
+    for (const nm of RM_NAMES) if (!['showroom', 'cocktail lounge', want].includes(nm) && (seen.text.includes(nm) || seen.source.includes(nm))) throw new Error(where + ': the copy holds the hidden room "' + nm + '"');
+    for (const s of [RM_ROLL.physThreatName, RM_ROLL.socThreatName, 'Tilly Frost']) if (GP.svgText(d.svg).includes(s.toLowerCase())) throw new Error(where + ': prints ' + s);
+    // numbers: the crew knows k rooms and the copy numbers them r0..r(k-1); a gap, or a number above k, would say how many are shut
+    const k = knownCount(map), ids = roomIds(d.svg);
+    if (k !== 3) throw new Error('self-test: three rooms are known');
+    if (!ids.length || ids.some((i) => i >= k)) throw new Error(where + ': a data-room id above k=' + k + ': ' + ids.join(','));
+    if (ids.length < 3) throw new Error(where + ': positive control: all three known rooms are numbered (' + ids.join(',') + ')');
+    if (GP.leaks(d.svg, RM_ROLL, GP.revealEntries(map)).length) throw new Error(where + ': the page\'s own scan finds a leak');
+    checkSvg(d.svg);
+    n++;
+  }
+  if (n < 30) throw new Error('only ' + n + ' copies checked');
+  // the same room opened alone is a different copy from the band-only copy, and the GM copy still has every room and the book's numbers
+  const bare = GP.playerDisplay(RM_ROLL, RM_MAP(), mapRender), one = GP.playerDisplay(RM_ROLL, RM_MAP({ open: ['Private card rooms'] }), mapRender);
+  if (one.svg === bare.svg || roomIds(bare.svg).join() !== '0,1') throw new Error('opening a room changed nothing, or the band-only copy is not r0,r1');
+  const gm = mapRender(RM_ROLL, { view: 'iso', layer: 'gm', reveal: ['public'], layout: 'ipad' }).svg;
+  if (roomIds(gm).join() !== '0,1,2,3,4,5' || namesIn(gm).text.length !== 6) throw new Error('self-test: the GM copy should have all six rooms, numbered as the book numbers them');
+});
+
+await test('(n) a room opened on top of a band: the band and that room show, the rest does not; ids stay below k, and the caption names only what is open', async () => {
+  const map = RM_MAP({ reveal: { public: true, working: true }, open: ['Private card rooms'] });
+  // the street view is the public street whatever is open (kit 0.9): it must not name a shut room, and it is not asked to show the opened one
+  const street = GP.playerDisplay(RM_ROLL, { ...map, view: 'street' }, mapRender);
+  for (const nm of ['security control room', 'underground counting room', 'private card rooms', 'luxury penthouse']) if (namesIn(street.svg).text.includes(nm) || namesIn(street.svg).source.includes(nm)) throw new Error('street: names "' + nm + '"');
+  for (const view of GP.VIEWS.filter((v) => v !== 'street')) {
+    const d = GP.playerDisplay(RM_ROLL, { ...map, view }, mapRender), seen = namesIn(d.svg);
+    for (const nm of ['showroom', 'cocktail lounge', 'security control room', 'underground counting room', 'private card rooms']) if (!seen.text.includes(nm)) throw new Error(view + ': positive control: "' + nm + '" should be on the copy');
+    if (seen.text.includes('luxury penthouse') || seen.source.includes('luxury penthouse')) throw new Error(view + ': the secure band\'s room is on the copy');
+    const k = knownCount(map), ids = roomIds(d.svg);
+    if (k !== 5 || ids.some((i) => i >= k)) throw new Error(view + ': ids ' + ids.join(',') + ' for k=' + k);
+    assertEq(d.reveal, ['public', 'working', 'room:Private card rooms']);
+    assertEq(d.caption, 'Nowhere · surveyed: public, working + Private card rooms');
+    checkSvg(d.svg);
+  }
+  // the target opened on its own is the GM's call: it draws, and the page's scan does not take its own name for a leak
+  const t = GP.playerDisplay(RM_ROLL, RM_MAP({ open: ['Luxury penthouse'] }), mapRender);
+  if (!namesIn(t.svg).text.includes('luxury penthouse')) throw new Error('the target opened alone is not drawn (refused as a leak?)');
+  assertEq(GP.hiddenNames(RM_ROLL, ['public', 'room:Luxury penthouse']).includes('luxury penthouse'), false, 'an opened target is not a hidden name');
+  assertEq(GP.hiddenNames(RM_ROLL, ['public']).includes('luxury penthouse'), true, 'positive control: a shut target is');
+  assertEq(GP.hiddenNames(RM_ROLL, ['public', 'room:Private card rooms']).includes('private card rooms'), false, 'an opened room is not a hidden name');
+  assertEq(GP.hiddenNames(RM_ROLL, ['public', 'room:Private card rooms']).includes('security control room'), true, 'its sibling in the same band is still hidden');
+  // a name that is no room of the roll opens nothing (the kit names it in warnings) and leaks nothing
+  const ghost = GP.playerDisplay(RM_ROLL, RM_MAP({ open: ['No such room'] }), mapRender);
+  assertEq(namesIn(ghost.svg).text, ['showroom', 'cocktail lounge'], 'a stale name opens nothing');
+});
+
+await test('(n) a hidden room cannot be reached by the count: 1..k numbering for every combination of band and single room, over 40 rolls of the real generator', async () => {
+  const req = createRequire(import.meta.url), LOC = req(path.join(ROOT, 'app', 'gm', 'location.js'));
+  const pk = JSON.parse(read(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'location-pack.json')));
+  let n = 0;
+  const bad = [];
+  for (let s = 1; s <= 40; s++) {
+    const roll = LOC.generate(pk.body || pk, {}, { seed: s * 104729 });
+    const names = [...new Set(roll.rooms.map((r) => r.name))];
+    const open = [names[(s * 3) % names.length], names[(s * 5 + 1) % names.length]].filter((x, i, a) => a.indexOf(x) === i);
+    for (const reveal of [{ public: true }, { public: true, working: true }]) for (const o of [[open[0]], open]) {
+      const map = { layer: 'player', view: ['iso', 'plan', 'rings', 'section'][s % 4], theme: 'rulebook', reveal, open: o }, E = GP.revealEntries(map);
+      let d; try { d = GP.playerDisplay(roll, map, mapRender); } catch (e) { bad.push(s + ': ' + e.message); continue; }
+      const k = new Set(roll.rooms.filter((r) => GP.roomShown(r, E)).map((r) => r.name)).size, ids = roomIds(d.svg);
+      // a room the kit draws without furniture has no data-room: the ids are a subset of 0..k-1, never above
+      if (ids.some((i) => i >= roll.rooms.filter((r) => GP.roomShown(r, E)).length)) bad.push(s + ' ' + E.join('|') + ': id above k (' + ids.join(',') + ', k=' + k + ')');
+      const text = GP.svgText(d.svg), src = d.svg.toLowerCase();
+      for (const r of roll.rooms) if (!GP.roomShown(r, E) && !roll.rooms.some((x) => x.name === r.name && GP.roomShown(x, E)) && !GP.LEVEL_TITLES.includes(r.name.toLowerCase()) && (text.includes(r.name.toLowerCase()) && r.name.length > 5)) bad.push(s + ': the hidden "' + r.name + '" is on the copy');
+      if (GP.leaks(d.svg, roll, E).length) bad.push(s + ' ' + E.join('|') + ': leaks');
+      if (!o.every((x) => text.includes(x.toLowerCase()))) bad.push(s + ': an opened room is not on the copy');
+      void src; n++;
+    }
+  }
+  if (bad.length) throw new Error(bad.length + ' problems: ' + bad.slice(0, 4).join(' ; '));
+  if (n < 150) throw new Error('only ' + n + ' copies');
+  console.log('     ' + n + ' player copies with single rooms');
+});
+
+await test('(n) markers follow the kit\'s rule, keyed on the room\'s NAME: a PC in a room opened alone is drawn; a PC in an unopened sibling is not (a positive control beside each)', async () => {
+  const pcs = [{ id: 'pc1', name: 'Cass Fenn' }, { id: 'pc2', name: 'Dov Ketch' }];
+  const E = ['public', 'room:Private card rooms'];
+  const shown = RM_ROLL.rooms.filter((r) => GP.roomShown(r, E)).map((r) => r.name);
+  assertEq(shown, ['Showroom', 'Cocktail lounge', 'Private card rooms'], 'the shown rooms are the band and the opened room');
+  const tokens = GP.playerTokens({ crew: { pc1: 'Private card rooms', pc2: 'Luxury penthouse' }, pins: {} }, shown, [], pcs);
+  assertEq(tokens.map((t) => t.room), ['Private card rooms'], 'the builder keeps the PC in the opened room and drops the one in a room that is shut');
+  const scr = GP.tokenScreen(tokens, RM_ROLL, E, []);
+  assertEq(scr.tokens.map((t) => t.room), ['Private card rooms'], 'the screen keeps it');
+  // forced past the builder: the screen drops a marker in an unopened sibling of the opened room's band, and keeps the one in the opened room
+  const forced = ['Private card rooms', 'Security control room', 'Luxury penthouse'].map((room, i) => ({ room, label: i ? 'Dov Ketch' : 'Cass Fenn', svg: GP.runTokenSvg({ pills: [{ t: i ? 'DK' : 'CF', c: '#111111' }] }) }));
+  assertEq(GP.tokenScreen(forced, RM_ROLL, E, []).tokens.map((t) => t.room), ['Private card rooms'], 'only the opened room keeps its marker');
+  assertEq(GP.tokenScreen(forced, RM_ROLL, ['public', 'controlled'], []).tokens.map((t) => t.room), ['Private card rooms'], 'positive control: the band does the same');
+  assertEq(GP.tokenScreen(forced, RM_ROLL, ['public'], []).tokens, [], 'and with neither, none is kept');
+  // the drawn copy
+  const mk = (open, tk) => GP.playerDisplay(RM_ROLL, RM_MAP({ open }), mapRender, tk);
+  const d = mk(['Private card rooms'], { tokens: tokens, hide: [] });
+  if (d.tokens !== 1 || tokCount(d.svg) !== 1 || !GP.svgText(d.svg).includes('cass fenn')) throw new Error('the marker in the opened room is not drawn (' + d.tokens + ', ' + tokCount(d.svg) + ')');
+  const f = mk(['Private card rooms'], { tokens: forced, hide: [] });
+  if (f.tokens !== 1 || tokCount(f.svg) !== 1 || /dov ketch/i.test(GP.svgText(f.svg))) throw new Error('a marker in a sibling that is not open was drawn');
+  const none = mk([], { tokens: forced, hide: [] });
+  if (none.tokens !== 0 || tokCount(none.svg) !== 0) throw new Error('with no room open, a marker in a closed band was drawn');
+  // a hidden name in an opened room's marker is still refused: the opened room's own name is not a secret, a sibling's is
+  const sib = [{ room: 'Private card rooms', label: 'Security control room', svg: GP.runTokenSvg({ pills: [{ t: 'SC', c: '#111111' }] }) }];
+  const own = [{ room: 'Private card rooms', label: 'Private card rooms', svg: GP.runTokenSvg({ pills: [{ t: 'PC', c: '#111111' }] }) }];
+  if (mk(['Private card rooms'], { tokens: sib, hide: [] }).tokens !== 0) throw new Error('a sibling\'s name on a marker went out');
+  if (mk(['Private card rooms'], { tokens: own, hide: [] }).tokens !== 1) throw new Error('the opened room\'s own name is not a secret');
+  // the page source: one rule everywhere
+  const src = read(path.join(ROOT, 'app', 'gm-page.js'));
+  for (const fn of ['hiddenNames', 'tokenHidden', 'tokenScreen', 'playerTokenSet']) {
+    const from = src.indexOf('function ' + fn + '('); const body = src.slice(from, src.indexOf('\n  }\n', from)).replace(/\/\*[\s\S]*?\*\//g, '');
+    if (!/roomShown\(/.test(body)) throw new Error(fn + ' no longer decides "shown" with roomShown');
+    if (/reveal\.indexOf\((r|room)\.band\)/.test(body)) throw new Error(fn + ' still tests a band alone');
+  }
 });
 
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
