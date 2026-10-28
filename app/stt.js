@@ -17,7 +17,10 @@
 
    B68Stt.attach(container, { gm })   gm = window.claude.gm (stt, patchStt, sttToken, addTranscript) -> { destroy, state, feed }
      feed(part)  the display poll's transcriber part { want, session } (null: that answer had none, ask GET /api/gm/stt yourself)
-   Pure: downsample(f32, inRate, outRate) -> Int16Array · runsOf(words) · makeMerger(emit) · lineId() · DG_URL */
+   Pure: downsample(f32, inRate, outRate) -> Int16Array · runsOf(words) -> runs with their words · makeMerger(emit, clock, cue) · lineId() · DG_URL
+   makeMerger(emit, clock, cue): cue is B68Cue (display bundle: cue.js loads first). A line closes after 4 s quiet or 20 s open, as before; a line holding a cue closes
+   1 s after its last run (any speaker label joins it inside that second), is cut at the cue by Deepgram's words, and is emitted with cue: true; a bare
+   "Blade," waits 2 s of audio for the command; the line after a cued line is emitted at once. emit gets { speaker, text, at, conn, cue?, urgent? }. */
 (function (root, factory) {
   'use strict';
   var api = factory(root);
@@ -27,13 +30,16 @@
   'use strict';
 
   var DG_PARAMS = ['model=nova-3', 'language=en', 'diarize=true', 'smart_format=true', 'punctuate=true', 'interim_results=false',
-    'endpointing=300', 'encoding=linear16', 'sample_rate=16000', 'channels=1'];
+    'endpointing=300', 'keyterm=Blade', 'encoding=linear16', 'sample_rate=16000', 'channels=1'];
   var DG_URL = 'wss://api.deepgram.com/v1/listen?' + DG_PARAMS.join('&');
   var RATE = 16000;
   /* poll: the fallback's own GET (only while the display answers carry no transcriber part). status: how often the iPad's report is
      considered while the mic is open (the GM page calls it stale after 40 s); idleStatus: the report that says "still here" when it
      is not listening and the page is visible (a change of state is always reported at once); a hidden page reports nothing. */
-  var T = { poll: 4000, flush: 3000, status: 10000, idleStatus: 60000, keepalive: 4000, tick: 1000, stopGrace: 3000, maxSession: 6 * 3600 * 1000 };
+  var T = { poll: 4000, flush: 3000, status: 10000, idleStatus: 60000, keepalive: 4000, tick: 250, stopGrace: 3000, maxSession: 6 * 3600 * 1000 };
+  /* the cue (design "the cue and the phones" 1.2, 1.4): a line holding a cue takes any run within CUE_TAIL_MS of the last, then goes;
+     a line ending in a bare wake word waits ARM_S seconds of audio for the command, whatever the speaker label; the line after a cued line goes at once */
+  var CUE_TAIL_MS = 1000, ARM_S = 2, AFTER_CUE_MS = 20000, SHORT_RUN = 8;
   var MERGE_GAP_S = 4, IDLE_CLOSE_MS = 4000, MAX_OPEN_MS = 20000, MAX_LINE = 700, MAX_QUEUE = 3000, MAX_BUFFER = 240, BATCH = 50;
   var BACKOFF = [1000, 2000, 5000, 10000];
   var SCHEMES = ['bearer', 'token'];          /* how the token rides the WebSocket handshake: Deepgram's subprotocol pair */
@@ -58,28 +64,115 @@
     (words || []).forEach(function (w) {
       var t = String(w.punctuated_word || w.word || '').trim(); if (!t) return;
       var sp = typeof w.speaker === 'number' ? w.speaker : null;
-      if (!cur || cur.speaker !== sp) { cur = { speaker: sp, parts: [t], start: +w.start || 0, end: +w.end || 0 }; runs.push(cur); }
+      var ws = +w.start || 0, we = +w.end || 0;
+      if (!cur || cur.speaker !== sp) { cur = { speaker: sp, parts: [t], words: [], start: ws, end: we }; runs.push(cur); }
       else { cur.parts.push(t); cur.end = +w.end || cur.end; }
+      cur.words.push({ t: t, start: ws, end: we });
     });
     if (!runs.length && fallback) return [{ speaker: null, text: String(fallback).trim(), start: 0, end: 0 }];
-    return runs.map(function (r) { return { speaker: r.speaker, text: r.parts.join(' '), start: r.start, end: r.end }; });
+    return runs.map(function (r) { return { speaker: r.speaker, text: r.parts.join(' '), start: r.start, end: r.end, words: r.words }; });
   }
   var idn = 0;
   function lineId() { idn = (idn + 1) % 1679616; return 'l' + Date.now().toString(36) + idn.toString(36) + Math.floor(Math.random() * 46656).toString(36); }
-  /* runs -> lines: same speaker, same connection, within MERGE_GAP_S of audio -> one line. emit(line) gets { speaker, text, at, conn } */
-  function makeMerger(emit, clock) {
-    var open = null, now = clock || function () { return Date.now(); };
-    function flush() { if (open) { var o = open; open = null; emit({ speaker: o.speaker, text: o.text, at: o.at, conn: o.conn }); } }
+  /* a run's words, each with its own speaker label and its own wall time (at is the run's start): [{ t, start, end, speaker, at }].
+     A run without words (a fallback transcript, a test) is cut at its spaces, the times spread evenly. */
+  function wordsOf(run, at) {
+    var list = run.words && run.words.length ? run.words : null;
+    if (!list) {
+      var parts = String(run.text || '').split(/\s+/).filter(Boolean), span = ((+run.end || 0) - (+run.start || 0)) / (parts.length || 1);
+      list = parts.map(function (p, i) { return { t: p, start: (+run.start || 0) + i * span, end: (+run.start || 0) + (i + 1) * span }; });
+    }
+    return list.map(function (w) { return { t: w.t, start: w.start, end: w.end, speaker: run.speaker, at: (+at || 0) + (w.start - (+run.start || 0)) * 1000 }; });
+  }
+  function textOfWords(ws) { return ws.map(function (w) { return w.t; }).join(' '); }
+  /* the word whose span holds the character offset idx of textOfWords(ws) (not only one that starts exactly there) */
+  function wordAt(ws, idx) {
+    var pos = 0;
+    for (var i = 0; i < ws.length; i++) { var end = pos + ws[i].t.length; if (idx <= end) return i; pos = end + 1; }
+    return Math.max(0, ws.length - 1);
+  }
+  /* cut a line's words at each cue: [{ words, kind }] with kind 'cue' | 'armed' (a bare wake word at the end) | null (no cue). cue is B68Cue's find */
+  function segmentsOf(words, cue) {
+    var f = cue && words.length ? cue.find(textOfWords(words)) : null;
+    if (!f) return [{ words: words, kind: null }];
+    var segs = [], wi = wordAt(words, f.index), rest = words;
+    if (wi > 0) { segs.push({ words: words.slice(0, wi), kind: null }); rest = words.slice(wi); f = cue.find(textOfWords(rest)) || f; }
+    for (var guard = 0; guard < 8; guard++) {
+      if (f.pending) { segs.push({ words: rest, kind: 'armed' }); return segs; }
+      var tail = rest.slice(1), g = tail.length ? cue.find(textOfWords(tail)) : null, k = g ? wordAt(tail, g.index) : -1;
+      if (!g || k < 1) { segs.push({ words: rest, kind: 'cue' }); return segs; }      /* a second cue must start at least two words in */
+      segs.push({ words: rest.slice(0, k + 1), kind: 'cue' });
+      rest = rest.slice(k + 1); f = cue.find(textOfWords(rest));
+      if (!f) { segs.push({ words: rest, kind: null }); return segs; }
+    }
+    segs.push({ words: rest, kind: 'cue' });
+    return segs;
+  }
+  /* runs -> lines: same speaker, same connection, within MERGE_GAP_S of audio -> one line. emit(line) gets { speaker, text, at, conn },
+     plus cue: true on a line that holds a cue and urgent: true on a line to post at once (a cued line, and the one straight after it).
+     cue: B68Cue (its find). Without it nothing below the plain merge runs.
+     The cue (design 1.4): after each run is added the whole open line is checked, and cut by Deepgram's words at the cue (the words before
+     close the line, the cue starts a new one). A line ending in a bare wake word arms for ARM_S seconds of audio: the next run starting within that joins it, whatever its label.
+     A line holding a cue takes a run within CUE_TAIL_MS of the last, whatever its label, then closes at once; with none it closes when
+     tick() sees CUE_TAIL_MS pass. Nothing here waits for speech_final. */
+  function makeMerger(emit, clock, cue) {
+    var open = null, now = clock || function () { return Date.now(); }, afterUntil = -1;
+    function lineOf(words, conn, t) {
+      return { words: words, speaker: words[0].speaker, text: textOfWords(words), end: words[words.length - 1].end, conn: conn, at: words[0].at, opened: t, updated: t, cue: false, armed: false };
+    }
+    function out(l, isCue, urgent) {
+      var o = { speaker: l.speaker, text: l.text, at: l.at, conn: l.conn };
+      if (isCue) { o.cue = true; afterUntil = now() + AFTER_CUE_MS; }
+      if (isCue || urgent) o.urgent = true;
+      emit(o);
+    }
+    function flush() { if (open) { var o = open; open = null; out(o, o.cue, false); } }
+    /* cut the open line at its cues: every part but the last goes now, the last stays open */
+    function settle(joinedCue) {
+      var segs = segmentsOf(open.words, cue), meta = open;
+      if (segs.length === 1 && !segs[0].kind && !meta.cue && !meta.armed) return;
+      var t = now();
+      for (var i = 0; i < segs.length; i++) {
+        var s = segs[i], first = i === 0 && segs.length === 1;
+        var ln = lineOf(s.words, meta.conn, first ? meta.opened : t);
+        if (first) { ln.updated = meta.updated; ln.at = meta.at; }
+        ln.cue = s.kind === 'cue'; ln.armed = s.kind === 'armed';
+        if (i < segs.length - 1) out(ln, ln.cue, false);
+        else if (ln.cue && joinedCue && segs.length === 1) { open = null; out(ln, true, false); return; }
+        else open = ln;
+      }
+    }
+    /* a run joins a cue line inside its tail: the same speaker (MAX_LINE holds), or another label only while the command is still unfinished or the run is short */
+    function cueTakes(line, run, words) {
+      if (line.speaker === run.speaker) return line.text.length + textOfWords(words).length < MAX_LINE;
+      if (words.length <= SHORT_RUN) return true;
+      var p = cue && cue.parse ? cue.parse(line.text) : null;
+      return !!(p && (p.missing === 'more' || p.pending));
+    }
     return {
       add: function (run, conn, at) {
-        var t = now();
-        if (open && open.conn === conn && open.speaker === run.speaker && run.start - open.end <= MERGE_GAP_S && open.text.length + run.text.length < MAX_LINE) {
-          open.text += ' ' + run.text; open.end = run.end; open.updated = t; return;
+        var t = now(), words = run ? wordsOf(run, at) : [], joined = false, joinedCue = false;
+        if (!words.length) return;                                 /* an empty or whitespace-only run is dropped */
+        if (open && open.conn === conn) {
+          if (open.cue) { if (t - open.updated <= CUE_TAIL_MS && cueTakes(open, run, words)) { joined = true; joinedCue = true; } }
+          else if (open.armed && run.start - open.end <= ARM_S) joined = true;       /* AUDIO time: a final lands after the words, so the wall clock would lose a long command */
+          else if (open.speaker === run.speaker && run.start - open.end <= MERGE_GAP_S && open.text.length + run.text.length < MAX_LINE) joined = true;
+        }
+        if (joined) {
+          open.words = open.words.concat(words); open.text = textOfWords(open.words); open.end = run.end; open.updated = t;
+          if (cue) settle(joinedCue);
+          return;
         }
         flush();
-        open = { speaker: run.speaker, text: run.text, end: run.end, conn: conn, at: at, opened: t, updated: t };
+        var after = t <= afterUntil; afterUntil = -1;                 /* the one line after a cue; used or not, the chance is gone */
+        open = lineOf(words, conn, t);
+        if (cue) settle(false);
+        if (open && !open.cue && !open.armed && after) { var o = open; open = null; out(o, false, true); }
       },
-      tick: function () { var t = now(); if (open && (t - open.updated >= IDLE_CLOSE_MS || t - open.opened >= MAX_OPEN_MS)) flush(); },
+      tick: function () {
+        var t = now(); if (!open) return;
+        if (open.cue ? t - open.updated > CUE_TAIL_MS || t - open.opened >= MAX_OPEN_MS : t - open.updated >= IDLE_CLOSE_MS || t - open.opened >= MAX_OPEN_MS) flush();
+      },
       flush: flush,
       open: function () { return open; }
     };
@@ -104,7 +197,7 @@
     var pill = el('div', 'stt-pill'); pill.hidden = true; pill.setAttribute('role', 'status');
     pill.appendChild(el('span', 'stt-dot')); var pillText = el('span', 'stt-text', 'Listening'); pill.appendChild(pillText);
     container.appendChild(tap); container.appendChild(pill);
-    s.merger = makeMerger(function (l) { push({ kind: 'line', speaker: l.speaker, text: l.text, at: l.at, conn: l.conn }); });
+    s.merger = makeMerger(function (l) { push({ kind: 'line', speaker: l.speaker, text: l.text, at: l.at, conn: l.conn, cue: l.cue === true, urgent: l.urgent === true }); }, null, W.B68Cue);
 
     function every(fn, ms) { var id = W.setInterval(function () { if (!s.dead) fn(); }, ms); s.timers.push(id); return id; }
     function paint() {
@@ -125,17 +218,20 @@
     /* ---- the lines out ---- */
     function push(line) {
       var text = String(line.text || '').replace(/\s+/g, ' ').trim(); if (!text && line.kind !== 'mark') return;
-      s.queue.push({ id: lineId(), session: s.session, at: new Date(line.at || Date.now()).toISOString(),
-        conn: s.conn, speaker: line.speaker === undefined ? null : line.speaker, kind: line.kind || 'line', text: text.slice(0, 2000) });
+      var item = { id: lineId(), session: s.session, at: new Date(line.at || Date.now()).toISOString(),
+        conn: s.conn, speaker: line.speaker === undefined ? null : line.speaker, kind: line.kind || 'line', text: text.slice(0, 2000) };
+      if (line.cue === true) item.cue = true;       /* a boolean, only when true (the server may not keep it: see the report) */
+      s.queue.push(item);
       if (s.queue.length > MAX_QUEUE) s.queue.splice(0, s.queue.length - MAX_QUEUE);
+      if (line.cue === true || line.urgent === true) { s.hurry = true; send(); }      /* a cued line, or the one after it, does not wait for the 3 s round */
     }
     function send() {
       if (s.posting || !s.queue.length) return;
-      var batch = s.queue.slice(0, BATCH); s.posting = true;
+      var batch = s.queue.slice(0, BATCH); s.posting = true; s.hurry = false;
       Promise.resolve().then(function () { return gm.addTranscript(batch); }).then(function () {
         var ids = {}; batch.forEach(function (l) { ids[l.id] = 1; });
         s.queue = s.queue.filter(function (l) { return !ids[l.id]; }); s.sent += batch.length;
-      }, function () { /* kept: the next round tries again */ }).then(function () { s.posting = false; });
+      }, function () { s.hurry = false; /* kept: the next round tries again */ }).then(function () { s.posting = false; if (s.hurry) send(); });
     }
 
     /* ---- the mic ---- */

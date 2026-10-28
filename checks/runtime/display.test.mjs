@@ -612,8 +612,8 @@ await test('poller: a malformed transcriber part is ignored like a missing one, 
 });
 
 /* ---------- app/stt.js: what the GM wants comes from the display poll; its own GET is only the fallback ---------- */
-function sttRig() {
-  const timers = []; let now = 0, id = 0; const base = 1.7e12;
+function sttRig(live) {
+  const timers = []; let now = 0, id = 0; const base = 1.7e12, sockets = [];
   const add = (fn, ms, every) => { timers.push({ id: ++id, at: now + ms, fn, every }); return id; };
   const drop = (i) => { const k = timers.findIndex((t) => t.id === i); if (k >= 0) timers.splice(k, 1); };
   const el = (tag) => ({ tag, className: '', textContent: '', hidden: false, kids: [], attrs: {}, listeners: {}, appendChild(c) { this.kids.push(c); return c; }, setAttribute(k, v) { this.attrs[k] = v; }, remove() {},
@@ -622,16 +622,27 @@ function sttRig() {
   class FakeDate extends Date { static now() { return base + now; } }
   const win = { document: doc, navigator: {}, Date: FakeDate, setTimeout: (f, ms) => add(f, ms, 0), setInterval: (f, ms) => add(f, ms, ms), clearTimeout: drop, clearInterval: drop, console };
   win.self = win;
+  if (live) {       /* a fake microphone and a fake Deepgram socket, so a tap really opens the stream and a Results message really reaches the merger */
+    const track = { readyState: 'live', addEventListener() {} };
+    win.navigator = { mediaDevices: { getUserMedia: () => Promise.resolve({ getAudioTracks: () => [track], getTracks: () => [track] }) } };
+    win.AudioContext = class { constructor() { this.sampleRate = 48000; this.destination = {}; this.state = 'running'; }
+      createMediaStreamSource() { return { connect() {}, disconnect() {} }; } createScriptProcessor() { return { connect() {}, disconnect() {} }; }
+      resume() { return Promise.resolve(); } close() {} };
+    win.WebSocket = class { constructor(url, protocols) { this.url = url; this.protocols = protocols; this.readyState = 0; sockets.push(this); Promise.resolve().then(() => { this.readyState = 1; if (this.onopen) this.onopen(); }); }
+      send() {} close() { this.readyState = 3; } };
+  }
+  vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'app', 'cue.js'), 'utf8'), win);          /* the display bundle loads cue.js before stt.js */
   vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'app', 'stt.js'), 'utf8'), win);
-  const calls = { stt: 0, patch: [] }, server = { want: 'off', session: '' };
+  const calls = { stt: 0, patch: [], posts: [] }, server = { want: 'off', session: '' };
   const gm = {
     stt: () => { calls.stt++; return Promise.resolve({ doc: { want: server.want, session: server.session } }); },
-    sttToken: () => Promise.reject(new Error('no token here')), addTranscript: () => Promise.resolve({ added: 0 }),
+    sttToken: () => live ? Promise.resolve({ token: 'fake-token' }) : Promise.reject(new Error('no token here')),
+    addTranscript: (batch) => { calls.posts.push({ at: now, batch: JSON.parse(JSON.stringify(batch)) }); return Promise.resolve({ added: batch.length }); },
     patchStt: (p) => { calls.patch.push(p); return Promise.resolve({}); }
   };
   const container = el('div'); const ctl = win.B68Stt.attach(container, { gm });
   const tap = container.kids[0];
-  return { ctl, gm, calls, server, doc, tap, now: () => now,
+  return { ctl, gm, calls, server, doc, tap, sockets, now: () => now,
     async advance(ms) {
       const end = now + ms;
       for (;;) {
@@ -689,6 +700,33 @@ await test('stt.js: the iPad reports its state at once on a change, then once a 
   r.ctl.feed({ seq: 2, want: 'on', session: '' }); r.tap.listeners.click[0]({ stopPropagation() {} }); await r.advance(0);   // a tap: no microphone here, so it starts and fails at once
   assert.deepEqual(r.calls.patch.slice(3).map((p) => p.status.state), ['starting', 'error'], 'a change of state is reported at once');
   assert.ok(/microphone/.test(r.calls.patch[4].status.error), r.calls.patch[4].status.error);
+  r.ctl.destroy();
+});
+
+await test('stt.js (C4b): a cue is posted within about a second of the words, and the line after it at once; an ordinary line waits for the 3 s round', async () => {
+  const r = sttRig(true); r.ctl.feed({ seq: 1, want: 'on', session: '9' });
+  r.tap.listeners.click[0]({ stopPropagation() {} }); await r.advance(10);
+  assert.equal(r.sockets.length, 1, 'the tap opened the socket'); assert.ok(/keyterm=Blade/.test(r.sockets[0].url), 'the keyterm rides the real URL');
+  assert.equal(r.ctl.state().state, 'listening');
+  const msg = (speaker, text, start) => {
+    const words = text.split(' ').map((w, i) => ({ word: w.toLowerCase().replace(/[^a-z0-9]/g, ''), punctuated_word: w, speaker, start: start + i * 0.4, end: start + i * 0.4 + 0.3 }));
+    r.sockets[0].onmessage({ data: JSON.stringify({ type: 'Results', is_final: true, channel: { alternatives: [{ transcript: text, words }] } }) });
+  };
+  const t0 = r.now();
+  msg(0, 'Okay so. Blade, make a 6 clock called Escape', 1);
+  await r.advance(0); assert.equal(r.calls.posts.length, 0, 'the cue line is held for its one-second tail, nothing posted yet');
+  await r.advance(1000); assert.equal(r.calls.posts.length, 0, 'still inside the tail (it closes after more than 1 s)');
+  await r.advance(300);
+  assert.equal(r.calls.posts.length, 1, 'posted by the cue, not by the 3 s round');
+  assert.ok(r.calls.posts[0].at - t0 <= 1500 && r.calls.posts[0].at - t0 < 3000, 'posted ' + (r.calls.posts[0].at - t0) + ' ms after the words');
+  const b = r.calls.posts[0].batch;
+  assert.deepEqual(b.map((l) => l.text), ['Okay so.', 'Blade, make a 6 clock called Escape']);
+  assert.ok(!('cue' in b[0]), 'the words before the cue are an ordinary line'); assert.strictEqual(b[1].cue, true, 'cue is a boolean true on the posted line');
+  const t1 = r.now(); msg(1, 'and mark two', 5);
+  await r.advance(0); assert.equal(r.calls.posts.length, 2, 'the line straight after a cued line goes at once'); assert.equal(r.calls.posts[1].at, t1);
+  assert.deepEqual(r.calls.posts[1].batch.map((l) => l.text), ['and mark two']); assert.ok(!('cue' in r.calls.posts[1].batch[0]));
+  msg(0, 'just talking now', 9); await r.advance(2500); assert.equal(r.calls.posts.length, 2, 'an ordinary line still waits (4 s quiet, then the 3 s round)');
+  await r.advance(8000); assert.equal(r.calls.posts.length, 3); assert.deepEqual(r.calls.posts[2].batch.map((l) => l.text), ['just talking now']);
   r.ctl.destroy();
 });
 

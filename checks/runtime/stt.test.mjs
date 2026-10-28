@@ -45,7 +45,128 @@ await test('iPad: 48 kHz float -> 16 kHz 16-bit PCM; words -> runs by speaker; s
   assert.deepEqual(ST.SCHEMES, ['bearer', 'token']);
 });
 
+/* ---------- the cue in the merger (C4b): the real app/cue.js, a fake clock, fake runs ---------- */
+const CUE = createRequire(import.meta.url)(path.join(ROOT, 'app', 'cue.js'));
+const STEP = 0.4;
+/* a run of one speaker: one word every 0.4 s from `start` s; `at` is the wall time (ms) of the run's first word */
+function runOf(speaker, text, start, at) {
+  const words = text.split(' ').map((w, i) => ({ t: w, start: start + i * STEP, end: start + i * STEP + 0.3 }));
+  return { run: { speaker, text, start, end: words[words.length - 1].end, words }, at: at === undefined ? start * 1000 : at };
+}
+function rig(cue = CUE) {
+  let t = 0; const out = [];
+  const m = ST.makeMerger((l) => out.push(Object.assign({ when: t }, l)), () => t, cue);
+  return { m, out, at: (ms) => { t = ms; }, tick: (ms) => { t = ms; m.tick(); },
+    add(speaker, text, start, ms, conn = 'c1', atWall) { if (ms !== undefined) t = ms; const r = runOf(speaker, text, start, atWall); m.add(r.run, conn, r.at); } };
+}
+await test('cue merger: a split mid-run. The words before close the open line, the cue starts a new one, each keeps its own times; the cue goes after a 1 s tail', () => {
+  const r = rig(); r.add(0, 'Right so that is the plan. Blade, make a six clock called Escape', 10, 100);
+  assert.equal(r.out.length, 1, 'the words before the cue closed at once');
+  assert.deepEqual([r.out[0].text, r.out[0].speaker, r.out[0].at, r.out[0].conn], ['Right so that is the plan.', 0, 10000, 'c1']);
+  assert.ok(!('cue' in r.out[0]) && !('urgent' in r.out[0]), 'an ordinary line: exactly as before');
+  assert.equal(r.m.open().cue, true, 'the cue is the open line');
+  r.tick(1100); assert.equal(r.out.length, 1, 'exactly 1 s after its last run it is still open');
+  r.tick(1101);
+  assert.equal(r.out.length, 2); const c = r.out[1];
+  assert.deepEqual([c.text, c.cue, c.urgent, c.when], ['Blade, make a six clock called Escape', true, true, 1101], 'emitted as soon as the tail passes, not after 4 s');
+  assert.equal(c.at, 10000 + 6 * STEP * 1000, 'the cue keeps ITS time: the 7th word started 2.4 s into the run');
+  assert.equal(r.m.open(), null);
+});
+await test('cue merger: a cue at the start of the line (no words before) makes no empty part; "Blade" followed by punctuation and numbers as smart_format writes them', () => {
+  const r = rig(); r.add(2, 'Blade, make a 6 clock called Escape', 3, 0);
+  assert.equal(r.out.length, 0); r.tick(1001);
+  assert.deepEqual(r.out.map((l) => [l.text, l.cue, l.speaker]), [['Blade, make a 6 clock called Escape', true, 2]]);
+  /* through runsOf from Deepgram's words: punctuated_word is what the text holds, so the offsets line up with the words */
+  const dg = [['okay', 'Okay.'], ['blade', 'Blade,'], ['make', 'make'], ['a', 'a'], ['6', '6'], ['clock', 'clock.']].map(([word, pw], i) => ({ word, punctuated_word: pw, speaker: 0, start: 20 + i, end: 20.5 + i }));
+  const runs = ST.runsOf(dg); assert.equal(runs.length, 1); assert.equal(runs[0].words.length, 6);
+  const q = rig(); q.m.add(runs[0], 'c1', 777000); assert.equal(q.out.length, 1);
+  assert.deepEqual([q.out[0].text, q.out[0].at], ['Okay.', 777000]);
+  q.tick(1001); assert.deepEqual([q.out[1].text, q.out[1].cue, q.out[1].at], ['Blade, make a 6 clock.', true, 778000], 'Blade starts at word 2 (1 s into the run)');
+  /* a filler before the wake word is part of the words before it */
+  const f = rig(); f.add(0, 'Hey Blade, tick Escape', 0, 0); assert.deepEqual(f.out.map((l) => l.text), ['Hey']); f.tick(1001); assert.equal(f.out[1].text, 'Blade, tick Escape');
+});
+await test('cue merger: a bare "Blade," arms for 2 s; the command under ANOTHER speaker label joins it, and the whole is cued', () => {
+  const r = rig(); r.add(0, 'Blade,', 5, 0);
+  assert.equal(r.out.length, 0); assert.equal(r.m.open().armed, true, 'armed: a wake word with nothing after it');
+  r.add(3, 'make a six clock called Escape', 6.5, 1900);               // starts 1.2 s of audio after the wake word, another label
+  assert.equal(r.out.length, 0, 'joined, not emitted'); assert.deepEqual([r.m.open().text, r.m.open().speaker, r.m.open().cue], ['Blade, make a six clock called Escape', 0, true]);
+  r.tick(2900); assert.equal(r.out.length, 0); r.tick(2901);
+  assert.deepEqual(r.out.map((l) => [l.text, l.cue, l.speaker, l.when]), [['Blade, make a six clock called Escape', true, 0, 2901]]);
+  /* a long command: the final lands 2.6 s of wall time later (it took 2.4 s to say), still joined because the arm counts AUDIO */
+  const lg = rig(); lg.add(0, 'Blade,', 5, 0); lg.add(2, 'make a six clock called Escape', 5.9, 2600);
+  assert.equal(lg.out.length, 0); assert.deepEqual([lg.m.open().text, lg.m.open().cue], ['Blade, make a six clock called Escape', true]); lg.tick(3601); assert.deepEqual(lg.out.map((l) => [l.text, l.cue]), [['Blade, make a six clock called Escape', true]]);
+  /* too late: 2.2 s of audio after the bare wake word it is an ordinary line and the next one starts a new line */
+  const s = rig(); s.add(0, 'Blade,', 5, 0); s.add(1, 'make a six clock called Escape', 7.5, 600);
+  assert.deepEqual(s.out.map((l) => [l.text, 'cue' in l]), [['Blade,', false]], 'the lapsed arm (2.2 s of audio) closed as an ordinary line');
+  /* a bare wake word that the next words do not turn into a cue stays an ordinary line */
+  const n = rig(); n.add(0, 'Blade,', 0, 0); n.add(1, 'hello there my friend', 1, 500); assert.equal(n.m.open().armed, false); assert.equal(n.m.open().cue, false);
+  n.tick(5000); assert.deepEqual(n.out.map((l) => [l.text, 'cue' in l]), [['Blade, hello there my friend', false]]);
+  /* a mishearing never arms */
+  const mis = rig(); mis.add(0, 'Blaine,', 0, 0); assert.equal(mis.m.open().armed, false);
+});
+await test('cue merger: a command split mid-way. "Blade, make a six" then "clock called escape" under another label join and go at once; the next line goes at once too', () => {
+  const r = rig(); r.add(0, 'Blade, make a six', 40, 0);
+  assert.equal(r.out.length, 0); assert.equal(r.m.open().cue, true, 'a cue as far as it goes');
+  r.add(1, 'clock called escape', 41.8, 600);
+  assert.equal(r.out.length, 1, 'joined within 1 s and closed at once'); assert.deepEqual([r.out[0].text, r.out[0].cue, r.out[0].speaker, r.out[0].when], ['Blade, make a six clock called escape', true, 0, 600]);
+  r.add(1, 'and mark two', 43, 700);
+  assert.equal(r.out.length, 2, 'the line straight after a cued line is emitted at once'); assert.deepEqual([r.out[1].text, r.out[1].urgent, 'cue' in r.out[1], r.out[1].when], ['and mark two', true, false, 700]);
+  r.add(1, 'more chat here', 44, 800); assert.equal(r.out.length, 2, 'only the ONE line after the cue; the next waits as before');
+  r.tick(5000); assert.equal(r.out.length, 3); assert.ok(!('urgent' in r.out[2]));
+  /* the tail is 1 s: a run 1.2 s after the cue line's last is a new line (and is urgent), the cue line has been emitted by the tick */
+  const q = rig(); q.add(0, 'Blade, make a six', 0, 0); q.tick(1100); q.tick(1300); assert.equal(q.out.length, 1);
+  q.add(1, 'clock called escape', 3, 1300); assert.deepEqual(q.out.map((l) => [l.text, l.cue === true, l.urgent === true]), [['Blade, make a six', true, true], ['clock called escape', false, true]]);
+  /* a different connection never joins, even inside the tail */
+  const c = rig(); c.add(0, 'Blade, make a six', 0, 0); c.add(0, 'clock called escape', 1, 300, 'c2'); assert.deepEqual(c.out.map((l) => [l.text, l.cue === true]), [['Blade, make a six', true], ['clock called escape', false]], 'the cue line went; the c2 run is its own line');
+});
+await test('cue merger: two cues in one run (and in a joined line) become two cued lines, each with its own time', () => {
+  const r = rig(); r.add(0, 'Blade, tick Escape. Blade, tick Doom', 0, 0);
+  assert.equal(r.out.length, 1, 'the first cue closed when the second began'); assert.deepEqual([r.out[0].text, r.out[0].cue, r.out[0].urgent, r.out[0].at], ['Blade, tick Escape.', true, true, 0]);
+  assert.equal(r.m.open().text, 'Blade, tick Doom'); r.tick(1001);
+  assert.deepEqual([r.out[1].text, r.out[1].cue, r.out[1].at], ['Blade, tick Doom', true, 3 * STEP * 1000]);
+  /* a second cue that arrives as the continuation: joined, split, the first goes, the second waits its own tail */
+  const j = rig(); j.add(0, 'Blade, tick Escape.', 0, 0); j.add(1, 'Blade, tick Doom', 1.5, 500);
+  assert.deepEqual(j.out.map((l) => [l.text, l.cue]), [['Blade, tick Escape.', true]]); assert.equal(j.m.open().text, 'Blade, tick Doom'); assert.equal(j.m.open().cue, true);
+  j.tick(1500); assert.equal(j.out.length, 1); j.tick(1501); assert.equal(j.out.length, 2, 'the second cue waited its own 1 s from its own run');
+  /* a wake word inside a clause is not a second cue: "make a blade clock" */
+  const k = rig(); k.add(0, 'Blade, make a blade clock called Escape', 0, 0); assert.equal(k.out.length, 0); k.tick(1001); assert.deepEqual(k.out.map((l) => l.text), ['Blade, make a blade clock called Escape']);
+});
+await test('cue merger: no cue = behaviour unchanged (same joins, same 4 s / 20 s closes, same line shape), with or without the finder', () => {
+  for (const cue of [CUE, null]) {
+    const r = rig(cue);
+    r.add(0, 'the blade is sharp', 0, 0); r.add(0, 'and so is the other one', 2, 500); r.add(1, 'sure', 3, 600); r.add(1, 'yes', 9, 700);
+    r.tick(5000);
+    assert.deepEqual(r.out.map((l) => [l.speaker, l.text, Object.keys(l).filter((k) => k !== 'when').sort().join()]), [
+      [0, 'the blade is sharp and so is the other one', 'at,conn,speaker,text'], [1, 'sure', 'at,conn,speaker,text'], [1, 'yes', 'at,conn,speaker,text']],
+    'one line cut at the speaker change; "yes" is 5.7 s of audio later so it is a new line, closed at the tick');
+  }
+  /* a line open for 20 s closes even while speech keeps coming */
+  const long = rig(); for (let i = 0; i < 6; i++) long.add(0, 'talking on and on', i * 4, i * 4000); long.tick(20000); assert.equal(long.out.length >= 1, true);
+  assert.ok(!long.out.some((l) => l.cue || l.urgent));
+});
+await test('cue merger: a cue line takes a different label only while the command is unfinished or the run is short; MAX_LINE holds; empty runs are dropped', () => {
+  const long = 'so then she said that we should really go and look at the other one now';
+  const r = rig(); r.add(0, 'Blade, tick Escape', 0, 0); r.add(1, long, 2, 900);
+  assert.deepEqual(r.out.map((l) => [l.text, l.cue === true]), [['Blade, tick Escape', true], [long, false]], 'a long sentence from another speaker is its own line (and goes at once, straight after a cue)');
+  const s = rig(); s.add(0, 'Blade, tick Escape', 0, 0); s.add(1, 'and mark two', 2, 900);
+  assert.deepEqual(s.out.map((l) => l.text), ['Blade, tick Escape and mark two'], 'a short run under another label still joins');
+  const u = rig(); u.add(0, 'Blade, make a six', 0, 0); u.add(1, long, 2, 500);
+  assert.deepEqual(u.out.map((l) => l.text), ['Blade, make a six ' + long], 'an unfinished command takes even a long continuation');
+  const m = rig(); m.add(0, 'Blade, tick Escape', 0, 0); m.add(0, 'word '.repeat(150).trim(), 2, 500);
+  assert.equal(m.out.length, 2, 'over MAX_LINE: not swallowed'); assert.equal(m.out[0].text, 'Blade, tick Escape'); assert.ok(m.out[0].cue); assert.ok(!m.out[1].cue);
+  for (const bad of [{ speaker: 0, text: ' ', start: 0, end: 0 }, { speaker: 0, text: '', start: 0, end: 0, words: [] }]) { const e = rig(); e.m.add(bad, 'c1', 0); e.add(0, 'Blade, tick Escape', 1, 0); e.m.add(bad, 'c1', 0); e.tick(1001); assert.deepEqual(e.out.map((l) => l.text), ['Blade, tick Escape']); }
+  const w = ST.runsOf([], ' '); const q = rig(); w.forEach((x) => q.m.add(x, 'c1', 0)); q.m.tick(); q.m.flush(); assert.equal(q.out.length, 0, 'a whitespace-only fallback transcript makes no line');
+});
+await test('cue merger: the DG URL carries keyterm=Blade', () => {
+  assert.ok(/[?&]keyterm=Blade(&|$)/.test(ST.DG_URL), ST.DG_URL);
+  assert.ok(/endpointing=300/.test(ST.DG_URL) && !/speech_final/.test(ST.DG_URL));
+});
+
 /* ---------- the server ---------- */
+await test('server: a posted line carrying cue: true is accepted (no 400), and the field is NOT kept (cleanLines rebuilds from fixed fields)', async () => {
+  const got = cleanLines({ lines: [L('q1', 'Blade, tick Escape', { cue: true })] });
+  assert.equal(got.length, 1); assert.equal(got[0].text, 'Blade, tick Escape'); assert.ok(!('cue' in got[0]), 'dropped by the server today: C4d and MD1b cannot read it from stored lines');
+});
 await test('server: lines are validated, stored in order with their seq, a resend is skipped, read after / tail, pruned', async () => {
   const db = await newDb();
   for (const bad of [{}, { lines: 'x' }, { lines: new Array(51).fill(L('a', 'b')) }, { lines: [L('bad id!', 'x')] }, { lines: [L('a', '')] }, { lines: [L('a', 'x', { at: 'yesterday' })] },
