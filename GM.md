@@ -926,7 +926,16 @@ A page hears of a change at once, instead of on its next poll. **The poll stays 
 - **The switch: Menu → Live sync.** On by default. It is the key `live` in the GM state (`PATCH /api/gm/state { live: false }`), so there is no migration and **no deploy is needed**, which matters on game day. Only an explicit `false` is off. It rides in answers every client already gets: `live` in the data poll (`GET /api/characters`) and in `GET /api/gm/display` (the seq-only call is unchanged).
 - **What off does.** The server closes every open socket with code 1000 when the switch flips to off (and only then, never on other GM state writes); `/api/live` answers 503 while it is off, so a page that reconnects stays on its poll; every page sees `live: false` in its next poll and goes back to the fast poll. Turned on again, pages reopen their sockets. With the switch off, or the object down, the console works exactly as it does without live sync.
 
-Checks: `checks/api/live.mjs` (every write path, the role header, the object down, the switch) and `checks/api/display-role.mjs` (real sockets under `wrangler dev`: each role hears only its kinds, the switch closes them).
+**The client half (`app/runtime/cf.js`, `B68Live`).** One socket per page, shared by whoever listens: `B68Live.on(kinds, fn)`.
+- **Opens** only after a poll answer said `live: true`, while the page is visible, online and signed in; at the same origin (`wss://<host>/api/live`). A hidden page closes it; visible again it reopens and polls at once.
+- **Phones and the GM page** (the data poll): a poke for `characters`, `campaign` or `npcs` runs the poll now. The poll is 15 s while the socket is *healthy* and 4 s otherwise. Healthy is all three: a poke or pong in the last 60 s; each own write came back as a poke within 5 s; no poll brought back a change no poke announced (judged 2 s later; the first poll after a reconnect is not judged). Failing any holds the poll at 4 s for a minute.
+- **The iPad** (`app/display-page.js`): a `display`, `ambient` or `stt` poke makes its poll run now (`poller.poke()`). Its 4 s beat, the transcriber's `want` and the 2-hour idle drop are unchanged.
+- **The GM page's cue lane**: a `cue` poke reads the transcript at once; the 2 s poll stays as the fallback.
+- **Ping** every 30 s (`ping`/`pong`); no pong in 10 s, or no hello in 10 s, closes it and reconnects on a 1, 2, 5, 10, 30 s backoff.
+- **Off.** A server close with 1000 means the switch went off: the page stays closed until a poll that started after the close says `live: true`. A close before the socket ever opened (a 503, an expired Access session: a browser cannot tell them apart) waits for its backoff step AND a fresh `live: true` answer, so it costs one connect per step, never one per poll, and shows nothing.
+- **Service worker.** A socket is not a fetch, so `sw.js` never sees it; the code ships in `runtime/cf.js`, which is in the core bundle the worker already files.
+
+Checks: `checks/api/live.mjs` (every write path, the role header, the object down, the switch) and `checks/api/display-role.mjs` (real sockets under `wrangler dev`: each role hears only its kinds, the switch closes them); `checks/runtime/adapter.test.mjs` (the client's rules with a fake WebSocket); `checks/runtime/live-clients.e2e.mjs` (real pages: latency, the 15 s poll, a killed socket, a silent socket, the switch, the iPad's beat).
 
 ## Claude at the table (the box, `app/gm/assist-panel.js`, `functions/api/gm/assist.js`)
 

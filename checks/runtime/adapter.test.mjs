@@ -116,7 +116,7 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
         .filter(([, r]) => (since ? r.updatedAt > since : !r.deleted))
         .sort((a, b) => (a[1].updatedAt < b[1].updatedAt ? 1 : -1))
         .map(([id, r]) => ({ id, doc: r.deleted ? null : clone(r.doc), updatedAt: r.updatedAt, deleted: r.deleted }));
-      return [200, { now: new Date(tick - 2000).toISOString(), docs: list, campaignUpdatedAt: s.campaign ? s.campaign.updatedAt : null, npcsUpdatedAt: s.npcsAt() }];   // like the real API: 2 s behind, so rows repeat
+      return [200, { now: new Date(tick - 2000).toISOString(), docs: list, campaignUpdatedAt: s.campaign ? s.campaign.updatedAt : null, npcsUpdatedAt: s.npcsAt(), ...(typeof s.live === 'boolean' ? { live: s.live } : {}) }];   // like the real API: 2 s behind, so rows repeat
     }
     if (p === '/api/campaign') {
       // the player rule (functions/_lib/campaign.js playerMayWrite) is the server's own; checks/api/flow.mjs and clocks.mjs
@@ -207,7 +207,7 @@ function memStorage({ broken = false } = {}) {
 }
 const read = (st, k) => { const v = st._m.get(k); return v == null ? null : JSON.parse(v); };
 
-function browser(server, user, { preset, protocol = 'https:', storage } = {}) {
+function browser(server, user, { preset, protocol = 'https:', storage, extra } = {}) {
   const fetchLog = [];
   const clicks = [];
   const listeners = {};
@@ -245,13 +245,14 @@ function browser(server, user, { preset, protocol = 'https:', storage } = {}) {
   const events = [];                                   // every b68:runtime detail, in order
   class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } }
   const win = {
-    document, fetch, setTimeout, clearTimeout, console, Blob, AbortController, location: { protocol, pathname: '/' },
+    document, fetch, setTimeout, clearTimeout, console, Blob, AbortController, location: { protocol, pathname: '/', host: 'app.test' },
     URL: { createObjectURL: (b) => { const u = 'blob:' + (++nBlob); blobs[u] = b; return u; }, revokeObjectURL: () => {} },
     CustomEvent,
     addEventListener: (t, fn) => { (winListeners[t] = winListeners[t] || []).push(fn); },
     dispatchEvent: (ev) => { if (ev.type === 'b68:runtime') events.push(clone(ev.detail)); (winListeners[ev.type] || []).forEach((fn) => fn(ev)); return true; },
   };
   if (storage) win.localStorage = storage;
+  if (extra) Object.assign(win, extra);
   /* the user can change between page loads (a reload as someone else) */
   const fire = (t) => (winListeners[t] || []).forEach((fn) => fn({ type: t }));
   win.window = win;
@@ -1477,6 +1478,207 @@ await test('status.newBuild: null while the server runs this page\'s build; the 
   const same = browser(api, { email: 'gm@x.test' }); same.win.B68_BUILD = '2026-10-17-def5678';
   await same.win.claude.use('db');
   eq(same.win.B68Runtime.status.newBuild, null, 'a page on the new build: silent');
+});
+
+/* ---------- live sync (design 2.5): the poke socket, with a fake WebSocket ---------- */
+/* A WebSocket stand-in the test drives by hand: nothing opens, answers or closes until the test says so. */
+function fakeSockets({ autoPong = true } = {}) {
+  const made = [];
+  class FakeWS {
+    constructor(url) { this.url = url; this.sent = []; this.closed = null; made.push(this); }
+    send(d) { this.sent.push(d); if (d === 'ping' && autoPong && !this.mute) setTimeout(() => this.onmessage && this.onmessage({ data: 'pong' }), 1); }
+    close(code) { this.closed = code === undefined ? 1005 : code; }
+    // test side
+    open() { this.onopen && this.onopen({}); this.onmessage && this.onmessage({ data: '{"hello":1}' }); }
+    poke(k) { this.onmessage && this.onmessage({ data: JSON.stringify({ k, t: Date.now() }) }); }
+    drop(code) { this.onclose && this.onclose({ code }); }
+  }
+  return { FakeWS, made, last: () => made[made.length - 1] };
+}
+const LIVE_KNOBS = { pingMs: 100000, pongMs: 100000, silentMs: 100000, echoMs: 80, graceMs: 80, badMs: 700, backoff: [60, 120, 300] };
+const HEALTHY_MS = 400;
+function liveBrowser(api, knobs = {}, sockOpts) {
+  const ws = fakeSockets(sockOpts);
+  const b = browser(api, { email: 'gm@x.test' }, { extra: { WebSocket: ws.FakeWS, __B68_LIVE: { ...LIVE_KNOBS, ...knobs }, __B68_HEALTHY_POLL_MS: HEALTHY_MS } });
+  const polls = () => b.fetchLog.filter((c) => /^\/api\/characters(\?|$)/.test(c.url)).length;
+  return { b, ws, polls };
+}
+async function liveUp(api, knobs, sockOpts) {
+  api.live = true;
+  const L = liveBrowser(api, knobs, sockOpts);
+  const db = await L.b.win.claude.use('db');
+  const snaps = []; const un = db.collection('characters').onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  await until(() => L.ws.made.length, 500);
+  return { ...L, db, snaps, un };
+}
+
+await test('live: no socket until a poll answer says live: true; a page with no WebSocket is untouched', async () => {
+  const api = fakeApi();
+  const L = liveBrowser(api);
+  const db = await L.b.win.claude.use('db');
+  const un = db.collection('characters').onSnapshot(() => {});
+  await sleep(POLL * 5);
+  eq(L.ws.made.length, 0, 'no live key in the answer: no socket');
+  api.live = false; await sleep(POLL * 4);
+  eq(L.ws.made.length, 0, 'live: false: no socket');
+  un();
+  const plain = browser(fakeApi(), { email: 'gm@x.test' });            // no WebSocket on the window at all
+  const d2 = await plain.win.claude.use('db'); const u2 = d2.collection('characters').onSnapshot(() => {});
+  await sleep(POLL * 3); u2();
+  ok(plain.win.B68Live && plain.win.B68Live.state().connects === 0, 'inert without WebSocket');
+});
+
+await test('live: a poll that says live: true opens the same-origin socket; a poke runs the poll at once; healthy slows the poll', async () => {
+  const api = fakeApi();
+  const { b, ws, polls, un } = await liveUp(api);
+  eq(ws.made.length, 1, 'one socket'); eq(ws.last().url, 'wss://app.test/api/live', 'same origin, wss on https');
+  ws.last().open();
+  ok(b.win.B68Live.state().healthy, 'healthy after hello');
+  await sleep(POLL * 2);                                                // the hello poll runs at once
+  const n0 = polls(); await sleep(POLL * 4);
+  ok(polls() - n0 <= 1, 'a healthy socket slows the poll to ' + HEALTHY_MS + ' ms: ' + (polls() - n0) + ' polls in ' + POLL * 4 + ' ms');
+  api.put('p', char('p'));
+  const n1 = polls(); ws.last().poke('characters');
+  await until(() => polls() > n1, 40);
+  ok(polls() > n1, 'the poke ran the poll within 40 ms');
+  ok(b.win.B68Live.state().healthy, 'a poke that announced the change keeps it healthy');
+  await sleep(LIVE_KNOBS.graceMs * 2); ok(b.win.B68Live.state().healthy, 'still healthy past the grace');
+  un();
+  ok(ws.last().closed === 1000, 'the last listener leaving closes the socket');
+});
+
+await test('live: a poke for a kind nobody holds does nothing', async () => {
+  const api = fakeApi();
+  const { ws, polls, un } = await liveUp(api);
+  ws.last().open(); await sleep(POLL * 2);
+  const n = polls(); ws.last().poke('cue'); ws.last().poke('display'); await sleep(40);
+  eq(polls(), n, 'no poll for cue or display');
+  un();
+});
+
+await test('live: a poll that brings back a change no poke announced marks the socket unhealthy, and the poll goes back to the fast beat', async () => {
+  const api = fakeApi();
+  const { b, ws, polls, un } = await liveUp(api);
+  ws.last().open(); await sleep(POLL * 2);
+  ok(b.win.B68Live.state().healthy, 'healthy first');
+  api.put('quiet', char('quiet'));                                      // a write nobody poked (a silent socket)
+  await until(() => !b.win.B68Live.state().healthy, HEALTHY_MS + 400);
+  ok(!b.win.B68Live.state().healthy, 'unhealthy within one healthy poll + grace');
+  const n = polls(); await sleep(POLL * 6);
+  ok(polls() - n >= 3, 'back on the fast beat: ' + (polls() - n) + ' polls in ' + POLL * 6 + ' ms');
+  un();
+});
+
+await test('live: the first poll after a (re)connect is not judged, and a late poke inside the grace still counts', async () => {
+  const api = fakeApi();
+  const { b, ws, un } = await liveUp(api);
+  api.put('before', char('before'));                                    // changed while the socket was still opening
+  ws.last().open();                                                     // the hello poll finds it: grace
+  await sleep(LIVE_KNOBS.graceMs * 2 + POLL * 2);
+  ok(b.win.B68Live.state().healthy, 'the reconnect poll is not judged');
+  await sleep(HEALTHY_MS);
+  api.put('late', char('late'));
+  setTimeout(() => ws.last().poke('characters'), 40);                   // arrives after the poll that already saw it
+  await sleep(HEALTHY_MS + LIVE_KNOBS.graceMs * 2 + 100);
+  ok(b.win.B68Live.state().healthy, 'a poke inside the grace announced it');
+  un();
+});
+
+await test('live: an own write whose poke does not come back in time marks the socket unhealthy; one that does keeps it healthy', async () => {
+  const api = fakeApi();
+  const { b, ws, db, un } = await liveUp(api);
+  ws.last().open(); await sleep(POLL * 2);
+  await db.collection('characters').doc('w1').set(char('w1'));
+  ws.last().poke('characters');                                         // the echo
+  await sleep(LIVE_KNOBS.echoMs * 2); ok(b.win.B68Live.state().healthy, 'echoed: healthy');
+  await db.collection('characters').doc('w2').set(char('w2'));          // no echo
+  await until(() => !b.win.B68Live.state().healthy, LIVE_KNOBS.echoMs * 3 + 100);
+  ok(!b.win.B68Live.state().healthy, 'no echo within the window: unhealthy');
+  un();
+});
+
+await test('live: a pong alone is not health, and a missed pong reconnects with the backoff', async () => {
+  const api = fakeApi();
+  const { ws, un } = await liveUp(api, { pingMs: 40, pongMs: 40, echoMs: 100000, graceMs: 100000 }, { autoPong: true });
+  ws.last().open();
+  await sleep(200);
+  eq(ws.made.length, 1, 'pongs keep the socket');
+  ok(ws.last().sent.filter((x) => x === 'ping').length >= 2, 'pings go out');
+  ws.last().mute = true;                                                // the runtime stops answering
+  await until(() => ws.made.length > 1, 600);
+  ok(ws.made.length >= 2, 'no pong: closed and reconnected');
+  un();
+});
+
+await test('live: a drop after it was open reconnects on the backoff and the poll is fast meanwhile; nothing is lost', async () => {
+  const api = fakeApi();
+  const { b, ws, polls, snaps, un } = await liveUp(api);
+  ws.last().open(); await sleep(POLL * 2);
+  ws.made[0].drop(1006);
+  ok(!b.win.B68Live.state().healthy, 'a dead socket is not healthy');
+  api.put('during', char('during'));
+  const n = polls(); await until(() => snaps.some((s) => s.docs.some((d) => d.id === 'during')), 300);
+  ok(snaps.some((s) => s.docs.some((d) => d.id === 'during')), 'the fast poll still delivered the change');
+  await until(() => ws.made.length > 1, 300);
+  eq(ws.made.length, 2, 'reconnected once');
+  un();
+});
+
+await test('live: a server close with 1000 is "off": no reconnect through the backoff, not until a poll says live: true again', async () => {
+  const api = fakeApi();
+  const { b, ws, un } = await liveUp(api);
+  ws.last().open(); await sleep(POLL);
+  api.live = false;                                                     // the GM flips the switch: the server closes every socket with 1000
+  ws.last().drop(1000);
+  await sleep(500);
+  eq(ws.made.length, 1, 'no reconnect while the switch is off (1000 is not a drop)');
+  api.live = true; await until(() => ws.made.length > 1, 600);
+  eq(ws.made.length, 2, 'reopened once a poll said live: true');
+  un();
+});
+
+await test('live: a refused upgrade (503, an Access redirect) costs one connect per backoff step, never one per poll, with no error', async () => {
+  const api = fakeApi();
+  const errors = [];
+  const { b, ws, polls, un } = await liveUp(api);
+  const t0 = Date.now();
+  // every connect closes before it opens: what a 503 or an Access redirect looks like to a page
+  const fail = () => { const w = ws.last(); if (w && !w.failed) { w.failed = true; w.drop(1006); } };
+  const iv = setInterval(fail, 5);
+  await sleep(1200);
+  clearInterval(iv);
+  const n = ws.made.length, p = polls();
+  ok(p > 12, 'the poll went on: ' + p);
+  ok(n >= 3 && n <= 6, 'connects on the 60/120/300 ms backoff: ' + n + ' in 1.2 s with ' + p + ' polls');
+  ok(b.win.B68Runtime.status.online, 'no error shown');
+  un();
+});
+
+await test('live: a hidden page closes its socket; visible again it reopens it and polls at once', async () => {
+  const api = fakeApi();
+  const { b, ws, polls, un } = await liveUp(api);
+  ws.last().open(); await sleep(POLL * 2);
+  b.document.hidden = true; b.fire('visibilitychange'); (b.listeners.visibilitychange || []).forEach((fn) => fn());
+  ok(ws.made[0].closed === 1000, 'hidden: closed');
+  eq(ws.made.length, 1, 'no new socket while hidden');
+  b.document.hidden = false; const n = polls(); (b.listeners.visibilitychange || []).forEach((fn) => fn());
+  await sleep(30);
+  eq(ws.made.length, 2, 'visible: reopened'); ok(polls() > n, 'and polled at once');
+  un();
+});
+
+await test('live: the switch going off closes the socket within one poll and the poll is fast again', async () => {
+  const api = fakeApi();
+  const { b, ws, polls, un } = await liveUp(api);
+  ws.last().open(); await sleep(POLL * 2);
+  api.live = false;
+  await until(() => ws.made[0].closed === 1000, HEALTHY_MS + 100);
+  eq(ws.made[0].closed, 1000, 'closed by the page');
+  ok(!b.win.B68Live.state().open && !b.win.B68Live.state().healthy, 'not open, not healthy');
+  const n = polls(); await sleep(POLL * 6); ok(polls() - n >= 3, 'fast beat again');
+  eq(ws.made.length, 1, 'and no reconnect');
+  un();
 });
 
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');

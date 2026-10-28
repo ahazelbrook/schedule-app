@@ -1700,6 +1700,7 @@
   function cogmStop(me) {
     var cm = me && me.cogm; if (!cm) return;
     cm.on = false; cm.uncued = false; cm.epoch++; if (cm.timer) { W.clearInterval(cm.timer); cm.timer = null; }
+    if (cm.liveOff) { try { cm.liveOff(); } catch (e) {} cm.liveOff = null; } cm.again = false;
     Object.keys(cm.working).forEach(function (k) { W.clearTimeout(cm.working[k]); if (me.assist) me.assist.removeCard(k); }); cm.working = {};
   }
   function cogmOff(me, why) {
@@ -1720,7 +1721,9 @@
       if (box.key === 'off') toast('Blade is off tonight (the cap): cues still work, but one that needs the model will not land.', true);
       cm.C.start(cm.st, r[1] && Number.isInteger(r[1].last) ? r[1].last : 0);
       cm.on = true; cm.n = 0; cm.sw.set(true);
-      cm.timer = W.setInterval(function () { cogmStep(me); }, cm.C.TIMING.poll);
+      cm.timer = W.setInterval(function () { cogmStep(me); }, cm.C.TIMING.poll);   /* the 2 s poll stays: it is the fallback when the socket is down */
+      /* live sync (design 2.5): a cue poke reads the transcript now, and once more if a read was already out when it arrived */
+      if (!cm.liveOff && W.B68Live && typeof W.B68Live.on === 'function') { try { cm.liveOff = W.B68Live.on(['cue'], function (k) { if (k !== 'cue') return; if (cm.busy) cm.again = true; else cogmStep(me); }); } catch (e) { cm.liveOff = null; } }
       toast('Co-GM is on. It acts on “Blade, …”; every card has Undo.');
     }, function (e) { cm.starting = false; if (S === me && me.cogm === cm) { cm.sw.set(false, 'Off'); toast('Could not turn Co-GM on: ' + errText(e), true); } });
   }
@@ -1743,7 +1746,7 @@
       /* uncued windows only with the second switch on, and never while one is in flight: a slow window must not hold a cue back */
       var w = cm.uncued && !cm.capped && !cm.winBusy ? C.nextWindow(cm.st, Date.now()) : null;
       if (w) { cm.winBusy = true; return cogmSend(me, w, epoch).then(function () { cm.winBusy = false; }, function () { cm.winBusy = false; }); }
-    }).then(null, function () {}).then(function () { cm.busy = false; });
+    }).then(null, function () {}).then(function () { cm.busy = false; if (cm.again) { cm.again = false; if (S === me && cm.on) cogmStep(me); } });
   }
   /* ---------- the cue lane (C4d; design 1.3 to 1.5) ---------- */
   function cogmCues(me, epoch) {
