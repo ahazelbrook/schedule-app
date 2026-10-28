@@ -82,6 +82,7 @@ try {
       if (seen.mode === 'cap') return route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: "tonight's cap is reached" }) });
       if (seen.mode === 'voice') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], spend: reply.spend, last: 30, voice: VOICE }) });
       if (seen.mode === 'stall') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [{ seat: 'mystery', at: new Date().toISOString(), text: 'Push next: invented second key.' }], updates: [], flags: ['stall'], spend: reply.spend, last: 32, stall: { kind: 'clue', offer: 'Invented: a runner bursts in with news.', why: 'Invented: the table went quiet.', at: new Date().toISOString() } }) });
+      if (seen.mode === 'meanwhile') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], spend: reply.spend, last: 33, meanwhile: { faction: 'Invented Ferrymen', cutaway: 'The ferrymen ride the tide early. Their lamps are lit before dusk.', clock: 'Invented Tide', ticks: 1, why: 'Invented: the scene moved to the quay.', at: new Date().toISOString() } }) });
       if (seen.mode === 'handout') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], spend: reply.spend, last: 40, handout: { id: seen.handoutId || 'ho-a', why: 'Invented: the table has just reached the cue.', at: new Date().toISOString() } }) });
       if (seen.mode === 'quiet') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], spend: reply.spend, last: 31 }) });
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(seen.mode === 'second' ? { ...reply, cards: [CLERK], updates: [], last: 20 } : reply) });
@@ -260,6 +261,27 @@ try {
   check(await S1.page.$(stallCard) === null, 'Clear drops the offer');
   await S1.c.close();
 
+  // ---- Meanwhile: the faction cutaway is an idea card; it suggests a tick and never makes one ----
+  await api('PATCH', '/gm/stt', { want: 'on' });
+  const Mw = await open('#gm', { mode: 'meanwhile' });
+  Mw.seen.mode = 'meanwhile';
+  const mp = Mw.page, mwSent = [];
+  mp.on('request', (rq) => { if (rq.method() !== 'GET' && /\/api\//.test(rq.url()) && !/\/gm\/assist\//.test(rq.url())) mwSent.push(rq.method() + ' ' + rq.url()); });
+  await mp.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  await mp.click('.gm-assist .as-launch, #as-launch');
+  const mwCard = '#as-list .as-card[data-seat="meanwhile"]';
+  check(await mp.waitForSelector(mwCard, { timeout: 15000 }).then(() => true, () => false), 'Meanwhile: the cutaway is a card in the box');
+  check(await mp.$eval(mwCard, (e) => e.getAttribute('data-kind')) === 'idea' && await mp.$eval(mwCard + ' .as-text', (e) => e.textContent) === 'The ferrymen ride the tide early.', 'an idea card whose headline is the cutaway\'s first sentence');
+  const mwText = await mp.textContent(mwCard);
+  check(/Invented Ferrymen/.test(mwText) && /Their lamps are lit before dusk/.test(mwText) && /Clock: Invented Tide/.test(mwText) && /\+1 \(your call\)/.test(mwText), 'with the faction, the rest of the cutaway and the clock with the suggested tick (your call)');
+  check(await mp.$('#gm-rack .gm-meanwhile') === null && await mp.$('#gm-rack .gm-stall') === null, 'and nothing of it in the Rack');
+  await shot(mp, 'p4-meanwhile-card');
+  await mp.click(mwCard + ' [data-as="fold"]');
+  await mp.click(mwCard + ' [data-as="ack"]');
+  check(await mp.$(mwCard) === null, 'Clear drops the card');
+  check(!mwSent.some((x) => /clock|campaign|display|ambient/i.test(x)), 'it suggested only: no clock, campaign, iPad or ambient write was made' + (mwSent.length ? ' (saw ' + mwSent.slice(0, 3).join(', ') + ')' : ''));
+  await Mw.c.close();
+
   // ---- Handouts: the Mystery keeper's suggestion reaches the Rack once; not again after Dismiss or Show ----
   await api('PATCH', '/gm/stt', { want: 'on' });
   const Hd = await open('#gm', { mode: 'handout' });
@@ -278,10 +300,11 @@ try {
   check(await hp.$(offerCard() + ' [data-act="show"]') !== null && await hp.$eval(offerCard() + ' [data-as="ack"]', (b) => /Dismiss/.test(b.textContent)), 'with Show and Dismiss');
   await shot(hp, 'p4-handout-card');
   check(await tickAgain(2) && await offers() === 1, 'a second tick with the same handout leaves one offer');
-  check((await api('GET', '/gm/display')).json.display.kind === 'blank' && sent.length === 0, 'nothing is on the iPad and nothing was sent to it so far');
+  check((await api('GET', '/gm/display')).json.display.kind === 'blank', 'nothing is on the iPad');
+  const sent0 = sent.length;
   await hp.click(offerCard() + ' [data-as="ack"]');
   const n1 = Hd.seen.tick.length;
-  check(await offers() === 0 && sent.length === 0 && (await api('GET', '/gm/display')).json.display.kind === 'blank', 'Dismiss drops the card and sends nothing to the iPad');
+  check(await offers() === 0 && sent.length === sent0 && (await api('GET', '/gm/display')).json.display.kind === 'blank', 'Dismiss drops the card and sends nothing to the iPad');
   check(await tickAgain(n1 + 1) && await sleep(600) === undefined && await offers() === 0, 'after Dismiss the same handout is not offered again');
   Hd.seen.handoutId = 'ho-b';
   const n2 = Hd.seen.tick.length;
@@ -394,6 +417,7 @@ try {
   await sp.click(item + ' [data-act="show"]');
   check(await until(async () => /WHAT WE KNOW/.test((await display()).text || ''), 8000), 'Screen board: Show puts the board on the iPad');
   await api('PUT', '/gm/display', { kind: 'blank' });
+  check(sentSc.some((x) => /PUT .*\/gm\/display/.test(x)) && sentSc.some((x) => /\/gm\/ambient/.test(x)), 'Screen: the listener sees what Show sends (an iPad display write and an ambient write), so the Dismiss check below is not vacuous');
   // Dismiss never sends anything: the card goes, the iPad and the ambient document are untouched
   await api('PUT', '/gm/display', { kind: 'blank' });
   const sn0 = sentSc.length;

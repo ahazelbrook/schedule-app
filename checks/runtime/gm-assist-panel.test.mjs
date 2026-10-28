@@ -745,6 +745,9 @@ await test('page cards (P4): actions run the page function, Got it runs onAck on
   assert.ok(/data-act="show"/.test(html) && /Dismiss/.test(html) && /as-tone-bad/.test(html) && /Handout/.test(html), 'buttons, label, tone and seat chip are drawn');
   assert.ok(!/<b>raw<\/b>/.test(html), 'the body is text, never markup');
   assert.equal(r.ctl.state().cards.find((c) => c.id === id).seen, false);
+  const lines = Array.from({ length: 50 }, (_, n) => 'line ' + n + ' of a long document').join('\n'), lid = r.ctl.addCard({ kind: 'idea', headline: 'Long', body: lines });
+  assert.equal(r.ctl.state().cards.find((c) => c.id === lid).body, lines, 'a body of the Worker\'s longest length (1450) is kept whole: what the GM reads is what Show sends'); assert.ok(lines.length > 1200 && lines.length <= 1450);
+  r.ctl.removeCard(lid);
   r.br.click('act', id, undefined, 'show'); await tick();
   assert.deepEqual(ran, ['show'], 'the page function ran');
   r.br.click('act', id, undefined, 'nonesuch'); r.br.click('act', 'nope', undefined, 'show'); await tick();

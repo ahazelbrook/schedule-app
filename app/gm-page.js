@@ -2206,7 +2206,7 @@
     var g = isObj(it.gate) ? it.gate : {};
     return gateOk(it) ? { text: 'Checked: clear', tone: 'ok' } : g.checked ? { text: 'Blocked', tone: 'bad' } : { text: 'Not checked', tone: 'unk' };
   }
-  function gateBullets(it) {
+  function gateBullets(it, full) {
     if (it.status !== 'ready') return [];
     var g = isObj(it.gate) ? it.gate : {}, why = [], tail = [];
     if (!gateOk(it)) {
@@ -2215,7 +2215,7 @@
       tail.push('Show asks you to confirm. Your tap decides.');
     }
     if (g.cites_bad && g.cites_bad.length) tail.push('Check these page cites: ' + g.cites_bad.join('; '));
-    return why.slice(0, 5 - tail.length).concat(tail);
+    return full ? why.concat(tail) : why.slice(0, 5 - tail.length).concat(tail);
   }
   function screenShow(id) {
     var me = S, it = screenItem(id); if (!it || it.status !== 'ready' || it.kind === 'portrait') return;
@@ -3119,6 +3119,7 @@
     var head = port ? 'Portrait: ' + (it.name || 'Unnamed') : wire ? 'Wire: ' + str(it.text).replace(/\s+/g, ' ').trim() : (SC_LABEL[it.kind] || it.kind) + (it.title ? ': ' + it.title : '');
     var chips = [gateChip(it)], bullets = [], actions = [];
     if (port && it.notes && it.notes.length) bullets.push(it.notes.join('; '));
+    var notes = bullets.slice(), all = notes.concat(gateBullets(it, true));
     bullets = bullets.concat(gateBullets(it));
     if (port) {
       if (it.added) { chips.push({ text: 'Saved (hidden)', tone: 'ok' }); bullets.push('Saved as a hidden NPC. Reveal it from the cast when you want it shown.'); }
@@ -3131,6 +3132,7 @@
     var sp = { kind: 'idea', seat: 'screen', headline: head, chips: chips, bullets: bullets.slice(0, 5), actions: actions, open: true, ackLabel: 'Dismiss',
       body: port ? str(it.description) : str(it.text), bodyLabel: port ? 'Description' : wire ? 'Wire bulletin' : 'Will show on the iPad',
       onAck: function () { if (S && S.screenItems) S.screenItems = S.screenItems.filter(function (x) { return x.id !== id; }); } };
+    if (all.length > 5 || all.some(function (x) { return x.length > 160; })) sp.more = all.map(function (x) { return '- ' + x; }).join('\n');      /* the card cuts a long verdict: the whole of it is under More, the GM's decision needs every line */
     if (port && it.svg) { sp.figKey = id + '|' + it.svg.length; sp.figure = function () { var d = W.document.createElement('div'); d.className = 'gm-screen-fig'; d.innerHTML = it.svg; return d; }; }   /* the figure kit's own drawing of the cleaned spec; it escapes its text */
     else { sp.figKey = ''; sp.figure = null; }
     return sp;
