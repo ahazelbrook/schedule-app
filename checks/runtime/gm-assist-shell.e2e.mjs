@@ -131,6 +131,20 @@ try {
     const order = await p.evaluate(() => ['.as-head', '#as-now', '#as-ask', '#as-chips', '#as-list', '#as-tools'].map((s) => document.querySelector(s).getBoundingClientRect().top));
     check(order.every((v, i) => i === 0 || v >= order[i - 1]), tag + 'the zones run header, Now, Ask, chips, feed, Tools');
     check(await p.$eval('#as-state-word', (n) => n.textContent) === 'Listening' && /\$3\.40 of \$30/.test(await p.$eval('#as-tier', (n) => n.textContent)) && (await p.$$('#as-health .as-hd')).length === 3, tag + 'the header has the state, the spend and three health dots');
+    // the header's buttons (the autopilot's Take over / Hand back, the co-GM switch when the page has one, Pin where it shows, close) all sit inside the panel and
+    // do not overlap one another, at this width and at the narrowest the panel gets (360 px, a window under 1091 px)
+    const headFit = async (label) => {
+      const r = await p.evaluate(() => {
+        const panel = document.getElementById('as-panel').getBoundingClientRect();
+        const boxes = [...document.querySelectorAll('.as-head-1 button')].filter((b) => !b.hidden && getComputedStyle(b).display !== 'none').map((b) => { const q = b.getBoundingClientRect(); return { id: b.id || b.className, l: q.left, r: q.right, t: q.top, b: q.bottom }; });
+        const out = [];
+        boxes.forEach((x, i) => { if (x.l < panel.left - 0.5 || x.r > panel.right + 0.5) out.push(x.id + ' leaves the panel'); boxes.slice(i + 1).forEach((y) => { if (x.l < y.r - 0.5 && y.l < x.r - 0.5 && x.t < y.b - 0.5 && y.t < x.b - 0.5) out.push(x.id + ' overlaps ' + y.id); }); });
+        return { ids: boxes.map((x) => x.id), out, row: Math.max(...boxes.map((x) => x.b)) - Math.min(...boxes.map((x) => x.t)) };
+      });
+      check(r.ids.includes('as-ap') && r.out.length === 0, tag + 'the header buttons fit ' + label + ': ' + r.ids.join(' ') + (r.out.length ? ' | ' + r.out.join('; ') : ''));
+    };
+    await headFit('at ' + W);
+    if (W === 1280) { await p.setViewportSize({ width: 1024, height: Hh }); await p.waitForTimeout(300); await headFit('at the 360 px minimum (window 1024)'); await p.setViewportSize({ width: W, height: Hh }); await p.waitForTimeout(300); }
     // the console is not covered
     if (W === 1280) {
       let clicked = true;

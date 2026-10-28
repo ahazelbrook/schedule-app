@@ -85,7 +85,19 @@ try {
   const crewSyncOnly = (rq) => {
     if (rq.method() !== 'PATCH' || !/\/api\/gm\/ambient$/.test(rq.url())) return false;
     let b = null; try { b = JSON.parse(rq.postData() || 'null'); } catch (_) { return false; }
-    return !!b && typeof b === 'object' && Object.keys(b).join() === 'crew' && !!b.crew && Object.keys(b.crew).every((k) => (k === 'heat' || k === 'wanted') && typeof b.crew[k] === 'number');
+    if (b && typeof b === 'object' && Object.keys(b).join() === 'crew' && !!b.crew && Object.keys(b.crew).every((k) => (k === 'heat' || k === 'wanted') && typeof b.crew[k] === 'number')) return true;
+    return autopilotOnly(b);
+  };
+  // The iPad autopilot (A2) is on by default: a clock the co-GM adds is a visible clock appearing on the table, so it lays a clock overlay over the iPad (an ambient PATCH of
+  // exactly { overlay: { auto: true, ... }, auto: true }), clears it ({ overlay: null }) and flips its AUTO flag ({ auto: true | false }). That is the autopilot, not the co-GM,
+  // and it carries an id only; any other ambient write still counts.
+  const autopilotOnly = (b) => {
+    if (!b || typeof b !== 'object') return false;
+    const keys = Object.keys(b).sort().join();
+    if (keys === 'auto') return typeof b.auto === 'boolean' || b.auto === null;
+    if (keys === 'overlay') return b.overlay === null;
+    if (keys === 'auto,overlay') return !!b.overlay && b.overlay.auto === true && b.auto === true && (b.overlay.kind === 'clock' || b.overlay.kind === 'npc') && !('name' in b.overlay);
+    return false;
   };
   page.on('request', (r) => { if (r.url().startsWith(BASE + '/api/') && !crewSyncOnly(r)) seen.requests.push(r.method() + ' ' + r.url().slice(BASE.length)); });
   page.on('dialog', (d) => { seen.dialogs.push(d.type() + ': ' + d.message()); if (d.type() === 'prompt') return d.accept(seen.promptText); return seen.accept ? d.accept() : d.dismiss(); });
@@ -381,6 +393,23 @@ try {
   await sleep(800);
   check(await page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'false') && /stays off/.test(await toastText()), 'cap: a tap cannot turn it back on while the box is off, and says why ("stays off")');
   seen.capped = false;
+
+  // ============ the header: the autopilot's button and the co-GM switch both fit, at the panel's narrowest (360 px, a window under 1091 px) ============
+  {
+    await page.setViewportSize({ width: 1024, height: 900 });
+    if (await page.$eval('.gm-assist', (h) => h.getAttribute('data-state')) !== 'open') { await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur()); await page.keyboard.press('a'); }
+    await sleep(500);
+    const fit = await page.evaluate(() => {
+      const panel = document.getElementById('as-panel').getBoundingClientRect();
+      const boxes = [...document.querySelectorAll('.as-head-1 button')].filter((b) => !b.hidden && getComputedStyle(b).display !== 'none').map((b) => { const q = b.getBoundingClientRect(); return { id: b.id || b.className, l: q.left, r: q.right, t: q.top, b: q.bottom }; });
+      const out = [];
+      boxes.forEach((x, i) => { if (x.l < panel.left - 0.5 || x.r > panel.right + 0.5) out.push(x.id + ' leaves the panel'); boxes.slice(i + 1).forEach((y) => { if (x.l < y.r - 0.5 && y.l < x.r - 0.5 && x.t < y.b - 0.5 && y.t < x.b - 0.5) out.push(x.id + ' overlaps ' + y.id); }); });
+      return { w: Math.round(panel.width), ids: boxes.map((x) => x.id), out };
+    });
+    check(fit.ids.includes('as-ap') && fit.ids.includes('as-cogm') && fit.out.length === 0, 'header: Take over and the co-GM switch both fit in the ' + fit.w + ' px panel: ' + fit.ids.join(' ') + (fit.out.length ? ' | ' + fit.out.join('; ') : ''));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await sleep(300);
+  }
 
   // ============ the safety ledger: what the page asked the server to write ============
   const writes = seen.requests.filter((r) => /^(PUT|POST|PATCH|DELETE) /.test(r));
