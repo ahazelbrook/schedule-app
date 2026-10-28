@@ -949,8 +949,8 @@ await test('9j2. overlays: overlayOk takes exactly the server\'s shapes and no s
   /* a text overlay is free text: refused when it names a hidden clock or a hidden NPC as a whole word, in any case (positive controls beside each) */
   const gh = P.makeGate(() => ['Vex', 'The Brass Fox', 'Mr. O\'Neil (Jr)', 'Zoë']);
   const txt = (t) => ({ overlay: { id: 'a', kind: 'text', ms: 5000, text: t } });
-  assert.equal(gh.allowsAmbient(txt('A quiet evening at the docks.')), true, 'positive control: a line naming nobody hidden');
-  assert.equal(gh.allowsAmbient(txt('Vex was seen at the docks')), false, 'a hidden name');
+  assert.equal(gh.allowsAmbient(txt('A quiet evening by the invented pier.')), true, 'positive control: a line naming nobody hidden');
+  assert.equal(gh.allowsAmbient(txt('Vex was seen by the invented pier')), false, 'a hidden name');
   assert.equal(gh.allowsAmbient(txt('the dock saw vex again')), false, 'any case');
   assert.equal(gh.allowsAmbient(txt('the brass   fox is out')), false, 'a two-word name, any run of spaces');
   assert.equal(gh.allowsAmbient(txt('"Vex," she said.')), false, 'punctuation is a boundary');

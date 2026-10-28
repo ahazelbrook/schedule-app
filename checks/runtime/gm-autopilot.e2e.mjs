@@ -215,8 +215,8 @@ try {
   check(r1 === null && !(await ovOf()), 'a text overlay naming the hidden clock is refused before it is sent');
   const r2 = await gp.evaluate(() => window.B68GmPage.showOverlay({ kind: 'text', ms: 5000, text: 'Hidden Mystery Person waits outside.' }));
   check(r2 === null && !(await ovOf()), 'and one naming the hidden NPC');
-  const r3 = await gp.evaluate(() => window.B68GmPage.showOverlay({ kind: 'text', ms: 5000, text: 'A quiet moment at the docks.' }));
-  check(!!r3 && (await ovOf()) && (await ovOf()).text === 'A quiet moment at the docks.', 'while a line naming nobody hidden goes (positive control)');
+  const r3 = await gp.evaluate(() => window.B68GmPage.showOverlay({ kind: 'text', ms: 5000, text: 'A quiet moment by the invented pier.' }));
+  check(!!r3 && (await ovOf()) && (await ovOf()).text === 'A quiet moment by the invented pier.', 'while a line naming nobody hidden goes (positive control)');
   await api('PATCH', '/gm/ambient', { overlay: null });
   check(ids.every((i) => ID_RE.test(i)) && new Set(ids).size === ids.length, 'every autopilot overlay id was opaque and different: ' + ids.join(' '));
 
