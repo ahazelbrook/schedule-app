@@ -74,9 +74,9 @@ try {
     apple: !!document.querySelector('link[rel="apple-touch-icon"]'),
   }));
   check(head.manifest && /crossorigin="use-credentials"/.test(head.manifest) && head.theme === '#14110e' && head.apple, 'manifest link, theme colour and touch icon in the page: ' + JSON.stringify(head));
-  const cached = await until(() => page.evaluate(async () => { const ks = await caches.keys(); if (!ks.length) return null; const c = await caches.open(ks[0]); return (await c.keys()).map((r) => new URL(r.url).pathname); }), 10000);
+  const cached = await until(() => page.evaluate(async () => { const ks = await caches.keys(); if (!ks.length) return null; const c = await caches.open(ks[0]); const p = (await c.keys()).map((r) => new URL(r.url).pathname); return p.includes('/display-page.js') ? p : null; }), 15000);   // install brings the core and table; /api/me saying GM brings gm and display by the page's message
   check(cached && cached.includes('/') && cached.includes('/boot.js') && cached.includes('/fonts/SpaceMono-Regular.woff2') && !cached.some((p) => p.startsWith('/api/')), 'app shell precached (' + (cached || []).length + ' files), no /api/');
-  check(cached && ['/campaign.js', '/season.js', '/gm-page.js', '/gm/console.js', '/display-page.js', '/gm.css'].every((f) => cached.includes(f)), 'the lazily loaded route bundles (app/routes.js) are precached too, though the page never asked for them');
+  check(cached && ['/campaign.js', '/season.js', '/gm-page.js', '/gm/console.js', '/display-page.js', '/gm.css'].every((f) => cached.includes(f)), 'the GM page and the display bundle (app/routes.js) are precached too, though the page never asked for them: this user is the GM, so the page asked the worker for them');
   const cachedPage = await page.evaluate(async () => { const ks = await caches.keys(); const c = await caches.open(ks[0]); const r = await c.match(location.origin + '/'); return r ? (await r.text()).slice(0, 200) : null; });
   check(cachedPage && /^<!doctype html><meta charset=utf-8><meta name=viewport /i.test(cachedPage), 'the cached page carries the Worker\'s doctype and viewport: ' + JSON.stringify((cachedPage || '').slice(0, 60)));
   check(await page.evaluate(() => document.compatMode === 'CSS1Compat' && !!document.querySelector('meta[name="viewport"]')), 'online: standards mode with a viewport meta');

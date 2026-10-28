@@ -158,12 +158,21 @@ export const PAGE_HEADERS = {
 
 export async function handlePage(res) {
   const type = res.headers.get('Content-Type') || '';
-  if (res.status !== 200 || !/^text\/html/i.test(type)) return res; // 304s, redirects, errors as they are
+  if (res.status === 304) {
+    // the browser's cached page is still current, but it must learn the build now: the service worker (app/sw.js) reads
+    // X-B68-Build off the page to tell whether the server has moved on, and a 304's headers refresh the stored ones
+    const h = new Headers(res.headers);
+    h.set('X-B68-Build', BUILD);
+    return new Response(null, { status: 304, headers: h });
+  }
+  if (res.status !== 200 || !/^text\/html/i.test(type)) return res; // redirects, errors as they are
   const body = withPageHead(await res.text());
   const headers = new Headers(res.headers);
   headers.delete('Content-Length');
   headers.set('Content-Type', 'text/html; charset=utf-8');
   for (const [k, v] of Object.entries(PAGE_HEADERS)) headers.set(k, v);
+  // X-B68-Build: the Worker's build stamp (app/routes.js), as on every API answer
+  headers.set('X-B68-Build', BUILD);
   // The ETag stays the asset's: the same file always gets the same head, so revalidation still works.
   return new Response(body, { status: 200, statusText: res.statusText, headers });
 }
