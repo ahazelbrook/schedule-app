@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PORT = Number(process.env.PORT || 8861);
+const PORT = Number(process.env.PORT || 8863);
 const BASE = 'http://127.0.0.1:' + PORT;
 const GM = 'gm@example.test';
 const SHOTS = process.env.GM_SHOTS || '';

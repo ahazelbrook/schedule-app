@@ -42,6 +42,9 @@ const CHECKS = [
   ['checks/runtime/gm-run.e2e.mjs', 'Run the site: floors, the evening clock, disguise, crew, pins (8877)'],
   ['checks/runtime/gm-score.e2e.mjs', 'the Score panel (8859)'],
   ['checks/runtime/gm-chase.e2e.mjs', 'the Chase panel and the iPad drawing its strip (8861)'],
+  ['checks/runtime/gm-assist-panel.e2e.mjs', 'the Blade panel: tab, banner, polling, Fit, Ask (8862)'],
+  ['checks/runtime/gm-assist-shell.e2e.mjs', 'the Blade side panel shell at three widths (8863)'],
+  ['checks/runtime/gm-assist-cards.e2e.mjs', 'the Blade cards: fold, Now, filters, strip, restore, light and dark (8864)'],
   ['checks/runtime/display-ambient.e2e.mjs', 'the ambient floor on the display (8871)'],
   ['checks/runtime/display-overlay.e2e.mjs', 'overlays on the display: a clock, an NPC, a line, the dawn (8874)'],
 ];
