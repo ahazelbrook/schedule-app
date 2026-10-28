@@ -1481,6 +1481,7 @@
     if (me.npcUnsub) { try { me.npcUnsub(); } catch (e) {} }
     if (me.prepTimer) { W.clearInterval(me.prepTimer); me.prepTimer = null; }
     if (me.sttTimer) { W.clearInterval(me.sttTimer); me.sttTimer = null; }
+    if (me.cogm) { cogmStop(me); me.cogm = null; }
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     S = null;
     setApp(false);
@@ -1628,7 +1629,7 @@
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
     mountAssist();
-    layout(); redrawAll(); subscribeNpcs(); checkPack();
+    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack();
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -1645,6 +1646,255 @@
     if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
     try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); },
       screen: { vocab: screenVocab, cleanSpec: screenCleanSpec }, onScreen: function (item) { if (S === me) setScreenItem(item); } }); } catch (e) { me.assist = null; }
+  }
+
+  /* ---------- the co-GM (app/gm/cogm.js, design 5.1-5.6; POST /api/gm/assist/act is its Worker side) ----------
+     The switch is in the Blade panel's header and starts OFF on every load (nothing is stored). While it is on and Listening is on, every 5 s this reads the
+     new transcript lines (after a cursor that starts at the newest line, so old talk is never replayed), and a line that matches the pre-filter sends its
+     window (at most one call every 8 s) with the table's state. What comes back is applied through the GM's own write paths:
+       clock_add   a hidden danger clock through the table's clockOps add (api.addClock); Undo takes it out if it is as it was left
+       clock_tick  one clockOps { id, filled }; Undo sets it back only while it still holds what was set
+       npc_add     a cast doc with revealed: false and the tag cogm, written as fileNpc writes one; Undo tags it undone (never a delete)
+       capture     the capture bar; Undo removes that line
+     An 'offer' (the seat was unsure, or the live table disagrees: a clock with the same name, a fill that moved, the iPad following the clocks) is a yellow card
+     with Do it. Nothing here writes a player's sheet, and nothing reaches the display or the ambient document except Reveal and show on an NPC card, which asks first
+     and goes through pushDisplay's gate. The answer's `key` is used as given; a key seen tonight is never applied twice. The answer has no health: absorb and
+     healthStep are not called. Model text (name, look, quote) is only ever set with textContent (cards) or stored as plain text. */
+  function mountCogm() {
+    var me = S, C = W.B68GmCogm, g = gmApi(), ctl = me.assist;
+    if (me.cogm) cogmStop(me);
+    me.cogm = null;
+    if (!C || !ctl || typeof ctl.cogmSwitch !== 'function' || !g || typeof g.assistAct !== 'function' || typeof g.transcript !== 'function' || typeof g.stt !== 'function') return;
+    var cm = { C: C, st: C.newState(), on: false, starting: false, busy: false, epoch: 0, timer: null, sw: null, n: 0, recs: {}, plans: {}, acts: {}, cards: {}, mine: {}, doing: {}, noted: {} };
+    cm.sw = ctl.cogmSwitch({ onChange: function (want) { cogmSet(me, want); } });
+    if (cm.sw) me.cogm = cm;
+  }
+  function cogmStop(me) {
+    var cm = me && me.cogm; if (!cm) return;
+    cm.on = false; cm.epoch++; if (cm.timer) { W.clearInterval(cm.timer); cm.timer = null; }
+  }
+  function cogmOff(me, why) {
+    var cm = me.cogm; if (!cm) return;
+    cogmStop(me);
+    if (cm.sw) cm.sw.set(false, why || '');
+  }
+  function cogmSet(me, want) {
+    var cm = me.cogm; if (!cm || S !== me) return;
+    if (!want) { cogmOff(me, ''); return; }
+    if (cm.on || cm.starting) return;
+    var g = gmApi(); cm.starting = true;
+    Promise.all([Promise.resolve().then(function () { return g.stt(); }), Promise.resolve().then(function () { return g.transcript({ tail: 1 }); })]).then(function (r) {
+      cm.starting = false;
+      if (S !== me || me.cogm !== cm) return;
+      var listening = !!(r[0] && isObj(r[0].doc) && r[0].doc.want === 'on'), box = cm.sw.box();
+      if (!listening) { cm.sw.set(false, 'Off: Listening is off'); toast('Turn Listening on first: Co-GM acts on what the table says.', true); return; }
+      if (box.key === 'off') { cm.sw.set(false, 'Off: the night’s cap is reached'); toast('Blade is off (the night’s cap), so Co-GM stays off.', true); return; }
+      cm.C.start(cm.st, r[1] && Number.isInteger(r[1].last) ? r[1].last : 0);
+      cm.on = true; cm.n = 0; cm.sw.set(true);
+      cm.timer = W.setInterval(function () { cogmStep(me); }, cm.C.TIMING.poll);
+      toast('Co-GM is on. It acts on what you say aloud; every card has Undo.');
+    }, function (e) { cm.starting = false; if (S === me && me.cogm === cm) { cm.sw.set(false, 'Off'); toast('Could not turn Co-GM on: ' + errText(e), true); } });
+  }
+  /* one poll: read, note matches, send at most one window. The box going off (Listening off, the cap, not set up) switches co-GM off and says so. */
+  function cogmStep(me) {
+    var cm = me.cogm; if (!cm || !cm.on || S !== me || cm.busy || document.hidden) return;
+    var box = cm.sw.box();
+    /* the box is off when its night's cap is reached (the header says Off). Listening is asked of the server here every 6th poll, not read from the panel's last tick, which can be a minute old. "Not set up" does not matter: the hands need no briefing. */
+    if (box.key === 'off') { cogmOff(me, 'Off: the night’s cap is reached'); toast('Co-GM switched itself off: Blade is off (the night’s cap).', true); return; }
+    var g = gmApi(), C = cm.C, epoch = cm.epoch, check = (cm.n++ % 6) === 5;
+    cm.busy = true;
+    Promise.all([Promise.resolve().then(function () { return g.transcript({ after: cm.st.readAfter }); }), check ? Promise.resolve().then(function () { return g.stt(); }).then(null, function () { return null; }) : null]).then(function (r) {
+      if (S !== me || cm.epoch !== epoch) return;
+      if (r[1] && isObj(r[1].doc) && r[1].doc.want !== 'on') { cogmOff(me, 'Off: Listening is off'); toast('Co-GM switched itself off: Listening is off.', true); return; }
+      C.ingest(cm.st, r[0] && r[0].lines, r[0] && r[0].last, Date.now());
+      var w = C.nextWindow(cm.st, Date.now());
+      return w ? cogmSend(me, w, epoch) : null;
+    }).then(null, function () {}).then(function () { cm.busy = false; });
+  }
+  function cogmSend(me, w, epoch) {
+    var cm = me.cogm, g = gmApi(), C = cm.C;
+    return Promise.resolve().then(function () { return g.assistAct({ from: w.from, to: w.to, state: C.buildState(cogmLive(me), onStageName()) }); }).then(function (res) {
+      if (S !== me || cm.epoch !== epoch) return;
+      C.windowSent(cm.st, w, Date.now());        /* the handled cursor moves only on an answer */
+      return cogmApply(me, res);
+    }, function (e) {
+      if (S !== me || cm.epoch !== epoch) return;
+      C.windowFailed(cm.st, w, Date.now(), !!(e && e.status === 429));      /* a 429 (cooldown or busy) leaves the window to go again after 8 s */
+    });
+  }
+  /* the table as the planner needs it, read now */
+  function cogmLive(me) {
+    var cm = me.cogm;
+    return {
+      clocks: tableClocks().filter(function (c) { return str(c.id); }).map(function (c) { return { id: str(c.id), name: str(c.name), size: +c.size || 4, filled: +c.filled || 0, hidden: c.hidden === true }; }),
+      mineClocks: Object.keys(cm.mine).map(function (k) { return cm.mine[k]; }),
+      npcs: Object.keys(me.npcs || {}).map(function (id) { var d = me.npcs[id]; return { id: id, name: str(d.name), tags: Array.isArray(d.tags) ? d.tags : [], revealed: d.revealed === true, description: str(d.description), role: str(d.role) }; }),
+      pcs: dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; }),
+      ipadClocks: !!me.clOn
+    };
+  }
+  function cogmApply(me, res) {
+    var cm = me.cogm, C = cm.C, chain = Promise.resolve();
+    if (!isObj(res)) return chain;
+    (Array.isArray(res.actions) ? res.actions : []).forEach(function (a) { chain = chain.then(function () { return S === me ? cogmOne(me, a) : null; }).then(null, function () {}); });
+    (Array.isArray(res.dropped) ? res.dropped : []).forEach(function (d) {
+      if (!isObj(d) || d.why !== 'already known' || !str(d.name).trim()) return;
+      var k = C.norm(d.name); if (cm.noted[k]) return; cm.noted[k] = true;
+      if (S === me && me.assist) me.assist.addCard({ id: 'cogm|known|' + k, kind: 'note', seat: 'cogm', headline: 'Already known: ' + C.plain(d.name, 80), body: 'Heard a name that is already in the cast or at the table, so nothing was added.', bodyLabel: 'Co-GM' });
+    });
+    return chain;
+  }
+  function cogmNewId(type) { return (type === 'npc_add' ? 'npc_cogm_' : 'c_') + Date.now().toString(36) + Math.floor(Math.random() * 1679616).toString(36); }
+  function cogmOne(me, a) {
+    var cm = me.cogm, C = cm.C;
+    if (!isObj(a) || typeof a.key !== 'string' || !a.key) return null;
+    if (C.seen(cm.st, a.key)) return null;                     /* a window sent twice, or a decision heard twice: the key is the server's, used as given */
+    var plan = C.planApply(a, cogmLive(me), { id: cogmNewId(a.type) });
+    if (plan.op === 'drop') { C.mark(cm.st, a.key, 'dropped'); return null; }
+    cm.acts[a.key] = a;
+    if (plan.op === 'offer') { C.mark(cm.st, a.key, 'offered'); cogmOffer(me, a, plan); return null; }
+    C.mark(cm.st, a.key, 'applied');                           /* before the write: a second copy arriving while it is in flight finds the key */
+    return cogmDo(me, a, plan, false);
+  }
+  function cogmCardId(a) { return 'cogm|' + a.key; }
+  /* a yellow card: what Blade would do, why it is asking, and Do it */
+  function cogmOffer(me, a, plan) {
+    var cm = me.cogm, C = cm.C, ctl = me.assist; if (!ctl) return;
+    var id = cogmCardId(a), spec = { id: id, kind: 'idea', seat: 'cogm', headline: C.headline(plan, false), bullets: [C.plain(plan.why, 150)], body: C.heard(a), bodyLabel: 'Heard',
+      actions: [{ id: 'do', label: 'Do it', primary: true, run: function () { return cogmDoIt(me, a); } }], ackLabel: 'Skip', open: true };
+    if (cm.cards[a.key]) ctl.updateCard(id, Object.assign({}, spec, { undo: null })); else cm.cards[a.key] = ctl.addCard(spec);
+  }
+  function cogmDoIt(me, a) {
+    var cm = me.cogm; if (!cm || S !== me || cm.doing[a.key]) return Promise.resolve();
+    cm.doing[a.key] = true;
+    var plan = cm.C.planApply(a, cogmLive(me), { id: cogmNewId(a.type) }, { confirmed: true });
+    if (plan.op === 'drop') {
+      delete cm.doing[a.key]; toast('Not done: ' + plan.why + '.', true);
+      if (me.assist) me.assist.updateCard(cogmCardId(a), { kind: 'note', headline: 'Not done: ' + cm.C.plain(plan.why, 100), bullets: [], actions: [] });
+      return Promise.resolve();
+    }
+    cm.C.mark(cm.st, a.key, 'applied');
+    return cogmDo(me, a, plan, true).then(function () { delete cm.doing[a.key]; }, function () { delete cm.doing[a.key]; });
+  }
+  /* the writes. Each resolves when the table has been changed and the green card is up; a failure becomes (or stays) an offer with a reason. */
+  function cogmWrite(me, plan) {
+    var api = me.api;
+    if (plan.type === 'clock_add') {
+      if (!api || typeof api.addClock !== 'function') return Promise.reject(new Error('The table is not available here.'));
+      return Promise.resolve().then(function () { return api.addClock(plan.clock); }).then(function (r) { if (r === false) throw new Error('The clock was not added.'); me.cogm.mine[plan.id] = plan.clock.name; });
+    }
+    if (plan.type === 'clock_tick') {
+      if (!api || typeof api.clockOps !== 'function') return Promise.reject(new Error('The table is not available here.'));
+      return Promise.resolve().then(function () { return api.clockOps([{ id: plan.id, filled: plan.to }]); });
+    }
+    if (plan.type === 'npc_add') {
+      var ref = npcRef(plan.id); if (!ref) return Promise.reject(new Error('The cast is not available here.'));
+      return Promise.resolve().then(function () { return ref.set(clone(plan.doc)); });
+    }
+    var ok = addCapture(plan.bucket, plan.text, true);
+    if (!ok) return Promise.reject(new Error('The capture bar refused it.'));
+    plan.capId = S.capId;
+    return Promise.resolve();
+  }
+  function cogmDo(me, a, plan, viaButton) {
+    var cm = me.cogm, C = cm.C, ctl = me.assist;
+    return cogmWrite(me, plan).then(function () {
+      if (S !== me || !me.assist) return;
+      var rec = C.recordOf(plan); if (plan.type === 'capture') rec.id = plan.capId;
+      cm.recs[a.key] = rec; cm.plans[a.key] = plan;
+      var id = cogmCardId(a), spec = { kind: 'done', headline: C.headline(plan, true), bullets: [], body: C.heard(a), bodyLabel: 'Heard', actions: cogmButtons(me, a), ackLabel: 'Got it ×',
+        undo: function () { return cogmUndo(me, a, false); } };
+      if (cm.cards[a.key]) ctl.updateCard(id, spec); else cm.cards[a.key] = ctl.addCard(Object.assign({ id: id, seat: 'cogm' }, spec));
+    }, function (e) {
+      if (S !== me) return;
+      if (viaButton) { toast('Could not do it: ' + errText(e), true); return; }
+      C.mark(cm.st, a.key, 'offered');
+      cogmOffer(me, a, Object.assign({}, plan, { op: 'offer', why: 'Could not do it: ' + errText(e) }));
+    });
+  }
+  /* the buttons on a green card: a clock can be shown or hidden and renamed; an NPC can be drawn, or revealed and shown (each asks, and uses the existing paths) */
+  function cogmButtons(me, a) {
+    var cm = me.cogm, rec = cm.recs[a.key], plan = cm.plans[a.key], btns = [];
+    if (!rec || !plan) return btns;
+    if (plan.type === 'clock_add') {
+      var hid = rec.snap.hidden;
+      btns.push({ id: 'vis', label: hid ? 'Show players' : 'Hide', title: hid ? 'Hidden from the players now' : 'Visible to the players now', run: function () { return cogmClockVis(me, a); } });
+      btns.push({ id: 'rename', label: 'Rename', run: function () { return cogmClockRename(me, a); } });
+    } else if (plan.type === 'npc_add') {
+      btns.push({ id: 'portrait', label: 'Draw portrait', run: function () { return cogmPortrait(me, plan); } });
+      btns.push({ id: 'reveal', label: 'Reveal and show', title: 'Asks first, then shows them on the iPad', run: function () { return cogmReveal(me, plan); } });
+    }
+    return btns;
+  }
+  function cogmRefresh(me, a) {
+    var cm = me.cogm, ctl = me.assist; if (!ctl || !cm.cards[a.key]) return;
+    ctl.updateCard(cogmCardId(a), { headline: cm.C.headline(cm.plans[a.key], true), actions: cogmButtons(me, a) });
+  }
+  function cogmClockVis(me, a) {
+    var cm = me.cogm, rec = cm.recs[a.key], plan = cm.plans[a.key]; if (!rec || !plan || !me.api || typeof me.api.clockOps !== 'function') return Promise.resolve();
+    var show = rec.snap.hidden === true;
+    if (show && !W.confirm('Show “' + plan.clock.name + '” to the players? It appears on their table page' + (me.clOn ? ' and on the iPad, which is following the clocks.' : '.'))) return Promise.resolve();
+    return Promise.resolve().then(function () { return me.api.clockOps([{ id: rec.id, hidden: !show }]); }).then(function () { cm.C.noteEdit(rec, { hidden: !show }); cogmRefresh(me, a); }, function (e) { toast('Could not change the clock: ' + errText(e), true); });
+  }
+  function cogmClockRename(me, a) {
+    var cm = me.cogm, rec = cm.recs[a.key], plan = cm.plans[a.key]; if (!rec || !plan || !me.api || typeof me.api.clockOps !== 'function') return Promise.resolve();
+    var nn = W.prompt ? W.prompt('Rename the clock', plan.clock.name) : null; nn = str(nn).replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!nn || nn === plan.clock.name) return Promise.resolve();
+    return Promise.resolve().then(function () { return me.api.clockOps([{ id: rec.id, name: nn }]); }).then(function () {
+      cm.C.noteEdit(rec, { name: nn }); plan.clock.name = nn; cm.mine[rec.id] = nn; cogmRefresh(me, a);
+    }, function (e) { toast('Could not rename the clock: ' + errText(e), true); });
+  }
+  /* Draw portrait is the Blade panel's own Screen path (portrait seat, then the gatekeeper); the picture goes to the Rack and nothing is shown until Show there */
+  function cogmPortrait(me, plan) {
+    var ctl = me.assist; if (!ctl || typeof ctl.screenMake !== 'function') return Promise.resolve();
+    if (typeof ctl.canScreen === 'function' && !ctl.canScreen('portrait')) { toast('Blade cannot draw right now.', true); return Promise.resolve(); }
+    return Promise.resolve(ctl.screenMake('portrait', { name: plan.doc.name })).then(function () { toast('Drawing ' + plan.doc.name + ': it will appear in the Rack.'); }, function () {});
+  }
+  /* the only way a co-GM NPC reaches the players: a tap, a confirm, revealed: true, then the display's own gated push */
+  function cogmReveal(me, plan) {
+    var ref = npcRef(plan.id); if (!ref) { toast('The cast is not available here.', true); return Promise.resolve(); }
+    if (!W.confirm(plan.doc.name + ' is hidden from the players. Reveal them and show them on the iPad?')) return Promise.resolve();
+    return Promise.resolve().then(function () { return ref.update({ revealed: true, firstSeen: nowIso() }); }).then(function () {
+      return pushDisplay({ kind: 'npc', npcId: plan.id, title: str(plan.doc.name).slice(0, 2000) });
+    }).then(function () { toast('On the iPad: ' + plan.doc.name + '.'); }, function (e) { if (!e || !e.superseded) toast('Could not reveal and show them: ' + errText(e), true); });
+  }
+  /* Undo: a compare-and-swap. The object is read fresh; if it is not as the co-GM left it the undo is REFUSED (the promise rejects, so the panel does not
+     mark the card undone) and the card asks first. `viaButton` is the "Undo anyway" button: it forces, and marks the card itself. */
+  function cogmLiveFor(me, rec) {
+    if (rec.type === 'clock_add' || rec.type === 'clock_tick') return Promise.resolve({ clock: tableClocks().filter(function (c) { return c.id === rec.id; })[0] || null });
+    if (rec.type === 'capture') { var e = isObj(S.doc.capture) ? S.doc.capture[rec.id] : null; return Promise.resolve({ capture: isObj(e) ? str(e.text) : null }); }
+    var ref = npcRef(rec.id);
+    return Promise.resolve().then(function () { return ref && typeof ref.get === 'function' ? ref.get() : null; }).then(function (snap) {
+      var d = snap && snap.exists ? snap.data() : (me.npcs && me.npcs[rec.id]) || null;
+      return { npc: d };
+    });
+  }
+  function cogmUndoWrite(me, rec, w) {
+    var api = me.api;
+    if (rec.type === 'clock_add' || rec.type === 'clock_tick') {
+      if (!api || typeof api.clockOps !== 'function') return Promise.reject(new Error('The table is not available here.'));
+      return Promise.resolve().then(function () { return api.clockOps([w]); }).then(function () { if (rec.type === 'clock_add') delete me.cogm.mine[rec.id]; });
+    }
+    if (rec.type === 'capture') { var p = {}; p[rec.id] = null; patch({ capture: p }, { force: true }); renderCapture(); return Promise.resolve(); }
+    var ref = npcRef(rec.id); if (!ref) return Promise.reject(new Error('The cast is not available here.'));
+    return Promise.resolve().then(function () { return ref.update(clone(w)); });
+  }
+  function cogmUndo(me, a, viaButton) {
+    var cm = me.cogm, C = cm.C, rec = cm.recs[a.key], ctl = me.assist;
+    if (!rec) return Promise.resolve();
+    return cogmLiveFor(me, rec).then(function (live) {
+      var u = C.planUndo(rec, live, viaButton === true);
+      if (!u.ok) {
+        var msg = 'Changed since: now ' + u.now + ', was ' + u.was + '.';
+        if (ctl) ctl.updateCard(cogmCardId(a), { bullets: [C.plain(msg, 150)], actions: cogmButtons(me, a).concat([{ id: 'force', label: 'Undo anyway', run: function () { return cogmUndo(me, a, true); } }]) });
+        toast('Not undone: it changed since. Open the card to undo it anyway.', true);
+        throw new Error('changed');
+      }
+      return (u.noop ? Promise.resolve() : cogmUndoWrite(me, rec, u.write)).then(function () {
+        if (viaButton && ctl) ctl.updateCard(cogmCardId(a), { bullets: [], actions: [], undone: true });
+        else if (ctl) ctl.updateCard(cogmCardId(a), { bullets: [], actions: [] });
+      });
+    });
   }
   function loadShown() {
     var g = gmApi(), me = S; if (!g || typeof g.display !== 'function' || AM.displayRead) return;
@@ -4693,6 +4943,7 @@
     var plan = capturePlan(S.doc.capture, id, entry, sessionOf(camp));
     if (plan.refused) { toast(CAP_FULL, true); return false; }
     if (!patch({ capture: plan.patch })) return false;
+    S.capId = id;       /* the line just filed, for the co-GM's Undo */
     var said = capDropped(plan.dropped.length);       /* a toast has one line: "Filed under ..." must not cover what was dropped */
     renderCapture();
     if (!quiet && !said) { var b = BUCKETS.filter(function (x) { return x.k === bucket; })[0]; toast('Filed under ' + (b ? b.head : bucket) + '.'); }

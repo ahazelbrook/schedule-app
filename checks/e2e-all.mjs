@@ -45,6 +45,7 @@ const CHECKS = [
   ['checks/runtime/gm-assist-panel.e2e.mjs', 'the Blade panel: tab, banner, polling, Fit, Ask (8862)'],
   ['checks/runtime/gm-assist-shell.e2e.mjs', 'the Blade side panel shell at three widths (8863)'],
   ['checks/runtime/gm-assist-cards.e2e.mjs', 'the Blade cards: fold, Now, filters, strip, restore, light and dark (8864)'],
+  ['checks/runtime/gm-cogm.e2e.mjs', 'the co-GM: switch, clock and Undo, re-sent window, 429, Do it, compare-and-swap, hidden NPC, Reveal and show (8878)'],
   ['checks/runtime/gm-assist-health.e2e.mjs', 'the Blade header: seat-health dots, reaped note, meter, live regions, focus, contrast in light and dark (8872)'],
   ['checks/runtime/display-ambient.e2e.mjs', 'the ambient floor on the display (8871)'],
   ['checks/runtime/display-overlay.e2e.mjs', 'overlays on the display: a clock, an NPC, a line, the dawn (8874)'],
