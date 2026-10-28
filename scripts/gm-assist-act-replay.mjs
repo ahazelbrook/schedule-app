@@ -88,14 +88,14 @@ for (const win of windows) {
   tally.actions += v.actions.length; tally.dropped += v.dropped.length; tally.skippedKeys += step.skipped.length;
   for (const a of v.actions) { tally[a.mode]++; tally.byType[a.type] = (tally.byType[a.type] || 0) + 1; }
   for (const d of v.dropped) tally.droppedWhy[d.why] = (tally.droppedWhy[d.why] || 0) + 1;
-  calls.push({ from: win.from, to: win.to, lines: win.rows.length, stop: r ? r.stop : '', secs: r ? r.secs : 0, in: r && r.usage ? r.usage.input_tokens : 0, out: r && r.usage ? r.usage.output_tokens : 0, cost: r ? r.cost : 0, raw: usable ? r.json.actions.length : 0, kept: v.actions.length, dropped: v.dropped.length, ...(err ? { error: err } : {}) });
+  calls.push({ from: win.from, to: win.to, lines: win.rows.length, stop: r ? r.stop : '', secs: r ? r.secs : 0, in: r && r.usage ? r.usage.input_tokens : 0, out: r && r.usage ? r.usage.output_tokens : 0, cost: r ? r.cost : 0, raw: usable ? r.json.actions.length : 0, kept: v.actions.length, dropped: v.dropped.length, proposed: usable ? r.json.actions : [], droppedWhy: v.dropped, ...(err ? { error: err } : {}) });
   const used = r && r.usage ? `, in ${r.usage.input_tokens} out ${r.usage.output_tokens} $${(r.cost || 0).toFixed(4)}` : '';
   md.push(`## ${win.rows[0].stamp} to ${win.rows[win.rows.length - 1].stamp} (seq ${win.from}-${win.to}, ${win.rows.length} lines${win.matched ? ', matched ' + win.matched.length : ''}${r ? `, stop ${r.stop}` : ''}${used}${err ? ', ' + err : ''})`, '');
   if (!v.actions.length && !v.dropped.length) md.push('(nothing)', '');
   for (const a of v.actions) {
     const seq = lineOf(win.rows, a.quote), again = step.skipped.includes(a);
     md.push(`- ${describe(a)}`, `  - quote: "${a.quote}"${a.at ? ' at ' + a.at : ''}, line ${seq || '?'}${again ? '  (already applied: a re-sent window)' : ''}`);
-    acts.push({ window: { from: win.from, to: win.to }, call: calls.length, line: seq, resent: again, ...a });
+    acts.push({ window: { from: win.from, to: win.to }, call: calls.length, line: seq, stamp: (win.rows.find((x) => x.seq === seq) || {}).stamp || '', resent: again, ...a });
   }
   for (const d of v.dropped) md.push(`- DROPPED ${d.type || '?'}: ${d.why}${d.name ? ' (' + d.name + ')' : ''}`);
   md.push('');
