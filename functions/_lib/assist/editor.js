@@ -9,6 +9,7 @@
 
 import { isRepeatSlip, slipKeys, REPEAT_WINDOW_MS } from './conductor.js';
 import { capStory } from './prompts.js';
+import { refGlance, clerkGlance, mysteryGlance, showrunnerGlance, stallGlance, meanwhileGlance, handoutGlance } from './glance.js';
 
 export const CARD_GAP_MS = 5 * 60 * 1000;     // at most one card in this long
 export const STALE_MS = 4 * 60 * 1000;        // a held-back Ref card older than this is no longer worth showing
@@ -52,7 +53,8 @@ export function toCandidate(seat, json, { recent = [], now = 0, known = [] } = {
   if (seat === 'ref') {
     if (!json.slip || !clip(json.card)) return null;
     if (isRepeatSlip(json, recent, now)) return null;
-    return { seat, text: clip(json.card), keys: slipKeys(json), detail: { said_at: json.said_at || '', rule: clip(json.rule, 200) } };
+    return { seat, text: clip(json.card), keys: slipKeys(json), detail: { said_at: json.said_at || '', rule: clip(json.rule, 200) },
+      glance: refGlance({ card: clip(json.card), said_at: json.said_at, what_was_said: json.what_was_said, rule: clip(json.rule, 200), check: json.check }) };
   }
   const seen = seenKeys(recent, now, REPEAT_WINDOW_MS);
   if (seat === 'clerk') {
@@ -62,7 +64,7 @@ export function toCandidate(seat, json, { recent = [], now = 0, known = [] } = {
     for (const c of json.clues_landed || []) items.push({ key: 'clerk:clue:' + norm(c).slice(0, 80), text: 'Clue: ' + clip(c, 160) });
     const fresh = items.filter((i) => i.key !== 'clerk:name:' && !seen.has(i.key));
     if (!fresh.length) return null;
-    return { seat, text: clip(fresh.map((i) => i.text).join(' / ')), keys: fresh.map((i) => i.key) };
+    return { seat, text: clip(fresh.map((i) => i.text).join(' / ')), keys: fresh.map((i) => i.key), glance: clerkGlance(fresh) };
   }
   if (seat === 'mystery') {
     // push_next must come from tonight's Must land list: the seat copies the entry into must_land_item. The Worker never holds
@@ -71,7 +73,7 @@ export function toCandidate(seat, json, { recent = [], now = 0, known = [] } = {
     if (!push || !item) return null;
     const keys = ['mystery:' + norm(push).slice(0, 80), 'mystery:item:' + norm(item).slice(0, 60)];
     if (keys.some((k) => seenKeys(recent, now, REPEAT_WINDOW_MS).has(k))) return null;
-    return { seat, text: clip('Push next: ' + push + (clip(json.how) ? ' How: ' + clip(json.how) : '')), keys };
+    return { seat, text: clip('Push next: ' + push + (clip(json.how) ? ' How: ' + clip(json.how) : '')), keys, glance: mysteryGlance({ push, how: clip(json.how), item }) };
   }
   if (seat === 'showrunner') {
     if (json.speak !== true) return null;                   // the Showrunner speaks only for a clear pacing problem
@@ -80,7 +82,7 @@ export function toCandidate(seat, json, { recent = [], now = 0, known = [] } = {
     if (!advice && !named) return null;
     const key = 'showrunner:' + norm(advice || who).slice(0, 80);
     if (seenKeys(recent, now, REPEAT_WINDOW_MS).has(key)) return null;
-    return { seat, text: clip((named ? 'Spotlight: ' + who + '. ' : '') + advice), keys: [key] };
+    return { seat, text: clip((named ? 'Spotlight: ' + who + '. ' : '') + advice), keys: [key], glance: showrunnerGlance({ advice, who: named ? who : '' }) };
   }
   if (seat === 'ledger') {
     const items = [];
@@ -104,7 +106,7 @@ export function pendingRefs(rows, { recent = [], now = 0 } = {}) {
     if (!c || !c.text || !Number.isFinite(r.at) || now - r.at > STALE_MS) continue;
     const keys = c.keys || [];
     if (!keys.length || recent.some((x) => Number.isFinite(x.at) && now - x.at < REPEAT_WINDOW_MS && (x.keys || []).some((k) => keys.includes(k)))) continue;
-    out.push({ seat: 'ref', text: c.text, keys, ...(c.detail ? { detail: c.detail } : {}), pending: true, born: r.at });
+    out.push({ seat: 'ref', text: c.text, keys, ...(c.detail ? { detail: c.detail } : {}), ...(c.glance ? { glance: c.glance } : {}), pending: true, born: r.at });
   }
   return out;
 }
@@ -155,16 +157,25 @@ export function handoutIds(part) {
   return out;
 }
 
+/** The titles in the live `handouts` part: a Map id -> title (only items that have one). */
+export function handoutTitles(part) {
+  const out = new Map();
+  if (!part || typeof part !== 'object' || !Array.isArray(part.items)) return out;
+  for (const x of part.items) if (x && typeof x.id === 'string' && x.id && typeof x.title === 'string' && x.title.trim()) out.set(x.id, x.title.trim());
+  return out;
+}
+
 /**
- * The Mystery seat's JSON -> { id, why } or null. An id that is empty, or not in the live handouts part (`ids`, from handoutIds), is
+ * The Mystery seat's JSON -> { id, why, kind, headline, bullets } or null. An id that is empty, or not in the live handouts part (`ids`, from handoutIds), is
  * dropped: the model may only name a handout the GM actually has. A handout never uses the card slot: it goes in its own field of the
  * tick answer, so the Editor's merge() never sees it.
  */
-export function toHandout(json, ids) {
+export function toHandout(json, ids, titles = null) {
   if (!json || typeof json !== 'object' || typeof json.handout_id !== 'string') return null;
   const id = json.handout_id.trim();
   if (!id || !(ids instanceof Set) || !ids.has(id)) return null;
-  return { id, why: clip(json.handout_why, 200) };
+  const why = clip(json.handout_why, 200);
+  return { id, why, ...handoutGlance({ id, title: titles instanceof Map ? titles.get(id) : '', why }) };
 }
 
 // ---------- Voice ----------
@@ -207,7 +218,8 @@ export function toStall(json, { recent = [], now = 0 } = {}) {
   if (!json || typeof json !== 'object' || json.stalled !== true) return null;
   const offer = clip(json.offer, 400), k = 'stall:' + norm(offer).slice(0, 80);
   if (!offer || k === 'stall:' || seenKeys(recent, now, REPEAT_WINDOW_MS).has(k)) return null;
-  return { kind: ['complication', 'clue'].includes(json.kind) ? json.kind : 'complication', offer, why: clip(json.why_now, 200), keys: [k] };
+  const why = clip(json.why_now, 200);
+  return { kind: ['complication', 'clue'].includes(json.kind) ? json.kind : 'complication', offer, why, keys: [k], ...stallGlance({ offer, why }) };
 }
 
 // ---------- Scribe and Meanwhile ----------
@@ -234,5 +246,6 @@ export function toMeanwhile(json) {
   const cutaway = clip(json.cutaway, 600);
   if (!cutaway) return null;
   const t = json.suggest_ticks;
-  return { faction: clip(json.faction, 80), cutaway, clock: clip(json.clock, 100), ticks: Number.isInteger(t) && t >= 1 && t <= 2 ? t : 0, why: clip(json.why, 200) };
+  const clock = clip(json.clock, 100), ticks = Number.isInteger(t) && t >= 1 && t <= 2 ? t : 0;
+  return { faction: clip(json.faction, 80), cutaway, clock, ticks, why: clip(json.why, 200), ...meanwhileGlance({ cutaway, clock, ticks }) };
 }

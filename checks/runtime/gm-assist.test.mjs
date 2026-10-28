@@ -1372,7 +1372,7 @@ const MYS_H = (n, id, push = true) => ({ ...MYS(n), ...(push ? {} : { push_next:
 await test('editor: toHandout keeps an id that is in the live handouts part and drops anything else', () => {
   const ids = handoutIds(HO_PART);
   assert.deepEqual([...ids].sort(), ['receipt', 'torn-map']);
-  assert.deepEqual(toHandout({ handout_id: ' torn-map ', handout_why: 'on cue' }, ids), { id: 'torn-map', why: 'on cue' });
+  assert.deepEqual(toHandout({ handout_id: ' torn-map ', handout_why: 'on cue' }, ids), { id: 'torn-map', why: 'on cue', kind: 'idea', headline: 'Show handout: torn-map?', bullets: ['on cue'] }, 'no titles given: the id stands in');
   assert.equal(toHandout({ handout_id: 'unknown-one', handout_why: 'x' }, ids), null, 'not in the pack: dropped');
   assert.equal(toHandout({ handout_id: '', handout_why: 'x' }, ids), null);
   assert.equal(toHandout({ handout_id: 7 }, ids), null);

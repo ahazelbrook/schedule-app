@@ -91,7 +91,7 @@ await test('storyBlock rides with the instructions: empty means nothing, STORY_S
 await test('toMeanwhile: one cutaway or nothing; the tick is a suggestion of 0 to 2; clocks are open ones only, a dozen at most', () => {
   assert.equal(toMeanwhile(null), null); assert.equal(toMeanwhile({ cutaway: '  ' }), null);
   const m = toMeanwhile({ faction: 'The Lamplighters', cutaway: 'Their runners post a watch at the quay.', clock: 'Seal the quay', suggest_ticks: 1, why: 'they now know' });
-  assert.deepEqual(m, { faction: 'The Lamplighters', cutaway: 'Their runners post a watch at the quay.', clock: 'Seal the quay', ticks: 1, why: 'they now know' });
+  assert.deepEqual(m, { faction: 'The Lamplighters', cutaway: 'Their runners post a watch at the quay.', clock: 'Seal the quay', ticks: 1, why: 'they now know', kind: 'idea', headline: 'Their runners post a watch at the quay.', bullets: ['Tick Seal the quay +1'] });
   assert.equal(toMeanwhile({ cutaway: 'x', suggest_ticks: 5 }).ticks, 0); assert.equal(toMeanwhile({ cutaway: 'x', suggest_ticks: 'two' }).ticks, 0);
   const cl = cleanClocks([{ name: ' Seal the quay ', size: 6, filled: 2, kind: 'faction' }, { name: 'Done', size: 4, filled: 4 }, { name: '', size: 4, filled: 0 }, { name: 'Odd', size: 99, filled: 0 }, null, 'x']);
   assert.deepEqual(cl, [{ name: 'Seal the quay', kind: 'faction', filled: 2, size: 6 }]);

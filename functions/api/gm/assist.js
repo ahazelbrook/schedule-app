@@ -1,6 +1,9 @@
 // /api/gm/assist/{tick,fit} (GM only, see the "Claude at the table" build plan): Claude at the table, GM side. Players never
 // call it and nothing it returns reaches the iPad. A player (or the table display sign-in) gets 403 before the body is read.
 //   POST /api/gm/assist/tick { after?, npc? } -> { cards, updates, flags, spend, last, voice?, errors? }
+//        Glance fields (functions/_lib/assist/glance.js; design 3.6): every card, Ledger update, voice, handout and meanwhile answer carries kind, and cards, updates, handout, stall and
+//        meanwhile also headline + bullets (a Ref card also cite and, when the seat set it, check), beside text/detail and every older field. Stall's own `kind` stays complication|clue
+//        (the Rack reads it). `secret` is Ask Blade's alone. GET /cards restores them; a row from before restores as { kind by seat, headline: text, bullets: [] }.
 //        `npc` is the name of the NPC the GM's page has on stage (at most 80 characters; the Worker holds no scene, so the page
 //        says). With none, Voice never runs. With one, Voice wakes on the Tripwire's npc_change flag and on every tick (about each
 //        minute), after Ref in the list, and its lines come back as `voice: { who, want, lines: [two], at }` (they go to the
@@ -114,7 +117,8 @@ import { portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN, SCREEN_NAME_MAX, a
 import { gatekeeperUser, ITEM_MAX, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX,
   STORY_SEATS, storyBlock, scribeUser, SCRIBE_SLICE_MAX, SCRIBE_FIRST_MIN, MEANWHILE_MIN, meanwhileUser, cleanClocks, silenceUser } from '../../_lib/assist/prompts.js';
 import { DEFAULT_CAP, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS, isListening, silenceFlag } from '../../_lib/assist/conductor.js';
-import { toCandidate, toVoice, toAnother, toStall, toScribe, toMeanwhile, toHandout, handoutIds, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
+import { ledgerGlance, fixerGlance, restoreGlance } from '../../_lib/assist/glance.js';
+import { toCandidate, toVoice, toAnother, toStall, toScribe, toMeanwhile, toHandout, handoutIds, handoutTitles, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
 
 const BODY_MAX = 8 * 1024;
@@ -207,9 +211,10 @@ const FILE_ID = /^file_[A-Za-z0-9_-]{4,100}$/;
 const HANDOUTS_MAX_BYTES = 16 * 1024;           // the handouts part is a short list; a bigger one is not read here
 
 /** The ids in the live handouts part (a Set; empty when there is none or it is too big to be the short list it should be). */
-async function liveHandoutIds(db, campaign) {
+async function liveHandouts(db, campaign) {
   const row = await db.prepare("SELECT CASE WHEN LENGTH(CAST(body AS BLOB)) <= ?2 THEN body END AS body FROM gm_pack WHERE campaign = ?1 AND part = 'handouts'").bind(campaign, HANDOUTS_MAX_BYTES).first();
-  return handoutIds(row && row.body ? parseJson(row.body, null) : null);
+  const part = row && row.body ? parseJson(row.body, null) : null;
+  return { ids: handoutIds(part), titles: handoutTitles(part) };
 }
 
 async function loadPrefix(db, campaign) {
@@ -586,7 +591,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const out = r && r.json ? r.json : null;
       await logRow(db, campaign, { at, session, seat: 'fixer', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['fit'], timing,
         card: out ? { out, shown: 0, draws } : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : 'no JSON', draws } }).run();
-      return done(out ? [{ seat: 'fixer', at, text: out.read, ...out }] : [], [], last);
+      return done(out ? [{ seat: 'fixer', at, text: out.read, ...out, ...fixerGlance(out.read) }] : [], [], last);
     }
 
     if (action[1] === 'another') {
@@ -605,7 +610,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const one = toAnother(out, shown);
       await logRow(db, campaign, { at, session, seat: 'voice_plus', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['another'], timing,
         card: out ? { out, ...(one ? { voice: 1, text: one.line, keys: one.keys } : {}) } : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : 'no JSON' } }).run();
-      return done([], [], last, [], one ? { voice: { who: one.who || npc, lines: [one.line], at } } : {});
+      return done([], [], last, [], one ? { voice: { kind: 'say', who: one.who || npc, lines: [one.line], at } } : {});
     }
 
     // ---- tick ----
@@ -637,7 +642,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const st = sx.r ? toStall(sx.r.json, { recent: await shownVoice(db, campaign, t0), now: t0 }) : null;
       await logRow(db, campaign, { at: sat, session: ll.session, seat: 'stall', cfg: sx.cfg, usage: sx.r && sx.r.usage, cost: sx.r && sx.r.cost, flags: sflags, timing: sx.timing,
         card: sx.r ? { out: sx.r.json, silence: 1, ...(st ? { stall: 1, text: st.offer, keys: st.keys } : {}) } : { error: errors.find((e) => e.seat === 'stall')?.error || 'no reply', silence: 1 } }).run();
-      return done([], sflags, last, [], { stall: st ? { kind: st.kind, offer: st.offer, why: st.why, at: sat } : null });
+      return done([], sflags, last, [], { stall: st ? { kind: st.kind, offer: st.offer, why: st.why, headline: st.headline, bullets: st.bullets, at: sat } : null });
     }
 
     const lastRun = await lastRuns(db, campaign, t0);
@@ -718,7 +723,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const mx = all.find((x) => x.name === 'mystery');
     let handoutOut = null;
     if (mx && mx.r && mx.r.json && typeof mx.r.json.handout_id === 'string' && mx.r.json.handout_id.trim()) {
-      const h = toHandout(mx.r.json, await liveHandoutIds(db, campaign));
+      const live = await liveHandouts(db, campaign);
+      const h = toHandout(mx.r.json, live.ids, live.titles);
       if (h) handoutOut = { ...h, at };
     }
     const rows = results.map((x, i) => {
@@ -726,22 +732,22 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const isShown = !!(cand && !cand.pending && edit.card && edit.card.seat === x.name && edit.card.text === cand.text);
       const held = !!(cand && cand.seat === 'ref' && edit.held.includes(cand));
       const isUpdate = !!(cand && cand.seat === 'ledger');
-      const card = x.r ? { out: x.r.json, text: cand ? cand.text : '', keys: cand ? cand.keys : [], shown: isShown ? 1 : 0, ...(held ? { held: 1 } : {}), ...(cand && cand.detail ? { detail: cand.detail } : {}), ...(isUpdate ? { update: 1, items: cand.items } : {}), ...(x.name === 'mystery' && handoutOut ? { handout: { id: handoutOut.id, why: handoutOut.why } } : {}) } : { error: errors.find((e) => e.seat === x.name)?.error || 'no reply' };
+      const card = x.r ? { out: x.r.json, text: cand ? cand.text : '', keys: cand ? cand.keys : [], shown: isShown ? 1 : 0, ...(held ? { held: 1 } : {}), ...(cand && cand.detail ? { detail: cand.detail } : {}), ...(cand && cand.glance ? { glance: cand.glance } : {}), ...(isUpdate ? { update: 1, items: cand.items } : {}), ...(x.name === 'mystery' && handoutOut ? { handout: { id: handoutOut.id, why: handoutOut.why } } : {}) } : { error: errors.find((e) => e.seat === x.name)?.error || 'no reply' };
       return logRow(db, campaign, { at, session, seat: x.name, cfg: x.cfg, usage: x.r && x.r.usage, cost: x.r && x.r.cost, flags, card, timing: x.timing });
     });
     // a pending Ref card shown now has no row of its own this tick: record the showing (no cost) so the gap and repeats see it
-    if (edit.card && edit.card.pending) rows.push(logRow(db, campaign, { at, session, seat: 'editor', cfg: { model: 'editor' }, flags, card: { seat: 'ref', text: edit.card.text, keys: edit.card.keys, ...(edit.card.detail ? { detail: edit.card.detail } : {}), shown: 1, from_pending: 1 } }));
+    if (edit.card && edit.card.pending) rows.push(logRow(db, campaign, { at, session, seat: 'editor', cfg: { model: 'editor' }, flags, card: { seat: 'ref', text: edit.card.text, keys: edit.card.keys, ...(edit.card.detail ? { detail: edit.card.detail } : {}), ...(edit.card.glance ? { glance: edit.card.glance } : {}), shown: 1, from_pending: 1 } }));
     let voiceOut = null;
     if (vx) {
       const v = vx.r ? toVoice(vx.r.json, { recent: await shownVoice(db, campaign, t0), now: t0 }) : null;
-      if (v) voiceOut = { who: v.who, want: v.want, lines: v.lines, at };
+      if (v) voiceOut = { kind: 'say', who: v.who, want: v.want, lines: v.lines, at };
       rows.push(logRow(db, campaign, { at, session, seat: 'voice', cfg: vx.cfg, usage: vx.r && vx.r.usage, cost: vx.r && vx.r.cost, flags, timing: vx.timing,
         card: vx.r ? { out: vx.r.json, ...(v ? { voice: 1, text: v.lines.join(' / '), keys: v.keys } : {}) } : { error: errors.find((e) => e.seat === 'voice')?.error || 'no reply' } }));
     }
     let stallOut = null;
     if (sx) {
       const st = sx.r ? toStall(sx.r.json, { recent: await shownVoice(db, campaign, t0), now: t0 }) : null;
-      if (st) stallOut = { kind: st.kind, offer: st.offer, why: st.why, at };
+      if (st) stallOut = { kind: st.kind, offer: st.offer, why: st.why, headline: st.headline, bullets: st.bullets, at };
       rows.push(logRow(db, campaign, { at, session, seat: 'stall', cfg: sx.cfg, usage: sx.r && sx.r.usage, cost: sx.r && sx.r.cost, flags, timing: sx.timing,
         card: sx.r ? { out: sx.r.json, ...(st ? { stall: 1, text: st.offer, keys: st.keys } : {}) } : { error: errors.find((e) => e.seat === 'stall')?.error || 'no reply' } }));
     }
@@ -761,8 +767,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
         card: wx.r ? { out: wx.r.json, ...(mw ? { meanwhile: 1, text: mw.cutaway } : {}) } : { error: errors.find((e) => e.seat === 'meanwhile')?.error || 'no reply' } }));
     }
     if (rows.length) await db.batch(rows);
-    const cardOut = edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}) }] : [];
-    const updatesOut = edit.updates.flatMap((u) => (u.items || [{ key: (u.keys || [])[0] || '', text: u.text }]).map((it) => ({ seat: 'ledger', at, key: it.key, text: it.text })));
+    const cardOut = edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}), ...restoreGlance(edit.card, edit.card.seat) }] : [];
+    const updatesOut = edit.updates.flatMap((u) => (u.items || [{ key: (u.keys || [])[0] || '', text: u.text }]).map((it) => ({ seat: 'ledger', at, key: it.key, text: it.text, ...ledgerGlance(it.text) })));
     return done(cardOut, flags, last, updatesOut, { voice: voiceOut, stall: stallOut, handout: handoutOut, meanwhile: meanwhileOut });
   };
 }
