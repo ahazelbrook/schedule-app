@@ -45,7 +45,8 @@
 //             cast, every NPC card's How to play block, the player-to-character table (player: on the PC notes, or the git-ignored
 //             gm-private/players.json, which wins) and tonight's prep (last) as <context name="..."> blocks (lib/assist-export.mjs). GM only. This file keeps the text;
 //             gm-sync push uploads it to Anthropic's Files API and pushes only { file_id, hash, extra } (lib/assist-file.mjs). Tonight's prep is
-//             --assist-prep <vault-relative note> or "prep" in gm-private/assist-config.json; warns past ~90k tokens.
+//             --assist-prep <vault-relative note> or "prep" in gm-private/assist-config.json; with neither, the gm_prep: true session note with the
+//             soonest date on or after today (else the newest) is picked and printed (lib/assist-prep.mjs; --today DD/MM/YYYY overrides today); warns past ~90k tokens.
 //
 // F (the figure map) comes from the vault page Tools/blades-68-npc-figure-map.md, read as JSON from fenced code blocks:
 //   ```json F          the whole F object (use this form for a small map), or
@@ -71,6 +72,7 @@ import { packLosses, lossLines } from "./lib/pack-guard.mjs";
 import { buildScreen } from "./lib/screen-export.mjs";
 import { buildDowntime } from "./lib/downtime-export.mjs";
 import { buildAssist, readConfig } from "./lib/assist-export.mjs";
+import { resolvePrep, dateKey } from "./lib/assist-prep.mjs";
 import { buildHandouts } from "./lib/handouts-export.mjs";
 import { buildAuthored } from "./lib/authored-export.mjs";
 
@@ -92,7 +94,8 @@ function args(argv) {
     else if (a === "--handouts-src") o.handoutsSrc = argv[++i];
     else if (a === "--assist-prep") o.assistPrep = argv[++i];
     else if (a === "--assist-config") o.assistConfig = argv[++i];
-    else if (a === "-h" || a === "--help") { console.log("usage: node scripts/gm-pack.mjs --vault <vault dir> [--out gm-private/b68-gm-pack.json] [--quiet] [--allow-shrink]"); console.log("  [--assist-prep <vault-relative session note>] [--assist-config <file>]"); process.exit(0); }
+    else if (a === "--today") { o.today = argv[++i]; if (dateKey(o.today) === null) { console.error("--today takes DD/MM/YYYY"); process.exit(2); } }
+    else if (a === "-h" || a === "--help") { console.log("usage: node scripts/gm-pack.mjs --vault <vault dir> [--out gm-private/b68-gm-pack.json] [--quiet] [--allow-shrink]"); console.log("  [--assist-prep <vault-relative session note>] [--assist-config <file>] [--today DD/MM/YYYY]"); process.exit(0); }
     else { console.error("unknown argument: " + a); process.exit(2); }
   }
   if (!o.vault) { console.error("--vault <vault dir> is required (or set B68_VAULT)"); process.exit(2); }
@@ -811,7 +814,11 @@ function main() {
   // score comes after location: it lays the location part's dossiers and districts over its own tables
   // assist: the cached prefix for "Claude at the table" (rules reference, NPC cast, tonight's prep); GM only (lib/assist-export.mjs)
   const assistConfig = readConfig(a.assistConfig ? path.resolve(a.assistConfig) : path.join(REPO, "gm-private", "assist-config.json"));
-  const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: a.assistPrep, config: assistConfig, playersFile: path.join(REPO, "gm-private", "players.json"), handouts: parts.handouts || null });
+  // no --assist-prep and no "prep" in the config: pick the gm_prep: true session note by date (lib/assist-prep.mjs), and say which
+  const picked = resolvePrep({ vault, assistPrep: a.assistPrep, config: assistConfig, today: a.today ? dateKey(a.today) : undefined });
+  const assistPrep = picked ? picked.rel : a.assistPrep;
+  if (picked && picked.how !== "named") console.log("assist prep: " + picked.rel + " (picked by date" + (picked.how === "past" ? "; every prep note is dated before today, so this is the newest" : "") + ")");
+  const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: assistPrep, prepBy: picked ? picked.how : "named", prepDate: picked ? dateKey(picked.date) : null, config: assistConfig, playersFile: path.join(REPO, "gm-private", "players.json"), handouts: parts.handouts || null });
   const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart], ["handouts", buildHandoutsPart], ["assist", buildAssistPart]];
   let npcLeverage = 0;
   let locationExtraNames = [];

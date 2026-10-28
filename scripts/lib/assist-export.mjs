@@ -373,7 +373,7 @@ export function playersText(map) {
  * `playersFile`, gm-private/players.json), then the handouts list (`handouts`: the pack's handouts part, if any), then the factions (name, tier, standing, clocks; from the Group campaign's faction board), then never-reveal; tonight's prep stays last. Returns null when no note could be read. A missing note is a warning, not a failure, except a prep path the GM named
  * explicitly (a typo there would quietly leave tonight's prep out), which throws.
  */
-export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, cast, config = {}, playersFile = '', handouts = null, factions }) {
+export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, cast, config = {}, playersFile = '', handouts = null, factions, prepBy = '', prepDate = null }) {
   const want = [
     ['rules', rules || config.rules || DEFAULT_RULES, false],
     ['cast', cast || config.cast || DEFAULT_CAST, false],
@@ -410,7 +410,7 @@ export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, c
         if (fs.existsSync(pf)) {
           const pt = readText(pf), ml = extractMustLand(pt);
           prepNever = { name: path.basename(pf), entries: ml.entries, sections: extractSecretSections(pt) };
-          stats.mustLand = ml.entries.length; stats.mustLandLanded = ml.landed;
+          stats.prep = posix(rel); if (prepBy) { stats.prepBy = prepBy; if (Number.isInteger(prepDate)) stats.prepDate = prepDate; } stats.mustLand = ml.entries.length; stats.mustLandLanded = ml.landed;
           noMust = !ml.found;
           if (ml.found && !ml.entries.length) warn('assist: the prep note\'s "Must land" section has no unlanded entries (' + ml.landed + ' ticked): no clues in the never-reveal list');
         }

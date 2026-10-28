@@ -9,6 +9,8 @@
 // Parts the server holds that the file lacks are left alone and reported (the sync never deletes).
 // The guard (lib/pack-guard.mjs): a part far smaller than the server's, or a prep note the server has that the file lacks
 // or has much shorter, is refused and nothing in the pack is written, unless --allow-shrink.
+// The prep guard (lib/assist-prep.mjs): an assist part built with no prep note, or with no unlanded Must land entries, is
+// refused (that part only) before any upload, unless --allow-no-prep.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +18,7 @@ import crypto from 'node:crypto';
 import { cleanPart, shortHash, packHeads, LIMITS } from '../../functions/_lib/gm.js';
 import { bindSql, literal, charCost, MAX_COMMAND_COST } from './d1.mjs';
 import { packLosses } from './pack-guard.mjs';
+import { prepProblem } from './assist-prep.mjs';
 import { preparePart, finishPart, defaultClient, STATE_NAME } from './assist-file.mjs';
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -69,6 +72,9 @@ export async function pushPack(ctx) {
   let assistTouched = false, assistClient = null;
   for (const raw of pk.parts) {
     if (raw.part === 'assist' && typeof raw.body.prefix === 'string') {
+      // the prep guard, before anything is uploaded: an assist part with no prep, or prep with no Must land, runs the seats blind
+      const why = ctx.allowNoPrep ? '' : prepProblem(raw.src, ctx.today);
+      if (why) { report.refuse('pack:assist', why, []); continue; }
       assistTouched = true;
       assistClient = planning ? null : filesClient();
       const prep = await preparePart(raw.body, { stateFile, client: assistClient, dryRun: planning });

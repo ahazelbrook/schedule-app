@@ -100,7 +100,7 @@ async function pushSetup(prefix, extraParts = {}) {
   const db = asD1(exec);
   const priv = tmpDir();
   const file = path.join(priv, 'b68-gm-pack.json');
-  const write = (p) => fs.writeFileSync(file, JSON.stringify({ format: 1, parts: { assist: { src: { file: 'rules.md', exportedAt: 'x', tokens: 5 }, prefix: p, extra: { ref: 'e' } }, ...extraParts } }));
+  const write = (p) => fs.writeFileSync(file, JSON.stringify({ format: 1, parts: { assist: { src: { file: 'rules.md', exportedAt: 'x', tokens: 5, prep: 'Notes/Tonight.md', mustLand: 1, mustLandLanded: 0 }, prefix: p, extra: { ref: 'e' } }, ...extraParts } }));
   write(prefix);
   const go = async (o = {}) => { const report = newReport(); const ledger = { pack: {} }; await pushPack({ exec, db, campaign: 'c', report, ledger, privateDir: priv, now: Date.now(), yes: true, ...o }); return report; };
   return { exec, db, priv, file, write, go };

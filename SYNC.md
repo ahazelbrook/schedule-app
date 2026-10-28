@@ -96,7 +96,7 @@ version, as the API computes it. A part on the server that the file lacks is lef
 server's (sizes from the index; the prep notes from the server's prep part). A part gone (gm:pack only: the push leaves
 missing parts alone), a part under 75% of its size, or a prep note gone or under 75% of its length is a loss: gm:pack
 writes nothing and exits 1; the push refuses and pushes nothing of the pack. `--allow-shrink` overrides either, for a
-loss that is meant. The GM page's **Update pack** runs the same rules against the pack it holds and asks before
+loss that is meant. Separately, an `assist` part built with no prep note, or with no unlanded Must land entries, is refused (that part only, before any upload to Anthropic); `--allow-no-prep` overrides it, and `npm run gm:preflight` shows beforehand what the part carries. The GM page's **Update pack** runs the same rules against the pack it holds and asks before
 uploading. A part the app has retired on purpose (`RETIRED_PARTS`: `engagement`, which went with Engage when the Score
 generator replaced it, 17/10/2026) is not a loss in any of the three; **Update pack** still removes it from the server,
 because it removes every part the file lacks.
