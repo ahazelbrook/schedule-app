@@ -17,7 +17,7 @@
     "check:stt-live": "node scripts/stt-check.mjs",
     "check:stt": "node checks/runtime/gm-stt.e2e.mjs",
     "gm:sync": "npm run -s with-vault -- scripts/gm-sync.mjs both",
-    "check:api": "node checks/api/jwt.mjs && node checks/api/worker.mjs && node checks/api/deploy.mjs && node checks/api/flow.mjs && node checks/api/clocks.mjs && node checks/api/rules.mjs && node checks/api/npcs.mjs && npm run check:gm-api && node checks/api/name.mjs && node checks/api/display-role.mjs",
+    "check:api": "node checks/api/jwt.mjs && node checks/api/worker.mjs && node checks/api/deploy.mjs && node checks/api/flow.mjs && node checks/api/clocks.mjs && node checks/api/rules.mjs && node checks/api/npcs.mjs && npm run check:gm-api && node checks/api/name.mjs && node checks/api/display-role.mjs && node checks/api/assist-health.mjs",
     "check:display-role": "node checks/api/display-role.mjs",
     "check:clocks": "node checks/api/clocks.mjs",
     "check:clocks-e2e": "node checks/runtime/clocks.e2e.mjs",

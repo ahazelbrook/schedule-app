@@ -1048,6 +1048,7 @@
       var al = q('#as-alert'); if (!al) return;
       var w = fresh.filter(function (c) { return cardKind2(c) === 'warn'; });
       if (!w.length) return;
+      if (st.open && active()) return;       /* the open, visible panel shows it in Now and the feed: speaking it a third time is noise */
       al.textContent = '';
       al.textContent = 'Warning: ' + w.map(function (c) { return c.headline; }).join('. ');
     }
@@ -1153,6 +1154,7 @@
     }
     /* one decision: not while paused, hidden or on a phone; only while Listening is on (asked of the server, so a stale page is not fooled) */
     function poll() {
+      if (active() && st.paused && host) render();           /* paused (the cap, busy, setup) makes no call, but the header's clock still moves: a green dot greys at 10 minutes */
       if (!active() || st.paused || st.busy) return Promise.resolve();
       return Promise.resolve().then(function () { return gm.stt(); }).then(function (r) {
         var d = r && isObj(r.doc) ? r.doc : null, on = !!(d && d.want === 'on');

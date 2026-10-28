@@ -180,5 +180,34 @@ await test('the box: a warn made on the page (addCard, the way the co-GM and the
   assert.match(al.textContent, /^Warning: Invented page warning: the display is off./);
 });
 
+await test('the box: a paused box (the cap) still re-renders on the poll, so a green dot greys at 10 minutes', async () => {
+  const clock = { t: Date.now() };
+  const r = rig({ ...BASE, health: H({ ran: ['tripwire', 'ref'] }) }, clock);
+  await r.ctl.poll();
+  assert.equal(dot(r, 'ref'), 'ok');
+  r.g.assistTick = async () => { throw Object.assign(new Error("tonight's cap is reached"), { status: 429 }); };
+  await r.ctl.poll();
+  assert.equal(r.ctl.state().paused, 'cap');
+  assert.equal(dot(r, 'ref'), 'ok', 'still inside 10 minutes');
+  clock.t += 11 * MIN;
+  await r.ctl.poll();                              // paused: no call, but the header still moves
+  assert.equal(dot(r, 'ref'), 'asleep', 'a paused box greys the dot');
+  assert.equal(dot(r, 'tripwire'), 'asleep');
+});
+
+await test('the box: with the panel open and visible a warn is not spoken again; closed, it is', async () => {
+  const r = rig({ ...BASE }, { t: Date.now() });
+  await r.ctl.poll();
+  r.ctl.open();
+  const al = r.stub('#as-alert');
+  r.g.reply = { ...BASE, last: 4, cards: [{ seat: 'ref', kind: 'warn', at: new Date(Date.now() + 1000).toISOString(), text: 'Invented warning while open.' }] };
+  await r.ctl.poll();
+  assert.equal(al.textContent || '', '', 'open: Now and the feed already say it');
+  r.ctl.close();
+  r.g.reply = { ...BASE, last: 5, cards: [{ seat: 'ref', kind: 'warn', at: new Date(Date.now() + 2000).toISOString(), text: 'Invented warning while closed.' }] };
+  await r.ctl.poll();
+  assert.match(al.textContent, /while closed/);
+});
+
 console.log((failed ? failed + ' FAILED, ' : '') + passed + ' passed');
 process.exit(failed ? 1 : 0);

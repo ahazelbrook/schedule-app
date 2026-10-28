@@ -956,7 +956,7 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 .gm-assist .as-kept { font: 900 12px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
 .gm-assist .as-star, .gm-assist .as-ack, .gm-assist .as-moreb, .gm-assist .as-undo, .gm-assist .as-upbtns button { min-height: 36px; font-size: 14px; padding: 0 12px; border: 1.5px solid var(--rule); background: var(--card); }
 .gm-assist .as-undo { border-color: var(--k-done); }
-.gm-assist .as-body { display: grid; gap: 2px; padding: 6px 8px; border: 1.5px solid var(--rule); background: var(--paper); }
+.gm-assist .as-card .as-body { display: grid; gap: 2px; padding: 6px 8px; border: 1.5px solid var(--rule); background: var(--paper); }
 .gm-assist .as-body-text { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 15px; line-height: 1.4; }
 .gm-assist .gm-screen-fig { width: 96px; max-height: 190px; overflow: hidden; border: 1.5px solid var(--rule); background: var(--paper); }
 .gm-assist .gm-screen-fig svg { display: block; width: 100%; height: auto; }

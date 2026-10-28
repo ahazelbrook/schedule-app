@@ -187,6 +187,23 @@ try {
   check(!cover.none && cover.ok && cover.taH > 60, 'with the Ask field focused (' + Math.round(cover.taH || 0) + ' px) the chips row is still on top of nothing: ' + JSON.stringify(cover));
   await p.click('#as-chips .as-chip[data-k="rule"]');
   check(await attr(p, '#as-chips .as-chip[data-k="rule"]', 'aria-pressed') === 'true', 'and a chip tapped while the field was focused applies its filter');
+  check(await p.$eval('#as-panel > .as-body', (e) => { const c = getComputedStyle(e); return c.display === 'flex' && c.borderTopWidth === '0px'; }), 'the panel body is a plain flex column (the card .as-body rule had been reaching it, stretching the Ask bar)');
+  // blur collapses the field's room again: 500 ms after the focus leaves, the chip is back where it rests
+  // the chip's place below the Ask field (the panel may scroll a focused field into view, so a page coordinate would move for that reason alone)
+  const chipTop = () => p.evaluate(() => Math.round(document.querySelector('#as-chips .as-chip[data-k="rule"]').getBoundingClientRect().top - document.querySelector('#as-ask-q').parentElement.getBoundingClientRect().top));
+  await p.click('#as-name'); await sleep(500);
+  const rest = await chipTop();                    // the resting place: no focus in the field
+  await p.click('#as-ask-q'); await sleep(100);
+  const grown = await chipTop();
+  check(grown - rest >= 30, 'focused, the field pushes the chip down (' + rest + ' -> ' + grown + ')');
+  await p.click('#as-name');                       // focus moves off the field
+  check(await p.evaluate(() => document.activeElement.id) !== 'as-ask-q', 'the Ask field has lost focus');
+  await sleep(500);
+  check(await chipTop() === rest, 'the chip is back at its resting place 500 ms after blur (' + await chipTop() + ' vs ' + rest + ')');
+  await p.click('#as-ask-q'); await sleep(100);
+  check(await chipTop() === grown, 'focusing again pushes it down to the same place');
+  await p.click('#as-name'); await sleep(500);
+  check(await chipTop() === rest, 'and back to rest again (not a one-off)');
   await p.keyboard.press('Escape');
 
   // ---- contrast: every token pair the header uses, in both themes and the OS dark preference ----
