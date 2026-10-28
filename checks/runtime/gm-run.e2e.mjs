@@ -181,15 +181,17 @@ try {
   check(JSON.stringify((await gmState()).ball) === JSON.stringify(before.ball), 'and the server still holds exactly that state');
   check(await R.page.$eval('#gm-map', (m) => m.innerHTML.includes('#d11') && m.innerHTML.includes('#fffdf6')), 'the map has its tokens again');
 
-  /* nothing reaches the iPad */
+  /* the iPad gets the crew and any clock the players can see, in rooms they can see, and nothing else (M3): Cass is in the lounge
+     (public), the hidden Fuse is pinned in the control room */
   await R.page.click('[data-gm="layer"][data-v="player"]');
-  check(await R.page.$eval('#gm-map', (m) => !m.innerHTML.includes('#fffdf6')), 'the player layer\'s map has no token');
+  check(await R.page.$eval('#gm-map', (m) => (m.innerHTML.match(/#fffdf6/g) || []).length === 1 && m.innerHTML.includes('CASS FENN') && !m.innerHTML.includes('#d11')), 'the player layer\'s map has exactly one token: the crew marker, with no ring, and not the hidden clock');
   const s0 = (await api('GET', '/gm/display')).json.seq;
   await R.page.click('[data-gm="ipad"]');
   const d = await until(async () => { const x = (await api('GET', '/gm/display')).json; return x.seq > s0 ? x : null; }, 8000);
   const all = JSON.stringify(d || {});
   check(!!d && d.display.kind === 'svg', 'Show on iPad sent the player map');
-  check(!!d && ['"ball"', 'Odette', 'Wren', 'Pip Quill', 'Ivo', 'Cook', 'Speeches', 'Fireworks', 'Cass Fenn', 'Gala night', '#d11', '#fffdf6'].every((w) => !all.includes(w)), 'the iPad payload carries no ball, no people, no disguise, no event and no token');
+  check(!!d && ['"ball"', 'Odette', 'Wren', 'Pip Quill', 'Ivo', 'Cook', 'Speeches', 'Fireworks', 'Gala night', '#d11', 'Fuse', 'FUSE', '>OM<', '>WT<', '>PQ<', '>IS<'].every((w) => !all.includes(w)), 'the iPad payload carries no ball, no people, no disguise, no event, no ring and no hidden clock');
+  check(!!d && (d.display.svg.match(/#fffdf6/g) || []).length === 1 && d.display.svg.includes('CASS FENN') && d.display.svg.includes('>CF<'), 'and it carries the crew marker, once, in the lounge');
   await R.page.click('[data-gm="layer"][data-v="gm"]');
   check(await R.page.$eval('#gm-map', (m) => m.innerHTML.includes('#fffdf6')), 'the GM layer has them again');
 
