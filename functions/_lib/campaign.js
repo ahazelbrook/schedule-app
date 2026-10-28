@@ -338,6 +338,23 @@ export function campaignDoc(row) {
   return defaultCampaign();
 }
 
+export const OVERLAY_CLOCK_REFUSED = 'overlay.clockId must be a clock the players can see';
+
+/**
+ * The clock an overlay names, as the players see it: { name (at most 60), size, filled }, read from the stored campaign document by
+ * the clock's id (one read of the campaign row). 400 unless the clock exists and is not hidden; a missing clock, a hidden one and a
+ * clock with no name read exactly alike, so the answer says nothing about a hidden clock. The caller never supplies the name: it is
+ * only ever copied from the document, here.
+ */
+export async function resolveOverlayClock(db, campaign, clockId) {
+  const doc = campaignDoc(await loadCampaignRow(db, campaign));
+  const c = withClockIds(Array.isArray(doc.clocks) ? doc.clocks : []).find((x) => isPlainObject(x) && x.id === clockId);
+  const name = c ? str(c.name).replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+  if (!c || c.hidden || !name) throw new HttpError(400, OVERLAY_CLOCK_REFUSED);
+  const size = clockSize(c);
+  return { name, size, filled: clampFill(c.filled, size) };
+}
+
 /**
  * Read-modify-write loop, as for characters. `build(current, now)` gets the stored document
  * (or the default one; its clocks with ids, see withClockIds) and the timestamp to stamp, checks

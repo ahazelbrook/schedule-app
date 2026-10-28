@@ -49,6 +49,7 @@ const CHECKS = [
   ['checks/runtime/gm-assist-health.e2e.mjs', 'the Blade header: seat-health dots, reaped note, meter, live regions, focus, contrast in light and dark (8872)'],
   ['checks/runtime/display-ambient.e2e.mjs', 'the ambient floor on the display (8871)'],
   ['checks/runtime/display-overlay.e2e.mjs', 'overlays on the display: a clock, an NPC, a line, the dawn (8874)'],
+  ['checks/runtime/gm-autopilot.e2e.mjs', 'the iPad autopilot: a clock overlay, Take over, secrecy, lights out, display-only expiry (8879)'],
 ];
 
 const want = process.argv.slice(2);

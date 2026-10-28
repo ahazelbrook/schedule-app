@@ -320,10 +320,13 @@ function sceneId(v, name) {
 
 /**
  * The overlay (GM.md, "Overlays"): something laid over the iPad without replacing what is up. Pure shape checks; the one check that
- * needs the database (an npc overlay's NPC must be revealed) is assertOverlayNpc() in functions/_lib/npcs.js, run by the handler.
- * null removes it. Otherwise { id (at most 40), kind clock|npc|fx|text, ms 1000-180000 } plus, per kind, clock { name (at most 60),
- * size 4|6|8|10|12, filled 0..size }, npc { npcId }, fx { fx: 'dawn' }, text { text (at most 120) }. A fresh object is built, so any
- * other key is dropped; `at` is the server's time. No model text or prep text belongs in one: the GM page sends only what the GM chose.
+ * needs the database is run by the handler: an npc overlay's NPC must be revealed (assertRevealedNpc, functions/_lib/npcs.js) and a
+ * clock overlay's clock must be one the players can see (resolveOverlayClock, functions/_lib/campaign.js, which also fills in the
+ * name, size and fill: the caller never sends them).
+ * null removes it. Otherwise { id (at most 40), kind clock|npc|fx|text, ms 1000-180000, auto? } plus, per kind, clock { clockId },
+ * npc { npcId }, fx { fx: 'dawn' }, text { text (at most 120) }. `auto: true` marks an overlay the autopilot sent (it never lights a
+ * blacked-out screen). A fresh object is built, so any other key (a clock's name, size or fill included) is dropped; `at` is the
+ * server's time. No model text or prep text belongs in one: the GM page sends only what the GM chose.
  */
 export function cleanOverlay(v) {
   if (v === null) return null;
@@ -331,13 +334,13 @@ export function cleanOverlay(v) {
   const id = str(v.id, 'overlay.id', OVERLAY.id, true).trim();
   if (typeof v.kind !== 'string' || !OVERLAY_KINDS.includes(v.kind)) throw new HttpError(400, 'overlay.kind must be one of ' + OVERLAY_KINDS.join(', '));
   if (!isInt(v.ms, OVERLAY.msMin, OVERLAY.msMax)) throw new HttpError(400, 'overlay.ms must be a whole number from ' + OVERLAY.msMin + ' to ' + OVERLAY.msMax);
+  if (v.auto !== undefined && v.auto !== null && typeof v.auto !== 'boolean') throw new HttpError(400, 'overlay.auto must be true or false');
   const out = { id, kind: v.kind, ms: v.ms };
+  if (v.auto === true) out.auto = true;
   if (v.kind === 'clock') {
-    if (!OVERLAY_CLOCK_SIZES.includes(v.size)) throw new HttpError(400, 'overlay.size must be one of ' + OVERLAY_CLOCK_SIZES.join(', '));
-    if (!isInt(v.filled, 0, v.size)) throw new HttpError(400, 'overlay.filled must be a whole number from 0 to the size');
-    out.name = str(v.name, 'overlay.name', OVERLAY.name, true).trim();
-    out.size = v.size;
-    out.filled = v.filled;
+    // the clock is named by its id; the handler looks it up (and refuses a hidden or missing one) and fills in the name, size and fill
+    if (typeof v.clockId !== 'string' || !ID_RE.test(v.clockId)) throw new HttpError(400, 'overlay.clockId is a bad id');
+    out.clockId = v.clockId;
   } else if (v.kind === 'npc') {
     if (typeof v.npcId !== 'string' || !ID_RE.test(v.npcId)) throw new HttpError(400, 'overlay.npcId is a bad id');
     out.npcId = v.npcId;
@@ -461,10 +464,13 @@ const ambientOf = (row) => {
  * left out (a reload of the display then replays nothing), and while it runs it carries `age`, the whole ms since the server set
  * `at`, so a reloaded display carries on from the right moment. Nothing is written and seq does not move. One comparison per poll;
  * an overlay with no readable `at` (stored before the server set one) is served as it is. `nowMs` is the server's own clock.
+ * `displayKind`, when given, is the kind the display is showing: an overlay the autopilot sent (`auto: true`) is left out while that is
+ * 'dark' (lights out), so nothing autopilot-driven lights a blacked-out screen. A GM-pressed overlay (the dawn) carries no such mark.
  */
-export function liveAmbient(amb, nowMs) {
+export function liveAmbient(amb, nowMs, displayKind) {
   const o = amb && amb.doc && amb.doc.overlay;
   if (!o || typeof o !== 'object') return amb;
+  if (o.auto === true && displayKind === 'dark') { const d = { ...amb.doc }; delete d.overlay; return { ...amb, doc: d }; }
   const at = typeof o.at === 'string' ? Date.parse(o.at) : NaN;
   if (!Number.isFinite(at) || !Number.isInteger(o.ms)) return amb;
   const age = Math.max(0, nowMs - at);

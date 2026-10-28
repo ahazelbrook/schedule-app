@@ -134,7 +134,7 @@ async function main() {
     { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, encoding: 'utf8', shell: process.platform === 'win32' });
   if (mig.status !== 0) throw new Error('migrations failed:\n' + mig.stdout + mig.stderr);
   server = spawn(WRANGLER, ['dev', '--port', String(PORT), '--ip', '127.0.0.1', '--inspector-port', String(PORT + 20000), '--show-interactive-dev-session', 'false',
-    '--persist-to', persist, '--log-level', 'warn', '--var', 'DEV_USER:' + GM, '--var', 'GM_EMAILS:' + GM, '--var', 'CAMPAIGN:gmcheck'],
+    '--persist-to', persist, '--log-level', 'warn', '--var', 'DEV_USER:' + GM, '--var', 'GM_EMAILS:' + GM, '--var', 'DISPLAY_EMAILS:table.ipad@example.test', '--var', 'CAMPAIGN:gmcheck'],
   { cwd: ROOT, env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' }, detached: process.platform !== 'win32', stdio: 'ignore', shell: process.platform === 'win32' });
   let up = false;
   for (let i = 0; i < 180 && !up; i++) { try { const r = await fetch('http://127.0.0.1:' + PORT + '/index.html', { signal: AbortSignal.timeout(2000) }); up = r.status > 0; } catch (_) {} if (!up) await sleep(500); }
@@ -481,9 +481,25 @@ async function main() {
     expect(g.seq === seq0 + 2 && !('scene' in g.doc), 'only the two good writes moved seq, and no scene was applied from a refused patch: ' + JSON.stringify(g).slice(0, 200));
   });
 
+  // the table's clocks, as the campaign document holds them: a clock overlay names one by its id and the SERVER resolves its name, size and fill
+  const CLOCKS = {
+    c_fuse: { name: 'Invented Fuse', size: 6, filled: 2 }, c_wide: { name: 'n'.repeat(60), size: 4, filled: 0 }, c_full: { name: 'Invented Full', size: 12, filled: 12 },
+    c_eight: { name: 'Invented Eight', size: 8, filled: 3 }, c_ten: { name: 'Invented Ten', size: 10, filled: 10 },
+  };
+  const camp = (ops) => gm('PATCH', '/api/campaign', { clockOps: ops, updatedAt: new Date().toISOString() });
+  const same = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
+  await step('setup: the campaign clocks the overlay steps name (visible ones, a hidden one, a nameless one)', async () => {
+    const adds = Object.entries(CLOCKS).map(([id, c]) => ({ add: { id, ...c, kind: 'danger', hidden: false } }));
+    adds.push({ add: { id: 'c_hid', name: 'HIDDEN-CLOCK-NAME', size: 4, filled: 1, kind: 'danger', hidden: true } });
+    adds.push({ add: { id: 'c_blank', name: '', size: 4, filled: 1, kind: 'danger', hidden: false } });
+    status(await camp(adds), 200);
+    const c = (await gm('GET', '/api/campaign')).json.doc.clocks;
+    expect(c.length === 7 && c.find((x) => x.id === 'c_hid').hidden === true, 'the clocks are in the campaign document');
+  });
+
   await step('ambient overlay: every field, at its bounds; a refusal beside a good key changes nothing; the server sets at; null removes; other keys drop', async () => {
     const seq0 = await ambSeq();
-    const clock = (x) => ({ id: 'ov1', kind: 'clock', ms: 8000, name: 'Invented Fuse', size: 6, filled: 2, ...x });
+    const clock = (x) => ({ id: 'ov1', kind: 'clock', ms: 8000, clockId: 'c_fuse', ...x });
     const bad = [
       [{ overlay: 'a clock' }, 400, /overlay must be/], [{ overlay: [] }, 400, /overlay must be/], [{ overlay: 7 }, 400, /overlay must be/],
       [{ overlay: clock({ id: undefined }) }, 400, /overlay\.id is required/], [{ overlay: clock({ id: '' }) }, 400, /overlay\.id is required/],
@@ -495,14 +511,10 @@ async function main() {
       [{ overlay: clock({ ms: 0 }) }, 400, /overlay\.ms must be/], [{ overlay: clock({ ms: -5000 }) }, 400, /overlay\.ms must be/],
       [{ overlay: clock({ ms: 5000.5 }) }, 400, /overlay\.ms must be/], [{ overlay: clock({ ms: '5000' }) }, 400, /overlay\.ms must be/],
       [{ overlay: clock({ ms: undefined }) }, 400, /overlay\.ms must be/], [{ overlay: clock({ ms: null }) }, 400, /overlay\.ms must be/],
-      [{ overlay: clock({ name: undefined }) }, 400, /overlay\.name is required/], [{ overlay: clock({ name: '' }) }, 400, /overlay\.name is required/],
-      [{ overlay: clock({ name: 5 }) }, 400, /overlay\.name must be a string/], [{ overlay: clock({ name: 'n'.repeat(61) }) }, 413, /overlay\.name is too long/],
-      [{ overlay: clock({ size: 5 }) }, 400, /overlay\.size must be/], [{ overlay: clock({ size: 14 }) }, 400, /overlay\.size must be/],
-      [{ overlay: clock({ size: 0 }) }, 400, /overlay\.size must be/], [{ overlay: clock({ size: '6' }) }, 400, /overlay\.size must be/],
-      [{ overlay: clock({ size: undefined }) }, 400, /overlay\.size must be/],
-      [{ overlay: clock({ filled: 7 }) }, 400, /overlay\.filled must be/], [{ overlay: clock({ filled: -1 }) }, 400, /overlay\.filled must be/],
-      [{ overlay: clock({ filled: 1.5 }) }, 400, /overlay\.filled must be/], [{ overlay: clock({ filled: '2' }) }, 400, /overlay\.filled must be/],
-      [{ overlay: clock({ filled: undefined }) }, 400, /overlay\.filled must be/], [{ overlay: clock({ size: 4, filled: 5 }) }, 400, /overlay\.filled must be/],
+      [{ overlay: clock({ clockId: undefined }) }, 400, /overlay\.clockId is a bad id/], [{ overlay: clock({ clockId: '' }) }, 400, /overlay\.clockId is a bad id/],
+      [{ overlay: clock({ clockId: 5 }) }, 400, /overlay\.clockId is a bad id/], [{ overlay: clock({ clockId: 'has space' }) }, 400, /overlay\.clockId is a bad id/],
+      [{ overlay: clock({ clockId: 'c'.repeat(81) }) }, 400, /overlay\.clockId is a bad id/], [{ overlay: { id: 'k', kind: 'clock', ms: 8000, name: 'Invented Fuse', size: 6, filled: 2 } }, 400, /overlay\.clockId is a bad id/],
+      [{ overlay: clock({ auto: 'yes' }) }, 400, /overlay\.auto must be/], [{ overlay: clock({ auto: 1 }) }, 400, /overlay\.auto must be/],
       [{ overlay: { id: 'f', kind: 'fx', ms: 30000 } }, 400, /overlay\.fx must be/], [{ overlay: { id: 'f', kind: 'fx', ms: 30000, fx: 'dusk' } }, 400, /overlay\.fx must be/],
       [{ overlay: { id: 'f', kind: 'fx', ms: 30000, fx: 5 } }, 400, /overlay\.fx must be/],
       [{ overlay: { id: 't', kind: 'text', ms: 5000 } }, 400, /overlay\.text is required/], [{ overlay: { id: 't', kind: 'text', ms: 5000, text: '  ' } }, 400, /overlay\.text is required/],
@@ -518,8 +530,8 @@ async function main() {
     expect(await ambSeq() === seq0 && !('scene' in (await gm('GET', '/api/gm/ambient')).json.doc), 'a refused overlay stored nothing and applied no beside-key');
     // every bound that is allowed
     const edge = [
-      clock({ id: 'i'.repeat(40), ms: 1000, name: 'n'.repeat(60), size: 4, filled: 0 }), clock({ ms: 180000, size: 12, filled: 12 }),
-      clock({ size: 8, filled: 8 }), clock({ size: 10, filled: 3 }), clock({ size: 6, filled: 6 }),
+      clock({ id: 'i'.repeat(40), ms: 1000, clockId: 'c_wide' }), clock({ ms: 180000, clockId: 'c_full' }),
+      clock({ clockId: 'c_eight' }), clock({ clockId: 'c_ten' }), clock({ clockId: 'c_fuse', auto: true }),
       { id: 'f', kind: 'fx', ms: 30000, fx: 'dawn' }, { id: 't', kind: 'text', ms: 1000, text: 't'.repeat(120) },
     ];
     for (const o of edge) {
@@ -527,11 +539,14 @@ async function main() {
       const got = r.json.doc.overlay;
       expect(typeof got.at === 'string' && Math.abs(Date.parse(got.at) - Date.now()) < 60000, 'at is the server time: ' + got.at);
       const { at, ...rest } = got;
-      expect(JSON.stringify(rest) === JSON.stringify(o), 'stored as sent: ' + JSON.stringify(rest) + ' vs ' + JSON.stringify(o));
+      const want = o.kind === 'clock' ? { ...o, ...CLOCKS[o.clockId] } : o;   // a clock is stored with the name, size and fill the SERVER read from the campaign
+      expect(same(rest, want), 'stored as resolved: ' + JSON.stringify(rest) + ' vs ' + JSON.stringify(want));
     }
-    // the server sets at, whatever the caller says; other keys (a smuggled text on a clock, a note on a dawn) are dropped; text is one line
-    let r = await A({ overlay: { ...clock({}), at: '1999-01-01T00:00:00.000Z', text: 'smuggled', npcId: 'npc_x', svg: '<svg/>', note: 'n' } }); status(r, 200);
-    expect(r.json.doc.overlay.at !== '1999-01-01T00:00:00.000Z' && Object.keys(r.json.doc.overlay).sort().join() === 'at,filled,id,kind,ms,name,size', 'at is the server one and other keys dropped: ' + JSON.stringify(r.json.doc.overlay));
+    // the server sets at, whatever the caller says; other keys (a smuggled text on a clock, a note on a dawn) are dropped; text is one line;
+    // and a name, size or fill the caller sends for a clock is never kept: the document's own are
+    let r = await A({ overlay: { ...clock({}), at: '1999-01-01T00:00:00.000Z', text: 'smuggled', npcId: 'npc_x', svg: '<svg/>', note: 'n', name: 'LEAK-MARKER', size: 12, filled: 0 } }); status(r, 200);
+    expect(r.json.doc.overlay.at !== '1999-01-01T00:00:00.000Z' && Object.keys(r.json.doc.overlay).sort().join() === 'at,clockId,filled,id,kind,ms,name,size', 'at is the server one and other keys dropped: ' + JSON.stringify(r.json.doc.overlay));
+    expect(same({ n: r.json.doc.overlay.name, s: r.json.doc.overlay.size, f: r.json.doc.overlay.filled }, { n: 'Invented Fuse', s: 6, f: 2 }) && !r.text.includes('LEAK-MARKER'), 'the clock\'s own name, size and fill, not the caller\'s: ' + JSON.stringify(r.json.doc.overlay));
     r = await A({ overlay: { id: 't', kind: 'text', ms: 5000, text: '  one\n two\t three  ', fx: 'dawn' } }); status(r, 200);
     expect(r.json.doc.overlay.text === 'one two three' && Object.keys(r.json.doc.overlay).sort().join() === 'at,id,kind,ms,text', 'text is one trimmed line: ' + JSON.stringify(r.json.doc.overlay));
     // auto
@@ -610,6 +625,129 @@ async function main() {
     status(await A({ overlay: null }), 200);
     status(await gm('PATCH', '/api/npcs/npc_ov_hidden', { revealed: false }), 200);
     await refuse('npc_ov_hidden', 'revealed, then hidden again');
+    status(await A({ overlay: null }), 200);
+  });
+
+  await step('ambient overlay: a clock is named by its id; a hidden, missing, removed or nameless clock is 400 in the same words with nothing stored; the caller\'s name never lands', async () => {
+    const OV = (clockId, x) => ({ overlay: { id: 'ck', kind: 'clock', ms: 8000, clockId, ...x } });
+    status(await A({ overlay: null }), 200);
+    // positive control first: a visible clock is accepted, named from the document, whatever name the caller sent
+    let r = await A(OV('c_fuse', { name: 'LEAK-MARKER', size: 12, filled: 0 })); status(r, 200);
+    expect(r.json.doc.overlay.name === 'Invented Fuse' && r.json.doc.overlay.size === 6 && r.json.doc.overlay.filled === 2 && !r.text.includes('LEAK-MARKER'), 'named from the document: ' + r.text.slice(0, 200));
+    status(await A({ overlay: null }), 200);
+    const seq1 = await ambSeq();
+    const refuse = async (clockId, why) => {
+      const r2 = await A({ scene: 'harvest', ...OV(clockId, { name: 'Invented Fuse', size: 6, filled: 2 }) });   // a good name beside the id does not help
+      expect(r2.status === 400 && /overlay\.clockId must be a clock the players can see/.test(r2.json && r2.json.error), why + ' -> ' + r2.status + ' ' + r2.text.slice(0, 160));
+      return r2.json.error;
+    };
+    const hid = await refuse('c_hid', 'hidden'), miss = await refuse('c_nope', 'missing'), blank = await refuse('c_blank', 'nameless');
+    expect(hid === miss && miss === blank, 'a hidden clock reads exactly like a missing one: ' + [hid, miss, blank].join(' / '));
+    expect(!(hid + miss + blank).includes('HIDDEN-CLOCK-NAME'), 'and says nothing of its name');
+    const held = (await gm('GET', '/api/gm/ambient')).json;
+    expect(held.seq === seq1 && !('overlay' in held.doc) && !('scene' in held.doc), 'the refusals stored nothing, not even the key beside them');
+    // revealing it makes the same id acceptable (the positive control for the hidden refusal); hiding it again refuses again
+    status(await camp([{ id: 'c_hid', hidden: false }]), 200);
+    r = await A(OV('c_hid')); status(r, 200);
+    expect(r.json.doc.overlay.name === 'HIDDEN-CLOCK-NAME', 'once the players may see it, its name is the document\'s: ' + r.text.slice(0, 160));
+    status(await camp([{ id: 'c_hid', hidden: true }]), 200);
+    await refuse('c_hid', 'hidden again');
+    // the fill is the document's, read when the overlay is set
+    status(await camp([{ id: 'c_fuse', filled: 4 }]), 200);
+    r = await A(OV('c_fuse')); status(r, 200); expect(r.json.doc.overlay.filled === 4, 'follows the clock: ' + r.text.slice(0, 160));
+    status(await camp([{ id: 'c_fuse', filled: 2 }]), 200);
+    // a removed clock is refused
+    status(await camp([{ remove: 'c_eight' }]), 200);
+    await refuse('c_eight', 'removed');
+    // GM only
+    status(await call('PATCH', '/api/gm/ambient', { user: PLAYER, body: OV('c_fuse') }), 403);
+    status(await A({ overlay: null }), 200);
+  });
+
+  await step('ambient overlay: an autopilot overlay (auto: true, in the overlay or beside it) is 409 while the display is in lights out and stores nothing; a GM-pressed one is not; the display GET leaves it out under lights out', async () => {
+    status(await A({ overlay: null, auto: null }), 200);
+    status(await gm('PUT', '/api/gm/display', { kind: 'blank' }), 200);
+    const ck = { id: 'ap1', kind: 'clock', ms: 20000, clockId: 'c_fuse' };
+    const shapes = async () => {
+      const d0 = (await gm('GET', '/api/gm/display')).json;
+      return [d0, (await gm('GET', '/api/gm/display?seq=-1&aseq=-1')).json, (await gm('GET', '/api/gm/display?seq=-1&aseq=-1&sseq=-1')).json];
+    };
+    // positive controls: not dark, an autopilot overlay is accepted and marked, whichever way it says so
+    let r = await A({ overlay: ck, auto: true }); status(r, 200);
+    expect(r.json.doc.overlay.auto === true && r.json.doc.auto === true, 'marked: ' + JSON.stringify(r.json.doc.overlay));
+    r = await A({ overlay: { ...ck, id: 'ap2', auto: true } }); status(r, 200);
+    expect(r.json.doc.overlay.auto === true && r.json.doc.overlay.id === 'ap2', 'marked inside the overlay too');
+    (await shapes()).forEach((d, i) => expect(d.ambient.doc.overlay && d.ambient.doc.overlay.id === 'ap2', 'while the lights are on the display GET carries it (shape ' + i + ')'));
+    // lights out
+    status(await gm('PUT', '/api/gm/display', { kind: 'dark' }), 200);
+    (await shapes()).forEach((d, i) => expect(d.display.kind === 'dark' && d.ambient.doc && !('overlay' in d.ambient.doc), 'under lights out the display GET leaves the autopilot\'s overlay out (shape ' + i + '): ' + JSON.stringify(d.ambient.doc)));
+    expect((await gm('GET', '/api/gm/ambient')).json.doc.overlay.id === 'ap2', 'the document still holds it (response only)');
+    const seq0 = await ambSeq();
+    for (const body of [
+      { overlay: { ...ck, id: 'ap3' }, auto: true }, { overlay: { ...ck, id: 'ap4', auto: true } },
+      { overlay: { id: 'ap5', kind: 'npc', ms: 5000, npcId: 'npc_ov_hidden', auto: true } }, { overlay: { id: 'ap6', kind: 'text', ms: 5000, text: 'An invented line.' }, auto: true },
+    ]) {
+      r = await A({ scene: 'harvest', ...body });
+      expect(r.status === 409 && /lights out/.test(r.json && r.json.error), JSON.stringify(body).slice(0, 90) + ' -> ' + r.status + ' ' + r.text.slice(0, 120));
+    }
+    const after = (await gm('GET', '/api/gm/ambient')).json;
+    expect(after.seq === seq0 && after.doc.overlay.id === 'ap2' && !('scene' in after.doc), 'the refusals stored nothing');
+    // a GM-pressed overlay (the dawn) carries no auto mark and is allowed, and the display GET carries it
+    r = await A({ overlay: { id: 'dawn1', kind: 'fx', ms: 30000, fx: 'dawn' } }); status(r, 200);
+    expect(!('auto' in r.json.doc.overlay), 'no auto mark on the GM\'s');
+    (await shapes()).forEach((d, i) => expect(d.ambient.doc.overlay && d.ambient.doc.overlay.id === 'dawn1', 'a GM-pressed dawn is carried under lights out (shape ' + i + ')'));
+    // the chip alone (no overlay) is not an overlay
+    status(await A({ auto: true }), 200);
+    // the lights back: the autopilot's are accepted again
+    status(await gm('PUT', '/api/gm/display', { kind: 'blank' }), 200);
+    status(await A({ overlay: { ...ck, id: 'ap7' }, auto: true }), 200);
+    status(await A({ overlay: null, auto: null }), 200);
+  });
+
+  await step('display GET joins an npc overlay to its row at read time: name, alias, role, faction and spec only, while revealed; hidden or deleted drops it; the stored overlay holds the id alone', async () => {
+    const IPAD = 'table.ipad@example.test';
+    const spec = { heightIn: 61, build: 'invented-spec' };
+    status(await gm('PUT', '/api/npcs/npc_join', { name: 'Invented Joiner', alias: 'Join', role: 'Porter', faction: 'The Invented Guild', description: 'DESC-MARKER', gmNotes: 'GMNOTES-MARKER', tags: ['TAG-MARKER'], spec, revealed: true }), 200);
+    status(await A({ overlay: null, auto: null }), 200);
+    let r = await A({ overlay: { id: 'nj', kind: 'npc', ms: 60000, npcId: 'npc_join', auto: true } }); status(r, 200);
+    expect(Object.keys(r.json.doc.overlay).sort().join() === 'at,auto,id,kind,ms,npcId', 'the stored overlay: ' + JSON.stringify(r.json.doc.overlay));
+    expect(!(await gm('GET', '/api/gm/ambient')).text.includes('Invented Joiner'), 'no NPC name anywhere in the stored ambient document');
+    const shapes = async (user) => {
+      const q = (p) => call('GET', '/api/gm/display' + p, { user });
+      return [await q(''), await q('?seq=-1&aseq=-1'), await q('?seq=-1&aseq=-1&sseq=-1')];
+    };
+    const joined = (x) => same({ n: x.name, a: x.alias, r: x.role, f: x.faction, s: JSON.stringify(x.spec) }, { n: 'Invented Joiner', a: 'Join', r: 'Porter', f: 'The Invented Guild', s: JSON.stringify(spec) }) && Object.keys(x).sort().join() === 'alias,faction,name,role,spec';
+    for (const user of [GM, IPAD]) {
+      for (const [i, d] of (await shapes(user)).entries()) {
+        status(d, 200);
+        const o = d.json.ambient.doc.overlay;
+        expect(o && o.npcId === 'npc_join' && o.npc && joined(o.npc), user + ' shape ' + i + ' carries the joined fields: ' + d.text.slice(0, 260));
+        expect(!/DESC-MARKER|GMNOTES-MARKER|TAG-MARKER|"revealed"|"gmNotes"|"description"|"tags"/.test(d.text), user + ' shape ' + i + ': nothing else of the row (description, gmNotes, tags, revealed)');
+      }
+    }
+    expect((await call('GET', '/api/npcs/npc_join', { user: IPAD })).status === 403, 'the display sign-in cannot read the cast itself, so the join is how its card gets drawn');
+    // the display holds what it was sent: with the ambient seq current the ambient part is "unchanged" while the NPC stays revealed
+    const full = (await gm('GET', '/api/gm/display')).json, aseq = (await gm('GET', '/api/gm/ambient')).json.seq;
+    const cur = (await gm('GET', '/api/gm/display?seq=' + full.seq + '&aseq=' + aseq + '&sseq=' + full.stt.seq)).json;
+    expect(cur.unchanged === true && cur.ambient.unchanged === true, 'both current: ' + JSON.stringify(cur).slice(0, 160));
+    // hidden: gone from every shape, for both sign-ins, and a display whose numbers are current is sent the ambient part IN FULL (without the overlay)
+    status(await gm('PATCH', '/api/npcs/npc_join', { revealed: false }), 200);
+    for (const user of [GM, IPAD]) {
+      for (const [i, d] of (await shapes(user)).entries()) expect(!('overlay' in d.json.ambient.doc) && !d.text.includes('Invented Joiner'), user + ' shape ' + i + ' hidden: ' + d.text.slice(0, 200));
+    }
+    const news = (await call('GET', '/api/gm/display?seq=' + full.seq + '&aseq=' + aseq + '&sseq=' + full.stt.seq, { user: IPAD })).json;
+    expect(news.ambient && news.ambient.unchanged !== true && news.ambient.doc && !('overlay' in news.ambient.doc), 'the hidden NPC is news even at a current ambient seq: ' + JSON.stringify(news).slice(0, 200));
+    expect((await gm('GET', '/api/gm/ambient')).json.doc.overlay.npcId === 'npc_join', 'the stored overlay is untouched (the drop is response only)');
+    // revealed again: back (the positive control for the hidden drop)
+    status(await gm('PATCH', '/api/npcs/npc_join', { revealed: true }), 200);
+    expect((await shapes(IPAD)).every((d) => d.json.ambient.doc.overlay && joined(d.json.ambient.doc.overlay.npc)), 'revealed again: the join returns');
+    // deleted: dropped
+    status(await gm('DELETE', '/api/npcs/npc_join'), 200);
+    for (const [i, d] of (await shapes(IPAD)).entries()) expect(!('overlay' in d.json.ambient.doc), 'deleted, shape ' + i);
+    status(await A({ overlay: null, auto: null }), 200);
+    // a non-npc overlay costs no join and is served as before
+    status(await A({ overlay: { id: 'fxj', kind: 'fx', ms: 60000, fx: 'dawn' } }), 200);
+    expect((await shapes(IPAD)).every((d) => d.json.ambient.doc.overlay && d.json.ambient.doc.overlay.id === 'fxj' && !('npc' in d.json.ambient.doc.overlay)), 'a dawn is untouched by the join');
     status(await A({ overlay: null }), 200);
   });
 

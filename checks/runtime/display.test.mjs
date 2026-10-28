@@ -1049,18 +1049,26 @@ await test('overlay: overlayCard builds the card from the validated fields; an N
   assert.deepEqual(P.overlayCard(P.cleanOverlay({ id: 't', kind: 'text', ms: 5000, text: 'Invented line.' }), null), { kind: 'text', text: 'Invented line.', size: 'xl' });
   assert.deepEqual(P.overlayCard(P.cleanOverlay({ id: 'd', kind: 'fx', ms: 30000, fx: 'dawn' }), null), { kind: 'fx', fx: 'dawn' });
   assert.equal(P.overlayCard(null, null), null);
-  const o = P.cleanOverlay({ id: 'n', kind: 'npc', ms: 20000, npcId: 'npc_x' });
-  const doc = { name: 'Invented Person', alias: 'Inky', role: 'Clerk', faction: 'The Invented Guild', description: 'A long description.', gmNotes: 'SECRET-NOTE', tags: ['secret-tag'], revealed: true, spec: { heightIn: 60 } };
-  const c = P.overlayCard(o, doc);
+  /* the NPC card is drawn from what the SERVER joined to the overlay at read time (`npc`, present only while the NPC is revealed); the page reads nothing else */
+  const raw = { id: 'n', kind: 'npc', ms: 20000, npcId: 'npc_x' };
+  const joined = { name: 'Invented Person', alias: 'Inky', role: 'Clerk', faction: 'The Invented Guild', spec: { heightIn: 60 } };
+  const o = P.cleanOverlay({ ...raw, npc: joined });
+  const c = P.overlayCard(o);
   assert.deepEqual(c, { kind: 'npc', name: 'Invented Person', alias: 'Inky', sub: 'Clerk · The Invented Guild', spec: { heightIn: 60 } });
-  assert.ok(!/SECRET|secret|description|tags|revealed/.test(JSON.stringify(c)), 'no gmNotes, tags, description or revealed flag on the card');
-  assert.equal(P.overlayCard(o, { ...doc, revealed: false }), null, 'a hidden NPC draws nothing, whatever the server checked earlier');
-  const noFlag = { ...doc }; delete noFlag.revealed;
-  assert.equal(P.overlayCard(o, noFlag), null, 'an NPC with no revealed flag draws nothing');
-  assert.equal(P.overlayCard(o, { ...doc, revealed: 'true' }), null, 'only the boolean true counts');
-  assert.equal(P.overlayCard(o, null), null, 'an NPC the page could not read draws nothing');
-  assert.equal(P.overlayCard(o, undefined), null);
-  assert.equal(P.overlayCard(o, { name: '', alias: 'x', revealed: true }), null, 'a nameless NPC draws nothing');
+  /* whatever else rides on the joined object is not copied: the view model keeps the five fields */
+  const dirty = P.cleanOverlay({ ...raw, npc: { ...joined, description: 'A long description.', gmNotes: 'SECRET-NOTE', tags: ['secret-tag'], revealed: true } });
+  assert.deepEqual(Object.keys(dirty.npc).sort(), ['alias', 'faction', 'name', 'role', 'spec']);
+  assert.ok(!/SECRET|secret|description|tags|revealed/.test(JSON.stringify(P.overlayCard(dirty))), 'no gmNotes, tags, description or revealed flag on the card');
+  assert.equal(P.overlayCard(P.cleanOverlay(raw)), null, 'an npc overlay the server did not join (no `npc`) draws nothing at all');
+  assert.equal(P.overlayCard(P.cleanOverlay({ ...raw, npc: 'x' })), null, 'a junk npc draws nothing');
+  assert.equal(P.overlayCard(P.cleanOverlay({ ...raw, npc: { ...joined, name: '' } })), null, 'a nameless NPC draws nothing');
+  assert.equal(P.overlayCard(P.cleanOverlay({ id: 't', kind: 'text', ms: 5000, text: 'Invented line.', npc: joined })).kind, 'text', 'an npc key on another kind is ignored');
+  assert.ok(!('npc' in P.cleanOverlay({ id: 't', kind: 'text', ms: 5000, text: 'x', npc: joined })), 'and not kept');
+});
+await test('overlay: `auto` (the autopilot sent it) is kept as a boolean true and nothing else; a name beside an npc id is dropped', () => {
+  assert.equal(P.cleanOverlay({ ...OVC, auto: true }).auto, true);
+  for (const a of [false, 'true', 1, null, undefined]) assert.ok(!('auto' in P.cleanOverlay({ ...OVC, auto: a })), String(a));
+  assert.deepEqual(Object.keys(P.cleanOverlay({ id: 'n', kind: 'npc', ms: 20000, npcId: 'npc_x', name: 'LEAK', auto: true })).sort(), ['auto', 'id', 'kind', 'ms', 'npcId'], 'a name beside an npc id is dropped');
 });
 await test('overlay: the ambient plan is unchanged by overlay and auto, and no model text can reach a card (the page draws text, never markup)', () => {
   const want = P.ambientPlan({});

@@ -740,6 +740,8 @@ function addAmbient(fg, init) {
     s.ambPatches.push(clone(p)); const d = clone(s.amb.doc);
     for (const k of Object.keys(p)) { if (k === 'skip') d.skip = (d.skip || 0) + 1; else if (p[k] === null) delete d[k]; else d[k] = clone(p[k]); }
     if (p.score) d.score.at = '2026-10-17T01:02:03.000Z';
+    /* the server resolves a clock overlay's name, size and fill from the campaign document (functions/_lib/campaign.js resolveOverlayClock) */
+    if (p.overlay && p.overlay.kind === 'clock') Object.assign(d.overlay, (s.clockTable || { c_fuse: { name: 'Invented Fuse', size: 8, filled: 3 } })[p.overlay.clockId] || {});
     s.amb.seq++; s.amb.doc = d; return { seq: s.amb.seq, doc: clone(d), updatedAt: 'a' + s.amb.seq };
   };
   return fg;
@@ -924,8 +926,9 @@ await test('9j. Off / Auto / Pin, a scene, the interval, Next scene and Clear sc
 
 await test('9j2. overlays: overlayOk takes exactly the server\'s shapes and no stray field; the gate lets an overlay or auto through only in that shape', () => {
   const ok = [
-    { id: 'a', kind: 'clock', ms: 8000, name: 'Invented Fuse', size: 6, filled: 2 }, { id: 'a', kind: 'clock', ms: 1000, name: 'n'.repeat(60), size: 12, filled: 12 },
+    { id: 'a', kind: 'clock', ms: 8000, clockId: 'c_fuse' }, { id: 'a', kind: 'clock', ms: 1000, clockId: 'c'.repeat(80), auto: true },
     { id: 'i'.repeat(40), kind: 'npc', ms: 180000, npcId: 'npc_x' }, { id: 'a', kind: 'fx', ms: 30000, fx: 'dawn' }, { id: 'a', kind: 'text', ms: 5000, text: 't'.repeat(120) },
+    { id: 'a', kind: 'npc', ms: 5000, npcId: 'npc_x', auto: true }, { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn', auto: false },
   ];
   ok.forEach((o) => assert.equal(P.overlayOk(o), true, JSON.stringify(o)));
   const bad = [
@@ -933,15 +936,34 @@ await test('9j2. overlays: overlayOk takes exactly the server\'s shapes and no s
     { id: '', kind: 'fx', ms: 5000, fx: 'dawn' }, { id: 'i'.repeat(41), kind: 'fx', ms: 5000, fx: 'dawn' }, { kind: 'fx', ms: 5000, fx: 'dawn' }, { id: 'a', kind: 'fx', ms: 5000, fx: 'dusk' },
     { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn', text: 'smuggled' }, { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn', svg: '<svg/>' }, { id: 'a', kind: 'text', ms: 5000, text: 'x', at: 'now' },
     { id: 'a', kind: 'text', ms: 5000, text: 'x'.repeat(121) }, { id: 'a', kind: 'text', ms: 5000, text: '  ' }, { id: 'a', kind: 'npc', ms: 5000, npcId: 'has space' }, { id: 'a', kind: 'npc', ms: 5000, npcId: 'npc_x', name: 'Name' },
-    { id: 'a', kind: 'clock', ms: 8000, name: '', size: 6, filled: 2 }, { id: 'a', kind: 'clock', ms: 8000, name: 'n'.repeat(61), size: 6, filled: 2 }, { id: 'a', kind: 'clock', ms: 8000, name: 'x', size: 5, filled: 2 },
-    { id: 'a', kind: 'clock', ms: 8000, name: 'x', size: 4, filled: 5 }, { id: 'a', kind: 'clock', ms: 8000, name: 'x', size: 4, filled: -1 }, { id: 'a', kind: 'clock', ms: 8000, name: 'x', size: 4, filled: 1.5 },
+    /* a clock is named by its id: no clockId, a bad one, or a name / size / fill smuggled beside it (the server resolves those) is not sent */
+    { id: 'a', kind: 'clock', ms: 8000 }, { id: 'a', kind: 'clock', ms: 8000, clockId: '' }, { id: 'a', kind: 'clock', ms: 8000, clockId: 'has space' }, { id: 'a', kind: 'clock', ms: 8000, clockId: 7 },
+    { id: 'a', kind: 'clock', ms: 8000, clockId: 'c'.repeat(81) }, { id: 'a', kind: 'clock', ms: 8000, clockId: 'c_fuse', name: 'Invented Fuse' }, { id: 'a', kind: 'clock', ms: 8000, clockId: 'c_fuse', size: 6, filled: 2 },
+    { id: 'a', kind: 'clock', ms: 8000, name: 'Invented Fuse', size: 6, filled: 2 }, { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn', auto: 'yes' }, { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn', auto: 1 },
   ];
   bad.forEach((o) => assert.equal(P.overlayOk(o), false, JSON.stringify(o)));
   const g = P.makeGate();
   assert.equal(g.allowsAmbient({ overlay: ok[3] }), true); assert.equal(g.allowsAmbient({ overlay: null }), true); assert.equal(g.allowsAmbient({ auto: true }), true); assert.equal(g.allowsAmbient({ auto: null }), true);
   assert.equal(g.allowsAmbient({ overlay: bad[12] }), false, 'a stray field'); assert.equal(g.allowsAmbient({ overlay: 'dawn' }), false); assert.equal(g.allowsAmbient({ auto: 1 }), false); assert.equal(g.allowsAmbient({ auto: 'yes' }), false);
   assert.equal(g.allowsAmbient({ mode: 'off', overlay: bad[5] }), false, 'a good key does not carry a bad overlay');
-  assert.equal(P.overlayLine(ok[3]), 'dawn · 30 s'); assert.equal(P.overlayLine(ok[0]), 'clock Invented Fuse 2/6 · 8 s'); assert.equal(P.overlayLine(null), ''); assert.equal(P.overlayLine({ kind: 'x' }), '');
+  /* a text overlay is free text: refused when it names a hidden clock or a hidden NPC as a whole word, in any case (positive controls beside each) */
+  const gh = P.makeGate(() => ['Vex', 'The Brass Fox', 'Mr. O\'Neil (Jr)', 'Zoë']);
+  const txt = (t) => ({ overlay: { id: 'a', kind: 'text', ms: 5000, text: t } });
+  assert.equal(gh.allowsAmbient(txt('A quiet evening at the docks.')), true, 'positive control: a line naming nobody hidden');
+  assert.equal(gh.allowsAmbient(txt('Vex was seen at the docks')), false, 'a hidden name');
+  assert.equal(gh.allowsAmbient(txt('the dock saw vex again')), false, 'any case');
+  assert.equal(gh.allowsAmbient(txt('the brass   fox is out')), false, 'a two-word name, any run of spaces');
+  assert.equal(gh.allowsAmbient(txt('"Vex," she said.')), false, 'punctuation is a boundary');
+  assert.equal(gh.allowsAmbient(txt('Mr. O\'Neil (Jr) arrived')), false, 'a name with regex characters is matched literally');
+  assert.equal(gh.allowsAmbient(txt('Zoë waits')), false, 'a name with a non-ASCII letter');
+  assert.equal(gh.allowsAmbient(txt('Vexing weather tonight')), true, 'but not inside a longer word (Vexing)');
+  assert.equal(gh.allowsAmbient(txt('Convex lenses')), true, 'nor at the end of one');
+  assert.equal(gh.allowsAmbient(txt('Zoëtrope')), true, 'nor a non-ASCII word that merely starts with one');
+  assert.equal(gh.allowsAmbient({ overlay: { id: 'a', kind: 'fx', ms: 5000, fx: 'dawn' } }), true, 'the scan is for text; a dawn passes');
+  assert.equal(gh.allowsAmbient({ overlay: ok[0], auto: true }), true, 'an id-only clock overlay passes (the server names it)');
+  assert.equal(P.makeGate(() => { throw new Error('x'); }).allowsAmbient(txt('hello')), false, 'a failing name source fails closed');
+  assert.deepEqual([P.namesHit('Vex!', ['Vex']), P.namesHit('Vexed', ['Vex']), P.namesHit('x', ['x']), P.namesHit('', ['Vex']), P.namesHit('Vex', [])], [true, false, false, false, false], 'one-letter names are not scanned');
+  assert.equal(P.overlayLine(ok[3]), 'dawn · 30 s'); assert.equal(P.overlayLine({ id: 'a', kind: 'clock', ms: 8000, clockId: 'c_fuse', name: 'Invented Fuse', size: 6, filled: 2 }), 'clock Invented Fuse 2/6 · 8 s', 'the line is drawn from the document the server holds, which carries the name'); assert.equal(P.overlayLine(null), ''); assert.equal(P.overlayLine({ kind: 'x' }), '');
   assert.equal(P.ipadView({ overlay: ok[3], auto: true }).overlayLine, 'dawn · 30 s'); assert.equal(P.ipadView({ overlay: ok[3], auto: true }).auto, true); assert.equal(P.ipadView({}).overlayLine, '');
 });
 
@@ -955,10 +977,17 @@ await test('9j3. showOverlay and clearOverlay go through the ambient PATCH (so t
   assert.equal(fg.server.ambPatches.length, n0 + 1);
   const sent = fg.server.ambPatches[n0];
   assert.deepEqual(Object.keys(sent), ['overlay']); assert.deepEqual(Object.keys(sent.overlay).sort(), ['fx', 'id', 'kind', 'ms']);
-  assert.match(sent.overlay.id, /^ov-[a-z0-9]+$/); assert.ok(sent.overlay.id.length <= 40); assert.equal(sent.overlay.kind, 'fx');
+  assert.match(sent.overlay.id, /^o[a-z0-9]+-\d+$/, 'an opaque id: a per-load prefix and a counter'); assert.ok(sent.overlay.id.length <= 40); assert.equal(sent.overlay.kind, 'fx');
   assert.match(h.q('#gm-ipad-overlay').textContent, /^Overlay sent: dawn · 30 s$/, 'drawn from the answer');
-  await h.page.showOverlay({ id: 'my-own', kind: 'clock', ms: 8000, name: 'Invented Fuse', size: 8, filled: 3 });
+  const idA = sent.overlay.id;
+  await h.page.showOverlay({ id: 'my-own', kind: 'clock', ms: 8000, clockId: 'c_fuse' });
   assert.equal(fg.server.ambPatches[n0 + 1].overlay.id, 'my-own', 'a given id is kept');
+  assert.deepEqual(Object.keys(fg.server.ambPatches[n0 + 1].overlay).sort(), ['clockId', 'id', 'kind', 'ms'], 'a clock goes by its id: no name leaves the page');
+  await h.page.showOverlay({ kind: 'npc', ms: 5000, npcId: 'npc_x' });
+  const idB = fg.server.ambPatches[n0 + 2].overlay.id;
+  assert.notEqual(idA, idB); assert.equal(idB.split('-')[0], idA.split('-')[0], 'one prefix per page load'); assert.equal(Number(idB.split('-')[1]), Number(idA.split('-')[1]) + 1, 'and a counter');
+  assert.ok(!/npc|x$/.test(idB), 'never built from the NPC id');
+  await h.page.showOverlay({ id: 'my-own', kind: 'clock', ms: 8000, clockId: 'c_fuse' });
   assert.match(h.q('#gm-ipad-overlay').textContent, /clock Invented Fuse 3\/8 · 8 s/);
   /* refused before any request: a bad kind, a stray field, an svg, a too-long text, junk */
   br.toasts.length = 0;
@@ -966,11 +995,11 @@ await test('9j3. showOverlay and clearOverlay go through the ambient PATCH (so t
     const r = await h.page.showOverlay(bad); assert.equal(r, null, JSON.stringify(bad));
   }
   assert.equal(await h.page.showOverlay(null), null); assert.equal(await h.page.showOverlay('dawn'), null);
-  assert.equal(fg.server.ambPatches.length, n0 + 2, 'nothing was sent for them'); assert.equal(br.toasts.length, 5);
+  assert.equal(fg.server.ambPatches.length, n0 + 4, 'nothing was sent for them'); assert.equal(br.toasts.length, 5);
   /* the Clear overlay control */
   const btn = h.q('#gm-ipad [data-gm="clearoverlay"]'); assert.ok(btn && /Clear overlay/.test(btn.textContent), 'the iPad panel has Clear overlay');
-  btn.click(); await until(() => fg.server.ambPatches.length === n0 + 3);
-  assert.deepEqual(fg.server.ambPatches[n0 + 2], { overlay: null }); await until(() => !h.q('#gm-ipad-overlay'));
+  btn.click(); await until(() => fg.server.ambPatches.length === n0 + 5);
+  assert.deepEqual(fg.server.ambPatches[n0 + 4], { overlay: null }); await until(() => !h.q('#gm-ipad-overlay'));
   assert.equal(fg.server.amb.doc.overlay, undefined);
   await h.page.showOverlay({ kind: 'text', ms: 5000, text: 'Invented line.' }); await h.page.clearOverlay();
   assert.deepEqual(fg.server.ambPatches[fg.server.ambPatches.length - 1], { overlay: null }, 'clearOverlay() sends null');

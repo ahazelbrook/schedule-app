@@ -35,6 +35,8 @@
          onStall   (stall | null): Stall's offer from a tick ({ kind, offer, why, at }); null clears it (Listening off, the cap)
          onMeanwhile (cutaway | null): Meanwhile's faction cutaway from a tick ({ faction, cutaway, clock, ticks, why, at }); null clears it (Listening off, the cap)
          onHandout (handout): a handout the Mystery keeper suggests, from a tick ({ id, why, at }); the page offers it in the Rack
+         onAutopilot ()  the header's autopilot button was tapped (Take over / Hand back / Switch on: the page decides which, and sets its label
+                   with ctl.setAutopilot({ label, title } | null); the panel sends nothing itself)
          dots      () -> 0-4 | null: the Dots chip's value; the "Fit it" form sends it as `dots` when set
          markdown  { render(src, opts) -> html }: default window.B68Markdown (app/markdown.js); without it `more` shows as plain text
          onNote    the page's capture: "Note it" on a Ledger update and "Keep" on a card file their text as a Moment (the update
@@ -535,6 +537,19 @@
         lay.bar = bar; lay.foot = foot;
       }
     }
+    /* The autopilot's button in the header (the page owns the state): { label, title? } shows a button with that text (textContent) that calls
+       o.onAutopilot(); null hides it. The panel sends and decides nothing itself. */
+    var apView = null;
+    function paintAutopilot() {
+      var b = q('#as-ap'); if (!b) return;
+      if (!apView) { b.hidden = true; return; }
+      b.textContent = apView.label; b.setAttribute('title', apView.title || ''); b.setAttribute('aria-label', apView.title || apView.label);
+      b.hidden = false;
+    }
+    function setAutopilot(v) {
+      apView = isObj(v) && str(v.label).trim() ? { label: str(v.label).trim().slice(0, 40), title: str(v.title).trim().slice(0, 160) } : null;
+      paintAutopilot();
+    }
     function onResize() { applyState(); relayout(); render(); }
     function onScroll() {
       if (lay.raf || !win || !win.requestAnimationFrame) return;
@@ -551,6 +566,7 @@
         '<aside class="as-panel" id="as-panel" aria-label="Blade, the table agent" hidden>' +
           '<header class="as-head"><div class="as-head-1"><img class="as-av" src="' + esc(avatar) + '" alt="" width="32" height="32">' +
             '<div class="as-who"><b tabindex="-1" id="as-name">Blade</b><span class="as-state" id="as-state" data-state="wait"><i class="as-dot" aria-hidden="true"></i><span id="as-state-word">Waiting</span></span></div>' +
+            '<button type="button" class="as-ap" id="as-ap" data-as="ap" hidden></button>' +
             '<button type="button" class="as-pin" id="as-pin" data-as="pin" aria-pressed="false" hidden>Pin</button>' +
             '<button type="button" class="as-x" data-as="close" aria-label="Close Blade (A)"><span aria-hidden="true">×</span></button></div>' +
             '<div class="as-head-2"><span class="as-tier" id="as-tier" hidden></span><span class="as-meter" id="as-meter" role="img" aria-label="Spend: no reading yet" data-tone="ok"></span>' +
@@ -594,7 +610,7 @@
       host.addEventListener('submit', onSubmit);
       host.addEventListener('keydown', onKey);
       if (win && typeof win.addEventListener === 'function') { win.addEventListener('resize', onResize); win.addEventListener('scroll', onScroll, { passive: true }); }
-      render(); relayout();
+      paintAutopilot(); render(); relayout();
     }
     function render() {
       if (!host) return;
@@ -1262,6 +1278,7 @@
       else if (a === 'close') close();
       else if (a === 'banner') open();
       else if (a === 'pin') togglePin();
+      else if (a === 'ap') { if (typeof o.onAutopilot === 'function') { try { o.onAutopilot(); } catch (e) {} } }
       else if (a === 'fold') { st.unfolded[id] = !st.unfolded[id]; renderList(); refocus(id); }
       else if (a === 'more') { st.moreOpen[id] = !st.moreOpen[id]; render(); }
       else if (a === 'undo') { undoCard(cardById(id)); }
@@ -1338,6 +1355,7 @@
     if (!o.noTimer) setTimeout(function () { poll(); }, 1500);
 
     return {
+      setAutopilot: setAutopilot,
       ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, pin: togglePin, isPinned: function () { return docked(); }, undoNewest: undoNewest, addCard: addCard, updateCard: updateCard, removeCard: removeCard, relayout: relayout, poll: poll, rolled: rolled, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
       state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, asks: st.cards.filter(function (c) { return c.src === 'ask'; }), ask: st.ask, nowId: st.nowId, renders: { cards: cache.builds, more: cache.moreRenders }, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, screen: st.screen, banner: bannerCard ? bannerCard.headline : '' })); },
       el: function () { return host; },

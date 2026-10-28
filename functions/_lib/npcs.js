@@ -122,6 +122,28 @@ export async function assertRevealedNpc(db, campaign, id) {
   if (!isLiveNpc(row, campaign) || parseNpc(row).revealed !== true) throw new HttpError(400, 'overlay.npcId must be a revealed NPC');
 }
 
+/**
+ * The ambient part as the display is served it, with an npc overlay joined to its row at READ time (GET /api/gm/display, after
+ * liveAmbient). The stored overlay holds only the NPC's id; here, while that NPC is live, in this campaign and `revealed: true`, a
+ * copy of the overlay in the answer gains `npc`: exactly name, alias, role, faction and the figure's spec (never description, gmNotes,
+ * tags, revealed, or anything else; each field is copied by name, the row is never spread). Otherwise the overlay is left out of the
+ * answer, so a display, including the table's display-only sign-in (which cannot read the cast), draws the card from this or not at
+ * all. One read by primary key, and only when the overlay is an npc one. Returns { amb, dropped }: `dropped` says an overlay was
+ * left out because its NPC is no longer revealed (the caller then sends the ambient part in full, so a display that holds the card
+ * sees it go).
+ */
+export async function joinOverlayNpc(db, campaign, amb) {
+  const o = amb && amb.doc && amb.doc.overlay;
+  if (!o || typeof o !== 'object' || o.kind !== 'npc') return { amb, dropped: false };
+  const row = typeof o.npcId === 'string' && ID_RE.test(o.npcId) ? await loadNpcRow(db, o.npcId) : null;
+  const doc = row && isLiveNpc(row, campaign) ? parseNpc(row) : null;
+  const next = { ...amb.doc };
+  if (!doc || doc.revealed !== true) { delete next.overlay; return { amb: { ...amb, doc: next }, dropped: true }; }
+  const text = (v) => (typeof v === 'string' ? v : '');
+  next.overlay = { ...o, npc: { name: text(doc.name), alias: text(doc.alias), role: text(doc.role), faction: text(doc.faction), spec: isPlainObject(doc.spec) ? doc.spec : null } };
+  return { amb: { ...amb, doc: next }, dropped: false };
+}
+
 /** The newest updated_at over every row of the campaign, tombstones included (the adapter's cheap change stamp). */
 export async function npcsUpdatedAt(db, campaign) {
   const row = await db.prepare('SELECT MAX(updated_at) AS at FROM npcs WHERE campaign = ?1').bind(campaign).first();
