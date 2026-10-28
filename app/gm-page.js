@@ -3406,7 +3406,7 @@
     if (!A) return;
     var core = A.create({ now: function () { return Date.now(); }, idPrefix: 'a' + Math.random().toString(36).slice(2, 7) + '-' });
     var prev = isObj(me.doc.ap) && Array.isArray(me.doc.ap.log) ? me.doc.ap.log.filter(isObj).slice(-A.DURATIONS.logMax) : [];
-    var ap = me.ap = { core: core, q: Promise.resolve(), sets: 0, clocks: apClockMap(), settle: {}, probeAt: 0, logKey: '', prev: prev, cat: '' };
+    var ap = me.ap = { core: core, q: Promise.resolve(), sets: 0, clocks: apClockMap(), settle: {}, probeAt: 0, logKey: '0:', prev: prev, cat: '' };   /* '0:' is apLog's key for an empty log: a controller with nothing to say writes nothing (an empty ap.log on the first tick pushed the GM's pending save back by a debounce) */
     var saved = apSavedMode();
     if (saved === 'hold') core.event({ type: 'takeover' }); else if (saved === 'off') core.event({ type: 'off' });
     if (document.hidden) core.event({ type: 'visible', visible: false });

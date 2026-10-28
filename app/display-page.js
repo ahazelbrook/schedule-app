@@ -1402,7 +1402,7 @@
        arrives with another fill the card is redrawn in place (no new slide-in, the timers untouched). */
     function ovSig(o) { return o.kind === 'clock' ? [o.name, o.size, o.filled].join('|') : ''; }
     function ovRefresh(o) {
-      if (o.kind !== 'clock' || !s.ov.node || s.ov.sig === ovSig(o)) return;
+      if (!o || o.kind !== 'clock' || !s.ov.node || s.ov.sig === ovSig(o)) return;     /* no overlay (a 'keep' with nothing seen): nothing to refresh; this threw on the first ambient doc and skipped its setPlan */
       var card = Pure.overlayCard(o); if (!card) return;
       var old = s.ov.node, node = ovCardNode(card, o);
       node.classList.add('dp-ov-in');
