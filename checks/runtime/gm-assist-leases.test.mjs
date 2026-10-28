@@ -198,6 +198,8 @@ await test('a tick whose Voice hangs: Voice times out on its own deadline, Ref\'
   assert.equal(out.voice, undefined);
   assert.deepEqual(out.errors, [{ seat: 'voice', error: 'timed out' }]);
   assert.deepEqual(out.health.reaped, []);
+  assert.ok(out.health.ran.includes('tripwire') && out.health.ran.includes('ref'), 'the seats whose call came back are in ran');
+  assert.ok(!out.health.ran.includes('voice'), 'a call that hit its deadline did not run');
   const why = Object.fromEntries(out.health.skipped.map((x) => [x.seat, x.why]));
   assert.deepEqual(why, { showrunner: 'cooldown', scribe: 'cooldown' });
   const rows = s.rows();
@@ -215,7 +217,7 @@ await test('a quiet tick (nothing new) still answers with health', async () => {
   clock.t += 3_600_000;
   const s = await setup();
   const out = await body(await s.post('tick', { after: 0 }));
-  assert.deepEqual(out.health, { skipped: [], reaped: [] });
+  assert.deepEqual(out.health, { skipped: [], reaped: [], ran: [] });
   assert.equal(s.calls.length, 0);
 });
 
@@ -238,7 +240,7 @@ await test('the stuck-seat night: a hung call whose request the page abandoned h
   // 2: the next tick, inside the ttl: the Tripwire is in flight, said so in health, and no second call is made
   clock.t += 20_000;
   let out = await body(await s.post('tick', { after: 0 }));
-  assert.deepEqual(out.health, { skipped: [{ seat: 'tripwire', why: 'in-flight' }], reaped: [] });
+  assert.deepEqual(out.health, { skipped: [{ seat: 'tripwire', why: 'in-flight' }], reaped: [], ran: [] });
   assert.equal(s.count.tripwire, 1);
   // 3: past the 27 s ttl: the lease is reaped, reported once, and the Tripwire runs (this call hangs too)
   clock.t += 8_000;
