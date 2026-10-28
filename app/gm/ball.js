@@ -1,0 +1,233 @@
+/* B68GmBall — a site's "play" block: its timeline, routes and disguises.
+ *
+ * Pure logic. No DOM, no storage, no network. The block is authored in the vault inside a site's `b68-site` JSON
+ * (key `play`), carried in the location part's `authored.sites[name].play` (scripts/lib/authored-export.mjs), and
+ * read by the GM page only. It never reaches the iPad.
+ *
+ * Load: <script src="gm/ball.js"> exposes window.B68GmBall; in Node, require() returns the same object.
+ *
+ * checkPlay(play, roomNames) -> { play, warnings }
+ *   play        the raw block, or anything else
+ *   roomNames   the site's room names (an array, or an object whose keys are room names)
+ *   Returns the block with everything that fails dropped, and one warning per drop. `play` is null when the block as a
+ *   whole is unusable (not an object, `v` is not 1, or no valid `clock`). The input is never mutated. Keys this module
+ *   does not know are carried through untouched (top level and per item), and are not warned about.
+ *
+ *   clock      { start: "HH:MM", end: "HH:MM", step?: whole minutes (15), label?: string }
+ *   floors     { "<level number>": "<name>" }  names only: the map kit decides which floor a room sits on
+ *   routes     [{ id, from, to, via?, dir?: both|up|down (both), who?, needs?, watched? }]   from/to must be rooms
+ *   people     [{ id, label, kind: target|guard|staff|rival|ally|contact, npc?, note?, stops?, with? }]
+ *                stops [{ at: "HH:MM", room, note? }]  sorted by minutes from clock.start, so 00:15 follows 23:30
+ *                with   the id of another person whose stops this one follows. A person with both keeps both.
+ *   disguises  [{ id, label, floors: [level numbers], rooms?: [room], never?: [room], sees?: string }]
+ *                `sees` is free text in the vault today (a role or a name), carried as written.
+ *   events     [{ at: "HH:MM", id, label, room?, fx? }]
+ *   clocks     [{ name, room? }]
+ *
+ * minuteOf(hhmm, start) -> whole minutes after `start`, wrapping past midnight (a time before `start` is the next
+ *   morning); NaN when either is not HH:MM.
+ */
+(function (root, factory) {
+  if (typeof module === "object" && module.exports) module.exports = factory();
+  else root.B68GmBall = factory();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var KINDS = ["target", "guard", "staff", "rival", "ally", "contact"];
+  var DIRS = ["both", "up", "down"];
+  var LIMITS = { people: 60, stops: 40, routes: 40, disguises: 24, events: 40, clocks: 24, floors: 12, rooms: 40, text: 400 };
+  var TIME_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+
+  var isObj = function (v) { return !!v && typeof v === "object" && !Array.isArray(v); };
+  var isStr = function (v) { return typeof v === "string" && v.trim() !== ""; };
+  var copy = function (o) { var r = {}; Object.keys(o).forEach(function (k) { r[k] = o[k]; }); return r; };
+  var clipText = function (s) { return String(s).slice(0, LIMITS.text); };
+
+  function mins(hhmm) {
+    var m = TIME_RE.exec(typeof hhmm === "string" ? hhmm.trim() : "");
+    return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+  }
+  function minuteOf(hhmm, start) {
+    var t = mins(hhmm), s = mins(start);
+    if (isNaN(t) || isNaN(s)) return NaN;
+    return t >= s ? t - s : t + 1440 - s;
+  }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function hhmm(s) { var m = mins(s); return pad(Math.floor(m / 60)) + ":" + pad(m % 60); }
+
+  function checkPlay(play, roomNames) {
+    var warnings = [];
+    var warn = function (m) { warnings.push(m); };
+    var rooms = {};
+    (Array.isArray(roomNames) ? roomNames : isObj(roomNames) ? Object.keys(roomNames) : []).forEach(function (n) { rooms[String(n)] = 1; });
+    var hasRoom = function (n) { return typeof n === "string" && rooms[n] === 1; };
+
+    if (!isObj(play)) { warn("play: not an object; dropped"); return { play: null, warnings: warnings }; }
+    if (play.v !== 1) { warn("play: v is " + JSON.stringify(play.v) + ", not 1; the whole block is dropped"); return { play: null, warnings: warnings }; }
+    var c = play.clock;
+    if (!isObj(c) || isNaN(mins(c.start)) || isNaN(mins(c.end))) {
+      warn("play: clock needs start and end as HH:MM; the whole block is dropped");
+      return { play: null, warnings: warnings };
+    }
+    var out = copy(play);
+    var clock = copy(c);
+    clock.start = hhmm(c.start); clock.end = hhmm(c.end);
+    if (c.step === undefined) clock.step = 15;
+    else if (!Number.isInteger(c.step) || c.step < 1 || c.step > 240) { warn("play: clock.step " + JSON.stringify(c.step) + " is not a whole number of minutes (1 to 240); using 15"); clock.step = 15; }
+    if (c.label !== undefined && typeof c.label !== "string") { warn("play: clock.label is not text; dropped"); delete clock.label; }
+    out.clock = clock;
+    var start = clock.start;
+    var span = minuteOf(clock.end, start);
+    var inWindow = function (t) { return minuteOf(t, start) <= span; };
+
+    /* a list-valued key: absent is empty; present but not an array is dropped with a warning */
+    function list(key, max) {
+      var v = play[key];
+      if (v === undefined) return [];
+      if (!Array.isArray(v)) { warn("play." + key + ": not a list; dropped"); return []; }
+      if (v.length > max) { warn("play." + key + ": " + v.length + " entries, keeping the first " + max); return v.slice(0, max); }
+      return v;
+    }
+    function ids(label, arr) {
+      var seen = {};
+      return arr.filter(function (x, i) {
+        var where = "play." + label + "[" + i + "]";
+        if (!isObj(x)) { warn(where + ": not an object; dropped"); return false; }
+        if (!isStr(x.id)) { warn(where + ": no id; dropped"); return false; }
+        if (seen[x.id]) { warn(where + ": id " + x.id + " is used twice; the later one is dropped"); return false; }
+        seen[x.id] = 1; return true;
+      });
+    }
+    function roomList(where, v) {
+      if (v === undefined) return undefined;
+      if (!Array.isArray(v)) { warn(where + ": not a list; dropped"); return undefined; }
+      return v.filter(function (n) {
+        if (hasRoom(n)) return true;
+        warn(where + ": room " + JSON.stringify(n) + " is not in the site; dropped"); return false;
+      });
+    }
+
+    /* floors */
+    if (play.floors !== undefined) {
+      if (!isObj(play.floors)) { warn("play.floors: not an object; dropped"); delete out.floors; }
+      else {
+        var fl = {}, fk = Object.keys(play.floors);
+        if (fk.length > LIMITS.floors) warn("play.floors: " + fk.length + " levels, keeping the first " + LIMITS.floors);
+        fk.slice(0, LIMITS.floors).forEach(function (k) {
+          if (!/^-?\d{1,2}$/.test(k) || !isStr(play.floors[k])) warn("play.floors[" + JSON.stringify(k) + "]: needs a level number and a name; dropped");
+          else fl[k] = clipText(play.floors[k]);
+        });
+        out.floors = fl;
+      }
+    }
+
+    /* routes */
+    out.routes = ids("routes", list("routes", LIMITS.routes)).filter(function (r) {
+      var where = "play.routes[" + r.id + "]";
+      if (!hasRoom(r.from) || !hasRoom(r.to)) { warn(where + ": " + (!hasRoom(r.from) ? "from " : "to ") + JSON.stringify(!hasRoom(r.from) ? r.from : r.to) + " is not a room in the site; dropped"); return false; }
+      if (r.dir !== undefined && DIRS.indexOf(r.dir) < 0) { warn(where + ": dir " + JSON.stringify(r.dir) + " is not both, up or down; dropped"); return false; }
+      return true;
+    }).map(function (r) { var o = copy(r); if (o.dir === undefined) o.dir = "both"; return o; });
+
+    /* people */
+    var rawPeople = ids("people", list("people", LIMITS.people));
+    var people = rawPeople.filter(function (p) {
+      var where = "play.people[" + p.id + "]";
+      if (!isStr(p.label)) { warn(where + ": no label; dropped"); return false; }
+      if (KINDS.indexOf(p.kind) < 0) { warn(where + ": kind " + JSON.stringify(p.kind) + " is not " + KINDS.join(", ") + "; dropped"); return false; }
+      return true;
+    }).map(function (p) {
+      var where = "play.people[" + p.id + "]", o = copy(p);
+      if (p.stops !== undefined) {
+        if (!Array.isArray(p.stops)) { warn(where + ".stops: not a list; dropped"); o.stops = []; }
+        else {
+          if (p.stops.length > LIMITS.stops) warn(where + ".stops: " + p.stops.length + " stops, keeping the first " + LIMITS.stops);
+          var stops = [];
+          p.stops.slice(0, LIMITS.stops).forEach(function (s, i) {
+            var at = where + ".stops[" + i + "]";
+            if (!isObj(s)) { warn(at + ": not an object; dropped"); return; }
+            if (isNaN(mins(s.at))) { warn(at + ": time " + JSON.stringify(s.at) + " is not HH:MM; dropped"); return; }
+            if (!hasRoom(s.room)) { warn(at + ": room " + JSON.stringify(s.room) + " is not in the site; dropped"); return; }
+            var r = copy(s); r.at = hhmm(s.at);
+            if (!inWindow(r.at)) warn(at + ": " + r.at + " is outside the clock (" + start + " to " + clock.end + "), so it reads as the next morning; kept");
+            stops.push(r);
+          });
+          stops.sort(function (a, b) { return minuteOf(a.at, start) - minuteOf(b.at, start); });
+          o.stops = stops;
+        }
+      }
+      return o;
+    });
+    /* with: the id of another surviving person; no self, no unknown id, no loop */
+    var byId = {};
+    people.forEach(function (p) { byId[p.id] = p; });
+    var changed = true;
+    while (changed) {
+      changed = false;
+      people = people.filter(function (p) {
+        var where = "play.people[" + p.id + "]";
+        if (p.with !== undefined) {
+          if (!isStr(p.with)) { warn(where + ": with is not an id; person dropped"); delete byId[p.id]; changed = true; return false; }
+          if (p.with === p.id) { warn(where + ": follows itself; person dropped"); delete byId[p.id]; changed = true; return false; }
+          if (!byId[p.with]) { warn(where + ": with " + JSON.stringify(p.with) + " is not a person in the play; person dropped"); delete byId[p.id]; changed = true; return false; }
+          var seen = {}, q = p;
+          while (q && q.with !== undefined && !seen[q.id]) { seen[q.id] = 1; q = byId[q.with]; }
+          if (q && seen[q.id]) { warn(where + ": with " + JSON.stringify(p.with) + " leads back to itself; person dropped"); delete byId[p.id]; changed = true; return false; }
+        } else if (!p.stops || !p.stops.length) {
+          warn(where + ": no stops and no with, so nowhere to be; person dropped"); delete byId[p.id]; changed = true; return false;
+        }
+        return true;
+      });
+    }
+    out.people = people;
+
+    /* disguises */
+    out.disguises = ids("disguises", list("disguises", LIMITS.disguises)).filter(function (d) {
+      var where = "play.disguises[" + d.id + "]";
+      if (!isStr(d.label)) { warn(where + ": no label; dropped"); return false; }
+      if (!Array.isArray(d.floors) || !d.floors.length || !d.floors.every(Number.isInteger)) { warn(where + ": floors must be a list of level numbers; dropped"); return false; }
+      if (d.sees !== undefined && typeof d.sees !== "string") { warn(where + ": sees is not text; dropped"); return false; }
+      return true;
+    }).map(function (d) {
+      var where = "play.disguises[" + d.id + "]", o = copy(d);
+      ["rooms", "never"].forEach(function (k) {
+        var l = roomList(where + "." + k, d[k]);
+        if (l === undefined) delete o[k]; else o[k] = l;
+      });
+      return o;
+    });
+
+    /* events */
+    out.events = ids("events", list("events", LIMITS.events)).filter(function (e) {
+      var where = "play.events[" + e.id + "]";
+      if (isNaN(mins(e.at))) { warn(where + ": time " + JSON.stringify(e.at) + " is not HH:MM; dropped"); return false; }
+      if (!isStr(e.label)) { warn(where + ": no label; dropped"); return false; }
+      if (e.room !== undefined && !hasRoom(e.room)) { warn(where + ": room " + JSON.stringify(e.room) + " is not in the site; dropped"); return false; }
+      return true;
+    }).map(function (e) {
+      var o = copy(e); o.at = hhmm(e.at);
+      if (!inWindow(o.at)) warn("play.events[" + e.id + "]: " + o.at + " is outside the clock (" + start + " to " + clock.end + "), so it reads as the next morning; kept");
+      return o;
+    });
+    out.events.sort(function (a, b) { return minuteOf(a.at, start) - minuteOf(b.at, start); });
+
+    /* clocks (the table clocks pinned to a room) */
+    out.clocks = list("clocks", LIMITS.clocks).filter(function (k, i) {
+      var where = "play.clocks[" + i + "]";
+      if (!isObj(k) || !isStr(k.name)) { warn(where + ": no name; dropped"); return false; }
+      if (k.room !== undefined && !hasRoom(k.room)) { warn(where + " (" + k.name + "): room " + JSON.stringify(k.room) + " is not in the site; dropped"); return false; }
+      return true;
+    }).map(copy);
+
+    return { play: out, warnings: warnings };
+  }
+
+  /* counts for the pack's summary line: people, stops (each person's own), routes, disguises, events, clocks */
+  function countPlay(play) {
+    var p = isObj(play) ? play : {}, n = function (k) { return Array.isArray(p[k]) ? p[k].length : 0; };
+    var stops = (Array.isArray(p.people) ? p.people : []).reduce(function (a, x) { return a + (isObj(x) && Array.isArray(x.stops) ? x.stops.length : 0); }, 0);
+    return { people: n("people"), stops: stops, routes: n("routes"), disguises: n("disguises"), events: n("events"), clocks: n("clocks") };
+  }
+
+  return { checkPlay: checkPlay, countPlay: countPlay, minuteOf: minuteOf, KINDS: KINDS, DIRS: DIRS, LIMITS: LIMITS };
+});

@@ -77,6 +77,7 @@ import { buildAuthored } from "./lib/authored-export.mjs";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..");
 const PART_CAP = 900 * 1024;        // the server's per-part cap (contract)
+const { countPlay } = createRequire(import.meta.url)("../app/gm/ball.js");
 const Score = createRequire(import.meta.url)("../app/gm/score.js");     // check(T) and fkey(): the app's own definitions of a complete table set and of a matching name
 
 // ---- args ---------------------------------------------------------------------------------------------
@@ -868,7 +869,7 @@ function main() {
     console.log("  location.T  (" + Object.keys(parts.location.T).length + ")  " + summariseKeys(parts.location.T).join(" "));
     console.log("  location.extra: " + locationExtraNames.join(", "));
     const au = parts.location.authored;
-    console.log("  location.authored: " + (au ? Object.keys(au.sites).join(", ") + (Object.keys(au.bind).length ? " (bound: " + Object.keys(au.bind).map((k) => k + " -> " + au.bind[k]).join(", ") + ")" : " (no score card's site: names one)") : "none"));
+    console.log("  location.authored: " + (au ? Object.keys(au.sites).map((n) => { const p = au.sites[n].play; if (!p) return n; const c = countPlay(p); return n + " [play: " + c.people + " people, " + c.stops + " stops, " + c.routes + " routes, " + c.disguises + " disguises, " + c.events + " events, " + c.clocks + " clocks]"; }).join(", ") + (Object.keys(au.bind).length ? " (bound: " + Object.keys(au.bind).map((k) => k + " -> " + au.bind[k]).join(", ") + ")" : " (no score card's site: names one)") : "none"));
     console.log("  npc.T       (" + Object.keys(parts.npc.T).length + ")  " + summariseKeys(parts.npc.T).join(" "));
     console.log("  npc: cast " + parts.npc.cast.length + ", leverage shapes " + npcLeverage + " (round-trip tested), F " + (parts.npc.F ? "present (" + Object.keys(parts.npc.F).join(", ") + ")" : "null"));
     console.log("  scenes.T     (" + Object.keys(parts.scenes.T).length + ")  " + summariseKeys(parts.scenes.T).join(" "));
