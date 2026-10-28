@@ -259,6 +259,27 @@ await test('the stuck-seat night: a hung call whose request the page abandoned h
   await Promise.all(s.collected);
 });
 
+await test('the page gives up on a tick whose Tripwire never answers: waitUntil alone keeps the work alive, and it still writes the timeout row and frees the lease', async () => {
+  clock.t += 3_600_000;
+  const s = await setup({ deadlines: { ...SHORT, tripwire: 60 }, behave: (seat) => (seat === 'tripwire' ? new Promise(() => {}) : undefined) });
+  await s.lines(3);
+  const page = new AbortController();
+  const response = s.post('tick', { after: 0 }, { signal: page.signal });          // nobody awaits the response: the page has gone
+  response.catch(() => {});
+  await settle();
+  page.abort();
+  assert.equal(s.collected.length, 1, 'one promise handed to waitUntil');
+  assert.ok(s.leases.seats().has('tripwire'), 'the lease is held while the call hangs');
+  await s.collected[0];                                                            // only the platform's grace period is waiting on it now
+  const row = s.rows().find((r) => r.seat === 'tripwire');
+  assert.ok(row, 'the row was written after the page left');
+  assert.equal(row.card.timeout, 1); assert.equal(row.card.shown, 0); assert.equal(row.card.error, 'timed out');
+  assert.equal(s.leases.size, 0, 'and the lease was released');
+  assert.ok(s.calls[0].signal.aborted, 'the deadline, not the page, ended the call');
+  const out = await body(await response);
+  assert.deepEqual(out.errors, [{ seat: 'tripwire', error: 'timed out' }]);
+});
+
 await test('a /fit that sweeps first does not swallow the reap the tick reports', async () => {
   clock.t += 3_600_000;
   const s = await setup();
