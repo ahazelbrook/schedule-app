@@ -652,6 +652,35 @@
   function locKey(c) { return isObj(c) ? (c.auth ? 'a:' + str(c.auth) : c.seed) : undefined; }
   function rollKey(r) { return isObj(r) ? (r.auth ? 'a:' + str(r.auth) : r.seed) : undefined; }
   P.authoredOf = authoredOf; P.authoredRoll = authoredRoll; P.locKey = locKey; P.rollKey = rollKey; P.nameSeed = nameSeed;
+  /* Run the site's token (see "Run the site" below): pure, so it is checked on its own */
+  var RUN_KIND = { target: '#8a5a00', guard: '#1f4e79', staff: '#4a6b3a', rival: '#7a2e6e', ally: '#1d7f6e', contact: '#5d5d5d' };
+  var RUN_POS = { controlled: '#2a7f3f', risky: '#b87a00', desperate: '#b3261e', unknown: '#6b6b6b' };
+  var RUN_LETTER = { controlled: 'C', risky: 'R', desperate: 'D', unknown: '?' };
+  function runInitials(label) {
+    var out = '';
+    str(label).trim().split(/\s+/).filter(Boolean).slice(0, 2).forEach(function (w) { out += Array.from(w)[0].toUpperCase(); });
+    return out || '?';
+  }
+  /* the combined token for one room, as the svg the kit nests (viewBox 540 x 600): up to four initials pills (the last "+N" when
+     more), a red ring when danger, the lens chip (C, R, D or ?) and a small pie for each pinned clock.
+     o: { pills: [{ t, c }], pies: [{ f, s }], lens: pos | null, danger: bool } */
+  function runTokenSvg(o) {
+    o = o || {};
+    var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 600"><rect x="20" y="20" width="500" height="560" rx="44" fill="#fffdf6" stroke="' + (o.danger ? '#d11' : '#1a1a1a') + '" stroke-width="' + (o.danger ? 40 : 14) + '"/>';
+    (Array.isArray(o.pills) ? o.pills : []).slice(0, 4).forEach(function (p, i) {
+      var x = 50 + (i % 2) * 235, y = 60 + Math.floor(i / 2) * 150;
+      s += '<rect x="' + x + '" y="' + y + '" width="220" height="130" rx="34" fill="' + esc(p.c) + '"/><text x="' + (x + 110) + '" y="' + (y + 90) + '" text-anchor="middle" font-size="84" font-weight="700" fill="#fff">' + esc(p.t) + '</text>';
+    });
+    (Array.isArray(o.pies) ? o.pies : []).slice(0, 3).forEach(function (p, i) {
+      var cx = 100 + i * 120, cy = 480, r = 48, size = +p.s > 0 ? +p.s : 0, f = size ? Math.max(0, Math.min(1, (+p.f || 0) / size)) : 0;
+      s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="#fff" stroke="#1a1a1a" stroke-width="10"/>';
+      if (f >= 1) s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="#1a1a1a"/>';
+      else if (f > 0) { var a = f * 2 * Math.PI; s += '<path d="M' + cx + ' ' + cy + ' L' + cx + ' ' + (cy - r) + ' A' + r + ' ' + r + ' 0 ' + (f > 0.5 ? 1 : 0) + ' 1 ' + (cx + r * Math.sin(a)).toFixed(1) + ' ' + (cy - r * Math.cos(a)).toFixed(1) + ' Z" fill="#1a1a1a"/>'; }
+    });
+    if (o.lens) s += '<circle cx="450" cy="480" r="62" fill="' + (RUN_POS[o.lens] || RUN_POS.unknown) + '"/><text x="450" y="510" text-anchor="middle" font-size="86" font-weight="700" fill="#fff">' + esc(RUN_LETTER[o.lens] || '?') + '</text>';
+    return s + '</svg>';
+  }
+  P.runTokenSvg = runTokenSvg; P.runInitials = runInitials;
 
   /* a key press on #gm -> an action, or null. ev: { key, ctrlKey, altKey, metaKey, typing }
      1-4 roll a situation; 5-9 do nothing (the nine single tables have no keys: More tables, under the card). Blanking the
@@ -2292,14 +2321,16 @@
         '<button type="button" class="btn sm" data-gm="scorescene"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + (mu.layer === 'player' ? ' title="The planning board and the exploded site on the iPad, from this roll at these bands"' : '') + '>Set as score scene</button>' +
         '<button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></div>' +
         (sceneBehind(mu) ? '<p class="gm-dim gm-scene-behind">The score scene shows ' + esc(sceneBehind(mu).join(', ')) + ': press Set as score scene to bring it up to date.</p>' : '') +
-        '<div class="gm-map" id="gm-map"></div>' +
+        runBox(runSite()) +
         '<details class="gm-more gm-mapopts"' + (foldOpen('mapopts') ? ' open' : '') + ' data-fold="mapopts"><summary>View &amp; theme <span class="gm-dim">' + esc(mapLine(mu)) + '</span></summary>' + '<div class="gm-map-ctl">' + sel('view', 'View', VIEWS, mu.view) + sel('theme', 'Theme', THEMES, mu.theme) + sel('time', 'Time', P.TIMES, mu.time) + sel('weather', 'Weather', P.WEATHERS, mu.weather) + '</div></details>' +
         '<details class="gm-more gm-dl"' + (foldOpen('dl') ? ' open' : '') + ' data-fold="dl"><summary>Downloads</summary><div class="gm-map-acts">' + '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button></div></details>' + '</section>';
     } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what the players can see.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></p>';
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
     if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return earlierChip(x, 'location', cur && cur.hid === x._id); }).join('') + '</div>';
     box.innerHTML = h;
-    if (S.map) showMap();
+    runPaint();
+    if (!S.map && runSite() && W.B68Map && W.B68Map.render) drawMap(true);     /* a run draws itself: its people are on the map */
+    else if (S.map) showMap();
   }
   /* the glance card: place, whose, the bands, the target, the one line to say aloud. The whole page is GM-only, so nothing says
      so; a mustard "Players see" chip marks what the players can see: a revealed band, and the Say box once the street description
@@ -2347,9 +2378,14 @@
   function drawMap(quiet) {
     var K = W.B68Map; if (!S.locRoll) { if (!quiet) toast('Roll a location first.', true); return; }
     if (!K || !K.render) { if (!quiet) toast('The map kit is missing.', true); return; }
-    var mu = mapUi(), r;
-    try { r = K.render(S.locRoll, mapOpts(mu, mu.layer === 'player' ? 'player' : 'gm', revealList(mu))); } catch (e) { if (!quiet) toast('The map could not be drawn: ' + errText(e), true); return; }
-    S.map = { svg: r.svg, warnings: r.warnings || [], layer: mu.layer === 'player' ? 'player' : 'gm', view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather };
+    var mu = mapUi(), r, o = mapOpts(mu, mu.layer === 'player' ? 'player' : 'gm', revealList(mu)), sig = runApply(o);     /* a run: the GM layer only, with its tokens */
+    if (sig && S.map && S.map.sig === sig) return;                  /* nobody moved: the map on screen is this one */
+    if (sig && S.runCache && S.runCache.map[sig]) r = S.runCache.map[sig];
+    else {
+      try { r = K.render(S.locRoll, o); } catch (e) { if (!quiet) toast('The map could not be drawn: ' + errText(e), true); return; }
+      if (sig) { var rc = S.runCache = S.runCache || { map: {}, keys: [] }; rc.map[sig] = r; rc.keys.push(sig); while (rc.keys.length > RUN_CACHE_MAX) delete rc.map[rc.keys.shift()]; }
+    }
+    S.map = { svg: r.svg, warnings: r.warnings || [], layer: mu.layer === 'player' ? 'player' : 'gm', view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather, sig: sig };
     S.map.leak = S.map.layer === 'player' && leaks(r.svg, S.locRoll, revealList(mu)).length > 0;
     showMap();
   }
@@ -2366,6 +2402,233 @@
     var p = { loc: { map: {} } }; p.loc.map[k] = v; patch(p); if (S.map) drawMap();
     var sum = $q('.gm-mapopts summary .gm-dim'); if (sum) sum.textContent = mapLine(mapUi());     /* the fold's line, without redrawing the panel */
   }
+  /* ---------- Run the site (GM.md, "Authored sites"; design 4.6) ----------
+     An authored card whose site has a `play` block gets a strip above the map: floor tabs, the evening's clock, the disguise,
+     the crew and the table clocks. Everything lives in the GM state's `ball` (scoped to the site by `ball.site`; written with a
+     replace patch, so a removed crew or pin goes), and the map's tokens (ONE per room, so none hides another) are drawn on the GM
+     layer only: playerDisplay, Show on iPad, live reveal and the score scene never pass through here. The clock `t` is whatever the
+     GM set (minutes from play.clock.start); the wall clock is never read. */
+
+  var RUN_CACHE_MAX = 24;
+  /* the authored site on the card, with a usable play block: { name, play, B }, else null (a rolled site never has one) */
+  function runSite() {
+    var B = W.B68GmBall, cur = S && isObj(S.doc.cards) ? S.doc.cards.location : null;
+    if (!B || !S.locRoll || !isObj(cur) || !cur.auth || rollKey(S.locRoll) !== locKey(cur)) return null;
+    var site = authoredOf(part('location')).sites[str(cur.auth)];
+    if (!isObj(site) || !isObj(site.play) || !isObj(site.play.clock)) return null;
+    return { name: str(cur.auth), play: site.play, B: B };
+  }
+  function ballDoc(name) { return isObj(S.doc.ball) && S.doc.ball.site === name ? S.doc.ball : {}; }
+  /* write the changes to `ball` as a replace patch (a key set to null goes). Another site's state is replaced whole */
+  function ballSet(name, change) {
+    var old = isObj(S.doc.ball) ? S.doc.ball : null, base = old && old.site === name ? clone(old) : {};
+    base.site = name;
+    Object.keys(change).forEach(function (k) { if (change[k] === null || change[k] === undefined) delete base[k]; else base[k] = change[k]; });
+    return patch({ ball: replacePatch(old, base) });
+  }
+  /* the levels of the roll, by number, with the names the play gives them; and room name -> level */
+  function runFloors(rs) {
+    var key = rollKey(S.locRoll) + '|' + rs.name;
+    if (S.runFl && S.runFl.key === key) return S.runFl;
+    var out = { key: key, list: [], floorOf: {} }, K = W.B68Map, names = isObj(rs.play.floors) ? rs.play.floors : {};
+    try {
+      (K && K.floors ? K.floors(S.locRoll) : []).forEach(function (f) {
+        var lvl = Number(f.lvl); if (isNaN(lvl)) return;
+        out.list.push({ lvl: lvl, name: str(names[String(lvl)]) || str(f.title) || 'Floor ' + lvl });
+        (f.rooms || []).forEach(function (r) { out.floorOf[str(r.name)] = lvl; });
+      });
+    } catch (e) { out = { key: key, list: [], floorOf: {} }; }
+    out.list.sort(function (a, b) { return a.lvl - b.lvl; });
+    S.runFl = out; return out;
+  }
+  function runSpan(rs) { var n = rs.B.minuteOf(rs.play.clock.end, rs.play.clock.start); return n > 0 ? n : 1440; }
+  /* everything the strip and the map need at the time on screen (S.runT while the slider is being dragged, else the state's t) */
+  function runModel(rs) {
+    var st = ballDoc(rs.name), span = runSpan(rs), fl = runFloors(rs);
+    var t = S.runT != null ? S.runT : +st.t; if (!isFinite(t)) t = 0; t = Math.max(0, Math.min(span, Math.round(t)));
+    var floor = st.floor === 'all' || st.floor == null ? 'all' : Number(st.floor);
+    if (floor !== 'all' && !fl.list.some(function (f) { return f.lvl === floor; })) floor = 'all';
+    var view = rs.B.ballView(rs.play, Object.assign({}, st, { t: t }), fl.floorOf);
+    return view ? { st: st, t: t, span: span, fl: fl, floor: floor, view: view } : null;
+  }
+  /* the windows: each target person's own stops, in minutes from the start */
+  function runWindows(rs) {
+    var out = [];
+    (Array.isArray(rs.play.people) ? rs.play.people : []).forEach(function (p) {
+      if (!isObj(p) || p.kind !== 'target') return;
+      (Array.isArray(p.stops) ? p.stops : []).forEach(function (s) { var t = rs.B.minuteOf(s.at, rs.play.clock.start); if (!isNaN(t)) out.push({ t: t, at: str(s.at), room: str(s.room), who: str(p.label) }); });
+    });
+    return out.sort(function (a, b) { return a.t - b.t; });
+  }
+  /* one token per room that holds someone, a crew marker or a pinned clock, on the selected floor (crew ids the table no longer has are skipped) */
+  function runTokens(m) {
+    var out = [], pcs = {}, byId = {}, clocks = {};
+    dtPcs().forEach(function (c) { pcs[str(c.id)] = pcName(c); });
+    m.view.people.forEach(function (p) { byId[p.id] = p; });
+    tableClocks().forEach(function (c) { if (str(c.id)) clocks[str(c.id)] = c; });
+    Object.keys(m.view.rooms).sort().forEach(function (name) {
+      var r = m.view.rooms[name];
+      if (r.lvl === null || (m.floor !== 'all' && r.lvl !== m.floor)) return;
+      var pills = [];
+      r.crew.forEach(function (id) { if (pcs[id]) pills.push({ t: runInitials(pcs[id]), c: '#111111' }); });
+      r.people.forEach(function (id) { var p = byId[id]; if (p) pills.push({ t: runInitials(p.label), c: RUN_KIND[p.kind] || '#5d5d5d' }); });
+      var pies = r.pinned.map(function (id) { return clocks[id]; }).filter(Boolean).map(function (c) { return { f: +c.filled || 0, s: +c.size || 0 }; });
+      if (!pills.length && !pies.length) return;
+      if (pills.length > 4) pills = pills.slice(0, 3).concat([{ t: '+' + (pills.length - 3), c: '#333333' }]);
+      out.push({ room: name, label: '', svg: runTokenSvg({ pills: pills, pies: pies, lens: r.lens ? r.lens.pos : null, danger: !!(r.lens && r.lens.danger) }) });
+    });
+    return out;
+  }
+  /* the GM layer's map options for a run: tokens, and the floor (rings draws every floor, the street none) -> a key that names this
+     drawing, or '' when this map is not a run (a player layer, a rolled site) */
+  function runApply(o) {
+    var rs = o.layer === 'gm' ? runSite() : null; if (!rs) return '';
+    var m = runModel(rs); if (!m) return '';
+    var toks = runTokens(m);
+    o.tokens = toks;
+    if (m.floor !== 'all' && (o.view === 'iso' || o.view === 'plan' || o.view === 'section')) o.floor = m.floor;
+    return JSON.stringify([rollKey(S.locRoll), o.view, o.theme, o.time, o.weather, o.floor, toks.map(function (t) { return t.room + '|' + t.svg; })]);
+  }
+
+  /* ---- the strip ---- */
+  function runChip(label, attrs, on, cls) { return '<button type="button" class="chip sm' + (cls ? ' ' + cls : '') + '"' + attrs + (on === undefined ? '' : ' aria-pressed="' + (!!on) + '"') + '>' + label + '</button>'; }
+  function runTimeHtml(rs, m) {
+    var B = rs.B, start = rs.play.clock.start, pct = function (x) { return (Math.max(0, Math.min(m.span, x)) / m.span * 100).toFixed(2); }, ticks = '';
+    (Array.isArray(rs.play.events) ? rs.play.events : []).forEach(function (e) { var t = B.minuteOf(e.at, start); if (!isNaN(t) && t <= m.span) ticks += '<i class="gm-run-tick' + (e.fx ? ' fx' : '') + '" style="left:' + pct(t) + '%" title="' + esc(str(e.at) + ' ' + str(e.label)) + '"></i>'; });
+    runWindows(rs).forEach(function (w) { if (w.t <= m.span) ticks += '<i class="gm-run-dot" style="left:' + pct(w.t) + '%" title="' + esc(w.at + ' ' + w.who + ' in ' + w.room) + '"></i>'; });
+    return '<div class="gm-run-time"><output class="gm-run-clock" id="gm-run-clock" aria-live="off">' + esc(m.view.label) + '</output>' +
+      '<div class="gm-run-scrub"><div class="gm-run-btns">' + runChip('−15', ' data-gm="run-step" data-d="-15" aria-label="15 minutes earlier"') + runChip('+15', ' data-gm="run-step" data-d="15" aria-label="15 minutes later"') + runChip('Next window', ' data-gm="run-next"') + '</div>' +
+      '<input type="range" id="gm-run-t" data-run="t" min="0" max="' + m.span + '" step="1" value="' + m.t + '" aria-label="Time of night, from ' + esc(start) + ' to ' + esc(rs.play.clock.end) + '">' +
+      '<div class="gm-run-track" aria-hidden="true">' + ticks + '</div></div></div>';
+  }
+  function runBox(rs) {
+    var plain = '<div class="gm-map" id="gm-map"></div>', m = rs ? runModel(rs) : null; if (!m) return plain;
+    var label = str(rs.play.clock.label);
+    return '<div class="gm-runzone" id="gm-runzone"><section class="gm-run" id="gm-run" tabindex="0" aria-label="Run the site' + (label ? ': ' + esc(label) : '') + '. Left and Right move the time by 5 minutes.">' +
+      '<div class="gm-run-h"><b>Run the site</b>' + (label ? ' <span class="gm-dim">' + esc(label) + '</span>' : '') + ' <span class="gm-dim" id="gm-run-note"></span></div>' +
+      '<div class="seg gm-run-tabs" id="gm-run-tabs" role="group" aria-label="Floor"></div>' + runTimeHtml(rs, m) + '<div class="gm-run-place" id="gm-run-place"></div></section>' +
+      '<div class="gm-runbody">' + plain + '<aside class="gm-run-side" id="gm-run-side" aria-label="The site at this time"></aside></div><div class="gm-run-rooms" id="gm-run-rooms"></div></div>';
+  }
+  function runMarks(r) { return (r.people.length ? r.people.length + ' in' : '') + (r.crew.length ? (r.people.length ? ', ' : '') + r.crew.length + ' crew' : ''); }
+  /* the parts that change with the time or a placement: redrawn in place (never the slider, which would drop the drag or the focus) */
+  function runPaint() {
+    /* the tabs, chips and select are replaced: the focus follows to the same control (else the strip), so Left and Right keep working */
+    var a = document.activeElement, zone = $q('#gm-runzone'), sel = '';
+    if (a && zone && zone !== a && zone.contains(a) && a.getAttribute) {
+      if (a.id) sel = '#' + a.id;
+      else if (a.getAttribute('data-gm')) { sel = '[data-gm="' + a.getAttribute('data-gm') + '"]'; ['data-v', 'data-id', 'data-room'].forEach(function (k) { if (a.hasAttribute(k)) sel += '[' + k + '="' + str(a.getAttribute(k)).replace(/"/g, '') + '"]'; }); }
+    }
+    runPaintParts();
+    if (sel && zone && !zone.contains(document.activeElement)) { var n = null; try { n = zone.querySelector(sel); } catch (e) { n = null; } n = n || $q('#gm-run'); if (n && n.focus) { try { n.focus({ preventScroll: true }); } catch (e) { n.focus(); } } }
+  }
+  function runPaintParts() {
+    var rs = runSite(), tabs = $q('#gm-run-tabs'); if (!rs || !tabs) return;
+    var m = runModel(rs); if (!m) return;
+    var v = m.view, st = m.st, arm = S.runArm, pcs = dtPcs(), clocks = tableClocks().filter(function (c) { return str(c.id); });
+    tabs.innerHTML = runChip('All', ' data-gm="run-floor" data-v="all"', m.floor === 'all') + m.fl.list.map(function (f) { return runChip(esc(f.name), ' data-gm="run-floor" data-v="' + f.lvl + '"', m.floor === f.lvl); }).join('');
+    var place = '', lensId = str(st.lens), disg = Array.isArray(rs.play.disguises) ? rs.play.disguises : [];
+    if (disg.length) place += '<label class="gm-field" for="gm-run-lens"><span class="gm-lab">Disguise</span><select id="gm-run-lens" data-run="lens"><option value="">No disguise</option>' + disg.map(function (d) { return '<option value="' + esc(d.id) + '"' + (d.id === lensId ? ' selected' : '') + '>' + esc(d.label) + '</option>'; }).join('') + '</select></label>';
+    var crew = isObj(st.crew) ? st.crew : {};
+    place += '<div class="gm-run-row"><span class="gm-lab">Crew</span>' + (pcs.length ? pcs.map(function (c) { var id = str(c.id), at = str(crew[id]); return runChip(esc(pcName(c)) + (at ? ' <small>' + esc(at) + '</small>' : ''), ' data-gm="run-pc" data-id="' + esc(id) + '"', !!(arm && arm.kind === 'pc' && arm.id === id)); }).join('') : '<span class="gm-dim">No characters filed.</span>') + '</div>';
+    var pins = isObj(st.pins) ? st.pins : {};
+    if (clocks.length) place += '<div class="gm-run-row"><span class="gm-lab">Clocks</span>' + clocks.map(function (c) { var id = str(c.id), at = str(pins[id]); return runChip(esc(str(c.name) || 'Clock') + ' ' + (+c.filled || 0) + '/' + (+c.size || 0) + (at ? ' <small>' + esc(at) + '</small>' : ''), ' data-gm="run-clock" data-id="' + esc(id) + '" title="Pin to room"', !!(arm && arm.kind === 'clock' && arm.id === id)); }).join('') + '</div>';
+    if (arm) place += '<p class="gm-run-arm" role="status">' + (arm.kind === 'pc' ? 'Tap a room to put that crew member there (the room they are in takes them off).' : 'Pin to room: tap a room (the room it is pinned to unpins it).') + ' <button type="button" class="chip sm" data-gm="run-disarm">Cancel</button></p>';
+    var note = $q('#gm-run-note'); if (note) note.textContent = mapUi().layer === 'player' ? 'People show on the GM layer.' : '';
+    $q('#gm-run-place').innerHTML = place;
+    /* the rooms (this floor, or all): the lens colours them */
+    var names = Object.keys(v.rooms).filter(function (n) { return v.rooms[n].lvl !== null && (m.floor === 'all' || v.rooms[n].lvl === m.floor); })
+      .sort(function (a, b) { return v.rooms[a].lvl - v.rooms[b].lvl || (a < b ? -1 : 1); });
+    $q('#gm-run-rooms').innerHTML = '<span class="gm-lab">Rooms</span>' + names.map(function (n) {
+      var r = v.rooms[n], cls = 'gm-run-room' + (r.lens ? ' pos-' + r.lens.pos : '') + (r.lens && r.lens.danger ? ' danger' : '');
+      return runChip(esc(n) + (runMarks(r) ? ' <small>' + esc(runMarks(r)) + '</small>' : '') + (r.lens ? ' <small>' + esc(RUN_LETTER[r.lens.pos]) + (r.lens.danger ? ' !' : '') + '</small>' : ''), ' data-gm="run-room" data-room="' + esc(n) + '"', undefined, cls);
+    }).join('');
+    /* beside the map: where everyone is, what is next, the routes */
+    var side = '<h5>At ' + esc(v.label) + '</h5><ul class="gm-run-people">' + (v.people.length ? v.people.map(function (p) {
+      return '<li><b>' + esc(p.label) + '</b> <small>' + esc(p.kind) + '</small> ' + (p.room ? esc(p.room) : '<span class="gm-dim">not here yet</span>') + (p.note ? ' · ' + esc(p.note) : '') + (p.moving ? ' <span class="gm-run-moving">→ ' + esc(p.moving.to) + ' in ' + p.moving.inMin + ' min</span>' : '') + '</li>';
+    }).join('') : '<li class="gm-dim">Nobody on the list.</li>') + '</ul>';
+    side += '<h5>Next</h5><p class="gm-chips">' + (v.next.length ? v.next.map(function (n) { return '<span class="chip sm">' + esc(n.at) + ' ' + esc(n.label) + (n.room ? ' · ' + esc(n.room) : '') + '</span>'; }).join('') : '<span class="gm-dim">Nothing more tonight.</span>') + '</p>';
+    var MARK = { both: '↕', up: '↑', down: '↓' };
+    side += '<h5>Routes</h5><p class="gm-chips">' + (v.routes.length ? v.routes.map(function (r) {
+      return '<span class="chip sm" title="' + esc(str(r.via)) + '">' + esc(r.from) + ' ' + (MARK[r.dir] || '↕') + ' ' + esc(r.to) + (r.watched ? ' 👁' : '') + (r.needs ? ' 🔑 ' + esc(typeof r.needs === 'string' ? r.needs : '') : '') + '</span>';
+    }).join('') : '<span class="gm-dim">No routes.</span>') + '</p>';
+    $q('#gm-run-side').innerHTML = side;
+  }
+  /* the table or the filed characters changed (a clock ticked, a PC arrived): the strip and the pies follow; a poll never closes the Disguise select */
+  function runStale() {
+    if (!S || !runSite()) return;
+    var a = document.activeElement; if (!(a && a.id === 'gm-run-lens')) runPaint();
+    runDraw(true);
+  }
+  function runClock() {
+    var rs = runSite(); if (!rs) return;
+    var m = runModel(rs); if (!m) return;
+    var c = $q('#gm-run-clock'), s = $q('#gm-run-t');
+    if (c) c.textContent = m.view.label;
+    if (s && +s.value !== m.t) s.value = m.t;
+  }
+  /* the map again, with the tokens as they are now (debounced for the slider: a render is 10 to 25 ms, and only the tokens change) */
+  function runDraw(soon) {
+    clearTimeout(S.runDt);
+    if (!soon) { if (S.locRoll && W.B68Map && W.B68Map.render) drawMap(true); return; }
+    var me = S; S.runDt = setTimeout(function () { if (S === me && S.locRoll && W.B68Map && W.B68Map.render) drawMap(true); }, 200);
+  }
+  function runCommit() {
+    clearTimeout(S.runTm);
+    var rs = runSite(); if (!rs || S.runT == null) { S.runT = null; return; }
+    var t = S.runT; S.runT = null; ballSet(rs.name, { t: t }); runDraw(); runPaint();
+  }
+  /* the slider while it moves: the clock and the side at once, the state and the map after 200 ms of quiet (or on release) */
+  function runScrub(v) {
+    var rs = runSite(); if (!rs) return;
+    S.runT = Math.max(0, Math.min(runSpan(rs), Math.round(+v) || 0));
+    runClock(); runPaint(); clearTimeout(S.runTm);
+    var me = S; S.runTm = setTimeout(function () { if (S === me) runCommit(); }, 200);
+  }
+  function runGo(t) {
+    var rs = runSite(); if (!rs) return false;
+    var m = runModel(rs); if (!m) return false;
+    clearTimeout(S.runTm); S.runT = null;
+    ballSet(rs.name, { t: Math.max(0, Math.min(m.span, Math.round(t))) });
+    runClock(); runPaint(); runDraw(true); return true;
+  }
+  function runStep(d) { var rs = runSite(), m = rs && runModel(rs); return m ? runGo(m.t + d) : false; }
+  function runNext() {
+    var rs = runSite(), m = rs && runModel(rs); if (!m) return;
+    var w = runWindows(rs).filter(function (x) { return x.t > m.t && x.t <= m.span; })[0];
+    if (!w) { toast('No more windows tonight.'); return; }
+    runGo(w.t);
+  }
+  function runSetFloor(v) {
+    var rs = runSite(); if (!rs) return;
+    ballSet(rs.name, { floor: v === 'all' ? 'all' : Number(v) });
+    runPaint(); runDraw();
+  }
+  function runSetLens(v) {
+    var rs = runSite(); if (!rs) return;
+    ballSet(rs.name, { lens: v || null });
+    runPaint(); runDraw();
+  }
+  /* tap a crew member or a table clock, then a room: placed there, or taken off when it is already there */
+  function runArm(kind, id) {
+    if (S.runArm && S.runArm.kind === kind && S.runArm.id === id) S.runArm = null; else S.runArm = { kind: kind, id: id };
+    runPaint();
+  }
+  function runRoom(room) {
+    var rs = runSite(), a = S.runArm; if (!rs || !a) return;
+    var st = ballDoc(rs.name), key = a.kind === 'pc' ? 'crew' : 'pins', cur = clone(isObj(st[key]) ? st[key] : {}), ch = {};
+    if (cur[a.id] === room) delete cur[a.id]; else cur[a.id] = room;
+    ch[key] = Object.keys(cur).length ? cur : null;
+    ballSet(rs.name, ch);
+    S.runArm = null; runPaint(); runDraw();
+  }
+  /* Left and Right move the time 5 minutes while the focus is in the strip (not in the Disguise select, which uses them itself) */
+  function runKey(ev) {
+    var tg = ev.target;
+    if ((ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') || ev.ctrlKey || ev.altKey || ev.metaKey || !tg || !tg.closest || str(tg.tagName).toUpperCase() === 'SELECT' || !tg.closest('.gm-runzone')) return false;
+    if (runStep(ev.key === 'ArrowRight' ? 5 : -5)) { ev.preventDefault(); return true; }
+    return false;
+  }
+
   /* Every push to the iPad from this page goes through one queue (the secrecy review of 23/10/2026, R2): one PUT in flight at a
      time, and a push made while one is in flight waits; a newer one replaces a push still waiting (it is refused with
      e.superseded and never sent), so the last thing the GM set is what ends on the iPad. Anything but the map ends live reveal the
@@ -3303,6 +3566,7 @@
      (the next change catches up) */
   function charactersChanged() {
     if (!S || S.status !== 'ready' || JSON.stringify(dtPcs()) === S.dtPcSig) return;
+    runStale();
     var a = document.activeElement, box = $q('#gm-dt');
     if (a && box && box.contains(a) && str(a.tagName).toUpperCase() === 'SELECT') return;
     renderDowntime();
@@ -4281,6 +4545,7 @@
     if (ev.key === 'Enter' && tg && tg.id === 'gm-gs-q') { ev.preventDefault(); screenFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-dt-d100') { ev.preventDefault(); dtD100(tg.value); return; }     /* the morning's d100 */
     var ml = $q('.gm-menu-list'); if (ml && !ml.hasAttribute('hidden') && ev.key === 'Escape') { menuOpen(false); var mb = $q('[data-gm="menu"]'); if (mb) mb.focus(); ev.preventDefault(); return; }
+    if (runKey(ev)) return;
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
     if (!a) return;
     if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } return; }
@@ -4416,6 +4681,13 @@
       case 'dt-rule': dtRule(); break;
       case 'layer': setMap('layer', b.getAttribute('data-v')); if (b.getAttribute('data-v') !== 'player') endLive(); renderLocation(); break;
       case 'draw': drawMap(); break;
+      case 'run-floor': runSetFloor(str(b.getAttribute('data-v'))); break;
+      case 'run-step': runStep(+b.getAttribute('data-d') || 0); break;
+      case 'run-next': runNext(); break;
+      case 'run-pc': runArm('pc', str(b.getAttribute('data-id'))); break;
+      case 'run-clock': runArm('clock', str(b.getAttribute('data-id'))); break;
+      case 'run-room': runRoom(str(b.getAttribute('data-room'))); break;
+      case 'run-disarm': S.runArm = null; runPaint(); break;
       case 'ipad': showOnIpad(); break;
       case 'pushtext': pushText(); break;
       case 'blankipad': blankIpad(); break;
@@ -4455,6 +4727,10 @@
     }
     if (t.hasAttribute && t.hasAttribute('data-sttspk')) {   /* a speaker's name: saved when the field is left */
       if (ev.type === 'change') { var sp = {}; sp[t.getAttribute('data-sttspk')] = str(t.value).trim().slice(0, 60) || null; sttPatch({ speakers: sp }); }
+      return;
+    }
+    if (t.hasAttribute && t.hasAttribute('data-run')) {      /* Run the site: the slider (released: the state and the map now) and the Disguise select */
+      if (t.getAttribute('data-run') === 't') { if (ev.type === 'change') runCommit(); } else if (ev.type === 'change') runSetLens(t.value);
       return;
     }
     if (t.hasAttribute && t.hasAttribute('data-hotitle')) { S.hoTitle = !!t.checked; return; }      /* this page only: the next Show on iPad carries the title caption */
@@ -4506,7 +4782,7 @@
     else if (k === 'rules') { var q = $q('#gm-rq'); if (q && q.value.trim()) rulesSearch(q.value); }
   }
   function wire(el) {
-    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'gm-find-q') { findRender(ev.target.value); return; } if (ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-chf')) { chForm()[ev.target.getAttribute('data-chf')] = str(ev.target.value).slice(0, 80); return; } if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-prep-q') { prepFilter(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-dt-purveyor') { clearTimeout(wire.dt); var pv = ev.target; wire.dt = setTimeout(function () { if (S) dtField('purveyor', pv.value); }, 500); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); el.addEventListener('scroll', onScroll, true); }
+    if (!el.__gm) { el.__gm = true; el.addEventListener('click', onClick); el.addEventListener('change', onChange); el.addEventListener('input', function (ev) { if (ev.target && ev.target.getAttribute && ev.target.getAttribute('data-run') === 't') { runScrub(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-find-q') { findRender(ev.target.value); return; } if (ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-chf')) { chForm()[ev.target.getAttribute('data-chf')] = str(ev.target.value).slice(0, 80); return; } if (ev.target && ev.target.id === 'gm-gs-q') { filterScreen(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-prep-q') { prepFilter(ev.target.value); return; } if (ev.target && ev.target.id === 'gm-dt-purveyor') { clearTimeout(wire.dt); var pv = ev.target; wire.dt = setTimeout(function () { if (S) dtField('purveyor', pv.value); }, 500); return; } if (ev.target && ev.target.type === 'text' && ev.target.hasAttribute('data-ctl')) { clearTimeout(wire.t); var t = ev.target; wire.t = setTimeout(function () { if (S) { var l = {}; l[t.getAttribute('data-ctl')] = t.value; patch({ con: { live: l } }); } }, 500); } }); el.addEventListener('submit', onSubmit); el.addEventListener('toggle', onToggle, true); el.addEventListener('scroll', onScroll, true); }
     if (!wire.global) {
       wire.global = true;
       document.addEventListener('keydown', onKey, true);
@@ -4525,7 +4801,7 @@
     var before = isObj(camp) && isObj(camp.scene) ? JSON.stringify(camp.scene.npcs || {}) : '';
     camp = isObj(doc) ? doc : null;
     if (S && S.status === 'ready') {
-      renderRail(); renderBar(); scMaybeRedraw();
+      renderRail(); renderBar(); scMaybeRedraw(); runStale();
       /* the stage changed: the NPC tab's buttons follow */
       if ((isObj(camp) && isObj(camp.scene) ? JSON.stringify(camp.scene.npcs || {}) : '') !== before) {
         [].forEach.call(S.root.querySelectorAll('[data-gm="npcstage"]'), function (b) { var on = staged(b.getAttribute('data-id')); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Off stage' : 'Put on stage'; b.classList.toggle('primary', !on); });

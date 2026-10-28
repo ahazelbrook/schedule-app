@@ -51,7 +51,8 @@
     "check:handouts-e2e": "node checks/runtime/gm-handouts.e2e.mjs",
     "kits": "node scripts/kits.mjs",
     "check:kits": "node checks/runtime/kits.test.mjs",
-    "check:gm-maps": "node checks/runtime/gm-maps.e2e.mjs"
+    "check:gm-maps": "node checks/runtime/gm-maps.e2e.mjs",
+    "check:gm-run": "node checks/runtime/gm-run.e2e.mjs"
   },
   "keywords": [],
   "author": "",

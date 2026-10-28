@@ -2699,6 +2699,218 @@ await test('S4. authored sites, page: the card\'s site: from the vault opens as 
 });
 
 /* =====================================================================================================================
+   S5. Run the site (M2b): the strip above an authored site's map, its tokens, and the state in `ball`. INVENTED venue and cast.
+   ===================================================================================================================== */
+const BALL = require(path.join(ROOT, 'app', 'gm', 'ball.js'));
+const rsleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const RUN_ROOMS = [
+  { name: 'Showroom', band: 'public', detail: 'Chairs.' }, { name: 'Cocktail lounge', band: 'public', detail: 'Glass.' },
+  { name: 'Security control room', band: 'working', detail: 'Screens.' }, { name: 'Private card rooms', band: 'controlled', detail: 'Cards.' },
+  { name: 'Underground counting room', band: 'working', detail: 'Coins.' }, { name: 'Luxury penthouse', band: 'secure', isTarget: true, detail: 'The strongbox.' }];
+const RUN_PLAY = {
+  v: 1, clock: { start: '21:00', end: '02:00', label: 'Gala night' }, floors: { '-1': 'Under', '0': 'Ground', '1': 'Upper', '2': 'Loft' },
+  routes: [{ id: 'lift', from: 'Cocktail lounge', to: 'Luxury penthouse', via: 'the service lift', dir: 'up', needs: 'a key', watched: true }, { id: 'stairs', from: 'Showroom', to: 'Security control room', via: 'the back stairs' }],
+  people: [
+    { id: 'od', label: 'Odette Marsh', kind: 'target', stops: [{ at: '21:00', room: 'Showroom' }, { at: '23:30', room: 'Private card rooms', note: 'cards' }, { at: '00:15', room: 'Luxury penthouse', note: 'alone' }] },
+    { id: 'wr', label: 'Wren Tully', kind: 'guard', with: 'od' },
+    { id: 'pq', label: 'Pip Quill', kind: 'staff', stops: [{ at: '21:00', room: 'Cocktail lounge' }, { at: '00:00', room: 'Underground counting room' }] },
+    { id: 'iv', label: 'Ivo Stark', kind: 'rival', stops: [{ at: '21:00', room: 'Security control room' }]}],
+  disguises: [{ id: 'cook', label: 'Cook', floors: [-1], sees: 'Ivo Stark' }],
+  events: [{ at: '22:00', id: 'sp', label: 'Speeches' }, { at: '00:00', id: 'fw', label: 'Fireworks', room: 'Showroom', fx: 'dawn' }],
+  clocks: [{ name: 'Fuse', room: 'Security control room' }],
+};
+const RUN_SITE = (play) => ({ name: 'The Pelican Rooms', rel: 'x', map: { view: 'iso' }, patch: { district: 'Nowhere Ward', rooms: RUN_ROOMS }, ...(play ? { play } : {}) });
+const runPack = (site) => ({ location: { version: 'l2', src: {}, body: { T: FIXL.T, extra: FIXL.extra, authored: { v: 1, sites: { 'The Pelican Rooms': site }, bind: { 'b68g-score-goose': 'The Pelican Rooms' } } } } });
+/* the map kit with a spy on render: every call's options, in order */
+function spyKit() { const calls = []; const K = Object.create(M); K.render = (roll, o) => { calls.push(JSON.parse(JSON.stringify(o))); return M.render(roll, o); }; return { K, calls }; }
+const RUN_PCS = [{ id: 'pc1', name: 'Cass Fenn' }, { id: 'pc2', name: 'Dov Ketch' }];
+const RUN_CAMP = { session: { number: 3 }, crew: {}, clocks: [{ id: 'c1', name: 'Fuse', size: 6, filled: 2, kind: 'danger' }] };
+async function openRun({ fg, site, spy, camp } = {}) {
+  const { K, calls } = spy || spyKit(), g = fg || fakeGm(undefined, Object.assign({}, prepPart, runPack(site || RUN_SITE(RUN_PLAY))));
+  const h = await openPage({ fg: g, camp: camp || RUN_CAMP, over: { B68GmPrep: PR, B68Markdown: MDN, B68Map: K, B68GmBall: BALL }, api: { characters: () => RUN_PCS } });
+  h.press('r'); h.q('.pp-site[data-score="b68g-score-goose"] [data-gm="siteauth"]').click();
+  h.calls = calls; h.fg = g; return h;
+}
+const selectedOf = (sel) => { const o = sel.querySelectorAll('option').find((x) => x.hasAttribute('selected')); return o ? o.getAttribute('value') : ''; };
+const clockText = (h) => h.q('#gm-run-clock').textContent;
+const lastTokens = (h) => (h.calls[h.calls.length - 1] || {}).tokens;
+
+await test('S5a. a token is the escaped svg the kit nests: initials, a red ring only on danger, the lens letter, a pie per clock', () => {
+  const s = P.runTokenSvg({ pills: [{ t: '<b>', c: '"x' }, { t: 'AB', c: '#111111' }], pies: [{ f: 2, s: 6 }, { f: 6, s: 6 }, { f: 0, s: 4 }], lens: 'desperate', danger: true });
+  assert.ok(/^<svg [^>]*viewBox="0 0 540 600"/.test(s) && s.endsWith('</svg>'));
+  assert.ok(!s.includes('<b>') && s.includes('&lt;b&gt;') && !s.includes('"x"'), 'text and colours are escaped');
+  assert.ok(s.includes('stroke="#d11"') && s.includes('>D<'));
+  assert.ok(!P.runTokenSvg({ pills: [{ t: 'AB', c: '#111111' }], lens: 'risky' }).includes('#d11'), 'no ring without danger');
+  assert.equal(P.runInitials('Odette Marsh'), 'OM'); assert.equal(P.runInitials('  wren '), 'W'); assert.equal(P.runInitials(''), '?');
+  checkSvg(P.runTokenSvg({ pills: [{ t: 'AB', c: '#111111' }] }));
+});
+
+await test('S5b. the strip: floor tabs in number order, the time, the lens, the crew; one token per room; a rolled site and a site with no play have none', async () => {
+  assert.deepEqual(BALL.checkPlay(RUN_PLAY, RUN_ROOMS.map((r) => r.name)).warnings, [], 'the fixture play is clean');
+  const h = await openRun();
+  assert.ok(h.q('#gm-run'), 'an authored site with a play block has the strip');
+  const floors = M.floors(h.page._state().locRoll).map((f) => f.lvl).sort((a, b) => a - b);
+  assert.deepEqual(floors, [-1, 0, 1, 2]);
+  assert.deepEqual(h.qa('#gm-run-tabs button').map((b) => b.textContent), ['All', 'Under', 'Ground', 'Upper', 'Loft']);
+  assert.deepEqual(h.qa('#gm-run-tabs button').map((b) => b.getAttribute('data-v')), ['all', '-1', '0', '1', '2']);
+  assert.equal(clockText(h), '21:00'); assert.equal(h.q('#gm-run-t').getAttribute('max'), '300');
+  assert.equal(h.qa('#gm-run .gm-run-dot').length, 3, 'a dot for each of the target\'s windows'); assert.equal(h.qa('#gm-run .gm-run-tick').length, 2, 'a tick for each event');
+  assert.ok(h.q('#gm-run .gm-run-tick.fx'), 'the dawn is marked');
+  assert.deepEqual(h.qa('#gm-run-lens option').map((o) => o.textContent), ['No disguise', 'Cook']);
+  assert.deepEqual(h.qa('#gm-run-place [data-gm="run-pc"]').map((b) => b.textContent), ['Cass Fenn', 'Dov Ketch']);
+  assert.ok(h.q('#gm-map svg'), 'a run draws itself, with no Draw press');
+  /* 21:00: Odette and Wren in the showroom, Pip in the lounge, Ivo in the control room: three rooms, three tokens, never two in one room */
+  const tk = lastTokens(h);
+  assert.deepEqual(tk.map((t) => t.room).sort(), ['Cocktail lounge', 'Security control room', 'Showroom']);
+  assert.equal(new Set(tk.map((t) => t.room)).size, tk.length, 'one token per room');
+  assert.ok(tk.find((t) => t.room === 'Showroom').svg.includes('>OM<') && tk.find((t) => t.room === 'Showroom').svg.includes('>WT<'), 'both people in the one token');
+  assert.ok(tk.every((t) => !t.svg.includes('#d11')), 'no disguise, no ring');
+  assert.match(h.q('#gm-run-side').textContent, /At 21:00/); assert.match(h.q('#gm-run-side').textContent, /Odette Marsh.*Showroom/);
+  assert.match(h.q('#gm-run-side').textContent, /22:00 Speeches/); assert.match(h.q('#gm-run-side').textContent, /Cocktail lounge ↑ Luxury penthouse/);
+  assert.match(h.q('#gm-run-side').textContent, /Showroom ↕ Security control room/);
+  assert.equal(stateDoc(h).ball, undefined, 'nothing is written by looking');
+  /* a plain roll after it has no strip */
+  h.q('[data-gm="locroll"]').click();
+  assert.ok(!h.q('#gm-run') && !h.q('#gm-run-side'), 'a rolled site has no strip');
+  await h.save();
+  /* an authored site with no play block */
+  const h2 = await openRun({ site: RUN_SITE(null) });
+  assert.ok(!h2.q('#gm-run') && h2.q('#gm-map'), 'no play block, no strip');
+  await h2.save();
+});
+
+await test('S5c. scrub across midnight, floors, the disguise and its danger ring, a PC, a pinned clock; every change is saved; a reload shows the same', async () => {
+  const fg = fakeGm(undefined, Object.assign({}, prepPart, runPack(RUN_SITE(RUN_PLAY))));
+  const h = await openRun({ fg });
+  const strip = h.q('#gm-run');
+  /* Next window: 23:30 (150 minutes in), saved at once */
+  h.q('[data-gm="run-next"]').click();
+  assert.equal(clockText(h), '23:30'); assert.equal(stateDoc(h).ball.t, 150); assert.equal(stateDoc(h).ball.site, 'The Pelican Rooms');
+  assert.match(h.q('#gm-run-side').textContent, /Odette Marsh.*Private card rooms/);
+  /* the slider across midnight: 00:15 is 195 minutes in; the clock and the side follow at once, the state and the map 200 ms after */
+  const callsBefore = h.calls.length, slider = h.q('#gm-run-t');
+  slider.value = '190'; dispatch(slider, 'input'); slider.value = '195'; dispatch(slider, 'input');
+  assert.equal(clockText(h), '00:15', 'the clock is the evening\'s, across midnight'); assert.match(h.q('#gm-run-side').textContent, /Odette Marsh.*Luxury penthouse/);
+  assert.equal(stateDoc(h).ball.t, 150, 'not saved while it moves'); assert.equal(h.calls.length, callsBefore, 'nor drawn');
+  await rsleep(320);
+  assert.equal(stateDoc(h).ball.t, 195); assert.ok(h.calls.length - callsBefore <= 1, 'one render for the whole scrub');
+  assert.ok(lastTokens(h).some((t) => t.room === 'Luxury penthouse'), 'Odette is in the penthouse on the map');
+  /* Left and Right: 5 minutes, only with the focus in the strip */
+  h.press('ArrowRight', { target: strip }); assert.equal(clockText(h), '00:20'); assert.equal(stateDoc(h).ball.t, 200);
+  h.press('ArrowLeft', { target: strip }); h.press('ArrowLeft', { target: strip }); assert.equal(clockText(h), '00:10');
+  h.press('ArrowRight', { target: h.q('#gm-run-lens') }); assert.equal(clockText(h), '00:10', 'the Disguise select keeps its own arrows');
+  h.press('ArrowRight', { target: h.br.doc.body }); assert.equal(clockText(h), '00:10', 'outside the strip they do nothing');
+  /* the end of the night holds; the beginning too */
+  slider.value = '300'; dispatch(slider, 'input'); dispatch(slider, 'change'); h.press('ArrowRight', { target: strip }); assert.equal(clockText(h), '02:00'); assert.equal(stateDoc(h).ball.t, 300);
+  h.q('[data-gm="run-next"]'); h.q('[data-gm="run-next"]').click(); assert.ok(h.br.toasts.some(([m]) => /No more windows/.test(m)), 'no window after the last');
+  slider.value = '195'; dispatch(slider, 'input'); dispatch(slider, 'change'); assert.equal(stateDoc(h).ball.t, 195);
+  /* floors: the Loft tab keeps the penthouse and drops the rest; the kit is told the floor */
+  const top = h.qa('#gm-run-tabs button').find((b) => b.getAttribute('data-v') === '2'); top.click();
+  assert.equal(stateDoc(h).ball.floor, 2); await rsleep(0);
+  assert.equal(h.calls[h.calls.length - 1].floor, 2); assert.deepEqual(lastTokens(h).map((t) => t.room), ['Luxury penthouse']);
+  assert.deepEqual(h.qa('#gm-run-rooms [data-gm="run-room"]').map((b) => b.getAttribute('data-room')), ['Luxury penthouse'], 'the room list follows the floor');
+  assert.equal(h.qa('#gm-run-tabs button').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent).join(), 'Loft');
+  const topSvg = h.page._state().map.svg; h.qa('#gm-run-tabs button')[0].click(); assert.equal(stateDoc(h).ball.floor, 'all'); assert.notEqual(h.page._state().map.svg, topSvg, 'All draws every floor again (from the cache: the same people, the same map)');
+  /* the disguise: Cook lives in the cellar. The control room (two floors up) is desperate, and Ivo, whom a cook sees through, is in it */
+  const lens = h.q('#gm-run-lens'); lens.value = 'cook'; dispatch(lens, 'change');
+  assert.equal(stateDoc(h).ball.lens, 'cook');
+  const rooms = Object.fromEntries(h.qa('#gm-run-rooms [data-gm="run-room"]').map((b) => [b.getAttribute('data-room'), b]));
+  assert.ok(rooms['Underground counting room'].className.includes('pos-controlled') && rooms['Security control room'].className.includes('pos-desperate') && rooms['Security control room'].className.includes('danger'));
+  assert.ok(rooms['Showroom'].className.includes('pos-risky'), 'one floor off the cellar');
+  const ring = lastTokens(h).filter((t) => t.svg.includes('stroke="#d11"')).map((t) => t.room);
+  assert.deepEqual(ring, ['Security control room'], 'the red ring only where the one the disguise sees through stands');
+  assert.ok(lastTokens(h).find((t) => t.room === 'Security control room').svg.includes('>D<'), 'the lens chip');
+  /* the crew: tap a PC chip, then a room; one token still; moving them leaves no old key; tapping the same room takes them off */
+  h.qa('#gm-run-place [data-gm="run-pc"]')[0].click();
+  assert.match(h.q('#gm-run-place').textContent, /Tap a room/);
+  h.qa('#gm-run-rooms [data-gm="run-room"]').find((b) => b.getAttribute('data-room') === 'Luxury penthouse').click();
+  assert.deepEqual(cl(stateDoc(h).ball.crew), { pc1: 'Luxury penthouse' });
+  let pen = lastTokens(h).filter((t) => t.room === 'Luxury penthouse'); assert.equal(pen.length, 1); assert.ok(pen[0].svg.includes('>CF<') && pen[0].svg.includes('>OM<'), 'the crew and Odette share the one token');
+  h.qa('#gm-run-place [data-gm="run-pc"]')[0].click(); h.qa('#gm-run-rooms [data-gm="run-room"]').find((b) => b.getAttribute('data-room') === 'Showroom').click();
+  assert.deepEqual(cl(stateDoc(h).ball.crew), { pc1: 'Showroom' });
+  h.qa('#gm-run-place [data-gm="run-pc"]')[1].click(); h.qa('#gm-run-rooms [data-gm="run-room"]').find((b) => b.getAttribute('data-room') === 'Showroom').click();
+  assert.deepEqual(cl(stateDoc(h).ball.crew), { pc1: 'Showroom', pc2: 'Showroom' });
+  h.qa('#gm-run-place [data-gm="run-pc"]')[1].click(); h.qa('#gm-run-rooms [data-gm="run-room"]').find((b) => b.getAttribute('data-room') === 'Showroom').click();
+  assert.deepEqual(cl(stateDoc(h).ball.crew), { pc1: 'Showroom' }, 'tapping their room takes them off');
+  /* a table clock pinned to a room draws its pie */
+  h.q('#gm-run-place [data-gm="run-clock"]').click(); assert.match(h.q('#gm-run-place').textContent, /Pin to room/);
+  h.qa('#gm-run-rooms [data-gm="run-room"]').find((b) => b.getAttribute('data-room') === 'Cocktail lounge').click();
+  assert.deepEqual(cl(stateDoc(h).ball.pins), { c1: 'Cocktail lounge' });
+  const lounge = lastTokens(h).find((t) => t.room === 'Cocktail lounge'); assert.ok(lounge && /<path d="M100 480/.test(lounge.svg), 'a pie for the clock, 2 of 6');
+  /* the player layer never gets tokens or a floor, and the strip says so */
+  h.q('[data-gm="layer"][data-v="player"]').click();
+  assert.equal(h.calls[h.calls.length - 1].layer, 'player'); assert.equal(h.calls[h.calls.length - 1].tokens, undefined); assert.equal(h.calls[h.calls.length - 1].floor, undefined);
+  assert.match(h.q('#gm-run-note').textContent, /GM layer/); assert.ok(!h.page._state().map.svg.includes('#fffdf6'), 'no token on the player layer map');
+  h.q('[data-gm="layer"][data-v="gm"]').click();
+  assert.ok(h.page._state().map.svg.includes('#fffdf6'), 'and the GM layer has them again');
+  const svgBefore = h.page._state().map.svg;
+  await h.save();
+  const saved = fg.server.doc.ball;
+  assert.deepEqual(saved, { site: 'The Pelican Rooms', t: 195, floor: 'all', lens: 'cook', crew: { pc1: 'Showroom' }, pins: { c1: 'Cocktail lounge' } }, 'the server holds exactly the state');
+  /* a reload on the same server: the same strip, the same tokens */
+  const spy2 = spyKit();
+  const r = await openRun({ fg, spy: spy2 });
+  assert.equal(clockText(r), '00:15'); assert.equal(r.q('#gm-run-t').value, '195'); assert.equal(selectedOf(r.q('#gm-run-lens')), 'cook');
+  assert.equal(r.qa('#gm-run-tabs button').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent).join(), 'All');
+  assert.match(r.qa('#gm-run-place [data-gm="run-pc"]')[0].textContent, /Showroom/); assert.match(r.q('#gm-run-place [data-gm="run-clock"]').textContent, /Cocktail lounge/);
+  const ids = (s) => String(s).replace(/b68md+-/g, 'b68m-');
+  assert.equal(ids(r.page._state().map.svg), ids(svgBefore), 'the same people on the same map');
+  await r.save();
+});
+
+await test('S5d. another site\'s ball is not this one\'s: its crew does not show, and the first write replaces it whole', async () => {
+  const fg = fakeGm(undefined, Object.assign({}, prepPart, runPack(RUN_SITE(RUN_PLAY))));
+  fg.server.doc = { ball: { site: 'Some Other Place', t: 200, floor: 1, lens: 'cook', crew: { pc1: 'Showroom' }, pins: { c1: 'Showroom' } } };
+  const h = await openRun({ fg });
+  assert.equal(clockText(h), '21:00'); assert.equal(selectedOf(h.q('#gm-run-lens')), ''); assert.ok(lastTokens(h).every((t) => !t.svg.includes('>CF<')));
+  h.q('[data-gm="run-step"][data-d="15"]').click();
+  assert.deepEqual(cl(stateDoc(h).ball), { site: 'The Pelican Rooms', t: 15 }, 'nothing of the other site is left');
+  await h.save();
+  assert.deepEqual(fg.server.doc.ball, { site: 'The Pelican Rooms', t: 15 }, 'and on the server');
+});
+
+await test('S5f. the table moves under the run: a pinned clock ticks and a new PC is filed; the strip and the map follow (and the focus survives a tap)', async () => {
+  const h = await openRun();
+  h.q('#gm-run-place [data-gm="run-clock"]').click();
+  h.qa('#gm-run-rooms [data-gm="run-room"]').find((b) => b.getAttribute('data-room') === 'Cocktail lounge').click();
+  const chip = () => h.q('#gm-run-place [data-gm="run-clock"]').textContent;
+  assert.match(chip(), /Fuse 2\/6/);
+  const svg0 = h.page._state().map.svg;
+  h.cd.current.clocks[0].filled = 4; h.page.campaign(h.cd.current);
+  await rsleep(320);
+  assert.match(chip(), /Fuse 4\/6/, 'the chip reads the table');
+  assert.notEqual(h.page._state().map.svg, svg0, 'and the pie on the map moved');
+  assert.equal(h.qa('#gm-run-place [data-gm="run-pc"]').length, 2);
+  RUN_PCS.push({ id: 'pc3', name: 'Eli Vance' });
+  try { h.page.characters(); } finally { RUN_PCS.pop(); }
+  assert.deepEqual(h.qa('#gm-run-place [data-gm="run-pc"]').map((b) => b.textContent), ['Cass Fenn', 'Dov Ketch', 'Eli Vance'], 'a newly filed PC is a chip at once');
+  /* a tap rebuilds the chips: the focus goes to the same control, so Left and Right keep working */
+  const pc = h.qa('#gm-run-place [data-gm="run-pc"]')[0]; pc.focus(); pc.click();
+  assert.equal(h.br.doc.activeElement.getAttribute('data-id'), 'pc1', 'the focus is on the rebuilt chip');
+  h.press('ArrowRight', { target: h.br.doc.activeElement }); assert.equal(clockText(h), '21:05', 'Left and Right still move the time');
+  await h.save();
+});
+
+await test('S5e. SECRECY: nothing of the run reaches the iPad: no ball, no people, no disguise, no event, no token', async () => {
+  const fg = fakeGm(undefined, Object.assign({}, prepPart, runPack(RUN_SITE(RUN_PLAY))));
+  const h = await openRun({ fg });
+  h.q('[data-gm="run-next"]').click();
+  const lens = h.q('#gm-run-lens'); lens.value = 'cook'; dispatch(lens, 'change');
+  h.qa('#gm-run-place [data-gm="run-pc"]')[0].click(); h.qa('#gm-run-rooms [data-gm="run-room"]')[0].click();
+  h.br.W.confirm = () => true;
+  h.q('[data-gm="layer"][data-v="player"]').click();
+  const w = h.q('[data-reveal="working"]'); w.checked = true; dispatch(w, 'change');
+  h.q('[data-gm="ipad"]').click();
+  const shown = await until(() => fg.server.displays.filter((d) => d.kind === 'svg').pop());
+  assert.ok(shown, 'a map went to the iPad');
+  const all = JSON.stringify(fg.server.displays);
+  for (const word of ['"ball"', 'Odette', 'Wren', 'Pip Quill', 'Ivo', 'Cook', 'Speeches', 'Fireworks', 'Cass Fenn', 'Gala night', 'tok-frame', '#d11']) assert.ok(!all.includes(word), 'the iPad payload carries ' + word);
+  assert.ok(!/ball/.test(Object.keys(shown).join()), 'no ball key on the payload');
+  assert.match(shown.svg, /Showroom/, 'the map itself is the player layer');
+  await h.save();
+});
+
+/* =====================================================================================================================
    18. Score (J): the outline of a heist, rolled for inspiration (app/gm/score.js; GM.md "Score (J)")
    ===================================================================================================================== */
 const SCT = SCFIX.score.T, SFAC = SCT.faction.map((f) => f[0]), SDIST = SCT.loc.district;
