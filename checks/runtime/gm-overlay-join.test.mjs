@@ -204,6 +204,8 @@ await test('namesHit folds with NFKC on both sides, in the server and the page a
     [FW + ' was here', ['Vex'], true], ['Vex was here', [FW], true], [FW + 'ing weather', ['Vex'], false], ['the ﬁsher waits', ['fisher'], true],
     ['Zoë waits', ['Zoë'], true], ['Zoë waits', ['Zoë'], true], ['The　Brass Fox', ['The Brass Fox'], true],
     ['Vex was here', ['Vex'], true], ['nothing here', [FW], false],         // ASCII-only paths, and a folded name that is absent
+    ['José said', ['Jose'], true],                                      // folding must never remove a hit: raw "Jose" + combining acute was a hit before NFKC and stays one
+    ['José said', ['José'], true], ['Josephine said', ['Jose'], false], ['Jose said', ['José'], false],      // and ASCII negative controls: a longer word, a different name
   ];
   for (const [text, names, want] of cases) {
     assert.equal(serverNamesHit(text, names), want, 'server ' + JSON.stringify([text, names]));

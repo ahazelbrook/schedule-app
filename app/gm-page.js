@@ -446,12 +446,17 @@
      and the like read as the plain letters), as the server's namesHit does. */
   function nfkc(s) { return /[^\x00-\x7f]/.test(s) ? s.normalize('NFKC') : s; }
   function namesHit(text, names) {
-    var t = nfkc(typeof text === 'string' ? text : '');
-    return (Array.isArray(names) ? names : []).some(function (n) {
-      n = typeof n === 'string' ? nfkc(n).replace(/\s+/g, ' ').trim() : '';
-      if (n.length < 2) return false;
-      var src = n.split(' ').map(function (w) { return w.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); }).join('\\s+');
-      try { return new RegExp('(?:^|[^\\p{L}\\p{N}_])' + src + '(?![\\p{L}\\p{N}_])', 'iu').test(t); } catch (e) { return true; }
+    var raw = typeof text === 'string' ? text : '';
+    var texts = [raw], folded = nfkc(raw); if (folded !== raw) texts.push(folded);     /* the raw text always counts: folding can only add hits, never remove one */
+    return (Array.isArray(names) ? names : []).some(function (n0) {
+      if (typeof n0 !== 'string') return false;
+      var forms = [n0], fn = nfkc(n0); if (fn !== n0) forms.push(fn);
+      return forms.some(function (n1) {
+        var n = n1.replace(/\s+/g, ' ').trim();
+        if (n.length < 2) return false;
+        var src = n.split(' ').map(function (w) { return w.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); }).join('\\s+');
+        try { var re = new RegExp('(?:^|[^\\p{L}\\p{N}_])' + src + '(?![\\p{L}\\p{N}_])', 'iu'); return texts.some(function (t) { return re.test(t); }); } catch (e) { return true; }
+      });
     });
   }
   P.namesHit = namesHit;
