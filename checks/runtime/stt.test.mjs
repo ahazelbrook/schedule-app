@@ -88,13 +88,16 @@ await test('cue merger: a cue at the start of the line (no words before) makes n
 await test('cue merger: a bare "Blade," arms for 2 s; the command under ANOTHER speaker label joins it, and the whole is cued', () => {
   const r = rig(); r.add(0, 'Blade,', 5, 0);
   assert.equal(r.out.length, 0); assert.equal(r.m.open().armed, true, 'armed: a wake word with nothing after it');
-  r.add(3, 'make a six clock called Escape', 6.5, 1900);               // 1.9 s later, another label
+  r.add(3, 'make a six clock called Escape', 6.5, 1900);               // starts 1.2 s of audio after the wake word, another label
   assert.equal(r.out.length, 0, 'joined, not emitted'); assert.deepEqual([r.m.open().text, r.m.open().speaker, r.m.open().cue], ['Blade, make a six clock called Escape', 0, true]);
   r.tick(2900); assert.equal(r.out.length, 0); r.tick(2901);
   assert.deepEqual(r.out.map((l) => [l.text, l.cue, l.speaker, l.when]), [['Blade, make a six clock called Escape', true, 0, 2901]]);
-  /* too late: 2.1 s after the bare wake word it is an ordinary line and the next one starts a new line */
-  const s = rig(); s.add(0, 'Blade,', 5, 0); s.add(1, 'make a six clock called Escape', 7.5, 2100);
-  assert.deepEqual(s.out.map((l) => [l.text, 'cue' in l]), [['Blade,', false]], 'the lapsed arm closed as an ordinary line');
+  /* a long command: the final lands 2.6 s of wall time later (it took 2.4 s to say), still joined because the arm counts AUDIO */
+  const lg = rig(); lg.add(0, 'Blade,', 5, 0); lg.add(2, 'make a six clock called Escape', 5.9, 2600);
+  assert.equal(lg.out.length, 0); assert.deepEqual([lg.m.open().text, lg.m.open().cue], ['Blade, make a six clock called Escape', true]); lg.tick(3601); assert.deepEqual(lg.out.map((l) => [l.text, l.cue]), [['Blade, make a six clock called Escape', true]]);
+  /* too late: 2.2 s of audio after the bare wake word it is an ordinary line and the next one starts a new line */
+  const s = rig(); s.add(0, 'Blade,', 5, 0); s.add(1, 'make a six clock called Escape', 7.5, 600);
+  assert.deepEqual(s.out.map((l) => [l.text, 'cue' in l]), [['Blade,', false]], 'the lapsed arm (2.2 s of audio) closed as an ordinary line');
   /* a bare wake word that the next words do not turn into a cue stays an ordinary line */
   const n = rig(); n.add(0, 'Blade,', 0, 0); n.add(1, 'hello there my friend', 1, 500); assert.equal(n.m.open().armed, false); assert.equal(n.m.open().cue, false);
   n.tick(5000); assert.deepEqual(n.out.map((l) => [l.text, 'cue' in l]), [['Blade, hello there my friend', false]]);
@@ -147,6 +150,10 @@ await test('cue merger: the DG URL carries keyterm=Blade', () => {
 });
 
 /* ---------- the server ---------- */
+await test('server: a posted line carrying cue: true is accepted (no 400), and the field is NOT kept (cleanLines rebuilds from fixed fields)', async () => {
+  const got = cleanLines({ lines: [L('q1', 'Blade, tick Escape', { cue: true })] });
+  assert.equal(got.length, 1); assert.equal(got[0].text, 'Blade, tick Escape'); assert.ok(!('cue' in got[0]), 'dropped by the server today: C4d and MD1b cannot read it from stored lines');
+});
 await test('server: lines are validated, stored in order with their seq, a resend is skipped, read after / tail, pruned', async () => {
   const db = await newDb();
   for (const bad of [{}, { lines: 'x' }, { lines: new Array(51).fill(L('a', 'b')) }, { lines: [L('bad id!', 'x')] }, { lines: [L('a', '')] }, { lines: [L('a', 'x', { at: 'yesterday' })] },

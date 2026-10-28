@@ -17,7 +17,10 @@
 
    B68Stt.attach(container, { gm })   gm = window.claude.gm (stt, patchStt, sttToken, addTranscript) -> { destroy, state, feed }
      feed(part)  the display poll's transcriber part { want, session } (null: that answer had none, ask GET /api/gm/stt yourself)
-   Pure: downsample(f32, inRate, outRate) -> Int16Array · runsOf(words) · makeMerger(emit) · lineId() · DG_URL */
+   Pure: downsample(f32, inRate, outRate) -> Int16Array · runsOf(words) -> runs with their words · makeMerger(emit, clock, cue) · lineId() · DG_URL
+   makeMerger(emit, clock, cue): cue is B68Cue (display bundle: cue.js loads first). A line closes after 4 s quiet or 20 s open, as before; a line holding a cue closes
+   1 s after its last run (any speaker label joins it inside that second), is cut at the cue by Deepgram's words, and is emitted with cue: true; a bare
+   "Blade," waits 2 s of audio for the command; the line after a cued line is emitted at once. emit gets { speaker, text, at, conn, cue?, urgent? }. */
 (function (root, factory) {
   'use strict';
   var api = factory(root);
@@ -35,8 +38,8 @@
      is not listening and the page is visible (a change of state is always reported at once); a hidden page reports nothing. */
   var T = { poll: 4000, flush: 3000, status: 10000, idleStatus: 60000, keepalive: 4000, tick: 250, stopGrace: 3000, maxSession: 6 * 3600 * 1000 };
   /* the cue (design "the cue and the phones" 1.2, 1.4): a line holding a cue takes any run within CUE_TAIL_MS of the last, then goes;
-     a line ending in a bare wake word waits ARM_MS for the command, whatever the speaker label; the line after a cued line goes at once */
-  var CUE_TAIL_MS = 1000, ARM_MS = 2000, AFTER_CUE_MS = 20000;
+     a line ending in a bare wake word waits ARM_S seconds of audio for the command, whatever the speaker label; the line after a cued line goes at once */
+  var CUE_TAIL_MS = 1000, ARM_S = 2, AFTER_CUE_MS = 20000;
   var MERGE_GAP_S = 4, IDLE_CLOSE_MS = 4000, MAX_OPEN_MS = 20000, MAX_LINE = 700, MAX_QUEUE = 3000, MAX_BUFFER = 240, BATCH = 50;
   var BACKOFF = [1000, 2000, 5000, 10000];
   var SCHEMES = ['bearer', 'token'];          /* how the token rides the WebSocket handshake: Deepgram's subprotocol pair */
@@ -109,7 +112,7 @@
      plus cue: true on a line that holds a cue and urgent: true on a line to post at once (a cued line, and the one straight after it).
      cue: B68Cue (its find). Without it nothing below the plain merge runs.
      The cue (design 1.4): after each run is added the whole open line is checked, and cut by Deepgram's words at the cue (the words before
-     close the line, the cue starts a new one). A line ending in a bare wake word arms for ARM_MS: the next run joins it, whatever its label.
+     close the line, the cue starts a new one). A line ending in a bare wake word arms for ARM_S seconds of audio: the next run starting within that joins it, whatever its label.
      A line holding a cue takes a run within CUE_TAIL_MS of the last, whatever its label, then closes at once; with none it closes when
      tick() sees CUE_TAIL_MS pass. Nothing here waits for speech_final. */
   function makeMerger(emit, clock, cue) {
@@ -144,7 +147,7 @@
         var t = now(), words = wordsOf(run, at), joined = false, joinedCue = false;
         if (open && open.conn === conn) {
           if (open.cue) { if (t - open.updated <= CUE_TAIL_MS) { joined = true; joinedCue = true; } }
-          else if (open.armed && t - open.updated <= ARM_MS) joined = true;
+          else if (open.armed && run.start - open.end <= ARM_S) joined = true;       /* AUDIO time: a final lands after the words, so the wall clock would lose a long command */
           else if (open.speaker === run.speaker && run.start - open.end <= MERGE_GAP_S && open.text.length + run.text.length < MAX_LINE) joined = true;
         }
         if (joined) {
