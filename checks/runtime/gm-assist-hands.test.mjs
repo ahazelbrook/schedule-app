@@ -354,8 +354,11 @@ await test('CPU: exactly one read of the transcript, one read for spend and the 
   const touches = s.sqls.filter((q) => /gm_transcript/.test(q));
   assert.equal(touches.length, 1, 'transcript reads: ' + touches.length);
   assert.match(touches[0], /seq BETWEEN \?2 AND \?3/); assert.match(touches[0], /LIMIT \?4/);
-  assert.equal(s.sqls.length, 4, s.sqls.map((q) => q.slice(0, 60)).join(' | '));
+  assert.equal(s.sqls.length, 4, 'an old-shape window asks for no seen filtering: ' + s.sqls.map((q) => q.slice(0, 60)).join(' | '));
   assert.ok(!s.sqls.some((q) => /gm_pack/.test(q)), 'the assist part is never read');
+  clock.t += 9_000; s.sqls.length = 0;
+  await s.post({ ...REQ, seenOk: true });
+  assert.equal(s.sqls.length, 5, 'with seenOk: the tonight-keys read shares a batch with the log write');
   assert.ok(!s.sqls.some((q) => /campaigns|npcs/.test(q)), 'the table\'s own data is never read: the page sent its state');
 });
 
@@ -506,6 +509,454 @@ await test('route: the same window sent twice gives the same keys, so the page c
   assert.deepEqual(d.actions.map((x) => x.key), a.actions.map((x) => x.key));
 });
 
+// ---------- C4c: the cue (/act mode 'cue') ----------
+import { CUE_TYPES, markSeen } from '../../functions/_lib/assist/hands.js';
+import { CUE_INSTRUCTION } from '../../functions/_lib/assist/seats.js';
+
+// the invented cue: line 2 holds the wake word; the command runs on into line 3
+const CUE_TALK = ['Okay so the dockside is quiet tonight.', 'Blade, make a six clock called Harbour Bell', 'and mark two on it. Anyway, back to the quay.', 'The crew look at each other.'];
+const CUE_LINES = CUE_TALK.map((text, i) => ({ ...row(i + 1, text), id: 'l' + (i + 1) }));
+const CUE_ONE = 'Blade, make a six clock called Harbour Bell', CUE_TWO = 'Blade, make a six clock called Harbour Bell and mark two on it';
+const pa = (over = {}) => ({ type: 'clock_add', quote: CUE_TWO, name: 'Harbour Bell', size: 6, hidden: true, filled: 2, ...over });
+const cueCheck = (raw, over = {}) => validateActions(raw, { state: cleanState(STATE), lines: CUE_LINES, cue: { parsed: true, cueLineId: 'l2' }, ...over });
+const CREQ = { from: 1, to: 4, state: STATE, mode: 'cue', cueLineId: 'l2' };
+
+await test('cue body: mode is absent or cue; parsed is 1-8 objects, needs mode cue and a cueLineId; a window body keeps its old shape', () => {
+  assert.deepEqual(cleanActBody({ from: 1, to: 4, state: STATE }), { from: 1, to: 4, state: cleanState(STATE) });
+  const ok = cleanActBody({ ...CREQ, parsed: [pa()] });
+  assert.deepEqual([ok.mode, ok.cueLineId, ok.parsed.length], ['cue', 'l2', 1]);
+  const noParse = cleanActBody(CREQ);
+  assert.deepEqual([noParse.mode, noParse.parsed, noParse.cueLineId], ['cue', null, 'l2']);
+  assert.equal(cleanActBody({ from: 1, to: 4, state: STATE, mode: 'cue' }).cueLineId, '', 'the model path may come without the id');
+  const bads = [{ mode: 'window' }, { mode: 'cuee' }, { mode: 'cue', parsed: [] }, { mode: 'cue', parsed: 'x', cueLineId: 'l2' }, { mode: 'cue', parsed: [pa()] },
+    { mode: 'cue', parsed: [pa(), 'x'], cueLineId: 'l2' }, { mode: 'cue', parsed: Array.from({ length: 9 }, () => pa()), cueLineId: 'l2' }, { parsed: [pa()], cueLineId: 'l2' },
+    { mode: 'cue', cueLineId: 5 }, { mode: 'cue', cueLineId: '' }, { mode: 'cue', cueLineId: 'x'.repeat(65) }];
+  for (const b of bads) assert.throws(() => cleanActBody({ from: 1, to: 4, state: STATE, ...b }), (e) => e.status === 400, JSON.stringify(b).slice(0, 60));
+  assert.equal(cleanActBody({ ...CREQ, parsed: Array.from({ length: 8 }, () => pa()) }).parsed.length, 8);
+});
+
+await test('cue validation: the six cue types act; every survivor is mode act (confidence 1), whatever was sent', () => {
+  assert.deepEqual(CUE_TYPES, ['clock_add', 'clock_tick', 'npc_add', 'capture', 'undo', 'rename']);
+  const v = cueCheck([pa({ confidence: 0.1 }), { type: 'clock_tick', quote: CUE_TWO, clock_id: 'ck1', by: 2 }, { type: 'npc_add', quote: CUE_TWO, name: 'Corvin Lathe', look: 'tall', role: 'porter' },
+    { type: 'capture', quote: CUE_TWO, bucket: 'loose_end', text: 'who owns the bell' }, { type: 'undo', quote: CUE_TWO }, { type: 'rename', quote: CUE_TWO, name: 'Big Ben' }]);
+  assert.deepEqual(v.actions.map((a) => [a.type, a.mode, a.confidence]), [['clock_add', 'act', 1], ['clock_tick', 'act', 1], ['npc_add', 'act', 1], ['capture', 'act', 1], ['undo', 'act', 1], ['rename', 'act', 1]]);
+  assert.deepEqual(v.dropped, []);
+  assert.deepEqual(v.actions[0], { type: 'clock_add', mode: 'act', quote: CUE_TWO, at: '', confidence: 1, key: v.actions[0].key, name: 'Harbour Bell', size: 6, hidden: true, filled: 2 });
+  assert.deepEqual([v.actions[1].by, v.actions[1].to_filled, v.actions[5].name], [2, 4, 'Big Ben']);
+  // a roll_log is not a cue command, and the other hands rules still hold
+  const bad = cueCheck([{ type: 'roll_log', quote: CUE_TWO, who: 'Odo', action: 'hunt' }, pa({ size: 7 }), pa({ name: '' }), { type: 'clock_tick', quote: CUE_TWO, clock_id: 'nope', by: 1 }, { type: 'npc_add', quote: CUE_TWO, name: 'Mirelle Tanager' }, { type: 'rename', quote: CUE_TWO, name: '   ' }]);
+  assert.deepEqual(bad.actions, []); assert.deepEqual(bad.dropped.map((d) => d.why), ['unknown type', 'illegal size', 'no name', 'unknown clock', 'already known', 'no name']);
+});
+
+await test('cue validation: undo and rename are accepted only from the page: a window, or the model\'s reading of a cue, drops them (and a window drops roll_log only into an offer)', () => {
+  const raw = [{ type: 'undo', quote: CUE_TWO, confidence: 1 }, { type: 'rename', quote: CUE_TWO, name: 'Big Ben', confidence: 1 }, pa({ confidence: 1 })];
+  for (const cue of [undefined, { parsed: false, cueLineId: 'l2' }]) {
+    const v = validateActions(raw, { state: cleanState(STATE), lines: CUE_LINES, cue });
+    assert.deepEqual(v.actions.map((a) => a.type), ['clock_add']);
+    assert.deepEqual(v.dropped.map((d) => [d.type, d.why]), [['undo', 'unknown type'], ['rename', 'unknown type']]);
+  }
+  const win = validateActions([{ type: 'roll_log', quote: CUE_TWO, who: 'Odo', action: 'hunt', confidence: 1 }], { state: cleanState(STATE), lines: CUE_LINES });
+  assert.deepEqual(win.actions.map((a) => [a.type, a.mode]), [['roll_log', 'offer']], 'a window still treats roll_log as an offer');
+});
+
+await test('cue validation: a rename is capped at 80 characters', () => {
+  const v = cueCheck([{ type: 'rename', quote: CUE_TWO, name: 'Z'.repeat(200) }]);
+  assert.equal(v.actions[0].name.length, 80);
+});
+
+await test('cue validation: filled is clamped to 0..size (and truncated); a missing or odd one is 0; a window action gets filled 0 too', () => {
+  const f = (filled, size = 6) => cueCheck([pa({ filled, size })]).actions[0].filled;
+  assert.deepEqual([f(2), f(99), f(-4), f(2.9), f(6), f(0)], [2, 6, 0, 2, 6, 0]);
+  assert.deepEqual([f(undefined), f('3'), f(NaN), f(null), f(4, 4), f(9, 4)], [0, 0, 0, 0, 4, 4]);
+  assert.equal(check([act()]).actions[0].filled, 0);
+  assert.equal(check([act({ filled: 3 })]).actions[0].filled, 3);
+});
+
+await test('cue quote: a one-line quote and a two-line quote (consecutive lines joined with one space) both pass; one that is not in the lines is dropped', () => {
+  assert.equal(cueCheck([pa({ quote: CUE_ONE })]).actions.length, 1);
+  assert.equal(cueCheck([pa({ quote: CUE_TWO })]).actions.length, 1, 'wake word on line 2, the command on line 3');
+  assert.equal(cueCheck([pa({ quote: 'Blade, make a six clock called Harbour Bell and  MARK two on it.' })]).actions.length, 1, 'after the usual normalisation');
+  const lost = cueCheck([pa({ quote: 'Blade, make a six clock called Harbour Bell and also tick the other one' })]);
+  assert.deepEqual([lost.actions.length, lost.dropped.map((d) => d.why)], [0, ['quote not in the talk']]);
+  assert.deepEqual(cueCheck([pa({ quote: '' }), pa({ quote: 'Blade' })]).dropped.map((d) => d.why), ['quote not in the talk', 'quote not in the talk']);
+  // two lines that are not neighbours do not join
+  const gap = validateActions([pa({ quote: 'Blade, make a six clock called Harbour Bell the crew look at each other' })], { state: cleanState(STATE), lines: CUE_LINES, cue: { parsed: true, cueLineId: 'l2' } });
+  assert.equal(gap.actions.length, 0);
+});
+
+await test('cue quote: it must START on the cue line: a quote from an earlier line, or only said after it, is dropped; an unknown cue line drops everything', () => {
+  const early = cueCheck([pa({ quote: 'Okay so the dockside is quiet tonight. Blade, make a six clock called Harbour Bell' })]);
+  assert.deepEqual([early.actions.length, early.dropped.map((d) => d.why)], [0, ['quote not in the talk']], 'it starts on line 1: the search begins at the cue line, so it is not found');
+  const later = cueCheck([pa({ quote: 'The crew look at each other' })]);
+  assert.deepEqual([later.actions.length, later.dropped.map((d) => d.why)], [0, ['quote not on the cue line']]);
+  const none = cueCheck([pa()], { cue: { parsed: true, cueLineId: 'zzz' } });
+  assert.deepEqual([none.actions.length, none.dropped.map((d) => d.why)], [0, ['cue line not in the talk']]);
+});
+
+await test('cue keys: from cueLineId and the action\'s index alone, not the quote, type or target; the model\'s cue reading derives them the same way', () => {
+  const a = cueCheck([pa(), pa({ type: 'capture', bucket: 'moment', text: 'x', name: '', size: 0 })]).actions.map((x) => x.key);
+  const b = cueCheck([pa({ quote: CUE_ONE, name: 'Another Name' }), { type: 'undo', quote: CUE_ONE }]).actions.map((x) => x.key);
+  assert.deepEqual(a, b, 'a second page that read the command differently, or joined it differently, still gets the same keys');
+  assert.equal(new Set(a).size, 2); assert.match(a[0], /^cue:[0-9a-f]{8}:0$/); assert.match(a[1], /:1$/);
+  const other = validateActions([pa()], { state: cleanState(STATE), lines: CUE_LINES.map((l) => ({ ...l, id: 'm' + l.id })), cue: { parsed: true, cueLineId: 'ml2' } }).actions[0].key;
+  assert.notEqual(other, a[0], 'another cue line, another key');
+  // the index is the position in what was sent: a dropped action does not shift the ones after it
+  const k = cueCheck([pa({ size: 7 }), pa()]).actions;
+  assert.deepEqual(k.map((x) => x.key), [a[0].replace(/:0$/, ':1')]);
+  const m = validateActions([pa()], { state: cleanState(STATE), lines: CUE_LINES, cue: { parsed: false, cueLineId: 'l2' } }).actions[0];
+  assert.equal(m.key, a[0], 'the model path, with a cueLineId, keys the same way: a page that parsed and a page that asked the model act once');
+  assert.equal(m.mode, 'act');
+  const noId = validateActions([pa({ confidence: 0.3 })], { state: cleanState(STATE), lines: CUE_LINES, cue: { parsed: false, cueLineId: '' } }).actions[0];
+  assert.match(noId.key, /^clock_add:/); assert.equal(noId.mode, 'act', 'a cue is always act, even at low confidence');
+});
+
+await test('markSeen: only the keys in the set change mode, and nothing else about them', () => {
+  const [x, y] = cueCheck([pa(), { type: 'undo', quote: CUE_ONE }]).actions;
+  const out = markSeen([x, y], new Set([y.key]));
+  assert.deepEqual([out[0], out[1]], [x, { ...y, mode: 'seen' }]);
+});
+
+// ---------- the route, parsed ----------
+const noModel = () => { throw new Error('the model was called'); };
+const cueSetup = async (o = {}) => {
+  const s = await setup({ handlerOpts: { clientFor: noModel, call: noModel }, ...o });
+  await s.lines(CUE_TALK);
+  return s;
+};
+const rowCount = (s) => s.rows().length;
+
+await test('route, parsed: no model call (a client and a call that throw if touched), no API key needed, one hands row with out.cue and spend 0, and the answer carries the actions as act', async () => {
+  const s = await cueSetup({ env: { ANTHROPIC_API_KEY: undefined } });
+  const res = await s.post({ ...CREQ, parsed: [pa(), { type: 'rename', quote: CUE_TWO, name: 'Big Ben' }] });
+  assert.equal(res.status, 200);
+  const out = await body(res);
+  assert.deepEqual(out.actions.map((a) => [a.type, a.mode]), [['clock_add', 'act'], ['rename', 'act']]);
+  assert.deepEqual([out.actions[0].filled, out.actions[1].name], [2, 'Big Ben']);
+  assert.deepEqual(out.dropped, []); assert.equal(out.spend.tick, 0); assert.equal(out.errors, undefined);
+  assert.equal(s.calls.length, 0);
+  const rows = s.rows(); assert.equal(rows.length, 1);
+  const r = rows[0], card = JSON.parse(r.card);
+  assert.deepEqual([r.seat, r.flags, r.cents, r.input_tokens, r.output_tokens], ['hands', 'act,cue', 0, 0, 0]);
+  assert.equal(card.out.cue, true); assert.equal(card.shown, 0); assert.equal(card.cue_line, 'l2');
+  assert.deepEqual(card.actions.map((a) => a.key), out.actions.map((a) => a.key));
+  assert.equal(r.session, '3');
+});
+
+await test('route, parsed: it works at the cap and inside the 8 s cooldown (it costs nothing), and a cue row does not start the window cooldown', async () => {
+  const s = await cueSetup();
+  await s.seed('ref', clock.t - 1000, 3000);                       // $30: the cap
+  await s.seed('hands', clock.t - 1000, 0);                        // a window run a second ago
+  const out = await body(await s.post({ ...CREQ, parsed: [pa()] }));
+  assert.equal(out.actions[0].mode, 'act'); assert.equal(out.spend.tier, 'off');
+  // a window run, after the cue row, is gated by the cooldown from the REAL window row only
+  const s2 = await setup();
+  await s2.lines(CUE_TALK); s2.st.reply = { actions: [] };
+  await s2.post({ ...CREQ, parsed: [pa()] });
+  assert.equal((await s2.post({ from: 1, to: 4, state: STATE })).status, 200, 'a window right after a cue row is not cooling down');
+});
+
+await test('route, parsed: a cueLineId that is not among the lines read is a 400, with no row; so is a range with no lines', async () => {
+  const s = await cueSetup();
+  await assert.rejects(s.post({ ...CREQ, cueLineId: 'nope', parsed: [pa()] }), (e) => e.status === 400 && /cueLineId/.test(e.message));
+  await assert.rejects(s.post({ ...CREQ, from: 3, to: 4, parsed: [pa()] }), (e) => e.status === 400, 'l2 is outside 3..4');
+  await assert.rejects(s.post({ ...CREQ, from: 500, to: 520, parsed: [pa()] }), (e) => e.status === 400);
+  assert.equal(rowCount(s), 0);
+});
+
+await test('route, parsed: a quote that is not in the lines is dropped (and reported), and a cue whose actions were all dropped still logs its row', async () => {
+  const s = await cueSetup();
+  const out = await body(await s.post({ ...CREQ, parsed: [pa({ quote: 'Blade, make a nine clock called Nonsense Gate' }), pa()] }));
+  assert.deepEqual(out.actions.map((a) => a.key.slice(-2)), [':1']);
+  assert.deepEqual(out.dropped, [{ type: 'clock_add', why: 'quote not in the talk' }]);
+  const s2 = await cueSetup();
+  const out2 = await body(await s2.post({ ...CREQ, parsed: [pa({ quote: 'something nobody said at all' })] }));
+  assert.deepEqual([out2.actions, out2.dropped.length, rowCount(s2)], [[], 1, 1]);
+});
+
+await test('route, parsed: it applies nothing (campaign, NPC table and pack are byte-identical)', async () => {
+  const s = await cueSetup();
+  const before = s.dump();
+  await s.post({ ...CREQ, parsed: [pa(), { type: 'npc_add', quote: CUE_TWO, name: 'Corvin Lathe' }] });
+  assert.equal(s.dump(), before);
+});
+
+await test('route, parsed: the same cue posted again is seen: no second row, and the action is still returned, as seen', async () => {
+  const s = await cueSetup();
+  const first = await body(await s.post({ ...CREQ, parsed: [pa(), { type: 'undo', quote: CUE_TWO }] }));
+  assert.deepEqual(first.actions.map((a) => a.mode), ['act', 'act']);
+  const again = await body(await s.post({ ...CREQ, parsed: [pa(), { type: 'undo', quote: CUE_TWO }] }));
+  assert.deepEqual(again.actions.map((a) => [a.type, a.mode, a.key]), first.actions.map((a) => [a.type, 'seen', a.key]));
+  assert.equal(rowCount(s), 1);
+  // another page that read the command differently (a different quote, a different name) has the same cueLineId and index: seen
+  const other = await body(await s.post({ ...CREQ, parsed: [pa({ quote: CUE_ONE, name: 'Other Name', filled: 0 })] }));
+  assert.deepEqual(other.actions.map((a) => a.mode), ['seen']);
+  // an action of the same cue that is new (index 2) acts, and the cue's seen ones do not block it
+  const more = await body(await s.post({ ...CREQ, parsed: [pa(), { type: 'undo', quote: CUE_TWO }, { type: 'capture', quote: CUE_TWO, bucket: 'name', text: 'the bell' }] }));
+  assert.deepEqual(more.actions.map((a) => a.mode), ['seen', 'seen', 'act']);
+  assert.equal(rowCount(s), 2);
+  const card = JSON.parse(s.rows()[1].card); assert.deepEqual(card.actions.map((a) => a.type), ['capture'], 'the row holds only what this call won');
+  // a different cue line is a different key
+  const diff = await body(await s.post({ ...CREQ, from: 1, to: 4, cueLineId: 'l3', parsed: [{ type: 'undo', quote: 'and mark two on it. Anyway, back to the quay.' }] }));
+  assert.deepEqual(diff.actions.map((a) => a.mode), ['act']);
+});
+
+await test('route, parsed: tonight means the last 12 hours: a key older than that is not seen', async () => {
+  const s = await cueSetup();
+  const first = await body(await s.post({ ...CREQ, parsed: [pa()] }));
+  clock.t += 13 * 3600 * 1000;
+  await s.lines([]);                                                // the lines keep their old stamps; the cue is read by id and seq, not by time
+  const later = await body(await s.post({ ...CREQ, parsed: [pa()] }));
+  assert.deepEqual([first.actions[0].mode, later.actions[0].mode], ['act', 'act']);
+  assert.equal(rowCount(s), 2);
+  clock.t -= 13 * 3600 * 1000;
+});
+
+await test('route, parsed: a hands row whose card is malformed or has no actions does not break the keys read', async () => {
+  const s = await cueSetup();
+  await s.seed('hands', clock.t - 5000, 0, 'this is not json');
+  await s.seed('hands', clock.t - 4000, 0, JSON.stringify({ act: 1 }));
+  await s.seed('hands', clock.t - 3000, 0, null);
+  await s.seed('hands', clock.t - 2000, 0, JSON.stringify({ actions: 'oops' }));
+  const out = await body(await s.post({ ...CREQ, parsed: [pa()] }));
+  assert.deepEqual(out.actions.map((a) => a.mode), ['act']);
+  const again = await body(await s.post({ ...CREQ, parsed: [pa()] }));
+  assert.deepEqual(again.actions.map((a) => a.mode), ['seen']);
+});
+
+await test('route, parsed: THE RACE: two pages post the same cue at the same moment: one claim wins (changes 1), the other loses (changes 0): one act, one seen, one row', async () => {
+  const s = await cueSetup();
+  const orig = s.db.prepare.bind(s.db), arrivals = [], changes = [];
+  let open; const gate = new Promise((r) => { open = r; });
+  s.db.prepare = (sql) => {
+    const st = orig(sql);
+    if (!/WHERE NOT EXISTS/.test(sql)) return st;
+    const run = st.run.bind(st);
+    st.run = async () => { arrivals.push(1); if (arrivals.length === 2) open(); await gate; const r = await run(); changes.push(r.meta.changes); return r; };
+    return st;
+  };
+  const b = { ...CREQ, parsed: [pa()] };
+  const [x, y] = await Promise.all([s.post(b), s.post(b)]);
+  assert.equal(arrivals.length, 2, 'both requests reached the claim statement before either ran it');
+  assert.deepEqual(changes.slice().sort(), [0, 1]);
+  const modes = [(await body(x)).actions[0].mode, (await body(y)).actions[0].mode].sort();
+  assert.deepEqual(modes, ['act', 'seen']);
+  assert.equal(rowCount(s), 1);
+  assert.equal(s.calls.length, 0);
+});
+
+await test('route, parsed: the race with a partly different list: the loser gets the actions the winner did not take and acts on them', async () => {
+  const s = await cueSetup();
+  const orig = s.db.prepare.bind(s.db), arrivals = [];
+  let open; const gate = new Promise((r) => { open = r; });
+  s.db.prepare = (sql) => {
+    const st = orig(sql);
+    if (!/WHERE NOT EXISTS/.test(sql) || arrivals.length >= 2) return st;
+    const run = st.run.bind(st);
+    st.run = async () => { arrivals.push(1); if (arrivals.length === 2) open(); await gate; return run(); };
+    return st;
+  };
+  const [x, y] = await Promise.all([s.post({ ...CREQ, parsed: [pa()] }), s.post({ ...CREQ, parsed: [pa(), { type: 'capture', quote: CUE_TWO, bucket: 'name', text: 'the bell' }] })]);
+  const a = await body(x), b = await body(y);
+  assert.deepEqual(a.actions.map((z) => z.mode), ['act'], 'the first claim won index 0');
+  assert.deepEqual(b.actions.map((z) => z.mode), ['seen', 'act'], 'the second lost the whole claim, found index 0 seen, and claimed the rest');
+  assert.equal(rowCount(s), 2);
+});
+
+// ---------- the route, the model path ----------
+const MCUE = (over = {}) => ({ ...CREQ, ...over });
+const mact = (over = {}) => act({ quote: CUE_ONE, ...over });
+
+await test('route, cue without parsed: the hands seat runs with the cue instruction AFTER the base instructions, and the cue line in the user turn', async () => {
+  const s = await setup();
+  await s.lines(CUE_TALK);
+  s.st.reply = { actions: [mact({ confidence: 0.2, filled: 2 })] };
+  const out = await body(await s.post(MCUE()));
+  assert.equal(s.calls.length, 1);
+  const c = s.calls[0];
+  assert.ok(c.ins.startsWith(SEATS.hands.instructions), 'the base instructions come first');
+  assert.ok(c.ins.endsWith('\n' + CUE_INSTRUCTION)); assert.equal(CUE_INSTRUCTION, 'The GM said this to you by name, as a command. Carry out exactly that command. Speaker labels do not matter. If you cannot tell what to do, return nothing.');
+  assert.match(c.user, /The command begins in this line: \[\d\d:\d\d\] S0: Blade, make a six clock called Harbour Bell$/);
+  assert.deepEqual(out.actions.map((a) => [a.type, a.mode, a.filled]), [['clock_add', 'act', 2]], 'a cue is act even at confidence 0.2');
+  assert.equal(out.actions[0].key, cueCheck([pa()]).actions[0].key, 'keyed from cueLineId and index, like the page\'s parse');
+  const r = s.rows()[0], card = JSON.parse(r.card);
+  assert.deepEqual([r.flags, card.cue, card.cue_line, r.cents > 0], ['act,cue', 1, 'l2', true]);
+  // a plain window gets no cue text, in either place
+  const s2 = await setup(); await s2.lines(CUE_TALK); await s2.post(REQ);
+  assert.ok(!s2.calls[0].ins.includes(CUE_INSTRUCTION) && !s2.calls[0].user.includes('The command begins'));
+});
+
+await test('route, cue without parsed: undo, rename and roll_log from the model are dropped, and a quote not in the talk too', async () => {
+  const s = await setup();
+  await s.lines(CUE_TALK);
+  s.st.reply = { actions: [{ ...mact(), type: 'undo' }, { ...mact(), type: 'rename', name: 'Big Ben' }, { ...mact(), type: 'roll_log', who: 'Odo', action: 'hunt' }, mact({ quote: 'Blade tick the moon please' }), mact()] };
+  const out = await body(await s.post(MCUE()));
+  assert.deepEqual(out.actions.map((a) => a.type), ['clock_add']);
+  assert.deepEqual(out.dropped.map((d) => d.why), ['unknown type', 'unknown type', 'unknown type', 'quote not in the talk']);
+});
+
+await test('route, cue without parsed: an unknown cueLineId is a 400 before any model call; with no id at all it still runs (anchor keys)', async () => {
+  const s = await setup();
+  await s.lines(CUE_TALK);
+  await assert.rejects(s.post(MCUE({ cueLineId: 'nope' })), (e) => e.status === 400);
+  assert.equal(s.calls.length, 0);
+  s.st.reply = { actions: [mact()] };
+  const out = await body(await s.post({ from: 1, to: 4, state: STATE, mode: 'cue' }));
+  assert.match(out.actions[0].key, /^clock_add:/); assert.equal(out.actions[0].mode, 'act'); assert.ok(!s.calls[0].user.includes('The command begins'));
+});
+
+await test('route, cue without parsed: no 8 s cooldown (a cue is the GM\'s command), but one at a time (busy) and the cap still stop it', async () => {
+  const s = await setup();
+  await s.lines(CUE_TALK);
+  s.st.reply = { actions: [] };
+  await s.post(REQ);                                               // a window run: the cooldown now applies to windows
+  await assert.rejects(s.post(REQ), (e) => e.status === 429 && /cooling down/.test(e.message));
+  assert.equal((await s.post(MCUE())).status, 200, 'a cue right after a window run goes through');
+  assert.equal((await s.post(MCUE())).status, 200, 'and right after another cue');
+  await s.seed('ref', clock.t - 1000, 3000);
+  await assert.rejects(s.post(MCUE()), (e) => e.status === 429 && /cap/.test(e.message));
+  // busy
+  const s2 = await setup(); await s2.lines(CUE_TALK); s2.st.reply = { actions: [] };
+  let release; s2.st.hold = new Promise((r) => { release = r; });
+  const first = s2.post(MCUE()); await new Promise((r) => setTimeout(r, 20));
+  await assert.rejects(s2.post(MCUE()), (e) => e.status === 429 && /busy/.test(e.message));
+  release(); await first;
+});
+
+await test('route, cue without parsed: a cue the page parsed and a cue it sent to the model act once between them (same key)', async () => {
+  const s = await setup();
+  await s.lines(CUE_TALK);
+  const parsed = await body(await s.post({ ...MCUE(), parsed: [pa()] }));
+  s.st.reply = { actions: [mact()] };
+  const viaModel = await body(await s.post(MCUE()));
+  assert.deepEqual([parsed.actions[0].mode, viaModel.actions[0].mode, viaModel.actions[0].key === parsed.actions[0].key], ['act', 'seen', true]);
+  assert.equal(rowCount(s), 2, 'the model call cost money, so its row is written even when its action is seen');
+});
+
+await test('route, a window: a key a cue row already holds, or an earlier window did, comes back seen; the row is still written', async () => {
+  const s = await setup();
+  await s.lines(TALK);
+  s.st.reply = { actions: [good(), good({ type: 'clock_tick', quote: 'Tick that once', clock_id: 'ck1', by: 1 })] };
+  const a = await body(await s.post(REQ));
+  assert.deepEqual(a.actions.map((x) => x.mode), ['act', 'act']);
+  clock.t += 9_000;
+  const old = await body(await s.post(REQ));
+  assert.deepEqual(old.actions.map((x) => x.mode), ['act', 'act'], 'an old-shape window (no seenOk) never gets seen: an old page would apply it');
+  assert.equal(s.rows().length, 2);
+  clock.t += 9_000;
+  const b = await body(await s.post({ ...REQ, seenOk: true }));
+  assert.deepEqual(b.actions.map((x) => x.mode), ['seen', 'seen']);
+  assert.deepEqual(b.actions.map((x) => x.key), a.actions.map((x) => x.key));
+  assert.equal(rowCount(s), 3);
+  // a new decision in a later window is not seen
+  clock.t += 9_000;
+  s.st.reply = { actions: [good(), good({ type: 'npc_add', quote: "His name's Wren Alder", name: 'Wren Alder' })] };
+  const c = await body(await s.post({ ...REQ, seenOk: true }));
+  assert.deepEqual(c.actions.map((x) => [x.type, x.mode]), [['clock_add', 'seen'], ['npc_add', 'act']]);
+  // an offer's key is in the rows too
+  clock.t += 9_000;
+  s.st.reply = { actions: [good({ type: 'npc_add', quote: "His name's Wren Alder", name: 'Wren Alder', confidence: 0.4 })] };
+  assert.deepEqual((await body(await s.post({ ...REQ, seenOk: true }))).actions.map((x) => x.mode), ['seen']);
+});
+
+await test('route, a window: a key older than tonight is not seen', async () => {
+  const s = await setup();
+  await s.lines(TALK);
+  s.st.reply = { actions: [good()] };
+  const first = await body(await s.post(REQ));
+  clock.t += 13 * 3600 * 1000;
+  const next = await body(await s.post(REQ));
+  assert.deepEqual([first.actions[0].mode, next.actions[0].mode], ['act', 'act']);
+  clock.t -= 13 * 3600 * 1000;
+});
+
+await test('route, two overlapping model calls (two isolates, so two lease sets): both rows are written, the lower id owns the key: one act, one seen', async () => {
+  const s = await setup();
+  await s.lines(CUE_TALK);
+  const second = makeHandler({ clientFor: () => fakeClient(s.st, s.calls), now: () => clock.t, leases: makeLeases() });
+  const post2 = (b) => second({ request: new Request('https://blades.example.test/api/gm/assist/act', { method: 'POST', body: JSON.stringify(b), headers: { 'Content-Type': 'application/json' } }), env: s.env, data: { me: GM } });
+  s.st.reply = { actions: [mact()] };
+  let release; s.st.hold = new Promise((r) => { release = r; });
+  const p1 = s.post(MCUE()), p2 = post2(MCUE());
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(s.calls.length, 2, 'both calls are in flight at the provider');
+  release();
+  const modes = [(await body(await p1)).actions[0].mode, (await body(await p2)).actions[0].mode].sort();
+  assert.deepEqual(modes, ['act', 'seen']);
+  assert.equal(rowCount(s), 2);
+});
+
+// ---------- C4c with C4a: every command row of app/cue.js through the real parser and then cue-mode /act ----------
+import { createRequire } from 'node:module';
+const B68Cue = createRequire(import.meta.url)(path.join(ROOT, 'app', 'cue.js'));
+const LIVE = { clocks: STATE.clocks, lastClock: 'ck1' };
+
+await test('cue.js to /act: one fixture per command row: parse, post with cueLineId, and every action comes back act (none dropped by the quote check), one-line and split', async () => {
+  const fixtures = [
+    ['make', 'Blade, make a six clock called Harbour Bell', ['clock_add']],
+    ['make + mark', 'Okay, Blade, make a four clock called Night Crew and mark two', ['clock_add']],
+    ['tick by name', 'Blade, tick Lamp Oil Running Low twice', ['clock_tick']],
+    ['mark on', 'Blade, mark two on Empty One', ['clock_tick']],
+    ['plus', 'Blade, Empty One plus two', ['clock_tick']],
+    ['tick that', 'Blade, tick that', ['clock_tick']],
+    ['fill (the whole size of an 8 clock)', 'Blade, fill Empty One', ['clock_tick']],
+    ['clear', 'Blade, clear one on Harbour Watch Wakes', ['clock_tick']],
+    ['new NPC, named', 'Blade, new NPC called Corvin Lathe, a porter', ['npc_add']],
+    ['new NPC, no name', 'Blade, new NPC', ['npc_add']],
+    ['note', 'Blade, note the ferry stopped running', ['capture']],
+    ['loose end', 'Blade, loose end: who rang the bell', ['capture']],
+    ['name', 'Blade, name: Pernel Quayle, the ropemaker', ['capture']],
+    ['call him', 'Blade, call him Big Sal', ['rename']],
+    ['undo', 'Blade, undo that', ['undo']],
+  ];
+  for (const [what, text, types] of fixtures) {
+    const p = B68Cue.parse(text, LIVE);
+    assert.ok(!p.missing && !p.refused && p.actions.length, what + ': ' + JSON.stringify({ m: p.missing, r: p.refused, n: p.actions.length }));
+    assert.deepEqual(p.actions.map((a) => a.type), types, what);
+    const s = await cueSetup();
+    // a different set of lines per fixture: the cue is line 2 of 3, as a Deepgram line would be
+    s.exec.db.exec('DELETE FROM gm_transcript');
+    await s.lines(['Some talk before.', text, 'And then some after.']);
+    const row2 = s.exec.db.prepare("SELECT id FROM gm_transcript WHERE seq = 2").get().id;
+    const out = await body(await s.post({ from: 1, to: 3, state: STATE, mode: 'cue', cueLineId: row2, parsed: p.actions }));
+    assert.deepEqual(out.dropped, [], what + ' dropped: ' + JSON.stringify(out.dropped));
+    assert.deepEqual(out.actions.map((a) => a.mode), p.actions.map(() => 'act'), what);
+    assert.equal(s.calls.length, 0);
+    if (what.startsWith('new NPC, no')) assert.deepEqual([out.actions[0].name, out.actions[0].needsName], ['', true]);
+    if (what.startsWith('fill')) assert.equal(out.actions[0].by, 8, 'a fill on an 8 clock moves 8, past the window cap of 6');
+    if (what.startsWith('make + mark')) assert.equal(out.actions[0].filled, 2);
+  }
+  // a command split over two rows, joined with joinLines
+  const a = 'Okay, Blade, make a six clock called', b = 'Harbour Bell and mark one';
+  const joined = B68Cue.joinLines(a, b), p = B68Cue.parse(joined, LIVE);
+  assert.deepEqual([p.actions.length, p.missing], [1, null]);
+  const s = await cueSetup(); s.exec.db.exec('DELETE FROM gm_transcript');
+  await s.lines(['Talk first.', a, b, 'Talk after.']);
+  const id2 = s.exec.db.prepare("SELECT id FROM gm_transcript WHERE seq = 2").get().id;
+  const out = await body(await s.post({ from: 1, to: 4, state: STATE, mode: 'cue', cueLineId: id2, parsed: p.actions }));
+  assert.deepEqual([out.dropped, out.actions.map((x) => x.mode), out.actions[0].filled], [[], ['act'], 1]);
+});
+
+await test('cue: an empty npc_add name is taken only with needsName and only from the page\'s parse; the model path never gets it', () => {
+  const np = (over) => ({ type: 'npc_add', quote: CUE_TWO, name: '', look: '', role: '', needsName: true, ...over });
+  const ok = cueCheck([np()]);
+  assert.deepEqual([ok.actions.length, ok.actions[0].name, ok.actions[0].needsName, ok.actions[0].mode], [1, '', true, 'act']);
+  assert.deepEqual(cueCheck([np({ needsName: false }), np({ needsName: undefined })]).dropped.map((d) => d.why), ['no name', 'no name']);
+  assert.equal(cueCheck([np({ name: 'Corvin Lathe' })]).actions[0].needsName, false);
+  for (const cue of [undefined, { parsed: false, cueLineId: 'l2' }]) {
+    const v = validateActions([np()], { state: cleanState(STATE), lines: CUE_LINES, cue });
+    assert.deepEqual([v.actions.length, v.dropped.map((d) => d.why)], [0, ['no name']]);
+  }
+});
+
+await test('cue: a parsed tick may move a clock by its whole size (12 and 10 too); a window and the model still stop at 6; the room left still caps it', () => {
+  const st = cleanState({ ...STATE, clocks: [{ id: 'big', name: 'Big One', size: 12, filled: 0, hidden: false }, { id: 'ten', name: 'Ten', size: 10, filled: 8, hidden: false }] });
+  const tick = (id, by) => ({ type: 'clock_tick', quote: CUE_TWO, clock_id: id, by, confidence: 1 });
+  const run = (cue, raw) => validateActions(raw, { state: st, lines: CUE_LINES, cue }).actions.map((a) => a.by);
+  assert.deepEqual(run({ parsed: true, cueLineId: 'l2' }, [tick('big', 12), tick('ten', 10), tick('big', 99), tick('big', -3)]), [12, 2, 12], 'a negative at 0 is no change and is dropped');
+  assert.deepEqual(run(undefined, [tick('big', 12)]), [6]);
+  assert.deepEqual(run({ parsed: false, cueLineId: 'l2' }, [tick('big', 12)]), [6]);
+});
+
 // ---------- the replay script's helpers and guards ----------
 const TRANSCRIPT = [
   '# invented', '',
@@ -573,6 +1024,47 @@ await test('replay script guards: no key and no --fake, a budget over $0.50, and
   const out = run(['--fake', '--out', path.join(dir, 'elsewhere')]); assert.equal(out.status, 2); assert.match(out.stderr, /gm-private/);
   assert.ok(!fs.existsSync(path.join(dir, 'elsewhere')));
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+await test('cue replay: ten invented windows; a stand-in that answers each one right passes all ten, one that always says nothing passes only the two "nothing" windows, and the budget stops it', async () => {
+  const { CUE_WINDOWS, runCueWindows, windowRows } = await import('../../scripts/lib/cue-replay.mjs');
+  assert.equal(CUE_WINDOWS.length, 10);
+  const q = (i) => windowRows(CUE_WINDOWS[i]).map((r) => r.text).join(' ');
+  const correct = [
+    [{ type: 'clock_add', name: 'Harbour Bell', size: 6, hidden: true, filled: 0, quote: 'Blade, make a six clock called Harbour Bell' }],
+    [{ type: 'clock_add', name: 'Night Crew', size: 4, hidden: true, filled: 1, quote: 'Blade, make a four clock called Night Crew and mark one.' }],
+    [{ type: 'clock_tick', clock_id: 'ck1', by: 2, quote: 'Blade, tick Lamp Oil Running Low twice.' }],
+    [{ type: 'npc_add', name: 'Corvin Lathe', look: 'tall', role: 'porter', quote: 'Played, new NPC called Corvin Lathe, a tall porter with a bad knee.' }],
+    [{ type: 'clock_tick', clock_id: 'ck2', by: -1, quote: 'Blade, clear one on Harbour Watch Wakes.' }],
+    [{ type: 'capture', bucket: 'moment', text: 'ferry stopped', quote: 'Blade, note that the ferry stopped running after the bell.' }],
+    [{ type: 'capture', bucket: 'loose_end', text: 'who rang the bell', quote: 'Blade, loose end: who rang the bell that night?' }],
+    [{ type: 'capture', bucket: 'name', text: 'Pernel Quayle, ropemaker', quote: 'Blade, name: Pernel Quayle, the ropemaker.' }],
+    [], [],
+  ];
+  const full = act({ filled: 0 });
+  let n = 0;
+  const call = async () => ({ json: { actions: correct[n++].map((a) => ({ ...full, confidence: 0.9, ...a })) }, usage: {}, cost: 0.001, stop: 'end_turn' });
+  const good10 = await runCueWindows({ call });
+  assert.deepEqual(good10.results.map((r) => r.ok), Array(10).fill(true), JSON.stringify(good10.results.filter((r) => !r.ok).map((r) => [r.name, r.dropped, r.kept])));
+  assert.ok(good10.spend > 0.0099 && good10.spend < 0.0101);
+  const nothing = await runCueWindows({ call: async () => ({ json: { actions: [] }, usage: {}, cost: 0, stop: 'end_turn' }) });
+  assert.deepEqual(nothing.results.map((r) => r.ok), [false, false, false, false, false, false, false, false, true, true]);
+  const refused = await runCueWindows({ call: async () => ({ json: null, usage: {}, cost: 0, stop: 'refusal' }) });
+  assert.ok(refused.results.every((r) => !r.ok), 'a refusal is never a pass, not even for the "nothing" windows');
+  let calls = 0;
+  const capped = await runCueWindows({ call: async () => { calls++; return { json: { actions: [] }, usage: {}, cost: 0.04, stop: 'end_turn' }; }, maxSpend: 0.1 });
+  assert.deepEqual([calls, capped.results.length, capped.stopped], [3, 3, 'budget']);
+  assert.ok(q(0).length > 0);
+});
+
+await test('replay script --cue: with no key it stops at once (exit 2), --cue with --fake is refused, and the spend ceiling is capped', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const script = path.join(ROOT, 'scripts', 'gm-assist-act-replay.mjs');
+  const run = (extra, env = {}) => spawnSync(process.execPath, [script, '--cue', ...extra], { encoding: 'utf8', env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, ...env } });
+  const noKey = run([]); assert.equal(noKey.status, 2); assert.match(noKey.stderr, /B68_ANTHROPIC_KEY/);
+  assert.equal(run([], { ANTHROPIC_API_KEY: 'sk-ant-should-not-be-used' }).status, 2);
+  const fake = run(['--fake']); assert.equal(fake.status, 2); assert.match(fake.stderr, /real model/);
+  assert.equal(run(['--max-spend', '0.6'], { B68_ANTHROPIC_KEY: 'sk-ant-x' }).status, 2, 'over the budget ceiling');
 });
 
 console.log('\n' + (failed ? failed + ' FAILED, ' + passed + ' passed' : 'ALL PASSED (' + passed + ')'));

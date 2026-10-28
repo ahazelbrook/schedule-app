@@ -1738,7 +1738,7 @@
   }
   function cogmSend(me, w, epoch) {
     var cm = me.cogm, g = gmApi(), C = cm.C;
-    return Promise.resolve().then(function () { return g.assistAct({ from: w.from, to: w.to, state: C.buildState(cogmLive(me), onStageName()) }); }).then(function (res) {
+    return Promise.resolve().then(function () { return g.assistAct({ from: w.from, to: w.to, state: C.buildState(cogmLive(me), onStageName()), seenOk: true }); }).then(function (res) {
       if (S !== me || cm.epoch !== epoch) return;
       C.windowSent(cm.st, w, Date.now());        /* the handled cursor moves only on an answer */
       return cogmApply(me, res);

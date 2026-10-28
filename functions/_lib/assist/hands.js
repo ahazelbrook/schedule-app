@@ -24,6 +24,9 @@ const NAME_MAX = 80, ID_MAX = 64, LOOK_MAX = 200, ROLE_MAX = 80, TEXT_MAX = 300,
 const CLOCKS_MAX = 40, NPCS_MAX = 100, PCS_MAX = 12, STATE_SIZE_MAX = 12;
 export const BUCKETS = ['name', 'loose_end', 'moment'];
 export const TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture', 'roll_log'];
+export const CUE_TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture', 'undo', 'rename'];   // what the page's own parse of a cue may send (C4c); undo and rename only ever come this way
+const CUE_MODEL_TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture'];                       // what the model may return for a cue: no roll_log, and never undo or rename
+export const CUE_ID_MAX = ID_MAX;
 const POSITIONS = ['controlled', 'risky', 'desperate', 'unclear'], EFFECTS = ['limited', 'standard', 'great', 'unclear'], RESULTS = ['critical', 'full', 'partial', 'miss', 'unclear'];
 
 /** Lowercase, accents and punctuation gone, runs of whitespace one space: what a quote and the talk are compared as. */
@@ -86,11 +89,29 @@ export function cleanState(state) {
   return { clocks, npcs, pcs, onStage: typeof state.onStage === 'string' ? clip(state.onStage, NAME_MAX) : '' };
 }
 
-/** The body of POST /assist/act: { from, to, state } checked before the database or the key are touched. Any `lines` in it are ignored (the Worker reads them itself). Throws HttpError(400). */
+/**
+ * The body of POST /assist/act: { from, to, state, mode?, parsed?, cueLineId? } checked before the database or the key are touched. Any `lines` in it are ignored (the Worker
+ * reads them itself). mode is absent (a window of talk, the model decides) or 'cue' (the GM said "Blade, ..."). With 'cue', `parsed` is the page's own parse, 1 to ACTIONS_MAX
+ * actions in the shapes below, and it needs cueLineId, the transcript row id of the line holding the wake word; without `parsed` the model reads the cue (cueLineId is then
+ * optional). Returns { from, to, state } for a window, or { from, to, state, mode: 'cue', parsed: array | null, cueLineId: string } for a cue. Throws HttpError(400).
+ */
 export function cleanActBody(b) {
   const range = cleanRange(b.from, b.to);
   if (!range) bad('from and to are transcript seqs: whole numbers, from <= to, at most ' + RANGE_MAX + ' apart');
-  return { ...range, state: cleanState(b.state) };
+  const state = cleanState(b.state);
+  if (b.mode !== undefined && b.mode !== null && b.mode !== 'cue') bad("mode is absent or 'cue'");
+  const mode = b.mode === 'cue' ? 'cue' : '';
+  if (b.cueLineId !== undefined && b.cueLineId !== null && (typeof b.cueLineId !== 'string' || !b.cueLineId || b.cueLineId.length > CUE_ID_MAX)) bad('cueLineId is a transcript row id: a string of at most ' + CUE_ID_MAX + ' characters');
+  const cueLineId = typeof b.cueLineId === 'string' ? b.cueLineId : '';
+  let parsed = null;
+  if (b.parsed !== undefined && b.parsed !== null) {
+    if (mode !== 'cue') bad("parsed needs mode 'cue'");
+    if (!Array.isArray(b.parsed) || b.parsed.length < 1 || b.parsed.length > ACTIONS_MAX || !b.parsed.every(isObj)) bad('parsed is a list of 1-' + ACTIONS_MAX + ' actions');
+    if (!cueLineId) bad('parsed needs cueLineId');
+    parsed = b.parsed;
+  }
+  const seenOk = b.seenOk === true;               // a page that handles mode 'seen' says so; an older page left open across a deploy does not, and never gets it in a window
+  return mode === 'cue' ? { ...range, state, mode, parsed, cueLineId, seenOk: true } : { ...range, state, ...(seenOk ? { seenOk } : {}) };
 }
 
 const clamp = (n, lo, hi) => (n < lo ? lo : n > hi ? hi : n);
@@ -98,62 +119,88 @@ const clamp = (n, lo, hi) => (n < lo ? lo : n > hi ? hi : n);
 /**
  * What the seat said, checked against the state and the lines the Worker read.
  *   raw: the seat's `actions` (anything); state: cleanState's; lines: the transcript rows read from D1.
+ * cue (C4c): undefined for a window of talk. For a cue, { parsed: true, cueLineId } (the page's own parse: types CUE_TYPES, and the quote must start ON the cue line, the line with that
+ * id) or { parsed: false, cueLineId } (the model's reading of a cue: CUE_MODEL_TYPES). In both, every survivor is mode 'act' (the cue counts as the GM's tap) and, when cueLineId is
+ * there, its key is made from that id and the action's index in `raw` alone (NOT its type, target or quote: two pages may read one command differently and it must act once).
  * -> { actions, dropped }. An action is { type, mode: 'act' | 'offer', key, quote, at, confidence, ...its fields }. A dropped one is { type, why, name? }
  * (an npc_add of a known name is dropped with why 'already known' and its name, so the card can say so). Nothing here is applied.
  */
-export function validateActions(raw, { state, lines }) {
+export function validateActions(raw, { state, lines, cue }) {
   const actions = [], dropped = [];
   if (!Array.isArray(raw)) return { actions, dropped };
   // The talk as one normalised string, each line a word-bounded stretch of it; starts[i] is where line i begins in `hay` (so a quote's position names its line).
-  const norm = (lines || []).filter((l) => l && l.kind === 'line').map((l) => normalise(l.text)).filter(Boolean);
+  const entries = (lines || []).filter((l) => l && l.kind === 'line').map((l) => ({ id: l.id, n: normalise(l.text) })).filter((e) => e.n);
+  const norm = entries.map((e) => e.n);
   const hay = ' ' + norm.join(' ') + ' ';
   const starts = []; let at0 = 1;
   for (const t of norm) { starts.push(at0); at0 += t.length + 1; }
   // The line a quote starts on (the first, if it is said twice). The key hashes THAT LINE, not the quote: the model may copy "Tick that once" in one window and
   // "Tick that once, the night crew is stirring." in the next (the C1 replay did exactly that), and the same decision must keep one key. A quote running across lines takes its first.
-  const lineAt = (pos) => { let i = starts.length - 1; while (i > 0 && starts[i] > pos) i--; return norm[i]; };
+  const lineIdx = (pos) => { let i = starts.length - 1; while (i > 0 && starts[i] > pos) i--; return i; };
+  const lineAt = (pos) => norm[lineIdx(pos)];
+  const cueIdx = cue && cue.cueLineId ? entries.findIndex((e) => e.id === cue.cueLineId) : -1;
+  const allowed = !cue ? TYPES : cue.parsed ? CUE_TYPES : CUE_MODEL_TYPES;
   const clocks = new Map(state.clocks.map((c) => [c.id, c]));
   const known = new Set(state.npcs.concat(state.pcs).map((n) => normalise(n.name)).filter(Boolean));
   const seen = new Set();
   const drop = (type, why, name) => { if (dropped.length < DROPPED_MAX) dropped.push({ type: typeof type === 'string' ? type.slice(0, 20) : '', why, ...(name ? { name } : {}) }); };
   if (raw.length > ACTIONS_MAX) drop('', 'too many');
-  for (const a of raw.slice(0, ACTIONS_MAX)) {
-    if (!isObj(a) || !TYPES.includes(a.type)) { drop(isObj(a) ? a.type : '', 'unknown type'); continue; }
+  for (const [i, a] of raw.slice(0, ACTIONS_MAX).entries()) {
+    if (!isObj(a) || !allowed.includes(a.type)) { drop(isObj(a) ? a.type : '', 'unknown type'); continue; }
     const nq = normalise(a.quote);
-    const hit = nq.length < QUOTE_MIN ? -1 : hay.indexOf(' ' + nq + ' ');
+    let hit = -1;
+    if (nq.length >= QUOTE_MIN) {
+      if (cue && cue.parsed) {
+        // the page's parse: the quote runs from the wake word to the end of the cue text, so it STARTS on the cue line (and may run on over the lines after it)
+        if (cueIdx < 0) { drop(a.type, 'cue line not in the talk'); continue; }
+        hit = hay.indexOf(' ' + nq + ' ', starts[cueIdx] - 1);
+        if (hit >= 0 && lineIdx(hit + 1) !== cueIdx) { drop(a.type, 'quote not on the cue line'); continue; }
+      } else hit = hay.indexOf(' ' + nq + ' ');
+    }
     if (hit < 0) { drop(a.type, 'quote not in the talk'); continue; }
     const anchor = lineAt(hit + 1);
-    const conf = typeof a.confidence === 'number' && Number.isFinite(a.confidence) ? clamp(a.confidence, 0, 1) : 0;
-    const base = { type: a.type, mode: conf >= CONFIDENCE_MIN ? 'act' : 'offer', quote: clip(a.quote, QUOTE_KEEP), at: typeof a.at === 'string' && /^\d{2}:\d{2}$/.test(a.at.trim()) ? a.at.trim() : '', confidence: Math.round(conf * 100) / 100 };
+    const conf = cue && cue.parsed ? 1 : typeof a.confidence === 'number' && Number.isFinite(a.confidence) ? clamp(a.confidence, 0, 1) : 0;
+    const keyOf = (type, target) => (cue && cue.cueLineId ? 'cue:' + hash(cue.cueLineId) + ':' + i : actionKey(type, target, anchor));
+    const base = { type: a.type, mode: cue || conf >= CONFIDENCE_MIN ? 'act' : 'offer', quote: clip(a.quote, QUOTE_KEEP), at: typeof a.at === 'string' && /^\d{2}:\d{2}$/.test(a.at.trim()) ? a.at.trim() : '', confidence: Math.round(conf * 100) / 100 };
     let out;
     if (a.type === 'clock_add') {
       const name = clip(a.name, NAME_MAX);
       if (!name) { drop(a.type, 'no name'); continue; }
       if (!CLOCK_SIZES.includes(a.size)) { drop(a.type, 'illegal size'); continue; }
-      out = { ...base, key: actionKey(a.type, name, anchor), name, size: a.size, hidden: a.hidden === true };
+      const filled = Number.isFinite(a.filled) ? clamp(Math.trunc(a.filled), 0, a.size) : 0;
+      out = { ...base, key: keyOf(a.type, name), name, size: a.size, hidden: a.hidden === true, filled };
     } else if (a.type === 'clock_tick') {
       const c = typeof a.clock_id === 'string' ? clocks.get(a.clock_id) : undefined;
       if (!c) { drop(a.type, 'unknown clock'); continue; }
       if (!Number.isFinite(a.by)) { drop(a.type, 'no amount'); continue; }
       // the amount is clamped twice: to what one action may do, then to what the clock can take. Nothing left to do is dropped, not sent as a zero.
-      const by = clamp(clamp(Math.trunc(a.by), TICK_MIN, TICK_MAX), -c.filled, c.size - c.filled);
+      // a parsed cue may move a clock by its whole size ("fill" on a 12): the window and the model keep TICK_MIN..TICK_MAX
+      const by = clamp(clamp(Math.trunc(a.by), cue && cue.parsed ? -c.size : TICK_MIN, cue && cue.parsed ? c.size : TICK_MAX), -c.filled, c.size - c.filled);
       if (by === 0) { drop(a.type, 'no change'); continue; }
-      out = { ...base, key: actionKey(a.type, c.id, anchor), clock_id: c.id, clock_name: c.name, by, from_filled: c.filled, to_filled: c.filled + by, size: c.size };
+      out = { ...base, key: keyOf(a.type, c.id), clock_id: c.id, clock_name: c.name, by, from_filled: c.filled, to_filled: c.filled + by, size: c.size };
     } else if (a.type === 'npc_add') {
       const name = clip(a.name, NAME_MAX);
-      if (!name) { drop(a.type, 'no name'); continue; }
-      if (known.has(normalise(name))) { drop(a.type, 'already known', name); continue; }
-      out = { ...base, key: actionKey(a.type, name, anchor), name, look: clip(a.look, LOOK_MAX), role: clip(a.role, ROLE_MAX) };
+      // only the page's own parse may leave the name empty (needsName: the page rolls one later); the model never may
+      const needsName = !!(cue && cue.parsed) && !name && a.needsName === true;
+      if (!name && !needsName) { drop(a.type, 'no name'); continue; }
+      if (name && known.has(normalise(name))) { drop(a.type, 'already known', name); continue; }
+      out = { ...base, key: keyOf(a.type, name), name, look: clip(a.look, LOOK_MAX), role: clip(a.role, ROLE_MAX), ...(cue && cue.parsed ? { needsName } : {}) };
     } else if (a.type === 'capture') {
       const text = clip(a.text, TEXT_MAX);
       if (!BUCKETS.includes(a.bucket)) { drop(a.type, 'unknown bucket'); continue; }
       if (!text) { drop(a.type, 'no text'); continue; }
-      out = { ...base, key: actionKey(a.type, a.bucket, anchor), bucket: a.bucket, text };
+      out = { ...base, key: keyOf(a.type, a.bucket), bucket: a.bucket, text };
+    } else if (a.type === 'undo') {
+      out = { ...base, key: keyOf(a.type, '') };                 // the page carries it out; the server only validates, keys and logs it
+    } else if (a.type === 'rename') {
+      const name = clip(a.name, NAME_MAX);
+      if (!name) { drop(a.type, 'no name'); continue; }
+      out = { ...base, key: keyOf(a.type, ''), name };
     } else {
       // roll_log (P3): the page has no apply path for it yet (design 5.5), so it is only ever an offer
       const who = clip(a.who, FIELD_MAX), what = clip(a.action, FIELD_MAX);
       if (!who || !what) { drop(a.type, 'no roll'); continue; }
-      out = { ...base, mode: 'offer', key: actionKey(a.type, who, anchor), who, action: what,
+      out = { ...base, mode: 'offer', key: keyOf(a.type, who), who, action: what,
         position: POSITIONS.includes(a.position) ? a.position : 'unclear', effect: EFFECTS.includes(a.effect) ? a.effect : 'unclear', result: RESULTS.includes(a.result) ? a.result : 'unclear' };
     }
     if (seen.has(out.key)) { drop(a.type, 'duplicate'); continue; }
@@ -161,4 +208,9 @@ export function validateActions(raw, { state, lines }) {
     actions.push(out);
   }
   return { actions, dropped };
+}
+
+/** The actions whose key is in `seenKeys` (a Set of keys already in tonight's hands rows) come back as mode 'seen': another page, or an earlier window, already has them. */
+export function markSeen(actions, seenKeys) {
+  return actions.map((a) => (seenKeys.has(a.key) ? { ...a, mode: 'seen' } : a));
 }

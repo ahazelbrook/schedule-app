@@ -1011,6 +1011,7 @@ the assist part's `extra.ref`, appended to its instructions. The Editor also dro
 - **`downtime`** is a Tripwire flag (a vice indulged, a downtime action or roll, recovery or healing being worked out right now) that wakes Ref.
 - **Replay and gate** take `--extra-file <seat>=<path>` (repeatable), handed to the endpoint as the assist part's `extra.<seat>`, so a replay can give Ref
   the same checklist the live part carries. The file's text is never printed. The replay does not send `rolled`.
+- **`/act` cue mode** (C4c): `mode: 'cue'` with `cueLineId` (the transcript row id of the line holding the wake word, which must be among the lines read) means the GM said "Blade, ...". With `parsed` (the page's own parse, 1-8 actions: `clock_add` with `filled`, `clock_tick`, `npc_add` (an empty name only with `needsName`), `capture`, `undo`, `rename`) there is no model call, no key and no gate and it costs nothing: the Worker validates the actions (the quote must start on the cue line), keys them from `cueLineId` and the action's index, and writes one hands row (`card.out.cue`). Without `parsed` the `hands` seat reads the cue. Every survivor is mode `act`. A key already in tonight's hands rows comes back mode `seen` (a second GM page posting the same cue loses a single atomic claim); a window request gets `seen` only if it sends `seenOk: true`, so a page from before the deploy never re-applies one.
 
 ## The Screen (the box's four buttons, `app/gm/assist-panel.js` and the cards `syncCards` makes in `app/gm-page.js`)
 
