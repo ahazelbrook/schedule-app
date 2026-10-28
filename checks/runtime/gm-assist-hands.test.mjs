@@ -538,6 +538,25 @@ await test('replay helpers: rows are in transcript order with a seq; windows ove
   assert.equal(applyToState(cleanState(STATE), offer, new Set()).applied.length, 0);
 });
 
+await test('replay with the pages pre-filter: only the windows cogm.js matches are cut, each holds its matching line and its neighbours, and quiet talk is never sent', async () => {
+  const { rowsOf, windowsOf, cogmWindows, lineOf } = await import('../../scripts/lib/act-replay.mjs');
+  const chatter = (m, n) => Array.from({ length: n }, (_, i) => `- **[21:${String(m).padStart(2, '0')}] Gm:** the rain keeps on falling over the quiet street ${i}`);
+  const text = [...chatter(0, 12), "- **[21:01] Gm:** Right, that's a six-segment clock for the patrol.", ...chatter(1, 12), ...chatter(2, 12), ...chatter(3, 12),
+    '- **[21:04] Gm:** Tick that once, please.', ...chatter(4, 6)].join('\n');
+  const rows = rowsOf(text), clockSeq = rows.find((r) => /six-segment/.test(r.text)).seq, tickSeq = rows.find((r) => /Tick that/.test(r.text)).seq;
+  const p = cogmWindows(rows);
+  assert.equal(p.lines, rows.length); assert.equal(p.matchedLines, 2, 'the two lines the pre-filter matches');
+  assert.equal(p.windows.length, 2, 'two matches far apart: two windows, not one per minute');
+  assert.ok(p.windows.length < windowsOf(rows).length, 'fewer than the time windows');
+  const [a, b] = p.windows;
+  assert.ok(a.from <= clockSeq && clockSeq <= a.to && a.matched.includes(clockSeq) && a.rows.length > 1 && a.rows.length <= LINES_MAX);
+  assert.ok(b.from <= tickSeq && tickSeq <= b.to && b.matched.includes(tickSeq));
+  assert.ok(a.to < b.from, 'quiet talk between them is in neither window');
+  assert.ok(a.rows.every((r, i) => i === 0 || r.seq === a.rows[i - 1].seq + 1), 'a window is a run of lines, in order');
+  assert.deepEqual(cogmWindows([]).windows, []); assert.equal(cogmWindows(rowsOf('- **[21:00] Gm:** just talking')).windows.length, 0);
+  assert.equal(lineOf(rows, 'Tick that once'), tickSeq); assert.equal(lineOf(rows, 'nobody said this'), 0);
+});
+
 await test('replay script guards: no key and no --fake, a budget over $0.50, and an --out outside gm-private/ all stop at once with exit 2 and no output files', async () => {
   const { spawnSync } = await import('node:child_process');
   const os = await import('node:os'), fs = await import('node:fs');
@@ -550,6 +569,7 @@ await test('replay script guards: no key and no --fake, a budget over $0.50, and
   assert.ok(!withApiKey.stdout.includes('sk-ant') && !withApiKey.stderr.includes('sk-ant'));
   assert.equal(run(['--fake', '--max-spend', '0.6']).status, 2);
   assert.equal(run(['--fake', '--max-spend', '0']).status, 2);
+  assert.equal(run(['--fake', '--max-spend', '0.6', '--budget', '2']).status, 2, 'the ceiling itself is capped at 1');
   const out = run(['--fake', '--out', path.join(dir, 'elsewhere')]); assert.equal(out.status, 2); assert.match(out.stderr, /gm-private/);
   assert.ok(!fs.existsSync(path.join(dir, 'elsewhere')));
   fs.rmSync(dir, { recursive: true, force: true });
