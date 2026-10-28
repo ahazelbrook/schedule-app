@@ -2,7 +2,10 @@
 // sign-in (role 'display', DISPLAY_EMAILS) may GET only. Never part of /api/export. A player gets 403 on every method,
 // before the body is read.
 //   GET            -> { seq, display, updatedAt, ambient: { seq, doc, updatedAt }, stt: { seq, want, session } }
-//                     (The ambient overlay is served live: left out once the server's clock passes its at + ms, else with `age`, the whole
+//                     (The overlay is served on its own, as a top-level `overlay` (the object, or null) on every answer but the oldest `?seq` only
+//                     "unchanged" one, and also inside `ambient.doc` whenever that goes out in full. It is made on each poll from the stored
+//                     overlay alone, so it reaches a display whose ambient seq is current while the big ambient part stays changed-only.
+//                     It is served live: left out once the server's clock passes its at + ms, else with `age`, the whole
 //                     ms since the server set `at`; response only, nothing is written. An overlay the autopilot sent (`auto: true`) is left out
 //                     while the display is in lights out. An npc overlay is joined to its row now: it gains `npc` (name, alias, role, faction,
 //                     spec: only the figure's drawing keys) while that NPC is revealed, and is left out otherwise. A clock overlay is joined to
@@ -35,7 +38,7 @@
 
 import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf, HttpError } from '../../_lib/http.js';
-import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay, loadAmbient, liveAmbient } from '../../_lib/gm.js';
+import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay, loadAmbient, loadAmbientLite, liveAmbient } from '../../_lib/gm.js';
 import { joinOverlayNpc } from '../../_lib/npcs.js';
 import { joinOverlayClock } from '../../_lib/campaign.js';
 import { loadSttPart } from '../../_lib/stt.js';
@@ -54,31 +57,41 @@ export async function onRequest({ request, env, data }) {
     const seq = q.get('seq'), aseq = q.get('aseq'), sseq = q.get('sseq');
     const cur = await loadDisplay(db, campaign);
     const same = seq !== null && seq === String(cur.seq);
-    // the ambient part as served: the overlay left out once the server's clock passes its end, or while the display is in lights out and
-    // the autopilot sent it; an npc overlay joined to its row now and a clock overlay to its clock (one read by primary key each, only while
-    // such an overlay is up), or left out when that NPC is not revealed / that clock is hidden, gone or the old shape
-    const liveAmb = async () => {
-      const a = await joinOverlayNpc(db, campaign, liveAmbient(await loadAmbient(db, campaign), Date.now(), cur.display && cur.display.kind));
+    // THE OVERLAY, served on its own: a small top-level `overlay` on every answer (null when none), made on each poll from the stored overlay
+    // alone (the ambient row's overlay cut out in SQL, never the whole document): the server's expiry (left out once its clock passes at + ms,
+    // else with `age`), lights out (an autopilot overlay is left out while the display is dark), an npc overlay joined to its row (name, alias,
+    // role, faction, drawing keys of the spec) and a clock overlay to its clock (name, size and the LIVE fill), or left out when that NPC is not
+    // revealed / that clock is hidden, gone or the old shape. One primary-key read each, only while such an overlay is up. So a hidden NPC or
+    // clock, and a fill that moves, reach a display whose ambient seq is current without the big ambient part being sent or even parsed.
+    const liveOverlay = async () => {
+      const lite = await loadAmbientLite(db, campaign);
+      const shell = { seq: lite.seq, doc: lite.overlay ? { overlay: lite.overlay } : {}, updatedAt: lite.updatedAt };
+      const a = await joinOverlayNpc(db, campaign, liveAmbient(shell, Date.now(), cur.display && cur.display.kind));
       const b = await joinOverlayClock(db, campaign, a.amb);
-      return { amb: b.amb, dropped: a.dropped || b.dropped, follows: b.follows };
+      return { seq: lite.seq, overlay: b.amb.doc.overlay || null };
+    };
+    // the ambient part in full: the stored document with its overlay replaced by the served one (the same object the overlay field carries)
+    const fullAmbient = async (ov) => {
+      const amb = await loadAmbient(db, campaign), doc = { ...amb.doc };
+      if (ov) doc.overlay = ov; else delete doc.overlay;
+      return { ...amb, doc };
     };
     if (aseq === null && sseq === null) {
       if (same) return json({ seq: cur.seq, unchanged: true });   // the oldest call: neither the ambient nor the transcriber is even read
-      return json({ ...cur, ambient: (await liveAmb()).amb, stt: await loadSttPart(db, campaign) });
+      const o = await liveOverlay();
+      return json({ ...cur, ambient: await fullAmbient(o.overlay), overlay: o.overlay, stt: await loadSttPart(db, campaign) });
     }
-    const { amb, dropped, follows } = await liveAmb();
-    // an overlay left out (its NPC hidden, its clock hidden or gone) is news even when the ambient seq is the one the display holds, and so
-    // is a clock overlay's fill, which follows the clock: the ambient part goes in full on every poll while one is up or was just dropped
-    const ambSame = aseq === String(amb.seq) && !dropped && !follows;
-    const ambient = ambSame ? { seq: amb.seq, unchanged: true } : amb;
+    const { seq: aseqNow, overlay } = await liveOverlay();
+    const ambSame = aseq === String(aseqNow);
+    const ambient = ambSame ? { seq: aseqNow, unchanged: true } : await fullAmbient(overlay);
     if (sseq === null) {   // a display page from before the transcriber rode along: what it always got, so it never pulls the full display each time
-      return json(same && ambSame ? { seq: cur.seq, unchanged: true, ambient } : { ...cur, ambient });
+      return json(same && ambSame ? { seq: cur.seq, unchanged: true, ambient, overlay } : { ...cur, ambient, overlay });
     }
     const st = await loadSttPart(db, campaign);
     const sttSame = sseq === String(st.seq);
     const stt = sttSame ? { seq: st.seq, unchanged: true } : st;
-    if (same && ambSame && sttSame) return json({ seq: cur.seq, unchanged: true, ambient, stt });
-    return json({ ...cur, ambient, stt });
+    if (same && ambSame && sttSame) return json({ seq: cur.seq, unchanged: true, ambient, stt, overlay });
+    return json({ ...cur, ambient, stt, overlay });
   }
   const raw = await readJsonObject(request, LIMITS.displayRequest);
   let ifSeq;

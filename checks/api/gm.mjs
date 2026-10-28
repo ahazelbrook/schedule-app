@@ -672,6 +672,43 @@ async function main() {
     status(await A({ overlay: null }), 200);
   });
 
+  await step('ambient overlay: a text overlay naming a hidden clock, a hidden NPC or its alias is 400 (whole word, any case, nothing stored); a visible clock, a revealed NPC, a partial word and plain words are allowed', async () => {
+    status(await A({ overlay: null }), 200);
+    status(await gm('PUT', '/api/npcs/npc_txt_h', { name: 'Quillon Hush', alias: 'The Lantern Mouse', revealed: false }), 200);
+    status(await gm('PUT', '/api/npcs/npc_txt_s', { name: 'Marrow Plain', alias: 'Plainer', revealed: true }), 200);
+    const T = (text, x) => A({ scene: 'harvest', overlay: { id: 'tx', kind: 'text', ms: 5000, text, ...x } });
+    const seq0 = await ambSeq();
+    const refused = async (text, why) => {
+      const r = await T(text);
+      expect(r.status === 400 && /names something the players must not see/.test(r.json && r.json.error), why + ' -> ' + r.status + ' ' + r.text.slice(0, 140));
+    };
+    await refused('The HIDDEN-CLOCK-NAME is ticking', 'a hidden clock\'s name');
+    await refused('the hidden-clock-name, again', 'any case');
+    await refused('Quillon Hush is at the door', 'a hidden NPC\'s name');
+    await refused('quillon   hush waits', 'any run of spaces inside a name');
+    await refused('Someone saw "The Lantern Mouse" tonight', 'a hidden NPC\'s alias');
+    await refused('the lantern mouse.', 'the alias in any case');
+    const held = (await gm('GET', '/api/gm/ambient')).json;
+    expect(held.seq === seq0 && !('overlay' in held.doc) && !('scene' in held.doc), 'the refusals stored nothing, not even the key beside them');
+    // positive controls: each of these is accepted
+    for (const [text, why] of [['The Invented Fuse burns low', 'a VISIBLE clock\'s name'], ['Marrow Plain nods', 'a REVEALED NPC\'s name'], ['Plainer words are best', 'a revealed NPC\'s alias'],
+      ['HIDDEN-CLOCK-NAMES are plural here', 'a partial word after a hidden clock\'s name'], ['Quillonesque manners', 'a partial word after a hidden NPC\'s name'], ['Hush, hush, said the room', 'one word of a two-word name'], ['A quiet moment by the invented pier', 'plain words']]) {
+      const r = await T(text); status(r, 200); expect(r.json.doc.overlay.text === text, why + ' stored');
+    }
+    // the rule follows the data: reveal the NPC and the same line is allowed; hide the visible clock and its name is refused
+    status(await gm('PATCH', '/api/npcs/npc_txt_h', { revealed: true }), 200);
+    status(await T('Quillon Hush is at the door'), 200);
+    status(await gm('PATCH', '/api/npcs/npc_txt_h', { revealed: false }), 200);
+    await refused('Quillon Hush is at the door', 'hidden again');
+    status(await camp([{ id: 'c_fuse', hidden: true }]), 200);
+    await refused('The Invented Fuse burns low', 'a clock hidden after');
+    status(await camp([{ id: 'c_fuse', hidden: false }]), 200);
+    status(await T('The Invented Fuse burns low'), 200);
+    // not on the poll: the display GET makes no such read (a text overlay is served as it is)
+    expect((await gm('GET', '/api/gm/display')).json.overlay.text === 'The Invented Fuse burns low', 'served as stored');
+    status(await A({ overlay: null }), 200);
+  });
+
   await step('display GET joins a clock overlay to its clock at read time: name, size and the LIVE fill while it is visible; hidden, removed or the old shape drops it, for the GM and the display-only sign-in; the stored overlay holds the id alone', async () => {
     const IPAD = 'table.ipad@example.test';
     status(await camp([{ add: { id: 'c_join', name: 'Invented Join', size: 8, filled: 1, kind: 'danger', hidden: false } }]), 200);
@@ -682,17 +719,26 @@ async function main() {
       const q = (p) => call('GET', '/api/gm/display' + p, { user });
       return [await q(''), await q('?seq=-1&aseq=-1'), await q('?seq=-1&aseq=-1&sseq=-1')];
     };
-    const ovs = async (user) => (await shapes(user)).map((d) => (d.json.ambient && d.json.ambient.doc ? d.json.ambient.doc.overlay : undefined));
+    const ovs = async (user) => (await shapes(user)).map((d) => {
+      const inAmb = d.json.ambient && d.json.ambient.doc ? d.json.ambient.doc.overlay : undefined;
+      expect(d.json.overlay === undefined ? inAmb === undefined : JSON.stringify(d.json.overlay) === JSON.stringify(inAmb === undefined ? null : inAmb), 'the top-level overlay field is the one inside the ambient doc: ' + JSON.stringify([d.json.overlay, inAmb]));
+      return inAmb;
+    });
     for (const user of [GM, IPAD]) {
       (await ovs(user)).forEach((o, i) => expect(o && o.name === 'Invented Join' && o.size === 8 && o.filled === 1 && o.clockId === 'c_join', user + ' shape ' + i + ' names it: ' + JSON.stringify(o)));
     }
     // the fill follows the clock live, with nothing re-sent by the caller
     status(await camp([{ id: 'c_join', filled: 5 }]), 200);
     (await ovs(IPAD)).forEach((o, i) => expect(o && o.filled === 5, 'live fill, shape ' + i + ': ' + JSON.stringify(o)));
-    // a display whose ambient seq is current is still sent the ambient part in full while a clock overlay is up (the fill may have moved)
+    // a display whose numbers are all current: the big ambient part stays "unchanged" (it is not even parsed), and the overlay rides on its own
+    // with the live fill, so the card follows the clock without the ambient part being sent
     const full = (await gm('GET', '/api/gm/display')).json, aseq = (await gm('GET', '/api/gm/ambient')).json.seq;
-    const cur = (await call('GET', '/api/gm/display?seq=' + full.seq + '&aseq=' + aseq + '&sseq=' + full.stt.seq, { user: IPAD })).json;
-    expect(cur.ambient && cur.ambient.unchanged !== true && cur.ambient.doc.overlay.filled === 5, 'in full, with the live fill: ' + JSON.stringify(cur).slice(0, 200));
+    const curUrl = '/api/gm/display?seq=' + full.seq + '&aseq=' + aseq + '&sseq=' + full.stt.seq;
+    const cur = (await call('GET', curUrl, { user: IPAD })).json;
+    expect(cur.unchanged === true && cur.ambient.unchanged === true && cur.overlay && cur.overlay.filled === 5 && cur.overlay.name === 'Invented Join', 'ambient unchanged, overlay on its own with the live fill: ' + JSON.stringify(cur).slice(0, 240));
+    status(await camp([{ id: 'c_join', filled: 6 }]), 200);
+    expect((await call('GET', curUrl, { user: IPAD })).json.overlay.filled === 6, 'and the fill moves on the next poll with the ambient seq still current');
+    status(await camp([{ id: 'c_join', filled: 5 }]), 200);
     // hidden after it was set: gone from every shape, for both sign-ins; the stored overlay is untouched and still holds the id alone
     status(await camp([{ id: 'c_join', hidden: true }]), 200);
     for (const user of [GM, IPAD]) {
@@ -700,8 +746,9 @@ async function main() {
     }
     const stored = (await gm('GET', '/api/gm/ambient')).json.doc.overlay;
     expect(stored && stored.clockId === 'c_join' && Object.keys(stored).sort().join() === 'at,clockId,id,kind,ms', 'the stored overlay is untouched (the drop is response only)');
-    const news = (await call('GET', '/api/gm/display?seq=' + full.seq + '&aseq=' + aseq + '&sseq=' + full.stt.seq, { user: IPAD })).json;
-    expect(news.ambient && news.ambient.unchanged !== true && !('overlay' in news.ambient.doc), 'the hidden clock is news even at a current ambient seq');
+    const news = (await call('GET', curUrl, { user: IPAD })).json;
+    expect(news.unchanged === true && news.ambient.unchanged === true && news.overlay === null, 'the hidden clock: the overlay field is null at a current ambient seq, the big ambient part still unchanged: ' + JSON.stringify(news).slice(0, 200));
+    expect(!JSON.stringify(news).includes('Invented Join'), 'and nothing of the clock is in the answer');
     // revealed again: back, with the fill it has now (the positive control for the hidden drop)
     status(await camp([{ id: 'c_join', hidden: false, filled: 6 }]), 200);
     (await ovs(IPAD)).forEach((o, i) => expect(o && o.name === 'Invented Join' && o.filled === 6, 'revealed again, shape ' + i));
@@ -784,14 +831,14 @@ async function main() {
     // the display holds what it was sent: with the ambient seq current the ambient part is "unchanged" while the NPC stays revealed
     const full = (await gm('GET', '/api/gm/display')).json, aseq = (await gm('GET', '/api/gm/ambient')).json.seq;
     const cur = (await gm('GET', '/api/gm/display?seq=' + full.seq + '&aseq=' + aseq + '&sseq=' + full.stt.seq)).json;
-    expect(cur.unchanged === true && cur.ambient.unchanged === true, 'both current: ' + JSON.stringify(cur).slice(0, 160));
-    // hidden: gone from every shape, for both sign-ins, and a display whose numbers are current is sent the ambient part IN FULL (without the overlay)
+    expect(cur.unchanged === true && cur.ambient.unchanged === true && cur.overlay && cur.overlay.npc && joined(cur.overlay.npc), 'both current, the ambient part unchanged, the overlay on its own with the joined card: ' + JSON.stringify(cur).slice(0, 200));
+    // hidden: gone from every shape, for both sign-ins, and a display whose numbers are current gets overlay: null while the big ambient part stays unchanged
     status(await gm('PATCH', '/api/npcs/npc_join', { revealed: false }), 200);
     for (const user of [GM, IPAD]) {
       for (const [i, d] of (await shapes(user)).entries()) expect(!('overlay' in d.json.ambient.doc) && !d.text.includes('Invented Joiner'), user + ' shape ' + i + ' hidden: ' + d.text.slice(0, 200));
     }
     const news = (await call('GET', '/api/gm/display?seq=' + full.seq + '&aseq=' + aseq + '&sseq=' + full.stt.seq, { user: IPAD })).json;
-    expect(news.ambient && news.ambient.unchanged !== true && news.ambient.doc && !('overlay' in news.ambient.doc), 'the hidden NPC is news even at a current ambient seq: ' + JSON.stringify(news).slice(0, 200));
+    expect(news.unchanged === true && news.ambient.unchanged === true && news.overlay === null && !JSON.stringify(news).includes('Invented Joiner'), 'the hidden NPC at a current ambient seq: overlay null, the ambient part unchanged: ' + JSON.stringify(news).slice(0, 200));
     expect((await gm('GET', '/api/gm/ambient')).json.doc.overlay.npcId === 'npc_join', 'the stored overlay is untouched (the drop is response only)');
     // revealed again: back (the positive control for the hidden drop)
     status(await gm('PATCH', '/api/npcs/npc_join', { revealed: true }), 200);

@@ -283,6 +283,42 @@ export async function loadDisplay(db, campaign) {
 }
 
 /**
+ * namesHit(text, names) -> true when the text holds any of the names as a whole word, any case ("Vex" is hit by "vex said", not by "Vexing").
+ * Whole word is Unicode-aware (letters, digits and _ are word characters), spaces in a name match any run of spaces, a name's own regex
+ * characters are escaped, names under two characters are not scanned, and a name that cannot be turned into a pattern counts as a hit
+ * (fail closed). The same rule as the GM page's namesHit (app/gm-page.js), which a test holds to this one on a shared list of cases.
+ */
+export function namesHit(text, names) {
+  const t = typeof text === 'string' ? text : '';
+  return (Array.isArray(names) ? names : []).some((n) => {
+    n = typeof n === 'string' ? n.replace(/\s+/g, ' ').trim() : '';
+    if (n.length < 2) return false;
+    const src = n.split(' ').map((w) => w.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('\\s+');
+    try { return new RegExp('(?:^|[^\\p{L}\\p{N}_])' + src + '(?![\\p{L}\\p{N}_])', 'iu').test(t); } catch (_) { return true; }
+  });
+}
+
+/**
+ * The names the players must not meet: every hidden clock's name and every hidden NPC's name and alias, read in ONE batch of two statements
+ * (the clocks cut out of the campaign row with json_extract, the NPCs that are not revealed). Run only when an overlay with free text is
+ * being SET; never on the display's poll.
+ */
+export async function loadHiddenNames(db, campaign) {
+  const [c, n] = await db.batch([
+    db.prepare("SELECT json_extract(doc, '$.clocks') AS clocks FROM campaigns WHERE id = ?1").bind(campaign),
+    db.prepare("SELECT json_extract(doc, '$.name') AS name, json_extract(doc, '$.alias') AS alias FROM npcs WHERE campaign = ?1 AND deleted = 0 AND COALESCE(json_extract(doc, '$.revealed'), 0) != 1").bind(campaign),
+  ]);
+  const out = [];
+  const row = c && c.results && c.results[0];
+  try {
+    const list = row && typeof row.clocks === 'string' ? JSON.parse(row.clocks) : [];
+    for (const k of Array.isArray(list) ? list : []) if (isPlainObject(k) && k.hidden && typeof k.name === 'string') out.push(k.name);
+  } catch (_) { /* no clocks */ }
+  for (const r of (n && n.results) || []) { if (typeof r.name === 'string') out.push(r.name); if (typeof r.alias === 'string') out.push(r.alias); }
+  return out;
+}
+
+/**
  * Only the `kind` of the display now ('blank' while none is stored), read with json_extract in SQL: no JS parse of a document that can hold a
  * 600 KiB map. For the one question the ambient handler asks (is the display in lights out?).
  */
@@ -486,6 +522,16 @@ export function liveAmbient(amb, nowMs, displayKind) {
   const doc = { ...amb.doc };
   if (age >= o.ms) delete doc.overlay; else doc.overlay = { ...o, age: Math.floor(age) };
   return { ...amb, doc };
+}
+
+/**
+ * { seq, updatedAt, overlay }: the ambient row's seq and its stored overlay (or null), with the overlay cut out in SQL by json_extract, so the
+ * rest of the document (a score scene can be a megabyte) is neither read into JS nor parsed. What the display GET asks every poll.
+ */
+export async function loadAmbientLite(db, campaign) {
+  const row = await db.prepare("SELECT seq, updated_at, json_extract(doc, '$.overlay') AS overlay FROM gm_ambient WHERE campaign = ?1").bind(campaign).first();
+  const ov = row && typeof row.overlay === 'string' ? parseJson(row.overlay, null) : null;
+  return { seq: row ? row.seq : 0, updatedAt: row ? row.updated_at : null, overlay: isPlainObject(ov) ? ov : null };
 }
 
 /** { seq, doc, updatedAt }: `{ seq: 0, doc: {}, updatedAt: null }` while none is stored. */

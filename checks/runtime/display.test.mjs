@@ -370,6 +370,25 @@ await test('poller: a new seq calls onData once with the display and updatedAt',
   assert.deepEqual(r.data.map((x) => [x.seq, x.d.text]), [[1, 'v1'], [2, 'v2']]); assert.equal(r.data[1].at, '2026-10-17T09:00:00.000Z');
   r.poller.stop();
 });
+await test('poller: the answer\'s top-level `overlay` goes to onOverlay on every answer that carries the key (an object or null), after onData; a missing or junk key calls nothing', async () => {
+  const order = [], got = [];
+  const r = rig({ onOverlay: (o) => { order.push('overlay'); got.push(o); }, onAmbient: () => order.push('ambient') });
+  const orig = r.poller;   // data goes through rig's onData; note its place in the order too
+  const r2 = rig({ onData: () => order.push('data'), onOverlay: (o) => { order.push('overlay'); got.push(o); }, onAmbient: () => order.push('ambient') });
+  const answers = [
+    { ...ok(1), ambient: { seq: 5, doc: { mode: 'auto' }, updatedAt: 'x' }, overlay: { id: 'o1', kind: 'text', ms: 5000, text: 'x' } },
+    { seq: 1, unchanged: true, ambient: { seq: 5, unchanged: true }, overlay: { id: 'o1', kind: 'text', ms: 5000, text: 'x', age: 4100 } },
+    { seq: 1, unchanged: true, ambient: { seq: 5, unchanged: true }, overlay: null },
+    { seq: 1, unchanged: true, ambient: { seq: 5, unchanged: true } },
+    { seq: 1, unchanged: true, ambient: { seq: 5, unchanged: true }, overlay: 'junk' },
+    { seq: 1, unchanged: true, ambient: { seq: 5, unchanged: true }, overlay: [] },
+  ];
+  let i = 0; r2.g.handler = () => Promise.resolve(answers[Math.min(i++, answers.length - 1)]);
+  r2.poller.start(); await r2.c.advance(0); for (let k = 1; k < answers.length; k++) await r2.c.advance(BEAT);
+  assert.deepEqual(order.slice(0, 3), ['ambient', 'data', 'overlay'], 'the ambient part, then the display, then the overlay (so the page knows whether it is dark)');
+  assert.deepEqual(got.map((o) => (o === null ? null : o.id + (o.age ? '@' + o.age : ''))), ['o1', 'o1@4100', null], 'an object, an object with its age, then null; the answers with no key, a string or an array call nothing');
+  r2.poller.stop(); orig.stop();
+});
 await test('poller: three failures in a row back off to 10 s; the first success returns to 4 s', async () => {
   const r = rig(); let fail = true; r.g.handler = () => (fail ? Promise.reject(new Error('net')) : Promise.resolve({ seq: 1, unchanged: true }));
   r.poller.start(); await r.c.advance(0);

@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { joinOverlayClock, assertOverlayClock } from '../../functions/_lib/campaign.js';
+import { namesHit as serverNamesHit, loadHiddenNames } from '../../functions/_lib/gm.js';
 import { joinOverlayNpc, drawingSpec, FIGURE_SPEC_KEYS, FIGURE_SPEC_LABELS } from '../../functions/_lib/npcs.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -112,6 +113,33 @@ await test('the whitelist covers the figure kit: every top-level key normalise()
   const filled = K.normalise({ figure: 'fem', jewelry: [], heads: [], companion: { type: 'dog' }, props: [{ type: 'cigarette' }], body: {}, bigLeg: 'right', seed: 3, age: 40 });
   assert.deepEqual(Object.keys(filled).filter((k) => !known.has(k)), []);
   assert.ok(FIGURE_SPEC_KEYS.every((k) => !FIGURE_SPEC_LABELS.includes(k)), 'no key is both');
+});
+
+/* ---------- the server's text scan holds the same rule as the GM page's ---------- */
+await test('the server\'s namesHit and the page\'s agree on a shared list of cases (whole word, any case, Unicode, regex characters, spaces, short names)', () => {
+  const page = require(path.join(ROOT, 'app', 'gm-page.js'))._pure.namesHit;
+  const cases = [
+    ['Vex was here', ['Vex']], ['vex was here', ['Vex']], ['Vexing weather', ['Vex']], ['Convex lenses', ['Vex']], ['"Vex," she said', ['Vex']], ['Vex', ['Vex']],
+    ['the brass   fox is out', ['The Brass Fox']], ['The Brass Foxes', ['The Brass Fox']], ['Mr. O\'Neil (Jr) arrived', ['Mr. O\'Neil (Jr)']], ['Mr. ONeil (Jr) arrived', ['Mr. O\'Neil (Jr)']],
+    ['Zoë waits', ['Zoë']], ['Zoëtrope', ['Zoë']], ['x marks it', ['x']], ['', ['Vex']], ['Vex', []], ['a+b is c', ['a+b']], ['a b is c', ['a+b']], ['nothing here', ['Vex', 'Zoë']],
+    ['HIDDEN-CLOCK-NAME ticks', ['HIDDEN-CLOCK-NAME']], ['HIDDEN-CLOCK-NAMES tick', ['HIDDEN-CLOCK-NAME']], ['the (hush) room', ['(hush)']], ['a \\ b', ['\\']], ['end Vex', ['Vex']], ['Vex_ and', ['Vex']], ['2Vex', ['Vex']],
+  ];
+  for (const [text, names] of cases) assert.equal(serverNamesHit(text, names), page(text, names), JSON.stringify([text, names]));
+  assert.equal(serverNamesHit(5, ['Vex']), false); assert.equal(serverNamesHit('Vex', 'Vex'), false); assert.equal(serverNamesHit('Vex', [null, 5, {}]), false);
+});
+
+await test('loadHiddenNames: hidden clocks, and NPCs that are not revealed (name and alias), in one batch of two statements; revealed ones are not in it', async () => {
+  const calls = { batch: 0, stmts: 0 };
+  const db = {
+    prepare(sql) { return { bind: () => ({ sql }) }; },
+    async batch(list) { calls.batch++; calls.stmts += list.length;
+      return [{ results: [{ clocks: JSON.stringify([clk('c_1', 'Visible Invented', 4, 1), clk('c_2', 'Hidden Invented Clock', 4, 1, true)]) }] }, { results: [{ name: 'Hidden Invented Person', alias: 'Shade' }, { name: 'Other Hidden', alias: null }] }]; },
+  };
+  const names = await loadHiddenNames(db, 'camp');
+  assert.deepEqual(names, ['Hidden Invented Clock', 'Hidden Invented Person', 'Shade', 'Other Hidden']);
+  assert.deepEqual([calls.batch, calls.stmts], [1, 2], 'one batch of two statements');
+  assert.deepEqual(await loadHiddenNames({ prepare: () => ({ bind: () => ({}) }), batch: async () => [{ results: [] }, { results: [] }] }, 'camp'), [], 'nothing hidden');
+  assert.deepEqual(await loadHiddenNames({ prepare: () => ({ bind: () => ({}) }), batch: async () => [{ results: [{ clocks: '{bad' }] }, { results: [] }] }, 'camp'), [], 'unreadable clocks');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

@@ -333,7 +333,7 @@
      display, updatedAt, ambient: { seq, unchanged: true } | { seq, doc, updatedAt }, stt: { seq, unchanged: true } | { seq, want,
      session } }. The display redraws only when its seq moved (an ambient-only change carries the display along, and it must not
      cross-fade the same spotlight again); the ambient part, when it holds a doc, goes to onAmbient first (so the first draw already
-     has its plan), then the transcriber part to onStt. A malformed ambient or transcriber part is ignored: it never stops the
+     has its plan), then the transcriber part to onStt, then (after onData) the answer's top-level `overlay` to onOverlay. A malformed ambient or transcriber part is ignored: it never stops the
      spotlight. onStt(part) gets { seq, want, session } when the part changed, and null once when an answer has no usable part
      (an older server: app/stt.js then asks for itself). */
   Pure.POLL = { intervalMs: 4000, idleMs: 15000, idleAfterMs: 2 * 3600 * 1000, slowMs: 10000, hiddenMs: 60000 };
@@ -414,6 +414,9 @@
             seq = r.seq;
             if (o.onData) { try { o.onData(r.display, r.seq, r.updatedAt || null); } catch (e) { /* ditto */ } }
           }
+          /* the overlay rides on its own, small, on every answer (null when none), after the display part so the page already knows whether it is
+             dark: onOverlay(overlay | null). An answer without the key (an older server) leaves the ambient doc's overlay to onAmbient. */
+          if (o.onOverlay && Object.prototype.hasOwnProperty.call(r, 'overlay') && (r.overlay === null || isObj(r.overlay))) { try { o.onOverlay(r.overlay); } catch (e) { /* ditto */ } }
           if (moved) movedAt = clock();
           setState('live');
         }
@@ -1420,10 +1423,16 @@
       if (h) { s.ov.seen = h.o.id; if (!s.dark && Date.now() - h.at < 8000) { ovShow(h.o); s.ov.auto = true; } }
       ovPaintChip();
     }
+    /* The ambient part brings the AUTO flag (and, from an older server, the overlay); the overlay itself comes on every answer as its own small
+       top-level field (onOverlay), applied after the display part. Once the field has been seen the ambient doc's copy is ignored. */
     function ovApply(doc) {
       var d = isObj(doc) ? doc : {};
       s.ov.chip = d.auto === true; ovPaintChip();
-      var before = s.ov.seen, step = Pure.overlayStep(before, d.overlay);
+      if (!s.ov.field) ovStep(d.overlay);
+    }
+    function ovApplyField(overlay) { s.ov.field = true; ovStep(overlay); }
+    function ovStep(raw) {
+      var before = s.ov.seen, step = Pure.overlayStep(before, raw);
       s.ov.held = null;
       if (step.action === 'show' && step.overlay.auto && s.dark) {
         s.ov.held = { o: step.overlay, at: Date.now() };
@@ -1715,6 +1724,7 @@
         /* the transcriber's part of the answer goes to app/stt.js, which then makes no request of its own for it */
         onStt: function (part) { if (s.stt && typeof s.stt.feed === 'function') { try { s.stt.feed(part); } catch (e) { /* the page goes on */ } } },
         onData: function (display, seq, at) { s.seq = seq; s.updatedAt = at; paintStatus(); show(display, seq); },
+        onOverlay: function (overlay) { ovApplyField(overlay); },
         onStatus: function (p) { s.poll = p; paintStatus(); s.reloader.state(p.state); }
       });
       s.poller.start();
