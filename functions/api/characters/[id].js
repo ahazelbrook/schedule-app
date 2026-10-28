@@ -7,8 +7,9 @@
 import { getDb } from '../../_lib/db.js';
 import { HttpError, json, methodNotAllowed, readJsonObject, deepMerge, campaignOf } from '../../_lib/http.js';
 import { FORBIDDEN, checkId, loadRow, isLive, parseDoc, canChange, writeDoc, tombstone } from '../../_lib/characters.js';
+import { pokeLive } from '../../_lib/live.js';
 
-export async function onRequest({ request, env, params, data }) {
+export async function onRequest({ request, env, params, data, waitUntil }) {
   const method = request.method;
   if (!['GET', 'PUT', 'PATCH', 'DELETE'].includes(method)) return methodNotAllowed(['GET', 'PUT', 'PATCH', 'DELETE']);
   const id = checkId(params.id);
@@ -24,6 +25,7 @@ export async function onRequest({ request, env, params, data }) {
 
   if (method === 'DELETE') {
     await tombstone(db, campaign, id, me);
+    pokeLive({ env, waitUntil }, ['characters']);
     return json({ ok: true });
   }
 
@@ -45,6 +47,7 @@ export async function onRequest({ request, env, params, data }) {
       next.updatedAt = now;
       return next;
     });
+    pokeLive({ env, waitUntil }, ['characters']);
     return json({ id, doc });
   }
 
@@ -58,5 +61,6 @@ export async function onRequest({ request, env, params, data }) {
     next.updatedAt = now;
     return next;
   });
+  pokeLive({ env, waitUntil }, ['characters']);
   return json({ id, doc });
 }

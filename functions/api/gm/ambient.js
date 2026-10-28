@@ -25,10 +25,11 @@ import { json, methodNotAllowed, readJsonObject, campaignOf, HttpError } from '.
 import { LIMITS, requireGm, cleanAmbientPatch, loadAmbient, patchAmbient, loadDisplayKind, loadHiddenNames, namesHit } from '../../_lib/gm.js';
 import { assertRevealedNpc } from '../../_lib/npcs.js';
 import { assertOverlayClock } from '../../_lib/campaign.js';
+import { pokeLive } from '../../_lib/live.js';
 
 const METHODS = ['GET', 'PATCH'];
 
-export async function onRequest({ request, env, data }) {
+export async function onRequest({ request, env, data, waitUntil }) {
   requireGm(data);
   const method = request.method;
   if (!METHODS.includes(method)) return methodNotAllowed(METHODS);
@@ -53,5 +54,7 @@ export async function onRequest({ request, env, data }) {
     // an NPC who is not revealed (one batch of two reads, only here, only for a text overlay; the GM page scans too, this is the server's own check)
     if (ov.kind === 'text' && namesHit(ov.text, await loadHiddenNames(db, campaign))) throw new HttpError(400, 'overlay.text names something the players must not see');
   }
-  return json(await patchAmbient(db, campaign, patch));
+  const out = await patchAmbient(db, campaign, patch);
+  pokeLive({ env, waitUntil }, ['ambient']);
+  return json(out);
 }

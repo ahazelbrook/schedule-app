@@ -3,7 +3,7 @@
 // Cache-Control: no-store.
 //
 // The table display role (DISPLAY_EMAILS, GM.md) is an allow-list enforced here, before any handler runs: only
-// GET /api/me, GET /api/gm/display and the transcriber's calls (DISPLAY_ALLOWED in auth.js) pass; everything else, unknown paths included, is 403 before the body is read or
+// GET /api/me, GET /api/gm/display, GET /api/live (the live-sync socket, which hears only the display's kinds) and the transcriber's calls (DISPLAY_ALLOWED in auth.js) pass; everything else, unknown paths included, is 403 before the body is read or
 // the database touched. A route added later is denied to the display by default.
 
 import { identify, displayMayCall, DISPLAY_ONLY } from '../_lib/auth.js';
@@ -24,7 +24,7 @@ function noStore(res) {
 }
 
 // The worker's router (worker/app.js) also names the route it matched: when it does, it must be one of these as well.
-const DISPLAY_FUNCTIONS = new Set(['/api/me', '/api/gm/display', '/api/gm/stt', '/api/gm/stt/token', '/api/gm/transcript']);
+const DISPLAY_FUNCTIONS = new Set(['/api/me', '/api/gm/display', '/api/gm/stt', '/api/gm/stt/token', '/api/gm/transcript', '/api/live']);
 function displayAllowed(context) {
   const { request } = context;
   let pathname;

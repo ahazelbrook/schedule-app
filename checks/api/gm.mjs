@@ -896,7 +896,7 @@ async function main() {
     status(await A({ mode: 'auto', playlist: ['harvest', 'duskwall'], intervalMin: 7 }), 200);
     const a = await gm('GET', '/api/gm/ambient'); status(a, 200);
     const d = await gm('GET', '/api/gm/display'); status(d, 200);
-    expect(Object.keys(d.json).sort().join() === 'ambient,display,overlay,seq,stt,updatedAt' && d.json.overlay === null, 'keys ' + Object.keys(d.json) + ' (the overlay rides on its own: null while none is up)');
+    expect(Object.keys(d.json).sort().join() === 'ambient,display,live,overlay,seq,stt,updatedAt' && d.json.overlay === null && d.json.live === true, 'keys ' + Object.keys(d.json) + ' (the overlay rides on its own: null while none is up)');
     expect(JSON.stringify(d.json.ambient) === JSON.stringify(a.json) && d.json.ambient.doc.mode === 'auto', 'the full ambient: ' + d.text.slice(0, 200));
     const S = d.json.seq, AS = a.json.seq;
     expect(S > 1 && AS > 1, 'seqs are well past 0 and 1: ' + S + ' ' + AS);
@@ -937,7 +937,7 @@ async function main() {
     expect(Object.keys(T0).sort().join() === 'seq,session,want' && T0.want === 'off' && T0.session === '' && Number.isInteger(T0.seq), 'nothing stored: off, no session: ' + JSON.stringify(T0));
     // all three current: the small answer, each part unchanged
     let j = await get('?seq=' + S + '&aseq=' + AS + '&sseq=' + T0.seq);
-    expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true }, stt: { seq: T0.seq, unchanged: true }, overlay: null }), 'all three current: ' + JSON.stringify(j));
+    expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true }, stt: { seq: T0.seq, unchanged: true }, overlay: null, live: true }), 'all three current (the live-sync switch rides here too): ' + JSON.stringify(j));
     // the calls of a display page from before the part existed: no stt in the answer, and it never keeps their answer from being the small one
     j = await get('?seq=' + S + '&aseq=' + AS);
     expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true }, overlay: null }), 'without sseq: ' + JSON.stringify(j));
@@ -967,7 +967,7 @@ async function main() {
     const STT_MARK = 'tangerine-lighthouse-chorus';
     status(await gm('PATCH', '/api/gm/stt', { speakers: { 0: 'Fixture ' + STT_MARK }, status: { state: 'listening', lines: 2, error: 'oops ' + STT_MARK } }), 200);
     j = await get('?seq=' + S + '&aseq=' + AS + '&sseq=' + T1.seq);
-    expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true }, stt: { seq: T1.seq, unchanged: true }, overlay: null }), 'names and the iPad report do not move it: ' + JSON.stringify(j));
+    expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true }, stt: { seq: T1.seq, unchanged: true }, overlay: null, live: true }), 'names and the iPad report do not move it: ' + JSON.stringify(j));
     const whole = await gm('GET', '/api/gm/display'); status(whole, 200);
     expect(same(whole.json.stt, T1) && !whole.text.includes(STT_MARK), 'only want and session ride on the display: ' + whole.text.slice(0, 200));
     // a new session number moves it; off again
@@ -1012,7 +1012,7 @@ async function main() {
   });
 
   await step('/api/characters carries no GM key (gmUpdatedAt was removed: nothing read it); GM and player see the same keys', async () => {
-    const KEYS = 'campaignUpdatedAt,docs,now,npcsUpdatedAt';
+    const KEYS = 'campaignUpdatedAt,docs,live,now,npcsUpdatedAt';   // live: the live-sync switch (MD1b), the same for everyone
     status(await gm('PATCH', '/api/gm/state', { ui: { tab: 'B' } }), 200);
     for (const q of ['', '?since=' + encodeURIComponent(new Date(0).toISOString())]) {
       const p = await player('GET', '/api/characters' + q); status(p, 200);

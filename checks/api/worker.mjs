@@ -233,16 +233,16 @@ await step('/api/live: the GM upgrade reaches idFromName(campaign) and the 101 c
   expect(unset.names[0] === 'default', 'no CAMPAIGN var: the app default: ' + unset.names);
 });
 
-await step('/api/live: a player and the display are 403 before any upgrade (the object is never reached); no token is 401', async () => {
+await step('/api/live (MD1b): a player and the display reach the object on an upgrade, each as its own role; with no upgrade they are 426, the object untouched; no token is 401', async () => {
   for (const [who, user] of [['player', 'player@example.test'], ['display', 'ipad@example.test']]) {
-    for (const withUpgrade of [true, false]) {
-      const calls = liveCalls();
-      const req = withUpgrade ? upgradeReq(user) : new Request('http://127.0.0.1:8788/api/live', { headers: { 'X-Dev-User': user } });
-      const r = await worker.fetch(req, liveEnv({ LIVE: fakeLive(calls) }), {});
-      expect(r.status === 403, who + (withUpgrade ? ' upgrade' : ' plain') + ': expected 403, got ' + r.status);
-      expect(r.headers.get('Cache-Control') === 'no-store', who + ': no-store');
-      expect(calls.names.length === 0 && calls.gets.length === 0 && calls.fetches.length === 0, who + ': the Durable Object was reached');
-    }
+    const up = liveCalls();
+    const r = await worker.fetch(upgradeReq(user), liveEnv({ LIVE: fakeLive(up) }), {});
+    expect(r.status === 101 && up.fetches.length === 1, who + ' upgrade: expected 101, got ' + r.status);
+    expect(up.fetches[0].headers.get('X-B68-Role') === who, who + ': the object is told the signed-in role: ' + up.fetches[0].headers.get('X-B68-Role'));
+    const calls = liveCalls();
+    const plain = await worker.fetch(new Request('http://127.0.0.1:8788/api/live', { headers: { 'X-Dev-User': user } }), liveEnv({ LIVE: fakeLive(calls) }), {});
+    expect(plain.status === 426 && plain.headers.get('Cache-Control') === 'no-store', who + ' plain: expected 426, got ' + plain.status);
+    expect(calls.names.length === 0 && calls.gets.length === 0 && calls.fetches.length === 0, who + ': the Durable Object was reached');
   }
   const calls = liveCalls();
   const anon = await worker.fetch(upgradeReq(), { LIVE: fakeLive(calls), CAMPAIGN: 'tablecheck', GM_EMAILS: 'gm@example.test', DB: fakeDb() }, {});

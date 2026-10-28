@@ -2,11 +2,12 @@
 // GET /api/characters?since=ISO  -> { now, docs }: every row changed after `since`, tombstones
 //                                   included ({ deleted: true, doc: null })
 // Both also carry campaignUpdatedAt and npcsUpdatedAt (ISO or null), so the adapter knows when to
-// refetch /api/campaign and /api/npcs without polling them separately.
+// refetch /api/campaign and /api/npcs without polling them separately, and `live`: the live-sync switch (the GM state
+// document's `live`; true unless the GM turned it off), so a page learns of a flip in the poll it already makes.
 
 import { getDb } from '../../_lib/db.js';
 import { HttpError, json, methodNotAllowed, campaignOf } from '../../_lib/http.js';
-import { campaignUpdatedAt } from '../../_lib/campaign.js';
+import { campaignStamp } from '../../_lib/live.js';
 import { npcsUpdatedAt } from '../../_lib/npcs.js';
 
 // `now` is reported this far in the past so a write stamped just before a poll but
@@ -48,6 +49,7 @@ export async function onRequest({ request, env }) {
       )
       .bind(campaign);
   }
-  const [{ results }, campaignAt, npcsAt] = await Promise.all([stmt.all(), campaignUpdatedAt(db, campaign), npcsUpdatedAt(db, campaign)]);
-  return json({ now, docs: (results || []).map(toEntry), campaignUpdatedAt: campaignAt, npcsUpdatedAt: npcsAt });
+  // campaignStamp: the campaign's updated_at AND the live-sync switch (design 2.5) in one read, so the switch adds no read to the poll
+  const [{ results }, stamp, npcsAt] = await Promise.all([stmt.all(), campaignStamp(db, campaign), npcsUpdatedAt(db, campaign)]);
+  return json({ now, docs: (results || []).map(toEntry), campaignUpdatedAt: stamp.at, npcsUpdatedAt: npcsAt, live: stamp.live });
 }

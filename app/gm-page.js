@@ -1975,13 +1975,27 @@
       '<p class="gm-menu-h"><span><b>GM tools</b> · The console</span><span class="gm-exp" id="gm-menu-exp"></span></p>' + '<div class="gm-menu-warn" id="gm-menu-warn" hidden></div>' +
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
+      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
       '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
       '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
   }
   function menuOpen(on) {
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
-    if (on) m.removeAttribute('hidden'); else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
+    if (on) { renderLiveItem(); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
+  }
+  /* Live sync (design 2.5): the GM state's `live`, on unless it is an explicit false. The server puts it in the data poll's answer and the
+     display's, so every page follows it within one poll; only this menu item sets it. */
+  function liveOn() { return !(S && S.doc && S.doc.live === false); }
+  function renderLiveItem() {
+    var b = $q('#gm-menu-live'); if (b) b.textContent = 'Live sync: ' + (liveOn() ? 'on (turn off)' : 'off (turn on)');
+  }
+  function toggleLive() {
+    var next = !liveOn();
+    if (!patch({ live: next }, { force: true })) return;
+    if (S.saver && S.saver.flush) S.saver.flush();
+    renderLiveItem();
+    toast(next ? 'Live sync is on: pages hear of a change at once.' : 'Live sync is off: every page is back to polling within a few seconds.');
   }
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
@@ -5462,6 +5476,7 @@
       case 'arm': arm(b.getAttribute('data-b'), true); break;
       case 'last': fileLast(); break;
       case 'clearcap': clearCapture(); break;
+      case 'livesync': toggleLive(); break;
     }
   }
   function onChange(ev) {

@@ -9,17 +9,24 @@
 import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf, HttpError } from '../../_lib/http.js';
 import { requireListener, cleanLines, addLines, readLines, pruneLines } from '../../_lib/stt.js';
+import { pokeLive } from '../../_lib/live.js';
 
 const METHODS = ['GET', 'POST', 'DELETE'];
 const int = (v) => { const n = Number(v); return Number.isInteger(n) && n >= 0 ? n : null; };
 
-export async function onRequest({ request, env, data }) {
+export async function onRequest({ request, env, data, waitUntil }) {
   const role = requireListener(data, true);
   const method = request.method;
   if (!METHODS.includes(method)) return methodNotAllowed(METHODS);
   if (method !== 'POST' && role !== 'gm') throw new HttpError(403, 'only the GM can read the transcript');
   const db = await getDb(env), campaign = campaignOf(env), q = new URL(request.url).searchParams;
-  if (method === 'POST') return json(await addLines(db, campaign, cleanLines(await readJsonObject(request, 160 * 1024))));
+  if (method === 'POST') {
+    const raw = await readJsonObject(request, 160 * 1024);
+    const out = await addLines(db, campaign, cleanLines(raw));
+    // a cued line (C4b): the GM pages' cue lane reads at once. cleanLines drops the `cue` flag (it is not stored), so ask the raw body.
+    if (raw.lines.some((l) => l && l.cue === true)) pokeLive({ env, waitUntil }, ['cue']);
+    return json(out);
+  }
   if (method === 'DELETE') {
     const through = int(q.get('through'));
     if (through === null) throw new HttpError(400, 'through must be a seq');

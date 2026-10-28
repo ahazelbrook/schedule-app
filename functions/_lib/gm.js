@@ -151,12 +151,14 @@ export async function loadState(db, campaign) {
 }
 
 /** Merge `patch` into the stored state (plain objects merge, arrays and scalars replace, null deletes). */
-export async function patchState(db, campaign, patch) {
+export async function patchState(db, campaign, patch, meta) {
   const id = stateId(campaign);
   for (let attempt = 0; attempt < STATE_ATTEMPTS; attempt++) {
     const { doc: current, row } = await loadState(db, campaign);
     const now = nowIso(row && row.updated_at);
     const doc = deepMerge(current, patch);
+    // `meta.liveOff`: this write turns live sync off (the stored switch was on or absent, and is now an explicit false); the read is the one made above
+    if (meta) meta.liveOff = current.live !== false && doc.live === false;
     const text = JSON.stringify(doc);
     if (byteLength(text) > LIMITS.state) throw new HttpError(413, 'the GM state is too large (at most ' + LIMITS.state + ' bytes)');
     const result = row

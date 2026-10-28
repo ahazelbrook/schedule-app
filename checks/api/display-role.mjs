@@ -71,6 +71,7 @@ await step('roleFor: gm wins, then display, else player; unset DISPLAY_EMAILS ma
 await step('displayMayCall: GET /api/me, GET /api/gm/display and the transcriber calls (optional trailing slash), nothing else', () => {
   expect(displayMayCall('GET', '/api/me') && displayMayCall('GET', '/api/me/') && displayMayCall('GET', '/api/gm/display') && displayMayCall('GET', '/api/gm/display/'), 'allowed');
   expect(displayMayCall('POST', '/api/gm/stt/token') && displayMayCall('GET', '/api/gm/stt') && displayMayCall('PATCH', '/api/gm/stt/') && displayMayCall('POST', '/api/gm/transcript'), 'the transcriber is allowed');
+  expect(displayMayCall('GET', '/api/live') && displayMayCall('GET', '/api/live/') && !displayMayCall('POST', '/api/live') && !displayMayCall('GET', '/api/livex') && !displayMayCall('GET', '/api/live/x'), 'the live-sync socket (GET only) is allowed');
   for (const [m, p] of [['GET', '/api/gm/transcript'], ['DELETE', '/api/gm/transcript'], ['GET', '/api/gm/stt/token'], ['PUT', '/api/gm/stt'], ['POST', '/api/gm/stt/tokenx']])
     expect(!displayMayCall(m, p), m + ' ' + p + ' should be refused');
   for (const [m, p] of [['PATCH', '/api/me'], ['PUT', '/api/gm/display'], ['POST', '/api/gm/display'], ['GET', '/api/gm/pack'], ['GET', '/api/gm/state'],
@@ -211,10 +212,10 @@ async function main() {
     expect(!e.text.includes(IPAD), 'export has no display sign-in');
   });
 
-  // ---------- /api/live (MD1a): the GM socket, real LiveHub Durable Object under wrangler dev ----------
-  // node's fetch refuses an Upgrade header, so these speak raw HTTP.
-  const upgrade = (user) => new Promise((resolveP, rejectP) => {
-    const headers = { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': Buffer.from('b68-live-check-key').toString('base64') };
+  // ---------- /api/live (MD1a, MD1b): the sockets of every role, real LiveHub Durable Object under wrangler dev ----------
+  // node's fetch refuses an Upgrade header, so these speak raw HTTP and read server frames themselves (several may arrive in one chunk).
+  const openLive = (user, extra) => new Promise((resolveP, rejectP) => {
+    const headers = { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': Buffer.from('b68-live-check-key').toString('base64'), ...(extra || {}) };
     if (user) headers['X-Dev-User'] = user;
     const req = httpRequest({ host: '127.0.0.1', port: PORT, path: '/api/live', method: 'GET', headers });
     const timer = setTimeout(() => { req.destroy(); rejectP(new Error('no answer to the upgrade')); }, 15000);
@@ -223,45 +224,133 @@ async function main() {
     });
     req.on('upgrade', (res, socket, head) => {
       clearTimeout(timer);
-      let buf = Buffer.from(head);
-      const finish = () => { // one unmasked server text frame: 0x81, length (< 126), payload
-        if (buf.length < 2 || buf.length < 2 + (buf[1] & 0x7f)) return false;
-        resolveP({ status: res.statusCode, headers: res.headers, socket, first: buf.subarray(2, 2 + (buf[1] & 0x7f)).toString('utf8'), opcode: buf[0] & 0x0f });
-        return true;
+      const c = { status: res.statusCode, socket, frames: [], buf: Buffer.alloc(0), waiters: [] };
+      const pump = () => {
+        for (;;) { // unmasked server frames: byte 0 FIN+opcode, byte 1 length (< 126, or 126 and two length bytes)
+          const b = c.buf;
+          if (b.length < 2) return;
+          let len = b[1] & 0x7f, off = 2;
+          if (len === 126) { if (b.length < 4) return; len = b.readUInt16BE(2); off = 4; }
+          if (b.length < off + len) return;
+          const opcode = b[0] & 0x0f;
+          c.frames.push({ opcode, text: b.subarray(off, off + len).toString('utf8'), code: opcode === 8 && len >= 2 ? b.readUInt16BE(off) : null });
+          c.buf = b.subarray(off + len);
+        }
       };
-      if (finish()) return;
-      socket.on('data', (c) => { buf = Buffer.concat([buf, c]); finish(); });
-      setTimeout(() => rejectP(new Error('upgraded, but no first frame')), 10000);
+      const feed = (chunk) => { c.buf = Buffer.concat([c.buf, chunk]); pump(); c.waiters = c.waiters.filter((w) => !w()); };
+      c.until = (n, ms = 10000) => new Promise((ok, no) => {
+        const t = setTimeout(() => no(new Error('waited for ' + n + ' frames, got ' + c.frames.length + ': ' + JSON.stringify(c.frames.map((f) => f.text)))), ms);
+        const check = () => { if (c.frames.length >= n) { clearTimeout(t); ok(); return true; } return false; };
+        if (!check()) c.waiters.push(check);
+      });
+      c.send = (text) => socket.write(Buffer.concat([Buffer.from([0x81, 0x80 | text.length, 0, 0, 0, 0]), Buffer.from(text)])); // masked with four zero bytes: the payload is plain
+      c.messages = () => c.frames.filter((f) => f.opcode === 1).map((f) => JSON.parse(f.text));
+      c.closeFrame = () => c.frames.find((f) => f.opcode === 8) || null;
+      socket.on('data', feed);
+      feed(Buffer.from(head));
+      c.until(1, 10000).then(() => resolveP(c), rejectP);
     });
     req.on('error', rejectP);
     req.end();
   });
+  const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 
   await step('GET /api/live as the GM with an upgrade: 101, the first frame is {"hello":1}, and a ping is answered with pong', async () => {
-    const r = await upgrade(GM);
+    const r = await openLive(GM);
     try {
       expect(r.status === 101, 'expected 101, got ' + r.status + ' ' + (r.text || ''));
-      expect(r.opcode === 1 && r.first === '{"hello":1}', 'first frame: ' + r.opcode + ' ' + r.first);
-      // client frames are masked: text "ping" (opcode 1, FIN), the mask is four zero bytes so the payload is plain
-      const frame = Buffer.concat([Buffer.from([0x81, 0x84, 0, 0, 0, 0]), Buffer.from('ping')]);
-      const got = await new Promise((res, rej) => {
-        const t = setTimeout(() => rej(new Error('no pong')), 8000);
-        r.socket.once('data', (c) => { clearTimeout(t); res(c); });
-        r.socket.write(frame);
-      });
-      expect(got[0] === 0x81 && got.subarray(2, 2 + (got[1] & 0x7f)).toString('utf8') === 'pong', 'ping -> pong, got ' + got.toString('hex'));
+      expect(r.frames[0].opcode === 1 && r.frames[0].text === '{"hello":1}', 'first frame: ' + JSON.stringify(r.frames[0]));
+      r.send('ping');
+      await r.until(2, 8000);
+      expect(r.frames[1].opcode === 1 && r.frames[1].text === 'pong', 'ping -> pong, got ' + JSON.stringify(r.frames[1]));
     } finally { if (r.socket) r.socket.destroy(); }
   });
 
-  await step('GET /api/live: a player and the display are 403 on an upgrade (no socket), and the GM without an upgrade is 426', async () => {
+  await step('GET /api/live: the player and the display (MD1b) open sockets too, each answers a ping; without an upgrade every role is 426, and the display may only GET', async () => {
     for (const [who, user] of [['player', PLAYER], ['display', IPAD]]) {
-      const r = await upgrade(user);
-      expect(r.status === 403 && !r.socket, who + ': expected 403, got ' + r.status + ' ' + (r.text || ''));
-      expect(!/hello/.test(r.text || ''), who + ': no hello');
+      const r = await openLive(user);
+      try {
+        expect(r.status === 101 && r.frames[0].text === '{"hello":1}', who + ': expected 101 and hello, got ' + r.status + ' ' + (r.text || ''));
+        r.send('ping'); await r.until(2, 8000);
+        expect(r.frames[1].text === 'pong', who + ': pong');
+      } finally { if (r.socket) r.socket.destroy(); }
     }
-    status(await call('GET', '/api/live', { user: PLAYER }), 403);
-    status(await call('GET', '/api/live', { user: IPAD }), 403);
-    const plain = await call('GET', '/api/live', { user: GM }); status(plain, 426);
+    for (const user of [GM, PLAYER, IPAD]) status(await call('GET', '/api/live', { user }), 426);
+    status(await call('POST', '/api/live', { user: IPAD }), 403);
+    status(await call('PUT', '/api/live', { user: IPAD, body: {} }), 403);
+  });
+
+  await step('live pokes: each role hears only its kinds, in the order of the writes; a poke is exactly { k, t }; a player who sends the role header is still a player', async () => {
+    const gm = await openLive(GM), player = await openLive(PLAYER), display = await openLive(IPAD), spoof = await openLive(PLAYER, { 'X-B68-Role': 'gm' });
+    const all = [gm, player, display, spoof];
+    try {
+      expect(all.every((s) => s.status === 101), 'all four opened');
+      let heard = 1; // the GM has heard its hello
+      // every write is followed by waiting for the GM to hear it, so the order of the pokes is the order of the writes
+      const write = async (label, p) => { const r = await p; expect(r.status >= 200 && r.status < 300, label + ': ' + r.status + ' ' + r.text.slice(0, 200)); heard++; await gm.until(heard, 10000); return r; };
+      await write('player character', call('PUT', '/api/characters/char_live_sock', { user: PLAYER, body: { name: 'Invented Socket Scoundrel' } }));
+      await write('ambient', call('PATCH', '/api/gm/ambient', { user: GM, body: { mode: 'pin', scene: 'testcard' } }));
+      await write('display', call('PUT', '/api/gm/display', { user: GM, body: { kind: 'text', text: 'invented' } }));
+      const wantNow = (await call('GET', '/api/gm/stt', { user: GM })).json.doc.want;   // earlier steps may have set it: flip it, since only a change pokes
+      await write('stt', call('PATCH', '/api/gm/stt', { user: GM, body: { want: wantNow === 'on' ? 'off' : 'on' } }));
+      await write('stt status changes', call('PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'listening', lines: 7 } } }));
+      for (let i = 0; i < 2; i++) status(await call('PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'listening', lines: 7 } } }), 200);   // heartbeats: same content, a new `at`: no poke
+      await write('uncued transcript line: no poke', call('POST', '/api/gm/transcript', { user: IPAD, body: { lines: [{ id: 'sock1', at: '2030-01-01T09:30:00.000Z', text: 'An invented line.' }] } }).then((r) => { heard--; return r; }));
+      await write('cued transcript line', call('POST', '/api/gm/transcript', { user: IPAD, body: { lines: [{ id: 'sock2', at: '2030-01-01T09:30:01.000Z', text: 'An invented cued line.', cue: true }] } }));
+      await write('campaign', call('PATCH', '/api/campaign', { user: GM, body: { crew: { heat: 1 } } }));
+      await write('npc', call('POST', '/api/npcs', { user: GM, body: { name: 'Invented Socket Fence', revealed: false } }));
+      // the closing pair: each of these is heard by one group only, so a kind that leaked earlier would sit before it
+      await write('ambient again', call('PATCH', '/api/gm/ambient', { user: GM, body: { mode: 'auto' } }));
+      await write('character again', call('PATCH', '/api/characters/char_live_sock', { user: PLAYER, body: { stress: 1 } }));
+      await sleepMs(300); // a late poke to the wrong socket would land inside this
+      const kinds = (s) => s.messages().slice(1).map((m) => m.k);
+      expect(JSON.stringify(kinds(gm)) === JSON.stringify(['characters', 'ambient', 'display', 'stt', 'stt', 'cue', 'campaign', 'npcs', 'ambient', 'characters']), 'GM heard ' + JSON.stringify(kinds(gm)));
+      expect(JSON.stringify(kinds(player)) === JSON.stringify(['characters', 'campaign', 'npcs', 'characters']), 'player heard ' + JSON.stringify(kinds(player)));
+      expect(JSON.stringify(kinds(spoof)) === JSON.stringify(kinds(player)), 'the spoofing player heard what a player hears: ' + JSON.stringify(kinds(spoof)));
+      expect(JSON.stringify(kinds(display)) === JSON.stringify(['ambient', 'display', 'stt', 'stt', 'ambient']), 'display heard ' + JSON.stringify(kinds(display)));
+      for (const s of all) {
+        expect(s.messages()[0].hello === 1, 'hello first');
+        for (const m of s.messages().slice(1)) {
+          expect(Object.keys(m).sort().join() === 'k,t', 'a poke carries only k and t: ' + JSON.stringify(m));
+          expect(typeof m.k === 'string' && Number.isInteger(m.t) && Math.abs(Date.now() - m.t) < 120000, 'k is a kind and t a time: ' + JSON.stringify(m));
+        }
+        expect(s.frames.every((f) => f.opcode === 1), 'text frames only (no close frame while the switch is on)');
+      }
+    } finally { all.forEach((s) => s.socket && s.socket.destroy()); }
+  });
+
+  await step('live switch (real): a GM state write that leaves live alone closes nothing; the flip to off closes every open socket with 1000; a second write of false closes nothing new', async () => {
+    status(await call('PATCH', '/api/gm/state', { user: GM, body: { live: true } }), 200);
+    const gm = await openLive(GM), player = await openLive(PLAYER), display = await openLive(IPAD);
+    const all = [gm, player, display];
+    try {
+      status(await call('PATCH', '/api/gm/state', { user: GM, body: { ui: { tab: 'C' } } }), 200);
+      status(await call('PATCH', '/api/gm/state', { user: GM, body: { live: true } }), 200);
+      await sleepMs(500);
+      expect(all.every((s) => !s.closeFrame() && !s.socket.destroyed && s.frames.length === 1), 'still open, only hello heard, after writes that do not flip it');
+      status(await call('PATCH', '/api/gm/state', { user: GM, body: { live: false } }), 200);
+      for (const s of all) {
+        for (let i = 0; i < 100 && !s.closeFrame(); i++) await sleepMs(100);
+        expect(s.closeFrame() && s.closeFrame().code === 1000, 'closed with 1000: ' + JSON.stringify(s.closeFrame()));
+      }
+    } finally { all.forEach((s) => s.socket && s.socket.destroy()); status(await call('PATCH', '/api/gm/state', { user: GM, body: { live: true } }), 200); }
+  });
+
+  await step('live switch (real): GM state { live: false } reaches the phone poll and the display answers, closes the door to new sockets, and { live: true } reopens it', async () => {
+    const before = await call('GET', '/api/characters', { user: PLAYER }); status(before, 200);
+    expect(before.json.live === true, 'on by default: ' + before.json.live);
+    status(await call('PATCH', '/api/gm/state', { user: GM, body: { live: false } }), 200);
+    const off = await call('GET', '/api/characters', { user: PLAYER });
+    expect(off.json.live === false, 'phone poll: ' + off.json.live);
+    const d = await call('GET', '/api/gm/display', { user: IPAD });
+    expect(d.json.live === false, 'display answer: ' + d.json.live);
+    const cur = await call('GET', '/api/gm/display?seq=' + d.json.seq + '&aseq=' + d.json.ambient.seq + '&sseq=' + d.json.stt.seq, { user: IPAD });
+    expect(cur.json.unchanged === true && cur.json.live === false, 'display answer, everything current: ' + cur.text.slice(0, 160));
+    const refused = await openLive(PLAYER);
+    expect(refused.status === 503 && !refused.socket, 'no socket while off: ' + refused.status);
+    status(await call('PATCH', '/api/gm/state', { user: GM, body: { live: true } }), 200);
+    const on = await openLive(PLAYER);
+    try { expect(on.status === 101, 'reopened: ' + on.status); } finally { if (on.socket) on.socket.destroy(); }
   });
 }
 
