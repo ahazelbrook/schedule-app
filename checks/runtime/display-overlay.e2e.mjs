@@ -48,13 +48,20 @@ async function push(doc) { const r = await gmCall('PUT', '/api/gm/display', doc)
 async function ambient(patch) { const r = await gmCall('PATCH', '/api/gm/ambient', patch); if (r.status !== 200) throw new Error('ambient ' + JSON.stringify(patch).slice(0, 80) + ' -> ' + r.status + ' ' + (await r.text()).slice(0, 120)); return r.json(); }
 /* a computed transition-duration list ("0s", "0.001s, 0s"): every one of them a blink or less (the app also clamps all motion under reduce) */
 const instant = (list) => String(list).split(',').every((d) => parseFloat(d) < 0.02);
+const storedAt = async () => Date.parse((await (await gmCall('GET', '/api/gm/ambient')).json()).doc.overlay.at);   // the SERVER's start of the overlay
 const SPOT = { kind: 'text', title: 'Spot', text: 'The invented spotlight line' };
 let n = 0; const uid = (p) => p + '-' + (++n);
 
 /* a browser on #display: signed in as `user`, with its page errors, console errors and requests collected */
-async function openDisplay(browser, { user = GM, reduced = false } = {}) {
+async function openDisplay(browser, { user = GM, reduced = false, watch = false } = {}) {
   const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: 1366, height: 1024 }, reducedMotion: reduced ? 'reduce' : 'no-preference' });
   const page = await ctx.newPage();
+  /* watch: every data-phase the dawn goes through from the very first node, recorded before the page's own script runs (a reload cannot miss the first phase) */
+  if (watch) await page.addInitScript(() => {
+    window.__ph = []; window.__t0 = Date.now();
+    const rec = (n) => { if (n && n.nodeType === 1 && n.classList.contains('dp-ov-dawn')) window.__ph.push(n.getAttribute('data-phase')); };
+    new MutationObserver((ms) => ms.forEach((m) => { if (m.type === 'attributes' && m.attributeName === 'data-phase') rec(m.target); if (m.type === 'childList') m.addedNodes.forEach(rec); })).observe(document, { attributes: true, childList: true, subtree: true });
+  });
   await page.addInitScript(() => { try { if (window === window.top) localStorage.setItem('b68.display.ambientTiming', JSON.stringify({ intervalMs: 600000, graceMs: 60000 })); } catch (e) { /* no storage */ } });
   const seen = { requests: [], errors: [], console: [], responses: [] };
   page.on('request', (r) => seen.requests.push(r.url()));
@@ -192,8 +199,11 @@ try {
     const t0 = await stageText(G.page);
     const MS = 8000;
     await ambient({ overlay: { id: uid('d'), kind: 'fx', ms: MS, fx: 'dawn' } });
+    const t1 = await storedAt();                                    // a dawn lasts its ms from the server's clock, however late this page's poll sees it
     await G.page.waitForSelector('.dp-overlay .dp-ov-dawn', { timeout: 20000 });
-    const t1 = Date.now();
+    await sleep(350);
+    const warm = await G.page.evaluate(() => { const e = document.querySelector('.dp-ov-dawn'); return { phase: e.getAttribute('data-phase'), op: parseFloat(getComputedStyle(e).opacity), warm: parseFloat(getComputedStyle(e.querySelector('.dp-ov-warm')).opacity) }; });
+    expect(warm.phase === 'ramp' && (warm.op > 0 && warm.op < 1 || warm.warm > 0 && warm.warm < 1), 'the ramp is animating about 0.4 s in (not a jump to white): ' + JSON.stringify(warm));
     const r = await rect(G.page, '.dp-ov-dawn');
     expect(r.l === 0 && r.t === 0 && Math.abs(r.r - 1) < 1e-6 && Math.abs(r.b - 1) < 1e-6, 'the whole frame: ' + JSON.stringify(r));
     await G.page.waitForSelector('.dp-ov-dawn[data-phase="hold"]', { timeout: 15000 });
@@ -204,8 +214,9 @@ try {
     await G.page.waitForSelector('.dp-ov-dawn[data-phase="fade"]', { timeout: 15000 });
     await noOverlay(G.page, 15000);
     const took = Date.now() - t1;
-    expect(Math.abs(took - MS) < 2500, 'from first sight to gone took ' + took + ' ms for ms ' + MS);
+    expect(Math.abs(took - MS) < 2500, 'from the server start to gone took ' + took + ' ms for ms ' + MS);
     const ph = (await G.page.evaluate(() => window.__ph)).filter((x) => x !== 'pre');
+    /* a dawn that arrives on a running page plays whole, however late the 4 s poll saw it: the hold is shortened, the ramp is not */
     expect(JSON.stringify(ph) === JSON.stringify(['ramp', 'hold', 'fade']), 'phases: ' + JSON.stringify(ph));
     expect(await stageText(G.page) === t0, 'the spotlight underneath is still there, unchanged');
     await ambient({ overlay: null });
@@ -224,13 +235,13 @@ try {
   await step('prefers-reduced-motion: the dawn is white at once and straight back (no ramp, no fade); cards do not slide', async () => {
     const R = await openDisplay(browser, { reduced: true });
     await watchPhases(R.page);
-    const MS = 5000;
+    const MS = 9000;
     await ambient({ overlay: { id: uid('d'), kind: 'fx', ms: MS, fx: 'dawn' } });
     await R.page.waitForSelector('.dp-overlay .dp-ov-dawn', { timeout: 20000 });
-    const t1 = Date.now();
+    const t1 = await storedAt();
     const first = await R.page.evaluate(() => { const e = document.querySelector('.dp-ov-dawn'); return { phase: e.getAttribute('data-phase'), op: getComputedStyle(e).opacity, tr: getComputedStyle(e).transitionDuration }; });
     expect(first.phase === 'hold' && first.op === '1' && instant(first.tr), 'white at once: ' + JSON.stringify(first));
-    await sleep(MS - 2500);
+    await sleep(Math.max(0, t1 + MS - 1500 - Date.now()));
     expect(await R.page.evaluate(() => !!document.querySelector('.dp-ov-dawn[data-phase="hold"]')), 'still white near the end');
     await noOverlay(R.page, 15000);
     const took = Date.now() - t1;
@@ -264,6 +275,73 @@ try {
     await ambient({ overlay: null });
     expect(D.seen.errors.length === 0, 'page errors: ' + D.seen.errors.join(' | '));
     await D.ctx.close();
+  });
+
+  await step('a bump of the document (the same id, other fields) mid-overlay does not restart it, and the server holds one overlay for one ms', async () => {
+    const id = uid('s');
+    await ambient({ overlay: { id, kind: 'clock', ms: 60000, name: 'Invented Steady', size: 6, filled: 1 } });
+    await cardIn(G.page, 'clock', id);
+    await G.page.evaluate(() => { document.querySelector('.dp-ov-clock').setAttribute('data-keep', '1'); });
+    await ambient({ auto: true });
+    await G.page.waitForFunction(() => !document.querySelector('.dp-auto').hidden, null, { timeout: 15000 });
+    expect(await G.page.evaluate(() => !!document.querySelector('.dp-ov-clock[data-keep="1"]')), 'the very same card is still there: it did not restart');
+    await ambient({ auto: null, overlay: null });
+    await noOverlay(G.page, 15000);
+  });
+
+  await step('reload the display MID-dawn: it carries on in the hold (never the warm start or the ramp again) and ends at the server end, not a fresh ms later', async () => {
+    const MS = 24000;
+    await ambient({ overlay: { id: uid('d'), kind: 'fx', ms: MS, fx: 'dawn' } });
+    const at = await storedAt();
+    await sleep(7000);                                              // well into the hold, by the server's clock
+    const R = await openDisplay(browser, { watch: true });
+    await R.page.waitForSelector('.dp-overlay .dp-ov-dawn', { timeout: 20000 });   // it IS shown (a vanished dawn would not pass this)
+    await R.page.reload();                                          // a real reload of the same page and context: its storage carries over; the observer re-arms clean
+    await R.page.waitForSelector('.dp-overlay .dp-ov-dawn', { timeout: 20000 });
+    const first = await R.page.evaluate(() => { const e = document.querySelector('.dp-ov-dawn'); return { phase: e.getAttribute('data-phase'), op: getComputedStyle(e).opacity }; });
+    expect(first.phase === 'hold' && first.op === '1', 'white straight away, in the hold: ' + JSON.stringify(first));
+    await noOverlay(R.page, 30000);
+    const end = Date.now();
+    const ph = await R.page.evaluate(() => window.__ph);
+    expect(ph.length >= 1 && ph[0] === 'hold' && !ph.includes('pre') && !ph.includes('ramp'), 'phases from the first node: ' + JSON.stringify(ph));
+    expect(ph.includes('fade'), 'and it still fades at the end: ' + JSON.stringify(ph));
+    expect(Math.abs(end - (at + MS)) < 3000, 'it ended at the server end (off by ' + (end - (at + MS)) + ' ms); a restart would be ' + (MS - 7000) + ' ms late');
+    expect(R.seen.errors.length === 0, 'page errors: ' + R.seen.errors.join(' | '));
+    await R.ctx.close();
+    await ambient({ overlay: null });
+  });
+
+  await step('reload the display after the dawn has expired: nothing shows, across several polls', async () => {
+    await ambient({ overlay: { id: uid('d'), kind: 'fx', ms: 2000, fx: 'dawn' } });
+    await sleep(2600);
+    const stored = (await (await gmCall('GET', '/api/gm/ambient')).json()).doc.overlay;
+    expect(stored && stored.kind === 'fx', 'the server still holds the expired overlay (so only the display GET dropped it)');
+    const R = await openDisplay(browser, { watch: true });
+    await sleep(6500);
+    expect(await R.page.evaluate(() => window.__ph.length === 0 && !document.querySelector('.dp-ov-dawn') && !document.querySelector('.dp-ov-card')), 'no dawn, no card: ' + JSON.stringify(await R.page.evaluate(() => window.__ph)));
+    expect(/dp-dot-ok/.test(await R.page.evaluate(() => document.querySelector('.dp-dot').className)), 'and the poll is live (it asked, and was told nothing)');
+    await R.ctx.close();
+    await ambient({ overlay: null });
+  });
+
+  await step('reload mid-card: a clock card carries on for the rest of its ms by the server clock, and a text card past its end does not return', async () => {
+    const MS = 14000;
+    await ambient({ overlay: { id: uid('c'), kind: 'clock', ms: MS, name: 'Invented Wick', size: 6, filled: 2 } });
+    const at = await storedAt();
+    await sleep(6000);
+    const R = await openDisplay(browser);
+    await cardIn(R.page, 'clock');
+    await noOverlay(R.page, 20000);
+    const end = Date.now();
+    expect(Math.abs(end - (at + MS)) < 3500, 'the card left at the server end (off by ' + (end - (at + MS)) + ' ms), not a fresh ' + MS + ' ms');
+    await ambient({ overlay: { id: uid('t'), kind: 'text', ms: 1500, text: 'Over before the reload.' } });
+    await sleep(2200);
+    await R.page.reload();
+    await R.page.waitForSelector('.dp-overlay', { state: 'attached', timeout: 20000 });
+    await sleep(5500);
+    expect((await cards(R.page)).length === 0, 'the expired text card did not come back');
+    await R.ctx.close();
+    await ambient({ overlay: null });
   });
 
   await step('only same-origin requests; no page errors; the GM display made no unexpected calls', async () => {

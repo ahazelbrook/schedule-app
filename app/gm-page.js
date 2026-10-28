@@ -2497,7 +2497,7 @@
     (Array.isArray(rs.play.events) ? rs.play.events : []).forEach(function (e) { var t = B.minuteOf(e.at, start); if (!isNaN(t) && t <= m.span) ticks += '<i class="gm-run-tick' + (e.fx ? ' fx' : '') + '" style="left:' + pct(t) + '%" title="' + esc(str(e.at) + ' ' + str(e.label)) + '"></i>'; });
     runWindows(rs).forEach(function (w) { if (w.t <= m.span) ticks += '<i class="gm-run-dot" style="left:' + pct(w.t) + '%" title="' + esc(w.at + ' ' + w.who + ' in ' + w.room) + '"></i>'; });
     return '<div class="gm-run-time"><output class="gm-run-clock" id="gm-run-clock" aria-live="off">' + esc(m.view.label) + '</output>' +
-      '<div class="gm-run-scrub"><div class="gm-run-btns">' + runChip('−15', ' data-gm="run-step" data-d="-15" aria-label="15 minutes earlier"') + runChip('+15', ' data-gm="run-step" data-d="15" aria-label="15 minutes later"') + runChip('Next window', ' data-gm="run-next"') + '</div>' +
+      '<div class="gm-run-scrub"><div class="gm-run-btns">' + runChip('−15', ' data-gm="run-step" data-d="-15" aria-label="15 minutes earlier"') + runChip('+15', ' data-gm="run-step" data-d="15" aria-label="15 minutes later"') + runChip('Next window', ' data-gm="run-next"') + runChip('False dawn', ' data-gm="run-dawn" title="Whites out the iPad for 30 seconds; asks first"') + '</div>' +
       '<input type="range" id="gm-run-t" data-run="t" min="0" max="' + m.span + '" step="1" value="' + m.t + '" aria-label="Time of night, from ' + esc(start) + ' to ' + esc(rs.play.clock.end) + '">' +
       '<div class="gm-run-track" aria-hidden="true">' + ticks + '</div></div></div>';
   }
@@ -2546,7 +2546,7 @@
     var side = '<h5>At ' + esc(v.label) + '</h5><ul class="gm-run-people">' + (v.people.length ? v.people.map(function (p) {
       return '<li><b>' + esc(p.label) + '</b> <small>' + esc(p.kind) + '</small> ' + (p.room ? esc(p.room) : '<span class="gm-dim">not here yet</span>') + (p.note ? ' · ' + esc(p.note) : '') + (p.moving ? ' <span class="gm-run-moving">→ ' + esc(p.moving.to) + ' in ' + p.moving.inMin + ' min</span>' : '') + '</li>';
     }).join('') : '<li class="gm-dim">Nobody on the list.</li>') + '</ul>';
-    side += '<h5>Next</h5><p class="gm-chips">' + (v.next.length ? v.next.map(function (n) { return '<span class="chip sm">' + esc(n.at) + ' ' + esc(n.label) + (n.room ? ' · ' + esc(n.room) : '') + '</span>'; }).join('') : '<span class="gm-dim">Nothing more tonight.</span>') + '</p>';
+    side += '<h5>Next</h5><p class="gm-chips">' + (v.next.length ? v.next.map(function (n) { var txt = esc(n.at) + ' ' + esc(n.label) + (n.room ? ' · ' + esc(n.room) : ''); return n.fx === 'dawn' ? runChip(txt + ' · False dawn', ' data-gm="run-dawn" title="Whites out the iPad for 30 seconds; asks first"') : '<span class="chip sm">' + txt + '</span>'; }).join('') : '<span class="gm-dim">Nothing more tonight.</span>') + '</p>';
     var MARK = { both: '↕', up: '↑', down: '↓' };
     side += '<h5>Routes</h5><p class="gm-chips">' + (v.routes.length ? v.routes.map(function (r) {
       return '<span class="chip sm" title="' + esc(str(r.via)) + '">' + esc(r.from) + ' ' + (MARK[r.dir] || '↕') + ' ' + esc(r.to) + (r.watched ? ' 👁' : '') + (r.needs ? ' 🔑 ' + esc(typeof r.needs === 'string' ? r.needs : '') : '') + '</span>';
@@ -2590,6 +2590,15 @@
     clearTimeout(S.runTm); S.runT = null;
     ballSet(rs.name, { t: Math.max(0, Math.min(m.span, Math.round(t))) });
     runClock(); runPaint(); runDraw(true); return true;
+  }
+  /* The false dawn (design 4.9): never by itself, only this tap, and only after a yes. It records ball.dawn once the iPad took it. */
+  function runDawn() {
+    var rs = runSite(); if (!rs) return Promise.resolve(null);
+    if (!W.confirm('The iPad goes white for 30 seconds. Go ahead?')) return Promise.resolve(null);
+    return showOverlay({ kind: 'fx', fx: 'dawn', ms: 30000 }).then(function (r) {
+      if (r && runSite()) ballSet(rs.name, { dawn: { at: new Date().toISOString() } });
+      return r;
+    });
   }
   function runStep(d) { var rs = runSite(), m = rs && runModel(rs); return m ? runGo(m.t + d) : false; }
   function runNext() {
@@ -4684,6 +4693,7 @@
       case 'run-floor': runSetFloor(str(b.getAttribute('data-v'))); break;
       case 'run-step': runStep(+b.getAttribute('data-d') || 0); break;
       case 'run-next': runNext(); break;
+      case 'run-dawn': runDawn(); break;
       case 'run-pc': runArm('pc', str(b.getAttribute('data-id'))); break;
       case 'run-clock': runArm('clock', str(b.getAttribute('data-id'))); break;
       case 'run-room': runRoom(str(b.getAttribute('data-room'))); break;

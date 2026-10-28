@@ -2,7 +2,9 @@
 // sign-in (role 'display', DISPLAY_EMAILS) may GET only. Never part of /api/export. A player gets 403 on every method,
 // before the body is read.
 //   GET            -> { seq, display, updatedAt, ambient: { seq, doc, updatedAt }, stt: { seq, want, session } }
-//                     (seq 0 and a blank display while none is stored. The ambient document, GM.md "Ambient scenes" and
+//                     (The ambient overlay is served live: left out once the server's clock passes its at + ms, else with `age`, the whole
+//                     ms since the server set `at`; response only, nothing is written. GM.md, "Overlays".
+//                     seq 0 and a blank display while none is stored. The ambient document, GM.md "Ambient scenes" and
 //                     functions/api/gm/ambient.js, rides along because the display sign-in may not call /api/gm/ambient.
 //                     So does what the iPad needs of the transcriber, so that one poll does the work of two (GM.md "Listening"):
 //                     `want` ('on' | 'off': the GM wants it listening) and `session` (the number to stamp on its lines), and
@@ -29,7 +31,7 @@
 
 import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf, HttpError } from '../../_lib/http.js';
-import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay, loadAmbient } from '../../_lib/gm.js';
+import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay, loadAmbient, liveAmbient } from '../../_lib/gm.js';
 import { loadSttPart } from '../../_lib/stt.js';
 
 const METHODS = ['GET', 'PUT'];
@@ -48,9 +50,9 @@ export async function onRequest({ request, env, data }) {
     const same = seq !== null && seq === String(cur.seq);
     if (aseq === null && sseq === null) {
       if (same) return json({ seq: cur.seq, unchanged: true });   // the oldest call: neither the ambient nor the transcriber is even read
-      return json({ ...cur, ambient: await loadAmbient(db, campaign), stt: await loadSttPart(db, campaign) });
+      return json({ ...cur, ambient: liveAmbient(await loadAmbient(db, campaign), Date.now()), stt: await loadSttPart(db, campaign) });
     }
-    const amb = await loadAmbient(db, campaign);
+    const amb = liveAmbient(await loadAmbient(db, campaign), Date.now());
     const ambSame = aseq === String(amb.seq);
     const ambient = ambSame ? { seq: amb.seq, unchanged: true } : amb;
     if (sseq === null) {   // a display page from before the transcriber rode along: what it always got, so it never pulls the full display each time

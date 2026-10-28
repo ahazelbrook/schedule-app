@@ -87,14 +87,14 @@ try {
     clocks: [{ id: 'c_fuse', name: 'Fuse', size: 6, filled: 2, kind: 'danger', hidden: true }], log: [] });
   check(put.status === 200, 'the table holds a hidden Fuse clock');
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
-  const errors = [], asked = [];
+  const errors = [], asked = [], answer = { no: false };
   async function open() {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1366, height: 1024 }, serviceWorkers: 'block', isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-    page.on('dialog', (d) => { asked.push(d.message()); return d.accept(); });
+    page.on('dialog', (d) => { asked.push(d.message()); return answer.no ? d.dismiss() : d.accept(); });
     await page.goto(BASE + '/#gm');
     await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
     await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
@@ -192,6 +192,44 @@ try {
   check(!!d && ['"ball"', 'Odette', 'Wren', 'Pip Quill', 'Ivo', 'Cook', 'Speeches', 'Fireworks', 'Cass Fenn', 'Gala night', '#d11', '#fffdf6'].every((w) => !all.includes(w)), 'the iPad payload carries no ball, no people, no disguise, no event and no token');
   await R.page.click('[data-gm="layer"][data-v="gm"]');
   check(await R.page.$eval('#gm-map', (m) => m.innerHTML.includes('#fffdf6')), 'the GM layer has them again');
+
+  /* the false dawn (M5): a button on the strip and on the fx event in Next; it asks first and never fires by itself */
+  const amb = async () => (await api('GET', '/gm/ambient')).json;
+  await R.page.evaluate(() => { const sl = document.getElementById('gm-run-t'); sl.value = '150'; sl.dispatchEvent(new Event('input', { bubbles: true })); sl.dispatchEvent(new Event('change', { bubbles: true })); });
+  check(await clock(R.page) === '23:30', 'scrubbed to 23:30, where the fireworks are next');
+  check(await R.page.waitForFunction(() => { const b = document.querySelector('#gm-run-side [data-gm="run-dawn"]'); return !!b && /00:00 Fireworks/.test(b.textContent) && /False dawn/.test(b.textContent); }, null, { timeout: 5000 }).then(() => true, () => false), 'the fx event in the Next list carries a False dawn button');
+  check(await R.page.$eval('#gm-run .gm-run-btns [data-gm="run-dawn"]', (b) => /False dawn/.test(b.textContent)), 'and the strip has its own False dawn button');
+  check(await R.page.$$eval('#gm-run-side .chip:not([data-gm])', (c) => c.every((x) => !/Fireworks/.test(x.textContent))) && await R.page.$$eval('#gm-run-side [data-gm="run-dawn"]', (c) => c.length) === 1, 'only the fx event has a button (Speeches is gone by 23:30; one button)');
+  const a0 = await amb();
+  await R.page.click('[data-gm="run-next"]'); await R.page.click('[data-gm="run-step"][data-d="15"]'); await R.page.keyboard.press('ArrowRight');
+  await sleep(1500);
+  const a1 = await amb();
+  if (a1.seq !== a0.seq) console.log('     ambient moved between a0 and a1: ' + JSON.stringify(Object.keys(a1.doc).filter((k) => JSON.stringify(a1.doc[k]) !== JSON.stringify(a0.doc[k]))));
+  check(!a1.doc.overlay && !a0.doc.overlay, 'moving the clock past midnight and onto the fireworks sends no overlay (it never fires by itself)');
+  answer.no = true; asked.length = 0;
+  await R.page.click('#gm-run .gm-run-btns [data-gm="run-dawn"]');
+  await sleep(1500);
+  const a2 = await amb(), st2 = await gmState();
+  check(asked.length === 1 && /The iPad goes white for 30 seconds/.test(asked[0]), 'the button asks first (' + asked.join(' | ') + ')');
+  check(!a2.doc.overlay && !(st2.ball && st2.ball.dawn), 'a no sends nothing and records nothing (' + JSON.stringify({ a0: a0.seq, a1: a1.seq, a2: a2.seq }) + ')');
+  answer.no = false; asked.length = 0;
+  await R.page.evaluate(() => { const sl = document.getElementById('gm-run-t'); sl.value = '150'; sl.dispatchEvent(new Event('input', { bubbles: true })); sl.dispatchEvent(new Event('change', { bubbles: true })); });
+  await R.page.waitForSelector('#gm-run-side [data-gm="run-dawn"]', { timeout: 5000 });
+  const D = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1366, height: 1024 }, serviceWorkers: 'block' });
+  const dp = await D.newPage();
+  dp.on('pageerror', (e) => errors.push('display pageerror: ' + e.message));
+  await dp.goto(BASE + '/#display'); await dp.waitForSelector('.dp-overlay', { state: 'attached', timeout: 20000 });
+  check(await dp.waitForFunction(() => /Updated|Waiting/.test((document.querySelector('.dp-status-text') || {}).textContent || ''), null, { timeout: 20000 }).then(() => true, () => false) && !(await dp.$('.dp-ov-dawn')), 'the iPad is up and shows no dawn yet');
+  await R.page.click('#gm-run-side [data-gm="run-dawn"]');
+  check(asked.length === 1 && /The iPad goes white for 30 seconds/.test(asked[0]), 'the Next chip asks the same question');
+  const a3 = await until(async () => { const a = await amb(); return a.doc.overlay ? a : null; }, 8000);
+  check(!!a3 && a3.doc.overlay.kind === 'fx' && a3.doc.overlay.fx === 'dawn' && a3.doc.overlay.ms === 30000 && Object.keys(a3.doc.overlay).sort().join() === 'at,fx,id,kind,ms', 'a yes sends exactly { kind fx, fx dawn, ms 30000 } (' + JSON.stringify(a3 && a3.doc.overlay) + ')');
+  check(await dp.waitForSelector('.dp-overlay .dp-ov-dawn', { timeout: 20000 }).then(() => true, () => false), 'and the iPad shows the dawn');
+  const rec = await until(async () => { const b = (await gmState()).ball; return b && b.dawn ? b : null; }, 8000);
+  check(!!rec && typeof rec.dawn.at === 'string' && Object.keys(rec.dawn).join() === 'at' && rec.lens === 'cook' && rec.crew && rec.pins, 'ball.dawn is recorded as { at } with the rest of the run kept (' + JSON.stringify(rec && rec.dawn) + ')');
+  check((await api('GET', '/gm/display')).json.ambient.doc.overlay.age >= 0, 'the display call reports the age of the running dawn');
+  check((await api('PATCH', '/gm/ambient', { overlay: null })).status === 200 && await dp.waitForFunction(() => !document.querySelector('.dp-ov-dawn'), null, { timeout: 15000 }).then(() => true, () => false), 'clearing takes the dawn off the iPad');
+  await D.close();
 
   /* the table ticks the pinned clock: the strip and the map follow by themselves */
   check((await api('PATCH', '/campaign', { clockOps: [{ id: 'c_fuse', filled: 4 }] })).status === 200, 'the Fuse clock is ticked on the table');

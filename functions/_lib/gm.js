@@ -456,6 +456,23 @@ const ambientOf = (row) => {
   return { seq: row ? row.seq : 0, doc: isPlainObject(d) ? d : {}, updatedAt: row ? row.updated_at : null };
 };
 
+/**
+ * The ambient part as the display is served it (GET /api/gm/display): the overlay, once the SERVER's clock has passed at + ms, is
+ * left out (a reload of the display then replays nothing), and while it runs it carries `age`, the whole ms since the server set
+ * `at`, so a reloaded display carries on from the right moment. Nothing is written and seq does not move. One comparison per poll;
+ * an overlay with no readable `at` (stored before the server set one) is served as it is. `nowMs` is the server's own clock.
+ */
+export function liveAmbient(amb, nowMs) {
+  const o = amb && amb.doc && amb.doc.overlay;
+  if (!o || typeof o !== 'object') return amb;
+  const at = typeof o.at === 'string' ? Date.parse(o.at) : NaN;
+  if (!Number.isFinite(at) || !Number.isInteger(o.ms)) return amb;
+  const age = Math.max(0, nowMs - at);
+  const doc = { ...amb.doc };
+  if (age >= o.ms) delete doc.overlay; else doc.overlay = { ...o, age: Math.floor(age) };
+  return { ...amb, doc };
+}
+
 /** { seq, doc, updatedAt }: `{ seq: 0, doc: {}, updatedAt: null }` while none is stored. */
 export async function loadAmbient(db, campaign) {
   return ambientOf(await ambientRow(db, campaign));
