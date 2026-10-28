@@ -138,9 +138,10 @@ try {
   await p.keyboard.press('a');
   check(await p.$eval('#as-panel', (e) => !e.hidden), 'key A opens the box');
   check(await p.$eval('.gm-assist .as-banner', (b) => b.hidden), 'the banner goes when the box opens');
-  check((await p.$$('.gm-assist .as-card')).length === 1 && /p\. 12/.test(await p.$eval('.gm-assist .as-card', (e) => e.textContent)), 'the bubble carries the page cite');
+  check((await p.$$('#as-list .as-card')).length === 1 && /p\. 12/.test(await p.$eval('#as-list .as-card', (e) => e.textContent)), 'the card in the feed carries the page cite');
   check(await p.$$eval('.gm-assist .as-up', (l) => l.length) === 1, 'the Ledger update is listed');
   await p.click('#gm-page .gm-dotb[data-v="2"]');
+  await p.click('#as-tools > summary');                 // Fit it, the Screen and the Ledger live in the Tools drawer
   await p.fill('#as-eff', 'standard');
   await p.click('.gm-assist .as-pos label:nth-child(3)');
   await p.click('#as-go');
@@ -296,6 +297,7 @@ try {
   await until(async () => Sc.seen.tick.length >= 1, 15000);
   await sp.keyboard.press('a');
   check(await sp.$eval('#as-panel', (e) => !e.hidden), 'Screen: the box is open');
+  await sp.click('#as-tools > summary');
   check(await sp.$$eval('#as-screen button', (b) => b.map((x) => x.textContent.trim()).join('|')) === 'Draw them|Make the prop|Wire|Case board', 'Screen: the four buttons are in the box');
   await shot(sp, 'screen-buttons');
   // a prop: preview at once, Show disabled while the gatekeeper works, enabled with "Checked: clear"; nothing on the iPad until Show
@@ -382,7 +384,7 @@ try {
   const cg = Cf.seen.sc.reqs.gate.find((r) => r.kind === 'card');
   check(cg && cg.cites && cg.cites.join() === 'p. 12', 'Cite flag: the cite was sent for the check (' + JSON.stringify(cg && cg.cites) + ')');
   await Cf.page.keyboard.press('a');
-  check(await Cf.page.waitForSelector('.gm-assist .as-card .as-citeflag', { timeout: 8000 }).then(() => true, () => false), 'Cite flag: the card carries a small "cite?" flag');
+  check(await Cf.page.waitForSelector('.gm-assist .as-card .as-citeflag', { timeout: 8000, state: 'attached' }).then(() => true, () => false), 'Cite flag: the card carries a small "cite?" flag');
   check(/Invented rule slip/.test(await Cf.page.textContent('.gm-assist .as-card .as-text')), 'Cite flag: and the card is shown as before');
   await Cf.c.close();
 

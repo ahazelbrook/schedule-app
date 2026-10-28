@@ -2,7 +2,7 @@
    with its map, the cast as a list to push to the iPad, the state rail (crew, clocks, bargains owed, pins, who is on stage) and
    the capture bar. S opens the street scene roller beside the location generator (a side panel), and
    D the downtime cards (personal business: a scene prompt per activity a PC takes, an overindulgence's cost), and
-   A the Claude box (gm/assist-panel.js: the table agent's cards, Ledger updates and the Fixer, bottom right; laptop only).
+   A the Blade side panel (gm/assist-panel.js: the table agent's cards, Ask, the Fixer and the Screen; a tab on the right edge; laptop only).
    Hosted build only (window.claude.gm); in the claude.ai artifact, or for a player, the page says so and does nothing.
 
    window.B68GmPage (boot.js):
@@ -677,6 +677,7 @@
       case 'm': return { type: 'capture', bucket: 'm' };
       case 'l': return { type: 'last' };
       case 'a': return { type: 'assist' };
+      case 'u': return { type: 'undo' };
       case 'i': return { type: 'panel', panel: 'ipad' };
       case 'r': return { type: 'panel', panel: 'prep' };
       case 'o': return { type: 'panel', panel: 'cards' };
@@ -1510,7 +1511,7 @@
     loadStt();
   }
   /* the top bar: what the iPad shows, read once (GET /api/gm/display only: the heat sync waits for the iPad tab, as before) */
-  /* Claude at the table (app/gm/assist-panel.js): the chat box at the bottom right. It lives in <body> beside this page, made here and
+  /* Claude at the table (app/gm/assist-panel.js): the Blade side panel (a tab on the right edge). It lives in <body> beside this page, made here and
      destroyed in close(), so only the GM's ready page has it. Its Ledger updates have no state of their own to change: "Note it" files
      the text in the capture bar as a Moment, nothing else is written. A phone gets no box (the CSS hides it, and it does not poll). */
   function mountAssist() {
@@ -1553,6 +1554,7 @@
       '<ol class="gm-find-list" id="gm-find-list"></ol><p class="gm-find-help"><kbd>↑</kbd> <kbd>↓</kbd> choose · <kbd>Enter</kbd> go (or copy) · <kbd>Esc</kbd> close</p></div></div></div>';
     renderRules();
     setApp(true);
+    if (S.assist && typeof S.assist.relayout === 'function') S.assist.relayout();   /* the Blade panel sits between this bar and the capture bar */
   }
   /* the top bar of the app layout (every width): the session, saving, what the iPad shows, listening (once the transcriber has
      ever been used), Clear and Lights out, and a menu with what is not play: the display page, the note, the capture, the pack,
@@ -4254,6 +4256,9 @@
     if (blankEl) { ev.preventDefault(); ev.stopPropagation(); unblank(); return; }
     if (!S || S.status !== 'ready' || document.body.dataset.mode !== 'gm') return;
     var dlg = document.querySelector('dialog[open]'); if (dlg) return;
+    /* with the focus inside the Blade panel, J and K move between its cards and U undoes: the panel's own keys, not Score or anything else */
+    var pel = S.assist && typeof S.assist.el === 'function' ? S.assist.el() : null;
+    if (pel && ev.target && pel.contains && pel.contains(ev.target) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && /^[jku]$/i.test(str(ev.key))) return;
     /* a focused task box or tick cell in the Prep tab: Space or Enter ticks it */
     var tg = ev.target;
     if ((ev.key === ' ' || ev.key === 'Enter') && tg && tg.matches && S.root.contains(tg) && tg.matches('.rl-task[data-task], td[data-cell]')) {
@@ -4288,6 +4293,7 @@
     else if (a.type === 'focus') toggleFocus();
     else if (a.type === 'find') findOpen();
     else if (a.type === 'assist') { if (S.assist) S.assist.toggle(); else toast('Blade is not available on this page.', true); }
+    else if (a.type === 'undo') { if (S.assist && typeof S.assist.undoNewest === 'function') S.assist.undoNewest(); }
   }
   function toggleFocus() { S.prepWide = !S.prepWide; try { W.localStorage.setItem(PREP_WIDE, S.prepWide ? '1' : '0'); } catch (e) {} syncPanels(); }
   function onClick(ev) {
