@@ -90,7 +90,11 @@ try {
   page.on('request', (r) => { if (r.url().startsWith(BASE + '/api/') && !crewSyncOnly(r)) seen.requests.push(r.method() + ' ' + r.url().slice(BASE.length)); });
   page.on('dialog', (d) => { seen.dialogs.push(d.type() + ': ' + d.message()); if (d.type() === 'prompt') return d.accept(seen.promptText); return seen.accept ? d.accept() : d.dismiss(); });
   const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
-  await page.route('**/api/gm/assist/tick', (route) => json(route, { cards: [], updates: [], flags: [], spend: SPEND, last: 9 }));
+  await page.addInitScript(() => {          // keep a handle on the panel's controller, so a check can make the panel poll now (the cap check)
+    let A; Object.defineProperty(window, 'B68GmAssist', { configurable: true, get() { return A; },
+      set(v) { A = v && v.create ? Object.assign({}, v, { create(o) { const ctl = v.create(o); window.__ctl = ctl; return ctl; } }) : v; } });
+  });
+  await page.route('**/api/gm/assist/tick', (route) => json(route, { cards: [], updates: [], flags: [], spend: seen.capped ? Object.assign({}, SPEND, { tonight: 20, tier: 'off' }) : SPEND, last: 9 }));
   await page.route('**/api/gm/assist/cards', (route) => route.request().method() === 'POST' ? json(route, { marked: 1 }) : json(route, { cards: [], updates: [], asks: [] }));
   await page.route('**/api/gm/transcript**', (route) => {
     const u = new URL(route.request().url());
@@ -235,9 +239,60 @@ try {
   await sleep(300);
   check(!(await cogmCards()).some((x) => x.id === kSkip), 'Skip dismisses an offer');
 
+  // ============ Show players asks first: a No writes nothing, a Yes makes the clock visible ============
+  const displayKind = async () => (await api('GET', '/gm/display')).json.display.kind;
+  const sinceW = (from, re) => seen.requests.slice(from).filter((r) => re.test(r)).length;
+  const CAMPAIGN_WRITE = /^(PUT|POST|PATCH|DELETE) \/api\/campaign/, DISPLAY_WRITE = /^(PUT|POST|PATCH|DELETE) \/api\/gm\/display/;
+  const K9 = 'clock_add:show-test-invented:aa000010';
+  reply([act({ type: 'clock_add', key: K9, name: 'Show Test Invented', size: 6, quote: 'a six segment clock, show test invented' })]);
+  say('a six segment clock, show test invented', 'right', 'ok');
+  check(await until(async () => (await clocksNow()).some((k) => k.name === 'Show Test Invented' && k.hidden === true), 10000), 'show: a hidden co-GM clock is made');
+  const shw = await unfold(K9);
+  const acts9 = () => page.$$eval(shw + ' .as-act', (l) => l.map((b) => b.textContent.trim()));
+  check((await acts9()).includes('Show players') && !(await acts9()).includes('Hide'), 'show: its button says Show players');
+  seen.accept = false;
+  const w9 = seen.requests.length, nd9 = seen.dialogs.length;
+  await page.click(shw + ' .as-act:has-text("Show players")');
+  await sleep(1200);
+  check(seen.dialogs.slice(nd9).some((d) => /^confirm: Show “Show Test Invented” to the players\?/.test(d)), 'show: it asks first');
+  check((await clocksNow()).find((k) => k.name === 'Show Test Invented').hidden === true && sinceW(w9, CAMPAIGN_WRITE) === 0, 'show: a No writes nothing, and the clock stays hidden');
+  check((await acts9()).includes('Show players'), 'show: and the button still says Show players');
+  seen.accept = true;
+  await page.click(shw + ' .as-act:has-text("Show players")');
+  check(await until(async () => (await clocksNow()).find((k) => k.name === 'Show Test Invented').hidden === false, 6000), 'show: a Yes makes the clock visible');
+  check(await until(async () => (await acts9()).includes('Hide'), 3000), 'show: and the button now says Hide');
+  seen.accept = false;
+
+  // ============ the iPad following the clocks: a tick of a VISIBLE clock is an offer, written nowhere, until Do it ============
+  const K10 = 'clock_tick:c_seed:aa000011', K11 = 'clock_tick:c_seed:aa000012';
+  const seed = async () => (await clocksNow()).find((k) => k.id === 'c_seed');
+  const seed0 = (await seed()).filled;
+  reply([act({ type: 'clock_tick', key: K10, clock_id: 'c_seed', clock_name: 'Seed Clock Invented', by: 1, from_filled: seed0, to_filled: seed0 + 1, size: 6, quote: 'tick that once for the guards, they are stirring' })]);
+  say('tick that once for the guards, they are stirring', 'yes', 'sure');
+  check(await until(async () => (await seed()).filled === seed0 + 1, 10000), 'ipad control: the iPad is NOT following, so the same tick of a visible clock applies');
+  check(await until(async () => ((await cogmCards()).find((x) => x.id === 'cogm|' + K10) || {}).kind === 'done', 3000), 'ipad control: as a green card');
+  await page.click((await unfold(K10)) + ' .as-undo');
+  check(await until(async () => (await seed()).filled === seed0, 6000), 'ipad control: Undo puts it back');
+  await page.evaluate(() => document.querySelector('[data-gm="clocks-ipad"]').click());          // Show on iPad: the page sets S.clOn the way it always does
+  check(await until(async () => (await displayKind()) === 'svg', 8000), 'ipad: the clocks are on the iPad');
+  await sleep(700);
+  const w10 = seen.requests.length, nd10 = seen.act.length;
+  reply([act({ type: 'clock_tick', key: K11, clock_id: 'c_seed', clock_name: 'Seed Clock Invented', by: 1, from_filled: seed0, to_filled: seed0 + 1, size: 6, quote: 'tick it once more, the lanterns are going' })]);
+  say('tick it once more, the lanterns are going', 'go on', 'ok');
+  check(await until(async () => (await cogmCards()).some((x) => x.id === 'cogm|' + K11), 10000), 'ipad: the same tick, with the iPad following the clocks, makes a card');
+  const off11 = (await cogmCards()).find((x) => x.id === 'cogm|' + K11);
+  check(off11.kind === 'idea' && /^Tick: /.test(off11.text) && /iPad is following/.test(off11.html), 'ipad: it is a yellow OFFER that says why (' + off11.text + ')');
+  await sleep(1200);
+  check((await seed()).filled === seed0 && sinceW(w10, CAMPAIGN_WRITE) === 0 && sinceW(w10, DISPLAY_WRITE) === 0, 'ipad: and nothing is written: the clock is still at ' + seed0 + ', no campaign write, no display write');
+  check(seen.act.length === nd10 + 1, 'ipad: (one /act call)');
+  await page.click(firstCard(K11) + ' .as-act:has-text("Do it")');
+  check(await until(async () => (await seed()).filled === seed0 + 1, 8000), 'ipad: Do it ticks the clock');
+  check(await until(async () => ((await cogmCards()).find((x) => x.id === 'cogm|' + K11) || {}).kind === 'done', 3000), 'ipad: and the offer turns green');
+  await page.evaluate(() => window.B68GmPage._pushDisplay({ kind: 'blank' }));          // end the following: anything else pushed to the iPad does
+  await sleep(500);
+
   // ============ a new NPC: hidden, a player cannot see it, model text stays text, Reveal and show asks first ============
   const K6 = 'npc_add:xss-name:aa000006';
-  const displayKind = async () => (await api('GET', '/gm/display')).json.display.kind;
   const disp0 = await displayKind();
   const reqs0 = seen.requests.length;
   reply([act({ type: 'npc_add', key: K6, name: XSS, look: 'a tall figure in <b>green</b>', role: 'fence', quote: "his name's whoever, tall, green coat" })]);
@@ -304,11 +359,34 @@ try {
   check(seen.act.length === nOff && !(await clocksNow()).some((k) => k.name === 'Never Made Invented'), 'and nothing is sent or applied while it is off');
   await api('PATCH', '/gm/stt', { want: 'on' });
 
+  // ============ the cap switches it off and stops the polling (the box reaches 'off') ============
+  seen.replies.length = 0;
+  const polls = () => seen.requests.filter((r) => /^GET \/api\/gm\/transcript\?after=/.test(r)).length;
+  await page.click(sw);
+  check(await until(() => page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'true'), 6000), 'cap: it is switched on again (Listening is on)');
+  const pl0 = polls(); await sleep(1200);
+  check(polls() > pl0 + 2, 'cap: while it is on it polls the transcript (' + (polls() - pl0) + ' reads in 1.2 s)');
+  seen.capped = true;
+  await page.evaluate(() => window.__ctl.poll());          // the panel's own tick: the answer says the night\'s cap is reached
+  check(await until(() => page.$eval('#as-state', (e) => e.getAttribute('data-state') === 'off'), 6000), 'cap: the panel header says Off');
+  check(await until(() => page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'false'), 6000), 'cap: the co-GM switch goes off by itself');
+  await sleep(700);
+  const pl1 = polls(), ac1 = seen.act.length;
+  reply([act({ type: 'clock_add', key: 'clock_add:capped:aa000020', name: 'Capped Clock Invented', size: 4, quote: 'a four part clock after the cap' })]);
+  say('a four part clock after the cap', 'x', 'y');
+  await sleep(2000);
+  check(polls() === pl1, 'cap: it has stopped polling (' + (polls() - pl1) + ' reads in 2 s)');
+  check(seen.act.length === ac1 && !(await clocksNow()).some((k) => k.name === 'Capped Clock Invented'), 'cap: nothing is sent or applied');
+  await page.click(sw);
+  await sleep(800);
+  check(await page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'false') && /stays off/.test(await toastText()), 'cap: a tap cannot turn it back on while the box is off, and says why ("stays off")');
+  seen.capped = false;
+
   // ============ the safety ledger: what the page asked the server to write ============
   const writes = seen.requests.filter((r) => /^(PUT|POST|PATCH|DELETE) /.test(r));
   check(!writes.some((r) => /\/api\/characters/.test(r)), 'no request wrote a player\'s sheet (/api/characters): ' + writes.filter((r) => /characters/.test(r)).length);
   check(!writes.some((r) => /\/api\/gm\/ambient/.test(r)), 'no request wrote the ambient document');
-  check(writes.filter((r) => /\/api\/gm\/display/.test(r)).length >= 1 && writes.filter((r) => /\/api\/gm\/display/.test(r)).length <= 3, 'the display was written only by the one Reveal and show');
+  check(writes.filter((r) => /\/api\/gm\/display/.test(r)).length >= 1, 'the display was written, by the GM\'s own taps (Show clocks on the iPad, Do it while it follows, Reveal and show): the sections above show it was never written between them');
   check(errors.length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));
   await c.close();
   await browser.close();

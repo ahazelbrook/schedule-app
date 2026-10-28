@@ -44,7 +44,7 @@
 
   /* ---------- 1. hearing it: the pre-filter (design 5.2) ----------
      Case-insensitive, and loose about what a speech-to-text engine hears ("tic that", "sick segment", "to" for two). It is allowed to over-match: the seat
-     decides, and a miss costs more than a call. The one case-sensitive pattern is a name after "called". */
+     decides, and a miss costs more than a call. The one case-sensitive pattern is a capitalised word after "tick". */
   var NUM = '(?:\\d{1,2}|one|won|two|to|too|three|four|for|five|six|sick|seven|eight|ate|nine|ten|eleven|twelve)';
   var PATTERNS = P.PATTERNS = [
     { intent: 'clock', re: new RegExp('\\b' + NUM + '[\\s-]*(?:segments?|ticks?|parts?|pieces?|slices?)\\b', 'i') },
@@ -56,7 +56,7 @@
     { intent: 'tick', re: /\b(?:advance|advances|advanced)\s+(?:that|the|it)\b/i },
     { intent: 'name', re: /\b(?:his|her|their|its)\s+name(?:'s|’s|s|\s+is|\s+was)\b/i },
     { intent: 'name', re: /\b(?:he|she|they|it)(?:'s|’s|s|\s+is)\s+(?:called|named|known\s+as)\b/i },
-    { intent: 'name', re: /\b(?:[Cc]alled|[Nn]amed|goes\s+by|[Nn]ame(?:'s|’s|\s+is))\s+[A-Z]/ },
+    { intent: 'name', re: /\b(?:called|named|goes\s+by|name(?:'s|’s|\s+is))\s+[A-Z]/i },       /* case-insensitive: a transcript can be all lowercase, so any word after "called" matches (the seat decides) */
     { intent: 'pool', re: new RegExp('\\b(?:level|lvl|lv)\\s*' + NUM + '\\s+harm\\b', 'i') },
     { intent: 'pool', re: new RegExp('\\b(?:take|takes|taking|took|mark|marks|marked|suffer|suffers|gain|gains|gets?|adds?)\\s+' + NUM + '\\s+(?:stress|harm|heat|coin|xp|trauma|rep)\\b', 'i') },
     { intent: 'pool', re: new RegExp('\\b(?:plus\\s+)?' + NUM + '\\s+(?:(?:more|extra|points?\\s+of|levels?(?:\\s+of)?)\\s+)?(?:stress|heat)\\b', 'i') },

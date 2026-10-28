@@ -51,10 +51,16 @@ await test('1. match: chatter does not match', () => {
     'the lamp flickers', 'i would like another biscuit', 'are we on the roof now', 'she nods slowly', 'a quiet street', 'ok let me think']) assert.deepEqual(C.match(s), [], JSON.stringify(s));
   assert.deepEqual(C.match(null), []); assert.deepEqual(C.match(undefined), []); assert.deepEqual(C.match(42), []);
 });
-await test('1. match: "called" needs a capital after it; a lowercase one is not a name being given', () => {
-  assert.deepEqual(C.match('what is it called again'), []);
-  assert.deepEqual(C.match('he called out to us'), []);
-  assert.ok(C.match('a man called Hobrik waits').includes('name'));
+await test('1. match: a name after "called" matches with a capital AND in an all-lowercase transcript', () => {
+  assert.ok(C.match('a man called Hobrik waits').includes('name'), 'capitalised');
+  assert.ok(C.match('a man called hobrik waits').includes('name'), 'lowercase');
+  assert.ok(C.match('A MAN CALLED HOBRIK WAITS').includes('name'), 'upper case');
+  assert.ok(C.match('a woman named orrin by the door').includes('name'), 'named, lowercase');
+  assert.ok(C.match('a woman named Orrin by the door').includes('name'), 'named, capitalised');
+  assert.ok(C.match('the porter goes by pell').includes('name'), 'goes by, lowercase');
+  assert.ok(C.match("and the name's wynne").includes('name'), "name's, lowercase");
+  assert.ok(C.match('what is it called again').includes('name'), 'permissive by design: any word after "called" passes, the seat decides');
+  assert.deepEqual(C.match('it was called'), [], 'called at the end of the line has no name after it');
 });
 
 /* the model-made fixtures: every line was read by hand; the floors are what the patterns do on them, minus a margin */
