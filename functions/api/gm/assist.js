@@ -47,19 +47,19 @@
 //        reads all of it); wire {} -> item { kind: 'wire', text } (at most 240 characters). Each reads the last 5 minutes of talk. The ladder:
 //        Wire stops at 60% of the night's cap, Portrait and Prop at 85%, all at the cap (429); one of each at a time (429 busy). item is null
 //        when the seat refused, was cut off or gave nothing usable (logged, never shown). The page runs the gatekeeper on every item.
-//   POST /api/gm/assist/ask { q } -> { answer: { q, text, at } | null, spend, warnings?, errors? }    Ask Blade: the GM's typed question in the box
-//        (q is whitespace-squashed, 1-600 characters, else 400 before the database or the key). Seat `ask` (Opus, plain text, no schema) reads
+//   POST /api/gm/assist/ask { q } -> { answer: { q, at, kind, headline, bullets, say, secret, more, text } | null, spend, warnings?, errors? }    Ask Blade: the GM's typed question in the box
+//        (q is whitespace-squashed, 1-600 characters, else 400 before the database or the key). Seat `ask` (Opus, a JSON schema: kind, headline, bullets, say, secret, more) reads
 //        tonight's story (the Scribe's, appended after the cache breakpoint), the last 10 minutes of talk and the last two exchanges of the
-//        last 45 minutes (not the dismissed ones) (read from the log with json_extract), and answers for the GM's eyes only; nothing here reaches the iPad. The answer
-//        is kept to 4000 characters. Like Portrait and Prop it stops at 85% of the night's cap (429 with the cap or the ladder as the reason)
+//        last 45 minutes (not the dismissed ones) (read from the log with json_extract), and answers for the GM's eyes only; nothing here reaches the iPad. Every field is clipped in code (headline 90, 5 bullets of 120, say 600, secret 300, more 900); text is their plain rendering
+//        (secret marked), kept to 4000 characters, and is what askHistory and gm:after read. Like Portrait and Prop it stops at 85% of the night's cap (429 with the cap or the ladder as the reason)
 //        and runs one at a time (429 busy). answer is null when there is no assist part (with a warning), the seat refused, was cut off
-//        or said nothing. One row is logged (seat 'ask', card { ask: 1, q, text, shown: 0 }); GET /cards hands the last 10 back as `asks`.
+//        or said nothing. One row is logged (seat 'ask', card { ask: 1, q, ...fields, text, shown: 0 }); GET /cards hands the last 10 back as `asks`, with the fields (an old row without them is { headline: text }).
 //   POST /api/gm/assist/board {} -> { item: { kind: 'board', title, text, at } | null }   the case board, from the Mystery keeper's latest
 //        known and theories (what the players said aloud). Code only: no model, no key, no spend, and it runs at any tier.
 //   POST /api/gm/assist/portrait-add { name, description?, spec } -> { id, doc }   saves a portrait as an app NPC through checkNpc/writeNpc,
 //        always HIDDEN (revealed: false, whatever is sent); showing it to the players is the normal reveal flow.
 //   GET  /api/gm/assist/cards?session=&since= -> { cards, updates, asks }   tonight's shown cards, open Ledger updates and Ask Blade answers
-//        (last 12 h unless `since`; asks: [{ row, at, q, text, kept }], the last 10, oldest first), so a reloaded GM page restores its chat.
+//        (last 12 h unless `since`; asks: [{ row, at, q, text, kind, headline, bullets, say, secret, more, kept }], the last 10, oldest first), so a reloaded GM page restores its chat.
 //        Dismissed cards, finished updates and dismissed asks are left out. No model, no key.
 //   POST /api/gm/assist/cards { op: 'seen'|'dismiss'|'keep', items: [{ at, text, key? }] } -> { marked }   the box's marks, kept on the
 //        log row (functions/_lib/assist/cards.js); an Ask Blade answer is named by its question (`text` is the q). A card is shown once (`shown: 1` on its row); the log is also what gm:after files.
@@ -110,7 +110,7 @@ import { SEATS, WAKES } from '../../_lib/assist/seats.js';
 import { cleanItem, verdictOf, unknownVerdict } from '../../_lib/assist/gatekeeper.js';
 import { checkNpc, newNpcId, writeNpc } from '../../_lib/npcs.js';
 import { toPortrait, toProp, toWire, buildBoard, boardSource, cleanName, cleanAsk, cleanVocab } from '../../_lib/assist/screen.js';
-import { portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN, SCREEN_NAME_MAX, askUser, clipAnswer, ASK_MAX, ASK_WINDOW_MIN, ASK_HISTORY, ASK_HISTORY_MIN, ASK_HISTORY_ANSWER_MAX } from '../../_lib/assist/prompts.js';
+import { portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN, SCREEN_NAME_MAX, askUser, cleanAskFields, clerkUser, CLERK_KNOWN_MAX, CLERK_NAME_MAX, ASK_MAX, ASK_WINDOW_MIN, ASK_HISTORY, ASK_HISTORY_MIN, ASK_HISTORY_ANSWER_MAX } from '../../_lib/assist/prompts.js';
 import { gatekeeperUser, ITEM_MAX, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX,
   STORY_SEATS, storyBlock, scribeUser, SCRIBE_SLICE_MAX, SCRIBE_FIRST_MIN, MEANWHILE_MIN, meanwhileUser, cleanClocks, silenceUser } from '../../_lib/assist/prompts.js';
 import { DEFAULT_CAP, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS, isListening, silenceFlag } from '../../_lib/assist/conductor.js';
@@ -270,6 +270,28 @@ async function lastKnown(db, campaign, now) {
   const out = r ? (parseJson(r.card, {}) || {}).out : null;
   const known = out && Array.isArray(out.known) ? out.known : [];
   return known.filter((k) => typeof k === 'string' && k.trim()).slice(0, KNOWN_MAX).map((k) => k.replace(/\s+/g, ' ').trim().slice(0, KNOWN_ITEM_MAX));
+}
+
+const NPC_RECENT_MS = 12 * 60 * 60 * 1000;   // an NPC row touched this recently counts as already in the cast
+
+/**
+ * Names the Clerk should not raise again: the new_names it reported tonight, plus the names (and aliases) of NPC rows updated in the last
+ * 12 hours. json_each / json_extract keep the parsing in D1; the Worker only trims and dedupes a short list.
+ */
+async function clerkKnown(db, campaign, now) {
+  const since = new Date(now - NIGHT_MS).toISOString(), npcSince = new Date(now - NPC_RECENT_MS).toISOString();
+  const { results } = await db.prepare(
+    "SELECT j.value AS n FROM gm_assist_log l, json_each(json_extract(l.card, '$.out.new_names')) j WHERE l.campaign = ?1 AND l.at >= ?2 AND l.seat = 'clerk' AND l.card IS NOT NULL AND json_type(l.card, '$.out.new_names') = 'array' " +
+    "UNION SELECT json_extract(doc, '$.name') FROM npcs WHERE campaign = ?1 AND deleted = 0 AND updated_at >= ?3 " +
+    "UNION SELECT json_extract(doc, '$.alias') FROM npcs WHERE campaign = ?1 AND deleted = 0 AND updated_at >= ?3 LIMIT 60").bind(campaign, since, npcSince).all();
+  const seen = new Set(), out = [];
+  for (const r of results || []) {
+    const n = typeof r.n === 'string' ? r.n.replace(/\s+/g, ' ').trim().slice(0, CLERK_NAME_MAX) : '';
+    if (!n || seen.has(n.toLowerCase())) continue;
+    seen.add(n.toLowerCase()); out.push(n);
+    if (out.length >= CLERK_KNOWN_MAX) break;
+  }
+  return out;
 }
 
 /** The Scribe's last saved story tonight: { story, through (seq of the last line it read), session } or null. json_extract keeps the parsing in D1. */
@@ -519,11 +541,12 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const at = new Date(now()).toISOString();
       if (fileMissing) return json({ answer: null, spend: spend(), warnings });                // nothing was billed or logged: the file is gone
       // run() nulls r.json only: a refusal or a reply cut off at the limit shows nothing, whatever text came with it
-      const text = r && r.stop !== 'refusal' && r.stop !== 'max_tokens' ? clipAnswer(r.text) : '';
+      const fields = r && r.stop !== 'refusal' && r.stop !== 'max_tokens' ? cleanAskFields(r.json) : null;
+      const text = fields ? fields.text : '';
       const session = recent.length ? recent[recent.length - 1].session : sr ? sr.session : '';
       await logRow(db, campaign, { at, session, seat: 'ask', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['ask'], timing,
-        card: { ask: 1, q: askQ, text, shown: 0, ...(text ? {} : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : r && r.stop === 'max_tokens' ? 'cut off' : 'no text' }) } }).run();
-      return json({ answer: text ? { q: askQ, text, at } : null, spend: spend(), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
+        card: { ask: 1, q: askQ, ...(fields || {}), text, shown: 0, ...(text ? {} : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : r && r.stop === 'max_tokens' ? 'cut off' : 'no JSON' }) } }).run();
+      return json({ answer: fields ? { q: askQ, at, ...fields } : null, spend: spend(), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}) });
     }
 
     if (action[1] === 'gatekeeper') {
@@ -669,6 +692,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
         turns.mystery = mysteryUser({ stamp: hhmm(t0), talk: formatLines(wide.filter((l) => Date.parse(l.at) >= from), speakers), known: await lastKnown(db, campaign, t0) });
       }
     }
+    let clerkNames = [];
+    if (wake.includes('clerk')) { clerkNames = await clerkKnown(db, campaign, t0); turns.clerk = clerkUser({ known: clerkNames, stamp: hhmm(t0), talk: recentText }); }
     if (scribeTurn) turns.scribe = scribeTurn;
     // each woken seat is on its own deadline: a slow one cannot hold the others' cards. A seat another request took meanwhile is skipped, not an error.
     const settled = await Promise.allSettled(wake.map((name) => run(name, name === 'voice' ? voiceTurn : turns[name] || user)));
@@ -683,7 +708,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const vx = all.find((x) => x.name === 'voice'), sx = all.find((x) => x.name === 'stall'), results = all.filter((x) => !['voice', 'stall', 'scribe', 'meanwhile'].includes(x.name));
 
     const recent = await shownCards(db, campaign, t0);
-    const candidates = results.map((x) => (x.r ? toCandidate(x.name, x.r.json, { recent, now: t0 }) : null));
+    const candidates = results.map((x) => (x.r ? toCandidate(x.name, x.r.json, { recent, now: t0, known: clerkNames }) : null));
     // a Ref card held back earlier waits in the log; it competes with this tick's own until it goes stale
     const pending = pendingRefs(held || await heldRefs(db, campaign, t0), { recent, now: t0 });
     const edit = merge(candidates.concat(pending), { now: t0, lastShownAt: await lastShown(db, campaign, t0), lastRefShownAt: await lastRefShown(db, campaign, t0) });

@@ -36,6 +36,14 @@ export function showrunnerUser({ stamp, talk }) {
   return 'Talk of the last ' + SHOWRUNNER_MIN + ' minutes, up to ' + stamp + ' (earlier talk is not shown):\n' + talk;
 }
 
+export const CLERK_KNOWN_MAX = 30;           // names handed back to the Clerk
+export const CLERK_NAME_MAX = 60;
+
+/** The Clerk turn: the names already noted tonight (may be empty), then the last minutes of talk (the tick's own turn). */
+export function clerkUser({ known = [], stamp, talk }) {
+  return (known.length ? "Already noted tonight (don't raise again): " + known.join(', ') + '\n' : '') + 'Last four minutes, up to ' + stamp + ':\n' + talk;
+}
+
 /** The Mystery turn: what the seat reported known earlier (short list, may be empty), then the last MYSTERY_MIN minutes of talk. */
 export function mysteryUser({ stamp, talk, known = [] }) {
   return (known.length ? 'You reported these as known earlier tonight (already learned):\n' + known.map((k) => '- ' + k).join('\n') + '\n' : '') +
@@ -164,4 +172,45 @@ export function askUser({ q, history = [], stamp, talk }) {
     ? 'Earlier this session, the GM asked and you answered (newest last):\n' + history.map((h) => 'GM: ' + h.q + '\nYou: ' + String(h.text || '').slice(0, ASK_HISTORY_ANSWER_MAX)).join('\n\n') + '\n\n'
     : '';
   return earlier + 'Talk of the last ' + ASK_WINDOW_MIN + ' minutes, up to ' + stamp + ':\n' + (talk || '(nothing heard)') + '\n\nThe GM asks: ' + q;
+}
+
+// ---------- Ask Blade's fields ----------
+export const ASK_KINDS = ['rule', 'say', 'idea', 'npc', 'recap', 'other'];
+export const ASK_HEADLINE_MAX = 90;         // characters (the instructions ask for under 12 words; the Worker enforces this)
+export const ASK_BULLETS_MAX = 5;
+export const ASK_BULLET_MAX = 120;
+export const ASK_SAY_MAX = 600;
+export const ASK_SECRET_MAX = 300;
+export const ASK_MORE_MAX = 900;
+
+const oneLine = (v, max) => cutTo(String(typeof v === 'string' ? v : '').replace(/\s+/g, ' ').trim(), max);
+const block = (v, max) => cutTo(String(typeof v === 'string' ? v : '').replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(), max);
+function cutTo(s, max) { return s.length <= max ? s : s.slice(0, max - 1).trimEnd() + '…'; }
+
+/**
+ * The Ask seat's JSON -> { kind, headline, bullets, say, secret, more, text } or null when every field is empty. Each field is clipped here, in code:
+ * headline 90, at most 5 bullets of 120, say 600, secret 300, more 900. An unknown kind reads as 'other'. text is the plain rendering of the fields
+ * (secret marked "(secret)"), the one string askHistory, gm:after and the restore path read.
+ */
+export function cleanAskFields(json) {
+  if (!json || typeof json !== 'object') return null;
+  const bullets = (Array.isArray(json.bullets) ? json.bullets : []).map((b) => oneLine(b, ASK_BULLET_MAX)).filter(Boolean).slice(0, ASK_BULLETS_MAX);
+  const f = {
+    kind: ASK_KINDS.includes(json.kind) ? json.kind : 'other',
+    headline: oneLine(json.headline, ASK_HEADLINE_MAX), bullets,
+    say: block(json.say, ASK_SAY_MAX), secret: block(json.secret, ASK_SECRET_MAX), more: block(json.more, ASK_MORE_MAX),
+  };
+  if (!f.headline && !f.bullets.length && !f.say && !f.secret && !f.more) return null;
+  return { ...f, text: askText(f) };
+}
+
+/** The fields as plain text: headline, bullets, the read-aloud block, the secret (marked), the rest. */
+export function askText(f) {
+  const parts = [];
+  if (f.headline) parts.push(f.headline);
+  if (f.bullets && f.bullets.length) parts.push(f.bullets.map((b) => '- ' + b).join('\n'));
+  if (f.say) parts.push('Say: ' + f.say);
+  if (f.secret) parts.push('(secret) ' + f.secret);
+  if (f.more) parts.push(f.more);
+  return clipAnswer(parts.join('\n\n'));
 }

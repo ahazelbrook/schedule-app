@@ -161,7 +161,7 @@ async function setup({ env = {}, stt = null } = {}) {
   if (stt) await db.prepare('INSERT INTO gm_stt (campaign, updated_at, doc) VALUES (?1, ?2, ?3)').bind('c', iso(clock.t), JSON.stringify(stt)).run();
   const calls = [], replies = REPLIES();
   const handler = makeHandler({ clientFor: () => fakeClient(replies, calls), now: () => clock.t });
-  const e = { DB: db, CAMPAIGN: 'c', ANTHROPIC_API_KEY: 'sk-ant-test-0000', ...env };
+  const e = { DB: db, CAMPAIGN: 'c', ANTHROPIC_API_KEY: 'sk-ant-test-0000', ASSIST_CAP_USD: '20', ...env };
   let n = 0;
   const lines = (count, { ago = 20_000, session = '3', text = 'we move on the quay now' } = {}) => addLines(db, 'c', cleanLines({ lines: Array.from({ length: count }, (_, i) => ({ id: 'l' + (++n), at: iso(clock.t - ago + i), session, conn: 'x', speaker: 0, text: text + ' ' + n, kind: 'line' })) }));
   const post = (body = {}) => handler({ request: new Request('https://blades.example.test/api/gm/assist/tick', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }), env: e, data: { me: GM } });

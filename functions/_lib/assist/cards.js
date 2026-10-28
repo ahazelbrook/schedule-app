@@ -27,7 +27,7 @@ const str = (v) => (typeof v === 'string' ? v : '');
  *   opts.all      include dismissed cards and finished Ledger items (gm:after files everything shown)
  * -> { cards: [{ row, seat, at, text, detail?, important, seen, kept, filed, dismissed }],
  *      updates: [{ row, i, seat: 'ledger', at, key, text }],
- *      asks: [{ row, at, q, text, kept }] }      Ask Blade's answers, oldest first, the last ASKS_MAX only
+ *      asks: [{ row, at, q, text, kind, headline, bullets, say, secret, more, kept }] }      Ask Blade's answers, oldest first, the last ASKS_MAX only
  */
 export async function nightCards(db, campaign, { since, now = Date.now(), session, all = false } = {}) {
   const from = since || new Date(now - NIGHT_MS).toISOString();
@@ -56,13 +56,20 @@ export async function nightCards(db, campaign, { since, now = Date.now(), sessio
   return { cards, updates, asks: await nightAsks(db, campaign, from, all) };
 }
 
+/** The fields of an ask row; a row from before the fields existed has only its text, which becomes the headline. */
+function askFields(c) {
+  const has = typeof c.headline === 'string' || Array.isArray(c.bullets) || typeof c.say === 'string';
+  if (!has) return { kind: 'other', headline: str(c.text), bullets: [], say: '', secret: '', more: '' };
+  return { kind: str(c.kind) || 'other', headline: str(c.headline), bullets: Array.isArray(c.bullets) ? c.bullets.filter((b) => typeof b === 'string') : [], say: str(c.say), secret: str(c.secret), more: str(c.more) };
+}
+
 /** Ask Blade's answers since `from` (a separate small query: an ask row is never a shown card), oldest first, the last ASKS_MAX. */
 async function nightAsks(db, campaign, from, all) {
   const { results } = await db.prepare("SELECT id, at, card FROM gm_assist_log WHERE campaign = ?1 AND at >= ?2 AND seat = 'ask' AND card IS NOT NULL AND json_extract(card, '$.ask') = 1 AND COALESCE(json_extract(card, '$.text'), '') != '' ORDER BY id DESC LIMIT " + LIMIT).bind(campaign, from).all();
   const out = [];
   for (const r of results || []) {
     const c = parse(r.card); if (!c || !str(c.text).trim() || (!all && c.dismissed === 1)) continue;
-    out.push({ row: r.id, at: r.at, q: str(c.q), text: str(c.text), kept: c.kept === 1 });
+    out.push({ row: r.id, at: r.at, q: str(c.q), text: str(c.text), ...askFields(c), kept: c.kept === 1 });
     if (out.length >= ASKS_MAX) break;
   }
   return out.reverse();
