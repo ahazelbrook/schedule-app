@@ -5,8 +5,13 @@
 import assert from 'node:assert/strict';
 import Anthropic from '@anthropic-ai/sdk';
 import { melbourneHHMM, melbourneOffsetHours } from '../../functions/_lib/assist/clock.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
+import { makeHandler } from '../../functions/api/gm/assist.js';
 import { cachedClient, clientCacheSize, callSeat, requestOptions } from '../../functions/_lib/assist/claude.js';
 
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 let failed = 0, passed = 0;
 async function test(name, fn) { try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); } }
 
@@ -31,7 +36,7 @@ await test('clock: equals Intl on 40,000 pseudo-random instants 2008-2060, and m
   assert.equal(melbourneOffsetHours(Date.parse('2026-12-01T00:00:00Z')), 11);
 });
 
-await test('client cache: one client per key, a different key gets its own, the key is not a map key, and the size stays bounded', () => {
+await test('client cache: one client per key, a different key gets its own, and the size stays bounded', () => {
   let built = 0;
   const make = (k) => { built++; return { k }; };
   const a = cachedClient('sk-test-aaaa', make), a2 = cachedClient('sk-test-aaaa', make);
@@ -47,6 +52,23 @@ await test('client cache: the default is a real SDK client, shared, built from t
   const c = cachedClient('sk-test-real-0001'), c2 = cachedClient('sk-test-real-0001');
   assert.ok(c instanceof Anthropic); assert.equal(c, c2);
   assert.equal(c.apiKey, 'sk-test-real-0001');
+});
+
+await test('route: the default handler gets its client from the cache (built once, reused by the next request), with no model called', async () => {
+  const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });
+  const db = asD1(exec);                                       // no assist pack: the route answers before any model call
+  const env = { DB: db, CAMPAIGN: 'c', ANTHROPIC_API_KEY: 'sk-test-route-1' };
+  const h = makeHandler();                                     // the default clientFor, which is the one the Worker uses
+  const post = () => h({ request: new Request('https://blades.example.test/api/gm/assist/ask', { method: 'POST', body: JSON.stringify({ q: 'Where is the lantern?' }) }), env, data: { me: { role: 'gm', id: 'gm@example.test' } } });
+  const r1 = await post(); assert.equal(r1.status, 200);
+  const body = await r1.json(); assert.equal(body.answer, null); assert.ok(body.warnings && body.warnings.length, 'it stopped at the missing pack, before any call');
+  const size = clientCacheSize();
+  // the client for this key is already cached: asking for it again must not build one
+  const c = cachedClient('sk-test-route-1', () => { throw new Error('rebuilt'); });
+  assert.ok(c instanceof Anthropic);
+  await post();
+  assert.equal(clientCacheSize(), size, 'a second request adds no client');
+  assert.equal(cachedClient('sk-test-route-1', () => { throw new Error('rebuilt'); }), c);
 });
 
 await test('shared client: overlapping calls each carry their own timeout and signal; aborting one leaves the other', async () => {
