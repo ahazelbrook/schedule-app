@@ -732,7 +732,7 @@ await test('Ask Blade: the field is the first thing in the body, a 600-character
   const r = askRig(); const h = r.br.host.innerHTML;
   assert.ok(h.indexOf('id="as-ask"') > h.indexOf('class="as-body"') && h.indexOf('id="as-ask"') < h.indexOf('id="as-list"') && h.indexOf('id="as-ask"') < h.indexOf('id="as-fit"'), 'above the cards and the Fixer');
   assert.match(h, /<form class="as-ask" id="as-ask" data-as-form="ask"/);
-  assert.match(h, /<textarea id="as-ask-q" maxlength="600" rows="2" placeholder="Ask Blade: pitch three complications, write an epilogue for tonight…"/);
+  assert.match(h, /<textarea id="as-ask-q" maxlength="600" rows="2" placeholder="Ask Blade: a ruling, three ideas, a read-aloud…"/);
   assert.match(h, /<button type="submit" class="as-go" id="as-ask-go">Ask<\/button>/);
   assert.equal(GP.keyAction({ key: 'a', typing: true }), null, 'typing in the field does not open or close the box');
   assert.deepEqual(GP.keyAction({ key: 'Escape', typing: true }), { type: 'esc' }, 'Escape in a field only blurs it (the page), the box stays');
@@ -887,6 +887,77 @@ await test('Ask Blade: the helpers are plain, and the styles keep the answer to 
   assert.equal(P.askMoment({ at: ANS.at, q: ' q ', text: ' a \n b ' }), 'Blade, ask (' + P.hhmm(ANS.at) + '): q -> a b');
   const css = fs.readFileSync(path.join(ROOT, 'app', 'gm.css'), 'utf8');
   assert.match(css, /\.gm-assist \.as-answer \.as-text \{[^}]*white-space: pre-wrap/); assert.match(css, /\.gm-assist \.as-ask textarea \{[^}]*width: 100%[^}]*box-sizing: border-box/);
+});
+
+// ---------- the side panel's shell (P2): the glance grammar, the feed's chips, the header, the tab, U, Pin ----------
+await test('the glance grammar: every seat has a kind (rule, say, idea, done, warn, note), a glyph and a word; an unknown seat is a note', () => {
+  assert.deepEqual(['ref', 'fixer', 'mystery', 'showrunner', 'clerk', 'ledger', 'nobody'].map(P.kindOf), ['rule', 'say', 'idea', 'idea', 'note', 'note', 'note']);
+  assert.deepEqual(Object.keys(P.KIND), ['rule', 'say', 'idea', 'done', 'warn', 'note']);
+  for (const k of Object.keys(P.KIND)) assert.ok(P.KIND[k].glyph && P.KIND[k].word, k + ' has a glyph and a word: colour is never the only signal');
+  assert.deepEqual(P.FILTERS, ['all', 'rule', 'say', 'idea', 'done', 'note']);
+});
+await test('the feed: counts per kind, a filter keeps one kind newest first, the tab shows at most five pips of the unread, newest first', () => {
+  const cards = ['ref', 'clerk', 'ref', 'mystery', 'fixer', 'ref', 'clerk'].map((seat, i) => ({ id: 'c' + i, seat, at: '2026-01-01T10:0' + i + ':00Z', text: 't' + i, seen: i === 0 }));
+  assert.deepEqual(P.countsOf(cards), { all: 7, rule: 3, say: 1, idea: 1, done: 0, warn: 0, note: 2 });
+  assert.deepEqual(P.feedOf(cards, 'rule').map((c) => c.id), ['c5', 'c2', 'c0']);
+  assert.equal(P.feedOf(cards, 'all').length, 7); assert.deepEqual(P.feedOf(null, 'all'), []);
+  assert.deepEqual(P.pipsOf(cards), ['note', 'rule', 'say', 'idea', 'rule'], 'the unread, newest first, five of the six');
+  assert.deepEqual(P.pipsOf(cards.map((c) => ({ ...c, seen: true }))), []);
+  assert.equal(P.headline('x'.repeat(300)).length, 140);
+});
+await test('the header: the state word (Listening, Paused, Off, Not set up) and the spend meter (mustard from 60%, red from 85%)', () => {
+  assert.deepEqual(P.stateOf({ listening: true }), { key: 'on', word: 'Listening' });
+  assert.equal(P.stateOf({ listening: false }).word, 'Paused'); assert.equal(P.stateOf({ paused: 'busy' }).word, 'Paused');
+  assert.equal(P.stateOf({ paused: 'cap' }).word, 'Off'); assert.equal(P.stateOf({ spend: { tier: 'off' }, listening: true }).word, 'Off');
+  assert.equal(P.stateOf({ paused: 'setup' }).word, 'Not set up'); assert.equal(P.stateOf({ setup: true, listening: true }).word, 'Not set up');
+  assert.equal(P.stateOf({}).word, 'Waiting');
+  assert.deepEqual(P.meterOf({ tonight: 3.4, cap: 30 }), { cells: 1, tone: 'ok', frac: 3.4 / 30 });
+  assert.equal(P.meterOf({ tonight: 18, cap: 30 }).tone, 'mid'); assert.equal(P.meterOf({ tonight: 25.5, cap: 30 }).tone, 'warn');
+  assert.equal(P.meterOf({ tonight: 30, cap: 30 }).cells, 5); assert.equal(P.meterOf(null).cells, 0); assert.equal(P.meterOf({ tonight: 1 }).cells, 0);
+});
+await test('the tab: the count, the pips and the unread kinds are drawn from the cards; the panel markup has every zone, in order, and the old ids', async () => {
+  const r = rig({ stored: { cards: [{ seat: 'ref', at: '2026-01-01T10:00:00Z', text: 'A slip.' }, { seat: 'mystery', at: '2026-01-01T10:01:00Z', text: 'An idea.' }], updates: [] } });
+  await r.ctl.ready;
+  assert.equal(r.br.stub('#as-pips').innerHTML.match(/class="as-pip"/g).length, 2);
+  assert.match(r.br.stub('#as-pips').innerHTML, /data-kind="idea"[^>]*><\/i><i class="as-pip" data-kind="rule"/, 'newest first');
+  const h = r.br.host.innerHTML, at = (s) => h.indexOf(s);
+  const order = ['class="as-head"', 'id="as-now"', 'id="as-ask"', 'id="as-chips"', 'id="as-list"', 'id="as-tools"', 'id="as-fit"', 'id="as-screen"'].map(at);
+  assert.ok(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1])), 'header, Now, Ask, chips, feed, Tools (Fit it, Screen): ' + order);
+  assert.match(h, /id="as-launch"/); assert.match(h, /<details class="as-tools" id="as-tools">/);
+});
+await test('Now: the newest unread card is open for 1.5 s once the panel opens, then it is only in the feed', async () => {
+  const r = rig({ stored: { cards: [{ seat: 'ref', at: '2026-01-01T10:00:00Z', text: 'Older slip.' }, { seat: 'ref', at: '2026-01-01T10:01:00Z', text: 'Newest slip.' }], updates: [] } });
+  await r.ctl.ready;
+  assert.match(r.br.stub('#as-now').innerHTML, /Quiet/, 'closed: nothing is in Now');
+  r.ctl.open();
+  assert.match(r.br.stub('#as-now').innerHTML, /Newest slip/); assert.ok(!/Older slip/.test(r.br.stub('#as-now').innerHTML));
+  const t = r.timers.find((x) => x.ms === 1500); assert.ok(t, 'a 1.5 s timer');
+  t.f(); assert.match(r.br.stub('#as-now').innerHTML, /Quiet/); assert.match(r.br.stub('#as-list').innerHTML, /Newest slip/, 'still in the feed');
+});
+await test('mock cards (o.mock) are labelled examples with no actions, never counted, and off unless asked for; real cards replace them', async () => {
+  const off = rig(); assert.ok(!/example/.test(off.br.stub('#as-list').innerHTML) && /Nothing yet/.test(off.br.stub('#as-list').innerHTML), 'off by default: the empty feed says so');
+  const on = rig({ mock: true }); const h = on.br.stub('#as-list').innerHTML;
+  assert.equal((h.match(/data-mock/g) || []).length, 3); assert.ok(!/data-as="keep"|data-as="ack"/.test(h), 'an example has no Keep and no Got it, so nothing invented reaches the capture bar');
+  assert.equal(on.ctl.state().cards.length, 0); assert.equal(on.ctl.state().unread, 0);
+  assert.match(h, /data-kind="rule"/); assert.match(h, /data-kind="idea"/); assert.match(h, /data-kind="done"/);
+  const real = rig({ mock: true, stored: { cards: [{ seat: 'ref', at: '2026-01-01T10:00:00Z', text: 'A real slip.' }], updates: [] } }); await real.ctl.ready;
+  assert.ok(!/data-mock/.test(real.br.stub('#as-list').innerHTML) && /A real slip/.test(real.br.stub('#as-list').innerHTML));
+});
+await test('U is wired to undoNewest, a no-op until C2; Pin is refused when the window is too narrow, and the page maps U to it', async () => {
+  const r = rig(); assert.equal(typeof r.ctl.undoNewest, 'function'); assert.equal(await r.ctl.undoNewest(), null);
+  r.ctl.open(); r.ctl.pin(); assert.equal(r.ctl.isPinned(), false, 'a fake window is under 1600 px: no dock');
+  assert.deepEqual(GP.keyAction({ key: 'u' }), { type: 'undo' }); assert.equal(GP.keyAction({ key: 'u', typing: true }), null);
+  const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  assert.ok(/a\.type === 'undo'[^}]*undoNewest/.test(page), 'the page calls undoNewest'); assert.ok(/\[jku\]/.test(page), 'J, K and U inside the panel are the panel\'s, not the page\'s');
+});
+await test('the shell\'s CSS: tokens for the six kinds on #gm-page and on the panel (light and dark), a 400 px panel (min 360, max 33vw), no slide under reduced motion, a fourth column when docked', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'app', 'gm.css'), 'utf8');
+  assert.match(css, /#gm-page, \.gm-assist \{[^}]*--k-rule: #3f62c4;[^}]*--k-idea: var\(--mustard\)/);
+  assert.equal((css.match(/--k-rule: #8fa3dd/g) || []).length, 2, 'the dark blue under the media query and under data-theme');
+  assert.match(css, /--as-w: max\(360px, min\(400px, 33vw\)\)/);
+  assert.match(css, /transition: transform \.18s ease-out/); assert.match(css, /prefers-reduced-motion: reduce\) \{ \.gm-assist \.as-panel, \.gm-assist \.as-panel\[hidden\] \{ transition: none/);
+  assert.match(css, /body\.as-dock\.gm-app #gm-page \.gm-main \{[^}]*var\(--as-w\)/);
+  assert.ok(!/\.gm-assist [^{]*\{[^}]*font(-size)?: [^;}]*\b(9|10|10\.5|11|11\.5)(px|\/)/.test(css.slice(css.indexOf('Blade, the side panel'))), 'nothing in the panel is under 12 px');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

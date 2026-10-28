@@ -1,7 +1,15 @@
-/* B68GmAssist — "Claude at the table", the GM page's chat box (build plan Phase 1; functions/api/gm/assist.js is the server side).
-   A round launcher fixed to the bottom right with the table agent's portrait and a count of unread cards; a card that arrives pops
-   a banner beside it for 12 s. Open, it is a small chat: the cards as bubbles (rule slips, clerk notes), the Ledger's updates, and
-   "Fit it" for the Fixer. Plain script, UMD: window.B68GmAssist in the browser, module.exports under Node.
+/* B68GmAssist — "Claude at the table", the GM page's Blade side panel (build plan Phase 1; functions/api/gm/assist.js is the server side).
+   Closed, it is a 44 px tab on the right edge between the top bar and the capture bar: the table agent's portrait, the count of unread
+   cards and up to five coloured pips (one per unread card, by kind, newest on top); a card that arrives pops a banner beside it for 12 s.
+   Open, it is a panel 400 px wide (at least 360, at most 33vw) that slides in over the page (a transform, 180 ms; none under
+   prefers-reduced-motion). At >= 1600 px Pin docks it as a fourth .gm-main column (body.as-dock). Under 600 px it is not drawn.
+   Top to bottom: the header (the state as a dot and a word, the spend with a five-cell meter, the three seats' health dots, Pin, close),
+   Now (the newest unread card, open, for 1.5 s once the panel is open), the Ask bar, the feed (filter chips with counts, then the cards
+   newest first, each folded to one 44 px line; an "Earlier tonight" divider after 30 minutes) and the Tools drawer at the foot (Fit it,
+   the Screen, the Ledger's updates). A card has a kind (rule, say, idea, done, warn, note) with a colour, a glyph and a word.
+   Keys: A toggles (the page), Esc closes (not while typing), J / K move between the feed's cards, Enter folds or unfolds the focused
+   card, U undoes the newest done card (ctl.undoNewest(), a no-op until C2). J, K and U count only with the focus inside the panel.
+   Plain script, UMD: window.B68GmAssist in the browser, module.exports under Node.
 
    GM only, by construction: gm-page.js creates it once the GM's page is ready and destroys it on close, so the player and display
    pages never see it. It calls exactly these on window.claude.gm: stt() (is Listening on), assistTick(), assistFit(), and
@@ -25,7 +33,11 @@
          dots      () -> 0-4 | null: the Dots chip's value; the "Fit it" form sends it as `dots` when set
          onNote    the page's capture: "Note it" on a Ledger update and "Keep" on a card file their text as a Moment (the update
                    itself changes no state)
-     ctl.open() / close() / toggle()      the box
+     ctl.open() / close() / toggle()      the panel
+     ctl.pin() / isPinned()               dock it as a column (>= 1600 px only; a no-op below) / is it docked now
+     ctl.undoNewest() -> Promise<null>    U: undo the newest done card (nothing to undo until C2)
+     ctl.relayout()                       measure the top bar and the capture bar again (the page calls it after it redraws its layout)
+         mock      true shows a few clearly labelled example cards (no Keep, no Got it) while there are no real ones: for looking at the shell only
      ctl.poll()      one polling decision now: Listening on, page visible, not paused -> one tick (resolves when done)
      ctl.fit(position, effect) -> Promise     the Fixer for a position (the "Fit it" form), with the draws from o.draws
      ctl.another({ npc, shown }) -> Promise<{ voice } | { error } | null>   one more Voice line (POST /gm/assist/another); null when the box cannot
@@ -76,6 +88,13 @@
   var POSITIONS = ['controlled', 'risky', 'desperate'];
   var SEAT = { ref: 'Rule slip', clerk: 'Clerk', fixer: 'Fixer', ledger: 'Ledger', mystery: 'Mystery', showrunner: 'Pacing' };
   var TIER = { all: 'Full', reduced: 'Reduced', core: 'Core only', off: 'Off: cap reached' };
+  /* the glance grammar (design 3.2): every card has a kind, and a kind has a colour (CSS: --k-*), a glyph and a word, so colour is never alone */
+  var KINDS = ['rule', 'say', 'idea', 'done', 'warn', 'note'];
+  var KIND = { rule: { glyph: '⚙', word: 'Rule' }, say: { glyph: '▶', word: 'Say' }, idea: { glyph: '✦', word: 'Idea' }, done: { glyph: '✓', word: 'Done' }, warn: { glyph: '⚠', word: 'Stop' }, note: { glyph: '·', word: 'Note' } };
+  var SEAT_KIND = { ref: 'rule', fixer: 'say', mystery: 'idea', showrunner: 'idea', clerk: 'note', ledger: 'note' };
+  var FILTERS = ['all'].concat(KINDS.filter(function (k) { return k !== 'warn'; }));   /* All, Rule, Say, Idea, Done, Note: a warn is rare and always shows under All */
+  var PIPS_MAX = 5, EARLIER_MS = 30 * 60 * 1000, FOLD_CHARS = 140, NOW_MS = 1500;
+  var PIN_MIN = 1600;
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
@@ -115,6 +134,47 @@
     return '$' + sp.tonight.toFixed(2) + (typeof sp.cap === 'number' ? ' of $' + sp.cap.toFixed(0) : '');
   }
   P.tierLabel = tierLabel; P.spendLine = spendLine;
+
+  /* a seat's card -> its kind (anything unknown is a note) */
+  function kindOf(seat) { return SEAT_KIND[str(seat)] || 'note'; }
+  P.kindOf = kindOf; P.KIND = KIND; P.FILTERS = FILTERS;
+  /* the feed's chip counts: { all, rule, say, idea, done, warn, note } */
+  function countsOf(cards) {
+    var n = { all: 0 }; KINDS.forEach(function (k) { n[k] = 0; });
+    (Array.isArray(cards) ? cards : []).forEach(function (c) { n.all++; n[kindOf(c && c.seat)]++; });
+    return n;
+  }
+  P.countsOf = countsOf;
+  /* the cards a filter shows, newest first (All shows every kind, a warn among them) */
+  function feedOf(cards, filter) {
+    return (Array.isArray(cards) ? cards : []).filter(function (c) { return !filter || filter === 'all' || kindOf(c && c.seat) === filter; }).slice().reverse();
+  }
+  P.feedOf = feedOf;
+  /* the tab's pips: the kinds of the unread cards, newest first, at most five */
+  function pipsOf(cards) {
+    return (Array.isArray(cards) ? cards : []).filter(function (c) { return !c.seen; }).reverse().slice(0, PIPS_MAX).map(function (c) { return kindOf(c.seat); });
+  }
+  P.pipsOf = pipsOf;
+  /* the header's state, as a word: Listening, Paused (not listening, or busy), Off (the cap), Not set up */
+  function stateOf(st) {
+    st = isObj(st) ? st : {};
+    if (st.paused === 'setup' || (st.setup && st.paused !== 'cap')) return { key: 'setup', word: 'Not set up' };
+    if (st.paused === 'cap' || (isObj(st.spend) && st.spend.tier === 'off')) return { key: 'off', word: 'Off' };
+    if (st.paused === 'busy' || st.listening === false) return { key: 'paused', word: 'Paused' };
+    if (st.listening === true) return { key: 'on', word: 'Listening' };
+    return { key: 'wait', word: 'Waiting' };
+  }
+  P.stateOf = stateOf;
+  /* the spend meter: five cells, filled in fifths of the cap; the colour steps at 60% and 85% */
+  function meterOf(sp) {
+    if (!isObj(sp) || typeof sp.tonight !== 'number' || typeof sp.cap !== 'number' || sp.cap <= 0) return { cells: 0, tone: 'ok', frac: 0 };
+    var f = Math.max(0, Math.min(1, sp.tonight / sp.cap));
+    return { cells: f > 0 ? Math.max(1, Math.round(f * 5)) : 0, tone: f >= 0.85 ? 'warn' : f >= 0.6 ? 'mid' : 'ok', frac: f };
+  }
+  P.meterOf = meterOf;
+  /* a card's folded line: one line of its text, cut with an ellipsis */
+  function headline(text) { return clip(text, FOLD_CHARS); }
+  P.headline = headline;
 
   /* the Fixer's answer as the five lines the GM reads aloud, in the order the dice are read */
   function fitLines(card) {
@@ -271,8 +331,9 @@
     o = o || {};
     var gm = o.gm, doc = o.doc || (W && W.document), win = o.win || W;
     var st = { open: false, cards: [], updates: [], asks: [], after: null, spend: null, paused: '', error: '', setup: false, listening: null, checkedAt: '', busy: false,
-      fit: { busy: false, error: '', card: null }, screen: { busy: {}, error: '' }, ask: { busy: false, error: '' } };
-    var host = null, timer = null, bannerT = null, gone = false, bannerCard = null;
+      fit: { busy: false, error: '', card: null }, screen: { busy: {}, error: '' }, ask: { busy: false, error: '' },
+      pinned: false, filter: 'all', unfolded: {}, nowId: '', since: '', chipSig: '' };
+    var host = null, timer = null, bannerT = null, nowT = null, gone = false, bannerCard = null;
     var avatar = o.avatar || 'gm/blade.svg';
     var bannerMs = o.bannerMs || BANNER_MS;
     var setI = o.setInterval || (win && win.setInterval && win.setInterval.bind(win)), clrI = o.clearInterval || (win && win.clearInterval && win.clearInterval.bind(win));
@@ -297,60 +358,120 @@
     }
 
     /* ---------- drawing ---------- */
+    function dockable() { try { return !!(win && win.matchMedia && win.matchMedia('(min-width: ' + PIN_MIN + 'px)').matches); } catch (e) { return false; } }
+    function docked() { return st.open && st.pinned && dockable() && !isPhone(); }
+    function bodyClass(c, on) { var b = doc && doc.body; if (b && b.classList && typeof b.classList.toggle === 'function') { try { b.classList.toggle(c, !!on); } catch (e) {} } }
+    function applyState() {
+      if (!host) return;
+      var d = docked();
+      host.setAttribute('data-state', d ? 'pinned' : st.open ? 'open' : 'closed');
+      bodyClass('as-tab', true); bodyClass('as-dock', d);
+      var pin = q('#as-pin');
+      if (pin) { pin.setAttribute('aria-pressed', String(!!st.pinned)); pin.hidden = !dockable(); pin.title = st.pinned ? 'Unpin: Blade slides over the page again' : 'Pin: dock Blade as a column beside the page'; }
+    }
+    /* the bar's bottom and the capture bar's top, as custom properties on the host: the tab and the panel sit between them whatever their height */
+    var lay = { bar: null, foot: null, ro: null, raf: false };
+    function relayout() {
+      if (!host || gone) return;
+      var top = 0, bot = 0, bar = null, foot = null;
+      try {
+        bar = doc.querySelector ? doc.querySelector('.gm-bar') : null; foot = doc.querySelector ? doc.querySelector('#gm-foot') : null;
+        if (bar && bar.getBoundingClientRect) top = Math.max(0, Math.round(bar.getBoundingClientRect().bottom));
+        var vh = (win && win.innerHeight) || 0;
+        if (foot && foot.getBoundingClientRect && vh) { var r = foot.getBoundingClientRect(); if (r.height > 0 && r.top < vh && r.bottom > 0) bot = Math.max(0, Math.round(vh - r.top)); }
+      } catch (e) {}
+      if (host.style && typeof host.style.setProperty === 'function') { host.style.setProperty('--as-top', top + 'px'); host.style.setProperty('--as-bot', bot + 'px'); }
+      var RO = win && win.ResizeObserver;
+      if (RO && (bar !== lay.bar || foot !== lay.foot)) {
+        try { if (!lay.ro) lay.ro = new RO(function () { relayout(); }); lay.ro.disconnect(); if (bar) lay.ro.observe(bar); if (foot) lay.ro.observe(foot); } catch (e) {}
+        lay.bar = bar; lay.foot = foot;
+      }
+    }
+    function onResize() { applyState(); relayout(); render(); }
+    function onScroll() {
+      if (lay.raf || !win || !win.requestAnimationFrame) return;
+      lay.raf = true; win.requestAnimationFrame(function () { lay.raf = false; relayout(); });
+    }
     function build() {
       if (!doc || !doc.body) return;
       host = doc.createElement('div');
-      host.className = 'gm-assist'; host.setAttribute('data-assist', '');
+      host.className = 'gm-assist'; host.setAttribute('data-assist', ''); host.setAttribute('data-state', 'closed');
+      var HEALTH = [['T', 'Tripwire'], ['R', 'Ref'], ['V', 'Voice']];
       host.innerHTML =
         '<div class="as-banner" id="as-banner" hidden><button type="button" class="as-banner-b" data-as="banner"></button></div>' +
-        '<section class="as-panel" id="as-panel" role="dialog" aria-label="Blade, the table agent" hidden>' +
-          '<header class="as-head"><img class="as-av" src="' + esc(avatar) + '" alt="" width="40" height="40">' +
-            '<div class="as-who"><b tabindex="-1" id="as-name">Blade</b><small>at the table</small></div>' +
-            '<span class="as-tier" id="as-tier" hidden></span>' +
-            '<button type="button" class="as-x" data-as="close" aria-label="Close Blade"><span aria-hidden="true">×</span></button></header>' +
+        '<aside class="as-panel" id="as-panel" aria-label="Blade, the table agent" hidden>' +
+          '<header class="as-head"><div class="as-head-1"><img class="as-av" src="' + esc(avatar) + '" alt="" width="32" height="32">' +
+            '<div class="as-who"><b tabindex="-1" id="as-name">Blade</b><span class="as-state" id="as-state" data-state="wait"><i class="as-dot" aria-hidden="true"></i><span id="as-state-word">Waiting</span></span></div>' +
+            '<button type="button" class="as-pin" id="as-pin" data-as="pin" aria-pressed="false" hidden>Pin</button>' +
+            '<button type="button" class="as-x" data-as="close" aria-label="Close Blade (A)"><span aria-hidden="true">×</span></button></div>' +
+            '<div class="as-head-2"><span class="as-tier" id="as-tier" hidden></span><span class="as-meter" id="as-meter" aria-hidden="true"></span>' +
+              '<span class="as-health" id="as-health" role="group" aria-label="Seat health">' + HEALTH.map(function (h) {
+                return '<span class="as-hd" data-seat="' + h[1].toLowerCase() + '" data-health="unknown" title="' + h[1] + ': no reading yet"><b>' + h[0] + '</b><i aria-hidden="true"></i></span>'; }).join('') + '</span></div></header>' +
           '<p class="as-status" id="as-status" role="status"></p>' +
+          '<section class="as-now" id="as-nowz" aria-label="Now"><p class="as-zlab">Now</p><div id="as-now" aria-live="polite"></div></section>' +
           '<div class="as-body">' +
-            '<form class="as-ask" id="as-ask" data-as-form="ask" aria-label="Ask Blade"><p class="as-lab">Ask Blade: for your eyes only</p>' +
-              '<textarea id="as-ask-q" maxlength="' + ASK_MAX + '" rows="2" placeholder="Ask Blade: pitch three complications, write an epilogue for tonight…" autocomplete="off" aria-label="Ask Blade"></textarea>' +
-              '<button type="submit" class="as-go" id="as-ask-go">Ask</button>' +
+            '<form class="as-ask" id="as-ask" data-as-form="ask" aria-label="Ask Blade"><p class="as-lab as-sr">Ask Blade: for your eyes only</p>' +
+              '<div class="as-ask-row"><div class="as-ask-in"><textarea id="as-ask-q" maxlength="' + ASK_MAX + '" rows="2" placeholder="Ask Blade: a ruling, three ideas, a read-aloud…" autocomplete="off" aria-label="Ask Blade"></textarea></div>' +
+              '<button type="submit" class="as-go" id="as-ask-go">Ask</button></div>' +
+              '<div class="as-prog" id="as-prog" hidden></div>' +
               '<p class="as-status" id="as-ask-status" role="status" aria-live="polite"></p></form>' +
-            '<ul class="as-asks" id="as-asks" aria-label="Answers from Blade" aria-live="polite"></ul>' +
-            '<ol class="as-list" id="as-list" aria-label="Cards" aria-live="polite"></ol>' +
-            '<div id="as-updates"></div>' +
-            '<form class="as-fit" id="as-fit" data-as-form="fit"><p class="as-lab">Fit it: for the roll about to be made</p>' +
-              '<div class="as-pos" role="radiogroup" aria-label="Position">' + POSITIONS.map(function (p, i) {
-                return '<label><input type="radio" name="as-pos" value="' + p + '"' + (i === 1 ? ' checked' : '') + '><span>' + p + '</span></label>'; }).join('') + '</div>' +
-              '<input type="text" id="as-eff" maxlength="200" placeholder="Effect (optional)" autocomplete="off" aria-label="Effect (optional)">' +
-              '<button type="submit" class="as-go" id="as-go">Fit it</button></form>' +
-            '<div id="as-fitout" aria-live="polite"></div>' +
-            '<section class="as-screen" id="as-screen" aria-label="Screen"><p class="as-lab">Screen: nothing shows on the iPad until you tap Show in the Rack</p>' +
-              '<div class="as-sc-row"><input type="text" id="as-sc-name" maxlength="80" placeholder="NPC name (optional)" autocomplete="off" aria-label="NPC name (optional)">' +
-                '<button type="button" class="as-go" data-as="sc-portrait" id="as-sc-portrait">Draw them</button></div>' +
-              '<div class="as-sc-row"><input type="text" id="as-sc-ask" maxlength="200" placeholder="One-line ask (optional)" autocomplete="off" aria-label="Prop ask (optional)">' +
-                '<button type="button" class="as-go" data-as="sc-prop" id="as-sc-prop">Make the prop</button></div>' +
-              '<div class="as-sc-row"><button type="button" class="as-go" data-as="sc-wire" id="as-sc-wire">Wire</button><button type="button" class="as-go" data-as="sc-board" id="as-sc-board">Case board</button></div>' +
-              '<p class="as-status" id="as-sc-status" role="status" aria-live="polite"></p></section>' +
-          '</div></section>' +
+            '<div class="as-feed" id="as-feed">' +
+              '<ul class="as-asks" id="as-asks" aria-label="Answers from Blade" aria-live="polite"></ul>' +
+              '<div class="as-chips" id="as-chips" role="group" aria-label="Show cards of one kind"></div>' +
+              '<ol class="as-list" id="as-list" aria-label="Cards" aria-live="polite"></ol></div>' +
+            '<details class="as-tools" id="as-tools"><summary><span class="as-zlab">Tools</span><small>Fit it · Screen · Ledger</small><span class="as-tools-n" id="as-tools-n" hidden></span></summary><div class="as-tools-body">' +
+              '<div id="as-updates"></div>' +
+              '<form class="as-fit" id="as-fit" data-as-form="fit"><p class="as-lab">Fit it: for the roll about to be made</p>' +
+                '<div class="as-pos" role="radiogroup" aria-label="Position">' + POSITIONS.map(function (p, i) {
+                  return '<label><input type="radio" name="as-pos" value="' + p + '"' + (i === 1 ? ' checked' : '') + '><span>' + p + '</span></label>'; }).join('') + '</div>' +
+                '<input type="text" id="as-eff" maxlength="200" placeholder="Effect (optional)" autocomplete="off" aria-label="Effect (optional)">' +
+                '<button type="submit" class="as-go" id="as-go">Fit it</button></form>' +
+              '<div id="as-fitout" aria-live="polite"></div>' +
+              '<section class="as-screen" id="as-screen" aria-label="Screen"><p class="as-lab">Screen: nothing shows on the iPad until you tap Show in the Rack</p>' +
+                '<div class="as-sc-row"><input type="text" id="as-sc-name" maxlength="80" placeholder="NPC name (optional)" autocomplete="off" aria-label="NPC name (optional)">' +
+                  '<button type="button" class="as-go" data-as="sc-portrait" id="as-sc-portrait">Draw them</button></div>' +
+                '<div class="as-sc-row"><input type="text" id="as-sc-ask" maxlength="200" placeholder="One-line ask (optional)" autocomplete="off" aria-label="Prop ask (optional)">' +
+                  '<button type="button" class="as-go" data-as="sc-prop" id="as-sc-prop">Make the prop</button></div>' +
+                '<div class="as-sc-row"><button type="button" class="as-go" data-as="sc-wire" id="as-sc-wire">Wire</button><button type="button" class="as-go" data-as="sc-board" id="as-sc-board">Case board</button></div>' +
+                '<p class="as-status" id="as-sc-status" role="status" aria-live="polite"></p></section>' +
+            '</div></details>' +
+          '</div></aside>' +
         '<button type="button" class="as-launch" id="as-launch" data-as="toggle" aria-expanded="false" aria-controls="as-panel" title="Blade (A)">' +
-          '<img src="' + esc(avatar) + '" alt=""><span class="as-count" id="as-count" hidden></span></button>';
-      doc.body.appendChild(host);
+          '<img class="as-tab-av" src="' + esc(avatar) + '" alt="" width="32" height="32"><span class="as-count" id="as-count" hidden></span><span class="as-pips" id="as-pips" aria-hidden="true"></span><span class="as-tab-word" aria-hidden="true">Blade · A</span></button>';
+      /* beside the page, inside the site's .wrap when there is one: .wrap is a stacking context, so a host on <body> would sit above the top bar's
+         Menu and Find, which drop into the panel's place. A page without .wrap (a test's fake document) gets it on <body>. */
+      (doc.querySelector && doc.querySelector('.wrap') || doc.body).appendChild(host);
       host.addEventListener('click', onClick);
       host.addEventListener('submit', onSubmit);
       host.addEventListener('keydown', onKey);
-      render();
+      if (win && typeof win.addEventListener === 'function') { win.addEventListener('resize', onResize); win.addEventListener('scroll', onScroll, { passive: true }); }
+      render(); relayout();
     }
     function render() {
       if (!host) return;
       var n = unread(), cnt = q('#as-count'), lb = q('#as-launch');
       cnt.textContent = n > 9 ? '9+' : String(n); cnt.hidden = n === 0;
-      lb.setAttribute('aria-label', 'Blade' + (n ? ', ' + n + ' new' : ''));
+      lb.setAttribute('aria-label', 'Blade' + (n ? ', ' + n + ' new' : '') + ' (A)');
       lb.setAttribute('aria-expanded', String(st.open));
+      var pp = q('#as-pips'); if (pp) pp.innerHTML = pipsOf(st.cards).map(function (k) { return '<i class="as-pip" data-kind="' + k + '" title="' + esc(KIND[k].word) + '"></i>'; }).join('');
       q('#as-panel').hidden = !st.open;
+      applyState();
       var tier = q('#as-tier');
       var tl = st.spend ? tierLabel(st.spend.tier) : '';
       tier.hidden = !tl; tier.textContent = tl ? tl + (spendLine(st.spend) ? ' · ' + spendLine(st.spend) : '') : '';
       tier.setAttribute('data-tier', st.spend ? st.spend.tier : '');
-      renderStatus(); renderAsk(); renderList(); renderUpdates(); renderFit(); renderScreen();
+      renderHead(); renderStatus(); renderNow(); renderAsk(); renderChips(); renderList(); renderUpdates(); renderFit(); renderScreen();
+    }
+    function renderHead() {
+      var s = stateOf({ paused: st.paused, setup: st.setup, spend: st.spend, listening: st.listening }), el = q('#as-state'), w = q('#as-state-word');
+      if (el) el.setAttribute('data-state', s.key);
+      if (w) w.textContent = s.word;
+      var m = q('#as-meter');
+      if (m) {
+        var mo = meterOf(st.spend);
+        m.setAttribute('data-tone', mo.tone);
+        m.innerHTML = [0, 1, 2, 3, 4].map(function (i) { return '<i' + (i < mo.cells ? ' class="on"' : '') + '></i>'; }).join('');
+      }
     }
     function renderStatus() {
       var el = q('#as-status'); if (!el) return;
@@ -364,21 +485,76 @@
       el.innerHTML = esc(t) + (again ? ' <button type="button" class="as-link" data-as="resume">Check again</button>' : '');
       el.classList.toggle('bad', !!(st.paused || st.error));
     }
-    function renderList() {
-      var el = q('#as-list'); if (!el) return;
-      if (!st.cards.length) { el.innerHTML = '<li class="as-empty">Nothing yet. Blade speaks up only when there is something worth the table’s time.</li>'; return; }
-      el.innerHTML = st.cards.slice().reverse().map(function (c) {
-        var d = c.detail, cite = d && (d.rule || d.said_at) ? '<p class="as-cite">' + (d.rule ? esc(d.rule) : '') + (d.rule && d.said_at ? ' · ' : '') + (d.said_at ? 'said ' + esc(d.said_at) : '') + '</p>' : '';
-        var keep = c.kept ? '<span class="as-kept" title="Kept: filed as a Moment">★ Kept</span>'
-          : typeof o.onNote === 'function' ? '<button type="button" class="as-star" data-as="keep" data-id="' + esc(c.id) + '" aria-label="Keep this card: file it as a Moment">☆ Keep</button>' : '';
-        var flag = c.citeBad && c.citeBad.length ? '<span class="as-citeflag" title="The gatekeeper could not match this page cite to the rule: ' + esc(c.citeBad.join('; ')) + '">cite?</span>' : '';
-        var saved = c.important ? '<p class="as-saved">' + (c.filed ? 'Saved to campaign history' : 'In tonight’s log; gm:after files it to history') + '</p>' : '';
-        return '<li class="as-card" data-seat="' + esc(c.seat) + '"><div class="as-meta"><b>' + esc(SEAT[c.seat] || c.seat) + '</b><time>' + esc(hhmm(c.at)) + '</time>' + flag + keep +
-          '<button type="button" class="as-ack" data-as="ack" data-id="' + esc(c.id) + '" aria-label="Dismiss this card">Got it</button></div><p class="as-text">' + esc(c.text) + '</p>' + cite + saved + '</li>';
+    /* ---- the card: one component (folded to a line, or open); the Now zone shows the same card, open ---- */
+    var MOCKS = [
+      { id: 'mock-rule', seat: 'ref', text: 'Example rule slip: a placeholder that shows how a rule card looks.', cite: 'p.0' },
+      { id: 'mock-idea', seat: 'mystery', text: 'Example idea: a placeholder suggestion in the idea colour.' },
+      { id: 'mock-done', seat: 'ledger', kind: 'done', text: 'Example done: a placeholder for something Blade did, with Undo.' }
+    ];
+    function cardKind(c) { return c.kind || kindOf(c.seat); }
+    function cardHtml(c, now) {
+      var k = cardKind(c), kd = KIND[k], open = now || !!st.unfolded[c.id], d = c.detail;
+      var cite = d && (d.rule || d.said_at) ? '<p class="as-cite">' + (d.rule ? esc(d.rule) : '') + (d.rule && d.said_at ? ' · ' : '') + (d.said_at ? 'said ' + esc(d.said_at) : '') + '</p>' : c.cite ? '<p class="as-cite">' + esc(c.cite) + '</p>' : '';
+      var keep = c.mock ? '' : c.kept ? '<span class="as-kept" title="Kept: filed as a Moment">★ Kept</span>'
+        : typeof o.onNote === 'function' ? '<button type="button" class="as-star" data-as="keep" data-id="' + esc(c.id) + '" aria-label="Keep this card: file it as a Moment">☆ Keep</button>' : '';
+      var flag = c.citeBad && c.citeBad.length ? '<span class="as-citeflag" title="The gatekeeper could not match this page cite to the rule: ' + esc(c.citeBad.join('; ')) + '">cite?</span>' : '';
+      var saved = c.important ? '<p class="as-saved">' + (c.filed ? 'Saved to campaign history' : 'In tonight’s log; gm:after files it to history') + '</p>' : '';
+      var ack = c.mock ? '' : '<button type="button" class="as-ack" data-as="ack" data-id="' + esc(c.id) + '" aria-label="Dismiss this card">Got it</button>';
+      var inner = '<span class="as-kind"><span class="as-glyph" aria-hidden="true">' + kd.glyph + '</span><b>' + esc(kd.word) + '</b></span><span class="as-text">' + esc(c.text) + '</span>' + (c.mock ? '<span class="as-eg">example</span>' : '<time>' + esc(hhmm(c.at)) + '</time>');
+      var head = now ? '<div class="as-fold">' + inner + '</div>'
+        : '<button type="button" class="as-fold" data-as="fold" data-id="' + esc(c.id) + '" aria-expanded="' + open + '">' + inner + '</button>';
+      var tag = now ? 'div' : 'li';
+      return '<' + tag + ' class="as-card' + (now ? ' as-now-card' : '') + '" data-seat="' + esc(c.seat) + '" data-kind="' + k + '" data-open="' + (open ? 1 : 0) + '"' + (c.mock ? ' data-mock' : '') + '>' + head +
+        '<div class="as-more"><p class="as-seatname">' + esc(SEAT[c.seat] || c.seat) + '</p>' + cite + saved + '<div class="as-acts">' + flag + keep + ack + '</div></div></' + tag + '>';
+    }
+    function cardById(id) { for (var i = 0; i < st.cards.length; i++) if (st.cards[i].id === id) return st.cards[i]; return null; }
+    function quietLine() { return st.listening === true && st.since ? 'Quiet. Listening since ' + st.since + '.' : 'Quiet.'; }
+    function renderNow() {
+      var el = q('#as-now'); if (!el) return;
+      var c = st.nowId ? cardById(st.nowId) : null;
+      if (c) el.innerHTML = cardHtml(c, true);
+      else if (o.mock) el.innerHTML = cardHtml(Object.assign({ at: '' }, MOCKS[0], { mock: true }), true);
+      else el.innerHTML = '<p class="as-quiet">' + esc(quietLine()) + '</p>';
+    }
+    function foldedFocusId() {
+      var ae = doc && doc.activeElement;
+      return ae && ae.getAttribute && ae.getAttribute('data-as') === 'fold' && (!ae.closest || ae.closest('#as-list')) ? ae.getAttribute('data-id') : '';
+    }
+    function foldBtns() { return host && host.querySelectorAll ? Array.prototype.slice.call(host.querySelectorAll('#as-list [data-as="fold"]')) : []; }
+    function refocus(id) {
+      if (!id) return;
+      var b = foldBtns().filter(function (x) { return x.getAttribute('data-id') === id; })[0];
+      if (b) { try { b.focus({ preventScroll: true }); } catch (e) {} }
+    }
+    function renderChips() {
+      var el = q('#as-chips'); if (!el) return;
+      var n = countsOf(st.cards), sig = st.filter + '|' + FILTERS.map(function (f) { return n[f]; }).join(',');
+      if (st.chipSig === sig) return;
+      st.chipSig = sig;
+      el.innerHTML = FILTERS.map(function (f) {
+        return '<button type="button" class="as-chip" data-as="chip" data-k="' + f + '" data-kind="' + f + '" aria-pressed="' + (st.filter === f) + '">' + (f === 'all' ? 'All' : KIND[f].word) + ' <span class="as-chip-n">' + n[f] + '</span></button>';
       }).join('');
     }
+    function renderList() {
+      var el = q('#as-list'); if (!el) return;
+      var fid = foldedFocusId();                  /* focus goes back only if it was on a card line when the list was rewritten: a tick never takes it from a field */
+      var items = feedOf(st.cards, st.filter), h = '';
+      if (!st.cards.length) h = o.mock ? MOCKS.map(function (m) { return cardHtml(Object.assign({ at: '' }, m, { mock: true }), false); }).join('') : '<li class="as-empty">Nothing yet. Blade speaks up only when there is something worth the table’s time.</li>';
+      else if (!items.length) h = '<li class="as-empty">No ' + esc(KIND[st.filter] ? KIND[st.filter].word.toLowerCase() : '') + ' cards tonight.</li>';
+      else {
+        var cut = Date.now() - EARLIER_MS, shown = false;
+        items.forEach(function (c, i) {
+          var t = Date.parse(c.at);
+          if (!shown && i > 0 && t && t < cut) { shown = true; h += '<li class="as-earlier" role="separator">Earlier tonight</li>'; }
+          h += cardHtml(c, false);
+        });
+      }
+      el.innerHTML = h;
+      if (fid) refocus(fid);
+    }
     function renderUpdates() {
-      var el = q('#as-updates'); if (!el) return;
+      var el = q('#as-updates'), tn = q('#as-tools-n'); if (!el) return;
+      if (tn) { tn.hidden = !st.updates.length; tn.textContent = st.updates.length ? st.updates.length + ' ledger' : ''; }
       if (!st.updates.length) { el.innerHTML = ''; return; }
       /* no stress / harm / xp state exists to write to on this page, so an update is read-only: Done dismisses it, and Note it files
          its text in the capture bar (when the page gave us one) */
@@ -412,6 +588,7 @@
       sec.hidden = !gm || typeof gm.assistAsk !== 'function';      /* an older runtime without the call: the field is not offered */
       var can = canAsk(), busy = st.ask.busy, hint = !can && !askAllowed(tierNow()) ? 'Dropped by the budget for tonight.' : '';
       go.disabled = busy || !can; go.textContent = busy ? 'Thinking…' : 'Ask';
+      var pr = q('#as-prog'); if (pr) pr.hidden = !busy;
       go.title = can ? 'Ask Blade (Enter)' : hint || 'Not available now';
       var m = q('#as-ask-status'), msg = st.ask.error || hint; if (m) { m.textContent = msg; m.hidden = !msg; m.classList.toggle('bad', !!st.ask.error); }
       list.innerHTML = st.asks.slice().reverse().map(function (a) {
@@ -555,19 +732,36 @@
     function hideBanner() { var b = q('#as-banner'); if (b) b.hidden = true; bannerT = null; bannerCard = null; }
 
     /* ---------- the box ---------- */
+    /* Now: the newest unread card, shown open for 1.5 s once the panel is open (or until a newer one arrives), then it is only in the feed */
+    function setNow(id) {
+      if (nowT && clrT) clrT(nowT);
+      nowT = null;
+      st.nowId = id || '';
+      if (id && setT) nowT = setT(function () { nowT = null; st.nowId = ''; if (host) renderNow(); }, NOW_MS);
+    }
     function open() {
       if (gone) return;
       st.open = true; hideBanner();
+      var un = st.cards.filter(function (c) { return !c.seen; });
+      setNow(un.length ? un[un.length - 1].id : '');
       markSeen();
-      render();
+      render(); relayout();
       var nm = q('#as-name'); if (nm) { try { nm.focus(); } catch (e) {} }
     }
     function close() {
       if (!st.open) return;
       var had = host && doc && host.contains(doc.activeElement);
-      st.open = false; render();
+      st.open = false; setNow(''); render(); relayout();
       if (had) { var lb = q('#as-launch'); if (lb) { try { lb.focus(); } catch (e) {} } }
     }
+    function togglePin() {
+      if (!dockable() || isPhone()) return;
+      st.pinned = !st.pinned;
+      if (st.pinned && !st.open) { open(); return; }
+      render(); relayout();
+    }
+    /* U: undo the newest green (done) card. The co-GM's done cards arrive with C2; until then there is nothing to undo, and this does nothing. */
+    function undoNewest() { return Promise.resolve(null); }
     function toggle() { if (st.open) close(); else open(); }
 
     /* ---------- polling ---------- */
@@ -585,7 +779,7 @@
         var fresh = absorb(st, res, new Date().toISOString());
         fresh.forEach(citeCheck);
         st.error = ''; st.checkedAt = hhmm(new Date().toISOString());
-        if (st.open) markSeen();
+        if (st.open) { if (fresh.length) setNow(fresh[fresh.length - 1].id); markSeen(); }
         else if (fresh.length) showBanner(fresh[fresh.length - 1]);
         if (st.spend && st.spend.tier === 'off') { st.paused = 'cap'; sendNone(); }
       }, function (e) {
@@ -602,6 +796,7 @@
       return Promise.resolve().then(function () { return gm.stt(); }).then(function (r) {
         var d = r && isObj(r.doc) ? r.doc : null, on = !!(d && d.want === 'on');
         st.listening = on;
+        if (on && !st.since) st.since = hhmm(new Date().toISOString());
         if (!on) { sendNone(); render(); return; }   /* Listening off: Voice shows nothing */
         return tickOnce();
       }, function () { /* Listening could not be read: say nothing, try next minute */ });
@@ -683,7 +878,10 @@
       if (a === 'toggle') toggle();
       else if (a === 'close') close();
       else if (a === 'banner') open();
-      else if (a === 'ack') { var k = st.cards.filter(function (x) { return x.id === id; })[0]; if (k) mark('dismiss', [k]); remove(st.cards, id); render(); }
+      else if (a === 'pin') togglePin();
+      else if (a === 'fold') { st.unfolded[id] = !st.unfolded[id]; renderList(); refocus(id); }
+      else if (a === 'chip') { st.filter = FILTERS.indexOf(b.getAttribute('data-k')) >= 0 ? b.getAttribute('data-k') : 'all'; render(); var cb = q('.as-chip[data-k="' + st.filter + '"]'); if (cb && cb.focus) { try { cb.focus(); } catch (e) {} } }
+      else if (a === 'ack') { var k = st.cards.filter(function (x) { return x.id === id; })[0]; if (k) mark('dismiss', [k]); remove(st.cards, id); delete st.unfolded[id]; if (st.nowId === id) setNow(''); render(); }
       else if (a === 'keep') { var kc = st.cards.filter(function (x) { return x.id === id; })[0]; if (kc && !kc.kept && typeof o.onNote === 'function' && o.onNote(momentText(kc))) { kc.kept = true; mark('keep', [kc]); render(); } }
       else if (a === 'done') { var d = st.updates.filter(function (x) { return x.id === id; })[0]; if (d) mark('dismiss', [d]); remove(st.updates, id); render(); }
       else if (a === 'note') { var u = st.updates.filter(function (x) { return x.id === id; })[0]; if (u && typeof o.onNote === 'function' && o.onNote(u.text)) { mark('dismiss', [u]); remove(st.updates, id); render(); } }
@@ -704,9 +902,22 @@
     function onKey(ev) {
       var t = ev.target, n = t && t.tagName ? t.tagName.toLowerCase() : '';
       if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing && n === 'textarea' && t.id === 'as-ask-q') { ev.preventDefault(); submitAsk(); return; }   /* Enter asks, Shift+Enter is a new line */
+      /* J / K move between the feed's cards and U undoes the newest done card, only with the focus in the panel and not in a field;
+         Enter folds or unfolds because a card's line is a button */
+      if (st.open && !ev.ctrlKey && !ev.metaKey && !ev.altKey && n !== 'input' && n !== 'textarea' && n !== 'select') {
+        var kl = str(ev.key).toLowerCase();
+        if (kl === 'j' || kl === 'k') { ev.preventDefault(); moveFocus(kl === 'j' ? 1 : -1); return; }
+        if (kl === 'u') { ev.preventDefault(); undoNewest(); return; }
+      }
       if (ev.key !== 'Escape' || !st.open) return;
       if (n === 'input' || n === 'textarea' || n === 'select') return;   /* the page blurs the field first; the next Escape closes the box */
       ev.preventDefault(); close();
+    }
+    function moveFocus(d) {
+      var b = foldBtns(); if (!b.length) return;
+      var i = b.indexOf(doc && doc.activeElement), ni = i < 0 ? (d > 0 ? 0 : b.length - 1) : Math.max(0, Math.min(b.length - 1, i + d));
+      try { b[ni].focus(); } catch (e) {}
+      try { if (b[ni].scrollIntoView) b[ni].scrollIntoView({ block: 'nearest' }); } catch (e) {}
     }
     function onVis() { if (doc && !doc.hidden) poll(); }
 
@@ -717,13 +928,17 @@
     if (!o.noTimer) setTimeout(function () { poll(); }, 1500);
 
     return {
-      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, poll: poll, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
+      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, pin: togglePin, isPinned: function () { return docked(); }, undoNewest: undoNewest, relayout: relayout, poll: poll, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
       state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, asks: st.asks, ask: st.ask, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, screen: st.screen, banner: bannerCard ? bannerCard.text : '' })); },
       el: function () { return host; },
       destroy: function () {
         gone = true;
         if (timer && clrI) clrI(timer);
         if (bannerT && clrT) clrT(bannerT);
+        if (nowT && clrT) clrT(nowT);
+        if (lay.ro) { try { lay.ro.disconnect(); } catch (e) {} }
+        if (win && typeof win.removeEventListener === 'function') { win.removeEventListener('resize', onResize); win.removeEventListener('scroll', onScroll); }
+        bodyClass('as-tab', false); bodyClass('as-dock', false);
         if (doc && doc.removeEventListener) doc.removeEventListener('visibilitychange', onVis);
         if (host && host.parentNode) host.parentNode.removeChild(host);
         host = null;
@@ -731,5 +946,5 @@
     };
   }
 
-  return { create: create, POSITIONS: POSITIONS, _pure: P };
+  return { create: create, POSITIONS: POSITIONS, KINDS: KINDS, _pure: P };
 });
