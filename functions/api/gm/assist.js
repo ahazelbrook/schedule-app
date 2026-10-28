@@ -642,7 +642,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
         card: { act: 1, ...(cueMode ? { cue: 1, ...(actIn.cueLineId ? { cue_line: actIn.cueLineId } : {}) } : {}), from: actIn.from, to: actIn.to, n: lines.length, ...(out ? { out } : {}), actions: v.actions.map(slimAction), dropped: v.dropped, shown: 0,
           ...(out ? {} : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : r && r.stop === 'max_tokens' ? 'cut off' : 'no JSON' }) } };
       let seenKeys = new Set();
-      if (v.actions.length) {
+      // 'seen' only for a page that asked for it (seenOk) or a cue: an older page would apply a 'seen' action as if it were new
+      if (v.actions.length && (cueMode || actIn.seenOk)) {
         const res = await db.batch([logRow(db, campaign, row), seenStmt(db, campaign, t0, v.actions.map((a) => a.key), true)]);
         seenKeys = new Set(((res[1] && res[1].results) || []).map((x) => x.k));
       } else await logRow(db, campaign, row).run();

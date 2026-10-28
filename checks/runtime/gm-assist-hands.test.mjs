@@ -354,8 +354,11 @@ await test('CPU: exactly one read of the transcript, one read for spend and the 
   const touches = s.sqls.filter((q) => /gm_transcript/.test(q));
   assert.equal(touches.length, 1, 'transcript reads: ' + touches.length);
   assert.match(touches[0], /seq BETWEEN \?2 AND \?3/); assert.match(touches[0], /LIMIT \?4/);
-  assert.equal(s.sqls.length, 5, 'four reads and writes plus the tonight-keys read, which shares a batch with the log write: ' + s.sqls.map((q) => q.slice(0, 60)).join(' | '));
+  assert.equal(s.sqls.length, 4, 'an old-shape window asks for no seen filtering: ' + s.sqls.map((q) => q.slice(0, 60)).join(' | '));
   assert.ok(!s.sqls.some((q) => /gm_pack/.test(q)), 'the assist part is never read');
+  clock.t += 9_000; s.sqls.length = 0;
+  await s.post({ ...REQ, seenOk: true });
+  assert.equal(s.sqls.length, 5, 'with seenOk: the tonight-keys read shares a batch with the log write');
   assert.ok(!s.sqls.some((q) => /campaigns|npcs/.test(q)), 'the table\'s own data is never read: the page sent its state');
 });
 
@@ -836,19 +839,23 @@ await test('route, a window: a key a cue row already holds, or an earlier window
   const a = await body(await s.post(REQ));
   assert.deepEqual(a.actions.map((x) => x.mode), ['act', 'act']);
   clock.t += 9_000;
-  const b = await body(await s.post(REQ));
+  const old = await body(await s.post(REQ));
+  assert.deepEqual(old.actions.map((x) => x.mode), ['act', 'act'], 'an old-shape window (no seenOk) never gets seen: an old page would apply it');
+  assert.equal(s.rows().length, 2);
+  clock.t += 9_000;
+  const b = await body(await s.post({ ...REQ, seenOk: true }));
   assert.deepEqual(b.actions.map((x) => x.mode), ['seen', 'seen']);
   assert.deepEqual(b.actions.map((x) => x.key), a.actions.map((x) => x.key));
-  assert.equal(rowCount(s), 2);
+  assert.equal(rowCount(s), 3);
   // a new decision in a later window is not seen
   clock.t += 9_000;
   s.st.reply = { actions: [good(), good({ type: 'npc_add', quote: "His name's Wren Alder", name: 'Wren Alder' })] };
-  const c = await body(await s.post(REQ));
+  const c = await body(await s.post({ ...REQ, seenOk: true }));
   assert.deepEqual(c.actions.map((x) => [x.type, x.mode]), [['clock_add', 'seen'], ['npc_add', 'act']]);
   // an offer's key is in the rows too
   clock.t += 9_000;
   s.st.reply = { actions: [good({ type: 'npc_add', quote: "His name's Wren Alder", name: 'Wren Alder', confidence: 0.4 })] };
-  assert.deepEqual((await body(await s.post(REQ))).actions.map((x) => x.mode), ['seen']);
+  assert.deepEqual((await body(await s.post({ ...REQ, seenOk: true }))).actions.map((x) => x.mode), ['seen']);
 });
 
 await test('route, a window: a key older than tonight is not seen', async () => {
@@ -876,6 +883,78 @@ await test('route, two overlapping model calls (two isolates, so two lease sets)
   const modes = [(await body(await p1)).actions[0].mode, (await body(await p2)).actions[0].mode].sort();
   assert.deepEqual(modes, ['act', 'seen']);
   assert.equal(rowCount(s), 2);
+});
+
+// ---------- C4c with C4a: every command row of app/cue.js through the real parser and then cue-mode /act ----------
+import { createRequire } from 'node:module';
+const B68Cue = createRequire(import.meta.url)(path.join(ROOT, 'app', 'cue.js'));
+const LIVE = { clocks: STATE.clocks, lastClock: 'ck1' };
+
+await test('cue.js to /act: one fixture per command row: parse, post with cueLineId, and every action comes back act (none dropped by the quote check), one-line and split', async () => {
+  const fixtures = [
+    ['make', 'Blade, make a six clock called Harbour Bell', ['clock_add']],
+    ['make + mark', 'Okay, Blade, make a four clock called Night Crew and mark two', ['clock_add']],
+    ['tick by name', 'Blade, tick Lamp Oil Running Low twice', ['clock_tick']],
+    ['mark on', 'Blade, mark two on Empty One', ['clock_tick']],
+    ['plus', 'Blade, Empty One plus two', ['clock_tick']],
+    ['tick that', 'Blade, tick that', ['clock_tick']],
+    ['fill (the whole size of an 8 clock)', 'Blade, fill Empty One', ['clock_tick']],
+    ['clear', 'Blade, clear one on Harbour Watch Wakes', ['clock_tick']],
+    ['new NPC, named', 'Blade, new NPC called Corvin Lathe, a porter', ['npc_add']],
+    ['new NPC, no name', 'Blade, new NPC', ['npc_add']],
+    ['note', 'Blade, note the ferry stopped running', ['capture']],
+    ['loose end', 'Blade, loose end: who rang the bell', ['capture']],
+    ['name', 'Blade, name: Pernel Quayle, the ropemaker', ['capture']],
+    ['call him', 'Blade, call him Big Sal', ['rename']],
+    ['undo', 'Blade, undo that', ['undo']],
+  ];
+  for (const [what, text, types] of fixtures) {
+    const p = B68Cue.parse(text, LIVE);
+    assert.ok(!p.missing && !p.refused && p.actions.length, what + ': ' + JSON.stringify({ m: p.missing, r: p.refused, n: p.actions.length }));
+    assert.deepEqual(p.actions.map((a) => a.type), types, what);
+    const s = await cueSetup();
+    // a different set of lines per fixture: the cue is line 2 of 3, as a Deepgram line would be
+    s.exec.db.exec('DELETE FROM gm_transcript');
+    await s.lines(['Some talk before.', text, 'And then some after.']);
+    const row2 = s.exec.db.prepare("SELECT id FROM gm_transcript WHERE seq = 2").get().id;
+    const out = await body(await s.post({ from: 1, to: 3, state: STATE, mode: 'cue', cueLineId: row2, parsed: p.actions }));
+    assert.deepEqual(out.dropped, [], what + ' dropped: ' + JSON.stringify(out.dropped));
+    assert.deepEqual(out.actions.map((a) => a.mode), p.actions.map(() => 'act'), what);
+    assert.equal(s.calls.length, 0);
+    if (what.startsWith('new NPC, no')) assert.deepEqual([out.actions[0].name, out.actions[0].needsName], ['', true]);
+    if (what.startsWith('fill')) assert.equal(out.actions[0].by, 8, 'a fill on an 8 clock moves 8, past the window cap of 6');
+    if (what.startsWith('make + mark')) assert.equal(out.actions[0].filled, 2);
+  }
+  // a command split over two rows, joined with joinLines
+  const a = 'Okay, Blade, make a six clock called', b = 'Harbour Bell and mark one';
+  const joined = B68Cue.joinLines(a, b), p = B68Cue.parse(joined, LIVE);
+  assert.deepEqual([p.actions.length, p.missing], [1, null]);
+  const s = await cueSetup(); s.exec.db.exec('DELETE FROM gm_transcript');
+  await s.lines(['Talk first.', a, b, 'Talk after.']);
+  const id2 = s.exec.db.prepare("SELECT id FROM gm_transcript WHERE seq = 2").get().id;
+  const out = await body(await s.post({ from: 1, to: 4, state: STATE, mode: 'cue', cueLineId: id2, parsed: p.actions }));
+  assert.deepEqual([out.dropped, out.actions.map((x) => x.mode), out.actions[0].filled], [[], ['act'], 1]);
+});
+
+await test('cue: an empty npc_add name is taken only with needsName and only from the page\'s parse; the model path never gets it', () => {
+  const np = (over) => ({ type: 'npc_add', quote: CUE_TWO, name: '', look: '', role: '', needsName: true, ...over });
+  const ok = cueCheck([np()]);
+  assert.deepEqual([ok.actions.length, ok.actions[0].name, ok.actions[0].needsName, ok.actions[0].mode], [1, '', true, 'act']);
+  assert.deepEqual(cueCheck([np({ needsName: false }), np({ needsName: undefined })]).dropped.map((d) => d.why), ['no name', 'no name']);
+  assert.equal(cueCheck([np({ name: 'Corvin Lathe' })]).actions[0].needsName, false);
+  for (const cue of [undefined, { parsed: false, cueLineId: 'l2' }]) {
+    const v = validateActions([np()], { state: cleanState(STATE), lines: CUE_LINES, cue });
+    assert.deepEqual([v.actions.length, v.dropped.map((d) => d.why)], [0, ['no name']]);
+  }
+});
+
+await test('cue: a parsed tick may move a clock by its whole size (12 and 10 too); a window and the model still stop at 6; the room left still caps it', () => {
+  const st = cleanState({ ...STATE, clocks: [{ id: 'big', name: 'Big One', size: 12, filled: 0, hidden: false }, { id: 'ten', name: 'Ten', size: 10, filled: 8, hidden: false }] });
+  const tick = (id, by) => ({ type: 'clock_tick', quote: CUE_TWO, clock_id: id, by, confidence: 1 });
+  const run = (cue, raw) => validateActions(raw, { state: st, lines: CUE_LINES, cue }).actions.map((a) => a.by);
+  assert.deepEqual(run({ parsed: true, cueLineId: 'l2' }, [tick('big', 12), tick('ten', 10), tick('big', 99), tick('big', -3)]), [12, 2, 12], 'a negative at 0 is no change and is dropped');
+  assert.deepEqual(run(undefined, [tick('big', 12)]), [6]);
+  assert.deepEqual(run({ parsed: false, cueLineId: 'l2' }, [tick('big', 12)]), [6]);
 });
 
 // ---------- the replay script's helpers and guards ----------

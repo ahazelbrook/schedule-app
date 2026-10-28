@@ -110,7 +110,8 @@ export function cleanActBody(b) {
     if (!cueLineId) bad('parsed needs cueLineId');
     parsed = b.parsed;
   }
-  return mode === 'cue' ? { ...range, state, mode, parsed, cueLineId } : { ...range, state };
+  const seenOk = b.seenOk === true;               // a page that handles mode 'seen' says so; an older page left open across a deploy does not, and never gets it in a window
+  return mode === 'cue' ? { ...range, state, mode, parsed, cueLineId, seenOk: true } : { ...range, state, ...(seenOk ? { seenOk } : {}) };
 }
 
 const clamp = (n, lo, hi) => (n < lo ? lo : n > hi ? hi : n);
@@ -173,14 +174,17 @@ export function validateActions(raw, { state, lines, cue }) {
       if (!c) { drop(a.type, 'unknown clock'); continue; }
       if (!Number.isFinite(a.by)) { drop(a.type, 'no amount'); continue; }
       // the amount is clamped twice: to what one action may do, then to what the clock can take. Nothing left to do is dropped, not sent as a zero.
-      const by = clamp(clamp(Math.trunc(a.by), TICK_MIN, TICK_MAX), -c.filled, c.size - c.filled);
+      // a parsed cue may move a clock by its whole size ("fill" on a 12): the window and the model keep TICK_MIN..TICK_MAX
+      const by = clamp(clamp(Math.trunc(a.by), cue && cue.parsed ? -c.size : TICK_MIN, cue && cue.parsed ? c.size : TICK_MAX), -c.filled, c.size - c.filled);
       if (by === 0) { drop(a.type, 'no change'); continue; }
       out = { ...base, key: keyOf(a.type, c.id), clock_id: c.id, clock_name: c.name, by, from_filled: c.filled, to_filled: c.filled + by, size: c.size };
     } else if (a.type === 'npc_add') {
       const name = clip(a.name, NAME_MAX);
-      if (!name) { drop(a.type, 'no name'); continue; }
-      if (known.has(normalise(name))) { drop(a.type, 'already known', name); continue; }
-      out = { ...base, key: keyOf(a.type, name), name, look: clip(a.look, LOOK_MAX), role: clip(a.role, ROLE_MAX) };
+      // only the page's own parse may leave the name empty (needsName: the page rolls one later); the model never may
+      const needsName = !!(cue && cue.parsed) && !name && a.needsName === true;
+      if (!name && !needsName) { drop(a.type, 'no name'); continue; }
+      if (name && known.has(normalise(name))) { drop(a.type, 'already known', name); continue; }
+      out = { ...base, key: keyOf(a.type, name), name, look: clip(a.look, LOOK_MAX), role: clip(a.role, ROLE_MAX), ...(cue && cue.parsed ? { needsName } : {}) };
     } else if (a.type === 'capture') {
       const text = clip(a.text, TEXT_MAX);
       if (!BUCKETS.includes(a.bucket)) { drop(a.type, 'unknown bucket'); continue; }
