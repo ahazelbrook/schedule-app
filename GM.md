@@ -525,6 +525,21 @@ fails and nobody is known, nothing is purged.
     minutes before a stop. `lens.pos` is controlled, risky, desperate or unknown (a room on no floor); `danger` is true when the person a
     disguise `sees` stands in the room (free text, matched by id, label or a whole word of the label). `next` is the next three events
     and target stops after `t`.
+  - **Run the site** (`app/gm-page.js`, the Location card). When the card is an authored site with a `play` block (never a rolled one),
+    a strip sits above the map: floor tabs (All, then each level by number, named by `play.floors` else the kit's title), the time (a
+    scrubber from `clock.start` to `clock.end` with a tick per event and a dot per window of the target, -15 and +15, **Left** and **Right** for 5
+    minutes while the strip has the focus, **Next window**, and the time in big type), a Disguise select, the crew (tap a PC chip, then a
+    room chip; the room they are in takes them off) and the table's clocks (tap one, then a room: **Pin to room**). Beside the map:
+    **At** the time, **Next** and **Routes** (arrows for both ways, up and down; an eye for watched, a key for needs). `t` is only what the
+    GM set: the wall clock is never read. The map's tokens go through the kit's `tokens` option, **one per room** (initials pills by kind,
+    the lens chip C, R, D or ?, a red ring when the person the disguise sees through is there, a pie per pinned clock), on the **GM layer
+    only**: Show on iPad, live reveal and the score scene never see them. A floor tab passes the kit's `floor` (iso, plan and section;
+    rings draws every floor). While the slider moves, the clock and the side update at once and the state and map follow after 200 ms of
+    quiet; each drawn (view, theme, floor, tokens) is kept (24), so going back costs nothing. A run draws itself when the panel opens.
+  - **`ball` in the GM state** (GM-only, never on the display): `{ site, t, floor: <level> | "all", lens, crew: { <pc id>: room }, pins: { <table clock id>: room }, open?, dawn? }`.
+    It belongs to the site named in `site`: another site's `ball` reads as empty and the first write replaces it whole. `crew` and `pins`
+    are written with a replace patch, so a removed key goes (`open` and `dawn` are M3's and are kept as they are). Checks:
+    `gm-page.test.mjs` (S5) and `gm-run.e2e.mjs` (a real Worker and browser: floors, midnight, disguise, PC, pin, reload, and the iPad payload).
 - **State.** The GM state document holds `con` (the console state: `live` controls, `owed`, `struck`, `used`), `loc`
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON
   string of the guard before the roll, and for the console `con`, a JSON string of the bargains and callbacks as they were,
@@ -532,7 +547,7 @@ fails and nobody is known, nothing is purged.
   `hist` (five per tool), `npc` (`ui`: the NPC pickers), `npcgen` (`{ seed, mem, at, s?, ui? }` per generated NPC id: the
   roll that made them, `ui` only when a picker was set), `sc` (`ui`: the Score panel's choices; its cards are `cards.score` /
   `hist.score` / `mem.score`, see Score (J)), `dt` (`ui`: the Downtime panel's choices; its cards are `cards.downtime` /
-  `hist.downtime` / `mem.downtime`, see Downtime (D)), `pins` (50, text), `capture` (400, and 128 KiB: `{ id, bucket: n|x|m|r, text, at, s? }`),
+  `hist.downtime` / `mem.downtime`, see Downtime (D)), `ball` (Run the site: `{ site, t, floor, lens, crew, pins }`, see Authored sites), `pins` (50, text), `capture` (400, and 128 KiB: `{ id, bucket: n|x|m|r, text, at, s? }`),
   `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab), `opps` (the Cards panel), `sites` (Score sites), `chase` (the Chase panel:
   `current`, `past`, `ui`) and `now` (`{ district }`: Now in). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.

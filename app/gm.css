@@ -990,3 +990,31 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 
 @media (max-width: 599px) { .gm-assist { display: none !important; } }
 @media print { .gm-assist { display: none !important; } }
+/* Run the site: the strip above an authored site's map (GM.md, "Authored sites") */
+#gm-page .gm-runzone { display: grid; gap: 8px; }
+#gm-page .gm-run { border: 2px solid var(--rule); background: var(--inset); padding: 8px 10px; display: grid; gap: 8px; }
+#gm-page .gm-run:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+#gm-page .gm-run-h { font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; }
+#gm-page .gm-run-tabs, #gm-page .gm-run-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+#gm-page .gm-run-time { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+#gm-page .gm-run-clock { font: 900 44px/1 var(--font-cond); letter-spacing: .02em; min-width: 3.4em; }
+#gm-page .gm-run-scrub { flex: 1 1 260px; display: grid; gap: 4px; }
+#gm-page .gm-run-scrub input[type="range"] { width: 100%; min-height: 32px; accent-color: var(--accent); }
+#gm-page .gm-run-track { position: relative; height: 12px; margin: -6px 8px 0; }
+#gm-page .gm-run-tick { position: absolute; top: 0; width: 3px; height: 12px; background: var(--rule); transform: translateX(-1px); }
+#gm-page .gm-run-tick.fx { background: var(--mustard); width: 5px; }
+#gm-page .gm-run-dot { position: absolute; top: 3px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); transform: translateX(-4px); }
+#gm-page .gm-run-place { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: end; }
+#gm-page .gm-run-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#gm-page .gm-run-arm { margin: 0; font-size: 13.5px; flex-basis: 100%; }
+#gm-page .gm-runbody { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+#gm-page .gm-runbody .gm-map { flex: 2 1 420px; min-width: 0; }
+#gm-page .gm-run-side { flex: 1 1 240px; min-width: 0; display: grid; gap: 4px; font-size: 13.5px; }
+#gm-page .gm-run-side h5 { font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; margin: 6px 0 0; }
+#gm-page .gm-run-people { margin: 0; padding-left: 16px; display: grid; gap: 2px; }
+#gm-page .gm-run-moving { color: var(--accent); font-weight: 700; }
+#gm-page .gm-run-rooms { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#gm-page .gm-run-room.pos-controlled { border-left: 6px solid #2a7f3f; }
+#gm-page .gm-run-room.pos-risky { border-left: 6px solid #b87a00; }
+#gm-page .gm-run-room.pos-desperate { border-left: 6px solid #b3261e; }
+#gm-page .gm-run-room.danger { outline: 2px solid var(--alarm); }
