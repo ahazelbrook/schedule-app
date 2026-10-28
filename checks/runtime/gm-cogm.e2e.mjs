@@ -89,14 +89,22 @@ try {
     return autopilotOnly(b);
   };
   // The iPad autopilot (A2) is on by default: a clock the co-GM adds is a visible clock appearing on the table, so it lays a clock overlay over the iPad (an ambient PATCH of
-  // exactly { overlay: { auto: true, ... }, auto: true }), clears it ({ overlay: null }) and flips its AUTO flag ({ auto: true | false }). That is the autopilot, not the co-GM,
-  // and it carries an id only; any other ambient write still counts.
+  // exactly { overlay: { auto: true, ... }, auto: true }), clears it ({ overlay: null, ifOverlay: <its id> }, a compare-and-swap) and flips its AUTO flag ({ auto: true | false }).
+  // That is the autopilot, not the co-GM, and it carries an id only. Every shape is a STRICT key list (the keys listed and no others, with their types), so a co-GM write that
+  // happens to share a key with one of them is still counted; any other ambient write counts.
+  const sameKeys = (o, list) => !!o && typeof o === 'object' && Object.keys(o).sort().join() === list.slice().sort().join();
   const autopilotOnly = (b) => {
     if (!b || typeof b !== 'object') return false;
     const keys = Object.keys(b).sort().join();
     if (keys === 'auto') return typeof b.auto === 'boolean' || b.auto === null;
-    if (keys === 'overlay') return b.overlay === null;
-    if (keys === 'auto,overlay') return !!b.overlay && b.overlay.auto === true && b.auto === true && (b.overlay.kind === 'clock' || b.overlay.kind === 'npc') && !('name' in b.overlay);
+    if (keys === 'ifOverlay,overlay') return b.overlay === null && typeof b.ifOverlay === 'string' && b.ifOverlay.length > 0;
+    if (keys === 'auto,overlay') {
+      const o = b.overlay;
+      if (b.auto !== true || !o || o.auto !== true || typeof o.id !== 'string' || !Number.isInteger(o.ms)) return false;
+      if (o.kind === 'clock') return sameKeys(o, ['auto', 'clockId', 'id', 'kind', 'ms']) && typeof o.clockId === 'string';
+      if (o.kind === 'npc') return sameKeys(o, ['auto', 'id', 'kind', 'ms', 'npcId']) && typeof o.npcId === 'string';
+      return false;
+    }
     return false;
   };
   page.on('request', (r) => { if (r.url().startsWith(BASE + '/api/') && !crewSyncOnly(r)) seen.requests.push(r.method() + ' ' + r.url().slice(BASE.length)); });

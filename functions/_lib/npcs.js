@@ -140,7 +140,9 @@ export async function joinOverlayNpc(db, campaign, amb) {
   const next = { ...amb.doc };
   if (!doc || doc.revealed !== true) { delete next.overlay; return { amb: { ...amb, doc: next }, dropped: true }; }
   const text = (v) => (typeof v === 'string' ? v : '');
-  next.overlay = { ...o, npc: { name: text(doc.name), alias: text(doc.alias), role: text(doc.role), faction: text(doc.faction), spec: drawingSpec(doc.spec) } };
+  // built from named keys, never by spreading the stored overlay: whatever else a stored row holds (an old shape, a stray key) is not served
+  next.overlay = { id: o.id, kind: o.kind, ms: o.ms, at: o.at, age: o.age, auto: o.auto, npcId: o.npcId, npc: { name: text(doc.name), alias: text(doc.alias), role: text(doc.role), faction: text(doc.faction), spec: drawingSpec(doc.spec) } };
+  for (const k of Object.keys(next.overlay)) if (next.overlay[k] === undefined) delete next.overlay[k];       // absent stays absent
   return { amb: { ...amb, doc: next }, dropped: false };
 }
 

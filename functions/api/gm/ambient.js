@@ -18,11 +18,14 @@
 //             not revealed, by name or alias }; replaces, null removes, `at` is set here
 //   auto true | false | null   the iPad's AUTO chip. Sent beside an overlay (or as overlay.auto: true) it also marks that overlay as the
 //             autopilot's, which is refused with 409 while the display is in lights out, and which the display never draws over black
+//   ifOverlay "<overlay id>"   beside `overlay: null` only (else 400): clear the overlay only while the stored one still has that id. If it
+//             does not (it ended, or another was set meanwhile) nothing is written, seq does not move, and the answer is the stored
+//             document with `unchanged: true`. The autopilot clears its own overlay this way.
 // The stored document is at most 1.4 MiB.
 
 import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf, HttpError } from '../../_lib/http.js';
-import { LIMITS, requireGm, cleanAmbientPatch, loadAmbient, patchAmbient, loadDisplayKind, loadHiddenNames, namesHit } from '../../_lib/gm.js';
+import { LIMITS, requireGm, cleanAmbientPatch, loadAmbient, patchAmbient, cleanIfOverlay, loadDisplayKind, loadHiddenNames, namesHit } from '../../_lib/gm.js';
 import { assertRevealedNpc } from '../../_lib/npcs.js';
 import { assertOverlayClock } from '../../_lib/campaign.js';
 import { pokeLive } from '../../_lib/live.js';
@@ -38,7 +41,9 @@ export async function onRequest({ request, env, data, waitUntil }) {
     const db = await getDb(env);
     return json(await loadAmbient(db, campaign));
   }
-  const patch = cleanAmbientPatch(await readJsonObject(request, LIMITS.ambientRequest));
+  const raw = await readJsonObject(request, LIMITS.ambientRequest);
+  const patch = cleanAmbientPatch(raw);
+  const ifOverlay = cleanIfOverlay(raw, patch);
   const db = await getDb(env);
   const ov = patch.overlay;
   if (ov) {
@@ -54,7 +59,7 @@ export async function onRequest({ request, env, data, waitUntil }) {
     // an NPC who is not revealed (one batch of two reads, only here, only for a text overlay; the GM page scans too, this is the server's own check)
     if (ov.kind === 'text' && namesHit(ov.text, await loadHiddenNames(db, campaign))) throw new HttpError(400, 'overlay.text names something the players must not see');
   }
-  const out = await patchAmbient(db, campaign, patch);
-  pokeLive({ env, waitUntil }, ['ambient']);
+  const out = await patchAmbient(db, campaign, patch, { ifOverlay });
+  if (!out.unchanged) pokeLive({ env, waitUntil }, ['ambient']);       // a compare-and-swap that found another overlay wrote nothing: nothing to tell
   return json(out);
 }

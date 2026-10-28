@@ -500,6 +500,18 @@ export function cleanAmbientPatch(raw) {
   return patch;
 }
 
+/**
+ * The optional `ifOverlay` of a PATCH /api/gm/ambient body: an overlay id, valid only beside `overlay: null` (it makes that clear a
+ * compare-and-swap, see patchAmbient). Returns the id, or null when the body has none. 400 for anything else (not a string, empty,
+ * longer than an overlay id, or beside a patch that does not clear the overlay), so a stray key never turns into a silent no-op.
+ */
+export function cleanIfOverlay(raw, patch) {
+  if (!raw || raw.ifOverlay === undefined || raw.ifOverlay === null) return null;
+  if (typeof raw.ifOverlay !== 'string' || !raw.ifOverlay.trim() || raw.ifOverlay.length > OVERLAY.id) throw new HttpError(400, 'ifOverlay must be an overlay id');
+  if (!patch || !('overlay' in patch) || patch.overlay !== null) throw new HttpError(400, 'ifOverlay goes only with overlay: null');
+  return raw.ifOverlay;
+}
+
 async function ambientRow(db, campaign) {
   return db.prepare('SELECT seq, updated_at, doc FROM gm_ambient WHERE campaign = ?1').bind(campaign).first();
 }
@@ -550,11 +562,19 @@ export async function loadAmbient(db, campaign) {
  * updated_at check as patchState (409 when it keeps colliding); the stored document is at most LIMITS.ambient bytes (413).
  * An empty patch changes nothing and does not move seq. Returns { seq, doc, updatedAt }.
  */
-export async function patchAmbient(db, campaign, patch) {
+export async function patchAmbient(db, campaign, patch, opts) {
+  const ifOverlay = opts && typeof opts.ifOverlay === 'string' ? opts.ifOverlay : null;
   for (let attempt = 0; attempt < AMBIENT_ATTEMPTS; attempt++) {
     const row = await ambientRow(db, campaign);
     const cur = ambientOf(row);
     if (!Object.keys(patch).length) return cur;
+    /* compare-and-swap: with `ifOverlay` the patch lands only while the stored overlay still has that id. The check runs on the row read for
+       THIS attempt, and the write below is guarded by that row's updated_at, so a change in between makes the write miss and the loop re-reads:
+       an overlay set after the caller looked is never cleared by it. A mismatch returns the stored document unchanged (unchanged: true). */
+    if (ifOverlay !== null) {
+      const o = cur.doc.overlay;
+      if (!isPlainObject(o) || o.id !== ifOverlay) return { ...cur, unchanged: true };
+    }
     const doc = { ...cur.doc };
     for (const [k, v] of Object.entries(patch)) {
       if (k === 'skip') doc.skip = (doc.skip | 0) + 1;

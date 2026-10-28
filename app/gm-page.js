@@ -3502,13 +3502,14 @@
       if (S !== me || me.ap !== ap) { if (a.do === 'set') ap.sets--; return; }
       if (a.do === 'clear') {
         /* only what is ours: the GM's dawn (perhaps pressed on another device), or an overlay already cleared, is left alone. The document is read
-           again first rather than trusting this page's copy; the write that follows is not atomic with that read (a few tens of ms). */
+           again first rather than trusting this page's copy; the write that follows carries ifOverlay (our overlay's id), so the server clears
+           only while that overlay is still the stored one: a dawn set in the few tens of ms between the read and the write is not cleared. */
         var g = gmApi();
         return Promise.resolve().then(function () { return g && typeof g.ambient === 'function' ? g.ambient() : null; }).then(function (r) {
           if (r) adoptAmbient(r);
           var cur = r && isObj(r.doc) && isObj(r.doc.overlay) ? r.doc.overlay : (r ? null : (AM.doc && isObj(AM.doc.overlay) ? AM.doc.overlay : null));
           if (!cur || cur.id !== a.id) return;
-          return apPatch({ overlay: null });
+          return apPatch({ overlay: null, ifOverlay: a.id });
         }).then(null, function (e) { ap.core.note({ do: 'refused', kind: 'clear', why: apWhy(e) }); apLog(); });
       }
       var ov = a.overlay;
