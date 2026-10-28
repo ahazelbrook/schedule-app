@@ -132,6 +132,8 @@ try {
   const firstCard = (key) => '#as-list .as-card[data-id="cogm|' + key + '"]';
   const unfold = async (key) => { const s = firstCard(key); if ((await page.$eval(s, (e) => e.getAttribute('data-open'))) !== '1') await page.click(s + ' .as-fold'); return s; };
   const toastText = () => page.$$eval('.toast, #toast, [role="status"]', (l) => l.map((x) => x.textContent).join(' | '));
+  // C4d: a window of UNCUED talk is only ever offered ("Also listen for uncued decisions (offers only)"), so each window's action waits for a tap on Do it
+  const tap = async (key) => { const s = firstCard(key); if (!(await until(() => page.$(s), 10000))) return false; await page.click(s + ' .as-act:has-text("Do it")'); return true; };
 
   // ============ the switch: in the header, off by default, refuses without Listening ============
   check(await page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'false' && /off/i.test(b.textContent)), 'the Co-GM switch is in the panel header and is OFF by default');
@@ -144,17 +146,24 @@ try {
   await api('PATCH', '/gm/stt', { want: 'on' });
   await page.click(sw);
   check(await until(() => page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'true'), 5000), 'with Listening on, a tap turns it on');
+  check(await page.$eval('#as-cogm-also', (b) => b.checked === false && !b.closest('label').hidden && /uncued decisions \(offers only\)/.test(b.closest('label').textContent)), 'on means cue only: the second switch, "Also listen for uncued decisions (offers only)", is shown and OFF');
+  say('a six-segment clock for the uncued test, call it Switch Test Invented', 'ok', 'fine'); await sleep(2500);
+  check(seen.act.length === 0, 'with the second switch off, uncued talk that matches the pre-filter sends nothing');
+  await page.check('#as-cogm-also');
   await sleep(1500);
   check(seen.act.length === 0, 'the talk before it was switched on ("tick that") is never replayed: no /act call');
 
   // ============ a clock appears, and Undo removes it ============
   const K1 = 'clock_add:drains-below-invented:aa000001';
   reply([act({ type: 'clock_add', key: K1, name: 'Drains Below Invented', size: 6, hidden: false, quote: "that's going to be a six-segment clock, call it Drains Below Invented" })]);
+  const k1seq = feed.last + 1;
   say("right, that's going to be a six-segment clock, call it Drains Below Invented", 'the water is rising', 'everyone ok with that');
   check(await until(() => seen.act.length >= 1, 8000), 'a match sends one /act call');
   const b1 = seen.act[0].body;
-  check(b1.from === 4 && b1.to === 6 || (b1.from <= 4 && b1.to >= 4 && b1.to - b1.from <= 6), 'the window holds the matching line (seqs ' + b1.from + '-' + b1.to + ')');
+  check(b1.from <= k1seq && b1.to >= k1seq && b1.to - b1.from <= 6, 'the window holds the matching line (seqs ' + b1.from + '-' + b1.to + ')');
   check(Array.isArray(b1.state.clocks) && b1.state.clocks.some((k) => k.id === 'c_seed' && k.size === 6 && k.filled === 2 && k.hidden === false) && b1.state.npcs.some((n) => n.name === 'Marta Quillfeather') && 'onStage' in b1.state && !('health' in b1.state), 'the state carries the live clocks and the cast');
+  check(await until(async () => ((await cogmCards()).find((x) => x.id === 'cogm|' + K1) || {}).kind === 'idea', 6000) && !(await clocksNow()).some((k) => k.name === 'Drains Below Invented'), 'uncued: the window comes back as an OFFER (yellow), and nothing is written');
+  await tap(K1);
   check(await until(async () => (await clocksNow()).some((k) => k.name === 'Drains Below Invented'), 8000), 'the clock is on the real table');
   const made = (await clocksNow()).find((k) => k.name === 'Drains Below Invented');
   check(made && made.size === 6 && made.filled === 0 && made.hidden === true && made.kind === 'danger', 'it is a hidden, empty, six-segment danger clock (hidden from the players even though the model said hidden: false)');
@@ -196,6 +205,7 @@ try {
   const [r1, r2] = [seen.act[n0].body, seen.act[n0 + 1].body];
   check(r1.from === r2.from && r1.to === r2.to, 'the same window (' + r1.from + '-' + r1.to + ' twice): the 429 did not move the cursor');
   check(seen.act[n0 + 1].at - seen.act[n0].at >= 600, 'and not before the gap (' + (seen.act[n0 + 1].at - seen.act[n0].at) + ' ms)');
+  await tap(K2);
   check(await until(async () => (await clocksNow()).some((k) => k.name === 'Ferry Late Invented'), 6000), 'it applied');
   await sleep(1000);
   check((await clocksNow()).filter((k) => k.name === 'Ferry Late Invented').length === 1, 'exactly once');
@@ -204,6 +214,7 @@ try {
   const K3 = 'clock_tick:c_seed:aa000003';
   reply([act({ type: 'clock_tick', key: K3, clock_id: 'c_seed', clock_name: 'Seed Clock Invented', by: 1, from_filled: 2, to_filled: 3, size: 6, quote: 'tick that once, the guards are stirring' })]);
   say('tick that once, the guards are stirring', 'they are', 'quietly');
+  await tap(K3);
   check(await until(async () => (await clocksNow()).find((k) => k.id === 'c_seed').filled === 3, 10000), 'a tick: the seed clock goes 2 to 3');
   check(await until(async () => (await card(0)) && (await card(0)).id === 'cogm|' + K3, 3000), 'with a green card ' + JSON.stringify((await card(0) || {}).text));
   // the GM changes it by hand (here: through the API, then the page reads it)
@@ -258,6 +269,7 @@ try {
   const K9 = 'clock_add:show-test-invented:aa000010';
   reply([act({ type: 'clock_add', key: K9, name: 'Show Test Invented', size: 6, quote: 'a six segment clock, show test invented' })]);
   say('a six segment clock, show test invented', 'right', 'ok');
+  await tap(K9);
   check(await until(async () => (await clocksNow()).some((k) => k.name === 'Show Test Invented' && k.hidden === true), 10000), 'show: a hidden co-GM clock is made');
   const shw = await unfold(K9);
   const acts9 = () => page.$$eval(shw + ' .as-act', (l) => l.map((b) => b.textContent.trim()));
@@ -281,6 +293,7 @@ try {
   const seed0 = (await seed()).filled;
   reply([act({ type: 'clock_tick', key: K10, clock_id: 'c_seed', clock_name: 'Seed Clock Invented', by: 1, from_filled: seed0, to_filled: seed0 + 1, size: 6, quote: 'tick that once for the guards, they are stirring' })]);
   say('tick that once for the guards, they are stirring', 'yes', 'sure');
+  await tap(K10);
   check(await until(async () => (await seed()).filled === seed0 + 1, 10000), 'ipad control: the iPad is NOT following, so the same tick of a visible clock applies');
   check(await until(async () => ((await cogmCards()).find((x) => x.id === 'cogm|' + K10) || {}).kind === 'done', 3000), 'ipad control: as a green card');
   await page.click((await unfold(K10)) + ' .as-undo');
@@ -310,6 +323,8 @@ try {
   reply([act({ type: 'npc_add', key: K6, name: XSS, look: 'a tall figure in <b>green</b>', role: 'fence', quote: "his name's whoever, tall, green coat" })]);
   say("his name's whoever, tall, green coat", 'he nods', 'ok');
   check(await until(async () => (await cogmCards()).some((x) => x.id === 'cogm|' + K6), 10000), 'the NPC card arrives');
+  await tap(K6);
+  check(await until(async () => !!(await npcNamed(XSS)), 8000), 'the NPC is made once Do it is tapped');
   const made2 = await npcNamed(XSS), doc = made2 ? made2.doc : null, nid = made2 ? made2.id : null;
   check(doc && doc.revealed === false && doc.firstSeen === null && doc.tags.includes('cogm') && doc.description === 'a tall figure in <b>green</b>' && doc.role === 'fence', 'the NPC is saved revealed: false, tagged cogm, with the look as plain text');
   const asPlayer = JSON.stringify(await npcs(PLAYER));
@@ -319,7 +334,7 @@ try {
   check(((await card(0)).text) === 'New NPC (hidden): ' + XSS, 'the headline shows the name as text');
   check(await displayKind() === disp0 && !seen.requests.slice(reqs0).some((r) => /^(PUT|POST|PATCH|DELETE) \/api\/gm\/(display|ambient)/.test(r)), 'creating the NPC wrote nothing to the display or the ambient document');
   const s6 = await unfold(K6);
-  check(JSON.stringify(await page.$$eval(s6 + ' .as-acts button', (l) => l.map((b) => b.textContent.trim()))) === JSON.stringify(['Draw portrait', 'Reveal and show', '☆ Keep', 'Undo', 'Got it ×']), 'the NPC card has Draw portrait, Reveal and show, and Undo');
+  check(JSON.stringify(await page.$$eval(s6 + ' .as-acts button', (l) => l.map((b) => b.textContent.trim()))) === JSON.stringify(['Rename', 'Draw portrait', 'Reveal and show', '☆ Keep', 'Undo', 'Got it ×']), 'the NPC card has Rename, Draw portrait, Reveal and show, and Undo');
   seen.accept = false;
   await page.click(s6 + ' .as-act:has-text("Reveal and show")');
   await sleep(800);
@@ -331,6 +346,8 @@ try {
   reply([act({ type: 'npc_add', key: K7, name: 'Second Face Invented', look: 'a thin clerk', quote: 'her name is Second Face Invented, thin clerk' })]);
   say('her name is Second Face Invented, thin clerk', 'she waves', 'ok');
   check(await until(async () => (await cogmCards()).some((x) => x.id === 'cogm|' + K7), 10000), 'a second NPC');
+  await tap(K7);
+  check(await until(async () => ((await cogmCards()).find((x) => x.id === 'cogm|' + K7) || {}).kind === 'done', 6000), 'made on Do it');
   const s7 = await unfold(K7);
   await page.click(s7 + ' .as-undo');
   check(await until(async () => { const n = await npcNamed('Second Face Invented'); return n && n.doc.tags.includes('undone'); }, 6000), 'Undo tags the NPC undone; it is not deleted');
@@ -357,6 +374,7 @@ try {
   const K8 = 'capture:moment:aa000008';
   reply([act({ type: 'capture', key: K8, bucket: 'moment', text: 'Invented: the lamp went out on the stairs', quote: 'flashback to when the lamp went out on the stairs' })]);
   say('flashback to when the lamp went out on the stairs', 'oh', 'right');
+  await tap(K8);
   check(await until(async () => /the lamp went out on the stairs/.test(await page.$eval('#gm-foot', (e) => e.textContent)), 10000), 'the capture bar has the line');  const s8 = await unfold(K8);
   await page.click(s8 + ' .as-undo');
   check(await until(async () => !/the lamp went out on the stairs/.test(await page.$eval('#gm-foot', (e) => e.textContent)), 6000), 'Undo removes that capture line');
@@ -371,27 +389,25 @@ try {
   check(seen.act.length === nOff && !(await clocksNow()).some((k) => k.name === 'Never Made Invented'), 'and nothing is sent or applied while it is off');
   await api('PATCH', '/gm/stt', { want: 'on' });
 
-  // ============ the cap switches it off and stops the polling (the box reaches 'off') ============
+  // ============ the cap: the uncued windows stop, the switch and the cue lane stay on (C4d: a parsed cue costs $0 and needs no gate) ============
   seen.replies.length = 0;
   const polls = () => seen.requests.filter((r) => /^GET \/api\/gm\/transcript\?after=/.test(r)).length;
   await page.click(sw);
   check(await until(() => page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'true'), 6000), 'cap: it is switched on again (Listening is on)');
+  await page.check('#as-cogm-also');
   const pl0 = polls(); await sleep(1200);
   check(polls() > pl0 + 2, 'cap: while it is on it polls the transcript (' + (polls() - pl0) + ' reads in 1.2 s)');
   seen.capped = true;
-  await page.evaluate(() => window.__ctl.poll());          // the panel's own tick: the answer says the night\'s cap is reached
+  await page.evaluate(() => window.__ctl.poll());          // the panel's own tick: the answer says the night's cap is reached
   check(await until(() => page.$eval('#as-state', (e) => e.getAttribute('data-state') === 'off'), 6000), 'cap: the panel header says Off');
-  check(await until(() => page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'false'), 6000), 'cap: the co-GM switch goes off by itself');
-  await sleep(700);
+  await sleep(2500);
+  check(await page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'true'), 'cap: the co-GM switch stays on (the cue lane keeps going)');
   const pl1 = polls(), ac1 = seen.act.length;
   reply([act({ type: 'clock_add', key: 'clock_add:capped:aa000020', name: 'Capped Clock Invented', size: 4, quote: 'a four part clock after the cap' })]);
   say('a four part clock after the cap', 'x', 'y');
-  await sleep(2000);
-  check(polls() === pl1, 'cap: it has stopped polling (' + (polls() - pl1) + ' reads in 2 s)');
-  check(seen.act.length === ac1 && !(await clocksNow()).some((k) => k.name === 'Capped Clock Invented'), 'cap: nothing is sent or applied');
-  await page.click(sw);
-  await sleep(800);
-  check(await page.$eval(sw, (b) => b.getAttribute('aria-pressed') === 'false') && /stays off/.test(await toastText()), 'cap: a tap cannot turn it back on while the box is off, and says why ("stays off")');
+  await sleep(2500);
+  check(polls() > pl1 + 2, 'cap: it still polls (' + (polls() - pl1) + ' reads)');
+  check(seen.act.length === ac1 && !(await clocksNow()).some((k) => k.name === 'Capped Clock Invented'), 'cap: the uncued window is not sent and nothing is applied');
   seen.capped = false;
 
   // ============ the header: the autopilot's button and the co-GM switch both fit, at the panel's narrowest (360 px, a window under 1091 px) ============

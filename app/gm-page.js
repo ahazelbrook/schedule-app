@@ -1674,9 +1674,11 @@
   }
 
   /* ---------- the co-GM (app/gm/cogm.js, design 5.1-5.6; POST /api/gm/assist/act is its Worker side) ----------
-     The switch is in the Blade panel's header and starts OFF on every load (nothing is stored). While it is on and Listening is on, every 5 s this reads the
-     new transcript lines (after a cursor that starts at the newest line, so old talk is never replayed), and a line that matches the pre-filter sends its
-     window (at most one call every 8 s) with the table's state. What comes back is applied through the GM's own write paths:
+     The switch is in the Blade panel's header and starts OFF on every load (nothing is stored). ON MEANS CUE ONLY (C4d): while it is on and Listening is on, every 2 s this
+     reads the new transcript lines (after a cursor that starts at the newest line, so old talk is never replayed) and a line holding "Blade, ..." is the cue lane's:
+     parsed at once (app/cue.js, against the live table), joined with the next line if it is cut off, and sent with POST /act mode 'cue'. A second switch, "Also listen for
+     uncued decisions (offers only)", is OFF; only with it on does a line that matches the pre-filter send its window (at most one call every 8 s), and what comes
+     back from a window is only ever offered, never acted on. A cue's actions are applied with confirmed: true (the cue is the GM's tap). What comes back is applied through the GM's own write paths:
        clock_add   a hidden danger clock through the table's clockOps add (api.addClock); Undo takes it out if it is as it was left
        clock_tick  one clockOps { id, filled }; Undo sets it back only while it still holds what was set
        npc_add     a cast doc with revealed: false and the tag cogm, written as fileNpc writes one; Undo tags it undone (never a delete)
@@ -1690,13 +1692,15 @@
     if (me.cogm) cogmStop(me);
     me.cogm = null;
     if (!C || !ctl || typeof ctl.cogmSwitch !== 'function' || !g || typeof g.assistAct !== 'function' || typeof g.transcript !== 'function' || typeof g.stt !== 'function') return;
-    var cm = { C: C, st: C.newState(), on: false, starting: false, busy: false, epoch: 0, timer: null, sw: null, n: 0, recs: {}, plans: {}, acts: {}, cards: {}, mine: {}, doing: {}, noted: {} };
-    cm.sw = ctl.cogmSwitch({ onChange: function (want) { cogmSet(me, want); } });
+    var cm = { C: C, st: C.newState(), on: false, starting: false, busy: false, winBusy: false, epoch: 0, timer: null, sw: null, n: 0, recs: {}, plans: {}, acts: {}, cards: {}, mine: {}, doing: {}, noted: {},
+      uncued: false, order: [], undone: {}, lastMade: '', lastClock: null, working: {} };
+    cm.sw = ctl.cogmSwitch({ onChange: function (want) { cogmSet(me, want); }, onAlso: function (v) { cm.uncued = !!v && cm.on; if (cm.uncued) C.catchUp(cm.st); } });
     if (cm.sw) me.cogm = cm;
   }
   function cogmStop(me) {
     var cm = me && me.cogm; if (!cm) return;
-    cm.on = false; cm.epoch++; if (cm.timer) { W.clearInterval(cm.timer); cm.timer = null; }
+    cm.on = false; cm.uncued = false; cm.epoch++; if (cm.timer) { W.clearInterval(cm.timer); cm.timer = null; }
+    Object.keys(cm.working).forEach(function (k) { W.clearTimeout(cm.working[k]); if (me.assist) me.assist.removeCard(k); }); cm.working = {};
   }
   function cogmOff(me, why) {
     var cm = me.cogm; if (!cm) return;
@@ -1713,28 +1717,170 @@
       if (S !== me || me.cogm !== cm) return;
       var listening = !!(r[0] && isObj(r[0].doc) && r[0].doc.want === 'on'), box = cm.sw.box();
       if (!listening) { cm.sw.set(false, 'Off: Listening is off'); toast('Turn Listening on first: Co-GM acts on what the table says.', true); return; }
-      if (box.key === 'off') { cm.sw.set(false, 'Off: the night’s cap is reached'); toast('Blade is off (the night’s cap), so Co-GM stays off.', true); return; }
+      if (box.key === 'off') toast('Blade is off tonight (the cap): cues still work, but one that needs the model will not land.', true);
       cm.C.start(cm.st, r[1] && Number.isInteger(r[1].last) ? r[1].last : 0);
       cm.on = true; cm.n = 0; cm.sw.set(true);
       cm.timer = W.setInterval(function () { cogmStep(me); }, cm.C.TIMING.poll);
-      toast('Co-GM is on. It acts on what you say aloud; every card has Undo.');
+      toast('Co-GM is on. It acts on “Blade, …”; every card has Undo.');
     }, function (e) { cm.starting = false; if (S === me && me.cogm === cm) { cm.sw.set(false, 'Off'); toast('Could not turn Co-GM on: ' + errText(e), true); } });
   }
   /* one poll: read, note matches, send at most one window. The box going off (Listening off, the cap, not set up) switches co-GM off and says so. */
   function cogmStep(me) {
-    var cm = me.cogm; if (!cm || !cm.on || S !== me || cm.busy || document.hidden) return;
+    var cm = me.cogm; if (!cm || !cm.on || S !== me || cm.busy) return;
+    if (document.hidden) { if (!cm.st.away) cm.st.away = Date.now(); return; }          /* a cue heard while this page was away may be stale when it comes back */
     var box = cm.sw.box();
     /* the box is off when its night's cap is reached (the header says Off). Listening is asked of the server here every 6th poll, not read from the panel's last tick, which can be a minute old. "Not set up" does not matter: the hands need no briefing. */
-    if (box.key === 'off') { cogmOff(me, 'Off: the night’s cap is reached'); toast('Co-GM switched itself off: Blade is off (the night’s cap).', true); return; }
-    var g = gmApi(), C = cm.C, epoch = cm.epoch, check = (cm.n++ % 6) === 5;
+    /* At the cap the cue lane keeps going: a parsed cue costs $0 and needs no gate. Only the uncued windows stop, and a cue that needs the model gets a grey card (cogmCuePost). */
+    cm.capped = box.key === 'off';
+    var g = gmApi(), C = cm.C, epoch = cm.epoch, check = (cm.n++ % Math.max(1, C.TIMING.sttEvery)) === Math.max(1, C.TIMING.sttEvery) - 1;
     cm.busy = true;
     Promise.all([Promise.resolve().then(function () { return g.transcript({ after: cm.st.readAfter }); }), check ? Promise.resolve().then(function () { return g.stt(); }).then(null, function () { return null; }) : null]).then(function (r) {
       if (S !== me || cm.epoch !== epoch) return;
       if (r[1] && isObj(r[1].doc) && r[1].doc.want !== 'on') { cogmOff(me, 'Off: Listening is off'); toast('Co-GM switched itself off: Listening is off.', true); return; }
-      C.ingest(cm.st, r[0] && r[0].lines, r[0] && r[0].last, Date.now());
-      var w = C.nextWindow(cm.st, Date.now());
-      return w ? cogmSend(me, w, epoch) : null;
+      C.ingest(cm.st, r[0] && r[0].lines, r[0] && r[0].last, Date.now(), cogmLive(me));
+      cm.st.away = 0;
+      cogmCues(me, epoch);
+      /* uncued windows only with the second switch on, and never while one is in flight: a slow window must not hold a cue back */
+      var w = cm.uncued && !cm.capped && !cm.winBusy ? C.nextWindow(cm.st, Date.now()) : null;
+      if (w) { cm.winBusy = true; return cogmSend(me, w, epoch).then(function () { cm.winBusy = false; }, function () { cm.winBusy = false; }); }
     }).then(null, function () {}).then(function () { cm.busy = false; });
+  }
+  /* ---------- the cue lane (C4d; design 1.3 to 1.5) ---------- */
+  function cogmCues(me, epoch) {
+    var cm = me.cogm, C = cm.C, job, guard = 0;
+    while (guard++ < 8 && (job = C.cueNext(cm.st, Date.now(), cogmLive(me)))) {
+      if (job.kind === 'card') cogmCueCard(me, job);
+      else if (job.kind === 'stale') cogmCueStale(me, job);
+      else if (!cogmHasTarget(me, job)) cogmNoTarget(me, job);
+      else cogmCuePost(me, job, epoch);
+    }
+  }
+  /* Undo and rename act on what THIS page made, so a page with nothing to act on posts nothing: the Worker's claim would go to a page that applies it zero times. */
+  function cogmUndoTarget(cm) { for (var i = cm.order.length - 1; i >= 0; i--) if (!cm.undone[cm.order[i]] && cm.recs[cm.order[i]] && cm.acts[cm.order[i]]) return cm.order[i]; return ''; }
+  function cogmRenameTarget(cm) { var k = cm.lastMade; return k && cm.recs[k] && !cm.undone[k] ? k : ''; }
+  function cogmHasTarget(me, job) {
+    var cm = me.cogm, p = Array.isArray(job.parsed) ? job.parsed : [];
+    if (p.some(function (a) { return a && a.type === 'undo'; })) return !!cogmUndoTarget(cm);
+    if (p.some(function (a) { return a && a.type === 'rename'; })) return !!cogmRenameTarget(cm);
+    return true;
+  }
+  function cogmNoTarget(me, job) {
+    var ctl = me.assist, undo = (job.parsed || []).some(function (a) { return a && a.type === 'undo'; }); if (!ctl) return;
+    ctl.addCard({ id: cogmCueId(job, 't'), seat: 'cogm', kind: 'note', headline: undo ? 'Nothing of mine to undo here.' : 'Nothing of mine to rename here.', bodyLabel: 'Heard', body: cogmQuoteBody(job), ackLabel: 'Got it ×' });
+  }
+  function cogmHhmm(iso) { var d = new Date(iso); if (isNaN(d.getTime())) d = new Date(); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+  function cogmQuoteBody(job) { return 'Heard ' + cogmHhmm(job.cue.at) + ': “' + str(job.quote).replace(/\s+/g, ' ').trim() + '”'; }
+  function cogmCueId(job, tag) { return 'cogm|cue|' + (tag || 'c') + '|' + job.cueLineId; }
+  /* a grey or yellow card for a cue that is not acted on: nothing is posted */
+  function cogmCueCard(me, job) {
+    var cm = me.cogm, C = cm.C, ctl = me.assist, res = job.res, id = cogmCueId(job, 'n'), q = C.plain(res.quote, 90);
+    if (!ctl) return;
+    var spec = { id: id, seat: 'cogm', kind: 'note', strip: true, bodyLabel: 'Heard', body: cogmQuoteBody(job), ackLabel: 'Got it ×', open: true };
+    var act = function (a) { return function () { ctl.removeCard(id); return cogmCuePost(me, Object.assign({}, job, { kind: 'post', parsed: [Object.assign({ quote: res.quote }, a)] }), cm.epoch); }; };
+    if (res.refused) {
+      spec.headline = res.refused === 'nochange' ? 'Heard “' + q + '”: nothing to change.' : 'Heard “' + q + '”: I can’t do that yet.';
+    } else if (res.missing === 'which') {
+      var by = res.draft && Number.isFinite(res.draft.by) ? res.draft.by : 1;
+      spec.kind = 'idea'; spec.headline = 'Which clock? “' + q + '”'; spec.bullets = ['Tap the one you meant.'];
+      spec.actions = (res.candidates || []).slice(0, 6).map(function (c, i) { return { id: 'c' + i, label: C.plain(c.name, 38), run: act({ type: 'clock_tick', clock_id: c.id, clock_name: c.name, by: by }) }; });
+    } else if (res.missing === 'size') {
+      var d = res.draft || {};
+      spec.kind = 'idea'; spec.headline = 'How big is “' + C.plain(d.name, 60) + '”?'; spec.bullets = ['A clock needs 4, 6 or 8 segments.'];
+      spec.actions = (res.candidates || [4, 6, 8]).map(function (n) { return { id: 's' + n, label: String(n), run: act(Object.assign({ type: 'clock_add', name: d.name, size: n, hidden: true }, d.filled > 0 ? { filled: Math.min(d.filled, n) } : {})) }; });
+    } else if (res.missing === 'clock') {
+      spec.kind = 'idea'; spec.headline = 'No clock called “' + C.plain(res.name, 60) + '”: make one?'; spec.bullets = ['Pick its size.'];
+      spec.actions = [4, 6, 8].map(function (n) { return { id: 'm' + n, label: 'Make it ' + n, run: act({ type: 'clock_add', name: res.name, size: n, hidden: true }) }; });
+    } else {
+      var what = res.missing === 'name' ? 'a name' : res.missing === 'amount' ? 'how many' : res.missing === 'text' ? 'the words' : 'more';
+      spec.kind = 'idea'; spec.headline = 'Heard “' + q + '”: I need ' + what + '. Say it again.';
+    }
+    ctl.addCard(spec);
+  }
+  /* a cue that waited in a hidden page: it is stale, so it is a yellow card that acts only when tapped */
+  function cogmCueStale(me, job) {
+    var cm = me.cogm, C = cm.C, ctl = me.assist, id = cogmCueId(job, 's'); if (!ctl) return;
+    ctl.addCard({ id: id, seat: 'cogm', kind: 'idea', strip: true, headline: 'Old cue: “' + C.plain(job.quote, 90) + '”', bullets: ['Heard while this page was hidden. Do it now?'], bodyLabel: 'Heard', body: cogmQuoteBody(job),
+      actions: [{ id: 'do', label: 'Do it', primary: true, run: function () { ctl.removeCard(id); return cogmCuePost(me, Object.assign({}, job, { kind: 'post' }), cm.epoch); } }], ackLabel: 'Skip', open: true });
+  }
+  /* post the cue and show "working…" at once. NEVER retried: if the Worker logged it but the answer is lost, a retry comes back 'seen'. A late answer is still used. */
+  function cogmCuePost(me, job, epoch) {
+    var cm = me.cogm, C = cm.C, g = gmApi(), ctl = me.assist, wid = cogmCueId(job, 'w'); if (!cm || !g) return Promise.resolve();
+    if (!job.parsed && cm.capped) {          /* at the night's cap the model is off: only a parsed cue can land */
+      if (ctl) ctl.addCard({ id: cogmCueId(job, 'n'), seat: 'cogm', kind: 'note', strip: true, headline: 'Heard “' + C.plain(job.quote, 90) + '”: I couldn’t finish that one tonight.', bodyLabel: 'Heard', body: cogmQuoteBody(job), ackLabel: 'Got it ×' });
+      return Promise.resolve();
+    }
+    if (ctl) ctl.addCard({ id: wid, seat: 'cogm', kind: 'note', strip: true, headline: 'Working…', bodyLabel: 'Heard', body: cogmQuoteBody(job), open: true });
+    cm.working[wid] = W.setTimeout(function () {
+      delete cm.working[wid];
+      if (S === me && me.assist) me.assist.updateCard(wid, { kind: 'warn', headline: 'Didn’t land: say it again', bullets: [], strip: true });
+    }, C.TIMING.cueAnswer);
+    var body = { from: job.from, to: job.to, state: C.buildState(cogmLive(me), onStageName()), mode: 'cue', cueLineId: job.cueLineId, seenOk: true };
+    if (job.parsed) body.parsed = job.parsed;
+    return Promise.resolve().then(function () { return g.assistAct(body); }).then(function (res) {
+      if (S !== me || cm.epoch !== epoch) return;
+      if (cm.working[wid]) { W.clearTimeout(cm.working[wid]); delete cm.working[wid]; }
+      return cogmCueAnswer(me, job, res, wid);
+    }, function (e) {
+      if (S !== me || cm.epoch !== epoch) return;
+      if (cm.working[wid]) { W.clearTimeout(cm.working[wid]); delete cm.working[wid]; }
+      if (me.assist) me.assist.updateCard(wid, { kind: 'warn', headline: 'Didn’t land: say it again', bullets: [C.plain(errText(e), 120)], strip: true });
+    });
+  }
+  function cogmCueAnswer(me, job, res, wid) {
+    var cm = me.cogm, C = cm.C, ctl = me.assist, chain = Promise.resolve(), acts = isObj(res) && Array.isArray(res.actions) ? res.actions : [];
+    var fresh = acts.filter(function (a) { return isObj(a) && a.mode !== 'seen'; });
+    if (!fresh.length) {
+      if (!ctl) return chain;
+      if (acts.length) { ctl.removeCard(wid); return chain; }                      /* another page has it: that page shows the card */
+      var why = isObj(res) && Array.isArray(res.dropped) && res.dropped[0] ? res.dropped[0].why : '';
+      ctl.updateCard(wid, { kind: 'note', headline: why === 'already known' ? 'Already known: nothing added.' : 'Heard “' + C.plain(job.quote, 80) + '”: nothing to do.', bullets: why && why !== 'already known' ? [C.plain(why, 100)] : [], strip: true });
+      return chain;
+    }
+    if (ctl) ctl.removeCard(wid);
+    fresh.forEach(function (a) {
+      if (!a.at) a.at = cogmHhmm(job.cue.at);
+      chain = chain.then(function () { return S === me ? cogmCueOne(me, a) : null; }).then(null, function () {});
+    });
+    return chain;
+  }
+  /* the Rolled name (E3): the NPC generator's own draw, with a repeat-guard copy so the console's memory is not disturbed */
+  function cogmRollName(me) {
+    var g = npcgInst(); if (!g) return '';
+    try { var roll = g.roll({ mem: clone(S.npcMem || {}), ui: {} }); return str(roll && roll.npc && roll.npc.name).replace(/\s+/g, ' ').trim().slice(0, 80); } catch (e) { return ''; }
+  }
+  function cogmCueNote(me, a, text) {
+    var ctl = me.assist; if (!ctl) return;
+    ctl.addCard({ id: 'cogm|' + a.key, seat: 'cogm', kind: 'note', strip: true, headline: me.cogm.C.plain(text, 160), bodyLabel: 'Heard', body: me.cogm.C.heard(a), ackLabel: 'Got it ×' });
+  }
+  /* one action of a cue's answer */
+  function cogmCueOne(me, a) {
+    var cm = me.cogm, C = cm.C;
+    if (!isObj(a) || typeof a.key !== 'string' || !a.key || C.seen(cm.st, a.key)) return null;
+    if (a.type === 'undo') { C.mark(cm.st, a.key, 'applied'); return cogmCueUndo(me, a); }
+    if (a.type === 'rename') { C.mark(cm.st, a.key, 'applied'); return cogmCueRename(me, a); }
+    if (a.type === 'npc_add' && a.needsName) {
+      var rolled = cogmRollName(me);
+      if (!rolled) { C.mark(cm.st, a.key, 'dropped'); cogmCueNote(me, a, 'Heard a new NPC with no name, and I could not roll one. Say it again with a name.'); return null; }
+      a = Object.assign({}, a, { name: rolled, nameRolled: true });
+    }
+    return cogmOne(me, a, { cue: true });
+  }
+  /* "Blade, undo": the newest thing Blade did tonight that is still done, with the same compare-and-swap as its card's Undo */
+  function cogmCueUndo(me, a) {
+    var cm = me.cogm, C = cm.C, ctl = me.assist, key = '';
+    for (var i = cm.order.length - 1; i >= 0; i--) if (!cm.undone[cm.order[i]] && cm.recs[cm.order[i]] && cm.acts[cm.order[i]]) { key = cm.order[i]; break; }
+    if (!key) { cogmCueNote(me, a, 'Nothing to undo.'); return null; }
+    var target = cm.acts[key], head = C.headline(cm.plans[key], true);
+    return cogmUndo(me, target, false).then(function () {
+      if (ctl) ctl.updateCard(cogmCardId(target), { bullets: [], actions: [], undone: true });          /* the panel marks a card undone itself only when ITS Undo ran */
+      cogmCueNote(me, a, 'Undid: ' + head);
+    }, function () { /* the CAS refused: the card already says so and asks first */ cogmCueNote(me, a, 'Not undone: it changed since. Open its card to undo it anyway.'); });
+  }
+  /* "Blade, call him Big Sal": the last NPC or clock Blade made tonight, through the existing write paths */
+  function cogmCueRename(me, a) {
+    var cm = me.cogm, key = cm.lastMade;
+    if (!key || !cm.recs[key] || cm.undone[key]) { cogmCueNote(me, a, 'Nothing to rename: Blade has made no NPC or clock tonight.'); return null; }
+    return cogmRenameTo(me, cm.acts[key], str(a.name)).then(function (ok) { if (ok) cogmCueNote(me, a, 'Renamed: ' + cm.C.plain(a.name, 80)); }, function (e) { cogmCueNote(me, a, 'Could not rename: ' + errText(e)); });
   }
   function cogmSend(me, w, epoch) {
     var cm = me.cogm, g = gmApi(), C = cm.C;
@@ -1755,7 +1901,9 @@
       mineClocks: Object.keys(cm.mine).map(function (k) { return cm.mine[k]; }),
       npcs: Object.keys(me.npcs || {}).map(function (id) { var d = me.npcs[id]; return { id: id, name: str(d.name), tags: Array.isArray(d.tags) ? d.tags : [], revealed: d.revealed === true, description: str(d.description), role: str(d.role) }; }),
       pcs: dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; }),
-      ipadClocks: !!me.clOn
+      ipadClocks: !!me.clOn,
+      /* "tick that": the clock Blade last made or ticked, only within the last 10 minutes (cue.js is given the id; the rule is the page's) */
+      lastClock: cm.lastClock && Date.now() - cm.lastClock.at <= 600000 ? cm.lastClock.id : ''
     };
   }
   function cogmApply(me, res) {
@@ -1770,16 +1918,22 @@
     return chain;
   }
   function cogmNewId(type) { return (type === 'npc_add' ? 'npc_cogm_' : 'c_') + Date.now().toString(36) + Math.floor(Math.random() * 1679616).toString(36); }
-  function cogmOne(me, a) {
-    var cm = me.cogm, C = cm.C;
+  function cogmOne(me, a, opts) {
+    var cm = me.cogm, C = cm.C, cue = !!(opts && opts.cue);
     if (!isObj(a) || typeof a.key !== 'string' || !a.key) return null;
     if (C.seen(cm.st, a.key)) return null;                     /* a window sent twice, or a decision heard twice: the key is the server's, used as given */
-    var plan = C.planApply(a, cogmLive(me), { id: cogmNewId(a.type) });
-    if (plan.op === 'drop') { C.mark(cm.st, a.key, 'dropped'); return null; }
+    /* a cue is the GM's own tap, so it is applied confirmed; a window is never more than an offer (the second switch: "offers only") */
+    var plan = C.planApply(a, cogmLive(me), { id: cogmNewId(a.type) }, cue ? { confirmed: true } : undefined);
+    if (plan.op === 'drop') {
+      C.mark(cm.st, a.key, 'dropped');
+      if (cue && plan.why !== 'seen') cogmCueNote(me, a, plan.why === 'no change' ? 'Nothing to change.' : plan.why === 'already known' ? 'Already known: ' + C.plain(plan.name, 80) + '.' : 'Not done: ' + plan.why + '.');
+      return null;
+    }
     cm.acts[a.key] = a;
+    if (!cue && plan.op === 'do') { plan.op = 'offer'; plan.why = 'Heard without “Blade”: tap Do it to act on it'; }
     if (plan.op === 'offer') { C.mark(cm.st, a.key, 'offered'); cogmOffer(me, a, plan); return null; }
     C.mark(cm.st, a.key, 'applied');                           /* before the write: a second copy arriving while it is in flight finds the key */
-    return cogmDo(me, a, plan, false);
+    return cogmDo(me, a, plan, false, cue);
   }
   function cogmCardId(a) { return 'cogm|' + a.key; }
   /* a yellow card: what Blade would do, why it is asking, and Do it */
@@ -1821,14 +1975,18 @@
     plan.capId = S.capId;
     return Promise.resolve();
   }
-  function cogmDo(me, a, plan, viaButton) {
+  function cogmDo(me, a, plan, viaButton, cue) {
     var cm = me.cogm, C = cm.C, ctl = me.assist;
     return cogmWrite(me, plan).then(function () {
       if (S !== me || !me.assist) return;
       var rec = C.recordOf(plan); if (plan.type === 'capture') rec.id = plan.capId;
-      cm.recs[a.key] = rec; cm.plans[a.key] = plan;
+      cm.recs[a.key] = rec; cm.plans[a.key] = plan; cm.acts[a.key] = a;
+      if (cm.order.indexOf(a.key) < 0) cm.order.push(a.key);
+      if (plan.type === 'clock_add' || plan.type === 'npc_add') cm.lastMade = a.key;
+      if (plan.type === 'clock_add' || plan.type === 'clock_tick') cm.lastClock = { id: plan.id, at: Date.now() };
       var id = cogmCardId(a), spec = { kind: 'done', headline: C.headline(plan, true), bullets: [], body: C.heard(a), bodyLabel: 'Heard', actions: cogmButtons(me, a), ackLabel: 'Got it ×',
         undo: function () { return cogmUndo(me, a, false); } };
+      if (cue === true) spec.strip = true;                       /* a cue's result slides the strip out even with the panel closed */
       if (cm.cards[a.key]) ctl.updateCard(id, spec); else cm.cards[a.key] = ctl.addCard(Object.assign({ id: id, seat: 'cogm' }, spec));
     }, function (e) {
       if (S !== me) return;
@@ -1846,6 +2004,7 @@
       btns.push({ id: 'vis', label: hid ? 'Show players' : 'Hide', title: hid ? 'Hidden from the players now' : 'Visible to the players now', run: function () { return cogmClockVis(me, a); } });
       btns.push({ id: 'rename', label: 'Rename', run: function () { return cogmClockRename(me, a); } });
     } else if (plan.type === 'npc_add') {
+      btns.push({ id: 'rename', label: 'Rename', run: function () { return cogmNpcRename(me, a); } });
       btns.push({ id: 'portrait', label: 'Draw portrait', run: function () { return cogmPortrait(me, plan); } });
       btns.push({ id: 'reveal', label: 'Reveal and show', title: 'Asks first, then shows them on the iPad', run: function () { return cogmReveal(me, plan); } });
     }
@@ -1865,9 +2024,34 @@
     var cm = me.cogm, rec = cm.recs[a.key], plan = cm.plans[a.key]; if (!rec || !plan || !me.api || typeof me.api.clockOps !== 'function') return Promise.resolve();
     var nn = W.prompt ? W.prompt('Rename the clock', plan.clock.name) : null; nn = str(nn).replace(/\s+/g, ' ').trim().slice(0, 80);
     if (!nn || nn === plan.clock.name) return Promise.resolve();
-    return Promise.resolve().then(function () { return me.api.clockOps([{ id: rec.id, name: nn }]); }).then(function () {
-      cm.C.noteEdit(rec, { name: nn }); plan.clock.name = nn; cm.mine[rec.id] = nn; cogmRefresh(me, a);
-    }, function (e) { toast('Could not rename the clock: ' + errText(e), true); });
+    return cogmRenameTo(me, a, nn).then(null, function (e) { toast('Could not rename the clock: ' + errText(e), true); });
+  }
+  function cogmNpcRename(me, a) {
+    var cm = me.cogm, rec = cm.recs[a.key], plan = cm.plans[a.key]; if (!rec || !plan) return Promise.resolve();
+    var nn = W.prompt ? W.prompt('Rename the NPC', plan.name) : null; nn = str(nn).replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!nn || nn === plan.name) return Promise.resolve();
+    return cogmRenameTo(me, a, nn).then(null, function (e) { toast('Could not rename the NPC: ' + errText(e), true); });
+  }
+  /* the one rename: the card's Rename button and "Blade, call him ..." both come here. The clock goes through clockOps, the NPC through its cast doc (existing paths). The undo
+     snapshot follows the rename, so a renamed thing can still be undone. -> Promise<true> when it was renamed */
+  function cogmRenameTo(me, a, name) {
+    var cm = me.cogm, C = cm.C, rec = cm.recs[a.key], plan = cm.plans[a.key], nn = str(name).replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!rec || !plan || !nn) return Promise.resolve(false);
+    if (plan.type === 'clock_add') {
+      if (!me.api || typeof me.api.clockOps !== 'function') return Promise.reject(new Error('The table is not available here.'));
+      return Promise.resolve().then(function () { return me.api.clockOps([{ id: rec.id, name: nn }]); }).then(function () {
+        C.noteEdit(rec, { name: nn }); plan.clock.name = nn; cm.mine[rec.id] = nn; cogmRefresh(me, a); return true;
+      });
+    }
+    if (plan.type === 'npc_add') {
+      var ref = npcRef(rec.id); if (!ref) return Promise.reject(new Error('The cast is not available here.'));
+      var taken = (cogmLive(me).npcs || []).some(function (n) { return n.id !== rec.id && C.norm(n.name) === C.norm(nn) && n.tags.indexOf('undone') < 0; });
+      if (taken) return Promise.reject(new Error('“' + nn + '” is already in the cast'));
+      return Promise.resolve().then(function () { return ref.update({ name: nn }); }).then(function () {
+        C.noteEdit(rec, { name: nn }); plan.name = nn; plan.doc.name = nn; plan.rolled = false; cogmRefresh(me, a); return true;
+      });
+    }
+    return Promise.resolve(false);
   }
   /* Draw portrait is the Blade panel's own Screen path (portrait seat, then the gatekeeper); the picture goes to the Rack and nothing is shown until Show there */
   function cogmPortrait(me, plan) {
@@ -1916,6 +2100,7 @@
         throw new Error('changed');
       }
       return (u.noop ? Promise.resolve() : cogmUndoWrite(me, rec, u.write)).then(function () {
+        cm.undone[a.key] = true;                               /* "Blade, undo" looks for the newest thing that is not undone yet */
         if (viaButton && ctl) ctl.updateCard(cogmCardId(a), { bullets: [], actions: [], undone: true });
         else if (ctl) ctl.updateCard(cogmCardId(a), { bullets: [], actions: [] });
       });

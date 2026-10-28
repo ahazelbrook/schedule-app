@@ -389,5 +389,129 @@ await test('8. gm-page.js co-GM section: no health, no sheet, no innerHTML, no s
   assert.ok(/assistAct: function \(req\) \{ return api\('POST', '\/gm\/assist\/act'/.test(cf), 'cf.js has the assistAct client');
 });
 
+/* ---------- 9. the cue lane (C4d) ---------- */
+const CLIVE = { clocks: [{ id: 'c_a', name: 'Escape Invented', size: 6, filled: 1, hidden: true }, { id: 'c_b', name: 'Ferry Late Invented', size: 4, filled: 0, hidden: true }], npcs: [], pcs: [], lastClock: '' };
+const CT0 = 1_700_000_000_000;
+const crow = (seq, text, o = {}) => ({ seq, id: 'row' + seq, kind: 'line', at: new Date(o.at === undefined ? CT0 : o.at).toISOString(), text, speaker: o.speaker === undefined ? 0 : o.speaker });
+const clane = (rows, live = CLIVE, now = CT0) => { const st = C.newState(); C.start(st, 0); C.ingest(st, rows, rows.length ? rows[rows.length - 1].seq : 0, now, live); return st; };
+
+await test('9. a cue line is found at ingest and parsed at once: no settling, no gap, the row id is the cue line id', () => {
+  const st = clane([crow(1, 'we sneak in'), crow(2, 'Blade, make a six segment clock called Night Boat Invented'), crow(3, 'and so on')]);
+  assert.equal(st.cues.length, 1);
+  assert.equal(st.pending.length, 0, 'a cue line is never an uncued window');
+  const j = C.cueNext(st, CT0, CLIVE);
+  assert.equal(j.kind, 'post'); assert.equal(j.cueLineId, 'row2'); assert.equal(j.from, 2); assert.equal(j.to, 2); assert.equal(j.joined, false);
+  assert.equal(j.parsed.length, 1); assert.equal(j.parsed[0].type, 'clock_add'); assert.equal(j.parsed[0].size, 6); assert.ok(!('key' in j.parsed[0]), 'the page never makes a key');
+  assert.equal(C.cueNext(st, CT0 + 1, CLIVE), null, 'and it is taken');
+});
+
+await test('9. without live, nothing is a cue (the old callers are unchanged)', () => {
+  const st = C.newState(); C.start(st, 0); C.ingest(st, [crow(1, 'Blade, make a six segment clock called X Invented')], 1, CT0);
+  assert.equal(st.cues.length, 0);
+});
+
+await test('9. a cut-off cue waits for ONE more line, joins it whatever its speaker label, and parses again', () => {
+  const st = clane([crow(1, 'Blade, make a six', { speaker: 1 })]);
+  assert.equal(C.cueNext(st, CT0 + 100, CLIVE), null, 'no next line yet, inside the wait: nothing');
+  C.ingest(st, [crow(2, 'segment clock called Night Boat Invented', { speaker: 0 })], 2, CT0 + 300, CLIVE);
+  const j = C.cueNext(st, CT0 + 400, CLIVE);
+  assert.equal(j.kind, 'post'); assert.equal(j.joined, true); assert.equal(j.cueLineId, 'row1'); assert.equal(j.from, 1); assert.equal(j.to, 2);
+  assert.equal(j.parsed[0].name, 'Night Boat Invented'); assert.equal(j.parsed[0].quote, 'Blade, make a six segment clock called Night Boat Invented', 'joined with one space (joinLines)');
+});
+
+await test('9. still cut off after the join, or no line within cueWait: the model path (parsed: null)', () => {
+  const a = clane([crow(1, 'Blade, make a six')]);
+  const j = C.cueNext(a, CT0 + C.TIMING.cueWait + 1, CLIVE);
+  assert.equal(j.kind, 'post'); assert.equal(j.parsed, null); assert.equal(j.to, 1);
+  const b = clane([crow(1, 'Blade, make a six')]); C.ingest(b, [crow(2, 'um')], 2, CT0 + 200, CLIVE);
+  const k = C.cueNext(b, CT0 + 300, CLIVE);
+  assert.equal(k.kind, 'post'); assert.equal(k.parsed, null); assert.equal(k.to, 2); assert.equal(k.joined, true);
+});
+
+await test('9. a bare "Blade," then a command in the next line', () => {
+  const st = clane([crow(1, 'Blade,', { speaker: 0 })]); C.ingest(st, [crow(2, 'tick Escape Invented twice', { speaker: 1 })], 2, CT0 + 50, CLIVE);
+  const j = C.cueNext(st, CT0 + 100, CLIVE);
+  assert.equal(j.kind, 'post'); assert.equal(j.parsed[0].type, 'clock_tick'); assert.equal(j.parsed[0].clock_id, 'c_a'); assert.equal(j.parsed[0].by, 2);
+});
+
+await test('9. at most one cue call every cueGap; cards are not calls and are not held', () => {
+  const st = clane([crow(1, 'Blade, tick Escape Invented'), crow(2, 'Blade, tick Ferry Late Invented'), crow(3, 'Blade, show the map to everyone')]);
+  assert.equal(C.cueNext(st, CT0, CLIVE).kind, 'post');
+  assert.equal(C.cueNext(st, CT0 + 500, CLIVE), null, 'the second call waits');
+  assert.equal(C.cueNext(st, CT0 + C.TIMING.cueGap - 1, CLIVE), null);
+  const j2 = C.cueNext(st, CT0 + C.TIMING.cueGap, CLIVE);
+  assert.equal(j2.kind, 'post'); assert.equal(j2.cueLineId, 'row2');
+  const card = C.cueNext(st, CT0 + C.TIMING.cueGap + 1, CLIVE);
+  assert.equal(card.kind, 'card'); assert.equal(card.res.refused, 'show');
+});
+
+await test('9. refused and missing cues are cards, never posted; which and clock do not wait for a next line', () => {
+  const st = clane([crow(1, 'Blade, tick Invented'), crow(2, 'Blade, tick Nonexistent Pier'), crow(3, 'Blade, take a stress'), crow(4, 'Blade, make a clock called Sizeless Invented')]);
+  const w = C.cueNext(st, CT0, CLIVE); assert.equal(w.kind, 'card'); assert.equal(w.res.missing, 'which'); assert.deepEqual(w.res.candidates.map((c) => c.id), ['c_a', 'c_b']);
+  const cl = C.cueNext(st, CT0, CLIVE); assert.equal(cl.kind, 'card'); assert.equal(cl.res.missing, 'clock');
+  const sh = C.cueNext(st, CT0, CLIVE); assert.equal(sh.kind, 'card'); assert.equal(sh.res.refused, 'sheet');
+  assert.equal(C.cueNext(st, CT0 + 100, CLIVE), null, 'a missing size waits for one more line');
+  const sz = C.cueNext(st, CT0 + C.TIMING.cueWait, CLIVE); assert.equal(sz.kind, 'card'); assert.equal(sz.res.missing, 'size'); assert.deepEqual(sz.res.candidates, [4, 6, 8]);
+});
+
+await test('9. a cue is joined only with a line that is not a cue itself', () => {
+  const st = clane([crow(1, 'Blade, make a six'), crow(2, 'Blade, tick Escape Invented')]);
+  const a = C.cueNext(st, CT0, CLIVE);
+  assert.equal(a.kind, 'post'); assert.equal(a.parsed, null, 'cut off, the next line is its own cue: not joined'); assert.equal(a.to, 1); assert.equal(a.joined, false);
+  assert.equal(C.cueNext(st, CT0 + C.TIMING.cueGap, CLIVE).cueLineId, 'row2');
+});
+
+await test('9. a cue older than cueStale (a hidden page coming back) is "stale": a card that acts only when tapped', () => {
+  const st = C.newState(); C.start(st, 0); st.away = CT0 - 70_000; C.ingest(st, [crow(1, 'Blade, tick Escape Invented', { at: CT0 - 90_000 })], 1, CT0, CLIVE);
+  const j = C.cueNext(st, CT0, CLIVE);
+  assert.equal(j.kind, 'stale'); assert.ok(j.parsed && j.parsed.length === 1);
+  assert.equal(st.cueNotBefore, 0, 'a stale cue does not use the call gap');
+  const drift = clane([crow(1, 'Blade, tick Escape Invented', { at: CT0 - 90_000 })], CLIVE, CT0);
+  assert.equal(C.cueNext(drift, CT0, CLIVE).kind, 'post', 'an old time with the page never away (a drifting iPad clock) is not stale');
+  const fresh = clane([crow(1, 'Blade, tick Escape Invented', { at: CT0 - 5_000 })], CLIVE, CT0);
+  assert.equal(C.cueNext(fresh, CT0, CLIVE).kind, 'post');
+});
+
+await test('9. "tick that" uses lastClock, which the page gives only inside ten minutes', () => {
+  const st = clane([crow(1, 'Blade, tick that')], Object.assign({}, CLIVE, { lastClock: 'c_b' }));
+  const j = C.cueNext(st, CT0, Object.assign({}, CLIVE, { lastClock: 'c_b' }));
+  assert.equal(j.kind, 'post'); assert.equal(j.parsed[0].clock_id, 'c_b');
+  const none = clane([crow(1, 'Blade, tick that')]);
+  assert.equal(C.cueNext(none, CT0, CLIVE).res.missing, 'which');
+});
+
+await test('9. catchUp: what was said while the uncued switch was off is not sent', () => {
+  const st = C.newState(); C.start(st, 0);
+  C.ingest(st, [crow(1, 'a six segment clock for the cannery')], 1, CT0, CLIVE);
+  assert.equal(st.pending.length, 1);
+  C.catchUp(st);
+  assert.equal(st.pending.length, 0); assert.equal(C.nextWindow(st, CT0 + 60_000), null);
+});
+
+await test('9. planApply: a cue clock carries filled; Undo\'s snapshot agrees; a rolled name shows on the card', () => {
+  const p = C.planApply({ type: 'clock_add', key: 'cue:x:0', name: 'Ferry', size: 4, filled: 2, hidden: true, quote: 'q' }, { clocks: [], npcs: [], pcs: [] }, { id: 'c_n' }, { confirmed: true });
+  assert.equal(p.op, 'do'); assert.equal(p.clock.filled, 2); assert.equal(p.clock.hidden, true);
+  assert.equal(C.recordOf(p).snap.filled, 2);
+  assert.equal(C.planUndo(C.recordOf(p), { clock: { name: 'Ferry', size: 4, filled: 2, hidden: true } }).ok, true, 'a filled cue clock can be undone');
+  assert.equal(C.headline(p, true), 'Clock made (hidden): Ferry (4), 2 marked');
+  assert.equal(C.planApply({ type: 'clock_add', name: 'Ferry', size: 4, filled: 9, quote: 'q' }, { clocks: [], npcs: [], pcs: [] }, { id: 'c_n' }, { confirmed: true }).clock.filled, 4, 'clamped to the size');
+  const n = C.planApply({ type: 'npc_add', key: 'cue:x:1', name: 'Rolled Name Invented', nameRolled: true, look: 'tired', role: '', quote: 'q' }, { clocks: [], npcs: [], pcs: [] }, { id: 'n_1' }, { confirmed: true });
+  assert.equal(n.op, 'do'); assert.equal(n.doc.revealed, false); assert.equal(C.headline(n, true), 'New NPC (hidden): Rolled Name Invented (name rolled)');
+  assert.deepEqual(C.planApply({ type: 'undo', key: 'k' }, {}, {}, { confirmed: true }), { op: 'page', type: 'undo' });
+  assert.deepEqual(C.planApply({ type: 'rename', name: 'X', key: 'k' }, {}, {}, { confirmed: true }), { op: 'page', type: 'rename' });
+});
+
+await test('9. gm-page.js cue lane: no key made, answers applied confirmed, seen skipped, undo and rename page-only, a name rolled by the generator, never retried', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  const a = src.indexOf('function mountCogm()'), b = src.indexOf('function loadShown()');
+  const sec = src.slice(a, b).replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(!/key:\s*['"`]/.test(sec) && !/\bkey\s*=\s*['"`]cue/.test(sec) && !/'cue:'/.test(sec), 'the page never makes an action key');
+  assert.ok(/mode: 'cue'/.test(sec) && /cueLineId: job\.cueLineId/.test(sec) && /seenOk: true/.test(sec), 'a cue is posted as mode cue with the cue line id');
+  assert.ok(/\{ confirmed: true \}/.test(sec) && /a\.mode !== 'seen'/.test(sec), 'a cue is applied confirmed, and a seen action is skipped');
+  assert.ok(/g\.roll\(\{ mem: clone\(S\.npcMem/.test(sec) && /nameRolled: true/.test(sec), 'a missing NPC name is rolled by the NPC generator\'s own draw');
+  assert.ok((sec.match(/g\.assistAct\(/g) || []).length === 2, 'assistAct is called from exactly two places (the window and the cue post); the cue post is not retried');
+  assert.ok(/cm\.uncued && !cm\.capped && !cm\.winBusy/.test(sec), 'uncued windows run only behind the second switch');
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

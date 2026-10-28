@@ -19,18 +19,31 @@
      buildState(live, onStage) -> the state body POST /assist/act takes, trimmed so the server cannot 400 it
      planApply(action, live, ctx, opts) -> { op: 'do' | 'offer' | 'drop', ... }
      planUndo(rec, live, force) -> { ok: true, write? } | { ok: false, why, ... }
-     headline / heard                   the card's words (model text goes in as text, with * made harmless) */
+     headline / heard                   the card's words (model text goes in as text, with * made harmless)
+
+   The cue lane (C4d; design "the cue and the phones" 1.3 to 1.5). A line holding "Blade, ..." is found by B68Cue.find as it is ingested (pass `live` as ingest's 5th
+   argument) and kept OUT of the uncued windows. cueNext(st, now, live) -> the next job, or null while there is nothing to do or the call has to wait:
+     { kind: 'post' | 'stale' | 'card', cue, from, to, cueLineId, parsed (the actions, or null for the model path), res (B68Cue.parse's answer), quote, joined }
+   It parses at once against `live`. A cut-off or incomplete command (missing more, name, text, amount or size, or a bare "Blade") waits for ONE more line (TIMING.cueWait),
+   joins it whatever its speaker label (B68Cue.joinLines) and parses again. Still cut off after that -> the model path (parsed: null) for 'more'; a card for the rest.
+   missing which / clock and every refusal are a card with no call. Cue lines skip the settling and the 8 s gap; at most one cue call every TIMING.cueGap. A cue older
+   than TIMING.cueStale (a hidden page coming back) is kind 'stale': a yellow card that acts only when tapped. The page never makes a key: the Worker does. */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
   if (typeof module === 'object' && module && module.exports) module.exports = M;
   else root.B68GmCogm = M;
-})(typeof self !== 'undefined' ? self : this, function () {
+})(typeof self !== 'undefined' ? self : this, function (root) {
   'use strict';
 
   var P = {};
   /* the page reads these when it runs, so a check can make them short */
-  var TIMING = P.TIMING = { poll: 5000, gap: 8000, settle: 6000, span: 30000, giveUpAfter: 3 };
+  var TIMING = P.TIMING = { poll: 2000, gap: 8000, settle: 6000, span: 30000, giveUpAfter: 3, cueWait: 6000, cueGap: 2000, cueStale: 60000, cueAnswer: 10000, sttEvery: 15 };
+  /* B68Cue (app/cue.js): the browser has it from the bundle (cue.js is listed before this file); Node requires it. Looked up when used, so a missing one only switches the lane off. */
+  function cueMod() {
+    if (typeof root !== 'undefined' && root && root.B68Cue) return root.B68Cue;
+    try { return typeof require === 'function' ? require('../cue.js') : null; } catch (e) { return null; }
+  }
   var BUF_MAX = 80, WIN_LINES = 30, WIN_SEQS = 200, SIDE = 2;
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -73,22 +86,26 @@
   P.match = match;
 
   /* ---------- 2. the window, the cursors, the keys ---------- */
-  function newState() { return { buf: [], pending: [], readAfter: 0, handled: 0, notBefore: 0, keys: {}, tries: {} }; }
+  function newState() { return { buf: [], pending: [], readAfter: 0, handled: 0, notBefore: 0, keys: {}, tries: {}, cues: [], cueNotBefore: 0, away: 0 }; }
   P.newState = newState;
   /* start at the newest seq: the talk before co-GM was switched on is not replayed */
-  function start(st, last) { var n = Math.max(0, Math.floor(+last) || 0); st.readAfter = n; st.handled = n; st.buf = []; st.pending = []; return st; }
+  function start(st, last) { var n = Math.max(0, Math.floor(+last) || 0); st.readAfter = n; st.handled = n; st.buf = []; st.pending = []; st.cues = []; st.cueNotBefore = 0; return st; }
   P.start = start;
+  /* the uncued switch came on: what was said while it was off is not sent */
+  function catchUp(st) { st.handled = st.readAfter; st.pending = []; return st; }
+  P.catchUp = catchUp;
 
   /* rows from GET /gm/transcript?after=: lines are kept (marks are not talk), a line that matches is noted as pending; the read cursor follows `last`
      and the highest seq seen, so the next read asks for what came after. */
-  function ingest(st, rows, last, now) {
-    var top = st.readAfter;
+  function ingest(st, rows, last, now, live) {
+    var top = st.readAfter, Cue = isObj(live) ? cueMod() : null;
     (Array.isArray(rows) ? rows : []).forEach(function (r) {
       if (!isObj(r) || !Number.isInteger(r.seq)) return;
       if (r.seq > top) top = r.seq;
       if (r.kind !== 'line' || r.seq <= st.readAfter || !str(r.text).trim()) return;
       if (st.buf.length && st.buf[st.buf.length - 1].seq >= r.seq) return;
-      st.buf.push({ seq: r.seq, at: str(r.at), text: str(r.text), speaker: typeof r.speaker === 'number' ? r.speaker : null });
+      st.buf.push({ seq: r.seq, id: str(r.id), at: str(r.at), text: str(r.text), speaker: typeof r.speaker === 'number' ? r.speaker : null });
+      if (Cue && Cue.find(str(r.text), live)) { st.cues.push({ seq: r.seq, id: str(r.id), at: str(r.at), text: str(r.text), seenAt: now, late: !!st.away }); return; }      /* a cue is the cue lane's, never an uncued window's */
       if (r.seq > st.handled) { var m = match(r.text); if (m.length) st.pending.push({ seq: r.seq, intents: m, seenAt: now }); }
     });
     /* `last` is the newest seq the server holds. It is used only when this read came back empty: a full page (the server gives at most 500) must be read on, not skipped past */
@@ -145,6 +162,32 @@
   }
   P.windowFailed = windowFailed;
 
+  /* ---------- 2b. the cue lane (C4d) ---------- */
+  var WAITS = { more: 1, name: 1, text: 1, amount: 1, size: 1 };       /* what one more line can fix; 'which' and 'clock' it cannot */
+  function lineAfter(st, seq) { for (var i = 0; i < st.buf.length; i++) if (st.buf[i].seq > seq) return st.buf[i]; return null; }
+  function cueAge(c, now) { var t = Date.parse(c.at); return now - (isFinite(t) ? t : c.seenAt); }
+  function cueNext(st, now, live) {
+    var Cue = cueMod();
+    if (!Cue || !st.cues.length) return null;
+    var c = st.cues[0], text = c.text, to = c.seq, joined = false, res = Cue.parse(text, live), waiting = res.pending || (res.missing && WAITS[res.missing]);
+    if (waiting) {
+      var nx = lineAfter(st, c.seq);
+      if (nx && !Cue.find(nx.text, live)) { text = Cue.joinLines(c.text, nx.text); to = nx.seq; joined = true; res = Cue.parse(text, live); }
+      else if (!nx && now - c.seenAt < TIMING.cueWait) return null;                    /* the next line may still be on its way: longer than the iPad's tail */
+    }
+    var job = { kind: 'card', cue: c, from: c.seq, to: to, cueLineId: c.id, parsed: null, res: res, quote: res.quote, joined: joined };
+    if (res.refused) { st.cues.shift(); return job; }
+    if (res.pending) { st.cues.shift(); job.res = Object.assign({}, res, { refused: 'unparsed' }); return job; }
+    if (res.missing && res.missing !== 'more') { st.cues.shift(); return job; }
+    if (!res.missing && !res.actions.length) { st.cues.shift(); job.res = Object.assign({}, res, { refused: 'unparsed' }); return job; }
+    if (res.missing === 'more') job.parsed = null; else job.parsed = res.actions;
+    job.kind = c.late && cueAge(c, now) > TIMING.cueStale ? 'stale' : 'post';       /* stale only when this page was away (st.away): the iPad's clock and the laptop's can differ */
+    if (job.kind === 'post') { if (now < st.cueNotBefore) return null; st.cueNotBefore = now + TIMING.cueGap; }
+    st.cues.shift();
+    return job;
+  }
+  P.cueNext = cueNext;
+
   function seen(st, key) { return typeof key === 'string' && Object.prototype.hasOwnProperty.call(st.keys, key); }
   function mark(st, key, how) { if (typeof key === 'string' && key) st.keys[key] = how || 'applied'; }
   P.seen = seen; P.mark = mark;
@@ -186,11 +229,13 @@
     var confirmed = opts.confirmed === true, plan, why = '';
     if (!isObj(action)) return { op: 'drop', why: 'not an action' };
     if (action.mode === 'seen') return { op: 'drop', why: 'seen' };      // the server has handed this key to another page or an earlier window (C4c): never write it twice
+    if (action.type === 'undo' || action.type === 'rename') return { op: 'page', type: action.type };      // a cue's own: the page carries them out, there is nothing to write from a plan
     if (action.type === 'clock_add') {
       var name = clipName(action.name);
       if (!name || !ctx.id) return { op: 'drop', why: 'no name' };
       if (!confirmed && (clockByName(live, name) || (live.mineClocks || []).some(function (m) { return norm(m) === norm(name); }))) why = 'A clock called “' + name + '” is already on the table';
-      plan = { op: 'do', type: 'clock_add', id: ctx.id, clock: { id: ctx.id, name: name, size: action.size, filled: 0, kind: 'danger', hidden: true } };
+      var fill = Math.max(0, Math.min(Math.floor(+action.size) || 0, Math.floor(+action.filled) || 0));      /* "and mark two" (a cue's clock_add carries filled) */
+      plan = { op: 'do', type: 'clock_add', id: ctx.id, clock: { id: ctx.id, name: name, size: action.size, filled: fill, kind: 'danger', hidden: true } };
     } else if (action.type === 'clock_tick') {
       var c = (live.clocks || []).filter(function (x) { return x.id === action.clock_id; })[0];
       if (!c) return { op: 'drop', why: 'that clock is gone' };
@@ -206,7 +251,7 @@
       if (!nm || !ctx.id) return { op: 'drop', why: 'no name' };
       var known = (live.npcs || []).concat(live.pcs || []).some(function (n) { return isObj(n) && norm(n.name) === norm(nm) && !(Array.isArray(n.tags) && n.tags.indexOf('undone') >= 0); });
       if (known) return { op: 'drop', why: 'already known', name: nm };
-      plan = { op: 'do', type: 'npc_add', id: ctx.id, name: nm,
+      plan = { op: 'do', type: 'npc_add', id: ctx.id, name: nm, rolled: action.nameRolled === true,
         doc: { name: nm, alias: '', role: str(action.role).slice(0, 80), faction: '', description: str(action.look).slice(0, 2000), spec: {}, revealed: false, firstSeen: null, tags: ['cogm'],
           gmNotes: ('Heard' + (action.at ? ' at ' + action.at : '') + ': “' + str(action.quote).replace(/\s+/g, ' ').trim() + '” (co-GM)').slice(0, 600) } };
     } else if (action.type === 'capture') {
@@ -274,7 +319,7 @@
   P.noteEdit = noteEdit;
   /* what an applied plan leaves for undo */
   function recordOf(plan) {
-    if (plan.type === 'clock_add') return { type: 'clock_add', id: plan.id, snap: { name: plan.clock.name, size: plan.clock.size, filled: 0, hidden: true } };
+    if (plan.type === 'clock_add') return { type: 'clock_add', id: plan.id, snap: { name: plan.clock.name, size: plan.clock.size, filled: plan.clock.filled || 0, hidden: true } };
     if (plan.type === 'clock_tick') return { type: 'clock_tick', id: plan.id, from: plan.from, to: plan.to };
     if (plan.type === 'npc_add') return { type: 'npc_add', id: plan.id, snap: { name: plan.doc.name, description: plan.doc.description, role: plan.doc.role } };
     return { type: 'capture', id: '', text: plan.text };
@@ -284,9 +329,9 @@
   /* ---------- 6. the words on the cards (model text is data: the page sets it with textContent, and an asterisk is made harmless here) ---------- */
   function headline(plan, done) {
     var t = plan.type;
-    if (t === 'clock_add') return (done ? 'Clock made (hidden): ' : 'Make a clock: ') + plain(plan.clock.name, 80) + ' (' + plan.clock.size + ')';
+    if (t === 'clock_add') return (done ? 'Clock made (hidden): ' : 'Make a clock: ') + plain(plan.clock.name, 80) + ' (' + plan.clock.size + ')' + (plan.clock.filled > 0 ? ', ' + plan.clock.filled + ' marked' : '');
     if (t === 'clock_tick') return (done ? 'Ticked: ' : 'Tick: ') + plain(plan.name, 80) + ' ' + plan.from + '→' + plan.to + '/' + plan.size;
-    if (t === 'npc_add') return (done ? 'New NPC (hidden): ' : 'Add an NPC: ') + plain(plan.name, 80);
+    if (t === 'npc_add') return (done ? 'New NPC (hidden): ' : 'Add an NPC: ') + plain(plan.name, 80) + (plan.rolled ? ' (name rolled)' : '');
     if (plan.roll) return (done ? 'Roll filed: ' : 'File this roll: ') + plain(plan.text, 100);
     return (done ? 'Filed: ' : 'File this: ') + plain(plan.text, 100);
   }
@@ -297,7 +342,7 @@
   }
   P.heard = heard;
 
-  var api = { match: match, newState: newState, start: start, ingest: ingest, nextWindow: nextWindow, windowSent: windowSent, windowFailed: windowFailed, seen: seen, mark: mark,
+  var api = { match: match, newState: newState, start: start, catchUp: catchUp, ingest: ingest, cueNext: cueNext, nextWindow: nextWindow, windowSent: windowSent, windowFailed: windowFailed, seen: seen, mark: mark,
     buildState: buildState, planApply: planApply, planUndo: planUndo, noteEdit: noteEdit, recordOf: recordOf, headline: headline, heard: heard, plain: plain, norm: norm,
     TIMING: TIMING, PATTERNS: PATTERNS, _pure: P };
   return api;
