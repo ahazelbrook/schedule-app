@@ -33,8 +33,8 @@
       'markdown.js', 'rules.js', 'cast-page.js', 'name-edit.js', 'runtime/cf.js', 'routes.js', 'boot.js'],
     table: TABLE,
     print: TABLE,
-    gm: ['gm.css', 'prep.css', 'maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm-page.js'],
-    display: ['display.css', 'stt.js', 'display-page.js']
+    gm: ['gm.css', 'prep.css', 'maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm-page.js'],
+    display: ['display.css', 'cue.js', 'stt.js', 'display-page.js']
   };
   /* every stylesheet, in cascade order (index.html's order from before lazy loading) */
   var CSS_ORDER = ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', 'display.css'];

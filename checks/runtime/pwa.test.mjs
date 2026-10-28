@@ -144,7 +144,7 @@ await test('routes.js: index.html loads exactly the core bundle; every other bun
       if (name !== 'core') ok(!core.has(f), name + ': ' + f + ' is in the core too (loaded twice)');
     }
   }
-  for (const f of ['gm-page.js', 'gm/console.js', 'display-page.js', 'stt.js', 'maps/map-kit.js', 'campaign.js', 'season.js']) ok(!core.has(f) && !HTML.includes('"' + f + '"'), f + ' is lazy, not in index.html');
+  for (const f of ['gm-page.js', 'gm/console.js', 'display-page.js', 'stt.js', 'cue.js', 'maps/map-kit.js', 'campaign.js', 'season.js']) ok(!core.has(f) && !HTML.includes('"' + f + '"'), f + ' is lazy, not in index.html');
   eq(L.BUNDLES.print, L.BUNDLES.table, "#print and #t need the same files (the table's print button calls B68Season)");
   // the scripts ran in this order when index.html loaded them all, and some register with another as they run
   // (crewsheet.js with B68Campaign): every bundle keeps it
@@ -180,7 +180,7 @@ await test('routes.js: need() adds each file once, scripts in order (async off),
   eq(doc.added().length, 7, 'each file added once');
   const gm = L.need('gm');
   eq(doc.order().slice(0, 10), ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', '<style>'], 'the GM stylesheets after the cast, still before the inline style');
-  eq(doc.order().slice(14), ['maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm-page.js'], 'gm/*.js before gm-page.js');
+  eq(doc.order().slice(14), ['maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm-page.js'], 'gm/*.js before gm-page.js');
   doc.settle(['gm/npc.js']);
   let err = null; try { await gm; } catch (e) { err = e; }
   eq(err && err.message, 'could not load gm/npc.js', 'a file that fails rejects the bundle');
@@ -201,7 +201,7 @@ await test('routes.js: an unstamped build (the repository, the artifact, file://
   const W = routes(stamped(), doc);
   eq(W.B68_BUILD, STAMP, 'the stamp is B68_BUILD');
   W.B68Load.need('display');
-  eq(doc.order(), ['tracker.css', 'display.css?v=' + STAMP, '<style>', 'stt.js?v=' + STAMP, 'display-page.js?v=' + STAMP], 'a stamped build versions every bundle URL');
+  eq(doc.order(), ['tracker.css', 'display.css?v=' + STAMP, '<style>', 'cue.js?v=' + STAMP, 'stt.js?v=' + STAMP, 'display-page.js?v=' + STAMP], 'a stamped build versions every bundle URL');
 });
 
 await test('sw: the precache list is the page, the fonts and install files, and every bundle file (the core first); all exist; the cache is named after the build', async () => {
