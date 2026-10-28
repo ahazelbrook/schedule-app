@@ -39,7 +39,7 @@
   var T = { poll: 4000, flush: 3000, status: 10000, idleStatus: 60000, keepalive: 4000, tick: 250, stopGrace: 3000, maxSession: 6 * 3600 * 1000 };
   /* the cue (design "the cue and the phones" 1.2, 1.4): a line holding a cue takes any run within CUE_TAIL_MS of the last, then goes;
      a line ending in a bare wake word waits ARM_S seconds of audio for the command, whatever the speaker label; the line after a cued line goes at once */
-  var CUE_TAIL_MS = 1000, ARM_S = 2, AFTER_CUE_MS = 20000;
+  var CUE_TAIL_MS = 1000, ARM_S = 2, AFTER_CUE_MS = 20000, SHORT_RUN = 8;
   var MERGE_GAP_S = 4, IDLE_CLOSE_MS = 4000, MAX_OPEN_MS = 20000, MAX_LINE = 700, MAX_QUEUE = 3000, MAX_BUFFER = 240, BATCH = 50;
   var BACKOFF = [1000, 2000, 5000, 10000];
   var SCHEMES = ['bearer', 'token'];          /* how the token rides the WebSocket handshake: Deepgram's subprotocol pair */
@@ -142,11 +142,19 @@
         else open = ln;
       }
     }
+    /* a run joins a cue line inside its tail: the same speaker (MAX_LINE holds), or another label only while the command is still unfinished or the run is short */
+    function cueTakes(line, run, words) {
+      if (line.speaker === run.speaker) return line.text.length + textOfWords(words).length < MAX_LINE;
+      if (words.length <= SHORT_RUN) return true;
+      var p = cue && cue.parse ? cue.parse(line.text) : null;
+      return !!(p && (p.missing === 'more' || p.pending));
+    }
     return {
       add: function (run, conn, at) {
-        var t = now(), words = wordsOf(run, at), joined = false, joinedCue = false;
+        var t = now(), words = run ? wordsOf(run, at) : [], joined = false, joinedCue = false;
+        if (!words.length) return;                                 /* an empty or whitespace-only run is dropped */
         if (open && open.conn === conn) {
-          if (open.cue) { if (t - open.updated <= CUE_TAIL_MS) { joined = true; joinedCue = true; } }
+          if (open.cue) { if (t - open.updated <= CUE_TAIL_MS && cueTakes(open, run, words)) { joined = true; joinedCue = true; } }
           else if (open.armed && run.start - open.end <= ARM_S) joined = true;       /* AUDIO time: a final lands after the words, so the wall clock would lose a long command */
           else if (open.speaker === run.speaker && run.start - open.end <= MERGE_GAP_S && open.text.length + run.text.length < MAX_LINE) joined = true;
         }

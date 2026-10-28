@@ -144,6 +144,19 @@ await test('cue merger: no cue = behaviour unchanged (same joins, same 4 s / 20 
   const long = rig(); for (let i = 0; i < 6; i++) long.add(0, 'talking on and on', i * 4, i * 4000); long.tick(20000); assert.equal(long.out.length >= 1, true);
   assert.ok(!long.out.some((l) => l.cue || l.urgent));
 });
+await test('cue merger: a cue line takes a different label only while the command is unfinished or the run is short; MAX_LINE holds; empty runs are dropped', () => {
+  const long = 'so then she said that we should really go and look at the other one now';
+  const r = rig(); r.add(0, 'Blade, tick Escape', 0, 0); r.add(1, long, 2, 900);
+  assert.deepEqual(r.out.map((l) => [l.text, l.cue === true]), [['Blade, tick Escape', true], [long, false]], 'a long sentence from another speaker is its own line (and goes at once, straight after a cue)');
+  const s = rig(); s.add(0, 'Blade, tick Escape', 0, 0); s.add(1, 'and mark two', 2, 900);
+  assert.deepEqual(s.out.map((l) => l.text), ['Blade, tick Escape and mark two'], 'a short run under another label still joins');
+  const u = rig(); u.add(0, 'Blade, make a six', 0, 0); u.add(1, long, 2, 500);
+  assert.deepEqual(u.out.map((l) => l.text), ['Blade, make a six ' + long], 'an unfinished command takes even a long continuation');
+  const m = rig(); m.add(0, 'Blade, tick Escape', 0, 0); m.add(0, 'word '.repeat(150).trim(), 2, 500);
+  assert.equal(m.out.length, 2, 'over MAX_LINE: not swallowed'); assert.equal(m.out[0].text, 'Blade, tick Escape'); assert.ok(m.out[0].cue); assert.ok(!m.out[1].cue);
+  for (const bad of [{ speaker: 0, text: ' ', start: 0, end: 0 }, { speaker: 0, text: '', start: 0, end: 0, words: [] }]) { const e = rig(); e.m.add(bad, 'c1', 0); e.add(0, 'Blade, tick Escape', 1, 0); e.m.add(bad, 'c1', 0); e.tick(1001); assert.deepEqual(e.out.map((l) => l.text), ['Blade, tick Escape']); }
+  const w = ST.runsOf([], ' '); const q = rig(); w.forEach((x) => q.m.add(x, 'c1', 0)); q.m.tick(); q.m.flush(); assert.equal(q.out.length, 0, 'a whitespace-only fallback transcript makes no line');
+});
 await test('cue merger: the DG URL carries keyterm=Blade', () => {
   assert.ok(/[?&]keyterm=Blade(&|$)/.test(ST.DG_URL), ST.DG_URL);
   assert.ok(/endpointing=300/.test(ST.DG_URL) && !/speech_final/.test(ST.DG_URL));
