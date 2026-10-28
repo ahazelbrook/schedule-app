@@ -538,7 +538,7 @@ fails and nobody is known, nothing is purged.
     quiet; each drawn (view, theme, floor, tokens) is kept (24), so going back costs nothing. A run draws itself when the panel opens.
   - **`ball` in the GM state** (GM-only, never on the display): `{ site, t, floor: <level> | "all", lens, crew: { <pc id>: room }, pins: { <table clock id>: room }, open?, dawn? }`.
     It belongs to the site named in `site`: another site's `ball` reads as empty and the first write replaces it whole. `crew` and `pins`
-    are written with a replace patch, so a removed key goes (`open` and `dawn` are M3's and are kept as they are). Checks:
+    are written with a replace patch, so a removed key goes (`open` is M3's and is kept as it is; `dawn` is written by the False dawn button as `{ at }`, set by a replace of the whole `ball` like the rest, and kept by every other write). Checks:
     `gm-page.test.mjs` (S5) and `gm-run.e2e.mjs` (a real Worker and browser: floors, midnight, disguise, PC, pin, reload, and the iPad payload).
 - **State.** The GM state document holds `con` (the console state: `live` controls, `owed`, `struck`, `used`), `loc`
   (`ui`, `map`), `mem` (the repeat guards), `cards` (the current card per tool as `{ id, seed, ui, mem }`, `mem` a JSON

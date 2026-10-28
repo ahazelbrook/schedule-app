@@ -1015,21 +1015,33 @@ await test('overlay: cleanOverlay keeps the age the server reports (whole ms) an
   for (const age of [-1, 1.5, '3000', null, 180001, NaN]) assert.ok(!('age' in P.cleanOverlay({ ...OVC, age })), String(age));
   assert.equal(P.overlayStep('', { ...OVC, age: 900 }).overlay.age, 900);
 });
-await test('overlay: dawnPlan carries a dawn on from the age the server reports: never from the start again, to the same end', () => {
+await test('overlay: dawnPlan, a dawn that ARRIVES on a running page: the whole show, the hold shortened by the poll lag, ending at the server end', () => {
   const MS = 30000;
-  let p = P.dawnPlan(MS, 0, false);
-  assert.equal(p.init, 'pre'); assert.deepEqual(p.steps.map((x) => x.phase), ['ramp', 'hold', 'fade']); assert.equal(p.end, MS);
-  assert.deepEqual(p.steps.map((x) => x.at), [30, 2000, 28000]);
-  p = P.dawnPlan(MS, 500, false);   /* mid-ramp: the rest of the ramp, then on */
-  assert.equal(p.init, 'ramp'); assert.equal(p.ramp, 1500); assert.deepEqual(p.steps, [{ at: 1500, phase: 'hold' }, { at: 27500, phase: 'fade' }]); assert.equal(p.end, 29500);
-  p = P.dawnPlan(MS, 10000, false); /* mid-hold: straight into the hold, no ramp */
+  let p = P.dawnPlan(MS, 0, false, false);
+  assert.equal(p.init, 'pre'); assert.deepEqual(p.steps, [{ at: 30, phase: 'ramp' }, { at: 2000, phase: 'hold' }, { at: 28000, phase: 'fade' }]); assert.equal(p.end, MS); assert.equal(p.ramp, 2000);
+  for (const age of [1, 1500, 2500, 4000, 20000, 25999]) {   /* a tap seen late still warms up, holds, fades, and ends where the server does */
+    p = P.dawnPlan(MS, age, false, false);
+    assert.equal(p.init, 'pre', 'age ' + age); assert.equal(p.ramp, 2000); assert.equal(p.fade, 2000); assert.equal(p.end, MS - age);
+    assert.deepEqual(p.steps.map((x) => x.phase), ['ramp', 'hold', 'fade']); assert.equal(p.steps[2].at, MS - age - 2000, 'the fade starts 2 s before the end');
+  }
+  p = P.dawnPlan(MS, 27000, false, false);   /* no room for a ramp and a fade: carries on instead */
+  assert.equal(p.init, 'hold'); assert.equal(p.end, 3000);
+  p = P.dawnPlan(MS, 12000, true, false); assert.equal(p.init, 'hold'); assert.deepEqual(p.steps, []); assert.equal(p.end, 18000, 'reduced motion: white to the end');
+  assert.equal(P.dawnPlan(MS, MS, false, false), null);
+});
+await test('overlay: dawnPlan, a dawn FOUND on a page that was just loaded: carries on from where it has reached, never the warm start again, to the same end', () => {
+  const MS = 30000;
+  let p = P.dawnPlan(MS, 0, false, true); assert.equal(p.init, 'pre'); assert.equal(p.end, MS);
+  p = P.dawnPlan(MS, 500, false, true);   /* inside the ramp: opens dark, runs the rest of the ramp (1.5 s) */
+  assert.equal(p.init, 'pre'); assert.equal(p.ramp, 1500); assert.deepEqual(p.steps, [{ at: 30, phase: 'ramp' }, { at: 1500, phase: 'hold' }, { at: 27500, phase: 'fade' }]); assert.equal(p.end, 29500);
+  p = P.dawnPlan(MS, 10000, false, true); /* in the hold: white at once */
   assert.equal(p.init, 'hold'); assert.equal(p.ramp, 0); assert.deepEqual(p.steps, [{ at: 18000, phase: 'fade' }]); assert.equal(p.end, 20000);
-  p = P.dawnPlan(MS, 29000, false); /* mid-fade: the fade's remainder only */
+  p = P.dawnPlan(MS, 29000, false, true); /* in the fade: only the rest of the fade */
   assert.equal(p.init, 'fade'); assert.equal(p.fade, 1000); assert.deepEqual(p.steps, []); assert.equal(p.end, 1000);
-  assert.equal(P.dawnPlan(MS, MS, false), null); assert.equal(P.dawnPlan(MS, MS + 5, false), null);
-  p = P.dawnPlan(MS, 12000, true);  /* reduced motion: white to the end, no phases */
-  assert.equal(p.init, 'hold'); assert.deepEqual(p.steps, []); assert.equal(p.end, 18000);
-  for (const age of [1, 1999, 2000, 2001, 27999, 28000, 28001, 29999]) { const q = P.dawnPlan(MS, age, false); assert.equal(q.end, MS - age, 'age ' + age); assert.notEqual(q.init, 'pre', 'age ' + age); }
+  assert.equal(P.dawnPlan(MS, MS, false, true), null); assert.equal(P.dawnPlan(MS, MS + 5, false, true), null);
+  p = P.dawnPlan(MS, 12000, true, true); assert.equal(p.init, 'hold'); assert.deepEqual(p.steps, []); assert.equal(p.end, 18000);
+  for (const age of [1, 1999, 2000, 2001, 27999, 28000, 28001, 29999]) assert.equal(P.dawnPlan(MS, age, false, true).end, MS - age, 'age ' + age);
+  for (const age of [2000, 10000, 27999]) assert.notEqual(P.dawnPlan(MS, age, false, true).init, 'pre', 'past the ramp it never goes back to the warm start: ' + age);
 });
 await test('overlay: overlayCard builds the card from the validated fields; an NPC card takes the player-safe fields only', () => {
   const clk = P.overlayCard(P.cleanOverlay(OVC), null);

@@ -201,6 +201,9 @@ try {
     await ambient({ overlay: { id: uid('d'), kind: 'fx', ms: MS, fx: 'dawn' } });
     const t1 = await storedAt();                                    // a dawn lasts its ms from the server's clock, however late this page's poll sees it
     await G.page.waitForSelector('.dp-overlay .dp-ov-dawn', { timeout: 20000 });
+    await sleep(350);
+    const warm = await G.page.evaluate(() => { const e = document.querySelector('.dp-ov-dawn'); return { phase: e.getAttribute('data-phase'), op: parseFloat(getComputedStyle(e).opacity), warm: parseFloat(getComputedStyle(e.querySelector('.dp-ov-warm')).opacity) }; });
+    expect(warm.phase === 'ramp' && (warm.op > 0 && warm.op < 1 || warm.warm > 0 && warm.warm < 1), 'the ramp is animating about 0.4 s in (not a jump to white): ' + JSON.stringify(warm));
     const r = await rect(G.page, '.dp-ov-dawn');
     expect(r.l === 0 && r.t === 0 && Math.abs(r.r - 1) < 1e-6 && Math.abs(r.b - 1) < 1e-6, 'the whole frame: ' + JSON.stringify(r));
     await G.page.waitForSelector('.dp-ov-dawn[data-phase="hold"]', { timeout: 15000 });
@@ -213,8 +216,8 @@ try {
     const took = Date.now() - t1;
     expect(Math.abs(took - MS) < 2500, 'from the server start to gone took ' + took + ' ms for ms ' + MS);
     const ph = (await G.page.evaluate(() => window.__ph)).filter((x) => x !== 'pre');
-    /* the poll beat is 4 s, so the page may first see a dawn after its 2 s ramp: it then starts in the hold; it never goes back, and it always ends hold, fade */
-    expect(['ramp,hold,fade', 'hold,fade'].includes(ph.join()), 'phases: ' + JSON.stringify(ph));
+    /* a dawn that arrives on a running page plays whole, however late the 4 s poll saw it: the hold is shortened, the ramp is not */
+    expect(JSON.stringify(ph) === JSON.stringify(['ramp', 'hold', 'fade']), 'phases: ' + JSON.stringify(ph));
     expect(await stageText(G.page) === t0, 'the spotlight underneath is still there, unchanged');
     await ambient({ overlay: null });
   });
@@ -293,6 +296,8 @@ try {
     await sleep(7000);                                              // well into the hold, by the server's clock
     const R = await openDisplay(browser, { watch: true });
     await R.page.waitForSelector('.dp-overlay .dp-ov-dawn', { timeout: 20000 });   // it IS shown (a vanished dawn would not pass this)
+    await R.page.reload();                                          // a real reload of the same page and context: its storage carries over; the observer re-arms clean
+    await R.page.waitForSelector('.dp-overlay .dp-ov-dawn', { timeout: 20000 });
     const first = await R.page.evaluate(() => { const e = document.querySelector('.dp-ov-dawn'); return { phase: e.getAttribute('data-phase'), op: getComputedStyle(e).opacity }; });
     expect(first.phase === 'hold' && first.op === '1', 'white straight away, in the hold: ' + JSON.stringify(first));
     await noOverlay(R.page, 30000);

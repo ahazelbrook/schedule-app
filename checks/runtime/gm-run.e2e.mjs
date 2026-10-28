@@ -204,6 +204,7 @@ try {
   await R.page.click('[data-gm="run-next"]'); await R.page.click('[data-gm="run-step"][data-d="15"]'); await R.page.keyboard.press('ArrowRight');
   await sleep(1500);
   const a1 = await amb();
+  if (a1.seq !== a0.seq) console.log('     ambient moved between a0 and a1: ' + JSON.stringify(Object.keys(a1.doc).filter((k) => JSON.stringify(a1.doc[k]) !== JSON.stringify(a0.doc[k]))));
   check(!a1.doc.overlay && !a0.doc.overlay, 'moving the clock past midnight and onto the fireworks sends no overlay (it never fires by itself)');
   answer.no = true; asked.length = 0;
   await R.page.click('#gm-run .gm-run-btns [data-gm="run-dawn"]');

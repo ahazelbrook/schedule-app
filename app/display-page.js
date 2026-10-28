@@ -724,20 +724,28 @@
     var edge = Math.min(2000, Math.floor(ms / 4));
     return { ramp: edge, hold: ms - 2 * edge, fade: edge };
   };
-  /* dawnPlan(ms, age, reduce) -> how a dawn that is `age` ms old (by the server's clock) carries on: { init: the data-phase to start in,
-     ramp, fade: the ms for the css transitions, steps: [{ at: ms from now, phase }], end: ms from now }. Age 0 is the whole dawn. Later
-     it starts in the phase it has reached and runs on to the SAME end (ms - age), never from the warm start again; at or past ms there is
-     nothing to show (null). */
-  Pure.dawnPlan = function (ms, age, reduce) {
-    var ph = Pure.dawnPhases(ms, reduce), e = Math.max(0, age || 0), holdEnd = ph.ramp + ph.hold;
-    if (e >= ms) return null;
-    if (e === 0) {
-      var steps0 = ph.ramp ? [{ at: 30, phase: 'ramp' }, { at: ph.ramp, phase: 'hold' }, { at: holdEnd, phase: 'fade' }] : [];
-      return { init: ph.ramp ? 'pre' : 'hold', ramp: ph.ramp, fade: ph.fade, steps: steps0, end: ms };
+  /* dawnPlan(ms, age, reduce, reload) -> how a dawn that is `age` ms old (by the SERVER's clock) plays: { init: the data-phase to start in,
+     ramp, fade: the ms for the css transitions, steps: [{ at: ms from now, phase }], end: ms from now }, or null at or past its ms.
+     Every plan ends at ms - age, the server's end. Two cases:
+       - a dawn this page watches arrive (reload false: the page was already running, and learns of it at its next poll, so age is the
+         poll lag): the whole show, warm ramp and fade, with the white hold shortened by the lag, so a tap still warms up. When the ramp,
+         a fade and some hold no longer fit, it falls through to the next case.
+       - a dawn found on the page's first look (reload true: the page was just loaded): it carries on from where it has reached, never from
+         the warm start again: inside the ramp it opens dark and runs only the rest of the ramp, in the hold it is white at once, in the
+         fade only the rest of the fade. Age 0 is the whole dawn too. */
+  Pure.dawnPlan = function (ms, age, reduce, reload) {
+    var ph = Pure.dawnPhases(ms, reduce), e = Math.max(0, age || 0), left = ms - e;
+    if (left <= 0) return null;
+    if (!reload || e === 0) {
+      if (!ph.ramp) return { init: 'hold', ramp: 0, fade: 0, steps: [], end: left };
+      var hold = left - ph.ramp - ph.fade;
+      if (hold >= 1) return { init: 'pre', ramp: ph.ramp, fade: ph.fade, steps: [{ at: 30, phase: 'ramp' }, { at: ph.ramp, phase: 'hold' }, { at: ph.ramp + hold, phase: 'fade' }], end: left };
     }
-    if (e < ph.ramp) return { init: 'ramp', ramp: ph.ramp - e, fade: ph.fade, steps: [{ at: ph.ramp - e, phase: 'hold' }, { at: holdEnd - e, phase: 'fade' }], end: ms - e };
-    if (e < holdEnd) return { init: 'hold', ramp: 0, fade: ph.fade, steps: ph.fade ? [{ at: holdEnd - e, phase: 'fade' }] : [], end: ms - e };
-    return { init: 'fade', ramp: 0, fade: ms - e, steps: [], end: ms - e };
+    var holdEnd = ph.ramp + ph.hold;
+    if (!ph.ramp) return { init: 'hold', ramp: 0, fade: 0, steps: [], end: left };
+    if (e < ph.ramp) { var r = ph.ramp - e; return { init: 'pre', ramp: r, fade: ph.fade, steps: [{ at: 30, phase: 'ramp' }, { at: Math.max(r, 60), phase: 'hold' }, { at: holdEnd - e, phase: 'fade' }], end: left }; }
+    if (e < holdEnd) return { init: 'hold', ramp: 0, fade: ph.fade, steps: [{ at: holdEnd - e, phase: 'fade' }], end: left };
+    return { init: 'fade', ramp: 0, fade: left, steps: [], end: left };
   };
   /* overlayCard(overlay, npcDoc) -> what a card draws, or null when there is nothing to draw (an npc the page may not read draws
      nothing at all). An npc card takes the same player-safe fields as the npc spotlight (Pure.playerNpc): name, alias, role and faction
@@ -1321,7 +1329,7 @@
     /* The overlay (Pure.OVERLAY, GM.md "Overlays"): a clock, an NPC, a line of text or the dawn laid over whatever is up. Each id shows
        once, for its ms from the moment this page first sees it; null or a new id takes it away. Cards take the right-hand 34% of the
        frame and the dawn the whole of it. Everything is drawn from the validated fields as text or as an svg built node by node. */
-    s.ov = { seen: '', node: null, token: 0, timers: [] };
+    s.ov = { seen: '', node: null, token: 0, timers: [], applied: false };
     function ovTimer(fn, ms) { var id = later(fn, ms); s.ov.timers.push(id); return id; }
     function ovRemove(now) {
       var node = s.ov.node; s.ov.token++; s.ov.node = null;
@@ -1357,7 +1365,7 @@
       return e;
     }
     function ovDawn(o) {
-      var pl = Pure.dawnPlan(o.ms, o.age, reduced());
+      var pl = Pure.dawnPlan(o.ms, o.age, reduced(), !s.ov.applied);
       if (!pl) return;
       var e = el('div', 'dp-ov-dawn'); e.setAttribute('data-ov-id', o.id);
       e.style.setProperty('--dp-dawn-ramp', pl.ramp + 'ms'); e.style.setProperty('--dp-dawn-fade', pl.fade + 'ms');
@@ -1391,6 +1399,7 @@
       s.ov.seen = step.seen;
       if (step.action === 'show') ovShow(step.overlay);
       else if (step.action === 'hide') ovRemove(false);
+      s.ov.applied = true;   /* the first look is the page's reload: an overlay found then carries on; one that arrives later plays whole */
     }
 
     /* What the scenes are told. s.crew = the crew the plan last held (null: none yet); s.score = the ambient doc's score
