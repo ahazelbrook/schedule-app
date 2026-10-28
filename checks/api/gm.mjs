@@ -962,12 +962,12 @@ async function main() {
     expect(j.display && j.stt.want === 'on' && j.stt.session === '9' && j.stt.seq !== T0.seq, 'listening on: ' + JSON.stringify(j.stt));
     const T1 = j.stt;
     j = await get('?seq=' + S + '&aseq=' + AS);
-    expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true } }), 'the older call is still the small answer');
+    expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true }, overlay: null }), 'the older call is still the small answer');
     // everything else the control document holds neither moves it nor rides along: names, the iPad's report, its errors
     const STT_MARK = 'tangerine-lighthouse-chorus';
     status(await gm('PATCH', '/api/gm/stt', { speakers: { 0: 'Fixture ' + STT_MARK }, status: { state: 'listening', lines: 2, error: 'oops ' + STT_MARK } }), 200);
     j = await get('?seq=' + S + '&aseq=' + AS + '&sseq=' + T1.seq);
-    expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true }, stt: { seq: T1.seq, unchanged: true } }), 'names and the iPad report do not move it: ' + JSON.stringify(j));
+    expect(same(j, { seq: S, unchanged: true, ambient: { seq: AS, unchanged: true }, stt: { seq: T1.seq, unchanged: true }, overlay: null }), 'names and the iPad report do not move it: ' + JSON.stringify(j));
     const whole = await gm('GET', '/api/gm/display'); status(whole, 200);
     expect(same(whole.json.stt, T1) && !whole.text.includes(STT_MARK), 'only want and session ride on the display: ' + whole.text.slice(0, 200));
     // a new session number moves it; off again
