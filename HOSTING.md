@@ -301,6 +301,12 @@ fetched 39 files, 2.54 MB (707 kB); now Home and a sheet fetch 19 files, 1.48 MB
 files, 1.71 MB (463 kB), the GM page 30 files, 2.21 MB (612 kB). On the first visit after a deploy the
 service worker still precaches everything in the background, after the page is up.
 
+The figure kit (about 1 MB) is its own bundle, `figures`, and is not in the first load (MS2): `index.html` does not carry it,
+the first paint draws no figure, and `B68Load.kit()` fetches it once the route has rendered (at once for the creator and the
+cast page). Every caller shows a placeholder meanwhile (the sheet: this character's last thumbnail from `localStorage`, else a
+silhouette) and redraws on `B68Load.onFigures(fn)`; the GM page and the display need it first (`need()` loads it). The
+service worker files it with the rest, so the creator and every figure work offline once the first visit has finished.
+
 ## Adapter (`app/runtime/cf.js`)
 
 Loaded before `routes.js` and `boot.js`. If `window.claude` already exists it does nothing. Otherwise:
@@ -444,8 +450,10 @@ that skips the stamp, a plain `npx wrangler deploy`, keeps `b68-shell-dev`, whic
   keeps A's files after B's worker took over: activate keeps the newest older cache, marked `__b68-activated`), else from
   the network. Never written.
 - A file outside `SHELL` (an ambient scene) stays network first with an 8 s fallback to its cached copy.
-- Install precaches `INSTALL`: the page, the fonts, the manifest and icons, and the `core` and `table` bundles (about
-  2.5 MB); `skipWaiting`. A player's phone fetches no `gm` or `display` file. When `/api/me` says GM, `cf.js` posts
+- Install precaches `INSTALL`: the page, the fonts, the manifest and icons, and the `core`, `table` and `figures` bundles
+  (about 3.5 MB; the figures bundle, the figure kit and the cast canon at about 1 MB, is listed last and is not required, so a
+  failed fetch of it does not fail the install: the page draws placeholders until it has the kit, and any later load files it);
+  `skipWaiting`. A player's phone fetches no `gm` or `display` file. When `/api/me` says GM, `cf.js` posts
   `{ precache: ['gm', 'display'] }` to the worker (the table iPad's `display` role posts `['display']`), which fetches
   only what its cache lacks, so those devices work offline as before. An install that finds the server on another build
   fails (the running worker keeps serving). `checks/runtime/pwa.test.mjs` fails when `index.html` or a bundle names a

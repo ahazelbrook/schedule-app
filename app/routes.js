@@ -30,8 +30,12 @@
        every sheet draws its "?" links (tracker.js asks B68Rules.help while it renders) and the Rules button shows when
        it is there; the cast, because its "on stage" banner shows on every screen during a scene */
     core: ['tracker.css', 'schedule.css', 'rules.css', 'cast.css',
-      'figures/figure-kit.js', 'figures/cast.js', 'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'schedule.js',
+      'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'schedule.js',
       'markdown.js', 'rules.js', 'cast-page.js', 'name-edit.js', 'runtime/cf.js', 'routes.js', 'boot.js'],
+    /* the figure kit and the cast canon (about 1 MB): NOT in the core. First paint draws no figure; boot.js asks for this bundle
+       once the route has rendered (B68Load.kit), every caller shows a placeholder and redraws on B68Load.onFigures. gm and
+       display need it before they run (DEPS); season.js and the other callers wait for it themselves. sw.js precaches it for everyone but does not require it at install */
+    figures: ['figures/figure-kit.js', 'figures/cast.js'],
     table: TABLE,
     print: TABLE,
     crews: ['crews.js'],   /* just the crew playbooks' text, for the sheet's roll-panel abilities strip (the table bundle loads it too, once) */
@@ -41,6 +45,7 @@
   /* every stylesheet, in cascade order (index.html's order from before lazy loading) */
   var CSS_ORDER = ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', 'display.css'];
 
+  var DEPS = { gm: ['figures'], display: ['figures'] };   /* bundles that need another one in first */
   var loading = {};            /* file -> Promise (resolved: loaded; a failure is forgotten so it can be tried again) */
   var loaded = {};             /* file -> true once its load event fired (the core: index.html's own tags) */
   BUNDLES.core.forEach(function (f) { loaded[f] = true; loading[f] = Promise.resolve(f); });
@@ -74,7 +79,8 @@
   function need(name) {
     var files = Object.prototype.hasOwnProperty.call(BUNDLES, name) ? BUNDLES[name] : null;
     if (!files) return Promise.reject(new Error('unknown bundle: ' + name));
-    return Promise.all(files.map(one)).then(function () { return name; });
+    var deps = DEPS[name] || [];
+    return Promise.all(deps.map(need).concat(files.map(one))).then(function () { if (name === 'figures') arrive(); return name; });   /* whoever fetched the kit, its waiters run */
   }
   /* true once every file of the bundle has loaded (then a module still missing is the file's fault, not a load to wait for) */
   function done(name) { return Object.prototype.hasOwnProperty.call(BUNDLES, name) && BUNDLES[name].every(function (f) { return loaded[f]; }); }
@@ -85,6 +91,38 @@
     return out;
   }
 
+  /* ---------- the figure kit, after the first paint ----------
+     kitIn(): the kit and the cast canon are both here. onFigures(fn): fn runs now when they are, else once when they arrive
+     (every caller draws a placeholder meanwhile and redraws in fn). kit(urgent): fetch the bundle; urgent (a route that cannot
+     do without it: the creator) at once, else when the browser is idle, never before the route's first render (boot.js calls
+     it after that). One fetch at a time; a failure is forgotten so the next kit() tries again. */
+  var waiters = [], kitP = null, kitGo = null;
+  function kitIn() { return !!(root.B68Figure && root.B68Cast); }
+  function onFigures(fn) {
+    if (typeof fn !== 'function') return;
+    if (kitIn()) { try { fn(); } catch (e) { if (root.console) root.console.error(e); } return; }
+    waiters.push(fn);
+  }
+  function arrive() {
+    var w = waiters; waiters = [];
+    w.forEach(function (fn) { try { fn(); } catch (e) { if (root.console) root.console.error(e); } });
+  }
+  function kit(urgent) {
+    if (kitIn()) return Promise.resolve(true);
+    if (kitP) { if (urgent === true && kitGo) kitGo(); return kitP; }
+    kitP = new Promise(function (resolve) {
+      var started = false;
+      kitGo = function () {
+        if (started) return; started = true;
+        need('figures').then(function () { kitP = null; kitGo = null; resolve(true); }, function () { kitP = null; kitGo = null; resolve(false); });
+      };
+      if (urgent === true || !root.document) kitGo();
+      else if (typeof root.requestIdleCallback === 'function') root.requestIdleCallback(function () { if (kitGo) kitGo(); }, { timeout: 1500 });
+      else setTimeout(function () { if (kitGo) kitGo(); }, 200);
+    });
+    return kitP;
+  }
+
   root.B68_BUILD = BUILD;
-  root.B68Load = { need: need, done: done, files: files, url: url, BUNDLES: BUNDLES, CSS_ORDER: CSS_ORDER, build: BUILD };
+  root.B68Load = { need: need, done: done, kit: kit, kitIn: kitIn, onFigures: onFigures, files: files, url: url, BUNDLES: BUNDLES, CSS_ORDER: CSS_ORDER, build: BUILD };
 })(typeof self !== 'undefined' ? self : typeof window !== 'undefined' ? window : globalThis);

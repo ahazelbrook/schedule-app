@@ -1,10 +1,15 @@
 /* Creator core: state, helpers, the control factory, drawing, playbook looks. Sets window.B68. */
 (function () {
   'use strict';
-  var K = window.B68Figure, C = window.B68Cast, CT = window.B68Content;
+  var CT = window.B68Content;
   var A = window.B68 = {};
-  if (!K || !C || !CT) { var w = document.getElementById('warnings'); if (w) w.textContent = 'The figure kit did not load.'; return; }
-  var O = K.options();
+  if (!CT) { var w = document.getElementById('warnings'); if (w) w.textContent = 'The content did not load.'; return; }
+  /* The figure kit is not in the first load (routes.js: the 'figures' bundle arrives after the first paint). K, C, O, CLOTH and
+     SKINS are shells that bindKit() fills IN PLACE when the kit and the cast canon are here, so steps.js and boot.js, which
+     captured them at load, see the real ones. Nothing here draws or reads the kit until A.kitReady; A.onKit(fn) runs fn then
+     (at once when it already is). */
+  var K = {}, C = { pcs: [], npcs: [], byId: {} }, O = {}, kitQueue = [];
+  A.kitReady = false;
   var $ = function (id) { return document.getElementById(id); };
   var clone = function (o) { return JSON.parse(JSON.stringify(o)); };
   function merge(a, b) { var o = clone(a); for (var k in b) o[k] = (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && o[k] && typeof o[k] === 'object') ? merge(o[k], b[k]) : clone(b[k]); return o; }
@@ -20,9 +25,20 @@
   function params(kind, name) { try { var p = K.registry.get(kind, name); return p && p.params || {}; } catch (e) { return {}; } }
   function kickerHtml(s) { var LIGHT = { a: 1, an: 1, the: 1, of: 1, and: 1, who: 1, their: 1, in: 1, from: 1, at: 1, to: 1, with: 1, or: 1, by: 1 }; return esc(s).split(' ').map(function (w) { return LIGHT[w.toLowerCase()] ? '<span class="lt">' + w + '</span>' : w; }).join(' '); }
 
-  var CLOTH = O.cloth.slice();
+  var CLOTH = [];
   var HAIR_TOKENS = ['cloth-black', 'cloth-graphite', 'cloth-chocolate', 'cloth-brown', 'cloth-tobacco', 'cloth-tan', 'cloth-camel', 'cloth-ochre', 'cloth-mustard', 'cloth-rust', 'cloth-brick', 'cloth-cream', 'cloth-stone', 'cloth-ash', 'ink-300', 'ink-150', 'cloth-white', 'cloth-lilac', 'cloth-magenta', 'cloth-cobalt'];
-  var SKINS = Object.keys(K.tokens.SKIN);
+  var SKINS = [];
+  function bindKit() {
+    var rk = window.B68Figure, rc = window.B68Cast;
+    if (A.kitReady || !rk || !rc) return;
+    Object.assign(K, rk); Object.assign(C, rc); Object.assign(O, rk.options());
+    O.cloth.forEach(function (t) { CLOTH.push(t); }); Object.keys(K.tokens.SKIN).forEach(function (t) { SKINS.push(t); });
+    A.kitReady = true;
+    var q = kitQueue; kitQueue = [];
+    q.forEach(function (fn) { try { fn(); } catch (e) { if (window.console) console.error(e); } });
+  }
+  A.bindKit = bindKit;
+  A.onKit = function (fn) { if (A.kitReady) fn(); else kitQueue.push(fn); };
 
   /* ---------- state ---------- */
   var S = A.S = { spec: null, sheet: null, step: 0, view: 'figure', dirty: false };
@@ -82,6 +98,7 @@
   A.renderSpec = renderSpec;
   function draw() {
     drawTimer = null;
+    if (!A.kitReady) return;   /* nothing to draw with yet: boot.js draws when the kit arrives (creator mode only) */
     var s = renderSpec(), pb = pbOf();
     try {
       var lod = (window.B68Zoom && window.B68Zoom.state.scale >= 2) ? 'hi' : undefined;
@@ -117,8 +134,8 @@
     var o = s.outfit || {}; Object.keys(o).forEach(function (k) { if (o[k] && o[k].type) n++; });
     n += (s.props || []).length; if (s.companion) n++; if (s.face && s.face.facialHair) n++; if (s.face && s.face.eyewear) n++; if (s.face && s.face.makeup) n++; n += ((s.face && s.face.marks) || []).length; return n;
   }
-  A.mugshot = function () { return K.portrait(renderSpec()); };
-  A.figureSvg = function (h) { return K.render(renderSpec(), { height: h || 900 }).svg; };
+  A.mugshot = function () { if (!A.kitReady) throw new Error('The figure kit is still loading.'); return K.portrait(renderSpec()); };
+  A.figureSvg = function (h) { if (!A.kitReady) throw new Error('The figure kit is still loading.'); return K.render(renderSpec(), { height: h || 900 }).svg; };
 
   /* ---------- control factory ---------- */
   var controls = A.controls = [];
@@ -209,4 +226,5 @@
   Object.assign(A, { K: K, C: C, CT: CT, O: O, $: $, el: el, esc: esc, clone: clone, merge: merge, pick: pick, chance: chance, slug: slug, feet: feet, newCode: newCode, hex: hex, describe: describe, params: params, kickerHtml: kickerHtml,
     CLOTH: CLOTH, HAIR_TOKENS: HAIR_TOKENS, SKINS: SKINS, BASE_FIGURE: BASE_FIGURE, blankSheet: blankSheet,
     field: field, chips: chips, multi: multi, swatches: swatches, range: range, text: text, toggle: toggle, group: group, custom: custom, slot: slot, toast: toast });
+  bindKit();   /* the kit is already here (the file:// checks, the artifact); else routes.js calls A.bindKit when it arrives */
 })();

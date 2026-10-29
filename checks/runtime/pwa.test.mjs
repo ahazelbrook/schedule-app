@@ -196,7 +196,9 @@ await test('routes.js: index.html loads exactly the core bundle; every other bun
   const W = routes(), L = W.B68Load;
   ok(L && typeof L.need === 'function' && typeof L.files === 'function', 'routes.js defines B68Load');
   eq(W.B68_BUILD, 'dev', "the committed build is 'dev' (scripts/deploy.sh stamps it for the upload)");
-  eq(Object.keys(L.BUNDLES), ['core', 'table', 'print', 'crews', 'gm', 'display'], 'the bundles');
+  eq(Object.keys(L.BUNDLES), ['core', 'figures', 'table', 'print', 'crews', 'gm', 'display'], 'the bundles');
+  eq(L.BUNDLES.figures, ['figures/figure-kit.js', 'figures/cast.js'], 'the figures bundle is the kit and the cast canon');
+  ok(!HTML.includes('figure-kit.js') && !HTML.includes('figures/cast.js'), 'index.html does not load the figure kit (first paint draws no figure)');
   eq(htmlTags(), L.BUNDLES.core, "index.html's stylesheet and script tags are BUNDLES.core, in order");
   const core = new Set(L.BUNDLES.core);
   for (const [name, list] of Object.entries(L.BUNDLES)) {
@@ -239,10 +241,10 @@ await test('routes.js: need() adds each file once, scripts in order (async off),
   const again = L.need('print');
   doc.settle(); await p;
   eq([settled, await again, L.done('table'), L.done('print')], ['table', 'print', true, true], 'resolved; #print needed nothing more');
-  eq(doc.added().length, 7, 'each file added once');
+  eq(doc.added().length, 7, 'each file added once (the table does not wait for the figure kit)');
   const gm = L.need('gm');
   eq(doc.order().slice(0, 10), ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', '<style>'], 'the GM stylesheets after the cast, still before the inline style');
-  eq(doc.order().slice(14), ['maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm-page.js'], 'gm/*.js before gm-page.js');
+  eq(doc.order().slice(14), ['figures/figure-kit.js', 'figures/cast.js', 'maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm-page.js'], 'gm/*.js before gm-page.js');
   doc.settle(['gm/npc.js']);
   let err = null; try { await gm; } catch (e) { err = e; }
   eq(err && err.message, 'could not load gm/npc.js', 'a file that fails rejects the bundle');
@@ -263,7 +265,7 @@ await test('routes.js: an unstamped build (the repository, the artifact, file://
   const W = routes(stamped(), doc);
   eq(W.B68_BUILD, STAMP, 'the stamp is B68_BUILD');
   W.B68Load.need('display');
-  eq(doc.order(), ['tracker.css', 'display.css?v=' + STAMP, '<style>', 'cue.js?v=' + STAMP, 'stt.js?v=' + STAMP, 'display-page.js?v=' + STAMP], 'a stamped build versions every bundle URL');
+  eq(doc.order(), ['tracker.css', 'display.css?v=' + STAMP, '<style>', 'figures/figure-kit.js?v=' + STAMP, 'figures/cast.js?v=' + STAMP, 'cue.js?v=' + STAMP, 'stt.js?v=' + STAMP, 'display-page.js?v=' + STAMP], 'a stamped build versions every bundle URL (the display needs the figure kit first)');
 });
 
 /* the files that only the GM's laptop and the table iPad load: in the gm or display bundle and not in core or table */
@@ -297,7 +299,7 @@ await test('sw: SHELL is the page, the fonts and install files and every bundle 
   // INSTALL: static files + core + table, nothing else
   eq(new Set(w.INSTALL).size, w.INSTALL.length, 'no file twice in INSTALL');
   eq(w.INSTALL.filter((f) => !w.SHELL.includes(f)), [], 'INSTALL is part of SHELL');
-  eq(w.INSTALL.filter((f) => f.endsWith('.js') || f.endsWith('.css')), [...new Set([...L.BUNDLES.core, ...L.BUNDLES.table])], 'INSTALL scripts and stylesheets are exactly the core and table bundles');
+  eq(w.INSTALL.filter((f) => f.endsWith('.js') || f.endsWith('.css')), [...new Set([...L.BUNDLES.core, ...L.BUNDLES.table, ...L.BUNDLES.figures])], 'INSTALL scripts and stylesheets are exactly the core, table and figures bundles (the kit last)');
   eq(w.INSTALL.filter((f) => ROLE_ONLY.includes(f)), [], 'no gm or display file is installed on every device');
   ok(ROLE_ONLY.includes('gm-page.js') && ROLE_ONLY.includes('maps/map-kit.js') && ROLE_ONLY.includes('display-page.js'), 'the role-only list names the GM page, the map kit and the display page: ' + ROLE_ONLY.length + ' files');
   ok(w.INSTALL.includes('./') && w.INSTALL.includes('routes.js') && w.INSTALL.includes('campaign.js') && w.INSTALL.includes('fonts/SpaceMono-Bold.woff2'), 'the page, routes.js, the table and the fonts are installed');
@@ -323,6 +325,48 @@ await test('sw: a player\'s install fetches the page, the fonts, the core and th
   ok(!w.cache().has(u('icons/icon-192.png')) && !w.cache().has(u('fonts/Yellowtail-Regular.woff2')), 'a redirected or failed optional answer was cached');
   eq(w.cache().size, w.INSTALL.length - 2, 'exactly the install files that answered');
   ok(w.self.skipped, 'skipWaiting');
+});
+
+await test('figures: the kit is not required at install (the page draws placeholders without it) but is fetched, filed and offered offline; a failed kit file does not fail the install', async () => {
+  const L = routes().B68Load;
+  const W = world(), w = worker({ world: W });
+  W.net.fail[u('figures/figure-kit.js')] = true;
+  const out = await w.dispatch('install');
+  eq(out.rejected, null, 'the install succeeded without the figure kit');
+  ok(w.cache().has(u('figures/cast.js')) && !w.cache().has(u('figures/figure-kit.js')), 'the file that answered is filed, the one that failed is not');
+  const W2 = world(), w2 = worker({ world: W2 });
+  const out2 = await w2.dispatch('install');
+  eq(out2.rejected, null, 'install ok'); ok(L.BUNDLES.figures.every((f) => w2.cache().has(u(f))), 'with the kit answering, both files are in the install cache (a player has them offline)');
+  const at = (f) => w2.INSTALL.indexOf(f);
+  ok(L.BUNDLES.core.concat(L.BUNDLES.table).every((f) => at(f) < at('figures/figure-kit.js')), 'the required files are listed before the kit, so a lane never holds them up behind it');
+});
+
+await test('routes.js: B68Load.kit() fetches the figures bundle once, waiters run once on arrival (whoever fetched it), urgent beats idle, a failure is retried by the next call; gm and display need the kit first', async () => {
+  const doc = fakeDoc(['tracker.css']);
+  const win = routes(ROUTES, doc), L = win.B68Load;
+  ok(typeof L.kit === 'function' && typeof L.onFigures === 'function' && typeof L.kitIn === 'function', 'kit, onFigures, kitIn');
+  ok(!L.kitIn(), 'no kit at first paint');
+  let ran = 0; L.onFigures(() => { ran++; }); L.onFigures(() => { ran++; });
+  eq(ran, 0, 'waiters wait');
+  const idle = []; win.requestIdleCallback = (fn) => { idle.push(fn); };
+  const a = L.kit(false), b = L.kit(false);
+  eq(doc.added().length, 0, 'a non-urgent request waits for the browser to be idle'); eq(idle.length, 1, 'one idle callback however many asks');
+  L.kit(true);
+  eq(doc.order().filter((f) => /figures/.test(f)).length, 2, 'an urgent request fetches now: the two files, once');
+  idle[0](); eq(doc.order().filter((f) => /figures/.test(f)).length, 2, 'the idle callback finds it already started');
+  win.B68Figure = {}; win.B68Cast = {}; doc.settle();
+  eq([await a, await b], [true, true], 'both asks resolve true'); eq(ran, 2, 'each waiter ran once on arrival');
+  let late = 0; L.onFigures(() => { late++; }); eq(late, 1, 'a waiter that comes after the kit is here runs at once');
+  eq(L.done('figures'), true, 'done(figures)');
+  // a failure is forgotten; the next kit() tries again
+  const doc2 = fakeDoc(['tracker.css']), W2 = routes(ROUTES, doc2), L2 = W2.B68Load;
+  const f1 = L2.kit(true); doc2.settle(['figures/cast.js']); eq(await f1, false, 'a failed file resolves false, not a throw');
+  const f2 = L2.kit(true); eq(doc2.order().filter((f) => f === 'figures/cast.js').length, 1, 'the retry adds only the file that failed'); W2.B68Figure = {}; W2.B68Cast = {}; doc2.settle(); eq(await f2, true, 'the retry works');
+  // a bundle that needs the kit loads it first and wakes the waiters
+  const doc3 = fakeDoc(['tracker.css']), W3 = routes(ROUTES, doc3), L3 = W3.B68Load; let woke = 0; L3.onFigures(() => { woke++; });
+  const g = L3.need('display'); const order = doc3.order();
+  ok(order.indexOf('figures/figure-kit.js') >= 0 && order.indexOf('figures/figure-kit.js') < order.indexOf('display-page.js'), 'display: the kit is inserted before display-page.js');
+  W3.B68Figure = {}; W3.B68Cast = {}; doc3.settle(); await g; eq(woke, 1, 'needing display woke the kit waiters');
 });
 
 await test('sw: install needs the required set (the page, boot.js, the core, the table): without any one of them it fails, files nothing and does not take over; fonts and icons are optional', async () => {
@@ -505,7 +549,8 @@ await test('sw: starting offline: the page and every installed file come from th
   const t0 = w.timers.length;
   eq((await w.get('/', 'navigate')).r.res.body, 'page:A', 'the page');
   eq(w.timers.slice(t0).filter((t) => t.ms === 4000 && !t.done).length, 0, 'no timer left waiting on the network');
-  for (const f of ['boot.js', 'core.js', 'campaign.js', 'fonts/SpaceMono-Bold.woff2', 'manifest.webmanifest']) eq((await w.get('/' + f)).r.res.body, 'A:/' + f, f);
+  for (const f of ['boot.js', 'core.js', 'campaign.js', 'fonts/SpaceMono-Bold.woff2', 'manifest.webmanifest', 'figures/figure-kit.js', 'figures/cast.js']) eq((await w.get('/' + f)).r.res.body, 'A:/' + f, f + (f.startsWith('figures/') ? ' (the figure kit offline: the creator and every figure still draw)' : ''));
+  eq((await w.get('/figures/figure-kit.js?v=A')).r.res.body, 'A:/figures/figure-kit.js', 'the versioned request the page makes (B68Load.need) finds it');
   await w.drain();
   eq(W.net.log.filter((x) => x === u('routes.js')).length, 0, 'no probe when no answer arrived to file');
   eq(w.at('/boot.js'), 'A:/boot.js', 'the cache is as it was');

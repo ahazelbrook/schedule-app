@@ -154,3 +154,5 @@ body .wrap { padding-bottom: calc(48px + var(--cp-stage-h, 0px)); }
 }
 @media print { #stageBanner { display: none !important; } }
 body[data-mode="print"] #stageBanner { display: none !important; }
+/* the placeholder shown until the figure kit arrives (MS2): a quiet silhouette, never the size of a figure */
+#cast-page svg.cp-sil, #stageBanner svg.cp-sil { display: block; width: 55%; max-width: 160px; height: auto; margin: 0 auto; color: var(--ink-soft, #7a7266); }

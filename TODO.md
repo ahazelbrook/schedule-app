@@ -266,9 +266,9 @@ last unsubscribe landing after the count; 2 of 12 runs failed under heavy load, 
       with two laptops open the daily cap can trip mid-session. Display 4 s, stt carried in the display GET, slow to 30 s
       after an hour without change, hidden tabs 60 s. · S
 - [x] (MERGED 8b1faba) E14 P3 · The display never leaves "denied"; reload once after 10 min. · S
-- [ ] Lazy loading phase 2 · The figure kit (688 KB) loaded after first paint; the three top-level captures become
-      lookups. · M · Deferred: phase 1 already cut a player's first load by 42% and the service worker caches the rest;
-      revisit only if phones feel slow at the table.
+- [x] (MS2) Lazy loading phase 2 · The figure kit (now ~1 MB) is the `figures` bundle, loaded after the first render; the
+      top-level captures became lookups (core.js shells, tracker/cast-page/schedule/season placeholders). Warm open on a mid-range
+      phone measured before and after in the MS2 report. · M
 - [x] (MERGED, gm-wave2) Physical dice on the GM page · The engagement roll: let the GM roll physically and tap the highest die instead
       of the app rolling (the pool is still computed by the app); the same for any GM-side roll. · S
 - [ ] Ideas from review B · Re-roll one row of a card (per-section seeds exist); a "Tonight" strip of every roll beyond

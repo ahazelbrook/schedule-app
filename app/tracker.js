@@ -11,7 +11,43 @@
   'use strict';
   var T = window.B68Tracker = {};
   var CT = window.B68Content || { PLAYBOOKS: [], byId: {}, ACTIONS: [], STANDARD_ITEMS: [], VICES: [] };
-  var K = window.B68Figure || null;
+  /* The figure kit is not in the first load (routes.js 'figures'; MB0: drawing the thumbnail was most of a warm open's cost on a phone).
+     Until it arrives the thumbnail is a placeholder (this character's last thumbnail from localStorage, else a silhouette) and the
+     desk's Figure box says it is drawing; onKit() swaps the real one in, in place: the same <img>, the same box, once. */
+  var K = null;
+  function kit() { return K || (K = window.B68Figure || null); }
+  var SIL = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240"><rect width="240" height="240" fill="#d8d1c2"/><circle cx="120" cy="90" r="42" fill="#a39a88"/><path d="M34 240c0-54 36-86 86-86s86 32 86 86z" fill="#a39a88"/></svg>');
+  var THUMBS = 'b68.thumbs.v1', THUMBS_KEEP = 6;
+  function readThumb(id) { try { var o = JSON.parse(localStorage.getItem(THUMBS) || 'null'); var e = o && o.by && o.by[id || '']; return e && typeof e.u === 'string' ? e.u : ''; } catch (e) { return ''; } }
+  function writeThumb(id, key, uri) {
+    try {
+      var o = JSON.parse(localStorage.getItem(THUMBS) || 'null'); if (!o || typeof o !== 'object' || !o.by || !Array.isArray(o.order)) o = { order: [], by: {} };
+      id = id || ''; o.order = o.order.filter(function (x) { return x !== id; }); o.order.unshift(id); o.by[id] = { k: key.length + ':' + key.slice(0, 40), u: uri };
+      o.order.slice(THUMBS_KEEP).forEach(function (x) { delete o.by[x]; }); o.order = o.order.slice(0, THUMBS_KEEP);
+      localStorage.setItem(THUMBS, JSON.stringify(o));
+    } catch (e) { /* private window, quota: the silhouette is the placeholder */ }
+  }
+  /* the drawn thumbnail is a 200 KB SVG: what is remembered is a small picture of it (160 px), made when the browser is idle, so
+     six characters never crowd the draft the creator keeps in the same storage */
+  function storeThumb(id, key, uri) {
+    var later = window.requestIdleCallback || function (f) { return setTimeout(f, 200); };
+    later(function () {
+      try {
+        var im = new Image();
+        im.onload = function () { try { var c = document.createElement('canvas'); c.width = 160; c.height = 160; c.getContext('2d').drawImage(im, 0, 0, 160, 160); writeThumb(id, key, c.toDataURL('image/webp', 0.8)); } catch (e) {} };
+        im.src = uri;
+      } catch (e) {}
+    });
+  }
+  var kitHooked = false;
+  /* the kit arrived: the thumbnail on a phone, the figure on a desk, each redrawn in its own node and nothing else touched */
+  function onKit() {
+    if (!cur || cur.ui.static) return;
+    try {
+      if (narrow()) { if (cur.doc.spec) thumb(cur.doc); }
+      else if (cur.ui.figNode) { figureSvg(cur.doc); cur.ui.figNode.innerHTML = cur.ui.svg || '<div class="ds-dim">' + esc(cur.ui.svgWarn || 'No figure yet.') + '</div>'; }
+    } catch (e) { if (window.console) console.error(e); }
+  }
   function B() { return window.B68 || {}; }
 
   /* ---------- helpers (prefer window.B68's, fall back locally) ---------- */
@@ -394,7 +430,8 @@
   function figKey(doc) { var k; try { k = JSON.stringify(doc.spec || null); } catch (e) { k = ''; } return (cur.ui.mug ? 'm' : 'f') + k; }
   function figureSvg(doc) {
     var key = figKey(doc); if (cur.ui.svgKey === key) return;
-    var svg = '', warn = '';
+    var K = kit(), svg = '', warn = '';
+    if (!K && doc.spec) { cur.ui.svg = ''; cur.ui.svgWarn = ''; return; }   /* not drawn yet: svgKey stays unset so the kit's arrival draws it */
     try { if (K && doc.spec) { var r = cur.ui.mug ? K.portrait(doc.spec) : K.render(doc.spec, { height: 420 }); svg = r && r.svg || ''; } } catch (e) { warn = 'The kit could not draw this figure: ' + e.message; }
     cur.ui.svg = svg; cur.ui.svgWarn = warn; cur.ui.svgKey = key;
   }
@@ -402,10 +439,15 @@
      drawn once per figure, and the same <img> node is carried from one render to the next (see render) */
   function thumb(doc) {
     var key; try { key = JSON.stringify(doc.spec || null); } catch (e) { key = ''; }
-    if (cur.ui.thumbKey === key) return cur.ui.thumb;
-    cur.ui.thumbKey = key; cur.ui.thumb = '';
-    try { if (K && doc.spec) { var r = K.portrait(doc.spec, { width: 240, height: 240, chart: false, plate: false, suffix: '-t', lod: 'lo' }), s = r && r.svg || ''; if (s) { if (s.indexOf('xmlns=') < 0) s = s.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'); cur.ui.thumb = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s); } } } catch (e) {}
-    return cur.ui.thumb;
+    var u = cur.ui, K = kit(), same = u.thumbKey === key;
+    if (same && (u.thumbDone || !K)) return u.thumb;   /* drawn (or tried) with the kit, or no kit yet and the placeholder is up */
+    u.thumbKey = key; u.thumb = ''; u.thumbDone = false;
+    if (K && doc.spec) {
+      u.thumbDone = true;
+      try { var r = K.portrait(doc.spec, { width: 240, height: 240, chart: false, plate: false, suffix: '-t', lod: 'lo' }), s = r && r.svg || ''; if (s) { if (s.indexOf('xmlns=') < 0) s = s.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'); u.thumb = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s); storeThumb(doc.id, key, u.thumb); } } catch (e) {}
+    } else if (doc.spec) u.thumb = readThumb(doc.id) || SIL;   /* placeholder: the key is set but the thumbnail is not done */
+    if (same && u.thumbNode && u.thumb) u.thumbNode.src = u.thumb;   /* placeholder -> the real one: the same <img>, once */
+    return u.thumb;
   }
   function thumbTag(doc, pb) {
     var src = thumb(doc), u = cur.ui; if (!src) return '';
@@ -420,7 +462,7 @@
     for (var i = 0; i < ms.length; i++) {
       var m = ms[i], n;
       if (m.hasAttribute('data-fslot')) {
-        if (!u.figNode) { u.figNode = el('div', u.figCls, u.svg || '<div class="ds-dim">' + esc(u.svgWarn || 'No figure yet.') + '</div>'); u.figNode.setAttribute('data-k', 'fig'); }
+        if (!u.figNode) { u.figNode = el('div', u.figCls, u.svg || '<div class="ds-dim">' + esc(u.svgWarn || (kit() ? 'No figure yet.' : 'Drawing the figure…')) + '</div>'); u.figNode.setAttribute('data-k', 'fig'); }
         n = u.figNode;
       } else {
         if (!u.thumbNode) { u.thumbNode = document.createElement('img'); u.thumbNode.className = u.thumbCls; u.thumbNode.setAttribute('data-k', 'thumb'); u.thumbNode.src = u.thumb; u.thumbNode.alt = ''; u.thumbNode.setAttribute('aria-hidden', 'true'); }
@@ -1628,6 +1670,7 @@
     window.addEventListener('b68:runtime', onRuntime); window.addEventListener('pagehide', onHide); document.addEventListener('visibilitychange', onHide);
     render();
     var sc = screenApi(); if (sc && typeof sc.on === 'function') { try { cur.screenOff = sc.on(onScreenSeq); } catch (e) {} }   /* the Table button's dot, and an open viewer, follow screenSeq */
+    if (!kitHooked && window.B68Load && typeof window.B68Load.onFigures === 'function') { kitHooked = true; window.B68Load.onFigures(onKit); }
     if (!doc.play && !readOnly()) flushSave(); /* a doc filed without a play object gets one */
   };
   T.update = function (doc) {

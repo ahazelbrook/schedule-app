@@ -163,6 +163,14 @@
   /* the line-up at true height, as boot.js draws the crew line-up, over every filed character with a figure */
   function lineup(chart, names, chars) {
     var K = window.B68Figure, list = chars.filter(function (d) { return isObj(d.spec); });
+    /* the kit is a bundle of its own (routes.js 'figures'); the print route loads it first, the table's Print button may not have */
+    var L = window.B68Load;
+    if ((!K || typeof K.lineup !== 'function') && list.length && L && typeof L.onFigures === 'function') {
+      chart.innerHTML = '<p class="sn-dim">Drawing the line-up…</p>';
+      L.onFigures(function () { if (chart.isConnected !== false) lineup(chart, names, chars); });
+      if (typeof L.kit === 'function') L.kit(true);
+      return;
+    }
     if (!K || typeof K.lineup !== 'function' || !list.length) { chart.innerHTML = '<p class="sn-dim">' + (list.length ? 'The figure kit is missing.' : 'No figures on file.') + '</p>'; return; }
     try {
       var specs = list.map(function (d, i) { var s = clone(d.spec); s.id = 'sn' + i + '-' + slug(d.name); s.name = d.name; s.playbook = pbName(d); return s; });

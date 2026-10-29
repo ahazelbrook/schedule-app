@@ -9,7 +9,16 @@
    is a plain button or link; nothing here throws when the kit, the db or the canon is missing. */
 (function () {
   'use strict';
-  var K = window.B68Figure, CANON = window.B68Cast;
+  /* The kit and the canon arrive after the first paint (routes.js 'figures'): read them when needed (sync), draw a silhouette
+     meanwhile and draw again when B68Load says they are here. */
+  var K = null, CANON = null, kitHooked = false;
+  function sync() { K = window.B68Figure || null; CANON = window.B68Cast || null; return !!K; }
+  var SIL = '<svg class="cp-sil" viewBox="0 0 240 240" aria-hidden="true" focusable="false"><circle cx="120" cy="90" r="42" fill="currentColor" opacity=".28"/><path d="M34 240c0-54 36-86 86-86s86 32 86 86z" fill="currentColor" opacity=".28"/></svg>';
+  function waitKit() {
+    var L = window.B68Load; if (kitHooked || !L || typeof L.onFigures !== 'function') return;
+    kitHooked = true;
+    L.onFigures(function () { kitHooked = false; sync(); if (isOpen) render(); renderStage(); });
+  }
   var M = window.B68CastPage = {};
 
   /* ---------- small helpers ---------- */
@@ -61,6 +70,7 @@
 
   /* ---------- figures (figure-kit.js): a mugshot or a full figure, memoised per place ---------- */
   function draw(place, id, spec, how) {
+    sync();
     var key = how + JSON.stringify(spec), hit = memo[place + ':' + id];
     if (hit && hit.key === key) return hit.svg;
     var svg = '';
@@ -75,13 +85,15 @@
   }
   /* fill the figure holders under `root` one at a time, so a phone paints the page before it has drawn them all */
   function fillFigures(root) {
+    sync();
     var holders = [].slice.call(root.querySelectorAll('[data-fig]')), i = 0;
     (function next() {
       if (i >= holders.length) return;
       var h = holders[i++];
       if (root.contains(h)) {
         var d = find(h.getAttribute('data-id')), how = h.getAttribute('data-fig');
-        if (d && K) h.innerHTML = draw(h.getAttribute('data-place'), h.getAttribute('data-id'), d.spec, how) || '<span class="cp-nofig">No figure</span>';
+        if (d && !K) { if (!h.firstChild) h.innerHTML = SIL; waitKit(); }   /* not drawn yet, nothing remembered: the kit's arrival draws it */
+        else if (d && K) h.innerHTML = draw(h.getAttribute('data-place'), h.getAttribute('data-id'), d.spec, how) || '<span class="cp-nofig">No figure</span>';
       }
       setTimeout(next, 0);
     })();
@@ -301,7 +313,7 @@
   var BLANK = { heightIn: 68, figure: 'masc', shape: 'lean', skin: 'fair', age: 35, face: { eyes: 'almond', brows: 'straight', nose: 'straight', mouth: 'neutral', expression: 'neutral' }, hair: { style: 'short', color: 'cloth-brown' },
     outfit: { base: { type: 'shirt', color: 'cloth-cream' }, bottom: { type: 'trousers', color: 'cloth-charcoal' }, feet: { type: 'oxfords', color: 'cloth-black' } }, props: [] };
   var SLOTS = [['base', 'top', 'Top'], ['mid', 'mid', 'Mid layer'], ['outer', 'outer', 'Coat or jacket'], ['neck', 'neckwear', 'Neck'], ['bottom', 'bottom', 'Trousers or skirt'], ['dress', 'dress', 'Dress'], ['legs', 'legwear', 'Legs'], ['feet', 'footwear', 'Shoes'], ['waist', 'belt', 'Belt']];
-  function opts() { try { return K && K.options ? K.options() : {}; } catch (e) { return {}; } }
+  function opts() { sync(); try { return K && K.options ? K.options() : {}; } catch (e) { return {}; } }
   function names(v) { return Array.isArray(v) ? v : isObj(v) ? Object.keys(v) : []; }
   function colours(O) { return names(O.cloth).concat(['ink-300', 'ink-500', 'ink-900', 'leather-black', 'leather-brown', 'metal-brass', 'metal-steel']); }
 
@@ -376,7 +388,7 @@
   function preview() {
     if (prevTimer) clearTimeout(prevTimer);
     prevTimer = setTimeout(function () {
-      prevTimer = null;
+      prevTimer = null; sync();
       var m = $('cp-prev-mug'), f = $('cp-prev-fig'), w = $('cp-warn'); if (!ed || !m || !f) return;
       var s = clone(ed.doc.spec) || {}; s.id = 'cp-prev'; s.name = ed.doc.name || 'Preview'; if (!s.plate) s.plate = s.name; if (!s.code) s.code = 'NPC-968-0000';
       try {
@@ -390,6 +402,7 @@
   }
   function wireEditor() { syncControls(); preview(); }
   function fromCanon(id) {
+    sync();
     var n = ((CANON && CANON.npcs) || []).filter(function (x) { return x.id === id; })[0];
     var s = id === '__blank' ? clone(BLANK) : n ? clone(n) : null; if (!s) return;
     ['id', 'name', 'plate', 'code', 'archetype', 'notes', 'playbook'].forEach(function (k) { delete s[k]; });

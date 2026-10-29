@@ -432,8 +432,6 @@
     });
     var st = function (id) { return (id && rsvpOf(s, id)) || 'none'; };
     var chips = ordered(known.filter(function (id) { return !owners[id] && rsvpOf(s, id); }), ctx.me, ctx.name);
-    var K = window.B68Figure;
-    if (!K || typeof K.lineup !== 'function') docs = [];
     board.want = docs.length ? { docs: docs, states: docs.map(function (d) { return st(d.owner); }), owners: docs.map(function (d) { return d.owner ? ctx.name(d.owner) : ''; }) } : null;
     if (!docs.length && !chips.length) return '';
     return '<div class="sc-board" role="group" aria-label="Who is coming: the crew line-up">' + (docs.length ? '<div class="sc-luslot" data-sc-lu="1"></div>' : '') +
@@ -480,8 +478,19 @@
     });
     var nl = node.querySelector('.sc-lunames'); if (nl && nl.innerHTML !== names) nl.innerHTML = names;
   }
+  /* the figure kit arrives after the first paint (routes.js 'figures'): until then the slot says the line-up is being drawn, and
+     the kit's arrival mounts it. Nothing is remembered as drawn (board.key stays) while it waits */
+  var boardHooked = false;
+  function kitHere() { var K = window.B68Figure; return !!(K && typeof K.lineup === 'function'); }
   M.mountBoard = function (root) {
     var slot = root && root.querySelector('[data-sc-lu]'), w = board.want; if (!slot || !w) return;
+    if (!kitHere()) {
+      if (!slot.firstChild) slot.innerHTML = '<p class="hint sc-wait">Drawing the line-up…</p>';
+      var L = window.B68Load;
+      if (!boardHooked && L && typeof L.onFigures === 'function') { boardHooked = true; L.onFigures(function () { boardHooked = false; M.mountBoard(document); }); }
+      return;
+    }
+    var wt = slot.querySelector('.sc-wait'); if (wt) wt.parentNode.removeChild(wt);
     var key = JSON.stringify(w.docs.map(function (d) { return [d.id, d.name || '', d.playbook || '', d.spec]; }));
     if (key !== board.key || !board.node) {
       try { board.node = buildBoard(w.docs); board.key = key; }

@@ -16,8 +16,9 @@
    - once this worker has seen the server on a newer build it is 'moved': it asks the browser to update, writes nothing, and
      goes network first, except for pages it answered from its own cache (a slow link: the 4 s fallback still applies), which
      keep getting this build's files from the cache, and for ?v=<its build>. Offline the cache answers as always.
-   Install precaches the page, the fonts and the core and table bundles only, and fails (the running worker stays in charge)
-   unless the page, boot.js, the core and the table are all filed; the page asks for the gm and display bundles
+   Install precaches the page, the fonts and the core, table and figures bundles only, and fails (the running worker stays in charge)
+   unless the page, boot.js, the core and the table are all filed (the figures bundle, the figure kit, is filed too but not required:
+   the page draws placeholders until it has it, and any later load from the network files it); the page asks for the gm and display bundles
    by message ({ precache: ['gm', 'display'] }) when /api/me says GM. /api/*, /cdn-cgi/*, /media/* and other origins are not
    touched at all: the data layer (cf.js) keeps its own offline copy. */
 'use strict';
@@ -55,11 +56,11 @@ function bundleFiles(names) {
   return out;
 }
 
-/* INSTALL: what install precaches, every device: the page, the fonts and the core and table bundles (checks/runtime/
+/* INSTALL: what install precaches, every device: the page, the fonts and the core, table and figures bundles (checks/runtime/
    pwa.test.mjs: no file of the gm or display bundles is in it). SHELL: the whole app, every file of every bundle, all of
    which are served from the cache once it holds them; the gm and display bundles get there by the page's message, or by
    being used once (checks/runtime/pwa.test.mjs: index.html's references and every bundle are in it, and every file exists) */
-var INSTALL = STATIC.concat(bundleFiles(['core', 'table']));
+var INSTALL = STATIC.concat(bundleFiles(['core', 'table', 'figures']));   /* the figure kit last: the required files are fetched before it */
 var SHELL = STATIC.concat(self.B68Load.files());
 var REQUIRED = ['./'].concat(bundleFiles(['core', 'table']));   /* an install without all of these fails (boot.js is in the core) */
 
