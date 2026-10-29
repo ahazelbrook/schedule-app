@@ -670,6 +670,12 @@
         if (!Array.isArray(ops) || !ops.length) return Promise.resolve(false);
         return campaignSave({ clockOps: ops });
       },
+      /* the players' mission (gm/mission-publish.js): PATCH /api/campaign { mission } (null removes it), GM only. Resolves when the server took it; rejects with its error, whose
+         message names the hit on a 422. The store replaces a mission whole (a deep merge would keep a card the page dropped). */
+      publishMission: function (mission) {
+        if (!campRef || typeof campRef.update !== 'function') return Promise.reject(new Error('The table is not available here.'));
+        return Promise.resolve().then(function () { return campRef.update({ mission: mission === null ? null : clone(mission) }); }).then(function () { return true; });
+      },
       saveFile: function (name, data) { saveFile(name, data); },
       copy: function (text, ok) { copyText(text, ok); }
     };
@@ -687,7 +693,7 @@
     if (Array.isArray(raw)) raw.forEach(function (c) { if (isObj(c) && t(c.name).trim()) contacts.push({ name: t(c.name).trim(), role: t(c.role).trim(), kind: kind(c.kind) }); });
     else if (isObj(raw)) Object.keys(raw).forEach(function (n) { if (n.trim()) contacts.push({ name: n.trim(), role: '', kind: kind(raw[n]) }); });
     return {
-      id: String(id), name: t(d.name), alias: t(d.alias), playbook: t(d.playbook), playbookName: t(d.playbookName),
+      id: String(id), owner: t(d.owner), name: t(d.name), alias: t(d.alias), playbook: t(d.playbook), playbookName: t(d.playbookName),
       vice: t(p.vice != null ? p.vice : sh.vice), purveyor: t(p.purveyor != null ? p.purveyor : sh.purveyor), contacts: contacts,
       clocks: (Array.isArray(p.clocks) ? p.clocks : []).filter(isObj).map(function (c) { return { name: t(c.name), size: Math.max(0, Math.floor(+c.size || 0)), filled: Math.max(0, Math.floor(+c.filled || 0)) }; })
     };

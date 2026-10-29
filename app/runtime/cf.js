@@ -146,7 +146,11 @@
     var rest = {};
     Object.keys(patch).forEach(function (k) { if (k !== 'log' && k !== 'clockOps') rest[k] = patch[k]; });
     withClockIds(doc);
+    /* `mission` (the players' band and cards, VV2) is the GM's whole-document replace: a deep merge would keep a card the page dropped */
+    var hasMission = Object.prototype.hasOwnProperty.call(rest, 'mission'), mission = rest.mission;
+    if (hasMission) delete rest.mission;
     deepMerge(doc, rest);
+    if (hasMission) { if (mission === null) delete doc.mission; else doc.mission = clone(mission); }
     withClockIds(doc);
     if (Array.isArray(patch.clockOps)) doc.clocks = applyClockOps(doc.clocks, patch.clockOps);
     if ('log' in patch && Array.isArray(patch.log)) doc.log = mergeLog(doc.log, patch.log);
@@ -960,6 +964,8 @@
         continue;
       }
       if (campaign && depth === 0 && k === 'clocks' && Object.prototype.hasOwnProperty.call(a, 'clockOps')) return null;
+      /* a mission replaces whole (or null removes it), so the later one is the folded one, whatever the earlier held */
+      if (campaign && depth === 0 && k === 'mission') { out.mission = bv === null ? null : clone(bv); continue; }
       if (bv === null) { if (depth > 0) return null; out[k] = null; continue; }
       if (isObj(bv)) {
         if (!has) { out[k] = clone(bv); continue; }
