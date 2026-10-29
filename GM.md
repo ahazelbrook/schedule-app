@@ -1082,6 +1082,8 @@ two pages open only a page that has something to undo or rename posts the cue (a
 | "Blade, call him Big Sal", "rename that to ..." | renames the last NPC or clock Blade made tonight |
 | "Blade, undo", "scratch that" | undoes Blade's newest action that is still done |
 
+Also accepted, because Deepgram writes what it hears: **"the Escape clock"** or **"Escape clock"** for Escape; **"tick the clock"** = "tick that" (the last clock, else it asks which); the **past and -ing forms** right after the wake word ("Blade. Created NPC called Wexley", "Blade, ticked Escape"); **"Blade at an NPC ..."** and **"Blade, status six segment clock. Called Quillmoth"** (misheard "add" and "start a"; only that exact shape); and **"called Name"** in the next sentence of the same line. Anything looser stays silent.
+
 **Typed.** In the Ask bar (laptop only: the box is hidden on a phone), text starting **"Blade,"** or **"/"** is a command, not a question: it never goes to Ask. Slash forms:
 `/tick Quillmoth 2` = "Blade, tick Quillmoth 2"; `/clock 6 Quillmoth` = "Blade, make a 6 clock called Quillmoth"; `/npc Pembrake, a nervous lamp salesman` = "Blade, new NPC called Pembrake, a nervous lamp
 salesman" (`/npc` alone rolls a name); `/note ...`; `/undo`. Any other slash shows a grey card and sends nothing. The mapping lives in one place (`fromTyped` in `app/cue.js`). A typed
