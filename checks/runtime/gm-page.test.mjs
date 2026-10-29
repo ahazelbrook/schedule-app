@@ -1543,6 +1543,26 @@ await test('11f2. listening: Clear names sends a null for every named number; th
   await h.save(); await h2.save();
 });
 
+await test('11f3. listening: at most the 5 newest lines of the session show, newest last; More holds the earlier ones, shut until opened and kept across a refresh', async () => {
+  const fg = fakeGm(), lines = [];
+  for (let i = 1; i <= 12; i++) lines.push({ speaker: i % 2, kind: 'line', session: '4', text: 'Line number ' + i + '.' });
+  lines.unshift({ speaker: 0, kind: 'line', session: '3', text: 'Last time.' });
+  fg.gm.stt = async () => ({ doc: { want: 'on', session: '4', speakers: {}, status: { state: 'listening', at: new Date().toISOString(), lines: 12 } } });
+  fg.gm.transcript = async () => ({ lines });
+  const h = await openPage({ fg, camp: CAMP3 });
+  h.press('i');
+  assert.ok(await until(() => h.qa('#gm-stt ol.gm-stt-now li').length === 5));
+  const shown = h.qa('#gm-stt ol.gm-stt-now li').map((li) => li.textContent);
+  assert.ok(shown[0].includes('Line number 8.') && shown[4].includes('Line number 12.'), 'the newest five, newest last: ' + shown.join('|'));
+  const more = h.q('[data-sttmore]'); assert.ok(more && !more.hasAttribute('open'), 'More is shut by default');
+  assert.equal(h.qa('#gm-stt .gm-stt-more li').length, 7, 'the earlier lines of this session, not last session’s');
+  assert.ok(!h.q('#gm-stt').textContent.includes('Last time.'));
+  more.open = true; dispatch(more, 'toggle');
+  h.q('#gm-stt [data-gm="stt-name"]').click();   // any re-render
+  assert.ok(h.q('[data-sttmore]').hasAttribute('open'), 'More stays open across a render');
+  await h.save();
+});
+
 await test('11g. clocks to the iPad: Show on iPad sends the players’ clocks as a checked svg; a clock changing on the table sends them again', async () => {
   const camp = { session: { number: 3 }, crew: {}, clocks: [{ name: 'Bluecoats close in', filled: 2, size: 6 }, { name: 'Secret plan', filled: 1, size: 4, hidden: true }] };
   const fg = fakeGm(), h = await openPage({ fg, camp });
