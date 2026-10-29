@@ -3332,7 +3332,8 @@
       pcs: runPcs, floors: function () { var rs = runV2(); return rs ? runFloors(rs) : { list: [], floorOf: {} }; }, isOpen: runIsOpen,
       openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg,
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
-      publish: runPublish, toast: toast
+      publish: runPublish, toast: toast,
+      /* VV5 BEGIN */ dawn: function () { return runDawn(); }, setPosition: function (pos) { if (S && hasSit()) setPos(pos); } /* VV5 END */
     };
   }
   function rvInst() {

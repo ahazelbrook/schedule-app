@@ -1204,5 +1204,56 @@ test('v2: ids named constructor, toString, __proto__ or hasOwnProperty are just 
   assert.deepEqual(B.lookers(P2, {}, 'toString', 0), { here: [], soon: [] });
 });
 
+/* ---- VV5 engine items: over.from, an event's own end, a roomless lead ------------------------------------------- */
+test('v2 over.from: a delay moves only the stops at or after from; no from behaves as before', () => {
+  const room = (over, hhmm) => { const w = B.placesAt(P2, { over: { od: over } }, T(hhmm)).od; return w && w.room; };
+  /* od: 21:00 Showroom, 23:30 card rooms, 00:15 penthouse. A 30 minute delay with no from moves both later stops. */
+  assert.equal(room({ delay: 30 }, '23:45'), 'Showroom'); assert.equal(room({ delay: 30 }, '00:00'), 'Private card rooms');
+  /* set at 23:45, when od has already left for the card rooms: the 23:30 stop stays, the 00:15 one moves to 00:45 */
+  const from = T('23:45');
+  assert.equal(room({ delay: 30, from }, '23:45'), 'Private card rooms', 'not dragged back to the showroom');
+  assert.equal(room({ delay: 30, from }, '00:30'), 'Private card rooms', 'the 00:15 stop is now 00:45'); assert.equal(room({ delay: 30, from }, '00:45'), 'Luxury penthouse');
+  assert.equal(room({ delay: 30, from: 0 }, '23:45'), 'Showroom', 'from at the start is the old behaviour');
+  assert.equal(room({ delay: 30, from: 'x' }, '23:45'), 'Showroom', 'a junk from is no from');
+  assert.equal(room({ from }, '00:20'), 'Luxury penthouse', 'from with no delay changes nothing');
+});
+test('v2 event until: mission now reads the sooner of the event end and the target\'s next stop; no end keeps the beat end', () => {
+  const p = fx2(); p.events[0].until = '22:50'; p.events[1].until = 'soon';
+  const chk = B.checkPlay(p, R2); assert.equal(chk.play.events[0].until, '22:50'); assert.equal(chk.play.events[1].until, undefined); assert.ok(chk.warnings.some((w) => /until/.test(w)));
+  const mk = (play, hhmm) => { const st = { crew: CREW }; return B.missionFor(B.playerView(play, st, R2), st, T(hhmm), PCS).hud.now; };
+  /* the speeches at 22:00 in the showroom, own end 22:50, Odette leaves at 23:30: the end is sooner */
+  assert.deepEqual(mk(chk.play, '22:00'), [{ text: 'The speeches', where: 'Showroom', until: '22:50' }]);
+  assert.deepEqual(mk(chk.play, '22:30'), [{ text: 'The speeches', where: 'Showroom', until: '22:50' }], 'the event stays while it runs, past one beat');
+  assert.deepEqual(mk(chk.play, '22:50'), []);
+  /* an own end after Odette\'s next stop reads as that stop */
+  const q = fx2(); q.events[0].until = '23:45'; const qp = B.checkPlay(q, R2).play;
+  assert.deepEqual(mk(qp, '22:00'), [{ text: 'The speeches', where: 'Showroom', until: '23:30' }]);
+  /* no end: the beat end, as before */
+  assert.deepEqual(mk(P2, '22:00'), [{ text: 'The speeches', where: 'Showroom', until: '22:15' }]);
+});
+test('v2 beatCard: a lead with no room shows once (not per PC), only while its window covers t, with a line, and until every PC has heard it', () => {
+  const p = fx2(); delete p.ways[0].lead.room; const anywhere = B.checkPlay(p, R2).play;
+  const leads = (state, a, b) => B.beatCard(anywhere, state, T(a), T(b)).items.filter((i) => i.type === 'lead' && i.way === 'A');
+  const crew = { a: { room: 'Showroom' }, b: { room: 'Cocktail lounge' }, c: { room: 'Underground counting room' } };
+  const l = leads({ crew, heard: {} }, '21:15', '21:30');
+  assert.equal(l.length, 1); assert.equal(l[0].pc, ''); assert.equal(l[0].anywhere, true); assert.equal(l[0].line, 'She never leaves a table while she\'s winning.');
+  assert.equal(leads({ crew: {}, heard: {} }, '21:15', '21:30').length, 1, 'no crew yet: still said once');
+  assert.equal(leads({ crew, heard: { A: { a: 1 } } }, '21:15', '21:30').length, 1, 'one PC has heard, the others have not');
+  assert.equal(leads({ crew, heard: { A: { a: 1, b: 1, c: 1 } } }, '21:15', '21:30').length, 0, 'everyone has heard it');
+  assert.equal(leads({ crew, heard: {} }, '22:45', '23:00').length, 0, 'the lead window (to 23:00) is over');
+  const noLine = (() => { const x = fx2(); delete x.ways[0].lead.room; x.ways[0].lead.line = ' '; return B.checkPlay(x, R2).play; })();
+  assert.equal(B.beatCard(noLine, { crew, heard: {} }, T('21:15'), T('21:30')).items.some((i) => i.type === 'lead' && i.way === 'A'), false, 'no line, no lead');
+  /* a lead with a room still shows per PC in that room, unchanged */
+  assert.equal(B.beatCard(P2, { crew, heard: {} }, T('21:15'), T('21:30')).items.filter((i) => i.type === 'lead').map((i) => i.way + ':' + i.pc).join(), 'A:b,B:c');
+});
+
+test('v2 private stops and the alarm lockdown room are validated: a boolean and a room of the site, else dropped with a warning', () => {
+  assert.equal(P2.people[0].stops[2].private, true); assert.deepEqual(P2.alarm.lockdown, { room: 'Security control room' });
+  const p = fx2(); p.people[0].stops[0].private = 'yes'; p.alarm.lockdown = { room: 'Nowhere' };
+  const c = B.checkPlay(p, R2); assert.equal(c.play.people[0].stops[0].private, undefined); assert.equal(c.play.alarm.lockdown, undefined);
+  assert.ok(c.warnings.some((w) => /private/.test(w))); assert.ok(c.warnings.some((w) => /lockdown/.test(w)));
+  const q = fx2(); q.people[0].stops[1].private = false; assert.equal(B.checkPlay(q, R2).play.people[0].stops[1].private, false);
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

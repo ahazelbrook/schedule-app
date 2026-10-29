@@ -1161,6 +1161,38 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .rv-heard { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12px; }
 #gm-page .rv-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 #gm-page .rv-empty { border: 2px dashed var(--hair); padding: 14px; color: var(--ink-soft); font-size: 13px; }
+/* VV5 BEGIN: This beat, the crew, the job, intel */
+#gm-page .rv-pace { margin: 0; font: 700 11.5px/1.2 var(--font-mono); }
+#gm-page .rv-beat5 { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+#gm-page .rv-bi { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; font-size: 13.5px; align-items: start; }
+#gm-page .rv-bic { font-size: 14px; text-align: center; }
+#gm-page .rv-bb .rv-say { margin-top: 3px; }
+#gm-page .rv-wary { border-left: 4px solid var(--alarm); padding: 2px 6px; font-size: 12.5px; color: var(--ink); background: var(--inset); }
+#gm-page .rv-exits { margin: 0; padding-left: 16px; font-size: 13px; display: grid; gap: 2px; }
+#gm-page .rv-crew { border: 1.5px solid var(--hair); border-left: 6px solid var(--hair); padding: 4px 6px; display: grid; gap: 3px; }
+#gm-page .rv-crew.pos-controlled { border-left-color: #2a7f3f; }
+#gm-page .rv-crew.pos-risky { border-left-color: #b87a00; }
+#gm-page .rv-crew.pos-desperate { border-left-color: #b3261e; }
+#gm-page .rv-cr1, #gm-page .rv-cr2, #gm-page .rv-cr3 { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+#gm-page .rv-crn { font: 900 13px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .05em; }
+#gm-page .rv-sel { font: 600 12px/1.2 var(--font-body, inherit); max-width: 100%; min-height: 28px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); }
+#gm-page .rv-poschip.pos-controlled { border-color: #2a7f3f; }
+#gm-page .rv-poschip.pos-risky { border-color: #b87a00; }
+#gm-page .rv-poschip.pos-desperate { border-color: #b3261e; }
+#gm-page .rv-tog[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .rv-busy { font: 700 11.5px/1 var(--font-mono); color: var(--ink-soft); }
+#gm-page .rv-target { border-bottom: 1px solid var(--hair); padding-bottom: 4px; font-size: 13px; }
+#gm-page .rv-hid { color: var(--accent); font-style: normal; font-size: 12px; }
+#gm-page .rv-way { border: 1.5px solid var(--hair); }
+#gm-page .rv-way.st-done, #gm-page .rv-way.st-gone { opacity: .6; }
+#gm-page .rv-wayhd { width: 100%; text-align: left; background: none; border: 0; color: var(--ink); padding: 6px 8px; font-size: 13px; cursor: pointer; min-height: 32px; }
+#gm-page .rv-wst { color: var(--ink-soft); font: 700 11.5px/1 var(--font-mono); margin-left: 6px; }
+#gm-page .rv-way > :not(.rv-wayhd) { margin-left: 8px; margin-right: 8px; }
+#gm-page .rv-wl { margin: 2px 8px; font-size: 12.5px; }
+#gm-page .rv-steps { list-style: none; margin: 2px 8px; padding: 0; font-size: 13px; }
+#gm-page .rv-intel > summary { cursor: pointer; }
+#gm-page .rv-intel1 { border-top: 1px solid var(--hair); padding: 4px 0; font-size: 13px; display: grid; gap: 3px; }
+/* VV5 END */
 @media (max-width: 760px) {
   #gm-page .rv-body { grid-template-columns: minmax(0, 1fr); }
   #gm-page .rv-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }

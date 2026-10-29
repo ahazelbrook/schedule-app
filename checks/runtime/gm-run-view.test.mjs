@@ -125,5 +125,48 @@ test('the seams VV5 and VV6 build on exist', () => {
   R.setPlayersChip('Players: —', false);
 });
 
+
+/* ---- VV5: the pure helpers behind This beat, the crew and the job ---- */
+const TT = (h) => B.minuteOf(h, '21:00');
+test('sortedStops mirrors the engine: the sorted list with usable times, indexed as over.skip reads them', () => {
+  const od = play.people.find((p) => p.id === 'od');
+  assert.deepEqual(R.sortedStops(od, '21:00').map((s) => [s.j, s.at, s.room]), [[0, '21:00', 'Showroom'], [1, '23:30', 'Private card rooms'], [2, '00:15', 'Luxury penthouse']]);
+  /* skipping index 2 with the engine keeps her in the card rooms: the index means what the view thinks it means */
+  assert.equal(B.placesAt(play, { over: { od: { skip: [2] } } }, TT('00:30')).od.room, 'Private card rooms');
+});
+test('scanChanges: the next change of room with the overrides on; null when nothing more happens', () => {
+  const sc = R.scanChanges(play, {}, ['od', 'iv', 'pq'], TT('22:00'));
+  assert.deepEqual(sc.od, { at: TT('23:30'), room: 'Private card rooms' }); assert.deepEqual(sc.iv, { at: TT('00:30'), room: null }); assert.deepEqual(sc.pq, { at: TT('00:00'), room: 'Underground counting room' });
+  assert.deepEqual(R.scanChanges(play, { over: { od: { delay: 30, from: TT('22:00') } } }, ['od'], TT('22:00')).od, { at: TT('00:00'), room: 'Private card rooms' }, 'a delay from now moves the next stop');
+  assert.equal(R.scanChanges(play, { over: { od: { gone: true } } }, ['od'], TT('22:00')).od, null, 'a person who is gone has no next move');
+});
+test('skipTarget: the next future stop flagged private, never a public one, never one already skipped; none left is null', () => {
+  const open = () => false;
+  assert.equal(R.skipTarget(play, {}, TT('22:00'), open).stop.room, 'Luxury penthouse', 'the card rooms stop is public, so it is passed over');
+  assert.equal(R.skipTarget(play, { over: { od: { skip: [2] } } }, TT('22:00'), open), null);
+  assert.equal(R.skipTarget(play, {}, TT('00:30'), open), null, 'nothing is left to skip after the last stop');
+  assert.equal(R.skipTarget(play, {}, TT('22:00'), () => true).stop.room, 'Luxury penthouse', 'the fog does not matter');
+});
+
+test('crewOrder: desperate with a looker, desperate, risky with, risky, controlled with, controlled, then the unplaced', () => {
+  const st = { crew: {
+    p1: { room: 'Showroom', disguise: 'guard' },                        /* controlled, Wren is there at 21:00 */
+    p2: { room: 'Cocktail lounge', disguise: 'cook' },                  /* risky (floor is risky for a cook), Pip is there */
+    p3: { room: 'Luxury penthouse', disguise: 'guest' } } };            /* desperate */
+  assert.deepEqual(R.crewOrder(play, st, PCS, 0).map((o) => [o.id, o.pos]), [['p3', 'desperate'], ['p2', 'risky'], ['p1', 'controlled']]);
+  const st2 = { crew: { p1: { room: 'Showroom', disguise: 'guard', blown: ['guard'] }, p2: { room: 'Cocktail lounge', disguise: 'cook' } } };
+  assert.deepEqual(R.crewOrder(play, st2, PCS, 0).map((o) => o.id), ['p1', 'p2', 'p3'], 'blown makes Cass desperate with a looker: first; the unplaced Ira is last');
+  assert.equal(R.crewOrder(play, st2, PCS, 0)[0].here[0].label, 'Wren Tully');
+});
+test('waySummary: unheard, heard by, steps n of m, done, and gone once t passes window.until', () => {
+  const wA = play.ways[0], wB = play.ways[1];
+  assert.equal(R.waySummary(play, {}, wA, 0).state, 'unheard');
+  assert.equal(R.waySummary(play, { heard: { A: { p1: 5 } } }, wA, 0).state, 'heard');
+  assert.deepEqual([R.waySummary(play, { steps: { A: [true, false] } }, wA, 0).state, R.waySummary(play, { steps: { A: [true, false] } }, wA, 0).n, R.waySummary(play, {}, wA, 0).total], ['steps', 1, 2]);
+  assert.equal(R.waySummary(play, { ways: { A: 'done' }, steps: { A: [true] } }, wA, 0).state, 'done');
+  assert.equal(R.waySummary(play, {}, wA, TT('00:14')).state, 'unheard'); assert.equal(R.waySummary(play, {}, wA, TT('00:15')).state, 'gone', 'the window of A ends 00:15');
+  assert.equal(R.waySummary(play, {}, wB, TT('01:00')).state, 'unheard', 'a window with no until never closes by itself');
+});
+
 console.log(failed ? 'FAILED ' + failed + ' of ' + (failed + passed) : 'ok ' + passed + ' passed');
 process.exit(failed ? 1 : 0);

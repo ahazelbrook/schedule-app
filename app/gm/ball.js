@@ -404,7 +404,7 @@
    *
    * checkPlay(play, roomNames) with play.v === 2 validates every key (see checkPlayV2). v1 is untouched.
    * whereAt(person, minute, byId, start, { over }) is whereAt for v2: stops are { at, room, note? } | { at, with } |
-   *   { at, gone: true }; `over` is ball.over (person id -> { delay, skip, at, gone }).
+   *   { at, gone: true }; `over` is ball.over (person id -> { delay, from, skip, at, gone, ... }).
    * placesAt(play, state, t) -> { <person id>: whereAt result or null }
    * positionOf(play, state, pcId) -> { pos: "controlled"|"risky"|"desperate", why: "reason; reason" }
    * lookers(play, state, pcId, t) -> { here: [looker], soon: [looker + { at, inMin }] }; looker = { id, label, look, wary }
@@ -577,6 +577,7 @@
             delete r.room;
           } else if (!hasRoom(s.room)) { warn(at + ": room " + JSON.stringify(s.room) + " is not in the site; dropped"); return; }
           textKey(r, s, "note", at);
+          if (s.private !== undefined && typeof s.private !== "boolean") { warn(at + ".private: not true or false; dropped"); delete r.private; }
           if (!inWindow(r.at)) warn(at + ": " + r.at + " is outside the clock (" + start + " to " + clock.end + "), so it reads as the next morning; kept");
           stops.push(r);
         });
@@ -676,6 +677,8 @@
       else if (VIS.indexOf(e.vis) < 0) { warn(where + ": vis " + JSON.stringify(e.vis) + " is not public, seen or hidden; using hidden"); o.vis = "hidden"; }
       ["pub", "say"].forEach(function (k) { textKey(o, e, k, where); });
       if (e.rival !== undefined && typeof e.rival !== "boolean") { warn(where + ".rival: not true or false; dropped"); delete o.rival; }
+      if (e.until !== undefined && isNaN(mins(e.until))) { warn(where + ".until: " + JSON.stringify(e.until) + " is not HH:MM; dropped"); delete o.until; }
+      else if (e.until !== undefined) o.until = hhmm(e.until);
       return o;
     });
     out.events.sort(function (a, b) { return minuteOf(a.at, start) - minuteOf(b.at, start); });
@@ -801,6 +804,10 @@
             ao.at = atm;
           }
         }
+        if (al.lockdown !== undefined) {
+          if (!isObj(al.lockdown) || !hasRoom(al.lockdown.room)) { warn("play.alarm.lockdown: needs { room } naming a room in the site; dropped"); delete ao.lockdown; }
+          else ao.lockdown = { room: al.lockdown.room };
+        }
         out.alarm = ao;
       }
     }
@@ -833,10 +840,13 @@
   /* ---- v2: where people are ---------------------------------------------------------------------------------- */
 
   /* A person's effective stops [{ t, room?, with?, gone?, note }] in minutes from start, with the overrides applied:
-   * skip (indexes into the sorted stops), delay (minutes added to every stop after the first). */
+   * skip (indexes into the sorted stops), delay (minutes added to every stop after the first, or only to those at or after over.from). */
   function stopsV2(person, start, ov) {
     var skip = ov && Array.isArray(ov.skip) ? ov.skip : [];
     var delay = ov && typeof ov.delay === "number" && isFinite(ov.delay) ? ov.delay : 0;
+    /* over.from (minutes after clock.start): a delay moves only the stops at or after it, so a delay set mid-night
+     * never drags a person back to a room they have left. No from: every stop after the first, as before. */
+    var from = ov && typeof ov.from === "number" && isFinite(ov.from) ? ov.from : null;
     var arr = (isObj(person) && Array.isArray(person.stops) ? person.stops : []).map(function (s, i) {
       return { s: s, i: i, t: isObj(s) ? minuteOf(s.at, start) : NaN };
     }).filter(function (x) { return !isNaN(x.t); });
@@ -844,7 +854,7 @@
     var out = [];
     arr.forEach(function (x, j) {
       if (skip.indexOf(j) >= 0) return;
-      var t = x.t + (j >= 1 ? delay : 0), s = x.s, note = typeof s.note === "string" ? s.note : "";
+      var t = x.t + (j >= 1 && (from === null || x.t >= from) ? delay : 0), s = x.s, note = typeof s.note === "string" ? s.note : "";
       if (s.gone === true) out.push({ t: t, gone: true, note: note });
       else if (typeof s.with === "string") out.push({ t: t, with: s.with, note: note });
       else if (typeof s.room === "string") out.push({ t: t, room: s.room, note: note });
@@ -1081,7 +1091,20 @@
     });
     rt.sort(byTime);
     items = items.concat(strip(rt), strip(gones));
-    leadsInReach(play, state, t1).forEach(function (l) { var o = { type: "lead" }; Object.keys(l).forEach(function (k) { o[k] = l[k]; }); items.push(o); });
+    leadsInReach(play, state, t1).forEach(function (l) {
+      var w = findBy(play.ways, l.way), ld = w && isObj(w.lead) ? w.lead : null;
+      if (ld && ld.room === undefined) return;           /* a lead with no room is not in reach for every PC: it is added once, below */
+      var o = { type: "lead" }; Object.keys(l).forEach(function (k) { o[k] = l[k]; }); items.push(o);
+    });
+    /* a lead with no room: once, if it has a line, its window covers t1, and some PC (or nobody yet) has still to hear it */
+    var crewIds = Object.keys(crew), heardMap = isObj(state) && isObj(state.heard) ? state.heard : {};
+    (Array.isArray(play.ways) ? play.ways : []).forEach(function (w) {
+      var ld = isObj(w) ? w.lead : null;
+      if (!isObj(ld) || ld.room !== undefined || !isStr(ld.line)) return;
+      if (!(minuteOf(ld.from, start) <= t1 && t1 < minuteOf(ld.to, start))) return;
+      if (crewIds.length && crewIds.every(function (pc) { return own(own(heardMap, w.id), pc) !== undefined; })) return;
+      items.push({ type: "lead", way: w.id, pc: "", line: ld.line, who: nameOf(ld.who), room: "", name: nameOf(w.name), anywhere: true });
+    });
 
     /* the first thing after t1: an event, a target's move or a route opening or closing; at a tie, in that order */
     var best = null, take = function (m, rank, o) { if (!best || m < best.m || (m === best.m && rank < best.rank)) best = { m: m, rank: rank, o: o }; };
@@ -1221,6 +1244,7 @@
       var shown = e.vis === "public" || (e.vis === "seen" && typeof e.room === "string" && pcRooms[e.room] === 1) || audAny(aud);
       if (!shown) return;
       var o = { id: e.id, at: minuteOf(e.at, start), vis: e.vis === "public" || e.vis === "seen" ? e.vis : "hidden", pub: e.pub, aud: aud };
+      if (typeof e.until === "string" && !isNaN(minuteOf(e.until, start)) && minuteOf(e.until, start) > o.at) o.end = minuteOf(e.until, start);
       if (typeof e.room === "string") o.room = e.room;
       view.events.push(o);
     });
@@ -1292,14 +1316,25 @@
     (Array.isArray(view.open) ? view.open : []).forEach(function (r) { openSet[r] = 1; });
     var where = function (room) { return typeof room === "string" && openSet[room] === 1 ? room : undefined; };
     var events = (Array.isArray(view.events) ? view.events : []).slice().sort(function (a, b) { return a.at - b.at || (a.id < b.id ? -1 : 1); });
+    /* an event with its own end reads "until" the sooner of that and the target's next stop after t; any other, the beat's end */
+    var targetNext = function () {
+      var tg = (Array.isArray(view.people) ? view.people : []).filter(function (p) { return p.target; })[0], best = null;
+      if (tg) (tg.segs || []).forEach(function (s, i) { if (i > 0 && s.from > t && (best === null || s.from < best)) best = s.from; });
+      return best;
+    };
+    var untilOf = function (e) {
+      if (typeof e.end !== "number" || e.end <= t) return e.at + beat;
+      var nx = targetNext();
+      return nx !== null && nx < e.end ? nx : e.end;
+    };
     var line = function (e, withAt) {
       var o = { text: e.pub };
       var w = where(e.room);
       if (w !== undefined) o.where = w;
-      if (withAt) { o.at = label(e.at); o.inMin = inMin(t, e.at); } else o.until = label(e.at + beat);
+      if (withAt) { o.at = label(e.at); o.inMin = inMin(t, e.at); } else o.until = label(untilOf(e));
       return o;
     };
-    var happening = function (e) { return e.at <= t && t < e.at + beat; };
+    var happening = function (e) { return e.at <= t && t < (typeof e.end === "number" ? e.end : e.at + beat); };
     var upcoming = function (e) { return e.at > t; };
 
     /* NOW: public events; a seen event only while a PC is in its room; any event once the crew has been told of it */
