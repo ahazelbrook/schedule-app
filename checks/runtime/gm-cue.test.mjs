@@ -112,6 +112,21 @@ await test('1h. rename and undo are ordinary parsed actions with a quote and no 
   assert.equal(shape('cancel').none, true, 'cancel needs the wake word');
 });
 
+/* CUE-P (29/10): the loose phrasings. A loose form (past/-ing verb, "at an NPC", "status six segment clock") counts only when the cue parses to something, and a past-tense tick
+   needs the table, so find() with NO live can say null where parse() with live acts. The fixtures above pin the acting side; the decoys pin find() with no table. */
+await test('1i. clock names: "the X clock" / "X clock" is X; a clock really named "X Clock" still wins; "the clock" is "that"; "that X clock" is X, not the last clock', () => {
+  const live = { clocks: [{ id: 'a', name: 'Escape', size: 6, filled: 0 }, { id: 'b', name: 'Quillmoth Clock', size: 4, filled: 0 }, { id: 'c', name: 'Quillmoth', size: 4, filled: 0 }, { id: 'd', name: 'The Clock', size: 4, filled: 0 }], lastClock: 'a' };
+  const tk = (s, l) => Cue.parse(s, Object.assign({}, live, l || {})).actions.map((x) => x.clock_id);
+  assert.deepEqual(tk('Blade, tick the Escape clock.'), ['a']); assert.deepEqual(tk('Blade, tick escape clock'), ['a']);
+  assert.deepEqual(tk('Blade, tick Quillmoth Clock'), ['b'], 'exact name first'); assert.deepEqual(tk('Blade, tick the Quillmoth clock'), ['b'], 'the-less exact (existing rule) comes before stripping'); assert.deepEqual(tk('Blade, tick the Escape clock twice'), ['a']);
+  assert.deepEqual(tk('Blade, tick the clock', { lastClock: 'c' }), ['d'], 'a clock really named The Clock is an exact match');
+  const l2 = { clocks: live.clocks.slice(0, 3), lastClock: 'c' };
+  assert.deepEqual(Cue.parse('Blade, tick the clock', l2).actions.map((x) => x.clock_id), ['c'], 'the clock = that');
+  assert.equal(Cue.parse('Blade, tick the clock', { clocks: l2.clocks }).missing, 'which');
+  assert.deepEqual(Cue.parse('Blade, tick that Escape clock', l2).actions.map((x) => x.clock_id), ['a'], 'a named clock beats the last clock');
+  assert.deepEqual(Cue.matchClock('the clock', l2.clocks), [], 'never a guess');
+});
+
 /* ---------- 2. refusals ---------- */
 await test('2. refusals: show/reveal/put up, a sheet (stress, harm, xp, coin), anything it cannot parse', () => {
   for (const s of ['Blade, show the players the map', 'Blade, reveal the clock', 'Blade, put up the harbour map', 'Blade, tick Escape and show it']) { const r = P(s); assert.deepEqual([r.actions, r.refused], [[], 'show'], s); }
