@@ -4212,13 +4212,13 @@ await test('A2e. start() running again on the same page (Update pack, then Cance
    Who is who: Blade's suggestions (STT-W). Chips in the fold; a tap is the ordinary speakers PATCH; nothing is applied otherwise.
    ===================================================================================================================== */
 async function whoisPage({ speakers = {}, canGuess = true, withBox = true } = {}) {
-  const sent = [], log = { opts: null, guesses: 0, reply: null };
+  const sent = [], log = { opts: null, guesses: 0, reply: null, session: '3' };
   const fg = fakeGm();
   fg.gm.assistTick = async () => ({ cards: [], updates: [], flags: [], spend: { tonight: 0, cap: 20, tier: 'all', tick: 0 }, last: 1 });
   fg.gm.assistWhois = async () => ({ whois: {} });
-  fg.gm.stt = async () => ({ doc: { want: 'on', speakers, status: { state: 'listening', at: new Date().toISOString(), lines: 2 } } });
+  fg.gm.stt = async () => ({ doc: { want: 'on', session: '3', speakers, status: { state: 'listening', at: new Date().toISOString(), lines: 2 } } });
   fg.gm.transcript = async () => ({ lines: [{ speaker: 2, kind: 'line', text: 'Who knocks?' }] });
-  fg.gm.patchStt = async (p) => { sent.push(p); return { doc: { want: 'on', speakers: Object.assign({}, speakers, p.speakers || {}), status: { state: 'listening' } } }; };
+  fg.gm.patchStt = async (p) => { sent.push(p); return { doc: { want: 'on', session: log.session, speakers: Object.assign({}, speakers, p.speakers || {}), status: { state: 'listening' } } }; };
   const A = { create(o) {
     log.opts = o;
     return { destroy() {}, toggle() {}, isOpen: () => false, close() {}, canFit: () => true, canGuess: () => canGuess, guess() { log.guesses++; if (log.reply) o.onWhois(log.reply); return Promise.resolve({ whois: log.reply || {} }); } };
@@ -4290,6 +4290,28 @@ await test('Who is who: "Blade, guess" asks the box once and the answer becomes 
   const c = await whoisPage({ canGuess: false });
   assert.equal(c.h.q('[data-gm="whois-ask"]'), null, 'capped or not set up: no button');
   await c.h.save();
+});
+
+await test('Who is who: Clear names also clears the pending chips', async () => {
+  const t = await whoisPage({ speakers: { 0: 'Pat (Wexley)' } });
+  t.sug({ 2: { name: 'Quinn', why: 'a' }, 3: { name: 'Sam', why: 'b' } });
+  assert.equal(chipTxt(t.h).length, 2);
+  t.h.q('[data-gm="stt-clear"]').click();
+  assert.ok(await until(() => t.sent.length === 1 && chipTxt(t.h).length === 0), 'the chips go with the names');
+  t.sug({ 2: { name: 'Quinn', why: 'a' } });
+  assert.deepEqual(chipTxt(t.h), ['S2 Quinn? (a)'], 'a dismissed-before guess is offered again after a clear (the dismissals went too)');
+  await t.h.save();
+});
+
+await test('Who is who: a session change clears the pending chips (speaker numbers mean other people)', async () => {
+  const t = await whoisPage();
+  t.log.session = '4';
+  t.sug({ 2: { name: 'Quinn', why: 'a' }, 3: { name: 'Sam', why: 'b' } });
+  assert.equal(chipTxt(t.h).length, 2);
+  t.h.q('[data-gm="whois-take"]').click();               /* the PATCH answer comes back with a new session */
+  assert.ok(await until(() => t.sent.length === 1));
+  assert.ok(await until(() => chipTxt(t.h).length === 0), 'S3 is gone too');
+  await t.h.save();
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
