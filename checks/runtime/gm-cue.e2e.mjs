@@ -62,6 +62,7 @@ let lineN = 0;
 async function say(text, opts = {}) {
   const id = 'cue-' + Date.now().toString(36) + '-' + (++lineN);
   const row = { id, at: opts.at || new Date().toISOString(), session: '1', conn: 'c1', speaker: opts.speaker === undefined ? 0 : opts.speaker, kind: 'line', text };
+  if (/^\s*blade\b/i.test(text)) row.cue = true;   // as the iPad's transcriber flags a cued line (C4b): the Worker pokes the GM pages' cue lane (live sync)
   const t = Date.now();
   const r = await api('POST', '/gm/transcript', { lines: [row] });
   if (r.status !== 200) throw new Error('transcript POST -> ' + r.status + ' ' + JSON.stringify(r.json));
@@ -69,6 +70,7 @@ async function say(text, opts = {}) {
 }
 const seen = { act: [], responses: [], requests: [], dialogs: [], accept: true, promptText: '', delayAct: 0, modelReply: null };
 const lands = [];          // cue-to-card times (ms), for the report
+const trReads = [], readLags = [];   // live sync: when the page read the transcript, and the lag from a cue line to the first read after it
 
 try {
   const up = await until(async () => { try { return (await fetch(BASE + '/index.html')).status > 0; } catch (_) { return false; } }, 90000, 500);
@@ -108,6 +110,7 @@ try {
     page.on('pageerror', (e) => errors.push('p' + n + ' pageerror: ' + e.message));
     page.on('request', (r) => {
       if (!r.url().startsWith(BASE + '/api/')) return;
+      if (r.method() === 'GET' && r.url().includes('/api/gm/transcript?after=')) trReads.push(Date.now());
       if (!crewSyncOnly(r)) seen.requests.push(n + ' ' + r.method() + ' ' + r.url().slice(BASE.length));
       if (r.method() === 'POST' && /\/api\/gm\/assist\/act$/.test(r.url())) seen.act.push({ page: n, body: JSON.parse(r.postData() || '{}'), at: Date.now() });
     });
@@ -157,6 +160,7 @@ try {
     await sleep(2200);               // the page makes at most one cue call every 2 s (TIMING.cueGap): space the cues so each time measures the lane, not the gap before it
     const l = await say(text, o);
     const cd = await cardLike(re, o.ms || 8000, o.page || page);
+    if (!o.page) { const rd = trReads.find((t) => t >= l.t); if (rd) readLags.push(rd - l.t); }
     const ms = cd ? Date.now() - l.t : -1;
     if (cd && o.measure !== false) lands.push(ms);
     return { line: l, card: cd, ms };
@@ -437,6 +441,9 @@ try {
   check(!writes.some((r) => /\/api\/characters/.test(r)), 'no request wrote a player\'s sheet');
   check(errors.length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));
 
+  // live sync (MD2): the 2 s poll alone would read a cue 0 to 2000 ms after its line (median about 1000); a cue poke reads it at once
+  console.log('cue line -> transcript read (ms): ' + readLags.join(', '));
+  check(readLags.length >= 4 && med(readLags) < 600 && Math.max(...readLags) < 1500, 'live sync: the cue lane reads the transcript at once on a cue poke (median ' + med(readLags) + ' ms, max ' + Math.max(...readLags) + ' ms over ' + readLags.length + ' cues; the 2 s poll alone would not)');
   console.log('cue-to-card times (ms): ' + lands.join(', ') + '  | median ' + med(lands) + ' ms over ' + lands.length + ' cues');
   await c.close();
   await browser.close();

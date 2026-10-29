@@ -40,9 +40,14 @@
   /* how often the characters, campaign and NPCs are looked at: every 4 s while the page is in front, once a minute when it is hidden
      (the Workers Free plan allows 100,000 requests a day for the whole site; a hidden tab learns what changed at its next look, or at
      once when it comes back, as a visibilitychange polls straight away) */
-  function pollMs() {
+  function fastMs() {
     if (typeof window.__B68_POLL_MS === 'number') return window.__B68_POLL_MS;
     return document.hidden ? 60000 : 4000;
+  }
+  function pollMs() {
+    /* live sync (design 2.5): 15 s while the socket is healthy, 4 s otherwise (a hidden page has no socket) */
+    if (!document.hidden && live.healthy()) return typeof window.__B68_HEALTHY_POLL_MS === 'number' ? window.__B68_HEALTHY_POLL_MS : 15000;
+    return fastMs();
   }
   /* the server's PATCH semantics: objects merge, arrays and scalars replace, null deletes */
   function deepMerge(target, patch) {
@@ -229,7 +234,7 @@
       try { err.network = true; } catch (x) { err = new Error(err.message); err.network = true; }
       throw err;
     }
-    var sent;
+    var sent, t0 = Date.now();
     try { sent = fetch('/api' + path, opts); } catch (e) { sent = Promise.reject(e); }
     if (ctl) timer = setTimeout(function () { timedOut = true; try { ctl.abort(); } catch (e) {} }, limit);
     return Promise.resolve(sent).then(function (res) {
@@ -252,10 +257,181 @@
       return res.text().then(function (t) {
         var j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
         if (!res.ok) { var err = new Error((j && j.error) || ('HTTP ' + res.status)); err.status = res.status; throw err; }
+        if (method !== 'GET') live.wrote(path, t0);      /* live sync: this write's poke should come back within 5 s */
         return j;
       }, netFail);                               /* the headers came but the body did not (aborted, a dropped stream): a network failure too */
     }, netFail).then(function (v) { clearTimeout(timer); return v; }, function (e) { clearTimeout(timer); throw e; });
   }
+
+  /* ---------- live sync: the poke socket (design 2.5; GM.md "Live sync") ----------
+     A poke is { k: kind, t: ms } and nothing else: it only tells a page to run the poll it already has, at once. The poll stays the
+     source of truth, so a page with no socket (or a dead one) behaves as it always did. One socket per page, shared by whoever
+     listens (the data poller here, the table display's poller, the GM page's cue lane): B68Live.on(kinds, fn) -> off. fn(kind) is
+     called for each poke of a kind it holds, and fn('hello') when the socket (re)opens.
+     It opens only after a poll answer said `live: true` (the GM's switch rides in the data poll and in /api/gm/display), while the
+       page is visible, online and signed in.
+     It stays shut after a server close with code 1000, which means the switch went off (never a drop): until a poll answer that
+       started after the close says live: true. A browser cannot see a 503 or an Access refusal, only a close before the socket ever
+       opened: that waits for the backoff step AND a fresh live: true answer, so a refusal costs one connect per step (1, 2, 5, 10,
+       then 30 s), never one per poll, and there is no error UI. A drop after it was open reconnects on the same backoff.
+     Healthy (the data poll slows from 4 s to 15 s only while this holds): a poke or pong in the last 60 s; each own write came
+       back as a poke within 5 s; and no poll brought back a change that no poke announced (judged 2 s after the poll, so a poke
+       that arrives a little late still counts). The runtime answers 'ping' by itself, so a pong alone proves only the pipe.
+       Anything else holds the poll at 4 s for a minute. */
+  var LV = window.__B68_LIVE || {};      /* test knobs only: pingMs, pongMs, silentMs, echoMs, graceMs, badMs, backoff */
+  function lvn(k, d) { return typeof LV[k] === 'number' ? LV[k] : d; }
+  var HEAR = { characters: ['player', 'gm'], campaign: ['player', 'gm'], npcs: ['player', 'gm'], screen: ['player'], display: ['display', 'gm'], ambient: ['display', 'gm'], stt: ['display', 'gm'], cue: ['gm'] };
+  var live = (function () {
+    var subs = [], ws = null, opened = false, wantFlag = null, blocked = false, blockedAt = 0, nextTryAt = 0, retry = 0, openedAt = 0;
+    var timers = { ping: null, pong: null, retry: null, hello: null, stable: null }, lastSignal = 0, badUntil = 0, grace = false, connects = 0;
+    var failLog = [], broken = false;   /* the circuit breaker: UNPLANNED failures in the last hour (a drop, a missed pong, a refused or silent connect); past the limit live sync stays off until a reload. Planned closes never count. */
+    var pokeAt = {}, pend = {};
+    var BACKOFF = Array.isArray(LV.backoff) ? LV.backoff : [1000, 2000, 5000, 10000, 30000];
+    function now() { return Date.now(); }
+    function hears(k) { return !!HEAR[k] && !!me && HEAR[k].indexOf(me.role) >= 0; }
+    function holds(k) { return subs.some(function (s) { return s.kinds.indexOf(k) >= 0; }); }
+    function able() {
+      return typeof window.WebSocket === 'function' && !!me && mode === 'online' && !signedOut && !(document && document.hidden) && subs.length > 0;
+    }
+    function clearT(n) { if (timers[n]) { clearTimeout(timers[n]); timers[n] = null; } }
+    function backoffMs() { return BACKOFF[Math.min(retry, BACKOFF.length - 1)]; }
+    function url() { var l = window.location || {}; return (l.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + l.host + '/api/live'; }
+    function healthy() { var n = now(); return opened && n - lastSignal < lvn('silentMs', 60000) && n >= badUntil; }
+    /* the poll's cadence follows health: when it changes, the poller re-times its next look */
+    function repoll() { if (running && !inflight && !signedOut && (!timer || timerAt - Date.now() > pollMs())) schedule(); }   /* only ever sooner: a look already due earlier is left alone */
+    function trip() { badUntil = now() + lvn('badMs', 60000); repoll(); }
+    function shut(code) {
+      var w = ws; ws = null; opened = false;
+      clearT('ping'); clearT('pong'); clearT('hello'); clearT('stable');
+      if (w) { w.onopen = w.onmessage = w.onclose = w.onerror = null; try { w.close(code || 1000); } catch (e) {} }
+      repoll();
+    }
+    /* THE connect gate: every path that can open a socket (a poll answer, the retry timer, a page coming back, a new listener) ends here.
+       It refuses before nextTryAt (every close that was not our own advances the backoff) and past 20 unplanned failures an hour. */
+    function connect() {
+      if (ws || !able() || wantFlag !== true || blocked || broken) return;
+      var t = now();
+      if (t < nextTryAt) return;
+      failLog = failLog.filter(function (x) { return t - x < 3600000; });
+      if (failLog.length >= lvn('maxFails', 20)) { broken = true; return; }
+      var w;
+      connects++;
+      try { w = new window.WebSocket(url()); } catch (e) { failedConnect(); return; }
+      ws = w; var mine = w, sawOpen = false;
+      /* a socket that never says hello (a proxy holding it, a refusal that does not close) is treated as a failed connect */
+      clearT('hello');
+      timers.hello = setTimeout(function () { timers.hello = null; if (ws === mine && !opened) { shut(); failedConnect(); } }, lvn('pongMs', 10000));
+      w.onopen = function () { if (ws === mine) sawOpen = true; };
+      w.onmessage = function (ev) {
+        if (ws !== mine) return;
+        var d = ev && ev.data;
+        lastSignal = now();
+        if (d === 'pong') { clearT('pong'); return; }
+        var j = null; try { j = typeof d === 'string' ? JSON.parse(d) : null; } catch (e) { j = null; }
+        if (!j || typeof j !== 'object') return;
+        if (j.hello) {
+          clearT('hello');
+          clearT('stable'); timers.stable = setTimeout(function () { timers.stable = null; retry = 0; failLog = []; }, lvn('stableMs', 60000));   /* the backoff and the failure count start over only after a minute open */
+          opened = true; openedAt = now(); grace = true; pokeAt = {}; pend = {};
+          armPing();
+          fire('hello');
+        } else if (typeof j.k === 'string') {
+          pokeAt[j.k] = now(); pend[j.k] = now();
+          fire(j.k);
+        }
+      };
+      w.onerror = function () {};
+      w.onclose = function (ev) {
+        if (ws !== mine) return;
+        var code = ev && ev.code, was = opened;
+        ws = null; opened = false; clearT('ping'); clearT('pong'); clearT('hello'); clearT('stable');
+        if (sawOpen && code === 1000) { advance(); blocked = true; blockedAt = now(); repoll(); return; }   /* the switch went off: a poll must say on again */
+        if (!was) { failedConnect(); repoll(); return; }                      /* never opened: a 503, an Access refusal, no network */
+        reconnectSoon(); repoll();
+      };
+    }
+    function advance() { nextTryAt = now() + backoffMs(); retry++; failLog.push(now()); }   /* every caller is an unplanned close or failure */
+    function failedConnect() { blocked = true; blockedAt = now(); advance(); }
+    function reconnectSoon() {
+      clearT('retry');
+      advance();
+      timers.retry = setTimeout(function () { timers.retry = null; connect(); }, Math.max(0, nextTryAt - now()));
+    }
+    function armPing() {
+      clearT('ping');
+      timers.ping = setTimeout(function () {
+        timers.ping = null;
+        var mine = ws; if (!mine || !opened) return;
+        try { mine.send('ping'); } catch (e) {}
+        clearT('pong');
+        timers.pong = setTimeout(function () {                                /* no pong: the pipe is dead */
+          timers.pong = null;
+          if (ws !== mine) return;
+          shut(); reconnectSoon();
+        }, lvn('pongMs', 10000));
+        armPing();
+      }, lvn('pingMs', 30000));
+    }
+    /* at most one call per listener every 500 ms: pokes inside the gap coalesce into one call at its end (the last poke of a burst is never dropped) */
+    function fire(k) {
+      subs.slice().forEach(function (s) {
+        if (k !== 'hello' && s.kinds.indexOf(k) < 0) return;
+        var gap = lvn('pokeGapMs', 500), wait = (s.last || 0) + gap - now();
+        if (wait > 0) {
+          s.pendingK = k;
+          if (!s.timer) s.timer = setTimeout(function () { s.timer = null; s.last = now(); try { s.fn(s.pendingK); } catch (e) { setTimeout(function () { throw e; }, 0); } }, wait);
+          return;
+        }
+        s.last = now();
+        try { s.fn(k); } catch (e) { setTimeout(function () { throw e; }, 0); }
+      });
+    }
+    /* a poll answer's `live` (the switch); at is when that poll started */
+    function flag(v, at) {
+      if (typeof v !== 'boolean') return;
+      wantFlag = v;
+      if (!v) { if (ws) shut(1000); clearT('retry'); blocked = false; retry = 0; nextTryAt = 0; return; }   /* off on purpose: nothing to back off from */
+      if (blocked) {
+        if ((at || 0) < blockedAt || now() < nextTryAt) return;               /* only a poll that began after the close, and past the backoff */
+        blocked = false;
+      }
+      connect();
+    }
+    function visibility() {
+      if (document.hidden) { if (ws) shut(1000); clearT('retry'); return; }
+      if (wantFlag === true && !ws && !blocked) connect();   /* only through the gate; otherwise the poll the page makes now lets the answer decide */
+    }
+    /* the data poll's report: when it started and which kinds came back changed (first: a full load, whose changes are no news) */
+    function polled(startedAt, moved, first) {
+      var g = grace && startedAt >= openedAt;
+      if (g) grace = false;
+      var doneAt = now();
+      Object.keys(moved || {}).forEach(function (k) {
+        if (!moved[k] || !opened || g || first || pend[k] !== undefined) return;
+        setTimeout(function () { if (opened && (pokeAt[k] === undefined || pokeAt[k] < doneAt)) trip(); }, lvn('graceMs', 2000));
+      });
+      Object.keys(pend).forEach(function (k) { if (pend[k] < startedAt) delete pend[k]; });
+    }
+    /* an own write the server accepted: its poke must come back within 5 s */
+    function wrote(path, startedAt) {
+      if (!opened) return;
+      var k = /^\/characters/.test(path) ? 'characters' : /^\/campaign/.test(path) ? 'campaign' : /^\/npcs/.test(path) ? 'npcs' : '';
+      if (!k || !hears(k) || !holds(k)) return;
+      var sock = ws;
+      setTimeout(function () { if (ws === sock && opened && (pokeAt[k] === undefined || pokeAt[k] < startedAt)) trip(); }, lvn('echoMs', 5000));
+    }
+    function stopAll() { shut(1000); clearT('retry'); blocked = false; retry = 0; }
+    return {
+      on: function (kinds, fn) {
+        var s = { kinds: kinds || [], fn: fn }; subs.push(s);
+        if (wantFlag === true) connect();
+        return function () { if (s.timer) { clearTimeout(s.timer); s.timer = null; } var i = subs.indexOf(s); if (i >= 0) subs.splice(i, 1); if (!subs.length) stopAll(); };
+      },
+      flag: flag, visibility: visibility, polled: polled, wrote: wrote, healthy: healthy, stop: stopAll,
+      state: function () { return { open: opened, healthy: healthy(), flag: wantFlag, blocked: blocked, connects: connects, retry: retry, broken: broken, nextTryAt: nextTryAt, grace: grace, pend: Object.keys(pend), pokes: Object.keys(pokeAt) }; }
+    };
+  })();
+  window.B68Live = { on: live.on, state: live.state };
 
   /* ---------- the service worker's precache by role ---------- */
   /* Install (sw.js) precaches the page, the fonts and the core and table bundles on every device. The GM's laptop also runs
@@ -348,7 +524,7 @@
   var listeners = [];          /* { id?, query?, campaign?, cb, err } */
   var loaded = false;          /* the first full load has happened since start */
   var running = false, inflight = false, again = false, timer = null;
-  var since = null, epoch = 0, errored = false;
+  var since = null, epoch = 0, errored = false, timerAt = 0;
 
   function docSnap(id) {
     var d = cache[id];
@@ -524,11 +700,12 @@
     loaded = true;
     notify(changed, full);
     persistSoon();
+    return changed;
   }
 
   function schedule(ms) {
     clearTimeout(timer); timer = null;
-    if (running && !signedOut) timer = setTimeout(tick, ms == null ? pollMs() : ms);
+    if (running && !signedOut) { var wait = ms == null ? pollMs() : ms; timerAt = Date.now() + wait; timer = setTimeout(tick, wait); }
   }
   function tick() {
     timer = null;
@@ -543,14 +720,22 @@
       });
       return;
     }
-    var full = !loaded, at = epoch, campAt = camp.epoch;
+    var full = !loaded, at = epoch, campAt = camp.epoch, startedAt = Date.now();
     api('GET', '/' + COLLECTION + (full ? '' : '?since=' + encodeURIComponent(since)))
       .then(function (r) {
         r = r || {};
         lastSync = nowIso();                          /* before applyServer, so the snapshot it saves carries it */
+        var chg = null;
         /* a write started or finished while this poll was out: its view may be stale, ask again */
         if (at !== epoch) again = true;
-        else if (running) applyServer(r, full);
+        else if (running) chg = applyServer(r, full);
+        /* live sync: the switch rides in this answer, and the health rule is told what moved (before the campaign and cast refetch) */
+        live.flag(r.live, startedAt);
+        live.polled(startedAt, {
+          characters: !!chg && Object.keys(chg).length > 0,
+          campaign: camp.loaded && hasCampaignListeners() && r.campaignUpdatedAt !== undefined && r.campaignUpdatedAt !== camp.stamp,
+          npcs: npcs.loaded && hasNpcListeners() && r.npcsUpdatedAt !== undefined && r.npcsUpdatedAt !== npcs.at
+        }, full);
         if (campAt !== camp.epoch) { again = true; return; }
         return Promise.resolve(syncCampaign(r.campaignUpdatedAt)).then(function () { return syncNpcs(r.npcsUpdatedAt); });
       })
@@ -567,14 +752,19 @@
       });
   }
   /* epoch++: drop a poll left over from before a stop. After an offline start the snapshot stays loaded. */
-  function start() { if (running) return; running = true; if (mode !== 'snapshot') loaded = false; errored = false; epoch++; schedule(0); }
-  function stop() { running = false; if (mode !== 'snapshot') { loaded = false; camp.loaded = false; npcs.loaded = false; } again = false; clearTimeout(timer); timer = null; }
+  var liveOff = null;
+  function start() {
+    if (running) return; running = true; if (mode !== 'snapshot') loaded = false; errored = false; epoch++; schedule(0);
+    if (!liveOff) liveOff = live.on(['characters', 'campaign', 'npcs'], function () { pollSoon(); });   /* a poke runs the poll now */
+  }
+  function stop() { if (liveOff) { liveOff(); liveOff = null; } running = false; if (mode !== 'snapshot') { loaded = false; camp.loaded = false; npcs.loaded = false; } again = false; clearTimeout(timer); timer = null; }
   function pollSoon() { if (!running) return; if (inflight) again = true; else schedule(0); }
 
   /* the session is over (signed out, or another account signed in): stop, tell every listener once.
      Queued writes stay in localStorage for this user's next visit. */
   function endSession(err) {
     if (!signedOut) signedOut = true;
+    live.stop();
     stop(); notifyErr(err);
     queue.forEach(function (q) { settleWaiters(q, err); q.claim = null; });
     saveQueue();                 /* kept for the next visit, unclaimed */
@@ -583,6 +773,7 @@
   onSignedOut = function () { endSession(signedOutError()); };
   if (document.addEventListener) document.addEventListener('visibilitychange', function () {
     if (document.hidden) saveNow();
+    live.visibility();                  /* a hidden page closes its socket; visible again it reopens it, and the poll below runs at once */
     if (running && !inflight) schedule(document.hidden ? null : 0);
   });
   if (typeof window.addEventListener === 'function') {
@@ -822,7 +1013,7 @@
   function keptForNextVisit(p) { return p.then(function () { throw signedOutError(); }); }
   function retryLater() {
     if (retryTimer || !queue.length || signedOut) return;
-    retryTimer = setTimeout(function () { retryTimer = null; kick(); }, pollMs());
+    retryTimer = setTimeout(function () { retryTimer = null; kick(); }, fastMs());
   }
   /* the network may be back: reconnect after an offline start, send the queue, poll */
   function kick() {
@@ -1179,7 +1370,11 @@
       if (seq !== undefined && seq !== null) q.push(qs('seq', seq));
       if (aseq !== undefined && aseq !== null) q.push(qs('aseq', aseq));
       if (sseq !== undefined && sseq !== null) q.push(qs('sseq', sseq));
-      return api('GET', '/gm/display' + (q.length ? '?' + q.join('&') : ''));
+      var t0 = Date.now();
+      return api('GET', '/gm/display' + (q.length ? '?' + q.join('&') : '')).then(function (r) {
+        if (r && typeof r.live === 'boolean') live.flag(r.live, t0);   /* the switch rides in this answer too (design 2.5) */
+        return r;
+      });
     },
     /* PUT /api/gm/display { kind: blank | dark | svg | npc | text, title, caption, svg | npcId | text } -> { seq, display, updatedAt } */
     setDisplay: function (d) { return api('PUT', '/gm/display', d || {}); },

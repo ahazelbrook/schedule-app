@@ -356,7 +356,7 @@
     var B = Pure.POLL, fast = o.intervalMs || B.intervalMs, idleBeat = o.idleMs || B.idleMs, idleAfter = o.idleAfterMs || B.idleAfterMs,
         slow = o.slowMs || B.slowMs, hiddenBeat = o.hiddenMs || B.hiddenMs, limit = o.failLimit || 3, tmo = o.timeoutMs || 10000;
     var clock = o.now || function () { return Date.now(); };
-    var seq = null, aseq = null, sseq = null, sttSeen = null, movedAt = null, fails = 0, timer = null, inflight = false, running = false, gen = 0, state = 'connecting', lastErr = null;
+    var seq = null, aseq = null, sseq = null, sttSeen = null, movedAt = null, fails = 0, timer = null, inflight = false, running = false, gen = 0, state = 'connecting', lastErr = null, again = false;
     function hidden() { return !!(o.isHidden && o.isHidden()); }
     function setState(s) {
       if (s === state) return;
@@ -420,7 +420,7 @@
           if (moved) movedAt = clock();
           setState('live');
         }
-        schedule();
+        if (again) { again = false; clearTimer(); tick(); } else schedule();   /* a live-sync poke arrived while this was out: ask again now */
       }
       var p;
       try { p = Promise.resolve(o.fetch(seq, aseq, sseq)); } catch (e) { p = Promise.reject(e); }
@@ -428,7 +428,13 @@
     }
     return {
       start: function () { if (running) return; running = true; gen++; fails = 0; movedAt = clock(); tick(); },
-      stop: function () { running = false; gen++; inflight = false; clearTimer(); },
+      stop: function () { running = false; gen++; inflight = false; again = false; clearTimer(); },
+      /* a live-sync poke (design 2.5): look now, whatever the beat. The 4 s beat itself never changes. A look already out is followed by another. */
+      poke: function () {
+        if (!running || hidden()) return;
+        if (inflight) { again = true; return; }
+        clearTimer(); tick();
+      },
       /* the page became hidden or visible, or the network came back: a hidden page waits out the hidden beat from now, a visible one polls at once */
       kick: function () {
         if (!running || inflight) return;
@@ -1728,6 +1734,8 @@
         onStatus: function (p) { s.poll = p; paintStatus(); s.reloader.state(p.state); }
       });
       s.poller.start();
+      /* live sync: a poke for the display, the ambient or the transcriber makes the poll run now; the 4 s poll goes on unchanged */
+      if (root.B68Live && typeof root.B68Live.on === 'function') { try { s.liveOff = root.B68Live.on(['display', 'ambient', 'stt'], function () { if (s.poller) s.poller.poke(); }); } catch (e) { s.liveOff = null; } }
       /* the transcriber (app/stt.js): idle until the GM presses Start listening, then one tap here opens the mic */
       if (root.B68Stt && typeof root.B68Stt.attach === 'function') { try { s.stt = root.B68Stt.attach(container, { gm: ctx.gm }); } catch (e) { s.stt = null; } }
     }
@@ -1792,6 +1800,7 @@
   function unmount() {
     var s = S; if (!s) return;
     S = null; s.dead = true; s.token++;
+    if (s.liveOff) { try { s.liveOff(); } catch (e) { /* ditto */ } s.liveOff = null; }
     if (s.poller) s.poller.stop();
     if (s.reloader) s.reloader.stop();
     if (s.stt) { try { s.stt.destroy(); } catch (e) {} s.stt = null; }
