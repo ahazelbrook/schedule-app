@@ -294,7 +294,7 @@
         if (!c.playbook || !own.length) return [];
         var CR = window.B68Crews, r = CR && CR.byId && CR.byId[c.playbook];
         if (!CR) {
-          if (!crewsAsked && window.B68Load && window.B68Load.need) { crewsAsked = true; window.B68Load.need('crews').then(function () { var T2 = tracker(); if (openId === id && T2 && T2.refresh) T2.refresh(); }, function () { crewsAsked = false; }); }
+          if (!crewsAsked && Date.now() >= crewsRetryAt && window.B68Load && window.B68Load.need) { crewsAsked = true; window.B68Load.need('crews').then(function () { var T2 = tracker(); if (openId === id && T2 && T2.refresh) T2.refresh(); }, function () { crewsAsked = false; crewsRetryAt = Date.now() + 30000; }); }
           return null;
         }
         if (!r) return [];
@@ -345,7 +345,7 @@
      Subscribed once, as soon as the files settle, in every mode: the next-session card (schedule.js, SCHEDULE.md) at
      the top of the creator, the sheet and the table reads it too. The table page only attaches to that subscription
      while it is open; nothing is written on open. */
-  var crewsAsked = false;   /* crews.js (the crew playbooks' text) is fetched once for a sheet's abilities strip when the table bundle has not loaded it */
+  var crewsAsked = false, crewsRetryAt = 0;   /* a failed fetch is retried at most every 30 s, never once per redraw */   /* crews.js (the crew playbooks' text) is fetched once for a sheet's abilities strip when the table bundle has not loaded it */
   var campRef = null, campUnsub = null, campLive = false, campLoaded = false, tableOn = false, tableLatest = null, tableExists = false;
   var NO_TABLE = 'The table is not available in this view.';
   function campaignMod() { var Cm = window.B68Campaign; return Cm && typeof Cm.open === 'function' ? Cm : null; }

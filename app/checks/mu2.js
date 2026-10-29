@@ -43,10 +43,11 @@ const STUB = src.slice(a0, a1) + '})();';
   const campaign = { crew: { playbook: 'dealers', name: 'Zzq Crew', abilities: { [seed.own[0].name]: 1, [seed.own[1].name]: 1 } }, session: { number: 1, startedAt: '2026-01-02T00:00:00.000Z' }, clocks: [], updatedAt: '2026-01-02T00:00:00.000Z' };
   const store = (withTable) => { const s = { 'characters/pc1': seed.char }; if (withTable) s['campaign/main'] = campaign; return s; };
 
-  async function open(role, withTable, w, h) {
+  async function open(role, withTable, w, h, pre) {
     const ctx = await b.newContext({ viewport: { width: w || 360, height: h || 780 } });
     await ctx.addInitScript(([role, st]) => { try { localStorage.setItem('__role', role); localStorage.setItem('__stub', JSON.stringify(st)); } catch (e) {} }, [role, store(withTable)]);
     await ctx.addInitScript(STUB);
+    if (pre) await pre(ctx);
     const p = await ctx.newPage();
     p.on('console', m => { if (m.type() === 'error' && !/ERR_FILE_NOT_FOUND/.test(m.text())) errs.push(role + ' console.error: ' + m.text()); });
     p.on('pageerror', e => errs.push(role + ' pageerror: ' + e.message));
@@ -116,6 +117,25 @@ const STUB = src.slice(a0, a1) + '})();';
     const { p, ctx } = await open('player', true, 1360, 900);
     await p.click('#dossier .ds-actbtn'); await p.waitForTimeout(250);
     assert(await p.evaluate(() => !!document.querySelector('#dossier .ds-roll .ds-abstrip')), 'desk: the panel carries the strip');
+    await ctx.close();
+  }
+
+  /* 4. crews.js cannot be fetched: the strip says the crew's are not available, nothing throws, and redraws do not refetch
+     (a failed fetch is retried at most every 30 s, not once per render) */
+  {
+    let hits = 0, n0 = errs.length;
+    const { p, ctx } = await open('player', true, 360, 780, async (c) => { await c.route('**/crews.js*', (rt) => { hits++; rt.abort(); }); });
+    await p.click('#dossier .ds-actbtn'); await p.waitForTimeout(600);
+    await p.click('#dossier [data-act="abstrip"]'); await p.waitForTimeout(300);
+    const h1 = hits;
+    assert(h1 >= 1, 'aborted crews.js: the strip did try to fetch it (' + h1 + ')');
+    for (let i = 0; i < 4; i++) { await p.click('#dossier [data-act="abstrip"]'); await p.waitForTimeout(150); await p.click('#dossier [data-act="abstrip"]'); await p.waitForTimeout(150); await p.evaluate(() => B68Tracker.refresh()); }
+    await p.click('#dossier .ds-abi'); await p.waitForTimeout(300);
+    const t = await p.evaluate(() => ({ note: Array.from(document.querySelectorAll('#dossier .ds-abstrip-b .ds-abnone')).some(n => /not available here/.test(n.textContent)), mine: document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi').length }));
+    assert(t.note && t.mine === 3, 'aborted crews.js: "not available here" shows and the character’s own half still lists: ' + JSON.stringify(t));
+    assert(hits - h1 <= 1, 'aborted crews.js: taps and redraws made ' + (hits - h1) + ' more crews.js requests (at most 1 allowed), total ' + hits);
+    const mine = errs.splice(n0).filter(e => !/console.error: .*ERR_FAILED/.test(e));
+    mine.forEach(e => errs.push(e));
     await ctx.close();
   }
 
