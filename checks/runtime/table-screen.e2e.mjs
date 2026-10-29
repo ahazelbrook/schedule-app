@@ -8,7 +8,7 @@
 //   - the mirror switched off takes the dot away and empties an open viewer; a second player's read-only copy of the sheet works too
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] PORT=9014 node checks/runtime/table-screen.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -136,6 +136,8 @@ try {
   // a handout
   await display({ kind: 'handout', file: FILE, title: 'An invented note', showTitle: true });
   check(!!(await until(async () => (await dot()) === 1, 10000, 150)), 'a handout lights the dot');
+  // closed means closed: while the viewer was shut, every display change above only moved the dot
+  check(p1.screenReqs.length === 3, 'a closed viewer never fetches /api/table/screen: still ' + p1.screenReqs.length + ' requests, all made by opens or by the open viewer');
   await page.click('.ds-tablebtn');
   check(!!(await until(async () => { const x = await viewer(); return x && x.loaded; }, 8000, 100)), 'the handout loads in the viewer');
   v = await viewer();
@@ -143,6 +145,17 @@ try {
   await page.click('.ds-tv-x');
   check((await viewer()) === null, '× closes the viewer');
   check(await page.evaluate(() => document.activeElement && document.activeElement.classList.contains('ds-tablebtn')), 'and focus goes back to the Table button');
+
+  // a refused screen (a hidden name in the map) leaves an empty viewer and no dot behind
+  const hid = await api('POST', '/npcs', GM, { name: 'Zephyrine Pemberthy', revealed: false });
+  check(hid.status === 200, 'a hidden NPC is on file: ' + hid.status);
+  await page.click('.ds-tablebtn');
+  await until(async () => { const x = await viewer(); return x && x.loaded; }, 8000, 100);
+  await display({ kind: 'svg', title: 'Refused', svg: mapSvg('#633', 'Zephyrine Pemberthy') });
+  check(!!(await until(async () => { const x = await viewer(); return x && !x.src && /Nothing on the table screen/.test(x.none); }, 8000, 100)), 'a map that names a hidden NPC is refused: the open viewer shows nothing');
+  await page.click('.ds-tv-x');
+  await sleep(700);
+  check((await dot()) === 0, 'and no dot is left behind by the refused screen');
 
   // the mirror switched off: the dot goes and an open viewer empties
   await page.click('.ds-tablebtn');
@@ -162,6 +175,76 @@ try {
   await p2.page.click('.ds-tablebtn');
   check(!!(await until(async () => p2.page.evaluate(() => { const i = document.querySelector('.ds-tv-img'); return !!i && i.complete && i.naturalWidth > 0; }), 8000, 100)), 'and the viewer opens there');
   await p2.ctx.close();
+
+  // ---- hidden stays hidden for GEOMETRY: an invented site at a partial reveal, painted by the iPad's display page and by the phone's <img> ----
+  // The reveal is baked into the stored bytes by the map kit (app/maps/map-kit.js "player cover": the file never holds a hidden room's edge) and the
+  // display keeps nothing else (cleanDisplay stores kind, title, caption and the svg). So the checks are: (1) the bytes hold no hidden room; (2) the svg
+  // the iPad paints, with all of the page's CSS, is pixel-for-pixel what an <img> of the same bytes paints, so the phone shows nothing the iPad hides;
+  // (3) the same comparison against the FULL reveal fails, so the pixels compared are not blank.
+  const L = require(path.join(ROOT, 'app', 'gm', 'location.js')), K = require(path.join(ROOT, 'app', 'maps', 'map-kit.js'));
+  const FIXL = JSON.parse(readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'location-pack.json'), 'utf8'));
+  const roll = L.generate({ T: FIXL.T, extra: FIXL.extra }, {}, { seed: 11, mem: {} });
+  const mkMap = (reveal) => K.render(roll, { view: 'plan', theme: 'rulebook', layer: 'player', reveal, width: 1000 });
+  const partial = mkMap(['public']), fullMap = mkMap(['public', 'working', 'controlled', 'secure']);
+  const hiddenRooms = partial.model.rooms.filter((r) => r.band !== 'public' && r.name).map((r) => r.name);
+  check(hiddenRooms.length >= 3 && hiddenRooms.every((n) => !partial.svg.includes(n)) && hiddenRooms.every((n) => fullMap.svg.includes(n)), 'the partial-reveal bytes name none of the ' + hiddenRooms.length + ' hidden rooms (the full ones name them all)');
+  await display({ kind: 'svg', title: 'Invented warehouse', caption: 'surveyed: public', svg: partial.svg });
+  const ipadCtx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1366, height: 1024 }, serviceWorkers: 'block' });
+  const ipad = await ipadCtx.newPage();
+  ipad.on('pageerror', (e) => errors.push('ipad pageerror: ' + e.message));
+  await ipad.goto(BASE + '/#display');
+  await ipad.waitForSelector('.dp-map-frame svg', { timeout: 30000 });
+  const painted = await ipad.evaluate((names) => {
+    const s = document.querySelector('.dp-map-frame svg'), txt = s.textContent + ' ' + s.outerHTML;
+    return { elements: s.querySelectorAll('*').length, leaked: names.filter((n) => txt.includes(n)), vb: s.getAttribute('data-vb') };
+  }, hiddenRooms);
+  check(painted.leaked.length === 0 && painted.elements > 20, 'the iPad paints the partial reveal: ' + painted.elements + ' elements, no hidden room in its DOM');
+  // the phone's answer for the same display, built into an <img> exactly as the viewer does (xmlns patch, blob URL)
+  const shown = await api('GET', '/table/screen', P1);
+  check(shown.json.kind === 'svg' && shown.json.svg === partial.svg, 'the phone is sent the very bytes that were pushed');
+  // two boxes of the same size in the iPad's own page (so display.css and every other rule of the page apply): the iPad's painted svg, and an <img> of the phone's bytes
+  async function snap(phoneSvg) {
+    return ipad.evaluate(async ({ phoneSvg }) => {
+      const live = document.querySelector('.dp-map-frame svg'), vb = live.getAttribute('data-vb').split(' ').map(Number), W = 600, H = Math.round(W * vb[3] / vb[2]);
+      if (document.getElementById('mm1-cmp')) document.getElementById('mm1-cmp').remove();
+      const box = document.createElement('div'); box.id = 'mm1-cmp'; box.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;background:#fff;display:flex';
+      const a = document.createElement('div'); a.className = 'dp-map-frame'; a.style.cssText = 'position:relative;inset:auto;width:' + W + 'px;height:' + H + 'px;background:#fff';
+      const sv = live.cloneNode(true); sv.setAttribute('viewBox', vb.join(' ')); a.appendChild(sv);
+      const b = document.createElement('div'); b.style.cssText = 'position:relative;width:' + W + 'px;height:' + H + 'px;background:#fff';
+      let s = phoneSvg; const head = /^<svg[^>]*>/i.exec(s); if (head && !/\sxmlns\s*=/i.test(head[0])) s = s.replace(/^<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+      const img = document.createElement('img'); img.style.cssText = 'display:block;width:100%;height:100%'; img.src = URL.createObjectURL(new Blob([s], { type: 'image/svg+xml' }));
+      b.appendChild(img); box.appendChild(a); box.appendChild(b); (document.getElementById('display-page') || document.body).appendChild(box);
+      await img.decode();
+      return { W, H };
+    }, { phoneSvg });
+  }
+  const raster = async (sel) => (await (await ipad.$(sel)).screenshot({ type: 'png' })).toString('base64');
+  async function diff(x, y) {
+    return ipad.evaluate(async ([p, q]) => {
+      const load = (b) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = 'data:image/png;base64,' + b; });
+      const [i1, i2] = await Promise.all([load(p), load(q)]);
+      const w = Math.min(i1.width, i2.width), h = Math.min(i1.height, i2.height), c = document.createElement('canvas'); c.width = w; c.height = h;
+      const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(i1, 0, 0); const d1 = g.getImageData(0, 0, w, h).data; g.clearRect(0, 0, w, h); g.drawImage(i2, 0, 0); const d2 = g.getImageData(0, 0, w, h).data;
+      let bad = 0, ink = 0; for (let k = 0; k < d1.length; k += 4) { const dd = Math.abs(d1[k] - d2[k]) + Math.abs(d1[k + 1] - d2[k + 1]) + Math.abs(d1[k + 2] - d2[k + 2]); if (dd > 96) bad++; if (d1[k] + d1[k + 1] + d1[k + 2] < 600) ink++; }
+      return { bad: bad / (w * h), ink: ink / (w * h), w, h };
+    }, [x, y]);
+  }
+  await snap(partial.svg);
+  const ipadPng = await raster('#mm1-cmp > div:nth-child(1)'), phonePng = await raster('#mm1-cmp > div:nth-child(2)');
+  if (process.env.MM1_SHOTS) { writeFileSync(path.join(process.env.MM1_SHOTS, 'ipad.png'), Buffer.from(ipadPng, 'base64')); writeFileSync(path.join(process.env.MM1_SHOTS, 'phone.png'), Buffer.from(phonePng, 'base64')); }
+  const same = await diff(ipadPng, phonePng);
+  check(same.ink > 0.02, 'the comparison is not blank: ' + (same.ink * 100).toFixed(1) + '% of the iPad box is inked');
+  // what remains is type: an <img> cannot use the page's web fonts, so the lettering (title, labels) falls back to another face; the shapes, covers and hatching match
+  check(same.bad < 0.06, 'the phone <img> of the partial reveal matches what the iPad paints, apart from the lettering face (' + (same.bad * 100).toFixed(2) + '% of pixels differ)');
+  await snap(fullMap.svg);
+  const fullPng = await raster('#mm1-cmp > div:nth-child(2)');
+  const more = await diff(ipadPng, fullPng);
+  check(more.bad > 0.15 && more.bad > 3 * same.bad, 'and the full reveal is visibly different, so the match above means something (' + (more.bad * 100).toFixed(1) + '% differ)');
+  // a room opened on its own (reveal "room:<name>") is baked in the same way
+  const one = hiddenRooms[0];
+  const opened = mkMap(['public', 'room:' + one]);
+  check(opened.svg.includes(one) && hiddenRooms.filter((n) => n !== one).every((n) => !opened.svg.includes(n)), 'opening one room by name shows that room in the bytes and still none of the others');
+  await ipadCtx.close();
 
   // live sync (MD2): a 'screen' poke lights the dot at once. This phone polls only once a minute, so only the poke can bring the news in time
   await display({ kind: 'dark' });

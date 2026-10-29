@@ -1594,6 +1594,7 @@
   }
   function showTableScreen(v, r) {
     r = r && typeof r === 'object' ? r : {};
+    if (Number.isInteger(r.seq) && r.seq > 0) { setSeen(r.seq); refreshTableDot(); }   /* looked at, whatever the answer: a refused screen leaves no dot behind */
     if (v.url) { try { URL.revokeObjectURL(v.url); } catch (e) {} v.url = ''; }
     var src = '';
     if (r.kind === 'svg' && typeof r.svg === 'string' && /^<svg[\s>\/]/i.test(r.svg)) {
@@ -1613,7 +1614,6 @@
     if (title) { var b = document.createElement('b'); b.textContent = title; v.cap.appendChild(b); }
     if (cap) { if (title) v.cap.appendChild(document.createTextNode(' · ')); v.cap.appendChild(document.createTextNode(cap)); }
     v.cap.hidden = !(title || cap);
-    if (Number.isInteger(r.seq) && r.seq > 0) { setSeen(r.seq); refreshTableDot(); }
   }
 
   /* ---------- API ---------- */
