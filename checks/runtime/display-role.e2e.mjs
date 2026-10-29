@@ -86,9 +86,9 @@ try {
     expect(!calls.some((c) => c.startsWith('GET /api/gm/stt')), 'the display read carries the transcriber, so no GET /api/gm/stt: ' + calls.join(' | '));
   });
 
-  await step('the display read names all three parts after the first (seq, aseq, sseq), and the first names none', async () => {
-    expect(reads[0] === '', 'the first read: ' + reads[0]);
-    expect(reads.length >= 2 && reads.slice(1).every((q) => /^\?seq=\d+&aseq=\d+&sseq=\d+$/.test(q)), 'the later reads: ' + reads.join(' | '));
+  await step('the display read names all four parts after the first (seq, aseq, sseq, hseq), and the first names only hseq=0', async () => {
+    expect(reads[0] === '?hseq=0', 'the first read: ' + reads[0]);
+    expect(reads.length >= 2 && reads.slice(1).every((q) => /^\?seq=\d+&aseq=\d+&sseq=\d+&hseq=\d+$/.test(q)), 'the later reads: ' + reads.join(' | '));
   });
 
   await step('the GM asks for listening: the tap appears on the display and goes when the GM stops, with no GET /api/gm/stt', async () => {

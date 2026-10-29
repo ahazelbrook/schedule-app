@@ -316,7 +316,7 @@
   };
 
   /* ---------- the poller ----------
-     o = { fetch(seq, aseq, sseq) -> Promise, onData(display, seq, updatedAt), onAmbient(doc, aseq, updatedAt), onStt(part | null),
+     o = { fetch(seq, aseq, sseq, hseq) -> Promise, onMission(hud | null), onData(display, seq, updatedAt), onAmbient(doc, aseq, updatedAt), onStt(part | null),
            onStatus({state, fails, error}), isHidden(), timers, now(), failLimit (3), timeoutMs (10000), and the beats of Pure.POLL:
            intervalMs, idleMs, idleAfterMs, slowMs, hiddenMs }
      One request in flight at a time; the next is scheduled only when the last has finished. States: connecting (nothing yet),
@@ -351,12 +351,75 @@
     if (a.want !== 'on' && a.want !== 'off') return null;
     return { seq: a.seq, want: a.want, session: typeof a.session === 'string' ? a.session.slice(0, 12) : '' };
   };
+  /* The fourth part (design 5.3, 5.5d): GET ...&hseq=N adds a top-level `mission`: { hseq, hud } (hud an object, or null for no mission) or
+     { hseq, unchanged: true }. Anything else is ignored (an older server sends none). */
+  Pure.missionPart = function (r) {
+    var m = r && r.mission;
+    if (!isObj(m) || typeof m.hseq !== 'number' || !isFinite(m.hseq)) return null;
+    if (m.unchanged === true) return { hseq: m.hseq, unchanged: true };
+    if (m.hud === null) return { hseq: m.hseq, hud: null };
+    return isObj(m.hud) ? { hseq: m.hseq, hud: m.hud } : null;
+  };
+  /* The band beside the map (design 5.3): the hud as the page draws it. Pure. The server's clean-up sends optional strings as "" and
+     never leaves a key out, but nothing here trusts that: every field is tested for truthiness and capped. Returns null for no hud.
+     A beat is 15 minutes (the night's default, design 5.5a); the hud carries beats as a count, not a length. */
+  Pure.BAND_BEAT = 15;
+  var bstr = function (v, n) { return typeof v === 'string' ? v.slice(0, n || 160) : (typeof v === 'number' && isFinite(v) ? String(v) : ''); };
+  var bnum = function (v) { return typeof v === 'number' && isFinite(v) ? v : null; };
+  /* 0 -> "now", 15 -> "in 15 min", 60 -> "in 1 h", 90 -> "in 1 h 30" (the design's own wording) */
+  Pure.inText = function (min) {
+    var m = bnum(min);
+    if (m === null) return '';
+    m = Math.max(0, Math.round(m));
+    if (m === 0) return 'now';
+    if (m < 60) return 'in ' + m + ' min';
+    var h = Math.floor(m / 60), r = m % 60;
+    return 'in ' + h + ' h' + (r ? ' ' + r : '');
+  };
+  Pure.bandModel = function (hud) {
+    if (!isObj(hud)) return null;
+    var list = function (a, n) { return Array.isArray(a) ? a.filter(isObj).slice(0, n) : []; };
+    var m = { time: bstr(hud.time, 16), label: bstr(hud.label), now: [], next: [], night: null, alarm: null, crew: [], ways: null };
+    list(hud.now, 3).forEach(function (n) { var t = bstr(n.text); if (t) m.now.push({ text: t, where: bstr(n.where), until: bstr(n.until) ? 'until ' + bstr(n.until, 16) : '' }); });
+    list(hud.next, 3).forEach(function (n) {
+      var t = bstr(n.text); if (!t) return;
+      var inMin = bnum(n.inMin), soon = inMin !== null && inMin <= Pure.BAND_BEAT;
+      m.next.push({ text: t, where: bstr(n.where), at: bstr(n.at, 16), inText: Pure.inText(inMin), soon: soon, kicker: soon ? 'Next, soon' : 'Next' });
+    });
+    var ng = hud.night;
+    if (isObj(ng) && bnum(ng.beats) !== null && ng.beats >= 1) {
+      var beats = Math.min(96, Math.floor(ng.beats)), start = bnum(ng.start) === null ? 0 : ng.start, cur = bnum(ng.cur) === null ? -1 : ng.cur, marks = {};
+      list(ng.marks, 24).forEach(function (k) { var i = bnum(k.i); if (i !== null && i >= 0 && i < beats) marks[Math.floor(i)] = { icon: k.icon === 'star' ? 'star' : 'diamond', text: bstr(k.text, 80) }; });
+      var sq = [];
+      for (var i = 0; i < beats; i++) {
+        var st = i === cur ? 'cur' : i < start ? 'before' : i < cur ? 'past' : 'ahead';
+        sq.push({ i: i, state: st, mark: marks[i] || null });
+      }
+      m.night = { squares: sq, marks: Object.keys(marks).map(function (k) { return marks[k]; }) };
+    }
+    var al = hud.alarm;
+    if (isObj(al) && bstr(al.name) && bnum(al.size) !== null && al.size >= 1) {
+      var size = Math.min(12, Math.floor(al.size)), filled = Math.max(0, Math.min(size, Math.floor(bnum(al.filled) || 0)));
+      m.alarm = { name: bstr(al.name, 60), size: size, filled: filled, count: filled + ' of ' + size, text: bstr(al.text) };
+    }
+    list(hud.crew, 8).forEach(function (c) {
+      var n = bstr(c.name, 60); if (!n) return;
+      var icon = bstr(c.icon, 24);
+      m.crew.push({ name: n, costume: bstr(c.costume, 40), icon: icon, badge: icon ? icon.charAt(0).toUpperCase() : '', room: bstr(c.room, 60) });
+    });
+    var w = hud.ways;
+    if (isObj(w) && bnum(w.total) !== null && w.total > 0) { var tot = Math.floor(w.total), fnd = Math.max(0, Math.min(tot, Math.floor(bnum(w.found) || 0))); m.ways = 'Ways found: ' + fnd + ' of ' + tot; }
+    return m;
+  };
+  /* a signature of what the band shows, so a poll that changes nothing repaints nothing */
+  Pure.bandSig = function (m) { return m ? JSON.stringify(m) : ''; };
+
   Pure.createPoller = function (o) {
     var T = o.timers || { setTimeout: function (f, ms) { return setTimeout(f, ms); }, clearTimeout: function (id) { clearTimeout(id); } };
     var B = Pure.POLL, fast = o.intervalMs || B.intervalMs, idleBeat = o.idleMs || B.idleMs, idleAfter = o.idleAfterMs || B.idleAfterMs,
         slow = o.slowMs || B.slowMs, hiddenBeat = o.hiddenMs || B.hiddenMs, limit = o.failLimit || 3, tmo = o.timeoutMs || 10000;
     var clock = o.now || function () { return Date.now(); };
-    var seq = null, aseq = null, sseq = null, sttSeen = null, movedAt = null, fails = 0, timer = null, inflight = false, running = false, gen = 0, state = 'connecting', lastErr = null, again = false;
+    var seq = null, aseq = null, sseq = null, hseq = null, sttSeen = null, movedAt = null, fails = 0, timer = null, inflight = false, running = false, gen = 0, state = 'connecting', lastErr = null, again = false;
     function hidden() { return !!(o.isHidden && o.isHidden()); }
     function setState(s) {
       if (s === state) return;
@@ -388,7 +451,7 @@
         inflight = false;
         if (!running) return;
         if (!err && !(r && typeof r === 'object' && typeof r.seq === 'number' && (r.unchanged === true || (r.display && typeof r.display === 'object')))) err = new Error('bad response');
-        var amb = err ? null : Pure.ambientPart(r), stt = err ? null : Pure.sttPart(r);
+        var amb = err ? null : Pure.ambientPart(r), stt = err ? null : Pure.sttPart(r), mis = err ? null : Pure.missionPart(r);
         if (err) {
           fails++; lastErr = err;
           var code = err.status;
@@ -400,6 +463,11 @@
             if (amb.seq !== aseq) moved = true;
             aseq = amb.seq;
             if (!amb.unchanged && o.onAmbient) { try { o.onAmbient(amb.doc, amb.seq, amb.updatedAt); } catch (e) { /* ditto */ } }
+          }
+          if (mis) {                    /* the band's part: the hud only when its seq moved */
+            if (mis.hseq !== hseq) moved = true;
+            hseq = mis.hseq;
+            if (!mis.unchanged && o.onMission) { try { o.onMission(mis.hud); } catch (e) { /* ditto */ } }
           }
           if (stt) {
             if (stt.seq !== sseq) moved = true;
@@ -423,7 +491,7 @@
         if (again) { again = false; clearTimer(); tick(); } else schedule();   /* a live-sync poke arrived while this was out: ask again now */
       }
       var p;
-      try { p = Promise.resolve(o.fetch(seq, aseq, sseq)); } catch (e) { p = Promise.reject(e); }
+      try { p = Promise.resolve(o.fetch(seq, aseq, sseq, hseq === null ? 0 : hseq)); } catch (e) { p = Promise.reject(e); }
       p.then(function (r) { finish(null, r); }, function (e) { finish(e || new Error('failed')); });
     }
     return {
@@ -1305,7 +1373,8 @@
     /* the overlay layer sits over the stages (a spotlight included) and under the status and the buttons; the AUTO chip is its corner mark */
     var ovLayer = el('div', 'dp-overlay'); ovLayer.setAttribute('aria-hidden', 'true');
     var autoChip = el('div', 'dp-auto', 'AUTO'); autoChip.hidden = true; autoChip.setAttribute('aria-hidden', 'true');
-    container.appendChild(layer); container.appendChild(stages); container.appendChild(ovLayer); container.appendChild(autoChip); container.appendChild(status); container.appendChild(chrome); container.appendChild(hint);
+    var band = el('aside', 'dp-band'); band.hidden = true; band.setAttribute('aria-label', 'Tonight');   /* no controls: nothing in it is tappable (design 5.3) */
+    container.appendChild(layer); container.appendChild(stages); container.appendChild(band); container.appendChild(ovLayer); container.appendChild(autoChip); container.appendChild(status); container.appendChild(chrome); container.appendChild(hint);
 
     function later(fn, ms) { var id = setTimeout(function () { var i = s.timers.indexOf(id); if (i >= 0) s.timers.splice(i, 1); if (!s.dead) fn(); }, ms); s.timers.push(id); return id; }
     function clearLater(id) { clearTimeout(id); var i = s.timers.indexOf(id); if (i >= 0) s.timers.splice(i, 1); }
@@ -1668,10 +1737,79 @@
       dot.className = 'dp-dot dp-dot-' + v.dot; stext.textContent = v.text;
     }
 
+    /* ---- the band beside the map (design 5.3): drawn from the answer's mission.hud, over a map stage only ---- */
+    function bandText(parent, cls, text) { var n = el('p', cls); n.textContent = text; parent.appendChild(n); return n; }
+    function bandBlock(cls) { var d = el('div', 'dp-b-sec ' + cls); band.appendChild(d); return d; }
+    function bandPaint(m) {
+      band.textContent = '';
+      var h = bandBlock('dp-b-time');
+      if (m.time) bandText(h, 'dp-b-clock', m.time);
+      if (m.label) bandText(h, 'dp-b-label', m.label);
+      if (m.now.length) {
+        var nw = bandBlock('dp-b-now'); bandText(nw, 'dp-b-kick', 'Now');
+        m.now.forEach(function (n) { var it = el('div', 'dp-b-item'); bandText(it, 'dp-b-head', n.text); var d = [n.where, n.until].filter(Boolean).join(' · '); if (d) bandText(it, 'dp-b-line', d); nw.appendChild(it); });
+      }
+      if (m.next.length) {
+        var nx = bandBlock('dp-b-next' + (m.next.some(function (n) { return n.soon; }) ? ' dp-b-soon' : ''));
+        bandText(nx, 'dp-b-kick', m.next.some(function (n) { return n.soon; }) ? 'Next, soon' : 'Next');
+        m.next.forEach(function (n) {
+          var it = el('div', 'dp-b-item' + (n.soon ? ' dp-b-soon' : '')); bandText(it, 'dp-b-head', n.text);
+          var d = [n.where, n.at].filter(Boolean).join(' · '); if (d) bandText(it, 'dp-b-line', d);
+          if (n.inText) bandText(it, 'dp-b-in', n.inText);
+          nx.appendChild(it);
+        });
+      }
+      if (m.alarm) {
+        var al = bandBlock('dp-b-alarm'); bandText(al, 'dp-b-line dp-b-alarm-name', m.alarm.name + ' ' + m.alarm.count);
+        if (m.alarm.text) bandText(al, 'dp-b-line', m.alarm.text);
+      }
+      if (m.night) {
+        var ng = bandBlock('dp-b-night'), row = el('div', 'dp-b-squares'); row.setAttribute('role', 'img');
+        row.setAttribute('aria-label', 'The night, ' + m.night.squares.length + ' beats' + (m.night.marks.length ? ', ' + m.night.marks.map(function (k) { return k.text; }).filter(Boolean).join(', ') : ''));
+        m.night.squares.forEach(function (q) { var sq = el('span', 'dp-b-sq dp-b-sq-' + q.state); if (q.mark) { sq.classList.add('dp-b-marked'); sq.textContent = q.mark.icon === 'star' ? '★' : '◆'; } row.appendChild(sq); });
+        ng.appendChild(row);
+      }
+      if (m.crew.length) {
+        var cw = bandBlock('dp-b-crew');
+        m.crew.forEach(function (c) {
+          var r = el('p', 'dp-b-crewline');
+          if (c.badge) { var b = el('span', 'dp-b-badge'); b.textContent = c.badge; b.setAttribute('aria-hidden', 'true'); r.appendChild(b); }
+          var t = el('span', 'dp-b-crewtext'); t.textContent = [c.name, c.costume].filter(Boolean).join(' · '); r.appendChild(t);
+          if (c.room) { var rm = el('span', 'dp-b-room'); rm.textContent = ' · ' + c.room; r.appendChild(rm); }   /* "the room only if there's space": bandShrink drops it */
+          cw.appendChild(r);
+        });
+      }
+      if (m.ways) { var wy = bandBlock('dp-b-ways'); bandText(wy, 'dp-b-crewline', m.ways); }
+    }
+    /* When the night's content is more than the band can hold, cut in the design's order: the ways found first (P1), then the crew's rooms. */
+    function bandShrink() {
+      band.classList.remove('dp-b-no-ways', 'dp-b-no-rooms');
+      var over = function () { return band.scrollHeight > band.clientHeight + 1; };
+      if (over()) band.classList.add('dp-b-no-ways');
+      if (over()) band.classList.add('dp-b-no-rooms');
+    }
+    function bandFit() { try { container.style.setProperty('--dp-band-h', Math.ceil(band.getBoundingClientRect().height) + 'px'); } catch (e) { /* the map keeps its frame */ } }
+    function paintBand() {
+      var m = s.bandModel, show = !!m && !!s.current && !!s.current.el && s.current.el.classList.contains('dp-map');
+      if (!show) { if (!band.hidden) band.hidden = true; container.classList.remove('dp-band-on'); return; }
+      var sig = Pure.bandSig(m), was = !band.hidden;
+      band.hidden = false; container.classList.add('dp-band-on');
+      if (sig !== s.bandSig || !was) {
+        s.bandSig = sig; bandPaint(m);
+        bandShrink();
+        if (!reduced()) { band.classList.remove('dp-b-fade'); void band.offsetWidth; band.classList.add('dp-b-fade'); }   /* a 300 ms fade on change, nothing else */
+      }
+      bandFit();
+    }
+    function applyBand(hud) { s.bandModel = Pure.bandModel(hud); if (!s.bandModel) s.bandSig = ''; paintBand(); }
+    if (window.ResizeObserver) { var bandRo = new ResizeObserver(function () { bandFit(); }); bandRo.observe(band); s.offs.push(function () { bandRo.disconnect(); }); }
+    s.offs.push(on(window, 'resize', function () { if (!band.hidden) bandShrink(); bandFit(); }));
+
     /* swap in a new stage with a cross-fade */
     function swap(stage) {
       var old = s.current;
       s.current = stage;
+      paintBand();
       stages.appendChild(stage.el);
       s.stages.push(stage);
       if (stage.attached) later(function () { stage.attached(); }, 0);
@@ -1724,7 +1862,8 @@
       s.poller = Pure.createPoller({
         /* sseq rides as a third argument: the adapter (app/runtime/cf.js) forwards it as ?sseq= to make the unchanged answer
            the small one; an adapter that does not simply gets the transcriber part in full each time */
-        fetch: function (seq, aseq, sseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq); },
+        fetch: function (seq, aseq, sseq, hseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq, hseq === null ? undefined : hseq); },
+        onMission: function (hud) { applyBand(hud); },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },
         /* the transcriber's part of the answer goes to app/stt.js, which then makes no request of its own for it */

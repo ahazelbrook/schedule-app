@@ -248,3 +248,44 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
   background: rgba(12, 10, 8, .7); border: 1px solid rgba(232, 195, 60, .6); color: #e8c33c;
   font: 900 clamp(11px, 1.7vmin, 18px)/1 var(--font-cond, "Arial Narrow", sans-serif); letter-spacing: .22em; }
 .dp-auto[hidden] { display: none; }
+
+/* ---- the band beside the map (design 5.3; app/display-page.js paints it from the answer's mission.hud) ----
+   About 36% of the width on the right in landscape, along the bottom in portrait. It shows over a map stage only (the page hides it
+   otherwise), and the map stage shrinks to fit: the frame and the caption bar sit inside the stage, so fitAboveBar and the corner
+   status go on working. Nothing in it is tappable. Sizes are for 1 to 1.5 m (about 4% of the screen's short side for body text);
+   nothing under 26 px, the time at least 112 px, the night's squares at least 22 px. Colours are the display's own: 4.5:1 or better. */
+.dp-band { position: absolute; z-index: 2; top: 0; right: 0; bottom: 0; width: 36%; padding: max(14px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(36px, calc(env(safe-area-inset-bottom) + 30px)) 20px;
+  display: flex; flex-direction: column; gap: clamp(8px, 1.4vmin, 16px); overflow: hidden; background: #14110f; border-left: 2px solid #3a342d; color: var(--dp-ink); pointer-events: none; }
+.dp-band[hidden] { display: none; }
+.dp-band.dp-b-fade { animation: dp-b-fade .3s ease-out; }
+@keyframes dp-b-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dp-band.dp-b-fade { animation: none; } }
+.dp-root.dp-band-on .dp-stage.dp-map { right: 36%; }
+.dp-band p { margin: 0; }
+.dp-b-clock { font: 900 clamp(112px, min(13vmin, 9vw), 170px)/.95 var(--font-poster, Impact, "Arial Narrow", sans-serif); letter-spacing: .01em; font-variant-numeric: tabular-nums; }
+.dp-b-label { font-size: clamp(32px, 4vmin, 44px); line-height: 1.1; color: var(--dp-soft); }
+.dp-b-kick { font: 700 clamp(26px, 3.1vmin, 34px)/1.1 var(--font-mono, ui-monospace, Menlo, monospace); letter-spacing: .08em; text-transform: uppercase; color: var(--dp-kick); }
+.dp-b-item + .dp-b-item { margin-top: .4em; }
+.dp-b-head { font: 800 clamp(40px, 4.9vmin, 54px)/1.08 var(--font-text, Helvetica, Arial, sans-serif); overflow-wrap: anywhere; }
+.dp-b-line { font-size: clamp(32px, 4vmin, 44px); line-height: 1.1; color: var(--dp-soft); overflow-wrap: anywhere; }
+.dp-b-in { font: 800 clamp(32px, 4vmin, 44px)/1.1 var(--font-text, Helvetica, Arial, sans-serif); }
+.dp-b-next.dp-b-soon .dp-b-kick, .dp-b-item.dp-b-soon .dp-b-in { color: #ffb347; }
+.dp-b-next.dp-b-soon .dp-b-item { border-left: 6px solid #ffb347; padding-left: 12px; }
+.dp-b-alarm-name { color: var(--dp-ink); font-weight: 800; }
+.dp-b-squares { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 4px; }
+.dp-b-sq { box-sizing: border-box; width: clamp(22px, 2.9vmin, 30px); height: clamp(22px, 2.9vmin, 30px); border: 2px solid var(--dp-soft); border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; line-height: 1; color: var(--dp-ink); }
+.dp-b-sq-before { border-color: #6c665d; background: repeating-linear-gradient(45deg, #2a2621 0 4px, #14110f 4px 8px); }
+.dp-b-sq-past { background: #4a453e; border-color: #4a453e; }
+.dp-b-sq-ahead { background: transparent; }
+.dp-b-sq-cur { background: transparent; outline: 4px solid var(--dp-kick); outline-offset: 2px; border-color: var(--dp-ink); }
+.dp-b-crewline { font-size: clamp(30px, 3.7vmin, 40px); line-height: 1.12; overflow-wrap: anywhere; }
+.dp-b-crewline + .dp-b-crewline { margin-top: .12em; }
+.dp-b-badge { display: inline-flex; align-items: center; justify-content: center; width: 1.2em; height: 1.2em; margin-right: .35em; border: 2px solid var(--dp-soft); border-radius: 50%; font-size: .75em; font-weight: 800; vertical-align: .08em; }
+.dp-b-ways .dp-b-crewline { color: var(--dp-soft); }
+@media (orientation: portrait) {
+  .dp-band { top: auto; left: 0; width: auto; border-left: 0; border-top: 2px solid #3a342d; max-height: 62%;
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-content: start; gap: clamp(8px, 1.4vmin, 16px) 24px; }
+  .dp-b-night, .dp-b-crew, .dp-b-ways, .dp-b-alarm { grid-column: 1 / -1; }
+  .dp-root.dp-band-on .dp-stage.dp-map { right: 0; bottom: var(--dp-band-h, 0px); }
+}
+.dp-band.dp-b-no-ways .dp-b-ways, .dp-band.dp-b-no-rooms .dp-b-room { display: none; }
