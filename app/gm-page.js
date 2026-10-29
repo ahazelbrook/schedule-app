@@ -5694,9 +5694,9 @@
         else { S.locRoll = null; S.map = null; renderLocation(); }
         break;
       }
-      case 'stt-on': sttPatch({ want: 'on', session: String(isObj(camp) && isObj(camp.session) ? +camp.session.number || '' : '') }); break;
+      case 'stt-on': WHOIS.sug = {}; WHOIS.no = {}; sttPatch({ want: 'on', session: String(isObj(camp) && isObj(camp.session) ? +camp.session.number || '' : '') }); break;
       case 'stt-clear': { WHOIS.sug = {}; WHOIS.no = {}; var spk = STT.doc && isObj(STT.doc.speakers) ? STT.doc.speakers : {}, nul = {}, any = false; Object.keys(spk).forEach(function (k) { nul[k] = null; any = true; }); if (any) sttPatch({ speakers: nul }); break; }
-      case 'stt-off': sttPatch({ want: 'off' }); break;
+      case 'stt-off': WHOIS.sug = {}; WHOIS.no = {}; sttPatch({ want: 'off' }); break;
       case 'opp-add': oppAdd(); break;
       case 'opp-show': oppShow(b.getAttribute('data-mode')); break;
       case 'opp-one': oppShow('carousel', b.getAttribute('data-id')); break;

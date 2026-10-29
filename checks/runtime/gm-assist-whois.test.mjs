@@ -11,7 +11,7 @@ import { decide, canRun, budgetTier, COOLDOWN_MS, CORE_SEATS, DROPPED_WHEN_REDUC
 import { SEATS, WAKES } from '../../functions/_lib/assist/seats.js';
 import { DEADLINE_MS, LEASE_TTL_MS } from '../../functions/_lib/assist/leases.js';
 import { rosterOf, allowedNames, unnamedNeeds, anyUnnamed, whoisUser, toWhois, WHY_MAX, WHOIS_MIN_LINES } from '../../functions/_lib/assist/whois.js';
-import { makeHandler } from '../../functions/api/gm/assist.js';
+import { makeHandler, onRequest as assistRoute } from '../../functions/api/gm/assist.js';
 import { matchApi } from '../../worker/app.js';
 import { nightCards } from '../../functions/_lib/assist/cards.js';
 
@@ -28,7 +28,7 @@ const ROSTER = { players: { Wexley: 'Pat', Dara: 'Quinn' }, gm: 'Sam' };
 // ---------- the seat ----------
 await test('seat: Haiku 5.5 at medium, no prefix, a list schema; wakes on the tick; 3-minute cooldown; not a Core seat, so it stops at 85% like Voice and Stall', () => {
   const s = SEATS.whois;
-  assert.deepEqual([s.model, s.effort, s.maxTokens, s.noPrefix], ['claude-haiku-5-5', 'medium', 2000, true]);
+  assert.deepEqual([s.model, s.effort, s.maxTokens, s.noPrefix], ['claude-haiku-5-5', 'medium', 4000, true]);
   assert.equal(s.schema.additionalProperties, false);
   assert.deepEqual(s.schema.required, ['guesses']);
   const item = s.schema.properties.guesses.items;
@@ -221,7 +221,7 @@ await test('tick: the cap tier stops it at 85% (the other non-Core seats go too)
 // ---------- POST /whois ----------
 await test('route: /api/gm/assist/whois is wired; a player, the display or nobody gets 403 before the body, the database or the key are touched', async () => {
   const real = matchApi('/api/gm/assist/whois');
-  assert.ok(real && real.handler); assert.equal(matchApi('/api/gm/assist/whois/').handler, real.handler);
+  assert.ok(real && real.handler); assert.equal(real.handler, assistRoute, 'the router hands it to the assist handler, not to a catch-all'); assert.equal(matchApi('/api/gm/assist/whois/').handler, assistRoute);
   const touched = [];
   const request = { method: 'POST', url: 'https://blades.example.test/api/gm/assist/whois', headers: new Headers(), json() { touched.push('json'); throw new Error('read'); }, text() { touched.push('text'); throw new Error('read'); }, arrayBuffer() { touched.push('ab'); throw new Error('read'); }, get body() { touched.push('body'); throw new Error('read'); } };
   const env = { get DB() { touched.push('DB'); return undefined; }, get ANTHROPIC_API_KEY() { touched.push('key'); return 'k'; }, CAMPAIGN: 'x' };

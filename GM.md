@@ -1162,7 +1162,7 @@ you are the only reader, Blade may draw on hidden prep, and its instructions ask
 not read out by accident. A scene it writes frames the moment and ends on a question or choice for the players, and never decides what a player character
 does, thinks or feels. New colour offered for ideas is labelled as new.
 
-`POST /api/gm/assist/whois {}` -> `{ whois: { "<n>": { name, why } }, spend }` (GM only; the **Blade, guess** button in Who is who). Seat `whois`: Haiku 5.5, medium effort, 2k output, no cached prefix (it reads the
+`POST /api/gm/assist/whois {}` -> `{ whois: { "<n>": { name, why } }, spend }` (GM only; the **Blade, guess** button in Who is who). Seat `whois`: Haiku 5.5, medium effort, 4k output, no cached prefix (it reads the
 roster and the talk only, so it cannot leak prep), a JSON list of `{ speaker, name, why }`. It reads the last 120 lines of the newest connection (speaker numbers restart on every connection) and answers for unnamed numbers with at least 3 lines.
 The Worker keeps an answer only when the number was asked about and the name is a player's name or the GM's from the assist part's `roster`: a name that is not on it is dropped, a name given to two numbers is dropped for both, and `why` is plain text of at most 80 characters.
 A suggestion only: nothing is applied, and it is never written to the listening document (the table display can read that); a tap in the page is the ordinary `PATCH /api/gm/stt { speakers }`. Not a Core seat, so it stops at 85% of the cap (429 "cap reached"); one at a time and not within 10 s of the last guess (429).
