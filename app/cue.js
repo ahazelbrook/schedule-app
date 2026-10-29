@@ -379,7 +379,10 @@
     /* "the clock" is "that": the clock Blade last touched */
     if (r.length === 2 && first === 'the' && isClock(r[1])) { out.pron = true; out.theClock = true; return out; }
     /* "that Salt Fog clock" names a clock: the pronoun comes off only when a name sits between it and "clock" */
-    if (PRON[first] && r.length >= 3 && isClock(r[r.length - 1]) && numOf(toks[r[1]].w) === null && !TAILN[toks[r[1]].w] && !ONCE[toks[r[1]].w]) { r = r.slice(1); first = toks[r[0]].w; }
+    if (PRON[first] && r.length >= 3) {
+      var rs = strip(r.slice(1)).list;      /* an amount (twice, by two) is set aside first */
+      if (rs.length >= 2 && isClock(rs[rs.length - 1]) && numOf(toks[rs[0]].w) === null && !TAILN[toks[rs[0]].w] && !ONCE[toks[rs[0]].w]) { r = r.slice(1); first = toks[r[0]].w; }
+    }
     if (PRON[first]) {
       out.pron = true;
       var st = strip(r.slice(1)); if (st.amt !== null && amount === null) out.amount = st.amt;
