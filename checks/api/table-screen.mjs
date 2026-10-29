@@ -283,7 +283,7 @@ await step('the scan helpers: views, the prefilter agrees with namesHit on a sha
   await exec.batch(`DELETE FROM npcs WHERE campaign = ${dq(CAMP)};`);
 });
 
-await step('the screen poke: a map or a handout put up while the mirror is on; the switch flipping; never for other kinds, a refused write, the mirror off, or a read', async () => {
+await step('the screen poke: any display change while the mirror is on (a map or handout, and lights out etc. so an open viewer clears at once); the switch flipping; never for a refused write, the mirror off, or a read', async () => {
   const hub = fakeHub();
   const run = async (label, kinds, method, p, opts) => {
     hub.pokes.length = 0;
@@ -296,7 +296,7 @@ await step('the screen poke: a map or a handout put up while the mirror is on; t
   await mirror(null);
   await run('map', ['display', 'screen'], 'PUT', '/api/gm/display', { body: { kind: 'svg', svg: MAP } });
   await run('handout', ['display', 'screen'], 'PUT', '/api/gm/display', { body: { kind: 'handout', file: 'invented-note.png' } });
-  for (const d of [{ kind: 'blank' }, { kind: 'dark' }, { kind: 'text', text: 'x' }, { kind: 'rule', md: 'x' }, { kind: 'npc', npcId: 'n9' }]) await run(d.kind, ['display'], 'PUT', '/api/gm/display', { body: d });
+  for (const d of [{ kind: 'blank' }, { kind: 'dark' }, { kind: 'text', text: 'x' }, { kind: 'rule', md: 'x' }, { kind: 'npc', npcId: 'n9' }]) await run(d.kind + ' (a change away from a map reaches an open viewer at once)', ['display', 'screen'], 'PUT', '/api/gm/display', { body: d });
   const stale = await run('map with a stale ifSeq (409)', [], 'PUT', '/api/gm/display', { body: { kind: 'svg', svg: MAP, ifSeq: 999999 } });
   expect(stale.status === 409, 'stale: ' + stale.status);
   const player = await run('a player cannot push', [], 'PUT', '/api/gm/display', { user: ALEX, body: { kind: 'svg', svg: MAP } });

@@ -60,9 +60,9 @@ try {
 
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const errors = [];
-  async function open(user) {
+  async function open(user, pollMs = 300) {
     const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
-    await ctx.addInitScript(() => { window.__B68_POLL_MS = 300; });
+    await ctx.addInitScript((ms) => { window.__B68_POLL_MS = ms; }, pollMs);
     const page = await ctx.newPage();
     const screenReqs = [];
     page.on('request', (r) => { if (/\/api\/table\/screen/.test(r.url())) screenReqs.push(r.url()); });
@@ -163,6 +163,20 @@ try {
   check(!!(await until(async () => p2.page.evaluate(() => { const i = document.querySelector('.ds-tv-img'); return !!i && i.complete && i.naturalWidth > 0; }), 8000, 100)), 'and the viewer opens there');
   await p2.ctx.close();
 
+  // live sync (MD2): a 'screen' poke lights the dot at once. This phone polls only once a minute, so only the poke can bring the news in time
+  await display({ kind: 'dark' });
+  const p3 = await open('p3@example.test', 60000);
+  check(!!(await until(() => p3.page.evaluate(() => !!window.B68Live && window.B68Live.state().open), 15000, 100)), 'the live socket of the phone is open');
+  check((await p3.page.$$eval('.ds-tablebtn .ds-tdot', (n) => n.length)) === 0, 'no dot while the iPad is dark');
+  const t0 = Date.now();
+  await display({ kind: 'svg', title: 'Poked in', svg: mapSvg('#639', 'Poke') });
+  const lit = await until(async () => (await p3.page.$$eval('.ds-tablebtn .ds-tdot', (n) => n.length)) === 1, 5000, 50);
+  check(!!lit && Date.now() - t0 < 4500, 'a map on the iPad lights the dot through the poke, with the poll a minute away (' + (Date.now() - t0) + ' ms)');
+  check(await p3.page.evaluate(() => window.B68Live.state().pokes.indexOf('screen') >= 0), 'and the socket did hear a screen poke');
+  await api('PATCH', '/gm/state', GM, { mirror: false });
+  check(!!(await until(async () => (await p3.page.$$eval('.ds-tablebtn .ds-tdot', (n) => n.length)) === 0, 5000, 50)), 'switching the mirror off clears the dot through a poke too');
+  await api('PATCH', '/gm/state', GM, { mirror: null });
+  await p3.ctx.close();
   check(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await browser.close();
 } catch (e) {

@@ -44,7 +44,7 @@ import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay, loadAmbient, 
 import { joinOverlayNpc } from '../../_lib/npcs.js';
 import { joinOverlayClock } from '../../_lib/campaign.js';
 import { loadSttPart } from '../../_lib/stt.js';
-import { liveFlag, mirrorFlag, screenKind, pokeLive } from '../../_lib/live.js';
+import { liveFlag, mirrorFlag, pokeLive } from '../../_lib/live.js';
 
 const METHODS = ['GET', 'PUT'];
 
@@ -106,10 +106,11 @@ export async function onRequest({ request, env, data, waitUntil }) {
   }
   const display = cleanDisplay(raw);
   const db = await getDb(env);
-  // the phones' table screen (MM1): read the mirror switch before the write (only for a map or a handout), poke after it succeeded
-  const phones = screenKind(display.kind) && await mirrorFlag(db, campaign);
+  // the phones' table screen (MM1): read the mirror switch before the write, poke after it succeeded. Any change of the display pokes while the mirror is
+  // on, not only a map or a handout, so a map that gives way to lights out (or anything else) leaves an open viewer at once instead of on the next
+  // poll, which is 15 s apart while live sync is healthy. A poke is a kind and a time, so it carries nothing; the phones' poll then says screenSeq 0.
+  const phones = await mirrorFlag(db, campaign);
   const out = await putDisplay(db, campaign, display, ifSeq);
-  pokeLive({ env, waitUntil }, ['display']);
-  if (phones) pokeLive({ env, waitUntil }, ['screen']);
+  if (phones) pokeLive({ env, waitUntil }, ['display', 'screen']); else pokeLive({ env, waitUntil }, ['display']);
   return json(out);
 }

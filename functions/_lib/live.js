@@ -10,7 +10,7 @@
 
 import { campaignOf } from './http.js';
 
-/** The kinds, and the roles that hear each. 'screen' (MM1) is for phones: sent when the stored display changes to a map or a handout while the mirror is on, and when the mirror flips. */
+/** The kinds, and the roles that hear each. 'screen' (MM1) is for phones: sent when the stored display changes while the mirror is on, and when the mirror flips. */
 export const KINDS = {
   characters: ['player', 'gm'],
   campaign: ['player', 'gm'],

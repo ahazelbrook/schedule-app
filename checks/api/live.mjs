@@ -90,7 +90,7 @@ await step('the pokeLive call sites: exactly the write paths; screen is sent onl
   } };
   walk(path.join(ROOT, 'functions', 'api'));
   const want = ['functions/api/campaign.js campaign', 'functions/api/characters/[id].js characters', 'functions/api/characters/[id].js characters', 'functions/api/characters/[id].js characters',
-    'functions/api/gm/ambient.js ambient', 'functions/api/gm/assist.js npcs', 'functions/api/gm/display.js display', 'functions/api/gm/display.js screen', 'functions/api/gm/state.js screen', 'functions/api/gm/stt.js stt',
+    'functions/api/gm/ambient.js ambient', 'functions/api/gm/assist.js npcs', 'functions/api/gm/display.js display', 'functions/api/gm/display.js display, screen', 'functions/api/gm/state.js screen', 'functions/api/gm/stt.js stt',
     'functions/api/gm/transcript.js cue', 'functions/api/npcs/[id].js npcs', 'functions/api/npcs/[id].js npcs', 'functions/api/npcs/[id].js npcs', 'functions/api/npcs/index.js npcs'];
   expect(same(sites.sort(), want.sort()), 'call sites: ' + JSON.stringify(sites.sort()));
   expect(sites.filter((s) => /screen/.test(s)).length === 2, 'only the display push and the mirror switch send screen');
@@ -133,7 +133,7 @@ await step('every write path pokes its kind: display PUT, ambient PATCH, stt PAT
     expect(same(kindsOf(hub), kinds), label + ': poked ' + JSON.stringify(kindsOf(hub)) + ', wanted ' + JSON.stringify(kinds));
     return r;
   };
-  await run('display PUT', ['display'], 'PUT', '/api/gm/display', { user: GM, body: { kind: 'text', text: 'Invented words' } });
+  await run('display PUT (the mirror is on by default: phones are poked too, MM1)', ['display', 'screen'], 'PUT', '/api/gm/display', { user: GM, body: { kind: 'text', text: 'Invented words' } });
   await run('ambient PATCH', ['ambient'], 'PATCH', '/api/gm/ambient', { user: GM, body: { mode: 'pin', scene: 'testcard' } });
   await run('stt PATCH (GM)', ['stt'], 'PATCH', '/api/gm/stt', { user: GM, body: { want: 'on' } });
   await run('stt PATCH (the iPad reports status)', ['stt'], 'PATCH', '/api/gm/stt', { user: IPAD, body: { status: { state: 'listening', lines: 1 } } });
@@ -195,13 +195,13 @@ await step('the object down: the write answers 200 with its body, the poke WAS a
     expect(r.status === 200 && r.json && r.json.display && r.json.display.text === 'Down check ' + mode, mode + ': the write still answers: ' + r.status + ' ' + r.text.slice(0, 120));
     expect(r.answeredMs < 1000, mode + ': the answer was not delayed (' + r.answeredMs + ' ms)');
     expect(r.pending.length === 1, mode + ': the poke was handed to waitUntil');
-    if (mode === 'hangs') { expect(hub.pokes.length === 1, 'hangs: poke() was called'); continue; }   // its promise stays pending, as waitUntil would hold it
+    if (mode === 'hangs') { expect(hub.pokes.length === 2, 'hangs: poke() was called for display and screen'); continue; }   // its promise stays pending, as waitUntil would hold it
     await settle(r);   // logged and dropped: nothing may reject
     const outcomes = await Promise.allSettled(r.pending);
     expect(outcomes.every((o) => o.status === 'fulfilled'), mode + ': the dropped poke must not reject the waitUntil promise');
     if (mode === 'getThrows') expect(hub.attempts === 1 && hub.pokes.length === 0, 'get() was tried: ' + hub.attempts);
     if (mode === 'idThrows') expect(hub.names.length === 1, 'idFromName was tried');
-    if (mode === 'rejects') expect(hub.pokes.length === 1, 'poke() was tried');
+    if (mode === 'rejects') expect(hub.pokes.length === 2, 'poke() was tried (display, and screen with the mirror on)');
   }
   const all = await call(fakeHub('rejects'), 'POST', '/api/npcs', { user: GM, body: { name: 'Invented Down', revealed: false } });
   expect(all.status === 200 && all.json.id, 'npcs POST with a rejecting object');

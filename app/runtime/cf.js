@@ -726,7 +726,7 @@
     api('GET', '/' + COLLECTION + (full ? '' : '?since=' + encodeURIComponent(since)))
       .then(function (r) {
         r = r || {};
-        noteScreen(r.screenSeq);                      /* the table screen's seq (MM1): a number, 0 when the iPad shows nothing a phone may copy */
+        var screenMoved = noteScreen(r.screenSeq);    /* the table screen's seq (MM1): a number, 0 when the iPad shows nothing a phone may copy */
         lastSync = nowIso();                          /* before applyServer, so the snapshot it saves carries it */
         var chg = null;
         /* a write started or finished while this poll was out: its view may be stale, ask again */
@@ -737,7 +737,8 @@
         live.polled(startedAt, {
           characters: !!chg && Object.keys(chg).length > 0,
           campaign: camp.loaded && hasCampaignListeners() && r.campaignUpdatedAt !== undefined && r.campaignUpdatedAt !== camp.stamp,
-          npcs: npcs.loaded && hasNpcListeners() && r.npcsUpdatedAt !== undefined && r.npcsUpdatedAt !== npcs.at
+          npcs: npcs.loaded && hasNpcListeners() && r.npcsUpdatedAt !== undefined && r.npcsUpdatedAt !== npcs.at,
+          screen: screenMoved && !!me && me.role === 'player'     /* only phones are sent 'screen' pokes, so only a phone can be surprised by a move nobody announced */
         }, full);
         if (campAt !== camp.epoch) { again = true; return; }
         return Promise.resolve(syncCampaign(r.campaignUpdatedAt)).then(function () { return syncNpcs(r.npcsUpdatedAt); });
@@ -758,7 +759,7 @@
   var liveOff = null;
   function start() {
     if (running) return; running = true; if (mode !== 'snapshot') loaded = false; errored = false; epoch++; schedule(0);
-    if (!liveOff) liveOff = live.on(['characters', 'campaign', 'npcs'], function () { pollSoon(); });   /* a poke runs the poll now */
+    if (!liveOff) liveOff = live.on(['characters', 'campaign', 'npcs', 'screen'], function () { pollSoon(); });   /* a poke runs the poll now */
   }
   function stop() { if (liveOff) { liveOff(); liveOff = null; } running = false; if (mode !== 'snapshot') { loaded = false; camp.loaded = false; npcs.loaded = false; } again = false; clearTimeout(timer); timer = null; }
   function pollSoon() { if (!running) return; if (inflight) again = true; else schedule(0); }
@@ -1447,11 +1448,12 @@
      is the one call that fetches the picture, made when the player opens the viewer (or while it is open and screenSeq moves). ---------- */
   var screenSeq = 0, screenListeners = [];
   function noteScreen(v) {
-    if (typeof v !== 'number' || !isFinite(v)) return;      /* an older server sends none: keep what we have */
+    if (typeof v !== 'number' || !isFinite(v)) return false;      /* an older server sends none: keep what we have */
     v = v > 0 ? Math.floor(v) : 0;
-    if (v === screenSeq) return;
+    if (v === screenSeq) return false;
     screenSeq = v;
     screenListeners.slice().forEach(function (cb) { try { cb(v); } catch (e) { setTimeout(function () { throw e; }, 0); } });
+    return true;
   }
   var table = {
     /* GET /api/table/screen -> { seq, kind: 'none' } | { seq, kind: 'svg', svg, title?, caption? } | { seq, kind: 'handout', file, title? }.

@@ -1794,6 +1794,8 @@ await test('live breaker: a socket that stays open for the stable time resets th
   ws.last().drop(1006);
   await until(() => b.win.B68Live.state().broken, 2000);
   eq(ws.made.length, 5, 'three more failures after the reset (sockets 3, 4, 5), where without it the drop of socket 3 would already have been the third and stopped at 3');
+  un();
+});
 
 await test('table (MM1): screenSeq arrives in the data poll, onScreenSeq hears every change (a move to 0 too), screen() is a plain GET and nothing polls for it', async () => {
   const api = fakeApi();

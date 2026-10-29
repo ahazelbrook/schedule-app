@@ -1562,7 +1562,9 @@
     if (!tv) return; var v = tv; tv = null;
     if (v.url) { try { URL.revokeObjectURL(v.url); } catch (e) {} }
     if (v.el.parentNode) v.el.parentNode.removeChild(v.el);
-    if (restore !== false && v.from && v.from.focus && document.body.contains(v.from)) { try { v.from.focus({ preventScroll: true }); } catch (e) {} }
+    /* the sheet may have redrawn its head since: focus goes to the button that is there now */
+    var back = (cur && cur.root && cur.root.querySelector && cur.root.querySelector('.ds-tablebtn')) || v.from;
+    if (restore !== false && back && back.focus && document.body.contains(back)) { try { back.focus({ preventScroll: true }); } catch (e) {} }
   }
   function openTableScreen(from) {
     var sc = screenApi(); if (!sc || tv) return;
