@@ -148,13 +148,27 @@
   }
   /* a command word within the next three words (skipping please, just, now and "can you") */
   /* the loose forms at the first command slot: "at an NPC" (add misheard), "status six segment clock" (start a misheard), and past/-ing verbs. -> { k, verb, soft } or null */
+  /* a loose make names its thing only DIRECTLY after the noun phrase: [a/an] [new] [size] [segment] clock|NPC, an optional comma, then called/named and a name; or called/named
+     opening the next sentence. "...a six clock he called Escape", "an NPC conference called Nothing" are talk. */
+  function calledDirect(toks, k) {
+    var j = k + 1, t;
+    if (toks[j] && (toks[j].w === 'a' || toks[j].w === 'an')) j++;
+    if (toks[j] && toks[j].w === 'new') j++;
+    if (toks[j] && numOf(toks[j].w) !== null) j++;
+    if (toks[j] && (toks[j].w === 'segment' || toks[j].w === 'segments')) j++;
+    t = toks[j]; if (!t) return false;
+    if (t.w === 'clock' || AT_NOUN[t.w]) j++;
+    else if (t.w === 'n' && toks[j + 1] && toks[j + 1].w === 'p' && toks[j + 2] && toks[j + 2].w === 'c') j += 3;
+    else return false;
+    t = toks[j];
+    return !!t && (t.w === 'called' || t.w === 'named') && !!toks[j + 1] && !CARRY_NO[toks[j + 1].w];
+  }
   function softAt(toks, k) {
     var t = toks[k], n1 = toks[k + 1], n2 = toks[k + 2], n3 = toks[k + 3], n4 = toks[k + 4];
     if (!t) return null;
     if (Object.prototype.hasOwnProperty.call(INFL, t.w)) return { k: k, verb: INFL[t.w], soft: true };
     if (t.w === 'at' && n1 && (n1.w === 'a' || n1.w === 'an') && n2 && (AT_NOUN[n2.w] || (n2.w === 'n' && n3 && n3.w === 'p' && n4 && n4.w === 'c'))) {
-      for (var q = k + 3; q < toks.length - 1; q++) if (toks[q].w === 'called' || toks[q].w === 'named') return { k: k, verb: 'make', soft: true };
-      return null;
+      return calledDirect(toks, k) ? { k: k, verb: 'make', soft: true } : null;
     }
     /* "status six segment clock": an unrecognised verb starting sta- (status, stat, stats), an optional a/an, then <number> segment clock and nothing looser */
     if (/^sta/.test(t.w) && !Object.prototype.hasOwnProperty.call(CMD, t.w)) {
@@ -194,13 +208,7 @@
     var got = run(text, isObj(live) ? live : {}, { toks: toks, wi: i, vi: hit.k, verb: hit.verb }, !isObj(live));
     /* complete or silent: an action, nothing missing, nothing refused. A make must say called/named; a tick must name its clock (no "it", "that", "the clock"). */
     if (got.refused || got.missing || !got.actions.length || got.viaPron) return false;
-    if (hit.verb === 'make') {
-      for (var q = hit.k + 1; q < toks.length - 1; q++) {
-        if ((toks[q].w === 'called' || toks[q].w === 'named') && !CARRY_NO[toks[q + 1].w]) return true;
-        if (/[.?!]/.test(toks[q].p) && !(toks[q + 1] && (toks[q + 1].w === 'called' || toks[q + 1].w === 'named'))) return false;      /* only a name marker opening the next sentence carries over */
-      }
-      return false;
-    }
+    if (hit.verb === 'make') return calledDirect(toks, hit.k);
     return true;
   }
   function locate(text, live) {
