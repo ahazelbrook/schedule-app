@@ -39,7 +39,7 @@
     table: TABLE,
     print: TABLE,
     crews: ['crews.js'],   /* just the crew playbooks' text, for the sheet's roll-panel abilities strip (the table bundle loads it too, once) */
-    gm: ['gm.css', 'prep.css', 'maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm-page.js'],
+    gm: ['gm.css', 'prep.css', 'maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/run-view.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm-page.js'],
     display: ['display.css', 'cue.js', 'stt.js', 'display-page.js']
   };
   /* every stylesheet, in cascade order (index.html's order from before lazy loading) */

@@ -769,7 +769,7 @@
     function slot(room) { return byRoom[room] || (byRoom[room] = { names: [], pies: [] }); }
     (Array.isArray(pcs) ? pcs : []).forEach(function (c) {
       if (!isObj(c) || typeof c.id !== 'string' || !c.id || !hasOwn(crew, c.id)) return;
-      var room = crew[c.id], name = str(c.name).trim();
+      var at = crew[c.id], room = isObj(at) ? at.room : at, name = str(c.name).trim();       /* a v1 crew entry is the room's name; a v2 one is { room, ... } and only its room is read */
       if (typeof room === 'string' && open[room] && name) slot(room).names.push(name);
     });
     (Array.isArray(clocks) ? clocks : []).forEach(function (c) {
@@ -841,6 +841,7 @@
       case 'u': return { type: 'undo' };
       case 'i': return { type: 'panel', panel: 'ipad' };
       case 'r': return { type: 'panel', panel: 'prep' };
+      case 'g': return { type: 'panel', panel: 'run' };
       case 'o': return { type: 'panel', panel: 'cards' };
       case 'f': return { type: 'focus' };
       case '/': return { type: 'find' };
@@ -2175,7 +2176,7 @@
       '<details class="gm-singles" id="gm-singles"></details></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
       [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score', 'J'], ['chase', 'Chase', 'C'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
-      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="score" id="gm-score"></div><div class="gm-pane" data-pane="chase" id="gm-chase"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div></section>' +
+      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="score" id="gm-score"></div><div class="gm-pane" data-pane="chase" id="gm-chase"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div></section>' +
       '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button>' +
@@ -2406,7 +2407,7 @@
 
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderScenes(); renderNpcs(); renderScore(); renderChase(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
+    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderRun(); renderScenes(); renderNpcs(); renderScore(); renderChase(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
   }
   /* the pack's export date: in the Menu in full, in the bar only when stale or an offline copy */
   function syncHead() {
@@ -2435,6 +2436,7 @@
     try { W.localStorage.setItem('b68.gm.panel', p); } catch (e) {}
     syncPanels();
     if (p === 'ipad') { loadAmbient(); loadStt(); }
+    if (p === 'run') renderRun();
     if (p === 'chase') renderChase();      /* the start form offers the Location roll or Street scene made since it was drawn */
     spy(p);
   }
@@ -3101,6 +3103,7 @@
      drawing, or '' when this map is not a run (a player layer, a rolled site) */
   function runApply(o) {
     var rs = o.layer === 'gm' ? runSite() : null; if (!rs) return '';
+    if (rs.play.v === 2) { var t2 = runV2Tokens(rs); o.tokens = t2; return JSON.stringify([rollKey(S.locRoll), o.view, o.theme, o.time, o.weather, o.floor, t2.map(function (t) { return t.room + '|' + t.svg; })]); }
     var m = runModel(rs); if (!m) return '';
     var toks = runTokens(m);
     o.tokens = toks;
@@ -3144,6 +3147,7 @@
   }
   function runBox(rs) {
     var plain = '<div class="gm-map" id="gm-map"></div>', m = rs ? runModel(rs) : null; if (!m) return plain;
+    if (rs.play.v === 2) return '<p class="gm-dim gm-runv2note">This night is built for the Run tab: press <kbd>G</kbd>.</p>' + plain;     /* a v2 block is run there (VV4); the v1 strip reads v1 state */
     var label = str(rs.play.clock.label);
     return '<div class="gm-runzone" id="gm-runzone"><section class="gm-run" id="gm-run" tabindex="0" aria-label="Run the site' + (label ? ': ' + esc(label) : '') + '. Left and Right move the time by 5 minutes.">' +
       '<div class="gm-run-h"><b>Run the site</b>' + (label ? ' <span class="gm-dim">' + esc(label) + '</span>' : '') + ' <span class="gm-dim" id="gm-run-note"></span></div>' +
@@ -3197,6 +3201,7 @@
   /* the table or the filed characters changed (a clock ticked, a PC arrived): the strip and the pies follow; a poll never closes the Disguise select */
   function runStale() {
     if (!S || !runSite()) return;
+    renderRun();
     var a = document.activeElement; if (!(a && a.id === 'gm-run-lens')) runPaint();
     runDraw(true);
     liveTokens();         /* a clock ticked or went hidden, a PC was renamed: the markers on the iPad follow (M3) */
@@ -3278,6 +3283,91 @@
     var tg = ev.target;
     if ((ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') || ev.ctrlKey || ev.altKey || ev.metaKey || !tg || !tg.closest || str(tg.tagName).toUpperCase() === 'SELECT' || !tg.closest('.gm-runzone')) return false;
     if (runStep(ev.key === 'ArrowRight' ? 5 : -5)) { ev.preventDefault(); return true; }
+    return false;
+  }
+
+  /* ---------- the Run tab for a v2 night (design 5.2; app/gm/run-view.js) ----------
+     The rendering and the moves live in B68GmRunView; this is its host. A v1 block never gets here: runV2() is null, the tab is hidden and
+     Location keeps its strip. ball.crew is { <pc>: { room, disguise, ... } } for v2 (v1 keeps a room name): playerTokens reads only the room of
+     either shape. */
+  function runV2() { var rs = runSite(); return rs && rs.play.v === 2 && W.B68GmRunView ? rs : null; }
+  function runPcs() { return dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; }); }
+  /* a room is open to the players when its band is ticked or the GM opened it on its own */
+  function runIsOpen(name) {
+    var rs = runSite(); if (!rs || !S.locRoll || !Array.isArray(S.locRoll.rooms)) return false;
+    if (cleanRooms(ballDoc(rs.name).open).indexOf(name) >= 0) return true;
+    var reveal = revealList(mapUi());
+    return S.locRoll.rooms.some(function (r) { return isObj(r) && r.name === name && roomShown(r, reveal); });
+  }
+  function runV2Model(rs, t) { return W.B68GmRunView.model(rs.play, ballDoc(rs.name), { t: t, pcs: runPcs(), floors: runFloors(rs), isOpen: runIsOpen }); }
+  /* one token per room that holds a PC or a person who matters, at the published time (a peek never reaches the map) */
+  function runV2Tokens(rs) {
+    var st = ballDoc(rs.name), m = runV2Model(rs, +st.t >= 0 ? +st.t : 0), out = [];
+    Object.keys(m.cards).sort().forEach(function (name) {
+      var c = m.cards[name]; if (c.lvl === null) return;
+      var pills = c.pcs.map(function (p) { return { t: p.ini, c: '#111111' }; }).concat(c.npcs.map(function (n) { return { t: n.ini, c: RUN_KIND[n.kind] || '#5d5d5d' }; }));
+      if (!pills.length) return;
+      if (pills.length > 4) pills = pills.slice(0, 3).concat([{ t: '+' + (pills.length - 3), c: '#333333' }]);
+      out.push({ room: name, label: '', svg: runTokenSvg({ pills: pills, pies: [], lens: null, danger: c.pcs.some(function (p) { return p.mark === 'warn'; }) }) });
+    });
+    return out;
+  }
+  /* THE CALL SITE VV6 FILLS: publish the mission for ball.t = t. why is 'start', 'beat' or 'jump'. Nothing is sent today. */
+  function runPublish(t, why) {}
+  function runMapSvg() {
+    var K = W.B68Map, rs = runSite(); if (!rs || !K || !K.render || !S.locRoll) return '';
+    var mu = mapUi(), o = mapOpts(mu, 'gm', revealEntries(mu)), sig = runApply(o), r;
+    if (sig && S.runCache && S.runCache.map[sig]) r = S.runCache.map[sig];
+    else {
+      try { r = K.render(S.locRoll, o); } catch (e) { return ''; }
+      if (sig) { var rc = S.runCache = S.runCache || { map: {}, keys: [] }; rc.map[sig] = r; rc.keys.push(sig); while (rc.keys.length > RUN_CACHE_MAX) delete rc.map[rc.keys.shift()]; }
+    }
+    return stripSize(r.svg);     /* the map kit's own output from our roll; it escapes its text */
+  }
+  function rvHost() {
+    return {
+      site: function () { var rs = runV2(); return rs ? { name: rs.name, play: rs.play } : null; },
+      state: function () { var rs = runV2(); return rs ? ballDoc(rs.name) : {}; },
+      set: function (change, quiet) { var rs = runV2(); if (!rs) return false; var ok = ballSet(rs.name, change, quiet === true); if (ok && !quiet) runDraw(true); return !!ok; },
+      pcs: runPcs, floors: function () { var rs = runV2(); return rs ? runFloors(rs) : { list: [], floorOf: {} }; }, isOpen: runIsOpen,
+      openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg,
+      clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
+      publish: runPublish, toast: toast
+    };
+  }
+  function rvInst() {
+    var box = $q('#gm-runv'); if (!box || !W.B68GmRunView) return null;
+    if (!S.rv || S.rvBox !== box) { if (S.rv) S.rv.detach(); S.rv = W.B68GmRunView.create(rvHost()); S.rv.attach(box); S.rvBox = box; S.rvSite = ''; }
+    return S.rv;
+  }
+  /* the Run tab and its phone segment exist only while the Location card holds a v2 night (the others are always there) */
+  function runTabs(on) {
+    var tab = $q('.gm-tab[data-panel="run"]'), sg = $q('[data-gm="seg"][data-seg="run"]'), bar = $q('.gm-tabs'), sb = $q('.gm-segbar');
+    if (!on) { if (tab) tab.remove(); if (sg) sg.remove(); return; }
+    var changed = false;
+    if (!tab && bar) { bar.insertAdjacentHTML('beforeend', '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="run">Run <kbd>G</kbd></button>'); changed = true; }
+    if (!sg && sb) { sb.insertAdjacentHTML('beforeend', '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="run">Run</button>'); changed = true; }
+    if (changed) syncPanels();
+  }
+  var RUN_HELP = '<div class="gm-empty gm-runhelp"><b>Run</b> runs a night built on a v2 play block. ' + 'Roll or pick an authored site in Location whose <code>b68-site</code> block has a <code>play</code> with <code>"v": 2</code>, then rebuild the pack. ' + 'A v1 block keeps its Run the site strip in Location.</div>';
+  function renderRun() {
+    var box = $q('#gm-runv'); if (!box || !S) return;
+    var rs = runV2();
+    runTabs(!!rs);
+    if (!rs) { if (S.rv) { S.rv.reset(); S.rvSite = ''; } if (box.getAttribute('data-help') !== '1') { box.innerHTML = RUN_HELP; box.setAttribute('data-help', '1'); } return; }
+    if (S.panel !== 'run') return;
+    var v = rvInst(); if (!v) return;
+    box.removeAttribute('data-help');
+    if (S.rvSite !== rs.name) { v.reset(); S.rvSite = rs.name; }
+    if (!v.dragging()) v.render(box);
+  }
+  /* Right and Left a beat, Shift+Right the next thing that happens, Esc back to now: only while Run is the panel on screen */
+  function runViewKey(ev) {
+    if (!S || S.panel !== 'run' || !S.rv || !runV2() || ev.ctrlKey || ev.altKey || ev.metaKey || typing(ev.target)) return false;
+    var k = ev.key;
+    if (k === 'ArrowRight') { ev.preventDefault(); if (ev.shiftKey) S.rv.jump(); else S.rv.step(1); return true; }
+    if (k === 'ArrowLeft') { ev.preventDefault(); S.rv.step(-1); return true; }
+    if (k === 'Escape' && S.rv.unpeek()) { ev.preventDefault(); return true; }
     return false;
   }
 
@@ -4142,7 +4232,7 @@
   }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
 
-  var SIDE = ['prep', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'rules', 'ipad'];
+  var SIDE = ['prep', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'rules', 'ipad', 'run'];
   /* ---------- the street scene roller (S): a side panel ---------- */
   function genLinesHtml(lines) {
     return (lines || []).map(function (l) { return l.kind === 'chips' ? chipsHtml(l.chips) : linesHtml([l], md); }).join('');
@@ -5612,6 +5702,7 @@
     if (ev.key === 'Enter' && tg && tg.id === 'gm-gs-q') { ev.preventDefault(); screenFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-dt-d100') { ev.preventDefault(); dtD100(tg.value); return; }     /* the morning's d100 */
     var ml = $q('.gm-menu-list'); if (ml && !ml.hasAttribute('hidden') && ev.key === 'Escape') { menuOpen(false); var mb = $q('[data-gm="menu"]'); if (mb) mb.focus(); ev.preventDefault(); return; }
+    if (runViewKey(ev)) return;
     if (runKey(ev)) return;
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
     if (!a) return;
