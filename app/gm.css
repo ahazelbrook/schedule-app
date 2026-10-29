@@ -506,7 +506,7 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-page .gm-bar { height: 44px; min-height: 44px; flex-wrap: nowrap; gap: 6px; padding: 0 10px; margin-bottom: 0; z-index: 45; }
   body.gm-app #gm-page .gm-bar a.gm-bar-mark { font-size: 20px; }
   body.gm-app #gm-page .gm-bar .gm-save:not(.bad), body.gm-app #gm-page .gm-bar-exp, body.gm-app #gm-page .gm-beatbar, body.gm-app #gm-page .gm-bar [data-gm="find-open"],
-  body.gm-app #gm-page #gm-bar-stt, body.gm-app #gm-page #gm-bar-ap, body.gm-app #gm-page .gm-bar [data-gm="blankipad"], body.gm-app #gm-page .gm-bar [data-gm="darkipad"] { display: none; }
+  body.gm-app #gm-page #gm-bar-stt, body.gm-app #gm-page #gm-bar-ap, body.gm-app #gm-page .gm-bar [data-gm="blankipad"], body.gm-app #gm-page .gm-bar [data-gm="darkipad"], body.gm-app #gm-page .gm-bar [data-gm="mirror"] { display: none; }
   body.gm-app #gm-page .gm-pill { max-width: 40vw; min-width: 0; flex: 0 1 auto; }
   body.gm-app #gm-page .gm-bar .gm-now { display: none; }
   #gm-page .gm-nowline { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; }

@@ -3,7 +3,9 @@
 //                                   included ({ deleted: true, doc: null })
 // Both also carry campaignUpdatedAt and npcsUpdatedAt (ISO or null), so the adapter knows when to
 // refetch /api/campaign and /api/npcs without polling them separately, and `live`: the live-sync switch (the GM state
-// document's `live`; true unless the GM turned it off), so a page learns of a flip in the poll it already makes.
+// document's `live`; true unless the GM turned it off), so a page learns of a flip in the poll it already makes, and `screenSeq` (MM1): the
+// table display's seq while the phones' mirror is on and the display is a map or a handout, else 0 (a number only; the picture is
+// GET /api/table/screen).
 
 import { getDb } from '../../_lib/db.js';
 import { HttpError, json, methodNotAllowed, campaignOf } from '../../_lib/http.js';
@@ -49,7 +51,7 @@ export async function onRequest({ request, env }) {
       )
       .bind(campaign);
   }
-  // campaignStamp: the campaign's updated_at AND the live-sync switch (design 2.5) in one read, so the switch adds no read to the poll
+  // campaignStamp: the campaign's updated_at, the live-sync switch (design 2.5) and the table screen's seq (MM1) in one read, so they add no call to the poll
   const [{ results }, stamp, npcsAt] = await Promise.all([stmt.all(), campaignStamp(db, campaign), npcsUpdatedAt(db, campaign)]);
-  return json({ now, docs: (results || []).map(toEntry), campaignUpdatedAt: stamp.at, npcsUpdatedAt: npcsAt, live: stamp.live });
+  return json({ now, docs: (results || []).map(toEntry), campaignUpdatedAt: stamp.at, npcsUpdatedAt: npcsAt, live: stamp.live, screenSeq: stamp.screenSeq });
 }

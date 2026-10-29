@@ -343,6 +343,7 @@
       '<div class="ds-bar">' +
         '<div class="ds-nav">' +
           '<button type="button" class="btn sm" data-act="back" data-always="1">← Back</button>' +
+          (live ? tableButton() : '') +
           '<button type="button" class="btn sm ds-wide" data-act="edit"' + (ro ? ' disabled' : '') + '>Edit figure</button>' +
           '<button type="button" class="btn sm" data-act="print" data-always="1">Print</button>' +
           (live ? moreMenu(name) : '') +
@@ -1129,6 +1130,7 @@
   }
   var ACTIONS = {
     back: function () { if (cur.api && cur.api.back) cur.api.back(); },
+    tablescreen: function (d, btn) { openTableScreen(btn); },
     edit: function () { if (cur.api && cur.api.edit) cur.api.edit(); },
     print: function () { printFigure(true); try { window.print(); } catch (e) { note('Printing is not available here'); } },
     /* Remove deletes the character for everyone, for good: it sits at the foot of "…", for the owner and the GM, behind a
@@ -1481,7 +1483,7 @@
     note('Session ' + n + ' started'); commit();
   }
   /* roll-panel controls stay live for read-only viewers (they write nothing); everything else is gated */
-  var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, abstrip: 1, abitem: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1, rollapp: 1, resistapp: 1, markharm: 1, markresist: 1, markrattr: 1, markrdone: 1, more: 1, about: 1, loadout: 1, jump: 1 };
+  var RO_OK = { back: 1, tablescreen: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, abstrip: 1, abitem: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1, rollapp: 1, resistapp: 1, markharm: 1, markresist: 1, markrattr: 1, markrdone: 1, more: 1, about: 1, loadout: 1, jump: 1 };
   /* one panel at a time: the mark strip, a roll, a downtime activity or the end of session */
   function anyPanel() { return !!(cur && (cur.ui.mark || cur.ui.roll || cur.ui.dt || cur.ui.endSess)); }
   function closePanels() { if (!cur) return; cur.ui.mark = null; cur.ui.roll = null; cur.ui.dt = null; cur.ui.endSess = null; }
@@ -1518,6 +1520,7 @@
   }
   function onDocKey(e) {
     if (!cur || (e.key !== 'Escape' && e.key !== 'Esc')) return;
+    if (tv) { closeTableScreen(); return; }
     if (cur.ui.more) { cur.ui.more = false; render(); var mb = cur.root.querySelector('.ds-morebtn'); if (mb) try { mb.focus({ preventScroll: true }); } catch (x) {} return; }
     if (!anyPanel()) return; closePanels(); render();
   }
@@ -1527,6 +1530,91 @@
   /* a phone never drew the figure: it is drawn here, once, for the page that prints */
   function printFigure(on) { if (!cur || cur.ui.static) return; var f = cur.root.querySelector('.ds-printfig'); if (!f) return; if (on) figureSvg(cur.doc); f.innerHTML = on ? (cur.ui.svg || '') : ''; }
   if (window.addEventListener) { window.addEventListener('beforeprint', function () { printing = true; printFigure(true); }); window.addEventListener('afterprint', function () { printing = false; printFigure(false); }); }
+
+  /* ---------- the table screen (MM1, design 2.4) ----------
+     api.screen (boot.js, from the hosted runtime's window.claude.table) is { seq(), load(), on(cb) }, or null where the runtime has none (then
+     there is no Table button). seq() is the display's seq while the iPad shows a map or a handout and the GM's mirror is on, else 0: the data
+     poll brings it and nothing here polls. The button carries a dot while seq() is something this phone has not looked at. The viewer is a
+     full-screen layer on the page body, outside the sheet, so a redraw of the sheet never touches it. The picture is an <img> (a blob URL for a
+     map, so it cannot run script; the static handout path for a handout), the zoom is the browser's own pinch-zoom, and × closes it. It asks
+     the server again only when seq() moves while it is open. Everything the server sends is put in as text. */
+  var SEEN_KEY = 'b68.table.seen', HANDOUT_DIR = 'media/handouts/', HANDOUT_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}\.(?:png|jpe?g|gif|webp|svg)$/i;
+  var tv = null, tvSeen = null;
+  function screenApi() { var a = cur && cur.api && cur.api.screen; return a && typeof a.seq === 'function' && typeof a.load === 'function' ? a : null; }
+  function seenSeq() { if (tvSeen === null) { try { tvSeen = Math.max(0, Math.floor(+localStorage.getItem(SEEN_KEY) || 0)); } catch (e) { tvSeen = 0; } } return tvSeen; }
+  function setSeen(n) { tvSeen = Math.max(0, Math.floor(+n || 0)); try { localStorage.setItem(SEEN_KEY, String(tvSeen)); } catch (e) {} }
+  function screenNew() { var sc = screenApi(); if (!sc) return false; var s = 0; try { s = Math.floor(+sc.seq() || 0); } catch (e) {} return s > 0 && s !== seenSeq(); }
+  function tableButtonBody(nw) { return 'Table' + (nw ? '<span class="ds-tdot" aria-hidden="true"></span>' : ''); }
+  function tableButton() {
+    if (!screenApi()) return '';
+    var nw = screenNew();
+    return '<button type="button" class="btn sm ds-tablebtn' + (nw ? ' new' : '') + '" data-act="tablescreen" data-always="1" aria-haspopup="dialog" aria-label="' + (nw ? 'Table screen, changed' : 'Table screen') +
+      '" title="What the iPad is showing, when it is a map or a handout">' + tableButtonBody(nw) + '</button>';
+  }
+  /* the dot alone: the button's contents are replaced, the sheet is not redrawn */
+  function refreshTableDot() {
+    if (!cur || !cur.root) return; var b = cur.root.querySelector('.ds-tablebtn'); if (!b) return;
+    var nw = screenNew();
+    b.classList.toggle('new', nw); b.setAttribute('aria-label', nw ? 'Table screen, changed' : 'Table screen'); b.innerHTML = tableButtonBody(nw);
+  }
+  function onScreenSeq() { if (!cur) return; refreshTableDot(); if (tv) loadTableScreen(); }
+  function closeTableScreen(restore) {
+    if (!tv) return; var v = tv; tv = null;
+    if (v.url) { try { URL.revokeObjectURL(v.url); } catch (e) {} }
+    if (v.el.parentNode) v.el.parentNode.removeChild(v.el);
+    /* the sheet may have redrawn its head since: focus goes to the button that is there now */
+    var back = (cur && cur.root && cur.root.querySelector && cur.root.querySelector('.ds-tablebtn')) || v.from;
+    if (restore !== false && back && back.focus && document.body.contains(back)) { try { back.focus({ preventScroll: true }); } catch (e) {} }
+  }
+  function openTableScreen(from) {
+    var sc = screenApi(); if (!sc || tv) return;
+    var el = document.createElement('div'); el.className = 'ds-tv'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'The table screen');
+    el.innerHTML = '<div class="ds-tv-top"><button type="button" class="ds-tv-x" aria-label="Close the table screen">×</button><span class="ds-tv-h">The table screen</span></div>' +
+      '<div class="ds-tv-stage" aria-live="polite"></div><p class="ds-tv-cap" hidden></p>';
+    var x = el.querySelector('.ds-tv-x'); x.addEventListener('click', function () { closeTableScreen(); });
+    tv = { el: el, stage: el.querySelector('.ds-tv-stage'), cap: el.querySelector('.ds-tv-cap'), from: from || null, url: '', token: 0 };
+    document.body.appendChild(el);
+    try { x.focus({ preventScroll: true }); } catch (e) {}
+    try { setSeen(sc.seq()); } catch (e) {}   /* looking now: the dot goes */
+    refreshTableDot();
+    loadTableScreen();
+  }
+  function tableMessage(v, text, retry) {
+    v.stage.textContent = ''; v.cap.hidden = true; v.cap.textContent = '';
+    var p = document.createElement('p'); p.className = 'ds-tv-none'; p.textContent = text; v.stage.appendChild(p);
+    if (retry) { var b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm ds-tv-retry'; b.textContent = 'Try again'; b.addEventListener('click', function () { if (tv === v) loadTableScreen(); }); v.stage.appendChild(b); }
+  }
+  function loadTableScreen() {
+    var sc = screenApi(), v = tv; if (!sc || !v) return;
+    var token = ++v.token;
+    var p; try { p = sc.load(); } catch (e) { p = Promise.reject(e); }
+    Promise.resolve(p).then(function (r) { if (tv === v && token === v.token) showTableScreen(v, r); }, function (e) {
+      if (tv === v && token === v.token) tableMessage(v, e && e.network ? 'No signal. Try again when you are back online.' : 'Could not load the table screen.', true);
+    });
+  }
+  function showTableScreen(v, r) {
+    r = r && typeof r === 'object' ? r : {};
+    if (Number.isInteger(r.seq) && r.seq > 0) { setSeen(r.seq); refreshTableDot(); }   /* looked at, whatever the answer: a refused screen leaves no dot behind */
+    if (v.url) { try { URL.revokeObjectURL(v.url); } catch (e) {} v.url = ''; }
+    var src = '';
+    if (r.kind === 'svg' && typeof r.svg === 'string' && /^<svg[\s>\/]/i.test(r.svg)) {
+      var s = r.svg, head = /^<svg[^>]*>/i.exec(s);
+      if (head && !/\sxmlns\s*=/i.test(head[0])) s = s.replace(/^<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');   /* an <img> needs the namespace */
+      try { v.url = URL.createObjectURL(new Blob([s], { type: 'image/svg+xml' })); src = v.url; } catch (e) { src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s); }
+    } else if (r.kind === 'handout' && typeof r.file === 'string' && HANDOUT_RE.test(r.file) && r.file.indexOf('..') < 0) {
+      src = HANDOUT_DIR + encodeURIComponent(r.file);
+    }
+    if (!src) { tableMessage(v, 'Nothing on the table screen right now. When the iPad shows a map or a handout, it appears here.', false); return; }
+    var title = typeof r.title === 'string' ? r.title : '', cap = typeof r.caption === 'string' ? r.caption : '';
+    v.stage.textContent = '';
+    var img = document.createElement('img'); img.className = 'ds-tv-img'; img.alt = title || 'The table screen'; img.decoding = 'async'; img.draggable = false;
+    img.onerror = function () { if (tv === v) tableMessage(v, 'This picture could not be loaded.', true); };
+    img.src = src; v.stage.appendChild(img);
+    v.cap.textContent = '';
+    if (title) { var b = document.createElement('b'); b.textContent = title; v.cap.appendChild(b); }
+    if (cap) { if (title) v.cap.appendChild(document.createTextNode(' · ')); v.cap.appendChild(document.createTextNode(cap)); }
+    v.cap.hidden = !(title || cap);
+  }
 
   /* ---------- API ---------- */
   T.open = function (doc, api) {
@@ -1539,6 +1627,7 @@
     document.addEventListener('keydown', onDocKey); document.addEventListener('click', onDocClick);
     window.addEventListener('b68:runtime', onRuntime); window.addEventListener('pagehide', onHide); document.addEventListener('visibilitychange', onHide);
     render();
+    var sc = screenApi(); if (sc && typeof sc.on === 'function') { try { cur.screenOff = sc.on(onScreenSeq); } catch (e) {} }   /* the Table button's dot, and an open viewer, follow screenSeq */
     if (!doc.play && !readOnly()) flushSave(); /* a doc filed without a play object gets one */
   };
   T.update = function (doc) {
@@ -1551,6 +1640,8 @@
     if (!cur) return; var c = cur;
     if (c.timer) { clearTimeout(c.timer); c.timer = null; flushSave(); } /* typed text still waiting goes out before the sheet closes */
     cur = null; if (c.statusT) clearTimeout(c.statusT);
+    if (c.screenOff) { try { c.screenOff(); } catch (e) {} c.screenOff = null; }
+    closeTableScreen(false);
     c.root.removeEventListener('click', onClick); c.root.removeEventListener('input', onInput); c.root.removeEventListener('change', onChange); c.root.removeEventListener('keydown', onKey);
     document.removeEventListener('keydown', onDocKey); document.removeEventListener('click', onDocClick);
     window.removeEventListener('b68:runtime', onRuntime); window.removeEventListener('pagehide', onHide); document.removeEventListener('visibilitychange', onHide);

@@ -34,6 +34,7 @@ import { onRequest as gmSttToken } from '../functions/api/gm/stt-token.js';
 import { onRequest as gmTranscript } from '../functions/api/gm/transcript.js';
 import { onRequest as gmAssist } from '../functions/api/gm/assist.js';
 import { onRequest as live } from '../functions/api/live.js';
+import { onRequest as tableScreen } from '../functions/api/table/screen.js';
 import { gmNotFound } from '../functions/_lib/gm.js';
 import { onRequest as notFound } from '../functions/api/[[path]].js';
 
@@ -51,6 +52,8 @@ export const ROUTES = [
   { re: /^\/api\/rules\/house\/([^/]+)\/?$/, handler: rulesHouse, path: '/api/rules/house/:slug', params: ['slug'] },
   { re: /^\/api\/npcs\/?$/, handler: npcs, path: '/api/npcs' },
   { re: /^\/api\/npcs\/([^/]+)\/?$/, handler: npc, path: '/api/npcs/:id', params: ['id'] },
+  // the phones' table screen (MM1): a copy of what the iPad shows (a map or a handout), for any signed-in member
+  { re: /^\/api\/table\/screen\/?$/, handler: tableScreen, path: '/api/table/screen' },
   // the GM tools (GM.md), GM only: any other /api/gm path is 403 for a player (404 for the GM), not the plain 404
   { re: /^\/api\/gm\/pack\/?$/, handler: gmPack, path: '/api/gm/pack' },
   { re: /^\/api\/gm\/state\/?$/, handler: gmState, path: '/api/gm/state' },

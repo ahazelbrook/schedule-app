@@ -116,8 +116,9 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
         .filter(([, r]) => (since ? r.updatedAt > since : !r.deleted))
         .sort((a, b) => (a[1].updatedAt < b[1].updatedAt ? 1 : -1))
         .map(([id, r]) => ({ id, doc: r.deleted ? null : clone(r.doc), updatedAt: r.updatedAt, deleted: r.deleted }));
-      return [200, { now: new Date(tick - 2000).toISOString(), docs: list, campaignUpdatedAt: s.campaign ? s.campaign.updatedAt : null, npcsUpdatedAt: s.npcsAt(), ...(typeof s.live === 'boolean' ? { live: s.live } : {}) }];   // like the real API: 2 s behind, so rows repeat
+      return [200, { now: new Date(tick - 2000).toISOString(), docs: list, campaignUpdatedAt: s.campaign ? s.campaign.updatedAt : null, npcsUpdatedAt: s.npcsAt(), ...(typeof s.live === 'boolean' ? { live: s.live } : {}), ...(s.screenSeq === undefined ? {} : { screenSeq: s.screenSeq }) }];   // like the real API: 2 s behind, so rows repeat
     }
+    if (p === '/api/table/screen' && method === 'GET') return [200, clone(s.screen || { seq: 0, kind: 'none' })];   // MM1: the phones' copy of the iPad's map or handout
     if (p === '/api/campaign') {
       // the player rule (functions/_lib/campaign.js playerMayWrite) is the server's own; checks/api/flow.mjs and clocks.mjs
       // check it against the real Worker. A PATCH adds log entries (same at + by + text: skipped; same at + by, other text:
@@ -1793,6 +1794,35 @@ await test('live breaker: a socket that stays open for the stable time resets th
   ws.last().drop(1006);
   await until(() => b.win.B68Live.state().broken, 2000);
   eq(ws.made.length, 5, 'three more failures after the reset (sockets 3, 4, 5), where without it the drop of socket 3 would already have been the third and stopped at 3');
+  un();
+});
+
+await test('table (MM1): screenSeq arrives in the data poll, onScreenSeq hears every change (a move to 0 too), screen() is a plain GET and nothing polls for it', async () => {
+  const api = fakeApi();
+  const b = browser(api, { email: 'p@x.test' });
+  const T = b.win.claude.table;
+  ok(T && typeof T.screen === 'function' && typeof T.screenSeq === 'function' && typeof T.onScreenSeq === 'function', 'window.claude.table has screen, screenSeq, onScreenSeq');
+  eq(T.screenSeq(), 0, 'nothing known yet');
+  const heard = []; const off = T.onScreenSeq((v) => heard.push(v));
+  const db = await b.win.claude.use('db');
+  const un = db.collection('characters').onSnapshot(() => {});
+  await sleep(POLL * 3);
+  eq(heard, [], 'an older server that sends no screenSeq: nothing is heard, nothing is made up');
+  api.screenSeq = 7;
+  await until(() => heard.length >= 1, POLL * 3);
+  eq([T.screenSeq(), heard], [7, [7]], 'screenSeq from the poll');
+  await sleep(POLL * 3);
+  eq(heard, [7], 'the same number again is not a change');
+  api.screenSeq = 9; await until(() => heard.length >= 2, POLL * 3);
+  api.screenSeq = 0; await until(() => heard.length >= 3, POLL * 3);
+  eq(heard, [7, 9, 0], 'every move is heard, the move to 0 included');
+  ok(!b.fetchLog.some((f) => f.url.includes('table/screen')), 'the poll never fetched the picture');
+  api.screen = { seq: 9, kind: 'svg', svg: '<svg xmlns="http://www.w3.org/2000/svg"/>', title: 'Invented' };
+  const got = await T.screen();
+  eq(got, api.screen, 'screen() returns the answer as it is');
+  eq(b.fetchLog.filter((f) => f.url.includes('table/screen')).map((f) => (f.opts.method || 'GET') + ' ' + f.url), ['GET /api/table/screen'], 'one plain GET');
+  off(); api.screenSeq = 11; await sleep(POLL * 3);
+  eq(heard, [7, 9, 0], 'unsubscribed: nothing more is heard');
   un();
 });
 

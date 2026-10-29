@@ -66,8 +66,8 @@ missing token is `401 {"error":"not signed in","reason":"..."}`. `reason` is a s
 `app/runtime/cf.js`; when Access answered with its login page instead of JSON the page says so).
 
 Roles: `gm` when the email is in `GM_EMAILS` (comma-separated, case-insensitive); `display`
-when it is in `DISPLAY_EMAILS` (optional, the table iPad's own sign-in: it may only make six
-calls, `GET /api/me`, `GET /api/gm/display` and the transcriber's `POST /api/gm/stt/token`,
+when it is in `DISPLAY_EMAILS` (optional, the table iPad's own sign-in: it may only make a few
+calls, `GET /api/me`, `GET /api/gm/display`, `GET /api/live`, `GET /api/table/screen` and the transcriber's `POST /api/gm/stt/token`,
 `GET` and `PATCH /api/gm/stt` and `POST /api/gm/transcript` (`DISPLAY_ALLOWED` in
 `functions/_lib/auth.js`; the current display page no longer calls `GET /api/gm/stt`, since the display read carries
 `want` and `session`, but older pages do); everything else is 403; GM wins if an email is in both; GM.md); else
@@ -244,6 +244,8 @@ before the body is read (no token: 401, as everywhere). Never part of `/api/expo
   one part (name `[a-z0-9-]{1,32}`, body a JSON object ≤ 900 KiB, src ≤ 2 KiB, at most 12 parts; the same body and src again is
   `unchanged` and writes nothing); `DELETE ?part=name`. Table `gm_pack(campaign, part, version, src, updated_at, body)`, primary
   key `(campaign, part)`, `version` = 12 hex digits of SHA-256 of the body, `updated_at` in ms (migration `0004_gm.sql`).
+- `GET /api/table/screen` (any signed-in member; the phones' Table button, MM1) → `{ seq, kind: 'none' }`, or a copy of the stored display for a map
+  `{ seq, kind: 'svg', svg, title?, caption? }` or a handout `{ seq, kind: 'handout', file, title? }` and for nothing else. GM.md, "The phones' table screen".
 - `GET /api/gm/state` → `{ doc, updatedAt }`; `PATCH` deep-merges (maps merge, null deletes, arrays replace; ≤ 256 KiB). Stored as
   the `campaigns` row `<CAMPAIGN>#gm`, which `/api/campaign` and `/api/export` never read.
 - `GET /api/gm/display` → `{ seq, display, updatedAt, ambient, stt }` (`?seq=N` → `{ seq, unchanged: true }`); `PUT { kind, title, caption,

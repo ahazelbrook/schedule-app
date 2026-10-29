@@ -2201,6 +2201,7 @@
       '<button type="button" class="gm-pill gm-ap" data-gm="aptoggle" id="gm-bar-ap" data-ap="auto" hidden></button>' +
       '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-stt" title="The transcriber (the iPad tab)" hidden></button>' +
       '<button type="button" class="gm-bb" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' + '<button type="button" class="gm-bb" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
+      mirrorButton('gm-bb', 'bar') +
       '<span class="gm-menu"><button type="button" class="gm-bb" data-gm="menu" aria-expanded="false" aria-haspopup="true">Menu</button><span class="gm-menu-list" hidden>' +
       '<p class="gm-menu-h"><span><b>GM tools</b> · The console</span><span class="gm-exp" id="gm-menu-exp"></span></p>' + '<div class="gm-menu-warn" id="gm-menu-warn" hidden></div>' +
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
@@ -2227,9 +2228,29 @@
     renderLiveItem();
     toast(next ? 'Live sync is on: pages hear of a change at once.' : 'Live sync is off: every page is back to polling within a few seconds.');
   }
+  /* Phones mirror the iPad (MM1, design 2.4): the GM state's `mirror`, on unless it is an explicit false. While it is on, a phone's Table button
+     shows what the iPad shows when that is a map or a handout, and nothing else. The server reads it from the same GM state row as Live sync, so
+     the phones' next poll hears of a flip; it is set here, beside the iPad controls (the bar, and the iPad tab). No deploy is needed. */
+  function mirrorOn() { return !(S && S.doc && S.doc.mirror === false); }
+  function mirrorLabel(where) { var on = mirrorOn(); return where === 'bar' ? 'Phones: ' + (on ? 'see it' : 'off') : 'Phones mirror the iPad: ' + (on ? 'on (turn off)' : 'off (turn on)'); }
+  function mirrorButton(cls, where) {
+    return '<button type="button" class="' + cls + ' gm-mirror" data-gm="mirror" data-mir="' + where + '" aria-pressed="' + mirrorOn() + '" title="Phones mirror the iPad: while on, a map or a handout on the iPad also shows on the players’ phones (Table button). Nothing else ever does. Off stops it at once; no deploy needed">' + esc(mirrorLabel(where)) + '</button>';
+  }
+  function renderMirror() {
+    if (!S || !S.root || !S.root.querySelectorAll) return;
+    Array.prototype.forEach.call(S.root.querySelectorAll('[data-gm="mirror"]'), function (b) { b.setAttribute('aria-pressed', String(mirrorOn())); b.textContent = mirrorLabel(b.getAttribute('data-mir') || 'panel'); });
+  }
+  function toggleMirror() {
+    var next = !mirrorOn();
+    if (!patch({ mirror: next }, { force: true })) return;
+    if (S.saver && S.saver.flush) S.saver.flush();
+    renderMirror();
+    toast(next ? 'Phones mirror the iPad: a map or a handout on the iPad also shows on their Table button.' : 'Phones no longer mirror the iPad: their Table button shows nothing within a few seconds.');
+  }
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
+    renderMirror();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -3872,6 +3893,7 @@
       '<button type="button" class="btn sm" data-gm="apoff" title="Blade stops laying anything over the iPad until you switch it on">Switch off</button></p>' +
       '<div class="gm-ipad-acts"><button type="button" class="btn primary" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' +
       '<button type="button" class="btn" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
+      mirrorButton('btn', 'panel') +
       '<button type="button" class="btn" data-gm="clearoverlay"' + (busy ? ' disabled' : '') + ' title="Take the overlay (a clock, an NPC, a line or the dawn) off the iPad; what is under it stays">Clear overlay</button></div></section>';
     h += '<section class="gm-box gm-ipad-amb"><h3 class="gm-band">Ambient scenes</h3><div class="gm-ipad-body">';
     if (!AM.loaded) h += '<p class="gm-dim" role="status">' + (AM.error ? 'Could not read the settings: ' + esc(AM.error) : 'Loading the iPad settings…') + '</p>' + (AM.error ? '<p><button type="button" class="btn sm" data-gm="ambretry">Try again</button></p>' : '');
@@ -5715,6 +5737,7 @@
       case 'last': fileLast(); break;
       case 'clearcap': clearCapture(); break;
       case 'livesync': toggleLive(); break;
+      case 'mirror': toggleMirror(); break;
     }
   }
   function onChange(ev) {

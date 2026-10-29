@@ -9,7 +9,7 @@
 import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf } from '../../_lib/http.js';
 import { LIMITS, requireGm, loadState, patchState } from '../../_lib/gm.js';
-import { closeLive } from '../../_lib/live.js';
+import { closeLive, pokeLive } from '../../_lib/live.js';
 
 const METHODS = ['GET', 'PATCH'];
 
@@ -28,5 +28,6 @@ export async function onRequest({ request, env, data, waitUntil }) {
   const meta = {};
   const out = await patchState(db, campaign, patch, meta);
   if (meta.liveOff) closeLive({ env, waitUntil });   // only on the flip to off (design 2.5): the sockets close server-side too
+  if (meta.mirrorFlip) pokeLive({ env, waitUntil }, ['screen']);   // the phones' mirror switch flipped (MM1): their screenSeq moves, so they poll at once
   return json(out);
 }
