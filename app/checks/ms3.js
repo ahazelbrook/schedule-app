@@ -15,6 +15,8 @@ const URL = 'file://' + path.join(APP, 'index.html').replace(/\\/g, '/');
     p.on('console', m => { if (m.type() === 'error' && !/ERR_FILE_NOT_FOUND/.test(m.text())) errs.push(name + ' console.error: ' + m.text()); });
     p.on('pageerror', e => errs.push(name + ' pageerror: ' + e.message));
     await p.goto(URL); await p.waitForTimeout(700);
+    /* MS2: the figure kit is a bundle fetched after the first render; wait for it (and the thumbnail swap that follows) so its arrival cannot fall inside a mutation window below */
+    await p.waitForFunction(() => window.B68Load && window.B68Load.kitIn && window.B68Load.kitIn(), null, { timeout: 20000 }); await p.waitForTimeout(500);
     const r = await p.evaluate((canWrite) => {
       try {
         const pb = 'hound'; B68.choosePlaybook(pb);
@@ -150,6 +152,8 @@ const URL = 'file://' + path.join(APP, 'index.html').replace(/\\/g, '/');
     const p = await b.newPage({ viewport: { width: 390, height: 900 } });
     p.on('pageerror', e => errs.push('roster pageerror: ' + e.message));
     await p.goto(URL); await p.waitForTimeout(700);
+    /* MS2: the figure kit is a bundle fetched after the first render; wait for it (and the thumbnail swap that follows) so its arrival cannot fall inside a mutation window below */
+    await p.waitForFunction(() => window.B68Load && window.B68Load.kitIn && window.B68Load.kitIn(), null, { timeout: 20000 }); await p.waitForTimeout(500);
     const r = await p.evaluate(() => {
       const mk = (id, name) => ({ id, name, alias: '', playbook: 'hound', playbookName: 'Hound', code: 'H-1', spec: JSON.parse(JSON.stringify(B68.S.spec)), sheet: { name }, play: null, owner: null });
       const n = () => document.querySelectorAll('#cards .card').length;
