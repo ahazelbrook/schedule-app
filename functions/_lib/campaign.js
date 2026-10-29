@@ -5,6 +5,9 @@
 // default document (app/campaign.js); keep the two in step.
 
 import { HttpError, ID_RE, MAX_BODY_BYTES, isPlainObject, nowIso } from './http.js';
+import { namesHit } from './gm.js';
+import { hiddenNameHit } from './table-screen.js';
+import { LIVE_SQL, liveFlagOf } from './live.js';
 
 export const CAMPAIGN_DOC_ID = 'main';
 export const LOG_MAX = 200;
@@ -65,6 +68,7 @@ function playerMayChange(path, meId) {
  * (so a new `schedule.avail.<me>` is `[schedule, avail, <me>, <key>]`), else as its own path.
  */
 export function changedPaths(before, after, path = [], out = []) {
+  if (before === after) return out;       // the same object (a part a PATCH did not touch, such as a big `mission`) cannot differ: skip its walk
   const nonEmpty = (v) => isPlainObject(v) && Object.keys(v).length > 0;
   if (before === undefined && nonEmpty(after)) before = {};
   else if (after === undefined && nonEmpty(before)) after = {};
@@ -412,4 +416,185 @@ export async function writeCampaign(db, id, build) {
     if (result && result.meta && result.meta.changes > 0) return doc;
   }
   throw new HttpError(409, 'the campaign changed while saving, try again');
+}
+
+// ---------- the mission: what the players are shown of the Run view (design 5.1, 5.5c, 5.7) ----------
+//
+// `mission` in the campaign document is written by the GM page only, in a PATCH, and rebuilt here field by field (cleanMission):
+// whatever else a body holds is dropped. It is { v, site, t, seq, hud, cards }. `hud` is the iPad's band and the one part the display
+// GET serves (loadMissionPart); `cards` are one per PC and reach phones through the campaign document alone, never the display route.
+// A player cannot write it: playerMayWrite reports any change under `mission`. The PATCH handler stores the GM's mission whole (it
+// replaces, it does not deep merge), and a PUT never changes it (see functions/api/campaign.js).
+
+export const MISSION_LIMITS = {
+  str: 160, line: 300,                 // characters of a string; of a lead's line
+  now: 3, next: 3, cardNext: 4,        // entries of hud.now, hud.next, a card's next
+  marks: 24, crew: 8, cards: 8,        // night marks, hud.crew, cards
+  leads: 8, zones: 12, items: 10, know: 16, paths: 6,   // per card
+  beats: 200, size: 12, count: 99,     // whole numbers: beats in the night, an alarm clock's size, "ways found"
+};
+export const MISSION_REFUSED = 'mission names';
+
+// text cut at `max` characters: control characters made spaces, and no half of a surrogate pair left at the cut
+const cut = (v, max) => {
+  if (typeof v !== 'string') return '';
+  let s = v.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
+  if (s.length > max) {
+    s = s.slice(0, max);
+    const c = s.charCodeAt(max - 1);
+    if (c >= 0xd800 && c <= 0xdbff) s = s.slice(0, -1);
+    s = s.trimEnd();
+  }
+  return s;
+};
+const whole = (v, lo, hi) => Math.min(hi, Math.max(lo, typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : 0));
+const listOf = (v, max, one) => {
+  const out = [];
+  if (!Array.isArray(v)) return out;
+  for (const x of v) {
+    if (out.length >= max) break;
+    const c = one(x);
+    if (c !== null) out.push(c);
+  }
+  return out;
+};
+const strings = (v, max) => listOf(v, max, (x) => cut(x, MISSION_LIMITS.str) || null);
+const nowEntry = (x) => {
+  if (!isPlainObject(x)) return null;
+  const text = cut(x.text, MISSION_LIMITS.str);
+  return text ? { text, where: cut(x.where, MISSION_LIMITS.str), until: cut(x.until, MISSION_LIMITS.str) } : null;
+};
+const nextEntry = (x) => {
+  if (!isPlainObject(x)) return null;
+  const text = cut(x.text, MISSION_LIMITS.str);
+  return text ? { text, where: cut(x.where, MISSION_LIMITS.str), at: cut(x.at, MISSION_LIMITS.str), inMin: whole(x.inMin, 0, 100000) } : null;
+};
+
+function cleanHud(h) {
+  if (!isPlainObject(h)) return null;
+  const L = MISSION_LIMITS, n = isPlainObject(h.night) ? h.night : null, a = isPlainObject(h.alarm) ? h.alarm : null;
+  const size = a ? whole(a.size, 0, L.size) : 0;
+  return {
+    time: cut(h.time, L.str), label: cut(h.label, L.str),
+    now: listOf(h.now, L.now, nowEntry),
+    next: listOf(h.next, L.next, nextEntry),
+    night: n ? {
+      beats: whole(n.beats, 0, L.beats), start: whole(n.start, 0, L.beats), cur: whole(n.cur, 0, L.beats),
+      marks: listOf(n.marks, L.marks, (m) => (isPlainObject(m) ? { i: whole(m.i, 0, L.beats), icon: cut(m.icon, L.str), text: cut(m.text, L.str) } : null)),
+    } : null,
+    alarm: a ? { name: cut(a.name, L.str), size, filled: Math.min(whole(a.filled, 0, L.size), size), text: cut(a.text, L.str) } : null,
+    crew: listOf(h.crew, L.crew, (c) => {
+      if (!isPlainObject(c)) return null;
+      const out = { name: cut(c.name, L.str), costume: cut(c.costume, L.str), icon: cut(c.icon, L.str) };
+      const room = cut(c.room, L.str);
+      if (room) out.room = room;
+      return out;
+    }),
+    target: isPlainObject(h.target) ? { room: cut(h.target.room, L.str) } : null,
+    ways: isPlainObject(h.ways) ? { found: whole(h.ways.found, 0, L.count), total: whole(h.ways.total, 0, L.count) } : null,
+  };
+}
+
+function cleanCard(c) {
+  const L = MISSION_LIMITS, z = isPlainObject(c.zones) ? c.zones : {}, w = isPlainObject(c.warn) ? c.warn : null;
+  return {
+    name: cut(c.name, L.str), owner: cut(c.owner, L.str), costume: cut(c.costume, L.str), icon: cut(c.icon, L.str), room: cut(c.room, L.str), pos: cut(c.pos, L.str),
+    warn: w ? { who: cut(w.who, L.str), look: cut(w.look, L.str), sees: cut(w.sees, L.str) } : null,
+    zones: { controlled: strings(z.controlled, L.zones), risky: strings(z.risky, L.zones) },
+    items: strings(c.items, L.items),
+    leads: listOf(c.leads, L.leads, (d) => {
+      if (!isPlainObject(d)) return null;
+      const out = { name: cut(d.name, L.str), line: cut(d.line, L.line), heard: cut(d.heard, L.str), window: cut(d.window, L.str), next: cut(d.next, L.str) };
+      if (d.done === true) out.done = true;
+      return out.name || out.line ? out : null;
+    }),
+    know: strings(c.know, L.know),
+    next: listOf(c.next, L.cardNext, nextEntry),
+    paths: listOf(c.paths, L.paths, (p) => {
+      if (!isPlainObject(p)) return null;
+      const text = cut(p.text, L.str);
+      return text ? { text, until: cut(p.until, L.str) } : null;
+    }),
+    busy: cut(c.busy, L.str) || null,
+  };
+}
+
+/**
+ * The mission as stored, rebuilt field by field from design 5.5c: every key is named here and anything else is dropped; strings are cut to
+ * MISSION_LIMITS.str characters (a lead's line to .line), lists to their caps, numbers made whole and kept in range. null stays null (the
+ * write removes the mission). Cards are kept by PC id (ID_RE), the first MISSION_LIMITS.cards of them. HttpError(400) for a value that is not
+ * an object, and for a missing or non-whole `seq` (it must be 1 or more: the iPad compares it, and 0 reads as "no mission").
+ */
+export function cleanMission(raw) {
+  if (raw === null) return null;
+  if (!isPlainObject(raw)) throw new HttpError(400, 'mission must be an object, or null to remove it');
+  if (!(Number.isInteger(raw.seq) && raw.seq >= 1 && raw.seq <= 1e9)) throw new HttpError(400, 'mission.seq must be a whole number of 1 or more');
+  const cards = {};
+  let n = 0;
+  if (isPlainObject(raw.cards)) {
+    for (const [id, c] of Object.entries(raw.cards)) {
+      if (n >= MISSION_LIMITS.cards) break;
+      if (!ID_RE.test(id) || id === '__proto__' || !isPlainObject(c)) continue;
+      cards[id] = cleanCard(c);
+      n++;
+    }
+  }
+  return { v: 1, site: cut(raw.site, MISSION_LIMITS.str), t: whole(raw.t, -100000, 100000), seq: raw.seq, hud: cleanHud(raw.hud), cards };
+}
+
+/** Every string of a cleaned mission (the card ids too), as [path, text] pairs. */
+export function missionTexts(m, path = 'mission', out = []) {
+  if (typeof m === 'string') { if (m) out.push([path, m]); }
+  else if (Array.isArray(m)) m.forEach((x, i) => missionTexts(x, path + '.' + i, out));
+  else if (isPlainObject(m)) for (const [k, v] of Object.entries(m)) { out.push([path + '.' + k, k]); missionTexts(v, path + '.' + k, out); }
+  return out;
+}
+
+/**
+ * null, or { name, path }: the first of `names` (the hidden clocks and NPCs, loadHiddenNames) that a string of the cleaned mission holds as a
+ * whole word, and where. Cost guard (a Worker has 10 ms of CPU): hiddenNameHit makes ONE pass over every string joined with a separator no name
+ * can match across, and only when that finds something are the strings read one by one.
+ */
+export function missionHit(clean, names) {
+  if (!clean || !Array.isArray(names) || !names.length) return null;
+  const texts = missionTexts(clean);
+  if (!hiddenNameHit([texts.map((t) => t[1]).join('\u0001')], names)) return null;
+  for (const [path, text] of texts) for (const name of names) if (typeof name === 'string' && namesHit(text, [name])) return { name, path };
+  return { name: '(a hidden name)', path: 'mission' };    // the joined pass saw a hit the strings do not show: fail closed
+}
+
+/** Throw the 422 for a hit from missionHit; the message names the hit and where, for the page to show. */
+export function refuseMissionHit(hit) {
+  throw new HttpError(422, MISSION_REFUSED + ' "' + hit.name + '" at ' + hit.path + ', which the players must not see');
+}
+
+// ---------- the iPad's fourth part ----------
+
+const HSEQ_RE = /^\d{1,15}$/;
+
+/**
+ * The display GET's fourth part (?hseq=N), read in ONE statement: the mission's seq with json_extract, and `mission.hud` only while that seq
+ * differs from the page's (the CASE keeps the hud, and everything else of the document, out of the answer when nothing changed). With
+ * `withLive` the same statement carries the live-sync switch too, so a poll that reads the switch anyway makes no extra D1 call. The cards are
+ * never selected. -> { part, live }: part is { hseq, hud } (no mission stored: hseq 0 and hud null) or { hseq, unchanged: true }.
+ */
+export async function loadMissionPart(db, campaign, hseqRaw, withLive) {
+  const have = typeof hseqRaw === 'string' && HSEQ_RE.test(hseqRaw) ? Number(hseqRaw) : -1;      // anything else counts as stale
+  const seq = "CASE WHEN json_valid(doc) THEN json_extract(doc, '$.mission.seq') END";
+  const hud = "CASE WHEN json_valid(doc) AND COALESCE(json_extract(doc, '$.mission.seq'), 0) != ?2 THEN json_extract(doc, '$.mission.hud') END";
+  const row = await db.prepare(
+    'SELECT (SELECT ' + seq + ' FROM campaigns WHERE id = ?1) AS hseq, (SELECT ' + hud + ' FROM campaigns WHERE id = ?1) AS hud' +
+    (withLive ? ', (SELECT ' + LIVE_SQL + ' FROM campaigns WHERE id = ?3) AS live' : '')
+  ).bind(...(withLive ? [campaign, have, campaign + '#gm'] : [campaign, have])).first();
+  const r = row || {};
+  const now = Number.isInteger(r.hseq) && r.hseq >= 1 ? r.hseq : 0;
+  let part;
+  if (now === 0) part = { hseq: 0, hud: null };
+  else if (now === have) part = { hseq: now, unchanged: true };
+  else {
+    let h = null;
+    try { const v = typeof r.hud === 'string' ? JSON.parse(r.hud) : null; if (isPlainObject(v)) h = v; } catch (_) { /* no hud */ }
+    part = { hseq: now, hud: h };
+  }
+  return { part, live: liveFlagOf(r.live === undefined ? null : r.live) };
 }

@@ -28,6 +28,10 @@
 //                  -> the same with the transcriber part named too: each part comes as { seq, unchanged: true } when its number
 //                     is the one given, else in full; all three current: { seq, unchanged: true, ambient, stt }, else the full
 //                     display along with them. A part whose number is not given counts as stale (`?aseq=M` alone, `?sseq=K` alone).
+//   GET ...&hseq=N -> any of the above, plus a top-level `mission` (the fourth part, the band beside the map): { hseq, hud } while the campaign
+//                     document's mission.seq differs from N (hud is mission.hud as stored; no mission at all is { hseq: 0, hud: null }), else
+//                     { hseq, unchanged: true }. Read in one statement, the same one as the live switch when that is read too (loadMissionPart in
+//                     functions/_lib/campaign.js). Never the mission's cards. A call without hseq is answered as before, with no `mission`.
 //   PUT  display   -> { seq, display, updatedAt }: replaces the display and bumps seq. With ifSeq (a whole number) only while the
 //                     display is still at that seq, else 409 and nothing changes (the GM page's live reveal; GM.md "Location")
 // display: { kind: 'blank' | 'dark' | 'svg' | 'npc' | 'text' | 'rule' | 'cards' | 'handout', title?, caption? } plus `file` + `showTitle`
@@ -42,7 +46,7 @@ import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf, HttpError } from '../../_lib/http.js';
 import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay, loadAmbient, loadAmbientLite, liveAmbient } from '../../_lib/gm.js';
 import { joinOverlayNpc } from '../../_lib/npcs.js';
-import { joinOverlayClock } from '../../_lib/campaign.js';
+import { joinOverlayClock, loadMissionPart } from '../../_lib/campaign.js';
 import { loadSttPart } from '../../_lib/stt.js';
 import { liveFlag, mirrorFlag, pokeLive } from '../../_lib/live.js';
 
@@ -57,7 +61,15 @@ export async function onRequest({ request, env, data, waitUntil }) {
   if (method === 'GET') {
     const db = await getDb(env);
     const q = new URL(request.url).searchParams;
-    const seq = q.get('seq'), aseq = q.get('aseq'), sseq = q.get('sseq');
+    const seq = q.get('seq'), aseq = q.get('aseq'), sseq = q.get('sseq'), hseq = q.get('hseq');
+    // THE FOURTH PART (?hseq=N, the mission's band): a top-level `mission` on any answer, only when the page asks. One statement; when the page also reads the
+    // live switch it is the SAME statement (loadMissionPart), so a page that sends hseq makes no more D1 calls than one that does not. hud only, never the cards.
+    const wantHud = hseq !== null;
+    const withHud = (out, part) => (part ? { ...out, mission: part } : out);
+    const tail = async (needLive) => {      // the live switch (when the call reads it) and the mission part (when asked), in one read
+      if (wantHud) return loadMissionPart(db, campaign, hseq, needLive);
+      return { part: undefined, live: needLive ? await liveFlag(db, campaign) : true };
+    };
     const cur = await loadDisplay(db, campaign);
     const same = seq !== null && seq === String(cur.seq);
     // THE OVERLAY, served on its own: a small top-level `overlay` on every answer (null when none), made on each poll from the stored overlay
@@ -80,23 +92,23 @@ export async function onRequest({ request, env, data, waitUntil }) {
       return { ...amb, doc };
     };
     if (aseq === null && sseq === null) {
-      if (same) return json({ seq: cur.seq, unchanged: true });   // the oldest call: neither the ambient nor the transcriber is even read
-      const [o, live] = await Promise.all([liveOverlay(), liveFlag(db, campaign)]);
-      return json({ ...cur, ambient: await fullAmbient(o.overlay), overlay: o.overlay, stt: await loadSttPart(db, campaign), live });
+      if (same) return json(withHud({ seq: cur.seq, unchanged: true }, wantHud ? (await tail(false)).part : undefined));   // the oldest call: neither the ambient nor the transcriber is even read
+      const [o, rest] = await Promise.all([liveOverlay(), tail(true)]);
+      return json(withHud({ ...cur, ambient: await fullAmbient(o.overlay), overlay: o.overlay, stt: await loadSttPart(db, campaign), live: rest.live }, rest.part));
     }
     // the live-sync switch (design 2.5): one small read beside the overlay's, on every answer a page that knows the switch can send
     // (the ones with a transcriber seq, and the first full one); the seq-only call and the older ?aseq-only one stay as they were
-    const [{ seq: aseqNow, overlay }, live] = await Promise.all([liveOverlay(), sseq === null ? true : liveFlag(db, campaign)]);
+    const [{ seq: aseqNow, overlay }, { live, part }] = await Promise.all([liveOverlay(), tail(sseq !== null)]);
     const ambSame = aseq === String(aseqNow);
     const ambient = ambSame ? { seq: aseqNow, unchanged: true } : await fullAmbient(overlay);
     if (sseq === null) {   // a display page from before the transcriber rode along: what it always got, so it never pulls the full display each time
-      return json(same && ambSame ? { seq: cur.seq, unchanged: true, ambient, overlay } : { ...cur, ambient, overlay });
+      return json(withHud(same && ambSame ? { seq: cur.seq, unchanged: true, ambient, overlay } : { ...cur, ambient, overlay }, part));
     }
     const st = await loadSttPart(db, campaign);
     const sttSame = sseq === String(st.seq);
     const stt = sttSame ? { seq: st.seq, unchanged: true } : st;
-    if (same && ambSame && sttSame) return json({ seq: cur.seq, unchanged: true, ambient, stt, overlay, live });
-    return json({ ...cur, ambient, stt, overlay, live });
+    if (same && ambSame && sttSame) return json(withHud({ seq: cur.seq, unchanged: true, ambient, stt, overlay, live }, part));
+    return json(withHud({ ...cur, ambient, stt, overlay, live }, part));
   }
   const raw = await readJsonObject(request, LIMITS.displayRequest);
   let ifSeq;
