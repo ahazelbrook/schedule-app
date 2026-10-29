@@ -284,6 +284,24 @@
         if (!t || (window.B68Runtime && window.B68Runtime.kind === 'cloudflare' && !t.updatedAt)) return null;
         var n = Math.max(0, Math.floor(+s.number || 0)); return { session: n, inPlay: n > 0 && !!s.startedAt && !s.endedAt };
       },
+      /* the crew's special abilities the table has taken, as [{ name, text }] for the roll panel's strip (MU2, display only): the names are
+         crew.abilities in the campaign document (which every player already receives), the text is the crew playbook's own, from crews.js.
+         null = not known yet (no table yet, or crews.js still loading); [] = the crew has taken none */
+      crewAbilities: function () {
+        var t = campLoaded && tableExists && isObj(tableLatest) ? tableLatest : null, c = t && isObj(t.crew) ? t.crew : null;
+        if (!c) return null;
+        var own = isObj(c.abilities) ? Object.keys(c.abilities).filter(function (k) { return +c.abilities[k] > 0; }) : [];
+        if (!c.playbook || !own.length) return [];
+        var CR = window.B68Crews, r = CR && CR.byId && CR.byId[c.playbook];
+        if (!CR) {
+          if (!crewsAsked && window.B68Load && window.B68Load.need) { crewsAsked = true; window.B68Load.need('crews').then(function () { var T2 = tracker(); if (openId === id && T2 && T2.refresh) T2.refresh(); }, function () { crewsAsked = false; }); }
+          return null;
+        }
+        if (!r) return [];
+        var out = (r.abilities || []).filter(function (a) { return own.indexOf(a[0]) >= 0; }).map(function (a) { return { name: a[0], text: String(a[1] || '') }; });
+        (Array.isArray(c.versatile) ? c.versatile : []).forEach(function (v) { if (typeof v === 'string' && v.trim()) out.push({ name: v.trim(), text: '' }); });
+        return out;
+      },
       profiles: userCap && typeof userCap.profiles === 'function' ? profiles : null
     };
     function arrived(data) {
@@ -327,6 +345,7 @@
      Subscribed once, as soon as the files settle, in every mode: the next-session card (schedule.js, SCHEDULE.md) at
      the top of the creator, the sheet and the table reads it too. The table page only attaches to that subscription
      while it is open; nothing is written on open. */
+  var crewsAsked = false;   /* crews.js (the crew playbooks' text) is fetched once for a sheet's abilities strip when the table bundle has not loaded it */
   var campRef = null, campUnsub = null, campLive = false, campLoaded = false, tableOn = false, tableLatest = null, tableExists = false;
   var NO_TABLE = 'The table is not available in this view.';
   function campaignMod() { var Cm = window.B68Campaign; return Cm && typeof Cm.open === 'function' ? Cm : null; }

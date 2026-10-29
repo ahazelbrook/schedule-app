@@ -179,6 +179,30 @@ const URL = 'file://' + path.join(APP, 'index.html').replace(/\\/g, '/');
     await p.close();
   }
 
+  /* 9. the roll panel's abilities strip (MU2) lives in the Actions box: folding or opening it, or opening one ability's text,
+     redraws that box and nothing else, and a read-only sheet takes the same taps */
+  for (const [canWrite, label] of [[true, 'strip'], [false, 'strip-ro']]) {
+    const { p, r } = await open(390, canWrite, label);
+    assert(r.ok, label + ': opened');
+    await p.click('#dossier .ds-actbtn'); await settle(p);
+    assert(await p.evaluate(() => !!document.querySelector('#dossier .ds-abstrip')), label + ': the mark panel carries the abilities strip');
+    assert(await p.evaluate(() => !document.querySelector('#dossier .ds-abstrip.open')), label + ': and it starts folded');
+    await p.evaluate(() => { window.takeRec(); window.markSlots(); window.saves = 0; });
+    await p.click('#dossier [data-act="abstrip"]'); await settle(p);
+    const recA = await p.evaluate(() => window.takeRec());
+    const sA = Array.from(new Set(recA.flatMap(x => x.slot.split('+')))).sort();
+    assert(recA.length > 0 && sA.every(s => ['actbox', 'status'].indexOf(s) >= 0), label + ': opening the strip touched only the Actions box: ' + JSON.stringify(sA));
+    assert(await p.evaluate(() => !!document.querySelector('#dossier .ds-abstrip.open .ds-abi')), label + ': the strip is open and lists abilities');
+    await p.click('#dossier .ds-abi'); await settle(p);
+    const recB = await p.evaluate(() => window.takeRec());
+    const sB = Array.from(new Set(recB.flatMap(x => x.slot.split('+')))).sort();
+    assert(recB.length > 0 && sB.every(s => ['actbox', 'status'].indexOf(s) >= 0), label + ': opening one ability touched only the Actions box: ' + JSON.stringify(sB));
+    const lost = await p.evaluate(() => { const l = []; document.querySelectorAll('#dossier .ds-box, #dossier .ds-head, #dossier .ds-tablebar').forEach(s => { if (!s.__m && !s.classList.contains('ds-actbox')) l.push(s.className); }); return l; });
+    assert(lost.length === 0, label + ': every other box kept its node: ' + JSON.stringify(lost));
+    assert((await p.evaluate(() => window.saves)) === 0, label + ': a strip tap writes nothing');
+    await p.close();
+  }
+
   await b.close();
   info.forEach(s => console.log('INFO', s));
   console.log(fails.length ? 'ASSERTIONS FAILED:\n  ' + fails.join('\n  ') : 'ASSERTIONS: all passed');

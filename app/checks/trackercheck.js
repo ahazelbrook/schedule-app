@@ -251,8 +251,8 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
       return { stress: top('.ds-stressbox'), harm: top('.ds-harmbox'), actions: top('.ds-actbox'), xp: top('.ds-xpbox'), items: top('.ds-itembox'), downtime: top('.ds-dtbox'), session: top('.ds-sessbox'), keys: top('.ds-keybox'), stacks: top('.ds-stackbox'), abilities: top('.ds-abbox'), fig: top('.ds-figbox'), thumb: th && th.offsetParent ? [th.naturalWidth, Math.round(th.getBoundingClientRect().width)] : null,
         rollMin: Math.min.apply(null, [...document.querySelectorAll('#dossier .ds-actbtn')].map(n => n.getBoundingClientRect().height)), vh: innerHeight };
     });
-    const order = ['stress', 'harm', 'actions', 'xp', 'items', 'downtime', 'session', 'keys', 'stacks', 'abilities'];
-    assert(order.every((k, i) => lay[k] != null && (!i || lay[order[i - 1]] < lay[k])), tag + ': play order Stress, Harm, Actions, XP, Load, Downtime, Session, Keys, Stacks, then the rest: ' + JSON.stringify(lay));
+    const order = ['stress', 'harm', 'actions', 'abilities', 'xp', 'items', 'downtime', 'session', 'keys', 'stacks'];
+    assert(order.every((k, i) => lay[k] != null && (!i || lay[order[i - 1]] < lay[k])), tag + ': play order Stress, Harm, Actions, Special abilities, XP, Load, Downtime, Session, Keys, Stacks, then the rest: ' + JSON.stringify(lay));
     assert(lay.stress < lay.vh - 120, tag + ': Stress is on the first screen: ' + lay.stress);
     /* the first screen: the identity folded into "About", a sticky bar (Back, Print, "…") with the vitals, each a jump to its box */
     const head = await q.evaluate(() => {
